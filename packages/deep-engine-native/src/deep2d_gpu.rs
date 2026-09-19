@@ -128,9 +128,10 @@ impl Deep2dGpuPainter {
         previous: Option<&Self>,
         context: Option<Deep2dFrameContext>,
     ) -> Result<Self, String> {
-        let path_cache = previous
-            .map(|p| p.path_cache.clone())
-            .unwrap_or_else(|| Arc::new(std::sync::Mutex::new(Deep2dPathCache::default())));
+        let timing = std::time::Instant::now();
+        let path_cache = previous.map(|p| p.path_cache.clone()).unwrap_or_else(|| {
+            Arc::new(std::sync::Mutex::new(Deep2dPathCache::with_package_cache()))
+        });
         let mut prepared = {
             let mut cache = path_cache
                 .lock()
@@ -143,6 +144,7 @@ impl Deep2dGpuPainter {
             }
             prepare_runtime_content_cached(content, &mut cache)?
         };
+        let prepare_ms = timing.elapsed().as_secs_f64() * 1000.0;
         let frame_layout = cache.frame_layout(|| frame_layout(device));
         let mut path = (!prepared.path.vertices.is_empty()).then(|| {
             Deep2dPathGpuResources::new(
@@ -160,6 +162,7 @@ impl Deep2dGpuPainter {
                 Deep2dAtlasGpuResources::new(device, queue, format, &frame_layout, &prepared, cache)
             })
             .transpose()?;
+        let resources_ms = timing.elapsed().as_secs_f64() * 1000.0 - prepare_ms;
         let frame_bind_group = frame_resources(
             device,
             queue,
@@ -172,6 +175,13 @@ impl Deep2dGpuPainter {
             path.snapshot = vertex_transfer::VertexSnapshot::capture(&mut prepared.path);
             path.transfer.shadow_bytes = if path.snapshot.is_some() { byte_len } else { 0 };
         }
+        let draw_evidence = draw_evidence::DrawEvidenceTracker::new(content, &prepared.atlases);
+        if std::env::var_os("DEEP_DASHBOARD_FILTER_EVIDENCE").is_some() {
+            println!(
+                "dashboard GPU prepare_ms={prepare_ms:.3} resources_ms={resources_ms:.3} evidence_ms={:.3}",
+                timing.elapsed().as_secs_f64() * 1000.0 - prepare_ms - resources_ms
+            );
+        }
         Ok(Self {
             path,
             atlas,
@@ -179,7 +189,7 @@ impl Deep2dGpuPainter {
             path_cache,
             queue: Arc::new(queue.clone()),
             frame_resources: frame_bind_group,
-            draw_evidence: draw_evidence::DrawEvidenceTracker::new(content, &prepared.atlases),
+            draw_evidence,
             chunks: prepared.chunks,
             logical_size: [prepared.path.logical_width, prepared.path.logical_height],
             last_physical_size: std::cell::Cell::new(None),
@@ -328,6 +338,9 @@ impl Deep2dGpuPainter {
 
     pub fn draw_evidence(&self) -> Vec<DrawEvidence> {
         self.draw_evidence.snapshot()
+    }
+    pub fn atlas_inventory(&self) -> &[serde_json::Value] {
+        self.draw_evidence.atlas_inventory()
     }
     pub fn enable_draw_evidence(&self) {
         self.draw_evidence.enable();

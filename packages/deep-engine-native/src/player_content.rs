@@ -6,6 +6,7 @@ use deep_engine_native::{
     ibl::{PreparedIblEnvironment, builtin_default_environment},
     runtime_package::{
         LoadedRuntimePackage, RuntimeMaterialShaderBinding, RuntimeResourceIndexEntry,
+        runtime_content_sha256,
     },
     shader_package::DeepShaderPackageV2,
 };
@@ -50,12 +51,32 @@ pub struct PlayerContent {
     pub fog: Option<FogSettings>,
     pub shader_packages: Vec<DeepShaderPackageV2>,
     pub material_bindings: Vec<RuntimeMaterialShaderBinding>,
+    /// v7 动态场景通道。先随包进入 PlayerContent，供宿主 replay/交互层消费；
+    /// 不在加载阶段把动画误降级成静态几何。
+    #[allow(dead_code)]
+    pub dynamic_runtime: Option<deep_engine_native::runtime_package::DynamicSceneRuntime>,
     runtime_package: Option<RuntimePackageSnapshot>,
 }
 
 #[cfg(test)]
 #[path = "player_content_camera_tests.rs"]
 mod camera_tests;
+
+#[cfg(test)]
+#[path = "player_content_dynamic_tests.rs"]
+mod dynamic_tests;
+
+/// One deterministic dynamic playback step: the sampled TRS channels were
+/// applied to the packet instances and the canonical frame string is the
+/// cross-end determinism contract shared with the Web consumer.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DynamicPlaybackStep {
+    pub time_ms: u64,
+    pub canonical: String,
+    pub replay_revisions: Vec<u64>,
+    pub changed_instances: usize,
+}
 
 #[derive(Clone, Debug)]
 pub struct RuntimePackageSnapshot {
@@ -130,6 +151,7 @@ impl PlayerContent {
             fog: None,
             shader_packages: Vec::new(),
             material_bindings: Vec::new(),
+            dynamic_runtime: None,
             runtime_package: None,
         }
     }
@@ -153,6 +175,7 @@ impl PlayerContent {
             fog,
             shader_packages,
             material_bindings,
+            dynamic_runtime,
             ..
         } = package;
         // 图表包：ChartIR 经包校验后重建运行时；展示列表由图表呈现，与静态 deep2d 入口互斥。
@@ -199,6 +222,7 @@ impl PlayerContent {
             fog,
             shader_packages,
             material_bindings,
+            dynamic_runtime,
             runtime_package,
         };
         // 包通过结构/哈希校验后，仍需在创建窗口前核对实际执行支持。
@@ -301,6 +325,38 @@ impl PlayerContent {
         self.scene_content_key
     }
 
+    /// Authored animation duration in milliseconds, when the package carries
+    /// the dynamic runtime channel.
+    pub fn dynamic_runtime_duration_ms(&self) -> Option<u64> {
+        self.dynamic_runtime
+            .as_ref()?
+            .animation
+            .as_ref()
+            .map(|animation| animation.duration_ms)
+    }
+
+    /// Samples one deterministic playback step from the dynamic runtime and
+    /// applies the TRS result to the render packet instances it targets. The
+    /// replay clock is clamped by `sample_animation`; the returned canonical
+    /// string is the byte-exact cross-end frame contract.
+    pub fn apply_dynamic_playback_step(&mut self, time_ms: u64) -> Result<DynamicPlaybackStep, String> {
+        let Some(runtime) = self.dynamic_runtime.as_ref() else {
+            return Err("content has no dynamic runtime channel; real playback requires one".into());
+        };
+        let time_ms = time_ms.min(runtime.animation.as_ref().map(|a| a.duration_ms).unwrap_or(0));
+        let samples = runtime.sample_animation(time_ms);
+        let replay_revisions: Vec<u64> = runtime
+            .replay_events_at(time_ms)
+            .iter()
+            .map(|event| event.revision)
+            .collect();
+        let canonical =
+            deep_engine_native::runtime_package::canonical_dynamic_frame(time_ms, &samples, &replay_revisions);
+        let changed_instances = apply_dynamic_transforms(&mut self.packet, &samples)?;
+        self.scene_content_key = crate::player_shader_plan::scene_content_key(&self.packet);
+        Ok(DynamicPlaybackStep { time_ms, canonical, replay_revisions, changed_instances })
+    }
+
     pub fn runtime_package(&self) -> Option<&RuntimePackageSnapshot> {
         self.runtime_package.as_ref()
     }
@@ -311,4 +367,80 @@ impl PlayerContent {
         update(&mut self.packet);
         self.scene_content_key = crate::player_shader_plan::scene_content_key(&self.packet);
     }
+}
+
+/// Composed TRS state for one dynamic animation target node.
+#[derive(Clone, Copy, Default)]
+struct DynamicNodeTransform {
+    translation: Option<[f64; 3]>,
+    rotation: Option<[f64; 4]>,
+    scale: Option<[f64; 3]>,
+}
+
+/// Maps sampled TRS channels onto packet instances and overwrites their
+/// transforms with `T * R * S` (column-major, translation at [12..15]), the
+/// same convention `compileSceneRenderPacket` and three.js use. Instance ids
+/// follow the published binding rules: primitive nodes are their own instance
+/// id, model nodes own every `model-<content-hash>/<instance>` id.
+fn apply_dynamic_transforms(
+    packet: &mut RenderPacket,
+    samples: &[deep_engine_native::runtime_package::DynamicAnimationSample],
+) -> Result<usize, String> {
+    use std::collections::BTreeMap;
+    let mut nodes: BTreeMap<&str, DynamicNodeTransform> = BTreeMap::new();
+    for sample in samples {
+        let node = nodes.entry(sample.target_id.as_str()).or_default();
+        match sample.property.as_str() {
+            "translation" => node.translation = Some([sample.value[0], sample.value[1], sample.value[2]]),
+            "rotation" => node.rotation = Some([sample.value[3], sample.value[4], sample.value[5], sample.value[6]]),
+            "scale" => node.scale = Some([sample.value[0], sample.value[1], sample.value[2]]),
+            other => return Err(format!("dynamic playback cannot consume transform property {other:?}")),
+        }
+    }
+    let mut changed = 0usize;
+    for (target_id, node) in &nodes {
+        let prefix = format!(
+            "model-{}/",
+            runtime_content_sha256(&serde_json::Value::String((*target_id).to_owned()))
+        );
+        let transform = dynamic_trs_matrix(node);
+        for instance in &mut packet.instances {
+            if instance.id != *target_id && !instance.id.starts_with(&prefix) {
+                continue;
+            }
+            instance.transform = transform;
+            changed += 1;
+        }
+    }
+    Ok(changed)
+}
+
+fn dynamic_trs_matrix(node: &DynamicNodeTransform) -> [f32; 16] {
+    let [tx, ty, tz] = node.translation.unwrap_or([0.0; 3]);
+    let [qx, qy, qz, qw] = node.rotation.unwrap_or([0.0, 0.0, 0.0, 1.0]);
+    let [sx, sy, sz] = node.scale.unwrap_or([1.0; 3]);
+    let (xx, yy, zz, xy, xz, yz, wx, wy, wz) = (
+        qx * qx, qy * qy, qz * qz,
+        qx * qy, qx * qz, qy * qz,
+        qw * qx, qw * qy, qw * qz,
+    );
+    // Column-major T * R * S: scale applies along each rotation column.
+    [
+        ((1.0 - 2.0 * (yy + zz)) * sx) as f32,
+        ((2.0 * (xy + wz)) * sx) as f32,
+        ((2.0 * (xz - wy)) * sx) as f32,
+        0.0,
+        ((2.0 * (xy - wz)) * sy) as f32,
+        ((1.0 - 2.0 * (xx + zz)) * sy) as f32,
+        ((2.0 * (yz + wx)) * sy) as f32,
+        0.0,
+        ((2.0 * (xz + wy)) * sz) as f32,
+        ((2.0 * (yz - wx)) * sz) as f32,
+        ((1.0 - 2.0 * (xx + yy)) * sz) as f32,
+        0.0,
+        tx as f32,
+        ty as f32,
+        tz as f32,
+        1.0,
+    ]
 }

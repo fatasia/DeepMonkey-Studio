@@ -1,6 +1,6 @@
 //! CPU-only text compilation for the trusted publication worker.
 use deep_engine_native::platform_text::{
-    TEXT_RASTER_REQUEST_MAX_BYTES, measure_glyph_run_json, rasterize_text_json,
+    TEXT_RASTER_REQUEST_MAX_BYTES, measure_glyph_run_json, rasterize_text_json, rasterize_text_batch_json,
 };
 use std::{
     ffi::OsString,
@@ -15,6 +15,7 @@ pub(crate) fn execute(
 ) -> Option<Result<(), String>> {
     match command {
         Some("--rasterize-text") => Some(rasterize(args, rasterize_text_json)),
+        Some("--rasterize-text-batch") => Some(rasterize(args, rasterize_text_batch_json)),
         Some("--measure-glyph-run") => Some(rasterize(args, measure_glyph_run_json)),
         _ => None,
     }

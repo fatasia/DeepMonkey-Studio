@@ -52,12 +52,7 @@ pub fn encode_opaque_pass(
             depth_slice: None,
             resolve_target: Some(&targets.hdr_view),
             ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(wgpu::Color {
-                    r: 0.012,
-                    g: 0.020,
-                    b: 0.035,
-                    a: 1.0,
-                }),
+                load: wgpu::LoadOp::Clear(targets.clear_color()),
                 store: if has_transparent {
                     wgpu::StoreOp::Store
                 } else {

@@ -57,6 +57,7 @@ mod gpu_texture_upload;
 mod gpu_textures;
 mod half_float;
 mod hdr_readback;
+mod hdr_prefilter_cli;
 mod ibl_probe;
 mod mesh_pass;
 #[cfg(test)]

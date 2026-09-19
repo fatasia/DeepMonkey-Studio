@@ -16,7 +16,7 @@ where
     T::deserialize(deserializer)
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct RenderPacket {
     pub schema: String,
@@ -28,7 +28,7 @@ pub struct RenderPacket {
     pub textures: Vec<TextureResource>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct GeometryResource {
     pub id: String,
@@ -45,7 +45,7 @@ pub struct GeometryResource {
     pub indices: Vec<u32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct PbrMaterial {
     pub id: String,
@@ -79,7 +79,7 @@ pub struct PbrMaterial {
     pub premultiplied_alpha: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct TextureSlot {
     pub texture: String,
@@ -93,7 +93,7 @@ pub struct TextureSlot {
     pub rotation: Option<f32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct NormalTextureSlot {
     pub texture: String,
@@ -109,7 +109,7 @@ pub struct NormalTextureSlot {
     pub normal_scale: Option<f32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct OcclusionTextureSlot {
     pub texture: String,
@@ -177,7 +177,7 @@ pub struct RenderLodLevel {
     pub resident: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct TextureResource {
     pub id: String,
@@ -204,7 +204,7 @@ pub enum TextureSemantic {
     Emissive,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct PixelLevel {
     pub width: u32,

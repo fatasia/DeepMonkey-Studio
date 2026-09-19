@@ -38,6 +38,7 @@ pub enum RuntimeResourceKind {
     ChartSimRuntime,
     DashboardRuntime,
     ExperimentalX,
+    DynamicRuntime,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -68,6 +69,8 @@ pub struct RuntimeEntrypoints {
     pub chart_sim: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dashboard: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dynamic_runtime: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -129,6 +132,7 @@ pub struct LoadedRuntimePackage {
     pub fog: Option<crate::fog::FogSettings>,
     pub shader_packages: Vec<DeepShaderPackageV2>,
     pub material_bindings: Vec<RuntimeMaterialShaderBinding>,
+    pub dynamic_runtime: Option<super::DynamicSceneRuntime>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

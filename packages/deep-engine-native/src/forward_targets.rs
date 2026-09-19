@@ -4,6 +4,7 @@ use deep_engine_native::mesh_abi::{
 use winit::dpi::PhysicalSize;
 
 pub struct ForwardTargets {
+    pub background: Option<[f64; 3]>,
     hdr: wgpu::Texture,
     _msaa: wgpu::Texture,
     _depth: wgpu::Texture,
@@ -55,6 +56,7 @@ impl ForwardTargets {
         let msaa_view = msaa.create_view(&Default::default());
         let depth_view = depth.create_view(&Default::default());
         Self {
+            background: None,
             hdr,
             _msaa: msaa,
             _depth: depth,
@@ -66,5 +68,10 @@ impl ForwardTargets {
 
     pub fn resolved_texture(&self) -> &wgpu::Texture {
         &self.hdr
+    }
+
+    pub fn clear_color(&self) -> wgpu::Color {
+        let [r, g, b] = self.background.unwrap_or([0.012, 0.020, 0.035]);
+        wgpu::Color { r, g, b, a: 1.0 }
     }
 }

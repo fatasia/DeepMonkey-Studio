@@ -11,9 +11,13 @@ pub(super) fn version(
     value: &Value,
 ) -> Result<(), RuntimePackageError> {
     let experimental = package.schema_version == super::DEEP_RUNTIME_PACKAGE_EXPERIMENTAL_X_VERSION;
+    let dynamic = package.schema_version == super::DEEP_RUNTIME_PACKAGE_DYNAMIC_VERSION;
     let has_x = value["entrypoints"].get("experimentalX").is_some();
     if experimental && package.entrypoints.experimental_x.is_none() {
         return fail("runtime package v6 requires experimentalX entrypoint");
+    }
+    if dynamic && package.entrypoints.dynamic_runtime.is_none() {
+        return fail("runtime package v7 requires dynamicRuntime entrypoint");
     }
     // v6是静态v2形状加单个X入口，不继承v3-v5的camera/chart/dashboard组合。
     if experimental
@@ -43,6 +47,11 @@ pub(super) fn version(
     {
         return fail("experimental X is forbidden before runtime package v6");
     }
+    if !dynamic && (value["entrypoints"].get("dynamicRuntime").is_some()
+        || package.resources.iter().any(|r| r.kind == RuntimeResourceKind::DynamicRuntime))
+    {
+        return fail("dynamic runtime is only supported by runtime package v7");
+    }
     let dashboard = package.schema_version == super::DEEP_RUNTIME_PACKAGE_DASHBOARD_VERSION;
     let has_dashboard = value["entrypoints"].get("dashboard").is_some();
     if dashboard {
@@ -60,7 +69,7 @@ pub(super) fn version(
     let has_camera = entrypoints_value.and_then(|v| v.get("camera")).is_some();
     let camera_era = package.schema_version == super::DEEP_RUNTIME_PACKAGE_CAMERA_VERSION;
     let chart_era = package.schema_version == super::DEEP_RUNTIME_PACKAGE_CHART_VERSION;
-    if (has_camera && !camera_era && !chart_era)
+    if (has_camera && !camera_era && !chart_era && !dynamic)
         || camera_era && (!has_camera || package.entrypoints.camera.is_none())
     {
         return fail(
@@ -79,7 +88,7 @@ pub(super) fn version(
         if package.entrypoints.chart.is_none() {
             return fail("runtime package v4 requires a chart entrypoint");
         }
-    } else if has_chart_key || has_chart_sim_key {
+    } else if (has_chart_key || has_chart_sim_key) && !dynamic {
         return fail("chart entrypoints are forbidden before runtime package v4");
     }
     if package.entrypoints.chart_sim.is_some() && package.entrypoints.chart.is_none() {
@@ -120,6 +129,9 @@ pub(super) fn validate_entrypoints(
     if let Some(id) = &entry.chart_sim {
         require_kind(index, id, RuntimeResourceKind::ChartSimRuntime)?;
     }
+    if let Some(id) = &entry.dynamic_runtime {
+        require_kind(index, id, RuntimeResourceKind::DynamicRuntime)?;
+    }
     if entry.shader_packages.len() > MAX_SHADER_PACKAGES
         || entry
             .shader_packages
@@ -146,6 +158,9 @@ pub(super) fn validate_entrypoints(
         referenced.insert(id);
     }
     if let Some(id) = &entry.chart_sim {
+        referenced.insert(id);
+    }
+    if let Some(id) = &entry.dynamic_runtime {
         referenced.insert(id);
     }
     referenced.extend(entry.shader_packages.iter().map(String::as_str));

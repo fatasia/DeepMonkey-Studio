@@ -7,7 +7,7 @@ pub(super) fn key(app: &mut NativeApp, key: KeyCode, text: Option<&str>) -> bool
     if app.state.annotations.draft.is_some() && !app.state.annotations.preedit.is_empty() {
         return true;
     }
-    if let Some(draft) = &mut app.state.annotations.draft {
+    if app.state.annotations.draft.is_some() {
         match key {
             KeyCode::Escape => {
                 app.state.annotations.draft = None;
@@ -21,8 +21,7 @@ pub(super) fn key(app: &mut NativeApp, key: KeyCode, text: Option<&str>) -> bool
                 }
             }
             KeyCode::Backspace => {
-                draft.label.pop();
-                preview(app);
+                edit(app, |editor| editor.backspace());
             }
             _ => {
                 if let Some(text) = text {
@@ -40,9 +39,11 @@ pub(super) fn key(app: &mut NativeApp, key: KeyCode, text: Option<&str>) -> bool
                     point,
                     label: String::new(),
                 });
+                app.annotation_editor = None;
                 if let Some(window) = &app.window {
                     window.set_ime_allowed(true);
                 }
+                super::annotation_ime_area::refresh_current(app);
                 preview(app);
             } else {
                 status(app, "select an object before adding an annotation");
@@ -109,13 +110,7 @@ pub(super) fn key(app: &mut NativeApp, key: KeyCode, text: Option<&str>) -> bool
 }
 
 pub(super) fn append(app: &mut NativeApp, text: &str) {
-    if let Some(draft) = &mut app.state.annotations.draft {
-        let capacity = 256usize.saturating_sub(draft.label.chars().count());
-        draft
-            .label
-            .extend(text.chars().filter(|c| !c.is_control()).take(capacity));
-        preview(app);
-    }
+    edit(app, |editor| editor.append(text));
 }
 
 pub(super) fn clear(app: &mut NativeApp) {
@@ -140,22 +135,45 @@ pub(super) fn ime(app: &mut NativeApp, event: winit::event::Ime) {
     if app.state.annotations.draft.is_none() {
         return;
     }
-    match event {
-        Ime::Enabled => {
-            if let Some(window) = &app.window {
-                window.set_ime_cursor_area(
-                    winit::dpi::LogicalPosition::new(16.0, 16.0),
-                    winit::dpi::LogicalSize::new(256.0, 24.0),
-                );
+    if matches!(event, Ime::Enabled) {
+        super::annotation_ime_area::refresh_current(app);
+    }
+    edit(app, |editor| editor.ime(event));
+}
+
+pub(super) fn focus(app: &mut NativeApp, focused: bool) {
+    if focused {
+        super::annotation_ime_area::refresh_current(app);
+    }
+    edit(app, |editor| {
+        editor.focus(focused);
+        Ok(())
+    });
+}
+
+fn edit(
+    app: &mut NativeApp,
+    action: impl FnOnce(&mut super::annotation_input::AnnotationEditor) -> Result<(), String>,
+) {
+    let Some(draft) = app.state.annotations.draft.as_mut() else {
+        return;
+    };
+    if app.annotation_editor.is_none() {
+        match super::annotation_input::AnnotationEditor::new(&draft.label) {
+            Ok(editor) => app.annotation_editor = Some(editor),
+            Err(error) => {
+                status(app, &error);
+                return;
             }
         }
-        Ime::Preedit(text, _) => app.state.annotations.preedit = text,
-        Ime::Commit(text) => {
-            app.state.annotations.preedit.clear();
-            append(app, &text);
-        }
-        Ime::Disabled => app.state.annotations.preedit.clear(),
     }
+    let editor = app.annotation_editor.as_mut().unwrap();
+    if let Err(error) = action(editor) {
+        status(app, &format!("annotation input failed: {error}"));
+        return;
+    }
+    draft.label = editor.text().to_owned();
+    app.state.annotations.preedit = editor.preedit().to_owned();
     preview(app);
 }
 
@@ -173,7 +191,9 @@ fn location(app: &NativeApp) -> Result<(PathBuf, String), String> {
     ))
 }
 
-fn end_edit(app: &NativeApp) {
+fn end_edit(app: &mut NativeApp) {
+    app.annotation_editor = None;
+    app.state.annotations.preedit.clear();
     if let Some(window) = &app.window {
         window.set_ime_allowed(false);
     }

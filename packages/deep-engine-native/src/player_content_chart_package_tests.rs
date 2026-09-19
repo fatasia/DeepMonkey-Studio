@@ -9,6 +9,40 @@ fn dynamic_package() -> LoadedRuntimePackage {
 }
 
 #[test]
+fn v7_dynamic_runtime_is_carried_into_player_content_for_replay_consumers() {
+    let mut package = dynamic_package();
+    package.dynamic_runtime = Some(
+        serde_json::from_value(serde_json::json!({
+            "schema": "deep-engine.dynamic-runtime",
+            "schemaVersion": 1,
+            "id": "scene.dynamic",
+            "revision": 7,
+            "animation": {
+                "schema": "deep-engine.dynamic-animation",
+                "schemaVersion": 1,
+                "durationMs": 1000,
+                "tracks": [{
+                    "targetId": "model-a",
+                    "property": "translation",
+                    "keyframes": [
+                        {"timeMs": 0, "value": [0, 0, 0, 0, 0, 0, 1]},
+                        {"timeMs": 1000, "value": [1, 0, 0, 0, 0, 0, 1]}
+                    ]
+                }]
+            }
+        }))
+        .unwrap(),
+    );
+    let content = PlayerContent::from_package(package).unwrap();
+    let runtime = content
+        .dynamic_runtime
+        .as_ref()
+        .expect("v7 dynamic runtime should reach player content");
+    assert_eq!(runtime.revision, 7);
+    assert_eq!(runtime.animation.as_ref().unwrap().tracks.len(), 1);
+}
+
+#[test]
 fn chart_package_builds_runtime_sim_host_and_presentable_display_list() {
     let content = PlayerContent::from_package(dynamic_package()).unwrap();
     let chart = content.chart.as_ref().expect("chart runtime from package");

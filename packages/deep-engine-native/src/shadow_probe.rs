@@ -42,7 +42,7 @@ impl ShadowProbe {
             size: wgpu::Extent3d {
                 width: 1,
                 height: 1,
-                depth_or_array_layers: shadow_map.cascade_count(),
+                depth_or_array_layers: shadow_map.layer_views.len() as u32,
             },
             mip_level_count: 1,
             sample_count: 1,
@@ -54,11 +54,11 @@ impl ShadowProbe {
         let unshadowed_view = unshadowed_texture.create_view(&wgpu::TextureViewDescriptor {
             label: Some("Deep Engine native all-lit shadow probe array view"),
             dimension: Some(wgpu::TextureViewDimension::D2Array),
-            array_layer_count: Some(shadow_map.cascade_count()),
+            array_layer_count: Some(shadow_map.layer_views.len() as u32),
             aspect: wgpu::TextureAspect::DepthOnly,
             ..Default::default()
         });
-        let unshadowed_layer_views = (0..shadow_map.cascade_count())
+        let unshadowed_layer_views = (0..shadow_map.layer_views.len() as u32)
             .map(|layer| {
                 unshadowed_texture.create_view(&wgpu::TextureViewDescriptor {
                     label: Some("Deep Engine native all-lit probe layer"),

@@ -125,7 +125,7 @@ impl Renderer {
         content: &PlayerContent,
     ) -> Result<StagedRenderPacketUpdate, String> {
         if crate::gpu_ibl::GpuIblEnvironment::source_identity(&content.environment)
-            != self.ibl.identity
+            != self.ibl.identity || content.background != self.forward_targets.background
         {
             return Err(
                 "native RenderPacket update changed IBL identity; rebuild the renderer epoch"

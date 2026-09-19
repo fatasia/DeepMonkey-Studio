@@ -47,12 +47,12 @@ impl XProcessLimits {
     }
 }
 
-pub(super) struct ProcessJob(OwnedHandle, i64);
+pub(crate) struct ProcessJob(OwnedHandle, i64);
 impl ProcessJob {
     pub(super) fn raw_handle(&self) -> windows_sys::Win32::Foundation::HANDLE {
         self.0.as_raw_handle()
     }
-    pub(super) fn cpu_budget_exceeded(&self) -> io::Result<bool> {
+    pub(crate) fn cpu_budget_exceeded(&self) -> io::Result<bool> {
         let mut info = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
         if unsafe {
             QueryInformationJobObject(
@@ -68,7 +68,7 @@ impl ProcessJob {
         }
         Ok(info.TotalUserTime > self.1)
     }
-    pub(super) fn terminate_and_wait(&self) -> io::Result<()> {
+    pub(crate) fn terminate_and_wait(&self) -> io::Result<()> {
         if unsafe { TerminateJobObject(self.0.as_raw_handle(), 1) } == 0 {
             return Err(io::Error::last_os_error());
         }
@@ -102,6 +102,29 @@ impl ProcessJob {
 
     pub(super) fn new(limits: XProcessLimits) -> io::Result<Self> {
         limits.validate()?;
+        Self::create(limits)
+    }
+
+    /// 工业任务沿用声明的预算，不扩大封闭 X lane 的原有限额。
+    pub(crate) fn new_for_conversion(limits: XProcessLimits) -> io::Result<Self> {
+        if limits.process_commit_bytes < 16 * 1024 * 1024
+            || limits.process_commit_bytes > 16 * 1024 * 1024 * 1024
+            || limits.job_commit_bytes < limits.process_commit_bytes
+            || limits.job_commit_bytes > 16 * 1024 * 1024 * 1024
+            || limits.active_processes == 0
+            || limits.active_processes > 8
+            || limits.job_cpu_time_ms == 0
+            || limits.job_cpu_time_ms > 1_800_000
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid conversion process limits",
+            ));
+        }
+        Self::create(limits)
+    }
+
+    fn create(limits: XProcessLimits) -> io::Result<Self> {
         // NULL security attributes: Job句柄不继承；匿名Job无法由worker按名字打开。
         let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
         if handle.is_null() {
@@ -135,7 +158,7 @@ impl ProcessJob {
         Ok(job)
     }
 
-    pub(super) fn assign_and_resume(&self, child: &Child) -> io::Result<()> {
+    pub(crate) fn assign_and_resume(&self, child: &Child) -> io::Result<()> {
         if unsafe { AssignProcessToJobObject(self.0.as_raw_handle(), child.as_raw_handle()) } == 0 {
             return Err(io::Error::last_os_error());
         }

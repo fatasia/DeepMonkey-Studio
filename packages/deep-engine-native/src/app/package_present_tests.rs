@@ -80,6 +80,7 @@ fn run(shader: bool, full: bool) {
         content,
         event_loop.create_proxy(),
         NativeAppSetup {
+            dynamic_playback: None,
             smoke_frame: false,
             features: RendererFeatures {
                 bloom: Default::default(),
@@ -162,6 +163,7 @@ impl ApplicationHandler<GpuEvent> for Probe {
             self.mailbox.push(
                 generation,
                 WatchedPackage {
+                    base_package_hash: None,
                     content: Box::new(next),
                     snapshot,
                     plan,
@@ -240,6 +242,7 @@ impl ApplicationHandler<GpuEvent> for Probe {
             self.mailbox.push(
                 3,
                 WatchedPackage {
+                    base_package_hash: None,
                     content: Box::new(next),
                     snapshot,
                     plan,

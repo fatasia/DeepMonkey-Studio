@@ -16,6 +16,10 @@ pub struct PreparedRuntimePackage {
 }
 
 impl PreparedRuntimePackage {
+    pub(crate) fn summary(&self) -> &RuntimePackageSummary {
+        &self.summary
+    }
+
     pub(crate) fn into_content(self) -> PlayerContent {
         self.content
     }
@@ -240,6 +244,45 @@ pub fn run(package: PreparedRuntimePackage, mode: PackageMode) -> Result<(), Str
         false,
         bloom,
     )
+}
+
+/// `--smoke-dynamic-package`: real-window playback of the dynamic runtime
+/// channel. Requires the channel to exist — a static package must fail the
+/// dynamic gate instead of pretending to play.
+pub fn run_dynamic_playback(package: PreparedRuntimePackage) -> Result<(), String> {
+    let PreparedRuntimePackage {
+        content,
+        summary,
+        id,
+        version,
+        hash,
+    } = package;
+    println!(
+        "Deep Runtime Package Dynamic Player preflight OK: id={id} version={version} hash={hash} resources={} geometries={} instances={} triangles={} deep2d={}",
+        summary.resources,
+        summary.geometries,
+        summary.instances,
+        summary.triangles,
+        summary.has_deep2d,
+    );
+    let duration_ms = content
+        .dynamic_runtime_duration_ms()
+        .ok_or("runtime package has no dynamic runtime channel; real-window playback requires one")?;
+    if duration_ms == 0 {
+        return Err("dynamic runtime has no animation clock; real-window playback requires durationMs > 0".into());
+    }
+    let snapshot = content.runtime_package().cloned();
+    let (package_id, package_version, package_hash) = snapshot
+        .map(|snapshot| (snapshot.package_id, snapshot.package_version, snapshot.package_hash))
+        .unwrap_or((id, version, hash));
+    let spec = app::DynamicPlaybackSpec {
+        step_ms: app::DYNAMIC_PLAYBACK_STEP_MS,
+        duration_ms,
+        package_id,
+        package_version,
+        package_hash,
+    };
+    app::run_dynamic_playback(content, spec)
 }
 
 fn prepare(package: LoadedRuntimePackage) -> Result<PreparedRuntimePackage, String> {

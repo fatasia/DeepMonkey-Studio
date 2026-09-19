@@ -99,7 +99,7 @@ pub fn append_legend(
             Some(prefix) => format!("{prefix}{label}"),
             None => label,
         };
-        let pixels = rasterizer.rasterize(TextRasterRequest {
+        let pixels = rasterizer.rasterize_for_display(TextRasterRequest {
             text: &text,
             family,
             font_size: font_size as f32,

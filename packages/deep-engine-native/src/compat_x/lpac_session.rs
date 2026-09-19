@@ -1,7 +1,7 @@
 //! 同一个零 capability LPAC worker 顺序消费有界帧；任何失败均关闭整个会话。
 use super::{launch, profile, *};
 use crate::compat_x::process::frames::{
-    MAX_SESSION_REQUESTS, SESSION_MAGIC, read_frame, write_frame,
+    read_frame, write_frame, MAX_SESSION_REQUESTS, SESSION_MAGIC,
 };
 
 pub struct Session {
@@ -48,14 +48,12 @@ impl Session {
                 }
             }
         });
-        let reader = thread::spawn(move || {
-            loop {
-                let result =
-                    read_frame(&mut stdout).and_then(|bytes| bytes.ok_or(XProcessError::Crashed));
-                let failed = result.is_err();
-                if responses.send(result).is_err() || failed {
-                    break;
-                }
+        let reader = thread::spawn(move || loop {
+            let result =
+                read_frame(&mut stdout).and_then(|bytes| bytes.ok_or(XProcessError::Crashed));
+            let failed = result.is_err();
+            if responses.send(result).is_err() || failed {
+                break;
             }
         });
         Ok(Self {

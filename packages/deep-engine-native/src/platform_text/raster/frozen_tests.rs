@@ -30,6 +30,20 @@ fn fixture() -> FrozenFontInput {
 fn rasterizer() -> FrozenTextRasterizer {
     TextRasterizer::from_frozen_fonts("en-US", vec![fixture()]).unwrap()
 }
+#[test]
+fn batched_labels_reuse_current_glyph_allocations_without_retaining_old_glyphs() {
+    let mut painter = rasterizer();
+    painter.rasterize_styled(request("AAA")).unwrap();
+    let prior: Vec<_> = painter.inner.cache.image_cache.iter().filter_map(|(key, image)|
+        image.as_ref().map(|image| (*key, image.data.as_ptr()))).collect();
+    assert!(!prior.is_empty());
+    painter.rasterize_styled(request("AAA")).unwrap();
+    for (key, pointer) in &prior {
+        assert_eq!(painter.inner.cache.image_cache[key].as_ref().unwrap().data.as_ptr(), *pointer);
+    }
+    painter.rasterize_styled(request("BBB")).unwrap();
+    assert!(prior.iter().all(|(key, _)| !painter.inner.cache.image_cache.contains_key(key)));
+}
 fn request(text: &str) -> StyledTextRequest {
     let f = fixture();
     StyledTextRequest {

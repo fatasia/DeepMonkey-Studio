@@ -87,7 +87,7 @@ pub fn compose_tooltip(
         text.push('\n');
         text.push_str(&fit(&format!("另 {} 项", tooltip.omitted))?);
     }
-    let pixels = rasterizer.rasterize(TextRasterRequest {
+    let pixels = rasterizer.rasterize_for_display(TextRasterRequest {
         text: &text,
         family,
         font_size: font_size as f32,

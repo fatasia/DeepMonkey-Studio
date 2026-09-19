@@ -45,7 +45,7 @@ pub(super) fn resume(
             renderer_id,
             &candidate.content,
             view,
-            app.features,
+            app.features.for_content(&candidate.content),
         ));
         match staged {
             Ok(renderer) => Box::new(renderer),

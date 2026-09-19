@@ -53,6 +53,12 @@ impl Renderer {
         self.deep2d.as_ref().map(|painter| painter.summary)
     }
 
+    pub fn deep2d_atlas_inventory(&self) -> Option<&[serde_json::Value]> {
+        self.deep2d
+            .as_ref()
+            .map(|painter| painter.atlas_inventory())
+    }
+
     pub fn deep2d_vertex_transfer_stats(&self) -> Option<crate::deep2d_gpu::VertexTransferStats> {
         self.deep2d
             .as_ref()

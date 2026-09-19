@@ -23,7 +23,7 @@ pub(super) fn stage_open_camera(
         id,
         content,
         view,
-        app.features,
+        app.features.for_content(content),
     ))?;
     renderer.verify_candidate_frame()?;
     Ok(Some(renderer))

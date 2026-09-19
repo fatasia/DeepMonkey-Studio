@@ -41,6 +41,7 @@ fn canonical(value: &Value, output: &mut String) {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct Sha256 {
     state: [u32; 8],
     block: [u8; 64],

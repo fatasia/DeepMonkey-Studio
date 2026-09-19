@@ -73,6 +73,8 @@ fn secondary_family_alias_cannot_hijack_the_requested_primary_face() {
         inner: TextRasterizer {
             fonts,
             cache: SwashCache::new(),
+            profile: None,
+            display_scale: 1.0,
         },
         identities: BTreeMap::from([(a_id, identity_a.clone()), (b_id, identity_b.clone())]),
     };

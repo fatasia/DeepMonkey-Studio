@@ -10,6 +10,7 @@ import {
   selectPublishedRenderer,
 } from "../rendererCapabilities";
 import { applySceneViewerSnapshot } from "./applySceneViewerSnapshot";
+import { startSceneViewerDynamicPlayback } from "./sceneViewerDynamicPlayback";
 import { sceneViewerDeliveryManifest } from "./sceneViewerDelivery";
 import { applyDocumentBranding } from "../branding/documentBranding";
 import { PublishedModelCredits } from "./PublishedModelCredits";
@@ -57,6 +58,7 @@ export function SceneViewerRoot() {
     if (!backend || !viewportRef.current) return;
     let cancelled = false;
     let viewer: ViewerEngine | undefined;
+    let playbackStop: (() => void) | undefined;
     setError(undefined);
     void import("../viewer/ViewerEngine")
       .then(({ ViewerEngine }) => ViewerEngine.create(viewportRef.current!, backend))
@@ -71,6 +73,12 @@ export function SceneViewerRoot() {
         setEngine(created);
         setModels(created.listModels());
         setStatus("场景已就绪");
+        // 冻结发布快照携带对象 TRS 动画时,在实际 presentation frame scheduler 上
+        // 播放编译后的 v7 dynamic runtime;渲染提交由引擎帧循环自然发生。
+        playbackStop = startSceneViewerDynamicPlayback(created, manifest.publication.snapshot, {
+          packageId: `${manifest.packageId}.dynamic`,
+          packageVersion: manifest.publication.publishedAt,
+        });
       })
       .catch((reason) => {
         if (backend === "webgpu") {
@@ -80,6 +88,7 @@ export function SceneViewerRoot() {
       });
     return () => {
       cancelled = true;
+      playbackStop?.();
       viewer?.dispose();
       setEngine(undefined);
     };

@@ -8,6 +8,7 @@ mod dashboard_validation;
 mod delta;
 mod delta_manifest;
 mod diff;
+mod dynamic_scene;
 mod entrypoints;
 mod experimental_x;
 mod file_read;
@@ -46,6 +47,7 @@ pub use types::{
     RuntimeEntrypoints, RuntimeMaterialShaderBinding, RuntimePackageSummary,
     RuntimeResourceIndexEntry, RuntimeResourceKind,
 };
+pub use dynamic_scene::{canonical_dynamic_frame, parse_and_validate_dynamic_scene_runtime, DynamicAnimationKeyframe, DynamicAnimationRuntime, DynamicAnimationSample, DynamicAnimationTrack, DynamicDataReplayEvent, DynamicDataReplayRuntime, DynamicInteractionRuntime, DynamicSceneRuntime};
 pub use validate::{runtime_content_sha256, runtime_package_sha256};
 
 pub const DEEP_RUNTIME_PACKAGE_SCHEMA: &str = "deep-engine.runtime-package";
@@ -60,6 +62,8 @@ pub const DEEP_RUNTIME_PACKAGE_CAMERA_VERSION: u32 = 3;
 pub const DEEP_RUNTIME_PACKAGE_CHART_VERSION: u32 = 4;
 pub const DEEP_RUNTIME_PACKAGE_DASHBOARD_VERSION: u32 = 5;
 pub const DEEP_RUNTIME_PACKAGE_EXPERIMENTAL_X_VERSION: u32 = 6;
+/// v7 adds a first-class dynamic scene runtime resource/entrypoint.
+pub const DEEP_RUNTIME_PACKAGE_DYNAMIC_VERSION: u32 = 7;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimePackageError(String);

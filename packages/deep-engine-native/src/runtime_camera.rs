@@ -15,6 +15,8 @@ pub struct RuntimeSceneCamera {
     pub far: f64,
     #[serde(default, deserialize_with = "deserialize_frame")]
     pub coordinate_frame: Option<SceneLocalCoordinateFrame>,
+    #[serde(default)]
+    pub clipping_plane: Option<[f64; 4]>,
 }
 
 fn deserialize_frame<'de, D: serde::Deserializer<'de>>(
@@ -28,7 +30,7 @@ impl RuntimeSceneCamera {
     pub fn validate(&self) -> Result<(), String> {
         let id = self.id.as_bytes();
         if self.schema != "deep-engine.scene-camera"
-            || !matches!(self.schema_version, 1 | 2)
+            || !matches!(self.schema_version, 1 | 2 | 3)
             || id.is_empty()
             || id.len() > 256
             || !id[0].is_ascii_lowercase() && !id[0].is_ascii_digit()
@@ -40,13 +42,18 @@ impl RuntimeSceneCamera {
         {
             return Err("invalid scene camera identity".into());
         }
+        if self.clipping_plane.is_some() && self.schema_version != 3 {
+            return Err("scene camera clipping plane requires schema version 3".into());
+        }
         match (self.schema_version, &self.coordinate_frame) {
             (1, None) => {}
-            (2, Some(frame)) => {
+            (2 | 3, Some(frame)) => {
                 frame.validate()?;
                 frame.local_to_world(self.position)?;
                 frame.local_to_world(self.target)?;
             }
+            (2, None) => return Err("scene camera v2 requires the coordinate frame".into()),
+            (3, None) => {}
             _ => return Err("scene camera coordinate frame does not match schema version".into()),
         }
         if self
@@ -71,6 +78,15 @@ impl RuntimeSceneCamera {
             .sqrt();
         if distance < 0.0001 {
             return Err("camera position and target must remain distinct in float32".into());
+        }
+        if let Some(plane) = &self.clipping_plane {
+            if plane.iter().any(|v| !v.is_finite() || v.abs() > 10_000_000.0) {
+                return Err("invalid section plane numbers".into());
+            }
+            let length = (plane[0] * plane[0] + plane[1] * plane[1] + plane[2] * plane[2]).sqrt();
+            if !((length as f32) > 0.0001 && (length as f32) <= 10_000_000.0) {
+                return Err("section plane normal must stay nonzero in float32".into());
+            }
         }
         Ok(())
     }
@@ -109,6 +125,31 @@ mod tests {
         assert!(!valid(missing));
     }
 
+    #[test]
+    fn schema_three_accepts_section_plane_and_v1_rejects_it() {
+        let mut value = camera();
+        value["schemaVersion"] = json!(3);
+        value.as_object_mut().unwrap().remove("coordinateFrame");
+        assert!(valid(value.clone()));
+        value["clippingPlane"] = json!([1.0, 0.0, 0.0, -2.0]);
+        assert!(valid(value.clone()));
+        value["clippingPlane"] = json!([0.0, 0.0, 0.0, 1.0]);
+        assert!(!valid(value.clone()));
+        value["clippingPlane"] = json!([1.0, 0.0, 0.0, "x"]);
+        assert!(!valid(value.clone()));
+        value["clippingPlane"] = json!([1e8, 0.0, 0.0, 0.0]);
+        assert!(!valid(value));
+        let mut legacy = camera();
+        legacy["clippingPlane"] = json!([1.0, 0.0, 0.0, -2.0]);
+        assert!(!valid(legacy));
+        let parsed: RuntimeSceneCamera = serde_json::from_value(
+            serde_json::json!({"schema":"deep-engine.scene-camera","schemaVersion":3,"id":"scene.camera","revision":1,
+                "position":[1,2,5],"target":[0,0,0],"verticalFovDegrees":50,"near":0.1,"far":10000,
+                "clippingPlane":[0.0,1.0,0.0,-1.5]}),
+        ).unwrap();
+        assert!(parsed.validate().is_ok());
+        assert_eq!(parsed.clipping_plane, Some([0.0, 1.0, 0.0, -1.5]));
+    }
     #[test]
     fn rejects_unknown_frame_fields_non_grid_and_changed_profile() {
         for path in [

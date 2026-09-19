@@ -24,9 +24,17 @@ use crate::deep2d::{
     Deep2dMatrix, Deep2dPathVerb, Deep2dResource, FillRule, LineCap, LineJoin, PathCommand,
     PathResource, validate_display_list,
 };
+#[path = "render_axis_cache.rs"]
+mod axis_cache;
 #[path = "render_cartesian.rs"]
 mod cartesian;
-pub(super) use cartesian::{CartesianPoints, map_cartesian};
+use axis_cache::FrameAxisValues;
+#[cfg(test)]
+#[path = "render_axis_cache_tests.rs"]
+mod axis_cache_tests;
+pub(super) use cartesian::CartesianPoints;
+#[cfg(test)]
+pub(super) use cartesian::map_cartesian;
 pub(in crate::chart) use cartesian::{RowBands, XInverter, axis_presentation, numeric_mapper_for};
 
 const LINE_COLOR: Deep2dColor = [0.2, 0.6, 1.0, 1.0];

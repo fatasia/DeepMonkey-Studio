@@ -1,3 +1,5 @@
+pub mod panorama;
+pub mod panorama_wire;
 mod sampling;
 mod validation;
 
@@ -193,34 +195,46 @@ fn generate_cube(size: u32, sample: impl Fn([f32; 3]) -> [f32; 3]) -> PreparedIb
 }
 
 fn convolve_diffuse(normal: [f32; 3]) -> [f32; 3] {
+    convolve_diffuse_source(normal, ENVIRONMENT_SAMPLES, &studio)
+}
+fn convolve_diffuse_source(
+    normal: [f32; 3],
+    samples: u32,
+    sample: &impl Fn([f32; 3]) -> [f32; 3],
+) -> [f32; 3] {
     let mut color = [0.0; 3];
-    for index in 0..ENVIRONMENT_SAMPLES {
-        let xi = sampling::hammersley(index, ENVIRONMENT_SAMPLES);
+    for index in 0..samples {
+        let xi = sampling::hammersley(index, samples);
         let radius = xi[1].sqrt();
         let local = [
             (std::f32::consts::TAU * xi[0]).cos() * radius,
             (std::f32::consts::TAU * xi[0]).sin() * radius,
             (1.0 - xi[1]).sqrt(),
         ];
-        color = add(color, studio(basis(normal, local)));
+        color = add(color, sample(basis(normal, local)));
     }
-    mul(color, 1.0 / ENVIRONMENT_SAMPLES as f32)
+    mul(color, 1.0 / samples as f32)
 }
 
 fn prefilter_specular(normal: [f32; 3], roughness: f32) -> [f32; 3] {
+    prefilter_specular_source(normal, roughness, ENVIRONMENT_SAMPLES, &studio)
+}
+fn prefilter_specular_source(
+    normal: [f32; 3],
+    roughness: f32,
+    samples: u32,
+    sample: &impl Fn([f32; 3]) -> [f32; 3],
+) -> [f32; 3] {
     if roughness < 0.001 {
-        return studio(normal);
+        return sample(normal);
     }
     let mut color = [0.0; 3];
     let mut weight = 0.0;
-    for index in 0..ENVIRONMENT_SAMPLES {
-        let half = basis(
-            normal,
-            ggx(sampling::hammersley(index, ENVIRONMENT_SAMPLES), roughness),
-        );
+    for index in 0..samples {
+        let half = basis(normal, ggx(sampling::hammersley(index, samples), roughness));
         let light = reflect(mul(normal, -1.0), half);
         let cosine = dot(normal, light).max(0.0);
-        color = add(color, mul(studio(light), cosine));
+        color = add(color, mul(sample(light), cosine));
         weight += cosine;
     }
     mul(color, 1.0 / weight.max(0.0001))

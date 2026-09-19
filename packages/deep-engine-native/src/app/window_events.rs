@@ -21,10 +21,12 @@ use crate::{app_startup::report_presented, events::RenderOutcome, renderer::Rend
 
 use super::NativeApp;
 
-use super::{chart, chart_keyboard_smoke, chart_smoke, section_probe, selection_probe};
+use super::{chart, chart_keyboard_smoke, chart_smoke, dynamic_playback::AfterPresent, section_probe, selection_probe};
 mod keyboard;
 mod redraw;
 
+#[cfg(windows)]
+pub(super) use keyboard::legend_snapshot;
 pub(super) use keyboard::{chart_key, chart_legend_focus};
 use redraw::redraw;
 
@@ -76,6 +78,7 @@ pub(super) fn handle(
             super::chart::zoom(app, amount);
         }
         WindowEvent::Ime(event) => super::annotations::ime(app, event),
+        WindowEvent::Focused(focused) => super::annotations::focus(app, focused),
         WindowEvent::MouseInput {
             state: ElementState::Pressed,
             button: MouseButton::Left,
@@ -85,10 +88,16 @@ pub(super) fn handle(
                 super::selection::click(app);
             }
         }
-        WindowEvent::Resized(size) => app.resize(size),
-        WindowEvent::ScaleFactorChanged { .. } => {
+        WindowEvent::Resized(size) => {
+            app.resize(size);
+            if let Some(window) = &app.window {
+                super::annotation_ime_area::refresh(app, size, window.scale_factor());
+            }
+        }
+        WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
             if let Some(size) = app.window.as_ref().map(|window| window.inner_size()) {
                 app.resize(size);
+                super::annotation_ime_area::refresh(app, size, scale_factor);
             }
         }
         WindowEvent::Occluded(false) => app.request_redraw(),

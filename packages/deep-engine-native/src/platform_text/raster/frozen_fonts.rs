@@ -97,6 +97,8 @@ impl TextRasterizer {
             inner: TextRasterizer {
                 fonts: system,
                 cache: SwashCache::new(),
+                profile: None,
+                display_scale: 1.0,
             },
             identities,
         })

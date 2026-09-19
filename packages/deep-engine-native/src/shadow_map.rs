@@ -34,12 +34,19 @@ pub struct ShadowMap {
     pub(crate) plan: CascadedShadowPlan,
     pub(crate) scene_bounds: Option<SceneWorldBounds>,
     pub(crate) frame_stride: u64,
+    pub(crate) local_matrices: Vec<[[f32; 4]; 4]>,
 }
 
 pub trait ShadowViewSource {
     fn cascade_count(&self) -> u32;
     fn cascade_view_projection(&self, index: usize) -> [[f32; 4]; 4];
     fn shadow_map_size(&self) -> u32;
+    fn shadow_view_count(&self) -> u32 {
+        self.cascade_count()
+    }
+    fn shadow_view_projection(&self, index: usize) -> [[f32; 4]; 4] {
+        self.cascade_view_projection(index)
+    }
 }
 
 impl ShadowMap {
@@ -76,12 +83,17 @@ impl ShadowMap {
         let sampling_data = plan.uniform(DEPTH_BIAS)?;
         let frame_stride = aligned_frame_stride(device);
         let shadow_frame_data = pack_shadow_frames(frame, &plan, frame_stride);
+        let local_matrices = deep_engine_native::local_shadow::frame_matrices(frame);
+        let layer_count = options.cascade_count as u32 + local_matrices.len() as u32;
+        if layer_count > device.limits().max_texture_array_layers {
+            return Err("shadow views exceed device array budget".into());
+        }
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Deep Engine native cascaded shadow map"),
             size: wgpu::Extent3d {
                 width: options.shadow_map_size,
                 height: options.shadow_map_size,
-                depth_or_array_layers: options.cascade_count as u32,
+                depth_or_array_layers: layer_count,
             },
             mip_level_count: 1,
             sample_count: 1,
@@ -95,11 +107,11 @@ impl ShadowMap {
         let view = texture.create_view(&wgpu::TextureViewDescriptor {
             label: Some("Deep Engine native cascaded shadow array view"),
             dimension: Some(wgpu::TextureViewDimension::D2Array),
-            array_layer_count: Some(options.cascade_count as u32),
+            array_layer_count: Some(layer_count),
             aspect: wgpu::TextureAspect::DepthOnly,
             ..Default::default()
         });
-        let layer_views = (0..options.cascade_count as u32)
+        let layer_views = (0..layer_count)
             .map(|layer| {
                 texture.create_view(&wgpu::TextureViewDescriptor {
                     label: Some("Deep Engine native cascade layer view"),
@@ -152,6 +164,7 @@ impl ShadowMap {
             plan,
             scene_bounds,
             frame_stride,
+            local_matrices,
         })
     }
 
@@ -170,14 +183,19 @@ impl ShadowMap {
         )?;
         let sampling_data = plan.uniform(DEPTH_BIAS)?;
         let shadow_frame_data = pack_shadow_frames(frame, &plan, self.frame_stride);
+        let local_matrices = deep_engine_native::local_shadow::frame_matrices(frame);
+        if local_matrices.len() != self.local_matrices.len() {
+            return Err("shadow topology requires full renderer replacement".into());
+        }
         queue.write_buffer(&self.sampling_uniform, 0, cast_slice(&sampling_data));
         queue.write_buffer(&self.shadow_frames, 0, &shadow_frame_data);
         self.plan = plan;
+        self.local_matrices = local_matrices;
         Ok(())
     }
 
     pub fn dynamic_offset(&self, cascade_index: usize) -> u32 {
-        debug_assert!(cascade_index < self.plan.cascades.len());
+        debug_assert!(cascade_index < self.layer_views.len());
         (cascade_index as u64 * self.frame_stride) as u32
     }
 
@@ -194,7 +212,7 @@ impl ShadowMap {
             cascade_count: self.cascade_count(),
             map_size: self.options.shadow_map_size,
             depth_texture_bytes: u64::from(self.options.shadow_map_size).pow(2)
-                * u64::from(self.cascade_count())
+                * self.layer_views.len() as u64
                 * 4,
             shadow_frame_stride: self.frame_stride,
         }
@@ -202,6 +220,16 @@ impl ShadowMap {
 }
 
 impl ShadowViewSource for ShadowMap {
+    fn shadow_view_count(&self) -> u32 {
+        self.layer_views.len() as u32
+    }
+    fn shadow_view_projection(&self, index: usize) -> [[f32; 4]; 4] {
+        if index < self.plan.cascades.len() {
+            self.plan.cascades[index].view_projection
+        } else {
+            self.local_matrices[index - self.plan.cascades.len()]
+        }
+    }
     fn cascade_count(&self) -> u32 {
         self.cascade_count()
     }
@@ -248,10 +276,16 @@ pub(crate) fn pack_shadow_frames(
     plan: &CascadedShadowPlan,
     frame_stride: u64,
 ) -> Vec<u8> {
-    let mut packed = vec![0; frame_stride as usize * plan.cascades.len()];
-    for (index, cascade) in plan.cascades.iter().enumerate() {
+    let matrices: Vec<_> = plan
+        .cascades
+        .iter()
+        .map(|cascade| cascade.view_projection)
+        .chain(deep_engine_native::local_shadow::frame_matrices(frame))
+        .collect();
+    let mut packed = vec![0; frame_stride as usize * matrices.len()];
+    for (index, matrix) in matrices.iter().enumerate() {
         let mut cascade_frame = *frame;
-        cascade_frame[4..8].copy_from_slice(&cascade.view_projection);
+        cascade_frame[4..8].copy_from_slice(matrix);
         let offset = index * frame_stride as usize;
         packed[offset..offset + FRAME_UNIFORM_BYTES as usize]
             .copy_from_slice(bytes_of(&cascade_frame));

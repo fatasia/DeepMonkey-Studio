@@ -1,9 +1,25 @@
 use super::{RasterizedText, TextRasterRequest, TextRasterizer};
-use cosmic_text::{Attrs, Buffer, Color, Family, Metrics, Shaping, SwashCache};
+use cosmic_text::{Attrs, Buffer, Color, Family, Metrics, Renderer, Shaping, SwashCache};
 
 impl TextRasterizer {
     /// 单行自然宽度(逻辑像素,含字距);不设视口、不换行,供省略截断做真实测量。
     pub fn measure(
+        &mut self,
+        text: &str,
+        family: &str,
+        font_size: f32,
+        line_height: f32,
+    ) -> Result<f32, String> {
+        let started = self.profile.as_ref().map(|_| std::time::Instant::now());
+        let result = self.measure_uncached(text, family, font_size, line_height);
+        if let (Some(started), Some(profile)) = (started, &mut self.profile) {
+            profile.measure_calls += 1;
+            profile.measure_nanos += started.elapsed().as_nanos();
+        }
+        result
+    }
+
+    fn measure_uncached(
         &mut self,
         text: &str,
         family: &str,
@@ -42,6 +58,28 @@ impl TextRasterizer {
     }
 
     pub fn rasterize(&mut self, request: TextRasterRequest<'_>) -> Result<RasterizedText, String> {
+        self.rasterize_scaled(request, 1.0)
+    }
+
+    pub(super) fn rasterize_scaled(
+        &mut self,
+        request: TextRasterRequest<'_>,
+        scale: f32,
+    ) -> Result<RasterizedText, String> {
+        let started = self.profile.as_ref().map(|_| std::time::Instant::now());
+        let result = self.rasterize_uncached(request, scale);
+        if let (Some(started), Some(profile)) = (started, &mut self.profile) {
+            profile.raster_calls += 1;
+            profile.raster_nanos += started.elapsed().as_nanos();
+        }
+        result
+    }
+
+    fn rasterize_uncached(
+        &mut self,
+        request: TextRasterRequest<'_>,
+        scale: f32,
+    ) -> Result<RasterizedText, String> {
         if request.width == 0
             || request.height == 0
             || request.width > 2048
@@ -55,6 +93,16 @@ impl TextRasterizer {
         {
             return Err("text raster request exceeds viewport, text or metric limits".into());
         }
+        let physical_width = (request.width as f64 * f64::from(scale)).ceil();
+        let physical_height = (request.height as f64 * f64::from(scale)).ceil();
+        if !scale.is_finite()
+            || scale <= 0.0
+            || !(1.0..=2048.0).contains(&physical_width)
+            || !(1.0..=2048.0).contains(&physical_height)
+        {
+            return Err("scaled text raster exceeds physical viewport limit".into());
+        }
+        let (physical_width, physical_height) = (physical_width as u32, physical_height as u32);
         let mut buffer = Buffer::new(
             &mut self.fonts,
             Metrics::new(request.font_size, request.line_height),
@@ -82,31 +130,43 @@ impl TextRasterizer {
         if self.cache.image_cache.len() > 4096 {
             self.cache = SwashCache::new();
         }
-        let mut rgba = vec![0; request.width as usize * request.height as usize * 4];
+        let mut rgba = vec![0; physical_width as usize * physical_height as usize * 4];
         let [r, g, b, a] = request.color;
-        buffer.draw(
-            &mut self.fonts,
-            &mut self.cache,
-            Color::rgba(r, g, b, a),
-            |x, y, w, h, color| {
-                let left = i64::from(x).max(0);
-                let top = i64::from(y).max(0);
-                let right = (i64::from(x) + i64::from(w)).min(i64::from(request.width));
-                let bottom = (i64::from(y) + i64::from(h)).min(i64::from(request.height));
-                for py in top..bottom {
-                    for px in left..right {
-                        let offset = (py as usize * request.width as usize + px as usize) * 4;
-                        blend(
-                            &mut rgba[offset..offset + 4],
-                            [color.r(), color.g(), color.b(), color.a()],
-                        );
-                    }
+        let draw = |x, y, w, h, color: Color| {
+            let left = i64::from(x).max(0);
+            let top = i64::from(y).max(0);
+            let right = (i64::from(x) + i64::from(w)).min(i64::from(physical_width));
+            let bottom = (i64::from(y) + i64::from(h)).min(i64::from(physical_height));
+            for py in top..bottom {
+                for px in left..right {
+                    let offset = (py as usize * physical_width as usize + px as usize) * 4;
+                    blend(
+                        &mut rgba[offset..offset + 4],
+                        [color.r(), color.g(), color.b(), color.a()],
+                    );
                 }
-            },
-        );
+            }
+        };
+        let color = Color::rgba(r, g, b, a);
+        if scale == 1.0 {
+            // Preserve the existing 1x path byte for byte.
+            buffer.draw(&mut self.fonts, &mut self.cache, color, draw);
+        } else {
+            let mut renderer = cosmic_text::LegacyRenderer {
+                font_system: &mut self.fonts,
+                cache: &mut self.cache,
+                callback: draw,
+            };
+            for run in buffer.layout_runs() {
+                for glyph in run.glyphs {
+                    let physical = glyph.physical((0.0, run.line_y * scale), scale);
+                    renderer.glyph(physical, glyph.color_opt.unwrap_or(color));
+                }
+            }
+        }
         Ok(RasterizedText {
-            width: request.width,
-            height: request.height,
+            width: physical_width,
+            height: physical_height,
             rgba,
             glyph_count,
             line_count,

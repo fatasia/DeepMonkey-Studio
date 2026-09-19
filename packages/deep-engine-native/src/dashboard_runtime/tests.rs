@@ -13,6 +13,33 @@ fn loaded() -> LoadedDashboard {
     .dashboard
     .unwrap()
 }
+
+#[test]
+fn density_rebuild_keeps_layout_and_rejected_candidate_retains_lkg() {
+    let mut runtime = DashboardRuntime::new(loaded()).unwrap();
+    let previous = runtime.content.clone();
+    assert!(!runtime.set_text_scale(1.0).unwrap());
+    assert!(Arc::ptr_eq(&previous, &runtime.content));
+    assert!(runtime.set_text_scale(1.25).unwrap());
+    assert_eq!(runtime.text_scale(), 1.25);
+    assert_eq!(
+        runtime.content().display_list().logical_width,
+        previous.display_list().logical_width
+    );
+    assert_eq!(
+        runtime.content().display_list().logical_height,
+        previous.display_list().logical_height
+    );
+    let accepted = runtime.content.clone();
+    let revision = runtime.revision;
+    for scale in [0.0, f64::NAN, f64::INFINITY, 10000.0] {
+        assert!(runtime.set_text_scale(scale).is_err());
+        assert_eq!(runtime.text_scale(), 1.25);
+        assert_eq!(runtime.revision, revision);
+        assert!(Arc::ptr_eq(&accepted, &runtime.content));
+    }
+    assert!(runtime.set_text_scale(1.0).unwrap());
+}
 fn ids(runtime: &DashboardRuntime) -> Vec<String> {
     runtime.document().pages[0]
         .nodes

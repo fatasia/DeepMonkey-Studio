@@ -36,6 +36,10 @@ use full::apply_full;
 #[path = "package_present_tests.rs"]
 mod present_tests;
 
+#[cfg(all(test, windows))]
+#[path = "package_delta_present_tests.rs"]
+mod delta_present_tests;
+
 pub(super) struct PackageLiveTransport {
     _watcher: super::watch_thread::WatchThread,
     mailbox: LatestMailbox<WatchedPackage>,
@@ -86,6 +90,18 @@ pub(super) fn apply_latest(app: &mut NativeApp) {
     app.package_live_transport.as_mut().unwrap().retry = None;
     // 后台求值不持发布锁；候选可能基于旧快照，发布前按当前资源重新计划。
     if let Some(current) = app.content.active().runtime_package() {
+        if candidate
+            .value
+            .base_package_hash
+            .as_ref()
+            .is_some_and(|base| base != &current.package_hash)
+        {
+            app.packet_coalescer.failed(generation);
+            eprintln!(
+                "runtime package delta discarded: presented baseline changed during preparation"
+            );
+            return;
+        }
         match deep_engine_native::runtime_package::plan_runtime_package_resource_diff(
             &current.resource_index,
             &candidate.value.snapshot.resource_index,
@@ -236,6 +252,16 @@ pub(super) fn retry(
         .is_some_and(|(wake, _, _, _)| *wake <= now)
     {
         let (_, generation, candidate, kind) = transport.retry.take().unwrap();
+        if candidate.base_package_hash.as_ref().is_some_and(|base| {
+            app.content
+                .active()
+                .runtime_package()
+                .is_none_or(|current| base != &current.package_hash)
+        }) {
+            app.packet_coalescer.failed(generation);
+            eprintln!("runtime package delta retry discarded: presented baseline changed");
+            return false;
+        }
         match kind {
             RetryKind::Deep2d => apply_deep2d(app, generation, candidate),
             RetryKind::Scene => apply_incremental(app, generation, candidate),

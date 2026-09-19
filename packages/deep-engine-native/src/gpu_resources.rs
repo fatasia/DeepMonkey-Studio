@@ -15,6 +15,8 @@ pub fn frame_data(size: PhysicalSize<u32>, yaw: f32) -> FrameUniform {
 pub fn frame_data_with_fog(size: PhysicalSize<u32>, yaw: f32, fog: FogSettings) -> FrameUniform {
     let mut frame = frame_data(size, yaw);
     frame[12] = fog.frame_tuning();
+    frame[deep_engine_native::mesh_abi::FRAME_FOG_PROJECTION_ROW] = fog.frame_projection(
+        deep_engine_native::mesh_abi::CAMERA_NEAR, deep_engine_native::mesh_abi::CAMERA_FAR);
     frame
 }
 
@@ -60,6 +62,7 @@ pub fn frame_data_with_camera(
         std::array::from_fn(|row| -(0..3).map(|axis| frame[axis][row] * eye[axis]).sum::<f32>());
     frame[3][2] -= view.near * depth;
     frame[8] = [eye[0], eye[1], eye[2], 1.0];
+    frame[deep_engine_native::mesh_abi::FRAME_FOG_PROJECTION_ROW] = fog.frame_projection(view.near, view.far);
     frame
 }
 

@@ -4,9 +4,7 @@ use deep_engine_native::{
     bloom::BloomSettings,
     contract::load_and_validate,
     deep2d::{Deep2dRuntimeContent, decode_runtime_content},
-    runtime_package::{
-        load_and_validate_runtime_package, runtime_content_sha256, runtime_package_sha256,
-    },
+    runtime_package::{runtime_content_sha256, runtime_package_sha256},
 };
 
 use crate::{app, player_content::PlayerContent, runtime_package_startup};
@@ -20,6 +18,12 @@ pub enum PackageMode {
 pub fn run_package(path: PathBuf, mode: PackageMode) -> Result<(), String> {
     let package = runtime_package_startup::load_auto(&path)?;
     runtime_package_startup::run(package, mode)
+}
+
+/// `--smoke-dynamic-package`: real-window playback with an exit receipt.
+pub fn run_dynamic_playback_package(path: PathBuf) -> Result<(), String> {
+    let package = runtime_package_startup::load_auto(&path)?;
+    runtime_package_startup::run_dynamic_playback(package)
 }
 
 pub fn required_path(
@@ -172,10 +176,9 @@ pub fn run_package_live(path: PathBuf, smoke: bool) -> Result<(), String> {
     } else {
         (path.clone(), None, None)
     };
-    let package = load_and_validate_runtime_package(&watch_path)
+    let package = crate::runtime_package_startup::load_auto(&watch_path)
         .map_err(|error| format!("runtime package live preflight failed: {error}"))?;
     let summary = package.summary();
-    let content = PlayerContent::from_package(package)?;
     println!(
         "runtime package live preflight OK: resources={} geometries={} instances={} deep2d={} shader_packages={}",
         summary.resources,
@@ -185,7 +188,7 @@ pub fn run_package_live(path: PathBuf, smoke: bool) -> Result<(), String> {
         summary.shader_packages
     );
     app::run_package_live(
-        content,
+        package.into_content(),
         app::PackageLiveSpec {
             watch_path,
             smoke_rewrite,
@@ -270,6 +273,6 @@ pub fn print_help() {
         "Click a triangle to select and focus its object; blank space clears selection. M toggles two-point measurement in scene units. Home resets the view.\n  deep-engine-native --smoke-selection [render-packet.json]\n  deep-engine-native --smoke-package-selection <runtime-package.json>"
     );
     println!(
-        "Deep Engine Native Player\n\n  deep-engine-native --package <runtime-package.json>\n  deep-engine-native --headless-package <runtime-package.json>\n  deep-engine-native --headless-x-package <runtime-package-v6.json>\n  deep-engine-native --headless-x-package-ticks <runtime-package-v6.json> <count>\n  deep-engine-native --smoke-package <runtime-package.json>\n  deep-engine-native --package-recover <primary.json> <last-known-good.json>\n  deep-engine-native --headless-package-recover <primary.json> <last-known-good.json>\n  deep-engine-native --package-live <runtime-package.json>\n  deep-engine-native --smoke-package-live <runtime-package.json>\n  deep-engine-native\n  deep-engine-native --packet <render-packet.json>\n  deep-engine-native --packet-live <render-packet.json>\n  deep-engine-native --fog <density> <r> <g> <b> [render-packet.json]\n  deep-engine-native --smoke-fog <density> <r> <g> <b> [render-packet.json]\n  deep-engine-native --headless-fog <density> <r> <g> <b> [render-packet.json]\n  deep-engine-native --no-bloom [render-packet.json]\n  deep-engine-native --headless-contract [render-packet.json]\n  deep-engine-native --headless-pbr [render-packet.json]\n  deep-engine-native --headless-alpha [render-packet.json]\n  deep-engine-native --headless-ibl\n  deep-engine-native --chart <chart-ir.json>\n  deep-engine-native --smoke-chart <chart-ir.json>\n  deep-engine-native --headless-chart <chart-ir.json>\n  deep-engine-native --headless-deep2d [deep2d.json]\n  deep-engine-native --smoke-frame [render-packet.json]\n  deep-engine-native --smoke-no-bloom [render-packet.json]\n  deep-engine-native --smoke-textured\n  deep-engine-native --smoke-textured-deep2d\n  deep-engine-native --smoke-alpha\n  deep-engine-native --smoke-alpha-deep2d\n  deep-engine-native --smoke-shadow [render-packet.json]\n  deep-engine-native --smoke-shadow-update [render-packet.json]\n  deep-engine-native --smoke-packet-live\n  deep-engine-native --smoke-ibl [render-packet.json]\n  deep-engine-native --smoke-shader-package\n  deep-engine-native --smoke-deep2d-interleaved\n  deep-engine-native --smoke-deep2d [deep2d.json]\n  deep-engine-native --smoke-telemetry [render-packet.json]\n  deep-engine-native --packet-with-deep2d <render-packet.json> <deep2d.json>\n\nArrow keys rotate the mesh, R rebuilds the GPU state, Esc exits."
+        "Deep Engine Native Player\n\n  deep-engine-native --package <runtime-package.json>\n  deep-engine-native --headless-package <runtime-package.json>\n  deep-engine-native --headless-x-package <runtime-package-v6.json>\n  deep-engine-native --headless-x-package-ticks <runtime-package-v6.json> <count>\n  deep-engine-native --smoke-package <runtime-package.json>\n  deep-engine-native --smoke-dynamic-package <runtime-package.json>\n  deep-engine-native --package-recover <primary.json> <last-known-good.json>\n  deep-engine-native --headless-package-recover <primary.json> <last-known-good.json>\n  deep-engine-native --package-live <runtime-package.json>\n  deep-engine-native --smoke-package-live <runtime-package.json>\n  deep-engine-native\n  deep-engine-native --packet <render-packet.json>\n  deep-engine-native --packet-live <render-packet.json>\n  deep-engine-native --fog <density> <r> <g> <b> [render-packet.json]\n  deep-engine-native --smoke-fog <density> <r> <g> <b> [render-packet.json]\n  deep-engine-native --headless-fog <density> <r> <g> <b> [render-packet.json]\n  deep-engine-native --no-bloom [render-packet.json]\n  deep-engine-native --headless-contract [render-packet.json]\n  deep-engine-native --headless-pbr [render-packet.json]\n  deep-engine-native --headless-alpha [render-packet.json]\n  deep-engine-native --headless-ibl\n  deep-engine-native --chart <chart-ir.json>\n  deep-engine-native --smoke-chart <chart-ir.json>\n  deep-engine-native --headless-chart <chart-ir.json>\n  deep-engine-native --headless-deep2d [deep2d.json]\n  deep-engine-native --smoke-frame [render-packet.json]\n  deep-engine-native --smoke-no-bloom [render-packet.json]\n  deep-engine-native --smoke-textured\n  deep-engine-native --smoke-textured-deep2d\n  deep-engine-native --smoke-alpha\n  deep-engine-native --smoke-alpha-deep2d\n  deep-engine-native --smoke-shadow [render-packet.json]\n  deep-engine-native --smoke-shadow-update [render-packet.json]\n  deep-engine-native --smoke-packet-live\n  deep-engine-native --smoke-ibl [render-packet.json]\n  deep-engine-native --smoke-shader-package\n  deep-engine-native --smoke-deep2d-interleaved\n  deep-engine-native --smoke-deep2d [deep2d.json]\n  deep-engine-native --smoke-telemetry [render-packet.json]\n  deep-engine-native --packet-with-deep2d <render-packet.json> <deep2d.json>\n\nArrow keys rotate the mesh, R rebuilds the GPU state, Esc exits."
     );
 }

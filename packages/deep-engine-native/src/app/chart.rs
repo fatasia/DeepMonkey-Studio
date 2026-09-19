@@ -122,13 +122,15 @@ pub(super) fn update(
             return Ok(false);
         }
         {
+            let scale = super::text_scale::effective_scale(app).unwrap_or(1.0);
             let rasterizer = app.chart_text.get_or_insert_with(Default::default);
-            let list = deep_engine_native::chart::presentation::present_chart(
+            let list = deep_engine_native::chart::presentation::present_chart_scaled(
                 &candidate,
                 rasterizer,
                 app.chart_legend_page,
                 anchor,
                 super::window_events::chart_legend_focus(),
+                scale,
             )?;
             let content = Deep2dRuntimeContent::DisplayList(list);
             let epoch = super::deep2d_context::current_resource_epoch(app);
@@ -143,6 +145,7 @@ pub(super) fn update(
             let active = app.content.active_mut();
             active.chart = Some(chart);
             active.deep2d = Some(deep2d);
+            active.chart_text_scale = scale;
         }
         Ok::<_, String>(true)
     })();
@@ -157,43 +160,51 @@ pub(super) fn update(
 }
 
 fn change_legend_page(app: &mut NativeApp, page: usize) {
-    let result = (|| {
-        let chart = app
-            .content
-            .active()
-            .chart
-            .as_ref()
-            .ok_or("chart missing")?
-            .clone();
-        let rasterizer = app.chart_text.get_or_insert_with(Default::default);
-        let list = deep_engine_native::chart::presentation::present_chart(
-            &chart,
-            rasterizer,
-            page,
-            [0.0, 0.0],
-            super::window_events::chart_legend_focus(),
-        )?;
-        let content = Deep2dRuntimeContent::DisplayList(list);
-        // 资源代次传**目标页**:提交后 resource_set 会变成 page,暂存阶段先用它,
-        // 旧页条目才会在下一次 prepare 按 epoch 失效;传旧值会漏掉这次换页。
-        let context = super::deep2d_context::active_frame_context(app, &content, page as u64);
-        let renderer = app.renderer.as_mut().ok_or("chart renderer is not ready")?;
-        let staged =
-            pollster::block_on(renderer.stage_deep2d_update_inner(Some(&content), context))?;
-        // 提交区:legend 页计入 resource_set,与 chart/deep2d 同帧落地。
-        let commit = ChartEpochCommit::new(chart, content, page);
-        renderer.publish_deep2d_update(staged);
-        let (chart, deep2d) = commit.commit(&mut app.content.active_mut().epoch);
-        let active = app.content.active_mut();
-        active.chart = Some(chart);
-        active.deep2d = Some(deep2d);
-        app.chart_legend_page = page;
-        Ok::<_, String>(())
-    })();
+    let result = change_legend_page_inner(app, page);
     match result {
         Ok(()) => app.request_redraw(),
         Err(error) => report(app, Some(&error)),
     }
+}
+
+pub(super) fn refresh_text_scale(app: &mut NativeApp) -> Result<(), String> {
+    change_legend_page_inner(app, app.chart_legend_page)
+}
+
+fn change_legend_page_inner(app: &mut NativeApp, page: usize) -> Result<(), String> {
+    let chart = app
+        .content
+        .active()
+        .chart
+        .as_ref()
+        .ok_or("chart missing")?
+        .clone();
+    let scale = super::text_scale::effective_scale(app).unwrap_or(1.0);
+    let rasterizer = app.chart_text.get_or_insert_with(Default::default);
+    let list = deep_engine_native::chart::presentation::present_chart_scaled(
+        &chart,
+        rasterizer,
+        page,
+        [0.0, 0.0],
+        super::window_events::chart_legend_focus(),
+        scale,
+    )?;
+    let content = Deep2dRuntimeContent::DisplayList(list);
+    // 资源代次传**目标页**:提交后 resource_set 会变成 page,暂存阶段先用它,
+    // 旧页条目才会在下一次 prepare 按 epoch 失效;传旧值会漏掉这次换页。
+    let context = super::deep2d_context::active_frame_context(app, &content, page as u64);
+    let renderer = app.renderer.as_mut().ok_or("chart renderer is not ready")?;
+    let staged = pollster::block_on(renderer.stage_deep2d_update_inner(Some(&content), context))?;
+    // 提交区:legend 页计入 resource_set,与 chart/deep2d 同帧落地。
+    let commit = ChartEpochCommit::new(chart, content, page);
+    renderer.publish_deep2d_update(staged);
+    let (chart, deep2d) = commit.commit(&mut app.content.active_mut().epoch);
+    let active = app.content.active_mut();
+    active.chart = Some(chart);
+    active.deep2d = Some(deep2d);
+    active.chart_text_scale = scale;
+    app.chart_legend_page = page;
+    Ok::<_, String>(())
 }
 
 /// 焦点移动不改变图表内容,但焦点环画在图例像素里——重呈现当前页使环跟随。

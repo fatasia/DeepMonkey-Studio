@@ -11,6 +11,17 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
         || app.content.active().pending_lkg.is_some()
         || app.content.active().pending_x_lkg.is_some()
         || app.content.active().pending_asset_lkg.is_some();
+    // Dynamic playback consumes the real window clock before the frame renders:
+    // newly covered deterministic steps mutate the packet and stage a real
+    // GPU update, so every present shows the advanced animation state.
+    if let Some(probe) = app.dynamic_playback.as_mut()
+        && let Some(renderer) = app.renderer.as_mut()
+        && let Err(error) = probe.before_render(renderer, app.content.active_mut())
+    {
+        app.state.failed(error);
+        event_loop.exit();
+        return;
+    }
     let outcome = app
         .renderer
         .as_mut()
@@ -153,6 +164,27 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
         report_presented(size, app.content.active().deep2d.is_some());
         event_loop.exit();
         return;
+    }
+    if app.dynamic_playback.is_some() {
+        match outcome {
+            Some(RenderOutcome::Presented) => {
+                match app.dynamic_playback.as_mut().expect("probe remains alive").after_present() {
+                    AfterPresent::Continue => app.request_redraw(),
+                    AfterPresent::Complete(receipt) => {
+                        println!("native dynamic playback receipt: {receipt}");
+                        event_loop.exit();
+                    }
+                }
+                return;
+            }
+            Some(RenderOutcome::Skipped) => {
+                // A skipped frame must not advance the receipt: retry.
+                app.request_redraw();
+                return;
+            }
+            // Recover falls through to the standard surface-recreation path.
+            _ => {}
+        }
     }
     if verify && matches!(outcome, Some(RenderOutcome::Skipped)) {
         app.request_redraw();

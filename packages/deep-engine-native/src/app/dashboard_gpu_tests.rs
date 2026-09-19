@@ -36,6 +36,7 @@ fn dashboard_updates_present_atomically_in_the_window_host() {
         content,
         event_loop.create_proxy(),
         NativeAppSetup {
+            dynamic_playback: None,
             smoke_frame: false,
             features: RendererFeatures {
                 bloom: Default::default(),
@@ -202,6 +203,29 @@ impl Probe {
             .unwrap()
             .content()
             .clone();
+        let before_scale = self
+            .app
+            .content
+            .active()
+            .dashboard
+            .as_ref()
+            .unwrap()
+            .text_scale();
+        assert!(!dashboard::update(&mut self.app, |next| next.set_text_scale(1.5)).unwrap());
+        assert_eq!(
+            self.app
+                .content
+                .active()
+                .dashboard
+                .as_ref()
+                .unwrap()
+                .text_scale(),
+            before_scale
+        );
+        assert_eq!(
+            self.app.content.active().deep2d.as_ref().unwrap(),
+            &before_skip
+        );
         assert!(!dashboard::update(&mut self.app, |next| next.tick(0)).unwrap());
         assert_eq!(
             self.app
@@ -220,6 +244,29 @@ impl Probe {
             .resize(self.app.window.as_ref().unwrap().inner_size())
             .unwrap();
         assert!(dashboard::update(&mut self.app, |next| next.tick(0)).unwrap());
+        assert!(dashboard::update(&mut self.app, |next| next.set_text_scale(1.5)).unwrap());
+        assert_eq!(
+            self.app
+                .content
+                .active()
+                .dashboard
+                .as_ref()
+                .unwrap()
+                .text_scale(),
+            1.5
+        );
+        let expected_scale = super::text_scale::effective_scale(&self.app).unwrap();
+        super::text_scale::refresh(&mut self.app);
+        assert_eq!(
+            self.app
+                .content
+                .active()
+                .dashboard
+                .as_ref()
+                .unwrap()
+                .text_scale(),
+            expected_scale
+        );
         assert!(
             self.app
                 .content

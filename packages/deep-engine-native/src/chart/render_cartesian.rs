@@ -94,6 +94,7 @@ impl XInverter {
 /// (band width, baseline pixel). Returns `None` when the series has no usable
 /// data (caller skips it). X mode is numeric per axis scale, or category
 /// banding by row index when the column is not uniformly numeric.
+#[cfg(test)]
 pub(in crate::chart) fn map_cartesian(
     ir: &ChartIR,
     series: &ChartSeries,
@@ -101,6 +102,23 @@ pub(in crate::chart) fn map_cartesian(
     plot: [f64; 4],
     windows: &[(String, f64, f64)],
 ) -> Option<CartesianPoints> {
+    map_cartesian_cached(
+        &mut super::FrameAxisValues::new(ir),
+        series,
+        dataset,
+        plot,
+        windows,
+    )
+}
+
+pub(super) fn map_cartesian_cached(
+    shared: &mut super::FrameAxisValues<'_>,
+    series: &ChartSeries,
+    dataset: &ChartDataset,
+    plot: [f64; 4],
+    windows: &[(String, f64, f64)],
+) -> Option<CartesianPoints> {
+    let ir = shared.source;
     let (x_col, y_col) = (dim(dataset, &series.x)?, dim(dataset, &series.y)?);
     let numeric = |column: usize| -> Vec<Option<f64>> {
         dataset
@@ -138,26 +156,28 @@ pub(in crate::chart) fn map_cartesian(
     }
     let [px, py, pw, ph] = plot;
     // Automatic bar bounds include the zero baseline; explicit axis bounds still win.
-    let shared_y = shared_axis_values(ir, series, false);
+    let shared_y = shared.get(series, false);
     let has_bar = ir
         .series
         .iter()
         .any(|peer| peer.y_axis_id == series.y_axis_id && peer.series_type == ChartSeriesType::Bar);
     let zero = (has_bar && !log_y && !shared_y.is_empty()).then_some(0.0);
-    let y_domain = resolve_domain(y_axis, shared_y.into_iter().chain(zero))?;
+    let y_domain = resolve_domain(y_axis, shared_y.iter().copied().chain(zero))?;
     let y_map = numeric_mapper(
         y_axis,
         zoom_domain(y_axis, y_domain, windows)?,
         (py + ph, py),
     )?;
 
+    // Category/fallback row bands never consume numeric X values.
+    let shared_x = numeric_ok.then(|| shared.get(series, true));
     let (x_mapper, invert_x) = x_projector(
         x_axis,
         dataset.rows.len(),
         (px, px + pw),
         numeric_ok,
         windows,
-        shared_axis_values(ir, series, true).into_iter(),
+        shared_x.as_deref().unwrap_or_default().iter().copied(),
     )?;
 
     let points = kept

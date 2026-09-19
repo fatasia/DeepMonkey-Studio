@@ -14,6 +14,10 @@ use crate::{
     player_state::PlayerState,
     renderer::{Renderer, RendererFeatures},
 };
+#[cfg(windows)]
+mod accessibility;
+mod annotation_ime_area;
+mod annotation_input;
 mod annotations;
 mod chart;
 mod chart_keyboard_smoke;
@@ -22,7 +26,10 @@ mod chart_smoke;
 mod dashboard;
 #[cfg(all(test, target_os = "windows"))]
 mod dashboard_gpu_tests;
+#[cfg(all(test, target_os = "windows"))]
+mod dashboard_filter_gpu_tests;
 mod deep2d_context;
+mod dynamic_playback;
 mod lifecycle;
 mod package_camera;
 #[cfg(test)]
@@ -46,6 +53,7 @@ mod section_probe;
 mod selection;
 mod selection_probe;
 mod shadow_update_probe;
+mod text_scale;
 mod watch_thread;
 mod window_events;
 #[cfg(all(test, windows))]
@@ -60,10 +68,10 @@ use package_live::PackageLiveTransport;
 use packet_coalescer::{PublishedState, UpdateCoalescer};
 use packet_live::PacketLiveTransport;
 use packet_live_probe::PacketLiveProbe;
-pub use runner::{
-    PackageLiveSpec, PacketLiveSpec, run, run_chart_keyboard_smoke, run_fog, run_package_live,
-    run_packet_live, run_section_smoke, run_selection_smoke, run_shadow_update_probe,
-    run_telemetry_smoke, run_verification,
+pub use dynamic_playback::{DYNAMIC_PLAYBACK_STEP_MS, DynamicPlaybackSpec};pub use runner::{
+    PackageLiveSpec, PacketLiveSpec, run, run_chart_keyboard_smoke, run_dynamic_playback,
+    run_fog, run_package_live, run_packet_live, run_section_smoke, run_selection_smoke,
+    run_shadow_update_probe, run_telemetry_smoke, run_verification,
 };
 use shadow_update_probe::ShadowUpdateProbe;
 
@@ -76,6 +84,7 @@ struct NativeApp {
     smoke_frame: bool,
     features: RendererFeatures,
     shadow_update_probe: Option<ShadowUpdateProbe>,
+    dynamic_playback: Option<dynamic_playback::DynamicPlaybackProbe>,
     packet_live_probe: Option<PacketLiveProbe>,
     packet_live_transport: Option<PacketLiveTransport>,
     package_live_transport: Option<PackageLiveTransport>,
@@ -91,6 +100,7 @@ struct NativeApp {
     /// P1-16 第三批键盘 smoke 的推进阶段;独立于 chart_probe,两者不共存。
     chart_key_probe: Option<u8>,
     chart_text: Option<deep_engine_native::platform_text::TextRasterizer>,
+    annotation_editor: Option<annotation_input::AnnotationEditor>,
     chart_legend_page: usize,
     /// 上次已应用布局的窗口物理尺寸;None=窗口尚未 resize 过。layout_revision 的
     /// 去重依据:同尺寸重复事件(ScaleFactorChanged 回环、平台重发)不得推进版本。
@@ -99,12 +109,15 @@ struct NativeApp {
     dashboard_wake_at: Option<std::time::Instant>,
     #[cfg(windows)]
     x_runtime: Option<x_runtime::Runtime>,
+    #[cfg(windows)]
+    accessibility: Option<accessibility::WindowAccessibility>,
 }
 
 struct NativeAppSetup {
     smoke_frame: bool,
     features: RendererFeatures,
     shadow_update_probe: Option<ShadowUpdateProbe>,
+    dynamic_playback: Option<DynamicPlaybackSpec>,
     packet_live_probe: Option<PacketLiveProbe>,
     packet_live_transport: Option<PacketLiveTransport>,
     package_live_transport: Option<PackageLiveTransport>,
@@ -126,12 +139,15 @@ impl NativeApp {
             chart_probe,
             chart_key_probe: (setup.chart_key_probe && content.chart.is_some()).then_some(0),
             chart_text: None,
+            annotation_editor: None,
             chart_legend_page: 0,
             last_resize: None,
             chart_sim_scheduled: false,
             dashboard_wake_at: None,
             #[cfg(windows)]
             x_runtime: None,
+            #[cfg(windows)]
+            accessibility: None,
             content: PublishedState::new(content),
             proxy,
             window: None,
@@ -140,6 +156,7 @@ impl NativeApp {
             smoke_frame: setup.smoke_frame,
             features: setup.features,
             shadow_update_probe: setup.shadow_update_probe,
+            dynamic_playback: setup.dynamic_playback.map(dynamic_playback::DynamicPlaybackProbe::new),
             packet_live_probe: setup.packet_live_probe,
             packet_live_transport: setup.packet_live_transport,
             package_live_transport: setup.package_live_transport,
@@ -199,6 +216,7 @@ impl NativeApp {
         {
             self.state.failed(error);
         }
+        text_scale::refresh(self);
         self.request_redraw();
     }
 }

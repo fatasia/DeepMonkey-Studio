@@ -21,6 +21,9 @@ use crate::{
 
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
+#[path = "package_watch_delta.rs"]
+mod delta;
+
 pub(super) type Decoder =
     fn(&[u8], &Path, &RuntimePackageSnapshot) -> Result<Option<WatchedPackage>, String>;
 
@@ -29,9 +32,30 @@ pub(super) fn ordinary_decoder(
     path: &Path,
     published: &RuntimePackageSnapshot,
 ) -> Result<Option<WatchedPackage>, String> {
-    let mut candidate = decode_candidate(bytes, published)?;
+    let resolved = delta::resolve(bytes, path, published)?;
+    let Some(bytes) = resolved else {
+        return Ok(None);
+    };
+    let mut candidate = decode_candidate(&bytes, published)?;
     if let Some(package) = &mut candidate {
+        if matches!(bytes, std::borrow::Cow::Owned(_)) {
+            package.base_package_hash = Some(published.package_hash.clone());
+        }
         package.content.bind_resource_source(path, "runtime-file")?;
+        // 完整包与 delta 复用同一呈现屏障，预热失败不得推进磁盘基线。
+        match crate::runtime_lkg::Store::local(path) {
+            Ok(store) => {
+                package.content.pending_lkg = Some(crate::runtime_lkg::Pending {
+                    store,
+                    bytes: bytes.into_owned(),
+                    hash: package.snapshot.package_hash.clone(),
+                })
+            }
+            Err(error) => {
+                package.content.startup_notice =
+                    Some(format!("recovery cache unavailable: {error}"))
+            }
+        }
     }
     Ok(candidate)
 }
@@ -57,6 +81,7 @@ pub(super) fn x_decoder(
     let snapshot = RuntimePackageSnapshot::from_loaded(&loaded.base);
     let content = crate::x_package_window::prepare_primary(path, bytes)?;
     Ok(Some(WatchedPackage {
+        base_package_hash: None,
         content: Box::new(content),
         snapshot,
         plan,
@@ -70,6 +95,7 @@ struct PackageIdentity {
 }
 
 pub(super) struct WatchedPackage {
+    pub base_package_hash: Option<String>,
     pub content: Box<PlayerContent>,
     pub snapshot: RuntimePackageSnapshot,
     pub plan: RuntimeResourceDiffPlan,
@@ -119,6 +145,7 @@ fn decode_candidate(
     let snapshot = RuntimePackageSnapshot::from_loaded(&package);
     let content = PlayerContent::from_package(package)?;
     Ok(Some(WatchedPackage {
+        base_package_hash: None,
         content: Box::new(content),
         snapshot,
         plan,
@@ -160,6 +187,12 @@ fn load_update(
     match decoder(&bytes, path, published) {
         Ok(Some(package)) => PackageUpdate::Ready { package, identity },
         Ok(None) => PackageUpdate::Equivalent { identity },
+        Err(reason) if reason.starts_with("runtime package delta baseline unavailable:") => {
+            PackageUpdate::Rejected {
+                reason,
+                identity: None,
+            }
+        }
         Err(reason) => rejected(reason),
     }
 }
@@ -176,11 +209,19 @@ pub(super) fn spawn(
         let mut observed = None;
         let mut generation = 0_u64;
         let mut rejected_identity: Option<Option<PackageIdentity>> = None;
+        let mut observed_hash = String::new();
         while stop.wait(POLL_INTERVAL) {
             let snapshot = published
                 .read()
                 .unwrap_or_else(|error| error.into_inner())
                 .clone();
+            // 同一文件可先于其基线到达。呈现推进后必须重试，否则元数据去重
+            // 会永久吞掉先到的 delta；也避免把候选准备误当作基线提交。
+            if observed_hash != snapshot.package_hash {
+                observed = None;
+                rejected_identity = None;
+                observed_hash.clone_from(&snapshot.package_hash);
+            }
             let update = load_update(&path, observed.as_ref(), &snapshot, decoder);
             if stop.cancelled() {
                 return;
@@ -218,3 +259,7 @@ pub(super) fn spawn(
 #[cfg(test)]
 #[path = "package_watch_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "package_watch_delta_tests.rs"]
+pub(super) mod delta_tests;

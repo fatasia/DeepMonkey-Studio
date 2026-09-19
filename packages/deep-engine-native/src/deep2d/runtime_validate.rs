@@ -39,6 +39,15 @@ pub fn decode_runtime_content(bytes: &[u8]) -> Result<Deep2dRuntimeContent, Stri
 }
 
 pub fn validate_runtime_package(package: &Deep2dRuntimePackage) -> Deep2dValidationResult {
+    validate_runtime_package_with_atlases(package, None)
+}
+
+// Only the preparation path supplies atlases, after an exact comparison against a
+// previously successful immutable source in Deep2dPathCache. All other validation remains live.
+pub(super) fn validate_runtime_package_with_atlases(
+    package: &Deep2dRuntimePackage,
+    prepared: Option<&[super::PreparedDeep2dAtlas]>,
+) -> Deep2dValidationResult {
     let mut issues = Vec::new();
     if package.schema != DEEP_2D_RUNTIME_PACKAGE_SCHEMA {
         add(
@@ -148,7 +157,10 @@ pub fn validate_runtime_package(package: &Deep2dRuntimePackage) -> Deep2dValidat
         }
         let expected =
             atlas.width as usize * atlas.height as usize * atlas.format.bytes_per_pixel();
-        match decoded_len(&atlas.data_base64) {
+        match prepared.and_then(|values| values.get(index)).map_or_else(
+            || decoded_len(&atlas.data_base64),
+            |value| Ok(value.data.len()),
+        ) {
             Ok(actual) if actual == expected => total_bytes = total_bytes.saturating_add(actual),
             Ok(actual) => add(
                 &mut issues,

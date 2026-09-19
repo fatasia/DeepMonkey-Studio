@@ -45,6 +45,9 @@ pub(super) async fn create_renderer(
     if features.shadow_probe && features.ibl_probe {
         return Err("shadow and IBL differential probes cannot run in the same frame".into());
     }
+    if content.background.is_some() && (features.bloom.is_active() || features.fog.requires_output_pass()) {
+        return Err("authored solid background requires the native-aces-v1 output without Bloom/Fog".into());
+    }
     let packet = content.packet();
     if view.clipping != [0.0; 4] && !content.material_bindings.is_empty() {
         return Err("section-unavailable: authored ShaderPackage ABI has no section plane".into());
@@ -77,7 +80,11 @@ pub(super) async fn create_renderer(
     );
 
     let yaw = view.yaw;
-    let frame = frame_data_with_camera(size, view, features.fog);
+    if content.lighting.is_some() && !content.material_bindings.is_empty() {
+        return Err("authored directional light is not supported by legacy ShaderPackage material bindings".into());
+    }
+    let mut frame = frame_data_with_camera(size, view, features.fog);
+    if let Some(lighting) = content.lighting { lighting.apply(&mut frame); }
     let validation_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
     let memory_scope = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
     let internal_scope = device.push_error_scope(wgpu::ErrorFilter::Internal);
@@ -120,13 +127,14 @@ pub(super) async fn create_renderer(
             "Deep Engine native frame bindings",
             true,
         );
-        let forward_targets = ForwardTargets::new(
+        let mut forward_targets = ForwardTargets::new(
             &device,
             super::content_profile::forward_size(
                 super::content_profile::compact_forward(content, features),
                 size,
             ),
         );
+        forward_targets.background = content.background;
         let shadow_probe = features.shadow_probe.then(|| {
             ShadowProbe::new(
                 &device,
@@ -158,7 +166,7 @@ pub(super) async fn create_renderer(
             bloom
                 .as_ref()
                 .map(|bloom| (bloom.output_view(), bloom.settings().intensity)),
-            (features.fog.density() > 0.0).then_some((&forward_targets.depth_view, &frame_buffer)),
+            features.fog.requires_output_pass().then_some((&forward_targets.depth_view, &frame_buffer)),
         );
         scene_cache
             .stage_scoped(
@@ -299,6 +307,7 @@ pub(super) async fn create_renderer(
         output_pass,
         frame,
         fog: features.fog,
+        lighting: content.lighting,
         yaw,
         view,
         telemetry,

@@ -10,7 +10,7 @@ pub fn encode_shadow_cascades(
     culling: &GpuCulling,
     lod: Option<&GpuLod>,
     pipelines: &MeshPipelines,
-    dirty_mask: u8,
+    dirty_mask: u16,
 ) {
     for (cascade_index, layer_view) in shadow_map.layer_views.iter().enumerate() {
         if dirty_mask & (1 << cascade_index) == 0 {

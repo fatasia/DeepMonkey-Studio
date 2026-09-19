@@ -256,8 +256,8 @@ fn view_frustums(
         .try_into()
         .map_err(|_| "native frame view projection ABI is incomplete")?;
     let mut frustums = vec![frustum_planes(main_matrix)?];
-    for index in 0..shadow_map.cascade_count() as usize {
-        frustums.push(frustum_planes(shadow_map.cascade_view_projection(index))?);
+    for index in 0..shadow_map.shadow_view_count() as usize {
+        frustums.push(frustum_planes(shadow_map.shadow_view_projection(index))?);
     }
     Ok(frustums)
 }

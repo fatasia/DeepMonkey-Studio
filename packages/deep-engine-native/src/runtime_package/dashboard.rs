@@ -51,6 +51,7 @@ fn document(package: &RuntimePackageEnvelope) -> Result<DashboardRuntimeV1, Runt
         return fail("dashboard schema or resource identity mismatch");
     }
     super::dashboard_validation::validate(&root)?;
+    super::dashboard_table_validation::resources(&root)?;
     Ok(root)
 }
 pub(super) fn validate_closure(
@@ -80,6 +81,9 @@ pub(super) fn validate_closure(
                 own(id, kind)?;
             }
         }
+    }
+    for id in super::dashboard_table_validation::resources(&root)? {
+        own(&id, RuntimeResourceKind::Deep2dRuntime)?;
     }
     if owned.len() != index.len() {
         return fail("dashboard package contains unreferenced resources");
@@ -143,10 +147,30 @@ pub(super) fn decode(
             charts.insert(id.clone(), chart);
         }
     }
-    Ok(Some(LoadedDashboard {
+    for id in super::dashboard_table_validation::resources(&document)? {
+        let content = decode_deep2d(package, &id)?;
+        if let Deep2dRuntimeContent::Package(package) = &content {
+            for atlas in &package.atlases {
+                atlas_bytes = atlas_bytes.saturating_add(
+                    atlas.width as usize * atlas.height as usize * atlas.format.bytes_per_pixel(),
+                );
+            }
+        }
+        if atlas_bytes > 64 * 1024 * 1024 {
+            return fail("dashboard static atlas budget exceeds 64 MiB");
+        }
+        deep2d.insert(id, content);
+    }
+    let loaded = LoadedDashboard {
         document,
         deep2d,
         charts,
         simulations,
-    }))
+    };
+    if loaded.document.filter.is_some() || !loaded.document.tables.is_empty() {
+        // Untrusted variants must pass the same dataset/frame checks before package admission.
+        crate::dashboard_runtime::DashboardRuntime::new(loaded.clone())
+            .map_err(RuntimePackageError)?;
+    }
+    Ok(Some(loaded))
 }

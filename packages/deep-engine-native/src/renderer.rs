@@ -40,6 +40,8 @@ mod coordinate_frame_gpu_tests;
 #[cfg(test)]
 mod environment_probe_tests;
 mod environment_update;
+#[cfg(all(test, target_os = "windows"))]
+mod solid_environment_tests;
 mod frame;
 mod frame_probes;
 mod frame_target;
@@ -62,6 +64,7 @@ pub struct RendererFeatures {
 }
 
 pub struct Renderer {
+    lighting: Option<deep_engine_native::scene_lighting::DirectionalLighting>,
     id: u64,
     instance: wgpu::Instance,
     window: Arc<Window>,
@@ -146,7 +149,7 @@ impl Renderer {
         let validation = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let memory = self.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
         let internal = self.device.push_error_scope(wgpu::ErrorFilter::Internal);
-        let next_forward = ForwardTargets::new(
+        let mut next_forward = ForwardTargets::new(
             &self.device,
             content_profile::forward_size(self.content_profile.compact_forward_targets, size),
         );
@@ -160,7 +163,7 @@ impl Renderer {
                 &self.device,
                 &next_forward.hdr_view,
                 next_bloom.as_ref().map(BloomTargets::output_view),
-                (self.fog.density() > 0.0)
+                self.fog.requires_output_pass()
                     .then_some((&next_forward.depth_view, &self.frame_buffer)),
             )
             .expect("renderer bloom mode remains stable during resize");
@@ -178,12 +181,14 @@ impl Renderer {
         self.config.width = size.width;
         self.config.height = size.height;
         self.surface.configure(&self.device, &self.config);
+        next_forward.background = self.forward_targets.background;
         self.forward_targets = next_forward;
         if let (Some(bloom), Some(targets)) = (&mut self.bloom, next_bloom) {
             bloom.publish_resize(targets);
         }
         self.output_pass.publish_rebind(next_output);
         self.frame = crate::gpu_resources::frame_data_with_camera(size, self.view, self.fog);
+        if let Some(lighting) = self.lighting { lighting.apply(&mut self.frame); }
         update_shadow_map(
             &mut self.shadow_map,
             &self.queue,
@@ -232,7 +237,8 @@ impl Renderer {
         self.shadow_keys = self
             .shadow_casters
             .keys(&self.shadow_map, self.shadow_shader_key)?;
-        self.shadow_cache.invalidate();
+        // resize 保留阴影纹理；方向级联保持旧刷新策略，世界固定聚光视图可继续复用。
+        self.shadow_cache.invalidate_directional(self.shadow_map.cascade_count() as usize);
         self.queue
             .write_buffer(&self.frame_buffer, 0, cast_slice(&self.frame));
         if let Some(telemetry) = self.telemetry.as_mut() {
@@ -257,6 +263,7 @@ impl Renderer {
         self.view = view;
         self.shadow_version.bump_light();
         self.frame = crate::gpu_resources::frame_data_with_camera(self.size, self.view, self.fog);
+        if let Some(lighting) = self.lighting { lighting.apply(&mut self.frame); }
         update_shadow_map(
             &mut self.shadow_map,
             &self.queue,

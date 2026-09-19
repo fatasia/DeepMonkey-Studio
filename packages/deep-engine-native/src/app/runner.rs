@@ -9,8 +9,8 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use crate::{events::GpuEvent, player_content::PlayerContent, renderer::RendererFeatures};
 
 use super::{
-    NativeApp, NativeAppSetup, ShadowUpdateProbe, package_live, packet_live,
-    packet_live_probe::PacketLiveProbe,
+    NativeApp, NativeAppSetup, ShadowUpdateProbe, dynamic_playback::DynamicPlaybackSpec,
+    package_live, packet_live, packet_live_probe::PacketLiveProbe,
 };
 
 pub struct PacketLiveSpec {
@@ -55,6 +55,7 @@ pub fn run_verification(
         None,
         None,
         ReportMode::Verification(verification),
+        None,
     )
 }
 
@@ -73,6 +74,7 @@ pub fn run_section_smoke(content: PlayerContent) -> Result<(), String> {
         None,
         None,
         ReportMode::Section,
+        None,
     )
 }
 
@@ -91,6 +93,7 @@ pub fn run_selection_smoke(content: PlayerContent) -> Result<(), String> {
         None,
         None,
         ReportMode::Selection,
+        None,
     )
 }
 
@@ -115,6 +118,34 @@ pub fn run(
         None,
         None,
         ReportMode::None,
+        None,
+    )
+}
+
+/// `--smoke-dynamic-package`: real-window playback of the package's dynamic
+/// runtime channel. The wall clock drives the fixed step grid; every applied
+/// step mutates the packet and is re-submitted to the GPU before the next
+/// present. Exits 0 with a JSON receipt listing per-step canonical frames
+/// and per-presentation timings.
+pub fn run_dynamic_playback(
+    content: PlayerContent,
+    spec: DynamicPlaybackSpec,
+) -> Result<(), String> {
+    run_internal(
+        content,
+        false,
+        RendererFeatures {
+            bloom: BloomSettings::default(),
+            fog: FogSettings::DISABLED,
+            shadow_probe: false,
+            ibl_probe: false,
+            telemetry: false,
+        },
+        None,
+        None,
+        None,
+        ReportMode::None,
+        Some(spec),
     )
 }
 
@@ -133,6 +164,7 @@ pub fn run_fog(content: PlayerContent, smoke_frame: bool, fog: FogSettings) -> R
         None,
         None,
         ReportMode::None,
+        None,
     )
 }
 
@@ -152,6 +184,7 @@ pub fn run_telemetry_smoke(content: PlayerContent) -> Result<(), String> {
         None,
         None,
         ReportMode::Telemetry,
+        None,
     )
 }
 
@@ -175,6 +208,7 @@ pub fn run_shadow_update_probe(
         None,
         None,
         ReportMode::None,
+        None,
     )
 }
 
@@ -195,6 +229,7 @@ pub fn run_chart_keyboard_smoke(content: PlayerContent) -> Result<(), String> {
         None,
         None,
         ReportMode::ChartKeyboard,
+        None,
     )
 }
 
@@ -213,6 +248,7 @@ pub fn run_packet_live(content: PlayerContent, spec: PacketLiveSpec) -> Result<(
         Some(spec),
         None,
         ReportMode::None,
+        None,
     )
 }
 
@@ -234,5 +270,6 @@ pub fn run_package_live(content: PlayerContent, spec: PackageLiveSpec) -> Result
         None,
         Some(spec),
         ReportMode::None,
+        None,
     )
 }

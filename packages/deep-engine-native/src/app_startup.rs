@@ -8,6 +8,17 @@ pub fn window_attributes(smoke_frame: bool) -> WindowAttributes {
         .with_theme(Some(winit::window::Theme::Dark))
         .with_inner_size(winit::dpi::LogicalSize::new(960, 640))
         .with_min_inner_size(winit::dpi::LogicalSize::new(480, 320));
+    #[cfg(target_os = "windows")]
+    let attributes = {
+        use winit::platform::windows::{IconExtWindows, WindowAttributesExtWindows};
+        use winit::window::Icon;
+        let window_icon = Icon::from_resource(101, None).expect("embedded product window icon");
+        let taskbar_icon = Icon::from_resource(101, Some(PhysicalSize::new(256, 256)))
+            .expect("embedded product taskbar icon");
+        attributes
+            .with_window_icon(Some(window_icon))
+            .with_taskbar_icon(Some(taskbar_icon))
+    };
     if !smoke_frame {
         return attributes;
     }
@@ -131,6 +142,12 @@ pub fn report_renderer_ready(renderer: &Renderer) {
             painter.path.vertices
         );
         if painter.atlases > 0 {
+            if let Some(inventory) = renderer.deep2d_atlas_inventory() {
+                println!(
+                    "native Deep2d atlas inventory: {}",
+                    serde_json::to_string(inventory).expect("atlas inventory serialization")
+                );
+            }
             println!(
                 "native Deep2d atlases prepared: atlases={} bytes={} glyph_quads={} image_quads={} batches={} vertices={} chunks={}",
                 painter.atlases,

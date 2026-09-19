@@ -20,10 +20,12 @@ pub(super) struct DrawEvidenceTracker {
     enabled: Cell<bool>,
     layer_ids: Vec<String>,
     atlas_ids: Vec<String>,
+    atlas_inventory: Vec<serde_json::Value>,
     draws: RefCell<BTreeMap<usize, DrawEvidence>>,
 }
 impl DrawEvidenceTracker {
     pub fn new(content: &Deep2dRuntimeContent, atlases: &[PreparedDeep2dAtlas]) -> Self {
+        let capture_atlas_pixels = std::env::var_os("DEEP_ENGINE_ATLAS_EVIDENCE").is_some();
         Self {
             enabled: Cell::new(false),
             layer_ids: match content {
@@ -33,11 +35,25 @@ impl DrawEvidenceTracker {
                 _ => Vec::new(),
             },
             atlas_ids: atlases.iter().map(|v| v.id.clone()).collect(),
+            atlas_inventory: atlases
+                .iter()
+                .filter(|_| capture_atlas_pixels)
+                .map(|v| {
+                    serde_json::json!({
+                        "id": v.id, "width": v.width, "height": v.height, "format": v.format,
+                        "kind": v.kind, "sampling": v.sampling, "bytes": v.data.len(),
+                        "sha256": v.content_sha256(),
+                    })
+                })
+                .collect(),
             draws: RefCell::new(BTreeMap::new()),
         }
     }
     pub fn clear(&self) {
         self.draws.borrow_mut().clear();
+    }
+    pub fn atlas_inventory(&self) -> &[serde_json::Value] {
+        &self.atlas_inventory
     }
     pub fn enable(&self) {
         self.enabled.set(true);
@@ -85,6 +101,7 @@ mod tests {
             enabled: Cell::new(true),
             layer_ids: vec!["node.a:static".into(), "node.b:chart".into()],
             atlas_ids: vec!["glyph.a".into(), "glyph.unused".into()],
+            atlas_inventory: Vec::new(),
             draws: RefCell::new(BTreeMap::new()),
         }
     }

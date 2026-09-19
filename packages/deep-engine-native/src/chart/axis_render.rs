@@ -310,7 +310,7 @@ fn paint_tick_labels(
                 [backdrop[0], backdrop[1], backdrop[2], 0.78],
             );
         }
-        let pixels = rasterizer.rasterize(TextRasterRequest {
+        let pixels = rasterizer.rasterize_for_display(TextRasterRequest {
             text: &tick.text,
             family,
             font_size: font_size as f32,

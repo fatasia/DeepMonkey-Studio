@@ -2,6 +2,10 @@ use super::*;
 
 impl ApplicationHandler<GpuEvent> for NativeApp {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // Also refresh newly opened packages whose initial CPU content is 1x.
+        text_scale::refresh(self);
+        #[cfg(windows)]
+        accessibility::sync(self);
         package_open::flush_drop(self);
         if packet_live::retry(self, event_loop, std::time::Instant::now()) {
             return;
@@ -38,6 +42,7 @@ impl ApplicationHandler<GpuEvent> for NativeApp {
                 return;
             }
         }
+        text_scale::refresh(self);
         if self.smoke_frame {
             let proxy = self.proxy.clone();
             std::thread::spawn(move || {
@@ -45,6 +50,8 @@ impl ApplicationHandler<GpuEvent> for NativeApp {
                 let _ = proxy.send_event(GpuEvent::SmokeTimeout);
             });
         }
+        #[cfg(windows)]
+        accessibility::attach(self);
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: GpuEvent) {

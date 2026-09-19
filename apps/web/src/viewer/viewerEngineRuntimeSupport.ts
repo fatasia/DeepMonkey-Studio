@@ -1,3 +1,6 @@
+import * as THREE from "three";
+import type { DeepRuntimePackage } from "@bim-studio/deep-engine/runtime-package";
+import { applyDynamicRuntimeFrame, type DynamicRuntimeFrame } from "../delivery/dynamicRuntimePlayback";
 import type { RendererLoadSnapshot } from "./framePerformanceMonitor";
 import { canChangeRendererPixelRatio, shouldResizeRendererDrawingBuffer } from "./rendererResizePolicy";
 import { normalizedRendererDrawCalls, type RendererInfoLike } from "./viewerEngineTypes";
@@ -6,6 +9,70 @@ import { getPresentationPerformance } from "./viewerPresentationPerformance";
 
 /** 渲染负载采样、分辨率和脚本常用视图操作。 */
 export abstract class ViewerEngineRuntimeSupport extends ViewerEngineTimelineRuntime {
+  private dynamicRuntimePlaybackStop: (() => void) | undefined;
+  /**
+   * Apply one deterministic v7 dynamic-runtime frame to the live WebGPU/WebGL
+   * scene. The package sampler is renderer-agnostic; this adapter is the
+   * product-side consumer that maps package transforms to loaded model nodes.
+   */
+  applyDynamicRuntimeFrame(
+    runtimePackage: DeepRuntimePackage,
+    timeMs: number,
+    onReplayEvent?: (channel: string, event: { readonly revision: number; readonly timeMs: number; readonly payload: unknown }) => void,
+  ): DynamicRuntimeFrame {
+    return applyDynamicRuntimeFrame(runtimePackage, timeMs, {
+      applyTransform: (targetId, transform) => {
+        const rotation = transform.rotationQuaternion
+          ? (() => {
+            const quaternion = new THREE.Quaternion(...transform.rotationQuaternion);
+            const euler = new THREE.Euler().setFromQuaternion(quaternion, "XYZ");
+            return [euler.x, euler.y, euler.z] as [number, number, number];
+          })()
+          : undefined;
+        this.setModelTransform(targetId, {
+          ...(transform.translation ? { position: [...transform.translation] as [number, number, number] } : {}),
+          ...(rotation ? { rotation } : {}),
+          ...(transform.scale ? { scale: [...transform.scale] as [number, number, number] } : {}),
+        });
+      },
+      ...(onReplayEvent ? { applyReplayEvent: onReplayEvent } : {}),
+    });
+  }
+
+  /** Start clock-driven package playback on the engine's existing presentation
+   * frame scheduler. Returns an idempotent stop function. `onFramePresented`
+   * is the render-submission receipt: it fires inside the engine's rendered
+   * presentation frame, so a call proves the sampled frame reached the live
+   * scene and a real renderer submit, on both WebGL and WebGPU hosts. */
+  startDynamicRuntimePlayback(
+    runtimePackage: DeepRuntimePackage,
+    options: {
+      readonly startTimeMs?: number;
+      readonly loop?: boolean;
+      readonly onReplayEvent?: (channel: string, event: { readonly revision: number; readonly timeMs: number; readonly payload: unknown }) => void;
+      readonly onFramePresented?: (frame: { readonly timeMs: number; readonly presentationMs: number }) => void;
+    } = {},
+  ): () => void {
+    this.dynamicRuntimePlaybackStop?.();
+    const startedAt = performance.now() - Math.max(0, options.startTimeMs ?? 0);
+    const duration = Number((runtimePackage.payloads[runtimePackage.entrypoints.dynamicRuntime ?? ""] as { animation?: { durationMs?: number } } | undefined)?.animation?.durationMs ?? 0);
+    const loop = options.loop ?? true;
+    const unsubscribe = this.subscribePresentationFrames(() => {
+      const presentationMs = performance.now();
+      const elapsed = Math.max(0, presentationMs - startedAt);
+      const timeMs = loop && duration > 0 ? elapsed % duration : Math.min(elapsed, duration);
+      this.applyDynamicRuntimeFrame(runtimePackage, timeMs, options.onReplayEvent);
+      options.onFramePresented?.({ timeMs, presentationMs });
+      if (!loop && duration > 0 && elapsed >= duration) stop();
+    });
+    const stop = () => {
+      unsubscribe();
+      if (this.dynamicRuntimePlaybackStop === stop) this.dynamicRuntimePlaybackStop = undefined;
+    };
+    this.dynamicRuntimePlaybackStop = stop;
+    return stop;
+  }
+
   /** 清空性能采样窗口；基准测试用它隔离显式 GC、初始化和稳定渲染阶段。 */
   resetPerformanceSamples(): void {
     this.framePerformanceMonitor.reset();

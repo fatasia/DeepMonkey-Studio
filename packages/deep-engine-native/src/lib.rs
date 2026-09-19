@@ -15,6 +15,8 @@ pub mod executable_overlay;
 pub mod fog;
 pub mod half_decode;
 pub mod host_capabilities;
+#[cfg(windows)]
+pub mod industrial_worker_host;
 pub mod ibl;
 pub mod lod_contract;
 pub mod mesh_abi;
@@ -29,6 +31,9 @@ pub mod runtime_camera;
 pub mod runtime_coordinates;
 pub mod runtime_package;
 pub mod scene;
+pub mod scene_lighting;
+pub mod local_lighting;
+pub mod local_shadow;
 mod scene_alpha;
 pub mod scene_bounds;
 mod scene_pack;

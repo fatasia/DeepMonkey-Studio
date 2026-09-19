@@ -10,15 +10,24 @@ use std::{
     sync::{Arc, Mutex},
 };
 mod compose;
+mod filter;
+mod table;
+#[cfg(test)]
+mod table_tests;
+pub use table::TableAction;
+#[cfg(test)]
+mod filter_tests;
 mod hit;
 mod input;
 mod simulation;
+pub mod report_save;
 #[cfg(test)]
 mod tests;
 pub use hit::DashboardHit;
 
 #[derive(Clone)]
 pub struct DashboardRuntime {
+    table_states: BTreeMap<String, table::TableState>,
     loaded: Arc<LoadedDashboard>,
     page_id: String,
     charts: BTreeMap<String, ChartRuntime>,
@@ -27,8 +36,13 @@ pub struct DashboardRuntime {
     anchors: BTreeMap<String, [f64; 2]>,
     text: Arc<Mutex<TextRasterizer>>,
     content: Arc<Deep2dRuntimeContent>,
+    prepare_cache: Arc<Mutex<crate::deep2d::Deep2dPathCache>>,
     hits: Vec<hit::HitLayer>,
     revision: u64,
+    text_scale: f64,
+    selected_filter: Option<usize>,
+    hovered_filter: Option<usize>,
+    keyboard_filter_focus: bool,
 }
 impl DashboardRuntime {
     pub fn new(loaded: LoadedDashboard) -> Result<Self, String> {
@@ -89,6 +103,8 @@ impl DashboardRuntime {
             Vec::new(),
         )?;
         let mut runtime = Self {
+            table_states: BTreeMap::new(),
+            prepare_cache: Arc::new(Mutex::new(crate::deep2d::Deep2dPathCache::with_package_cache())),
             loaded: Arc::new(loaded),
             page_id,
             charts,
@@ -99,12 +115,35 @@ impl DashboardRuntime {
             content: Arc::new(Deep2dRuntimeContent::Composite(initial)),
             hits: Vec::new(),
             revision: 1,
+            text_scale: 1.0,
+            selected_filter: None,
+            hovered_filter: None,
+            keyboard_filter_focus: false,
         };
+        runtime.validate_filter()?;
+        if runtime.document().filter.is_some() {
+            runtime.apply_filter_option(0)?;
+        }
         runtime.rebuild()?;
         Ok(runtime)
     }
     pub fn content(&self) -> &Deep2dRuntimeContent {
         &self.content
+    }
+    pub fn set_text_scale(&mut self, scale: f64) -> Result<bool, String> {
+        if !scale.is_finite() || scale <= 0.0 || !(scale as f32).is_finite() {
+            return Err("dashboard text scale must be finite and positive".into());
+        }
+        if scale == self.text_scale {
+            return Ok(false);
+        }
+        self.transaction(|candidate| {
+            candidate.text_scale = scale;
+            Ok(true)
+        })
+    }
+    pub fn text_scale(&self) -> f64 {
+        self.text_scale
     }
     pub fn document(&self) -> &DashboardRuntimeV1 {
         &self.loaded.document

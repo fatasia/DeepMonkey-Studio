@@ -14,13 +14,13 @@ pub use ipc::serve;
 #[path = "process_frames.rs"]
 mod frames;
 pub use frames::serve_worker;
-use ipc::{Envelope, encode, io_error, read_bounded, validate_receipt};
+use ipc::{encode, io_error, read_bounded, validate_receipt, Envelope};
 
 pub const MAX_IPC_BYTES: usize = 4 * 1024 * 1024;
 
 #[cfg(windows)]
 #[path = "windows_job.rs"]
-mod windows_job;
+pub(crate) mod windows_job;
 #[cfg(windows)]
 pub use windows_job::XProcessLimits;
 

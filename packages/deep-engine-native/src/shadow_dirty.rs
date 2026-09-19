@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use crate::shadow_map::ShadowViewSource;
 
-const MAX_CASCADES: usize = 4;
+const MAX_CASCADES: usize = 14;
 
 pub fn shader_key(signature: Option<&str>) -> u64 {
     let mut hash = std::collections::hash_map::DefaultHasher::new();
@@ -35,7 +35,7 @@ pub struct ShadowCascadeKey {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct ShadowDirtyEvidence {
-    pub dirty_mask: u8,
+    pub dirty_mask: u16,
     pub updated: [bool; MAX_CASCADES],
     pub reused: [bool; MAX_CASCADES],
     pub cascade_count: u8,
@@ -74,6 +74,9 @@ impl ShadowDirtyCache {
 
     pub fn invalidate(&mut self) {
         self.rendered = [None; MAX_CASCADES];
+    }
+    pub fn invalidate_directional(&mut self, cascade_count: usize) {
+        self.rendered[..cascade_count.min(MAX_CASCADES)].fill(None);
     }
 }
 
@@ -196,9 +199,9 @@ impl ShadowCasterSet {
         views: &impl ShadowViewSource,
         shader_revision: u64,
     ) -> Result<Vec<ShadowCascadeKey>, String> {
-        (0..views.cascade_count() as usize)
+        (0..views.shadow_view_count() as usize)
             .map(|cascade| {
-                let matrix = views.cascade_view_projection(cascade);
+                let matrix = views.shadow_view_projection(cascade);
                 let planes = frustum_planes(matrix)?;
                 let mut view = std::collections::hash_map::DefaultHasher::new();
                 for value in matrix.into_iter().flatten() {

@@ -9,9 +9,9 @@ use windows_sys::Win32::{
         Authorization::{
             ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
         },
-        DACL_SECURITY_INFORMATION, FreeSid,
+        FreeSid,
         Isolation::{CreateAppContainerProfile, DeleteAppContainerProfile},
-        PSID, SetFileSecurityW,
+        SetFileSecurityW, DACL_SECURITY_INFORMATION, PSID,
     },
 };
 
@@ -119,7 +119,11 @@ impl Profile {
         unsafe {
             LocalFree(descriptor);
         }
-        if result == 0 { Err(error) } else { Ok(()) }
+        if result == 0 {
+            Err(error)
+        } else {
+            Ok(())
+        }
     }
     pub fn cleanup(&mut self) -> io::Result<()> {
         if self.cleaned {

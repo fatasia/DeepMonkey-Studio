@@ -8,6 +8,8 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct DashboardRuntimeV1 {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tables: Vec<super::DashboardTable>,
     pub schema: String,
     pub schema_version: u32,
     pub id: String,
@@ -16,6 +18,42 @@ pub struct DashboardRuntimeV1 {
     pub document_revision: u64,
     pub entry_page_id: String,
     pub pages: Vec<DashboardPage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<DashboardFrozenFilter>,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DashboardFrozenFilter {
+    pub node_id: String,
+    pub source_node_id: String,
+    pub key: String,
+    pub options: Vec<DashboardFilterOption>,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DashboardFilterOption {
+    pub value: String,
+    pub updates: Vec<DashboardFilterUpdate>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub visibility: Vec<DashboardFilterVisibility>,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DashboardFilterVisibility {
+    pub node_id: String,
+    pub visible: bool,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DashboardFilterUpdate {
+    pub node_id: String,
+    pub datasets: Vec<DashboardFilterDataset>,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DashboardFilterDataset {
+    pub dataset_id: String,
+    pub rows: crate::chart::ChartRows,
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]

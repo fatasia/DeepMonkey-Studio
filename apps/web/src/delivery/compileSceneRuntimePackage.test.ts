@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { SceneSnapshot } from "@bim-studio/contracts";
 import { parseDeepRuntimePackage, runtimeContentSha256 } from "@bim-studio/deep-engine/runtime-package";
 import { compileSceneRuntimePackage } from "./compileSceneRuntimePackage";
+import { applyDynamicRuntimeFrame } from "./dynamicRuntimePlayback";
 
 function scene(): SceneSnapshot {
   return { schemaVersion: 1, id: "source", projectId: "project", name: "fixture", primitives: [], models: [], measurements: [],
@@ -62,7 +63,10 @@ describe("scene runtime compilation evidence", () => {
     expect(farCamera).toEqual(nearCamera);
     expect(farFrame).not.toEqual(nearFrame);
     for (const [index, source] of [near, far].entries()) {
-      expect(cameras[index].schemaVersion).toBe(2);
+      // Framed camera payloads use the current v3 contract. v3 keeps the
+      // coordinate-frame fields and leaves room for the optional section
+      // plane; do not regress the compiler back to the retired v2 output.
+      expect(cameras[index].schemaVersion).toBe(3);
       for (const key of ["position", "target"] as const) {
         expect(cameras[index][key].map((value: number, axis: number) =>
           value + cameras[index].coordinateFrame.origin[["x", "y", "z"][axis]!]))
@@ -142,5 +146,42 @@ describe("scene runtime compilation evidence", () => {
     input.models[0]!.animationPlayback = { autoplay: true, loopMode: "loop" };
     const result = await compileSceneRuntimePackage(input, options);
     expect(result.evidence.deferredObjectFields).toEqual([{ nodeId: "instance", fields: ["animationPlayback"] }]);
+  });
+  it("lowers unit-scale model TRS keyframes into the v7 dynamic resource", async () => {
+    const input = withModel();
+    input.animation = { duration: 2, loop: true, camera: [], models: [{ id: "frame-0", time: 0, modelId: "instance",
+      transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } } },
+      { id: "frame-1", time: 2, modelId: "instance",
+        transform: { position: { x: 1, y: 0, z: 0 }, rotation: { x: 0, y: 0.5, z: 0 }, scale: { x: 1, y: 1, z: 1 } } }] };
+    const result = await compileSceneRuntimePackage(input, options);
+    expect(result.runtimePackage.schemaVersion).toBe(7);
+    expect(result.runtimePackage.entrypoints.dynamicRuntime).toBe("scene.dynamic");
+    const dynamic = result.runtimePackage.payloads["scene.dynamic"] as any;
+    expect(dynamic.schema).toBe("deep-engine.dynamic-runtime");
+    expect(dynamic.animation.durationMs).toBe(2000);
+    expect(dynamic.animation.tracks).toHaveLength(3);
+    expect(dynamic.animation.tracks.map((track: any) => track.property)).toEqual(["translation", "rotation", "scale"]);
+    expect(dynamic.animation.tracks[0].keyframes.map((frame: any) => frame.timeMs)).toEqual([0, 2000]);
+    expect(result.evidence.compiledSceneFields).toContainEqual({ field: "animation", capability: "deep.scene.dynamic-runtime.v1", resourceId: "scene.dynamic" });
+  });
+
+  it("consumes the compiled v7 dynamic resource through Web sampling and frame application", async () => {
+    const input = withModel();
+    input.animation = { duration: 2, loop: true, camera: [], models: [
+      { id: "frame-0", time: 0, modelId: "instance", transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } } },
+      { id: "frame-1", time: 2, modelId: "instance", transform: { position: { x: 2, y: 0, z: 0 }, rotation: { x: 0, y: Math.PI / 2, z: 0 }, scale: { x: 2, y: 2, z: 2 } } },
+    ] };
+    const result = await compileSceneRuntimePackage(input, options);
+    const applied: Array<{ id: string; transform: unknown }> = [];
+    const frame = applyDynamicRuntimeFrame(result.runtimePackage, 1000, {
+      applyTransform: (id, transform) => applied.push({ id, transform }),
+    });
+    expect(frame.timeMs).toBe(1000);
+    expect(Object.keys(frame.transforms)).toEqual(["instance"]);
+    expect(applied).toHaveLength(1);
+    expect(applied[0]).toMatchObject({ id: "instance", transform: {
+      translation: [1, 0, 0], scale: [1.5, 1.5, 1.5],
+      rotationQuaternion: [0, expect.closeTo(Math.sin(Math.PI / 8)), 0, expect.closeTo(Math.cos(Math.PI / 8))],
+    } });
   });
 });

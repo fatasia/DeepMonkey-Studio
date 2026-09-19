@@ -9,6 +9,7 @@ pub(super) fn run_internal(
     packet_live: Option<PacketLiveSpec>,
     package_live: Option<PackageLiveSpec>,
     report: ReportMode,
+    dynamic_playback: Option<DynamicPlaybackSpec>,
 ) -> Result<(), String> {
     let event_loop = EventLoop::<GpuEvent>::with_user_event()
         .build()
@@ -63,6 +64,7 @@ pub(super) fn run_internal(
             smoke_frame,
             features,
             shadow_update_probe,
+            dynamic_playback,
             packet_live_probe,
             packet_live_transport,
             package_live_transport,

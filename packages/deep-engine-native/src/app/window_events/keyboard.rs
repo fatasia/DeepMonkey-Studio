@@ -23,12 +23,19 @@ pub(in crate::app) fn chart_key(app: &mut NativeApp, key: KeyCode) -> bool {
     let Some(input) = chart_key_input(key) else {
         return false;
     };
-    let Some(chart) = app.content.active().chart.as_ref() else {
+    let Some(snapshot) = legend_snapshot(app) else {
         return false;
     };
-    let Ok(frame) = LegendFrame::prepare(chart, app.chart_legend_page) else {
-        return false;
-    };
+    let response = CHART_KEYBOARD
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .handle(&snapshot, input);
+    apply_chart_key(app, response)
+}
+
+pub(in crate::app) fn legend_snapshot(app: &NativeApp) -> Option<LegendSnapshot> {
+    let chart = app.content.active().chart.as_ref()?;
+    let frame = LegendFrame::prepare(chart, app.chart_legend_page).ok()?;
     let zoom_window = chart
         .source()
         .axes
@@ -36,7 +43,7 @@ pub(in crate::app) fn chart_key(app: &mut NativeApp, key: KeyCode) -> bool {
         .find(|axis| axis.channel == ChartAxisChannel::X)
         .and_then(|axis| chart.state().zoom_window(&axis.id))
         .unwrap_or((0.0, 1.0));
-    let snapshot = LegendSnapshot {
+    Some(LegendSnapshot {
         page: frame.page,
         pages: frame.pages,
         zoom_window,
@@ -54,12 +61,7 @@ pub(in crate::app) fn chart_key(app: &mut NativeApp, key: KeyCode) -> bool {
                 }
             })
             .collect(),
-    };
-    let response = CHART_KEYBOARD
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .handle(&snapshot, input);
-    apply_chart_key(app, response)
+    })
 }
 
 fn chart_key_input(key: KeyCode) -> Option<ChartKeyInput> {

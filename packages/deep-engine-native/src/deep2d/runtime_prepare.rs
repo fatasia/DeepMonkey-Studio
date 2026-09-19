@@ -7,7 +7,6 @@ use super::{
     runtime_base64,
     runtime_layers::{PreparedAtlasItem, build_chunks},
     runtime_quad::append_quad,
-    validate_runtime_package,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -19,6 +18,13 @@ pub struct PreparedDeep2dAtlas {
     pub height: u32,
     pub sampling: ImageSampling,
     pub data: Vec<u8>,
+}
+
+impl PreparedDeep2dAtlas {
+    /// Decoded pixel identity, independent of composite namespacing and base64 spelling.
+    pub fn content_sha256(&self) -> String {
+        crate::shader_package::hash::sha256(&self.data)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -193,7 +199,13 @@ pub(super) fn prepare_impl(
             })
         }
         Deep2dRuntimeContent::Package(package) => {
-            let validation = validate_runtime_package(package);
+            let reused_atlases = cache
+                .as_ref()
+                .and_then(|cache| cache.package_atlases(package));
+            let validation = super::runtime_validate::validate_runtime_package_with_atlases(
+                package,
+                reused_atlases.as_deref(),
+            );
             if let Some(issue) = validation.issues.first() {
                 return Err(format!(
                     "invalid Deep2d runtime package: {} at {} ({:?})",
@@ -202,28 +214,32 @@ pub(super) fn prepare_impl(
             }
             let path = super::painter::prepare_impl(&package.display_list, cache, finish_frame)
                 .map_err(|error| error.to_string())?;
-            let atlases = package
-                .atlases
-                .iter()
-                .map(|atlas| {
-                    runtime_base64::decode(&atlas.data_base64)
-                        .map(|data| PreparedDeep2dAtlas {
-                            id: atlas.id.clone(),
-                            kind: atlas.kind,
-                            format: atlas.format,
-                            width: atlas.width,
-                            height: atlas.height,
-                            sampling: atlas.sampling,
-                            data,
-                        })
-                        .map_err(|error| {
-                            format!(
-                                "atlas {} failed base64 decode after validation: {error}",
-                                atlas.id
-                            )
-                        })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
+            let atlases = if let Some(atlases) = reused_atlases {
+                atlases
+            } else {
+                package
+                    .atlases
+                    .iter()
+                    .map(|atlas| {
+                        runtime_base64::decode(&atlas.data_base64)
+                            .map(|data| PreparedDeep2dAtlas {
+                                id: atlas.id.clone(),
+                                kind: atlas.kind,
+                                format: atlas.format,
+                                width: atlas.width,
+                                height: atlas.height,
+                                sampling: atlas.sampling,
+                                data,
+                            })
+                            .map_err(|error| {
+                                format!(
+                                    "atlas {} failed base64 decode after validation: {error}",
+                                    atlas.id
+                                )
+                            })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+            };
             let atlas_indices = atlases
                 .iter()
                 .enumerate()

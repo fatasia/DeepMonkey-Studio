@@ -28,9 +28,43 @@ pub fn pack_views(
         [count, 1, 0, 0],
         [size.height as f32 * focal * 0.5, near, 0.0, 0.0],
     )];
-    for index in 0..shadows.cascade_count() as usize {
-        let matrix = shadows.cascade_view_projection(index);
+    for index in 0..shadows.shadow_view_count() as usize {
+        let matrix = shadows.shadow_view_projection(index);
         let scale = (matrix[0][1].powi(2) + matrix[1][1].powi(2) + matrix[2][1].powi(2)).sqrt();
+        if index >= shadows.cascade_count() as usize {
+            let slot = (index - shadows.cascade_count() as usize + 1) as f32;
+            let light = (0..16)
+                .find(|light| {
+                    let start = frame[18 + light * 4][2];
+                    let count = if frame[16 + light * 4][3] == 2.0 {
+                        6.0
+                    } else {
+                        1.0
+                    };
+                    start > 0.0 && slot >= start && slot < start + count
+                })
+                .ok_or("local shadow LOD view has no light binding")?;
+            let position = frame[15 + light * 4];
+            let direction = [matrix[0][3], matrix[1][3], matrix[2][3], 0.0];
+            let far = if position[3] > 0.0 {
+                position[3]
+            } else {
+                500.0
+            };
+            views.push(pack(
+                frustum_planes(matrix)?,
+                [position[0], position[1], position[2], 1.0],
+                [direction[0], direction[1], direction[2], 0.0],
+                [count, 1, 1, 0],
+                [
+                    shadows.shadow_map_size() as f32 * 0.5 * scale,
+                    (far * 0.001).clamp(0.0001, 0.05),
+                    0.0,
+                    0.0,
+                ],
+            ));
+            continue;
+        }
         views.push(pack(
             frustum_planes(matrix)?,
             [0.0; 4],

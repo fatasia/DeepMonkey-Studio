@@ -1,6 +1,10 @@
 pub const MESH_ABI_ID: &str = "deep.pbr.mesh.v1";
 
-pub const FRAME_UNIFORM_FLOATS: usize = 52;
+/// 只追加灯光参数；旧 v1/v2/v3 成员偏移保持不变。
+pub const FRAME_ABI_ID: &str = "deep.native.frame.v6";
+pub const FRAME_V1_BYTES: u64 = 208;
+pub const FRAME_UNIFORM_FLOATS: usize = 60 + 16 * 16 + 10 * 16 + 4;
+pub const FRAME_FOG_PROJECTION_ROW: usize = 119;
 pub const FRAME_UNIFORM_BYTES: u64 = (FRAME_UNIFORM_FLOATS * size_of::<f32>()) as u64;
 pub const FRAME_MEMBER_BYTE_OFFSETS: [u64; 7] = [0, 64, 128, 144, 160, 176, 192];
 pub type FrameUniform = [[f32; 4]; FRAME_UNIFORM_FLOATS / 4];
@@ -68,7 +72,7 @@ pub fn frame_uniform(aspect: f32, yaw: f32) -> FrameUniform {
     let depth_offset = depth_scale * 4.0 - near * far / (far - near);
     let light = light_view_projection(yaw);
 
-    [
+    let legacy = [
         [
             focal / aspect * cos_yaw,
             0.0,
@@ -97,12 +101,19 @@ pub fn frame_uniform(aspect: f32, yaw: f32) -> FrameUniform {
             0.0,
         ],
         [0.0; 4],
-    ]
+        [0.0; 4],             // sunColor.w=0 保持旧包固定灯光；v2 作者灯光显式设为 2。
+        [1.0, 1.0, 0.0, 0.0], // exposure、shadowEnabled，legacy 分支不读取。
+    ];
+    let mut frame = [[0.0; 4]; FRAME_UNIFORM_FLOATS / 4];
+    frame[..15].copy_from_slice(&legacy);
+    frame[FRAME_FOG_PROJECTION_ROW] = [near, far, 0.0, 0.0];
+    frame
 }
 
 pub fn frame_uniform_with_fog(aspect: f32, yaw: f32, fog: crate::fog::FogSettings) -> FrameUniform {
     let mut frame = frame_uniform(aspect, yaw);
     frame[12] = fog.frame_tuning();
+    frame[FRAME_FOG_PROJECTION_ROW] = fog.frame_projection(CAMERA_NEAR, CAMERA_FAR);
     frame
 }
 

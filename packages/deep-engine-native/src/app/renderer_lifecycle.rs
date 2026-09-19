@@ -17,7 +17,7 @@ impl NativeApp {
             renderer_id,
             self.content.active(),
             self.state.view,
-            self.features,
+            self.features.for_content(self.content.active()),
         )) {
             Ok(renderer) => {
                 self.state.renderer_ready();

@@ -39,6 +39,12 @@ pub(super) fn decode(
         .as_deref()
         .map(|id| decode_chart_sim(&package, id, chart.as_ref()))
         .transpose()?;
+    let dynamic_runtime = package
+        .entrypoints
+        .dynamic_runtime
+        .as_deref()
+        .map(|id| decode_dynamic_runtime(&package, id))
+        .transpose()?;
     let environment = decode_environment(&package, &package.entrypoints.environment)?;
     let solid_environment = decode_background(&package, &package.entrypoints.environment)?;
     let background = solid_environment.as_ref().map(|decoded| decoded.background);
@@ -88,7 +94,20 @@ pub(super) fn decode(
         fog,
         shader_packages,
         material_bindings: package.material_bindings,
+        dynamic_runtime,
     })
+}
+
+fn decode_dynamic_runtime(
+    package: &RuntimePackageEnvelope,
+    id: &str,
+) -> Result<super::DynamicSceneRuntime, RuntimePackageError> {
+    let entry = descriptor(package, id, RuntimeResourceKind::DynamicRuntime)?;
+    let runtime = super::parse_and_validate_dynamic_scene_runtime(payload(package, id)?)?;
+    if runtime.id != id || runtime.revision != entry.revision {
+        return fail("dynamic runtime identity differs from resource index");
+    }
+    Ok(runtime)
 }
 
 fn decode_camera(

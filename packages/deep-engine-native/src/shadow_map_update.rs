@@ -13,9 +13,20 @@ pub struct ShadowMapUpdate {
     scene_bounds: Option<SceneWorldBounds>,
     sampling_data: Vec<u8>,
     shadow_frame_data: Vec<u8>,
+    local_matrices: Vec<[[f32; 4]; 4]>,
 }
 
 impl ShadowViewSource for ShadowMapUpdate {
+    fn shadow_view_count(&self) -> u32 {
+        (self.plan.cascades.len() + self.local_matrices.len()) as u32
+    }
+    fn shadow_view_projection(&self, index: usize) -> [[f32; 4]; 4] {
+        if index < self.plan.cascades.len() {
+            self.plan.cascades[index].view_projection
+        } else {
+            self.local_matrices[index - self.plan.cascades.len()]
+        }
+    }
     fn cascade_count(&self) -> u32 {
         self.plan.cascades.len() as u32
     }
@@ -41,11 +52,16 @@ impl ShadowMap {
             plan_cascaded_shadows_for_scene(camera, light_direction, self.options, scene_bounds)?;
         let sampling_data = cast_slice(&plan.uniform(DEPTH_BIAS)?).to_vec();
         let shadow_frame_data = pack_shadow_frames(frame, &plan, self.frame_stride);
+        let local_matrices = deep_engine_native::local_shadow::frame_matrices(frame);
+        if local_matrices.len() != self.local_matrices.len() {
+            return Err("shadow topology requires full renderer replacement".into());
+        }
         Ok(ShadowMapUpdate {
             plan,
             scene_bounds,
             sampling_data,
             shadow_frame_data,
+            local_matrices,
         })
     }
 
@@ -54,5 +70,6 @@ impl ShadowMap {
         queue.write_buffer(&self.shadow_frames, 0, &update.shadow_frame_data);
         self.plan = update.plan;
         self.scene_bounds = update.scene_bounds;
+        self.local_matrices = update.local_matrices;
     }
 }

@@ -1,5 +1,40 @@
 use super::*;
 use std::sync::Arc;
+#[test]
+fn prepared_packages_preserve_current_layer_order_clip_translation_and_camera() {
+    let mut cache = Deep2dPathCache::with_package_cache();
+    for scale in [1.0, 2.0, 1.0] {
+        cache.set_camera_scale(scale);
+        for reverse in [false, true, false] {
+            let mut layers = vec![];
+            for index in 0..2 {
+                layers.push(Deep2dLayer {
+                    id: format!("layer-{index}"),
+                    content: Arc::new(source()),
+                    translation: [index as f64 * 13.0, if reverse { 11.0 } else { 0.0 }],
+                    clip: Deep2dRect {
+                        x: 10.0,
+                        y: 20.0,
+                        width: if reverse { 80.0 } else { 120.0 },
+                        height: 90.0,
+                    },
+                });
+            }
+            if reverse {
+                layers.reverse();
+            }
+            let content = Deep2dRuntimeContent::Composite(
+                Deep2dComposite::new("page".into(), 1, [640.0, 480.0], layers).unwrap(),
+            );
+            let mut reference = Deep2dPathCache::default();
+            reference.set_camera_scale(scale);
+            assert_eq!(
+                prepare_runtime_content_cached(&content, &mut cache).unwrap(),
+                prepare_runtime_content_cached(&content, &mut reference).unwrap()
+            );
+        }
+    }
+}
 fn source() -> Deep2dRuntimeContent {
     decode_runtime_content(include_bytes!(
         "../../fixtures/deep2d_runtime_atlas_v1.json"

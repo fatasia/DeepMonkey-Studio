@@ -11,8 +11,9 @@ use deep_engine_native::{
 
 use crate::player_cli::{
     PackageMode, default_shadow_fixture_path, load_deep2d, print_help, reject_extra, required_path,
-    run_package, run_package_live, run_packet_live, run_shadow_update_probe, run_telemetry_smoke,
-    run_viewer, run_viewer_mode, run_viewer_without_bloom,
+    run_dynamic_playback_package, run_package, run_package_live, run_packet_live,
+    run_shadow_update_probe, run_telemetry_smoke, run_viewer, run_viewer_mode,
+    run_viewer_without_bloom,
 };
 use crate::runtime_package_startup;
 use crate::{deep2d_interleave_probe, fog_cli, shader_package_probe};
@@ -163,6 +164,11 @@ pub fn execute() -> Result<(), String> {
                 _ => PackageMode::Viewer,
             };
             run_package(path, mode)
+        }
+        Some("--smoke-dynamic-package") => {
+            let path = required_path(&mut args, "--smoke-dynamic-package")?;
+            reject_extra(args)?;
+            run_dynamic_playback_package(path)
         }
         Some(option @ ("--package-recover" | "--headless-package-recover")) => {
             let primary = required_path(&mut args, option)?;

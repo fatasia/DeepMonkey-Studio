@@ -2,8 +2,8 @@
 use super::{
     CartesianPoints, ChartIR, ChartSeriesType, Ctx, DEEP_2D_DISPLAY_LIST_SCHEMA_VERSION,
     Deep2dDisplayList, LINE_COLOR, ListBuilder, dataset, display_list_id, layout_chart,
-    map_cartesian, min_max_envelope, render_bar, render_gauge, render_heatmap, render_pie,
-    render_scatter, validate_display_list,
+    min_max_envelope, render_bar, render_gauge, render_heatmap, render_pie, render_scatter,
+    validate_display_list,
 };
 /// Renders a validated ChartIR into a Deep2d display list that passes
 /// `deep2d::validate_display_list`. Fails closed on unusable canvas sizes.
@@ -75,6 +75,7 @@ pub(in crate::chart) fn render_chart_with_points(
         commands: Vec::new(),
     };
     let mut line_points = Vec::new();
+    let mut shared_axes = super::FrameAxisValues::new(ir);
     for series in &ir.series {
         if hidden.contains(series.id.as_str()) {
             continue;
@@ -116,7 +117,13 @@ pub(in crate::chart) fn render_chart_with_points(
                     band,
                     baseline,
                     invert_x,
-                }) = map_cartesian(ir, series, dataset, frame.plot, windows)
+                }) = super::cartesian::map_cartesian_cached(
+                    &mut shared_axes,
+                    series,
+                    dataset,
+                    frame.plot,
+                    windows,
+                )
                 else {
                     continue;
                 };

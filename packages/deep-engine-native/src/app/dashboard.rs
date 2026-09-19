@@ -13,6 +13,20 @@ pub(super) fn pointer(app: &mut NativeApp, select: bool) -> bool {
         return false;
     }
     let point = logical_cursor(app);
+    if select && let Some(action) = point.and_then(|point| app.content.active().dashboard.as_ref()?.table_action_at(point)) {
+        if matches!(action.action.as_str(), "csv" | "xlsx") {
+            export_table(app, &action);
+        } else {
+            apply(app, |candidate| candidate.table_action(&action));
+        }
+        return true;
+    }
+    if select && std::env::var_os("DEEP_DASHBOARD_FILTER_EVIDENCE").is_some() {
+        println!(
+            "dashboard filter pointer: physical={:?} logical={point:?}",
+            app.state.cursor
+        );
+    }
     apply(app, |candidate| candidate.pointer(point, select));
     true
 }
@@ -32,6 +46,29 @@ pub(super) fn key(app: &mut NativeApp, key: KeyCode) -> bool {
         return false;
     };
     match key {
+        KeyCode::ArrowUp | KeyCode::ArrowDown
+            if runtime.document().filter.as_ref().is_some_and(|filter| {
+                runtime
+                    .document()
+                    .pages
+                    .iter()
+                    .find(|page| page.id == runtime.active_page_id())
+                    .is_some_and(|page| {
+                        page.nodes
+                            .iter()
+                            .any(|node| node.id == filter.node_id && node.visible)
+                    })
+            }) =>
+        {
+            let current = runtime.selected_filter().unwrap_or(0);
+            let count = runtime.document().filter.as_ref().unwrap().options.len();
+            let next = if key == KeyCode::ArrowUp {
+                current.saturating_sub(1)
+            } else {
+                (current + 1).min(count - 1)
+            };
+            apply(app, |candidate| candidate.focus_filter(next));
+        }
         KeyCode::PageDown | KeyCode::PageUp => {
             let pages = &runtime.document().pages;
             let current = pages
@@ -86,10 +123,32 @@ fn logical_cursor(app: &NativeApp) -> Option<[f64; 2]> {
         .then_some(point)
 }
 
+fn export_table(app: &NativeApp, action: &deep_engine_native::dashboard_runtime::TableAction) {
+    #[cfg(windows)]
+    let result = (|| -> Result<String, String> {
+        let (filename, bytes) = app.content.active().dashboard.as_ref().ok_or("dashboard missing")?.table_export(action)?;
+        report(app, Some("请选择报表保存位置"));
+        use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        let owner = match app.window.as_ref().ok_or("window missing")?.window_handle().map_err(|error| error.to_string())?.as_raw() {
+            RawWindowHandle::Win32(handle) => handle.hwnd.get(), _ => return Err("Windows 窗口不可用".into()),
+        };
+        let Some(path) = deep_engine_native::dashboard_runtime::report_save::choose_report_path(&filename, &action.action, owner)? else {
+            return Ok("已取消导出".into());
+        };
+        deep_engine_native::dashboard_runtime::report_save::save_report_bytes(&path, &bytes)?;
+        println!("dashboard table exported: table={} format={} bytes={} path={}", action.table_id, action.action, bytes.len(), path.display());
+        Ok(format!("已导出：{}", path.display()))
+    })();
+    #[cfg(not(windows))]
+    let result: Result<String, String> = Err("当前平台不支持报表保存窗口".into());
+    match result { Ok(message) => report(app, Some(&message)), Err(error) => report(app, Some(&format!("导出失败：{error}"))) }
+}
+
 pub(super) fn update(
     app: &mut NativeApp,
     action: impl FnOnce(&mut DashboardRuntime) -> Result<bool, String>,
 ) -> Result<bool, String> {
+    let started = Instant::now();
     let mut candidate = app
         .content
         .active()
@@ -100,6 +159,7 @@ pub(super) fn update(
     if !action(&mut candidate)? {
         return Ok(false);
     }
+    let action_ms = started.elapsed().as_secs_f64() * 1000.0;
     let content = candidate.content();
     let page = candidate
         .document()
@@ -113,6 +173,7 @@ pub(super) fn update(
         .as_mut()
         .ok_or("dashboard renderer is not ready")?;
     let staged = pollster::block_on(renderer.stage_deep2d_update_inner(Some(content), context))?;
+    let stage_ms = started.elapsed().as_secs_f64() * 1000.0 - action_ms;
     let outcome = renderer.present_deep2d_update(staged);
     if !presented(app, outcome)? {
         return Ok(false);
@@ -129,6 +190,29 @@ pub(super) fn update(
     active.dashboard = Some(candidate);
     active.epoch.resource_set = page;
     active.epoch.published = true;
+    if std::env::var_os("DEEP_DASHBOARD_FILTER_EVIDENCE").is_some()
+        && let Some(runtime) = &active.dashboard
+        && let Some(filter) = &runtime.document().filter
+    {
+        println!(
+            "dashboard filter presented: selected={:?} rows={:?} update_ms={:.3} action_ms={action_ms:.3} stage_ms={stage_ms:.3}",
+            runtime.selected_filter(),
+            filter.options[0]
+                .updates
+                .iter()
+                .map(|update| (
+                    update.node_id.as_str(),
+                    runtime.chart(&update.node_id).map(|chart| chart
+                        .source()
+                        .datasets
+                        .iter()
+                        .map(|dataset| dataset.rows.len())
+                        .collect::<Vec<_>>())
+                ))
+                .collect::<Vec<_>>(),
+            started.elapsed().as_secs_f64() * 1000.0
+        );
+    }
     if page_changed {
         app.dashboard_wake_at = None;
     }
@@ -251,7 +335,21 @@ fn report(app: &NativeApp, error: Option<&str>) {
         .position(|page| page.id == runtime.active_page_id())
         .unwrap_or(0)
         + 1;
-    let label = format!("页面 {page} / {}", runtime.document().pages.len());
+    let selection = runtime
+        .document()
+        .filter
+        .as_ref()
+        .and_then(|filter| {
+            runtime
+                .selected_filter()
+                .and_then(|index| filter.options.get(index))
+        })
+        .map(|option| format!(" · {}", option.value))
+        .unwrap_or_default();
+    let label = format!(
+        "页面 {page} / {}{selection}",
+        runtime.document().pages.len()
+    );
     let status = error.unwrap_or(&label);
     crate::window_chrome::set_title(window, &format!("Deep Engine Dashboard — {status}"));
 }

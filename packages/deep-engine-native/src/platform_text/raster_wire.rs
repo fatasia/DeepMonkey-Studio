@@ -1,6 +1,9 @@
 //! Frozen text producer wire contract; no filesystem or system-font discovery.
 use super::raster::{FrozenFontInput, GlyphMeasureRequest, StyledTextRequest, TextRasterizer};
 use serde::Deserialize;
+#[path = "raster_batch.rs"]
+mod batch;
+pub use batch::rasterize_text_batch_json;
 
 pub const TEXT_RASTER_REQUEST_MAX_BYTES: usize = 90 * 1024 * 1024;
 const FONT_BYTES_MAX: usize = 64 * 1024 * 1024;
@@ -50,10 +53,14 @@ pub fn rasterize_text_json(bytes: &[u8]) -> Result<Vec<u8>, String> {
     }
     let mut rasterizer = TextRasterizer::from_frozen_fonts(&input.locale, fonts)?;
     let result = rasterizer.rasterize_styled(input.request)?;
-    let output = serde_json::json!({
+    serde_json::to_vec(&result_value(result, crate::shader_package::hash::sha256(bytes))).map_err(|e| e.to_string())
+}
+
+fn result_value(result: super::raster::StyledRasterizedText, source_sha256: String) -> serde_json::Value {
+    serde_json::json!({
         "schema": "deep-engine.text-raster-result", "schemaVersion": 1,
         "producer": "cosmic-text-0.19.0-frozen-v1",
-        "sourceSha256": crate::shader_package::hash::sha256(bytes),
+        "sourceSha256": source_sha256,
         "width": result.width, "height": result.height,
         "rgbaBase64": crate::deep2d::encode_base64(&result.rgba),
         "pixelSha256": crate::shader_package::hash::sha256(&result.rgba),
@@ -62,8 +69,7 @@ pub fn rasterize_text_json(bytes: &[u8]) -> Result<Vec<u8>, String> {
         "layoutWidth": result.layout_width, "layoutHeight": result.layout_height,
         "inkBounds": result.ink_bounds, "clipped": result.clipped,
         "lines": result.lines, "usedFaces": result.used_faces,
-    });
-    serde_json::to_vec(&output).map_err(|e| e.to_string())
+    })
 }
 
 #[derive(Deserialize)]

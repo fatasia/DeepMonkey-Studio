@@ -10,6 +10,8 @@ mod keys;
 mod prepare;
 #[path = "painter_cache_stats.rs"]
 mod stats;
+#[path = "painter_cache_packages.rs"]
+mod packages;
 pub use stats::{Deep2dPathCacheMissReason, Deep2dPathCacheStats};
 
 /// 按原因分解的 miss 计数;total() 恒等于 stats.misses。
@@ -81,6 +83,7 @@ struct Entry {
 const MIN_EVICTED_MEMORY: usize = 64;
 
 pub struct Deep2dPathCache {
+    packages: Option<packages::PackageCache>,
     entries: HashMap<String, Entry>,
     order: BTreeSet<(u64, String)>,
     stats: Deep2dPathCacheStats,
@@ -101,6 +104,7 @@ pub struct Deep2dPathCache {
 impl Default for Deep2dPathCache {
     fn default() -> Self {
         Self {
+            packages: None,
             entries: HashMap::new(),
             order: BTreeSet::new(),
             stats: Default::default(),

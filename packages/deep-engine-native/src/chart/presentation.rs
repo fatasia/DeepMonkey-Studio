@@ -16,6 +16,29 @@ pub fn present_chart(
     anchor: [f64; 2],
     legend_focus: Option<usize>,
 ) -> Result<Deep2dDisplayList, String> {
+    present_chart_scaled(chart, rasterizer, page, anchor, legend_focus, 1.0)
+}
+
+pub fn present_chart_scaled(
+    chart: &ChartRuntime,
+    rasterizer: &mut TextRasterizer,
+    page: usize,
+    anchor: [f64; 2],
+    legend_focus: Option<usize>,
+    scale: f64,
+) -> Result<Deep2dDisplayList, String> {
+    rasterizer.with_display_scale(scale, |rasterizer| {
+        compose(chart, rasterizer, page, anchor, legend_focus)
+    })
+}
+
+fn compose(
+    chart: &ChartRuntime,
+    rasterizer: &mut TextRasterizer,
+    page: usize,
+    anchor: [f64; 2],
+    legend_focus: Option<usize>,
+) -> Result<Deep2dDisplayList, String> {
     let tokens: DesignTokenSnapshot =
         serde_json::from_str(include_str!("../../fixtures/design-tokens-v1.json"))
             .map_err(|error| format!("chart design tokens: {error}"))?;

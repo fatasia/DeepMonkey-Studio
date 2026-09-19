@@ -14,12 +14,34 @@ pub(super) fn prepare(
     };
     let mut output = prepare_runtime_content(&Deep2dRuntimeContent::DisplayList(empty))?;
     for (layer_index, layer) in value.layers().iter().enumerate() {
+        let timer = std::time::Instant::now();
         let mut part = match cache.as_deref_mut() {
             Some(cache) => {
-                super::runtime_prepare::prepare_impl(&layer.content, Some(cache), false)?
+                if let Some(prepared) = cache.prepared_package(&layer.content) {
+                    prepared
+                } else {
+                    let prepared =
+                        super::runtime_prepare::prepare_impl(&layer.content, Some(cache), false)?;
+                    cache.remember_package(&layer.content, &prepared);
+                    prepared
+                }
             }
             None => prepare_runtime_content(&layer.content)?,
         };
+        if std::env::var_os("DEEP_DASHBOARD_FILTER_EVIDENCE").is_some()
+            && timer.elapsed().as_millis() >= 10
+        {
+            println!(
+                "dashboard layer prepare: {} ms={:.3} kind={}",
+                layer.id,
+                timer.elapsed().as_secs_f64() * 1000.0,
+                if matches!(layer.content.as_ref(), Deep2dRuntimeContent::Package(_)) {
+                    "package"
+                } else {
+                    "display-list"
+                }
+            );
+        }
         // Reject the complete candidate totals before appending any geometry/resources.
         let summary = combined_summary(output.summary, part.summary)?;
         let path_offset = u32::try_from(output.path.vertices.len())

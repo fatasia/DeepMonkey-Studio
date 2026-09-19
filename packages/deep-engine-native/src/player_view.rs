@@ -40,7 +40,7 @@ impl PlayerView {
             focal: (1.0 / (camera.vertical_fov_degrees.to_radians() * 0.5).tan()) as f32,
             near: camera.near as f32,
             far: camera.far as f32,
-            clipping: [0.0; 4],
+            clipping: camera.clipping_plane.map(|plane| plane.map(|v| v as f32)).unwrap_or([0.0; 4]),
         })
     }
 

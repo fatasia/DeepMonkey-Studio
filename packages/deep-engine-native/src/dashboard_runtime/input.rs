@@ -5,9 +5,24 @@ use crate::chart::{
 };
 impl DashboardRuntime {
     pub fn pointer(&mut self, point: Option<[f64; 2]>, select: bool) -> Result<bool, String> {
+        let filter_hover = point.and_then(|p| self.filter_at(p));
+        if select && let Some(index) = filter_hover {
+            return self.transaction(|candidate| {
+                let changed = candidate.selected_filter != Some(index)
+                    || candidate.hovered_filter != filter_hover
+                    || candidate.keyboard_filter_focus;
+                if candidate.selected_filter != Some(index) {
+                    candidate.apply_filter_option(index)?;
+                }
+                candidate.hovered_filter = filter_hover;
+                candidate.keyboard_filter_focus = false;
+                Ok(changed)
+            });
+        }
         let hit = point.and_then(|point| self.hit(point));
         self.transaction(|candidate| {
-            let mut changed = false;
+            let mut changed = candidate.hovered_filter != filter_hover;
+            candidate.hovered_filter = filter_hover;
             let target = hit.as_ref().map(|h| h.node_id.as_str());
             for (id, chart) in &mut candidate.charts {
                 if Some(id.as_str()) != target {
