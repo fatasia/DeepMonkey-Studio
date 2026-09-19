@@ -32,7 +32,7 @@ pub fn matrices(light: LocalLight) -> Result<Vec<Matrix>, String> {
     if light.kind == LocalLightKind::Point {
         POINT_DIRECTIONS
             .into_iter()
-            .map(|direction| projection(light, direction, 1.0))
+            .map(|direction| projection(light.clone(), direction, 1.0))
             .collect()
     } else {
         Ok(vec![spot_matrix(light)?])
@@ -43,11 +43,9 @@ pub fn spot_matrix(light: LocalLight) -> Result<Matrix, String> {
     if !light.validate() || light.outer_cos <= 0.001 || light.outer_cos >= 0.999999 {
         return Err("spot shadow requires a finite nondegenerate cone".into());
     }
-    projection(
-        light,
-        light.direction,
-        light.outer_cos / (1.0 - light.outer_cos * light.outer_cos).sqrt(),
-    )
+    let direction = light.direction;
+    let focal = light.outer_cos / (1.0 - light.outer_cos * light.outer_cos).sqrt();
+    projection(light, direction, focal)
 }
 fn projection(light: LocalLight, direction: [f32; 3], focal: f32) -> Result<Matrix, String> {
     if !light.validate() {

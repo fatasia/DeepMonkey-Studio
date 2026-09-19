@@ -11,6 +11,7 @@ fn light() -> LocalLight {
         inner_cos: 0.8,
         outer_cos: 0.5,
         cast_shadow: true,
+        ies: None,
     }
 }
 fn project(matrix: Matrix, point: [f32; 3]) -> [f32; 3] {
@@ -25,7 +26,7 @@ fn project(matrix: Matrix, point: [f32; 3]) -> [f32; 3] {
 #[test]
 fn spot_projection_has_expected_depth_and_translates_with_the_world() {
     let source = light();
-    let matrix = spot_matrix(source).unwrap();
+    let matrix = spot_matrix(source.clone()).unwrap();
     let center = project(matrix, [0.0; 3]);
     assert!(
         center[0].abs() < 0.00001
@@ -35,7 +36,7 @@ fn spot_projection_has_expected_depth_and_translates_with_the_world() {
     );
     let shifted = LocalLight {
         position: [100.0, 204.0, -297.0],
-        ..source
+        ..source.clone()
     };
     let moved = project(spot_matrix(shifted).unwrap(), [100.0, 200.0, -300.0]);
     for i in 0..3 {
@@ -43,7 +44,7 @@ fn spot_projection_has_expected_depth_and_translates_with_the_world() {
     }
     let vertical = LocalLight {
         direction: [0.0, -1.0, 0.0],
-        ..source
+        ..source.clone()
     };
     assert!(
         spot_matrix(vertical)
@@ -73,7 +74,7 @@ fn point_faces_cover_six_axes_and_keep_world_translation() {
         kind: LocalLightKind::Point,
         ..light()
     };
-    let faces = matrices(source).unwrap();
+    let faces = matrices(source.clone()).unwrap();
     assert_eq!(faces.len(), 6);
     for (face, direction) in faces.into_iter().zip(POINT_DIRECTIONS) {
         let target = std::array::from_fn(|i| source.position[i] + direction[i] * 2.0);
@@ -83,7 +84,7 @@ fn point_faces_cover_six_axes_and_keep_world_translation() {
         );
         let shifted = LocalLight {
             position: std::array::from_fn(|i| source.position[i] + [100.0, 200.0, -300.0][i]),
-            ..source
+            ..source.clone()
         };
         let moved = project(
             projection(shifted, direction, 1.0).unwrap(),
@@ -92,24 +93,28 @@ fn point_faces_cover_six_axes_and_keep_world_translation() {
         assert!((0..3).all(|i| (center[i] - moved[i]).abs() < 1e-4));
     }
     let mut combined = vec![light(); 4];
-    combined.push(source);
+    combined.push(source.clone());
     assert!(validate_budget(&combined));
-    let mut local_lights = Default::default();
+    // 第 5 盏灯超预算:validate_budget 必须拒绝(下方 lighting 仍可 apply,validate 独立拒绝)。
+    combined.push(light());
+    assert!(!validate_budget(&combined));
     let lighting = crate::scene_lighting::DirectionalLighting {
         direction: [0.0, 1.0, 0.0],
         radiance: [0.0; 3],
         exposure: 1.05,
         shadows: false,
+        light_profiles: None,
         local_lights: {
-            let lights: &mut [LocalLight; crate::local_lighting::MAX_LOCAL_LIGHTS] =
-                &mut local_lights;
-            lights[..combined.len()].copy_from_slice(&combined);
-            local_lights
+            let mut lights: [LocalLight; crate::local_lighting::MAX_LOCAL_LIGHTS] =
+                std::array::from_fn(|_| LocalLight::default());
+            for (slot, item) in combined.iter().enumerate() {
+                lights[slot] = item.clone();
+            }
+            lights
         },
     };
     let mut frame = crate::mesh_abi::frame_uniform(1.0, 0.0);
     lighting.apply(&mut frame);
     assert_eq!(frame_matrices(&frame).len(), 10);
-    combined.push(source);
     assert!(!validate_budget(&combined));
 }

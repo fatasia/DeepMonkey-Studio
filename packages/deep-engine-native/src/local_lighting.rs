@@ -11,7 +11,7 @@ pub enum LocalLightKind {
     Point,
     Spot,
 }
-#[derive(Debug, Default, Clone, Copy, PartialEq, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct LocalLight {
     pub kind: LocalLightKind,
@@ -24,11 +24,15 @@ pub struct LocalLight {
     pub outer_cos: f32,
     #[serde(default)]
     pub cast_shadow: bool,
+    /// E02 IES 光域网引用；缺省=既有全向/锥形行为，旧载荷字节不变。
+    #[serde(default)]
+    pub ies: Option<crate::runtime_package::LightIes>,
 }
 impl LocalLight {
-    pub fn validate(self) -> bool {
+    pub fn validate(&self) -> bool {
         let norm = self.direction.iter().map(|v| v * v).sum::<f32>();
         self.kind != LocalLightKind::Disabled
+            && self.ies.as_ref().is_none_or(|ies| ies.validate().is_ok())
             && (!self.cast_shadow
                 || ((self.kind == LocalLightKind::Point
                     || (self.kind == LocalLightKind::Spot
@@ -54,7 +58,7 @@ impl LocalLight {
             && (-1.0..=1.0).contains(&self.outer_cos)
             && (self.outer_cos..=1.0).contains(&self.inner_cos)
     }
-    pub fn rows(self) -> [[f32; 4]; 4] {
+    pub fn rows(&self) -> [[f32; 4]; 4] {
         let kind = match self.kind {
             LocalLightKind::Disabled => 0.0,
             LocalLightKind::Directional => 1.0,
@@ -97,8 +101,8 @@ pub fn decode<'de, D: Deserializer<'de>>(
             "invalid or over-budget local light array",
         ));
     }
-    let mut result = [LocalLight::default(); MAX_LOCAL_LIGHTS];
-    result[..lights.len()].copy_from_slice(&lights);
+    let mut result = std::array::from_fn(|_| LocalLight::default());
+    result[..lights.len()].clone_from_slice(&lights);
     Ok(result)
 }
 

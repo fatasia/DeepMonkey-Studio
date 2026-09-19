@@ -247,7 +247,7 @@ mod tests {
         let lighting_valid = parsed
             .as_ref()
             .ok()
-            .and_then(|source| source.lighting)
+            .and_then(|source| source.lighting.as_ref())
             .map(|light| light.validate().map(|_| ()))
             .unwrap_or(Ok(()));
         assert!(parsed.is_ok(), "{parsed:?}");
