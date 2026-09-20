@@ -3,6 +3,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { CapabilityDescriptor, CapabilityRequest } from "@bim-studio/plugin-runtime";
 import type { IndustrialCapabilityHost } from "./industrialCapabilities.js";
 import type { MetadataStore } from "./store.js";
+import type { EditorPresence, EditorPresenceRegistry } from "./editorPresence.js";
+import { listEditorSceneResources, parseEditorSceneResourceUri, readEditorSceneResource } from "./mcpEditorSceneResources.js";
+import { EDITOR_SCENE_TRANSACTION_TOOL, callEditorSceneTransactionTool, editorTransactionToolDefinition, type EditorSceneTransactionBridge } from "./mcpEditorSceneTransactionBridge.js";
 
 const MODERN_VERSION = "2026-07-28";
 const SUPPORTED_VERSIONS = [MODERN_VERSION, "2025-11-25", "2025-06-18"] as const;
@@ -14,7 +17,7 @@ interface JsonRpcRequest {
   params?: Record<string, unknown>;
 }
 
-interface McpDependencies { host: IndustrialCapabilityHost; store: MetadataStore }
+interface McpDependencies { host: IndustrialCapabilityHost; store: MetadataStore; editorPresence?: EditorPresenceRegistry; editorSceneTransactions?: EditorSceneTransactionBridge }
 
 /**
  * 无状态 MCP 适配层。登录身份、项目权限、超时和证据全部复用宿主治理，
@@ -30,7 +33,7 @@ export async function registerMcpCapabilityRoute(app: FastifyInstance, dependenc
 
     if (body.method === "server/discover") return rpcResult(id, {
       supportedVersions: [...SUPPORTED_VERSIONS],
-      capabilities: { tools: { listChanged: false } },
+      capabilities: { tools: { listChanged: false }, ...(dependencies.editorPresence ? { resources: { subscribe: false, listChanged: false } } : {}) },
       instructions: "工具按当前登录用户与项目权限过滤；能力目录不是执行证据，调用结果包含决策状态、trace 和证据。",
       _meta: { "io.modelcontextprotocol/serverInfo": { name: "bim-industrial-core", version: "1.1.0" } },
       ttlMs: 0,
@@ -40,17 +43,101 @@ export async function registerMcpCapabilityRoute(app: FastifyInstance, dependenc
     // 保留旧客户端握手兼容；现代 2026 协议不需要 initialize。
     if (body.method === "initialize") return rpcResult(id, {
       protocolVersion: legacyProtocol(body.params),
-      capabilities: { tools: { listChanged: false } },
+      capabilities: { tools: { listChanged: false }, ...(dependencies.editorPresence ? { resources: { subscribe: false, listChanged: false } } : {}) },
       serverInfo: { name: "bim-industrial-core", version: "1.1.0" }
     });
     if (body.method === "notifications/initialized") return reply.code(204).send();
-    if (body.method === "tools/list") return rpcResult(id, {
-      tools: toolDefinitions(dependencies.host, request),
-      ...(modern ? { ttlMs: 0, cacheScope: "private", resultType: "complete" } : {})
-    });
+    if (body.method === "tools/list") {
+      const tools: Array<Record<string, unknown>> = toolDefinitions(dependencies.host, request);
+      if (dependencies.editorSceneTransactions) tools.push(editorTransactionToolDefinition());
+      return rpcResult(id, {
+        tools,
+        ...(modern ? { ttlMs: 0, cacheScope: "private", resultType: "complete" } : {})
+      });
+    }
+    if (body.method === "resources/list") return listEditorResources(body.params, dependencies, request, id, reply);
+    if (body.method === "resources/read") return readEditorResource(body.params, dependencies, request, id, reply);
+    if (body.method === "tools/call" && body.params?.name === EDITOR_SCENE_TRANSACTION_TOOL && dependencies.editorSceneTransactions) {
+      return callEditorSceneTransactionTool(body.params, dependencies.editorSceneTransactions, request, id, reply, modern);
+    }
     if (body.method === "tools/call") return callTool(body.params, dependencies, request, id, reply, modern);
     return reply.code(400).send(rpcError(id, -32601, `未知 MCP 方法：${body.method ?? ""}`));
   });
+}
+
+function listEditorResources(params: Record<string, unknown> | undefined, dependencies: McpDependencies,
+  request: FastifyRequest, id: string | number | null, reply: FastifyReply) {
+  const user = request.systemUser;
+  if (!user) return reply.code(401).send(rpcError(id, -32001, "请先登录"));
+  const offset = resourceCursor(params?.cursor);
+  if (offset === undefined) return reply.code(400).send(rpcError(id, -32602, "resources/list cursor 无效"));
+  const entries = dependencies.editorPresence?.listFor(user) ?? [];
+  const resources = entries.flatMap(entry => [editorResource(entry), ...listEditorSceneResources(entry, dependencies.store)]);
+  const page = resources.slice(offset, offset + 20);
+  return rpcResult(id, {
+    resources: page,
+    ...(offset + page.length < resources.length ? { nextCursor: String(offset + page.length) } : {}),
+  });
+}
+
+function readEditorResource(params: Record<string, unknown> | undefined, dependencies: McpDependencies,
+  request: FastifyRequest, id: string | number | null, reply: FastifyReply) {
+  const user = request.systemUser;
+  if (!user) return reply.code(401).send(rpcError(id, -32001, "请先登录"));
+  const sceneAddress = parseEditorSceneResourceUri(params?.uri);
+  if (sceneAddress) {
+    const entry = dependencies.editorPresence?.readFor(user, sceneAddress.sessionId, sceneAddress.draftRevision);
+    const content = entry && readEditorSceneResource(sceneAddress, entry, dependencies.store);
+    if (!content) return reply.code(404).send(rpcError(id, -32004, "场景资源不存在、已过期或 editor/persisted revision 已变化"));
+    return rpcResult(id, { contents: [content] });
+  }
+  const parsed = parseEditorResourceUri(params?.uri);
+  if (!parsed) return reply.code(400).send(rpcError(id, -32602, "resources/read uri 无效"));
+  const entry = dependencies.editorPresence?.readFor(user, parsed.sessionId, parsed.draftRevision);
+  if (!entry) return reply.code(404).send(rpcError(id, -32004, "活跃编辑器会话不存在、已过期或 revision 已变化"));
+  const resource = editorResource(entry);
+  return rpcResult(id, { contents: [{ uri: resource.uri, mimeType: resource.mimeType, text: JSON.stringify(editorSummary(entry)) }] });
+}
+
+function editorResource(entry: EditorPresence) {
+  const target = entry.targetName ? ` · ${entry.targetName}` : "";
+  return {
+    uri: editorResourceUri(entry), name: `editor-${entry.sessionId}`,
+    title: `${entry.applicationName}${target}`,
+    description: `当前用户的活跃 ${entry.surface} 编辑器；草稿 revision ${entry.draftRevision}${entry.dirty ? "，有未保存修改" : ""}`,
+    mimeType: "application/json",
+  };
+}
+
+function editorSummary(entry: EditorPresence) {
+  return {
+    schema: "deep-monkey.active-editor.v1", sessionId: entry.sessionId, projectId: entry.projectId,
+    applicationId: entry.applicationId, applicationName: entry.applicationName, surface: entry.surface,
+    ...(entry.targetId ? { targetId: entry.targetId } : {}), ...(entry.targetName ? { targetName: entry.targetName } : {}),
+    persistedRevision: entry.persistedRevision, draftRevision: entry.draftRevision, dirty: entry.dirty,
+    selectionCount: entry.selectionCount, updatedAt: entry.updatedAt,
+    writeSemantics: "Use the existing governed SceneCommandTransaction path; this resource is read-only.",
+  };
+}
+
+function editorResourceUri(entry: Pick<EditorPresence, "sessionId" | "draftRevision">): string {
+  return `studio://active-editor/${encodeURIComponent(entry.sessionId)}?revision=${entry.draftRevision}`;
+}
+function parseEditorResourceUri(value: unknown): { sessionId: string; draftRevision: number } | undefined {
+  if (typeof value !== "string") return undefined;
+  let parsed: URL;
+  try { parsed = new URL(value); } catch { return undefined; }
+  const revision = Number(parsed.searchParams.get("revision"));
+  let sessionId: string;
+  try { sessionId = decodeURIComponent(parsed.pathname.replace(/^\//, "")); } catch { return undefined; }
+  return parsed.protocol === "studio:" && parsed.hostname === "active-editor" && sessionId && Number.isSafeInteger(revision) && revision >= 0
+    ? { sessionId, draftRevision: revision } : undefined;
+}
+function resourceCursor(value: unknown): number | undefined {
+  if (value === undefined) return 0;
+  if (typeof value !== "string" || !/^\d+$/.test(value)) return undefined;
+  const offset = Number(value);
+  return Number.isSafeInteger(offset) && offset >= 0 ? offset : undefined;
 }
 
 function toolDefinitions(host: IndustrialCapabilityHost, request: FastifyRequest) {

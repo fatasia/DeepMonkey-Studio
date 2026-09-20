@@ -38,6 +38,8 @@ import { registerOperationsRoutes } from "./operationsRoutes.js";
 import { registerUnityResourceRoutes } from "./unityResourceRoutes.js";
 import { createIndustrialCapabilityHost, registerIndustrialCapabilityRoutes } from "./industrialCapabilities.js";
 import { registerMcpCapabilityRoute } from "./mcpCapabilityAdapter.js";
+import { EditorPresenceRegistry, registerEditorPresenceRoutes } from "./editorPresence.js";
+import { EditorSceneTransactionBridge, registerEditorSceneDriverRoutes } from "./mcpEditorSceneTransactionBridge.js";
 import { createAssistantService } from "./ai/assistantService.js";
 import { createMetadataAiAuditSink } from "./ai/metadataAiAuditSink.js";
 import { resolveAiSettings } from "./ai/aiRuntimeSettings.js";
@@ -92,6 +94,7 @@ export async function buildApp() {
     dataQuerySource,
     conversionTasks,
   });
+  const editorPresence = new EditorPresenceRegistry();
   const industrialAgent = await createIndustrialAgentRuntime({
     dataDir: config.dataDir,
     registry: industrialCapabilities.registry,
@@ -167,6 +170,9 @@ export async function buildApp() {
       audit: aiAudit,
     }),
   });
+  await registerEditorPresenceRoutes(app, editorPresence);
+  const editorSceneTransactions = new EditorSceneTransactionBridge(editorPresence, store);
+  await registerEditorSceneDriverRoutes(app, editorSceneTransactions);
   const dataEventBus = await registerDataEventRoutes(app, store);
   const mqttIngest = new MqttIngestSupervisor(dataEventBus, async (url, options) => {
     const { connectAsync } = await import("mqtt");
@@ -223,7 +229,7 @@ export async function buildApp() {
   await registerIndustrialAgentRoutes(app, { store, runtime: industrialAgent });
   await registerAiSampleRoutes(app, { store });
   await registerModeling3dRoutes(app, { store });
-  await registerMcpCapabilityRoute(app, { store, host: industrialCapabilities });
+  await registerMcpCapabilityRoute(app, { store, host: industrialCapabilities, editorPresence, editorSceneTransactions });
   const directCredentialResolver = new StaticDirectCredentialResolver(config.directBindings.credentials);
   const directBindingOptions = {
     credentialResolver: directCredentialResolver,

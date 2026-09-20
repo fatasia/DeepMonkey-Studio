@@ -3,7 +3,7 @@ import type { AppState } from "./useAppState";
 
 const harness = vi.hoisted(() => ({
   cursor: 0, dependencies: [] as unknown[][], effects: [] as Array<() => void>,
-  cleanups: [] as Array<(() => void) | undefined>,
+  cleanups: [] as Array<(() => void) | undefined>, refs: [] as Array<{ current: unknown }>, memos: [] as unknown[],
   getBranding: vi.fn(), listRevitInstallations: vi.fn(), me: vi.fn(), getAuthToken: vi.fn(), setAuthToken: vi.fn(),
   resolvePublishedRenderer: vi.fn(), sceneViewerDeliveryRendererMode: vi.fn(),
 }));
@@ -15,6 +15,20 @@ vi.mock("react", () => ({
       harness.dependencies[index] = dependencies;
       harness.effects.push(() => { harness.cleanups[index]?.(); harness.cleanups[index] = effect() || undefined; });
     }
+  },
+  useRef: (initial: unknown) => {
+    const index = harness.cursor++;
+    harness.refs[index] ??= { current: initial };
+    return harness.refs[index];
+  },
+  useMemo: (factory: () => unknown, dependencies: unknown[]) => {
+    const index = harness.cursor++;
+    const previous = harness.dependencies[index];
+    if (!previous || previous.some((value, slot) => !Object.is(value, dependencies[slot]))) {
+      harness.dependencies[index] = dependencies;
+      harness.memos[index] = factory();
+    }
+    return harness.memos[index];
   },
 }));
 vi.mock("../api", () => ({ api: harness, getAuthToken: harness.getAuthToken, setAuthToken: harness.setAuthToken }));
@@ -33,6 +47,7 @@ import { useAppLifecycleEffects } from "./useAppLifecycleEffects";
 function unmount() { harness.cleanups.splice(0).forEach(cleanup => cleanup?.()); }
 beforeEach(() => {
   vi.resetAllMocks(); vi.useFakeTimers(); harness.cursor = 0; harness.dependencies = []; harness.effects = []; harness.cleanups = [];
+  harness.refs = []; harness.memos = [];
   harness.getBranding.mockResolvedValue({ defaultLocale: "zh-CN" });
   harness.listRevitInstallations.mockResolvedValue({ installations: [] });
   harness.resolvePublishedRenderer.mockResolvedValue({ backend: "webgl" });
@@ -51,7 +66,7 @@ function fixture(patch: Record<string, unknown> = {}) {
   const unsubscribe = vi.fn();
   const state = {
     activeApplication: { metadata: { id: "application-a" } }, activeScene: { id: "scene-a", publicationMode: "auto" },
-    applicationRevision: 0, applicationState: { dirty: false }, applicationSessionRef: { current: { store: { subscribe: vi.fn(() => unsubscribe), setSelection: vi.fn() } } },
+    applicationRevision: 0, applicationState: { dirty: false }, applicationSessionRef: { current: { store: { getState: vi.fn(() => ({ document: undefined, selection: [], dirty: false })), subscribe: vi.fn(() => unsubscribe), setSelection: vi.fn() } } },
     autoSaveEnabled: true, branding: {}, busy: false, engine: {}, lastAutoSavedSceneRevisionRef: { current: -1 },
     locale: "zh-CN", rendererBackend: "webgl", rendererSwitching: false, rendererSwitchPhase: "idle", revision: 10,
     route: { view: "studio" }, rvtRevitVersion: "auto",
