@@ -12,6 +12,7 @@ use deep_engine_native::{
 
 use crate::{
     gpu_scene::{GpuGeometry, GpuInstanceResource, GpuScene},
+    gpu_scene_cache_instances::InstanceStagingRing,
     gpu_texture_upload::GpuTexture,
     gpu_textures::GpuMaterial,
 };
@@ -84,6 +85,8 @@ pub struct GpuSceneCache {
     pub(super) materials: HashMap<MaterialResourceIdentity, Weak<GpuMaterial>>,
     pub(super) instances: HashMap<ContentFingerprint, (Weak<GpuInstanceResource>, u64)>,
     pub(super) latest_instance: Weak<GpuInstanceResource>,
+    /// B05: 实例暂存环,stage 与 refresh 共用;`&self` 入口经 RefCell 轮转。
+    pub(super) instance_ring: std::cell::RefCell<InstanceStagingRing>,
     pub(super) fallbacks: Weak<Vec<GpuTexture>>,
     /// Resident-byte ceiling. Defaults from the device buffer limit with a
     /// conservative cap; explicit overrides replace it wholesale.
@@ -118,6 +121,9 @@ impl GpuSceneCache {
             materials: HashMap::new(),
             instances: HashMap::new(),
             latest_instance: Weak::new(),
+            instance_ring: std::cell::RefCell::new(
+                InstanceStagingRing::new(),
+            ),
             fallbacks: Weak::new(),
             live_bytes: 0,
             peak_live_bytes: 0,
@@ -177,6 +183,10 @@ impl GpuSceneCache {
         self.materials.clear();
         self.instances.clear();
         self.latest_instance = Weak::new();
+        // reset 语义是整体弃用:槽位一并清空,避免跨 epoch 复用旧容量。
+        self.instance_ring = std::cell::RefCell::new(
+            InstanceStagingRing::new(),
+        );
         self.fallbacks = Weak::new();
         self.live_bytes = 0;
         self.peak_live_bytes = 0;

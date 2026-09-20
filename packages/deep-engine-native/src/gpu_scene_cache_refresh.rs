@@ -27,7 +27,6 @@ use deep_engine_native::{
 use crate::{
     gpu_scene::{GpuGeometry, GpuScene},
     gpu_scene_cache::{GpuSceneCache, GpuSceneCacheMetrics, GpuSceneCandidate, VersionKey},
-    gpu_scene_cache_instances::stage_instance_update,
     gpu_texture_upload::{GpuTexture, create_fallbacks},
     gpu_textures::{GpuMaterial, GpuPbrResources},
 };
@@ -168,7 +167,9 @@ impl GpuSceneCache {
                 metrics.instance_buffer_uploads = 1;
                 let previous = self.latest_instance.upgrade();
                 let (value, transfer) =
-                    stage_instance_update(device, queue, previous.as_ref(), &prepared.instances);
+                    self.instance_ring
+                    .borrow_mut()
+                    .stage(device, queue, previous.as_ref(), &prepared.instances);
                 metrics.instance_uploaded_bytes = transfer.uploaded_bytes;
                 metrics.instance_copied_bytes = transfer.copied_bytes;
                 (Arc::clone(&value), Some(value.buffer.size()))
