@@ -118,8 +118,11 @@ export class AuthorChunkStream {
         const ids = this.virtualSources.get(instance.id) ?? [instance.id];
         return ids.map(id => {
           const derived = compiled.get(id);
-          return derived === undefined ? instance : Object.freeze({ ...instance, id,
-            geometry: derived.geometry, ...(derived.lod ? { lod: derived.lod } : {}) });
+          if (derived === undefined) return instance;
+          // Author LOD from the fresh packet is authoritative; a compiled HLOD screen-space
+          // proxy (only ever on instances without author LOD) must survive the refresh.
+          const lod = instance.lod ?? derived.lod;
+          return Object.freeze({ ...instance, id, geometry: derived.geometry, ...(lod ? { lod } : {}) });
         });
       })) });
   }
