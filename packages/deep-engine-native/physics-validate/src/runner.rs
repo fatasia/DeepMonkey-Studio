@@ -34,11 +34,17 @@ pub struct JointSpec {
     pub anchor1: [f64; 3],
     pub anchor2: [f64; 3],
     pub axis: [f64; 3],
+    #[serde(default)]
+    pub solver: JointSolver,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limits: Option<[f64; 2]>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub motor: Option<JointMotorSpec>,
 }
+
+#[derive(Deserialize, Serialize, Clone, Debug, Default, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum JointSolver { #[default] Impulse, Multibody }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -55,6 +61,9 @@ pub struct JointMotorSpec {
 pub enum JointMotorModel { Acceleration, Force }
 
 fn validate_joint_controls(joint: &JointSpec) -> Result<(), String> {
+    if joint.solver == JointSolver::Multibody && (joint.motor.is_some() || joint.limits.is_some()) {
+        return Err(format!("joint {}: multibody motor/limits are not supported by the paired WASM API", joint.id));
+    }
     let finite_f32 = |value: f64| value.is_finite() && (value as f32).is_finite();
     if let Some([min, max]) = joint.limits {
         if !finite_f32(min) || !finite_f32(max) || min > max {
@@ -229,11 +238,14 @@ pub fn run_scene(spec: &SceneSpec) -> RunOutcome {
                 motor.stiffness as f32, motor.damping as f32);
         }
         let data = joint.data().clone();
-        impulse_joints.insert(body1, body2, joint, true);
-        joint_ids.push((joint_spec.id.clone(), joint_spec.kind.clone(), joint_spec.body1.clone(), joint_spec.body2.clone(), data));
+        let multibody_handle = if joint_spec.solver == JointSolver::Multibody {
+            Some(multibody_joints.insert(body1, body2, joint, true)
+                .expect("multibody joint must form an acyclic tree with one parent per child"))
+        } else { impulse_joints.insert(body1, body2, joint, true); None };
+        joint_ids.push((joint_spec.id.clone(), joint_spec.kind.clone(), joint_spec.body1.clone(), joint_spec.body2.clone(), data, multibody_handle));
     }
 
-    let record = |step: u32, bodies: &RigidBodySet| -> FrameRecord {
+    let record = |step: u32, bodies: &RigidBodySet, multibodies: &MultibodyJointSet| -> FrameRecord {
         FrameRecord {
             step,
             bodies: handles
@@ -258,7 +270,11 @@ pub fn run_scene(spec: &SceneSpec) -> RunOutcome {
                 .collect(),
             joints: joint_ids
                 .iter()
-                .map(|(id, kind, body1, body2, data)| {
+                .map(|(id, kind, body1, body2, data, multibody_handle)| {
+                    let data = if let Some(handle) = multibody_handle {
+                        let (multibody, link) = multibodies.get(*handle).expect("multibody joint present");
+                        &multibody.link(link).expect("multibody link present").joint.data
+                    } else { data };
                     let a1 = data.local_anchor1();
                     let a2 = data.local_anchor2();
                     let f1 = data.local_frame1.rotation;
@@ -279,7 +295,7 @@ pub fn run_scene(spec: &SceneSpec) -> RunOutcome {
     };
 
     let mut frames = Vec::with_capacity(spec.timestep.steps as usize + 1);
-    frames.push(record(0, &bodies));
+    frames.push(record(0, &bodies, &multibody_joints));
     for step in 1..=spec.timestep.steps {
         physics_pipeline.step(
             gravity,
@@ -295,7 +311,7 @@ pub fn run_scene(spec: &SceneSpec) -> RunOutcome {
             &hooks,
             &no_events,
         );
-        frames.push(record(step, &bodies));
+        frames.push(record(step, &bodies, &multibody_joints));
     }
 
     RunOutcome { frames }

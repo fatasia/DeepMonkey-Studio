@@ -43,6 +43,8 @@
 
 ### R10 Rapier F04/F05
 
+F07 增量：固定 Multibody 三段重力摆链 native/WASM 241 帧逐位一致，逐帧锚点约束与移除关节/重力负对照通过；Rust 聚焦 13 项通过，F04–F06 金标不变。证据 `test-output/r10-f07-multibody-20260920-r1/evidence.json`。下方 Multibody 待办现收敛为动态拓扑/控制、混合求解器及产品宿主；不支持的 multibody motor/limits 组合明确拒绝。
+
 最新增量：F06 固定 position motor（acceleration/force）与双向限位已完成双端 241 帧逐位对拍，WASM 重跑和移除控制负对照通过；Rust 定向 10 项通过，F04/F05 金标保持不变。证据 `test-output/r10-f06-motor-limits-20260920-r1/evidence.json`，spec SHA-256 `26988f7c813fc28158511182ef3d983b4df335d92679d75018732270224ad4bc`。仍待 MultibodyJoint、速度模式/扭矩预算、运行时控制更新与产品 PhysicsWorld 宿主。
 
 现有 `packages/deep-engine-native/physics-validate/` 已具备：

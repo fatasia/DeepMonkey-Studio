@@ -1,5 +1,7 @@
 ## 2026-09-20 主线续跑检查点
 
+- R10 F07 固定 Multibody 三段摆链已通过 native/WASM 241 帧逐位对拍、双跑和去关节/去重力负对照；逐帧读取真实 joint 状态，锚点误差 <1e-5。Rust 聚焦 13 项通过，F04–F06 金标不变；证据 `test-output/r10-f07-multibody-20260920-r1/evidence.json`。动态拓扑/控制、混合求解器、产品宿主仍待；配对 API 不支持的 multibody motor/limits 明确拒绝。
+
 - OPT-01/03 重复上传切片：实例当前/历史缓冲独立更新与实际写入回滚；固定灯光强制阴影重绘跳过未变 uniform。4 文件/60 项及 engine tsc 通过；16,384 实例材质更新减少 25% 上传字节，固定四灯重绘减少 5 次/1,920 B。不是整帧性能结论，GPU/P95/P99 仍待，见[报告](reports/mainline-upload-optimization-2026-09-20.md)。
 
 - R12 实际 output pipeline 来源追踪已补：无 SpatialAA 的 present 使用同一 WGSL 的 SHA-256 与入口行，内置渲染器拒绝外部 package/map 注入；四场景真 GPU 通过，含来源反查，证据 `test-output/r12-frame-capture-1789882931950/evidence.json`。其余内置 pass 未映射；资源快照/调试 UI 仍待。FINAL-GATE [首轮预检](reports/mainline-final-gate-2026-09-20.md)仍未通过，Web 类型/source-size/public-brand 失败项已定位。

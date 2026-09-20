@@ -148,14 +148,20 @@ async function runWasmScene(spec) {
   const joints = [];
   for (const jointSpec of spec.joints ?? []) {
     if (jointSpec.kind !== "revolute") throw new Error(`unsupported joint kind: ${jointSpec.kind}`);
+    const solver = jointSpec.solver ?? "impulse";
+    if (!["impulse", "multibody"].includes(solver)) throw new Error(`unsupported joint solver: ${solver}`);
+    if (solver === "multibody" && (jointSpec.motor !== undefined || jointSpec.limits !== undefined)) {
+      throw new Error("multibody motor/limits are not supported by the paired WASM API");
+    }
     const vector = ([x, y, z]) => ({ x, y, z });
     const data = RAPIER.JointData.revolute(vector(jointSpec.anchor1), vector(jointSpec.anchor2), vector(jointSpec.axis));
-    const joint = world.createImpulseJoint(
+    const joint = world[solver === "multibody" ? "createMultibodyJoint" : "createImpulseJoint"](
       data,
       bodyById.get(jointSpec.body1),
       bodyById.get(jointSpec.body2),
       true,
     );
+    if (!joint?.isValid()) throw new Error(`joint ${jointSpec.id}: invalid topology`);
     const finiteF32 = (value) => typeof value === "number" && Number.isFinite(Math.fround(value));
     if (jointSpec.limits !== undefined) {
       const limits = jointSpec.limits;
@@ -173,7 +179,7 @@ async function runWasmScene(spec) {
       joint.configureMotorModel(motor.model === "acceleration" ? RAPIER.MotorModel.AccelerationBased : RAPIER.MotorModel.ForceBased);
       joint.configureMotor(...fields.slice(0, 4).map((key) => Math.fround(motor[key])));
     }
-    joints.push({ id: jointSpec.id, kind: jointSpec.kind, joint, body1: jointSpec.body1, body2: jointSpec.body2 });
+    joints.push({ id: jointSpec.id, kind: jointSpec.kind, joint, solver, body1: jointSpec.body1, body2: jointSpec.body2 });
   }
 
   const record = (step) => ({
@@ -186,12 +192,13 @@ async function runWasmScene(spec) {
         [translation.x, translation.y, translation.z, rotation.x, rotation.y, rotation.z, rotation.w],
       ];
     }),
-    joints: joints.map(({ id, kind, joint, body1, body2 }) => {
-      const anchor1 = joint.anchor1();
-      const anchor2 = joint.anchor2();
-      const frame1 = joint.frameX1();
-      const frame2 = joint.frameX2();
-      return {
+    joints: joints.map(({ id, kind, joint, solver, body1, body2 }) => {
+      const raw = solver === "multibody" ? world.multibodyJoints.raw : undefined;
+      const anchor1 = raw ? raw.jointAnchor1(joint.handle) : joint.anchor1();
+      const anchor2 = raw ? raw.jointAnchor2(joint.handle) : joint.anchor2();
+      const frame1 = raw ? raw.jointFrameX1(joint.handle) : joint.frameX1();
+      const frame2 = raw ? raw.jointFrameX2(joint.handle) : joint.frameX2();
+      const result = {
         id,
         kind,
         body1,
@@ -201,6 +208,8 @@ async function runWasmScene(spec) {
         frame1: [frame1.x, frame1.y, frame1.z, frame1.w],
         frame2: [frame2.x, frame2.y, frame2.z, frame2.w],
       };
+      if (raw) for (const value of [anchor1, anchor2, frame1, frame2]) value.free();
+      return result;
     }),
   });
 
@@ -293,6 +302,12 @@ const wasmFramesRun1 = await runWasmScene(spec);
 const wasmFramesRun2 = await runWasmScene(spec);
 const wasmSummary = summarize(wasmFramesRun1);
 const controlChecks = {};
+if ((spec.joints ?? []).some(joint => joint.solver === "multibody")) {
+  const free = structuredClone(spec); free.joints = [];
+  controlChecks.multibodyChangesMotion = summarize(await runWasmScene(free)).poseBitsSha256 !== wasmSummary.poseBitsSha256;
+  const weightless = structuredClone(spec); weightless.gravity = [0, 0, 0];
+  controlChecks.gravityChangesMotion = summarize(await runWasmScene(weightless)).poseBitsSha256 !== wasmSummary.poseBitsSha256;
+}
 for (const field of ["motor", "limits"]) {
   if (!(spec.joints ?? []).some((joint) => joint[field] !== undefined)) continue;
   const disabled = structuredClone(spec);
@@ -424,7 +439,7 @@ const evidence = {
   honestNotes: [
     "判定基准是位级:poseBitsSha256 双端相等 + 规范帧串逐帧相等 + 首分歧定位器为 null,三者同时成立才记 bitwiseIdentical=true。",
     "wasm 侧为 @dimforge/rapier3d-compat 官方预编译内核;其构建特性矩阵未随包声明,若未来版本引入平台相关数学,跨端逐位可能被打破——本验证以实测哈希为准,不靠声明。",
-    `当前场景 ${spec.id}: ${spec.bodies.length} 个刚体、${(spec.joints ?? []).length} 个 ImpulseJoint；控制项 ${Object.keys(controlChecks).join(",") || "无"}。不覆盖 MultibodyJoint、CCD 或产品宿主。`,
+    `当前场景 ${spec.id}: ${spec.bodies.length} 个刚体、${(spec.joints ?? []).length} 个关节；solver=${[...new Set((spec.joints ?? []).map(joint => joint.solver ?? "impulse"))].join(",")}；控制项 ${Object.keys(controlChecks).join(",") || "无"}。不覆盖 multibody motor/limits、CCD 或产品宿主。`,
     `fixed timestep 由宿主精确驱动 step() 共 ${spec.timestep.steps} 次,不使用 Variable 步进;dt 两端显式转 f32。`,
     "evidence.json 之外的 frames-*.jsonl / *-result.json 为逐帧原始证据,可独立复算哈希。",
   ],

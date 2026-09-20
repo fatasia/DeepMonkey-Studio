@@ -117,11 +117,30 @@ node packages/deep-engine-native/physics-validate/node-wasm/run-and-compare.mjs 
   --out test-output/r10-f06-motor-limits-20260920-r1
 ```
 
+## F07 Multibody 三段摆链
+
+`scene-spec-f07-multibody.json` 用 `solver: "multibody"` 选择 Rapier 的 reduced-coordinate
+MultibodyJointSet；不写 solver 时仍为旧 ImpulseJoint。三个水平起始的 revolute 链接在重力下摆动，
+native/WASM 共 241 帧的 body pose、joint anchor/frame 和 canonical 摘要全部逐位一致。
+WASM 高层类没有 anchor/frame getter，因此读取公开 raw set 的真实值，并释放临时 WASM 对象；
+native 逐帧从实际 multibody link 读取，不从场景 spec 合成状态。
+
+- poseBitsSha256：`241e9e4b8208caa4a005769ac4085bd707a2d6a0e2751877949087468317aa20`
+- frameSequenceSha256：`98fcbe38daa1ac1d56ca3aad2e7d9f12057181a55407dfeddfd8a1ad731a7113`
+- 证据：`test-output/r10-f07-multibody-20260920-r1/evidence.json`，移除关节/关闭重力的两端负对照均改变轨迹。
+
+Native 测试逐帧检查所有锚点相距 <0.00001 场景单位；循环和重复父节点必须失败，
+F04–F06 pose/canonical 金标不变。当前 WASM API 不支持 multibody motor/limits setter，
+此组合两端明确拒绝，未覆盖动态增删关节、混合求解器或产品宿主。
+
+复现：在本目录运行 `cargo test --test multibody --test joint_controls`，随后按 F06 命令将
+spec 改为 `scene-spec-f07-multibody.json`，证据目录改为 `r10-f07-multibody-20260920-r1`。
+
 ## 后续接线缺口
 
 - F04(PhysicsWorld 宿主接线):以本 runner 为内核骨架,宿主 tick 固定步长驱动,
   变更集(新增/移除刚体)走 revision 化命令,复用 R3 状态合同的 revision 语义。
-- F05/F06 已完成 revolute/ImpulseJoint 与固定 position motor/双向限位的双端门禁；MultibodyJoint 和产品编辑器接线仍未开放。
+- F05/F06/F07 已完成固定 revolute/ImpulseJoint、position motor/双向限位与 Multibody 三段摆链双端门禁；动态控制/拓扑及产品编辑器接线仍待。
 - Web 接线:`@dimforge/rapier3d-compat` 免打包加载,与现有 delivery 管线的 wasm 加载方式合并;
   WASM 二进制随包分发(离线纪律),不走 CDN。
 - 晋升决策:若采纳,把 `rapier3d =0.35.3` 提升进主 crate `Cargo.toml`(Cargo.lock 变更

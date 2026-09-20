@@ -1,0 +1,19 @@
+{
+  "schema": "deep-engine.physics-scene",
+  "schemaVersion": 1,
+  "id": "r10-f07-multibody-chain-v1",
+  "timestep": { "mode": "fixed", "dt": 0.016666666666666666, "steps": 240 },
+  "gravity": [0, -9.81, 0],
+  "ground": { "kind": "cuboid", "halfExtents": [25, 0.5, 25], "translation": [0, -0.5, 0], "friction": 0.05, "restitution": 0, "bodyType": "fixed", "canSleep": false },
+  "bodies": [
+    { "id": "link-a", "shape": { "kind": "ball", "radius": 0.2 }, "translation": [0.5, 4, 0], "linvel": [0, 0, 0], "bodyType": "dynamic", "canSleep": false },
+    { "id": "link-b", "shape": { "kind": "ball", "radius": 0.2 }, "translation": [1.5, 4, 0], "linvel": [0, 0, 0], "bodyType": "dynamic", "canSleep": false },
+    { "id": "link-c", "shape": { "kind": "ball", "radius": 0.2 }, "translation": [2.5, 4, 0], "linvel": [0, 0, 0], "bodyType": "dynamic", "canSleep": false }
+  ],
+  "joints": [
+    { "id": "chain-00", "solver": "multibody", "kind": "revolute", "body1": "ground", "body2": "link-a", "anchor1": [0, 4.5, 0], "anchor2": [-0.5, 0, 0], "axis": [0, 0, 1] },
+    { "id": "chain-01", "solver": "multibody", "kind": "revolute", "body1": "link-a", "body2": "link-b", "anchor1": [0.5, 0, 0], "anchor2": [-0.5, 0, 0], "axis": [0, 0, 1] },
+    { "id": "chain-02", "solver": "multibody", "kind": "revolute", "body1": "link-b", "body2": "link-c", "anchor1": [0.5, 0, 0], "anchor2": [-0.5, 0, 0], "axis": [0, 0, 1] }
+  ],
+  "contract": { "frameFormat": "physics-frame-v1", "jointKinds": ["revolute"], "solver": "multibody", "chainLength": 3 }
+}
