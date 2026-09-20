@@ -289,6 +289,97 @@ mod tests {
     }
 
     #[test]
+    fn trace_matches_brute_force_across_a_ray_fan() {
+        let (vertices, indices) = grid_mesh(8);
+        let built = build_bvh(&vertices, &indices).expect("build succeeds");
+        for step in 0..40u32 {
+            let angle = step as f32 / 40.0 * std::f32::consts::TAU;
+            for (ox, oy) in [(4.0f32, 4.0f32), (0.5, 0.5)] {
+                let query = TraceQuery {
+                    ox,
+                    oy,
+                    oz: 6.0,
+                    dx: angle.cos(),
+                    dy: angle.sin(),
+                    dz: -1.0,
+                    t_max: 64.0,
+                };
+                let traced = trace_closest(&vertices, &indices, &built, &query);
+                let mut brute: Option<TraceHit> = None;
+                for triangle in 0..(indices.len() / 3) as u32 {
+                    if let Some(t) = intersect_triangle(
+                        [query.ox, query.oy, query.oz],
+                        [query.dx, query.dy, query.dz],
+                        &vertices,
+                        indices[triangle as usize * 3],
+                        indices[triangle as usize * 3 + 1],
+                        indices[triangle as usize * 3 + 2],
+                    ) {
+                        if t <= query.t_max && brute.as_ref().is_none_or(|hit| t < hit.t) {
+                            brute = Some(TraceHit {
+                                t,
+                                primitive_index: triangle,
+                            });
+                        }
+                    }
+                }
+                assert_eq!(traced, brute, "mismatch at step {step} origin ({ox},{oy})");
+            }
+        }
+    }
+
+    #[test]
+    fn occlusion_and_miss_semantics_match_contract() {
+        let (vertices, indices) = grid_mesh(4);
+        let built = build_bvh(&vertices, &indices).expect("build succeeds");
+        assert!(trace_occluded(
+            &vertices,
+            &indices,
+            &built,
+            &TraceQuery {
+                ox: 2.0,
+                oy: 2.0,
+                oz: 4.0,
+                dx: 0.0,
+                dy: 0.0,
+                dz: -1.0,
+                t_max: 32.0
+            }
+        ));
+        assert!(!trace_occluded(
+            &vertices,
+            &indices,
+            &built,
+            &TraceQuery {
+                ox: 2.0,
+                oy: 2.0,
+                oz: 4.0,
+                dx: 0.0,
+                dy: 0.0,
+                dz: 1.0,
+                t_max: 32.0
+            }
+        ));
+        assert!(
+            trace_closest(
+                &vertices,
+                &indices,
+                &built,
+                &TraceQuery {
+                    ox: 2.0,
+                    oy: 2.0,
+                    oz: 4.0,
+                    dx: 0.0,
+                    dy: 0.0,
+                    dz: -1.0,
+                    t_max: 0.5
+                }
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
     fn moeller_trumbore_matches_expected_hit_and_parallel_rejection() {
         let vertices = vec![
             -1.0, -1.0, 0.0, 1.0, -1.0, 0.0, 1.0, 1.0, 0.0, -1.0, 1.0, 0.0,
@@ -302,4 +393,111 @@ mod tests {
             None
         );
     }
+}
+
+/// 栈式遍历查询（与 TS rayTrace.ts TraceQuery 一致；方向长度即 t 的单位）。
+pub struct TraceQuery {
+    pub ox: f32,
+    pub oy: f32,
+    pub oz: f32,
+    pub dx: f32,
+    pub dy: f32,
+    pub dz: f32,
+    pub t_max: f32,
+}
+
+/// 最近命中：t 与全局三角索引（indices 下标）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TraceHit {
+    pub t: f32,
+    pub primitive_index: u32,
+}
+
+/// 栈式最近命中遍历。slab 测试对零分量轴显式包含判定（0*Inf=NaN 会错误剪掉整棵树，
+/// 与 TS 侧修复同源）；无命中返回 None。
+pub fn trace_closest(
+    vertices: &[f32],
+    indices: &[u32],
+    built: &BvhBuildResult,
+    query: &TraceQuery,
+) -> Option<TraceHit> {
+    if !(query.t_max > 0.0) || built.nodes.is_empty() {
+        return None;
+    }
+    let inv = [1.0 / query.dx, 1.0 / query.dy, 1.0 / query.dz];
+    let origin = [query.ox, query.oy, query.oz];
+    let direction = [query.dx, query.dy, query.dz];
+    let mut best: Option<TraceHit> = None;
+    let mut stack = vec![0u32];
+    while let Some(node_index) = stack.pop() {
+        let node = &built.nodes[node_index as usize];
+        let t_cap = best.as_ref().map_or(query.t_max, |hit| hit.t);
+        if !overlaps_bounds(&origin, &direction, &inv, node, t_cap) {
+            continue;
+        }
+        if node.count > 0 {
+            for local in 0..node.count {
+                let primitive_index = built.order[node.left_first as usize + local as usize];
+                let i0 = indices[primitive_index as usize * 3];
+                let i1 = indices[primitive_index as usize * 3 + 1];
+                let i2 = indices[primitive_index as usize * 3 + 2];
+                let t = intersect_triangle(origin, direction, vertices, i0, i1, i2);
+                if let Some(t) = t {
+                    if t <= query.t_max && best.as_ref().is_none_or(|hit| t < hit.t) {
+                        best = Some(TraceHit { t, primitive_index });
+                    }
+                }
+            }
+            continue;
+        }
+        stack.push(node.right_child);
+        stack.push(node.left_first);
+    }
+    best
+}
+
+/// 遮挡查询：任意命中即 true（早退语义经 closest 实现，合同与 TS traceOccluded 一致）。
+pub fn trace_occluded(
+    vertices: &[f32],
+    indices: &[u32],
+    built: &BvhBuildResult,
+    query: &TraceQuery,
+) -> bool {
+    trace_closest(vertices, indices, built, query).is_some()
+}
+
+fn overlaps_bounds(
+    origin: &[f32; 3],
+    direction: &[f32; 3],
+    inv: &[f32; 3],
+    node: &BvhNode,
+    t_max: f32,
+) -> bool {
+    let mins = [node.min_x, node.min_y, node.min_z];
+    let maxs = [node.max_x, node.max_y, node.max_z];
+    let mut entry = 0.0f32;
+    let mut exit = t_max;
+    for axis in 0..3 {
+        if direction[axis] != 0.0 {
+            let (mut t_near, mut t_far) = (
+                (mins[axis] - origin[axis]) * inv[axis],
+                (maxs[axis] - origin[axis]) * inv[axis],
+            );
+            if t_near > t_far {
+                std::mem::swap(&mut t_near, &mut t_far);
+            }
+            if t_near > entry {
+                entry = t_near;
+            }
+            if t_far < exit {
+                exit = t_far;
+            }
+            if entry > exit {
+                return false;
+            }
+        } else if origin[axis] < mins[axis] || origin[axis] > maxs[axis] {
+            return false;
+        }
+    }
+    entry <= exit
 }
