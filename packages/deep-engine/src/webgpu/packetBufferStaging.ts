@@ -40,6 +40,8 @@ export interface StagedPacketBuffers {
 
 export interface PacketBufferStagingContext {
   readonly meshletsEnabled?: boolean;
+  /** P0-2 opt-in：author 几何同时构建可见性无共享布局（默认关，零额外显存）。 */
+  readonly meshletVisibility?: boolean;
   readonly deformationStaticSources?: DeformationStaticSources;
   /** Only an executor that submits deformation before drawing may opt in. */
   readonly deformationEnabled?: boolean;
@@ -111,7 +113,8 @@ function stageGeometries(
   target: Map<string, CachedPacketGeometry>,
   created: MeshBuffers[],
 ): void {
-  const meshletBudget = { remainingBytes: PACKET_MESHLET_STAGE_BYTES };
+  const meshletBudget: { remainingBytes: number; visibility?: boolean } = { remainingBytes: PACKET_MESHLET_STAGE_BYTES };
+  if (context.meshletVisibility) meshletBudget.visibility = true;
   for (const [id, source] of prepared.geometries) {
     const prior = context.geometries.get(id);
     if (prior?.source.revision === source.revision) meshletBudget.remainingBytes -= prior.mesh.meshletSource?.budgetBytes ?? 0;

@@ -29,6 +29,7 @@ import { gpuValidatedStage } from "./gpuValidatedStage.js";
 import { failWithResourceCleanup, runResourceCleanup } from "./resourceCleanup.js";
 import { PacketDeformationState } from "./packetDeformationState.js";
 import { PacketValidatedPublication } from "./packetValidatedPublication.js";
+import { compileMaterialEffectLedger, type MaterialEffectLedgerSnapshot } from "./materialEffectLedger.js";
 
 const cancelled = (): DOMException => new DOMException("Packet update cancelled or superseded.", "AbortError");
 export { GPU_CULLING_MIN_INSTANCES } from "./packetCulling.js";
@@ -52,7 +53,9 @@ export class PacketBuffers {
   private readonly lodInputs: PacketLodSceneCache;
   private shadowLod: PacketShadowLodResources | undefined;
   private readonly resident = new ResidentPacketBufferState();
-  constructor(private readonly session: DeviceSession, materialLayout?: MaterialLayouts, deformationPipelines?: Pipelines, private readonly meshletsEnabled = false) {
+  private materialEffects: MaterialEffectLedgerSnapshot | undefined;
+  constructor(private readonly session: DeviceSession, materialLayout?: MaterialLayouts, deformationPipelines?: Pipelines,
+    private readonly meshletsEnabled = false, private readonly meshletVisibility = false) {
     this.deformation = new PacketDeformationState(session, deformationPipelines);
     this.deformationStaticSources = new DeformationStaticSources(session);
     this.lodInputs = new PacketLodSceneCache(session);
@@ -64,9 +67,15 @@ export class PacketBuffers {
 
   /** Monotonic revision of successfully published visibility-affecting author state. */
   get visibilityRevision(): number { return this.sceneRevision; }
+  /** Last author-to-upload material reconciliation; absent for externally resident projections. */
+  get materialEffectLedger(): MaterialEffectLedgerSnapshot | undefined { return this.materialEffects; }
+  /** Live production material residency/bind-group telemetry; counters are monotonic for this renderer epoch. */
+  get materialBindingStats() { return this.materials.stats; }
   set(packet: RenderPacket): boolean {
     const generation = this.beginMutation();
-    return this.commit(this.stage(prepareRenderPacket(packet)), generation);
+    const prepared = prepareRenderPacket(packet);
+    const ledger = compileMaterialEffectLedger(packet, prepared.batches);
+    return this.commit(this.stage(prepared), generation, false, ledger);
   }
   /** Takes projection ownership; publication is deferred to the next frame boundary. */
   stageResidentProjection(projection: ResidentPacketProjection): boolean {
@@ -95,6 +104,7 @@ export class PacketBuffers {
     const oldGeometries = this.geometries, oldBatches = this.batches;
     this.geometries = current.geometries; this.geometryBounds = current.geometryBounds;
     this.batches = current.batches; this.textureLookup = current.textureLookup;
+    this.materialEffects = undefined;
     this.pruneCullingResources(); this.pruneLodInputs();
     this.motionHistory = new Map();
     if (current.changed) this.sceneRevision++;
@@ -118,7 +128,11 @@ export class PacketBuffers {
           if (generation !== this.generation || this.disposed || this.session.state !== "ready") throw cancelled();
         },
       }, update);
+      let ledger: MaterialEffectLedgerSnapshot;
+      try { ledger = compileMaterialEffectLedger(update, [...result.batches.values()].map(batch => batch.source)); }
+      catch (error) { this.batches = result.batches; this.dispose(); throw error; }
       this.batches = result.batches;
+      this.materialEffects = ledger;
       this.motionHistory = new Map(result.historyUpdates);
       this.pruneCullingResources(); this.pruneLodInputs();
       if (result.changed) this.sceneRevision++;
@@ -153,8 +167,9 @@ export class PacketBuffers {
     if (signal?.aborted) throw cancelled();
     const generation = this.beginMutation();
     const prepared = prepareRenderPacket(packet);
+    const ledger = compileMaterialEffectLedger(packet, prepared.batches);
     const { staged, checked } = this.stageValidated(prepared);
-    return this.validation.run(checked, signal, () => this.commit(staged, generation, true),
+    return this.validation.run(checked, signal, () => this.commit(staged, generation, true, ledger),
       () => this.rollback(staged), () => generation === this.generation && !this.disposed, cancelled);
   }
   private beginMutation(): number {
@@ -177,7 +192,8 @@ export class PacketBuffers {
     discardPacketBufferStage(this.stagingContext(), staged);
   }
 
-  private commit(staged: StagedPacketBuffers, generation: number, gpuValidated = false): boolean {
+  private commit(staged: StagedPacketBuffers, generation: number, gpuValidated = false,
+    materialEffects?: MaterialEffectLedgerSnapshot): boolean {
     if (staged.settled || generation !== this.generation || this.disposed || this.session.state !== "ready") {
       this.rollback(staged); throw cancelled();
     }
@@ -190,6 +206,7 @@ export class PacketBuffers {
     const previousResident = this.resident.detachActive();
     const oldGeometries = this.geometries, oldBatches = this.batches;
     this.geometries = staged.geometries; this.geometryBounds = bounds; this.batches = staged.batches;
+    this.materialEffects = materialEffects;
     this.pruneCullingResources(); this.pruneLodInputs();
     this.motionHistory = new Map();
     if (staged.changed) this.sceneRevision++;
@@ -203,6 +220,15 @@ export class PacketBuffers {
     let hasTransparent = false, hasMaterialTextures = false;
     for (const { source } of this.batches.values()) { hasTransparent ||= source.alphaMode === "BLEND"; hasMaterialTextures ||= source.textures !== undefined; }
     return { hasTransparent, hasMaterialTextures, hasDeformation: this.deformation.hasDeformation };
+  }
+
+  /** P0-2 可见性 pass 输入：当前绘制集的只读视图（opt-in 特性专用，不影响既有路径）。 */
+  visibilityInputs(): { readonly batches: ReadonlyMap<string, CachedPacketBatch>;
+    readonly geometries: ReadonlyMap<string, CachedPacketGeometry>;
+    readonly lod: PacketLodResources | undefined; readonly deformationActive: boolean } {
+    if (this.disposed) throw new Error("Packet resources are disposed.");
+    return { batches: this.batches, geometries: this.geometries, lod: this.lod,
+      deformationActive: this.deformation.hasDeformation };
   }
 
   encodeDeformation(encoder: GPUCommandEncoder): void { this.deformation.encode(encoder, this.batches, this.geometries); }
@@ -270,7 +296,7 @@ export class PacketBuffers {
     runResourceCleanup("Packet buffer disposal failed.", [() => this.validation.cancel(), () => this.deformation.dispose(),
       () => this.resident.cancel(context), () => { activeResident = this.resident.detachActive();
         this.geometries = new Map(); this.geometryBounds = new Map(); this.batches = new Map();
-        this.motionHistory = new Map(); this.textureLookup = this.textures; },
+        this.motionHistory = new Map(); this.textureLookup = this.textures; this.materialEffects = undefined; },
       ...geometries.map(value => () => { if (!activeResident) value.mesh.dispose(); }),
       ...batches.flatMap(value => [() => this.session.release(value.buffer),
         () => this.session.release(value.previousBuffer), () => this.materials.release(value.material)]),
@@ -284,6 +310,7 @@ export class PacketBuffers {
     const resident = this.resident.active !== undefined;
     return {
       deformationEnabled: this.deformation.enabled, meshletsEnabled: this.meshletsEnabled,
+      ...(this.meshletVisibility ? { meshletVisibility: true } : {}),
       deformationStaticSources: this.deformationStaticSources,
       ...(this.deformation.snapshot ? { deformationSnapshot: this.deformation.snapshot } : {}),
       session: this.session,

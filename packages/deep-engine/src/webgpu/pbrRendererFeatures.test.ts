@@ -10,6 +10,7 @@ describe("PBR renderer feature selection", () => {
       ambientOcclusion: false, temporalAa: false, spatialAa: false, bloom: false, vignette: false,
       occlusionCulling: false, toneMapping: "three-aces-r185" })).toEqual({ environment: false, fog: false, groundPlane: true, groundGrid: false,
       ambientOcclusion: false, screenSpaceReflection: false, temporalAa: false, spatialAa: false, bloom: false, vignette: false,
+      volumetricFog: false, visibilityBuffer: false,
       occlusionCulling: false, toneMapping: "three-aces-r185" });
     expect(DEFAULT_PBR_RENDERER_FEATURES.environment).toBe(true);
   });
@@ -17,6 +18,12 @@ describe("PBR renderer feature selection", () => {
     expect(resolvePbrRendererFeatures().screenSpaceReflection).toBe(false);
     expect(resolvePbrRendererFeatures({ screenSpaceReflection: true }).screenSpaceReflection).toBe(true);
     expect(() => resolvePbrRendererFeatures({ screenSpaceReflection: 1 as never })).toThrow("must be boolean");
+  });
+  it("keeps production volumetric fog opt-in", () => {
+    expect(resolvePbrRendererFeatures().volumetricFog).toBe(false);
+    expect(resolvePbrRendererFeatures({ volumetricFog: true })).toMatchObject({ volumetricFog: true, fog: false });
+    expect(resolvePbrRendererFeatures({ volumetricFog: true, fog: true })).toMatchObject({ volumetricFog: true, fog: true });
+    expect(() => resolvePbrRendererFeatures({ volumetricFog: 1 as never })).toThrow("must be boolean");
   });
   it("rejects malformed feature values", () => {
     expect(() => resolvePbrRendererFeatures(null as never)).toThrow("must be an object");

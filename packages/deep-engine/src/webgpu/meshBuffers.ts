@@ -93,6 +93,20 @@ export class MeshBuffers {
     pass.setIndexBuffer(draw.meshlets.indexBuffer, "uint32");
     for (let command = 0; command < draw.meshlets.commandCount; command++) pass.drawIndexedIndirect(draw.indirect, command * 20);
   }
+
+  /** P0-2 可见性切片布局；仅在 meshlet 预算声明 visibility 时存在。 */
+  get meshletVisibility() { return this.meshletSource?.visibility; }
+
+  /** P0-2 可见性光栅化：无共享布局 + carrier 三角索引，整层级一次 drawIndexed。 */
+  drawMeshletVisibility(pass: GPURenderPassEncoder, draw: PacketLodDraw): void {
+    const visibility = this.meshletSource?.visibility;
+    if (!visibility) throw Error("Visibility meshlet layout was not prepared for this geometry.");
+    pass.setVertexBuffer(0, visibility.positions);
+    pass.setVertexBuffer(1, draw.instances, draw.instanceByteOffset);
+    pass.setVertexBuffer(2, visibility.carriers);
+    pass.setIndexBuffer(visibility.indices.buffer, "uint32");
+    pass.drawIndexed(visibility.slotCount, 1);
+  }
 }
 
 /** GPU 顶点布局固定为 position/normal/uv0/uv1；旧 packet 缺失的坐标集补零。 */

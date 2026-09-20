@@ -46,6 +46,7 @@ import type { RenderGraphCompileResult } from "../renderGraph.js";
 import { AdaptiveQualityController, adaptiveShadowMapSize } from "./adaptiveQuality.js";
 import type { CascadedShadowQualityTier } from "../shadows/shadowQuality.js";
 import { ProbeClipmapPbrController } from "./probeClipmapPbrController.js";
+import { VisibilityBufferPath } from "./visibilityBufferPass.js";
 export type { FrameMetrics, PbrRendererOptions, RenderView } from "./pbrRendererTypes.js";
 export class PbrRenderer {
   readonly id = "deep-webgpu";
@@ -77,6 +78,7 @@ export class PbrRenderer {
   private probeClipmapBusy = false;
   private readonly probeClipmapAbort = new AbortController();
   private probeClipmapFailed = false;
+  private readonly visibility: VisibilityBufferPath | undefined;
   private readonly adaptiveQuality: AdaptiveQualityController | undefined;
   private readonly preparationPlan: RenderGraphCompileResult;
   private readonly preparationGroupIndex: number;
@@ -98,7 +100,7 @@ export class PbrRenderer {
     if (options.adaptiveQuality?.enabled) this.diagnostics.setEnabled(true);
     this.probeClipmap = options.probeClipmap === undefined ? undefined
       : new ProbeClipmapPbrController(this, probeClipmapDeviceEpoch(session.device), options.probeClipmap);
-    this.packets = new PacketBuffers(session, pipelines.materialLayout, deformationPipelines, options.meshlets === true);
+    this.packets = new PacketBuffers(session, pipelines.materialLayout, deformationPipelines, options.meshlets === true, features.visibilityBuffer);
     this.writeGeometryBuffers = features.ambientOcclusion || features.screenSpaceReflection || features.volumetricFog || features.temporalAa
       || !!deformationPipelines;
     this.ground = createPbrGround(session);
@@ -111,6 +113,9 @@ export class PbrRenderer {
     this.mainBindings = new PbrMainBindings(session, pipelines, this.frameBuffer, this.shadows, environment);
     this.transientTextures = new PbrTransientTexturePool(session, options.transientTextureBudgetBytes); this.targets = new RenderTargets(session, pipelines.output.getBindGroupLayout(0), this.outputs.buffer, this.transientTextures);
     this.features = features;
+    // P0-2 可见性切片（opt-in）：共享 frame uniform 与 transient 池；默认 features.visibilityBuffer=false 时不构建。
+    this.visibility = features.visibilityBuffer ? new VisibilityBufferPath(session, this.transientTextures, this.frameBuffer) : undefined;
+    if (this.visibility) void this.visibility.ensure();
     this.preparationPlan = compilePbrFrameGraph({ transparency: true, features,
       writeGeometryBuffers: this.writeGeometryBuffers });
     this.preparationGroupIndex = this.preparationPlan.parallelGroups?.findIndex(group =>
@@ -326,6 +331,11 @@ export class PbrRenderer {
     main.end();
     const gridTriangles = this.ground.author.encode(encoder, this.targets.hdr, this.targets.depth, frameState.depthViewProjection, frameState.worldToView, view.authorGrid);
     if (gridTriangles) { drawCalls++; triangles += gridTriangles; }
+    // P0-2 可见性合成（opt-in）：仅 HDR 管线路径；directDisplay 与 authorGrid 快路径保持逐字节不变。
+    if (this.visibility && !directClear) {
+      this.visibility.encodeComposite(encoder, { hdrView: this.targets.hdr, depthView: this.targets.depth,
+        width: size.width, height: size.height, frameData: this.frameData, inputs: this.packets.visibilityInputs() });
+    }
     // The chain owns override resolution. Keep the resolved snapshot above for
     // capture planning, but do not feed it back as if it were author input.
     const postProcessInput: PbrPostProcessInput = { encoder, targets: this.targets, revision: history.revision,
@@ -500,7 +510,8 @@ export class PbrRenderer {
     this.probeClipmapAbort.abort();
     this.probeClipmap?.dispose();
     const owners = [this.ground.author, this.outputs, this.environment, this.lighting, this.localShadows,
-      this.shadowState, this.previousHiZ, this.transparency, this.postProcess, this.packets, this.targets];
+      this.shadowState, this.previousHiZ, this.transparency, this.postProcess, this.packets, this.targets,
+      ...(this.visibility ? [this.visibility] : [])];
     runResourceCleanup("PBR renderer cleanup failed.", [...owners.map(owner => () => owner.dispose()),
       () => this.cameraHistory.reset(), () => this.session.dispose()]);
   }

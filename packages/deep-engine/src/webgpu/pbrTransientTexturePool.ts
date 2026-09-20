@@ -44,6 +44,8 @@ const BYTES_PER_PIXEL: Readonly<Record<string, number>> = Object.freeze({
   "r8unorm": 1, "r16float": 2, "rg8unorm": 2, "rg16float": 4,
   "rgba8unorm": 4, "rgba8snorm": 4, "r32float": 4, "depth32float": 4,
   "rgba16float": 8, "rg32float": 8, "rgba32float": 16,
+  // P0-2 可见性目标（rg32uint id 通道）按 4 字节/通道计价。
+  "r32uint": 4, "rg32uint": 8,
 });
 
 /** 估算纹理显存字节:bytes/pixel × 宽 × 高 × 采样;未登记格式抛错,不做静默猜测。 */

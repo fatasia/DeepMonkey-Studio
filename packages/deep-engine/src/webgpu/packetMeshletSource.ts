@@ -3,9 +3,10 @@ import { expandMeshletIndices } from "../geometry/meshletIndices.js";
 import type { GeometryResource } from "../renderPacket.js";
 import type { DeviceSession } from "./deviceSession.js";
 import { MeshletIndexBuffer } from "./meshletIndexBuffer.js";
+import { buildVisibilityMeshletLayout } from "./visibilityBufferEncoding.js";
 import { failWithResourceCleanup, runResourceCleanup } from "./resourceCleanup.js";
 export const PACKET_MESHLET_STAGE_BYTES = 32 * 1024 * 1024;
-export interface PacketMeshletBudget { remainingBytes: number }
+export interface PacketMeshletBudget { remainingBytes: number; /** P0-2 opt-in：同时构建可见性无共享布局。 */ visibility?: boolean }
 /** Candidate-stage entry used by Nanite Lite: all-or-nothing static build with explicit fallback. */
 export function prepareNaniteLiteCandidate(session: DeviceSession, geometry: GeometryResource, budget: PacketMeshletBudget) {
   return PacketMeshletSource.prepare(session, geometry, budget);
@@ -15,13 +16,17 @@ export class PacketMeshletSource {
   private disposed = false;
   private constructor(private readonly session: DeviceSession, readonly descriptors: GPUBuffer,
     readonly bounds: GPUBuffer, readonly indices: MeshletIndexBuffer, readonly count: number, readonly revision: number,
-    readonly budgetBytes: number, private readonly budget: PacketMeshletBudget) {}
+    readonly budgetBytes: number, private readonly budget: PacketMeshletBudget,
+    /** P0-2 可见性切片专用布局；仅在预算声明 visibility 时存在。 */
+    readonly visibility?: { readonly positions: GPUBuffer; readonly carriers: GPUBuffer; readonly indices: MeshletIndexBuffer; readonly slotCount: number }) {}
   static prepare(session: DeviceSession, geometry: GeometryResource, budget: PacketMeshletBudget):
     { source?: PacketMeshletSource; fallback?: string } {
     const triangles = geometry.indices.length / 3;
     if (triangles < 64) return { fallback: "small-geometry" };
     if (triangles > 512 * 126) return { fallback: "geometry-capacity" };
-    const estimate = geometry.vertices.byteLength + geometry.indices.byteLength + 512 * 80;
+    // 可见性无共享布局按槽位计价：position 12B + carrier 4B + 恒等索引 4B = 每槽 20B。
+    const visibilityBytes = budget.visibility ? triangles * 3 * 20 : 0;
+    const estimate = geometry.vertices.byteLength + geometry.indices.byteLength + 512 * 80 + visibilityBytes;
     if (estimate > budget.remainingBytes) return { fallback: "stage-memory-budget" };
     const positions = new Float32Array(geometry.vertices.length / 2);
     for (let vertex = 0; vertex < positions.length / 3; vertex++) positions.set(geometry.vertices.subarray(vertex * 6, vertex * 6 + 3), vertex * 3);
@@ -32,14 +37,24 @@ export class PacketMeshletSource {
     const limit = Math.min(device.limits.maxBufferSize, device.limits.maxStorageBufferBindingSize);
     if (Math.max(built.descriptors.byteLength, built.bounds.byteLength, expanded.indices.byteLength) > limit) return { fallback: "device-buffer-limit" };
     const buffers: GPUBuffer[] = []; let indices: MeshletIndexBuffer | undefined;
-    const upload = (label: string, data: Uint32Array<ArrayBuffer> | Float32Array<ArrayBuffer>) => {
-      const buffer = session.own(device.createBuffer({ label, size: data.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }));
+    const upload = (label: string, data: Uint32Array<ArrayBuffer> | Float32Array<ArrayBuffer>,
+      usage: GPUBufferUsageFlags = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST) => {
+      const buffer = session.own(device.createBuffer({ label, size: data.byteLength, usage }));
       buffers.push(buffer); device.queue.writeBuffer(buffer, 0, data); return buffer;
     };
     try {
       const descriptors = upload("Deep packet meshlet descriptors", built.descriptors), bounds = upload("Deep packet meshlet bounds", built.bounds);
+      let visibility: { positions: GPUBuffer; carriers: GPUBuffer; indices: MeshletIndexBuffer; slotCount: number } | undefined;
+      if (budget.visibility) {
+        const layout = buildVisibilityMeshletLayout(built, positions, expanded.winding);
+        const visibilityPositions = upload("Deep packet meshlet visibility positions", layout.positions, GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST);
+        const visibilityCarriers = upload("Deep packet meshlet visibility carriers", layout.triangleCarriers, GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST);
+        const visibilityIndices = new MeshletIndexBuffer(session, { ...expanded, indices: layout.indices });
+        visibility = { positions: visibilityPositions, carriers: visibilityCarriers, indices: visibilityIndices, slotCount: layout.indices.length };
+        buffers.push(visibilityPositions, visibilityCarriers);
+      }
       indices = new MeshletIndexBuffer(session, expanded); budget.remainingBytes -= estimate;
-      return { source: new PacketMeshletSource(session, descriptors, bounds, indices, built.meshletCount, geometry.revision, estimate, budget) };
+      return { source: new PacketMeshletSource(session, descriptors, bounds, indices, built.meshletCount, geometry.revision, estimate, budget, visibility) };
     } catch (error) { failWithResourceCleanup(error, "Packet meshlet preparation failed.", [
       ...buffers.map(buffer => () => session.release(buffer)), () => indices?.dispose(),
     ]); }
@@ -47,7 +62,10 @@ export class PacketMeshletSource {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true; this.budget.remainingBytes += this.budgetBytes;
+    const visibility = this.visibility;
     runResourceCleanup("Packet meshlet disposal failed.", [
     () => this.session.release(this.descriptors), () => this.session.release(this.bounds), () => this.indices.dispose(),
+    ...(visibility ? [() => this.session.release(visibility.positions),
+      () => this.session.release(visibility.carriers), () => visibility.indices.dispose()] : []),
   ]); }
 }
