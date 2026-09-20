@@ -1,5 +1,7 @@
 ## 2026-09-20 主线续跑检查点
 
+- R12 实际 output pipeline 来源追踪已补：无 SpatialAA 的 present 使用同一 WGSL 的 SHA-256 与入口行，内置渲染器拒绝外部 package/map 注入；四场景真 GPU 通过，含来源反查，证据 `test-output/r12-frame-capture-1789882931950/evidence.json`。其余内置 pass 未映射；资源快照/调试 UI 仍待。FINAL-GATE [首轮预检](reports/mainline-final-gate-2026-09-20.md)仍未通过，Web 类型/source-size/public-brand 失败项已定位。
+
 - 恢复入口：`docs/handoffs/mainline-closeout-2026-09-20.md`。R10 F04/F05 已在 `8dc7b14` 提交推送；R12 生产帧捕获切片已在 `726d8fd` 提交推送，完整 R12 仍待办。
 - R10 F06 固定 position motor/双向限位已通过 native/WASM 241 帧逐位对拍、WASM 重跑及移除马达/限位负对照；证据 `test-output/r10-f06-motor-limits-20260920-r1/evidence.json`。Rust 定向 10 项通过，F04/F05 金标不变。MultibodyJoint、速度模式/扭矩预算、运行时控制更新和产品 PhysicsWorld 宿主仍待，不扩大为完整 R10。
 - R12 已修复 begin 失败误取消既有帧，补 Shader Package 配置到 source-map 查询测试；集成 7 文件 / 49 项与 deep-engine tsc 通过。SSR 独立启用补齐几何输出并排除 direct-display；Hi-Z 维持硬件深度消费，不额外分配 MRT。真实 GPU 复验待执行。

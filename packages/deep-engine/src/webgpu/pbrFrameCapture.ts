@@ -14,11 +14,11 @@ export interface PbrFrameCaptureOptions {
   readonly session: FrameCaptureSession;
   /** A monotonic clock in milliseconds; defaults to the browser performance clock. */
   readonly now?: () => number;
-  /** Source-map entries from the shader package used by the pass executor. */
+  /** Standalone adapter source refs; built-in PbrRenderer rejects externally supplied provenance. */
   readonly sourceMapRefsByPass?: ReadonlyMap<string, readonly FrameCaptureSourceMapRef[]>;
-  /** The executable shader package used by this renderer. */
+  /** Standalone adapter package; the caller must execute it. Built-in PbrRenderer rejects this option. */
   readonly shaderPackage?: Pick<DeepShaderPackageV2, "passes">;
-  /** Explicit capture-pass → shader-package-pass bindings; IDs are never guessed. */
+  /** Standalone capture-pass → executed shader-package-pass bindings; IDs are never guessed. */
   readonly shaderPassBindings?: readonly FrameCaptureShaderPassBinding[];
 }
 
@@ -43,7 +43,7 @@ export class PbrFrameCapture {
   private readonly now: () => number;
   private readonly sourceMapRefsByPass: ReadonlyMap<string, readonly FrameCaptureSourceMapRef[]> | undefined;
 
-  constructor(private readonly options: PbrFrameCaptureOptions) {
+  constructor(private readonly options: PbrFrameCaptureOptions, ownership?: { readonly builtinRenderer: true }) {
     if (!options || typeof options !== "object" || !options.session
       || typeof options.session.beginFrame !== "function"
       || typeof options.session.recordPass !== "function"
@@ -53,6 +53,9 @@ export class PbrFrameCapture {
     }
     const hasPackage = options.shaderPackage !== undefined;
     const hasBindings = options.shaderPassBindings !== undefined;
+    if (ownership?.builtinRenderer && (hasPackage || hasBindings || options.sourceMapRefsByPass !== undefined)) {
+      throw new TypeError("Built-in PBR capture rejects external shader provenance; only executed pipeline sources are accepted.");
+    }
     if (hasPackage !== hasBindings) {
       throw new TypeError("PBR frame capture shaderPackage and shaderPassBindings must be provided together.");
     }
@@ -78,10 +81,16 @@ export class PbrFrameCapture {
     }
   }
 
-  recordPasses(actual: readonly PbrActualPassDescription[], executedPassIds?: ReadonlySet<string>): void {
+  recordPasses(actual: readonly PbrActualPassDescription[], executedPassIds?: ReadonlySet<string>,
+    presentSourceMapRefs?: readonly FrameCaptureSourceMapRef[]): void {
+    if (presentSourceMapRefs && this.sourceMapRefsByPass?.has("present")) {
+      throw new Error("Executed present shader provenance conflicts with external source-map configuration.");
+    }
     for (const description of actual) {
       if (executedPassIds && !executedPassIds.has(description.passId)) continue;
-      this.options.session.recordPass(pbrCapturePassInput(description, this.sourceMapRefsByPass));
+      const input = pbrCapturePassInput(description, this.sourceMapRefsByPass);
+      this.options.session.recordPass(description.passId === "present" && presentSourceMapRefs
+        ? { ...input, sourceMapRefs: presentSourceMapRefs } : input);
     }
   }
 

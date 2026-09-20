@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CASCADED_SHADOW_UNIFORM_BYTES } from "../shadows/cascadedShadowShader.js";
+import { sha256Utf8 } from "../shaderPackage/hash.js";
 import { createPipelines, PBR_FRAME_FLOAT_OFFSETS, PBR_FRAME_UNIFORM_BYTES, PBR_PREVIOUS_INSTANCE_BUFFER_LAYOUT } from "./pipelines.js";
 
 beforeEach(() => {
@@ -24,6 +25,15 @@ function fixture(messages: readonly GPUCompilationMessage[] = []) {
   };
   return { device: device as unknown as GPUDevice, descriptors, layouts, pipelineLayouts };
 }
+
+it("binds output provenance to the exact module code and output pipeline", async () => {
+  const f = fixture();
+  const result = await createPipelines(f.device, "bgra8unorm", {} as GPUBindGroupLayout);
+  const submitted = vi.mocked(f.device.createShaderModule).mock.calls.find(([descriptor]) => descriptor.label === "Deep HDR output")![0];
+  const refs = result.outputShaderProvenance!.refsFor(result.output);
+  expect(refs.map(ref => ref.moduleId)).toEqual(Array(2).fill(`builtin.pbr-output.sha256-${sha256Utf8(submitted.code)}`));
+  expect(() => result.outputShaderProvenance!.refsFor(result.main)).toThrow("executed pipeline");
+});
 
 it("builds deformation variants for all main and shadow modes without a fourth vertex stream", async () => {
   const f = fixture();

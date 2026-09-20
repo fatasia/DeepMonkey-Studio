@@ -8,6 +8,13 @@ import type { EditorOverlaySnapshot } from "./editorOverlayTypes.js";
 import type { PbrActualPassDescription } from "./pbrFramePlanResources.js";
 import { PBR_HDR_FORMAT } from "./renderTargets.js";
 import { SpatialAaPresent } from "./spatialAaPresent.js";
+import type { FrameCaptureSourceMapRef } from "../r12/frameCapture.js";
+
+export interface PbrPresentReceipt {
+  readonly view: GPUTextureView;
+  readonly acquireMs: number;
+  readonly sourceMapRefs?: readonly FrameCaptureSourceMapRef[];
+}
 
 /** Owns output settings, source bindings and the final presentation pass. */
 export class PbrOutputBindings {
@@ -55,9 +62,15 @@ export class PbrOutputBindings {
   }
 
   present(encoder: GPUCommandEncoder, source: GPUTexture, effects: PbrAuthorColorEffects | undefined,
-    measure: boolean, queries?: GPUQuerySet): { view: GPUTextureView; acquireMs: number } {
+    measure: boolean, queries?: GPUQuerySet, captureSource = false): PbrPresentReceipt {
     const surface = this.acquirePresent(measure);
     this.encode(encoder, source, surface.view, effects, queries);
+    // A logical present containing SpatialAA has multiple shader owners; keep it unmapped.
+    if (captureSource && !this.spatialAaEnabled) {
+      const provenance = this.pipelines.outputShaderProvenance;
+      if (!provenance) throw new Error("PBR output pipeline has no executable shader provenance.");
+      return { ...surface, sourceMapRefs: provenance.refsFor(this.pipelines.output) };
+    }
     return surface;
   }
 

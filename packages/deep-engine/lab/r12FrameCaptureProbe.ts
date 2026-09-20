@@ -2,6 +2,7 @@ import { FrameCaptureSession } from "../src/r12/frameCapture.js";
 import { PbrRenderer, type RenderView } from "../src/webgpu/pbrRenderer.js";
 import type { PbrRendererFeatureOptions } from "../src/webgpu/pbrRendererFeatures.js";
 import { spherePacket } from "../src/webgpu/spherePacket.js";
+import { outputShader } from "../src/webgpu/pbrShader.js";
 import { runR12ShaderPackageCaptureProbe } from "./r12ShaderPackageCaptureProbe.js";
 
 const disabled: PbrRendererFeatureOptions = {
@@ -16,6 +17,9 @@ const view: RenderView = { width: 192, height: 128, pixelRatio: 1,
 /** Records production PbrRenderer submissions, not manually synthesized capture records. */
 export async function runR12FrameCaptureProbe() {
   const cases = [];
+  const outputHash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(outputShader))),
+    byte => byte.toString(16).padStart(2, "0")).join("");
+  const outputModuleId = `builtin.pbr-output.sha256-${outputHash}`;
   for (const scenario of [
     { name: "direct", features: disabled, transparent: false },
     { name: "ssr-only", features: { ...disabled, screenSpaceReflection: true }, transparent: false },
@@ -49,6 +53,18 @@ export async function runR12FrameCaptureProbe() {
         exactPassSequence: records.every(record => record.passes.map(pass => pass.passId).join(",") === expectedPasses.join(",")),
         noGpuDiagnostics: renderer.session.diagnostics.length === 0,
         transparentExecuted: metrics.every(metric => metric.weightedOit === scenario.transparent),
+        actualOutputSource: records.every(record => {
+          const refs = record.passes.find(pass => pass.passId === "present")?.sourceMapRefs ?? [];
+          if (scenario.name !== "ssr-only") return refs.length === 0;
+          return refs.length === 2 && ["vertex", "fragment"].every(stage => {
+            const ref = refs.find(entry => entry.stage === stage);
+            return ref?.moduleId === outputModuleId && ref.nodeId === `wgsl.entrypoint.${stage}Main`
+              && outputShader.split("\n")[ref.generatedLine - 1]?.includes(`fn ${stage}Main(`);
+          });
+        }),
+        outputSourceLookup: scenario.name === "ssr-only"
+          ? capture.findBySourceMap({ moduleId: outputModuleId }).length === 4
+          : capture.findBySourceMap({ moduleId: outputModuleId }).length === 0,
       };
       cases.push({ name: scenario.name, success: Object.values(checks).every(Boolean), checks,
         adapter: renderer.session.adapterInfo, metrics, records, gpuQueueCompleted: true });
@@ -58,6 +74,6 @@ export async function runR12FrameCaptureProbe() {
   }
   const shaderPackage = await runR12ShaderPackageCaptureProbe();
   return { success: cases.every(entry => entry.success) && shaderPackage.success, cases, shaderPackage,
-    sourceMap: "unverified: built-in PBR passes do not consume a DeepShaderPackageV2; no invented bindings",
+    sourceMap: "Built-in non-SpatialAA present uses exact executed output WGSL identity and entrypoint lines; other built-in passes remain unmapped. Independent DeepShaderPackage execution is separate.",
     scope: "Real GPU encode/submit and validation; not resource snapshot/readback or visual quality acceptance" };
 }

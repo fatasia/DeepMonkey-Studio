@@ -31,6 +31,8 @@
 
 ### 2026-09-20 R12 续跑检查点
 
+- 最新：无 SpatialAA 的实际 present 管线已记录 exact WGSL SHA-256/入口行来源，拒绝外部来源注入；`test-output/r12-frame-capture-1789882931950/evidence.json` 四场景真 GPU 与查询通过。不是 ShaderGraph 作者节点映射，其他内置 pass、资源快照与 UI 仍待。FINAL-GATE 结果见 [首轮预检](../reports/mainline-final-gate-2026-09-20.md)。
+
 - R10 F04/F05 已由 `8dc7b14` 提交并推送，后续不重复实现这两个夹具。
 - R12 工作树已接入 render-loop 捕获事务；新增 Shader Package 显式 pass binding 配置和 source-map 查询测试。捕获开启被拒绝时，已修复误取消其他调用者活动帧的问题。
 - 本次聚焦验证：R12 与 capture 共 3 文件 / 20 项通过；后续集成共 7 文件 / 49 项通过，deep-engine tsc 通过。排除了 test-output 镜像路径，不重复计算测试数。SSR 单独开启需要 MRT；Hi-Z 实际读取硬件深度，不为它额外分配 MRT。

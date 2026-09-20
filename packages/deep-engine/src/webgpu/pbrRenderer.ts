@@ -28,7 +28,7 @@ import { PbrEnvironmentState, type EnvironmentStageResult } from "./pbrEnvironme
 import { PbrMainBindings } from "./pbrMainBindings.js";
 import { PbrLodWork } from "./pbrLodWork.js";
 import { runResourceCleanup } from "./resourceCleanup.js";
-import { PbrOutputBindings } from "./pbrOutputBindings.js";
+import { PbrOutputBindings, type PbrPresentReceipt } from "./pbrOutputBindings.js";
 import { PbrRendererDiagnostics } from "./pbrRendererDiagnostics.js";
 import { validatePbrRenderView } from "./pbrRenderViewValidation.js";
 import { beginPbrOpaquePass } from "./pbrOpaquePass.js";
@@ -79,7 +79,7 @@ export class PbrRenderer {
     this.mainBindings = new PbrMainBindings(session, pipelines, this.frameBuffer, this.shadows, environment);
     this.transientTextures = new PbrTransientTexturePool(session, options.transientTextureBudgetBytes); this.targets = new RenderTargets(session, pipelines.output.getBindGroupLayout(0), this.outputs.buffer, this.transientTextures);
     this.features = features;
-    this.frameCapture = options.frameCapture === undefined ? undefined : new PbrFrameCapture(options.frameCapture);
+    this.frameCapture = options.frameCapture === undefined ? undefined : new PbrFrameCapture(options.frameCapture, { builtinRenderer: true });
     this.postProcess = new PbrPostProcessChain(session, this.features, this.transientTextures);
     this.transparency = new PbrTransparencyPass(session, this.transientTextures);
     this.lighting = lighting; this.localShadows = localShadows;
@@ -198,7 +198,7 @@ export class PbrRenderer {
     const opaqueCulling = this.packets.encodeCulling(encoder, mainFrustum, "opaque",
       { sceneRevision: this.packets.visibilityRevision, ...(previousHiZ ? { previousHiZ } : {}) });
     const hasTransparent = drawProfile.hasTransparent;
-    let present = directClear ? this.outputs.acquirePresent(this.performanceTelemetry.enabled) : undefined;
+    let present: PbrPresentReceipt | undefined = directClear ? this.outputs.acquirePresent(this.performanceTelemetry.enabled) : undefined;
     const mainTimestamps = directClear && timing && !view.editorOverlay?.vertices.length ? { querySet: timing.queries,
       ...(!shadowUpdated ? { beginningOfPassWriteIndex: 0 } : {}), endOfPassWriteIndex: 1 }
       : !shadowUpdated && timing ? timingStart.timestampWrites : undefined;
@@ -241,7 +241,7 @@ export class PbrRenderer {
       : this.postProcess.encodeFinal(postProcessInput, temporalInput);
     if (!directClear) {
       present = this.outputs.present(encoder, finalEffects.color, view.authorColorEffects, this.performanceTelemetry.enabled,
-        view.editorOverlay?.vertices.length ? undefined : timing?.queries);
+        view.editorOverlay?.vertices.length ? undefined : timing?.queries, this.frameCapture !== undefined);
       drawCalls += this.features.spatialAa ? 2 : 1; triangles += this.features.spatialAa ? 2 : 1;
     }
     const overlayTriangles = this.outputs.encodeEditorOverlay(encoder, present!.view, view.editorOverlay, timing?.queries);
@@ -251,7 +251,7 @@ export class PbrRenderer {
     const encoded = this.performanceTelemetry.enabled ? performance.now() : 0;
     if (this.frameCapture && captureOpen) {
       const executedPassIds = this.executedCapturePassIds(directClear !== undefined, postProcess, hasTransparent);
-      this.frameCapture.recordPasses(this.captureActualPasses ?? [], executedPassIds);
+      this.frameCapture.recordPasses(this.captureActualPasses ?? [], executedPassIds, present?.sourceMapRefs);
       this.frameCapture.mark("submit", "queue.submit");
     }
     submitAttempted = true; device.queue.submit([commands]); this.targets.commitFrame();

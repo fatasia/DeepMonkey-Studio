@@ -18,6 +18,22 @@ function actual(passId: string): PbrActualPassDescription {
 }
 
 describe("PbrFrameCapture", () => {
+  it("rejects external provenance on the built-in renderer", () => {
+    const session = new FrameCaptureSession();
+    expect(() => new PbrFrameCapture({ session, sourceMapRefsByPass: new Map() }, { builtinRenderer: true })).toThrow("rejects external");
+    expect(() => new PbrFrameCapture({ session, shaderPackage: { passes: [] }, shaderPassBindings: [] }, { builtinRenderer: true })).toThrow("rejects external");
+  });
+  it("keeps executed present refs queryable and rejects external conflicts", () => {
+    const session = new FrameCaptureSession(), refs = [{ moduleId: "builtin.output", stage: "fragment" as const,
+      nodeId: "wgsl.entrypoint.fragmentMain", generatedLine: 1 }];
+    const capture = new PbrFrameCapture({ session, now: () => 10 }, { builtinRenderer: true });
+    capture.begin("executed", PLAN);
+    capture.recordPasses([actual("present")], new Set(["present"]), refs);
+    capture.end();
+    expect(session.findBySourceMap({ nodeId: "wgsl.entrypoint.fragmentMain" })).toHaveLength(1);
+    const external = new PbrFrameCapture({ session, sourceMapRefsByPass: new Map([["present", refs]]) });
+    expect(() => external.recordPasses([actual("present")], undefined, refs)).toThrow("conflicts");
+  });
   it("preserves an existing frame when a new begin is rejected", () => {
     const session = new FrameCaptureSession();
     const capture = new PbrFrameCapture({ session, now: () => 10 });

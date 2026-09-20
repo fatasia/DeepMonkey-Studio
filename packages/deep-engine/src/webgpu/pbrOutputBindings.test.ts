@@ -25,6 +25,29 @@ function fixture() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PBR output pass ownership", () => {
+  it("records provenance only after successful non-SpatialAA encoding and only when requested", () => {
+    const f = fixture(), refsFor = vi.fn(() => []);
+    const output = new PbrOutputBindings(f.session, { ...f.pipelines, outputShaderProvenance: { refsFor } }, () => 0, false);
+    output.present(f.encoder as unknown as GPUCommandEncoder, f.source, undefined, false);
+    expect(refsFor).not.toHaveBeenCalled();
+    f.pass.draw.mockImplementationOnce(() => { throw new Error("draw failed"); });
+    expect(() => output.present(f.encoder as unknown as GPUCommandEncoder, f.source, undefined, false, undefined, true)).toThrow("draw failed");
+    expect(refsFor).not.toHaveBeenCalled();
+    expect(output.present(f.encoder as unknown as GPUCommandEncoder, f.source, undefined, false, undefined, true).sourceMapRefs).toEqual([]);
+    expect(refsFor).toHaveBeenCalledWith(f.pipelines.output);
+    output.dispose();
+  });
+  it("does not label SpatialAA's composite logical present with only the output source", () => {
+    const f = fixture(), refsFor = vi.fn(() => []);
+    const output = new PbrOutputBindings(f.session, { ...f.pipelines, outputShaderProvenance: { refsFor } }, () => 0);
+    expect(output.present(f.encoder as unknown as GPUCommandEncoder, f.source, undefined, false, undefined, true).sourceMapRefs).toBeUndefined();
+    expect(refsFor).not.toHaveBeenCalled(); output.dispose();
+  });
+  it("fails closed when capture requests a pipeline without provenance", () => {
+    const f = fixture(), output = new PbrOutputBindings(f.session, f.pipelines, () => 0, false);
+    expect(() => output.present(f.encoder as unknown as GPUCommandEncoder, f.source, undefined, false, undefined, true)).toThrow("no executable shader provenance");
+    output.dispose();
+  });
   it("explicitly disabled spatial AA uses one display pass without intermediate allocation", () => {
     const f = fixture(), output = new PbrOutputBindings(f.session, f.pipelines, () => 0, false);
     const queries = {} as GPUQuerySet;

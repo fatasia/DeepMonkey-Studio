@@ -6,6 +6,7 @@ import type { MaterialLayouts } from "./materialBindings.js";
 import { PBR_DEPTH_FORMAT, PBR_HDR_FORMAT, PBR_MAIN_SAMPLE_COUNT, PBR_OPAQUE_ATTACHMENT_FORMATS } from "./renderTargets.js";
 import { weightedOitColorTargets } from "./weightedOit.js";
 import { CASCADED_SHADOW_UNIFORM_BYTES } from "../shadows/cascadedShadowShader.js";
+import { createPbrOutputShaderProvenance, type PbrOutputShaderProvenance } from "./pbrOutputShaderProvenance.js";
 
 export const PBR_FRAME_UNIFORM_FLOATS = 96;
 export const PBR_FRAME_UNIFORM_BYTES = PBR_FRAME_UNIFORM_FLOATS * 4;
@@ -31,6 +32,7 @@ export interface Pipelines {
   readonly displayDirectionalMain?: GPURenderPipeline;
   readonly shadowPipelines: ReadonlyMap<string, GPURenderPipeline>;
   readonly output: GPURenderPipeline;
+  readonly outputShaderProvenance?: PbrOutputShaderProvenance;
   readonly materialLayout: MaterialLayouts;
   readonly cascadedShadowLayout: GPUBindGroupLayout;
   readonly deformationPlainLayout?: GPUBindGroupLayout;
@@ -231,7 +233,8 @@ export async function createPipelines(device: GPUDevice, format: GPUTextureForma
       displayDirectionalPipelines.get(mainPipelineKey("plain", false, "ccw"))! } : {}),
     shadow: shadowPipelines.get(shadowPipelineKey("solid", "ccw"))!, mainPipelines, displayPipelines,
     displayDirectionalPipelines, shadowPipelines,
-    output: outputPipeline, materialLayout: { material }, cascadedShadowLayout,
+    output: outputPipeline, outputShaderProvenance: createPbrOutputShaderProvenance(outputPipeline, outputShader),
+    materialLayout: { material }, cascadedShadowLayout,
     ...(deformation ? { deformationPlainLayout: emptyMaterialLayout } : {}) };
 }
 
