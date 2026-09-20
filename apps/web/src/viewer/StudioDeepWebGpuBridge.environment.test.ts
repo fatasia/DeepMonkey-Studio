@@ -45,7 +45,7 @@ describe("Studio Deep bridge environment staging", () => {
     const scene = new THREE.Scene(); scene.background = new THREE.Color().setRGB(0.1, 0.2, 0.3);
     scene.environment = texture(2); scene.environmentIntensity = 0.4;
     const authorCanvas = canvas(), camera = new THREE.PerspectiveCamera();
-    const backend = { sync: vi.fn(async () => ({ status: "committed", update: "instances", packet: {} })),
+    const backend = { setProbeClipmapEnabled: vi.fn(), sync: vi.fn(async () => ({ status: "committed", update: "instances", packet: {} })),
       prepareScene: vi.fn(async (_root: unknown, _view: RenderView) => ({ frame: 1 })),
       stageEnvironment: vi.fn(async (_source: PbrEnvironmentSource, _signal: AbortSignal): Promise<"staged" | "superseded"> => "staged"),
       render: vi.fn((_view: RenderView) => ({ frame: 1 })), dispose: vi.fn(), runtime: {} };

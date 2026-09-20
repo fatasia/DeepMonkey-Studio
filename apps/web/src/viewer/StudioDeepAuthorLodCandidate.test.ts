@@ -23,7 +23,7 @@ function fixture() {
   lod.addLevel(new THREE.Mesh(new THREE.PlaneGeometry(), material), 10, 0.2);
   const selection = () => lod.levels.flatMap((level, index) => level.object.visible ? [index] : []);
   const captures: number[][] = [], update = vi.spyOn(lod, "update");
-  const backend = { prepareScene: vi.fn(async () => { captures.push(selection()); return { frame: 1 }; }),
+  const backend = { setProbeClipmapEnabled: vi.fn(), prepareScene: vi.fn(async () => { captures.push(selection()); return { frame: 1 }; }),
     sync: vi.fn(async () => ({ status: "committed" })), render: vi.fn(() => ({ frame: 1 })),
     dispose: vi.fn(), runtime: { session: { state: "ready" } } };
   const create = vi.fn(async () => { captures.push(selection()); return backend; });

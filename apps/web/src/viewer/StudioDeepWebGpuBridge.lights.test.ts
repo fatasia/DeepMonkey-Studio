@@ -34,7 +34,7 @@ describe("Studio Deep bridge author lighting", () => {
     const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera();
     scene.background = new THREE.Color("#123456");
     const authorCanvas = canvas(), container = { clientWidth: 640, clientHeight: 480, append: vi.fn() };
-    const backend = { prepareScene: vi.fn(async (_root: unknown, _view: RenderView) => ({ frame: 1 })),
+    const backend = { setProbeClipmapEnabled: vi.fn(), prepareScene: vi.fn(async (_root: unknown, _view: RenderView) => ({ frame: 1 })),
       stageShadowMapSize: vi.fn(async (_mapSize: number, _signal: AbortSignal): Promise<"staged" | "superseded"> => "staged"),
       sync: vi.fn(async () => ({ status: "committed", update: "instances", packet: {} })),
       render: vi.fn((_view: RenderView) => ({ frame: 1 })), dispose: vi.fn(), runtime: {} };
