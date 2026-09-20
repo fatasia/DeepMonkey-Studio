@@ -25,9 +25,12 @@ async function bootstrap(): Promise<void> {
   await initializeSceneViewerDelivery(loadSceneViewerDeliveryManifest);
   markStartup("delivery-manifest-loaded");
   if (sceneViewerBuild) {
-    if (!isSceneViewerDeliveryRuntime()) throw new Error("只读客户端缺少发布器清单，已阻止进入工作台");
-    await import("./delivery/sceneViewerStyles");
-    const { SceneViewerRoot } = await import("./delivery/SceneViewerRoot");
+    if (!isSceneViewerDeliveryRuntime()) throw Error("只读客户端缺少发布器清单，已阻止进入工作台");
+    // 样式与渲染根并行加载：CSS 不阻塞 JS 求值，任一失败仍整体抛错（语义不变）。
+    const [, { SceneViewerRoot }] = await Promise.all([
+      import("./delivery/sceneViewerStyles"),
+      import("./delivery/SceneViewerRoot"),
+    ]);
     markStartup("scene-viewer-render-start");
     renderRoot(<SceneViewerRoot />);
     return;
@@ -36,10 +39,12 @@ async function bootstrap(): Promise<void> {
 }
 
 async function renderStudioApplication(): Promise<void> {
-  await import("./editorStyles");
+  const [, { PublishedApplicationRoot }] = await Promise.all([
+    import("./editorStyles"),
+    import("./delivery/PublishedApplicationRoot"),
+  ]);
   markStartup("editor-styles-loaded");
   if (/^\/apps(?:\/|$)/.test(window.location.pathname)) {
-    const { PublishedApplicationRoot } = await import("./delivery/PublishedApplicationRoot");
     markStartup("studio-render-start");
     renderRoot(<PublishedApplicationRoot />);
     return;
@@ -99,7 +104,9 @@ async function renderStudioApplication(): Promise<void> {
     }
   }
 
-  const [{ App }, { DesktopConnectionGate }] = await Promise.all([
+  // 编辑器主路径：样式与应用包并行加载（样式原本串行阻塞在此处之前）。
+  const [, { App }, { DesktopConnectionGate }] = await Promise.all([
+    import("./editorStyles"),
     import("./App"),
     import("./components/DesktopConnectionGate"),
   ]);
