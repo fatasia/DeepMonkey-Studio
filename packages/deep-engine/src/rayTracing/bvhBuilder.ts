@@ -6,9 +6,11 @@
  */
 
 export interface BvhNode {
-  /** 内部节点：左右子；叶子：三角形起始/数量。bounds 恒为整棵子树的包围盒。 */
+  /** 内部节点：左右子节点索引；叶子：三角形起始/数量。bounds 恒为整棵子树的包围盒。 */
   readonly leftFirst: number;
   readonly count: number;
+  /** 内部节点专用：右子节点索引（递归构建中与 leftFirst 不相邻）。 */
+  readonly rightChild?: number;
   readonly minX: number; readonly minY: number; readonly minZ: number;
   readonly maxX: number; readonly maxY: number; readonly maxZ: number;
 }
@@ -67,7 +69,7 @@ export function buildBvh(input: BvhBuildInput): BvhBuildResult {
     const leftCount = Math.max(1, Math.min(count - 1, left - first));
     const leftIndex = build(first, leftCount);
     const rightIndex = build(first + leftCount, count - leftCount);
-    nodes[nodeIndex] = { leftFirst: leftIndex, count: 0, minX, minY, minZ, maxX, maxY, maxZ };
+    nodes[nodeIndex] = { leftFirst: leftIndex, rightChild: rightIndex, count: 0, minX, minY, minZ, maxX, maxY, maxZ };
     return nodeIndex;
   };
   build(0, triangles);
