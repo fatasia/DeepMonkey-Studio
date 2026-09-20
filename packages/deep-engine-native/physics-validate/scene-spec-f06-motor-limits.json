@@ -1,0 +1,22 @@
+{
+  "schema": "deep-engine.physics-scene",
+  "schemaVersion": 1,
+  "id": "r10-f06-motor-limits-v1",
+  "timestep": { "mode": "fixed", "dt": 0.016666666666666666, "steps": 240 },
+  "gravity": [0, 0, 0],
+  "ground": {
+    "kind": "cuboid", "halfExtents": [25, 0.5, 25], "translation": [0, -0.5, 0],
+    "friction": 0.05, "restitution": 0, "bodyType": "fixed", "canSleep": false
+  },
+  "bodies": [
+    { "id": "upper", "shape": { "kind": "ball", "radius": 0.5 }, "translation": [-2, 2, 0], "linvel": [0, 0, 0], "bodyType": "dynamic", "canSleep": false },
+    { "id": "lower", "shape": { "kind": "ball", "radius": 0.5 }, "translation": [0, 2, 0], "linvel": [0, 0, 0], "bodyType": "dynamic", "canSleep": false },
+    { "id": "position", "shape": { "kind": "ball", "radius": 0.5 }, "translation": [2, 2, 0], "linvel": [0, 0, 0], "bodyType": "dynamic", "canSleep": false }
+  ],
+  "joints": [
+    { "id": "upper-stop", "kind": "revolute", "body1": "ground", "body2": "upper", "anchor1": [-2, 2.5, 0], "anchor2": [0, 0, 0], "axis": [0, 0, 1], "limits": [-0.35, 0.35], "motor": { "targetPosition": 1, "targetVelocity": 0, "stiffness": 20, "damping": 4, "model": "acceleration" } },
+    { "id": "lower-stop", "kind": "revolute", "body1": "ground", "body2": "lower", "anchor1": [0, 2.5, 0], "anchor2": [0, 0, 0], "axis": [0, 0, 1], "limits": [-0.35, 0.35], "motor": { "targetPosition": -1, "targetVelocity": 0, "stiffness": 20, "damping": 4, "model": "acceleration" } },
+    { "id": "position-servo", "kind": "revolute", "body1": "ground", "body2": "position", "anchor1": [2, 2.5, 0], "anchor2": [0, 0, 0], "axis": [0, 0, 1], "motor": { "targetPosition": 0.2, "targetVelocity": 0, "stiffness": 2, "damping": 0.4, "model": "force" } }
+  ],
+  "contract": { "frameFormat": "physics-frame-v1", "jointKinds": ["revolute"], "controls": ["position-velocity-motor", "lower-limit", "upper-limit"] }
+}

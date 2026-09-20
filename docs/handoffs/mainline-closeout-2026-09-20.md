@@ -41,6 +41,8 @@
 
 ### R10 Rapier F04/F05
 
+最新增量：F06 固定 position motor（acceleration/force）与双向限位已完成双端 241 帧逐位对拍，WASM 重跑和移除控制负对照通过；Rust 定向 10 项通过，F04/F05 金标保持不变。证据 `test-output/r10-f06-motor-limits-20260920-r1/evidence.json`，spec SHA-256 `26988f7c813fc28158511182ef3d983b4df335d92679d75018732270224ad4bc`。仍待 MultibodyJoint、速度模式/扭矩预算、运行时控制更新与产品 PhysicsWorld 宿主。
+
 现有 `packages/deep-engine-native/physics-validate/` 已具备：
 
 - `physics-frame-v1` canonical frame 合同；
@@ -56,23 +58,18 @@
 - joint 首分歧定位；
 - 旧无关节场景保持旧 canonical 字节格式。
 
-`runner.rs`、WASM runner 已按同一 spec 构造 revolute `ImpulseJoint`；新增 F04 单关节与 F05 三段链场景，native cargo 7/7，F04/F05 对拍均 `bitwiseIdentical=true`。MultibodyJoint、马达/限位、产品 PhysicsWorld 宿主接线仍未完成。
+`runner.rs`、WASM runner 已按同一 spec 构造 revolute `ImpulseJoint`；新增 F04 单关节与 F05 三段链场景，native cargo 7/7，F04/F05 对拍均 `bitwiseIdentical=true`。F06 增量与剩余范围见本节最新记录。
 
 ### R12
 
-代码已由 `0be6b70` 提交。下一步不是重写：
-
-- 接入真实 render loop 的 pass begin/end；
-- 把 compiled render plan / actual pass description 映射到 capture record；
-- 将 shader package source map 与 capture ref 连接；
-- 仍需真实 GPU readback/资源快照策略（可单独排期）。
+生产 render-loop 捕获、compiled plan/actual pass 映射、独立 shader package source-map 适配已由 `726d8fd` 提交推送。下一步是内置 PBR source-map 消费、通用资源快照与调试 UI；具体证据和边界见本页续跑检查点。
 
 ## 4. 仍未完成的主线任务（按优先级）
 
 ### P0：本轮先收口
 
-1. R10 F04 revolute + F05 joint chain：**已完成首个双端门禁**；后续只剩 MultibodyJoint/马达/限位与产品宿主接线。
-2. R12 render-loop 接线：让 `FrameCaptureSession` 被实际 pass 执行路径调用，而不是只有 CPU API。
+1. R10 F04/F05/F06：固定 revolute、joint chain、position motor 与双向限位双端门禁已完成；MultibodyJoint、速度模式/扭矩预算、运行时控制更新与产品宿主接线仍待。
+2. R12 生产 render-loop 捕获已交付；内置 PBR source-map 消费、资源快照和调试 UI 仍待。
 3. FINAL-GATE 第一轮：性能、确定性、渲染回归、核心 UI/功能回归；不包含 Babylon/Unity/A01-X/480min soak。
 
 ### P1：性能轴
@@ -119,8 +116,8 @@
 ## 6. 下一会话推荐执行顺序
 
 1. 读取本交接文档与 `docs/specs/de26-master-execution-roadmap-2026-09-19.md`。
-2. 完成 R10 joint spec + runner + WASM 对拍；跑 `cargo test` 与 `node-wasm/run-and-compare.mjs`，写 F04/F05 evidence。
-3. 接 R12 到真实 render loop；至少记录一个实际 compiled pass 的 source-map 反查证据。
+2. 沿 R10 F06 已验证实现推进产品宿主与剩余关节控制，不重写 F04/F05/F06。
+3. 沿 R12 已提交真实捕获推进内置 PBR source-map 与资源快照，不重复独立 package 探针。
 4. 接 G7 pass 到 PBR post-process chain（先 feature off，再聚焦 GPU contract）。
 5. 接 R6-3 scheduler 到实际 RenderGraph executor，不改 plan hash 合同。
 6. 补 P5/P7 UI 导出入口并做浏览器真实交互闭环；再做 FINAL-GATE 第一轮。
@@ -128,7 +125,7 @@
 
 ## 7. 提交与交接纪律
 
-- 不 push，除非用户明确要求。
+- 用户已授权自主普通 push；禁止强推。
 - 每一车道独立 commit，提交信息说明能力、测试数字和未验证边界。
 - 发现一个机制缺陷要做同族排查，不做表面补丁。
 - 未接真实 GPU、未做真实浏览器、未做双端对拍的部分必须标记 partial/unverified。

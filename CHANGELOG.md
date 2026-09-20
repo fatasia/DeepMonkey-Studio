@@ -4,6 +4,7 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+- Validate fixed revolute position motors and bidirectional limits across native and WASM physics; preserve existing joint-frame golden hashes.
 - Add optional PBR frame capture with feature-specific pass plans, submission markers and explicit shader source-map bindings; repair SSR-only geometry outputs and composite shader compilation.
 - Skip the default Bloom chain for pure-2D runtime packages at the production entrypoints (run, verify, package-live); Bloom targets are no longer allocated and forward targets stay 1×1 with pixel-identical output.
 

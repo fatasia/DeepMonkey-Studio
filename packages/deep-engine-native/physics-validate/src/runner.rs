@@ -34,6 +34,40 @@ pub struct JointSpec {
     pub anchor1: [f64; 3],
     pub anchor2: [f64; 3],
     pub axis: [f64; 3],
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limits: Option<[f64; 2]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motor: Option<JointMotorSpec>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct JointMotorSpec {
+    pub target_position: f64,
+    pub target_velocity: f64,
+    pub stiffness: f64,
+    pub damping: f64,
+    pub model: JointMotorModel,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug)]
+#[serde(rename_all = "kebab-case")]
+pub enum JointMotorModel { Acceleration, Force }
+
+fn validate_joint_controls(joint: &JointSpec) -> Result<(), String> {
+    let finite_f32 = |value: f64| value.is_finite() && (value as f32).is_finite();
+    if let Some([min, max]) = joint.limits {
+        if !finite_f32(min) || !finite_f32(max) || min > max {
+            return Err(format!("joint {}: limits must be finite f32 values with min <= max", joint.id));
+        }
+    }
+    if let Some(motor) = &joint.motor {
+        if ![motor.target_position, motor.target_velocity, motor.stiffness, motor.damping]
+            .into_iter().all(finite_f32) || motor.stiffness < 0.0 || motor.damping < 0.0 {
+            return Err(format!("joint {}: motor values must be finite f32 and stiffness/damping nonnegative", joint.id));
+        }
+    }
+    Ok(())
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -159,6 +193,7 @@ pub fn run_scene(spec: &SceneSpec) -> RunOutcome {
     let body_handles: std::collections::HashMap<_, _> = handles.iter().cloned().collect();
     let mut joint_ids = Vec::with_capacity(spec.joints.len());
     for joint_spec in &spec.joints {
+        validate_joint_controls(joint_spec).expect("valid joint controls");
         assert_eq!(joint_spec.kind, "revolute", "仅支持 revolute joint");
         let body1 = *body_handles
             .get(&joint_spec.body1)
@@ -166,7 +201,7 @@ pub fn run_scene(spec: &SceneSpec) -> RunOutcome {
         let body2 = *body_handles
             .get(&joint_spec.body2)
             .unwrap_or_else(|| panic!("joint body2 missing: {}", joint_spec.body2));
-        let joint = RevoluteJointBuilder::new(Vec3::new(
+        let mut joint = RevoluteJointBuilder::new(Vec3::new(
             joint_spec.axis[0] as f32,
             joint_spec.axis[1] as f32,
             joint_spec.axis[2] as f32,
@@ -182,6 +217,17 @@ pub fn run_scene(spec: &SceneSpec) -> RunOutcome {
             joint_spec.anchor2[2] as f32,
         ))
         .build();
+        if let Some([min, max]) = joint_spec.limits {
+            joint.set_limits([min as f32, max as f32]);
+        }
+        if let Some(motor) = &joint_spec.motor {
+            joint.set_motor_model(match motor.model {
+                JointMotorModel::Acceleration => MotorModel::AccelerationBased,
+                JointMotorModel::Force => MotorModel::ForceBased,
+            });
+            joint.set_motor(motor.target_position as f32, motor.target_velocity as f32,
+                motor.stiffness as f32, motor.damping as f32);
+        }
         let data = joint.data().clone();
         impulse_joints.insert(body1, body2, joint, true);
         joint_ids.push((joint_spec.id.clone(), joint_spec.kind.clone(), joint_spec.body1.clone(), joint_spec.body2.clone(), data));
@@ -256,5 +302,7 @@ pub fn run_scene(spec: &SceneSpec) -> RunOutcome {
 }
 
 pub fn parse_spec(bytes: &[u8]) -> Result<SceneSpec, String> {
-    serde_json::from_slice(bytes).map_err(|error| format!("scene spec: {error}"))
+    let spec: SceneSpec = serde_json::from_slice(bytes).map_err(|error| format!("scene spec: {error}"))?;
+    for joint in &spec.joints { validate_joint_controls(joint)?; }
+    Ok(spec)
 }

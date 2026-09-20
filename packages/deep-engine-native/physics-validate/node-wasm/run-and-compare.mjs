@@ -156,6 +156,23 @@ async function runWasmScene(spec) {
       bodyById.get(jointSpec.body2),
       true,
     );
+    const finiteF32 = (value) => typeof value === "number" && Number.isFinite(Math.fround(value));
+    if (jointSpec.limits !== undefined) {
+      const limits = jointSpec.limits;
+      if (!Array.isArray(limits) || limits.length !== 2 || !limits.every(finiteF32) || limits[0] > limits[1]) {
+        throw new Error(`joint ${jointSpec.id}: invalid limits`);
+      }
+      joint.setLimits(...limits.map(Math.fround));
+    }
+    if (jointSpec.motor !== undefined) {
+      const motor = jointSpec.motor;
+      const fields = ["targetPosition", "targetVelocity", "stiffness", "damping", "model"];
+      if (!motor || Object.keys(motor).some((key) => !fields.includes(key)) ||
+          !fields.slice(0, 4).every((key) => finiteF32(motor[key])) || motor.stiffness < 0 || motor.damping < 0 ||
+          !["acceleration", "force"].includes(motor.model)) throw new Error(`joint ${jointSpec.id}: invalid motor`);
+      joint.configureMotorModel(motor.model === "acceleration" ? RAPIER.MotorModel.AccelerationBased : RAPIER.MotorModel.ForceBased);
+      joint.configureMotor(...fields.slice(0, 4).map((key) => Math.fround(motor[key])));
+    }
     joints.push({ id: jointSpec.id, kind: jointSpec.kind, joint, body1: jointSpec.body1, body2: jointSpec.body2 });
   }
 
@@ -192,6 +209,7 @@ async function runWasmScene(spec) {
     world.step();
     frames.push(record(step));
   }
+  world.free();
   return frames;
 }
 
@@ -266,6 +284,7 @@ const specBytes = readFileSync(specPath);
 const spec = JSON.parse(specBytes.toString("utf8"));
 const nativeResult = JSON.parse(readFileSync(nativePath, "utf8"));
 const nativeCanonical = readFileSync(nativeFramesPath, "utf8").trim().split("\n");
+if (nativeResult.spec.sha256 !== sha256Hex(specBytes)) throw new Error("native result was produced from a different scene spec");
 
 console.log("[r10] init wasm kernel ...");
 await RAPIER.init();
@@ -273,6 +292,13 @@ await RAPIER.init();
 const wasmFramesRun1 = await runWasmScene(spec);
 const wasmFramesRun2 = await runWasmScene(spec);
 const wasmSummary = summarize(wasmFramesRun1);
+const controlChecks = {};
+for (const field of ["motor", "limits"]) {
+  if (!(spec.joints ?? []).some((joint) => joint[field] !== undefined)) continue;
+  const disabled = structuredClone(spec);
+  for (const joint of disabled.joints) delete joint[field];
+  controlChecks[`${field}ChangesMotion`] = summarize(await runWasmScene(disabled)).poseBitsSha256 !== wasmSummary.poseBitsSha256;
+}
 
 const wasmRepeatIdentical =
   summarize(wasmFramesRun2).poseBitsSha256 === wasmSummary.poseBitsSha256 &&
@@ -296,6 +322,7 @@ for (let index = 0; index < Math.max(nativeCanonical.length, wasmFramesRun1.leng
 const divergence = locateBitDivergence(nativeResult.framesRaw, wasmFramesRun1);
 
 const bitwiseIdentical =
+  wasmRepeatIdentical && Object.values(controlChecks).every(Boolean) &&
   firstFrameMismatch === null &&
   nativeSummary.poseBitsSha256 === wasmSummary.poseBitsSha256 &&
   nativeSummary.jointBitsSha256 === wasmSummary.jointBitsSha256 &&
@@ -375,6 +402,7 @@ const evidence = {
       "仅精确 ±0 归一;极小负数定点格式化为 -0.000000,Rust/TS 输出逐字节一致(与 dynamic-frame-v1 同语义)",
   },
   results: {
+    controlChecks,
     native: {
       frameSequenceSha256: nativeSummary.frameSequenceSha256,
       poseBitsSha256: nativeSummary.poseBitsSha256,
@@ -396,8 +424,8 @@ const evidence = {
   honestNotes: [
     "判定基准是位级:poseBitsSha256 双端相等 + 规范帧串逐帧相等 + 首分歧定位器为 null,三者同时成立才记 bitwiseIdentical=true。",
     "wasm 侧为 @dimforge/rapier3d-compat 官方预编译内核;其构建特性矩阵未随包声明,若未来版本引入平台相关数学,跨端逐位可能被打破——本验证以实测哈希为准,不靠声明。",
-    "本场景覆盖:动态刚体积分、球-盒接触、恢复系数弹跳、摩擦滚动、休眠禁用;不含关节/马达/CCD/多体,Rapier 关节路径的跨端确定性未在本验证覆盖。",
-    "fixed timestep 由宿主精确驱动 step() 共 240 次,不使用引擎 Variable 步进;dt 以显式 f32(0x3c888889)两端一致。",
+    `当前场景 ${spec.id}: ${spec.bodies.length} 个刚体、${(spec.joints ?? []).length} 个 ImpulseJoint；控制项 ${Object.keys(controlChecks).join(",") || "无"}。不覆盖 MultibodyJoint、CCD 或产品宿主。`,
+    `fixed timestep 由宿主精确驱动 step() 共 ${spec.timestep.steps} 次,不使用 Variable 步进;dt 两端显式转 f32。`,
     "evidence.json 之外的 frames-*.jsonl / *-result.json 为逐帧原始证据,可独立复算哈希。",
   ],
 };

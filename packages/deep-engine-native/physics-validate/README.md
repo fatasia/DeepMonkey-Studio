@@ -86,11 +86,42 @@ iterations，并把 joint id/kind/body/anchor/local frame 纳入 `physics-frame-
 `jointBitsSha256`。2026-09-20 本地证据：F04/F05 均 `bitwiseIdentical=true`，
 WASM 重跑稳定，native `cargo test` 7/7。
 
+## F06 马达与双向限位
+
+`scene-spec-f06-motor-limits.json` 使用三个独立 revolute：两个 acceleration-based
+position motor 分别向 ±1 rad 驱动，由 ±0.35 rad 限位截停；另一个 force-based
+servo 收敛到 0.2 rad。native 与 WASM 共 241 帧逐位一致，WASM 双跑一致。
+两端分别移除 motor / limits 后轨迹摘要均改变；native 额外断言最终角度误差 <0.002 rad，
+无马达保持静止、无限位两侧角度超过 ±0.9 rad。
+
+- poseBitsSha256：`bbbe5f3b1863188641cf4ed9440163760dd9767539a3feae0dc90d326bbdee28`
+- frameSequenceSha256：`c1856b172625a5beb3900e577a86d02842261a3d1b744b859f12a015a44aa21e`
+- 证据：仓库根目录 `test-output/r10-f06-motor-limits-20260920-r1/evidence.json`。
+
+关节新增可选 `limits: [min, max]` 和 `motor`，后者显式声明
+`targetPosition / targetVelocity / stiffness / damping / model`，model 为 `acceleration` 或 `force`。
+数值必须能表示为有限 f32，限位有序，刚度与阻尼非负。控制配置由 spec SHA-256 绑定；
+`physics-frame-v1` 不变，F04/F05 的 pose 与 canonical 金标均保持原值。
+当前未配置最大马达力，不代表负载/扭矩预算验证；马达速度模式、运行时配置变化、
+MultibodyJoint 与产品宿主仍未验收。
+
+在本目录运行 `cargo test --test joint_controls` 和
+`cargo run -- scene-spec-f06-motor-limits.json ../../../test-output/r10-f06-motor-limits-20260920-r1`；
+随后在仓库根目录运行：
+
+```bash
+node packages/deep-engine-native/physics-validate/node-wasm/run-and-compare.mjs \
+  --spec packages/deep-engine-native/physics-validate/scene-spec-f06-motor-limits.json \
+  --native test-output/r10-f06-motor-limits-20260920-r1/native-result.json \
+  --native-frames test-output/r10-f06-motor-limits-20260920-r1/frames-native.jsonl \
+  --out test-output/r10-f06-motor-limits-20260920-r1
+```
+
 ## 后续接线缺口
 
 - F04(PhysicsWorld 宿主接线):以本 runner 为内核骨架,宿主 tick 固定步长驱动,
   变更集(新增/移除刚体)走 revision 化命令,复用 R3 状态合同的 revision 语义。
-- F05 已完成 revolute/ImpulseJoint 的双端门禁；MultibodyJoint、马达/限位和产品编辑器接线仍未开放。
+- F05/F06 已完成 revolute/ImpulseJoint 与固定 position motor/双向限位的双端门禁；MultibodyJoint 和产品编辑器接线仍未开放。
 - Web 接线:`@dimforge/rapier3d-compat` 免打包加载,与现有 delivery 管线的 wasm 加载方式合并;
   WASM 二进制随包分发(离线纪律),不走 CDN。
 - 晋升决策:若采纳,把 `rapier3d =0.35.3` 提升进主 crate `Cargo.toml`(Cargo.lock 变更
