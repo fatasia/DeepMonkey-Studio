@@ -22,7 +22,7 @@ function sourceMap(stage: FrameCaptureSourceMapRef["stage"], nodeId: string, gen
 describe("FrameCaptureSession", () => {
   it("records and normalizes a frame with a pass and timeline marker", () => {
     const session = new FrameCaptureSession();
-    session.beginFrame("frame-1", 10);
+    session.beginFrame("frame-1", 10, "plan-001");
     session.recordPass({
       ...pass("geometry"),
       execution: { kind: "draw", vertexCount: 3, instanceCount: 1 },
@@ -37,6 +37,7 @@ describe("FrameCaptureSession", () => {
       frameId: "frame-1",
       startedAtMs: 10,
       endedAtMs: 20,
+      planHash: "plan-001",
       markers: [{ frameId: "frame-1", markerId: "submit", timestampMs: 11 }],
     });
     expect(record.passes[0]?.execution).toEqual({ kind: "draw", vertexCount: 3, instanceCount: 1 });
@@ -131,5 +132,17 @@ describe("FrameCaptureSession", () => {
     expect(() => session.beginFrame("frame-2", 1)).toThrow("frame frame-1 is still open");
     expect(session.records()).toEqual([]);
     expect(session.endFrame(2).frameId).toBe("frame-1");
+  });
+
+  it("cancels an in-flight frame without retaining partial passes", () => {
+    const session = new FrameCaptureSession();
+    session.beginFrame("frame-1", 0, "plan-001");
+    session.recordPass(pass("geometry"));
+    expect(session.activeFrameId).toBe("frame-1");
+    expect(session.cancelFrame()).toBe("frame-1");
+    expect(session.activeFrameId).toBeUndefined();
+    expect(session.records()).toEqual([]);
+    session.beginFrame("frame-2", 1, "plan-002");
+    expect(session.endFrame(2).planHash).toBe("plan-002");
   });
 });

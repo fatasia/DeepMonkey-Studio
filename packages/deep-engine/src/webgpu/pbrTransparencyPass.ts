@@ -55,7 +55,7 @@ export class PbrTransparencyPass {
   }
 
   /** 第一切片计划对拍声明(DE26/B03):OIT 累积与合成两个 render pass 的实际读写;纯静态,不触 GPU。 */
-  static describePasses(): readonly PbrActualPassDescription[] {
+  static describePasses(opaqueColorResource = "ao-hdr"): readonly PbrActualPassDescription[] {
     const oitTargets = (id: string, format: string): PbrActualPassDescription["claims"][number] => ({
       id, access: "write", format, sampleCount: 1,
       usages: ["render-attachment", "texture-binding", "copy-src"], sizeRole: "surface",
@@ -70,9 +70,10 @@ export class PbrTransparencyPass {
         gpuPassCount: 1,
       }, {
         passId: "composite-oit", executor: "PbrTransparencyPass.encode → WeightedOitPass.encodeComposite", kind: "render",
-        reads: ["ao-hdr", "oit-accumulation", "oit-revealage"], writes: ["composited-hdr"],
-        claims: [{ id: "ao-hdr", access: "read", format: PBR_HDR_FORMAT, sampleCount: 1,
-          usages: ["storage-binding", "texture-binding", "render-attachment", "copy-src"], sizeRole: "surface" },
+        reads: [opaqueColorResource, "oit-accumulation", "oit-revealage"], writes: ["composited-hdr"],
+        claims: [{ id: opaqueColorResource, access: "read", format: PBR_HDR_FORMAT, sampleCount: 1,
+          usages: opaqueColorResource === "opaque-hdr" ? ["render-attachment", "texture-binding"]
+            : ["storage-binding", "texture-binding", "render-attachment", "copy-src"], sizeRole: "surface" },
           { id: "oit-accumulation", access: "read", format: WEIGHTED_OIT_ACCUMULATION_FORMAT, sampleCount: 1,
             usages: ["render-attachment", "texture-binding", "copy-src"], sizeRole: "surface" },
           { id: "oit-revealage", access: "read", format: WEIGHTED_OIT_REVEALAGE_FORMAT, sampleCount: 1,

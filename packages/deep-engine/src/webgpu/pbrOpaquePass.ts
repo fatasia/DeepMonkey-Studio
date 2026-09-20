@@ -38,16 +38,19 @@ export function beginPbrOpaquePass(encoder: GPUCommandEncoder,
 }
 
 /** 第一切片计划对拍声明(DE26/B03):主 opaque MRT 的实际写集;纯函数,不触 GPU。 */
-export function describePbrOpaquePass(): PbrActualPassDescription {
+export function describePbrOpaquePass(options: { readonly directDisplay?: boolean; readonly writeGeometryBuffers?: boolean } = {}): PbrActualPassDescription {
   const geometryWrite = (id: string, format: string): PbrActualPassDescription["claims"][number] => ({
     id, access: "write", format, sampleCount: PBR_MAIN_SAMPLE_COUNT,
     usages: ["render-attachment", "texture-binding"], sizeRole: "surface",
   });
   return {
     passId: "opaque", executor: "beginPbrOpaquePass (PbrRenderer main opaque MRT)", kind: "render",
-    reads: [], writes: ["opaque-hdr", "linear-depth", "view-normal", "motion"],
-    claims: [geometryWrite("opaque-hdr", PBR_HDR_FORMAT), geometryWrite("linear-depth", PBR_LINEAR_DEPTH_FORMAT),
-      geometryWrite("view-normal", PBR_VIEW_NORMAL_FORMAT), geometryWrite("motion", PBR_MOTION_FORMAT)],
+    reads: [], writes: options.directDisplay ? ["surface"] : options.writeGeometryBuffers === false
+      ? ["opaque-hdr"] : ["opaque-hdr", "linear-depth", "view-normal", "motion"],
+    claims: options.directDisplay ? [{ id: "surface", access: "write", format: "swapchain", sampleCount: 1,
+      usages: ["render-attachment"], sizeRole: "independent" }] : [geometryWrite("opaque-hdr", PBR_HDR_FORMAT),
+      ...(options.writeGeometryBuffers === false ? [] : [geometryWrite("linear-depth", PBR_LINEAR_DEPTH_FORMAT),
+        geometryWrite("view-normal", PBR_VIEW_NORMAL_FORMAT), geometryWrite("motion", PBR_MOTION_FORMAT)])],
     unplannedAttachments: [{ id: "hardware-depth", reason: "主 pass 硬件深度附件(depth32float clear/store),第一切片未入图" }],
     gpuPassCount: 1,
   };

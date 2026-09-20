@@ -1,3 +1,11 @@
+## 2026-09-20 主线续跑检查点
+
+- 恢复入口：`docs/handoffs/mainline-closeout-2026-09-20.md`。R10 F04/F05 已在 `8dc7b14` 提交推送；R12 当前仍是未提交接线工作，不标记完成。
+- R12 已修复 begin 失败误取消既有帧，补 Shader Package 配置到 source-map 查询测试；集成 7 文件 / 49 项与 deep-engine tsc 通过。SSR 独立启用补齐几何输出并排除 direct-display；Hi-Z 维持硬件深度消费，不额外分配 MRT。真实 GPU 复验待执行。
+- 当前收尾优先于开新项；按用户要求后置重复全量测试。P1 并行不得覆盖其他会话文件，已取消的跨引擎对比与 480min soak 不恢复。
+- R12 真 GPU 四组各两帧已通过：`test-output/r12-frame-capture-1789882232544/evidence.json`。修复 SSR composite 未绑定法线函数引用后复验，SSR 15 项聚焦通过；source-map 真实 package 执行与 FINAL-GATE 仍待，不将帧提交成功扩大为完整调试器或视觉验收。
+- 后续独立 ShaderPackageExecutor 真实 draw/readback 与 source-map 完成回执查询通过：`test-output/r12-frame-capture-1789882287963/evidence.json`，lab tsc 通过。内置 PBR 不消费该 package，其 source-map 集成仍待；FINAL-GATE 未完成。
+
 ## 当前检查点（2026-09-18，覆盖下方历史调度口径）
 
 ### 交接入口（2026-09-19）

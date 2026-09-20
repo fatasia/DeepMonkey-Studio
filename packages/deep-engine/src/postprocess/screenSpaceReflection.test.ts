@@ -153,6 +153,8 @@ describe("format and shader contracts", () => {
     expect(SSR_TRACE_WGSL).toMatch(/fn traceReflection\(/);
     expect(SSR_TRACE_WGSL).toMatch(/@workgroup_size\(8, 8\)/);
     expect(SSR_COMPOSITE_WGSL).toMatch(/fn compositeReflection\(/);
+    expect(SSR_COMPOSITE_WGSL).not.toContain("sourceNormal");
+    expect(SSR_TRACE_WGSL).toContain("fn ssrLoadNormal");
   });
   it("wgsl trace reconstruction matches the AO view-space contract", () => {
     expect(SSR_TRACE_WGSL).toMatch(/ndc\.x \* depth \* ssrParams\.projection\.x \* ssrParams\.projection\.y/);

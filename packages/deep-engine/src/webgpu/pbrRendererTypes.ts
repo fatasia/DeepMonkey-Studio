@@ -8,6 +8,7 @@ import type { EditorOverlaySnapshot } from "./editorOverlayTypes.js";
 import type { AuthorGridView } from "./authorGridTypes.js";
 import type { PbrTransientTexturePoolStats } from "./pbrTransientTexturePool.js";
 import type { DeviceResourceMemorySnapshot } from "./deviceResourceMemory.js";
+import type { PbrFrameCaptureOptions } from "./pbrFrameCapture.js";
 
 export interface RenderView extends PbrFrameUniformView {
   readonly authorGrid?: AuthorGridView | undefined;
@@ -27,6 +28,8 @@ export interface PbrRendererOptions {
   readonly shadows?: CascadedShadowResourceOptions;
   readonly features?: PbrRendererFeatureOptions;
   readonly environment?: PbrEnvironmentSource;
+  /** Optional R12 capture transaction; omitted on normal production frames. */
+  readonly frameCapture?: PbrFrameCaptureOptions;
 }
 
 export interface FrameMetrics {

@@ -40,6 +40,10 @@ export { PBR_FRAME_RESOURCE_CONTRACTS, resolvePbrFrameResourceSizes, resolvePbrF
   pbrFrameResourceContract, FRAME_PLAN_USAGES } from "./pbrFramePlanResources.js";
 export type { PbrFrameResourceContract, PbrFrameResourceSizeRole, FramePlanUsage,
   PbrPassResourceClaim, PbrUnplannedAttachment, PbrActualPassDescription } from "./pbrFramePlanResources.js";
+export { PbrFrameCapture, pbrCapturePassInput } from "./pbrFrameCapture.js";
+export type { PbrFrameCaptureOptions } from "./pbrFrameCapture.js";
+export { frameCaptureSourceMapRefsByPass, frameCaptureSourceMapRefsForShaderPass } from "../r12/shaderSourceMap.js";
+export type { FrameCaptureShaderPassBinding } from "../r12/shaderSourceMap.js";
 export { PbrTransientTexturePool, PBR_HISTORY_TRANSIENT_EXCLUDED, isPbrTransientPoolEligible,
   framePlanUsageFlags, transientTextureBytes, pbrTransientTextureKeyValue } from "./pbrTransientTexturePool.js";
 export type { PbrTransientTextureKey, PbrTransientRequest, PbrTransientTextureHandle,

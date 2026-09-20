@@ -9,7 +9,8 @@ export async function createPbrPipelineSet(session: DeviceSession, lightingLayou
   if (options.deformation !== undefined && typeof options.deformation !== "boolean")
     throw new TypeError("PBR deformation capability must be boolean.");
   if (options.meshlets !== undefined && typeof options.meshlets !== "boolean") throw new TypeError("PBR meshlets capability must be boolean.");
-  const writeGeometry = features.ambientOcclusion || features.temporalAa || options.deformation === true;
+  const writeGeometry = features.ambientOcclusion || features.screenSpaceReflection || features.temporalAa
+    || options.deformation === true;
   const [pipelines, deformationPipelines] = await Promise.all([
     createPipelines(session.device, session.format, lightingLayout, writeGeometry,
       !features.environment && !features.fog && !features.groundGrid, options.shadows?.exactProfile?.cascadeCount === 1),

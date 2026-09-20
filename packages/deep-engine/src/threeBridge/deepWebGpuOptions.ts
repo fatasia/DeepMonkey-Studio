@@ -9,7 +9,7 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
   if (!options || typeof options !== "object" || Array.isArray(options)) {
     throw new TypeError("Deep WebGPU renderer options must be an object.");
   }
-  if (Object.keys(options).some(key => !["shadows", "features", "environment", "deformation", "meshlets"].includes(key))) {
+  if (Object.keys(options).some(key => !["shadows", "features", "environment", "deformation", "meshlets", "frameCapture"].includes(key))) {
     throw new TypeError("Unknown Deep WebGPU renderer option.");
   }
   if (options.deformation !== undefined && typeof options.deformation !== "boolean") {
@@ -22,6 +22,7 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
     ...(options.shadows === undefined ? {} : { shadows: snapshotShadows(options.shadows) }),
     ...(options.features === undefined ? {} : { features: resolvePbrRendererFeatures(options.features) }),
     ...(options.environment === undefined ? {} : { environment: snapshotEnvironment(options.environment) }),
+    ...(options.frameCapture === undefined ? {} : { frameCapture: options.frameCapture }),
   });
 }
 

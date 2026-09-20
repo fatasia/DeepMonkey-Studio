@@ -1,7 +1,7 @@
 import { DeviceSession } from "./deviceSession.js";
 import { uploadBuffer } from "./meshBuffers.js";
 import { authoredShadowPipelines, PBR_FRAME_UNIFORM_FLOATS, type Pipelines } from "./pipelines.js";
-import { createPbrPipelineSet } from "./pbrPipelineSet.js";
+import { openPbrRenderer } from "./pbrRendererBootstrap.js";
 import { validatePbrFrame } from "./validatePbrFrame.js";
 import { RenderTargets } from "./renderTargets.js";
 import type { StudioEnvironment } from "./studioEnvironment.js";
@@ -22,7 +22,7 @@ import { PbrShadowState } from "./pbrShadowState.js";
 import { hasClusteredLights, resolvePbrSceneLighting } from "../lighting/pbrSceneLighting.js";
 import type { FrameMetrics, PbrRendererOptions, RenderView } from "./pbrRendererTypes.js";
 import type { ResidentPacketProjection } from "./residentPacketProjection.js";
-import { resolvePbrRendererFeatures, type PbrRendererFeatures } from "./pbrRendererFeatures.js";
+import type { PbrRendererFeatures } from "./pbrRendererFeatures.js";
 import { createPbrEnvironment, type PbrEnvironmentSource } from "./pbrEnvironmentSource.js";
 import { PbrEnvironmentState, type EnvironmentStageResult } from "./pbrEnvironmentState.js";
 import { PbrMainBindings } from "./pbrMainBindings.js";
@@ -36,6 +36,9 @@ import { LocalSpotShadowRuntime } from "./localSpotShadowRuntime.js";
 import { pbrDirectDisplayClear } from "./pbrDirectDisplay.js";
 import { createPbrGround, drawPbrGround, type PbrGroundResources } from "./pbrGroundPass.js";
 import { PbrTransientTexturePool } from "./pbrTransientTexturePool.js";
+import { buildPbrFrameExecutionPlan, collectActualPbrFramePasses, assertPlanMatchesActual } from "./pbrFramePlanExecutor.js";
+import { PbrFrameCapture } from "./pbrFrameCapture.js";
+import type { FrameCaptureSession } from "../r12/frameCapture.js";
 export type { FrameMetrics, PbrRendererOptions, RenderView } from "./pbrRendererTypes.js";
 export class PbrRenderer {
   readonly id = "deep-webgpu";
@@ -54,6 +57,10 @@ export class PbrRenderer {
   private readonly previousHiZ = new PreviousHiZVisibility();
   private pendingHiZ: PreviousHiZFramePlan | undefined; private readonly outputs: PbrOutputBindings;
   private readonly features: PbrRendererFeatures; private frame = 0;
+  private readonly frameCapture: PbrFrameCapture | undefined;
+  private capturePlanKey: string | undefined;
+  private capturePlan: ReturnType<typeof buildPbrFrameExecutionPlan> | undefined;
+  private captureActualPasses: ReturnType<typeof collectActualPbrFramePasses> | undefined;
   private readonly writeGeometryBuffers: boolean;
   private shadowDirty = true; private historyDirty = true;
   private previousAmbientOcclusion: boolean | undefined;
@@ -62,7 +69,8 @@ export class PbrRenderer {
     lighting: ForwardPlusPbrRuntime, localShadows: LocalSpotShadowRuntime, options: PbrRendererOptions, features: PbrRendererFeatures, deformationPipelines?: Pipelines) {
     this.diagnostics = new PbrRendererDiagnostics(session);
     this.packets = new PacketBuffers(session, pipelines.materialLayout, deformationPipelines, options.meshlets === true);
-    this.writeGeometryBuffers = features.ambientOcclusion || features.temporalAa || !!deformationPipelines;
+    this.writeGeometryBuffers = features.ambientOcclusion || features.screenSpaceReflection || features.temporalAa
+      || !!deformationPipelines;
     this.ground = createPbrGround(session);
     this.frameBuffer = uploadBuffer(session, "Deep frame", this.frameData, GPUBufferUsage.UNIFORM);
     this.outputs = new PbrOutputBindings(session, pipelines, () => performance.now(), features.spatialAa);
@@ -71,36 +79,16 @@ export class PbrRenderer {
     this.mainBindings = new PbrMainBindings(session, pipelines, this.frameBuffer, this.shadows, environment);
     this.transientTextures = new PbrTransientTexturePool(session, options.transientTextureBudgetBytes); this.targets = new RenderTargets(session, pipelines.output.getBindGroupLayout(0), this.outputs.buffer, this.transientTextures);
     this.features = features;
+    this.frameCapture = options.frameCapture === undefined ? undefined : new PbrFrameCapture(options.frameCapture);
     this.postProcess = new PbrPostProcessChain(session, this.features, this.transientTextures);
     this.transparency = new PbrTransparencyPass(session, this.transientTextures);
     this.lighting = lighting; this.localShadows = localShadows;
   }
+  get frameCaptureSession(): FrameCaptureSession | undefined { return this.frameCapture?.session; }
   static async create(canvas: HTMLCanvasElement, gpu: GPU | undefined, signal: AbortSignal, options: PbrRendererOptions = {}): Promise<PbrRenderer> {
     const session = await DeviceSession.open(canvas, gpu, signal, options.deviceMemoryBudgetBytes);
-    const cancel = (): void => session.dispose();
-    let scopeOpen = false;
-    signal.addEventListener("abort", cancel, { once: true });
-    try {
-      if (signal.aborted) throw new DOMException("GPU preparation cancelled", "AbortError");
-      session.device.pushErrorScope("validation"); scopeOpen = true;
-      const localShadows = await LocalSpotShadowRuntime.create(session, signal), lighting = new ForwardPlusPbrRuntime(session, localShadows.bindings);
-      const features = resolvePbrRendererFeatures(options.features);
-      const [{ pipelines, deformationPipelines }, environment] = await Promise.all([
-        createPbrPipelineSet(session, lighting.layout, options, features),
-        createPbrEnvironment(session, options.environment, signal),
-      ]);
-      if (signal.aborted || session.state !== "ready") throw new Error("GPU preparation interrupted.");
-      const renderer = new PbrRenderer(session, pipelines, environment, lighting, localShadows, options, features, deformationPipelines);
-      const pendingError = session.device.popErrorScope(); scopeOpen = false;
-      const error = await pendingError;
-      if (error) throw new Error(error.message);
-      if (signal.aborted || session.state !== "ready") throw new Error("GPU preparation interrupted.");
-      return renderer;
-    } catch (error) {
-      if (scopeOpen) try { await session.device.popErrorScope(); } catch { /* device loss owns diagnostics */ }
-      session.dispose(); throw error;
-    }
-    finally { signal.removeEventListener("abort", cancel); }
+    return openPbrRenderer(session, signal, options, () => new DOMException("GPU preparation cancelled", "AbortError"),
+      (...args) => new PbrRenderer(...args));
   }
   setInstances(data: Float32Array<ArrayBuffer>): void { this.setPacket(spherePacket(data)); }
   setPacket(packet: RenderPacket): void { if (this.packets.set(packet)) this.sceneChanged(); }
@@ -145,7 +133,7 @@ export class PbrRenderer {
     if (!size) return undefined;
     if (this.shadowState.publish(sceneLighting.primary.shadow?.mapSize, candidate => this.mainBindings.setShadows(candidate, this.environment.current))) this.sceneChanged();
     const drawProfile = this.packets.drawProfile();
-    const directClear = drawProfile.hasDeformation || view.authorGrid ? undefined : pbrDirectDisplayClear(view, this.features, drawProfile.hasTransparent);
+    const directClear = drawProfile.hasDeformation || view.authorGrid ? undefined : pbrDirectDisplayClear(view, this.features, drawProfile.hasTransparent, this.writeGeometryBuffers);
     const directionalDisplay = directClear !== undefined && !this.lighting.hasProbeClipmap && !hasClusteredLights(sceneLighting.clustered)
       && !drawProfile.hasMaterialTextures && this.pipelines.displayDirectionalMain !== undefined;
     const frameState = updatePbrFrameUniforms(this.session.device.queue, this.cameraHistory, view,
@@ -161,7 +149,14 @@ export class PbrRenderer {
     this.pendingHiZ = hiZPlan;
     const device = this.session.device;
     let submitAttempted = false;
+    let captureOpen = false;
     try {
+      const frameNumber = this.frame + 1;
+      const capturePlan = this.frameCapture ? this.captureForFrame(size, drawProfile.hasTransparent, postProcess, directClear !== undefined) : undefined;
+      if (this.frameCapture && capturePlan) {
+        this.frameCapture.begin(`frame-${frameNumber}`, capturePlan.plan);
+        captureOpen = true;
+      }
       this.targets.beginFrame(size); const encoder = device.createCommandEncoder({ label: "Deep frame" });
     this.packets.encodeDeformation(encoder);
     const visibility = pbrVisibilityInput(view, frameState.projection, size.width, size.height, history.cameraCut);
@@ -253,9 +248,19 @@ export class PbrRenderer {
     if (overlayTriangles) { drawCalls++; triangles += overlayTriangles; }
     timing?.resolve(encoder);
     const commands = encoder.finish();
-    const encoded = this.performanceTelemetry.enabled ? performance.now() : 0, frameNumber = this.frame + 1;
+    const encoded = this.performanceTelemetry.enabled ? performance.now() : 0;
+    if (this.frameCapture && captureOpen) {
+      const executedPassIds = this.executedCapturePassIds(directClear !== undefined, postProcess, hasTransparent);
+      this.frameCapture.recordPasses(this.captureActualPasses ?? [], executedPassIds);
+      this.frameCapture.mark("submit", "queue.submit");
+    }
     submitAttempted = true; device.queue.submit([commands]); this.targets.commitFrame();
     const submitted = this.performanceTelemetry.enabled ? performance.now() : 0;
+    if (this.frameCapture && captureOpen) {
+      this.frameCapture.mark("submitted", "queue submitted");
+      this.frameCapture.end();
+      captureOpen = false;
+    }
     this.packets.commitLodFrame();
     this.shadows.commit(); this.localShadows.commit();
     this.cameraHistory.commitFrame(history);
@@ -277,6 +282,7 @@ export class PbrRenderer {
       lightCount: lighting?.lightCount ?? 0, lightClusters: lighting?.grid.clusterCount ?? 0,
       ...this.shadows.metrics };
     } catch (error) {
+      if (captureOpen) this.frameCapture?.cancel();
       this.targets.failFrame();
       this.packets.cancelDeformationFrame();
       if (submitAttempted) this.packets.failLodFrame(); else this.packets.cancelLodFrame();
@@ -284,6 +290,47 @@ export class PbrRenderer {
       if (hiZPlan) this.previousHiZ.failFrame(hiZPlan); this.pendingHiZ = undefined;
       throw error;
     }
+  }
+  private captureForFrame(size: { readonly width: number; readonly height: number }, transparency: boolean,
+    postProcess: ReturnType<typeof resolvePbrPostProcessOverrides>, directDisplay: boolean): {
+    readonly plan: ReturnType<typeof buildPbrFrameExecutionPlan>;
+    readonly actual: ReturnType<typeof collectActualPbrFramePasses>;
+  } {
+    const key = `${size.width}x${size.height}:${transparency ? "transparent" : "opaque"}`
+      + `:ao=${postProcess.ambientOcclusion ? 1 : 0}:ssr=${postProcess.screenSpaceReflection ? 1 : 0}`
+      + `:bloom=${postProcess.bloom ? 1 : 0}:direct=${directDisplay ? 1 : 0}`;
+    if (this.capturePlanKey !== key || !this.capturePlan || !this.captureActualPasses) {
+      const captureFeatures: PbrRendererFeatures = Object.freeze({ ...this.features,
+        ambientOcclusion: postProcess.ambientOcclusion,
+        screenSpaceReflection: postProcess.screenSpaceReflection,
+        bloom: postProcess.bloom,
+      });
+      const opaqueColorResource = postProcess.ambientOcclusion ? "ao-hdr" : "opaque-hdr";
+      const plan = buildPbrFrameExecutionPlan(size, { transparency, features: captureFeatures,
+        directDisplay, writeGeometryBuffers: this.writeGeometryBuffers });
+      const presentInputResource = postProcess.bloom ? "bloom-hdr"
+        : this.features.temporalAa ? "temporal-hdr" : postProcess.screenSpaceReflection ? "ssr-hdr"
+          : transparency ? "composited-hdr" : opaqueColorResource;
+      const actual = collectActualPbrFramePasses(captureFeatures, transparency,
+        { opaqueColorResource, presentInputResource, directDisplay, writeGeometryBuffers: this.writeGeometryBuffers });
+      assertPlanMatchesActual(plan, actual);
+      this.capturePlan = plan;
+      this.captureActualPasses = actual;
+      this.capturePlanKey = key;
+    }
+    return { plan: this.capturePlan, actual: this.captureActualPasses };
+  }
+  private executedCapturePassIds(directClear: boolean, postProcess: ReturnType<typeof resolvePbrPostProcessOverrides>,
+    transparency: boolean): ReadonlySet<string> {
+    const ids = new Set<string>(["opaque"]);
+    if (directClear) return ids;
+    if (postProcess.ambientOcclusion) { ids.add("ambient-occlusion"); ids.add("apply-ambient-occlusion"); }
+    if (postProcess.screenSpaceReflection) { ids.add("screen-space-reflection-trace"); ids.add("screen-space-reflection-composite"); }
+    if (transparency) { ids.add("transparent-oit"); ids.add("composite-oit"); }
+    if (this.features.temporalAa) ids.add("temporal-aa");
+    if (postProcess.bloom) ids.add("bloom");
+    ids.add("present");
+    return ids;
   }
   async validateFrame(view: RenderView): Promise<FrameMetrics> {
     return validatePbrFrame(this.session, () => this.render(view), () => {

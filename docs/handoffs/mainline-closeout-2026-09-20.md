@@ -29,6 +29,16 @@
 
 ## 3. 当前正在收口
 
+### 2026-09-20 R12 续跑检查点
+
+- R10 F04/F05 已由 `8dc7b14` 提交并推送，后续不重复实现这两个夹具。
+- R12 工作树已接入 render-loop 捕获事务；新增 Shader Package 显式 pass binding 配置和 source-map 查询测试。捕获开启被拒绝时，已修复误取消其他调用者活动帧的问题。
+- 本次聚焦验证：R12 与 capture 共 3 文件 / 20 项通过；后续集成共 7 文件 / 49 项通过，deep-engine tsc 通过。排除了 test-output 镜像路径，不重复计算测试数。SSR 单独开启需要 MRT；Hi-Z 实际读取硬件深度，不为它额外分配 MRT。
+- 已接实际 feature switches 编译计划并在捕获前校验资源描述；覆盖 64 种开关组合。真实 GPU 四组（direct、SSR-only、默认效果、透明）各两帧通过，证据 `test-output/r12-frame-capture-1789882232544/evidence.json`。首轮发现 SSR composite 引入未绑定法线函数，移至 trace 后原路径复验通过；SSR 聚焦 15 项通过。
+- 独立 ShaderPackageExecutor 的 shadow/forward 真实 draw、像素/深度读回及完成回执 source-map 查询已通过，最终证据 `test-output/r12-frame-capture-1789882287963/evidence.json`；lab tsc 通过。
+- 仍待：内置 PBR 的实际 Shader Package/source-map 消费接线、通用资源快照与调试 UI、FINAL-GATE。独立 package 完成回执不等于内置 PBR source-map 集成，也不证明视觉质量；Hi-Z 等 unmapped pass 不计入精确捕获。
+- 用户最新顺序：当前任务先收尾，P0、P1 性能/效果/能力与 R10 剩余项按独立文件边界并行；重复全量测试后置，提交前保留必要验证。允许自主普通 push，禁止强推。
+
 ### R10 Rapier F04/F05
 
 现有 `packages/deep-engine-native/physics-validate/` 已具备：

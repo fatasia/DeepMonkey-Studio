@@ -17,6 +17,7 @@ describe("pbr frame execution plan", () => {
   it("maps the AO→TAA→Bloom subchain and explicit unmapped passes in both transparency modes", () => {
     for (const transparency of [false, true]) {
       const subject = plan(transparency);
+      expect(subject.planHash).toMatch(/^[0-9a-f]{8}$/);
       const byId = new Map(subject.passes.map(pass => [pass.passId, pass]));
       for (const passId of ["ambient-occlusion", "apply-ambient-occlusion", "temporal-aa", "bloom", "present", "opaque"]) {
         expect(byId.get(passId)!.mapping).toMatchObject({ status: "mapped" });
@@ -70,6 +71,30 @@ describe("pbr frame execution plan", () => {
 });
 
 describe("plan vs actual pass matching", () => {
+  it("matches every AO/SSR/TAA/bloom/HiZ/transparency feature combination in encode order", () => {
+    for (let mask = 0; mask < 64; mask++) {
+      const features = resolvePbrRendererFeatures({ ambientOcclusion: !!(mask & 1),
+        screenSpaceReflection: !!(mask & 2), temporalAa: !!(mask & 4), bloom: !!(mask & 8),
+        occlusionCulling: !!(mask & 16), spatialAa: false });
+      const transparency = !!(mask & 32);
+      const writeGeometryBuffers = features.ambientOcclusion || features.screenSpaceReflection
+        || features.temporalAa || features.occlusionCulling;
+      const subject = buildPbrFrameExecutionPlan(SURFACE, { transparency, features, writeGeometryBuffers });
+      const actual = collectActualPbrFramePasses(features, transparency, { writeGeometryBuffers });
+      expect(assertPlanMatchesActual(subject, actual).mismatches, `mask ${mask}`).toEqual([]);
+      expect(actual.map(pass => pass.passId)).toEqual(subject.mappedPassIds);
+    }
+  });
+
+  it("describes direct display as the only surface-writing pass without post-processing", () => {
+    const subject = buildPbrFrameExecutionPlan(SURFACE, { transparency: false, directDisplay: true });
+    const actual = collectActualPbrFramePasses(DEFAULT_PBR_RENDERER_FEATURES, false, { directDisplay: true });
+    expect(subject.passOrder).toEqual(["opaque"]);
+    expect(actual[0]!.writes).toEqual(["surface"]);
+    expect(assertPlanMatchesActual(subject, actual).mismatches).toEqual([]);
+    expect(subject.planHash).not.toBe(plan(false).planHash);
+  });
+
   it("matches the actual descriptions in both transparency combinations with default features", () => {
     for (const transparency of [false, true]) {
       const subject = plan(transparency);

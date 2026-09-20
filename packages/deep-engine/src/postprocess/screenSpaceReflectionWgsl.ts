@@ -15,10 +15,6 @@ fn ssrSafeNormal(value: vec3f) -> vec3f {
   let lengthSquared = dot(value, value);
   return select(vec3f(0.0, 0.0, 1.0), value * inverseSqrt(max(lengthSquared, 0.00000001)), lengthSquared > 0.00000001);
 }
-fn ssrLoadNormal(coordinate: vec2<u32>) -> vec3f {
-  // View normals are encoded from [-1, 1] into the renderable rgba8unorm target.
-  return ssrSafeNormal(textureLoad(sourceNormal, vec2<i32>(coordinate), 0).xyz * 2.0 - 1.0);
-}
 fn ssrReconstruct(coordinate: vec2<u32>, depth: f32) -> vec3f {
   // Same reconstruction contract as ambientOcclusionWgsl.reconstructPosition.
   let uv = (vec2f(coordinate) + 0.5) / vec2f(ssrParams.sourceSize);
@@ -50,6 +46,11 @@ export const SSR_TRACE_WGSL = /* wgsl */ `${COMMON}
 @group(0) @binding(3) var<storage, read> ssrParams: SsrParams;
 @group(0) @binding(4) var ssrSampler: sampler;
 @group(0) @binding(5) var traceTarget: texture_storage_2d<rgba16float, write>;
+
+fn ssrLoadNormal(coordinate: vec2<u32>) -> vec3f {
+  // Only the trace pipeline binds the view-normal texture.
+  return ssrSafeNormal(textureLoad(sourceNormal, vec2<i32>(coordinate), 0).xyz * 2.0 - 1.0);
+}
 
 @compute @workgroup_size(8, 8)
 fn traceReflection(@builtin(global_invocation_id) id: vec3<u32>) {

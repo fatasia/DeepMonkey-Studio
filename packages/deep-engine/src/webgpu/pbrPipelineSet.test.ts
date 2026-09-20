@@ -10,7 +10,18 @@ afterEach(() => { vi.clearAllMocks(); });
 describe("production PBR deformation pipeline selection", () => {
   const session = { device: {}, format: "bgra8unorm" } as DeviceSession;
   const lighting = {} as GPUBindGroupLayout;
-  const features = resolvePbrRendererFeatures({ ambientOcclusion: false, temporalAa: false });
+  const features = resolvePbrRendererFeatures({ ambientOcclusion: false, temporalAa: false, occlusionCulling: false });
+
+  it.each(["screenSpaceReflection"] as const)("allocates geometry outputs for %s alone", async feature => {
+    await createPbrPipelineSet(session, lighting, {}, { ...features, [feature]: true });
+    expect(createPipelines).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(createPipelines).mock.calls[0]![3]).toBe(true);
+  });
+
+  it("keeps Hi-Z on hardware depth without allocating unused MRT outputs", async () => {
+    await createPbrPipelineSet(session, lighting, {}, { ...features, occlusionCulling: true });
+    expect(vi.mocked(createPipelines).mock.calls[0]![3]).toBe(false);
+  });
 
   it("keeps the static-only default allocation", async () => {
     const result = await createPbrPipelineSet(session, lighting, {}, features);

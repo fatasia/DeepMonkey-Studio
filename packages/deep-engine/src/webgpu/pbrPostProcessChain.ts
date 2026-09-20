@@ -153,13 +153,20 @@ export class PbrPostProcessChain {
    * 第一切片计划对拍声明(DE26/B03):逐 pass 描述本类 encode 路径的实际读写、格式与尺寸角色,
    * 供 pbrFramePlanExecutor 与编译计划对拍;纯静态、不触 GPU、不改变执行。
    */
-  static describePasses(features: PbrRendererFeatures, transparency: boolean): readonly PbrActualPassDescription[] {
-    const opaqueDomain = transparency ? "composited-hdr" : "ao-hdr";
+  static describePasses(features: PbrRendererFeatures, transparency: boolean,
+    options: { readonly opaqueColorResource?: string } = {}): readonly PbrActualPassDescription[] {
+    const opaqueColorResource = options.opaqueColorResource ?? (features.ambientOcclusion ? "ao-hdr" : "opaque-hdr");
+    const opaqueDomain = transparency ? "composited-hdr" : opaqueColorResource;
     // E04:SSR 插在透明合成之后、TAA 之前;启用时 TAA 的输入域改为 ssr-hdr。
     const temporalInput = features.screenSpaceReflection ? "ssr-hdr" : opaqueDomain;
     // 输入资源的创建 usage 随生产者不同:composited-hdr 来自 OIT scratch;ao-hdr 来自 AO composite 输出。
-    const temporalInputUsages: readonly FramePlanUsage[] = transparency ? ["render-attachment", "texture-binding"]
-      : ["storage-binding", "texture-binding", "render-attachment", "copy-src"];
+    const opaqueInputUsages: readonly FramePlanUsage[] = transparency || opaqueColorResource === "opaque-hdr"
+      ? ["render-attachment", "texture-binding"] : ["storage-binding", "texture-binding", "render-attachment", "copy-src"];
+    const temporalInputUsages: readonly FramePlanUsage[] = features.screenSpaceReflection
+      ? ["storage-binding", "texture-binding"] : opaqueInputUsages;
+    const bloomInput = features.temporalAa ? "temporal-hdr" : temporalInput;
+    const bloomInputUsages: readonly FramePlanUsage[] = features.temporalAa
+      ? ["storage-binding", "texture-binding", "copy-src"] : temporalInputUsages;
     const geometryRead = (id: string): PbrActualPassDescription["claims"][number] => ({
       id, access: "read", format: id === "linear-depth" ? PBR_LINEAR_DEPTH_FORMAT : PBR_VIEW_NORMAL_FORMAT,
       sampleCount: PBR_MAIN_SAMPLE_COUNT, usages: ["render-attachment", "texture-binding"], sizeRole: "surface",
@@ -189,7 +196,7 @@ export class PbrPostProcessChain {
       passId: "screen-space-reflection-trace", executor: "ScreenSpaceReflectionPass.encode/trace", kind: "compute",
       reads: [opaqueDomain, "linear-depth", "view-normal"], writes: ["ssr-trace"],
       claims: [{ id: opaqueDomain, access: "read", format: PBR_HDR_FORMAT, sampleCount: 1,
-        usages: ["texture-binding"], sizeRole: "surface" },
+        usages: opaqueInputUsages, sizeRole: "surface" },
         geometryRead("linear-depth"), geometryRead("view-normal"),
         { id: "ssr-trace", access: "write", format: SSR_COMPOSITE_FORMAT, sampleCount: 1,
           usages: ["storage-binding", "texture-binding"], sizeRole: "half" }],
@@ -199,7 +206,7 @@ export class PbrPostProcessChain {
       passId: "screen-space-reflection-composite", executor: "ScreenSpaceReflectionPass.encode/composite", kind: "compute",
       reads: [opaqueDomain, "ssr-trace"], writes: ["ssr-hdr"],
       claims: [{ id: opaqueDomain, access: "read", format: PBR_HDR_FORMAT, sampleCount: 1,
-        usages: ["texture-binding"], sizeRole: "surface" },
+        usages: opaqueInputUsages, sizeRole: "surface" },
         { id: "ssr-trace", access: "read", format: SSR_COMPOSITE_FORMAT, sampleCount: 1,
           usages: ["storage-binding", "texture-binding"], sizeRole: "half" },
         { id: "ssr-hdr", access: "write", format: SSR_COMPOSITE_FORMAT, sampleCount: 1,
@@ -222,9 +229,9 @@ export class PbrPostProcessChain {
     });
     if (features.bloom) passes.push({
       passId: "bloom", executor: "BloomPass.encode", kind: "compute",
-      reads: ["temporal-hdr"], writes: ["bloom-hdr"],
-      claims: [{ id: "temporal-hdr", access: "read", format: TEMPORAL_AA_COLOR_FORMAT, sampleCount: 1,
-        usages: ["storage-binding", "texture-binding", "copy-src"], sizeRole: "surface" },
+      reads: [bloomInput], writes: ["bloom-hdr"],
+      claims: [{ id: bloomInput, access: "read", format: TEMPORAL_AA_COLOR_FORMAT, sampleCount: 1,
+        usages: bloomInputUsages, sizeRole: "surface" },
         { id: "bloom-hdr", access: "write", format: BLOOM_COLOR_FORMAT, sampleCount: 1,
           usages: ["texture-binding", "storage-binding", "render-attachment", "copy-src"], sizeRole: "surface" }],
       unplannedAttachments: [{ id: "bloom-pyramid-levels", reason: "bloom 高斯金字塔私有层级纹理" }],

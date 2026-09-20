@@ -2,6 +2,7 @@ import { ambientOcclusionHalfSize } from "../postprocess/ambientOcclusion.js";
 import { AMBIENT_OCCLUSION_OUTPUT_FORMAT } from "../postprocess/ambientOcclusionTypes.js";
 import { BLOOM_COLOR_FORMAT } from "../postprocess/bloomTypes.js";
 import { TEMPORAL_AA_COLOR_FORMAT } from "../postprocess/temporalAaTypes.js";
+import { SSR_COMPOSITE_FORMAT, SSR_TRACE_FORMAT } from "../postprocess/screenSpaceReflectionTypes.js";
 import { PBR_HDR_FORMAT, PBR_LINEAR_DEPTH_FORMAT, PBR_MAIN_SAMPLE_COUNT,
   PBR_MOTION_FORMAT, PBR_VIEW_NORMAL_FORMAT } from "./renderTargets.js";
 import { surfaceSize, type SurfaceSize } from "./surfaceSize.js";
@@ -59,6 +60,10 @@ export const PBR_FRAME_RESOURCE_CONTRACTS: readonly PbrFrameResourceContract[] =
     usages: ["storage-binding", "texture-binding", "render-attachment", "copy-src"], sizeRole: "surface", external: false },
   { id: "temporal-hdr", descriptor: "rgba16float", format: TEMPORAL_AA_COLOR_FORMAT, sampleCount: 1,
     usages: ["storage-binding", "texture-binding", "copy-src"], sizeRole: "surface", external: false },
+  { id: "ssr-trace", descriptor: "rgba16float-half", format: SSR_TRACE_FORMAT, sampleCount: 1,
+    usages: ["storage-binding", "texture-binding"], sizeRole: "half", external: false },
+  { id: "ssr-hdr", descriptor: "rgba16float", format: SSR_COMPOSITE_FORMAT, sampleCount: 1,
+    usages: ["storage-binding", "texture-binding"], sizeRole: "surface", external: false },
   { id: "bloom-hdr", descriptor: "rgba16float", format: BLOOM_COLOR_FORMAT, sampleCount: 1,
     usages: ["texture-binding", "storage-binding", "render-attachment", "copy-src"], sizeRole: "surface", external: false },
   { id: "oit-accumulation", descriptor: "rgba16float", format: WEIGHTED_OIT_ACCUMULATION_FORMAT, sampleCount: 1,

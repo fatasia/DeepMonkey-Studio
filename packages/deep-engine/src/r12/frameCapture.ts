@@ -46,6 +46,8 @@ export type FrameCaptureExecutionMetadata =
 export interface PassCaptureInput {
   readonly passId: string;
   readonly kind: string;
+  /** Stable encode owner, when the producer can identify one. */
+  readonly executor?: string;
   readonly reads: readonly string[];
   readonly writes: readonly string[];
   readonly execution?: FrameCaptureExecutionMetadata;
@@ -56,6 +58,7 @@ export interface PassCaptureInput {
 export interface PassCapture {
   readonly passId: string;
   readonly kind: string;
+  readonly executor?: string;
   readonly reads: readonly string[];
   readonly writes: readonly string[];
   readonly execution?: FrameCaptureExecutionMetadata;
@@ -123,6 +126,7 @@ const BUDGET_KEYS: readonly (keyof FrameCaptureBudget)[] = [
 type ActiveFrame = {
   readonly frameId: string;
   readonly startedAtMs: number;
+  readonly planHash?: string;
   readonly passes: PassCaptureInput[];
   readonly markers: FrameCaptureTimelineMarkerInput[];
 };
@@ -247,12 +251,14 @@ function normalizePass(value: PassCaptureInput, budget: FrameCaptureBudget, inde
   const durationMs = pass.durationMs === undefined ? undefined : requireTimestamp(pass.durationMs, `passes[${index}].durationMs`);
   if (durationMs !== undefined && durationMs < 0) fail(`passes[${index}].durationMs must be non-negative.`);
   const execution = pass.execution === undefined ? undefined : normalizeExecution(pass.execution, budget);
+  const executor = pass.executor === undefined ? undefined : requireText(pass.executor, `passes[${index}].executor`, budget.maxStringLength);
   return Object.freeze({
     passId: requireId(pass.passId, `passes[${index}].passId`, budget.maxStringLength),
     kind: requireText(pass.kind, `passes[${index}].kind`, budget.maxStringLength),
     reads: resources(pass.reads, "reads"),
     writes: resources(pass.writes, "writes"),
     sourceMapRefs: Object.freeze(sourceMapRefs),
+    ...(executor === undefined ? {} : { executor }),
     ...(execution === undefined ? {} : { execution }),
     ...(durationMs === undefined ? {} : { durationMs }),
   });
@@ -313,15 +319,25 @@ export class FrameCaptureSession {
 
   get budget(): FrameCaptureBudget { return this.#budget; }
 
-  beginFrame(frameId: string, startedAtMs: number): void {
+  beginFrame(frameId: string, startedAtMs: number, planHash?: string): void {
     if (this.#active) fail(`frame ${this.#active.frameId} is still open.`);
     const normalizedId = requireId(frameId, "frameId", this.#budget.maxStringLength);
     const start = requireTimestamp(startedAtMs, "startedAtMs");
+    const normalizedPlanHash = planHash === undefined ? undefined : requireText(planHash, "planHash", this.#budget.maxStringLength);
     if (this.#frames.some(frame => frame.frameId === normalizedId)) fail(`frame ${normalizedId} already exists.`);
     const previous = this.#frames[this.#frames.length - 1];
     if (previous && start < previous.endedAtMs) fail("frames must be recorded in non-overlapping timeline order.");
-    this.#active = { frameId: normalizedId, startedAtMs: start, passes: [], markers: [] };
+    this.#active = { frameId: normalizedId, startedAtMs: start, ...(normalizedPlanHash === undefined ? {} : { planHash: normalizedPlanHash }), passes: [], markers: [] };
   }
+
+  /** Drops an in-flight frame after an encode/submit failure; no partial record is retained. */
+  cancelFrame(): string | undefined {
+    const frameId = this.#active?.frameId;
+    this.#active = undefined;
+    return frameId;
+  }
+
+  get activeFrameId(): string | undefined { return this.#active?.frameId; }
 
   recordPass(pass: PassCaptureInput): void {
     const active = this.#active;
@@ -345,7 +361,7 @@ export class FrameCaptureSession {
     if (!active) fail("endFrame requires an open frame.");
     const end = requireTimestamp(endedAtMs, "endedAtMs");
     const record = createFrameCaptureRecord({ frameId: active.frameId, startedAtMs: active.startedAtMs, endedAtMs: end,
-      passes: active.passes, markers: active.markers }, this.#budget);
+      passes: active.passes, markers: active.markers, ...(active.planHash === undefined ? {} : { planHash: active.planHash }) }, this.#budget);
     this.#active = undefined;
     this.#frames.push(record);
     while (this.#frames.length > this.#budget.maxFrames) this.#frames.shift();
