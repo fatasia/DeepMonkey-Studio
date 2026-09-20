@@ -192,7 +192,9 @@
     "inventory:shader": "node scripts/collectShaderInventory.mjs docs/specs/deep-engine-shader-source-inventory-2026-09-12.json",
     "inventory:native-ui": "node scripts/collectNativeUiInventory.mjs",
     "test:r2-shader-ir-gpu": "node scripts/r2ShaderIrGpuTest.mjs",
-    "test:r4-hiz-wiring-gpu": "node scripts/r4HiZWiringGpuTest.mjs"
+    "test:r4-hiz-wiring-gpu": "node scripts/r4HiZWiringGpuTest.mjs",
+    "test:g7-volumetric-fog-gpu": "node scripts/volumetricFogGpuTest.mjs",
+    "test:ray-trace-gpu": "node scripts/rayTraceGpuTest.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
