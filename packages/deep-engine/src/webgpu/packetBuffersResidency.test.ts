@@ -120,8 +120,9 @@ describe("PacketBuffers streamed residency integration", () => {
     expect(f.draw()).toEqual({ drawCalls: 0, triangles: 0 });
     expect(f.cache.stageResidentProjection(r.projection)).toBe(true);
     expect(f.draw()).toEqual({ drawCalls: 0, triangles: 0 });
+    // 参数池接管 160B 材质块后，池路径不再创建独立的 "Deep material textures" buffer。
     expect(f.labels()).toEqual([
-      "Deep material textures", "Deep packet instances", "Deep packet previous transforms",
+      "Deep material parameter pool", "Deep packet instances", "Deep packet previous transforms",
     ]);
     expect(f.device.createTexture).not.toHaveBeenCalled();
 
