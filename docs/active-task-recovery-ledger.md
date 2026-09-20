@@ -6,6 +6,7 @@
 - 诚实边界：authorChunkStream.test LOD 一项失败为上轮 G3 HLOD WIP 与已提交测试期望的既有不一致（非本轮）；XR 未过真机闭环；批次 E/F 全量门禁+双客户端真实操作+同条件对拍未跑（按调度后置）；AI 助手与 R11/P5P7 子代理在途未收。
 - 恢复入口：按波次顺序接续——波次1 合同层（RayBackend/cluster LOD bake 合同/世界分区数据合同）→ 波次2 快赢（subgroups 变体/GI 收口/MCP 截图资源）→ 波次3 P0-1→P0-2→软光栅 → 波次4 消费者接线+分区流送 → 波次5 Native 渲染线程+bindless → 波次6 批次 E+F。
 - 波次1 部分完成（`b258cea`）：rayTracing/ 三合同（RayBackend 描述符+预算校验、CPU 参考 BVH+Möller–Trumbore 仲裁遍历、cluster LOD DAG 验证器（误差单调/叶子覆盖闭合）、世界分区 512m 单元+确定性流送优先级），15 测试过。**GI 收口现状核实**：采样合同 ABI v1 已含视差校正（relocation 参与探针位置）与切比雪夫泄漏加权，但 **relocation 更新侧全仓无写入方**（读取恒为 0）——GI 收口的真正缺口在 probe 位置优化更新，接波次2。subgroups HiZ 变体需 DCIR 新 op（subgroup-min/max）+双发射器+真机对拍，完整切片待派。
+- 既有失败修复（`dd78691`）：authorChunkStream 增量路径曾无条件透传首次编译的 derived.lod 冻结作者 selectedLevels；现以新作者帧 lod 为权威、仅无作者 lod 实例保留 HLOD screen-space 代理编译值——threeBridge 218 项全过，上轮遗留失败清零。**P0-1 现状发现（防重复建设）**：packetCulling.ts 已是 GPU compute frustum/occlusion 剔除 + meshletIndirectExecutor 已 compute 生成 indirect 命令 + OPT-01/03 实例缓冲独立更新已在——波次3 P0-1 执行前必须先做消费审计式精确盘点，只补真实缺口（候选：实例 buffer 完全常驻+纯 GPU LOD 选择+CPU 零逐实例路径的证据）。
 
 ## 2026-09-20 主线续跑检查点
 
