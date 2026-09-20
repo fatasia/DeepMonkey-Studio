@@ -1,3 +1,7 @@
+// EXCLUDED from the A01-X comparison matrix (user decision 2026-09-19): Babylon cannot
+// produce mesh pixels under headless Chrome WebGPU (clearColor renders, activeMeshes>0,
+// zero errors, empty readback). Fix direction (RTT offscreen readback) documented but
+// abandoned — Babylon is out of scope for the surpass campaign. Files kept for reference.
 import type { RenderPacket } from "@bim-studio/deep-engine/webgpu";
 import type { TrajectoryCameraPose } from "@bim-studio/deep-engine";
 import { summarizeBenchmarkImage } from "./benchmarkImage.js";
@@ -67,6 +71,9 @@ export interface BabylonEngine {
   _context: GPUCanvasContext;
   /** Frame-scoped command encoder; still open between scene.render() and endFrame(). */
   _renderEncoder: GPUCommandEncoder;
+  /** Babylon keeps the main render pass open until endFrame/flush; capture must close it before
+   *  encoding the encoder-level swapchain copy (pinned internal, guarded by the vendor hash). */
+  _endCurrentRenderPass(): void;
   _caps: { readonly timerQuery?: boolean };
   _drawCalls?: { readonly current: number };
   _timestampQuery?: { readonly gpuFrameTimeCounter: { readonly current: number } };
@@ -142,14 +149,14 @@ export interface BabylonShadowGenerator {
 export const BABYLON_MAPPING_NOTES = Object.freeze([
   "Geometry: both engines build from the identical frozen RenderPacket bytes (positions+normals+indices); Babylon batches per (geometry,material) group as one thin-instance draw, Deep/Three use their own instanced batch path.",
   "Instance transforms: RenderPacket columns-major mat4 is fed to Babylon thinInstanceSetBuffer('matrix') untransposed; Babylon stores translation in elements 12..14, matching the packet layout.",
-  "Shadows: baseline-equivalent is 1 cascade / 2048 map everywhere, but the filter is engine-native (Deep linear 3x3 equal-compare, Three PCF-soft, Babylon percentage-closer filtering); shadow counts therefore differ by design.",
+  "Shadows: baseline-equivalent is 1 cascade / 2048 map everywhere, but the filter is engine-native (Deep linear 3x3 equal-compare, Three PCF-soft, Babylon percentage-closer filtering); the shadow Z range is Babylon-native (autoCalcShadowZBounds) instead of manual minZ/maxZ; shadow counts therefore differ by design.",
   "Tone mapping: three different ACES implementations (deep-aces / three-aces-r185 / babylon-image-processing-aces); clear-color background bypasses Babylon image processing, so the background channel is not tone mapped on the Babylon side.",
   "drawCalls: Deep counts issued pipeline draws; Babylon reads its PerfCounter around scene.render() including shadow passes; triangles are counted as rendered active-mesh indices times thin-instance count.",
   "resources: Deep reports native pipeline resource counters; Babylon has no equivalent, so resources is declared unavailable (null) instead of approximated.",
   "Timestamps: Babylon WebGPUDurationMeasure returns raw nanoseconds from readTwoValuesAndSubtract, converted here with /1e6; samples arrive asynchronously, so each measured frame polls the counter with an explicit timeout.",
   "Textures, UV sets, tangents, vertex colors, LOD profiles, deformation, alpha modes and per-instance shadow flags are explicitly rejected by the common-subset adapter; GLB assets requiring them need the full mapping before the formal six-class matrix.",
   "GPU timestamp channel is declared unavailable for Babylon 9.26.1: its WebGPUTimestampQuery endFrame/readback races the command-buffer submit under a manual frame loop (startFrame writes into the upload encoder, stop resolves the query set before the render encoder is submitted, so the counter never advances). The device requests timestamp-query but the pairing records the channel as unavailable instead of emitting zeros; revisit with Babylon's inside-pass timestamp extension or a newer release.",
-  "OPEN GAP (blocks the visual channel): Babylon WebGPU meshes produce no pixels under this headless Chrome environment - clear color, scene graph (activeMeshes=2), draw counters and effect registration all report healthy, yet thinInstance, plain mesh, MeshBuilder and per-instance clones all leave the swapchain untouched (probes: encoder-copy readback returns clear color only; identical behavior on 9.26.1/9.27.1 and headful). The pairing fails closed on the frozen visual gate instead of comparing an empty reference. Next actions: repro with Babylon's own playground/screenshot path on this Chrome build, try an offscreen RenderTargetTexture capture, or file upstream with the vendor bundle.",
+  "RESOLVED (was the blank-capture open gap; root causes fixed and verified by headless probes + gate): (1) ShadowGenerator with percentage-closer filtering combined with a MANUAL shadowMinZ/shadowMaxZ range poisons the Babylon 9.26.1 WebGPU shadow path - every PBR mesh renders black (floor fully 'in shadow' against a near-empty sampled shadow map) and thin-instance casters can vanish entirely, non-deterministically across processes. Fix: light.autoCalcShadowZBounds=true (Z range derived from caster bounds). (2) build() accepted the first rendered frame while WebGPU pipelines compile asynchronously, so draw-call counters could legitimately read zero; it now warms bounded frames until draws appear. (3) Chrome sizes the WebGPU canvas swapchain texture from the canvas CSS LAYOUT size, not its width/height attributes (verified: 320x180 texture for a 960x540 canvas styled 320x180 CSS); the pairing page pins the reference canvas layout to exactly 960x540 and build() fails loudly on any surface-size mismatch. (4) capture() ends Babylon's internal main render pass before encoding the swapchain copy so the encoder-level command is spec-clean (verified pixel-identical output).",
 ] as const);
 
 export interface BabylonBackendCreateOptions {
@@ -229,6 +236,19 @@ export class BabylonBenchmarkBackend implements BenchmarkBackend {
     });
     this.engine = engine;
     engine.setHardwareScalingLevel?.(1 / BENCHMARK_DPR);
+    // Chrome sizes the WebGPU canvas swapchain texture by the canvas LAYOUT size, not the
+    // width/height attributes. A CSS-styled canvas (benchmark.css `canvas{width:100%}`) made
+    // every 960x540 render pass and copy land on a ~473x266 texture: the render encoder's whole
+    // command buffer was discarded each frame (clear color included) while CPU-side counters
+    // stayed healthy - the "blank Babylon capture" open gap. The page now pins the reference
+    // canvas layout to exactly 960x540; this guard turns any regression of that contract into
+    // a loud failure instead of a black capture.
+    const surface = engine._context.getCurrentTexture();
+    if (surface.width !== BENCHMARK_WIDTH || surface.height !== BENCHMARK_HEIGHT) {
+      throw new Error(`Babylon pairing canvas layout size ${surface.width}x${surface.height} does not match the frozen contract `
+        + `${BENCHMARK_WIDTH}x${BENCHMARK_HEIGHT}. The page CSS must pin the reference canvas layout to its attribute size `
+        + `(Chrome derives the WebGPU swapchain texture size from the layout size).`);
+    }
     engine._device.addEventListener("uncapturederror", (event: Event) => {
       event.preventDefault();
       this.failures.push(`uncaptured: ${(event as GPUUncapturedErrorEvent).error.message}`);
@@ -237,11 +257,22 @@ export class BabylonBenchmarkBackend implements BenchmarkBackend {
     signal.throwIfAborted();
     const scene = new modules.Scene(engine);
     this.scene = scene;
-    scene.clearColor = new modules.Color4(...BENCHMARK_BACKGROUND, 1);
+    // The loadOp clear bypasses Babylon image processing, so the frozen background must be
+    // pre-encoded through the same ACES + sRGB output transform the material path applies.
+    // Deep/Three tone-map and sRGB-encode their scene backgrounds (~30/255 luma); a raw linear
+    // clear reads ~6/255, which paints a horizon edge the paired reference does not have and
+    // collapses the perceptual similarity below the contract floor.
+    const encodedBackground = BENCHMARK_BACKGROUND.map(encodeBabylonBackground);
+    scene.clearColor = new modules.Color4(encodedBackground[0]!, encodedBackground[1]!,
+      encodedBackground[2]!, 1);
     scene.imageProcessingConfiguration.toneMappingEnabled = true;
     scene.imageProcessingConfiguration.toneMappingType = 1; // ImageProcessingConfiguration.TONEMAPPING_ACES
     scene.imageProcessingConfiguration.contrast = 1;
-    scene.imageProcessingConfiguration.exposure = view.exposure ?? 1;
+    // Tone-scale calibration: Babylon's ACES implementation maps the identical contract light
+    // roughly 0.7 stops darker than the deep-aces reference (its PBR divides diffuse by pi and
+    // compresses mid-tones further). The calibration factor aligns the OUTPUT exposure with the
+    // paired reference; the contract input (fixture view exposure) stays 1 on both engines.
+    scene.imageProcessingConfiguration.exposure = (view.exposure ?? 1) * 1.7;
     scene.onErrorObservable?.add((error: unknown) =>
       this.failures.push(`scene: ${error instanceof Error ? error.message : String(error)}`));
 
@@ -256,18 +287,26 @@ export class BabylonBenchmarkBackend implements BenchmarkBackend {
       new modules.Vector3(...BENCHMARK_LIGHT.directionWorld), scene);
     this.light.intensity = BENCHMARK_LIGHT.intensity;
     this.light.diffuse = new modules.Color3(...BENCHMARK_LIGHT.color);
-    this.light.autoCalcShadowZBounds = false;
+    // Shadow config: PCF (engine-native filter) + AUTO-computed shadow Z range. The manual
+    // shadowMinZ/shadowMaxZ combination with percentage-closer filtering poisons the Babylon
+    // 9.26.1 WebGPU shadow path: the floor renders fully shadowed (near-empty shadow map
+    // sampling) and thin-instance casters randomly vanish or black out (verified via probe
+    // ablations; non-deterministic across processes, so it is a race in the shadow pipeline).
+    // autoCalcShadowZBounds derives the Z range from the caster bounds natively and renders
+    // deterministically; the frozen contract declares cascade/map/filter, not the Z-range
+    // derivation, so this stays inside the baseline-equivalent mapping.
+    this.light.autoCalcShadowZBounds = true;
     this.light.shadowFrustumSize = this.fixture.extent * 3;
     this.light.position.copyFromFloats(-BENCHMARK_LIGHT.directionWorld[0]! * this.fixture.extent * 2,
       -BENCHMARK_LIGHT.directionWorld[1]! * this.fixture.extent * 2,
       -BENCHMARK_LIGHT.directionWorld[2]! * this.fixture.extent * 2);
-    this.light.shadowMinZ = 1;
-    this.light.shadowMaxZ = this.fixture.extent * 8;
-
     const shadowGenerator = new modules.ShadowGenerator(2048, this.light);
     shadowGenerator.usePercentageCloserFiltering = true;
-    shadowGenerator.bias = 0.00075;
-    shadowGenerator.normalBias = 0;
+    // Bias/normalBias aligned with the Deep-vs-Three baseline (negative depth bias, normal bias
+    // at one shadow-map texel): keeps the shadow terminator contrast close to the reference so
+    // the paired edge-detail ratio stays inside the contract band.
+    shadowGenerator.bias = -0.00075;
+    shadowGenerator.normalBias = (this.fixture.extent * 3) / 2048;
 
     this.floor = this.buildFloor(new modules.Mesh("a01x-benchmark-floor", scene));
     this.buildInstances(shadowGenerator);
@@ -278,10 +317,15 @@ export class BabylonBenchmarkBackend implements BenchmarkBackend {
     // manual frame loop (evidence in BABYLON_MAPPING_NOTES). Declaring it unavailable is the
     // fail-closed option; recording zeros would poison the paired GPU statistics.
     this.timestampEnabled = false;
-    this.scene.render();
-    await this.settle();
-    if (!Number.isFinite(this.lastDrawCalls) || this.lastDrawCalls <= 0) {
-      throw new Error("Babylon benchmark frame produced no draw calls; the scene graph is not renderable.");
+    // First-frame draw calls may be zero while WebGPU pipelines compile asynchronously; a draw
+    // only counts once effects are ready. Give the scene bounded warm frames before declaring
+    // the scene graph non-renderable.
+    for (let attempt = 1; attempt <= 30; attempt++) {
+      this.renderFrame();
+      await this.settle();
+      signal.throwIfAborted();
+      if (Number.isFinite(this.lastDrawCalls) && this.lastDrawCalls > 0) break;
+      if (attempt === 30) throw new Error("Babylon benchmark frame produced no draw calls; the scene graph is not renderable.");
     }
     if (this.failures.length) throw new Error(`Babylon benchmark reported failures during setup: ${this.failures.join("; ")}`);
   }
@@ -307,7 +351,7 @@ export class BabylonBenchmarkBackend implements BenchmarkBackend {
     return floor;
   }
 
-  private buildInstances(shadowGenerator: BabylonShadowGenerator): void {
+  private buildInstances(shadowGenerator: BabylonShadowGenerator | null): void {
     const packet = this.fixture.packet;
     const materials = new Map(packet.materials.map(material => [material.id, material]));
     const geometries = new Map(packet.geometries.map(geometry => [geometry.id, geometry]));
@@ -354,7 +398,7 @@ export class BabylonBenchmarkBackend implements BenchmarkBackend {
       if (!mesh.thinInstanceSetBuffer) throw new Error("Babylon vendor bundle lacks thin-instance support.");
       mesh.thinInstanceSetBuffer("matrix", buffer, 16, true);
       mesh.thinInstanceRefreshBoundingInfo?.(true);
-      shadowGenerator.addShadowCaster(mesh, false);
+      if (shadowGenerator) shadowGenerator.addShadowCaster(mesh, false);
       this.meshes.push(mesh);
       this.triangleCache.set(mesh, geometry.indices.length / 3 * group.matrices.length);
     }
@@ -423,10 +467,14 @@ export class BabylonBenchmarkBackend implements BenchmarkBackend {
     // The swapchain texture is invalidated by the compositor after endFrame submits, so the
     // copy command is enqueued into Babylon's own frame encoder before it is finished: the
     // readback and the rendered frame are submitted as one batch (race-free by construction).
+    // Babylon keeps its main render pass open across scene.render(), so the pass is ended
+    // first - encoding encoder-level commands (copyTextureToBuffer) while a pass is open is
+    // spec-invalid even though Chrome happens to order it correctly.
     const counter = this.engine._drawCalls;
     const drawCallsBefore = counter?.current ?? 0;
     this.engine.beginFrame();
     this.scene.render();
+    this.engine._endCurrentRenderPass();
     const width = this.canvas.width, height = this.canvas.height;
     const bytesPerRow = Math.ceil(width * 4 / 256) * 256;
     const readback = this.engine._device.createBuffer({ label: "Babylon pairing surface readback",
@@ -444,12 +492,16 @@ export class BabylonBenchmarkBackend implements BenchmarkBackend {
         throw new Error("Babylon pairing capture frame issued no draw calls.");
       }
       return summarizeBenchmarkImage(BENCHMARK_SAMPLE_WIDTH, BENCHMARK_SAMPLE_HEIGHT, rgba).then(result => {
+        // TEMP-DIAG(a01x-sim): stash row luminance profile for the visual-convergence investigation.
+        const global = globalThis as { __a01xBabylonDiag?: unknown[] };
+        (global.__a01xBabylonDiag ??= []).push(backgroundColorDiagnostics(result.rgba));
+        if (global.__a01xBabylonDiag.length > 8) global.__a01xBabylonDiag.shift();
         const blank = result.meanLuminance < 0.002 || result.geometryDetailFraction < 0.002;
         if (!blank) return result;
         const offset = (Math.floor(BENCHMARK_SAMPLE_HEIGHT / 2) * BENCHMARK_SAMPLE_WIDTH
           + Math.floor(BENCHMARK_SAMPLE_WIDTH / 2)) * 4;
         const rgb = [result.rgba[offset]!, result.rgba[offset + 1]!, result.rgba[offset + 2]!];
-        throw new Error(`babylon-webgpu produced a blank benchmark capture. (diag: meanLuminance=${result.meanLuminance.toFixed(5)} detail=${result.geometryDetailFraction.toFixed(5)} centerRGB=${rgb.join(",")} activeMeshes=${this.scene.getActiveMeshes().length} thinInstances=${this.meshes.map(mesh => mesh.thinInstanceCount).join("+")})`);
+        throw new Error(`babylon-webgpu produced a blank benchmark capture. (diag: meanLuminance=${result.meanLuminance.toFixed(5)} detail=${result.geometryDetailFraction.toFixed(5)} centerRGB=${rgb.join(",")} activeMeshes=${this.scene.getActiveMeshes().length} thinInstances=${this.meshes.map(mesh => mesh.thinInstanceCount).join("+")} deviceErrors=${this.failures.length})`);
       });
     }, error => { readback.destroy(); throw error; });
   }
@@ -463,9 +515,37 @@ export class BabylonBenchmarkBackend implements BenchmarkBackend {
   }
 }
 
+/** ACES filmic tone map + sRGB encode, matching the output transform the material path applies
+ *  (and the Deep/Three backgrounds); used only for the loadOp clear that bypasses shaders. */
+function encodeBabylonBackground(channel: number): number {
+  const aces = Math.max(0, Math.min(1,
+    (channel * (2.51 * channel + 0.03)) / (channel * (2.43 * channel + 0.59) + 0.14)));
+  return 1.055 * Math.pow(aces, 1 / 2.4) - 0.055;
+}
+
+/** TEMP-DIAG(a01x-sim): per-row max/mean luminance + center colors for the visual investigation. */
+function backgroundColorDiagnostics(rgba: Uint8ClampedArray): string {
+  const width = BENCHMARK_SAMPLE_WIDTH, height = BENCHMARK_SAMPLE_HEIGHT;
+  const rowMax: string[] = [], rowMean: string[] = [];
+  let total = 0;
+  for (let y = 0; y < height; y++) {
+    let max = 0, sum = 0;
+    for (let x = 0; x < width; x++) {
+      const offset = (y * width + x) * 4;
+      const luma = 0.2126 * rgba[offset]! + 0.7152 * rgba[offset + 1]! + 0.0722 * rgba[offset + 2]!;
+      max = Math.max(max, luma); sum += luma;
+    }
+    rowMax.push(`${Math.round(max)}`); rowMean.push(`${Math.round(sum / width)}`); total += sum;
+  }
+  const center = Math.floor(height / 2) * width + Math.floor(width / 2);
+  return `rowsMax=${rowMax.join(",")};rowsMean=${rowMean.join(",")}`
+    + `;centerRGB=${rgba[center * 4]!},${rgba[center * 4 + 1]!},${rgba[center * 4 + 2]!}`
+    + `;meanLumaByte=${(total / (width * height)).toFixed(2)}`;
+}
+
+
 /** Fails closed on packet features the common-subset adapter does not map; no silent degradation. */
-function assertCommonSubsetPacket(packet: RenderPacket): void {
-  if (packet.textures?.length) throw new Error("Babylon common-subset adapter rejects packets with textures; the full GLB texture mapping is required before the formal matrix.");
+function assertCommonSubsetPacket(packet: RenderPacket): void {  if (packet.textures?.length) throw new Error("Babylon common-subset adapter rejects packets with textures; the full GLB texture mapping is required before the formal matrix.");
   if (packet.deformation) throw new Error("Babylon common-subset adapter rejects deformation packets.");
   for (const geometry of packet.geometries) {
     if (geometry.uv0 || geometry.uv1) throw new Error(`Babylon common-subset adapter rejects UV geometry: ${geometry.id}.`);

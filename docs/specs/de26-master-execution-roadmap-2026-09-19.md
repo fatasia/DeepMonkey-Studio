@@ -146,7 +146,7 @@
 | **P6** | FMU/FMI | 后排,用户未批准 | 挂既有卡推进 |
 | **P7** | QTO | 核心已完成;导出/产品接入未完成 | 挂既有卡推进 |
 | **P8** | IFC 深水 profile | 后排,用户未批准 | 挂既有卡推进 |
-| **A01-X** | Babylon/Unity/Orillusion 全量对拍 | Three 配对已有;Babylon/Unity/Orillusion矩阵未完成 | 收官/对拍执行层，不改原分母 |
+| **A01-X** | **已收口**(用户 2026-09-19 拍板:对比不再继续) | Three 配对数据已有即结论;Unity/Babylon 矩阵取消;runner 文件保留 excluded | 收官/对拍执行层，不改原分母 |
 | **FINAL-GATE** | 终局性能/效果/质量/回归门禁 | 已登记,未执行 | 收官/对拍执行层，不改原分母 |
 
 ## 4. 去重与合并规则（保留每条验收，不重复造系统）
@@ -178,7 +178,7 @@ E01/E02（IES 已完成载荷与 Web 着色，Native 消费待做）→ E03/R1 D
 P2（已完成核心）→ P3/P4 UI和生产接入 → G06/G08 → R10/F04/F05 → R11/F01 → R5/H09 → R12/H02/H03/H04。
 
 ### Phase 4 · 工业与平台对拍
-RVT 2026 分区记录逆向→⑦ S1–S6 profile晋级→⑧ readiness tessellation→I04/I05/I07→A01-X(Babylon/Orillusion/Unity/Three/Deep)→B1–B6全矩阵。
+RVT 2026 分区记录逆向→⑦ S1–S6 profile晋级→⑧ readiness tessellation→I04/I05/I07→A01-X(已收口,2026-09-19)→B1–B6全矩阵。
 
 ### Phase 5 · 终局
 V04视觉门→V05综合签核→⑥ D24–D28剩余卡→480min soak→FINAL-GATE两轮全绿→最终对标报告。
@@ -189,7 +189,7 @@ V04视觉门→V05综合签核→⑥ D24–D28剩余卡→480min soak→FINAL-GA
 - 用户新增任务全部纳入：R1–R12、R6-0/1/2/3、P1–P8、G1–G8、A01-X、Wave A1–A8、Wave B1–B6、Wave C、FINAL-GATE。
 - 明确不做但保留记录：G4 地理坐标深度、G9 多人协同、V12 Splat/扫描方向、P6 FMU、P8 IFC 深水、G10 XR（留待）。
 - 重复项没有删掉：只建立“同一实现、不同验收”的映射表。
-- 当前真正缺失的执行卡：C3 材质/纹理/LOD/阴影/Deep2D增量、RVT 2026记录形态、V04/V05、A01-X Babylon/Orillusion/Unity全量runner、R10/R11/R12、FINAL-GATE。
+- 当前真正缺失的执行卡：C3 材质/纹理/LOD/阴影/Deep2D增量、RVT 2026记录形态、V04/V05、A01-X Unity runner( Babylon 已踢出)、R10/R11/R12、FINAL-GATE。
 
 ## 7. 状态纪律
 
