@@ -257,6 +257,27 @@ impl FrameTelemetry {
         }
     }
 
+    /// 并行编码路径:只做帧记账,Frame 起点时间戳延迟到实际承载帧工作
+    /// 的第一条 command buffer(pre CB 或首个级联 CB)写入。
+    pub fn gpu_begin_frame_deferred(&mut self, token: SampleToken) {
+        if let Some(gpu) = self.gpu.as_mut() {
+            gpu.begin_frame_deferred(token);
+        }
+    }
+
+    /// 跨线程时间戳句柄:并行段(如阴影级联)的起止时间戳写进各自的
+    /// command buffer,保持 GPU 时间线语义与串行一致。
+    pub fn gpu_segment_stamper(&self) -> Option<crate::telemetry_gpu::GpuSegmentStamper<'_>> {
+        self.gpu.as_ref().map(|gpu| gpu.stamper())
+    }
+
+    /// 并行段只翻活跃掩码,不写时间戳(时间戳已由 stamper 写在级联 CB)。
+    pub fn gpu_mark_segment(&mut self, segment: crate::telemetry_gpu::GpuSegment, active: bool) {
+        if let Some(gpu) = self.gpu.as_mut() {
+            gpu.mark(segment, active);
+        }
+    }
+
     pub fn gpu_finish_frame(&mut self, token: SampleToken, encoder: &mut wgpu::CommandEncoder) {
         if let Some(gpu) = self.gpu.as_mut() {
             gpu.finish_frame(token, encoder);

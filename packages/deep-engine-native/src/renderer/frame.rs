@@ -5,7 +5,10 @@ use crate::{
     events::RenderOutcome,
     gpu_submission::SubmissionCheck,
     mesh_pass::{encode_opaque_pass, encode_transparent_pass},
-    shadow_pass::encode_shadow_cascades,
+    shadow_pass::{
+        CascadeScene, CascadeShadowTimestamps, encode_shadow_cascades_parallel,
+        shadow_executor_threads,
+    },
     telemetry::{CpuSegment, FrameResult, FrameTelemetry, SampleToken},
     telemetry_gpu::GpuSegment,
 };
@@ -40,23 +43,66 @@ impl Renderer {
 
         let check = verify_submission.then(|| SubmissionCheck::begin(&self.device));
         let view = output.view.clone();
+
+        // 波次5:Native RenderGraph 真多线程 command 编码。阴影级联是帧内
+        // 互相独立的编码单元族(各写各自 texture array layer),派发
+        // executor 线程并行编码;产物按级联升序与 pre/主 CB 一起进单次
+        // submit —— wgpu 队列对单次 submit 内的 command buffer 保证 FIFO
+        // 执行序,因此 GPU 观察序与串行一致,阴影贴图逐位相同。
+        self.shadow_version.shader = self.scene.shader_revision;
+        let shadow_evidence = self.shadow_cache.plan(&self.shadow_keys);
+        let shadow_updated = shadow_evidence.dirty_mask != 0;
+        let parallel_shadow = shadow_updated;
+
+        // 并行路径下 culling/lod 的 compute 必须先于级联 CB 执行(级联的
+        // indirect draw 消费其结果):单次 submit 内 command buffer 按序
+        // 执行,所以把它们放进 pre CB。
+        let mut pre_encoder = parallel_shadow.then(|| {
+            self.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Deep Engine native frame pre-encoder"),
+                })
+        });
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Deep Engine native frame encoder"),
             });
-        if let (Some(telemetry), Some(token)) = (self.telemetry.as_mut(), token) {
+
+        // Frame 起点时间戳路由:pre CB 存在时写在 pre CB;否则延迟由首个
+        // 级联 CB 携带;串行路径维持写在帧主 encoder。GPU 时间线语义与
+        // 串行布局等价(Frame 段仍覆盖整帧)。
+        if parallel_shadow {
+            match pre_encoder.as_mut() {
+                Some(pre) => {
+                    if let (Some(telemetry), Some(token)) = (self.telemetry.as_mut(), token) {
+                        telemetry.gpu_begin_frame(token, pre);
+                    }
+                }
+                None => {
+                    if let (Some(telemetry), Some(token)) = (self.telemetry.as_mut(), token) {
+                        telemetry.gpu_begin_frame_deferred(token);
+                    }
+                }
+            }
+        } else if let (Some(telemetry), Some(token)) = (self.telemetry.as_mut(), token) {
             telemetry.gpu_begin_frame(token, &mut encoder);
         }
 
         let resources = timer(token);
         let culling_updated = self.culling.needs_encode();
         if culling_updated {
-            self.culling.encode(&self.queue, &mut encoder);
+            match pre_encoder.as_mut() {
+                Some(pre) => self.culling.encode(&self.queue, pre),
+                None => self.culling.encode(&self.queue, &mut encoder),
+            }
         }
         let lod_updated = self.lod.as_ref().is_some_and(|lod| lod.needs_encode());
-        if lod_updated {
-            self.lod.as_ref().unwrap().encode(&self.queue, &mut encoder);
+        if lod_updated && let Some(lod) = self.lod.as_ref() {
+            match pre_encoder.as_mut() {
+                Some(pre) => lod.encode(&self.queue, pre),
+                None => lod.encode(&self.queue, &mut encoder),
+            }
         }
         record(
             &mut self.telemetry,
@@ -65,29 +111,64 @@ impl Renderer {
             resources,
         );
 
-        self.shadow_version.shader = self.scene.shader_revision;
-        let shadow_evidence = self.shadow_cache.plan(&self.shadow_keys);
-        let shadow_updated = shadow_evidence.dirty_mask != 0;
-        gpu_begin(&self.telemetry, GpuSegment::Shadow, &mut encoder);
-        let shadow = timer(token).filter(|_| shadow_updated);
-        if shadow_updated {
-            encode_shadow_cascades(
-                &mut encoder,
-                &self.shadow_map,
-                &self.scene,
-                &self.culling,
-                self.lod.as_ref(),
-                &self.pipelines,
+        let shadow_started = timer(token);
+        let mut shadow_buffers = Vec::new();
+        if parallel_shadow {
+            // stamper 借用 self.telemetry(共享),最后一次使用在下面的并行
+            // 编码调用里;随后才能再做 &mut telemetry 的采样落账。
+            let stamper = self
+                .telemetry
+                .as_ref()
+                .and_then(FrameTelemetry::gpu_segment_stamper);
+            let timestamps = stamper.as_ref().map(|stamper| CascadeShadowTimestamps {
+                stamper,
+                frame_begin_on_first: pre_encoder.is_none(),
+            });
+            let shadow_scene = CascadeScene {
+                shadow_map: &self.shadow_map,
+                scene: &self.scene,
+                culling: &self.culling,
+                lod: self.lod.as_ref(),
+                pipelines: &self.pipelines,
+            };
+            match encode_shadow_cascades_parallel(
+                &self.device,
+                shadow_executor_threads(),
+                &shadow_scene,
                 shadow_evidence.dirty_mask,
+                timestamps,
+            ) {
+                Ok(buffers) => shadow_buffers = buffers,
+                Err(error) => {
+                    // 错误传播取消整批:本帧任何 command buffer 都不提交,
+                    // 阴影提交状态不推进(commit 只发生在 submit 之后)。
+                    record(
+                        &mut self.telemetry,
+                        token,
+                        CpuSegment::Shadow,
+                        shadow_started,
+                    );
+                    finish(&mut self.telemetry, token, FrameResult::Failed);
+                    return RenderOutcome::Failed(format!(
+                        "native parallel shadow encode failed: {error}"
+                    ));
+                }
+            }
+            // 并行段时间戳已由 stamper 写进级联 CB;这里只翻活跃掩码。
+            if let Some(telemetry) = self.telemetry.as_mut() {
+                telemetry.gpu_mark_segment(GpuSegment::Shadow, true);
+            }
+            record(
+                &mut self.telemetry,
+                token,
+                CpuSegment::Shadow,
+                shadow_started,
             );
+        } else {
+            gpu_begin(&self.telemetry, GpuSegment::Shadow, &mut encoder);
+            gpu_end(&mut self.telemetry, GpuSegment::Shadow, false, &mut encoder);
+            record(&mut self.telemetry, token, CpuSegment::Shadow, None);
         }
-        record(&mut self.telemetry, token, CpuSegment::Shadow, shadow);
-        gpu_end(
-            &mut self.telemetry,
-            GpuSegment::Shadow,
-            shadow_updated,
-            &mut encoder,
-        );
 
         gpu_begin(&self.telemetry, GpuSegment::Opaque, &mut encoder);
         let opaque = timer(token);
@@ -188,7 +269,15 @@ impl Renderer {
             telemetry.gpu_finish_frame(token, &mut encoder);
         }
         let submit = timer(token);
-        let submission = self.queue.submit([encoder.finish()]);
+        // 确定性提交:pre CB(culling/lod compute)→ 级联 CB(升序)→
+        // 主 CB(opaque 起);单次 submit 内 FIFO 执行序,与串行布局一致。
+        let submission = self.queue.submit(
+            pre_encoder
+                .map(wgpu::CommandEncoder::finish)
+                .into_iter()
+                .chain(shadow_buffers)
+                .chain(std::iter::once(encoder.finish())),
+        );
         if culling_updated {
             self.culling.commit_submission();
         }

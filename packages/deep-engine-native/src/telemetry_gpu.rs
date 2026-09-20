@@ -118,6 +118,30 @@ impl GpuReadback {
     }
 }
 
+/// 跨线程写段级 GPU 时间戳的句柄:并行 command 编码时,段的起止时间戳
+/// 必须写在承载该段工作的 command buffer 里(而不是帧主 encoder),
+/// 否则该段的 GPU 时长会失真。`wgpu::QuerySet` 是 `Sync`,句柄可随
+/// `&self` 进入任意 executor 线程;写入只追加到该线程自己的 encoder,
+/// 无共享可变状态。
+#[derive(Clone, Copy)]
+pub struct GpuSegmentStamper<'a> {
+    query_set: &'a wgpu::QuerySet,
+}
+
+impl GpuSegmentStamper<'_> {
+    pub fn write_frame_begin(&self, encoder: &mut wgpu::CommandEncoder) {
+        encoder.write_timestamp(self.query_set, GpuSegment::Frame.pair().0);
+    }
+
+    pub fn write_segment_begin(&self, segment: GpuSegment, encoder: &mut wgpu::CommandEncoder) {
+        encoder.write_timestamp(self.query_set, segment.pair().0);
+    }
+
+    pub fn write_segment_end(&self, segment: GpuSegment, encoder: &mut wgpu::CommandEncoder) {
+        encoder.write_timestamp(self.query_set, segment.pair().1);
+    }
+}
+
 pub struct GpuFrameTiming {
     query_set: wgpu::QuerySet,
     resolve_buffer: wgpu::Buffer,
@@ -153,8 +177,29 @@ impl GpuFrameTiming {
     }
 
     pub fn begin_frame(&mut self, token: SampleToken, encoder: &mut wgpu::CommandEncoder) {
-        self.current = Some((token, 1));
+        self.begin_frame_deferred(token);
         encoder.write_timestamp(&self.query_set, GpuSegment::Frame.pair().0);
+    }
+
+    /// 并行编码路径:只做帧记账(`current` 槽位与 token),Frame 起点时间戳
+    /// 由调用方决定写在哪条 command buffer(pre CB 或首个级联 CB)。
+    pub fn begin_frame_deferred(&mut self, token: SampleToken) {
+        self.current = Some((token, 1));
+    }
+
+    /// 并行编码路径:只翻段活跃掩码,不写时间戳 —— 并行段的时间戳由
+    /// `GpuSegmentStamper` 写在承载该段工作的级联 command buffer 里。
+    pub fn mark(&mut self, segment: GpuSegment, active: bool) {
+        if active && let Some((_, mask)) = self.current.as_mut() {
+            *mask |= 1 << segment.index();
+        }
+    }
+
+    /// 跨线程时间戳句柄(见 `GpuSegmentStamper`)。
+    pub fn stamper(&self) -> GpuSegmentStamper<'_> {
+        GpuSegmentStamper {
+            query_set: &self.query_set,
+        }
     }
 
     pub fn begin(&self, segment: GpuSegment, encoder: &mut wgpu::CommandEncoder) {

@@ -111,6 +111,16 @@ pub fn create_frame_layouts(device: &wgpu::Device) -> FrameLayouts {
                 },
                 count: None,
             },
+            wgpu::BindGroupLayoutEntry {
+                binding: 9,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(16 * 16),
+                },
+                count: None,
+            },
         ],
     });
     let shadow = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
