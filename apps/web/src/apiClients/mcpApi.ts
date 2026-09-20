@@ -105,5 +105,15 @@ export function createMcpApi(request: ApiRequest, endpoint: () => string, authen
         body: JSON.stringify({ leaseId, requestId, result }), ...(signal ? { signal } : {}),
       },
     ),
+    nextEditorSnapshotRequest: (sessionId: string, leaseId: string, signal?: AbortSignal) => request<
+      { requestId: string; resourceId: string; frameId?: string } | undefined
+    >(
+      `/api/editor-scene-driver/${encodeURIComponent(sessionId)}/snapshot-request`,
+      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ leaseId }), ...(signal ? { signal } : {}) },
+    ),
+    postEditorSnapshotResult: (sessionId: string, requestId: string, payload: unknown, signal?: AbortSignal) => request<void>(
+      `/api/editor-scene-driver/${encodeURIComponent(sessionId)}/snapshot-result`,
+      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ requestId, payload }), ...(signal ? { signal } : {}) },
+    ),
   };
 }

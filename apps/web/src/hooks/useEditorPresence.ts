@@ -3,6 +3,8 @@ import { api } from "../api.js";
 import type { EditorPresenceUpdate } from "../apiClients/mcpApi.js";
 import { buildEditorSceneDraftSnapshot } from "../studio/editorSceneDraftSnapshot.js";
 import { buildEditorDiagnosticsSnapshotReport } from "../studio/editorDiagnosticsSnapshotReport.js";
+import { readStudioFrameReadbacks } from "../viewer/studioFrameCaptureDiagnostics.js";
+import { isPbrFrameReadbackSnapshot } from "@bim-studio/deep-engine";
 import { getStudioSceneRuntime } from "../studio/studioSceneRuntimeRegistry.js";
 import { runEditorSceneTransaction } from "../studio/editorSceneWriteDriver.js";
 import type { AppState } from "./useAppState.js";
@@ -10,6 +12,8 @@ import type { AppState } from "./useAppState.js";
 const HEARTBEAT_MS = 15_000;
 /** 写事务轮询：仅场景编辑面开启；无在途事务时服务端 204，开销可忽略。 */
 const DRIVER_POLL_MS = 1_000;
+/** 快照字节拉取预算（原始字节）：覆盖 4K rgba8 与 1080p rgba16f，超出显式 unavailable。 */
+const SNAPSHOT_FETCH_BYTE_BUDGET = 64 * 1024 * 1024;
 
 /**
  * Publishes only a bounded editor summary; draft content leaves the browser only as the
@@ -93,6 +97,44 @@ export function useEditorPresence(state: AppState): void {
     publish();
     const timer = window.setInterval(publish, HEARTBEAT_MS);
     const driverTimer = descriptor.surface === "scene" ? window.setInterval(() => void pollOnce(), DRIVER_POLL_MS) : undefined;
+    let snapshotInFlight = false;
+    const snapshotOnce = async () => {
+      if (snapshotInFlight || lease.current !== current || !activeSceneRef.current) return;
+      snapshotInFlight = true;
+      try {
+        const request = await api.nextEditorSnapshotRequest(current.sessionId, current.leaseId);
+        if (!request || lease.current !== current) return;
+        // 在有界 readback 存储里找匹配（可选 frameId 精确匹配；否则取该资源最新一条）。
+        const latest = readStudioFrameReadbacks().at(-1);
+        const snapshot = latest?.results
+          .filter(result => result.resourceId === request.resourceId
+            && (request.frameId === undefined || result.frameId === request.frameId))
+          .map(result => (isPbrFrameReadbackSnapshot(result) ? result : undefined))
+          .find(value => value !== undefined);
+        let payload: unknown;
+        if (!snapshot) {
+          payload = { status: "unavailable", resourceId: request.resourceId,
+            message: "没有匹配的快照（帧已滚出有界历史或该帧此资源不可用）" };
+        } else if (snapshot.bytes.byteLength > SNAPSHOT_FETCH_BYTE_BUDGET) {
+          payload = { status: "unavailable", resourceId: request.resourceId,
+            message: `快照 ${snapshot.bytes.byteLength} 字节超出拉取预算 ${SNAPSHOT_FETCH_BYTE_BUDGET}` };
+        } else {
+          const chunk = 0x8000;
+          let binary = "";
+          for (let offset = 0; offset < snapshot.bytes.byteLength; offset += chunk) {
+            binary += String.fromCharCode(...snapshot.bytes.subarray(offset, Math.min(offset + chunk, snapshot.bytes.byteLength)));
+          }
+          payload = { status: "ok", resourceId: snapshot.resourceId, frameId: snapshot.frameId,
+            format: snapshot.format, width: snapshot.width, height: snapshot.height,
+            byteLength: snapshot.bytes.byteLength, dataBase64: btoa(binary) };
+        }
+        if (lease.current !== current) return;
+        await api.postEditorSnapshotResult(current.sessionId, request.requestId, payload);
+      } catch {
+        // 回传失败：下个周期由服务端 TTL 兜底。
+      } finally { snapshotInFlight = false; }
+    };
+    const snapshotTimer = descriptor.surface === "scene" ? window.setInterval(() => void snapshotOnce(), DRIVER_POLL_MS) : undefined;
     const pagehide = () => release(true);
     window.addEventListener("pagehide", pagehide);
     return () => {
@@ -100,6 +142,7 @@ export function useEditorPresence(state: AppState): void {
       unsubscribeRevision();
       window.clearInterval(timer);
       if (driverTimer !== undefined) window.clearInterval(driverTimer);
+      if (snapshotTimer !== undefined) window.clearInterval(snapshotTimer);
       window.removeEventListener("pagehide", pagehide);
       release();
     };

@@ -40,6 +40,7 @@ import { createIndustrialCapabilityHost, registerIndustrialCapabilityRoutes } fr
 import { registerMcpCapabilityRoute } from "./mcpCapabilityAdapter.js";
 import { EditorPresenceRegistry, registerEditorPresenceRoutes } from "./editorPresence.js";
 import { EditorSceneTransactionBridge, registerEditorSceneDriverRoutes } from "./mcpEditorSceneTransactionBridge.js";
+import { EditorSnapshotFetchBridge } from "./editorSnapshotFetchBridge.js";
 import { createAssistantService } from "./ai/assistantService.js";
 import { createMetadataAiAuditSink } from "./ai/metadataAiAuditSink.js";
 import { resolveAiSettings } from "./ai/aiRuntimeSettings.js";
@@ -178,7 +179,8 @@ export async function buildApp() {
   });
   await registerEditorPresenceRoutes(app, editorPresence);
   const editorSceneTransactions = new EditorSceneTransactionBridge(editorPresence, store);
-  await registerEditorSceneDriverRoutes(app, editorSceneTransactions);
+  const editorSnapshotFetch = new EditorSnapshotFetchBridge(editorPresence);
+  await registerEditorSceneDriverRoutes(app, editorSceneTransactions, editorSnapshotFetch);
   const dataEventBus = await registerDataEventRoutes(app, store);
   const mqttIngest = new MqttIngestSupervisor(dataEventBus, async (url, options) => {
     const { connectAsync } = await import("mqtt");

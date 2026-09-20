@@ -12,7 +12,7 @@ const REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 const RESOURCE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 /** 与 deep-engine PBR_FRAME_READBACK_RESOURCES 及镜像侧白名单一致。 */
 const READBACK_RESOURCE_WHITELIST = new Set(["present-color", "opaque-hdr", "linear-depth"]);
-const MAX_BASE64_CHARS = 16 * 1024 * 1024;
+const MAX_BASE64_CHARS = 96 * 1024 * 1024;
 
 export interface DriverSnapshotFetchRequest {
   requestId: string;

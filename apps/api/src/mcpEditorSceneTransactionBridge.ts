@@ -181,7 +181,9 @@ function normalizeDriverResult(value: unknown, transactionId: string): EditorTra
 }
 
 /** 浏览器 driver 轮询通道：leaseId 证明自己是 presence 注册的那个编辑器会话。 */
-export async function registerEditorSceneDriverRoutes(app: FastifyInstance, bridge: EditorSceneTransactionBridge): Promise<void> {
+export async function registerEditorSceneDriverRoutes(app: FastifyInstance, bridge: EditorSceneTransactionBridge,
+  snapshotFetch?: { takeDriverRequest(sessionId: string, leaseId: string): unknown;
+    submitDriverResult(sessionId: string, requestId: string, payload: unknown): boolean }): Promise<void> {
   app.post<{ Params: { sessionId: string }; Body: { leaseId?: string } }>("/api/editor-scene-driver/:sessionId/next", async (request, reply) => {
     const user = request.systemUser;
     if (!user) return reply.code(401).send({ message: "请先登录" });
@@ -201,6 +203,27 @@ export async function registerEditorSceneDriverRoutes(app: FastifyInstance, brid
     return bridge.completeResult(request.params.sessionId, leaseId, requestId, result)
       ? reply.code(204).send()
       : reply.code(409).send({ message: "没有匹配的在途写事务" });
+  });
+  if (!snapshotFetch) return;
+  app.post<{ Params: { sessionId: string }; Body: { leaseId?: string } }>("/api/editor-scene-driver/:sessionId/snapshot-request", async (request, reply) => {
+    const user = request.systemUser;
+    if (!user) return reply.code(401).send({ message: "请先登录" });
+    const leaseId = request.body?.leaseId;
+    if (typeof leaseId !== "string" || leaseId.length === 0 || leaseId.length > 160) return reply.code(400).send({ message: "leaseId 无效" });
+    const next = snapshotFetch.takeDriverRequest(request.params.sessionId, leaseId);
+    if (!next) return reply.code(204).send();
+    return reply.send(next);
+  });
+  app.post<{ Params: { sessionId: string }; Body: { requestId?: string; payload?: unknown } }>("/api/editor-scene-driver/:sessionId/snapshot-result", async (request, reply) => {
+    const user = request.systemUser;
+    if (!user) return reply.code(401).send({ message: "请先登录" });
+    const { requestId, payload } = request.body ?? {};
+    if (typeof requestId !== "string" || requestId.length === 0 || requestId.length > 128) {
+      return reply.code(400).send({ message: "requestId 无效" });
+    }
+    return snapshotFetch.submitDriverResult(request.params.sessionId, requestId, payload)
+      ? reply.code(204).send()
+      : reply.code(409).send({ message: "没有匹配的挂起快照拉取" });
   });
 }
 
