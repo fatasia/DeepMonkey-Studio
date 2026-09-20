@@ -39,6 +39,8 @@ export type { BenchmarkAssetLicense, BenchmarkAssetManifest, BenchmarkAssetSourc
   BenchmarkAssetTaskFixture, BenchmarkLoadClass, ManifestValidationIssue } from "./benchmarkAssetManifest.js";
 
 export { RenderGraphBuilder } from "./renderGraph.js";
+export { executeParallelGroups } from "./renderGraphScheduler.js";
+export type { ParallelGroupTask, ParallelGroupScheduleOptions, ParallelGroupScheduleResult } from "./renderGraphScheduler.js";
 export type {
   RenderGraphCompileResult,
   RenderGraphIssue,
