@@ -237,7 +237,7 @@ export async function buildApp() {
   await registerIndustrialAgentRoutes(app, { store, runtime: industrialAgent });
   await registerAiSampleRoutes(app, { store });
   await registerModeling3dRoutes(app, { store });
-  await registerMcpCapabilityRoute(app, { store, host: industrialCapabilities, editorPresence, editorSceneTransactions });
+  await registerMcpCapabilityRoute(app, { store, host: industrialCapabilities, editorPresence, editorSceneTransactions, editorSnapshotFetch });
   const directCredentialResolver = new StaticDirectCredentialResolver(config.directBindings.credentials);
   const directBindingOptions = {
     credentialResolver: directCredentialResolver,

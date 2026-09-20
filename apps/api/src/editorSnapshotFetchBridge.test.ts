@@ -30,7 +30,7 @@ describe("editor snapshot fetch bridge", () => {
   });
 
   it("rejects viewers, malformed input, and over-budget payloads fail-closed", async () => {
-    const bridge = new EditorSnapshotFetchBridge(registryWith("s1", "lease-1"));
+    const bridge = new EditorSnapshotFetchBridge(registryWith("s1", "lease-1"), { maxBase64Chars: 1024 });
     const viewer = { ...user, role: "viewer" } as SystemUserRecord;
     await expect(bridge.request(viewer, "s1", { requestId: "r2", resourceId: "present-color" }))
       .resolves.toMatchObject({ status: "unavailable", message: "viewer 角色无诊断快照读取权限" });

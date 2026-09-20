@@ -44,6 +44,8 @@ export interface EditorSnapshotFetchBridgeOptions {
   now?: () => number;
   pendingTtlMs?: number;
   completedTtlMs?: number;
+  /** 测试注入用；生产默认 96MB base64（≈72MB 原始字节）。 */
+  maxBase64Chars?: number;
 }
 
 export class EditorSnapshotFetchBridge {
@@ -52,11 +54,16 @@ export class EditorSnapshotFetchBridge {
   private readonly now: () => number;
   private readonly pendingTtlMs: number;
   private readonly completedTtlMs: number;
+  private readonly maxBase64Chars: number;
 
   constructor(private readonly editorPresence: EditorPresenceRegistry, options: EditorSnapshotFetchBridgeOptions = {}) {
     this.now = options.now ?? Date.now;
     this.pendingTtlMs = options.pendingTtlMs ?? 15_000;
     this.completedTtlMs = options.completedTtlMs ?? 60_000;
+    this.maxBase64Chars = options.maxBase64Chars ?? MAX_BASE64_CHARS;
+    if (!Number.isSafeInteger(this.maxBase64Chars) || this.maxBase64Chars < 4) {
+      throw new RangeError("maxBase64Chars must be a positive safe integer of at least 4.");
+    }
   }
 
   /** MCP 侧发起：返回缓存的幂等结果，或挂起等浏览器回传。 */
@@ -105,7 +112,7 @@ export class EditorSnapshotFetchBridge {
   submitDriverResult(sessionId: string, requestId: string, payload: unknown): boolean {
     const pending = this.pending.get(sessionId);
     if (!pending || pending.requestId !== requestId) return false;
-    const parsed = parseResultPayload(payload);
+    const parsed = parseResultPayload(payload, this.maxBase64Chars);
     this.pending.delete(sessionId);
     pending.resolve(parsed ?? { status: "unavailable", resourceId: pending.request.resourceId,
       message: "回传载荷不合法或超出预算" });
@@ -141,7 +148,7 @@ function parseFetchRequest(input: unknown): { requestId: string; resourceId: str
     ...(record.frameId !== undefined ? { frameId: record.frameId as string } : {}) };
 }
 
-function parseResultPayload(payload: unknown): DriverSnapshotFetchResult | undefined {
+function parseResultPayload(payload: unknown, maxBase64Chars: number): DriverSnapshotFetchResult | undefined {
   if (typeof payload !== "object" || payload === null) return undefined;
   const record = payload as Record<string, unknown>;
   if (record.status === "unavailable") {
@@ -150,7 +157,7 @@ function parseResultPayload(payload: unknown): DriverSnapshotFetchResult | undef
   }
   if (record.status !== "ok") return undefined;
   const dataBase64 = record.dataBase64;
-  if (typeof dataBase64 !== "string" || dataBase64.length === 0 || dataBase64.length > MAX_BASE64_CHARS) return undefined;
+  if (typeof dataBase64 !== "string" || dataBase64.length === 0 || dataBase64.length > maxBase64Chars) return undefined;
   if (typeof record.resourceId !== "string" || !RESOURCE_ID.test(record.resourceId)
     || typeof record.format !== "string" || record.format.length === 0 || record.format.length > 32
     || typeof record.frameId !== "string" || record.frameId.length === 0 || record.frameId.length > 160
@@ -159,4 +166,40 @@ function parseResultPayload(payload: unknown): DriverSnapshotFetchResult | undef
     || typeof record.byteLength !== "number" || !Number.isSafeInteger(record.byteLength) || record.byteLength < 0) return undefined;
   return { status: "ok", resourceId: record.resourceId, frameId: record.frameId, format: record.format,
     width: record.width, height: record.height, byteLength: record.byteLength, dataBase64 };
+}
+
+
+export const EDITOR_SNAPSHOT_FETCH_TOOL = "fetch_editor_snapshot";
+
+export function editorSnapshotFetchToolDefinition() {
+  return {
+    name: EDITOR_SNAPSHOT_FETCH_TOOL,
+    title: "拉取渲染诊断快照",
+    description: "从当前用户的活跃浏览器编辑器 readback 存储按需拉取一张诊断快照字节（base64）。"
+      + "资源限于白名单（present-color/opaque-hdr/linear-depth）；可选指定 frameId，缺省取该资源最新帧。"
+      + "字节不落盘、不出用户会话；超预算或无匹配帧返回明确的 unavailable 原因。",
+    inputSchema: {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      required: ["projectId", "sessionId", "resourceId"],
+      properties: {
+        projectId: { type: "string", minLength: 1 },
+        sessionId: { type: "string", minLength: 1 },
+        resourceId: { type: "string", enum: ["present-color", "opaque-hdr", "linear-depth"] },
+        frameId: { type: "string", maxLength: 160 },
+      },
+      additionalProperties: false,
+    },
+  };
+}
+
+/** MCP tools/call 入口：治理走 request()，结果以 JSON 文本返回。 */
+export async function callEditorSnapshotFetchTool(
+  params: Record<string, unknown>, bridge: EditorSnapshotFetchBridge, user: SystemUserRecord,
+): Promise<{ text: string }> {
+  const input = (params as { input?: unknown }).input;
+  const sessionId = typeof (input as { sessionId?: unknown })?.sessionId === "string"
+    ? (input as { sessionId: string }).sessionId : "";
+  const result = await bridge.request(user, sessionId, input);
+  return { text: JSON.stringify(result) };
 }

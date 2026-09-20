@@ -7,6 +7,8 @@ import type { EditorPresence, EditorPresenceRegistry } from "./editorPresence.js
 import { listEditorSceneResources, parseEditorSceneResourceUri, readEditorSceneResource,
   listEditorDiagnosticsResources, readEditorDiagnosticsResource } from "./mcpEditorSceneResources.js";
 import { EDITOR_SCENE_TRANSACTION_TOOL, callEditorSceneTransactionTool, editorTransactionToolDefinition, type EditorSceneTransactionBridge } from "./mcpEditorSceneTransactionBridge.js";
+import { EDITOR_SNAPSHOT_FETCH_TOOL, callEditorSnapshotFetchTool, editorSnapshotFetchToolDefinition,
+  type EditorSnapshotFetchBridge } from "./editorSnapshotFetchBridge.js";
 
 const MODERN_VERSION = "2026-07-28";
 const SUPPORTED_VERSIONS = [MODERN_VERSION, "2025-11-25", "2025-06-18"] as const;
@@ -18,7 +20,7 @@ interface JsonRpcRequest {
   params?: Record<string, unknown>;
 }
 
-interface McpDependencies { host: IndustrialCapabilityHost; store: MetadataStore; editorPresence?: EditorPresenceRegistry; editorSceneTransactions?: EditorSceneTransactionBridge }
+interface McpDependencies { host: IndustrialCapabilityHost; store: MetadataStore; editorPresence?: EditorPresenceRegistry; editorSceneTransactions?: EditorSceneTransactionBridge; editorSnapshotFetch?: EditorSnapshotFetchBridge }
 
 /**
  * 无状态 MCP 适配层。登录身份、项目权限、超时和证据全部复用宿主治理，
@@ -51,6 +53,7 @@ export async function registerMcpCapabilityRoute(app: FastifyInstance, dependenc
     if (body.method === "tools/list") {
       const tools: Array<Record<string, unknown>> = toolDefinitions(dependencies.host, request);
       if (dependencies.editorSceneTransactions) tools.push(editorTransactionToolDefinition());
+      if (dependencies.editorSnapshotFetch) tools.push(editorSnapshotFetchToolDefinition());
       return rpcResult(id, {
         tools,
         ...(modern ? { ttlMs: 0, cacheScope: "private", resultType: "complete" } : {})
@@ -58,6 +61,13 @@ export async function registerMcpCapabilityRoute(app: FastifyInstance, dependenc
     }
     if (body.method === "resources/list") return listEditorResources(body.params, dependencies, request, id, reply);
     if (body.method === "resources/read") return readEditorResource(body.params, dependencies, request, id, reply);
+    if (body.method === "tools/call" && body.params?.name === EDITOR_SNAPSHOT_FETCH_TOOL && dependencies.editorSnapshotFetch) {
+      const user = request.systemUser;
+      if (!user) return reply.code(401).send(rpcError(id, -32001, "请先登录"));
+      const params = body.params as { arguments?: Record<string, unknown> };
+      const { text } = await callEditorSnapshotFetchTool(params ?? {}, dependencies.editorSnapshotFetch, user);
+      return rpcResult(id, { content: [{ type: "text", text }] });
+    }
     if (body.method === "tools/call" && body.params?.name === EDITOR_SCENE_TRANSACTION_TOOL && dependencies.editorSceneTransactions) {
       return callEditorSceneTransactionTool(body.params, dependencies.editorSceneTransactions, request, id, reply, modern);
     }
