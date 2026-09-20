@@ -41,7 +41,12 @@ export function beginPbrOpaquePass(encoder: GPUCommandEncoder,
 export function describePbrOpaquePass(options: { readonly directDisplay?: boolean; readonly writeGeometryBuffers?: boolean } = {}): PbrActualPassDescription {
   const geometryWrite = (id: string, format: string): PbrActualPassDescription["claims"][number] => ({
     id, access: "write", format, sampleCount: PBR_MAIN_SAMPLE_COUNT,
-    usages: ["render-attachment", "texture-binding"], sizeRole: "surface",
+    // linear-depth 与 opaque-hdr 同带 COPY_SRC：R12 白名单诊断快照读回（与 renderTargets 创建一致）。
+    usages: id === "opaque-hdr"
+      ? ["render-attachment", "texture-binding", "storage-binding", "copy-src"]
+      : id === "linear-depth"
+        ? ["render-attachment", "texture-binding", "copy-src"]
+        : ["render-attachment", "texture-binding"], sizeRole: "surface",
   });
   return {
     passId: "opaque", executor: "beginPbrOpaquePass (PbrRenderer main opaque MRT)", kind: "render",
