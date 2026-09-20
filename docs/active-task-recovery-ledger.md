@@ -5,6 +5,7 @@
 - 调研产出：[超越四引擎方案](specs/surpass-engines-extreme-optimization-plan-2026-09-21.md)——Babylon9/Bevy0.17/Unity7/UE5.6 对标+P0-P2 排期+平台边界追平路线（RayBackend 双实现/cluster LOD DAG+软光栅/Native 渲染线程+开放世界基础栈 9.5.0：世界分区流送、多级 origin 级联、远距 GI、植被 GPU-driven）。
 - 诚实边界：authorChunkStream.test LOD 一项失败为上轮 G3 HLOD WIP 与已提交测试期望的既有不一致（非本轮）；XR 未过真机闭环；批次 E/F 全量门禁+双客户端真实操作+同条件对拍未跑（按调度后置）；AI 助手与 R11/P5P7 子代理在途未收。
 - 恢复入口：按波次顺序接续——波次1 合同层（RayBackend/cluster LOD bake 合同/世界分区数据合同）→ 波次2 快赢（subgroups 变体/GI 收口/MCP 截图资源）→ 波次3 P0-1→P0-2→软光栅 → 波次4 消费者接线+分区流送 → 波次5 Native 渲染线程+bindless → 波次6 批次 E+F。
+- 波次1 部分完成（`b258cea`）：rayTracing/ 三合同（RayBackend 描述符+预算校验、CPU 参考 BVH+Möller–Trumbore 仲裁遍历、cluster LOD DAG 验证器（误差单调/叶子覆盖闭合）、世界分区 512m 单元+确定性流送优先级），15 测试过。**GI 收口现状核实**：采样合同 ABI v1 已含视差校正（relocation 参与探针位置）与切比雪夫泄漏加权，但 **relocation 更新侧全仓无写入方**（读取恒为 0）——GI 收口的真正缺口在 probe 位置优化更新，接波次2。subgroups HiZ 变体需 DCIR 新 op（subgroup-min/max）+双发射器+真机对拍，完整切片待派。
 
 ## 2026-09-20 主线续跑检查点
 
