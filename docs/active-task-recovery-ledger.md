@@ -1,10 +1,34 @@
+## 2026-09-21 GLM 极致交付检查点
+
+- **用户战略指令（覆盖旧口径）**：①主力在引擎（Native wgpu）与打包客户端，Web 做不了的平台能力不强求；②产品定位不限 BIM/工业，**开放世界纳入目标负载域、不限制用户场景**；③任务队列按"先易+承接后续"排波次执行（合同层→快赢→核心工程→接线→Native 主战场→完整验收）。最终验收新增：全量测试+双客户端打包（Deep Native/Three WebView）+鼠标键盘交互与 Web 一致+性能极致；内部 AI 助手升级到极致（harness/agent/模型切换/思考深度/模型列表/failover），UI 交互不许变差。
+- 本轮已完成并本地提交（基线 6699892，**未 push**）：`9b3932b` Native annotation frame-aware v2 持久化（v2 记录 runtime origin，重开无损换算 world f64，7 新测试）；`1a48c8e` deep-engine 三切片（R12 readback 白名单 plan+PbrFrameCapture 集成、自适应 shadowTier 走 stage/publish 帧边界+residencyBudgetScale 进 catalog 预算、R1 ProbeClipmapPbrController 接入正式 PBR 循环+probeClipmap 白名单修复、virtualGeometryPages 10 单测）；`cc631a0` Studio readback 快照 UI+PNG 导出（HDR Reinhard 近似诚实标注）+启动时间线打点；`7f29a56` XR 十缺口补足（分档/重入/回滚/select-squeeze 拾取走 ordinaryPicking/能力单源，37+151 测试过）；`b48699b` Chrome 146+ TRANSIENT_ATTACHMENT 探测式启用；`50fc713` MCP 浏览器草稿镜像+SceneCommandTransaction 写事务桥（1s 轮询 driver、lease 凭证、幂等重放、fail-closed）。
+- 调研产出：[超越四引擎方案](specs/surpass-engines-extreme-optimization-plan-2026-09-21.md)——Babylon9/Bevy0.17/Unity7/UE5.6 对标+P0-P2 排期+平台边界追平路线（RayBackend 双实现/cluster LOD DAG+软光栅/Native 渲染线程+开放世界基础栈 9.5.0：世界分区流送、多级 origin 级联、远距 GI、植被 GPU-driven）。
+- 诚实边界：authorChunkStream.test LOD 一项失败为上轮 G3 HLOD WIP 与已提交测试期望的既有不一致（非本轮）；XR 未过真机闭环；批次 E/F 全量门禁+双客户端真实操作+同条件对拍未跑（按调度后置）；AI 助手与 R11/P5P7 子代理在途未收。
+- 恢复入口：按波次顺序接续——波次1 合同层（RayBackend/cluster LOD bake 合同/世界分区数据合同）→ 波次2 快赢（subgroups 变体/GI 收口/MCP 截图资源）→ 波次3 P0-1→P0-2→软光栅 → 波次4 消费者接线+分区流送 → 波次5 Native 渲染线程+bindless → 波次6 批次 E+F。
+
 ## 2026-09-20 主线续跑检查点
+
+- 独立品牌任务：按用户最终上传稿，将全局默认 Logo 替换为青绿渐变折带蛇标（覆盖早先扁平第三款）。Web/桌面/安装器/Native 打包图标已统一；默认 Native 包装在已验证 EXE 的副本中更新图标，不改缓存源及发布 SHA。Web/API 编译、API 39 项、桌面 12 项、36 格两轮视觉检查和 PE 六尺寸读回通过；NSIS/MSI 已重建。Web 全量 3827 passed / 2 个非本轮发布失败 / 3 skipped，未宣称全绿。详见 [Logo 验收](reports/product-snake-logo-2026-09-20.md)。未 commit/push。
+
+- 最新用户指令：后续先不 push。历史 Revit 插件按用户要求独立恢复，不改变 builtin-only 工业格式路线；Worker 重新发布、真实样本转换成功、重启后 API 可用。场景工具栏恢复画布居中，聚焦测试 2/2，三档浏览器复验通过；详见 [恢复记录](reports/legacy-rvt-toolbar-restore-2026-09-20.md)。
+
+- 用户最新交付纪律：停止小切片频繁 push，改为[批次门禁](specs/mainline-batch-delivery-gate-2026-09-20.md)通过后统一推送。P0 优先 FINAL-GATE 第一轮；R10 产品宿主、资源快照与完整 source-map UI 不阻塞此轮，P1/P2 全部保留。当前 engine 回归 3385 passed/41 skipped，runtime-purity 新增缺陷已修复并 focused 复验；产品浏览器 WebGL/WebGPU 门禁通过，仍不能宣称终局通过。
+
+- 用户新增最终验收口径：自研 WebGPU 打包客户端的 2D/3D 效果需与 Three.js Web 端接近或更好；该同场景/相机/材质/灯光/字体对拍放到功能任务末尾，不阻塞当前底层与合同收口。
+
+- Viewer 性能首轮实测已完成：`test-output/codex-2026-09-05/viewer-performance-LZ5XJB/report.json`。WebGL/WebGPU × 120/1000 primitives 四场景无渲染错误，P95 21.3–25.0ms、长任务为 0；仅保留 Chrome Windows `powerPreference` 警告和“诊断夹具、不等于工业模型 FPS”的边界。
+
+- 门禁续验：RVT 源级统计探针已按职责拆分，`pnpm quality:source-size` 5336 个源文件通过；抽样 RVT 审计 5 项通过、双跑确定性报告在 `test-output/codex-source-size-20260920145343/evidence.json`。公开品牌隔离在重建 Web dist 后通过。Web delivery typecheck 主线程复验通过，合同修复对应 9 个文件 32/32 通过；整组 delivery 回归仍有 11 项既有行为失败。deep-engine 严格 >300 行门禁仍有 70 个历史/并行超限文件，未降低阈值。
 
 - R10 F07 固定 Multibody 三段摆链已通过 native/WASM 241 帧逐位对拍、双跑和去关节/去重力负对照；逐帧读取真实 joint 状态，锚点误差 <1e-5。Rust 聚焦 13 项通过，F04–F06 金标不变；证据 `test-output/r10-f07-multibody-20260920-r1/evidence.json`。动态拓扑/控制、混合求解器、产品宿主仍待；配对 API 不支持的 multibody motor/limits 明确拒绝。
 
 - OPT-01/03 重复上传切片：实例当前/历史缓冲独立更新与实际写入回滚；固定灯光强制阴影重绘跳过未变 uniform。4 文件/60 项及 engine tsc 通过；16,384 实例材质更新减少 25% 上传字节，固定四灯重绘减少 5 次/1,920 B。不是整帧性能结论，GPU/P95/P99 仍待，见[报告](reports/mainline-upload-optimization-2026-09-20.md)。
 
 - R12 实际 output pipeline 来源追踪已补：无 SpatialAA 的 present 使用同一 WGSL 的 SHA-256 与入口行，内置渲染器拒绝外部 package/map 注入；四场景真 GPU 通过，含来源反查，证据 `test-output/r12-frame-capture-1789882931950/evidence.json`。其余内置 pass 未映射；资源快照/调试 UI 仍待。FINAL-GATE [首轮预检](reports/mainline-final-gate-2026-09-20.md)仍未通过，Web 类型/source-size/public-brand 失败项已定位。
+
+- 最新用户排序：接入、消费、编辑器挂载及无缝切换放到功能任务末尾、最终验收之前；先收尾在手切片，再做底层优化/核心能力。此排序覆盖旧的产品接入优先建议，不取消这些任务或回退已有接线。
+
+- 用户已将底层高收益优化、高价值能力缺口与六家引擎设计借鉴纳入当前任务：[执行表](specs/mainline-high-value-integration-2026-09-20.md)。OPT-01–07 / CAP-01–08 映射既有卡，补齐收益口径、产品接入条件、顺序和去重边界；先收尾在手 R10/R12，再按独立文件推进。此项仅完成计划纳入，不表示能力已实现；不恢复 A01-X/480min soak/wgpu fork，不改已有机器完成状态。
 
 - 恢复入口：`docs/handoffs/mainline-closeout-2026-09-20.md`。R10 F04/F05 已在 `8dc7b14` 提交推送；R12 生产帧捕获切片已在 `726d8fd` 提交推送，完整 R12 仍待办。
 - R10 F06 固定 position motor/双向限位已通过 native/WASM 241 帧逐位对拍、WASM 重跑及移除马达/限位负对照；证据 `test-output/r10-f06-motor-limits-20260920-r1/evidence.json`。Rust 定向 10 项通过，F04/F05 金标不变。MultibodyJoint、速度模式/扭矩预算、运行时控制更新和产品 PhysicsWorld 宿主仍待，不扩大为完整 R10。
@@ -2556,3 +2580,19 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 960/960 完成,0 crash;但 P95 仍超阈值——归因:三子代理同时跑(R4 遮挡/A01-X Babylon/Deep2D 文字)必然污染 CPU 采样。
 - 诚实结论:480min 生产 soak 必须在静默机器上运行(无并行 Chrome/cargo/vitest),否则 P95 不可信。建议在所有开发会话空闲时(如周末或深夜)单独执行。
 - 第二轮数据保留在 test-output/soak-prod-480-stdout.log + test-output/d24-d28-evidence-20260919/,供对比参考。
+
+### 2026-09-20 场景客户端三项实机收口
+
+- 网格近距采样清晰化完成，两轮浏览器放大复验通过；Three/Deep 网格采样合同与 73 项既有聚焦测试通过。
+- 场景 `666666` Deep Native 实机候选为 `ready`，原 14 项检查全部消除，v13 studio environment/lighting 取得 Native window 证据。
+- Three WebView 产品接口真实生成 32,958,976 字节 Windows PE，产物位于 `D:/Download/666666.three-webview.exe`；不再把 `.bimscene.zip` 当客户端交付。
+- Web 95 项、Native 归档 90 项、启动器 6 项、Web/API typecheck 通过。启动器冷编译等待窗口修正为 180 秒，当前 API/Web 健康。未 push。
+- Deep Native 版本 6 EXE 已改为 Windows GUI subsystem（2），`--help` 重定向输出仍正常；`D:/Download/666666.deep-native.exe` 实测 16,489,476 字节。Three 同一冻结归档缓存命中实测 223 ms；新发布首次 Tauri 壳构建尚未降到秒级，不能宣称完成该性能尾项。
+
+# 2026-09-20 极致性能、效果、AI 与双客户端暂停交接
+
+- 用户要求当前实现轮在完成交接后停止；未 commit、未 push，完整全量与真实客户端终验留待后续任务。
+- 唯一恢复入口：`docs/handoffs/deep-monkey-extreme-glm-handoff-2026-09-20.md`。
+- 已收口的新增切片：分页虚拟几何 CPU demand/residency、Web/Native camera-relative rebase、RenderGraph 帧内复用与 MRT 裁剪、材质参数池、SSR 粗糙锥与共享时域可信度、设备自适应、本地有界遥测、内容寻址 Shader/PSO 预热、MCP 设置/presence/分页场景资源、R12 通用 GPU readback、背景网格双客户端发布链。
+- 仍不得宣称完成：GPU feedback/稀疏虚拟几何、Native 多线程编码、完整 bindless/纹理虚拟化、完整反射层级、更强 DDGI/多灯体积时域、R12 产品白名单、MCP 浏览器写事务、双客户端完整交互/同画质性能终验。
+- 工作树包含大量共享 dirty/untracked；禁止 reset/clean/checkout 覆盖，按交接文档逐 hunk 复核。

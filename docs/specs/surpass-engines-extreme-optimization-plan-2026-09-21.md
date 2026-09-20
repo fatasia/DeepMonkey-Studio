@@ -96,14 +96,33 @@
 
 ## 9.5 追平平台边界项（2026-09-21 用户指令：Lumen HWRT / Nanite 极限 / 原生多核）
 
+> **2026-09-21 用户战略指令（覆盖一切范围限定）**：Web 端做不了的平台能力不强求（主力在引擎与
+> 客户端）；产品定位不限于 BIM 与工业，**开放世界纳入目标负载域，不限制用户场景**。
+> 因此本节所有路线按"Native wgpu 引擎为主战场、Web 端为兼容交付面"设计，
+> 开放世界所需的大世界流送、世界分区、远距 GI 一并纳入追平范围。
+
+### 9.5.0 开放世界基础栈（新增，追平三项目的前置）
+
+- **大世界流送**：authorChunkStream（内容寻址 chunk + residency）扩展为世界分区网格——固定世界
+  单元（如 512m 网格）+ 环形优先级（相机速度感知预取）+ 后台 bake；单元内即现有 meshlet 分页。
+- **精度**：相机相对坐标 + 动态 rebase（已有 ±750 滞回 + 1000 网格，正是为公里级世界设计）——
+  扩展为多级 origin 级联（世界→分区→chunk），工程公差与稳定 ID 不降级。
+- **开放世界光照/GI**：距离场式远距遮挡（低分辨率世界 SDF 分区缓存）+ DDGI clipmap 已有近场
+  clipmap 架构（扩展 clipmap 级数覆盖公里级）+ 太阳/天空主导的单弹远距近似；硬件 RT 就绪后远距
+  反射/阴影射线由 RayBackend 承担。
+- **万级实例植被/装饰**：GPU-driven 实例链（P0-1）+ 风场顶点动画（compute 顶点偏移，复用 deformation
+  管线）+ imposter/远景 LOD 层级。
+- 验收：10km×10km 世界、60fps 漫游、流送无爆点（P99 帧时长无 >100ms 尖峰）、GI/光照无分区接缝。
+
 ### 9.5.1 硬件光追 → RayBackend 双实现（软件 BVH 先行，硬件即插即用）
 
 - 差距本质：UE 用 DXR/Vulkan RT。WebGPU 无 RT API（提案推进中）；wgpu RT 实验性。
-- **追赶路线**：
-  1. 定义 `RayBackend` 合同（closestHit/anyHit/occlusion 查询，场景 BLAS/TLAS 句柄）；
-  2. **软件实现**：WGSL compute 两级 BVH（BLAS 按 meshlet 分页缓存、TLAS 每帧重建——实例数工业场景 <10 万，重建成本可忽略）；先落地三个消费者：SSR 屏外反射射线（补 SSR 缺失）、局部光软阴影射线（PCSS atlas 到任意灯）、DDGI probe 遮挡验证；
-  3. **硬件实现**：Native wgpu RT（experimental feature 探测）同合同接入；浏览器 WebGPU RT 提案落地后 Web 端同合同切换，零上层改动。
-- 等效判据：BIM/工业室内场景，GI/反射/软阴影视觉等效 Lumen 非 HWRT 档（固定夹具 SSIM + 盲评）；开放世界大尺度不追（非目标负载域）。
+- **主战场在 Native**：wgpu experimental RT 探测可用即接 RayBackend 硬件实现；软件 WGSL compute
+  BVH 作为无 RT 设备的统一回退与 Web 端唯一路径。
+- 消费者按开放世界扩展：SSR 屏外反射射线、任意局部光软阴影、DDGI probe 遮挡验证，+
+  **远距环境遮挡/天空可见性射线**（开放世界 GI 的关键项）。
+- 等效判据：室内场景 GI/反射/软阴影视觉等效 Lumen 非 HWRT 档；开放世界场景无 Lumen 级也需
+  达到"无接缝、无爆点、时域稳定"的工程等效。
 
 ### 9.5.2 Nanite 数十亿三角 → cluster LOD DAG + 可见性 buffer + 软光栅后备
 
@@ -112,16 +131,18 @@
 - **追赶路线**（依赖 P0-1 实例 GPU-driven、P0-2 可见性 buffer）：
   1. **cluster LOD DAG**：bake 期 cluster 简化层级（父子指针+误差标量，挂现有 author LOD/bake 管线）；GPU 端按屏幕误差阈值逐 cluster 选层（消费 Hi-Z 覆盖）；
   2. **软光栅后备**：compute scanline 光栅仅处理"选层后仍超误差阈值的 cluster"，写同一 visibility buffer（社区已有 WebGPU 先例，非理论）；CAD 高曲率边缘正需要它；
-  3. **可验证目标**：单场景 10 亿级源三角（全楼 BIM 合并）、帧内可见 200–500 万三角 @60fps（RTX 4060 档），代替不可实测的"数十亿"营销口径。
+  3. **可验证目标（按用户定位含开放世界）**：BIM 全楼合并 10 亿级源三角、开放世界地形+植被+资产 10 亿级源三角，两者均帧内可见 200–500 万三角 @60fps（RTX 4060 档）。
 - 诚实边界：像素级无瑕疵等价 Nanite 不承诺；验收=固定夹具 SSIM + 边缘锯齿度量 + 帧时间。
 
-### 9.5.3 原生多核红利 → 双端分工
+### 9.5.3 原生多核红利 → 双端分工（主战场 Native 引擎与客户端）
 
-- **Native（wgpu）可全面追平**：真多线程 command encoder（P1-4）+ 专用渲染线程 + rayon 并行资源准备；wgpu 异步提交模型不落后于 D3D12。完成后架构位与 UE 渲染线程/RHI 线程等效。
-- **Web 端等效体验路线**：JS 主线程是硬边界，但渲染 CPU 占比已实测 <10%（R6 结论），瓶颈不在提交。补两件事：
-  1. CPU 密集离线工作全部 worker 化（几何 bake、纹理转码、场景编译——worker 基建已有）；
-  2. 评估渲染循环迁入 OffscreenCanvas worker + SharedArrayBuffer（COOP/COEP 可控：桌面客户端与本地部署），主线程只剩输入与 UI——达到"交互永不卡顿"的体验等效。
-- 验收：主线程长任务（>50ms）计数为 0；Native 端 encoding 线性度 ≥3.5x/4 核。
+- **Native（wgpu）主战场，可全面追平**：真多线程 command encoder（P1-4）+ 专用渲染线程 + rayon
+  并行资源准备 + 流送/解压 worker 池；wgpu 异步提交模型不落后于 D3D12。完成后架构位与 UE
+  渲染线程/RHI 线程等效，且打包客户端（Deep Native）是承载它的产品面。
+- **Web 端为兼容交付面，不强行追平**：CPU 密集工作全部 worker 化（几何 bake、纹理转码、场景编译
+  ——worker 基建已有）；OffscreenCanvas 渲染 worker 隔离降为可选增强。主线程长任务（>50ms）
+  归零仍是验收线；不再投入超出此线的 Web 端多核工程。
+- Native 验收：encoding 4 核线性度 ≥3.5x；流送/解压与渲染帧内工作零争用（时间戳量化证据）。
 
 ### 新增任务队列映射
 
