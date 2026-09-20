@@ -23,6 +23,7 @@ import {
   Ruler,
   ScanLine,
   Scaling,
+  ShieldCheck,
   Sun,
   UserRound,
 } from "lucide-react";
@@ -59,6 +60,7 @@ interface SceneToolDockProps {
   xrOpen: boolean;
   simulationPanel: SceneSimulationPanelId | undefined;
   infoEnabled: boolean;
+  engineeringOpen: boolean;
   onFitAll: () => void;
   onSelect: () => void;
   onTransformChange: (mode: TransformMode) => void;
@@ -71,6 +73,7 @@ interface SceneToolDockProps {
   onNavigationChange: (mode: NavigationMode) => void;
   onAvatarToggle: () => void;
   onInfoToggle: () => void;
+  onEngineeringToggle: () => void;
   onEnvironmentToggle: () => void;
   onAnimationToggle: () => void;
   /** @deprecated Camera tools are unified in Scene director. */
@@ -216,7 +219,8 @@ export function SceneToolDock(props: SceneToolDockProps) {
           props.explosionActive ||
           props.environmentOpen ||
           props.animationOpen ||
-          props.infoEnabled
+          props.infoEnabled ||
+          props.engineeringOpen
         }
         onToggle={() => setOpenMenu((value) => (value === "inspect" ? undefined : "inspect"))}
       >
@@ -285,6 +289,12 @@ export function SceneToolDock(props: SceneToolDockProps) {
           icon={<Info size={15} />}
           active={props.infoEnabled}
           onClick={() => run(props.onInfoToggle)}
+        />
+        <MenuAction
+          label={tr(props.locale, "工程分析与导出", "Engineering analysis & export")}
+          icon={<ShieldCheck size={15} />}
+          active={props.engineeringOpen}
+          onClick={() => run(props.onEngineeringToggle)}
         />
         <MenuAction
           label={tr(props.locale, "环境与灯光", "Environment & lighting")}

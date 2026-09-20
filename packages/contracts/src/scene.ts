@@ -55,6 +55,28 @@ export interface ScenePhysicsState {
   enabled: boolean;
   playing: boolean;
   gravity: Vector3Value;
+  /** Product-authored joints. Omitted by legacy scenes. */
+  joints?: ScenePhysicsJointState[];
+}
+
+export interface ScenePhysicsJointState {
+  id: string;
+  kind: "revolute";
+  /** Reduced-coordinate multibody joints currently exclude limits and motors in the Web product API. */
+  solver?: "impulse" | "multibody";
+  /** Model rigid body mounted to the fixed world body. */
+  bodyId: string;
+  /** Optional second authored rigid body. Omitted joints remain attached to the fixed world. */
+  connectedBodyId?: string;
+  /** Anchor on the fixed world body, in world metres. */
+  worldAnchor: Vector3Value;
+  /** Anchor on the model rigid body, in model-local metres. */
+  localAnchor: Vector3Value;
+  /** Revolute axis in the joint local frame. */
+  axis: Vector3Value;
+  limits: { enabled: boolean; min: number; max: number };
+  /** Rapier velocity motor. Strength is the solver factor, not a torque claim. */
+  motor: { enabled: boolean; targetVelocity: number; strength: number };
 }
 
 export type ExplosionMode = "radial" | "vertical" | "x" | "y" | "z";
@@ -351,6 +373,9 @@ export interface GlobalLightingState {
   globalIlluminationEnabled?: boolean;
   globalIlluminationIntensity?: number;
   lights?: SceneLightState[];
+  /** Quantized LM-63 profiles referenced by spot lights. Kept in the scene so
+   * publications do not depend on the original local file. */
+  lightProfiles?: SceneLightProfileState[];
 }
 
 export type SceneLightType = "ambient" | "hemisphere" | "directional" | "point" | "spot" | "rectArea";
@@ -372,6 +397,25 @@ export interface SceneLightState {
   width?: number;
   height?: number;
   castShadow?: boolean;
+  /** Deep WebGPU local PCSS softness in [0,1]; omitted/zero preserves hard PCF. */
+  shadowSoftness?: number;
+  /** IES is valid only for spot lights and must reference lighting.lightProfiles. */
+  ies?: SceneLightIesState;
+}
+
+export interface SceneLightIesState {
+  profileId: string;
+  rotationDeg?: number;
+  scaleFactor?: number;
+}
+
+export interface SceneLightProfileState {
+  profileId: string;
+  format: "LM-63-1995" | "LM-63-2002";
+  verticalAngles: number[];
+  candela: number[][];
+  horizontalSymmetry: 1 | 2 | 4;
+  totalLumens: number;
 }
 
 export type SkyboxPreset =
@@ -410,6 +454,14 @@ export interface ScenePostProcessingState {
   ssaoIntensity: number;
   gtao?: boolean;
   gtaoIntensity?: number;
+  /** Deep WebGPU screen-space reflections. Other clients must report unsupported instead of dropping it. */
+  screenSpaceReflection?: boolean;
+  /** Ray-march samples, integer [8,128]. */
+  ssrSteps?: number;
+  /** Hit thickness as a fraction of scene extent, [0.001,0.1]. */
+  ssrThickness?: number;
+  /** Maximum trace distance as a multiple of scene extent, [0.25,4]. */
+  ssrMaxDistance?: number;
   bloom: boolean;
   bloomStrength: number;
   bloomThreshold: number;
@@ -470,6 +522,33 @@ export interface SceneModelAnimationPlaybackState {
   loopMode: "once" | "loop";
 }
 
+export interface SceneAnimationClipState {
+  id: string;
+  name: string;
+  modelId: string;
+  clipId: string;
+  loop: boolean;
+}
+
+export interface SceneAnimationClipTransitionState {
+  id: string;
+  fromStateId: string;
+  toStateId: string;
+  parameter: string;
+  equals: boolean;
+}
+
+/** Product-authored controller for switching imported animation clips. */
+export interface SceneAnimationStateMachineState {
+  enabled: boolean;
+  initialStateId: string;
+  activeStateId: string;
+  transitionDuration: number;
+  states: SceneAnimationClipState[];
+  parameters?: Record<string, boolean>;
+  transitions?: SceneAnimationClipTransitionState[];
+}
+
 export interface SceneAnimationState {
   duration: number;
   /** 发布预览进入场景后是否自动播放时间线。 */
@@ -484,8 +563,36 @@ export interface SceneAnimationState {
   cameraInterpolation?: "linear" | "smooth" | "spline";
   modelInterpolation?: "linear" | "smooth";
   showCameraPath?: boolean;
+  stateMachine?: SceneAnimationStateMachineState;
   camera: CameraKeyframe[];
   models: ModelKeyframe[];
+}
+
+/** P7 QTO 分类口径映射：按数组顺序应用，首条命中生效；未命中回落内置类别推断。 */
+export interface SceneQtoCategoryMapping {
+  id: string;
+  enabled: boolean;
+  /** 匹配来源：材质名 / 对象名 / 自定义属性。 */
+  source: "material-name" | "object-name" | "custom-property";
+  /** 匹配文本（小写包含匹配）；source 为 custom-property 时留空表示仅按属性键存在匹配。 */
+  pattern: string;
+  /** 自定义属性键；source 为 custom-property 时必填。 */
+  propertyKey?: string;
+  /** 命中后输出的 QTO 类别。 */
+  category: string;
+}
+
+/**
+ * P5 空间校验规则与 P7 QTO 分类口径。随场景文档保存（工程分析面板共享），
+ * 重开场景后恢复；运行时仍以当前可见对象为准，不进运行包。
+ */
+export interface SceneEngineeringAnalysisState {
+  /** 最小净空阈值（米，>=0）。 */
+  minimumClearance: number;
+  /** 限高阈值（米，>0）。 */
+  heightLimit: number;
+  /** P7 分类口径映射规则；缺省为空 = 沿用内置类别推断。 */
+  qtoMappings?: SceneQtoCategoryMapping[];
 }
 
 
@@ -572,6 +679,8 @@ export interface SceneSnapshot {
   postProcessing?: ScenePostProcessingState;
   physics?: ScenePhysicsState;
   animation?: SceneAnimationState;
+  /** P5 空间校验规则与 P7 QTO 分类口径（工程分析面板共享）。 */
+  engineeringAnalysis?: SceneEngineeringAnalysisState;
   dashboard?: SceneDashboardState;
   dataBindings?: SceneDataBindingState[];
   assetBindings?: SceneAssetBindingState[];

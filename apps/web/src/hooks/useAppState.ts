@@ -5,6 +5,7 @@ import type {
   RevitRuntimeInfo, RvtConversionMode, SceneAnnotationState, SceneAnimationState, SceneAssetBindingState,
   SceneCoordinateSystemState, SceneDashboardState, SceneDataBindingState,
   SceneEnvironmentState, SceneInteractionScriptState, ScenePhysicsState,
+  SceneEngineeringAnalysisState,
   ScenePostProcessingState, SceneSelectionSetState, SceneSnapshot,
   ScriptModule, SystemBrandingSettings, SystemUserRecord, TopologyScadaRuntimeState, WeatherMode
 } from "@bim-studio/contracts";
@@ -13,6 +14,7 @@ import {
   DEFAULT_CLIPPING, DEFAULT_ENVIRONMENT, DEFAULT_LIGHTING, DEFAULT_PHYSICS,
   DEFAULT_POST_PROCESSING, RENDERER_BACKEND_STORAGE_KEY, REVIT_VERSION_STORAGE_KEY
 } from "../appDefaults";
+import { DEFAULT_ENGINEERING_ANALYSIS } from "../viewer/engineeringAnalysisState";
 import { DEFAULT_DASHBOARD_STATE } from "../components/dashboardState";
 import type { InteractionTargetOption } from "../components/InteractionEditor";
 import type { SceneDataBindingRuntimeState } from "../components/SceneDataBindingEditor";
@@ -171,6 +173,7 @@ export function useAppState() {
   const [postProcessing, setPostProcessing] = useState<ScenePostProcessingState>(DEFAULT_POST_PROCESSING);
   const [physics, setPhysics] = useState<ScenePhysicsState>(DEFAULT_PHYSICS);
   const [physicsOpen, setPhysicsOpen] = useState(false);
+  const [engineeringAnalysis, setEngineeringAnalysis] = useState<SceneEngineeringAnalysisState>(() => structuredClone(DEFAULT_ENGINEERING_ANALYSIS));
   const [selectedLightId, setSelectedLightId] = useState("");
   const [creditsOpen, setCreditsOpen] = useState(false);
   const [digitalTwinOpen, setDigitalTwinOpen] = useState(false);
@@ -293,6 +296,7 @@ export function useAppState() {
     setLighting, sceneEnvironment, setSceneEnvironment, sceneCoordinates,
     setSceneCoordinates, configuredDefaultEnvironment, postProcessing, setPostProcessing,
     physics, setPhysics, physicsOpen, setPhysicsOpen,
+    engineeringAnalysis, setEngineeringAnalysis,
     selectedLightId, setSelectedLightId, creditsOpen, setCreditsOpen,
     digitalTwinOpen, setDigitalTwinOpen, sceneDataStatus, setSceneDataStatus,
     sceneDataReceived, setSceneDataReceived, aiAssistantOpen, setAiAssistantOpen,

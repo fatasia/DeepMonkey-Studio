@@ -144,15 +144,16 @@ export function buildQtoReport(objects: QtoObjectInput[]): QtoReport {
 /** CSV 导出:findings 平面表(与 spatialValidation 的 CSV 合同同风格,RFC 引号安全)。 */
 export function qtoReportToCsv(report: QtoReport): string {
   const escape = (value: string | number | undefined): string => {
-    const text = String(value ?? "");
+    const raw = String(value ?? "");
+    const text = typeof value === "string" && /^[=+\-@]/.test(raw) ? `'${raw}` : raw;
     return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
   };
   const header = ["category", "level", "count", "totalVolumeCubicMetres", "totalSurfaceAreaSquareMetres", "openMeshSuspectedCount"];
   const rows = report.lines.map((line) => [
-    line.category, line.level, String(line.count),
-    String(line.totalVolumeCubicMetres), String(line.totalSurfaceAreaSquareMetres),
-    String(line.openMeshSuspectedCount),
+    line.category, line.level, line.count,
+    line.totalVolumeCubicMetres, line.totalSurfaceAreaSquareMetres,
+    line.openMeshSuspectedCount,
   ].map(escape).join(","));
-  const skipped = report.skipped.map((item) => `skipped,${item.id},${escape(item.reason)}`);
+  const skipped = report.skipped.map((item) => ["skipped", item.id, item.reason].map(escape).join(","));
   return [header.join(","), ...rows, ...skipped].join("\n");
 }

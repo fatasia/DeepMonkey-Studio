@@ -1,5 +1,6 @@
 import type {
   GlobalLightingState,
+  SceneEngineeringAnalysisState,
   SceneEnvironmentState,
   SceneLightState,
   SceneMaterialState,
@@ -42,6 +43,7 @@ export function createSceneAppearanceCommands(context: SceneEditorControllerCont
     setSceneEnvironment,
     setPostProcessing,
     setPhysics,
+    setEngineeringAnalysis,
     setSelectedLightId,
     showError,
     recordSceneEdit,
@@ -76,6 +78,12 @@ export function createSceneAppearanceCommands(context: SceneEditorControllerCont
     setPhysics(next);
     engine?.setPhysicsState(next);
     recordSceneEdit("更新场景物理参数");
+  }
+
+  /** P5/P7 规则与 QTO 口径：面板受控更新 → 走场景历史（撤销/自动保存同链路）。 */
+  function changeEngineeringAnalysis(next: SceneEngineeringAnalysisState) {
+    setEngineeringAnalysis(next);
+    recordSceneEdit("更新工程分析规则");
   }
 
   function changeSelectedPhysics(patch: Partial<ScenePhysicsBodyState>) {
@@ -229,6 +237,7 @@ export function createSceneAppearanceCommands(context: SceneEditorControllerCont
     changeSceneEnvironment,
     changePostProcessing,
     changePhysics,
+    changeEngineeringAnalysis,
     changeSelectedPhysics,
     uploadEnvironmentMap,
     updateLight,

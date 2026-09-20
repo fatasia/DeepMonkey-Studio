@@ -71,4 +71,14 @@ describe("QTO takeoff (P7 slice)", () => {
     expect(csv).toContain("墙,一层,1");
     expect(csv).toContain("skipped,empty");
   });
+
+  it("neutralizes spreadsheet formulas in authored category, level, ids and reasons", () => {
+    const report = buildQtoReport([
+      { id: "=empty", root: new THREE.Group(), category: "@category", level: "+level" },
+      { id: "safe", root: new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1)), category: "-category", level: "safe" },
+    ]);
+    const csv = qtoReportToCsv(report);
+    expect(csv).toContain("'-category,safe");
+    expect(csv).toContain("skipped,'=empty");
+  });
 });

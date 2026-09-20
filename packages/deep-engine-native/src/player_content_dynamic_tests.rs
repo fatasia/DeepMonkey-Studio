@@ -56,7 +56,10 @@ fn consumes_playback_steps_into_packet_instances() {
     assert_eq!(step.time_ms, 500);
     assert_eq!(step.replay_revisions, vec![1]);
     assert_eq!(step.changed_instances, 1);
-    assert!(step.canonical.starts_with("dynamic-frame-v1|t=500|events=1|tracks=pump>"));
+    assert!(
+        step.canonical
+            .starts_with("dynamic-frame-v1|t=500|events=1|tracks=pump>")
+    );
     let transform = content.packet().instances[0].transform;
     assert_eq!(transform[12], 5.0);
     assert_eq!(transform[13], 1.0);
@@ -113,4 +116,36 @@ fn composes_rotation_scale_translation_for_render_instances() {
     assert_eq!(transform[13], 2.0);
     assert_eq!(transform[14], 0.0);
     assert_eq!(transform[15], 1.0);
+}
+
+#[test]
+fn samples_camera_tracks_into_a_real_player_view() {
+    let mut content = PlayerContent::from_packet(packet(), None);
+    content.dynamic_runtime = Some(parse_and_validate_dynamic_scene_runtime(&serde_json::json!({
+        "schema":"deep-engine.dynamic-runtime","schemaVersion":1,"id":"scene.dynamic","revision":1,
+        "animation":{"schema":"deep-engine.dynamic-animation","schemaVersion":1,"durationMs":1000,"autoplay":true,"loop":false,"tracks":[
+            {"targetId":"scene.camera","property":"camera-position","keyframes":[{"timeMs":0,"value":[0,2,5,0,0,0,1]},{"timeMs":1000,"value":[2,4,7,0,0,0,1]}]},
+            {"targetId":"scene.camera","property":"camera-target","keyframes":[{"timeMs":0,"value":[0,0,0,0,0,0,1]},{"timeMs":1000,"value":[1,1,1,0,0,0,1]}]}
+        ]}
+    })).unwrap());
+    assert_eq!(
+        content.dynamic_runtime_playback(),
+        Some((1000, true, false))
+    );
+    let camera = content.sample_dynamic_camera(500).unwrap();
+    assert_eq!(camera.position, [1.0, 3.0, 6.0]);
+    assert_eq!(camera.target, [0.5, 0.5, 0.5]);
+    let view = content
+        .initial_view()
+        .with_eye_target(camera.position, camera.target)
+        .unwrap();
+    assert_eq!(view.target, camera.target);
+    for (actual, expected) in view.eye().into_iter().zip(camera.position) {
+        assert!((actual - expected).abs() < 1e-5);
+    }
+    let step = content.apply_dynamic_playback_step(500).unwrap();
+    assert_eq!(
+        step.changed_instances, 0,
+        "camera tracks must not be misapplied as model transforms"
+    );
 }

@@ -1,8 +1,15 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFile } from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
 import { SceneToolDock } from "./SceneToolDock";
 
 describe("SceneToolDock", () => {
+  it("keeps orientation controls from overriding the centered scene dock", async () => {
+    const cubeStyles = await readFile(new URL("./ViewOrientationCube.css", import.meta.url), "utf8");
+    expect(cubeStyles).not.toContain(".scene-tool-dock");
+    expect(cubeStyles).toMatch(/@container studio-scene \(max-width:1000px\)[\s\S]*\.cube-actions\s*\{[^}]*top:calc\(100% \+ 24px\);\s*bottom:auto/);
+  });
+
   it("keeps primary actions visible and secondary tools progressively disclosed", () => {
     const onAction = vi.fn();
     const html = renderToStaticMarkup(
@@ -25,6 +32,7 @@ describe("SceneToolDock", () => {
         xrOpen={false}
         simulationPanel={undefined}
         infoEnabled={false}
+        engineeringOpen={false}
         onFitAll={onAction}
         onSelect={onAction}
         onTransformChange={onAction}
@@ -37,6 +45,7 @@ describe("SceneToolDock", () => {
         onNavigationChange={onAction}
         onAvatarToggle={onAction}
         onInfoToggle={onAction}
+        onEngineeringToggle={onAction}
         onEnvironmentToggle={onAction}
         onAnimationToggle={onAction}
         onBehaviorToggle={onAction}

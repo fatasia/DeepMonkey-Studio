@@ -13,6 +13,7 @@ type SceneSnapshotSource = Pick<
   | "defaultCameraViewId"
   | "measurements"
   | "sceneDashboard"
+  | "engineeringAnalysis"
   | "sceneDataBindings"
   | "sceneAssetBindings"
   | "sceneInteractions"
@@ -39,6 +40,7 @@ export function makeSceneSnapshot(source: SceneSnapshotSource): SceneSnapshot | 
     defaultCameraViewId,
     measurements,
     sceneDashboard,
+    engineeringAnalysis,
     sceneDataBindings,
     sceneAssetBindings,
     sceneInteractions,
@@ -86,6 +88,7 @@ export function makeSceneSnapshot(source: SceneSnapshotSource): SceneSnapshot | 
     postProcessing: engine.getPostProcessing(),
     physics: engine.getPhysicsState(),
     animation: engine.getSceneAnimation(),
+    engineeringAnalysis,
     dashboard: sceneDashboard,
     dataBindings: sceneDataBindings,
     assetBindings: sceneAssetBindings,
