@@ -1,5 +1,5 @@
-import type { LightVector3 } from "./types.js";
-import type { WorldClusteredLights, WorldDirectionalLight } from "./worldLights.js";
+import type { LightVector3, PointLight, SpotLight } from "./types.js";
+import type { WorldClusteredLights, WorldDirectionalLight, WorldPointLight, WorldSpotLight } from "./worldLights.js";
 import { snapshotAuthoredShadow, type AuthoredDirectionalShadow } from "../shadows/authoredDirectionalShadow.js";
 import { prioritizeLocalLights } from "./importanceBudget.js";
 
@@ -46,18 +46,22 @@ export function resolvePbrSceneLighting(lights?: WorldClusteredLights, options: 
     ...(authoredDirectional.length > 1 ? { directional: Object.freeze(authoredDirectional.slice(1)) } : {}),
     ...(lights.points ? { points: lights.points } : {}),
     ...(lights.spots ? { spots: lights.spots } : {}),
+    ...(lights.lightProfiles ? { lightProfiles: lights.lightProfiles } : {}),
   }) : DEFAULT_CLUSTERED_LIGHTS;
   if (options.maxLocalLights !== undefined && clustered !== DEFAULT_CLUSTERED_LIGHTS) {
-    const bounded = prioritizeLocalLights(transformToViewNeutral(clustered), options.maxLocalLights);
-    return Object.freeze({ primary, clustered: bounded as unknown as WorldClusteredLights });
+    // Neutral-space proxies are ranking inputs only; never expose them as world-space lights.
+    const points = (clustered.points ?? []).map(source => ({ ...source, positionView: source.positionWorld }));
+    const spots = (clustered.spots ?? []).map(source => ({ ...source,
+      positionView: source.positionWorld, directionView: source.directionWorld }));
+    const pointSources = new Map<PointLight, WorldPointLight>(points.map((proxy, index) => [proxy, clustered.points![index]!]));
+    const spotSources = new Map<SpotLight, WorldSpotLight>(spots.map((proxy, index) => [proxy, clustered.spots![index]!]));
+    const bounded = prioritizeLocalLights({ points, spots }, options.maxLocalLights);
+    return Object.freeze({ primary, clustered: Object.freeze({ ...clustered,
+      points: Object.freeze((bounded.points ?? []).map(proxy => pointSources.get(proxy)!)),
+      spots: Object.freeze((bounded.spots ?? []).map(proxy => spotSources.get(proxy)!)),
+    }) });
   }
   return Object.freeze({ primary, clustered });
-}
-
-function transformToViewNeutral(lights: WorldClusteredLights) {
-  return { ...(lights.directional ? { directional: lights.directional.map(d => ({ directionView: d.directionWorld, color: d.color, intensity: d.intensity })) } : {}),
-    ...(lights.points ? { points: lights.points.map(p => ({ positionView: p.positionWorld, color: p.color, intensity: p.intensity, range: p.range })) } : {}),
-    ...(lights.spots ? { spots: lights.spots.map(s => ({ positionView: s.positionWorld, directionView: s.directionWorld, color: s.color, intensity: s.intensity, range: s.range, innerConeCos: s.innerConeCos, outerConeCos: s.outerConeCos })) } : {}) };
 }
 
 function primaryFrom(source: WorldDirectionalLight): PbrPrimaryDirectionalLight {

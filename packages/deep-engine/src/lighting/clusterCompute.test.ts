@@ -94,7 +94,7 @@ describe("Forward+ WebGPU cluster assignment", () => {
     f.queue.writeBuffer.mockImplementationOnce(() => { throw new Error("upload failed"); });
     expect(() => assigner.prepare(config, { points: [point(), point(1), point(2)] })).toThrow("upload failed");
     expect((first.pointLightBuffer as FakeBuffer).destroy).not.toHaveBeenCalled();
-    expect(f.allocated.slice(allocationStart)).toHaveLength(8);
+    expect(f.allocated.slice(allocationStart)).toHaveLength(9);
     expect(f.allocated.slice(allocationStart).every(buffer => buffer.destroy.mock.calls.length === 1)).toBe(true);
     f.queue.writeBuffer.mockReset(); expect(assigner.prepare(config, { points: [point()] }).pointLightBuffer).toBe(first.pointLightBuffer);
     assigner.dispose();
@@ -108,10 +108,10 @@ describe("Forward+ WebGPU cluster assignment", () => {
 
     f.queue.writeBuffer.mockReset();
     const restored = assigner.prepare(config, { points: [point()] });
-    expect(restored.uploadedInputBufferCount).toBe(3);
+    expect(restored.uploadedInputBufferCount).toBe(4);
     expect(f.queue.writeBuffer.mock.calls.map(call => (call[0] as FakeBuffer).label)).toEqual([
       "Deep Forward+ point lights", "Deep Forward+ local light bounds",
-      "Deep Forward+ cluster parameters",
+      "Deep Forward+ IES shading tables", "Deep Forward+ cluster parameters",
     ]);
     assigner.dispose();
   });

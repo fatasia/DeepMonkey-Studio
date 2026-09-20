@@ -22,6 +22,7 @@ export function prioritizeLocalLights(lights: ClusteredLights, maxLocalLights: n
     values.filter((_, index) => selected.has(`${kind}:${index}`));
   return Object.freeze({
     ...(lights.directional ? { directional: lights.directional } : {}),
+    ...(lights.lightProfiles ? { lightProfiles: lights.lightProfiles } : {}),
     points: Object.freeze([...keep(points, "point")]) as readonly PointLight[],
     spots: Object.freeze([...keep(spots, "spot")]) as readonly SpotLight[],
   });

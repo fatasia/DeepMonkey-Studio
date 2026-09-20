@@ -1,4 +1,5 @@
 import type { ClusteredLights, DirectionalLight, LightVector3, PointLight, SpotLight } from "./types.js";
+import type { RuntimeLightProfile } from "../runtimePackage/environmentTypes.js";
 import type { AuthoredDirectionalShadow } from "../shadows/authoredDirectionalShadow.js";
 
 export interface WorldDirectionalLight extends Omit<DirectionalLight, "directionView"> {
@@ -34,6 +35,8 @@ export interface WorldClusteredLights {
   readonly directional?: readonly WorldDirectionalLight[];
   readonly points?: readonly WorldPointLight[];
   readonly spots?: readonly WorldSpotLight[];
+  /** E02：IES 光度表载荷，随灯阵一起透传到聚类打包（灯序不变，索引对齐）。 */
+  readonly lightProfiles?: readonly RuntimeLightProfile[];
 }
 
 function assertRigidViewMatrix(matrix: Float32Array): void {
@@ -79,7 +82,11 @@ export function transformWorldLightsToView(lights: WorldClusteredLights, worldTo
     positionView: transform(worldToView, light.positionWorld, true), directionView: transform(worldToView, light.directionWorld, false),
     range: light.range, color: light.color, intensity: light.intensity,
     innerConeCos: light.innerConeCos, outerConeCos: light.outerConeCos,
+    ...(light.ies ? { ies: light.ies } : {}),
     ...(light.shadow ? { shadow: light.shadow } : {}),
   }));
-  return Object.freeze({ directional: Object.freeze(directional), points: Object.freeze(points), spots: Object.freeze(spots) });
+  return Object.freeze({
+    directional: Object.freeze(directional), points: Object.freeze(points), spots: Object.freeze(spots),
+    ...(lights.lightProfiles ? { lightProfiles: lights.lightProfiles } : {}),
+  });
 }

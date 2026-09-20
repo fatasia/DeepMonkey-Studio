@@ -58,7 +58,8 @@ export class ForwardPlusPbrLightingBindings {
       { binding: 9, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float", viewDimension: "2d-array" } },
       { binding: 10, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
       { binding: 11, visibility: GPUShaderStage.FRAGMENT,
-        buffer: { type: "uniform", minBindingSize: DEEP_GI_TEXTURE_LEVEL_METADATA_BYTES } });
+        buffer: { type: "uniform", minBindingSize: DEEP_GI_TEXTURE_LEVEL_METADATA_BYTES } },
+      { binding: 12, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } });
       this.giFallback = giFallback = createGiFallback(session);
       this.layout = session.device.createBindGroupLayout({ label: "Deep Forward+ PBR lighting group 3", entries });
     } catch (error) {
@@ -81,11 +82,12 @@ export class ForwardPlusPbrLightingBindings {
     this.assertReady();
     const probe = this.probe ?? this.giFallback;
     const clusterBuffers = [resources.clusterParameterBuffer, resources.directionalLightBuffer, resources.pointLightBuffer,
-      resources.spotLightBuffer, resources.clusterHeaderBuffer, resources.clusterLightIndexBuffer] as const;
+      resources.spotLightBuffer, resources.clusterHeaderBuffer, resources.clusterLightIndexBuffer,
+      resources.iesShadingBuffer] as const;
     const signature = [...clusterBuffers,
       probe.view, probe.sampler, probe.levelMetadataBuffer] as const;
     if (!this.cached || !this.signature || !signature.every((buffer, index) => buffer === this.signature![index])) {
-      const entries: GPUBindGroupEntry[] = clusterBuffers.map((buffer, binding) => ({ binding, resource: { buffer } }));
+      const entries: GPUBindGroupEntry[] = clusterBuffers.map((buffer, binding) => ({ binding: binding < 6 ? binding : 12, resource: { buffer } }));
       entries.push({ binding: 6, resource: { buffer: this.localShadow.uniform } },
         { binding: 7, resource: this.localShadow.atlasView }, { binding: 8, resource: this.localShadow.sampler },
         { binding: 9, resource: probe.view }, { binding: 10, resource: probe.sampler },

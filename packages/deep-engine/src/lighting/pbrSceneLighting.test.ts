@@ -1,7 +1,32 @@
 import { describe, expect, it } from "vitest";
 import { hasClusteredLights, resolvePbrSceneLighting } from "./pbrSceneLighting.js";
+import { transformWorldLightsToView, type WorldClusteredLights } from "./worldLights.js";
 
 describe("PBR scene lighting", () => {
+  it.each([2, 10])("preserves world coordinates and shadow identities with budget %s", maxLocalLights => {
+    const lights: WorldClusteredLights = {
+      directional: [{ directionWorld: [0, -1, 0], color: [1, 1, 1], intensity: 1 },
+        { directionWorld: [1, 0, 0], color: [1, 1, 1], intensity: 2, castShadow: false }],
+      points: [{ positionWorld: [2, 3, 4], color: [1, 1, 1], intensity: 5, range: 10,
+        shadow: { key: "point-stable", importance: 3 } }],
+      spots: [{ positionWorld: [1, 2, 3], directionWorld: [0, -1, 0], color: [1, 1, 1],
+        intensity: 4, range: 8, innerConeCos: .9, outerConeCos: .7, shadow: { key: "spot-stable" } },
+        { positionWorld: [100, 0, 0], directionWorld: [0, -1, 0], color: [1, 1, 1],
+          intensity: .01, range: 1, innerConeCos: .9, outerConeCos: .7 }],
+    };
+    const result = resolvePbrSceneLighting(lights, { maxLocalLights }).clustered;
+    expect(result.points![0]).toBe(lights.points![0]);
+    expect(result.spots![0]).toBe(lights.spots![0]);
+    expect(result.directional![0]).toBe(lights.directional![1]);
+    expect(result.points![0]).not.toHaveProperty("positionView");
+    expect(result.spots![0]).not.toHaveProperty("directionView");
+    const view = transformWorldLightsToView(result, new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, -5,0,0,1]));
+    expect(view.points![0].positionView).toEqual([-3, 3, 4]);
+    expect(view.spots![0].directionView).toEqual([0, -1, 0]);
+    expect(view.directional![0].directionView).toEqual([1, 0, 0]);
+    expect(view.points![0].shadow).toEqual({ key: "point-stable", importance: 3 });
+    expect(view.spots![0].shadow).toEqual({ key: "spot-stable" });
+  });
   it("applies the Deep Lights local importance budget at the scene boundary", () => {
     const result = resolvePbrSceneLighting({ points: [
       { positionWorld: [0, 0, -1], range: 2, color: [1, 1, 1], intensity: 10 },

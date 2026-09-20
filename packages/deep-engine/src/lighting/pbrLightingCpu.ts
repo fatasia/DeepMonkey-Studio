@@ -1,6 +1,7 @@
 import { clusterSliceForDepth } from "./clusterGrid.js";
-import { packClusteredLights } from "./clusterPacking.js";
-import type { ClusteredLights, CpuClusterAssignment, LightVector3, PointLight, SpotLight } from "./types.js";
+import { packClusteredLights, SPOT_LIGHT_STRIDE } from "./clusterPacking.js";
+import { evaluateIesShadingFactor, packIesShading } from "./iesShading.js";
+import type { ClusteredLights, CpuClusterAssignment, LightVector3, PackedClusteredLights, PointLight, SpotLight } from "./types.js";
 
 const PI = Math.PI;
 type MutableVec3 = [number, number, number];
@@ -75,7 +76,8 @@ function rangeAttenuation(distanceSquared: number, range: number): number {
   return window * window / Math.max(distanceSquared, 0.01);
 }
 function localContribution(light: PointLight | SpotLight, surface: ForwardPlusPbrSurface, base: LightVector3,
-  metallic: number, roughness: number, normal: LightVector3, view: LightVector3): MutableVec3 {
+  metallic: number, roughness: number, normal: LightVector3, view: LightVector3,
+  packed: PackedClusteredLights, iesPacking: ReturnType<typeof packIesShading>, spotIndex: number): MutableVec3 {
   const toLight = subtract(light.positionView, surface.positionView), distanceSquared = dot(toLight, toLight);
   let attenuation = rangeAttenuation(distanceSquared, light.range); if (attenuation <= 0) return [0, 0, 0];
   const surfaceToLight = normalize(toLight, normal);
@@ -84,6 +86,13 @@ function localContribution(light: PointLight | SpotLight, surface: ForwardPlusPb
     const coneCos = dot(scale(surfaceToLight, -1), direction);
     const coneWeight = clamp((coneCos - light.outerConeCos) / (light.innerConeCos - light.outerConeCos), 0, 1);
     attenuation *= coneWeight * coneWeight * (3 - 2 * coneWeight);
+    if (light.ies !== undefined && spotIndex >= 0) {
+      // E02：与 GPU 同式（读打包 f32 方向 + 打包归一化表），见 iesShading.ts。
+      const packedBase = spotIndex * SPOT_LIGHT_STRIDE / 4 + 4;
+      const packedDirection: LightVector3 = [packed.spots[packedBase]!, packed.spots[packedBase + 1]!, packed.spots[packedBase + 2]!];
+      attenuation *= evaluateIesShadingFactor(iesPacking, spotIndex, packedDirection,
+        [surfaceToLight[0], surfaceToLight[1], surfaceToLight[2]]);
+    }
   }
   return brdf(base, metallic, roughness, normal, view, surfaceToLight,
     scale(light.color, light.intensity * attenuation));
@@ -93,6 +102,8 @@ function localContribution(light: PointLight | SpotLight, surface: ForwardPlusPb
 export function evaluateForwardPlusPbrCpu(assignment: CpuClusterAssignment, lights: ClusteredLights,
   surface: ForwardPlusPbrSurface): CpuForwardPlusPbrResult {
   const packed = packClusteredLights(lights), points = lights.points ?? [], spots = lights.spots ?? [];
+  // E02：与 GPU 同一份 IES 打包字节；无 ies 时为最小占位缓冲，评测恒等返回 1。
+  const iesPacking = packIesShading(spots, lights.lightProfiles);
   if (assignment.localLightCount !== packed.pointCount + packed.spotCount) throw new Error("CPU cluster assignment does not match the supplied local lights.");
   finite3(surface.positionView, "positionView"); finite3(surface.normalView, "normalView"); finite3(surface.baseColor, "baseColor");
   if (!surface.fragmentCoordinate.every(Number.isFinite) || !Number.isFinite(surface.metallic) || !Number.isFinite(surface.roughness)) {
@@ -113,9 +124,12 @@ export function evaluateForwardPlusPbrCpu(assignment: CpuClusterAssignment, ligh
     for (let slot = 0; slot < count; slot++) {
       const localIndex = assignment.lightIndices[offset + slot]!;
       if (localIndex >= assignment.localLightCount) continue;
-      const light = localIndex < points.length ? points[localIndex] : spots[localIndex - points.length];
+      const isPoint = localIndex < points.length;
+      const light = isPoint ? points[localIndex] : spots[localIndex - points.length];
       if (!light) continue;
-      referencedLocalLightCount++; add(color, localContribution(light, surface, base, metallic, roughness, normal, view));
+      referencedLocalLightCount++;
+      add(color, localContribution(light, surface, base, metallic, roughness, normal, view, packed, iesPacking,
+        isPoint ? -1 : localIndex - points.length));
     }
   }
   if (!color.every(Number.isFinite)) throw new Error("PBR CPU reference produced a non-finite color.");

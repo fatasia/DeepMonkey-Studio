@@ -48,6 +48,9 @@ mod gpu_resources;
 mod gpu_scene;
 mod gpu_scene_cache;
 mod gpu_scene_cache_instances;
+mod gpu_scene_cache_refresh;
+#[cfg(test)]
+mod gpu_scene_cache_refresh_tests;
 #[cfg(test)]
 mod gpu_scene_cache_revision_tests;
 mod gpu_scene_cache_stage;
