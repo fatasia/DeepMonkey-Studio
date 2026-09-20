@@ -36,16 +36,21 @@ export function validateScreenSpaceReflectionOptions(options: ScreenSpaceReflect
   if (!Number.isFinite(options.fresnelF0) || options.fresnelF0 < 0 || options.fresnelF0 > 1) {
     throw new RangeError("SSR fresnelF0 must be in [0, 1].");
   }
+  if (options.coneMipLevels !== undefined && (!Number.isSafeInteger(options.coneMipLevels)
+    || options.coneMipLevels < 2 || options.coneMipLevels > 6)) {
+    throw new RangeError("SSR coneMipLevels must be an integer in [2, 6].");
+  }
 }
 
-function sampleDepth(input: ScreenSpaceReflectionCpuInput, x: number, y: number): number {
+/** Clamped depth fetch (shared by the trace march and the ray extension miss re-derivation). */
+export function sampleDepth(input: ScreenSpaceReflectionCpuInput, x: number, y: number): number {
   const clampedX = Math.min(Math.max(x, 0), input.width - 1);
   const clampedY = Math.min(Math.max(y, 0), input.height - 1);
   return input.depth[clampedY * input.width + clampedX] ?? 0;
 }
 
 /** Same reconstruction contract as ambientOcclusionWgsl.reconstructPosition. */
-function reconstructPosition(input: ScreenSpaceReflectionCpuInput, x: number, y: number, depth: number,
+export function reconstructPosition(input: ScreenSpaceReflectionCpuInput, x: number, y: number, depth: number,
   tanHalfFov: number, aspect: number): readonly [number, number, number] {
   const uvX = (x + 0.5) / input.width;
   const uvY = (y + 0.5) / input.height;
@@ -54,7 +59,8 @@ function reconstructPosition(input: ScreenSpaceReflectionCpuInput, x: number, y:
   return [ndcX * depth * tanHalfFov * aspect, ndcY * depth * tanHalfFov, -depth];
 }
 
-function sampleNormal(input: ScreenSpaceReflectionCpuInput, x: number, y: number): readonly [number, number, number] {
+/** View-space normal decode + normalize (shared by the trace march and the ray extension). */
+export function sampleNormal(input: ScreenSpaceReflectionCpuInput, x: number, y: number): readonly [number, number, number] {
   const clampedX = Math.min(Math.max(x, 0), input.width - 1);
   const clampedY = Math.min(Math.max(y, 0), input.height - 1);
   const base = (clampedY * input.width + clampedX) * 3;
@@ -67,30 +73,62 @@ function sampleNormal(input: ScreenSpaceReflectionCpuInput, x: number, y: number
   return [nx * inverse, ny * inverse, nz * inverse];
 }
 
-function sampleColor(input: ScreenSpaceReflectionCpuInput, uvX: number, uvY: number): readonly [number, number, number] {
-  const fx = Math.min(Math.max(uvX, 0), 1) * input.width - 0.5;
-  const fy = Math.min(Math.max(uvY, 0), 1) * input.height - 0.5;
-  const x0 = Math.floor(fx), y0 = Math.floor(fy);
-  const tx = fx - x0, ty = fy - y0;
-  const channels: [number, number, number] = [0, 0, 0];
-  for (let channel = 0; channel < 3; channel++) {
-    const at = (x: number, y: number): number => {
-      const clampedX = Math.min(Math.max(x, 0), input.width - 1);
-      const clampedY = Math.min(Math.max(y, 0), input.height - 1);
-      return input.color[(clampedY * input.width + clampedX) * 3 + channel] ?? 0;
-    };
-    const top = at(x0, y0) * (1 - tx) + at(x0 + 1, y0) * tx;
-    const bottom = at(x0, y0 + 1) * (1 - tx) + at(x0 + 1, y0 + 1) * tx;
-    channels[channel] = top * (1 - ty) + bottom * ty;
-  }
-  return channels;
+/** CPU mirror of the bounded radiance mip cone used by the trace shader. */
+export function sampleScreenSpaceReflectionRoughRadianceCpu(input: ScreenSpaceReflectionCpuInput,
+  uvX: number, uvY: number, roughness: number): readonly [number, number, number] {
+  if (!Number.isFinite(roughness) || roughness < 0 || roughness > 1) throw new RangeError("SSR roughness must be in [0, 1].");
+  const maxMip = Math.min(5, Math.floor(Math.log2(Math.max(input.width, input.height))));
+  const lod = roughness * roughness * maxMip, low = Math.floor(lod), high = Math.min(maxMip, low + 1), blend = lod - low;
+  const sampleLevel = (level: number): readonly [number, number, number] => {
+    const footprint = 2 ** level;
+    const centerX = Math.min(input.width - 1, Math.max(0, Math.floor(uvX * input.width)));
+    const centerY = Math.min(input.height - 1, Math.max(0, Math.floor(uvY * input.height)));
+    const originX = Math.floor(centerX / footprint) * footprint, originY = Math.floor(centerY / footprint) * footprint;
+    const sum: [number, number, number] = [0, 0, 0]; let count = 0;
+    for (let y = originY; y < Math.min(input.height, originY + footprint); y++) for (let x = originX; x < Math.min(input.width, originX + footprint); x++) {
+      const base = (y * input.width + x) * 3;
+      for (let channel = 0; channel < 3; channel++) sum[channel] = sum[channel]! + (input.color[base + channel] ?? 0);
+      count++;
+    }
+    return [sum[0] / count, sum[1] / count, sum[2] / count];
+  };
+  const a = sampleLevel(low), b = sampleLevel(high);
+  return [a[0] * (1 - blend) + b[0] * blend, a[1] * (1 - blend) + b[1] * blend,
+    a[2] * (1 - blend) + b[2] * blend];
 }
 
-function projectToUv(position: readonly [number, number, number], tanHalfFov: number, aspect: number): readonly [number, number] {
+function sampleRoughness(input: ScreenSpaceReflectionCpuInput, x: number, y: number): number {
+  if (!input.roughness) return 0;
+  if (input.roughness.length !== input.width * input.height) throw new Error("SSR roughness dimensions must match the source.");
+  const clampedX = Math.min(Math.max(x, 0), input.width - 1);
+  const clampedY = Math.min(Math.max(y, 0), input.height - 1);
+  const value = input.roughness[clampedY * input.width + clampedX];
+  if (value === undefined || !Number.isFinite(value) || value < 0 || value > 1) throw new RangeError("SSR roughness must be in [0, 1].");
+  return value;
+}
+
+/** View-space position → UV (shared by the trace march and the ray extension hit re-projection). */
+export function projectToUv(position: readonly [number, number, number], tanHalfFov: number, aspect: number): readonly [number, number] {
   const depth = -position[2];
   const ndcX = position[0] / (depth * tanHalfFov * aspect);
   const ndcY = position[1] / (depth * tanHalfFov);
   return [(ndcX + 1) / 2, (1 - ndcY) / 2];
+}
+
+/**
+ * 表面→眼睛入射方向与镜面反射方向（ incident = normalize(origin/depth) 的视空间合同）。
+ * trace 本体与 rayTracing/ssrRayExtension 共用此单一数值来源，禁止在扩展侧复写公式。
+ * 返回 [incidentX, incidentY, incidentZ, reflectedX, reflectedY, reflectedZ, dotProduct]，
+ * dotProduct = normal·incident（trace 用 clamp(-dotProduct) 做 Fresnel cosθ）。
+ */
+export function reflectViewRay(origin: readonly [number, number, number], centerDepth: number,
+  nx: number, ny: number, nz: number): readonly [number, number, number, number, number, number, number] {
+  const rawIncidentX = origin[0] / centerDepth, rawIncidentY = origin[1] / centerDepth, rawIncidentZ = origin[2] / centerDepth;
+  const incidentLength = Math.hypot(rawIncidentX, rawIncidentY, rawIncidentZ);
+  const incidentX = rawIncidentX / incidentLength, incidentY = rawIncidentY / incidentLength, incidentZ = rawIncidentZ / incidentLength;
+  const dotProduct = nx * incidentX + ny * incidentY + nz * incidentZ;
+  return [incidentX, incidentY, incidentZ, incidentX - 2 * dotProduct * nx,
+    incidentY - 2 * dotProduct * ny, incidentZ - 2 * dotProduct * nz, dotProduct];
 }
 
 /** Edge-window fade shared by trace and CPU parity tests. */
@@ -112,13 +150,9 @@ export function traceScreenSpaceReflectionCpu(input: ScreenSpaceReflectionCpuInp
   if (!(centerDepth > 0)) return [0, 0, 0, 0];
   const origin = reconstructPosition(input, x, y, centerDepth, tanHalfFov, aspect);
   const [nx, ny, nz] = sampleNormal(input, x, y);
-  const rawIncidentX = origin[0] / centerDepth, rawIncidentY = origin[1] / centerDepth, rawIncidentZ = origin[2] / centerDepth;
-  const incidentLength = Math.hypot(rawIncidentX, rawIncidentY, rawIncidentZ);
-  const incidentX = rawIncidentX / incidentLength, incidentY = rawIncidentY / incidentLength, incidentZ = rawIncidentZ / incidentLength;
-  const dotProduct = nx * incidentX + ny * incidentY + nz * incidentZ;
-  const reflectedX = incidentX - 2 * dotProduct * nx;
-  const reflectedY = incidentY - 2 * dotProduct * ny;
-  const reflectedZ = incidentZ - 2 * dotProduct * nz;
+  const roughness = sampleRoughness(input, x, y);
+  const [incidentX, incidentY, incidentZ, reflectedX, reflectedY, reflectedZ, dotProduct] =
+    reflectViewRay(origin, centerDepth, nx, ny, nz);
   if (reflectedZ >= 0) return [0, 0, 0, 0]; // 反射朝相机平面之后:屏幕空间无法解析。
   const stepLength = options.maxDistance / options.steps;
   let hit = false;
@@ -160,7 +194,8 @@ export function traceScreenSpaceReflectionCpu(input: ScreenSpaceReflectionCpuInp
     }
   }
   if (!hit) return [0, 0, 0, 0];
-  const [radianceR, radianceG, radianceB] = sampleColor(input, hitUvX, hitUvY);
+  const [radianceR, radianceG, radianceB] = sampleScreenSpaceReflectionRoughRadianceCpu(
+    input, hitUvX, hitUvY, roughness);
   // Fresnel-Schlick:cosθ = dot(N, -incident);入射方向已被归一化。
   const cosTheta = Math.min(1, Math.max(-dotProduct, 0));
   const fresnel = options.fresnelF0 + (1 - options.fresnelF0) * Math.pow(1 - cosTheta, 5);
@@ -169,7 +204,7 @@ export function traceScreenSpaceReflectionCpu(input: ScreenSpaceReflectionCpuInp
   return [radianceR * mask, radianceG * mask, radianceB * mask, mask];
 }
 
-/** Composite pass mirror: color + bilinear-upsampled trace contribution. */
+/** Composite pass mirror: replace the probe/environment fallback under a valid hit. */
 export function compositeScreenSpaceReflectionCpu(input: ScreenSpaceReflectionCpuInput,
   trace: Float32Array, traceWidth: number, traceHeight: number, x: number, y: number): readonly [number, number, number] {
   const fx = (x + 0.5) / input.width * traceWidth - 0.5;
@@ -182,12 +217,15 @@ export function compositeScreenSpaceReflectionCpu(input: ScreenSpaceReflectionCp
     return trace[(clampedY * traceWidth + clampedX) * 4 + channel] ?? 0;
   };
   const base = (y * input.width + x) * 3;
+  const maskTop = at(x0, y0, 3) * (1 - tx) + at(x0 + 1, y0, 3) * tx;
+  const maskBottom = at(x0, y0 + 1, 3) * (1 - tx) + at(x0 + 1, y0 + 1, 3) * tx;
+  const mask = Math.min(1, Math.max(0, maskTop * (1 - ty) + maskBottom * ty));
   const output: [number, number, number] = [0, 0, 0];
   for (let channel = 0; channel < 3; channel++) {
     const top = at(x0, y0, channel) * (1 - tx) + at(x0 + 1, y0, channel) * tx;
     const bottom = at(x0, y0 + 1, channel) * (1 - tx) + at(x0 + 1, y0 + 1, channel) * tx;
     const contribution = top * (1 - ty) + bottom * ty;
-    output[channel] = (input.color[base + channel] ?? 0) + contribution;
+    output[channel] = (input.color[base + channel] ?? 0) * (1 - mask) + contribution;
   }
   return output;
 }

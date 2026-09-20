@@ -10,6 +10,10 @@ import { compareGpuAgainstCpu, RayTraceGpuExecutor, type GpuTraceHit } from "../
 import { emitRayTraceKernelWgsl } from "../src/rayTracing/rayTraceKernel.js";
 import { HIT_STATUS, HIT_RECORD_STRIDE_BYTES } from "../src/rayTracing/rayTraceLayout.js";
 import { buildTracedScene, traceClosest, type TraceQuery } from "../src/rayTracing/rayTrace.js";
+import { buildSsrRayExtensionBatch, collectSsrRayExtensionCandidates,
+  resolveSsrRayExtensionOptions } from "../src/rayTracing/ssrRayExtension.js";
+import type { ScreenSpaceReflectionCpuInput, ScreenSpaceReflectionCpuOptions,
+} from "../src/postprocess/screenSpaceReflectionTypes.js";
 import type { RayBlasDescriptor, RayBatchQuery } from "../src/rayTracing/rayBackendTypes.js";
 
 export { buildTracedScene, traceClosest } from "../src/rayTracing/rayTrace.js";
@@ -49,7 +53,44 @@ function fanRays(count: number, origins: ReadonlyArray<readonly [number, number,
   return { origins: originsOut, directions, tMax: tMaxOut, mask: 0xff };
 }
 
-/** 确定性案例集：网格高度场 + 单三角 + 平行轴 slab 探针 + tMax 截断探针。 */
+/** 视空间地板 BLAS（y=-3 平面网格）：SSR 二次射线案例的命中场景，与 vitest 端到端同构。 */
+function ssrFloorBlas(): RayBlasDescriptor {
+  const vertices: number[] = [], indices: number[] = [];
+  for (let z = 0; z < 13; z++) for (let x = 0; x < 13; x++) {
+    vertices.push(-36 + x * 6, -3, -6 - z * 3);
+  }
+  const stride = 13;
+  for (let z = 0; z < 12; z++) for (let x = 0; x < 12; x++) {
+    const a = z * stride + x;
+    indices.push(a, a + stride, a + 1, a + 1, a + stride, a + stride + 1);
+  }
+  return { id: "ssr-extension-floor", vertices: Float32Array.from(vertices), indices: Uint32Array.from(indices) };
+}
+
+/**
+ * SSR 屏外二次射线案例（波次4 第一消费者切片）：16x16 视空间地板帧（法线朝上）经
+ * collectSsrRayExtensionCandidates 收集 SSR miss∩有 origin 的像素，沿反射方向延长为
+ * 二次射线（identity viewToBlas，BLAS=视空间），预算合同与 vitest 端到端一致。
+ * SSR 候选生成与执行器共用同一 bundle，防口径分叉。
+ */
+function ssrSecondaryRayCase(): RayTraceCaseSpec {
+  const width = 16, height = 16;
+  const input: ScreenSpaceReflectionCpuInput = { width, height,
+    depth: new Array<number>(width * height).fill(5),
+    normals: new Array<number>(width * height * 3).fill(0)
+      .map((_, index) => ([0, 1, 0][index % 3]! + 1) / 2),
+    color: new Array<number>(width * height * 3).fill(0.1) };
+  const options: ScreenSpaceReflectionCpuOptions = { verticalFovRadians: Math.PI / 3, maxDistance: 20,
+    thickness: 0.5, steps: 32, refines: 4, edgeFade: 0.08, fresnelF0: 0.05 };
+  const resolved = resolveSsrRayExtensionOptions({ enabled: true, albedo: [0.8, 0.6, 0.4],
+    ambient: [1, 1, 1], tMax: 64, viewToBlas: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0] });
+  const collected = collectSsrRayExtensionCandidates(input, options, resolved);
+  const batch = buildSsrRayExtensionBatch(collected.candidates, resolved);
+  return { name: "ssr-secondary-rays", blas: ssrFloorBlas(), rays: batch.query,
+    note: `SSR 屏外二次射线：${collected.missedPixels} 个 miss 像素中 ${batch.query.tMax.length} 个可延长，沿反射方向命中视空间地板（预算 ≤16384 合同）` };
+}
+
+/** 确定性案例集：网格高度场 + 单三角 + 平行轴 slab 探针 + tMax 截断探针 + SSR 二次射线。 */
 export function buildRayTraceCases(): readonly RayTraceCaseSpec[] {
   const terrain = gridBlas("terrain-16", 16);
   const small = gridBlas("terrain-8", 8);
@@ -69,6 +110,7 @@ export function buildRayTraceCases(): readonly RayTraceCaseSpec[] {
       note: "dz=0（含 0.0001 近平行对照）触发 slab 平行轴分支（起点在 slab 内判定）" },
     { name: "tmax-cutoff", blas: small, rays: fanRays(48, [[4, 4, 6]], -1, 64, () => 0.01),
       note: "tMax 截断在命中之前：CPU/GPU 双侧全 miss" },
+    ssrSecondaryRayCase(),
   ];
 }
 
