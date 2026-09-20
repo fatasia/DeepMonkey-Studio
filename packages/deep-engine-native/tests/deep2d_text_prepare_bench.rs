@@ -67,9 +67,18 @@ fn deep2d_text_fixture_prepares_with_real_text_volume() {
     );
     let prepared = prepare_runtime_content(&content).expect("prepare must pass");
     let summary = &prepared.summary;
-    assert!(summary.image_quads >= 24, "text runs must exist: {summary:?}");
-    assert!(summary.glyph_quads == 0, "chart 文字走整段 image 通道,无 per-glyph quad");
-    assert!(summary.atlas_bytes >= 200_000, "real CJK raster bytes expected");
+    assert!(
+        summary.image_quads >= 24,
+        "text runs must exist: {summary:?}"
+    );
+    assert!(
+        summary.glyph_quads == 0,
+        "chart 文字走整段 image 通道,无 per-glyph quad"
+    );
+    assert!(
+        summary.atlas_bytes >= 200_000,
+        "real CJK raster bytes expected"
+    );
     assert!(summary.render_chunks > 0 && summary.path.vertices > 0);
     // 真实栅格内容:每个 atlas 都必须有非零像素(空白位图=伪造)。
     for atlas in &prepared.atlases {
@@ -102,14 +111,16 @@ fn bench_fixture_prepare() {
             break content;
         }
     };
-    println!("{}", json!({"bench": "decode_text_fixture", "samplesMs": decode_ms, "note": "夹具装载口径,不计入每帧"}));
+    println!(
+        "{}",
+        json!({"bench": "decode_text_fixture", "samplesMs": decode_ms, "note": "夹具装载口径,不计入每帧"})
+    );
 
     let mut cold_ms = 0.0;
     let mut warm = Vec::new();
     for index in 0..10 {
         let started = Instant::now();
-        let prepared =
-            prepare_runtime_content(&content).expect("text fixture prepare must pass");
+        let prepared = prepare_runtime_content(&content).expect("text fixture prepare must pass");
         let elapsed = ms(started);
         assert!(prepared.summary.image_quads >= 24 && prepared.summary.atlas_bytes > 0);
         if index == 0 {
@@ -135,8 +146,8 @@ fn bench_fixture_prepare() {
     let mut cached_warm = Vec::new();
     for index in 0..8 {
         let started = Instant::now();
-        let prepared = prepare_runtime_content_cached(&content, &mut cache)
-            .expect("cached prepare must pass");
+        let prepared =
+            prepare_runtime_content_cached(&content, &mut cache).expect("cached prepare must pass");
         let elapsed = ms(started);
         assert!(prepared.summary.image_quads >= 24);
         if index == 0 {
@@ -165,7 +176,7 @@ fn bench_atlas_only_control() {
     for _ in 0..6 {
         let started = Instant::now();
         let prepared = prepare_runtime_content(&content).expect("control prepare must pass");
-        assert!(prepared.summary.atlas_bytes > 0 && prepared.chunks.len() > 0);
+        assert!(prepared.summary.atlas_bytes > 0 && !prepared.chunks.is_empty());
         warm.push(ms(started));
     }
     println!(
@@ -208,9 +219,12 @@ fn bench_live_text_pipeline() {
 
     let mut result = Vec::new();
     for (phase, changing) in [("text_change_frames", true), ("static_text_frames", false)] {
-        let (mut tooltip, mut axes, mut state, mut legend) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-        let (mut present, mut prepare_slice, mut prepare_full) = (Vec::new(), Vec::new(), Vec::new());
-        let (mut measure_calls, mut measure_nanos, mut raster_calls, mut raster_nanos) = (0u64, 0u128, 0u64, 0u128);
+        let (mut tooltip, mut axes, mut state, mut legend) =
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        let (mut present, mut prepare_slice, mut prepare_full) =
+            (Vec::new(), Vec::new(), Vec::new());
+        let (mut measure_calls, mut measure_nanos, mut raster_calls, mut raster_nanos) =
+            (0u64, 0u128, 0u64, 0u128);
         let mut slice_atlas_bytes: Option<usize> = None;
         for index in 0..warmup + samples {
             let hover_index = if changing { index % 2 } else { 0 };

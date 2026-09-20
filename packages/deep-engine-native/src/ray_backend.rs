@@ -40,7 +40,7 @@ pub enum BvhBuildError {
 
 /// 中位数分裂构建：按质心最长轴二分，叶子 ≤4 三角；同输入产生逐位相同的节点数组。
 pub fn build_bvh(vertices: &[f32], indices: &[u32]) -> Result<BvhBuildResult, BvhBuildError> {
-    if vertices.len() % 3 != 0 || indices.len() % 3 != 0 {
+    if !vertices.len().is_multiple_of(3) || !indices.len().is_multiple_of(3) {
         return Err(BvhBuildError::EmptyGeometry);
     }
     let triangles = (indices.len() / 3) as u32;
@@ -385,13 +385,13 @@ mod tests {
                         indices[triangle as usize * 3],
                         indices[triangle as usize * 3 + 1],
                         indices[triangle as usize * 3 + 2],
-                    ) {
-                        if t <= query.t_max && brute.as_ref().is_none_or(|hit| t < hit.t) {
-                            brute = Some(TraceHit {
-                                t,
-                                primitive_index: triangle,
-                            });
-                        }
+                    ) && t <= query.t_max
+                        && brute.as_ref().is_none_or(|hit| t < hit.t)
+                    {
+                        brute = Some(TraceHit {
+                            t,
+                            primitive_index: triangle,
+                        });
                     }
                 }
                 assert_eq!(traced, brute, "mismatch at step {step} origin ({ox},{oy})");
@@ -554,7 +554,7 @@ pub fn trace_closest(
     built: &BvhBuildResult,
     query: &TraceQuery,
 ) -> Option<TraceHit> {
-    if !(query.t_max > 0.0) || built.nodes.is_empty() {
+    if query.t_max <= 0.0 || built.nodes.is_empty() {
         return None;
     }
     let inv = [1.0 / query.dx, 1.0 / query.dy, 1.0 / query.dz];
@@ -575,10 +575,11 @@ pub fn trace_closest(
                 let i1 = indices[primitive_index as usize * 3 + 1];
                 let i2 = indices[primitive_index as usize * 3 + 2];
                 let t = intersect_triangle(origin, direction, vertices, i0, i1, i2);
-                if let Some(t) = t {
-                    if t <= query.t_max && best.as_ref().is_none_or(|hit| t < hit.t) {
-                        best = Some(TraceHit { t, primitive_index });
-                    }
+                if let Some(t) = t
+                    && t <= query.t_max
+                    && best.as_ref().is_none_or(|hit| t < hit.t)
+                {
+                    best = Some(TraceHit { t, primitive_index });
                 }
             }
             continue;
@@ -676,7 +677,7 @@ pub fn trace_tlas_closest(
     query: &TraceQuery,
     mask: u32,
 ) -> Option<TlasHit> {
-    if !(query.t_max > 0.0) {
+    if query.t_max <= 0.0 {
         return None;
     }
     let origin = [query.ox, query.oy, query.oz];
@@ -692,7 +693,7 @@ pub fn trace_tlas_closest(
             + local_direction[1] * local_direction[1]
             + local_direction[2] * local_direction[2])
             .sqrt();
-        if !(scale > 0.0) {
+        if scale <= 0.0 {
             continue;
         }
         let local_query = TraceQuery {

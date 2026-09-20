@@ -69,8 +69,8 @@ impl Annotations {
             .chain(self.saved.iter_mut())
             .chain(self.draft.iter_mut())
         {
-            for axis in 0..3 {
-                note.point[axis] += delta[axis];
+            for (axis, value) in delta.iter().enumerate() {
+                note.point[axis] += *value;
             }
         }
     }

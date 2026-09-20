@@ -34,15 +34,17 @@ impl LightIes {
         if self.profile_id.is_empty() || self.profile_id.len() > 128 {
             return Err("ies profileId must hold 1..128 characters".into());
         }
-        if let Some(rotation) = self.rotation_deg {
-            if !rotation.is_finite() || !(0.0..360.0).contains(&rotation) || !on_angle_grid(rotation) {
-                return Err("ies rotationDeg must sit on the 0.5° grid inside [0,360)".into());
-            }
+        if let Some(rotation) = self.rotation_deg
+            && (!rotation.is_finite()
+                || !(0.0..360.0).contains(&rotation)
+                || !on_angle_grid(rotation))
+        {
+            return Err("ies rotationDeg must sit on the 0.5° grid inside [0,360)".into());
         }
-        if let Some(scale) = self.scale_factor {
-            if !scale.is_finite() || !(0.0..=IES_MAX_SCALE).contains(&scale) {
-                return Err("ies scaleFactor must be within [0,10]".into());
-            }
+        if let Some(scale) = self.scale_factor
+            && (!scale.is_finite() || !(0.0..=IES_MAX_SCALE).contains(&scale))
+        {
+            return Err("ies scaleFactor must be within [0,10]".into());
         }
         Ok(())
     }
@@ -73,7 +75,10 @@ impl LightProfile {
             return Err(format!("unsupported IES format {:?}", self.format));
         }
         if !matches!(self.horizontal_symmetry, 1 | 2 | 4) {
-            return Err(format!("horizontalSymmetry {} must be 1, 2 or 4", self.horizontal_symmetry));
+            return Err(format!(
+                "horizontalSymmetry {} must be 1, 2 or 4",
+                self.horizontal_symmetry
+            ));
         }
         if self.vertical_angles.is_empty() || self.vertical_angles.len() > MAX_GRID_ENTRIES {
             return Err("verticalAngles must hold 1..512 entries".into());
@@ -87,7 +92,9 @@ impl LightProfile {
                 return Err(format!("angle {angle} is off the 0.5° grid"));
             }
             if angle <= previous {
-                return Err(format!("vertical angles must be strictly ascending: {previous} → {angle}"));
+                return Err(format!(
+                    "vertical angles must be strictly ascending: {previous} → {angle}"
+                ));
             }
             previous = angle;
         }
@@ -115,7 +122,9 @@ impl LightProfile {
                 }
             }
         }
-        if !self.total_lumens.is_finite() || !(0.0..=IES_MAX_TOTAL_LUMENS).contains(&self.total_lumens) {
+        if !self.total_lumens.is_finite()
+            || !(0.0..=IES_MAX_TOTAL_LUMENS).contains(&self.total_lumens)
+        {
             return Err("totalLumens is out of contract range".into());
         }
         if !on_candela_grid(self.total_lumens) {
@@ -175,7 +184,13 @@ impl IesSamplingTable {
     }
 
     /// `intensityFactor(θ,φ)` 唯一权威语义（TS 镜像，见模块头注释）。
-    pub fn intensity_factor(&self, theta_deg: f64, phi_deg: f64, rotation_deg: f64, scale_factor: f64) -> f64 {
+    pub fn intensity_factor(
+        &self,
+        theta_deg: f64,
+        phi_deg: f64,
+        rotation_deg: f64,
+        scale_factor: f64,
+    ) -> f64 {
         if !theta_deg.is_finite()
             || !phi_deg.is_finite()
             || !rotation_deg.is_finite()
@@ -186,7 +201,7 @@ impl IesSamplingTable {
         if self.max_candela <= 0.0 || self.candela.is_empty() || self.vertical_angles.is_empty() {
             return 0.0;
         }
-        let theta = theta_deg.max(0.0).min(180.0);
+        let theta = theta_deg.clamp(0.0, 180.0);
         let mut phi = (phi_deg - rotation_deg) % 360.0;
         if phi < 0.0 {
             phi += 360.0;
@@ -227,7 +242,10 @@ impl IesSamplingTable {
 /// 垂直角最近邻：严格升序；并列取低索引；θ 在实测角域之外返回 None（不外推）。
 fn nearest_vertical_index(angles: &[f64], theta: f64) -> Option<usize> {
     if angles.len() == 1 {
-        return angles.first().is_some_and(|&angle| theta == angle).then_some(0);
+        return angles
+            .first()
+            .is_some_and(|&angle| theta == angle)
+            .then_some(0);
     }
     let mut low = 0usize;
     let mut high = angles.len() - 1;
@@ -249,7 +267,11 @@ fn nearest_vertical_index(angles: &[f64], theta: f64) -> Option<usize> {
     if theta >= upper {
         return Some(high);
     }
-    Some(if theta - lower <= upper - theta { low } else { high })
+    Some(if theta - lower <= upper - theta {
+        low
+    } else {
+        high
+    })
 }
 
 #[cfg(test)]
@@ -260,7 +282,11 @@ mod tests {
 
     const GOLDEN: &str = include_str!("../../../deep-engine/fixtures/ies/e02-golden.json");
 
-    fn sampling_table(candela: Vec<Vec<f64>>, vertical_angles: &[f64], symmetry: u8) -> IesSamplingTable {
+    fn sampling_table(
+        candela: Vec<Vec<f64>>,
+        vertical_angles: &[f64],
+        symmetry: u8,
+    ) -> IesSamplingTable {
         let profile = LightProfile {
             profile_id: "test.profile".into(),
             format: "LM-63-2002".into(),
@@ -288,10 +314,17 @@ mod tests {
                 .map(|value| value.as_f64().unwrap())
                 .collect()
         };
-        let (thetas, phis, rotations, scales) = (read("thetaDeg"), read("phiDeg"), read("rotationDeg"), read("scaleFactor"));
+        let (thetas, phis, rotations, scales) = (
+            read("thetaDeg"),
+            read("phiDeg"),
+            read("rotationDeg"),
+            read("scaleFactor"),
+        );
         for entry in golden["profiles"].as_array().unwrap() {
             let table: LightProfile = serde_json::from_value(entry["profile"].clone()).unwrap();
-            table.validate().unwrap_or_else(|error| panic!("{}: {error}", table.profile_id));
+            table
+                .validate()
+                .unwrap_or_else(|error| panic!("{}: {error}", table.profile_id));
             // 表哈希：双端 canonical sha256 互钉（生产者 runtimeContentSha256）。
             assert_eq!(
                 runtime_content_sha256(&entry["profile"]),
@@ -317,10 +350,13 @@ mod tests {
                     }
                 }
             }
-            let digest = crate::shader_package::hash::sha256(format!("{domain}{series}").as_bytes());
+            let digest =
+                crate::shader_package::hash::sha256(format!("{domain}{series}").as_bytes());
             assert_eq!(
                 digest,
-                golden["expectedFactorBits"][table.profile_id.as_str()].as_str().unwrap(),
+                golden["expectedFactorBits"][table.profile_id.as_str()]
+                    .as_str()
+                    .unwrap(),
                 "{}",
                 table.profile_id
             );
@@ -337,7 +373,9 @@ mod tests {
         for step in 0..steps {
             let theta = (f64::from(step) + 0.5) * 90.0 / f64::from(steps);
             let factor = table.intensity_factor(theta, 0.0, 0.0, 1.0);
-            flux += factor * table.max_candela * theta.to_radians().sin()
+            flux += factor
+                * table.max_candela
+                * theta.to_radians().sin()
                 * (90.0 / f64::from(steps)).to_radians()
                 * std::f64::consts::TAU;
         }
@@ -358,13 +396,22 @@ mod tests {
         assert_eq!(table.intensity_factor(45.0, 180.0, 0.0, 1.0), 0.025);
         assert_eq!(table.intensity_factor(45.0, 270.0, 0.0, 1.0), 0.1);
         assert_eq!(table.intensity_factor(45.0, 45.0, 45.0, 1.0), 1.0);
-        assert_eq!(table.intensity_factor(45.0, 90.0, 45.0, 1.0), table.intensity_factor(45.0, 45.0, 0.0, 1.0));
-        assert_eq!(table.intensity_factor(45.0, 0.0, 0.0, 1.0), table.intensity_factor(45.0, 0.0, 0.0, 0.5) * 2.0);
+        assert_eq!(
+            table.intensity_factor(45.0, 90.0, 45.0, 1.0),
+            table.intensity_factor(45.0, 45.0, 0.0, 1.0)
+        );
+        assert_eq!(
+            table.intensity_factor(45.0, 0.0, 0.0, 1.0),
+            table.intensity_factor(45.0, 0.0, 0.0, 0.5) * 2.0
+        );
         assert_eq!(table.intensity_factor(45.0, 0.0, 0.0, 10.0), 10.0);
         assert_eq!(table.intensity_factor(45.0, 0.0, 0.0, 0.0), 0.0);
         // 旋转对称表对 rotationDeg 不敏感。
         let spin = sampling_table(vec![vec![1000.0, 500.0, 0.0]], &[0.0, 90.0, 180.0], 1);
-        assert_eq!(spin.intensity_factor(90.0, 0.0, 0.0, 1.0), spin.intensity_factor(90.0, 123.5, 217.0, 1.0));
+        assert_eq!(
+            spin.intensity_factor(90.0, 0.0, 0.0, 1.0),
+            spin.intensity_factor(90.0, 123.5, 217.0, 1.0)
+        );
     }
 
     #[test]
@@ -381,7 +428,10 @@ mod tests {
         // 查询角量化到 0.5° 网格；并列取低索引；超出实测角域不外推。
         assert_eq!(table.intensity_factor(31.0, 0.0, 0.0, 1.0), 0.8);
         let ties = sampling_table(vec![vec![1000.0, 400.0, 100.0]], &[0.0, 10.0, 20.0], 1);
-        assert_eq!(ties.intensity_factor(10.24, 0.0, 0.0, 1.0), ties.intensity_factor(10.0, 0.0, 0.0, 1.0));
+        assert_eq!(
+            ties.intensity_factor(10.24, 0.0, 0.0, 1.0),
+            ties.intensity_factor(10.0, 0.0, 0.0, 1.0)
+        );
         assert_eq!(ties.intensity_factor(15.0, 0.0, 0.0, 1.0), 0.4);
         assert_eq!(ties.intensity_factor(20.24, 0.0, 0.0, 1.0), 0.1);
         assert_eq!(ties.intensity_factor(20.8, 0.0, 0.0, 1.0), 0.0);
@@ -394,14 +444,17 @@ mod tests {
         assert_eq!(ties.intensity_factor(f64::NAN, 0.0, 0.0, 1.0), 0.0);
         assert_eq!(ties.intensity_factor(0.0, f64::INFINITY, 0.0, 1.0), 0.0);
         let dark = sampling_table(vec![vec![0.0]], &[0.0], 1);
-        assert_eq!(ies_max_candela(&LightProfile {
-            profile_id: "dark".into(),
-            format: "LM-63-2002".into(),
-            vertical_angles: vec![0.0],
-            candela: vec![vec![0.0]],
-            horizontal_symmetry: 1,
-            total_lumens: 0.0,
-        }), 0.0);
+        assert_eq!(
+            ies_max_candela(&LightProfile {
+                profile_id: "dark".into(),
+                format: "LM-63-2002".into(),
+                vertical_angles: vec![0.0],
+                candela: vec![vec![0.0]],
+                horizontal_symmetry: 1,
+                total_lumens: 0.0,
+            }),
+            0.0
+        );
         assert_eq!(dark.intensity_factor(0.0, 0.0, 0.0, 1.0), 0.0);
     }
 
@@ -416,24 +469,51 @@ mod tests {
             total_lumens: 1234.5,
         };
         assert!(valid.validate().is_ok());
-        let off_grid = LightProfile { vertical_angles: vec![0.0, 45.0, 90.25], ..valid.clone() };
+        let off_grid = LightProfile {
+            vertical_angles: vec![0.0, 45.0, 90.25],
+            ..valid.clone()
+        };
         assert!(off_grid.validate().err().unwrap().contains("0.5° grid"));
-        let off_quantum = LightProfile { candela: vec![vec![1000.0005, 500.0, 100.0]], ..valid.clone() };
-        assert!(off_quantum.validate().err().unwrap().contains("1e-3 quantization grid"));
-        let bad_symmetry = LightProfile { horizontal_symmetry: 3, ..valid.clone() };
+        let off_quantum = LightProfile {
+            candela: vec![vec![1000.0005, 500.0, 100.0]],
+            ..valid.clone()
+        };
+        assert!(
+            off_quantum
+                .validate()
+                .err()
+                .unwrap()
+                .contains("1e-3 quantization grid")
+        );
+        let bad_symmetry = LightProfile {
+            horizontal_symmetry: 3,
+            ..valid.clone()
+        };
         assert!(bad_symmetry.validate().err().unwrap().contains("1, 2 or 4"));
         let two_rows_sym1 = LightProfile {
             candela: vec![vec![1000.0, 500.0, 100.0], vec![1000.0, 500.0, 100.0]],
             ..valid.clone()
         };
-        assert!(two_rows_sym1.validate().err().unwrap().contains("exactly one row"));
+        assert!(
+            two_rows_sym1
+                .validate()
+                .err()
+                .unwrap()
+                .contains("exactly one row")
+        );
         // 对称 2 需要 (rows−1) 整除 360 半度：8 行 → 360%7≠0 → 拒绝。
         let eight_rows_sym2 = LightProfile {
             candela: vec![vec![1000.0, 500.0, 100.0]; 8],
             horizontal_symmetry: 2,
             ..valid.clone()
         };
-        assert!(eight_rows_sym2.validate().err().unwrap().contains("evenly covering"));
+        assert!(
+            eight_rows_sym2
+                .validate()
+                .err()
+                .unwrap()
+                .contains("evenly covering")
+        );
         let three_rows_sym2 = LightProfile {
             vertical_angles: vec![0.0, 90.0, 180.0],
             candela: vec![vec![1000.0, 500.0, 100.0]; 3],
@@ -441,23 +521,71 @@ mod tests {
             ..valid.clone()
         };
         assert!(three_rows_sym2.validate().is_ok());
-        let bad_format = LightProfile { format: "LM-63-1986".into(), ..valid.clone() };
+        let bad_format = LightProfile {
+            format: "LM-63-1986".into(),
+            ..valid.clone()
+        };
         assert!(bad_format.validate().err().unwrap().contains("format"));
-        let huge = LightProfile { candela: vec![vec![2_000_000.0, 500.0, 100.0]], ..valid.clone() };
-        assert!(huge.validate().err().unwrap().contains("out of contract range"));
-        let negative_lumens = LightProfile { total_lumens: -1.0, ..valid };
-        assert!(negative_lumens.validate().err().unwrap().contains("totalLumens"));
+        let huge = LightProfile {
+            candela: vec![vec![2_000_000.0, 500.0, 100.0]],
+            ..valid.clone()
+        };
+        assert!(
+            huge.validate()
+                .err()
+                .unwrap()
+                .contains("out of contract range")
+        );
+        let negative_lumens = LightProfile {
+            total_lumens: -1.0,
+            ..valid
+        };
+        assert!(
+            negative_lumens
+                .validate()
+                .err()
+                .unwrap()
+                .contains("totalLumens")
+        );
     }
 
     #[test]
     fn validates_ies_references_and_rejects_unknown_fields() {
-        let ok = LightIes { profile_id: "grid.cone".into(), rotation_deg: Some(45.0), scale_factor: Some(0.5) };
+        let ok = LightIes {
+            profile_id: "grid.cone".into(),
+            rotation_deg: Some(45.0),
+            scale_factor: Some(0.5),
+        };
         assert!(ok.validate().is_ok());
         for (ies, message) in [
-            (LightIes { profile_id: String::new(), ..ok.clone() }, "profileId"),
-            (LightIes { rotation_deg: Some(45.25), ..ok.clone() }, "rotationDeg"),
-            (LightIes { rotation_deg: Some(360.0), ..ok.clone() }, "rotationDeg"),
-            (LightIes { scale_factor: Some(10.5), ..ok.clone() }, "scaleFactor"),
+            (
+                LightIes {
+                    profile_id: String::new(),
+                    ..ok.clone()
+                },
+                "profileId",
+            ),
+            (
+                LightIes {
+                    rotation_deg: Some(45.25),
+                    ..ok.clone()
+                },
+                "rotationDeg",
+            ),
+            (
+                LightIes {
+                    rotation_deg: Some(360.0),
+                    ..ok.clone()
+                },
+                "rotationDeg",
+            ),
+            (
+                LightIes {
+                    scale_factor: Some(10.5),
+                    ..ok.clone()
+                },
+                "scaleFactor",
+            ),
         ] {
             assert!(ies.validate().err().unwrap().contains(message));
         }

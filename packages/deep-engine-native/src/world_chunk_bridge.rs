@@ -2,7 +2,6 @@
 //! 与 TS `rayTracing/worldChunkBridge.ts` 逐语义对齐：`world|cx|cz|lodN` 键空间与
 //! 作者场景 chunk 键永不冲突；maxCells/maxLod 有界；解析 fail-closed。
 
-use crate::ray_backend;
 use crate::world_partition::{
     WORLD_CELL_LOD_COUNT, WorldCellId, WorldStreamingInput, world_streaming_plan,
 };

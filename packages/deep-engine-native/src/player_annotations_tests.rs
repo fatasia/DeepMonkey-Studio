@@ -167,12 +167,15 @@ fn save_after_rebase_reopens_in_the_authored_frame_without_world_drift() {
 
     // Authored against the base frame: world = [4000.25, -8000.5, 12000].
     let authored_point = [4000.25f32, -8000.5, 12000.0];
-    let mut annotations = Annotations::default();
-    annotations.notes = vec![Annotation {
-        object: "object-1".into(),
-        point: authored_point,
-        label: "检查阀门 1".into(),
-    }];
+    let annotations = Annotations {
+        notes: vec![Annotation {
+            object: "object-1".into(),
+            point: authored_point,
+            label: "检查阀门 1".into(),
+        }],
+        ..Annotations::default()
+    };
+    let mut annotations = annotations;
     annotations.rebase_local(delta);
     assert_eq!(annotations.notes[0].point, [0.25, -8000.5, 12000.0]);
     annotations
@@ -268,8 +271,11 @@ fn version1_documents_reject_a_recorded_frame() {
         r#"{"version":1,"scene":"scene-a","frame":{"origin":[0.0,0.0,0.0]},"notes":[{"object":"object-1","point":[1.0,2.0,3.0],"label":"x"}]}"#,
     )
     .unwrap();
-    let mut restored = Annotations::default();
-    restored.notes = vec![note()];
+    let restored = Annotations {
+        notes: vec![note()],
+        ..Annotations::default()
+    };
+    let mut restored = restored;
     assert!(
         restored
             .load(&path, "scene-a", &["object-1"], base_frames())
