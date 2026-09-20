@@ -17,7 +17,7 @@ use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
 
 use crate::gpu_culling::GpuCulling;
-use crate::gpu_occlusion::{projection_terms, OcclusionSource, OCCLUSION_MARGIN};
+use crate::gpu_occlusion::{footprint_mip_level, projection_terms, OcclusionSource, OCCLUSION_MARGIN};
 use crate::gpu_resources::frame_data_with_view;
 use crate::shadow_map::ShadowViewSource;
 
@@ -235,9 +235,25 @@ fn run_once(
     (frustum.main.visible_instances, occlusion)
 }
 
+/// 逐实例 mip 定档公式与 TS `hiZOcclusionMip` 逐值对拍(WGSL 内联式的
+/// CPU 参考):证据向量取自 TS hiZOcclusionCulling.test.ts。
 #[test]
-fn projection_terms_extracts_player_view_camera_exactly() {
-    let aspect = SIZE.width as f32 / SIZE.height as f32;
+fn footprint_mip_level_matches_ts_hiz_occlusion_mip() {
+    assert_eq!(footprint_mip_level(1.0, 8), 0, "1px footprint stays at mip 0");
+    assert_eq!(footprint_mip_level(9.0, 8), 4, "TS vector (9,3,8) -> 4");
+    // 2 的幂精确,非幂向上取整;上限夹紧;top=0 锁定 mip 0(场景 D 契约)。
+    assert_eq!(footprint_mip_level(8.0, 8), 3);
+    assert_eq!(footprint_mip_level(5.0, 8), 3);
+    assert_eq!(footprint_mip_level(1024.0, 2), 2);
+    assert_eq!(footprint_mip_level(64.0, 0), 0);
+    assert_eq!(footprint_mip_level(0.25, 8), 0, "sub-pixel footprints clamp to mip 0");
+    // 非有限输入落保守侧:NaN 归 0 层(最细 = 最少剔),inf 归顶层。
+    assert_eq!(footprint_mip_level(f32::NAN, 4), 0);
+    assert_eq!(footprint_mip_level(f32::INFINITY, 4), 4);
+}
+
+#[test]
+fn projection_terms_extracts_player_view_camera_exactly() {    let aspect = SIZE.width as f32 / SIZE.height as f32;
     for yaw in [0.0, 0.55, -1.2, std::f32::consts::PI] {
         for target in [[0.0; 3], [30.0, -12.0, 19.0], [-70.0, 20.0, -40.0]] {
             let view = PlayerView { yaw, target, ..scenario_view(6.0) };

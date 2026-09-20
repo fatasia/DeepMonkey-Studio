@@ -28,9 +28,10 @@
 //! 全步定序(min 按固定次序展开)、无原子、无共享内存;±0 由缩减链内核
 //! `select(v, 0.0, v == 0.0)` 规范化为 +0。
 //!
-//! 边界(如实):遮挡判定本切片按 R4 首切片合同只采样顶层(1×1,最大保守,
-//! 足迹封顶永不触发);逐实例 mip 定档(TS `hiZOcclusionMip`)与精度-召回
-//! 联测属下一切片。WebGL2 无此路径(native 渲染器仅原生后端,r32float
+//! 边界(如实):遮挡判定内核已按足迹逐实例定档(顶层为上限,TS
+//! `hiZOcclusionMip` 同式,见 `gpu_occlusion.rs`);精度-召回联测定档仍
+//! 属下一切片,联测前 `DEEP_ENGINE_NATIVE_OCCLUSION_HIZ` 保持默认关。
+//! WebGL2 无此路径(native 渲染器仅原生后端,r32float
 //! RENDER_ATTACHMENT 在 Vulkan/D3D12/Metal 均可用)。
 
 use wgpu::util::DeviceExt;
@@ -401,8 +402,8 @@ impl HiZPyramid {
         (self.width, self.height, self.mip_level_count)
     }
 
-    /// R4 首切片合同:遮挡判定采样顶层(1×1,最大保守)。
-    /// 视图必须是全 mip 链视图:判定内核 `textureLoad(hiz, coord, dims.w)`
+    /// 顶层 = 逐实例 mip 定档上限(内核在 [0, top] 内按足迹选层)。
+    /// 视图必须是全 mip 链视图:判定内核 `textureLoad(hiz, coord, level)`
     /// 按「视图内绝对层号」读,单层视图会越界读 0(WGSL 越界回 0)→
     /// 全部误剔;这与受控合成金字塔测试的默认全链视图一致。
     pub(crate) fn occlusion_source(&self) -> OcclusionSource {

@@ -17,6 +17,7 @@ use crate::{
     gpu_culling::GpuCulling,
     gpu_ibl::GpuIblEnvironment,
     gpu_lod::GpuLod,
+    gpu_occlusion_consume::ConsumeReadbackMode,
     gpu_resources::frame_data_with_camera,
     gpu_scene_cache::GpuSceneCache,
     gpu_shader_materials::GpuShaderMaterials,
@@ -236,7 +237,7 @@ pub(super) async fn create_renderer(
                     culling.attach_occlusion_consume(
                         &device,
                         &scene.scene().instance_buffer,
-                        false,
+                        ConsumeReadbackMode::Counts,
                     )?;
                     Some(pyramid)
                 } else {

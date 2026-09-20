@@ -36,6 +36,17 @@ impl ConsumeCompacted {
         self.per_batch.iter().filter(|count| **count > 0).count() as u32
     }
 }
+
+/// 消费链 readback 档位:`Off` 不读回;`Counts` 仅每批次 compact 计数
+/// (20B/批,生产门控路径:空批次 draw 跳过 + 查准/查全校准钩子);
+/// `CountsAndRows` 计数 + 幸存行(测试/诊断:位级对照,行区随实例数放大)。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(dead_code)] // Off/CountsAndRows are constructed at the bin-side evidence tests.
+pub enum ConsumeReadbackMode {
+    Off,
+    Counts,
+    CountsAndRows,
+}
 pub struct OcclusionConsumeStage {
     /// 与 CONSUME_ENTRY_POINTS 一一对应:(pipeline, entry 专属 bind group)。
     stages: Vec<(wgpu::ComputePipeline, wgpu::BindGroup)>,
@@ -65,7 +76,7 @@ impl OcclusionConsumeStage {
         candidate_count: u32,
         batch_count: u32,
         indirect_template: &[u8],
-        enable_readback: bool,
+        readback_mode: ConsumeReadbackMode,
     ) -> Result<Self, String> {
         if batch_ranges.len() != batch_count as usize {
             return Err(format!(
@@ -225,7 +236,7 @@ impl OcclusionConsumeStage {
             compact_visible,
             compact_indirect,
             indirect_template: indirect_template.to_vec(),
-            readback: ConsumeReadback::new(device, instance_count, batch_count, enable_readback),
+            readback: ConsumeReadback::new(device, instance_count, batch_count, readback_mode),
         })
     }
 
@@ -285,8 +296,9 @@ fn buffer_entry(binding: u32, buffer: &wgpu::Buffer) -> wgpu::BindGroupEntry<'_>
     }
 }
 
-/// 紧凑输出 readback:indirect 计数 + 幸存行内容,供场景断言与位级
-/// 确定性对照(诊断路径,生产 encode 不启用)。
+/// 紧凑输出 readback:indirect 计数 + 可选幸存行内容。`Counts` 档只拷
+/// 每批次 20B 计数(生产门控的轻量观测),`CountsAndRows` 另拷幸存行区
+/// 供位级对照(诊断路径)。
 struct ConsumeReadback {
     counts: wgpu::Buffer,
     counts_bytes: usize,
@@ -296,12 +308,23 @@ struct ConsumeReadback {
 }
 
 impl ConsumeReadback {
-    fn new(device: &wgpu::Device, instance_count: u32, batch_count: u32, enabled: bool) -> Option<Self> {
-        if !enabled {
-            return None;
-        }
+    fn new(
+        device: &wgpu::Device,
+        instance_count: u32,
+        batch_count: u32,
+        mode: ConsumeReadbackMode,
+    ) -> Option<Self> {
+        let with_rows = match mode {
+            ConsumeReadbackMode::Off => return None,
+            ConsumeReadbackMode::Counts => false,
+            ConsumeReadbackMode::CountsAndRows => true,
+        };
         let counts_bytes = (batch_count as usize * GPU_CULLING_INDIRECT_BYTES as usize).max(4);
-        let rows_bytes = instance_count as usize * GPU_CULLING_INSTANCE_BYTES as usize;
+        let rows_bytes = if with_rows {
+            instance_count as usize * GPU_CULLING_INSTANCE_BYTES as usize
+        } else {
+            0
+        };
         let staging = |label: &'static str, size: usize| {
             device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(label),
@@ -341,7 +364,11 @@ impl ConsumeReadback {
         }
         self.pending = false;
         let counts = map_slice(&self.counts, device, "compact counts")?;
-        let rows = map_slice(&self.rows, device, "compact rows")?;
+        let rows = if self.rows_bytes > 0 {
+            map_slice(&self.rows, device, "compact rows")?
+        } else {
+            Vec::new()
+        };
         let mut per_batch = Vec::with_capacity(self.counts_bytes / GPU_CULLING_INDIRECT_BYTES as usize);
         for chunk in counts.chunks_exact(GPU_CULLING_INDIRECT_BYTES as usize) {
             per_batch.push(u32::from_le_bytes(chunk[4..8].try_into().unwrap()));

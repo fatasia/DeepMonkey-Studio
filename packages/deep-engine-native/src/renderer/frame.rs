@@ -221,13 +221,12 @@ impl Renderer {
                 return RenderOutcome::Failed(error);
             }
         }
-        // R4 生产接线:HiZ 遮挡链幸存计数(挂载时启用 readback 的如实观测;
-        // 含每帧一次 map+poll 的诊断成本,属 opt-in 开关路径)。
-        match self.culling.take_occlusion_visible(&self.device) {
-            Ok(Some(visible)) => println!(
-                "native occlusion hiz: visible_instances={visible} frustum_candidates={}",
-                self.culling.summary().candidate_instances
-            ),
+        // R4 查准/查全校准钩子:候选 → drawn/culled 实例与非空批次 draw 数
+        // (挂载时启用 readback 的如实观测;含每帧一次 map+poll 的诊断成本,
+        // 属 opt-in 开关路径)。顺带刷新空批次跳过的计数快照;只观测,
+        // 不做自动校准。
+        match self.culling.take_occlusion_metrics(&self.device) {
+            Ok(Some(metrics)) => metrics.report(),
             Ok(None) => {}
             Err(error) => {
                 finish(&mut self.telemetry, token, FrameResult::Failed);

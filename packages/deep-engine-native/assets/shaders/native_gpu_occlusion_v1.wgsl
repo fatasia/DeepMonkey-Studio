@@ -12,7 +12,8 @@
 //   - 深度约定:标准 Z(clip.z/w ∈ [0,1],越小越近),HiZ 为 min 缩减
 //     (与 webgpu 侧 hiZPyramid 的 conservative/min 档语义一致)。
 // 边界:深度金字塔由调用方提供(r32float,textureLoad 按显式 mip 读取);
-// 第一档按规范只读顶层,rect 采样保持通用以便下一档下探。
+// 本档按 TS hiZOcclusionMip 同式逐实例定档:足迹长边像素 → [0, top] 层,
+// rect 采样按本实例层读取(top 由 OcclusionSource.mip_level 传入)。
 struct InstanceRow {
   model_0: vec4f, model_1: vec4f, model_2: vec4f,
   normal_0: vec4f, normal_1: vec4f, normal_2: vec4f,
@@ -23,7 +24,7 @@ struct Frustum {
   params: vec4u,
 };
 struct OcclusionParams {
-  // [instance_count, hiz_width_at_level, hiz_height_at_level, mip_level]
+  // [instance_count, hiz_width_at_level0, hiz_height_at_level0, top_mip_level]
   dims: vec4u,
   // [reversed_z(0=标准Z), rect_side_cap, 0, 0]
   config: vec4u,
@@ -104,14 +105,23 @@ fn occlude_instances(@builtin(global_invocation_id) id: vec3u) {
   let nearest_w = max(clip.w - radius, near);
   // 标准 Z:depth(w) = depth_scale * (w - near) / w。
   let instance_depth = depth_scale * (nearest_w - near) / nearest_w;
-  // 保守屏幕矩形:逐轴像素半径用 focal * r / w(轴对齐上界),
-  // 再折算到目标 mip 的 texel 网格并夹回纹理范围;迭代跨度封顶 rect_side_cap。
+  // 保守屏幕矩形:逐轴像素半径用 focal * r / w(轴对齐上界)。
   let ndc = clip.xy / clip.w;
   let pixel = (ndc * vec2f(0.5, 0.5) + vec2f(0.5, 0.5)) * occlusion.viewport.xy;
   let radius_px = vec2f(occlusion.projection.z, occlusion.projection.w)
     * (vec2f(radius, radius) / vec2f(clip.w, clip.w)) * (occlusion.viewport.xy * vec2f(0.5, 0.5));
-  let bin = exp2(f32(occlusion.dims.w));
-  let mip_dims = vec2i(i32(occlusion.dims.y), i32(occlusion.dims.z));
+  // 逐实例 mip 定档(TS hiZOcclusionMip 同式):足迹长边像素数 →
+  // min(ceil(log2(longest_side)), top)。小足迹落细层(精度),大足迹落粗层
+  // (rect 迭代成本有界)。粗层 texel = 区域 min,层内 rect 由同一足迹折算,
+  // 覆盖恒不小于细层足迹,判定保守性不变;NaN/inf 经 max/min 的非 NaN
+  // 分支落 0 层或顶层,均在保守侧。
+  let footprint_px = max(2.0 * max(radius_px.x, radius_px.y), 1.0);
+  let level = u32(min(ceil(log2(footprint_px)), f32(occlusion.dims.w)));
+  let bin = exp2(f32(level));
+  let mip_dims = vec2i(
+    i32(max(occlusion.dims.y >> level, 1u)),
+    i32(max(occlusion.dims.z >> level, 1u)),
+  );
   let side_cap = i32(occlusion.config.y);
   let low = max(vec2i(0, 0),
     min(vec2i(floor((pixel - radius_px) / vec2f(bin, bin))), mip_dims - vec2i(1, 1)));
@@ -122,7 +132,7 @@ fn occlude_instances(@builtin(global_invocation_id) id: vec3u) {
   var scene_min = 1.0;
   for (var y = low_capped.y; y <= high.y; y++) {
     for (var x = low_capped.x; x <= high.x; x++) {
-      scene_min = min(scene_min, textureLoad(hiz, vec2i(x, y), i32(occlusion.dims.w)).x);
+      scene_min = min(scene_min, textureLoad(hiz, vec2i(x, y), i32(level)).x);
     }
   }
   // 遮挡判定(标准 Z):足迹内最近场景深度比球的最近判定深度还近,

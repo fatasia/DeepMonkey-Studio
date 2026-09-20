@@ -15,6 +15,7 @@ use crate::{
     gpu_culling::{GpuCulling, GpuCullingSummary},
     gpu_ibl::GpuIblEnvironment,
     gpu_lod::GpuLod,
+    gpu_occlusion_consume::ConsumeReadbackMode,
     gpu_resources::update_shadow_map,
     gpu_scene::GpuScene,
     gpu_scene_cache::GpuSceneCache,
@@ -286,7 +287,11 @@ impl Renderer {
             true,
         )?;
         self.culling
-            .attach_occlusion_consume(&self.device, &self.scene.instance_buffer, false)?;
+            .attach_occlusion_consume(
+                &self.device,
+                &self.scene.instance_buffer,
+                ConsumeReadbackMode::Counts,
+            )?;
         Ok(Some(pyramid))
     }
 

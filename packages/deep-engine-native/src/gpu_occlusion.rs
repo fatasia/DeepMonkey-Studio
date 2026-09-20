@@ -6,7 +6,9 @@
 //! 档语义一致)做遮挡判定,输出 per-instance u32 标志。
 //!
 //! 纪律:全步定序、无原子、无 workgroup 共享内存;阈值带 1e-6 裕量;
-//! 判定只少剔不误剔(半径/矩形全部取保守上界)。
+//! 判定只少剔不误剔(半径/矩形全部取保守上界)。逐实例 mip 定档
+//! (TS `hiZOcclusionMip` 同式,见 [`footprint_mip_level`])替代首切片的
+//! 固定顶层采样:小足迹读细层修精度,大足迹读粗层保定序成本。
 //!
 //! 边界(如实):深度金字塔纹理由调用方提供;生产金字塔已由
 //! `renderer/hi_z_pyramid.rs`(MSAA 深度 resolve → r32float min 链)在
@@ -31,7 +33,8 @@ pub struct OcclusionSource {
     /// 金字塔第 0 层(全分辨率)宽高,亦是屏幕矩形折算基准。
     pub width: u32,
     pub height: u32,
-    /// 本切片按规范采样顶层;rect 采样实现保持通用。
+    /// 采样层上限:内核逐实例在 [0, mip_level] 内按足迹定档
+    /// (生产传顶层 = 金字塔层数 − 1;传 0 即锁定 mip 0)。
     pub mip_level: u32,
 }
 
@@ -89,6 +92,18 @@ pub fn projection_terms(frame: &FrameUniform) -> Result<ProjectionTerms, String>
     })
 }
 
+/// 逐实例 mip 定档的 CPU 参考:足迹长边像素 → min(ceil(log2), top)。
+/// 与 WGSL `occlude_instances` 内联式、TS `hiZOcclusionMip`(rect 长边,
+/// 上限 mipLevelCount−1)三方逐值一致;生产判定在内核内计算,本函数供
+/// 单测对拍(证据向量取自 TS 测试:(1,1,8)→0、(9,3,8)→4)。
+/// 非有限输入与 WGSL 同侧:NaN 经 max 落 1.0 → 0 层(最细 = 判定最少剔,
+/// 保守),inf 经饱和转换夹到顶层。
+#[allow(dead_code)] // Pinned by the TS-parity unit test; production math is inlined in WGSL.
+pub fn footprint_mip_level(footprint_pixels: f32, top_level: u32) -> u32 {
+    let footprint = footprint_pixels.max(1.0);
+    (footprint.log2().ceil() as u32).min(top_level)
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 struct OcclusionParams {
@@ -107,14 +122,12 @@ fn pack_params(
     frame: &FrameUniform,
     terms: &ProjectionTerms,
 ) -> Result<OcclusionParams, String> {
-    let shift = source.mip_level;
-    let level_width = source.width.checked_shr(shift).unwrap_or(0).max(1);
-    let level_height = source.height.checked_shr(shift).unwrap_or(0).max(1);
     if source.width == 0 || source.height == 0 {
         return Err("native occlusion HiZ source has empty dimensions".into());
     }
     Ok(OcclusionParams {
-        dims: [count, level_width, level_height, source.mip_level],
+        // 内核按第 0 层尺寸自折算各层 dims(max(1, dim >> level))。
+        dims: [count, source.width, source.height, source.mip_level],
         config: [0, OCCLUSION_RECT_SIDE_CAP, 0, 0],
         projection: [terms.depth_scale, terms.near, terms.focal_x, terms.focal_y],
         viewport: [source.width as f32, source.height as f32, OCCLUSION_MARGIN, 0.0],

@@ -14,6 +14,7 @@ use crate::{
     deep2d_gpu_cache::{Deep2dCacheStats, Deep2dGpuAssetCache},
     gpu_culling::GpuCulling,
     gpu_lod::GpuLod,
+    gpu_occlusion_consume::ConsumeReadbackMode,
     gpu_resources::{shadow_camera, shadow_ray_direction},
     gpu_scene_cache::{GpuSceneCacheMetrics, GpuSceneCandidate},
     gpu_shader_materials::GpuShaderMaterials,
@@ -437,7 +438,7 @@ impl Renderer {
                     next_culling.attach_occlusion_consume(
                         &self.device,
                         &scene.scene().instance_buffer,
-                        false,
+                        ConsumeReadbackMode::Counts,
                     )?;
                 }
                 let next_lod = GpuLod::new(
@@ -567,7 +568,7 @@ impl Renderer {
                     next_culling.attach_occlusion_consume(
                         &self.device,
                         &scene.scene().instance_buffer,
-                        false,
+                        ConsumeReadbackMode::Counts,
                     )?;
                 }
                 let next_lod = GpuLod::new(

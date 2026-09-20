@@ -10,10 +10,10 @@ use deep_engine_native::{
 use wgpu::util::DeviceExt;
 
 use crate::{
-    gpu_culling_readback::{CullingReadback, GpuCullingFrameMetrics},
+    gpu_culling_readback::{CullingReadback, GpuCullingFrameMetrics, OcclusionCullMetrics},
     gpu_culling_resources::{create_bind_group, create_layout, storage_init, validate_device},
     gpu_occlusion::{GpuOcclusionStage, OcclusionSource},
-    gpu_occlusion_consume::{ConsumeCompacted, OcclusionConsumeStage},
+    gpu_occlusion_consume::{ConsumeCompacted, ConsumeReadbackMode, OcclusionConsumeStage},
     shadow_map::ShadowViewSource,
 };
 
@@ -52,6 +52,10 @@ pub struct GpuCulling {
     consume: Option<OcclusionConsumeStage>,
     /// 批次区间表(场景静态,prepare 保证批次平铺实例数组),消费链构造输入。
     batch_ranges: Vec<[u32; 4]>,
+    /// 上一帧 compact 每批次幸存数(None = 未知/失效:链未挂、readback 未
+    /// 就绪、相机或场景更新)。draw 侧空批次跳过的唯一依据,与 HiZ
+    /// 「消费上一帧金字塔」同界;None 时 draw 行为与未接线逐字节一致。
+    survivors: Option<Vec<u32>>,
 }
 
 impl GpuCulling {
@@ -168,6 +172,7 @@ impl GpuCulling {
             occlusion: None,
             consume: None,
             batch_ranges,
+            survivors: None,
         })
     }
 
@@ -203,12 +208,14 @@ impl GpuCulling {
 
     /// 挂载遮挡标志消费链(需先 attach_occlusion):scan+compact 产出主视锥
     /// 紧凑 draw 输出,挂载后 view 0 的 draw 经访问器切换到紧凑缓冲对。
-    /// 生产入口:renderer init(显式开关,默认关);重复挂载整体替换。
+    /// 生产入口传 `ConsumeReadbackMode::Counts`(每批次 20B 轻量读回,供
+    /// 空批次跳过与校准钩子);测试/诊断传 `CountsAndRows` 带幸存行。
+    /// 重复挂载整体替换。
     pub fn attach_occlusion_consume(
         &mut self,
         device: &wgpu::Device,
         source_instances: &wgpu::Buffer,
-        enable_readback: bool,
+        readback_mode: ConsumeReadbackMode,
     ) -> Result<(), String> {
         let Some(occlusion) = &self.occlusion else {
             return Err("native GPU occlusion consume requires the occlusion stage".into());
@@ -222,18 +229,19 @@ impl GpuCulling {
             self.candidate_count,
             self.batch_ranges.len() as u32,
             &self.indirect_template,
-            enable_readback,
+            readback_mode,
         )?;
         self.consume = Some(stage);
+        self.survivors = None;
         Ok(())
     }
 
-    #[allow(dead_code)] // Reported alongside attach_occlusion until renderer wiring.
+    #[allow(dead_code)] // Stage summary accessors retained for diagnostics tooling.
     pub fn occlusion_summary(&self) -> Option<(u32, u32, u32)> {
         self.occlusion.as_ref().map(|stage| stage.summary())
     }
 
-    #[allow(dead_code)] // Reported alongside attach_occlusion_consume until renderer wiring.
+    #[allow(dead_code)] // Stage summary accessors retained for diagnostics tooling.
     pub fn consume_summary(&self) -> Option<(u32, u32, u32)> {
         self.consume.as_ref().map(|stage| stage.summary())
     }
@@ -273,6 +281,9 @@ impl GpuCulling {
         if let Some(occlusion) = &self.occlusion {
             occlusion.update_params(queue, frame)?;
         }
+        // 相机/视锥变化令上一帧 compact 计数跨视锥失效:回退「未知 = 照画」,
+        // 消除相机移动时的单帧 pop-in;静止场景才持续享受空批次跳过。
+        self.survivors = None;
         self.revision = self.revision.wrapping_add(1);
         Ok(())
     }
@@ -337,6 +348,8 @@ impl GpuCulling {
     }
 
     /// 取回主视锥遮挡判定后的幸存实例数(需挂载时启用 readback)。
+    /// GPU 证据测试直读 flags 计数;生产帧尾走 [`Self::take_occlusion_metrics`]。
+    #[allow(dead_code)] // Evidence-test entry point; production frame drains metrics instead.
     pub fn take_occlusion_visible(&mut self, device: &wgpu::Device) -> Result<Option<u32>, String> {
         match &mut self.occlusion {
             Some(occlusion) => occlusion.take_visible_count(device),
@@ -345,15 +358,63 @@ impl GpuCulling {
     }
 
     /// 取回消费链紧凑输出(每批次 instance_count + 幸存行内容;需启用 readback)。
-    #[allow(dead_code)] // Reported alongside attach_occlusion_consume until renderer wiring.
+    /// 计数部分同时刷新 [`Self::compact_batch_survivors`] 的依据快照。
+    #[allow(dead_code)] // Rows/counts diagnostics consumed by the bin-side GPU evidence tests.
     pub fn take_occlusion_compacted(
         &mut self,
         device: &wgpu::Device,
     ) -> Result<Option<ConsumeCompacted>, String> {
-        match &mut self.consume {
-            Some(consume) => consume.take_compacted(device),
-            None => Ok(None),
+        let compacted = match &mut self.consume {
+            Some(consume) => consume.take_compacted(device)?,
+            None => None,
+        };
+        if let Some(compacted) = &compacted {
+            self.survivors = Some(compacted.per_batch.clone());
         }
+        Ok(compacted)
+    }
+
+    /// draw 侧空批次跳过依据:view 0 且消费链挂载且已取回上一帧 compact
+    /// 计数时,返回该批次幸存实例数;其余一律 None(未知 = 照画,行为与
+    /// 未接线一致)。阴影视锥(view ≥ 1)恒走 frustum 输出,不做跳过。
+    pub fn compact_batch_survivors(&self, view_index: usize, batch_index: usize) -> Option<u32> {
+        if view_index != 0 {
+            return None;
+        }
+        self.survivors.as_ref()?.get(batch_index).copied()
+    }
+
+    /// R4 查准/查全校准钩子:排空遮挡 flags 与 compact 计数 readback,产出
+    /// 主视锥「候选 → drawn/culled 实例数 + 非空批次 draw 数」,并刷新
+    /// [`Self::compact_batch_survivors`] 快照。只观测,不做自动校准
+    /// (精度-召回联测属下一切片);未挂链或 readback 未就绪 → None。
+    pub fn take_occlusion_metrics(
+        &mut self,
+        device: &wgpu::Device,
+    ) -> Result<Option<OcclusionCullMetrics>, String> {
+        let drawn = match &mut self.occlusion {
+            Some(occlusion) => match occlusion.take_visible_count(device)? {
+                Some(drawn) => drawn,
+                None => return Ok(None),
+            },
+            None => return Ok(None),
+        };
+        let draws = match &mut self.consume {
+            Some(consume) => match consume.take_compacted(device)? {
+                Some(compacted) => {
+                    self.survivors = Some(compacted.per_batch.clone());
+                    Some(compacted.draws())
+                }
+                None => None,
+            },
+            None => None,
+        };
+        Ok(Some(OcclusionCullMetrics {
+            candidates: self.candidate_count,
+            drawn,
+            culled: self.candidate_count - drawn,
+            draws,
+        }))
     }
 
     pub fn take_metrics(

@@ -33,6 +33,31 @@ impl GpuCullingFrameMetrics {
     }
 }
 
+/// R4 遮挡链查准/查全校准钩子(主视锥):实例级「候选 → drawn/culled」与
+/// 批次级非空 draw 数。只观测,不做自动校准(精度-召回联测属下一切片);
+/// 前两个字段沿用既有 stdout 口径(visible_instances / frustum_candidates),
+/// smoke 与证据脚本按前缀定位不受追加字段影响。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OcclusionCullMetrics {
+    /// culling 候选实例总数(frustum pass 输入)。
+    pub candidates: u32,
+    /// 遮挡链幸存实例数(flags = 视锥∧遮挡),即进入 compact/draw 的实例。
+    pub drawn: u32,
+    /// 被剔除实例数(candidates − drawn,含 frustum 与遮挡两段)。
+    pub culled: u32,
+    /// 非空批次数(compact 每批次计数 > 0);消费链 readback 未启用 → None。
+    pub draws: Option<u32>,
+}
+
+impl OcclusionCullMetrics {
+    pub fn report(&self) {
+        println!(
+            "native occlusion hiz: visible_instances={} frustum_candidates={} culled={} draws={:?}",
+            self.drawn, self.candidates, self.culled, self.draws
+        );
+    }
+}
+
 pub struct CullingReadback {
     buffer: wgpu::Buffer,
     view_stride: u64,

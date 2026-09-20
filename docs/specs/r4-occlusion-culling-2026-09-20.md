@@ -1,9 +1,12 @@
 # R4 遮挡剔除(GPU-driven)——判定与消费链设计
 
-> 状态:第三切片(HiZ 生产接线)完成;逐实例 mip 定档与精度-召回联测 = 下一切片。
+> 状态:第四切片(尾巴项收口:空批次 draw 跳过、逐实例 mip 定档、校准钩子)完成;
+> 精度-召回联测、可见性缓冲两阶段管线、相机前推运动补偿 = 下一切片。
 > 权威计划:`docs/specs/industrial-3d-format-work-plan-2026-09-16.md` 不涉及本主题;
 > 路线锚点:`docs/specs/de26-master-execution-roadmap-2026-09-19.md` 第 7 节 #2。
-> 证据:`test-output/r4-occlusion-consume-20260920-r1/evidence.json`(本文所有实测
+> 证据:`test-output/r4-occlusion-consume-20260920-r1/evidence.json`、
+> `test-output/native-hiz-20260920-r1/evidence.json`、
+> `test-output/r4-tail-closure-20260919-r1/evidence.json`(本文所有实测
 > 数字均来自该文件与 `cargo test --ignored` 实跑输出,可复现命令见 §5)。
 
 ## 1. 背景与切片划分
@@ -18,8 +21,8 @@
 - **第三切片(本切片,2026-09-20)**:生产接线落地——`renderer/hi_z_pyramid.rs`
   (MSAA 深度 resolve → r32float min 金字塔)+ init/resize/scene_update 三处挂载
   (显式开关默认关)+ 主视锥 draw 真正消费紧凑输出,详见 §6。
-- **下一切片**:逐实例 mip 定档(TS `hiZOcclusionMip`)与精度-召回联测、
-  可见性缓冲两阶段管线、空批次 draw 跳过(§7.3)。
+- **下一切片**:精度-召回联测(含像素级 ground truth)、可见性缓冲两阶段管线、
+  相机前推运动补偿;逐实例 mip 定档与空批次跳过已在第四切片落地(§7)。
 
 ## 2. 架构
 
@@ -196,12 +199,67 @@ SceneResources(culling.encode:frustum → 遮挡 → 消费 dispatch,消费上�
 - 空批次 draw 跳过(原 §6.3)仍开放;Replace 重挂路径经编译接线 + 同一挂载契约
   (C3 快路径不触发 Replace),未单独 GPU 冒烟。
 
-## 7. 剩余缺口(下一切片)
+## 7. 第四切片:尾巴项收口(2026-09-19,原 §7.1/7.3 落地)
 
-1. 逐实例 mip 定档(TS `hiZOcclusionMip` 等价物,内核按 dims.w 单层采样需扩展)
-   与精度-召回联测定档;定档前 `DEEP_ENGINE_NATIVE_OCCLUSION_HIZ` 保持默认关(§6.4)。
+> 证据:`test-output/r4-tail-closure-20260919-r1/evidence.json`(RTX 4060 Laptop /
+> Vulkan / wgpu 30.0.1;所有数字出自该文件与实跑日志)。
+
+### 7.1 逐实例 mip 定档(TS `hiZOcclusionMip` 同式)
+
+- `native_gpu_occlusion_v1.wgsl`:足迹长边像素 `max(2·max(radius_px.x, radius_px.y), 1)`
+  → `level = min(ceil(log2(longest_side)), top)`;粗层 texel = 区域 min,层内 rect
+  由同一足迹折算、覆盖恒不小于细层足迹,保守性不变;NaN/inf 经 max/min 的非 NaN
+  分支落 0 层/顶层,均在保守侧。
+- `OcclusionParams.dims` 契约调整:y/z 语义改为第 0 层尺寸,w = 顶层上限;
+  `OcclusionSource.mip_level` 语义改为「采样层上限」(生产传顶层;传 0 = 锁定
+  mip 0,场景 D 的 rect 契约测试因此原样保持)。
+- CPU 参考 `gpu_occlusion::footprint_mip_level` 与 WGSL 内联式、TS 三方逐值对拍
+  (单测:TS 向量 (1,1,8)→0、(9,3,8)→4 + 夹紧/非有限分支)。
+- **精度收益(真实窗口)**:默认 fixture(屏幕重叠实例)稳态幸存从顶层采样的
+  1/4 恢复到 3/4;帧 2 的瞬时回落为「上一帧深度滞尾」已知边界。第 4 个实例是否
+  真被遮挡无像素级 ground truth,如实存疑。
+- **开关纪律**:`DEEP_ENGINE_NATIVE_OCCLUSION_HIZ` 仍保持默认关——精度-召回联测
+  (含像素级 ground truth)未做,定档参数未联测标定。
+
+### 7.2 空批次 draw 跳过(上一帧 compact 计数门控)
+
+- `ConsumeReadbackMode::{Off, Counts, CountsAndRows}`:生产挂载走 `Counts`
+  (每批次 20B 轻量读回),测试/诊断走 `CountsAndRows`。
+- `GpuCulling.survivors`:上次取回的每批次 compact 计数;`update_views`
+  (相机/resize)即失效回 None;`compact_batch_survivors(view, batch)` 仅在
+  view 0 + 挂链 + 计数已知时返回 Some。
+- `gpu_scene_draw::draw_selected` 非 LOD 分支:`Some(0)` → 不发起
+  `draw_indexed_indirect`。计数是上一帧快照(与 HiZ「消费上一帧」同界);
+  相机移动当帧失效 = 全画,无 pop-in。
+- GPU 用例 `consume_metrics_feed_empty_batch_skip_gate`:candidates=128 /
+  drawn=64 / culled=64 / draws=Some(1);survivors 逐批对齐 [64,0];view≥1 与
+  update_views 后为 None。
+
+### 7.3 查准/查全校准钩子
+
+- `gpu_culling_readback::OcclusionCullMetrics { candidates, drawn, culled,
+  draws: Option<u32> }` + `report()`;`GpuCulling::take_occlusion_metrics`
+  排空 flags 与 compact 计数 readback 并刷新 survivors。
+- `renderer/frame.rs` 帧尾输出 `native occlusion hiz: visible_instances=…
+  frustum_candidates=… culled=… draws=…`(前两字段沿用旧口径,smoke/证据脚本
+  前缀定位不受影响)。只观测,不做自动校准。
+
+### 7.4 回归与外部失败
+
+- lib 431 passed;bin 173 passed + 74 ignored;gpu_culling 7/7、
+  gpu_lod_draw_readback 31/31、gpu_shader_material_draw 28/28、surface_flags 5/5;
+  遮挡/HiZ/消费链 GPU ignored 用例全过(含新增门控用例)。
+- 真实窗口冒烟(开关开/关三组):遮挡 fixture 帧 1 = 3/3、帧 2-4 = 2/3
+  (与第三切片一致);开关关闭 = 零条指标行、scopes=clean(零回归)。
+- 既有外部失败(bloom_contract、cascaded_shadow、compat_x_*、runtime_package_x)
+  与本切片改动闭包无交集:其读取的全部文件与 HEAD 逐字节一致,归因并行会话
+  工作树,见 evidence.json `preexistingExternalFailures`。
+
+## 8. 剩余缺口(下一切片)
+
+1. 精度-召回联测(像素级 ground truth)标定逐实例 mip 定档与 1e-6 裕量;
+   联测前 `DEEP_ENGINE_NATIVE_OCCLUSION_HIZ` 保持默认关(§7.1)。
 2. 可见性缓冲两阶段管线。
-3. 空批次 draw 调用跳过(引 GPU 侧批次数或 CPU readback 门控)。
-4. 大预算层次化扫描(block_offsets 单线程扫在 1M 预算为常数量级,若未来放宽预算需
+3. 大预算层次化扫描(block_offsets 单线程扫在 1M 预算为常数量级,若未来放宽预算需
    升级为层次扫描;确定性纪律不变)。
-5. 相机大幅前推的上一帧深度滞尾运动补偿(§6.4)。
+4. 相机大幅前推的上一帧深度滞尾运动补偿(§6.4)。

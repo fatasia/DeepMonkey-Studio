@@ -114,6 +114,12 @@ impl GpuScene {
                 );
             }
         } else {
+            // R4 空批次跳过:上一帧 compact 计数为 0 的批次不再发起
+            // draw_indexed_indirect(计数快照与 HiZ「消费上一帧」同界,相机
+            // 或场景更新当帧失效回 None = 照画)。计数未知时行为与现状一致。
+            if culling.compact_batch_survivors(view, index) == Some(0) {
+                return;
+            }
             self.draw_indirect(
                 pass,
                 pipelines,

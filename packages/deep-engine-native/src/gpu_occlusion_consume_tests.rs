@@ -12,7 +12,7 @@ use wgpu::util::DeviceExt;
 
 use crate::gpu_culling::GpuCulling;
 use crate::gpu_occlusion::OcclusionSource;
-use crate::gpu_occlusion_consume::ConsumeCompacted;
+use crate::gpu_occlusion_consume::{ConsumeCompacted, ConsumeReadbackMode};
 use crate::gpu_occlusion_tests::{
     Bench, Scene, Shadows, bench_device, frame_for, grid_instances, hiz_pyramid, packed_instance,
     prepared, scenario_view, standard_depth, world_point,
@@ -79,7 +79,16 @@ fn build(
             .expect("occlusion stage builds");
         if consume {
             culling
-                .attach_occlusion_consume(&bench.device, &source, enable_readback)
+                .attach_occlusion_consume(
+                    &bench.device,
+                    &source,
+                    // 测试 harness 统一带幸存行(位级对照);生产挂载走 Counts。
+                    if enable_readback {
+                        ConsumeReadbackMode::CountsAndRows
+                    } else {
+                        ConsumeReadbackMode::Off
+                    },
+                )
                 .expect("consume stage builds");
         }
     }
@@ -399,7 +408,61 @@ fn consume_attach_requires_the_decision_stage() {
         GpuCulling::new(&bench.device, &source, &prepared(64), &scene.frame, &Shadows, false)
             .expect("frustum culling builds");
     let error = culling
-        .attach_occlusion_consume(&bench.device, &source, false)
+        .attach_occlusion_consume(&bench.device, &source, ConsumeReadbackMode::Off)
         .expect_err("consume without occlusion must fail");
     assert!(error.contains("requires the occlusion stage"), "{error}");
+}
+
+/// 空批次跳过门控 + 查准/查全校准钩子:生产 metrics 路径
+/// (take_occlusion_metrics)产出候选 → drawn/culled 与非空批次 draw 数;
+/// survivors 快照与 compact 计数逐批对齐(批次 1 = 0 → draw 侧可跳过);
+/// update_views(相机/视锥变化)即失效回 None。
+#[test]
+#[ignore = "requires a real GPU; run explicitly with --ignored"]
+fn consume_metrics_feed_empty_batch_skip_gate() {
+    let bench = pollster::block_on(bench_device());
+    let view = scenario_view(6.0);
+    let mut instances = grid_instances(view, 2.0);
+    instances.extend(grid_instances(view, 4.0));
+    let scene = Scene { instances, frame: frame_for(view) };
+    let prepared_culling = prepared_two_batches(128, 64);
+    let occluder = standard_depth(3.0);
+    let (_texture, hiz_view) =
+        hiz_pyramid(&bench.device, &bench.queue, &[&[occluder; 16], &[occluder; 4], &[occluder]]);
+    let mut culling = build(&bench, &scene, &prepared_culling, Some((&hiz_view, 4, 4, 2)), true, true);
+    culling.update_views(&bench.queue, &scene.frame, &Shadows).unwrap();
+    let mut encoder = bench
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("R4 consume metrics gate encoder"),
+        });
+    culling.encode(&bench.queue, &mut encoder);
+    culling.commit_submission();
+    bench.queue.submit(Some(encoder.finish()));
+    bench
+        .device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .unwrap();
+
+    let metrics = culling
+        .take_occlusion_metrics(&bench.device)
+        .unwrap()
+        .expect("occlusion metrics after encode");
+    assert_eq!(metrics.candidates, 128);
+    assert_eq!(metrics.drawn, 64, "front batch survives, back batch culled");
+    assert_eq!(metrics.culled, 64);
+    assert_eq!(metrics.draws, Some(1), "only the front batch is nonempty");
+    println!("consume metrics gate: candidates={} drawn={} culled={} draws={:?}", metrics.candidates, metrics.drawn, metrics.culled, metrics.draws);
+
+    // survivors 快照与 compact 计数逐批对齐;阴影视锥与失效后一律 None。
+    assert_eq!(culling.compact_batch_survivors(0, 0), Some(64));
+    assert_eq!(culling.compact_batch_survivors(0, 1), Some(0), "empty batch is skippable");
+    assert_eq!(culling.compact_batch_survivors(1, 0), None, "shadow views never skip");
+    assert_eq!(culling.compact_batch_survivors(0, 2), None, "out-of-range batch is unknown");
+    culling.update_views(&bench.queue, &scene.frame, &Shadows).unwrap();
+    assert_eq!(
+        culling.compact_batch_survivors(0, 0),
+        None,
+        "camera/view update invalidates the previous-frame snapshot"
+    );
 }
