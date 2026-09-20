@@ -18,3 +18,17 @@ export {
   type SceneAnimationMixerOptions,
   type SceneAnimationMixerStats,
 } from "./types.js";
+export {
+  AnimationStateMachine,
+  type AnimationStateId,
+  type AnimationParameterValue,
+  type AnimationParameterMap,
+  type AnimationState,
+  type AnimationTransition,
+  type AnimationCondition,
+  type AnimationStateMachineInput,
+  type AnimationStateMachineOptions,
+  type AnimationStateMachineSnapshot,
+} from "./stateMachine.js";
+export { applyAnimationConstraint, sampleAnimationPath } from "./pathConstraints.js";
+export type { AnimationPathDriver, AnimationPathSample, AnimationConstraint, AnimationConstraintResult } from "./pathConstraints.js";
