@@ -33,6 +33,14 @@ export interface EditorPresenceUpdate {
   selectionCount: number;
   /** 活跃场景未保存草稿的有界语义快照；仅 scene 面且 dirty 时附带。 */
   draftMirror?: EditorSceneDraftMirrorPayload;
+  /** 渲染诊断快照的有界元数据摘要（字节留在浏览器 readback 存储）。 */
+  diagnosticsSnapshot?: {
+    sceneId: string;
+    revision: number;
+    capturedAtMs: number;
+    resources: readonly { resourceId: string; frameId: string; width: number; height: number;
+      format: string; byteLength: number }[];
+  };
 }
 
 export interface McpInspection {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { api } from "../api.js";
 import type { EditorPresenceUpdate } from "../apiClients/mcpApi.js";
 import { buildEditorSceneDraftSnapshot } from "../studio/editorSceneDraftSnapshot.js";
+import { buildEditorDiagnosticsSnapshotReport } from "../studio/editorDiagnosticsSnapshotReport.js";
 import { getStudioSceneRuntime } from "../studio/studioSceneRuntimeRegistry.js";
 import { runEditorSceneTransaction } from "../studio/editorSceneWriteDriver.js";
 import type { AppState } from "./useAppState.js";
@@ -31,6 +32,11 @@ export function useEditorPresence(state: AppState): void {
     return buildEditorSceneDraftSnapshot(document, descriptor.targetId, state.applicationRevision);
   }, [document, storeState.dirty, descriptor?.surface, descriptor?.targetId, state.applicationRevision]);
 
+  const diagnosticsSnapshot = useMemo(() => {
+    if (!document || !storeState.dirty || descriptor?.surface !== "scene" || !descriptor.targetId) return undefined;
+    return buildEditorDiagnosticsSnapshotReport(descriptor.targetId, state.applicationRevision);
+  }, [document, storeState.dirty, descriptor?.surface, descriptor?.targetId, state.applicationRevision]);
+
   latest.current = descriptor ? {
     leaseId: lease.current?.identity === descriptor.identity ? lease.current.leaseId : "pending",
     projectId: descriptor.projectId, applicationId: descriptor.applicationId,
@@ -40,6 +46,7 @@ export function useEditorPresence(state: AppState): void {
     persistedRevision: document!.metadata.revision, draftRevision: state.applicationRevision,
     dirty: storeState.dirty, selectionCount: storeState.selection.length,
     ...(draftMirror ? { draftMirror } : {}),
+    ...(diagnosticsSnapshot ? { diagnosticsSnapshot } : {}),
   } : undefined;
 
   useEffect(() => {

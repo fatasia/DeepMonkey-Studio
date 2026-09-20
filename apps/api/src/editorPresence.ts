@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { SystemUserRecord } from "@bim-studio/contracts";
 import { parseEditorSceneDraftMirror, type EditorSceneDraftMirror } from "./editorSceneDraftMirror.js";
+import { parseEditorDiagnosticsSnapshotMirror, type EditorDiagnosticsSnapshotMirror } from "./editorDiagnosticsSnapshotMirror.js";
 
 export type EditorSurface = "scene" | "dashboard" | "topology";
 
@@ -18,6 +19,8 @@ export interface EditorPresenceInput {
   selectionCount: number;
   /** 可选的活跃场景草稿镜像；无效或越界时被整体丢弃，不影响 presence 摘要。 */
   draftMirror?: EditorSceneDraftMirror;
+  /** 可选的渲染诊断快照摘要（仅元数据，字节留在浏览器）；不合法时整体丢弃。 */
+  diagnosticsSnapshot?: EditorDiagnosticsSnapshotMirror;
 }
 
 export interface EditorPresence extends EditorPresenceInput {
@@ -113,7 +116,11 @@ function parsePresence(value: Partial<EditorPresenceInput> | undefined): EditorP
   // 镜像不可信时整体丢弃（fail-closed 到 unavailable），presence 摘要照常更新。
   const { draftMirror: rawMirror, ...rest } = value as EditorPresenceInput;
   const draftMirror = parseEditorSceneDraftMirror(rawMirror);
-  return draftMirror ? { ...rest, draftMirror } : rest as EditorPresenceInput;
+  const diagnosticsSnapshot = parseEditorDiagnosticsSnapshotMirror(
+    (value as EditorPresenceInput).diagnosticsSnapshot);
+  return { ...rest,
+    ...(draftMirror ? { draftMirror } : {}),
+    ...(diagnosticsSnapshot ? { diagnosticsSnapshot } : {}) } as EditorPresenceInput;
 }
 
 function canAccess(user: SystemUserRecord, projectId: string): boolean {

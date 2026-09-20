@@ -4,7 +4,8 @@ import type { CapabilityDescriptor, CapabilityRequest } from "@bim-studio/plugin
 import type { IndustrialCapabilityHost } from "./industrialCapabilities.js";
 import type { MetadataStore } from "./store.js";
 import type { EditorPresence, EditorPresenceRegistry } from "./editorPresence.js";
-import { listEditorSceneResources, parseEditorSceneResourceUri, readEditorSceneResource } from "./mcpEditorSceneResources.js";
+import { listEditorSceneResources, parseEditorSceneResourceUri, readEditorSceneResource,
+  listEditorDiagnosticsResources, readEditorDiagnosticsResource } from "./mcpEditorSceneResources.js";
 import { EDITOR_SCENE_TRANSACTION_TOOL, callEditorSceneTransactionTool, editorTransactionToolDefinition, type EditorSceneTransactionBridge } from "./mcpEditorSceneTransactionBridge.js";
 
 const MODERN_VERSION = "2026-07-28";
@@ -72,7 +73,8 @@ function listEditorResources(params: Record<string, unknown> | undefined, depend
   const offset = resourceCursor(params?.cursor);
   if (offset === undefined) return reply.code(400).send(rpcError(id, -32602, "resources/list cursor 无效"));
   const entries = dependencies.editorPresence?.listFor(user) ?? [];
-  const resources = entries.flatMap(entry => [editorResource(entry), ...listEditorSceneResources(entry, dependencies.store)]);
+  const resources = entries.flatMap(entry => [editorResource(entry), ...listEditorSceneResources(entry, dependencies.store),
+    ...listEditorDiagnosticsResources(entry)]);
   const page = resources.slice(offset, offset + 20);
   return rpcResult(id, {
     resources: page,
@@ -89,6 +91,14 @@ function readEditorResource(params: Record<string, unknown> | undefined, depende
     const entry = dependencies.editorPresence?.readFor(user, sceneAddress.sessionId, sceneAddress.draftRevision);
     const content = entry && readEditorSceneResource(sceneAddress, entry, dependencies.store);
     if (!content) return reply.code(404).send(rpcError(id, -32004, "场景资源不存在、已过期或 editor/persisted revision 已变化"));
+    return rpcResult(id, { contents: [content] });
+  }
+  const diagnosticsUri = typeof params?.uri === "string" && params.uri.endsWith("/diagnostics") ? params.uri : undefined;
+  if (diagnosticsUri) {
+    const sessionId = diagnosticsUri.match(/editor:\/\/session\/([^/]+)\//)?.[1];
+    const entry = sessionId ? dependencies.editorPresence?.readFor(user, sessionId, Number(diagnosticsUri.match(/rev\/(-?\d+)\//)?.[1])) : undefined;
+    const content = entry && readEditorDiagnosticsResource(entry);
+    if (!content) return reply.code(404).send(rpcError(id, -32004, "诊断快照目录不存在、已过期或 editor revision 已变化"));
     return rpcResult(id, { contents: [content] });
   }
   const parsed = parseEditorResourceUri(params?.uri);

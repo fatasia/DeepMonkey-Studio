@@ -1,6 +1,7 @@
 import type { ApplicationDocument, SceneDocument } from "@bim-studio/contracts";
 import type { EditorPresence } from "./editorPresence.js";
 import { activeDraftMirror, type EditorSceneDraftMirror } from "./editorSceneDraftMirror.js";
+import { activeDiagnosticsSnapshot } from "./editorDiagnosticsSnapshotMirror.js";
 import type { MetadataStore } from "./store.js";
 
 const PAGE_SIZE = 50;
@@ -169,3 +170,37 @@ function isKind(value: string | undefined): value is SceneResourceKind {
   return KINDS.includes(value as SceneResourceKind);
 }
 function safeRevision(value: number): boolean { return Number.isSafeInteger(value) && value >= 0; }
+
+/** 诊断快照资源（R12 readback 白名单摘要）：字节留在浏览器，MCP 只读有界元数据目录。 */
+export function listEditorDiagnosticsResources(entry: EditorPresence) {
+  const snapshot = activeDiagnosticsSnapshot(entry);
+  if (!snapshot) return [];
+  return [{
+    uri: `editor://session/${entry.sessionId}/rev/${entry.draftRevision}/diagnostics`,
+    name: `diagnostics-${entry.sessionId}`,
+    title: "渲染诊断快照目录",
+    description: `活跃编辑器的 R12 资源快照摘要：${snapshot.resources.map(r => r.resourceId).join(", ")}`,
+    mimeType: "application/json",
+  }];
+}
+
+export function readEditorDiagnosticsResource(entry: EditorPresence):
+  { uri: string; mimeType: string; text: string } | undefined {
+  const snapshot = activeDiagnosticsSnapshot(entry);
+  if (!snapshot) return undefined;
+  return {
+    uri: `editor://session/${entry.sessionId}/rev/${entry.draftRevision}/diagnostics`,
+    mimeType: "application/json",
+    text: JSON.stringify({
+      schema: "deep-monkey.editor-diagnostics.v1",
+      sessionId: entry.sessionId,
+      projectId: entry.projectId,
+      sceneId: snapshot.sceneId,
+      persistedRevision: entry.persistedRevision,
+      activeDraftRevision: entry.draftRevision,
+      capturedAtMs: snapshot.capturedAtMs,
+      note: "字节留在浏览器 readback 存储；本资源仅提供有界元数据目录。",
+      resources: snapshot.resources,
+    }),
+  };
+}
