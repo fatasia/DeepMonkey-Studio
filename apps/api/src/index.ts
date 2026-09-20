@@ -43,6 +43,7 @@ import { EditorSceneTransactionBridge, registerEditorSceneDriverRoutes } from ".
 import { createAssistantService } from "./ai/assistantService.js";
 import { createMetadataAiAuditSink } from "./ai/metadataAiAuditSink.js";
 import { resolveAiSettings } from "./ai/aiRuntimeSettings.js";
+import { createAiTelemetryRing } from "./ai/aiRequestTelemetry.js";
 import { createIndustrialAgentRuntime } from "./ai/industrialAgentRuntime.js";
 import { registerIndustrialAgentRoutes } from "./ai/industrialAgentRoutes.js";
 import { registerAiSampleRoutes } from "./ai/aiSampleRoutes.js";
@@ -83,6 +84,8 @@ export async function buildApp() {
   await conversionTasks.initialize();
   const dataQuerySource = createDataQuerySource(store, config);
   const aiAudit = createMetadataAiAuditSink(store);
+  // AI 请求观测环形缓冲：助手与工业 Agent 决策共用，供设置中心查看最近请求与 failover 事件。
+  const aiTelemetry = createAiTelemetryRing();
   const maintenanceScheduler = new MaintenanceInferenceScheduler({
     store,
     operations,
@@ -100,6 +103,7 @@ export async function buildApp() {
     registry: industrialCapabilities.registry,
     settings: () => resolveAiSettings(store),
     dataSource: dataQuerySource,
+    telemetry: aiTelemetry.sink,
     projectContext: (projectId) => {
       const operationsSnapshot = operations.snapshotForApi(projectId);
       return {
@@ -168,7 +172,9 @@ export async function buildApp() {
   await registerSystemRoutes(app, store, config.dataDir, {
     assistant: createAssistantService(industrialCapabilities.registry, {
       audit: aiAudit,
+      telemetry: aiTelemetry.sink,
     }),
+    aiTelemetry,
   });
   await registerEditorPresenceRoutes(app, editorPresence);
   const editorSceneTransactions = new EditorSceneTransactionBridge(editorPresence, store);

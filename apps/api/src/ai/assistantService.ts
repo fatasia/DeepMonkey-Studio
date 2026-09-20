@@ -1,15 +1,29 @@
 import { randomUUID } from "node:crypto";
-import type { AiAssistantResponse, AiProviderSettings } from "@bim-studio/contracts";
-import type { AiProviderRequest, PluginRegistry } from "@bim-studio/plugin-runtime";
+import type { AiAssistantResponse, AiFailureCategory, AiProviderSettings } from "@bim-studio/contracts";
+import type { AiProviderCompletion, AiProviderRequest, AiProviderStreamEvent, PluginRegistry } from "@bim-studio/plugin-runtime";
 import { auditFingerprint, createAiAuditEvent, emitAiAudit, safeErrorMessage, type AiReliabilityAuditSink } from "./aiReliabilityAudit.js";
 import { prepareAiInput, reliabilitySystemBoundary, type AiReliabilityAssessment } from "./aiReliabilityPolicy.js";
 import { assistantOutputLimit, assistantPrompts, parseAssistantContent, type AssistantMode } from "./assistantPrompts.js";
+import { attemptWithFailover, classifyAiProviderError, resolveFailoverTarget, type AiFailoverTarget } from "./aiFailoverPolicy.js";
+import { newTelemetryRecord, type AiTelemetrySink } from "./aiRequestTelemetry.js";
 
 export type AssistantStreamEvent =
   | { type: "delta"; delta: string }
   | { type: "done"; result: AiAssistantResponse };
 
-export type AiRuntimeSettings = Omit<AiProviderSettings, "apiKeyConfigured" | "apiKey"> & { apiKey: string };
+export interface AiRuntimeFailoverSettings {
+  enabled: boolean;
+  providerId: string;
+  baseUrl: string;
+  model: string;
+  protocol: "auto" | "responses" | "chat-completions";
+  apiKey: string;
+}
+
+export type AiRuntimeSettings = Omit<AiProviderSettings, "apiKeyConfigured" | "apiKey" | "failover"> & {
+  apiKey: string;
+  failover?: AiRuntimeFailoverSettings;
+};
 
 export interface AssistantRequest {
   mode: AssistantMode;
@@ -28,6 +42,7 @@ export interface AssistantService {
 
 export interface AssistantServiceOptions {
   audit?: AiReliabilityAuditSink;
+  telemetry?: AiTelemetrySink;
   now?: () => Date;
 }
 
@@ -43,40 +58,157 @@ export class AiReliabilityBlockedError extends Error {
 /**
  * 助手只负责编排提示词和插件能力目录；具体模型协议由 AI Provider 插件实现，
  * 领域事实仍由 Capability 执行，不能把 LLM 文本当作确定性结果。
+ * 主模型请求失败且属于可切换错误（额度/限流/服务端/超时/网络）时，
+ * 用备用模型配置重试一次；主路径成功时零额外开销、无额外请求。
  */
 export function createAssistantService(registry: PluginRegistry, options: AssistantServiceOptions = {}): AssistantService {
   return {
     async complete(request) {
+      const startedAt = Date.now();
       const prepared = await prepareRequest(registry, request, options);
+      let attempt: FailoverAttemptInfo = { servedBy: "primary" };
       try {
-        const completion = await registry.invokeAiProvider(request.settings.providerId, prepared.providerRequest);
-        const result = withReliability(parseAssistantContent(request.mode, completion.text, completion.model), prepared);
-        await emitAiAudit(options.audit, completionEvent(prepared, request, "completed", options));
-        return result;
+        const result = await attemptWithFailover({
+          failover: failoverTarget(request.settings),
+          ...(request.signal ? { signal: request.signal } : {}),
+          primary: () => registry.invokeAiProvider(request.settings.providerId, prepared.providerRequest),
+          fallback: (target) => registry.invokeAiProvider(request.settings.providerId, fallbackProviderRequest(prepared.providerRequest, target)),
+        });
+        attempt = { servedBy: result.servedBy, ...(result.failover ? { failover: result.failover } : {}) };
+        const completion = result.result;
+        const response = withReliability(parseAssistantContent(request.mode, completion.text, completion.model), prepared, attempt);
+        await emitAiAudit(options.audit, completionEvent(prepared, request, "completed", options, attempt));
+        recordTelemetry(options, request, attempt, "completed", Date.now() - startedAt, completion);
+        return response;
       } catch (error) {
-        await emitAiAudit(options.audit, completionEvent(prepared, request, request.signal?.aborted ? "cancelled" : "failed", options, error));
+        const cancelled = Boolean(request.signal?.aborted);
+        await emitAiAudit(options.audit, completionEvent(prepared, request, cancelled ? "cancelled" : "failed", options, attempt, error));
+        recordTelemetry(options, request, attempt, cancelled ? "cancelled" : "failed", Date.now() - startedAt, undefined, error);
         throw error;
       }
     },
     async *stream(request) {
+      const startedAt = Date.now();
       const prepared = await prepareRequest(registry, request, options);
       let content = "";
+      let usage: AiProviderCompletion["usage"] | undefined;
+      let attempt: FailoverAttemptInfo = { servedBy: "primary" };
       try {
-        for await (const event of registry.streamAiProvider(request.settings.providerId, prepared.providerRequest)) {
-          if (event.type !== "delta") continue;
-          content += event.delta;
-          yield { type: "delta", delta: event.delta };
+        for await (const [event, served] of streamOnce(registry, prepared.providerRequest, request)) {
+          if (event.type === "delta") {
+            content += event.delta;
+            yield { type: "delta", delta: event.delta };
+          } else {
+            usage = {
+              ...(event.inputTokens !== undefined ? { inputTokens: event.inputTokens } : {}),
+              ...(event.outputTokens !== undefined ? { outputTokens: event.outputTokens } : {}),
+            };
+          }
+          attempt = served;
         }
         if (!content.trim()) throw new Error("大模型没有返回内容");
-        const result = withReliability(parseAssistantContent(request.mode, content, request.settings.model), prepared);
-        await emitAiAudit(options.audit, completionEvent(prepared, request, "completed", options));
-        yield { type: "done", result };
+        const response = withReliability(
+          parseAssistantContent(request.mode, content, servedModelName(request, attempt)),
+          prepared,
+          attempt,
+        );
+        await emitAiAudit(options.audit, completionEvent(prepared, request, "completed", options, attempt));
+        recordTelemetry(options, request, attempt, "completed", Date.now() - startedAt, { model: servedModelName(request, attempt), usage }, undefined, request.mode);
+        yield { type: "done", result: response };
       } catch (error) {
-        await emitAiAudit(options.audit, completionEvent(prepared, request, request.signal?.aborted ? "cancelled" : "failed", options, error));
+        await emitAiAudit(options.audit, completionEvent(prepared, request, request.signal?.aborted ? "cancelled" : "failed", options, attempt, error));
+        recordTelemetry(options, request, attempt, request.signal?.aborted ? "cancelled" : "failed", Date.now() - startedAt, undefined, error, request.mode);
         throw error;
       }
     }
   };
+}
+
+type FailoverAttemptInfo = { servedBy: "primary" | "fallback"; failover?: { category: string; reason: string } };
+
+/**
+ * 流式生成器：首个增量发出之前失败且属于可切换错误时，整体改用备用配置重新流出；
+ * 已经有增量输出后的失败原样抛出（客户端保留已收内容与精确原因），绝不重复拼接内容。
+ */
+async function* streamOnce(
+  registry: PluginRegistry,
+  providerRequest: AiProviderRequest,
+  request: AssistantRequest,
+): AsyncGenerator<[AiProviderStreamEvent, FailoverAttemptInfo]> {
+  let yieldedDelta = false;
+  let primaryError: ReturnType<typeof classifyAiProviderError> | undefined;
+  try {
+    for await (const event of registry.streamAiProvider(request.settings.providerId, providerRequest)) {
+      yieldedDelta = yieldedDelta || event.type === "delta";
+      yield [event, { servedBy: "primary" }];
+    }
+    return;
+  } catch (error) {
+    if (yieldedDelta || request.signal?.aborted) throw error;
+    primaryError = classifyAiProviderError(error);
+    if (!primaryError.failoverEligible || !resolveFailoverTarget(failoverTarget(request.settings))) throw error;
+  }
+  const target = resolveFailoverTarget(failoverTarget(request.settings))!;
+  try {
+    for await (const event of registry.streamAiProvider(request.settings.providerId, fallbackProviderRequest(providerRequest, target))) {
+      yield [event, { servedBy: "fallback", failover: { category: primaryError!.category, reason: primaryError!.message } }];
+    }
+  } catch (fallbackError) {
+    if (request.signal?.aborted) throw fallbackError;
+    throw new Error(`主模型与备用模型均失败：主模型（${primaryError!.category}）${primaryError!.message}；备用模型${safeErrorMessage(fallbackError)}`);
+  }
+}
+
+function servedModelName(request: AssistantRequest, attempt: FailoverAttemptInfo): string {
+  if (attempt.servedBy !== "fallback") return request.settings.model;
+  return request.settings.failover?.model || request.settings.model;
+}
+
+function fallbackProviderRequest(providerRequest: AiProviderRequest, target: AiFailoverTarget): AiProviderRequest {
+  return {
+    ...providerRequest,
+    model: target.model,
+    config: { ...providerRequest.config, baseUrl: target.baseUrl, apiKey: target.apiKey, protocol: target.protocol },
+  };
+}
+
+function failoverTarget(settings: AiRuntimeSettings): AiFailoverTarget | undefined {
+  const failover = settings.failover;
+  if (!failover) return undefined;
+  return {
+    enabled: failover.enabled,
+    baseUrl: failover.baseUrl,
+    apiKey: failover.apiKey,
+    model: failover.model,
+    protocol: failover.protocol,
+  };
+}
+
+function recordTelemetry(
+  options: AssistantServiceOptions,
+  request: AssistantRequest,
+  attempt: FailoverAttemptInfo,
+  status: "completed" | "failed" | "cancelled",
+  latencyMs: number,
+  completion?: { model?: string; usage?: AiProviderCompletion["usage"] },
+  error?: unknown,
+  mode?: AssistantMode,
+): void {
+  if (!options.telemetry) return;
+  const classification = status === "completed" ? undefined : classifyAiProviderError(error);
+  options.telemetry(newTelemetryRecord({
+    occurredAt: (options.now?.() ?? new Date()).toISOString(),
+    source: "assistant",
+    ...(mode ? { mode } : {}),
+    providerId: request.settings.providerId,
+    model: completion?.model ?? servedModelName(request, attempt),
+    servedBy: attempt.servedBy,
+    status,
+    latencyMs,
+    ...(completion?.usage?.inputTokens !== undefined ? { inputTokens: completion.usage.inputTokens } : {}),
+    ...(completion?.usage?.outputTokens !== undefined ? { outputTokens: completion.usage.outputTokens } : {}),
+    ...(classification ? { errorCategory: classification.category satisfies AiFailureCategory, errorMessage: classification.message } : {}),
+  }));
 }
 
 interface PreparedAssistantRequest {
@@ -112,20 +244,28 @@ async function prepareRequest(registry: PluginRegistry, request: AssistantReques
     config: {
       baseUrl: request.settings.baseUrl,
       apiKey: request.settings.apiKey,
-      protocol: request.settings.protocol
+      protocol: request.settings.protocol,
+      ...(request.settings.reasoningEffort ? { reasoningEffort: request.settings.reasoningEffort } : {})
     },
     ...(request.signal ? { signal: request.signal } : {})
   };
   return { traceId, providerRequest, assessment: prepared.assessment, contextFingerprint };
 }
 
-function withReliability(result: AiAssistantResponse, prepared: PreparedAssistantRequest): AiAssistantResponse {
+function withReliability(
+  result: AiAssistantResponse,
+  prepared: PreparedAssistantRequest,
+  attempt: FailoverAttemptInfo = { servedBy: "primary" },
+): AiAssistantResponse {
   const suspicious = prepared.assessment.findings.length > 0;
   const warnings = [
     "上下文来自客户端快照，未经服务端 Capability 证据验证",
     "助手不会自动执行写入或控制类操作",
     ...(suspicious ? [`可靠性策略检测到 ${prepared.assessment.findings.length} 个可疑输入特征，已约束或隔离`] : []),
     ...(prepared.assessment.quarantinedSourceIds.length ? [`已隔离 ${prepared.assessment.quarantinedSourceIds.length} 个高风险上下文片段`] : []),
+    ...(attempt.servedBy === "fallback" && attempt.failover
+      ? [`主模型不可用（${failoverCategoryLabel(attempt.failover.category)}），本次回答由备用模型提供`, `切换原因：${attempt.failover.reason}`]
+      : []),
   ];
   return {
     ...result,
@@ -138,8 +278,14 @@ function withReliability(result: AiAssistantResponse, prepared: PreparedAssistan
       evidenceCount: 0,
       warnings,
       writePolicy: "read-only",
+      servedProvider: attempt.servedBy,
+      ...(attempt.servedBy === "fallback" && attempt.failover ? { failoverReason: `${attempt.failover.category}: ${attempt.failover.reason}` } : {}),
     },
   };
+}
+
+function failoverCategoryLabel(category: string): string {
+  return ({ auth: "鉴权失败", quota: "额度不足", "rate-limit": "请求限流", server: "服务端错误", timeout: "请求超时", network: "网络错误", policy: "内容策略", invalid: "请求无效", cancelled: "已取消", unknown: "未知错误" } as Record<string, string>)[category] ?? category;
 }
 
 function inputRisk(assessment: AiReliabilityAssessment): "low" | "medium" | "high" {
@@ -147,10 +293,20 @@ function inputRisk(assessment: AiReliabilityAssessment): "low" | "medium" | "hig
   return assessment.findings.length ? "medium" : "low";
 }
 
-function completionEvent(prepared: PreparedAssistantRequest, request: AssistantRequest, outcome: "completed" | "failed" | "cancelled", options: AssistantServiceOptions, error?: unknown) {
+function completionEvent(
+  prepared: PreparedAssistantRequest,
+  request: AssistantRequest,
+  outcome: "completed" | "failed" | "cancelled",
+  options: AssistantServiceOptions,
+  attempt: FailoverAttemptInfo,
+  error?: unknown,
+) {
+  const fallbackServed = attempt.servedBy === "fallback";
   return createAiAuditEvent({
-    traceId: prepared.traceId, stage: "model-completion", outcome, principal: request.principal, ...(request.projectId ? { projectId: request.projectId } : {}),
-    providerId: request.settings.providerId, model: request.settings.model, assessment: prepared.assessment, ...(options.now ? { now: options.now } : {}),
+    traceId: prepared.traceId, stage: "model-completion", outcome: fallbackServed && outcome === "completed" ? "degraded" : outcome,
+    principal: request.principal, ...(request.projectId ? { projectId: request.projectId } : {}),
+    providerId: fallbackServed ? `${request.settings.providerId}#fallback` : request.settings.providerId,
+    model: servedModelName(request, attempt), assessment: prepared.assessment, ...(options.now ? { now: options.now } : {}),
     ...(error ? { failure: { code: outcome, message: safeErrorMessage(error), retryable: outcome === "failed" } } : {}),
   });
 }

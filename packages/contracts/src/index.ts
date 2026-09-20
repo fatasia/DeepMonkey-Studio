@@ -78,12 +78,38 @@ export interface AiProviderSettings {
   apiKeyConfigured: boolean;
   apiKey?: string;
   temperature: number;
+  /** 思考深度；未配置时保持历史默认行为。仅 OpenAI 兼容 provider 支持。 */
+  reasoningEffort?: "minimal" | "standard" | "deep";
   updatedAt?: string;
+  /** 备用模型自动切换档；主模型出现额度/限流/服务端/超时/网络类错误时重试一次。 */
+  failover?: AiFailoverSettings;
   /** 3D 生成厂商配置档；仅保存配置，不代表厂商适配器已注册或连接已验证。 */
   modeling3d?: {
     tripo3d: AiModelProviderSettings;
     tencentHunyuan: AiModelProviderSettings;
   };
+}
+
+export type AiModelCatalogFailure = {
+  ok: false;
+  category: "auth" | "network" | "unsupported" | "server" | "invalid";
+  message: string;
+};
+
+export type AiModelCatalogResult =
+  | { ok: true; models: string[]; cachedAt?: string }
+  | AiModelCatalogFailure;
+
+export interface AiFailoverSettings {
+  enabled: boolean;
+  /** 信息性字段；持久层可省略，运行时由 AI_FALLBACK_PROVIDER_ID 或主配置推导。 */
+  providerId?: string;
+  baseUrl: string;
+  model: string;
+  /** 可省略；省略时跟随主配置协议。 */
+  protocol?: "auto" | "responses" | "chat-completions";
+  apiKeyConfigured?: boolean;
+  apiKey?: string;
 }
 
 export interface AiModelProviderSettings {
@@ -175,6 +201,38 @@ export interface AiAssistantReliability {
   evidenceCount: number;
   warnings: string[];
   writePolicy: AiAssistantWritePolicy;
+  /** 本次响应实际由哪个配置提供服务；缺省视为 primary，兼容旧响应。 */
+  servedProvider?: "primary" | "fallback";
+  /** 主模型切换到备用模型的原因分类（额度、限流、服务端、超时、网络）。 */
+  failoverReason?: string;
+}
+
+export type AiTelemetrySource = "assistant" | "agent-decision";
+
+export type AiFailureCategory = "auth" | "quota" | "rate-limit" | "server" | "timeout" | "network" | "policy" | "invalid" | "cancelled" | "unknown";
+
+export interface AiRequestTelemetryRecord {
+  id: string;
+  occurredAt: string;
+  source: AiTelemetrySource;
+  mode?: string;
+  providerId: string;
+  model: string;
+  servedBy: "primary" | "fallback";
+  status: "completed" | "failed" | "cancelled";
+  latencyMs: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  errorCategory?: AiFailureCategory;
+  errorMessage?: string;
+}
+
+export interface AiTelemetrySummary {
+  generatedAt: string;
+  limit: number;
+  records: AiRequestTelemetryRecord[];
+  lastFailover?: AiRequestTelemetryRecord;
+  totals: { completed: number; failed: number; cancelled: number; fallbackServed: number };
 }
 
 export interface SystemBrandingSettings {

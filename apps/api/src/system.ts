@@ -18,6 +18,8 @@ import { AiReliabilityBlockedError, type AssistantService } from "./ai/assistant
 import { streamAssistantHttp } from "./ai/streamAssistantHttp.js";
 import { httpDisconnectScope } from "./httpDisconnectScope.js";
 import { mergeAiSettingsDraft, publicAiSettings, resolveAiSettings } from "./ai/aiRuntimeSettings.js";
+import { fetchProviderModels } from "./ai/aiModelCatalog.js";
+import { emptyTelemetrySummary, type AiTelemetryRing } from "./ai/aiRequestTelemetry.js";
 import {
   collectServiceHealth,
   createDiagnosticArchive,
@@ -57,7 +59,12 @@ interface ServiceLogQuery {
   limit?: string;
 }
 
-export async function registerSystemRoutes(app: FastifyInstance, store: MetadataStore, dataDir: string, dependencies: { assistant?: AssistantService } = {}): Promise<void> {
+export async function registerSystemRoutes(
+  app: FastifyInstance,
+  store: MetadataStore,
+  dataDir: string,
+  dependencies: { assistant?: AssistantService; aiTelemetry?: AiTelemetryRing } = {},
+): Promise<void> {
   const brandingDirectory = path.join(dataDir, "branding");
   if (store.listUsers().length === 0) {
     const now = new Date().toISOString();
@@ -94,7 +101,8 @@ export async function registerSystemRoutes(app: FastifyInstance, store: Metadata
     const projectId = pathname.match(/^\/api\/projects\/([^/]+)/)?.[1];
     if (projectId && stored.role !== "admin" && !stored.projectIds.includes(decodeURIComponent(projectId))) return reply.code(403).send({ message: "没有该项目的访问权限" });
     const aiReadAction =
-      pathname === "/api/ai/assistant" || pathname === "/api/ai/assistant/stream" || pathname === "/api/mcp" || /^\/api\/projects\/[^/]+\/capabilities\/invoke$/.test(pathname);
+      pathname === "/api/ai/assistant" || pathname === "/api/ai/assistant/stream" || pathname === "/api/mcp"
+      || pathname.startsWith("/api/editor-presence/") || /^\/api\/projects\/[^/]+\/capabilities\/invoke$/.test(pathname);
     if (stored.role === "viewer" && !["GET", "HEAD"].includes(request.method) && !aiReadAction) return reply.code(403).send({ message: "浏览者不能修改数据" });
   });
 
@@ -269,12 +277,30 @@ export async function registerSystemRoutes(app: FastifyInstance, store: Metadata
       const assistant = requireAssistant(dependencies.assistant);
       const settings = mergeAiSettingsDraft(resolveAiSettings(store), request.body ?? {});
       const result = await assistant.complete({ mode: "scene", question: "只回复：连接成功", context: {}, settings, principal: "admin-test" });
-      return { ok: true, model: result.model };
+      return { ok: true, model: result.model, ...(result.reliability?.servedProvider ? { servedProvider: result.reliability.servedProvider } : {}) };
     } catch (reason) {
       if (reason instanceof AiReliabilityBlockedError) return reply.code(403).send(aiBlockedPayload(reason));
       return reply.code(502).send({ message: reason instanceof Error ? reason.message : String(reason) });
     }
   });
+
+  /** 拉取模型服务可用模型列表；请求体可携带未保存草案（同测试连接），refresh=true 绕过 5 分钟缓存。 */
+  app.post<{ Body: Partial<AiProviderSettings> & { refresh?: boolean } }>("/api/admin/ai-settings/models", async (request, reply) => {
+    const draft = request.body ?? {};
+    try {
+      const settings = mergeAiSettingsDraft(resolveAiSettings(store), draft);
+      const result = await fetchProviderModels({ baseUrl: settings.baseUrl, apiKey: settings.apiKey, ...(draft.refresh ? { refresh: true } : {}) });
+      return result.ok ? result : reply.code(200).send(result);
+    } catch (reason) {
+      return reply.code(400).send({ ok: false, category: "invalid", message: reason instanceof Error ? reason.message : String(reason) });
+    }
+  });
+
+  /** AI 请求观测快照：最近 N 条 provider/模型/延迟/token/状态记录与最近一次 failover 事件。 */
+  app.get("/api/admin/ai-settings/telemetry", async () => ({
+    settings: publicAiSettings(resolveAiSettings(store)),
+    telemetry: dependencies.aiTelemetry ? dependencies.aiTelemetry.summary() : emptyTelemetrySummary(new Date().toISOString()),
+  }));
 
   app.post<{ Body: AssistantRouteBody }>("/api/ai/assistant", async (request, reply) => {
     const question = request.body?.question?.trim();

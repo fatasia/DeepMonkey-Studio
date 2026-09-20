@@ -2,7 +2,9 @@ import type {
   AiDataBinding,
   AiDataBindingRunRecord,
   AiAssistantResponse,
+  AiModelCatalogResult,
   AiProviderSettings,
+  AiTelemetrySummary,
   ApplicationDocument,
   ApplicationScriptDependency,
   AuditLogRecord,
@@ -47,10 +49,11 @@ import {
 import { runtimeHost } from "./adapters/runtimeHost.js";
 import { networkStatusMonitor } from "./appStatus/networkStatusMonitor";
 import { createScenePublicationDependencyApi } from "./apiClients/scenePublicationDependencyApi.js";
-import type { DashboardCandidateDownloadFormat, DashboardCandidatePrepared, DashboardPublicationPointer } from "./components/dashboardOfflinePackageState";
+import { createDashboardPublicationApi } from "./apiClients/dashboardPublicationApi.js";
 import { desktopLocalApiFetch, setDesktopLocalExternalModuleFetch } from "./adapters/desktopLocalApi.js";
 import { isLocalDesktopMode } from "./adapters/desktopRuntimeMode.js";
 import { createIndustrialApi } from "./apiClients/industrialApi.js";
+import { createMcpApi } from "./apiClients/mcpApi.js";
 import { createPprBopApi } from "./apiClients/pprBopApi.js";
 import { createModelSceneApi } from "./apiClients/modelSceneApi.js";
 import { createVisionApi } from "./apiClients/visionApi.js";
@@ -143,6 +146,10 @@ export function setAuthToken(token?: string, remember = true) {
   else runtimeHost.clearAccessToken();
 }
 
+export function getMcpEndpoint(): string {
+  return new URL("/api/mcp", runtimeHost.getServerProfile().baseUrl).toString();
+}
+
 export function openDirectBindingWebSocket(): WebSocket {
   const url = new URL(
     "/api/direct-bindings/ws",
@@ -156,8 +163,6 @@ export function openDirectBindingWebSocket(): WebSocket {
 export const request = <T>(url: string, init?: RequestInit) =>
   serverClient.request<T>(url, init);
 
-const dashboardCandidateEndpoint = (format: DashboardCandidateDownloadFormat) =>
-  format === "exe" ? "standalone-executable" : format === "zip" ? "portable-zip" : "offline-archive";
 
 export interface UnityUploadProgress {
   phase: "uploading" | "processing";
@@ -367,31 +372,8 @@ export const api = {
   unpublishApplication: (projectId: string, applicationId: string) =>
     serverClient.unpublishApplication(projectId, applicationId),
   ...createScenePublicationDependencyApi(request, (url, init) => serverClient.open(url, init)),
-  readActivePublication: (applicationId: string) =>
-    request<DashboardPublicationPointer>(`/api/public/applications/${encodeURIComponent(applicationId)}`),
-  prepareDashboardCandidate: (
-    projectId: string,
-    applicationId: string,
-    authority: { publicationId: string; applicationRevision: number; entryPageId: string },
-    signal?: AbortSignal,
-  ) =>
-    request<DashboardCandidatePrepared>(
-      `/api/projects/${encodeURIComponent(projectId)}/applications/${encodeURIComponent(applicationId)}/dashboard-candidates`,
-      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(authority),
-        ...(signal ? { signal } : {}) },
-    ),
-  openDashboardCandidateDownload: (
-    projectId: string,
-    applicationId: string,
-    candidateId: string,
-    format: DashboardCandidateDownloadFormat,
-    signal?: AbortSignal,
-  ) =>
-    serverClient.open(
-      `/api/projects/${encodeURIComponent(projectId)}/applications/${encodeURIComponent(applicationId)}`
-        + `/dashboard-candidates/${encodeURIComponent(candidateId)}/${dashboardCandidateEndpoint(format)}`,
-      { ...(signal ? { signal } : {}) },
-    ),
+  ...createDashboardPublicationApi(request, (url, init) => serverClient.open(url, init)),
+  ...createMcpApi(request, getMcpEndpoint, () => Boolean(getAuthToken())),
   installNpmScriptDependency: (projectId: string, packageName: string, version: string, specifier?: string) =>
     request<ApplicationScriptDependency>(`/api/projects/${encodeURIComponent(projectId)}/script-dependencies/npm`, {
       method: "POST",
@@ -556,6 +538,14 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(settings),
     }),
+  fetchAiModels: (settings: Partial<AiProviderSettings> & { refresh?: boolean } = {}) =>
+    request<AiModelCatalogResult>("/api/admin/ai-settings/models", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(settings),
+    }),
+  getAiTelemetry: () =>
+    request<{ settings: AiProviderSettings; telemetry: AiTelemetrySummary }>("/api/admin/ai-settings/telemetry"),
   testAiSettings: (settings: Partial<AiProviderSettings> = {}) =>
     request<{ ok: boolean; model: string }>("/api/admin/ai-settings/test", {
       method: "POST",

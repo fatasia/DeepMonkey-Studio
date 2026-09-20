@@ -1,4 +1,5 @@
 import { AgentDecisionUnavailableError, type AgentDecisionProvider } from "@bim-studio/industrial-agent-orchestrator";
+import type { AiFailureCategory } from "@bim-studio/contracts";
 import type { PluginRegistry } from "@bim-studio/plugin-runtime";
 import type { DataQuerySource } from "@bim-studio/data-query-plugin";
 import type { AiRuntimeSettings } from "./assistantService.js";
@@ -7,6 +8,9 @@ import { prepareAiInput, reliabilitySystemBoundary } from "./aiReliabilityPolicy
 import { industrialAgentDatasetCatalog } from "./industrialAgentDatasetCatalog.js";
 import { AiProviderHttpError } from "./openAiCompatibleProvider.js";
 import { selectedAgentDatasets, validateAgentDatasetSelection } from "./industrialAgentSelection.js";
+import { attemptWithFailover, type AiFailoverTarget } from "./aiFailoverPolicy.js";
+import { newTelemetryRecord, type AiTelemetrySink } from "./aiRequestTelemetry.js";
+import { compressAgentContext } from "./agentContextBudget.js";
 
 const DECISION_INSTRUCTIONS = `你是工业 AI Agent 的受控决策器。你只能返回一个 JSON 对象，不得返回 Markdown。
 允许的决策：
@@ -27,9 +31,11 @@ export function createIndustrialAgentDecisionProvider(input: {
   dataSource: Pick<DataQuerySource, "listDatasets">;
   projectContext?: (projectId: string) => unknown | Promise<unknown>;
   audit?: AiReliabilityAuditSink;
+  telemetry?: AiTelemetrySink;
 }): AgentDecisionProvider {
   return {
     async decide(request) {
+      const startedAt = Date.now();
       const settings = input.settings();
       if (!settings.apiKey) throw new Error("尚未配置大模型 API Key，工业 Agent 无法生成下一步决策");
       const traceId = `${request.checkpoint.id}:decision:${request.checkpoint.usage.steps + 1}`;
@@ -53,40 +59,99 @@ export function createIndustrialAgentDecisionProvider(input: {
         assessment: prepared.assessment,
       }));
       if (prepared.assessment.decision === "block") throw new Error("工业 Agent 输入触发高风险注入或审批绕过规则");
+      const providerRequest = {
+        requestId: traceId,
+        projectId: request.checkpoint.projectId,
+        principal: request.checkpoint.principal,
+        model: settings.model,
+        instructions: `${DECISION_INSTRUCTIONS}\n${reliabilitySystemBoundary(prepared.assessment)}`,
+        input: JSON.stringify({ objective: prepared.question, context: prepared.context }),
+        temperature: Math.min(0.2, settings.temperature),
+        maxOutputTokens: 1_800,
+        config: {
+          baseUrl: settings.baseUrl,
+          apiKey: settings.apiKey,
+          protocol: settings.protocol,
+          ...(settings.reasoningEffort ? { reasoningEffort: settings.reasoningEffort } : {}),
+        },
+        signal: request.signal,
+      };
       try {
-        const completion = await input.registry.invokeAiProvider(settings.providerId, {
-          requestId: traceId,
-          projectId: request.checkpoint.projectId,
-          principal: request.checkpoint.principal,
-          model: settings.model,
-          instructions: `${DECISION_INSTRUCTIONS}\n${reliabilitySystemBoundary(prepared.assessment)}`,
-          input: JSON.stringify({ objective: prepared.question, context: prepared.context }),
-          temperature: Math.min(0.2, settings.temperature),
-          maxOutputTokens: 1_800,
-          config: { baseUrl: settings.baseUrl, apiKey: settings.apiKey, protocol: settings.protocol },
+        const attempt = await attemptWithFailover({
+          failover: failoverTarget(settings),
           signal: request.signal,
+          primary: () => input.registry.invokeAiProvider(settings.providerId, providerRequest),
+          fallback: (target) => input.registry.invokeAiProvider(settings.providerId, {
+            ...providerRequest,
+            model: target.model,
+            config: { ...providerRequest.config, baseUrl: target.baseUrl, apiKey: target.apiKey, protocol: target.protocol },
+          }),
         });
+        const completion = attempt.result;
         const decision = validateAgentDatasetSelection(parseJsonDecision(completion.text), catalog);
         await emitAiAudit(input.audit, createAiAuditEvent({
-          traceId, stage: "model-completion", outcome: "completed", principal: request.checkpoint.principal,
-          projectId: request.checkpoint.projectId, providerId: settings.providerId, model: completion.model, assessment: prepared.assessment,
+          traceId, stage: "model-completion", outcome: attempt.servedBy === "fallback" ? "degraded" : "completed",
+          principal: request.checkpoint.principal,
+          projectId: request.checkpoint.projectId,
+          providerId: attempt.servedBy === "fallback" ? `${settings.providerId}#fallback` : settings.providerId,
+          model: completion.model, assessment: prepared.assessment,
+        }));
+        input.telemetry?.(newTelemetryRecord({
+          occurredAt: new Date().toISOString(),
+          source: "agent-decision",
+          providerId: settings.providerId,
+          model: completion.model || settings.model,
+          servedBy: attempt.servedBy,
+          status: "completed",
+          latencyMs: Date.now() - startedAt,
+          ...(completion.usage?.inputTokens !== undefined ? { inputTokens: completion.usage.inputTokens } : {}),
+          ...(completion.usage?.outputTokens !== undefined ? { outputTokens: completion.usage.outputTokens } : {}),
         }));
         return decision;
       } catch (error) {
-        const retryable = !request.signal.aborted && error instanceof AiProviderHttpError && [429, 502, 503, 504].includes(error.status);
+        const cancelled = request.signal.aborted;
+        const eligible = !cancelled && error instanceof AiProviderHttpError && [402, 408, 429, 500, 502, 503, 504].includes(error.status);
+        const retryable = eligible || /^主模型与备用模型均失败/.test(error instanceof Error ? error.message : String(error));
         await emitAiAudit(input.audit, createAiAuditEvent({
-          traceId, stage: "model-completion", outcome: request.signal.aborted ? "cancelled" : "failed", principal: request.checkpoint.principal,
+          traceId, stage: "model-completion", outcome: cancelled ? "cancelled" : "failed", principal: request.checkpoint.principal,
           projectId: request.checkpoint.projectId, providerId: settings.providerId, model: settings.model, assessment: prepared.assessment,
-          failure: { code: request.signal.aborted ? "cancelled" : retryable ? "decision-provider-unavailable" : "invalid-decision", message: safeErrorMessage(error), retryable },
+          failure: { code: cancelled ? "cancelled" : retryable ? "decision-provider-unavailable" : "invalid-decision", message: safeErrorMessage(error), retryable },
         }));
-        throw retryable ? new AgentDecisionUnavailableError(safeErrorMessage(error)) : error;
+        input.telemetry?.(newTelemetryRecord({
+          occurredAt: new Date().toISOString(),
+          source: "agent-decision",
+          providerId: settings.providerId,
+          model: settings.model,
+          servedBy: "primary",
+          status: cancelled ? "cancelled" : "failed",
+          latencyMs: Date.now() - startedAt,
+          ...(cancelled ? {} : { errorCategory: errorCategoryOf(error), errorMessage: safeErrorMessage(error) }),
+        }));
+        throw retryable && !cancelled ? new AgentDecisionUnavailableError(safeErrorMessage(error)) : error;
       }
     },
   };
 }
 
+function failoverTarget(settings: AiRuntimeSettings): AiFailoverTarget | undefined {
+  const failover = settings.failover;
+  if (!failover) return undefined;
+  return { enabled: failover.enabled, baseUrl: failover.baseUrl, apiKey: failover.apiKey, model: failover.model, protocol: failover.protocol };
+}
+
+function errorCategoryOf(error: unknown): AiFailureCategory {
+  if (!(error instanceof AiProviderHttpError)) return "unknown";
+  if (error.status === 401 || error.status === 403) return "auth";
+  if (error.status === 402) return "quota";
+  if (error.status === 429) return "rate-limit";
+  if (error.status >= 500 || error.status === 408) return "server";
+  return "invalid";
+}
+
 function decisionContext(request: Parameters<AgentDecisionProvider["decide"]>[0], projectContext: unknown) {
   const checkpoint = request.checkpoint;
+  // 上下文预算：超出最近窗口的历史轮次压缩为摘要视图，而不是硬截断丢弃。
+  const compressed = compressAgentContext(checkpoint.decisions, checkpoint.toolRecords);
   return {
     budgetRemaining: {
       steps: checkpoint.budget.maxSteps - checkpoint.usage.steps,
@@ -102,14 +167,11 @@ function decisionContext(request: Parameters<AgentDecisionProvider["decide"]>[0]
       requiresApproval: tool.requiresApproval,
       inputSchema: tool.inputSchema,
     })),
-    priorDecisions: checkpoint.decisions.slice(-8),
-    toolResults: checkpoint.toolRecords.slice(-8).map((record) => ({
-      toolId: record.call.toolId,
-      status: record.outcome.status,
-      output: record.outcome.output,
-      evidence: [...record.outcome.evidence, ...record.outcome.verificationEvidence],
-      error: record.outcome.error,
-    })),
+    priorDecisions: compressed.decisions,
+    toolResults: compressed.toolResults,
+    contextCompression: compressed.compression.applied
+      ? `历史 ${compressed.compression.summarizedToolResults} 轮工具结果与 ${compressed.compression.summarizedDecisions} 轮决策已压缩为摘要；需要细节时不要凭摘要下生产结论`
+      : undefined,
     userContext: checkpoint.context,
     projectEvidenceContext: projectContext ?? { unavailable: true },
   };
