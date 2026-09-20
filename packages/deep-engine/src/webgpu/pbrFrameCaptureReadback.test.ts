@@ -120,7 +120,23 @@ describe("pbr frame readback plan", () => {
 });
 
 describe("pbr frame readback whitelist", () => {
-  it("stays fixed to the two shipped diagnostic resources", () => {
-    expect([...PBR_FRAME_READBACK_RESOURCES]).toEqual(["present-color", "opaque-hdr"]);
+  it("stays fixed to the shipped diagnostic resources", () => {
+    expect([...PBR_FRAME_READBACK_RESOURCES]).toEqual(["present-color", "opaque-hdr", "linear-depth"]);
+  });
+
+  it("snapshots single-channel depth within the shared budget", async () => {
+    const f = fixture();
+    const plan = new PbrFrameReadbackPlan({ requests: [{ resourceId: "linear-depth" }] });
+    plan.beginFrame("depth-1", f.device, f.encoder, {
+      "present-color": undefined, "opaque-hdr": undefined,
+      "linear-depth": texture({ format: "r32float" }),
+    });
+    const results = await plan.collectAfterSubmit();
+    expect(results).toHaveLength(1);
+    expect(isPbrFrameReadbackSnapshot(results[0]!)).toBe(true);
+    if (isPbrFrameReadbackSnapshot(results[0]!)) {
+      expect(results[0]!.format).toBe("r32float");
+      expect(results[0]!.bytesPerRow).toBe(results[0]!.width * 4);
+    }
   });
 });

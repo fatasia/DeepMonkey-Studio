@@ -12,6 +12,7 @@ const EXPORTABLE_FORMATS: Readonly<Record<string, FrameReadbackExportFormat>> = 
   "bgra8unorm-srgb": { label: "BGRA8 sRGB", hdr: false },
   "rgba16float": { label: "RGBA16F", hdr: true },
   "rgba32float": { label: "RGBA32F", hdr: true },
+  "r32float": { label: "R32F depth", hdr: true },
 });
 
 export function frameReadbackExportFormat(result: PbrFrameReadbackSnapshot): FrameReadbackExportFormat | undefined {
@@ -39,8 +40,23 @@ export function frameReadbackPixelsRgba8(result: PbrFrameReadbackSnapshot): Uint
   if (!isPbrFrameReadbackSnapshot(result)) return undefined;
   const format = EXPORTABLE_FORMATS[result.format];
   if (format === undefined) return undefined;
-  const pixels = new Uint8ClampedArray(result.width * result.height * 4);
+  const pixels = new Uint8ClampedArray(new ArrayBuffer(result.width * result.height * 4));
   const view = new DataView(result.bytes.buffer, result.bytes.byteOffset, result.bytes.byteLength);
+  if (result.format === "r32float") {
+    // 线性深度单通道 → 灰度：按本快照最大深度归一（远=亮），诊断读图用，不做任何逆投影。
+    let maxDepth = 0;
+    for (let pixel = 0; pixel < result.width * result.height; pixel++) {
+      const depth = view.getFloat32(pixel * 4, true);
+      if (Number.isFinite(depth) && depth > maxDepth) maxDepth = depth;
+    }
+    for (let pixel = 0; pixel < result.width * result.height; pixel++) {
+      const raw = view.getFloat32(pixel * 4, true);
+      const value = Number.isFinite(raw) ? Math.round(clamp01(raw / Math.max(maxDepth, 1e-9)) * 255) : 0;
+      const out = pixel * 4;
+      pixels[out] = value; pixels[out + 1] = value; pixels[out + 2] = value; pixels[out + 3] = 255;
+    }
+    return pixels;
+  }
   for (let pixel = 0; pixel < result.width * result.height; pixel++) {
     const out = pixel * 4;
     if (format.hdr) {
@@ -63,6 +79,10 @@ export function frameReadbackPixelsRgba8(result: PbrFrameReadbackSnapshot): Uint
     }
   }
   return pixels;
+}
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
 }
 
 export async function frameReadbackPngBlob(result: PbrFrameReadbackSnapshot): Promise<Blob | undefined> {

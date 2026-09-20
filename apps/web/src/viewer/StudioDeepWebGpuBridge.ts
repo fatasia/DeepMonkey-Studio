@@ -145,7 +145,7 @@ export class StudioDeepWebGpuBridge {
               features: { environment: true, groundPlane: false,
               groundGrid: false, screenSpaceReflection: true, toneMapping: "three-aces-r185" },
               ...(frameCaptureSession ? { frameCapture: { session: frameCaptureSession,
-                readbacks: { requests: [{ resourceId: "present-color" as const }] },
+                readbacks: { requests: [{ resourceId: "present-color" as const }, { resourceId: "linear-depth" as const }] },
                 onReadbackResults: createStudioFrameReadbackListener() } } : {}) },
             cameraLayerMask: this.viewer.camera.layers.mask, signal,
           });

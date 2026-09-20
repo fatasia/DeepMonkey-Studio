@@ -3,6 +3,8 @@ import { AMBIENT_OCCLUSION_OUTPUT_FORMAT } from "../postprocess/ambientOcclusion
 import { BLOOM_COLOR_FORMAT } from "../postprocess/bloomTypes.js";
 import { TEMPORAL_AA_COLOR_FORMAT } from "../postprocess/temporalAaTypes.js";
 import { SSR_COMPOSITE_FORMAT, SSR_TRACE_FORMAT } from "../postprocess/screenSpaceReflectionTypes.js";
+import { VOLUMETRIC_FOG_SCATTER_FORMAT } from "../fog/volumetricFogPassTypes.js";
+import { VOLUMETRIC_FOG_COMPOSITE_FORMAT } from "../fog/volumetricFogCompositeTypes.js";
 import { PBR_HDR_FORMAT, PBR_LINEAR_DEPTH_FORMAT, PBR_MAIN_SAMPLE_COUNT,
   PBR_MOTION_FORMAT, PBR_VIEW_NORMAL_FORMAT } from "./renderTargets.js";
 import { surfaceSize, type SurfaceSize } from "./surfaceSize.js";
@@ -31,6 +33,7 @@ export interface PbrFrameResourceContract {
 }
 
 const FULL_COLOR = Object.freeze(["render-attachment", "texture-binding"] as const);
+const FULL_HDR_TRANSIENT = Object.freeze(["render-attachment", "texture-binding", "storage-binding", "copy-src"] as const);
 
 export const PBR_FRAME_RESOURCE_CONTRACTS: readonly PbrFrameResourceContract[] = Object.freeze([
   { id: "animation-state", descriptor: "scene-animation-v1", sampleCount: 1, usages: [], sizeRole: "independent", external: true },
@@ -43,9 +46,9 @@ export const PBR_FRAME_RESOURCE_CONTRACTS: readonly PbrFrameResourceContract[] =
     usages: ["render-attachment"], sizeRole: "independent", external: false },
   { id: "light-grid", descriptor: "forward-plus-grid-v1", sampleCount: 1, usages: [], sizeRole: "independent", external: false },
   { id: "opaque-hdr", descriptor: "rgba16float", format: PBR_HDR_FORMAT, sampleCount: PBR_MAIN_SAMPLE_COUNT,
-    usages: FULL_COLOR, sizeRole: "surface", external: false },
+    usages: FULL_HDR_TRANSIENT, sizeRole: "surface", external: false },
   { id: "linear-depth", descriptor: "r32float", format: PBR_LINEAR_DEPTH_FORMAT, sampleCount: PBR_MAIN_SAMPLE_COUNT,
-    usages: FULL_COLOR, sizeRole: "surface", external: false },
+    usages: ["render-attachment", "texture-binding", "copy-src"], sizeRole: "surface", external: false },
   { id: "view-normal", descriptor: "rgba8unorm", format: PBR_VIEW_NORMAL_FORMAT, sampleCount: PBR_MAIN_SAMPLE_COUNT,
     usages: FULL_COLOR, sizeRole: "surface", external: false },
   { id: "motion", descriptor: "rg16float", format: PBR_MOTION_FORMAT, sampleCount: PBR_MAIN_SAMPLE_COUNT,
@@ -64,6 +67,10 @@ export const PBR_FRAME_RESOURCE_CONTRACTS: readonly PbrFrameResourceContract[] =
     usages: ["storage-binding", "texture-binding"], sizeRole: "half", external: false },
   { id: "ssr-hdr", descriptor: "rgba16float", format: SSR_COMPOSITE_FORMAT, sampleCount: 1,
     usages: ["storage-binding", "texture-binding"], sizeRole: "surface", external: false },
+  { id: "volumetric-fog-scatter", descriptor: "rgba16float-half", format: VOLUMETRIC_FOG_SCATTER_FORMAT, sampleCount: 1,
+    usages: ["storage-binding", "texture-binding"], sizeRole: "half", external: false },
+  { id: "volumetric-fog-hdr", descriptor: "rgba16float", format: VOLUMETRIC_FOG_COMPOSITE_FORMAT, sampleCount: 1,
+    usages: ["storage-binding", "texture-binding"], sizeRole: "surface", external: false },
   { id: "bloom-hdr", descriptor: "rgba16float", format: BLOOM_COLOR_FORMAT, sampleCount: 1,
     usages: ["texture-binding", "storage-binding", "render-attachment", "copy-src"], sizeRole: "surface", external: false },
   { id: "oit-accumulation", descriptor: "rgba16float", format: WEIGHTED_OIT_ACCUMULATION_FORMAT, sampleCount: 1,
@@ -71,7 +78,7 @@ export const PBR_FRAME_RESOURCE_CONTRACTS: readonly PbrFrameResourceContract[] =
   { id: "oit-revealage", descriptor: "r16float", format: WEIGHTED_OIT_REVEALAGE_FORMAT, sampleCount: 1,
     usages: ["render-attachment", "texture-binding", "copy-src"], sizeRole: "surface", external: false },
   { id: "composited-hdr", descriptor: "rgba16float", format: PBR_HDR_FORMAT, sampleCount: 1,
-    usages: FULL_COLOR, sizeRole: "surface", external: false },
+    usages: FULL_HDR_TRANSIENT, sizeRole: "surface", external: false },
   { id: "surface", descriptor: "swapchain", sampleCount: 1, usages: ["render-attachment"], sizeRole: "independent", external: true },
 ]);
 

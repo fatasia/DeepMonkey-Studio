@@ -364,6 +364,7 @@ export class PbrRenderer {
       this.frameCapture.encodeReadbacks(encoder, device, {
         "present-color": finalEffects.color,
         "opaque-hdr": this.targets.hdrTexture,
+        "linear-depth": this.targets.linearDepthTexture,
       });
     }
     timing?.resolve(encoder);

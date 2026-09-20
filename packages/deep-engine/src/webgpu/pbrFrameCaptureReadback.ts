@@ -1,7 +1,7 @@
 import { encodeFrameCaptureTextureReadback, type FrameCaptureTextureReadback } from "./frameCaptureReadback.js";
 
 /** Fixed whitelist of PBR resources a diagnostic host may snapshot. Never guessed, never implicitly extended. */
-export const PBR_FRAME_READBACK_RESOURCES = Object.freeze(["present-color", "opaque-hdr"] as const);
+export const PBR_FRAME_READBACK_RESOURCES = Object.freeze(["present-color", "opaque-hdr", "linear-depth"] as const);
 export type PbrFrameReadbackResourceId = (typeof PBR_FRAME_READBACK_RESOURCES)[number];
 
 export interface PbrFrameReadbackRequest {
@@ -165,7 +165,8 @@ export class PbrFrameReadbackPlan {
 
 function stagingBytes(texture: GPUTexture): number {
   const formatBytes: Record<string, number> = { "rgba8unorm": 4, "rgba8unorm-srgb": 4, "bgra8unorm": 4,
-    "bgra8unorm-srgb": 4, "rgba16float": 8, "rgba32float": 16, "rg11b10ufloat": 4, "rgb10a2unorm": 4 };
+    "bgra8unorm-srgb": 4, "rgba16float": 8, "rgba32float": 16, "rg11b10ufloat": 4, "rgb10a2unorm": 4,
+    "r32float": 4, "r16float": 2, "r8unorm": 1 };
   const bytesPerPixel = formatBytes[texture.format];
   if (bytesPerPixel === undefined) return Number.MAX_SAFE_INTEGER;
   const padded = Math.ceil(texture.width * bytesPerPixel / 256) * 256;
