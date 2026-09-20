@@ -2,7 +2,7 @@
 //! 由宿主精确调用 `step()` 共 `steps` 次(timestep-mode=Fixed,无 Variable),
 //! 每步记录全部刚体 [tx,ty,tz,qx,qy,qz,qw] 为 FrameRecord。
 //! 无 sleep、无线程、无随机、无真实时间:同一 spec 任意次运行必须逐位一致。
-//! F04/F05 当前只在 native crate 内接入; wasm runner 尚未消费关节帧,不宣称双端完成。
+//! F04/F05 通过 `joints` 字段接入 revolute 关节；WASM runner 使用同一字段构造同源约束。
 
 use crate::contract::FrameRecord;
 use rapier3d::math::glamx::Vec3;
@@ -20,7 +20,20 @@ pub struct SceneSpec {
     pub ground: GroundSpec,
     pub bodies: Vec<BodySpec>,
     #[serde(default)]
+    pub joints: Vec<JointSpec>,
+    #[serde(default)]
     pub contract: serde_json::Value,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct JointSpec {
+    pub id: String,
+    pub kind: String,
+    pub body1: String,
+    pub body2: String,
+    pub anchor1: [f64; 3],
+    pub anchor2: [f64; 3],
+    pub axis: [f64; 3],
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -119,6 +132,7 @@ pub fn run_scene(spec: &SceneSpec) -> RunOutcome {
     .restitution(spec.ground.restitution as f32)
     .build();
     colliders.insert_with_parent(ground_collider, ground_handle, &mut bodies);
+    handles.push(("ground".into(), ground_handle));
 
     for body_spec in &spec.bodies {
         let translation = f64x3(body_spec.translation);
@@ -142,11 +156,43 @@ pub fn run_scene(spec: &SceneSpec) -> RunOutcome {
         handles.push((body_spec.id.clone(), handle));
     }
 
+    let body_handles: std::collections::HashMap<_, _> = handles.iter().cloned().collect();
+    let mut joint_ids = Vec::with_capacity(spec.joints.len());
+    for joint_spec in &spec.joints {
+        assert_eq!(joint_spec.kind, "revolute", "仅支持 revolute joint");
+        let body1 = *body_handles
+            .get(&joint_spec.body1)
+            .unwrap_or_else(|| panic!("joint body1 missing: {}", joint_spec.body1));
+        let body2 = *body_handles
+            .get(&joint_spec.body2)
+            .unwrap_or_else(|| panic!("joint body2 missing: {}", joint_spec.body2));
+        let joint = RevoluteJointBuilder::new(Vec3::new(
+            joint_spec.axis[0] as f32,
+            joint_spec.axis[1] as f32,
+            joint_spec.axis[2] as f32,
+        ))
+        .local_anchor1(Vec3::new(
+            joint_spec.anchor1[0] as f32,
+            joint_spec.anchor1[1] as f32,
+            joint_spec.anchor1[2] as f32,
+        ))
+        .local_anchor2(Vec3::new(
+            joint_spec.anchor2[0] as f32,
+            joint_spec.anchor2[1] as f32,
+            joint_spec.anchor2[2] as f32,
+        ))
+        .build();
+        let data = joint.data().clone();
+        impulse_joints.insert(body1, body2, joint, true);
+        joint_ids.push((joint_spec.id.clone(), joint_spec.kind.clone(), joint_spec.body1.clone(), joint_spec.body2.clone(), data));
+    }
+
     let record = |step: u32, bodies: &RigidBodySet| -> FrameRecord {
         FrameRecord {
             step,
             bodies: handles
                 .iter()
+                .filter(|(id, _)| id != "ground")
                 .map(|(id, handle)| {
                     let body = bodies.get(*handle).expect("rigid body present");
                     let rotation = body.rotation();
@@ -164,7 +210,25 @@ pub fn run_scene(spec: &SceneSpec) -> RunOutcome {
                     )
                 })
                 .collect(),
-            joints: Vec::new(),
+            joints: joint_ids
+                .iter()
+                .map(|(id, kind, body1, body2, data)| {
+                    let a1 = data.local_anchor1();
+                    let a2 = data.local_anchor2();
+                    let f1 = data.local_frame1.rotation;
+                    let f2 = data.local_frame2.rotation;
+                    crate::contract::JointState {
+                        id: id.clone(),
+                        kind: kind.clone(),
+                        body1: body1.clone(),
+                        body2: body2.clone(),
+                        anchor1: [a1.x, a1.y, a1.z],
+                        anchor2: [a2.x, a2.y, a2.z],
+                        frame1: [f1.x, f1.y, f1.z, f1.w],
+                        frame2: [f2.x, f2.y, f2.z, f2.w],
+                    }
+                })
+                .collect(),
         }
     };
 

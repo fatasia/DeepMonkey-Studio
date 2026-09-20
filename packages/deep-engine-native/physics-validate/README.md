@@ -78,12 +78,19 @@ node run-and-compare.mjs --spec ../scene-spec-v1.json \
 `tests-summary.json`、`native-result.json`、`frames-native.jsonl`(241 行)、
 `wasm-result.json`、`frames-wasm.jsonl`(241 行)、`physics-validate.exe`(本机复现用)。
 
-## 与 F04/F05 的接线方案(剩余缺口)
+## F04/F05 双端关节验证
+
+`scene-spec-f04-revolute.json` 覆盖单个 ground→pendulum revolute，
+`scene-spec-f05-chain.json` 覆盖三个 revolute 组成的链。两端显式设置 8 次 solver
+iterations，并把 joint id/kind/body/anchor/local frame 纳入 `physics-frame-v1` 与
+`jointBitsSha256`。2026-09-20 本地证据：F04/F05 均 `bitwiseIdentical=true`，
+WASM 重跑稳定，native `cargo test` 7/7。
+
+## 后续接线缺口
 
 - F04(PhysicsWorld 宿主接线):以本 runner 为内核骨架,宿主 tick 固定步长驱动,
   变更集(新增/移除刚体)走 revision 化命令,复用 R3 状态合同的 revision 语义。
-- F05(机械约束/关节):Rapier ImpulseJoint/MultibodyJoint 走同一 physics-frame-v1 合同,
-  但**关节路径的跨端逐位尚未验证**(本场景不含关节)——接入时必须先补关节场景的双端哈希门禁。
+- F05 已完成 revolute/ImpulseJoint 的双端门禁；MultibodyJoint、马达/限位和产品编辑器接线仍未开放。
 - Web 接线:`@dimforge/rapier3d-compat` 免打包加载,与现有 delivery 管线的 wasm 加载方式合并;
   WASM 二进制随包分发(离线纪律),不走 CDN。
 - 晋升决策:若采纳,把 `rapier3d =0.35.3` 提升进主 crate `Cargo.toml`(Cargo.lock 变更

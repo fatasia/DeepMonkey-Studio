@@ -119,3 +119,25 @@ fn spec_file_bytes_are_stable() {
     assert_eq!(digest.len(), 64);
     assert!(Path::new(SPEC_PATH).exists());
 }
+
+#[test]
+fn f04_revolute_joint_is_canonical_and_deterministic() {
+    let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/scene-spec-f04-revolute.json")).unwrap();
+    let spec = parse_spec(&bytes).unwrap();
+    let first = run_scene(&spec);
+    let second = run_scene(&spec);
+    assert_eq!(spec.joints.len(), 1);
+    assert_eq!(first.frames[0].joints.len(), 1);
+    assert_eq!(summarize(&first.frames).joint_bits_sha256, summarize(&second.frames).joint_bits_sha256);
+    assert!(first_bit_divergence(&first.frames, &second.frames).is_none());
+}
+
+#[test]
+fn f05_joint_chain_has_stable_sorted_ids() {
+    let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/scene-spec-f05-chain.json")).unwrap();
+    let spec = parse_spec(&bytes).unwrap();
+    let outcome = run_scene(&spec);
+    let ids: Vec<_> = outcome.frames[0].joints.iter().map(|joint| joint.id.as_str()).collect();
+    assert_eq!(ids, vec!["chain-00-ground-a", "chain-01-a-b", "chain-02-b-c"]);
+    assert_eq!(outcome.frames.len(), 121);
+}

@@ -38,7 +38,7 @@
 - WASM `@dimforge/rapier3d-compat` 对拍脚本；
 - frame/body 位级摘要与首分歧定位器。
 
-本轮已在工作树扩展 `contract.rs`：
+本轮已在工作树扩展 `contract.rs`，并完成 F04/F05 最小双端闭环：
 
 - `JointState`；
 - joint canonical 字段：id/kind/body1/body2/anchor1/anchor2/frame1/frame2；
@@ -46,7 +46,7 @@
 - joint 首分歧定位；
 - 旧无关节场景保持旧 canonical 字节格式。
 
-`runner.rs` 已补旧场景 `joints: Vec::new()` 兼容。当前 cargo 测试正在复跑。**重要诚实边界**：还没有把 F04 revolute/F05 chain 的 joints spec、Rapier `ImpulseJointSet` 构造和 WASM runner 消费真正接完；若本轮只保留合同扩展，必须标记为 partial，不得宣称双端关节门禁完成。
+`runner.rs`、WASM runner 已按同一 spec 构造 revolute `ImpulseJoint`；新增 F04 单关节与 F05 三段链场景，native cargo 7/7，F04/F05 对拍均 `bitwiseIdentical=true`。MultibodyJoint、马达/限位、产品 PhysicsWorld 宿主接线仍未完成。
 
 ### R12
 
@@ -61,7 +61,7 @@
 
 ### P0：本轮先收口
 
-1. R10 F04 revolute + F05 joint chain：native + WASM 同 spec、同 fixed timestep、同 canonical joint frames、同 digest。
+1. R10 F04 revolute + F05 joint chain：**已完成首个双端门禁**；后续只剩 MultibodyJoint/马达/限位与产品宿主接线。
 2. R12 render-loop 接线：让 `FrameCaptureSession` 被实际 pass 执行路径调用，而不是只有 CPU API。
 3. FINAL-GATE 第一轮：性能、确定性、渲染回归、核心 UI/功能回归；不包含 Babylon/Unity/A01-X/480min soak。
 

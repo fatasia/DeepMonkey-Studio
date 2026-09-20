@@ -1,0 +1,21 @@
+{
+  "schema": "deep-engine.physics-scene",
+  "schemaVersion": 1,
+  "id": "r10-f04-revolute-v1",
+  "timestep": { "mode": "fixed", "dt": 0.016666666666666666, "steps": 120 },
+  "gravity": [0.0, -9.81, 0.0],
+  "ground": {
+    "kind": "cuboid", "halfExtents": [25.0, 0.5, 25.0], "translation": [0.0, -0.5, 0.0],
+    "friction": 0.05, "restitution": 0.0, "bodyType": "fixed", "canSleep": false
+  },
+  "bodies": [{
+    "id": "pendulum", "shape": { "kind": "ball", "radius": 0.5 },
+    "translation": [0.0, 2.0, 0.0], "linvel": [0.0, 0.0, 0.0],
+    "bodyType": "dynamic", "canSleep": false
+  }],
+  "joints": [{
+    "id": "hinge-ground-pendulum", "kind": "revolute", "body1": "ground", "body2": "pendulum",
+    "anchor1": [0.0, 2.0, 0.0], "anchor2": [0.0, 0.0, 0.0], "axis": [0.0, 0.0, 1.0]
+  }],
+  "contract": { "frameFormat": "physics-frame-v1", "jointKinds": ["revolute"] }
+}

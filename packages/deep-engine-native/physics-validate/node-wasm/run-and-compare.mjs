@@ -42,7 +42,11 @@ function fixed6(value) {
 function canonicalFrame(frame) {
   const bodies = [...frame.bodies].sort((left, right) => (left[0] < right[0] ? -1 : 1));
   const parts = bodies.map(([id, pose]) => `${id}>${pose.map(fixed6).join(",")}`);
-  return `physics-frame-v1|step=${frame.step}|bodies=${parts.join(";")}`;
+  const joints = [...(frame.joints ?? [])].sort((left, right) => (left.id < right.id ? -1 : 1));
+  const jointText = joints.length === 0
+    ? ""
+    : `|joints=${joints.map((joint) => `${joint.id}>${joint.kind},${joint.body1},${joint.body2}|a1=${joint.anchor1.map(fixed6).join(",")}|a2=${joint.anchor2.map(fixed6).join(",")}|f1=${joint.frame1.map(fixed6).join(",")}|f2=${joint.frame2.map(fixed6).join(",")}`).join(";")}`;
+  return `physics-frame-v1|step=${frame.step}|bodies=${parts.join(";")}${jointText}`;
 }
 
 // 位级摘要:step 升序 → body 字典序 → [tx,ty,tz,qx,qy,qz,qw],逐 f32 小端 4 字节。
@@ -70,11 +74,34 @@ function poseBitsBuffer(frames) {
   return Buffer.concat(chunks);
 }
 
+function jointBitsBuffer(frames) {
+  const chunks = [];
+  for (const frame of frames) {
+    const joints = [...(frame.joints ?? [])].sort((left, right) => (left.id < right.id ? -1 : 1));
+    for (const joint of joints) {
+      const step = Buffer.alloc(4);
+      step.writeUInt32LE(frame.step, 0);
+      chunks.push(step);
+      for (const text of [joint.id, joint.kind, joint.body1, joint.body2]) {
+        chunks.push(Buffer.from(text, "utf8"), Buffer.from([0]));
+      }
+      for (const values of [joint.anchor1, joint.anchor2, joint.frame1, joint.frame2]) {
+        for (const value of values) {
+          const bits = bitsOf(value);
+          chunks.push(Buffer.from([bits & 0xff, (bits >>> 8) & 0xff, (bits >>> 16) & 0xff, (bits >>> 24) & 0xff]));
+        }
+      }
+    }
+  }
+  return Buffer.concat(chunks);
+}
+
 function summarize(frames) {
   const sequence = frames.map(canonicalFrame).join("\n");
   return {
     frameSequenceSha256: sha256Hex(Buffer.from(sequence, "utf8")),
     poseBitsSha256: sha256Hex(poseBitsBuffer(frames)),
+    jointBitsSha256: sha256Hex(jointBitsBuffer(frames)),
   };
 }
 
@@ -83,6 +110,7 @@ async function runWasmScene(spec) {
   const world = new RAPIER.World(gravity);
   // 显式 f32:与 Rust `spec.timestep.dt as f32`(IEEE 最近偶舍入)逐位一致。
   world.timestep = Math.fround(spec.timestep.dt);
+  world.numSolverIterations = 8;
 
   const groundBody = world.createRigidBody(
     RAPIER.RigidBodyDesc.fixed()
@@ -97,6 +125,7 @@ async function runWasmScene(spec) {
   );
 
   const bodies = [];
+  const bodyById = new Map([["ground", groundBody]]);
   for (const bodySpec of spec.bodies) {
     const builder =
       bodySpec.bodyType === "dynamic" ? RAPIER.RigidBodyDesc.dynamic() : RAPIER.RigidBodyDesc.fixed();
@@ -113,6 +142,21 @@ async function runWasmScene(spec) {
       body,
     );
     bodies.push([bodySpec.id, body]);
+    bodyById.set(bodySpec.id, body);
+  }
+
+  const joints = [];
+  for (const jointSpec of spec.joints ?? []) {
+    if (jointSpec.kind !== "revolute") throw new Error(`unsupported joint kind: ${jointSpec.kind}`);
+    const vector = ([x, y, z]) => ({ x, y, z });
+    const data = RAPIER.JointData.revolute(vector(jointSpec.anchor1), vector(jointSpec.anchor2), vector(jointSpec.axis));
+    const joint = world.createImpulseJoint(
+      data,
+      bodyById.get(jointSpec.body1),
+      bodyById.get(jointSpec.body2),
+      true,
+    );
+    joints.push({ id: jointSpec.id, kind: jointSpec.kind, joint, body1: jointSpec.body1, body2: jointSpec.body2 });
   }
 
   const record = (step) => ({
@@ -124,6 +168,22 @@ async function runWasmScene(spec) {
         id,
         [translation.x, translation.y, translation.z, rotation.x, rotation.y, rotation.z, rotation.w],
       ];
+    }),
+    joints: joints.map(({ id, kind, joint, body1, body2 }) => {
+      const anchor1 = joint.anchor1();
+      const anchor2 = joint.anchor2();
+      const frame1 = joint.frameX1();
+      const frame2 = joint.frameX2();
+      return {
+        id,
+        kind,
+        body1,
+        body2,
+        anchor1: [anchor1.x, anchor1.y, anchor1.z],
+        anchor2: [anchor2.x, anchor2.y, anchor2.z],
+        frame1: [frame1.x, frame1.y, frame1.z, frame1.w],
+        frame2: [frame2.x, frame2.y, frame2.z, frame2.w],
+      };
     }),
   });
 
@@ -148,7 +208,10 @@ function summarizeNativeRaw(nativeResult) {
       }),
     ]),
   }));
-  return { poseBitsSha256: sha256Hex(poseBitsBuffer(frames)) };
+  return {
+    poseBitsSha256: sha256Hex(poseBitsBuffer(frames)),
+    jointBitsSha256: sha256Hex(jointBitsBuffer(nativeResult.framesRaw)),
+  };
 }
 
 function locateBitDivergence(nativeFrames, wasmFrames) {
@@ -171,6 +234,21 @@ function locateBitDivergence(nativeFrames, wasmFrames) {
             nativeBits: `0x${bitsOf(nativePose[component]).toString(16).padStart(8, "0")}`,
             wasmBits: `0x${bitsOf(wasmPose[component]).toString(16).padStart(8, "0")}`,
           };
+        }
+      }
+    }
+    const nativeJoints = new Map((nativeFrame.joints ?? []).map((joint) => [joint.id, joint]));
+    for (const wasmJoint of wasmFrame.joints ?? []) {
+      const nativeJoint = nativeJoints.get(wasmJoint.id);
+      if (!nativeJoint) return { step: nativeFrame.step, joint: wasmJoint.id, reason: "joint missing on native side" };
+      for (const field of ["kind", "body1", "body2"]) {
+        if (nativeJoint[field] !== wasmJoint[field]) return { step: nativeFrame.step, joint: wasmJoint.id, field, reason: "joint identity mismatch" };
+      }
+      for (const field of ["anchor1", "anchor2", "frame1", "frame2"]) {
+        for (let component = 0; component < nativeJoint[field].length; component += 1) {
+          if (Math.fround(nativeJoint[field][component]) !== Math.fround(wasmJoint[field][component])) {
+            return { step: nativeFrame.step, joint: wasmJoint.id, field, component, reason: "joint frame mismatch" };
+          }
         }
       }
     }
@@ -220,6 +298,7 @@ const divergence = locateBitDivergence(nativeResult.framesRaw, wasmFramesRun1);
 const bitwiseIdentical =
   firstFrameMismatch === null &&
   nativeSummary.poseBitsSha256 === wasmSummary.poseBitsSha256 &&
+  nativeSummary.jointBitsSha256 === wasmSummary.jointBitsSha256 &&
   nativeSummary.frameSequenceSha256 === wasmSummary.frameSequenceSha256 &&
   divergence === null;
 
@@ -299,11 +378,13 @@ const evidence = {
     native: {
       frameSequenceSha256: nativeSummary.frameSequenceSha256,
       poseBitsSha256: nativeSummary.poseBitsSha256,
+      jointBitsSha256: nativeSummary.jointBitsSha256,
       framesRawRoundTripCheck: nativeRawCheck.poseBitsSha256 === nativeSummary.poseBitsSha256,
     },
     wasm: {
       frameSequenceSha256: wasmSummary.frameSequenceSha256,
       poseBitsSha256: wasmSummary.poseBitsSha256,
+      jointBitsSha256: wasmSummary.jointBitsSha256,
       repeatRunBitwiseIdentical: wasmRepeatIdentical,
     },
     canonicalFramesIdentical: firstFrameMismatch === null,

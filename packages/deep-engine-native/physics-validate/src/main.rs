@@ -67,6 +67,7 @@ fn build_result(
         "summary": {
             "frameSequenceSha256": summary.frame_sequence_sha256,
             "poseBitsSha256": summary.pose_bits_sha256,
+            "jointBitsSha256": summary.joint_bits_sha256,
         },
         "framesRaw": frames
             .iter()
@@ -78,6 +79,16 @@ fn build_result(
                         .iter()
                         .map(|(id, pose)| json!([id, pose]))
                         .collect::<Vec<_>>(),
+                    "joints": frame.joints.iter().map(|joint| json!({
+                        "id": joint.id,
+                        "kind": joint.kind,
+                        "body1": joint.body1,
+                        "body2": joint.body2,
+                        "anchor1": joint.anchor1,
+                        "anchor2": joint.anchor2,
+                        "frame1": joint.frame1,
+                        "frame2": joint.frame2,
+                    })).collect::<Vec<_>>(),
                 })
             })
             .collect::<Vec<_>>(),
