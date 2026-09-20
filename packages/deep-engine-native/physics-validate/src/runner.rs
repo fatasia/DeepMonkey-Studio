@@ -2,6 +2,7 @@
 //! 由宿主精确调用 `step()` 共 `steps` 次(timestep-mode=Fixed,无 Variable),
 //! 每步记录全部刚体 [tx,ty,tz,qx,qy,qz,qw] 为 FrameRecord。
 //! 无 sleep、无线程、无随机、无真实时间:同一 spec 任意次运行必须逐位一致。
+//! F04/F05 当前只在 native crate 内接入; wasm runner 尚未消费关节帧,不宣称双端完成。
 
 use crate::contract::FrameRecord;
 use rapier3d::math::glamx::Vec3;
@@ -84,6 +85,7 @@ pub fn run_scene(spec: &SceneSpec) -> RunOutcome {
     );
     let mut integration_parameters = IntegrationParameters::default();
     integration_parameters.dt = spec.timestep.dt as f32;
+    integration_parameters.num_solver_iterations = 8;
 
     let mut physics_pipeline = PhysicsPipeline::new();
     let mut island_manager = IslandManager::new();
@@ -162,6 +164,7 @@ pub fn run_scene(spec: &SceneSpec) -> RunOutcome {
                     )
                 })
                 .collect(),
+            joints: Vec::new(),
         }
     };
 
