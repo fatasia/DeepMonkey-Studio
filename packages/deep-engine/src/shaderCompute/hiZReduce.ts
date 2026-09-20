@@ -82,6 +82,7 @@ export function buildHiZFirstStageKernel(reduceMax: boolean): DcirKernel {
   const value = push({ id: "value", type: "f32", op: "canonicalize-f32", input: v3 });
   return {
     name: HI_Z_FIRST_STAGE_NAME,
+    textureIo: "r32float",
     workgroupSize: [8, 8],
     uniforms: [
       { name: "sourceSize", type: "vec2u" },

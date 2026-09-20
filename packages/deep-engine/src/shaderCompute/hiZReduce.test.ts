@@ -15,8 +15,8 @@ describe("Hi-Z first-stage DCIR kernel", () => {
     expect(wgslMin.irSha256).toBe(kernelIrSha256(min));
     expect(glslMin.irSha256).toBe(wgslMin.irSha256);
     expect(wgslMin.code).toBe(emitKernelWgsl(buildHiZFirstStageKernel(false)).code);
-    expect(kernelIrSha256(min)).toBe("2356435319d8607f08fd589261837cff774b96b64ca14c7cdc640316d182b6e6");
-    expect(kernelIrSha256(max)).toBe("4dfb1ea6e9f2d649d7a6d3326a0481d5c140bc2a5caea4f04b766b73e2e8636f");
+    expect(kernelIrSha256(min)).toBe("bfc9ac69c7627e53b0515bf57958150822e79db3b67a121885dd89528d0d3dca");
+    expect(kernelIrSha256(max)).toBe("00b994601b0d2254cfcb58b2ef2d8c63b443eda659ee8fa9c1726bf27618b5fe");
     // 模式特化只允许改变归约方向；IR 哈希头注释随模式不同，比较时剥去注释行。
     const stripHeader = (text: string): string =>
       text.split("\n").filter((line) => !line.startsWith("//")).join("\n");

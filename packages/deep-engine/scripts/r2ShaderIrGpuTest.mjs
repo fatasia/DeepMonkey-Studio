@@ -26,6 +26,16 @@ const CASES = [
   { name: "denormal-17x9-min", seed: 0x5eed_0005, width: 17, height: 9, reduceMax: false, tier: "denormal-probe" },
 ];
 
+// 波次2 subgroup 变体案例（webgpu-only：GLSL 发射 fail-closed；对照参考 = referenceHiZFirstStageSubgroup，
+// 与 certified 2x2 参考逐位一致的契约在 vitest 层已锁，此处对拍真机 WGSL 执行）。
+const SUBGROUP_CASES = [
+  { name: "sub-npot-37x23-min", seed: 0x5eed_0011, width: 37, height: 23, reduceMax: false, subgroupSize: 4 },
+  { name: "sub-pow2-64x64-max", seed: 0x5eed_0012, width: 64, height: 64, reduceMax: true, subgroupSize: 8 },
+  { name: "sub-odd-13x7-max", seed: 0x5eed_0013, width: 13, height: 7, reduceMax: true, subgroupSize: 4 },
+  { name: "sub-tiny-1x1-min", seed: 0x5eed_0014, width: 1, height: 1, reduceMax: false, subgroupSize: 16 },
+  { name: "sub-odd-31x17-min", seed: 0x5eed_0015, width: 31, height: 17, reduceMax: false, subgroupSize: 16 },
+];
+
 const sha256 = (bytes) => createHash("sha256").update(new Uint8Array(bytes)).digest("hex");
 const base64ToBytes = (value) => Uint8Array.from(Buffer.from(value, "base64"));
 
@@ -94,6 +104,10 @@ async function main() {
   const kernels = { min: module.buildHiZFirstStageKernel(false), max: module.buildHiZFirstStageKernel(true) };
   const wgsl = { min: module.emitKernelWgsl(kernels.min), max: module.emitKernelWgsl(kernels.max) };
   const glsl = { min: module.emitKernelGlsl(kernels.min), max: module.emitKernelGlsl(kernels.max) };
+  // subgroup 变体：只有 WGSL 发射（GLSL fail-closed 是合同本身），发射产物带 requires subgroups。
+  const subKernels = { min: module.buildHiZFirstStageSubgroupKernel(false), max: module.buildHiZFirstStageSubgroupKernel(true) };
+  const subWgsl = { min: module.emitKernelWgsl(subKernels.min), max: module.emitKernelWgsl(subKernels.max) };
+  if (subWgsl.min.features[0] !== "subgroups") throw new Error("subgroup kernel must declare the subgroups feature.");
 
   const requests = [];
   const references = new Map();
@@ -104,6 +118,18 @@ async function main() {
     requests.push({ name: entry.name, sourceWidth: entry.width, sourceHeight: entry.height,
       reduceMax: entry.reduceMax, inputBase64: Buffer.from(input.buffer).toString("base64") });
     references.set(entry.name, { input, reference: module.referenceHiZFirstStage(input, entry.width, entry.height, entry.reduceMax), tw, th });
+  }
+  for (const entry of SUBGROUP_CASES) {
+    const input = module.generateHiZInput(entry.seed, entry.width, entry.height);
+    const [tw, th] = module.hiZFirstStageTargetSize(entry.width, entry.height);
+    requests.push({ name: entry.name, sourceWidth: entry.width, sourceHeight: entry.height,
+      reduceMax: entry.reduceMax, inputBase64: Buffer.from(input.buffer).toString("base64"),
+      webgpuOnly: true, subgroupSize: entry.subgroupSize });
+    references.set(entry.name, {
+      input,
+      reference: module.referenceHiZFirstStageSubgroup(input, entry.width, entry.height, entry.reduceMax, entry.subgroupSize),
+      tw, th,
+    });
   }
   await writeFile(path.join(bundleDirectory, "probe.html"), `<!doctype html><title>R2 shader IR probe</title>`);
 
@@ -126,36 +152,44 @@ async function main() {
   for (const mode of ["min", "max"]) {
     await writeFile(path.join(outputDirectory, `hiZFirstStage.${mode}.wgsl`), wgsl[mode].code);
     await writeFile(path.join(outputDirectory, `hiZFirstStage.${mode}.frag.glsl`), glsl[mode].fragment);
+    await writeFile(path.join(outputDirectory, `hiZFirstStageSubgroup.${mode}.wgsl`), subWgsl[mode].code);
   }
   await writeFile(path.join(outputDirectory, "hiZFirstStage.vert.glsl"), glsl.min.vertex);
 
   const cases = [];
   let bitwiseGate = probe.webgpu !== undefined && probe.webgl !== undefined;
-  for (const entry of CASES) {
+  for (const entry of [...CASES, ...SUBGROUP_CASES]) {
+    const subgroup = SUBGROUP_CASES.includes(entry);
     const prepared = references.get(entry.name);
     const webgpu = probe.webgpu?.cases[entry.name];
     const webgl = probe.webgl?.cases[entry.name];
     const mode = entry.reduceMax ? "max" : "min";
-    const outputOf = (backend, repeat) => backend
+    const outputOf = (backend, repeat) => backend && backend.repeatsBase64[repeat]
       ? new Float32Array(base64ToBytes(backend.repeatsBase64[repeat]).buffer.slice(0)) : undefined;
     const wgslOut = [outputOf(webgpu, 0), outputOf(webgpu, 1)];
     const glslOut = [outputOf(webgl, 0), outputOf(webgl, 1)];
     const compare = (a, b) => a && b ? compareOutputs(a, b) : null;
-    const crossBackend = compare(wgslOut[0], glslOut[0]);
+    const crossBackend = subgroup ? null : compare(wgslOut[0], glslOut[0]);
     const caseResult = {
-      name: entry.name, tier: entry.tier,
+      name: entry.name, tier: subgroup ? "bitwise-webgpu-only" : entry.tier,
       sourceSize: [entry.width, entry.height], targetSize: [prepared.tw, prepared.th], reduceMax: entry.reduceMax,
+      ...(subgroup ? { subgroupSize: entry.subgroupSize } : {}),
       inputSha256: sha256(prepared.input.buffer), referenceSha256: sha256(prepared.reference.buffer),
-      webgpu: { available: Boolean(webgpu), repeatStable: compare(wgslOut[0], wgslOut[1])?.bitwiseEqual ?? null,
+      webgpu: { available: Boolean(webgpu) && !webgpu?.skippedReason, skippedReason: webgpu?.skippedReason ?? null,
+        repeatStable: compare(wgslOut[0], wgslOut[1])?.bitwiseEqual ?? null,
         outputSha256: wgslOut[0] ? sha256(wgslOut[0].buffer) : null,
-        validationMessages: webgpu?.validationMessages ?? [] },      webgl: { available: Boolean(webgl), repeatStable: compare(glslOut[0], glslOut[1])?.bitwiseEqual ?? null,
-        outputSha256: glslOut[0] ? sha256(glslOut[0].buffer) : null, glError: webgl?.glError ?? null,
-        otherChannelMaxAbs: webgl?.otherChannelMaxAbs ?? null, uniformEcho: webgl?.uniformEcho ?? null,
-        uniformShaderEcho: webgl?.uniformShaderEcho ?? null },
+        validationMessages: webgpu?.validationMessages ?? [] },
+      webgl: subgroup
+        ? { available: false, skippedReason: webgl?.skippedReason ?? "subgroup kernels are WebGPU-only (GLSL emission fails closed)",
+            repeatStable: null, outputSha256: null, validationMessages: [] }
+        : { available: Boolean(webgl), repeatStable: compare(glslOut[0], glslOut[1])?.bitwiseEqual ?? null,
+            outputSha256: glslOut[0] ? sha256(glslOut[0].buffer) : null, glError: webgl?.glError ?? null,
+            otherChannelMaxAbs: webgl?.otherChannelMaxAbs ?? null, uniformEcho: webgl?.uniformEcho ?? null,
+            uniformShaderEcho: webgl?.uniformShaderEcho ?? null },
       crossBackend: crossBackend,
-      vsReference: { webgpu: compare(wgslOut[0], prepared.reference), webgl: compare(glslOut[0], prepared.reference) },
+      vsReference: { webgpu: compare(wgslOut[0], prepared.reference), webgl: subgroup ? null : compare(glslOut[0], prepared.reference) },
     };
-    if (entry.tier === "bitwise") {
+    if (!subgroup && entry.tier === "bitwise") {
       bitwiseGate &&= Boolean(crossBackend?.bitwiseEqual && caseResult.webgpu.repeatStable && caseResult.webgl.repeatStable
         && caseResult.vsReference.webgpu?.bitwiseEqual && caseResult.vsReference.webgl?.bitwiseEqual);
     }
@@ -164,7 +198,19 @@ async function main() {
     await writeFile(path.join(outputDirectory, "inputs", `${entry.name}.f32.bin`), Buffer.from(prepared.input.buffer));
     await writeFile(path.join(outputDirectory, "inputs", `${entry.name}.reference.f32.bin`), Buffer.from(prepared.reference.buffer));
     if (wgslOut[0]) await writeFile(path.join(outputDirectory, "outputs", `${entry.name}.webgpu.f32.bin`), Buffer.from(wgslOut[0].buffer));
-    if (glslOut[0]) await writeFile(path.join(outputDirectory, "outputs", `${entry.name}.webgl.f32.bin`), Buffer.from(glslOut[0].buffer));
+    if (!subgroup && glslOut[0]) await writeFile(path.join(outputDirectory, "outputs", `${entry.name}.webgl.f32.bin`), Buffer.from(glslOut[0].buffer));
+  }
+  // subgroup 门：feature 缺席 → "feature-unavailable"（如实记录，不判失败）；
+  // feature 在场 → 每案例 vs 参考逐位相等 + 同端两轮重复稳定。
+  let subgroupGate;
+  if (!probe.webgpu) {
+    subgroupGate = "webgpu-unavailable";
+  } else if (probe.webgpu.subgroupsFeature !== true) {
+    subgroupGate = "feature-unavailable";
+  } else {
+    subgroupGate = cases
+      .filter((entry) => entry.name.startsWith("sub-"))
+      .every((entry) => entry.webgpu.available && entry.webgpu.repeatStable && entry.vsReference.webgpu?.bitwiseEqual === true);
   }
 
   const evidence = {
@@ -174,11 +220,20 @@ async function main() {
       name: "hi_z_first_stage", dcirSchema: 1, workgroupSize: [8, 8],
       irSha256: { min: wgsl.min.irSha256, max: wgsl.max.irSha256 },
       modeSpecialization: "min/max 在 IR 层特化；ANGLE/D3D11 对『两个 uvec2 + 一个 uint』uniform 打包存在 quirk（uint 恒读 0），特化后仅剩两个 uvec2 uniform，双端真机证实正确",
+      subgroup: {
+        name: subKernels.min.name, dcirSchema: 1, workgroupSize: [2, 16],
+        irSha256: { min: subWgsl.min.irSha256, max: subWgsl.max.irSha256 },
+        wgslFeature: "subgroups",
+        layoutContract: "WebGPU 保证 subgroup 由连续递增 local invocation index 构成；workgroup (2,16) 下 2x2 texel = 连续 4 lane 块；消费侧须保证 4|subgroupSize（s=4/8/16 布局均正确且语义与 s 无关）",
+        inactiveLaneContract: "吸收值合同：min=+Inf / max=-Inf（f32 字面量，WGSL 端 bitcast 发射）；不在目标集或源外的 lane 被 select 预掩码成吸收值，吸收值是 IEEE 恒等元；s<32 的死归约节点全吸收出吸收值且永不被 select 链选中",
+      },
     },
     artifacts: {
       wgsl: {
         min: { sha256: sha256(await readFile(path.join(outputDirectory, "hiZFirstStage.min.wgsl"))), consumers: ["webgpu-dawn", "native-wgpu-pending"] },
         max: { sha256: sha256(await readFile(path.join(outputDirectory, "hiZFirstStage.max.wgsl"))), consumers: ["webgpu-dawn", "native-wgpu-pending"] },
+        subgroupMin: { sha256: sha256(await readFile(path.join(outputDirectory, "hiZFirstStageSubgroup.min.wgsl"))), consumers: ["webgpu-dawn-subgroups-feature"], requires: ["subgroups"] },
+        subgroupMax: { sha256: sha256(await readFile(path.join(outputDirectory, "hiZFirstStageSubgroup.max.wgsl"))), consumers: ["webgpu-dawn-subgroups-feature"], requires: ["subgroups"] },
       },
       glslFragment: {
         min: { sha256: sha256(await readFile(path.join(outputDirectory, "hiZFirstStage.min.frag.glsl"))), consumer: "webgl2-angle" },
@@ -189,7 +244,8 @@ async function main() {
     environment: {
       chromeVersion: probe.browserVersion ?? null,
       userAgent: probe.userAgent ?? null,
-      webgpu: probe.webgpu ? { adapter: probe.webgpu.adapter, features: probe.webgpu.features } : null,
+      webgpu: probe.webgpu ? { adapter: probe.webgpu.adapter, features: probe.webgpu.features,
+        subgroupsFeatureOnDevice: probe.webgpu.subgroupsFeature } : null,
       webgl: probe.webgl ? { version: probe.webgl.version, unmaskedRenderer: probe.webgl.unmaskedRenderer,
         unmaskedVendor: probe.webgl.unmaskedVendor, floatRenderable: probe.webgl.floatRenderable } : null,
       probeErrors: probe.errors,
@@ -197,20 +253,22 @@ async function main() {
     cases,
     verdict: {
       wgslVsGlslBitwise: bitwiseGate,
-      nativeWgpu: "not-connected (see src/shaderCompute/nativeHarness.ts)",
+      subgroup: subgroupGate,
+      nativeWgpu: "not-connected for subgroup variant (certified 2x2/variable kernels: src/shaderCompute/nativeHarness.ts)",
       notes: ["CPU 参考实现与两后端同语义;denormal 案例为阈值档风险探针,不参与逐位判定。",
         "NPOT 首档语义为 2×2 锚定块,与生产 HI_Z_REDUCE_WGSL 变窗公式不同(设计 §5/§8)。",
-        "uniformShaderEcho 为 ANGLE/D3D11 uniform 打包 quirk 的诊断证据(uvec2/uint 混排时部分 uniform 不进 shader),已用 IR 级模式特化规避。"],
+        "uniformShaderEcho 为 ANGLE/D3D11 uniform 打包 quirk 的诊断证据(uvec2/uint 混排时部分 uniform 不进 shader),已用 IR 级模式特化规避。",
+        "sub- 案例为 subgroup 变体(webgpu-only,对照 referenceHiZFirstStageSubgroup,与 certified 2x2 参考逐位一致);feature 缺席时如实记 feature-unavailable,不判失败也不冒充通过。",
+        "本机真机结论(2026-09-20,Chrome 153 headless/headed 同构):adapter/device 均暴露 subgroups API feature,但 Tint 拒绝 WGSL `requires subgroups;`(『feature subgroups is not supported』,chromium-experimental-subgroups 同样被拒)——内建被门控在该指令上导致 subgroup WGSL 在该构建不可执行;标准发射保持规范指令,待 Chrome 修复后在具备 subgroups 的环境执行本组 cases(native wgpu 腿为 wgpu 30,天然支持,未在本切片接线)。"],
     },
   };
   await writeFile(path.join(outputDirectory, "evidence.json"), JSON.stringify(evidence, null, 2));
   const summary = cases.map((entry) => `${entry.name}: cross=${entry.crossBackend?.bitwiseEqual ?? "n/a"} ref=${entry.vsReference.webgpu?.bitwiseEqual ?? "n/a"}/${entry.vsReference.webgl?.bitwiseEqual ?? "n/a"} maxUlp=${entry.crossBackend?.maxUlpDiff ?? "n/a"}`);
   console.log(summary.join("\n"));
-  if (!bitwiseGate) {
-    console.error("Bitwise tier verdict FAILED; see evidence.json.");
+  const subgroupOk = subgroupGate === true || subgroupGate === "feature-unavailable";
+  console.log(`Bitwise tier verdict: ${bitwiseGate ? "PASSED" : "FAILED"}; subgroup verdict: ${subgroupGate}; evidence: ${outputDirectory}`);
+  if (!bitwiseGate || !subgroupOk) {
     process.exitCode = 1;
-  } else {
-    console.log(`Bitwise tier verdict PASSED; evidence: ${outputDirectory}`);
   }
 }
 

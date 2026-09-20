@@ -17,6 +17,7 @@ function bufferKernel(): DcirKernel {
   const coords = builder.push({ id: "coords", type: "vec2u", op: "make-vec2u", inputs: [x, x] });
   return {
     name: "buffer_read_smoke",
+    textureIo: "r32float",
     workgroupSize: [8, 8],
     uniforms: [],
     buffers: [{ name: "visibleFlags", elementType: "u32", access: "read" }],
@@ -30,7 +31,7 @@ describe("DCIR v1 buffer-load", () => {
   it("emits read-only storage bindings and bounds-checked loads in WGSL", () => {
     const { code } = emitKernelWgsl(bufferKernel());
     expect(code).toContain("var<storage, read> deep_visibleFlags: array<u32>;");
-    expect(code).toContain("@group(0) @binding(3)");
+    expect(code).toContain("@group(0) @binding(2)");
     expect(code).toContain("arrayLength(&deep_visibleFlags)");
     expect(code).toContain("deep_visibleFlags[n_x]");
   });

@@ -1,11 +1,14 @@
 /// <reference types="@webgpu/types" />
-import { buildHiZFirstStageKernel, DCIR_GLSL_VERTEX, emitKernelGlsl, emitKernelWgsl, hiZFirstStageTargetSize } from "../src/shaderCompute/index.js";
+import {
+  buildHiZFirstStageKernel, buildHiZFirstStageSubgroupKernel, DCIR_GLSL_VERTEX, emitKernelGlsl, emitKernelWgsl,
+  hiZFirstStageSubgroupDispatchSize, hiZFirstStageTargetSize,
+} from "../src/shaderCompute/index.js";
 import { compileShader, DIAGNOSTIC_FRAGMENT, runWebGlCase } from "./r2ShaderIrProbeWebGl.js";
 
 // Node 侧 runner 与浏览器共用同一 bundle：输入生成、参考实现与发射器只此一份（防口径分叉）。
 export {
-  buildHiZFirstStageKernel, emitKernelGlsl, emitKernelWgsl, generateHiZInput,
-  hiZFirstStageTargetSize, referenceHiZFirstStage,
+  buildHiZFirstStageKernel, buildHiZFirstStageSubgroupKernel, emitKernelGlsl, emitKernelWgsl, generateHiZInput,
+  hiZFirstStageSubgroupDispatchSize, hiZFirstStageTargetSize, referenceHiZFirstStage, referenceHiZFirstStageSubgroup,
 } from "../src/shaderCompute/index.js";
 
 /**
@@ -21,11 +24,16 @@ export interface R2CaseRequest {
   readonly sourceHeight: number;
   readonly reduceMax: boolean;
   readonly inputBase64: string;
+  /** subgroup 变体案例：仅 WebGPU（GLSL 发射 fail-closed），且需 adapter 暴露 subgroups feature。 */
+  readonly webgpuOnly?: boolean;
+  readonly subgroupSize?: number;
 }
 
 export interface R2BackendCaseResult {
   readonly repeatsBase64: readonly [string, string];
   readonly validationMessages: readonly string[];
+  /** 该案例在后端缺席的原因（webgpu-only 案例在 WebGL2 / 无 subgroups feature 时）。 */
+  readonly skippedReason?: string;
   /** 仅 WebGL2：gl.getError() 与未写通道的最大幅度（通道混写哨兵，应为 0）。 */
   readonly glError?: number;
   readonly otherChannelMaxAbs?: number;
@@ -37,6 +45,8 @@ export interface R2ProbeResult {
   readonly webgpu?: {
     readonly adapter: Readonly<Record<string, string | number>>;
     readonly features: readonly string[];
+    /** adapter 是否暴露 subgroups feature（subgroup 案例的可探测拒绝依据）。 */
+    readonly subgroupsFeature: boolean;
     readonly cases: Readonly<Record<string, R2BackendCaseResult>>;
   };
   readonly webgl?: {
@@ -61,9 +71,10 @@ const base64ToBytes = (value: string): Uint8Array => Uint8Array.from(atob(value)
 
 const rowPadding = (rowBytes: number): number => Math.ceil(rowBytes / 256) * 256;
 
-async function runWebGpuCase(device: GPUDevice, pipelines: Readonly<Record<"min" | "max", GPUComputePipeline>>,
-  request: R2CaseRequest): Promise<R2BackendCaseResult> {
-  const pipeline = pipelines[request.reduceMax ? "max" : "min"];
+async function runWebGpuCase(device: GPUDevice, pipelines: Readonly<Record<string, GPUComputePipeline>>,
+  request: R2CaseRequest, options: Readonly<{ subgroup?: boolean }> = {}): Promise<R2BackendCaseResult> {
+  const mode = request.reduceMax ? "max" : "min";
+  const pipeline = pipelines[options.subgroup ? `sub${mode}` : mode]!;
   const sw = request.sourceWidth, sh = request.sourceHeight;
   const [tw, th] = hiZFirstStageTargetSize(sw, sh);
   const input = new Float32Array((base64ToBytes(request.inputBase64).buffer as ArrayBuffer).slice(0));
@@ -94,9 +105,15 @@ async function runWebGpuCase(device: GPUDevice, pipelines: Readonly<Record<"min"
   try {
     for (let repeat = 0; repeat < 2; repeat++) {
       const encoder = device.createCommandEncoder({ label: `r2-run-${repeat}` });
-      const pass = encoder.beginComputePass({ label: "r2-hiz-first-stage" });
+      const pass = encoder.beginComputePass({ label: options.subgroup ? "r2-hiz-first-stage-subgroup" : "r2-hiz-first-stage" });
       pass.setPipeline(pipeline); pass.setBindGroup(0, bindGroup);
-      pass.dispatchWorkgroups(Math.ceil(tw / 8), Math.ceil(th / 8));
+      // subgroup 变体 workgroup 为 (2,16)：x 每 texel 列一个 workgroup，y 每 8 个 texel 行一个。
+      if (options.subgroup) {
+        const [, dispatchY] = hiZFirstStageSubgroupDispatchSize(sw, sh);
+        pass.dispatchWorkgroups(tw, dispatchY);
+      } else {
+        pass.dispatchWorkgroups(Math.ceil(tw / 8), Math.ceil(th / 8));
+      }
       pass.end();
       encoder.copyTextureToBuffer({ texture: target },
         { buffer: readback, bytesPerRow: readBytes, rowsPerImage: th }, { width: tw, height: th });
@@ -123,7 +140,10 @@ export async function runR2ShaderIrProbe(requests: readonly R2CaseRequest[]): Pr
   const wgsl = {
     min: emitKernelWgsl(buildHiZFirstStageKernel(false)).code,
     max: emitKernelWgsl(buildHiZFirstStageKernel(true)).code,
+    subMin: emitKernelWgsl(buildHiZFirstStageSubgroupKernel(false)).code,
+    subMax: emitKernelWgsl(buildHiZFirstStageSubgroupKernel(true)).code,
   };
+  const hasSubgroupCases = requests.some((request) => request.webgpuOnly === true);
   const glsl = { min: emitKernelGlsl(buildHiZFirstStageKernel(false)), max: emitKernelGlsl(buildHiZFirstStageKernel(true)) };
   let webgpu: R2ProbeResult["webgpu"];
   let webgl: R2ProbeResult["webgl"];
@@ -132,36 +152,78 @@ export async function runR2ShaderIrProbe(requests: readonly R2CaseRequest[]): Pr
     if (!navigator.gpu) throw new Error("navigator.gpu unavailable.");
     const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
     if (!adapter) throw new Error("requestAdapter returned null.");
-    const device = await adapter.requestDevice({ label: "r2-shader-ir-probe" });
+    // subgroup 案例在 adapter 层声明意图；真机结论（本 runner 首跑）：headless Chrome 153 的
+    // adapter.features 可能声明 subgroups 但 device 实际未启用（Tint 拒绝 `requires subgroups;`），
+    // 因此以 requestDevice 之后的 device.features 为准做可探测拒绝，且 subgroup 腿
+    // 独立 error scope，绝不毒化 legacy WebGPU 案例。
+    const adapterSubgroups = adapter.features.has("subgroups");
+    const device = await adapter.requestDevice({ label: "r2-shader-ir-probe",
+      requiredFeatures: adapterSubgroups && hasSubgroupCases ? ["subgroups"] : [] });
     device.addEventListener?.("uncapturederror", (event) => { errors.push(`uncaptured: ${(event as GPUUncapturedErrorEvent).error.message}`); });
     const info = (adapter as GPUAdapter & { info?: GPUAdapterInfo }).info;
     const validationMessages: string[] = [];
-    const modules = {
+    const modules: Record<string, GPUShaderModule> = {
       min: device.createShaderModule({ label: "r2-hiz-first-stage-min", code: wgsl.min }),
       max: device.createShaderModule({ label: "r2-hiz-first-stage-max", code: wgsl.max }),
     };
+    const entryPoints: Record<string, string> = { min: "hi_z_first_stage", max: "hi_z_first_stage" };
+    // legacy 腿先行：module + pipeline 建立并验证（任何 subgroup 问题在此前不参与）。
+    device.pushErrorScope("validation");
+    const pipelines: Record<string, GPUComputePipeline> = {};
+    for (const key of ["min", "max"]) {
+      pipelines[key] = device.createComputePipeline({ label: `r2-${key}`, layout: "auto",
+        compute: { module: modules[key]!, entryPoint: entryPoints[key]! } });
+    }
+    const legacyValidation = await device.popErrorScope();
+    if (legacyValidation) throw new Error(`WebGPU validation error: ${legacyValidation.message}`);
+
+    // subgroup 腿（隔离）：device.features 实际启用才建 module；失败降级为案例缺席+原因。
+    let deviceSubgroups = false;
+    let subgroupSkipReason = "adapter does not expose the subgroups feature";
+    if (hasSubgroupCases) {
+      if (device.features.has("subgroups")) {
+        try {
+          device.pushErrorScope("validation");
+          modules.subMin = device.createShaderModule({ label: "r2-hiz-first-stage-subgroup-min", code: wgsl.subMin });
+          modules.subMax = device.createShaderModule({ label: "r2-hiz-first-stage-subgroup-max", code: wgsl.subMax });
+          entryPoints.subMin = "hi_z_first_stage_subgroup";
+          entryPoints.subMax = "hi_z_first_stage_subgroup";
+          for (const key of ["subMin", "subMax"]) {
+            pipelines[key] = device.createComputePipeline({ label: `r2-${key}`, layout: "auto",
+              compute: { module: modules[key]!, entryPoint: entryPoints[key]! } });
+          }
+          const subgroupValidation = await device.popErrorScope();
+          if (subgroupValidation) throw new Error(subgroupValidation.message);
+          deviceSubgroups = true;
+        } catch (subgroupError) {
+          errors.push(`subgroup-leg: ${subgroupError instanceof Error ? subgroupError.message : String(subgroupError)}`);
+          subgroupSkipReason = "subgroup module/pipeline creation failed on device (see probeErrors)";
+        }
+      } else {
+        subgroupSkipReason = "device did not enable the subgroups feature (adapter declared it; device.features is authoritative)";
+      }
+    }
+
     for (const [mode, module] of Object.entries(modules)) {
       for (const message of (await module.getCompilationInfo()).messages) {
         if (message.type !== "info") validationMessages.push(`${mode}:${message.type}:${message.lineNum}:${message.message}`);
       }
     }
-    device.pushErrorScope("validation");
-    const pipelines = {
-      min: device.createComputePipeline({ label: "r2-hiz-first-stage-min", layout: "auto",
-        compute: { module: modules.min, entryPoint: "hi_z_first_stage" } }),
-      max: device.createComputePipeline({ label: "r2-hiz-first-stage-max", layout: "auto",
-        compute: { module: modules.max, entryPoint: "hi_z_first_stage" } }),
-    };
-    const validation = await device.popErrorScope();
-    if (validation) throw new Error(`WebGPU validation error: ${validation.message}`);
     const cases: Record<string, R2BackendCaseResult> = {};
-    for (const request of requests) cases[request.name] = await runWebGpuCase(device, pipelines, request);
+    for (const request of requests) {
+      if (request.webgpuOnly && !deviceSubgroups) {
+        cases[request.name] = { repeatsBase64: ["", ""], validationMessages: [], skippedReason: subgroupSkipReason };
+        continue;
+      }
+      cases[request.name] = await runWebGpuCase(device, pipelines, request, { subgroup: request.webgpuOnly === true });
+    }
     webgpu = {
       adapter: {
         vendor: info?.vendor ?? "", architecture: info?.architecture ?? "", device: info?.device ?? "",
         description: info?.description ?? "",
       },
       features: [...adapter.features].sort(),
+      subgroupsFeature: deviceSubgroups,
       cases,
     };
     device.destroy();
@@ -196,6 +258,12 @@ export async function runR2ShaderIrProbe(requests: readonly R2CaseRequest[]): Pr
     }
     const cases: Record<string, R2BackendCaseResult> = {};
     if (floatExt) for (const request of requests) {
+      // subgroup 内核无 GLSL 发射（emitKernelGlsl fail-closed）；WebGL2 侧按缺席+原因记录。
+      if (request.webgpuOnly) {
+        cases[request.name] = { repeatsBase64: ["", ""], validationMessages: [],
+          skippedReason: "subgroup kernels are WebGPU-only; GLSL emission fails closed" };
+        continue;
+      }
       cases[request.name] = runWebGlCase(gl, programs, diagnosticProgram, request);
     }
     webgl = {

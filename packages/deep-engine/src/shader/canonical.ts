@@ -1,4 +1,10 @@
 function canonical(value: unknown): string {
+  // ±Infinity 必须与有限数/NaN 序列化区分（JSON.stringify 会把它们都折叠成 "null"，
+  // 导致 +Inf/-Inf 字面量 IR 哈希碰撞、缓存串 shader）。仅特判无穷：有限值与既有
+  // 哈希（全部由有限负载构成）逐字节不变。NaN 在 DCIR 合同中禁入，保持 "null" 行为。
+  if (typeof value === "number" && (value === Number.POSITIVE_INFINITY || value === Number.NEGATIVE_INFINITY)) {
+    return value > 0 ? "1e999" : "-1e999";
+  }
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   const record = value as Record<string, unknown>;

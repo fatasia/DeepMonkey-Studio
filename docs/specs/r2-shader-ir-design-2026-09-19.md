@@ -80,8 +80,10 @@ R3 拥有 `apps/web/src/delivery/` 与 `packages/deep-engine/src/runtimePackage/
 | 选择 | `select` | `(cond) ? trueValue : falseValue`，严格求值语义 |
 | 纹理 | `texel-load` | r32float 平铺取 texel（坐标必须在界内；越界由 IR 内 select/clamp 前置屏蔽） |
 | 输出 | `store` | 目标 r32float 存储/渲染目标写入 |
+| subgroup（2026-09-20 追加） | `subgroup-invocation-id` | subgroup 内 lane 序号 u32；仅 WGSL 发射（入口 `@builtin(subgroup_invocation_id)` 参数），GLSL fail-closed |
+| subgroup（2026-09-20 追加） | `subgroup-min` / `subgroup-max` | f32-only 整体 subgroup 归约；inactive-lane 吸收值合同：min=+Inf / max=-Inf（f32 字面量，WGSL 端 bitcast 发射），目标集外/源外 lane 由 select 预掩码为吸收值；uniformity 合同=归约节点先于 guard 直线展开；发射 `requires subgroups;` + `features` 元数据供消费侧探测拒绝；布局合同要求 4 整除 subgroup size（hiZReduceSubgroup.ts 头注释为权威语义文本） |
 
-内核合同：`@workgroup_size(8,8)`；`guard` 节点为真才继续（否则提前退出/discard）；单 `store` 终点。
+内核合同：`@workgroup_size(8,8)`（subgroup 变体 (2,16)）；`guard` 节点为真才继续（否则提前退出/discard）；单 `store` 终点。
 
 ---
 

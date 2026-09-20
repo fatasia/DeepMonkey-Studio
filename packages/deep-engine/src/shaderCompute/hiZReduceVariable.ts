@@ -101,6 +101,7 @@ export function buildHiZVariableReduceKernel(reduceMax: boolean): DcirKernel {
   const value = push({ id: "value", type: "f32", op: "canonicalize-f32", input: acc });
   return {
     name: HI_Z_VARIABLE_REDUCE_NAME,
+    textureIo: "r32float",
     workgroupSize: [8, 8],
     uniforms: [
       { name: "sourceSize", type: "vec2u" },

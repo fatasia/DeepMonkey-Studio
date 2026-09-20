@@ -15,6 +15,12 @@ const uniformName = (name: string): string => `deep_u_${name}`;
 function literal(node: Extract<DcirNode, { op: "literal" }>): string {
   if (node.type === "bool") return node.value ? "true" : "false";
   if (node.type === "u32") return `${node.value}u`;
+  // ±Infinity（subgroup 吸收值字面量）只服务于 subgroup 内核，而那些内核已在入口被
+  // fail-closed；这里再拦一道，防止未来其他内核把 inf 字面量静默降级成 GL 未定义行为
+  // （GLSL 没有无穷浮点字面量，1.0/0.0 是未定义表达式）。
+  if (node.value === Number.POSITIVE_INFINITY || node.value === Number.NEGATIVE_INFINITY) {
+    throw new Error(`±Infinity f32 literals are WebGPU/Native only and cannot be emitted to GLSL (node "${node.id}").`);
+  }
   const text = String(node.value);
   return text.includes(".") || text.includes("e") ? text : `${text}.0`;
 }
@@ -57,7 +63,10 @@ function expression(kernel: DcirKernel, node: DcirNode): string {
       return `(${varName(condition)} ? ${varName(trueValue)} : ${varName(falseValue)})`;
     }
     case "texel-load": return `texelFetch(deepSource, ivec2(${varName(node.coords)}), 0).r`;
-    case "loop-index": case "buffer-store": case "hash-rng":
+    case "subgroup-invocation-id": case "subgroup-min": case "subgroup-max":
+      // subgroup 能力 WebGL2 整体 absent：入口 emitKernelGlsl 已 fail-closed，此处不可达。
+      throw new Error(`op "${node.op}" cannot be emitted to GLSL (kernel "${kernel.name}").`);
+    case "loop-index": case "buffer-store": case "atomic-load": case "hash-rng":
       // v2 能力(loop/写 buffer/hash-rng)在 WebGL2 整体 absent(合同 §4);
       // 入口 emitKernelGlsl 已 fail-closed,此处不可达。
       throw new Error(`op "${node.op}" cannot be emitted to GLSL (kernel "${kernel.name}").`);
@@ -86,6 +95,9 @@ export interface EmittedKernelGlsl {
 }
 
 export function emitKernelGlsl(kernel: DcirKernel): EmittedKernelGlsl {
+  if (!kernel.textureIo && !kernel.output) {
+    throw new Error(`DCIR buffer-only kernel "${kernel.name}" is WebGPU/Native only and cannot be emitted to WebGL2 GLSL.`);
+  }
   if (kernel.buffers?.length) {
     // WebGL2 无 SSBO：buffer 内核只面向 WebGPU/Native（合同 §2.3），发射期 fail-closed,
     // 禁止静默降级成纹理路径（会改变数值语义,违反确定性合同）。
@@ -98,6 +110,16 @@ export function emitKernelGlsl(kernel: DcirKernel): EmittedKernelGlsl {
     // v2 静态循环属 WebGPU/Native 专用能力(合同 §4):GLSL 降级路径整体 fail-closed。
     throw new Error(`DCIR kernel "${kernel.name}" declares static loops; loop kernels are WebGPU/Native only and cannot be emitted to WebGL2 GLSL.`);
   }
+  const subgroupNode = kernel.nodes.find((node) =>
+    node.op === "subgroup-min" || node.op === "subgroup-max" || node.op === "subgroup-invocation-id");
+  if (subgroupNode) {
+    // subgroup 归约没有任何 GLSL ES 3.0 语义对应（无 compute、无 subgroup 内建），
+    // 静默降级必然产出错误数值——发射期显式拒绝。
+    throw new Error(
+      `DCIR kernel "${kernel.name}" uses subgroup op "${subgroupNode.op}"; ` +
+      "subgroup ops require WebGPU backend (WGSL with `requires subgroups;`) and cannot be emitted to WebGL2 GLSL.",
+    );
+  }
   const v2Node = kernel.nodes.find((node) => node.op === "hash-rng" || node.op === "buffer-store" || node.op === "loop-index");
   if (v2Node) {
     throw new Error(`DCIR kernel "${kernel.name}" uses v2 op "${v2Node.op}"; v2 ops are WebGPU/Native only and cannot be emitted to WebGL2 GLSL.`);
@@ -106,6 +128,7 @@ export function emitKernelGlsl(kernel: DcirKernel): EmittedKernelGlsl {
   if (diagnostics.length > 0) {
     throw new Error(`Invalid DCIR kernel "${kernel.name}": ${diagnostics.map((d) => `${d.code} ${d.path}: ${d.message}`).join("; ")}`);
   }
+  const output = kernel.output!;
   const lines: string[] = [
     "#version 300 es",
     `// Deep Compute IR v0 (schema 1); generated deterministically. Kernel: ${kernel.name}`,
@@ -113,7 +136,7 @@ export function emitKernelGlsl(kernel: DcirKernel): EmittedKernelGlsl {
     "precision highp float;",
     "precision highp int;",
     "uniform highp sampler2D deepSource;",
-    ...kernel.uniforms.map((uniform) => `uniform ${uniform.type === "u32" ? "uint" : "uvec2"} ${uniformName(uniform.name)};`),
+    ...kernel.uniforms.map((uniform) => `uniform ${{ u32: "uint", f32: "float", vec2u: "uvec2" }[uniform.type]} ${uniformName(uniform.name)};`),
     "out vec4 deepTargetOut;",
     "",
     "void main() {",
@@ -123,7 +146,7 @@ export function emitKernelGlsl(kernel: DcirKernel): EmittedKernelGlsl {
   }
   lines.push(
     `  if (!(${varName(kernel.guard)})) { discard; }`,
-    `  deepTargetOut = vec4(${varName(kernel.output.value)}, 0.0, 0.0, 0.0);`,
+    `  deepTargetOut = vec4(${varName(output.value)}, 0.0, 0.0, 0.0);`,
     "}",
   );
   return { fragment: `${lines.join("\n")}\n`, vertex: DCIR_GLSL_VERTEX, irSha256: kernelIrSha256(kernel) };

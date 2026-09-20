@@ -3,7 +3,7 @@ export type {
   DcirBufferElementType, DcirStorageBuffer, DcirLoopRange,
   DcirKernel, DcirKernelArtifacts, DcirKernelOutput, DcirNode, DcirUniform, DcirUniformType, DcirValueType,
 } from "./types.js";
-export { kernelIrSha256, validateKernel, KernelBuilder } from "./kernel.js";
+export { kernelIrSha256, kernelUsesSubgroupOps, validateKernel, KernelBuilder } from "./kernel.js";
 export type { DcirIssue } from "./kernel.js";
 export { emitKernelWgsl } from "./emitWgsl.js";
 export type { EmittedKernelWgsl } from "./emitWgsl.js";
@@ -14,6 +14,10 @@ export {
   hiZFirstStageTargetSize, referenceHiZFirstStage,
 } from "./hiZReduce.js";
 export type { HiZInputOptions } from "./hiZReduce.js";
+export {
+  HI_Z_FIRST_STAGE_SUBGROUP_NAME, HI_Z_SUBGROUP_WORKGROUP_SIZE, buildHiZFirstStageSubgroupKernel,
+  hiZFirstStageSubgroupDispatchSize, referenceHiZFirstStageSubgroup,
+} from "./hiZReduceSubgroup.js";
 export {
   HI_Z_VARIABLE_REDUCE_NAME, buildHiZVariableReduceKernel, hiZChainLevelCount, hiZChainLevelSize,
   referenceHiZChain, referenceHiZVariableReduce, usesAnchoredReduce,

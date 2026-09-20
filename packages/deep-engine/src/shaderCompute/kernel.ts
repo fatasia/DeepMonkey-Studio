@@ -38,7 +38,17 @@ function literalIssues(node: Extract<DcirNode, { op: "literal" }>, diagnostics: 
     if (typeof node.value !== "boolean") issue(diagnostics, "invalid-literal", node.id, "bool literals must be true/false.");
     return;
   }
-  if (typeof node.value !== "number" || !Number.isFinite(node.value)) {
+  if (typeof node.value !== "number") {
+    issue(diagnostics, "invalid-literal", node.id, "Literals must be numbers.");
+    return;
+  }
+  // f32 ±Infinity 是合法字面量：subgroup 归约的 inactive-lane 吸收值合同（min 用 +Inf、
+  // max 用 -Inf，见 subgroup-min 合同注释）。NaN 任何类型都禁入（确定性合同 §4）。
+  if (node.value === Number.POSITIVE_INFINITY || node.value === Number.NEGATIVE_INFINITY) {
+    if (node.type !== "f32") issue(diagnostics, "invalid-literal", node.id, "Infinity literals are only legal for f32 (subgroup absorber).");
+    return;
+  }
+  if (!Number.isFinite(node.value)) {
     issue(diagnostics, "invalid-literal", node.id, "Literals must be finite numbers.");
     return;
   }
@@ -76,7 +86,7 @@ function validateNode(node: DcirNode, known: Map<string, DcirValueType>, diagnos
     }
     // 坐标必须为界内 vec2u（越界由 IR 内 clamp/select 前置屏蔽）。
     case "texel-load": expect(node.coords, "vec2u", "coords"); return;
-    case "buffer-load":
+    case "buffer-load": case "atomic-load":
       expect(node.index, "u32", "index");
       return; // buffer 声明存在性与 access 合法性由 bufferIssues 校验。
     case "buffer-store":
@@ -84,7 +94,26 @@ function validateNode(node: DcirNode, known: Map<string, DcirValueType>, diagnos
       return;
     case "hash-rng":
       expect(node.seed, "u32", "seed"); expect(node.salt, "u32", "salt");
-      return;  }
+      return;
+    case "subgroup-invocation-id": {
+      // subgroupInvocationId 是 subgroup 内 lane 序号（u32）；发射层仅 WGSL 提供。
+      const { id } = node;
+      if (node.type !== "u32") issue(diagnostics, "type-mismatch", id, "subgroup-invocation-id must be u32.");
+      return;
+    }
+    case "subgroup-min": case "subgroup-max": {
+      // f32-only 合同：整型 subgroup 归约未收录（避免 i32 溢出语义分歧）。运行时也校验
+      // 元数与类型（持久化 IR 可能来自不受信 JSON，编译期元组不构成防线）。
+      const { id, op } = node;
+      if (node.type !== "f32") issue(diagnostics, "type-mismatch", id, `${op} must be f32.`);
+      if (typeof node.input !== "string") {
+        issue(diagnostics, "invalid-input", id, `${op} requires exactly one input reference.`);
+        return;
+      }
+      expect(node.input, "f32", "input");
+      return;
+    }
+  }
   node satisfies never; // op 集合扩展时编译失败，强制补全校验
 }
 
@@ -117,19 +146,48 @@ function bufferIssues(kernel: DcirKernel, diagnostics: DcirIssue[]): Map<string,
       continue;
     }
     if (declared.has(buffer.name)) issue(diagnostics, "duplicate-buffer", buffer.name, "Buffer names must be unique.");
+    if (buffer.atomic && (buffer.elementType !== "u32" || buffer.access !== "read_write")) {
+      issue(diagnostics, "invalid-atomic-buffer", buffer.name, "Atomic buffers must be read_write u32 arrays.");
+    }
     declared.set(buffer.name, buffer.elementType);
   }
   for (const node of kernel.nodes) {
-    if (node.op !== "buffer-load" && node.op !== "buffer-store") continue;
+    if (node.op !== "buffer-load" && node.op !== "buffer-store" && node.op !== "atomic-load") continue;
     const elementType = declared.get(node.buffer);
     if (elementType === undefined) issue(diagnostics, "unknown-buffer", node.id, `Buffer "${node.buffer}" is not declared.`);
     else if (elementType !== node.type) issue(diagnostics, "type-mismatch", node.id, `Buffer "${node.buffer}" carries ${elementType}.`);
     if (node.op === "buffer-store" && kernel.buffers?.find((buffer) => buffer.name === node.buffer)?.access !== "read_write") {
       issue(diagnostics, "buffer-not-writable", node.id, `Buffer "${node.buffer}" must be declared read_write for buffer-store.`);
     }
+    const atomic = kernel.buffers?.find((buffer) => buffer.name === node.buffer)?.atomic === true;
+    if (node.op === "atomic-load" && !atomic) {
+      issue(diagnostics, "buffer-not-atomic", node.id, `Buffer "${node.buffer}" must be declared atomic for atomic-load.`);
+    } else if ((node.op === "buffer-load" || node.op === "buffer-store") && atomic) {
+      issue(diagnostics, "atomic-buffer-access", node.id, `Atomic buffer "${node.buffer}" requires atomic operations.`);
+    }
   }
   validateLoops(kernel, diagnostics);
   return declared;
+}
+
+function bindingIssues(kernel: DcirKernel, diagnostics: DcirIssue[]): void {
+  const occupied = new Map<number, string>();
+  const claim = (binding: number | undefined, path: string): void => {
+    if (binding === undefined) return;
+    if (!Number.isSafeInteger(binding) || binding < 0) {
+      issue(diagnostics, "invalid-binding", path, "Bindings must be non-negative safe integers."); return;
+    }
+    const previous = occupied.get(binding);
+    if (previous) issue(diagnostics, "duplicate-binding", path, `Binding ${binding} is already used by ${previous}.`);
+    else occupied.set(binding, path);
+  };
+  // `output` is the schema-1 texture-kernel marker. `textureIo` was added later
+  // to make buffer-only kernels explicit without invalidating persisted v1 IR.
+  if (kernel.textureIo || kernel.output) { claim(0, "textureInput"); claim(1, "textureOutput"); }
+  if (kernel.uniforms.length === 0 && kernel.uniformBinding !== undefined) {
+    issue(diagnostics, "invalid-binding", "uniformBinding", "A kernel without uniforms cannot declare uniformBinding.");
+  } else if (kernel.uniforms.length > 0) claim(kernel.uniformBinding, "uniformBinding");
+  for (const buffer of kernel.buffers ?? []) claim(buffer.binding, `buffers.${buffer.name}`);
 }
 
 function validateLoops(kernel: DcirKernel, diagnostics: DcirIssue[]): void {
@@ -159,6 +217,7 @@ export function validateKernel(kernel: DcirKernel): readonly DcirIssue[] {
   }
   uniformIssues(kernel, diagnostics);
   bufferIssues(kernel, diagnostics);
+  bindingIssues(kernel, diagnostics);
   const known = new Map<string, DcirValueType>();
   for (const node of kernel.nodes) {
     if (!NODE_ID_PATTERN.test(node.id)) { issue(diagnostics, "invalid-id", "kernel", `Bad node id "${node.id}".`); continue; }
@@ -166,12 +225,34 @@ export function validateKernel(kernel: DcirKernel): readonly DcirIssue[] {
     else { validateNode(node, known, diagnostics); known.set(node.id, node.type); }
   }
   if (known.get(kernel.guard) !== "bool") issue(diagnostics, "invalid-guard", "kernel", "guard must reference a bool node.");
-  if (known.get(kernel.output.coords) !== "vec2u") issue(diagnostics, "invalid-output", "kernel", "output.coords must reference a vec2u node.");
-  if (known.get(kernel.output.value) !== "f32") issue(diagnostics, "invalid-output", "kernel", "output.value must reference an f32 node.");
+  if (kernel.textureIo || kernel.output) {
+    if (!kernel.output) issue(diagnostics, "invalid-output", "kernel", "texture kernels require an output.");
+    else {
+      if (known.get(kernel.output.coords) !== "vec2u") issue(diagnostics, "invalid-output", "kernel", "output.coords must reference a vec2u node.");
+      if (known.get(kernel.output.value) !== "f32") issue(diagnostics, "invalid-output", "kernel", "output.value must reference an f32 node.");
+    }
+  } else {
+    if (kernel.output) issue(diagnostics, "invalid-output", "kernel", "buffer-only kernels cannot declare a texture output.");
+    if (kernel.nodes.some((node) => node.op === "texel-load")) {
+      issue(diagnostics, "missing-texture-io", "kernel", "texel-load requires textureIo.");
+    }
+  }
   return diagnostics;
 }
 
 /** IR 内容哈希：canonical JSON（码点序键排序）+ 纯 TS sha256；同 IR 必同哈希。 */
 export function kernelIrSha256(kernel: DcirKernel): string {
   return sha256Hex({ schema: 1, kernel });
+}
+
+const SUBGROUP_OPS: ReadonlySet<string> = new Set(["subgroup-min", "subgroup-max", "subgroup-invocation-id"]);
+
+/**
+ * 内核是否使用 subgroup 能力（含 loop 体）。发射 WGSL 时据此声明 `requires subgroups;` 与
+ * `@builtin(subgroup_invocation_id)` 参数；消费侧据此在 device 上探测 `subgroups` feature——
+ * 不支持的环境必须走该探测拒绝，而不是让 createShaderModule 产出坏 shader。
+ */
+export function kernelUsesSubgroupOps(kernel: DcirKernel): boolean {
+  const hit = (node: DcirNode): boolean => SUBGROUP_OPS.has(node.op);
+  return kernel.nodes.some(hit) || (kernel.loops ?? []).some((loop) => loop.body.some(hit));
 }

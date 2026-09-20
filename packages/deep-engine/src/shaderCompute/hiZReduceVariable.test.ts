@@ -17,8 +17,8 @@ describe("Hi-Z variable reduce DCIR kernel", () => {
     expect(wgslMin.irSha256).toBe(kernelIrSha256(min));
     expect(glslMin.irSha256).toBe(wgslMin.irSha256);
     expect(wgslMin.code).toBe(emitKernelWgsl(buildHiZVariableReduceKernel(false)).code);
-    expect(kernelIrSha256(min)).toBe("bdf81d8fbfb8879fe3fe6ef2517152325ffd5cdcf50f1c342d0f4bc70156bb2a");
-    expect(kernelIrSha256(max)).toBe("05955055f03ecf148b2e1ffa7296c5ea0232b952d5c3ec56334717f8e8346215");
+    expect(kernelIrSha256(min)).toBe("ca33d78ba998800c7b2eec6a8812a107d10cbb05d0a6eb8b059e93f04528c94e");
+    expect(kernelIrSha256(max)).toBe("f5be302b1b1a810b4499ebd7741773b4f9cd6e5e14bd7410e8693c8423e6312a");
     expect(min.uniforms.map((uniform) => uniform.name)).toEqual(["sourceSize", "targetSize"]);
   });
 

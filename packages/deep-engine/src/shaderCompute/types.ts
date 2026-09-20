@@ -14,6 +14,10 @@ export interface DcirStorageBuffer {
   readonly elementType: DcirBufferElementType;
   /** v1 read-only; v2 read_write is WebGPU/Native only and fails closed in GLSL. */
   readonly access: "read" | "read_write";
+  /** Atomic buffers are currently limited to read_write u32 arrays. */
+  readonly atomic?: boolean;
+  /** Optional host ABI binding. Omit for deterministic compact allocation. */
+  readonly binding?: number;
 }
 
 export interface DcirLoopRange {
@@ -27,7 +31,7 @@ export interface DcirLoopRange {
 }
 
 export type DcirValueType = "u32" | "f32" | "vec2u" | "bool";
-export type DcirUniformType = "u32" | "vec2u";
+export type DcirUniformType = "u32" | "f32" | "vec2u";
 
 export interface DcirUniform {
   readonly name: string;
@@ -71,11 +75,20 @@ export type DcirNode =
       value: string;
     }>)
   | (DcirNodeBase & Readonly<{
+      op: "atomic-load";
+      type: "u32";
+      buffer: string;
+      /** Caller-validated in-bounds element index. */
+      index: string;
+    }>)
+  | (DcirNodeBase & Readonly<{
       op: "hash-rng";
       type: "u32";
       seed: string;
       salt: string;
-    }>);
+    }>)
+  | (DcirNodeBase & Readonly<{ op: "subgroup-invocation-id"; type: "u32" }>)
+  | (DcirNodeBase & Readonly<{ op: "subgroup-min" | "subgroup-max"; type: "f32"; input: string }>);
 
 export interface DcirKernelOutput {
   /** vec2u 节点：目标写入坐标。 */
@@ -89,6 +102,8 @@ export interface DcirKernel {
   /** v0 固定 (8, 8)；片段降级下 dispatch 尺寸即 viewport。 */
   readonly workgroupSize: readonly [number, number];
   readonly uniforms: readonly DcirUniform[];
+  /** Binding of the single packed uniform struct. Omit for deterministic compact allocation. */
+  readonly uniformBinding?: number;
   /** v1 只读 storage buffer;声明了 buffer 的内核不可发射 GLSL(WebGL2 无 SSBO)。 */
   readonly buffers?: readonly DcirStorageBuffer[];
   /** 依赖序节点表（引用只允许指向更早的节点，同时保证无环与确定性展开顺序）。 */
@@ -97,12 +112,15 @@ export interface DcirKernel {
   readonly loops?: readonly DcirLoopRange[];
   /** bool 节点：为假时该次调用提前退出（片段侧 discard，不写目标）。 */
   readonly guard: string;
-  readonly output: DcirKernelOutput;
+  /** Optional explicit texture format; legacy schema-1 texture kernels are also identified by `output`. */
+  readonly textureIo?: "r32float";
+  readonly output?: DcirKernelOutput;
 }
 
 export interface DcirKernelArtifacts {
   /** IR 内容哈希（canonical JSON + 纯 TS sha256，键序为码点序）。 */
   readonly irSha256: string;
   readonly wgsl: string;
-  readonly glsl: Readonly<{ vertex: string; fragment: string }>;
+  /** Absent for WebGPU/Native-only buffer kernels. */
+  readonly glsl?: Readonly<{ vertex: string; fragment: string }>;
 }

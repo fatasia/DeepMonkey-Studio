@@ -12,7 +12,6 @@ function v1Kernel(): DcirKernel {
   const value = builder.push({ id: "value", type: "f32", op: "literal", value: 1 });
   const stored = builder.push({ id: "stored", type: "f32", op: "buffer-store", buffer: "scratch", index: x, value });
   const guard = builder.push({ id: "guard", type: "bool", op: "literal", value: true });
-  const coords = builder.push({ id: "coords", type: "vec2u", op: "make-vec2u", inputs: [x, x] });
   const loopIndex = { id: "loopIndex", type: "u32", op: "loop-index", loopId: "steps" } as const;
   void loopIndex;
   return {
@@ -21,7 +20,7 @@ function v1Kernel(): DcirKernel {
     buffers: [{ name: "scratch", elementType: "f32", access: "read_write" }],
     nodes: [...builder.nodes()],
     loops: [{ id: "steps", indexId: "loopIndex", start: 0, end: 4, step: 1, body: [] }],
-    guard, output: { coords, value },
+    guard,
   };
 }
 
@@ -34,6 +33,9 @@ describe("DCIR v1 read-write storage, static loops, and hash-rng", () => {
     expect(first.irSha256).toBe(second.irSha256);
     expect(first.code).toBe(second.code);
     expect(first.code).toContain("var<storage, read_write> deep_scratch: array<f32>;");
+    expect(first.code).not.toContain("deepSource");
+    expect(first.code).not.toContain("deepTarget");
+    expect(first.bindings).toEqual([{ binding: 0, kind: "storage-buffer", name: "scratch" }]);
     expect(first.code).toContain("fn deepPcg(state: u32) -> u32");
     expect(first.code).toContain("let n_rng: u32 = deepPcg(n_seed ^ n_salt);");
     expect(first.code).toContain("deep_scratch[n_x] = n_value;");
@@ -43,7 +45,7 @@ describe("DCIR v1 read-write storage, static loops, and hash-rng", () => {
   it("fails closed for every v1 capability in GLSL/WebGL2", () => {
     expect(() => emitKernelGlsl(v1Kernel())).toThrow(/storage buffers|v2 op|cannot be emitted/i);
     const noBuffer = v1Kernel();
-    expect(() => emitKernelGlsl({ ...noBuffer, buffers: [], nodes: noBuffer.nodes.filter((node) => node.op !== "buffer-store" && node.op !== "hash-rng"), loops: undefined })).not.toThrow();
+    expect(() => emitKernelGlsl({ ...noBuffer, buffers: [], nodes: noBuffer.nodes.filter((node) => node.op !== "buffer-store" && node.op !== "hash-rng"), loops: undefined })).toThrow(/buffer-only/);
   });
 
   it("rejects stores to read-only buffers and invalid static ranges", () => {
