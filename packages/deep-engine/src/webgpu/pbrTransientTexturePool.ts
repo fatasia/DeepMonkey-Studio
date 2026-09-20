@@ -1,5 +1,6 @@
 /// <reference types="@webgpu/types" />
 import type { DeviceSession } from "./deviceSession.js";
+import type { RenderResourceLifetime } from "../renderGraph.js";
 import { createAdmittedTexture } from "./resourceAdmission.js";
 import { pbrFrameResourceContract, type FramePlanUsage } from "./pbrFramePlanResources.js";
 import { failWithResourceCleanup } from "./resourceCleanup.js";
@@ -65,6 +66,13 @@ interface PoolTexture {
   state: "in-flight" | "pending-return";
 }
 
+interface AliasSlot {
+  readonly entry: PoolTexture;
+  readonly aliasKey: string;
+  readonly keyValue: string;
+  lastUse: number;
+}
+
 /** history 合同条目拒绝入池;非合同资源(合同外私有 transient)允许,由调用方声明用途。 */
 export function isPbrTransientPoolEligible(resourceId: string): boolean {
   if ((PBR_HISTORY_TRANSIENT_EXCLUDED as readonly string[]).includes(resourceId)) return false;
@@ -77,13 +85,16 @@ export function isPbrTransientPoolEligible(resourceId: string): boolean {
 export class PbrTransientTexturePool {
   private readonly free = new Map<string, PoolTexture[]>();
   private readonly live = new Set<PoolTexture>();
+  private readonly activeLeases = new Map<PbrTransientTextureHandle, PoolTexture>();
+  private readonly aliasPlan = new Map<string, RenderResourceLifetime>();
+  private readonly aliasSlots = new Map<number, AliasSlot>();
   private currentEpoch = 0;
   private currentFrame = 0;
   private frameIsOpen = false;
   private residentBytes = 0;
   private lastInvalidation: readonly [PbrTransientPoolInvalidationReason, number] | undefined;
   private readonly counters = {
-    acquireCount: 0, hits: 0, misses: 0, allocatedBytes: 0, reusedBytes: 0,
+    acquireCount: 0, hits: 0, frameAliasHits: 0, misses: 0, allocatedBytes: 0, reusedBytes: 0,
     discardedCount: 0, evictedCount: 0, peakResidentBytes: 0, budgetRejectedCount: 0, budgetEvictedBytes: 0,
   };
 
@@ -107,7 +118,8 @@ export class PbrTransientTexturePool {
       budgetBytes: this.budgetBytes, residentBytes: this.residentBytes,
       budgetRejectedCount: this.counters.budgetRejectedCount, budgetEvictedBytes: this.counters.budgetEvictedBytes,
       epoch: this.currentEpoch, frameOpen: this.frameIsOpen, lastInvalidation: this.lastInvalidation,
-      acquireCount: this.counters.acquireCount, hits: this.counters.hits, misses: this.counters.misses,
+      acquireCount: this.counters.acquireCount, hits: this.counters.hits,
+      frameAliasHits: this.counters.frameAliasHits, misses: this.counters.misses,
       allocatedBytes: this.counters.allocatedBytes, reusedBytes: this.counters.reusedBytes,
       freeCount, freeBytes, inFlightCount, inFlightBytes,
       pendingReturnCount: pendingCount, pendingReturnBytes: pendingBytes,
@@ -116,9 +128,15 @@ export class PbrTransientTexturePool {
     });
   }
 
-  beginFrame(): void {
+  beginFrame(resourceLifetimes: readonly RenderResourceLifetime[] = []): void {
     if (this.frameIsOpen) throw new Error("Transient texture pool frame scope is already open; close it with endFrame first.");
     this.currentFrame += 1;
+    this.aliasPlan.clear(); this.aliasSlots.clear(); this.activeLeases.clear();
+    for (const resource of resourceLifetimes) {
+      if (resource.external || resource.aliasKey === undefined || resource.transientSlot === undefined) continue;
+      if (!isPbrTransientPoolEligible(resource.id)) continue;
+      this.aliasPlan.set(resource.id, resource);
+    }
     this.frameIsOpen = true;
   }
 
@@ -141,20 +159,36 @@ export class PbrTransientTexturePool {
         + ` ${key.width}x${key.height} s${key.sampleCount}.`);
     }
     const keyValue = pbrTransientTextureKeyValue(key);
+    const planned = this.aliasPlan.get(request.resourceId);
+    if (planned?.transientSlot !== undefined && planned.aliasKey !== undefined) {
+      const slot = this.aliasSlots.get(planned.transientSlot);
+      if (slot && slot.aliasKey === planned.aliasKey && slot.keyValue === keyValue && slot.lastUse < planned.firstUse) {
+        slot.lastUse = planned.lastUse;
+        this.counters.hits += 1; this.counters.frameAliasHits += 1;
+        this.counters.reusedBytes += slot.entry.bytes;
+        return this.lease(slot.entry, request.resourceId);
+      }
+    }
     const bucket = this.free.get(keyValue);
     const pooled = bucket?.pop();
     if (bucket?.length === 0) this.free.delete(keyValue);
     if (pooled) {
       this.counters.hits += 1;
       this.counters.reusedBytes += pooled.bytes;
-      return this.track(makePoolEntry(pooled.handle, pooled.bytes, this.currentFrame));
+      const handle = this.track(makePoolEntry(pooled.handle, pooled.bytes, this.currentFrame));
+      this.installAliasSlot(planned, keyValue, this.liveEntry(handle));
+      return handle;
     }
-    return this.create(key, request.resourceId);
+    const handle = this.create(key, request.resourceId);
+    this.installAliasSlot(planned, keyValue, this.liveEntry(handle));
+    return handle;
   }
 
   /** 帧内释放:只挂起,不改变可见复用性;回池发生在 endFrame(committed=true)。 */
   release(handle: PbrTransientTextureHandle): void {
-    this.ownedEntry(handle).state = "pending-return";
+    const entry = this.ownedEntry(handle);
+    this.activeLeases.delete(handle);
+    if (![...this.activeLeases.values()].includes(entry)) entry.state = "pending-return";
   }
 
   /** 提交成功:挂起纹理并入空闲列表供下帧复用;提交失败:本帧接触过的纹理全部销毁。 */
@@ -175,6 +209,7 @@ export class PbrTransientTexturePool {
         else this.free.set(keyValue, [entry]);
       }
       this.live.clear();
+      this.activeLeases.clear(); this.aliasPlan.clear(); this.aliasSlots.clear();
       return;
     }
     this.frameIsOpen = false;
@@ -202,11 +237,17 @@ export class PbrTransientTexturePool {
   private create(key: PbrTransientTextureKey, resourceId: string): PbrTransientTextureHandle {
     const bytes = transientTextureBytes(key.format, key.width, key.height, key.sampleCount);
     this.makeRoom(bytes, resourceId);
+    // Chrome 146+ 把带该 flag 的目标交给驱动做内存别名，主存压力不再随 transient 池线性增长；
+    // 不支持的浏览器或未暴露该常量的宿主维持原 usage，路径逐字节不变。
+    const usageTable: { readonly RENDER_ATTACHMENT?: number; readonly TRANSIENT_ATTACHMENT?: number } | undefined =
+      typeof GPUTextureUsage === "undefined" ? undefined : GPUTextureUsage;
+    const transientFlag = usageTable?.TRANSIENT_ATTACHMENT !== undefined && usageTable.RENDER_ATTACHMENT !== undefined
+      && (key.usage & usageTable.RENDER_ATTACHMENT) !== 0 ? usageTable.TRANSIENT_ATTACHMENT : 0;
     let texture: GPUTexture;
     try {
       texture = createAdmittedTexture(this.session, {
         label: `Deep transient ${resourceId}`, size: { width: key.width, height: key.height },
-        format: key.format, sampleCount: key.sampleCount, usage: key.usage,
+        format: key.format, sampleCount: key.sampleCount, usage: key.usage | transientFlag,
       });
     } catch (error) { failWithResourceCleanup(error, `Transient texture allocation failed for ${resourceId}`, []); }
     const handle = handleOf(this.session, texture, key, resourceId);
@@ -245,17 +286,17 @@ export class PbrTransientTexturePool {
 
   private track(entry: PoolTexture): PbrTransientTextureHandle {
     this.live.add(entry);
+    this.activeLeases.set(entry.handle, entry);
     this.trackPeak();
     return entry.handle;
   }
 
   private ownedEntry(handle: PbrTransientTextureHandle): PoolTexture {
     if (!this.frameIsOpen) throw new Error("Transient texture release requires an open frame scope.");
-    for (const entry of this.live) {
-      if (entry.handle === handle) {
-        if (entry.state !== "in-flight") throw new Error("Transient texture was released twice in the same frame.");
-        return entry;
-      }
+    const entry = this.activeLeases.get(handle);
+    if (entry) return entry;
+    for (const candidate of this.live) if (candidate.handle === handle && candidate.state === "pending-return") {
+      throw new Error("Transient texture was released twice in the same frame.");
     }
     throw new Error("Released transient texture does not belong to this pool's open frame.");
   }
@@ -265,11 +306,31 @@ export class PbrTransientTexturePool {
     let discarded = 0;
     for (const entry of this.live) { this.destroy(entry); discarded += 1; }
     this.live.clear();
+    this.activeLeases.clear(); this.aliasPlan.clear(); this.aliasSlots.clear();
     this.counters.discardedCount += discarded;
   }
 
   private trackPeak(): void {
     this.counters.peakResidentBytes = Math.max(this.residentBytes, this.counters.peakResidentBytes);
+  }
+
+  private lease(entry: PoolTexture, resourceId: string): PbrTransientTextureHandle {
+    const handle: PbrTransientTextureHandle = Object.freeze({ ...entry.handle, resourceId });
+    entry.state = "in-flight"; this.activeLeases.set(handle, entry);
+    return handle;
+  }
+
+  private liveEntry(handle: PbrTransientTextureHandle): PoolTexture {
+    const entry = this.activeLeases.get(handle);
+    if (!entry) throw new Error("Transient texture lease was not registered.");
+    return entry;
+  }
+
+  private installAliasSlot(planned: RenderResourceLifetime | undefined, keyValue: string, entry: PoolTexture): void {
+    if (planned?.transientSlot === undefined || planned.aliasKey === undefined) return;
+    if (!this.aliasSlots.has(planned.transientSlot)) this.aliasSlots.set(planned.transientSlot, {
+      entry, aliasKey: planned.aliasKey, keyValue, lastUse: planned.lastUse,
+    });
   }
 }
 
