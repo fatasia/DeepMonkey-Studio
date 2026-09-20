@@ -1,5 +1,5 @@
 use super::NativeApp;
-use crate::player_annotations::Annotation;
+use crate::player_annotations::{Annotation, AnnotationFrames};
 use std::path::PathBuf;
 use winit::keyboard::KeyCode;
 
@@ -50,14 +50,16 @@ pub(super) fn key(app: &mut NativeApp, key: KeyCode, text: Option<&str>) -> bool
             }
         }
         KeyCode::F5 => {
-            let result =
-                location(app).and_then(|(path, key)| app.state.annotations.save(&path, &key));
+            let frames = coordinate_frames(app);
+            let result = location(app)
+                .and_then(|(path, key)| app.state.annotations.save(&path, &key, frames));
             report(app, result, "annotations saved");
         }
         KeyCode::F9 => {
             if !preserve(app) {
                 return true;
             }
+            let frames = coordinate_frames(app);
             let result = location(app).and_then(|(path, key)| {
                 let objects: Vec<_> = app
                     .content
@@ -67,7 +69,7 @@ pub(super) fn key(app: &mut NativeApp, key: KeyCode, text: Option<&str>) -> bool
                     .iter()
                     .map(|v| v.id.as_str())
                     .collect();
-                app.state.annotations.load(&path, &key, &objects)
+                app.state.annotations.load(&path, &key, &objects, frames)
             });
             report(
                 app,
@@ -124,10 +126,23 @@ pub(super) fn preserve(app: &mut NativeApp) -> bool {
     if !app.state.annotations.dirty() && app.state.annotations.draft.is_none() {
         return true;
     }
-    let result = location(app).and_then(|(path, key)| app.state.annotations.preserve(&path, &key));
+    let frames = coordinate_frames(app);
+    let result =
+        location(app).and_then(|(path, key)| app.state.annotations.preserve(&path, &key, frames));
     let preserved = result.is_ok();
     report(app, result, "annotations saved");
     preserved
+}
+
+/// Frame context for persistence: save records the current runtime origin,
+/// load restores world positions against it, and version 1 documents are
+/// read in the package-authored frame.
+pub(super) fn coordinate_frames(app: &NativeApp) -> AnnotationFrames {
+    let content = app.content.active();
+    AnnotationFrames {
+        runtime: content.runtime_coordinate_origin(),
+        authored: content.authored_coordinate_origin(),
+    }
 }
 
 pub(super) fn ime(app: &mut NativeApp, event: winit::event::Ime) {

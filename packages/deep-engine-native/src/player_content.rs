@@ -28,6 +28,8 @@ pub struct PlayerContent {
     authored_view: Option<deep_engine_native::player_view::PlayerView>,
     authored_camera: Option<deep_engine_native::runtime_camera::RuntimeSceneCamera>,
     coordinate_frame: Option<deep_engine_native::runtime_coordinates::SceneLocalCoordinateFrame>,
+    authored_coordinate_origin: [f64; 3],
+    coordinate_frame_revision: u64,
     resource_domain: String,
     pub pending_lkg: Option<crate::runtime_lkg::Pending>,
     pub pending_x_lkg: Option<crate::runtime_lkg::Pending>,
@@ -55,6 +57,11 @@ pub struct PlayerContent {
     /// 不在加载阶段把动画误降级成静态几何。
     #[allow(dead_code)]
     pub dynamic_runtime: Option<deep_engine_native::runtime_package::DynamicSceneRuntime>,
+    /// R11 动画状态机宿主：装载包时按持久活动态启动 clip、应用持久参数首条
+    /// 转场；之后仅在参数更新时推进。无状态机场景为 `None`，零开销。
+    animation_controller:
+        Option<deep_engine_native::native_animation_controller::NativeAnimationControllerHost>,
+    physics: Option<deep_engine_native::native_physics::NativePhysicsHost>,
     runtime_package: Option<RuntimePackageSnapshot>,
 }
 
@@ -65,6 +72,10 @@ mod camera_tests;
 #[cfg(test)]
 #[path = "player_content_dynamic_tests.rs"]
 mod dynamic_tests;
+
+#[cfg(test)]
+#[path = "player_content_controller_tests.rs"]
+mod controller_tests;
 
 /// One deterministic dynamic playback step: the sampled TRS channels were
 /// applied to the packet instances and the canonical frame string is the
@@ -78,12 +89,39 @@ pub struct DynamicPlaybackStep {
     pub changed_instances: usize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DynamicCameraFrame {
+    pub position: [f32; 3],
+    pub target: [f32; 3],
+}
+
 #[derive(Clone, Debug)]
 pub struct RuntimePackageSnapshot {
     pub package_id: String,
     pub package_version: String,
     pub package_hash: String,
     pub resource_index: Vec<RuntimeResourceIndexEntry>,
+}
+
+pub struct DynamicCoordinateRebase {
+    packet: RenderPacket,
+    frame: deep_engine_native::runtime_coordinates::SceneLocalCoordinateFrame,
+    pub view: deep_engine_native::player_view::PlayerView,
+    delta: [f32; 3],
+    revision: u64,
+}
+
+impl DynamicCoordinateRebase {
+    pub fn delta(&self) -> [f32; 3] {
+        self.delta
+    }
+}
+
+pub struct DynamicCoordinateRollback {
+    packet: RenderPacket,
+    frame: Option<deep_engine_native::runtime_coordinates::SceneLocalCoordinateFrame>,
+    revision: u64,
+    delta: [f32; 3],
 }
 
 impl RuntimePackageSnapshot {
@@ -130,6 +168,8 @@ impl PlayerContent {
             authored_view: None,
             authored_camera: None,
             coordinate_frame: None,
+            authored_coordinate_origin: [0.0; 3],
+            coordinate_frame_revision: 0,
             packet,
             pending_lkg: None,
             pending_x_lkg: None,
@@ -152,6 +192,8 @@ impl PlayerContent {
             shader_packages: Vec::new(),
             material_bindings: Vec::new(),
             dynamic_runtime: None,
+            animation_controller: None,
+            physics: None,
             runtime_package: None,
         }
     }
@@ -187,6 +229,45 @@ impl PlayerContent {
             .as_ref()
             .map(|runtime| runtime.content().clone())
             .or(entry.deep2d);
+        // Build the complete physics graph before publishing PlayerContent.
+        // Any missing render binding/collider/joint rejects the package atomically.
+        let physics = dynamic_runtime
+            .as_ref()
+            .map(|runtime| {
+                deep_engine_native::native_physics::NativePhysicsHost::from_runtime(
+                    runtime,
+                    &render_packet,
+                )
+            })
+            .transpose()?
+            .flatten();
+        // R11 动画状态机宿主：装载即执行 Web SceneViewer 挂载序列（start 活动
+        // clip → evaluate 持久参数首条转场）。失败原子拒绝整包，不伪造播放态。
+        let mut animation_controller = dynamic_runtime
+            .as_ref()
+            .and_then(
+                deep_engine_native::native_animation_controller::NativeAnimationControllerHost::from_runtime,
+            );
+        if let Some(host) = animation_controller.as_mut() {
+            let runtime = dynamic_runtime
+                .as_ref()
+                .expect("controller host implies the dynamic runtime channel");
+            host.start(runtime)?;
+            host.evaluate(runtime)?;
+        }
+        // 产品可见的装载证据（窗口标题 startup notice），与物理链的启动回执同风格。
+        let startup_notice = animation_controller.as_ref().map(|host| {
+            format!(
+                "animation controller ready: state {} ({} commands applied)",
+                host.active_state_id(),
+                host.commands().len()
+            )
+        });
+        let authored_coordinate_origin = camera
+            .as_ref()
+            .and_then(|value| value.coordinate_frame.as_ref())
+            .map(|frame| frame.origin_array())
+            .unwrap_or([0.0; 3]);
         let content = Self {
             authored_view: camera
                 .as_ref()
@@ -195,6 +276,8 @@ impl PlayerContent {
             coordinate_frame: camera
                 .as_ref()
                 .and_then(|camera| camera.coordinate_frame.clone()),
+            coordinate_frame_revision: 0,
+            authored_coordinate_origin,
             authored_camera: camera.clone(),
             resource_domain: resource_domain::memory(&package_id),
             pending_lkg: None,
@@ -202,7 +285,7 @@ impl PlayerContent {
             #[cfg(windows)]
             x_template: None,
             pending_asset_lkg: None,
-            startup_notice: None,
+            startup_notice,
             packet: render_packet,
             scene_content_key,
             deep2d,
@@ -223,6 +306,8 @@ impl PlayerContent {
             shader_packages,
             material_bindings,
             dynamic_runtime,
+            animation_controller,
+            physics,
             runtime_package,
         };
         // 包通过结构/哈希校验后，仍需在创建窗口前核对实际执行支持。
@@ -243,7 +328,12 @@ impl PlayerContent {
     }
 
     pub fn initial_view(&self) -> deep_engine_native::player_view::PlayerView {
-        self.authored_view.unwrap_or_default()
+        let mut view = self.authored_view.unwrap_or_default();
+        let delta = self.authored_to_runtime_delta();
+        for axis in 0..3 {
+            view.target[axis] += delta[axis];
+        }
+        view
     }
 
     pub fn view_after_reload(
@@ -280,6 +370,118 @@ impl PlayerContent {
         self.coordinate_frame.as_ref()
     }
 
+    pub fn coordinate_frame_revision(&self) -> u64 {
+        self.coordinate_frame_revision
+    }
+
+    /// Origin of the runtime frame that f32-local state such as annotation
+    /// points is expressed in right now; diverges from the authored origin
+    /// after a dynamic coordinate rebase.
+    pub fn runtime_coordinate_origin(&self) -> [f64; 3] {
+        self.coordinate_origin()
+    }
+
+    /// Origin of the package-authored frame; annotation documents saved
+    /// before frame-aware persistence (version 1) are interpreted in this
+    /// frame.
+    pub fn authored_coordinate_origin(&self) -> [f64; 3] {
+        self.authored_coordinate_origin
+    }
+
+    pub fn dynamic_coordinate_rebase(
+        &self,
+        view: deep_engine_native::player_view::PlayerView,
+    ) -> Result<Option<DynamicCoordinateRebase>, String> {
+        let eye = view.eye();
+        if eye.iter().all(|value| value.abs() <= 750.0) {
+            return Ok(None);
+        }
+        let old_origin = self.coordinate_origin();
+        let world_eye = self.local_to_world(eye.map(f64::from))?;
+        let next_origin = world_eye.map(|value| (value / 1000.0).round() * 1000.0);
+        if next_origin == old_origin {
+            return Ok(None);
+        }
+        let delta: [f32; 3] = std::array::from_fn(|i| (old_origin[i] - next_origin[i]) as f32);
+        if delta.iter().any(|value| !value.is_finite()) {
+            return Err("native camera-relative rebase exceeds float32 range".into());
+        }
+        let mut packet = self.packet.clone();
+        for instance in &mut packet.instances {
+            for axis in 0..3 {
+                instance.transform[12 + axis] += delta[axis];
+                if !instance.transform[12 + axis].is_finite() {
+                    return Err("native camera-relative instance rebase overflow".into());
+                }
+            }
+        }
+        let mut next_view = view;
+        for axis in 0..3 {
+            next_view.target[axis] += delta[axis];
+        }
+        let profile = self
+            .coordinate_frame
+            .as_ref()
+            .map(|frame| frame.profile.clone())
+            .unwrap_or(
+                deep_engine_native::runtime_coordinates::SceneLocalCoordinateProfile {
+                    id: "scene-local-coordinates-v1".into(),
+                    unit: "scene-unit".into(),
+                    origin_grid: 1000.0,
+                    max_round_trip_error:
+                        deep_engine_native::runtime_coordinates::MAX_ROUND_TRIP_ERROR,
+                    max_float32_coordinate_error:
+                        deep_engine_native::runtime_coordinates::MAX_FLOAT32_COORDINATE_ERROR,
+                },
+            );
+        let frame = deep_engine_native::runtime_coordinates::SceneLocalCoordinateFrame {
+            schema_version: 1,
+            profile,
+            origin: deep_engine_native::runtime_coordinates::SceneCoordinate {
+                x: next_origin[0],
+                y: next_origin[1],
+                z: next_origin[2],
+            },
+        };
+        frame.validate()?;
+        Ok(Some(DynamicCoordinateRebase {
+            packet,
+            frame,
+            view: next_view,
+            delta,
+            revision: self
+                .coordinate_frame_revision
+                .checked_add(1)
+                .ok_or("native coordinate revision exhausted")?,
+        }))
+    }
+
+    pub fn begin_dynamic_coordinate_rebase(
+        &mut self,
+        candidate: DynamicCoordinateRebase,
+    ) -> DynamicCoordinateRollback {
+        let rollback = DynamicCoordinateRollback {
+            packet: std::mem::replace(&mut self.packet, candidate.packet),
+            frame: self.coordinate_frame.replace(candidate.frame),
+            revision: self.coordinate_frame_revision,
+            delta: candidate.delta,
+        };
+        self.coordinate_frame_revision = candidate.revision;
+        if let Some(physics) = self.physics.as_mut() {
+            physics.rebase(candidate.delta);
+        }
+        rollback
+    }
+
+    pub fn rollback_dynamic_coordinate_rebase(&mut self, rollback: DynamicCoordinateRollback) {
+        self.packet = rollback.packet;
+        self.coordinate_frame = rollback.frame;
+        self.coordinate_frame_revision = rollback.revision;
+        if let Some(physics) = self.physics.as_mut() {
+            physics.rebase(rollback.delta.map(|value| -value));
+        }
+    }
+
     pub fn local_to_world(&self, position: [f64; 3]) -> Result<[f64; 3], String> {
         deep_engine_native::runtime_coordinates::local_to_world(position, self.coordinate_origin())
     }
@@ -305,12 +507,10 @@ impl PlayerContent {
             return false;
         }
         for (next_local, old_local) in [(next.position, old.position), (next.target, old.target)] {
-            let (Ok(next_world), Ok(old_world)) = (
-                self.local_to_world(next_local),
-                previous.local_to_world(old_local),
-            ) else {
-                return false;
-            };
+            let next_world: [f64; 3] =
+                std::array::from_fn(|i| next_local[i] + self.authored_coordinate_origin[i]);
+            let old_world: [f64; 3] =
+                std::array::from_fn(|i| old_local[i] + previous.authored_coordinate_origin[i]);
             if (0..3).any(|i| {
                 (next_world[i] - old_world[i]).abs()
                     > deep_engine_native::runtime_coordinates::MAX_ROUND_TRIP_ERROR
@@ -335,26 +535,151 @@ impl PlayerContent {
             .map(|animation| animation.duration_ms)
     }
 
+    pub fn dynamic_runtime_playback(&self) -> Option<(u64, bool, bool)> {
+        let animation = self.dynamic_runtime.as_ref()?.animation.as_ref()?;
+        Some((animation.duration_ms, animation.autoplay, animation.r#loop))
+    }
+
+    pub fn physics_playing(&self) -> bool {
+        self.physics
+            .as_ref()
+            .is_some_and(|physics| physics.is_playing())
+    }
+
+    /// R11 状态机宿主的只读视图（活动态 + 已应用的确定性命令轨迹）。
+    /// 当前产品消费点：装载路径 startup notice 与测试对拍；实时宿主（交互层）
+    /// 通过 `set_animation_controller_parameter` 驱动。
+    #[allow(dead_code)]
+    pub fn animation_controller(
+        &self,
+    ) -> Option<&deep_engine_native::native_animation_controller::NativeAnimationControllerHost>
+    {
+        self.animation_controller.as_ref()
+    }
+
+    /// 更新一个已声明参数并在同一调用内解析转场（与 Web 的 setParameter →
+    /// evaluate 时序一致）。无宿主或未知参数返回 `Ok(false)`；转场失败向上
+    /// 传播为 `Err`，不猜测。
+    /// 合同事实：dynamic-runtime v2/v3 的转场触发词表只有布尔参数——interaction
+    /// 通道动作（select/clear-selection/clip/set-visible）不含参数写边，故 Native
+    /// 与 Web 一致，只做持久参数装载转场 + 本入口的显式参数驱动，不虚构交互触发。
+    #[allow(dead_code)]
+    pub fn set_animation_controller_parameter(
+        &mut self,
+        name: &str,
+        value: bool,
+    ) -> Result<bool, String> {
+        let declared = match self.animation_controller.as_mut() {
+            Some(host) => host.set_parameter(name, value),
+            None => return Ok(false),
+        };
+        if !declared {
+            return Ok(false);
+        }
+        // 构造不变式：宿主存在当且仅当 dynamic_runtime 携带 controller 通道；
+        // 缺失即内容被外部破坏，显式失败而非猜测。
+        let runtime = self
+            .dynamic_runtime
+            .as_ref()
+            .ok_or("animation controller host has no dynamic runtime channel")?;
+        self.animation_controller
+            .as_mut()
+            .expect("host checked above")
+            .evaluate(runtime)
+            .map(|_| true)
+    }
+
+    pub fn advance_physics(&mut self, delta_seconds: f64) -> Result<usize, String> {
+        let Some(physics) = self.physics.as_mut() else {
+            return Ok(0);
+        };
+        let mut candidate = self.packet.clone();
+        let changed = physics.advance(delta_seconds, &mut candidate)?;
+        if changed > 0 {
+            self.packet = candidate;
+            self.scene_content_key = crate::player_shader_plan::scene_content_key(&self.packet);
+        }
+        Ok(changed)
+    }
+
+    pub fn sample_dynamic_camera(&self, time_ms: u64) -> Option<DynamicCameraFrame> {
+        let runtime = self.dynamic_runtime.as_ref()?;
+        let samples = runtime.sample_animation(time_ms);
+        let position = samples.iter().find(|sample| {
+            sample.target_id == "scene.camera" && sample.property == "camera-position"
+        })?;
+        let target = samples.iter().find(|sample| {
+            sample.target_id == "scene.camera" && sample.property == "camera-target"
+        })?;
+        let delta = self.authored_to_runtime_delta();
+        Some(DynamicCameraFrame {
+            position: std::array::from_fn(|index| {
+                [
+                    position.value[0] as f32,
+                    position.value[1] as f32,
+                    position.value[2] as f32,
+                ][index]
+                    + delta[index]
+            }),
+            target: std::array::from_fn(|index| {
+                [
+                    target.value[0] as f32,
+                    target.value[1] as f32,
+                    target.value[2] as f32,
+                ][index]
+                    + delta[index]
+            }),
+        })
+    }
+
     /// Samples one deterministic playback step from the dynamic runtime and
     /// applies the TRS result to the render packet instances it targets. The
     /// replay clock is clamped by `sample_animation`; the returned canonical
     /// string is the byte-exact cross-end frame contract.
-    pub fn apply_dynamic_playback_step(&mut self, time_ms: u64) -> Result<DynamicPlaybackStep, String> {
+    pub fn apply_dynamic_playback_step(
+        &mut self,
+        time_ms: u64,
+    ) -> Result<DynamicPlaybackStep, String> {
         let Some(runtime) = self.dynamic_runtime.as_ref() else {
-            return Err("content has no dynamic runtime channel; real playback requires one".into());
+            return Err(
+                "content has no dynamic runtime channel; real playback requires one".into(),
+            );
         };
-        let time_ms = time_ms.min(runtime.animation.as_ref().map(|a| a.duration_ms).unwrap_or(0));
+        let time_ms = time_ms.min(
+            runtime
+                .animation
+                .as_ref()
+                .map(|a| a.duration_ms)
+                .unwrap_or(0),
+        );
         let samples = runtime.sample_animation(time_ms);
         let replay_revisions: Vec<u64> = runtime
             .replay_events_at(time_ms)
             .iter()
             .map(|event| event.revision)
             .collect();
-        let canonical =
-            deep_engine_native::runtime_package::canonical_dynamic_frame(time_ms, &samples, &replay_revisions);
-        let changed_instances = apply_dynamic_transforms(&mut self.packet, &samples)?;
+        let canonical = deep_engine_native::runtime_package::canonical_dynamic_frame(
+            time_ms,
+            &samples,
+            &replay_revisions,
+        );
+        let translation_delta = self.authored_to_runtime_delta();
+        let changed_instances =
+            apply_dynamic_transforms(&mut self.packet, &samples, translation_delta)?;
         self.scene_content_key = crate::player_shader_plan::scene_content_key(&self.packet);
-        Ok(DynamicPlaybackStep { time_ms, canonical, replay_revisions, changed_instances })
+        Ok(DynamicPlaybackStep {
+            time_ms,
+            canonical,
+            replay_revisions,
+            changed_instances,
+        })
+    }
+
+    fn authored_to_runtime_delta(&self) -> [f32; 3] {
+        let runtime = self.coordinate_origin();
+        std::array::from_fn(|index| {
+            (self.authored_coordinate_origin[index] - runtime[index]) as f32
+        })
     }
 
     pub fn runtime_package(&self) -> Option<&RuntimePackageSnapshot> {
@@ -385,16 +710,31 @@ struct DynamicNodeTransform {
 fn apply_dynamic_transforms(
     packet: &mut RenderPacket,
     samples: &[deep_engine_native::runtime_package::DynamicAnimationSample],
+    translation_delta: [f32; 3],
 ) -> Result<usize, String> {
     use std::collections::BTreeMap;
     let mut nodes: BTreeMap<&str, DynamicNodeTransform> = BTreeMap::new();
     for sample in samples {
         let node = nodes.entry(sample.target_id.as_str()).or_default();
         match sample.property.as_str() {
-            "translation" => node.translation = Some([sample.value[0], sample.value[1], sample.value[2]]),
-            "rotation" => node.rotation = Some([sample.value[3], sample.value[4], sample.value[5], sample.value[6]]),
+            "translation" => {
+                node.translation = Some([sample.value[0], sample.value[1], sample.value[2]])
+            }
+            "rotation" => {
+                node.rotation = Some([
+                    sample.value[3],
+                    sample.value[4],
+                    sample.value[5],
+                    sample.value[6],
+                ])
+            }
             "scale" => node.scale = Some([sample.value[0], sample.value[1], sample.value[2]]),
-            other => return Err(format!("dynamic playback cannot consume transform property {other:?}")),
+            "camera-position" | "camera-target" => continue,
+            other => {
+                return Err(format!(
+                    "dynamic playback cannot consume transform property {other:?}"
+                ));
+            }
         }
     }
     let mut changed = 0usize;
@@ -403,7 +743,10 @@ fn apply_dynamic_transforms(
             "model-{}/",
             runtime_content_sha256(&serde_json::Value::String((*target_id).to_owned()))
         );
-        let transform = dynamic_trs_matrix(node);
+        let mut transform = dynamic_trs_matrix(node);
+        for axis in 0..3 {
+            transform[12 + axis] += translation_delta[axis];
+        }
         for instance in &mut packet.instances {
             if instance.id != *target_id && !instance.id.starts_with(&prefix) {
                 continue;
@@ -420,9 +763,15 @@ fn dynamic_trs_matrix(node: &DynamicNodeTransform) -> [f32; 16] {
     let [qx, qy, qz, qw] = node.rotation.unwrap_or([0.0, 0.0, 0.0, 1.0]);
     let [sx, sy, sz] = node.scale.unwrap_or([1.0; 3]);
     let (xx, yy, zz, xy, xz, yz, wx, wy, wz) = (
-        qx * qx, qy * qy, qz * qz,
-        qx * qy, qx * qz, qy * qz,
-        qw * qx, qw * qy, qw * qz,
+        qx * qx,
+        qy * qy,
+        qz * qz,
+        qx * qy,
+        qx * qz,
+        qy * qz,
+        qw * qx,
+        qw * qy,
+        qw * qz,
     );
     // Column-major T * R * S: scale applies along each rotation column.
     [

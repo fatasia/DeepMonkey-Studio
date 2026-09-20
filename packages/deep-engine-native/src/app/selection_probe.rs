@@ -199,10 +199,13 @@ fn annotation_probe(
     ));
     std::fs::create_dir(&folder).map_err(|e| e.to_string())?;
     let path = folder.join("notes.json");
+    let frames = super::annotations::coordinate_frames(app);
     let result = (|| {
-        app.state.annotations.save(&path, "probe-scene")?;
+        app.state.annotations.save(&path, "probe-scene", frames)?;
         app.state.annotations.notes.clear();
-        app.state.annotations.load(&path, "probe-scene", &[id])?;
+        app.state
+            .annotations
+            .load(&path, "probe-scene", &[id], frames)?;
         let note = &app.state.annotations.notes[0];
         if note.label != "检查设备" || note.object != id || note.point != point {
             return Err("annotation restoration changed identity or coordinates".into());
