@@ -46,5 +46,6 @@ pub mod scene_resource_identity;
 pub mod shader_disk_cache;
 pub mod shader_package;
 pub mod shadow_cache;
+pub mod world_partition;
 
 pub const NATIVE_SHADER_VERSION: u32 = 1;
