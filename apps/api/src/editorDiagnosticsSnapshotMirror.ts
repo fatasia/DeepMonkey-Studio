@@ -22,6 +22,9 @@ export interface EditorDiagnosticsSnapshotResource {
   readonly byteLength: number;
 }
 
+/** 与 deep-engine 的 PBR_FRAME_READBACK_RESOURCES 一致；镜像只接受白名单资源。 */
+const READBACK_RESOURCE_WHITELIST = new Set(["present-color", "opaque-hdr", "linear-depth"]);
+
 export const DIAGNOSTICS_SNAPSHOT_LIMITS = {
   resources: 4,
   resourceId: 64,
@@ -64,7 +67,7 @@ function parseResources(value: unknown): readonly EditorDiagnosticsSnapshotResou
       || typeof format !== "string" || format.length === 0 || format.length > DIAGNOSTICS_SNAPSHOT_LIMITS.format
       || typeof byteLength !== "number" || !Number.isSafeInteger(byteLength)
       || byteLength < 0 || byteLength > DIAGNOSTICS_SNAPSHOT_LIMITS.maxByteLength) return undefined;
-    if (seen.has(resourceId)) return undefined;
+    if (seen.has(resourceId) || !READBACK_RESOURCE_WHITELIST.has(resourceId)) return undefined;
     seen.add(resourceId);
     resources.push({ resourceId, frameId, width, height, format, byteLength });
   }
