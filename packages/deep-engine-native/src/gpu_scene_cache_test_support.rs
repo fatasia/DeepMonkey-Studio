@@ -28,6 +28,46 @@ pub(crate) fn alpha_packet() -> RenderPacket {
     load_and_validate(default_alpha_fixture_path()).unwrap().0
 }
 
+/// C3 LOD-only 测试夹具:复制首个几何,保留全部顶点、只留第一个三角形,
+/// 追加为 `-lod` 几何(三角数严格递减的合法 LOD 目标)。LOD profile 需要
+/// 三角数递减的至少两级,而内置夹具都只有单几何。未被实例直接引用的
+/// 几何是合法 packet 形态(阴影分类器明确处理 unreferenced 资源)。
+pub(crate) fn with_lod_target(packet: &RenderPacket) -> RenderPacket {
+    let mut next = packet.clone();
+    let primary = next.geometries[0].clone();
+    let reduced_id = format!("{}-lod", primary.id);
+    let mut reduced = primary;
+    reduced.id = reduced_id.clone();
+    reduced.indices = reduced.indices[..3].to_vec();
+    next.geometries.push(reduced);
+    next
+}
+
+/// 给首个实例挂两级 LOD profile:主几何 + `-lod` 目标(需先 with_lod_target)。
+pub(crate) fn with_lod_profile(packet: &RenderPacket) -> RenderPacket {
+    let mut next = packet.clone();
+    let primary = next.instances[0].geometry.clone();
+    next.instances[0].lod = Some(deep_engine_native::contract::RenderLodProfile {
+        levels: vec![
+            deep_engine_native::contract::RenderLodLevel {
+                geometry: primary,
+                min_projected_diameter_pixels: 48.0,
+                geometric_error: 1.0,
+                resident: None,
+            },
+            deep_engine_native::contract::RenderLodLevel {
+                geometry: format!("{}-lod", next.instances[0].geometry),
+                min_projected_diameter_pixels: 0.0,
+                geometric_error: 4.0,
+                resident: None,
+            },
+        ],
+        hysteresis_ratio: None,
+        author: None,
+    });
+    next
+}
+
 pub(crate) fn prepare(packet: &RenderPacket) -> (PreparedScene, PreparedPbrResources) {
     (
         prepare_scene(packet).unwrap(),

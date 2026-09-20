@@ -233,8 +233,7 @@ pub fn prepare_scene(packet: &RenderPacket) -> Result<PreparedScene, String> {
 pub fn recompute_transform_update(
     model: &[f32; 16],
     index: usize,
-) -> Result<([f32; 24], f32), String> {
-    let determinant = determinant3(model);
+) -> Result<([f32; 24], f32), String> {    let determinant = determinant3(model);
     let scale = column_norm(model, 0) * column_norm(model, 4) * column_norm(model, 8);
     if !determinant.is_finite() || scale == 0.0 || determinant.abs() < scale * 1e-8 {
         return Err(format!("instance transform is singular (row {index})"));
@@ -246,6 +245,28 @@ pub fn recompute_transform_update(
     ]);
     words[12..24].copy_from_slice(&inverse_transpose3(model, determinant));
     Ok((words, if determinant.is_sign_negative() { -1.0 } else { 1.0 }))
+}
+
+/// C3 receive-shadow-only 快路径的纯重算核:重算实例缓冲词 31(surface
+/// flags + BLEND alpha_cutoff 附加位),与 `pack_instance` 的词 31 逐位
+/// 一致(测试钉死)。材质表面字段由调用方守卫保证全同,唯一自由度是
+/// `receive_shadow`;cast_shadow 不进实例词(它参与批键,走批重排路径)。
+pub fn recompute_surface_flags(material: &crate::contract::PbrMaterial, receive_shadow: Option<bool>) -> f32 {
+    let alpha_mode = material.alpha_mode.unwrap_or(AlphaMode::Opaque);
+    let premultiplied =
+        alpha_mode == AlphaMode::Blend && material.premultiplied_alpha.unwrap_or(false);
+    let double_sided = material.double_sided.unwrap_or(false);
+    surface_flags(
+        alpha_mode,
+        premultiplied,
+        double_sided,
+        receive_shadow,
+        material.shading_model,
+    ) + if material.alpha_mode == Some(AlphaMode::Blend) && material.alpha_cutoff.is_some() {
+        2.0
+    } else {
+        0.0
+    }
 }
 
 #[cfg(test)]
@@ -308,5 +329,69 @@ mod transform_update_tests {
     fn singular_transform_is_rejected() {
         let zero = [0.0_f32; 16];
         assert!(recompute_transform_update(&zero, 3).is_err());
+    }
+
+    /// 词 31 重算核与 pack_instance 逐位一致:遍历 alpha 模式 / 双面 /
+    /// premultiplied / cutoff / unlit / 接收阴影的全部组合。
+    #[test]
+    fn recompute_surface_flags_matches_pack_instance_word31() {
+        use crate::contract::AlphaMode;
+        let mut material = crate::contract::PbrMaterial {
+            id: "mat/flags".into(),
+            shading_model: None,
+            base_color: [0.2, 0.4, 0.8],
+            metallic: 0.7,
+            roughness: 0.3,
+            base_color_texture: None,
+            metallic_roughness_texture: None,
+            normal_texture: None,
+            occlusion_texture: None,
+            emissive_factor: None,
+            emissive_texture: None,
+            base_color_alpha: None,
+            alpha_mode: None,
+            alpha_cutoff: None,
+            double_sided: None,
+            premultiplied_alpha: None,
+        };
+        for alpha_mode in [None, Some(AlphaMode::Opaque), Some(AlphaMode::Mask), Some(AlphaMode::Blend)] {
+            for double_sided in [None, Some(true), Some(false)] {
+                for premultiplied in [None, Some(true)] {
+                    for cutoff in [None, Some(0.4)] {
+                        for unlit in [None, Some(crate::contract::ShadingModel::Unlit)] {
+                            for receive in [None, Some(true), Some(false)] {
+                                material.alpha_mode = alpha_mode;
+                                material.double_sided = double_sided;
+                                material.premultiplied_alpha = premultiplied;
+                                material.alpha_cutoff = cutoff;
+                                material.shading_model = unlit;
+                                let packed = pack_instance(
+                                    &[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                                    inverse_transpose3(
+                                        &[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                                        1.0,
+                                    ),
+                                    &material,
+                                    1.0,
+                                    surface_flags(
+                                        material.alpha_mode.unwrap_or(AlphaMode::Opaque),
+                                        material.alpha_mode == Some(AlphaMode::Blend)
+                                            && material.premultiplied_alpha.unwrap_or(false),
+                                        material.double_sided.unwrap_or(false),
+                                        receive,
+                                        material.shading_model,
+                                    ),
+                                );
+                                assert_eq!(
+                                    packed[31],
+                                    recompute_surface_flags(&material, receive),
+                                    "word 31 mismatch for {material:?} receive={receive:?}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

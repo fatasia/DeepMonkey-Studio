@@ -98,6 +98,9 @@ impl ApplicationHandler<GpuEvent> for Probe {
             StagedRenderPacketUpdate::TransformRefresh(_) => {
                 panic!("expected MaterialUniformRefresh, got TransformRefresh")
             }
+            StagedRenderPacketUpdate::ShadowFlagRefresh(_) => {
+                panic!("expected MaterialUniformRefresh, got ShadowFlagRefresh")
+            }
             StagedRenderPacketUpdate::Replace(_) => {
                 panic!("expected MaterialUniformRefresh, got Replace")
             }

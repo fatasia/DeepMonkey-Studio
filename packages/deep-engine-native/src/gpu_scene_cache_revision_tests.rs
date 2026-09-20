@@ -229,3 +229,74 @@ fn nvidia_texture_revision_rebuilds_only_dependents_and_fails_closed() {
         );
     });
 }
+
+/// C3 切片三(2026-09-19)目标 1:纹理 **revision-only bump(像素内容逐字节
+/// 不变)** 必须仅凭 (id,revision) 版本键触发该纹理的缓存 miss 并只重传它;
+/// 几何零重传、实例缓冲按内容指纹整块复用、未受影响纹理全部复用。采样该
+/// 纹理的材质因依赖签名(含依赖 revision)重建——这是清单身份的既定级联,
+/// 由 `texture_revision_bump_changes_manifest_identity`(纯 manifest 测试)
+/// 在身份层钉死,本测试在真实 GPU 资源层钉死。
+#[test]
+#[ignore = "requires a real GPU; run explicitly with --ignored"]
+fn texture_revision_only_bump_misses_cache_and_reuploads_single_texture() {
+    pollster::block_on(async {
+        let (device, queue) = high_performance_device().await;
+        let uncaptured = capture_uncaptured_errors(&device);
+        let layout = create_material_layout(&device);
+        let mut cache = GpuSceneCache::new(&device, 13);
+        let source = alpha_packet();
+
+        let scopes = push_scopes(&device);
+        let base = stage(&cache, &device, &queue, &layout, &source);
+        let base_metrics = base.metrics();
+        assert_eq!(base_metrics.texture_uploads, source.textures.len());
+        clean_scopes(scopes, "revision-only baseline").await;
+        let base_geometry = Arc::as_ptr(&base.scene().geometries[0]);
+        let base_instance = Arc::as_ptr(&base.instance);
+        let base_scene = cache.commit(base).unwrap();
+        let base_bytes = read_instances(&device, &queue, &base_scene, source.instances.len());
+
+        // revision +1,像素数据/尺寸/采样器全部不变。
+        let mut bumped = source.clone();
+        bumped.textures[4].revision += 1;
+        assert_eq!(bumped.textures[4].data, source.textures[4].data);
+
+        let scopes = push_scopes(&device);
+        let candidate = stage(&cache, &device, &queue, &layout, &bumped);
+        let metrics = candidate.metrics();
+        assert_eq!(
+            metrics.texture_uploads, 1,
+            "exactly the revised texture must miss and re-upload"
+        );
+        assert_eq!(metrics.texture_reuses, source.textures.len() - 1);
+        assert_eq!(
+            metrics.geometry_uploads, 0,
+            "geometry must not re-upload on a texture revision bump"
+        );
+        assert_eq!(metrics.geometry_reuses, source.geometries.len());
+        assert_eq!(
+            metrics.instance_buffer_reuses, 1,
+            "instance buffer must be reused wholesale when packed instances are unchanged"
+        );
+        assert_eq!(candidate.new_textures.len(), 1);
+        assert_eq!(candidate.new_textures[0].0 .1, bumped.textures[4].revision);
+        assert_eq!(Arc::as_ptr(&candidate.scene().geometries[0]), base_geometry);
+        assert_eq!(
+            Arc::as_ptr(&candidate.instance),
+            base_instance,
+            "identical packed instances must reuse the resident instance buffer wholesale"
+        );
+        clean_scopes(scopes, "revision-only stage").await;
+        let bumped_scene = cache.commit(candidate).unwrap();
+        assert_eq!(
+            read_instances(&device, &queue, &bumped_scene, source.instances.len()),
+            base_bytes,
+            "instance GPU bytes are unchanged by a texture revision bump"
+        );
+
+        assert_no_uncaptured_errors(&uncaptured);
+        println!(
+            "native revision-only bump: {metrics:?} — single texture re-upload, geometry/instance untouched"
+        );
+    });
+}

@@ -275,6 +275,43 @@ pub fn run_telemetry_smoke_prepare_material(path: PathBuf) -> Result<(), String>
     app::run_telemetry_smoke_prepare_material(PlayerContent::from_packet(packet, None))
 }
 
+/// C3 切片三:receive/cast/LOD/Structural 摄动的 telemetry prepare 采样入口。
+pub fn run_telemetry_smoke_prepare_shadow(path: PathBuf) -> Result<(), String> {
+    let (packet, summary) = load_and_validate(&path)?;
+    println!(
+        "telemetry prepare(shadow) smoke contract v1 loaded: {} geometries, {} instances, {} triangles",
+        summary.geometries, summary.instances, summary.triangles
+    );
+    app::run_telemetry_smoke_prepare_shadow(PlayerContent::from_packet(packet, None))
+}
+
+pub fn run_telemetry_smoke_prepare_cast(path: PathBuf) -> Result<(), String> {
+    let (packet, summary) = load_and_validate(&path)?;
+    println!(
+        "telemetry prepare(cast) smoke contract v1 loaded: {} geometries, {} instances, {} triangles",
+        summary.geometries, summary.instances, summary.triangles
+    );
+    app::run_telemetry_smoke_prepare_cast(PlayerContent::from_packet(packet, None))
+}
+
+pub fn run_telemetry_smoke_prepare_lod(path: PathBuf) -> Result<(), String> {
+    let (packet, summary) = load_and_validate(&path)?;
+    println!(
+        "telemetry prepare(lod) smoke contract v1 loaded: {} geometries, {} instances, {} triangles",
+        summary.geometries, summary.instances, summary.triangles
+    );
+    app::run_telemetry_smoke_prepare_lod(PlayerContent::from_packet(packet, None))
+}
+
+pub fn run_telemetry_smoke_prepare_structural(path: PathBuf) -> Result<(), String> {
+    let (packet, summary) = load_and_validate(&path)?;
+    println!(
+        "telemetry prepare(structural) smoke contract v1 loaded: {} geometries, {} instances, {} triangles",
+        summary.geometries, summary.instances, summary.triangles
+    );
+    app::run_telemetry_smoke_prepare_structural(PlayerContent::from_packet(packet, None))
+}
+
 pub fn default_shadow_fixture_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/render_packet_shadow_v1.json")
 }

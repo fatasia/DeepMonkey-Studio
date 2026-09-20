@@ -1,7 +1,8 @@
 use deep_engine_native::{
     culling_contract::prepare_gpu_culling, lod_contract::prepare_gpu_lod,
     mesh_abi::MATERIAL_UNIFORM_FLOATS, pbr_texture::prepare_material_uniform_rows,
-    pbr_texture::prepare_pbr_resources, scene::prepare_scene, scene_bounds::prepare_scene_bounds,
+    pbr_texture::prepare_pbr_resources, scene::prepare_scene, scene::recompute_surface_flags,
+    scene_bounds::prepare_scene_bounds,
 };
 
 use crate::renderer::material_resource_diff::{
@@ -46,6 +47,11 @@ pub(crate) enum StagedRenderPacketUpdate {
     /// 仅材质数值 uniform 变化。rows 为 stage 侧 prepare_material_uniform
     /// 的输出,publish 按行原位写缓冲。
     MaterialUniformRefresh(Box<StagedMaterialUniformRefresh>),
+    /// C3 receive-shadow-only 快路径:cast_shadow/实例身份/几何/材质/纹理/
+    /// LOD 全同,仅 receive_shadow 子集变化。receive 标志只进实例词 31
+    /// (surface flags)且不参与批键——批布局与实例顺序稳定,publish 单行
+    /// 原位写;阴影贴图与 caster 集合不受影响,不失效阴影版本。
+    ShadowFlagRefresh(Box<StagedShadowFlagRefresh>),
 }
 
 pub(crate) struct StagedTransformRefresh {
@@ -55,6 +61,11 @@ pub(crate) struct StagedTransformRefresh {
 
 pub(crate) struct StagedMaterialUniformRefresh {
     pub(crate) rows: Vec<(usize, [f32; MATERIAL_UNIFORM_FLOATS])>,
+    pub(crate) scene_content_key: u64,
+}
+
+pub(crate) struct StagedShadowFlagRefresh {
+    pub(crate) rows: Vec<(usize, f32)>,
     pub(crate) scene_content_key: u64,
 }
 
@@ -69,8 +80,11 @@ pub(crate) struct StagedRenderPacketPayload {
     invalidate_shadow: bool,
     /// R6-2 细分:staging 的纯 CPU 场景准备耗时(校验/遍历/派生数据)。
     scene_update_ns: u64,
-    /// R6-2 细分:GPU 资源准备与上传暂存耗时(stage_scoped + 错误域)。
+    /// R6-2 细分:GPU 资源准备与上传暂存耗时(stage_scoped 闭包 + 错误域)。
     resource_upload_ns: u64,
+    /// C3 切片三:true = 资源复用刷新 staging(跳过纹理解码与整包内容哈希),
+    /// false = 全量 stage_scoped。测试与遥测的路由证据。
+    pub(crate) staged_via_resource_reuse: bool,
 }
 
 impl Renderer {
@@ -202,9 +216,12 @@ impl Renderer {
         let prepare_started = std::time::Instant::now();
         let packet = content.packet();
         // C3 快路径判别:实例 diff + 几何/纹理 id+revision 守卫先行,任一不过
-        // 回落全量路径。transform-only 与 uniform-only 材质是两条互斥快路径:
-        // 实例有变化时材质分支不参与(diff 非 Identical);材质有变化时
-        // transform 分支不参与(materials 全等守卫不过)。
+        // 回落全量路径。四条互斥快路径:transform-only 与 uniform-only 材质
+        // (切片一)、receive-shadow-only 单行写与 LOD/cast 阴影标志的资源复
+        // 用刷新(切片三)。实例有变化时材质分支不参与(diff 非 Identical);
+        // 材质有变化时 transform 分支不参与(materials 守卫不过);receive-only
+        // 要求材质资源与实例词字段全同(词 31 唯一自由度);刷新 staging 要求
+        // 材质资源身份不变(已驻留 GpuMaterial 复用的前提)。
         let geometries_equal = previous_packet
             .geometries
             .iter()
@@ -269,6 +286,93 @@ impl Renderer {
                             scene_content_key: content.scene_content_key(),
                         },
                     )));
+                }
+            }
+            SceneInstanceDiff::ShadowFlagOnly {
+                changed_indices,
+                cast_changed: false,
+            } => {
+                // receive-shadow-only:词 31 = f(材质表面字段, receive)。
+                // 材质表面字段(词 24..36 来源)由实例词守卫保证全同;材质
+                // 资源(uniform 缓冲 + GpuMaterial)由 classify Identical 保证
+                // 全同——本帧唯一的实例缓冲变化就是词 31 的接收阴影位。
+                if geometries_equal
+                    && textures_equal
+                    && instance_material_words_unchanged(
+                        &previous_packet.materials,
+                        &packet.materials,
+                    )
+                    && let (Ok(previous_rows), Ok(next_rows)) = (
+                        prepare_material_uniform_rows(previous_packet),
+                        prepare_material_uniform_rows(packet),
+                    )
+                    && matches!(
+                        classify_material_resources(&previous_rows, &next_rows),
+                        MaterialResourceDiff::Identical
+                    )
+                {
+                    let mut rows: Vec<(usize, f32)> = Vec::with_capacity(changed_indices.len());
+                    for index in &changed_indices {
+                        let instance = &packet.instances[*index as usize];
+                        let Some(material_index) = packet
+                            .materials
+                            .iter()
+                            .position(|material| material.id == instance.material)
+                        else {
+                            break;
+                        };
+                        rows.push((
+                            *index as usize,
+                            recompute_surface_flags(
+                                &packet.materials[material_index],
+                                instance.receive_shadow,
+                            ),
+                        ));
+                    }
+                    if rows.len() == changed_indices.len() {
+                        return Ok(StagedRenderPacketUpdate::ShadowFlagRefresh(Box::new(
+                            StagedShadowFlagRefresh {
+                                rows,
+                                scene_content_key: content.scene_content_key(),
+                            },
+                        )));
+                    }
+                }
+            }
+            SceneInstanceDiff::ShadowFlagOnly {
+                cast_changed: true,
+                ..
+            }
+            | SceneInstanceDiff::LodOnly { .. } => {
+                // cast 阴影标志/LOD-only:参与批键,批可能重排 → 全实例重打包
+                // 不可避免,但几何/纹理/材质与 LOD 不耦合(按 (id,revision) 版
+                // 本键独立复用)——走资源复用刷新 staging(跳过纹理解码与整包
+                // 内容哈希)。前置或查取失败回落全量路径;GPU 校验错误仍然
+                // 原子拒绝。
+                let materials_resources_equal = geometries_equal
+                    && textures_equal
+                    && match (
+                        prepare_material_uniform_rows(previous_packet),
+                        prepare_material_uniform_rows(packet),
+                    ) {
+                        (Ok(previous_rows), Ok(next_rows)) => matches!(
+                            classify_material_resources(&previous_rows, &next_rows),
+                            MaterialResourceDiff::Identical
+                        ),
+                        _ => false,
+                    };
+                if materials_resources_equal
+                    && let Some(staged) = self
+                        .try_stage_scene_refresh(
+                            previous_packet,
+                            packet,
+                            content,
+                            shadow_shader_key,
+                            ibl,
+                        )
+                        .await?
+                {
+                    return Ok(staged);
                 }
             }
             SceneInstanceDiff::Structural => {}
@@ -374,8 +478,144 @@ impl Renderer {
                 invalidate_shadow: shadow_relevance.must_invalidate,
                 scene_update_ns,
                 resource_upload_ns,
+                staged_via_resource_reuse: false,
             },
         )))
+    }
+
+    /// C3 切片三:资源复用的场景刷新 staging(cast 阴影标志 / LOD-only 变更)。
+    /// 与全量 Replace 的唯一差别是跳过 `prepare_pbr_resources`(纹理解码)与
+    /// `scene_resource_manifest`(整包内容哈希),按已提交清单版本键复用全部
+    /// 已驻留 GPU 资源;prepare/contracts/阴影/批表/实例缓冲全部重建,产出与
+    /// Replace 相同的 payload(publish 无分叉)。
+    ///
+    /// 返回 `Ok(None)` = 前置或驻留查取不成立,调用方回落全量路径;`Err` =
+    /// GPU 校验错误,原子拒绝。错误域纪律:域内 Err 且域干净 → 回落;域报
+    /// 错 → 拒绝。
+    async fn try_stage_scene_refresh(
+        &self,
+        previous_packet: &deep_engine_native::contract::RenderPacket,
+        packet: &deep_engine_native::contract::RenderPacket,
+        content: &PlayerContent,
+        shadow_shader_key: u64,
+        ibl: &crate::gpu_ibl::GpuIblEnvironment,
+    ) -> Result<Option<StagedRenderPacketUpdate>, String> {
+        let domain = content.resource_domain();
+        if self
+            ._scene_cache
+            .probe_scene_refresh(packet, domain)
+            .is_err()
+        {
+            return Ok(None);
+        }
+        let prepare_started = std::time::Instant::now();
+        let prepared = prepare_scene(packet)?;
+        let culling = prepare_gpu_culling(packet, &prepared)?;
+        let lod = prepare_gpu_lod(packet, &prepared)?;
+        let bounds = prepare_scene_bounds(packet)?;
+        let shadow_casters = ShadowCasterSet::prepare(packet, &prepared, &culling, &lod)?;
+        let shadow_update = self.shadow_map.stage_scene_update(
+            &self.frame,
+            shadow_camera(self.size, &self.frame, self.view),
+            shadow_ray_direction(&self.frame),
+            bounds,
+        )?;
+        let shadow_relevance = classify_shadow_relevance(previous_packet, packet);
+        let scene_update_ns =
+            u64::try_from(prepare_started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        let staging_started = std::time::Instant::now();
+        let validation = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let memory = self.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+        let internal = self.device.push_error_scope(wgpu::ErrorFilter::Internal);
+        let candidate = self
+            ._scene_cache
+            .stage_scene_refresh(
+                &self.device,
+                &self.queue,
+                packet,
+                content.scene_content_key(),
+                &prepared,
+                self.scene.pbr_summary(),
+                domain,
+            )
+            .and_then(|mut scene| {
+                scene.scene_mut().replace_shader_materials(
+                    &self.device,
+                    content,
+                    &self.frame_buffer,
+                    &self.shadow_map,
+                    ibl,
+                )?;
+                let mut next_culling = GpuCulling::new(
+                    &self.device,
+                    &scene.scene().instance_buffer,
+                    &culling,
+                    &self.frame,
+                    &shadow_update,
+                    self.shadow_probe.is_some(),
+                )?;
+                // 与 Replace 同一挂载契约:packet 更新重建 GpuCulling,不重挂
+                // 会把遮挡链静默丢掉(开关关闭时跳过)。
+                if let Some(pyramid) = &self.hi_z {
+                    next_culling.attach_occlusion(
+                        &self.device,
+                        &scene.scene().instance_buffer,
+                        pyramid.occlusion_source(),
+                        &self.frame,
+                        true,
+                    )?;
+                    next_culling.attach_occlusion_consume(
+                        &self.device,
+                        &scene.scene().instance_buffer,
+                        false,
+                    )?;
+                }
+                let next_lod = GpuLod::new(
+                    &self.device,
+                    &scene.scene().instance_buffer,
+                    &lod,
+                    &self.frame,
+                    self.size,
+                    &shadow_update,
+                    self.view.near,
+                )?;
+                let shadow_keys =
+                    shadow_casters.keys(&shadow_update, shadow_shader_key)?;
+                Ok((scene, next_culling, next_lod, shadow_keys))
+            });
+        let gpu_errors = [
+            internal.pop().await,
+            memory.pop().await,
+            validation.pop().await,
+        ];
+        if let Some(error) = gpu_errors.into_iter().flatten().next() {
+            drop(candidate);
+            return Err(format!(
+                "native RenderPacket refresh candidate rejected atomically: {error}"
+            ));
+        }
+        // 域干净但查取失活(驱逐/释放)→ 回落全量路径,由全量 staging 重建
+        // 版本登记;这里不产生部分副作用(候选被丢弃,无 commit)。
+        let Ok((scene, culling, lod, shadow_keys)) = candidate else {
+            return Ok(None);
+        };
+        let resource_upload_ns =
+            u64::try_from(staging_started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        Ok(Some(StagedRenderPacketUpdate::Replace(Box::new(
+            StagedRenderPacketPayload {
+                scene,
+                culling,
+                lod,
+                shadow_update,
+                shadow_casters,
+                shadow_keys,
+                shadow_shader_key,
+                invalidate_shadow: shadow_relevance.must_invalidate,
+                scene_update_ns,
+                resource_upload_ns,
+                staged_via_resource_reuse: true,
+            },
+        ))))
     }
 
     pub(crate) fn publish_render_packet_update(
@@ -393,6 +633,22 @@ impl Renderer {
             // 材质数值变化影响表面在光照/阴影下的呈现,保守失效阴影缓存
             // (与 TransformRefresh 同级;不做逐材质阴影相关性分析)。
             self.shadow_version.bump_scene();
+            // R6-2/C3 遥测:快路径无全量场景准备,scene_update 记 0,honest。
+            if let Some(telemetry) = self.telemetry.as_mut() {
+                telemetry.record_packet_prepare(0, resource_upload_ns);
+            }
+            return Ok(GpuSceneCacheMetrics::default());
+        }
+        if let StagedRenderPacketUpdate::ShadowFlagRefresh(staged) = &staged {
+            let upload_started = std::time::Instant::now();
+            self.scene
+                .write_instance_shadow_flags(&self.queue, &staged.rows)?;
+            let resource_upload_ns =
+                u64::try_from(upload_started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+            self.scene.set_scene_content_key(staged.scene_content_key);
+            // receive_shadow 只改 lit-pass 采样语义(实例词 31);caster 集合、
+            // 批布局与阴影贴图全部不变——不失效阴影版本(与
+            // classify_shadow_relevance 对"实例集未变"的判定一致)。
             // R6-2/C3 遥测:快路径无全量场景准备,scene_update 记 0,honest。
             if let Some(telemetry) = self.telemetry.as_mut() {
                 telemetry.record_packet_prepare(0, resource_upload_ns);

@@ -121,7 +121,9 @@ pub fn scene_resource_manifest(
     })
 }
 
-fn instance_fingerprint(scene: &PreparedScene) -> ContentFingerprint {
+/// C3 场景刷新 staging(GPU 资源全复用)使用:实例内容变化(LOD/阴影
+/// 标志/重排)而资源身份不变时,实例缓冲按本指纹复用或 copy-diff 上传。
+pub fn instance_fingerprint(scene: &PreparedScene) -> ContentFingerprint {
     let mut hash = Fingerprint::new(b"instances-v1");
     hash.usize(scene.instance_ids.len());
     for (id, instance) in scene.instance_ids.iter().zip(&scene.instances) {
@@ -276,7 +278,7 @@ mod tests {
 #[cfg(test)]
 mod texture_revision_tests {
     use super::*;
-    use crate::contract::{RenderInstance, RenderPacket};
+    use crate::contract::RenderPacket;
     use crate::pbr_texture::prepare_pbr_resources;
     use crate::scene::prepare_scene;
 

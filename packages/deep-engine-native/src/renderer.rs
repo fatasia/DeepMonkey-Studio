@@ -53,6 +53,8 @@ mod material_resource_diff;
 mod material_uniform_fastpath_gpu_tests;
 mod replacement_present;
 mod scene_instance_diff;
+#[cfg(all(test, target_os = "windows"))]
+mod scene_incremental_fastpath_gpu_tests;
 pub(crate) mod scene_update;
 mod scene_update_stage;
 mod section_readback;

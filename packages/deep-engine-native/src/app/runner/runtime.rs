@@ -75,6 +75,10 @@ pub(super) fn run_internal(
                 ReportMode::Telemetry
                     | ReportMode::TelemetryPrepare
                     | ReportMode::TelemetryPrepareMaterial
+                    | ReportMode::TelemetryPrepareShadowFlag
+                    | ReportMode::TelemetryPrepareCastFlag
+                    | ReportMode::TelemetryPrepareLod
+                    | ReportMode::TelemetryPrepareStructural
             ),
             telemetry_prepare_replay: match report {
                 ReportMode::TelemetryPrepare => {
@@ -82,6 +86,18 @@ pub(super) fn run_internal(
                 }
                 ReportMode::TelemetryPrepareMaterial => {
                     Some(super::super::TelemetryPreparePerturbation::MaterialUniform)
+                }
+                ReportMode::TelemetryPrepareShadowFlag => {
+                    Some(super::super::TelemetryPreparePerturbation::ShadowFlag)
+                }
+                ReportMode::TelemetryPrepareCastFlag => {
+                    Some(super::super::TelemetryPreparePerturbation::CastFlag)
+                }
+                ReportMode::TelemetryPrepareLod => {
+                    Some(super::super::TelemetryPreparePerturbation::Lod)
+                }
+                ReportMode::TelemetryPrepareStructural => {
+                    Some(super::super::TelemetryPreparePerturbation::Structural)
                 }
                 _ => None,
             },

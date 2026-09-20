@@ -74,7 +74,9 @@ pub use runner::{
     PackageLiveSpec, PacketLiveSpec, run, run_chart_keyboard_smoke, run_dynamic_playback, run_fog,
     run_occlusion_smoke, run_package_live, run_packet_live, run_section_smoke, run_selection_smoke,
     run_shadow_update_probe, run_state_ops_playback, run_telemetry_smoke,
-    run_telemetry_smoke_prepare, run_telemetry_smoke_prepare_material, run_verification,
+    run_telemetry_smoke_prepare, run_telemetry_smoke_prepare_cast, run_telemetry_smoke_prepare_lod,
+    run_telemetry_smoke_prepare_material, run_telemetry_smoke_prepare_shadow,
+    run_telemetry_smoke_prepare_structural, run_verification,
 };
 use shadow_update_probe::ShadowUpdateProbe;
 pub use state_ops_playback::StateOpsSpec;
@@ -151,6 +153,18 @@ pub enum TelemetryPreparePerturbation {
     /// 首个带 baseColor 纹理的材质 uv offset 摄动(材质 uniform 恰为纹理
     /// 变换块;base_color/metallic 走实例缓冲词,不属本通道)。
     MaterialUniform,
+    /// C3 切片三:首实例 receive_shadow 翻转(receive-only 词 31 原位写被测
+    /// 对象;caster 集合不变,阴影版本不失效)。
+    ShadowFlag,
+    /// C3 切片三:首实例 cast_shadow 翻转(批键变化 → 资源复用刷新 staging
+    /// 被测对象;阴影版本失效)。
+    CastFlag,
+    /// C3 切片三:首实例 LOD profile 出现/移除(批键变化 → 资源复用刷新
+    /// staging 被测对象)。基准 packet 会被补一个三角数严格递减的 LOD 目标
+    /// 几何(两侧 packet 同补,几何列表不因摄动变化)。
+    Lod,
+    /// C3 切片三:首实例 id 改写(身份变化 → Structural 全量路径对照)。
+    Structural,
 }
 
 /// R6-2 细分采样的交替内容对。变体按摄动类型生成,保证每次 replace 的
@@ -189,6 +203,71 @@ impl TelemetryPrepareReplay {
                 let next_x = if x == 0.25 { 0.0 } else { 0.25 };
                 slot.offset = Some([next_x, slot.offset.unwrap_or([0.0, 0.0])[1]]);
             }
+            TelemetryPreparePerturbation::ShadowFlag => {
+                // receive 语义归一(None ≡ Some(true)):Some(false) ↔ None,
+                // 两种取值的实例词 31 必然不同。
+                let first = moved.instances.first_mut()?;
+                first.receive_shadow = if first.receive_shadow == Some(false) {
+                    None
+                } else {
+                    Some(false)
+                };
+            }
+            TelemetryPreparePerturbation::CastFlag => {
+                // cast 语义归一(None ≡ Some(true)):Some(false) ↔ None,批键
+                // 必然变化(单实例批拆分/合并)。
+                let first = moved.instances.first_mut()?;
+                first.cast_shadow = if first.cast_shadow == Some(false) {
+                    None
+                } else {
+                    Some(false)
+                };
+            }
+            TelemetryPreparePerturbation::Lod => {
+                // 基准与变体都补 LOD 目标几何(几何列表两侧一致,不参与摄动),
+                // 变体只在首实例上挂/摘两级 profile。
+                let mut base = packet.clone();
+                append_lod_target(&mut base);
+                let mut moved_with_lod = base.clone();
+                let first = moved_with_lod.instances.first_mut()?;
+                let primary = first.geometry.clone();
+                if first.lod.is_some() {
+                    first.lod = None;
+                } else {
+                    first.lod = Some(deep_engine_native::contract::RenderLodProfile {
+                        levels: vec![
+                            deep_engine_native::contract::RenderLodLevel {
+                                geometry: primary,
+                                min_projected_diameter_pixels: 48.0,
+                                geometric_error: 1.0,
+                                resident: None,
+                            },
+                            deep_engine_native::contract::RenderLodLevel {
+                                geometry: lod_target_id(&base, 0),
+                                min_projected_diameter_pixels: 0.0,
+                                geometric_error: 4.0,
+                                resident: None,
+                            },
+                        ],
+                        hysteresis_ratio: None,
+                        author: None,
+                    });
+                }
+                return Some(Self {
+                    original: PlayerContent::from_packet(base, content.deep2d.clone()),
+                    alternate: PlayerContent::from_packet(moved_with_lod, content.deep2d.clone()),
+                    use_alternate: true,
+                });
+            }
+            TelemetryPreparePerturbation::Structural => {
+                // 首实例 id 改写 → 实例身份变化,永远走全量路径(对照组)。
+                let first = moved.instances.first_mut()?;
+                if first.id.ends_with("#alt") {
+                    first.id = first.id.trim_end_matches("#alt").to_string();
+                } else {
+                    first.id.push_str("#alt");
+                }
+            }
         }
         Some(Self {
             original: PlayerContent::from_packet(packet.clone(), content.deep2d.clone()),
@@ -196,6 +275,22 @@ impl TelemetryPrepareReplay {
             use_alternate: true,
         })
     }
+}
+
+/// C3 LOD 摄动夹具:复制第 `index` 个几何,顶点全留、索引减半(至少 1 个
+/// 三角形),追加为 `<id>-lod` —— 满足 validate_lod 的"三角数严格递减"。
+/// 未被实例直接引用的几何是合法 packet 形态。
+fn append_lod_target(packet: &mut deep_engine_native::contract::RenderPacket) {
+    let primary = packet.geometries[0].clone();
+    let half = (primary.indices.len() / 2).max(3) - (primary.indices.len() / 2).max(3) % 3;
+    let mut reduced = primary;
+    reduced.id = format!("{}-lod", reduced.id);
+    reduced.indices.truncate(half.max(3));
+    packet.geometries.push(reduced);
+}
+
+fn lod_target_id(packet: &deep_engine_native::contract::RenderPacket, index: usize) -> String {
+    format!("{}-lod", packet.geometries[index].id)
 }
 
 impl NativeApp {

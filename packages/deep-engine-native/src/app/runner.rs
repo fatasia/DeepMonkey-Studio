@@ -36,6 +36,14 @@ enum ReportMode {
     /// C3 材质细分采样:同 TelemetryPrepare,摄动改为首材质 metallic 数值
     /// (uniform-only 材质更新的被测对象)。
     TelemetryPrepareMaterial,
+    /// C3 切片三采样:receive_shadow 翻转(receive-only 词 31 原位写)。
+    TelemetryPrepareShadowFlag,
+    /// C3 切片三采样:cast_shadow 翻转(资源复用刷新 staging)。
+    TelemetryPrepareCastFlag,
+    /// C3 切片三采样:LOD profile 出现/移除(资源复用刷新 staging)。
+    TelemetryPrepareLod,
+    /// C3 切片三采样:实例 id 改写(Structural 全量路径对照)。
+    TelemetryPrepareStructural,
     Selection,
     Section,
     /// P1-16 第三批:真实窗口键盘 smoke(需要图例可聚焦)。
@@ -247,6 +255,94 @@ pub fn run_telemetry_smoke_prepare_material(content: PlayerContent) -> Result<()
         None,
         None,
         ReportMode::TelemetryPrepareMaterial,
+        None,
+        None,
+    )
+}
+
+/// `--smoke-telemetry-prepare-shadow`:C3 切片三采样,摄动为首实例
+/// receive_shadow 翻转(receive-only 词 31 原位写被测对象)。
+pub fn run_telemetry_smoke_prepare_shadow(content: PlayerContent) -> Result<(), String> {
+    run_internal(
+        content,
+        true,
+        RendererFeatures {
+            bloom: BloomSettings::default(),
+            fog: FogSettings::DISABLED,
+            shadow_probe: false,
+            ibl_probe: false,
+            telemetry: true,
+        },
+        None,
+        None,
+        None,
+        ReportMode::TelemetryPrepareShadowFlag,
+        None,
+        None,
+    )
+}
+
+/// `--smoke-telemetry-prepare-cast`:C3 切片三采样,摄动为首实例
+/// cast_shadow 翻转(资源复用刷新 staging 被测对象)。
+pub fn run_telemetry_smoke_prepare_cast(content: PlayerContent) -> Result<(), String> {
+    run_internal(
+        content,
+        true,
+        RendererFeatures {
+            bloom: BloomSettings::default(),
+            fog: FogSettings::DISABLED,
+            shadow_probe: false,
+            ibl_probe: false,
+            telemetry: true,
+        },
+        None,
+        None,
+        None,
+        ReportMode::TelemetryPrepareCastFlag,
+        None,
+        None,
+    )
+}
+
+/// `--smoke-telemetry-prepare-lod`:C3 切片三采样,摄动为首实例 LOD
+/// profile 出现/移除(资源复用刷新 staging 被测对象)。
+pub fn run_telemetry_smoke_prepare_lod(content: PlayerContent) -> Result<(), String> {
+    run_internal(
+        content,
+        true,
+        RendererFeatures {
+            bloom: BloomSettings::default(),
+            fog: FogSettings::DISABLED,
+            shadow_probe: false,
+            ibl_probe: false,
+            telemetry: true,
+        },
+        None,
+        None,
+        None,
+        ReportMode::TelemetryPrepareLod,
+        None,
+        None,
+    )
+}
+
+/// `--smoke-telemetry-prepare-structural`:C3 切片三采样,摄动为首实例
+/// id 改写(Structural 全量路径对照)。
+pub fn run_telemetry_smoke_prepare_structural(content: PlayerContent) -> Result<(), String> {
+    run_internal(
+        content,
+        true,
+        RendererFeatures {
+            bloom: BloomSettings::default(),
+            fog: FogSettings::DISABLED,
+            shadow_probe: false,
+            ibl_probe: false,
+            telemetry: true,
+        },
+        None,
+        None,
+        None,
+        ReportMode::TelemetryPrepareStructural,
         None,
         None,
     )

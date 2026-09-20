@@ -91,6 +91,10 @@ pub struct GpuSceneCache {
     /// Strong-alive resident bytes over all retained entries.
     live_bytes: u64,
     peak_live_bytes: u64,
+    /// C3 场景刷新 staging 的身份基线:最近一次 commit 的资源清单(几何/
+    /// 纹理/材质身份向量)。实例内容变化而资源身份不变时,刷新路径凭它
+    /// 跳过纹理解码与整包内容哈希;`reset` 清空,commit 覆盖。
+    pub(super) committed_manifest: Option<SceneResourceManifest>,
 }
 
 /// Conservative default resident budget: twice the device buffer limit,
@@ -117,6 +121,7 @@ impl GpuSceneCache {
             fallbacks: Weak::new(),
             live_bytes: 0,
             peak_live_bytes: 0,
+            committed_manifest: None,
         }
     }
 
@@ -175,6 +180,7 @@ impl GpuSceneCache {
         self.fallbacks = Weak::new();
         self.live_bytes = 0;
         self.peak_live_bytes = 0;
+        self.committed_manifest = None;
     }
 
     pub fn commit(&mut self, candidate: GpuSceneCandidate) -> Result<GpuScene, String> {
@@ -186,6 +192,7 @@ impl GpuSceneCache {
         self.materials.retain(|_, value| value.strong_count() > 0);
         self.instances
             .retain(|_, (weak, _)| weak.strong_count() > 0);
+        self.committed_manifest = Some(candidate.manifest.clone());
         self.revisions.commit(candidate.revisions)?;
         self.domains.insert(candidate.domain.clone());
         self.active_domain = candidate.domain;

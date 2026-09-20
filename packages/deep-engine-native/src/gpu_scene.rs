@@ -142,6 +142,38 @@ impl GpuScene {
         Ok(())
     }
 
+    /// C3 receive-shadow-only 快路径:对受影响行重算词 31(surface flags),
+    /// 其余词保持不变;按升序连续段合并 partial-write 整行(144B)进 GPU
+    /// 实例缓冲。词 31 数值由 `deep_engine_native::scene::recompute_surface_flags`
+    /// 生成(与 pack_instance 逐位一致,测试钉死);批布局/实例顺序不变。
+    pub(crate) fn write_instance_shadow_flags(
+        &mut self,
+        queue: &wgpu::Queue,
+        rows: &[(usize, f32)],
+    ) -> Result<(), String> {
+        let packed = &mut self.packed_instances;
+        let mut runs: Vec<(usize, usize)> = Vec::new();
+        for (index, flags) in rows {
+            let row = packed
+                .get_mut(*index)
+                .ok_or("instance shadow-flag row out of range")?;
+            row[31] = *flags;
+            match runs.last_mut() {
+                Some((_, end)) if *end == *index => *end = *index + 1,
+                _ => runs.push((*index, *index + 1)),
+            }
+        }
+        for (start, end) in &runs {
+            let bytes = cast_slice(&packed[*start..*end]);
+            queue.write_buffer(
+                &self.instance_buffer,
+                (*start as wgpu::BufferAddress) * deep_engine_native::scene::PACKED_INSTANCE_BYTES,
+                bytes,
+            );
+        }
+        Ok(())
+    }
+
     pub fn replace_shader_materials(
         &mut self,
         device: &wgpu::Device,
