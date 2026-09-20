@@ -37,15 +37,18 @@ export function planWorldChunkDemand(input: WorldStreamingInput, radius: number,
     throw new RangeError(`maxLod must be an integer in [1,${WORLD_CELL_LOD_COUNT}].`);
   }
   const plan = worldStreamingPlan(input, radius).slice(0, maxCells);
-  const priorities = new Map<string, number>();
+  // 紧迫度按流送优先级秩次归一到 0..1（秩 0 = 最优先，即相机单元），与
+  // worldStreamingPriority 严格同序；同一单元各 LOD 共享同一紧迫度。
+  // 秩次归一对任意半径/maxCells 组合都确定且有界，供消费方做 visible/prefetch 分档。
+  const rankDenominator = Math.max(1, plan.length - 1);
   const cells: WorldChunkDemand[] = [];
-  for (const cell of plan) {
+  for (let index = 0; index < plan.length; index++) {
+    const cell = plan[index]!;
+    const urgency = index / rankDenominator;
     const center2d = worldCellCenter(cell);
-    const keyBase = worldCellKey(cell);
-    priorities.set(keyBase, 0);
     for (let lod = 0; lod < maxLod; lod++) {
-      cells.push({ key: worldChunkKey(cell, lod), cell, lod,
-        urgency: priorities.get(keyBase)!, center: [center2d.x, 0, center2d.z] });
+      cells.push({ key: worldChunkKey(cell, lod), cell, lod, urgency,
+        center: [center2d.x, 0, center2d.z] });
     }
   }
   return cells;

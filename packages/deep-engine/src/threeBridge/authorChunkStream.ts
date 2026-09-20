@@ -79,6 +79,10 @@ export class AuthorChunkStream {
       if (!old || old.replaceRequired || full || !old.catalog.update(streamedPacket)) candidate = this.create(streamedPacket);
       const owner = candidate ?? old!;
       const demands = owner.catalog.demand(view);
+      // 波次4 接线点（世界分区流送）：世界单元期望集由 threeBridge/worldStreamingBridge.ts
+      // 的 decideWorldStreamingReplan → translateWorldChunkDemand → diffWorldChunkDesired
+      // 生成，走独立的 SceneChunkResidency 实例，不进本 author catalog 域；本处全量
+      // 期望集语义（省略即逐出）与世界单元一致，两种域禁止混用同一 residency。
       const frame = await owner.residency.update({ frame: ++this.frame, chunks: demands, signal });
       await stageSceneChunkFrame(this.runtime, frame, signal, owner.catalog.batchUpdates);
       staged = true;
@@ -136,6 +140,8 @@ export class AuthorChunkStream {
     const residency = createSceneChunkResidency(this.runtime.session,
       { maxResidentBytes: budgetBytes, maxUploadBytesPerFrame: budgetBytes, retainFrames: 0 }, { meshlets: this.meshlets });
     try { for (const chunk of catalog.chunks) residency.registerChunk(chunk.key, chunk.packet); }
+    // 波次4 接线点：`world|<cx>|<cz>|lodN` 键的世界单元 chunk 不在此注册（其生命周期
+    // 跟随相机位姿而非 RenderPacket sync）；注册路径见 threeBridge/worldStreamingBridge.ts 顶部合同。
     catch (error) { residency.dispose(); throw error; }
     return { catalog, residency, replaceRequired: false };
   }

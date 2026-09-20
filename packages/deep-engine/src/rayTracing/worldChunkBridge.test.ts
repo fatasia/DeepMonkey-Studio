@@ -32,6 +32,26 @@ describe("world chunk bridge", () => {
     expect(parseWorldChunkKey("world|1|2|core")).toBeUndefined();
   });
 
+  it("normalises urgency by streaming priority rank", () => {
+    const demands = planWorldChunkDemand(camera, 1);
+    // 秩 0 = 最优先（相机单元），紧迫度 0；末秩紧迫度 1。
+    expect(demands[0]!.cell).toEqual({ cx: 1, cz: -2 });
+    expect(demands[0]!.urgency).toBe(0);
+    expect(demands[demands.length - 1]!.urgency).toBe(1);
+    // 单元首次出现顺序与紧迫度严格同序（worldStreamingPriority 升序）。
+    const seenCells = new Set<string>();
+    let lastUrgency = -1;
+    for (const demand of demands) {
+      const cellKey = `${demand.cell.cx}|${demand.cell.cz}`;
+      if (seenCells.has(cellKey)) continue;
+      seenCells.add(cellKey);
+      expect(demand.urgency).toBeGreaterThan(lastUrgency);
+      lastUrgency = demand.urgency;
+    }
+    expect(seenCells.size).toBe(9);
+    expect(demands.filter(demand => demand.urgency === 0)).toHaveLength(WORLD_CELL_LOD_COUNT);
+  });
+
   it("validates options fail-closed", () => {
     expect(() => planWorldChunkDemand(camera, 1, { maxCells: 0 })).toThrow(RangeError);
     expect(() => planWorldChunkDemand(camera, 1, { maxLod: 5 })).toThrow(RangeError);
