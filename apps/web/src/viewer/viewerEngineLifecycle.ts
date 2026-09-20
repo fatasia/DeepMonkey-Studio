@@ -11,6 +11,7 @@ export abstract class ViewerEngineLifecycle extends ViewerEngineNavigationTools 
   dispose(): void {
     if (this.rendererDisposalStarted) return;
     this.rendererDisposalStarted = true;
+    this.teardownXRSessionOnDispose();
     this.presentationFrameListeners.clear();
     disposeViewerPerformanceBinding(this);
     disposeOrdinaryPicking(this);
@@ -84,8 +85,10 @@ export abstract class ViewerEngineLifecycle extends ViewerEngineNavigationTools 
     for (const visual of this.spaceVisuals.values()) this.disposeObject(visual.object);
     this.spaceVisuals.clear();
     this.disposeSceneLightProxies();
-    this.physicsWorld?.free();
+    this.physicsHost.dispose();
     this.physicsWorld = undefined;
+    this.physicsGroundBody = undefined;
+    this.physicsJoints.clear();
     this.rapier = undefined;
     this.postProcessingRevision += 1;
     if (this.postProcessingDisposeTimer !== undefined) window.clearTimeout(this.postProcessingDisposeTimer);
@@ -96,5 +99,22 @@ export abstract class ViewerEngineLifecycle extends ViewerEngineNavigationTools 
     this.renderer.dispose();
     if (this.rendererBackend === "webgl") (this.renderer as THREE.WebGLRenderer).forceContextLoss();
     this.renderer.domElement.remove();
+  }
+
+  /**
+   * XR 会话先于渲染器销毁结束：残留会话会在头显上保持沉浸模式并持续占用 rAF。
+   * 直接清状态而非走 finishXRSession——引擎即将销毁，无需恢复编辑器视图或重启动画循环。
+   */
+  protected teardownXRSessionOnDispose(): void {
+    if (this.renderer instanceof THREE.WebGLRenderer) {
+      this.renderer.setAnimationLoop(null);
+      this.renderer.xr.enabled = false;
+    }
+    this.xrActive = false;
+    const xrSession = this.xrSession;
+    this.xrSession = undefined;
+    this.xrMode = undefined;
+    for (const controller of this.xrControllers.splice(0)) this.disposeObject(controller);
+    if (xrSession) void xrSession.end().catch(() => undefined);
   }
 }

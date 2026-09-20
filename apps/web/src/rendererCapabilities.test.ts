@@ -6,6 +6,7 @@ import {
   rendererRequirementsForScene,
   selectPublishedRenderer,
   resolvePublishedRenderer,
+  xrSessionAvailability,
 } from "./rendererCapabilities";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -144,5 +145,37 @@ describe("initial renderer selection", () => {
     expect(initialRendererBackend("auto", "webgpu")).toBe("webgl");
     expect(initialRendererBackend("webgl", "webgpu")).toBe("webgl");
     expect(initialRendererBackend("webgpu", "webgl")).toBe("webgpu");
+  });
+});
+
+describe("XR session availability", () => {
+  it("supports XR on the WebGL backend in a secure context with the WebXR API", () => {
+    expect(xrSessionAvailability({ secureContext: true, webxr: true, backend: "webgl" })).toEqual({
+      supported: true,
+      reasons: [],
+    });
+  });
+
+  it("explains that XR is WebGL-only while Deep WebGPU is active", () => {
+    const result = xrSessionAvailability({ secureContext: true, webxr: true, backend: "webgpu" });
+    expect(result.supported).toBe(false);
+    expect(result.reasons).toHaveLength(1);
+    expect(result.reasons[0]).toContain("仅 Three WebGL 渲染后端支持");
+  });
+
+  it("lists every unmet static requirement for the panel", () => {
+    const result = xrSessionAvailability({ secureContext: false, webxr: false, backend: "webgl" });
+    expect(result.supported).toBe(false);
+    expect(result.reasons).toContain("需要 HTTPS 或 localhost 安全上下文");
+    expect(result.reasons).toContain("浏览器未暴露 WebXR API（navigator.xr）");
+  });
+
+  it("keeps the WebGL readiness row and Deep WebGPU row explicit about XR", () => {
+    const result = rendererReadiness(
+      { secureContext: true, webgl2: true, webgpuApi: true, webgpuAdapter: true, timestampQuery: true, shaderF16: true },
+      { postProcessingEnabled: false },
+    );
+    expect(result[0]?.details).toContain("XR 会话挂载在本后端：WebXR 进入、控制器选择与双目渲染均走 WebGL");
+    expect(result[1]?.details).toContain("Deep WebGPU 激活期间 XR 入口不可用；浏览器端 WebGPU-XR 会话特性尚未落地，属诚实降级而非缺陷");
   });
 });

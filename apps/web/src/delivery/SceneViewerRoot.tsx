@@ -8,6 +8,7 @@ import {
   probeRendererCapabilities,
   rendererRequirementsForScene,
   selectPublishedRenderer,
+  xrSessionAvailability,
 } from "../rendererCapabilities";
 import { applySceneViewerSnapshot } from "./applySceneViewerSnapshot";
 import { startSceneViewerDynamicPlayback } from "./sceneViewerDynamicPlayback";
@@ -129,6 +130,13 @@ export function SceneViewerRoot() {
   }
 
   const statistics = engine?.getSceneStatistics();
+  // Deep WebGPU 发布时 XR 入口必须可解释地禁用（仅 Three WebGL 后端支持），而非点击后才报错。
+  const xrReasons = xrSessionAvailability({
+    secureContext: window.isSecureContext,
+    webxr: Boolean(navigator.xr),
+    backend: backend ?? "webgl",
+  }).reasons;
+  const xrUnavailableReason = xrReasons.length > 0 ? xrReasons.join("；") : undefined;
   return (
     <main className="scene-viewer-delivery-shell">
       <div className="scene-viewer-viewport" ref={viewportRef} />
@@ -163,6 +171,7 @@ export function SceneViewerRoot() {
           onStandardView={(view) => engine?.setStandardView(view)}
           onFullscreen={() => void (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen())}
           onStartXR={(mode) => void engine?.startXR(mode).catch((reason) => setError(message(reason)))}
+          xrUnavailableReason={xrUnavailableReason}
         />
       )}
       {objectPanelOpen && engine && (

@@ -11,6 +11,7 @@ import { type AnnotationPointerHit, type InteractionEventDetail, type LoadedScen
 import { type PointerSceneHit } from "./viewerEngineTypes";
 import { ViewerEngineObjectState } from "./viewerEngineObjectState";
 import { createOrdinaryPicking } from "./ordinaryPicking";
+import { xrControllerRay, xrHitModelId } from "./xrInput";
 
 /** Pointer 职责层。 */
 export abstract class ViewerEnginePointer extends ViewerEngineObjectState {
@@ -19,6 +20,35 @@ export abstract class ViewerEnginePointer extends ViewerEngineObjectState {
   setPickingAccelerationEnabled(enabled: boolean): void { this.ordinaryPicking.setEnabled(enabled); }
 
   getPickingAccelerationDiagnostics() { return this.ordinaryPicking.diagnostics(); }
+
+  /** XR 控制器 select/squeeze → 既有选择命令与交互总线（复用 WebXRManager 转发的事件，不造第二套输入）。 */
+  protected override onXRControllerCreated(controller: THREE.Group): void {
+      // getController 返回的 XRTargetRaySpace 会派发 selectstart/squeezestart；
+      // three 的 Object3DEventMap 未收录这两个事件名，这里按 WebXR 合同窄化。
+      const targetRay = controller as unknown as {
+        addEventListener(type: "selectstart" | "squeezestart", listener: () => void): void;
+      };
+      targetRay.addEventListener("selectstart", () => this.handleXRControllerSelect(controller));
+      targetRay.addEventListener("squeezestart", () => this.handleXRControllerSelect(controller));
+    }
+  protected handleXRControllerSelect(controller: THREE.Group): void {
+      if (!this.xrActive) return;
+      const ray = xrControllerRay(controller.matrixWorld);
+      this.raycaster.set(ray.origin, ray.direction);
+      this.raycaster.near = 0;
+      this.raycaster.far = Infinity;
+      // 与 pointerHit 相同的排除口径：Fragments 模型走异步拾取，普通射线先排除。
+      const excluded = new Set<THREE.Object3D>();
+      for (const id of this.fragmentModels.keys()) {
+        const object = this.models.get(id)?.object;
+        if (object) excluded.add(object);
+      }
+      const hit = this.ordinaryPicking.intersectObjects(this.raycaster, this.visibleModelObjects(), excluded)[0];
+      const modelId = xrHitModelId(hit?.object);
+      const model = modelId ? this.models.get(modelId) : undefined;
+      this.select(model && modelId ? modelId : undefined);
+      if (model && modelId) this.dispatchInteraction("click", { kind: "object", modelId });
+    }
 
   protected updateCollisions(force: boolean, now = performance.now()): void {
       // 未启用碰撞且没有待清理高亮时，不遍历全场景计算包围盒。

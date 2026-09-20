@@ -532,9 +532,13 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     if (!xrPanelOpen || !engine) return;
     let cancelled = false;
     setXrCapabilities((current) => ({ ...current, checking: true, secure: window.isSecureContext, webxr: Boolean(navigator.xr) }));
-    void Promise.all([engine.isXRSupported("immersive-vr"), engine.isXRSupported("immersive-ar")]).then(([vr, ar]) => {
+    const settle = (vr: boolean, ar: boolean) => {
       if (!cancelled) setXrCapabilities({ checking: false, secure: window.isSecureContext, webxr: Boolean(navigator.xr), vr, ar });
-    });
+    };
+    void Promise.all([engine.isXRSupported("immersive-vr"), engine.isXRSupported("immersive-ar")])
+      .then(([vr, ar]) => settle(vr, ar))
+      // isSessionSupported 异常（设备枚举失败等）不能让面板永远停在 checking。
+      .catch(() => settle(false, false));
     return () => {
       cancelled = true;
     };

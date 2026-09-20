@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { GlobalLightingState, SceneEnvironmentState, SceneFloorState, SceneIKConstraintState, SceneMaterialState, SceneModelEffectsState, ScenePostProcessingState, SceneRigState, Vector3Value, WeatherMode } from "@bim-studio/contracts";
 import { sceneWeatherFog } from "@bim-studio/contracts";
 import { readXRThumbstick } from "./xrInput";
+import { describeXrEntryBlock, describeXrSessionRequestFailure, describeXrSessionSetupFailure } from "./xrSession";
 import { componentFacets } from "./analysis";
 import { toValue } from "./sceneObjectUtils";
 import { DEFAULT_MODEL_EFFECTS, DEFAULT_SCENE_LIGHTS } from "./viewerEngineTypes";
@@ -175,7 +176,9 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
         reflectionsEnabled: state.reflectionsEnabled ?? false,
         globalIlluminationEnabled: state.globalIlluminationEnabled ?? false,
         globalIlluminationIntensity: THREE.MathUtils.clamp(state.globalIlluminationIntensity ?? 0.45, 0, 2),
-        lights: structuredClone(state.lights?.length ? state.lights : DEFAULT_SCENE_LIGHTS)
+        lights: structuredClone((state.lights?.length ? state.lights : DEFAULT_SCENE_LIGHTS).map(light => ({ ...light,
+          ...(light.type === "spot" ? { shadowSoftness: THREE.MathUtils.clamp(light.shadowSoftness ?? 0, 0, 1) } : {}) }))),
+        ...(state.lightProfiles?.length ? { lightProfiles: structuredClone(state.lightProfiles) } : {})
       };
       this.syncSceneLights();
       this.applyLighting();
@@ -291,6 +294,10 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
         ssaoIntensity: THREE.MathUtils.clamp(state.ssaoIntensity ?? 1, 0, 4),
         gtao: state.gtao ?? false,
         gtaoIntensity: THREE.MathUtils.clamp(state.gtaoIntensity ?? 1, 0, 4),
+        screenSpaceReflection: state.screenSpaceReflection ?? false,
+        ssrSteps: Math.round(THREE.MathUtils.clamp(state.ssrSteps ?? 32, 8, 128)),
+        ssrThickness: THREE.MathUtils.clamp(state.ssrThickness ?? 0.01, 0.001, 0.1),
+        ssrMaxDistance: THREE.MathUtils.clamp(state.ssrMaxDistance ?? 2, 0.25, 4),
         bloom: state.bloom ?? false,
         bloomStrength: THREE.MathUtils.clamp(state.bloomStrength ?? 0.35, 0, 3),
         bloomThreshold: THREE.MathUtils.clamp(state.bloomThreshold ?? 0.9, 0, 1),
@@ -372,41 +379,73 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
       return this.renderer instanceof THREE.WebGLRenderer && Boolean(navigator.xr && await navigator.xr.isSessionSupported(mode));
     }
   async startXR(mode: "immersive-vr" | "immersive-ar"): Promise<boolean> {
-      if (!(this.renderer instanceof THREE.WebGLRenderer) || !navigator.xr) throw new Error("XR 仅支持 WebGL 和具备 WebXR 的浏览器");
-      if (!await navigator.xr.isSessionSupported(mode)) throw new Error(mode === "immersive-vr" ? "当前设备不支持 VR" : "当前设备不支持 AR");
-      if (this.xrSession) await this.xrSession.end();
-      const session = await navigator.xr.requestSession(mode, mode === "immersive-ar" ? { requiredFeatures: ["local"], optionalFeatures: ["hit-test", "dom-overlay"], domOverlay: { root: document.body } } : { optionalFeatures: ["local-floor", "bounded-floor"] });
-      session.addEventListener("end", this.handleXRSessionEnd, { once: true });
-      this.xrActive = true;
-      this.xrSession = session;
-      this.xrMode = mode;
-      this.xrBackground = this.scene.background;
-      if (mode === "immersive-ar") this.scene.background = null;
-      this.xrSavedCamera = {
-        position: this.camera.position.clone(),
-        quaternion: this.camera.quaternion.clone(),
-        scale: this.camera.scale.clone(),
-        up: this.camera.up.clone(),
-        target: this.orbit.target.clone(),
-        fov: this.camera.fov,
-        zoom: this.camera.zoom,
-        near: this.camera.near,
-        far: this.camera.far
-      };
-      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
-      this.xrRig.position.set(this.camera.position.x, this.camera.position.y - this.navigationSettings.eyeHeight, this.camera.position.z);
-      this.xrRig.rotation.set(0, Math.atan2(-forward.x, -forward.z), 0);
-      this.camera.position.set(0, 0, 0);
-      this.camera.quaternion.identity();
-      cancelAnimationFrame(this.animationFrame);
-      this.renderer.xr.enabled = true;
-      this.renderer.xr.setReferenceSpaceType(mode === "immersive-vr" ? "local-floor" : "local");
-      this.setupXRControllers();
-      this.renderer.setAnimationLoop(this.animate);
-      await this.renderer.xr.setSession(session);
-      if (!this.xrActive || this.xrSession !== session) return false;
-      this.onXRSessionChange?.(mode);
-      return true;
+      // 重复进入防护：标记必须在首个 await 之前同步落位，否则同一轮事件里的双击
+      // 会各自穿过闸门并发起两个 requestSession。
+      if (this.xrStartPending) return false;
+      this.xrStartPending = true;
+      try {
+        const block = describeXrEntryBlock({
+          secureContext: window.isSecureContext,
+          webxrApi: Boolean(navigator.xr),
+          authorBackend: this.rendererBackend,
+        });
+        if (block || !(this.renderer instanceof THREE.WebGLRenderer)) throw new Error(block ?? "XR 仅支持 WebGL 渲染后端");
+        let supported = false;
+        try {
+          supported = await navigator.xr!.isSessionSupported(mode);
+        } catch (reason) {
+          throw new Error(describeXrSessionRequestFailure(reason, mode));
+        }
+        if (!supported) throw new Error(mode === "immersive-vr" ? "当前设备不支持 VR 会话（isSessionSupported=false）" : "当前设备不支持 AR 会话（isSessionSupported=false）");
+        if (this.xrSession) {
+          try { await this.endXR(); } catch { /* 旧会话结束失败时继续尝试请求新会话，失败原因由 requestSession 给出 */ }
+        }
+        let session: XRSession;
+        try {
+          session = await navigator.xr!.requestSession(mode, mode === "immersive-ar" ? { requiredFeatures: ["local"], optionalFeatures: ["hit-test", "dom-overlay"], domOverlay: { root: document.body } } : { optionalFeatures: ["local-floor", "bounded-floor"] });
+        } catch (reason) {
+          throw new Error(describeXrSessionRequestFailure(reason, mode));
+        }
+        session.addEventListener("end", this.handleXRSessionEnd.bind(this), { once: true });
+        this.xrActive = true;
+        this.xrSession = session;
+        this.xrMode = mode;
+        this.xrBackground = this.scene.background;
+        if (mode === "immersive-ar") this.scene.background = null;
+        this.xrSavedCamera = {
+          position: this.camera.position.clone(),
+          quaternion: this.camera.quaternion.clone(),
+          scale: this.camera.scale.clone(),
+          up: this.camera.up.clone(),
+          target: this.orbit.target.clone(),
+          fov: this.camera.fov,
+          zoom: this.camera.zoom,
+          near: this.camera.near,
+          far: this.camera.far
+        };
+        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+        this.xrRig.position.set(this.camera.position.x, this.camera.position.y - this.navigationSettings.eyeHeight, this.camera.position.z);
+        this.xrRig.rotation.set(0, Math.atan2(-forward.x, -forward.z), 0);
+        this.camera.position.set(0, 0, 0);
+        this.camera.quaternion.identity();
+        cancelAnimationFrame(this.animationFrame);
+        try {
+          this.renderer.xr.enabled = true;
+          this.renderer.xr.setReferenceSpaceType(mode === "immersive-vr" ? "local-floor" : "local");
+          this.setupXRControllers();
+          this.renderer.setAnimationLoop(this.animate);
+          await this.renderer.xr.setSession(session);
+        } catch (reason) {
+          // 会话建立后接线失败必须回滚，否则 xrActive/相机清零/xr.enabled 残留会让状态机卡死。
+          this.finishXRSession(session);
+          throw new Error(describeXrSessionSetupFailure(reason, mode));
+        }
+        if (!this.xrActive || this.xrSession !== session) return false;
+        this.onXRSessionChange?.(mode);
+        return true;
+      } finally {
+        this.xrStartPending = false;
+      }
     }
   async endXR(): Promise<void> {
       if (!(this.renderer instanceof THREE.WebGLRenderer)) return;
@@ -424,6 +463,11 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
         this.finishXRSession(session);
       }
     }
+  /**
+   * 控制器创建钩子：输入映射（select/squeeze → 选择命令）由具备拾取与选择
+   * 命令的职责层覆盖实现，Rig 只负责会话与位姿。
+   */
+  protected onXRControllerCreated(_controller: THREE.Group): void {}
   protected setupXRControllers(): void {
       if (!(this.renderer instanceof THREE.WebGLRenderer) || this.xrControllers.length > 0) return;
       for (let index = 0; index < 2; index += 1) {
@@ -437,6 +481,7 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
         controller.add(ray);
         controller.addEventListener("connected", (event) => { controller.userData.inputSource = (event as unknown as { data: XRInputSource }).data; });
         controller.addEventListener("disconnected", () => { delete controller.userData.inputSource; });
+        this.onXRControllerCreated(controller);
         this.xrRig.add(controller);
         this.xrControllers.push(controller);
       }
@@ -472,12 +517,12 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
       if (exitPressed && !this.xrExitPressed) void this.endXR();
       this.xrExitPressed = exitPressed;
     }
-  protected handleXRSessionEnd = (event: Event): void => {
+  protected handleXRSessionEnd(event: Event): void {
       const session = event.currentTarget as unknown as XRSession | null;
       // The WebXRManager listener restores its framebuffer after session `end`
       // listeners run. Defer our editor restore until that browser event finishes.
       queueMicrotask(() => this.finishXRSession(session ?? undefined));
-    };
+    }
   protected finishXRSession(session?: XRSession): void {
       if (!(this.renderer instanceof THREE.WebGLRenderer)) return;
       if (session && this.xrSession && session !== this.xrSession) return;

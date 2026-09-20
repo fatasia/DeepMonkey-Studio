@@ -1,7 +1,7 @@
 import type * as FRAGS from "@thatopen/fragments";
 import * as THREE from "three";
 import type { ClippingGroup } from "three/webgpu";
-import type { World as RapierWorld } from "@dimforge/rapier3d-compat";
+import type { RigidBody, World as RapierWorld } from "@dimforge/rapier3d-compat";
 import { CompatibleGLTFLoader as GLTFLoader } from "./CompatibleGLTFLoader";
 import { configureGltfKtx2 } from "./gltfKtx2Support";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
@@ -43,6 +43,7 @@ import { DEFAULT_ENVIRONMENT, DEFAULT_LIGHTING, DEFAULT_POST_PROCESSING } from "
 import { type CollisionRecord, type ComponentRecord } from "./analysis";
 import { ModelLoadCoordinator } from "./modelLoadCoordinator";
 import { objectTransform, toValue } from "./sceneObjectUtils";
+import type { MountedRapierJoint } from "./rapierPhysicsJoint";
 import type { ViewerPostProcessingRuntime } from "./viewerPostProcessingRuntime";
 import { FramePerformanceMonitor } from "./framePerformanceMonitor";
 import { AdaptiveRenderScaleController } from "./adaptiveRenderScale";
@@ -87,6 +88,7 @@ import { RepeatedAssetBatcher } from "./repeatedAssetBatcher";
 import { ConservativeOcclusion } from "./conservativeOcclusion";
 import { installOcclusionDrawFilter } from "./occlusionDrawFilter";
 import { ViewerOffscreenController } from "./viewerOffscreenController";
+import { PhysicsWorldHost } from "./physicsWorldHost";
 
 /** ViewerEngine 的共享状态与跨模块契约，具体能力由职责层逐级实现。 */
 export abstract class ViewerEngineCore extends ViewerEngineContract {
@@ -129,8 +131,10 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
   protected readonly modelLoads = new ModelLoadCoordinator<LoadedSceneModel>();
   protected rapier: (typeof import("@dimforge/rapier3d-compat"))["default"] | undefined;
   protected physicsWorld: RapierWorld | undefined;
+  protected physicsGroundBody: RigidBody | undefined;
+  protected readonly physicsJoints = new Map<string, MountedRapierJoint>();
   protected physicsInit: Promise<void> | undefined;
-  protected physicsAccumulator = 0;
+  protected readonly physicsHost = new PhysicsWorldHost();
   protected lastPhysicsUiUpdate = 0;
   protected physicsState: ScenePhysicsState = { enabled: false, playing: false, gravity: { x: 0, y: -9.81, z: 0 } };
   protected readonly physicsBodyStates = new Map<string, ScenePhysicsBodyState>();
@@ -311,6 +315,8 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
     | undefined;
   protected xrSnapTurnReady = true;
   protected xrExitPressed = false;
+  /** startXR 进行中标记，防止并发重复请求会话。 */
+  protected xrStartPending = false;
   protected floorStates = new Map<string, SceneFloorState>();
   protected weatherEffect: THREE.Points | THREE.LineSegments | undefined;
   protected sceneAnimation: SceneAnimationState = {

@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { translate as tr, type AppLocale } from "../i18n";
 import { useFloatingPanelDrag } from "../hooks/useFloatingPanelDrag";
+import { xrBackendLabel, xrEntryBlockReasons } from "../viewer/xrSession";
 
 export type SceneXrMode = "immersive-vr" | "immersive-ar";
 
@@ -14,6 +15,7 @@ export interface SceneXrCapabilities {
 
 interface SceneXrPanelProps {
   locale: AppLocale;
+  /** 引擎实际承载 XR 的作者渲染后端（非用户偏好）。 */
   rendererBackend: "webgl" | "webgpu";
   capabilities: SceneXrCapabilities;
   activeMode?: SceneXrMode | undefined;
@@ -25,6 +27,12 @@ interface SceneXrPanelProps {
 export function SceneXrPanel(props: SceneXrPanelProps) {
   const { locale, capabilities, activeMode } = props;
   const drag = useFloatingPanelDrag<HTMLDivElement>();
+  // 与引擎 startXR 前置门槛同一事实源：不支持时展示原因而不是只给一个不可点的按钮。
+  const backendBlockReasons = xrEntryBlockReasons({
+    secureContext: capabilities.secure,
+    webxrApi: capabilities.webxr,
+    authorBackend: props.rendererBackend,
+  });
 
   return (
     <>
@@ -66,8 +74,8 @@ export function SceneXrPanel(props: SceneXrPanelProps) {
           <span className={capabilities.webxr ? "ok" : "bad"}>
             {capabilities.webxr ? "✓" : "!"} WebXR
           </span>
-          <span>
-            {props.rendererBackend === "webgl" ? "✓ WebGL" : "! WebGPU"}
+          <span className={props.rendererBackend === "webgl" ? "ok" : "bad"}>
+            {props.rendererBackend === "webgl" ? "✓" : "!"} {xrBackendLabel(props.rendererBackend)}
           </span>
         </div>
         <div className="xr-mode-grid">
@@ -82,7 +90,7 @@ export function SceneXrPanel(props: SceneXrPanelProps) {
             )}
             checking={capabilities.checking}
             supported={capabilities.vr}
-            disabled={Boolean(activeMode)}
+            disabled={Boolean(activeMode) || backendBlockReasons.length > 0}
             onStart={() => props.onStart("immersive-vr")}
           />
           <XrModeCard
@@ -96,7 +104,7 @@ export function SceneXrPanel(props: SceneXrPanelProps) {
             )}
             checking={capabilities.checking}
             supported={capabilities.ar}
-            disabled={Boolean(activeMode)}
+            disabled={Boolean(activeMode) || backendBlockReasons.length > 0}
             onStart={() => props.onStart("immersive-ar")}
           />
         </div>
@@ -105,7 +113,17 @@ export function SceneXrPanel(props: SceneXrPanelProps) {
             {tr(locale, "退出当前 XR 会话", "Exit current XR session")}
           </button>
         )}
-        {!capabilities.checking && (!capabilities.vr || !capabilities.ar) && (
+        {backendBlockReasons.length > 0 && !capabilities.checking && (
+          <p role="note" data-testid="xr-block-reasons">
+            {backendBlockReasons.map((reason, index) => (
+              <span key={reason}>
+                {index > 0 && "；"}
+                {tr(locale, reason, XR_REASON_I18N[reason] ?? reason)}
+              </span>
+            ))}
+          </p>
+        )}
+        {!capabilities.checking && (!capabilities.vr || !capabilities.ar) && backendBlockReasons.length === 0 && (
           <p>
             {tr(
               locale,
@@ -173,3 +191,11 @@ function XrModeCard(props: {
     </article>
   );
 }
+
+/** xrEntryBlockReasons 产出的原因文案英文对照，与诊断面板保持同一口径。 */
+const XR_REASON_I18N: Record<string, string> = {
+  "XR 会话仅 Three WebGL 渲染后端支持；Deep WebGPU 激活期间不可用":
+    "XR sessions are supported only on the Three WebGL backend; unavailable while Deep WebGPU is active",
+  "需要 HTTPS 或 localhost 安全上下文": "Requires HTTPS or a localhost secure context",
+  "浏览器未暴露 WebXR API（navigator.xr）": "The browser does not expose the WebXR API (navigator.xr)",
+};

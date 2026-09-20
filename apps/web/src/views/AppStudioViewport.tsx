@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import * as THREE from "three";
 import { getSceneModelAssetId, type PlantLiteStudyRecord } from "@bim-studio/contracts";
 import type { CameraState } from "@bim-studio/contracts";
 import { LoaderCircle } from "lucide-react";
@@ -9,6 +10,7 @@ import { AiAssistantPanel } from "../components/AiAssistantPanel";
 import { CameraNavigationPanel } from "../components/CameraNavigationPanel";
 import { SceneClippingPanel } from "../components/SceneClippingPanel";
 import { SceneEnvironmentPanel } from "../components/SceneEnvironmentPanel";
+import { SceneEngineeringAnalysisPanel } from "../components/SceneEngineeringAnalysisPanel";
 import { ScenePhysicsPanel } from "../components/ScenePhysicsPanel";
 import { PublishedViewerToolDock } from "../components/PublishedViewerToolDock";
 import { PublishedViewerObjectPanel } from "../components/PublishedViewerObjectPanel";
@@ -26,6 +28,7 @@ import { useSceneSimulationOverlay } from "../hooks/useSceneSimulationOverlay";
 import { useScenePlantPlayback } from "../hooks/useScenePlantPlayback";
 import type { PlantLitePlaybackFrame } from "../components/plantLitePlaybackModel";
 import { PublishedModelCredits } from "../delivery/PublishedModelCredits";
+import { xrSessionAvailability } from "../rendererCapabilities";
 
 const SceneSimulationPanel = lazy(() => import("../components/SceneSimulationPanel").then((module) => ({ default: module.SceneSimulationPanel })));
 
@@ -149,6 +152,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
     xrPanelOpen,
   } = controller;
   const [viewerObjectPanelOpen, setViewerObjectPanelOpen] = useState(false);
+  const [engineeringOpen, setEngineeringOpen] = useState(false);
   const [simulationPanelId, setSimulationPanelId] = useState<SceneSimulationPanelId>();
   const [simulationDock, setSimulationDock] = useState<SimulationDockReservation>({ placement: "float", collapsed: false, width: 0 });
   const [simulationStudy, setSimulationStudy] = useState<PlantLiteStudyRecord>();
@@ -173,6 +177,14 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
   const [viewerExplosion, setViewerExplosion] = useState(false);
   const viewerExplosionActive = viewerExplosion && Boolean(engine && viewerExplosionTargets.length > 0);
   const cubeOrientation = getCubeOrientation(cameraInfo);
+  // XR 的后端事实来源是引擎作者渲染器（XR 仅挂 WebGL），而非用户后端偏好。
+  const xrAuthorBackend = engine?.getAuthorRendererBackend() ?? "webgl";
+  const xrUnavailableReasons = xrSessionAvailability({
+    secureContext: window.isSecureContext,
+    webxr: Boolean(navigator.xr),
+    backend: xrAuthorBackend,
+  }).reasons;
+  const xrUnavailableReason = xrUnavailableReasons.length > 0 ? xrUnavailableReasons.join("；") : undefined;
 
   function toggleViewerExplosion() {
     if (!engine || viewerExplosionTargets.length === 0) return;
@@ -287,6 +299,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           onStandardView={(view) => engine?.setStandardView(view)}
           onFullscreen={() => void toggleFullscreen()}
           onStartXR={(mode) => void startXR(mode)}
+          xrUnavailableReason={xrUnavailableReason}
         />
       ) : route.view === "studio" ? (
         <SceneToolDock
@@ -307,6 +320,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           xrOpen={xrPanelOpen}
           simulationPanel={simulationPanelId}
           infoEnabled={infoEnabled}
+          engineeringOpen={engineeringOpen}
           onFitAll={() => engine?.fitAll()}
           onSelect={() => changeNavigation("orbit")}
           onTransformChange={changeTransform}
@@ -328,6 +342,11 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
             engine?.setAvatarVisible(next);
           }}
           onInfoToggle={() => setInfoEnabled((value) => !value)}
+          onEngineeringToggle={() => {
+            setEngineeringOpen((value) => !value);
+            setEnvironmentOpen(false);
+            setPhysicsOpen(false);
+          }}
           onEnvironmentToggle={() => {
             setEnvironmentOpen((value) => !value);
             setDigitalTwinOpen(false);
@@ -346,6 +365,14 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           onSimulationPanelChange={toggleSimulationPanel}
         />
       ) : null}
+      {route.view === "studio" && engineeringOpen && engine && (
+        <SceneEngineeringAnalysisPanel
+          locale={locale}
+          sceneName={sceneName}
+          models={engine.listModels()}
+          onClose={() => setEngineeringOpen(false)}
+        />
+      )}
       {route.view === "studio" && environmentOpen && (
         <SceneEnvironmentPanel
           locale={locale}
@@ -375,7 +402,17 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           locale={locale}
           value={physics}
           selectedName={selected?.name}
+          selectedId={selected?.id}
+          selectedPosition={selected ? (() => {
+            const position = selected.object.getWorldPosition(new THREE.Vector3());
+            return { x: position.x, y: position.y, z: position.z };
+          })() : undefined}
           selectedBody={selected ? selectedPhysics : undefined}
+          {...(engine ? { bodyOptions: engine.listModels().map((model) => ({
+              id: model.id,
+              name: model.name,
+              type: engine.getPhysicsBodyState(model.id).type,
+            })) } : {})}
           onChange={changePhysics}
           onSelectedBodyChange={changeSelectedPhysics}
           onReset={() => {
@@ -388,7 +425,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
       {route.view === "studio" && xrPanelOpen && (
         <SceneXrPanel
           locale={locale}
-          rendererBackend={rendererBackend}
+          rendererBackend={xrAuthorBackend}
           capabilities={xrCapabilities}
           activeMode={xrActiveMode}
           onStart={(mode) => void startXR(mode)}

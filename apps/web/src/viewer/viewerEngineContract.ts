@@ -210,6 +210,7 @@ export abstract class ViewerEngineContract {
       time?: number;
     },
   ): boolean;
+  abstract transitionAnimationClip(id: string, fromClipId: string, toClipId: string, durationSeconds: number): boolean;
   abstract isAnimationEnabled(id: string): boolean;
   abstract setAnimationEnabled(id: string, enabled: boolean): void;
   abstract hasSkeleton(modelId: string): boolean;
@@ -273,6 +274,8 @@ export abstract class ViewerEngineContract {
   protected abstract createPhysicsBody(id: string, state: ScenePhysicsBodyState): void;
   protected abstract removePhysicsBody(id: string): void;
   protected abstract rebuildPhysicsBody(id: string): void;
+  protected abstract rebuildPhysicsJoints(): void;
+  protected abstract removePhysicsJointsForBody(bodyId: string): void;
   protected abstract updatePhysics(delta: number): void;
   abstract getSceneAnimation(): SceneAnimationState;
   abstract setSceneAnimation(animation: SceneAnimationState): void;

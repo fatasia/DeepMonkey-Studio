@@ -1,5 +1,6 @@
 import { requiresWebGlPublicationEffects, sceneRequiresWebGlPublicationEffects, type SceneSnapshot } from "@bim-studio/contracts";
 import type { RendererBackend } from "./viewer/ViewerEngine";
+import { xrEntryBlockReasons } from "./viewer/xrSession";
 
 export interface RendererCapabilityProbe {
   secureContext: boolean;
@@ -48,6 +49,21 @@ export interface RendererReadiness {
   level: "ready" | "limited" | "unavailable";
   summary: string;
   details: string[];
+}
+
+/** XR 会话静态可用性；与引擎 startXR 的前置门槛共用 xrEntryBlockReasons 单一事实源。 */
+export interface XrSessionAvailability {
+  supported: boolean;
+  reasons: string[];
+}
+
+export function xrSessionAvailability(input: {
+  secureContext: boolean;
+  webxr: boolean;
+  backend: RendererBackend;
+}): XrSessionAvailability {
+  const reasons = xrEntryBlockReasons({ secureContext: input.secureContext, webxrApi: input.webxr, authorBackend: input.backend });
+  return { supported: reasons.length === 0, reasons };
 }
 
 interface AdapterLike {
@@ -125,6 +141,7 @@ export async function resolvePublishedRenderer(
 export function rendererReadiness(probe: RendererCapabilityProbe, project: RendererProjectRequirements): RendererReadiness[] {
   const webglDetails = [
     project.postProcessingEnabled ? "当前后处理与真实对象轮廓完整可用" : "模型、材质、拾取与动画完整可用",
+    "XR 会话挂载在本后端：WebXR 进入、控制器选择与双目渲染均走 WebGL",
     "作为生产兼容后端保留"
   ];
   const webgpuDetails = [
@@ -134,7 +151,8 @@ export function rendererReadiness(probe: RendererCapabilityProbe, project: Rende
     project.postProcessingEnabled
       ? "作者后处理或对象轮廓需要逐场景验证；自动发布保留 WebGL"
       : "仅在显式选择时使用；自动默认仍保留 WebGL",
-    "产品 WebGPU 路径尚未完成 WebXR 实机验收，XR 会话继续使用 WebGL"
+    "产品 WebGPU 路径尚未完成 WebXR 实机验收，XR 会话继续使用 WebGL",
+    "Deep WebGPU 激活期间 XR 入口不可用；浏览器端 WebGPU-XR 会话特性尚未落地，属诚实降级而非缺陷"
   ];
   const webgpuAvailable = probe.secureContext && probe.webgpuApi && probe.webgpuAdapter;
   return [{
