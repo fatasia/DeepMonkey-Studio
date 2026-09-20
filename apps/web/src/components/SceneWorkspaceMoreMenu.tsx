@@ -4,6 +4,7 @@ import { translate as tr } from "../i18n";
 import type { RendererCapabilityProbe, RendererReadiness } from "../rendererCapabilities";
 import type { FramePerformanceSnapshot } from "../viewer/framePerformanceMonitor";
 import type { RendererBackend } from "../viewer/ViewerEngine";
+import type { StudioFrameCaptureSnapshot, StudioFrameReadbackEntry } from "../viewer/studioFrameCaptureDiagnostics";
 import { RendererDiagnosticsDialog } from "./RendererDiagnosticsDialog";
 import { SceneExportMenu } from "./SceneExportMenu";
 import { useDismissableDetails } from "../hooks/useDismissableDetails";
@@ -22,6 +23,8 @@ interface Props {
     probe: RendererCapabilityProbe | undefined;
     readiness: RendererReadiness[];
     performance: FramePerformanceSnapshot | undefined;
+    frameCapture: StudioFrameCaptureSnapshot;
+    frameReadbacks: readonly StudioFrameReadbackEntry[];
     refresh: () => void;
   };
   changeRendererBackend: (backend: RendererBackend) => void;
@@ -124,6 +127,8 @@ export function SceneWorkspaceMoreMenu(props: Props) {
           probe={props.rendererDiagnostics.probe}
           readiness={props.rendererDiagnostics.readiness}
           performance={props.rendererDiagnostics.performance}
+          frameCapture={props.rendererDiagnostics.frameCapture}
+          frameReadbacks={props.rendererDiagnostics.frameReadbacks}
           onClose={() => props.setRendererDiagnosticsOpen(false)}
           onRefresh={props.rendererDiagnostics.refresh}
           onSwitch={props.changeRendererBackend}

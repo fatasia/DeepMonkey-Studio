@@ -2,12 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { probeRendererCapabilities, rendererReadiness, type RendererCapabilityProbe } from "../rendererCapabilities";
 import type { FramePerformanceSnapshot } from "./framePerformanceMonitor";
 import type { ViewerEngine } from "./ViewerEngine";
+import { readStudioFrameCaptureSnapshot, readStudioFrameReadbacks, setStudioFrameCaptureRequested,
+  type StudioFrameCaptureSnapshot, type StudioFrameReadbackEntry } from "./studioFrameCaptureDiagnostics";
 
 interface RendererDiagnosticsState {
   checking: boolean;
   probe: RendererCapabilityProbe | undefined;
   readiness: ReturnType<typeof rendererReadiness>;
   performance: FramePerformanceSnapshot | undefined;
+  frameCapture: StudioFrameCaptureSnapshot;
+  frameReadbacks: readonly StudioFrameReadbackEntry[];
   refresh: () => void;
 }
 
@@ -22,6 +26,14 @@ export function useRendererDiagnostics(
   const [revision, setRevision] = useState(0);
   const [checking, setChecking] = useState(false);
   const [performance, setPerformance] = useState<FramePerformanceSnapshot>();
+  const [frameCapture, setFrameCapture] = useState<StudioFrameCaptureSnapshot>(() => readStudioFrameCaptureSnapshot());
+  const [frameReadbacks, setFrameReadbacks] = useState<readonly StudioFrameReadbackEntry[]>(() => readStudioFrameReadbacks());
+
+  useEffect(() => {
+    setStudioFrameCaptureRequested(open);
+    if (!open) setFrameCapture(readStudioFrameCaptureSnapshot());
+    return () => setStudioFrameCaptureRequested(false);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -50,8 +62,13 @@ export function useRendererDiagnostics(
     }
     engine.setGpuTimingEnabled(true);
     const update = () => setPerformance(engine.getPerformanceSnapshot());
-    update();
-    const timer = window.setInterval(update, 500);
+    const updateDiagnostics = () => {
+      update();
+      setFrameCapture(readStudioFrameCaptureSnapshot());
+      setFrameReadbacks(readStudioFrameReadbacks());
+    };
+    updateDiagnostics();
+    const timer = window.setInterval(updateDiagnostics, 500);
     return () => {
       window.clearInterval(timer);
       engine.setGpuTimingEnabled(false);
@@ -65,6 +82,8 @@ export function useRendererDiagnostics(
     probe,
     readiness,
     performance,
+    frameCapture,
+    frameReadbacks,
     refresh: () => setRevision((value) => value + 1),
   };
 }

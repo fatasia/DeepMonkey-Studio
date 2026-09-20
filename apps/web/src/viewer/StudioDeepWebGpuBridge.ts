@@ -19,6 +19,9 @@ import { StudioDeepRenderView } from "./StudioDeepRenderView";
 import { updateAuthorProjectionState } from "./authorLodSelection";
 import { createDeepCanvas, prepareAuthorInputCanvas, captureAuthorStyle, restoreAuthorStyle,
   type AuthorCanvasStyle } from "./studioDeepPresentationCanvas";
+import type { FrameCaptureSession } from "@bim-studio/deep-engine";
+import { createRequestedStudioFrameCaptureSession, createStudioFrameReadbackListener,
+  publishStudioFrameCaptureSession, releaseStudioFrameCaptureSession } from "./studioFrameCaptureDiagnostics";
 
 type BridgeModule = typeof import("@bim-studio/deep-engine/three-bridge");
 type BridgeModuleLoader = () => Promise<BridgeModule>;
@@ -61,6 +64,7 @@ export class StudioDeepWebGpuBridge {
   private environmentSession: StudioDeepEnvironmentSession | undefined;
   private shadowSession: StudioDeepShadowSession | undefined;
   private performanceSource: StudioDeepPerformance | undefined;
+  private frameCaptureSession: FrameCaptureSession | undefined;
   private readonly viewReader: StudioDeepRenderView;
   private readonly temporalSettler = new TemporalFrameSettler({ initialDelayFrames: 1,
     onSettled: () => this.performanceSource?.pause(), onError: reason => this.failRuntime(reason) });
@@ -116,6 +120,7 @@ export class StudioDeepWebGpuBridge {
     const canvas = createDeepCanvas(this.container);
     let environment: PreparedStudioDeepEnvironment | undefined;
     let shadowMapSize = 1024;
+    let frameCaptureSession: FrameCaptureSession | undefined;
     try {
       const prepared = await prepareStudioRendererCandidate({
         signal: controller.signal,
@@ -128,14 +133,20 @@ export class StudioDeepWebGpuBridge {
           const view = this.viewReader.renderView(module, canvas);
           shadowMapSize = view.lights?.directional?.[0]?.shadow?.mapSize
             ?? studioDeepShadowMapSize(this.viewer.scene, this.viewer.camera.layers.mask);
+          frameCaptureSession = createRequestedStudioFrameCaptureSession();
           return module.DeepWebGpuBackend.create({
             canvas, gpu: navigator.gpu,
             projection: new module.ThreeProjectionBridge({ hooks: threePrototypeHooks(), capabilities: { authorDeformation: true, authorLod: true } }),
             root: this.projectionRoot(), view, authorChunks: true,
             renderer: { environment: environment.source, deformation: true, meshlets: true,
+              probeClipmap: {},
+              adaptiveQuality: { enabled: true, collectHotspots: false },
               shadows: { exactProfile: { cascadeCount: 1, shadowMapSize } },
               features: { environment: true, groundPlane: false,
-              groundGrid: false, toneMapping: "three-aces-r185" } },
+              groundGrid: false, screenSpaceReflection: true, toneMapping: "three-aces-r185" },
+              ...(frameCaptureSession ? { frameCapture: { session: frameCaptureSession,
+                readbacks: { requests: [{ resourceId: "present-color" as const }] },
+                onReadbackResults: createStudioFrameReadbackListener() } } : {}) },
             cameraLayerMask: this.viewer.camera.layers.mask, signal,
           });
         },
@@ -160,7 +171,7 @@ export class StudioDeepWebGpuBridge {
         try { backend.dispose(); } finally { canvas.remove(); }
         return this.result("cancelled");
       }
-      this.publishDeep(canvas, backend, environment!, shadowMapSize);
+      this.publishDeep(canvas, backend, environment!, shadowMapSize, frameCaptureSession);
       return this.result("switched");
     } finally {
       if (this.pending === controller) this.pending = undefined;
@@ -181,7 +192,8 @@ export class StudioDeepWebGpuBridge {
   }
 
   private publishDeep(canvas: HTMLCanvasElement, backend: DeepWebGpuBackend, environment: PreparedStudioDeepEnvironment,
-    shadowMapSize: number): void {
+    shadowMapSize: number, frameCaptureSession: FrameCaptureSession | undefined): void {
+    backend.setProbeClipmapEnabled(this.probeClipmapEnabled());
     const environmentSession = new StudioDeepEnvironmentSession({ scene: this.viewer.scene, initial: environment,
       readView: () => readStudioDeepEnvironmentView(this.viewer.scene, this.viewer.usesAuthorPostProcessing()),
       stage: (source, signal) => backend.stageEnvironment(source, signal),
@@ -200,6 +212,8 @@ export class StudioDeepWebGpuBridge {
     this.authorCanvas.style.opacity = "0";
     this.deepCanvas = canvas;
     this.deepBackend = backend;
+    this.frameCaptureSession = frameCaptureSession;
+    publishStudioFrameCaptureSession(frameCaptureSession);
     this.performanceSource = new StudioDeepPerformance(backend.runtime as ConstructorParameters<typeof StudioDeepPerformance>[0]);
     this.viewer.setPresentationPerformanceSource(this.performanceSource);
     this.environmentSession = environmentSession;
@@ -241,8 +255,11 @@ export class StudioDeepWebGpuBridge {
     this.unsubscribeFrame = undefined;
     const backend = this.deepBackend;
     const canvas = this.deepCanvas;
+    const frameCaptureSession = this.frameCaptureSession;
     this.deepBackend = undefined;
     this.deepCanvas = undefined;
+    this.frameCaptureSession = undefined;
+    releaseStudioFrameCaptureSession(frameCaptureSession);
     this.syncPending = undefined;
     this.syncAgain = undefined;
     const errors: unknown[] = [];
@@ -291,6 +308,7 @@ export class StudioDeepWebGpuBridge {
     view = this.viewReader.renderViewDirect(canvas)): void {
     const draw = () => {
       if (this.deepBackend !== backend) return;
+      backend.setProbeClipmapEnabled(this.probeClipmapEnabled());
       const metrics = backend.render(view);
       if (metrics) this.performanceSource?.record(metrics, view.width, document.visibilityState !== "hidden");
       this.shadowSession?.acknowledgeMapSize(metrics?.shadowMapSize);
@@ -322,6 +340,11 @@ export class StudioDeepWebGpuBridge {
   private updateAuthorMatrices(): void {
     this.viewer.scene.updateMatrixWorld(true);
     this.viewer.camera.updateMatrixWorld(true);
+  }
+
+  private probeClipmapEnabled(): boolean {
+    const lighting = (this.viewer as Partial<ViewerEngine>).getGlobalLighting?.();
+    return lighting?.enabled === true && lighting.globalIlluminationEnabled === true;
   }
 
   private projectionRoot(): ThreeObjectSource {

@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { LoaderCircle } from "lucide-react";
 import { LoginPage } from "../components/LoginPage";
 import type { AppViewBindings } from "./appViewBindings";
+import { StartupInteractiveMark } from "./StartupInteractiveMark";
 import { useSdkExampleNavigation } from "../hooks/useSdkExampleNavigation";
 
 const DocsCenter = lazy(() => import("../components/DocsCenter").then((module) => ({ default: module.DocsCenter })));
@@ -46,6 +47,7 @@ export function AppRootView({ bindings, onOpenDocs, onCloseDocs }: AppRootViewPr
 
   return (
     <Suspense fallback={<div className="app-auth-loading"><LoaderCircle className="spin" size={24} />正在加载项目工作台</div>}>
+      <StartupInteractiveMark />
       <div className={`app-workspace-frame ${bindings.state.sceneBehaviorOpen ? `behavior-${bindings.state.sceneBehaviorLayout} behavior-from-${route.view}` : ""}`}>
         <div className="app-workspace-surface">
           <AppPlatformRoutes bindings={bindings} />

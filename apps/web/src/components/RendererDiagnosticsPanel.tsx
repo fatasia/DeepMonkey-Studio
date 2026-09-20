@@ -5,6 +5,8 @@ import type { FramePerformanceSnapshot, PerformancePressureCode } from "../viewe
 import type { RendererCapabilityProbe, RendererReadiness } from "../rendererCapabilities";
 import { translate as tr, type AppLocale } from "../i18n";
 import { downloadRendererDiagnosticEvidence } from "../viewer/rendererDiagnosticExport";
+import type { StudioFrameCaptureSnapshot, StudioFrameReadbackEntry } from "../viewer/studioFrameCaptureDiagnostics";
+import { FrameCaptureSourceMapPanel } from "./FrameCaptureSourceMapPanel";
 
 interface Props {
   locale: AppLocale;
@@ -17,6 +19,8 @@ interface Props {
   probe: RendererCapabilityProbe | undefined;
   readiness: RendererReadiness[];
   performance: FramePerformanceSnapshot | undefined;
+  frameCapture?: StudioFrameCaptureSnapshot;
+  frameReadbacks?: readonly StudioFrameReadbackEntry[] | undefined;
   onClose: () => void;
   onRefresh: () => void;
   onSwitch: (backend: RendererBackend) => void;
@@ -86,6 +90,8 @@ export function RendererDiagnosticsPanel(props: Props) {
           </div>
           <SwitchStatus locale={props.locale} current={props.current} desired={props.desired} phase={props.switchPhase} message={props.switchMessage} />
           <PerformanceSummary locale={props.locale} snapshot={props.performance} />
+          {props.frameCapture && <FrameCaptureSourceMapPanel locale={props.locale} readbacks={props.frameReadbacks}
+            {...props.frameCapture} />}
           <div className="renderer-option-list">
             {props.readiness.map((item) => (
               <article key={item.backend} className={`${item.level} ${props.current === item.backend ? "current" : ""}`}>
@@ -319,6 +325,8 @@ function trDetail(locale: AppLocale, detail: string): string {
     "仅在显式选择时使用；自动默认仍保留 WebGL":
       "Used only when explicitly selected; automatic default remains on WebGL",
     "产品 WebGPU 路径尚未完成 WebXR 实机验收，XR 会话继续使用 WebGL": "The product WebGPU path has not passed WebXR device validation; XR sessions continue to use WebGL",
+    "XR 会话挂载在本后端：WebXR 进入、控制器选择与双目渲染均走 WebGL": "XR sessions mount on this backend: WebXR entry, controller selection and stereo rendering all run on WebGL",
+    "Deep WebGPU 激活期间 XR 入口不可用；浏览器端 WebGPU-XR 会话特性尚未落地，属诚实降级而非缺陷": "The XR entry is unavailable while Deep WebGPU is active; browser-side WebGPU-XR session support has not landed yet — an honest fallback, not a defect",
   };
   return locale === "zh-CN" ? detail : (translations[detail] ?? detail);
 }

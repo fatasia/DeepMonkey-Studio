@@ -7,6 +7,7 @@ import {
   isSceneViewerDeliveryRuntime,
 } from "./delivery/sceneViewerDelivery";
 import { loadSceneViewerDeliveryManifest } from "./api";
+import { markStartup } from "./startupTimeline";
 import { DesktopWindowFrame } from "./components/DesktopWindowFrame";
 
 const sceneViewerBuild = import.meta.env.VITE_SCENE_VIEWER_BUILD === "true";
@@ -20,11 +21,14 @@ function renderRoot(children: ReactNode) {
 }
 
 async function bootstrap(): Promise<void> {
+  markStartup("bootstrap-start");
   await initializeSceneViewerDelivery(loadSceneViewerDeliveryManifest);
+  markStartup("delivery-manifest-loaded");
   if (sceneViewerBuild) {
     if (!isSceneViewerDeliveryRuntime()) throw new Error("只读客户端缺少发布器清单，已阻止进入工作台");
     await import("./delivery/sceneViewerStyles");
     const { SceneViewerRoot } = await import("./delivery/SceneViewerRoot");
+    markStartup("scene-viewer-render-start");
     renderRoot(<SceneViewerRoot />);
     return;
   }
@@ -33,8 +37,10 @@ async function bootstrap(): Promise<void> {
 
 async function renderStudioApplication(): Promise<void> {
   await import("./editorStyles");
+  markStartup("editor-styles-loaded");
   if (/^\/apps(?:\/|$)/.test(window.location.pathname)) {
     const { PublishedApplicationRoot } = await import("./delivery/PublishedApplicationRoot");
+    markStartup("studio-render-start");
     renderRoot(<PublishedApplicationRoot />);
     return;
   }
@@ -98,6 +104,7 @@ async function renderStudioApplication(): Promise<void> {
     import("./components/DesktopConnectionGate"),
   ]);
   const standaloneDocsMode = /^\/docs(?:\/|$)/.test(window.location.pathname);
+  markStartup("studio-render-start");
   renderRoot(standaloneDocsMode ? <App /> : <DesktopConnectionGate><App /></DesktopConnectionGate>);
 }
 
