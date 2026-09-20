@@ -71,6 +71,7 @@ export function PublishedApplicationRoot() {
   const application = publication.document;
   const page = application.pages.find(page => page.id === pageId) ?? publishedEntryPage(application)!;
   return <div className="app-shell published-application">
+    <div className="published-application-content">
     <DashboardPlayback key={`${publication.id}:${attempt}`} readOnly locale={locale} application={application} project={project} page={page} rendererBackend="webgl"
       metrics={{}} variables={{}} filters={publishedInitialDashboardFilters(application)} connected={false}
       readDependency={(_projectId, dependencyId) => publishedApplicationApi.dependency(application.metadata.id, publication.id, dependencyId)}
@@ -82,6 +83,7 @@ export function PublishedApplicationRoot() {
       <button type="button" title="发布说明" aria-label="发布说明" aria-expanded={detailsOpen} onClick={() => setDetailsOpen(value => !value)}><Info size={15} /></button>
       <button type="button" title="刷新发布版本" aria-label="刷新发布版本" onClick={() => setAttempt(value => value + 1)}><RefreshCw size={15} /></button>
     </header>
+    </div>
     <PublishedModelCredits locale={locale} models={project.models} modelIds={application.scenes.flatMap(scene => scene.models.map(getSceneModelAssetId))} />
     {detailsOpen && <aside className="published-application-details" aria-label="发布说明">
       <strong>正式版本 · 只读运行</strong>

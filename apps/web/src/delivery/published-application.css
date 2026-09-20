@@ -1,4 +1,7 @@
 .app-shell.published-application { display: block; min-height: 100dvh; background: var(--bg-0); color: var(--text); }
+/* 批次 E A4 附带发现：发布头栏为 fixed 浮层（40px 高 + 12px 顶距），应用内容页顶组件
+   （返回导航等）在其下会被遮挡。让出头部高度，保证页顶交互可达。 */
+.published-application-content { padding-top: 56px; }
 .app-shell.published-application-state { display: grid; grid-template: 1fr / minmax(0, 1fr); place-items: center; padding: 32px; }
 .published-application-state section { width: min(440px, 100%); text-align: center; }
 .published-application-state section > svg { color: var(--accent); }
