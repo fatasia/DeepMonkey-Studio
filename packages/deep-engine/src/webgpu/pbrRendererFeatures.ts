@@ -16,6 +16,8 @@ export interface PbrRendererFeatureOptions {
   readonly spatialAa?: boolean;
   /** P0-2 visibility-buffer slice for static opaque meshlet batches; off keeps the forward path byte-identical. */
   readonly visibilityBuffer?: boolean;
+  /** 波次5 bindless 级 1：材质纹理 texture_2d_array 数组化；off 保持常规 per-material bind group。 */
+  readonly textureArrays?: boolean;
   readonly occlusionCulling?: boolean;
   readonly bloom?: boolean;
   readonly vignette?: boolean;
@@ -33,6 +35,7 @@ export interface PbrRendererFeatures {
   readonly temporalAa: boolean;
   readonly spatialAa: boolean;
   readonly visibilityBuffer: boolean;
+  readonly textureArrays: boolean;
   readonly occlusionCulling: boolean;
   readonly bloom: boolean;
   readonly vignette: boolean;
@@ -42,6 +45,7 @@ export interface PbrRendererFeatures {
 export const DEFAULT_PBR_RENDERER_FEATURES: PbrRendererFeatures = Object.freeze({
   environment: true, fog: true, groundPlane: true, groundGrid: true, ambientOcclusion: true,
   screenSpaceReflection: false, volumetricFog: false, temporalAa: true, spatialAa: true, visibilityBuffer: false,
+  textureArrays: false,
   occlusionCulling: true, bloom: true, vignette: true, toneMapping: "deep-aces",
 });
 
@@ -65,6 +69,7 @@ export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = 
     screenSpaceReflection: boolean("screenSpaceReflection"),
     volumetricFog,
     temporalAa: boolean("temporalAa"), spatialAa: boolean("spatialAa"), visibilityBuffer: boolean("visibilityBuffer"),
+    textureArrays: boolean("textureArrays"),
     occlusionCulling: boolean("occlusionCulling"),
     bloom: boolean("bloom"), vignette: boolean("vignette"), toneMapping });
 }

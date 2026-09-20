@@ -19,7 +19,20 @@ export interface MaterialLayouts { readonly material: GPUBindGroupLayout }
 
 interface PooledMaterialBinding {
   readonly binding: MaterialBinding;
+  readonly parameterKey: string;
   references: number;
+}
+
+interface PooledMaterialParameters { readonly buffer: GPUBuffer; references: number }
+
+export interface MaterialBindingPoolStats {
+  readonly bindGroups: number;
+  readonly parameterBuffers: number;
+  readonly parameterBytes: number;
+  readonly bindGroupHits: number;
+  readonly bindGroupMisses: number;
+  readonly parameterHits: number;
+  readonly parameterMisses: number;
 }
 
 /**
@@ -28,14 +41,22 @@ interface PooledMaterialBinding {
  */
 export class MaterialBindingPool {
   private readonly entries = new Map<string, PooledMaterialBinding>();
+  private readonly parameters = new Map<string, PooledMaterialParameters>();
   private readonly keys = new Map<MaterialBinding, string>();
   private readonly textureIds = new WeakMap<object, number>();
   private nextTextureId = 1;
+  private readonly counters = { bindGroupHits: 0, bindGroupMisses: 0, parameterHits: 0, parameterMisses: 0 };
 
   constructor(
     private readonly session: DeviceSession,
     private readonly layouts: MaterialLayouts | undefined,
   ) {}
+
+  get stats(): MaterialBindingPoolStats {
+    return Object.freeze({ bindGroups: this.entries.size, parameterBuffers: this.parameters.size,
+      parameterBytes: this.parameters.size * 40 * Float32Array.BYTES_PER_ELEMENT,
+      ...this.counters });
+  }
 
   acquire(textures: PreparedMaterialTextures | undefined,
     lookup: (id: string) => TextureBinding): MaterialBinding | undefined {
@@ -43,11 +64,16 @@ export class MaterialBindingPool {
     const key = this.poolKey(textures, lookup);
     const existing = this.entries.get(key);
     if (existing) {
-      existing.references++;
+      existing.references++; this.counters.bindGroupHits++;
       return existing.binding;
     }
-    const binding = createMaterialBinding(this.session, this.layouts, textures, lookup)!;
-    this.entries.set(key, { binding, references: 1 });
+    this.counters.bindGroupMisses++;
+    const parameterKey = materialParameterKey(textures);
+    const parameters = this.acquireParameters(parameterKey, textures);
+    let binding: MaterialBinding;
+    try { binding = createMaterialBinding(this.session, this.layouts, textures, lookup, parameters)!; }
+    catch (error) { this.releaseParameters(parameterKey); throw error; }
+    this.entries.set(key, { binding, parameterKey, references: 1 });
     this.keys.set(binding, key);
     return binding;
   }
@@ -63,7 +89,7 @@ export class MaterialBindingPool {
     if (entry.references > 0) return;
     this.entries.delete(key!);
     this.keys.delete(binding);
-    releaseMaterialBinding(this.session, binding);
+    this.releaseParameters(entry.parameterKey);
   }
 
   private poolKey(textures: PreparedMaterialTextures, lookup: (id: string) => TextureBinding): string {
@@ -81,6 +107,22 @@ export class MaterialBindingPool {
     this.textureIds.set(value, id);
     return id;
   }
+
+  private acquireParameters(key: string, textures: PreparedMaterialTextures): GPUBuffer {
+    const existing = this.parameters.get(key);
+    if (existing) { existing.references++; this.counters.parameterHits++; return existing.buffer; }
+    const buffer = uploadBuffer(this.session, "Deep material parameter pool", packMaterialParameters(textures), GPUBufferUsage.UNIFORM);
+    this.parameters.set(key, { buffer, references: 1 }); this.counters.parameterMisses++;
+    return buffer;
+  }
+
+  private releaseParameters(key: string): void {
+    const entry = this.parameters.get(key);
+    if (!entry || entry.references <= 0) throw new Error("Material parameters are not owned by this pool.");
+    entry.references--;
+    if (entry.references > 0) return;
+    this.parameters.delete(key); this.session.release(entry.buffer);
+  }
 }
 
 /**
@@ -88,7 +130,8 @@ export class MaterialBindingPool {
  * WGSL 通过每槽 uniform 标志跳过采样，从而避免纹理组合造成 bind-layout/pipeline 笛卡尔积。
  */
 export function createMaterialBinding(session: DeviceSession, layouts: MaterialLayouts | undefined,
-  textures: PreparedMaterialTextures | undefined, lookup: (id: string) => TextureBinding): MaterialBinding | undefined {
+  textures: PreparedMaterialTextures | undefined, lookup: (id: string) => TextureBinding,
+  pooledParameters?: GPUBuffer): MaterialBinding | undefined {
   if (!textures) return undefined;
   if (!layouts) throw new Error("Material bind group layout is unavailable.");
   const fallbackSlot = textures.baseColor ?? textures.metallicRoughness ?? textures.normal ?? textures.occlusion ?? textures.emissive!;
@@ -98,16 +141,8 @@ export function createMaterialBinding(session: DeviceSession, layouts: MaterialL
   const normal = textures.normal ? lookup(textures.normal.texture) : undefined;
   const occlusion = textures.occlusion ? lookup(textures.occlusion.texture) : undefined;
   const emissive = textures.emissive ? lookup(textures.emissive.texture) : undefined;
-  const data = new Float32Array(40);
-  writeTransform(data, 0, textures.baseColor, base !== undefined);
-  writeTransform(data, 8, textures.metallicRoughness, metallicRoughness !== undefined);
-  writeTransform(data, 16, textures.occlusion, occlusion !== undefined);
-  data[23] = textures.occlusion?.strength ?? 1;
-  writeTransform(data, 24, textures.normal, normal !== undefined);
-  data[31] = textures.normal?.normalScale ?? 1;
-  writeTransform(data, 32, textures.emissive, emissive !== undefined);
-  data[DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS.emissiveStrength.floatOffset] = textures.emissiveStrength;
-  const parameters = uploadBuffer(session, "Deep material textures", data, GPUBufferUsage.UNIFORM);
+  const parameters = pooledParameters
+    ?? uploadBuffer(session, "Deep material textures", packMaterialParameters(textures), GPUBufferUsage.UNIFORM);
   try {
     const actual = (binding: TextureBinding | undefined) => binding ?? fallback;
     const b = actual(base), mr = actual(metallicRoughness), ao = actual(occlusion), n = actual(normal), e = actual(emissive);
@@ -121,7 +156,7 @@ export function createMaterialBinding(session: DeviceSession, layouts: MaterialL
     ] });
     return { group, parameters, ...(base ? { base } : {}), ...(metallicRoughness ? { metallicRoughness } : {}),
       ...(normal ? { normal } : {}), ...(occlusion ? { occlusion } : {}), ...(emissive ? { emissive } : {}), key: materialKey(textures) };
-  } catch (error) { session.release(parameters); throw error; }
+  } catch (error) { if (!pooledParameters) session.release(parameters); throw error; }
 }
 
 export function materialBindingMatches(binding: MaterialBinding | undefined, textures: PreparedMaterialTextures | undefined,
@@ -147,3 +182,21 @@ function writeTransform(target: Float32Array, offset: number,
 }
 
 function materialKey(textures: PreparedMaterialTextures): string { return JSON.stringify(textures); }
+
+/** 导出给纹理数组索引通道复用：160B 材质 ABI 块的唯一打包实现，禁止旁路复制。 */
+export function packMaterialParameters(textures: PreparedMaterialTextures): Float32Array<ArrayBuffer> {
+  const data = new Float32Array(40);
+  writeTransform(data, 0, textures.baseColor, textures.baseColor !== undefined);
+  writeTransform(data, 8, textures.metallicRoughness, textures.metallicRoughness !== undefined);
+  writeTransform(data, 16, textures.occlusion, textures.occlusion !== undefined);
+  data[23] = textures.occlusion?.strength ?? 1;
+  writeTransform(data, 24, textures.normal, textures.normal !== undefined);
+  data[31] = textures.normal?.normalScale ?? 1;
+  writeTransform(data, 32, textures.emissive, textures.emissive !== undefined);
+  data[DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS.emissiveStrength.floatOffset] = textures.emissiveStrength;
+  return data;
+}
+
+function materialParameterKey(textures: PreparedMaterialTextures): string {
+  return JSON.stringify(Array.from(packMaterialParameters(textures)));
+}
