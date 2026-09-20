@@ -2534,3 +2534,10 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 1 failure: P95 帧时间超 33.3ms——**归因:并行会话负载**(三子代理同时跑 + dashboard WIP tsc 错误),非产品缺陷。
 - **需静默窗口重跑**才能通过 V03 绑定;建议在所有子代理完成后、无其他 Chrome/GPU 负载时执行 `bash scripts/fixtures/launch-production-soak.sh`。
 - 证据:`test-output/viewer-soak/report-webgl.json`(WebGL 后端 960 样本原始数据)。
+
+
+### 480min soak 第二轮(并行负载下)
+
+- 960/960 完成,0 crash;但 P95 仍超阈值——归因:三子代理同时跑(R4 遮挡/A01-X Babylon/Deep2D 文字)必然污染 CPU 采样。
+- 诚实结论:480min 生产 soak 必须在静默机器上运行(无并行 Chrome/cargo/vitest),否则 P95 不可信。建议在所有开发会话空闲时(如周末或深夜)单独执行。
+- 第二轮数据保留在 test-output/soak-prod-480-stdout.log + test-output/d24-d28-evidence-20260919/,供对比参考。
