@@ -400,6 +400,68 @@ mod tests {
     }
 
     #[test]
+    fn tlas_picks_nearest_instance_with_translation_and_mask() {
+        let unit = |ox: f32, oy: f32| {
+            vec![
+                -1.0 + ox,
+                -1.0 + oy,
+                0.0,
+                1.0 + ox,
+                -1.0 + oy,
+                0.0,
+                1.0 + ox,
+                1.0 + oy,
+                0.0,
+                -1.0 + ox,
+                1.0 + oy,
+                0.0,
+            ]
+        };
+        let near = BvhBuildResult {
+            nodes: Vec::new(),
+            order: Vec::new(),
+        };
+        let _ = &near;
+        let near_built = build_bvh(&unit(0.0, 0.0), &[0, 1, 2, 0, 2, 3]).expect("near");
+        let far_built = build_bvh(&unit(0.0, 0.0), &[0, 1, 2, 0, 2, 3]).expect("far");
+        let instances = vec![
+            TlasInstance {
+                id: 0,
+                blas_vertices: std::rc::Rc::new(unit(0.0, 0.0)),
+                blas_indices: std::rc::Rc::new(vec![0, 1, 2, 0, 2, 3]),
+                blas: near_built,
+                world_to_local: [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                mask: 1,
+            },
+            TlasInstance {
+                id: 1,
+                blas_vertices: std::rc::Rc::new(unit(0.0, 0.0)),
+                blas_indices: std::rc::Rc::new(vec![0, 1, 2, 0, 2, 3]),
+                blas: far_built,
+                // world→local 平移 +5：实例位于世界 z=-5（更远）。
+                world_to_local: [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 5.0],
+                mask: 1,
+            },
+        ];
+        let hit = trace_tlas_closest(
+            &instances,
+            &TraceQuery {
+                ox: 0.0,
+                oy: 0.0,
+                oz: 5.0,
+                dx: 0.0,
+                dy: 0.0,
+                dz: -1.0,
+                t_max: 64.0,
+            },
+            1,
+        )
+        .expect("must hit");
+        assert_eq!(hit.instance_id, 0);
+        assert!((hit.t - 5.0).abs() < 1e-5);
+    }
+
+    #[test]
     fn occlusion_and_miss_semantics_match_contract() {
         let (vertices, indices) = grid_mesh(4);
         let built = build_bvh(&vertices, &indices).expect("build succeeds");
@@ -571,4 +633,93 @@ fn overlaps_bounds(
         }
     }
     entry <= exit
+}
+
+/// TLAS 实例描述：world→local 仿射（行主序 3x4）+ 掩码。
+#[derive(Debug, Clone)]
+pub struct TlasInstance {
+    pub id: u32,
+    pub blas_vertices: std::rc::Rc<Vec<f32>>,
+    pub blas_indices: std::rc::Rc<Vec<u32>>,
+    pub blas: BvhBuildResult,
+    pub world_to_local: [f32; 12],
+    pub mask: u32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TlasHit {
+    pub t: f32,
+    pub primitive_index: u32,
+    pub instance_id: u32,
+}
+
+fn apply(m: &[f32; 12], p: [f32; 3]) -> [f32; 3] {
+    [
+        m[0] * p[0] + m[1] * p[1] + m[2] * p[2] + m[3],
+        m[4] * p[0] + m[5] * p[1] + m[6] * p[2] + m[7],
+        m[8] * p[0] + m[9] * p[1] + m[10] * p[2] + m[11],
+    ]
+}
+
+fn apply_direction(m: &[f32; 12], d: [f32; 3]) -> [f32; 3] {
+    [
+        m[0] * d[0] + m[1] * d[1] + m[2] * d[2],
+        m[4] * d[0] + m[5] * d[1] + m[6] * d[2],
+        m[8] * d[0] + m[9] * d[1] + m[10] * d[2],
+    ]
+}
+
+/// 两级最近命中：逐实例（mask 过滤）逆变换到局部后走 trace_closest，取全局最近 t。
+/// 实例级 TLAS BVH（实例盒的构建）与 WGSL 扩展同属后续切片；本合同先保证语义正确性。
+pub fn trace_tlas_closest(
+    instances: &[TlasInstance],
+    query: &TraceQuery,
+    mask: u32,
+) -> Option<TlasHit> {
+    if !(query.t_max > 0.0) {
+        return None;
+    }
+    let origin = [query.ox, query.oy, query.oz];
+    let direction = [query.dx, query.dy, query.dz];
+    let mut best: Option<TlasHit> = None;
+    for instance in instances {
+        if instance.mask & mask == 0 {
+            continue;
+        }
+        let local_origin = apply(&instance.world_to_local, origin);
+        let local_direction = apply_direction(&instance.world_to_local, direction);
+        let scale = (local_direction[0] * local_direction[0]
+            + local_direction[1] * local_direction[1]
+            + local_direction[2] * local_direction[2])
+            .sqrt();
+        if !(scale > 0.0) {
+            continue;
+        }
+        let local_query = TraceQuery {
+            ox: local_origin[0],
+            oy: local_origin[1],
+            oz: local_origin[2],
+            dx: local_direction[0] / scale,
+            dy: local_direction[1] / scale,
+            dz: local_direction[2] / scale,
+            t_max: query.t_max * scale,
+        };
+        let hit = trace_closest(
+            &instance.blas_vertices,
+            &instance.blas_indices,
+            &instance.blas,
+            &local_query,
+        );
+        if let Some(hit) = hit {
+            let world_t = hit.t / scale;
+            if world_t <= query.t_max && best.as_ref().is_none_or(|best| world_t < best.t) {
+                best = Some(TlasHit {
+                    t: world_t,
+                    primitive_index: hit.primitive_index,
+                    instance_id: instance.id,
+                });
+            }
+        }
+    }
+    best
 }
