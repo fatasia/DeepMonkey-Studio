@@ -46,6 +46,7 @@ pub mod scene_resource_identity;
 pub mod shader_disk_cache;
 pub mod shader_package;
 pub mod shadow_cache;
+pub mod texture_array_packing;
 pub mod world_chunk_bridge;
 pub mod world_partition;
 

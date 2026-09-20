@@ -1,0 +1,318 @@
+{
+ "schema": "deep-monkey.texture-array-golden.v1",
+ "scenarios": [
+  {
+   "name": "mixed-formats-and-sizes",
+   "input": {
+    "maxArrayLayers": 8,
+    "entries": [
+     {
+      "textureId": "t-c",
+      "format": "rgba8unorm",
+      "width": 512,
+      "height": 512
+     },
+     {
+      "textureId": "t-a",
+      "format": "rgba16float",
+      "width": 512,
+      "height": 512
+     },
+     {
+      "textureId": "t-b",
+      "format": "rgba8unorm",
+      "width": 512,
+      "height": 512
+     },
+     {
+      "textureId": "t-half",
+      "format": "rgba8unorm",
+      "width": 256,
+      "height": 256
+     }
+    ]
+   },
+   "plan": {
+    "arrays": [
+     {
+      "format": "rgba16float",
+      "width": 512,
+      "height": 512,
+      "arrayIndex": 0,
+      "layers": [
+       "t-a"
+      ]
+     },
+     {
+      "format": "rgba8unorm",
+      "width": 256,
+      "height": 256,
+      "arrayIndex": 1,
+      "layers": [
+       "t-half"
+      ]
+     },
+     {
+      "format": "rgba8unorm",
+      "width": 512,
+      "height": 512,
+      "arrayIndex": 2,
+      "layers": [
+       "t-b",
+       "t-c"
+      ]
+     }
+    ],
+    "assignments": [
+     {
+      "textureId": "t-a",
+      "arrayIndex": 0,
+      "layerIndex": 0
+     },
+     {
+      "textureId": "t-b",
+      "arrayIndex": 2,
+      "layerIndex": 0
+     },
+     {
+      "textureId": "t-c",
+      "arrayIndex": 2,
+      "layerIndex": 1
+     },
+     {
+      "textureId": "t-half",
+      "arrayIndex": 1,
+      "layerIndex": 0
+     }
+    ],
+    "overflowed": []
+   }
+  },
+  {
+   "name": "overflow-into-fallback",
+   "input": {
+    "maxArrayLayers": 2,
+    "entries": [
+     {
+      "textureId": "a",
+      "format": "rgba8unorm",
+      "width": 512,
+      "height": 512
+     },
+     {
+      "textureId": "b",
+      "format": "rgba8unorm",
+      "width": 512,
+      "height": 512
+     },
+     {
+      "textureId": "c",
+      "format": "rgba8unorm",
+      "width": 512,
+      "height": 512
+     }
+    ]
+   },
+   "plan": {
+    "arrays": [
+     {
+      "format": "rgba8unorm",
+      "width": 512,
+      "height": 512,
+      "arrayIndex": 0,
+      "layers": [
+       "a",
+       "b"
+      ]
+     }
+    ],
+    "assignments": [
+     {
+      "textureId": "a",
+      "arrayIndex": 0,
+      "layerIndex": 0
+     },
+     {
+      "textureId": "b",
+      "arrayIndex": 0,
+      "layerIndex": 1
+     }
+    ],
+    "overflowed": [
+     "c"
+    ]
+   }
+  },
+  {
+   "name": "duplicate-id-across-boxes",
+   "input": {
+    "maxArrayLayers": 4,
+    "entries": [
+     {
+      "textureId": "shared",
+      "format": "rgba8unorm",
+      "width": 512,
+      "height": 512
+     },
+     {
+      "textureId": "shared",
+      "format": "rgba16float",
+      "width": 512,
+      "height": 512
+     }
+    ]
+   },
+   "plan": {
+    "arrays": [
+     {
+      "format": "rgba16float",
+      "width": 512,
+      "height": 512,
+      "arrayIndex": 0,
+      "layers": [
+       "shared"
+      ]
+     },
+     {
+      "format": "rgba8unorm",
+      "width": 512,
+      "height": 512,
+      "arrayIndex": 1,
+      "layers": [
+       "shared"
+      ]
+     }
+    ],
+    "assignments": [
+     {
+      "textureId": "shared",
+      "arrayIndex": 1,
+      "layerIndex": 0
+     }
+    ],
+    "overflowed": []
+   }
+  },
+  {
+   "name": "multi-box-overflow-ordering",
+   "input": {
+    "maxArrayLayers": 2,
+    "entries": [
+     {
+      "textureId": "w-3",
+      "format": "rgba8unorm",
+      "width": 512,
+      "height": 512
+     },
+     {
+      "textureId": "w-1",
+      "format": "rgba8unorm",
+      "width": 512,
+      "height": 512
+     },
+     {
+      "textureId": "w-4",
+      "format": "rgba8unorm",
+      "width": 512,
+      "height": 512
+     },
+     {
+      "textureId": "w-2",
+      "format": "rgba8unorm",
+      "width": 512,
+      "height": 512
+     },
+     {
+      "textureId": "n-1",
+      "format": "rgba16float",
+      "width": 512,
+      "height": 512
+     },
+     {
+      "textureId": "n-2",
+      "format": "rgba16float",
+      "width": 512,
+      "height": 512
+     },
+     {
+      "textureId": "n-3",
+      "format": "rgba16float",
+      "width": 512,
+      "height": 512
+     },
+     {
+      "textureId": "s-1",
+      "format": "rgba8unorm",
+      "width": 256,
+      "height": 256
+     }
+    ]
+   },
+   "plan": {
+    "arrays": [
+     {
+      "format": "rgba16float",
+      "width": 512,
+      "height": 512,
+      "arrayIndex": 0,
+      "layers": [
+       "n-1",
+       "n-2"
+      ]
+     },
+     {
+      "format": "rgba8unorm",
+      "width": 256,
+      "height": 256,
+      "arrayIndex": 1,
+      "layers": [
+       "s-1"
+      ]
+     },
+     {
+      "format": "rgba8unorm",
+      "width": 512,
+      "height": 512,
+      "arrayIndex": 2,
+      "layers": [
+       "w-1",
+       "w-2"
+      ]
+     }
+    ],
+    "assignments": [
+     {
+      "textureId": "n-1",
+      "arrayIndex": 0,
+      "layerIndex": 0
+     },
+     {
+      "textureId": "n-2",
+      "arrayIndex": 0,
+      "layerIndex": 1
+     },
+     {
+      "textureId": "s-1",
+      "arrayIndex": 1,
+      "layerIndex": 0
+     },
+     {
+      "textureId": "w-1",
+      "arrayIndex": 2,
+      "layerIndex": 0
+     },
+     {
+      "textureId": "w-2",
+      "arrayIndex": 2,
+      "layerIndex": 1
+     }
+    ],
+    "overflowed": [
+     "n-3",
+     "w-3",
+     "w-4"
+    ]
+   }
+  }
+ ]
+}

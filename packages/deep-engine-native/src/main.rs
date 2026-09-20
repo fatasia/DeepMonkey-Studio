@@ -1,3 +1,5 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 mod app;
 mod app_startup;
 mod asset_package_cli;
@@ -65,8 +67,8 @@ mod gpu_texture_types;
 mod gpu_texture_upload;
 mod gpu_textures;
 mod half_float;
-mod hdr_readback;
 mod hdr_prefilter_cli;
+mod hdr_readback;
 mod ibl_probe;
 mod mesh_pass;
 #[cfg(test)]
@@ -84,6 +86,9 @@ mod player_state;
 #[cfg(test)]
 mod prototype_gpu_tests;
 mod publication_verification;
+mod render_graph;
+#[cfg(test)]
+mod render_graph_tests;
 mod renderer;
 mod runtime_lkg;
 mod runtime_package_startup;
@@ -101,6 +106,7 @@ mod shadow_update_classify;
 mod telemetry;
 mod telemetry_gpu;
 mod text_raster_cli;
+mod texture_array_bindings;
 mod window_chrome;
 #[cfg(windows)]
 mod x_package_source;
