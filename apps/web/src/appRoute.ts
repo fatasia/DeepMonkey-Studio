@@ -32,10 +32,10 @@ export interface AppRoute {
   dashboardView?: DashboardViewState;
   dashboardReturn?: DashboardReturnContext;
   topologyReturn?: TopologyReturnContext;
-  operationsTab?: "maintenance" | "commissioning" | "battery" | "logistics" | "energy" | "whatif";
+  operationsTab?: "maintenance" | "commissioning" | "battery" | "logistics" | "energy" | "whatif" | "monitoring";
 }
 
-const operationsTabs = new Set(["maintenance", "commissioning", "battery", "logistics", "energy", "whatif"]);
+const operationsTabs = new Set(["maintenance", "commissioning", "battery", "logistics", "energy", "whatif", "monitoring"]);
 
 export function readRoute(): AppRoute {
   try {

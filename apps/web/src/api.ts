@@ -153,7 +153,7 @@ export function openDirectBindingWebSocket(): WebSocket {
   return new WebSocket(url, token ? [`bim-studio-auth.${token}`] : []);
 }
 
-const request = <T>(url: string, init?: RequestInit) =>
+export const request = <T>(url: string, init?: RequestInit) =>
   serverClient.request<T>(url, init);
 
 const dashboardCandidateEndpoint = (format: DashboardCandidateDownloadFormat) =>

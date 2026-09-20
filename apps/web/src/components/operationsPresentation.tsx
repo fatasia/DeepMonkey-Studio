@@ -1,4 +1,4 @@
-import { ArrowRight, BatteryCharging, BatteryMedium, CheckCircle2, Cpu, Database, FileUp, Gauge, RefreshCw, Route, Wrench } from "lucide-react";
+import { ArrowRight, BatteryCharging, BatteryMedium, CheckCircle2, Cpu, Database, FileUp, Gauge, RefreshCw, Route, ShieldAlert, Wrench } from "lucide-react";
 import type {
   EnergyObservation,
   LogisticsExperimentRequest,
@@ -11,7 +11,7 @@ import type { OperationsSnapshot } from "../api";
 import { SecondaryPageBack } from "./SecondaryPageBack";
 import { createDefaultPlantLiteRequest } from "./plantLiteModelEditing";
 
-export type OperationsTab = "maintenance" | "commissioning" | "battery" | "logistics" | "energy" | "whatif";
+export type OperationsTab = "maintenance" | "commissioning" | "battery" | "logistics" | "energy" | "whatif" | "monitoring";
 
 export const defaultLogistics: LogisticsExperimentRequest = {
   name: "默认产线物流方案",
@@ -63,6 +63,7 @@ export function OperationsTabs({ tab, onChange }: { tab: OperationsTab; onChange
     { id: "logistics", label: "工厂规划", icon: Route },
     { id: "energy", label: "能耗分析", icon: BatteryCharging },
     { id: "whatif", label: "工况推演", icon: Gauge },
+    { id: "monitoring", label: "现场监控", icon: ShieldAlert },
   ];
   return (
     <nav className="vision-tabs operations-tabs">

@@ -12,7 +12,7 @@ import type {
   ProjectRecord,
   SceneSnapshot,
 } from "@bim-studio/contracts";
-import { api, type OperationsSnapshot } from "../api";
+import { api, request, type OperationsSnapshot } from "../api";
 import { plantLiteRequestFromStudy, readPlantLiteDraft, writePlantLiteDraft } from "./plantLiteDraftPersistence";
 import { VirtualCommissioningWorkbench } from "./VirtualCommissioningWorkbench";
 import { MaintenanceDiagnosisCard } from "./MaintenanceDiagnosisCard";
@@ -49,6 +49,8 @@ import { resolveOperationsStudyAction } from "./operationsStudyAction";
 import { EMPTY_ENERGY_FIELD_MAP, energyObservationsFromPreview, inferEnergyFieldMap, type EnergyFieldMap } from "./energyDatasetMapping";
 import { usePlantLiteRunController } from "./plantLiteRunController";
 import { AiSampleRunner } from "./AiSampleRunner";
+import { AlertIngestPanel } from "./AlertIngestPanel";
+import { DataReplayPanel } from "./DataReplayPanel";
 
 const DEFAULT_MAINTENANCE_POLICY: AiDataRunPolicyDraft = {
   mode: "interval",
@@ -731,6 +733,12 @@ export function OperationsCenter({
               onRun={(request) => void runWhatIfStudy(request)}
               onReproduce={(studyId) => void reproduceWhatIfStudy(studyId)}
             />
+          </div>
+        )}
+        {mountedTabs.has("monitoring") && (
+          <div hidden={tab !== "monitoring"} className="operations-grid">
+            <AlertIngestPanel projectId={project.id} request={request} locale="zh-CN" />
+            <DataReplayPanel projectId={project.id} request={request} signals={[]} locale="zh-CN" />
           </div>
         )}
         {!embedded && tab !== "battery" && <OperationsStudyHistory
