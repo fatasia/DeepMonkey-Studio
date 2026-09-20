@@ -3,7 +3,7 @@ import type { ProbeClipmapResourceUpdate } from "./probeClipmapResources.js";
 import type { ProbeAabb, ProbeClipmapPlan, ProbeVector3 } from "./probeClipmapPlan.js";
 import {
   ProbeClipmapUpdateScheduler,
-  type ProbeClipmapFrameRequest, type ProbeClipmapPlanPublisher,
+  type ProbeClipmapFrameRequest, type ProbeClipmapPlanPublisher, type ProbeClipmapPublicationContext,
 } from "./probeClipmapUpdateScheduler.js";
 
 const scene = { min: [-100, -100, -100], max: [100, 100, 100] } as const;
@@ -19,9 +19,11 @@ function published(plan: ProbeClipmapPlan): ProbeClipmapResourceUpdate {
 }
 class ImmediatePublisher implements ProbeClipmapPlanPublisher {
   readonly plans: ProbeClipmapPlan[] = [];
+  readonly contexts: ProbeClipmapPublicationContext[] = [];
   failure: Error | undefined;
-  async setValidated(plan: ProbeClipmapPlan): Promise<ProbeClipmapResourceUpdate> {
-    this.plans.push(plan);
+  async setValidated(plan: ProbeClipmapPlan, _epoch: string, _signal?: AbortSignal,
+    context?: ProbeClipmapPublicationContext): Promise<ProbeClipmapResourceUpdate> {
+    this.plans.push(plan); this.contexts.push(context!);
     if (this.failure) throw this.failure;
     return published(plan);
   }
@@ -77,6 +79,9 @@ describe("probe clipmap frame scheduler", () => {
     expect(result.stats!.updatesByClass.dirty).toBeGreaterThan(0);
     expect(result.stats!.updatesByClass.pending).toBeGreaterThan(0);
     expect(result.stats!.updateCount).toBe(8);
+    expect(publisher.contexts[1]!.dynamicUpdateIndices).toEqual(result.plan!.updates
+      .flatMap((update, index) => box(dynamic).min.every((value, axis) =>
+        update.position[axis]! >= value && update.position[axis]! <= box(dynamic).max[axis]!) ? [index] : []));
   });
 
   it("scrolls cascades on camera movement and bounds camera-cut acceleration", async () => {

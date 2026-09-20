@@ -76,9 +76,19 @@ function finiteVector(value: unknown): value is readonly [number, number, number
     && value.every(item => typeof item === "number" && Number.isFinite(item) && Number.isFinite(Math.fround(item)));
 }
 
-export function packProbeUpdates(updates: readonly ProbeUpdate[]): ArrayBuffer {
+const DYNAMIC_PROBE_UPDATE_FLAG = 0x8000_0000;
+
+export function packProbeUpdates(updates: readonly ProbeUpdate[],
+  dynamicUpdateIndices: readonly number[] = []): ArrayBuffer {
+  const dynamic = new Set(dynamicUpdateIndices);
+  if (dynamic.size !== dynamicUpdateIndices.length || dynamicUpdateIndices.some(index =>
+    !Number.isSafeInteger(index) || index < 0 || index >= updates.length)) {
+    throw new RangeError("Dynamic probe update indices are invalid.");
+  }
   const values = new Uint32Array(updates.length * 4);
-  updates.forEach((update, index) => values.set([update.level, ...update.localCell], index * 4));
+  updates.forEach((update, index) => values.set([
+    update.level | (dynamic.has(index) ? DYNAMIC_PROBE_UPDATE_FLAG : 0), ...update.localCell,
+  ], index * 4));
   return values.buffer;
 }
 export function packProbeLevels(levels: readonly ProbeClipmapLevel[]): ArrayBuffer {

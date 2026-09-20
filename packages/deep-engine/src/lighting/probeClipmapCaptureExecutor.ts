@@ -6,9 +6,13 @@ import type { ProbeClipmapPlan, ProbeUpdate } from "./probeClipmapPlan.js";
 import type {
   ProbeClipmapPlanPublisher, ProbeClipmapPublicationContext,
 } from "./probeClipmapUpdateScheduler.js";
+import type { ProbeRelocationWrite } from "./probeRelocationResolver.js";
 
-export interface ProbeClipmapResourceOwner extends ProbeClipmapPlanPublisher {
+export interface ProbeClipmapResourceOwner {
   readonly deviceEpoch: string;
+  setValidated(plan: ProbeClipmapPlan, deviceEpoch: string, signal?: AbortSignal,
+    context?: ProbeClipmapPublicationContext, relocation?: ProbeRelocationWrite):
+    Promise<ProbeClipmapResourceUpdate>;
   dispose(): void;
 }
 export interface ProbeCaptureBeginContext {
@@ -90,7 +94,8 @@ export class ProbeClipmapCaptureExecutor<TSubmission, TPublished = void> impleme
   get disposed(): boolean { return this.terminalReason !== undefined; }
 
   async setValidated(plan: ProbeClipmapPlan, deviceEpoch: string, signal?: AbortSignal,
-    context?: ProbeClipmapPublicationContext): Promise<ProbeClipmapResourceUpdate> {
+    context?: ProbeClipmapPublicationContext,
+    relocation?: ProbeRelocationWrite): Promise<ProbeClipmapResourceUpdate> {
     this.assertReady(plan, deviceEpoch, signal, context);
     const generation = ++this.generation;
     this.active?.abort(abortError("Probe capture batch was superseded."));
@@ -99,7 +104,8 @@ export class ProbeClipmapCaptureExecutor<TSubmission, TPublished = void> impleme
     let transaction: ProbeCaptureTransaction<TSubmission, TPublished> | undefined;
     try {
       const resourceUpdate = await waitForAbort(
-        this.resources.setValidated(plan, deviceEpoch, controller.signal), controller.signal);
+        this.resources.setValidated(plan, deviceEpoch, controller.signal, context, relocation),
+        controller.signal);
       this.assertCurrent(generation, deviceEpoch, controller.signal);
       if (plan.updates.length === 0) {
         this.snapshot = createSnapshot(resourceUpdate, createStats(generation, deviceEpoch, plan,

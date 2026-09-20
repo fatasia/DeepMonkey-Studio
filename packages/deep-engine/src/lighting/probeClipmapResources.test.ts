@@ -195,3 +195,49 @@ describe("Deep GI probe clipmap GPU resource lifecycle", () => {
     second.dispose(); expect(b.owned.size).toBe(0);
   });
 });
+
+describe("Deep GI relocation record writes", () => {
+  it("writes ABI v1 records into the probe storage buffer with fail-closed validation", async () => {
+    const f = fixture(), resources = new ProbeClipmapResources(f.session, "gpu-1");
+    const source = plan();
+    const update = source.updates[0]!;
+    const offsets: (readonly [number, number, number] | undefined)[] =
+      new Array(source.updates.length).fill(undefined);
+    offsets[source.updates.indexOf(update)] = [0.5, 0, -0.25];
+    const pending = resources.setValidated(source, "gpu-1", undefined, undefined,
+      { offsets, recordCount: 1 });
+    f.settle();
+    const result = await pending;
+    expect(result.evidence).toEqual({ generation: 1, allocatedBytes: 591_040,
+      updatedBytes: 1_216, updateCount: 64, createdBufferCount: 3, reusedBufferCount: 0,
+      relocationRecordCount: 1, relocationRecordBytes: 96 });
+    const storageWrites = f.writes.filter(write => write.buffer.label === "Deep GI probe storage");
+    expect(storageWrites).toHaveLength(1);
+    const perLevel = source.profile.gridSize[0]! * source.profile.gridSize[1]! * source.profile.gridSize[2]!;
+    expect(storageWrites[0]!.offset).toBe((update.level * perLevel + update.linearIndex) * 96);
+    const floats = new Float32Array(storageWrites[0]!.data.buffer);
+    expect([...floats.slice(0, 8)]).toEqual([0, 0, 0, 0, 0, 0, 0, 0]); // 光照通道保持惰性
+    expect([...floats.slice(8, 11)]).toEqual([0.5, 0, -0.25]);        // relocation 通道
+    expect([...floats.slice(11, 12)]).toEqual([0]);
+  });
+
+  it("rejects misaligned or out-of-bounds relocation writes before any allocation", async () => {
+    const f = fixture(), resources = new ProbeClipmapResources(f.session, "gpu-1");
+    const source = plan();
+    await expect(resources.setValidated(source, "gpu-1", undefined, undefined,
+      { offsets: new Array(source.updates.length - 1).fill(undefined), recordCount: 0 }))
+      .rejects.toThrow(RangeError);
+    const outOfBounds: (readonly [number, number, number] | undefined)[] =
+      new Array(source.updates.length).fill(undefined);
+    outOfBounds[source.updates.length - 1] = [5, 0, 0]; // 间距 2：|5| 越界
+    await expect(resources.setValidated(source, "gpu-1", undefined, undefined,
+      { offsets: outOfBounds, recordCount: 1 })).rejects.toThrow("out of bounds");
+    const nonFinite: (readonly [number, number, number] | undefined)[] =
+      new Array(source.updates.length).fill(undefined);
+    nonFinite[0] = [Number.NaN, 0, 0];
+    await expect(resources.setValidated(source, "gpu-1", undefined, undefined,
+      { offsets: nonFinite, recordCount: 1 })).rejects.toThrow("out of bounds");
+    expect(f.writes).toHaveLength(0);
+    expect(f.device.createBuffer).not.toHaveBeenCalled();
+  });
+});

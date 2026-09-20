@@ -6,8 +6,14 @@ import {
   validateProbeClipmapResourcePlan,
 } from "./probeClipmapResourceData.js";
 import {
+  DEEP_GI_PROBE_RECORD_BYTES,
   type ProbeClipmapPlan, type ProbeClipmapProfile,
 } from "./probeClipmapPlan.js";
+import { packIrradianceProbeRecord } from "./probeClipmapSampling.js";
+import type {
+  ProbeClipmapPublicationContext,
+} from "./probeClipmapUpdateScheduler.js";
+import type { ProbeRelocationWrite } from "./probeRelocationResolver.js";
 
 const DEVICE_EPOCH = /^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$/;
 
@@ -27,6 +33,9 @@ export interface ProbeClipmapResourceEvidence {
   readonly updateCount: number;
   readonly createdBufferCount: number;
   readonly reusedBufferCount: number;
+  /** Present only when a relocation record write accompanied this update. */
+  readonly relocationRecordCount?: number;
+  readonly relocationRecordBytes?: number;
 }
 export interface ProbeClipmapResourceUpdate {
   readonly status: "created" | "reused";
@@ -68,32 +77,40 @@ export class ProbeClipmapResources {
 
   get current(): ProbeClipmapGpuResource | undefined { return this.active; }
 
-  async setValidated(plan: ProbeClipmapPlan, deviceEpoch: string,
-    signal?: AbortSignal): Promise<ProbeClipmapResourceUpdate> {
+  /** `context` is accepted for publisher symmetry; this layer consumes only the plan bytes. */
+  async setValidated(plan: ProbeClipmapPlan, deviceEpoch: string, signal?: AbortSignal,
+    context?: ProbeClipmapPublicationContext,
+    relocation?: ProbeRelocationWrite): Promise<ProbeClipmapResourceUpdate> {
     if (signal?.aborted) throw cancellation(signal, "Probe clipmap update cancelled.");
     this.assertReady(deviceEpoch); validateProbeClipmapResourcePlan(plan, this.session.device);
+    // Fail-closed first: relocation records are validated and encoded before any allocation,
+    // so an unknown/out-of-bounds offset never reaches the device.
+    const relocationRecords = relocation ? relocationRecordsFor(plan, relocation) : undefined;
     const generation = ++this.generation;
     this.cancelPending("Superseded probe clipmap generation.");
     const profileKey = probeProfileSignature(plan.profile);
 
     if (this.allocation?.profileKey === profileKey && this.active) {
       const metadataChanged = !sameProbeLevels(this.active.plan.levels, plan.levels);
-      const updatedBytes = this.writePlan(this.allocation, plan, metadataChanged, signal);
+      const { updatedBytes, relocationBytes, relocationCount } =
+        this.writePlan(this.allocation, plan, metadataChanged, signal, relocationRecords);
       this.assertReady(deviceEpoch);
       if (signal?.aborted) throw cancellation(signal, "Probe clipmap update cancelled.");
       this.active = snapshot(this.allocation, plan, this.deviceEpoch);
       return result("reused", this.active, evidence(generation, this.allocation.allocatedBytes,
-        updatedBytes, plan.updates.length, 0, 3));
+        updatedBytes, plan.updates.length, 0, 3, relocationCount, relocationBytes));
     }
 
     const controller = new AbortController(), unlink = signal ? relayAbort(signal, controller) : () => {};
     let candidate: Allocation | undefined;
     let staged: ReturnType<typeof gpuValidatedStage<ProbeClipmapGpuResource>>;
-    let updatedBytes = 0;
+    let updatedBytes = 0, relocationBytes = 0, relocationCount = 0;
     try {
       staged = gpuValidatedStage(this.session.device, () => {
         candidate = this.allocate(plan.profile, profileKey);
-        updatedBytes = this.writePlan(candidate, plan, true, controller.signal);
+        const written = this.writePlan(candidate, plan, true, controller.signal, relocationRecords);
+        updatedBytes = written.updatedBytes;
+        relocationBytes = written.relocationBytes; relocationCount = written.relocationCount;
         return snapshot(candidate, plan, this.deviceEpoch);
       }, "Probe clipmap GPU preparation failed");
     } catch (error) {
@@ -102,7 +119,7 @@ export class ProbeClipmapResources {
       throw error;
     }
     const updateEvidence = evidence(generation, candidate!.allocatedBytes, updatedBytes,
-      plan.updates.length, 3, 0);
+      plan.updates.length, 3, 0, relocationCount, relocationBytes);
     const pending: Pending = { generation, controller, allocation: candidate!,
       resource: staged.value, evidence: updateEvidence, released: false };
     this.pending = pending;
@@ -159,7 +176,9 @@ export class ProbeClipmapResources {
   }
 
   private writePlan(allocation: Allocation, plan: ProbeClipmapPlan,
-    writeMetadata: boolean, signal?: AbortSignal): number {
+    writeMetadata: boolean, signal?: AbortSignal,
+    records?: readonly { byteOffset: number; record: ArrayBuffer }[]):
+    { updatedBytes: number; relocationBytes: number; relocationCount: number } {
     signal?.throwIfAborted();
     let bytes = 0;
     if (plan.updates.length) {
@@ -172,7 +191,12 @@ export class ProbeClipmapResources {
       this.session.device.queue.writeBuffer(allocation.levelMetadataBuffer, 0, metadata);
       bytes += metadata.byteLength; signal?.throwIfAborted();
     }
-    return bytes;
+    let relocationBytes = 0;
+    records?.forEach(({ byteOffset, record }) => {
+      this.session.device.queue.writeBuffer(allocation.probeStorageBuffer, byteOffset, record);
+      relocationBytes += DEEP_GI_PROBE_RECORD_BYTES;
+    });
+    return { updatedBytes: bytes, relocationBytes, relocationCount: records?.length ?? 0 };
   }
 
   private assertReady(deviceEpoch: string): void {
@@ -203,8 +227,45 @@ function snapshot(allocation: Allocation, plan: ProbeClipmapPlan, deviceEpoch: s
     levelMetadataBuffer: allocation.levelMetadataBuffer, plan, allocatedBytes: allocation.allocatedBytes });
 }
 function evidence(generation: number, allocatedBytes: number, updatedBytes: number,
-  updateCount: number, createdBufferCount: number, reusedBufferCount: number): ProbeClipmapResourceEvidence {
-  return Object.freeze({ generation, allocatedBytes, updatedBytes, updateCount, createdBufferCount, reusedBufferCount });
+  updateCount: number, createdBufferCount: number, reusedBufferCount: number,
+  relocationRecordCount = 0, relocationRecordBytes = 0): ProbeClipmapResourceEvidence {
+  return Object.freeze({ generation, allocatedBytes, updatedBytes, updateCount, createdBufferCount,
+    reusedBufferCount, ...(relocationRecordCount ? { relocationRecordCount, relocationRecordBytes } : {}) });
+}
+
+/**
+ * Encodes relocation records for the storage-buffer ABI v1 channel. Only the relocation
+ * vec4 is meaningful: irradiance/visibility stay zero (validity 0 keeps the record inert for
+ * any future storage-path sampling) because lighting data is owned by the texture volume.
+ * Rejects unknown/out-of-bounds offsets before any write is queued.
+ */
+function relocationRecordsFor(plan: ProbeClipmapPlan,
+  relocation: ProbeRelocationWrite): readonly { byteOffset: number; record: ArrayBuffer }[] {
+  if (relocation.offsets.length !== plan.updates.length || !Number.isSafeInteger(relocation.recordCount)
+    || relocation.recordCount < 0 || relocation.recordCount > plan.updates.length
+    || relocation.offsets.filter(Boolean).length !== relocation.recordCount) {
+    throw new RangeError("Probe relocation write is misaligned with the plan.");
+  }
+  const perLevel = plan.profile.gridSize[0]! * plan.profile.gridSize[1]! * plan.profile.gridSize[2]!;
+  const records: { byteOffset: number; record: ArrayBuffer }[] = [];
+  relocation.offsets.forEach((offset, index) => {
+    if (!offset) return;
+    const update = plan.updates[index];
+    if (!update) throw new RangeError(`Probe relocation record ${index} is misaligned with the plan.`);
+    const level = plan.levels[update.level];
+    if (!level || level.level !== update.level) {
+      throw new RangeError(`Probe relocation record ${index} references an unknown level.`);
+    }
+    if (!Array.isArray(offset) || offset.length !== 3 || !offset.every(value =>
+      Number.isFinite(value) && Math.abs(value) <= level.spacing)) {
+      throw new RangeError(`Probe relocation offset ${index} is out of bounds.`);
+    }
+    const byteOffset = (update.level * perLevel + update.linearIndex) * DEEP_GI_PROBE_RECORD_BYTES;
+    records.push({ byteOffset, record: packIrradianceProbeRecord({
+      irradiance: [0, 0, 0], validity: 0, meanDistance: 0, distanceVariance: 0,
+      positionOffset: offset }) });
+  });
+  return records;
 }
 function result(status: ProbeClipmapResourceUpdate["status"], resource: ProbeClipmapGpuResource,
   value: ProbeClipmapResourceEvidence): ProbeClipmapResourceUpdate {

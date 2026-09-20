@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { RenderPacket } from "../renderPacket.js";
 import type { DeviceSession } from "./deviceSession.js";
 import { ProbeClipmapPbrController } from "./probeClipmapPbrController.js";
 import { ProbeClipmapRuntime } from "./probeClipmapRuntime.js";
@@ -39,6 +40,15 @@ function fixture(bufferLimit = 128 * 1024 * 1024) {
 const frame = (cameraPosition: readonly [number, number, number] = [0, 0, 0]) => ({
   viewport: [1280, 720] as const, cameraPosition,
   sceneBounds: { min: [-100, -100, -100], max: [100, 100, 100] } as const,
+});
+const packet = (x: number): RenderPacket => ({
+  geometries: [{ id: "robot-geometry", revision: 1,
+    vertices: new Float32Array([
+      -2, -2, -2, 0, 1, 0, 2, -2, -2, 0, 1, 0, 2, 2, 2, 0, 1, 0,
+    ]), indices: new Uint32Array([0, 1, 2]) }],
+  materials: [{ id: "robot-material", baseColor: [1, 1, 1], metallic: 0, roughness: 0.5 }],
+  instances: [{ id: "robot", geometry: "robot-geometry", material: "robot-material",
+    transform: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, 0, 0, 1]) }],
 });
 const options = { frameBudget: 4, cameraCutBudget: 6,
   clipmap: { levelCount: 2, gridSize: [4, 2, 4] as const } } as const;
@@ -126,5 +136,62 @@ describe("probe clipmap WebGPU runtime", () => {
     expect(published.at(-1)).toBeUndefined(); expect(controller.current?.binding).toBeUndefined();
     controller.dispose(); expect(published.at(-1)).toBeUndefined();
     await expect(controller.beginFrame(frame())).rejects.toThrow("disposed");
+  });
+
+  it("feeds surface-cache mutations into real probe capture and retries after host publication failure", async () => {
+    const f = fixture(), publish = vi.fn();
+    const controller = new ProbeClipmapPbrController({ session: f.session,
+      setProbeClipmap: publish }, "gpu-1", options);
+    const initialPacket = packet(0);
+    expect(controller.syncRenderPacket({ packet: initialPacket, revision: 1,
+      dynamicInstanceIds: new Set(["robot"]) })).toBe(true);
+    expect(controller.syncRenderPacket({ packet: initialPacket, revision: 1,
+      dynamicInstanceIds: new Set(["robot"]) })).toBe(false);
+    const first = await controller.beginFrame(frame());
+    expect(first).toMatchObject({ status: "committed",
+      snapshot: { frameStats: { updatesByClass: { dynamic: expect.any(Number) } } } });
+    expect(first.snapshot!.frameStats.updatesByClass.dynamic).toBeGreaterThan(0);
+    expect(controller.surfaceCache.pendingCount).toBe(0);
+
+    controller.syncRenderPacket({ packet: packet(4), revision: 2,
+      dynamicInstanceIds: new Set(["robot"]) });
+    publish.mockImplementationOnce(() => { throw new Error("renderer rejected GI binding"); });
+    await expect(controller.beginFrame(frame())).rejects.toThrow("renderer rejected GI binding");
+    expect(controller.surfaceCache.pendingCount).toBe(1);
+    await expect(controller.beginFrame(frame())).resolves.toMatchObject({ status: "committed" });
+    expect(controller.surfaceCache.pendingCount).toBe(0);
+    controller.dispose();
+  });
+
+  it("solves relocation against occluders, feeds dirty evidence forward and converges", async () => {
+    const f = fixture(), runtime = new ProbeClipmapRuntime(f.session, "gpu-1",
+      { ...options, frameBudget: 8, cameraCutBudget: 12 });
+    // baseSpacing 默认 2：世界原点探针 [0,0,0]（level0 与 level1）嵌入墙体，逸出 +x。
+    const wall = { min: [-0.6, -0.8, -0.6], max: [0.2, 0.8, 0.2] } as const;
+    const first = await runtime.beginFrame({ ...frame(), relocationOccluders: [wall] });
+    expect(first.status).toBe("committed");
+    expect(first.snapshot?.relocation?.recordCount).toBe(2);
+    expect(first.snapshot?.relocation?.changedCount).toBe(2);
+    expect(first.snapshot?.relocation?.dirtyBounds).toHaveLength(2);
+    // 第二帧：偏移 dirty 证据进入计划（dirty 类），重新求解零变化 → 证据链收敛。
+    const second = await runtime.beginFrame({ ...frame(), relocationOccluders: [wall] });
+    expect(second.status).toBe("committed");
+    expect(second.snapshot?.frameStats.updatesByClass.dirty).toBe(2);
+    expect(second.snapshot?.relocation?.changedCount).toBe(0);
+    runtime.dispose();
+  });
+
+  it("feeds surface-cache occluders into relocation through the PBR controller", async () => {
+    const f = fixture(), published: unknown[] = [];
+    const controller = new ProbeClipmapPbrController({ session: f.session,
+      setProbeClipmap: binding => { published.push(binding); } }, "gpu-1", options);
+    controller.upsertSurface({ id: "relocation-wall", revision: 1,
+      bounds: { min: [-0.6, -0.8, -0.6], max: [0.2, 0.8, 0.2] } });
+    const result = await controller.beginFrame(frame());
+    expect(result.status).toBe("committed");
+    expect(result.snapshot?.relocation?.recordCount).toBeGreaterThan(0);
+    expect(published[0]).toBeDefined();
+    controller.dispose();
+    expect(published.at(-1)).toBeUndefined();
   });
 });

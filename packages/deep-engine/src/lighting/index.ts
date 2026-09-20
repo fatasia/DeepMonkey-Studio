@@ -23,3 +23,7 @@ export * from "./probeClipmapSamplingWgsl.js";
 export * from "./probeClipmapTextureSamplingWgsl.js";
 export * from "./probeClipmapUpdateScheduler.js";
 export * from "./probeClipmapCaptureExecutor.js";
+export * from "./probeSurfaceCache.js";
+export * from "./probeSurfaceCachePacket.js";
+export * from "./probeRelocation.js";
+export * from "./probeRelocationResolver.js";

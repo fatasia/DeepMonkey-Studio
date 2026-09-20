@@ -17,6 +17,8 @@ export interface ProbeClipmapPublicationContext {
   readonly capacityBudget: number;
   readonly cameraCut: boolean;
   readonly invalidation: ProbeClipmapInvalidation;
+  /** Indices in `plan.updates` whose irradiance may use temporal history. */
+  readonly dynamicUpdateIndices?: readonly number[];
 }
 export interface ProbeClipmapSchedulerOptions {
   readonly frameBudget?: number;
@@ -33,6 +35,8 @@ export interface ProbeClipmapFrameRequest {
   readonly capacity?: ProbeClipmapCapacity;
   readonly options?: Omit<ProbeClipmapOptions, "updateBudget">;
   readonly cameraCut?: boolean;
+  /** Optional per-frame reduction; cannot exceed the scheduler's admitted budget. */
+  readonly frameBudget?: number;
 }
 export type ProbeClipmapInvalidation = "initial" | "none" | "device-epoch" | "resize";
 export type ProbeScheduleClass = "dynamic" | "dirty" | "scroll" | "pending" | "initial";
@@ -109,19 +113,22 @@ export class ProbeClipmapUpdateScheduler {
     const plan = this.plan(request, previous?.history, fairCursor, fairCycle);
     const generation = ++this.generation;
     const nextCursor = (fairCursor + plan.updates.length) % LEVEL_WHEEL.length;
-    const stats = createStats(plan, request, generation, invalidation,
-      request.cameraCut ? this.cameraCutBudget : this.frameBudget,
+    const budget = this.budget(request);
+    const stats = createStats(plan, request, generation, invalidation, budget,
       (previous?.stats.committedUpdateCount ?? 0) + plan.updates.length);
     this.latestFrame = request.frame;
     this.active?.abort(abortError("Probe clipmap frame was superseded."));
     const controller = new AbortController(), unlink = signal ? relayAbort(signal, controller) : () => {};
     this.active = controller;
     try {
+      const dynamic = request.dynamicBounds ?? [];
+      const dynamicUpdateIndices = Object.freeze(plan.updates.flatMap((update, index) =>
+        classify(update, dynamic, []) === 0 ? [index] : []));
       const publication = await waitForAbort(
         this.publisher.setValidated(plan, request.deviceEpoch, controller.signal, Object.freeze({
           frame: request.frame, schedulerGeneration: generation,
           frameBudget: stats.frameBudget, capacityBudget: stats.capacityBudget,
-          cameraCut: request.cameraCut === true, invalidation,
+          cameraCut: request.cameraCut === true, invalidation, dynamicUpdateIndices,
         })), controller.signal);
       if (generation !== this.generation) return result(generation, request.frame, "superseded",
         plan, undefined, stats, controller.signal.reason);
@@ -157,7 +164,7 @@ export class ProbeClipmapUpdateScheduler {
       options: { ...request.options, updateBudget: this.cameraCutBudget } });
     const candidates = [...raw.updates, ...raw.deferred].map(update => ({ update,
       group: classify(update, dynamic, dirty) }));
-    const budget = request.cameraCut ? this.cameraCutBudget : this.frameBudget;
+    const budget = this.budget(request);
     const updates = selectUpdates(candidates, budget, fairCursor, fairCycle, request.cameraPosition);
     const selected = new Set(updates.map(updateKey));
     const deferred = Object.freeze(candidates.filter(item => !selected.has(updateKey(item.update)))
@@ -183,6 +190,16 @@ export class ProbeClipmapUpdateScheduler {
       throw new RangeError("viewport must contain two integers in 1..65535.");
     }
     if (signal !== undefined && !isAbortSignal(signal)) throw new TypeError("signal is invalid.");
+    if (request.frameBudget !== undefined) {
+      const ceiling = request.cameraCut ? this.cameraCutBudget : this.frameBudget;
+      if (!Number.isSafeInteger(request.frameBudget) || request.frameBudget < 1 || request.frameBudget > ceiling) {
+        throw new RangeError(`frameBudget must be an integer in [1, ${ceiling}].`);
+      }
+    }
+  }
+
+  private budget(request: ProbeClipmapFrameRequest): number {
+    return request.frameBudget ?? (request.cameraCut ? this.cameraCutBudget : this.frameBudget);
   }
 }
 
