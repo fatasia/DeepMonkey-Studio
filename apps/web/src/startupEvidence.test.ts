@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectStartupEvidence } from "./startupEvidence.js";
+import { collectStartupEvidence, exposeStartupEvidenceCollector } from "./startupEvidence.js";
 import { markStartup, resetStartupTimelineForTest } from "./startupTimeline.js";
 
 function fakeClock(entries: { name: string; startTime: number }[]) {
@@ -30,6 +30,17 @@ describe("startup evidence", () => {
       ["startup.bootstrap-to-render", "startup.render-to-interactive"]);
     expect(evidence.spans[0]!.durationMs).toBeCloseTo(222.5, 6);
     expect(evidence.capturedAtMs).toBe(6_000);
+  });
+
+  it("exposes the collector on the injected target", () => {
+    resetStartupTimelineForTest();
+    markStartup("bootstrap-start");
+    const target: Record<string, unknown> = {};
+    exposeStartupEvidenceCollector(target);
+    const collector = target.__deepStartupEvidence as () => unknown;
+    expect(typeof collector).toBe("function");
+    const evidence = collector() as { schema: string };
+    expect(evidence).toMatchObject({ schema: "deep-monkey.startup-evidence.v1" });
   });
 
   it("emits JSON-serializable payloads for evidence collection", () => {

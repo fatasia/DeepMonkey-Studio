@@ -8,6 +8,7 @@ import {
 } from "./delivery/sceneViewerDelivery";
 import { loadSceneViewerDeliveryManifest } from "./api";
 import { markStartup } from "./startupTimeline";
+import { exposeStartupEvidenceCollector } from "./startupEvidence";
 import { DesktopWindowFrame } from "./components/DesktopWindowFrame";
 
 const sceneViewerBuild = import.meta.env.VITE_SCENE_VIEWER_BUILD === "true";
@@ -115,6 +116,7 @@ async function renderStudioApplication(): Promise<void> {
   renderRoot(standaloneDocsMode ? <App /> : <DesktopConnectionGate><App /></DesktopConnectionGate>);
 }
 
+exposeStartupEvidenceCollector();
 void bootstrap().catch((reason) => {
   console.error("STUDIO_STARTUP_FAILED", reason);
   root.render(<ApplicationErrorFallback startup />);

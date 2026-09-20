@@ -28,3 +28,9 @@ export function collectStartupEvidence(clock: Performance = performance,
     spans,
   };
 }
+
+
+/** 采集入口：批次 F 的 CDP 脚本经 `window.__deepStartupEvidence()` 取证（纯读，无副作用）。 */
+export function exposeStartupEvidenceCollector(target: { [key: string]: unknown } = globalThis as never): void {
+  (target as { __deepStartupEvidence?: unknown }).__deepStartupEvidence = () => collectStartupEvidence();
+}
