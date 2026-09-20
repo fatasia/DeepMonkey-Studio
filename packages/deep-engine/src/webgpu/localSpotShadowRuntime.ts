@@ -122,7 +122,8 @@ export class LocalSpotShadowRuntime {
       this.degraded || selection.plan?.downgraded === true);
 
     try {
-      this.stageMetadata(selected);
+      // Moving casters require a redraw, not another upload of unchanged light matrices.
+      if (changed) this.stageMetadata(selected);
       const lodStats = this.lod.encode(encoder, packets, selected);
       const pass = encoder.beginRenderPass({ label: `Deep local spot shadows (${selected.length})`,
         ...(timestampWrites ? { timestampWrites } : {}), colorAttachments: [], depthStencilAttachment: {

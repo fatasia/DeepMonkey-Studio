@@ -128,6 +128,32 @@ describe("Browser local spot shadow runtime", () => {
     expect(f.device.createTexture).toHaveBeenCalledOnce(); runtime.dispose();
   });
 
+  it.each([1, 4])("redraws %i unchanged spot lights without reuploading uniforms and recovers after failure", async count => {
+    const f = fixture(), runtime = await LocalSpotShadowRuntime.create(f.session);
+    const hero = lights().spots[0]!;
+    const stable = { spots: Array.from({ length: count }, (_, index) => ({ ...hero,
+      positionWorld: [index, 3, 4] as const, shadow: { key: `stable-${index}`, importance: count - index } })) };
+    f.device.queue.writeBuffer.mockClear();
+    expect(runtime.prepareAndEncode(f.encoder, f.packets as never, f.pipelines, stable, false).rendered).toBe(true);
+    const initialWrites = f.device.queue.writeBuffer.mock.calls;
+    expect(initialWrites).toHaveLength(count + 1);
+    expect(initialWrites.reduce((bytes, call) => bytes + (call[2] as Float32Array).byteLength, 0)).toBe(384 + count * PBR_FRAME_UNIFORM_BYTES);
+    runtime.commit();
+    f.device.queue.writeBuffer.mockClear(); f.draw.mockClear();
+    for (let frame = 0; frame < 3; frame++) {
+      expect(runtime.prepareAndEncode(f.encoder, f.packets as never, f.pipelines, stable, true).rendered).toBe(true);
+      runtime.commit();
+    }
+    expect(f.draw).toHaveBeenCalledTimes(count * 3);
+    expect(f.device.queue.writeBuffer).not.toHaveBeenCalled();
+    f.draw.mockImplementationOnce(() => { throw new Error("forced redraw failed"); });
+    expect(() => runtime.prepareAndEncode(f.encoder, f.packets as never, f.pipelines, stable, true)).toThrow("forced redraw failed");
+    expect(f.device.queue.writeBuffer).not.toHaveBeenCalled();
+    expect(runtime.prepareAndEncode(f.encoder, f.packets as never, f.pipelines, stable, false).rendered).toBe(true);
+    expect(f.device.queue.writeBuffer).toHaveBeenCalledTimes(count + 1);
+    runtime.commit(); runtime.dispose();
+  });
+
   it("keeps four importance-ranked keys on stable atlas tiles and bounds overflow", async () => {
     const f = fixture(), runtime = await LocalSpotShadowRuntime.create(f.session);
     const spot = (key: string, importance: number) => ({ positionWorld: [0, 0, 0] as const,

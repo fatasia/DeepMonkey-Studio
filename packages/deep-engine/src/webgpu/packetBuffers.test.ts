@@ -152,7 +152,7 @@ describe("packet GPU resource ownership", () => {
     expect(slice).not.toHaveBeenCalled();
     const current = f.byLabel("Deep packet instances")[0]!;
     const previous = f.byLabel("Deep packet previous transforms")[0]!;
-    expect(f.device.queue.writeBuffer).toHaveBeenCalledTimes(6);
+    expect(f.device.queue.writeBuffer).toHaveBeenCalledTimes(5);
     expect(f.contents.get(current)![3]).toBe(5); expect(f.contents.get(previous)![3]).toBe(0);
     expect(f.allocated[0]!.destroy).not.toHaveBeenCalled(); expect(f.allocated[1]!.destroy).not.toHaveBeenCalled();
     const movedAgain = { ...moved, transform: [...transform.slice(0, 12), 7, 0, 0, 1] };
@@ -163,7 +163,29 @@ describe("packet GPU resource ownership", () => {
     expect(f.cache.updateInstances({ materials: p.materials, instances: [movedAgain] })).toBe(false);
     expect(f.cache.visibilityRevision).toBe(3);
     expect(f.cache.commitFrame()).toBe(false);
-    expect(f.device.queue.writeBuffer).toHaveBeenCalledTimes(9);
+    expect(f.device.queue.writeBuffer).toHaveBeenCalledTimes(7);
+  });
+  it("uploads only current material words at the 16384-instance limit and preserves full-packet bytes", () => {
+    const f = fixture(), p = packet();
+    const large = { ...p, instances: Array.from({ length: 16_384 }, (_, index) => ({ ...p.instances[0]!, id: `i${index}` })) };
+    f.cache.set(large);
+    const history = f.byLabel("Deep packet previous transforms")[0]!;
+    const before = f.contents.get(history);
+    f.device.queue.writeBuffer.mockClear();
+    const changed = { ...large, materials: [{ ...p.materials[0]!, metallic: 1 }] };
+    expect(f.cache.updateInstances(changed)).toBe(true);
+    const writes = f.device.queue.writeBuffer.mock.calls;
+    expect(writes).toHaveLength(1);
+    expect(writes[0]![0]).toBe(f.byLabel("Deep packet instances")[0]);
+    expect(writes[0]![2].byteLength).toBe(16_384 * 144);
+    expect(f.contents.get(history)).toBe(before);
+    expect(f.cache.commitFrame()).toBe(false);
+    expect(f.cache.updateInstances(changed)).toBe(false);
+    expect(f.device.queue.writeBuffer).toHaveBeenCalledTimes(1);
+    const full = fixture(); full.cache.set(changed);
+    expect(f.contents.get(writes[0]![0])).toEqual(full.contents.get(full.byLabel("Deep packet instances")[0]!));
+    expect(f.contents.get(history)).toEqual(full.contents.get(full.byLabel("Deep packet previous transforms")[0]!));
+    f.cache.dispose(); full.cache.dispose();
   });
   it("does no transform packing or allocation on a submitted static frame", () => {
     const f = fixture(); f.cache.set(packet());
@@ -202,7 +224,7 @@ describe("packet GPU resource ownership", () => {
     const oldCurrent = f.contents.get(current), oldPrevious = f.contents.get(previous);
     const write = f.device.queue.writeBuffer.getMockImplementation()!; let calls = 0;
     f.device.queue.writeBuffer.mockImplementation((buffer, offset, data) => {
-      write(buffer, offset, data); if (++calls === 4) throw new Error("second batch failed");
+      write(buffer, offset, data); if (++calls === 3) throw new Error("second batch failed");
     });
     expect(() => f.cache.updateInstances({ materials: [{ ...p.materials[0]!, metallic: 1 }], instances: [p.instances[0]!,
       { ...p.instances[0]!, id: "mirrored", transform: [-1, ...transform.slice(1)] }] })).toThrow("second batch failed");
@@ -217,7 +239,7 @@ describe("packet GPU resource ownership", () => {
       const moved = { ...p.instances[0]!, transform: [...transform.slice(0, 12), frame * 0.1, 0, 0, 1] };
       expect(f.cache.updateInstances({ materials: p.materials, instances: [moved] })).toBe(true);
     }
-    expect(f.device.createBuffer).toHaveBeenCalledTimes(4); expect(f.device.queue.writeBuffer).toHaveBeenCalledTimes(244);
+    expect(f.device.createBuffer).toHaveBeenCalledTimes(4); expect(f.device.queue.writeBuffer).toHaveBeenCalledTimes(124);
     for (const buffer of f.allocated) expect(buffer.destroy).not.toHaveBeenCalled();
     f.cache.updateInstances({ materials: p.materials, instances: [...p.instances, { ...p.instances[0]!, id: "second" }] });
     expect(f.byLabel("Deep packet instances")).toHaveLength(2);
@@ -242,7 +264,7 @@ describe("packet GPU resource ownership", () => {
     f.cache.set(update); const before = new Map(f.contents);
     const write = f.device.queue.writeBuffer.getMockImplementation()!; let calls = 0;
     f.device.queue.writeBuffer.mockImplementation((buffer, offset, data) => {
-      write(buffer, offset, data); if (++calls === 4) throw new Error("late write");
+      write(buffer, offset, data); if (++calls === 2) throw new Error("late write");
     });
     expect(() => f.cache.updateInstances({ ...update, materials: [{ ...p.materials[0]!, metallic: 1 }] })).toThrow("late write");
     expect(f.contents).toEqual(before); expect(f.owned.size).toBe(6); expect(f.allocated).toHaveLength(6);

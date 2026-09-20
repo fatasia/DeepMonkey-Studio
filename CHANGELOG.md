@@ -4,6 +4,7 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+- Skip unchanged instance-history and spot-shadow uniform uploads while preserving redraws and failed-update rollback.
 - Bind non-SpatialAA PBR presentation captures to the executed pipeline's exact WGSL source and reject unrelated shader provenance.
 - Validate fixed revolute position motors and bidirectional limits across native and WASM physics; preserve existing joint-frame golden hashes.
 - Add optional PBR frame capture with feature-specific pass plans, submission markers and explicit shader source-map bindings; repair SSR-only geometry outputs and composite shader compilation.

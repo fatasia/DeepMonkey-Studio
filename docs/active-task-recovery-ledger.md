@@ -1,5 +1,7 @@
 ## 2026-09-20 主线续跑检查点
 
+- OPT-01/03 重复上传切片：实例当前/历史缓冲独立更新与实际写入回滚；固定灯光强制阴影重绘跳过未变 uniform。4 文件/60 项及 engine tsc 通过；16,384 实例材质更新减少 25% 上传字节，固定四灯重绘减少 5 次/1,920 B。不是整帧性能结论，GPU/P95/P99 仍待，见[报告](reports/mainline-upload-optimization-2026-09-20.md)。
+
 - R12 实际 output pipeline 来源追踪已补：无 SpatialAA 的 present 使用同一 WGSL 的 SHA-256 与入口行，内置渲染器拒绝外部 package/map 注入；四场景真 GPU 通过，含来源反查，证据 `test-output/r12-frame-capture-1789882931950/evidence.json`。其余内置 pass 未映射；资源快照/调试 UI 仍待。FINAL-GATE [首轮预检](reports/mainline-final-gate-2026-09-20.md)仍未通过，Web 类型/source-size/public-brand 失败项已定位。
 
 - 恢复入口：`docs/handoffs/mainline-closeout-2026-09-20.md`。R10 F04/F05 已在 `8dc7b14` 提交推送；R12 生产帧捕获切片已在 `726d8fd` 提交推送，完整 R12 仍待办。

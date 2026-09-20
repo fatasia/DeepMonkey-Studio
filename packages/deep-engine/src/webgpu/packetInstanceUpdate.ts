@@ -47,7 +47,11 @@ export type CommitCullingHistory = (
 interface PendingWrite {
   readonly next: CachedPacketBatch;
   readonly previous?: CachedPacketBatch;
+  readonly currentChanged: boolean;
+  readonly historyChanged: boolean;
 }
+
+interface AttemptedWrite { readonly buffer: GPUBuffer; readonly restore?: Float32Array<ArrayBuffer> }
 
 /** Applies the animation fast path as one CPU-visible transaction. */
 export function updatePacketInstances(
@@ -75,7 +79,7 @@ export function updatePacketInstances(
   const createdBuffers: GPUBuffer[] = [];
   const acquiredMaterials: MaterialBinding[] = [];
   const writes: PendingWrite[] = [];
-  const attempted: PendingWrite[] = [];
+  const attempted: AttemptedWrite[] = [];
   const historyUpdates = new Map<string, Float32Array<ArrayBuffer>>();
   let deformationChanged = false;
   let lodChanged = false;
@@ -88,8 +92,9 @@ export function updatePacketInstances(
       if (!equal(currentTransforms, previousTransforms)) historyUpdates.set(source.key, currentTransforms);
       const lookup = (id: string) => context.textures.get(id)!;
       const sameMaterial = materialBindingMatches(previous?.material, source.textures, lookup);
-      if (previous && equal(previous.source.data, source.data)
-        && equal(previous.previousTransforms, previousTransforms) && sameMaterial) {
+      const currentChanged = !previous || !equal(previous.source.data, source.data);
+      const historyChanged = !previous || !equal(previous.previousTransforms, previousTransforms);
+      if (previous && !currentChanged && !historyChanged && sameMaterial) {
         batches.set(source.key, metadataChanged ? { ...previous, source } : previous);
         lodChanged ||= metadataChanged;
         continue;
@@ -124,12 +129,19 @@ export function updatePacketInstances(
         ...(material ? { material } : {}),
       };
       batches.set(source.key, next);
-      writes.push({ next, ...(previous ? { previous } : {}) });
+      writes.push({ next, currentChanged, historyChanged, ...(previous ? { previous } : {}) });
     }
     for (const write of writes) {
-      attempted.push(write);
-      context.session.device.queue.writeBuffer(write.next.previousBuffer, 0, write.next.previousTransforms);
-      context.session.device.queue.writeBuffer(write.next.buffer, 0, write.next.source.data);
+      if (write.historyChanged) {
+        attempted.push({ buffer: write.next.previousBuffer,
+          ...(write.next.previousBuffer === write.previous?.previousBuffer ? { restore: write.previous.previousTransforms } : {}) });
+        context.session.device.queue.writeBuffer(write.next.previousBuffer, 0, write.next.previousTransforms);
+      }
+      if (write.currentChanged) {
+        attempted.push({ buffer: write.next.buffer,
+          ...(write.next.buffer === write.previous?.buffer ? { restore: write.previous.source.data } : {}) });
+        context.session.device.queue.writeBuffer(write.next.buffer, 0, write.next.source.data);
+      }
     }
     context.assertCurrent();
     deformationChanged = context.commitDeformation?.() ?? false;
@@ -216,22 +228,17 @@ function ensureBuffer(
 
 function rollbackWrites(
   context: PacketInstanceUpdateContext,
-  attempted: readonly PendingWrite[],
+  attempted: readonly AttemptedWrite[],
   createdBuffers: readonly GPUBuffer[],
   acquiredMaterials: readonly MaterialBinding[],
   cause: unknown,
 ): never {
   const failures: unknown[] = [];
   for (let index = attempted.length - 1; index >= 0; index--) {
-    const { next, previous } = attempted[index]!;
-    if (!previous) continue;
+    const { buffer, restore } = attempted[index]!;
+    if (!restore) continue;
     try {
-      if (next.previousBuffer === previous.previousBuffer) {
-        context.session.device.queue.writeBuffer(previous.previousBuffer, 0, previous.previousTransforms);
-      }
-      if (next.buffer === previous.buffer) {
-        context.session.device.queue.writeBuffer(previous.buffer, 0, previous.source.data);
-      }
+      context.session.device.queue.writeBuffer(buffer, 0, restore);
     } catch (error) {
       failures.push(error);
     }
