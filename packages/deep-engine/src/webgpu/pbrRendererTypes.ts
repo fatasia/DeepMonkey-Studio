@@ -9,6 +9,8 @@ import type { AuthorGridView } from "./authorGridTypes.js";
 import type { PbrTransientTexturePoolStats } from "./pbrTransientTexturePool.js";
 import type { DeviceResourceMemorySnapshot } from "./deviceResourceMemory.js";
 import type { PbrFrameCaptureOptions } from "./pbrFrameCapture.js";
+import type { AdaptiveQualityHotspotSummary, AdaptiveQualityOptions, AdaptiveQualityState } from "./adaptiveQuality.js";
+import type { ProbeClipmapRuntimeOptions } from "./probeClipmapRuntime.js";
 
 export interface RenderView extends PbrFrameUniformView {
   readonly authorGrid?: AuthorGridView | undefined;
@@ -30,6 +32,10 @@ export interface PbrRendererOptions {
   readonly environment?: PbrEnvironmentSource;
   /** Optional R12 capture transaction; omitted on normal production frames. */
   readonly frameCapture?: PbrFrameCaptureOptions;
+  /** Off by default; uses bounded local telemetry and never disables scene content or interaction. */
+  readonly adaptiveQuality?: AdaptiveQualityOptions;
+  /** Omitted keeps probe GI off; present installs the DDGI/surface-cache runtime into the PBR loop. */
+  readonly probeClipmap?: ProbeClipmapRuntimeOptions;
 }
 
 export interface FrameMetrics {
@@ -54,4 +60,6 @@ export interface FrameMetrics {
   /** Actual author LOD compute work for main, refreshed directional cascades, and local spots. */
   readonly authorFrustumPasses?: number;
   readonly authorFrustumDispatches?: number;
+  readonly adaptiveQuality?: AdaptiveQualityState;
+  readonly adaptiveHotspots?: readonly AdaptiveQualityHotspotSummary[];
 }

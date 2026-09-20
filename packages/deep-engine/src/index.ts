@@ -41,6 +41,10 @@ export type { BenchmarkAssetLicense, BenchmarkAssetManifest, BenchmarkAssetSourc
 export { RenderGraphBuilder } from "./renderGraph.js";
 export { executeParallelGroups } from "./renderGraphScheduler.js";
 export type { ParallelGroupTask, ParallelGroupScheduleOptions, ParallelGroupScheduleResult } from "./renderGraphScheduler.js";
+export { encodeRenderGraphEncoderGroup, executeRenderGraphEncoders } from "./webgpu/renderGraphEncoderExecutor.js";
+export type { RenderGraphEncoderExecutionOptions, RenderGraphEncoderExecutionResult,
+  RenderGraphEncodedGroup, RenderGraphEncoderPass, RenderGraphEncoderPassContext,
+  RenderGraphSynchronousEncoderPass } from "./webgpu/renderGraphEncoderExecutor.js";
 export type {
   RenderGraphCompileResult,
   RenderGraphIssue,
@@ -170,3 +174,5 @@ export * from "./runtimePackage/index.js";
 export * from "./fog/index.js";
 export * from "./r12/frameCapture.js";
 export * from "./r12/shaderSourceMap.js";
+export * from "./webgpu/pbrFrameCaptureReadback.js";
+export * from "./webgpu/materialEffectLedger.js";

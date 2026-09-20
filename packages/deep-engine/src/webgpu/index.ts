@@ -16,6 +16,11 @@ export type { PbrEnvironmentSource } from "./pbrEnvironmentSource.js";
 export { PbrEnvironmentState } from "./pbrEnvironmentState.js";
 export type { EnvironmentFactory, EnvironmentStageResult } from "./pbrEnvironmentState.js";
 export type { RenderView, FrameMetrics, PbrRendererOptions } from "./pbrRenderer.js";
+export { encodeRenderGraphEncoderGroup, executeRenderGraphEncoders } from "./renderGraphEncoderExecutor.js";
+export type { RenderGraphEncodedGroup, RenderGraphEncoderExecutionOptions, RenderGraphEncoderExecutionResult,
+  RenderGraphEncoderPass, RenderGraphEncoderPassContext,
+  RenderGraphSynchronousEncoderPass } from "./renderGraphEncoderExecutor.js";
+export type { SpotLightIes } from "../lighting/types.js";
 export { resolvePbrEnvironmentIntensity } from "./pbrEnvironmentIntensity.js";
 export { DEFAULT_PBR_RENDERER_FEATURES, resolvePbrRendererFeatures } from "./pbrRendererFeatures.js";
 export type { PbrRendererFeatureOptions, PbrRendererFeatures, PbrToneMapping } from "./pbrRendererFeatures.js";
@@ -24,7 +29,8 @@ export { applyPbrColorGradingLinear, NEUTRAL_PBR_COLOR_GRADING,
 export type { PbrColorGrading, PbrColorGradingOptions } from "./pbrColorGrading.js";
 export { applyPbrAuthorColorEffects, packPbrAuthorColorEffects } from "./pbrAuthorColorEffects.js";
 export type { PbrAuthorColorEffects } from "./pbrAuthorColorEffects.js";
-export type { PbrPostProcessOverrides, PbrAuthorBloomOptions } from "./pbrPostProcessOverrides.js";
+export { DEFAULT_PBR_VOLUMETRIC_FOG_PROFILE } from "./pbrPostProcessOverrides.js";
+export type { PbrPostProcessOverrides, PbrAuthorBloomOptions, PbrVolumetricFogProfile } from "./pbrPostProcessOverrides.js";
 export type { Vec3 } from "./cameraMath.js";
 export { CameraFrameHistory, jitterViewProjection } from "./cameraFrameHistory.js";
 export type { CameraFrameHistoryResult, CameraFrameState } from "./cameraFrameHistory.js";
@@ -44,6 +50,12 @@ export { PbrFrameCapture, pbrCapturePassInput } from "./pbrFrameCapture.js";
 export type { PbrFrameCaptureOptions } from "./pbrFrameCapture.js";
 export { frameCaptureSourceMapRefsByPass, frameCaptureSourceMapRefsForShaderPass } from "../r12/shaderSourceMap.js";
 export type { FrameCaptureShaderPassBinding } from "../r12/shaderSourceMap.js";
+export { encodeFrameCaptureBufferReadback, encodeFrameCaptureTextureReadback } from "./frameCaptureReadback.js";
+export type { FrameCaptureBufferReadbackRequest, FrameCaptureReadbackOptions, FrameCaptureBufferReadback,
+  FrameCaptureTextureReadbackRequest, FrameCaptureTextureReadback, FrameCaptureTextureSnapshot } from "./frameCaptureReadback.js";
+export { PbrFrameReadbackPlan, PBR_FRAME_READBACK_RESOURCES, isPbrFrameReadbackSnapshot } from "./pbrFrameCaptureReadback.js";
+export type { PbrFrameReadbackRequest, PbrFrameReadbackPlanOptions, PbrFrameReadbackResourceId,
+  PbrFrameReadbackSnapshot, PbrFrameReadbackUnavailable, PbrFrameReadbackResult } from "./pbrFrameCaptureReadback.js";
 export { PbrTransientTexturePool, PBR_HISTORY_TRANSIENT_EXCLUDED, isPbrTransientPoolEligible,
   framePlanUsageFlags, transientTextureBytes, pbrTransientTextureKeyValue } from "./pbrTransientTexturePool.js";
 export type { PbrTransientTextureKey, PbrTransientRequest, PbrTransientTextureHandle,
@@ -86,7 +98,8 @@ export type { PacketResidencyLoader, PacketResidencyLoadErrorCode,
 export { createPacketResidencyDomain } from "./packetResidencyDomain.js";
 export type { PacketResidencyDomain, PacketResidencyTicket } from "./packetResidencyDomain.js";
 export { createRuntimePackageWebGpuPrewarmAdapter } from "./runtimePackagePrewarmAdapter.js";
-export type { RuntimePackageWebGpuPrewarmOptions, RuntimePackageWebGpuRenderPublication } from "./runtimePackagePrewarmAdapter.js";
+export type { RuntimePackageWebGpuPrewarmOptions, RuntimePackageWebGpuRenderPublication,
+  RuntimePackageWebGpuResidency } from "./runtimePackagePrewarmAdapter.js";
 export type { PacketResidencySetEntry, PacketResidencySetLoadOptions,
   PacketResidencySetProjection } from "./packetResidencySet.js";
 export { createPacketResidencyRequestPlanner,
@@ -216,4 +229,5 @@ export { validatePbrFog, snapshotPbrFog, packPbrFog, pbrFogFactor } from "./pbrF
 export type { PbrFog, PbrFogColor } from "./pbrFog.js";
 export { snapshotEditorOverlay, EDITOR_OVERLAY_MAX_VERTICES, type EditorOverlaySnapshot } from "./editorOverlayTypes.js";
 export type { AuthorGridView } from "./authorGridTypes.js";
+export * from "./adaptiveQuality.js";
 export { createBrowserImageDecoder, type DecodedImageHandle, type ImageDecoderHost } from "./browserImageDecoder.js";

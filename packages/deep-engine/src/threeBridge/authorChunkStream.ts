@@ -6,8 +6,12 @@ import { createSceneChunkResidency, type SceneChunkResidency } from "../webgpu/s
 import { stageSceneChunkFrame } from "../webgpu/sceneChunkFrameStage.js";
 import { failWithResourceCleanup } from "../webgpu/resourceCleanup.js";
 import { AuthorChunkCatalog } from "./authorChunkCatalog.js";
+import { compilePacketBoundsHlod } from "../packetBoundsHlod.js";
+import { compileVirtualGeometryPages } from "../virtualGeometryPages.js";
 
-export interface AuthorChunkStreamRuntime extends PbrResidencyFrameTarget { readonly session: DeviceSession }
+export interface AuthorChunkStreamRuntime extends PbrResidencyFrameTarget { readonly session: DeviceSession
+  /** Adaptive quality hook; absent or out-of-range values keep the fixed budget. */
+  residencyBudgetScale?: () => number }
 export interface AuthorChunkStreamDiagnostics {
   readonly path: "full-packet" | "scene-chunks";
   readonly reason: string;
@@ -16,6 +20,8 @@ export interface AuthorChunkStreamDiagnostics {
   readonly prefetchChunks: number;
   readonly derivedCpuBytes: number;
   readonly residentGpuBytes: number;
+  readonly virtualPages: number;
+  readonly virtualPageBytes: number;
 }
 interface CatalogOwner { readonly catalog: AuthorChunkCatalog; readonly residency: SceneChunkResidency; replaceRequired: boolean }
 const GPU_BYTES = 128 * 1024 * 1024;
@@ -28,8 +34,12 @@ export class AuthorChunkStream {
   private pending: AbortController | undefined;
   private pendingWork: Promise<boolean> | undefined;
   private generation = 0;
+  private compiledPacket: RenderPacket | undefined;
+  private virtualSources = new Map<string, readonly string[]>();
+  private virtualPageCount = 0;
+  private virtualPageBytes = 0;
   private state: AuthorChunkStreamDiagnostics = { path: "full-packet", reason: "not-started", chunkCount: 0,
-    visibleChunks: 0, prefetchChunks: 0, derivedCpuBytes: 0, residentGpuBytes: 0 };
+    visibleChunks: 0, prefetchChunks: 0, derivedCpuBytes: 0, residentGpuBytes: 0, virtualPages: 0, virtualPageBytes: 0 };
   constructor(private readonly runtime: AuthorChunkStreamRuntime, private readonly meshlets = false) {}
   get diagnostics(): AuthorChunkStreamDiagnostics { return this.state; }
   get hasCatalog(): boolean { return this.active !== undefined; }
@@ -50,7 +60,8 @@ export class AuthorChunkStream {
   }
   fullPacketPublished(reason: string): void {
     const old = this.active; this.active = undefined; old?.residency.dispose();
-    this.state = { path: "full-packet", reason, chunkCount: 0, visibleChunks: 0, prefetchChunks: 0, derivedCpuBytes: 0, residentGpuBytes: 0 };
+    this.state = { path: "full-packet", reason, chunkCount: 0, visibleChunks: 0, prefetchChunks: 0,
+      derivedCpuBytes: 0, residentGpuBytes: 0, virtualPages: 0, virtualPageBytes: 0 };
   }
   dispose(): void {
     if (this.closed) return; this.closed = true; this.generation++; this.pending?.abort();
@@ -58,11 +69,14 @@ export class AuthorChunkStream {
   }
   private async execute(packet: RenderPacket, full: boolean, view: RenderView, signal: AbortSignal): Promise<boolean> {
     if (packet.deformation !== undefined || packet.instances.some(instance => instance.pose !== undefined)) return false;
+    // The derived packet is GPU-only. Three remains authoritative for object identity,
+    // picking, measurement and the full CPU geometry snapshot.
+    const streamedPacket = this.streamPacket(packet, full);
     const old = this.active, prior = old?.catalog.batchUpdates;
     let candidate: CatalogOwner | undefined;
     let staged = false;
     try {
-      if (!old || old.replaceRequired || full || !old.catalog.update(packet)) candidate = this.create(packet);
+      if (!old || old.replaceRequired || full || !old.catalog.update(streamedPacket)) candidate = this.create(streamedPacket);
       const owner = candidate ?? old!;
       const demands = owner.catalog.demand(view);
       const frame = await owner.residency.update({ frame: ++this.frame, chunks: demands, signal });
@@ -73,7 +87,8 @@ export class AuthorChunkStream {
       this.state = Object.freeze({ path: "scene-chunks", reason: "static-author-batches;casters-required",
         chunkCount: owner.catalog.chunks.length, visibleChunks: demands.filter(value => value.mode === "visible").length,
         prefetchChunks: demands.filter(value => value.mode === "prefetch").length,
-        derivedCpuBytes: owner.catalog.cpuBytes, residentGpuBytes: owner.residency.telemetrySnapshot().residentBytes });
+        derivedCpuBytes: owner.catalog.cpuBytes, residentGpuBytes: owner.residency.telemetrySnapshot().residentBytes,
+        virtualPages: this.virtualPageCount, virtualPageBytes: this.virtualPageBytes });
       return true;
     } catch (error) {
       failWithResourceCleanup(error, "Author chunk candidate failed.", [
@@ -88,13 +103,44 @@ export class AuthorChunkStream {
       ]);
     }
   }
+  private streamPacket(packet: RenderPacket, full: boolean): RenderPacket {
+    if (full || !this.compiledPacket) {
+      const paged = compileVirtualGeometryPages(packet);
+      this.virtualSources = new Map(paged.sourceInstances);
+      this.virtualPageCount = paged.pages.length;
+      this.virtualPageBytes = paged.pages.reduce((sum, page) => sum + page.byteLength, 0);
+      this.compiledPacket = compilePacketBoundsHlod(paged.packet, { spatialPartitions: 4 }).packet;
+      return this.compiledPacket;
+    }
+    const compiled = new Map(this.compiledPacket.instances.map(instance => [instance.id, instance]));
+    return Object.freeze({ ...packet, geometries: this.compiledPacket.geometries,
+      instances: Object.freeze(packet.instances.flatMap(instance => {
+        const ids = this.virtualSources.get(instance.id) ?? [instance.id];
+        return ids.map(id => {
+          const derived = compiled.get(id);
+          return derived === undefined ? instance : Object.freeze({ ...instance, id,
+            geometry: derived.geometry, ...(derived.lod ? { lod: derived.lod } : {}) });
+        });
+      })) });
+  }
   private create(packet: RenderPacket): CatalogOwner {
     const catalog = new AuthorChunkCatalog(packet);
+    // Adaptive pressure lowers the ceiling for newly created catalogs; the live catalog still
+    // sheds memory through visibility-driven eviction, not by shrinking under its residents.
+    const scale = clampResidencyScale(this.runtime.residencyBudgetScale?.() ?? 1);
+    const budgetBytes = Math.max(1, Math.floor(GPU_BYTES * scale));
     // Two catalog generations may overlap while the renderer owns the previous frame's leases.
     const residency = createSceneChunkResidency(this.runtime.session,
-      { maxResidentBytes: GPU_BYTES, maxUploadBytesPerFrame: GPU_BYTES, retainFrames: 0 }, { meshlets: this.meshlets });
+      { maxResidentBytes: budgetBytes, maxUploadBytesPerFrame: budgetBytes, retainFrames: 0 }, { meshlets: this.meshlets });
     try { for (const chunk of catalog.chunks) residency.registerChunk(chunk.key, chunk.packet); }
     catch (error) { residency.dispose(); throw error; }
     return { catalog, residency, replaceRequired: false };
   }
 }
+
+function clampResidencyScale(value: number): number {
+  if (!Number.isFinite(value)) return 1;
+  return Math.min(1, Math.max(0.5, value));
+}
+
+export const clampAuthorChunkResidencyScale = clampResidencyScale;
