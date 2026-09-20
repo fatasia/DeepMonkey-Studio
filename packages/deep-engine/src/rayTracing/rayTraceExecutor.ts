@@ -154,7 +154,8 @@ export class RayTraceGpuExecutor {
   }
 }
 
-async function readBack(buffer: GPUBuffer): Promise<ArrayBuffer> {
+/** 读回已 map 缓冲的完整字节快照（两级执行器 rayTraceTlasExecutor 复用）。 */
+export async function readBack(buffer: GPUBuffer): Promise<ArrayBuffer> {
   await buffer.mapAsync(MAP_MODE_READ);
   try {
     return new Uint8Array(buffer.getMappedRange() as ArrayBuffer).slice().buffer;

@@ -18,6 +18,13 @@
  * 4. 布局：buffer 字节映射见 rayTraceLayout.ts 头注释（BvhNode stride 48B 等）。
  * 5. 写出：每射线恒写一条 HitRecord（miss 时 t=-1/primitiveIndex=SENTINEL/status=0）；
  *    越界 lane（rayIndex ≥ rayCount）在读写前返回，不触 buffer。
+ *
+ * == 两级扩展（TLAS 实例层） ==
+ * `emitTwoLevelRayTraceKernelWgsl` 发射 `ray_trace_tlas_batch`，复用本模块导出的
+ * WGSL_CORE/WGSL_HELPERS 共享片段（旧单级发射文本逐字节不变，由 rayTraceTlasKernel.test
+ * 的 sha256 合同钉死；有意变更任一内核必须同步更新钉值并复核另一内核语义）。实现位于
+ * rayTraceTlasKernel.ts（300 行体量门禁：两级遍历为独立职责单独成文件）；两级专属布局
+ * 合同见 tlasLayout.ts，遍历/t 缩放语义以 tlas.ts traceTlasClosest 为仲裁基准。
  */
 
 import { BVH_LEAF_SENTINEL, RAY_TRACE_STACK_CAPACITY, RAY_TRACE_WORKGROUP_SIZE } from "./rayTraceLayout.js";
@@ -36,14 +43,9 @@ export const RAY_TRACE_BINDINGS = Object.freeze([
   { binding: 7, name: "params", type: "uniform" },
 ] as const);
 
-/** 发射内核源码；常量自 rayTraceLayout 单一来源插值（改常量即改内核，禁止双写）。 */
-export function emitRayTraceKernelWgsl(): string {
-  const stack = RAY_TRACE_STACK_CAPACITY;
-  const sentinel = BVH_LEAF_SENTINEL;
-  return /* wgsl */ `// RayBackend software trace kernel (wave 4). Byte layout contract: rayTraceLayout.ts.
-// Traversal/intersection semantics: arbitrated against rayTrace.ts (CPU reference).
-const STACK_CAPACITY: u32 = ${stack}u;
-const SENTINEL: u32 = ${sentinel}u;
+// —— 单级/两级共享片段：改任一片段即同时改变两个内核（sha256 合同钉死保护）。 ——
+export const WGSL_CORE = /* wgsl */ `const STACK_CAPACITY: u32 = ${RAY_TRACE_STACK_CAPACITY}u;
+const SENTINEL: u32 = ${BVH_LEAF_SENTINEL}u;
 const STATUS_MISS: u32 = 0u;
 const STATUS_HIT: u32 = 1u;
 const STATUS_OVERFLOW: u32 = 2u;
@@ -63,23 +65,8 @@ struct HitRecord {
   status: u32,
   pad0: u32,
 }
-struct Params {
-  rayCount: u32,
-  triangleCount: u32,
-  pad0: u32,
-  pad1: u32,
-}
-
-@group(0) @binding(0) var<storage, read> bvhNodes: array<BvhNode>;
-@group(0) @binding(1) var<storage, read> vertices: array<f32>;
-@group(0) @binding(2) var<storage, read> indices: array<u32>;
-@group(0) @binding(3) var<storage, read> triangleOrder: array<u32>;
-@group(0) @binding(4) var<storage, read> rayStream: array<vec4f>;
-@group(0) @binding(5) var<storage, read_write> hitRecords: array<HitRecord>;
-@group(0) @binding(6) var<storage, read_write> stackOverflows: atomic<u32>;
-@group(0) @binding(7) var<uniform> params: Params;
-
-fn fetchVertex(index: u32) -> vec3f {
+`;
+export const WGSL_HELPERS = /* wgsl */ `fn fetchVertex(index: u32) -> vec3f {
   let base = index * 3u;
   return vec3f(vertices[base], vertices[base + 1u], vertices[base + 2u]);
 }
@@ -115,7 +102,29 @@ fn slabOverlaps(origin: f32, dir: f32, inv: f32, lo: f32, hi: f32,
   }
   return origin >= lo && origin <= hi;
 }
+`;
 
+/** 发射单级内核源码；输出逐字节不变合同由 rayTraceTlasKernel.test 的 sha256 钉死。 */
+export function emitRayTraceKernelWgsl(): string {
+  return /* wgsl */ `// RayBackend software trace kernel (wave 4). Byte layout contract: rayTraceLayout.ts.
+// Traversal/intersection semantics: arbitrated against rayTrace.ts (CPU reference).
+${WGSL_CORE}struct Params {
+  rayCount: u32,
+  triangleCount: u32,
+  pad0: u32,
+  pad1: u32,
+}
+
+@group(0) @binding(0) var<storage, read> bvhNodes: array<BvhNode>;
+@group(0) @binding(1) var<storage, read> vertices: array<f32>;
+@group(0) @binding(2) var<storage, read> indices: array<u32>;
+@group(0) @binding(3) var<storage, read> triangleOrder: array<u32>;
+@group(0) @binding(4) var<storage, read> rayStream: array<vec4f>;
+@group(0) @binding(5) var<storage, read_write> hitRecords: array<HitRecord>;
+@group(0) @binding(6) var<storage, read_write> stackOverflows: atomic<u32>;
+@group(0) @binding(7) var<uniform> params: Params;
+
+${WGSL_HELPERS}
 @compute @workgroup_size(${RAY_TRACE_WORKGROUP_SIZE})
 fn ${RAY_TRACE_ENTRY_POINT}(@builtin(global_invocation_id) gid: vec3u) {
   let rayIndex = gid.x;
@@ -171,3 +180,4 @@ fn ${RAY_TRACE_ENTRY_POINT}(@builtin(global_invocation_id) gid: vec3u) {
 }
 `;
 }
+

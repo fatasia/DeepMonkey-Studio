@@ -8,6 +8,7 @@
 
 import { compareGpuAgainstCpu, RayTraceGpuExecutor, type GpuTraceHit } from "../src/rayTracing/rayTraceExecutor.js";
 import { emitRayTraceKernelWgsl } from "../src/rayTracing/rayTraceKernel.js";
+import { emitTwoLevelRayTraceKernelWgsl } from "../src/rayTracing/rayTraceTlasKernel.js";
 import { HIT_STATUS, HIT_RECORD_STRIDE_BYTES } from "../src/rayTracing/rayTraceLayout.js";
 import { buildTracedScene, traceClosest, type TraceQuery } from "../src/rayTracing/rayTrace.js";
 import { buildSsrRayExtensionBatch, collectSsrRayExtensionCandidates,
@@ -15,10 +16,17 @@ import { buildSsrRayExtensionBatch, collectSsrRayExtensionCandidates,
 import type { ScreenSpaceReflectionCpuInput, ScreenSpaceReflectionCpuOptions,
 } from "../src/postprocess/screenSpaceReflectionTypes.js";
 import type { RayBlasDescriptor, RayBatchQuery } from "../src/rayTracing/rayBackendTypes.js";
+import { runTlasCase, type RayTraceTlasBackendCaseResult,
+  type RayTraceTlasCaseRequest } from "./rayTraceTlasCases.js";
 
 export { buildTracedScene, traceClosest } from "../src/rayTracing/rayTrace.js";
 export { compareGpuAgainstCpu, planRayTraceDispatch } from "../src/rayTracing/rayTraceExecutor.js";
 export { emitRayTraceKernelWgsl } from "../src/rayTracing/rayTraceKernel.js";
+export { emitTwoLevelRayTraceKernelWgsl, RAY_TRACE_TLAS_BINDINGS, RAY_TRACE_TLAS_ENTRY_POINT } from "../src/rayTracing/rayTraceTlasKernel.js";
+export { buildTlas, traceTlasClosest } from "../src/rayTracing/tlas.js";
+export { packTlasScene } from "../src/rayTracing/tlasLayout.js";
+export { compareTlasGpuAgainstCpu } from "../src/rayTracing/rayTraceTlasExecutor.js";
+export { buildRayTraceTlasCases, decodeGpuTlasHits, encodeGpuTlasHits } from "./rayTraceTlasCases.js";
 
 export interface RayTraceCaseSpec {
   readonly name: string;
@@ -163,16 +171,16 @@ export interface RayTraceBackendCaseResult {
   readonly stackOverflows: number;
   readonly rayCount: number;
   readonly validationMessages: readonly string[];
-  /** 诊断：GPU 读回前 4 条原始 HitRecord (t, primitiveIndex, status)。 */
-  readonly firstRawRecords: readonly (readonly [number, number, number])[];
+  /** 诊断：GPU 读回前 4 条原始 HitRecord（单级 3 元组；两级第 4 位为 instanceIndex）。 */
+  readonly firstRawRecords: readonly (readonly number[])[];
   /** 诊断：浏览器侧同 bundle CPU 参考的前 4 条 (t, primitiveIndex|NaN)。 */
-  readonly cpuSanity: readonly (readonly [number, number])[];
+  readonly cpuSanity: readonly (readonly (number | string)[])[];
 }
 
 export interface RayTraceProbeResult {
   readonly adapter: Readonly<Record<string, string | number>>;
   readonly features: readonly string[];
-  readonly cases: Readonly<Record<string, RayTraceBackendCaseResult>>;
+  readonly cases: Readonly<Record<string, RayTraceBackendCaseResult | RayTraceTlasBackendCaseResult>>;
   readonly errors: readonly string[];
 }
 
@@ -186,10 +194,10 @@ const bytesToBase64 = (bytes: Uint8Array): string => {
 
 const base64ToBytes = (value: string): Uint8Array => Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
 
-/** 浏览器腿：真实 WebGPU 设备上按完整 API 路径执行每案例。 */
-export async function runRayTraceGpuProbe(requests: readonly RayTraceCaseRequest[]): Promise<RayTraceProbeResult> {
+/** 浏览器腿：真实 WebGPU 设备上按完整 API 路径执行每案例（含 TLAS 两级分支）。 */
+export async function runRayTraceGpuProbe(requests: readonly (RayTraceCaseRequest | RayTraceTlasCaseRequest)[]): Promise<RayTraceProbeResult> {
   const errors: string[] = [];
-  const cases: Record<string, RayTraceBackendCaseResult> = {};
+  const cases: Record<string, RayTraceBackendCaseResult | RayTraceTlasBackendCaseResult> = {};
   if (!navigator.gpu) throw new Error("navigator.gpu unavailable.");
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
   if (!adapter) throw new Error("requestAdapter returned null.");
@@ -199,11 +207,18 @@ export async function runRayTraceGpuProbe(requests: readonly RayTraceCaseRequest
   });
   const info = (adapter as GPUAdapter & { info?: GPUAdapterInfo }).info;
   const diagnostic = device.createShaderModule({ label: "ray-trace-kernel-diagnostic", code: emitRayTraceKernelWgsl() });
-  const validationMessages = (await diagnostic.getCompilationInfo()).messages
-    .filter((message) => message.type !== "info")
-    .map((message) => `${message.type}:${message.lineNum}:${message.message}`);
+  const tlasDiagnostic = device.createShaderModule({ label: "ray-trace-tlas-kernel-diagnostic", code: emitTwoLevelRayTraceKernelWgsl() });
+  const collect = async (module: GPUShaderModule): Promise<readonly string[]> =>
+    (await module.getCompilationInfo()).messages
+      .filter((message) => message.type !== "info")
+      .map((message) => `${message.type}:${message.lineNum}:${message.message}`);
+  const validationMessages = [...await collect(diagnostic), ...await collect(tlasDiagnostic)];
   try {
     for (const request of requests) {
+      if ("instances" in request) {
+        cases[request.name] = await runTlasCase(device, request);
+        continue;
+      }
       const blas: RayBlasDescriptor = {
         id: request.name,
         vertices: new Float32Array(base64ToBytes(request.verticesBase64).buffer.slice(0)),

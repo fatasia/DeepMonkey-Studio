@@ -19,32 +19,70 @@ export interface TlasInstanceDescriptor {
   readonly mask: number;
 }
 
+export interface TlasInstanceBounds {
+  readonly minX: number; readonly minY: number; readonly minZ: number;
+  readonly maxX: number; readonly maxY: number; readonly maxZ: number;
+}
+
 export interface TlasBuildResult {
   readonly built: BvhBuildResult;
   /** 每实例（order 排列后索引即 order 值）的局部包围盒（BLAS bounds 原样，用于变换回世界验证）。 */
   readonly instances: readonly TlasInstanceDescriptor[];
+  /** 参与构建的实例的世界 AABB（下标与 instances 对齐；空 BLAS 为 undefined）。
+   *  由 localToWorld（worldToLocal 的逆）变换 BLAS 根节点 8 角后取轴对齐 min/max，分量
+   *  以 f32 量化（fround）——合同即 f32 精度盒，与 GPU storage 记录逐位一致；CPU 遍历
+   *  不读盒（保守下钻）不受影响，GPU TLAS 盒剪枝与打包以此为准。 */
+  readonly instanceBounds: readonly (TlasInstanceBounds | undefined)[];
+}
+
+/** 行主序 3×4 仿射求逆（local = M × world ⇒ world = M⁻¹ × local）；3×3 奇异即抛错。 */
+export function invertAffine3x4(m: readonly number[]): number[] {
+  const a = m[0]!, b = m[1]!, c = m[2]!, d = m[4]!, e = m[5]!, f = m[6]!, g = m[8]!, h = m[9]!, i = m[10]!;
+  const determinant = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+  if (!Number.isFinite(determinant) || determinant === 0) throw new Error("worldToLocal affine is singular.");
+  const inverse = 1 / determinant;
+  const i00 = (e * i - f * h) * inverse, i01 = (c * h - b * i) * inverse, i02 = (b * f - c * e) * inverse;
+  const i10 = (f * g - d * i) * inverse, i11 = (a * i - c * g) * inverse, i12 = (c * d - a * f) * inverse;
+  const i20 = (d * h - e * g) * inverse, i21 = (b * g - a * h) * inverse, i22 = (a * e - b * d) * inverse;
+  const tx = m[3]!, ty = m[7]!, tz = m[11]!;
+  return [i00, i01, i02, -(i00 * tx + i01 * ty + i02 * tz),
+    i10, i11, i12, -(i10 * tx + i11 * ty + i12 * tz),
+    i20, i21, i22, -(i20 * tx + i21 * ty + i22 * tz)];
 }
 
 export function buildTlas(instances: readonly TlasInstanceDescriptor[]): TlasBuildResult {
-  if (instances.length === 0) return { built: buildBvh({ vertices: new Float32Array(0), indices: new Uint32Array(0) }), instances: [] };
-  // 实例的"质心与包围盒"以其实际 BLAS bounds 经仿射变换后的世界 AABB 表示；
+  const empty = { built: buildBvh({ vertices: new Float32Array(0), indices: new Uint32Array(0) }) };
+  if (instances.length === 0) return { ...empty, instances: [], instanceBounds: [] };
+  // 实例的"质心与包围盒"以其实际 BLAS bounds 经 localToWorld（实例正向变换）后的世界 AABB 表示；
   // 为确定性且免去 8 角变换误差，直接用三轴独立 min/max（与 BLAS bounds 变换等价的保守盒）。
+  const instanceBounds: (TlasInstanceBounds | undefined)[] = instances.map(() => undefined);
   const fakeVertices: number[] = [];
   const fakeIndices: number[] = [];
   instances.forEach((instance, index) => {
     const scene = buildTracedScene(instance.blas);
     const node = scene.built.nodes[0];
     if (node === undefined) return; // 空 BLAS 不参与实例盒
+    const localToWorld = invertAffine3x4(instance.worldToLocal);
     const corners: number[][] = [];
+    let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
     for (const x of [node.minX, node.maxX]) for (const y of [node.minY, node.maxY]) for (const z of [node.minZ, node.maxZ]) {
-      corners.push(applyTransform(instance.worldToLocal, [x, y, z]));
+      const corner = applyTransform(localToWorld, [x, y, z]);
+      corners.push(corner);
+      minX = Math.min(minX, corner[0]!); maxX = Math.max(maxX, corner[0]!);
+      minY = Math.min(minY, corner[1]!); maxY = Math.max(maxY, corner[1]!);
+      minZ = Math.min(minZ, corner[2]!); maxZ = Math.max(maxZ, corner[2]!);
     }
+    instanceBounds[index] = { minX: Math.fround(minX), minY: Math.fround(minY), minZ: Math.fround(minZ),
+      maxX: Math.fround(maxX), maxY: Math.fround(maxY), maxZ: Math.fround(maxZ) };
     for (const corner of corners) fakeVertices.push(...corner);
-    fakeIndices.push(index * 8 + 0, index * 8 + 1, index * 8 + 2);
+    // fake 三角必须覆盖盒的三轴全距（角 0=min.x/min.y/min.z、7=max.x/max.y/max.z、
+    // 5=max.x/min.y/max.z）：取 0/1/2 会三顶点共享 minX，使盒在 x 轴退化——CPU 遍历不读盒
+    // 不受影响，但 GPU TLAS 盒剪枝会把整棵树剪光（真机实测）。
+    fakeIndices.push(index * 8 + 0, index * 8 + 7, index * 8 + 5);
   });
-  if (fakeIndices.length === 0) return { built: buildBvh({ vertices: new Float32Array(0), indices: new Uint32Array(0) }), instances };
+  if (fakeIndices.length === 0) return { ...empty, instances, instanceBounds };
   const built = buildBvh({ vertices: new Float32Array(fakeVertices), indices: Uint32Array.from(fakeIndices) });
-  return { built, instances };
+  return { built, instances, instanceBounds };
 }
 
 export interface TlasHit extends TraceHit {
