@@ -26,6 +26,7 @@
     "build": "pnpm -r build && pnpm smoke:api",
     "smoke:api": "node scripts/smoke-api-import.mjs",
     "typecheck": "pnpm -r typecheck && pnpm quality:source-size",
+    "editor:bundle-budget": "node scripts/editorBundleBudget.mjs",
     "quality:source-size": "node scripts/check-source-size.mjs",
     "gate:repository": "node --test scripts/check-repository-governance.test.mjs && node scripts/check-repository-governance.mjs",
     "verify:scene-client": "node scripts/verify-scene-client-package.mjs",
