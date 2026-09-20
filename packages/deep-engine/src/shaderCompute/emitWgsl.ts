@@ -20,6 +20,7 @@ function expression(node: DcirNode): string {
     case "literal": return literal(node);
     case "global-invocation-id": return "deepGlobalId.xy";
     case "kernel-uniform": return `deepUniforms.${node.uniform}`;
+    case "loop-index": return `l_${node.loopId}`;
     case "iadd": case "isub": case "imul": case "idiv": {
       const [lhs, rhs] = node.inputs;
       const symbol = { iadd: "+", isub: "-", imul: "*", idiv: "/" }[node.op];
@@ -58,6 +59,13 @@ function expression(node: DcirNode): string {
       // 越界回零：WebGPU 规范越界读返回 0，此处显式表达同一合同（WGSL 与 Native wgpu 同语义）。
       return value;
     }
+    case "buffer-store":
+      // 语句化副作用在 emitKernelWgsl 的节点行后追加;此处求值为被存值(pass-through),
+      // 保持"每节点一条 let"的确定性展开序。
+      return varName(node.value);
+    case "hash-rng":
+      // PCG 整数哈希(设计合同 §2):纯 u32 移位/乘加/异或,双端逐位一致。
+      return `deepPcg(${varName(node.seed)} ^ ${varName(node.salt)})`;
   }
   node satisfies never; // op 集合扩展时编译失败，强制补全两个后端
 }
@@ -77,7 +85,8 @@ export function emitKernelWgsl(kernel: DcirKernel): EmittedKernelWgsl {
   const buffers = kernel.buffers ?? [];
   const bufferLines = buffers.map((buffer, index) => {
     const elementType = buffer.elementType === "u32" ? "u32" : "f32";
-    return `@group(0) @binding(${3 + index}) var<storage, read> deep_${buffer.name}: array<${elementType}>;`;
+    const access = buffer.access === "read_write" ? "read_write" : "read";
+    return `@group(0) @binding(${3 + index}) var<storage, ${access}> deep_${buffer.name}: array<${elementType}>;`;
   });
   const lines: string[] = [
     `// Deep Compute IR v0 (schema 1); generated deterministically. Kernel: ${kernel.name}`,
@@ -85,6 +94,13 @@ export function emitKernelWgsl(kernel: DcirKernel): EmittedKernelWgsl {
     "struct DeepKernelUniforms {",
     ...kernel.uniforms.map((uniform) => `  ${uniform.name}: ${uniform.type},`),
     "};",
+    "",
+    "// PCG round of the hash (u32 exact ops only; bitwise-identical on every backend).",
+    "fn deepPcg(state: u32) -> u32 {",
+    "  let x = state * 747796405u + 2891336453u;",
+    "  let word = ((x >> ((x >> 28u) + 4u)) ^ x) * 277803737u;",
+    "  return (word >> 22u) ^ word;",
+    "}",
     "",
     "@group(0) @binding(0) var deepSource: texture_2d<f32>;",
     "@group(0) @binding(1) var deepTarget: texture_storage_2d<r32float, write>;",
@@ -96,6 +112,20 @@ export function emitKernelWgsl(kernel: DcirKernel): EmittedKernelWgsl {
   ];
   for (const node of kernel.nodes) {
     lines.push(`  let ${varName(node.id)}: ${wgslType[node.type]} = ${expression(node)};`);
+    if (node.op === "buffer-store") {
+      // 副作用语句紧跟节点 let;越界写入按 WebGPU 合同由调用侧 guard/select 屏蔽。
+      lines.push(`  deep_${node.buffer}[${varName(node.index)}] = ${varName(node.value)};`);
+    }
+  }
+  for (const loop of kernel.loops ?? []) {
+    lines.push(`  for (var l_${loop.id}: u32 = ${loop.start}u; l_${loop.id} < ${loop.end}u; l_${loop.id} = l_${loop.id} + ${loop.step}u) {`);
+    for (const node of loop.body) {
+      lines.push(`    let ${varName(node.id)}: ${wgslType[node.type]} = ${expression(node)};`);
+      if (node.op === "buffer-store") {
+        lines.push(`    deep_${node.buffer}[${varName(node.index)}] = ${varName(node.value)};`);
+      }
+    }
+    lines.push("  }");
   }
   lines.push(
     `  if (!(${varName(kernel.guard)})) { return; }`,

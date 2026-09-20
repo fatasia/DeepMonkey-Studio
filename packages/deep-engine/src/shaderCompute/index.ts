@@ -1,5 +1,6 @@
 export { DCIR_SCHEMA_VERSION } from "./types.js";
 export type {
+  DcirBufferElementType, DcirStorageBuffer, DcirLoopRange,
   DcirKernel, DcirKernelArtifacts, DcirKernelOutput, DcirNode, DcirUniform, DcirUniformType, DcirValueType,
 } from "./types.js";
 export { kernelIrSha256, validateKernel, KernelBuilder } from "./kernel.js";

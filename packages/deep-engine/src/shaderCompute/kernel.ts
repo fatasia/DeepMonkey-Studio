@@ -58,7 +58,7 @@ function validateNode(node: DcirNode, known: Map<string, DcirValueType>, diagnos
   };
   switch (node.op) {
     case "literal": literalIssues(node, diagnostics); return;
-    case "global-invocation-id": case "kernel-uniform": return; // uniform 引用由 uniformIssues 校验
+    case "global-invocation-id": case "kernel-uniform": case "loop-index": return; // 引用由对应合同校验
     case "iadd": case "isub": case "imul": case "idiv": case "imin": case "imax":
       expect(node.inputs[0], "u32", "lhs"); expect(node.inputs[1], "u32", "rhs"); return;
     case "ieq": case "ult":
@@ -79,7 +79,12 @@ function validateNode(node: DcirNode, known: Map<string, DcirValueType>, diagnos
     case "buffer-load":
       expect(node.index, "u32", "index");
       return; // buffer 声明存在性与 access 合法性由 bufferIssues 校验。
-  }
+    case "buffer-store":
+      expect(node.index, "u32", "index"); expect(node.value, node.type, "value");
+      return;
+    case "hash-rng":
+      expect(node.seed, "u32", "seed"); expect(node.salt, "u32", "salt");
+      return;  }
   node satisfies never; // op 集合扩展时编译失败，强制补全校验
 }
 
@@ -115,12 +120,34 @@ function bufferIssues(kernel: DcirKernel, diagnostics: DcirIssue[]): Map<string,
     declared.set(buffer.name, buffer.elementType);
   }
   for (const node of kernel.nodes) {
-    if (node.op !== "buffer-load") continue;
+    if (node.op !== "buffer-load" && node.op !== "buffer-store") continue;
     const elementType = declared.get(node.buffer);
     if (elementType === undefined) issue(diagnostics, "unknown-buffer", node.id, `Buffer "${node.buffer}" is not declared.`);
     else if (elementType !== node.type) issue(diagnostics, "type-mismatch", node.id, `Buffer "${node.buffer}" carries ${elementType}.`);
+    if (node.op === "buffer-store" && kernel.buffers?.find((buffer) => buffer.name === node.buffer)?.access !== "read_write") {
+      issue(diagnostics, "buffer-not-writable", node.id, `Buffer "${node.buffer}" must be declared read_write for buffer-store.`);
+    }
   }
+  validateLoops(kernel, diagnostics);
   return declared;
+}
+
+function validateLoops(kernel: DcirKernel, diagnostics: DcirIssue[]): void {
+  const seen = new Set<string>();
+  for (const loop of kernel.loops ?? []) {
+    if (!NODE_ID_PATTERN.test(loop.id) || !NODE_ID_PATTERN.test(loop.indexId)) issue(diagnostics, "invalid-loop", loop.id, "Loop ids must be identifiers.");
+    if (seen.has(loop.id)) issue(diagnostics, "duplicate-loop", loop.id, "Loop ids must be unique.");
+    seen.add(loop.id);
+    if (!Number.isSafeInteger(loop.start) || !Number.isSafeInteger(loop.end) || !Number.isSafeInteger(loop.step)
+      || loop.step <= 0 || loop.end < loop.start || loop.end - loop.start > 4096) {
+      issue(diagnostics, "invalid-loop", loop.id, "Loop range must be a static safe range with step > 0 and at most 4096 iterations.");
+    }
+    const known = new Map<string, DcirValueType>([[loop.indexId, "u32"]]);
+    for (const node of loop.body) {
+      if (known.has(node.id)) issue(diagnostics, "duplicate-node", node.id, "Loop body node ids must be unique.");
+      else { validateNode(node, known, diagnostics); known.set(node.id, node.type); }
+    }
+  }
 }
 
 /** 校验内核合同：依赖序、类型正确、guard/output 指向存在且类型正确的节点。 */

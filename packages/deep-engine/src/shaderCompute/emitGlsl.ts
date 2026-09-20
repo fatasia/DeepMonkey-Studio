@@ -57,6 +57,10 @@ function expression(kernel: DcirKernel, node: DcirNode): string {
       return `(${varName(condition)} ? ${varName(trueValue)} : ${varName(falseValue)})`;
     }
     case "texel-load": return `texelFetch(deepSource, ivec2(${varName(node.coords)}), 0).r`;
+    case "loop-index": case "buffer-store": case "hash-rng":
+      // v2 能力(loop/写 buffer/hash-rng)在 WebGL2 整体 absent(合同 §4);
+      // 入口 emitKernelGlsl 已 fail-closed,此处不可达。
+      throw new Error(`op "${node.op}" cannot be emitted to GLSL (kernel "${kernel.name}").`);
     case "buffer-load":
       // 入口 emitKernelGlsl 已对声明 buffer 的内核整体 fail-closed;此处不可达。
       throw new Error(`buffer-load cannot be emitted to GLSL (kernel "${kernel.name}").`);
@@ -89,6 +93,14 @@ export function emitKernelGlsl(kernel: DcirKernel): EmittedKernelGlsl {
       `DCIR kernel "${kernel.name}" declares storage buffers (${kernel.buffers.map((buffer) => buffer.name).join(", ")}); ` +
       "buffer kernels are WebGPU/Native only and cannot be emitted to WebGL2 GLSL.",
     );
+  }
+  if (kernel.loops?.length) {
+    // v2 静态循环属 WebGPU/Native 专用能力(合同 §4):GLSL 降级路径整体 fail-closed。
+    throw new Error(`DCIR kernel "${kernel.name}" declares static loops; loop kernels are WebGPU/Native only and cannot be emitted to WebGL2 GLSL.`);
+  }
+  const v2Node = kernel.nodes.find((node) => node.op === "hash-rng" || node.op === "buffer-store" || node.op === "loop-index");
+  if (v2Node) {
+    throw new Error(`DCIR kernel "${kernel.name}" uses v2 op "${v2Node.op}"; v2 ops are WebGPU/Native only and cannot be emitted to WebGL2 GLSL.`);
   }
   const diagnostics = validateKernel(kernel);
   if (diagnostics.length > 0) {
