@@ -507,7 +507,8 @@ export class PbrRenderer {
     });
   }
   dispose(): void {
-    this.probeClipmapAbort.abort();
+    // 可选链：测试以手造对象直调原型 dispose，字段可能不存在。
+    this.probeClipmapAbort?.abort();
     this.probeClipmap?.dispose();
     const owners = [this.ground.author, this.outputs, this.environment, this.lighting, this.localShadows,
       this.shadowState, this.previousHiZ, this.transparency, this.postProcess, this.packets, this.targets,
