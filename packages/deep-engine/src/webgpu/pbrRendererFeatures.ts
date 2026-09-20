@@ -7,6 +7,8 @@ export interface PbrRendererFeatureOptions {
   readonly groundPlane?: boolean;
   readonly groundGrid?: boolean;
   readonly ambientOcclusion?: boolean;
+  /** E04 first slice: screen-space reflection trace+composite ahead of temporal AA; off by default. */
+  readonly screenSpaceReflection?: boolean;
   readonly temporalAa?: boolean;
   /** Display-domain edge AA, independent of temporal history. */
   readonly spatialAa?: boolean;
@@ -22,6 +24,7 @@ export interface PbrRendererFeatures {
   readonly groundPlane: boolean;
   readonly groundGrid: boolean;
   readonly ambientOcclusion: boolean;
+  readonly screenSpaceReflection: boolean;
   readonly temporalAa: boolean;
   readonly spatialAa: boolean;
   readonly occlusionCulling: boolean;
@@ -32,7 +35,8 @@ export interface PbrRendererFeatures {
 
 export const DEFAULT_PBR_RENDERER_FEATURES: PbrRendererFeatures = Object.freeze({
   environment: true, fog: true, groundPlane: true, groundGrid: true, ambientOcclusion: true,
-  temporalAa: true, spatialAa: true, occlusionCulling: true, bloom: true, vignette: true, toneMapping: "deep-aces",
+  screenSpaceReflection: false, temporalAa: true, spatialAa: true, occlusionCulling: true,
+  bloom: true, vignette: true, toneMapping: "deep-aces",
 });
 
 export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = {}): PbrRendererFeatures {
@@ -49,6 +53,7 @@ export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = 
   return Object.freeze({ environment: boolean("environment"), fog: boolean("fog"),
     groundPlane: boolean("groundPlane"),
     groundGrid: boolean("groundGrid"), ambientOcclusion: boolean("ambientOcclusion"),
+    screenSpaceReflection: boolean("screenSpaceReflection"),
     temporalAa: boolean("temporalAa"), spatialAa: boolean("spatialAa"), occlusionCulling: boolean("occlusionCulling"),
     bloom: boolean("bloom"), vignette: boolean("vignette"), toneMapping });
 }
