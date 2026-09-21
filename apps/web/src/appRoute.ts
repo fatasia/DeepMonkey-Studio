@@ -33,9 +33,11 @@ export interface AppRoute {
   dashboardReturn?: DashboardReturnContext;
   topologyReturn?: TopologyReturnContext;
   operationsTab?: "maintenance" | "commissioning" | "battery" | "logistics" | "energy" | "whatif" | "monitoring";
+  systemTab?: "users" | "health" | "cloud-render" | "notifications" | "audit" | "ai" | "mcp" | "performance";
 }
 
 const operationsTabs = new Set(["maintenance", "commissioning", "battery", "logistics", "energy", "whatif", "monitoring"]);
+const systemTabs = new Set(["users", "health", "cloud-render", "notifications", "audit", "ai", "mcp"]);
 
 export function readRoute(): AppRoute {
   try {
@@ -68,6 +70,7 @@ function readLocationRoute(): AppRoute {
   if (["optimizer", "parametric", "data", "vision", "operations", "system", "branding"].includes(window.location.pathname.slice(1))) {
     const view = window.location.pathname.slice(1) as AppRoute["view"];
     const requestedTask = new URLSearchParams(window.location.search).get("task");
+    const requestedSystemTab = new URLSearchParams(window.location.search).get("tab");
     const projectId = new URLSearchParams(window.location.search).get("project");
     return {
       view,
@@ -75,6 +78,9 @@ function readLocationRoute(): AppRoute {
       ...(view === "optimizer" ? readModelAssetQuery(new URLSearchParams(window.location.search)) : {}),
       ...(view === "operations" && requestedTask && operationsTabs.has(requestedTask)
         ? { operationsTab: requestedTask as NonNullable<AppRoute["operationsTab"]> }
+        : {}),
+      ...(view === "system" && requestedSystemTab && systemTabs.has(requestedSystemTab)
+        ? { systemTab: requestedSystemTab as NonNullable<AppRoute["systemTab"]> }
         : {}),
     };
   }
@@ -111,6 +117,7 @@ export function routePath(route: AppRoute): string {
     if (route.view === "manager" && route.managerTab) query.set("tab", route.managerTab);
     if (route.view === "manager" || route.view === "optimizer") writeModelAssetQuery(query, route);
     if (route.view === "operations" && route.operationsTab) query.set("task", route.operationsTab);
+    if (route.view === "system" && route.systemTab) query.set("tab", route.systemTab);
     return `/${route.view}${query.size ? `?${query.toString().replace(/\+/g, "%20")}` : ""}`;
   }
   if (route.view === "dashboard" && route.projectId && route.applicationId && route.pageId) {
@@ -125,7 +132,9 @@ export function routePath(route: AppRoute): string {
   return route.view === "vision" || route.view === "operations" || route.view === "system" || route.view === "branding"
     ? route.view === "operations" && route.operationsTab
       ? `/operations?task=${encodeURIComponent(route.operationsTab)}`
-      : `/${route.view}`
+      : route.view === "system" && route.systemTab
+        ? `/system?tab=${encodeURIComponent(route.systemTab)}`
+        : `/${route.view}`
     : route.view === "studio" ? appendSceneAssetQuery(`/studio/${encodeURIComponent(route.sceneId ?? "new")}`, route) : `/${route.view}/${encodeURIComponent(route.sceneId ?? "new")}`;
 }
 

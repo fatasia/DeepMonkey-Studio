@@ -1,10 +1,9 @@
 import { useRef, useState, type CSSProperties } from "react";
-import { Check, Image, MonitorCog, Palette, Save, Upload } from "lucide-react";
+import { Check, Image, Palette, Save, Upload } from "lucide-react";
 import type { SystemBrandingSettings } from "@bim-studio/contracts";
 import { api } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
 import { SecondaryPageBack } from "./SecondaryPageBack";
-import { ViewerPerformanceSettings } from "./ViewerPerformanceSettings";
 
 interface BrandingSettingsPageProps {
   value: SystemBrandingSettings;
@@ -121,7 +120,6 @@ export function BrandingSettingsPage({ value, locale, onChange, onBack }: Brandi
         </section>
 
         <div className="branding-sections">
-          <ViewerPerformanceSettings locale={locale} />
           <section>
             <header>
               <Image size={16} />
@@ -206,28 +204,6 @@ export function BrandingSettingsPage({ value, locale, onChange, onBack }: Brandi
             </div>
           </section>
 
-          <section>
-            <header>
-              <MonitorCog size={16} />
-              <div>
-                <strong>{t("运行状态", "Runtime status")}</strong>
-                <small>{t("维护期间管理员仍可登录检查系统", "Administrators can still sign in during maintenance")}</small>
-              </div>
-            </header>
-            <div className="branding-form-grid">
-              <label className="branding-switch wide">
-                <input type="checkbox" checked={draft.maintenanceEnabled} onChange={(event) => patch("maintenanceEnabled", event.target.checked)} />
-                <span>
-                  <b>{t("维护模式", "Maintenance mode")}</b>
-                  <small>{t("阻止普通用户进入和修改数据", "Block standard users from entering or changing data")}</small>
-                </span>
-              </label>
-              <label className="wide">
-                <span>{t("维护提示", "Maintenance message")}</span>
-                <input value={draft.maintenanceMessage} onChange={(event) => patch("maintenanceMessage", event.target.value)} />
-              </label>
-            </div>
-          </section>
         </div>
       </div>
       {message && (

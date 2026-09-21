@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Activity, BellRing, Box, Bot, Braces, CircleAlert, CloudCog, FileClock, KeyRound, Pencil, PlugZap, Plus, Power, Save, Trash2, Users } from "lucide-react";
+import { Activity, BellRing, Box, Bot, Braces, CircleAlert, CloudCog, FileClock, Gauge, KeyRound, Pencil, PlugZap, Plus, Power, Save, Trash2, Users } from "lucide-react";
 import type {
   AiModelProviderSettings,
   AiProviderSettings,
@@ -13,6 +13,7 @@ import type {
 } from "@bim-studio/contracts";
 import { api, type AiProviderDescriptor, type SystemPluginSummary } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
+import { PerformanceMaintenancePanel } from "./PerformanceMaintenancePanel.js";
 import {
   buildAiSettingsPayload,
   describeFailoverCategory,
@@ -26,7 +27,7 @@ import { SecondaryPageBack } from "./SecondaryPageBack";
 import { SystemHealthPanel, SystemLogPanel } from "./SystemObservabilityPanels";
 import { McpSettingsPanel } from "./McpSettingsPanel";
 
-export type SystemCenterTab = "users" | "health" | "audit" | "ai" | "mcp" | "cloud-render" | "notifications";
+export type SystemCenterTab = "users" | "health" | "audit" | "ai" | "mcp" | "cloud-render" | "notifications" | "performance";
 type Translate = (zh: string, en: string) => string;
 
 export function SystemCenter({
@@ -102,6 +103,7 @@ export function SystemCenter({
         <TabButton active={tab === "health"} onClick={() => selectTab("health")} icon={<Activity />} label={t("服务健康", "Service health")} />
         <TabButton active={tab === "cloud-render"} onClick={() => selectTab("cloud-render")} icon={<CloudCog />} label={t("云渲染设置", "Cloud settings")} />
         <TabButton active={tab === "notifications"} onClick={() => selectTab("notifications")} icon={<BellRing />} label={t("通知与推送", "Notifications")} />
+        <TabButton active={tab === "performance"} onClick={() => selectTab("performance")} icon={<Gauge />} label={t("性能与维护", "Performance & maintenance")} />
         <TabButton active={tab === "audit"} onClick={() => selectTab("audit")} icon={<FileClock />} label={t("审计与日志", "Audit & logs")} />
         <TabButton active={tab === "ai"} onClick={() => selectTab("ai")} icon={<Bot />} label={t("AI 大模型", "AI model")} />
         <TabButton active={tab === "mcp"} onClick={() => selectTab("mcp")} icon={<Braces />} label="MCP" />
@@ -113,6 +115,7 @@ export function SystemCenter({
         {tab === "health" && <SystemHealthPanel t={t} initialHealth={health} converters={converters} onError={setError} />}
         {tab === "cloud-render" && <CloudRenderControl locale={locale} />}
         {tab === "notifications" && <SystemNotificationPanel locale={locale} projects={projects} t={t} />}
+        {tab === "performance" && <PerformanceMaintenancePanel locale={locale} onError={(message) => setError(message)} />}
         {tab === "audit" && <SystemLogPanel t={t} auditLogs={logs} onError={setError} />}
         {tab === "ai" && ai && (
           <div className="system-ai-layout">
