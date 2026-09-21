@@ -19,6 +19,7 @@ function fixture() {
   const pixels = new Uint8ClampedArray(16).fill(128), getImageData = vi.fn(() => ({ data: pixels }));
   const image = { width: 2, height: 2, getContext: () => ({ getImageData }) } as unknown as HTMLCanvasElement;
   const texture = new THREE.CanvasTexture(image); texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = THREE.NearestFilter; texture.anisotropy = 1;
   const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
   const geometry = new THREE.PlaneGeometry(200, 200), grid = new THREE.Mesh(geometry, material);
   grid.name = "helper:grid"; grid.renderOrder = -10;
@@ -31,7 +32,7 @@ function fixture() {
     getDeepGrid: () => grid, getDeepEditorOverlayRoots: () => [], setPresentationRendererBackend: presentation,
     setPresentationPerformanceSource: vi.fn(), subscribePresentationFrames: (callback: () => void) => { frames.add(callback); return () => frames.delete(callback); },
   } as unknown as ViewerEngine;
-  const backend = () => ({ prepareScene: vi.fn().mockResolvedValue({ frame: 1 }), sync: vi.fn().mockResolvedValue({ status: "committed" }),
+  const backend = () => ({ setProbeClipmapEnabled: vi.fn(), prepareScene: vi.fn().mockResolvedValue({ frame: 1 }), sync: vi.fn().mockResolvedValue({ status: "committed" }),
     render: vi.fn(() => ({ frame: 1 })), dispose: vi.fn(), runtime: { session: { state: "ready" } } });
   const first = backend(), second = backend(), create = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second);
   const module = { DeepWebGpuBackend: { create }, ThreeProjectionBridge: class {}, threeRenderView: (view: unknown) => view };
