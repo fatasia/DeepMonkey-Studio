@@ -255,9 +255,9 @@ export interface SystemBrandingSettings {
 
 /** Web、API 与本地客户端共享的默认品牌；部署方仍可在运行时覆盖这些字段。 */
 export const DEFAULT_PRODUCT_BRANDING: Readonly<SystemBrandingSettings> = {
-  systemName: "Deep Monkey Studio",
-  browserTitle: "Deep Monkey Studio",
-  loginSubtitle: "数字孪生场景平台",
+  systemName: "DeepMonkey Studio",
+  browserTitle: "DeepMonkey Studio",
+  loginSubtitle: "元宇宙平台",
   copyright: "Copyright © 张文鹏 Charlie",
   logoUrl: "/brand/logo-industrial.svg",
   iconUrl: "/brand/app-icon-industrial.svg",

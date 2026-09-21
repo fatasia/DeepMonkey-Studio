@@ -44,6 +44,7 @@ export function LoginPage({
       <section className="login-card">
         <h1 className="login-brand" aria-label={branding.systemName}>
           <img src={branding.logoUrl} alt="" />
+          <span className="login-brand-name">{branding.systemName}</span>
         </h1>
         {branding.loginSubtitle && <p>{branding.loginSubtitle}</p>}
         {branding.maintenanceEnabled && (

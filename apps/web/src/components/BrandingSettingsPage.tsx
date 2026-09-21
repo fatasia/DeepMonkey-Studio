@@ -148,7 +148,8 @@ export function BrandingSettingsPage({ value, locale, onChange, onBack }: Brandi
               </label>
               <label className="wide">
                 <span>{t("登录页副标题", "Login subtitle")}</span>
-                <input value={draft.loginSubtitle} onChange={(event) => patch("loginSubtitle", event.target.value)} />
+                <textarea value={draft.loginSubtitle} onChange={(event) => patch("loginSubtitle", event.target.value)}
+                  rows={2} style={{ resize: "vertical" }} />
               </label>
               <label className="wide">
                 <span>{t("版权标识", "Copyright")}</span>

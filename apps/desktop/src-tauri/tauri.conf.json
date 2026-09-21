@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Deep Monkey Studio",
+  "productName": "DeepMonkey Studio",
   "version": "0.1.0",
   "identifier": "com.bimstudio.devstudio",
   "build": {
@@ -17,7 +17,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Deep Monkey Studio",
+        "title": "DeepMonkey Studio",
         "width": 1440,
         "height": 900,
         "minWidth": 1100,
@@ -47,7 +47,7 @@
       "nsis": {
         "installMode": "perMachine",
         "displayLanguageSelector": true,
-        "startMenuFolder": "Deep Monkey Studio",
+        "startMenuFolder": "DeepMonkey Studio",
         "installerIcon": "icons/icon.ico",
         "uninstallerIcon": "icons/icon.ico"
       },

@@ -1,16 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="icon-title">
-  <title id="icon-title">Deep Monkey Studio</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="160 160 960 960" role="img" aria-labelledby="logo-title logo-description">
+  <title id="logo-title">DeepMonkey Studio</title>
+  <desc id="logo-description">青绿色渐变折带构成的 S 形蛇标，无字标与底板</desc>
   <defs>
-    <linearGradient id="icon-signal" x1="10" y1="9" x2="52" y2="55" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#76D4FF"/>
-      <stop offset="1" stop-color="#2F83FF"/>
+    <linearGradient id="head" x1="383" y1="391" x2="862" y2="183" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#002F2E"/><stop offset=".52" stop-color="#006657"/><stop offset="1" stop-color="#00A58B"/>
+    </linearGradient>
+    <linearGradient id="coil" x1="693" y1="821" x2="493" y2="1100" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#002D2C"/><stop offset=".58" stop-color="#007D6D"/><stop offset="1" stop-color="#003E3A"/>
+    </linearGradient>
+    <linearGradient id="body" x1="730" y1="489" x2="498" y2="813" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#00BCA0"/><stop offset=".43" stop-color="#008E79"/><stop offset="1" stop-color="#003B36"/>
+    </linearGradient>
+    <linearGradient id="tail" x1="352" y1="987" x2="474" y2="764" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#004B46"/><stop offset="1" stop-color="#009A88"/>
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="14" fill="#101A22"/>
-  <path d="M32 10v35M14 20l18 10 18-10M14 44l18-14 18 14" fill="none" stroke="#D6AA4D" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/>
-  <path d="M32 10 14 20v24l18 10 18-10V20L32 10Z" fill="none" stroke="url(#icon-signal)" stroke-width="3" stroke-linejoin="round"/>
-  <circle cx="32" cy="10" r="5" fill="#76D4FF"/>
-  <circle cx="14" cy="20" r="5" fill="#D6AA4D"/>
-  <circle cx="50" cy="20" r="5" fill="#D6AA4D"/>
-  <circle cx="32" cy="54" r="5" fill="#2F83FF"/>
+  <path fill="url(#coil)" d="M764 806 C804 872 786 918 710 939 L509 939 L402 882 L310 966 L443 1061 L724 1061 C815 1061 881 1040 923 994 C1001 914 893 836 764 806Z"/>
+  <path fill="url(#head)" fill-rule="evenodd" d="M365 285 C404 244 455 216 524 216 L836 216 L966 291 L1036 404 L981 454 L819 419 L709 338 L579 338 C511 335 479 388 514 444 L406 402 C352 371 349 318 365 285Z M866 297 L910 322 L940 364 L899 347Z"/>
+  <path fill="url(#body)" d="M365 285 C279 350 245 437 275 523 C289 565 323 594 365 616 L765 826 C850 870 913 899 922 945 C929 981 904 1018 873 1038 C969 992 1019 922 1025 841 C1035 748 990 674 916 634 L514 444 C443 412 367 385 363 330 C360 313 361 298 365 285Z"/>
+  <path fill="url(#tail)" d="M561 769 C445 791 327 836 285 909 C262 950 269 1017 320 1053 C290 1010 318 957 402 882 C453 837 506 800 561 769Z"/>
 </svg>

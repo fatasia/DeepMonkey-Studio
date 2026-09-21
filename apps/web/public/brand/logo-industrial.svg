@@ -1,23 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 304 56" role="img" aria-labelledby="logo-title logo-desc">
-  <title id="logo-title">Deep Monkey Studio</title>
-  <desc id="logo-desc">工业数字孪生节点与轨道组成的几何标志</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="160 160 960 960" role="img" aria-labelledby="logo-title logo-description">
+  <title id="logo-title">DeepMonkey Studio</title>
+  <desc id="logo-description">青绿色渐变折带构成的 S 形蛇标，无字标与底板</desc>
   <defs>
-    <linearGradient id="signal" x1="8" y1="8" x2="44" y2="46" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#76D4FF"/>
-      <stop offset="1" stop-color="#2F83FF"/>
+    <linearGradient id="head" x1="383" y1="391" x2="862" y2="183" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#002F2E"/><stop offset=".52" stop-color="#006657"/><stop offset="1" stop-color="#00A58B"/>
+    </linearGradient>
+    <linearGradient id="coil" x1="693" y1="821" x2="493" y2="1100" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#002D2C"/><stop offset=".58" stop-color="#007D6D"/><stop offset="1" stop-color="#003E3A"/>
+    </linearGradient>
+    <linearGradient id="body" x1="730" y1="489" x2="498" y2="813" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#00BCA0"/><stop offset=".43" stop-color="#008E79"/><stop offset="1" stop-color="#003B36"/>
+    </linearGradient>
+    <linearGradient id="tail" x1="352" y1="987" x2="474" y2="764" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#004B46"/><stop offset="1" stop-color="#009A88"/>
     </linearGradient>
   </defs>
-  <g transform="translate(4 4)">
-    <path d="M24 4v32M8 14l16 9 16-9M8 34l16-11 16 11" fill="none" stroke="#D6AA4D" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/>
-    <path d="M24 4 8 14v20l16 10 16-10V14L24 4Z" fill="none" stroke="url(#signal)" stroke-width="2.4" stroke-linejoin="round"/>
-    <circle cx="24" cy="4" r="4" fill="#76D4FF"/>
-    <circle cx="8" cy="14" r="4" fill="#D6AA4D"/>
-    <circle cx="40" cy="14" r="4" fill="#D6AA4D"/>
-    <circle cx="24" cy="46" r="4" fill="#2F83FF"/>
-  </g>
-  <g transform="translate(68 0)" fill="#E8F0F4">
-    <text x="0" y="31" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="22" font-weight="700" letter-spacing="-.6">Deep Monkey</text>
-    <text x="142" y="31" fill="#D6AA4D" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="22" font-weight="700" letter-spacing="-.6">Studio</text>
-    <text x="1" y="46" fill="#80939E" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="8.5" font-weight="600" letter-spacing="2.1">INDUSTRIAL DIGITAL TWIN</text>
-  </g>
+  <path fill="url(#coil)" d="M764 806 C804 872 786 918 710 939 L509 939 L402 882 L310 966 L443 1061 L724 1061 C815 1061 881 1040 923 994 C1001 914 893 836 764 806Z"/>
+  <path fill="url(#head)" fill-rule="evenodd" d="M365 285 C404 244 455 216 524 216 L836 216 L966 291 L1036 404 L981 454 L819 419 L709 338 L579 338 C511 335 479 388 514 444 L406 402 C352 371 349 318 365 285Z M866 297 L910 322 L940 364 L899 347Z"/>
+  <path fill="url(#body)" d="M365 285 C279 350 245 437 275 523 C289 565 323 594 365 616 L765 826 C850 870 913 899 922 945 C929 981 904 1018 873 1038 C969 992 1019 922 1025 841 C1035 748 990 674 916 634 L514 444 C443 412 367 385 363 330 C360 313 361 298 365 285Z"/>
+  <path fill="url(#tail)" d="M561 769 C445 791 327 836 285 909 C262 950 269 1017 320 1053 C290 1010 318 957 402 882 C453 837 506 800 561 769Z"/>
 </svg>
