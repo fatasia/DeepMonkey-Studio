@@ -3,7 +3,7 @@ use std::sync::Arc;
 use bytemuck::cast_slice;
 use deep_engine_native::{
     mesh_abi::PACKED_INSTANCE_BYTES,
-    scene::{PackedInstance, PACKED_INSTANCE_FLOATS},
+    scene::{PACKED_INSTANCE_FLOATS, PackedInstance},
 };
 
 use crate::gpu_scene::GpuInstanceResource;
@@ -74,6 +74,8 @@ fn copy_incremental_into(
     transfer
 }
 
+/// 接线波次的待消费接口（C3 域）；当前仅测试引用。
+#[allow(dead_code)]
 pub fn stage_instance_update(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -189,6 +191,7 @@ impl InstanceStagingRing {
     }
 
     /// 观测面:当前已驻留槽数(测试与遥测用)。
+    #[allow(dead_code)] // 测试与遥测消费；bin 目标暂未引用。
     pub fn resident_slots(&self) -> usize {
         self.slots.iter().filter(|slot| slot.is_some()).count()
     }

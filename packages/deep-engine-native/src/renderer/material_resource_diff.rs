@@ -160,17 +160,18 @@ mod tests {
         let uv_moved = contract_material(0.4, Some([0.25, 0.0]));
         let metallic_moved = contract_material(0.9, Some([0.0, 0.0]));
         assert!(instance_material_words_unchanged(
-            &[base.clone()],
+            std::slice::from_ref(&base),
             &[uv_moved]
         ));
         assert!(!instance_material_words_unchanged(
-            &[base.clone()],
+            std::slice::from_ref(&base),
             &[metallic_moved]
         ));
         // 数量变化直接拦截。
+        let doubled = [base.clone(), base.clone()];
         assert!(!instance_material_words_unchanged(
-            &[base.clone()],
-            &[base.clone(), base]
+            std::slice::from_ref(&base),
+            &doubled
         ));
     }
 

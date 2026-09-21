@@ -16,7 +16,24 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
     // GPU update, so every present shows the advanced animation state.
     if let Some(probe) = app.dynamic_playback.as_mut()
         && let Some(renderer) = app.renderer.as_mut()
-        && let Err(error) = probe.before_render(renderer, app.content.active_mut())
+        && let Err(error) = probe.before_render(renderer, app.content.active_mut(), &mut app.state)
+    {
+        app.state.failed(error);
+        event_loop.exit();
+        return;
+    }
+    if let Some(playback) = app.product_dynamic_playback.as_mut()
+        && let Some(renderer) = app.renderer.as_mut()
+        && let Err(error) =
+            playback.before_render(renderer, app.content.active_mut(), &mut app.state)
+    {
+        app.state.failed(error);
+        event_loop.exit();
+        return;
+    }
+    if let Some(playback) = app.product_physics_playback.as_mut()
+        && let Some(renderer) = app.renderer.as_mut()
+        && let Err(error) = playback.before_render(renderer, app.content.active_mut())
     {
         app.state.failed(error);
         event_loop.exit();
@@ -31,6 +48,83 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
         app.state.failed(error);
         event_loop.exit();
         return;
+    }
+    // Runtime-only floating origin. The package/source hash stays untouched;
+    // packet, physics, camera and history revisions publish as one redraw transaction.
+    let rebase = app
+        .content
+        .active()
+        .dynamic_coordinate_rebase(app.state.view);
+    match rebase {
+        Err(error) => {
+            app.state.failed(error);
+            event_loop.exit();
+            return;
+        }
+        Ok(Some(candidate)) => {
+            let next_view = candidate.view;
+            let coordinate_delta = candidate.delta();
+            let previous = app.content.active().packet().clone();
+            let mut rollback = Some(
+                app.content
+                    .active_mut()
+                    .begin_dynamic_coordinate_rebase(candidate),
+            );
+            app.state.rebase_local(coordinate_delta);
+            let update = {
+                let content = app.content.active();
+                pollster::block_on(
+                    app.renderer
+                        .as_mut()
+                        .expect("renderer exists")
+                        .replace_render_packet(&previous, content),
+                )
+            };
+            if let Err(error) = update {
+                app.content
+                    .active_mut()
+                    .rollback_dynamic_coordinate_rebase(rollback.take().unwrap());
+                app.state.rebase_local(coordinate_delta.map(|value| -value));
+                app.state.failed(error);
+                event_loop.exit();
+                return;
+            }
+            let revision = app.content.active().coordinate_frame_revision();
+            if let Err(error) = app
+                .renderer
+                .as_mut()
+                .expect("renderer exists")
+                .publish_coordinate_rebase(next_view, revision)
+            {
+                let rebased = app.content.active().packet().clone();
+                app.content
+                    .active_mut()
+                    .rollback_dynamic_coordinate_rebase(rollback.take().unwrap());
+                app.state.rebase_local(coordinate_delta.map(|value| -value));
+                let restore = {
+                    let content = app.content.active();
+                    pollster::block_on(
+                        app.renderer
+                            .as_mut()
+                            .expect("renderer exists")
+                            .replace_render_packet(&rebased, content),
+                    )
+                };
+                app.renderer
+                    .as_mut()
+                    .expect("renderer exists")
+                    .set_view(app.state.view);
+                let failure = match restore {
+                    Ok(_) => error,
+                    Err(restore) => format!("{error}; coordinate rollback failed: {restore}"),
+                };
+                app.state.failed(failure);
+                event_loop.exit();
+                return;
+            }
+            app.state.view = next_view;
+        }
+        Ok(None) => {}
     }
     // R6-2 细分采样:遥测采样窗内(预热结束后)每帧先对真实渲染器提交一次
     // packet 更新(原始↔变体交替),为 packet_scene_update / packet_resource_upload
@@ -223,15 +317,10 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
         event_loop.exit();
         return;
     }
-    if app.dynamic_playback.is_some() {
+    if let Some(probe) = app.dynamic_playback.as_mut() {
         match outcome {
             Some(RenderOutcome::Presented) => {
-                match app
-                    .dynamic_playback
-                    .as_mut()
-                    .expect("probe remains alive")
-                    .after_present()
-                {
+                match probe.after_present() {
                     AfterPresent::Continue => app.request_redraw(),
                     AfterPresent::Complete(receipt) => {
                         println!("native dynamic playback receipt: {receipt}");
@@ -249,15 +338,10 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
             _ => {}
         }
     }
-    if app.state_ops.is_some() {
+    if let Some(playback) = app.state_ops.as_mut() {
         match outcome {
             Some(RenderOutcome::Presented) => {
-                match app
-                    .state_ops
-                    .as_mut()
-                    .expect("probe remains alive")
-                    .after_present()
-                {
+                match playback.after_present() {
                     state_ops_playback::AfterPresent::Continue => app.request_redraw(),
                     state_ops_playback::AfterPresent::Complete(receipt) => {
                         println!("native state ops receipt: {receipt}");

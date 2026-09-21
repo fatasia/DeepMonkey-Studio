@@ -85,6 +85,8 @@ pub(crate) struct StagedRenderPacketPayload {
     resource_upload_ns: u64,
     /// C3 切片三:true = 资源复用刷新 staging(跳过纹理解码与整包内容哈希),
     /// false = 全量 stage_scoped。测试与遥测的路由证据。
+    /// C3 路由证据（测试与遥测读）；运行期由结构化构造携带。
+    #[allow(dead_code)]
     pub(crate) staged_via_resource_reuse: bool,
 }
 
@@ -341,8 +343,7 @@ impl Renderer {
                 }
             }
             SceneInstanceDiff::ShadowFlagOnly {
-                cast_changed: true,
-                ..
+                cast_changed: true, ..
             }
             | SceneInstanceDiff::LodOnly { .. } => {
                 // cast 阴影标志/LOD-only:参与批键,批可能重排 → 全实例重打包
@@ -580,8 +581,7 @@ impl Renderer {
                     &shadow_update,
                     self.view.near,
                 )?;
-                let shadow_keys =
-                    shadow_casters.keys(&shadow_update, shadow_shader_key)?;
+                let shadow_keys = shadow_casters.keys(&shadow_update, shadow_shader_key)?;
                 Ok((scene, next_culling, next_lod, shadow_keys))
             });
         let gpu_errors = [

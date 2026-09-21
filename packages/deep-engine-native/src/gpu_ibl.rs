@@ -106,16 +106,18 @@ impl GpuIblEnvironment {
         })
     }
 
+    #[allow(clippy::too_many_arguments)] // GPU 测试装配天然多参。
     pub fn create_frame_bind_group(
         &self,
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
         frame: &wgpu::Buffer,
+        ies: Option<&wgpu::Buffer>,
         shadow: &ShadowMap,
         label: &'static str,
         include_native_section: bool,
     ) -> wgpu::BindGroup {
-        let entries = [
+        let mut entries = vec![
             wgpu::BindGroupEntry {
                 binding: 8,
                 resource: shadow.section_uniform.as_entire_binding(),
@@ -135,6 +137,14 @@ impl GpuIblEnvironment {
                 resource: shadow.sampling_uniform.as_entire_binding(),
             },
         ];
+        if include_native_section {
+            entries.push(wgpu::BindGroupEntry {
+                binding: 9,
+                resource: ies
+                    .expect("native frame requires IES resource")
+                    .as_entire_binding(),
+            });
+        }
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some(label),
             layout,

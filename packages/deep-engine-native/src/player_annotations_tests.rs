@@ -293,8 +293,10 @@ fn version2_documents_fail_closed_when_the_frame_is_missing() {
         r#"{"version":2,"scene":"scene-a","notes":[{"object":"object-1","point":[1.0,2.0,3.0],"label":"x"}]}"#,
     )
     .unwrap();
-    let mut restored = Annotations::default();
-    restored.notes = vec![note()];
+    let mut restored = Annotations {
+        notes: vec![note()],
+        ..Annotations::default()
+    };
     assert!(
         restored
             .load(&path, "scene-a", &["object-1"], base_frames())
@@ -314,8 +316,10 @@ fn version2_documents_fail_closed_when_the_frame_is_corrupt() {
         r#"{"version":2,"scene":"scene-a","frame":{"origin":[0.0,"x",0.0]},"notes":[]}"#,
     ] {
         fs::write(&path, corrupt).unwrap();
-        let mut restored = Annotations::default();
-        restored.notes = vec![note()];
+        let mut restored = Annotations {
+            notes: vec![note()],
+            ..Annotations::default()
+        };
         assert!(
             restored
                 .load(&path, "scene-a", &["object-1"], base_frames())
@@ -338,8 +342,10 @@ fn loads_that_cannot_preserve_world_positions_fail_closed() {
         r#"{"version":2,"scene":"scene-a","frame":{"origin":[0.0,0.0,0.0]},"notes":[{"object":"object-1","point":[1000000000.0,0.0,0.0],"label":"x"}]}"#,
     )
     .unwrap();
-    let mut restored = Annotations::default();
-    restored.notes = vec![note()];
+    let mut restored = Annotations {
+        notes: vec![note()],
+        ..Annotations::default()
+    };
     assert!(
         restored
             .load(
