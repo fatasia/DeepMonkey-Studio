@@ -31,12 +31,25 @@ SSIM 矩阵（1200×800 同场景）：Native↔WebView 0.7983、WebView↔Web 0
 残差=覆盖层/DPR 1.25vs1/纵横比 3.4%）。收敛路线：对齐 DPR 与视口裁剪后重对拍。
 证据：batch-e-20260921-r2/c-group/c-group-result.json。
 
-## D 组：性能证据（部分就绪）
+## D 组：三端性能对拍矩阵（已完成）
 
-- 启动采集器 `scripts/startupEvidenceCapture.mjs`（真机 3 轮：load 178/121/142ms，evidence 全 yes）
-- 启动证据组装器 `apps/web/src/startupEvidence.ts`（CDP 入口 `window.__deepStartupEvidence()`）
-- 统一口径 `packages/deep-engine/src/perf/latencyStats.ts`（P50/P95/P99/长帧）
-- 产物 SHA/包体：批次 E 执行已记录（Deep Native 16.4MB、WebView EXE 33MB/NSIS 26.3MB）
+**启动矩阵**（RTX 4060 Laptop 同机，口径差异已记录）：
+
+| 端 | 轮次 | 主窗可见中位 | 渲染就绪中位 |
+|---|---|---|---|
+| Web（Chrome 5173） | 冷1+热4 | load 中位 161ms | interactive 中位 167ms（evidence 5/5） |
+| studio-desktop.exe | 3（全新 profile） | 2378ms | 2434ms |
+| three-webview.exe（A5 修复版） | 3 | 1660ms | 1709ms |
+
+**Web 运行帧率**（三维场景页 rAF 2×10s 拖拽期间）：avgFps=144（vsync 锁定）、
+帧间隔 P50=6.9ms / P95=7.1ms / P99=7.2ms、max 7.8ms、长帧(>100ms)=0、2966 样本同分布。
+
+证据：batch-e-20260921-r2/d-group/d-group-result.json（口径差异与环境指纹全记录）。
+
+**基建就绪**：启动采集器 `scripts/startupEvidenceCapture.mjs`（可复现多轮）、
+证据组装器 `apps/web/src/startupEvidence.ts`（CDP 入口 `window.__deepStartupEvidence()`）、
+统一口径 `packages/deep-engine/src/perf/latencyStats.ts`、
+产物 SHA/包体（Deep Native 16.4MB、WebView EXE 33MB/NSIS 26.3MB）。
 
 ## 修复清单（本批次产出）
 
