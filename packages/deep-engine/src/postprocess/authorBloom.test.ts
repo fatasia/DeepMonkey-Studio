@@ -55,7 +55,7 @@ describe("author bloom r185", () => {
     }
     expect(pool.stats).toMatchObject({ acquireCount: 39, hits: 26, misses: 13, freeCount: 13 });
     expect(f.device.createTexture).toHaveBeenCalledTimes(13); expect(f.device.createBuffer).toHaveBeenCalledTimes(1);
-    expect(f.device.createBindGroup).toHaveBeenCalledTimes(26);
+    expect(f.device.createBindGroup).toHaveBeenCalledTimes(13);
     const bindings = f.device.createBindGroup.mock.calls.length;
     pool.beginFrame(); pass.encode(f.encoder, { ...f.source, revision: 3 }, options); pool.endFrame(true);
     expect(f.device.createBindGroup).toHaveBeenCalledTimes(bindings);

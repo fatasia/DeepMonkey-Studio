@@ -100,7 +100,7 @@ describe("HDR bloom", () => {
     }
     expect(pool.stats).toMatchObject({ acquireCount: 36, hits: 24, misses: 12, freeCount: 12 });
     expect(f.outputs).toHaveLength(12); expect(f.device.createBuffer).toHaveBeenCalledTimes(1);
-    expect(f.device.createBindGroup).toHaveBeenCalledTimes(32);
+    expect(f.device.createBindGroup).toHaveBeenCalledTimes(16);
     const bindings = f.device.createBindGroup.mock.calls.length;
     pool.beginFrame(); pass.encode(encoder.encoder, source(3, 32, 16, initial), options); pool.endFrame(true);
     expect(f.device.createBindGroup).toHaveBeenCalledTimes(bindings);
