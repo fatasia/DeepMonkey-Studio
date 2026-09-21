@@ -2,6 +2,7 @@ import type { SceneSnapshot } from "@bim-studio/contracts";
 import { api } from "./api";
 import { isModelLoadSuperseded, waitForModelReady } from "./appModelLoading";
 import { createApplicationRuntimeController } from "./controllers/applicationRuntimeController";
+import { sortScenesByTime } from "./appSceneOrder";
 import { createSceneEditorController } from "./controllers/sceneEditorController";
 import { createScenePersistenceController } from "./controllers/scenePersistenceController";
 import { useScenePublicationArtifacts } from "./hooks/useScenePublicationArtifacts";
@@ -20,9 +21,6 @@ import type { AppViewBindings } from "./views/appViewBindings";
 import { AppRootView } from "./views/AppRootView";
 import { NetworkStatusBanner } from "./appStatus/NetworkStatusBanner";
 
-function sortScenesByTime(items: SceneSnapshot[]): SceneSnapshot[] {
-  return [...items].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
-}
 export function App() {
   const appState = useAppState();
   useGlobalDialogEscape();
@@ -179,6 +177,8 @@ export function App() {
     setPhysics,
     physicsOpen,
     setPhysicsOpen,
+    engineeringAnalysis,
+    setEngineeringAnalysis,
     selectedLightId,
     setSelectedLightId,
     creditsOpen,
@@ -402,6 +402,8 @@ export function App() {
     setSceneEnvironment,
     setPostProcessing,
     setPhysics,
+    engineeringAnalysis,
+    setEngineeringAnalysis,
     setEnvironmentOpen,
     setSelectedLightId,
     setCameraViews,
@@ -561,6 +563,7 @@ export function App() {
     defaultCameraViewId,
     sceneCoordinates,
     sceneDashboard,
+    engineeringAnalysis,
     sceneDataBindings,
     sceneAssetBindings,
     sceneInteractions,
@@ -605,6 +608,7 @@ export function App() {
     setNavigationSettings,
     setPhysics,
     setPostProcessing,
+    setEngineeringAnalysis,
     setProject,
     setProjects,
     setRevision,
@@ -777,18 +781,12 @@ export function App() {
     recovery: {
       draft: recoveryDraft,
       busy: recoveryBusy,
-      restore: restoreRecoveryDraft,
-      export: () => {
-        if (recoveryDraft) downloadWorkspaceRecoveryDraft(recoveryDraft);
-      },
-      defer: deferRecoveryDraft,
-      discard: discardRecoveryDraft,
+      restore: restoreRecoveryDraft, defer: deferRecoveryDraft, discard: discardRecoveryDraft,
+      export: () => { if (recoveryDraft) downloadWorkspaceRecoveryDraft(recoveryDraft); },
     },
     sceneHistory: {
       ...sceneHistoryRef.current.getState(),
-      flush: flushSceneHistoryEdit,
-      undo: undoSceneEdit,
-      redo: redoSceneEdit,
+      flush: flushSceneHistoryEdit, undo: undoSceneEdit, redo: redoSceneEdit,
     },
   };
 
