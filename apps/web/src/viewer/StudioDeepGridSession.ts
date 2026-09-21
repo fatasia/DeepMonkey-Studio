@@ -15,14 +15,16 @@ export class StudioDeepGridSession {
     if (!composerActive) throw new Error("Deep 地面网格需要作者后处理管线；请保持 WebGL 或启用后处理。");
     if (!(map instanceof THREE.CanvasTexture) || map.colorSpace !== THREE.SRGBColorSpace || !map.flipY || map.premultiplyAlpha
       || map.wrapS !== THREE.ClampToEdgeWrapping || map.wrapT !== THREE.ClampToEdgeWrapping || map.channel !== 0
-      || !map.generateMipmaps || map.minFilter !== THREE.LinearMipmapLinearFilter || map.magFilter !== THREE.LinearFilter
+      || !map.generateMipmaps || map.minFilter !== THREE.LinearMipmapLinearFilter || map.magFilter !== THREE.NearestFilter
       || map.offset.x !== 0 || map.offset.y !== 0 || map.repeat.x !== 1 || map.repeat.y !== 1 || map.rotation !== 0
       || !map.matrixAutoUpdate || material.toneMapped || !material.transparent || !material.depthTest || material.depthWrite
       || material.vertexColors || material.alphaTest !== 0 || material.alphaMap || material.wireframe
       || material.side !== THREE.DoubleSide || material.blending !== THREE.NormalBlending || grid.renderOrder !== -10)
       throw new Error("Deep 地面网格材质不符合固定合同。");
     const image = map.image as HTMLCanvasElement, width = image.width, height = image.height;
-    if (![width, height].every(value => Number.isSafeInteger(value) && value > 0 && value <= 2048 && (value & (value - 1)) === 0)
+    // 作者网格走传统 2×2 mip 折减与 getImageData 逐像素合同，非 2 的幂会破坏 mip 链。
+    if (![width, height].every(value => Number.isSafeInteger(value) && value > 0 && value <= 2048
+      && (value & (value - 1)) === 0)
       || !Number.isSafeInteger(map.anisotropy) || map.anisotropy < 1 || map.anisotropy > 16
       || !Number.isSafeInteger(map.version) || map.version < 0) throw new Error("Deep 地面网格纹理尺寸或版本无效。");
     const color = [material.color.r, material.color.g, material.color.b, material.opacity] as const;
@@ -47,7 +49,11 @@ export class StudioDeepGridSession {
       // A tainted canvas throws here; candidate/runtime failure restores WebGL.
       const data = new Uint8Array(context.getImageData(0, 0, width, height).data);
       const source = Object.freeze({ id: map.uuid, revision: map.version, semantic: "baseColor" as const, width, height, data,
-        sampler: { minFilter: "linear" as const, magFilter: "linear" as const, mipmapFilter: "linear" as const, maxAnisotropy: map.anisotropy } });
+        // WebGPU requires all sampler filters to be linear when anisotropy is enabled.
+        // Preserve nearest magnification (the close-up clarity contract) and use the
+        // generated mip chain for oblique/minified views instead of publishing an
+        // invalid anisotropic sampler.
+        sampler: { minFilter: "linear" as const, magFilter: "nearest" as const, mipmapFilter: "linear" as const, maxAnisotropy: 1 } });
       this.cached = { texture: map, image, version: map.version, width, height, anisotropy: map.anisotropy, source };
     }
     return Object.freeze({ texture: this.cached.source, model: Object.freeze([...model.elements]), color, fog: material.fog ? fog : null });
