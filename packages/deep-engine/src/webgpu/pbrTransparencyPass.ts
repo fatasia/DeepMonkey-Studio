@@ -1,6 +1,6 @@
 import type { DeviceSession } from "./deviceSession.js";
 import type { PbrActualPassDescription } from "./pbrFramePlanResources.js";
-import { PBR_HDR_FORMAT } from "./renderTargets.js";
+import { PBR_HDR_FORMAT, pbrFullHdrTransientUsage } from "./renderTargets.js";
 import { WeightedOitPass } from "./weightedOit.js";
 import { WEIGHTED_OIT_ACCUMULATION_FORMAT, WEIGHTED_OIT_REVEALAGE_FORMAT } from "./weightedOitTypes.js";
 import { runResourceCleanup } from "./resourceCleanup.js";
@@ -72,14 +72,14 @@ export class PbrTransparencyPass {
         passId: "composite-oit", executor: "PbrTransparencyPass.encode → WeightedOitPass.encodeComposite", kind: "render",
         reads: [opaqueColorResource, "oit-accumulation", "oit-revealage"], writes: ["composited-hdr"],
         claims: [{ id: opaqueColorResource, access: "read", format: PBR_HDR_FORMAT, sampleCount: 1,
-          usages: opaqueColorResource === "opaque-hdr" ? ["render-attachment", "texture-binding"]
+          usages: opaqueColorResource === "opaque-hdr" ? ["render-attachment", "texture-binding", "storage-binding", "copy-src"]
             : ["storage-binding", "texture-binding", "render-attachment", "copy-src"], sizeRole: "surface" },
           { id: "oit-accumulation", access: "read", format: WEIGHTED_OIT_ACCUMULATION_FORMAT, sampleCount: 1,
             usages: ["render-attachment", "texture-binding", "copy-src"], sizeRole: "surface" },
           { id: "oit-revealage", access: "read", format: WEIGHTED_OIT_REVEALAGE_FORMAT, sampleCount: 1,
             usages: ["render-attachment", "texture-binding", "copy-src"], sizeRole: "surface" },
           { id: "composited-hdr", access: "write", format: PBR_HDR_FORMAT, sampleCount: 1,
-            usages: ["render-attachment", "texture-binding"], sizeRole: "surface" }],
+            usages: ["render-attachment", "texture-binding", "storage-binding", "copy-src"], sizeRole: "surface" }],
         gpuPassCount: 1,
       },
     ];
@@ -98,7 +98,7 @@ export class PbrTransparencyPass {
   private scratchTarget(width: number, height: number): { texture: GPUTexture; view: GPUTextureView } {
     if (this.pool) {
       const pooled = this.pool.acquire({ resourceId: "composited-hdr", format: PBR_HDR_FORMAT, width, height, sampleCount: 1,
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
+        usage: pbrFullHdrTransientUsage() });
       this.scratch = { texture: pooled.texture, view: pooled.view, pooled }; return this.scratch;
     }
     if (this.scratch?.texture.width === width && this.scratch.texture.height === height) return this.scratch;

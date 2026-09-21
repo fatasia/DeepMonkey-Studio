@@ -114,7 +114,8 @@ export function describePbrPresentPasses(inputResourceId: string, spatialAa = tr
     reads: [inputResourceId], writes: ["surface"],
     claims: [{ id: inputResourceId, access: "read", format: PBR_HDR_FORMAT, sampleCount: 1,
       usages: inputResourceId === "opaque-hdr" || inputResourceId === "composited-hdr"
-        ? ["render-attachment", "texture-binding"] : inputResourceId === "ssr-hdr"
+        ? ["render-attachment", "texture-binding", "storage-binding", "copy-src"]
+        : inputResourceId === "ssr-hdr" || inputResourceId === "volumetric-fog-hdr"
           ? ["storage-binding", "texture-binding"] : inputResourceId === "temporal-hdr"
             ? ["storage-binding", "texture-binding", "copy-src"]
             : ["texture-binding", "storage-binding", "render-attachment", "copy-src"], sizeRole: "surface" },

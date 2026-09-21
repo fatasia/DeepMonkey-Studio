@@ -1,10 +1,80 @@
 import { array, fields, integer, record, requireValue, resourceId, string } from "./primitives.js";
 import { RUNTIME_IBL_MAX_BYTES, type RuntimePrefilteredIbl } from "./environmentTypes.js";
 import { visitIblBytes } from "./environmentBytes.js";
+import { validateLocalLights } from "./localLights.js";
+import { validateLightingIes } from "./lightProfiles.js";
 
 export const BUILTIN_RUNTIME_IBL_ID = "deep.builtin.studio-ibl.v1";
 export function validateRuntimeEnvironment(value: unknown, id: string, revision: number, path: string): void {
   const object = record(value, path);
+  if (object.schema === "deep-engine.solid-environment") {
+    const hdr = object.schemaVersion === 6;
+    const fogged = object.schemaVersion === 7 || object.schemaVersion === 8;
+    const studio = object.schemaVersion === 8;
+    const hasFog = object.fog !== undefined;
+    fields(object, ["schema", "schemaVersion", "id", "revision", "kind", "backgroundSrgb", "outputTransform",
+      ...(hdr ? ["ibl"] : []), ...(object.schemaVersion === 7 ? ["fog"] : [])],
+      ["lighting", ...(studio ? ["fog"] : [])], path);
+    const pointShadow = object.schemaVersion === 5;
+    const shadows = pointShadow || object.schemaVersion === 4;
+    const many = shadows || object.schemaVersion === 3;
+    const lit = many || object.schemaVersion === 2;
+    const fogLit = fogged && object.lighting !== undefined;
+    // v7 的 author fog 是合同必需项：显式 undefined 与缺失一致，均 fail-closed（v8 studio 才可选）。
+    requireValue(!(object.schemaVersion === 7 && object.fog === undefined), path, "v7 requires author fog.");
+    requireValue((hdr || lit || fogged || object.schemaVersion === 1) && object.id === id && id === "scene.environment"
+      && object.revision === 1 && revision === 1 && object.kind === (studio ? "solid-background-builtin-ibl" : hdr ? "solid-background-prefiltered-ibl" : "solid-background-no-ibl")
+      && object.outputTransform === (studio ? "native-aces-studio-v8" : fogged ? "native-aces-fog-v7" : hdr ? "native-aces-hdr-v6" : pointShadow ? "native-aces-local-shadows-v5" : shadows ? "native-aces-spot-shadows-v4" : many ? "native-aces-lights-v3" : lit ? "native-aces-light-v2" : "native-aces-v1")
+      && (hdr || lit || fogged || !Object.hasOwn(object, "lighting")), path, "Unsupported solid environment profile.");
+    if (hdr) {
+      validateRuntimePrefilteredIbl(object.ibl,id,revision,`${path}.ibl`);
+      const light = record(object.lighting, `${path}.lighting`);
+      const locals = light.localLights as Array<{castShadow?:boolean;kind?:string}> | undefined;
+      const point = Array.isArray(locals) && locals.some(value=>value?.kind==="point" && value.castShadow);
+      const cast = Array.isArray(locals) && locals.some(value=>value?.castShadow);
+      const version=point?5:cast?4:locals?3:2;
+      const plain={...object}; delete plain.ibl;
+      validateRuntimeEnvironment({...plain,schemaVersion:version,kind:"solid-background-no-ibl",outputTransform:point?"native-aces-local-shadows-v5":cast?"native-aces-spot-shadows-v4":locals?"native-aces-lights-v3":"native-aces-light-v2"},id,revision,path);
+    }
+    if (lit || fogLit) {
+      const light = record(object.lighting, `${path}.lighting`);
+      // v3-v5 阶梯强制 localLights；v7 灯光沿用完整阶梯能力但 localLights 可选（同 v2）。
+      const withLocals = many || (fogLit && light.localLights !== undefined);
+      fields(light, ["direction", "radiance", "exposure", "shadows", ...(withLocals ? ["localLights"] : [])], withLocals ? ["lightProfiles"] : [], path);
+      if (withLocals) {
+        if (lit) {
+          validateLocalLights(light.localLights, `${path}.lighting.localLights`, shadows, pointShadow);
+        } else {
+          const locals = light.localLights as Array<{castShadow?:boolean;kind?:string}> | undefined;
+          const point = Array.isArray(locals) && locals.some(value=>value?.kind==="point" && value.castShadow);
+          const cast = Array.isArray(locals) && locals.some(value=>value?.castShadow);
+          validateLocalLights(light.localLights, `${path}.lighting.localLights`, cast === true || point, point);
+        }
+        // E02：ies 引用闭合与 lightProfiles 量化网格验证（列名报错）。
+        validateLightingIes(light, `${path}.lighting`);
+      }
+      const direction = array(light.direction, path, 3), radiance = array(light.radiance, path, 3);
+      requireValue(direction.length === 3 && direction.every(v => typeof v === "number" && Number.isFinite(v))
+        && Math.abs((direction as number[]).reduce((sum, v) => sum + v*v, 0) - 1) < 0.0001
+        && radiance.length === 3 && radiance.every(v => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 256)
+        && typeof light.exposure === "number" && light.exposure >= 0.55 && light.exposure <= 1.55
+        && typeof light.shadows === "boolean", path, "Invalid authored directional lighting.");
+    }
+    if (hasFog) {
+      const fog = record(object.fog, `${path}.fog`);
+      fields(fog, ["schemaVersion", "kind", "colorLinearRgb", "density"], [], `${path}.fog`);
+      const color = array(fog.colorLinearRgb, `${path}.fog.colorLinearRgb`, 3);
+      // 通道与密度上限与 Native FogSettings(MAX_HDR_CHANNEL=64 / MAX_DENSITY=8)一致。
+      requireValue(fog.schemaVersion === 1 && fog.kind === "exp2"
+        && color.length === 3 && color.every(v => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 64)
+        && typeof fog.density === "number" && Number.isFinite(fog.density) && fog.density >= 0 && fog.density <= 8,
+        path, "Invalid authored fog.");
+    }
+    const color = array(object.backgroundSrgb, `${path}.backgroundSrgb`, 3);
+    requireValue(color.length === 3 && color.every(channel => typeof channel === "number"
+      && Number.isFinite(channel) && channel >= 0 && channel <= 1), path, "Invalid sRGB background.");
+    return;
+  }
   if (object.schema === "deep-engine.ibl-reference") {
     fields(object, ["schema", "schemaVersion", "id", "revision", "kind"], [], path);
     requireValue(object.schemaVersion === 1 && object.id === id && id === BUILTIN_RUNTIME_IBL_ID

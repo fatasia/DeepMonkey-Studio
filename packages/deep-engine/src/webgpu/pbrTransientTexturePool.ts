@@ -171,9 +171,11 @@ export class PbrTransientTexturePool {
         return this.lease(slot.entry, request.resourceId);
       }
     }
-    const bucket = this.free.get(keyValue);
+    // 桶键含 resourceId：同物理参数的不同资源（如 OIT 三目标 usage 统一后）不得互换身份。
+    const bucketKey = `${keyValue}#${request.resourceId}`;
+    const bucket = this.free.get(bucketKey);
     const pooled = bucket?.pop();
-    if (bucket?.length === 0) this.free.delete(keyValue);
+    if (bucket?.length === 0) this.free.delete(bucketKey);
     if (pooled) {
       this.counters.hits += 1;
       this.counters.reusedBytes += pooled.bytes;
@@ -205,10 +207,10 @@ export class PbrTransientTexturePool {
       }
       this.frameIsOpen = false;
       for (const entry of this.live) {
-        const keyValue = pbrTransientTextureKeyValue(entry.handle.key);
-        const bucket = this.free.get(keyValue);
+        const bucketKey = `${pbrTransientTextureKeyValue(entry.handle.key)}#${entry.handle.resourceId}`;
+        const bucket = this.free.get(bucketKey);
         if (bucket) bucket.push(entry);
-        else this.free.set(keyValue, [entry]);
+        else this.free.set(bucketKey, [entry]);
       }
       this.live.clear();
       this.activeLeases.clear(); this.aliasPlan.clear(); this.aliasSlots.clear();
@@ -272,7 +274,7 @@ export class PbrTransientTexturePool {
     const candidates = [...this.free.values()].flat().sort((a, b) => a.frame - b.frame);
     for (const entry of candidates) {
       if (this.residentBytes + bytes <= this.budgetBytes) break;
-      const key = pbrTransientTextureKeyValue(entry.handle.key), bucket = this.free.get(key)!;
+      const key = `${pbrTransientTextureKeyValue(entry.handle.key)}#${entry.handle.resourceId}`, bucket = this.free.get(key)!;
       bucket.splice(bucket.indexOf(entry), 1);
       if (!bucket.length) this.free.delete(key);
       this.destroy(entry);

@@ -10,8 +10,11 @@ export interface AuthorGridView {
 
 /** Fixed Canvas grid input: copy level zero, then construct the linear-light mip chain. */
 export function prepareAuthorGridTexture(source: DecodedTexture): PreparedTexture {
-  if (![source.width, source.height].every(value => Number.isSafeInteger(value) && value > 0 && value <= 2048 && (value & (value - 1)) === 0))
-    throw new Error("Author grid requires bounded power-of-two texture dimensions.");
+  if (![source.width, source.height].every(value => Number.isSafeInteger(value) && value > 0 && value <= 2048))
+    throw new Error("Author grid requires bounded texture dimensions.");
+  // 作者网格走传统 2×2 mip 折减，非 2 的幂宽高会破坏 mip 链（批次 F 回归保护）。
+  if (![source.width, source.height].every(value => (value & (value - 1)) === 0))
+    throw new Error("Author grid requires power-of-two texture dimensions.");
   if (source.semantic !== "baseColor" || source.compression || source.mipmaps) throw new Error("Unsupported author grid texture.");
   const initial = prepareTextures([source], { maxDimension: 2048, maxBytes: 24 * 1024 * 1024 })[0]!;
   const levels = [initial.levels[0]!];
