@@ -196,7 +196,8 @@
     "test:g7-volumetric-fog-gpu": "node scripts/volumetricFogGpuTest.mjs",
     "test:ray-trace-gpu": "node scripts/rayTraceGpuTest.mjs",
     "test:cluster-lod-gpu": "node scripts/clusterLodGpuTest.mjs",
-    "test:soft-raster-gpu": "node scripts/softRasterizeGpuTest.mjs"
+    "test:soft-raster-gpu": "node scripts/softRasterizeGpuTest.mjs",
+    "test:probe-occlusion-gpu": "node scripts/probeOcclusionGpuTest.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
