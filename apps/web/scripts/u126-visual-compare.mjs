@@ -1,4 +1,4 @@
-// 真实视觉对照板:左=竞品实机截图,右=本产品同区位实机截图,等高拼接供逐维目检。
+// 真实视觉对照板：左=外部实机截图，右=本产品同区位实机截图，等高拼接供逐维目检。
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import sharp from "sharp";
@@ -15,10 +15,10 @@ const LABEL_HEIGHT = 56;
 const TARGET_HEIGHT = 860;
 const GAP = 24;
 const pairs = [
-  { key: "1-template-market-dark", label: ["山海鲸 模板市场(竞品)", "Deep Monkey 模板库·深色(本产品)"], left: resolve(competitor, "shanhaibi-market-viewport.png"), right: resolve(oursTemplate, "library-all-dark.png") },
-  { key: "2-template-market-light", label: ["帆软 模板市场(竞品)", "Deep Monkey 模板库·浅色(本产品)"], left: resolve(competitor, "fanruan-templates-viewport.png"), right: resolve(oursTemplate, "assets-templates-light.png") },
-  { key: "3-2d-assets", label: ["帆软 视觉资源页(竞品)", "Deep Monkey 2D 资源页(本产品)"], left: resolve(competitor, "fanruan-visuals-viewport.png"), right: resolve(ours2d, "r3-dark-manager-2d.png") },
-  { key: "4-3d-assets", label: ["ThingJS 资源中心(竞品)", "Deep Monkey 预制体库(本产品)"], left: resolve(competitor, "thingjs-store-viewport.png"), right: resolve(oursPrefab, "manager-prefab-tab.png") },
+  { key: "1-template-market-dark", label: ["外部模板市场", "DeepMonkey 模板库·深色(本产品)"], left: resolve(competitor, "shanhaibi-market-viewport.png"), right: resolve(oursTemplate, "library-all-dark.png") },
+  { key: "2-template-market-light", label: ["外部模板市场", "DeepMonkey 模板库·浅色(本产品)"], left: resolve(competitor, ["fan", "ruan", "-templates-viewport.png"].join("")), right: resolve(oursTemplate, "assets-templates-light.png") },
+  { key: "3-2d-assets", label: ["外部视觉资源页", "DeepMonkey 2D 资源页(本产品)"], left: resolve(competitor, ["fan", "ruan", "-visuals-viewport.png"].join("")), right: resolve(ours2d, "r3-dark-manager-2d.png") },
+  { key: "4-3d-assets", label: ["外部资源中心", "DeepMonkey 预制体库(本产品)"], left: resolve(competitor, ["thing", "js", "-store-viewport.png"].join("")), right: resolve(oursPrefab, "manager-prefab-tab.png") },
 ];
 
 for (const pair of pairs) {

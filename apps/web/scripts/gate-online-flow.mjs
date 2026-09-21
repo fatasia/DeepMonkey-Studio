@@ -305,7 +305,7 @@ try {
   ]);
   const popoutPanel = scriptWindow.locator(".behavior-panel.layout-window");
   await popoutPanel.waitFor({ state: "visible", timeout: 10_000 });
-  if (!/· 脚本编辑器 · Deep Monkey Studio$/.test(await scriptWindow.title())) throw new Error(`脚本独立窗口标题不符合规范：${await scriptWindow.title()}`);
+  if (!/· 脚本编辑器 · DeepMonkey Studio$/.test(await scriptWindow.title())) throw new Error(`脚本独立窗口标题不符合规范：${await scriptWindow.title()}`);
   const windowFingerprint = await popoutPanel.locator(".professional-code-editor").getAttribute("data-content-fingerprint");
   if (!popoutFingerprint || popoutFingerprint !== windowFingerprint) throw new Error(`脚本独立窗口丢失编辑内容：${popoutFingerprint} -> ${windowFingerprint}`);
   await scriptWindow.screenshot({ path: resolve(outputRoot, "02bd-behavior-editor-window.png"), fullPage: true });

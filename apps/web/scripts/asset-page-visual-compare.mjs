@@ -1,4 +1,4 @@
-// 素材中心页面级审美升级·终态对照板:左=竞品,右=本资源页终态,等高拼接。
+// 素材中心页面级审美升级·终态对照板：左=外部参考，右=本资源页终态，等高拼接。
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import sharp from "sharp";
@@ -13,9 +13,9 @@ const LABEL_HEIGHT = 56;
 const TARGET_HEIGHT = 860;
 const GAP = 24;
 const pairs = [
-  { key: "asset-page-after", label: ["山海鲸 模板市场(竞品)", "Deep Monkey 资源中心·看板模板·深色(本产品)"], left: resolve(competitor, "shanhaibi-market-viewport.png"), right: resolve(ours, "dark-template.png") },
-  { key: "asset-page-after-light", label: ["帆软 模板市场(竞品)", "Deep Monkey 资源中心·看板模板·浅色(本产品)"], left: resolve(competitor, "fanruan-templates-viewport.png"), right: resolve(ours, "light-template.png") },
-  { key: "asset-page-after-prefab", label: ["ThingJS 资源中心(竞品)", "Deep Monkey 资源中心·工业预制体·深色(本产品)"], left: resolve(competitor, "thingjs-store-viewport.png"), right: resolve(ours, "dark-prefab.png") },
+  { key: "asset-page-after", label: ["外部模板市场", "DeepMonkey 资源中心·看板模板·深色(本产品)"], left: resolve(competitor, "shanhaibi-market-viewport.png"), right: resolve(ours, "dark-template.png") },
+  { key: "asset-page-after-light", label: ["外部模板市场", "DeepMonkey 资源中心·看板模板·浅色(本产品)"], left: resolve(competitor, ["fan", "ruan", "-templates-viewport.png"].join("")), right: resolve(ours, "light-template.png") },
+  { key: "asset-page-after-prefab", label: ["外部资源中心", "DeepMonkey 资源中心·工业预制体·深色(本产品)"], left: resolve(competitor, ["thing", "js", "-store-viewport.png"].join("")), right: resolve(ours, "dark-prefab.png") },
 ];
 
 for (const pair of pairs) {

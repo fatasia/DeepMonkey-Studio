@@ -278,7 +278,7 @@ export async function inspectCommissioningWorkflow(browser, origin, viewport, ou
     const trajectoryDeliveryValid = trajectoryJsonDownload.suggestedFilename().endsWith(".json")
       && trajectoryCsvDownload.suggestedFilename().endsWith("-keyframes.csv")
       && trajectoryPackage.schema === "bim-studio.workcell-trajectory-delivery.v1"
-      && trajectoryPackage.generatedBy === "Deep Monkey Studio"
+      && trajectoryPackage.generatedBy === "DeepMonkey Studio"
       && trajectoryPackage.capabilityBoundary?.dispatchable === false
       && trajectoryPackage.summary?.trajectoryCount === trajectoryPackage.trajectoryInputs?.length
       && trajectoryPackage.traceability?.includedTrajectoryIds?.length === trajectoryPackage.trajectoryInputs?.length

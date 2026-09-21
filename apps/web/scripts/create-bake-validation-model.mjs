@@ -37,7 +37,7 @@ class NodeFileReader {
 globalThis.FileReader = NodeFileReader;
 
 const scene = new THREE.Scene();
-scene.name = "Deep Monkey Studio Lightmap Validation";
+scene.name = "DeepMonkey Studio Lightmap Validation";
 
 const materials = {
   floor: new THREE.MeshStandardMaterial({ name: "Warm concrete", color: 0xb7a996, roughness: 0.92 }),

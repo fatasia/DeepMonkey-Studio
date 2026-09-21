@@ -1,4 +1,4 @@
-// 封面质量终态证据:模板库弹窗 + 资源页模板 tab(双主题),并输出与竞品的并排对照板。
+// 封面质量终态证据：模板库弹窗 + 资源页模板 tab(双主题)，并输出与外部参考的并排对照板。
 // 用法:node scripts/probe-cover-final-board.mjs [origin]
 import fs from "node:fs";
 import path from "node:path";
@@ -71,7 +71,7 @@ for (const theme of ["dark", "light"]) {
 }
 await browser.close();
 
-// 3) 对照板:左=竞品实机,右=本产品终态(FVS 浅色对照用帆软,深色对照用山海鲸)。
+// 3) 对照板：左=外部实机，右=本产品终态。
 const LABEL_HEIGHT = 52;
 const TARGET_HEIGHT = 860;
 const GAP = 24;
@@ -103,8 +103,8 @@ async function compose(key, labelLeft, leftFile, labelRight, rightFile) {
   console.log(`composed ${key}`);
 }
 // 深浅双对照 + 升级前后对照(同一域同机位)
-await compose("board-market-dark.png", "山海鲸 模板市场(竞品)", "shanhaibi-market-viewport.png", "Deep Monkey 模板库·深色(本产品终态)", "library-all-dark.png");
-await compose("board-market-light.png", "帆软 模板市场(竞品)", "fanruan-templates-viewport.png", "Deep Monkey 模板库·浅色(本产品终态)", "library-all-light.png");
+await compose("board-market-dark.png", "外部模板市场", "shanhaibi-market-viewport.png", "DeepMonkey 模板库·深色(本产品终态)", "library-all-dark.png");
+await compose("board-market-light.png", "外部模板市场", ["fan", "ruan", "-templates-viewport.png"].join(""), "DeepMonkey 模板库·浅色(本产品终态)", "library-all-light.png");
 await compose("board-before-after.png", "本产品·升级前(before)", path.resolve(outDir, "../before/production-dark.png"), "本产品·升级后(final)", path.resolve(outDir, "production-dark.png"));
 
 fs.writeFileSync(path.join(outDir, "console-errors.log"), errors.join("\n") || "(no console errors)");

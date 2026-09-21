@@ -62,7 +62,7 @@ export function writeMinimalGltf(filePath) {
   const indices = Buffer.from(new Uint16Array([0, 1, 2]).buffer);
   const binary = Buffer.concat([positions, indices]);
   const document = {
-    asset: { version: "2.0", generator: "Deep Monkey Studio online flow gate" },
+    asset: { version: "2.0", generator: "DeepMonkey Studio online flow gate" },
     scene: 0,
     scenes: [{ nodes: [0] }],
     nodes: [{ mesh: 0, name: "Online flow triangle" }],
