@@ -1,10 +1,4 @@
 import type {
-  AiDataBinding,
-  AiDataBindingRunRecord,
-  AiAssistantResponse,
-  AiModelCatalogResult,
-  AiProviderSettings,
-  AiTelemetrySummary,
   ApplicationDocument,
   ApplicationScriptDependency,
   AuditLogRecord,
@@ -65,6 +59,7 @@ import { createIndustrialAgentApi } from "./apiClients/industrialAgentApi.js";
 import { createSemanticModelApi } from "./apiClients/semanticModelApi.js";
 import { isRecoverableStudioRead } from "./apiClients/studioReadRecovery.js";
 import { createAuthenticationRecheck } from "./apiClients/authenticationRecheck.js";
+import { createAiApi } from "./apiClients/aiApi.js";
 import type {
   ScriptGitCommit,
   ScriptGitCommitResult,
@@ -114,6 +109,7 @@ export async function loadSceneViewerDeliveryManifest(url: URL): Promise<unknown
   if (!response.ok) throw new Error(`只读场景清单加载失败（HTTP ${response.status}）`);
   return response.json();
 }
+export type { AssistantMode } from "./apiClients/aiApi.js";
 export type {
   AiProviderDescriptor,
   BatteryReleaseGateSnapshot,
@@ -266,69 +262,6 @@ const { getExternalJson, downloadExternalModel } = createExternalResourceApi(
   () => runtimeHost.getServerProfile().baseUrl,
   (input, init) => globalThis.fetch(input, init),
 );
-
-export type AssistantMode =
-  | "platform"
-  | "operations"
-  | "vision"
-  | "bim"
-  | "scene"
-  | "component"
-  | "dashboard"
-  | "sql";
-
-async function streamAssistant(
-  mode: AssistantMode,
-  question: string,
-  context: unknown,
-  onDelta: (delta: string) => void,
-  options: { projectId?: string; signal?: AbortSignal } = {},
-): Promise<AiAssistantResponse> {
-  const response = await serverClient.open("/api/ai/assistant/stream", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "text/event-stream",
-    },
-    body: JSON.stringify({ mode, question, context, ...(options.projectId ? { projectId: options.projectId } : {}) }),
-    ...(options.signal ? { signal: options.signal } : {}),
-  });
-  if (!response.body) throw new Error("浏览器不支持流式响应");
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done });
-    const events = buffer.split(/\r?\n\r?\n/);
-    buffer = events.pop() ?? "";
-    for (const block of events) {
-      const event = block
-        .split(/\r?\n/)
-        .find((line) => line.startsWith("event:"))
-        ?.slice(6)
-        .trim();
-      const data = block
-        .split(/\r?\n/)
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trimStart())
-        .join("\n");
-      if (!data) continue;
-      const payload = JSON.parse(data) as
-        | { delta?: string; message?: string }
-        | AiAssistantResponse;
-      if (event === "delta" && "delta" in payload && payload.delta)
-        onDelta(payload.delta);
-      if (event === "error")
-        throw new Error(
-          "message" in payload ? payload.message : "AI 流式请求失败",
-        );
-      if (event === "done") return payload as AiAssistantResponse;
-    }
-    if (done) break;
-  }
-  throw new Error("AI 流式响应意外结束");
-}
 
 export const api = {
   getExternalJson,
@@ -520,7 +453,6 @@ export const api = {
   listConverters: () =>
     serverClient.listConverters() as Promise<ConverterPluginDescriptor[]>,
   getModelImportFormats:(projectId:string)=>request<string[]>(`/api/projects/${encodeURIComponent(projectId)}/model-import-formats`),
-  getAiSettings: () => request<AiProviderSettings>("/api/admin/ai-settings"),
   listPlugins: () =>
     request<{ plugins: SystemPluginSummary[] }>("/api/plugins"),
   setPluginEnabled: (pluginId: string, enabled: boolean) =>
@@ -532,26 +464,6 @@ export const api = {
         body: JSON.stringify({ enabled }),
       },
     ),
-  saveAiSettings: (settings: Partial<AiProviderSettings>) =>
-    request<AiProviderSettings>("/api/admin/ai-settings", {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(settings),
-    }),
-  fetchAiModels: (settings: Partial<AiProviderSettings> & { refresh?: boolean } = {}) =>
-    request<AiModelCatalogResult>("/api/admin/ai-settings/models", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(settings),
-    }),
-  getAiTelemetry: () =>
-    request<{ settings: AiProviderSettings; telemetry: AiTelemetrySummary }>("/api/admin/ai-settings/telemetry"),
-  testAiSettings: (settings: Partial<AiProviderSettings> = {}) =>
-    request<{ ok: boolean; model: string }>("/api/admin/ai-settings/test", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(settings),
-    }),
   getCloudRenderOverview: () =>
     request<CloudRenderControlOverview>("/api/admin/cloud-render"),
   getCloudRenderCapability: () =>
@@ -609,13 +521,6 @@ export const api = {
         body: JSON.stringify({ binding, variables }),
       },
     ),
-  askAssistant: (mode: AssistantMode, question: string, context: unknown, projectId?: string) =>
-    request<AiAssistantResponse>("/api/ai/assistant", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ mode, question, context, ...(projectId ? { projectId } : {}) }),
-    }),
-  streamAssistant,
   listProjects: (options: { signal?: AbortSignal } = {}) => request<ProjectRecord[]>("/api/projects", options),
   createProject: (name: string, description = "") =>
     request<ProjectRecord>("/api/projects", {
@@ -696,27 +601,6 @@ export const api = {
     ),
   listDatasets: (projectId: string) =>
     request<DataDatasetRecord[]>(`/api/projects/${projectId}/datasets`),
-  listAiDataBindings: (projectId: string) =>
-    request<AiDataBinding[]>(`/api/projects/${projectId}/ai-data-bindings`),
-  saveAiDataBinding: (projectId: string, binding: Partial<AiDataBinding>) =>
-    request<AiDataBinding>(
-      binding.id
-        ? `/api/projects/${projectId}/ai-data-bindings/${encodeURIComponent(binding.id)}`
-        : `/api/projects/${projectId}/ai-data-bindings`,
-      {
-        method: binding.id ? "PATCH" : "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(binding),
-      },
-    ),
-  deleteAiDataBinding: (projectId: string, bindingId: string) =>
-    request<void>(`/api/projects/${projectId}/ai-data-bindings/${encodeURIComponent(bindingId)}`, { method: "DELETE" }),
-  listAiDataBindingRuns: (projectId: string, options: { bindingId?: string; limit?: number } = {}) => {
-    const query = new URLSearchParams();
-    if (options.bindingId) query.set("bindingId", options.bindingId);
-    if (options.limit !== undefined) query.set("limit", String(options.limit));
-    return request<AiDataBindingRunRecord[]>(`/api/projects/${projectId}/ai-data-binding-runs${query.size ? `?${query}` : ""}`);
-  },
   createDataset: (projectId: string, dataset: Omit<Partial<DataDatasetRecord>, "writeback"> & { writeback?: DataDatasetRecord["writeback"] | null }) =>
     request<DataDatasetRecord>(`/api/projects/${projectId}/datasets`, {
       method: "POST",
@@ -802,6 +686,7 @@ export const api = {
   ...createIndustrialAgentApi(request),
   ...createSemanticModelApi(request),
   ...createModeling3dApi(request),
+  ...createAiApi(request, (url, init) => serverClient.open(url, init)),
 };
 
 function serviceLogQuery(filters: { service?: string; level?: ServiceLogLevel; from?: string; to?: string; keyword?: string; limit?: number }): string {
