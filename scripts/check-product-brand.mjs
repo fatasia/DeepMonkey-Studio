@@ -4,14 +4,14 @@ import path from "node:path";
 import sharp from "sharp";
 
 const root = path.resolve(import.meta.dirname, "..");
-const productName = "Deep Monkey Studio";
+const productName = "DeepMonkey Studio";
 const webBrand = path.join(root, "apps/web/public/brand");
 const desktopIcons = path.join(root, "apps/desktop/src-tauri/icons");
 const issues = [];
 
 await expectImage(path.join(webBrand, "app-icon.png"), 1024, 1024);
 await expectImage(path.join(webBrand, "app-icon-chroma.png"), 1024, 1024);
-await expectImage(path.join(webBrand, "logo-transparent.png"), 1216, 224);
+await expectImage(path.join(webBrand, "logo-transparent.png"), 1024, 1024);
 await expectImage(path.join(desktopIcons, "32x32.png"), 32, 32);
 await expectImage(path.join(desktopIcons, "128x128.png"), 128, 128);
 await expectImage(path.join(desktopIcons, "128x128@2x.png"), 256, 256);
@@ -19,7 +19,9 @@ await expectImage(path.join(desktopIcons, "128x128@2x.png"), 256, 256);
 const iconSvg = await read("apps/web/public/brand/app-icon-industrial.svg");
 const logoSvg = await read("apps/web/public/brand/logo-industrial.svg");
 if (!iconSvg.includes(productName) || !logoSvg.includes(productName)) issues.push("SVG 品牌名称未统一");
-if (!logoSvg.includes("Deep Monkey") || !logoSvg.includes(">Studio<")) issues.push("Logo 字标不是当前产品名");
+if (iconSvg !== logoSvg) issues.push("Logo 与应用图标未使用同一蛇形标志");
+if (/<(?:text|image|rect)\b/.test(logoSvg)) issues.push("Logo 应为透明背景纯矢量图形，不含字标或底板");
+await import("./generate-product-brand.mjs?verify");
 
 const legacyIconHash = await hash(path.join(webBrand, "app-icon-chroma.png"));
 const primaryIconHash = await hash(path.join(webBrand, "app-icon.png"));
@@ -43,6 +45,14 @@ for (const icon of tauri.bundle?.icon ?? []) {
 }
 
 const html = await read("apps/web/index.html");
+const nativeBuild = await read("packages/deep-engine-native/build.rs");
+const nativeStartup = await read("packages/deep-engine-native/src/app_startup.rs");
+if (!nativeBuild.includes("../../apps/desktop/src-tauri/icons/icon.ico") || !nativeBuild.includes("cargo:rustc-link-arg-bins=")) {
+  issues.push("Native EXE 未嵌入统一 Tauri ICO");
+}
+if (!nativeStartup.includes("Icon::from_resource(101,") || !nativeStartup.includes(".with_window_icon(Some(window_icon))") || !nativeStartup.includes(".with_taskbar_icon(Some(taskbar_icon))")) {
+  issues.push("Native 标题栏/任务栏未使用统一 EXE 图标资源");
+}
 if (!html.includes(`<title>${productName}</title>`)) issues.push("Web 默认页签标题未统一");
 if (!html.includes('href="/brand/app-icon-industrial.svg"')) issues.push("Web favicon 未使用统一矢量图标");
 
