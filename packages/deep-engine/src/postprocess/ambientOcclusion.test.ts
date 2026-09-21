@@ -48,7 +48,8 @@ describe("WebGPU half-resolution ambient occlusion", () => {
     }
     expect(pool.stats).toMatchObject({ acquireCount: 9, hits: 6, misses: 3, freeCount: 3 });
     expect(f.outputs).toHaveLength(3); expect(f.buffers).toHaveLength(1);
-    expect(f.device.createBindGroup).toHaveBeenCalledTimes(6);
+    // identity 分桶后三帧 pop 回同一纹理实例，pooledBindings 五元组逐帧命中 → 绑定组只在首帧创建。
+    expect(f.device.createBindGroup).toHaveBeenCalledTimes(3);
     const bindingCount = f.device.createBindGroup.mock.calls.length;
     pool.beginFrame(); pass.encode(encoder.encoder, { ...input, revision: 3 }, options); pool.endFrame(true);
     expect(f.device.createBindGroup).toHaveBeenCalledTimes(bindingCount);
