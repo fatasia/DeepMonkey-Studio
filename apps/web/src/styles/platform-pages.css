@@ -9,8 +9,11 @@
 .login-brand-name { color: #eef2f3; font-size: 20px; font-weight: 700; letter-spacing: .02em; text-align: center; }
 .login-card p { margin: -2px 0 7px; color: #74868d; font-size: 12px; text-align: center; white-space: pre-line; }
 .login-card label { display: grid; gap: 5px; color: #82939a; font-size: 9px; }
-.login-card input { height: 38px; padding: 0 11px; color: #e8edef; border: 1px solid #34444b; border-radius: 7px; outline: none; background: #11191d; }
-.login-card input:focus { border-color: #a9843e; box-shadow: 0 0 0 3px rgba(212,168,79,.1); }
+.login-card input, .login-card textarea { color: #e8edef; border: 1px solid #34444b; border-radius: 7px; outline: none; background: #11191d; font: inherit; }
+.login-card input { height: 38px; padding: 0 11px; }
+.login-card textarea { padding: 9px 11px; min-height: 58px; resize: vertical; line-height: 1.5; }
+.login-card textarea::placeholder, .login-card input::placeholder { color: #5d6f77; }
+.login-card input:focus, .login-card textarea:focus { border-color: #a9843e; box-shadow: 0 0 0 3px rgba(212,168,79,.1); }
 .login-card .login-remember { display: flex; align-items: center; gap: 7px; width: fit-content; cursor: pointer; }
 .login-card .login-remember input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); }
 .login-card .login-remember span { color: #9aa9af; font-size: 10px; }
@@ -37,7 +40,7 @@
 .branding-preview-window.theme-dark .branding-preview-login strong { color:var(--on-accent-light); }
 .branding-preview-bar { display: flex; align-items: center; gap: 6px; padding: 0 10px; border-bottom: 1px solid #26343a; background: #141d21; }.branding-preview-bar img { width: 20px; height: 20px; object-fit: cover; border-radius: 5px; }.branding-preview-bar span { flex: 1; color: color-mix(in srgb,var(--on-accent-light) 62%,transparent); font-size: 8px; }.branding-preview-bar i { width: 6px; height: 6px; border-radius: 50%; background: color-mix(in srgb,var(--on-accent-light) 25%,transparent); }
 .branding-preview-window.theme-light .branding-preview-bar span { color: color-mix(in srgb,var(--on-accent-dark) 62%,transparent); }
-.branding-preview-login { display: grid; width: 210px; place-self: center; justify-items: center; gap: 7px; }.branding-preview-login > img { width: 72px; height: 72px; object-fit: contain; }.branding-preview-login strong { font-size: 18px; }.branding-preview-login span { color: color-mix(in srgb,var(--on-accent-light) 48%,transparent); font-size: 8px; }.branding-preview-login button { width: 100%; height: 30px; margin-top: 9px; color: var(--on-accent); border: 0; border-radius: 5px; background: var(--preview-accent); font-size: 9px; font-weight: 800; }
+.branding-preview-login { display: grid; width: 210px; place-self: center; justify-items: center; gap: 7px; }.branding-preview-login > img { width: 72px; height: 72px; object-fit: contain; }.branding-preview-login strong { font-size: 18px; }.branding-preview-login span { color: color-mix(in srgb,var(--on-accent-light) 48%,transparent); font-size: 10px; text-align: center; white-space: pre-line; }.branding-preview-login button { width: 100%; height: 30px; margin-top: 9px; color: var(--on-accent); border: 0; border-radius: 5px; background: var(--preview-accent); font-size: 9px; font-weight: 800; }
 .branding-preview-window.theme-light .branding-preview-login span { color: color-mix(in srgb,var(--on-accent-dark) 48%,transparent); }
 .branding-preview-window > footer { align-self: center; color: color-mix(in srgb,var(--on-accent-light) 38%,transparent); font-size: 7px; text-align: center; }
 .branding-preview-window.theme-light > footer { color: color-mix(in srgb,var(--on-accent-dark) 38%,transparent); }
