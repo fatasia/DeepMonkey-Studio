@@ -2810,4 +2810,11 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 产品接线闭环：`ProbeClipmapPbrControllerOptions.sceneRadianceSync`（表面缓存接受后转发，失败不穿透渲染循环）+ `PbrRenderer.createProbeClipmapController`（实现 DeepWebGpuRenderRuntime 产品 GI 工厂——`backend.setProbeClipmapEnabled(true)` 现在产生 `radianceSource=scene` 的真实宿主控制器）+ 渲染帧主光锁存馈送（`resolvePbrSceneLighting.primary` 同源直射光）。
 - 证据：真机 Chrome WebGPU `node scripts/probeRadianceGpuTest.mjs` gate TRUE（`test-output/probe-radiance-gpu-20260922/report.json` + WGSL 证据）——三探针（遮挡下方/开阔天空/遮挡体上方）CPU 参考对拍全部通过（open-sky/above-box 绝对差 2e-4；occluded 在单方向 f32/f64 轮廓翻转界内，翻转量恰为 ambient/8 已归因）、溢出哨兵 0、WGSL 零编译告警、开阔天空能量>遮挡探针、一跳能量存在。单测 9/9、探针族聚焦回归 51/51（adapter/runtime/executor/probeOcclusion）、threeBridge 会话回归 16/16、deep-engine 与 apps/web typecheck 全绿。
 - 边界：环境项当前由宿主馈送零值（环境均值 GPU 读回属下一切片，接口已就绪）；命中点不追第二次阴影射线；MASK 纹理 alpha/BLEND/形变按 RenderPacketRayScene 既有排除/拒绝口径；deformation 包触发软降级（probe GI 关闭回退 IBL，渲染循环不中断）。package.json 的 `test:probe-radiance-gpu` 脚本行与并行会话 hunks 混在同一共享文件，待收拢时统一入库，当前可 `node scripts/probeRadianceGpuTest.mjs` 直跑。未 push。
+
+### 2026-09-22 F1 切片2：环境均值 GPU 读回接入探针 ambient（ZCode）
+
+- `webgpu/environmentAmbientReader.ts`：对 StudioEnvironment.diffuse（漫射辐度 cubemap）做确定性稀疏均值——每面 8×8 方向（标准立方体面轴映射）`textureSampleLevel` 直采 mip0，GPU 写 384 样本、CPU 归约 RGB 均值（`averageAmbientSamples` 纯函数）；一次环境读一次并按环境身份缓存，读回失败保持上次值零起步。
+- PbrRenderer 消费：环境对象身份变化且读回空闲时触发懒读回，`syncLighting` 的 ambient 从硬编码零升级为真实环境均值；零总能量仍 fail-closed。
+- 真机证据（同一 gate 扩展 ambient 案例，`node scripts/probeRadianceGpuTest.mjs` gate TRUE）：内置 studio IBL 实测均值 RGB [0.525, 0.563, 0.613]、双读 repeatDelta 逐位为 0（确定性）、positive 通过；三探针 CPU 对拍保持通过、溢出哨兵 0。
+- 过程修正（都是真机才暴露的合同）：WGSL 无 cube `textureLoad`（改 textureSampleLevel+方向集）；compute 阶段禁 `textureSample`；filterable rgba16float 不能绑 `unfilterable-float` 槽。单测 3/3+（含 Naga 条件）、聚焦回归 27/27、deep-engine 与 apps/web typecheck 绿。未 push。
 - 2026-09-22 剩余任务交接收口：新增 `docs/handoffs/deep-monkey-remaining-work-handoff-2026-09-22.md`，按“功能开发 → 上层接入 → 跨端一致性/打包/全量验收”排序，只保留当前证据显示未完成的事项；已完成项、明确排除项和本交接范围外的清理均不重新排队。后续每个切片必须回填本交接、总账和对应 spec，禁止重复建设。

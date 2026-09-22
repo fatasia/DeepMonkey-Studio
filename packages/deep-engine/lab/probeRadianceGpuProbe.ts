@@ -16,6 +16,9 @@ import { probeOcclusionDirection } from "../src/rayTracing/probeOcclusionRayExte
 import { traceTlasClosest } from "../src/rayTracing/tlas.js";
 import { RENDER_PACKET_GI_RAY_MASK } from "../src/rayTracing/renderPacketRayScene.js";
 import { ProbeSceneRadianceProducer } from "../src/rayTracing/probeSceneRadianceProducer.js";
+import { EnvironmentAmbientReader } from "../src/webgpu/environmentAmbientReader.js";
+import { createStudioEnvironment } from "../src/webgpu/studioEnvironment.js";
+import type { DeviceSession } from "../src/webgpu/deviceSession.js";
 import { emitProbeRadianceKernelWgsl } from "../src/rayTracing/probeRadianceKernel.js";
 
 export { emitProbeRadianceKernelWgsl };
@@ -33,6 +36,12 @@ export interface ProbeRadianceGpuResult {
   readonly openSkyExceedsOccluded: boolean;
   readonly oneBounceEnergyPresent: boolean;
   readonly adapter: string;
+}
+
+export interface AmbientGpuResult {
+  readonly value: readonly [number, number, number];
+  readonly repeatDelta: readonly [number, number, number];
+  readonly positive: boolean;
 }
 
 const DIRECTION_COUNT = 8, T_MAX = 32;
@@ -230,5 +239,35 @@ export async function runProbeRadianceGpuProbe(): Promise<ProbeRadianceGpuResult
       oneBounceEnergyPresent: luminance(openSky.gpu) > 0.01,
       adapter: (adapter as GPUAdapter & { info?: { description?: string } }).info?.description ?? "",
     };
+  } finally { device.destroy(); }
+}
+
+/** F1 slice-2 evidence: the ambient readback path against the real built-in studio IBL. */
+export async function runAmbientGpuProbe(): Promise<AmbientGpuResult> {
+  if (!navigator.gpu) throw new Error("navigator.gpu unavailable.");
+  const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+  if (!adapter) throw new Error("requestAdapter returned null.");
+  const device = await adapter.requestDevice({ label: "ambient-gpu-probe" });
+  const errors: string[] = [];
+  device.addEventListener?.("uncapturederror", event => {
+    errors.push((event as GPUUncapturedErrorEvent).error.message);
+  });
+  try {
+    // Evidence stub session: the reader only needs device/state/own/release; buffers are
+    // page-local and die with the browser context, so release is a no-op here.
+    const session = { device, state: "ready",
+      own: <T>(resource: T): T => resource, release: (): void => {} } as unknown as DeviceSession;
+    const environment = await createStudioEnvironment(session);
+    const reader = new EnvironmentAmbientReader(session);
+    device.pushErrorScope("validation");
+    const first = await reader.read(environment);
+    const validation = await device.popErrorScope();
+    if (validation) errors.push(`validation: ${validation.message}`);
+    const second = await reader.read(environment);
+    const repeatDelta = first.map((value, axis) => Math.abs(value - second[axis]!)) as [number, number, number];
+    return { value: first, repeatDelta,
+      positive: first.every(channel => Number.isFinite(channel) && channel >= 0)
+        && first.some(channel => channel > 0),
+      ...(errors.length ? { diagnostics: errors } : {}) };
   } finally { device.destroy(); }
 }

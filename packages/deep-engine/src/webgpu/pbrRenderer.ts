@@ -47,6 +47,7 @@ import { AdaptiveQualityController, adaptiveShadowMapSize } from "./adaptiveQual
 import type { CascadedShadowQualityTier } from "../shadows/shadowQuality.js";
 import { ProbeClipmapPbrController, type ProbeClipmapPbrTarget } from "./probeClipmapPbrController.js";
 import { ProbeSceneRadianceProducer } from "../rayTracing/probeSceneRadianceProducer.js";
+import { EnvironmentAmbientReader, type EnvironmentAmbient } from "./environmentAmbientReader.js";
 import { VisibilityBufferPath } from "./visibilityBufferPass.js";
 import { SoftRasterizeFallback } from "./softRasterizeFallback.js";
 export type { FrameMetrics, PbrRendererOptions, RenderView } from "./pbrRendererTypes.js";
@@ -82,6 +83,10 @@ export class PbrRenderer {
   private probeClipmapFailed = false;
   /** Owns the real scene-radiance capture chain (F1) for the product probe-clipmap session. */
   private probeRadianceProducer: ProbeSceneRadianceProducer | undefined;
+  /** Latest committed environment average (GPU readback); feeds the probe ambient term. */
+  private environmentAmbient: EnvironmentAmbient = Object.freeze([0, 0, 0]);
+  private ambientReader: EnvironmentAmbientReader | undefined;
+  private ambientEnvironment: StudioEnvironment | undefined;
   private readonly visibility: VisibilityBufferPath | undefined;
   private readonly adaptiveQuality: AdaptiveQualityController | undefined;
   private readonly preparationPlan: RenderGraphCompileResult;
@@ -234,12 +239,22 @@ export class PbrRenderer {
     const sceneLighting = resolvePbrSceneLighting(view.lights);
     if (this.mainBindings.update(view.lights, view.fog)) this.historyDirty = true;
     // F1 scene-radiance latch: the producer packs whatever was latest at capture encode time,
-    // so probes shade with the same primary light the raster pass uses (ambient stays zero
-    // until the environment-average readback slice lands; zero total energy fails closed).
+    // so probes shade with the same primary light the raster pass uses. The ambient term is
+    // the environment's GPU-read average; until the first readback lands it stays zero and a
+    // zero total energy still fails closed (no dark volume is ever published).
+    const currentEnvironment = this.environment.current;
+    if (this.probeRadianceProducer && this.ambientEnvironment !== currentEnvironment
+      && !this.ambientReader?.busy) {
+      this.ambientEnvironment = currentEnvironment;
+      this.ambientReader ??= new EnvironmentAmbientReader(this.session);
+      void this.ambientReader.read(currentEnvironment).then(ambient => {
+        this.environmentAmbient = ambient;
+      }).catch(() => { /* keep the last committed average; capture stays fail-closed */ });
+    }
     this.probeRadianceProducer?.syncLighting({
       primary: { surfaceToLightWorld: [...sceneLighting.primary.surfaceToLightWorld],
         color: [...sceneLighting.primary.color], intensity: sceneLighting.primary.intensity },
-      ambient: [0, 0, 0] });
+      ambient: this.environmentAmbient });
     if (this.pendingHiZ) { this.previousHiZ.failFrame(this.pendingHiZ); this.pendingHiZ = undefined; }
     this.packets.failLodFrame();
     this.packets.cancelDeformationFrame();

@@ -46,7 +46,9 @@ async function runInBrowser(origin) {
     await page.goto(`${origin}/probe.html`, { waitUntil: "load" });
     const result = await page.evaluate(async () => {
       const module = await import("./probe.bundle.mjs");
-      return module.runProbeRadianceGpuProbe();
+      const radiance = await module.runProbeRadianceGpuProbe();
+      const ambient = await module.runAmbientGpuProbe();
+      return { ...radiance, ambient };
     });
     result.browserVersion = browser.version();
     return result;
@@ -99,16 +101,21 @@ async function main() {
     name: entry.name, position: entry.position, gpu: entry.gpu, cpu: entry.cpu,
     flipAllowance: entry.flipAllowance, maxContribution: entry.maxContribution,
     ...probeMatchesCpu(entry.gpu, entry.cpu, entry.flipAllowance) }));
+  const ambient = probe.ambient ?? { value: [0, 0, 0], repeatDelta: [1, 1, 1], positive: false };
+  const ambientDeterministic = ambient.repeatDelta.every(delta => delta <= 1e-6);
   const gate = comparisons.length === 3
     && comparisons.every(comparison => comparison.passed)
     && probe.overflowSentinel === 0
     && probe.openSkyExceedsOccluded === true
     && probe.oneBounceEnergyPresent === true
+    && ambient.positive === true
+    && ambientDeterministic === true
     && probe.validationMessages.length === 0;
   const report = {
     gate, adapter: probe.adapter, browserVersion: probe.browserVersion,
     overflowSentinel: probe.overflowSentinel,
     rawHalfWords: probe.rawHalfWords ?? [],
+    ambient, ambientDeterministic,
     validationMessages: probe.validationMessages,
     openSkyExceedsOccluded: probe.openSkyExceedsOccluded,
     oneBounceEnergyPresent: probe.oneBounceEnergyPresent,
