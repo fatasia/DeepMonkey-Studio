@@ -3273,3 +3273,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **测试**：Web 校验 8 项（单层回归/级联合法/层序非法/包含性非法/单层字段并存/层数越界/层内探针规则/跨层预算 65535）；编译器端到端 3 项（级联载荷逐层局部化+互斥+evidence、层序非法与包含性非法→`invalid-level-nesting` 可读错误）；Native 分派 4 项（v2 记录流布局头/层头 base=2、11+renderer 同款 cascade decode 复核、互斥拒绝、层序/包含性拒绝、层数与层内探针非法）。
 - **门禁**：deep-engine vitest（lighting+runtimePackage）**601/0**（5 skipped 既有）、typecheck 过；apps/web typecheck 过 + compileSceneRuntimePackage **28/0**；cargo **lib 539/0**（1 ignored 既有；535 基线+新增 4 项）、**bin 271/0**（`--bin deep-engine-native -- --test-threads=2`，78 ignored 既有，与台账基线一致）；probe 族 33/0、solid_environment 族 13/0。runtimePurityGate 过。
 - **诚实边界**：端到端=两端合同测试拼合（Web 断言载荷形状、Rust 以编译器同形 JSON 断言可解码+renderer 同款级联解码接受），未跑"编译产物→EXE 实装载"全链（真机级联消费由上一切片 GPU 双层用例覆盖）；`sourceSizeGate` 在 HEAD 本就红（solid_environment.rs 745 行等既有超限，LEGACY_OVERSIZED 未收录），本切片使其增至 965 行、未新增文件未新增红灯文件，未做模块拆分（拆出 probe grid 解析模块留作后续独立重构）；`cargo fmt --check` 全 crate 有既有漂移（probe_gi_grid.rs 等），本切片新增代码逐 hunk 修净、既有漂移未越界修；旧单层 Web 校验的 schema 检查与 fields() 顺序对调（错误信息更准，无测试依赖旧序）。dist 未重编译。未 push。工作树并行 WIP（.tmp-*、scripts/benchmarks/babylon-web）未触碰。
+
+### 2026-09-23 30 分钟自检（第十四轮）：F3 载荷管道验收 + V1 执行计划卡
+
+- **F3 多层载荷管道验收通过**（dc585495）：Web 合同 v2 双形态联合（Single∪Cascade，levels 细→粗 1..4、顶层互斥）、编译器多层输入逐层局部化+packNativeProbeGridLevels 先行对账（字节数恰等）、Native decode 按 levels 键分派 cascade（单层错误信息逐字不变）。主线程复跑 environment+packer 48/48 绿。门禁：lib 539/0、bin 271/0、deep-engine 601/0、compileSceneRuntimePackage 28/0。边界：端到端为两端合同测试拼合（未跑 EXE 实装载全链，真机级联由 GPU 双层用例覆盖）；solid_environment.rs 增至 965 行待拆分。
+- **V1 执行计划卡**（盘点结论）：三端运行入口均已各自验证——Deep Native（V2 三路实窗 1dc7c39f）、Three WebView（真实 PE+NSIS 品牌链）、Web（发布产物）；GI 特性矩阵已有跨端先例（gi-crossend-matrix r1-r3）。缺统一对拍 runner：同一冻结场景 fixture+同 packageId/hash 三端加载+各端截帧+能力矩阵比较表。下一动作：以 V2 用过的 coordinate-origin fixture 为起点建 V1 冻结场景，复用 gi-crossend-matrix 的取证骨架扩展三端覆盖。
+- **满载**：子代理① Babylon harness（runner 已产出收尾中）、子代理②新补位 I3 贴地投影+坡度边界（I3 四缺口收敛中）、主线程 V1 计划卡+台账。
