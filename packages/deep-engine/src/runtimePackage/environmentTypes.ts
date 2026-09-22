@@ -43,7 +43,7 @@ export interface RuntimeAuthoredLighting {
   readonly radiance: readonly [number, number, number];
   readonly exposure: number;
   readonly shadows: boolean;
-  /** Author GI multiplier from the editor (kept separate from direct-light exposure). */
+  /** 编辑器中的作者 GI 强度（与直射光曝光分开）。 */
   readonly globalIlluminationIntensity?: number;
   readonly localLights?: readonly RuntimeLocalLight[];
   readonly lightProfiles?: readonly RuntimeLightProfile[];

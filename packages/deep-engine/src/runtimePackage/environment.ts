@@ -3,6 +3,7 @@ import { RUNTIME_IBL_MAX_BYTES, type RuntimePrefilteredIbl } from "./environment
 import { visitIblBytes } from "./environmentBytes.js";
 import { validateLocalLights } from "./localLights.js";
 import { validateLightingIes } from "./lightProfiles.js";
+import { runtimeContentSha256 } from "./hash.js";
 
 export const BUILTIN_RUNTIME_IBL_ID = "deep.builtin.studio-ibl.v1";
 export function validateRuntimeEnvironment(value: unknown, id: string, revision: number, path: string): void {
@@ -130,6 +131,23 @@ export function validateRuntimePrefilteredIbl(value: unknown, id: string, revisi
 function dimension(value: unknown, path: string): number {
   const size = integer(value, 1, 2048, path);
   requireValue((size & (size - 1)) === 0, path, "IBL dimensions must be powers of two."); return size;
+}
+
+export function validateRuntimeStaticLightmapBinding(environment: unknown, renderPacket: unknown, path = "$.environment"): void {
+  const object = record(environment, path);
+  if (object.staticLightmap === undefined) return;
+  const descriptor = record(object.staticLightmap, `${path}.staticLightmap`);
+  const packet = record(renderPacket, "$.renderPacket");
+  const textures = array(packet.textures, "$.renderPacket.textures");
+  const texture = textures.find(candidate => record(candidate, "$.renderPacket.textures[]").id === descriptor.textureId);
+  requireValue(texture !== undefined, `${path}.staticLightmap.textureId`, "Static lightmap texture is missing from the render packet.");
+  const textureObject = record(texture, `${path}.staticLightmap.textureId`);
+  requireValue(textureObject.semantic === "occlusion" || textureObject.semantic === "emissive",
+    `${path}.staticLightmap.textureId`, "Static lightmap texture must use an occlusion or emissive slot.");
+  requireValue(textureObject.width === descriptor.width && textureObject.height === descriptor.height,
+    `${path}.staticLightmap`, "Static lightmap dimensions differ from the texture resource.");
+  requireValue(runtimeContentSha256(textureObject) === record(descriptor.textureHash, `${path}.staticLightmap.textureHash`).value,
+    `${path}.staticLightmap.textureHash`, "Static lightmap texture hash does not match the render packet.");
 }
 
 function validateStaticLightmap(value: unknown, path: string): void {
