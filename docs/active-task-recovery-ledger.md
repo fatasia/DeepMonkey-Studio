@@ -3201,3 +3201,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **测试**：新增 `rapierPhysicsDebugOverlay.test.ts` 5 项（位姿换算含旋转偏移、按类型着色、池隐藏复用、开关显隐、dispose 摘除）；`ScenePhysicsPanel.test.tsx` +1（开关文案/高亮切换，静态标记断言 active 计数=2）。
 - **门禁**：apps/web `tsc --noEmit` 0 错误；vitest 相关 33/33（overlay 5 + 数据层 2 + 面板 4 + 物理族回归 22）。
 - **诚实边界**：真实浏览器画面中的线框视觉表现未验证（ViewerEngine 构造需真实 container/renderer，headless 无法挂载）——渲染表现以数据面单测+tsc 覆盖，列为本切片未验证边界；开关点击→引擎调用的 React 集成无挂载测试，靠 tsc+props 契约覆盖；面板关闭后线框保持显示（与导航碰撞调试开关同语义，重开面板可关）。
+
+### 2026-09-23 30 分钟自检（第八轮）：B3 消费端验收 + V4 Babylon 轨道补位
+
+- **B3 缺口5 渲染线框层验收通过**（08deed1a）：rapierPhysicsDebugOverlay 自包含线框池（共享 EdgesGeometry+按刚体类型四色、depthTest=false+renderOrder 10k、helper: 命名+raycast 置空）；位姿换算与数据层真机语义逐条对齐（世界中心=刚体平移+旋转后 centerOffset）；setPhysicsDebugVisible 关闭帧同步早退零开销；ScenePhysicsPanel"显示碰撞体"开关接入；引擎重建后自动重应用。门禁：tsc 0 错误、33/33 测试（主线程复跑聚焦 6/6）。边界：headless 无法挂真实 container，画面视觉表现未验证。
+- **满载补位**：子代理①派 V4 Babylon Web 轨道采集 harness（对齐 bevy 轨道 evidence schema，独立基准目录固定版本，单侧采集诚实记录口径差异）；子代理② V2 occlusion 诊断排查继续在跑。
