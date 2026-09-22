@@ -7,6 +7,7 @@ import { resolvePbrRendererFeatures, type PbrRendererFeatures } from "./pbrRende
 import type { Pipelines } from "./pipelines.js";
 import type { StudioEnvironment } from "./studioEnvironment.js";
 import type { PbrRendererOptions } from "./pbrRendererTypes.js";
+import { assertTextureArrayProductionReady } from "./textureArrayProductionGate.js";
 
 /** Owns bootstrap error scopes and cancellation; the renderer owns successfully prepared resources. */
 export async function openPbrRenderer<T>(session: DeviceSession,
@@ -19,9 +20,10 @@ export async function openPbrRenderer<T>(session: DeviceSession,
   signal.addEventListener("abort", cancel, { once: true });
   try {
     if (signal.aborted) throw abortError();
+    const features = resolvePbrRendererFeatures(options.features);
+    assertTextureArrayProductionReady(features);
     session.device.pushErrorScope("validation"); scopeOpen = true;
     const localShadows = await LocalSpotShadowRuntime.create(session, signal), lighting = new ForwardPlusPbrRuntime(session, localShadows.bindings);
-    const features = resolvePbrRendererFeatures(options.features);
     const [{ pipelines, deformationPipelines }, environment] = await Promise.all([
       createPbrPipelineSet(session, lighting.layout, options, features),
       createPbrEnvironment(session, options.environment, signal),

@@ -209,6 +209,9 @@ describe("ShaderPackageExecutor", () => {
     expect(first.passes[0]).toBe(second.passes[0]);
     expect(first.passes[1]).toBe(second.passes[1]);
     expect(executor.cacheSize).toBe(2);
+    await executor.prepare(value);
+    expect(executor.stats).toMatchObject({ entries: 2, cacheHits: 2, cacheMisses: 4,
+      compiledEntries: 2, failedCompiles: 0, abortedCompiles: 0 });
   });
 
   it("serializes distinct device error scopes while allowing concurrent callers", async () => {

@@ -1,4 +1,5 @@
 import { packTransform } from "./instanceTransform.js";
+import { MATERIAL_IOR_FLOAT_OFFSET, packMaterialIor, type MaterialInstanceOptions } from "./materialInstanceAbi.js";
 import { getGeometryFeatures, validateGeometryFeatures, type GeometryFeatureSource } from "./renderPacketGeometryFeatures.js";
 import { prepareLodProfile } from "./renderPacketLod.js";
 import type {
@@ -33,7 +34,7 @@ export function validateInstanceIds(instances: readonly RenderInstance[]): void 
     }
     ids.add(instance.id);
     if (instance.pose !== undefined && (typeof instance.pose !== "string" || !instance.pose.trim())) throw new Error("Instance pose must be a nonempty ID.");
-    for (const key of ["castShadow", "receiveShadow"] as const) {
+    for (const key of ["castShadow", "receiveShadow", "outline"] as const) {
       if (instance[key] !== undefined && typeof instance[key] !== "boolean") throw new Error(`Instance ${key} must be boolean.`);
     }
   }
@@ -44,6 +45,7 @@ export function packInstanceBatches(
   instances: readonly RenderInstance[],
   materials: ReadonlyMap<string, PbrMaterial>,
   materialTextures: ReadonlyMap<string, PreparedMaterialTextures | undefined>,
+  options: MaterialInstanceOptions = {},
 ): readonly PreparedBatch[] {
   const staging = new Float32Array(instances.length * 36);
   const grouped = new Map<string, MutableBatch>();
@@ -59,7 +61,9 @@ export function packInstanceBatches(
     const lod = prepareLodProfile(instance, geometries, material, textures);
     const mirrored = packTransform(instance.transform, staging, offset);
     packMaterialRecord(staging, offset, material, textures, mirrored);
+    staging[offset + MATERIAL_IOR_FLOAT_OFFSET] = packMaterialIor(material.ior, options);
     if (instance.receiveShadow === false) staging[offset + 31]! += 16;
+    if (instance.outline === true) staging[offset + 31]! += 256;
     const alphaMode = material.alphaMode ?? "OPAQUE";
     const doubleSided = material.doubleSided === true;
     const premultiplied = alphaMode === "BLEND" && material.premultipliedAlpha === true;
@@ -111,7 +115,7 @@ function packMaterialRecord(
   const alphaMode = material.alphaMode ?? "OPAQUE";
   const doubleSided = material.doubleSided === true;
   // 位图与 Native surface_flags 逐位对拍：1 double、2 mask、4 blend、(+2) blend cutoff、
-  // 16 不接收阴影、32 fog off、64 unlit、128 premultiplied（仅 BLEND，validate 保证）。
+  // 16 不接收阴影、32 fog off、64 unlit、128 premultiplied、256 对象级 outline。
   const premultiplied = alphaMode === "BLEND" && material.premultipliedAlpha === true;
   target[offset + 31] = (doubleSided ? 1 : 0) + (alphaMode === "MASK" ? 2 : alphaMode === "BLEND" ? 4 + (material.alphaCutoff !== undefined ? 2 : 0) : 0)
     + (material.fog === false ? 32 : 0) + (material.shadingModel === "unlit" ? 64 : 0) + (premultiplied ? 128 : 0);

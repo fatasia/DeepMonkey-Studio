@@ -25,14 +25,15 @@ describe("selectSceneClientDependencyInputs", () => {
     ["compatible read-only", "1.0", "studio.scene", "scene.read", false],
     ["future version", "2.0", "studio.scene", "scene.read", true],
     ["unknown capability", "1.0", "studio.unknown", "scene.read", true],
-    ["write permission", "1.0", "studio.scene", "scene.write", true],
+    ["local write permission", "1.0", "studio.scene", "scene.write", false],
+    ["network permission", "1.0", "studio.scene", "network.connect", true],
     ["unknown permission", "1.0", "studio.scene", "unknown.read", true],
   ] as const)("checks %s before freezing script dependencies", (_, apiVersion, capability, permission, rejected) => {
     const { scene, project, app } = fixture();
     app.scripts.push({ id: "worker", name: "Worker", enabled: true, runtime: "worker-sandbox", apiVersion,
       entrypoint: "behavior", code: "opaqueCode()", lifecycle: [], capabilities: [capability], permissions: [permission] } as typeof app.scripts[number]);
     const freeze = () => select(project, scene, [app]);
-    if (rejected) expect(freeze).toThrow(/applications\[root\].scripts\[0\]/);
+    if (rejected) expect(freeze).toThrow(/applications\[(?:root|0)\].scripts\[0\]/);
     else expect(freeze().applications[0]!.scripts).toEqual(app.scripts);
   });
 

@@ -5,6 +5,12 @@ import { array, fields, integer, record, requireValue, revision, string } from "
 import type { RuntimeResourceKind } from "./types.js";
 import { ChartSimulationSource } from "../chartSimulation.js";
 import type { ChartIR } from "../chartIr.js";
+import { validateDashboardFilter } from "./dashboardFilterValidation.js";
+import { validateDashboardTextInput } from "./dashboardTextInputValidation.js";
+import { validateDashboardTables } from "./dashboardTableValidation.js";
+import { validateDashboardVideos } from "./dashboardVideoValidation.js";
+import { validateDashboardVideoMedia } from "./dashboardVideoMedia.js";
+import type { DashboardRuntimePageV1 } from "./dashboardCompositionTypes.js";
 
 type ResourceIndex = ReadonlyMap<string, { readonly revision: number }>;
 type UseResource = (value: unknown, kind: RuntimeResourceKind) => string;
@@ -27,7 +33,7 @@ function identity(value: unknown, prefix: "page" | "node", path: string): string
 export function validateDashboardComposition(payload: unknown, id: string, index: ResourceIndex,
   payloads: Readonly<Record<string, unknown>>, use: UseResource): void {
   const path = `$.payloads.${id}`, root = record(payload, path);
-  fields(root, ["schema", "schemaVersion", "id", "revision", "documentId", "documentRevision", "entryPageId", "pages"], [], path);
+  fields(root, ["schema", "schemaVersion", "id", "revision", "documentId", "documentRevision", "entryPageId", "pages"], ["filter", "tables", "textInput", "textInputs", "videos", "media"], path);
   requireValue(root.schema === "deep-engine.dashboard-runtime" && root.schemaVersion === 1, path, "Unsupported dashboard schema or version.");
   requireValue(root.id === id && revision(root.revision, `${path}.revision`) === index.get(id)!.revision, path, "Dashboard identity differs from index.");
   revision(root.documentRevision, `${path}.documentRevision`);
@@ -87,4 +93,37 @@ export function validateDashboardComposition(payload: unknown, id: string, index
     }
   }
   requireValue(pageIds.has(entry), path, "Entry page is missing.");
+  const media = root.media === undefined ? new Map() : validateDashboardVideoMedia(root.media, `${path}.media`);
+  if (root.videos !== undefined) validateDashboardVideos(root.videos, pages as unknown as DashboardRuntimePageV1[], media, `${path}.videos`);
+  requireValue(root.videos !== undefined || media.size === 0, path, "Packaged media requires a video diagnostic owner.");
+  if (root.textInput !== undefined) {
+    requireValue(root.textInputs === undefined, path, "Use one text input representation.");
+    requireValue(!root.filter || (record(root.filter, path).key !== record(root.textInput, path).key && record(root.filter, path).nodeId !== record(root.textInput, path).nodeId), path, "Filter keys must be unique.");
+    validateDashboardTextInput(root.textInput, pages as unknown as DashboardRuntimePageV1[], payloads, `${path}.textInput`);
+  }
+  if (root.textInputs !== undefined) {
+    const inputs = array(root.textInputs, path, 16), ids = new Set(), keys = new Set();
+    requireValue(inputs.length > 0, path, "Text inputs must not be empty.");
+    let bytes = 0;
+    for (const input of inputs) {
+      validateDashboardTextInput(input, pages as unknown as DashboardRuntimePageV1[], payloads, `${path}.textInputs`);
+      const item = input as import("./dashboardTextInputTypes.js").DashboardTextInputV1;
+      requireValue(!ids.has(item.nodeId) && !keys.has(item.key) && (!root.filter || (record(root.filter, path).key !== item.key && record(root.filter, path).nodeId !== item.nodeId)), path, "Duplicate text input node or key."); ids.add(item.nodeId); keys.add(item.key);
+      bytes += item.fonts.reduce((sum, font) => sum + atob(font.dataBase64).length, 0);
+      requireValue(bytes <= 32 * 1024 * 1024, path, "Combined text input fonts exceed 32 MiB.");
+    }
+  }
+  if (root.filter !== undefined) validateDashboardFilter(root.filter, pages as unknown as DashboardRuntimePageV1[], payloads, `${path}.filter`, Array.isArray(root.tables) && root.tables.length > 0);
+  if (root.tables !== undefined) {
+    const families = root.filter ? (root.filter as { options: unknown[] }).options.length : 1;
+    for (const id of validateDashboardTables(root.tables, pages as unknown as DashboardRuntimePageV1[], families, `${path}.tables`)) {
+      const resource = use(id, "deep2d-runtime"), content = payloads[resource];
+      validateRuntimeDeep2d(content, resource, index.get(resource)!.revision, `$.payloads.${resource}`);
+      for (const atlas of (content as { atlases: { dataBase64: string }[] }).atlases) {
+        const text = atlas.dataBase64;
+        atlasBytes += text.length / 4 * 3 - (text.endsWith("==") ? 2 : text.endsWith("=") ? 1 : 0);
+      }
+      requireValue(atlasBytes <= LIMITS.atlasBytes, path, "Dashboard aggregate atlas budget exceeded.");
+    }
+  }
 }

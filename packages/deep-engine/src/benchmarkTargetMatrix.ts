@@ -1,6 +1,6 @@
 import { CAPABILITY_DOMAIN_WEIGHTS, type BenchmarkReference } from "./benchmarkContract";
 
-/** A01 · 五引擎目标矩阵 v2:版本/渲染器/平台/任务/必选能力/禁止退化项,
+/** A01 · 四引擎目标矩阵 v2:版本/渲染器/平台/任务/必选能力/禁止退化项,
  *  公共子集与最佳质量双赛道。矩阵可独立判定;未实现/未验证进固定分母;
  *  排除项显式登记且永不计成通过;删分母、改权重、缺证据均使判定无效。 */
 
@@ -110,6 +110,10 @@ export function validateMatrix(matrix: EngineTargetMatrix): readonly string[] {
   }
   if (!matrix.engine.version.trim() || !matrix.engine.renderer.trim() || !matrix.engine.platform.trim()) {
     issues.push("engine version/renderer/platform must be declared");
+  }
+  if (matrix.reference === "bevy") {
+    if (!/^0\.19(?:\.|$)/.test(matrix.engine.version)) issues.push("Bevy matrix must pin a 0.19 release");
+    if (!/wgpu/i.test(matrix.engine.renderer)) issues.push("Bevy matrix must declare its wgpu renderer");
   }
   const caseIds = new Set<string>();
   const domainTotals = Object.fromEntries(DOMAINS.map(domain => [domain, 0])) as Record<string, number>;

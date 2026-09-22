@@ -5,6 +5,20 @@
     {
       "schema": "deep-engine.benchmark-trajectory",
       "schemaVersion": 1,
+      "id": "fixture.factory.animation-replay",
+      "name": "工厂装配动画回放(真实 GLB Animation.001)",
+      "durationMs": 2000,
+      "frame": "asset-bounding-sphere",
+      "cameraKeys": [
+        { "timeMs": 0, "position": [1.6, 1.0, 1.6], "target": [0.0, 0.0, 0.0], "fovDeg": 48, "easing": "linear" },
+        { "timeMs": 1000, "position": [1.2, 0.8, 1.2], "target": [0.0, 0.0, 0.0], "fovDeg": 48, "easing": "linear" },
+        { "timeMs": 2000, "position": [1.6, 1.0, 1.6], "target": [0.0, 0.0, 0.0], "fovDeg": 48, "easing": "linear" }
+      ],
+      "actions": []
+    },
+    {
+      "schema": "deep-engine.benchmark-trajectory",
+      "schemaVersion": 1,
       "id": "fixture.appearance.orbit-360",
       "name": "360 度等高环绕(归一化半径 2.2,20 秒,45 度分段线性)",
       "durationMs": 20000,

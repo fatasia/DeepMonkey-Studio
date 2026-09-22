@@ -43,15 +43,14 @@ describe("Three world-light adapter", () => {
     expect(Object.isFrozen(lights.spots?.[0])).toBe(true);
   });
 
-  it("requires and applies an explicit bounded fallback for Three distance=0", () => {
+  it("preserves unlimited range and hard cone edges, retaining optional bounded overrides", () => {
     const scene = new THREE.Scene();
     scene.add(new THREE.PointLight(0xffffff, 1, 0, 2));
     const spot = new THREE.SpotLight(0xffffff, 1, 0, Math.PI / 3, 0, 2);
     scene.add(spot, spot.target); scene.updateWorldMatrix(true, true);
 
     const missing = projectThreeWorldLights(scene, { cameraLayerMask: 1 });
-    expect(missing).toMatchObject({ ok: false });
-    if (!missing.ok) expect(missing.issues.map(issue => issue.feature)).toEqual(["light range", "light range"]);
+    expect(missing).toMatchObject({ ok: true, lights: { points: [{ range: 0 }], spots: [{ range: 0 }] } });
 
     const calls: string[] = [];
     const lights = accepted(projectThreeWorldLights(scene, {
@@ -61,7 +60,7 @@ describe("Three world-light adapter", () => {
     expect(lights.points?.[0]?.range).toBe(40);
     expect(lights.spots?.[0]?.range).toBe(60);
     expect(calls).toEqual(["root.children[0]", "root.children[1]"]);
-    expect(lights.spots?.[0]?.innerConeCos).toBeGreaterThan(lights.spots?.[0]?.outerConeCos ?? 1);
+    expect(lights.spots?.[0]?.innerConeCos).toBe(lights.spots?.[0]?.outerConeCos);
   });
 
   it("maps a shadow-casting Three spot light to a stable Deep atlas identity", () => {
@@ -83,7 +82,7 @@ describe("Three world-light adapter", () => {
     const ambient = new THREE.AmbientLight(), hemisphere = new THREE.HemisphereLight();
     const cookieSpot = new THREE.SpotLight(0xffffff, 1, 5);
     cookieSpot.map = new THREE.Texture();
-    const wrongDecay = new THREE.PointLight(0xffffff, 1, 5, 1);
+    const wrongDecay = new THREE.PointLight(0xffffff, 1, 5, 5);
     scene.add(ambient, hemisphere, cookieSpot, cookieSpot.target, wrongDecay);
     scene.updateWorldMatrix(true, true);
 
@@ -94,7 +93,7 @@ describe("Three world-light adapter", () => {
       ["AmbientLight", "unsupported", "light type AmbientLight"],
       ["HemisphereLight", "unsupported", "light type HemisphereLight"],
       ["SpotLight", "unsupported", "spot map"],
-      ["PointLight", "unsupported", "light decay"],
+      ["PointLight", "invalid", "light decay"],
     ]);
     expect(result.issues.every(issue => issue.path.startsWith("root.children["))).toBe(true);
   });

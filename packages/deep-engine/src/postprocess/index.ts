@@ -14,6 +14,7 @@ export * from "./temporalAaTypes.js";
 export * from "./temporalAaWgsl.js";
 export * from "./temporalAaCpu.js";
 export * from "./temporalAa.js";
+export * from "./temporalValidity.js";
 export * from "./screenSpaceReflectionTypes.js";
 export * from "./screenSpaceReflectionWgsl.js";
 export * from "./screenSpaceReflectionCpu.js";

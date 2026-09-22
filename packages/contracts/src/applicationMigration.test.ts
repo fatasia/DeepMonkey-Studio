@@ -99,4 +99,13 @@ describe("scene bridge to native ApplicationDocument", () => {
     expect(application.scenes[0]?.selectionSets).toEqual(input.selectionSets);
     expect(applicationToSceneSnapshotV1(application).selectionSets).toEqual(input.selectionSets);
   });
+  it("round trips author root layer ordering without adding it to legacy scenes", () => {
+    const input = structuredClone(pure3dFixture) as unknown as SceneSnapshot;
+    expect(applicationToSceneSnapshotV1(migrateSceneSnapshotV1(input))).not.toHaveProperty("rootLayerOrder");
+    input.rootLayerOrder = [{ kind: "object", id: "pump" }, { kind: "group", id: "line" }];
+    const application = migrateSceneSnapshotV1(input);
+    expect(application.scenes[0]?.rootLayerOrder).toEqual(input.rootLayerOrder);
+    expect(applicationToSceneSnapshotV1(application)).toEqual(input);
+    expect(application.scenes[0]?.rootLayerOrder).not.toBe(input.rootLayerOrder);
+  });
 });

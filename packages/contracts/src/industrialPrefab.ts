@@ -9,6 +9,7 @@ export type IndustrialPrefabKind =
   | "access-control"
   | "display"
   | "fence"
+  | "road"
   | "machine"
   | "utility"
   | "electrical"
@@ -19,6 +20,37 @@ export type IndustrialPrefabKind =
 export type IndustrialPrefabOperatingState = "idle" | "running" | "paused" | "fault" | "maintenance";
 export type IndustrialPrefabParameterValue = string | number | boolean;
 export type IndustrialPrefabRuntimeAction = "dispatch" | "pause" | "resume" | "stop" | "return" | "replay" | "clear-fault";
+
+export type RoadSurface = "asphalt" | "concrete";
+export type RoadMarking = "none" | "center" | "lanes";
+
+/** 首条道路作者合同；弯道、端点连接和路口使用后续独立合同扩展。 */
+export interface StraightRoadPrefabParameters {
+  lengthM: number;
+  carriagewayWidthM: number;
+  laneCount: number;
+  shoulderWidthM: number;
+  surface: RoadSurface;
+  marking: RoadMarking;
+}
+
+export interface SceneLinearPrefabPathPoint {
+  /** Stable author identity used by endpoint/spline editing and undo snapshots. */
+  id: string;
+  /** Position in the prefab root's local coordinate system. */
+  position: Vector3Value;
+}
+
+/** Shared structural path for fences and roads; separate from moving-object routes. */
+export interface SceneLinearPrefabPathState {
+  points: SceneLinearPrefabPathPoint[];
+  interpolation: "linear" | "catmull-rom";
+  closed: boolean;
+  /** Projects authored points onto scene geometry before rebuilding the path. */
+  snapToGround: boolean;
+  /** Stable uint32 seed for deterministic gates, markings and future path decoration. */
+  seed: number;
+}
 
 export interface SceneMotionRoutePoint {
   id: string;
@@ -66,6 +98,8 @@ export interface IndustrialPrefabInstanceState {
   faultCode?: string;
   motionRoute?: SceneMotionRouteState;
   mediaSurface?: SceneMediaSurfaceState;
+  /** Structural placement for path-capable static prefabs such as fences and roads. */
+  placementPath?: SceneLinearPrefabPathState;
 }
 
 export type IndustrialPrefabParameterKind = "number" | "boolean" | "text" | "select" | "color";
@@ -104,5 +138,6 @@ export interface IndustrialPrefabDefinition {
   actions: IndustrialPrefabActionDefinition[];
   dataPorts: string[];
   routeCapable: boolean;
+  pathCapable: boolean;
   rigCapable: boolean;
 }

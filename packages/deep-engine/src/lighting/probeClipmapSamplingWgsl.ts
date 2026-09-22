@@ -58,11 +58,10 @@ fn deepGiVisibility(record: DeepGiProbeRecord, receiver: vec3f, probePosition: v
   let chebyshev = variance / max(variance + delta * delta, 0.000001);
   return select(max(clamp(record.visibility.z, 0.0, 1.0), chebyshev), 1.0, distance <= meanDistance);
 }
-// DDGI normal weight (leak suppression, mirrors probeClipmapSampling.probeNormalWeight):
-// only probes in the receiver's facing hemisphere contribute, weighted by cosine^bias.
-// The hemisphere test uses the original shading point (worldPosition), never the
-// bias-offset receiver: the bias only serves the visibility test, and measuring the
-// hemisphere from it would reject every probe at a grid-edge surface facing outward.
+// DDGI 法线权重（泄漏抑制，逐式对应 probeClipmapSampling.probeNormalWeight）：
+// 只让接收面的正半球探针参与，并按余弦的 bias 次幂衰减。
+// 半球判断使用原始着色点（worldPosition），不使用偏置后的 receiver；偏置只用于
+// 可见性测试，若用偏置点判断半球，网格边缘朝外表面会错误拒绝所有探针。
 fn deepGiNormalWeight(probePosition: vec3f, shadingPoint: vec3f, normal: vec3f) -> f32 {
   let toProbe = probePosition - shadingPoint;
   let lengthToProbe = length(toProbe);

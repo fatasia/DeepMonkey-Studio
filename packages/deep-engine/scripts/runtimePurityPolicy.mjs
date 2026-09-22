@@ -24,6 +24,7 @@ function isTypeOnlyImport(node) {
 }
 
 const browserSurfaceAllowlist = new Map([
+  ["src/app/pbrRendererPlugin.ts", new Set(["HTMLCanvasElement"])],
   ["src/webgpu/dashboardCompositionHost.ts", new Set(["HTMLCanvasElement"])],
   ["src/webgpu/deep2d/gpu.ts", new Set(["DOMException"])],
   ["src/webgpu/deviceSession.ts", new Set(["DOMException", "Event", "HTMLCanvasElement"])],

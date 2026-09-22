@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createEngineTargetMatrix, evaluateEngineTargetMatrix, REQUIRED_LOAD_CLASSES, TARGET_MATRIX_SCHEMA_VERSION,
   type EngineTargetMatrix, type TargetRunEvidence } from "./benchmarkTargetMatrix";
 
-const REFERENCES = ["three", "babylon", "unity", "ue5", "godot"] as const;
+const REFERENCES = ["three", "babylon", "unity", "bevy"] as const;
 
 /** 六类负载全覆盖 + 各域权重精确配平(rendering20/large-scene15/material10/animation10/
  *  sim-media-xr10/editor10/gui-chart10/script-api5/native5/diagnostics5,合计 100)。 */
@@ -11,7 +11,9 @@ function matrix(reference: (typeof REFERENCES)[number], overrides: Partial<Engin
     schema: "deep-engine.benchmark-target-matrix",
     schemaVersion: TARGET_MATRIX_SCHEMA_VERSION,
     reference,
-    engine: { version: "2026.1.0f1", renderer: "URP", platform: "windows-x64" },
+    engine: reference === "bevy"
+      ? { version: "0.19.0", renderer: "wgpu Vulkan", platform: "windows-x64" }
+      : { version: "2026.1.0f1", renderer: "URP", platform: "windows-x64" },
     cases: [
       { id: "case.factory-draw", track: "common-baseline", critical: true, loadClass: "factory-instances", weight: 6, domain: "rendering", quality: "equivalent" },
       { id: "case.factory-streaming", track: "common-baseline", critical: false, loadClass: "factory-instances", weight: 6, domain: "rendering", quality: "equivalent" },
@@ -46,7 +48,7 @@ function evidence(overrides: Partial<TargetRunEvidence> = {}): TargetRunEvidence
 }
 
 describe("engine target matrix construction", () => {
-  it("builds five independently judgeable matrices with all load classes and exact weights", () => {
+  it("builds four independently judgeable matrices with all load classes and exact weights", () => {
     for (const reference of REFERENCES) {
       const frozen = createEngineTargetMatrix(matrix(reference));
       expect(frozen.schemaVersion).toBe(2);
@@ -60,6 +62,8 @@ describe("engine target matrix construction", () => {
     expect(() => createEngineTargetMatrix(matrix("three", { requiredCapabilities: [] }))).toThrow(/denominator/);
     expect(() => createEngineTargetMatrix(matrix("three", { cases: [] }))).toThrow(/load class/);
     expect(() => createEngineTargetMatrix(matrix("three", { engine: { version: " ", renderer: "r", platform: "p" } }))).toThrow(/version/);
+    expect(() => createEngineTargetMatrix(matrix("bevy", { engine: { version: "0.17.2", renderer: "wgpu", platform: "windows-x64" } }))).toThrow(/0\.19/);
+    expect(() => createEngineTargetMatrix(matrix("bevy", { engine: { version: "0.19.0", renderer: "OpenGL", platform: "windows-x64" } }))).toThrow(/wgpu/);
     // 公共基线赛道混入最佳质量口径
     const mixed = matrix("three");
     (mixed.cases[0] as { quality: string }).quality = "best";
@@ -108,12 +112,12 @@ describe("engine target matrix verdicts", () => {
   });
 
   it("never passes an unlocked identity and invalidates malformed matrices instead of scoring them", () => {
-    const unlocked = evaluateEngineTargetMatrix(createEngineTargetMatrix(matrix("godot",
+    const unlocked = evaluateEngineTargetMatrix(createEngineTargetMatrix(matrix("unity",
       { engine: { version: "unlocked", renderer: "Forward+", platform: "windows-x64" } })), evidence());
     expect(unlocked.valid).toBe(true);
     expect(unlocked.passed).toBe(false);
 
-    const tampered = structuredClone(matrix("ue5"));
+    const tampered = structuredClone(matrix("unity"));
     (tampered as { schemaVersion: number }).schemaVersion = 1;
     const invalid = evaluateEngineTargetMatrix(tampered as EngineTargetMatrix, evidence());
     expect(invalid.valid).toBe(false);

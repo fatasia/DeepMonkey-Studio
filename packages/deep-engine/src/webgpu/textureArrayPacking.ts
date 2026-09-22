@@ -10,6 +10,8 @@ export interface TextureArrayPackingEntry {
   readonly format: string;
   readonly width: number;
   readonly height: number;
+  /** Extra GPU compatibility identity (sampler/mip policy); does not change the texture format. */
+  readonly compatibilityKey?: string;
 }
 
 export interface TextureArrayPackingInput {
@@ -36,7 +38,7 @@ export function planTextureArrays(input: TextureArrayPackingInput): TextureArray
   if (!Number.isSafeInteger(input.maxArrayLayers) || input.maxArrayLayers < 1) {
     throw new RangeError("maxArrayLayers must be a positive safe integer.");
   }
-  const boxes = new Map<string, { format: string; width: number; height: number; ids: string[] }>();
+  const boxes = new Map<string, { format: string; width: number; height: number; compatibilityKey: string; ids: string[] }>();
   for (const entry of input.entries) {
     if (!entry || typeof entry.textureId !== "string" || entry.textureId.length === 0
       || typeof entry.format !== "string" || entry.format.length === 0) {
@@ -45,8 +47,9 @@ export function planTextureArrays(input: TextureArrayPackingInput): TextureArray
     if (!Number.isSafeInteger(entry.width) || entry.width < 1 || !Number.isSafeInteger(entry.height) || entry.height < 1) {
       throw new RangeError(`Texture ${entry.textureId} has invalid dimensions.`);
     }
-    const key = `${entry.format}|${entry.width}x${entry.height}`;
-    const box = boxes.get(key) ?? { format: entry.format, width: entry.width, height: entry.height, ids: [] };
+    const key = `${entry.format}|${entry.width}x${entry.height}|${entry.compatibilityKey ?? ""}`;
+    const box = boxes.get(key) ?? { format: entry.format, width: entry.width, height: entry.height,
+      compatibilityKey: entry.compatibilityKey ?? "", ids: [] };
     box.ids.push(entry.textureId);
     boxes.set(key, box);
   }
@@ -54,7 +57,8 @@ export function planTextureArrays(input: TextureArrayPackingInput): TextureArray
   const assignments = new Map<string, { arrayIndex: number; layerIndex: number }>();
   const overflowed: string[] = [];
   const sortedBoxes = [...boxes.values()].sort((a, b) =>
-    a.format.localeCompare(b.format) || a.width - b.width || a.height - b.height);
+    a.format.localeCompare(b.format) || a.width - b.width || a.height - b.height
+    || a.compatibilityKey.localeCompare(b.compatibilityKey));
   for (const box of sortedBoxes) {
     const arrayIndex = arrays.length;
     const layers = [...box.ids].sort((a, b) => a < b ? -1 : 1);

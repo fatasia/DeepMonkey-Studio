@@ -70,21 +70,25 @@ function brdf(baseColor: LightVector3, metallic: number, roughness: number, norm
     return (diffuse + specular) * radiance[index]! * nDotL;
   }) as MutableVec3;
 }
-function rangeAttenuation(distanceSquared: number, range: number): number {
+function rangeAttenuation(distanceSquared: number, range: number, decay = 2): number {
+  const falloff = 1 / Math.max(Math.max(Math.sqrt(distanceSquared), 1e-8) ** decay, 0.01);
+  if (range === 0) return falloff;
   if (distanceSquared >= range * range) return 0;
   const ratioSquared = distanceSquared / Math.max(range * range, 1e-4), window = Math.max(1 - ratioSquared * ratioSquared, 0);
-  return window * window / Math.max(distanceSquared, 0.01);
+  if (decay === 2) return window * window / Math.max(distanceSquared, 0.01);
+  return window * window * falloff;
 }
 function localContribution(light: PointLight | SpotLight, surface: ForwardPlusPbrSurface, base: LightVector3,
   metallic: number, roughness: number, normal: LightVector3, view: LightVector3,
   packed: PackedClusteredLights, iesPacking: ReturnType<typeof packIesShading>, spotIndex: number): MutableVec3 {
   const toLight = subtract(light.positionView, surface.positionView), distanceSquared = dot(toLight, toLight);
-  let attenuation = rangeAttenuation(distanceSquared, light.range); if (attenuation <= 0) return [0, 0, 0];
+  let attenuation = rangeAttenuation(distanceSquared, light.range, light.decay); if (attenuation <= 0) return [0, 0, 0];
   const surfaceToLight = normalize(toLight, normal);
   if ("directionView" in light) {
     const direction = normalize(light.directionView, [0, 0, -1]);
     const coneCos = dot(scale(surfaceToLight, -1), direction);
-    const coneWeight = clamp((coneCos - light.outerConeCos) / (light.innerConeCos - light.outerConeCos), 0, 1);
+    const coneWeight = light.innerConeCos === light.outerConeCos ? Number(coneCos >= light.outerConeCos)
+      : clamp((coneCos - light.outerConeCos) / (light.innerConeCos - light.outerConeCos), 0, 1);
     attenuation *= coneWeight * coneWeight * (3 - 2 * coneWeight);
     if (light.ies !== undefined && spotIndex >= 0) {
       // E02：与 GPU 同式（读打包 f32 方向 + 打包归一化表），见 iesShading.ts。

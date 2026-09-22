@@ -70,7 +70,7 @@ describe("default PBR Forward+ frame runtime", () => {
     expect(f.passes).toHaveLength(2);
     for (const pass of f.passes) {
       expect(pass.setPipeline).toHaveBeenCalledOnce(); expect(pass.setBindGroup).toHaveBeenCalledWith(0, expect.anything());
-      expect(pass.dispatchWorkgroups).toHaveBeenCalledWith(1); expect(pass.end).toHaveBeenCalledOnce();
+      expect(pass.dispatchWorkgroups).toHaveBeenCalledWith(first.grid.clusterCount); expect(pass.end).toHaveBeenCalledOnce();
     }
     runtime.dispose(); runtime.dispose(); expect(f.owned.size).toBe(0);
     expect(f.buffers.every(buffer => buffer.destroy.mock.calls.length === 1)).toBe(true);

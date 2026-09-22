@@ -2,7 +2,7 @@ import type { GeometryResource, PbrMaterial, RenderPacket, TextureSlot } from ".
 import { decodeGltf, type GltfImportOptions } from "./decodeGltf.js";
 import { decodeGltfTextureManifest } from "./textureDecode.js";
 import { extractGltfTextureManifest } from "./textureManifest.js";
-import { KHR_MATERIALS_EMISSIVE_STRENGTH } from "./materialExtensions.js";
+import { KHR_MATERIALS_EMISSIVE_STRENGTH, KHR_MATERIALS_IOR } from "./materialExtensions.js";
 import { projectOptionalMaterialFallbacks, type GltfOptionalMaterialFallback } from "./optionalMaterialFallback.js";
 import type { GltfImageDecoder, GltfTextureDecodeOptions, GltfTextureManifest, GltfTextureSlot } from "./textureTypes.js";
 import { generateTangents, validateTangentBasis } from "./tangentSpace.js";
@@ -21,7 +21,10 @@ function textureSlot(slot: GltfTextureSlot): TextureSlot {
 /** 纹理 manifest 验证并取得纹理字段所有权后，为严格几何解码器构建隔离文档。 */
 function geometryDocument(json: unknown, manifest: GltfTextureManifest, handledDeformations: boolean): JsonObject {
   const document = object(json, "$"), result: JsonObject = { ...document };
-  for (const field of ["extensionsUsed", "extensionsRequired"] as const) if (list(document[field], field).length) delete result[field];
+  for (const field of ["extensionsUsed", "extensionsRequired"] as const) if (list(document[field], field).length) {
+    const retained = list(document[field], field).filter(name => name === KHR_MATERIALS_IOR);
+    if (retained.length) result[field] = retained; else delete result[field];
+  }
   if (list(document.images, "images").length) delete result.images;
   if (list(document.textures, "textures").length) delete result.textures;
   if (handledDeformations) {

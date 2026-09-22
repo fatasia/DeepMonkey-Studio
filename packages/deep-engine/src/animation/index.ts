@@ -28,6 +28,7 @@ export {
   type AnimationCondition,
   type AnimationStateMachineInput,
   type AnimationStateMachineOptions,
+  type AnimationStateMachinePlayback,
   type AnimationStateMachineSnapshot,
 } from "./stateMachine.js";
 export { applyAnimationConstraint, sampleAnimationPath } from "./pathConstraints.js";

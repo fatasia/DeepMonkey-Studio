@@ -272,7 +272,7 @@ export class BabylonBenchmarkBackend implements BenchmarkBackend {
     // roughly 0.7 stops darker than the deep-aces reference (its PBR divides diffuse by pi and
     // compresses mid-tones further). The calibration factor aligns the OUTPUT exposure with the
     // paired reference; the contract input (fixture view exposure) stays 1 on both engines.
-    scene.imageProcessingConfiguration.exposure = (view.exposure ?? 1) * 1.7;
+    scene.imageProcessingConfiguration.exposure = (view.exposure ?? 1) * 2.0;
     scene.onErrorObservable?.add((error: unknown) =>
       this.failures.push(`scene: ${error instanceof Error ? error.message : String(error)}`));
 

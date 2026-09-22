@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { resolvePbrPostProcessOverrides, validatePbrPostProcessOverrides } from "./pbrPostProcessOverrides.js";
+import { DEFAULT_PBR_VOLUMETRIC_FOG_PROFILE, resolvePbrPostProcessOverrides, validatePbrPostProcessOverrides } from "./pbrPostProcessOverrides.js";
 import type { DeviceSession } from "./deviceSession.js";
 import { PbrPostProcessChain, type PbrPostProcessInput } from "./pbrPostProcessChain.js";
 import { validatePbrRenderView } from "./pbrRenderViewValidation.js";
@@ -19,11 +19,14 @@ vi.mock("../postprocess/bloom.js", () => ({ BloomPass: class {
 describe("per-frame PBR post-process switches", () => {
   it("inherits legacy defaults and supports independent disabling", () => {
     const allocated = { ambientOcclusion: true, bloom: true };
-    expect(resolvePbrPostProcessOverrides(undefined, allocated)).toEqual(allocated);
-    expect(resolvePbrPostProcessOverrides({ bloom: false }, allocated)).toEqual({ ambientOcclusion: true, bloom: false });
+    expect(resolvePbrPostProcessOverrides(undefined, allocated)).toEqual({ ...allocated,
+      screenSpaceReflection: undefined, volumetricFog: false, volumetricFogProfile: DEFAULT_PBR_VOLUMETRIC_FOG_PROFILE });
+    expect(resolvePbrPostProcessOverrides({ bloom: false }, allocated)).toEqual({ ambientOcclusion: true,
+      screenSpaceReflection: undefined, volumetricFog: false, bloom: false,
+      volumetricFogProfile: DEFAULT_PBR_VOLUMETRIC_FOG_PROFILE });
   });
 
-  it.each([null, [], 1, "off", { bloom: 1 }, { ambientOcclusion: null }, { bloom: undefined }, { vignette: true }])(
+  it.each([null, [], 1, "off", { bloom: 1 }, { ambientOcclusion: null }, { volumetricFog: 1 }, { bloom: undefined }, { vignette: true }])(
     "rejects malformed overrides %j", value => {
       expect(() => validatePbrPostProcessOverrides(value as never)).toThrow();
     });
@@ -33,6 +36,31 @@ describe("per-frame PBR post-process switches", () => {
       extent: 10, exposure: 1, roughness: 1, width: 100, height: 100, pixelRatio: 1 } as RenderView;
     expect(() => validatePbrRenderView({ ...view, postProcess: { bloom: false } })).not.toThrow();
     expect(() => validatePbrRenderView({ ...view, postProcess: { bloom: "false" } as never })).toThrow("boolean");
+  });
+
+  it("validates and snapshots an enabled volumetric fog profile", () => {
+    const profile = { medium: { baseExtinction: 0.01, scaleHeight: 40, anisotropy: 0.4, albedo: 0.8 },
+      light: { direction: [0, -1, 0] as [number, number, number], radiance: [2, 1.8, 1.5] as [number, number, number] },
+      steps: 64, maxDistance: 500 };
+    const resolved = resolvePbrPostProcessOverrides({ volumetricFog: true, volumetricFogProfile: profile },
+      { ambientOcclusion: false, screenSpaceReflection: false, volumetricFog: true, bloom: false });
+    profile.medium.baseExtinction = 1; profile.light.radiance[0] = 99;
+    expect(resolved.volumetricFogProfile).toEqual({ medium: { baseExtinction: 0.01, scaleHeight: 40, anisotropy: 0.4, albedo: 0.8 },
+      light: { direction: [0, -1, 0], radiance: [2, 1.8, 1.5] }, steps: 64, maxDistance: 500 });
+    expect(Object.isFrozen(resolved.volumetricFogProfile.medium)).toBe(true);
+    expect(() => resolvePbrPostProcessOverrides({ volumetricFogProfile: profile },
+      { ambientOcclusion: false, volumetricFog: false, bloom: false })).toThrow("requires enabled");
+  });
+
+  it("validates and snapshots author SSR quality", () => {
+    const profile = { steps: 64, thicknessScale: 0.02, maxDistanceScale: 3 };
+    const resolved = resolvePbrPostProcessOverrides({ screenSpaceReflection: true,
+      screenSpaceReflectionProfile: profile }, { ambientOcclusion: false, screenSpaceReflection: true, bloom: false });
+    profile.steps = 8;
+    expect(resolved.screenSpaceReflectionProfile).toEqual({ steps: 64, thicknessScale: 0.02, maxDistanceScale: 3 });
+    expect(Object.isFrozen(resolved.screenSpaceReflectionProfile)).toBe(true);
+    expect(() => validatePbrPostProcessOverrides({ screenSpaceReflectionProfile:
+      { steps: 7, thicknessScale: 0.02, maxDistanceScale: 3 } })).toThrow(/steps/);
   });
 
   it.each(["ambientOcclusion", "bloom"] as const)("rejects unallocated %s before any encode", key => {

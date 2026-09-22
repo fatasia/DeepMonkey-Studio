@@ -32,7 +32,7 @@ describe("author output uniform ownership", () => {
     const f = fixture(), target = new PbrAuthorColorBindings(f.session, {} as GPUBindGroupLayout);
     target.update({ vignette: { darkness: 3 } }); target.update(undefined);
     const data = f.device.queue.writeBuffer.mock.calls.at(-1)![2] as Float32Array;
-    expect(Array.from(data)).toEqual(new Array(8).fill(0));
+    expect(Array.from(data)).toEqual(new Array(12).fill(0));
     expect(() => target.update({ vignette: { darkness: Infinity } })).toThrow();
     expect(f.device.queue.writeBuffer).toHaveBeenCalledTimes(3); target.dispose();
   });

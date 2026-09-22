@@ -12,6 +12,48 @@ struct Vertex { @builtin(position) position: vec4<f32>, @location(0) color: vec4
   return vec4(input.color.rgb,input.color.a*textureSample(atlas,atlasSampler,clamp(input.uv,input.bounds.xy,input.bounds.zw)).r);
 }`;
 export interface Deep2dGpuLease { dispose(): void }
+interface PackedDraw {
+  readonly source: Deep2dGpuFrame["draws"][number];
+  readonly byteOffset: number;
+  readonly byteLength: number;
+}
+interface PackedDrawBatch { readonly vertices: Float32Array<ArrayBuffer>; readonly draws: readonly PackedDraw[] }
+const DEEP2D_UPLOAD_BATCH_BYTES = 4 * 1024 * 1024;
+
+/** Packs adjacent draws without reordering them and never exceeds the device buffer-size limit. */
+function packDrawBatches(draws: Deep2dGpuFrame["draws"], maxBufferSize: number): readonly PackedDrawBatch[] {
+  if (!Number.isSafeInteger(maxBufferSize) || maxBufferSize < 48) throw new Error("Deep2D vertex buffer limit is invalid.");
+  const targetBatchBytes = Math.min(maxBufferSize, DEEP2D_UPLOAD_BATCH_BYTES);
+  const groups: Array<Array<Deep2dGpuFrame["draws"][number]>> = [];
+  let current: Array<Deep2dGpuFrame["draws"][number]> = [], currentBytes = 0;
+  for (const draw of draws) {
+    const byteLength = draw.vertices.byteLength;
+    if (byteLength < 48 || byteLength % 48 !== 0) throw new Error("Deep2D draw vertex data is not stride-aligned.");
+    if (byteLength > maxBufferSize) throw new Error("Deep2D draw exceeds the device vertex buffer limit.");
+    if (current.length && currentBytes + byteLength > targetBatchBytes) {
+      groups.push(current); current = []; currentBytes = 0;
+    }
+    current.push(draw); currentBytes += byteLength;
+  }
+  if (current.length) groups.push(current);
+  return groups.map(group => {
+    if (group.length === 1) {
+      const source = group[0]!;
+      return { vertices: source.vertices,
+        draws: [{ source, byteOffset: 0, byteLength: source.vertices.byteLength }] };
+    }
+    const floatLength = group.reduce((sum, draw) => sum + draw.vertices.length, 0);
+    const vertices = new Float32Array(floatLength);
+    const packed: PackedDraw[] = [];
+    let floatOffset = 0;
+    for (const source of group) {
+      vertices.set(source.vertices, floatOffset);
+      packed.push({ source, byteOffset: floatOffset * 4, byteLength: source.vertices.byteLength });
+      floatOffset += source.vertices.length;
+    }
+    return { vertices, draws: packed };
+  });
+}
 
 /** Renders a hidden WebGPU surface and waits for submission/error validation before returning ownership. */
 export async function renderDeep2dGpuFrame(device: GPUDevice, context: GPUCanvasContext,
@@ -61,13 +103,17 @@ export async function renderDeep2dGpuFrame(device: GPUDevice, context: GPUCanvas
     const encoder = device.createCommandEncoder({ label: "Deep2D complete page" });
     const pass = encoder.beginRenderPass({ colorAttachments: [{ view: msaa.createView(),
       resolveTarget: context.getCurrentTexture().createView({ format }), clearValue: [0, 0, 0, 0], loadOp: "clear", storeOp: "discard" }] });
-    for (const draw of frame.draws) {
-      const buffer = own(device.createBuffer({ size: draw.vertices.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST }));
-      device.queue.writeBuffer(buffer, 0, draw.vertices);
-      const binding = draw.atlasKey ? bindings.get(draw.atlasKey) : undefined;
-      if (draw.atlasKey && !binding) throw new Error("Missing GPU atlas binding.");
-      pass.setPipeline(binding?.pipeline ?? solid!); if (binding) pass.setBindGroup(0, binding.group);
-      pass.setVertexBuffer(0, buffer); pass.draw(draw.vertices.length / 12);
+    for (const batch of packDrawBatches(frame.draws, device.limits.maxBufferSize)) {
+      const buffer = own(device.createBuffer({ size: batch.vertices.byteLength,
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST }));
+      device.queue.writeBuffer(buffer, 0, batch.vertices);
+      for (const draw of batch.draws) {
+        const binding = draw.source.atlasKey ? bindings.get(draw.source.atlasKey) : undefined;
+        if (draw.source.atlasKey && !binding) throw new Error("Missing GPU atlas binding.");
+        pass.setPipeline(binding?.pipeline ?? solid!); if (binding) pass.setBindGroup(0, binding.group);
+        pass.setVertexBuffer(0, buffer, draw.byteOffset, draw.byteLength);
+        pass.draw(draw.source.vertices.length / 12);
+      }
     }
     pass.end(); device.queue.submit([encoder.finish()]);
     await device.queue.onSubmittedWorkDone(); check();

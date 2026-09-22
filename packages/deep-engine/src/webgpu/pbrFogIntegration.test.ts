@@ -47,7 +47,7 @@ describe("PBR author fog GPU integration", () => {
       expect(start, entry).toBeGreaterThan(0);
       const body = sceneShader.slice(start, sceneShader.indexOf("\n}", start));
       expect(body, entry).toContain("shade(v.clip.xy");
-      expect(body, entry).toContain("v.material.w)");
+      expect(body, entry).toContain("v.material.w, v.dielectric)");
     }
   });
 

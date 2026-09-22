@@ -1,6 +1,5 @@
 import type { SpatialItemId } from "../spatial/types.js";
-import { AnimationError, type AnimationClipInput, type AnimationLayerInput } from "./types.js";
-import { SceneAnimationMixer } from "./SceneAnimationMixer.js";
+import { AnimationError, type AnimationLayerInput } from "./types.js";
 
 export type AnimationStateId = string;
 export type AnimationParameterValue = number | boolean;
@@ -41,6 +40,12 @@ export interface AnimationStateMachineOptions {
   readonly transitionBudget?: number;
 }
 
+/** Small playback boundary implemented by both the Deep mixer and product hosts. */
+export interface AnimationStateMachinePlayback<TNodeId extends SpatialItemId = string> {
+  play(input: AnimationLayerInput<TNodeId>): void;
+  crossFade(fromLayerId: SpatialItemId, to: AnimationLayerInput<TNodeId>, duration: number): void;
+}
+
 export interface AnimationStateMachineSnapshot {
   readonly currentState: AnimationStateId;
   readonly parameters: AnimationParameterMap;
@@ -60,7 +65,7 @@ export class AnimationStateMachine<TNodeId extends SpatialItemId = string> {
   private current: AnimationState<TNodeId>;
   private revision = 0;
 
-  constructor(private readonly mixer: SceneAnimationMixer<TNodeId>, input: AnimationStateMachineInput<TNodeId>, options: AnimationStateMachineOptions = {}) {
+  constructor(private readonly mixer: AnimationStateMachinePlayback<TNodeId>, input: AnimationStateMachineInput<TNodeId>, options: AnimationStateMachineOptions = {}) {
     if (!input || typeof input !== "object" || !Array.isArray(input.states) || !Array.isArray(input.transitions)) {
       throw new AnimationError("invalid-layer", "Animation state machine input must be an object with states and transitions.");
     }

@@ -44,7 +44,7 @@ export interface ParticlePassDrawInput {
   readonly binding: GpuParticleRenderBinding;
 }
 
-/** Owns the particle render pipeline; the simulation runtime owns the buffers. */
+/** 持有粒子渲染管线；模拟运行时独占粒子缓冲。 */
 export class PbrParticlePass {
   private readonly pipeline: GPURenderPipeline;
   private readonly frameLayout: GPUBindGroupLayout;
@@ -70,19 +70,19 @@ export class PbrParticlePass {
       vertex: { module, entryPoint: "particleVertex" },
       fragment: { module, entryPoint: "particleFragment", targets: [{
         format: colorFormat,
-        // Premultiplied alpha, matching the shader's rgb*alpha output.
+        // 预乘 alpha，与着色器输出的 rgb*alpha 保持一致。
         blend: { color: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
           alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" } },
       }] },
       primitive: { topology: "triangle-list", cullMode: "none" },
-      // Depth test on (particles are occluded by geometry), depth write off (they blend).
+      // 开启深度测试（粒子会被几何遮挡），关闭深度写入（粒子需要混合）。
       depthStencil: { format: depthFormat, depthWriteEnabled: false, depthCompare: "less-equal" },
     });
     this.camera = device.createBuffer({ label: "Deep particle camera uniform",
       size: GPU_PARTICLE_CAMERA_UNIFORM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   }
 
-  /** Encodes one indirect particle draw into the caller's frame encoder. */
+  /** 将一次间接粒子绘制编码到调用方的帧编码器。 */
   encode(input: ParticlePassDrawInput): void {
     if (this.disposed) throw new Error("Particle pass is disposed.");
     const device = this.session.device;
@@ -104,8 +104,8 @@ export class PbrParticlePass {
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, frameBindings);
     pass.setBindGroup(1, cameraBindings);
-    // Indirect args (vertexCount, instanceCount, firstVertex, firstInstance) are produced by
-    // the simulation's DCIR stage; the CPU never reads the count back.
+    // 间接参数（顶点数、实例数、首顶点、首实例）由模拟阶段的 DCIR 写入；
+    // CPU 永远不回读实例数量。
     pass.drawIndirect(input.binding.indirectBuffer, 0);
     pass.end();
   }

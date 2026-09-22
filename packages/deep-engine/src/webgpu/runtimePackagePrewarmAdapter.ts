@@ -13,7 +13,10 @@ import type {
 import type { ResidencyBudgets } from "../streaming/index.js";
 import type { DeviceSession } from "./deviceSession.js";
 import { createPacketResidencyDomain, type PacketResidencyDomain, type PacketResidencyTicket } from "./packetResidencyDomain.js";
+import { createPacketResidencyRequestPlanner } from "./packetResidencyRequestPlanner.js";
+import type { PacketResidencyDemand } from "./packetResidencyRequestPlanner.js";
 import type { ResidentPacketProjection } from "./residentPacketProjection.js";
+import type { ShaderPackageExecutor } from "./shaderPackageExecutor.js";
 
 export interface RuntimePackageWebGpuPrewarmOptions {
   readonly session: DeviceSession;
@@ -24,6 +27,8 @@ export interface RuntimePackageWebGpuPrewarmOptions {
   readonly commit: (plan: RuntimePackagePrewarmPlan, publication: RuntimePackageWebGpuRenderPublication) => void;
   readonly prepareShaderPipeline?: (item: Extract<RuntimePackagePrewarmItem, { readonly type: "shader-pipeline" }>,
     packageValue: DeepRuntimePackage, signal: AbortSignal) => Promise<unknown>;
+  /** Production default: consumes shader-package payloads through the device-local content-addressed PSO cache. */
+  readonly shaderExecutor?: ShaderPackageExecutor;
   readonly prepareDeep2d?: (item: RuntimePackageResourcePrewarmItem,
     packageValue: DeepRuntimePackage, signal: AbortSignal) => Promise<unknown>;
   readonly releaseExternal?: (item: RuntimePackagePrewarmItem, prepared: unknown) => void;
@@ -34,6 +39,15 @@ export interface RuntimePackageWebGpuRenderPublication {
   readonly item: RuntimePackageResourcePrewarmItem;
   readonly baked: DeepBakedResidencyPacket;
   readonly projection: ResidentPacketProjection;
+  /** Product visibility hook: swaps drawable projections atomically and releases omitted GPU resources. */
+  readonly residency: RuntimePackageWebGpuResidency;
+}
+
+export interface RuntimePackageWebGpuResidency {
+  readonly projection: ResidentPacketProjection;
+  readonly residentBytes: number;
+  update(input: Readonly<{ frame: number; demands: readonly PacketResidencyDemand[];
+    textureMipLevels?: ReadonlyMap<string, number>; signal?: AbortSignal }>): Promise<ResidentPacketProjection>;
 }
 
 type Loaded = RenderLoaded | BuiltinLoaded | ExternalLoaded | CameraLoaded;
@@ -47,7 +61,7 @@ interface RenderLoaded {
 interface BuiltinLoaded { readonly type: "builtin-ibl"; readonly item: RuntimePackageResourcePrewarmItem }
 interface ExternalLoaded { readonly type: "external"; readonly item: RuntimePackagePrewarmItem; readonly packageValue: DeepRuntimePackage }
 type Prepared = RenderPrepared | BuiltinPrepared | ExternalPrepared | CameraLoaded;
-interface RenderPrepared { readonly type: "render"; readonly ticket: PacketResidencyTicket; readonly projection: ResidentPacketProjection }
+interface RenderPrepared { readonly type: "render"; readonly residency: RuntimePackageResidencyOwner }
 interface BuiltinPrepared { readonly type: "builtin-ibl" }
 interface ExternalPrepared { readonly type: "external"; readonly value: unknown }
 
@@ -82,8 +96,14 @@ RuntimePackagePrewarmAdapter<Loaded, Prepared> {
       if (loaded.type === "builtin-ibl") return { type: "builtin-ibl" };
       if (loaded.type === "camera") return loaded;
       if (item.type === "shader-pipeline") {
-        if (!options.prepareShaderPipeline) throw new Error("Runtime package shader prewarm requires a Browser pipeline handler.");
-        return { type: "external", value: await options.prepareShaderPipeline(item, loaded.packageValue, signal) };
+        const custom = options.prepareShaderPipeline;
+        const value = custom
+          ? await custom(item, loaded.packageValue, signal)
+          : options.shaderExecutor
+            ? await options.shaderExecutor.prepare(loaded.packageValue.payloads[item.resourceId], [item.passId], signal)
+            : undefined;
+        if (!value) throw new Error("Runtime package shader prewarm requires a ShaderPackageExecutor or pipeline handler.");
+        return { type: "external", value };
       }
       if (item.resourceKind === "deep2d-runtime") {
         if (!options.prepareDeep2d) throw new Error("Runtime package Deep2D prewarm requires a Browser resource handler.");
@@ -99,7 +119,8 @@ RuntimePackagePrewarmAdapter<Loaded, Prepared> {
           && candidate.loaded.type === "render" && candidate.prepared.type === "render");
       if (!render) throw new Error("Runtime package Browser prewarm did not produce a render packet publication.");
       const camera = candidates.find(candidate => candidate.prepared.type === "camera")?.prepared;
-      options.commit(plan, Object.freeze({ item: render.item, baked: render.loaded.baked, projection: render.prepared.projection,
+      options.commit(plan, Object.freeze({ item: render.item, baked: render.loaded.baked,
+        projection: render.prepared.residency.projection, residency: render.prepared.residency.publicApi,
         camera: camera?.type === "camera" ? camera.camera : null }));
     },
     release(item: RuntimePackagePrewarmItem, loaded: Loaded, prepared: Prepared | undefined): void {
@@ -115,8 +136,13 @@ async function prepareRender(loaded: RenderLoaded, frame: number, signal: AbortS
   if (!Number.isSafeInteger(frame) || frame < 0) throw new RangeError("Runtime package prewarm frame must be a non-negative integer.");
   const ticket = loaded.domain.registerPacket(`runtime-prewarm:${loaded.item.cacheKey}`, loaded.baked.packet);
   try {
-    const projection = await loaded.domain.load(ticket, { frame, signal });
-    return Object.freeze({ type: "render", ticket, projection });
+    // Initial publication keeps only the mandatory drawable fallback resident.
+    // Omitted fine LOD buffers are therefore genuinely absent from GPU memory;
+    // later domain frames can upload them and evict them again under the same budget.
+    const requests = createPacketResidencyRequestPlanner(loaded.baked.packet).plan([]);
+    const projection = await loaded.domain.load(ticket, { frame, signal, requests, allowPartialLod: true });
+    return Object.freeze({ type: "render", residency: new RuntimePackageResidencyOwner(loaded.domain,
+      ticket, loaded.baked.packet, projection, frame) });
   } catch (error) {
     loaded.domain.unregister(ticket); throw error;
   }
@@ -125,7 +151,8 @@ async function prepareRender(loaded: RenderLoaded, frame: number, signal: AbortS
 function bakeOptions(item: RuntimePackageResourcePrewarmItem) {
   const bake = item.bake;
   if (!bake) throw new Error("Runtime package render prewarm item is missing bake evidence.");
-  return { quality: bake.quality, recipeVersion: bake.recipeVersion } as const;
+  return { quality: bake.quality, recipeVersion: bake.recipeVersion,
+    ...(bake.boundsHlod ? { boundsHlod: bake.boundsHlod.options } : {}) } as const;
 }
 
 function assertBakeEvidence(item: RuntimePackageResourcePrewarmItem, baked: DeepBakedResidencyPacket): void {
@@ -138,11 +165,53 @@ function assertBakeEvidence(item: RuntimePackageResourcePrewarmItem, baked: Deep
 function releaseRender(loaded: RenderLoaded, prepared: RenderPrepared | undefined): void {
   const failures: unknown[] = [];
   if (prepared) {
-    attempt(() => prepared.projection.release(), failures);
-    attempt(() => loaded.domain.unregister(prepared.ticket), failures);
+    attempt(() => prepared.residency.dispose(), failures);
   }
   attempt(() => loaded.domain.dispose(), failures);
   if (failures.length) throw new AggregateError(failures, "Runtime package Browser render prewarm release failed.");
+}
+
+class RuntimePackageResidencyOwner {
+  private planner;
+  private current: ResidentPacketProjection;
+  private latestFrame: number;
+  private closed = false;
+  private pending = false;
+  readonly publicApi: RuntimePackageWebGpuResidency;
+  constructor(private readonly domain: PacketResidencyDomain, private readonly ticket: PacketResidencyTicket,
+    packet: DeepBakedResidencyPacket["packet"], projection: ResidentPacketProjection, frame: number) {
+    this.planner = createPacketResidencyRequestPlanner(packet); this.current = projection; this.latestFrame = frame;
+    const owner = this;
+    this.publicApi = Object.freeze({
+      get projection() { return owner.current; },
+      get residentBytes() { return owner.domain.residentBytes; },
+      update: (input: Parameters<RuntimePackageWebGpuResidency["update"]>[0]) => owner.update(input),
+    });
+  }
+  get projection(): ResidentPacketProjection { return this.current; }
+  async update(input: Parameters<RuntimePackageWebGpuResidency["update"]>[0]): Promise<ResidentPacketProjection> {
+    if (this.closed) throw new Error("Runtime package residency is disposed.");
+    if (this.pending) throw new Error("Runtime package residency update is already running.");
+    if (!input || !Number.isSafeInteger(input.frame) || input.frame <= this.latestFrame || !Array.isArray(input.demands)) {
+      throw new TypeError("Runtime package residency update is invalid or stale.");
+    }
+    this.pending = true;
+    try {
+      const requests = this.planner.plan(input.demands,
+        input.textureMipLevels ? { textureMipLevels: input.textureMipLevels } : undefined);
+      const next = await this.domain.load(this.ticket, { frame: input.frame, requests, allowPartialLod: true,
+        ...(input.signal ? { signal: input.signal } : {}) });
+      const previous = this.current;
+      this.current = next; this.latestFrame = input.frame;
+      previous.release();
+      return next;
+    } finally { this.pending = false; }
+  }
+  dispose(): void {
+    if (this.closed) return;
+    if (this.pending) throw new Error("Runtime package residency cannot be disposed during an update.");
+    this.closed = true; this.current.release(); this.domain.unregister(this.ticket);
+  }
 }
 
 function attempt(action: () => void, failures: unknown[]): void {
@@ -152,6 +221,9 @@ function attempt(action: () => void, failures: unknown[]): void {
 function validateOptions(options: RuntimePackageWebGpuPrewarmOptions): void {
   if (!options || typeof options !== "object" || typeof options.nextFrame !== "function" || typeof options.commit !== "function") {
     throw new TypeError("Runtime package Browser prewarm options are invalid.");
+  }
+  if (options.shaderExecutor && options.prepareShaderPipeline) {
+    throw new TypeError("Runtime package Browser prewarm accepts one shader pipeline executor path.");
   }
 }
 

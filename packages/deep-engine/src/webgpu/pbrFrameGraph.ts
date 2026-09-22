@@ -63,6 +63,13 @@ export function buildPbrFrameGraph(options: PbrFrameGraphOptions): RenderGraphBu
       .addPass({ id: "composite-oit", kind: "render", inputs: [temporalInput, "oit-accumulation", "oit-revealage"], outputs: ["composited-hdr"] });
     temporalInput = "composited-hdr";
   }
+  if (features.volumetricFog) {
+    graph.addResource({ id: "volumetric-fog-scatter", descriptor: "rgba16float-half" })
+      .addResource({ id: "volumetric-fog-hdr", descriptor: "rgba16float", aliasKey: "full-rgba16float" })
+      .addPass({ id: "volumetric-fog-march", kind: "compute", inputs: ["linear-depth"], outputs: ["volumetric-fog-scatter"] })
+      .addPass({ id: "volumetric-fog-composite", kind: "compute", inputs: [temporalInput, "volumetric-fog-scatter"], outputs: ["volumetric-fog-hdr"] });
+    temporalInput = "volumetric-fog-hdr";
+  }
   if (features.screenSpaceReflection) {
     graph.addResource({ id: "ssr-trace", descriptor: "rgba16float-half" })
       .addResource({ id: "ssr-hdr", descriptor: "rgba16float" })

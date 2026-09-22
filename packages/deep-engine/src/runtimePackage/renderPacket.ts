@@ -1,3 +1,4 @@
+import { STOCK_MATERIAL_INSTANCE_OPTIONS } from "../materialInstanceAbi.js";
 import { prepareRenderPacket, type PbrMaterial, type RenderPacket } from "../renderPacket.js";
 import { array, fields, integer, record, requireValue, string, snapshotJson } from "./primitives.js";
 import { assertNativePacketDeformationSupported, deformationForBrowserJson, materializePacketDeformation } from "./renderPacketDeformation.js";
@@ -6,7 +7,7 @@ export { assertNativePacketDeformationSupported } from "./renderPacketDeformatio
 const GEOMETRY_OPTIONAL = ["uv0", "uv1", "tangents", "colors"];
 const MATERIAL_OPTIONAL = ["baseColorTexture", "metallicRoughnessTexture", "normalTexture", "occlusionTexture",
   "emissiveFactor", "emissiveStrength", "emissiveTexture", "baseColorAlpha", "alphaMode", "alphaCutoff", "doubleSided",
-  "premultipliedAlpha", "fog", "shadingModel"];
+  "premultipliedAlpha", "fog", "shadingModel", "ior"];
 const SLOT_FIELDS = ["texCoord", "offset", "scale", "rotation"];
 const SAMPLER_FIELDS = ["addressModeU", "addressModeV", "magFilter", "minFilter", "mipmapFilter", "maxAnisotropy"];
 function id(value: unknown, path: string): void {
@@ -114,7 +115,7 @@ function parseRuntimeRenderPacket(input: unknown, path: string): RenderPacket {
     .map((item, index) => material(item, `${path}.materials[${index}]`));
   const instances = array(value.instances, `${path}.instances`, 16_384).map((input, index) => {
     const p = `${path}.instances[${index}]`, instance = record(input, p);
-    fields(instance, ["id", "geometry", "material", "transform"], ["lod", "castShadow", "receiveShadow", "pose"], p);
+    fields(instance, ["id", "geometry", "material", "transform"], ["lod", "castShadow", "receiveShadow", "outline", "pose"], p);
     if (Object.hasOwn(instance, "pose")) id(instance.pose, `${p}.pose`);
     if (Object.hasOwn(instance, "lod")) lod(instance.lod, `${p}.lod`);
     id(instance.id, `${p}.id`); string(instance.geometry, p); string(instance.material, p);
@@ -125,7 +126,7 @@ function parseRuntimeRenderPacket(input: unknown, path: string): RenderPacket {
   const textures = value.textures === undefined ? [] : array(value.textures, `${path}.textures`, 4096).map((item, index) => texture(item, `${path}.textures[${index}]`));
   const deformation = Object.hasOwn(value, "deformation") ? materializePacketDeformation(value.deformation, `${path}.deformation`, numericArray) : undefined;
   const packet = { geometries, materials, instances, textures, ...(deformation ? { deformation } : {}) } as unknown as RenderPacket;
-  prepareRenderPacket(packet);
+  prepareRenderPacket(packet, STOCK_MATERIAL_INSTANCE_OPTIONS);
   return packet;
 }
 
@@ -140,7 +141,7 @@ export function materializeRuntimeRenderPacket(input: unknown, path: string): Re
 
 /** Browser-only JSON roundtrip retains pose/source fields and the exact skin-joint array width. */
 export function serializeBrowserRenderPacket(packet: RenderPacket): string {
-  prepareRenderPacket(packet);
+  prepareRenderPacket(packet, STOCK_MATERIAL_INSTANCE_OPTIONS);
   return JSON.stringify(snapshotJson({ ...packet, schema: "deep-engine.render-packet", version: 1,
     ...(packet.deformation ? { deformation: deformationForBrowserJson(packet.deformation) } : {}) }, true));
 }

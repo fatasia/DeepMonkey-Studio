@@ -71,6 +71,22 @@ describe("RenderGraphBuilder", () => {
     expect(slots.get("handoff")).not.toBe(slots.get("early"));
   });
 
+  it("does not alias resources owned by independently encodable passes", () => {
+    const result = new RenderGraphBuilder()
+      .addResource({ id: "left", descriptor: "rgba16float", aliasKey: "hdr" })
+      .addResource({ id: "right", descriptor: "rgba16float", aliasKey: "hdr" })
+      .addResource({ id: "left-out", descriptor: "swapchain", external: true })
+      .addResource({ id: "right-out", descriptor: "swapchain", external: true })
+      .addPass({ id: "left", kind: "render", outputs: ["left"] })
+      .addPass({ id: "right", kind: "render", outputs: ["right"] })
+      .addPass({ id: "left-present", kind: "render", inputs: ["left"], outputs: ["left-out"] })
+      .addPass({ id: "right-present", kind: "render", inputs: ["right"], outputs: ["right-out"] })
+      .compile();
+    const slots = new Map(result.resources.map(resource => [resource.id, resource.transientSlot]));
+    expect(result.parallelGroups?.[0]).toEqual(["left", "right"]);
+    expect(slots.get("left")).not.toBe(slots.get("right"));
+  });
+
   it("reports missing resources and empty outputs", () => {
     const result = graph()
       .addPass({ id: "scene", kind: "forward", inputs: ["missing"], outputs: [] })

@@ -12,7 +12,7 @@ function numbers(input: unknown, length: number, min: number, max: number, path:
   requireValue(value.length === length && value.every(item => typeof item === "number" && item >= min && item <= max), path, "Invalid numeric vector.");
   return value as number[];
 }
-function decodedLength(input: unknown, path: string): number {
+export function decodedLength(input: unknown, path: string): number {
   const value = string(input, path);
   requireValue(value.length > 0 && value.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(value), path, "Invalid canonical base64.");
   const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;

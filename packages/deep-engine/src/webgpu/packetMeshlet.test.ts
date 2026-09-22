@@ -27,6 +27,26 @@ describe("formal packet meshlet consumer", () => {
     expect(f.cache.draw(f.pass as unknown as GPURenderPassEncoder, f.pipelines, "opaque").triangles).toBe(33 * 1344);
     f.cache.cancelLodFrame(); f.cache.dispose(); expect(f.owned.size).toBe(0);
   });
+  it("consumes the submitted previous Hi-Z pyramid in the production meshlet indirect path", () => {
+    const f = meshletFixture(), createView = vi.fn(() => ({}));
+    f.cache.set(meshletPacket());
+    const width = 800, height = 600, mipLevelCount = 10;
+    const texture = { format: "r32float", usage: GPUTextureUsage.TEXTURE_BINDING, dimension: "2d",
+      depthOrArrayLayers: 1, sampleCount: 1, width, height, mipLevelCount, createView } as unknown as GPUTexture;
+    const hiz = { texture, format: "r32float" as const, width, height, mipLevelCount,
+      levels: Array.from({ length: mipLevelCount }, (_, level) => ({ level,
+        width: Math.max(1, Math.floor(width / 2 ** level)), height: Math.max(1, Math.floor(height / 2 ** level)) })),
+      reduction: "max" as const, reversedZ: false, sourceRevision: 7 };
+    const stats = f.cache.encodeLod(f.encoder, { ...authorView, previousHiZ: {
+      viewProjection: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+      cameraPosition: authorView.camera.position, viewport: [width, height], reversedZ: false, hiz,
+    } });
+    expect(stats).toMatchObject({ meshletPasses: 2, meshletDispatches: 5 });
+    expect(createView).toHaveBeenCalledWith(expect.objectContaining({ label: "Deep meshlet Hi-Z view", mipLevelCount }));
+    const uniform = f.writes.findLast(write => write.label === "Deep meshlet culling view")!;
+    expect(new Uint32Array(uniform.bytes)[71]! & 2).toBe(2);
+    f.cache.cancelLodFrame(); f.cache.dispose();
+  });
   it("rolls back all static meshlet buffers on candidate cancellation", async () => {
     const f = meshletFixture(); let finish!: (value: GPUError | null) => void;
     f.device.popErrorScope.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));

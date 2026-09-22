@@ -14,6 +14,16 @@ const evaluate = (lights: ClusteredLights) => evaluateForwardPlusPbrCpu(
   assignLightsToClusters(grid, lights), lights, surface).color;
 
 describe("local-light attenuation parity with Three r185 lights_pars_begin", () => {
+  it.each([0, 1, 1.5, 2, 4])("preserves unlimited authored decay %s in point and spot contributions", decay => {
+    const light = { positionView: [0,0,-2] as const, range: 0, decay, color, intensity: 1 };
+    const reference = evaluate({ directional: [{ directionView: [0,0,-1], color, intensity: 1 }] });
+    const point = evaluate({ points: [light] });
+    const spot = evaluate({ spots: [{ ...light, directionView: [0,0,-1], outerConeCos: .8, innerConeCos: .8 }] });
+    reference.forEach((value, index) => {
+      expect(point[index]! / value).toBeCloseTo(1 / 2 ** decay, 10);
+      expect(spot[index]! / value).toBeCloseTo(1 / 2 ** decay, 10);
+    });
+  });
   // Directional and local lights share the BRDF; their radiance ratio isolates attenuation.
   const direct = () => evaluate({ directional: [{ directionView: [0, 0, -1], color, intensity: 1 }] });
 

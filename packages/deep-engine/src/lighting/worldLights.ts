@@ -76,11 +76,13 @@ export function transformWorldLightsToView(lights: WorldClusteredLights, worldTo
   }));
   const points = (lights.points ?? []).map(light => Object.freeze({
     positionView: transform(worldToView, light.positionWorld, true), range: light.range, color: light.color, intensity: light.intensity,
+    ...(light.decay !== undefined ? { decay: light.decay } : {}),
     ...(light.shadow ? { shadow: light.shadow } : {}),
   }));
   const spots = (lights.spots ?? []).map(light => Object.freeze({
     positionView: transform(worldToView, light.positionWorld, true), directionView: transform(worldToView, light.directionWorld, false),
     range: light.range, color: light.color, intensity: light.intensity,
+    ...(light.decay !== undefined ? { decay: light.decay } : {}),
     innerConeCos: light.innerConeCos, outerConeCos: light.outerConeCos,
     ...(light.ies ? { ies: light.ies } : {}),
     ...(light.shadow ? { shadow: light.shadow } : {}),

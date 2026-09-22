@@ -18,15 +18,24 @@ export function buildValidatedRuntimePackagePrewarmPlan(packageValue: DeepRuntim
   if (packageValue.schemaVersion === 5) return buildValidatedRuntimeResourcePrewarmPlan(packageValue, options);
   validateRuntimeResourcePrewarmBudget(options);
   const renderId = packageValue.entrypoints.renderPacket;
+  const boundsHlod = productBoundsHlod(options);
   const baked = bakeRenderPacketForResidency(materializeRuntimeRenderPacket(packageValue.payloads[renderId],
     `$.payloads.${renderId}`), {
     ...(options.bakeQuality ? { quality: options.bakeQuality } : {}),
     ...(options.bakeRecipeVersion ? { recipeVersion: options.bakeRecipeVersion } : {}),
+    ...(boundsHlod ? { boundsHlod } : {}),
   });
   const bake = { schemaVersion: baked.bake.schemaVersion, quality: baked.bake.quality, recipeVersion: baked.bake.recipeVersion,
     sourceHash: baked.sourceHash, cacheKey: baked.cacheKey, geometryPlans: baked.bake.geometryPlans,
     materialVariantKeys: [...baked.bake.materialVariantKeys].sort(), textureIds: baked.bake.textureIds,
+    ...(baked.boundsHlod ? { boundsHlod: { options: boundsHlod!, evidence: baked.boundsHlod } } : {}),
     residencyBatches: baked.batches,
   } as const;
   return buildValidatedRuntimeResourcePrewarmPlan(packageValue, options, { cacheKey: baked.cacheKey, evidence: bake });
+}
+
+/** Four conservative spatial boxes keep the far proxy useful without changing author object identity. */
+function productBoundsHlod(options: RuntimePackagePrewarmPlanOptions) {
+  if (options.boundsHlod === false) return undefined;
+  return Object.freeze({ spatialPartitions: 4, ...(options.boundsHlod ?? {}) });
 }

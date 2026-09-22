@@ -18,7 +18,13 @@ import { packMaterialParameters } from "./materialBindings.js";
 import { uploadBuffer } from "./meshBuffers.js";
 import { createAdmittedTexture } from "./resourceAdmission.js";
 import { runResourceCleanup } from "./resourceCleanup.js";
+import type { TextureBinding } from "./textureResources.js";
 import { planTextureArrays, type TextureArrayPackingEntry, type TextureArrayPlan } from "./textureArrayPacking.js";
+import { createTextureArrayMaterialTable, createTextureArrayMaterialTableLayout,
+  MATERIAL_ARRAY_INDEX_FLOATS, MATERIAL_ARRAY_INDICES_BINDING,
+  MATERIAL_ARRAY_INDICES_BYTES, type TextureArrayMaterialTable } from "./textureArrayMaterialTable.js";
+
+export { MATERIAL_ARRAY_INDEX_FLOATS, MATERIAL_ARRAY_INDICES_BINDING, MATERIAL_ARRAY_INDICES_BYTES };
 
 type TextureArraySlotName = "baseColor" | "metallicRoughness" | "occlusion" | "normal" | "emissive";
 
@@ -30,10 +36,6 @@ export const TEXTURE_ARRAY_SLOT_BINDINGS = Object.freeze([
   { slot: "normal", mapBinding: 3, samplerBinding: 8, indexOffset: 3 },
   { slot: "emissive", mapBinding: 4, samplerBinding: 9, indexOffset: 4 },
 ] as const satisfies readonly { slot: TextureArraySlotName; mapBinding: number; samplerBinding: number; indexOffset: number }[]);
-
-/** MaterialArrayIndices = layerRow(vec4i) + emissiveLayerRow(vec4i)；array_index 语义是 i32。 */
-export const MATERIAL_ARRAY_INDEX_FLOATS = 8;
-export const MATERIAL_ARRAY_INDICES_BYTES = MATERIAL_ARRAY_INDEX_FLOATS * Int32Array.BYTES_PER_ELEMENT;
 
 /** 上传就绪的单层数据；压缩纹理（requiredFeature）在级 1 显式拒绝入数组。 */
 export interface TextureArrayLayerSource {
@@ -94,7 +96,9 @@ interface ArrayBinding { readonly view: GPUTextureView; readonly sampler: GPUSam
 /** 计划→texture_2d_array 资源→数组材质 bind group；生命周期统一归 dispose。 */
 export class TextureArrayResources {
   readonly materialLayout: GPUBindGroupLayout;
+  readonly materialTableLayout: GPUBindGroupLayout;
   private readonly arrayBindings = new Map<number, ArrayBinding>();
+  private readonly layerBindings = new Map<string, TextureBinding>();
   private readonly createdTextures: GPUTexture[] = [];
   private readonly ownedIndexBuffers: GPUBuffer[] = [];
   private readonly ownedParameters: GPUBuffer[] = [];
@@ -104,7 +108,8 @@ export class TextureArrayResources {
   private disposed = false;
 
   constructor(private readonly session: DeviceSession, private readonly plan: TextureArrayPlan,
-    private readonly resolve: (textureId: string) => TextureArrayLayerSource) {
+    private readonly resolve: (textureId: string) => TextureArrayLayerSource,
+    materialTableLayout?: GPUBindGroupLayout) {
     const maxArrayLayers = session.device.limits.maxTextureArrayLayers;
     if (!Number.isSafeInteger(maxArrayLayers) || maxArrayLayers < 1) {
       throw new Error("Device maxTextureArrayLayers is unavailable.");
@@ -128,13 +133,26 @@ export class TextureArrayResources {
           { binding: config.samplerBinding, visibility: fragment, sampler: {} },
         ])),
         { binding: 10, visibility: fragment, buffer: { type: "uniform", minBindingSize: DEEP_PBR_MESH_V1_BYTE_SIZES.material } },
-        { binding: 11, visibility: fragment, buffer: { type: "uniform", minBindingSize: MATERIAL_ARRAY_INDICES_BYTES } },
+        { binding: MATERIAL_ARRAY_INDICES_BINDING, visibility: fragment,
+          buffer: { type: "uniform", minBindingSize: MATERIAL_ARRAY_INDICES_BYTES } },
       ] });
+      this.materialTableLayout = materialTableLayout ?? createTextureArrayMaterialTableLayout(session.device);
     } catch (error) {
       runResourceCleanup("Texture array staging rollback failed.",
         created.map(texture => () => session.release(texture)));
       throw error;
     }
+  }
+
+  supportsMaterial(textures: PreparedMaterialTextures): boolean {
+    this.assertReady();
+    const used = TEXTURE_ARRAY_SLOT_BINDINGS.map(config => textures[config.slot]).filter(Boolean);
+    return used.length > 0 && used.every(slot => this.plan.assignments.has(slot!.texture));
+  }
+
+  /** Conventional D2 fallback view backed by the same array allocation and sampler. */
+  textureBinding(textureId: string): TextureBinding | undefined {
+    this.assertReady(); return this.layerBindings.get(textureId);
   }
 
   get stats(): TextureArrayStats {
@@ -171,7 +189,7 @@ export class TextureArrayResources {
       const group = this.session.device.createBindGroup({ label: "Deep material texture arrays",
         layout: this.materialLayout, entries: [...textureEntries,
           { binding: 10, resource: { buffer: parameterBuffer } },
-          { binding: 11, resource: { buffer: indexBuffer } }] });
+          { binding: MATERIAL_ARRAY_INDICES_BINDING, resource: { buffer: indexBuffer } }] });
       this.ownedIndexBuffers.push(indexBuffer);
       if (ownParameters) this.ownedParameters.push(parameterBuffer);
       this.counters.materialGroups++;
@@ -181,6 +199,36 @@ export class TextureArrayResources {
       if (ownParameters) this.session.release(parameterBuffer);
       throw error;
     }
+  }
+
+  /** All-or-fallback shared table staging; callers partition incompatible materials onto the D2 path. */
+  materialTable(textures: readonly PreparedMaterialTextures[]): TextureArrayMaterialTable | undefined {
+    this.assertReady();
+    const sources = textures.map(material => {
+      const slots = TEXTURE_ARRAY_SLOT_BINDINGS.map(config => {
+        const slot = material[config.slot];
+        const assignment = slot ? this.plan.assignments.get(slot.texture) : undefined;
+        return { config, slot, assignment };
+      });
+      if (slots.every(entry => entry.slot === undefined) || slots.some(entry => entry.slot && !entry.assignment)) return undefined;
+      const layerIndices = new Array<number>(MATERIAL_ARRAY_INDEX_FLOATS).fill(0);
+      const textureEntries: GPUBindGroupEntry[] = [];
+      for (const entry of slots) {
+        const array = entry.assignment === undefined ? undefined : this.arrayBindings.get(entry.assignment.arrayIndex);
+        if (entry.assignment !== undefined && !array) throw new Error(`Texture array binding is unavailable: ${entry.slot?.texture}`);
+        layerIndices[entry.config.indexOffset] = entry.assignment?.layerIndex ?? 0;
+        textureEntries.push({ binding: entry.config.mapBinding, resource: array?.view ?? this.dummyView },
+          { binding: entry.config.samplerBinding, resource: array?.sampler ?? this.dummySampler });
+      }
+      return { textures: material, textureEntries, layerIndices,
+        arrayKey: slots.map(entry => entry.assignment?.arrayIndex ?? "-").join("|") };
+    });
+    const compatible = sources.filter((source): source is NonNullable<typeof source> => source !== undefined);
+    if (compatible.length !== sources.length) {
+      this.counters.materialFallbacks += sources.length - compatible.length;
+      return undefined;
+    }
+    return createTextureArrayMaterialTable(this.session, this.materialTableLayout, compatible);
   }
 
   dispose(): void {
@@ -226,6 +274,12 @@ export class TextureArrayResources {
     this.arrayBindings.set(array.arrayIndex,
       { view: texture.createView({ label: `Deep texture array ${array.arrayIndex}`, dimension: "2d-array" }),
         sampler: sources[0]!.sampler });
+    array.layers.forEach((textureId, layerIndex) => this.layerBindings.set(textureId, Object.freeze({
+      texture, view: texture.createView({ label: `Deep texture array ${array.arrayIndex} layer ${layerIndex}`,
+        dimension: "2d", baseArrayLayer: layerIndex, arrayLayerCount: 1 }), sampler: sources[0]!.sampler,
+      format: array.format as import("../textures/decodedTexture.js").PreparedTextureFormat,
+      width: array.width, height: array.height, mipLevelCount: mipLevelCount!,
+    })));
     return texture;
   }
 

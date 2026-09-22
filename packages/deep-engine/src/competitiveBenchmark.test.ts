@@ -8,7 +8,8 @@ import {
 } from "./competitiveBenchmark.js";
 
 const hash = (value: string): string => value.repeat(64);
-const definition: BenchmarkCase = { id: "instanced-pbr-1k", track: "browser-webgpu", critical: true,
+const definition: BenchmarkCase = { id: "instanced-pbr-1k", track: "browser-webgpu",
+  reference: "three", referenceVersion: "0.185.1", critical: true,
   environmentHash: hash("a"), fixtureHash: hash("b"), settingsHash: hash("c"), criteria: [
     { metric: "cpu-frame-p95-ms", direction: "lower", maxRegressionFraction: 0.05 },
     { metric: "visual-similarity", direction: "higher", maxRegressionFraction: 0.08, absoluteMinimum: 0.92 },

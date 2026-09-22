@@ -37,4 +37,15 @@ describe("production PBR frame graph", () => {
     expect(result.order.slice(-3)).toEqual(["temporal-aa", "bloom", "present"]);
     expect(result.resources.some(resource => resource.id.startsWith("oit-"))).toBe(false);
   });
+
+  it("inserts opt-in volumetric fog after transparency and before temporal effects", () => {
+    const result = compilePbrFrameGraph({ transparency: true, features: { volumetricFog: true } });
+    expect(result.valid).toBe(true);
+    const fogMarch = result.order.indexOf("volumetric-fog-march");
+    const fogComposite = result.order.indexOf("volumetric-fog-composite");
+    expect(fogMarch).toBeGreaterThan(result.order.indexOf("composite-oit"));
+    expect(fogComposite).toBe(fogMarch + 1);
+    expect(result.order.indexOf("temporal-aa")).toBeGreaterThan(fogComposite);
+    expect(result.resources.find(resource => resource.id === "volumetric-fog-scatter")?.descriptor).toBe("rgba16float-half");
+  });
 });

@@ -77,7 +77,7 @@ export class CascadedShadowResources {
       throw new RangeError("Invalid exact shadow receiver normal bias.");
     }
     this.constantNormalBias = normalBias === "constant-one-texel";
-    this.selection = selectProfile(validatedOptions, device.limits);
+    this.selection = selectProfile(validatedOptions, session);
     const { cascadeCount, shadowMapSize } = this.selection.profile.options;
     const created: Array<GPUTexture | GPUBuffer> = [];
     try {
@@ -179,10 +179,18 @@ function validateResourceOptions(options: CascadedShadowResourceOptions): Cascad
   return options;
 }
 
-function selectProfile(options: CascadedShadowResourceOptions, limits: GPUSupportedLimits): CascadedShadowQualitySelection | ExactShadowSelection {
+function selectProfile(options: CascadedShadowResourceOptions, session: DeviceSession): CascadedShadowQualitySelection | ExactShadowSelection {
+  const limits = session.device.limits;
+  const admission = session.resourceMemory?.admission;
+  const fixedBytes = CASCADED_SHADOW_UNIFORM_BYTES + CASCADED_SHADOW_QUALITY_PROFILES.ultra.options.cascadeCount
+    * PBR_FRAME_UNIFORM_FLOATS * 4;
+  const availableDepthBytes = admission === undefined ? undefined
+    : Math.max(1, admission.budgetBytes - session.resourceMemory.estimatedBytes - fixedBytes);
+  const maxDepthTextureBytes = options.maxDepthTextureBytes === undefined ? availableDepthBytes
+    : availableDepthBytes === undefined ? options.maxDepthTextureBytes : Math.min(options.maxDepthTextureBytes, availableDepthBytes);
   if (!options.exactProfile) return resolveCascadedShadowQuality(options.requestedTier ?? "high", {
     maxTextureDimension2D: limits.maxTextureDimension2D, maxTextureArrayLayers: limits.maxTextureArrayLayers,
-    ...(options.maxDepthTextureBytes === undefined ? {} : { maxDepthTextureBytes: options.maxDepthTextureBytes }),
+    ...(maxDepthTextureBytes === undefined ? {} : { maxDepthTextureBytes }),
   });
   if (options.requestedTier !== undefined) throw new Error("Exact shadows cannot also request a quality tier.");
   const { exactProfile } = options, cascadeCount = exactInteger(exactProfile.cascadeCount, 1, 8, "cascade count");
@@ -191,7 +199,7 @@ function selectProfile(options: CascadedShadowResourceOptions, limits: GPUSuppor
   const splitLambda = exactNumber(exactProfile.splitLambda ?? 0, 0, 1, "split lambda");
   const blendRatio = exactNumber(exactProfile.blendRatio ?? 0, 0, 0.5, "blend ratio");
   const estimatedDepthTextureBytes = estimateCascadedShadowDepthBytes(cascadeCount, shadowMapSize);
-  if (options.maxDepthTextureBytes !== undefined && estimatedDepthTextureBytes > options.maxDepthTextureBytes) {
+  if (maxDepthTextureBytes !== undefined && estimatedDepthTextureBytes > maxDepthTextureBytes) {
     throw new RangeError("Exact shadow profile exceeds its depth memory budget.");
   }
   return Object.freeze({ requestedTier: "exact", selectedTier: "exact", downgraded: false, rejected: Object.freeze([]),

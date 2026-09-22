@@ -22,6 +22,25 @@ function packet(): RenderPacket {
         { geometry: "low", minProjectedDiameterPixels: 0, geometricError: 1 },
       ] } }], textures: [] };
 }
+function densePacket(): RenderPacket {
+  const source = geometry("dense", 2);
+  const repeated = new Uint32Array(13 * 3);
+  for (let triangle = 0; triangle < 13; triangle += 1) repeated.set(triangle % 2 ? [0, 2, 3] : [0, 1, 2], triangle * 3);
+  return { geometries: [{ ...source, indices: repeated }],
+    materials: [{ id: "surface", baseColor: [0.2, 0.4, 0.8], metallic: 0.1, roughness: 0.7 }],
+    instances: [{ id: "dense-object", geometry: "dense", material: "surface", transform: TRANSFORM }], textures: [] };
+}
+function partitionedDensePacket(): RenderPacket {
+  const vertices = new Float32Array([
+    -12, -1, 0, 0, 0, 1, -8, -1, 0, 0, 0, 1, -8, 1, 0, 0, 0, 1, -12, 1, 0, 0, 0, 1,
+    8, -1, 0, 0, 0, 1, 12, -1, 0, 0, 0, 1, 12, 1, 0, 0, 0, 1, 8, 1, 0, 0, 0, 1,
+  ]);
+  const indices = new Uint32Array(30 * 3);
+  for (let triangle = 0; triangle < 30; triangle += 1) indices.set(triangle < 15 ? [0, 1, 2] : [4, 5, 6], triangle * 3);
+  return { geometries: [{ id: "partitioned", revision: 1, vertices, indices }],
+    materials: [{ id: "surface", baseColor: [0.2, 0.4, 0.8], metallic: 0.1, roughness: 0.7 }],
+    instances: [{ id: "partitioned-object", geometry: "partitioned", material: "surface", transform: TRANSFORM }], textures: [] };
+}
 afterEach(() => vi.unstubAllGlobals());
 
 describe("baked residency packet publication", () => {
@@ -78,6 +97,53 @@ describe("baked residency packet publication", () => {
     const words = new Uint32Array(levelData!);
     expect([words[3], words[4], words[8], words[9]]).toEqual([0, 1, 1, 1]);
     cache.clear();
+  });
+
+  it("compiles a real far proxy through meshlet residency into the production GPU LOD table", () => {
+    vi.stubGlobal("GPUBufferUsage", { STORAGE: 128, COPY_DST: 8 });
+    let levelData: ArrayBuffer | undefined;
+    const session = { state: "ready", device: {
+      createBuffer: vi.fn(({ label }: GPUBufferDescriptor) => ({ label, destroy: vi.fn() })),
+      queue: { writeBuffer: vi.fn((buffer: { label: string }, _offset: number,
+        data: ArrayBuffer) => { if (buffer.label === "Deep packet LOD levels") levelData = data.slice(0); }) },
+    }, own: <T>(value: T): T => value, release: vi.fn() } as unknown as DeviceSession;
+    const baked = bakeRenderPacketForResidency(densePacket(), { boundsHlod: {
+      minSourceTriangles: 13, switchProjectedDiameterPixels: 40,
+    } });
+    const proxyId = "dense#deep-hlod-bounds-v1";
+    expect(baked.boundsHlod).toEqual({ generatedGeometries: 1, attachedInstances: 1,
+      sourceTriangles: 13, proxyTriangles: 12, generatedPartitions: 1 });
+    expect(baked.batches[0]).toMatchObject({ fallbackGeometry: proxyId, levels: [
+      { geometry: "dense", triangles: 13, minProjectedDiameterPixels: 40 },
+      { geometry: proxyId, triangles: 12, minProjectedDiameterPixels: 0 },
+    ] });
+    expect(baked.bake.geometries.find(value => value.id === proxyId)?.meshlets.meshletCount).toBe(1);
+    expect(createPacketResidencyCatalog(baked.packet).requests.map(value => value.id).sort()).toEqual(["dense", proxyId].sort());
+
+    const source = baked.packet.batches[0]!;
+    const geometries = new Map([...baked.packet.geometries].map(([id, value]) => [id,
+      { source: value, mesh: {} as never, center: [0, 0, 0] as const, radius: 2 }]));
+    const cache = new PacketLodSceneCache(session);
+    cache.prepare([{ source, buffer: {} as GPUBuffer, capacity: source.data.byteLength,
+      previousBuffer: {} as GPUBuffer, previousCapacity: 48,
+      previousTransforms: new Float32Array(12) }], geometries, geometries, 1);
+    expect(new Uint32Array(levelData!).length).toBeGreaterThanOrEqual(10);
+    cache.clear();
+  });
+
+  it("bakes opt-in spatial HLOD partitions into one resident far level", () => {
+    const baked = bakeRenderPacketForResidency(partitionedDensePacket(), { boundsHlod: {
+      minSourceTriangles: 13, spatialPartitions: 2,
+    } });
+    const proxyId = "partitioned#deep-hlod-bounds-v1-p2";
+    expect(baked.boundsHlod).toEqual({ generatedGeometries: 1, attachedInstances: 1,
+      sourceTriangles: 30, proxyTriangles: 24, generatedPartitions: 2 });
+    expect(baked.batches[0]).toMatchObject({ fallbackGeometry: proxyId, levels: [
+      { geometry: "partitioned", triangles: 30 }, { geometry: proxyId, triangles: 24, resident: true },
+    ] });
+    expect(baked.packet.geometries.get(proxyId)?.indices).toHaveLength(72);
+    expect(createPacketResidencyCatalog(baked.packet).requests.map(value => value.id).sort())
+      .toEqual(["partitioned", proxyId].sort());
   });
 
   it("fails closed on budgets, cancellation, and a missing coarsest fallback", () => {

@@ -32,6 +32,8 @@ export interface PbrTransientTexturePoolStats {
   readonly lastInvalidation: readonly [PbrTransientPoolInvalidationReason, number] | undefined;
   readonly acquireCount: number;
   readonly hits: number;
+  /** Same-frame physical allocations avoided by the compiled render-graph alias plan. */
+  readonly frameAliasHits: number;
   /** 真实 GPU 新分配次数(无池基线对比的下降判据)。 */
   readonly misses: number;
   /** 真实新分配的累计字节估算。 */

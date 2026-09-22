@@ -128,6 +128,19 @@ describe("default PBR cascaded shadow resources", () => {
     expect(limited.device.createTexture).toHaveBeenCalledWith(expect.objectContaining({ size: { width: 1024, height: 1024, depthOrArrayLayers: 2 } }));
   });
 
+  it("adapts to the live DeviceSession ownership budget before resource admission", () => {
+    const f = fixture();
+    Object.assign(f.session, { resourceMemory: { estimatedBytes: 16 * 1024 * 1024,
+      admission: { budgetBytes: 64 * 1024 * 1024, rejectedCount: 0 } } });
+    const shadows = new CascadedShadowResources(f.session, f.pipelines, { requestedTier: "high" });
+    expect(shadows.selection).toMatchObject({ requestedTier: "high", selectedTier: "balanced", downgraded: true,
+      rejected: [{ tier: "high", constraints: ["memory-budget"] }] });
+    expect(f.device.createTexture).toHaveBeenCalledWith(expect.objectContaining({
+      size: { width: 1536, height: 1536, depthOrArrayLayers: 3 },
+    }));
+    shadows.dispose();
+  });
+
   it("fails closed without allocating when no tier fits or options are malformed", () => {
     const limited = fixture({ maxTextureArrayLayers: 1 });
     expect(() => new CascadedShadowResources(limited.session, limited.pipelines)).toThrow("require at least 1024px");

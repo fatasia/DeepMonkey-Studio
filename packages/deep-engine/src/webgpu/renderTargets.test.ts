@@ -48,6 +48,18 @@ describe("PBR render targets backed by the frame transient pool", () => {
     f.targets.commitFrame(); f.targets.dispose(); f.targets.dispose(); expect(f.owned.size).toBe(0);
   });
 
+  it("does not allocate MRT attachments removed from the compiled live-resource plan", () => {
+    const f = fixture();
+    f.targets.beginFrame({ width: 128, height: 72 }, [
+      { id: "opaque-hdr", descriptor: "rgba16float", external: false, aliasKey: "full-rgba16float",
+        firstUse: 0, lastUse: 1, transientSlot: 0 },
+      { id: "surface", descriptor: "swapchain", external: true, firstUse: 1, lastUse: 1 },
+    ]);
+    expect(f.textures.map(texture => texture.descriptor.format)).toEqual(["rgba16float", "depth32float"]);
+    expect(f.targets.transientStats).toMatchObject({ acquireCount: 2, misses: 2, inFlightCount: 2 });
+    f.targets.commitFrame();
+  });
+
   it("discards every acquired target when bind-group publication fails", () => {
     const f = fixture(); f.targets.beginFrame({ width: 16, height: 16 }); f.targets.commitFrame();
     const previous = [...f.textures];

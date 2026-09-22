@@ -26,6 +26,7 @@ fn deepPoseVertex(v: Input, previous: PreviousInstanceInput, index: u32, normalM
   }
   out.colorMetal = v.colorMetal; out.material = v.material;
   out.uv0 = v.uvSets.xy; out.uv1 = v.uvSets.zw; out.emissiveAlpha = v.emissiveAlpha;
+  out.dielectric = deepDielectricF0(v.normal0.w);
   out.authorShadow = deepAuthorShadowCoordinate(out.world, out.normal);
   return out;
 }

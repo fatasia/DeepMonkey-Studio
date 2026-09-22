@@ -1,4 +1,5 @@
 import type { DeepBakedResidencyBatch } from "../assetBakeResidency.js";
+import type { PacketBoundsHlodEvidence, PacketBoundsHlodOptions } from "../packetBoundsHlod.js";
 import type * as Core from "./resourcePrewarmTypes.js";
 export { DEEP_RUNTIME_PREWARM_SCHEMA, DEEP_RUNTIME_PREWARM_SCHEMA_VERSION, DEEP_RUNTIME_PREWARM_LIMITS } from "./resourcePrewarmTypes.js";
 
@@ -12,6 +13,9 @@ export interface RuntimePackageBakeEvidence {
     vertexCount: number; triangleCount: number; meshletCount: number; expandedIndexCount: number }>[];
   readonly materialVariantKeys: readonly string[];
   readonly textureIds: readonly string[];
+  /** Product HLOD policy compiled into this immutable bake. The author instance IDs remain unchanged. */
+  readonly boundsHlod?: Readonly<{ readonly options: PacketBoundsHlodOptions;
+    readonly evidence: PacketBoundsHlodEvidence }>;
   /** Offline LOD fallback and meshlet ranges consumed by the GPU LOD/indirect path. */
   readonly residencyBatches: readonly RuntimePackageBakeResidencyBatch[];
 }
@@ -41,6 +45,8 @@ export type RuntimePackagePrewarmAdapter<TLoaded, TPrepared> = Core.RuntimeResou
 export interface RuntimePackagePrewarmPlanOptions extends Core.RuntimeResourcePrewarmPlanOptions {
   readonly bakeQuality?: "performance" | "balanced" | "quality";
   readonly bakeRecipeVersion?: string;
+  /** Enabled by default for product packages; false preserves a fully authored packet. */
+  readonly boundsHlod?: false | PacketBoundsHlodOptions;
 }
 export interface RuntimePackagePrewarmRunOptions extends RuntimePackagePrewarmPlanOptions {
   readonly concurrency?: number;

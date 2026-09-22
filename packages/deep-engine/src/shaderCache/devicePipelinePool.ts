@@ -40,6 +40,8 @@ export class ShaderDevicePipelineCachePool<T extends object> {
   private diagnostics: ResidencyDiagnosticsHooks | undefined;
   private epoch: string;
   private generation = 0;
+  private readonly counters = { cacheHits: 0, cacheMisses: 0, compiledEntries: 0,
+    evictedEntries: 0, failedCompiles: 0, abortedCompiles: 0 };
 
   constructor(options: ShaderDevicePipelineCachePoolOptions<T>) {
     if (!options || typeof options !== "object") {
@@ -69,6 +71,8 @@ export class ShaderDevicePipelineCachePool<T extends object> {
   get size(): number { return this.memory.size; }
   get deviceEpoch(): string { return this.epoch; }
   get pendingOperations(): number { return this.operations.size; }
+  get stats() { return Object.freeze({ entries: this.memory.size, pendingOperations: this.operations.size,
+    deviceEpoch: this.epoch, ...this.counters }); }
 
   async getOrCreateAtomic(
     batch: ShaderPipelineAtomicBatch<T>,
@@ -77,9 +81,10 @@ export class ShaderDevicePipelineCachePool<T extends object> {
     if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : new ShaderCacheAbortError();
     const { packageValue, passes } = this.resolve(batch);
     const resolved = passes.map((pass) => ({ key: this.keyFor(packageValue, pass), pass }));
+    let hits = 0;
+    for (const entry of resolved) if (this.memory.has(entry.key)) hits += 1;
+    this.counters.cacheHits += hits; this.counters.cacheMisses += resolved.length - hits;
     if (this.diagnostics) {
-      let hits = 0;
-      for (const entry of resolved) if (this.memory.has(entry.key)) hits += 1;
       if (hits) { this.activity("hit", hits); this.activity("reuse", hits); }
       if (hits < resolved.length) this.activity("miss", resolved.length - hits);
     }
@@ -109,15 +114,19 @@ export class ShaderDevicePipelineCachePool<T extends object> {
           throw new ShaderCacheError("Atomic pipeline factory returned an invalid candidate set.", "invalid-config");
         }
       } catch (error) {
+        if (operationSignal.aborted) this.counters.abortedCompiles += missing.length;
+        else this.counters.failedCompiles += missing.length;
         this.timing(operationSignal.aborted ? "aborted" : "failure", startedAt, generation, deviceEpoch);
         throw error;
       }
       if (operationSignal.aborted || generation !== this.generation) {
+        this.counters.abortedCompiles += created.length;
         this.timing("aborted", startedAt, generation, deviceEpoch);
         for (const value of created) this.disposeSafely(value);
         throw new ShaderCacheError("Atomic pipeline batch was invalidated before publication.", "invalidated");
       }
       this.timing("success", startedAt, generation, deviceEpoch);
+      this.counters.compiledEntries += created.length;
       const createdByKey = new Map(missing.map((entry, index) => [entry.key, created[index]!]));
       for (const entry of missing) {
         const concurrent = this.memory.get(entry.key);
@@ -132,6 +141,7 @@ export class ShaderDevicePipelineCachePool<T extends object> {
           if (this.memory.has(entry.key)) return;
           for (const evicted of this.memory.set(entry.key, createdByKey.get(entry.key) ?? created[index]!)) {
             this.activity("evict", 1);
+            this.counters.evictedEntries += 1;
             this.disposeSafely(evicted.value);
           }
         });
@@ -160,6 +170,7 @@ export class ShaderDevicePipelineCachePool<T extends object> {
       generation: this.generation, deviceEpoch: this.epoch,
     }));
     if (cleared.length) this.activity("evict", cleared.length);
+    this.counters.evictedEntries += cleared.length;
     for (const value of cleared) this.disposeSafely(value);
   }
 

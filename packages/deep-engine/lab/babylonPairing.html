@@ -9,7 +9,7 @@
     <p id="benchmark-status" role="status" aria-live="polite">由门禁 runner 驱动执行。</p></section>
   <section class="canvases" aria-label="双引擎冻结画面">
     <figure><figcaption>Deep WebGPU（candidate）</figcaption><canvas id="candidate-canvas" width="960" height="540"></canvas></figure>
-    <figure><figcaption>Babylon.js WebGPU（reference）</figcaption><canvas id="reference-canvas" width="960" height="540"></canvas></figure>
+    <figure><figcaption>Babylon.js WebGPU（reference）</figcaption><!-- Chrome 从 CSS 布局尺寸推导 WebGPU swapchain 纹理大小：必须钉死为合同分辨率，否则整帧 command buffer 被判废（见 babylonBenchmarkBackend mappingNotes） --><canvas id="reference-canvas" width="960" height="540" style="width:960px;height:540px;max-width:none"></canvas></figure>
   </section>
   <details><summary>机器可读记录</summary><p>本页面由 gate-a01x-babylon-pairing.mjs 驱动；Babylon 模块经 /vendor 注入，版本与 vendor 哈希在 evidence 中声明。</p>
     <pre id="benchmark-output">尚未运行。</pre></details>

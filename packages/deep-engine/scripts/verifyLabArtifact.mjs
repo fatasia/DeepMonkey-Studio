@@ -33,7 +33,7 @@ if (manifest.javascriptBytes !== entry.length || manifest.gzipBytes !== gzipSync
 }
 
 for (const inputs of [manifest.inputs, manifest.migrationSwitchLab?.inputs,
-  manifest.competitiveBenchmarkLab?.inputs]) {
+  manifest.competitiveBenchmarkLab?.inputs, manifest.babylonPairingLab?.inputs]) {
   if (!record(inputs)) throw new Error("Lab entry input manifest is malformed.");
   for (const [name, expected] of Object.entries(inputs)) {
     if (typeof expected !== "string" || sha256(await readFile(path.resolve(root, name))) !== expected) {

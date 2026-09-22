@@ -6,12 +6,13 @@ import { validateDashboardComposition } from "./dashboardCompositionValidation.j
 import { DEEP_RUNTIME_PACKAGE_DASHBOARD_VERSION } from "./dashboardCompositionTypes.js";
 import { validateRuntimeChartPackage, validateRuntimeChartSimPackage } from "./chartPackage.js";
 import { validateRuntimeSceneCamera } from "./camera.js";
+import { validateDynamicSceneRuntime } from "./dynamicSceneRuntime.js";
 import { runtimeContentSha256, runtimePackageSha256 } from "./hash.js";
 import { array, fields, record, requireValue, resourceId, revision, RuntimePackageError, snapshotJson, string } from "./primitives.js";
 import { validateRuntimeRenderPacket } from "./renderPacket.js";
 import { BUILTIN_RUNTIME_IBL_ID, validateRuntimeEnvironment } from "./environment.js";
 import { DEEP_RUNTIME_PACKAGE_BUDGETS as LIMITS, DEEP_RUNTIME_PACKAGE_SCHEMA, DEEP_RUNTIME_PACKAGE_SCHEMA_VERSION,
-  DEEP_RUNTIME_PACKAGE_SHADER_BINDINGS_VERSION, DEEP_RUNTIME_PACKAGE_CHART_VERSION, type DeepRuntimePackage, type RuntimePackageValidation, type RuntimeResourceKind } from "./types.js";
+  DEEP_RUNTIME_PACKAGE_SHADER_BINDINGS_VERSION, DEEP_RUNTIME_PACKAGE_CHART_VERSION, DEEP_RUNTIME_PACKAGE_DYNAMIC_VERSION, type DeepRuntimePackage, type RuntimePackageValidation, type RuntimeResourceKind } from "./types.js";
 
 export { BUILTIN_RUNTIME_IBL_ID } from "./environment.js";
 function hash(value: unknown, path: string): string {
@@ -22,10 +23,12 @@ function hash(value: unknown, path: string): string {
 }
 function validate(input: unknown): DeepRuntimePackage {
   const value = record(snapshotJson(input), "$");
-  const hasCamera = value.schemaVersion === 3;
-  const hasChart = value.schemaVersion === DEEP_RUNTIME_PACKAGE_CHART_VERSION;
+  const entrypointShape = record(value.entrypoints, "$.entrypoints");
+  const hasDynamicRuntime = value.schemaVersion === DEEP_RUNTIME_PACKAGE_DYNAMIC_VERSION;
+  const hasCamera = value.schemaVersion === 3 || hasDynamicRuntime && Object.hasOwn(entrypointShape, "camera");
+  const hasChart = value.schemaVersion === DEEP_RUNTIME_PACKAGE_CHART_VERSION || hasDynamicRuntime && Object.hasOwn(entrypointShape, "chart");
   const hasDashboard = value.schemaVersion === DEEP_RUNTIME_PACKAGE_DASHBOARD_VERSION;
-  const hasBindings = hasCamera || hasChart || hasDashboard || value.schemaVersion === DEEP_RUNTIME_PACKAGE_SHADER_BINDINGS_VERSION;
+  const hasBindings = hasCamera || hasChart || hasDashboard || hasDynamicRuntime || value.schemaVersion === DEEP_RUNTIME_PACKAGE_SHADER_BINDINGS_VERSION;
   fields(value, ["schema", "schemaVersion", "packageId", "packageVersion", "entrypoints", "resources", "payloads", "packageHash",
     ...(hasBindings ? ["materialBindings"] : [])], [], "$");
   requireValue(value.schema === DEEP_RUNTIME_PACKAGE_SCHEMA && (value.schemaVersion === DEEP_RUNTIME_PACKAGE_SCHEMA_VERSION || hasBindings),
@@ -46,15 +49,15 @@ function validate(input: unknown): DeepRuntimePackage {
     requireValue(id > previous, path, "Resource index must be sorted by unique id."); previous = id;
     requireValue(["render-packet", "deep2d-runtime", "ibl-environment", "shader-package", ...(hasCamera ? ["scene-camera"] : []),
       ...(hasChart || hasDashboard ? ["chart-runtime", "chart-sim-runtime"] : []),
-      ...(hasDashboard ? ["dashboard-runtime"] : [])].includes(string(entry.kind, `${path}.kind`)), path, "Unknown resource kind.");
+      ...(hasDashboard ? ["dashboard-runtime"] : []), ...(hasDynamicRuntime ? ["dynamic-runtime"] : [])].includes(string(entry.kind, `${path}.kind`)), path, "Unknown resource kind.");
     index.set(id, { kind: entry.kind as RuntimeResourceKind, revision: revision(entry.revision, `${path}.revision`), hash: hash(entry.contentHash, `${path}.contentHash`) });
   }
   const payloads = record(value.payloads, "$.payloads");
   requireValue(Object.keys(payloads).length === index.size && Object.keys(payloads).every(id => index.has(id)), "$.payloads", "Payload keys must exactly match the resource index.");
   for (const [id, entry] of index) requireValue(runtimeContentSha256(payloads[id]) === entry.hash, `$.payloads.${id}`, "Resource content hash mismatch.");
-  const entry = record(value.entrypoints, "$.entrypoints");
+  const entry = entrypointShape;
   fields(entry, ["renderPacket", "deep2d", "environment", "shaderPackages", ...(hasCamera ? ["camera"] : []),
-    ...(hasChart || hasDashboard ? ["chart", "chartSim"] : []), ...(hasDashboard ? ["dashboard"] : [])], [], "$.entrypoints");
+    ...(hasChart || hasDashboard ? ["chart", "chartSim"] : []), ...(hasDashboard ? ["dashboard"] : []), ...(hasDynamicRuntime ? ["dynamicRuntime"] : [])], [], "$.entrypoints");
   if (hasDashboard) requireValue(entry.deep2d === null && entry.chart === null && entry.chartSim === null,
     "$.entrypoints", "Dashboard owns all 2D content references.");
   const used = new Set<string>();
@@ -69,6 +72,7 @@ function validate(input: unknown): DeepRuntimePackage {
   // v4:chart 键必填且非空,chartSim 键必填可空;chart 与 deep2d 互斥。
   const chartId = hasChart ? use(entry.chart, "chart-runtime") : null;
   const chartSimId = hasChart && entry.chartSim !== null ? use(entry.chartSim, "chart-sim-runtime") : null;
+  const dynamicRuntimeId = hasDynamicRuntime ? use(entry.dynamicRuntime, "dynamic-runtime") : null;
   requireValue(chartId === null || deep2dId === null, "$.entrypoints", "Chart and deep2d entrypoints are mutually exclusive.");
   requireValue(chartSimId === null || chartId !== null, "$.entrypoints", "chartSim requires a chart entrypoint.");
   const shaderIds = array(entry.shaderPackages, "$.entrypoints.shaderPackages", LIMITS.shaderPackages).map(value => use(value, "shader-package"));
@@ -96,6 +100,12 @@ function validate(input: unknown): DeepRuntimePackage {
   let chartIr: unknown;
   if (chartId !== null) chartIr = validateRuntimeChartPackage(payloads[chartId], chartId, index.get(chartId)!.revision, `$.payloads.${chartId}`);
   if (chartSimId !== null) validateRuntimeChartSimPackage(payloads[chartSimId], chartSimId, index.get(chartSimId)!.revision, chartIr, `$.payloads.${chartSimId}`);
+  if (dynamicRuntimeId !== null) {
+    const dynamic = validateDynamicSceneRuntime(payloads[dynamicRuntimeId]);
+    requireValue(dynamic.valid, `$.payloads.${dynamicRuntimeId}`, dynamic.issues[0]?.message ?? "Invalid dynamic runtime.");
+    requireValue(dynamic.value.id === dynamicRuntimeId && dynamic.value.revision === index.get(dynamicRuntimeId)!.revision,
+      `$.payloads.${dynamicRuntimeId}`, "Dynamic runtime identity differs from index.");
+  }
   const shaders = new Map<string, DeepShaderPackageV2>();
   for (const shaderId of shaderIds) {
     const shader = validateDeepShaderPackage(payloads[shaderId]);
@@ -105,7 +115,7 @@ function validate(input: unknown): DeepRuntimePackage {
   }
   if (hasBindings) {
     const packet = payloads[renderId] as { materials: readonly { id: string }[] };
-    validateRuntimeMaterialBindings(value.materialBindings, packet.materials, shaders, hasCamera || hasChart || hasDashboard);
+    validateRuntimeMaterialBindings(value.materialBindings, packet.materials, shaders, hasCamera || hasChart || hasDashboard || hasDynamicRuntime);
   }
   return value as unknown as DeepRuntimePackage;
 }

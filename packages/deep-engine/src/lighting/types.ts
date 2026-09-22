@@ -13,6 +13,8 @@ export interface LocalLightShadow {
   readonly key: string;
   /** Optional allocation priority; intensity is used when omitted. */
   readonly importance?: number;
+  /** Opt-in local PCSS strength in [0,1]; omitted/zero preserves the 4-tap PCF path. */
+  readonly softness?: number;
 }
 
 /** E02 IES 光域网引用（设计 §2）；字段语义与 runtimePackage 的 RuntimeLightIes 一致，
@@ -26,6 +28,7 @@ export interface SpotLightIes {
 }
 
 export interface PointLight {
+  readonly decay?: number;
   readonly positionView: LightVector3;
   readonly range: number;
   readonly color: LightVector3;

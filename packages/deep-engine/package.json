@@ -47,6 +47,14 @@
       "types": "./dist/webgpu/index.d.ts",
       "default": "./dist/webgpu/index.js"
     },
+    "./app": {
+      "development": {
+        "types": "./src/app/index.ts",
+        "default": "./src/app/index.ts"
+      },
+      "types": "./dist/app/index.d.ts",
+      "default": "./dist/app/index.js"
+    },
     "./gltf": {
       "development": {
         "types": "./src/gltf/index.ts",
@@ -178,7 +186,7 @@
   },
   "scripts": {
     "build": "node ../../scripts/clean-dir.mjs dist && tsc -p tsconfig.json",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.lab.json",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.lab.json && tsc -p tsconfig.examples.json",
     "lab:build": "node scripts/buildLab.mjs",
     "lab:serve": "node scripts/serveLab.mjs",
     "lab:verify": "node scripts/verifyLabArtifact.mjs",
@@ -197,12 +205,15 @@
     "test:ray-trace-gpu": "node scripts/rayTraceGpuTest.mjs",
     "test:cluster-lod-gpu": "node scripts/clusterLodGpuTest.mjs",
     "test:soft-raster-gpu": "node scripts/softRasterizeGpuTest.mjs",
-    "test:probe-occlusion-gpu": "node scripts/probeOcclusionGpuTest.mjs"
+    "test:probe-occlusion-gpu": "node scripts/probeOcclusionGpuTest.mjs",
+    "test:probe-radiance-gpu": "node scripts/probeRadianceGpuTest.mjs"
+  },
+  "dependencies": {
+    "@webgpu/types": "0.1.72"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
     "@types/three": "0.185.4",
-    "@webgpu/types": "0.1.72",
     "esbuild": "0.28.1",
     "fake-indexeddb": "6.2.4",
     "three": "0.185.1",

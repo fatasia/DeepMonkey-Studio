@@ -112,20 +112,13 @@ function lightRange(
   const distance = finiteNonnegative(light.distance, "light.distance");
   if (distance > 0) return distance;
   if (fallback === undefined) {
-    fail("unsupported", "light range", "Three distance=0 requires an explicit positive fallbackRange for bounded clustering.");
+    return 0;
   }
   const range = typeof fallback === "function" ? fallback(source, path) : fallback;
   if (typeof range !== "number" || !Number.isFinite(range) || range <= 0) {
     fail("invalid", "fallbackRange", "Three fallbackRange must resolve to a finite positive value.");
   }
   return range;
-}
-
-function nextFloat32(value: number): number {
-  const numbers = new Float32Array([value]);
-  const bits = new Uint32Array(numbers.buffer);
-  bits[0] = bits[0]! + 1;
-  return numbers[0]!;
 }
 
 function spotCones(light: Record<string, unknown>): readonly [number, number] {
@@ -137,9 +130,7 @@ function spotCones(light: Record<string, unknown>): readonly [number, number] {
     fail("invalid", "spot penumbra", "Three spot penumbra must be finite and inside [0, 1].");
   }
   const outer = Math.fround(Math.cos(angle));
-  let inner = Math.fround(Math.cos(angle * (1 - penumbra)));
-  // Deep 的固定 ABI 要求正锥宽；用一个 float32 ULP 表达 Three 的硬边并避免除零。
-  if (inner <= outer) inner = nextFloat32(outer);
+  const inner = Math.fround(Math.cos(angle * (1 - penumbra)));
   if (!Number.isFinite(inner) || inner > 1) {
     fail("invalid", "spot cone", "Three spot cone is narrower than the float32 lighting ABI can represent.");
   }
@@ -167,12 +158,14 @@ function localCommon(
   fallback: ThreeFallbackLightRange | undefined,
   shadowSupported = false,
 ): WorldPointLight {
-  if (light.decay !== 2) fail("unsupported", "light decay", "Deep clustered lights currently require Three decay=2.");
+  const decay = finiteNonnegative(light.decay, "light.decay");
+  if (decay > 4) fail("invalid", "light decay", "Deep light decay must be inside [0,4].");
   const shadow = localShadow(source, light, shadowSupported);
   return Object.freeze({
     ...common(light),
     positionWorld: worldPosition(source, "light"),
     range: lightRange(source, light, path, fallback),
+    decay,
     ...(shadow ? { shadow } : {}),
   });
 }

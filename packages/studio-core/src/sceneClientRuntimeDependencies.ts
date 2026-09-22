@@ -3,6 +3,7 @@ import type { ApplicationDocument, DataConnectionRecord, DataDatasetRecord, Data
 
 type Binding = { datasetId?: string; pipelineId?: string; semanticBinding?: unknown };
 const fail = (path: string, reason: string): never => { throw new Error(`客户端数据依赖 ${path}：${reason}`); };
+const DYNAMIC_DATA_CALL = /\b(?:studio|ctx)\.(?:getData|setData)\s*\(\s*(?!["'])/;
 
 /** 只选择合同声明的数据依赖；结果保持项目顺序，并与作者可变对象隔离。 */
 export function selectSceneClientRuntimeDependencies(project: ProjectRecord, scenes: readonly SceneSnapshot[],
@@ -64,7 +65,7 @@ export function selectSceneClientRuntimeDependencies(project: ProjectRecord, sce
     });
     application.scripts.forEach((script, i) => {
       if (script.enabled && script.code.trim() && (script.runtime === "legacy-trusted-main-thread"
-        || script.permissions.some(permission => ["data.read", "data.write", "network.connect"].includes(permission)))) {
+        || script.permissions.includes("network.connect") || DYNAMIC_DATA_CALL.test(script.code))) {
         fail(`${path}.scripts[${i}]`, "unsupported：动态脚本的数据依赖无法静态枚举");
       }
     });

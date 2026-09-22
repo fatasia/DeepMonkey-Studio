@@ -8,6 +8,7 @@ import type {
   TextureSlot,
 } from "./renderPacketTypes.js";
 import { finiteFloat32, unitFloat } from "./renderPacketValidation.js";
+import { packMaterialIor, STOCK_MATERIAL_INSTANCE_OPTIONS } from "./materialInstanceAbi.js";
 
 /** HDR 上限对应 8 EV 发光增益；避免任意作者数值污染 rgba16float 中间目标。 */
 export const MAX_EMISSIVE_STRENGTH = 256;
@@ -41,6 +42,7 @@ export function prepareMaterialTextures(
 }
 
 function validateMaterial(material: PbrMaterial): number {
+  packMaterialIor(material.ior, STOCK_MATERIAL_INSTANCE_OPTIONS);
   if (material.shadingModel !== undefined && material.shadingModel !== "unlit") {
     throw new Error("Invalid material shadingModel.");
   }

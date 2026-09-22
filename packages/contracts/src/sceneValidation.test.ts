@@ -156,3 +156,21 @@ function robotScene(robotPatch: Record<string, unknown>) {
     measurements: [],
   };
 }
+
+
+describe("material slot persistence validation", () => {
+  const scene = (slotOverrides: unknown) => ({ id: "slots", name: "Slots",
+    camera: { position: { x: 0, y: 2, z: 3 }, target: { x: 0, y: 0, z: 0 }, mode: "orbit" },
+    models: [{ modelId: "a", name: "A", visible: true, opacity: 1, transform, material: { slotOverrides } }],
+    primitives: [], measurements: [] });
+  it("accepts typed stable slot overrides after JSON persistence", () => {
+    expect(() => validateScene(JSON.parse(JSON.stringify(scene({ "gltf:0": { roughness: 0.4, ior: 2.4 } }))), "scene")).not.toThrow();
+  });
+  it.each([0, -1, NaN, Infinity, 1e100, "1.5"])("rejects invalid source or authored IOR %s", ior => {
+    expect(() => validateScene(scene({ "gltf:0": { ior } }), "scene")).toThrow();
+  });
+  it.each([{ "runtime-uuid": {} }, { "gltf:0": { roughness: "wrong" } }, { "gltf:0": { slotOverrides: {} } }])(
+    "rejects unstable, mistyped and nested overrides", slots => {
+      expect(() => validateScene(scene(slots), "scene")).toThrow();
+    });
+});

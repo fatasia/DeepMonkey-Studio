@@ -4,6 +4,10 @@ import { prioritizeLocalLights } from "./importanceBudget.js";
 const point = (x: number, intensity: number) => ({ positionView: [x, 0, -4] as const, range: 4, color: [1, 1, 1] as const, intensity });
 
 describe("Deep Lights importance budget", () => {
+  it("does not rank an unlimited light as zero coverage", () => {
+    const selected = prioritizeLocalLights({ points: [{ ...point(0, 4), range: 0 }, point(0, 1)] }, 1);
+    expect(selected.points?.[0]?.range).toBe(0);
+  });
   it("keeps the brightest nearby lights and preserves deterministic source order", () => {
     const source = { points: [point(0, 1), point(0, 4), point(0, 2)], spots: [] };
     const selected = prioritizeLocalLights(source, 2);

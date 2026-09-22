@@ -1,11 +1,17 @@
+import { STOCK_MATERIAL_INSTANCE_OPTIONS } from "./materialInstanceAbi.js";
 import { bakeRenderPacket, type DeepBakeOptions, type DeepBakeResult } from "./assetBakePlan.js";
 import { prepareRenderPacket } from "./renderPacket.js";
 import type { PreparedAuthorSelectedLodProfile, PreparedBatch, PreparedLodLevel, PreparedPacket, RenderPacket } from "./renderPacketTypes.js";
+import { compilePacketBoundsHlod, type PacketBoundsHlodEvidence, type PacketBoundsHlodOptions } from "./packetBoundsHlod.js";
+
+export { compilePacketBoundsHlod } from "./packetBoundsHlod.js";
+export type { PacketBoundsHlodEvidence, PacketBoundsHlodOptions, PacketBoundsHlodResult } from "./packetBoundsHlod.js";
 
 const DEFAULT_INPUT_BYTES = 256 * 1024 * 1024;
 const DEFAULT_MESHLETS = 4_000_000;
 
 export interface DeepBakeResidencyOptions extends DeepBakeOptions {
+  readonly boundsHlod?: PacketBoundsHlodOptions;
   readonly maxInputBytes?: number;
   readonly maxMeshlets?: number;
   readonly signal?: AbortSignal;
@@ -38,6 +44,7 @@ export interface DeepBakedResidencyPacket {
   readonly batches: readonly DeepBakedResidencyBatch[];
   readonly sourceHash: string;
   readonly cacheKey: string;
+  readonly boundsHlod?: PacketBoundsHlodEvidence;
 }
 export interface DeepBakeCandidateBinding {
   readonly sourceHash: string;
@@ -55,11 +62,13 @@ export function bakeCandidateBinding(value: DeepBakedResidencyPacket): DeepBakeC
 export function bakeRenderPacketForResidency(packet: RenderPacket,
   options: DeepBakeResidencyOptions = {}): DeepBakedResidencyPacket {
   validateOptions(options); checkAbort(options.signal);
-  const bytes = inputBytes(packet);
+  const hlod = options.boundsHlod === undefined ? undefined : compilePacketBoundsHlod(packet, options.boundsHlod);
+  const compiledPacket = hlod?.packet ?? packet;
+  const bytes = inputBytes(compiledPacket);
   const maxInputBytes = bounded(options.maxInputBytes, DEFAULT_INPUT_BYTES, "input byte");
   if (bytes > maxInputBytes) throw new RangeError(`Bake input exceeds its byte budget (${bytes} > ${maxInputBytes}).`);
-  const prepared = prepareRenderPacket(packet); checkAbort(options.signal);
-  const bake = bakeRenderPacket(packet, {
+  const prepared = prepareRenderPacket(compiledPacket, STOCK_MATERIAL_INSTANCE_OPTIONS); checkAbort(options.signal);
+  const bake = bakeRenderPacket(compiledPacket, {
     ...(options.quality ? { quality: options.quality } : {}),
     ...(options.recipeVersion ? { recipeVersion: options.recipeVersion } : {}),
   });
@@ -98,9 +107,10 @@ export function bakeRenderPacketForResidency(packet: RenderPacket,
     if (!fallback.resident) throw new Error(`Baked LOD fallback is unavailable: ${batch.key}.`);
     return Object.freeze({ key: batch.key, fallbackGeometry: fallback.geometry, levels: mapped });
   }));
-  const sourceHash = hashPacket(packet);
+  const sourceHash = hashPacket(compiledPacket);
   const planHash = hashText(`${sourceHash}\u0000${bake.cacheKey}\u0000${stableJson(batches)}`);
   return Object.freeze({ packet: packetValue, bake, batches, sourceHash,
+    ...(hlod ? { boundsHlod: hlod.evidence } : {}),
     cacheKey: `deep.bake-residency.v1:${planHash}` });
 }
 

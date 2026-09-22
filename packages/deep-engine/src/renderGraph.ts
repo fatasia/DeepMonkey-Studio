@@ -305,6 +305,25 @@ export class RenderGraphBuilder {
 
   private resourceLifetimes(order: readonly string[], livePasses?: ReadonlySet<string>): readonly RenderResourceLifetime[] {
     const passIndex = new Map(order.map((id, index) => [id, index]));
+    const producerByResource = new Map<string, string>();
+    for (const pass of this.passes.values()) {
+      if (livePasses && !livePasses.has(pass.id)) continue;
+      for (const output of pass.outputs ?? []) producerByResource.set(output, pass.id);
+    }
+    const orderedAfter = (later: string, earlier: string): boolean => {
+      const visited = new Set<string>();
+      const visit = (passId: string): boolean => {
+        if (passId === earlier) return true;
+        if (visited.has(passId)) return false;
+        visited.add(passId);
+        const pass = this.passes.get(passId);
+        if (!pass) return false;
+        const predecessors = [...pass.dependencies ?? [], ...(pass.inputs ?? [])
+          .map(input => producerByResource.get(input)).filter((id): id is string => id !== undefined)];
+        return predecessors.some(visit);
+      };
+      return visit(later);
+    };
     const uses = new Map<string, { first: number; last: number }>();
     for (const pass of this.passes.values()) {
       const index = passIndex.get(pass.id);
@@ -326,7 +345,8 @@ export class RenderGraphBuilder {
       .sort((a, b) => a.use.first - b.use.first || a.declaration - b.declaration)
       .forEach(({ resource, use }) => {
       let transientSlot = resource.aliasKey === undefined ? -1 : slots.findIndex((slot) =>
-        slot.aliasKey === resource.aliasKey && slot.lastUse < use.first);
+        slot.aliasKey === resource.aliasKey && slot.lastUse < use.first
+          && orderedAfter(order[use.first]!, order[slot.lastUse]!));
       if (transientSlot < 0) {
         transientSlot = slots.length;
         slots.push({ ...(resource.aliasKey === undefined ? {} : { aliasKey: resource.aliasKey }), lastUse: use.last });

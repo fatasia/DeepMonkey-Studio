@@ -15,3 +15,6 @@ export type { SharedShadowAtlasAllocation, SharedShadowAtlasLimits, SharedShadow
   SharedShadowAtlasPlan, SharedShadowAtlasRejection, SharedShadowAtlasRejectionReason,
   SharedShadowAtlasRequest, SharedShadowAtlasTile, SharedShadowCubeFace,
   SharedShadowLightKind } from "./sharedShadowAtlas.js";
+export { LOCAL_SHADOW_PCSS_MAX_RADIUS_TEXELS, LOCAL_SHADOW_PCSS_TAPS,
+  localShadowPcssDepthBias, localShadowPcssRadius, localShadowPcssRotation,
+  resolveLocalShadowSoftness } from "./localShadowSoftness.js";

@@ -84,6 +84,23 @@ describe("PBR transient texture pool", () => {
     expect(f.owned.size).toBe(0);
   });
 
+  it("only adds TRANSIENT_ATTACHMENT to attachment-only textures", () => {
+    vi.stubGlobal("GPUTextureUsage", {
+      RENDER_ATTACHMENT: 1, TEXTURE_BINDING: 2, STORAGE_BINDING: 4, COPY_SRC: 8, TRANSIENT_ATTACHMENT: 16,
+    });
+    const f = fixture(), pool = new PbrTransientTexturePool(f.session);
+    pool.beginFrame();
+    const attachmentOnly = pool.acquire(request("attachment-only", {
+      format: PBR_HDR_FORMAT, width: 64, height: 64, sampleCount: 1, usage: 1,
+    }));
+    const sampled = pool.acquire(request("sampled-attachment", {
+      format: PBR_HDR_FORMAT, width: 64, height: 64, sampleCount: 1, usage: 1 | 2 | 8,
+    }));
+    expect(f.textures[0]?.descriptor.usage).toBe(1 | 16);
+    expect(f.textures[1]?.descriptor.usage).toBe(1 | 2 | 8);
+    pool.release(attachmentOnly); pool.release(sampled); pool.endFrame(true);
+  });
+
   it("never pools cross-frame history resources", () => {
     const f = fixture(), pool = new PbrTransientTexturePool(f.session), key = keys();
     pool.beginFrame();
@@ -162,6 +179,23 @@ describe("PBR transient texture pool", () => {
     expect(() => pool.release(first)).toThrow(/released twice/);
     pool.endFrame(true);
     expect(pool.stats).toMatchObject({ acquireCount: 2, hits: 0, misses: 2 });
+  });
+
+  it("consumes compiled non-overlapping slots as one physical texture within the frame", () => {
+    const f = fixture(), pool = new PbrTransientTexturePool(f.session), key = keys().surface;
+    pool.beginFrame([
+      { id: "opaque-hdr", descriptor: "rgba16float", external: false, aliasKey: "full-rgba16float",
+        firstUse: 0, lastUse: 1, transientSlot: 0 },
+      { id: "bloom-hdr", descriptor: "rgba16float", external: false, aliasKey: "full-rgba16float",
+        firstUse: 2, lastUse: 3, transientSlot: 0 },
+    ]);
+    const opaque = pool.acquire(request("opaque-hdr", key));
+    const bloom = pool.acquire(request("bloom-hdr", key));
+    expect(bloom.texture).toBe(opaque.texture);
+    expect(f.textures).toHaveLength(1);
+    expect(pool.stats).toMatchObject({ acquireCount: 2, hits: 1, frameAliasHits: 1, misses: 1 });
+    pool.release(bloom); pool.release(opaque); pool.endFrame(true);
+    expect(pool.stats.freeCount).toBe(1);
   });
 
   it("enforces the explicit queue-lifecycle contract on scope misuse", () => {

@@ -2,7 +2,7 @@ import type { ClusteredLights, DirectionalLight, LightVector3, PackedClusteredLi
 
 export const DIRECTIONAL_LIGHT_STRIDE = 32;
 export const POINT_LIGHT_STRIDE = 32;
-export const SPOT_LIGHT_STRIDE = 48;
+export const SPOT_LIGHT_STRIDE = 64;
 export const LOCAL_LIGHT_BOUNDS_STRIDE = 16;
 export const MAX_CLUSTERED_DIRECTIONAL_LIGHTS = 16;
 export const MAX_CLUSTERED_LOCAL_LIGHTS = 65_535;
@@ -28,7 +28,8 @@ function direction(value: LightVector3, name: string): LightVector3 {
 function validateLocal(light: PointLight, name: string): void {
   finiteVector(light.positionView, `${name}.positionView`);
   finiteVector(light.color, `${name}.color`, true);
-  if (!Number.isFinite(light.range) || light.range <= 0) throw new Error(`${name}.range must be finite and positive.`);
+  if (!Number.isFinite(light.range) || light.range < 0) throw new Error(`${name}.range must be finite and nonnegative.`);
+  if (!Number.isFinite(light.decay ?? 2) || (light.decay ?? 2) < 0 || (light.decay ?? 2) > 4) throw new Error(`${name}.decay must be inside [0,4].`);
   finiteNonnegative(light.intensity, `${name}.intensity`);
 }
 
@@ -55,7 +56,7 @@ function packPoints(lights: readonly PointLight[]): Float32Array {
   lights.forEach((light, index) => {
     validateLocal(light, `points[${index}]`);
     result.set([...light.positionView, light.range,
-      light.color[0] * light.intensity, light.color[1] * light.intensity, light.color[2] * light.intensity, 0], index * 8);
+      light.color[0] * light.intensity, light.color[1] * light.intensity, light.color[2] * light.intensity, (light.decay ?? 2) - 2], index * 8);
   });
   return result;
 }
@@ -66,12 +67,13 @@ function packSpots(lights: readonly SpotLight[]): Float32Array {
     validateLocal(light, `spots[${index}]`);
     const normalized = direction(light.directionView, `spots[${index}].directionView`);
     if (!Number.isFinite(light.outerConeCos) || !Number.isFinite(light.innerConeCos)
-      || light.outerConeCos < -1 || light.innerConeCos > 1 || light.outerConeCos >= light.innerConeCos) {
+      || light.outerConeCos < -1 || light.innerConeCos > 1 || light.outerConeCos > light.innerConeCos) {
       throw new Error(`spots[${index}] cone cosines must satisfy -1 <= outerConeCos < innerConeCos <= 1.`);
     }
-    const coneScale = 1 / (light.innerConeCos - light.outerConeCos);
+    const coneScale = light.innerConeCos === light.outerConeCos ? 0 : 1 / (light.innerConeCos - light.outerConeCos);
     result.set([...light.positionView, light.range, ...normalized, light.outerConeCos,
-      light.color[0] * light.intensity, light.color[1] * light.intensity, light.color[2] * light.intensity, coneScale], index * 12);
+      light.color[0] * light.intensity, light.color[1] * light.intensity, light.color[2] * light.intensity, coneScale,
+      light.decay ?? 2, 0, 0, 0], index * 16);
   });
   return result;
 }

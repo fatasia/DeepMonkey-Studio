@@ -97,6 +97,8 @@ export interface DashboardGuide {
   position: number;
 }
 
+export interface DashboardRootLayerRef { kind: "group" | "node"; id: string }
+
 export interface DashboardPageDocument {
   id: string;
   name: string;
@@ -111,6 +113,8 @@ export interface DashboardPageDocument {
   /** Editor-only layout guides. They are saved with the page and hidden at runtime. */
   guides?: DashboardGuide[];
   nodes: WidgetNode[];
+  /** 作者目录根顺序；组内顺序由节点 zIndex 决定。 */
+  rootLayerOrder?: DashboardRootLayerRef[];
 }
 
 export interface TopologyNode { id: string; kind: string; x: number; y: number; properties: Record<string, JsonValue>; }

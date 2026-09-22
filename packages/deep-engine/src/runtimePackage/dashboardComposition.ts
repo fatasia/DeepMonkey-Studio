@@ -28,6 +28,14 @@ export function buildDashboardCompositionRuntimePackage(input: BuildDashboardCom
   const core = { ...base, schemaVersion: DEEP_RUNTIME_PACKAGE_DASHBOARD_VERSION, materialBindings: [],
     entrypoints: { ...base.entrypoints, chart: null, chartSim: null, dashboard: input.dashboard.id }, resources, payloads };
   const result = validateDeepRuntimePackage({ ...core, packageHash: { algorithm: "sha256", value: runtimePackageSha256(core) } });
-  if (!result.valid) throw new Error(result.issues[0]?.message ?? "Invalid dashboard composition.");
+  if (!result.valid) {
+    const dashboard = payloads[input.dashboard.id] as { pages?: readonly { nodes?: readonly unknown[] }[] } | undefined;
+    const nodes = dashboard?.pages?.reduce((sum, page) => sum + (page.nodes?.length ?? 0), 0) ?? 0;
+    const issue = result.issues[0];
+    throw new Error(
+      `${issue?.message ?? "Invalid dashboard composition."}${issue?.path ? ` at ${issue.path}` : ""} ` +
+        `resources=${resources.length}, nodes=${nodes}`
+    );
+  }
   return result.value as DeepRuntimePackageV5;
 }

@@ -47,9 +47,10 @@ function tileAt(ndc: number, viewport: number, tileSize: number, tileCount: numb
 
 /** Conservative sphere projection shared with the compute implementation. */
 export function clusterBoundsForSphere(grid: NormalizedClusterGrid, positionView: readonly [number, number, number], range: number): ClusterLightBounds | undefined {
-  if (positionView.length !== 3 || !positionView.every(Number.isFinite) || !Number.isFinite(range) || range <= 0) {
+  if (positionView.length !== 3 || !positionView.every(Number.isFinite) || !Number.isFinite(range) || range < 0) {
     throw new Error("Cluster sphere must have a finite view-space position and positive range.");
   }
+  if (range === 0) return { minTileX: 0, maxTileX: grid.tilesX - 1, minTileY: 0, maxTileY: grid.tilesY - 1, minSlice: 0, maxSlice: grid.zSlices - 1 };
   const depth = -positionView[2];
   if (depth + range < grid.near || depth - range > grid.far) return undefined;
   const minSlice = clusterSliceForDepth(grid, Math.max(grid.near, depth - range));

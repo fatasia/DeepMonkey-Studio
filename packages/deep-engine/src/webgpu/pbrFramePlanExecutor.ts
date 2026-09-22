@@ -64,6 +64,8 @@ const MAPPED_EXECUTORS: Readonly<Record<string, string>> = Object.freeze({
   "apply-ambient-occlusion": "AmbientOcclusionCompositePass.encode",
   "screen-space-reflection-trace": "ScreenSpaceReflectionPass.encode/trace",
   "screen-space-reflection-composite": "ScreenSpaceReflectionPass.encode/composite",
+  "volumetric-fog-march": "VolumetricFogPass.encode",
+  "volumetric-fog-composite": "VolumetricFogCompositePass.encode",
   "transparent-oit": "PbrTransparencyPass.encode → WeightedOitPass accumulation",
   "composite-oit": "PbrTransparencyPass.encode → WeightedOitPass.encodeComposite",
   "temporal-aa": "TemporalAaPass.encode",
@@ -258,7 +260,7 @@ export function collectActualPbrFramePasses(features: PbrRendererFeatures, trans
     ...(transparency ? PbrTransparencyPass.describePasses(opaqueColorResource) : []),
     ...effects.filter(pass => !opaqueEffect(pass)),
     describePbrPresentPasses(options.presentInputResource ?? (features.bloom ? "bloom-hdr"
-      : features.temporalAa ? "temporal-hdr" : features.screenSpaceReflection ? "ssr-hdr"
+      : features.temporalAa ? "temporal-hdr" : features.screenSpaceReflection ? "ssr-hdr" : features.volumetricFog ? "volumetric-fog-hdr"
         : transparency ? "composited-hdr" : opaqueColorResource), features.spatialAa),
   ]);
 }

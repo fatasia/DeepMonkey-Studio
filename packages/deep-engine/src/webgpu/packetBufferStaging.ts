@@ -2,6 +2,7 @@ import {
   assertPacketDeformationSupported,
   geometryCenter,
   type GeometryResource,
+  type PreparedBatch,
   type PreparedPacket,
 } from "../renderPacket.js";
 import { DEEP_PBR_MESH_V1_BYTE_SIZES } from "../shaderAbi/index.js";
@@ -14,7 +15,7 @@ import {
 import { MeshBuffers, uploadBuffer } from "./meshBuffers.js";
 import type { CachedPacketBatch, CachedPacketGeometry } from "./packetBufferTypes.js";
 import { packPreviousTransforms } from "./packetInstanceHistory.js";
-import { TextureResources, type StagedTextureSet } from "./textureResources.js";
+import { TextureResources, type StagedTextureSet, type TextureBinding } from "./textureResources.js";
 import { runResourceCleanup } from "./resourceCleanup.js";
 import { PacketDeformationResources } from "./packetDeformationResources.js";
 import type { DeformationStaticSources } from "./deformationStaticSources.js";
@@ -56,6 +57,9 @@ export interface PacketBufferStagingContext {
 export function stagePacketBuffers(
   context: PacketBufferStagingContext,
   prepared: PreparedPacket,
+  decorateBatches?: (textures: StagedTextureSet, batches: readonly PreparedBatch[]) => readonly PreparedBatch[],
+  stagedBinding?: (textures: StagedTextureSet, id: string) => TextureBinding,
+  omitTextureStorage?: ReadonlySet<string>,
 ): StagedPacketBuffers {
   assertPacketDeformationSupported(prepared, context?.deformationEnabled === true);
   if (prepared.deformation) assertSnapshotRevisions(prepared.deformation, context.deformationSnapshot);
@@ -64,17 +68,19 @@ export function stagePacketBuffers(
   const createdMeshes: MeshBuffers[] = [];
   const createdBuffers: GPUBuffer[] = [];
   const acquiredMaterials: MaterialBinding[] = [];
-  const textures = context.textures.stagePrepared(prepared.textures);
+  const textures = context.textures.stagePrepared(prepared.textures, omitTextureStorage);
   let deformation: PacketDeformationResources | undefined;
   const deformationBoundsProfiles = new Map<string, DeformationBoundsProfile>();
   try {
+    const preparedBatches = decorateBatches?.(textures, prepared.batches) ?? prepared.batches;
     if (prepared.deformation) {
       for (const source of prepared.deformation.sources) deformationBoundsProfiles.set(source.id, prepareDeformationBounds(source));
       deformation = new PacketDeformationResources(context.session, context.deformationStaticSources);
       deformation.prepare(prepared.deformation, new Map([...prepared.geometries].map(([id, geometry]) => [id, geometry.revision])));
     }
     stageGeometries(context, prepared, geometries, createdMeshes);
-    stageBatches(context, prepared, textures, batches, createdBuffers, acquiredMaterials);
+    stageBatches(context, { ...prepared, batches: preparedBatches }, textures, batches, createdBuffers, acquiredMaterials,
+      stagedBinding);
   } catch (error) {
     try { releaseStage(context, createdMeshes, createdBuffers, acquiredMaterials, textures, deformation); }
     catch (cleanupError) {
@@ -146,11 +152,12 @@ function stageBatches(
   target: Map<string, CachedPacketBatch>,
   createdBuffers: GPUBuffer[],
   acquiredMaterials: MaterialBinding[],
+  stagedBinding?: (textures: StagedTextureSet, id: string) => TextureBinding,
 ): void {
   for (const source of prepared.batches) {
     const previous = context.batches.get(source.key);
     const metadataChanged = authorLodMetadataChanged(previous?.source, source);
-    const lookup = (id: string) => context.textures.stagedBinding(textures, id);
+    const lookup = (id: string) => stagedBinding?.(textures, id) ?? context.textures.stagedBinding(textures, id);
     const sameMaterial = materialBindingMatches(previous?.material, source.textures, lookup);
     if (previous && equal(previous.source.data, source.data) && sameMaterial) {
       target.set(source.key, metadataChanged ? { ...previous, source } : previous);

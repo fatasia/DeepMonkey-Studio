@@ -7,6 +7,7 @@ import {
   type DashboardGuide,
   type DashboardPageAppearance,
   type DashboardPageDocument,
+  type DashboardRootLayerRef,
   type DashboardViewportFit,
   type InteractionFlow,
   type SceneViewportWidgetNode,
@@ -203,10 +204,12 @@ export interface UpdateDashboardNodeStatesCommand {
   readonly payload: {
     readonly pageId: string;
     readonly states: ReadonlyArray<{ readonly nodeId: string; readonly state: DashboardNodeStatePatch }>;
+    readonly rootLayerOrder?: readonly DashboardRootLayerRef[];
   };
 }
 
 export interface DashboardNodeStatePatch {
+  readonly zIndex?: number;
   readonly name?: string;
   readonly visible?: boolean;
   readonly selectable?: boolean;
@@ -471,8 +474,11 @@ export function createUpdateDashboardNodeStatesCommand(
   pageId: string,
   states: ReadonlyArray<{ nodeId: string; state: DashboardNodeStatePatch }>,
   label = "批量更新二维组件状态",
+  rootLayerOrder?: readonly DashboardRootLayerRef[],
 ): UpdateDashboardNodeStatesCommand {
-  return { id: commandId(), type: "dashboard.node.states.update", label, payload: { pageId, states: structuredClone(states) } };
+  return { id: commandId(), type: "dashboard.node.states.update", label, payload: { pageId, states: structuredClone(states),
+    ...(rootLayerOrder ? { rootLayerOrder: structuredClone(rootLayerOrder) } : {}),
+  } };
 }
 
 export function createUpdateDashboardDataWidgetCommand(pageId: string, nodeId: string, widget: DashboardDataWidgetConfig): UpdateDashboardDataWidgetCommand {

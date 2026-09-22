@@ -10,6 +10,16 @@ function packet(): RenderPacket {
 }
 
 describe("render packet projection", () => {
+  it("packs outline per object without splitting a shared material batch", () => {
+    const p = packet();
+    const result = prepareRenderPacket({ ...p, instances: [p.instances[0]!,
+      { ...p.instances[0]!, id: "outlined", outline: true }] });
+    expect(result.batches).toHaveLength(1);
+    expect(result.batches[0]!.data[31]! & 256).toBe(0);
+    expect(result.batches[0]!.data[67]! & 256).toBe(256);
+    expect(() => prepareRenderPacket({ ...p, instances: [{ ...p.instances[0]!, outline: 1 as unknown as boolean }] }))
+      .toThrow("outline must be boolean");
+  });
   it("shares a geometry batch across materials and separates mirrored winding", () => {
     const p = packet();
     const result = prepareRenderPacket({ ...p, materials: [...p.materials, { ...p.materials[0]!, id: "metal", metallic: 1 }], instances: [p.instances[0]!,

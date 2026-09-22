@@ -3,7 +3,7 @@ import type { DeviceSession } from "./deviceSession.js";
 import { packMaterialParameters } from "./materialBindings.js";
 import { DEFAULT_PBR_RENDERER_FEATURES, resolvePbrRendererFeatures } from "./pbrRendererFeatures.js";
 import { sceneShader } from "./pbrShader.js";
-import { buildTextureArrayPlan, MATERIAL_ARRAY_INDICES_BYTES, TextureArrayResources,
+import { buildTextureArrayPlan, MATERIAL_ARRAY_INDICES_BINDING, MATERIAL_ARRAY_INDICES_BYTES, TextureArrayResources,
   type TextureArrayLayerSource } from "./textureArrayResources.js";
 import { composeTextureArraySceneShader } from "./textureArrayWgsl.js";
 import { planTextureArrays } from "./textureArrayPacking.js";
@@ -15,7 +15,7 @@ function fixture(maxArrayLayers = 4) {
   const owned = new Set<OwnedResource>();
   const samplers: GPUSampler[] = [];
   const device = {
-    limits: { maxTextureArrayLayers: maxArrayLayers },
+    limits: { maxTextureArrayLayers: maxArrayLayers, minUniformBufferOffsetAlignment: 256 },
     features: new Set<GPUFeatureName>(),
     createTexture: vi.fn((descriptor: GPUTextureDescriptor) => {
       const texture: GPUTexture = { descriptor, destroy: vi.fn(),
@@ -45,7 +45,7 @@ const slot = (texture: string) => ({ texture, texCoord: 0 as const, uvTransform:
 
 beforeEach(() => {
   vi.stubGlobal("GPUTextureUsage", { TEXTURE_BINDING: 4, COPY_DST: 2 });
-  vi.stubGlobal("GPUBufferUsage", { UNIFORM: 64, COPY_DST: 8 });
+  vi.stubGlobal("GPUBufferUsage", { UNIFORM: 64, STORAGE: 128, COPY_DST: 8 });
   vi.stubGlobal("GPUShaderStage", { VERTEX: 1, FRAGMENT: 2 });
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -71,9 +71,14 @@ describe("texture array level 1 (wave 5 bindless)", () => {
     const composed = composeTextureArraySceneShader(sceneShader);
     expect(composed.match(/@group\(1\) @binding\(\d+\) var deepArrayMap\d: texture_2d_array<f32>;/g)).toHaveLength(5);
     expect(composed.match(/@group\(1\) @binding\(\d+\) var deepArraySampler\d: sampler;/g)).toHaveLength(5);
-    expect(composed).toContain("@group(1) @binding(10) var<uniform> materialTextures: MaterialTextures;");
+    for (let slot = 0; slot < 5; slot++) {
+      expect(composed).toContain(`@group(1) @binding(${slot}) var deepArrayMap${slot}: texture_2d_array<f32>;`);
+      expect(composed).toContain(`@group(1) @binding(${slot + 5}) var deepArraySampler${slot}: sampler;`);
+    }
+    expect(composed).toContain("struct MaterialTableRow { textures: MaterialTextures, indices: MaterialArrayIndices };");
+    expect(composed).toContain("@group(1) @binding(10) var<storage, read> materialTable: array<MaterialTableRow>;");
     expect(composed).toContain("struct MaterialArrayIndices { layerRow: vec4i, emissiveLayerRow: vec4i };");
-    expect(composed.match(/materialArrayIndices\./g)).toHaveLength(6);
+    expect(composed.match(/materialTable\[v\.materialRow\]\.indices\./g)).toHaveLength(6);
     for (const legacy of ["baseColorMap", "metallicRoughnessMap", "occlusionMap", "normalMap", "emissiveMap"]) {
       expect(composed).not.toContain(legacy);
     }
@@ -110,6 +115,10 @@ describe("texture array level 1 (wave 5 bindless)", () => {
     expect(resourceOf(7)).toBe(f.samplers[0]); // 哑元采样器是首个也是唯一 createSampler
     expect(resourceOf(5)).toBe(sampler);
     expect(resourceOf(10)).toEqual({ buffer: pooled });
+    const layerBinding = resources.textureBinding("t-b")!;
+    expect((layerBinding.view as unknown as { viewDescriptor: GPUTextureViewDescriptor }).viewDescriptor)
+      .toMatchObject({ dimension: "2d", baseArrayLayer: 1, arrayLayerCount: 1 });
+    expect(layerBinding.texture).toBe((resourceOf(0) as { texture: GPUTexture }).texture);
     const indices = f.device.queue.writeBuffer.mock.calls[0]![2] as Uint32Array;
     expect([...indices]).toEqual([1, 0, 0, 0, 0, 0, 0, 0]); // baseColor=t-b → array0 层 1
     expect(indices.byteLength).toBe(MATERIAL_ARRAY_INDICES_BYTES);
@@ -119,6 +128,41 @@ describe("texture array level 1 (wave 5 bindless)", () => {
     expect(pooled.destroy).not.toHaveBeenCalled(); // 外部池化参数不归本资源集释放
     expect(f.owned.size).toBe(0);
     expect(() => resources.materialGroup(material, pooled)).toThrow(/not ready/);
+  });
+
+  it("stages compatible materials into one shared indexed table through the array resource owner", () => {
+    const f = fixture();
+    const plan = buildTextureArrayPlan([
+      { textureId: "a", format: "rgba8unorm", width: 4, height: 4 },
+      { textureId: "b", format: "rgba8unorm", width: 4, height: 4 },
+    ], f.session);
+    const resources = new TextureArrayResources(f.session, plan, () => layer(4));
+    const table = resources.materialTable([
+      { emissiveStrength: 1, baseColor: slot("a") },
+      { emissiveStrength: 2, baseColor: slot("b") },
+    ])!;
+    expect(table.groupCount).toBe(1);
+    expect(table.rows.map(row => row.materialRow)).toEqual([0, 1]);
+    expect(table.rowStride).toBe(192);
+    expect(table.rows[0]!.group).toBe(table.rows[1]!.group);
+    table.dispose(); resources.dispose();
+    expect(f.owned.size).toBe(0);
+  });
+
+  it("keeps the whole shared table on the D2 fallback path when one material overflowed", () => {
+    const f = fixture(1);
+    const plan = buildTextureArrayPlan([
+      { textureId: "a", format: "rgba8unorm", width: 4, height: 4 },
+      { textureId: "b", format: "rgba8unorm", width: 4, height: 4 },
+    ], f.session);
+    const resources = new TextureArrayResources(f.session, plan, () => layer(4));
+    expect(resources.materialTable([
+      { emissiveStrength: 1, baseColor: slot("a") },
+      { emissiveStrength: 1, baseColor: slot("b") },
+    ])).toBeUndefined();
+    expect(resources.stats.materialFallbacks).toBe(1);
+    expect(f.device.createBuffer).not.toHaveBeenCalled();
+    resources.dispose();
   });
 
   it("falls back the whole material when any used slot overflowed, and counts it", () => {
@@ -191,7 +235,9 @@ describe("texture array level 1 (wave 5 bindless)", () => {
       .toMatchObject({ visibility: 2, texture: { sampleType: "float", viewDimension: "2d-array" } });
     expect(entries.find(entry => entry.binding === 10))
       .toMatchObject({ buffer: { type: "uniform", minBindingSize: DEEP_PBR_MESH_V1_BYTE_SIZES.material } });
-    expect(entries.find(entry => entry.binding === 11))
+    expect(MATERIAL_ARRAY_INDICES_BINDING).toBe(13);
+    expect(entries.some(entry => entry.binding === 11 || entry.binding === 12)).toBe(false);
+    expect(entries.find(entry => entry.binding === MATERIAL_ARRAY_INDICES_BINDING))
       .toMatchObject({ buffer: { type: "uniform", minBindingSize: MATERIAL_ARRAY_INDICES_BYTES } });
     resources.dispose(); resources.dispose(); // 幂等
     expect(f.owned.size).toBe(0);

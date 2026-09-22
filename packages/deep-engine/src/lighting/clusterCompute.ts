@@ -5,7 +5,7 @@ import { assignLightsToClusters, normalizeClusterGrid } from "./clusterGrid.js";
 import { packIesShading } from "./iesShading.js";
 import { prioritizeLocalLights } from "./importanceBudget.js";
 import { DIRECTIONAL_LIGHT_STRIDE, LOCAL_LIGHT_BOUNDS_STRIDE, packClusteredLights, POINT_LIGHT_STRIDE, SPOT_LIGHT_STRIDE } from "./clusterPacking.js";
-import { FORWARD_PLUS_CLUSTER_ASSIGN_WGSL, FORWARD_PLUS_CLUSTER_WORKGROUP_SIZE } from "./clusterComputeWgsl.js";
+import { FORWARD_PLUS_CLUSTER_ASSIGN_WGSL } from "./clusterComputeWgsl.js";
 import type { ClusterGridConfig, ClusteredLights, CpuClusterAssignment, NormalizedClusterGrid, PackedClusteredLights } from "./types.js";
 
 export const FORWARD_PLUS_CLUSTER_PIPELINE_KEY = "deep.forward-plus.cluster-assign.v1";
@@ -175,9 +175,8 @@ export class ForwardPlusClusterAssigner {
     const prepared = this.prepared, resources = this.resources, assignment = this.preparedAssignment;
     if (!prepared || !resources || !assignment) throw new Error("Forward+ cluster inputs must be prepared before encode.");
     if (!sameAssignment(assignment, this.assigned)) {
-      const groups = Math.ceil(prepared.grid.clusterCount / FORWARD_PLUS_CLUSTER_WORKGROUP_SIZE);
       const maxGroups = this.session.device.limits.maxComputeWorkgroupsPerDimension;
-      if (groups > maxGroups) throw new Error(`Forward+ cluster dispatch exceeds device limit ${maxGroups}.`);
+      const groups = Math.min(prepared.grid.clusterCount, maxGroups);
       this.session.device.queue.writeBuffer(resources.overflowBuffer, 0, new Uint32Array([0]));
       const pass = encoder.beginComputePass({ label: "Deep Forward+ cluster assignment" });
       pass.setPipeline(this.pipeline); pass.setBindGroup(0, resources.bindGroup); pass.dispatchWorkgroups(groups); pass.end();

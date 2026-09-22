@@ -62,6 +62,13 @@ describe("packet deformation draw routing", () => {
     expect(f.mesh.draw.mock.calls[0]![3]).toBe(false);
   });
 
+  it("binds a shared material table once without dynamic offsets", () => {
+    const f = fixture();
+    f.resolve.mockReturnValue({ ...f.resolve() });
+    f.draw();
+    expect(f.pass.setBindGroup).toHaveBeenCalledWith(1, f.group);
+  });
+
   it("preflights owner evidence for every indirect candidate before drawing", () => {
     const f = fixture();
     f.batches.set("second", { ...f.batch, source: { ...f.batch.source, key: "second" } });

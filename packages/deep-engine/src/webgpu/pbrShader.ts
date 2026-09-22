@@ -67,6 +67,7 @@ struct Vertex {
   @location(5) tangent: vec4f, @location(6) @interpolate(flat) emissiveAlpha: vec4f, @location(7) uv1: vec2f,
   @location(8) currentClip: vec4f, @location(9) previousClip: vec4f, @location(10) viewDepth: f32,
   @location(11) authorShadow: vec4f,
+  @location(12) @interpolate(flat) dielectric: f32,
 };
 struct PreviousInstanceInput {
   @location(13) row0: vec4f, @location(14) row1: vec4f, @location(15) row2: vec4f,
@@ -91,7 +92,7 @@ fn tangentFallback(normal: vec3f) -> vec3f {
   out.viewDepth = max(-(frame.worldToView * vec4f(out.world, 1.0)).z, 0.0);
   out.normal = safeNormalize(mat3x3f(v.normal0.xyz, v.normal1.xyz, v.normal2.xyz) * v.normal, vec3f(0.0, 1.0, 0.0));
   out.tangent = vec4f(1.0, 0.0, 0.0, v.material.z);
-  out.colorMetal = v.colorMetal; out.material = v.material; out.uv0 = v.uvSets.xy; out.uv1 = v.uvSets.zw; out.emissiveAlpha = v.emissiveAlpha;
+  out.dielectric = deepDielectricF0(v.normal0.w); out.colorMetal = v.colorMetal; out.material = v.material; out.uv0 = v.uvSets.xy; out.uv1 = v.uvSets.zw; out.emissiveAlpha = v.emissiveAlpha;
   out.authorShadow = deepAuthorShadowCoordinate(out.world, out.normal);
   return out;
 }
@@ -107,7 +108,7 @@ fn tangentFallback(normal: vec3f) -> vec3f {
   let rawTangent = vec3f(dot(v.row0.xyz, v.tangent.xyz), dot(v.row1.xyz, v.tangent.xyz), dot(v.row2.xyz, v.tangent.xyz));
   out.normal = n;
   out.tangent = vec4f(safeNormalize(rawTangent - n * dot(n, rawTangent), tangentFallback(n)), v.tangent.w * v.material.z);
-  out.colorMetal = v.colorMetal; out.material = v.material; out.uv0 = v.uvSets.xy; out.uv1 = v.uvSets.zw; out.emissiveAlpha = v.emissiveAlpha;
+  out.dielectric = deepDielectricF0(v.normal0.w); out.colorMetal = v.colorMetal; out.material = v.material; out.uv0 = v.uvSets.xy; out.uv1 = v.uvSets.zw; out.emissiveAlpha = v.emissiveAlpha;
   out.authorShadow = deepAuthorShadowCoordinate(out.world, out.normal);
   return out;
 }
@@ -148,7 +149,7 @@ fn orientedNormal(normalInput: vec3f, material: vec4f, frontFacing: bool) -> vec
 }
 ${GROUND_ALBEDO_WGSL}
 fn shade(fragmentCoordinate: vec2f, world: vec3f, normalInput: vec3f, ground: bool, baseInput: vec3f, metalInput: f32,
-  roughInput: f32, occlusionInput: f32, emissive: vec3f, authorShadow: vec4f, materialFlags: f32) -> vec3f {
+  roughInput: f32, occlusionInput: f32, emissive: vec3f, authorShadow: vec4f, materialFlags: f32, dielectric: f32) -> vec3f {
   let n = safeNormalize(normalInput, vec3f(0.0, 1.0, 0.0));
   let view = safeNormalize(frame.eye.xyz - world, vec3f(0.0, 0.0, 1.0));
   let l = safeNormalize(frame.lightDirection.xyz, vec3f(0.0, 1.0, 0.0));
@@ -161,12 +162,12 @@ fn shade(fragmentCoordinate: vec2f, world: vec3f, normalInput: vec3f, ground: bo
   }
   let base = groundGridAlbedo(select(baseInput, frame.floor.rgb, ground), grid, ground);
   let visibility = deepPrimaryShadow(world, n, dot(n, l), authorShadow, fragmentCoordinate, materialFlags);
-  var color = brdf(n, view, l, base, metal, rough) * frame.sunColor.rgb * frame.sunColor.w * visibility;
+  var color = brdfWithDielectricF0(n, view, l, base, metal, rough, dielectric) * frame.sunColor.rgb * frame.sunColor.w * visibility;
   if (deepClusterParams.limits.z > 0u || deepClusterParams.grid1.w > 0u) {
-    color += deepForwardPlusPbrWorldReceiving(fragmentCoordinate, world, n, frame.worldToView, base, metal, rough, !flag(materialFlags, 16u));
+    color += deepForwardPlusPbrWorldReceivingF0(fragmentCoordinate, world, n, frame.worldToView, base, metal, rough, !flag(materialFlags, 16u), dielectric);
   }
   if (frame.eye.w > 0.0) {
-    let nv = clamp(dot(n, view), 0.001, 1.0); let f0 = mix(vec3f(0.04), base, metal);
+    let nv = clamp(dot(n, view), 0.001, 1.0); let f0 = mix(vec3f(dielectric), base, metal);
     let f = f0 + (max(vec3f(1.0 - rough), f0) - f0) * pow(1.0 - nv, 5.0);
     let environmentIrradiance = textureSampleLevel(diffuseEnvironment, environmentSampler, n, 0.0).rgb * frame.lightDirection.w;
     let gi = deepGiSampleTexture(world, n); let irradiance = mix(environmentIrradiance, gi.rgb, gi.a);
@@ -198,10 +199,11 @@ fn clipUv(clip: vec4f) -> vec2f {
   let safeW = select(-max(abs(clip.w), 0.00000001), max(abs(clip.w), 0.00000001), clip.w >= 0.0);
   return clip.xy / safeW * vec2f(0.5, -0.5) + 0.5;
 }
-fn geometryOutput(v: Vertex, color: vec4f, worldNormal: vec3f) -> GeometryOutput {
+fn geometryOutput(v: Vertex, color: vec4f, worldNormal: vec3f, roughness: f32) -> GeometryOutput {
   var out: GeometryOutput; out.color = color; out.viewDepth = v.viewDepth;
   let viewNormal = safeNormalize((frame.worldToView * vec4f(worldNormal, 0.0)).xyz, vec3f(0.0, 0.0, 1.0));
-  out.viewNormal = vec4f(viewNormal * 0.5 + 0.5, select(0.0, 1.0, flag(v.material.w, 64u)));
+  // Alpha is the perceptual roughness consumed by SSR cone filtering; xyz stays the shared encoded view normal.
+  out.viewNormal = vec4f(viewNormal * 0.5 + 0.5, clamp(roughness, 0.0, 1.0));
   let projectionJitterDeltaUv = frame.tuning.xy;
   out.motion = clamp(clipUv(v.previousClip) - clipUv(v.currentClip) - projectionJitterDeltaUv, vec2f(-2.0), vec2f(2.0)); return out;
 }
@@ -209,20 +211,20 @@ fn geometryOutput(v: Vertex, color: vec4f, worldNormal: vec3f) -> GeometryOutput
   let ground = flag(v.material.w, 8u);
   let normal = orientedNormal(v.normal, v.material, frontFacing);
   let color = shade(v.clip.xy, v.world, normal, ground,
-    v.colorMetal.rgb, v.colorMetal.w, v.material.x, 1.0, v.emissiveAlpha.rgb, v.authorShadow, v.material.w);
-  return geometryOutput(v, vec4f(color, coverage(v.emissiveAlpha.w, v.material)), normal);
+    v.colorMetal.rgb, v.colorMetal.w, v.material.x, 1.0, v.emissiveAlpha.rgb, v.authorShadow, v.material.w, v.dielectric);
+  return geometryOutput(v, vec4f(color, coverage(v.emissiveAlpha.w, v.material)), normal, v.material.x);
 }
 @fragment fn fragmentMainColor(v: Vertex, @builtin(front_facing) frontFacing: bool) -> @location(0) vec4f {
   let ground = flag(v.material.w, 8u);
   let normal = orientedNormal(v.normal, v.material, frontFacing);
   let color = shade(v.clip.xy, v.world, normal, ground,
-    v.colorMetal.rgb, v.colorMetal.w, v.material.x, 1.0, v.emissiveAlpha.rgb, v.authorShadow, v.material.w);
+    v.colorMetal.rgb, v.colorMetal.w, v.material.x, 1.0, v.emissiveAlpha.rgb, v.authorShadow, v.material.w, v.dielectric);
   return vec4f(color, coverage(v.emissiveAlpha.w, v.material));
 }
 ${PBR_DIRECT_DISPLAY_WGSL}
 @fragment fn fragmentMainTransparent(v: Vertex, @builtin(front_facing) frontFacing: bool) -> DeepWeightedOitOutput {
   let ground = flag(v.material.w, 8u); let normal = orientedNormal(v.normal, v.material, frontFacing);
-  let color = shade(v.clip.xy, v.world, normal, ground, v.colorMetal.rgb, v.colorMetal.w, v.material.x, 1.0, v.emissiveAlpha.rgb, v.authorShadow, v.material.w);
+  let color = shade(v.clip.xy, v.world, normal, ground, v.colorMetal.rgb, v.colorMetal.w, v.material.x, 1.0, v.emissiveAlpha.rgb, v.authorShadow, v.material.w, v.dielectric);
   let depth = clamp(v.clip.z, 0.0, 1.0);
   let alpha = coverage(v.emissiveAlpha.w, v.material);
   if (flag(v.material.w, 128u)) { return deepWeightedOitPremultiplied(color, alpha, depth); }
@@ -264,26 +266,26 @@ fn mappedNormal(v: Vertex, frontFacing: bool) -> vec3f {
 @fragment fn fragmentMaterial(v: Vertex, @builtin(front_facing) frontFacing: bool) -> GeometryOutput {
   let surface = sampleSurface(v); var normal = orientedNormal(v.normal, v.material, frontFacing);
   if (materialTextures.normalRow0.w > 0.5) { normal = mappedNormal(v, frontFacing); }
-  let color = shade(v.clip.xy, v.world, normal, false, surface.base, surface.metal, surface.rough, surface.occlusion, surface.emissive, v.authorShadow, v.material.w);
-  return geometryOutput(v, vec4f(color, coverage(surface.alpha, v.material)), normal);
+  let color = shade(v.clip.xy, v.world, normal, false, surface.base, surface.metal, surface.rough, surface.occlusion, surface.emissive, v.authorShadow, v.material.w, v.dielectric);
+  return geometryOutput(v, vec4f(color, coverage(surface.alpha, v.material)), normal, surface.rough);
 }
 @fragment fn fragmentMaterialColor(v: Vertex, @builtin(front_facing) frontFacing: bool) -> @location(0) vec4f {
   let surface = sampleSurface(v); var normal = orientedNormal(v.normal, v.material, frontFacing);
   if (materialTextures.normalRow0.w > 0.5) { normal = mappedNormal(v, frontFacing); }
-  let color = shade(v.clip.xy, v.world, normal, false, surface.base, surface.metal, surface.rough, surface.occlusion, surface.emissive, v.authorShadow, v.material.w);
+  let color = shade(v.clip.xy, v.world, normal, false, surface.base, surface.metal, surface.rough, surface.occlusion, surface.emissive, v.authorShadow, v.material.w, v.dielectric);
   return vec4f(color, coverage(surface.alpha, v.material));
 }
 @fragment fn fragmentMaterialDisplay(v: Vertex, @builtin(front_facing) frontFacing: bool) -> @location(0) vec4f {
   let surface = sampleSurface(v); var normal = orientedNormal(v.normal, v.material, frontFacing);
   if (materialTextures.normalRow0.w > 0.5) { normal = mappedNormal(v, frontFacing); }
   let color = shade(v.clip.xy, v.world, normal, false, surface.base, surface.metal, surface.rough,
-    surface.occlusion, surface.emissive, v.authorShadow, v.material.w);
+    surface.occlusion, surface.emissive, v.authorShadow, v.material.w, v.dielectric);
   return vec4f(deepDisplayColor(color, frame.output), coverage(surface.alpha, v.material));
 }
 @fragment fn fragmentMaterialTransparent(v: Vertex, @builtin(front_facing) frontFacing: bool) -> DeepWeightedOitOutput {
   let surface = sampleSurface(v); var normal = orientedNormal(v.normal, v.material, frontFacing);
   if (materialTextures.normalRow0.w > 0.5) { normal = mappedNormal(v, frontFacing); }
-  let color = shade(v.clip.xy, v.world, normal, false, surface.base, surface.metal, surface.rough, surface.occlusion, surface.emissive, v.authorShadow, v.material.w);
+  let color = shade(v.clip.xy, v.world, normal, false, surface.base, surface.metal, surface.rough, surface.occlusion, surface.emissive, v.authorShadow, v.material.w, v.dielectric);
   let depth = clamp(v.clip.z, 0.0, 1.0);
   let alpha = coverage(surface.alpha, v.material);
   if (flag(v.material.w, 128u)) { return deepWeightedOitPremultiplied(color, alpha, depth); }

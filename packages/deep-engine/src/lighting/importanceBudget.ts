@@ -38,7 +38,8 @@ function localLightScore(light: PointLight): number {
   const depth = Math.max(0.25, Math.hypot(finiteOrZero(light.positionView[0]), finiteOrZero(light.positionView[1]), finiteOrZero(light.positionView[2])));
   const cone = "outerConeCos" in light && typeof (light as Partial<SpotLight>).outerConeCos === "number"
     ? Math.max(0.05, (1 + (light as SpotLight).outerConeCos) * 0.5) : 1;
-  return luminance * intensity * range * range * cone / (depth * depth);
+  const coverage = range === 0 ? 1 : range * range / (depth * depth);
+  return luminance * intensity * coverage * cone;
 }
 
 function finiteOrZero(value: number | undefined): number { return typeof value === "number" && Number.isFinite(value) ? value : 0; }

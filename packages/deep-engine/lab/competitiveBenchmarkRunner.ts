@@ -96,7 +96,8 @@ export async function runCompetitiveBenchmark(fixture: BenchmarkSceneFixture,
       maxRegressionFraction: 0.05, minImprovementFraction: 0.05 }] : []),
     { metric: "visual-similarity", direction: "higher", maxRegressionFraction: 0.08, absoluteMinimum: 0.92 },
   ];
-  const definition: BenchmarkCase = Object.freeze({ id: `${fixture.id}/${profile}`, track: "browser-webgpu", critical: true,
+  const definition: BenchmarkCase = Object.freeze({ id: `${fixture.id}/${profile}`, track: "browser-webgpu",
+    reference: "three", referenceVersion: reference.version, critical: true,
     environmentHash, fixtureHash, settingsHash, criteria: Object.freeze(criteria) });
   const rounds: CompetitiveRoundEvidence[] = [], images: CompetitiveBenchmarkReport["images"][number][] = [];
   const cpuBreakdown: CompetitiveBenchmarkReport["cpuBreakdown"][number][] = [];

@@ -13,6 +13,7 @@ import type {
   RenderPacket,
 } from "./renderPacketTypes.js";
 import { uniqueById } from "./renderPacketValidation.js";
+import type { MaterialInstanceOptions } from "./materialInstanceAbi.js";
 import { prepareTextures, type TextureSemantic } from "./textures/decodedTexture.js";
 import type { DeformationSnapshot } from "./deformation/types.js";
 import { preparePacketDeformation, prepareDeformationPoseUpdate } from "./renderPacketDeformation.js";
@@ -46,7 +47,7 @@ export type {
   TextureSlot,
 } from "./renderPacketTypes.js";
 
-export function prepareRenderPacket(packet: RenderPacket): PreparedPacket {
+export function prepareRenderPacket(packet: RenderPacket, options: MaterialInstanceOptions = {}): PreparedPacket {
   if (packet.instances.length > 16_384
     || packet.geometries.length > 4096
     || packet.materials.length > 16_384) {
@@ -58,7 +59,7 @@ export function prepareRenderPacket(packet: RenderPacket): PreparedPacket {
   const deformation = preparePacketDeformation(packet.deformation, geometries, packet.instances);
   const textureSemantics = new Map(textures.map(texture => [texture.id, texture.semantic]));
   const batches = prepareInstanceUpdate(geometryFeatureMap(geometries), { materials: packet.materials, instances: packet.instances,
-    ...(deformation ? { poses: deformation.poses } : {}) }, textureSemantics, deformation);
+    ...(deformation ? { poses: deformation.poses } : {}) }, textureSemantics, deformation, options);
   const usedTextures = collectUsedTextures(batches);
   return {
     geometries: snapshotUsedGeometries(geometries, batches, deformation?.sources.map(source => source.geometry)),
@@ -73,6 +74,7 @@ export function prepareInstanceUpdate(
   update: InstanceUpdate,
   textureSemantics: ReadonlyMap<string, TextureSemantic> = new Map(),
   deformation?: DeformationSnapshot,
+  options: MaterialInstanceOptions = {},
 ): readonly PreparedBatch[] {
   if (update.instances.length > 16_384 || update.materials.length > 16_384) {
     throw new Error("Instance update exceeds resource limits.");
@@ -88,7 +90,7 @@ export function prepareInstanceUpdate(
       throw new Error("Deformed normal-mapped instances require a deformable tangent stream.");
   }
   const materialTextures = prepareMaterialTextures(materials, textureSemantics);
-  return packInstanceBatches(geometries, update.instances, materials, materialTextures);
+  return packInstanceBatches(geometries, update.instances, materials, materialTextures, options);
 }
 
 function collectUsedTextures(batches: readonly PreparedBatch[]): ReadonlySet<string> {

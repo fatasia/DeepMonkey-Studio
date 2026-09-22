@@ -13,6 +13,8 @@ export type { BackendCanvasHost, BackendCanvasLease, BackendCanvasSurface,
 export { threeRenderView } from "./threeRenderView.js";
 export type { ThreePerspectiveCameraSource, ThreeRenderViewSource } from "./threeRenderView.js";
 export { threeObjectCollection } from "./threeObjectCollection.js";
+export { CameraRelativeCoordinates } from "./cameraRelativeCoordinates.js";
+export type { CameraRelativeCoordinateSnapshot } from "./cameraRelativeCoordinates.js";
 export { projectThreeWorldLights } from "./threeWorldLights.js";
 export type { ThreeFallbackLightRange, ThreeLightObjectSource, ThreeLightProjectionIssue,
   ThreeWorldLightsOptions, ThreeWorldLightsResult } from "./threeWorldLights.js";

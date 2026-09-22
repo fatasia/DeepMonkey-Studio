@@ -160,12 +160,28 @@ describe("packet and material texture publication", () => {
       .some(call => call[0] === buffer && (call[2] as Float32Array).length === 40));
     expect(materialBuffers).toHaveLength(1);
     expect(f.draw()).toEqual({ drawCalls: 2, triangles: 2 });
-    expect(f.pass.setBindGroup.mock.calls.map(call => call[1])).toEqual([f.groups[0], f.groups[0]]);
+    expect(f.pass.setBindGroup.mock.calls.map(call => call[1])).toEqual([f.groups[0]]);
 
     f.cache.updateInstances({ materials: source.materials, instances: [source.instances[0]!] });
     expect(materialBuffers[0]!.destroy).not.toHaveBeenCalled();
     f.cache.dispose();
     expect(materialBuffers[0]!.destroy).toHaveBeenCalledOnce();
+  });
+
+  it("shares one stable parameter buffer across distinct texture bind groups", () => {
+    const f = fixture(), source = packet();
+    f.cache.set({ ...source,
+      textures: [...source.textures!, { ...source.textures![0]!, id: "color-2" }],
+      materials: [...source.materials, { ...source.materials[0]!, id: "m-2",
+        baseColorTexture: { ...source.materials[0]!.baseColorTexture!, texture: "color-2" } }],
+      instances: [...source.instances, { ...source.instances[0]!, id: "i-2", material: "m-2" }],
+    });
+    expect(f.device.createBindGroup).toHaveBeenCalledTimes(2);
+    const materialBuffers = f.buffers.filter(buffer => f.device.queue.writeBuffer.mock.calls
+      .some(call => call[0] === buffer && (call[2] as Float32Array).length === 40));
+    expect(materialBuffers).toHaveLength(1);
+    expect(f.draw()).toEqual({ drawCalls: 2, triangles: 2 });
+    f.cache.dispose(); expect(materialBuffers[0]!.destroy).toHaveBeenCalledOnce();
   });
 
   it("uploads linear normal data and tangents, then selects the dedicated TBN pipeline", () => {

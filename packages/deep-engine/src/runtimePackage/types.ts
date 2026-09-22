@@ -10,12 +10,14 @@ export const DEEP_RUNTIME_PACKAGE_SHADER_BINDINGS_VERSION = 2 as const;
 export const DEEP_RUNTIME_PACKAGE_CAMERA_VERSION = 3 as const;
 /** v4 起 chart/chartSim 入口参与包合同;chart 展示列表与静态 deep2d 互斥。 */
 export const DEEP_RUNTIME_PACKAGE_CHART_VERSION = 4 as const;
+/** v7 adds a first-class dynamic scene runtime resource/entrypoint. */
+export const DEEP_RUNTIME_PACKAGE_DYNAMIC_VERSION = 7 as const;
 export const DEEP_RUNTIME_PACKAGE_BUDGETS = Object.freeze({
   inputBytes: 256 * 1024 * 1024, nodes: 2_000_000, depth: 32, resources: 132, shaderPackages: 128,
 });
 export type RuntimeJson = null | boolean | number | string | readonly RuntimeJson[] | { readonly [key: string]: RuntimeJson };
 export interface RuntimeContentHash { readonly algorithm: "sha256"; readonly value: string }
-export type RuntimeResourceKind = "render-packet" | "deep2d-runtime" | "ibl-environment" | "shader-package" | "scene-camera" | "chart-runtime" | "chart-sim-runtime" | "dashboard-runtime";
+export type RuntimeResourceKind = "render-packet" | "deep2d-runtime" | "ibl-environment" | "shader-package" | "scene-camera" | "chart-runtime" | "chart-sim-runtime" | "dashboard-runtime" | "dynamic-runtime";
 export interface RuntimeResourceIndexEntry {
   readonly id: string;
   readonly kind: RuntimeResourceKind;
@@ -30,6 +32,7 @@ export interface RuntimeEntrypoints {
   /** v4 起必须声明;chart 非空,chartSim 可空。 */
   readonly chart?: string | null;
   readonly chartSim?: string | null;
+  readonly dynamicRuntime?: string;
 }
 export interface DeepRuntimePackageV1 {
   readonly schema: typeof DEEP_RUNTIME_PACKAGE_SCHEMA;
@@ -65,7 +68,11 @@ export interface DeepRuntimePackageV5 extends Omit<DeepRuntimePackageV2, "schema
     readonly deep2d: null; readonly chart: null; readonly chartSim: null; readonly dashboard: string;
   };
 }
-export type DeepRuntimePackage = DeepRuntimePackageV1 | DeepRuntimePackageV2 | DeepRuntimePackageV3 | DeepRuntimePackageV4 | DeepRuntimePackageV5;
+export interface DeepRuntimePackageV7 extends Omit<DeepRuntimePackageV2, "schemaVersion" | "entrypoints"> {
+  readonly schemaVersion: typeof DEEP_RUNTIME_PACKAGE_DYNAMIC_VERSION;
+  readonly entrypoints: RuntimeEntrypoints & { readonly dynamicRuntime: string };
+}
+export type DeepRuntimePackage = DeepRuntimePackageV1 | DeepRuntimePackageV2 | DeepRuntimePackageV3 | DeepRuntimePackageV4 | DeepRuntimePackageV5 | DeepRuntimePackageV7;
 export interface Deep2dRuntimeAtlas {
   readonly id: string;
   readonly revision: number;
@@ -98,13 +105,14 @@ export interface Deep2dRuntimePackage {
 }
 export interface BuildDeepRuntimePackageInput {
   readonly camera?: RuntimeSceneCamera;
-  readonly environment?: RuntimePrefilteredIbl;
+  readonly environment?: RuntimePrefilteredIbl | import("./environmentTypes.js").RuntimeSolidEnvironment;
   readonly packageId: string;
   readonly packageVersion: string;
   readonly renderPacket: { readonly id: string; readonly revision: number; readonly value: RenderPacket };
   readonly deep2d?: Deep2dRuntimePackage;
   readonly chart?: { readonly id: string; readonly revision: number; readonly value: RuntimeJson };
   readonly chartSim?: { readonly id: string; readonly revision: number; readonly value: RuntimeJson };
+  readonly dynamicRuntime?: { readonly id: string; readonly revision: number; readonly value: RuntimeJson };
   readonly shaderPackages?: readonly { readonly revision: number; readonly value: DeepShaderPackageV2 }[];
   readonly materialBindings?: readonly RuntimeMaterialShaderBinding[];
 }

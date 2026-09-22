@@ -56,6 +56,7 @@ export class GpuLodSelector {
   private cameraSignature: readonly number[] | undefined;
   private last: LastSelection | undefined;
   private pending: PendingSelection | undefined;
+  private readonly uploadedUniforms = new WeakMap<GPUBuffer, ArrayBuffer>();
   private historyInvalidated = true;
   private disposed = false;
 
@@ -190,7 +191,9 @@ export class GpuLodSelector {
     floats.set([...request.camera.position, 0], 0); floats.set([...request.camera.forward, 0], 4);
     floats.set([request.camera.projectionScale, request.camera.near, request.camera.far, request.camera.projectionMode], 8);
     uints.set([count, request.capacity, reset ? 1 : 0, 0], 12);
+    if (sameWords(data, this.uploadedUniforms.get(buffer))) return;
     this.session.device.queue.writeBuffer(buffer, 0, data);
+    this.uploadedUniforms.set(buffer, data);
   }
 
   private validateRevision(input: GpuLodInput): void {
@@ -236,4 +239,10 @@ function exactLast(last: LastSelection, input: GpuLodInput, request: ValidatedGp
     && last.identity.objects === input.objects && last.identity.levels === input.levels
     && last.signature.length === request.camera.signature.length
     && last.signature.every((value, index) => value === request.camera.signature[index]);
+}
+
+function sameWords(current: ArrayBuffer, previous: ArrayBuffer | undefined): boolean {
+  if (!previous || current.byteLength !== previous.byteLength) return false;
+  const left = new Uint32Array(current), right = new Uint32Array(previous);
+  return left.every((value, index) => value === right[index]);
 }

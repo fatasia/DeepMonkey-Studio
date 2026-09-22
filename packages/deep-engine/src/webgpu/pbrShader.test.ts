@@ -21,6 +21,12 @@ describe("normal-map WGSL contract", () => {
     expect(currentToPreviousUvMotion([.25, 0, 0, 1], [-.25, 0, 0, 1], [-.25, 0])).toEqual([0, 0]);
   });
 
+  it("writes perceptual roughness into view-normal alpha for the SSR cone filter", () => {
+    expect(sceneShader).toContain("out.viewNormal = vec4f(viewNormal * 0.5 + 0.5, clamp(roughness, 0.0, 1.0))");
+    expect(sceneShader).toContain("normal, v.material.x)");
+    expect(sceneShader).toContain("normal, surface.rough)");
+  });
+
   it("keeps display output to tone mapping after the dedicated bloom pass", () => {
     expect(outputShader).not.toContain("for (var y = -1; y <= 1; y++)");
     expect(outputShader).not.toContain("settings.bloom / 9.0");
@@ -46,7 +52,7 @@ describe("normal-map WGSL contract", () => {
     expect(sceneShader).not.toContain("v.clip.z / max(v.clip.w");
   });
   it("uses the Forward+ group for fill lights in every material path", () => {
-    expect(sceneShader).toContain("deepForwardPlusPbrWorldReceiving(fragmentCoordinate, world, n, frame.worldToView");
+    expect(sceneShader).toContain("deepForwardPlusPbrWorldReceivingF0(fragmentCoordinate, world, n, frame.worldToView");
     expect(sceneShader).toContain("deepClusterParams.limits.z > 0u || deepClusterParams.grid1.w > 0u");
     expect(sceneShader).not.toContain("safeNormalize(vec3f(-0.8, 0.4, -0.6)");
     expect(sceneShader.match(/shade\(v\.clip\.xy/g)).toHaveLength(8);

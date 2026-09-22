@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DecodedTexture } from "../textures/decodedTexture.js";
+import { prepareTextures, type DecodedTexture } from "../textures/decodedTexture.js";
 import type { DeviceSession } from "./deviceSession.js";
 import { TextureResources } from "./textureResources.js";
 
@@ -32,6 +32,22 @@ beforeEach(() => vi.stubGlobal("GPUTextureUsage", { TEXTURE_BINDING: 4, COPY_DST
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("texture GPU cache transactions (fake device)", () => {
+  it("keeps array-owned sources and samplers without allocating duplicate D2 storage", () => {
+    const f = fixture(), prepared = prepareTextures([source()]);
+    const staged = f.cache.stagePrepared(prepared, new Set(["color"]));
+    expect(f.device.createTexture).not.toHaveBeenCalled();
+    expect(f.device.createSampler).toHaveBeenCalledOnce();
+    expect(f.cache.stagedArrayEntries(staged)).toHaveLength(1);
+    expect(f.cache.stagedArrayLayer(staged, "color").sampler).toBeDefined();
+    expect(() => f.cache.stagedBinding(staged, "color")).toThrow("unavailable");
+    f.cache.publishPrepared(staged);
+    expect(f.cache.get("color")).toBeUndefined();
+    const fallback = f.cache.stagePrepared(prepared);
+    expect(f.device.createTexture).toHaveBeenCalledOnce();
+    f.cache.publishPrepared(fallback);
+    expect(f.cache.get("color")).toBeDefined();
+    f.cache.dispose(); expect(f.owned.size).toBe(0);
+  });
   it("uploads owned compact RGBA8 once and exposes a borrowed sRGB binding", async () => {
     const f = fixture(), input = source(), result = f.cache.setValidated([input]); input.data.fill(0);
     expect(f.cache.get("color")).toBeUndefined();
@@ -78,6 +94,34 @@ describe("texture GPU cache transactions (fake device)", () => {
     f.cache.dispose(); f.cache.dispose();
     for (const texture of f.allocated) expect(texture.destroy).toHaveBeenCalledOnce();
   });
+  it("reuses texture storage across sampler-only revisions and uploads changed pixels", async () => {
+    const f = fixture();
+    expect(await f.cache.setValidated([source()])).toBe(true);
+    const original = f.cache.get("color")!;
+    expect(await f.cache.setValidated([source({ revision: 1,
+      sampler: { addressModeU: "clamp-to-edge" } })])).toBe(true);
+    const resampled = f.cache.get("color")!;
+    expect(resampled).not.toBe(original);
+    expect(resampled.texture).toBe(original.texture); expect(resampled.view).toBe(original.view);
+    expect(resampled.sampler).not.toBe(original.sampler);
+    expect(f.device.createTexture).toHaveBeenCalledTimes(1);
+    expect(f.device.queue.writeTexture).toHaveBeenCalledTimes(1);
+    expect(original.texture.destroy).not.toHaveBeenCalled();
+
+    expect(await f.cache.setValidated([source({ revision: 1,
+      sampler: { addressModeU: "clamp-to-edge" } })])).toBe(false);
+    expect(f.cache.get("color")).toBe(resampled);
+    expect(f.device.createTexture).toHaveBeenCalledTimes(1);
+    expect(f.device.queue.writeTexture).toHaveBeenCalledTimes(1);
+
+    expect(await f.cache.setValidated([source({ revision: 2, data: new Uint8Array(16).fill(7),
+      sampler: { addressModeU: "clamp-to-edge" } })])).toBe(true);
+    expect(f.cache.get("color")!.texture).not.toBe(original.texture);
+    expect(f.device.createTexture).toHaveBeenCalledTimes(2);
+    expect(f.device.queue.writeTexture).toHaveBeenCalledTimes(2);
+    expect(original.texture.destroy).toHaveBeenCalledOnce();
+    f.cache.dispose(); expect(f.owned.size).toBe(0);
+  });
   it("installs replacements and attempts every retirement when a driver destroy fails", async () => {
     const f = fixture();
     await f.cache.setValidated([source(), source({ id: "normal", semantic: "normal" })]);
@@ -113,7 +157,9 @@ describe("texture GPU cache transactions (fake device)", () => {
       const create = f.device.createTexture.getMockImplementation()!;
       f.device.createTexture.mockImplementationOnce(descriptor => { const texture = create(descriptor); vi.mocked(texture.createView).mockImplementationOnce(() => { throw new Error("failed view"); }); return texture; });
     }
-    await expect(f.cache.setValidated([source({ revision: 1, sampler: { minFilter: "nearest" } })])).rejects.toThrow("failed");
+    const changed = source({ revision: 1, sampler: { minFilter: "nearest" },
+      ...(failure === "sampler" ? {} : { data: new Uint8Array(16).fill(7) }) });
+    await expect(f.cache.setValidated([changed])).rejects.toThrow("failed");
     expect(f.cache.get("color")).toBe(old); expect(f.owned.size).toBe(1);
     for (const texture of f.allocated.slice(1)) expect(texture.destroy).toHaveBeenCalledOnce();
     expect(f.device.popErrorScope).toHaveBeenCalledTimes(6);

@@ -2,6 +2,8 @@ import { prepareTextures, sameTextureContent, type DecodedTexture, type Prepared
 import type { DeviceSession } from "./deviceSession.js";
 import { createAdmittedTexture } from "./resourceAdmission.js";
 import { runResourceCleanup } from "./resourceCleanup.js";
+import type { TextureArrayLayerSource } from "./textureArrayResources.js";
+import type { TextureArrayPackingEntry } from "./textureArrayPacking.js";
 
 /** 借用句柄，生命周期归 TextureResources；调用者不能自行 destroy。 */
 export interface TextureBinding {
@@ -13,7 +15,7 @@ export interface TextureBinding {
   readonly height: number;
   readonly mipLevelCount: number;
 }
-interface CachedTexture { readonly source: PreparedTexture; readonly binding: TextureBinding }
+interface CachedTexture { readonly source: PreparedTexture; readonly binding?: TextureBinding }
 export interface StagedTextureSet {
   readonly entries: Map<string, CachedTexture>;
   readonly samplers: Map<string, GPUSampler>;
@@ -77,7 +79,7 @@ export class TextureResources {
   }
 
   /** PacketBuffers 用于把纹理、几何和实例放进同一个发布事务。 */
-  stagePrepared(prepared: readonly PreparedTexture[]): StagedTextureSet {
+  stagePrepared(prepared: readonly PreparedTexture[], omitStorage: ReadonlySet<string> = new Set()): StagedTextureSet {
     this.assertReady();
     const limit = this.session.device.limits.maxTextureDimension2D ?? 16384;
     for (const texture of prepared) {
@@ -87,7 +89,7 @@ export class TextureResources {
         throw new Error(`Texture format ${texture.format} requires unavailable device feature ${texture.requiredFeature}.`);
       }
     }
-    return this.stage(prepared);
+    return this.stage(prepared, omitStorage);
   }
 
   publishPrepared(staged: StagedTextureSet): boolean {
@@ -101,6 +103,23 @@ export class TextureResources {
     const binding = staged.entries.get(id)?.binding;
     if (!binding) throw new Error(`Texture binding is unavailable: ${id}`);
     return binding;
+  }
+
+  stagedArrayEntries(staged: StagedTextureSet): readonly TextureArrayPackingEntry[] {
+    return [...staged.entries].filter(([, value]) => !value.source.requiredFeature).map(([textureId, value]) => ({
+      textureId, format: value.source.format, width: value.source.levels[0]!.width, height: value.source.levels[0]!.height,
+      compatibilityKey: `${value.source.samplerKey}|mips:${value.source.levels.length}`,
+    }));
+  }
+
+  stagedArrayLayer(staged: StagedTextureSet, id: string): TextureArrayLayerSource {
+    const value = staged.entries.get(id);
+    if (!value) throw new Error(`Texture array layer is unavailable: ${id}`);
+    const sampler = staged.samplers.get(value.source.samplerKey);
+    if (!sampler) throw new Error(`Texture array sampler is unavailable: ${id}`);
+    return { mipLevelCount: value.source.levels.length, sampler,
+      ...(value.source.requiredFeature ? { requiredFeature: value.source.requiredFeature } : {}),
+      levels: value.source.levels };
   }
 
   semanticMap(): ReadonlyMap<string, PreparedTexture["semantic"]> {
@@ -133,8 +152,9 @@ export class TextureResources {
     return { staged: staged!, checked };
   }
 
-  private stage(prepared: readonly PreparedTexture[]): StagedTextureSet {
+  private stage(prepared: readonly PreparedTexture[], omitStorage: ReadonlySet<string> = new Set()): StagedTextureSet {
     const entries = new Map<string, CachedTexture>(), samplers = new Map<string, GPUSampler>(), created: GPUTexture[] = [];
+    let bindingChanged = false;
     for (const source of prepared) {
       const previous = this.entries.get(source.id);
       if (previous && source.revision < previous.source.revision) throw new Error(`Stale texture revision: ${source.id}`);
@@ -146,7 +166,21 @@ export class TextureResources {
         let sampler = samplers.get(source.samplerKey) ?? this.samplers.get(source.samplerKey);
         if (!sampler) sampler = this.session.device.createSampler({ label: "Deep texture sampler", ...source.sampler, lodMinClamp: 0, lodMaxClamp: source.levels.length - 1 });
         samplers.set(source.samplerKey, sampler);
-        if (previous && source.revision === previous.source.revision) { entries.set(source.id, previous); continue; }
+        if (omitStorage.has(source.id)) {
+          if (previous && source.revision === previous.source.revision && previous.binding === undefined) entries.set(source.id, previous);
+          else { entries.set(source.id, { source }); bindingChanged ||= previous?.binding !== undefined; }
+          continue;
+        }
+        if (previous && source.revision === previous.source.revision && previous.binding) { entries.set(source.id, previous); continue; }
+        if (previous && source.samplerKey !== previous.source.samplerKey
+          && previous.binding && sameGpuTexturePayload(source, previous.source)) {
+          // Sampler-only revisions need a new binding identity so material groups refresh, but immutable
+          // texture storage and its view remain valid and avoid replaying every mip upload.
+          const binding = Object.freeze({ ...previous.binding, sampler });
+          bindingChanged = true;
+          entries.set(source.id, { source, binding });
+          continue;
+        }
         const level = source.levels[0]!;
         const texture = createAdmittedTexture(this.session, { label: `Deep texture ${source.id}`,
           size: { width: level.width, height: level.height, depthOrArrayLayers: 1 }, format: source.format,
@@ -169,7 +203,8 @@ export class TextureResources {
       catch (cleanup) { throw new AggregateError([error, cleanup], "Texture staging failed."); }
       throw error;
     }
-    return { entries, samplers, created, settled: false, changed: created.length > 0 || entries.size !== this.entries.size };
+    return { entries, samplers, created, settled: false,
+      changed: bindingChanged || created.length > 0 || entries.size !== this.entries.size };
   }
 
   private rollback(staged: StagedTextureSet): void {
@@ -191,9 +226,11 @@ export class TextureResources {
     staged.settled = true;
     const previous = this.entries;
     this.entries = staged.entries; this.samplers = staged.samplers;
+    // A sampler-only replacement borrows the active texture into the new entry; retire by GPU identity.
+    const retainedTextures = new Set(Array.from(staged.entries.values(), value => value.binding?.texture).filter(Boolean));
     runResourceCleanup("Superseded texture retirement failed.", [...previous]
-      .filter(([id, value]) => staged.entries.get(id) !== value)
-      .map(([, value]) => () => this.session.release(value.binding.texture)));
+      .filter(([, value]) => value.binding && !retainedTextures.has(value.binding.texture))
+      .map(([, value]) => () => this.session.release(value.binding!.texture)));
     return staged.changed;
   }
 
@@ -203,6 +240,18 @@ export class TextureResources {
     const pending = this.pending, entries = [...this.entries.values()];
     this.pending = undefined; this.entries = new Map(); this.samplers = new Map();
     runResourceCleanup("Texture resource disposal failed.", [() => pending?.cancel(),
-      ...entries.map(value => () => this.session.release(value.binding.texture))]);
+      ...entries.filter(value => value.binding).map(value => () => this.session.release(value.binding!.texture))]);
   }
+}
+
+/** GPU texture identity excludes revision, author semantic and sampler state. */
+function sameGpuTexturePayload(left: PreparedTexture, right: PreparedTexture): boolean {
+  return left.format === right.format && left.requiredFeature === right.requiredFeature
+    && left.levels.length === right.levels.length
+    && left.levels.every((level, index) => {
+      const other = right.levels[index]!;
+      return level.width === other.width && level.height === other.height
+        && level.bytesPerRow === other.bytesPerRow && level.data.length === other.data.length
+        && level.data.every((value, offset) => value === other.data[offset]);
+    });
 }

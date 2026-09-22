@@ -3,9 +3,12 @@ import { createRuntimePackageLodInput } from "../../scripts/runtimePackageLodFix
 import { buildDeepRuntimePackage } from "../runtimePackage/builder.js";
 import { RuntimePackagePrewarmExecutor } from "../runtimePackage/prewarmExecutor.js";
 import type { BuildDeepRuntimePackageInput } from "../runtimePackage/types.js";
+import type { DeepRuntimePackage } from "../runtimePackage/types.js";
+import type { RuntimePackagePrewarmItem } from "../runtimePackage/prewarmTypes.js";
 import type { DeviceSession } from "./deviceSession.js";
 import type { RuntimeSceneCamera } from "../runtimePackage/camera.js";
 import { createRuntimePackageWebGpuPrewarmAdapter } from "./runtimePackagePrewarmAdapter.js";
+import type { ShaderPackageExecutor } from "./shaderPackageExecutor.js";
 
 function gpuFixture(onRelease?: () => void) {
   const owned = new Set<{ destroy(): void }>();
@@ -46,7 +49,8 @@ it("publishes camera and geometry together, retaining both when a replacement re
   const input = createRuntimePackageLodInput() as BuildDeepRuntimePackageInput;
   expect((await executor.publish(buildDeepRuntimePackage({ ...input, camera }))).status).toBe("committed");
   expect(publications[0]!.camera).toEqual(camera);
-  expect(publications[0]!.projection.geometry("lod.high")).toBeDefined();
+  expect(publications[0]!.projection.geometry("lod.high")).toBeUndefined();
+  expect(publications[0]!.projection.geometry("lod.low")).toBeDefined();
   const owned = fixture.owned.size;
   reject = true;
   const changed = { ...camera, revision: 2, position: [1, 2, 3] as const };
@@ -67,6 +71,21 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("RuntimePackage Browser WebGPU prewarm adapter", () => {
+  it("routes shader items through the real device-local executor with cancellation", async () => {
+    const fixture = gpuFixture(), prepared = { packageId: "shader", packageVersion: "1", passes: [] };
+    const shaderExecutor = { prepare: vi.fn(async () => prepared) } as unknown as ShaderPackageExecutor;
+    const adapter = createRuntimePackageWebGpuPrewarmAdapter({ session: fixture.session,
+      budgets: { maxResidentBytes: 16_384, maxUploadBytesPerFrame: 16_384 }, nextFrame: () => 0,
+      commit: () => {}, shaderExecutor });
+    const item = { type: "shader-pipeline", resourceId: "shader-resource", passId: "pbr/forward",
+      cacheKey: `shader-pipeline:${"a".repeat(64)}` } as RuntimePackagePrewarmItem;
+    const packageValue = { payloads: { "shader-resource": { schemaVersion: 2 } } } as unknown as DeepRuntimePackage;
+    const controller = new AbortController();
+    const loaded = await adapter.load(item, packageValue, controller.signal);
+    await expect(adapter.prepare(item, loaded, controller.signal)).resolves.toMatchObject({ type: "external", value: prepared });
+    expect(shaderExecutor.prepare).toHaveBeenCalledWith(packageValue.payloads["shader-resource"], ["pbr/forward"], controller.signal);
+  });
+
   it("uploads baked LOD geometry and texture resources before atomically publishing the projection", async () => {
     const fixture = gpuFixture(), publications: unknown[] = [];
     const adapter = createRuntimePackageWebGpuPrewarmAdapter({ session: fixture.session,
@@ -83,7 +102,8 @@ describe("RuntimePackage Browser WebGPU prewarm adapter", () => {
     const publication = publications[0] as { baked: { batches: readonly { fallbackGeometry: string }[] };
       projection: { geometry(id: string): unknown; texture(id: string): unknown } };
     expect(publication.baked.batches.every(batch => batch.fallbackGeometry === "lod.low")).toBe(true);
-    expect(publication.projection.geometry("lod.high")).toBeDefined();
+    expect(publication.projection.geometry("lod.high")).toBeUndefined();
+    expect(publication.projection.geometry("lod.low")).toBeDefined();
     expect(publication.projection.texture("mask.grid")).toBeDefined();
 
     executor.dispose();

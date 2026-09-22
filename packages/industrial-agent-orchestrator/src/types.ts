@@ -92,6 +92,18 @@ export interface AgentDecisionRecord {
   step: number;
   decidedAt: string;
   decision: AgentDecision;
+  execution?: AgentExecutionReceipt;
+}
+
+/** Provider transport metadata, never parsed from model-authored decision JSON. */
+export interface AgentExecutionReceipt {
+  protocol: "responses" | "chat-completions";
+  requestedModel: string;
+  reportedModel?: string;
+  reasoningEffortSent?: string;
+  reasoningEffortReported?: string;
+  servedBy?: "primary" | "fallback";
+  failoverCategory?: string;
 }
 
 export interface AgentToolRecord {
@@ -120,6 +132,7 @@ export interface AgentCheckpoint {
   principal: string;
   role?: string;
   objective: string;
+  modelOptions?: { model?: string; reasoningEffort?: "minimal" | "standard" | "deep" };
   context: unknown;
   status: AgentRunStatus;
   budget: AgentBudget;
@@ -153,6 +166,7 @@ export interface StartAgentRunInput {
   principal: string;
   role?: string;
   objective: string;
+  modelOptions?: AgentCheckpoint["modelOptions"];
   context?: unknown;
   allowedToolIds: string[];
   budget?: Partial<AgentBudget>;
@@ -163,6 +177,7 @@ export interface AgentDecisionRequest {
   checkpoint: AgentCheckpoint;
   availableTools: AgentToolDefinition[];
   signal: AbortSignal;
+  reportExecution?: (receipt: AgentExecutionReceipt) => void;
 }
 
 export interface AgentDecisionProvider {

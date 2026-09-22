@@ -6,6 +6,9 @@ import type { InstanceUpdate, RenderPacket } from "../renderPacket.js";
 import { PbrRenderer, type FrameMetrics, type PbrRendererOptions, type RenderView } from "../webgpu/pbrRenderer.js";
 import type { PbrEnvironmentSource } from "../webgpu/pbrEnvironmentSource.js";
 import { snapshotShadows, shadowSelection, type DeepWebGpuShadowSelection } from "./deepWebGpuShadowPolicy.js";
+import { ProbeClipmapPbrController, type ProbeClipmapPbrTarget } from "../webgpu/probeClipmapPbrController.js";
+import { DeepWebGpuProbeClipmapSession, type DeepWebGpuProbeClipmapDiagnostics } from "./DeepWebGpuProbeClipmapSession.js";
+import { CameraRelativeCoordinates, type CameraRelativeCoordinateSnapshot } from "./cameraRelativeCoordinates.js";
 export type { DeepWebGpuShadowSelection } from "./deepWebGpuShadowPolicy.js";
 
 type DeepWebGpuCanvas = Parameters<typeof PbrRenderer.create>[0];
@@ -19,6 +22,12 @@ export interface DeepWebGpuRenderRuntime {
   validateFrame(view: RenderView): Promise<FrameMetrics>;
   stageEnvironment?(source: PbrEnvironmentSource, signal?: AbortSignal): Promise<"staged" | "superseded">;
   stageShadowMapSize?(mapSize: number, signal?: AbortSignal): Promise<"staged" | "superseded">;
+  /**
+   * Optional production GI source. Implementations must return a controller
+   * configured with real scene-radiance capture; omission keeps Studio IBL and
+   * fails closed instead of publishing the probe runtime's test fallback.
+   */
+  createProbeClipmapController?(target: ProbeClipmapPbrTarget, deviceEpoch: string): ProbeClipmapPbrController;
   dispose(): void;
 }
 
@@ -73,6 +82,10 @@ export class DeepWebGpuBackend {
   private shadowSelectionValue: DeepWebGpuShadowSelection | undefined;
   private readonly expectedShadows: PbrRendererOptions["shadows"];
   private chunks: AuthorChunkStream | undefined;
+  private probeClipmap: DeepWebGpuProbeClipmapSession | undefined;
+  private committedPacket: RenderPacket | undefined;
+  private readonly coordinates = new CameraRelativeCoordinates();
+  private pendingCoordinate: CameraRelativeCoordinateSnapshot | undefined;
 
   constructor(
     readonly runtime: DeepWebGpuRenderRuntime,
@@ -160,12 +173,36 @@ export class DeepWebGpuBackend {
 
   get shadowSelection(): DeepWebGpuShadowSelection | undefined { return this.shadowSelectionValue; }
   get chunkStreaming() { return this.chunks?.diagnostics; }
+  get probeClipmapFailure(): unknown { return this.probeClipmap?.failure; }
+  worldToRenderLocal(point: readonly [number, number, number]): readonly [number, number, number] {
+    return this.coordinates.worldToLocal(point);
+  }
+  renderLocalToWorld(point: readonly [number, number, number]): readonly [number, number, number] {
+    return this.coordinates.localToWorld(point);
+  }
+  setProbeClipmapEnabled(enabled: boolean): void {
+    this.assertOpen();
+    if (!enabled) {
+      this.probeClipmap?.dispose();
+      this.probeClipmap = undefined;
+      return;
+    }
+    if (this.probeClipmap) return;
+    const target = probeClipmapTarget(this.runtime);
+    const createController = this.runtime.createProbeClipmapController?.bind(this.runtime);
+    const session = new DeepWebGpuProbeClipmapSession(target, createController);
+    if (this.committedPacket) session.syncPacket(this.committedPacket);
+    session.setEnabled(true);
+    this.probeClipmap = session;
+  }
   /** Stable host-facing snapshot for Studio diagnostics and support reports. */
-  get diagnostics(): { readonly backend: "deep-webgpu"; readonly chunkStreaming?: AuthorChunkStream["diagnostics"]; readonly shadowSelection?: DeepWebGpuShadowSelection; readonly meshlets: boolean; readonly deformation: boolean } {
+  get diagnostics(): { readonly backend: "deep-webgpu"; readonly chunkStreaming?: AuthorChunkStream["diagnostics"]; readonly shadowSelection?: DeepWebGpuShadowSelection; readonly probeClipmap?: DeepWebGpuProbeClipmapDiagnostics; readonly meshlets: boolean; readonly deformation: boolean; readonly coordinateFrame: CameraRelativeCoordinates["current"] } {
     return Object.freeze({ backend: "deep-webgpu" as const,
       ...(this.chunks === undefined ? {} : { chunkStreaming: { ...this.chunks.diagnostics } }),
       ...(this.shadowSelectionValue === undefined ? {} : { shadowSelection: this.shadowSelectionValue }),
-      meshlets: this.options.meshlets === true, deformation: this.options.deformation === true });
+      ...(this.probeClipmap === undefined ? {} : { probeClipmap: this.probeClipmap.diagnostics }),
+      meshlets: this.options.meshlets === true, deformation: this.options.deformation === true,
+      coordinateFrame: this.coordinates.current });
   }
 
   project(root: ThreeObjectSource, cameraLayerMask = this.options.cameraLayerMask ?? 1): ProjectionResult {
@@ -183,7 +220,13 @@ export class DeepWebGpuBackend {
     const generation = ++this.syncGeneration;
     const projected = this.projection.project(root, { cameraLayerMask });
     if (!projected.ok) return { status: "rejected", issues: projected.issues };
+    const candidateFrame = view ? this.coordinates.candidate(view.eye) : this.coordinates.current;
+    const rebased = candidateFrame !== this.coordinates.current;
+    const localPacket = this.coordinates.localizePacket(projected.packet, candidateFrame);
+    if (rebased) this.pendingCoordinate = candidateFrame;
     try {
+      const localView = view ? this.coordinates.localizeView(view, candidateFrame) : undefined;
+      const framePacket = localPacket;
       const staticPacket = projected.packet.deformation === undefined && projected.packet.instances.every(instance => instance.pose === undefined);
       if (this.options.authorChunks && view && staticPacket && !this.chunks) {
         const target = this.runtime as unknown as AuthorChunkStreamRuntime;
@@ -192,30 +235,47 @@ export class DeepWebGpuBackend {
         }
         this.chunks = new AuthorChunkStream(target, this.options.meshlets);
       }
-      const streamed = this.chunks && view ? await this.chunks.sync(projected.packet, projected.update === "full", view, signal) : false;
+      const streamed = this.chunks && localView ? await this.chunks.sync(framePacket, projected.update === "full" || rebased, localView, signal) : false;
       if (streamed) { /* The existing renderer publishes the single resident candidate at its frame boundary. */ }
-      else if (projected.update === "full" || this.chunks?.hasCatalog) {
-        await this.runtime.setPacketValidated(projected.packet, signal);
+      else if (projected.update === "full" || rebased || this.chunks?.hasCatalog) {
+        await this.runtime.setPacketValidated(framePacket, signal);
         this.chunks?.fullPacketPublished(staticPacket ? "view-unavailable" : "deformation");
       }
-      else this.runtime.updateInstances({ materials: projected.packet.materials, instances: projected.packet.instances,
-        ...(projected.packet.deformation ? { poses: projected.packet.deformation.poses } : {}) });
+      else this.runtime.updateInstances({ materials: framePacket.materials, instances: framePacket.instances,
+        ...(framePacket.deformation ? { poses: framePacket.deformation.poses } : {}) });
     } catch (error) {
+      if (this.pendingCoordinate === candidateFrame) this.pendingCoordinate = undefined;
       if (generation !== this.syncGeneration || this.disposed) {
         return { status: "superseded", update: projected.update, packet: projected.packet };
       }
       throw error;
     }
     if (generation !== this.syncGeneration || this.disposed) {
+      if (this.pendingCoordinate === candidateFrame) this.pendingCoordinate = undefined;
       return { status: "superseded", update: projected.update, packet: projected.packet };
     }
+    if (rebased) this.coordinates.commit(candidateFrame);
+    if (this.pendingCoordinate === candidateFrame) this.pendingCoordinate = undefined;
     const status = projected.acknowledge() ? "committed" : "superseded";
+    if (status === "committed") {
+      this.committedPacket = localPacket;
+      this.probeClipmap?.syncPacket(this.committedPacket);
+    }
     return { status, update: projected.update, packet: projected.packet };
   }
 
   render(view: RenderView): FrameMetrics | undefined {
     this.assertOpen();
-    return this.runtime.render(view);
+    const localView = this.coordinates.localizeView(view, this.pendingCoordinate ?? this.coordinates.current);
+    const result = this.runtime.render(localView);
+    if (result) {
+      if (result.adaptiveQuality) {
+        const knobs = result.adaptiveQuality.knobs;
+        this.probeClipmap?.setUpdateBudget(knobs.ddgiUpdateBudget);
+      }
+      this.probeClipmap?.beginFrame(localView);
+    }
+    return result;
   }
 
   dispose(): void {
@@ -223,13 +283,26 @@ export class DeepWebGpuBackend {
     this.disposed = true;
     this.syncGeneration++;
     this.shadowSelectionValue = undefined;
+    this.committedPacket = undefined;
     this.projection.clear();
-    try { this.chunks?.dispose(); } finally { this.runtime.dispose(); }
+    try { this.probeClipmap?.dispose(); }
+    finally {
+      this.probeClipmap = undefined;
+      try { this.chunks?.dispose(); } finally { this.runtime.dispose(); }
+    }
   }
 
   private assertOpen(): void {
     if (this.disposed) throw new Error("Deep WebGPU backend is disposed.");
   }
+}
+
+function probeClipmapTarget(runtime: DeepWebGpuRenderRuntime): ProbeClipmapPbrTarget {
+  const candidate = runtime as Partial<ProbeClipmapPbrTarget>;
+  if (!candidate.session || typeof candidate.setProbeClipmap !== "function") {
+    throw new Error("Deep runtime cannot host probe clipmap GI.");
+  }
+  return candidate as ProbeClipmapPbrTarget;
 }
 
 export type DeepWebGpuBackendRuntime = PbrRenderer;

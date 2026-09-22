@@ -3,7 +3,7 @@ import { FORWARD_PLUS_LIGHT_ABI_WGSL } from "./lightAbiWgsl.js";
 
 export const FORWARD_PLUS_CLUSTER_WORKGROUP_SIZE = 64;
 
-/** One invocation owns one cluster and scans lights in ABI order, so list ordering is deterministic. */
+/** One workgroup owns one cluster and compacts 64-light batches in ABI order. */
 export const FORWARD_PLUS_CLUSTER_ASSIGN_WGSL = /* wgsl */ `${FORWARD_PLUS_LIGHT_ABI_WGSL}
 ${FORWARD_PLUS_CLUSTER_ABI_WGSL}
 struct LightBounds {
@@ -15,6 +15,7 @@ struct LightBounds {
 @group(0) @binding(2) var<storage, read_write> headers: array<ClusterHeaderAbi>;
 @group(0) @binding(3) var<storage, read_write> lightIndices: array<u32>;
 @group(0) @binding(4) var<storage, read_write> overflowCount: atomic<u32>;
+var<workgroup> acceptedPrefix: array<u32, ${FORWARD_PLUS_CLUSTER_WORKGROUP_SIZE}>;
 
 fn depthSlice(depth: f32) -> u32 {
   let slices = params.grid1.z;
@@ -36,6 +37,7 @@ fn boundsForSphere(sphere: vec4<f32>) -> LightBounds {
   let near = params.projection.x; let far = params.projection.y;
   let tanHalfFovY = params.projection.z; let aspect = params.projection.w;
   let depth = -sphere.z; let range = sphere.w;
+  if (range == 0.0) { return LightBounds(0u, tilesX - 1u, 0u, tilesY - 1u, 0u, params.grid1.z - 1u, 1u); }
   if (depth + range < near || depth - range > far) { return LightBounds(0u, 0u, 0u, 0u, 0u, 0u, 0u); }
   let minSlice = depthSlice(max(near, depth - range));
   let maxSlice = depthSlice(min(far, depth + range));
@@ -59,25 +61,53 @@ fn boundsForSphere(sphere: vec4<f32>) -> LightBounds {
 }
 
 @compute @workgroup_size(64)
-fn assignClusters(@builtin(global_invocation_id) invocation: vec3<u32>) {
-  let cluster = invocation.x;
+fn assignClusters(
+  @builtin(workgroup_id) workgroup: vec3<u32>,
+  @builtin(local_invocation_id) local: vec3<u32>,
+  @builtin(num_workgroups) workgroupCount: vec3<u32>,
+) {
   let clusterCount = params.limits.y; let maxPerCluster = params.limits.x;
-  if (cluster >= clusterCount) { return; }
   let xyCount = params.grid1.x * params.grid1.y;
-  let xy = cluster % xyCount; let tileX = xy % params.grid1.x; let tileY = xy / params.grid1.x;
-  let slice = cluster / xyCount; let offset = cluster * maxPerCluster;
-  headers[cluster].offset = offset; headers[cluster].count = 0u;
-  for (var slot = 0u; slot < maxPerCluster; slot++) { lightIndices[offset + slot] = 0xffffffffu; }
-  var count = 0u;
-  for (var light = 0u; light < params.grid1.w; light++) {
-    let bounds = boundsForSphere(localLights[light]);
-    let inside = bounds.valid == 1u && tileX >= bounds.minTileX && tileX <= bounds.maxTileX
-      && tileY >= bounds.minTileY && tileY <= bounds.maxTileY && slice >= bounds.minSlice && slice <= bounds.maxSlice;
-    if (inside) {
-      if (count < maxPerCluster) { lightIndices[offset + count] = light; count = count + 1u; }
-      else { atomicAdd(&overflowCount, 1u); }
+  for (var cluster = workgroup.x; cluster < clusterCount; cluster += workgroupCount.x) {
+    let xy = cluster % xyCount; let tileX = xy % params.grid1.x; let tileY = xy / params.grid1.x;
+    let slice = cluster / xyCount; let outputOffset = cluster * maxPerCluster;
+    if (local.x == 0u) { headers[cluster].offset = outputOffset; headers[cluster].count = 0u; }
+    for (var slot = local.x; slot < maxPerCluster; slot += ${FORWARD_PLUS_CLUSTER_WORKGROUP_SIZE}u) {
+      lightIndices[outputOffset + slot] = 0xffffffffu;
     }
+    workgroupBarrier();
+
+    var count = 0u;
+    for (var base = 0u; base < params.grid1.w; base += ${FORWARD_PLUS_CLUSTER_WORKGROUP_SIZE}u) {
+      let light = base + local.x;
+      var inside = false;
+      if (light < params.grid1.w) {
+        let bounds = boundsForSphere(localLights[light]);
+        inside = bounds.valid == 1u && tileX >= bounds.minTileX && tileX <= bounds.maxTileX
+          && tileY >= bounds.minTileY && tileY <= bounds.maxTileY && slice >= bounds.minSlice && slice <= bounds.maxSlice;
+      }
+      acceptedPrefix[local.x] = select(0u, 1u, inside);
+      workgroupBarrier();
+      for (var scanOffset = 1u; scanOffset < ${FORWARD_PLUS_CLUSTER_WORKGROUP_SIZE}u; scanOffset *= 2u) {
+        var addend = 0u;
+        if (local.x >= scanOffset) { addend = acceptedPrefix[local.x - scanOffset]; }
+        workgroupBarrier();
+        acceptedPrefix[local.x] += addend;
+        workgroupBarrier();
+      }
+      let rank = acceptedPrefix[local.x];
+      let batchCount = acceptedPrefix[${FORWARD_PLUS_CLUSTER_WORKGROUP_SIZE - 1}u];
+      if (inside && count + rank <= maxPerCluster) {
+        lightIndices[outputOffset + count + rank - 1u] = light;
+      }
+      if (local.x == 0u && count + batchCount > maxPerCluster) {
+        atomicAdd(&overflowCount, count + batchCount - max(maxPerCluster, count));
+      }
+      count += batchCount;
+      workgroupBarrier();
+    }
+    if (local.x == 0u) { headers[cluster].count = min(count, maxPerCluster); }
+    workgroupBarrier();
   }
-  headers[cluster].count = count;
 }
 `;

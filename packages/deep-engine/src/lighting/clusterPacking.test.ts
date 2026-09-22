@@ -4,7 +4,7 @@ import { FORWARD_PLUS_LIGHT_ABI_VERSION, FORWARD_PLUS_LIGHT_ABI_WGSL } from "./l
 
 describe("Forward+ compact light ABI", () => {
   it("packs directional, point, and spot shading rows without padding ambiguity", () => {
-    expect(FORWARD_PLUS_LIGHT_ABI_VERSION).toBe(1);
+    expect(FORWARD_PLUS_LIGHT_ABI_VERSION).toBe(2);
     expect(FORWARD_PLUS_LIGHT_ABI_WGSL).toContain("radianceConeScale");
     const packed = packClusteredLights({
       directional: [{ directionView: [0, -2, 0], color: [1, 0.5, 0.25], intensity: 3 }],
@@ -17,13 +17,13 @@ describe("Forward+ compact light ABI", () => {
     expect(packed.points.byteLength).toBe(POINT_LIGHT_STRIDE);
     expect(Array.from(packed.points)).toEqual([1, 2, -3, 4, 1, 0.5, 2, 0]);
     expect(packed.spots.byteLength).toBe(SPOT_LIGHT_STRIDE);
-    expect(Array.from(packed.spots)).toEqual([-1, 0, -5, 8, 0, 0, -1, 0.5, 4, 2, 1, 4]);
+    expect(Array.from(packed.spots)).toEqual([-1, 0, -5, 8, 0, 0, -1, 0.5, 4, 2, 1, 4, 2, 0, 0, 0]);
     expect(packed.localBounds.byteLength).toBe(2 * LOCAL_LIGHT_BOUNDS_STRIDE);
     expect(Array.from(packed.localBounds)).toEqual([1, 2, -3, 4, -1, 0, -5, 8]);
   });
 
   it("fails closed on invalid ranges, radiance, directions, cones, and budgets", () => {
-    expect(() => packClusteredLights({ points: [{ positionView: [0, 0, -1], range: 0, color: [1, 1, 1], intensity: 1 }] })).toThrow("range");
+    expect(() => packClusteredLights({ points: [{ positionView: [0, 0, -1], range: -1, color: [1, 1, 1], intensity: 1 }] })).toThrow("range");
     expect(() => packClusteredLights({ directional: [{ directionView: [0, 0, 0], color: [1, 1, 1], intensity: 1 }] })).toThrow("nonzero");
     expect(() => packClusteredLights({ points: [{ positionView: [0, 0, -1], range: 1, color: [-1, 1, 1], intensity: 1 }] })).toThrow("nonnegative");
     expect(() => packClusteredLights({ points: [{ positionView: [0, 0, -1], range: 1, color: [1e30, 1, 1], intensity: 1e30 }] })).toThrow("finite float32");

@@ -51,6 +51,7 @@ test("type-only bridge imports erase at compile time and stay pure", () => {
 
 test("surface allowlist is exact and cannot spread DOM APIs into another file", () => {
   assert.deepEqual(scanTypeScriptRuntime([{ file: "src/webgpu/deviceSession.ts", code: `let canvas: HTMLCanvasElement; new DOMException();` }]), []);
+  assert.deepEqual(scanTypeScriptRuntime([{ file: "src/app/pbrRendererPlugin.ts", code: `let canvas: HTMLCanvasElement;` }]), []);
   const issues = scanTypeScriptRuntime([{ file: "src/webgpu/other.ts", code: `let canvas: HTMLCanvasElement; new DOMException();` }]);
   assert.deepEqual(issues.map(({ detail }) => detail), ["HTMLCanvasElement", "DOMException"]);
 });

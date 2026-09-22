@@ -6,6 +6,7 @@ import {
   type SharedShadowAtlasTile,
 } from "../shadows/sharedShadowAtlas.js";
 import { LOCAL_SPOT_SHADOW_MAX_LIGHTS } from "../shadows/localSpotShadowShader.js";
+import { resolveLocalShadowSoftness } from "../shadows/localShadowSoftness.js";
 import { lookAt, multiply, perspective } from "./cameraMath.js";
 
 export const LOCAL_SPOT_SHADOW_ATLAS_OPTIONS = Object.freeze({
@@ -65,6 +66,7 @@ export function selectLocalSpotShadows(lights: WorldClusteredLights,
     return [{ index: candidate.index, light: candidate.light, tile, matrix: candidate.matrix,
       signature: Object.freeze([candidate.key, candidate.index, ...candidate.light.positionWorld,
         ...candidate.light.directionWorld, candidate.light.range, candidate.light.outerConeCos,
+        resolveLocalShadowSoftness(candidate.light.shadow?.softness),
         tile.slot, ...tile.uvOffset, ...tile.uvScale]) }];
   });
   return Object.freeze({ spots: Object.freeze(selected), plan });
@@ -73,12 +75,14 @@ export function selectLocalSpotShadows(lights: WorldClusteredLights,
 function validCandidates(spots: readonly WorldSpotLight[]): SpotCandidate[] {
   return spots.flatMap((light, index) => {
     if (!light.shadow) return [];
+    resolveLocalShadowSoftness(light.shadow.softness);
     try {
       const direction = normalized(light.directionWorld);
       const up = Math.abs(direction[1]) > 0.99 ? [0, 0, 1] as const : [0, 1, 0] as const;
       const fov = Math.min(Math.PI - 1e-4, 2 * Math.acos(light.outerConeCos));
+      const far = light.range > 0 ? light.range : 500;
       const matrix = multiply(perspective(fov, 1,
-        Math.min(Math.max(light.range * 0.001, 0.01), light.range * 0.5), light.range),
+        Math.min(Math.max(far * 0.001, 0.01), far * 0.5), far),
       lookAt(light.positionWorld, add(light.positionWorld, direction), up));
       return [{ key: light.shadow.key, index, light,
         importance: importance(light.shadow.importance, light.intensity), matrix }];

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compositeScreenSpaceReflectionCpu, screenSpaceReflectionCpu,
+  sampleScreenSpaceReflectionRoughRadianceCpu,
   screenSpaceReflectionEdgeFade, screenSpaceReflectionHalfSize, traceScreenSpaceReflectionCpu,
   validateScreenSpaceReflectionOptions, SSR_STEPS_MAX, SSR_STEPS_MIN } from "./screenSpaceReflectionCpu.js";
 import { SSR_COMPOSITE_FORMAT, SSR_DEPTH_FORMAT, SSR_NORMAL_FORMAT, SSR_TRACE_FORMAT } from "./screenSpaceReflectionTypes.js";
@@ -67,6 +68,16 @@ describe("screenSpaceReflectionEdgeFade", () => {
 });
 
 describe("traceScreenSpaceReflectionCpu", () => {
+  it("widens a bounded radiance cone from view-normal roughness while preserving the sharp default", () => {
+    const scene = tiltedFloor(16, 16); scene.color.fill(0);
+    const center = (8 * scene.width + 8) * 3; scene.color[center] = 4;
+    expect(sampleScreenSpaceReflectionRoughRadianceCpu(scene, 8.5 / 16, 8.5 / 16, 0)[0]).toBeCloseTo(4);
+    const rough = sampleScreenSpaceReflectionRoughRadianceCpu(scene, 8.5 / 16, 8.5 / 16, 1);
+    expect(rough[0]).toBeGreaterThan(0); expect(rough[0]).toBeLessThan(4);
+    expect(() => traceScreenSpaceReflectionCpu({ ...scene, roughness: [0] }, OPTIONS, 1, 1)).toThrow(/dimensions/);
+    expect(() => sampleScreenSpaceReflectionRoughRadianceCpu(scene, 0.5, 0.5, Number.NaN)).toThrow(/roughness/);
+  });
+
   it("zeroes pixels with no depth", () => {
     const scene = tiltedFloor(16, 16);
     scene.depth.fill(0);
@@ -102,18 +113,18 @@ describe("traceScreenSpaceReflectionCpu", () => {
 });
 
 describe("compositeScreenSpaceReflectionCpu", () => {
-  it("adds bilinear trace contribution onto the color", () => {
+  it("replaces the existing fallback energy under the bilinear hit mask", () => {
     const scene = tiltedFloor(8, 8);
     const trace = new Float32Array(4 * 4 * 4);
-    for (let i = 0; i < 4 * 4; i++) { trace[i * 4] = 0.5; } // trace rgb 已含 mask 加权,composite 直接相加。
+    for (let i = 0; i < 4 * 4; i++) { trace[i * 4] = 0.5; trace[i * 4 + 3] = 0.5; }
     const [r] = compositeScreenSpaceReflectionCpu(scene, trace, 4, 4, 3, 3);
-    // 8x8 中心像素对 4x4 trace 双线性,权重和为 1 → 贡献 0.5;颜色 0.1 → 0.6。
-    expect(Math.abs(r - 0.6)).toBeLessThan(1e-6);
+    // 反射 rgb 已含 mask；基础 probe/environment 回退只保留未命中的一半。
+    expect(Math.abs(r - 0.55)).toBeLessThan(1e-6);
   });
 });
 
 describe("screenSpaceReflectionCpu end to end", () => {
-  it("output equals color plus upsampled trace", () => {
+  it("outputs a finite fallback-replaced reflection composite", () => {
     const width = 16, height = 16;
     const scene = tiltedFloor(width, height);
     const result = screenSpaceReflectionCpu(scene, OPTIONS);
@@ -125,9 +136,7 @@ describe("screenSpaceReflectionCpu end to end", () => {
     }
     expect(sum).toBeGreaterThan(0);
   });
-  it("reflection only ever adds energy over the base color", () => {
-    // 朝相机法线在斜视角下仍有掠射反射(正确物理),所以不断言"零反射",
-    // 改断言合成输出永远 ≥ 基础色且有限。
+  it("keeps the fallback replacement finite and nonnegative", () => {
     const width = 16, height = 16;
     const scene = tiltedFloor(width, height);
     for (let i = 0; i < width * height; i++) {
@@ -135,9 +144,9 @@ describe("screenSpaceReflectionCpu end to end", () => {
     }
     const result = screenSpaceReflectionCpu(scene, OPTIONS);
     for (let i = 0; i < width * height; i++) {
-      expect(result.output[i * 3]).toBeGreaterThanOrEqual(0.1 - 1e-6);
-      expect(result.output[i * 3 + 1]).toBeGreaterThanOrEqual(0.2 - 1e-6);
-      expect(result.output[i * 3 + 2]).toBeGreaterThanOrEqual(0.3 - 1e-6);
+      expect(result.output[i * 3]).toBeGreaterThanOrEqual(0);
+      expect(result.output[i * 3 + 1]).toBeGreaterThanOrEqual(0);
+      expect(result.output[i * 3 + 2]).toBeGreaterThanOrEqual(0);
     }
   });
 });
@@ -159,5 +168,11 @@ describe("format and shader contracts", () => {
   it("wgsl trace reconstruction matches the AO view-space contract", () => {
     expect(SSR_TRACE_WGSL).toMatch(/ndc\.x \* depth \* ssrParams\.projection\.x \* ssrParams\.projection\.y/);
     expect(SSR_TRACE_WGSL).toMatch(/1\.0 - uv\.y \* 2\.0/);
+  });
+  it("consumes view-normal alpha as a bounded radiance hierarchy LOD", () => {
+    expect(SSR_TRACE_WGSL).toContain("fn ssrLoadRoughness");
+    expect(SSR_TRACE_WGSL).toContain("fn ssrSampleRoughRadiance");
+    expect(SSR_TRACE_WGSL).toContain("roughness * roughness * ssrParams.misc.z");
+    expect(SSR_COMPOSITE_WGSL).toContain("color * (1.0 - reflection.a) + reflection.rgb");
   });
 });

@@ -45,7 +45,7 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("Forward+ clustered PBR lighting", () => {
   it("bypasses spot atlas sampling for non-receivers and preserves legacy entry points", () => {
-    expect(FORWARD_PLUS_PBR_WGSL).toContain("if (receiveShadow) { visibility = deepLocalSpotShadow(spotIndex, worldPosition); }");
+    expect(FORWARD_PLUS_PBR_WGSL).toContain("deepLocalSpotShadow(spotIndex, worldPosition, dot(normal, surfaceToLight))");
     expect(FORWARD_PLUS_PBR_WGSL).toContain("worldPosition, baseColor, metallic, roughness, normal, view, receiveShadow");
     expect(FORWARD_PLUS_PBR_WGSL).toContain("worldToView, baseColor, metallic, roughness, true");
     expect(FORWARD_PLUS_PBR_WGSL).toContain("fn deepForwardPlusPbrWorldReceiving(");
@@ -54,13 +54,17 @@ describe("Forward+ clustered PBR lighting", () => {
   it("composes the fixed lighting ABI ahead of a renderer shader", () => {
     const source = composeForwardPlusPbrShader("@compute @workgroup_size(1) fn rendererEntry() {}");
     expect(source.indexOf("deepClusterParams")).toBeLessThan(source.indexOf("rendererEntry"));
+    expect(source.match(/fn deepForwardPlusPbrReceiving\(/g)).toHaveLength(1);
+    expect(source.match(/fn deepForwardPlusPbrWorldReceiving\(/g)).toHaveLength(1);
     expect(() => composeForwardPlusPbrShader("   ")).toThrow("must not be empty");
   });
 
   it("uses the same texture-free correlated GGX direct-light model as the primary sun", () => {
     expect(FORWARD_PLUS_PBR_WGSL).toContain("let visibility = 0.5 / max(gv + gl, 0.000001)");
     expect(FORWARD_PLUS_PBR_WGSL).toContain("let diffuse = (1.0 - metallic) * baseColor / DEEP_CLUSTER_PI");
-    expect(FORWARD_PLUS_PBR_WGSL.match(/textureSampleCompareLevel/g)).toHaveLength(1);
+    // One comparison site preserves legacy PCF; the opt-in bounded PCSS branch owns the second.
+    expect(FORWARD_PLUS_PBR_WGSL.match(/textureSampleCompareLevel/g)).toHaveLength(2);
+    expect(FORWARD_PLUS_PBR_WGSL).toContain("textureLoad(deepLocalShadowAtlas");
   });
 
   it("samples the guarded shared atlas only for its allocated spot index", () => {

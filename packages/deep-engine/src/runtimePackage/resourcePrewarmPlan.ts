@@ -10,7 +10,7 @@ import type { DeepRuntimePackage, RuntimeJson } from "./types.js";
 import { validateDeepRuntimePackage } from "./validation.js";
 
 const RESOURCE_ORDER = Object.freeze({ "ibl-environment": 0, "render-packet": 1,
-  "deep2d-runtime": 2, "shader-package": 3, "scene-camera": 4, "chart-runtime": 5, "chart-sim-runtime": 6, "dashboard-runtime": 7 } as const);
+  "deep2d-runtime": 2, "shader-package": 3, "scene-camera": 4, "chart-runtime": 5, "chart-sim-runtime": 6, "dashboard-runtime": 7, "dynamic-runtime": 8 } as const);
 
 export function buildRuntimeResourcePrewarmPlan(input: unknown,
   options: RuntimeResourcePrewarmPlanOptions = {}): RuntimeResourcePrewarmPlan {

@@ -1,3 +1,4 @@
+import { STOCK_MATERIAL_INSTANCE_OPTIONS } from "../materialInstanceAbi.js";
 import {
   assertPacketDeformationSupported,
   geometryCenter,
@@ -20,6 +21,7 @@ import type { PacketTextureLookup } from "./packetTextureLookup.js";
 import type { DeformationSnapshot } from "../deformation/types.js";
 import { runResourceCleanup } from "./resourceCleanup.js";
 import { authorLodMetadataChanged } from "./authorLodMetadata.js";
+import type { PreparedBatch } from "../renderPacket.js";
 
 export class PacketInstanceRollbackError extends AggregateError {}
 
@@ -32,6 +34,7 @@ export interface PacketInstanceUpdateContext {
   readonly geometries: ReadonlyMap<string, CachedPacketGeometry>;
   readonly batches: ReadonlyMap<string, CachedPacketBatch>;
   readonly assertCurrent: () => void;
+  readonly decorateBatches?: (batches: readonly PreparedBatch[]) => readonly PreparedBatch[];
 }
 
 export interface PacketInstanceUpdateResult {
@@ -67,7 +70,8 @@ export function updatePacketInstances(
     triangles: value.source.indices.length / 3,
     center: geometryCenter(value.source),
   }]));
-  const prepared = prepareInstanceUpdate(features, update, context.textures.semanticMap(), context.deformation);
+  const raw = prepareInstanceUpdate(features, update, context.textures.semanticMap(), context.deformation, STOCK_MATERIAL_INSTANCE_OPTIONS);
+  const prepared = context.decorateBatches?.(raw) ?? raw;
   const history = collectTransformHistory(context.batches);
   for (const source of prepared) {
     if (source.data.byteLength > context.session.device.limits.maxBufferSize) {
@@ -82,11 +86,13 @@ export function updatePacketInstances(
   const attempted: AttemptedWrite[] = [];
   const historyUpdates = new Map<string, Float32Array<ArrayBuffer>>();
   let deformationChanged = false;
-  let lodChanged = false;
+  let sourceMetadataChanged = false;
   try {
     for (const source of prepared) {
       const previous = context.batches.get(source.key);
       const metadataChanged = authorLodMetadataChanged(previous?.source, source);
+      const identitiesChanged = previous !== undefined
+        && !equalStrings(previous.source.instanceIds, source.instanceIds);
       const previousTransforms = packPreviousTransforms(source, history);
       const currentTransforms = packCurrentTransforms(source);
       if (!equal(currentTransforms, previousTransforms)) historyUpdates.set(source.key, currentTransforms);
@@ -95,8 +101,8 @@ export function updatePacketInstances(
       const currentChanged = !previous || !equal(previous.source.data, source.data);
       const historyChanged = !previous || !equal(previous.previousTransforms, previousTransforms);
       if (previous && !currentChanged && !historyChanged && sameMaterial) {
-        batches.set(source.key, metadataChanged ? { ...previous, source } : previous);
-        lodChanged ||= metadataChanged;
+        batches.set(source.key, metadataChanged || identitiesChanged ? { ...previous, source } : previous);
+        sourceMetadataChanged ||= metadataChanged || identitiesChanged;
         continue;
       }
       const material = sameMaterial
@@ -166,7 +172,7 @@ export function updatePacketInstances(
     throw new PacketInstanceRollbackError(failures, "Instance retirement failed; packet rebuild is required.");
   }
   return { batches, historyUpdates,
-    changed: deformationChanged || lodChanged || writes.length > 0 || context.batches.size !== batches.size };
+    changed: deformationChanged || sourceMetadataChanged || writes.length > 0 || context.batches.size !== batches.size };
 }
 
 /** Advances motion history only after the renderer has submitted the frame successfully. */
@@ -255,4 +261,6 @@ function rollbackWrites(
 }
 
 const equal = (a: Float32Array, b: Float32Array): boolean =>
+  a.length === b.length && a.every((value, index) => value === b[index]);
+const equalStrings = (a: readonly string[], b: readonly string[]): boolean =>
   a.length === b.length && a.every((value, index) => value === b[index]);

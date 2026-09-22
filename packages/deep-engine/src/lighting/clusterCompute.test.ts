@@ -53,8 +53,27 @@ describe("Forward+ WebGPU cluster assignment", () => {
     expect(Array.from(new Uint32Array(parameters.data).slice(0, 12))).toEqual([64, 32, 32, 32, 2, 1, 4, 2, 4, 8, 0, 1]);
     const pass = { setPipeline: vi.fn(), setBindGroup: vi.fn(), dispatchWorkgroups: vi.fn(), end: vi.fn() };
     const encoder = { beginComputePass: vi.fn(() => pass) } as unknown as GPUCommandEncoder;
-    expect(assigner.encode(encoder)).toBe(result); expect(pass.dispatchWorkgroups).toHaveBeenCalledWith(1);
+    expect(assigner.encode(encoder)).toBe(result); expect(pass.dispatchWorkgroups).toHaveBeenCalledWith(result.grid.clusterCount);
     expect(() => assigner.encode(encoder)).toThrow("prepared"); assigner.dispose();
+  });
+
+  it("uses one cooperative workgroup per cluster instead of a serial light scan per invocation", () => {
+    expect(FORWARD_PLUS_CLUSTER_ASSIGN_WGSL).toContain("var<workgroup> acceptedPrefix: array<u32, 64>");
+    expect(FORWARD_PLUS_CLUSTER_ASSIGN_WGSL).toContain("for (var base = 0u; base < params.grid1.w; base += 64u)");
+    expect(FORWARD_PLUS_CLUSTER_ASSIGN_WGSL).toContain("let light = base + local.x");
+    expect(FORWARD_PLUS_CLUSTER_ASSIGN_WGSL).toContain("lightIndices[outputOffset + count + rank - 1u] = light");
+  });
+
+  it("strides oversized grids across the device workgroup limit", () => {
+    const f = fixture(), assigner = new ForwardPlusClusterAssigner(f.session);
+    const result = assigner.prepare({ ...config, viewportWidth: 512, viewportHeight: 512,
+      tileSizeX: 1, tileSizeY: 1, zSlices: 1 }, { points: [] });
+    const pass = { setPipeline: vi.fn(), setBindGroup: vi.fn(), dispatchWorkgroups: vi.fn(), end: vi.fn() };
+    assigner.encode({ beginComputePass: vi.fn(() => pass) } as unknown as GPUCommandEncoder);
+    expect(result.grid.clusterCount).toBe(262_144);
+    expect(pass.dispatchWorkgroups).toHaveBeenCalledWith(65_535);
+    expect(FORWARD_PLUS_CLUSTER_ASSIGN_WGSL).toContain("cluster += workgroupCount.x");
+    assigner.dispose();
   });
 
   it("reuses stable buffers, grows and shrinks geometrically, and keeps one pipeline", () => {

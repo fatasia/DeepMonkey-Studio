@@ -1,5 +1,29 @@
 export const SSR_WORKGROUP_SIZE = 8;
 
+/** Builds mip 0 from the live HDR source, then a bounded 2x2 radiance hierarchy. */
+export const SSR_RADIANCE_DOWNSAMPLE_WGSL = /* wgsl */ `
+@group(0) @binding(0) var radianceSource: texture_2d<f32>;
+@group(0) @binding(1) var radianceTarget: texture_storage_2d<rgba16float, write>;
+
+@compute @workgroup_size(8, 8)
+fn downsampleRadiance(@builtin(global_invocation_id) id: vec3<u32>) {
+  let targetSize = textureDimensions(radianceTarget);
+  if (id.x >= targetSize.x || id.y >= targetSize.y) { return; }
+  let sourceSize = textureDimensions(radianceSource);
+  if (all(sourceSize == targetSize)) {
+    textureStore(radianceTarget, vec2<i32>(id.xy), textureLoad(radianceSource, vec2<i32>(id.xy), 0));
+    return;
+  }
+  let maximum = vec2<i32>(sourceSize - vec2<u32>(1u));
+  let origin = vec2<i32>(id.xy * 2u);
+  let radiance = textureLoad(radianceSource, min(origin, maximum), 0)
+    + textureLoad(radianceSource, min(origin + vec2i(1, 0), maximum), 0)
+    + textureLoad(radianceSource, min(origin + vec2i(0, 1), maximum), 0)
+    + textureLoad(radianceSource, min(origin + vec2i(1, 1), maximum), 0);
+  textureStore(radianceTarget, vec2<i32>(id.xy), radiance * 0.25);
+}
+`;
+
 const COMMON = /* wgsl */ `
 struct SsrParams {
   sourceSize: vec2<u32>,
@@ -51,6 +75,14 @@ fn ssrLoadNormal(coordinate: vec2<u32>) -> vec3f {
   // Only the trace pipeline binds the view-normal texture.
   return ssrSafeNormal(textureLoad(sourceNormal, vec2<i32>(coordinate), 0).xyz * 2.0 - 1.0);
 }
+fn ssrLoadRoughness(coordinate: vec2<u32>) -> f32 {
+  return clamp(textureLoad(sourceNormal, vec2<i32>(coordinate), 0).w, 0.0, 1.0);
+}
+fn ssrSampleRoughRadiance(uv: vec2f, roughness: f32) -> vec3f {
+  // Roughness selects a bounded cone footprint from the prefiltered radiance hierarchy.
+  let lod = roughness * roughness * ssrParams.misc.z;
+  return textureSampleLevel(sourceColor, ssrSampler, uv, lod).rgb;
+}
 
 @compute @workgroup_size(8, 8)
 fn traceReflection(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -61,6 +93,7 @@ fn traceReflection(@builtin(global_invocation_id) id: vec3<u32>) {
   if (!(centerDepth > 0.0)) { textureStore(traceTarget, vec2<i32>(id.xy), vec4f(0.0)); return; }
   let origin = ssrReconstruct(coordinate, centerDepth);
   let normal = ssrLoadNormal(coordinate);
+  let roughness = ssrLoadRoughness(coordinate);
   let incident = normalize(origin / centerDepth);
   let reflected = reflect(incident, normal);
   if (reflected.z >= 0.0) { textureStore(traceTarget, vec2<i32>(id.xy), vec4f(0.0)); return; }
@@ -92,7 +125,7 @@ fn traceReflection(@builtin(global_invocation_id) id: vec3<u32>) {
     }
   }
   if (!hit) { textureStore(traceTarget, vec2<i32>(id.xy), vec4f(0.0)); return; }
-  let radiance = textureSampleLevel(sourceColor, ssrSampler, hitUv, 0.0).rgb;
+  let radiance = ssrSampleRoughRadiance(hitUv, roughness);
   let cosTheta = clamp(-dot(normal, incident), 0.0, 1.0);
   let fresnel = ssrParams.misc.y + (1.0 - ssrParams.misc.y) * pow(1.0 - cosTheta, 5.0);
   let mask = fresnel * ssrEdgeFade(hitUv);
@@ -113,7 +146,9 @@ fn compositeReflection(@builtin(global_invocation_id) id: vec3<u32>) {
   let uv = (vec2f(id.xy) + 0.5) / vec2f(ssrParams.sourceSize);
   let color = textureSampleLevel(sourceColor, ssrSampler, uv, 0.0).rgb;
   // trace 是半分辨率 rgba16float,双线性采样即上采样;alpha 通道是 mask,rgb 已含加权。
-  let reflection = textureSampleLevel(sourceTrace, ssrSampler, uv, 0.0).rgb;
-  textureStore(compositeTarget, vec2<i32>(id.xy), vec4f(color + reflection, 1.0));
+  let reflection = textureSampleLevel(sourceTrace, ssrSampler, uv, 0.0);
+  // The opaque source already contains probe/environment specular. Replace that
+  // fallback under a valid SSR hit instead of adding the same energy twice.
+  textureStore(compositeTarget, vec2<i32>(id.xy), vec4f(color * (1.0 - reflection.a) + reflection.rgb, 1.0));
 }
 `;

@@ -47,4 +47,46 @@ describe("industrial prefab validation", () => {
       }, "prefab")).not.toThrow();
     }
   });
+
+  it("accepts the road authoring prefab kind", () => {
+    expect(() => validateIndustrialPrefabInstance({
+      definitionId: "road.straight",
+      definitionVersion: "1.0.0",
+      kind: "road",
+      parameters: {
+        lengthM: 20,
+        carriagewayWidthM: 7,
+        laneCount: 2,
+        shoulderWidthM: 0.75,
+        surface: "asphalt",
+        marking: "center",
+      },
+      operatingState: "idle",
+      placementPath: {
+        points: [
+          { id: "start", position: { x: 0, y: 0, z: 0 } },
+          { id: "end", position: { x: 20, y: 0, z: 5 } },
+        ],
+        interpolation: "catmull-rom",
+        closed: false,
+        snapToGround: true,
+        seed: 1234,
+      },
+    }, "prefab")).not.toThrow();
+  });
+
+  it("rejects malformed or nondeterministic placement paths", () => {
+    const value = {
+      definitionId: "fence.modular", definitionVersion: "1.0.0", kind: "fence",
+      parameters: {}, operatingState: "idle",
+      placementPath: { points: [
+        { id: "same", position: { x: 0, y: 0, z: 0 } },
+        { id: "same", position: { x: 4, y: 0, z: 0 } },
+      ], interpolation: "linear", closed: false, snapToGround: false, seed: 1 },
+    };
+    expect(() => validateIndustrialPrefabInstance(value, "prefab")).toThrow(/nonempty and unique/);
+    expect(() => validateIndustrialPrefabInstance({ ...value, placementPath: { ...value.placementPath,
+      points: [{ id: "a", position: { x: 0, y: 0, z: 0 } }, { id: "b", position: { x: 1, y: 0, z: 0 } }], seed: -1 } }, "prefab"))
+      .toThrow(/uint32/);
+  });
 });

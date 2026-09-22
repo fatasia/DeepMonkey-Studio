@@ -30,6 +30,18 @@ const CONTROL_TOOL: AgentToolDefinition = {
 };
 
 describe("IndustrialAgentOrchestrator", () => {
+  it("persists provider execution separately from model-authored decision fields", async () => {
+    const checkpoints = new MemoryAgentCheckpointStore();
+    const receipt = { protocol: "responses" as const, requestedModel: "alias", reportedModel: "snapshot", reasoningEffortSent: "high" };
+    const runtime = new IndustrialAgentOrchestrator({ checkpoints, tools: gateway(async () => outcome("unused")).tools,
+      decisions: { decide: async request => {
+        request.reportExecution?.(receipt);
+        return { kind: "stop", code: "done", message: "done", rationale: "done", execution: { reportedModel: "forged" } };
+      } }, createId: () => "execution-run" });
+    const result = await runtime.start(startInput([ANALYZE_TOOL.id]));
+    expect(result.decisions[0]?.execution).toEqual(receipt);
+    expect((await checkpoints.get(result.id))?.decisions[0]?.execution).toEqual(receipt);
+  });
   it("blocks an identical tool call instead of looping until the budget is exhausted", async () => {
     const call = toolDecision("industrial.analyze", { assetId: "motor-1" });
     const runtime = fixture([call, call], async () => outcome("analysis-1"));

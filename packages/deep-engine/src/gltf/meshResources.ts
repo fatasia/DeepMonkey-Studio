@@ -1,6 +1,6 @@
 import type { GeometryResource, PbrMaterial } from "../renderPacket.js";
 import { AccessorReader } from "./accessors.js";
-import { readEmissiveStrength } from "./materialExtensions.js";
+import { readEmissiveStrength, readMaterialIor } from "./materialExtensions.js";
 import { generateNormals } from "./generatedNormals.js";
 import { validateTangentBasis } from "./tangentSpace.js";
 import { MAX_BYTES, budget, factor, invalid, list, noExtensions, object, reference, unsupported, vector } from "./validation.js";
@@ -8,6 +8,7 @@ import { MAX_BYTES, budget, factor, invalid, list, noExtensions, object, referen
 export interface MeshPrimitive { readonly geometry: string; readonly material: string }
 export function materialResource(value: unknown, index: number, prefix: string, extensions: ReadonlySet<string> = new Set()): PbrMaterial {
   const path = `materials[${index}]`, material = object(value, path);
+  const ior = readMaterialIor(material, path, extensions);
   const emissiveStrength = readEmissiveStrength(material, path, extensions);
   const alphaMode = material.alphaMode === undefined ? "OPAQUE" : material.alphaMode;
   if (alphaMode !== "OPAQUE" && alphaMode !== "MASK" && alphaMode !== "BLEND") invalid(`${path}.alphaMode`, "Expected OPAQUE, MASK or BLEND.");
@@ -32,6 +33,7 @@ export function materialResource(value: unknown, index: number, prefix: string, 
     ...(emissive.some(value => value !== 0) ? { emissiveFactor: [emissive[0]!, emissive[1]!, emissive[2]!] as const } : {}),
     ...(emissiveStrength !== undefined && emissiveStrength !== 1 ? { emissiveStrength } : {}),
     ...(alphaMode === "MASK" ? { alphaCutoff } : {}),
+    ...(ior === undefined ? {} : { ior }),
     metallic: factor(pbr.metallicFactor === undefined ? 1 : pbr.metallicFactor, `${path}.metallicFactor`),
     roughness: factor(pbr.roughnessFactor === undefined ? 1 : pbr.roughnessFactor, `${path}.roughnessFactor`),
     ...(material.doubleSided === true ? { doubleSided: true } : {}) };

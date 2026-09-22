@@ -56,6 +56,22 @@ describe("runtime package browser-to-native contract", () => {
     const result = buildDeepRuntimePackage({ ...source, deep2d: read("fixtures/deep2d_runtime_atlas_v1.json") });
     expect(validateDeepRuntimePackage(result).valid).toBe(true);
   });
+  it("packages a dynamic scene as a first-class v7 resource and entrypoint", () => {
+    const source = input();
+    const dynamicRuntime = { id: "scene.dynamic", revision: 2, value: {
+      schema: "deep-engine.dynamic-runtime", schemaVersion: 1, id: "scene.dynamic", revision: 2,
+      animation: { schema: "deep-engine.dynamic-animation", schemaVersion: 1, durationMs: 1000,
+        tracks: [{ targetId: "node-a", property: "translation", keyframes: [
+          { timeMs: 0, value: [0, 0, 0, 0, 0, 0, 1] },
+          { timeMs: 1000, value: [1, 0, 0, 0, 0, 0, 1] },
+        ] }] },
+    } } as const;
+    const result = buildDeepRuntimePackage({ ...source, deep2d: undefined, dynamicRuntime });
+    expect(result.schemaVersion).toBe(7);
+    expect(result.entrypoints.dynamicRuntime).toBe(dynamicRuntime.id);
+    expect(result.resources.find(resource => resource.kind === "dynamic-runtime")?.id).toBe(dynamicRuntime.id);
+    expect(parseDeepRuntimePackage(serializeDeepRuntimePackage(result)).valid).toBe(true);
+  });
   it("serializes equivalent insertion orders to identical bytes", () => {
     const value = fixture(), reverse = (input: unknown): unknown => {
       if (Array.isArray(input)) return input.map(reverse);

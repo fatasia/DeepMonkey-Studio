@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { createHash } from "node:crypto";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const port = Number(process.env.DEEP_ENGINE_LAB_PORT ?? 5291);
@@ -9,6 +10,8 @@ if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("Inv
 const files = new Map([["/", ["index.html", "text/html"]], ["/switch", ["switch.html", "text/html"]],
   ["/benchmark", ["benchmark.html", "text/html"]], ["/lab.js", ["lab.js", "text/javascript"]],
   ["/switch.js", ["switch.js", "text/javascript"]], ["/benchmark.js", ["benchmark.js", "text/javascript"]],
+  ["/babylon-pairing", ["babylonPairing.html", "text/html"]],
+  ["/babylonPairing.js", ["babylonPairing.js", "text/javascript"]],
   ["/lab.css", ["lab.css", "text/css"]], ["/switch.css", ["switch.css", "text/css"]],
   ["/benchmark.css", ["benchmark.css", "text/css"]], ["/tokens.css", ["tokens.css", "text/css"]],
   ["/manifest.json", ["manifest.json", "application/json"]]]);
@@ -18,6 +21,17 @@ for (const name of ["Box", "BoxInterleaved", "BoxTextured", "NormalTangentTest",
 }
 files.set("/assets/sources.json", ["assets/sources.json", "application/json"]);
 const origin = `http://127.0.0.1:${port}`;
+const localAssetDirectory = process.env.DEEP_ENGINE_BENCHMARK_ASSET_DIR;
+const localAssets = new Map();
+if (localAssetDirectory) {
+  const catalog = JSON.parse(await readFile(path.join(localAssetDirectory, "sources.json"), "utf8"));
+  for (const asset of catalog.assets) {
+    if (!["LocalBim", "LocalPreheater"].includes(asset.name)) throw new Error("Unknown local benchmark asset.");
+    const bytes = await readFile(path.join(localAssetDirectory, `${asset.name}.glb`));
+    if (createHash("sha256").update(bytes).digest("hex") !== asset.sha256) throw new Error("Local benchmark asset identity mismatch.");
+    localAssets.set(`/assets/${asset.name}.glb`, { bytes, sourceSha256: asset.sourceSha256, sha256: asset.sha256, cameraFrame: asset.cameraFrame });
+  }
+}
 const server = createServer(async (request, response) => {
   response.setHeader("Cache-Control", "no-store");
   response.setHeader("X-Content-Type-Options", "nosniff");
@@ -43,6 +57,13 @@ const server = createServer(async (request, response) => {
     }
     if (request.method !== "GET") { response.writeHead(405).end(); return; }
     const pathname = new URL(request.url ?? "/", origin).pathname;
+    if (localAssets.has(pathname)) {
+      // Same-origin Lab requests only; local private models are never added to a distributable build.
+      if (request.headers["sec-fetch-site"] !== "same-origin") { response.writeHead(403).end(); return; }
+      const asset = localAssets.get(pathname);
+      response.writeHead(200, { "Content-Type": "model/gltf-binary", "X-Deep-Source-Sha256": asset.sourceSha256,
+        "X-Deep-Asset-Sha256": asset.sha256, "X-Deep-Camera-Frame": JSON.stringify(asset.cameraFrame) }).end(asset.bytes); return;
+    }
     if (pathname === "/favicon.ico") { response.writeHead(204).end(); return; }
     const file = files.get(pathname);
     if (!file) { response.writeHead(404).end(); return; }

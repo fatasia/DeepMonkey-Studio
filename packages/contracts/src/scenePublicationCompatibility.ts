@@ -67,7 +67,13 @@ export function summarizeScenePublicationCompatibility(input: ScenePublicationCo
     if (failure) return block(copy, failure);
     if (item.status === "blocked") return copy;
     if (item.status === "webview-only" && input.target === "deep-native") return copy;
-    if (item.evidenceIds.length === 0 || new Set(item.evidenceIds).size !== item.evidenceIds.length) {
+    // Degraded capabilities are explicitly optional fallbacks. They must carry
+    // a reason/remediation, but do not require runtime evidence for a feature
+    // that is intentionally omitted from the target package.
+    const omittedOptional = item.status === "degraded" && input.target === "deep-native"
+      && ["postProcessing", "weather", "measurements", "annotations", "camera", "navigationSettings", "lighting"].includes(item.path)
+      && item.objectId === input.sceneId && item.evidenceIds.length === 0;
+    if (!omittedOptional && (item.evidenceIds.length === 0 || new Set(item.evidenceIds).size !== item.evidenceIds.length)) {
       return block(copy, "缺少唯一且可追溯的运行证据。");
     }
     for (const id of item.evidenceIds) {

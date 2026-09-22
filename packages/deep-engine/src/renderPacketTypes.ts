@@ -38,6 +38,8 @@ export interface PbrMaterial {
   readonly baseColor: readonly [number, number, number];
   readonly metallic: number;
   readonly roughness: number;
+  /** Dielectric IOR, finite float32 >= 1; omitted = 1.5. Requires material instance ABI v5 when non-default. */
+  readonly ior?: number;
   readonly baseColorTexture?: TextureSlot;
   readonly metallicRoughnessTexture?: TextureSlot;
   /** 没有切线/TBN 时会明确拒绝，不能退化成错误的物体空间法线。 */
@@ -106,6 +108,8 @@ export interface RenderInstance {
   readonly castShadow?: boolean;
   /** Omitted receives shadows; false is encoded in existing material flags bit 16. */
   readonly receiveShadow?: boolean;
+  /** Object-level screen-space outline; encoded in instance flags bit 256. */
+  readonly outline?: boolean;
 }
 
 /** 作者状态的渲染投影，不持有脚本、对象行为或另一套可编辑场景。 */

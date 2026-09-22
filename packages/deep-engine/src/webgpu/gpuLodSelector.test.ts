@@ -87,7 +87,8 @@ describe("GpuLodSelector", () => {
     expect(publish(selector, selector.encode(encoder.encoder, { ...source, revision: 1 }, view([0.1, 0, 0])))).toMatchObject({ historyReset: false });
     expect(publish(selector, selector.encode(encoder.encoder, { ...source, revision: 2 }, view([1, 0, 0])))).toMatchObject({ historyReset: true });
     expect(publish(selector, selector.encode(encoder.encoder, { ...source, revision: 3 }, view([1, 0, 0], true)))).toMatchObject({ historyReset: true });
-    const resets = f.writes.map(write => new Uint32Array(write.data)[14]); expect(resets).toEqual([1, 0, 1, 1]);
+    const resets = f.writes.map(write => new Uint32Array(write.data)[14]); expect(resets).toEqual([1, 0, 1]);
+    expect(encoder.passes).toHaveLength(4);
   });
 
   it("always resets history when projection kind changes, including explicit-cut-only mode", () => {
@@ -124,6 +125,25 @@ describe("GpuLodSelector", () => {
     expect(() => selector.encode(encoder.encoder, { ...source, revision: 1, objects: buffer("short", 4) }, view())).toThrow("too small");
     expect(() => selector.encode(encoder.encoder, { ...source, revision: 1 }, { ...view(), viewport: { width: 0, height: 1 } })).toThrow("width");
     expect(() => selector.encode(encoder.encoder, { ...source, revision: 1 }, { ...view(), camera: { ...view().camera, forward: [0, 0, 0] } })).toThrow("zero");
+  });
+
+  it("skips unchanged LOD uniforms across revision-only dispatches and retries failed changes", () => {
+    const f = fixture(), encoder = encoderFixture(), selector = new GpuLodSelector(f.session), source = input();
+    publish(selector, selector.encode(encoder.encoder, source, view()));
+    publish(selector, selector.encode(encoder.encoder, { ...source, revision: 1 }, view()));
+    expect(f.queue.writeBuffer).toHaveBeenCalledTimes(2);
+    publish(selector, selector.encode(encoder.encoder, { ...source, revision: 2 }, view()));
+    expect(encoder.passes).toHaveLength(3);
+    expect(f.queue.writeBuffer).toHaveBeenCalledTimes(2);
+    expect(() => selector.encode(encoder.encoder, { ...source, revision: 1 }, view())).toThrow("Stale");
+    expect(f.queue.writeBuffer).toHaveBeenCalledTimes(2);
+
+    f.queue.writeBuffer.mockImplementationOnce(() => { throw new Error("uniform upload failed"); });
+    expect(() => selector.encode(encoder.encoder, { ...source, revision: 3 }, view([0.1, 0, 0]))).toThrow("uniform upload failed");
+    expect(f.queue.writeBuffer).toHaveBeenCalledTimes(3);
+    publish(selector, selector.encode(encoder.encoder, { ...source, revision: 3 }, view([0.1, 0, 0])));
+    expect(f.queue.writeBuffer).toHaveBeenCalledTimes(4);
+    selector.dispose();
   });
 
   it("rolls back partial growth, preserves active resources on write failure, and never destroys borrowed inputs", () => {

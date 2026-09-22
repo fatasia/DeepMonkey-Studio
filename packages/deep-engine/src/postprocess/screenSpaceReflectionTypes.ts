@@ -29,6 +29,8 @@ export interface ScreenSpaceReflectionOptions {
   /** UV distance (0..1, from the edge) below which the contribution fades out. */
   readonly edgeFade: number;
   readonly fresnelF0: number;
+  /** Active prefiltered cone levels; physical storage remains bounded to six. */
+  readonly coneMipLevels?: number;
 }
 
 export interface ScreenSpaceReflectionResult {
@@ -39,6 +41,8 @@ export interface ScreenSpaceReflectionResult {
   readonly height: number;
   readonly traceWidth: number;
   readonly traceHeight: number;
+  /** Actual bounded rough-radiance hierarchy consumed by cone tracing. */
+  readonly radianceMipLevelCount: number;
   readonly revision: number;
   readonly updated: boolean;
   readonly passCount: number;
@@ -51,6 +55,8 @@ export interface ScreenSpaceReflectionCpuInput {
   readonly depth: readonly number[];
   /** Tightly packed view-space xyz. */
   readonly normals: readonly number[];
+  /** Optional perceptual roughness mirror of view-normal alpha; omitted preserves the legacy sharp path. */
+  readonly roughness?: readonly number[];
   /** Linear HDR rgb, tightly packed. */
   readonly color: readonly number[];
 }
@@ -63,6 +69,7 @@ export interface ScreenSpaceReflectionCpuOptions {
   readonly refines: number;
   readonly edgeFade: number;
   readonly fresnelF0: number;
+  readonly coneMipLevels?: number;
 }
 
 export interface ScreenSpaceReflectionCpuResult {

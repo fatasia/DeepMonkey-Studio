@@ -48,9 +48,13 @@ export class AuthorMeshletView {
         this.active.add(key);
         const row = batch.source.data.subarray(instance * 36, instance * 36 + 12);
         const worldFromObject = [row[0]!, row[4]!, row[8]!, 0, row[1]!, row[5]!, row[9]!, 0, row[2]!, row[6]!, row[10]!, 0, row[3]!, row[7]!, row[11]!, 1];
-        // Hi-Z is disabled here; visibility uses the actual per-view planes, not this unused projection.
-        const result = entry.culler.encode(encoder, source, { viewProjection: IDENTITY, worldFromObject,
-          cameraPosition: view.camera.position, frustum: view.frustum, viewport: [view.viewport.width, view.viewport.height], reversedZ: false }, { normalCone: false });
+        const previous = view.previousHiZ;
+        const result = entry.culler.encode(encoder, source, {
+          viewProjection: previous?.viewProjection ?? IDENTITY, worldFromObject,
+          cameraPosition: previous?.cameraPosition ?? view.camera.position, frustum: view.frustum,
+          viewport: previous?.viewport ?? [view.viewport.width, view.viewport.height],
+          reversedZ: previous?.reversedZ ?? false, ...(previous ? { hiz: previous.hiz } : {}),
+        }, { normalCone: false });
         if (result.mode !== "gpu") throw Error("Prepared packet meshlet source is below the GPU threshold.");
         const plan = entry.executor.encode(encoder, result, { expandedIndexCount: source.indices.indexCount, instanceMapping: "constant" });
         if (result.updated) { passes++; dispatches += 4; } if (plan.updated) { passes++; dispatches++; }

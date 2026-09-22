@@ -2,7 +2,7 @@ import type { TextureSampler, TextureSemantic } from "../textures/decodedTexture
 import { TextureDataReader } from "./textureDataReader.js";
 import { decodeImageDataUri } from "./textureDataUri.js";
 import {
-  KHR_MATERIALS_EMISSIVE_STRENGTH, readEmissiveStrength, validateExtensionSets,
+  KHR_MATERIALS_IOR, KHR_MATERIALS_EMISSIVE_STRENGTH, readEmissiveStrength, validateExtensionSets,
 } from "./materialExtensions.js";
 import type { GltfEncodedImage, GltfNormalTextureSlot, GltfOcclusionTextureSlot, GltfTextureManifest, GltfTextureResource, GltfTextureSlot } from "./textureTypes.js";
 import { MAX_BYTES, budget, integer, invalid, list, noExtensions, object, reference, unsupported, validateJson, vector, type JsonObject } from "./validation.js";
@@ -120,7 +120,7 @@ export function extractGltfTextureManifest(json: unknown, buffers: readonly Uint
   if (asset.version !== "2.0") unsupported("asset.version", "glTF versions other than 2.0");
   if (asset.minVersion !== undefined && asset.minVersion !== "2.0") unsupported("asset.minVersion", "newer minimum glTF versions");
   const { used, required } = validateExtensionSets(document,
-    new Set([TRANSFORM, BASISU, KHR_MATERIALS_EMISSIVE_STRENGTH]));
+    new Set([TRANSFORM, BASISU, KHR_MATERIALS_EMISSIVE_STRENGTH, KHR_MATERIALS_IOR]));
   const prefix = options.resourcePrefix === undefined ? "gltf" : options.resourcePrefix;
   if (typeof prefix !== "string" || !prefix.length || prefix.length > 256) invalid("options.resourcePrefix", "Expected a nonempty prefix of at most 256 characters.");
   const maxImageBytes = options.maxImageBytes ?? MAX_BYTES;

@@ -130,8 +130,9 @@ export class ShaderPackageExecutor {
 
   get state(): ShaderPackageExecutorState { return this.currentState; }
   get cacheSize(): number { return this.cache.size; }
+  get stats() { return this.cache.stats; }
 
-  async prepare(input: unknown, passIds?: readonly string[]): Promise<PreparedShaderPackage> {
+  async prepare(input: unknown, passIds?: readonly string[], signal?: AbortSignal): Promise<PreparedShaderPackage> {
     if (this.currentState !== "ready") {
       throw new ShaderPackageExecutorError("Shader package executor is not ready.");
     }
@@ -152,7 +153,7 @@ export class ShaderPackageExecutor {
         create: (value, missing, signal) => queueDeviceWork(
           this.device, () => this.compileCandidate(value, missing, signal),
         ),
-      });
+      }, signal);
       this.assertReady();
       return Object.freeze({
         packageId: packageValue.packageId,

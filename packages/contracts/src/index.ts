@@ -3,6 +3,7 @@ import type { SceneDashboardState } from "./dashboard.js";
 import type { ProjectRecord } from "./project.js";
 import type { PublishedSceneRecord, SceneSnapshot } from "./scene.js";
 export * from "./directBinding.js";
+export type { AiSessionMessageStatus, AiSessionReliability, AiSessionSummary, AiSessionMessageInput, AiSessionMessage, AiSessionList, AiSessionMessages } from "./aiSession.js";
 export * from "./aiDataBinding.js";
 export * from "./parametricModeling.js";
 export * from "./operations.js";
@@ -147,6 +148,16 @@ export interface AiAssistantResponse {
   /** 模型返回的二维页面草案仍不可信，必须经当前页面与数据目录验证后才能应用。 */
   dashboardPageDraft?: unknown;
   model: string;
+  /** 发送参数与供应商回执分别记录，未回执不推断为已采用。 */
+  execution?: {
+    protocol: "responses" | "chat-completions";
+    requestedModel: string;
+    reportedModel?: string;
+    reasoningEffortSent?: string;
+    reasoningEffortReported?: string;
+  servedBy?: "primary" | "fallback";
+  failoverCategory?: string;
+  };
   reliability?: AiAssistantReliability;
 }
 
@@ -193,6 +204,8 @@ export type AiAssistantContextTrust = "client-snapshot" | "server-evidence" | "c
  * Capability及其证据指纹才能标记为 verified。
  */
 export interface AiAssistantReliability {
+  /** Server receipt for the context actually included in this answer's provider request. */
+  contextDelivery?: AiContextDelivery;
   traceId: string;
   verification: AiAssistantVerification;
   inputRisk: AiAssistantInputRisk;
@@ -205,6 +218,20 @@ export interface AiAssistantReliability {
   servedProvider?: "primary" | "fallback";
   /** 主模型切换到备用模型的原因分类（额度、限流、服务端、超时、网络）。 */
   failoverReason?: string;
+}
+
+export interface AiContextDelivery {
+  unit: "utf16";
+  preparedChars: number;
+  sentChars: number;
+  sources: Array<{
+    id: string;
+    path: string;
+    status: "sent" | "partial" | "omitted";
+    preparedChars: number;
+    sentChars: number;
+    transformed: boolean;
+  }>;
 }
 
 export type AiTelemetrySource = "assistant" | "agent-decision";
@@ -307,6 +334,7 @@ export * from "./deviceSignal.js";
 export * from "./modelProcessing.js";
 export * from "./scenePublicationCompatibility.js";
 export * from "./dashboardDocument.js";
+export * from "./dashboardLayerOrder.js";
 export * from "./dashboardWebPackage.js";
 export * from "./formatImportContracts.js";
 export * from "./sceneScriptProtocol.js";

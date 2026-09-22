@@ -14,6 +14,7 @@ import { failWithResourceCleanup, runResourceCleanup } from "./resourceCleanup.j
 import { LocalSpotLod } from "./localSpotLod.js";
 import { SharedShadowAtlasResources, type SharedShadowAtlasBudgetEvidence,
   type SharedShadowAtlasGpuResource } from "./sharedShadowAtlasResources.js";
+import { resolveLocalShadowSoftness } from "../shadows/localShadowSoftness.js";
 
 const DEPTH_BUDGET = 4 * 1024 * 1024;
 const DEPTH_BIAS = 0.001;
@@ -178,7 +179,8 @@ export class LocalSpotShadowRuntime {
     selected.forEach((spot, ordinal) => {
       const offset = ordinal * LOCAL_SPOT_SHADOW_ENTRY_BYTES / 4;
       metadata.set(spot.matrix, offset); metadata.set([...spot.tile.uvOffset, ...spot.tile.uvScale], offset + 16);
-      metadata.set([spot.index, DEPTH_BIAS, 1 / this.atlas!.plan.atlasSize, 1], offset + 20);
+      metadata.set([spot.index, DEPTH_BIAS, 1 / this.atlas!.plan.atlasSize,
+        1 + resolveLocalShadowSoftness(spot.light.shadow?.softness)], offset + 20);
       const frameData = new Float32Array(PBR_FRAME_UNIFORM_FLOATS); frameData.set(spot.matrix, PBR_FRAME_FLOAT_OFFSETS.lightViewProjection);
       this.session.device.queue.writeBuffer(this.shadowFrames[ordinal]!, 0, frameData);
     });

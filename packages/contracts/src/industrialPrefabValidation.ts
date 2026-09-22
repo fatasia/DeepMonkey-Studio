@@ -10,7 +10,7 @@ import {
   requiredLiteral
 } from "./applicationValidationPrimitives.js";
 
-const PREFAB_KINDS = ["conveyor", "robot-arm", "person", "agv", "vehicle", "access-control", "display", "fence", "machine", "utility", "electrical", "sensor", "camera", "storage"] as const;
+const PREFAB_KINDS = ["conveyor", "robot-arm", "person", "agv", "vehicle", "access-control", "display", "fence", "road", "machine", "utility", "electrical", "sensor", "camera", "storage"] as const;
 
 export function validateIndustrialPrefabInstance(value: unknown, path: string): void {
   const object = expectObject(value, path);
@@ -21,6 +21,42 @@ export function validateIndustrialPrefabInstance(value: unknown, path: string): 
   optional(object, "faultCode", expectString, path);
   optional(object, "motionRoute", validateMotionRoute, path);
   optional(object, "mediaSurface", validateMediaSurface, path);
+  optional(object, "placementPath", validatePlacementPath, path);
+}
+
+function validatePlacementPath(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  required(object, "points", (entries, entriesPath) =>
+    expectArray(entries, entriesPath, validatePlacementPathPoint), path);
+  const points = object.points as unknown[];
+  if (points.length < 2 || points.length > 512) throw new Error(`${path}.points must contain 2..512 points`);
+  const ids = new Set<string>();
+  for (const [index, value] of points.entries()) {
+    const id = (value as { id?: unknown }).id;
+    if (typeof id !== "string" || !id || ids.has(id)) throw new Error(`${path}.points[${index}].id must be nonempty and unique`);
+    ids.add(id);
+  }
+  requiredLiteral(object, "interpolation", ["linear", "catmull-rom"], path);
+  required(object, "closed", expectBoolean, path);
+  required(object, "snapToGround", expectBoolean, path);
+  required(object, "seed", expectNumber, path);
+  const seed = object.seed as number;
+  if (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xffff_ffff) {
+    throw new Error(`${path}.seed must be a uint32`);
+  }
+}
+
+function validatePlacementPathPoint(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  required(object, "id", expectString, path);
+  required(object, "position", (position, positionPath) => {
+    const vector = expectObject(position, positionPath);
+    for (const axis of ["x", "y", "z"] as const) {
+      required(vector, axis, expectNumber, positionPath);
+      const coordinate = vector[axis] as number;
+      if (!Number.isFinite(coordinate)) throw new Error(`${positionPath}.${axis} must be finite`);
+    }
+  }, path);
 }
 
 function validateParameterValues(value: unknown, path: string): void {

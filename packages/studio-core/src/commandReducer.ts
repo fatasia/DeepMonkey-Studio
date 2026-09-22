@@ -213,7 +213,8 @@ export function applyStudioCommand(document: ApplicationDocument, command: Studi
       }
       return updatePage(document, page.id, (candidate) => ({
         ...candidate,
-        nodes: candidate.nodes.map((node) => states.has(node.id) ? applyNodeState(node, states.get(node.id)!) : node)
+        nodes: candidate.nodes.map((node) => states.has(node.id) ? applyNodeState(node, states.get(node.id)!) : node),
+        ...(command.payload.rootLayerOrder ? { rootLayerOrder: structuredClone([...command.payload.rootLayerOrder]) } : {}),
       }));
     }
     case "dashboard.data-widget.update": {

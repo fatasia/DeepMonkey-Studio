@@ -43,7 +43,7 @@ fn deepGiTextureContains(level: DeepGiTextureLevel, position: vec3f) -> bool {
   return deepGiTextureLevelUsable(level) && all(position >= level.originSpacing.xyz)
     && all(position <= level.maxPosition);
 }
-// Hemisphere test against the original shading point (see the storage-record path note).
+// 半球判断使用原始着色点，详见 storage-record 采样路径的说明。
 fn deepGiTextureNormalWeight(probePosition: vec3f, shadingPoint: vec3f, normal: vec3f) -> f32 {
   let toProbe = probePosition - shadingPoint;
   let lengthToProbe = length(toProbe);

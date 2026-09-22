@@ -36,8 +36,9 @@ export function selectSceneClientApplications(scene: SceneSnapshot, applications
     if (owners.length !== 1) fail(`scene.actions.sceneId(${id})`, "场景缺失或跨应用歧义");
   }
   for (const input of applications) {
+    // app.scenes 是应用内部缓存，不代表该应用拥有或发布这个场景；仅显式来源、
+    // 视口和页面动作能建立交付关联，避免把历史测试应用一并拖入客户端闭包。
     const related = (input.metadata.source && roots.has(input.metadata.source.sceneId))
-      || input.scenes.some(value => roots.has(value.id))
       || input.pages.some(page => pageRoots.has(page.id) || page.nodes.some(node => node.kind === "scene-viewport" && roots.has(node.sceneId)));
     if (!related) continue;
     const app = structuredClone(input), prefix = `applications[${app.metadata.id}]`;
@@ -48,7 +49,7 @@ export function selectSceneClientApplications(scene: SceneSnapshot, applications
     if (!app.scenes.some(value => value.id === scene.id) && (app.metadata.source?.sceneId === scene.id
       || app.pages.some(page => page.nodes.some(node => node.kind === "scene-viewport" && node.sceneId === scene.id)))) {
       app.scenes.push(rootDocument);
-    }
+    };
     const unique = <T,>(values: readonly T[], id: (value: T) => string, path: string): Map<string, T> => {
       const map = new Map<string, T>();
       for (const value of values) { const key = id(value); if (!key || map.has(key)) fail(path, "ID 缺失或重复"); map.set(key, value); }
@@ -68,12 +69,13 @@ export function selectSceneClientApplications(scene: SceneSnapshot, applications
     for (const id of roots) if (scenes.has(id)) addScene(id, prefix);
     for (const page of app.pages) if (pageRoots.has(page.id) || page.nodes.some(node => node.kind === "scene-viewport" && roots.has(node.sceneId))) addPage(page.id, prefix);
     if (app.metadata.source) addScene(app.metadata.source.sceneId, `${prefix}.metadata.source.sceneId`, !roots.has(app.metadata.source.sceneId));
-    const unresolved = (path: string) => result.unresolved.push({ applicationId: app.metadata.id, path, reason: "脚本缺少可枚举的客户端依赖声明；请停用该脚本或选择仅发布。" });
+    const unresolved = (path: string) => result.unresolved.push({ applicationId: app.metadata.id, path, reason: "脚本运行协议不受离线客户端支持；请迁移到 Worker Sandbox 或停用该脚本。" });
     for (const [index, script] of app.scripts.entries()) if (script.enabled && script.code.trim()) {
       // 与 SDK 共享协议判定；host 的 sceneCommandPolicy 拒绝无 scene.write 的命令。
       const resolved = resolveSceneScriptProtocolCompatibility(script);
-      const readOnly = resolved.status === "ready" && script.permissions.every(permission => permission === "scene.read" || permission === "data.read");
-      if (!readOnly) unresolved(`${prefix}.scripts[${index}]`);
+      // scene.write 只操作已冻结场景中的稳定对象句柄，不会扩大客户端依赖闭包。
+      // 数据、网络等外部依赖由 sceneClientRuntimeDependencies 按显式合同继续严格校验。
+      if (resolved.status !== "ready") unresolved(`${prefix}.scripts[${index}]`);
     }
     for (const [index, script] of (scene.interactions ?? []).entries()) if (script.enabled && script.code.trim()) unresolved(`scene.interactions[${index}]`);
     for (const [index, flow] of app.interactions.entries()) if (flow.enabled && flow.legacyScript?.script.enabled && flow.legacyScript.script.code.trim()) unresolved(`${prefix}.interactions[${index}].legacyScript`);
@@ -88,21 +90,20 @@ export function selectSceneClientApplications(scene: SceneSnapshot, applications
     for (const id of app.spatialNavigation?.rootNodeIds ?? []) {
       if (!nodes.has(id)) fail(`${prefix}.spatialNavigation.rootNodeIds`, `节点不存在：${id}`);
     }
+    const sourceExists = (flow: ApplicationDocument["interactions"][number]) => {
+      const ref = flow.source;
+      if (ref.kind === "page") return pages.has(ref.id);
+      if (ref.kind === "widget") return widgets.has(ref.id);
+      if (ref.kind === "scene") return scenes.has(ref.id);
+      const source = scenes.get(ref.sceneId);
+      return Boolean(source && [...source.models, ...source.primitives].some(value => value.modelId === ref.modelId));
+    };
     const relevant = (flow: ApplicationDocument["interactions"][number]) => {
+      if (!sourceExists(flow)) return false;
       const ref = flow.source;
       if (ref.kind === "page") return selectedPages.has(ref.id);
       if (ref.kind === "widget") return selectedPages.has(widgets.get(ref.id)?.pageId ?? "");
       return selectedScenes.has(ref.kind === "scene" ? ref.id : ref.sceneId);
-    };
-    for (const [index, flow] of app.interactions.entries()) {
-      const ref = flow.source, path = `${prefix}.interactions[${index}].source`;
-      if (ref.kind === "page" && !pages.has(ref.id)) fail(path, "页面不存在");
-      if (ref.kind === "widget" && !widgets.has(ref.id)) fail(path, "组件不存在");
-      if (ref.kind === "scene" && !scenes.has(ref.id)) fail(path, "场景不存在");
-      if (ref.kind === "object") {
-        const source = scenes.get(ref.sceneId);
-        if (!source || ![...source.models, ...source.primitives].some(value => value.modelId === ref.modelId)) fail(path, "场景对象不存在");
-      }
     }
     let changed = true;
     while (changed) {
@@ -115,7 +116,9 @@ export function selectSceneClientApplications(scene: SceneSnapshot, applications
         if (!spatial.has(id)) continue;
         if (node.parentId) spatial.add(node.parentId);
         if (node.sceneId) addScene(node.sceneId, `${prefix}.spatialNavigation[${id}].sceneId`, !activeSpatial.has(id));
-        if (node.dashboardPageId) addPage(node.dashboardPageId, `${prefix}.spatialNavigation[${id}].dashboardPageId`, !activeSpatial.has(id));
+        // dashboardPageId 是空间节点的可选伴随页面。历史应用可能在删除页面后留下旧引用；
+        // 场景客户端仍可保留 3D 导航节点，但不能把不存在的页面写入离线闭包。
+        if (node.dashboardPageId && pages.has(node.dashboardPageId)) addPage(node.dashboardPageId, `${prefix}.spatialNavigation[${id}].dashboardPageId`, !activeSpatial.has(id));
       }
       for (const [index, flow] of app.interactions.entries()) if (flow.enabled && relevant(flow)) actions(flow.actions, addScene, addPage, `${prefix}.interactions[${index}].actions`);
       changed = before !== count();
@@ -125,7 +128,11 @@ export function selectSceneClientApplications(scene: SceneSnapshot, applications
     app.interactions = app.interactions.filter(flow => relevant(flow));
     app.publicationProfiles = app.publicationProfiles.filter(profile => selectedPages.has(profile.entryPageId));
     if (app.spatialNavigation) {
-      app.spatialNavigation.nodes = app.spatialNavigation.nodes.filter(node => spatial.has(node.id));
+      app.spatialNavigation.nodes = app.spatialNavigation.nodes.filter(node => spatial.has(node.id)).map(node => {
+        if (!node.dashboardPageId || pages.has(node.dashboardPageId)) return node;
+        const { dashboardPageId: _danglingPage, ...sceneOnlyNode } = node;
+        return sceneOnlyNode;
+      });
       app.spatialNavigation.rootNodeIds = app.spatialNavigation.rootNodeIds.filter(id => spatial.has(id));
     }
     result.applications.push(app);

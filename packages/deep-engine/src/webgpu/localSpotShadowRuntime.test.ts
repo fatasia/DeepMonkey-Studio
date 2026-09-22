@@ -128,6 +128,26 @@ describe("Browser local spot shadow runtime", () => {
     expect(f.device.createTexture).toHaveBeenCalledOnce(); runtime.dispose();
   });
 
+  it("uploads opt-in PCSS softness, redraws on softness changes, and rejects invalid author values", async () => {
+    const f = fixture(), runtime = await LocalSpotShadowRuntime.create(f.session), authored = lights();
+    authored.spots[0] = { ...authored.spots[0]!, shadow: { ...authored.spots[0]!.shadow, softness: 0.75 } };
+    f.device.queue.writeBuffer.mockClear();
+    expect(runtime.prepareAndEncode(f.encoder, f.packets as never, f.pipelines, authored, false).rendered).toBe(true);
+    const first = f.device.queue.writeBuffer.mock.calls.find(call =>
+      (call[0] as GPUBuffer).label === "Deep local spot shadow data")?.[2] as Float32Array;
+    expect(first[23]).toBeCloseTo(1.75, 6); runtime.commit();
+    const changed = { ...authored, spots: [{ ...authored.spots[0]!,
+      shadow: { ...authored.spots[0]!.shadow, softness: 0.25 } }] };
+    expect(runtime.prepareAndEncode(f.encoder, f.packets as never, f.pipelines, changed, false).rendered).toBe(true);
+    const latest = f.device.queue.writeBuffer.mock.calls.filter(call =>
+      (call[0] as GPUBuffer).label === "Deep local spot shadow data").at(-1)?.[2] as Float32Array;
+    expect(latest[23]).toBeCloseTo(1.25, 6);
+    const invalid = { ...authored, spots: [{ ...authored.spots[0]!,
+      shadow: { ...authored.spots[0]!.shadow, softness: 2 } }] };
+    expect(() => runtime.prepareAndEncode(f.encoder, f.packets as never, f.pipelines, invalid, false)).toThrow(/softness/);
+    runtime.dispose();
+  });
+
   it.each([1, 4])("redraws %i unchanged spot lights without reuploading uniforms and recovers after failure", async count => {
     const f = fixture(), runtime = await LocalSpotShadowRuntime.create(f.session);
     const hero = lights().spots[0]!;

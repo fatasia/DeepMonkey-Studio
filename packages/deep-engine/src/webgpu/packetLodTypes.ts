@@ -1,10 +1,13 @@
 import type { LodCamera, LodFrameBudget, LodViewport } from "../spatial/index.js";
 import type { Frustum } from "./gpuFrustumCulling.js";
+import type { HiZOcclusionView } from "./hiZOcclusionCulling.js";
 
 export interface PacketLodView {
   readonly camera: LodCamera;
   readonly viewport: LodViewport;
   readonly frustum: Frustum;
+  /** Previous submitted depth only; omitted keeps the conservative frustum-only meshlet path. */
+  readonly previousHiZ?: HiZOcclusionView;
   readonly budget?: LodFrameBudget;
   readonly cameraJump?: boolean;
 }

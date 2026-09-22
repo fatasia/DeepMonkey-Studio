@@ -40,6 +40,7 @@ describe("authored world grid GPU ownership", () => {
   });
   it("loads HDR color with depth test but no depth writes, and reuses unchanged GPU texture", () => {
     const f = fixture(), view = source(); expect(f.encode()).toBe(0); expect(f.encode(view)).toBe(2); f.encode(view);
+    f.encode({ ...source(), texture: { ...source().texture, data: source().texture.data.slice() } });
     expect(f.createTexture).toHaveBeenCalledTimes(1); expect(f.writeTexture).toHaveBeenCalledTimes(2);
     expect(f.createRenderPipeline).toHaveBeenCalledWith(expect.objectContaining({ depthStencil: { format: "depth32float", depthWriteEnabled: false, depthCompare: "less-equal" } }));
     expect(f.encoder.beginRenderPass).toHaveBeenCalledWith(expect.objectContaining({ depthStencilAttachment: expect.objectContaining({ depthReadOnly: true }) }));
@@ -47,9 +48,11 @@ describe("authored world grid GPU ownership", () => {
   });
   it("keeps prior texture after failed replacement and retries a cancelled encoder safely", () => {
     const f = fixture(), first = source(); f.encode(first);
-    f.writeTexture.mockImplementationOnce(() => { throw new Error("upload"); }); const next = source();
+    f.writeTexture.mockImplementationOnce(() => { throw new Error("upload"); });
+    const current = source(), next = { ...current, texture: { ...current.texture, revision: 2 } };
     expect(() => f.encode(next)).toThrow("upload"); f.encode(first); expect(f.createTexture).toHaveBeenCalledTimes(2);
     f.encode(next); f.encode(next); expect(f.createTexture).toHaveBeenCalledTimes(3);
+    expect(() => f.encode(first)).toThrow("Stale author grid texture revision");
     f.session.state = "lost"; expect(() => f.encode(next)).toThrow("unavailable"); f.owner.dispose();
     expect(f.release).toHaveBeenCalledTimes(4);
   });

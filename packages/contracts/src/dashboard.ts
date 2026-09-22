@@ -160,7 +160,7 @@ export interface SceneDashboardWidgetState {
   map?: DashboardMapConfig;
   chart?: DashboardChartConfig;
   url?: string;
-  /** Hosted Unity WebGL player URL. The player must include the Deep Monkey Studio Unity bridge. */
+  /** Hosted Unity WebGL player URL. The player must include the DeepMonkey Studio Unity bridge. */
   unityUrl?: string;
   /** Project-managed Unity build selected in Studio. */
   unityResourceId?: string;

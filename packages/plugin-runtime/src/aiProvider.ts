@@ -27,12 +27,25 @@ export interface AiProviderRequest {
 export interface AiProviderCompletion {
   text: string;
   model: string;
+  execution?: AiProviderExecution;
   finishReason?: string;
   usage?: { inputTokens?: number; outputTokens?: number };
 }
 
+export interface AiProviderExecution {
+  protocol: "responses" | "chat-completions";
+  requestedModel: string;
+  reportedModel?: string;
+  reasoningEffortSent?: string;
+  reasoningEffortReported?: string;
+  servedBy?: "primary" | "fallback";
+  failoverCategory?: string;
+}
+
 export type AiProviderStreamEvent =
   | { type: "delta"; delta: string }
+  | { type: "model"; model: string }
+  | { type: "execution"; execution: AiProviderExecution }
   | { type: "usage"; inputTokens?: number; outputTokens?: number };
 
 export interface AiProviderContext {
@@ -115,6 +128,8 @@ export class AiProviderRegistry {
       if (execution.controller.signal.aborted) throw abortError(execution.controller.signal);
       if (!registered.provider.stream) {
         const result = await registered.provider.complete({ ...request, signal: execution.controller.signal }, execution.context);
+        if (result.model) yield { type: "model", model: result.model };
+        if (result.execution) yield { type: "execution", execution: result.execution };
         if (result.text) yield { type: "delta", delta: result.text };
         return;
       }

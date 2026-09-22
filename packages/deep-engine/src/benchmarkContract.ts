@@ -1,18 +1,42 @@
-export const COMPETITIVE_BENCHMARK_SCHEMA_VERSION = 1 as const;
+export const COMPETITIVE_BENCHMARK_SCHEMA_VERSION = 2 as const;
 
 export type BenchmarkTrack = "browser-webgpu" | "native-wgpu";
-export type BenchmarkReference = "three" | "babylon" | "unity" | "ue5" | "godot";
+export type BenchmarkReference = "three" | "babylon" | "unity" | "bevy";
 export type BenchmarkDirection = "lower" | "higher";
 export type BenchmarkMetric =
+  | "cpu-frame-p50-ms"
   | "cpu-frame-p95-ms"
+  | "cpu-frame-p99-ms"
+  | "gpu-frame-p50-ms"
   | "gpu-frame-p95-ms"
+  | "gpu-frame-p99-ms"
   | "frame-p99-ms"
   | "input-latency-p95-ms"
   | "cold-start-ms"
+  | "load-to-interactive-ms"
+  | "long-run-frame-p99-ms"
   | "device-recovery-ms"
   | "peak-host-bytes"
   | "peak-gpu-bytes"
   | "visual-similarity";
+
+/** Bevy 0.19 challenge cases are invalid until all user-visible costs and quality parity are gated. */
+export const BEVY_019_REQUIRED_METRICS = Object.freeze([
+  "cpu-frame-p50-ms",
+  "cpu-frame-p95-ms",
+  "cpu-frame-p99-ms",
+  "gpu-frame-p50-ms",
+  "gpu-frame-p95-ms",
+  "gpu-frame-p99-ms",
+  "frame-p99-ms",
+  "input-latency-p95-ms",
+  "cold-start-ms",
+  "load-to-interactive-ms",
+  "long-run-frame-p99-ms",
+  "peak-host-bytes",
+  "peak-gpu-bytes",
+  "visual-similarity",
+] satisfies readonly BenchmarkMetric[]);
 
 export type CapabilityDomain =
   | "rendering"
@@ -51,6 +75,8 @@ export interface BenchmarkCriterion {
 export interface BenchmarkCase {
   readonly id: string;
   readonly track: BenchmarkTrack;
+  readonly reference: BenchmarkReference;
+  readonly referenceVersion: string;
   readonly critical: boolean;
   readonly environmentHash: string;
   readonly fixtureHash: string;
@@ -106,6 +132,8 @@ export interface CapabilityClaimResult {
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/;
 const HASH = /^[a-f0-9]{64}$/;
+const REFERENCES = new Set<BenchmarkReference>(["three", "babylon", "unity", "bevy"]);
+const TRACKS = new Set<BenchmarkTrack>(["browser-webgpu", "native-wgpu"]);
 
 function median(values: readonly number[]): number {
   const sorted = [...values].sort((left, right) => left - right);
@@ -144,6 +172,11 @@ export function evaluateBenchmarkCase(
 ): BenchmarkCaseResult {
   const issues: string[] = [];
   if (!ID.test(definition.id)) issues.push("case id is invalid");
+  if (!REFERENCES.has(definition.reference)) issues.push("benchmark reference is invalid");
+  if (!TRACKS.has(definition.track)) issues.push("benchmark track is invalid");
+  if (typeof definition.referenceVersion !== "string" || !definition.referenceVersion.trim()) {
+    issues.push("reference version is required");
+  }
   if (![definition.environmentHash, definition.fixtureHash, definition.settingsHash].every((hash) => HASH.test(hash))) {
     issues.push("case fingerprints must be lowercase SHA-256 values");
   }
@@ -155,6 +188,31 @@ export function evaluateBenchmarkCase(
     if (metricIds.has(criterion.metric)) issues.push(`duplicate criterion ${criterion.metric}`);
     metricIds.add(criterion.metric);
     if (!validCriterion(criterion)) issues.push(`invalid criterion ${criterion.metric}`);
+  }
+  if (definition.reference === "bevy") {
+    if (definition.track !== "native-wgpu") issues.push("Bevy 0.19 challenge must use the native-wgpu track");
+    if (typeof definition.referenceVersion !== "string" || !/^0\.19(?:\.|$)/.test(definition.referenceVersion)) {
+      issues.push("Bevy challenge must pin a 0.19 release");
+    }
+    for (const metric of BEVY_019_REQUIRED_METRICS) {
+      if (!metricIds.has(metric)) issues.push(`Bevy 0.19 challenge lacks required criterion ${metric}`);
+    }
+    for (const metric of ["cpu-frame-p95-ms", "cpu-frame-p99-ms", "gpu-frame-p95-ms", "gpu-frame-p99-ms"] as const) {
+      const criterion = definition.criteria.find((item) => item.metric === metric);
+      if (criterion && !(criterion.minImprovementFraction && criterion.minImprovementFraction > 0)) {
+        issues.push(`Bevy 0.19 challenge must require a measured improvement for ${metric}`);
+      }
+    }
+    for (const criterion of definition.criteria) {
+      const expectedDirection = criterion.metric === "visual-similarity" ? "higher" : "lower";
+      if (criterion.direction !== expectedDirection) {
+        issues.push(`Bevy 0.19 challenge uses the wrong direction for ${criterion.metric}`);
+      }
+    }
+    const visual = definition.criteria.find((item) => item.metric === "visual-similarity");
+    if (visual && (visual.absoluteMinimum === undefined || visual.absoluteMinimum < 0.98)) {
+      issues.push("Bevy 0.19 challenge requires visual similarity of at least 0.98");
+    }
   }
 
   const rounds = new Set<number>();
@@ -210,7 +268,7 @@ export function evaluateBenchmarkCase(
   };
 }
 
-/** Evaluates one separately frozen Unity, UE5, or Godot capability matrix. */
+/** Evaluates one separately frozen Unity or Bevy capability matrix. */
 export function evaluateCapabilityClaim(items: readonly CapabilityItem[]): CapabilityClaimResult {
   const validationIssues: string[] = [];
   const claimIssues: string[] = [];

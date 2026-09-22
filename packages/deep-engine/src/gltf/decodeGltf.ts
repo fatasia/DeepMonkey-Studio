@@ -1,7 +1,7 @@
 import type { PbrMaterial, RenderInstance, RenderPacket } from "../renderPacket.js";
 import { AccessorReader } from "./accessors.js";
 import { materialResource, meshResources } from "./meshResources.js";
-import { KHR_MATERIALS_EMISSIVE_STRENGTH, validateExtensionSets } from "./materialExtensions.js";
+import { KHR_MATERIALS_IOR, KHR_MATERIALS_EMISSIVE_STRENGTH, validateExtensionSets } from "./materialExtensions.js";
 import { sceneMeshNodes } from "./nodeTransforms.js";
 import { budget, invalid, list, noExtensions, object, unsupported, validateJson } from "./validation.js";
 
@@ -24,7 +24,7 @@ export function decodeGltf(json: unknown, buffers: readonly Uint8Array[], option
   noExtensions(asset, "asset");
   if (asset.version !== "2.0") unsupported("asset.version", "glTF versions other than 2.0");
   if (asset.minVersion !== undefined && asset.minVersion !== "2.0") unsupported("asset.minVersion", "newer minimum glTF versions");
-  const extensions = validateExtensionSets(document, new Set([KHR_MATERIALS_EMISSIVE_STRENGTH]));
+  const extensions = validateExtensionSets(document, new Set([KHR_MATERIALS_EMISSIVE_STRENGTH, KHR_MATERIALS_IOR]));
   for (const field of ["animations", "skins", "textures", "images", "cameras"]) {
     if (list(document[field], field).length) unsupported(field, field);
   }

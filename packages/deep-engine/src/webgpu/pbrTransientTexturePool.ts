@@ -246,7 +246,7 @@ export class PbrTransientTexturePool {
     const usageTable: { readonly RENDER_ATTACHMENT?: number; readonly TRANSIENT_ATTACHMENT?: number } | undefined =
       typeof GPUTextureUsage === "undefined" ? undefined : GPUTextureUsage;
     const transientFlag = usageTable?.TRANSIENT_ATTACHMENT !== undefined && usageTable.RENDER_ATTACHMENT !== undefined
-      && (key.usage & usageTable.RENDER_ATTACHMENT) !== 0 ? usageTable.TRANSIENT_ATTACHMENT : 0;
+      && key.usage === usageTable.RENDER_ATTACHMENT ? usageTable.TRANSIENT_ATTACHMENT : 0;
     let texture: GPUTexture;
     try {
       texture = createAdmittedTexture(this.session, {

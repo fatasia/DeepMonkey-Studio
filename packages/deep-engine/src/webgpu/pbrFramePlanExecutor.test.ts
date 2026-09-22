@@ -72,12 +72,12 @@ describe("pbr frame execution plan", () => {
 
 describe("plan vs actual pass matching", () => {
   it("matches every AO/SSR/TAA/bloom/HiZ/transparency feature combination in encode order", () => {
-    for (let mask = 0; mask < 64; mask++) {
+    for (let mask = 0; mask < 128; mask++) {
       const features = resolvePbrRendererFeatures({ ambientOcclusion: !!(mask & 1),
         screenSpaceReflection: !!(mask & 2), temporalAa: !!(mask & 4), bloom: !!(mask & 8),
-        occlusionCulling: !!(mask & 16), spatialAa: false });
+        occlusionCulling: !!(mask & 16), spatialAa: false, volumetricFog: !!(mask & 64) });
       const transparency = !!(mask & 32);
-      const writeGeometryBuffers = features.ambientOcclusion || features.screenSpaceReflection
+      const writeGeometryBuffers = features.ambientOcclusion || features.screenSpaceReflection || features.volumetricFog
         || features.temporalAa || features.occlusionCulling;
       const subject = buildPbrFrameExecutionPlan(SURFACE, { transparency, features, writeGeometryBuffers });
       const actual = collectActualPbrFramePasses(features, transparency, { writeGeometryBuffers });

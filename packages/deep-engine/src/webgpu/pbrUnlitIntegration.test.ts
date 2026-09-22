@@ -11,7 +11,7 @@ describe("PBR renderer unlit surface branch", () => {
     expect(sceneShader).toContain("deepApplySceneFog(select(color, baseInput, flag(materialFlags, 64u)), world, materialFlags)");
     expect(sceneShader).toContain("SurfaceSample(v.colorMetal.rgb * baseSample.rgb");
     expect(sceneShader).toContain("v.emissiveAlpha.w * baseSample.a");
-    expect(sceneShader).toContain("select(0.0, 1.0, flag(v.material.w, 64u))");
+    expect(sceneShader).toContain("vec4f(viewNormal * 0.5 + 0.5, clamp(roughness, 0.0, 1.0))");
   });
 
   it("keeps all no-effects direct variants unlit and sends alpha through normal coverage", () => {

@@ -1,6 +1,7 @@
 import type { GeometryResource, PreparedBatch } from "../renderPacket.js";
 import type { MeshBuffers } from "./meshBuffers.js";
 import type { MaterialBinding } from "./materialBindings.js";
+import type { TextureArrayMaterialTableRow } from "./textureArrayMaterialTable.js";
 
 export interface CachedPacketGeometry {
   readonly source: GeometryResource;
@@ -17,4 +18,5 @@ export interface CachedPacketBatch {
   readonly previousCapacity: number;
   readonly previousTransforms: Float32Array<ArrayBuffer>;
   readonly material?: MaterialBinding;
+  readonly arrayMaterial?: TextureArrayMaterialTableRow;
 }

@@ -9,15 +9,19 @@ import { build } from "esbuild";
 
 // 软光栅化 kernel 真机对拍 runner（追平-Nanite 三件套之三的 GPU 腿；模式沿用 clusterLodGpuTest.mjs）。
 // headless Chrome + WebGPU：固定三角形集合（全屏大三角 / z-fighting 顺序互换 / 背面退化 /
-// 越界部分覆盖 / 微三角亚像素+共享边+多 workgroup / NaN 与 slot 溢出故障通道）在浏览器 bundle 内
-// 驱动 soft_rasterize_triangles，读回 slot/packedTriangle/depth + 故障哨兵；与 CPU 参考
-// （webgpu/softRasterizeReference，同一 esbuild bundle 单一来源，防口径分叉）逐像素对拍：
+// 越界部分覆盖 / 微三角亚像素+共享边+多 workgroup / NaN 与 slot 溢出故障通道 / 可见性目标级
+// fallback-target-alias）在浏览器 bundle 内驱动 soft_rasterize 两阶段 kernel，读回
+// slot/packedTriangle/depth + 故障哨兵；与 CPU 参考（webgpu/softRasterizeReference 经
+// webgpu/softRasterizeFallback CPU 桥，同一 esbuild bundle 单一来源，防口径分叉）逐像素对拍：
 // 命中集必须一致（slot/packedTriangle u32 精确相等），depth 相对容差 1e-5（f32 量化级）。
-// 证据写入 test-output/soft-raster-gpu-20260921-r1/。
+// r2：接线切片——打包改走 softRasterizeFallback.packSoftRasterTriangles 单一来源，新增
+// 「可见性目标级」案例（目标初值含硬件已写内容 slot=7/packed=5，后备覆盖像素改写、
+// 未覆盖像素保持，验证三缓冲 alias 语义）。
+// 证据写入 test-output/soft-raster-gpu-20260921-r2/。
 
 const packageRoot = fileURLToPath(new URL("../", import.meta.url));
 const repoRoot = path.resolve(packageRoot, "../..");
-const outputDirectory = path.join(repoRoot, "test-output", "soft-raster-gpu-20260921-r1");
+const outputDirectory = path.join(repoRoot, "test-output", "soft-raster-gpu-20260921-r2");
 const chromePath = process.env.BIM_STUDIO_CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const maxAttempts = Number(process.env.SOFT_RASTER_GPU_TEST_ATTEMPTS ?? 3);
 const DEPTH_RELATIVE_TOLERANCE = 1e-5;
@@ -209,6 +213,7 @@ async function main() {
         "triangleCount=68（micro-subpixel-grid）> 64：第二个 workgroup 与 60 个越界尾 lane 同机受检越界守卫。",
         "storage 能力结论：本 kernel 读写全部为 storage buffer（array<u32>/array<f32>），非 storage texture——rg32uint 只是硬件 visibility pass 的附件格式命名（VISIBILITY_ATTACHMENT_FORMAT），不在本 kernel 路径；真机 pipeline/binding 未要求任何可选 feature（adapter.features 全表随证据记录）。",
         "kernel 小修（本切片）：params 从 var<storage,read> 改为 var<uniform>，对齐 SOFT_RASTERIZE_BINDINGS 合同（type:\"uniform\"）与 clusterLodSelectionKernel 同族模式；16B 布局不变。另将 @workgroup_size 抽为导出常量单一来源。",
+        "r2 接线切片：三角打包与 CPU 基准改走 webgpu/softRasterizeFallback 的 packSoftRasterTriangles / rasterizePackedTrianglesCpu（与渲染器 VisibilityBufferPath 后备段同一函数，单一来源）；fallback-target-alias 案例验证「写入现有可见性目标」的三缓冲 alias 语义（覆盖像素改写 slot/packed、未覆盖像素保持硬件初值 slot=7/packed=5/depth=1.0）。",
         "faults 哨兵非零即整案例拒绝（NaN/slot 溢出案例的哨兵值本身是受检对象：expectedFaults 精确相等）。",
       ],
     },

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  BEVY_019_REQUIRED_METRICS,
   CAPABILITY_DOMAIN_WEIGHTS,
   evaluateBenchmarkCase,
   evaluateCapabilityClaim,
@@ -13,6 +14,8 @@ const hash = (digit: string) => digit.repeat(64);
 const definition: BenchmarkCase = {
   id: "dense-industrial-scene",
   track: "browser-webgpu",
+  reference: "three",
+  referenceVersion: "0.185.1",
   critical: true,
   environmentHash: hash("a"),
   fixtureHash: hash("b"),
@@ -89,6 +92,48 @@ describe("competitive benchmark evidence", () => {
     expect(result).toMatchObject({ valid: true, passed: true });
     expect(result.criteria[0]!.relativeChange).toBe(-1);
   });
+
+  it("fails a Bevy 0.19 claim closed when the full native quality and performance profile is absent", () => {
+    const result = evaluateBenchmarkCase({
+      ...definition,
+      track: "native-wgpu",
+      reference: "bevy",
+      referenceVersion: "0.19.0",
+    }, observations());
+    expect(result).toMatchObject({ valid: false, passed: false, criteria: [] });
+    expect(result.issues).toContain("Bevy 0.19 challenge lacks required criterion cpu-frame-p99-ms");
+    expect(result.issues).toContain("Bevy 0.19 challenge lacks required criterion long-run-frame-p99-ms");
+  });
+
+  it("rejects an old or browser-hosted Bevy target before evaluating measurements", () => {
+    const result = evaluateBenchmarkCase({
+      ...definition,
+      reference: "bevy",
+      referenceVersion: "0.17.2",
+    }, observations());
+    expect(result.valid).toBe(false);
+    expect(result.issues).toEqual(expect.arrayContaining([
+      "Bevy 0.19 challenge must use the native-wgpu track",
+      "Bevy challenge must pin a 0.19 release",
+    ]));
+  });
+
+  it("does not accept reversed costs or a weak quality floor in a Bevy challenge", () => {
+    const criteria = BEVY_019_REQUIRED_METRICS.map((metric) => ({
+      metric,
+      direction: metric === "visual-similarity" ? "higher" as const : "lower" as const,
+      maxRegressionFraction: 0,
+      ...(metric.includes("frame-p9") || metric.includes("gpu-frame-p9")
+        ? { minImprovementFraction: 0.01 }
+        : {}),
+      ...(metric === "visual-similarity" ? { absoluteMinimum: 0.95 } : {}),
+    }));
+    criteria[0] = { ...criteria[0]!, direction: "higher" };
+    const result = evaluateBenchmarkCase({ ...definition, track: "native-wgpu", reference: "bevy",
+      referenceVersion: "0.19.1", criteria }, []);
+    expect(result.issues).toContain("Bevy 0.19 challenge uses the wrong direction for cpu-frame-p50-ms");
+    expect(result.issues).toContain("Bevy 0.19 challenge requires visual similarity of at least 0.98");
+  });
 });
 
 function completeMatrix(statusFor?: (domain: CapabilityDomain, index: number) => CapabilityItem["status"]): CapabilityItem[] {
@@ -102,7 +147,7 @@ function completeMatrix(statusFor?: (domain: CapabilityDomain, index: number) =>
   })));
 }
 
-describe("Unity, UE5 and Godot capability claims", () => {
+describe("Unity and Bevy capability claims", () => {
   it("accepts a complete separately frozen matrix", () => {
     const result = evaluateCapabilityClaim(completeMatrix());
     expect(result).toMatchObject({ valid: true, passed: true, score: 100 });

@@ -28,7 +28,7 @@ export class AuthorGridResources {
   private uniform?: GPUBuffer;
   private texture?: GPUTexture;
   private binding: GPUBindGroup | undefined;
-  private source: DecodedTexture | undefined;
+  private sourceIdentity: Readonly<{ id: string; revision: number }> | undefined;
   private disposed = false;
   constructor(private readonly session: DeviceSession) {}
   encode(encoder: GPUCommandEncoder, color: GPUTextureView, depth: GPUTextureView,
@@ -50,7 +50,11 @@ export class AuthorGridResources {
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }));
       this.pipeline = pipeline; this.uniform = uniform;
     }
-    if (this.source !== view.texture) this.upload(view.texture);
+    const identity = this.sourceIdentity;
+    if (identity?.id === view.texture.id && view.texture.revision < identity.revision) {
+      throw new Error(`Stale author grid texture revision: ${view.texture.id}.`);
+    }
+    if (identity?.id !== view.texture.id || identity.revision !== view.texture.revision) this.upload(view.texture);
     this.session.device.queue.writeBuffer(this.uniform!, 0, uniforms);
     const pass = encoder.beginRenderPass({ label: "Deep authored grid HDR", colorAttachments: [{ view: color, loadOp: "load", storeOp: "store" }],
       depthStencilAttachment: { view: depth, depthReadOnly: true } });
@@ -67,7 +71,8 @@ export class AuthorGridResources {
       const sampler = device.createSampler(prepared.sampler);
       const binding = device.createBindGroup({ layout: this.pipeline!.getBindGroupLayout(0), entries: [
         { binding: 0, resource: { buffer: this.uniform! } }, { binding: 1, resource: texture.createView() }, { binding: 2, resource: sampler }] });
-      const old = this.texture; this.texture = texture; this.binding = binding; this.source = source;
+      const old = this.texture; this.texture = texture; this.binding = binding;
+      this.sourceIdentity = Object.freeze({ id: source.id, revision: source.revision });
       if (old) this.session.release(old);
     } catch (error) { this.session.release(texture); throw error; }
   }
@@ -75,6 +80,6 @@ export class AuthorGridResources {
     if (this.disposed) return; this.disposed = true;
     if (this.texture) this.session.release(this.texture);
     if (this.uniform) this.session.release(this.uniform);
-    this.source = undefined; this.binding = undefined;
+    this.sourceIdentity = undefined; this.binding = undefined;
   }
 }

@@ -18,8 +18,8 @@ describe("Three-compatible author output color effects", () => {
     expect(outputShader.indexOf("return vec4f(deepDisplayColor(deepAuthorColor")).toBeLessThan(outputShader.indexOf("color *= 1.0 - settings.vignette"));
   });
   it("keeps undefined legacy distinct from explicitly disabled author effects", () => {
-    expect(Array.from(pack(undefined))).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
-    expect(Array.from(pack({}))).toEqual([1, 0, 0, 0, 0, 0, 0, 0]);
+    expect(Array.from(pack(undefined))).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(Array.from(pack({}))).toEqual([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     expect(apply(source, [0, 0], {})).toEqual(source);
     expect(apply(source, [0, 0], { colorGrading: neutral })).toEqual(source);
   });

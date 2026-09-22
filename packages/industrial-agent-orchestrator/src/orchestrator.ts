@@ -52,6 +52,10 @@ export class IndustrialAgentOrchestrator {
       principal: requiredText(input.principal, "执行人", 200),
       ...(input.role?.trim() ? { role: input.role.trim().slice(0, 100) } : {}),
       objective: requiredText(input.objective, "Agent 目标", 4_000),
+      ...(input.modelOptions ? { modelOptions: {
+        ...(input.modelOptions.model ? { model: input.modelOptions.model } : {}),
+        ...(input.modelOptions.reasoningEffort ? { reasoningEffort: input.modelOptions.reasoningEffort } : {}),
+      } } : {}),
       context: safeClone(input.context ?? {}),
       status: "running",
       budget: normalizeBudget(input.budget),
@@ -196,11 +200,13 @@ export class IndustrialAgentOrchestrator {
         }
         const availableTools = this.allowedDefinitions(checkpoint);
         let decision: AgentDecision;
+        let execution: import("./types.js").AgentExecutionReceipt | undefined;
         try {
           decision = parseAgentDecision(await raceAbort(this.dependencies.decisions.decide({
             checkpoint: structuredClone(checkpoint),
             availableTools,
             signal: controller.signal,
+            reportExecution: receipt => { if (!controller.signal.aborted) execution = structuredClone(receipt); },
           }), controller.signal));
         } catch (error) {
           checkpoint = controller.signal.aborted
@@ -211,7 +217,7 @@ export class IndustrialAgentOrchestrator {
           break;
         }
         checkpoint.usage.steps += 1;
-        checkpoint.decisions.push({ step: checkpoint.usage.steps, decidedAt: this.now(), decision });
+        checkpoint.decisions.push({ step: checkpoint.usage.steps, decidedAt: this.now(), decision, ...(execution ? { execution } : {}) });
         checkpoint = await this.applyDecision(checkpoint, decision, persist);
       }
       return structuredClone(checkpoint);

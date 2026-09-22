@@ -176,3 +176,6 @@ export * from "./r12/frameCapture.js";
 export * from "./r12/shaderSourceMap.js";
 export * from "./webgpu/pbrFrameCaptureReadback.js";
 export * from "./webgpu/materialEffectLedger.js";
+
+export { STOCK_MATERIAL_INSTANCE_OPTIONS, MATERIAL_IOR_FLOAT_OFFSET } from "./materialInstanceAbi.js";
+export type { MaterialInstanceAbi, MaterialInstanceOptions } from "./materialInstanceAbi.js";

@@ -49,6 +49,22 @@ beforeEach(() => { vi.stubGlobal("GPUBufferUsage", { VERTEX: 32, INDEX: 16, COPY
   vi.stubGlobal("GPUShaderStage", { COMPUTE: 4 }); });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 describe("packet GPU resource ownership", () => {
+  it("publishes a traceable material ledger only with the uploaded packet", () => {
+    const f = fixture(), initial = packet();
+    expect(f.cache.set(initial)).toBe(true);
+    const first = f.cache.materialEffectLedger;
+    expect(first?.entries).toEqual([expect.objectContaining({ instanceId: "i", materialId: "m",
+      instanceRecord: 0, consumed: expect.objectContaining({ metallic: 0, roughness: 0.5 }) })]);
+    f.device.queue.writeBuffer.mockImplementationOnce(() => { throw new Error("upload failed"); });
+    const changed = packet(1);
+    expect(() => f.cache.set({ ...changed,
+      materials: [{ ...changed.materials[0]!, metallic: 0.25 }] })).toThrow("upload failed");
+    expect(f.cache.materialEffectLedger).toBe(first);
+    expect(f.cache.updateInstances({ materials: [{ ...initial.materials[0]!, metallic: 1 }],
+      instances: initial.instances })).toBe(true);
+    expect(f.cache.materialEffectLedger?.entries[0]?.consumed.metallic).toBe(1);
+  });
+
   it("reuses unchanged uploads and only replaces the resource that changed", () => {
     const f = fixture(); expect(f.cache.set(packet())).toBe(true);
     expect(f.owned).toEqual(new Set([

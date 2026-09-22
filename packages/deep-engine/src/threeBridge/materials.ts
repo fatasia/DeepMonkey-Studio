@@ -83,7 +83,9 @@ export function projectMaterial(value: unknown, id: string, hooks: ThreeProjecti
   const normal = basic ? undefined : projectNormal(m, textures), occlusion = basic ? undefined : projectOcclusion(m, textures);
   const emissiveMap = basic || m.emissiveMap == null ? undefined : textures.projectEmissive(m.emissiveMap);
   // THREE.Color 和 emissive 已经处于线性工作色彩空间；不能再次执行 sRGB 解码。
+  if (physical && (typeof m.ior !== "number" || m.ior < 1 || !Number.isFinite(Math.fround(m.ior)))) invalid("material.ior");
   const material: PbrMaterial = { id, baseColor: color, metallic, roughness,
+    ...(physical ? { ior: m.ior as number } : {}),
     ...(basic ? { shadingModel: "unlit" as const } : {}),
     ...(m.fog === false ? { fog: false } : {}),
     ...(base ? { baseColorTexture: base.slot } : {}),
@@ -128,7 +130,7 @@ function validateDefines(m: Record<string, unknown>, physical: boolean, basic: b
 function validateNeutralPhysical(m: Record<string, unknown>): void {
   for (const key of physicalTextureFields) if (m[key] != null) unsupported(`material.${key}`);
   const defaults: Readonly<Record<string, number>> = { anisotropy: 0, anisotropyRotation: 0, clearcoat: 0,
-    clearcoatRoughness: 0, dispersion: 0, ior: 1.5, iridescence: 0, iridescenceIOR: 1.3,
+    clearcoatRoughness: 0, dispersion: 0, iridescence: 0, iridescenceIOR: 1.3,
     sheen: 0, sheenRoughness: 1, specularIntensity: 1, thickness: 0, transmission: 0 };
   if (Object.entries(defaults).some(([key, expected]) => m[key] !== expected) || m.attenuationDistance !== Infinity
     || !same(color3(m.attenuationColor, "material.attenuationColor"), [1, 1, 1])

@@ -38,6 +38,12 @@ export function selectSceneClientResources(project: ProjectRecord, scenes: reado
       selectAsset(asset, path); return;
     }
     if (!url || url.startsWith("data:")) return;
+    // 随 Studio 安装交付的同源 showcase 资源由构建产物固定提供，不属于用户上传资产。
+    // 只接受规范绝对路径；查询参数参与资源身份但不能改变读取边界。
+    if (/^\/showcase\/[A-Za-z0-9._/-]+(?:\?[A-Za-z0-9._~=&%-]*)?$/.test(url) && !url.includes("..")) {
+      add(`builtin-${url.split("?")[0]!.slice(1).replaceAll("/", "-")}`, url.split("/").at(-1)!, url, path);
+      return;
+    }
     const matches = byUrl.get(url) ?? [];
     if (!matches.length) fail(path, "URL 未登记为项目资源");
     for (const asset of matches) selectAsset(asset, path);

@@ -50,3 +50,16 @@ it("drops retired identities and leaves failed bindings retryable", () => {
   expect(f.device.createBindGroup).toHaveBeenCalledTimes(3);
   expect(() => f.bindings.get("pose", { ...f.streams, vertexCount: 4 })).toThrow("complete unmapped");
 });
+
+it("composes array-table buffers with deformation streams using the array layout", () => {
+  const f = fixture(), arrayLayout = {}, fallbackLayout = {};
+  const pipelines = (f.bindings as unknown as { pipelines: Pipelines }).pipelines;
+  Object.assign(pipelines.materialLayout, { material: arrayLayout });
+  Object.assign(pipelines, { textureArrayFallback: { materialLayout: { material: fallbackLayout } } });
+  const row = { group: {}, materialRow: 0, arrayKey: "a", textureEntries: [{ binding: 0, resource: {} }],
+    table: {} } as never;
+  f.bindings.get("pose", f.streams, row);
+  const descriptor = f.device.createBindGroup.mock.calls[0]![0];
+  expect(descriptor.layout).toBe(arrayLayout);
+  expect(descriptor.entries.map((entry: GPUBindGroupEntry) => entry.binding)).toEqual([0, 10, 11, 12]);
+});
