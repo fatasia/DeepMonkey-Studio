@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { validateRuntimeEnvironment } from "./environment.js";
-import { buildDeepRuntimePackage, parseDeepRuntimePackage } from "./index.js";
+import { buildDeepRuntimePackage, parseDeepRuntimePackage, runtimeContentSha256 } from "./index.js";
 
 describe("static lightmap runtime descriptor", () => {
   const base = () => ({ schema: "deep-engine.solid-environment", schemaVersion: 8,
@@ -14,10 +14,20 @@ describe("static lightmap runtime descriptor", () => {
   });
   it("survives runtime package build and serialize/parse round-trip", () => {
     const env = base();
-    const packet = { geometries: [], materials: [], instances: [] } as never;
+    const texture = { id: "scene.lightmap", revision: 1, semantic: "occlusion" as const, width: 1, height: 1,
+      data: new Uint8Array([255, 255, 255, 255]) };
+    env.staticLightmap = { ...env.staticLightmap, width: 1, height: 1,
+      textureHash: { algorithm: "sha256", value: runtimeContentSha256({ ...texture, data: Array.from(texture.data) }) } };
+    const packet = { geometries: [], materials: [], instances: [], textures: [texture] } as never;
     const value = buildDeepRuntimePackage({ packageId: "lightmap", packageVersion: "1.0.0", renderPacket: { id: "scene", revision: 1, value: packet }, environment: env });
     expect(value.payloads["scene.environment"]).toMatchObject({ staticLightmap: env.staticLightmap });
     expect(parseDeepRuntimePackage(JSON.stringify(value)).valid).toBe(true);
+    const mismatched = { ...env, staticLightmap: { ...env.staticLightmap, textureHash: { algorithm: "sha256", value: "b".repeat(64) } } };
+    expect(() => buildDeepRuntimePackage({ packageId: "lightmap", packageVersion: "1.0.0",
+      renderPacket: { id: "scene", revision: 1, value: packet }, environment: mismatched })).toThrow(/hash does not match/);
+    const absent = { ...env, staticLightmap: { ...env.staticLightmap, textureId: "absent" } };
+    expect(() => buildDeepRuntimePackage({ packageId: "lightmap", packageVersion: "1.0.0",
+      renderPacket: { id: "scene", revision: 1, value: packet }, environment: absent })).toThrow(/missing/);
   });
 
   it("rejects invalid hash, UV set and dimensions fail-closed", () => {

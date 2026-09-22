@@ -1,10 +1,12 @@
+import { STOCK_MATERIAL_INSTANCE_OPTIONS } from "../materialInstanceAbi.js";
 import { prepareRenderPacket } from "../renderPacket.js";
 import { runtimeContentSha256, runtimePackageSha256 } from "./hash.js";
 import { normalizeRuntimeMaterialBindings } from "./materialBindings.js";
 import { record, requireValue, snapshotJson } from "./primitives.js";
 import { assertNativePacketDeformationSupported, normalizeRuntimeRenderPacket, validateRuntimeRenderPacket } from "./renderPacket.js";
 import { BUILTIN_RUNTIME_IBL_ID, validateDeepRuntimePackage } from "./validation.js";
-import { DEEP_RUNTIME_PACKAGE_SCHEMA, DEEP_RUNTIME_PACKAGE_SCHEMA_VERSION, DEEP_RUNTIME_PACKAGE_SHADER_BINDINGS_VERSION, DEEP_RUNTIME_PACKAGE_CAMERA_VERSION, DEEP_RUNTIME_PACKAGE_CHART_VERSION,
+import { validateRuntimeStaticLightmapBinding } from "./environment.js";
+import { DEEP_RUNTIME_PACKAGE_SCHEMA, DEEP_RUNTIME_PACKAGE_SCHEMA_VERSION, DEEP_RUNTIME_PACKAGE_SHADER_BINDINGS_VERSION, DEEP_RUNTIME_PACKAGE_CAMERA_VERSION, DEEP_RUNTIME_PACKAGE_CHART_VERSION, DEEP_RUNTIME_PACKAGE_DYNAMIC_VERSION,
   type BuildDeepRuntimePackageInput, type DeepRuntimePackage, type RuntimeJson,
   type RuntimeResourceIndexEntry, type RuntimeResourceKind } from "./types.js";
 
@@ -17,7 +19,7 @@ export function buildDeepRuntimePackage(input: BuildDeepRuntimePackageInput): De
   })) };
   const packet = record(snapshotJson(packetSource, true), "$.renderPacket");
   validateRuntimeRenderPacket(packet, "$.renderPacket");
-  prepareRenderPacket(input.renderPacket.value);
+  prepareRenderPacket(input.renderPacket.value, STOCK_MATERIAL_INSTANCE_OPTIONS);
   normalizeRuntimeRenderPacket(packet);
   const payloads: Record<string, RuntimeJson> = Object.create(null), resources: RuntimeResourceIndexEntry[] = [];
   const add = (id: string, revision: number, kind: RuntimeResourceKind, value: unknown): void => {
@@ -30,6 +32,7 @@ export function buildDeepRuntimePackage(input: BuildDeepRuntimePackageInput): De
   const environment = input.environment ?? {
     schema: "deep-engine.ibl-reference", schemaVersion: 1, id: BUILTIN_RUNTIME_IBL_ID, revision: 1, kind: "builtin-default",
   };
+  validateRuntimeStaticLightmapBinding(environment, packet, "$.environment");
   add(environment.id, environment.revision, "ibl-environment", environment);
   if (input.camera) add(input.camera.id, input.camera.revision, "scene-camera", input.camera);
   if (input.deep2d) add(input.deep2d.id, input.deep2d.revision, "deep2d-runtime", input.deep2d);
@@ -43,6 +46,8 @@ export function buildDeepRuntimePackage(input: BuildDeepRuntimePackageInput): De
   } : undefined;
   if (chartPayload) add(chartPayload.id, chartPayload.revision, "chart-runtime", chartPayload);
   if (chartSimPayload) add(chartSimPayload.id, chartSimPayload.revision, "chart-sim-runtime", chartSimPayload);
+  const dynamicRuntimePayload = input.dynamicRuntime ? snapshotJson(input.dynamicRuntime.value) : undefined;
+  if (input.dynamicRuntime) add(input.dynamicRuntime.id, input.dynamicRuntime.revision, "dynamic-runtime", dynamicRuntimePayload);
   const shaderIds: string[] = [];
   for (const shader of input.shaderPackages ?? []) {
     add(shader.value.packageId, shader.revision, "shader-package", shader.value); shaderIds.push(shader.value.packageId);
@@ -51,21 +56,24 @@ export function buildDeepRuntimePackage(input: BuildDeepRuntimePackageInput): De
   const hasCamera = Object.hasOwn(input, "camera");
   requireValue(!hasCamera || input.camera !== undefined, "$.camera", "Camera payload is required when provided.");
   const hasChart = Object.hasOwn(input, "chart") || Object.hasOwn(input, "chartSim");
+  const hasDynamicRuntime = Object.hasOwn(input, "dynamicRuntime");
+  requireValue(!hasDynamicRuntime || input.dynamicRuntime !== undefined, "$.dynamicRuntime", "Dynamic runtime payload is required when provided.");
   requireValue(!hasChart || input.chart !== undefined || input.chartSim !== undefined, "$.chart", "Chart payload is required when provided.");
   requireValue(!hasChart || input.chart !== undefined, "$.chart", "Runtime package v4 requires a chart payload; chartSim is optional.");
   requireValue(!input.deep2d || !input.chart, "$.chart", "Chart and deep2d entrypoints are mutually exclusive.");
   requireValue(!input.chartSim || input.chart, "$.chartSim", "chartSim requires a chart payload.");
   // v4 时代 materialBindings 字段必填(可为空数组),与 Native 校验一致。
-  const hasBindings = hasChart || hasCamera || Object.hasOwn(input, "materialBindings");
-  const bindings = hasBindings ? normalizeRuntimeMaterialBindings(Object.hasOwn(input, "materialBindings") ? input.materialBindings : [], hasChart || hasCamera) : undefined;
+  const hasBindings = hasChart || hasCamera || hasDynamicRuntime || Object.hasOwn(input, "materialBindings");
+  const bindings = hasBindings ? normalizeRuntimeMaterialBindings(Object.hasOwn(input, "materialBindings") ? input.materialBindings : [], hasChart || hasCamera || hasDynamicRuntime) : undefined;
   const core = {
     schema: DEEP_RUNTIME_PACKAGE_SCHEMA,
-    schemaVersion: hasChart ? DEEP_RUNTIME_PACKAGE_CHART_VERSION : hasCamera ? DEEP_RUNTIME_PACKAGE_CAMERA_VERSION : hasBindings ? DEEP_RUNTIME_PACKAGE_SHADER_BINDINGS_VERSION : DEEP_RUNTIME_PACKAGE_SCHEMA_VERSION,
+    schemaVersion: hasDynamicRuntime ? DEEP_RUNTIME_PACKAGE_DYNAMIC_VERSION : hasChart ? DEEP_RUNTIME_PACKAGE_CHART_VERSION : hasCamera ? DEEP_RUNTIME_PACKAGE_CAMERA_VERSION : hasBindings ? DEEP_RUNTIME_PACKAGE_SHADER_BINDINGS_VERSION : DEEP_RUNTIME_PACKAGE_SCHEMA_VERSION,
     packageId: input.packageId, packageVersion: input.packageVersion,
     entrypoints: { renderPacket: input.renderPacket.id, deep2d: input.deep2d?.id ?? null,
       environment: environment.id, shaderPackages: shaderIds.sort(),
       ...(hasCamera ? { camera: input.camera!.id } : {}),
-      ...(hasChart ? { chart: input.chart!.id, chartSim: input.chartSim?.id ?? null } : {}) },
+      ...(hasChart ? { chart: input.chart!.id, chartSim: input.chartSim?.id ?? null } : {}),
+      ...(hasDynamicRuntime ? { dynamicRuntime: input.dynamicRuntime!.id } : {}) },
     resources, payloads,
     ...(hasBindings ? { materialBindings: bindings } : {}),
   };
