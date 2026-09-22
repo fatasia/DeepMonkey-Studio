@@ -3360,3 +3360,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **途中抓缺陷并同族清剿**：①playwright-core 1.62 `browser.process()` 类型有、运行时无 → 改 CIM 命令行匹配（`--js-flags=--expose-gc` 本 runner 独有参数+`--headless` 双过滤，父非 chrome 者为根）；②解析器初版把 flag 的值当未知参数误拒，已修并全量重测（bogus/0/61 拒绝、带值/不带值放行至锁检查）；③残留 stop 文件会让新采样器启动即零样本退出（实测 1.3s stop-file、sampleCount=0）→ 驱动起采样器前强制清理 stop/metrics，且 sampled 但零样本时 warning 留痕不再静默；④输出目录并发互踩（两次验证跑并行覆盖 pass-1.json 事故）→ 加 runner.lock 实例锁（pid 探活，陈旧锁自动接管，退出清理，负路径实测）。
 - **诚实边界**：①30 分钟正式口径未实跑（本次 1 分钟/引擎只验证管道出数；正式 V4 静默窗口执行）；②processMetrics 是 Chrome 树共享口径——Deep 与 Babylon 同页同树渲染，peak/mean 不可按引擎拆分，报告已标注（不注入轮级指标行防覆盖度虚标）；峰值含浏览器跨 pass 残留工作集（浏览器单实例跨 pass 复用）；③GPU 专用内存 null（计数器无树内实例），非"GPU 内存为 0"；④长稳帧时是页内同步渲染的帧间隔（无 vsync 钳制），与 bevy 真实 vsync 帧间隔不同口径，仅语义同构；⑤runner.lock 是轻量防呆（pid 探活），不防同机强制并发删锁；⑥runner 退出码非零系既有合同判定 invalid（visual-similarity 0.8376<0.92 抑制，20260920 原始跑同款 fail-loud 设计），采集管道本身零异常；⑦`scripts/benchmarks/babylon-web/`（untracked WIP）内的同名树采样器未合并收敛，留待该轨道归属代理统一。
 - 未 push；工作树并行 WIP（lifecycle.rs、prefabs、.tmp-* 等）未触碰。
+
+### 2026-09-23 30 分钟自检（第二十二轮）：a01x 内存/长稳验收 + F3 烘焙编排补位
+
+- **a01x 内存/长稳采集验收通过**（c2b121ef）：attach 型进程树采样器（152 行 ps1，peak/mean+stop-file 收口+GPU 计数器尽力求和）；长稳相位 --long-run-minutes（正式 30/硬上限 60/未知参数 fail loud）；短跑实测——**peak-host 1033.2MB/mean 953.8MB（301 样本）、long-run P99 Deep 4.90ms（68,723 样本）vs Babylon 4.70ms（86,132 样本）**；适配层+聚合器新行齐备。途中同族清剿 4 缺陷（playwright CIM 匹配/解析器 flag 值/stop 残留/runner.lock 并发锁，负路径实测）。主线程核样本 JSON 结构吻合。边界：Chrome 树共享口径不可按引擎拆分、peak-gpu 如实 null、长稳为页内同步帧间隔语义同构 bevy。
+- **监视点核销观察**：lib 538/1（grading 断言）仍为 F4 代理在途中态，继续监视。
+- **满载补位**：空闲代理派 F3 探针网格 GPU 烘焙编排服务（捕获→聚合→SceneIrradianceProbeBake，复用既有 producer/readback/编译器输入，真机 runner 取证）；F4 矩阵代理在跑。
