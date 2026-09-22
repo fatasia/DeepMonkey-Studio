@@ -6,12 +6,12 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 mod capacity;
 #[path = "painter_cache_keys.rs"]
 mod keys;
+#[path = "painter_cache_packages.rs"]
+mod packages;
 #[path = "painter_cache_prepare.rs"]
 mod prepare;
 #[path = "painter_cache_stats.rs"]
 mod stats;
-#[path = "painter_cache_packages.rs"]
-mod packages;
 pub use stats::{Deep2dPathCacheMissReason, Deep2dPathCacheStats};
 
 /// 按原因分解的 miss 计数;total() 恒等于 stats.misses。

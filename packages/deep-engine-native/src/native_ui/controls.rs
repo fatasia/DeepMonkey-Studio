@@ -72,6 +72,13 @@ pub struct Button {
 
 impl Button {
     pub fn handle(&mut self, event: &ControlEvent) -> Option<ControlResponse> {
+        if let ControlEvent::KeyInput(key) = event {
+            if interactive(self.disabled, self.loading) && matches!(key.as_str(), "Enter" | "Space")
+            {
+                self.press.pressed = false;
+                return Some(ControlResponse::Clicked);
+            }
+        }
         press_cycle(
             interactive(self.disabled, self.loading),
             &mut self.focused,
@@ -95,6 +102,14 @@ pub struct Toggle {
 
 impl Toggle {
     pub fn handle(&mut self, event: &ControlEvent) -> Option<ControlResponse> {
+        if let ControlEvent::KeyInput(key) = event {
+            if interactive(self.disabled, self.loading) && matches!(key.as_str(), "Enter" | "Space")
+            {
+                self.press.pressed = false;
+                self.checked = !self.checked;
+                return Some(ControlResponse::Toggled(self.checked));
+            }
+        }
         press_cycle(
             interactive(self.disabled, self.loading),
             &mut self.focused,
@@ -119,6 +134,14 @@ pub struct Checkbox {
 
 impl Checkbox {
     pub fn handle(&mut self, event: &ControlEvent) -> Option<ControlResponse> {
+        if let ControlEvent::KeyInput(key) = event {
+            if interactive(self.disabled, self.loading) && matches!(key.as_str(), "Enter" | "Space")
+            {
+                self.press.pressed = false;
+                self.checked = !self.checked;
+                return Some(ControlResponse::Toggled(self.checked));
+            }
+        }
         press_cycle(
             interactive(self.disabled, self.loading),
             &mut self.focused,
@@ -129,6 +152,54 @@ impl Checkbox {
             self.checked = !self.checked;
             ControlResponse::Toggled(self.checked)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Button, Checkbox, ControlEvent, ControlResponse, Toggle};
+
+    #[test]
+    fn authored_buttons_activate_from_enter_and_space_once() {
+        for key in ["Enter", "Space"] {
+            let mut button = Button::default();
+            assert_eq!(
+                button.handle(&ControlEvent::KeyInput(key.into())),
+                Some(ControlResponse::Clicked)
+            );
+            button.disabled = true;
+            assert_eq!(button.handle(&ControlEvent::KeyInput(key.into())), None);
+        }
+    }
+
+    #[test]
+    fn toggle_and_checkbox_keyboard_activation_preserves_state() {
+        let mut toggle = Toggle::default();
+        assert_eq!(
+            toggle.handle(&ControlEvent::KeyInput("Enter".into())),
+            Some(ControlResponse::Toggled(true))
+        );
+        assert_eq!(
+            toggle.handle(&ControlEvent::KeyInput("Space".into())),
+            Some(ControlResponse::Toggled(false))
+        );
+        let mut checkbox = Checkbox::default();
+        checkbox.checked = true;
+        assert_eq!(
+            checkbox.handle(&ControlEvent::KeyInput("Space".into())),
+            Some(ControlResponse::Toggled(false))
+        );
+    }
+
+    #[test]
+    fn keyboard_activation_does_not_leave_pointer_press_armed() {
+        let mut button = Button::default();
+        assert_eq!(button.handle(&ControlEvent::Press), None);
+        assert_eq!(
+            button.handle(&ControlEvent::KeyInput("Enter".into())),
+            Some(ControlResponse::Clicked)
+        );
+        assert_eq!(button.handle(&ControlEvent::Release), None);
     }
 }
 

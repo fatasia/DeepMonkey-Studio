@@ -90,10 +90,21 @@ pub struct Deep2dGpuPainter {
     chunks: Vec<PreparedDeep2dChunk>,
     draw_evidence: draw_evidence::DrawEvidenceTracker,
     logical_size: [f32; 2],
+    #[cfg(windows)]
+    dashboard_video_slots: Vec<DashboardVideoSlot>,
     /// Physical size last written into the frame uniform; equal sizes skip
     /// the re-upload (D06/D08).
     last_physical_size: std::cell::Cell<Option<(u32, u32)>>,
     pub summary: PreparedDeep2dRuntimeSummary,
+}
+
+#[cfg(windows)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct DashboardVideoSlot {
+    pub node_id: String,
+    pub layer_index: usize,
+    pub frame: [f32; 4],
+    pub clip: deep_engine_native::deep2d::Deep2dRect,
 }
 
 impl Deep2dGpuPainter {
@@ -129,6 +140,8 @@ impl Deep2dGpuPainter {
         context: Option<Deep2dFrameContext>,
     ) -> Result<Self, String> {
         let timing = std::time::Instant::now();
+        #[cfg(windows)]
+        let dashboard_video_slots = dashboard_video_slots(content)?;
         let path_cache = previous.map(|p| p.path_cache.clone()).unwrap_or_else(|| {
             Arc::new(std::sync::Mutex::new(Deep2dPathCache::with_package_cache()))
         });
@@ -192,6 +205,8 @@ impl Deep2dGpuPainter {
             draw_evidence,
             chunks: prepared.chunks,
             logical_size: [prepared.path.logical_width, prepared.path.logical_height],
+            #[cfg(windows)]
+            dashboard_video_slots,
             last_physical_size: std::cell::Cell::new(None),
             summary: prepared.summary,
         })
@@ -276,8 +291,34 @@ impl Deep2dGpuPainter {
         target: &wgpu::TextureView,
         physical_size: (u32, u32),
     ) {
+        self.draw_internal(encoder, target, physical_size, None);
+    }
+
+    #[cfg(windows)]
+    pub fn draw_with_dashboard_videos(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        target: &wgpu::TextureView,
+        physical_size: (u32, u32),
+        videos: Option<&crate::dashboard_video_gpu::DashboardVideoGpuCompositor>,
+    ) {
+        self.draw_internal(encoder, target, physical_size, videos);
+    }
+
+    fn draw_internal(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        target: &wgpu::TextureView,
+        physical_size: (u32, u32),
+        #[cfg(windows)] videos: Option<&crate::dashboard_video_gpu::DashboardVideoGpuCompositor>,
+        #[cfg(not(windows))] _videos: Option<&()>,
+    ) {
         self.draw_evidence.clear();
-        if self.chunks.is_empty() {
+        #[cfg(windows)]
+        let has_videos = videos.is_some_and(|videos| videos.max_layer_index().is_some());
+        #[cfg(not(windows))]
+        let has_videos = false;
+        if self.chunks.is_empty() && !has_videos {
             return;
         }
         // The frame uniform carries the physical target size for aspect-fit;
@@ -308,13 +349,13 @@ impl Deep2dGpuPainter {
             depth_stencil_attachment: None,
             ..Default::default()
         });
-        pass.set_bind_group(0, &self.frame_resources.bind_group, &[]);
-        for chunk in &self.chunks {
+        let draw_chunk = |pass: &mut wgpu::RenderPass<'_>, chunk: &PreparedDeep2dChunk| {
             let Some(scissor) = chunk_scissor(chunk.clip_rect, self.logical_size, physical_size)
             else {
-                continue;
+                return;
             };
             pass.set_scissor_rect(scissor[0], scissor[1], scissor[2], scissor[3]);
+            pass.set_bind_group(0, &self.frame_resources.bind_group, &[]);
             match chunk.kind {
                 PreparedDeep2dChunkKind::Path => {
                     let path = self.path.as_ref().expect("prepared path resource");
@@ -333,11 +374,49 @@ impl Deep2dGpuPainter {
                 0..1,
             );
             self.draw_evidence.record(chunk);
+        };
+        for chunk in self
+            .chunks
+            .iter()
+            .filter(|chunk| chunk.layer_index.is_none())
+        {
+            draw_chunk(&mut pass, chunk);
+        }
+        let max_deep2d_layer = self
+            .chunks
+            .iter()
+            .filter_map(|chunk| chunk.layer_index)
+            .max();
+        #[cfg(windows)]
+        let max_video_layer = videos.and_then(|videos| videos.max_layer_index());
+        #[cfg(not(windows))]
+        let max_video_layer = None;
+        if let Some(max_layer) = max_deep2d_layer.into_iter().chain(max_video_layer).max() {
+            for layer_index in 0..=max_layer {
+                for chunk in self
+                    .chunks
+                    .iter()
+                    .filter(|chunk| chunk.layer_index == Some(layer_index))
+                {
+                    draw_chunk(&mut pass, chunk);
+                }
+                #[cfg(windows)]
+                if let Some(videos) = videos {
+                    videos.draw_layer(&mut pass, layer_index, physical_size);
+                }
+            }
         }
     }
 
     pub fn draw_evidence(&self) -> Vec<DrawEvidence> {
         self.draw_evidence.snapshot()
+    }
+    #[cfg(windows)]
+    pub fn dashboard_video_slots(&self) -> &[DashboardVideoSlot] {
+        &self.dashboard_video_slots
+    }
+    pub fn logical_size(&self) -> [f32; 2] {
+        self.logical_size
     }
     pub fn atlas_inventory(&self) -> &[serde_json::Value] {
         self.draw_evidence.atlas_inventory()
@@ -345,6 +424,43 @@ impl Deep2dGpuPainter {
     pub fn enable_draw_evidence(&self) {
         self.draw_evidence.enable();
     }
+}
+
+#[cfg(windows)]
+fn dashboard_video_slots(
+    content: &Deep2dRuntimeContent,
+) -> Result<Vec<DashboardVideoSlot>, String> {
+    let Deep2dRuntimeContent::Composite(composite) = content else {
+        return Ok(Vec::new());
+    };
+    composite
+        .layers()
+        .iter()
+        .enumerate()
+        .filter_map(|(layer_index, layer)| {
+            layer.id.strip_suffix(":video").map(|node_id| {
+                let list = layer.content.display_list();
+                let values = [
+                    layer.translation[0],
+                    layer.translation[1],
+                    list.logical_width,
+                    list.logical_height,
+                ];
+                if values.iter().any(|value| !value.is_finite())
+                    || values[2] <= 0.0
+                    || values[3] <= 0.0
+                {
+                    return Err("invalid dashboard video slot geometry".into());
+                }
+                Ok(DashboardVideoSlot {
+                    node_id: node_id.to_owned(),
+                    layer_index,
+                    frame: values.map(|value| value as f32),
+                    clip: layer.clip,
+                })
+            })
+        })
+        .collect()
 }
 
 impl Deep2dPathGpuResources {

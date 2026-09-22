@@ -83,6 +83,17 @@ fn control_types_follow_roles_with_legend_prefix_override() {
 }
 
 #[test]
+fn control_type_ids_match_windows_uia_contract() {
+    assert_eq!(UiaControlType::Button.id(), 50000);
+    assert_eq!(UiaControlType::Image.id(), 50006);
+    assert_eq!(UiaControlType::ListItem.id(), 50007);
+    assert_eq!(UiaControlType::Text.id(), 50020);
+    assert_eq!(UiaControlType::Custom.id(), 50025);
+    assert_eq!(UiaControlType::Group.id(), 50026);
+    assert_eq!(UiaControlType::Pane.id(), 50033);
+}
+
+#[test]
 fn navigate_walks_neighbors_fail_closed() {
     let tree = chart_tree();
     let nav = |from: &str, direction| navigate_from(&tree, from, direction);

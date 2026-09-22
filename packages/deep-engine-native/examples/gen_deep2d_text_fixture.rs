@@ -61,11 +61,7 @@ fn make_ir_text(shift: usize) -> ChartIR {
         data.rows = (0..ROWS)
             .map(|row| {
                 // 类目名 = 常用汉字 + "-" + 行号:CJK/ASCII/数字三面齐备。
-                let label = format!(
-                    "{}-{}",
-                    pool[row % pool.len()],
-                    row
-                );
+                let label = format!("{}-{}", pool[row % pool.len()], row);
                 vec![
                     json!(label),
                     json!(((row as f64) * 0.1).sin() * 3.0 + 4.0 + shift as f64),
@@ -197,9 +193,13 @@ fn main() {
     // 分段计时(与 presentation.rs compose 同序)+ 全链计时。
     rasterizer.start_profile();
     let t = Instant::now();
-    let mut list =
-        tooltip_render::compose_tooltip(&chart, &mut rasterizer, &tokens.themes.dark, [100.0, 100.0])
-            .unwrap();
+    let mut list = tooltip_render::compose_tooltip(
+        &chart,
+        &mut rasterizer,
+        &tokens.themes.dark,
+        [100.0, 100.0],
+    )
+    .unwrap();
     let tooltip_ms = t.elapsed().as_secs_f64() * 1000.0;
     let t = Instant::now();
     axis_render::append_axes(&mut list, &chart, &mut rasterizer, &tokens.themes.dark).unwrap();
@@ -236,7 +236,7 @@ fn main() {
     let payload = serde_json::to_vec(&sliced).unwrap();
     let content = decode_runtime_content(&payload).unwrap();
     let prepared = prepare_runtime_content(&content).unwrap();
-    let summary = prepared.summary.clone();
+    let summary = prepared.summary;
 
     let out_path = std::env::var_os("DEEP_TEXT_FIXTURE_OUT").map_or_else(
         || {
@@ -254,9 +254,11 @@ fn main() {
     let known_strings: Vec<String> = (0..SERIES)
         .map(|i| format!("系列-{i}"))
         .chain(std::iter::once(format!("{heading}: 4.00")))
-        .chain((0..ROWS).step_by(ROWS.div_ceil(12)).map(|row| {
-            format!("{}-{}", pool[row % pool.len()], row)
-        }))
+        .chain(
+            (0..ROWS)
+                .step_by(ROWS.div_ceil(12))
+                .map(|row| format!("{}-{}", pool[row % pool.len()], row)),
+        )
         .chain(std::iter::once("中文标签".to_string()))
         .collect();
     let mut cjk = std::collections::BTreeSet::new();
