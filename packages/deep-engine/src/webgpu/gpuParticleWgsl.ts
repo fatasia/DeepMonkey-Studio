@@ -55,10 +55,6 @@ fn simulateAndCompact(@builtin(global_invocation_id) id: vec3u) {
   if (destination < frame.capacity) { outputParticles[destination] = particle; }
 }
 
-@compute @workgroup_size(1)
-fn writeIndirect(@builtin(global_invocation_id) id: vec3u) {
-  if (id.x == 0u) { indirect[1] = min(atomicLoad(&outputCounter.value), frame.capacity); }
-}
 `;
 
 /** Group 0 is owned by GpuParticleRuntime; a renderer supplies the camera at group 1. */

@@ -5,6 +5,7 @@ import { GpuParticleRuntime } from "./gpuParticleRuntime.js";
 import { createGpuParticleRuntimeFromEmitters,
   submitGpuParticleEmitterFrame } from "./gpuParticleEmitters.js";
 import { GPU_PARTICLE_COMPUTE_WGSL, GPU_PARTICLE_RENDER_WGSL } from "./gpuParticleWgsl.js";
+import { GPU_PARTICLE_INDIRECT_DCIR } from "./gpuParticleIndirectDcir.js";
 import { GPU_PARTICLE_BURST_WGSL } from "./gpuParticleBurstWgsl.js";
 
 function deferred<T>() {
@@ -64,7 +65,7 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("bounded GPU particle runtime", () => {
   it.runIf(Boolean(process.env.DEEP_SHADER_NAGA_BIN))("validates compute and reusable render WGSL with Naga", () => {
-    for (const [name, shader] of [["compute", GPU_PARTICLE_COMPUTE_WGSL],
+    for (const [name, shader] of [["compute", GPU_PARTICLE_COMPUTE_WGSL], ["indirect", GPU_PARTICLE_INDIRECT_DCIR.code],
       ["render", GPU_PARTICLE_RENDER_WGSL], ["burst", GPU_PARTICLE_BURST_WGSL]] as const) {
       const checked = spawnSync(process.env.DEEP_SHADER_NAGA_BIN!,
         ["--stdin-file-path", `deep-particle-${name}.wgsl`, "--input-kind", "wgsl"],
@@ -76,6 +77,10 @@ describe("bounded GPU particle runtime", () => {
   it("uploads seeds once, writes one small frame uniform, compacts and publishes drawIndirect", async () => {
     const f = fixture(), runtime = new GpuParticleRuntime(f.session, "gpu-1",
       { capacity: 8, initialParticles: seeds });
+    expect(f.device.createShaderModule).toHaveBeenNthCalledWith(2, {
+      label: "Deep GPU particle indirect DCIR", code: GPU_PARTICLE_INDIRECT_DCIR.code,
+    });
+    expect(GPU_PARTICLE_COMPUTE_WGSL).not.toContain("fn writeIndirect");
     expect(f.device.createBuffer).toHaveBeenCalledTimes(7);
     expect(f.queue.writes).toHaveLength(5);
     const committed = await runtime.beginFrame({ deltaTime: 0.25, acceleration: [0, 0, 0] });
@@ -85,7 +90,7 @@ describe("bounded GPU particle runtime", () => {
     expect(f.queue.writes).toHaveLength(6);
     expect((f.queue.writes[5]![2] as ArrayBuffer).byteLength).toBe(32);
     expect(f.passes[0]).toEqual({ pipelines: ["Deep particle reset pipeline",
-      "Deep particle simulation pipeline", "Deep particle indirect pipeline"], dispatches: [1, 1, 1] });
+      "Deep particle simulation pipeline", "Deep particle indirect DCIR pipeline"], dispatches: [1, 1, 1] });
     expect(f.bindGroups).toEqual(["Deep particle compute 0->1"]);
     expect(committed.snapshot!.binding.stateBuffer).toBe(f.buffers[4]);
     const pass = { setBindGroup: vi.fn(), drawIndirect: vi.fn() };
@@ -139,7 +144,7 @@ describe("bounded GPU particle runtime", () => {
     expect((f.queue.writes.at(-1)![2] as ArrayBuffer).byteLength).toBe(16);
     expect(f.passes[0]).toEqual({ pipelines: ["Deep particle reset pipeline",
       "Deep particle simulation pipeline", "Deep particle burst reserve pipeline",
-      "Deep particle burst spawn pipeline", "Deep particle indirect pipeline"],
+      "Deep particle burst spawn pipeline", "Deep particle indirect DCIR pipeline"],
     dispatches: [1, 1, 1, 1, 1] });
     expect(f.bindGroups).toEqual(["Deep particle compute 0->1", "Deep particle burst output 1",
       "Deep particle compute 0->1"]);

@@ -11,6 +11,7 @@ import {
   type GpuParticleSeed,
 } from "./gpuParticleTypes.js";
 import { GPU_PARTICLE_COMPUTE_WGSL, GPU_PARTICLE_RENDER_WGSL } from "./gpuParticleWgsl.js";
+import { GPU_PARTICLE_INDIRECT_DCIR } from "./gpuParticleIndirectDcir.js";
 import { runResourceCleanup } from "./resourceCleanup.js";
 
 interface ParticleSlot {
@@ -86,6 +87,8 @@ export class GpuParticleRuntime {
       const device = session.device;
       const computeModule = device.createShaderModule({ label: "Deep GPU particle compute WGSL",
         code: GPU_PARTICLE_COMPUTE_WGSL });
+      const indirectModule = device.createShaderModule({ label: "Deep GPU particle indirect DCIR",
+        code: GPU_PARTICLE_INDIRECT_DCIR.code });
       const computeLayout = device.createBindGroupLayout({ label: "Deep GPU particle compute layout", entries: [
         storage(0, true), storage(1), storage(2), storage(3), storage(4),
         { binding: 5, visibility: GPUShaderStage.COMPUTE,
@@ -97,7 +100,8 @@ export class GpuParticleRuntime {
         layout: pipelineLayout, compute: { module: computeModule, entryPoint } });
       this.pipelines = Object.freeze({ reset: pipeline("Deep particle reset pipeline", "resetOutput"),
         simulate: pipeline("Deep particle simulation pipeline", "simulateAndCompact"),
-        indirect: pipeline("Deep particle indirect pipeline", "writeIndirect") });
+        indirect: device.createComputePipeline({ label: "Deep particle indirect DCIR pipeline",
+          layout: pipelineLayout, compute: { module: indirectModule, entryPoint: "write_particle_indirect" } }) });
       this.renderLayoutValue = device.createBindGroupLayout({ label: "Deep GPU particle render layout", entries: [
         { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage" } },
       ] });
