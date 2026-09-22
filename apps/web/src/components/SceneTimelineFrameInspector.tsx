@@ -59,6 +59,14 @@ export function SceneTimelineFrameInspector(props: Props) {
         <VectorFields label={tr(locale, "位置", "Position")} value={frame.transform.position} onChange={(position) => props.onUpdate({ ...frame, transform: { ...frame.transform, position } })} />
         <VectorFields label={tr(locale, "旋转", "Rotation")} value={frame.transform.rotation} onChange={(rotation) => props.onUpdate({ ...frame, transform: { ...frame.transform, rotation } })} />
         <VectorFields label={tr(locale, "缩放", "Scale")} value={frame.transform.scale} onChange={(scale) => props.onUpdate({ ...frame, transform: { ...frame.transform, scale } })} />
+        <label className="timeline-frame-select"><span>{tr(locale, "可见性", "Visibility")}</span><select aria-label={tr(locale, "此帧起的对象可见性", "Object visibility from this frame")} value={frame.visibility === undefined ? "inherit" : frame.visibility ? "visible" : "hidden"} onChange={(event) => {
+          const { visibility: _, ...base } = frame;
+          props.onUpdate(event.target.value === "inherit" ? base : { ...base, visibility: event.target.value === "visible" });
+        }}>
+          <option value="inherit">{tr(locale, "跟随上一帧", "Inherit previous")}</option>
+          <option value="visible">{tr(locale, "可见", "Visible")}</option>
+          <option value="hidden">{tr(locale, "隐藏", "Hidden")}</option>
+        </select></label>
         {frame.animation && <div className="timeline-frame-animation">
           <label><span>{tr(locale, "动画片段", "Animation clip")}</span><input value={frame.animation.clipId ?? ""} placeholder={tr(locale, "默认片段", "Default clip")} onChange={(event) => props.onUpdate({ ...frame, animation: event.target.value ? { ...frame.animation!, clipId: event.target.value } : { time: frame.animation!.time } })} /></label>
           <label><span>{tr(locale, "片段时间", "Clip time")}</span><DeferredNumberInput min={0} step={0.05} value={roundParameter(frame.animation.time)} onCommit={(time) => props.onUpdate({ ...frame, animation: { ...frame.animation!, time: roundParameter(time) } })} /></label>
