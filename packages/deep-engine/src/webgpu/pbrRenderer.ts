@@ -95,6 +95,7 @@ export class PbrRenderer {
   private readonly particleRuntime: GpuParticleRuntime | undefined;
   private readonly particlePass: PbrParticlePass | undefined;
   private particleBusy = false;
+  private particleLastTime = performance.now();
   private readonly visibility: VisibilityBufferPath | undefined;
   private readonly adaptiveQuality: AdaptiveQualityController | undefined;
   private readonly preparationPlan: RenderGraphCompileResult;
@@ -234,7 +235,10 @@ export class PbrRenderer {
     const runtime = this.particleRuntime;
     if (!runtime || this.particleBusy) return;
     this.particleBusy = true;
-    void submitGpuParticleEmitterFrame(runtime, { frame, deltaTime: 1 / 60 })
+    const now = performance.now();
+    const deltaTime = Math.min(0.25, Math.max(0, (now - this.particleLastTime) / 1000));
+    this.particleLastTime = now;
+    void submitGpuParticleEmitterFrame(runtime, { frame, deltaTime })
       .catch(() => undefined).finally(() => { this.particleBusy = false; });
   }
   private driveProbeClipmap(frame: number, size: { readonly width: number; readonly height: number },
