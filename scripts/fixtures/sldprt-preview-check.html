@@ -1,0 +1,32 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8">
+<link rel="stylesheet" href="/tokens.css">
+<style>body{margin:0;background:var(--bg-0);color:var(--text-strong);font:13px "Microsoft YaHei",sans-serif}header{height:48px;display:flex;align-items:center;padding:0 24px;border-bottom:1px solid var(--line)}canvas{display:block}#status{margin-left:auto;color:var(--text-muted)}</style>
+<header>SolidWorks 源显示网格 · 诊断检查<span id="status">加载中</span></header>
+<script type="importmap">{"imports":{"three":"/three/build/three.module.js","three/addons/":"/three/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});
+renderer.setPixelRatio(devicePixelRatio);renderer.setSize(innerWidth,innerHeight-49);
+renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.outputColorSpace=THREE.SRGBColorSpace;
+document.body.append(renderer.domElement);
+const scene=new THREE.Scene();scene.background=new THREE.Color(getComputedStyle(document.body).getPropertyValue('--bg-0').trim());
+const pmrem=new THREE.PMREMGenerator(renderer),room=new RoomEnvironment();
+const environment=pmrem.fromScene(room);scene.environment=environment.texture;scene.environmentIntensity=.8;
+const key=new THREE.DirectionalLight(0xffffff,2);key.position.set(3,5,4);scene.add(key);
+const fill=new THREE.DirectionalLight(0xffffff,.5);fill.position.set(-3,1,-4);scene.add(fill);
+const camera=new THREE.PerspectiveCamera(35,innerWidth/(innerHeight-49),.001,1000);
+try {
+  const sample=new URL(location.href).searchParams.get('sample'),round=Number(new URL(location.href).searchParams.get('round'));
+  const gltf=await new GLTFLoader().loadAsync(`/model/${sample}`);scene.add(gltf.scene);scene.updateMatrixWorld(true);
+  const bounds=new THREE.Box3().setFromObject(gltf.scene),center=bounds.getCenter(new THREE.Vector3()),size=bounds.getSize(new THREE.Vector3());
+  const radius=size.length()/2,distance=radius/Math.sin(THREE.MathUtils.degToRad(camera.fov/2))*1.2;
+  camera.position.copy(center).add(new THREE.Vector3(round===1?1:-1,.7,round===1?1:-1).normalize().multiplyScalar(distance));
+  camera.near=Math.max(radius/10000,.000001);camera.far=distance+radius*4;camera.updateProjectionMatrix();camera.lookAt(center);
+  let meshes=0,triangles=0;gltf.scene.traverse(node=>{if(node.isMesh){meshes++;triangles+=node.geometry.index.count/3;}});
+  renderer.render(scene,camera);
+  document.getElementById('status').textContent=`样本 ${sample} · ${meshes} 网格 · ${triangles.toLocaleString()} 三角形 · 预览`;
+  window.result={sample,round,meshes,triangles,bounds:{min:bounds.min.toArray(),max:bounds.max.toArray()},calls:renderer.info.render.calls};
+} catch(error){document.getElementById('status').textContent='加载失败';window.failure=String(error);throw error;}
+</script></html>

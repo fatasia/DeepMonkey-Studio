@@ -23,6 +23,13 @@ export async function bundleConsumer({ consumer, reportDir, esbuild }) {
 }
 
 export async function checkBrowser({ root, consumer, reportDir, bundle, expected }) {
+  return runConsumerBrowser({ root, consumer, reportDir, bundle, screenshot: "sdk-consumer-browser.png",
+    waitFor: 'output[data-status="passed"]', readResult: page => page.locator("output").innerText(),
+    validate: async text => assert.deepEqual(JSON.parse(text), expected, "Installed Node and browser package behavior must match") });
+}
+
+export async function runConsumerBrowser({ root, consumer, reportDir, bundle, screenshot,
+  waitFor, readResult, validate, launchArgs = [], consoleLevels = ["error", "warning"] }) {
   const { default: playwright } = await import(pathToFileURL(join(root, "apps/cloud-render-worker/node_modules/playwright-core/index.js")).href);
   const html = await readFile(join(consumer, "index.html"));
   const script = await readFile(bundle.outfile);
@@ -37,7 +44,8 @@ export async function checkBrowser({ root, consumer, reportDir, bundle, expected
   const issues = [], requests = [];
   let browser;
   try {
-    browser = await playwright.chromium.launch({ executablePath: process.env.SDK_GATE_CHROME ?? "C:/Program Files/Google/Chrome/Application/chrome.exe", headless: true });
+    browser = await playwright.chromium.launch({ executablePath: process.env.SDK_GATE_CHROME ?? "C:/Program Files/Google/Chrome/Application/chrome.exe",
+      headless: true, args: launchArgs });
     const context = await browser.newContext({ viewport: { width: 1120, height: 740 }, serviceWorkers: "block" });
     await context.route("**/*", route => {
       const url = route.request().url();
@@ -45,18 +53,18 @@ export async function checkBrowser({ root, consumer, reportDir, bundle, expected
       return route.continue();
     });
     const page = await context.newPage();
-    page.on("console", message => { if (["error", "warning"].includes(message.type())) issues.push(`${message.type()}: ${message.text()}`); });
+    page.on("console", message => { if (consoleLevels.includes(message.type())) issues.push(`${message.type()}: ${message.text()}`); });
     page.on("pageerror", error => issues.push(`pageerror: ${error.message}`));
     page.on("request", request => requests.push({ url: request.url(), method: request.method() }));
     page.on("response", response => { if (response.status() >= 400) issues.push(`HTTP ${response.status()}: ${response.url()}`); });
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.locator('output[data-status="passed"]').waitFor({ timeout: 15_000 });
-    const observed = JSON.parse(await page.locator("output").innerText());
-    assert.deepEqual(observed, expected, "Installed Node and browser package behavior must match");
+    await page.locator(waitFor).waitFor({ timeout: 30_000 });
+    const observed = await readResult(page);
+    await validate(observed, page);
     assert.deepEqual(issues, []);
     assert.ok(requests.every(request => request.method === "GET" && new URL(request.url).origin === baseUrl));
-    await page.screenshot({ path: join(reportDir, "sdk-consumer-browser.png"), fullPage: true });
-    return { version: browser.version(), observed, issues, requests, screenshot: "sdk-consumer-browser.png" };
+    await page.screenshot({ path: join(reportDir, screenshot), fullPage: true });
+    return { version: browser.version(), observed, issues, requests, screenshot };
   } finally {
     await browser?.close();
     await new Promise(resolveClose => server.close(resolveClose));

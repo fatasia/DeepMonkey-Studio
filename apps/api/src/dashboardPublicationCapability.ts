@@ -35,7 +35,13 @@ export interface AuthoritativeDashboardCompiler {
   }, signal?: AbortSignal): Promise<{
     readonly artifact: Uint8Array;
     readonly windowEvidence?: DashboardCompiledWindowEvidence;
-    readonly objects: readonly { readonly nodeId: string; readonly contentCompiled: boolean; readonly deferredFields: readonly string[] }[];
+    readonly objects: readonly {
+      readonly nodeId: string;
+      readonly contentCompiled: boolean;
+      readonly deferredFields: readonly string[];
+      /** Compiler-owned explanation of each degraded/blocked decision. */
+      readonly reasons?: readonly string[];
+    }[];
   }>;
 }
 
@@ -63,7 +69,16 @@ export interface DashboardPublicationCapabilityReport {
   readonly targetArtifactHash: string;
   readonly compiler: { readonly id: string; readonly version: string; readonly sha256: string; readonly configurationSha256: string };
   readonly evidence: Pick<DashboardWindowVerification, "verifier" | "fixtureSha256" | "deviceFingerprintSha256" | "fontSha256">;
-  readonly objects: readonly { readonly nodeId: string; readonly status: "supported" | "degraded" | "blocked"; readonly deferredFields: readonly string[] }[];
+  readonly objects: readonly {
+    readonly nodeId: string;
+    readonly status: "supported" | "degraded" | "blocked";
+    readonly deferredFields: readonly string[];
+    /**
+     * Optional additive diagnostics from the authoritative compiler. Older
+     * compilers and persisted v1 reports may omit this field.
+     */
+    readonly reasons?: readonly string[];
+  }[];
 }
 
 export interface BuildDashboardPublicationCapabilityOptions {
@@ -136,16 +151,19 @@ export async function buildDashboardPublicationCapabilityReport(options: BuildDa
     if (!object.nodeId || objectIds.has(object.nodeId)) throw new Error("Compiler returned duplicate or invalid dashboard object identity");
     if (!authoredIds.has(object.nodeId)) throw new Error(`Compiler returned unknown dashboard object ${object.nodeId}`);
     objectIds.add(object.nodeId);
+    const reasons = normalizeReasons(object.reasons);
     return { nodeId: object.nodeId,
       status: object.contentCompiled && rendered.has(object.nodeId) && !missingFontNodes.has(object.nodeId)
         && object.deferredFields.length === 0 ? "supported" as const
         : object.contentCompiled ? "degraded" as const : "blocked" as const,
-      deferredFields: [...new Set(object.deferredFields)].sort() };
+      deferredFields: [...new Set(object.deferredFields)].sort(),
+      ...(reasons.length > 0 ? { reasons } : {}) };
   });
   for (const nodeId of rendered) if (!objectIds.has(nodeId)) throw new Error(`Verifier attested an unknown dashboard object ${nodeId}`);
   // 编译器遗漏对象也必须出现在报告中，不能使部分页面看起来已全部支持。
   for (const nodeId of authoredIds) {
-    if (!objectIds.has(nodeId)) objects.push({ nodeId, status: "blocked", deferredFields: ["$"] });
+    if (!objectIds.has(nodeId)) objects.push({ nodeId, status: "blocked", deferredFields: ["$"],
+      reasons: ["Compiler did not return an object report for this authored node"] });
   }
   return { schema: "deep-engine.dashboard-publication-capability", schemaVersion: 1, authority: { ...candidate.authority },
     freezeManifestSha256: candidate.manifest.manifestSha256, sourceSemanticHash, compileGraphHash, targetArtifactHash,
@@ -213,6 +231,11 @@ function missingVerifiedFonts(verification: DashboardWindowVerification, candida
 function normalizedFonts(fonts: readonly { readonly resourceId: string; readonly sha256: string; readonly faceIndex: number }[]) {
   return [...fonts].map(font => { if (!font.resourceId || !Number.isSafeInteger(font.faceIndex) || font.faceIndex < 0) throw new Error("Invalid verifier font identity"); assertSha(font.sha256, "Verifier font hash"); return { ...font }; })
     .sort((left, right) => left.resourceId.localeCompare(right.resourceId) || left.faceIndex - right.faceIndex || left.sha256.localeCompare(right.sha256));
+}
+
+function normalizeReasons(reasons: readonly string[] | undefined): string[] {
+  if (!reasons) return [];
+  return [...new Set(reasons.filter(reason => typeof reason === "string" && reason.trim()).map(reason => reason.trim()))];
 }
 
 function sha256(value: Uint8Array): string { return createHash("sha256").update(value).digest("hex"); }

@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import JSZip from "jszip";
+import { collectDashboardStaticFiles, readDashboardStaticFile } from "./dashboardWebStaticFiles.js";
 import {
   assertDashboardWebSource,
   createDashboardDocument,
@@ -77,10 +78,10 @@ export async function createDashboardWebStaticPackage(options: DashboardWebStati
       for (const entry of options.licensedFonts) {
         if (!path.isAbsolute(entry.path) || !path.isAbsolute(entry.licensePath)) continue;
         if ((await stat(entry.path)).size > DASHBOARD_WEB_FILE_LIMIT) continue;
-        if (sha256(await readFile(entry.path)) !== resource.sha256) continue;
+        if (sha256(await readDashboardStaticFile(entry.path, DASHBOARD_WEB_FILE_LIMIT, signal)) !== resource.sha256) continue;
         signal?.throwIfAborted();
         if ((await stat(entry.licensePath)).size > FONT_LICENSE_BYTES_LIMIT) throw new Error("字体许可文件超出预算");
-        const license = await readFile(entry.licensePath);
+        const license = await readDashboardStaticFile(entry.licensePath, FONT_LICENSE_BYTES_LIMIT, signal);
         if (!license.length) throw new Error("字体许可文件为空");
         const licensePath = `licenses/font-${resource.sha256}.txt`;
         licenseFiles.push({ path: licensePath, bytes: license, sha256: sha256(license) });
@@ -99,7 +100,7 @@ export async function createDashboardWebStaticPackage(options: DashboardWebStati
   const initial = { schema: WEB_STATIC_SCHEMA, schemaVersion: 1, publication, publicationSha256,
     entryPageId: freeze.entryPageId, resources, runtimeFiles: licenseFiles.map(manifestFile) };
   assertPackageDigests({ ...initial, contentSha256: runtimeContentSha256(initial) });
-  const staticFiles = await collectStaticFiles(options.webStaticRoot, signal);
+  const staticFiles = await collectDashboardStaticFiles(options.webStaticRoot, signal);
   const packaged = [...licenseFiles, ...staticFiles,
     ...await distributionNotices([...licenseFiles, ...staticFiles])];
   const body = { schema: WEB_STATIC_SCHEMA, schemaVersion: 1, publication, publicationSha256,
@@ -139,26 +140,6 @@ function assertPackageDigests(value: unknown): asserts value is DashboardWebPack
   if (runtimeContentSha256(item.publication) !== item.publicationSha256) throw new Error("静态包清单摘要不匹配");
   const { contentSha256, ...body } = item;
   if (runtimeContentSha256(body) !== contentSha256) throw new Error("静态包清单摘要不匹配");
-}
-
-async function collectStaticFiles(root: string, signal?: AbortSignal): Promise<PackagedFile[]> {
-  const directory = path.resolve(root);
-  const files: PackagedFile[] = [];
-  const walk = async (relative: string): Promise<void> => {
-    signal?.throwIfAborted();
-    for (const entry of await readdir(path.join(directory, relative), { withFileTypes: true })) {
-      const name = path.posix.join(relative, entry.name);
-      // dashboard.web.json 与 licenses/ 由本模块生成；符号链接一律不进入包。
-      if (entry.isDirectory()) { if (!(relative === "" && name === "licenses")) await walk(name); }
-      else if (entry.isFile()) {
-        if (name === "dashboard.web.json") continue;
-        const bytes = await readFile(path.join(directory, name));
-        files.push({ path: name, bytes, sha256: sha256(bytes) });
-      }
-    }
-  };
-  await walk("");
-  return files;
 }
 
 /** webStaticRoot 缺许可文本时从仓库根注入；缺失即失败，保证每次分发都带许可。 */

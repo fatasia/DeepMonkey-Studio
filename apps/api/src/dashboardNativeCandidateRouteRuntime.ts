@@ -45,7 +45,9 @@ export async function registerDashboardNativeCandidateRouteRuntime(
 ): Promise<DashboardNativeCandidateRouteRuntime> {
   const runtime = createDashboardNativeCandidateRuntime(dependencies.runtime);
   const registry = dependencies.registry ?? createDashboardNativeCandidateRegistry(dependencies.registryOptions);
-  await registerDashboardPublicationCandidateRoutes(app, runtime.service, registry);
+  await registerDashboardPublicationCandidateRoutes(app, runtime.service, registry,
+    [...(dependencies.nativeExecutable ? ["exe", "zip"] as const : []),
+      ...(dependencies.webStatic ? ["web"] as const : []), "dmda"]);
   await registerDashboardOfflineArchiveDownloadRoutes(app, {
     registry,
     ...(dependencies.nativeExecutable === undefined ? {} : { portable: { nativeExecutable: dependencies.nativeExecutable,

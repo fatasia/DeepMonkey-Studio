@@ -81,7 +81,8 @@ export async function createDashboardContentCompiler({ nativeExecutable, configu
         windowEvidence: dashboardCompiledWindowEvidence(result, input, verifyDashboardButtonComposition),
         objects: result.capabilityReport.objects.map(object => ({ nodeId: object.nodeId,
           contentCompiled: object.contentCompiled, deferredFields: [...new Set([...object.deferredFields,
-            ...pageDeferred, "runtime.interactions", "appearance.crossHost"])] })) };
+            ...pageDeferred, "runtime.interactions", "appearance.crossHost"])],
+          ...(object.reasons?.length ? { reasons: [...new Set(object.reasons)] } : {}) })) };
     },
   };
 }

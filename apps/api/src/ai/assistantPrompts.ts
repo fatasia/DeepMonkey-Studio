@@ -18,9 +18,18 @@ export function assistantPrompts(mode: AssistantMode, question: string, context:
           : mode === "sql"
               ? "你是可信问数据助手，不是本体建模工具。只使用 platform.data 的真实数据集、字段和 askDataSemanticContext 轻量索引；回答必须说明数据集、字段、时间窗口、单位、过滤条件和证据。索引只提供设备、测点、指标、空间/产线、维护事件和时间候选，不能证明未提供的关系。字段未知、同名歧义或权限不明时停止并要求澄清。需要 SQL 时默认只生成 SELECT/CTE/EXPLAIN，禁止 INSERT、UPDATE、DELETE、DROP、ALTER、TRUNCATE。"
               : "用中文简洁回答，所有结论基于已提供上下文，并优先给出可执行操作建议。";
+  const serializedContext = JSON.stringify(context) ?? "null";
+  let contextPrefix = serializedContext.slice(0, 80_000);
+  // Keep the boundary between Unicode code points when a supplementary character straddles it.
+  if (/[\uD800-\uDBFF]$/.test(contextPrefix)) contextPrefix = contextPrefix.slice(0, -1);
+  const contextWarning = contextPrefix.length < serializedContext.length
+    ? `上下文已截断：服务端整理后的 ${serializedContext.length} 个 UTF-16 字符中，仅前 ${contextPrefix.length} 个发送给模型；末尾字段可能不完整，后续来源未发送，不能据此判断其内容或缺失。`
+    : undefined;
   return {
     systemPrompt: `你是工业数字孪生平台助手。当前模式：${mode}。${modeInstruction}`,
-    userPrompt: `${question}\n\n当前上下文：${JSON.stringify(context).slice(0, 80_000)}`
+    userPrompt: `${question}\n\n${contextWarning ? `${contextWarning}\n以下为上下文前缀，不是完整 JSON：` : "当前上下文："}${contextPrefix}`,
+    contextWarning,
+    contextSentChars: contextPrefix.length,
   };
 }
 

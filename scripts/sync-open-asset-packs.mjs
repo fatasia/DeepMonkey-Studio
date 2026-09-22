@@ -11,13 +11,15 @@ const USER_AGENT = "BimStudioAssetSync/1.0";
 
 // 只同步能补足工业园区、人物车辆、环境、VFX 和声音的高价值开放包。
 const PACKS = [
+  // V11：补树木、灌木和绿化模板；来源 https://kenney.nl/assets/nature-kit，CC0。
+  pack("nature", "3d-environment", "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip"),
   pack("city-roads", "3d-city", "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1787042796/kenney_city-kit-roads.zip"),
   pack("factory", "3d-industrial", "https://kenney.nl/media/pages/assets/factory-kit/edaac9d4f6-1777639602/kenney_factory-kit_3.0.zip"),
   pack("cars", "3d-transport", "https://kenney.nl/media/pages/assets/car-kit/1a312ec241-1775131960/kenney_car-kit.zip"),
   pack("characters", "3d-people", "https://kenney.nl/media/pages/assets/blocky-characters/8369c0cf30-1749547469/kenney_blocky-characters_20.zip"),
   pack("light-masks", "vfx", "https://kenney.nl/media/pages/assets/light-masks/6530e254f9-1775631687/kenney_light-masks-1.0.zip"),
   pack("skyboxes", "environment", "https://kenney.nl/media/pages/assets/skyboxes/6736ff5c10-1784123473/kenney_skyboxes.zip"),
-  pack("city-industrial", "3d-industrial", "https://kenney.nl/media/pages/assets/city-kit-industrial/5fcb837741-1750838303/kenney_city-kit-industrial_1.0.zip"),
+  pack("city-industrial", "3d-industrial", "https://kenney.nl/media/pages/assets/city-kit-industrial/5fcb837741-1750838303/kenney_city-kit-industrial_1.0.zip", "https://kenney.nl/assets/city-kit-industrial"),
   pack("city-suburban", "3d-city", "https://kenney.nl/media/pages/assets/city-kit-suburban/2c871b7af2-1745479373/kenney_city-kit-suburban_20.zip"),
   pack("trains", "3d-transport", "https://kenney.nl/media/pages/assets/train-kit/cf8521d625-1727040883/kenney_train-kit.zip"),
   pack("animated-people", "3d-people", "https://kenney.nl/media/pages/assets/animated-characters-protagonists/608191acc4-1774773108/kenney_animated-characters-protagonists.zip"),
@@ -44,10 +46,16 @@ await runPool(PACKS, CONCURRENCY, async (item) => {
   const old = previousById.get(item.id);
   if (existing && old?.bytes === existing.size && old.sha256) records.push(old);
   else {
-    const downloaded = existing ? 0 : await download(item.url, `${filePath}.part`, filePath);
-    const file = await stat(filePath);
-    downloadedBytes += downloaded;
-    records.push({ ...item, bytes: file.size, sha256: await hashFile(filePath), synchronizedAt: new Date().toISOString() });
+    try {
+      const downloaded = existing ? 0 : await downloadWithPageFallback(item, `${filePath}.part`, filePath);
+      const file = await stat(filePath);
+      downloadedBytes += downloaded;
+      records.push({ ...item, bytes: file.size, sha256: await hashFile(filePath), synchronizedAt: new Date().toISOString(), syncError: undefined });
+    } catch (error) {
+      // 一个包的失效地址不能中断整批同步；保留旧记录（若有）并把原因写进目录，便于下次重试。
+      records.push({ ...item, ...(existing && old ? { bytes: existing.size, sha256: old.sha256, synchronizedAt: old.synchronizedAt } : {}), syncError: String(error?.message ?? error) });
+      console.warn(`跳过 ${item.id}：${error?.message ?? error}`);
+    }
   }
   completed += 1;
   console.log(`进度 ${completed}/${PACKS.length}，本次下载 ${formatBytes(downloadedBytes)} · ${item.id}`);
@@ -60,10 +68,21 @@ const catalog = {
   packs: records.sort((left, right) => left.id.localeCompare(right.id)),
 };
 await writeJsonAtomically(path.join(OUTPUT_DIRECTORY, "catalog.json"), catalog);
-console.log(`开放素材包索引已写入，共 ${formatBytes(records.reduce((sum, item) => sum + item.bytes, 0))}`);
+console.log(`开放素材包索引已写入，共 ${formatBytes(records.reduce((sum, item) => sum + (item.bytes ?? 0), 0))}`);
 
-function pack(id, category, url) {
-  return { id, category, url, fileName: `${id}.zip`, license: "CC0-1.0", publicationStatus: "review-required" };
+function pack(id, category, url, pageUrl = undefined) {
+  return { id, category, url, ...(pageUrl ? { pageUrl } : {}), fileName: `${id}.zip`, license: "CC0-1.0", publicationStatus: "review-required" };
+}
+
+async function downloadWithPageFallback(item, partialPath, targetPath) {
+  try {
+    return await download(item.url, partialPath, targetPath);
+  } catch (error) {
+    if (error?.status !== 404 || !item.pageUrl) throw error;
+    const resolvedUrl = await resolveZipFromAssetPage(item.pageUrl, item.fileName);
+    console.warn(`直链 404，改用资产页地址：${item.id} → ${resolvedUrl}`);
+    return await download(resolvedUrl, partialPath, targetPath);
+  }
 }
 
 async function download(url, partialPath, targetPath) {
@@ -76,7 +95,11 @@ async function download(url, partialPath, targetPath) {
         headers: { "User-Agent": USER_AGENT, ...(offset ? { Range: `bytes=${offset}-` } : {}) },
         signal: AbortSignal.timeout(900_000),
       });
-      if (!response.ok && response.status !== 206) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok && response.status !== 206) {
+        const error = new Error(`HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
       if (!response.body) throw new Error("下载响应没有内容");
       const append = offset > 0 && response.status === 206;
       await pipeline(Readable.fromWeb(response.body), createWriteStream(partialPath, { flags: append ? "a" : "w" }));
@@ -89,6 +112,17 @@ async function download(url, partialPath, targetPath) {
     }
   }
   throw lastError;
+}
+
+async function resolveZipFromAssetPage(pageUrl, fileName) {
+  const response = await fetch(pageUrl, { headers: { "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(30_000) });
+  if (!response.ok) throw new Error(`资产页 HTTP ${response.status}`);
+  const html = await response.text();
+  const links = [...html.matchAll(/https?:\/\/[^"'<>\s]+\.zip(?:\?[^"'<>\s]*)?/gi)].map((match) => match[0].replaceAll("&amp;", "&"));
+  const expectedStem = fileName.replace(/\.zip$/i, "").replace(/[-_]\d+(?:\.\d+)?$/, "");
+  const candidate = links.find((link) => link.toLowerCase().includes(expectedStem.toLowerCase())) ?? links[0];
+  if (!candidate) throw new Error(`资产页没有找到 ZIP：${pageUrl}`);
+  return candidate;
 }
 
 async function runPool(items, concurrency, worker) {

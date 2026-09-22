@@ -34,12 +34,17 @@ export async function fetchProviderModels(input: { baseUrl: string; apiKey: stri
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(new Error("拉取模型列表超时")), REQUEST_TIMEOUT_MS);
   let response: Response;
+  let body: unknown;
   try {
     response = await fetch(`${baseUrl}/models`, {
       method: "GET",
       headers: { accept: "application/json", authorization: `Bearer ${input.apiKey}` },
       signal: controller.signal,
     });
+    if (response.ok) {
+      try { body = await response.json(); }
+      catch (error) { if (controller.signal.aborted) throw error; }
+    }
   } catch (error) {
     return {
       ok: false,
@@ -57,18 +62,23 @@ export async function fetchProviderModels(input: { baseUrl: string; apiKey: stri
     return { ok: false, category: "invalid", message: `模型列表请求失败（HTTP ${response.status}）` };
   }
 
-  const body = await response.json().catch(() => undefined) as { data?: Array<{ id?: unknown }>; models?: Array<{ id?: unknown; name?: unknown }> } | undefined;
   const models = normalizeModels(body);
   if (!models.length) return { ok: false, category: "unsupported", message: "模型服务返回了无法识别的列表格式，请手动填写模型名" };
   cache.set(cacheKey, { at: new Date().toISOString(), models });
   return { ok: true, models };
 }
 
-function normalizeModels(body: { data?: Array<{ id?: unknown }>; models?: Array<{ id?: unknown; name?: unknown }> } | undefined): string[] {
-  const raw = body?.data ?? body?.models ?? [];
+function normalizeModels(body: unknown): string[] {
+  if (!body || typeof body !== "object") return [];
+  const payload = body as { data?: unknown; models?: unknown };
+  const raw: unknown[] = Array.isArray(payload.data) ? payload.data : Array.isArray(payload.models) ? payload.models : [];
   const models = raw
-    .map((item) => (typeof item?.id === "string" ? item.id : typeof (item as { name?: unknown } | undefined)?.name === "string" ? (item as { name: string }).name : ""))
-    .filter((id) => id.trim())
+    .map((item) => {
+      if (!item || typeof item !== "object") return "";
+      const model = item as { id?: unknown; name?: unknown };
+      return typeof model.id === "string" ? model.id.trim() : typeof model.name === "string" ? model.name.trim() : "";
+    })
+    .filter((id) => id.length > 0 && id.length <= 256)
     .sort((left, right) => left.localeCompare(right));
   return [...new Set(models)].slice(0, MAX_MODELS);
 }

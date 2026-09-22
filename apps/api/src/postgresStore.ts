@@ -1,14 +1,19 @@
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import type { DatabaseDocument } from "@bim-studio/contracts";
+import type { ConversionTaskRecord, DatabaseDocument, ModelRecord } from "@bim-studio/contracts";
 import type { AppConfig } from "./config.js";
 import { JsonStore } from "./jsonStore.js";
 import { runProcess } from "./processRunner.js";
 import { defaultDocument } from "./storeUtils.js";
+import { acceptedPostgresRevision, MetadataRevisionConflict, parsePostgresState, postgresStateWrite, READ_POSTGRES_STATE } from "./postgresStateRevision.js";
+import { CONVERSION_LEASE_SCHEMA, leaseSql, leaseWriteFence, parseConversionLease, type ConversionTaskLease } from "./conversionTaskLease.js";
+import { saveConversionTaskMutation } from "./conversionTaskStore.js";
+import { requestCancellationSql } from "./conversionTaskLease.js";
 
 export class PostgresStore extends JsonStore {
   private readonly postgres: AppConfig["metadata"]["postgres"];
   private postgresWriteChain: Promise<void> = Promise.resolve();
+  private postgresRevision: string | undefined;
 
   constructor(dataDir: string, config: AppConfig["metadata"]["postgres"]) {
     super(dataDir);
@@ -21,11 +26,12 @@ export class PostgresStore extends JsonStore {
     await this.sql(`CREATE TABLE IF NOT EXISTS bim_studio_state (
       id SMALLINT PRIMARY KEY CHECK (id = 1),
       document JSONB NOT NULL,
+      revision BIGINT NOT NULL DEFAULT 0,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
-    const encoded = (await this.sql("SELECT encode(convert_to(document::text, 'UTF8'), 'base64') FROM bim_studio_state WHERE id = 1", true)).trim();
-    if (encoded) {
-      this.document = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as DatabaseDocument;
+    await this.sql("ALTER TABLE bim_studio_state ADD COLUMN IF NOT EXISTS revision BIGINT NOT NULL DEFAULT 0");
+    await this.sql(CONVERSION_LEASE_SCHEMA);
+    if (await this.refreshPostgresState()) {
       this.document.publishedScenes ??= [];
       this.document.applications ??= [];
       this.document.publishedApplications ??= [];
@@ -53,18 +59,78 @@ export class PostgresStore extends JsonStore {
     this.normalizeAiDataBindingRuns();
     this.ensureExampleDataCatalog();
     this.sanitizeLegacyBranding();
-    await this.persist();
+    try { await this.persist(); }
+    catch (error) {
+      // 同时首次启动时，以已落库的初始文档为准，不能覆盖另一实例的初始化结果。
+      if (!(error instanceof MetadataRevisionConflict) || this.postgresRevision === undefined) throw error;
+    }
   }
 
   protected override async persistDocument(document: DatabaseDocument): Promise<void> {
-    const encoded = Buffer.from(JSON.stringify(document), "utf8").toString("base64");
+    return this.persistPostgresDocument(document);
+  }
+
+  override async saveConversionTask(task: ConversionTaskRecord, updates?: Partial<ModelRecord>, lease?: ConversionTaskLease): Promise<void> {
+    return this.runDocumentOperation(async () => {
+      const candidate = structuredClone(this.document);
+      if (!saveConversionTaskMutation(candidate, task, updates)) return;
+      const fence = leaseWriteFence(task.id, lease, ["failed", "cancelled"].includes(task.status) && !updates, task.status === "succeeded");
+      await this.persistPostgresDocument(candidate, fence);
+      this.document = candidate;
+    });
+  }
+
+  async refreshConversionTasks(): Promise<ConversionTaskRecord[]> {
+    return this.runDocumentOperation(async () => {
+      await this.refreshPostgresState();
+      const requested = new Set<string>(JSON.parse(await this.sql("SELECT COALESCE(json_agg(task_id), '[]'::json)::text FROM bim_studio_conversion_leases WHERE cancel_requested", true)));
+      return this.listConversionTasks().map(task => requested.has(task.id) && ["queued", "running"].includes(task.status)
+        ? { ...task, status: "cancelling" as const, message: "取消请求已送达执行器，等待资源退出" } : task);
+    });
+  }
+
+  async acquireConversionTaskLease(taskId: string, ownerId: string): Promise<ConversionTaskLease | undefined> {
+    return this.runDocumentOperation(async () => parseConversionLease(await this.sql(leaseSql(taskId, ownerId, "acquire"), true)));
+  }
+
+  async renewConversionTaskLease(lease: ConversionTaskLease): Promise<ConversionTaskLease | undefined> {
+    return this.runDocumentOperation(async () => parseConversionLease(await this.sql(leaseSql(lease.taskId, lease.ownerId, "renew", lease.epoch), true)));
+  }
+
+  async releaseConversionTaskLease(lease: ConversionTaskLease): Promise<void> {
+    return this.runDocumentOperation(async () => { await this.sql(leaseSql(lease.taskId, lease.ownerId, "release", lease.epoch), true); });
+  }
+
+  async activeConversionTaskLease(taskId: string): Promise<boolean> {
+    return (await this.sql(`SELECT NOT (${leaseWriteFence(taskId, undefined, true)})`, true)).trim() === "t";
+  }
+
+  async requestConversionCancellation(taskId: string): Promise<boolean> {
+    return (await this.sql(requestCancellationSql(taskId), true)).trim() === "t";
+  }
+
+  private async persistPostgresDocument(document: DatabaseDocument, fence?: string): Promise<void> {
+    // 版本必须绑定调用时的候选快照，不能等排队执行时换成较新的版本。
+    const expectedRevision = this.postgresRevision;
+    const statement = postgresStateWrite(document, expectedRevision, fence);
     const write = async () => {
-      await this.sql(`INSERT INTO bim_studio_state (id, document, updated_at)
-        VALUES (1, convert_from(decode('${encoded}', 'base64'), 'UTF8')::jsonb, NOW())
-        ON CONFLICT (id) DO UPDATE SET document = EXCLUDED.document, updated_at = NOW()`);
+      const revision = acceptedPostgresRevision(await this.sql(statement, true), expectedRevision);
+      if (revision === undefined) {
+        await this.refreshPostgresState();
+        throw new MetadataRevisionConflict();
+      }
+      this.postgresRevision = revision;
     };
     this.postgresWriteChain = this.postgresWriteChain.then(write, write);
     await this.postgresWriteChain;
+  }
+
+  private async refreshPostgresState(): Promise<boolean> {
+    const state = parsePostgresState(await this.sql(READ_POSTGRES_STATE, true));
+    if (!state) return false;
+    this.document = state.document;
+    this.postgresRevision = state.revision;
+    return true;
   }
 
   private async ensureDatabase(): Promise<void> {

@@ -1,5 +1,7 @@
 # Third-party notices
 
+The default champagne alpaca brand image (`apps/web/public/brand/logo-source.png`) was generated in the user's logo design session and explicitly selected for this project on 2026-09-21. It is a project brand asset, not a third-party stock image. Its original PNG is preserved; SVG, PNG, ICO and ICNS derivatives are generated locally. Provenance and SHA-256 are recorded in `docs/specs/product-alpaca-logo-2026-09-21.md`. No new library or font dependency is introduced.
+
 Native Windows process isolation uses `windows-sys` 0.61.2 (MIT OR Apache-2.0), copyright Microsoft Corporation, from https://github.com/microsoft/windows-rs. The existing transitive crate is also pinned directly for Job Object APIs. Retain the packaged license notices when distributing the native worker.
 
 This project uses open-source software. The lockfile is the authoritative inventory of exact versions. Run the following command before each release to audit production dependencies, including version-pinned manual evidence for packages with incomplete metadata:

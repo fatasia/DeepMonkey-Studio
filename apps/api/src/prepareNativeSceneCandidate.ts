@@ -10,7 +10,7 @@ import { compileNativeSceneCandidate } from "./nativeSceneCandidateCompiler.js";
 
 /** 冻结输入后只读取私有内容地址；窗口验证与发布提交由上层分别执行。 */
 export async function prepareNativeSceneCandidate(options: {
-  store: MetadataStore; objects: ObjectStore; dataDir: string; scene: SceneSnapshot; signal?: AbortSignal;
+  store: MetadataStore; objects: ObjectStore; dataDir: string; scene: SceneSnapshot; signal?: AbortSignal; nativeExecutable?:string;
 }, compile = compileNativeSceneCandidate) {
   const scene = structuredClone(options.scene), signal = options.signal;
   signal?.throwIfAborted();
@@ -33,7 +33,12 @@ export async function prepareNativeSceneCandidate(options: {
     models.set(assetId, await readFrozenResource(options.objects, resource, signal));
   }
   signal?.throwIfAborted();
-  const compiled = await compile({ scene, models, ...(signal ? { signal } : {}) });
+  const hdrResource=scene.environment?.environmentMapUrl ? capture.resources.find(resource=>resource.sourceUrl===scene.environment!.environmentMapUrl) : undefined;
+  if (scene.environment?.environmentMapUrl && !hdrResource) throw new Error("HDR 环境缺少冻结来源资源");
+  if (hdrResource && (hdrResource.bytes>32*1024**2 || totalBytes+hdrResource.bytes>256*1024**2)) throw new Error("HDR 或场景总字节超出预算");
+  const hdrAsset=capture.inputs.project.assets?.find(asset=>asset.url===scene.environment?.environmentMapUrl);
+  const hdrSource=hdrResource ? {bytes:await readFrozenResource(options.objects,hdrResource,signal),license:hdrAsset?.libraryOrigin?.license ?? "Project-provided HDR asset; redistribution rights remain with its owner"} : undefined;
+  const compiled = await compile({ scene, models, ...(hdrSource ? {hdrSource} : {}), ...(options.nativeExecutable ? {nativeExecutable:options.nativeExecutable} : {}), ...(signal ? { signal } : {}) });
   signal?.throwIfAborted();
   if (!scenePublicationJsonEqual(options.store.getScene(scene.projectId, scene.id), scene)) {
     throw new Error("场景在编译期间已变化，请重新验证");

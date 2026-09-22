@@ -88,6 +88,18 @@ describe("scene publication resource capture integration", () => {
     await expect(captureScenePublicationDependencies(f.input)).rejects.toThrow(/内容与记录不符/);
   });
 
+  it("captures canonical bundled showcase resources without requiring a project upload", async () => {
+    const f = await setup();
+    f.scene.dashboard!.widgets[0]!.imageUrl = undefined;
+    f.scene.dashboard!.widgets[0]!.type = "video";
+    f.scene.dashboard!.widgets[0]!.videoUrl = "/showcase/line-loop.mp4";
+    await f.store.edit(document => { document.projects.find(project => project.id === "default")!.assets = []; });
+    const captured = await captureScenePublicationDependencies(f.input);
+    expect(captured.resources).toHaveLength(1);
+    expect(captured.resources[0]!.sourceUrl).toBe("/showcase/line-loop.mp4");
+    expect(captured.resources[0]!.bytes).toBeGreaterThan(0);
+  });
+
   it("does not target a newer publication's worker after delayed capture finishes", async () => {
     const stop = vi.fn().mockResolvedValue(undefined), f = await setup(stop);
     const old = await f.store.savePublication({ projectId: "default", sceneId: "capture", name: "Old", snapshot: f.scene, publishedAt: f.scene.updatedAt });

@@ -104,6 +104,16 @@ function captureOptions(overrides: Partial<CaptureOptions>): CaptureOptions {
 }
 
 describe("dashboard measured layout", () => {
+  it("passes trusted table page/sort intent to the host and binds the captured view", async () => {
+    const widget = valueWidget({ widget: { type: "table", title: "机组", key: "units", unit: "" } });
+    const frozen = await candidate(widget);
+    const table = { page: 1, scrollLeft: 0, sort: { column: "power", direction: "desc" as const } };
+    const capture = vi.fn(async (_request: import("./dashboardMeasuredLayout.js").DashboardLayoutCaptureRequest) => captureOf(measuredLayout(), table));
+    const result = await captureDashboardMeasuredLayout({ candidate: frozen, nodeId: widget.id, locale: "zh-CN", table, host: host({ capture }) });
+    expect(capture.mock.calls[0]?.[0]).toMatchObject({ table });
+    expect(result.table).toEqual(table);
+    await expect(captureDashboardMeasuredLayout({ candidate: await candidate(), nodeId: "widget-value", locale: "zh-CN", table, host: host() })).rejects.toThrow("Only table");
+  });
   it("derives the shared frozen data request id used by the production closure", () => {
     expect(dashboardDataRequestId("widget-value")).toBe(`data.${createHash("sha256").update("widget-value").digest("hex")}`);
   });

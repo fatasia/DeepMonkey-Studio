@@ -25,6 +25,22 @@ it("uses configured frozen font order and does not mutate the freeze data", asyn
   expect(value.input.data.chart.layout).toEqual({ textBoxes: [], backgrounds: [] });
   expect(value.source).toEqual(before);
 });
+it.each(["value", "table"])("connects measured %s content instead of leaving a chrome-only package", async type => {
+  const value = fixture(); value.node.widget.type = type;
+  value.capture.mockResolvedValue({ protocol: "dashboard-measured-layout-v1", layout: { textBoxes: [], backgrounds: [] },
+    ...(type === "table" ? { table: { page: 0, scrollLeft: 0 } } : {}) });
+  await measureFrozenDashboardCharts(value.source, value.input, value.host);
+  expect(value.capture).toHaveBeenCalledOnce();
+  expect(value.input.data.chart.layout).toEqual({ textBoxes: [], backgrounds: [] });
+  if (type === "table") expect(value.input.data.chart.table).toEqual({ page: 0, scrollLeft: 0 });
+});
+it("does not install a table state onto a value widget", async () => {
+  const value = fixture(); value.node.widget.type = "value";
+  value.capture.mockResolvedValue({ protocol: "dashboard-measured-layout-v1", layout: { textBoxes: [], backgrounds: [] },
+    table: { page: 0, scrollLeft: 0 } });
+  await expect(measureFrozenDashboardCharts(value.source, value.input, value.host)).rejects.toThrow("Only table widgets");
+  expect(value.input.data.chart).not.toHaveProperty("layout");
+});
 it("rejects a late aborted capture without installing its layout", async () => {
   const value = fixture(), controller = new AbortController();
   value.capture.mockImplementation(async () => { controller.abort(); return { protocol: "dashboard-measured-layout-v1", layout: { textBoxes: [], backgrounds: [] } }; });

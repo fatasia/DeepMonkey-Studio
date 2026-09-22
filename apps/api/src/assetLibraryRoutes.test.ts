@@ -56,6 +56,23 @@ describe("asset library routes", () => {
     expect(repeated.json()).toMatchObject({ reused: true, model: { id: imported.json().model.id } });
     expect(queued).toHaveLength(1);
 
+    const nature = await app.inject({ method: "GET", url: "/api/asset-library?q=fence%20gate&dimension=3d&pageSize=5" });
+    expect(nature.statusCode).toBe(200);
+    expect(nature.json().items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "kenney.nature-kit.fence_gate", category: "环境搭建", publicationStatus: "published" }),
+    ]));
+    const natureImport = await app.inject({ method: "POST", url: "/api/projects/default/asset-library/kenney.nature-kit.fence_gate/import" });
+    expect(natureImport.statusCode).toBe(201);
+    expect(natureImport.json()).toMatchObject({ reused: false, model: { format: "glb", libraryOrigin: { itemId: "kenney.nature-kit.fence_gate", attribution: { author: "Kenney" } } } });
+    expect(queued).toHaveLength(2);
+    const natureBytes = await readFile(queued[1]!.sourcePath);
+    expect(natureBytes.readUInt32LE(0)).toBe(0x46546c67);
+    expect(createHash("sha256").update(natureBytes).digest("hex")).toBe(natureImport.json().model.libraryOrigin.contentHash);
+    const natureRepeat = await app.inject({ method: "POST", url: "/api/projects/default/asset-library/kenney.nature-kit.fence_gate/import" });
+    expect(natureRepeat.statusCode).toBe(200);
+    expect(natureRepeat.json()).toMatchObject({ reused: true, model: { id: natureImport.json().model.id } });
+    expect(queued).toHaveLength(2);
+
     const materialList = await app.inject({ method: "GET", url: "/api/asset-library?dimension=material" });
     expect(materialList.json()).toMatchObject({ total: 1, items: [{ id: "material-steel", mapKinds: ["base-color", "normal", "roughness"] }] });
     const materialMaps = await app.inject({ method: "GET", url: "/api/asset-library/items/material-steel/maps" });

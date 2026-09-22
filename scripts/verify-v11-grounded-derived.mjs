@@ -1,0 +1,20 @@
+import { createHash } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { createRequire } from "node:module";
+
+const root = path.resolve(import.meta.dirname, "..");
+const outputDir = path.join(root, "test-output", "de26-v11-nature-review-20260918", "derived");
+const input = path.join(outputDir, "fence_gate-grounded.glb");
+const sidecar = path.join(outputDir, "fence_gate-grounded.json");
+const requireWeb = createRequire(path.resolve(root, "apps/web/package.json"));
+const { NodeIO } = requireWeb("@gltf-transform/core");
+const bytes = await readFile(input);
+const document = await new NodeIO().readBinary(bytes);
+const positions = document.getRoot().listMeshes().flatMap((mesh) => mesh.listPrimitives().map((primitive) => primitive.getAttribute("POSITION")).filter(Boolean));
+const ys = positions.flatMap((accessor) => Array.from(accessor.getArray() ?? []).filter((_, index) => index % 3 === 1));
+const result = { schemaVersion: 1, artifact: path.relative(root, input), sha256: createHash("sha256").update(bytes).digest("hex"), bytes: bytes.byteLength, positionAccessors: positions.length, rawMinY: Math.min(...ys), rawMaxY: Math.max(...ys), grounded: Math.min(...ys) >= -0.001, sidecar: JSON.parse(await readFile(sidecar, "utf8")) };
+if (!result.grounded || result.sha256 !== result.sidecar.outputSha256) throw new Error("Grounded derived artifact failed hash or ground gate");
+const evidence = path.join(root, "test-output", "de26-v11-nature-review-20260918", "grounded-derived-evidence.json");
+await writeFile(evidence, `${JSON.stringify(result, null, 2)}\n`);
+console.log(JSON.stringify({ evidence, grounded: result.grounded, rawMinY: result.rawMinY, sha256: result.sha256 }));

@@ -2,6 +2,21 @@
 
 API 可从服务端配置注册 Dashboard 候选和 Windows 单 EXE、ZIP、DMDA 下载。没有配置时不注册这些入口；配置错误会中止启动。
 
+2026-09-18：可选 `webStatic` 配置现已接入正式启动。API `build`/`predev` 同时构建 `dist/dashboard-static/index.html` 及运行时资源，下载使用候选冻结的历史发布和现有对象存储。配置指向不存在的产物或许可文件时启动失败。
+
+```json
+{
+  "webStatic": {
+    "root": "D:/deployment/api/dist/dashboard-static",
+    "licensedFonts": [
+      { "path": "D:/deployment/fonts/NotoSansCJKsc-Regular.otf", "licensePath": "D:/deployment/fonts/OFL.txt" }
+    ]
+  }
+}
+```
+
+把该字段合入下方部署 JSON。字体文件必须与冻结资源哈希匹配，许可文本随包交付；无字体资源可用空数组。通过相同候选路径的 `web-package` 下载 `.web.zip`，解压后以 HTTP 静态托管访问。未配置时不注册该下载格式。生成包拒绝链接目录、超预算文件和读取期间的文件变化。
+
 从工作区根目录按依赖顺序构建 API：
 
 ```powershell

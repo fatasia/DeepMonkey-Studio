@@ -8,6 +8,8 @@ import type { SceneSnapshot, ScenePublicationCompatibilityReport, PublicationCap
 export interface NativeSceneCandidateInput {
   scene: SceneSnapshot;
   models: ReadonlyMap<string, Uint8Array>;
+  hdrSource?:{bytes:Uint8Array;license:string};
+  nativeExecutable?:string;
   packageId?: string;
   packageVersion?: string;
   maxSourceBytes?: number;
@@ -66,11 +68,13 @@ async function compileCandidate(input: NativeSceneCandidateInput, directory: URL
   if (manifest.schemaVersion !== 1 || manifest.compilerSha256 !== compilerSha256) throw new Error("Native 候选编译器内容校验失败");
   input.signal?.throwIfAborted();
   // 校验后从原字节启动，避免并行构建替换模块；sharp 由固定 API 路径解析。
-  const sharpUrl = pathToFileURL(createRequire(import.meta.url).resolve("sharp"));
-  const source = module.toString("utf8").replace(/from "sharp"/g, `from ${JSON.stringify(sharpUrl.href)}`);
+  const require = createRequire(import.meta.url);
+  const source = module.toString("utf8").replace(/from "(sharp|@gltf-transform\/core|@gltf-transform\/extensions|draco3dgltf)"/g,
+    (_match, name: string) => `from ${JSON.stringify(pathToFileURL(require.resolve(name)).href)}`);
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`), {
       workerData: { scene, models, packageId: input.packageId, packageVersion: input.packageVersion, maxSourceBytes,
+        hdrSource:input.hdrSource,nativeExecutable:input.nativeExecutable,
         ...(assessment ? { assessmentOnly: true, ...assessment } : {}) },
       // 自包含产物不继承开发进程的 tsx/watch loader 或条件参数。
       execArgv: [],

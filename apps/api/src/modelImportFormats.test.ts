@@ -19,7 +19,9 @@ describe("available model inputs",()=>{
     expect(actual).toEqual(expect.arrayContaining(["glb","gltf","obj","step","stp","ifc","usd","urdf"]));
     for(const format of ["dwg","rvt","jt","x_t","x_b"])expect(actual).not.toContain(format);
   });
-  it("includes configured external providers without changing converter cards",()=>{
-    expect(formats({dwg:{command:"dwg"},rvt:{command:"rvt"},industrialCad:{command:"cad"}})).toEqual(expect.arrayContaining(["dwg","rvt","x_t","x_b","jt"]));
+  it("retains legacy DWG/Revit providers but never enables industrial formats through an external command",()=>{
+    const actual=formats({dwg:{command:"dwg"},rvt:{command:"rvt"},industrialCad:{command:"cad"}});
+    expect(actual).toEqual(expect.arrayContaining(["dwg","rvt"]));
+    for(const format of ["x_t","x_b","jt"])expect(actual).not.toContain(format);
   });
 });

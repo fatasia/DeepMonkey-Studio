@@ -32,6 +32,7 @@ const NODE_TEXT_STYLES = {
   "mc-bar": { fontSize: 18, lineHeight: 27 },
   "mc-text": { fontSize: 22, lineHeight: 33 },
   "mc-kpi": { fontSize: 20, lineHeight: 30 },
+  "mc-table": { fontSize: 14, lineHeight: 21 },
 } as const;
 
 /** 中文验收字体绑定：多节点共享同一套 OFL 冻结字节，textStyle 是栅格基线,实测权重由采集宿主报告。 */
@@ -68,6 +69,7 @@ export async function dashboardMulticomponentFixture(directory: string, publicat
         { nodeId: "mc-bar", fonts: ["notocjk-400", "notocjk-700"], textStyle: textStyle("mc-bar", 400) },
         { nodeId: "mc-text", fonts: ["notocjk-400"], textStyle: textStyle("mc-text", 400) },
         { nodeId: "mc-kpi", fonts: ["notocjk-400", "notocjk-700"], textStyle: textStyle("mc-kpi", 400) },
+        { nodeId: "mc-table", fonts: ["notocjk-400", "notocjk-700"], textStyle: textStyle("mc-table", 400) },
       ],
     },
   };

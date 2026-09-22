@@ -2,11 +2,15 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseDeepRuntimePackage, serializeDeepRuntimePackage } from "@bim-studio/deep-engine/runtime-package";
 import { createDashboardOfflineArchive, dashboardArchiveCanonicalSha256 } from "./dashboardOfflineArchive.js";
 import { serializeDashboardOfflineArchive } from "./dashboardOfflineArchiveBytes.js";
 import { createDashboardStandaloneExecutable } from "./dashboardStandaloneExecutable.js";
+
+// 本文件验证包边界；真实 PE 资源读回由 nativeExecutableBranding.test.ts 覆盖。
+const brand = vi.hoisted(() => vi.fn(async (bytes: Uint8Array) => Buffer.from(bytes)));
+vi.mock("./nativeExecutableBranding.js", () => ({ applyNativeExecutableBranding: brand }));
 
 const sha = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const directories: string[] = [];
@@ -30,6 +34,18 @@ async function fixture() {
 }
 
 describe("Dashboard standalone executable", () => {
+  it("applies the current product icon to cached candidates and preserves explicit client icons", async () => {
+    const input = await fixture();
+    const currentIcon = await readFile(new URL("../../desktop/src-tauri/icons/icon.ico", import.meta.url));
+    await createDashboardStandaloneExecutable(input.archive, input.executable);
+    expect(brand).toHaveBeenLastCalledWith(input.pe, { iconIco: currentIcon }, undefined);
+    await createDashboardStandaloneExecutable(input.archive, input.executable, { branding: { applicationName: "Factory" } });
+    expect(brand).toHaveBeenLastCalledWith(input.pe, { applicationName: "Factory", iconIco: currentIcon }, undefined);
+    const custom = new Uint8Array([1, 2, 3]);
+    await createDashboardStandaloneExecutable(input.archive, input.executable, { branding: { iconIco: custom } });
+    expect(brand).toHaveBeenLastCalledWith(input.pe, { iconIco: custom }, undefined);
+    expect(await readFile(input.executable)).toEqual(input.pe);
+  });
   it("checks the deployed hash against the exact executable bytes used for packaging", async () => {
     const input = await fixture();
     const options = { expectedSha256: sha(input.pe) };

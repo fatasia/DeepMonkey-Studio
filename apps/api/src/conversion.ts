@@ -9,18 +9,22 @@ import { generateGlbLods, optimizeNativeGlb } from "./glbOptimizer.js";
 import { convertIgesToGlb, convertStepToGlb } from "./stepConverter.js";
 import { auditConverterOutput } from "./converterOutputAudit.js";
 import { convertXtTextSubsetToGlb } from "./xtTextSubsetConverter.js";
-import { writeJtInspectionArtifacts } from "./jtInspection.js";
-import { convertJtLod0ToGlb } from "./jtGlbConverter.js";
+import { runBuiltinJtWorker } from "./builtinJtWorkerExecutor.js";
 import { writeXtTextInspectionArtifact } from "./xtTextInspection.js";
 import { RobotSourceProvider } from "./RobotSourceProvider.js";
+import { ConversionTaskService } from "./conversionTasks.js";
+import { createModelConversionRegistration, submitModelConversion } from "./modelConversionAdapter.js";
 
-interface ConversionContext {
+export interface ConversionContext {
   model: ModelRecord;
   sourcePath: string;
   modelDir: string;
+  signal?: AbortSignal;
+  registerResourceExit?: ((exit: Promise<void>) => void) | undefined;
+  workerLimits?: { timeoutMs: number; maxMemoryMb: number; maxCpuPercent: number };
 }
 
-interface ConversionProvider {
+export interface ConversionProvider {
   readonly supportsGeneralImport?: boolean;
   convert(context: ConversionContext): Promise<void>;
 }
@@ -35,19 +39,34 @@ function assetUrl(projectId: string, modelId: string, fileName: string): string 
 }
 
 export class ConversionQueue {
-  private readonly pending: ConversionContext[] = [];
-  private running = false;
   private readonly providers: Record<ModelFormat, ConversionProvider>;
+  readonly tasks: ConversionTaskService;
 
   constructor(
     private readonly store: MetadataStore,
     config: AppConfig,
-    objects: ObjectStore
+    objects: ObjectStore,
+    tasks?: ConversionTaskService,
   ) {
-    const industrialCadProvider = config.industrialCad.command
-      ? new CommandProvider(store, objects, config.industrialCad, [{ fileName: "geometry.glb", viewerKind: "gltf" }])
-      : undefined;
-    this.providers = {
+    this.providers = createProviders(store, config, objects);
+    this.tasks = tasks ?? new ConversionTaskService([], undefined, undefined, store);
+    for (const format of Object.keys(this.providers) as ModelFormat[]) {
+      this.tasks.register(createModelConversionRegistration(format, store, objects, config,
+        (stagedStore, stagedObjects) => createProviders(stagedStore, config, stagedObjects)[format]));
+    }
+  }
+
+  listImportFormats(): ModelFormat[] {
+    return (Object.entries(this.providers) as [ModelFormat, ConversionProvider][]).filter(([,provider]) => provider.supportsGeneralImport !== false).map(([format]) => format);
+  }
+
+  async enqueue(context: ConversionContext): Promise<string> {
+    return submitModelConversion(this.tasks, context);
+  }
+}
+
+function createProviders(store: MetadataStore, config: AppConfig, objects: ObjectStore): Record<ModelFormat, ConversionProvider> {
+    return {
       ifc: new DirectProvider(store, objects, "ifc"),
       gltf: new DirectProvider(store, objects, "gltf"),
       glb: new DirectProvider(store, objects, "gltf"),
@@ -68,11 +87,9 @@ export class ConversionQueue {
       rvt: config.rvt.command
         ? new CommandProvider(store, objects, config.rvt, [])
         : new MissingProvider(store, "未配置 Revit Agent。请在安装 Revit 的 Windows 转换机上配置批处理程序。"),
-      x_t: new XtTextSubsetProvider(store, objects, industrialCadProvider),
-      x_b: industrialCadProvider
-        ? industrialCadProvider
-        : new MissingProvider(store, industrialCadUnavailableMessage("Parasolid X_B")),
-      jt: new JtStructureProvider(store, objects, industrialCadProvider),
+      x_t: new XtTextSubsetProvider(store, objects),
+      x_b: new MissingProvider(store, industrialCadUnavailableMessage("Parasolid X_B")),
+      jt: new JtStructureProvider(store, objects),
       // Three.js 0.185 的官方 USDLoader 同时解析 USDA、USDC 与 USDZ。
       // 原文件直接作为唯一运行资产，避免先预览源格式、再切换 GLB 造成对象标识漂移。
       usd: new DirectProvider(store, objects, "usd"),
@@ -82,38 +99,6 @@ export class ConversionQueue {
       urdf: new RobotSourceProvider(store, objects),
       zip: new RobotSourceProvider(store, objects),
     };
-  }
-
-  listImportFormats(): ModelFormat[] {
-    return (Object.entries(this.providers) as [ModelFormat, ConversionProvider][]).filter(([,provider]) => provider.supportsGeneralImport !== false).map(([format]) => format);
-  }
-
-  enqueue(context: ConversionContext): void {
-    this.pending.push(context);
-    void this.drain();
-  }
-
-  private async drain(): Promise<void> {
-    if (this.running) return;
-    this.running = true;
-    try {
-      while (this.pending.length > 0) {
-        const context = this.pending.shift();
-        if (!context) continue;
-        try {
-          await this.providers[context.model.format].convert(context);
-        } catch (error) {
-          await this.store.updateModel(context.model.projectId, context.model.id, {
-            status: "failed",
-            progress: 100,
-            message: error instanceof Error ? error.message : "转换失败"
-          });
-        }
-      }
-    } finally {
-      this.running = false;
-    }
-  }
 }
 
 class PreciseCadProvider implements ConversionProvider {
@@ -291,11 +276,10 @@ class CommandProvider implements ConversionProvider {
 }
 
 class XtTextSubsetProvider implements ConversionProvider {
-  get supportsGeneralImport() { return Boolean(this.fallback); }
+  readonly supportsGeneralImport = false;
   constructor(
     private readonly store: MetadataStore,
     private readonly objects: ObjectStore,
-    private readonly fallback?: ConversionProvider,
   ) {}
 
   async convert({ model, modelDir, sourcePath }: ConversionContext): Promise<void> {
@@ -308,15 +292,6 @@ class XtTextSubsetProvider implements ConversionProvider {
     const inspection = await writeXtTextInspectionArtifact(sourcePath, outputDir);
     const inspectionUrl = assetUrl(model.projectId, model.id, "output/inspection.json");
     if (!inspection.geometryParsed) {
-      if (inspection.status !== "invalid" && this.fallback) {
-        await this.store.updateModel(model.projectId, model.id, {
-          status: "processing",
-          progress: 40,
-          message: "X_T 文件结构已验证，正在转交工业转换器生成可交互几何",
-        });
-        await this.fallback.convert({ model, modelDir, sourcePath });
-        return;
-      }
       const manifest: ModelManifest = {
         schemaVersion: 1,
         modelId: model.id,
@@ -367,21 +342,20 @@ class XtTextSubsetProvider implements ConversionProvider {
 }
 
 class JtStructureProvider implements ConversionProvider {
-  get supportsGeneralImport() { return Boolean(this.fallback); }
+  readonly supportsGeneralImport = false;
   constructor(
     private readonly store: MetadataStore,
     private readonly objects: ObjectStore,
-    private readonly fallback?: ConversionProvider,
   ) {}
 
-  async convert({ model, modelDir, sourcePath }: ConversionContext): Promise<void> {
+  async convert({ model, modelDir, sourcePath, signal, registerResourceExit, workerLimits }: ConversionContext): Promise<void> {
     const outputDir = path.join(modelDir, "output");
     await this.store.updateModel(model.projectId, model.id, {
       status: "processing",
       progress: 10,
       message: "正在读取 JT 目录、装配层级、属性和材质",
     });
-    const { inspection, document } = await writeJtInspectionArtifacts(sourcePath, outputDir);
+    const { inspection, result } = await runBuiltinJtWorker({ sourcePath, outputDir, sourceName: model.name }, { signal, registerResourceExit, limits: workerLimits });
     const inspectionUrl = assetUrl(model.projectId, model.id, "output/inspection.json");
     const sidecarManifest: ModelManifest = {
       schemaVersion: 1,
@@ -393,17 +367,7 @@ class JtStructureProvider implements ConversionProvider {
       inspectionUrl,
       createdAt: new Date().toISOString(),
     };
-    const result = await convertJtLod0ToGlb(document, outputDir, model.name, inspection.materials);
     if (!result) {
-      if (this.fallback) {
-        await this.store.updateModel(model.projectId, model.id, {
-          status: "processing",
-          progress: 40,
-          message: "JT 装配结构已读取，正在转交工业转换器生成可交互几何",
-        });
-        await this.fallback.convert({ model, modelDir, sourcePath });
-        return;
-      }
       await writeManifest(modelDir, sidecarManifest);
       await this.objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
       await this.store.updateModel(model.projectId, model.id, {
@@ -439,7 +403,7 @@ class JtStructureProvider implements ConversionProvider {
 }
 
 function industrialCadUnavailableMessage(format: string): string {
-  return `未配置 ${format} 工业转换器。请配置 INDUSTRIAL_CAD_CONVERTER_COMMAND；正式环境建议使用 HOOPS Exchange、CAD Exchanger 或 Siemens 组件。`;
+  return `${format} 内置离线解析 profile 尚未就绪；当前仅保留源文件，未生成可发布几何。`;
 }
 
 function commandProgressMessage(model: ModelRecord): string {

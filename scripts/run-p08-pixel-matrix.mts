@@ -12,7 +12,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const repo = resolve(import.meta.dirname, "..");
-const output = resolve(repo, "test-output/p08-matrix-20260918");
+const output = resolve(process.env.DEEP_P08_OUTPUT ?? resolve(repo, "test-output/p08-matrix-20260918"));
 const baseFixture = resolve(repo, "packages/deep-engine/fixtures/dashboard-composition-v1.json");
 const chromePath = process.env.BIM_STUDIO_CHROME_PATH ?? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 const LOGICAL = { width: 960, height: 640 };

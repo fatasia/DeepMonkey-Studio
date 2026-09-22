@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const usage = "node scripts/verify-dashboard-production-build.mjs <native.exe> <device-sha256>";
 const [nativeExecutable, device, ...rest] = process.argv.slice(2);
@@ -20,18 +21,19 @@ else {
   try {
     const file = path.join(directory, "deployment.json");
     await writeFile(file, JSON.stringify({ nativeExecutable, expectedDeviceFingerprintSha256: device,
-      configuration: { locale: "zh-CN", packageVersion: "1.0.0" } }));
+      configuration: { locale: "zh-CN", packageVersion: "1.0.0" },
+      webStatic: { root: fileURLToPath(new URL("../apps/api/dist/dashboard-static", import.meta.url)), licensedFonts: [] } }));
     const store = new JsonStore(path.join(directory, "metadata")); await store.init();
     const runtime = await registerConfiguredDashboardNative(app, {
       store, objects: new LocalObjectStore(path.join(directory, "objects")), config: loadConfig(),
     }, file);
     assert(runtime);
     await app.ready();
-    for (const endpoint of ["standalone-executable", "portable-zip", "offline-archive"]) {
+    for (const endpoint of ["standalone-executable", "portable-zip", "offline-archive", "web-package"]) {
       const response = await app.inject({ method: "GET", url: `/api/projects/test/applications/test/dashboard-candidates/test/${endpoint}` });
       assert.equal(response.statusCode, 401, `${endpoint} must be registered and require authentication`);
     }
-    console.log(JSON.stringify({ status: "passed", productionImports: true, configuredRoutes: 3, nativeWindowTested: false }));
+    console.log(JSON.stringify({ status: "passed", productionImports: true, configuredRoutes: 4, nativeWindowTested: false }));
   } finally {
     await app.close();
     await rm(directory, { recursive: true, force: true });

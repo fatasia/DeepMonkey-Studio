@@ -36,6 +36,16 @@ export function validateSceneClientArchiveManifest(manifest, { expectedTarget } 
   validateSceneClientArchivePaths(paths);
   check(paths.every((path, index) => index === 0 || paths[index - 1] < path), "文件路径未排序");
   check(required.every(path => paths.includes(path)), "缺少必要文本文件");
+  if (manifest.branding !== undefined) {
+    const branding = manifest.branding;
+    check(object(branding) && Object.keys(branding).length > 0
+      && Object.keys(branding).every(key => ["applicationName", "iconPath"].includes(key)), "branding 字段无效");
+    check(branding.applicationName === undefined || (nonblank(branding.applicationName)
+      && branding.applicationName === branding.applicationName.trim() && branding.applicationName.length <= 80
+      && !/[\u0000-\u001f\u007f]/.test(branding.applicationName)), "branding.applicationName 无效");
+    check(branding.iconPath === undefined || (["branding/icon.png", "branding/icon.ico"].includes(branding.iconPath)
+      && paths.includes(branding.iconPath)), "branding.iconPath 缺失或无效");
+  }
   check(object(manifest.capabilities), "capabilities 缺失");
   if (manifest.target === "deep-native") {
     const native = manifest.nativeRuntime;

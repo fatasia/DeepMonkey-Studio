@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { compiledBackgroundBindings } from "./dashboardBackgroundEvidence.mjs";
+import { tableContentIds } from "./dashboardTableContent.mjs";
 
 /** Bind producer receipts to the exact atlas bytes emitted by this compilation. */
 export function dashboardCompiledWindowEvidence(result, input, verifyComposition) {
@@ -14,9 +15,9 @@ export function dashboardCompiledWindowEvidence(result, input, verifyComposition
       if (!runtime) throw new Error("Compiled node binding is missing from the runtime package");
       nodeBindings.push({ nodeId: binding.nodeId, runtimeNodeId, pageId: binding.runtimePageId,
         staticResourceId: runtime.deep2d });
-      const content = payloads[runtime.deep2d];
+      const contents = [...new Set([runtime.deep2d, ...tableContentIds(dashboard, runtimeNodeId) ?? []])].map(id => payloads[id]).filter(Boolean);
       for (const evidence of result.producerEvidence.filter(value => value.nodeId === binding.nodeId)) {
-        const atlas = content?.atlases?.find(value => value.id === evidence.atlasId);
+        const atlas = contents.flatMap(content => content.atlases ?? []).find(value => value.id === evidence.atlasId);
         if (!atlas) continue;
         const pixelSha256 = createHash("sha256").update(Buffer.from(atlas.dataBase64, "base64")).digest("hex");
         if (pixelSha256 !== evidence.pixelSha256) throw new Error("Producer evidence does not match compiled atlas bytes");

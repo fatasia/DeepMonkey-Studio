@@ -93,6 +93,7 @@ export class JsonStore extends JsonStoreFoundation implements MetadataStore {
       const originalLength = candidate.projects.length;
       const endpointIds = new Set((candidate.projects.find((project) => project.id === projectId)?.dataEndpoints ?? []).map((endpoint) => endpoint.id));
       candidate.projects = candidate.projects.filter((item) => item.id !== projectId);
+      candidate.conversionTasks = (candidate.conversionTasks ?? []).filter(item => item.projectId !== projectId);
       if (candidate.projects.length === originalLength) return unchanged(false);
       candidate.scenes = candidate.scenes.filter((scene) => scene.projectId !== projectId);
       candidate.publishedScenes = (candidate.publishedScenes ?? []).filter((scene) => scene.projectId !== projectId);

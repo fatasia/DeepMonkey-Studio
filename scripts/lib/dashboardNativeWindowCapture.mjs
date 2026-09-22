@@ -4,7 +4,7 @@ import path from "node:path";
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-const CAPTURE_PS1 = `param([int]$ProcId,[string]$OutPath,[int]$ClientWidth=0,[int]$ClientHeight=0,[int]$ClickX=-1,[int]$ClickY=-1,[int]$HoverOnly=0,[int]$ArrowDown=0,[string]$ReportPath='', [int]$CancelReport=0,[string]$PreClicks='')
+const CAPTURE_PS1 = `param([int]$ProcId,[string]$OutPath,[int]$ClientWidth=0,[int]$ClientHeight=0,[int]$ClickX=-1,[int]$ClickY=-1,[int]$HoverOnly=0,[int]$ArrowDown=0,[string]$ReportPath='', [int]$CancelReport=0,[string]$PreClicks='',[int]$MinContentColors=8)
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Drawing
 Add-Type @"
@@ -232,7 +232,7 @@ function Measure-ContentColors($image) {
   return $colors.Count
 }
 $contentColors=Measure-ContentColors $bmp
-if (-not $printed -or $contentColors -lt 8) {
+if (-not $printed -or $contentColors -lt $MinContentColors) {
   Start-Sleep -Milliseconds 800
   if([NativeWinCapture]::GetForegroundWindow() -ne $hwnd){$bmp.Dispose();throw 'Native window is not foreground; refusing unrelated screen capture'}
   $g2 = [System.Drawing.Graphics]::FromImage($bmp)
@@ -240,7 +240,7 @@ if (-not $printed -or $contentColors -lt 8) {
   $g2.Dispose()
   $contentColors=Measure-ContentColors $bmp
 }
-if($contentColors -lt 8){$bmp.Dispose();throw 'Native client content was not visible in captured compositor pixels'}
+if($contentColors -lt $MinContentColors){$bmp.Dispose();throw 'Native client content was not visible in captured compositor pixels'}
 $bmp.Save($OutPath, [System.Drawing.Imaging.ImageFormat]::Png)
 $bmp.Dispose()
 $title=New-Object System.Text.StringBuilder(512)
@@ -267,6 +267,8 @@ Write-Output "saved $OutPath $($w)x$($h) printed=$printed contentColors=$content
 export async function captureNativePlayerWindow({ label, executable, args, env, outputDirectory, presentedMarker, timeoutMs = 30_000,
   clientSize = /** @type {number[] | undefined} */ (undefined), clientClick = /** @type {number[] | undefined} */ (undefined), hoverOnly = false, arrowDown = false,
   reportPath = undefined, cancelReport = false, preClicks = [] }) {
+  const minimumContentColors = Number(process.env.DEEP_NATIVE_CAPTURE_MIN_COLORS ?? 8);
+  if (!Number.isSafeInteger(minimumContentColors) || minimumContentColors < 2 || minimumContentColors > 256) throw new Error("Invalid native capture color threshold");
   if (preClicks.some(point => !clientSize || point.length !== 2 || point.some((value, index) => !Number.isSafeInteger(value) || value < 0 || value >= clientSize[index]))) throw new Error("Invalid preceding click");
   if (clientClick && (!clientSize || clientClick.length !== 2 || !clientClick.every((value, index) =>
     Number.isSafeInteger(value) && value >= 0 && value < clientSize[index]))) throw new Error("Invalid client click");
@@ -298,6 +300,7 @@ export async function captureNativePlayerWindow({ label, executable, args, env, 
       ...(clientClick ? ["-ClickX", String(clientClick[0]), "-ClickY", String(clientClick[1])] : []),
       "-HoverOnly", hoverOnly ? "1" : "0", "-ArrowDown", arrowDown ? "1" : "0",
       ...(reportPath ? ["-ReportPath", reportPath] : []), "-CancelReport", cancelReport ? "1" : "0",
+      "-MinContentColors", String(minimumContentColors),
       ...(preClicks.length ? ["-PreClicks", preClicks.map(point => point.join(",")).join(";")] : [])], { windowsHide: true, encoding: "utf8" });
     let captureOutput = "";
     capture.stdout.on("data", bytes => { captureOutput += bytes.toString(); });

@@ -2,7 +2,9 @@ import {evaluateCurve,evaluateSurface} from './3dm-nurbs-parameters.mjs';
 import {provePlaneTrimIdentity} from './3dm-source-curve-identity.mts';
 import {proveSourceIsocurve} from './3dm-source-isocurve.mts';
 import {provePlaneC3Map} from './3dm-plane-c3-map.mts';
+import {proveReconstructedPairedBoundary} from './3dm-paired-boundary-map.mts';
 export function proveSourceBoundary(ir:any,part:any,edge:number){
+  if(part.audit?.sourcePairReconstructions?.some((r:any)=>r.edge===edge))return proveReconstructedPairedBoundary(ir,part,edge);
   if(part.geometrySource!=='cad-ir-affine-plane-trim'){
     const p=proveSourceIsocurve(ir,part,edge);return {...p,toBoundaryParameter:(i:number)=>p.toParameter(part.audit.uv[p.boundary.vertices[i]]),sourceParameter:(t:number)=>t};
   }

@@ -14,7 +14,7 @@ const sha=(b:any)=>createHash('sha256').update(b).digest('hex'),sourceSha256='a1
 assert.equal(sha(readFileSync(path)),sourceSha256);
 const native=spawnSync(resolve(root,'test-output/3dm-source-audit/3dm-source-audit.exe'),[path,'--parameter-evidence-all'],{encoding:'utf8',maxBuffer:128*1024*1024,timeout:60000});
 assert.equal(native.status,0,native.stderr);const source=JSON.parse(native.stdout),object=source.objects.find((o:any)=>o.cadIr),ir=object.cadIr;object.storedRenderMeshes=[];
-const complete=completeBrepParts(object,.001,{reconstructPlaneBoundaries:false});
+const complete=completeBrepParts(object,.001,{reconstructPlaneBoundaries:false,reconstructPairedBoundaries:false});
 test('remaining source expressions are classified without confusing identity and source tolerance',()=>{
   const remaining=complete.boundaryAudit.shared.filter(e=>!e.conforming),groups=new Map<string,number[]>(),audits:any[]=[],unverified:any[]=[];
   assert.equal(remaining.length,53);assert.equal(complete.parts.length,41);assert(complete.boundaryAudit.seams.every(s=>s.conforming));

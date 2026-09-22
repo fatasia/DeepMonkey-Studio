@@ -12,6 +12,7 @@ import type {
   DataPipelineDefinition,
   DatabaseDocument,
   ModelRecord,
+  ConversionTaskRecord,
   ProjectAssetRecord,
   ProjectRecord,
   PublishedApplicationRecord,
@@ -108,6 +109,14 @@ export interface AiDataBindingRunQuery {
 
 export interface MetadataStore {
   init(): Promise<void>;
+  listConversionTasks(): ConversionTaskRecord[];
+  saveConversionTask(task: ConversionTaskRecord, modelUpdates?: Partial<ModelRecord>, lease?: import("./conversionTaskLease.js").ConversionTaskLease): Promise<void>;
+  refreshConversionTasks?(): Promise<ConversionTaskRecord[]>;
+  acquireConversionTaskLease?(taskId: string, ownerId: string): Promise<import("./conversionTaskLease.js").ConversionTaskLease | undefined>;
+  renewConversionTaskLease?(lease: import("./conversionTaskLease.js").ConversionTaskLease): Promise<import("./conversionTaskLease.js").ConversionTaskLease | undefined>;
+  releaseConversionTaskLease?(lease: import("./conversionTaskLease.js").ConversionTaskLease): Promise<void>;
+  activeConversionTaskLease?(taskId: string): Promise<boolean>;
+  requestConversionCancellation?(taskId: string): Promise<boolean>;
   listProjects(): ProjectRecord[];
   getProject(projectId: string): ProjectRecord | undefined;
   createProject(name: string, description?: string): Promise<ProjectRecord>;

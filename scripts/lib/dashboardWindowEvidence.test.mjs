@@ -38,6 +38,15 @@ test("only attests the node and font atlas actually drawn, not every declared no
   assert.deepEqual(result.fontSha256, [{ resourceId: "font", sha256: "font-hash", faceIndex: 0 }]);
   assert.equal(result.fixtureSha256, f.input.targetArtifactHash);
 });
+
+test("attests only the initial filter-selected static layers", () => {
+  const f = fixture();
+  f.runtime.payloads.dashboard.pages[0].nodes[0].visible = false;
+  f.runtime.payloads.dashboard.filter = { options: [{ visibility: [{ nodeId: "n1", visible: true }] }] };
+  assert.deepEqual(f.bind().renderedNodeIds, ["author1"]);
+  f.runtime.payloads.dashboard.filter.options[0].visibility[0].visible = false;
+  assert.throws(f.bind, /draw layer is not on/);
+});
 test("an unused font remains unattested even when it is in the frozen manifest", () => {
   const f = fixture(); f.receipt.report.layers[0].atlasIds = [];
   assert.deepEqual(f.bind().fontSha256, []);

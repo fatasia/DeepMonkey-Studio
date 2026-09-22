@@ -21,7 +21,13 @@ const distance=(a:number[],b:number[])=>Math.hypot(...a.map((x,i)=>x-b[i]));
 const fixed=[60,83,84,86,88,89,91];
 function raw(face:number):any{return ir.surfaces[ir.faces[face].surface].degree.every((x:number)=>x===1)?tessellatePlanarFace(ir,face):tessellateRationalBezierFace(ir,face,.001);}
 test('seven plane/isocurve identities preserve source geometry including different inserted-knot bases',async()=>{
-  const result=completeBrepParts(object,.001),records=result.sourceEdgeSynchronizations.filter(r=>fixed.includes(r.edge));
+  const result=completeBrepParts(object,.001,{reconstructPairedBoundaries:false}),records=result.sourceEdgeSynchronizations.filter(r=>fixed.includes(r.edge));
+  // Each opposite face still needs its own proof; certifying one side does not weld the edge.
+  for(const [edge,face] of [[44,12],[47,14],[53,18],[56,20],[69,27],[71,28],[79,31],[81,32]]){
+    const part=result.parts.find(p=>p.face===face),proof=proveSourceBoundary(ir,part,edge);
+    assert(proof.continuousBound<1e-10,`cross-knot source identity ${edge}/${face}`);
+    assert(!result.sourceEdgeSynchronizations.some(r=>r.edge===edge));
+  }
   assert.deepEqual(records.map(r=>r.edge),fixed);assert.equal(result.parts.length,41);assert.equal(result.boundaryAudit.shared.filter(e=>!e.conforming).length,49);
   const patches=records.find(r=>r.edge===60).proofs.flatMap(p=>p.localRetriangulations??[]);assert(patches.length>0);assert(patches.every(p=>p.removed<=64&&p.passes<=5));
   assert.equal(result.boundaryAudit.unverified.length,0);assert(result.boundaryAudit.seams.every(e=>e.conforming));
@@ -49,7 +55,7 @@ test('seven plane/isocurve identities preserve source geometry including differe
     }
   }
   assert(references>=266&&maxReferenceError<1e-10);assert(trimReferences>=76&&maxTrimReferenceError<1e-12);
-  const glb=await export3dmGlb(source,hash);assert(glb.bytes);assert.equal(glb.sidecar.status,'partial-geometry-preview');
+  const glb=await export3dmGlb(source,hash,{reconstructPairedBoundaries:false,repairFloat32:false});assert(glb.bytes);assert.equal(glb.sidecar.status,'partial-geometry-preview');
   mkdirSync(out,{recursive:true});const glbPath=resolve(out,'MechPartA.glb');writeFileSync(glbPath,glb.bytes);
   const evidence={sourceSha256:hash,sourceUrl:'https://github.com/mcneel/opennurbs/blob/v8.35.26251.13001/example_files/V4/v4_MechPartA.3dm',archiveVersion:source.archiveVersion,metersPerUnit:.001,
     useBoundary:'official sample; local verification only; not redistributed',records,references,maxReferenceError,trimReferences,maxTrimReferenceError,boundaryAudit:result.boundaryAudit,glb:await auditGlbGeometry(glbPath),glbSha256:sha(glb.bytes),status:glb.sidecar.status};

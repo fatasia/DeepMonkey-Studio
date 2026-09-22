@@ -21,7 +21,7 @@ const distance=(a:number[],b:number[])=>Math.hypot(...a.map((x,i)=>x-b[i]));
 const repairedEdges=[45,48,54,57],repairedFaces=[12,14,16,17,18,20,22,23];
 test('four actual zero-tolerance source curves synchronize without moving existing vertices or losing any face',async()=>{
   const before=JSON.stringify(ir),noCache=structuredClone(source);for(const o of noCache.objects)if(o.kind==='brep')o.storedRenderMeshes=[];
-  const complete=completeBrepParts(noCache.objects.find((o:any)=>o.cadIr),.001);
+  const complete=completeBrepParts(noCache.objects.find((o:any)=>o.cadIr),.001,{reconstructPairedBoundaries:false});
   assert.equal(complete.parts.length,41);assert.deepEqual(complete.sourceEdgeSynchronizations.filter(r=>repairedEdges.includes(r.edge)).map(r=>r.edge),repairedEdges);
   const baseline=complete.parts.map(p=>repairedFaces.includes(p.face)?tessellateRationalBezierFace(ir,p.face,.001):p),initial=auditBrepBoundaries(ir,baseline);
   assert.equal(initial.shared.filter(e=>!e.conforming).length,53);
@@ -40,7 +40,7 @@ test('four actual zero-tolerance source curves synchronize without moving existi
   }
   assert(references>=152);assert.equal(JSON.stringify(ir),before);
   assert.equal(synchronizeSourceEdges(ir,complete.parts,.001).records.length,0);
-  const glb=await export3dmGlb(noCache,sourceSha256);assert(glb.bytes);assert.equal(glb.sidecar.status,'partial-geometry-preview');mkdirSync(out,{recursive:true});
+  const glb=await export3dmGlb(noCache,sourceSha256,{reconstructPairedBoundaries:false,repairFloat32:false});assert(glb.bytes);assert.equal(glb.sidecar.status,'partial-geometry-preview');mkdirSync(out,{recursive:true});
   const glbPath=resolve(out,'MechPartA.glb');writeFileSync(glbPath,glb.bytes);
   const groups:Record<string,number[]>={};for(const e of initial.shared.filter(e=>!e.conforming)){const c=ir.curves3d[ir.edges[e.edge].curve3d],key=`degree${c.degree}-${c.rational?'rational':'polynomial'}-cv${c.controlPoints.length}`;(groups[key]??=[]).push(e.edge);}
   const evidence={sourceSha256,sourceUrl:'https://github.com/mcneel/opennurbs/blob/v8.35.26251.13001/example_files/V4/v4_MechPartA.3dm',archiveVersion:source.archiveVersion,metersPerUnit:.001,

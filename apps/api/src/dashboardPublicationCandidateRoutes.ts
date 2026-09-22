@@ -26,6 +26,7 @@ export async function registerDashboardPublicationCandidateRoutes(
   app: FastifyInstance,
   service?: Pick<DashboardNativeCandidateService, "prepare">,
   registry?: Pick<DashboardNativeCandidateRegistry, "register">,
+  downloadFormats: readonly ("exe" | "zip" | "dmda" | "web")[] = ["dmda"],
 ): Promise<void> {
   app.post<{ Params: RouteParams; Body: CandidateBody }>(
     "/api/projects/:projectId/applications/:applicationId/dashboard-candidates",
@@ -47,7 +48,7 @@ export async function registerDashboardPublicationCandidateRoutes(
           AbortSignal.any([disconnect.signal, AbortSignal.timeout(180_000)]),
         );
         reply.header("cache-control", "private, no-store");
-        return reply.code(201).send(candidateMetadata(registry.register(candidate), candidate));
+        return reply.code(201).send({ ...candidateMetadata(registry.register(candidate), candidate), downloadFormats });
       } catch (reason) {
         return reply.code(409).send({
           code: candidateErrorCode(reason),
@@ -94,7 +95,9 @@ function candidateMetadata(
   return {
     ...summary,
     verifier: candidate.windowVerification.verifier,
-    objects: candidate.capability.objects.map(({ nodeId, status, deferredFields }) => ({ nodeId, status, deferredFields })),
+    objects: candidate.capability.objects.map(({ nodeId, status, deferredFields, reasons }) => ({
+      nodeId, status, deferredFields, ...(reasons?.length ? { reasons } : {}),
+    })),
   };
 }
 

@@ -12,7 +12,7 @@ const script = fileURLToPath(new URL("./start-local.mjs", import.meta.url));
 test("help is read-only and rejects unknown options", async () => {
   const help = await run(["--help"]);
   assert.equal(help.exitCode, 0);
-  assert.match(help.stdout, /Deep Monkey Studio 内部运行器/);
+  assert.match(help.stdout, /DeepMonkey Studio 内部运行器/);
   assert.doesNotMatch(help.stdout, /Server listening|tauri dev|vite/i);
 
   const invalid = await run(["--unknown"]);
@@ -20,7 +20,7 @@ test("help is read-only and rejects unknown options", async () => {
   assert.match(invalid.stderr, /未知参数/);
 });
 
-test("refuses an occupied API port when the listener is not Deep Monkey Studio", async () => {
+test("refuses an occupied API port when the listener is not DeepMonkey Studio", async () => {
   const listener = createServer((_request, response) => {
     response.writeHead(200, { "content-type": "application/json" });
     response.end('{"status":"ok","service":"another-product"}');
@@ -33,7 +33,7 @@ test("refuses an occupied API port when the listener is not Deep Monkey Studio",
   try {
     const result = await run(["--target", "services", "--skip-infra"], address.port);
     assert.equal(result.exitCode, 1);
-    assert.match(result.stderr, new RegExp(`API 端口 ${address.port} 已被非 Deep Monkey Studio 服务占用`));
+    assert.match(result.stderr, new RegExp(`API 端口 ${address.port} 已被非 DeepMonkey Studio 服务占用`));
   } finally {
     listener.close();
     await once(listener, "close");
@@ -43,7 +43,7 @@ test("refuses an occupied API port when the listener is not Deep Monkey Studio",
 test("check mode returns a non-zero health result without starting services", async () => {
   const listener = createServer((_request, response) => {
     response.writeHead(200, { "content-type": "text/plain" });
-    response.end("not Deep Monkey Studio");
+    response.end("not DeepMonkey Studio");
   });
   listener.listen(0, "127.0.0.1");
   await once(listener, "listening");

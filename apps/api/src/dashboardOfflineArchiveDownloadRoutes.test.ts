@@ -60,6 +60,35 @@ describe("dashboard offline archive download routes", () => {
   const exePath = path.replace("offline-archive", "standalone-executable");
   const webPath = path.replace("offline-archive", "web-package");
 
+  it("accepts per-download branding without changing the frozen candidate", async () => {
+    const createExecutable = vi.fn(async () => Uint8Array.of(0x4d, 0x5a));
+    const f = await fixture({ user: editor, portable: { nativeExecutable: executable, createExecutable } });
+    try {
+      const response = await f.app.inject({ method: "POST", url: exePath, payload: { branding: { applicationName: " 园区运行中心 " } } });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["content-disposition"]).toContain(`filename*=UTF-8''${encodeURIComponent("园区运行中心")}.exe`);
+      expect(createExecutable).toHaveBeenCalledWith(expect.any(Uint8Array), executable, {
+        signal: expect.any(AbortSignal), branding: { applicationName: "园区运行中心" },
+      });
+      expect(f.registry.read).toHaveBeenCalledTimes(2);
+      const invalid = await f.app.inject({ method: "POST", url: exePath, payload: { branding: { nativeExecutable: "outside.exe" } } });
+      expect(invalid.statusCode).toBe(400);
+      expect(invalid.json().code).toBe("invalid_client_branding");
+      expect(createExecutable).toHaveBeenCalledTimes(1);
+    } finally { await f.app.close(); }
+  });
+
+  it("requires authorization before decoding uploaded branding", async () => {
+    const createExecutable = vi.fn(async () => new Uint8Array());
+    const f = await fixture({ portable: { nativeExecutable: executable, createExecutable } });
+    try {
+      const response = await f.app.inject({ method: "POST", url: exePath, payload: { branding: { iconDataUrl: "bad" } } });
+      expect(response.statusCode).toBe(401);
+      expect(f.registry.read).not.toHaveBeenCalled();
+      expect(createExecutable).not.toHaveBeenCalled();
+    } finally { await f.app.close(); }
+  });
+
   it("finishes a real HTTP download after asynchronous packaging", async () => {
     const f = await fixture({ user: editor, portable: { nativeExecutable: executable,
       createExecutable: async (_archive, _file, options) => {

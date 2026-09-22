@@ -4,6 +4,7 @@ import type { PublishedApplicationRecord } from "@bim-studio/contracts";
 import { createDashboardWebStaticPackage } from "./dashboardWebStaticPackage.js";
 import { createDashboardPortableZip } from "./dashboardPortableZip.js";
 import { createDashboardStandaloneExecutable } from "./dashboardStandaloneExecutable.js";
+import { parseClientPackageBranding, type ClientPackageBranding } from "./clientPackageBranding.js";
 import {
   createDashboardOfflineArchive,
   type DashboardOfflineArchiveV1,
@@ -85,9 +86,11 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
   const formats = ["dmda", ...(portable ? ["zip", "exe"] : []), ...(webStatic ? ["web"] : [])] as const;
   for (const format of formats) {
   const endpoint = format === "exe" ? "standalone-executable" : format === "zip" ? "portable-zip" : format === "web" ? "web-package" : "offline-archive";
-  app.get<{ Params: RouteParams }>(
-    `/api/projects/:projectId/applications/:applicationId/dashboard-candidates/:candidateId/${endpoint}`,
-    async (request, reply) => {
+  app.route<{ Params: RouteParams; Body: { branding?: unknown } }>({
+    method: format === "exe" || format === "zip" ? ["GET", "POST"] : "GET",
+    url: `/api/projects/:projectId/applications/:applicationId/dashboard-candidates/:candidateId/${endpoint}`,
+    bodyLimit: 3 * 1024 ** 2,
+    handler: async (request, reply) => {
       if (!request.systemUser?.enabled) return reply.code(401).send({ message: "请先登录" });
       if (request.systemUser.role === "viewer") return reply.code(403).send({ message: "浏览者不能下载 Dashboard 候选离线包" });
       if (request.systemUser.role !== "admin" && !request.systemUser.projectIds.includes(request.params.projectId)) {
@@ -95,6 +98,16 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
       }
       if (format !== "dmda" && Object.keys(request.query as object).length !== 0) {
         return reply.code(400).send({ message: "Dashboard 下载不接受查询参数" });
+      }
+      let branding: ClientPackageBranding | undefined;
+      if (request.method === "POST") {
+        try {
+          if (!request.body || typeof request.body !== "object" || Array.isArray(request.body)
+            || Object.keys(request.body).some(key => key !== "branding")) throw new Error("客户端打包请求无效");
+          branding = await parseClientPackageBranding(request.body.branding, request.signal);
+        } catch (error) {
+          return reply.code(400).send({ code: "invalid_client_branding", message: error instanceof Error ? error.message : "客户端品牌设置无效" });
+        }
       }
 
       let record: DashboardNativeCandidateRecord;
@@ -138,7 +151,7 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
           });
           const archiveBytes = (dependencies.serializeArchive ?? serializeDashboardOfflineArchive)(archive);
           request.signal.throwIfAborted();
-          const packagingOptions = { signal: request.signal, ...(expectedSha256 === undefined ? {} : { expectedSha256 }) };
+          const packagingOptions = { signal: request.signal, ...(expectedSha256 === undefined ? {} : { expectedSha256 }), ...(branding ? { branding } : {}) };
           bytes = format === "zip"
             ? await createZip(archiveBytes, executable!, packagingOptions)
             : format === "exe" ? await createExecutable(archiveBytes, executable!, packagingOptions) : archiveBytes;
@@ -151,7 +164,7 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
         } catch (reason) { return sendLookupFailure(reply, reason); }
         return reply
           .header("cache-control", "private, no-store")
-          .header("content-disposition", `attachment; filename="dashboard-candidate-${safeFileId(record.summary.candidateId)}.${format === "web" ? "web.zip" : format}"`)
+          .header("content-disposition", `attachment; filename="dashboard-candidate-${safeFileId(record.summary.candidateId)}.${format === "web" ? "web.zip" : format}"${branding?.applicationName ? `; filename*=UTF-8''${encodeURIComponent(branding.applicationName.replace(/[<>:"/\\|?*]/g, "_")).replace(/'/g, "%27")}.${format}` : ""}`)
           .header("content-length", String(bytes.byteLength))
           .header("x-content-type-options", "nosniff")
           .type(format === "exe" ? "application/vnd.microsoft.portable-executable"
@@ -161,7 +174,7 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
         return reply.code(409).send({ code: "candidate_invalid", message: "Dashboard 候选离线包已失效，请刷新后重试" });
       }
     },
-  );
+  });
   }
 }
 

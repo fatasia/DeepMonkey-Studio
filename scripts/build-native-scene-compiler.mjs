@@ -14,7 +14,7 @@ await mkdir(directory, { recursive: true });
 const outfile = path.join(directory, "compiler.mjs");
 const result = await build({ absWorkingDir: root, entryPoints: ["scripts/native-scene-compiler-worker.mjs"],
   outfile, bundle: true, platform: "node", format: "esm", conditions: ["development"],
-  external: ["sharp"], metafile: true, logLevel: "error" });
+  external: ["sharp", "@gltf-transform/core", "@gltf-transform/extensions", "draco3dgltf"], metafile: true, logLevel: "error" });
 const windowFile = path.join(directory, "window-verifier.mjs");
 const windowBuild = await build({ absWorkingDir: root, entryPoints: ["scripts/native-scene-window-verifier.mjs"], outfile: windowFile,
   bundle: true, platform: "node", format: "esm", conditions: ["development"], metafile: true, logLevel: "error" });

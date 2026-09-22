@@ -46,6 +46,7 @@
     "battery:native:test": "cargo test --manifest-path apps/battery-native-runtime/Cargo.toml",
     "gate:product-browser": "pnpm --filter @bim-studio/web gate:product-browser",
     "gate:sdk-consumer": "node scripts/gate-sdk-consumer.mjs",
+    "gate:deep-engine-consumer": "pnpm --filter @bim-studio/deep-engine build && node scripts/gate-deep-engine-consumer.mjs",
     "gate:webgpu": "pnpm --filter @bim-studio/web gate:webgpu",
     "gate:viewer-soak": "pnpm --filter @bim-studio/web gate:viewer-soak",
     "gate:online-flow": "pnpm --filter @bim-studio/web gate:online-flow",

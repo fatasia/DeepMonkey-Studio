@@ -22,13 +22,13 @@ async function fixture() {
   const objects = { putFile: vi.fn(async () => undefined) };
   const provider = new RobotSourceProvider(store, objects as never);
   async function model(id: string, bytes: Buffer | string, format: "urdf" | "zip" = "urdf", extra: Partial<ModelRecord> = {}) {
-    const modelDir = path.join(dataDir, id); await mkdir(modelDir);
-    const sourcePath = path.join(modelDir, format === "urdf" ? "robot.urdf" : "robot.zip"); await writeFile(sourcePath, bytes);
+    const modelDir = path.join(dataDir, "projects", "default", "models", id); await mkdir(path.join(modelDir, "source"), { recursive: true });
+    const sourcePath = path.join(modelDir, "source", format === "urdf" ? "robot.urdf" : "robot.zip"); await writeFile(sourcePath, bytes);
     const model: ModelRecord = { id, projectId: "default", name: path.basename(sourcePath), format, status: "queued", progress: 0,
-      message: "queued", size: Buffer.byteLength(bytes), sourceUrl: `/assets/${id}/${path.basename(sourcePath)}`, createdAt: "2026-09-06", updatedAt: "2026-09-06", ...extra };
+      message: "queued", size: Buffer.byteLength(bytes), sourceUrl: `/assets/projects/default/models/${id}/source/${path.basename(sourcePath)}`, createdAt: "2026-09-06", updatedAt: "2026-09-06", ...extra };
     await store.addModel("default", model); return { model, modelDir, sourcePath };
   }
-  return { store, provider, objects, model };
+  return { store, provider, objects, model, dataDir };
 }
 async function zip(bytes: string, second = false) {
   const packageFile = new JSZip().file("robot.urdf", bytes);
@@ -65,9 +65,9 @@ describe("original robot source provider", () => {
     await expect(f.provider.convert(job)).rejects.toThrow("来源");
   });
   it("routes robot imports through the existing queue and reports invalid archives as failed", async () => {
-    const f = await fixture(); const queue = new ConversionQueue(f.store, loadConfig(), f.objects as never);
+    const f = await fixture(); const queue = new ConversionQueue(f.store, { ...loadConfig(), dataDir: f.dataDir }, f.objects as never);
     const valid = await f.model("valid", xml); const invalid = await f.model("invalid", "not zip", "zip");
-    queue.enqueue(valid); queue.enqueue(invalid);
+    await queue.enqueue(valid); await queue.enqueue(invalid);
     await vi.waitFor(() => expect(f.store.getProject("default")!.models.find(item => item.id === "valid")!.status).toBe("ready"));
     await vi.waitFor(() => expect(f.store.getProject("default")!.models.find(item => item.id === "invalid")!.status).toBe("failed"));
     expect(f.store.getProject("default")!.models.find(item => item.id === "invalid")!.message).toContain("ZIP");

@@ -32,6 +32,7 @@ export interface AppConfig {
   dataDir: string;
   /** 仅服务启动配置；请求不能提供可执行程序路径。 */
   nativeSceneVerifierExecutable?: string;
+  threeSceneViewerBuilderScript?: string;
   /** 可离线部署的统一素材目录，不会打进 Web 静态包。 */
   assetLibraryDir: string;
   metadata: {
@@ -92,6 +93,7 @@ export function loadConfig(): AppConfig {
   const cloudRenderWorkerUrl = process.env.CLOUD_RENDER_WORKER_URL?.trim();
   const cloudRenderWorkerToken = process.env.CLOUD_RENDER_WORKER_TOKEN?.trim();
   const cloudRenderPublicOrigin = process.env.CLOUD_RENDER_PUBLIC_ORIGIN?.trim();
+  const bundledSceneViewerBuilder = path.join(projectRoot, "apps", "desktop", "scripts", "build-scene-viewer.mjs");
   return {
     port: Number(process.env.API_PORT ?? 4100),
     host: process.env.API_HOST ?? "0.0.0.0",
@@ -99,6 +101,9 @@ export function loadConfig(): AppConfig {
     dataDir,
     ...(process.env.NATIVE_SCENE_VERIFIER_EXECUTABLE?.trim()
       ? { nativeSceneVerifierExecutable: path.resolve(process.env.NATIVE_SCENE_VERIFIER_EXECUTABLE.trim()) } : {}),
+    ...(process.env.THREE_SCENE_VIEWER_BUILDER_SCRIPT?.trim()
+      ? { threeSceneViewerBuilderScript: path.resolve(process.env.THREE_SCENE_VIEWER_BUILDER_SCRIPT.trim()) }
+      : existsSync(bundledSceneViewerBuilder) ? { threeSceneViewerBuilderScript: bundledSceneViewerBuilder } : {}),
     assetLibraryDir,
     metadata: {
       provider: process.env.METADATA_STORE === "postgres" ? "postgres" : "json",

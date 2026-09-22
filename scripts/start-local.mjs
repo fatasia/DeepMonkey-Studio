@@ -38,7 +38,7 @@ try {
     await main();
   }
 } catch (error) {
-  process.stderr.write(`[Deep Monkey Studio] 启动失败：${error instanceof Error ? error.message : String(error)}\n`);
+  process.stderr.write(`[DeepMonkey Studio] 启动失败：${error instanceof Error ? error.message : String(error)}\n`);
   await shutdown(1);
 }
 
@@ -85,7 +85,7 @@ async function main() {
       fail(`配置的 API ${apiOrigin} 不可用；远程 API 不会由本地启动器代启`);
     }
     if (await canConnect(apiEndpoint.hostname, endpointPort)) {
-      fail(`API 端口 ${endpointPort} 已被非 Deep Monkey Studio 服务占用`);
+      fail(`API 端口 ${endpointPort} 已被非 DeepMonkey Studio 服务占用`);
     }
     startPnpm(["--filter", "@bim-studio/api", "dev"], "API");
   }
@@ -96,7 +96,7 @@ async function main() {
     markReady();
   } else if (target === "web") {
     if (!summary.web) {
-      if (await canConnect(localProbeHost(webHost), webPort)) fail(`Web 端口 ${webPort} 已被非 Deep Monkey Studio 服务占用`);
+      if (await canConnect(localProbeHost(webHost), webPort)) fail(`Web 端口 ${webPort} 已被非 DeepMonkey Studio 服务占用`);
       startPnpm(["--filter", "@bim-studio/web", "dev"], "Web");
     }
     await Promise.all([
@@ -109,7 +109,7 @@ async function main() {
     if (!noOpen) openAddress(webOrigin);
   } else {
     await waitForApi();
-    if (!summary.web && await canConnect(localProbeHost(webHost), webPort)) fail(`Web 端口 ${webPort} 已被非 Deep Monkey Studio 服务占用`);
+    if (!summary.web && await canConnect(localProbeHost(webHost), webPort)) fail(`Web 端口 ${webPort} 已被非 DeepMonkey Studio 服务占用`);
     const desktopArgs = desktopDevelopmentArguments(summary.web);
     startPnpm(desktopArgs, "桌面客户端");
     await waitForWeb();
@@ -249,7 +249,11 @@ async function waitForWeb() {
 }
 
 async function waitForProbe(probe, label, url) {
-  const deadline = Date.now() + 60_000;
+  // API dev 启动会先构建 Native/工业 Worker；Windows 冷缓存下 Rust release
+  // 编译常超过一分钟。给真实构建留出时间，避免启动器在进程即将就绪时
+  // 连同刚启动的 MinIO 一起回收。
+  const timeoutMs = positiveDuration(environment.BIM_STUDIO_STARTUP_TIMEOUT_MS, 180_000);
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await probe()) return;
     await new Promise((resolveWait) => setTimeout(resolveWait, 500));
@@ -324,6 +328,11 @@ function readEnvironment(path) {
 function positivePort(value, fallback) {
   const port = Number(value ?? fallback);
   return Number.isInteger(port) && port > 0 && port <= 65_535 ? port : fallback;
+}
+
+function positiveDuration(value, fallback) {
+  const duration = Number(value ?? fallback);
+  return Number.isInteger(duration) && duration > 0 ? duration : fallback;
 }
 
 function configuredApiOrigin(environment, port) {

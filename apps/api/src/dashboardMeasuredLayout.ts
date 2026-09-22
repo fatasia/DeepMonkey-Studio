@@ -52,6 +52,7 @@ export interface DashboardMeasuredLayoutRecord {
 }
 
 export interface DashboardLayoutCaptureRequest {
+  readonly table?: DashboardMeasuredLayoutRecord["table"];
   readonly protocol: "dashboard-measured-layout-v1";
   readonly nodeId: string;
   readonly logicalSize: readonly [number, number];
@@ -82,6 +83,7 @@ export class DashboardLayoutFontMissingError extends Error {
 }
 
 export interface CaptureDashboardMeasuredLayoutOptions {
+  readonly table?: DashboardMeasuredLayoutRecord["table"];
   readonly candidate: DashboardPublicationFreezeCandidate;
   readonly nodeId: string;
   readonly host: DashboardLayoutCaptureHost;
@@ -113,6 +115,7 @@ export async function captureDashboardMeasuredLayout(options: CaptureDashboardMe
   const fonts = options.candidate.manifest.resources.filter(resource => resource.kind === "font" && resource.nodeIds.includes(node.id));
   if (!fonts.length) throw new Error(`Widget ${options.nodeId} has no frozen font binding to measure with`);
   const request: DashboardLayoutCaptureRequest = {
+    ...(options.table ? { table: structuredClone(options.table) } : {}),
     protocol: "dashboard-measured-layout-v1", nodeId: node.id,
     logicalSize: [frame.width, frame.height], widget: structuredClone(node.widget),
     data: { source: structuredClone((frozen as { source: Record<string, unknown> }).source),
@@ -121,6 +124,8 @@ export async function captureDashboardMeasuredLayout(options: CaptureDashboardMe
       bytes: Uint8Array.from(options.candidate.resources[font.id]!) })),
     locale: options.locale,
   };
+  assertTableState(options.table);
+  if (options.table && node.widget.type !== "table") throw new Error("Only table widgets accept a requested view state");
   options.signal?.throwIfAborted();
   const capture = await options.host.capture(request, options.signal);
   // 迟到响应:中止发生在宿主返回之后时,测量结果必须作废而不是进入记录。
@@ -214,8 +219,8 @@ function assertTableState(table: DashboardMeasuredLayoutRecord["table"]): void {
   }
 }
 
-const ROLES = new Set(["title", "value", "unit", "footer", "previous", "next", "row-number-header", "header", "sort", "total", "cell", "row-number", "tool"]);
-const PLAIN_ROLES = new Set(["title", "value", "unit", "footer", "previous", "next", "row-number-header"]);
+const ROLES = new Set(["title", "value", "unit", "footer", "previous", "next", "row-number-header", "header", "sort", "total", "cell", "row-number", "tool", "empty"]);
+const PLAIN_ROLES = new Set(["title", "value", "unit", "footer", "previous", "next", "row-number-header", "empty"]);
 const TOOLS = new Set(["csv", "excel"]);
 const COLUMN_ROLES = new Set(["header", "sort", "total"]);
 const WRAPS = new Set(["none", "word", "glyph", "word-or-glyph"]);

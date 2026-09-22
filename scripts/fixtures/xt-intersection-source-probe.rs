@@ -46,7 +46,7 @@ fn continuation_probe(n: &NurbsSurface, p: Vec3, mut uv: Vec2) -> (f64, Vec2) {
 }
 fn main() {
     let args: Vec<_> = std::env::args().skip(1).collect();
-    assert_eq!(args.len(), 3, "file intersection chart-curve");
+    assert!((3..=4).contains(&args.len()), "file intersection chart-curve [diagnostic-second-support]");
     let bytes = std::fs::read(&args[0]).unwrap();
     let file = xt_parser::parse_raw(&xt_parser::decode(bytes)).unwrap();
     assert!(file.truncated.is_none());
@@ -54,7 +54,9 @@ fn main() {
     let index: cad_xt::geom::Index = entities.iter().map(|e| (e.index, e)).collect();
     let intersection = index[&args[1].parse::<usize>().unwrap()];
     let first = entities.fields(intersection)[7].as_ptr();
-    let second = entities.extra(intersection)[0].as_ptr();
+    let declared_second = entities.extra(intersection)[0].as_ptr();
+    let second = args.get(3).map(|v| v.parse::<usize>().unwrap()).unwrap_or(declared_second);
+    println!("declared-second-support={declared_second}; diagnostic-second-support={second}");
     let curve =
         cad_xt::geom::curve(entities, index[&args[2].parse::<usize>().unwrap()], &index).unwrap();
     let trimmed = index[&args[2].parse::<usize>().unwrap()];

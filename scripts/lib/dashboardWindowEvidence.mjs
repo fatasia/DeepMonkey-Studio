@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { verifyBackgroundAtlases } from "./dashboardBackgroundEvidence.mjs";
+import { tableContentIds } from "./dashboardTableContent.mjs";
 
 const sha = value => createHash("sha256").update(value).digest("hex");
 const check = (value, reason) => { if (!value) throw new Error(`Dashboard window evidence: ${reason}`); };
@@ -20,6 +21,9 @@ export function bindDashboardWindowEvidence(input, runtime, receipt, runtimeCont
   check(Array.isArray(report.layers), "missing actual draw evidence");
   const dashboard = runtime.payloads[runtime.entrypoints.dashboard];
   const entry = dashboard.pages.find(page => page.id === dashboard.entryPageId);
+  const initialVisibility = new Map(dashboard.filter?.options[0]?.visibility?.map(item => [item.nodeId, item.visible]) ?? []);
+  for (const table of dashboard.tables ?? []) for (const nodeId of table.nodeIds)
+    initialVisibility.set(nodeId, (tableContentIds(dashboard, nodeId, true)?.length ?? 0) > 0);
   const authorPages = new Map(candidate.document.application.pages.flatMap(page => {
     const runtimePageId = `page.${runtimeContentSha256(JSON.stringify([
       candidate.document.application.metadata.id, page.id, page.id]))}`;
@@ -55,7 +59,7 @@ export function bindDashboardWindowEvidence(input, runtime, receipt, runtimeCont
       drawn.set(layer.id, layer);
       continue;
     }
-    check(binding && binding.pageId === entry.id && node?.visible
+    check(binding && binding.pageId === entry.id && node && (initialVisibility.get(node.id) ?? node.visible)
       && (suffix === ":static" ? node.deep2d : node.chart), "draw layer is not on the verified entry page");
     drawn.set(layer.id, layer);
     rendered.add(binding.nodeId);
@@ -69,9 +73,9 @@ export function bindDashboardWindowEvidence(input, runtime, receipt, runtimeCont
     const frozen = candidate.manifest.resources.find(resource => resource.id === font.resourceId && resource.kind === "font");
     check(binding && frozen && frozen.sha256 === font.sha256 && frozen.faceIndex === font.faceIndex
       && frozen.nodeIds.includes(binding.nodeId), "font binding is outside the frozen closure");
-    const resource = runtime.payloads[binding.staticResourceId];
+    const resources = [binding.staticResourceId, ...tableContentIds(dashboard, font.runtimeNodeId) ?? []].map(id => runtime.payloads[id]).filter(Boolean);
     // Frozen text is currently rasterized to RGBA image atlases; producer provenance identifies font use.
-    check(resource?.atlases?.some(atlas => atlas.id === font.atlasId), "font atlas absent from artifact");
+    check(resources.some(resource => resource.atlases?.some(atlas => atlas.id === font.atlasId)), "font atlas absent from artifact");
     const layerId = `${font.runtimeNodeId}:static`;
     const namespaced = `dashboard.${runtimeContentSha256([layerId, font.atlasId])}`;
     if (drawn.get(layerId)?.atlasIds.includes(namespaced)) {

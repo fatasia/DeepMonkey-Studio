@@ -17,7 +17,7 @@ function splitBoundary(ir:any,part:any,edge:number,parameters:number[],metersPer
     const a=old[j-1],b=old[j],lo=proof.toBoundaryParameter(j-1),hi=proof.toBoundaryParameter(j),direction=Math.sign(hi-lo);
     check(direction!==0,'non-monotonic-isocurve-boundary');
     const additions=parameters.filter(t=>t>Math.min(lo,hi)+1e-12&&t<Math.max(lo,hi)-1e-12).sort((x,y)=>direction*(x-y)),ids=[a];
-    for(const t of additions){const p=proof.toUv(t),position=evaluateSurface(proof.surface,p),normal=plane?[...mesh.normals[a]]:(()=>{const [du,dv]=bounds!.tangent(p);return cross(du,dv);})(),length=Math.hypot(...normal);
+    for(const t of additions){const p=proof.toUv(t),position='positionAt' in proof?proof.positionAt(t):evaluateSurface(proof.surface,p),normal=plane?[...mesh.normals[a]]:(()=>{const [du,dv]=bounds!.tangent(p);return cross(du,dv);})(),length=Math.hypot(...normal);
       check(length>1e-12,'singular-isocurve-normal');const id=mesh.positions.length;uv.push(p);mesh.positions.push(position);
       mesh.normals.push(normal.map(x=>x/length*(!plane&&ir.faces[part.face].reversed?-1:1)));ids.push(id);inserted++;}
     ids.push(b);newBoundary.push(...ids.slice(0,-1));newParameters.push(...[lo,...additions].map(proof.sourceParameter));if(!additions.length)continue;
@@ -33,7 +33,7 @@ function splitBoundary(ir:any,part:any,edge:number,parameters:number[],metersPer
     for(const i of removed)mesh.triangles.splice(i,1);mesh.triangles.splice(Math.min(...removed),0,...triangles);
   }
   boundary.vertices=[...newBoundary,old.at(-1)];mesh.sourceFaceCount=mesh.triangles.length;
-  if(plane)boundary.parameters=[...newParameters,proof.sourceParameter(proof.toBoundaryParameter(old.length-1))];
+  if(plane||'positionAt' in proof)boundary.parameters=[...newParameters,proof.sourceParameter(proof.toBoundaryParameter(old.length-1))];
   const quantization=Math.max(...mesh.positions.map((p:number[])=>Math.hypot(...p.map(x=>Math.fround(x)-x))));
   const baseBound=part.audit.physicalBoundMm??(part.audit.trimChordTolerance+part.audit.affineError)*metersPerUnit*1000;
   const physicalBoundMm=baseBound+(Math.max(0,quantization-(part.audit.quantization??0))+proof.continuousBound)*metersPerUnit*1000;

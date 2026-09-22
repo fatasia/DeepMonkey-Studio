@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AgentCheckpoint, AgentCheckpointStore } from "@bim-studio/industrial-agent-orchestrator";
+import { AgentRunError } from "@bim-studio/industrial-agent-orchestrator";
 
 interface CheckpointDocument {
   schemaVersion: 1;
@@ -38,6 +39,13 @@ export class IndustrialAgentCheckpointStore implements AgentCheckpointStore {
     const operation = this.writes.then(async () => {
       const runs = [...this.document.runs];
       const index = runs.findIndex((item) => item.id === snapshot.id);
+      const current = runs[index];
+      if (current) {
+        if (JSON.stringify(current) === JSON.stringify(snapshot)) return;
+        if (current.status === "cancelled" || snapshot.revision <= current.revision) {
+          throw new AgentRunError("checkpoint-conflict", "检查点已更新或取消，拒绝迟到写入；请重新读取运行状态");
+        }
+      }
       if (index >= 0) runs[index] = snapshot;
       else runs.unshift(snapshot);
       const next: CheckpointDocument = { schemaVersion: 1, runs: this.prune(runs) };

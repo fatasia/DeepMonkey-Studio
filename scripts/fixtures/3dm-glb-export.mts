@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module';
 import { createIndexedTrianglePrimitive } from '../../apps/api/src/indexedTriangleMesh.ts';
 import { completeBrepParts } from './3dm-brep-tessellation.mts';
+import {repairFloat32Interior} from './3dm-float32-interior-repair.mts';
 const require = createRequire(new URL('../../apps/api/package.json', import.meta.url));
 const { Document, NodeIO } = require('@gltf-transform/core');
 
@@ -8,7 +9,7 @@ const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
 function check(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
 
 /** Research adapter only: source mesh buffers are shared by instance nodes. */
-export async function export3dmGlb(source: any, sourceSha256: string) {
+export async function export3dmGlb(source: any, sourceSha256: string,options:{reconstructPairedBoundaries?:boolean;repairFloat32?:boolean}={}) {
   check(source.schemaVersion === 1 && /^[a-f0-9]{64}$/.test(sourceSha256), 'invalid source contract');
   check(Number.isFinite(source.metersPerUnit) && source.metersPerUnit > 0, 'invalid units');
   const objects = new Map<string, any>();
@@ -38,15 +39,17 @@ export async function export3dmGlb(source: any, sourceSha256: string) {
     materialSource: object.materialSource });
   for (const object of objects.values()) {
     check(source.layers.some((layer: any) => layer.index === object.layerIndex), 'missing layer');
-    const completed = completeBrepParts(object,source.metersPerUnit);
-    if(completed.boundaryAudit)boundaryAudits.push({objectId:object.id,...completed.boundaryAudit,refinements:completed.refinements,welds:completed.welds});
+    const completed = completeBrepParts(object,source.metersPerUnit,options);
+    if(completed.boundaryAudit)boundaryAudits.push({objectId:object.id,...completed.boundaryAudit,refinements:completed.refinements,welds:completed.welds,
+      sourceBoundaryPairProofs:completed.sourceBoundaryPairProofs,pairedBoundaryReconstructions:completed.pairedBoundaryReconstructions});
     const parts = object.kind === 'mesh' ? [{ face: null, mesh: object.mesh }] : completed.parts;
     diagnostics.push(...completed.diagnostics);
     if (object.kind === 'brep' && parts.length < object.faceCount) diagnostics.push({ objectId: object.id, code: 'missing-brep-render-mesh', count: object.faceCount - parts.length });
     if (object.kind === 'unsupported') diagnostics.push({ objectId: object.id, code: 'unsupported-object', objectType: object.objectType });
     if (!parts.length) continue;
     const mesh = document.createMesh(object.id).setExtras(sourceMap(object));
-    for (const part of parts) {
+    for (const originalPart of parts) {
+      const part=options.repairFloat32!==false&&object.cadIr?repairFloat32Interior(object.cadIr,originalPart,source.metersPerUnit):originalPart;
       const m = part.mesh;
       check(m.positions.length > 0 && m.positions.every((p: any) => Array.isArray(p) && p.length === 3 && p.every((n: number) => Number.isFinite(n) && Number.isFinite(Math.fround(n)))), 'invalid positions');
       check(m.triangles.length > 0 && m.triangles.length === m.sourceFaceCount + m.quadCount, 'invalid triangle count');

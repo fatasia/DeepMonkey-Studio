@@ -13,9 +13,13 @@ function sides(part:any){
     const a=t[i],b=t[(i+1)%3],k=key(a,b),prior=edges.get(k);if(prior)prior.count++;else edges.set(k,{a,b,count:1});
   }
   return new Map((part.boundaryEdges??[]).map((boundary:any)=>{
+    const valid=Array.isArray(boundary.vertices)&&boundary.vertices.length>=2
+      &&boundary.vertices.every((id:number)=>Number.isSafeInteger(id)&&id>=0&&part.mesh.positions[id]?.length===3
+        &&part.mesh.positions[id].every(Number.isFinite));
+    if(!valid)return [boundary.trim,{segments:[],face:part.face,invalid:true}];
     const segments=boundary.vertices.slice(1).map((b:number,i:number)=>{
       const a=boundary.vertices[i],actual=edges.get(key(a,b));
-      return {a:part.mesh.positions[a],b:part.mesh.positions[b],direction:actual?.count===1?(actual.a===a?1:-1):0};
+      return {a:part.mesh.positions[a],b:part.mesh.positions[b],direction:a!==b&&distance(part.mesh.positions[a],part.mesh.positions[b])>0&&actual?.count===1?(actual.a===a?1:-1):0};
     });return [boundary.trim,{segments,face:part.face}];
   }));
 }
@@ -33,6 +37,7 @@ export function auditBrepBoundaries(ir:any,parts:any[],tolerance=1e-8){
     catch(error){unverified.push({edge,reason:error instanceof Error?error.message:'self-seam-not-audited',faces});continue;}
     const pair:any[]=trims.map((t:number)=>byTrim.get(t));
     if(pair.some(s=>!s)){unverified.push({edge,reason:'missing-boundary-mesh',faces});continue;}
+    if(pair.some(s=>s.invalid)){unverified.push({edge,reason:'invalid-boundary-mesh',faces});continue;}
     let maxSampledDeviation=0,unmatchedSegments=0,orientationErrors=0,invalidBoundarySegments=0;
     if(seamProof){
       const curve=ir.curves3d[ir.edges[edge].curve3d],limit=Math.min(1e-10,ir.edges[edge].tolerance+1e-12);
@@ -58,7 +63,7 @@ export function auditBrepBoundaries(ir:any,parts:any[],tolerance=1e-8){
     (seamProof?seams:shared).push({edge,faces,segmentCounts:pair.map(s=>s.segments.length),maxSampledDeviation,unmatchedSegments,
       orientationErrors,invalidBoundarySegments,conforming:!unmatchedSegments&&!orientationErrors&&!invalidBoundarySegments,...(seamProof?{seamProof}:{})});
   }
-  const allFacesPresent=ir.faces.length===byFace.size&&ir.faces.every((_:any,i:number)=>byFace.has(i));
+  const allFacesPresent=parts.length===byFace.size&&ir.faces.length===byFace.size&&ir.faces.every((_:any,i:number)=>byFace.has(i));
   return {tolerance,allFacesPresent,shared,seams,unverified,
     status:allFacesPresent&&shared.length+seams.length>0&&!unverified.length&&[...shared,...seams].every(s=>s.conforming)?'conforming-two-sided-boundary':'unverified-or-nonconforming-boundary'};
 }

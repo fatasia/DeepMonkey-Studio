@@ -44,7 +44,8 @@ async function frozen(nodes, resources = [], data = []) {
 const node = type => ({ id: type, kind: "data-widget", zIndex: 0,
   frame: { x: 0, y: 0, width: 120, height: 120 }, widget: { type, title: "Frozen", key: type, unit: "" } });
 const resource = (id, kind, nodeId, bytes) => ({ id, kind, nodeIds: [nodeId], bytes, objectKey: `projects/test/${id}`,
-  revision: 3, mime: kind === "font" ? "font/ttf" : "image/png", ...(kind === "font" ? { faceIndex: 0, licenseEvidence: "test-only" } : {}) });
+  revision: 3, mime: kind === "font" ? "font/ttf" : kind === "video" ? "video/mp4" : "image/png",
+  ...(kind === "font" ? { faceIndex: 0, licenseEvidence: "test-only" } : {}) });
 
 test("frozen resources retain face/revision and explicit fallback order", async () => {
   const input = await frozen([node("text")], [resource("z-primary", "font", "text", new Uint8Array([1])),
@@ -56,6 +57,20 @@ test("frozen resources retain face/revision and explicit fallback order", async 
   assert.equal(result.assets["z-primary"].identity.revision, 3);
   result.assets["z-primary"].bytes[0] = 9;
   assert.equal(input.resources["z-primary"][0], 1);
+});
+
+test("binds frozen MP4 bytes only to the authored video node", async () => {
+  const bytes = Uint8Array.of(0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d,
+    0, 0, 0, 0, 0x69, 0x73, 0x6f, 0x6d, 0x6d, 0x70, 0x34, 0x32);
+  const input = await frozen([node("video")], [resource("inspection-video", "video", "video", bytes)]);
+  const result = dashboardFrozenRasterInput(input, configuration);
+  assert.equal(result.nodeAssets.video.video, "inspection-video");
+  assert.equal(result.assets["inspection-video"].sha256, hash(bytes));
+  input.document.application.pages[0].nodes[0].widget.type = "image";
+  input.freezeManifest.documentSha256 = hash(canonical(input.document));
+  const { manifestSha256: _, ...body } = input.freezeManifest;
+  input.freezeManifest.manifestSha256 = hash(canonical(body));
+  assert.throws(() => dashboardFrozenRasterInput(input, configuration), /does not belong to video node/);
 });
 
 test("actual Native producer consumes the explicitly frozen font face", {

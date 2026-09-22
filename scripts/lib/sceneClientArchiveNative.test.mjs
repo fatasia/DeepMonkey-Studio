@@ -6,6 +6,8 @@ import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { sceneCompilationSource } from "../../apps/web/src/delivery/sceneCompilationSource.ts";
+import { compileSceneEnvironment } from "../../apps/web/src/delivery/compileSceneEnvironment.ts";
+import { compileSceneHdrEnvironment } from "../../apps/web/src/delivery/compileSceneHdrEnvironment.ts";
 import { validateSceneClientArchiveNative } from "./sceneClientArchiveNative.mjs";
 const requireWeb = createRequire(new URL("../../apps/web/package.json", import.meta.url));
 const { runtimeContentSha256, runtimePackageSha256 } = await import(pathToFileURL(requireWeb.resolve("@bim-studio/deep-engine/runtime-package")).href);
@@ -198,13 +200,17 @@ for (const [key,value] of [
   ['animation',{duration:10,loop:false,camera:[{}],models:[]}],
   ['animation',{duration:10,loop:false,camera:[],models:[],future:false}],
   ['physics',{enabled:false,playing:true,gravity:{x:0,y:0,z:0}}],
-  ['clipping',{enabled:true,axis:'x',offset:0,inverted:false}],
   ['coordinateSystem',{unit:'mm',upAxis:'y',handedness:'right',origin:{x:0,y:0,z:0}}],
-  ['cameraConstraints',{nearClip:0.05}], ['environment',{gridVisible:true}], ['weather','sunny'], ['future',[]],
+  ['cameraConstraints',{nearClip:0.05}], ['environment',{gridVisible:true}], ['weather','rain'], ['future',[]],
 ]) test(`v4 refuses deleted deferred evidence for ${key}: ${JSON.stringify(value)}`, () => {
   const f=v4Fixture(scene=>{scene[key]=value;});
   // All source/graph/report bindings have been recomputed; the empty deferred list is still false.
   assert.throws(()=>validateSceneClientArchiveNative(f.manifest,f.contents),/未编译场景字段/);
+});
+
+test("v4 rejects authored clipping when the legacy camera payload has no section plane", () => {
+  const f = v4Fixture(scene => { scene.clipping = { enabled: true, axis: "x", offset: 0, inverted: false }; });
+  assert.throws(() => validateSceneClientArchiveNative(f.manifest, f.contents), /未编译场景字段/);
 });
 
 function rebindV5(f) {
@@ -218,6 +224,8 @@ function rebindV5(f) {
   compilation.compileGraphHash = runtimeContentSha256({ recipe: compilation.recipe, sourceSemanticHash: compilation.sourceSemanticHash,
     sourceAssets: compilation.sourceAssets, packageId: runtime.packageId, packageVersion: runtime.packageVersion,
     maxSourceBytes: compilation.maxSourceBytes, localCoordinates: compilation.localCoordinates,
+    ...(["deep-scene-static-compile-v6", "deep-scene-static-compile-v7", "deep-scene-static-compile-v8", "deep-scene-static-compile-v9", "deep-scene-static-compile-v10", "deep-scene-static-compile-v11"].includes(compilation.recipe) ? { environmentHash: runtimeContentSha256(runtime.payloads[runtime.entrypoints.environment]) } : {}),
+    ...(compilation.recipe==="deep-scene-static-compile-v11" ? {environmentSource:compilation.environmentSource} : {}),
     cameraHash: runtime.resources.find(resource => resource.kind === "scene-camera").contentHash.value,
     renderPacketHash: runtime.resources.find(resource => resource.kind === "render-packet").contentHash.value });
   f.contents.set(paths.compilation, Buffer.from(JSON.stringify(compilation)));
@@ -237,6 +245,112 @@ function v5Fixture() {
   });
   rebindV5(f); return f;
 }
+
+function v6Fixture(lighting,hdr=false) {
+  const f = v5Fixture();
+  const environment = { skybox: "none", gridVisible: false, backgroundColor: "#172126" };
+  const origin = createSceneLocalFrame(JSON.parse(f.contents.get(paths.scene))).origin;
+  let ibl;
+  if(hdr) {
+    environment.environmentMapUrl="assets/studio.hdr";environment.environmentAsBackground=false;environment.environmentIntensity=1;
+    const source=JSON.parse(readFileSync(new URL("../../packages/deep-engine-native/tests/fixtures/runtime-package-prefiltered-ibl-v1.json",import.meta.url)));
+    ibl={...source.payloads[source.entrypoints.environment],id:"scene.environment"};
+    f.contents.set("assets/studio.hdr",Buffer.from("hdr"));
+    ibl.source.contentHash.value=createHash("sha256").update("hdr").digest("hex");
+    f.manifest.files.push({path:"assets/studio.hdr",bytes:3,sha256:ibl.source.contentHash.value});
+  }
+  const payload = hdr ? compileSceneHdrEnvironment(environment,lighting,ibl,undefined,origin) : compileSceneEnvironment(environment, lighting, undefined, origin);
+  const capabilityLighting = hdr ? "deep.scene.hdr-lighting.v1" : payload.schemaVersion === 5 ? "deep.scene.point-shadow.v1" : payload.schemaVersion === 4 ? "deep.scene.spot-shadow.v1" : payload.lighting?.localLights ? "deep.scene.multi-light.v1" : "deep.scene.directional-light.v1";
+  mutate(f, "scene", scene => { scene.environment = environment; if (lighting) scene.lighting = lighting; });
+  const source = runtimeContentSha256(sceneCompilationSource(JSON.parse(f.contents.get(paths.scene))));
+  mutate(f, "compilation", value => {
+    value.recipe = hdr ? "deep-scene-static-compile-v11" : payload.schemaVersion === 5 ? "deep-scene-static-compile-v10" : payload.schemaVersion === 4 ? "deep-scene-static-compile-v9" : payload.lighting?.localLights ? "deep-scene-static-compile-v8" : lighting ? "deep-scene-static-compile-v7" : "deep-scene-static-compile-v6"; value.sourceSemanticHash = source;
+    if(hdr) value.environmentSource={bytes:3,sha256:ibl.source.contentHash.value};
+    value.compiledSceneFields.push({ field: "environment", capability: hdr ? "deep.scene.hdr-environment.v1" : "deep.scene.solid-environment.v1", resourceId: "scene.environment" });
+    if (lighting) value.compiledSceneFields.push({ field: "lighting", capability: capabilityLighting, resourceId: "scene.environment" });
+  });
+  mutate(f, "runtime", value => {
+    const old = value.entrypoints.environment;
+    delete value.payloads[old]; value.payloads[payload.id] = payload; value.entrypoints.environment = payload.id;
+    value.resources.find(r => r.id === old).id = payload.id;
+    value.resources.sort((a, b) => a.id < b.id ? -1 : 1);
+  });
+  mutate(f, "report", value => {
+    value.contentFingerprint = source; value.fixtureId = `scene-${source}`;
+    const capability = hdr ? "deep.scene.hdr-environment.v1" : "deep.scene.solid-environment.v1", id = "test-environment";
+    value.items.push({ sceneId: "scene", objectId: "scene", path: "environment", capability, status: "supported", reason: "test", remediation: "test", evidenceIds: [id] });
+    value.evidence.push({ ...value.evidence[0], id, capability });
+    if (lighting) {
+      value.items.push({ ...value.items.at(-1), path: "lighting", capability: capabilityLighting, evidenceIds: ["test-light"] });
+      value.evidence.push({ ...value.evidence[0], id: "test-light", capability: capabilityLighting });
+    }
+    value.evidence.forEach(e => { e.sourceSemanticHash = source; e.fixtureId = value.fixtureId; });
+  });
+  rebindV5(f); return f;
+}
+test("v6 validates the solid environment payload against author semantics", () => {
+  const f = v6Fixture(); validateSceneClientArchiveNative(f.manifest, f.contents);
+});
+const authorLight = { enabled: true, intensity: 1, shadowsEnabled: true, reflectionsEnabled: false, globalIlluminationEnabled: false,
+  lights: [{ id: "sun", name: "Sun", type: "directional", enabled: true, color: "#ffffff", intensity: 2, castShadow: true }] };
+test("v7 consumes exact directional-light source and evidence", () => {
+  const f = v6Fixture(authorLight); validateSceneClientArchiveNative(f.manifest, f.contents);
+});
+const authorMany = { ...authorLight, lights: [...authorLight.lights,
+  { id: "point", name: "Point", type: "point", enabled: true, color: "#ff0000", intensity: 4, castShadow: false,
+    position: { x: 4, y: 6, z: 2 }, distance: 12, decay: 2 }] };
+test("v8 consumes multi-light source including floating origin", () => {
+  const f = v6Fixture(authorMany); validateSceneClientArchiveNative(f.manifest, f.contents);
+});
+const authorShadow = {...authorLight,lights:[...authorLight.lights,{id:"spot",name:"Spot",type:"spot",enabled:true,color:"#ffffff",intensity:4,castShadow:true,
+  position:{x:0,y:4,z:3},target:{x:0,y:0,z:0},distance:12,angle:.6,penumbra:.2,decay:2}]};
+test("v9 consumes exact spot shadow contract",()=>{const f=v6Fixture(authorShadow);validateSceneClientArchiveNative(f.manifest,f.contents);});
+const authorPointShadow={...authorMany,lights:authorMany.lights.map(light=>({...light,castShadow:true}))};
+test("v10 consumes six-face point shadow contract",()=>{const f=v6Fixture(authorPointShadow);validateSceneClientArchiveNative(f.manifest,f.contents);});
+test("v10 rejects removed point projection despite rebound hashes",()=>{
+  const f=v6Fixture(authorPointShadow);
+  mutate(f,"runtime",v=>{v.payloads[v.entrypoints.environment].lighting.localLights[0].castShadow=false;});
+  rebindV5(f); assert.throws(()=>validateSceneClientArchiveNative(f.manifest,f.contents));
+});
+test("v11 consumes source-bound frozen HDR and rejects rebound source substitution",()=>{
+  const f=v6Fixture({...authorPointShadow,reflectionsEnabled:true},true);
+  validateSceneClientArchiveNative(f.manifest,f.contents);
+  mutate(f,"runtime",v=>{v.payloads[v.entrypoints.environment].ibl.source.contentHash.value="b".repeat(64);});
+  rebindV5(f);assert.throws(()=>validateSceneClientArchiveNative(f.manifest,f.contents),/HDR/);
+});
+test("v9 rejects a removed shadow request even when every hash is rebound",()=>{
+  const f=v6Fixture(authorShadow);
+  mutate(f,"runtime",v=>{const env=v.payloads[v.entrypoints.environment];env.lighting.localLights[0].castShadow=false;});
+  rebindV5(f);assert.throws(()=>validateSceneClientArchiveNative(f.manifest,f.contents));
+});
+for (const [name, patch] of [["position", p => { p.position[0] += 1; }], ["range", p => { p.range = 10; }],
+  ["decay", p => { p.decay = 1; }], ["cone", p => { p.innerCos = 1; }], ["color", p => { p.radiance[1] = 1; }]]) {
+  test(`v8 rejects rebound local ${name}`, () => {
+    const f = v6Fixture(authorMany); mutate(f, "runtime", v => patch(v.payloads[v.entrypoints.environment].lighting.localLights[0]));
+    rebindV5(f); assert.throws(() => validateSceneClientArchiveNative(f.manifest, f.contents));
+  });
+}
+for (const [name, patch] of [["radiance", p => { p.radiance[0] = 0.3; }], ["exposure", p => { p.exposure = 1.4; }],
+  ["direction", p => { p.direction = [0,0,1]; }], ["shadows", p => { p.shadows = false; }]]) {
+  test(`v7 rejects rebound ${name}`, () => {
+    const f = v6Fixture(authorLight); mutate(f, "runtime", v => patch(v.payloads[v.entrypoints.environment].lighting));
+    rebindV5(f); assert.throws(() => validateSceneClientArchiveNative(f.manifest, f.contents));
+  });
+}
+for (const [name, mutatePayload] of [["color", p => { p.backgroundSrgb[0] = 0.8; }],
+  ["transform", p => { p.outputTransform = "aces-exposure-2"; }]]) {
+  test(`v6 rejects ${name} despite rebound artifact, graph and evidence hashes`, () => {
+    const f = v6Fixture(); mutate(f, "runtime", value => mutatePayload(value.payloads[value.entrypoints.environment]));
+    rebindV5(f); assert.throws(() => validateSceneClientArchiveNative(f.manifest, f.contents));
+  });
+}
+test("v6 rejects deleted environment mapping or proof", () => {
+  for (const key of ["compilation", "report"]) {
+    const f = v6Fixture();
+    mutate(f, key, value => { if (key === "compilation") value.compiledSceneFields.pop(); else value.evidence.pop(); });
+    assert.throws(() => validateSceneClientArchiveNative(f.manifest, f.contents));
+  }
+});
 test("v5 accepts an embedded frame restoring the authored world camera", () => {
   const f = v5Fixture(); validateSceneClientArchiveNative(f.manifest, f.contents);
   const runtime = JSON.parse(f.contents.get(paths.runtime)), camera = runtime.payloads[runtime.entrypoints.camera];
@@ -262,7 +376,7 @@ test("v5 rejects compilation frame disagreement even with a matching graph hash"
 for (const version of [4, 5]) for (const field of ["weather", "object-data-binding"]) test(`v${version} rejects uncompiled ${field} even when source, package and evidence identities are rebound`, () => {
   const f = version === 5 ? v5Fixture() : v4Fixture();
   mutate(f, "scene", scene => {
-    if (field === "weather") scene.weather = "sunny";
+    if (field === "weather") scene.weather = "rain";
     else scene.primitives[0].dataBinding = { source: "sim:uncompiled" };
   });
   const source = runtimeContentSha256(sceneCompilationSource(JSON.parse(f.contents.get(paths.scene))));

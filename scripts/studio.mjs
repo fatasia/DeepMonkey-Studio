@@ -13,7 +13,7 @@ import { withStudioOperationLock } from "./lib/studioOperationLock.mjs";
 try {
   await main();
 } catch (error) {
-  process.stderr.write(`[Deep Monkey Studio] ${error instanceof Error ? error.message : String(error)}\n`);
+  process.stderr.write(`[DeepMonkey Studio] ${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
 }
 
@@ -67,7 +67,7 @@ function assertRequestedTarget(parsed, current) {
 
 function printStatus(status) {
   if (!status.running) {
-    process.stdout.write("\nDeep Monkey Studio：未运行\n\n");
+    process.stdout.write("\nDeepMonkey Studio：未运行\n\n");
     return;
   }
   const ownership = status.owned ? `PID ${status.pid}` : "外部服务（仅跟踪，不接管进程）";
@@ -85,7 +85,7 @@ function printStatus(status) {
   }
   for (const service of status.services ?? []) lines.push(`${service.label}    ${service.healthy ? "正常" : "异常"}`);
   lines.push(`日志      ${status.logs.stderr}`);
-  process.stdout.write(`\nDeep Monkey Studio 运行状态\n${lines.map((line) => `  ${line}`).join("\n")}\n\n`);
+  process.stdout.write(`\nDeepMonkey Studio 运行状态\n${lines.map((line) => `  ${line}`).join("\n")}\n\n`);
 }
 
 function displayHost(host) {

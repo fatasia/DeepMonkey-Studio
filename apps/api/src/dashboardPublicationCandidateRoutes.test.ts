@@ -24,7 +24,8 @@ function candidate(): Awaited<ReturnType<DashboardNativeCandidateService["prepar
     targetArtifactHash: "d".repeat(64),
     artifactSha256: "d".repeat(64),
     windowVerification: { verifier: "native-dashboard-window-v1" },
-    capability: { objects: [{ nodeId: "widget-1", status: "supported", deferredFields: [] }] },
+    capability: { objects: [{ nodeId: "widget-1", status: "degraded", deferredFields: ["widget.video"],
+      reasons: ["Video playback requires a media decoder and player state contract"] }] },
     artifact: { artifact: new Uint8Array([1, 2, 3]) },
   } as unknown as Awaited<ReturnType<DashboardNativeCandidateService["prepare"]>>;
 }
@@ -117,7 +118,8 @@ describe("dashboard publication candidate routes", () => {
     expect(response.headers["cache-control"]).toBe("private, no-store");
     expect(prepare).toHaveBeenCalledWith(authority, expect.any(AbortSignal));
     expect(response.json()).toMatchObject({ candidateId: "candidate-download-1", authority, artifactSha256: "d".repeat(64),
-      verifier: "native-dashboard-window-v1", objects: [{ nodeId: "widget-1", status: "supported" }] });
+      verifier: "native-dashboard-window-v1", objects: [{ nodeId: "widget-1", status: "degraded",
+        deferredFields: ["widget.video"], reasons: ["Video playback requires a media decoder and player state contract"] }] });
     const metadata = response.json() as Record<string, unknown>;
     expect(metadata).not.toHaveProperty("artifact");
     expect(metadata).not.toHaveProperty("capability");

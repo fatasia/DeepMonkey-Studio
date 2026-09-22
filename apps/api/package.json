@@ -5,13 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "node --conditions=development --import tsx --watch src/index.ts",
-    "build": "node ../../scripts/clean-dir.mjs dist && tsc -p tsconfig.json && node ../../scripts/build-native-scene-compiler.mjs && node ../../scripts/build-dashboard-content-compiler.mjs",
+    "build": "node ../../scripts/clean-dir.mjs dist && tsc -p tsconfig.json && node ../../scripts/build-native-scene-compiler.mjs && node ../../scripts/build-dashboard-content-compiler.mjs && node ../../scripts/build-dashboard-static-runtime.mjs && node ../../scripts/build-industrial-worker-host.mjs",
     "typecheck": "tsc --noEmit",
     "verify:battery-onnx-candidates": "tsx scripts/verifyBatteryOnnxCandidates.ts",
     "check:production": "tsx src/productionPreflight.ts",
     "test": "vitest run",
     "start": "node dist/index.js",
-    "predev": "node ../../scripts/build-native-scene-compiler.mjs && node ../../scripts/build-dashboard-content-compiler.mjs"
+    "predev": "node ../../scripts/build-native-scene-compiler.mjs && node ../../scripts/build-dashboard-content-compiler.mjs && node ../../scripts/build-dashboard-static-runtime.mjs && node ../../scripts/build-industrial-worker-host.mjs"
   },
   "dependencies": {
     "@bim-studio/contracts": "workspace:*",

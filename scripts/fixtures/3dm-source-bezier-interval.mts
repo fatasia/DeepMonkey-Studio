@@ -15,3 +15,16 @@ export function sourceBezierInterval(curve:any,domain:number[]){
   if(domain[0]>lo)control=split(control,(domain[0]-lo)/(domain[1]-lo))[1];
   return {...curve,controlPoints:control,knots:[...Array(p+1).fill(domain[0]),...Array(p+1).fill(domain[1])]};
 }
+
+/** Restrict a C0 chain without removing authored knots or approximating its geometry. */
+export function sourceBezierChainInterval(curve:any,domain:number[]){
+  check(Array.isArray(domain)&&domain.length===2&&domain.every(Number.isFinite)&&domain[0]<domain[1]
+    &&Array.isArray(curve?.knots),'unsupported-source-bezier-chain-interval');
+  const values=[...new Set<number>(curve.knots)];
+  check(domain[0]>=values[0]&&domain[1]<=values.at(-1)!,'source-chain-interval-outside-domain');
+  const boundaries=[domain[0],...values.filter(x=>x>domain[0]&&x<domain[1]),domain[1]];
+  const pieces=boundaries.slice(1).map((hi,i)=>sourceBezierInterval(curve,[boundaries[i],hi]));
+  const p=curve.degree;
+  return {...curve,controlPoints:pieces.flatMap((piece,i)=>piece.controlPoints.slice(i?1:0)),
+    knots:[...Array(p+1).fill(domain[0]),...boundaries.slice(1,-1).flatMap(x=>Array(p).fill(x)),...Array(p+1).fill(domain[1])]};
+}

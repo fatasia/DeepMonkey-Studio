@@ -15,9 +15,9 @@ const path=resolve(root,'data/external-assets/industrial-format-plan/dependencie
 const sha=(b:any)=>createHash('sha256').update(b).digest('hex'),sourceSha256='a1b0ef69925b5d9223a7d797033055bb766842768a96f7713e1ecaec2763bb31';
 assert.equal(sha(readFileSync(path)),sourceSha256);const native=spawnSync(resolve(root,'test-output/3dm-source-audit/3dm-source-audit.exe'),[path,'--parameter-evidence-all'],{encoding:'utf8',maxBuffer:128*1024*1024,timeout:60000});
 assert.equal(native.status,0,native.stderr);const source=JSON.parse(native.stdout),object=source.objects.find((o:any)=>o.cadIr),ir=object.cadIr;object.storedRenderMeshes=[];
-const sourceBefore=JSON.stringify(ir),baseline=completeBrepParts(object,.001,{reconstructPlaneBoundaries:false}),edges=[62,65,74,76],distance=(a:number[],b:number[])=>Math.hypot(...a.map((x,i)=>x-b[i]));
+const sourceBefore=JSON.stringify(ir),baseline=completeBrepParts(object,.001,{reconstructPlaneBoundaries:false,reconstructPairedBoundaries:false}),edges=[62,65,74,76],distance=(a:number[],b:number[])=>Math.hypot(...a.map((x,i)=>x-b[i]));
 test('four real plane boundaries reconstruct within continuous source budgets and preserve unrelated vertices',async()=>{
-  const complete=completeBrepParts(object,.001),records=complete.planeSourceReconstructions;assert.deepEqual(records.map(r=>r.edge),edges);
+  const complete=completeBrepParts(object,.001,{reconstructPairedBoundaries:false}),records=complete.planeSourceReconstructions;assert.deepEqual(records.map(r=>r.edge),edges);
   assert.equal(complete.parts.length,41);assert.equal(complete.boundaryAudit.shared.filter(e=>!e.conforming).length,49);assert(complete.boundaryAudit.seams.every(s=>s.conforming));assert.equal(complete.boundaryAudit.unverified.length,0);
   let references=0,maxReferenceError=0,maxMappedError=0;
   for(const record of records){const proof=provePlaneC3Map(ir,record.face,record.edge,.001),c2=ir.curves2d[ir.trims[proof.trim].curve2d],c3=proof.curve;
@@ -32,7 +32,7 @@ test('four real plane boundaries reconstruct within continuous source budgets an
     if(![25,26,29,30,33].includes(old.face))assert.deepEqual(part,old);
   }
   assert.equal(JSON.stringify(ir),sourceBefore);assert(references>=304&&maxReferenceError<1e-10);
-  const glb=await export3dmGlb(source,sourceSha256);assert(glb.bytes);assert.equal(glb.sidecar.status,'partial-geometry-preview');mkdirSync(out,{recursive:true});const glbPath=resolve(out,'MechPartA.glb');writeFileSync(glbPath,glb.bytes);
+  const glb=await export3dmGlb(source,sourceSha256,{reconstructPairedBoundaries:false,repairFloat32:false});assert(glb.bytes);assert.equal(glb.sidecar.status,'partial-geometry-preview');mkdirSync(out,{recursive:true});const glbPath=resolve(out,'MechPartA.glb');writeFileSync(glbPath,glb.bytes);
   const evidence={sourceSha256,sourceUrl:'https://github.com/mcneel/opennurbs/blob/v8.35.26251.13001/example_files/V4/v4_MechPartA.3dm',archiveVersion:source.archiveVersion,metersPerUnit:.001,useBoundary:'official sample; local verification only; not redistributed',
     records,references,maxReferenceError,maxMappedError,boundaryAudit:complete.boundaryAudit,glb:await auditGlbGeometry(glbPath),glbSha256:sha(glb.bytes),status:glb.sidecar.status};writeFileSync(resolve(out,'evidence.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify({references,maxReferenceError,maxMappedError,glb:evidence.glb,hash:evidence.glbSha256}));
 });

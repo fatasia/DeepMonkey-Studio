@@ -56,10 +56,12 @@ it.each(["window", "receipt", "scene", "project", "publication", "assess"])("cle
  await expect(stat(path.dirname(f.verifyWindow.mock.lastCall![0]))).rejects.toMatchObject({ code: "ENOENT" });
  f.prepare.mockRejectedValueOnce(new Error("slot released")); await expect(f.service.prepare("user", f.scene)).rejects.toThrow("slot released");
 });
-it("blocks unsupported fields before window and releases the slot", async () => {
- const f = await fixture(); f.compiled.report.items[0]!.capability = "deep.scene.uncompiled.v1";
- expect((await f.service.prepare("user", f.scene)).status).toBe("blocked"); expect(f.verifyWindow).not.toHaveBeenCalled();
- expect((await f.service.prepare("user", f.scene)).status).toBe("blocked");
+it("packages optional uncompiled fields after the real window evidence", async () => {
+ const f = await fixture(); f.compiled.report.items.push({ sceneId: "s", objectId: "s", path: "postProcessing",
+   capability: "deep.scene.uncompiled.v1", status: "degraded", reason: "可选后处理未接入", remediation: "补齐后处理能力", evidenceIds: [] });
+ const result = await f.service.prepare("user", f.scene);
+ expect(result.status).toBe("ready"); expect(result.report?.status).toBe("ready"); expect(f.verifyWindow).toHaveBeenCalledOnce();
+ expect((await f.service.prepare("user", f.scene)).status).toBe("ready");
 });
 it("rejects concurrent work and cancellation cannot create a candidate", async () => {
  const f = await fixture(), controller = new AbortController(); let release!: () => void;

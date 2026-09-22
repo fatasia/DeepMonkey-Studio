@@ -88,6 +88,7 @@ describe("dashboard Native candidate route runtime", () => {
       } });
       expect(prepared.statusCode, prepared.body).toBe(201);
       const candidate = prepared.json();
+      expect(candidate.downloadFormats).toEqual(["exe", "zip", "dmda"]);
       const download = await f.app.inject({ method: "GET", url: `${base}/${candidate.candidateId}/portable-zip` });
       expect(download.statusCode, download.body).toBe(200);
       expect(download.headers["content-type"]).toBe("application/zip");

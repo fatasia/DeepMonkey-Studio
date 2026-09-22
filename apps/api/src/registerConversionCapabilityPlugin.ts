@@ -20,6 +20,8 @@ const submitSchema: CapabilityJsonSchema = {
   additionalProperties: false,
   properties: {
     pluginId: { type: "string", minLength: 1 },
+    modelId: { type: "string", minLength: 1 },
+    idempotencyKey: { type: "string", minLength: 1 },
     input: {
       type: "object",
       additionalProperties: false,
@@ -110,9 +112,11 @@ function providers(service: ConversionTaskService): CapabilityProvider[] {
       ),
       async invoke(request) {
         const input = asRecord(request.input);
-        const task = service.submit({
+        const task = await service.submitDurable({
           projectId: request.projectId,
           pluginId: requiredString(input.pluginId, "pluginId"),
+          ...(input.modelId !== undefined ? { modelId: requiredString(input.modelId, "modelId") } : {}),
+          ...(input.idempotencyKey !== undefined ? { idempotencyKey: requiredString(input.idempotencyKey, "idempotencyKey") } : {}),
           input: asTaskInput(input.input),
           ...(isRecord(input.configuration) ? { configuration: input.configuration } : {}),
         });
@@ -144,7 +148,7 @@ function providers(service: ConversionTaskService): CapabilityProvider[] {
       ),
       async invoke(request) {
         const taskId = requiredString(asRecord(request.input).taskId, "taskId");
-        return taskResult(service.cancel(request.projectId, taskId), "转换任务取消结果");
+        return taskResult(await service.cancelDurable(request.projectId, taskId), "转换任务取消结果");
       },
     },
   ];

@@ -59,10 +59,10 @@ export async function getStudioDeploymentStatus(platform = process.platform, env
 
 export function printStudioDeploymentStatus(status) {
   if (!status.running) {
-    process.stdout.write("\nDeep Monkey Studio：未运行\n\n");
+    process.stdout.write("\nDeepMonkey Studio：未运行\n\n");
     return;
   }
-  process.stdout.write(`\nDeep Monkey Studio 生产服务\n  状态      ${status.healthy ? "健康" : "异常"}\n  守护      ${status.managed ? "已托管" : "未检测到守护进程"}\n  API       ${status.healthy ? "正常" : "异常"} · ${status.origin}\n\n`);
+  process.stdout.write(`\nDeepMonkey Studio 生产服务\n  状态      ${status.healthy ? "健康" : "异常"}\n  守护      ${status.managed ? "已托管" : "未检测到守护进程"}\n  API       ${status.healthy ? "正常" : "异常"} · ${status.origin}\n\n`);
 }
 
 export function productionServiceName(platform = process.platform) {

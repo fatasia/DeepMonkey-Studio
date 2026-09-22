@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "assetId": "kenney.nature-kit",
+  "source": "https://kenney.nl/assets/nature-kit",
+  "license": "CC0-1.0",
+  "archive": {
+    "fileName": "nature.zip",
+    "bytes": 10537521,
+    "sha256": "fa7974a0d342bfe63c38664ba9f8ec1a4aab8ea25f099bdc56870e33588c4d9d"
+  },
+  "auditEvidence": "test-output/de26-v11-nature-review-20260918/geometry-units-thumbnail-audit.json",
+  "selection": {
+    "categories": { "trees": 12, "shrubs": 12, "fences": 12, "ground": 12 },
+    "total": 48,
+    "required": {
+      "glbVersion": 2,
+      "positionAccessor": "float32 VEC3",
+      "nonFinitePositionValues": 0,
+      "isometricThumbnailViews": 4,
+      "unitContract": "meters"
+    }
+  },
+  "admission": {
+    "status": "blocked",
+    "policy": "fail-closed",
+    "fenceGate": {
+      "id": "grounded-origin",
+      "maxAbsMinY": 0.001,
+      "blocked": [
+        { "path": "Models/GLTF format/fence_gate.glb", "minY": -0.1702811569, "reason": "model origin is below ground" }
+      ],
+      "derivedCorrection": {
+        "policy": "explicit-grounding-offset; source bytes retained",
+        "sourcePath": "Models/GLTF format/fence_gate.glb",
+        "derivedPath": "derived/fence_gate-grounded.glb",
+        "geometryOffsetY": 0.17028115689754486,
+        "derivedMinY": 0,
+        "evidence": "test-output/de26-v11-nature-review-20260918/derived/fence_gate-grounded.json"
+      }
+    },
+    "nextActions": [
+      "offset or repair fence_gate.glb before admission",
+      "register GLB and Isometric/*_NE.png pairs in industrialPrefabCatalog",
+      "verify real scene drag/drop, save/refresh/reopen and repeated placement"
+    ]
+  }
+}

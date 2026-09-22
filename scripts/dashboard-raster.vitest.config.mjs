@@ -28,5 +28,7 @@ export default {
     "scripts/lib/dashboardRasterEndToEnd.vitest.mjs",
     "scripts/lib/dashboardDataEndToEnd.vitest.mjs",
     "scripts/lib/dashboardChartLayout.vitest.mjs",
+    "scripts/lib/dashboardFilterLayout.vitest.mjs",
+    "scripts/lib/dashboardTableLayout.vitest.mjs",
   ] },
 };

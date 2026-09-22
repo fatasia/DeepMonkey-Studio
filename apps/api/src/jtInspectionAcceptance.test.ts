@@ -49,9 +49,9 @@ describe("JT upload inspection closure", () => {
       propertiesUrl: expect.stringContaining("properties.json"),
       inspectionUrl: expect.stringContaining("inspection.json"),
     });
-    const outputDir = path.join(dataDir, "projects", "default", "models", uploaded.id, "output");
+    const outputDir = path.join(dataDir, "projects", "default", "models", uploaded.id, "attempts", model.conversionTaskId!, "output");
     await expect(access(path.join(outputDir, "geometry.glb"))).resolves.toBeUndefined();
-    expect(await objects.stat(`projects/default/models/${uploaded.id}/output/inspection.json`)).toBe(true);
+    expect(await objects.stat(`projects/default/models/${uploaded.id}/attempts/${model.conversionTaskId}/output/inspection.json`)).toBe(true);
     const geometryResponse = await app.inject({ method: "GET", url: model.manifest!.geometryUrl! });
     expect(geometryResponse.statusCode).toBe(200);
     expect(geometryResponse.headers["content-type"]).toContain("model/gltf-binary");
@@ -115,7 +115,7 @@ describe("JT upload inspection closure", () => {
     });
     expect(model.manifest?.geometryUrl).toBeUndefined();
     expect(model.manifest?.viewerKind).toBeUndefined();
-    const outputDir = path.join(dataDir, "projects", "default", "models", uploaded.id, "output");
+    const outputDir = path.join(dataDir, "projects", "default", "models", uploaded.id, "attempts", model.conversionTaskId!, "output");
     await expect(access(path.join(outputDir, "geometry.glb"))).rejects.toThrow();
     expect(JSON.parse(await readFile(path.join(outputDir, "inspection.json"), "utf8"))).toMatchObject({
       status: "structure-read",
@@ -125,23 +125,22 @@ describe("JT upload inspection closure", () => {
     await app.close();
   });
 
-  it("hands a valid unsupported JT to the configured industrial converter and preserves inspection evidence", async () => {
+  it("retains inspection evidence without invoking an external fallback for unsupported JT", async () => {
     const { app, dataDir, store } = await createHarness(true);
     const response = await uploadJt(app, withoutGeometrySegments(await readFile(fixturePath)), "external-lod.jt");
     const uploaded = response.json() as ModelRecord;
     await vi.waitFor(() => {
-      expect(store.getProject("default")?.models.find((item) => item.id === uploaded.id)?.status).toBe("ready");
+      expect(store.getProject("default")?.models.find((item) => item.id === uploaded.id)?.status).toBe("waiting_converter");
     }, { timeout: 5_000, interval: 25 });
 
     const model = store.getProject("default")!.models.find((item) => item.id === uploaded.id)!;
-    expect(model).toMatchObject({ status: "ready", progress: 100 });
+    expect(model).toMatchObject({ status: "waiting_converter", progress: 40 });
     expect(model.manifest).toMatchObject({
       sourceFormat: "jt",
-      viewerKind: "gltf",
-      geometryUrl: expect.stringContaining("geometry.glb"),
       inspectionUrl: expect.stringContaining("inspection.json"),
     });
-    const outputDir = path.join(dataDir, "projects", "default", "models", uploaded.id, "output");
+    expect(model.manifest?.geometryUrl).toBeUndefined();
+    const outputDir = path.join(dataDir, "projects", "default", "models", uploaded.id, "attempts", model.conversionTaskId!, "output");
     expect(JSON.parse(await readFile(path.join(outputDir, "inspection.json"), "utf8"))).toMatchObject({
       status: "structure-read",
       geometryParsed: false,

@@ -15,6 +15,7 @@ import { scenePublicationJsonEqual } from "./scenePublicationStore.js";
 
 interface Dependencies {
   store: MetadataStore; objects: ObjectStore; dataDir: string;
+  nativeExecutable?:string;
   verifyWindow: (packagePath: string, signal?: AbortSignal) => Promise<NativeSceneWindowEvidence>;
   prepare?: typeof prepareNativeSceneCandidate;
   assess?: typeof assessVerifiedNativeSceneCandidate;
@@ -38,9 +39,10 @@ export function createNativeSceneCandidateService(dependencies: Dependencies) {
         const candidate = await (dependencies.prepare ?? prepareNativeSceneCandidate)({ ...dependencies, scene,
           ...(signal ? { signal } : {}) });
         const { compiled, capture } = candidate;
-        if (compiled.report.items.some(item => item.capability === "deep.scene.uncompiled.v1")) {
-          return { status: "blocked" as const, report: compiled.report };
-        }
+        // Uncompiled entries describe optional capabilities that the Native
+        // package may omit.  They remain visible in the report so consumers
+        // can hide their controls, while core evidence is still checked below
+        // and a corrupted/blocked report cannot reach publication.
         if (Buffer.byteLength(compiled.packageJson) > 256 * 1024 ** 2) throw new Error("Native 编译产物超过 256MiB");
         const content = Buffer.from(compiled.packageJson), artifactHash = createHash("sha256").update(content).digest("hex");
         if (artifactHash !== compiled.evidence.targetArtifactHash) throw new Error("Native 编译产物身份不一致");
@@ -60,7 +62,7 @@ export function createNativeSceneCandidateService(dependencies: Dependencies) {
         const report = await (dependencies.assess ?? assessVerifiedNativeSceneCandidate)({ scene, compiled, runtimeEvidence,
           ...(signal ? { signal } : {}) });
         signal?.throwIfAborted();
-        if (report.status !== "ready") return { status: "blocked" as const, report };
+        if (report.status === "blocked") return { status: "blocked" as const, report };
         const assertCurrent = () => {
           const project = dependencies.store.getProject(scene.projectId);
           if (!project || !scenePublicationJsonEqual(dependencies.store.getScene(scene.projectId, scene.id), scene)

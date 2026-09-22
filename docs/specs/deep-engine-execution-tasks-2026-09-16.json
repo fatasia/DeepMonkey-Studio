@@ -6,7 +6,7 @@
   "headAtStart": "f677b78ea9a86d2f92656ddb7ae660e6824f0f0c",
   "reviewedThrough": "678d2715fab6df21087ac112441a0ffb73ba847b",
   "workingTreeDirty": true,
-  "scope": "2026-09-17 高价值最小化修订；DE26 后置，待核心主流程完成后由用户决定是否执行",
+  "scope": "2026-09-18 用户确认：V1–V7做扎实，V8小而强，V9/V10/V11/V13按真实场景补齐，V12不做；整合既有DE26任务，不重复建设。实现与证据继续独立验收，不把计划计为完成",
   "implementationComplete": false
  },
  "targets": [
@@ -308,7 +308,14 @@
    "qualifiedDependsOn": [
     "DE26/A03"
    ],
-   "note": "第一切片已落地(746ce63 TS 树):计划↔实际对拍 16 测试+unmapped 显式+回执;真实 GPU 提交顺序切换与像素回归归真机门禁"
+   "note": "第一切片已落地(746ce63 TS 树):计划↔实际对拍 16 测试+unmapped 显式+回执;真实 GPU 提交顺序切换与像素回归归真机门禁",
+   "strategy20260918": {
+    "reviewId": "V4",
+    "value": "高",
+    "work": "复用现有图和执行器，贯通生产提交，不以声明图替代真实GPU证据。",
+    "acceptance": "记录计划pass与实际提交对应关系，并与同资产同质量轨迹对拍。",
+    "status": "用户确认增强，保留原验收和完成状态"
+   }
   },
   {
    "id": "B04",
@@ -395,7 +402,14 @@
    "qualifiedDependsOn": [
     "DE26/A03",
     "DE26/B02"
-   ]
+   ],
+   "strategy20260918": {
+    "reviewId": "V4",
+    "value": "高",
+    "work": "账本包含渲染、上传、历史帧与候选同时驻留，预算与降级原因可查询。",
+    "acceptance": "记录峰值与卡顿原始窗口；内容或画质变化不能混入纯性能提升。",
+    "status": "用户确认增强，保留原验收和完成状态"
+   }
   },
   {
    "id": "B06",
@@ -491,7 +505,13 @@
     "DE26/A03",
     "DE26/B05",
     "DE26/E01"
-   ]
+   ],
+   "unityLighting20260918": {
+    "work": "自动质量仅在用户允许档位内调整；Unity锁定画质对拍禁止暗降分辨率、灯数、GI或阴影。",
+    "acceptance": "手动锁定配置与实际执行一致，采样报告包含所有质量变化。",
+    "document": "de26-unity-lighting-parity-2026-09-18.md",
+    "status": "用户确认增强，尚需逐格验收"
+   }
   },
   {
    "id": "C01",
@@ -628,7 +648,14 @@
    "qualifiedDependsOn": [
     "DE26/C01",
     "DE26/C02"
-   ]
+   ],
+   "strategy20260918": {
+    "reviewId": "V10",
+    "value": "条件高",
+    "work": "按真实工业资产频次选择材质语义，不建设完整新材质语言。",
+    "acceptance": "支持、近似和拒绝状态与双端画面对齐。",
+    "status": "用户确认增强，保留原验收和完成状态"
+   }
   },
   {
    "id": "C05",
@@ -662,7 +689,14 @@
     "DE26/C03",
     "DE26/C04",
     "DE26/E04"
-   ]
+   ],
+   "strategy20260918": {
+    "reviewId": "V10",
+    "value": "条件高",
+    "work": "传输/透明语义围绕真实资产和目标能力分级，不扩成通用节点体系。",
+    "acceptance": "画质与性能预算一起验收，不能用静默材质替换取得速度。",
+    "status": "用户确认增强，保留原验收和完成状态"
+   }
   },
   {
    "id": "C06",
@@ -724,6 +758,38 @@
    "qualifiedDependsOn": [
     "DE26/C06",
     "DE26/B05"
+   ],
+   "strategy20260918": {
+    "reviewId": "V2",
+    "value": "最高",
+    "work": "缓存键包含源内容、编译器/格式profile版本和目标能力；公开受影响产物与命中原因。",
+    "acceptance": "同一冻结资产修改一个字段/贴图，只失效相关派生项；记录重建耗时与字节，不预设收益比例。",
+    "status": "用户确认增强，保留原验收和完成状态"
+   },
+   "scenarioSlices20260918": [
+    {
+     "id": "V11",
+     "role": "主卡",
+     "title": "场景内拖拽搭建素材库",
+     "work": "在既有场景资源面板预置道路、地面、围栏、绿化模板，拖拽预览→贴地/吸附→放置→就地调整尺寸/方向/材质/间距；复用预制件、参数化派生、场景插入/撤销与持久化，不强制跳转独立建模页。",
+     "acceptance": "四类各一个真实模板完成拖放/吸附/连续铺设/复制/撤销、保存刷新和Web/Native离线发布；取消无残留、模板与实际几何一致，双主题/DPI/窄窗两轮视觉验证，重复实例资源预算可查。",
+     "negative": "非法尺寸/数量预算/ID冲突/资源缺失/取消/重复生成不留孤儿资产，不复制建模内核",
+     "reuse": [
+      "apps/web/src/parametric/parametricGeneration.ts",
+      "apps/web/src/parametric/parametricCadRuntime.ts",
+      "apps/web/src/prefabs/industrialPrefabCatalog.ts",
+      "apps/web/src/prefabs/industrialPrefabInstance.ts",
+      "apps/web/src/components/BuiltInAssetBrowser.tsx",
+      "apps/web/src/controllers/sceneEditorController.ts",
+      "packages/parametric-modeling-plugin/src/templates.ts"
+     ],
+     "requires": [
+      "DE26/B01",
+      "DE26/C07"
+     ],
+     "excludes": "不新建素材管理器/建模内核/命令总线；不做通用程序化世界，不夹带V12",
+     "document": "de26-v11-scene-building-assets-2026-09-18.md"
+    }
    ]
   },
   {
@@ -758,7 +824,14 @@
     "DE26/C01",
     "DE26/C07",
     "DE26/D01"
-   ]
+   ],
+   "strategy20260918": {
+    "reviewId": "V1",
+    "value": "最高",
+    "work": "编译链保留 SourceBundle hash/版本/单位、稳定源构件 ID、目标对象 source map 与质量诊断；由工业格式线供给，不另造 reader。",
+    "acceptance": "可从运行对象反查源构件和降级原因；未知来源、缺语义、超精度预算不能计为完整。",
+    "status": "用户确认增强，保留原验收和完成状态"
+   }
   },
   {
    "id": "D01",
@@ -819,7 +892,14 @@
    "qualifiedId": "DE26/D04",
    "qualifiedDependsOn": [
     "DE26/B06"
-   ]
+   ],
+   "strategy20260918": {
+    "reviewId": "V7",
+    "value": "高",
+    "work": "基于已有重基点实现补连续运动、持久标注和统一世界坐标服务。",
+    "acceptance": "源坐标精度、局部顶点精度和重基点误差分别记录，禁止仅凭视觉宣称毫米准确。",
+    "status": "用户确认增强，保留原验收和完成状态"
+   }
   },
   {
    "id": "D05",
@@ -888,7 +968,7 @@
   },
   {
    "id": "E01",
-   "title": "冻结双端色彩与材质参考",
+   "title": "Unity参照的双端色彩、能量与材质校准",
    "baseline": "Web/Native均有PBR/IBL/ACES，Dashboard曾修sRGB错误",
    "work": "同HDR环境、曝光、灯光与材质校准；区分线性计算、纹理解码、tone mapping与最终输出",
    "acceptance": "色卡/金属/粗糙度梯度的两端误差和曝光行为达到预冻结阈值",
@@ -915,11 +995,17 @@
    "qualifiedDependsOn": [
     "DE26/A02",
     "DE26/C01"
-   ]
+   ],
+   "unityLighting20260918": {
+    "work": "冻结Unity实际管线与版本、物理尺度、灯光强度单位、曝光/色彩；建立直接/间接/反射分离参考，先冻结场景误差预算再调优。",
+    "acceptance": "色卡、金属/粗糙度与法线梯度在Web/Native和Unity参照中逐项验证，不用任意曝光补偿掩盖受光错误。",
+    "document": "de26-unity-lighting-parity-2026-09-18.md",
+    "status": "用户确认增强，尚需逐格验收"
+   }
   },
   {
    "id": "E02",
-   "title": "普通场景环境灯光进入Native包",
+   "title": "统一多灯、模型受光与双端发布合同",
    "baseline": "静态编译仍只声明camera等有限语义；底层有IBL/灯光",
    "work": "从SceneSnapshot消费环境/曝光/主光/阴影设置，冻结资源并接Native读取；明确点/聚光支持分批",
    "acceptance": "普通带光照场景可导出同版本Native，变化反映到画面且不再仅因已实现字段被阻断",
@@ -947,11 +1033,24 @@
    "qualifiedDependsOn": [
     "DE26/E01",
     "DE26/C03"
-   ]
+   ],
+   "strategy20260918": {
+    "reviewId": "V6",
+    "value": "高",
+    "work": "优先让工业真实场景环境、曝光与已支持灯光语义随Web/Native发布包携带。",
+    "acceptance": "同一冻结场景双端对拍；不支持字段明确诊断。",
+    "status": "用户确认增强，保留原验收和完成状态"
+   },
+   "unityLighting20260918": {
+    "work": "多方向/点/聚/面积光作者语义、单位/范围/衰减/尺寸、灯与对象受光层/阴影层、castShadow/receiveShadow进入版本化合同和发布资源闭包。",
+    "acceptance": "场景编辑→保存→发布→Web/Native离线重开同光照；灯层隔离和投影/接影开关独立验证，不只支持第一盏灯。",
+    "document": "de26-unity-lighting-parity-2026-09-18.md",
+    "status": "用户确认增强，尚需逐格验收"
+   }
   },
   {
    "id": "E03",
-   "title": "GI探针接实际场景更新",
+   "title": "Unity能力对齐的全局光照与场景更新",
    "baseline": "ProbeClipmap控制器/adapter/调度均存在，创建调用主要Lab",
    "work": "用真实场景光照/几何脏域驱动探针capture；接Studio质量档与Native对应能力报告",
    "acceptance": "移动灯光/遮挡物会更新间接光；budget可控，漏光/时序收敛有参考",
@@ -959,12 +1058,13 @@
    "dependsOn": [
     "E01",
     "B02",
-    "B05"
+    "B05",
+    "E02"
    ],
    "owner": "GI/图形",
    "effortDays": "6–10",
    "legacy": "现有ProbeClipmap；P2-04",
-   "priority": "P1",
+   "priority": "P0",
    "checks": "T+GPU+BENCH",
    "existingPaths": [
     "packages/deep-engine/src/webgpu/probeClipmapPbrController.ts",
@@ -980,12 +1080,19 @@
    "qualifiedDependsOn": [
     "DE26/E01",
     "DE26/B02",
-    "DE26/B05"
-   ]
+    "DE26/B05",
+    "DE26/E02"
+   ],
+   "unityLighting20260918": {
+    "work": "复用ProbeClipmap并补静态烘焙/缓存资源、动态物体间接光、灯光/遮挡物脏域更新、混合直接间接光；统一探针与资源版本，不新建GI系统。",
+    "acceptance": "真实室内彩色反弹、遮挡物移动、开关门、室内外过渡可验证；漏光/更新收敛/取消与双端离线证据齐全，Ambient/AO/Bloom不能冒充GI。",
+    "document": "de26-unity-lighting-parity-2026-09-18.md",
+    "status": "用户确认增强，尚需逐格验收"
+   }
   },
   {
    "id": "E04",
-   "title": "局部反射与SSR首个切片",
+   "title": "Unity参照的局部反射与SSR",
    "baseline": "已有IBL；本轮未确认生产SSR",
    "work": "先可配置反射探针，再实现单bounce SSR+离屏回退；声明透明/粗糙限制",
    "acceptance": "镜面设备样本有空间变化反射；离屏与遮挡变化稳定，成本单列",
@@ -997,7 +1104,7 @@
    "owner": "图形",
    "effortDays": "6–10",
    "legacy": "反射增强新增",
-   "priority": "P2",
+   "priority": "P1",
    "checks": "T+GPU+BENCH",
    "existingPaths": [
     "packages/deep-engine/src/webgpu",
@@ -1012,23 +1119,30 @@
    "qualifiedDependsOn": [
     "DE26/E01",
     "DE26/B03"
-   ]
+   ],
+   "unityLighting20260918": {
+    "work": "已有IBL上补局部反射探针、空间混合/适用盒投影和SSR，离屏/遮挡失效回退显式；与金属/玻璃/粗糙材质统一。",
+    "acceptance": "空间变化反射、运动/屏边稳定、离屏退路逐格验证；反射不计为漫反射GI。",
+    "document": "de26-unity-lighting-parity-2026-09-18.md",
+    "status": "用户确认增强，尚需逐格验收"
+   }
   },
   {
    "id": "E05",
-   "title": "软阴影与局部灯光质量",
+   "title": "Unity能力对齐的多灯阴影与模型投影接影",
    "baseline": "已有CSM/局部阴影/缓存，PCF基础不能算高级软阴影",
    "work": "先优化CSM稳定和bias，再加预算受控软阴影；支持范围与影子atlas分配可诊断",
    "acceptance": "移动相机/灯光的细管阴影稳定；边界过渡、穿帮和GPU预算有视频证据",
    "negative": "薄面/尺度跨度、镜像、级联边界、缓存脏漏和剖切覆盖",
    "dependsOn": [
     "E01",
-    "B05"
+    "B05",
+    "E02"
    ],
    "owner": "图形",
    "effortDays": "5–8",
    "legacy": "CSM/localSpotShadowRuntime",
-   "priority": "P1",
+   "priority": "P0",
    "checks": "T+N+GPU",
    "existingPaths": [
     "packages/deep-engine/src/shadows",
@@ -1043,8 +1157,22 @@
    "qualifiedId": "DE26/E05",
    "qualifiedDependsOn": [
     "DE26/E01",
-    "DE26/B05"
-   ]
+    "DE26/B05",
+    "DE26/E02"
+   ],
+   "strategy20260918": {
+    "reviewId": "V9",
+    "value": "条件高",
+    "work": "先验证已有CSM与cluster/local-light生产接线和厂房灯阵，再按预算补软阴影。",
+    "acceptance": "真实相机运动与灯阵下记录阴影稳定、灯数和GPU/显存预算，不以极限灯数作为产品价值。",
+    "status": "用户确认增强，保留原验收和完成状态"
+   },
+   "unityLighting20260918": {
+    "work": "复用cluster/CSM/local shadows，贯通每灯/对象投影接影和层；点光全向、聚光、方向级联、面积光软化、接触/bias/薄面、缓存失效与atlas预算。",
+    "acceptance": "厂房灯阵/室内设备/园区V11真实场景和灯层消融通过；32/128/256总灯分组、投影灯单列，像素/视频和CPU/GPU/内存同质量实测，不以静默关灯影取性能。",
+    "document": "de26-unity-lighting-parity-2026-09-18.md",
+    "status": "用户确认增强，尚需逐格验收"
+   }
   },
   {
    "id": "E06",
@@ -1110,7 +1238,7 @@
   },
   {
    "id": "E08",
-   "title": "双端渲染特性一致性",
+   "title": "Unity画质目标的Web/Native逐格交付验收",
    "baseline": "Browser/Native能力与实现栈不同",
    "work": "按E01冻结的必选AO/AA/透明/阴影特性逐项完成Native对等消费；记录非等价实现而非强行改hash",
    "acceptance": "同源场景两端必选视觉/行为矩阵全过；质量档与包能力报告一致",
@@ -1119,12 +1247,14 @@
     "E02",
     "E05",
     "E06",
-    "B06"
+    "B06",
+    "E03",
+    "E04"
    ],
    "owner": "双端图形",
    "effortDays": "6–10",
    "legacy": "D14/D24",
-   "priority": "P2",
+   "priority": "P1",
    "checks": "T+N+GPU",
    "existingPaths": [
     "packages/deep-engine/src/shaderAbi",
@@ -1140,8 +1270,16 @@
     "DE26/E02",
     "DE26/E05",
     "DE26/E06",
-    "DE26/B06"
-   ]
+    "DE26/B06",
+    "DE26/E03",
+    "DE26/E04"
+   ],
+   "unityLighting20260918": {
+    "work": "把多灯/受光层/投影接影/GI/反射/材质/AA纳入同源双端与离线包矩阵；已存在目标能力继续复用，缺项不删分母。",
+    "acceptance": "冻结Unity参照和真实资产、灯光、曝光、相机，静帧与运动及失败恢复逐格通过；设备降级显式但不计为对齐完成。",
+    "document": "de26-unity-lighting-parity-2026-09-18.md",
+    "status": "用户确认增强，尚需逐格验收"
+   }
   },
   {
    "id": "F01",
@@ -1427,6 +1565,34 @@
     "DE26/G01",
     "DE26/B01",
     "DE26/G03"
+   ],
+   "strategy20260918": {
+    "reviewId": "V3",
+    "value": "最高",
+    "work": "图表与构件状态共用 dataRevision、单位、采样/接收时间和stale语义。",
+    "acceptance": "同一次数据更新可回放至二维与三维；旧数据或缺值不得显示为实时正常值。",
+    "status": "用户确认增强，保留原验收和完成状态"
+   },
+   "scenarioSlices20260918": [
+    {
+     "id": "V13",
+     "role": "主卡",
+     "title": "数据驱动构件信息牌",
+     "work": "复用现有annotationAnchor/annotationLabelLayout/annotationLabelPresentation与DOM/Deep2D宿主，绑定稳定对象ID与同dataRevision，补真实场景中的遮挡、选择和数据状态",
+     "acceptance": "实际设备信息牌随选中/相机/数据更新/重基点保持锚定；长文本、DPI、双主题、失联、对象删除与离线能力有对应证据",
+     "negative": "隐藏/遮挡/点击穿透/迟到数据/丢锚点不误导，未知目标能力明确降级",
+     "reuse": [
+      "apps/web/src/viewer/annotationAnchor.ts",
+      "apps/web/src/viewer/annotationLabelLayout.ts",
+      "apps/web/src/viewer/annotationLabelPresentation.ts",
+      "apps/web/src/components/SceneAnnotationInspector.tsx"
+     ],
+     "requires": [
+      "DE26/G01",
+      "DE26/D04"
+     ],
+     "excludes": "不为HTMLTexture另造标签系统；不支持HTML栅格化不阻断已有信息牌"
+    }
    ]
   },
   {
@@ -1493,7 +1659,14 @@
     "DE26/G01",
     "DE26/G06",
     "DE26/A03"
-   ]
+   ],
+   "strategy20260918": {
+    "reviewId": "V3",
+    "value": "高",
+    "work": "增量更新继承统一 revision 与数据质量状态，避免不同组件独立推进。",
+    "acceptance": "乱序、合并、取消、切场景保持既有原子更新和旧值标识。",
+    "status": "用户确认增强，保留原验收和完成状态"
+   }
   },
   {
    "id": "H02",
@@ -1524,7 +1697,14 @@
    "qualifiedDependsOn": [
     "DE26/B02",
     "DE26/A03"
-   ]
+   ],
+   "strategy20260918": {
+    "reviewId": "V5",
+    "value": "高",
+    "work": "源对象→运行对象→几何/材质→batch/pass/resource可追踪，复用C08 source map。",
+    "acceptance": "实际draw或明确拒绝原因可定位；导出脱敏复现诊断，不编造未知指标。",
+    "status": "用户确认增强，保留原验收和完成状态"
+   }
   },
   {
    "id": "H03",
@@ -1621,7 +1801,14 @@
    "qualifiedDependsOn": [
     "DE26/G05",
     "DE26/C07"
-   ]
+   ],
+   "strategy20260918": {
+    "reviewId": "V2",
+    "value": "最高",
+    "work": "增量发布与旧版本配套保留；候选通过校验并真正呈现后才提交 last-known-good。",
+    "acceptance": "坏delta、过期基线、迟到提交与中途取消均不覆盖旧状态；重启可恢复匹配包。",
+    "status": "用户确认增强，保留原验收和完成状态"
+   }
   },
   {
    "id": "I04",
@@ -1654,7 +1841,8 @@
     "DE26/C08",
     "DE26/D04",
     "DE26/D05"
-   ]
+   ],
+   "note": "2026-09-18：V12扫描现场对照/Gaussian Splatting新方向不做，不新增Spark/Splat依赖；本卡既有工业E57/LAS/3D Tiles验收范围保留，不把V12换名塞入本卡。"
   },
   {
    "id": "I05",
@@ -1757,7 +1945,7 @@
    "id": "X02",
    "title": "完整虚拟几何与高级阴影专项",
    "baseline": "Nanite Lite保留；UE全套虚拟几何属现范围明确排除",
-  "work": "只记录现有层级几何、流式、变形与阴影的能力残差和成本；不进入本轮建设或对标分母",
+   "work": "只记录现有层级几何、流式、变形与阴影的能力残差和成本；不进入本轮建设或对标分母",
    "acceptance": "真实数据证明何种负载仍落后；独立RFC决定扩展，不用meshlet名称替代系统能力",
    "negative": "不以LOD截图或总面数证明Nanite等价",
    "dependsOn": [],
@@ -1864,7 +2052,150 @@
    "document": "deep-engine-tasks-validation-2026-09-16.md#x05",
    "qualifiedId": "DE26/X05",
    "qualifiedDependsOn": []
+  },
+  {
+   "id": "H09",
+   "title": "Agent可校验场景事务",
+   "baseline": "复用既有命令、权限、revision、诊断与回滚能力；不先建设通用聊天编辑器",
+   "work": "提供构件查询、批量属性修改、数据状态绑定的受限操作；计划/diff预览→权限与目标revision校验→事务提交→结果回执/失败回滚",
+   "acceptance": "冻结真实工程场景中完成一次批量查询修改和一次数据绑定；稳定对象ID、变更范围与操作记录可追溯，失败无部分写入",
+   "negative": "越权、过期revision、对象删除、过大批量、非法字段、取消与并发提交必须拒绝或原子回滚",
+   "dependsOn": [
+    "H02",
+    "B01"
+   ],
+   "owner": "Studio/命令与数据",
+   "effortDays": "待最小事务接口盘点后估算",
+   "legacy": "2026-09-18 用户要求高ROI整合；不是恢复已删除通用节点编辑器/插件生态",
+   "priority": "P1",
+   "checks": "T+INTEGRATION+WEB",
+   "existingPaths": [
+    "packages/studio-core/src/command.ts",
+    "packages/studio-core/src/commandReducer.ts",
+    "packages/deep-engine/src/scene/SceneChangeset.ts",
+    "apps/web/src/behavior/SceneCommandExecutor.ts",
+    "apps/web/src/behavior/sceneCommandPolicy.ts"
+   ],
+   "status": "本轮待办",
+   "proposed": true,
+   "evidence": [],
+   "completed": false,
+   "document": "de26-reality-compiler-priorities-2026-09-18.md",
+   "qualifiedId": "DE26/H09",
+   "qualifiedDependsOn": [
+    "DE26/H02",
+    "DE26/B01"
+   ],
+   "decision": "V8用户确认：仅现有场景命令的可预览、可校验事务适配，不建通用聊天编辑器",
+   "strategy20260918": {
+    "reviewId": "V8",
+    "value": "高潜力、受限实施",
+    "status": "用户确认，小而强"
+   }
   }
  ],
- "planId": "DE26"
+ "planId": "DE26",
+ "strategy20260918": {
+  "source": "engine-landscape-and-positioning-2026-09-18.md",
+  "review": "de26-reality-compiler-priorities-2026-09-18.md",
+  "decision": "用户已确认执行范围；新增增强保留原验收，按依赖与真实场景实施",
+  "positioning": "Reality Compiler为定位建议，非产品改名决定",
+  "approved": [
+   "V1",
+   "V2",
+   "V3",
+   "V4",
+   "V5",
+   "V6",
+   "V7",
+   "V8",
+   "V9",
+   "V10",
+   "V11",
+   "V13"
+  ],
+  "excluded": [
+   "V12"
+  ],
+  "noDuplicateRule": "先查existingPaths及同族实现，只补缺口；每项归属唯一主卡，关联卡复用同一证据；不新增解析器、任务服务、场景状态源、命令总线、参数化建模器或标签渲染器。",
+  "chains": [
+   {
+    "lane": "工程编译与交付",
+    "steps": [
+     "DE26/C01",
+     "DE26/C06",
+     "DE26/C07",
+     "DE26/C08"
+    ],
+    "consumers": [
+     "DE26/H02",
+     "DE26/G03",
+     "DE26/H07"
+    ],
+    "note": "依赖以各卡dependsOn为准；复用工业SourceBundle和现有发布服务"
+   },
+   {
+    "lane": "运行架构与预算",
+    "steps": [
+     "DE26/B01",
+     "DE26/B02",
+     "DE26/B03",
+     "DE26/B05"
+    ],
+    "consumers": [
+     "DE26/H03",
+     "DE26/E05"
+    ],
+    "note": "生产接线优先于新增算法"
+   },
+   {
+    "lane": "数据与信息牌",
+    "steps": [
+     "DE26/G01",
+     "DE26/G03",
+     "DE26/G06",
+     "DE26/G08"
+    ],
+    "consumers": [
+     "V13"
+    ],
+    "note": "V13另依赖D04坐标锚；同一数据权威"
+   },
+   {
+    "lane": "受限agent",
+    "steps": [
+     "DE26/B01",
+     "DE26/H02",
+     "DE26/H09"
+    ],
+    "consumers": [],
+    "note": "复用现有权限、命令与revision，无第二场景状态"
+   },
+   {
+    "lane": "场景补齐",
+    "steps": [
+     "DE26/C07",
+     "DE26/E02",
+     "DE26/E05",
+     "DE26/C04",
+     "DE26/C05"
+    ],
+    "consumers": [
+     "V9",
+     "V10",
+     "V11"
+    ],
+    "note": "场景分支非串行硬依赖，按真实缺口选择"
+   }
+  ],
+  "renderingPrinciples": [
+   "效果提升先抓光照、材质和稳定性",
+   "Three/Babylon直接对照工程实现，Unity/UE借鉴系统设计和视觉目标"
+  ],
+  "unityLighting": {
+   "document": "de26-unity-lighting-parity-2026-09-18.md",
+   "decision": "2026-09-18 用户确认，多灯/GI/模型受光/投影接影等直接影响效果的能力对齐Unity",
+   "acceptance": "功能语义、实际画质、运动稳定和性能成本逐格验收，Web/Native分别有证据；降级不得计为对齐"
+  }
+ }
 }

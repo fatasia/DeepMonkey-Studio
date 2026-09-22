@@ -92,7 +92,36 @@ describe("service observability", () => {
     expect(health.find((item) => item.id === "api")?.latencyMs).toBeGreaterThan(0);
     expect(health.find((item) => item.id === "postgres")).toMatchObject({ status: "not-configured" });
     expect(health.find((item) => item.id === "minio")).toMatchObject({ status: "not-configured" });
+    expect(health.find((item) => item.id === "media")).toMatchObject({ status: "not-configured", endpoint: "未配置" });
     expect(health.find((item) => item.id === "web")).toMatchObject({ status: "offline" });
+  });
+
+  it("keeps an explicitly configured media gateway failure visible", async () => {
+    vi.stubEnv("METADATA_STORE", "json");
+    vi.stubEnv("OBJECT_STORE", "local");
+    vi.stubEnv("WEB_ORIGIN", "http://127.0.0.1:1");
+    vi.stubEnv("MEDIA_GATEWAY_CONTROL_URL", "http://127.0.0.1:1");
+    const health = await collectServiceHealth();
+    expect(health.find((item) => item.id === "media")).toMatchObject({
+      status: "offline",
+      endpoint: "http://127.0.0.1:1/",
+    });
+  });
+
+  it("recognizes the current DeepMonkey Web shell as healthy", async () => {
+    vi.stubEnv("METADATA_STORE", "json");
+    vi.stubEnv("OBJECT_STORE", "local");
+    vi.stubEnv("WEB_ORIGIN", "http://studio.test");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      "<!doctype html><html><head><title>DeepMonkey Studio</title></head><body><div id=\"root\"></div></body></html>",
+      { status: 200, headers: { "content-type": "text/html" } },
+    )));
+    const health = await collectServiceHealth();
+    expect(health.find((item) => item.id === "web")).toMatchObject({
+      status: "healthy",
+      endpoint: "http://studio.test/",
+      message: "页面标识验证通过",
+    });
   });
 
   it("builds a credential-free diagnostic archive", async () => {

@@ -2,6 +2,28 @@ import { describe, expect, it } from "vitest";
 import { assistantPrompts } from "./system.js";
 
 describe("platform assistant prompts", () => {
+  it("identifies the actual context prefix sent and excludes later sources", () => {
+    const context = { records: "数".repeat(80_000), laterSource: "not-sent" };
+    const result = assistantPrompts("platform", "分析", context);
+    expect(result.contextWarning).toContain(`${JSON.stringify(context).length} 个 UTF-16 字符`);
+    expect(result.contextWarning).toContain("仅前 80000 个发送给模型");
+    expect(result.userPrompt).toContain(result.contextWarning!);
+    expect(result.userPrompt).toContain("不是完整 JSON");
+    expect(result.userPrompt.endsWith(JSON.stringify(context).slice(0, 80_000))).toBe(true);
+    expect(result.userPrompt).not.toContain("not-sent");
+  });
+
+  it("does not split a surrogate pair at the prefix boundary", () => {
+    const result = assistantPrompts("scene", "分析", { text: "x".repeat(79_990) + "😀尾部" });
+    expect(result.contextWarning).toContain("仅前 79999 个发送给模型");
+    expect(result.userPrompt.endsWith("x")).toBe(true);
+  });
+
+  it("preserves complete context without a truncation warning", () => {
+    const result = assistantPrompts("scene", "分析", { selected: "设备一" });
+    expect(result.contextWarning).toBeUndefined();
+    expect(result.userPrompt).toBe('分析\n\n当前上下文：{"selected":"设备一"}');
+  });
   it("requires evidence and separates benchmark models from production", () => {
     const platform = assistantPrompts("platform", "当前有哪些模型", { platform: { operations: { models: [] } } });
     expect(platform.systemPrompt).toContain("没有证据就明确说没有");

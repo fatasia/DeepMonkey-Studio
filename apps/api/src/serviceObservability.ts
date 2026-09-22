@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import JSZip from "jszip";
+import { isStudioWebPage } from "./webPageIdentity.js";
 import type {
   ServiceHealthRecord,
   ServiceLogEntry,
@@ -77,7 +78,7 @@ export async function queryServiceLogs(directories: string[], filters: ServiceLo
 
 export function serviceLogExportText(result: ServiceLogQueryResult, filters: ServiceLogFilters): string {
   const heading = [
-    "# Deep Monkey Studio 脱敏服务日志",
+    "# DeepMonkey Studio 脱敏服务日志",
     `# 导出时间 ${result.generatedAt}`,
     `# 筛选 ${JSON.stringify(filters)}`,
     `# 匹配 ${result.total} 条${result.truncated ? "（已截断）" : ""}`,
@@ -88,10 +89,13 @@ export function serviceLogExportText(result: ServiceLogQueryResult, filters: Ser
 export async function collectServiceHealth(): Promise<ServiceHealthRecord[]> {
   const metadataStore = process.env.METADATA_STORE === "postgres" ? "postgres" : "json";
   const objectStore = process.env.OBJECT_STORE === "minio" ? "minio" : "local";
+  const mediaEndpoint = process.env.MEDIA_GATEWAY_CONTROL_URL?.trim();
   return Promise.all([
     checkApiRuntime(),
     checkWeb(),
-    checkTcp("media", "实时视频", configuredEndpoint("MEDIA_GATEWAY_CONTROL_URL", "http://127.0.0.1:9997")),
+    mediaEndpoint
+      ? checkTcp("media", "实时视频", mediaEndpoint)
+      : notConfigured("media", "实时视频", "未配置媒体网关控制地址"),
     checkVisionRuntime(),
     metadataStore === "postgres"
       ? checkTcp("postgres", "PostgreSQL", `tcp://${process.env.POSTGRES_HOST ?? "127.0.0.1"}:${boundedInteger(process.env.POSTGRES_PORT, 5432, 1, 65_535)}`)
@@ -127,7 +131,7 @@ export async function createDiagnosticArchive(snapshot: SystemDiagnosticSnapshot
   archive.file("diagnostic.json", `${JSON.stringify(snapshot, null, 2)}\n`);
   archive.file("health.json", `${JSON.stringify(snapshot.health, null, 2)}\n`);
   archive.file("errors.log", serviceLogExportText(snapshot.logs, { level: "error", limit: 300 }));
-  archive.file("README.txt", "Deep Monkey Studio 诊断包仅包含运行版本、服务健康与已脱敏错误日志；不包含凭据、审计记录、项目数据或模型。\n");
+  archive.file("README.txt", "DeepMonkey Studio 诊断包仅包含运行版本、服务健康与已脱敏错误日志；不包含凭据、审计记录、项目数据或模型。\n");
   return archive.generateAsync({ type: "nodebuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });
 }
 
@@ -223,7 +227,7 @@ async function checkWeb(): Promise<ServiceHealthRecord> {
   try {
     const response = await fetch(endpoint, { signal: AbortSignal.timeout(1_500) });
     const content = await response.text();
-    const valid = response.ok && /<title>\s*Deep Monkey Studio\s*<\/title>/i.test(content);
+    const valid = response.ok && isStudioWebPage(content);
     return record("web", "Web 前端", valid ? "healthy" : "degraded", endpoint, started, valid ? "页面标识验证通过" : `HTTP ${response.status}，页面标识不匹配`);
   } catch (error) {
     return record("web", "Web 前端", "offline", endpoint, started, errorMessage(error));
@@ -302,10 +306,6 @@ function safeEndpoint(value: string): string {
   } catch {
     return value.length > 160 ? `${value.slice(0, 157)}...` : value;
   }
-}
-
-function configuredEndpoint(name: string, fallback: string): string {
-  return process.env[name] ?? fallback;
 }
 
 function optionalTimestamp(value: string | undefined, label: string): string | undefined {

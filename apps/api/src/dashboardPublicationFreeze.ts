@@ -34,7 +34,7 @@ export interface DashboardResolvedResourceValue { readonly revision: number; rea
 
 export interface DashboardFrozenResourceRequest {
   readonly id: string;
-  readonly kind: "font" | "image";
+  readonly kind: "font" | "image" | "video";
   readonly objectKey: string;
   readonly mime: string;
   readonly nodeIds: readonly string[];
@@ -58,7 +58,7 @@ export interface DashboardPublicationFreezeManifest {
     readonly bytes: number; readonly sha256: string;
   }[];
   readonly resources: readonly {
-    readonly id: string; readonly kind: "font" | "image"; readonly objectKey: string;
+    readonly id: string; readonly kind: "font" | "image" | "video"; readonly objectKey: string;
     readonly mime: string; readonly nodeIds: readonly string[]; readonly revision: number;
     readonly pageIds?: readonly string[];
     readonly bytes: number; readonly sha256: string; readonly faceIndex?: number;
@@ -228,11 +228,12 @@ function assertResourceRequest(request: DashboardFrozenResourceRequest, projectI
   if (!Number.isSafeInteger(request.revision) || request.revision < 1 || !(request.nodeIds.length || request.pageIds?.length)
     || request.nodeIds.some((id) => !nodeIds.has(id)) || request.pageIds?.some(id => !pageIds.has(id))
     || (request.kind !== "image" && request.pageIds?.length)) throw new Error(`Resource ${request.id} has an invalid revision or consumer`);
-  if ((request.kind === "font" && !/^font\//.test(request.mime)) || (request.kind === "image" && !/^image\//.test(request.mime)))
+  if ((request.kind === "font" && !/^font\//.test(request.mime)) || (request.kind === "image" && !/^image\//.test(request.mime))
+    || (request.kind === "video" && request.mime !== "video/mp4"))
     throw new Error(`Resource ${request.id} MIME does not match its kind`);
   if (request.kind === "font" && (!request.license?.redistributable || !request.license.evidence
     || !Number.isSafeInteger(request.faceIndex) || request.faceIndex! < 0)) throw new Error(`Font ${request.id} is not licensed and indexed for publication`);
-  if (request.kind === "image" && request.faceIndex !== undefined) throw new Error(`Image ${request.id} cannot declare a font face`);
+  if (request.kind !== "font" && request.faceIndex !== undefined) throw new Error(`Media ${request.id} cannot declare a font face`);
 }
 
 function assertCandidateIntegrity(candidate: DashboardPublicationFreezeCandidate): void {

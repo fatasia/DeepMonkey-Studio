@@ -11,13 +11,13 @@
 ## A · 对标证据与基准
 
 <a id="a01"></a>
-### A01 · 冻结五引擎目标矩阵
+### A01 · 冻结四引擎目标矩阵
 
 - **排程**：P0｜本轮待办｜责任角色：架构/性能QA｜初估 2–3 工程人日。
-- **已有基础**：已有benchmarkContract与旧90%合同；没有五平台领先结论。
+- **已有基础**：已有benchmarkContract与旧90%合同；没有四平台领先结论。
 - **代码入口**：[packages/deep-engine/src/benchmarkContract.ts](../../packages/deep-engine/src/benchmarkContract.ts)；[docs/specs/deep-engine-competitive-benchmark-contract-2026-09-12.md](../../docs/specs/deep-engine-competitive-benchmark-contract-2026-09-12.md)。入口用于查找职责，禁止整目录机械改写。
 - **实施与产物**：新增v2矩阵：版本/渲染器/平台/任务/必选能力/禁止退化项；分别保留公共子集和最佳质量赛道。
-- **通过标准**：五张矩阵可独立判定；未实现/未验证有固定分母；排除项不被计成通过。
+- **通过标准**：Three、Babylon、Unity、Bevy 四张矩阵可独立判定；未实现/未验证有固定分母；排除项不被计成通过。UE、Godot 不进入测试基准。
 - **边界/失败验证**：删分母、改权重、缺证据均使结果无效。
 - **依赖**：无前置实现；先复核当前工作树与任务证据。
 - **验证**：T（命令与硬件流程见[验证手册](deep-engine-tasks-validation-2026-09-16.md#commands)）；先增加本卡反例与参考路径对照，再运行相关现有回归。
@@ -81,13 +81,13 @@
 - **收尾证据**：记录任务ID、源码/产物hash、设备/工具版本、完整命令、原始日志位置、通过/失败/未测项及限制；执行人签署，独立复核后更新JSON状态。
 
 <a id="a06"></a>
-### A06 · 建立Godot原生基准
+### A06 · Godot 原生基准（已取消）
 
-- **排程**：P1｜本轮待办｜责任角色：Godot/QA｜初估 4–7 工程人日。
+- **排程**：已删除｜用户 2026-09-22 明确要求 Godot 退出测试基准。
 - **已有基础**：本轮未见完整Godot成对runner。
 - **代码入口**：[tools](../../tools)。入口用于查找职责，禁止整目录机械改写。
 - **实施与产物**：新增tools下独立Godot项目，锁版本和Forward+/Compatibility档位；导入同项目、导出release并输出公共schema。
-- **通过标准**：一真实项目静态/动态/加载三case可与Native复跑。
+- **通过标准**：不下载、不安装、不运行、不进入性能排名或能力分母；Godot 文档只作架构参考。
 - **边界/失败验证**：导入丢材质/单位、VSync限制、脚本计时代替GPU标无效。
 - **依赖**：[A02](deep-engine-tasks-foundation-2026-09-16.md#a02)、[A03](deep-engine-tasks-foundation-2026-09-16.md#a03)。
 - **验证**：N+GPU（命令与硬件流程见[验证手册](deep-engine-tasks-validation-2026-09-16.md#commands)）；先增加本卡反例与参考路径对照，再运行相关现有回归。
@@ -95,13 +95,13 @@
 - **收尾证据**：记录任务ID、源码/产物hash、设备/工具版本、完整命令、原始日志位置、通过/失败/未测项及限制；执行人签署，独立复核后更新JSON状态。
 
 <a id="a07"></a>
-### A07 · 建立UE原生基准
+### A07 · UE 原生基准（已取消）
 
-- **排程**：P1｜本轮待办｜责任角色：UE/QA｜初估 5–8 工程人日。
+- **排程**：已删除｜用户 2026-09-22 明确要求 UE 退出测试基准。
 - **已有基础**：本轮未见完整UE成对runner。
 - **代码入口**：[tools](../../tools)。入口用于查找职责，禁止整目录机械改写。
 - **实施与产物**：新增独立UE benchmark工程；固定Lumen/Nanite/VSM设置，区分公共子集和UE最佳质量，使用打包产物。
-- **通过标准**：一真实项目含相机轨迹和完整质量声明；捕获加载、帧尾延迟、显存。
+- **通过标准**：不下载、不安装、不运行、不进入性能排名或能力分母；UE 文档只作架构参考。
 - **边界/失败验证**：关Lumen得到的速度不能记入Lumen质量赛道；无可运行安装记录前置阻塞。
 - **依赖**：[A02](deep-engine-tasks-foundation-2026-09-16.md#a02)、[A03](deep-engine-tasks-foundation-2026-09-16.md#a03)。
 - **验证**：N+GPU（命令与硬件流程见[验证手册](deep-engine-tasks-validation-2026-09-16.md#commands)）；先增加本卡反例与参考路径对照，再运行相关现有回归。
@@ -115,7 +115,7 @@
 - **已有基础**：旧报告与README存在状态漂移。
 - **代码入口**：[packages/deep-engine/src/benchmarkContract.ts](../../packages/deep-engine/src/benchmarkContract.ts)；[scripts](../../scripts)。入口用于查找职责，禁止整目录机械改写。
 - **实施与产物**：从矩阵/原始结果/源码构建身份生成报告；记录运行日期、commit+dirty文件hash、设备、置信区间和旧证据失效原因。
-- **通过标准**：同输入同结论；五对手独立结论；缺项显式未验证，链接可复跑。
+- **通过标准**：同输入同结论；四对手独立结论；缺项显式未验证，链接可复跑。
 - **边界/失败验证**：旧EXE/新包混用、局部基准冒充整帧、调分母都被校验拒绝。
 - **依赖**：[A01](deep-engine-tasks-foundation-2026-09-16.md#a01)、[A03](deep-engine-tasks-foundation-2026-09-16.md#a03)、[A04](deep-engine-tasks-foundation-2026-09-16.md#a04)。
 - **验证**：T（命令与硬件流程见[验证手册](deep-engine-tasks-validation-2026-09-16.md#commands)）；先增加本卡反例与参考路径对照，再运行相关现有回归。
@@ -466,5 +466,3 @@
 - **验证**：T+N+W+WEB（命令与硬件流程见[验证手册](deep-engine-tasks-validation-2026-09-16.md#commands)）；先增加本卡反例与参考路径对照，再运行相关现有回归。
 - **对应原任务**：D12；格式精度报告。复用已有产物；本卡只负责上述剩余切片。
 - **收尾证据**：记录任务ID、源码/产物hash、设备/工具版本、完整命令、原始日志位置、通过/失败/未测项及限制；执行人签署，独立复核后更新JSON状态。
-
-

@@ -68,13 +68,18 @@ describe("IndustrialAgentCheckpointStore", () => {
     directories.push(dataDir);
     const first = new IndustrialAgentCheckpointStore(dataDir);
     await first.init();
-    await first.save(checkpoint());
+    const saved = checkpoint();
+    saved.decisions = [{ step: 1, decidedAt: saved.createdAt,
+      decision: { kind: "stop", rationale: "done", code: "done", message: "done" },
+      execution: { protocol: "responses", requestedModel: "alias", reportedModel: "snapshot", reasoningEffortSent: "high", servedBy: "fallback", failoverCategory: "server" } }];
+    await first.save(saved);
 
     const recovered = new IndustrialAgentCheckpointStore(dataDir);
     await recovered.init();
     expect(await recovered.get("run-1")).toMatchObject({
       status: "awaiting-approval",
       pendingTool: { fingerprint: "scope-1", state: "awaiting-approval" },
+      decisions: saved.decisions,
     });
   });
 });

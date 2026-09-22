@@ -19,8 +19,11 @@ await expectImage(path.join(desktopIcons, "128x128@2x.png"), 256, 256);
 const iconSvg = await read("apps/web/public/brand/app-icon-industrial.svg");
 const logoSvg = await read("apps/web/public/brand/logo-industrial.svg");
 if (!iconSvg.includes(productName) || !logoSvg.includes(productName)) issues.push("SVG 品牌名称未统一");
-if (iconSvg !== logoSvg) issues.push("Logo 与应用图标未使用同一蛇形标志");
-if (/<(?:text|image|rect)\b/.test(logoSvg)) issues.push("Logo 应为透明背景纯矢量图形，不含字标或底板");
+if (iconSvg !== logoSvg) issues.push("Logo 与应用图标未使用同一标志");
+if (/<(?:text|rect)\b/.test(logoSvg)) issues.push("Logo 不应含字标或底板");
+const sourcePng = await readFile(path.join(webBrand, "logo-source.png"));
+if (!logoSvg.includes(`href="data:image/png;base64,${sourcePng.toString("base64")}"`)) issues.push("SVG 未无损嵌入选定 PNG 母版");
+if (!(await sharp(sourcePng).metadata()).hasAlpha) issues.push("品牌母版缺少透明通道");
 await import("./generate-product-brand.mjs?verify");
 
 const legacyIconHash = await hash(path.join(webBrand, "app-icon-chroma.png"));

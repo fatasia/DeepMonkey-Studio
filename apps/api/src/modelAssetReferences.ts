@@ -62,6 +62,7 @@ export function removeUnreferencedModel(document: DatabaseDocument, projectId: s
     throw new ModelAssetReferenceError("模型资源仍被场景、应用或发布历史引用；请先移除相关引用");
   }
   project.models = project.models.filter(model => model.id !== assetModelId);
+  document.conversionTasks = (document.conversionTasks ?? []).filter(task => task.projectId !== projectId || task.modelId !== assetModelId);
   project.updatedAt = new Date().toISOString();
   return changed(true);
 }

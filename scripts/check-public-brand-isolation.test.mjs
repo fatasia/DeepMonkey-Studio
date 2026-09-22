@@ -28,7 +28,7 @@ test("品牌门禁会扫描 TypeScript 与 TSX 中的禁止品牌", async (conte
 test("品牌门禁允许中性自有品牌源码", async (context) => {
   const directory = await mkdtemp(join(tmpdir(), "bim-studio-brand-gate-safe-"));
   context.after(() => rm(directory, { recursive: true, force: true }));
-  await writeFile(join(directory, "branding.tsx"), "export const title = <strong>Deep Monkey Studio</strong>;\n");
+  await writeFile(join(directory, "branding.tsx"), "export const title = <strong>DeepMonkey Studio</strong>;\n");
 
   const result = runGate(directory);
 

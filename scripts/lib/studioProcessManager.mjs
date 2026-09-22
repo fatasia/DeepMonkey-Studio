@@ -104,7 +104,7 @@ export async function startStudioRuntime(configuration, environment = process.en
 export async function stopStudioRuntime(paths = studioRuntimePaths(), options = {}) {
   const state = readStudioRuntimeState(paths);
   if (!state) {
-    if (!options.quiet) process.stdout.write("Deep Monkey Studio 当前没有由统一入口管理的运行环境。\n");
+    if (!options.quiet) process.stdout.write("DeepMonkey Studio 当前没有由统一入口管理的运行环境。\n");
     cleanupRuntimeFiles(paths);
     return { stopped: false, external: false };
   }

@@ -12,6 +12,16 @@ function sign(manifest) {
     files: files.map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 })) }) };
   return manifest;
 }
+
+test("rejects signed but unsafe, missing or malformed branding descriptors", () => {
+  for (const branding of [null, [], {}, { extra: "field" }, { applicationName: "x".repeat(81) },
+    { applicationName: "x\u0000y" }, { applicationName: " padded " }, { iconPath: "../icon.png" },
+    { iconPath: "branding/missing.png" }, { iconPath: "branding/icon.png" }]) {
+    assert.throws(() => validateSceneClientArchiveManifest(sign({ ...fixture(), branding })), /branding/);
+  }
+  const named = sign({ ...fixture(), branding: { applicationName: "客户园区" } });
+  assert.equal(validateSceneClientArchiveManifest(named).branding.applicationName, "客户园区");
+});
 function fixture(target = "three-webview") {
   const manifest = { kind: "bim-studio-scene-client-package", schemaVersion: 1, purpose: "delivery", target,
     renderer: "webgl", toolbarVisible: false, projectId: "p", sceneId: "s", sceneName: "场景", publishedAt: null,

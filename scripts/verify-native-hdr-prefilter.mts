@@ -1,0 +1,14 @@
+import { readFile,writeFile } from "node:fs/promises";
+import path from "node:path";
+import assert from "node:assert/strict";
+import { decodeRadianceHdr } from "../packages/deep-engine/src/textures/radianceHdr.js";
+import { prefilterNativeHdr } from "./lib/nativeHdrPrefilter.mjs";
+const [input,executable,output]=process.argv.slice(2);
+assert(input && executable && output,"Expected HDR source, Native EXE and output JSON");
+const bytes=new Uint8Array(await readFile(input));
+const decoded=decodeRadianceHdr(bytes);
+let max=0; for (const value of decoded.data) max=Math.max(max,value);
+const started=performance.now();
+const environment=await prefilterNativeHdr(bytes,path.resolve(executable),"CC0: Poly Haven Studio Small 09");
+await writeFile(output,JSON.stringify(environment),{flag:"wx"});
+console.log(JSON.stringify({width:decoded.width,height:decoded.height,sourceMax:max,milliseconds:performance.now()-started,mips:environment.specular.mips.length,sourceHash:environment.source.contentHash.value}));

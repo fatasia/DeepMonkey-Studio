@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentDecisionRecord, AgentToolRecord } from "@bim-studio/industrial-agent-orchestrator";
-import { compressAgentContext } from "./agentContextBudget.js";
+import { AgentContextBudgetError, compressAgentContext } from "./agentContextBudget.js";
 
 function decisionRecord(step: number): AgentDecisionRecord {
   return { step, decidedAt: `2026-09-20T00:00:0${step % 10}.000Z`, decision: { kind: "call-tool", rationale: `第 ${step} 轮决策理由，包含较长的说明文本用于验证摘要截断行为`, call: { toolId: "data.query.read", arguments: { sql: `SELECT ${step}` }, resources: [{ kind: "project", id: "project-1", projectId: "project-1" }] } } };
@@ -33,6 +33,7 @@ describe("agent context budget", () => {
     expect(context.toolResults[0]).toMatchObject({ toolId: "data.query.read", status: "completed" });
     expect(context.toolResults[0].summarized).toBeUndefined();
     expect(context.toolResults[0].output).toEqual(toolRecords[0].outcome.output);
+    expect(context.compression.approxChars).toBe(JSON.stringify({ decisions: context.decisions, toolResults: context.toolResults }).length);
   });
 
   it("summarizes the oldest rounds instead of hard-truncating them", () => {
@@ -42,6 +43,8 @@ describe("agent context budget", () => {
     expect(context.compression).toMatchObject({ applied: true, summarizedDecisions: 3, summarizedToolResults: 3 });
     const summarizedDecision = context.decisions[0] as { step: number; kind: string; rationale: string; summarized: boolean };
     expect(summarizedDecision).toMatchObject({ step: 1, kind: "call-tool", summarized: true });
+    expect(summarizedDecision).toHaveProperty("call", toolRecords[0].call);
+    expect(context.toolResults.map((result) => result.step)).toEqual(context.decisions.map((decision) => decision.step));
     expect(summarizedDecision.rationale).toContain("第 1 轮");
     expect(summarizedDecision.rationale.length).toBeLessThanOrEqual(decisionRecord(1).decision.rationale.length);
     const recent = context.decisions.at(-1);
@@ -63,22 +66,26 @@ describe("agent context budget", () => {
     const serialized = JSON.stringify({ decisions: context.decisions, toolResults: context.toolResults });
     expect(serialized.length).toBeLessThanOrEqual(12_000);
     expect(context.compression.applied).toBe(true);
-    // 全保真窗口收缩但从不归零：最近两轮保持原始输出。
+    // 全保真窗口收缩但从不归零：最近一轮保持原始输出。
     const full = context.toolResults.filter((item) => !item.summarized);
-    expect(full.length).toBeGreaterThanOrEqual(2);
+    expect(full.length).toBeGreaterThanOrEqual(1);
     expect(full.length).toBeLessThan(8);
     expect(context.toolResults.at(-1)!.output).toEqual(toolRecords[11].outcome.output);
     expect(context.decisions.at(-1)).toEqual(decisions[11]);
+    expect(context.compression.approxChars).toBe(serialized.length);
+    expect(context.compression.charBudget).toBe(12_000);
   });
 
-  it("always preserves at least the newest round even under extreme budget pressure", () => {
+  it("rejects an uncompressible newest tool pair instead of silently exceeding the budget", () => {
     const decisions = Array.from({ length: 6 }, (_, index) => decisionRecord(index + 1));
     const toolRecords = Array.from({ length: 6 }, (_, index) => toolRecord(index + 1, 60_000));
-    const context = compressAgentContext(decisions, toolRecords, { recentRounds: 6, charBudget: 1_000 });
-    // 预算收缩到窗口为 1 后停止：最近一轮永不摘要，即使总量仍超预算。
-    expect(context.toolResults.filter((item) => !item.summarized)).toHaveLength(1);
-    expect(context.toolResults.at(-1)!.summarized).toBeUndefined();
-    expect(context.toolResults.at(-1)!.output).toEqual(toolRecords[5].outcome.output);
-    expect(context.decisions.at(-1)).toEqual(decisions[5]);
+    expect(() => compressAgentContext(decisions, toolRecords, { recentRounds: 6, charBudget: 1_000 })).toThrow(AgentContextBudgetError);
+    expect(toolRecords[5].outcome.output).toEqual({ rows: "x".repeat(60_000), step: 6 });
+  });
+
+  it("rejects oversized historical arguments without cutting the call away from its result", () => {
+    const decisions = [decisionRecord(1), decisionRecord(2)];
+    if (decisions[0].decision.kind === "call-tool") decisions[0].decision.call.arguments = { rows: "x".repeat(50_000) };
+    expect(() => compressAgentContext(decisions, [toolRecord(1), toolRecord(2)], { recentRounds: 1 })).toThrow(AgentContextBudgetError);
   });
 });

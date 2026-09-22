@@ -66,7 +66,7 @@ foreach ($inputFile in $InputFiles) {
     }
     $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
     if ($report.sourceSha256 -ne $before -or $report.quality -ne 'inspect' -or $report.geometry -ne 'missing') { throw 'Invalid source/quality contract' }
-    $results += [ordered]@{ sourceSha256=$before; reportSha256=$reportHash; status=$report.status; version=$report.revitVersion; identities=$report.elements.Count }
+    $results += [ordered]@{ sourcePath=$inputPath; sourceBytes=(Get-Item -LiteralPath $inputPath).Length; sourceSha256=$before; reportSha256=$reportHash; status=$report.status; version=$report.revitVersion; identities=$report.elements.Count }
 }
 $hashPaths = @($sourcePath,$PSCommandPath,$manifestPath,(Join-Path $readerPath 'Cargo.lock'),$exePath)
 $hashPaths += Get-ChildItem -LiteralPath (Join-Path $readerPath 'src') -Recurse -File | Sort-Object FullName | Select-Object -ExpandProperty FullName

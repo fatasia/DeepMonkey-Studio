@@ -3,6 +3,17 @@ import test from "node:test";
 import { verifySceneClientArchive } from "./sceneClientArchive.mjs";
 import { archiveFixture, centralEntries, renameRawEntry } from "./sceneClientArchiveFixture.mjs";
 
+test("validates indexed local icon bytes and rejects signed format mismatches", async () => {
+  const path = "branding/icon.png", branding = { applicationName: "客户园区", iconPath: path };
+  const content = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]).buffer;
+  const valid = await archiveFixture({ branding, payloads: [{ path, content }] });
+  assert.deepEqual((await verifySceneClientArchive(valid.buffer)).manifest.branding, branding);
+  const bad = await archiveFixture({ branding, payloads: [{ path, content: "not a PNG" }] });
+  await assert.rejects(verifySceneClientArchive(bad.buffer), /图标格式/);
+  const changed = await archiveFixture({ branding, payloads: [{ path, content }], editZip: zip => zip.file(path, "tampered") });
+  await assert.rejects(verifySceneClientArchive(changed.buffer));
+});
+
 test("accepts real streamed descriptors and rejects missing or corrupt descriptors", async () => {
   const streamed = await archiveFixture({ compression: "DEFLATE", streamFiles: true });
   assert.equal((await verifySceneClientArchive(streamed.buffer)).fileCount, 5);

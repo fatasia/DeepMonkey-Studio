@@ -53,7 +53,7 @@ export function createExternalConverterRegistrations(
       id: "bim.revit-native",
       name: "Revit 原生高保真转换",
       inputFormats: ["rvt"],
-      providerName: "Deep Monkey Studio Revit Worker",
+      providerName: "DeepMonkey Studio Revit Worker",
       config: config.rvt,
       deployment: "desktop",
       requireHierarchy: true,
@@ -175,7 +175,7 @@ async function executeExternalConverter(
       includePmi: String(options.includePmi),
     }));
     context.reportProgress(20, "正在执行隔离转换器");
-    await runCommand(command, args, definition.config.cwd, context.signal, context.task.id, context.task.input.fileName);
+    await runCommand(command, args, definition.config.cwd, context.signal, context.task.id, context.task.input.fileName, context.registerResourceExit);
     context.reportProgress(85, "正在校验并发布转换产物");
     await publishOutputFiles(context, objects, outputDir, definition.requireHierarchy);
   } finally {
@@ -230,9 +230,13 @@ function runCommand(
   signal: AbortSignal,
   taskId: string,
   inputName: string,
+  registerResourceExit?: ((exit: Promise<void>) => void) | undefined,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd, windowsHide: true, shell: false });
+    let resolveExit!: () => void;
+    const exited = new Promise<void>(resolve => { resolveExit = resolve; });
+    registerResourceExit?.(exited);
     let stderr = "";
     let settled = false;
     const finish = (error?: Error) => {
@@ -259,9 +263,12 @@ function runCommand(
       stderr = `${stderr}${chunk.toString()}`.slice(-8_000);
     });
     child.once("error", (error) => finish(error));
-    child.once("exit", (code) => finish(code === 0
-      ? undefined
-      : new Error(`转换器退出码 ${String(code)}（任务 ${taskId}，输入 ${inputName}）：${stderr.trim() || "无错误输出"}`)));
+    child.once("close", (code) => {
+      resolveExit();
+      finish(code === 0
+        ? undefined
+        : new Error(`转换器退出码 ${String(code)}（任务 ${taskId}，输入 ${inputName}）：${stderr.trim() || "无错误输出"}`));
+    });
   });
 }
 

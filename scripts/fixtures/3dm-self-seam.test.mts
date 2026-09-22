@@ -14,7 +14,7 @@ const sha=(b:any)=>createHash('sha256').update(b).digest('hex'),sourceSha256='a1
 assert.equal(sha(readFileSync(path)),sourceSha256);
 const run=spawnSync(resolve(root,'test-output/3dm-source-audit/3dm-source-audit.exe'),[path,'--parameter-evidence-all'],{encoding:'utf8',maxBuffer:128*1024*1024,timeout:60000});
 assert.equal(run.status,0,run.stderr);const source=JSON.parse(run.stdout),object=source.objects.find((o:any)=>o.cadIr),ir=object.cadIr;
-object.storedRenderMeshes=[];const complete=completeBrepParts(object,.001),seamEdges=[0,38,43,85,87,90,92];
+object.storedRenderMeshes=[];const complete=completeBrepParts(object,.001,{reconstructPairedBoundaries:false}),seamEdges=[0,38,43,85,87,90,92];
 const distance=(a:number[],b:number[])=>Math.hypot(...a.map((x,i)=>x-b[i]));
 test('seven real periodic seams have independent source identities and matching oriented mesh sides',async()=>{
   const before=JSON.stringify(complete.parts),audit=auditBrepBoundaries(ir,complete.parts);
@@ -29,7 +29,7 @@ test('seven real periodic seams have independent source identities and matching 
         maxTrimError=Math.max(maxTrimError,distance(evaluateSurface(surface,sample.point.slice(0,2)),evaluateCurve(curve,edge.sourceSubdomain[0]+t*(edge.sourceSubdomain[1]-edge.sourceSubdomain[0]))));}}
   }
   assert(curveReferences>=266&&trimReferences>=532);assert(maxCurveError<1e-10&&maxTrimError<1e-10);assert.equal(JSON.stringify(complete.parts),before);
-  const glb=await export3dmGlb(source,sourceSha256);assert(glb.bytes);assert.equal(glb.sidecar.status,'partial-geometry-preview');
+  const glb=await export3dmGlb(source,sourceSha256,{reconstructPairedBoundaries:false,repairFloat32:false});assert(glb.bytes);assert.equal(glb.sidecar.status,'partial-geometry-preview');
   assert.equal(sha(glb.bytes),'82a84b95a08661260f3e2a42965b58698d70868245abe9a27efe6edb9a006523');
   mkdirSync(out,{recursive:true});writeFileSync(resolve(out,'MechPartA.glb'),glb.bytes);
   const evidence={sourceSha256,sourceUrl:'https://github.com/mcneel/opennurbs/blob/v8.35.26251.13001/example_files/V4/v4_MechPartA.3dm',archiveVersion:source.archiveVersion,

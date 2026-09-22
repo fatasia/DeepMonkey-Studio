@@ -1,10 +1,10 @@
 import { evaluateSurface } from './3dm-nurbs-parameters.mjs';
 import {matchSourceCurve} from './3dm-source-curve-identity.mts';
-import {sourceBezierInterval} from './3dm-source-bezier-interval.mts';
+import {sourceBezierChainInterval} from './3dm-source-bezier-interval.mts';
 import {rationalBezierBounds} from './3dm-rational-bezier-bounds.mts';
 const distance=(a:number[],b:number[])=>Math.hypot(...a.map((x,i)=>x-b[i]));
 function check(v:unknown,m:string):asserts v {if(!v)throw new Error(m);}
-/** Match an authored full/single-span isocurve to C3; a bounded trim-axis drift remains in source UV. */
+/** Match an authored full/restricted C0-chain isocurve to C3; bound trim-axis drift in source UV. */
 export function proveSourceIsocurve(ir:any,part:any,edgeIndex:number) {
   const edge=ir.edges[edgeIndex],curve=ir.curves3d[edge.curve3d],s=ir.surfaces[ir.faces[part.face].surface];
   check(['cad-ir-rational-bezier-chain','cad-ir-trimmed-cylinder','cad-ir-proven-cylinder'].includes(part.geometrySource)&&s.parameterMap?.kind==='identity'&&curve.parameterMap?.kind==='identity'
@@ -31,7 +31,7 @@ export function proveSourceIsocurve(ir:any,part:any,edgeIndex:number) {
     return start.map((x:number,k:number)=>x===end[k]?x:(1-t)*x+t*end[k]);
   });
   let iso={degree:s.degree[variable],rational:s.rational,knots:s.knots[variable],controlPoints:points};
-  if(interval.some((x,i)=>x!==s.domain[variable][i]))iso=sourceBezierInterval(iso,interval);
+  if(interval.some((x,i)=>x!==s.domain[variable][i]))iso=sourceBezierChainInterval(iso,interval);
   const drift=Math.abs(a[fixed]-b[fixed]),driftBound=drift?rationalBezierBounds(s).first[fixed]*drift:0;
   const match=matchSourceCurve(iso,curve,Math.min(1e-10,edge.tolerance+1e-12)-driftBound);
   for(const id of boundary.vertices){const uv=part.audit.uv[id];

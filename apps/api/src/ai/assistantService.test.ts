@@ -48,6 +48,31 @@ const settings = {
 };
 
 describe("AssistantService", () => {
+  it("reports source trimming that occurs before the final character budget", async () => {
+    const runtime = await host();
+    const response = await createAssistantService(runtime.registry).complete({ mode: "scene", question: "解释场景", context: { scene: { rows: Array.from({ length: 501 }, (_, i) => i) } }, settings, principal: "operator" });
+    const source = response.reliability?.contextDelivery?.sources.find((item) => item.id === "workspace-scene");
+    expect(source).toMatchObject({ status: "partial", transformed: true });
+    expect(source?.sentChars).toBe(source?.preparedChars);
+    expect(response.reliability?.verification).toBe("limited");
+  });
+
+  it.each(["complete", "stream"] as const)("reports actual final-context truncation through %s evidence", async (method) => {
+    const runtime = await host();
+    const service = createAssistantService(runtime.registry);
+    const request = { mode: "scene" as const, question: "解释场景", context: { records: "数".repeat(90_000), later: "UNSENT_SOURCE" }, settings, principal: "operator" };
+    let response;
+    if (method === "complete") response = await service.complete(request);
+    else for await (const event of service.stream(request)) if (event.type === "done") response = event.result;
+    const warning = response?.reliability?.warnings.find((item) => item.startsWith("上下文已截断："));
+    expect(warning).toContain("仅前 80000 个发送给模型");
+    expect(runtime.observedRequest()?.input).toContain(warning!);
+    expect(runtime.observedRequest()?.input).not.toContain("UNSENT_SOURCE");
+    expect(runtime.observedRequest()?.input).not.toContain("asset.health.score");
+    expect(response?.reliability?.verification).toBe("limited");
+    expect(response?.reliability?.contextDelivery?.sources).toContainEqual(expect.objectContaining({ id: "capability-catalog", status: "omitted", sentChars: 0 }));
+  });
+
   it("discovers capability plugins without treating discovery as execution evidence", async () => {
     const runtime = await host();
     const service = createAssistantService(runtime.registry);

@@ -124,7 +124,7 @@ export function resolveStudioConfiguration(parsed, previous, platform = process.
 }
 
 export function studioHelp() {
-  return `Deep Monkey Studio 统一运行入口（Windows / Linux）
+  return `DeepMonkey Studio 统一运行入口（Windows / Linux）
 
 用法：
   pnpm studio start [client|web|api] [选项]

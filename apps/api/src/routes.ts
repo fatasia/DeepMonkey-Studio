@@ -42,6 +42,7 @@ import { registerSemanticModelRoutes } from "./semanticModelRoutes.js";
 import { registerDataWritebackRoutes } from "./dataWritebackRoutes.js";
 import { createNativeSceneCandidateService } from "./nativeSceneCandidateService.js";
 import { createNativeSceneWindowVerifier } from "./nativeSceneWindowVerifier.js";
+import { registerCacheManagementRoutes } from "./cacheManagementRoutes.js";
 
 interface RouteDependencies {
   store: MetadataStore;
@@ -439,10 +440,14 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
   await registerSemanticModelRoutes(app, { store });
   await registerDataWritebackRoutes(app, store, config);
   await registerAssetLibraryRoutes(app, { store, queue, objects, dataDir, libraryDir: config.assetLibraryDir });
+  registerCacheManagementRoutes(app);
   await registerSceneRoutes(app, {
     store,
     deliveryStorage: { objects, dataDir },
+    ...(config.nativeSceneVerifierExecutable ? { nativeExecutable: config.nativeSceneVerifierExecutable } : {}),
+    ...(config.threeSceneViewerBuilderScript ? { threeSceneViewerBuilderScript: config.threeSceneViewerBuilderScript } : {}),
     ...(config.nativeSceneVerifierExecutable ? { nativeCandidates: createNativeSceneCandidateService({ store, objects, dataDir,
+      nativeExecutable:config.nativeSceneVerifierExecutable,
       verifyWindow: createNativeSceneWindowVerifier({ nativeExecutable: config.nativeSceneVerifierExecutable }) }) } : {}),
     ...(beforeDiscardPublication ? { beforeDiscardPublication } : {}),
     ...(afterPublish ? { afterPublish } : {}),

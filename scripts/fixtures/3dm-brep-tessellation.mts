@@ -11,14 +11,23 @@ import { tessellateBicubicFace,tessellateMultispanBicubicFace } from './3dm-bicu
 import { tessellateRationalBezierFace } from './3dm-rational-bezier-face.mts';
 import { synchronizeSourceEdges } from './3dm-synchronize-source-edges.mts';
 import { reconstructPlaneSourceEdges } from './3dm-reconstruct-plane-source.mts';
+import { provePairedBoundary } from './3dm-paired-boundary-proof.mts';
+import { reconstructPairedBoundaries } from './3dm-reconstruct-paired-boundary.mts';
 
 /** Preserve saved meshes, reconstruct only supported missing faces, retain per-face diagnostics. */
-export function completeBrepParts(object: any,metersPerUnit?:number,options:{reconstructPlaneBoundaries?:boolean}={}) {
+export function completeBrepParts(object: any,metersPerUnit?:number,options:{reconstructPlaneBoundaries?:boolean;reconstructPairedBoundaries?:boolean}={}) {
   const parts=[...(object.storedRenderMeshes??[])], diagnostics: any[]=[];
   if(object.kind!=='brep' || !object.cadIr) return { parts, diagnostics };
   if(!Number.isInteger(object.faceCount) || object.faceCount<0 || object.faceCount>100000
     || object.cadIr.faces?.length!==object.faceCount) throw new Error('invalid-brep-face-budget');
   const saved=new Set(parts.map(part=>part.face));
+  // Reserve local mesh error for certified curved-to-curved C3 reconstruction.
+  // Existing saved meshes are never replaced; unsupported pairs retain preview.
+  const tightenedFaces=new Set<number>();
+  if(options.reconstructPairedBoundaries!==false&&metersPerUnit!==undefined)for(let edge=0;edge<(object.cadIr.edges?.length??0);edge++)try{
+    const proof=provePairedBoundary(object.cadIr,edge,metersPerUnit);
+    if(object.cadIr.surfaces[object.cadIr.faces[proof.faces[0]].surface].degree[0]===3)tightenedFaces.add(proof.faces[1]);
+  }catch { /* No continuous pair certificate, no changed mesh allocation. */ }
   for(let face=0;face<object.faceCount;face++) {
     if(saved.has(face)) continue;
     try {
@@ -36,7 +45,7 @@ export function completeBrepParts(object: any,metersPerUnit?:number,options:{rec
         }
         if(!support&&surface?.rational&&(surface.degree?.[0]===3&&surface.degree?.[1]===2
           ||surface.degree?.[0]===2&&surface.degree?.[1]===1&&surface.controlPointCount?.[0]>3)) {
-          parts.push(tessellateRationalBezierFace(object.cadIr,face,metersPerUnit!));continue;
+          parts.push(tessellateRationalBezierFace(object.cadIr,face,metersPerUnit!,tightenedFaces.has(face)?.005:.01));continue;
         }
         if(!support&&surface?.rational&&surface.degree?.includes(1)&&surface.degree?.includes(2)) {
           parts.push(tessellateProvenCylinderFace(object.cadIr,face,metersPerUnit!));continue;
@@ -64,9 +73,18 @@ export function completeBrepParts(object: any,metersPerUnit?:number,options:{rec
   if(options.reconstructPlaneBoundaries!==false&&metersPerUnit!==undefined&&object.cadIr.edges&&object.cadIr.trims&&object.cadIr.loops){
     const result=reconstructPlaneSourceEdges(object.cadIr,refined,metersPerUnit);refined=result.parts;planeSourceReconstructions=result.records;
   }
+  let pairedBoundaryReconstructions:any[]=[];
+  if(options.reconstructPairedBoundaries!==false&&metersPerUnit!==undefined&&object.cadIr.edges&&object.cadIr.trims&&object.cadIr.loops){
+    const result=reconstructPairedBoundaries(object.cadIr,refined,metersPerUnit);refined=result.parts;pairedBoundaryReconstructions=result.records;
+  }
   const boundaryAudit=object.cadIr.edges&&object.cadIr.trims&&object.cadIr.loops?auditBrepBoundaries(object.cadIr,refined):null;
+  const sourceBoundaryPairProofs:any[]=[];
+  if(metersPerUnit!==undefined)for(const edge of boundaryAudit?.shared??[])if(!edge.conforming){
+    try {sourceBoundaryPairProofs.push(provePairedBoundary(object.cadIr,edge.edge,metersPerUnit));}
+    catch { /* 未获连续双侧证明的边仍由原非共形诊断拒绝，不提升质量档。 */ }
+  }
   for(const edge of [...(boundaryAudit?.shared??[]),...(boundaryAudit?.seams??[])])if(!edge.conforming)diagnostics.push({objectId:object.id,code:'nonconforming-brep-boundary',edge:edge.edge});
   for(const edge of boundaryAudit?.unverified??[])if(edge.reason!=='source-edge-not-two-sided'||edge.faces.length>2)
     diagnostics.push({objectId:object.id,code:'nonconforming-brep-boundary',edge:edge.edge,reason:edge.reason});
-  return {parts:refined,diagnostics,boundaryAudit,refinements,welds,sourceEdgeSynchronizations,planeSourceReconstructions};
+  return {parts:refined,diagnostics,boundaryAudit,refinements,welds,sourceEdgeSynchronizations,planeSourceReconstructions,sourceBoundaryPairProofs,pairedBoundaryReconstructions};
 }

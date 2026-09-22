@@ -8,7 +8,7 @@ export async function measureFrozenDashboardCharts(source, input, host, signal) 
   for (const node of input.document.application.pages.flatMap(page => page.nodes)) {
     signal?.throwIfAborted();
     if (node.kind !== "data-widget" || node.visible === false || node.widget.semanticBinding
-      || !["bar", "line", "scatter", "pie"].includes(node.widget.type) || !input.data[node.id]
+      || !["value", "table", "bar", "line", "scatter", "pie"].includes(node.widget.type) || !input.data[node.id]
       || !input.nodeAssets[node.id]?.fonts?.length) continue;
     const orderedHost = { ...host, capture: (request, abort) => host.capture({ ...request,
       fonts: input.nodeAssets[node.id].fonts.map(id => request.fonts.find(font => font.id === id)) }, abort) };

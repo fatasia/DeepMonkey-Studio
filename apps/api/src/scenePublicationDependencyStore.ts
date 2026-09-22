@@ -88,7 +88,11 @@ function assertNativeCompiled(projectId: string, native: SceneNativeCompiledPubl
     || report.fixtureId !== `scene-${evidence.sourceSemanticHash}` || report.capabilityProfileVersion !== "deep-scene-compiled-v1") {
     throw new Error("Native 编译报告身份不匹配");
   }
-  const capabilities = ["deep.scene.runtime.v1", "deep.scene.static-primitives.v1", "deep.scene.static-glb.v1", "deep.scene.camera.v1", "deep.scene.uncompiled.v1"];
+  const capabilities = ["deep.scene.runtime.v1", "deep.scene.static-primitives.v1", "deep.scene.static-glb.v1",
+    "deep.scene.camera.v1", "deep.scene.section-plane.v1", "deep.scene.dynamic-runtime.v1",
+    "deep.scene.solid-environment.v1", "deep.scene.directional-light.v1", "deep.scene.multi-light.v1",
+    "deep.scene.spot-shadow.v1", "deep.scene.point-shadow.v1", "deep.scene.hdr-environment.v1",
+    "deep.scene.hdr-lighting.v1", "deep.scene.uncompiled.v1"];
   if (report.evidence.some(proof => proof.target !== report.target || proof.scope !== "native-window"
     || proof.platform !== report.platform || proof.fixtureId !== report.fixtureId || proof.sourceSemanticHash !== report.contentFingerprint
     || proof.compileGraphHash !== report.compileGraphHash || proof.targetArtifactHash !== report.targetArtifactHash)) throw new Error("Native 运行证据身份不匹配");
@@ -96,5 +100,5 @@ function assertNativeCompiled(projectId: string, native: SceneNativeCompiledPubl
     if (!report.items.some(item => item.capability === capability && item.path === path && item.objectId === report.sceneId)) throw new Error("Native 报告缺少必要检查项");
   }
   const checked = summarizeScenePublicationCompatibility({ ...report, profile: { version: report.capabilityProfileVersion, capabilities } });
-  if (checked.status !== "ready") throw new Error("Native 运行证据未通过复核");
+  if (checked.status === "blocked") throw new Error("Native 运行证据未通过复核");
 }

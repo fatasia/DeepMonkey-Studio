@@ -1,10 +1,14 @@
-# DE26/A01 · 五引擎目标矩阵 v2(冻结)
+# DE26/A01 · 四引擎目标矩阵 v2（当前口径）
 
 日期:2026-09-17。卡:DE26/A01(P0)。合同模块 `packages/deep-engine/src/benchmarkTargetMatrix.ts`,v1 `benchmarkContract.ts` 未动(8 项回归保持)。
 
+> 2026-09-22 用户指令覆盖本文件原冻结名单：正式测试、排名和能力分母只包含
+> Three、Babylon、Unity、Bevy 0.19。UE 与 Godot 已退出测试基准；历史调研内容只能作为架构参考，
+> 不安装、不运行，也不进入任何胜出结论。
+
 ## 冻结内容
 
-- **五张矩阵独立判定**:three / babylon / unity / ue5 / godot 各一张,互相不抵扣。
+- **四张矩阵独立判定**:three / babylon / unity / bevy 各一张,互相不抵扣；Bevy 固定为 0.19 Native wgpu 赛道。
 - **引擎身份**:version/renderer/platform(+rendererProfile);version 为空或 `unlocked` 的矩阵**永远不能判 passed**(A05–A07 锁版本后才可能通过)。
 - **双赛道**:`common-baseline`(公共子集,quality=equivalent)与 `best-quality`(最佳质量,quality=best);公共基线混入最佳口径即构造失败。
 - **必选任务**:六类负载(工厂实例/异构BIM/远原点园区/动态工作单元/混合看板/外观展示)是每张矩阵的下限,缺一即 invalid;引擎可追加 case。
@@ -21,8 +25,8 @@
 
 ## 测试与边界
 
-- `benchmarkTargetMatrix.test.ts` 6 项:五矩阵构造/权重与分母篡改拒绝/全通过路径/unverified 留分母+critical 失败/无证据 pass 拒绝/禁止退化命中/排除项越权评分拒绝/unlocked 永不通过/非法矩阵零评分。v1 回归 8 项通过,deep-engine typecheck 通过。
-- 边界(如实):本卡只冻结**判定合同**;真实引擎版本、环境 hash、样本与配对观测由 A02/A04/A05–A07 提供后才能产出真实 verdict;矩阵的 JSON 实例落盘(含五引擎 rendererProfile 档位)在 A04 领取时按当时锁定值生成。
+- `benchmarkTargetMatrix.test.ts` 覆盖四矩阵构造、权重与分母篡改拒绝、全通过路径、unverified 留分母与 critical 失败、无证据 pass 拒绝、禁止退化命中、排除项越权评分拒绝、unlocked 永不通过、非法矩阵零评分。合同回归与 deep-engine typecheck 通过。
+- 边界(如实):本卡只冻结**判定合同**;真实引擎版本、环境 hash、样本与配对观测由 A02/A04/A05–A07 提供后才能产出真实 verdict;矩阵的 JSON 实例落盘(含四引擎 rendererProfile 档位)在 A04 领取时按当时锁定值生成。
 
 ## 2026-09-19 政策增补(G5/G6,用户批准)
 

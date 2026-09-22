@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { copyFile, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import type { AssetLibraryDimension, AssetLibraryImportResult, ModelRecord, ProjectAssetRecord, ProjectRecord } from "@bim-studio/contracts";
 import { AssetLibraryCatalog, type AssetLibraryCatalogEntry } from "./assetLibraryCatalog.js";
@@ -15,6 +16,7 @@ interface AssetLibraryRouteDependencies {
   objects: ObjectStore;
   dataDir: string;
   libraryDir: string;
+  natureKitDir?: string;
 }
 
 interface AssetLibraryListQuery {
@@ -33,6 +35,7 @@ export async function registerAssetLibraryRoutes(app: FastifyInstance, dependenc
     dependencies.libraryDir,
     path.join(dependencies.dataDir, "external-assets", "environment-materials"),
     path.join(dependencies.dataDir, "external-assets", "source-b"),
+    dependencies.natureKitDir ?? fileURLToPath(new URL("../../web/public/assets/nature-kit/", import.meta.url)),
   );
 
   app.get<{ Querystring: AssetLibraryListQuery }>("/api/asset-library", async (request, reply) => {
@@ -166,7 +169,7 @@ async function importCatalogModel(
     };
     await dependencies.store.addModel(projectId, model);
     modelPersisted = true;
-    dependencies.queue.enqueue({ model, sourcePath, modelDir });
+    model.conversionTaskId = await dependencies.queue.enqueue({ model, sourcePath, modelDir });
     return model;
   } catch (reason) {
     // 任一步失败都同时清理元数据、本地文件和对象存储，避免留下半导入资源。

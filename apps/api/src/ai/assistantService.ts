@@ -6,9 +6,11 @@ import { prepareAiInput, reliabilitySystemBoundary, type AiReliabilityAssessment
 import { assistantOutputLimit, assistantPrompts, parseAssistantContent, type AssistantMode } from "./assistantPrompts.js";
 import { attemptWithFailover, classifyAiProviderError, resolveFailoverTarget, type AiFailoverTarget } from "./aiFailoverPolicy.js";
 import { newTelemetryRecord, type AiTelemetrySink } from "./aiRequestTelemetry.js";
+import { assistantContextDelivery } from "./assistantContextDelivery.js";
 
 export type AssistantStreamEvent =
   | { type: "delta"; delta: string }
+  | { type: "execution"; execution: AiAssistantResponse["execution"] | null }
   | { type: "done"; result: AiAssistantResponse };
 
 export interface AiRuntimeFailoverSettings {
@@ -77,6 +79,7 @@ export function createAssistantService(registry: PluginRegistry, options: Assist
         attempt = { servedBy: result.servedBy, ...(result.failover ? { failover: result.failover } : {}) };
         const completion = result.result;
         const response = withReliability(parseAssistantContent(request.mode, completion.text, completion.model), prepared, attempt);
+        if (completion.execution) response.execution = { ...completion.execution, servedBy: attempt.servedBy, ...(attempt.failover ? { failoverCategory: attempt.failover.category } : {}) };
         await emitAiAudit(options.audit, completionEvent(prepared, request, "completed", options, attempt));
         recordTelemetry(options, request, attempt, "completed", Date.now() - startedAt, completion);
         return response;
@@ -92,12 +95,23 @@ export function createAssistantService(registry: PluginRegistry, options: Assist
       const prepared = await prepareRequest(registry, request, options);
       let content = "";
       let usage: AiProviderCompletion["usage"] | undefined;
+      let reportedModel: string | undefined;
+      let execution: AiProviderCompletion["execution"];
       let attempt: FailoverAttemptInfo = { servedBy: "primary" };
       try {
         for await (const [event, served] of streamOnce(registry, prepared.providerRequest, request)) {
+          if (served.servedBy !== attempt.servedBy) {
+            reportedModel = undefined; usage = undefined; execution = undefined;
+            yield { type: "execution", execution: null };
+          }
           if (event.type === "delta") {
             content += event.delta;
             yield { type: "delta", delta: event.delta };
+          } else if (event.type === "model") {
+            reportedModel = event.model;
+          } else if (event.type === "execution") {
+            execution = { ...event.execution, servedBy: served.servedBy, ...(served.failover ? { failoverCategory: served.failover.category } : {}) };
+            yield { type: "execution", execution };
           } else {
             usage = {
               ...(event.inputTokens !== undefined ? { inputTokens: event.inputTokens } : {}),
@@ -108,12 +122,13 @@ export function createAssistantService(registry: PluginRegistry, options: Assist
         }
         if (!content.trim()) throw new Error("大模型没有返回内容");
         const response = withReliability(
-          parseAssistantContent(request.mode, content, servedModelName(request, attempt)),
+          parseAssistantContent(request.mode, content, reportedModel ?? servedModelName(request, attempt)),
           prepared,
           attempt,
         );
+        if (execution) response.execution = execution;
         await emitAiAudit(options.audit, completionEvent(prepared, request, "completed", options, attempt));
-        recordTelemetry(options, request, attempt, "completed", Date.now() - startedAt, { model: servedModelName(request, attempt), usage }, undefined, request.mode);
+        recordTelemetry(options, request, attempt, "completed", Date.now() - startedAt, { model: reportedModel ?? servedModelName(request, attempt), usage }, undefined, request.mode);
         yield { type: "done", result: response };
       } catch (error) {
         await emitAiAudit(options.audit, completionEvent(prepared, request, request.signal?.aborted ? "cancelled" : "failed", options, attempt, error));
@@ -165,10 +180,11 @@ function servedModelName(request: AssistantRequest, attempt: FailoverAttemptInfo
 }
 
 function fallbackProviderRequest(providerRequest: AiProviderRequest, target: AiFailoverTarget): AiProviderRequest {
+  const { reasoningEffort: _primaryEffort, ...config } = providerRequest.config;
   return {
     ...providerRequest,
     model: target.model,
-    config: { ...providerRequest.config, baseUrl: target.baseUrl, apiKey: target.apiKey, protocol: target.protocol },
+    config: { ...config, baseUrl: target.baseUrl, apiKey: target.apiKey, protocol: target.protocol },
   };
 }
 
@@ -216,6 +232,8 @@ interface PreparedAssistantRequest {
   providerRequest: AiProviderRequest;
   assessment: AiReliabilityAssessment;
   contextFingerprint: string;
+  contextWarning?: string;
+  contextDelivery: ReturnType<typeof assistantContextDelivery>;
 }
 
 async function prepareRequest(registry: PluginRegistry, request: AssistantRequest, options: AssistantServiceOptions): Promise<PreparedAssistantRequest> {
@@ -231,7 +249,8 @@ async function prepareRequest(registry: PluginRegistry, request: AssistantReques
   await emitAiAudit(options.audit, assessmentEvent);
   if (prepared.assessment.decision === "block") throw new AiReliabilityBlockedError(traceId, prepared.assessment.findings.map((item) => item.code));
   const context = withCapabilityCatalog(registry, prepared.context, request.settings.providerId);
-  const { systemPrompt, userPrompt } = assistantPrompts(request.mode, prepared.question, context);
+  const { systemPrompt, userPrompt, contextWarning, contextSentChars } = assistantPrompts(request.mode, prepared.question, context);
+  const contextDelivery = assistantContextDelivery(request.context, context, contextSentChars);
   const providerRequest: AiProviderRequest = {
     requestId: traceId,
     principal: request.principal,
@@ -249,7 +268,7 @@ async function prepareRequest(registry: PluginRegistry, request: AssistantReques
     },
     ...(request.signal ? { signal: request.signal } : {})
   };
-  return { traceId, providerRequest, assessment: prepared.assessment, contextFingerprint };
+  return { traceId, providerRequest, assessment: prepared.assessment, contextFingerprint, contextDelivery, ...(contextWarning ? { contextWarning } : {}) };
 }
 
 function withReliability(
@@ -261,6 +280,7 @@ function withReliability(
   const warnings = [
     "上下文来自客户端快照，未经服务端 Capability 证据验证",
     "助手不会自动执行写入或控制类操作",
+    ...(prepared.contextWarning ? [prepared.contextWarning] : []),
     ...(suspicious ? [`可靠性策略检测到 ${prepared.assessment.findings.length} 个可疑输入特征，已约束或隔离`] : []),
     ...(prepared.assessment.quarantinedSourceIds.length ? [`已隔离 ${prepared.assessment.quarantinedSourceIds.length} 个高风险上下文片段`] : []),
     ...(attempt.servedBy === "fallback" && attempt.failover
@@ -271,10 +291,11 @@ function withReliability(
     ...result,
     reliability: {
       traceId: prepared.traceId,
-      verification: suspicious ? "limited" : "unverified",
+      verification: suspicious || prepared.contextWarning || prepared.contextDelivery.sources.some((source) => source.status !== "sent") ? "limited" : "unverified",
       inputRisk: inputRisk(prepared.assessment),
       contextTrust: "client-snapshot",
       contextFingerprint: prepared.contextFingerprint,
+      contextDelivery: prepared.contextDelivery,
       evidenceCount: 0,
       warnings,
       writePolicy: "read-only",

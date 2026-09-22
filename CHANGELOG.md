@@ -4,11 +4,48 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+- Freeze project-owned Dashboard MP4 bytes into a content-addressed, budgeted Native package resource and continuously update muted autoplay/loop BGRA textures through Windows Media Foundation, while keeping audio, playback controls and seek explicitly gated.
+- Preserve folded layer selections during Ctrl/Cmd selection, keep dashboard group controls on one row, and allow locked dashboard layers to be inspected with read-only properties.
+- Replace the default Web, desktop, installer and packaged-client logo with the champagne alpaca; preserve the selected PNG master and generate consistent icons with tighter transparent margins.
+- Keep the scene editing toolbar centered in narrow viewports; move orientation shortcuts below the cube to avoid overlap.
 - Validate fixed multibody revolute chains across native and WASM physics, including live joint states and topology rejection.
 - Skip unchanged instance-history and spot-shadow uniform uploads while preserving redraws and failed-update rollback.
 - Bind non-SpatialAA PBR presentation captures to the executed pipeline's exact WGSL source and reject unrelated shader provenance.
 - Validate fixed revolute position motors and bidirectional limits across native and WASM physics; preserve existing joint-frame golden hashes.
 - Add optional PBR frame capture with feature-specific pass plans, submission markers and explicit shader source-map bindings; repair SSR-only geometry outputs and composite shader compilation.
+- Reuse the bounded Windows Job executor for SolidWorks diagnostic geometry and E57 inspection blocks; verify output identity while keeping these research profiles out of ready model publication.
+- Deliver cancellation requests across conversion service instances through persisted lease intent, and reject successful publication after cancellation wins.
+- Preserve material-colored single-bounce light and source HDR emission in baked GLBs; add an explicit 64-sample quality option without changing existing fast presets.
+- Fence conversion workers with database-backed leases; preserve active jobs on another service, stop lost owners and recover expired attempts without replacing existing ready assets.
+- Support authored point-light shadows across six faces in Native packages, including offline Windows delivery and a bounded combined point/spot shadow budget.
+- Repair the final known X_T surface-witness mismatch in the 109-file research corpus by recovering intersection supports from actual adjacent faces; production geometry certification remains separate.
+- Preserve authored spot-light shadows in Native scene packages, including per-material casting and receiving, floating origins and offline Windows delivery.
+- Add a diagnostic SolidWorks display-mesh export for five fixed real samples, retaining source identities, geometry and unresolved ownership without promoting previews to ready models.
+
+- Reject stale PostgreSQL metadata snapshots with an atomic revision check, preserving newer conversion publications across competing API instances.
+
+- Support authored point and spot lights in Native scene packages, including distance falloff, cone angles and floating origins; local shadow casting remains gated.
+
+- Repair four more proven 3DM surface boundaries within the existing 0.01 mm budget, preserving all 41 faces in the verified partial-preview sample.
+
+- Reject altered results from repeated terminal conversion callbacks; identical retries no longer rewrite publications or reclaim a newer attempt's model pointer.
+
+- Preserve authored directional-light color, strength, direction and shadow settings in Native scene packages; fix interpolated material flags corrupting shadow reception.
+
+- Customize Dashboard and Scene Windows package names and icons at download time, with product defaults and matching window, taskbar and executable resources. Verified Scene publications now download as standalone EXEs.
+
+- Consume package branding in Three WebView builds, including installer icons; fix duplicate window creation and remove the editor title bar from published clients.
+
+- Keep the published scene canvas fitted to its viewport after resizing and on high-DPI displays, without changing the authored camera or shadow buffer policy.
+
+- Render Native Dashboard text at its display density and reuse bounded, verified glyph results during candidate compilation.
+
+- Build the Dashboard static Web runtime with API production artifacts; expose available download formats and validate publication identity, resource paths and font licenses before packaging.
+
+- Apply runtime package deltas through the Native file watcher and retain the last presented package when an update fails.
+
+- Isolate conversion attempts and publish validated resources with their model metadata; failed or cancelled retries preserve the previously ready model.
+
 - Skip the default Bloom chain for pure-2D runtime packages at the production entrypoints (run, verify, package-live); Bloom targets are no longer allocated and forward targets stay 1×1 with pixel-identical output.
 
 - Use 1×1 forward targets for plain pure-2D Native output, preserving HDR background and ACES; Bloom, fog, probes and 3D retain full-size targets.

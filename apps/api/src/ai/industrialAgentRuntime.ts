@@ -11,11 +11,13 @@ import type { AiTelemetrySink } from "./aiRequestTelemetry.js";
 import { IndustrialAgentCheckpointStore } from "./industrialAgentCheckpointStore.js";
 import { createIndustrialAgentDecisionProvider } from "./industrialAgentDecisionProvider.js";
 import { IndustrialAgentToolGateway } from "./industrialAgentToolGateway.js";
+import { resolveAssistantSessionOptions, type AssistantSessionOptions } from "./assistantSessionOptions.js";
 
 export interface IndustrialAgentRuntime {
   checkpoints: AgentCheckpointStore;
   tools: AgentToolGateway;
   orchestrator: IndustrialAgentOrchestrator;
+  resolveModelOptions?: (options: AssistantSessionOptions) => Promise<AssistantSessionOptions>;
 }
 
 export async function createIndustrialAgentRuntime(input: {
@@ -39,6 +41,10 @@ export async function createIndustrialAgentRuntime(input: {
     ...(input.telemetry ? { telemetry: input.telemetry } : {}),
   });
   return {
+    resolveModelOptions: async options => {
+      const settings = await resolveAssistantSessionOptions(input.settings(), options);
+      return { model: settings.model, ...(settings.reasoningEffort ? { reasoningEffort: settings.reasoningEffort } : {}) };
+    },
     checkpoints,
     tools,
     orchestrator: new IndustrialAgentOrchestrator({ decisions, tools, checkpoints }),

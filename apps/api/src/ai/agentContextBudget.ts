@@ -1,6 +1,7 @@
 import type { AgentDecision, AgentDecisionRecord, AgentToolRecord } from "@bim-studio/industrial-agent-orchestrator";
 
 export interface AgentToolResultView {
+  step: number;
   toolId: string;
   status: string;
   output: unknown;
@@ -17,6 +18,7 @@ export interface AgentDecisionView {
   kind: AgentDecision["kind"];
   rationale?: string;
   summarized?: boolean;
+  call?: AgentToolRecord["call"];
 }
 
 export interface AgentContextCompression {
@@ -24,6 +26,7 @@ export interface AgentContextCompression {
   summarizedDecisions: number;
   summarizedToolResults: number;
   approxChars: number;
+  charBudget: number;
 }
 
 export interface CompressedAgentContext {
@@ -42,6 +45,19 @@ export interface AgentContextBudgetOptions {
 }
 
 const DIGEST_MARKER = "…[已摘要压缩]";
+
+export class AgentContextBudgetError extends Error {
+  readonly code = "agent-context-budget-exceeded";
+  constructor(readonly actualChars: number, readonly charBudget: number) {
+    super(`Agent 上下文需要 ${actualChars} 个 UTF-16 字符，超过 ${charBudget} 预算；完整当前请求与必要工具记录无法安全压缩，请缩小请求或工具返回范围`);
+    this.name = "AgentContextBudgetError";
+  }
+}
+
+/** Check complete serialized inputs; never cut system instructions or structured tool records. */
+export function assertAgentContextBudget(actualChars: number, charBudget = 80_000): void {
+  if (actualChars > charBudget) throw new AgentContextBudgetError(actualChars, charBudget);
+}
 
 /**
  * Agent 上下文预算：决策与工具结果超出最近窗口时，把最旧轮次压缩为
@@ -64,6 +80,9 @@ export function compressAgentContext(
     window = Math.max(1, Math.floor(window / 2));
     compressed = build(decisions, toolRecords, window, Math.min(outputPreviewChars, 120), rationaleChars);
   }
+  compressed.compression.approxChars = approxChars(compressed);
+  compressed.compression.charBudget = charBudget;
+  assertAgentContextBudget(compressed.compression.approxChars, charBudget);
   return compressed;
 }
 
@@ -81,6 +100,7 @@ function build(
     return {
       step: record.step,
       kind: record.decision.kind,
+      ...(record.decision.kind === "call-tool" ? { call: record.decision.call } : {}),
       ...(rationale ? { rationale } : {}),
       summarized: true,
     };
@@ -91,6 +111,7 @@ function build(
     const evidence = [...record.outcome.evidence, ...record.outcome.verificationEvidence];
     if (index >= recentToolFloor) {
       return {
+        step: record.step,
         toolId: record.call.toolId,
         status: record.outcome.status,
         output: record.outcome.output,
@@ -99,6 +120,7 @@ function build(
       };
     }
     return {
+      step: record.step,
       toolId: record.call.toolId,
       status: record.outcome.status,
       output: truncateWithMarker(stringify(record.outcome.output), outputPreviewChars),
@@ -118,6 +140,7 @@ function build(
       summarizedDecisions: recentFloor,
       summarizedToolResults: recentToolFloor,
       approxChars: 0,
+      charBudget: 0,
     },
   };
 }

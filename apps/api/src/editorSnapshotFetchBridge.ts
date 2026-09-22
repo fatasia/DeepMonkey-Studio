@@ -190,6 +190,7 @@ export function editorSnapshotFetchToolDefinition() {
       },
       additionalProperties: false,
     },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotent: true, openWorldHint: false },
   };
 }
 

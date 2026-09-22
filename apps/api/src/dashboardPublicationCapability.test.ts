@@ -66,6 +66,25 @@ describe("dashboard publication capability report", () => {
     expect((await buildDashboardPublicationCapabilityReport(input)).objects[0]).toMatchObject({ status: "degraded" });
   });
 
+  it("carries authoritative compiler reasons while keeping the field optional for legacy compilers", async () => {
+    const input = inputs(await candidate());
+    const compile = input.compiler.compile;
+    Object.assign(input.compiler, { compile: async () => {
+      const result = await compile();
+      return { ...result, objects: result.objects.map(object => ({
+        ...object, deferredFields: ["widget.interactions"],
+        reasons: ["Frozen chart data is compiled into ChartIR; Web appearance remains deferred", "  duplicate trimmed  "],
+      })) };
+    } });
+    const report = await buildDashboardPublicationCapabilityReport(input);
+    expect(report.objects[0]).toMatchObject({
+      status: "degraded",
+      reasons: ["Frozen chart data is compiled into ChartIR; Web appearance remains deferred", "duplicate trimmed"],
+    });
+    const legacy = await buildDashboardPublicationCapabilityReport(inputs(await candidate()));
+    expect(legacy.objects[0]).not.toHaveProperty("reasons");
+  });
+
   it("reports omitted authored objects as blocked rather than silently dropping them", async () => {
     const input = inputs(await candidate());
     const compile = input.compiler.compile;
@@ -74,6 +93,7 @@ describe("dashboard publication capability report", () => {
     } });
     expect((await buildDashboardPublicationCapabilityReport(input)).objects).toContainEqual({
       nodeId: "second", status: "blocked", deferredFields: ["$"],
+      reasons: ["Compiler did not return an object report for this authored node"],
     });
   });
 
@@ -159,6 +179,14 @@ async function coverageInput(multiPage = false) {
 }
 
 describe("compiler-bound font coverage", () => {
+  it("accepts a separate chart-only layer without inventing a static font resource", async () => {
+    const { input, evidence } = await coverageInput();
+    evidence.nodeBindings.push({ nodeId: "widget-scene-main", runtimeNodeId: "runtime-plot",
+      pageId: "runtime-page-main", staticResourceId: null as unknown as string });
+    await expect(buildDashboardPublicationCapabilityReport(input)).resolves.toBeDefined();
+    evidence.fontBindings.push({ ...evidence.fontBindings[0]!, runtimeNodeId: "runtime-plot" });
+    await expect(buildDashboardPublicationCapabilityReport(input)).rejects.toThrow(/outside the frozen font closure/);
+  });
   it("merges table chrome and text-cell layer fonts under their shared author node", async () => {
     const { input, evidence } = await coverageInput(), verify = input.verifyWindow;
     evidence.nodeBindings.push({ nodeId: "widget-scene-main", runtimeNodeId: "runtime-cell",

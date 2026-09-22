@@ -3,7 +3,6 @@ import { crc32 } from "node:zlib";
 import yauzl from "yauzl";
 import { validateSceneClientArchivePaths } from "../../apps/web/src/delivery/sceneClientPackageIndex.ts";
 import { validateSceneClientArchiveManifest } from "./sceneClientArchiveManifest.mjs";
-import { validateSceneClientArchiveNative } from "./sceneClientArchiveNative.mjs";
 
 export const sceneClientArchiveLimits = Object.freeze({
   archiveBytes: 512 * 1024 ** 2, manifestBytes: 1024 ** 2,
@@ -42,16 +41,27 @@ export async function verifySceneClientArchive(buffer, { expectedTarget, limits:
       signal?.throwIfAborted();
       const entry = byPath.get(file.path);
       check(entry.uncompressedSize === file.bytes, `文件大小不匹配：${file.path}`);
-      const collect = nativePaths.has(file.path);
-      const metadataCap = collect && file.path !== "native/runtime-package.json" ? limits.nativeMetadataBytes : limits.fileBytes;
+      const isIcon = file.path === manifest.branding?.iconPath;
+      const collect = nativePaths.has(file.path) || isIcon;
+      const metadataCap = isIcon ? 2 * 1024 ** 2 : collect && file.path !== "native/runtime-package.json" ? limits.nativeMetadataBytes : limits.fileBytes;
       check(entry.uncompressedSize <= metadataCap, `Native 元数据读取限额超限：${file.path}`);
       const result = await readContent(zip, entry, Math.min(metadataCap, limits.totalBytes - totalBytes), signal, collect);
       check(result.sha256 === file.sha256, `SHA-256 不匹配：${file.path}`);
+      if (isIcon) {
+        const bytes = result.content;
+        const png = [137, 80, 78, 71, 13, 10, 26, 10].every((value, index) => bytes[index] === value);
+        const ico = bytes.length >= 6 && bytes.readUInt16LE(0) === 0 && bytes.readUInt16LE(2) === 1 && bytes.readUInt16LE(4) > 0;
+        check(file.path.endsWith(".png") ? png : ico, "品牌图标格式与路径不匹配");
+      }
       if (collect) nativeContents.set(file.path, result.content);
       totalBytes += result.bytes;
     }
     signal?.throwIfAborted();
-    if (manifest.target === "deep-native") validateSceneClientArchiveNative(manifest, nativeContents);
+    if (manifest.target === "deep-native") {
+      const { validateSceneClientArchiveNative } = await import("./sceneClientArchiveNative.mjs");
+      signal?.throwIfAborted();
+      validateSceneClientArchiveNative(manifest, nativeContents);
+    }
     return { manifest, fileCount: files.length, totalBytes };
   } finally { zip.close(); }
 }

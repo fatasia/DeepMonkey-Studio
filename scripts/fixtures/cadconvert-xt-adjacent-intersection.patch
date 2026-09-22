@@ -1,0 +1,84 @@
+diff --git a/crates/cad-xt/src/adjacent_intersection.rs b/crates/cad-xt/src/adjacent_intersection.rs
+new file mode 100644
+--- /dev/null
++++ b/crates/cad-xt/src/adjacent_intersection.rs
+@@ -0,0 +1,66 @@
++//! Recover an edge from its two actual face supports when an intersection
++//! record still names a shorter, pre-extension support surface.
++use crate::geom::{self, Index};
++use cad_ir::{brep::{Curve, Surface}, Interval, Vec3};
++use xt_parser::{entity::{Entities, RawEntity}, schema as xt};
++
++fn pointer(e: &Entities, row: &RawEntity, slot: usize) -> Option<usize> {
++    Some(e.fields(row).get(slot)?.as_ptr()).filter(|v| *v != 0)
++}
++fn on(surface: &Surface, point: Vec3, tolerance: f64) -> bool {
++    surface.invert(point, None).is_some_and(|uv| (surface.point_at(uv)-point).length() <= tolerance)
++}
++fn distance(point: Vec3, guide: &[Vec3]) -> f64 {
++    guide.windows(2).map(|p| {let d=p[1]-p[0];let t=if d.length_squared()>0. {((point-p[0]).dot(d)/d.length_squared()).clamp(0.,1.)}else{0.};
++        (point-p[0].lerp(p[1],t)).length()}).fold(f64::INFINITY,f64::min)
++}
++
++pub(crate) fn recover(e: &Entities, index: &Index, edge: usize, curve: &Curve,
++    range: Interval, from: Vec3, to: Vec3, tolerance: f64) -> Option<Curve> {
++    if !tolerance.is_finite() || tolerance<=0. || (to-from).length()<=tolerance {return None;}
++    let edge=index.get(&edge).filter(|r|r.type_id==xt::EDGE)?;
++    let original=index.get(&pointer(e,edge,6)?)?;
++    let intersection=if original.type_id==xt::TRIMMED_CURVE {index.get(&pointer(e,original,7)?)?}else{original};
++    if intersection.type_id!=xt::INTERSECTION {return None;}
++    // Only superseded supports: ordinary intersection refinement keeps its
++    // existing path. The source edge must demonstrably leave a declared face.
++    let declared=[pointer(e,intersection,7)?,e.extra(intersection).first()?.as_ptr()];
++    let declared_surfaces=[geom::surface(e,index.get(&declared[0])?,index).ok()?,
++        geom::surface(e,index.get(&declared[1])?,index).ok()?];
++    if declared_surfaces.iter().all(|s|on(s,from,tolerance)&&on(s,to,tolerance)){return None;}
++    let first=index.get(&pointer(e,edge,3)?).filter(|r|r.type_id==xt::FIN)?;
++    let shift=|r:&RawEntity|match e.fields(r).len(){9=>Some(1),10=>Some(0),_=>None};
++    let a=shift(first)?;
++    let second=index.get(&pointer(e,first,5-a)?).filter(|r|r.type_id==xt::FIN)?;
++    let b=shift(second)?;
++    if first.index==second.index || pointer(e,second,5-b)?!=first.index
++        || pointer(e,first,6-a)?!=edge.index || pointer(e,second,6-b)?!=edge.index {return None;}
++    let mut faces=Vec::new();
++    for (fin,shift) in [(first,a),(second,b)] {
++        let lp=index.get(&pointer(e,fin,1-shift)?).filter(|r|r.type_id==xt::LOOP)?;
++        faces.push(*index.get(&pointer(e,lp,3)?).filter(|r|r.type_id==xt::FACE)?);
++    }
++    if faces[0].index==faces[1].index || pointer(e,faces[0],6)?!=pointer(e,faces[1],6)? {return None;}
++    let supports=[geom::surface(e,index.get(&pointer(e,faces[0],7)?)?,index).ok()?,
++        geom::surface(e,index.get(&pointer(e,faces[1],7)?)?,index).ok()?];
++    if supports.iter().any(|s| !on(s,from,tolerance)||!on(s,to,tolerance)){return None;}
++    let mut guide:Vec<_>=(0..=16).map(|i|curve.point_at(range.at(i as f64/16.))).collect();
++    if (guide[0]-from).length()+(guide[16]-to).length()>(guide[0]-to).length()+(guide[16]-from).length(){guide.reverse();}
++    guide[0]=from;guide[16]=to;
++    if guide.iter().all(|p|supports.iter().all(|s|on(s,*p,tolerance))){return None;}
++    let chart=index.get(&pointer(e,intersection,8)?).filter(|r|r.type_id==xt::CHART)?;
++    let stated=e.fields(chart).get(3)?.as_f64().abs();
++    if !stated.is_finite(){return None;}
++    let slack=stated.max(guide.windows(2).map(|p|(p[1]-p[0]).length()).fold(0.,f64::max))+tolerance;
++    let candidate=geom::intersection_polyline(&supports[0],&supports[1],from,to,tolerance)
++        .or_else(||geom::projected_intersection_polyline(&supports[0],&supports[1],&guide,tolerance,slack))?;
++    let Curve::Polyline{mut points}=candidate else{return None;};
++    if points.len()<3||points.len()>4096||(points[0]-from).length()>tolerance||(*points.last()?-to).length()>tolerance{return None;}
++    points[0]=from;*points.last_mut()?=to;
++    // Check both face supports and the source chart, including chord interiors.
++    // A valid one-sided projection is not sufficient to replace a shared edge.
++    for pair in points.windows(2) {for i in 0..=8 {let p=pair[0].lerp(pair[1],i as f64/8.);
++        if distance(p,&guide)>slack||supports.iter().any(|s|!on(s,p,tolerance)){return None;}
++    }}
++    Some(Curve::Polyline{points})
++}
+diff --git a/crates/cad-xt/src/lib.rs b/crates/cad-xt/src/lib.rs
+--- a/crates/cad-xt/src/lib.rs
++++ b/crates/cad-xt/src/lib.rs
+@@ -1,1 +1,2 @@
+ mod isolated_loop;
++mod adjacent_intersection;
+diff --git a/crates/cad-xt/src/topo.rs b/crates/cad-xt/src/topo.rs
+--- a/crates/cad-xt/src/topo.rs
++++ b/crates/cad-xt/src/topo.rs
+@@ -2245,1 +2245,2 @@
+-        let walked = self.computed_intersection(curve_ptr, curve, range, p0, p1, tolerance);
++        let walked = crate::adjacent_intersection::recover(self.entities,self.index,edge_ptr,curve,range,p0,p1,tolerance.min(self.solid.tolerance))
++            .or_else(|| self.computed_intersection(curve_ptr, curve, range, p0, p1, tolerance));

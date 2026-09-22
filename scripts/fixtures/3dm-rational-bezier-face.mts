@@ -5,10 +5,11 @@ import { refineSurfaceWinding } from './3dm-refine-surface-winding.mts';
 const cross=(a:number[],b:number[])=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
 function check(v:unknown,m:string):asserts v {if(!v)throw new Error(m);}
 /** Bounded positive-weight or polynomial Bezier chains, split at every source knot. */
-export function tessellateRationalBezierFace(ir:any,faceIndex:number,metersPerUnit:number) {
+export function tessellateRationalBezierFace(ir:any,faceIndex:number,metersPerUnit:number,meshBudgetMm=.01) {
   check(Number.isFinite(metersPerUnit)&&metersPerUnit>0,'invalid-rational-face-unit');
+  check(Number.isFinite(meshBudgetMm)&&meshBudgetMm>0&&meshBudgetMm<=.01,'invalid-rational-face-budget');
   const face=ir.faces[faceIndex],s=ir.surfaces[face?.surface],bounds=rationalBezierBounds(s),{first,second}=bounds;
-  const width=s.domain.map((d:number[])=>d[1]-d[0]),lipschitz=first[0]+first[1],budget=.00001/metersPerUnit,trimBound=.1*budget;
+  const width=s.domain.map((d:number[])=>d[1]-d[0]),lipschitz=first[0]+first[1],budget=meshBudgetMm/(1000*metersPerUnit),trimBound=.1*budget;
   const numerator=second[0]*width[0]**2+2*second[1]*width[0]*width[1]+second[2]*width[1]**2;
   const divisions=Math.max(1,Math.ceil(Math.sqrt(numerator/(8*.7*budget))));
   check(Number.isFinite(lipschitz)&&lipschitz>0&&Number.isFinite(divisions)&&divisions<=256,'rational-face-subdivision-budget');

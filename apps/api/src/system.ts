@@ -16,7 +16,11 @@ import type { MetadataStore } from "./store.js";
 import type { AssistantMode } from "./ai/assistantPrompts.js";
 import { AiReliabilityBlockedError, type AssistantService } from "./ai/assistantService.js";
 import { streamAssistantHttp } from "./ai/streamAssistantHttp.js";
+import { AssistantSessionStore } from "./ai/assistantSessionStore.js";
+import { registerAssistantSessionRoutes } from "./ai/assistantSessionRoutes.js";
 import { httpDisconnectScope } from "./httpDisconnectScope.js";
+import { registerCacheManagementRoutes } from "./cacheManagementRoutes.js";
+import { assistantSessionCatalog, resolveAssistantSessionOptions, AssistantSessionOptionError, type AssistantSessionOptions } from "./ai/assistantSessionOptions.js";
 import { mergeAiSettingsDraft, publicAiSettings, resolveAiSettings } from "./ai/aiRuntimeSettings.js";
 import { fetchProviderModels } from "./ai/aiModelCatalog.js";
 import { emptyTelemetrySummary, type AiTelemetryRing } from "./ai/aiRequestTelemetry.js";
@@ -43,7 +47,7 @@ const SESSION_LIFETIME = 12 * 60 * 60 * 1_000;
 const REMEMBER_SESSION_LIFETIME = 30 * 24 * 60 * 60 * 1_000;
 const ASSISTANT_MODES = new Set<AssistantMode>(["platform", "operations", "vision", "bim", "scene", "component", "dashboard", "sql"]);
 
-interface AssistantRouteBody {
+interface AssistantRouteBody extends AssistantSessionOptions {
   mode?: AssistantMode;
   question?: string;
   context?: unknown;
@@ -66,6 +70,7 @@ export async function registerSystemRoutes(
   dependencies: { assistant?: AssistantService; aiTelemetry?: AiTelemetryRing } = {},
 ): Promise<void> {
   const brandingDirectory = path.join(dataDir, "branding");
+  registerCacheManagementRoutes(app);
   if (store.listUsers().length === 0) {
     const now = new Date().toISOString();
     await store.saveUser({
@@ -102,6 +107,7 @@ export async function registerSystemRoutes(
     if (projectId && stored.role !== "admin" && !stored.projectIds.includes(decodeURIComponent(projectId))) return reply.code(403).send({ message: "没有该项目的访问权限" });
     const aiReadAction =
       pathname === "/api/ai/assistant" || pathname === "/api/ai/assistant/stream" || pathname === "/api/mcp"
+      || (request.method === "PUT" && /^\/api\/projects\/[^/]+\/ai\/assistant-sessions\/[^/]+(?:\/messages\/[^/]+)?$/.test(pathname))
       || pathname.startsWith("/api/editor-presence/") || /^\/api\/projects\/[^/]+\/capabilities\/invoke$/.test(pathname);
     if (stored.role === "viewer" && !["GET", "HEAD"].includes(request.method) && !aiReadAction) return reply.code(403).send({ message: "浏览者不能修改数据" });
   });
@@ -302,8 +308,15 @@ export async function registerSystemRoutes(
     telemetry: dependencies.aiTelemetry ? dependencies.aiTelemetry.summary() : emptyTelemetrySummary(new Date().toISOString()),
   }));
 
+  const assistantSessions = new AssistantSessionStore(dataDir);
+  await assistantSessions.init();
+  await registerAssistantSessionRoutes(app, assistantSessions, (id) => Boolean(store.getProject(id)));
+  app.get("/api/ai/assistant/models", async (_request, reply) => {
+    reply.header("cache-control", "private, no-store");
+    return assistantSessionCatalog(resolveAiSettings(store));
+  });
   app.post<{ Body: AssistantRouteBody }>("/api/ai/assistant", async (request, reply) => {
-    const question = request.body?.question?.trim();
+    const question = typeof request.body?.question === "string" ? request.body.question.trim() : "";
     if (!question) return reply.code(400).send({ message: "请输入问题或生成要求" });
     const issue = validateAssistantRouteInput(request.body, request.systemUser, store);
     if (issue) return reply.code(issue.statusCode).send({ message: issue.message });
@@ -315,20 +328,21 @@ export async function registerSystemRoutes(
         mode: request.body.mode ?? "platform",
         question,
         context: request.body.context ?? {},
-        settings: resolveAiSettings(store),
+        settings: await resolveAssistantSessionOptions(resolveAiSettings(store), request.body, request.body.mode),
         principal: request.systemUser?.username ?? "api-user",
         ...(projectId ? { projectId } : {}),
       });
     } catch (reason) {
       if (reply.raw.destroyed) return reply.hijack();
       if (reason instanceof AiReliabilityBlockedError) return reply.code(403).send(aiBlockedPayload(reason));
+      if (reason instanceof AssistantSessionOptionError) return reply.code(400).send({ message: reason.message });
       return reply.code(502).send({ message: reason instanceof Error ? reason.message : String(reason) });
     } finally {
       scope.dispose();
     }
   });
   app.post<{ Body: AssistantRouteBody }>("/api/ai/assistant/stream", async (request, reply) => {
-    const question = request.body?.question?.trim();
+    const question = typeof request.body?.question === "string" ? request.body.question.trim() : "";
     if (!question) return reply.code(400).send({ message: "请输入问题或生成要求" });
     const issue = validateAssistantRouteInput(request.body, request.systemUser, store);
     if (issue) return reply.code(issue.statusCode).send({ message: issue.message });
@@ -340,7 +354,7 @@ export async function registerSystemRoutes(
         mode: request.body.mode ?? "platform",
         question,
         context: request.body.context ?? {},
-        settings: resolveAiSettings(store),
+        settings: await resolveAssistantSessionOptions(resolveAiSettings(store), request.body, request.body.mode),
         principal: request.systemUser?.username ?? "api-user",
         ...(projectId ? { projectId } : {}),
       });
@@ -355,7 +369,7 @@ export async function registerSystemRoutes(
         reply.raw.end();
         return reply.hijack();
       }
-      return reply.code(reason instanceof AiReliabilityBlockedError ? 403 : 502).send(payload);
+      return reply.code(reason instanceof AiReliabilityBlockedError ? 403 : reason instanceof AssistantSessionOptionError ? 400 : 502).send(payload);
     } finally {
       scope.dispose();
     }
@@ -372,6 +386,7 @@ function validateAssistantRouteInput(
   store: MetadataStore,
 ): { statusCode: 400 | 403 | 404; message: string } | undefined {
   if (body.mode !== undefined && !ASSISTANT_MODES.has(body.mode)) return { statusCode: 400, message: "不支持的 AI 助手模式" };
+  if (body.projectId !== undefined && typeof body.projectId !== "string") return { statusCode: 400, message: "项目参数无效" };
   if ((body.question?.trim().length ?? 0) > 4_000) return { statusCode: 400, message: "问题最多 4000 个字符" };
   const projectId = body.projectId?.trim();
   if (!projectId) return undefined;

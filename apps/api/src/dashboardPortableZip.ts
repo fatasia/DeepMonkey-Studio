@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import JSZip from "jszip";
 import { createDashboardOfflineNativeLaunchPlan } from "./dashboardOfflineNativeLauncher.js";
 import { readDashboardWindowsExecutable } from "./dashboardWindowsExecutable.js";
+import { applyNativeExecutableBranding } from "./nativeExecutableBranding.js";
+import type { ClientPackageBranding } from "./clientPackageBranding.js";
 
 const executableName = "deep-native-player.exe";
 const packageName = "runtime-package.json";
@@ -13,16 +15,17 @@ const sha256 = (bytes: Uint8Array | string) => createHash("sha256").update(bytes
 export async function createDashboardPortableZip(
   archiveBytes: Uint8Array,
   nativeExecutable: string,
-  options: { signal?: AbortSignal; expectedSha256?: string } = {},
+  options: { signal?: AbortSignal; expectedSha256?: string; branding?: ClientPackageBranding } = {},
 ): Promise<Uint8Array> {
   options.signal?.throwIfAborted();
   const plan = createDashboardOfflineNativeLaunchPlan(archiveBytes);
   const executable = await readDashboardWindowsExecutable(nativeExecutable, options.signal, options.expectedSha256);
+  const brandedExecutable = options.branding ? await applyNativeExecutableBranding(executable, options.branding, options.signal) : executable;
   const files = new Map<string, Uint8Array | string>([
-    [packageName, plan.artifact], [executableName, executable],
+    [packageName, plan.artifact], [executableName, brandedExecutable],
     ["LICENSE", await readFile(new URL("../../../LICENSE", import.meta.url))],
     ["THIRD_PARTY_NOTICES.md", await readFile(new URL("../../../THIRD_PARTY_NOTICES.md", import.meta.url))],
-    ["README.txt", "Deep Monkey Dashboard Windows portable package\r\n\r\nExtract all files into one local directory.\r\nRun: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\Start-Dashboard.ps1\r\nNo Node.js installation is required. Extra arguments are rejected.\r\nThe launcher checks SHA-256 before starting the bundled player.\r\nHashes detect changed files; they are not a publisher signature.\r\nThis archive does not prove formal publication or full window acceptance.\r\nProject source-available license and third-party notices are included.\r\n"],
+    ["README.txt", "DeepMonkey Dashboard Windows portable package\r\n\r\nExtract all files into one local directory.\r\nRun: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\Start-Dashboard.ps1\r\nNo Node.js installation is required. Extra arguments are rejected.\r\nThe launcher checks SHA-256 before starting the bundled player.\r\nHashes detect changed files; they are not a publisher signature.\r\nThis archive does not prove formal publication or full window acceptance.\r\nProject source-available license and third-party notices are included.\r\n"],
   ]);
   const payloadHashes = Object.fromEntries([...files].map(([name, bytes]) => [name, sha256(bytes)]));
   files.set(launcherName, portableLauncher(payloadHashes));
@@ -43,7 +46,7 @@ export async function createDashboardPortableZip(
 }
 
 function portableLauncher(hashes: Record<string, string>): string {
-  return `# Deep Monkey Dashboard portable launcher\r
+  return `# DeepMonkey Dashboard portable launcher\r
 $ErrorActionPreference = 'Stop'
 try {
   if ($args.Count -ne 0) { throw 'Dashboard launcher accepts no arguments' }

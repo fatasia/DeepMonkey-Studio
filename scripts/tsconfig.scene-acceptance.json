@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.dashboard-acceptance.json",
+  "include": ["verify-scene-standalone-executable.mts", "../apps/api/src/**/*.d.ts"],
+  "exclude": []
+}

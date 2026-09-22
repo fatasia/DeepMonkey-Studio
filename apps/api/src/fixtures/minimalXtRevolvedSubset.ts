@@ -20,7 +20,7 @@ export function minimalXtRevolvedSubsetFixture(): Uint8Array {
     "**ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
     "**PARASOLID",
     "**PART1;",
-    "APPL=Deep Monkey Studio clean-room regression;",
+    "APPL=DeepMonkey Studio clean-room regression;",
     "FORMAT=text;",
     "**PART2;",
     "SCH=SCH_2401231_20000;",

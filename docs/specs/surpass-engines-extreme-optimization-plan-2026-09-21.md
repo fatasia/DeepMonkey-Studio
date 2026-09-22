@@ -1,10 +1,13 @@
-# 超越 Bevy / Babylon / Unity / UE 的极致优化方案（2026-09-21）
+# Deep Engine 极致优化方案（2026-09-21）
 
 > 基于全网调研与自研现状分析。目标：Deep Engine 在 Web 端（Deep WebGPU）与 Native 双端，
-> 功能一致、效果相当或更好、性能有实测提升的前提下，在选定维度形成对四大引擎的代差优势。
-> 调研基准：Babylon 9.0（Frame Graph v1.0 + Clustered Lighting，2026-03）、Bevy 0.17（Solari GPU
-> 光追 + GPU-driven rendering）、Unity 7（GPU Resident Drawer / Entities Graphics）、
+> 功能一致、效果相当或更好、性能有实测提升的前提下，在选定维度形成优势。
+> 调研基准：Babylon 9.0（Frame Graph v1.0 + Clustered Lighting，2026-03）、Bevy 0.19（正式挑战轨；
+> 0.17 资料仅保留为 Solari / GPU-driven 历史架构参考）、Unity 7（GPU Resident Drawer / Entities Graphics）、
 > UE 5.6/6（Lumen HWRT、Nanite programmable rasterization 路线）、Chrome 149–150 WebGPU 新特性。
+
+> 2026-09-22 当前测试口径：正式运行、排名和能力分母仅含 Three、Babylon、Unity、Bevy 0.19。
+> UE 与 Godot 已退出测试基准；本文中的 UE 内容只保留为架构研究资料，不下载安装、不执行测试，也不产生对 UE 的胜出声明。
 
 ## 0. 结论总览
 
@@ -161,7 +164,7 @@
 ## 附：调研来源
 
 - [Announcing Babylon.js 9.0](https://blogs.windows.com) · [Babylon Clustered Lighting Docs](https://doc.babylonjs.com) · [Babylon Frame Graph v1.0](https://forum.babylonjs.com) · [FG 实现 PR #17294](https://github.com/BabylonJS/Babylon.js) · [Babylon 9.0 解读](https://www.arttechpost.com)
-- [Bevy 0.17（Solari）](https://bevy.org/news/bevy-0-17) · [Bevy 0.16 GPU-driven rendering](https://bevy.org/news/bevy-0-16) · [Solari 博文](https://jms55.github.io/posts/2025-09-20-solari-bevy-0-17)
+- [Bevy 0.19（正式挑战版本）](https://bevy.org/news/bevy-0-19/) · [Bevy 0.17（Solari 历史参考）](https://bevy.org/news/bevy-0-17) · [Bevy 0.16 GPU-driven rendering](https://bevy.org/news/bevy-0-16) · [Solari 博文](https://jms55.github.io/posts/2025-09-20-solari-bevy-0-17)
 - [Unity GPU Resident Drawer（URP）](https://docs.unity3d.com) · [Entities Graphics+GPU RD 讨论](https://discussions.unity.com) · [Unity Graphics 仓库指南](https://github.com/Unity-Technologies/UnityGraphics)
 - [UE 5.6 性能亮点](https://tomlooman.com) · [Lumen 官方指南](https://dev.epicgames.com) · [UE 5.6 35% 提升报道](https://www.techpowerup.com) · [Nanite 路线图](https://portal.productboard.com) · [UE 5.6 60FPS 深读](https://www.strayspark.studio)
 - [Chrome 149–150 WebGPU 新特性](https://developer.chrome.com) · [WebGPU 规范](https://www.w3.org) · [WebGPU 工程实践](https://blog.4dpipeline.com) · [TSL/WebGPU 指南](https://blog.maximeheckel.com) · [Three.js 性能 100 招](https://www.utsubo.com)

@@ -147,7 +147,7 @@ export async function registerModelAssetRoutes(app: FastifyInstance, dependencie
       updatedAt: now
     };
     await store.addModel(project.id, model);
-    queue.enqueue({ model, sourcePath, modelDir });
+    model.conversionTaskId = await queue.enqueue({ model, sourcePath, modelDir });
     return reply.code(202).send(model);
   });
 

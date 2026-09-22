@@ -11,6 +11,8 @@ import { createDashboardLayoutCaptureDeployment } from "./dashboardLayoutCapture
 import { createDashboardPublishedClosure } from "./dashboardPublishedClosure.js";
 import { createDashboardPublishedFontCatalog, type DashboardPublishedFontConfiguration } from "./dashboardPublishedFontCatalog.js";
 import { registerDashboardNativeCandidateRouteRuntime } from "./dashboardNativeCandidateRouteRuntime.js";
+import { createDashboardWebStaticDeployment, isDashboardWebStaticDeploymentConfig,
+  type DashboardWebStaticDeploymentConfig } from "./dashboardWebStaticDeployment.js";
 
 interface DashboardDeploymentConfig {
   readonly nativeExecutable: string;
@@ -22,6 +24,7 @@ interface DashboardDeploymentConfig {
    * 缺省时行为与未接线部署一致(编译输入保持纯冻结数据)。
    */
   readonly layoutCapture?: { readonly chromePath: string; readonly capturePageDirectory?: string };
+  readonly webStatic?: DashboardWebStaticDeploymentConfig;
 }
 
 /** Only the server startup environment selects this file; HTTP cannot select executable code. */
@@ -30,6 +33,8 @@ export async function registerConfiguredDashboardNative(app: FastifyInstance, de
 }, deploymentFile = process.env.DASHBOARD_NATIVE_DEPLOYMENT_FILE) {
   if (!deploymentFile) return;
   const deployment = await readDashboardDeploymentConfig(deploymentFile);
+  const webStatic = deployment.webStatic
+    ? await createDashboardWebStaticDeployment(deployment.webStatic, dependencies.store, dependencies.objects) : undefined;
   const fonts = deployment.fontCatalog ? createDashboardPublishedFontCatalog(deployment.fontCatalog, dependencies.objects) : undefined;
   const bundleUrl = new URL("../dist/dashboard-content-compiler/deployment.mjs", import.meta.url);
   const bundle = await import(bundleUrl.href) as {
@@ -59,6 +64,7 @@ export async function registerConfiguredDashboardNative(app: FastifyInstance, de
         ...(layoutCapture ? { layoutCapture: { host: layoutCapture.host, locale: layoutCapture.locale } } : {}) },
       nativeExecutable: deployment.nativeExecutable,
       nativeExecutableSha256,
+      ...(webStatic ? { webStatic } : {}),
     });
   } catch (error) {
     // 路由注册失败时启动整体失败,托管的捕获页服务不能悬空到进程退出。
@@ -79,7 +85,8 @@ export async function readDashboardDeploymentConfig(file: string): Promise<Dashb
     || !value.configuration || typeof value.configuration !== "object" || Array.isArray(value.configuration)
     || typeof value.configuration.locale !== "string" || !value.configuration.locale.trim()
     || typeof value.configuration.packageVersion !== "string" || !value.configuration.packageVersion.trim()
-    || !isValidLayoutCaptureConfig(value.layoutCapture)) {
+    || !isValidLayoutCaptureConfig(value.layoutCapture)
+    || (value.webStatic !== undefined && !isDashboardWebStaticDeploymentConfig(value.webStatic))) {
     throw new Error("Dashboard deployment requires a Windows player, device fingerprint, locale and package version");
   }
   return value;
@@ -87,7 +94,7 @@ export async function readDashboardDeploymentConfig(file: string): Promise<Dashb
 
 function isValidLayoutCaptureConfig(value: DashboardDeploymentConfig["layoutCapture"]): boolean {
   if (value === undefined) return true;
-  return typeof value === "object" && !Array.isArray(value)
+  return value !== null && typeof value === "object" && !Array.isArray(value)
     && typeof value.chromePath === "string" && path.isAbsolute(value.chromePath)
     && (value.capturePageDirectory === undefined
       || typeof value.capturePageDirectory === "string" && path.isAbsolute(value.capturePageDirectory));

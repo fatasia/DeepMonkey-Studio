@@ -6,7 +6,7 @@ const requireWeb = createRequire(new URL("../../apps/web/package.json", import.m
 const JSZip = requireWeb("jszip");
 const { runtimeContentSha256 } = await import(pathToFileURL(requireWeb.resolve("@bim-studio/deep-engine/runtime-package")).href);
 
-export async function archiveFixture({ compression = "STORE", streamFiles = false, payloads = [], editZip, editManifest } = {}) {
+export async function archiveFixture({ compression = "STORE", streamFiles = false, payloads = [], editZip, editManifest, branding } = {}) {
   const files = [
     { path: "scene.json", content: JSON.stringify({ id: "scene", projectId: "project", name: "场景" }) },
     { path: "project.json", content: JSON.stringify({ id: "project", name: "项目" }) },
@@ -16,7 +16,7 @@ export async function archiveFixture({ compression = "STORE", streamFiles = fals
   const entries = await indexSceneClientArchiveFiles(files);
   const metadata = { kind: "bim-studio-scene-client-package", schemaVersion: 1, purpose: "delivery", target: "three-webview",
     renderer: "webgl", toolbarVisible: true, projectId: "project", sceneId: "scene", sceneName: "测试场景", publishedAt: null,
-    capabilities: { twoD: true, threeD: true, dataBindings: true, liveConnections: true } };
+    capabilities: { twoD: true, threeD: true, dataBindings: true, liveConnections: true }, ...(branding ? { branding } : {}) };
   const manifest = { ...metadata, generatedAt: "2026-09-15T00:00:00.000Z", files: entries,
     contentHash: { algorithm: "sha256", value: runtimeContentSha256({ metadata,
       files: entries.map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 })) }) } };

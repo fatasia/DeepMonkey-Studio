@@ -72,6 +72,25 @@ describe("published Dashboard production closure", () => {
     expect(await f.closure.resourceRevision(authority, result.resources[0]!)).toBe(Date.parse(f.assets[0]!.updatedAt));
   });
 
+  it("freezes a project-owned MP4 for its authored video node", async () => {
+    const f = fixture(), url = "/assets/projects/project-golden/assets/video-asset/inspection.mp4";
+    f.assets.push({ id: "video-asset", projectId: authority.projectId, kind: "video", name: "inspection",
+      fileName: "inspection.mp4", mimeType: "video/mp4", size: 24, url, createdAt: now, updatedAt: now });
+    f.publication.document.pages[0]!.nodes.push({ id: "video", kind: "data-widget", zIndex: 2,
+      frame: { x: 0, y: 130, width: 240, height: 135 },
+      widget: { type: "video", title: "Inspection", key: "", unit: "", assetId: "video-asset", videoUrl: url } });
+    const result = await f.closure.derive(f.publication, authority.entryPageId);
+    expect(result.resources.find(item => item.kind === "video")).toEqual({ id: "video-asset", kind: "video",
+      nodeIds: ["video"], objectKey: "projects/project-golden/assets/video-asset/inspection.mp4",
+      mime: "video/mp4", revision: Date.parse(now) });
+    f.assets.at(-1)!.mimeType = "video/webm";
+    await expect(f.closure.derive(f.publication, authority.entryPageId)).rejects.toThrow(/outside/);
+    const video = f.publication.document.pages[0]!.nodes.at(-1)!;
+    if (video.kind !== "data-widget") throw new Error("invalid video fixture");
+    delete video.widget.assetId; video.widget.videoUrl = "https://media.example/inspection.mp4";
+    expect((await f.closure.derive(f.publication, authority.entryPageId)).resources.some(item => item.kind === "video")).toBe(false);
+  });
+
   it("rejects changed image binding, remote URLs and cross-project metadata", async () => {
     const f = fixture(), result = await f.closure.derive(f.publication, authority.entryPageId);
     f.assets[0]!.url = "https://example.test/a.png";

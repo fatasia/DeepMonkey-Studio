@@ -9,11 +9,15 @@ import { createPublishedSceneBrowseRecord } from "./publishedSceneBundle.js";
 import { scenePublicationJsonEqual } from "./scenePublicationStore.js";
 import { CloudRenderControlError } from "./cloudRenderControl.js";
 import { registerNativeSceneCandidateRoutes, type NativeSceneCandidateService } from "./nativeSceneCandidateRoutes.js";
+import { registerSceneStandaloneExecutableRoutes } from "./sceneStandaloneExecutableRoutes.js";
+import { registerThreeSceneViewerExecutableRoutes } from "./threeSceneViewerExecutableRoutes.js";
 
 interface SceneRouteDependencies {
   store: MetadataStore;
   deliveryStorage?: { objects: ObjectStore; dataDir: string };
   nativeCandidates?: NativeSceneCandidateService;
+  nativeExecutable?: string;
+  threeSceneViewerBuilderScript?: string;
   beforeDiscardPublication?: (publication: PublishedSceneRecord) => Promise<void>;
   afterPublish?: (publication: PublishedSceneRecord) => Promise<void>;
 }
@@ -23,6 +27,10 @@ export async function registerSceneRoutes(app: FastifyInstance, dependencies: Sc
   const { store, beforeDiscardPublication, afterPublish } = dependencies;
   await registerNativeSceneCandidateRoutes(app, dependencies.nativeCandidates);
   if (dependencies.deliveryStorage) await registerScenePublicationDependencyRoutes(app, { store, ...dependencies.deliveryStorage });
+  if (dependencies.deliveryStorage && dependencies.nativeExecutable) await registerSceneStandaloneExecutableRoutes(app,
+    { store, objects: dependencies.deliveryStorage.objects, nativeExecutable: dependencies.nativeExecutable });
+  if (dependencies.threeSceneViewerBuilderScript) await registerThreeSceneViewerExecutableRoutes(app,
+    { store, builderScript: dependencies.threeSceneViewerBuilderScript });
 
   app.get<{ Params: { projectId: string } }>("/api/projects/:projectId/scenes", async (request) =>
     store.listScenes(request.params.projectId)

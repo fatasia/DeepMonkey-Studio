@@ -9,6 +9,7 @@ import type {
 } from "@bim-studio/contracts";
 import { loadEnvironmentMaterialEntries } from "./environmentMaterialCatalog.js";
 import { loadSourceBEntries } from "./sourceBAssetCatalog.js";
+import { loadNatureKitEntries } from "./natureKitCatalog.js";
 
 interface RawCatalogModel {
   id: number;
@@ -94,6 +95,7 @@ export class AssetLibraryCatalog {
     private readonly libraryRoot: string,
     private readonly environmentMaterialRoot?: string,
     private readonly sourceBRoot?: string,
+    private readonly natureKitRoot?: string,
   ) {}
 
   async list(query: AssetLibraryQuery = {}): Promise<AssetLibraryPage> {
@@ -131,6 +133,7 @@ export class AssetLibraryCatalog {
     // 同步目录与审核回填后立即可见；失败不缓存，重试无需重启服务。
     const files = [path.join(this.libraryRoot, "catalog.json"), path.join(this.libraryRoot, "audit.json"),
       ...(this.environmentMaterialRoot ? [path.join(this.environmentMaterialRoot, "catalog.json")] : []),
+      ...(this.natureKitRoot ? [path.join(this.natureKitRoot, "catalog.json")] : []),
       ...(this.sourceBRoot ? [path.join(this.sourceBRoot, "catalog.json"), path.join(this.sourceBRoot, "audit.json")] : [])];
     const revision = (await Promise.all(files.map(async file => {
       try { const info = await stat(file); return `${info.mtimeMs}:${info.ctimeMs}:${info.size}`; }
@@ -142,7 +145,8 @@ export class AssetLibraryCatalog {
       loadCatalogEntries(this.libraryRoot),
       this.environmentMaterialRoot ? loadEnvironmentMaterialEntries(this.environmentMaterialRoot) : [],
       this.sourceBRoot ? loadSourceBEntries(this.sourceBRoot) : [],
-    ]).then(([models, resources, community]) => [...models, ...resources, ...community]);
+      this.natureKitRoot ? loadNatureKitEntries(this.natureKitRoot) : [],
+    ]).then(([models, resources, community, nature]) => [...models, ...resources, ...community, ...nature]);
     this.entriesPromise = pending;
     try { return await pending; }
     catch (error) { if (this.entriesPromise === pending) this.entriesPromise = undefined; throw error; }

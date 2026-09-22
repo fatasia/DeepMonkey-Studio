@@ -7,7 +7,7 @@ import { createAiTelemetryRing } from "./aiRequestTelemetry.js";
 
 type CompleteFn = NonNullable<AiProvider["complete"]>;
 
-async function host(options: { primary?: CompleteFn } = {}) {
+async function host(options: { primary?: CompleteFn; stream?: AiProvider["stream"] } = {}) {
   const registry = new PluginRegistry({
     apiVersion: "1.0", sceneApiVersion: "1.0", host: "cloud", renderer: "webgl2",
     capabilities: ["ai.provider"], permissions: ["ai.invoke"],
@@ -29,6 +29,7 @@ async function host(options: { primary?: CompleteFn } = {}) {
         return { text: "主模型回答", model: request.model, usage: { inputTokens: 11, outputTokens: 7 } };
       },
       async *stream(request) {
+        if (options.stream) { yield* options.stream(request, contextStub()); return; }
         if (options.primary) await options.primary(request, contextStub());
         yield { type: "delta", delta: "流式" };
         yield { type: "delta", delta: "回答" };
@@ -47,6 +48,24 @@ const primarySettings = {
   providerId: "ai.test", baseUrl: "https://primary.test/v1", model: "primary-model", protocol: "auto" as const,
   apiKey: "primary-key", temperature: 0.2,
 };
+
+it("uses streamed provider model metadata and clears it when fallback takes over", async () => {
+  const runtime = await host({ async *stream(request) {
+    if (request.model === "primary-model") {
+      yield { type: "model", model: "primary-snapshot" };
+      throw new AiProviderHttpError(503);
+    }
+    yield { type: "delta", delta: "备用答复" };
+  } });
+  const events = [];
+  const settings = settingsWithFallback();
+  for await (const event of createAssistantService(runtime.registry).stream({ mode: "platform", question: "状态", context: {}, settings, principal: "operator" })) events.push(event);
+  expect(events.at(-1)).toMatchObject({ type: "done", result: { model: settings.failover!.model } });
+  const reported = await host({ async *stream() { yield { type: "model", model: "served-snapshot" }; yield { type: "delta", delta: "回答" }; } });
+  const responses = [];
+  for await (const event of createAssistantService(reported.registry).stream({ mode: "platform", question: "状态", context: {}, settings, principal: "operator" })) responses.push(event);
+  expect(responses.at(-1)).toMatchObject({ type: "done", result: { model: "served-snapshot" } });
+});
 
 function settingsWithFallback(overrides: Partial<AiRuntimeSettings["failover"]> = {}): AiRuntimeSettings {
   return {
@@ -73,7 +92,7 @@ describe("assistant service failover", () => {
     const audit = new AiReliabilityAuditBuffer();
     const ring = createAiTelemetryRing(10);
     const result = await createAssistantService(runtime.registry, { audit: audit.sink, telemetry: ring.sink }).complete({
-      mode: "platform", question: "设备状态", context: {}, settings: settingsWithFallback(), principal: "operator",
+      mode: "platform", question: "设备状态", context: {}, settings: { ...settingsWithFallback(), reasoningEffort: "deep" }, principal: "operator",
     });
     expect(result.text).toBe("备用回答");
     expect(result.model).toBe("fallback-model");
@@ -87,6 +106,7 @@ describe("assistant service failover", () => {
     expect(audit.list().at(-1)).toMatchObject({ stage: "model-completion", outcome: "degraded" });
     expect(runtime.observedRequest()?.config.baseUrl).toBe("https://fallback.test/v1");
     expect(runtime.observedRequest()?.model).toBe("fallback-model");
+    expect(runtime.observedRequest()?.config.reasoningEffort).toBeUndefined();
   });
 
   it("keeps the healthy primary path byte-identical: single invocation, primary marking", async () => {
@@ -142,6 +162,41 @@ describe("assistant service failover", () => {
     const done = events.at(-1) as { result: { reliability: { servedProvider?: string; failoverReason?: string } } };
     expect(done.result.reliability).toMatchObject({ servedProvider: "fallback" });
     expect(ring.summary().lastFailover).toMatchObject({ servedBy: "fallback", status: "completed" });
+  });
+
+  it("emits fallback reason with its receipt before text and retains it on completion", async () => {
+    const runtime = await host({ stream: async function* (request) {
+      if (request.config.baseUrl === "https://primary.test/v1") throw quotaError();
+      yield { type: "execution", execution: { protocol: "responses", requestedModel: request.model } };
+      yield { type: "delta", delta: "备用回答" };
+    } });
+    const events = [];
+    for await (const event of createAssistantService(runtime.registry).stream({
+      mode: "scene", question: "解释场景", context: {}, settings: settingsWithFallback(), principal: "operator",
+    })) events.push(event);
+    const receipt = { protocol: "responses", requestedModel: "fallback-model", servedBy: "fallback", failoverCategory: "rate-limit" };
+    expect(events.find(event => event.type === "execution" && event.execution)).toEqual({ type: "execution", execution: receipt });
+    expect(events.at(-1)).toMatchObject({ type: "done", result: { execution: receipt } });
+  });
+
+  it("clears streamed primary execution before a fallback without receipts", async () => {
+    const runtime = await host({ stream: async function* (request) {
+      if (request.config.baseUrl === "https://primary.test/v1") {
+        yield { type: "execution", execution: { protocol: "responses", requestedModel: "primary-model", reportedModel: "primary-snapshot" } };
+        throw quotaError();
+      }
+      yield { type: "delta", delta: "备用回答" };
+    } });
+    const events = [];
+    for await (const event of createAssistantService(runtime.registry).stream({
+      mode: "scene", question: "解释场景", context: {}, settings: settingsWithFallback(), principal: "operator",
+    })) events.push(event);
+    expect(events.filter(event => event.type === "execution")).toEqual([
+      { type: "execution", execution: { protocol: "responses", requestedModel: "primary-model", reportedModel: "primary-snapshot", servedBy: "primary" } },
+      { type: "execution", execution: null },
+    ]);
+    expect(events.at(-1)).toMatchObject({ type: "done", result: { text: "备用回答" } });
+    expect((events.at(-1) as { result: object }).result).not.toHaveProperty("execution");
   });
 
   it("keeps partial streamed content visible and aborts switching once deltas were emitted", async () => {

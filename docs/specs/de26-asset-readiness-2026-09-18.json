@@ -1,0 +1,136 @@
+{
+  "schema": "deep-engine.de26-asset-readiness-report",
+  "schemaVersion": 1,
+  "status": "blocked",
+  "requiredLoadClasses": [
+    "factory-instances",
+    "heterogeneous-bim",
+    "far-origin-campus",
+    "dynamic-workcell",
+    "mixed-dashboard",
+    "appearance-showcase"
+  ],
+  "inputs": {
+    "manifest": "packages/deep-engine/fixtures/benchmark-assets/manifests-v1.json",
+    "trajectories": "packages/deep-engine/fixtures/benchmark-assets/trajectories-v1.json",
+    "inspectionCommand": "pnpm exec tsx scripts/prepare-de26-local-benchmarks.mts test-output/de26-local-assets-readiness-20260918 && pnpm exec tsx scripts/inspect-de26-local-benchmarks.mts test-output/de26-local-assets-readiness-20260918",
+    "readinessArtifact": "test-output/de26-local-assets-readiness-20260918/readiness.json",
+    "readinessSha256": "bdbcebe3b409cfecb8f1d4b30abc22638084f1cec0ca534fb7259de885cefb06"
+  },
+  "checks": [
+    {
+      "id": "minimum-asset-count",
+      "status": "measured",
+      "summary": "5 assets are present; A02 minimum is 3"
+    },
+    {
+      "id": "manifest-contract",
+      "status": "measured",
+      "summary": "5/5 checked-in manifests pass benchmark asset schema v1"
+    },
+    {
+      "id": "manifest-identity",
+      "status": "measured",
+      "summary": "manifest IDs are unique"
+    },
+    {
+      "id": "required-load-classes",
+      "status": "blocked",
+      "summary": "A02 requires six load classes; only three are represented",
+      "missing": ["factory-instances", "mixed-dashboard", "appearance-showcase"]
+    },
+    {
+      "id": "task-coverage",
+      "status": "blocked",
+      "summary": "A02 requires appearance, animation and dashboard fixtures",
+      "missing": ["animation"]
+    },
+    {
+      "id": "trajectory-contract",
+      "status": "measured",
+      "summary": "2/2 frozen trajectories pass schema v1"
+    },
+    {
+      "id": "trajectory-identity",
+      "status": "measured",
+      "summary": "trajectory IDs are unique"
+    },
+    {
+      "id": "trajectory-references",
+      "status": "measured",
+      "summary": "all appearance/animation/interaction task fixtures resolve"
+    },
+    {
+      "id": "source-integrity",
+      "status": "measured",
+      "summary": "5/5 local source byte counts and SHA-256 values match the frozen manifest"
+    },
+    {
+      "id": "measured-stats",
+      "status": "unverified",
+      "summary": "RVT sources have no exact geometry/material statistics in the manifest",
+      "assets": ["asset.bim.bimface-demo-1", "asset.bim.snowdon-towers-arch"]
+    },
+    {
+      "id": "cache-conditions",
+      "status": "measured",
+      "summary": "all five manifests declare cold and warm runs"
+    },
+    {
+      "id": "license-boundary",
+      "status": "measured",
+      "summary": "all five assets carry an explicit local-only/non-redistributable boundary"
+    },
+    {
+      "id": "v11-kenney-grounded-origin",
+      "status": "blocked",
+      "summary": "Kenney Nature Kit admission remains fail-closed for fence_gate.glb",
+      "reason": "minY=-0.1702811569 exceeds |minY|<=0.001m",
+      "evidence": "docs/specs/de26-v11-kenney-nature-admission-manifest-2026-09-18.json"
+    }
+  ],
+  "assets": [
+    {
+      "id": "asset.bim.bimface-demo-1",
+      "status": "unverified",
+      "sourceStatus": "measured",
+      "missingStats": ["triangles", "materials", "meshes", "textures", "bounds"],
+      "sourceSha256": "8087a360173edaedf6d35992a8bbe7d4dc1904843024cec8f7d607cac73725fe"
+    },
+    {
+      "id": "asset.bim.snowdon-towers-arch",
+      "status": "unverified",
+      "sourceStatus": "measured",
+      "missingStats": ["triangles", "materials", "meshes", "textures", "bounds"],
+      "sourceSha256": "33271010919acb2a0d0d040851393a511d86ea7fd9a1f4c054797ae03e5e44a1"
+    },
+    {
+      "id": "asset.bim.baked-scene",
+      "status": "measured",
+      "sourceStatus": "measured",
+      "sourceSha256": "b7eaaaf876a51636fb863dbaa58c8dbc5ee68b25e5ef0dbe184727d87d0d3c95"
+    },
+    {
+      "id": "asset.factory.preheater-far-origin",
+      "status": "measured",
+      "sourceStatus": "measured",
+      "sourceSha256": "3ae7527b6d171355cb7237072959397ab7da3f271d5c764269949caed0092073"
+    },
+    {
+      "id": "asset.factory.battery-stack-exploded",
+      "status": "measured",
+      "sourceStatus": "measured",
+      "sourceSha256": "78ae4e76289680a5f59b4c1b85b9d56d17af50e0be32ecdf3bd9d8aa316bf55a"
+    }
+  ],
+  "trajectoryIds": [
+    "fixture.appearance.orbit-360",
+    "fixture.factory.select-clip"
+  ],
+  "remaining": [
+    "Add and verify factory-instances, mixed-dashboard and appearance-showcase benchmark assets.",
+    "Measure exact stats for the two RVT sources through an approved local parser; do not estimate from file size.",
+    "Repair or explicitly offset fence_gate.glb, then register GLB and isometric thumbnail pairs in the existing prefab catalog.",
+    "Run real V11 drag/drop, placement, save/refresh/reopen and repeated-placement acceptance before changing any blocked status."
+  ]
+}

@@ -23,5 +23,6 @@ export async function streamAssistantHttp(raw: ServerResponse, assistant: Assist
 
 function writeAssistantEvent(raw: ServerResponse, event: AssistantStreamEvent): void {
   if (event.type === "delta") raw.write(`event: delta\ndata: ${JSON.stringify({ delta: event.delta })}\n\n`);
+  else if (event.type === "execution") raw.write(`event: execution\ndata: ${JSON.stringify({ execution: event.execution ?? null })}\n\n`);
   else raw.write(`event: done\ndata: ${JSON.stringify(event.result)}\n\n`);
 }

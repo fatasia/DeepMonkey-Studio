@@ -37,6 +37,15 @@ import { plantLiteRequestFromRecord } from "./plantLiteStudy.js";
 import { PlantLiteWorkerExecutionError, PlantLiteWorkerExecutor, type PlantLiteStudyExecutor } from "./plantLiteWorkerExecutor.js";
 import { buildOperationsStudyIndex } from "./operationsStudyIndex.js";
 import { plantLiteStudiesForOperationsSnapshot } from "./operationsSnapshot.js";
+import {
+  compactError,
+  compactRecords,
+  finiteInteger,
+  inferredValidationStudyType,
+  logisticsRequestFromResult,
+  plantLiteStudyRecordIssue,
+  requiredText,
+} from "./operationsRecordUtilities.js";
 
 interface OperationsProjectState {
   models: MaintenanceModelPackage[];
@@ -447,55 +456,4 @@ export class OperationsService {
     await writeFile(temporary, JSON.stringify(this.document, null, 2));
     await rename(temporary, this.filePath);
   }
-}
-
-function compactRecords<T>(value: T[] | null | undefined): T[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is T => item !== null && item !== undefined)
-    : [];
-}
-
-function isPlantLiteStudyRecord(value: PlantLiteStudyRecord | null | undefined): value is PlantLiteStudyRecord {
-  return plantLiteStudyRecordIssue(value) === undefined;
-}
-
-function plantLiteStudyRecordIssue(value: PlantLiteStudyRecord | null | undefined): string | undefined {
-  if (!value || typeof value !== "object") return "Worker 未返回记录对象";
-  if (typeof value.id !== "string" || !value.id) return "记录 ID 缺失";
-  if (typeof value.projectId !== "string" || !value.projectId) return "项目 ID 缺失";
-  if (typeof value.inputFingerprint !== "string" || !value.inputFingerprint) return "输入指纹缺失";
-  if (!value.execution || typeof value.execution !== "object") return "执行证据缺失";
-  if (!value.outcome || typeof value.outcome !== "object") return "结果证据缺失";
-  return undefined;
-}
-
-function requiredText(value: string | undefined, label: string): string {
-  const text = value?.trim();
-  if (!text) throw new Error(`${label}不能为空`);
-  return text;
-}
-
-function finiteInteger(value: number | undefined, fallback: number): number {
-  return Number.isFinite(value) ? Math.max(1, Math.round(Number(value))) : fallback;
-}
-
-function compactError(error: unknown): string {
-  return (error instanceof Error ? error.message : String(error)).replace(/\s+/g, " ").trim().slice(0, 300) || "未知错误";
-}
-
-function logisticsRequestFromResult(result: LogisticsExperimentResult): LogisticsExperimentRequest {
-  return {
-    name: result.name,
-    agvCount: result.agvCount,
-    bufferCapacity: result.bufferCapacity,
-    demandPerHour: result.demandPerHour,
-    cycleTimeSec: result.cycleTimeSec,
-    chargingMinutesPerHour: result.chargingMinutesPerHour,
-    congestionFactor: result.congestionFactor,
-    durationHours: result.durationHours,
-  };
-}
-
-function inferredValidationStudyType(sourceKind: IndustrialValidationStudyRecord["sourceKind"] | undefined) {
-  return sourceKind === "workcell-audit" ? "workcell-audit" : "virtual-commissioning";
 }

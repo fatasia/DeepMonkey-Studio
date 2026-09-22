@@ -76,7 +76,7 @@ Native不是pnpm包，不使用不存在的pnpm native脚本。ignored测试包�
 
 | 代号 | 执行与产物 |
 | --- | --- |
-| BENCH | Web现有入口：`pnpm --filter @bim-studio/web benchmark:render-engines`。新Unity/Godot/UE runner由A05–A07新增，当前不能给它们伪造已存在命令；完成后登记完整命令、安装前置与原始样本。 |
+| BENCH | Web现有入口：`pnpm --filter @bim-studio/web benchmark:render-engines`。新 Unity/Bevy runner 按对应研究卡新增，当前不能给它们伪造已存在命令；完成后登记完整命令、安装前置与原始样本。Unity 复用本机安装；Bevy 固定版本与 SHA 后安装到工作区外隔离缓存，不写项目依赖、系统 PATH 或产品包。Bevy 挑战轨固定正式发布的 0.19，并保留完整 Cargo.lock、feature 集、wgpu 后端和构建 profile。UE、Godot 不进入测试基准。 |
 | SDK | `pnpm gate:sdk-consumer`，另增加H01独立consumer工程真实build/run；Unity桥现有 `pnpm test:unity-bridge` 只验证桥，不能替代Unity渲染性能。 |
 | INTEGRATION | 受控测试项目走保存→刷新→发布→下载落盘→校验→同包启动→交互→恢复；测试PG/MinIO与离线机器各自留证。不得修改固定账号或生产数据。 |
 | REPORT | 检查矩阵分母、hash、版本、样本、置信区间、失败与未测项；至少另一名复核人或独立环境复跑。缺资源/硬件明确记录。 |
@@ -86,10 +86,11 @@ Native不是pnpm包，不使用不存在的pnpm native脚本。ignored测试包�
 
 ## 3. 性能与胜出规则
 
-- 五引擎版本和各渲染器独立锁定。Three本地0.185.1、Babylon隔离9.26.1可作为固定历史基线；增加当前稳定版挑战轨，不能只挑旧版本。
+- Deep、Three、Babylon、Unity、Bevy 的版本和各渲染器独立锁定。Three 本地 0.185.1、Babylon 隔离 9.26.1 可作为固定历史基线；增加当前稳定版挑战轨，不能只挑旧版本。Bevy 使用 0.19 正式版，不再以 0.17 的历史结果代表当前对手。UE、Godot 仅作架构参考，不参与实测排名或能力分母。
 - Web对Web，Native对Native；产品任务对功能等价实现。允许正常优化，给对手同等调优时间。
 - 工厂实例、异构BIM、远原点园区、动态工作单元、混合看板、外观展示六类负载；至少三个真实项目。
 - 同画质主要case目标P95降低≥20%，所有关键case回退≤5%；显存降低≥25%、可交互加载/任务耗时降低≥30%是分别验证的目标，不能由帧时推导。
+- Bevy 对比必须覆盖静态与动态实体、GPU driven 批处理/MDI、材质异构、多灯阴影、GUI/文本输入和大场景流送；同时报告 ECS/Extract/Prepare/Queue/Render 与 Deep 编译包/增量投影/编码/提交的 CPU 分段。只赢空 ECS、纯立方体或单一 GPU pass 不算引擎性能胜出。
 - 5组成对交替是最低轮次；每轮稳定采足逐帧样本，P99需足够样本量。使用分组置信区间，不能把自相关帧当独立样本制造显著性。
 - GPU时间戳不可用时报告缺失；CPU计时、GPU计时、RAF/呈现间隔和输入到反馈分别报告。
 - 显存写明逻辑载荷/分配预算/驱动可见用量；浏览器限制导致无法取真实驱动用量时不编造数字。估算只与同口径估算比较。
@@ -161,7 +162,7 @@ Native不是pnpm包，不使用不存在的pnpm native脚本。ignored测试包�
 - **排程**：P0｜项目级后验收｜责任角色：架构/独立评审｜初估 2–4 工程人日。
 - **已有基础**：旧90%覆盖不等于本次超越。
 - **代码入口**：[.github/workflows/deep-engine.yml](../../.github/workflows/deep-engine.yml)；[scripts](../../scripts)；[docs/specs](../../docs/specs)；[packages/deep-engine/lab](../../packages/deep-engine/lab)。入口用于查找职责，禁止整目录机械改写。
-- **实施与产物**：汇总全部域状态与五对手矩阵；关键能力全通过、主要指标领先、非领先项显式呈现；独立复跑。
+- **实施与产物**：汇总全部域状态与四对手矩阵；关键能力全通过、主要指标领先、非领先项显式呈现；独立复跑。
 - **通过标准**：分别发布局部/领域/综合结论；X域未解除或未过验收时不得称全平台全能力超过。
 - **边界/失败验证**：删分母/权重掩盖短板/生态与平台缺项隐去均拒绝综合领先。
 - **依赖**：[V01](deep-engine-tasks-validation-2026-09-16.md#v01)、[V02](deep-engine-tasks-validation-2026-09-16.md#v02)、[V03](deep-engine-tasks-validation-2026-09-16.md#v03)、[V04](deep-engine-tasks-validation-2026-09-16.md#v04)、[I02](deep-engine-tasks-product-2026-09-16.md#i02)、[I03](deep-engine-tasks-product-2026-09-16.md#i03)、[I04](deep-engine-tasks-product-2026-09-16.md#i04)、[I05](deep-engine-tasks-product-2026-09-16.md#i05)、[I06](deep-engine-tasks-product-2026-09-16.md#i06)、[B07](deep-engine-tasks-foundation-2026-09-16.md#b07)、[C05](deep-engine-tasks-foundation-2026-09-16.md#c05)、[E03](deep-engine-tasks-product-2026-09-16.md#e03)、[E07](deep-engine-tasks-product-2026-09-16.md#e07)、[F05](deep-engine-tasks-product-2026-09-16.md#f05)、[F06](deep-engine-tasks-product-2026-09-16.md#f06)、[F07](deep-engine-tasks-product-2026-09-16.md#f07)、[G08](deep-engine-tasks-product-2026-09-16.md#g08)、[H08](deep-engine-tasks-product-2026-09-16.md#h08)。这些依赖的传递闭包必须覆盖全部72张建设卡；遗漏的关键域会阻止综合结论。
@@ -242,4 +243,3 @@ Native不是pnpm包，不使用不存在的pnpm native脚本。ignored测试包�
 - **验证**：RESEARCH（命令与硬件流程见[验证手册](deep-engine-tasks-validation-2026-09-16.md#commands)）；先增加本卡反例与参考路径对照，再运行相关现有回归。
 - **对应原任务**：明确排除：全Three插件矩阵。复用已有产物；本卡只负责上述剩余切片。
 - **收尾证据**：记录任务ID、源码/产物hash、设备/工具版本、完整命令、原始日志位置、通过/失败/未测项及限制；执行人签署，独立复核后更新JSON状态。
-

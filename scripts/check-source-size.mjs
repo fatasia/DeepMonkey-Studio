@@ -3,9 +3,10 @@ import path from "node:path";
 import process from "node:process";
 
 const NORMAL_FILE_LIMIT = 800;
-const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".css", ".rs", ".cs", ".py", ".ps1"]);
+const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".css", ".rs", ".cs", ".py", ".ps1"]);
 const IGNORED_DIRECTORIES = new Set([
   "coverage",
+  "test-output",
   "dist",
   "node_modules",
   "target",

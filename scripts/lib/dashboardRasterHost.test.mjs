@@ -4,6 +4,17 @@ import { createHash } from "node:crypto";
 import sharp from "sharp";
 import { createDashboardRasterHost, rasterizeFrozenImage } from "./dashboardRasterHost.mjs";
 const hash = bytes => createHash("sha256").update(bytes).digest("hex");
+test("text prewarm deduplicates cache hits and checks every frozen font before reuse", async () => {
+  const fontBytes = Uint8Array.of(1, 2), requests = ["a", "b", "c", "a"].map(requestHash => ({
+    requestHash, width: 1, height: 1, fonts: [{ bytes: fontBytes, sha256: hash(fontBytes), faceIndex: 0 }] }));
+  let calls = 0;
+  const cached = createDashboardRasterHost({ nativeExecutable: "unused", textCache: { get: () => { calls++; return {}; } } });
+  await cached.prewarmText(requests); assert.equal(calls, 3);
+  const corrupt = structuredClone(requests); corrupt[1].fonts[0].bytes[0] ^= 1;
+  await assert.rejects(cached.prewarmText(corrupt), /hash/);
+  const cancelled = createDashboardRasterHost({ nativeExecutable: "unused", textCache: {}, signal: AbortSignal.abort() });
+  await assert.rejects(cancelled.prewarmText(requests), /abort/i);
+});
 async function request(fit, options = {}) {
   const bytes = await sharp({ create: { width: 4, height: 2, channels: 4, background: { r: 255, g: 0, b: 0, alpha: 0.5 } } })
     .png().toBuffer();

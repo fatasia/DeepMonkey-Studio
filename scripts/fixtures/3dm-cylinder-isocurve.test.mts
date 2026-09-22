@@ -21,7 +21,7 @@ const distance=(a:number[],b:number[])=>Math.hypot(...a.map((x,i)=>x-b[i]));
 const sub=(a:number[],b:number[])=>a.map((x,i)=>x-b[i]),cross=(a:number[],b:number[])=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
 function raw(face:number):any{return [0,9,10].includes(face)?tessellateTrimmedCylinderFace(ir,face,.001):tessellatePlanarFace(ir,face);}
 test('five actual full and partial cylinder-plane curves share source chains without changing old points or normals',async()=>{
-  const before=JSON.stringify(ir),result=completeBrepParts(object,.001),records=result.sourceEdgeSynchronizations.filter(r=>[1,34,37,39,42].includes(r.edge));
+  const before=JSON.stringify(ir),result=completeBrepParts(object,.001,{reconstructPairedBoundaries:false}),records=result.sourceEdgeSynchronizations.filter(r=>[1,34,37,39,42].includes(r.edge));
   assert.deepEqual(records.map(r=>r.edge),[1,34,37,39,42]);assert.equal(result.parts.length,41);assert.equal(result.boundaryAudit.shared.filter(e=>!e.conforming).length,49);
   assert.equal(result.boundaryAudit.unverified.length,0);assert(result.boundaryAudit.seams.every(e=>e.conforming));
   let references=0,maxReferenceError=0,trimReferences=0,maxTrimReferenceError=0;
@@ -39,7 +39,7 @@ test('five actual full and partial cylinder-plane curves share source chains wit
     }
   }
   assert.equal(JSON.stringify(ir),before);assert(references>=190&&maxReferenceError<1e-10);assert(trimReferences>=76&&maxTrimReferenceError<1e-12);
-  const glb=await export3dmGlb(source,hash);assert(glb.bytes);assert.equal(glb.sidecar.status,'partial-geometry-preview');mkdirSync(out,{recursive:true});
+  const glb=await export3dmGlb(source,hash,{reconstructPairedBoundaries:false,repairFloat32:false});assert(glb.bytes);assert.equal(glb.sidecar.status,'partial-geometry-preview');mkdirSync(out,{recursive:true});
   const path=resolve(out,'MechPartA.glb');writeFileSync(path,glb.bytes);const evidence={sourceSha256:hash,sourceUrl:'https://github.com/mcneel/opennurbs/blob/v8.35.26251.13001/example_files/V4/v4_MechPartA.3dm',archiveVersion:4,metersPerUnit:.001,useBoundary:'official sample; local verification only; not redistributed',records,references,maxReferenceError,trimReferences,maxTrimReferenceError,boundaryAudit:result.boundaryAudit,glb:await auditGlbGeometry(path),glbSha256:sha(glb.bytes),status:glb.sidecar.status};
   writeFileSync(resolve(out,'evidence.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify({references,maxReferenceError,glb:evidence.glb,hash:evidence.glbSha256}));
 });

@@ -26,12 +26,10 @@
  */
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
-import type { DashboardDataWidgetNode } from "../packages/contracts/src/index.ts";
-import { assertDashboardDocument } from "../packages/contracts/src/index.ts";
 import { JsonStore } from "../apps/api/src/jsonStore.js";
 import { LocalObjectStore } from "../apps/api/src/objects.js";
 import { createApiServer } from "../apps/api/src/serverOptions.js";
@@ -42,6 +40,23 @@ import { createDashboardOfflineNativeLaunchPlan } from "../apps/api/src/dashboar
 import { parseDeepRuntimePackage } from "../packages/deep-engine/src/runtimePackage/index.ts";
 import { publishDashboardAcceptanceFixture } from "./lib/dashboardAcceptanceHttp.mts";
 import { dashboardMulticomponentFixture } from "./lib/dashboardMulticomponentFixture.mts";
+import { assertDashboardAtlasEvidence } from "./lib/dashboardAtlasEvidence.mts";
+import {
+  acceptanceHttp,
+  buildVersionDocument,
+  V2,
+  V3,
+  type ChainVersion,
+} from "./lib/dashboardUpgradeRollbackFixture.mts";
+import {
+  assertRegionsIdentical,
+  atomicReplace,
+  checkpointState,
+  hashInventory,
+  pixelDigest,
+  regionDelta,
+  type CheckpointState,
+} from "./lib/dashboardUpgradeRollbackEvidence.mts";
 
 const require = createRequire(new URL("../apps/api/package.json", import.meta.url));
 const JSZip = require("jszip");
@@ -51,89 +66,6 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const PRESENTED = "native package recovery checkpoint committed after present";
 const SMOKE_SUBMITTED = "native smoke GPU submission complete";
 const usage = `DASHBOARD_HEADING_FONT_MANIFEST=<abs> pnpm exec tsx --conditions=development scripts/verify-dashboard-upgrade-rollback-chain.mts <native.exe> <device-sha256> <new-output-directory> [prior-v1-run-directory]`;
-
-// ── 版本化多组件页面内容:三个版本在标题文本、数据、页面背景三重可区分 ──────────────
-interface ChainVersion {
-  readonly id: string;
-  readonly packageVersion: string;
-  readonly banner: string;
-  readonly barRows: readonly (readonly [string, number])[];
-  readonly kpiRows: readonly (readonly [string, number])[];
-  readonly pageBackground?: string;
-}
-const V2: ChainVersion = {
-  id: "v2", packageVersion: "1.0.1", banner: "冷热电联供园区运行总览·检修二版",
-  barRows: [["华东", 91], ["华北", 37], ["华南", 24]], kpiRows: [["华东", 91], ["华北", 37]],
-  pageBackground: "#0e2f45",
-};
-const V3: ChainVersion = {
-  id: "v3", packageVersion: "1.0.2", banner: "冷热电联供园区运行总览·检修三版",
-  barRows: [["华东", 24], ["华北", 58], ["华南", 91]], kpiRows: [["华东", 24], ["华北", 58]],
-  pageBackground: "#3a1230",
-};
-
-function chainNodes(version: ChainVersion): DashboardDataWidgetNode[] {
-  const panel = { backgroundColor: "#172126", backgroundOpacity: 0.86 };
-  const barRows = version.barRows.map(([region, value]) => ({ region, value }));
-  const kpiRows = version.kpiRows.map(([region, value]) => ({ region, value }));
-  return [
-    { id: "mc-text", kind: "data-widget", zIndex: 0, frame: { x: 20, y: 16, width: 920, height: 72 },
-      widget: { type: "text", title: version.banner, content: version.banner,
-        key: "banner.title", unit: "", fontSize: 22, textColor: "#eef2f4", textAlign: "left" } },
-    { id: "mc-kpi", kind: "data-widget", zIndex: 1, frame: { x: 20, y: 100, width: 224, height: 132 },
-      widget: { type: "value", title: "总有功功率", key: "kpi.power", unit: "MW", field: "value", fontSize: 20,
-        ...panel, analysis: { measureField: "value", aggregation: "maximum" },
-        sampleData: { sourceId: "mc-kpi-samples", rows: kpiRows } } },
-    { id: "mc-filter", kind: "data-widget", zIndex: 2, frame: { x: 20, y: 244, width: 224, height: 286 },
-      widget: { type: "filter", title: "区域筛选", key: "filter.region", unit: "",
-        options: ["全部区域", "华东", "华北", "华南"], filterMode: "select", filterField: "region", ...panel } },
-    { id: "mc-bar", kind: "data-widget", zIndex: 3, frame: { x: 256, y: 100, width: 440, height: 430 },
-      widget: { type: "bar", title: "分区域出力", key: "bar.output", unit: "MW", field: "value", fontSize: 18,
-        analysis: { dimensionField: "region", measureField: "value", aggregation: "sum" },
-        sampleData: { sourceId: "mc-bar-samples", rows: barRows } } },
-    { id: "mc-table", kind: "data-widget", zIndex: 4, frame: { x: 708, y: 100, width: 232, height: 430 },
-      widget: { type: "table", title: "机组运行表", key: "table.rows", unit: "", ...panel,
-        report: { mode: "detail", rowField: "机组", valueFields: ["出力(MW)", "状态"], aggregation: "none",
-          showRowNumbers: true, stripedRows: true },
-        analysis: { dimensionField: "机组", measureField: "出力(MW)", aggregation: "none" },
-        sampleData: { sourceId: "mc-table-samples", rows: [
-          { "机组": "1号燃机", "出力(MW)": 42.5, "状态": "运行" }, { "机组": "2号燃机", "出力(MW)": 38.2, "状态": "运行" },
-          { "机组": "储能", "出力(MW)": 12, "状态": "充电" }, { "机组": "余热锅炉", "出力(MW)": 0, "状态": "检修" }] } } },
-  ];
-}
-
-async function buildVersionDocument(version: ChainVersion, projectId: string) {
-  const document: unknown = JSON.parse(await readFile(
-    new URL("../packages/deep-engine/fixtures/dashboard-layout-source-v1.json", import.meta.url), "utf8"));
-  assertDashboardDocument(document);
-  document.application.metadata.id = `upgrade-chain-${version.id}-${randomUUID()}`;
-  document.application.metadata.projectId = projectId;
-  document.application.metadata.name = `升级回滚链 ${version.id}`;
-  document.application.scripts = []; document.application.interactions = []; document.application.scenes = [];
-  const page = document.application.pages[0]!;
-  page.width = 960; page.height = 540;
-  if (version.pageBackground) page.appearance = { backgroundColor: version.pageBackground };
-  page.nodes = chainNodes(version);
-  document.application.pages = [page];
-  assertDashboardDocument(document);
-  return document;
-}
-
-// ── 真实 loopback HTTP 会话(与 dashboardAcceptanceHttp 同语义,支持逐请求 signal) ──
-async function acceptanceHttp(app: ReturnType<typeof createApiServer>) {
-  const origin = await app.listen({ host: "127.0.0.1", port: 0 });
-  const call = async ({ method, url, payload, signal }: {
-    method: string; url: string; payload?: unknown; signal?: AbortSignal }) => {
-    if (!url.startsWith("/api/") || url.startsWith("//")) throw new Error("Acceptance request must stay on its local API");
-    const response = await fetch(`${origin}${url}`, { method,
-      ...(payload === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }),
-      signal: signal ?? AbortSignal.timeout(120_000), redirect: "error" });
-    const rawPayload = Buffer.from(await response.arrayBuffer());
-    return { statusCode: response.status, headers: Object.fromEntries(response.headers), rawPayload,
-      body: rawPayload.toString("utf8"), json: () => JSON.parse(rawPayload.toString("utf8")) };
-  };
-  return { origin, call, close: () => app.close() };
-}
 
 // ── 播放器启动:PATH 仅 System32(无 Node/浏览器),隔离 LOCALAPPDATA,真实 GPU 窗口 ──
 const playerEnv = (localAppData: string) => ({
@@ -181,35 +113,6 @@ $bmp.Dispose()
 Write-Output "saved $OutPath \${w}x\${h} printed=$printed"
 `;
 
-const PIXEL_REGIONS_PS1 = `param([string]$PngPath,[string]$OutDir)
-$ErrorActionPreference = "Stop"
-Add-Type -AssemblyName System.Drawing
-$bmp = New-Object System.Drawing.Bitmap($PngPath)
-$w = $bmp.Width; $h = $bmp.Height
-$rect = New-Object System.Drawing.Rectangle(0, 0, $w, $h)
-$data = $bmp.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::ReadOnly, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-$bytes = New-Object byte[] ($data.Stride * $h)
-[System.Runtime.InteropServices.Marshal]::Copy($data.Scan0, $bytes, 0, $bytes.Length)
-$bmp.UnlockBits($data); $bmp.Dispose()
-[IO.File]::WriteAllBytes((Join-Path $OutDir "full.bgra"), $bytes)
-$regions = Get-Content (Join-Path $OutDir "regions.json") -Raw | ConvertFrom-Json
-$out = @()
-foreach ($r in $regions) {
-  $x0 = [int][math]::Floor($r.x0 * $w); $x1 = [int][math]::Ceiling($r.x1 * $w)
-  $y0 = [int][math]::Floor($r.y0 * $h); $y1 = [int][math]::Ceiling($r.y1 * $h)
-  $rw = $x1 - $x0; $rh = $y1 - $y0
-  $buf = New-Object byte[] ($rw * $rh * 4)
-  for ($y = 0; $y -lt $rh; $y++) {
-    $src = ($y0 + $y) * $data.Stride + $x0 * 4
-    [Array]::Copy($bytes, $src, $buf, $y * $rw * 4, $rw * 4)
-  }
-  [IO.File]::WriteAllBytes((Join-Path $OutDir ($r.name + ".bgra")), $buf)
-  $out += @{ name = $r.name; width = $rw; height = $rh }
-}
-$out | ConvertTo-Json -Compress | Set-Content (Join-Path $OutDir "regions-out.json")
-Write-Output "regions ok \${w}x\${h}"
-`;
-
 interface LaunchResult { code: number | null; log: string; presented: boolean; png?: string }
 
 function assertActiveCheckpoint(state: CheckpointState, hash: string, payloadSha: string, context: string) {
@@ -225,7 +128,7 @@ async function launchPlayer(options: {
   const timeoutMs = options.timeoutMs ?? 90_000;
   let log = "", presented = false, spawnError: unknown;
   const child = spawn(executable, [...args], { cwd: path.dirname(executable), windowsHide: false,
-    stdio: ["ignore", "pipe", "pipe"], env: playerEnv(localAppData) });
+    stdio: ["ignore", "pipe", "pipe"], env: { ...playerEnv(localAppData), DEEP_ENGINE_ATLAS_EVIDENCE: "1" } });
   const receive = (bytes: Buffer) => {
     log += bytes.toString();
     if (!presented && log.includes(PRESENTED)) presented = true;
@@ -345,115 +248,6 @@ async function launchRestoredPlayer(options: {
     return { log, presented: true, smokeSubmitted, exited: true, exitCode: child.exitCode };
   } finally {
     if (child.exitCode === null && child.signalCode === null) child.kill();
-  }
-}
-
-
-// ── 检查点(恢复目录)状态:按 source 路径定位,逐文件 SHA ────────────────────────────
-interface CheckpointState { key: string; active: { version: number; source: string; hash: string };
-  files: Record<string, string> }
-
-async function checkpointState(localAppData: string, sourcePath: string): Promise<CheckpointState> {
-  const root = path.join(localAppData, "DeepEngineNative", "package-recovery");
-  const wanted = path.resolve(sourcePath).toLowerCase();
-  for (const entry of await readdir(root)) {
-    const directory = path.join(root, entry);
-    const active = JSON.parse(await readFile(path.join(directory, "active.json"), "utf8"));
-    if (active.source !== wanted) continue;
-    const files: Record<string, string> = {};
-    for (const file of (await readdir(directory)).sort()) {
-      files[file] = sha(await readFile(path.join(directory, file)));
-    }
-    return { key: directory, active, files };
-  }
-  throw new Error(`checkpoint not found for ${wanted}`);
-}
-
-// ── 像素特征:整窗 + 4 个分数区域,SHA-256 与平均 RGB ─────────────────────────────
-const PIXEL_REGIONS = [
-  { name: "banner", x0: 0.04, y0: 0.10, x1: 0.96, y1: 0.22 },
-  { name: "kpi", x0: 0.03, y0: 0.26, x1: 0.24, y1: 0.46 },
-  { name: "center", x0: 0.35, y0: 0.40, x1: 0.75, y1: 0.75 },
-  { name: "bottom", x0: 0.04, y0: 0.84, x1: 0.96, y1: 0.98 },
-];
-
-interface PixelDigest { width: number; height: number; full: string;
-  regions: Record<string, { sha256: string; rgb: readonly [number, number, number] }> }
-
-async function pixelDigest(png: string, workDirectory: string): Promise<PixelDigest> {
-  await rm(workDirectory, { recursive: true, force: true });
-  await mkdir(workDirectory, { recursive: true });
-  await writeFile(path.join(workDirectory, "regions.json"), JSON.stringify(PIXEL_REGIONS));
-  const ps1 = path.join(workDirectory, "regions.ps1");
-  await writeFile(ps1, PIXEL_REGIONS_PS1, "utf8");
-  const child = spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1,
-    "-PngPath", png, "-OutDir", workDirectory], { windowsHide: true, encoding: "utf8" });
-  let output = "";
-  child.stdout.on("data", bytes => { output += String(bytes); });
-  child.stderr.on("data", bytes => { output += String(bytes); });
-  const code = await new Promise<number>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`pixel digest timeout: ${output}`)), 30_000);
-    child.once("error", reject);
-    child.once("close", value => { clearTimeout(timer); resolve(value ?? -1); });
-  });
-  assert.equal(code, 0, `pixel digest failed for ${png}: ${output}`);
-  const regionMeta = JSON.parse(await readFile(path.join(workDirectory, "regions-out.json"), "utf8")) as
-    Readonly<{ name: string; width: number; height: number }>[];
-  const full = await readFile(path.join(workDirectory, "full.bgra"));
-  const regions: PixelDigest["regions"] = {};
-  for (const meta of regionMeta) {
-    const bytes = await readFile(path.join(workDirectory, `${meta.name}.bgra`));
-    let blue = 0, green = 0, red = 0;
-    const pixels = bytes.byteLength / 4;
-    for (let index = 0; index < bytes.byteLength; index += 4) {
-      blue += bytes[index]!; green += bytes[index + 1]!; red += bytes[index + 2]!;
-    }
-    regions[meta.name] = { sha256: sha(bytes),
-      rgb: [Math.round(red / pixels), Math.round(green / pixels), Math.round(blue / pixels)] };
-  }
-  await rm(workDirectory, { recursive: true, force: true });
-  return { width: Number(/regions ok (\d+)x/.exec(output)?.[1] ?? 0),
-    height: Number(/regions ok \d+x(\d+)/.exec(output)?.[1] ?? 0), full: sha(full), regions };
-}
-
-function assertRegionsIdentical(left: PixelDigest, right: PixelDigest, context: string) {
-  assert.equal(left.full, right.full, `${context}: full-window digest must match`);
-  for (const name of Object.keys(left.regions)) {
-    assert.equal(left.regions[name]!.sha256, right.regions[name]!.sha256, `${context}: region ${name} digest must match`);
-  }
-}
-function regionDelta(left: PixelDigest, right: PixelDigest, name: string) {
-  return (Math.abs(left.regions[name]!.rgb[0] - right.regions[name]!.rgb[0])
-    + Math.abs(left.regions[name]!.rgb[1] - right.regions[name]!.rgb[1])
-    + Math.abs(left.regions[name]!.rgb[2] - right.regions[name]!.rgb[2])) / 3;
-}
-
-async function hashInventory(directory: string) {
-  const entries: Array<{ file: string; sha256: string; bytes: number }> = [];
-  async function walk(current: string) {
-    for (const item of await readdir(current, { withFileTypes: true })) {
-      const full = path.join(current, item.name);
-      if (item.isDirectory()) { await walk(full); continue; }
-      const bytes = await readFile(full);
-      entries.push({ file: path.relative(directory, full).replaceAll("\\", "/"), sha256: sha(bytes), bytes: bytes.byteLength });
-    }
-  }
-  await walk(directory);
-  return entries.sort((left, right) => left.file.localeCompare(right.file));
-}
-
-/** 原子替换:同目录写临时文件后 rename 覆盖(客户端真实替换语义);等待旧播放器句柄释放后重试。 */
-async function atomicReplace(target: string, bytes: Uint8Array) {
-  const temporary = `${target}.download-${process.pid}`;
-  await writeFile(temporary, bytes);
-  for (let attempt = 0;; attempt += 1) {
-    try {
-      await rename(temporary, target);
-      return;
-    } catch (error) {
-      if (attempt >= 20 || !(error as NodeJS.ErrnoException).code?.startsWith("EPERM")) throw error;
-      await sleep(250);
-    }
   }
 }
 
@@ -613,13 +407,13 @@ async function main() {
   const v2Run = await launchExe("exe-v2", "present");
   assert(v2Run.log.includes("native GPU:"), v2Run.log.slice(-500));
   assert(v2Run.log.includes(`hash=${v2.packageHash}`) && v2Run.log.includes(`version=${V2.packageVersion}`), v2Run.log.slice(-600));
-  assert(v2Run.log.includes(`atlases=${v2.atlasCount}`), v2Run.log.slice(-600));
+  const v2AtlasEvidence = assertDashboardAtlasEvidence(v2Run.log, v2.runtimePackage);
   const v2Checkpoint = await checkpointState(localAppData, exePath);
   assert.equal(v2Checkpoint.active.hash, v2.packageHash);
   assert.equal(v2Checkpoint.files[`${v2.packageHash}.json`], sha(v2.runtimePackage));
   const v2Pixels = await pixelDigest(v2Run.png!, path.join(pixelWork, "exe-v2"));
   record("exe-v2-verified", { version: V2.packageVersion, packageHash: v2.packageHash, checkpointActive: "v2",
-    screenshot: v2Run.png, pixels: v2Pixels });
+    screenshot: v2Run.png, pixels: v2Pixels, atlasEvidence: v2AtlasEvidence });
 
   // 坏 v3:hash 破坏与 schema 破坏都在 GPU 前拒绝,检查点逐字节不变。
   const v3Payload = payloadRegion(v3.exe);
@@ -679,7 +473,7 @@ async function main() {
   await atomicReplace(exePath, v3.exe);
   const v3Run = await launchExe("exe-v3-valid", "present");
   assert(v3Run.log.includes(`hash=${v3.packageHash}`) && v3Run.log.includes(`version=${V3.packageVersion}`), v3Run.log.slice(-600));
-  assert(v3Run.log.includes(`atlases=${v3.atlasCount}`), v3Run.log.slice(-600));
+  const v3AtlasEvidence = assertDashboardAtlasEvidence(v3Run.log, v3.runtimePackage);
   const v3Checkpoint = await checkpointState(localAppData, exePath);
   assert.equal(v3Checkpoint.active.hash, v3.packageHash);
   assert.equal(v3Checkpoint.files[`${v3.packageHash}.json`], sha(v3.runtimePackage));
@@ -688,7 +482,7 @@ async function main() {
   assert.notEqual(v3Pixels.regions.banner.sha256, v2Pixels.regions.banner.sha256, "banner text pixels must differ across versions");
   assert.notEqual(v3Pixels.regions.bottom.sha256, v2Pixels.regions.bottom.sha256, "page background pixels must differ across versions");
   record("exe-v3-valid", { version: V3.packageVersion, packageHash: v3.packageHash, checkpointActive: "v3",
-    screenshot: v3Run.png, pixels: v3Pixels,
+    screenshot: v3Run.png, pixels: v3Pixels, atlasEvidence: v3AtlasEvidence,
     bannerDeltaVsV1: v1Pixels ? regionDelta(v1Pixels, v3Pixels, "banner") : null });
 
   // ── D. 文件链(--package):坏包自动回退 last-known-good、双重失败 fail-closed ──

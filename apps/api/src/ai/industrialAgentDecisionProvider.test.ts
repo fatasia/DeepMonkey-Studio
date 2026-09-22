@@ -5,8 +5,50 @@ import { AiReliabilityAuditBuffer } from "./aiReliabilityAudit.js";
 import { createIndustrialAgentDecisionProvider } from "./industrialAgentDecisionProvider.js";
 import { AiProviderHttpError } from "./openAiCompatibleProvider.js";
 import { AgentDecisionUnavailableError } from "@bim-studio/industrial-agent-orchestrator";
+import { AgentContextBudgetError } from "./agentContextBudget.js";
 
 describe("industrial Agent decision provider", () => {
+  it("uses saved per-run effort and removes primary effort from failover requests", async () => {
+    const execution = { protocol: "responses", requestedModel: "backup", reportedModel: "backup-snapshot" };
+    const reportExecution = vi.fn();
+    const invokeAiProvider = vi.fn().mockRejectedValueOnce(new AiProviderHttpError(503))
+      .mockResolvedValueOnce({ text: '{"kind":"stop","rationale":"done","code":"done","message":"done"}', model: "backup", execution });
+    const current = checkpoint(); current.modelOptions = { model: "test-model", reasoningEffort: "minimal" };
+    const provider = createIndustrialAgentDecisionProvider({ registry: { invokeAiProvider } as unknown as PluginRegistry,
+      settings: () => ({ ...settings(), reasoningEffort: "deep", failover: { enabled: true, model: "backup", baseUrl: "https://backup.test/v1", apiKey: "test", protocol: "responses" } }),
+      dataSource: { listDatasets: () => [] } });
+    await provider.decide({ checkpoint: current, availableTools: [], signal: new AbortController().signal, reportExecution });
+    expect(reportExecution).toHaveBeenCalledExactlyOnceWith({ ...execution, servedBy: "fallback", failoverCategory: "server" });
+    expect(invokeAiProvider.mock.calls[0]?.[1].config.reasoningEffort).toBe("minimal");
+    expect(invokeAiProvider.mock.calls[1]?.[1].model).toBe("backup");
+    expect(invokeAiProvider.mock.calls[1]?.[1].config.reasoningEffort).toBeUndefined();
+  });
+  it("blocks scanner clipping of a required tool result rather than sending altered history", async () => {
+    const invokeAiProvider = vi.fn();
+    const current = checkpoint();
+    current.toolRecords = [{
+      step: 1, fingerprint: "fp", effect: "read", startedAt: current.createdAt, completedAt: current.updatedAt,
+      call: { toolId: "data.query.read", arguments: {}, resources: [] },
+      outcome: { status: "completed", output: Array.from({ length: 501 }, (_, index) => index), evidence: [], verificationEvidence: [] },
+    }];
+    const provider = createIndustrialAgentDecisionProvider({ registry: { invokeAiProvider } as unknown as PluginRegistry, settings, dataSource: { listDatasets: () => [] } });
+    await expect(provider.decide({ checkpoint: current, availableTools: [], signal: new AbortController().signal })).rejects.toThrow("工具记录在上下文检查中被裁剪或隔离");
+    expect(invokeAiProvider).not.toHaveBeenCalled();
+  });
+
+  it.each(["objective", "context", "projectEvidence"])("rejects oversized %s before invoking a model", async (source) => {
+    const invokeAiProvider = vi.fn();
+    const current = checkpoint();
+    if (source === "objective") current.objective = "数".repeat(90_000);
+    if (source === "context") current.context = { text: "数".repeat(90_000) };
+    const provider = createIndustrialAgentDecisionProvider({
+      registry: { invokeAiProvider } as unknown as PluginRegistry, settings, dataSource: { listDatasets: () => [] },
+      ...(source === "projectEvidence" ? { projectContext: () => ({ text: "数".repeat(90_000) }) } : {}),
+    });
+    await expect(provider.decide({ checkpoint: current, availableTools: [], signal: new AbortController().signal })).rejects.toBeInstanceOf(AgentContextBudgetError);
+    expect(invokeAiProvider).not.toHaveBeenCalled();
+  });
+
   it.each([401, 403, 429, 502, 503, 504])("classifies HTTP %s using trusted status, not response prose", async status => {
     const error = new AiProviderHttpError(status, "opaque upstream message");
     const provider = createIndustrialAgentDecisionProvider({ registry: { invokeAiProvider: async () => { throw error; } } as unknown as PluginRegistry, settings, dataSource: { listDatasets: () => [] } });
@@ -38,6 +80,9 @@ describe("industrial Agent decision provider", () => {
     const invokeAiProvider = vi.fn(async (_providerId: string, request: { input: string }) => {
       expect(request.input).toContain("projectEvidenceContext");
       expect(request.input).toContain("battery.model.predict");
+      const context = JSON.parse(request.input).context;
+      expect(context.contextBudget.approxChars).toBe(JSON.stringify({ decisions: context.priorDecisions, toolResults: context.toolResults }).length);
+      expect(context.contextBudget.charBudget).toBe(48_000);
       return {
         text: '{"kind":"finish","rationale":"已有项目证据","summary":"可复用已有电池证据","decisionStatus":"shadow","evidenceIds":[]}',
         model: "test-model",

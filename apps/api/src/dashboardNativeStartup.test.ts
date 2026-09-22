@@ -24,6 +24,13 @@ describe("Dashboard deployment startup", () => {
   it("reads explicit Windows executable and expected verifier identity", async () => {
     expect(await readDashboardDeploymentConfig(await configFile(deployment))).toEqual(deployment);
   });
+  it("accepts server-owned Web static paths and rejects malformed optional configurations", async () => {
+    const webStatic = { root: path.resolve("dist/dashboard-static"), licensedFonts: [] };
+    expect((await readDashboardDeploymentConfig(await configFile({ ...deployment, webStatic }))).webStatic).toEqual(webStatic);
+    for (const patch of [{ webStatic: null }, { webStatic: { root: "relative", licensedFonts: [] } }, { layoutCapture: null }]) {
+      await expect(readDashboardDeploymentConfig(await configFile({ ...deployment, ...patch }))).rejects.toThrow(/requires/);
+    }
+  });
   it("rejects relative configuration, executable paths and missing device identity", async () => {
     await expect(readDashboardDeploymentConfig("relative.json")).rejects.toThrow(/absolute path/);
     for (const patch of [{ nativeExecutable: "relative.exe" }, { expectedDeviceFingerprintSha256: "" },

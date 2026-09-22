@@ -12,14 +12,14 @@ const time = "2026-09-15T10:00:00.000Z";
 // 仅验证存储绑定的合成证据，不是实际 Native 窗口验证结果。
 function nativeCompiled(): SceneNativeCompiledPublication {
   const source = "a".repeat(64), graph = "b".repeat(64), artifact = "c".repeat(64), fixtureId = `scene-${source}`;
-  const capabilities = ["deep.scene.runtime.v1", "deep.scene.camera.v1"];
+  const capabilities = ["deep.scene.runtime.v1", "deep.scene.camera.v1", "deep.scene.dynamic-runtime.v1"];
   return { runtimePackage: { key: `projects/default/publication-resources/sha256/${artifact}`, bytes: 100, sha256: artifact },
     compilationEvidence: { sourceSemanticHash: source, compileGraphHash: graph, targetArtifactHash: artifact },
     compilerSha256: "d".repeat(64), executableSha256: "e".repeat(64), verifiedAt: time,
     compatibilityReport: { schemaVersion: 1, target: "deep-native", sceneId: "scene-1", status: "ready",
       platform: "windows-x64", fixtureId, contentFingerprint: source, compileGraphHash: graph, targetArtifactHash: artifact,
       capabilityProfileVersion: "deep-scene-compiled-v1",
-      items: capabilities.map((capability, index) => ({ sceneId: "scene-1", objectId: "scene-1", path: index ? "camera" : "$",
+      items: capabilities.map((capability, index) => ({ sceneId: "scene-1", objectId: "scene-1", path: index === 0 ? "$" : index === 1 ? "camera" : "animation",
         capability, status: "supported", reason: "测试证据", remediation: "重新验证", evidenceIds: [capability] })),
       evidence: capabilities.map(capability => ({ id: capability, capability, target: "deep-native", scope: "native-window",
         fixtureId, platform: "windows-x64", sourceSemanticHash: source, compileGraphHash: graph, targetArtifactHash: artifact })) } };

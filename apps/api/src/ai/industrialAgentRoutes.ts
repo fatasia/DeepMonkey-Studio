@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { AgentRunError, type AgentApproval, type AgentBudget, type AgentCheckpoint } from "@bim-studio/industrial-agent-orchestrator";
 import type { MetadataStore } from "../store.js";
 import type { IndustrialAgentRuntime } from "./industrialAgentRuntime.js";
+import { AssistantSessionOptionError, type AssistantSessionOptions } from "./assistantSessionOptions.js";
 
 interface StartBody {
   objective?: string;
@@ -9,6 +10,7 @@ interface StartBody {
   allowedToolIds?: string[];
   budget?: Partial<AgentBudget>;
   execution?: "background";
+  modelOptions?: AssistantSessionOptions;
 }
 
 /** 路由只接收目标与预算；身份、审批人和项目范围始终从服务端会话注入。 */
@@ -16,6 +18,8 @@ export async function registerIndustrialAgentRoutes(
   app: FastifyInstance,
   dependencies: { store: Pick<MetadataStore, "getProject">; runtime: IndustrialAgentRuntime },
 ): Promise<void> {
+  // Retries share the durable stop operation, including requests arriving before its write completes.
+  const cancellations = new Map<string, Promise<AgentCheckpoint>>();
   app.get<{ Params: { projectId: string } }>(
     "/api/projects/:projectId/ai/agent-tools",
     async (request, reply) => dependencies.store.getProject(request.params.projectId)
@@ -28,7 +32,7 @@ export async function registerIndustrialAgentRoutes(
     async (request, reply) => {
       if (!dependencies.store.getProject(request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
       if (request.systemUser?.role === "viewer") return reply.code(403).send({ message: "浏览者不能启动工业 Agent" });
-      const objective = request.body?.objective?.trim();
+      const objective = typeof request.body?.objective === "string" ? request.body.objective.trim() : "";
       if (!objective) return reply.code(400).send({ message: "Agent 目标不能为空" });
       const available = dependencies.runtime.tools.list();
       const allowedToolIds = request.body.allowedToolIds ?? available.map((tool) => tool.id);
@@ -36,11 +40,18 @@ export async function registerIndustrialAgentRoutes(
       const abortFromClient = () => controller.abort(new Error("客户端已断开工业 Agent 请求"));
       request.raw.once("aborted", abortFromClient);
       try {
+        const options = request.body.modelOptions;
+        if (options !== undefined && (!options || typeof options !== "object" || Array.isArray(options))) {
+          throw new AssistantSessionOptionError("会话模型参数无效");
+        }
+        if (options && !dependencies.runtime.resolveModelOptions) throw new AssistantSessionOptionError("当前运行环境未配置会话模型选择");
+        const modelOptions = dependencies.runtime.resolveModelOptions ? await dependencies.runtime.resolveModelOptions(options ?? {}) : undefined;
         const startInput = {
           projectId: request.params.projectId,
           principal: request.systemUser?.id ?? "api-user",
           ...(request.systemUser ? { role: request.systemUser.role } : {}),
           objective,
+          ...(modelOptions ? { modelOptions } : {}),
           context: request.body.context ?? {},
           allowedToolIds,
           ...(request.body.budget ? { budget: request.body.budget } : {}),
@@ -50,6 +61,7 @@ export async function registerIndustrialAgentRoutes(
           : await dependencies.runtime.orchestrator.start({ ...startInput, signal: controller.signal });
         return reply.code(request.body.execution === "background" ? 202 : 201).send(checkpoint);
       } catch (error) {
+        if (error instanceof AssistantSessionOptionError) return reply.code(400).send({ message: error.message });
         return sendAgentError(reply, error);
       } finally {
         request.raw.removeListener("aborted", abortFromClient);
@@ -114,7 +126,15 @@ export async function registerIndustrialAgentRoutes(
       if (request.systemUser?.role === "viewer") return reply.code(403).send({ message: "浏览者不能取消工业 Agent" });
       const checkpoint = await projectCheckpoint(dependencies.runtime, request.params.projectId, request.params.runId);
       if (!checkpoint) return reply.code(404).send({ message: "Agent 运行不存在" });
-      try { return await dependencies.runtime.orchestrator.cancel(checkpoint.id, request.systemUser?.id ?? "api-user"); }
+      try {
+        let cancellation = cancellations.get(checkpoint.id);
+        if (!cancellation) {
+          cancellation = dependencies.runtime.orchestrator.cancel(checkpoint.id, request.systemUser?.id ?? "api-user");
+          cancellations.set(checkpoint.id, cancellation);
+        }
+        try { return await cancellation; }
+        finally { if (cancellations.get(checkpoint.id) === cancellation) cancellations.delete(checkpoint.id); }
+      }
       catch (error) { return sendAgentError(reply, error); }
     },
   );

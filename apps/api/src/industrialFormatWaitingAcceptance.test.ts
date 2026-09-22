@@ -45,7 +45,7 @@ describe("industrial format upload acceptance without providers", () => {
     });
     const model = store.getProject("default")!.models.find((item) => item.id === uploaded.id)!;
     expect(model).toMatchObject({ status: "waiting_converter", progress: 0 });
-    expect(model.message).toContain("未配置");
+    expect(model.message).toContain("内置离线解析 profile 尚未就绪");
     // 需要规范化的格式在转换完成前不暴露源格式预览，避免运行时双几何切换。
     expect(model.manifest).toBeUndefined();
     expect(model.manifestUrl).toBeUndefined();
@@ -57,7 +57,7 @@ describe("industrial format upload acceptance without providers", () => {
   });
 
   it.each(["part.x_b"])(
-    "runs the complete %s plumbing through a synthetic provider and audits its GLB cache",
+    "does not run an external fallback for unsupported %s even if its command is configured",
     async (fileName) => {
       const dataDir = await mkdtemp(path.join(tmpdir(), "bim-industrial-plumbing-"));
       directories.push(dataDir);
@@ -77,23 +77,18 @@ describe("industrial format upload acceptance without providers", () => {
       const response = await upload(app, fileName, "transport fixture; synthetic provider does not parse source geometry");
       const uploaded = response.json() as ModelRecord;
       await vi.waitFor(() => {
-        expect(store.getProject("default")?.models.find((item) => item.id === uploaded.id)?.status).toBe("ready");
+        expect(store.getProject("default")?.models.find((item) => item.id === uploaded.id)?.status).toBe("waiting_converter");
       });
       const model = store.getProject("default")!.models.find((item) => item.id === uploaded.id)!;
-      expect(model.manifest).toMatchObject({ sourceFormat: model.format, viewerKind: "gltf" });
-      expect(model.manifest?.geometryUrl).toContain("/output/geometry.glb");
-      const outputDir = path.join(dataDir, "projects", "default", "models", uploaded.id, "output");
-      expect(await auditGlbGeometry(path.join(outputDir, "geometry.glb"))).toEqual({
-        meshCount: 1, primitiveCount: 1, vertexCount: 3, triangleCount: 1,
-      });
-      expect(JSON.parse(await readFile(path.join(outputDir, "hierarchy.json"), "utf8"))).toHaveProperty("nodes");
-      expect(JSON.parse(await readFile(path.join(outputDir, "properties.json"), "utf8"))).toHaveProperty("sourceFormat", model.format);
-      expect(JSON.parse(await readFile(path.join(outputDir, "pmi.json"), "utf8"))).toHaveProperty("annotations");
+      expect(model.manifest).toBeUndefined();
+      expect(queue.tasks.get("default", model.conversionTaskId!)?.quality?.tier).toBe("inspect");
+      const outputDir = path.join(dataDir, "projects", "default", "models", uploaded.id, "attempts", model.conversionTaskId!, "output");
+      await expect(readFile(path.join(outputDir, "geometry.glb"))).rejects.toMatchObject({ code: "ENOENT" });
       await app.close();
     },
   );
 
-  it("fails a hung industrial converter within its configured time budget", async () => {
+  it("does not launch a configured industrial executable for a blocked binary profile", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "bim-industrial-timeout-"));
     directories.push(dataDir);
     const store = new JsonStore(dataDir);
@@ -115,9 +110,9 @@ describe("industrial format upload acceptance without providers", () => {
     const response = await upload(app, "hung.x_b", "timeout fixture");
     const uploaded = response.json() as ModelRecord;
     await vi.waitFor(() => {
-      expect(store.getProject("default")?.models.find((item) => item.id === uploaded.id)?.status).toBe("failed");
+      expect(store.getProject("default")?.models.find((item) => item.id === uploaded.id)?.status).toBe("waiting_converter");
     }, { timeout: 2_000, interval: 25 });
-    expect(store.getProject("default")!.models.find((item) => item.id === uploaded.id)?.message).toContain("运行超时");
+    expect(store.getProject("default")!.models.find((item) => item.id === uploaded.id)?.message).toContain("内置离线解析");
     await app.close();
   });
 
@@ -148,7 +143,7 @@ describe("industrial format upload acceptance without providers", () => {
       inspectionUrl: expect.stringContaining("inspection.json"),
     });
     expect(model.message).toContain("10 个面");
-    const outputDir = path.join(dataDir, "projects", "default", "models", uploaded.id, "output");
+    const outputDir = path.join(dataDir, "projects", "default", "models", uploaded.id, "attempts", model.conversionTaskId!, "output");
     expect(await auditGlbGeometry(path.join(outputDir, "geometry.glb"))).toMatchObject({
       meshCount: 10,
       primitiveCount: 10,
@@ -192,7 +187,7 @@ describe("industrial format upload acceptance without providers", () => {
       inspectionUrl: expect.stringContaining("inspection.json"),
     });
     expect(model.manifest?.geometryUrl).toBeUndefined();
-    const outputDir = path.join(dataDir, "projects", "default", "models", uploaded.id, "output");
+    const outputDir = path.join(dataDir, "projects", "default", "models", uploaded.id, "attempts", model.conversionTaskId!, "output");
     expect(JSON.parse(await readFile(path.join(outputDir, "inspection.json"), "utf8"))).toMatchObject({
       status: "structure-read",
       geometryParsed: false,

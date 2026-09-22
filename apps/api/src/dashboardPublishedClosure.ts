@@ -23,7 +23,7 @@ export function createDashboardPublishedClosure(store: ClosureStore, config: App
       throw new Error("Dashboard publication is no longer authoritative");
     return createDashboardDocument(publication.document, request.entryPageId);
   }
-  function imageRequests(publication: PublishedApplicationRecord, entryPageId: string): DashboardFrozenResourceRequest[] {
+  function mediaRequests(publication: PublishedApplicationRecord, entryPageId: string): DashboardFrozenResourceRequest[] {
     const document = published({ ...publication, publicationId: publication.id, entryPageId });
     const assets = store.listAssets(publication.projectId);
     const requests = new Map<string, DashboardFrozenResourceRequest>();
@@ -32,17 +32,23 @@ export function createDashboardPublishedClosure(store: ClosureStore, config: App
       if (!url) continue;
       const asset = assets.find(asset => asset.url === url);
       if (!asset) throw new Error(`Published page background has no project asset: ${page.id}`);
-      const value = imageRequest(asset, publication.projectId, []);
+      const value = mediaRequest(asset, publication.projectId, [], "image");
       const existing = requests.get(value.id);
       requests.set(value.id, { ...value, pageIds: [...existing?.pageIds ?? [], page.id] });
     }
     for (const node of document.application.pages.flatMap(page => page.nodes)) {
-      if (node.kind !== "data-widget" || node.widget.type !== "image") continue;
+      if (node.kind !== "data-widget" || !["image", "video"].includes(node.widget.type)) continue;
+      const kind = node.widget.type as "image" | "video";
       const asset = node.widget.assetId ? assets.find(asset => asset.id === node.widget.assetId)
-        : assets.find(asset => asset.url === node.widget.imageUrl);
-      if (!asset) throw new Error(`Published image has no project asset: ${node.id}`);
-      if (node.widget.imageUrl && node.widget.imageUrl !== asset.url) throw new Error("Published image ID and URL disagree");
-      const value = imageRequest(asset, publication.projectId, [node.id]);
+        : assets.find(asset => asset.url === (kind === "image" ? node.widget.imageUrl : node.widget.videoUrl));
+      const authoredUrl = kind === "image" ? node.widget.imageUrl : node.widget.videoUrl;
+      if (!asset) {
+        if (kind === "video" && !node.widget.assetId
+          && (!authoredUrl || !authoredUrl.startsWith(`/assets/projects/${publication.projectId}/`))) continue;
+        throw new Error(`Published ${kind} has no project asset: ${node.id}`);
+      }
+      if (authoredUrl && authoredUrl !== asset.url) throw new Error(`Published ${kind} ID and URL disagree`);
+      const value = mediaRequest(asset, publication.projectId, [node.id], kind);
       const existing = requests.get(value.id);
       requests.set(value.id, existing ? { ...existing, nodeIds: [...existing.nodeIds, node.id] } : value);
     }
@@ -61,7 +67,7 @@ export function createDashboardPublishedClosure(store: ClosureStore, config: App
         if (source) data.push({ id: dataId(node.id), nodeId: node.id,
           sourceRevision: JSON.stringify({ metadataSha256: source.metadataSha256, capturedAt }) });
       }
-      const resources = [...imageRequests(publication, entryPageId), ...await options.fonts?.derive(publication, signal) ?? []];
+      const resources = [...mediaRequests(publication, entryPageId), ...await options.fonts?.derive(publication, signal) ?? []];
       if (new Set(resources.map(resource => resource.id)).size !== resources.length) throw new Error("Font and image resource IDs collide");
       return { data, resources };
     },
@@ -80,7 +86,7 @@ export function createDashboardPublishedClosure(store: ClosureStore, config: App
         if (!options.fonts) throw new Error("Published font catalog is not configured");
         return options.fonts.resourceRevision(publication, request, signal);
       }
-      const current = imageRequests(publication, authority.entryPageId).find(item => item.id === request.id);
+      const current = mediaRequests(publication, authority.entryPageId).find(item => item.id === request.id);
       if (!current || current.objectKey !== request.objectKey || current.kind !== request.kind || current.mime !== request.mime
         || [...current.pageIds ?? []].sort().join("\0") !== [...request.pageIds ?? []].sort().join("\0")
         || [...current.nodeIds].sort().join("\0") !== [...request.nodeIds].sort().join("\0"))
@@ -90,14 +96,15 @@ export function createDashboardPublishedClosure(store: ClosureStore, config: App
   };
 }
 
-function imageRequest(asset: ProjectAssetRecord, projectId: string, nodeIds: readonly string[]): DashboardFrozenResourceRequest {
+function mediaRequest(asset: ProjectAssetRecord, projectId: string, nodeIds: readonly string[], kind: "image" | "video"): DashboardFrozenResourceRequest {
   const prefix = `/assets/projects/${projectId}/assets/${asset.id}/`;
-  if (asset.projectId !== projectId || asset.kind !== "image" || !asset.mimeType.startsWith("image/")
-    || !asset.url.startsWith(prefix)) throw new Error("Dashboard image is outside the published project");
+  if (asset.projectId !== projectId || asset.kind !== kind
+    || (kind === "image" ? !asset.mimeType.startsWith("image/") : asset.mimeType !== "video/mp4")
+    || !asset.url.startsWith(prefix)) throw new Error(`Dashboard ${kind} is outside the published project`);
   const key = asset.url.slice("/assets/".length);
   if (/[?%#\\\u0000-\u001f]/.test(key) || key.split("/").some(part => !part || part === "." || part === ".."))
-    throw new Error("Dashboard image object key is not canonical");
+    throw new Error(`Dashboard ${kind} object key is not canonical`);
   const revision = Date.parse(asset.updatedAt);
   if (!Number.isSafeInteger(revision) || revision < 0) throw new Error("Dashboard asset revision is invalid");
-  return { id: asset.id, kind: "image", objectKey: key, mime: asset.mimeType, nodeIds, revision };
+  return { id: asset.id, kind, objectKey: key, mime: asset.mimeType, nodeIds, revision };
 }

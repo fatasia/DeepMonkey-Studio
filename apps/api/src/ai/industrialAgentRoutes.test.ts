@@ -15,6 +15,19 @@ const closeTasks: Array<() => Promise<void>> = [];
 afterEach(async () => Promise.all(closeTasks.splice(0).map((task) => task())));
 
 describe("industrial Agent HTTP lifecycle", () => {
+  it("validates and stores non-sensitive per-run model options before starting", async () => {
+    const runtime = testRuntime([]);
+    runtime.resolveModelOptions = vi.fn(async () => ({ model: "selected", reasoningEffort: "deep" }));
+    const app = createApiServer(); closeTasks.push(() => app.close());
+    await registerIndustrialAgentRoutes(app, { store: { getProject: () => ({ id: "project-1" } as never) }, runtime });
+    const result = await app.inject({ method: "POST", url: "/api/projects/project-1/ai/agent-runs",
+      payload: { objective: "检查", allowedToolIds: ["industrial.control"], modelOptions: { model: "selected", reasoningEffort: "deep" } } });
+    expect(result.statusCode).toBe(201);
+    expect(result.json().modelOptions).toEqual({ model: "selected", reasoningEffort: "deep" });
+    expect((await runtime.checkpoints.get(result.json().id))?.modelOptions).toEqual(result.json().modelOptions);
+    const invalid = await app.inject({ method: "POST", url: "/api/projects/project-1/ai/agent-runs", payload: { objective: "检查", modelOptions: [] } });
+    expect(invalid.statusCode).toBe(400);
+  });
   it("resumes a failed decision over HTTP in the same durable run", async () => {
     const runtime = testRuntime([]);
     let attempts = 0;

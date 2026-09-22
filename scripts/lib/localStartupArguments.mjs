@@ -53,7 +53,7 @@ export function parseLocalStartupArguments(argv) {
 }
 
 export function localStartupHelp() {
-  return `Deep Monkey Studio 内部运行器（用户请使用 pnpm studio）
+  return `DeepMonkey Studio 内部运行器（用户请使用 pnpm studio）
 
 用法：
   node scripts/start-local.mjs [--target desktop|web|services] [--skip-infra] [--no-open]
@@ -98,5 +98,5 @@ export function isBimStudioApiHealth(value) {
 }
 
 export function isBimStudioWebDocument(value) {
-  return typeof value === "string" && /<title>\s*Deep Monkey Studio\s*<\/title>/i.test(value) && /<div\b[^>]*\bid=["']root["'](?:\s|>)/i.test(value);
+  return typeof value === "string" && /<title>\s*DeepMonkey Studio\s*<\/title>/i.test(value) && /<div\b[^>]*\bid=["']root["'](?:\s|>)/i.test(value);
 }

@@ -40,7 +40,7 @@ function Test-BimStudioExpectedService([string]$Name) {
         "web" {
             $probe = Invoke-BimStudioHttpProbe "http://127.0.0.1:5173/" {
                 param($response)
-                return $response.Content -match "<title>\s*Deep Monkey Studio\s*</title>" -and $response.Content -match 'id=["'']root["'']'
+                return $response.Content -match "<title>\s*Deep\s*Monkey\s+Studio\s*</title>" -and $response.Content -match '<div\b[^>]*\sid\s*=\s*["'']root["''][^>]*>'
             }
             return $probe.Healthy
         }
@@ -74,7 +74,7 @@ function Get-BimStudioServiceHealth([string]$Name, [bool]$Listening) {
         "web" {
             Invoke-BimStudioHttpProbe "http://127.0.0.1:5173/" {
                 param($response)
-                return $response.Content -match "<title>\s*Deep Monkey Studio\s*</title>" -and $response.Content -match 'id=["'']root["'']'
+                return $response.Content -match "<title>\s*Deep\s*Monkey\s+Studio\s*</title>" -and $response.Content -match '<div\b[^>]*\sid\s*=\s*["'']root["''][^>]*>'
             }
         }
         "minio" {

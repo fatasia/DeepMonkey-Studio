@@ -4,11 +4,25 @@ import { clearModelCatalogCacheForTests, fetchProviderModels } from "./aiModelCa
 afterEach(() => {
   vi.unstubAllGlobals();
   clearModelCatalogCacheForTests();
+  vi.useRealTimers();
 });
 
 const input = { baseUrl: "https://models.test/v1", apiKey: "secret-key" };
 
 describe("AI model catalog", () => {
+  it.each([{ data: {} }, { data: "not a list" }, null, 3])("rejects malformed payload %j without throwing", async body => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(body))));
+    expect(await fetchProviderModels(input)).toMatchObject({ ok: false, category: "unsupported" });
+  });
+  it("keeps the timeout active until the response body is read", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn(async (_url, options) => ({ ok: true, json: () => new Promise((_resolve, reject) => {
+      options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true });
+    }) })));
+    const pending = fetchProviderModels(input);
+    await vi.advanceTimersByTimeAsync(15_001);
+    expect(await pending).toMatchObject({ ok: false, category: "network", message: expect.stringContaining("超时") });
+  });
   it("normalizes the OpenAI model list payload and caches the result", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [{ id: "gpt-5.5" }, { id: "gpt-4.1-mini" }, { id: "gpt-5.5" }] }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);

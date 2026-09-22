@@ -38,6 +38,11 @@ function image(overrides: Partial<DashboardFrozenResourceRequest> = {}): Dashboa
     mime: "image/png", nodeIds: ["widget-scene-main"], revision: 2, ...overrides };
 }
 
+function video(overrides: Partial<DashboardFrozenResourceRequest> = {}): DashboardFrozenResourceRequest {
+  return { id: "video-main", kind: "video", objectKey: "projects/project-golden/assets/video-main.mp4",
+    mime: "video/mp4", nodeIds: ["widget-scene-main"], revision: 4, ...overrides };
+}
+
 function options(overrides: Partial<PrepareDashboardPublicationFreezeOptions> = {}): PrepareDashboardPublicationFreezeOptions {
   return { expected, entryPageId: "page-main",
     data: [{ id: "metric-main", nodeId: "widget-scene-main", sourceRevision: "dataset:8" }],
@@ -73,6 +78,17 @@ describe("dashboard publication freeze", () => {
     expect(candidate.resources["image-main"]).toEqual(Uint8Array.of(7, 8, 9));
     expect(candidate.manifest.resources[0]!.sha256).toBe(hash(Uint8Array.of(7, 8, 9)));
     await expect(prepareDashboardPublicationFreeze(input)).rejects.toThrow(/deployed catalog/);
+  });
+
+  it("freezes project MP4 bytes with content identity and rejects other video MIME types", async () => {
+    const bytes = Uint8Array.of(0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d,
+      0, 0, 0, 0, 0x69, 0x73, 0x6f, 0x6d, 0x6d, 0x70, 0x34, 0x32);
+    const input = options({ data: [], resources: [video()],
+      readResource: async request => ({ revision: request.revision, bytes }) });
+    const candidate = await prepareDashboardPublicationFreeze(input);
+    expect(candidate.manifest.resources[0]).toMatchObject({ kind: "video", mime: "video/mp4", bytes: 24, sha256: hash(bytes) });
+    await expect(prepareDashboardPublicationFreeze(options({ data: [], resources: [video({ mime: "video/webm" })] })))
+      .rejects.toThrow(/MIME/);
   });
 
   it("stops a cancelled resource read before copying its returned bytes", async () => {

@@ -1,4 +1,5 @@
 import type { AiProvider, AiProviderRequest, AiProviderStreamEvent } from "@bim-studio/plugin-runtime";
+import { inspectProviderResponse } from "./providerResponseStatus.js";
 
 type Protocol = "auto" | "responses" | "chat-completions";
 type ReasoningEffort = "minimal" | "standard" | "deep";
@@ -30,7 +31,7 @@ export function createOpenAiCompatibleProvider(): AiProvider {
       const content = config.protocol === "responses"
         ? await completeResponses(request, config, context.signal)
         : await completeChatWithFallback(request, config, context.signal);
-      return { text: content.text, model: request.model, ...(content.usage ? { usage: content.usage } : {}) };
+      return { text: content.text, model: content.model ?? request.model, ...(content.execution ? { execution: content.execution } : {}), ...(content.usage ? { usage: content.usage } : {}) };
     },
     async *stream(request, context) {
       const config = providerConfig(request);
@@ -47,14 +48,26 @@ export function createOpenAiCompatibleProvider(): AiProvider {
       }
       if (!response.ok) throw new AiProviderHttpError(response.status, await responseError(response));
       if (!response.body) throw new Error("大模型未返回流式响应");
+      let reportedModel: string | undefined;
+      let completed = false;
+      let execution = executionReceipt(request, useResponses ? "responses" : "chat-completions");
+      yield { type: "execution", execution };
       for await (const data of sseData(response.body)) {
-        if (data === "[DONE]") continue;
+        if (data === "[DONE]") { completed = true; break; }
         const parsed = JSON.parse(data) as { type?: string; delta?: string; choices?: Array<{ delta?: { content?: string } }>; usage?: { input_tokens?: number; output_tokens?: number; prompt_tokens?: number; completion_tokens?: number } };
+        completed = inspectProviderResponse(parsed) || completed;
+        const metadata = parsed as { model?: unknown; response?: { model?: unknown; usage?: typeof parsed.usage } };
+        const model = providerModel(metadata.model ?? metadata.response?.model);
+        if (model && model !== reportedModel) { reportedModel = model; yield { type: "model", model }; }
+        const receipt = executionReceipt(request, useResponses ? "responses" : "chat-completions", metadata.response ?? parsed);
+        const nextExecution = { ...execution, ...receipt };
+        if (JSON.stringify(nextExecution) !== JSON.stringify(execution)) { execution = nextExecution; yield { type: "execution", execution }; }
         const delta = parsed.type === "response.output_text.delta" ? parsed.delta : parsed.choices?.[0]?.delta?.content;
         if (delta) yield { type: "delta", delta } satisfies AiProviderStreamEvent;
-        if (parsed.usage) {
-          const inputTokens = parsed.usage.input_tokens ?? parsed.usage.prompt_tokens;
-          const outputTokens = parsed.usage.output_tokens ?? parsed.usage.completion_tokens;
+        const usage = useResponses ? metadata.response?.usage ?? parsed.usage : parsed.usage;
+        if (usage) {
+          const inputTokens = usage.input_tokens ?? usage.prompt_tokens;
+          const outputTokens = usage.output_tokens ?? usage.completion_tokens;
           yield {
             type: "usage",
             ...(inputTokens !== undefined ? { inputTokens } : {}),
@@ -62,11 +75,27 @@ export function createOpenAiCompatibleProvider(): AiProvider {
           } satisfies AiProviderStreamEvent;
         }
       }
+      if (!completed) throw new Error("大模型流式连接提前结束，回答未完成");
     }
   };
 }
 
-interface CompletionContent { text: string; usage?: { inputTokens?: number; outputTokens?: number } }
+interface CompletionContent { text: string; model?: string; execution?: ExecutionReceipt; usage?: { inputTokens?: number; outputTokens?: number } }
+type ExecutionReceipt = NonNullable<Awaited<ReturnType<AiProvider["complete"]>>["execution"]>;
+
+function executionReceipt(request: AiProviderRequest, protocol: "responses" | "chat-completions", response?: unknown): ExecutionReceipt {
+  const sent = reasoningParam(request, protocol) as { reasoning?: { effort?: unknown }; reasoning_effort?: unknown };
+  const body = response && typeof response === "object" ? response as { model?: unknown; reasoning?: { effort?: unknown }; reasoning_effort?: unknown } : {};
+  const reportedModel = providerModel(body.model);
+  const effortSent = providerModel(sent.reasoning?.effort ?? sent.reasoning_effort);
+  const effortReported = providerModel(body.reasoning?.effort ?? body.reasoning_effort);
+  return { protocol, requestedModel: request.model, ...(reportedModel ? { reportedModel } : {}),
+    ...(effortSent ? { reasoningEffortSent: effortSent } : {}), ...(effortReported ? { reasoningEffortReported: effortReported } : {}) };
+}
+
+function providerModel(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= 256 && !/[\u0000-\u001f\u007f]/.test(value) ? value.trim() : undefined;
+}
 
 async function completeChatWithFallback(request: AiProviderRequest, config: ProviderConfig, signal: AbortSignal): Promise<CompletionContent> {
   const response = await fetch(`${config.baseUrl}/chat/completions`, {
@@ -76,12 +105,16 @@ async function completeChatWithFallback(request: AiProviderRequest, config: Prov
     signal
   });
   const body = await response.json().catch(() => undefined) as {
+    model?: unknown;
     choices?: Array<{ message?: { content?: string } }>; usage?: { prompt_tokens?: number; completion_tokens?: number }; error?: { code?: string; message?: string };
   } | undefined;
   if (!response.ok && config.protocol === "auto" && shouldUseResponses(response.status, body?.error)) return completeResponses(request, config, signal);
   if (!response.ok) throw new AiProviderHttpError(response.status, body?.error?.message);
+  inspectProviderResponse(body);
   return {
     text: requireContent(body?.choices?.[0]?.message?.content),
+    execution: executionReceipt(request, "chat-completions", body),
+    ...(providerModel(body?.model) ? { model: providerModel(body?.model)! } : {}),
     ...(body?.usage ? { usage: usageFromChat(body.usage) } : {}),
   };
 }
@@ -94,14 +127,18 @@ async function completeResponses(request: AiProviderRequest, config: ProviderCon
     signal
   });
   const body = await response.json().catch(() => undefined) as {
+    model?: unknown;
     output_text?: string;
     output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
     usage?: { input_tokens?: number; output_tokens?: number };
     error?: { message?: string };
   } | undefined;
   if (!response.ok) throw new AiProviderHttpError(response.status, body?.error?.message);
+  inspectProviderResponse(body);
   return {
     text: requireContent(body?.output_text ?? body?.output?.flatMap((item) => item.content ?? []).find((item) => item.type === "output_text")?.text),
+    execution: executionReceipt(request, "responses", body),
+    ...(providerModel(body?.model) ? { model: providerModel(body?.model)! } : {}),
     ...(body?.usage ? { usage: usageFromResponses(body.usage) } : {}),
   };
 }
@@ -188,6 +225,7 @@ async function* sseData(body: ReadableStream<Uint8Array>): AsyncIterable<string>
       if (done) break;
     }
   } finally {
+    await reader.cancel().catch(() => undefined);
     reader.releaseLock();
   }
 }

@@ -5,6 +5,8 @@ import type {
   AiProviderSettings,
   AuditLogRecord,
   DatabaseDocument,
+  ConversionTaskRecord,
+  ModelRecord,
   ProjectRecord,
   StoredSystemUserRecord,
   SystemBrandingSettings,
@@ -12,9 +14,19 @@ import type {
 import { JsonFilePersistence } from "./jsonFilePersistence.js";
 import { emptyDatabaseDocument, ensureExampleDataCatalog, normalizeAiDataBindingRuns, normalizeAiDataBindings, sanitizeLegacyBranding } from "./storeNormalization.js";
 import { changed, defaultDocument, unchanged, type DocumentMutation } from "./storeUtils.js";
+import { saveConversionTaskMutation } from "./conversionTaskStore.js";
 
 /** JSON 元数据存储的持久化、串行事务和系统级数据基础。 */
 export abstract class JsonStoreFoundation {
+  listConversionTasks(): ConversionTaskRecord[] {
+    return structuredClone(this.document.conversionTasks ?? []);
+  }
+
+  async saveConversionTask(task: ConversionTaskRecord, modelUpdates?: Partial<ModelRecord>): Promise<void> {
+    return this.runDocumentMutation(candidate => {
+      return saveConversionTaskMutation(candidate, task, modelUpdates) ? changed(undefined) : unchanged(undefined);
+    });
+  }
   protected readonly databasePath: string;
   protected document: DatabaseDocument = emptyDatabaseDocument();
   private documentMutationChain = Promise.resolve();
@@ -150,7 +162,7 @@ export abstract class JsonStoreFoundation {
 
   /**
    * 同一实例内串行执行整文档事务。先持久化隔离副本再切换内存状态，写入失败时不会暴露半成品。
-   * 部署仍应保持单 API 写实例；这不是跨进程 CAS 协议。
+   * PostgreSQL 子类另做持久化版本比较；本队列本身不提供跨进程任务租约。
    */
   protected runDocumentMutation<T>(mutation: (candidate: DatabaseDocument) => DocumentMutation<T>): Promise<T> {
     const execute = async () => {
@@ -161,6 +173,10 @@ export abstract class JsonStoreFoundation {
       this.document = candidate;
       return result.value;
     };
+    return this.runDocumentOperation(execute);
+  }
+
+  protected runDocumentOperation<T>(execute: () => Promise<T>): Promise<T> {
     const operation = this.documentMutationChain.then(execute, execute);
     this.documentMutationChain = operation.then(
       () => undefined,

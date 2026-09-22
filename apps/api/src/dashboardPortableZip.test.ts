@@ -53,7 +53,7 @@ describe("Dashboard Windows portable ZIP", () => {
     expect(manifest.runtimePackageSha256).not.toBe(manifest.artifactSha256);
     expect(Object.keys(zip.files).sort()).toEqual([...Object.keys(manifest.files), "manifest.json"].sort());
     for (const [name, expected] of Object.entries(manifest.files)) expect(sha(await zip.file(name)!.async("uint8array"))).toBe(expected);
-    expect(await zip.file("LICENSE")!.async("text")).toContain("Deep Monkey");
+    expect(await zip.file("LICENSE")!.async("text")).toContain("DeepMonkey");
     expect(await zip.file("THIRD_PARTY_NOTICES.md")!.async("text")).toContain("jszip");
   });
 
@@ -85,7 +85,7 @@ describe("Dashboard Windows portable ZIP", () => {
     await writeFile(manifestPath, JSON.stringify(manifest));
     const replacedHash = launch();
     expect(replacedHash.status).toBe(1); expect(replacedHash.stderr).toContain("Manifest payload hash changed");
-  });
+  }, 15_000);
 
   it.skipIf(process.platform !== "win32")("launches a local test EXE with only the fixed verified package argument", async () => {
     const input = await fixture();

@@ -9,6 +9,9 @@
     "types": ["node", "@webgpu/types", "@fastify/multipart"]
   },
   "include": [
+    "verify-dashboard-measured-widget-recovery.mts",
+    "verify-dashboard-text-density-matrix.mts",
+    "verify-dashboard-text-density-layout.mts",
     "verify-dashboard-page-background.mts",
     "../apps/api/src/**/*.d.ts",
     "../apps/api/src/system.ts",
@@ -20,7 +23,11 @@
     "lib/dashboardPublishedHeadingFixture.mts",
     "lib/dashboardPublishedHeadingFixture.test.mts",
     "lib/dashboardMulticomponentFixture.mts",
-    "lib/dashboardDownloadedOpen.mts"
+    "lib/dashboardDownloadedOpen.mts",
+    "lib/dashboardUpgradeRollbackFixture.mts",
+    "lib/dashboardUpgradeRollbackFixture.test.mts",
+    "lib/dashboardUpgradeRollbackEvidence.mts",
+    "lib/dashboardUpgradeRollbackEvidence.test.mts"
   ],
   "exclude": []
 }

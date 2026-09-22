@@ -10,7 +10,8 @@ import { AiProviderHttpError } from "./openAiCompatibleProvider.js";
 import { selectedAgentDatasets, validateAgentDatasetSelection } from "./industrialAgentSelection.js";
 import { attemptWithFailover, type AiFailoverTarget } from "./aiFailoverPolicy.js";
 import { newTelemetryRecord, type AiTelemetrySink } from "./aiRequestTelemetry.js";
-import { compressAgentContext } from "./agentContextBudget.js";
+import { assertAgentContextBudget, compressAgentContext } from "./agentContextBudget.js";
+import { resolveAssistantSessionOptions } from "./assistantSessionOptions.js";
 
 const DECISION_INSTRUCTIONS = `你是工业 AI Agent 的受控决策器。你只能返回一个 JSON 对象，不得返回 Markdown。
 允许的决策：
@@ -36,18 +37,21 @@ export function createIndustrialAgentDecisionProvider(input: {
   return {
     async decide(request) {
       const startedAt = Date.now();
-      const settings = input.settings();
+      const settings = await resolveAssistantSessionOptions(input.settings(), request.checkpoint.modelOptions ?? {});
       if (!settings.apiKey) throw new Error("尚未配置大模型 API Key，工业 Agent 无法生成下一步决策");
       const traceId = `${request.checkpoint.id}:decision:${request.checkpoint.usage.steps + 1}`;
       const catalog = industrialAgentDatasetCatalog(request.checkpoint.projectId, input.dataSource.listDatasets(request.checkpoint.projectId));
       const projectContext = input.projectContext ? await input.projectContext(request.checkpoint.projectId) : undefined;
-      const prepared = prepareAiInput(request.checkpoint.objective, {
+      const context = {
         projectId: request.checkpoint.projectId,
         // 独立有界检索片段，避免字段逐项消耗可靠性扫描来源预算，或被大场景快照挤掉。
         serverDatasetCatalog: JSON.stringify(catalog),
         selectedDatasets: selectedAgentDatasets(request.checkpoint, catalog),
         ...decisionContext(request, projectContext),
-      });
+      };
+      // Reject before the reliability scanner can clip a required tool pair or the objective.
+      assertAgentContextBudget(DECISION_INSTRUCTIONS.length + JSON.stringify({ objective: request.checkpoint.objective, context }).length);
+      const prepared = prepareAiInput(request.checkpoint.objective, context);
       await emitAiAudit(input.audit, createAiAuditEvent({
         traceId,
         stage: "input-assessment",
@@ -59,6 +63,12 @@ export function createIndustrialAgentDecisionProvider(input: {
         assessment: prepared.assessment,
       }));
       if (prepared.assessment.decision === "block") throw new Error("工业 Agent 输入触发高风险注入或审批绕过规则");
+      const checkedContext = prepared.context as Record<string, unknown>;
+      for (const key of ["priorDecisions", "toolResults"] as const) {
+        if (JSON.stringify(checkedContext[key]) !== JSON.stringify(context[key])) {
+          throw new Error("Agent 工具记录在上下文检查中被裁剪或隔离，无法保持完整调用与结果；请缩小工具返回范围后重试");
+        }
+      }
       const providerRequest = {
         requestId: traceId,
         projectId: request.checkpoint.projectId,
@@ -77,18 +87,22 @@ export function createIndustrialAgentDecisionProvider(input: {
         signal: request.signal,
       };
       try {
+        assertAgentContextBudget(providerRequest.instructions.length + providerRequest.input.length);
         const attempt = await attemptWithFailover({
           failover: failoverTarget(settings),
           signal: request.signal,
           primary: () => input.registry.invokeAiProvider(settings.providerId, providerRequest),
-          fallback: (target) => input.registry.invokeAiProvider(settings.providerId, {
-            ...providerRequest,
-            model: target.model,
-            config: { ...providerRequest.config, baseUrl: target.baseUrl, apiKey: target.apiKey, protocol: target.protocol },
-          }),
+          fallback: (target) => {
+            const { reasoningEffort: _primaryEffort, ...config } = providerRequest.config;
+            return input.registry.invokeAiProvider(settings.providerId, {
+              ...providerRequest, model: target.model,
+              config: { ...config, baseUrl: target.baseUrl, apiKey: target.apiKey, protocol: target.protocol },
+            });
+          },
         });
         const completion = attempt.result;
         const decision = validateAgentDatasetSelection(parseJsonDecision(completion.text), catalog);
+        if (completion.execution && !request.signal.aborted) request.reportExecution?.({ ...completion.execution, servedBy: attempt.servedBy, ...(attempt.failover ? { failoverCategory: attempt.failover.category } : {}) });
         await emitAiAudit(input.audit, createAiAuditEvent({
           traceId, stage: "model-completion", outcome: attempt.servedBy === "fallback" ? "degraded" : "completed",
           principal: request.checkpoint.principal,
@@ -172,6 +186,7 @@ function decisionContext(request: Parameters<AgentDecisionProvider["decide"]>[0]
     contextCompression: compressed.compression.applied
       ? `历史 ${compressed.compression.summarizedToolResults} 轮工具结果与 ${compressed.compression.summarizedDecisions} 轮决策已压缩为摘要；需要细节时不要凭摘要下生产结论`
       : undefined,
+    contextBudget: compressed.compression,
     userContext: checkpoint.context,
     projectEvidenceContext: projectContext ?? { unavailable: true },
   };

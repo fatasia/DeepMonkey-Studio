@@ -4,7 +4,7 @@ const distance=(a:number[],b:number[])=>Math.hypot(...a.map((x,i)=>x-b[i]));
 const dot=(a:number[],b:number[])=>a.reduce((s,x,i)=>s+x*b[i],0);
 function check(v:unknown,m:string):asserts v{if(!v)throw Error(m);}
 function elevate(points:number[][],degree:number){let p=points.length-1;while(p<degree){const next=[points[0]];for(let i=1;i<=p;i++)next.push(points[i].map((x,j)=>i/(p+1)*points[i-1][j]+(1-i/(p+1))*x));next.push(points.at(-1)!);points=next;p++;}return points;}
-function controlBound(a:number[][],b:number[][]){const degree=Math.max(a.length,b.length)-1;a=elevate(a,degree);b=elevate(b,degree);
+export function sourceCurveControlBound(a:number[][],b:number[][]){const degree=Math.max(a.length,b.length)-1;a=elevate(a,degree);b=elevate(b,degree);
   const pa=a.map(p=>p.slice(0,3).map(x=>x/p[3])),pb=b.map(p=>p.slice(0,3).map(x=>x/p[3])),wa=a.map(p=>p[3]/a[0][3]),wb=b.map(p=>p[3]/b[0][3]);
   return Math.max(...pa.map((p,i)=>distance(p,pb[i])))+2*Math.max(...pb.map(p=>distance(p,pb[0])))*Math.max(...wa.map((w,i)=>Math.abs(w-wb[i])))/Math.min(...wa);
 }
@@ -27,7 +27,7 @@ export function provePlaneC3Map(ir:any,face:number,edgeIndex:number,metersPerUni
   const limit=Math.min(edge.tolerance/4,.0000005/metersPerUnit),segments:{source:number[],target:number[],bound:number}[]=[];
   const visit=(lo:number,hi:number,x:number,y:number,depth:number)=>{
     const left=sourceBezierInterval(lifted,[lo,hi]).controlPoints,right=sourceBezierInterval(c3,[Math.min(x,y),Math.max(x,y)]).controlPoints;
-    if(x>y)right.reverse();const bound=controlBound(left,right)+planeBound+1e-10;
+    if(x>y)right.reverse();const bound=sourceCurveControlBound(left,right)+planeBound+1e-10;
     if(bound<=limit){check(segments.length<1024,'plane-c3-map-budget');segments.push({source:[lo,hi],target:[x,y],bound});return;}
     check(depth<16&&segments.length<1024,'plane-c3-map-budget');const middle=(lo+hi)/2,p=original(middle);let low=0,high=1;
     for(let j=0;j<60;j++){const f=low+(high-low)/3,g=high-(high-low)/3;if(distance(p,target(x+f*(y-x)))<distance(p,target(x+g*(y-x))))high=g;else low=f;}

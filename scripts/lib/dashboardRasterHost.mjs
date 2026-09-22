@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
+import { writeFileSync } from "node:fs";
 import sharp from "sharp";
-import { rasterizeNativeText } from "./nativeTextRasterizer.mjs";
+import { rasterizeNativeText, rasterizeNativeTextBatch } from "./nativeTextRasterizer.mjs";
 import { decodePageBackgroundPixels } from "./dashboardPageBackgroundRaster.mjs";
 const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
 const MAX_BYTES = 64 * 1024 * 1024;
@@ -31,32 +32,86 @@ function extent(request) {
   if (![request.width, request.height].every(v => Number.isSafeInteger(v) && v > 0 && v <= 8192)
     || request.width * request.height * 4 > MAX_BYTES) throw new Error("Invalid raster extent");
 }
+function verifyCachedFonts(input) {
+  if (!Array.isArray(input.fonts) || !input.fonts.length) throw new Error("Frozen primary font is required");
+  let total = 0;
+  for (const font of input.fonts) {
+    if (!(font?.bytes instanceof Uint8Array) || !font.bytes.length
+      || (total += font.bytes.byteLength) > MAX_BYTES || sha256(font.bytes) !== font.sha256)
+      throw new Error("Frozen raster resource hash or byte budget mismatch");
+  }
+}
 /** Only immutable byte inputs enter these producers; no URL resolution or publication authorization. */
-export function createDashboardRasterHost({ nativeExecutable, signal }) {
-  return {
+export function createDashboardRasterHost({ nativeExecutable, signal, textCache = undefined }) {
+  const host = {
+    traceCompilation(value) {
+      if (process.env.DASHBOARD_COMPILER_RESOURCE_TRACE) writeFileSync(process.env.DASHBOARD_COMPILER_RESOURCE_TRACE, JSON.stringify(value));
+    },
     async rasterizeText(input) {
+      signal?.throwIfAborted(); extent(input);
+      verifyCachedFonts(input);
+      // Cache hits need no second font copy after synchronous byte validation.
+      const hit = textCache?.get(input, signal);
+      if (hit) return hit;
       const request = snapshot(input, signal, true);
       if (!request.fonts.length) throw new Error("Frozen primary font is required");
-      const fonts = request.fonts.map(font => ({ sha256: font.sha256, faceIndex: font.faceIndex,
-        dataBase64: font.bytes.toString("base64") }));
-      const primary = fonts[0];
-      const wire = { schema: "deep-engine.text-raster-request", schemaVersion: 1, locale: request.locale, fonts,
-        request: { text: request.text, font: { sha256: primary.sha256, faceIndex: primary.faceIndex },
-          weight: request.fontWeight, style: request.fontStyle, align: request.align,
-          verticalAlign: request.verticalAlign, wrap: request.wrap, fontSize: request.fontSize,
-          lineHeight: request.lineHeight, width: request.width, height: request.height, color: request.color } };
-      const { result, rgba, evidence } = await rasterizeNativeText({ nativeExecutable, request: wire, signal });
-      return { width: result.width, height: result.height, rgba: new Uint8Array(rgba), sha256: result.pixelSha256,
-        requestHash: request.requestHash, sourceSha256: result.sourceSha256,
-        producer: { id: "cosmic-text", version: "0.19.0-frozen-v1" },
-        producerEvidence: { scope: "native-text-raster", sourceSha256: evidence.sourceSha256,
-          executableSha256: evidence.executableSha256, pixelSha256: evidence.pixelSha256, producer: evidence.producer },
-        format: result.format, alphaMode: result.alphaMode, usedFaces: result.usedFaces, lines: result.lines,
-        clipped: result.clipped };
+      const cached = textCache?.get(request, signal);
+      if (cached) return cached;
+      const started = performance.now();
+      const output = textOutput(request, await rasterizeNativeText({ nativeExecutable, request: textWire(request), signal }));
+      signal?.throwIfAborted(); textCache?.put(request, output, signal);
+      if (process.env.DASHBOARD_COMPILER_TRACE === "1") console.info("text raster", request.text, Math.round(performance.now() - started));
+      return output;
     },
     decodeImage: request => rasterizeFrozenImage(request, signal),
     decodePageBackground: request => rasterizeFrozenPageBackground(request, signal),
   };
+  return { ...host, async prewarmText(requests) {
+    if (!textCache) return;
+    const unique = [...new Map(requests.map(request => [request.requestHash, request])).values()];
+    const groups = new Map();
+    for (const request of unique) {
+      const key = JSON.stringify({ locale: request.locale, fonts: request.fonts.map(font => ({ ...font, bytes: undefined })) });
+      const group = groups.get(key) ?? []; group.push(request); groups.set(key, group);
+    }
+    // One font group at a time keeps the aggregate frozen-font working set bounded.
+    for (const group of groups.values()) {
+      const pending = []; let fonts;
+      for (const input of group) {
+        signal?.throwIfAborted(); extent(input); verifyCachedFonts(input);
+        if (textCache.get(input, signal)) continue;
+        const request = snapshot(input, signal, true);
+        if (textCache.get(request, signal)) continue;
+        fonts ??= request.fonts;
+        pending.push({ ...request, fonts });
+      }
+      if (!pending.length) continue;
+      const first = textWire(pending[0]);
+      const requests = pending.map((request, index) => index ? textWire(request, first.fonts) : first);
+      const started = performance.now();
+      const produced = await rasterizeNativeTextBatch({ nativeExecutable, requests, signal });
+      if (process.env.DASHBOARD_COMPILER_TRACE === "1") console.info("text batch", pending.length, Math.round(performance.now() - started));
+      signal?.throwIfAborted();
+      for (const [index, result] of produced.entries()) textCache.put(pending[index], textOutput(pending[index], result), signal);
+    }
+  } };
+}
+function textWire(request, sharedFonts) {
+  const fonts = sharedFonts ?? request.fonts.map(font => ({ sha256: font.sha256, faceIndex: font.faceIndex,
+    dataBase64: font.bytes.toString("base64") }));
+  return { schema: "deep-engine.text-raster-request", schemaVersion: 1, locale: request.locale, fonts,
+    request: { text: request.text, font: { sha256: fonts[0].sha256, faceIndex: fonts[0].faceIndex },
+      weight: request.fontWeight, style: request.fontStyle, align: request.align,
+      verticalAlign: request.verticalAlign, wrap: request.wrap, fontSize: request.fontSize,
+      lineHeight: request.lineHeight, width: request.width, height: request.height, color: request.color } };
+}
+function textOutput(request, { result, rgba, evidence }) {
+  return { width: result.width, height: result.height, rgba: new Uint8Array(rgba), sha256: result.pixelSha256,
+    requestHash: request.requestHash, sourceSha256: result.sourceSha256,
+    producer: { id: "cosmic-text", version: "0.19.0-frozen-v1" },
+    producerEvidence: { scope: "native-text-raster", sourceSha256: evidence.sourceSha256,
+      executableSha256: evidence.executableSha256, pixelSha256: evidence.pixelSha256, producer: evidence.producer },
+    format: result.format, alphaMode: result.alphaMode, usedFaces: result.usedFaces, lines: result.lines, clipped: result.clipped };
 }
 export async function rasterizeFrozenPageBackground(input, signal) {
   const request = snapshot(input, signal, false);
