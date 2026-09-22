@@ -3,13 +3,19 @@ mod dashboard;
 mod dashboard_table_types;
 mod dashboard_table_validation;
 mod dashboard_types;
+mod dashboard_video_types;
+mod dashboard_video_validation;
+pub use dashboard_video_types::*;
+pub(crate) use dashboard_video_validation::is_mp4_isobmff;
+mod dashboard_text_input_types;
 pub use dashboard_table_types::*;
+pub use dashboard_text_input_types::*;
 mod dashboard_validation;
 mod delta;
 mod delta_manifest;
 mod diff;
 mod dynamic_scene;
-mod r3_state;
+mod dynamic_scene_physics;
 mod entrypoints;
 mod experimental_x;
 mod file_read;
@@ -18,6 +24,7 @@ mod light_profiles;
 mod material_bindings;
 mod payloads;
 mod prefiltered_ibl;
+mod r3_state;
 mod render_packet;
 mod types;
 mod unique_json;
@@ -43,19 +50,32 @@ pub use diff::{
     RuntimeResourceDiffPlan, RuntimeResourcePlanAction, RuntimeResourcePlanEntry,
     plan_runtime_package_diff, plan_runtime_package_resource_diff,
 };
+pub use dynamic_scene::{
+    DynamicAnimationControllerCommand, DynamicAnimationControllerRuntime,
+    DynamicAnimationControllerState, DynamicAnimationControllerTransition,
+    DynamicAnimationKeyframe, DynamicAnimationRuntime, DynamicAnimationSample,
+    DynamicAnimationTrack, DynamicDataReplayEvent, DynamicDataReplayRuntime,
+    DynamicInteractionRuntime, DynamicSceneRuntime, canonical_dynamic_frame,
+    parse_and_validate_dynamic_scene_runtime,
+};
+pub use dynamic_scene_physics::{
+    DynamicPhysicsAutostepRuntime, DynamicPhysicsBodyRuntime,
+    DynamicPhysicsCharacterControllerRuntime, DynamicPhysicsColliderRuntime, DynamicPhysicsCommand,
+    DynamicPhysicsJointRuntime, DynamicPhysicsLimitsRuntime, DynamicPhysicsMotorRuntime,
+    DynamicPhysicsPoseRuntime, DynamicPhysicsRuntime, DynamicPhysicsSnapToGroundRuntime,
+};
+pub use light_profiles::{IesSamplingTable, LightIes, LightProfile, ies_max_candela};
+pub use r3_state::{
+    ClipState, R3_STATE_FRAME_CONTRACT, R3_STATE_OPS_SCHEMA, R3StateBox, R3StateOp, R3StateOps,
+    axis_clip_field_from_plane, axis_clip_plane, canonical_r3_state_frame, clip_field,
+    parse_and_validate_r3_state_ops, selection_field,
+};
 use types::RuntimePackageEnvelope;
 pub use types::{
     IblEnvironmentReferenceV1, IblReferenceKind, LoadedRuntimePackage, RuntimeContentHash,
     RuntimeEntrypoints, RuntimeMaterialShaderBinding, RuntimePackageSummary,
     RuntimeResourceIndexEntry, RuntimeResourceKind,
 };
-pub use dynamic_scene::{canonical_dynamic_frame, parse_and_validate_dynamic_scene_runtime, DynamicAnimationKeyframe, DynamicAnimationRuntime, DynamicAnimationSample, DynamicAnimationTrack, DynamicDataReplayEvent, DynamicDataReplayRuntime, DynamicInteractionRuntime, DynamicSceneRuntime};
-pub use r3_state::{
-    axis_clip_field_from_plane, axis_clip_plane, canonical_r3_state_frame, clip_field,
-    parse_and_validate_r3_state_ops, selection_field, ClipState, R3StateBox, R3StateOp, R3StateOps,
-    R3_STATE_FRAME_CONTRACT, R3_STATE_OPS_SCHEMA,
-};
-pub use light_profiles::{ies_max_candela, IesSamplingTable, LightIes, LightProfile};
 pub use validate::{runtime_content_sha256, runtime_package_sha256};
 
 pub const DEEP_RUNTIME_PACKAGE_SCHEMA: &str = "deep-engine.runtime-package";

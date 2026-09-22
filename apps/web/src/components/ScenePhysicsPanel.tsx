@@ -1,7 +1,10 @@
 import { X } from "lucide-react";
+import * as THREE from "three";
 import type {
   ScenePhysicsBodyState,
+  ScenePhysicsJointState,
   ScenePhysicsState,
+  Vector3Value,
 } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import { DeferredNumberInput } from "./AppFormControls";
@@ -11,7 +14,10 @@ interface ScenePhysicsPanelProps {
   locale: AppLocale;
   value: ScenePhysicsState;
   selectedName?: string | undefined;
+  selectedId?: string | undefined;
+  selectedPosition?: Vector3Value | undefined;
   selectedBody?: ScenePhysicsBodyState | undefined;
+  bodyOptions?: readonly { id: string; name: string; type: ScenePhysicsBodyState["type"] }[];
   onChange: (next: ScenePhysicsState) => void;
   onSelectedBodyChange: (patch: Partial<ScenePhysicsBodyState>) => void;
   onReset: () => void;
@@ -21,6 +27,17 @@ interface ScenePhysicsPanelProps {
 export function ScenePhysicsPanel(props: ScenePhysicsPanelProps) {
   const { locale, value, selectedBody } = props;
   const drag = useFloatingPanelDrag<HTMLDivElement>();
+  const selectedJoint = value.joints?.find((joint) => joint.bodyId === props.selectedId);
+  const replaceJoint = (next?: ScenePhysicsJointState) => props.onChange({
+    ...value,
+    joints: [
+      ...(value.joints ?? []).filter((joint) => joint.bodyId !== props.selectedId),
+      ...(next ? [next] : []),
+    ],
+  });
+  const updateJoint = (patch: Partial<ScenePhysicsJointState>) => {
+    if (selectedJoint) replaceJoint({ ...selectedJoint, ...patch });
+  };
 
   return (
     <div
@@ -169,6 +186,94 @@ export function ScenePhysicsPanel(props: ScenePhysicsPanelProps) {
           </>
         )}
       </section>
+      {selectedBody?.type === "dynamic" && props.selectedId && (
+        <section className="physics-object">
+          <div>
+            <strong>{tr(locale, "旋转关节", "Revolute joint")}</strong>
+            <small>{tr(locale, "连接世界或另一刚体；角度单位为度", "Connect to the world or another rigid body; angles are degrees")}</small>
+          </div>
+          {!selectedJoint ? (
+            <button onClick={() => replaceJoint({
+              id: `revolute-${props.selectedId}`,
+              kind: "revolute",
+              bodyId: props.selectedId!,
+              worldAnchor: { ...(props.selectedPosition ?? { x: 0, y: 0, z: 0 }) },
+              localAnchor: { x: 0, y: 0, z: 0 },
+              axis: { x: 0, y: 1, z: 0 },
+              limits: { enabled: true, min: -Math.PI, max: Math.PI },
+              motor: { enabled: false, targetVelocity: 0, strength: 1 },
+            })}>
+              {tr(locale, "挂载旋转关节", "Mount revolute joint")}
+            </button>
+          ) : (
+            <>
+              <label>
+                <span>{tr(locale, "求解器", "Solver")}</span>
+                <select value={selectedJoint.solver ?? "impulse"} onChange={(event) => {
+                  const solver = event.target.value as "impulse" | "multibody";
+                  updateJoint({ solver, ...(solver === "multibody" ? {
+                    limits: { ...selectedJoint.limits, enabled: false },
+                    motor: { ...selectedJoint.motor, enabled: false },
+                  } : {}) });
+                }}>
+                  <option value="impulse">ImpulseJoint</option>
+                  <option value="multibody">MultibodyJoint</option>
+                </select>
+              </label>
+              <label>
+                <span>{tr(locale, "连接目标", "Connected body")}</span>
+                <select value={selectedJoint.connectedBodyId ?? ""} onChange={(event) => {
+                  const connectedBodyId = event.target.value;
+                  if (connectedBodyId) updateJoint({ connectedBodyId });
+                  else {
+                    const { connectedBodyId: _discarded, ...worldJoint } = selectedJoint;
+                    replaceJoint(worldJoint);
+                  }
+                }}>
+                  <option value="">{tr(locale, "固定世界", "Fixed world")}</option>
+                  {(props.bodyOptions ?? []).filter(option => option.id !== props.selectedId && option.type !== "none").map(option => (
+                    <option key={option.id} value={option.id}>{option.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>{tr(locale, "旋转轴", "Axis")}</span>
+                <select value={selectedJoint.axis.x ? "x" : selectedJoint.axis.z ? "z" : "y"} onChange={(event) => {
+                  const axis = event.target.value;
+                  updateJoint({ axis: { x: axis === "x" ? 1 : 0, y: axis === "y" ? 1 : 0, z: axis === "z" ? 1 : 0 } });
+                }}>
+                  <option value="x">X</option><option value="y">Y</option><option value="z">Z</option>
+                </select>
+              </label>
+              <label>
+                <span>{tr(locale, "启用限位", "Enable limits")}</span>
+                <input type="checkbox" disabled={selectedJoint.solver === "multibody"} checked={selectedJoint.limits.enabled} onChange={(event) => updateJoint({ limits: { ...selectedJoint.limits, enabled: event.target.checked } })} />
+              </label>
+              <label>
+                <span>{tr(locale, "最小角", "Minimum angle")}</span>
+                <DeferredNumberInput disabled={selectedJoint.solver === "multibody" || !selectedJoint.limits.enabled} min={-360} max={360} step={5} value={THREE.MathUtils.radToDeg(selectedJoint.limits.min)} onCommit={(degrees) => updateJoint({ limits: { ...selectedJoint.limits, min: THREE.MathUtils.degToRad(degrees) } })} />
+              </label>
+              <label>
+                <span>{tr(locale, "最大角", "Maximum angle")}</span>
+                <DeferredNumberInput disabled={selectedJoint.solver === "multibody" || !selectedJoint.limits.enabled} min={-360} max={360} step={5} value={THREE.MathUtils.radToDeg(selectedJoint.limits.max)} onCommit={(degrees) => updateJoint({ limits: { ...selectedJoint.limits, max: THREE.MathUtils.degToRad(degrees) } })} />
+              </label>
+              <label>
+                <span>{tr(locale, "速度马达", "Velocity motor")}</span>
+                <input type="checkbox" disabled={selectedJoint.solver === "multibody"} checked={selectedJoint.motor.enabled} onChange={(event) => updateJoint({ motor: { ...selectedJoint.motor, enabled: event.target.checked } })} />
+              </label>
+              <label>
+                <span>{tr(locale, "目标速度 rad/s", "Target speed rad/s")}</span>
+                <DeferredNumberInput disabled={selectedJoint.solver === "multibody" || !selectedJoint.motor.enabled} min={-100} max={100} step={0.1} value={selectedJoint.motor.targetVelocity} onCommit={(targetVelocity) => updateJoint({ motor: { ...selectedJoint.motor, targetVelocity } })} />
+              </label>
+              <label title={tr(locale, "Rapier 速度约束求解强度，不代表额定扭矩", "Rapier velocity-constraint strength; not a rated torque") }>
+                <span>{tr(locale, "马达强度", "Motor strength")}</span>
+                <DeferredNumberInput disabled={selectedJoint.solver === "multibody" || !selectedJoint.motor.enabled} min={0} max={1000000} step={0.1} value={selectedJoint.motor.strength} onCommit={(strength) => updateJoint({ motor: { ...selectedJoint.motor, strength } })} />
+              </label>
+              <button onClick={() => replaceJoint()}>{tr(locale, "移除关节", "Remove joint")}</button>
+            </>
+          )}
+        </section>
+      )}
     </div>
   );
 }

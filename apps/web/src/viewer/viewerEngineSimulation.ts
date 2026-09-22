@@ -1,8 +1,20 @@
 import * as THREE from "three";
-import type { SceneAnimationState, ScenePhysicsBodyState, ScenePhysicsState } from "@bim-studio/contracts";
+import type { SceneAnimationState, SceneCharacterControllerState, ScenePhysicsBodyState, ScenePhysicsState } from "@bim-studio/contracts";
 import { normalizeAnimationFrameRate } from "./timeline";
 import { applyTransform, objectTransform } from "./sceneObjectUtils";
 import { ViewerEngineRig } from "./viewerEngineRig";
+import { mountRapierJoint, normalizePhysicsJoints, removeMountedRapierJoint } from "./rapierPhysicsJoint";
+import { configureCharacterController, moveRapierCharacter, mountRapierCharacterController, removeMountedRapierCharacter } from "./rapierCharacterController";
+
+function cloneCharacter(state: SceneCharacterControllerState): SceneCharacterControllerState {
+  return {
+    ...(state.offset === undefined ? {} : { offset: state.offset }),
+    ...(state.maxSlopeClimbAngle === undefined ? {} : { maxSlopeClimbAngle: state.maxSlopeClimbAngle }),
+    ...(state.minSlopeSlideAngle === undefined ? {} : { minSlopeSlideAngle: state.minSlopeSlideAngle }),
+    ...(state.autostep === undefined ? {} : { autostep: { ...state.autostep } }),
+    ...(state.snapToGround === undefined ? {} : { snapToGround: { ...state.snapToGround } }),
+  };
+}
 
 /** Simulation 职责层。 */
 export abstract class ViewerEngineSimulation extends ViewerEngineRig {
@@ -10,30 +22,63 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
       return structuredClone(this.physicsState);
     }
   setPhysicsState(state: ScenePhysicsState): void {
+      const joints = normalizePhysicsJoints(state.joints);
       this.physicsState = {
         enabled: state.enabled,
         playing: state.enabled && state.playing,
-        gravity: { ...state.gravity }
+        gravity: { ...state.gravity },
+        ...(joints.length ? { joints } : {}),
       };
+      this.physicsHost.configure(this.physicsState);
       if (state.enabled) void this.ensurePhysicsWorld().then(() => {
         if (this.physicsWorld) this.physicsWorld.gravity = { ...this.physicsState.gravity };
+        this.rebuildPhysicsJoints();
       });
     }
   getPhysicsBodyState(id: string): ScenePhysicsBodyState {
       return structuredClone(this.physicsBodyStates.get(id) ?? { type: "none", mass: 1, friction: 0.7, restitution: 0.15 });
     }
   async setPhysicsBodyState(id: string, state: ScenePhysicsBodyState): Promise<void> {
+      if (!["none", "fixed", "dynamic", "kinematic"].includes(state.type)) throw new Error("不支持的物理刚体类型");
+      if (state.character !== undefined && state.type !== "kinematic") throw new Error("角色控制器要求 kinematic 刚体");
       const normalized: ScenePhysicsBodyState = {
         type: state.type,
         mass: THREE.MathUtils.clamp(state.mass, 0.01, 100_000),
         friction: THREE.MathUtils.clamp(state.friction, 0, 2),
-        restitution: THREE.MathUtils.clamp(state.restitution, 0, 1)
+        restitution: THREE.MathUtils.clamp(state.restitution, 0, 1),
+        // 角色控制器只跟随 kinematic；切成别的类型时丢弃，避免留下无消费者的载荷。
+        ...(state.type === "kinematic" && state.character ? { character: cloneCharacter(state.character) } : {}),
       };
       this.physicsBodyStates.set(id, normalized);
+      if (normalized.type !== "dynamic") {
+        const joints = (this.physicsState.joints ?? []).filter((joint) => joint.bodyId !== id && joint.connectedBodyId !== id);
+        const { joints: _discarded, ...physics } = this.physicsState;
+        this.physicsState = joints.length ? { ...physics, joints } : physics;
+      }
       this.removePhysicsBody(id);
       if (normalized.type === "none" || !this.models.has(id)) return;
       await this.ensurePhysicsWorld();
       this.createPhysicsBody(id, normalized);
+      this.rebuildPhysicsJoints();
+    }
+  /** 运行期更新某个 kinematic 刚体的角色控制器参数；非 kinematic 或无运行时返回 false。 */
+  updateCharacterController(id: string, character: SceneCharacterControllerState | undefined): boolean {
+      const runtime = this.physicsBodies.get(id);
+      const world = this.physicsWorld;
+      if (!runtime?.character || !world) return false;
+      configureCharacterController(runtime.character.controller, character);
+      const state = this.physicsBodyStates.get(id);
+      if (state) {
+        const { character: _previous, ...bodyState } = state;
+        this.physicsBodyStates.set(id, { ...bodyState, ...(character ? { character: cloneCharacter(character) } : {}) });
+      }
+      return true;
+    }
+  /** 计算并排队 Web 角色位移；Native 没有对应消费入口，保持降级边界。 */
+  moveCharacter(id: string, delta: { x: number; y: number; z: number }): { movement: { x: number; y: number; z: number }; grounded: boolean } | undefined {
+      const runtime = this.physicsBodies.get(id);
+      if (!runtime?.character) return;
+      return moveRapierCharacter(runtime.character, runtime.body, delta);
     }
   resetPhysics(): void {
       for (const [id, runtime] of this.physicsBodies) {
@@ -48,7 +93,7 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
         runtime.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
         runtime.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
       }
-      this.physicsAccumulator = 0;
+      this.physicsHost.resetClock();
     }
   protected async ensurePhysicsWorld(): Promise<void> {
       if (this.physicsWorld) return;
@@ -67,11 +112,22 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
         } finally {
           console.warn = originalWarn;
         }
+        if (this.rendererDisposalStarted) return;
+        const world = new rapier.World({ ...this.physicsState.gravity });
+        const attached = this.physicsHost.attach({
+          setGravity: (gravity) => { world.gravity = { ...gravity }; },
+          step: (timestep) => { world.timestep = timestep; world.step(); },
+          dispose: () => world.free(),
+        });
+        if (!attached) { world.free(); return; }
         this.rapier = rapier;
-        this.physicsWorld = new rapier.World({ ...this.physicsState.gravity });
+        this.physicsWorld = world;
+        const groundBody = world.createRigidBody(rapier.RigidBodyDesc.fixed());
+        this.physicsGroundBody = groundBody;
         const ground = rapier.ColliderDesc.cuboid(5_000, 0.05, 5_000).setTranslation(0, -0.05, 0).setFriction(0.9);
-        this.physicsWorld.createCollider(ground);
+        world.createCollider(ground, groundBody);
         for (const [id, state] of this.physicsBodyStates) if (state.type !== "none" && !this.physicsBodies.has(id)) this.createPhysicsBody(id, state);
+        this.rebuildPhysicsJoints();
       })().finally(() => { this.physicsInit = undefined; });
       return this.physicsInit;
     }
@@ -90,7 +146,9 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
       const worldPosition = object.getWorldPosition(new THREE.Vector3());
       const worldRotation = object.getWorldQuaternion(new THREE.Quaternion());
       const worldScale = object.getWorldScale(new THREE.Vector3());
-      const descriptor = state.type === "dynamic" ? rapier.RigidBodyDesc.dynamic() : rapier.RigidBodyDesc.fixed();
+      const descriptor = state.type === "dynamic" ? rapier.RigidBodyDesc.dynamic()
+        : state.type === "kinematic" ? rapier.RigidBodyDesc.kinematicPositionBased()
+        : rapier.RigidBodyDesc.fixed();
       descriptor.setTranslation(worldPosition.x, worldPosition.y, worldPosition.z).setRotation(worldRotation);
       if (state.type === "dynamic") descriptor.setCcdEnabled(true).setLinearDamping(0.08).setAngularDamping(0.12);
       const body = world.createRigidBody(descriptor);
@@ -102,11 +160,17 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
         Math.max(Math.abs(half.z), 0.01)
       ).setTranslation(offset.x, offset.y, offset.z).setFriction(state.friction).setRestitution(state.restitution);
       if (state.type === "dynamic") collider.setMass(state.mass);
-      world.createCollider(collider, body);
-      this.physicsBodies.set(id, { body, initialTransform: objectTransform(object) });
+      const colliderHandle = world.createCollider(collider, body);
+      // 角色控制器只挂在 kinematic 刚体上；它靠宿主调用 setNextKinematicTranslation 移动。
+      const character = state.type === "kinematic"
+        ? mountRapierCharacterController(world, colliderHandle, state.character)
+        : undefined;
+      this.physicsBodies.set(id, { body, initialTransform: objectTransform(object), ...(character ? { character } : {}) });
     }
   protected removePhysicsBody(id: string): void {
+      this.removePhysicsJointsForBody(id);
       const runtime = this.physicsBodies.get(id);
+      if (runtime?.character && this.physicsWorld) removeMountedRapierCharacter(this.physicsWorld, runtime.character);
       if (runtime && this.physicsWorld) this.physicsWorld.removeRigidBody(runtime.body);
       this.physicsBodies.delete(id);
     }
@@ -115,17 +179,36 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
       if (!state || state.type === "none" || !this.physicsWorld) return;
       this.removePhysicsBody(id);
       this.createPhysicsBody(id, state);
+      this.rebuildPhysicsJoints();
+    }
+  protected rebuildPhysicsJoints(): void {
+      const world = this.physicsWorld, rapier = this.rapier, ground = this.physicsGroundBody;
+      if (!world || !rapier || !ground) return;
+      for (const joint of this.physicsJoints.values()) removeMountedRapierJoint(world, joint);
+      this.physicsJoints.clear();
+      for (const state of this.physicsState.joints ?? []) {
+        const body = this.physicsBodies.get(state.bodyId)?.body;
+        const connectedBody = state.connectedBodyId ? this.physicsBodies.get(state.connectedBodyId)?.body : ground;
+        if (!body || !connectedBody) continue;
+        const runtime = mountRapierJoint(rapier, world, connectedBody, body, state);
+        this.physicsJoints.set(state.id, runtime);
+      }
+    }
+  protected removePhysicsJointsForBody(bodyId: string): void {
+      const world = this.physicsWorld;
+      if (!world) return;
+      const states = new Map((this.physicsState.joints ?? []).map((joint) => [joint.id, joint]));
+      for (const [id, joint] of this.physicsJoints) {
+        const state = states.get(id);
+        if (state?.bodyId !== bodyId && state?.connectedBodyId !== bodyId) continue;
+        removeMountedRapierJoint(world, joint);
+        this.physicsJoints.delete(id);
+      }
     }
   protected updatePhysics(delta: number): void {
       const world = this.physicsWorld;
       if (!world || !this.physicsState.enabled || !this.physicsState.playing) return;
-      this.physicsAccumulator = Math.min(this.physicsAccumulator + delta, 0.2);
-      const fixedStep = 1 / 60;
-      while (this.physicsAccumulator >= fixedStep) {
-        world.timestep = fixedStep;
-        world.step();
-        this.physicsAccumulator -= fixedStep;
-      }
+      this.physicsHost.advance(delta);
       for (const [id, runtime] of this.physicsBodies) {
         if (this.physicsBodyStates.get(id)?.type !== "dynamic") continue;
         const object = this.models.get(id)?.object;

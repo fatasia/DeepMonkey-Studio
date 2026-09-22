@@ -101,10 +101,24 @@ pub struct DynamicAnimationTrack {
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum DynamicAnimationTransition {
+    Linear,
+    Smooth,
+    #[serde(rename = "ease-in")]
+    EaseIn,
+    #[serde(rename = "ease-out")]
+    EaseOut,
+    Step,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct DynamicAnimationKeyframe {
     pub time_ms: u64,
     pub value: [f64; 7],
+    #[serde(default)]
+    pub transition: Option<DynamicAnimationTransition>,
 }
 
 /// A sampled animation value ready for a host renderer/player to apply.
@@ -237,6 +251,13 @@ fn sample_track(keyframes: &[DynamicAnimationKeyframe], time_ms: u64) -> [f64; 7
     } else {
         (time_ms - previous.time_ms) as f64 / span
     };
+    let factor = match next.transition.as_ref().unwrap_or(&DynamicAnimationTransition::Linear) {
+        DynamicAnimationTransition::Linear => factor,
+        DynamicAnimationTransition::Smooth => factor * factor * (3.0 - 2.0 * factor),
+        DynamicAnimationTransition::EaseIn => factor * factor,
+        DynamicAnimationTransition::EaseOut => 1.0 - (1.0 - factor) * (1.0 - factor),
+        DynamicAnimationTransition::Step => 0.0,
+    };
     let mut value = [0.0; 7];
     for (slot, output) in value.iter_mut().enumerate() {
         *output = previous.value[slot] + (next.value[slot] - previous.value[slot]) * factor;
@@ -291,7 +312,7 @@ pub fn parse_and_validate_dynamic_scene_runtime(
     let runtime: DynamicSceneRuntime = serde_json::from_value(value.clone())
         .map_err(|error| RuntimePackageError(format!("dynamic runtime: {error}")))?;
     if runtime.schema != "deep-engine.dynamic-runtime"
-        || !matches!(runtime.schema_version, 1 | 2 | 3)
+        || !matches!(runtime.schema_version, 1..=3)
         || runtime.id.is_empty()
         || runtime.revision == 0
     {

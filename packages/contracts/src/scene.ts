@@ -42,13 +42,34 @@ export interface SceneModelState {
   layers?: SceneLayerState[];
 }
 
-export type PhysicsBodyType = "none" | "fixed" | "dynamic";
+/** kinematic 为位姿驱动刚体：不受重力/外力，可推动 dynamic，自身只能由宿主显式设位姿。 */
+export type PhysicsBodyType = "none" | "fixed" | "dynamic" | "kinematic";
 
 export interface ScenePhysicsBodyState {
   type: PhysicsBodyType;
   mass: number;
   friction: number;
   restitution: number;
+  /** 可选角色控制器；仅 kinematic 刚体消费，其余类型忽略。 */
+  character?: SceneCharacterControllerState;
+}
+
+/**
+ * Rapier KinematicCharacterController 的作者参数。
+ * 全部字段可省略，省略时用引擎默认（坡度 45°、偏移 0.01、自动台阶关闭、贴地开启）。
+ * 角度为弧度；offset/autostep/snapToGround 的长度单位为米，相对角色高度的比值由引擎自行换算。
+ */
+export interface SceneCharacterControllerState {
+  /** 与环境的保持间隙；必须大于 0，过小会降低数值稳定性。 */
+  offset?: number;
+  /** 可攀爬的最大坡度（弧度）。 */
+  maxSlopeClimbAngle?: number;
+  /** 开始自动下滑的最小坡度（弧度）。 */
+  minSlopeSlideAngle?: number;
+  /** 自动跨越台阶；省略或 enabled=false 时关闭。 */
+  autostep?: { enabled: boolean; maxHeight?: number; minWidth?: number; includeDynamicBodies?: boolean };
+  /** 贴地吸附；省略或 enabled=false 时关闭。 */
+  snapToGround?: { enabled: boolean; distance?: number };
 }
 
 export interface ScenePhysicsState {
@@ -117,6 +138,11 @@ export interface SceneLayerState {
 }
 
 export interface SceneMaterialState {
+  /** Preserve source linear color precision when restoring authored glTF materials. */
+  sourceColor?: boolean;
+  sourceEmissive?: boolean;
+  /** Instance-local glTF source material index overrides; never runtime UUIDs. */
+  slotOverrides?: Record<string, Omit<SceneMaterialState, "slotOverrides">>;
   color?: string;
   /** 实例级颜色校正；不改写原始素材，可为同一素材的不同实例保存不同外观。 */
   hue?: number;
@@ -150,6 +176,8 @@ export interface SceneMaterialState {
   screen?: SceneMaterialScreenState;
   normalScale?: number;
   roughness?: number;
+  /** Dielectric index of refraction; source values are preserved, default 1.5. */
+  ior?: number;
   metalness?: number;
   emissive?: string;
   emissiveIntensity?: number;
@@ -483,6 +511,9 @@ export interface ScenePostProcessingState {
   saturation?: number;
   brightness?: number;
   contrast?: number;
+  /** HDR white-balance controls in the author color pass. */
+  temperature?: number;
+  tint?: number;
 }
 
 /** Transition from this keyframe to the next one; omitted uses the track default. */
@@ -656,6 +687,12 @@ export interface SceneInteractionScriptState {
   code: string;
 }
 
+/** 作者目录根行引用；只影响目录顺序，不改变渲染或空间层级。 */
+export interface SceneRootLayerRef {
+  kind: "group" | "object" | "light" | "measurement" | "annotation" | "space";
+  id: string;
+}
+
 export interface SceneSnapshot {
   schemaVersion: 1;
   id: string;
@@ -686,6 +723,8 @@ export interface SceneSnapshot {
   assetBindings?: SceneAssetBindingState[];
   interactions?: SceneInteractionScriptState[];
   selectionSets?: SceneSelectionSetState[];
+  /** 缺省沿用旧目录顺序；组内顺序由 selectionSets.objectIds 保存。 */
+  rootLayerOrder?: SceneRootLayerRef[];
   selectedModelId?: string;
   selectedLayerId?: string;
   selectedAnnotationId?: string;

@@ -1,3 +1,5 @@
+
+- 2026-09-22 B3-b 物理能力扩展收口：复用既有 Rapier 固定步进宿主与运行包，不重建物理底座。`PhysicsBodyType`/场景验证/Deep runtime v3/Native runtime 校验贯通 `kinematic`；Web 使用 `kinematicPositionBased` 并挂载 Rapier 角色控制器，Native 使用 `kinematic_position_based` 消费刚体但角色控制器明确 `degraded`（Native 未调用 Rapier 控制器 API）。未知类型、角色字段错配和非法参数 fail-closed。Web 物理 19 项、Deep runtime 8 项、contracts 18 项、Native native_physics 4 项、physics-validate 19 项及 Web tsc/Native cargo check 通过；固定 1/60 与 0.2s 追赶上限无回退。16384 bodies ≤4ms 尚未取得新实测，继续列项目级性能后验收。
 ## 2026-09-21 产品复盘与自研引擎对等持续目标
 
 - 2026-09-22 AI 普通问答回执恢复接线：复用既有会话存储，把页面已经展示的有界可靠性快照（等级、Trace/指纹、来源标签、警告、上下文发送计数）随回答保存，并在刷新/重开会话时恢复；API 对枚举、字符串、数量与字符预算严格校验，旧消息无该字段保持兼容。合同类型检查、API 路由 4 项、Web 会话/请求 9 项通过。该快照只用于解释历史回答，不替代重新执行 Capability；真实供应商回执、页面刷新、双主题与全量发布仍留项目级后验收。

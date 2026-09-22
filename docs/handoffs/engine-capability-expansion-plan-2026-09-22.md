@@ -183,6 +183,14 @@
 
 **性能要求**：物理步进固定 1/60 且不与渲染帧耦合（已有）；碰撞体形状升级后必须保持 16384 body 上限内的步进 ≤4ms；Native 与 Web 的逐位确定性必须由 `physics-validate` 扩展用例守住（新增形状/关节后必须补对拍）。
 
+#### B3-b 收口记录（2026-09-22）
+
+- **已完成（不重建）**：沿用 WIP 的 Web `PhysicsBodyType`、Deep Engine dynamic runtime v3、Native `dynamic_scene_physics.rs` fail-closed 校验、`PhysicsWorldHost` 固定 1/60 时钟与 Rapier 依赖；补齐 `kinematic` 合同、运行包字符段、Web `kinematicPositionBased` 与 Native `kinematic_position_based` builder。
+- **角色控制器边界**：Web 已接 Rapier `KinematicCharacterController` 的参数配置、坡度/自动台阶/贴地合同和运行时挂载；Native 运行包保留并校验同一参数，但 Native 当前只消费 kinematic 刚体静态位姿，不调用 `rapier3d::control::KinematicCharacterController`，因此 Native 角色控制器明确为 `degraded`，未伪造跨端支持。
+- **兼容与失败关闭**：旧 dynamic runtime v1/v2 无 physics 或旧 fixed/dynamic 物理包继续可解析；未知刚体类型、非 kinematic 携带角色字段、非法角色参数均拒绝。新增 Web/Deep Engine/Native kinematic 断言，真实源码定向回归通过。
+- **验证证据**：Web 物理定向 4 文件 19 项通过，Deep Engine runtime 8 项通过，contracts 18 项通过；`pnpm --dir apps/web exec tsc --noEmit`、Native `cargo check --lib`、Native `native_physics` 4 项、`physics-validate` 19 项通过。固定步进仍为 1/60，追赶上限 0.2s 未改；本轮未取得 16384 bodies ≤4ms 的新基准，不能宣称该性能门槛已实测。
+
+
 ---
 
 ## 3. 任务排序与依赖

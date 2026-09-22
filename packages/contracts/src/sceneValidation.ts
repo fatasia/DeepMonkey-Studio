@@ -85,7 +85,23 @@ export function validateScene(value: unknown, path: string): void {
   optional(object, "dataBindings", (bindings, bindingsPath) => expectArray(bindings, bindingsPath, validateSceneDataBinding), path);
   optional(object, "assetBindings", (bindings, bindingsPath) => expectArray(bindings, bindingsPath, validateSceneAssetBinding), path);
   optional(object, "selectionSets", (sets, setsPath) => expectArray(sets, setsPath, validateSceneSelectionSet), path);
+  optional(object, "rootLayerOrder", validateRootLayerOrder, path);
   for (const key of ["selectedModelId", "selectedLayerId", "selectedAnnotationId"] as const) optional(object, key, expectString, path);
+}
+
+function validateRootLayerOrder(value: unknown, path: string): void {
+  const seen = new Set<string>();
+  expectArray(value, path, (entry, entryPath) => {
+    const object = expectObject(entry, entryPath);
+    for (const key of Object.keys(object)) if (key !== "kind" && key !== "id") invalid(`${entryPath}.${key}`, "不属于根图层引用");
+    required(object, "kind", expectString, entryPath);
+    required(object, "id", expectString, entryPath);
+    if (!["group", "object", "light", "measurement", "annotation", "space"].includes(String(object.kind))) invalid(`${entryPath}.kind`, "未知根图层类型");
+    if (!String(object.id).trim()) invalid(`${entryPath}.id`, "不能为空");
+    const key = `${object.kind}:${object.id}`;
+    if (seen.has(key)) invalid(entryPath, "根图层引用重复");
+    seen.add(key);
+  });
 }
 
 function validateSceneAssetBinding(value: unknown, path: string): void {
@@ -193,6 +209,16 @@ function validateLayer(value: unknown, path: string): void {
 
 function validateMaterial(value: unknown, path: string): void {
   const object = expectObject(value, path);
+  optional(object, "slotOverrides", (slots, slotsPath) => {
+    const entries = Object.entries(expectObject(slots, slotsPath));
+    if (entries.length > 4096) invalid(slotsPath, "材质槽数量超过 4096");
+    for (const [id, override] of entries) {
+      if (!/^gltf:(0|[1-9]\d*)$/.test(id)) invalid(slotsPath, "材质槽身份无效");
+      const slot = expectObject(override, `${slotsPath}.${id}`);
+      if (slot.slotOverrides !== undefined) invalid(slotsPath, "材质槽不能嵌套");
+      validateMaterial(slot, `${slotsPath}.${id}`);
+    }
+  }, path);
   for (const key of [
     "color",
     "emissive",
@@ -226,7 +252,11 @@ function validateMaterial(value: unknown, path: string): void {
     "brightness",
     "contrast",
   ] as const) optional(object, key, expectNumber, path);
-  for (const key of ["wireframe", "doubleSided"] as const) optional(object, key, expectBoolean, path);
+  optional(object, "ior", (value, valuePath) => {
+    expectNumber(value, valuePath);
+    if (typeof value !== "number" || value < 1 || !Number.isFinite(Math.fround(value))) throw new Error(`${valuePath} must be a finite float32 >= 1`);
+  }, path);
+  for (const key of ["wireframe", "doubleSided", "sourceColor", "sourceEmissive"] as const) optional(object, key, expectBoolean, path);
   optional(object, "uvAnimation", (animation, animationPath) => {
     const animationObject = expectObject(animation, animationPath);
     required(animationObject, "enabled", expectBoolean, animationPath);
@@ -349,8 +379,57 @@ function validateRobotToolLoad(value: unknown, path: string): void {
 
 function validatePhysicsBody(value: unknown, path: string): void {
   const object = expectObject(value, path);
-  requiredLiteral(object, "type", ["none", "fixed", "dynamic"], path);
+  requiredLiteral(object, "type", ["none", "fixed", "dynamic", "kinematic"], path);
   for (const key of ["mass", "friction", "restitution"] as const) required(object, key, expectNumber, path);
+  optional(object, "character", validateCharacterController, path);
+}
+
+/** 角色控制器作者参数：角度为弧度，长度单位为米；只做范围与类型把关，不替作者选默认值。 */
+function validateCharacterController(value: unknown, path: string): void {
+  const object = expectObject(value, path);
+  for (const key of Object.keys(object)) {
+    if (!["offset", "maxSlopeClimbAngle", "minSlopeSlideAngle", "autostep", "snapToGround"].includes(key)) {
+      invalid(`${path}.${key}`, "不属于角色控制器参数");
+    }
+  }
+  optional(object, "offset", (offset, offsetPath) => {
+    expectNumber(offset, offsetPath);
+    if ((offset as number) <= 0 || (offset as number) > 10) invalid(offsetPath, "必须大于 0 且不超过 10 米");
+  }, path);
+  for (const key of ["maxSlopeClimbAngle", "minSlopeSlideAngle"] as const) {
+    optional(object, key, (angle, anglePath) => {
+      expectNumber(angle, anglePath);
+      // 0 表示只能走平地，π/2 表示垂直面也算可走；超出即为无意义输入。
+      if ((angle as number) < 0 || (angle as number) > Math.PI / 2) invalid(anglePath, "必须在 0 到 π/2 之间");
+    }, path);
+  }
+  optional(object, "autostep", (autostep, autostepPath) => {
+    const step = expectObject(autostep, autostepPath);
+    required(step, "enabled", expectBoolean, autostepPath);
+    for (const key of Object.keys(step)) {
+      if (!["enabled", "maxHeight", "minWidth", "includeDynamicBodies"].includes(key)) invalid(`${autostepPath}.${key}`, "不属于自动台阶参数");
+    }
+    optional(step, "maxHeight", (height, heightPath) => {
+      expectNumber(height, heightPath);
+      if ((height as number) <= 0 || (height as number) > 10) invalid(heightPath, "必须大于 0 且不超过 10 米");
+    }, autostepPath);
+    optional(step, "minWidth", (width, widthPath) => {
+      expectNumber(width, widthPath);
+      if ((width as number) <= 0 || (width as number) > 10) invalid(widthPath, "必须大于 0 且不超过 10 米");
+    }, autostepPath);
+    optional(step, "includeDynamicBodies", expectBoolean, autostepPath);
+  }, path);
+  optional(object, "snapToGround", (snap, snapPath) => {
+    const snapObject = expectObject(snap, snapPath);
+    required(snapObject, "enabled", expectBoolean, snapPath);
+    for (const key of Object.keys(snapObject)) {
+      if (!["enabled", "distance"].includes(key)) invalid(`${snapPath}.${key}`, "不属于贴地参数");
+    }
+    optional(snapObject, "distance", (distance, distancePath) => {
+      expectNumber(distance, distancePath);
+      if ((distance as number) <= 0 || (distance as number) > 10) invalid(distancePath, "必须大于 0 且不超过 10 米");
+    }, snapPath);
+  }, path);
 }
 
 function validateMeasurement(value: unknown, path: string): void {
@@ -447,6 +526,16 @@ function validateLighting(value: unknown, path: string): void {
   for (const key of ["shadowsEnabled", "reflectionsEnabled", "globalIlluminationEnabled"] as const) optional(object, key, expectBoolean, path);
   optional(object, "globalIlluminationIntensity", expectNumber, path);
   optional(object, "lights", (lights, lightsPath) => expectArray(lights, lightsPath, validateLight), path);
+  optional(object, "lightProfiles", validateLightProfiles, path);
+  const profiles = Array.isArray(object.lightProfiles) ? object.lightProfiles : [];
+  const profileIds = new Set(profiles.map((profile) => expectObject(profile, `${path}.lightProfiles`).profileId));
+  if (profileIds.size !== profiles.length) invalid(`${path}.lightProfiles`, "profileId 不能重复");
+  for (const [index, light] of (Array.isArray(object.lights) ? object.lights : []).entries()) {
+    const ies = expectObject(light, `${path}.lights[${index}]`).ies;
+    if (ies && !profileIds.has(expectObject(ies, `${path}.lights[${index}].ies`).profileId)) {
+      invalid(`${path}.lights[${index}].ies.profileId`, "引用的 IES profileId 不存在");
+    }
+  }
 }
 
 function validateLight(value: unknown, path: string): void {
@@ -460,6 +549,44 @@ function validateLight(value: unknown, path: string): void {
   optional(object, "groundColor", expectString, path);
   for (const key of ["distance", "decay", "angle", "penumbra", "width", "height"] as const) optional(object, key, expectNumber, path);
   optional(object, "castShadow", expectBoolean, path);
+  optional(object, "shadowSoftness", expectNumber, path);
+  if (object.shadowSoftness !== undefined && object.type !== "spot") invalid(`${path}.shadowSoftness`, "局部 PCSS 柔化仅支持聚光灯");
+  if (typeof object.shadowSoftness === "number" && (object.shadowSoftness < 0 || object.shadowSoftness > 1)) invalid(`${path}.shadowSoftness`, "必须在 [0,1] 内");
+  optional(object, "ies", (ies, iesPath) => {
+    if (object.type !== "spot") invalid(iesPath, "IES 仅支持聚光灯");
+    const entry = expectObject(ies, iesPath);
+    required(entry, "profileId", expectString, iesPath);
+    optional(entry, "rotationDeg", expectNumber, iesPath);
+    optional(entry, "scaleFactor", expectNumber, iesPath);
+    if (typeof entry.rotationDeg === "number" && (entry.rotationDeg < 0 || entry.rotationDeg >= 360
+      || Math.abs(entry.rotationDeg * 2 - Math.round(entry.rotationDeg * 2)) > 1e-6)) invalid(`${iesPath}.rotationDeg`, "必须位于 [0,360) 的 0.5° 网格");
+    if (typeof entry.scaleFactor === "number" && (entry.scaleFactor < 0 || entry.scaleFactor > 10)) invalid(`${iesPath}.scaleFactor`, "必须位于 [0,10]");
+  }, path);
+}
+
+function validateLightProfiles(value: unknown, path: string): void {
+  expectArray(value, path, (profile, profilePath) => {
+    const entry = expectObject(profile, profilePath);
+    required(entry, "profileId", expectString, profilePath);
+    requiredLiteral(entry, "format", ["LM-63-1995", "LM-63-2002"], profilePath);
+    requiredLiteral(entry, "horizontalSymmetry", [1, 2, 4], profilePath);
+    required(entry, "totalLumens", expectNumber, profilePath);
+    required(entry, "verticalAngles", (angles, anglesPath) => expectArray(angles, anglesPath, expectNumber), profilePath);
+    required(entry, "candela", (rows, rowsPath) => expectArray(rows, rowsPath,
+      (row, rowPath) => expectArray(row, rowPath, expectNumber)), profilePath);
+  });
+  const profiles = value as unknown[];
+  if (profiles.length > 64) invalid(path, "IES profile 数量超过 64");
+  let cells = 0;
+  for (const [index, profile] of profiles.entries()) {
+    const entry = expectObject(profile, `${path}[${index}]`);
+    const angles = entry.verticalAngles as unknown[];
+    const rows = entry.candela as unknown[][];
+    if (!angles.length || angles.length > 512 || !rows.length || rows.length > 512
+      || rows.some((row) => row.length !== angles.length)) invalid(`${path}[${index}]`, "IES 表尺寸无效");
+    cells += rows.length * angles.length;
+  }
+  if (cells > 1_048_576) invalid(path, "IES profile 总采样预算超过 1048576");
 }
 
 function validateEnvironment(value: unknown, path: string): void {
@@ -484,10 +611,14 @@ function validatePostProcessing(value: unknown, path: string): void {
   const object = expectObject(value, path);
   for (const key of ["enabled", "smaa", "ssao", "bloom"] as const) required(object, key, expectBoolean, path);
   for (const key of ["ssaoIntensity", "bloomStrength", "bloomThreshold"] as const) required(object, key, expectNumber, path);
-  for (const key of ["fxaa", "gtao", "outline", "depthOfField", "vignette", "filmGrain", "afterimage", "colorGrading"] as const) optional(object, key, expectBoolean, path);
-  for (const key of ["gtaoIntensity", "outlineStrength", "focusDistance", "aperture", "maxBlur", "vignetteDarkness", "filmGrainIntensity", "afterimageDamp", "hue", "saturation", "brightness", "contrast"] as const) {
+  for (const key of ["fxaa", "gtao", "screenSpaceReflection", "outline", "depthOfField", "vignette", "filmGrain", "afterimage", "colorGrading"] as const) optional(object, key, expectBoolean, path);
+  for (const key of ["gtaoIntensity", "ssrSteps", "ssrThickness", "ssrMaxDistance", "outlineStrength", "focusDistance", "aperture", "maxBlur", "vignetteDarkness", "filmGrainIntensity", "afterimageDamp", "hue", "saturation", "brightness", "contrast", "temperature", "tint"] as const) {
     optional(object, key, expectNumber, path);
   }
+  if (object.ssrSteps !== undefined && (typeof object.ssrSteps !== "number" || !Number.isInteger(object.ssrSteps)
+    || object.ssrSteps < 8 || object.ssrSteps > 128)) invalid(`${path}.ssrSteps`, "必须为 [8,128] 内的整数");
+  if (typeof object.ssrThickness === "number" && (object.ssrThickness < 0.001 || object.ssrThickness > 0.1)) invalid(`${path}.ssrThickness`, "必须在 [0.001,0.1] 内");
+  if (typeof object.ssrMaxDistance === "number" && (object.ssrMaxDistance < 0.25 || object.ssrMaxDistance > 4)) invalid(`${path}.ssrMaxDistance`, "必须在 [0.25,4] 内");
 }
 
 function validateScenePhysics(value: unknown, path: string): void {
