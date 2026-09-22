@@ -2881,3 +2881,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - Monaco 现有 `checkJs: false` 保持不变；实测现有默认脚本与 SDK fixtures 在 `checkJs=false/true` 均无误报，未扩大普通 JavaScript 的类型检查范围。
 - 证据：B1 聚焦测试 5 文件 **34/34**；Monaco checkJs 探针 **1/1**（真实 fixtures 两种模式均无诊断）。`pnpm --filter web typecheck` 仍被工作树既有 `apps/web/src/delivery/dynamicRuntimePlayback.test.ts:67` 语法错误阻断，非本轮文件。未 push。
 - 未尽边界：本轮未实现 Worker 真机集成测试（Vitest 无 Dedicated Worker/Blob import 环境）；未做性能基准，原因是变更仅为每次日志序列化与静态诊断首匹配，暂无现成 Worker benchmark harness。
+
+### 2026-09-22 Shader S4：SubGraph 依赖清单与编辑器资产合同（ZCode）
+
+- **现状核查**：仓内没有 SubGraph 资产/依赖闭包机制（既有 `shaderAuthoring` 是 DeepSL 文本前端，`shader` 是编译 IR；两者均非可复用子图资产）。
+- 新增 `shaderGraph/subgraph.ts`：`ShaderGraphSubGraphAssetV1` 输入/输出/内嵌 graph/依赖声明；稳定依赖 manifest（按 id 排序、每个 graph SHA-256 hash）；缺依赖与循环依赖 fail-closed。新增 2 项测试。
+- Shader Graph S1–S4 当前 9/9，deep-engine typecheck 通过。未实现递归 lowering/子图端口映射/可视化 SubGraph 节点，保留为后续 UI/Lowering 增量，未复制 Babylon/Unity 代码。未 push。
