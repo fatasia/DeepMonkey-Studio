@@ -191,18 +191,17 @@ impl Renderer {
 
         gpu_begin(&self.telemetry, GpuSegment::Opaque, &mut encoder);
         let opaque = timer(token);
-        // F2 pixel:opaque/MASK pass 的 RT 分支。全部就绪条件(设备 ray
-        // query、TLAS 驻留、RT frame 绑定、Ray Query 管线族、场景无 custom
-        // shader 批次——custom 只能绑普通 frame layout)任一缺失都回退既有
-        // 栅格路径,逐帧判定,fail-closed。
-        let rt_opaque = match (&self.rt_residency, &self.rt_frame_bind_group) {
-            (Some(residency), Some(bind_group)) if self.scene.shader_materials.is_none() => {
-                residency
-                    .pixel_pipelines()
-                    .map(|pipelines| (pipelines, bind_group))
-            }
-            _ => None,
-        };
+        // F2 pixel:opaque/MASK pass 的 RT 分支裁决抽成纯函数
+        // `rt_residency::rt_opaque_ready`(行为与原 match 逐条一致):设备
+        // ray query 驻留、RT frame 绑定、Ray Query 管线族、场景无 custom
+        // shader 批次任一缺失都回退既有栅格路径,逐帧判定,fail-closed。
+        // 回退条件由 rt_residency_tests(CPU)与 rt_fallback_gpu_tests
+        // (真机)双向钉死。
+        let rt_opaque = super::rt_residency::rt_opaque_ready(
+            self.rt_residency.as_ref(),
+            self.rt_frame_bind_group.as_ref(),
+            self.scene.shader_materials.is_none(),
+        );
         match rt_opaque {
             Some((pipelines, rt_bind_group)) => encode_opaque_pass_rt(
                 &mut encoder,

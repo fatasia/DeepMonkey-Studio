@@ -145,7 +145,69 @@ mod tests {
         let feature = wgpu::Features::EXPERIMENTAL_RAY_QUERY;
         assert!(!ray_query_device_ready(feature, wgpu::Features::empty()));
         assert!(!ray_query_device_ready(wgpu::Features::empty(), feature));
+        // 双双缺失(F2 回退切片):真实无 RT 设备上适配器与设备都不带特征,
+        // 能力判定必须 fail-closed 为 false——这是 renderer 侧一切降级决策
+        // (frame_rt layout 不创建、驻留不建、帧循环回退栅格)的源头。
+        assert!(!ray_query_device_ready(wgpu::Features::empty(), wgpu::Features::empty()));
         assert!(ray_query_device_ready(feature, feature));
+    }
+
+    #[test]
+    fn blas_and_tlas_builds_fail_closed_on_device_without_ray_query_feature() {
+        // F2 回退切片的真机降级设备:同一适配器创建一台**不带** ray-query
+        // 特征的 device(本机适配器支持 RT,但该 device 与真实无 RT 设备
+        // 走同一条 `device.features()` 判定路径)。驻留原语必须在触碰任何
+        // 资源之前 fail-closed 返回 MissingFeature,renderer 据此把驻留槽
+        // 保持为空并逐帧回退栅格。
+        let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+        descriptor.backends = wgpu::Backends::DX12 | wgpu::Backends::VULKAN;
+        let instance = wgpu::Instance::new(descriptor);
+        let Some(adapter) = pollster::block_on(instance.request_adapter(&Default::default())).ok()
+        else {
+            return;
+        };
+        let (device, _queue) = pollster::block_on(adapter.request_device(
+            &wgpu::DeviceDescriptor::default(),
+        ))
+        .expect("adapter must create a plain device");
+        assert!(
+            !device
+                .features()
+                .contains(wgpu::Features::EXPERIMENTAL_RAY_QUERY),
+            "premise: the plain device must not carry the ray-query feature"
+        );
+        // 注意:无特征设备上连 BLAS_INPUT usage 的缓冲都无法创建(wgpu
+        // 设备校验直接拒绝——gpu_scene 几何缓冲条件附加 BLAS_INPUT 的依据,
+        // 见 F2 回退切片)。这里用普通 usage 缓冲仅为走到构建入口的特征门:
+        // 门在触碰任何几何之前就拒绝,缓冲内容不会被读。
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("no-ray-query BLAS input vertices"),
+            contents: bytemuck::cast_slice(&[[0.0f32, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("no-ray-query BLAS input indices"),
+            contents: bytemuck::cast_slice(&[0u32, 1, 2]),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        assert!(matches!(
+            build_resident_blas_set(
+                &device,
+                &[ResidentBlasGeometry {
+                    vertex_buffer: &vertex_buffer,
+                    index_buffer: &index_buffer,
+                    vertex_count: 3,
+                    index_count: 3,
+                }],
+            ),
+            Err(HardwareRayError::MissingFeature)
+        ));
+        // TLAS 构建:特征门同样在实例校验之前(传空实例即可验证门本身,
+        // 无特征设备上根本无法创建 Blas 资源)。
+        assert!(matches!(
+            build_tlas_from_blas(&device, &[]),
+            Err(HardwareRayError::MissingFeature)
+        ));
     }
 
     #[test]

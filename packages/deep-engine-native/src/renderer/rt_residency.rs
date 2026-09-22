@@ -341,6 +341,32 @@ impl RtSceneResidency {
     }
 }
 
+/// F2 pixel:opaque pass 的 RT/栅格逐帧裁决(renderer/frame.rs 原 match 抽出
+/// 为纯函数,让回退条件可被单测钉死,防止悄悄放松)。四个就绪条件全部满足
+/// 才返回 `Some((RT 管线族, RT frame 绑定))`;任一缺失返回 None,帧循环回退
+/// 既有栅格路径(fail-closed):
+/// 1. TLAS 驻留存在——设备恢复重建失败、特性缺失、场景被拒(BLEND 整族/
+///    预算超限)时为 None:重建未完成前绝不使用半途状态,也不引用旧实例
+///    残留(设备恢复切片的核心合同);
+/// 2. frame RT 槽绑定存在(与驻留同生共死,`reestablish_rt_residency`
+///    重建前先双双卸下);
+/// 3. 场景无 custom shader 批次(custom 只能绑普通 frame layout,整帧
+///    必须走普通绑定);
+/// 4. RT pixel 管线族创建成功(error scope 捕获到错误时为 None)。
+pub(crate) fn rt_opaque_ready<'a, B>(
+    residency: Option<&'a RtSceneResidency>,
+    rt_frame_bound: Option<&'a B>,
+    has_custom_shader: bool,
+) -> Option<(&'a crate::pipeline::RtMeshPipelines, &'a B)> {
+    let residency = residency?;
+    if has_custom_shader {
+        return None;
+    }
+    let pipelines = residency.pixel_pipelines()?;
+    let bind_group = rt_frame_bound?;
+    Some((pipelines, bind_group))
+}
+
 impl Renderer {
     /// 用当前场景重建 RT 驻留(初始化与场景整体替换共用)。任何失败都
     /// fail-closed:RT 关闭、frame RT 槽卸下、诊断记录原因,绝不阻塞栅格

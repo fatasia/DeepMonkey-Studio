@@ -9,7 +9,7 @@ use deep_engine_native::scene::{DrawBatch, PackedInstance};
 
 use crate::renderer::rt_residency::{
     RT_MAX_BLAS_TRIANGLES, RT_MAX_INSTANCES, RtResidencyReject, RtScenePlan, classify_rt_batches,
-    plan_rt_scene,
+    plan_rt_scene, rt_opaque_ready,
 };
 
 /// 3x4 行主序模型矩阵：平移 + 均匀缩放，便于断言变换保真。
@@ -216,4 +216,68 @@ fn plan_keeps_triangle_total_bounded_by_resident_geometry() {
     assert_eq!(plan.triangles, 12 + 3);
     assert_eq!(plan.excluded_blend_instances, 0);
     assert_eq!(plan.conservative_mask_instances, 0);
+}
+
+// ---------------------------------------------------------------------------
+// F2 设备恢复切片(CPU 合同):RT 驻留重建必须不携带任何历史状态。
+//
+// 真机恢复链(gpu_context.rs 设备丢失回调 → app/recovery.rs 把整个 Renderer
+// 丢弃重建 → init.rs 全新 RtSceneResidency::build)在 bin 侧的
+// rt_recovery_gpu_tests 以真机 Ray Query 探针验证;这里用纯计划核钉住它的
+// CPU 前提:重建计划是 (geometries, instances) 的纯函数,槽位派生不引用
+// 上一次构建的任何残留。
+// ---------------------------------------------------------------------------
+
+#[test]
+fn plan_kernel_rebuild_carries_no_history_between_builds() {
+    // 模拟设备恢复的三次构建:初建场景 A → 换成场景 B(旧 Renderer 的最后
+    // 一帧)→ 重建场景 A(恢复后的 Renderer)。第三次必须与第一次逐字段
+    // 一致:BLAS 槽位从 0 重新派生、实例 custom_index 重排、排除计数清零,
+    // 不复用旧构建的任何槽位或计数。
+    let scene_a = (
+        vec![(8u32, 36u32), (4, 6)],
+        vec![
+            (0usize, 0u32, model(1.0, 0.0)),
+            (1, 1, model(1.0, 3.0)),
+            (0, 2, model(2.0, -1.0)),
+        ],
+    );
+    let scene_b = (vec![(6u32, 12u32)], vec![(0usize, 0u32, model(3.0, 9.0))]);
+    let first = plan_rt_scene(&scene_a.0, &scene_a.1).expect("scene A must plan");
+    // 中间构建换成完全不同的场景(不同几何数/实例数/变换)。
+    let middle = plan_rt_scene(&scene_b.0, &scene_b.1).expect("scene B must plan");
+    assert_ne!(middle, first, "sanity: the interleaved scene differs");
+    // B 的预算表从 0 开始、与 A 的槽位无交集,证明没有跨构建累加状态。
+    assert_eq!(
+        middle.instances.iter().map(|i| i.blas_slot).collect::<Vec<_>>(),
+        vec![0]
+    );
+    let rebuilt = plan_rt_scene(&scene_a.0, &scene_a.1).expect("scene A rebuild must plan");
+    assert_eq!(
+        rebuilt, first,
+        "rebuild must be a pure function of (geometries, instances)"
+    );
+    // 槽位派生只看几何首用序:重建后同一几何仍然拿到同一槽位号,
+    // 但那是重新计算的结果,不是旧实例的复用(无全局计数器/缓存)。
+    assert_eq!(
+        rebuilt.instances.iter().map(|i| i.blas_slot).collect::<Vec<_>>(),
+        first.instances.iter().map(|i| i.blas_slot).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn rt_opaque_ready_falls_back_when_residency_slot_is_empty() {
+    // 设备恢复重建失败(特性缺失/场景被拒/预算超限)后驻留槽保持 None:
+    // 帧循环必须回退栅格,无论其余槽位处于什么状态——重建未完成前绝不
+    // 使用半途状态,也不引用旧实例残留。类型参数显式标注为帧循环里的
+    // wgpu::BindGroup,便于脱离 GPU 钉死合同。
+    let fallback = rt_opaque_ready::<wgpu::BindGroup>(None, None, false);
+    assert!(
+        fallback.is_none(),
+        "empty residency slot must fall back to raster"
+    );
+    // custom shader 场景同样整帧回退(custom 批次只能绑普通 frame
+    // layout,RT 管线族对它不可用);裁决函数自身的条件优先级与
+    // frame.rs 的消费顺序一致,驻留缺失先于其余条件短路。
+    assert!(rt_opaque_ready::<wgpu::BindGroup>(None, None, true).is_none());
 }

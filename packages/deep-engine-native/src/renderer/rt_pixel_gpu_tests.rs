@@ -14,6 +14,18 @@ mod rt_raster_parity_gpu_tests;
 #[path = "probe_gi_gpu_tests.rs"]
 mod probe_gi_gpu_tests;
 
+// F2 设备恢复证据切片:旧驻留整体丢弃后重建自足(Ray Query 探针验证),
+// 同样以子模块挂载,复用本文件的 request_ray_query_device 与 parity 场景。
+#[cfg(test)]
+#[path = "rt_recovery_gpu_tests.rs"]
+mod rt_recovery_gpu_tests;
+
+// F2 回退证据切片:同适配器无 ray-query 特征设备全链降级 + 全 BLEND 场景
+// 驻留拒绝 + rt_opaque_ready 裁决边界,复用 parity 场景与读回助手。
+#[cfg(test)]
+#[path = "rt_fallback_gpu_tests.rs"]
+mod rt_fallback_gpu_tests;
+
 use crate::frame_bindings::{create_frame_layouts, create_native_mesh_rt_shader};
 use crate::gpu_textures::create_material_layout;
 use crate::pipeline::create_rt_mesh_pipelines;

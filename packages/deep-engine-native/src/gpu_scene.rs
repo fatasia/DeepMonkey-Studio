@@ -274,6 +274,21 @@ impl GpuScene {
 
 impl GpuGeometry {
     pub(crate) fn new(device: &wgpu::Device, geometry: &GeometryResource) -> Self {
+        // F2 回退切片修复:wgpu 规定 BLAS_INPUT/TLAS_INPUT buffer usage 必须
+        // 持有 EXPERIMENTAL_RAY_QUERY 特征,无 RT 设备上带该 usage 的缓冲
+        // 创建会被整体拒绝——此前无条件附加 BLAS_INPUT 导致 GpuScene 在
+        // 非 RT 硬件上无法创建,栅格回退分支根本不可达。改为按设备特征
+        // 附加:RT 设备行为逐位不变,无 RT 设备得到纯栅格可用的几何缓冲
+        // (驻留构建本就 fail-closed 拒绝,不需要 BLAS 输入)。
+        let blas_input = device
+            .features()
+            .contains(wgpu::Features::EXPERIMENTAL_RAY_QUERY);
+        let vertex_usage = wgpu::BufferUsages::VERTEX
+            | (blas_input.then_some(wgpu::BufferUsages::BLAS_INPUT))
+                .unwrap_or(wgpu::BufferUsages::empty());
+        let index_usage = wgpu::BufferUsages::INDEX
+            | (blas_input.then_some(wgpu::BufferUsages::BLAS_INPUT))
+                .unwrap_or(wgpu::BufferUsages::empty());
         let vertex_count = geometry.vertices.len() / 6;
         let mut vertices = Vec::<[f32; GEOMETRY_VERTEX_FLOATS]>::with_capacity(vertex_count);
         let mut tangents = geometry
@@ -317,7 +332,7 @@ impl GpuGeometry {
             vertex_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Deep Engine native geometry vertices"),
                 contents: cast_slice(&vertices),
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::BLAS_INPUT,
+                usage: vertex_usage,
             }),
             tangent_buffer: tangents.map(|tangents| {
                 device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -330,7 +345,7 @@ impl GpuGeometry {
             index_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Deep Engine native geometry indices"),
                 contents: cast_slice(&geometry.indices),
-                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::BLAS_INPUT,
+                usage: index_usage,
             }),
             index_count: geometry.indices.len() as u32,
             vertex_count: vertex_count as u32,

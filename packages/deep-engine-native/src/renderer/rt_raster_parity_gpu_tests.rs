@@ -51,7 +51,9 @@ const FRAME_BACKGROUND_ROW: usize = 9;
 /// 默认方向光 ≈ normalize([0.55,0.8,0.35]),箱体投影落在相机(yaw=0.55,
 /// distance=4)视野内的地面上。全部 OPAQUE、单面、无纹理:两条路径的
 /// BRDF 输入逐位一致,差异只剩阴影可见性来源。
-fn parity_packet() -> RenderPacket {
+/// F2 后续切片(rt_recovery_gpu_tests / rt_fallback_gpu_tests)复用同一
+/// 场景,保证设备恢复/回退证据与像素对拍基准可互相引用。
+pub(crate) fn parity_packet() -> RenderPacket {
     let mut vertices: Vec<f32> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
     // 每面 4 顶点(法线为面法线),索引模板 [0,1,2, 0,2,3];四角按外向
@@ -114,7 +116,8 @@ fn parity_packet() -> RenderPacket {
 }
 
 /// 提交完成后把 RGBA16F 读回缓冲 map 出原始字节(256*8 行距恰 256 对齐)。
-fn map_readback(device: &wgpu::Device, buffer: &wgpu::Buffer) -> Vec<u8> {
+/// rt_fallback_gpu_tests 的跨设备栅格对拍复用同一读回助手。
+pub(crate) fn map_readback(device: &wgpu::Device, buffer: &wgpu::Buffer) -> Vec<u8> {
     let (sender, receiver) = std::sync::mpsc::channel();
     buffer.map_async(wgpu::MapMode::Read, .., move |result| sender.send(result).unwrap());
     device
@@ -132,7 +135,8 @@ fn map_readback(device: &wgpu::Device, buffer: &wgpu::Buffer) -> Vec<u8> {
     bytes
 }
 
-fn decode_hdr(bytes: &[u8]) -> Vec<[f32; 3]> {
+/// RGBA16F 半浮点解码;rt_fallback_gpu_tests 复用。
+pub(crate) fn decode_hdr(bytes: &[u8]) -> Vec<[f32; 3]> {
     bytes
         .chunks_exact(8)
         .map(|pixel| {
