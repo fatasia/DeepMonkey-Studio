@@ -3041,3 +3041,10 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - Native 首个嵌入示例 `examples/runtime_playback_sample.rs`：解析运行包→校验动态通道→按时间采样动画输出 TRS；cargo check --example 通过。语义与 Web `dynamicRuntimePlayback.ts` canonical 帧一致。
 - SDK 文档 `apps/web/src/docs/deep-engine-sdk.md` 追加本轮新能力：DDGI 探针 GI（真机证据路径）、GPU 粒子（真机证据路径）、Cluster LOD 间接执行（真机像素对拍路径）、静态光照描述符、WGSL-first 作者图合同。全部引用真实命令与产物路径。
+
+### 2026-09-23 满载冲刺自检（主线程+双子智能体）
+
+- 已交付并提交：F2 RT 像素消费全链（RT fragment shader/pipeline族/opaque分支/回退，bin 247/247）；F3 Native probe storage/bind 合同（c0b163c）+ Web/Native ABI golden（b508c5b）+ 最近探针对拍基准；B2-a 可见性轨道全链（d6abafe 合同/runtime/下译/播放 + a0a3852 UI编辑 + e5e6a21 查看器消费 + f1b993b Native 兼容修复）；B6 真实消费校验（df49f32）+ Native loader UV/语义/尺寸/hash 校验（50c03da）；F6 Native 示例与 SDK 文档（d574c76、4a00a1a）。
+- 门禁：deep-engine 全量 3780/3780；Native lib 511/511；Native bin 247/247（既有 dashboard_video_gpu 失败已消失）；Web delivery 746/746；可见性/编译/播放聚焦 36/36、9/9、54/54、47/47。
+- 子智能体状态：F2 像素对拍、F3 GI 合成两 lane 运行中；A1 真机 draw 证据 agent 已提交 2716f4a（真机 draw PASSED）；B6 消费验证 agent 已完成（确认 builder 已接线）。
+- 未验证边界如实声明：F2 同场景 RT/栅格像素对拍与设备恢复待真机窗口验收；F3 producer/GI 混合未做；A4 粒子仅离屏 128×128 证据，非产品构图；B5 多选 select 需跨 dashboardFrozenFilter 编译链（待独立切片）；B2 曲线编辑器/导出、B1 断点/沙箱加固待排。
