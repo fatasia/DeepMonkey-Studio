@@ -66,11 +66,15 @@ function compileAnimationRuntime(scene: SceneSnapshot): DynamicAnimationRuntime 
     });
     const rotation = sorted.map(frame => { const q = quat(frame.transform.rotation.x, frame.transform.rotation.y, frame.transform.rotation.z); return { timeMs: Math.round(frame.time * 1000), value: [0, 0, 0, q[0], q[1], q[2], q[3]] as const, ...transition(frame) }; });
     const scale = sorted.map(frame => ({ timeMs: Math.round(frame.time * 1000), value: [frame.transform.scale.x, frame.transform.scale.y, frame.transform.scale.z, 0, 0, 0, 1] as const, ...transition(frame) }));
-    return [
+    const visibleTrack = sorted.filter(frame => frame.visibility !== undefined)
+      .map(frame => ({ timeMs: Math.round(frame.time * 1000), value: [frame.visibility ? 1 : 0, 0, 0, 0, 0, 0, 1] as const }));
+    const objectTracks = [
       { targetId: modelId, property: "translation" as const, keyframes: translation.map(({ timeMs, value }) => ({ timeMs, value })) },
       { targetId: modelId, property: "rotation" as const, keyframes: rotation },
       { targetId: modelId, property: "scale" as const, keyframes: scale },
+      ...(visibleTrack.length ? [{ targetId: modelId, property: "object-visible" as const, keyframes: visibleTrack }] : []),
     ];
+    return objectTracks;
   });
   const cameraFrames = [...animation.camera].sort((a, b) => a.time - b.time);
   if (cameraFrames.length) {

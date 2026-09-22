@@ -15,6 +15,8 @@ export interface DynamicRuntimeTransform {
 export interface DynamicRuntimeFrame {
   readonly timeMs: number;
   readonly transforms: Readonly<Record<string, DynamicRuntimeTransform>>;
+  /** B2-a 可见性轨道采样结果；仅有显式关键帧的对象。 */
+  readonly visibleTargets: readonly { readonly targetId: string; readonly visible: boolean }[];
   readonly camera?: { readonly position: readonly [number, number, number]; readonly target: readonly [number, number, number] };
   readonly replayEvents: readonly { readonly revision: number; readonly timeMs: number; readonly payload: unknown }[];
   readonly interaction?: DynamicSceneRuntime["interaction"];
@@ -25,6 +27,8 @@ export interface DynamicRuntimeFrameSink {
   applyCamera?(camera: NonNullable<DynamicRuntimeFrame["camera"]>): void;
   applyReplayEvent?(channel: string, event: { readonly revision: number; readonly timeMs: number; readonly payload: unknown }): void;
   applyInteraction?(interaction: NonNullable<DynamicSceneRuntime["interaction"]>): void;
+  /** B2-a 可见性轨道：缺省宿主未接时静默跳过，不伪装已应用。 */
+  applyVisibility?(targetId: string, visible: boolean): void;
 }
 
 function lerp(a: number, b: number, amount: number): number { return a + (b - a) * amount; }
@@ -97,6 +101,7 @@ export function sampleDynamicRuntimePackage(runtimePackage: DeepRuntimePackage, 
     const value = sampleTrack(track, clamped);
     if (track.property === "camera-position") { cameraPosition = [value[0], value[1], value[2]]; continue; }
     if (track.property === "camera-target") { cameraTarget = [value[0], value[1], value[2]]; continue; }
+    if (track.property === "object-visible") continue;
     const current = transforms[track.targetId] ?? {};
     transforms[track.targetId] = track.property === "translation"
       ? { ...current, translation: [value[0], value[1], value[2]] }
@@ -110,6 +115,8 @@ export function sampleDynamicRuntimePackage(runtimePackage: DeepRuntimePackage, 
   return {
     timeMs: clamped,
     transforms,
+    visibleTargets: (runtime.animation?.tracks ?? []).filter(track => track.property === "object-visible")
+      .map(track => ({ targetId: track.targetId, visible: sampleTrack(track, clamped)[0] > 0.5 })),
     ...(cameraPosition && cameraTarget ? { camera: { position: cameraPosition, target: cameraTarget } } : {}),
     replayEvents: (runtime.dataReplay?.events ?? []).filter((event) => event.timeMs <= clamped),
     ...(runtime.interaction ? { interaction: runtime.interaction } : {}),
@@ -120,6 +127,7 @@ export function sampleDynamicRuntimePackage(runtimePackage: DeepRuntimePackage, 
 export function applyDynamicRuntimeFrame(runtimePackage: DeepRuntimePackage, timeMs: number, sink: DynamicRuntimeFrameSink): DynamicRuntimeFrame {
   const frame = sampleDynamicRuntimePackage(runtimePackage, timeMs);
   for (const [targetId, transform] of Object.entries(frame.transforms)) sink.applyTransform(targetId, transform);
+  if (sink.applyVisibility) for (const target of frame.visibleTargets) sink.applyVisibility(target.targetId, target.visible);
   if (frame.camera && sink.applyCamera) sink.applyCamera(frame.camera);
   const id = runtimePackage.entrypoints.dynamicRuntime!;
   const parsed = validateDynamicSceneRuntime(runtimePackage.payloads[id]);

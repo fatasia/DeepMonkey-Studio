@@ -2989,3 +2989,10 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 未完成且明确保留：Native probe volume 纹理、binding、producer、PBR GI 混合、动态更新、设备恢复；不能把 ABI 对拍称为 Native GI 画面消费。F2 RT 像素消费同样仍阻断（无正式 RT fragment pipeline/pixel test）。
 
 - 2026-09-22 F3 Native probe storage 最小切片：新增 renderer-owned 96B probe storage/bind 合同；空场景与旧包不分配，记录校验/预算 fail-closed。尚未接 shader/producer；cargo test/check 被仓库既有 runtime_package 编译错误阻断，未提交。
+
+### 2026-09-23 B2-a 切片：对象可见性轨道全链（ZCode）
+
+- 现状核查：作者 ModelKeyframe 无 visibility，runtime DynamicAnimationProperty 无 object-visible，播放端无消费——真实缺口确认，不重复已有 transform/相机轨道。
+- 实现：合同 `ModelKeyframe.visibility?`；runtime 新增 `object-visible` 属性通道（7 元组首分量 0/1，0.5 阈值）并解析校验；`compileSceneRuntimePackage` 仅在存在显式可见关键帧时下译该轨道（不伪造默认轨道）；`sampleDynamicRuntimePackage` 输出 `visibleTargets`；`applyDynamicRuntimeFrame` 经可选 `applyVisibility` sink 应用，缺省宿主静默跳过（不伪装已应用）。
+- 证据：新增可见性轨道测试 2 项 + 既有 playback/compile/viewer 回归，合计 **36/36**；contracts/deep-engine/apps-web 三包 typecheck 通过。step/transition 语义由既有 dynamicTransitionAmount 承载。
+- 边界：时间轴面板 UI 增加可见性关键帧编辑、Native 端 object-visible 消费仍待后续切片；本切片只完成合同→下译→Web 播放真实消费链。未 push。

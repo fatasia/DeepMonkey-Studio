@@ -541,6 +541,8 @@ export interface ModelKeyframe {
   transition?: KeyframeTransition;
   /** Optional imported GLTF/FBX animation clip state recorded on the same object track. */
   animation?: ModelAnimationKeyframeState;
+  /** B2-a 可见性轨道：该关键帧起对象可见性；缺省保持上一帧状态。 */
+  visibility?: boolean;
 }
 
 export interface ModelAnimationKeyframeState {

@@ -17,7 +17,7 @@ const MAX_COLLIDER_INSTANCES = 65_536;
 export type DynamicAnimationValue = readonly [number, number, number, number, number, number, number];
 export type DynamicAnimationTransition = "linear" | "smooth" | "ease-in" | "ease-out" | "step";
 export interface DynamicAnimationKeyframe { readonly timeMs: number; readonly value: DynamicAnimationValue; readonly transition?: DynamicAnimationTransition }
-export type DynamicAnimationProperty = "translation" | "rotation" | "scale" | "camera-position" | "camera-target";
+export type DynamicAnimationProperty = "translation" | "rotation" | "scale" | "camera-position" | "camera-target" | "object-visible";
 export interface DynamicAnimationTrack { readonly targetId: string; readonly property: DynamicAnimationProperty; readonly keyframes: readonly DynamicAnimationKeyframe[] }
 export interface DynamicAnimationRuntime { readonly schema: "deep-engine.dynamic-animation"; readonly schemaVersion: 1; readonly durationMs: number; readonly autoplay?: boolean; readonly loop?: boolean; readonly tracks: readonly DynamicAnimationTrack[] }
 export interface DynamicDataReplayEvent { readonly revision: number; readonly timeMs: number; readonly payload: RuntimeJson }
@@ -96,7 +96,7 @@ function parseAnimation(value: unknown, path: string): DynamicAnimationRuntime {
     const trackPath = `${path}.tracks[${index}]`, track = record(item, trackPath);
     fields(track, ["targetId", "property", "keyframes"], [], trackPath);
     const targetId = resourceId(track.targetId, `${trackPath}.targetId`);
-    requireValue(["translation", "rotation", "scale", "camera-position", "camera-target"].includes(String(track.property)), `${trackPath}.property`, "Unsupported animation property.");
+    requireValue(["translation", "rotation", "scale", "camera-position", "camera-target", "object-visible"].includes(String(track.property)), `${trackPath}.property`, "Unsupported animation property.");
     const keyframes = array(track.keyframes, `${trackPath}.keyframes`, MAX_KEYFRAMES).map((frame, frameIndex) => {
       const framePath = `${trackPath}.keyframes[${frameIndex}]`, item = record(frame, framePath);
       fields(item, ["timeMs", "value"], ["transition"], framePath);
