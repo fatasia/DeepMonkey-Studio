@@ -3393,3 +3393,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - **F3 探针网格烘焙编排服务验收通过**（2907cb3f+8d262faf）：纯函数层（planProbeGridCapture/probeGridReadbackLayout/decodeProbeGridCapture/aggregateProbeGridBake——validity=捕获覆盖 alpha 不虚构、越界/重复 fail loud、查表与供给顺序无关确定性）+ GPU 编排层（复用 encodeSourceRadiance 一次 dispatch 全网格、packNativeProbeGridRecords 同源校验对账、溢出哨兵拒绝）。**真机 gate TRUE 一次通过**：8/8 探针覆盖、逐 cell GPU/CPU 对拍最差 2.33e-4（f16 容差 1e-3）、两次独立 bake JSON 逐位一致。门禁：3935/0+三 tsconfig 0+node --test 27/0+purity gate 过。主线程复跑 15/15。边界：捕获纹理无距离通道（meanDistance=0）、UI 穿透未做（已派下一切片）。
 - **满载补位**：空闲代理派 F3 烘焙 UI 与发布穿透（面板动作+状态承载+prepareNativeSceneClientPayload 透传，端到端 UI→包内字段）；V1 runner 代理在跑。
+
+### 2026-09-23 30 分钟自检（第二十五轮）：V3 现状核对
+
+- **V3 Unity WebGL 插件现状**：基础链已存在——apps/web/src/unityBridge.ts + public/unity-bridge.js + apps/web/scripts/onlineFlowUnityRuntime.mjs，产品形态=托管 Unity Web Build ZIP（iframe + Unity JS/WASM Player），台账 2026-09-12 实测 Unity 2022.3/6000.0 WebGL；`pnpm test:unity-bridge` 3/3 曾于 0913 通过（修复 tgz 与插件源码清单漂移后）。Unity 6.6 WebGPU backend 标为"架构可兼容待实测"（本机无该构建、manifest 未记录 graphics API）。`.unitypackage`/UPM 路线已冻结为隔离 Unity Editor exporter（ASSET-00..07 合同）。
+- **V3 精确剩余**：用本机 Unity（用户已确认可用）真实导出一个 WebGL Build → 走 bridge 在 Deep Web 端到端验证加载/材质/输入/资源/发布五项；Native 侧维持明确排除（handoff 规定，不转伪兼容入口）。执行需要 Unity 构建时长，列为下一子任务（可派代理：先核 unity-bridge 合同与测试现状，再跑构建+托管+五项验证，能验几项验几项并如实记录）。
+- 子代理在跑：V1 runner、F3 烘焙 UI 穿透。
