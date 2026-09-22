@@ -3048,3 +3048,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 门禁：deep-engine 全量 3780/3780；Native lib 511/511；Native bin 247/247（既有 dashboard_video_gpu 失败已消失）；Web delivery 746/746；可见性/编译/播放聚焦 36/36、9/9、54/54、47/47。
 - 子智能体状态：F2 像素对拍、F3 GI 合成两 lane 运行中；A1 真机 draw 证据 agent 已提交 2716f4a（真机 draw PASSED）；B6 消费验证 agent 已完成（确认 builder 已接线）。
 - 未验证边界如实声明：F2 同场景 RT/栅格像素对拍与设备恢复待真机窗口验收；F3 producer/GI 混合未做；A4 粒子仅离屏 128×128 证据，非产品构图；B5 多选 select 需跨 dashboardFrozenFilter 编译链（待独立切片）；B2 曲线编辑器/导出、B1 断点/沙箱加固待排。
+
+### 2026-09-23 30 分钟自检：满载执行确认
+
+- 子智能体 1（F2 RT/栅格像素对拍）：运行中，产出 probe_gi_storage.rs +47 行与 rt_pixel_gpu_tests 修改，未返回；不触碰。
+- 子智能体 2（F3 GI 合成）：运行中，同一批文件有实时改动；不触碰。
+- 主线程本轮聚焦门禁：Shader Preview LKG/B6 descriptor/A1 indirect executor/A4 particle pass/粒子 DCIR/probe ABI golden/采样 **51/51**；deep-engine typecheck 通过。
+- 已核对文档：交接 F 段与能力扩展计划与台账一致；F7 排除不变。
+- 30 分钟自检 automation 已按用户指令更新为 30 分钟 recurring 并启用。
+- 下一动作：两 lane 返回后立即验证、按逐文件纪律提交；若失败按精确阻断转主线程补齐。未 push、未 reset/clean/checkout。
