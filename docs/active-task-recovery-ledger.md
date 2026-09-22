@@ -3233,3 +3233,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **I6 文档中心同步**（主线程）：deep-engine-sdk.md 补三节——F3 探针网格 Native 消费链（打包/发布/消费/边界四段，全部以已提交代码与证据路径为准）、B3 物理调试视图、B2 播放区间发布语义；docsCatalog 8/8 过。
 - **F6 仓外独立消费示例验收通过**（919f9468）：复用既有 gate 打包 lib（tarball 私有性/sha256 断言保留），Node 例（validateDynamicSceneRuntime + packNativeProbeGridRecords 真实执行，主线程复跑输出 ALL-OK）+ Browser 例（headless Chrome 加载断言+截图）；离线 npm 安装链带断网探针（registry 127.0.0.1:9）零错误。证据 test-output/f6-standalone-20260923/（status=passed）。边界：浏览器侧未做真 WebGPU 渲染（由既有 gate 覆盖）；F6 剩余=插件启停/宿主入口/interaction 拆分。
 - **满载补位**：子代理②派 F3 Native 探针网格多层级联（头协议扩展+Rust 多层 decode/CPU 混合对拍+WGSL 细粗两层混合对齐 Web smoothstep 1.5 格+打包器多层输入；单层兼容逐位不变）；子代理① V4 Babylon harness 在跑。
+
+### 2026-09-23 30 分钟自检（第十一轮）：I3 现状核对
+
+- HEAD=b755b1e3；子代理①（V4 Babylon harness）与②（F3 多层级联，probe_gi_grid/storage/init 三文件在途）均在跑。
+- **I3 初核**：Web 侧 first/third-person 导航完整（viewerEngineNavigationTools.ts 531 行：三模式切换、avatar、pointer lock）；**精确降级语义已实现有据**——resolveNativeCameraCompatibility 把 avatar 渲染与 ground-solver（stepHeight/maxSlopeAngle）判为 Web-only，Native 回退 orbit 并经 nativeCameraFallback 进兼容报告，符合 handoff"不把 orbit 回退包装成 first/third person 完成"。围栏/道路：parametricFenceGeometry + industrialPrefabFence 测试、道路 prefab 已入库。待深入核对：贴地/样条/道路连接/碰撞/坡度边界/固定 seed 的完备度清单。
+- 下轮：验收 F3 多层与 Babylon 产出；I3 完备度清单核对。
