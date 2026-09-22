@@ -2,7 +2,8 @@ import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { planIrradianceProbeClipmap, type ProbeClipmapLevel, type ProbeVector3 } from "./probeClipmapPlan.js";
 import { packIrradianceProbeRecord, probeClipmapSamplingBudget,
-  sampleIrradianceProbeClipmap, type IrradianceProbeRecord } from "./probeClipmapSampling.js";
+  sampleIrradianceProbeClipmap, sampleNearestProbeIrradiance,
+  type IrradianceProbeRecord } from "./probeClipmapSampling.js";
 import { DEEP_GI_LEVEL_METADATA_BINDING, DEEP_GI_MAX_PROBE_FETCHES, DEEP_GI_PROBE_STORAGE_BINDING,
   PROBE_CLIPMAP_SAMPLING_WGSL } from "./probeClipmapSamplingWgsl.js";
 
@@ -133,5 +134,27 @@ describe("GI Lite probe clipmap sampling", () => {
     const result = spawnSync(process.env.DEEP_SHADER_NAGA_BIN!,
       ["--stdin-file-path", "deep-gi-probe-sampling.wgsl", "--input-kind", "wgsl"], { input: code, encoding: "utf8" });
     expect(result.status, result.stderr).toBe(0);
+  });
+});
+
+describe("nearest probe irradiance (F3 Native GI parity baseline)", () => {
+  const fine = level(0, [0, 0, 0], 1, [2, 2, 2]);
+  const records = Array.from({ length: 8 }, (_, corner) => record([
+    corner & 1, (corner >> 1) & 1, (corner >> 2) & 1,
+  ]));
+  it("returns the irradiance of the rounded nearest cell", () => {
+    const value = sampleNearestProbeIrradiance({ worldPosition: [0.4, 0.6, 0.4], worldNormal: [0, 1, 0],
+      levels: [fine], records });
+    expect(value).toEqual([0, 1, 0]);
+  });
+  it("returns undefined outside every level", () => {
+    expect(sampleNearestProbeIrradiance({ worldPosition: [50, 50, 50], worldNormal: [0, 1, 0],
+      levels: [fine], records })).toBeUndefined();
+  });
+  it("returns undefined when the nearest record is invalid", () => {
+    const sparse = records.map((entry, index) => index === 0 ? undefined : entry);
+    const value = sampleNearestProbeIrradiance({ worldPosition: [0.1, 0.1, 0.1], worldNormal: [0, 1, 0],
+      levels: [fine], records: sparse });
+    expect(value).toBeUndefined();
   });
 });

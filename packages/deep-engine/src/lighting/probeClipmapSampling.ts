@@ -193,3 +193,23 @@ function finite(value: unknown, path: string, minimum: number, maximum: number):
   return value;
 }
 function clamp(value: number, minimum: number, maximum: number): number { return Math.min(maximum, Math.max(minimum, value)); }
+
+/**
+ * 最近探针采样（F3 Native GI 对拍基准）：返回包含 worldPosition 的层内最近探针
+ * （按插值坐标四舍五入）的 irradiance。Native GI 合成的最小语义与此一致；
+ * 三线性/法线权重的完整采样仍以 sampleIrradianceProbeClipmap 为准。
+ */
+export function sampleNearestProbeIrradiance(request: ProbeClipmapSampleRequest): ProbeVector3 | undefined {
+  const position = request.worldPosition;
+  const levels = request.levels;
+  const selected = levels.findIndex(level => contains(level, position));
+  if (selected < 0) return undefined;
+  const level = levels[selected]!;
+  const coordinate = position.map((value, axis) => (value - level.origin[axis]!) / level.spacing);
+  const cell = coordinate.map((value, axis) =>
+    Math.min(level.gridSize[axis]! - 1, Math.max(0, Math.round(value))));
+  const linear = (cell[2]! * level.gridSize[1]! + cell[1]!) * level.gridSize[0]! + cell[0]!;
+  const record = request.records[linear];
+  if (!record || record.validity <= 0) return undefined;
+  return record.irradiance;
+}
