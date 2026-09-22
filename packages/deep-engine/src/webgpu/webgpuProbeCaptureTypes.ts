@@ -4,7 +4,7 @@ import type { ProbeClipmapPlan, ProbeUpdate, ProbeVector3 } from "../lighting/pr
 import { WEBGPU_PROBE_CAPTURE_WORKGROUP } from "./webgpuProbeCaptureWgsl.js";
 
 export const WEBGPU_PROBE_VOLUME_FORMAT = "rgba16float" as const satisfies GPUTextureFormat;
-export const WEBGPU_PROBE_UNIFORM_BYTES = 32;
+export const WEBGPU_PROBE_UNIFORM_BYTES = 48;
 
 export interface WebGpuProbeRadianceContext {
   readonly encoder: GPUCommandEncoder;
@@ -20,6 +20,12 @@ export interface WebGpuProbeCaptureOptions {
   readonly fallbackRadiance?: ProbeVector3;
   readonly maxTransientBytes?: number;
   readonly encodeSourceRadiance?: WebGpuProbeRadianceEncoder;
+  /** Previous-frame weight for scheduler-classified dynamic probes. */
+  readonly dynamicIrradianceHysteresis?: number;
+  /** F1 slice-3: max per-channel frame-to-frame change relative to history; 0 (default) disables. */
+  readonly energyClamp?: number;
+  /** F1 slice-3: bounded feedback weight for non-dynamic probes; 0 (default) keeps them fresh-only. */
+  readonly staticIrradianceHysteresis?: number;
 }
 export interface WebGpuProbeCaptureSubmission {
   readonly commandBuffer: GPUCommandBuffer;
@@ -74,6 +80,31 @@ export function validateProbeRadiance(value: ProbeVector3): ProbeVector3 {
     throw new RangeError("fallbackRadiance must contain three finite positive half-float channels.");
   }
   return Object.freeze([...value]) as unknown as ProbeVector3;
+}
+export function validateProbeHysteresis(value: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value >= 1) {
+    throw new RangeError("dynamicIrradianceHysteresis must be in [0, 1).");
+  }
+  return value;
+}
+export function validateProbeEnergyClamp(value: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new RangeError("energyClamp must be a non-negative finite number.");
+  }
+  return value;
+}
+export function packProbeCaptureUniform(plan: ProbeClipmapPlan, fallback: ProbeVector3,
+  dynamicHysteresis: number, hasHistory: boolean, energyClamp = 0, staticHysteresis = 0): ArrayBuffer {
+  const data = new ArrayBuffer(WEBGPU_PROBE_UNIFORM_BYTES);
+  new Uint32Array(data).set([plan.updates.length, plan.profile.gridSize[2], plan.profile.levelCount]);
+  const floats = new Float32Array(data); floats[3] = hasHistory ? dynamicHysteresis : 0;
+  floats.set([...fallback, 1], 4);
+  // F1 slice-3: bounded history feedback. energyClamp 0 disables the frame-to-frame energy
+  // clamp; staticHysteresis 0 keeps static probes purely freshly filtered (both bit-exact
+  // with the previous contract when left at their defaults).
+  floats[8] = energyClamp;
+  floats[9] = hasHistory ? staticHysteresis : 0;
+  return data;
 }
 export function positiveProbeInteger(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value < 1) throw new RangeError(`${name} must be a positive integer.`);

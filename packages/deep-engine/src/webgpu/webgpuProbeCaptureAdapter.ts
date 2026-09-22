@@ -14,8 +14,10 @@ import {
 } from "./webgpuProbeCaptureWgsl.js";
 import {
   assertProbeUpdate, positiveProbeInteger, probeAbortError, probeMipSize,
+  packProbeCaptureUniform, validateProbeEnergyClamp,
   probeSampledTextureLayout, probeStorageLayout, probeStorageTextureLayout, probeUniformLayout,
-  validateProbeRadiance, validateProbeVolume, WEBGPU_PROBE_UNIFORM_BYTES, WEBGPU_PROBE_VOLUME_FORMAT,
+  validateProbeHysteresis, validateProbeRadiance, validateProbeVolume,
+  WEBGPU_PROBE_UNIFORM_BYTES, WEBGPU_PROBE_VOLUME_FORMAT,
   type WebGpuProbeCaptureOptions, type WebGpuProbeCaptureSubmission,
   type WebGpuProbeSamplingBinding,
 } from "./webgpuProbeCaptureTypes.js";
@@ -38,7 +40,6 @@ interface TransactionState {
   settled: boolean;
 }
 interface CommittedVolume { readonly volume: ProbeVolume; readonly metadata: GPUBuffer }
-
 /** Concrete double-buffered WebGPU capture/filter/mip adapter for the probe scheduler. */
 export class WebGpuProbeCaptureAdapter implements ProbeCaptureAdapter<
   WebGpuProbeCaptureSubmission, WebGpuProbeSamplingBinding> {
@@ -50,6 +51,9 @@ export class WebGpuProbeCaptureAdapter implements ProbeCaptureAdapter<
   private readonly sampler: GPUSampler;
   private readonly fallback: ProbeVector3;
   private readonly maxTransientBytes: number;
+  private readonly dynamicHysteresis: number;
+  private readonly energyClamp: number;
+  private readonly staticHysteresis: number;
   private readonly pending = new Set<TransactionState>();
   private readonly submissionStates = new WeakMap<WebGpuProbeCaptureSubmission, TransactionState>();
   private readonly pool: WebGpuProbeCapturePool;
@@ -63,6 +67,9 @@ export class WebGpuProbeCaptureAdapter implements ProbeCaptureAdapter<
     if (session.state !== "ready") throw new Error("GPU session is not ready for probe capture.");
     if (!/^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$/.test(deviceEpoch)) throw new TypeError("Invalid probe capture epoch.");
     this.deviceEpoch = deviceEpoch; this.fallback = validateProbeRadiance(options.fallbackRadiance ?? [0, 0, 0]);
+    this.dynamicHysteresis = validateProbeHysteresis(options.dynamicIrradianceHysteresis ?? 0.85);
+    this.energyClamp = validateProbeEnergyClamp(options.energyClamp ?? 0);
+    this.staticHysteresis = validateProbeHysteresis(options.staticIrradianceHysteresis ?? 0);
     this.maxTransientBytes = positiveProbeInteger(options.maxTransientBytes ?? 32 * 1024 * 1024, "maxTransientBytes");
     this.pool = new WebGpuProbeCapturePool(session);
     const device = session.device, module = device.createShaderModule({
@@ -72,6 +79,7 @@ export class WebGpuProbeCaptureAdapter implements ProbeCaptureAdapter<
     ] });
     this.filterLayout = device.createBindGroupLayout({ label: "Deep GI probe filter layout", entries: [
       probeStorageLayout(0), probeUniformLayout(1), probeSampledTextureLayout(3), probeStorageTextureLayout(4),
+      probeSampledTextureLayout(7),
     ] });
     this.mipLayout = device.createBindGroupLayout({ label: "Deep GI probe mip layout", entries: [
       probeSampledTextureLayout(5), probeStorageTextureLayout(6),
@@ -92,9 +100,8 @@ export class WebGpuProbeCaptureAdapter implements ProbeCaptureAdapter<
     void device.lost.then(() => this.dispose(), () => this.dispose()).catch(() => undefined);
   }
 
-  get current(): WebGpuProbeSamplingBinding | undefined {
-    return !this.disposed && this.session.state === "ready" ? this.binding : undefined;
-  }
+  get current(): WebGpuProbeSamplingBinding | undefined { return !this.disposed
+    && this.session.state === "ready" ? this.binding : undefined; }
 
   begin(context: ProbeCaptureBeginContext): ProbeCaptureTransaction<
     WebGpuProbeCaptureSubmission, WebGpuProbeSamplingBinding> {
@@ -112,9 +119,14 @@ export class WebGpuProbeCaptureAdapter implements ProbeCaptureAdapter<
           GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
         updateList = this.pool.takeBuffer("Deep GI private probe updates", context.plan.profile.updateListBytes,
           GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-        this.writeUniform(uniformBuffer, context.plan);
+        const hasHistory = this.committed?.volume.key === dimensions.key
+          && context.publication?.invalidation === "none";
+        this.session.device.queue.writeBuffer(uniformBuffer, 0,
+          packProbeCaptureUniform(context.plan, this.fallback, this.dynamicHysteresis, hasHistory,
+            this.energyClamp, this.staticHysteresis));
         this.session.device.queue.writeBuffer(metadata, 0, packTextureLevels(context.plan));
-        this.session.device.queue.writeBuffer(updateList, 0, packProbeUpdates(context.plan.updates));
+        this.session.device.queue.writeBuffer(updateList, 0, packProbeUpdates(context.plan.updates,
+          context.publication?.dynamicUpdateIndices));
         return { capture, output, uniform: uniformBuffer, metadata, updateList };
       } catch (error) {
         if (capture) this.pool.recycleVolume(capture);
@@ -219,10 +231,13 @@ export class WebGpuProbeCaptureAdapter implements ProbeCaptureAdapter<
         { binding: 2, resource: state.capture.levels[0]! }] });
   }
   private filterBinding(state: TransactionState): GPUBindGroup {
+    const history = this.committed?.volume.key === state.output.key
+      && state.context.publication?.invalidation === "none" ? this.committed.volume : state.capture;
     return this.session.device.createBindGroup({ label: "Deep GI filter bindings", layout: this.filterLayout,
       entries: [{ binding: 0, resource: { buffer: state.updateList } },
         { binding: 1, resource: { buffer: state.uniform, size: WEBGPU_PROBE_UNIFORM_BYTES } },
-        { binding: 3, resource: state.capture.levels[0]! }, { binding: 4, resource: state.output.levels[0]! }] });
+        { binding: 3, resource: state.capture.levels[0]! }, { binding: 4, resource: state.output.levels[0]! },
+        { binding: 7, resource: history.levels[0]! }] });
   }
   private volumePass(encoder: GPUCommandEncoder, label: string, pipeline: GPUComputePipeline,
     binding: GPUBindGroup, width: number, height: number, layers: number): void {
@@ -234,8 +249,7 @@ export class WebGpuProbeCaptureAdapter implements ProbeCaptureAdapter<
     binding: GPUBindGroup, workgroups: number): void {
     if (!workgroups) return;
     const pass = encoder.beginComputePass({ label }); pass.setPipeline(pipeline); pass.setBindGroup(0, binding);
-    pass.dispatchWorkgroups(workgroups); pass.end();
-  }
+    pass.dispatchWorkgroups(workgroups); pass.end(); }
 
   private commit(state: TransactionState): WebGpuProbeSamplingBinding {
     this.assertPending(state);
@@ -275,11 +289,6 @@ export class WebGpuProbeCaptureAdapter implements ProbeCaptureAdapter<
     } };
     if (state.retirement) void state.retirement.then(retire).catch(() => undefined); else retire();
   }
-  private writeUniform(buffer: GPUBuffer, plan: ProbeClipmapPlan): void {
-    const data = new ArrayBuffer(WEBGPU_PROBE_UNIFORM_BYTES), uints = new Uint32Array(data), floats = new Float32Array(data);
-    uints.set([plan.updates.length, plan.profile.gridSize[2], plan.profile.levelCount, 0]);
-    floats.set([...this.fallback, 1], 4); this.session.device.queue.writeBuffer(buffer, 0, data);
-  }
   private assertPending(state: TransactionState): void {
     this.assertReady(state.context.deviceEpoch);
     if (state.settled || !this.pending.has(state)) throw new Error("Probe capture transaction is settled.");
@@ -293,5 +302,4 @@ export class WebGpuProbeCaptureAdapter implements ProbeCaptureAdapter<
 
 function packTextureLevels(plan: ProbeClipmapPlan): Uint8Array<ArrayBuffer> {
   const result = new Uint8Array(DEEP_GI_TEXTURE_LEVEL_METADATA_BYTES);
-  result.set(new Uint8Array(packProbeLevels(plan.levels))); return result;
-}
+  result.set(new Uint8Array(packProbeLevels(plan.levels))); return result; }

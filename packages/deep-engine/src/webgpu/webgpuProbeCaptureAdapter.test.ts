@@ -71,7 +71,8 @@ function plan(previous?: ProbeClipmapPlan): ProbeClipmapPlan {
     ...(previous ? { previous: previous.history } : {}),
     options: { levelCount: 2, gridSize: [4, 2, 4], updateBudget: 4 } });
 }
-function context(source: ProbeClipmapPlan, invalidation: "initial" | "none" | "resize" = "initial"):
+function context(source: ProbeClipmapPlan, invalidation: "initial" | "none" | "resize" = "initial",
+  dynamicUpdateIndices: readonly number[] = []):
 ProbeCaptureBeginContext {
   const buffer = {} as GPUBuffer;
   return { generation: 1, deviceEpoch: "gpu-1", plan: source, signal: new AbortController().signal,
@@ -79,7 +80,7 @@ ProbeCaptureBeginContext {
       probeStorageBuffer: buffer, updateListBuffer: buffer, levelMetadataBuffer: buffer,
       allocatedBytes: source.profile.estimatedBytes } as ProbeClipmapGpuResource,
     publication: { frame: 0, schedulerGeneration: 1, frameBudget: 4,
-      capacityBudget: 4, cameraCut: false, invalidation } };
+      capacityBudget: 4, cameraCut: false, invalidation, dynamicUpdateIndices } };
 }
 async function execute(transaction: ProbeCaptureTransaction<WebGpuProbeCaptureSubmission, WebGpuProbeSamplingBinding>,
   adapter: WebGpuProbeCaptureAdapter, source: ProbeClipmapPlan): Promise<WebGpuProbeSamplingBinding> {
@@ -146,6 +147,27 @@ describe("concrete WebGPU probe capture adapter", () => {
     expect(f.encoders[1]!.passes.map(pass => pass.label)).not.toContain("Deep GI clear irradiance");
   });
 
+  it("temporally blends only dynamic updates against the last committed GPU volume", async () => {
+    const f = fixture(), firstPlan = plan();
+    const adapter = new WebGpuProbeCaptureAdapter(f.session, "gpu-1",
+      { dynamicIrradianceHysteresis: 0.75 });
+    const first = await execute(adapter.begin(context(firstPlan)), adapter, firstPlan);
+    const secondPlan = plan(firstPlan), secondContext = context(secondPlan, "none", [0, 2]);
+    await execute(adapter.begin(secondContext), adapter, secondPlan);
+
+    const uniform = f.queue.writeBuffer.mock.calls[3]![2] as ArrayBuffer;
+    expect(new Float32Array(uniform)[3]).toBe(0.75);
+    const packed = new Uint32Array(f.queue.writeBuffer.mock.calls[5]![2] as ArrayBuffer);
+    expect(packed[0]! >>> 31).toBe(1); expect(packed[4]! >>> 31).toBe(0);
+    expect(packed[8]! >>> 31).toBe(1);
+    const filter = f.device.createBindGroup.mock.calls.map(call => call[0])
+      .findLast(call => call.label === "Deep GI filter bindings");
+    const history = filter.entries.find((entry: GPUBindGroupEntry) => entry.binding === 7)!.resource as {
+      texture: GPUTexture;
+    };
+    expect(history.texture).toBe(first.texture);
+  });
+
   it("does not recycle a cancelled submission until its GPU work retires", async () => {
     const f = fixture(), source = plan(), adapter = new WebGpuProbeCaptureAdapter(f.session, "gpu-1");
     let retireGpu!: () => void;
@@ -191,6 +213,8 @@ describe("concrete WebGPU probe capture adapter", () => {
     expect(() => constrained.begin(context(source))).toThrow("transient budget");
     expect(() => new WebGpuProbeCaptureAdapter(memory.session, "gpu-1",
       { fallbackRadiance: [Number.NaN, 0, 0] })).toThrow("fallbackRadiance");
+    expect(() => new WebGpuProbeCaptureAdapter(memory.session, "gpu-1",
+      { dynamicIrradianceHysteresis: 1 })).toThrow("dynamicIrradianceHysteresis");
   });
 
   it("rolls back all staging resources after device loss and disposes committed pools exactly once", async () => {
@@ -208,5 +232,40 @@ describe("concrete WebGPU probe capture adapter", () => {
     expect(ready.textures.every(texture => texture.destroy.mock.calls.length === 1)).toBe(true);
     expect(ready.buffers.every(buffer => buffer.destroy.mock.calls.length === 1)).toBe(true);
     expect(() => adapter.begin(context(source))).toThrow("disposed");
+  });
+
+  it("carries the energy clamp and static hysteresis in the extended uniform (F1 slice-3)", async () => {
+    const f = fixture();
+    const adapter = new WebGpuProbeCaptureAdapter(f.session, "gpu-1",
+      { energyClamp: 0.25, staticIrradianceHysteresis: 0.5 });
+    // First commit has no history, so both hysteresis weights are (correctly) zeroed;
+    // the "none" publication keeps the committed volume and enables the weights.
+    const firstPlan = plan();
+    await execute(adapter.begin(context(firstPlan)), adapter, firstPlan);
+    const secondPlan = plan(firstPlan);
+    await execute(adapter.begin(context(secondPlan, "none")), adapter, secondPlan);
+    const uniformCalls = f.queue.writeBuffer.mock.calls
+      .filter((call: unknown[]) => (call[2] as ArrayBuffer)?.byteLength === 48);
+    expect(uniformCalls.length).toBe(2);
+    expect(new Float32Array(uniformCalls[0]![2] as ArrayBuffer)[8]).toBe(0.25);
+    expect(new Float32Array(uniformCalls[0]![2] as ArrayBuffer)[9]).toBe(0);
+    expect(new Float32Array(uniformCalls[1]![2] as ArrayBuffer)[8]).toBe(0.25);
+    expect(new Float32Array(uniformCalls[1]![2] as ArrayBuffer)[9]).toBe(0.5);
+  });
+
+  it("keeps clamp and static hysteresis zero by default and validates fail-fast", async () => {
+    const f = fixture();
+    expect(() => new WebGpuProbeCaptureAdapter(f.session, "gpu-1", { energyClamp: -1 }))
+      .toThrow(/energyClamp/);
+    expect(() => new WebGpuProbeCaptureAdapter(f.session, "gpu-1", { staticIrradianceHysteresis: 1 }))
+      .toThrow(/in \[0, 1\)/);
+    const adapter = new WebGpuProbeCaptureAdapter(f.session, "gpu-1");
+    const source = plan();
+    await execute(adapter.begin(context(source)), adapter, source);
+    const uniformCall = f.queue.writeBuffer.mock.calls
+      .find((call: unknown[]) => (call[2] as ArrayBuffer).byteLength === 48)!;
+    const floats = new Float32Array(uniformCall[2] as ArrayBuffer);
+    expect(floats[8]).toBe(0);
+    expect(floats[9]).toBe(0);
   });
 });

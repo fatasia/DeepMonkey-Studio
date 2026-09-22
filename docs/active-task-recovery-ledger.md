@@ -2817,4 +2817,10 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - PbrRenderer 消费：环境对象身份变化且读回空闲时触发懒读回，`syncLighting` 的 ambient 从硬编码零升级为真实环境均值；零总能量仍 fail-closed。
 - 真机证据（同一 gate 扩展 ambient 案例，`node scripts/probeRadianceGpuTest.mjs` gate TRUE）：内置 studio IBL 实测均值 RGB [0.525, 0.563, 0.613]、双读 repeatDelta 逐位为 0（确定性）、positive 通过；三探针 CPU 对拍保持通过、溢出哨兵 0。
 - 过程修正（都是真机才暴露的合同）：WGSL 无 cube `textureLoad`（改 textureSampleLevel+方向集）；compute 阶段禁 `textureSample`；filterable rgba16float 不能绑 `unfilterable-float` 槽。单测 3/3+（含 Naga 条件）、聚焦回归 27/27、deep-engine 与 apps/web typecheck 绿。未 push。
+
+### 2026-09-22 F1 切片3：能量钳制 + 静态探针受限历史反馈（ZCode）
+
+- capture filter 合同扩展（缺省零值 = 与上一合同逐位等价）：uniform 32→48B 新增 `energyClamp`（每通道相对历史的单帧最大变化界，0 关闭；底线 epsilon 0.05 保证暗历史仍可增亮）与 `staticIrradianceHysteresis`（非 dynamic 探针的受限反馈权重，0 保持纯新值）；filterIrradiance 混合后按 `clamp(blended, history±clamp×max(history,floor))` 钳制，坏捕获可闪不可爆。受限性来源 = hysteresis<1 的几何衰减 ((1-h)^n) + 既有 invalidation/epoch 历史失效链，无帧计数纹理依赖。
+- 透传链：WebGpuProbeCaptureOptions.energyClamp/staticIrradianceHysteresis → adapter 校验（validateProbeEnergyClamp ≥0、hysteresis ∈[0,1)）→ ProbeClipmapRuntime 透传；runtime 选项扩展自动到达 ProbeClipmapPbrController/产品工厂。
+- 证据：adapter 钉测 2 项（扩展 uniform 通道值 + 缺省零值与 fail-fast 校验、hasHistory=false 时权重正确零化）；探针链回归 30/30；真机 gate 复跑 TRUE（WGSL 扩展后零编译告警、三探针对拍/哨兵/ambient 全保持）。未 push。
 - 2026-09-22 剩余任务交接收口：新增 `docs/handoffs/deep-monkey-remaining-work-handoff-2026-09-22.md`，按“功能开发 → 上层接入 → 跨端一致性/打包/全量验收”排序，只保留当前证据显示未完成的事项；已完成项、明确排除项和本交接范围外的清理均不重新排队。后续每个切片必须回填本交接、总账和对应 spec，禁止重复建设。

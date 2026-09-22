@@ -85,6 +85,8 @@ export interface ProbeClipmapRuntimeDiagnostic {
 /** Owns the complete CPU-plan to committed WebGPU probe-volume lifecycle for one device epoch. */
 export class ProbeClipmapRuntime {
   readonly deviceEpoch: string;
+  /** Distinguishes production scene capture from the constant SDK validation path. */
+  readonly radianceSource: "scene" | "fallback";
   private readonly resources: ProbeClipmapResources;
   private readonly adapter: WebGpuProbeCaptureAdapter;
   private readonly executor: ProbeClipmapCaptureExecutor<WebGpuProbeCaptureSubmission, WebGpuProbeSamplingBinding>;
@@ -105,6 +107,7 @@ export class ProbeClipmapRuntime {
   constructor(private readonly session: DeviceSession, deviceEpoch: string,
     options: ProbeClipmapRuntimeOptions = {}) {
     this.deviceEpoch = deviceEpoch;
+    this.radianceSource = options.encodeSourceRadiance === undefined ? "fallback" : "scene";
     this.clipmap = freezeClipmap(options.clipmap ?? {});
     this.diagnosticsOn = options.diagnosticsEnabled === true;
     this.capacity = Object.freeze({ maxBufferSize: session.device.limits.maxBufferSize,
@@ -117,6 +120,9 @@ export class ProbeClipmapRuntime {
       ...(options.encodeSourceRadiance ? { encodeSourceRadiance: options.encodeSourceRadiance } : {}),
       dynamicIrradianceHysteresis: options.dynamicIrradianceHysteresis
         ?? DEFAULT_PROBE_CLIPMAP_RUNTIME_OPTIONS.dynamicIrradianceHysteresis,
+      ...(options.energyClamp !== undefined ? { energyClamp: options.energyClamp } : {}),
+      ...(options.staticIrradianceHysteresis !== undefined
+        ? { staticIrradianceHysteresis: options.staticIrradianceHysteresis } : {}),
       maxTransientBytes: options.maxTransientBytes ?? DEFAULT_PROBE_CLIPMAP_RUNTIME_OPTIONS.maxTransientBytes,
     });
     this.executor = new ProbeClipmapCaptureExecutor(this.resources, this.adapter,
