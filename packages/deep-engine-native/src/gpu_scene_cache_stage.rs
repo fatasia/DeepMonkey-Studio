@@ -103,10 +103,12 @@ impl GpuSceneCache {
         } else {
             metrics.instance_buffer_uploads = 1;
             let previous = self.latest_instance.upgrade();
-            let (value, transfer) =
-                self.instance_ring
-                    .borrow_mut()
-                    .stage(device, queue, previous.as_ref(), &prepared.instances);
+            let (value, transfer) = self.instance_ring.borrow_mut().stage(
+                device,
+                queue,
+                previous.as_ref(),
+                &prepared.instances,
+            );
             metrics.instance_uploaded_bytes = transfer.uploaded_bytes;
             metrics.instance_copied_bytes = transfer.copied_bytes;
             new_instance_bytes = Some(value.buffer.size());

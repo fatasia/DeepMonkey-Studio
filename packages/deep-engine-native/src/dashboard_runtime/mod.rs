@@ -11,22 +11,55 @@ use std::{
 };
 mod compose;
 mod filter;
+mod filter_multi;
+mod filter_select;
+mod filter_select_paint;
+#[cfg(test)]
+mod filter_select_tests;
+mod filter_select_typeahead;
+mod filter_select_validation;
 mod table;
 #[cfg(test)]
 mod table_tests;
 pub use table::TableAction;
 #[cfg(test)]
+mod filter_multi_tests;
+#[cfg(test)]
 mod filter_tests;
+mod focus;
 mod hit;
 mod input;
-mod simulation;
+mod input_text;
+mod input_text_filter;
+mod input_text_group;
+#[cfg(test)]
+mod input_text_group_tests;
+mod input_text_layout;
+mod input_text_paint;
+mod input_text_selection;
+#[cfg(test)]
+mod input_text_tests;
+mod input_text_validation;
 pub mod report_save;
+mod simulation;
+#[cfg(windows)]
+mod video;
+#[cfg(windows)]
+pub use video::{
+    DashboardVideoAdvance, DashboardVideoCommand, DashboardVideoFit, DashboardVideoPlacement,
+    DashboardVideoPlayback, dashboard_video_drag_command, dashboard_video_key_command,
+};
 #[cfg(test)]
 mod tests;
 pub use hit::DashboardHit;
 
 #[derive(Clone)]
 pub struct DashboardRuntime {
+    active_input: Option<String>,
+    input_bank: BTreeMap<String, input_text_group::StoredInput>,
+    focus_id: Option<String>,
+    input_ui: input_text::InputState,
+    input_fonts: Option<Arc<Mutex<crate::platform_text::FrozenTextRasterizer>>>,
     table_states: BTreeMap<String, table::TableState>,
     loaded: Arc<LoadedDashboard>,
     page_id: String,
@@ -41,8 +74,11 @@ pub struct DashboardRuntime {
     revision: u64,
     text_scale: f64,
     selected_filter: Option<usize>,
+    /// 多选过滤的已选索引集合;单选包恒为空,不参与 `selected_filter` 单选指针语义。
+    selected_options: std::collections::BTreeSet<usize>,
     hovered_filter: Option<usize>,
     keyboard_filter_focus: bool,
+    select_ui: filter_select::SelectState,
 }
 impl DashboardRuntime {
     pub fn new(loaded: LoadedDashboard) -> Result<Self, String> {
@@ -103,8 +139,15 @@ impl DashboardRuntime {
             Vec::new(),
         )?;
         let mut runtime = Self {
+            active_input: None,
+            input_bank: BTreeMap::new(),
+            focus_id: None,
+            input_ui: input_text::InputState::default(),
+            input_fonts: None,
             table_states: BTreeMap::new(),
-            prepare_cache: Arc::new(Mutex::new(crate::deep2d::Deep2dPathCache::with_package_cache())),
+            prepare_cache: Arc::new(Mutex::new(
+                crate::deep2d::Deep2dPathCache::with_package_cache(),
+            )),
             loaded: Arc::new(loaded),
             page_id,
             charts,
@@ -117,12 +160,23 @@ impl DashboardRuntime {
             revision: 1,
             text_scale: 1.0,
             selected_filter: None,
+            selected_options: std::collections::BTreeSet::new(),
             hovered_filter: None,
             keyboard_filter_focus: false,
+            select_ui: filter_select::SelectState::default(),
         };
         runtime.validate_filter()?;
+        runtime.initialize_input()?;
         if runtime.document().filter.is_some() {
-            runtime.apply_filter_option(0)?;
+            // 多选包初始为空选集(无约束,保留包内原始行);单选包维持默认选中第一项。
+            if !runtime
+                .document()
+                .filter
+                .as_ref()
+                .is_some_and(|filter| filter.multi_select)
+            {
+                runtime.apply_filter_option(0)?;
+            }
         }
         runtime.rebuild()?;
         Ok(runtime)
@@ -148,6 +202,9 @@ impl DashboardRuntime {
     pub fn document(&self) -> &DashboardRuntimeV1 {
         &self.loaded.document
     }
+    pub fn video_diagnostics(&self) -> &[crate::runtime_package::DashboardVideoDiagnostic] {
+        &self.loaded.document.videos
+    }
     pub fn active_page_id(&self) -> &str {
         &self.page_id
     }
@@ -163,6 +220,11 @@ impl DashboardRuntime {
         }
         self.transaction(|candidate| {
             candidate.page_id = id.into();
+            candidate.focus_id = None;
+            candidate.select_ui = filter_select::SelectState::default();
+            candidate.input_ui.focused = false;
+            candidate.input_ui.preedit.clear();
+            candidate.input_ui.ime = crate::platform_text::WinitImeAdapter::new();
             candidate.anchors.clear();
             candidate.legend_pages.clear();
             for chart in candidate.charts.values_mut() {

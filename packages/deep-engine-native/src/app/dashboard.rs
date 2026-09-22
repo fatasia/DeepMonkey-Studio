@@ -1,135 +1,24 @@
 //! Dashboard 输入与整页 GPU 提交。候选失败时保留运行状态和模拟游标。
 use super::NativeApp;
 use crate::events::RenderOutcome;
-use deep_engine_native::{dashboard_runtime::DashboardRuntime, deep2d::LetterboxMapping};
+use deep_engine_native::dashboard_runtime::DashboardRuntime;
 use std::time::{Duration, Instant};
-use winit::{
-    event_loop::{ActiveEventLoop, ControlFlow},
-    keyboard::KeyCode,
-};
+use winit::event_loop::{ActiveEventLoop, ControlFlow};
 
-pub(super) fn pointer(app: &mut NativeApp, select: bool) -> bool {
-    if app.content.active().dashboard.is_none() {
-        return false;
-    }
-    let point = logical_cursor(app);
-    if select
-        && let Some(action) = point.and_then(|point| {
-            app.content
-                .active()
-                .dashboard
-                .as_ref()?
-                .table_action_at(point)
-        })
-    {
-        if matches!(action.action.as_str(), "csv" | "xlsx") {
-            export_table(app, &action);
-        } else {
-            apply(app, |candidate| candidate.table_action(&action));
-        }
-        return true;
-    }
-    if select && std::env::var_os("DEEP_DASHBOARD_FILTER_EVIDENCE").is_some() {
-        println!(
-            "dashboard filter pointer: physical={:?} logical={point:?}",
-            app.state.cursor
-        );
-    }
-    apply(app, |candidate| candidate.pointer(point, select));
-    true
-}
-
-pub(super) fn zoom(app: &mut NativeApp, delta: f64) -> bool {
-    if app.content.active().dashboard.is_none() {
-        return false;
-    }
-    if let Some(point) = logical_cursor(app) {
-        apply(app, |candidate| candidate.zoom_at(point, delta));
-    }
-    true
-}
-
-pub(super) fn key(app: &mut NativeApp, key: KeyCode) -> bool {
-    let Some(runtime) = app.content.active().dashboard.as_ref() else {
-        return false;
-    };
-    match key {
-        KeyCode::ArrowUp | KeyCode::ArrowDown
-            if runtime.document().filter.as_ref().is_some_and(|filter| {
-                runtime
-                    .document()
-                    .pages
-                    .iter()
-                    .find(|page| page.id == runtime.active_page_id())
-                    .is_some_and(|page| {
-                        page.nodes
-                            .iter()
-                            .any(|node| node.id == filter.node_id && node.visible)
-                    })
-            }) =>
-        {
-            let current = runtime.selected_filter().unwrap_or(0);
-            let count = runtime.document().filter.as_ref().unwrap().options.len();
-            let next = if key == KeyCode::ArrowUp {
-                current.saturating_sub(1)
-            } else {
-                (current + 1).min(count - 1)
-            };
-            apply(app, |candidate| candidate.focus_filter(next));
-        }
-        KeyCode::PageDown | KeyCode::PageUp => {
-            let pages = &runtime.document().pages;
-            let current = pages
-                .iter()
-                .position(|page| page.id == runtime.active_page_id())
-                .unwrap_or(0);
-            let target = if key == KeyCode::PageDown {
-                (current + 1).min(pages.len().saturating_sub(1))
-            } else {
-                current.saturating_sub(1)
-            };
-            let id = pages[target].id.clone();
-            apply(app, |candidate| candidate.switch_page(&id));
-        }
-        KeyCode::Home => {
-            apply(app, DashboardRuntime::reset);
-        }
-        KeyCode::Equal | KeyCode::NumpadAdd => {
-            zoom(app, 1.0);
-        }
-        KeyCode::Minus | KeyCode::NumpadSubtract => {
-            zoom(app, -1.0);
-        }
-        // 二维文档不接受三维相机旋转键。
-        KeyCode::ArrowLeft | KeyCode::ArrowRight => {}
-        _ => return false,
-    }
-    true
-}
-
-fn logical_cursor(app: &NativeApp) -> Option<[f64; 2]> {
-    let list = app
-        .content
-        .active()
-        .dashboard
-        .as_ref()?
-        .content()
-        .display_list();
-    let size = app.window.as_ref()?.inner_size();
-    if size.width == 0 || size.height == 0 {
-        return None;
-    }
-    let mapping = LetterboxMapping::new(
-        [list.logical_width, list.logical_height],
-        [size.width.into(), size.height.into()],
-    );
-    let point = mapping.physical_to_logical(app.state.cursor?);
-    (point[0] >= 0.0
-        && point[1] >= 0.0
-        && point[0] < list.logical_width
-        && point[1] < list.logical_height)
-        .then_some(point)
-}
+#[cfg(windows)]
+#[path = "dashboard_clipboard.rs"]
+mod clipboard;
+#[path = "dashboard_clipboard_input.rs"]
+mod clipboard_input;
+#[path = "dashboard_input.rs"]
+mod input;
+#[path = "dashboard_input_gesture.rs"]
+mod input_gesture;
+#[path = "dashboard_text_input.rs"]
+mod text_input;
+pub(super) use input::{blur, key, pointer, zoom};
+pub(super) use input_gesture::{InputGesture, release as release_input};
+pub(super) use text_input::{ime, refresh as refresh_input, select_text_key, text_key};
 
 fn export_table(app: &NativeApp, action: &deep_engine_native::dashboard_runtime::TableAction) {
     #[cfg(windows)]

@@ -31,7 +31,12 @@ pub(super) fn click(app: &mut NativeApp) {
             return;
         }
         let hit = hit.local;
+        let previous = app.state.view;
         player_picking::focus(&mut app.state.view, &hit, [size.width, size.height]);
+        app.state.view = app
+            .content
+            .active()
+            .resolve_camera_motion(Some(previous), app.state.view);
         if let Some(renderer) = app.renderer.as_mut() {
             renderer.set_view(app.state.view);
         }
@@ -72,7 +77,7 @@ fn reset_state(
     content: &crate::player_content::PlayerContent,
 ) {
     clear_state(state);
-    state.view = content.initial_view();
+    state.set_camera(content.initial_view(), content.camera_controls());
 }
 
 pub(super) fn reset_view(app: &mut NativeApp) {

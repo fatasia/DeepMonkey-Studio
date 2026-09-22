@@ -4,7 +4,7 @@ use std::{collections::HashMap, fmt::Write, hash::Hasher};
 
 use deep_engine_native::{
     contract::{AlphaMode, RenderPacket},
-    culling_contract::{PreparedGpuCulling, frustum_planes, sphere_visible},
+    culling_contract::PreparedGpuCulling,
     lod_contract::PreparedGpuLod,
     scene::{PackedInstance, PreparedScene},
 };
@@ -90,6 +90,7 @@ struct ShadowCaster {
 #[derive(Clone, Debug, Default)]
 pub struct ShadowCasterSet {
     casters: Vec<ShadowCaster>,
+    view_keys: std::cell::RefCell<Vec<Option<caster_keys::CachedView>>>,
 }
 
 impl ShadowCasterSet {
@@ -191,38 +192,10 @@ impl ShadowCasterSet {
                 });
             }
         }
-        Ok(Self { casters })
-    }
-
-    pub fn keys(
-        &self,
-        views: &impl ShadowViewSource,
-        shader_revision: u64,
-    ) -> Result<Vec<ShadowCascadeKey>, String> {
-        (0..views.shadow_view_count() as usize)
-            .map(|cascade| {
-                let matrix = views.shadow_view_projection(cascade);
-                let planes = frustum_planes(matrix)?;
-                let mut view = std::collections::hash_map::DefaultHasher::new();
-                for value in matrix.into_iter().flatten() {
-                    view.write_u32(value.to_bits());
-                }
-                let mut casters = std::collections::hash_map::DefaultHasher::new();
-                let mut count = 0_u64;
-                for caster in &self.casters {
-                    if sphere_visible(&planes, &caster.instance, caster.bound) {
-                        casters.write_u64(caster.fingerprint);
-                        count += 1;
-                    }
-                }
-                casters.write_u64(count);
-                Ok(ShadowCascadeKey {
-                    view: view.finish(),
-                    casters: casters.finish(),
-                    shader: shader_revision,
-                })
-            })
-            .collect()
+        Ok(Self {
+            casters,
+            view_keys: Default::default(),
+        })
     }
 }
 
@@ -295,3 +268,6 @@ impl Write for HashWriter {
 #[cfg(test)]
 #[path = "shadow_dirty_tests.rs"]
 mod tests;
+
+#[path = "shadow_caster_keys.rs"]
+mod caster_keys;

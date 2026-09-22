@@ -14,6 +14,8 @@ pub(super) fn pack_instance(
         model[6], model[10], model[14],
     ]);
     packed[12..24].copy_from_slice(&normal);
+    let ior = material.ior.unwrap_or(1.5);
+    packed[crate::mesh_abi::MATERIAL_IOR_FLOAT_OFFSET] = if ior == 1.5 { 0.0 } else { ior };
     packed[24..28].copy_from_slice(&[
         material.base_color[0],
         material.base_color[1],

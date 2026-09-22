@@ -191,14 +191,18 @@ mod tests {
         let grading = AuthorGrading::new(30.0, 0.5, -0.25, 0.1, 0.8, -0.4).unwrap();
         assert_eq!(
             grading.pack(),
-            [1.0, 0.0, 1.0, 0.0, 30.0, 0.5, -0.25, 0.1, 0.8, -0.4, 0.0, 0.0]
+            [
+                1.0, 0.0, 1.0, 0.0, 30.0, 0.5, -0.25, 0.1, 0.8, -0.4, 0.0, 0.0
+            ]
         );
         // 边界常量也由真实 TS 输出对拍：
         // {hue:-45,saturation:-0.6,brightness:0.2,contrast:-0.3,temperature:-1,tint:1}。
         let boundary = AuthorGrading::new(-45.0, -0.6, 0.2, -0.3, -1.0, 1.0).unwrap();
         assert_eq!(
             boundary.pack(),
-            [1.0, 0.0, 1.0, 0.0, -45.0, -0.6, 0.2, -0.3, -1.0, 1.0, 0.0, 0.0]
+            [
+                1.0, 0.0, 1.0, 0.0, -45.0, -0.6, 0.2, -0.3, -1.0, 1.0, 0.0, 0.0
+            ]
         );
         // hue 之外可选通道缺省 0：wire 层 unwrap_or(0.0) 后 pack 与显式 0 一致。
         let defaults = AuthorGrading::new(15.0, 0.25, 0.05, 0.05, 0.0, 0.0).unwrap();

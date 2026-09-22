@@ -43,16 +43,44 @@ pub(crate) async fn create_gpu_context(
     let adapter_features = adapter.features();
     // Timestamps are only requested when telemetry needs them and the adapter
     // actually supports them, so the default path keeps an unmodified feature set.
-    let required_features = if request_timestamps {
+    // wgpu 30 exposes the experimental acceleration-structure API on DX12 and
+    // Vulkan. Request it only when the selected adapter advertises the exact
+    // feature; unsupported GPUs retain the software BVH/TLAS path.
+    let mut required_features = if request_timestamps {
         adapter_features
             & (wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS)
     } else {
         wgpu::Features::empty()
     };
+    if adapter_features.contains(wgpu::Features::EXPERIMENTAL_RAY_QUERY) {
+        required_features |= wgpu::Features::EXPERIMENTAL_RAY_QUERY;
+    }
+    let available_limits = adapter.limits();
+    let mut required_limits = wgpu::Limits::default();
+    if required_features.contains(wgpu::Features::EXPERIMENTAL_RAY_QUERY) {
+        required_limits.max_blas_primitive_count = available_limits.max_blas_primitive_count;
+        required_limits.max_blas_geometry_count = available_limits.max_blas_geometry_count;
+        required_limits.max_tlas_instance_count = available_limits.max_tlas_instance_count;
+        required_limits.max_acceleration_structures_per_shader_stage =
+            available_limits.max_acceleration_structures_per_shader_stage;
+        required_limits.max_buffers_and_acceleration_structures_per_shader_stage =
+            available_limits.max_buffers_and_acceleration_structures_per_shader_stage;
+    }
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: Some("Deep Engine native device"),
             required_features,
+            required_limits,
+            // wgpu gates its experimental acceleration-structure API behind an
+            // explicit opt-in token. Only acknowledge it when this selected
+            // adapter actually advertises Ray Query.
+            experimental_features: if required_features
+                .contains(wgpu::Features::EXPERIMENTAL_RAY_QUERY)
+            {
+                unsafe { wgpu::ExperimentalFeatures::enabled() }
+            } else {
+                wgpu::ExperimentalFeatures::disabled()
+            },
             ..Default::default()
         })
         .await

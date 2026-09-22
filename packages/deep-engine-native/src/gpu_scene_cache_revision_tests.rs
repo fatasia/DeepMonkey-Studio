@@ -279,7 +279,7 @@ fn texture_revision_only_bump_misses_cache_and_reuploads_single_texture() {
             "instance buffer must be reused wholesale when packed instances are unchanged"
         );
         assert_eq!(candidate.new_textures.len(), 1);
-        assert_eq!(candidate.new_textures[0].0 .1, bumped.textures[4].revision);
+        assert_eq!(candidate.new_textures[0].0.1, bumped.textures[4].revision);
         assert_eq!(Arc::as_ptr(&candidate.scene().geometries[0]), base_geometry);
         assert_eq!(
             Arc::as_ptr(&candidate.instance),

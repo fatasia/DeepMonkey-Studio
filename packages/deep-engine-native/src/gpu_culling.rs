@@ -40,6 +40,9 @@ pub struct GpuCulling {
     views: Vec<CullingView>,
     indirect_template: Vec<u8>,
     candidate_count: u32,
+    /// Last uploaded frustum bytes. The main-view entry is also the temporal
+    /// validity key for previous-frame HiZ consumption.
+    view_signatures: Vec<[u8; 112]>,
     revision: u64,
     submitted_revision: u64,
     summary: GpuCullingSummary,
@@ -56,6 +59,9 @@ pub struct GpuCulling {
     /// 就绪、相机或场景更新)。draw 侧空批次跳过的唯一依据,与 HiZ
     /// 「消费上一帧金字塔」同界;None 时 draw 行为与未接线逐字节一致。
     survivors: Option<Vec<u32>>,
+    /// A changed main camera cannot consume the previous camera's depth pyramid.
+    /// One frustum-only submission refreshes depth before occlusion resumes.
+    occlusion_bypass: bool,
 }
 
 impl GpuCulling {
@@ -98,6 +104,7 @@ impl GpuCulling {
         });
         let capacity = u64::from(candidate_count.max(1));
         let mut views = Vec::with_capacity(frustums.len());
+        let mut view_signatures = Vec::with_capacity(frustums.len());
         for (view_index, planes) in frustums.iter().enumerate() {
             let params = pack_frustum(
                 planes,
@@ -108,6 +115,7 @@ impl GpuCulling {
                     SHADOW_CASTER_MASK
                 },
             );
+            view_signatures.push(params);
             let frustum = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Deep Engine native GPU culling frustum"),
                 contents: &params,
@@ -158,6 +166,7 @@ impl GpuCulling {
             views,
             indirect_template,
             candidate_count,
+            view_signatures,
             revision: 1,
             submitted_revision: 0,
             summary: GpuCullingSummary {
@@ -173,6 +182,7 @@ impl GpuCulling {
             consume: None,
             batch_ranges,
             survivors: None,
+            occlusion_bypass: false,
         })
     }
 
@@ -246,6 +256,12 @@ impl GpuCulling {
         self.consume.as_ref().map(|stage| stage.summary())
     }
 
+    /// Whether main-view draws currently consume compacted HiZ output. False
+    /// for the one-frame safety refresh after a camera/frustum change.
+    pub fn occlusion_consume_active(&self) -> bool {
+        self.consume.is_some() && !self.occlusion_bypass
+    }
+
     pub fn summary(&self) -> GpuCullingSummary {
         self.summary
     }
@@ -275,8 +291,15 @@ impl GpuCulling {
                 )
             })
             .collect::<Vec<_>>();
-        for (view, bytes) in self.views.iter().zip(&packed) {
+        let main_view_changed = packed.first() != self.view_signatures.first();
+        for ((view, bytes), signature) in self
+            .views
+            .iter()
+            .zip(&packed)
+            .zip(&mut self.view_signatures)
+        {
             queue.write_buffer(&view.frustum, 0, bytes);
+            *signature = *bytes;
         }
         if let Some(occlusion) = &self.occlusion {
             occlusion.update_params(queue, frame)?;
@@ -284,6 +307,9 @@ impl GpuCulling {
         // 相机/视锥变化令上一帧 compact 计数跨视锥失效:回退「未知 = 照画」,
         // 消除相机移动时的单帧 pop-in;静止场景才持续享受空批次跳过。
         self.survivors = None;
+        if main_view_changed && self.occlusion.is_some() {
+            self.occlusion_bypass = true;
+        }
         self.revision = self.revision.wrapping_add(1);
         Ok(())
     }
@@ -313,12 +339,16 @@ impl GpuCulling {
         }
         // 串联第二档:frustum 先、遮挡后(独立 compute pass,隐式屏障,
         // 遮挡 pass 不读 frustum 输出,判定自带逐位一致的视锥重放)。
-        if let Some(occlusion) = &self.occlusion {
+        if !self.occlusion_bypass
+            && let Some(occlusion) = &self.occlusion
+        {
             occlusion.encode(queue, encoder);
         }
         // 串联第三档:遮挡标志 → scan+compact 紧凑输出(消费遮挡 pass 的
         // flags,产出主视锥紧凑 draw 缓冲对)。
-        if let Some(consume) = &self.consume {
+        if !self.occlusion_bypass
+            && let Some(consume) = &self.consume
+        {
             consume.encode(queue, encoder);
         }
         if let Some(readback) = &self.readback {
@@ -326,10 +356,14 @@ impl GpuCulling {
                 readback.encode_copy(encoder, index, &view.indirect);
             }
         }
-        if let Some(occlusion) = &self.occlusion {
+        if !self.occlusion_bypass
+            && let Some(occlusion) = &self.occlusion
+        {
             occlusion.encode_readback(encoder);
         }
-        if let Some(consume) = &self.consume {
+        if !self.occlusion_bypass
+            && let Some(consume) = &self.consume
+        {
             consume.encode_readback(encoder);
         }
     }
@@ -339,11 +373,21 @@ impl GpuCulling {
         if let Some(readback) = &mut self.readback {
             readback.commit();
         }
-        if let Some(occlusion) = &mut self.occlusion {
+        if !self.occlusion_bypass
+            && let Some(occlusion) = &mut self.occlusion
+        {
             occlusion.commit_submission();
         }
-        if let Some(consume) = &mut self.consume {
+        if !self.occlusion_bypass
+            && let Some(consume) = &mut self.consume
+        {
             consume.commit_submission();
+        }
+        if self.occlusion_bypass {
+            self.occlusion_bypass = false;
+            // A fresh HiZ is produced later in this submission. Schedule one
+            // more culling encode so a stationary next frame can consume it.
+            self.revision = self.revision.wrapping_add(1);
         }
     }
 
@@ -429,14 +473,22 @@ impl GpuCulling {
     /// draw 消费点(view 0 = 主视锥):挂载消费链后切换到遮挡紧凑输出,
     /// 阴影视锥(view ≥ 1)始终走 frustum 输出。
     pub fn visible_instances(&self, view_index: usize) -> &wgpu::Buffer {
-        match self.consume.as_ref().filter(|_| view_index == 0) {
+        match self
+            .consume
+            .as_ref()
+            .filter(|_| view_index == 0 && !self.occlusion_bypass)
+        {
             Some(consume) => &consume.compact_visible,
             None => &self.views[view_index].visible_instances,
         }
     }
 
     pub fn indirect(&self, view_index: usize) -> &wgpu::Buffer {
-        match self.consume.as_ref().filter(|_| view_index == 0) {
+        match self
+            .consume
+            .as_ref()
+            .filter(|_| view_index == 0 && !self.occlusion_bypass)
+        {
             Some(consume) => &consume.compact_indirect,
             None => &self.views[view_index].indirect,
         }

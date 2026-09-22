@@ -13,7 +13,8 @@ use winit::{
     platform::windows::EventLoopBuilderExtWindows,
 };
 
-const TEST: &str = "renderer::scene_incremental_fastpath_gpu_tests::scene_incremental_fastpaths_route_and_publish";
+const TEST: &str =
+    "renderer::scene_incremental_fastpath_gpu_tests::scene_incremental_fastpaths_route_and_publish";
 
 #[test]
 #[ignore = "requires a real Windows GPU surface"]
@@ -50,13 +51,17 @@ struct Probe {
     verified: bool,
 }
 
-fn receive_off(packet: &deep_engine_native::contract::RenderPacket) -> deep_engine_native::contract::RenderPacket {
+fn receive_off(
+    packet: &deep_engine_native::contract::RenderPacket,
+) -> deep_engine_native::contract::RenderPacket {
     let mut next = packet.clone();
     next.instances[0].receive_shadow = Some(false);
     next
 }
 
-fn cast_off(packet: &deep_engine_native::contract::RenderPacket) -> deep_engine_native::contract::RenderPacket {
+fn cast_off(
+    packet: &deep_engine_native::contract::RenderPacket,
+) -> deep_engine_native::contract::RenderPacket {
     let mut next = packet.clone();
     next.instances[0].cast_shadow = Some(false);
     next
@@ -66,13 +71,11 @@ fn content_of(packet: deep_engine_native::contract::RenderPacket) -> PlayerConte
     PlayerContent::from_packet(packet, None)
 }
 
-
 /// 枚举无 Debug(GpuScene 等 GPU 资源不可格式化);只输出变体名。
 fn variant_name(staged: &StagedRenderPacketUpdate) -> &'static str {
     match staged {
         StagedRenderPacketUpdate::Noop => "Noop",
         StagedRenderPacketUpdate::Replace(_) => "Replace",
-        StagedRenderPacketUpdate::TransformRefresh(_) => "TransformRefresh",
         StagedRenderPacketUpdate::MaterialUniformRefresh(_) => "MaterialUniformRefresh",
         StagedRenderPacketUpdate::ShadowFlagRefresh(_) => "ShadowFlagRefresh",
     }
@@ -110,10 +113,9 @@ impl ApplicationHandler<GpuEvent> for Probe {
         //    版本必须保持;rows 与 recompute_surface_flags 逐位一致。
         let shadow_before = renderer.scene_update_evidence().shadow_version;
         let variant = receive_off(&current);
-        let staged = pollster::block_on(renderer.stage_render_packet_update(
-            &current,
-            &content_of(variant.clone()),
-        ))
+        let staged = pollster::block_on(
+            renderer.stage_render_packet_update(&current, &content_of(variant.clone())),
+        )
         .unwrap();
         let refresh = match &staged {
             StagedRenderPacketUpdate::ShadowFlagRefresh(refresh) => refresh,
@@ -124,7 +126,8 @@ impl ApplicationHandler<GpuEvent> for Probe {
         assert_eq!(
             refresh.rows[0].1,
             deep_engine_native::scene::recompute_surface_flags(
-                &variant.materials
+                variant
+                    .materials
                     .iter()
                     .find(|material| material.id == variant.instances[0].material)
                     .unwrap(),
@@ -137,10 +140,9 @@ impl ApplicationHandler<GpuEvent> for Probe {
             shadow_after.scene, shadow_before.scene,
             "receive-only change must not invalidate the shadow scene version"
         );
-        let restaged = pollster::block_on(renderer.stage_render_packet_update(
-            &variant,
-            &content_of(variant.clone()),
-        ))
+        let restaged = pollster::block_on(
+            renderer.stage_render_packet_update(&variant, &content_of(variant.clone())),
+        )
         .unwrap();
         assert!(matches!(restaged, StagedRenderPacketUpdate::Noop));
         current = variant;
@@ -149,14 +151,16 @@ impl ApplicationHandler<GpuEvent> for Probe {
         //    零几何/纹理/材质上传);阴影版本必须失效。
         let shadow_before = renderer.scene_update_evidence().shadow_version;
         let variant = cast_off(&current);
-        let staged = pollster::block_on(renderer.stage_render_packet_update(
-            &current,
-            &content_of(variant.clone()),
-        ))
+        let staged = pollster::block_on(
+            renderer.stage_render_packet_update(&current, &content_of(variant.clone())),
+        )
         .unwrap();
         let payload = match &staged {
             StagedRenderPacketUpdate::Replace(payload) => payload,
-            other => panic!("expected Replace (resource-reuse refresh), got {}", variant_name(other)),
+            other => panic!(
+                "expected Replace (resource-reuse refresh), got {}",
+                variant_name(other)
+            ),
         };
         assert!(payload.staged_via_resource_reuse);
         let metrics = renderer.publish_render_packet_update(staged).unwrap();
@@ -168,47 +172,71 @@ impl ApplicationHandler<GpuEvent> for Probe {
             shadow_before.scene,
             "cast-flag change must invalidate the shadow scene version"
         );
-        let restaged = pollster::block_on(renderer.stage_render_packet_update(
-            &variant,
-            &content_of(variant.clone()),
-        ))
+        let restaged = pollster::block_on(
+            renderer.stage_render_packet_update(&variant, &content_of(variant.clone())),
+        )
         .unwrap();
         assert!(matches!(restaged, StagedRenderPacketUpdate::Noop));
         current = variant;
 
         // 3) LOD-only:同一刷新通道(重 prepare + 重 culling/lod,资源全复用)。
-        let variant =
-            crate::gpu_scene_cache_test_support::with_lod_profile(&current);
-        let staged = pollster::block_on(renderer.stage_render_packet_update(
-            &current,
-            &content_of(variant.clone()),
-        ))
+        let variant = crate::gpu_scene_cache_test_support::with_lod_profile(&current);
+        let staged = pollster::block_on(
+            renderer.stage_render_packet_update(&current, &content_of(variant.clone())),
+        )
         .unwrap();
         let payload = match &staged {
             StagedRenderPacketUpdate::Replace(payload) => payload,
-            other => panic!("expected Replace (resource-reuse refresh), got {}", variant_name(other)),
+            other => panic!(
+                "expected Replace (resource-reuse refresh), got {}",
+                variant_name(other)
+            ),
         };
         assert!(payload.staged_via_resource_reuse);
         let metrics = renderer.publish_render_packet_update(staged).unwrap();
         assert_eq!(metrics.geometry_uploads, 0);
         assert_eq!(metrics.texture_uploads, 0);
         assert_eq!(metrics.material_uploads, 0);
-        let restaged = pollster::block_on(renderer.stage_render_packet_update(
-            &variant,
-            &content_of(variant.clone()),
-        ))
+        let restaged = pollster::block_on(
+            renderer.stage_render_packet_update(&variant, &content_of(variant.clone())),
+        )
         .unwrap();
         assert!(matches!(restaged, StagedRenderPacketUpdate::Noop));
         current = variant;
 
         // 4) 多维度同帧(receive + transform)保守归 Structural → 全量路径。
+        let mut moved = current.clone();
+        moved.instances[0].transform[12] += 0.25;
+        let start = std::time::Instant::now();
+        let staged = pollster::block_on(
+            renderer.stage_render_packet_update(&current, &content_of(moved.clone())),
+        )
+        .unwrap();
+        let payload = match &staged {
+            StagedRenderPacketUpdate::Replace(payload) => payload,
+            other => panic!(
+                "transform must refresh derived views, got {}",
+                variant_name(other)
+            ),
+        };
+        assert!(payload.staged_via_resource_reuse);
+        let metrics = renderer.publish_render_packet_update(staged).unwrap();
+        assert_eq!(metrics.geometry_uploads, 0);
+        assert_eq!(metrics.texture_uploads, 0);
+        assert_eq!(metrics.material_uploads, 0);
+        renderer.verify_candidate_frame().unwrap();
+        println!(
+            "transform derived refresh stage+publish+verified_frame_ms={:.3}; geometry/texture/material uploads=0",
+            start.elapsed().as_secs_f64() * 1000.0
+        );
+        current = moved;
+
         let mut mixed = current.clone();
         mixed.instances[0].receive_shadow = Some(true);
         mixed.instances[0].transform[12] += 0.1;
-        let staged = pollster::block_on(renderer.stage_render_packet_update(
-            &current,
-            &content_of(mixed.clone()),
-        ))
+        let staged = pollster::block_on(
+            renderer.stage_render_packet_update(&current, &content_of(mixed.clone())),
+        )
         .unwrap();
         let payload = match &staged {
             StagedRenderPacketUpdate::Replace(payload) => payload,
@@ -243,5 +271,8 @@ fn load_textured_with_lod_target() -> PlayerContent {
     .unwrap();
     // 预置未引用的 LOD 目标几何:LOD profile 需要三角数严格递减的两级,
     // 内置夹具只有单几何;先补目标,LOD-only 变体就不再动几何列表。
-    PlayerContent::from_packet(crate::gpu_scene_cache_test_support::with_lod_target(&packet), None)
+    PlayerContent::from_packet(
+        crate::gpu_scene_cache_test_support::with_lod_target(&packet),
+        None,
+    )
 }

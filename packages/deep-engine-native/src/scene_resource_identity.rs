@@ -274,7 +274,6 @@ mod tests {
     }
 }
 
-
 #[cfg(test)]
 mod texture_revision_tests {
     use super::*;

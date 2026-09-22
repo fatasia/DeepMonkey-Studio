@@ -73,6 +73,9 @@ pub(super) fn validate(root: &DashboardRuntimeV1) -> Result<(), RuntimePackageEr
     if !pages.contains(root.entry_page_id.as_str()) || nodes.len() > 128 || charts > 32 {
         return fail("dashboard entry page is absent or node/chart budget exceeded");
     }
+    if !root.videos.is_empty() || !root.media.is_empty() {
+        super::dashboard_video_validation::validate(&root.videos, &root.media, &root.pages)?;
+    }
     Ok(())
 }
 

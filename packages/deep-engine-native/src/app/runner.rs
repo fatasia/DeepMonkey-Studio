@@ -369,6 +369,28 @@ pub fn run_telemetry_smoke(content: PlayerContent) -> Result<(), String> {
     )
 }
 
+/// Paired baseline evidence keeps post-processing disabled to match the Web
+/// benchmark's frozen baseline-equivalent profile.
+pub fn run_package_telemetry_smoke(content: PlayerContent) -> Result<(), String> {
+    run_internal(
+        content,
+        true,
+        RendererFeatures {
+            bloom: BloomSettings::DISABLED,
+            fog: FogSettings::DISABLED,
+            shadow_probe: false,
+            ibl_probe: false,
+            telemetry: true,
+        },
+        None,
+        None,
+        None,
+        ReportMode::Telemetry,
+        None,
+        None,
+    )
+}
+
 pub fn run_shadow_update_probe(
     content: PlayerContent,
     rejected: PlayerContent,

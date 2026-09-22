@@ -58,12 +58,18 @@ mod pipeline;
 mod player_content;
 #[path = "../src/player_shader_plan.rs"]
 mod player_shader_plan;
+#[path = "../src/render_graph.rs"]
+mod render_graph;
 #[path = "../src/runtime_lkg.rs"]
 mod runtime_lkg;
 #[path = "../src/shadow_map.rs"]
 mod shadow_map;
 #[path = "../src/shadow_pass.rs"]
 mod shadow_pass;
+#[path = "../src/telemetry.rs"]
+mod telemetry;
+#[path = "../src/telemetry_gpu.rs"]
+mod telemetry_gpu;
 
 use deep_engine_native::runtime_package::parse_and_validate_runtime_package;
 use lod_draw_renderer::render;

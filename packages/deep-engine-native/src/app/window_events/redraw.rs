@@ -1,6 +1,7 @@
 use super::*;
 
 pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
+    app.step_navigation();
     if app.state.verification.is_some()
         && let Some(renderer) = &app.renderer
     {

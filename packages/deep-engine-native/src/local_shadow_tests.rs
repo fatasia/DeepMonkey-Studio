@@ -6,6 +6,8 @@ fn light() -> LocalLight {
         position: [0.0, 4.0, 3.0],
         direction: [0.0, -0.8, -0.6],
         radiance: [4.0; 3],
+        ground_radiance: None,
+        shadow_softness: None,
         range: 12.0,
         decay: 2.0,
         inner_cos: 0.8,
@@ -103,6 +105,7 @@ fn point_faces_cover_six_axes_and_keep_world_translation() {
         radiance: [0.0; 3],
         exposure: 1.05,
         shadows: false,
+        global_illumination_intensity: None,
         light_profiles: None,
         local_lights: {
             let mut lights: [LocalLight; crate::local_lighting::MAX_LOCAL_LIGHTS] =

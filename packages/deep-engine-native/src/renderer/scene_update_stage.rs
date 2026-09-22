@@ -42,8 +42,6 @@ pub(crate) struct StagedDeep2dUpdate {
 pub(crate) enum StagedRenderPacketUpdate {
     Noop,
     Replace(Box<StagedRenderPacketPayload>),
-    /// C3 transform-only 快路径:实例身份/几何/材质/纹理全同,仅 transform 子集变化。
-    TransformRefresh(Box<StagedTransformRefresh>),
     /// C3 uniform-only 材质快路径:实例/几何/纹理全同且材质 id/数量不变,
     /// 仅材质数值 uniform 变化。rows 为 stage 侧 prepare_material_uniform
     /// 的输出,publish 按行原位写缓冲。
@@ -53,11 +51,6 @@ pub(crate) enum StagedRenderPacketUpdate {
     /// (surface flags)且不参与批键——批布局与实例顺序稳定,publish 单行
     /// 原位写;阴影贴图与 caster 集合不受影响,不失效阴影版本。
     ShadowFlagRefresh(Box<StagedShadowFlagRefresh>),
-}
-
-pub(crate) struct StagedTransformRefresh {
-    pub(crate) rows: Vec<(usize, [f32; 16])>,
-    pub(crate) scene_content_key: u64,
 }
 
 pub(crate) struct StagedMaterialUniformRefresh {
@@ -242,20 +235,24 @@ impl Renderer {
                 .iter()
                 .map(|texture| (&texture.id, texture.revision)));
         match diff_scene_instances(&previous_packet.instances, &packet.instances) {
-            SceneInstanceDiff::TransformOnly { changed_indices } => {
+            SceneInstanceDiff::TransformOnly { .. } => {
                 let materials_equal =
                     format!("{:?}", previous_packet.materials) == format!("{:?}", packet.materials);
                 if materials_equal && geometries_equal && textures_equal {
-                    let rows: Vec<(usize, [f32; 16])> = changed_indices
-                        .iter()
-                        .map(|index| (*index as usize, packet.instances[*index as usize].transform))
-                        .collect();
-                    return Ok(StagedRenderPacketUpdate::TransformRefresh(Box::new(
-                        StagedTransformRefresh {
-                            rows,
-                            scene_content_key: content.scene_content_key(),
-                        },
-                    )));
+                    // 变换同时改变剔除/LOD包围体与阴影投射物。复用驻留资源，
+                    // 但必须原子重建这些派生数据，不能仅覆写 instance buffer。
+                    if let Some(staged) = self
+                        .try_stage_scene_refresh(
+                            previous_packet,
+                            packet,
+                            content,
+                            shadow_shader_key,
+                            ibl,
+                        )
+                        .await?
+                    {
+                        return Ok(staged);
+                    }
                 }
             }
             SceneInstanceDiff::Identical => {
@@ -268,6 +265,7 @@ impl Renderer {
                 // 之外)回落全量路径,由全量校验给出错误呈现。
                 if geometries_equal
                     && textures_equal
+                    && !classify_shadow_relevance(previous_packet, packet).must_invalidate
                     && instance_material_words_unchanged(
                         &previous_packet.materials,
                         &packet.materials,
@@ -656,21 +654,6 @@ impl Renderer {
             }
             return Ok(GpuSceneCacheMetrics::default());
         }
-        if let StagedRenderPacketUpdate::TransformRefresh(staged) = &staged {
-            let upload_started = std::time::Instant::now();
-            self.scene
-                .write_instance_transforms(&self.queue, &staged.rows)?;
-            let resource_upload_ns =
-                u64::try_from(upload_started.elapsed().as_nanos()).unwrap_or(u64::MAX);
-            self.scene.set_scene_content_key(staged.scene_content_key);
-            // 变换变化 = 阴影投影变化,保守失效阴影缓存(与 Replace 的 must_invalidate 同级)。
-            self.shadow_version.bump_scene();
-            // R6-2 遥测:快路径无全量场景准备,scene_update 记 0,honest。
-            if let Some(telemetry) = self.telemetry.as_mut() {
-                telemetry.record_packet_prepare(0, resource_upload_ns);
-            }
-            return Ok(GpuSceneCacheMetrics::default());
-        }
         let StagedRenderPacketUpdate::Replace(staged) = staged else {
             return Ok(GpuSceneCacheMetrics::default());
         };
@@ -679,6 +662,12 @@ impl Renderer {
         self.shadow_map
             .publish_scene_update(&self.queue, staged.shadow_update);
         self.scene = scene;
+        // F2:场景整体替换可能改变几何/实例集,而 BLAS 直接引用旧 GpuGeometry
+        // 驻留缓冲——驻留必须随场景重建,否则会悬挂已释放的缓冲。失败
+        // fail-closed 关闭 RT 并记录诊断原因,不阻塞本次栅格提交;更细粒度的
+        // transform-only TLAS 快路径(rebuild_tlas)待几何内容键复用切片接入。
+        self.reestablish_rt_residency();
+        self.sync_outline_resources();
         self.culling = staged.culling;
         self.lod = staged.lod;
         self.shadow_casters = staged.shadow_casters;

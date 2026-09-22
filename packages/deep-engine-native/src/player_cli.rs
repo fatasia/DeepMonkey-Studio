@@ -253,6 +253,18 @@ pub fn run_telemetry_smoke(path: PathBuf) -> Result<(), String> {
     app::run_telemetry_smoke(PlayerContent::from_packet(packet, None))
 }
 
+/// `--smoke-package-telemetry`: keep the package camera, authored lighting and
+/// environment while using the same bounded telemetry path.
+pub fn run_package_telemetry(path: PathBuf) -> Result<(), String> {
+    let package = runtime_package_startup::load_auto(&path)?;
+    let summary = package.summary();
+    println!(
+        "telemetry runtime package loaded: {} geometries, {} instances, {} triangles",
+        summary.geometries, summary.instances, summary.triangles
+    );
+    app::run_package_telemetry_smoke(package.into_content())
+}
+
 /// `--smoke-telemetry-prepare`:telemetry smoke + 采样窗内每帧一次真实
 /// packet 更新(R6-2 准备细分采样)。
 pub fn run_telemetry_smoke_prepare(path: PathBuf) -> Result<(), String> {

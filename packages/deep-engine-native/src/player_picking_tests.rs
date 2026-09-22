@@ -20,6 +20,113 @@ fn view() -> PlayerView {
     }
 }
 
+fn box_packet() -> RenderPacket {
+    let positions = [
+        [-1.0, -1.0, 2.0],
+        [1.0, -1.0, 2.0],
+        [1.0, 1.0, 2.0],
+        [-1.0, 1.0, 2.0],
+        [-1.0, -1.0, 3.0],
+        [1.0, -1.0, 3.0],
+        [1.0, 1.0, 3.0],
+        [-1.0, 1.0, 3.0],
+    ];
+    let vertices: Vec<f32> = positions
+        .into_iter()
+        .flat_map(|position| [position[0], position[1], position[2], 0.0, 0.0, 1.0])
+        .collect();
+    serde_json::from_value(serde_json::json!({
+        "schema":"deep-engine.render-packet", "version":1,
+        "geometries":[{"id":"box", "revision":0, "vertices":vertices,
+            "indices":[0,2,1,0,3,2,4,5,6,4,6,7,0,1,5,0,5,4,
+                       1,2,6,1,6,5,2,3,7,2,7,6,3,0,4,3,4,7]}],
+        "materials":[],
+        "instances":[{"id":"box-instance", "geometry":"box", "material":"unused",
+            "transform":[1.,0.,0.,0., 0.,1.,0.,0., 0.,0.,1.,0., 0.,0.,0.,1.]}]
+    }))
+    .unwrap()
+}
+
+#[test]
+fn orbit_collision_keeps_clear_motion_and_clamps_obstacle_clearance() {
+    let previous = PlayerView {
+        yaw: 0.0,
+        distance: 5.0,
+        ..Default::default()
+    };
+    let clear = PlayerView {
+        distance: 1.0,
+        ..previous
+    };
+    assert_eq!(
+        resolve_camera_collision(
+            &RenderPacket {
+                schema: "deep-engine.render-packet".into(),
+                version: 1,
+                geometries: vec![],
+                materials: vec![],
+                instances: vec![],
+                textures: vec![],
+            },
+            Some(previous),
+            clear,
+            0.5,
+            [0.01, 100.0],
+        ),
+        clear
+    );
+    let mut off_axis = box_packet();
+    off_axis.instances[0].transform[12] = 100.0;
+    assert_eq!(
+        resolve_camera_collision(&off_axis, Some(previous), clear, 0.5, [0.01, 100.0],),
+        clear
+    );
+    let constrained =
+        resolve_camera_collision(&box_packet(), Some(previous), clear, 0.5, [0.01, 100.0]);
+    assert!((constrained.distance - 3.5).abs() < 0.0001);
+    assert_eq!(constrained.target, clear.target);
+    let bounded = resolve_camera_collision(&box_packet(), None, previous, 0.5, [4.0, 6.0]);
+    assert!((bounded.distance - 4.0).abs() < 0.0001);
+    assert!((bounded.eye()[2] - 1.5).abs() < 0.0001);
+}
+
+#[test]
+fn orbit_collision_recovers_inside_and_respects_section_removal() {
+    let scene = box_packet();
+    let inside = PlayerView {
+        yaw: 0.0,
+        distance: 2.5,
+        ..Default::default()
+    };
+    let recovered = resolve_camera_collision(&scene, None, inside, 0.25, [0.01, 100.0]);
+    assert!(recovered.eye()[2] < 2.0 - 0.24 || recovered.eye()[2] > 3.0 + 0.24);
+
+    let clipped = PlayerView {
+        clipping: [0.0, 0.0, -1.0, 1.0],
+        ..inside
+    };
+    assert_eq!(
+        resolve_camera_collision(&scene, None, clipped, 0.25, [0.01, 100.0]),
+        clipped
+    );
+}
+
+#[test]
+fn orbit_collision_catches_a_single_large_zoom_step() {
+    let scene = box_packet();
+    let previous = PlayerView {
+        yaw: 0.0,
+        distance: 100.0,
+        ..Default::default()
+    };
+    let desired = PlayerView {
+        distance: 0.5,
+        ..previous
+    };
+    let constrained = resolve_camera_collision(&scene, Some(previous), desired, 0.2, [0.01, 100.0]);
+    assert!((constrained.distance - 3.2).abs() < 0.0001);
+}
+
 #[test]
 fn author_selection_picks_only_current_levels_with_stable_identity_and_nearest_hit() {
     let mut scene = packet();

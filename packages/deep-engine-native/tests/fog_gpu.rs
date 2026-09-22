@@ -87,6 +87,7 @@ async fn draw_output(
         source,
         None,
         fog.map(|_| (depth, &frame_buffer)),
+        None,
     );
     assert!(!pass.uses_bloom());
     assert_eq!(pass.uses_fog(), fog.is_some());

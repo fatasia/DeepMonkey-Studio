@@ -29,8 +29,9 @@
 //! `select(v, 0.0, v == 0.0)` 规范化为 +0。
 //!
 //! 边界(如实):遮挡判定内核已按足迹逐实例定档(顶层为上限,TS
-//! `hiZOcclusionMip` 同式,见 `gpu_occlusion.rs`);精度-召回联测定档仍
-//! 属下一切片,联测前 `DEEP_ENGINE_NATIVE_OCCLUSION_HIZ` 保持默认关。
+//! `hiZOcclusionMip` 同式,见 `gpu_occlusion.rs`);精度-召回联测继续通过
+//! 显式关闭开关保留回退路径。默认 auto 使用相机变化后一帧保守旁路，避免
+//! 旧金字塔误剔，同时让零配置 Native 默认获得遮挡收益。
 //! WebGL2 无此路径(native 渲染器仅原生后端,r32float
 //! RENDER_ATTACHMENT 在 Vulkan/D3D12/Metal 均可用)。
 
@@ -51,13 +52,39 @@ pub(crate) fn hi_z_mip_level_count(width: u32, height: u32) -> u32 {
 
 /// 缩减内核选择,与 TS `encodePasses` 规则一致:源 even×even → anchored。
 pub(crate) fn reduce_is_anchored(source_width: u32, source_height: u32) -> bool {
-    source_width % 2 == 0 && source_height % 2 == 0
+    source_width.is_multiple_of(2) && source_height.is_multiple_of(2)
 }
 
-/// 显式开关(默认关):环境变量 `DEEP_ENGINE_NATIVE_OCCLUSION_HIZ=1` 才挂载
-/// HiZ 遮挡链;未验证路径不进生产默认(诚实条款,见 spec 接线节)。
+/// Native Hi-Z 运行模式。
+///
+/// `auto`/未设置是生产默认：挂载遮挡链，并在相机视锥变化后保守旁路一帧。
+/// `0`/`off` 用于诊断与回退，`1`/`on` 用于显式强制开启；未知值按 auto 处理，
+/// 避免配置拼写错误让用户意外退回全量绘制。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum OcclusionHizMode {
+    Auto,
+    Enabled,
+    Disabled,
+}
+
+pub(crate) fn parse_occlusion_hiz_mode(value: Option<&str>) -> OcclusionHizMode {
+    match value.map(|raw| raw.trim().to_ascii_lowercase()).as_deref() {
+        Some("0" | "off" | "false" | "disable" | "disabled") => OcclusionHizMode::Disabled,
+        Some("1" | "on" | "true" | "force" | "enabled") => OcclusionHizMode::Enabled,
+        _ => OcclusionHizMode::Auto,
+    }
+}
+
+pub(crate) fn occlusion_hiz_mode() -> OcclusionHizMode {
+    parse_occlusion_hiz_mode(
+        std::env::var("DEEP_ENGINE_NATIVE_OCCLUSION_HIZ")
+            .ok()
+            .as_deref(),
+    )
+}
+
 pub(crate) fn occlusion_hiz_enabled() -> bool {
-    std::env::var("DEEP_ENGINE_NATIVE_OCCLUSION_HIZ").as_deref() == Ok("1")
+    occlusion_hiz_mode() != OcclusionHizMode::Disabled
 }
 
 /// mip 尺寸,与 TS `mipDimension` 一致:max(1, size >> level)。
@@ -74,7 +101,7 @@ pub(crate) fn reference_reduce(source: &[f32], source_width: u32, source_height:
     let target_height = mip_dimension(source_height, 1);
     let window = |tx: u32, sw: u32, tw: u32| {
         let begin = tx * sw / tw;
-        let end = ((tx + 1) * sw + tw - 1) / tw;
+        let end = ((tx + 1) * sw).div_ceil(tw);
         begin..end.min(sw)
     };
     let mut target = Vec::with_capacity((target_width * target_height) as usize);

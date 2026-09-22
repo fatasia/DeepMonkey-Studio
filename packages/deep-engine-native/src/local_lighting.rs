@@ -10,6 +10,7 @@ pub enum LocalLightKind {
     Directional,
     Point,
     Spot,
+    Hemisphere,
 }
 #[derive(Debug, Default, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -18,6 +19,10 @@ pub struct LocalLight {
     pub position: [f32; 3],
     pub direction: [f32; 3],
     pub radiance: [f32; 3],
+    #[serde(default)]
+    pub ground_radiance: Option<[f32; 3]>,
+    #[serde(default)]
+    pub shadow_softness: Option<f32>,
     pub range: f32,
     pub decay: f32,
     pub inner_cos: f32,
@@ -32,6 +37,17 @@ impl LocalLight {
     pub fn validate(&self) -> bool {
         let norm = self.direction.iter().map(|v| v * v).sum::<f32>();
         self.kind != LocalLightKind::Disabled
+            && self.shadow_softness.is_none_or(|value| {
+                self.kind == LocalLightKind::Spot
+                    && value.is_finite()
+                    && (0.0..=1.0).contains(&value)
+            })
+            && (self.kind == LocalLightKind::Hemisphere) == self.ground_radiance.is_some()
+            && self.ground_radiance.is_none_or(|rgb| {
+                rgb.iter()
+                    .all(|v| v.is_finite() && (0.0..=256.0).contains(v))
+            })
+            && (self.ies.is_none() || self.kind == LocalLightKind::Spot)
             && self.ies.as_ref().is_none_or(|ies| ies.validate().is_ok())
             && (!self.cast_shadow
                 || ((self.kind == LocalLightKind::Point
@@ -64,14 +80,11 @@ impl LocalLight {
             LocalLightKind::Directional => 1.0,
             LocalLightKind::Point => 2.0,
             LocalLightKind::Spot => 3.0,
+            LocalLightKind::Hemisphere => 4.0,
         };
+        let position = self.ground_radiance.unwrap_or(self.position);
         [
-            [
-                self.position[0],
-                self.position[1],
-                self.position[2],
-                self.range,
-            ],
+            [position[0], position[1], position[2], self.range],
             [
                 self.direction[0],
                 self.direction[1],
@@ -110,6 +123,42 @@ pub fn decode<'de, D: Deserializer<'de>>(
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn hemisphere_preserves_ground_rgb_direction_and_legacy_rows() {
+        let light: LocalLight = serde_json::from_value(json!({"kind":"hemisphere","position":[0,0,0],
+            "direction":[0,1,0],"radiance":[2,1,0],"groundRadiance":[0,0.5,3],"range":0,"decay":2,"innerCos":1,"outerCos":0})).unwrap();
+        assert!(light.validate());
+        assert_eq!(light.rows()[0], [0.0, 0.5, 3.0, 0.0]);
+        assert_eq!(light.rows()[1], [0.0, 1.0, 0.0, 4.0]);
+        assert!(
+            !LocalLight {
+                ground_radiance: None,
+                ..light.clone()
+            }
+            .validate()
+        );
+        assert!(
+            !LocalLight {
+                kind: LocalLightKind::Point,
+                ..light.clone()
+            }
+            .validate()
+        );
+        assert!(
+            !LocalLight {
+                cast_shadow: true,
+                ..light.clone()
+            }
+            .validate()
+        );
+        assert!(
+            !LocalLight {
+                ground_radiance: Some([f32::NAN, 0.0, 0.0]),
+                ..light
+            }
+            .validate()
+        );
+    }
     #[derive(Deserialize)]
     struct Payload {
         #[serde(deserialize_with = "decode")]
@@ -121,11 +170,19 @@ mod tests {
         let parsed: Payload = serde_json::from_value(json!({"lights":[local.clone()]})).unwrap();
         assert_eq!(parsed.lights[0].rows()[1], [0.0, -1.0, 0.0, 3.0]);
         assert_eq!(parsed.lights[1], LocalLight::default());
+        for softness in [0.0, 0.25, 1.0] {
+            let mut soft = local.clone();
+            soft["shadowSoftness"] = json!(softness);
+            let parsed: Payload = serde_json::from_value(json!({"lights":[soft]})).unwrap();
+            assert_eq!(parsed.lights[0].shadow_softness, Some(softness as f32));
+        }
         for (key, value) in [
             ("kind", json!("area")),
             ("direction", json!([0, 0, 0])),
             ("range", json!(-1)),
             ("decay", json!(5)),
+            ("shadowSoftness", json!(1.01)),
+            ("shadowSoftness", json!(-0.01)),
             ("innerCos", json!(0.5)),
             ("futureShadow", json!(false)),
         ] {
@@ -136,5 +193,9 @@ mod tests {
         for values in [vec![], vec![local; 17]] {
             assert!(serde_json::from_value::<Payload>(json!({"lights":values})).is_err());
         }
+        let mut point_ies = json!({"kind":"point","position":[2,4,0],"direction":[0,-1,0],
+            "radiance":[2,1,0],"range":12,"decay":2,"innerCos":1,"outerCos":0});
+        point_ies["ies"] = json!({"profileId":"cone"});
+        assert!(serde_json::from_value::<Payload>(json!({"lights":[point_ies]})).is_err());
     }
 }

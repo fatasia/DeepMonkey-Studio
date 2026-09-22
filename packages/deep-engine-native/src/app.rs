@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use winit::{
     application::ApplicationHandler,
@@ -14,11 +14,13 @@ use crate::{
     player_state::PlayerState,
     renderer::{Renderer, RendererFeatures},
 };
+use deep_engine_native::runtime_navigation::{NavigationInput, NavigationState};
 #[cfg(windows)]
 mod accessibility;
 mod annotation_ime_area;
 mod annotation_input;
 mod annotations;
+mod camera_views;
 mod chart;
 mod chart_keyboard_smoke;
 mod chart_sim;
@@ -28,6 +30,8 @@ mod dashboard;
 mod dashboard_filter_gpu_tests;
 #[cfg(all(test, target_os = "windows"))]
 mod dashboard_gpu_tests;
+#[cfg(windows)]
+mod dashboard_video_input;
 mod deep2d_context;
 mod dynamic_playback;
 mod lifecycle;
@@ -72,16 +76,20 @@ use packet_live::PacketLiveTransport;
 use packet_live_probe::PacketLiveProbe;
 pub use runner::{
     PackageLiveSpec, PacketLiveSpec, run, run_chart_keyboard_smoke, run_dynamic_playback, run_fog,
-    run_occlusion_smoke, run_package_live, run_packet_live, run_section_smoke, run_selection_smoke,
-    run_shadow_update_probe, run_state_ops_playback, run_telemetry_smoke,
-    run_telemetry_smoke_prepare, run_telemetry_smoke_prepare_cast, run_telemetry_smoke_prepare_lod,
-    run_telemetry_smoke_prepare_material, run_telemetry_smoke_prepare_shadow,
-    run_telemetry_smoke_prepare_structural, run_verification,
+    run_occlusion_smoke, run_package_live, run_package_telemetry_smoke, run_packet_live,
+    run_section_smoke, run_selection_smoke, run_shadow_update_probe, run_state_ops_playback,
+    run_telemetry_smoke, run_telemetry_smoke_prepare, run_telemetry_smoke_prepare_cast,
+    run_telemetry_smoke_prepare_lod, run_telemetry_smoke_prepare_material,
+    run_telemetry_smoke_prepare_shadow, run_telemetry_smoke_prepare_structural, run_verification,
 };
 use shadow_update_probe::ShadowUpdateProbe;
 pub use state_ops_playback::StateOpsSpec;
 
 struct NativeApp {
+    input_gesture: dashboard::InputGesture,
+    #[cfg(windows)]
+    dashboard_video_input: dashboard_video_input::VideoInput,
+    input_modifiers: winit::keyboard::ModifiersState,
     content: PublishedState<PlayerContent>,
     proxy: EventLoopProxy<GpuEvent>,
     window: Option<Arc<Window>>,
@@ -91,6 +99,8 @@ struct NativeApp {
     features: RendererFeatures,
     shadow_update_probe: Option<ShadowUpdateProbe>,
     dynamic_playback: Option<dynamic_playback::DynamicPlaybackProbe>,
+    product_dynamic_playback: Option<dynamic_playback::ProductDynamicPlayback>,
+    product_physics_playback: Option<dynamic_playback::ProductPhysicsPlayback>,
     state_ops: Option<state_ops_playback::StateOpsProbe>,
     packet_live_probe: Option<PacketLiveProbe>,
     packet_live_transport: Option<PacketLiveTransport>,
@@ -98,8 +108,8 @@ struct NativeApp {
     package_open: Option<package_open::PackageOpen>,
     drop_batch: package_source::DropBatch,
     packet_coalescer: UpdateCoalescer,
-    telemetry_warmup_frames_remaining: u8,
-    telemetry_sample_frames_remaining: u8,
+    telemetry_warmup_frames_remaining: u16,
+    telemetry_sample_frames_remaining: u16,
     /// R6-2 细分采样:遥测采样窗内每帧一次真实 packet 更新。
     telemetry_prepare_replay: Option<TelemetryPrepareReplay>,
     state: PlayerState,
@@ -117,6 +127,10 @@ struct NativeApp {
     last_resize: Option<winit::dpi::PhysicalSize<u32>>,
     chart_sim_scheduled: bool,
     dashboard_wake_at: Option<std::time::Instant>,
+    navigation_input: NavigationInput,
+    navigation_state: NavigationState,
+    navigation_clock: Option<std::time::Instant>,
+    navigation_pressed: HashSet<winit::keyboard::KeyCode>,
     #[cfg(windows)]
     x_runtime: Option<x_runtime::Runtime>,
     #[cfg(windows)]
@@ -296,6 +310,23 @@ fn lod_target_id(packet: &deep_engine_native::contract::RenderPacket, index: usi
 impl NativeApp {
     fn new(content: PlayerContent, proxy: EventLoopProxy<GpuEvent>, setup: NativeAppSetup) -> Self {
         let view = content.initial_view();
+        let camera_controls = content.camera_controls();
+        let product_dynamic_playback = if !setup.smoke_frame
+            && setup.dynamic_playback.is_none()
+            && setup.state_ops.is_none()
+        {
+            dynamic_playback::ProductDynamicPlayback::for_content(&content)
+        } else {
+            None
+        };
+        let product_physics_playback = if !setup.smoke_frame
+            && setup.dynamic_playback.is_none()
+            && setup.state_ops.is_none()
+        {
+            dynamic_playback::ProductPhysicsPlayback::for_content(&content)
+        } else {
+            None
+        };
         // 键盘 smoke 与图表交互 smoke 都推进 chart 探针,同一窗口只能选一条;
         // 键盘模式下 chart_probe 保持 None,由 chart_key_probe 独占推进权。
         let chart_probe =
@@ -305,6 +336,10 @@ impl NativeApp {
             .telemetry_prepare_replay
             .and_then(|perturbation| TelemetryPrepareReplay::build(&content, perturbation));
         Self {
+            input_modifiers: winit::keyboard::ModifiersState::empty(),
+            input_gesture: dashboard::InputGesture::default(),
+            #[cfg(windows)]
+            dashboard_video_input: dashboard_video_input::VideoInput::default(),
             chart_probe,
             chart_key_probe: (setup.chart_key_probe && content.chart.is_some()).then_some(0),
             chart_text: None,
@@ -313,6 +348,10 @@ impl NativeApp {
             last_resize: None,
             chart_sim_scheduled: false,
             dashboard_wake_at: None,
+            navigation_input: NavigationInput::default(),
+            navigation_state: NavigationState::default(),
+            navigation_clock: None,
+            navigation_pressed: HashSet::new(),
             #[cfg(windows)]
             x_runtime: None,
             #[cfg(windows)]
@@ -328,6 +367,8 @@ impl NativeApp {
             dynamic_playback: setup
                 .dynamic_playback
                 .map(dynamic_playback::DynamicPlaybackProbe::new),
+            product_dynamic_playback,
+            product_physics_playback,
             state_ops: setup.state_ops.map(state_ops_playback::StateOpsProbe::new),
             packet_live_probe: setup.packet_live_probe,
             packet_live_transport: setup.packet_live_transport,
@@ -336,18 +377,19 @@ impl NativeApp {
             drop_batch: Default::default(),
             packet_coalescer: UpdateCoalescer::new(0),
             telemetry_warmup_frames_remaining: if setup.telemetry_report {
-                crate::player_diagnostics::TELEMETRY_WARMUP_FRAMES
+                crate::player_diagnostics::telemetry_warmup_frames()
             } else {
                 0
             },
             telemetry_sample_frames_remaining: if setup.telemetry_report {
-                crate::player_diagnostics::TELEMETRY_SAMPLE_FRAMES
+                crate::player_diagnostics::telemetry_sample_frames()
             } else {
                 0
             },
             telemetry_prepare_replay,
             state: PlayerState {
                 view,
+                camera_controls,
                 ..Default::default()
             },
             occlusion_probe: setup.occlusion_probe.then_some(0),
@@ -359,7 +401,141 @@ impl NativeApp {
     }
 
     fn rotate(&mut self, delta: f32) {
+        let previous = self.state.view;
         self.state.rotate(delta);
+        self.state.view = self
+            .content
+            .active()
+            .resolve_camera_motion(Some(previous), self.state.view);
+        self.publish_interactive_view();
+    }
+
+    /// Apply one real redraw-clock navigation step. Orbit keeps its existing
+    /// discrete keyboard behavior; locomotion is only active for authored
+    /// first/third-person modes and remains harmless while Native preflight
+    /// fail-closes those modes.
+    pub(super) fn step_navigation(&mut self) {
+        let now = std::time::Instant::now();
+        let dt = self
+            .navigation_clock
+            .replace(now)
+            .map(|previous| previous.elapsed().as_secs_f32())
+            .unwrap_or(0.0);
+        if dt <= 0.0 {
+            if self.navigation_input.forward != 0.0
+                || self.navigation_input.strafe != 0.0
+                || self.navigation_input.vertical != 0.0
+                || self.navigation_input.jump
+            {
+                self.request_redraw();
+            }
+            return;
+        }
+        let controls = self.content.active().camera_controls();
+        if !matches!(
+            controls.mode,
+            deep_engine_native::runtime_camera::RuntimeCameraMode::FirstPerson
+                | deep_engine_native::runtime_camera::RuntimeCameraMode::ThirdPerson
+        ) {
+            return;
+        }
+        let previous = self.state.view;
+        let candidate = self
+            .navigation_state
+            .step(previous, controls, self.navigation_input, dt);
+        self.state.view = self
+            .content
+            .active()
+            .resolve_camera_motion(Some(previous), candidate);
+        if self.state.view != previous {
+            self.publish_interactive_view();
+        } else if self.navigation_input.forward != 0.0
+            || self.navigation_input.strafe != 0.0
+            || self.navigation_input.vertical != 0.0
+            || self.navigation_input.jump
+        {
+            self.request_redraw();
+        }
+    }
+
+    pub(super) fn navigation_key(&mut self, key: winit::keyboard::KeyCode, pressed: bool) -> bool {
+        if !matches!(
+            self.content.active().camera_controls().mode,
+            deep_engine_native::runtime_camera::RuntimeCameraMode::FirstPerson
+                | deep_engine_native::runtime_camera::RuntimeCameraMode::ThirdPerson
+        ) {
+            return false;
+        }
+        match key {
+            winit::keyboard::KeyCode::KeyW
+            | winit::keyboard::KeyCode::KeyS
+            | winit::keyboard::KeyCode::KeyD
+            | winit::keyboard::KeyCode::KeyA
+            | winit::keyboard::KeyCode::KeyE
+            | winit::keyboard::KeyCode::KeyQ
+            | winit::keyboard::KeyCode::ShiftLeft
+            | winit::keyboard::KeyCode::ShiftRight
+            | winit::keyboard::KeyCode::Space => {}
+            _ => return false,
+        }
+        if pressed {
+            self.navigation_pressed.insert(key);
+        } else {
+            self.navigation_pressed.remove(&key);
+        }
+        let has = |key| self.navigation_pressed.contains(&key);
+        let axis = |positive, negative| {
+            (if has(positive) { 1.0 } else { 0.0 }) - (if has(negative) { 1.0 } else { 0.0 })
+        };
+        self.navigation_input.forward = axis(
+            winit::keyboard::KeyCode::KeyW,
+            winit::keyboard::KeyCode::KeyS,
+        );
+        self.navigation_input.strafe = axis(
+            winit::keyboard::KeyCode::KeyD,
+            winit::keyboard::KeyCode::KeyA,
+        );
+        self.navigation_input.vertical = axis(
+            winit::keyboard::KeyCode::KeyE,
+            winit::keyboard::KeyCode::KeyQ,
+        );
+        self.navigation_input.sprint =
+            has(winit::keyboard::KeyCode::ShiftLeft) || has(winit::keyboard::KeyCode::ShiftRight);
+        self.navigation_input.jump = has(winit::keyboard::KeyCode::Space);
+        self.request_redraw();
+        true
+    }
+
+    pub(super) fn clear_navigation_input(&mut self) {
+        self.navigation_input = NavigationInput::default();
+        self.navigation_pressed.clear();
+        self.navigation_state.reset();
+        self.navigation_clock = None;
+    }
+
+    fn tilt(&mut self, delta: f32) {
+        let previous = self.state.view;
+        self.state.orbit(0.0, delta);
+        self.state.view = self
+            .content
+            .active()
+            .resolve_camera_motion(Some(previous), self.state.view);
+        self.publish_interactive_view();
+    }
+
+    fn zoom(&mut self, delta: f64) {
+        let previous = self.state.view;
+        if !self.state.zoom(delta) {
+            return;
+        }
+        self.state.view = self
+            .content
+            .active()
+            .resolve_camera_motion(Some(previous), self.state.view);
+        self.publish_interactive_view();
+    }
+
+    fn publish_interactive_view(&mut self) {
         if let Some(renderer) = self.renderer.as_mut() {
             renderer.set_view(self.state.view);
         }

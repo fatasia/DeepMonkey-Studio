@@ -1,4 +1,7 @@
 use super::*;
+use crate::runtime_package::{
+    DashboardVideoDiagnostic, DashboardVideoPlayback, DashboardVideoSource, DashboardVideoState,
+};
 fn document() -> DashboardRuntimeV1 {
     let p: serde_json::Value = serde_json::from_str(include_str!(
         "../../../deep-engine/fixtures/dashboard-composition-v1.json"
@@ -64,5 +67,49 @@ fn rectangle_boundary_and_document_utf8_bytes_are_exact() {
     assert!(validate(&d).is_err());
     d.document_id = "author".into();
     d.pages[0].nodes[0].frame[0] = MAX_COORD + 1.;
+    assert!(validate(&d).is_err());
+}
+
+#[test]
+fn video_diagnostic_cannot_claim_packaged_or_playable_media() {
+    let mut d = document();
+    let node_id = d.pages[0].nodes[0].id.clone();
+    d.videos = vec![DashboardVideoDiagnostic {
+        node_id,
+        source_node_id: "author-video".into(),
+        source: DashboardVideoSource {
+            uri: Some("/media/inspection.mp4".into()),
+            availability: "external-unresolved".into(),
+            packaged: false,
+            resource_id: None,
+        },
+        playback: DashboardVideoPlayback {
+            fit: "contain".into(),
+            autoplay: false,
+            muted: true,
+            r#loop: false,
+        },
+        state: DashboardVideoState {
+            status: "blocked".into(),
+            transport: "unavailable".into(),
+            position_seconds: 0.0,
+            duration_seconds: None,
+            reason: "native-video-runtime-unavailable".into(),
+            missing_capabilities: [
+                "video-decoder",
+                "frame-texture-update",
+                "media-clock",
+                "playback-controls",
+                "seek",
+            ]
+            .map(str::to_owned)
+            .into(),
+        },
+    }];
+    assert!(validate(&d).is_ok());
+    d.videos[0].source.packaged = true;
+    assert!(validate(&d).is_err());
+    d.videos[0].source.packaged = false;
+    d.videos[0].state.status = "ready".into();
     assert!(validate(&d).is_err());
 }

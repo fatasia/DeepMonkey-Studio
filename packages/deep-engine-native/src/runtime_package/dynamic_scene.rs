@@ -251,7 +251,11 @@ fn sample_track(keyframes: &[DynamicAnimationKeyframe], time_ms: u64) -> [f64; 7
     } else {
         (time_ms - previous.time_ms) as f64 / span
     };
-    let factor = match next.transition.as_ref().unwrap_or(&DynamicAnimationTransition::Linear) {
+    let factor = match next
+        .transition
+        .as_ref()
+        .unwrap_or(&DynamicAnimationTransition::Linear)
+    {
         DynamicAnimationTransition::Linear => factor,
         DynamicAnimationTransition::Smooth => factor * factor * (3.0 - 2.0 * factor),
         DynamicAnimationTransition::EaseIn => factor * factor,
@@ -345,6 +349,7 @@ pub fn parse_and_validate_dynamic_scene_runtime(
                 || !matches!(
                     track.property.as_str(),
                     "translation" | "rotation" | "scale" | "camera-position" | "camera-target"
+                        | "object-visible"
                 )
                 || track.keyframes.is_empty()
                 || track.keyframes.len() > MAX_KEYFRAMES

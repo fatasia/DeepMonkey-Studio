@@ -60,20 +60,18 @@ pub fn diff_scene_instances(
         }
         if shadow_flag_changed(before, after) {
             flags.push(index as u32);
-            cast_changed =
-                cast_changed || cast_enabled(&before.cast_shadow) != cast_enabled(&after.cast_shadow);
+            cast_changed = cast_changed
+                || cast_enabled(&before.cast_shadow) != cast_enabled(&after.cast_shadow);
         }
         if !lod_equal(before, after) {
             lods.push(index as u32);
         }
     }
-    match (
-        transforms.is_empty(),
-        flags.is_empty(),
-        lods.is_empty(),
-    ) {
+    match (transforms.is_empty(), flags.is_empty(), lods.is_empty()) {
         (true, true, true) => SceneInstanceDiff::Identical,
-        (false, true, true) => SceneInstanceDiff::TransformOnly { changed_indices: transforms },
+        (false, true, true) => SceneInstanceDiff::TransformOnly {
+            changed_indices: transforms,
+        },
         (true, false, true) => SceneInstanceDiff::ShadowFlagOnly {
             changed_indices: flags,
             cast_changed,
@@ -88,7 +86,10 @@ pub fn diff_scene_instances(
 /// 身份字段相等:id/geometry/material。transform/阴影标志/LOD 不在身份内,
 /// 由各自维度表达。
 fn instance_identity_equal(before: &RenderInstance, after: &RenderInstance) -> bool {
-    before.id == after.id && before.geometry == after.geometry && before.material == after.material
+    before.id == after.id
+        && before.geometry == after.geometry
+        && before.material == after.material
+        && before.outline == after.outline
 }
 
 /// 阴影标志按 prepare_scene 语义比较:None 与 Some(true) 等价。
@@ -113,12 +114,16 @@ fn lod_equal(before: &RenderInstance, after: &RenderInstance) -> bool {
         (Some(before_lod), Some(after_lod)) => {
             before_lod.hysteresis_ratio == after_lod.hysteresis_ratio
                 && before_lod.levels.len() == after_lod.levels.len()
-                && before_lod.levels.iter().zip(after_lod.levels.iter()).all(|(a, b)| {
-                    a.geometry == b.geometry
-                        && a.min_projected_diameter_pixels == b.min_projected_diameter_pixels
-                        && a.geometric_error == b.geometric_error
-                        && a.resident == b.resident
-                })
+                && before_lod
+                    .levels
+                    .iter()
+                    .zip(after_lod.levels.iter())
+                    .all(|(a, b)| {
+                        a.geometry == b.geometry
+                            && a.min_projected_diameter_pixels == b.min_projected_diameter_pixels
+                            && a.geometric_error == b.geometric_error
+                            && a.resident == b.resident
+                    })
                 && before_lod.author.is_none()
                 && after_lod.author.is_none()
         }
@@ -141,6 +146,7 @@ mod tests {
             ],
             cast_shadow: Some(true),
             receive_shadow: Some(true),
+            outline: None,
             lod: None,
         }
     }

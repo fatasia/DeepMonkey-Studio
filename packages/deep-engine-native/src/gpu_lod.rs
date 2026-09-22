@@ -118,6 +118,14 @@ impl GpuLod {
         self.dirty
     }
 
+    pub fn reset_history(&mut self, queue: &wgpu::Queue) {
+        let reset = vec![u32::MAX; self.count as usize];
+        for view in &self.views {
+            queue.write_buffer(&view._history, 0, cast_slice(&reset));
+        }
+        self.dirty = true;
+    }
+
     pub fn encode(&self, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder) {
         for view in &self.views {
             queue.write_buffer(&view.indirect, 0, &self.indirect_template);

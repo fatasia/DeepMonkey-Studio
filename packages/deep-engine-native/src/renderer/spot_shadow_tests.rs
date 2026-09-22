@@ -8,7 +8,7 @@ pub(super) fn verify_point(window: Arc<Window>, proxy: EventLoopProxy<GpuEvent>)
 }
 fn verify_kind(window: Arc<Window>, proxy: EventLoopProxy<GpuEvent>, kind: &str) {
     let mut frames = Vec::new();
-    for (index, (cast, receive, x)) in [
+    let mut cases = vec![
         (false, true, 0.0),
         (true, true, 0.0),
         (true, false, 0.0),
@@ -16,13 +16,17 @@ fn verify_kind(window: Arc<Window>, proxy: EventLoopProxy<GpuEvent>, kind: &str)
         (false, true, 2.0),
         (true, true, 0.0),
         (true, true, 0.0),
-    ]
-    .into_iter()
-    .enumerate()
-    {
+    ];
+    if kind == "spot" {
+        cases.extend([(true, true, 0.0), (true, true, 0.0), (true, false, 0.0)]);
+    }
+    for (index, (cast, receive, x)) in cases.into_iter().enumerate() {
         let mut local = json!({"kind":kind,"position":[x,4,3],"direction":[0,-0.8,-0.6],"radiance":[16,16,16],"range":12,"decay":2,"innerCos":0.8,"outerCos":0.5});
         if cast {
             local["castShadow"] = json!(true);
+        }
+        if index >= 7 {
+            local["shadowSoftness"] = json!(if index == 7 { 0.0 } else { 1.0 });
         }
         let locals = if index == 6 {
             let mut spot = local.clone();
@@ -35,7 +39,7 @@ fn verify_kind(window: Arc<Window>, proxy: EventLoopProxy<GpuEvent>, kind: &str)
         } else {
             vec![local]
         };
-        let content = lit_content_flags(
+        let mut content = lit_content_flags(
             [0.0; 3],
             Some(
                 json!({"direction":[0,1,0],"radiance":[0,0,0],"exposure":1.05,"shadows":false,"localLights":locals}),
@@ -62,6 +66,61 @@ fn verify_kind(window: Arc<Window>, proxy: EventLoopProxy<GpuEvent>, kind: &str)
         renderer.activate_surface();
         present(&mut renderer);
         frames.push(directional_tests::read_pixels(&renderer));
+        if kind == "spot" && index == 1 {
+            let reference = renderer.shadow_casters.clone();
+            reference.clear_view_key_cache_for_test();
+            assert_eq!(
+                renderer.shadow_keys,
+                reference
+                    .keys(&renderer.shadow_map, renderer.shadow_shader_key)
+                    .unwrap()
+            );
+            renderer.shadow_cache.invalidate();
+            present(&mut renderer);
+            assert_eq!(
+                frames[index],
+                directional_tests::read_pixels(&renderer),
+                "full shadow refresh and retained keys must match pixels"
+            );
+            let previous = content.packet().clone();
+            let previous_keys = renderer.shadow_keys.clone();
+            content.mutate_packet_for_test(|packet| {
+                packet.instances.last_mut().unwrap().transform[12] += 0.5
+            });
+            let staged =
+                pollster::block_on(renderer.stage_render_packet_update(&previous, &content))
+                    .unwrap();
+            let metrics = renderer.publish_render_packet_update(staged).unwrap();
+            assert_eq!(
+                (
+                    metrics.geometry_uploads,
+                    metrics.texture_uploads,
+                    metrics.material_uploads
+                ),
+                (0, 0, 0)
+            );
+            assert_ne!(
+                renderer.shadow_keys, previous_keys,
+                "moving caster must refresh shadow fingerprints"
+            );
+            present(&mut renderer);
+            assert_ne!(
+                frames[index],
+                directional_tests::read_pixels(&renderer),
+                "moving geometry must change actual pixels"
+            );
+            let moved = content.packet().clone();
+            content.mutate_packet_for_test(|packet| *packet = previous.clone());
+            let staged =
+                pollster::block_on(renderer.stage_render_packet_update(&moved, &content)).unwrap();
+            renderer.publish_render_packet_update(staged).unwrap();
+            present(&mut renderer);
+            assert_eq!(
+                frames[index],
+                directional_tests::read_pixels(&renderer),
+                "undo must restore exact shadow pixels"
+            );
+        }
         if index == 1 {
             renderer.resize(PhysicalSize::new(0, 0)).unwrap();
             assert!(matches!(
@@ -135,6 +194,24 @@ fn verify_kind(window: Arc<Window>, proxy: EventLoopProxy<GpuEvent>, kind: &str)
         0,
         "castShadow false must remove local occluders"
     );
+    if kind == "spot" {
+        assert_eq!(
+            different(1, 7),
+            0,
+            "explicit zero preserves old shadow pixels"
+        );
+        assert!(
+            different(7, 8) > 100,
+            "PCSS softness must change shadow pixels"
+        );
+        assert_eq!(different(0, 9), 0, "soft shadows honor receiveShadow false");
+        println!(
+            "spot PCSS pixels: softened={} legacy={} bypass={}",
+            different(7, 8),
+            different(1, 7),
+            different(0, 9)
+        );
+    }
     eprintln!(
         "spot shadow pixels: shadow={} receive bypass={} moved={}",
         different(0, 1),

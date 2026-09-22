@@ -5,7 +5,7 @@
 
 use bytemuck::cast_slice;
 use deep_engine_native::culling_contract::{
-    MAIN_SOLID_MASK, PreparedGpuCulling, batch_ranges_from_metadata, GPU_CULLING_INSTANCE_BYTES,
+    GPU_CULLING_INSTANCE_BYTES, MAIN_SOLID_MASK, PreparedGpuCulling, batch_ranges_from_metadata,
 };
 use deep_engine_native::mesh_abi::FrameUniform;
 use wgpu::util::DeviceExt;
@@ -72,7 +72,12 @@ fn build(
             .attach_occlusion(
                 &bench.device,
                 &source,
-                OcclusionSource { view: view.clone(), width, height, mip_level },
+                OcclusionSource {
+                    view: view.clone(),
+                    width,
+                    height,
+                    mip_level,
+                },
                 &scene.frame,
                 enable_readback,
             )
@@ -113,7 +118,14 @@ fn prepared_two_batches(total: usize, half: usize) -> PreparedGpuCulling {
 }
 
 /// 单个对照用例:(名称, 场景, prepared, HiZ 各层, 期望幸存数, 期望 draws)。
-type ConsumeCase<'a> = (&'a str, &'a Scene, &'a PreparedGpuCulling, &'a [&'a [f32]], u32, u32);
+type ConsumeCase<'a> = (
+    &'a str,
+    &'a Scene,
+    &'a PreparedGpuCulling,
+    &'a [&'a [f32]],
+    u32,
+    u32,
+);
 
 /// 场景 A/B/C 复跑:紧凑 count 必须逐场景等于遮挡判定 count(64/0/64),
 /// per-batch 计数、indirect draws、幸存行数一致。
@@ -124,23 +136,50 @@ fn consume_compacted_counts_match_decision_across_three_scenarios() {
     let view = scenario_view(6.0);
     let occluder_b = standard_depth(1.0);
     let occluder_c = standard_depth(3.0);
-    let scene_grid = Scene { instances: grid_instances(view, 6.0), frame: frame_for(view) };
+    let scene_grid = Scene {
+        instances: grid_instances(view, 6.0),
+        frame: frame_for(view),
+    };
     let mut instances_mixed = grid_instances(view, 2.0);
     instances_mixed.extend(grid_instances(view, 4.0));
-    let scene_mixed = Scene { instances: instances_mixed, frame: frame_for(view) };
+    let scene_mixed = Scene {
+        instances: instances_mixed,
+        frame: frame_for(view),
+    };
     let prepared_single = prepared(64);
     let prepared_double = prepared(128);
     let levels_far: &[&[f32]] = &[&[1.0; 16], &[1.0; 4], &[1.0]];
     let levels_b: &[&[f32]] = &[&[occluder_b; 16], &[occluder_b; 4], &[occluder_b]];
     let levels_c: &[&[f32]] = &[&[occluder_c; 16], &[occluder_c; 4], &[occluder_c]];
     let cases: [ConsumeCase; 3] = [
-        ("A all-in-frustum", &scene_grid, &prepared_single, levels_far, 64, 1),
-        ("B all-occluded", &scene_grid, &prepared_single, levels_b, 0, 0),
+        (
+            "A all-in-frustum",
+            &scene_grid,
+            &prepared_single,
+            levels_far,
+            64,
+            1,
+        ),
+        (
+            "B all-occluded",
+            &scene_grid,
+            &prepared_single,
+            levels_b,
+            0,
+            0,
+        ),
         ("C mixed", &scene_mixed, &prepared_double, levels_c, 64, 1),
     ];
     for (name, scene, prepared_culling, levels, expected, draws) in cases {
         let (_texture, hiz_view) = hiz_pyramid(&bench.device, &bench.queue, levels);
-        let mut culling = build(&bench, scene, prepared_culling, Some((&hiz_view, 4, 4, 2)), true, true);
+        let mut culling = build(
+            &bench,
+            scene,
+            prepared_culling,
+            Some((&hiz_view, 4, 4, 2)),
+            true,
+            true,
+        );
         let (frustum, flags, compacted) = run_chain(&mut culling, &bench, &scene.frame);
         let compacted = compacted.expect("consume readback enabled");
         println!(
@@ -150,9 +189,17 @@ fn consume_compacted_counts_match_decision_across_three_scenarios() {
             compacted.draws(),
         );
         assert_eq!(flags, Some(expected), "{name}: flag count mismatch");
-        assert_eq!(compacted.total(), expected, "{name}: compacted count mismatch");
+        assert_eq!(
+            compacted.total(),
+            expected,
+            "{name}: compacted count mismatch"
+        );
         assert_eq!(compacted.draws(), draws, "{name}: draw count mismatch");
-        assert_eq!(compacted.per_batch, vec![expected], "{name}: per-batch mismatch");
+        assert_eq!(
+            compacted.per_batch,
+            vec![expected],
+            "{name}: per-batch mismatch"
+        );
         // rows readback 覆盖整个紧凑区容量;幸存数由 per_batch 决定。
         assert_eq!(
             compacted.rows.len(),
@@ -171,16 +218,29 @@ fn consume_places_rows_in_batch_regions_in_cpu_reference_order() {
     let view = scenario_view(6.0);
     let mut instances = grid_instances(view, 2.0);
     instances.extend(grid_instances(view, 4.0));
-    let scene = Scene { instances, frame: frame_for(view) };
+    let scene = Scene {
+        instances,
+        frame: frame_for(view),
+    };
     let prepared_culling = prepared_two_batches(128, 64);
     assert_eq!(
         batch_ranges_from_metadata(&prepared_culling.metadata, 2),
         vec![[0, 64, 0, 0], [64, 128, 0, 0]]
     );
     let occluder = standard_depth(3.0);
-    let (_texture, hiz_view) =
-        hiz_pyramid(&bench.device, &bench.queue, &[&[occluder; 16], &[occluder; 4], &[occluder]]);
-    let mut culling = build(&bench, &scene, &prepared_culling, Some((&hiz_view, 4, 4, 2)), true, true);
+    let (_texture, hiz_view) = hiz_pyramid(
+        &bench.device,
+        &bench.queue,
+        &[&[occluder; 16], &[occluder; 4], &[occluder]],
+    );
+    let mut culling = build(
+        &bench,
+        &scene,
+        &prepared_culling,
+        Some((&hiz_view, 4, 4, 2)),
+        true,
+        true,
+    );
     let (frustum, flags, compacted) = run_chain(&mut culling, &bench, &scene.frame);
     let compacted = compacted.expect("consume readback enabled");
     println!(
@@ -190,7 +250,11 @@ fn consume_places_rows_in_batch_regions_in_cpu_reference_order() {
     );
     assert_eq!(frustum, 128);
     assert_eq!(flags, Some(64));
-    assert_eq!(compacted.per_batch, vec![64, 0], "front batch survives, back batch culled");
+    assert_eq!(
+        compacted.per_batch,
+        vec![64, 0],
+        "front batch survives, back batch culled"
+    );
     // CPU 参考:批次 0 的幸存行 = 实例 0..64 按 id 升序,逐字节一致;
     // 背景批无幸存,其区域槽位保持初始零(不被触碰)。
     assert_eq!(
@@ -199,7 +263,9 @@ fn consume_places_rows_in_batch_regions_in_cpu_reference_order() {
         "compacted rows must equal source rows of the surviving front batch, in id order"
     );
     assert!(
-        compacted.rows[64..].iter().all(|row| row.iter().all(|value| *value == 0.0)),
+        compacted.rows[64..]
+            .iter()
+            .all(|row| row.iter().all(|value| *value == 0.0)),
         "slots beyond the compacted count must stay zero"
     );
 }
@@ -210,12 +276,29 @@ fn consume_places_rows_in_batch_regions_in_cpu_reference_order() {
 fn consume_output_is_bit_identical_across_runs() {
     let bench = pollster::block_on(bench_device());
     let view = scenario_view(6.0);
-    let scene = Scene { instances: grid_instances(view, 6.0), frame: frame_for(view) };
-    let (_texture, hiz_view) =
-        hiz_pyramid(&bench.device, &bench.queue, &[&[1.0; 16], &[1.0; 4], &[1.0]]);
-    let mut culling = build(&bench, &scene, &prepared(64), Some((&hiz_view, 4, 4, 2)), true, true);
-    let first = run_chain(&mut culling, &bench, &scene.frame).2.expect("first run readback");
-    let second = run_chain(&mut culling, &bench, &scene.frame).2.expect("second run readback");
+    let scene = Scene {
+        instances: grid_instances(view, 6.0),
+        frame: frame_for(view),
+    };
+    let (_texture, hiz_view) = hiz_pyramid(
+        &bench.device,
+        &bench.queue,
+        &[&[1.0; 16], &[1.0; 4], &[1.0]],
+    );
+    let mut culling = build(
+        &bench,
+        &scene,
+        &prepared(64),
+        Some((&hiz_view, 4, 4, 2)),
+        true,
+        true,
+    );
+    let first = run_chain(&mut culling, &bench, &scene.frame)
+        .2
+        .expect("first run readback");
+    let second = run_chain(&mut culling, &bench, &scene.frame)
+        .2
+        .expect("second run readback");
     assert_eq!(first.per_batch, second.per_batch);
     assert_eq!(first.rows.len(), second.rows.len());
     assert_eq!(
@@ -257,7 +340,10 @@ fn performance_consume_chain_three_way_at_4096() {
             )));
         }
     }
-    let scene = Scene { instances, frame: frame_for(view) };
+    let scene = Scene {
+        instances,
+        frame: frame_for(view),
+    };
     let mut metadata = vec![[0u32; 4]; 4096];
     for (index, row) in metadata.iter_mut().enumerate() {
         *row = if index < 2048 {
@@ -272,11 +358,21 @@ fn performance_consume_chain_three_way_at_4096() {
         indirect_template: vec![[36, 0, 0, 0, 0]; 2],
     };
     let occluder = standard_depth(3.0);
-    let (_texture, hiz_view) =
-        hiz_pyramid(&bench.device, &bench.queue, &[&[occluder; 16], &[occluder; 4], &[occluder]]);
+    let (_texture, hiz_view) = hiz_pyramid(
+        &bench.device,
+        &bench.queue,
+        &[&[occluder; 16], &[occluder; 4], &[occluder]],
+    );
     // 计数核对(单次,readback 开启):4096 → 2048 → 2048,per-batch [2048, 0]。
     {
-        let mut verify = build(&bench, &scene, &prepared_culling, Some((&hiz_view, 4, 4, 2)), true, true);
+        let mut verify = build(
+            &bench,
+            &scene,
+            &prepared_culling,
+            Some((&hiz_view, 4, 4, 2)),
+            true,
+            true,
+        );
         let (frustum, flags, compacted) = run_chain(&mut verify, &bench, &scene.frame);
         let compacted = compacted.expect("verify readback");
         println!(
@@ -291,10 +387,22 @@ fn performance_consume_chain_three_way_at_4096() {
         assert_eq!(compacted.per_batch, vec![2048, 0]);
     }
     let mut frustum_only = build(&bench, &scene, &prepared_culling, None, false, false);
-    let mut occlusion_only =
-        build(&bench, &scene, &prepared_culling, Some((&hiz_view, 4, 4, 2)), false, false);
-    let mut consume_chain =
-        build(&bench, &scene, &prepared_culling, Some((&hiz_view, 4, 4, 2)), true, false);
+    let mut occlusion_only = build(
+        &bench,
+        &scene,
+        &prepared_culling,
+        Some((&hiz_view, 4, 4, 2)),
+        false,
+        false,
+    );
+    let mut consume_chain = build(
+        &bench,
+        &scene,
+        &prepared_culling,
+        Some((&hiz_view, 4, 4, 2)),
+        true,
+        false,
+    );
     let mut floor_samples = Vec::new();
     let mut frustum_samples = Vec::new();
     let mut occlusion_samples = Vec::new();
@@ -306,7 +414,12 @@ fn performance_consume_chain_three_way_at_4096() {
         consume_samples.push(timed(&mut consume_chain, &bench, &scene.frame));
         let _ = round;
     }
-    for samples in [&mut floor_samples, &mut frustum_samples, &mut occlusion_samples, &mut consume_samples] {
+    for samples in [
+        &mut floor_samples,
+        &mut frustum_samples,
+        &mut occlusion_samples,
+        &mut consume_samples,
+    ] {
         samples.sort();
     }
     let median = |samples: &[std::time::Duration]| samples[13];
@@ -322,18 +435,15 @@ fn performance_consume_chain_three_way_at_4096() {
     );
     // 合理性断言:消费链不引发病态放大(阈值宽松防误报;方向不作物理结论)。
     assert!(
-        median(&consume_samples).as_secs_f64() < median(&frustum_samples).as_secs_f64() * 5.0 + 0.005,
+        median(&consume_samples).as_secs_f64()
+            < median(&frustum_samples).as_secs_f64() * 5.0 + 0.005,
         "consume chain exploded frame time: {:?} -> {:?}",
         median(&frustum_samples),
         median(&consume_samples),
     );
 }
 
-fn timed(
-    culling: &mut GpuCulling,
-    bench: &Bench,
-    frame: &FrameUniform,
-) -> std::time::Duration {
+fn timed(culling: &mut GpuCulling, bench: &Bench, frame: &FrameUniform) -> std::time::Duration {
     culling.update_views(&bench.queue, frame, &Shadows).unwrap();
     let start = std::time::Instant::now();
     let mut encoder = bench
@@ -379,10 +489,16 @@ fn freezes_occlusion_compaction_shader_contract() {
         "fn compact_instances(",
         "fn write_indirect(",
     ] {
-        assert!(shader.contains(entry_point), "missing entry point {entry_point}");
+        assert!(
+            shader.contains(entry_point),
+            "missing entry point {entry_point}"
+        );
     }
     assert_eq!(shader.matches("@compute @workgroup_size(64)").count(), 5);
-    assert!(!shader.contains("atomic"), "compaction must stay atomic-free");
+    assert!(
+        !shader.contains("atomic"),
+        "compaction must stay atomic-free"
+    );
     assert!(
         !shader.contains("var<workgroup>"),
         "compaction must stay shared-memory-free"
@@ -396,7 +512,10 @@ fn freezes_occlusion_compaction_shader_contract() {
 fn consume_attach_requires_the_decision_stage() {
     let bench = pollster::block_on(bench_device());
     let view = scenario_view(6.0);
-    let scene = Scene { instances: grid_instances(view, 6.0), frame: frame_for(view) };
+    let scene = Scene {
+        instances: grid_instances(view, 6.0),
+        frame: frame_for(view),
+    };
     let source = bench
         .device
         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -404,9 +523,15 @@ fn consume_attach_requires_the_decision_stage() {
             contents: cast_slice(&scene.instances),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
-    let mut culling =
-        GpuCulling::new(&bench.device, &source, &prepared(64), &scene.frame, &Shadows, false)
-            .expect("frustum culling builds");
+    let mut culling = GpuCulling::new(
+        &bench.device,
+        &source,
+        &prepared(64),
+        &scene.frame,
+        &Shadows,
+        false,
+    )
+    .expect("frustum culling builds");
     let error = culling
         .attach_occlusion_consume(&bench.device, &source, ConsumeReadbackMode::Off)
         .expect_err("consume without occlusion must fail");
@@ -424,13 +549,28 @@ fn consume_metrics_feed_empty_batch_skip_gate() {
     let view = scenario_view(6.0);
     let mut instances = grid_instances(view, 2.0);
     instances.extend(grid_instances(view, 4.0));
-    let scene = Scene { instances, frame: frame_for(view) };
+    let scene = Scene {
+        instances,
+        frame: frame_for(view),
+    };
     let prepared_culling = prepared_two_batches(128, 64);
     let occluder = standard_depth(3.0);
-    let (_texture, hiz_view) =
-        hiz_pyramid(&bench.device, &bench.queue, &[&[occluder; 16], &[occluder; 4], &[occluder]]);
-    let mut culling = build(&bench, &scene, &prepared_culling, Some((&hiz_view, 4, 4, 2)), true, true);
-    culling.update_views(&bench.queue, &scene.frame, &Shadows).unwrap();
+    let (_texture, hiz_view) = hiz_pyramid(
+        &bench.device,
+        &bench.queue,
+        &[&[occluder; 16], &[occluder; 4], &[occluder]],
+    );
+    let mut culling = build(
+        &bench,
+        &scene,
+        &prepared_culling,
+        Some((&hiz_view, 4, 4, 2)),
+        true,
+        true,
+    );
+    culling
+        .update_views(&bench.queue, &scene.frame, &Shadows)
+        .unwrap();
     let mut encoder = bench
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -452,14 +592,31 @@ fn consume_metrics_feed_empty_batch_skip_gate() {
     assert_eq!(metrics.drawn, 64, "front batch survives, back batch culled");
     assert_eq!(metrics.culled, 64);
     assert_eq!(metrics.draws, Some(1), "only the front batch is nonempty");
-    println!("consume metrics gate: candidates={} drawn={} culled={} draws={:?}", metrics.candidates, metrics.drawn, metrics.culled, metrics.draws);
+    println!(
+        "consume metrics gate: candidates={} drawn={} culled={} draws={:?}",
+        metrics.candidates, metrics.drawn, metrics.culled, metrics.draws
+    );
 
     // survivors 快照与 compact 计数逐批对齐;阴影视锥与失效后一律 None。
     assert_eq!(culling.compact_batch_survivors(0, 0), Some(64));
-    assert_eq!(culling.compact_batch_survivors(0, 1), Some(0), "empty batch is skippable");
-    assert_eq!(culling.compact_batch_survivors(1, 0), None, "shadow views never skip");
-    assert_eq!(culling.compact_batch_survivors(0, 2), None, "out-of-range batch is unknown");
-    culling.update_views(&bench.queue, &scene.frame, &Shadows).unwrap();
+    assert_eq!(
+        culling.compact_batch_survivors(0, 1),
+        Some(0),
+        "empty batch is skippable"
+    );
+    assert_eq!(
+        culling.compact_batch_survivors(1, 0),
+        None,
+        "shadow views never skip"
+    );
+    assert_eq!(
+        culling.compact_batch_survivors(0, 2),
+        None,
+        "out-of-range batch is unknown"
+    );
+    culling
+        .update_views(&bench.queue, &scene.frame, &Shadows)
+        .unwrap();
     assert_eq!(
         culling.compact_batch_survivors(0, 0),
         None,

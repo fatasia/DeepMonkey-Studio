@@ -47,8 +47,12 @@ pub(super) fn version(
     {
         return fail("experimental X is forbidden before runtime package v6");
     }
-    if !dynamic && (value["entrypoints"].get("dynamicRuntime").is_some()
-        || package.resources.iter().any(|r| r.kind == RuntimeResourceKind::DynamicRuntime))
+    if !dynamic
+        && (value["entrypoints"].get("dynamicRuntime").is_some()
+            || package
+                .resources
+                .iter()
+                .any(|r| r.kind == RuntimeResourceKind::DynamicRuntime))
     {
         return fail("dynamic runtime is only supported by runtime package v7");
     }

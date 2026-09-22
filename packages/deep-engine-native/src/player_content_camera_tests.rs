@@ -8,6 +8,171 @@ fn content() -> PlayerContent {
     )
     .unwrap()
 }
+
+fn controlled_package(
+    controls: deep_engine_native::runtime_camera::RuntimeCameraControls,
+) -> deep_engine_native::runtime_package::LoadedRuntimePackage {
+    let mut package = deep_engine_native::runtime_package::parse_and_validate_runtime_package(
+        include_bytes!("../tests/fixtures/runtime-package-camera-v3.json"),
+    )
+    .unwrap();
+    let camera = package.camera.as_mut().unwrap();
+    camera.schema_version = 4;
+    camera.controls = Some(controls);
+    package
+}
+
+fn collision_packet() -> deep_engine_native::contract::RenderPacket {
+    serde_json::from_value(serde_json::json!({
+        "schema":"deep-engine.render-packet", "version":1,
+        "geometries":[{"id":"wall", "revision":0,
+            "vertices":[-10.,-10.,3.,0.,0.,1., 10.,-10.,3.,0.,0.,1., 0.,10.,3.,0.,0.,1.],
+            "indices":[0,1,2]}],
+        "materials":[],
+        "instances":[{"id":"wall-instance", "geometry":"wall", "material":"unused",
+            "transform":[1.,0.,0.,0., 0.,1.,0.,0., 0.,0.,1.,0., 0.,0.,0.,1.]}]
+    }))
+    .unwrap()
+}
+
+#[test]
+fn camera_v4_controls_enter_player_content_and_constrain_initial_view() {
+    let controls = deep_engine_native::runtime_camera::RuntimeCameraControls {
+        min_distance: 2.0,
+        max_distance: 3.0,
+        min_polar_angle_degrees: 40.0,
+        max_polar_angle_degrees: 50.0,
+        walk_speed: 4.0,
+        fly_speed: 15.0,
+        ..Default::default()
+    };
+    let content = PlayerContent::from_package(controlled_package(controls)).unwrap();
+    assert_eq!(content.camera_controls(), controls);
+    assert_eq!(content.initial_view().distance, 3.0);
+    assert!((content.initial_view().pitch.to_degrees() - 40.0).abs() < 0.0001);
+}
+
+#[test]
+fn camera_v5_saved_views_enter_player_content_in_author_order() {
+    let mut package = controlled_package(Default::default());
+    let camera = package.camera.as_mut().unwrap();
+    camera.schema_version = 5;
+    camera.camera_views = Some(vec![
+        deep_engine_native::runtime_camera::RuntimeCameraView {
+            id: "overview".into(),
+            name: "Overview".into(),
+            position: [12.0, 8.0, 16.0],
+            target: [0.0; 3],
+        },
+        deep_engine_native::runtime_camera::RuntimeCameraView {
+            id: "detail".into(),
+            name: "Detail".into(),
+            position: [3.0, 2.0, 1.0],
+            target: [1.0, 0.0, 0.0],
+        },
+    ]);
+    camera.default_camera_view_id = Some("overview".into());
+    let content = PlayerContent::from_package(package).unwrap();
+    assert_eq!(content.camera_view_count(), 2);
+    let (id, name, view) = content.camera_view(1).unwrap();
+    assert_eq!((id, name), ("detail", "Detail"));
+    assert_eq!(view.target, [1.0, 0.0, 0.0]);
+    assert!(content.camera_view(2).is_none());
+}
+
+#[test]
+fn camera_v4_consumes_simple_native_navigation_and_rejects_ground_solver_fields() {
+    for mode in [
+        deep_engine_native::runtime_camera::RuntimeCameraMode::FirstPerson,
+        deep_engine_native::runtime_camera::RuntimeCameraMode::ThirdPerson,
+    ] {
+        let controls = deep_engine_native::runtime_camera::RuntimeCameraControls {
+            mode,
+            ..Default::default()
+        };
+        assert!(PlayerContent::from_package(controlled_package(controls)).is_ok());
+    }
+    for (mode, expected) in [
+        (
+            deep_engine_native::runtime_camera::RuntimeCameraMode::FirstPerson,
+            "native firstPerson navigation requires stepHeight=0 and maxSlopeAngleDegrees=0",
+        ),
+        (
+            deep_engine_native::runtime_camera::RuntimeCameraMode::ThirdPerson,
+            "native thirdPerson navigation requires stepHeight=0 and maxSlopeAngleDegrees=0",
+        ),
+    ] {
+        let controls = deep_engine_native::runtime_camera::RuntimeCameraControls {
+            mode,
+            step_height: 0.3,
+            ..Default::default()
+        };
+        assert_eq!(
+            PlayerContent::from_package(controlled_package(controls))
+                .err()
+                .unwrap(),
+            expected
+        );
+    }
+    let collision = deep_engine_native::runtime_camera::RuntimeCameraControls {
+        collision_enabled: true,
+        mode: deep_engine_native::runtime_camera::RuntimeCameraMode::FirstPerson,
+        ..Default::default()
+    };
+    assert!(PlayerContent::from_package(controlled_package(collision)).is_ok());
+}
+
+#[test]
+fn camera_reload_rechecks_collision_against_the_new_packet() {
+    let controls = deep_engine_native::runtime_camera::RuntimeCameraControls {
+        collision_enabled: true,
+        collision_radius: 0.5,
+        ..Default::default()
+    };
+    let mut old = PlayerContent::from_package(controlled_package(controls)).unwrap();
+    old.packet.geometries.clear();
+    old.packet.instances.clear();
+    let mut next = PlayerContent::from_package(controlled_package(controls)).unwrap();
+    next.packet = collision_packet();
+    let current = deep_engine_native::player_view::PlayerView {
+        yaw: 0.0,
+        distance: 5.0,
+        target: [0.0; 3],
+        ..Default::default()
+    };
+    let resolved = next.view_after_reload(&old, current);
+    assert!((resolved.distance - 2.5).abs() < 0.0001);
+}
+
+#[test]
+fn first_person_consumption_reuses_triangle_sweep_for_wall_clearance() {
+    let controls = deep_engine_native::runtime_camera::RuntimeCameraControls {
+        mode: deep_engine_native::runtime_camera::RuntimeCameraMode::FirstPerson,
+        collision_enabled: true,
+        collision_radius: 0.5,
+        eye_height: 1.7,
+        ..Default::default()
+    };
+    let mut content = PlayerContent::from_package(controlled_package(controls)).unwrap();
+    content.packet = collision_packet();
+    let previous = deep_engine_native::player_view::PlayerView {
+        yaw: 0.0,
+        pitch: 0.0,
+        target: [0.0, 1.7, 0.0],
+        distance: 4.0,
+        ..Default::default()
+    };
+    // Move the eye from z=4 toward a wall at z=3. The native locomotion
+    // consumer must preserve the configured clearance instead of publishing
+    // a camera inside the triangle.
+    let desired = previous.translate([0.0, 0.0, -2.0]);
+    let resolved = content.resolve_camera_motion(Some(previous), desired);
+    assert!(
+        resolved.eye()[2] >= 3.49,
+        "eye crossed wall: {:?}",
+        resolved.eye()
+    );
+}
 #[test]
 fn camera_reload_preserves_user_view_unless_authored_camera_changes() {
     let old = content();

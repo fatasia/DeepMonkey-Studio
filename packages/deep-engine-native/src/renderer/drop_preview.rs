@@ -145,6 +145,7 @@ impl Drop for PreviewGuard<'_> {
 }
 pub(super) fn swap_scene(renderer: &mut Renderer, staged: &mut StagedRenderPacketPayload) {
     std::mem::swap(&mut renderer.scene, staged.scene.scene_mut());
+    renderer.sync_outline_resources();
     std::mem::swap(&mut renderer.culling, &mut staged.culling);
     std::mem::swap(&mut renderer.lod, &mut staged.lod);
     std::mem::swap(&mut renderer.shadow_casters, &mut staged.shadow_casters);

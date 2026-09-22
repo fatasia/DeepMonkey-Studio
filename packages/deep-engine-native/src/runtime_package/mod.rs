@@ -44,7 +44,8 @@ use std::{fmt, path::Path};
 use serde_json::Value;
 
 pub use dashboard_types::{
-    DashboardFilterUpdate, DashboardNode, DashboardPage, DashboardRuntimeV1, LoadedDashboard,
+    DashboardFilterDataset, DashboardFilterUpdate, DashboardFrozenFilter, DashboardNode,
+    DashboardPage, DashboardRuntimeV1, LoadedDashboard,
 };
 pub use diff::{
     RuntimeResourceDiffPlan, RuntimeResourcePlanAction, RuntimeResourcePlanEntry,

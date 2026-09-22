@@ -55,6 +55,8 @@ pub struct PbrMaterial {
     pub metallic: f32,
     pub roughness: f32,
     #[serde(default, deserialize_with = "present")]
+    pub ior: Option<f32>,
+    #[serde(default, deserialize_with = "present")]
     pub base_color_texture: Option<TextureSlot>,
     #[serde(default, deserialize_with = "present")]
     pub metallic_roughness_texture: Option<TextureSlot>,
@@ -152,6 +154,8 @@ pub struct RenderInstance {
     pub cast_shadow: Option<bool>,
     #[serde(default, deserialize_with = "present")]
     pub receive_shadow: Option<bool>,
+    #[serde(default, deserialize_with = "present")]
+    pub outline: Option<bool>,
     #[serde(default, deserialize_with = "present")]
     pub lod: Option<RenderLodProfile>,
 }

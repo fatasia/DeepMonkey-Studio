@@ -92,6 +92,7 @@ fn nvidia_hdr_bloom_spreads_highlights_without_adding_dark_energy() {
         &source_view,
         Some((bloom.output_view(), bloom.settings().intensity)),
         None,
+        None,
     );
     assert!(output.uses_bloom());
     assert!(

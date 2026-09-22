@@ -121,9 +121,7 @@ impl GpuSceneCache {
             materials: HashMap::new(),
             instances: HashMap::new(),
             latest_instance: Weak::new(),
-            instance_ring: std::cell::RefCell::new(
-                InstanceStagingRing::new(),
-            ),
+            instance_ring: std::cell::RefCell::new(InstanceStagingRing::new()),
             fallbacks: Weak::new(),
             live_bytes: 0,
             peak_live_bytes: 0,
@@ -184,9 +182,7 @@ impl GpuSceneCache {
         self.instances.clear();
         self.latest_instance = Weak::new();
         // reset 语义是整体弃用:槽位一并清空,避免跨 epoch 复用旧容量。
-        self.instance_ring = std::cell::RefCell::new(
-            InstanceStagingRing::new(),
-        );
+        self.instance_ring = std::cell::RefCell::new(InstanceStagingRing::new());
         self.fallbacks = Weak::new();
         self.live_bytes = 0;
         self.peak_live_bytes = 0;

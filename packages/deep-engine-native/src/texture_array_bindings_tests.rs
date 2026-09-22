@@ -22,6 +22,9 @@ fn rgba8(id: &str) -> TextureArrayPackingEntry {
 
 #[test]
 fn slot_index_channel_layout_matches_web_contract() {
+    assert_eq!(ARRAY_INDICES_BINDING, 13);
+    assert_ne!(ARRAY_INDICES_BINDING, 11);
+    assert_ne!(ARRAY_INDICES_BINDING, 12);
     let indices = MaterialArrayIndices::from_slot_layers([Some(3), None, Some(1), None, Some(2)]);
     // offsets 0..4 = baseColor/metallicRoughness/occlusion/normal/emissive;未分配写 0。
     assert_eq!(indices.0, [3, 0, 1, 0, 2, 0, 0, 0]);

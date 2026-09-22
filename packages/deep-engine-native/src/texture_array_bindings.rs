@@ -7,7 +7,8 @@
 //! - 布局替代点:`renderer.rs::create_material_layout`(D2 逐材质)→
 //!   [`create_texture_array_material_layout`];renderer.rs 的既有渲染路径保持只读不动。
 //! - 材质侧:`gpu_textures.rs::GpuMaterial` 的 bind group(view/sampler/uniform)→
-//!   增补 binding 11 的 [`MaterialArrayIndices`] uniform(32B);`PreparedMaterial`
+//!   增补 binding 13 的 [`MaterialArrayIndices`] uniform(32B),11/12 保留给变形
+//!   current/previous stream;`PreparedMaterial`
 //!   的纹理解析改走 packing 的 (arrayIndex, layerIndex);任一在用槽位溢出/缺分配 →
 //!   整材质回退既有 D2 路径并计数,绝不部分数组化(Web materialGroup 同语义)。
 //! - WGSL 侧需配套 `texture_2d_array` 采样声明与索引 uniform 读取(对齐 Web
@@ -38,7 +39,8 @@ pub const TEXTURE_ARRAY_SLOT_MAP_BINDINGS: [u32; MATERIAL_ARRAY_SLOT_COUNT] = [0
 pub const TEXTURE_ARRAY_SLOT_SAMPLER_BINDINGS: [u32; MATERIAL_ARRAY_SLOT_COUNT] = [5, 6, 7, 8, 9];
 pub const TEXTURE_ARRAY_SLOT_INDEX_OFFSETS: [usize; MATERIAL_ARRAY_SLOT_COUNT] = [0, 1, 2, 3, 4];
 pub const MATERIAL_UNIFORM_BINDING: u32 = 10;
-pub const ARRAY_INDICES_BINDING: u32 = 11;
+/// 11/12 与 Web/Native 生产变形 current/previous stream ABI 保持隔离。
+pub const ARRAY_INDICES_BINDING: u32 = 13;
 
 /// 32B 数组索引通道:8×i32,槽位层号写在 [`TEXTURE_ARRAY_SLOT_INDEX_OFFSETS`],
 /// 未分配槽位写 0(Web `assignment?.layerIndex ?? 0`),配合 dummy 视图采样无效值。

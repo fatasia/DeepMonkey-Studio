@@ -192,7 +192,8 @@ pub(super) fn apply_latest(app: &mut NativeApp) {
     };
     match outcome {
         Ok(()) => {
-            app.state.view = content.initial_view();
+            app.state
+                .set_camera(content.initial_view(), content.camera_controls());
             // This mode has no watcher: drop generations are the publication authority.
             app.content.publish(generation, content);
             super::selection::clear(app);

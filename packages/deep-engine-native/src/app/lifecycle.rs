@@ -22,10 +22,35 @@ impl ApplicationHandler<GpuEvent> for NativeApp {
         } else {
             chart_sim::tick(self, event_loop);
         }
+        let dynamic_wake = self
+            .product_dynamic_playback
+            .as_ref()
+            .and_then(|playback| playback.wake_at());
+        let physics_wake = self
+            .product_physics_playback
+            .as_ref()
+            .map(|playback| playback.wake_at());
+        if let Some(wake_at) = dynamic_wake.into_iter().chain(physics_wake).min() {
+            let now = std::time::Instant::now();
+            if now >= wake_at {
+                self.request_redraw();
+            }
+            event_loop
+                .set_control_flow(winit::event_loop::ControlFlow::WaitUntil(wake_at.max(now)));
+        }
     }
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() {
-            let attributes = window_attributes(self.smoke_frame);
+            let attributes = crate::player_diagnostics::telemetry_surface_size()
+                .filter(|_| self.telemetry_sample_frames_remaining > 0)
+                .map_or_else(
+                    || window_attributes(self.smoke_frame),
+                    |size| {
+                        window_attributes(self.smoke_frame)
+                            .with_inner_size(size)
+                            .with_min_inner_size(size)
+                    },
+                );
             match event_loop.create_window(attributes) {
                 Ok(window) => self.window = Some(Arc::new(window)),
                 Err(error) => {

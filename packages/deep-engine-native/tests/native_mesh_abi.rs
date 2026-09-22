@@ -81,13 +81,13 @@ fn native_forward_attachment_profile_matches_the_browser_golden() {
 }
 
 #[test]
-fn native_frame_v6_retains_the_v1_through_v5_prefixes() {
+fn native_frame_v7_retains_the_v1_through_v6_prefixes() {
     assert_eq!(
         deep_engine_native::mesh_abi::FRAME_ABI_ID,
-        "deep.native.frame.v6"
+        "deep.native.frame.v7"
     );
     assert_eq!(deep_engine_native::mesh_abi::FRAME_V1_BYTES, 208);
-    assert_eq!((FRAME_UNIFORM_FLOATS, FRAME_UNIFORM_BYTES), (480, 1920));
+    assert_eq!((FRAME_UNIFORM_FLOATS, FRAME_UNIFORM_BYTES), (496, 1984));
     assert_eq!(FRAME_MEMBER_BYTE_OFFSETS, [0, 64, 128, 144, 160, 176, 192]);
 
     let frame = frame_uniform(2.0, 0.0);
@@ -105,7 +105,8 @@ fn native_frame_v6_retains_the_v1_through_v5_prefixes() {
     assert_slice_close(&flat[52..56], &[0.0; 4]);
     assert_slice_close(&flat[56..60], &[1.0, 1.0, 0.0, 0.0]);
     assert!(flat[60..476].iter().all(|value| *value == 0.0));
-    assert_slice_close(&flat[476..], &[0.1,100.0,0.0,0.0]);
+    assert_slice_close(&flat[476..480], &[0.1, 100.0, 0.0, 0.0]);
+    assert!(flat[480..].iter().all(|value| *value == 0.0));
     assert!(flat.iter().all(|value| value.is_finite()));
 
     let fog = FogSettings::exponential(0.125, [0.2, 0.3, 0.4]).unwrap();
@@ -154,6 +155,7 @@ fn wgsl_consumes_compact_rows_uv_sets_and_instance_emissive_alpha() {
     }
     assert!(shader.contains("textureNumLevels(specular_environment) - 1u"));
     assert!(shader.contains("energy_compensation * ambient_occlusion"));
+    assert!(shader.contains("global_illumination"));
     assert!(!shader.contains("vec3f(0.13, 0.16, 0.22)"));
 }
 

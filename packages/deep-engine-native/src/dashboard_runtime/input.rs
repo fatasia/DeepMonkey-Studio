@@ -5,8 +5,20 @@ use crate::chart::{
 };
 impl DashboardRuntime {
     pub fn pointer(&mut self, point: Option<[f64; 2]>, select: bool) -> Result<bool, String> {
+        if let Some(changed) = self.select_pointer(point, select)? {
+            return Ok(changed);
+        }
         let filter_hover = point.and_then(|p| self.filter_at(p));
         if select && let Some(index) = filter_hover {
+            // 多选列表点击 = 切换选中态(单事务内同步悬停/焦点);单选列表保持既有语义。
+            if self
+                .document()
+                .filter
+                .as_ref()
+                .is_some_and(|filter| filter.multi_select)
+            {
+                return self.toggle_filter_pointer(index, filter_hover);
+            }
             return self.transaction(|candidate| {
                 let changed = candidate.selected_filter != Some(index)
                     || candidate.hovered_filter != filter_hover
@@ -64,6 +76,9 @@ impl DashboardRuntime {
         })
     }
     pub fn zoom_at(&mut self, point: [f64; 2], delta: f64) -> Result<bool, String> {
+        if let Some(changed) = self.select_scroll(point, delta)? {
+            return Ok(changed);
+        }
         if !delta.is_finite() || delta == 0.0 {
             return Ok(false);
         }

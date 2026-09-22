@@ -12,11 +12,11 @@ use deep_engine_native::{
 use crate::player_cli::{
     PackageMode, default_shadow_fixture_path, load_deep2d, print_help, reject_extra, required_path,
     run_dynamic_playback_package, run_occlusion_smoke, run_package, run_package_live,
-    run_packet_live, run_shadow_update_probe, run_state_ops_package, run_telemetry_smoke,
-    run_telemetry_smoke_prepare, run_telemetry_smoke_prepare_cast, run_telemetry_smoke_prepare_lod,
-    run_telemetry_smoke_prepare_material, run_telemetry_smoke_prepare_shadow,
-    run_telemetry_smoke_prepare_structural, run_viewer, run_viewer_mode,
-    run_viewer_without_bloom,
+    run_package_telemetry, run_packet_live, run_shadow_update_probe, run_state_ops_package,
+    run_telemetry_smoke, run_telemetry_smoke_prepare, run_telemetry_smoke_prepare_cast,
+    run_telemetry_smoke_prepare_lod, run_telemetry_smoke_prepare_material,
+    run_telemetry_smoke_prepare_shadow, run_telemetry_smoke_prepare_structural, run_viewer,
+    run_viewer_mode, run_viewer_without_bloom,
 };
 use crate::runtime_package_startup;
 use crate::{deep2d_interleave_probe, fog_cli, shader_package_probe};
@@ -271,6 +271,11 @@ pub fn execute() -> Result<(), String> {
                 .unwrap_or_else(|| default_fixture_path().to_owned());
             reject_extra(args)?;
             run_telemetry_smoke(path)
+        }
+        Some("--smoke-package-telemetry") => {
+            let path = required_path(&mut args, "--smoke-package-telemetry")?;
+            reject_extra(args)?;
+            run_package_telemetry(path)
         }
         Some("--smoke-telemetry-prepare") => {
             let path = args

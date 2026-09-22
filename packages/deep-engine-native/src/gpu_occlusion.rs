@@ -52,10 +52,10 @@ pub struct ProjectionTerms {
 /// 纯 CPU 函数,确定性,单测覆盖(对照 PlayerView 原值)。
 pub fn projection_terms(frame: &FrameUniform) -> Result<ProjectionTerms, String> {
     let row_norm = |row: usize| {
-        ((frame[0][row] * frame[0][row]
+        (frame[0][row] * frame[0][row]
             + frame[1][row] * frame[1][row]
             + frame[2][row] * frame[2][row])
-            .sqrt()) as f32
+            .sqrt()
     };
     let depth_scale = row_norm(2);
     let focal_x = row_norm(0);
@@ -70,9 +70,13 @@ pub fn projection_terms(frame: &FrameUniform) -> Result<ProjectionTerms, String>
         return Err("native occlusion frame projection rows are degenerate".into());
     }
     let eye = [frame[8][0], frame[8][1], frame[8][2]];
-    let mut forward = [frame[0][2] / depth_scale, frame[1][2] / depth_scale, frame[2][2] / depth_scale];
-    let forward_length = (forward[0] * forward[0] + forward[1] * forward[1] + forward[2] * forward[2])
-        .sqrt();
+    let mut forward = [
+        frame[0][2] / depth_scale,
+        frame[1][2] / depth_scale,
+        frame[2][2] / depth_scale,
+    ];
+    let forward_length =
+        (forward[0] * forward[0] + forward[1] * forward[1] + forward[2] * forward[2]).sqrt();
     if !forward_length.is_finite() || forward_length <= 0.0 {
         return Err("native occlusion camera forward is degenerate".into());
     }
@@ -130,7 +134,12 @@ fn pack_params(
         dims: [count, source.width, source.height, source.mip_level],
         config: [0, OCCLUSION_RECT_SIDE_CAP, 0, 0],
         projection: [terms.depth_scale, terms.near, terms.focal_x, terms.focal_y],
-        viewport: [source.width as f32, source.height as f32, OCCLUSION_MARGIN, 0.0],
+        viewport: [
+            source.width as f32,
+            source.height as f32,
+            OCCLUSION_MARGIN,
+            0.0,
+        ],
         view_projection: [frame[0], frame[1], frame[2], frame[3]],
     })
 }
@@ -168,8 +177,7 @@ impl GpuOcclusionStage {
         enable_readback: bool,
     ) -> Result<Self, String> {
         let terms = projection_terms(frame)?;
-        let params =
-            pack_params(candidate_count, &source, frame, &terms)?;
+        let params = pack_params(candidate_count, &source, frame, &terms)?;
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Deep Engine native GPU occlusion layout"),
             entries: &[

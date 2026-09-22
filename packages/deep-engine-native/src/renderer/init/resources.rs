@@ -62,6 +62,25 @@ pub(super) fn frame_buffer(device: &wgpu::Device, frame: &FrameUniform) -> wgpu:
     })
 }
 
+pub(super) fn ies_buffer(
+    device: &wgpu::Device,
+    lighting: Option<&deep_engine_native::scene_lighting::DirectionalLighting>,
+) -> Result<wgpu::Buffer, String> {
+    use wgpu::util::DeviceExt;
+    let empty: [deep_engine_native::local_lighting::LocalLight; 0] = [];
+    let packed = deep_engine_native::ies_shading::NativeIesShadingResource::prepare(
+        lighting.map_or(&empty, |value| value.local_lights.as_slice()),
+        lighting.and_then(|value| value.light_profiles.as_deref()),
+    )?;
+    Ok(
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Deep Engine native IES shading"),
+            contents: packed.bytes(),
+            usage: wgpu::BufferUsages::STORAGE,
+        }),
+    )
+}
+
 pub(super) fn deep2d(
     device: &wgpu::Device,
     queue: &wgpu::Queue,

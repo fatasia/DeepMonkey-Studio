@@ -1,7 +1,5 @@
 use super::{FrozenTextRasterizer, styled_types::*};
-use cosmic_text::{
-    Align, Attrs, Buffer, Color, Family, Metrics, Shaping, Style, Weight, Wrap,
-};
+use cosmic_text::{Align, Attrs, Buffer, Color, Family, Metrics, Shaping, Style, Weight, Wrap};
 use std::collections::{BTreeSet, HashSet};
 impl FrozenTextRasterizer {
     pub fn rasterize_styled(
@@ -83,14 +81,34 @@ impl FrozenTextRasterizer {
         let mut sample_budget = 0u64;
         let mut raster_bytes = 0usize;
         // Reuse shared glyphs between batched labels, but never retain unrelated glyphs indefinitely.
-        let needed: HashSet<_> = buffer.layout_runs().flat_map(|run| run.glyphs.iter()
-            .map(move |glyph| glyph.physical((0., run.line_y), 1.).cache_key)).collect();
-        self.inner.cache.image_cache.retain(|key, _| needed.contains(key));
-        let mut resident_bytes: usize = self.inner.cache.image_cache.values().flatten().map(|image| image.data.len()).sum();
+        let needed: HashSet<_> = buffer
+            .layout_runs()
+            .flat_map(|run| {
+                run.glyphs
+                    .iter()
+                    .map(move |glyph| glyph.physical((0., run.line_y), 1.).cache_key)
+            })
+            .collect();
+        self.inner
+            .cache
+            .image_cache
+            .retain(|key, _| needed.contains(key));
+        let mut resident_bytes: usize = self
+            .inner
+            .cache
+            .image_cache
+            .values()
+            .flatten()
+            .map(|image| image.data.len())
+            .sum();
         for run in buffer.layout_runs() {
             for glyph in run.glyphs {
                 let physical = glyph.physical((0., run.line_y), 1.);
-                let cached = self.inner.cache.image_cache.contains_key(&physical.cache_key);
+                let cached = self
+                    .inner
+                    .cache
+                    .image_cache
+                    .contains_key(&physical.cache_key);
                 if let Some(image) = self
                     .inner
                     .cache
@@ -100,8 +118,13 @@ impl FrozenTextRasterizer {
                         u64::from(image.placement.width) * u64::from(image.placement.height),
                     );
                     raster_bytes = raster_bytes.saturating_add(image.data.len());
-                    if !cached { resident_bytes = resident_bytes.saturating_add(image.data.len()); }
-                    if resident_bytes > 64 * 1024 * 1024 || raster_bytes > 64 * 1024 * 1024 || sample_budget > 64 * 1024 * 1024 {
+                    if !cached {
+                        resident_bytes = resident_bytes.saturating_add(image.data.len());
+                    }
+                    if resident_bytes > 64 * 1024 * 1024
+                        || raster_bytes > 64 * 1024 * 1024
+                        || sample_budget > 64 * 1024 * 1024
+                    {
                         return Err("styled glyph raster work exceeds 64 Mi pixels".into());
                     }
                 }

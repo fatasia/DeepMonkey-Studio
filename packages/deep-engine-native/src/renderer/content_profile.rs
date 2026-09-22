@@ -297,6 +297,7 @@ mod tests {
                 ],
                 cast_shadow: None,
                 receive_shadow: None,
+                outline: None,
                 lod: None,
             });
         assert_eq!(

@@ -27,10 +27,10 @@ fn clean_name(stem: &str) -> String {
 #[cfg(target_os = "windows")]
 fn embedded_application_name() -> Option<String> {
     use windows::{
-        core::PCWSTR,
         Win32::System::LibraryLoader::{
             FindResourceW, GetModuleHandleW, LoadResource, LockResource, SizeofResource,
         },
+        core::PCWSTR,
     };
     // 发布器写入 UTF-8 RCDATA 102；不依赖文件名或工作目录中的旁车文件。
     unsafe {

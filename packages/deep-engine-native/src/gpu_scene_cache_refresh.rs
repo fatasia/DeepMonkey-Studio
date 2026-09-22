@@ -18,9 +18,7 @@
 use std::sync::{Arc, Weak};
 
 use deep_engine_native::{
-    contract::RenderPacket,
-    pbr_texture::PreparedPbrSummary,
-    scene::PreparedScene,
+    contract::RenderPacket, pbr_texture::PreparedPbrSummary, scene::PreparedScene,
     scene_resource_identity::instance_fingerprint,
 };
 
@@ -43,14 +41,13 @@ impl GpuSceneCache {
         }
         // stage_scoped 对非空域把清单 id 包成 (domain, id) 的 JSON 字符串;
         // 核对时对 packet id 做同样包装,再与清单 id 逐条比对。
-        let scoped_id =
-            |id: &str| -> String {
-                if domain.is_empty() {
-                    id.to_string()
-                } else {
-                    serde_json::to_string(&(domain, id)).unwrap_or_else(|_| id.to_string())
-                }
-            };
+        let scoped_id = |id: &str| -> String {
+            if domain.is_empty() {
+                id.to_string()
+            } else {
+                serde_json::to_string(&(domain, id)).unwrap_or_else(|_| id.to_string())
+            }
+        };
         let geometry_matches = manifest
             .geometries
             .iter()
@@ -60,18 +57,23 @@ impl GpuSceneCache {
             })
             && manifest.geometries.len() == packet.geometries.len();
         if !geometry_matches {
-            return Err("scene refresh geometry identity drifted from the committed manifest".into());
+            return Err(
+                "scene refresh geometry identity drifted from the committed manifest".into(),
+            );
         }
-        let texture_matches = manifest
-            .textures
-            .iter()
-            .zip(packet.textures.iter())
-            .all(|(identity, texture)| {
-                identity.id == scoped_id(&texture.id) && identity.revision == texture.revision
-            })
-            && manifest.textures.len() == packet.textures.len();
+        let texture_matches =
+            manifest
+                .textures
+                .iter()
+                .zip(packet.textures.iter())
+                .all(|(identity, texture)| {
+                    identity.id == scoped_id(&texture.id) && identity.revision == texture.revision
+                })
+                && manifest.textures.len() == packet.textures.len();
         if !texture_matches {
-            return Err("scene refresh texture identity drifted from the committed manifest".into());
+            return Err(
+                "scene refresh texture identity drifted from the committed manifest".into(),
+            );
         }
         let material_matches = manifest
             .materials
@@ -80,7 +82,9 @@ impl GpuSceneCache {
             .all(|(identity, material)| identity.id == scoped_id(&material.id))
             && manifest.materials.len() == packet.materials.len();
         if !material_matches {
-            return Err("scene refresh material identity drifted from the committed manifest".into());
+            return Err(
+                "scene refresh material identity drifted from the committed manifest".into(),
+            );
         }
         Ok(())
     }
@@ -117,7 +121,9 @@ impl GpuSceneCache {
                 self.geometries
                     .get(&VersionKey(identity.id.clone(), identity.revision))
                     .and_then(|(weak, _)| weak.upgrade())
-                    .ok_or_else(|| format!("scene refresh geometry {} is not resident", identity.id))
+                    .ok_or_else(|| {
+                        format!("scene refresh geometry {} is not resident", identity.id)
+                    })
             })
             .collect::<Result<Vec<Arc<GpuGeometry>>, String>>()?;
         metrics.geometry_reuses = geometries.len();
@@ -141,7 +147,9 @@ impl GpuSceneCache {
                 self.materials
                     .get(identity)
                     .and_then(Weak::upgrade)
-                    .ok_or_else(|| format!("scene refresh material {} is not resident", identity.id))
+                    .ok_or_else(|| {
+                        format!("scene refresh material {} is not resident", identity.id)
+                    })
             })
             .collect::<Result<Vec<Arc<GpuMaterial>>, String>>()?;
         metrics.material_reuses = materials.len();
@@ -155,25 +163,26 @@ impl GpuSceneCache {
         };
 
         let fingerprint = instance_fingerprint(prepared);
-        let (instance, new_instance_bytes) =
-            if let Some(value) = self
-                .instances
-                .get(&fingerprint)
-                .and_then(|(weak, _)| weak.upgrade())
-            {
-                metrics.instance_buffer_reuses = 1;
-                (value, None)
-            } else {
-                metrics.instance_buffer_uploads = 1;
-                let previous = self.latest_instance.upgrade();
-                let (value, transfer) =
-                    self.instance_ring
-                    .borrow_mut()
-                    .stage(device, queue, previous.as_ref(), &prepared.instances);
-                metrics.instance_uploaded_bytes = transfer.uploaded_bytes;
-                metrics.instance_copied_bytes = transfer.copied_bytes;
-                (Arc::clone(&value), Some(value.buffer.size()))
-            };
+        let (instance, new_instance_bytes) = if let Some(value) = self
+            .instances
+            .get(&fingerprint)
+            .and_then(|(weak, _)| weak.upgrade())
+        {
+            metrics.instance_buffer_reuses = 1;
+            (value, None)
+        } else {
+            metrics.instance_buffer_uploads = 1;
+            let previous = self.latest_instance.upgrade();
+            let (value, transfer) = self.instance_ring.borrow_mut().stage(
+                device,
+                queue,
+                previous.as_ref(),
+                &prepared.instances,
+            );
+            metrics.instance_uploaded_bytes = transfer.uploaded_bytes;
+            metrics.instance_copied_bytes = transfer.copied_bytes;
+            (Arc::clone(&value), Some(value.buffer.size()))
+        };
 
         // 版本登记:资源身份与已提交清单一致 → 零新增登记条目,仅复核。
         let revisions = self.revisions.stage(&manifest)?;

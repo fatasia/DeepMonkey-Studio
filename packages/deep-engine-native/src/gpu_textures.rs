@@ -123,11 +123,14 @@ impl GpuPbrResources {
                 .materials
                 .get(*index)
                 .ok_or("material uniform update row out of range")?;
-            queue.write_buffer(&material._uniform, 0, cast_slice(std::slice::from_ref(uniform)));
+            queue.write_buffer(
+                &material._uniform,
+                0,
+                cast_slice(std::slice::from_ref(uniform)),
+            );
         }
         Ok(())
     }
-
 
     #[allow(dead_code)] // Direct builder remains the independent GPU-test entrypoint.
     pub fn new(
@@ -304,9 +307,13 @@ mod tests {
             updated_b[7] = 42.0;
             // 空行集必须是无害 no-op。
             pbr.write_material_uniforms(&queue, &[]).unwrap();
-            pbr.write_material_uniforms(&queue, &[(1, updated_b)]).unwrap();
+            pbr.write_material_uniforms(&queue, &[(1, updated_b)])
+                .unwrap();
             // 越界行必须在写入前被守卫拒绝。
-            assert!(pbr.write_material_uniforms(&queue, &[(9, updated_b)]).is_err());
+            assert!(
+                pbr.write_material_uniforms(&queue, &[(9, updated_b)])
+                    .is_err()
+            );
 
             let size = MATERIAL_UNIFORM_BYTES;
             let staging = |label| {
@@ -326,10 +333,9 @@ mod tests {
             encoder.copy_buffer_to_buffer(&pbr.materials[1]._uniform, 0, &stage1, 0, size);
             queue.submit([encoder.finish()]);
             let readback = |buffer: &wgpu::Buffer| -> Vec<u8> {
-                buffer
-                    .map_async(wgpu::MapMode::Read, .., |result| {
-                        result.expect("material uniform readback map")
-                    });
+                buffer.map_async(wgpu::MapMode::Read, .., |result| {
+                    result.expect("material uniform readback map")
+                });
                 device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
                 let mapped = buffer.get_mapped_range(..).unwrap();
                 let bytes = mapped.to_vec();

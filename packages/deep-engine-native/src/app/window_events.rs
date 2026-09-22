@@ -66,6 +66,10 @@ pub(super) fn handle(
         WindowEvent::CursorMoved { position, .. } => {
             app.state.cursor = Some([position.x, position.y]);
             #[cfg(windows)]
+            if super::dashboard_video_input::pointer(app) {
+                return;
+            }
+            #[cfg(windows)]
             super::x_input::pointer(app);
             super::chart::pointer(app, false);
         }
@@ -78,15 +82,44 @@ pub(super) fn handle(
                 MouseScrollDelta::LineDelta(_, y) => f64::from(y),
                 MouseScrollDelta::PixelDelta(position) => position.y,
             };
-            super::chart::zoom(app, amount);
+            if !super::chart::zoom(app, amount) {
+                app.zoom(amount);
+            }
         }
-        WindowEvent::Ime(event) => super::annotations::ime(app, event),
-        WindowEvent::Focused(focused) => super::annotations::focus(app, focused),
+        WindowEvent::Ime(event) => {
+            if !super::dashboard::ime(app, event.clone()) {
+                super::annotations::ime(app, event);
+            }
+        }
+        WindowEvent::ModifiersChanged(modifiers) => app.input_modifiers = modifiers.state(),
+        WindowEvent::Focused(focused) => {
+            super::annotations::focus(app, focused);
+            if !focused {
+                app.clear_navigation_input();
+                app.input_modifiers = winit::keyboard::ModifiersState::empty();
+                super::dashboard::blur(app);
+                #[cfg(windows)]
+                super::dashboard_video_input::blur(app);
+            }
+        }
+        WindowEvent::MouseInput {
+            state: ElementState::Released,
+            button: MouseButton::Left,
+            ..
+        } => {
+            #[cfg(windows)]
+            super::dashboard_video_input::release(app);
+            super::dashboard::release_input(app);
+        }
         WindowEvent::MouseInput {
             state: ElementState::Pressed,
             button: MouseButton::Left,
             ..
         } => {
+            #[cfg(windows)]
+            if super::dashboard_video_input::press(app) {
+                return;
+            }
             if !super::chart::pointer(app, true) {
                 super::selection::click(app);
             }
@@ -95,19 +128,61 @@ pub(super) fn handle(
             app.resize(size);
             if let Some(window) = &app.window {
                 super::annotation_ime_area::refresh(app, size, window.scale_factor());
+                super::dashboard::refresh_input(app);
             }
         }
         WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
             if let Some(size) = app.window.as_ref().map(|window| window.inner_size()) {
                 app.resize(size);
                 super::annotation_ime_area::refresh(app, size, scale_factor);
+                super::dashboard::refresh_input(app);
             }
         }
         WindowEvent::Occluded(false) => app.request_redraw(),
         WindowEvent::RedrawRequested => redraw(app, event_loop),
+        WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Released => {
+            if let PhysicalKey::Code(key) = event.physical_key
+                && app.navigation_key(key, false)
+            {
+                return;
+            }
+        }
+        WindowEvent::KeyboardInput { event, .. }
+            if event.state == ElementState::Pressed && event.repeat =>
+        {
+            if super::dashboard::text_key(app, &event) {
+                return;
+            }
+            if super::dashboard::select_text_key(app, &event) {
+                return;
+            }
+            if app
+                .content
+                .active()
+                .dashboard
+                .as_ref()
+                .is_some_and(|runtime| runtime.select_focused())
+                && let PhysicalKey::Code(
+                    key @ (KeyCode::ArrowUp | KeyCode::ArrowDown | KeyCode::Home | KeyCode::End),
+                ) = event.physical_key
+            {
+                super::dashboard::key(app, key);
+            }
+        }
         WindowEvent::KeyboardInput { event, .. }
             if event.state == ElementState::Pressed && !event.repeat =>
         {
+            if let PhysicalKey::Code(key) = event.physical_key
+                && app.navigation_key(key, true)
+            {
+                return;
+            }
+            if super::dashboard::text_key(app, &event) {
+                return;
+            }
+            if super::dashboard::select_text_key(app, &event) {
+                return;
+            }
             if event.physical_key == PhysicalKey::Code(KeyCode::F11)
                 && let Some(window) = &app.window
             {
@@ -117,6 +192,12 @@ pub(super) fn handle(
             #[cfg(windows)]
             if let PhysicalKey::Code(key) = event.physical_key
                 && super::x_input::key(app, key)
+            {
+                return;
+            }
+            #[cfg(windows)]
+            if let PhysicalKey::Code(key) = event.physical_key
+                && super::dashboard_video_input::key(app, key)
             {
                 return;
             }
@@ -140,6 +221,11 @@ pub(super) fn handle(
             {
                 return;
             }
+            if let PhysicalKey::Code(key) = event.physical_key
+                && super::camera_views::key(app, key)
+            {
+                return;
+            }
             match event.physical_key {
                 PhysicalKey::Code(KeyCode::Escape)
                     if app.window.as_ref().is_some_and(|window| {
@@ -148,6 +234,8 @@ pub(super) fn handle(
                 PhysicalKey::Code(KeyCode::Escape) => close(app, event_loop),
                 PhysicalKey::Code(KeyCode::ArrowLeft) => app.rotate(-0.18),
                 PhysicalKey::Code(KeyCode::ArrowRight) => app.rotate(0.18),
+                PhysicalKey::Code(KeyCode::ArrowUp) => app.tilt(0.12),
+                PhysicalKey::Code(KeyCode::ArrowDown) => app.tilt(-0.12),
                 PhysicalKey::Code(KeyCode::KeyR) => app.initialize_renderer(),
                 PhysicalKey::Code(KeyCode::KeyM) => super::selection::toggle_measurement(app),
                 PhysicalKey::Code(KeyCode::Home) => {

@@ -53,10 +53,17 @@ pub fn rasterize_text_json(bytes: &[u8]) -> Result<Vec<u8>, String> {
     }
     let mut rasterizer = TextRasterizer::from_frozen_fonts(&input.locale, fonts)?;
     let result = rasterizer.rasterize_styled(input.request)?;
-    serde_json::to_vec(&result_value(result, crate::shader_package::hash::sha256(bytes))).map_err(|e| e.to_string())
+    serde_json::to_vec(&result_value(
+        result,
+        crate::shader_package::hash::sha256(bytes),
+    ))
+    .map_err(|e| e.to_string())
 }
 
-fn result_value(result: super::raster::StyledRasterizedText, source_sha256: String) -> serde_json::Value {
+fn result_value(
+    result: super::raster::StyledRasterizedText,
+    source_sha256: String,
+) -> serde_json::Value {
     serde_json::json!({
         "schema": "deep-engine.text-raster-result", "schemaVersion": 1,
         "producer": "cosmic-text-0.19.0-frozen-v1",

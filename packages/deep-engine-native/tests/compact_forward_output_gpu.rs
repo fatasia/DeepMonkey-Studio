@@ -71,7 +71,7 @@ fn render(
     } else {
         size
     };
-    let source = ForwardTargets::new(device, source_size);
+    let source = ForwardTargets::new(device, source_size, false);
     assert_eq!(source.resolved_texture().width(), source_size.width);
     assert_eq!(source.resolved_texture().height(), source_size.height);
     let target = device.create_texture(&wgpu::TextureDescriptor {
@@ -88,7 +88,7 @@ fn render(
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
-    let output = OutputPass::new(device, format, &source.hdr_view, None, None);
+    let output = OutputPass::new(device, format, &source.hdr_view, None, None, None);
     assert!(!output.uses_bloom() && !output.uses_fog());
     let row_bytes = (size.width * 4).div_ceil(256) * 256;
     let readback = device.create_buffer(&wgpu::BufferDescriptor {

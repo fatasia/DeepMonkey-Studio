@@ -8,6 +8,10 @@ pub struct DirectionalLighting {
     pub radiance: [f32; 3],
     pub exposure: f32,
     pub shadows: bool,
+    /// Web 编译器保留的作者 GI 强度；Native 当前不执行 GI 合成，
+    /// 但必须接受并校验该字段，避免新运行包被 deny_unknown_fields 拒绝。
+    #[serde(default)]
+    pub global_illumination_intensity: Option<f32>,
     #[serde(default, deserialize_with = "crate::local_lighting::decode")]
     pub local_lights: [crate::local_lighting::LocalLight; crate::local_lighting::MAX_LOCAL_LIGHTS],
     /// E02 IES 光度表节；缺省=无 IES 语义，旧载荷字节不变。
@@ -26,6 +30,9 @@ impl DirectionalLighting {
                 .any(|v| !v.is_finite() || !(0.0..=256.0).contains(v))
             || !self.exposure.is_finite()
             || !(0.55..=1.55).contains(&self.exposure)
+            || self
+                .global_illumination_intensity
+                .is_some_and(|value| !value.is_finite() || !(0.0..=16.0).contains(&value))
             || !crate::local_shadow::validate_budget(&self.local_lights)
             || self.local_lights.iter().any(|light| {
                 light.kind != crate::local_lighting::LocalLightKind::Disabled && !light.validate()
@@ -38,17 +45,33 @@ impl DirectionalLighting {
     }
     pub fn apply(&self, frame: &mut FrameUniform) {
         frame[11][..3].copy_from_slice(&self.direction);
-        frame[13] = [self.radiance[0], self.radiance[1], self.radiance[2], 2.0];
+        // Reuse the reserved fog-projection W lane for the optional indirect
+        // multiplier. Zero keeps the legacy shader default of 1.0 and avoids
+        // growing the frame ABI for a single scalar.
+        frame[crate::mesh_abi::FRAME_FOG_PROJECTION_ROW][3] =
+            self.global_illumination_intensity.unwrap_or(0.0);
+        let has_local_lights = self
+            .local_lights
+            .iter()
+            .any(|light| light.kind != crate::local_lighting::LocalLightKind::Disabled);
+        frame[13] = [
+            self.radiance[0],
+            self.radiance[1],
+            self.radiance[2],
+            if has_local_lights { 3.0 } else { 2.0 },
+        ];
         frame[14] = [self.exposure, f32::from(self.shadows), 0.0, 0.0];
         for (index, light) in self.local_lights.iter().enumerate() {
+            frame[crate::mesh_abi::FRAME_LOCAL_SOFTNESS_ROW + index / 4][index % 4] =
+                light.shadow_softness.unwrap_or(0.0);
             frame[15 + index * 4..19 + index * 4].copy_from_slice(&light.rows());
             if light.kind != crate::local_lighting::LocalLightKind::Disabled {
                 frame[14][2] += 1.0;
             }
             if light.cast_shadow {
                 let slot = frame[14][3] as usize;
-                let matrices =
-                    crate::local_shadow::matrices(light.clone()).expect("validated local projection");
+                let matrices = crate::local_shadow::matrices(light.clone())
+                    .expect("validated local projection");
                 if slot + matrices.len() <= crate::local_shadow::MAX_LOCAL_SHADOW_VIEWS {
                     for (face, matrix) in matrices.iter().enumerate() {
                         let start = crate::local_shadow::MATRIX_ROW + (slot + face) * 4;
@@ -76,85 +99,130 @@ fn rejects_invalid_directional_lighting() {
         radiance: [1.0, 1.0, 1.0],
         exposure: 1.05,
         shadows: false,
+        global_illumination_intensity: None,
         local_lights: std::array::from_fn(|_| crate::local_lighting::LocalLight::default()),
         light_profiles: None,
     };
     for invalid in [
-            DirectionalLighting {
-                direction: [0.0; 3],
-                ..source.clone()
-            },
-            DirectionalLighting {
-                radiance: [f32::NAN, 0.0, 0.0],
-                ..source.clone()
-            },
-            DirectionalLighting {
-                radiance: [257.0, 0.0, 0.0],
-                ..source.clone()
-            },
-            DirectionalLighting {
-                exposure: 2.0,
-                ..source.clone()
-            },
-        ] {
-            assert!(invalid.validate().is_err());
-        }
+        DirectionalLighting {
+            direction: [0.0; 3],
+            ..source.clone()
+        },
+        DirectionalLighting {
+            radiance: [f32::NAN, 0.0, 0.0],
+            ..source.clone()
+        },
+        DirectionalLighting {
+            radiance: [257.0, 0.0, 0.0],
+            ..source.clone()
+        },
+        DirectionalLighting {
+            exposure: 2.0,
+            ..source.clone()
+        },
+        DirectionalLighting {
+            global_illumination_intensity: Some(16.1),
+            ..source.clone()
+        },
+    ] {
+        assert!(invalid.validate().is_err());
     }
+}
 
-    #[test]
-    fn closes_ies_references_and_rejects_undeclared_or_duplicate_profiles() {
-        let profile = crate::runtime_package::LightProfile {
-            profile_id: "grid.cone".into(),
-            format: "LM-63-2002".into(),
-            vertical_angles: vec![0.0, 45.0, 90.0],
-            candela: vec![vec![1000.0, 500.0, 100.0]],
-            horizontal_symmetry: 1,
-            total_lumens: 1234.5,
-        };
-        let lighting = |local_lights: crate::local_lighting::LocalLight, profiles: Option<Vec<_>>| DirectionalLighting {
+#[test]
+fn closes_ies_references_and_rejects_undeclared_or_duplicate_profiles() {
+    let profile = crate::runtime_package::LightProfile {
+        profile_id: "grid.cone".into(),
+        format: "LM-63-2002".into(),
+        vertical_angles: vec![0.0, 45.0, 90.0],
+        candela: vec![vec![1000.0, 500.0, 100.0]],
+        horizontal_symmetry: 1,
+        total_lumens: 1234.5,
+    };
+    let lighting = |local_lights: crate::local_lighting::LocalLight, profiles: Option<Vec<_>>| {
+        DirectionalLighting {
             direction: [0.0, 0.6, 0.8],
             radiance: [0.0; 3],
             exposure: 1.05,
             shadows: false,
+            global_illumination_intensity: None,
             local_lights: {
-                let mut lights = std::array::from_fn(|_| crate::local_lighting::LocalLight::default());
+                let mut lights =
+                    std::array::from_fn(|_| crate::local_lighting::LocalLight::default());
                 lights[0] = local_lights;
                 lights
             },
             light_profiles: profiles,
-        };
-        let spot = |ies| crate::local_lighting::LocalLight {
-            kind: crate::local_lighting::LocalLightKind::Spot,
-            position: [0.0, 4.0, 0.0],
-            direction: [0.0, -1.0, 0.0],
-            radiance: [4.0; 3],
-            range: 12.0,
-            decay: 2.0,
-            inner_cos: 0.9,
-            outer_cos: 0.7,
-            cast_shadow: false,
-            ies,
-        };
-        let ies = || Some(crate::runtime_package::LightIes {
+        }
+    };
+    let spot = |ies| crate::local_lighting::LocalLight {
+        kind: crate::local_lighting::LocalLightKind::Spot,
+        position: [0.0, 4.0, 0.0],
+        direction: [0.0, -1.0, 0.0],
+        radiance: [4.0; 3],
+        ground_radiance: None,
+        shadow_softness: None,
+        range: 12.0,
+        decay: 2.0,
+        inner_cos: 0.9,
+        outer_cos: 0.7,
+        cast_shadow: false,
+        ies,
+    };
+    let ies = || {
+        Some(crate::runtime_package::LightIes {
             profile_id: "grid.cone".into(),
             rotation_deg: Some(45.0),
             scale_factor: Some(0.5),
-        });
-        // 合法闭合、无 ies 无 profiles（旧载荷）、声明 profiles 但灯未引用。
-        assert!(lighting(spot(ies()), Some(vec![profile.clone()])).validate().is_ok());
-        assert!(lighting(spot(None), None).validate().is_ok());
-        assert!(lighting(spot(None), Some(vec![profile.clone()])).validate().is_ok());
-        // 引用缺失声明、重复 profileId、越界旋转、坏表 → 按名拒绝。
-        assert!(lighting(spot(ies()), None).validate().is_err());
-        let undeclared = crate::runtime_package::LightIes { profile_id: "ghost.profile".into(), rotation_deg: None, scale_factor: None };
-        assert!(lighting(spot(Some(undeclared)), Some(vec![profile.clone()])).validate().is_err());
-        assert!(lighting(spot(ies()), Some(vec![profile.clone(), profile.clone()])).validate().is_err());
-        let bad_rotation = crate::runtime_package::LightIes { profile_id: "grid.cone".into(), rotation_deg: Some(45.25), scale_factor: None };
-        assert!(lighting(spot(Some(bad_rotation)), Some(vec![profile.clone()])).validate().is_err());
-        let mut broken = profile.clone();
-        broken.vertical_angles = vec![0.0, 45.0, 90.25];
-        assert!(lighting(spot(ies()), Some(vec![broken])).validate().is_err());
-    }
+        })
+    };
+    // 合法闭合、无 ies 无 profiles（旧载荷）、声明 profiles 但灯未引用。
+    assert!(
+        lighting(spot(ies()), Some(vec![profile.clone()]))
+            .validate()
+            .is_ok()
+    );
+    assert!(lighting(spot(None), None).validate().is_ok());
+    assert!(
+        lighting(spot(None), Some(vec![profile.clone()]))
+            .validate()
+            .is_ok()
+    );
+    // 引用缺失声明、重复 profileId、越界旋转、坏表 → 按名拒绝。
+    assert!(lighting(spot(ies()), None).validate().is_err());
+    let undeclared = crate::runtime_package::LightIes {
+        profile_id: "ghost.profile".into(),
+        rotation_deg: None,
+        scale_factor: None,
+    };
+    assert!(
+        lighting(spot(Some(undeclared)), Some(vec![profile.clone()]))
+            .validate()
+            .is_err()
+    );
+    assert!(
+        lighting(spot(ies()), Some(vec![profile.clone(), profile.clone()]))
+            .validate()
+            .is_err()
+    );
+    let bad_rotation = crate::runtime_package::LightIes {
+        profile_id: "grid.cone".into(),
+        rotation_deg: Some(45.25),
+        scale_factor: None,
+    };
+    assert!(
+        lighting(spot(Some(bad_rotation)), Some(vec![profile.clone()]))
+            .validate()
+            .is_err()
+    );
+    let mut broken = profile.clone();
+    broken.vertical_angles = vec![0.0, 45.0, 90.25];
+    assert!(
+        lighting(spot(ies()), Some(vec![broken]))
+            .validate()
+            .is_err()
+    );
+}
 
 /// E02：ies 引用闭合与 lightProfiles 结构/量化验证（与 TS validateLightingIes
 /// 同语义；缺 lightProfiles 而灯带 ies → 拒绝，不静默降级为全向灯）。
@@ -164,7 +232,10 @@ fn validate_ies_closure(
 ) -> Result<(), String> {
     let Some(profiles) = profiles else {
         if lights.iter().any(|light| light.ies.is_some()) {
-            return Err("local light references an ies profile but no lightProfiles section is declared".into());
+            return Err(
+                "local light references an ies profile but no lightProfiles section is declared"
+                    .into(),
+            );
         }
         return Ok(());
     };
@@ -174,13 +245,19 @@ fn validate_ies_closure(
             .validate()
             .map_err(|error| format!("light profile {}: {error}", profile.profile_id))?;
         if !declared.insert(profile.profile_id.as_str()) {
-            return Err(format!("light profile {} declared more than once", profile.profile_id));
+            return Err(format!(
+                "light profile {} declared more than once",
+                profile.profile_id
+            ));
         }
     }
     for light in lights {
         let Some(ies) = &light.ies else { continue };
         if !declared.contains(ies.profile_id.as_str()) {
-            return Err(format!("local light references undeclared ies profile {}", ies.profile_id));
+            return Err(format!(
+                "local light references undeclared ies profile {}",
+                ies.profile_id
+            ));
         }
     }
     Ok(())
@@ -195,6 +272,7 @@ mod tests {
             radiance: [2.0, 1.0, 0.0],
             exposure: 1.05,
             shadows: false,
+            global_illumination_intensity: None,
             local_lights: Default::default(),
             light_profiles: None,
         };
@@ -206,6 +284,13 @@ mod tests {
         assert_eq!(frame[11][..3], source.direction);
         assert_eq!(frame[13], [2.0, 1.0, 0.0, 2.0]);
         assert_eq!(frame[14], [1.05, 0.0, 0.0, 0.0]);
+        assert_eq!(frame[crate::mesh_abi::FRAME_FOG_PROJECTION_ROW][3], 0.0);
+        let authored = DirectionalLighting {
+            global_illumination_intensity: Some(0.8),
+            ..source.clone()
+        };
+        authored.validate().unwrap().apply(&mut frame);
+        assert_eq!(frame[crate::mesh_abi::FRAME_FOG_PROJECTION_ROW][3], 0.8);
         for invalid in [
             DirectionalLighting {
                 direction: [0.0; 3],

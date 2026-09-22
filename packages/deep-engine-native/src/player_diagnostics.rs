@@ -178,6 +178,19 @@ impl PlayerDiagnostics {
         self.note_rt("tlas_resident_pixel_pending");
     }
 
+    /// F2 pixel:TLAS 驻留与 opaque/MASK 方向阴影 Ray Query 管线族同时
+    /// 就绪,opaque pass 将真实选择 RT fragment 消费像素。仍非全场景光追
+    /// 完成态(仅方向阴影、静态 opaque/MASK),按真实覆盖范围命名原因。
+    pub(crate) fn note_rt_directional_shadow_pixels(&mut self) {
+        self.note_rt("directional_shadow_ray_query");
+    }
+
+    /// F2 pixel:Ray Query 管线族在 device error scope 内创建失败,
+    /// fail-closed 丢弃并记录精确原因;栅格主通路不受影响。
+    pub(crate) fn note_rt_pixel_rejected(&mut self) {
+        self.note_rt("rt_pixel_pipeline_rejected");
+    }
+
     /// F2:RT 驻留被拒(预算/空场景/几何校验),fail-closed 记录精确原因;
     /// 能力缺失(MissingFeature)维持既有 adapter/device 原因,不覆盖。
     pub(crate) fn note_rt_tlas_rejected(&mut self, reason: &'static str) {
@@ -350,9 +363,15 @@ mod tests {
         // Bloom defaults to active; the probe features stay off in this run configuration.
         assert_eq!(capability("bloom")["status"], "enabled");
         assert_eq!(capability("exponential_fog")["status"], "disabled");
-        assert_eq!(capability("exponential_fog")["reason"], "disabled_by_run_configuration");
+        assert_eq!(
+            capability("exponential_fog")["reason"],
+            "disabled_by_run_configuration"
+        );
         assert_eq!(capability("exponential_fog")["status"], "disabled");
-        assert_eq!(capability("shadow_differential_probe")["status"], "disabled");
+        assert_eq!(
+            capability("shadow_differential_probe")["status"],
+            "disabled"
+        );
         assert_eq!(capability("ibl_differential_probe")["status"], "disabled");
     }
 

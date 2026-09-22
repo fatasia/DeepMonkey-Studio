@@ -24,6 +24,10 @@ pub struct GpuGeometry {
     pub color_buffer: Option<wgpu::Buffer>,
     pub index_buffer: wgpu::Buffer,
     pub index_count: u32,
+    /// 顶点数与 index_count 一起构成硬件 RT BLAS 的尺寸描述输入；
+    /// 普通栅格路径不消费该值。
+    #[allow(dead_code)]
+    pub vertex_count: u32,
 }
 
 pub(crate) struct GpuInstanceResource {
@@ -43,6 +47,7 @@ pub struct GpuScene {
     _instance_resource: Arc<GpuInstanceResource>,
     /// CPU 侧打包行镜像:C3 transform-only 快路径的原位改写目标。
     packed_instances: Vec<deep_engine_native::scene::PackedInstance>,
+    has_outline: bool,
 }
 
 impl GpuScene {
@@ -89,6 +94,7 @@ impl GpuScene {
         scene_content_key: u64,
         device: &wgpu::Device,
     ) -> Self {
+        let has_outline = instances.packed.iter().any(|row| row[31] as u32 & 256 != 0);
         Self {
             geometries,
             instance_buffer: instances.buffer.clone(),
@@ -99,8 +105,21 @@ impl GpuScene {
             shader_scene_key: scene_content_key,
             device: device.clone(),
             packed_instances: instances.packed.clone(),
+            has_outline,
             _instance_resource: instances,
         }
+    }
+
+    pub fn has_outline(&self) -> bool {
+        self.has_outline
+    }
+
+    /// 硬件 RT 驻留计划核的只读视图:packed 行词 0..12 就是行主序 3x4
+    /// 模型矩阵(scene::recompute_transform_update 的布局),可直接充当
+    /// TLAS 实例变换;alpha 模式由批次给出。
+    #[allow(dead_code)] // 消费方为 renderer::rt_residency(正式 Renderer 驻留路径)。
+    pub(crate) fn packed_instances(&self) -> &[deep_engine_native::scene::PackedInstance] {
+        &self.packed_instances
     }
 
     /// C3 transform-only 快路径:内容键推进(shader 替换守卫依赖它判断"场景未变")。
@@ -298,7 +317,7 @@ impl GpuGeometry {
             vertex_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Deep Engine native geometry vertices"),
                 contents: cast_slice(&vertices),
-                usage: wgpu::BufferUsages::VERTEX,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::BLAS_INPUT,
             }),
             tangent_buffer: tangents.map(|tangents| {
                 device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -311,9 +330,10 @@ impl GpuGeometry {
             index_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Deep Engine native geometry indices"),
                 contents: cast_slice(&geometry.indices),
-                usage: wgpu::BufferUsages::INDEX,
+                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::BLAS_INPUT,
             }),
             index_count: geometry.indices.len() as u32,
+            vertex_count: vertex_count as u32,
         }
     }
 }

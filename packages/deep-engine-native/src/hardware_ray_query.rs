@@ -400,18 +400,16 @@ pub fn build_resident_blas_set(
         .iter()
         .map(|geometry| wgpu::BlasBuildEntry {
             blas: &geometry.blas,
-            geometry: wgpu::BlasGeometries::TriangleGeometries(vec![
-                wgpu::BlasTriangleGeometry {
-                    size: &geometry.size,
-                    vertex_buffer: geometry.vertex_buffer,
-                    first_vertex: 0,
-                    vertex_stride: RESIDENT_VERTEX_STRIDE,
-                    index_buffer: Some(geometry.index_buffer),
-                    first_index: Some(0),
-                    transform_buffer: None,
-                    transform_buffer_offset: None,
-                },
-            ]),
+            geometry: wgpu::BlasGeometries::TriangleGeometries(vec![wgpu::BlasTriangleGeometry {
+                size: &geometry.size,
+                vertex_buffer: geometry.vertex_buffer,
+                first_vertex: 0,
+                vertex_stride: RESIDENT_VERTEX_STRIDE,
+                index_buffer: Some(geometry.index_buffer),
+                first_index: Some(0),
+                transform_buffer: None,
+                transform_buffer_offset: None,
+            }]),
         })
         .collect();
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -419,10 +417,7 @@ pub fn build_resident_blas_set(
     });
     encoder.build_acceleration_structures(&entries, std::iter::empty::<&wgpu::Tlas>());
     Ok((
-        prepared
-            .into_iter()
-            .map(|geometry| geometry.blas)
-            .collect(),
+        prepared.into_iter().map(|geometry| geometry.blas).collect(),
         encoder,
     ))
 }

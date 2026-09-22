@@ -4,6 +4,7 @@ pub use deep_engine_native::player_view::PlayerView;
 #[derive(Default)]
 pub struct PlayerState {
     pub view: PlayerView,
+    pub camera_controls: deep_engine_native::runtime_camera::RuntimeCameraControls,
     pub verification: Option<crate::publication_verification::Verification>,
     pub failure: Option<String>,
     pub selected: Option<String>,
@@ -14,8 +15,42 @@ pub struct PlayerState {
 }
 
 impl PlayerState {
+    pub fn rebase_local(&mut self, delta: [f32; 3]) {
+        if let Some(point) = self.selected_point.as_mut() {
+            for axis in 0..3 {
+                point[axis] += delta[axis];
+            }
+        }
+        self.annotations.rebase_local(delta);
+    }
     pub fn rotate(&mut self, delta: f32) {
-        self.view.yaw += delta;
+        self.orbit(delta, 0.0);
+    }
+
+    pub fn orbit(&mut self, yaw_delta: f32, pitch_delta: f32) {
+        self.view.yaw += yaw_delta;
+        self.view.pitch += pitch_delta;
+        self.view = self.view.constrained(self.camera_controls);
+    }
+
+    pub fn zoom(&mut self, wheel_delta: f64) -> bool {
+        if !wheel_delta.is_finite() || wheel_delta == 0.0 {
+            return false;
+        }
+        let previous = self.view.distance;
+        let exponent = (-wheel_delta.clamp(-4.0, 4.0) * 0.12) as f32;
+        self.view.distance *= exponent.exp();
+        self.view = self.view.constrained(self.camera_controls);
+        self.view.distance != previous
+    }
+
+    pub fn set_camera(
+        &mut self,
+        view: PlayerView,
+        controls: deep_engine_native::runtime_camera::RuntimeCameraControls,
+    ) {
+        self.camera_controls = controls;
+        self.view = view.constrained(controls);
     }
 
     pub fn renderer_ready(&mut self) {
@@ -74,5 +109,40 @@ mod tests {
             "recovered session must exit successfully"
         );
         assert_eq!(state.view, authored_view);
+    }
+
+    #[test]
+    fn orbit_input_consumes_authored_distance_and_polar_constraints() {
+        let mut controls = deep_engine_native::runtime_camera::RuntimeCameraControls {
+            min_distance: 2.0,
+            max_distance: 6.0,
+            min_polar_angle_degrees: 30.0,
+            max_polar_angle_degrees: 120.0,
+            walk_speed: 3.5,
+            fly_speed: 12.0,
+            ..Default::default()
+        };
+        let mut state = PlayerState::default();
+        state.set_camera(state.view, controls);
+        assert_eq!(state.camera_controls.walk_speed, 3.5);
+        assert_eq!(state.camera_controls.fly_speed, 12.0);
+
+        state.orbit(0.25, 10.0);
+        assert!((state.view.pitch.to_degrees() - 60.0).abs() < 0.0001);
+        state.orbit(0.0, -20.0);
+        assert!((state.view.pitch.to_degrees() + 30.0).abs() < 0.0001);
+        for _ in 0..20 {
+            state.zoom(1000.0);
+        }
+        assert_eq!(state.view.distance, 2.0);
+        for _ in 0..20 {
+            state.zoom(-1000.0);
+        }
+        assert_eq!(state.view.distance, 6.0);
+
+        controls.min_distance = 5.0;
+        controls.max_distance = 10.0;
+        state.set_camera(state.view, controls);
+        assert_eq!(state.view.distance, 6.0);
     }
 }

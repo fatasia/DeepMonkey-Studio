@@ -216,3 +216,60 @@ fn positive_tiny_frames_have_same_package_semantics_with_or_without_sim() {
         parse_and_validate_runtime_package(&serde_json::to_vec(&p).unwrap()).unwrap();
     }
 }
+
+#[test]
+fn video_diagnostic_round_trips_but_cannot_claim_playback() {
+    let mut p = golden();
+    let node_id = root(&mut p)["pages"][0]["nodes"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    root(&mut p)["videos"] = json!([{
+        "nodeId": node_id,
+        "sourceNodeId": "author-video",
+        "source": { "uri": "/media/inspection.mp4", "availability": "external-unresolved", "packaged": false, "resourceId": null },
+        "playback": { "fit": "contain", "autoplay": false, "muted": true, "loop": false },
+        "state": {
+            "status": "blocked", "transport": "unavailable", "positionSeconds": 0, "durationSeconds": null,
+            "reason": "native-video-runtime-unavailable",
+            "missingCapabilities": ["video-decoder", "frame-texture-update", "media-clock", "playback-controls", "seek"]
+        }
+    }]);
+    rehash(&mut p);
+    let loaded = parse_and_validate_runtime_package(&serde_json::to_vec(&p).unwrap()).unwrap();
+    assert_eq!(loaded.dashboard.unwrap().document.videos.len(), 1);
+
+    root(&mut p)["videos"][0]["state"]["status"] = json!("ready");
+    rejects(p);
+}
+
+#[test]
+fn content_addressed_mp4_round_trips_with_ready_poster_transport() {
+    let mut p = golden();
+    let node_id = root(&mut p)["pages"][0]["nodes"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let sha = "754ed2f212d495ae30ef2f68f8ab18b0ab162ce669f768373d79f72f1ba3c3bd";
+    root(&mut p)["media"] = json!([{
+        "id": format!("media.{sha}"), "revision": 1, "format": "mp4-isobmff", "mime": "video/mp4",
+        "byteLength": 24, "sha256": sha, "dataBase64": "AAAAGGZ0eXBpc29tAAAAAGlzb21tcDQy"
+    }]);
+    root(&mut p)["videos"] = json!([{
+        "nodeId": node_id, "sourceNodeId": "author-video",
+        "source": { "uri": "/media/inspection.mp4", "availability": "packaged", "packaged": true,
+          "resourceId": format!("media.{sha}") },
+        "playback": { "fit": "contain", "autoplay": false, "muted": true, "loop": false },
+        "state": { "status": "ready", "transport": "poster", "positionSeconds": 0, "durationSeconds": null,
+          "reason": "native-video-runtime-ready",
+          "missingCapabilities": [] }
+    }]);
+    rehash(&mut p);
+    let loaded = parse_and_validate_runtime_package(&serde_json::to_vec(&p).unwrap()).unwrap();
+    let dashboard = loaded.dashboard.unwrap().document;
+    assert_eq!(dashboard.media[0].byte_length, 24);
+    assert_eq!(dashboard.videos[0].state.status, "ready");
+
+    root(&mut p)["media"][0]["dataBase64"] = json!("AAAAGGZ0eXBpc29tAAAAAGlzb21tcDQz");
+    rejects(p);
+}

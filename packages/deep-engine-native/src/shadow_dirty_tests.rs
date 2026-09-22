@@ -51,6 +51,7 @@ fn only_the_cascade_containing_a_changed_caster_is_dirty() {
                 fingerprint: 2,
             },
         ],
+        ..Default::default()
     };
     let first = set.keys(&views, 4).unwrap();
     let mut cache = ShadowDirtyCache::default();
@@ -60,6 +61,7 @@ fn only_the_cascade_containing_a_changed_caster_is_dirty() {
     assert_eq!(cache.plan(&first).reused[..2], [true, true]);
 
     set.casters[0].fingerprint = 3;
+    set.view_keys.borrow_mut().clear(); // 模拟生产 prepare 生成新的不可变投射物集合。
     let changed = set.keys(&views, 4).unwrap();
     let evidence = cache.plan(&changed);
     assert_eq!(evidence.updated[..2], [true, false]);

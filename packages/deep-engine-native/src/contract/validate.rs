@@ -38,6 +38,15 @@ pub fn validate_packet(packet: &RenderPacket) -> Result<ContractSummary, String>
     let mut material_features = HashMap::new();
     for material in &packet.materials {
         unique_id(&mut material_ids, &material.id, "material")?;
+        if material
+            .ior
+            .is_some_and(|value| !value.is_finite() || value < 1.0)
+        {
+            return Err(format!(
+                "material {} has invalid IOR (expected finite >= 1)",
+                material.id
+            ));
+        }
         if material.base_color.iter().any(|&value| !unit(value))
             || !unit(material.metallic)
             || !unit(material.roughness)

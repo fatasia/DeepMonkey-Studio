@@ -52,8 +52,15 @@ fn fog_is_a_separate_opt_in_hdr_variant_before_aces() {
     assert!(!plain.contains("forward_depth"));
     for shader in [fog, bloom_fog] {
         assert!(shader.contains("texture_depth_multisampled_2d"));
-        assert!(shader.contains("1.0 - exp(-frame.tuning.w * distance)"));
-        assert!(shader.find("mix(").unwrap() < shader.find("aces(hdr.rgb)").unwrap());
+        assert!(shader.contains("let near = frame.fogProjection.x"));
+        assert!(shader.contains("let far = frame.fogProjection.y"));
+        assert!(shader.contains(
+            "select(optical_depth, optical_depth * optical_depth, frame.fogProjection.z == 2.0)"
+        ));
+        assert!(shader.contains("1.0 - exp(-metric)"));
+        assert!(
+            shader.find("let hdr = fogged_hdr").unwrap() < shader.find("aces(hdr.rgb)").unwrap()
+        );
     }
     assert!(bloom_fog.contains("mix(hdr.rgb + glow, frame.tuning.rgb, amount)"));
 }
@@ -62,7 +69,7 @@ fn fog_is_a_separate_opt_in_hdr_variant_before_aces() {
 fn resize_prepares_every_binding_before_publishing_the_candidate() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let renderer = fs::read_to_string(root.join("src/renderer.rs")).unwrap();
-    let prepare_forward = renderer.find("let next_forward").unwrap();
+    let prepare_forward = renderer.find("let mut next_forward").unwrap();
     let prepare_bloom = renderer.find("let next_bloom").unwrap();
     let prepare_output = renderer.find("let next_output").unwrap();
     let publish_forward = renderer

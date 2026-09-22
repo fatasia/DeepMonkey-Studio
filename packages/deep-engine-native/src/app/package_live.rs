@@ -348,14 +348,16 @@ fn publish(
     let action_count = candidate.plan.entries.len();
     let reused = candidate.plan.reused;
     let package_version = candidate.snapshot.package_version.clone();
+    let view = candidate
+        .content
+        .view_after_reload(app.content.active(), app.state.view);
+    let controls = candidate.content.camera_controls();
     if let Some(renderer) = renderer {
         drop(app.renderer.take());
-        app.state.view = candidate
-            .content
-            .view_after_reload(app.content.active(), app.state.view);
         report_renderer_ready(&renderer);
         app.renderer = Some(renderer);
     }
+    app.state.set_camera(view, controls);
     app.content.publish(generation, *candidate.content);
     *transport
         .published

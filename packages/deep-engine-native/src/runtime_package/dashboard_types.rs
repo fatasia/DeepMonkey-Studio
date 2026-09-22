@@ -9,6 +9,14 @@ use std::collections::BTreeMap;
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct DashboardRuntimeV1 {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub media: Vec<super::DashboardVideoMedia>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub videos: Vec<super::DashboardVideoDiagnostic>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub text_inputs: Vec<super::DashboardTextInput>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_input: Option<super::DashboardTextInput>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tables: Vec<super::DashboardTable>,
     pub schema: String,
     pub schema_version: u32,
@@ -24,10 +32,23 @@ pub struct DashboardRuntimeV1 {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct DashboardFrozenFilter {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<DashboardSelectPresentation>,
     pub node_id: String,
     pub source_node_id: String,
     pub key: String,
     pub options: Vec<DashboardFilterOption>,
+    /// 多选开关:缺省 false(旧冻结包无此字段时按单选解释,读写双兼容)。
+    /// true 时运行时以已选项 updates 的行交集重放过滤,见 `filter_multi`。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub multi_select: bool,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DashboardSelectPresentation {
+    pub kind: String,
+    pub row_height: f64,
+    pub visible_rows: usize,
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]

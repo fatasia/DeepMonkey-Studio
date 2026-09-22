@@ -102,18 +102,23 @@ impl DashboardRuntime {
                     Ok(())
                 };
             if let Some(id) = &node.deep2d {
-                append(
-                    "static",
-                    self.filter_content(
-                        &node.id,
-                        self.loaded
-                            .deep2d
-                            .get(id)
-                            .ok_or("dashboard static resource missing")?
-                            .clone(),
-                    ),
-                    false,
-                )?;
+                let source = self
+                    .loaded
+                    .deep2d
+                    .get(id)
+                    .ok_or("dashboard static resource missing")?;
+                let content = if self
+                    .select_node()
+                    .is_some_and(|select| select.id == node.id)
+                {
+                    self.select_content(source, false)
+                } else {
+                    self.filter_content(&node.id, source.clone())
+                };
+                append("static", content, false)?;
+                if let Some(content) = self.input_content_for(&node.id)? {
+                    append("text-input", content, false)?;
+                }
             }
             if let Some(chart) = self.charts.get(&node.id) {
                 let list = crate::chart::presentation::present_chart_scaled(
@@ -126,6 +131,39 @@ impl DashboardRuntime {
                 )?;
                 append("chart", Deep2dRuntimeContent::DisplayList(list), true)?;
             }
+            if self
+                .document()
+                .videos
+                .iter()
+                .any(|video| video.node_id == node.id)
+            {
+                let slot = crate::deep2d::Deep2dDisplayList {
+                    schema_version: 1,
+                    id: format!("dashboard-video-slot.{}", node.id),
+                    revision: self.revision,
+                    logical_width: node.frame[2],
+                    logical_height: node.frame[3],
+                    scale_factor: 1.0,
+                    resources: Vec::new(),
+                    commands: Vec::new(),
+                    atlases: Vec::new(),
+                };
+                layers.push(Deep2dLayer {
+                    id: format!("{}:video", node.id),
+                    content: Arc::new(Deep2dRuntimeContent::DisplayList(slot)),
+                    translation: offset,
+                    clip,
+                });
+            }
+        }
+        if let Some(popup) = self.select_popup_layer(page_rect) {
+            layers.push(popup);
+        }
+        if let Some(focus) = self.focus_layer(page_rect) {
+            layers.push(focus);
+        }
+        if let Some(tooltip) = self.select_tooltip_layer(page_rect) {
+            layers.push(tooltip);
         }
         let composite = Deep2dComposite::new(
             format!("dashboard.{}", page.id),

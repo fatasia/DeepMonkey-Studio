@@ -130,6 +130,8 @@ pub struct LoadedRuntimePackage {
     pub lighting: Option<crate::scene_lighting::DirectionalLighting>,
     /// v7 作者雾（exp2）；仅在纯色环境声明时存在。
     pub fog: Option<crate::fog::FogSettings>,
+    /// v9 作者色彩分级（六通道）；仅在纯色环境 v9 档声明时存在，旧包恒 None。
+    pub author_grading: Option<crate::author_grading::AuthorGrading>,
     pub shader_packages: Vec<DeepShaderPackageV2>,
     pub material_bindings: Vec<RuntimeMaterialShaderBinding>,
     pub dynamic_runtime: Option<super::DynamicSceneRuntime>,

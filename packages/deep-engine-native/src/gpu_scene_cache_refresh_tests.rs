@@ -8,9 +8,7 @@ use std::sync::Arc;
 
 use bytemuck::cast_slice;
 use deep_engine_native::{
-    contract::RenderPacket,
-    mesh_abi::PACKED_INSTANCE_BYTES,
-    scene::prepare_scene,
+    contract::RenderPacket, mesh_abi::PACKED_INSTANCE_BYTES, scene::prepare_scene,
 };
 
 use crate::{
@@ -42,7 +40,13 @@ fn scene_refresh_reuses_all_resources_and_falls_back_on_drift() {
         let source = with_lod_target(&alpha_packet());
 
         let scopes = push_scopes(&device);
-        let base = stage(&cache, &device, &queue, &create_material_layout(&device), &source);
+        let base = stage(
+            &cache,
+            &device,
+            &queue,
+            &create_material_layout(&device),
+            &source,
+        );
         let base_metrics = base.metrics();
         assert_eq!(base_metrics.geometry_uploads, source.geometries.len());
         assert_eq!(base_metrics.texture_uploads, source.textures.len());
@@ -60,7 +64,15 @@ fn scene_refresh_reuses_all_resources_and_falls_back_on_drift() {
         let (prepared, _) = prepare(&flipped);
         let scopes = push_scopes(&device);
         let candidate = cache
-            .stage_scene_refresh(&device, &queue, &flipped, scene_content_key(&flipped), &prepared, base_summary, "")
+            .stage_scene_refresh(
+                &device,
+                &queue,
+                &flipped,
+                scene_content_key(&flipped),
+                &prepared,
+                base_summary,
+                "",
+            )
             .unwrap();
         let metrics = candidate.metrics();
         assert_eq!(metrics.geometry_reuses, source.geometries.len());
@@ -73,7 +85,10 @@ fn scene_refresh_reuses_all_resources_and_falls_back_on_drift() {
         assert!(candidate.new_textures.is_empty());
         assert!(candidate.new_materials.is_empty());
         assert_eq!(Arc::as_ptr(&candidate.scene().geometries[0]), base_geometry);
-        assert_eq!(Arc::as_ptr(&candidate.scene().pbr.materials[0]), base_material);
+        assert_eq!(
+            Arc::as_ptr(&candidate.scene().pbr.materials[0]),
+            base_material
+        );
         assert!(
             candidate
                 .scene()
@@ -107,13 +122,24 @@ fn scene_refresh_reuses_all_resources_and_falls_back_on_drift() {
         let (prepared, _) = prepare(&loded);
         let scopes = push_scopes(&device);
         let candidate = cache
-            .stage_scene_refresh(&device, &queue, &loded, scene_content_key(&loded), &prepared, base_summary, "")
+            .stage_scene_refresh(
+                &device,
+                &queue,
+                &loded,
+                scene_content_key(&loded),
+                &prepared,
+                base_summary,
+                "",
+            )
             .unwrap();
         let metrics = candidate.metrics();
         assert_eq!(metrics.geometry_reuses, source.geometries.len());
         assert_eq!(metrics.texture_reuses, source.textures.len());
         assert_eq!(metrics.material_reuses, source.materials.len());
-        assert_eq!(metrics.texture_uploads + metrics.geometry_uploads + metrics.material_uploads, 0);
+        assert_eq!(
+            metrics.texture_uploads + metrics.geometry_uploads + metrics.material_uploads,
+            0
+        );
         assert_eq!(Arc::as_ptr(&candidate.scene().geometries[0]), base_geometry);
         assert!(
             candidate.scene().batches.iter().any(|batch| batch.lod),
@@ -139,7 +165,15 @@ fn scene_refresh_reuses_all_resources_and_falls_back_on_drift() {
         assert!(cache.probe_scene_refresh(&drifted, "").is_err());
         assert!(
             cache
-                .stage_scene_refresh(&device, &queue, &drifted, scene_content_key(&drifted), &prepare(&drifted).0, base_summary, "")
+                .stage_scene_refresh(
+                    &device,
+                    &queue,
+                    &drifted,
+                    scene_content_key(&drifted),
+                    &prepare(&drifted).0,
+                    base_summary,
+                    ""
+                )
                 .is_err()
         );
 

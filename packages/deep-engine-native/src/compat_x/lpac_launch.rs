@@ -1,4 +1,4 @@
-use super::profile::{wide, Profile};
+use super::profile::{Profile, wide};
 #[path = "lpac_token.rs"]
 mod token;
 use std::{
@@ -9,7 +9,7 @@ use std::{
 };
 use token::verify_identity;
 use windows_sys::Win32::{
-    Foundation::{SetHandleInformation, HANDLE, HANDLE_FLAG_INHERIT, WAIT_OBJECT_0},
+    Foundation::{HANDLE, HANDLE_FLAG_INHERIT, SetHandleInformation, WAIT_OBJECT_0},
     Security::*,
     System::{
         Pipes::CreatePipe, Threading::*,

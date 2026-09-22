@@ -31,7 +31,7 @@ fn optional_surface_fields_remain_strict_and_legacy_defaults_are_unchanged() {
         prepare_scene(&old).unwrap(),
         prepare_scene(&explicit).unwrap()
     );
-    for field in ["castShadow", "receiveShadow"] {
+    for field in ["castShadow", "receiveShadow", "outline"] {
         for invalid in [
             serde_json::Value::Null,
             serde_json::json!(0),
@@ -61,6 +61,26 @@ fn optional_surface_fields_remain_strict_and_legacy_defaults_are_unchanged() {
     let parsed: RenderPacket = serde_json::from_value(json).unwrap();
     assert_eq!(parsed.materials[0].shading_model, Some(ShadingModel::Unlit));
     assert_eq!(prepare_scene(&parsed).unwrap().instances[0][31], 80.0);
+}
+
+#[test]
+fn outline_is_an_object_flag_and_does_not_split_shared_materials() {
+    let mut source = packet();
+    let original_batches = prepare_scene(&source).unwrap().batches.len();
+    let mut second = source.instances[0].clone();
+    second.id = "outlined-copy".into();
+    second.transform[12] = 2.0;
+    second.outline = Some(true);
+    source.instances.push(second);
+    let scene = prepare_scene(&source).unwrap();
+    assert_eq!(scene.batches.len(), original_batches);
+    assert_eq!(scene.instances[0][31] as u32 & 256, 0);
+    let outlined = scene
+        .instance_ids
+        .iter()
+        .position(|id| id == "outlined-copy")
+        .unwrap();
+    assert_eq!(scene.instances[outlined][31] as u32 & 256, 256);
 }
 
 #[test]

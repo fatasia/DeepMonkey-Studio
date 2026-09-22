@@ -1,7 +1,7 @@
 use super::*;
 use crate::runtime_package::parse_and_validate_runtime_package;
 
-fn fixture() -> LoadedDashboard {
+pub(super) fn fixture() -> LoadedDashboard {
     let mut loaded = parse_and_validate_runtime_package(include_bytes!(
         "../../../deep-engine/fixtures/dashboard-composition-v1.json"
     ))

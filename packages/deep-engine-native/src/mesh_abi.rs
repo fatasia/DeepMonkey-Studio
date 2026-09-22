@@ -1,10 +1,14 @@
 pub const MESH_ABI_ID: &str = "deep.pbr.mesh.v1";
+/// Stock material ABI v5 names normalColumn0.w; legacy custom ABI remains v1.
+pub const STOCK_MATERIAL_ABI_ID: &str = "deep.pbr.mesh.v5";
+pub const MATERIAL_IOR_FLOAT_OFFSET: usize = 15;
 
 /// 只追加灯光参数；旧 v1/v2/v3 成员偏移保持不变。
-pub const FRAME_ABI_ID: &str = "deep.native.frame.v6";
+pub const FRAME_ABI_ID: &str = "deep.native.frame.v7";
 pub const FRAME_V1_BYTES: u64 = 208;
-pub const FRAME_UNIFORM_FLOATS: usize = 60 + 16 * 16 + 10 * 16 + 4;
+pub const FRAME_UNIFORM_FLOATS: usize = 60 + 16 * 16 + 10 * 16 + 4 + 16;
 pub const FRAME_FOG_PROJECTION_ROW: usize = 119;
+pub const FRAME_LOCAL_SOFTNESS_ROW: usize = 120;
 pub const FRAME_UNIFORM_BYTES: u64 = (FRAME_UNIFORM_FLOATS * size_of::<f32>()) as u64;
 pub const FRAME_MEMBER_BYTE_OFFSETS: [u64; 7] = [0, 64, 128, 144, 160, 176, 192];
 pub type FrameUniform = [[f32; 4]; FRAME_UNIFORM_FLOATS / 4];
@@ -182,6 +186,39 @@ mod tests {
         COLOR_VERTEX_ATTRIBUTES, COLOR_VERTEX_BYTES, COLOR_VERTEX_FLOATS, pack_color_vertices,
     };
     use wgpu::VertexFormat;
+
+    #[test]
+    fn softness_extension_defaults_to_zero_without_moving_legacy_fields() {
+        use super::*;
+        assert_eq!(FRAME_UNIFORM_BYTES, 1984);
+        assert_eq!(FRAME_LOCAL_SOFTNESS_ROW * 16, 1920);
+        let mut frame = frame_uniform(1.0, 0.0);
+        assert_eq!(&frame[FRAME_LOCAL_SOFTNESS_ROW..], &[[0.0; 4]; 4]);
+        let lights: Vec<_> = (0..16)
+            .map(|index| {
+                serde_json::json!({
+                    "kind":"spot", "position":[0,4,0], "direction":[0,-1,0],
+                    "radiance":[1,1,1], "range":12, "decay":2,
+                    "innerCos":0.9, "outerCos":0.7, "shadowSoftness":index as f32 / 15.0,
+                    "castShadow":index < 4
+                })
+            })
+            .collect();
+        let lighting: crate::scene_lighting::DirectionalLighting = serde_json::from_value(serde_json::json!({
+            "direction":[0,1,0], "radiance":[1,1,1], "exposure":1, "shadows":true,"localLights":lights
+        })).unwrap();
+        lighting.validate().unwrap().apply(&mut frame);
+        for index in 0..16 {
+            assert_eq!(
+                frame[FRAME_LOCAL_SOFTNESS_ROW + index / 4][index % 4],
+                index as f32 / 15.0
+            );
+            assert_eq!(
+                frame[18 + index * 4][2],
+                if index < 4 { (index + 1) as f32 } else { 0.0 }
+            );
+        }
+    }
 
     #[test]
     fn color_stream_abi_is_frozen() {

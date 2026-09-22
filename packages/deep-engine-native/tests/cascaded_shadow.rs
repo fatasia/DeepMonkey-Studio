@@ -267,8 +267,21 @@ fn runtime_contract_uses_array_sampling_dynamic_caster_offsets_and_blending() {
     assert!(mesh_shader.contains("shadow_visibility(input.world, normal"));
     assert!(frame_bindings.contains("view_dimension: wgpu::TextureViewDimension::D2Array"));
     assert!(frame_bindings.contains("has_dynamic_offset: true"));
-    assert!(shadow_map.contains("depth_or_array_layers: options.cascade_count as u32"));
+    assert!(
+        shadow_map.contains(
+            "let layer_count = options.cascade_count as u32 + local_matrices.len() as u32"
+        )
+    );
+    assert!(shadow_map.contains("depth_or_array_layers: layer_count"));
+    assert!(shadow_map.contains("if layer_count > device.limits().max_texture_array_layers"));
+    assert!(shadow_map.contains("let layer_views = (0..layer_count)"));
     assert!(shadow_map.contains("base_array_layer: layer"));
+    // 波次5 重构后,串行参照与并行编码共用单个级联编码体 encode_cascade:
+    // 合同升级为「逐级联循环 + 每级联各自 layer_view + 动态 offset +
+    // 并行入口按级联升序产出 command buffer」。
     assert!(shadow_pass.contains("for (cascade_index, layer_view)"));
+    assert!(shadow_pass.contains("fn encode_cascade("));
+    assert!(shadow_pass.contains("layer_view: &wgpu::TextureView"));
     assert!(shadow_pass.contains("shadow_map.dynamic_offset(cascade_index)"));
+    assert!(shadow_pass.contains("pub fn encode_shadow_cascades_parallel"));
 }

@@ -135,7 +135,10 @@ fn batch_ranges_from_metadata_closes_each_batch_at_its_last_row() {
         batch_ranges_from_metadata(&metadata, 3),
         vec![[0, 3, 0, 0], [0, 0, 0, 0], [3, 6, 0, 0]]
     );
-    assert_eq!(batch_ranges_from_metadata(&[[0, 1, 0, 0]], 1), vec![[0, 1, 0, 0]]);
+    assert_eq!(
+        batch_ranges_from_metadata(&[[0, 1, 0, 0]], 1),
+        vec![[0, 1, 0, 0]]
+    );
     assert!(batch_ranges_from_metadata(&[], 0).is_empty());
 }
 

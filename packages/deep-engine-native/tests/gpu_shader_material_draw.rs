@@ -50,6 +50,8 @@ mod player_content;
 mod player_shader_plan;
 #[path = "support/production_transparency_draw.rs"]
 mod production_transparency_draw;
+#[path = "../src/render_graph.rs"]
+mod render_graph;
 #[path = "../src/runtime_lkg.rs"]
 mod runtime_lkg;
 #[path = "support/shader_material_assertions.rs"]
@@ -62,6 +64,10 @@ mod shader_material_transactions;
 mod shadow_map;
 #[path = "../src/shadow_pass.rs"]
 mod shadow_pass;
+#[path = "../src/telemetry.rs"]
+mod telemetry;
+#[path = "../src/telemetry_gpu.rs"]
+mod telemetry_gpu;
 
 use deep_engine_native::runtime_package::parse_and_validate_runtime_package;
 use player_content::PlayerContent;

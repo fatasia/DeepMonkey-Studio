@@ -36,7 +36,12 @@ impl DashboardRuntime {
             || node.deep2d.is_none()
             || node.chart.is_some()
             || filter.options.is_empty()
-            || filter.options.len() > 16
+            || filter.options.len()
+                > if filter.presentation.is_some() {
+                    256
+                } else {
+                    16
+                }
             || [&filter.key, &filter.source_node_id]
                 .iter()
                 .any(|v| v.is_empty() || v.chars().count() > 256 || v.chars().any(char::is_control))
@@ -44,8 +49,28 @@ impl DashboardRuntime {
         {
             return Err("invalid frozen filter profile".into());
         }
-        if node.frame[2] <= 34.0 || node.frame[3] - 34.0 < 18.0 * filter.options.len() as f64 {
+        if let Some(select) = &filter.presentation
+            && (select.kind != "select-v1" || select.row_height != 32.0 || select.visible_rows != 8)
+        {
+            return Err("unsupported select presentation profile".into());
+        }
+        let required_height = if filter.presentation.is_some() {
+            32.0
+        } else {
+            18.0 * filter.options.len() as f64
+        };
+        if node.frame[2]
+            <= if filter.presentation.is_some() {
+                58.0
+            } else {
+                34.0
+            }
+            || node.frame[3] - 34.0 < required_height
+        {
             return Err("filter option layout is too small".into());
+        }
+        if filter.presentation.is_some() {
+            self.validate_select_package(node, filter.options.len())?;
         }
         let mut values = std::collections::HashSet::new();
         let mut previous_targets = None;
@@ -54,7 +79,9 @@ impl DashboardRuntime {
             if option.value.is_empty()
                 || option.value.chars().count() > 256
                 || !values.insert(&option.value)
-                || (option.updates.is_empty() && option.visibility.is_empty() && self.document().tables.is_empty())
+                || (option.updates.is_empty()
+                    && option.visibility.is_empty()
+                    && self.document().tables.is_empty())
                 || option.updates.len() > 32
                 || option.visibility.len() > 128
             {
@@ -134,7 +161,21 @@ impl DashboardRuntime {
             .as_ref()
             .and_then(|f| f.options.get(index))
             .ok_or("filter option out of range")?;
+        let text_targets: std::collections::HashSet<_> = self
+            .input_profiles()
+            .into_iter()
+            .flat_map(|profile| {
+                profile
+                    .bindings
+                    .iter()
+                    .map(|binding| binding.node_id.clone())
+            })
+            .collect();
         for update in &option.updates {
+            // Shared targets are applied once after intersecting all text values.
+            if text_targets.contains(&update.node_id) {
+                continue;
+            }
             apply(
                 self.charts
                     .get_mut(&update.node_id)
@@ -143,11 +184,17 @@ impl DashboardRuntime {
             )?;
         }
         self.selected_filter = Some(index);
+        if !self.input_profiles().is_empty() {
+            self.apply_input_value()?;
+        }
         Ok(())
     }
 
     pub(super) fn filter_at(&self, point: [f64; 2]) -> Option<usize> {
         let filter = self.document().filter.as_ref()?;
+        if filter.presentation.is_some() {
+            return None;
+        }
         if self.hit(point)?.node_id != filter.node_id {
             return None;
         }
@@ -228,7 +275,8 @@ impl DashboardRuntime {
     }
 }
 
-fn apply(
+/// 单选与多选共用的行替换:以固定 dataset 标识整组覆盖并推进数据修订。
+pub(super) fn apply(
     chart: &mut ChartRuntime,
     update: &crate::runtime_package::DashboardFilterUpdate,
 ) -> Result<(), String> {

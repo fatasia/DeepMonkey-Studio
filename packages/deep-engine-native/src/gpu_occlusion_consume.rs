@@ -172,9 +172,7 @@ impl OcclusionConsumeStage {
                                 ty: wgpu::BindingType::Buffer {
                                     ty: wgpu::BufferBindingType::Uniform,
                                     has_dynamic_offset: false,
-                                    min_binding_size: wgpu::BufferSize::new(
-                                        COMPACT_PARAMS_BYTES,
-                                    ),
+                                    min_binding_size: wgpu::BufferSize::new(COMPACT_PARAMS_BYTES),
                                 },
                                 count: None,
                             }
@@ -195,12 +193,11 @@ impl OcclusionConsumeStage {
                     })
                     .collect::<Vec<_>>(),
             });
-            let pipeline_layout =
-                device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some(entry_point),
-                    bind_group_layouts: &[Some(&layout)],
-                    immediate_size: 0,
-                });
+            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some(entry_point),
+                bind_group_layouts: &[Some(&layout)],
+                immediate_size: 0,
+            });
             let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: Some(entry_point),
                 layout: Some(&pipeline_layout),
@@ -281,7 +278,10 @@ impl OcclusionConsumeStage {
         }
     }
 
-    pub fn take_compacted(&mut self, device: &wgpu::Device) -> Result<Option<ConsumeCompacted>, String> {
+    pub fn take_compacted(
+        &mut self,
+        device: &wgpu::Device,
+    ) -> Result<Option<ConsumeCompacted>, String> {
         match &mut self.readback {
             Some(readback) => readback.take(device),
             None => Ok(None),
@@ -334,9 +334,15 @@ impl ConsumeReadback {
             })
         };
         Some(Self {
-            counts: staging("Deep Engine native GPU occlusion compact counts readback", counts_bytes),
+            counts: staging(
+                "Deep Engine native GPU occlusion compact counts readback",
+                counts_bytes,
+            ),
             counts_bytes,
-            rows: staging("Deep Engine native GPU occlusion compact rows readback", rows_bytes),
+            rows: staging(
+                "Deep Engine native GPU occlusion compact rows readback",
+                rows_bytes,
+            ),
             rows_bytes,
             pending: false,
         })
@@ -369,30 +375,28 @@ impl ConsumeReadback {
         } else {
             Vec::new()
         };
-        let mut per_batch = Vec::with_capacity(self.counts_bytes / GPU_CULLING_INDIRECT_BYTES as usize);
+        let mut per_batch =
+            Vec::with_capacity(self.counts_bytes / GPU_CULLING_INDIRECT_BYTES as usize);
         for chunk in counts.chunks_exact(GPU_CULLING_INDIRECT_BYTES as usize) {
             per_batch.push(u32::from_le_bytes(chunk[4..8].try_into().unwrap()));
         }
         let rows = rows
             .chunks_exact(GPU_CULLING_INSTANCE_BYTES as usize)
-            .map(|row| std::array::from_fn(|axis| {
-                f32::from_le_bytes(row[axis * 4..axis * 4 + 4].try_into().unwrap())
-            }))
+            .map(|row| {
+                std::array::from_fn(|axis| {
+                    f32::from_le_bytes(row[axis * 4..axis * 4 + 4].try_into().unwrap())
+                })
+            })
             .collect();
         Ok(Some(ConsumeCompacted { per_batch, rows }))
     }
 }
 
-fn map_slice(
-    buffer: &wgpu::Buffer,
-    device: &wgpu::Device,
-    label: &str,
-) -> Result<Vec<u8>, String> {
+fn map_slice(buffer: &wgpu::Buffer, device: &wgpu::Device, label: &str) -> Result<Vec<u8>, String> {
     let (sender, receiver) = mpsc::sync_channel(1);
-    buffer
-        .map_async(wgpu::MapMode::Read, .., move |result| {
-            let _ = sender.send(result);
-        });
+    buffer.map_async(wgpu::MapMode::Read, .., move |result| {
+        let _ = sender.send(result);
+    });
     device
         .poll(wgpu::PollType::wait_indefinitely())
         .map_err(|error| format!("GPU occlusion consume {label} device poll failed: {error}"))?;

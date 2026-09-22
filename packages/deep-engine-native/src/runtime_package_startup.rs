@@ -267,15 +267,24 @@ pub fn run_dynamic_playback(package: PreparedRuntimePackage) -> Result<(), Strin
         summary.triangles,
         summary.has_deep2d,
     );
-    let duration_ms = content
-        .dynamic_runtime_duration_ms()
-        .ok_or("runtime package has no dynamic runtime channel; real-window playback requires one")?;
+    let duration_ms = content.dynamic_runtime_duration_ms().ok_or(
+        "runtime package has no dynamic runtime channel; real-window playback requires one",
+    )?;
     if duration_ms == 0 {
-        return Err("dynamic runtime has no animation clock; real-window playback requires durationMs > 0".into());
+        return Err(
+            "dynamic runtime has no animation clock; real-window playback requires durationMs > 0"
+                .into(),
+        );
     }
     let snapshot = content.runtime_package().cloned();
     let (package_id, package_version, package_hash) = snapshot
-        .map(|snapshot| (snapshot.package_id, snapshot.package_version, snapshot.package_hash))
+        .map(|snapshot| {
+            (
+                snapshot.package_id,
+                snapshot.package_version,
+                snapshot.package_hash,
+            )
+        })
         .unwrap_or((id, version, hash));
     let spec = app::DynamicPlaybackSpec {
         step_ms: app::DYNAMIC_PLAYBACK_STEP_MS,
@@ -300,8 +309,8 @@ pub fn run_state_ops(ops_path: &Path, package: PreparedRuntimePackage) -> Result
     } = package;
     let raw = fs::read_to_string(ops_path)
         .map_err(|error| format!("state ops file cannot be read: {error}"))?;
-    let value: serde_json::Value =
-        serde_json::from_str(&raw).map_err(|error| format!("state ops JSON is invalid: {error}"))?;
+    let value: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|error| format!("state ops JSON is invalid: {error}"))?;
     let ops = parse_and_validate_r3_state_ops(value)?;
     if ops.package_hash != hash {
         return Err(format!(
@@ -318,7 +327,13 @@ pub fn run_state_ops(ops_path: &Path, package: PreparedRuntimePackage) -> Result
         summary.has_deep2d,
         ops.steps.len(),
     );
-    app::run_state_ops_playback(content, app::StateOpsSpec { ops, package_hash: hash })
+    app::run_state_ops_playback(
+        content,
+        app::StateOpsSpec {
+            ops,
+            package_hash: hash,
+        },
+    )
 }
 
 fn prepare(package: LoadedRuntimePackage) -> Result<PreparedRuntimePackage, String> {

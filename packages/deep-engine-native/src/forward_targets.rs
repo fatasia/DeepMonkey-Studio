@@ -3,6 +3,16 @@ use deep_engine_native::mesh_abi::{
 };
 use winit::dpi::PhysicalSize;
 
+pub const OUTLINE_MASK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
+pub const OUTLINE_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
+pub struct OutlineTargets {
+    _mask: wgpu::Texture,
+    _depth: wgpu::Texture,
+    pub mask_view: wgpu::TextureView,
+    pub depth_view: wgpu::TextureView,
+}
+
 pub struct ForwardTargets {
     pub background: Option<[f64; 3]>,
     hdr: wgpu::Texture,
@@ -11,10 +21,11 @@ pub struct ForwardTargets {
     pub hdr_view: wgpu::TextureView,
     pub msaa_view: wgpu::TextureView,
     pub depth_view: wgpu::TextureView,
+    pub outline: Option<OutlineTargets>,
 }
 
 impl ForwardTargets {
-    pub fn new(device: &wgpu::Device, size: PhysicalSize<u32>) -> Self {
+    pub fn new(device: &wgpu::Device, size: PhysicalSize<u32>, outline: bool) -> Self {
         let extent = wgpu::Extent3d {
             width: size.width.max(1),
             height: size.height.max(1),
@@ -63,7 +74,15 @@ impl ForwardTargets {
             hdr_view,
             msaa_view,
             depth_view,
+            outline: outline.then(|| OutlineTargets::new(device, extent)),
         }
+    }
+
+    pub fn set_outline_enabled(&mut self, device: &wgpu::Device, enabled: bool) {
+        if enabled == self.outline.is_some() {
+            return;
+        }
+        self.outline = enabled.then(|| OutlineTargets::new(device, self.hdr.size()));
     }
 
     pub fn resolved_texture(&self) -> &wgpu::Texture {
@@ -83,5 +102,38 @@ impl ForwardTargets {
     pub fn clear_color(&self) -> wgpu::Color {
         let [r, g, b] = self.background.unwrap_or([0.012, 0.020, 0.035]);
         wgpu::Color { r, g, b, a: 1.0 }
+    }
+}
+
+impl OutlineTargets {
+    fn new(device: &wgpu::Device, size: wgpu::Extent3d) -> Self {
+        let mask = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Deep Engine native selected-object outline mask"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: OUTLINE_MASK_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let depth = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Deep Engine native selected-object depth"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: OUTLINE_DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let mask_view = mask.create_view(&Default::default());
+        let depth_view = depth.create_view(&Default::default());
+        Self {
+            _mask: mask,
+            _depth: depth,
+            mask_view,
+            depth_view,
+        }
     }
 }

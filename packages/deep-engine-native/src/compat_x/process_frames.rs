@@ -1,5 +1,5 @@
 //! 一次仅一个在途请求；长度前缀避免等待 EOF，帧预算沿用单次 IPC。
-use super::{ipc, XProcessError, MAX_IPC_BYTES};
+use super::{MAX_IPC_BYTES, XProcessError, ipc};
 use std::io::{Read, Write};
 
 pub(super) const SESSION_MAGIC: [u8; 4] = *b"XSF1";

@@ -60,8 +60,15 @@ pub struct R3StateBox {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClipState {
     Off,
-    Axis { axis: char, inverted: bool, offset: f64 },
-    Box { min: [f64; 3], max: [f64; 3] },
+    Axis {
+        axis: char,
+        inverted: bool,
+        offset: f64,
+    },
+    Box {
+        min: [f64; 3],
+        max: [f64; 3],
+    },
 }
 
 fn fail<T>(message: impl AsRef<str>) -> Result<T, String> {
@@ -73,7 +80,10 @@ fn validate_coordinate(value: f64, context: &str) -> Result<f64, String> {
         return fail(format!("{context} must be a finite number"));
     }
     if value.abs() > MAX_COORD {
-        return fail(format!("{context} exceeds the ±{} contract bound", MAX_COORD as u64));
+        return fail(format!(
+            "{context} exceeds the ±{} contract bound",
+            MAX_COORD as u64
+        ));
     }
     if (value / QUANTUM - (value / QUANTUM).round()).abs() > 1e-6 {
         return fail(format!("{context} must sit on the {QUANTUM} grid"));
@@ -83,10 +93,18 @@ fn validate_coordinate(value: f64, context: &str) -> Result<f64, String> {
 
 fn validate_target_id(value: &str) -> Result<(), String> {
     let bytes = value.as_bytes();
-    let first_ok = bytes.first().is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, b'.' | b'_' | b':' | b'/'));
-    let rest_ok = bytes.iter().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, b'.' | b'_' | b':' | b'/' | b'-'));
+    let first_ok = bytes.first().is_some_and(|c| {
+        c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, b'.' | b'_' | b':' | b'/')
+    });
+    let rest_ok = bytes.iter().all(|c| {
+        c.is_ascii_lowercase()
+            || c.is_ascii_digit()
+            || matches!(c, b'.' | b'_' | b':' | b'/' | b'-')
+    });
     if value.is_empty() || value.len() > 256 || !first_ok || !rest_ok {
-        return fail("select requires a targetId of [a-z0-9._:/] followed by [a-z0-9._:/-] with at most 256 bytes");
+        return fail(
+            "select requires a targetId of [a-z0-9._:/] followed by [a-z0-9._:/-] with at most 256 bytes",
+        );
     }
     Ok(())
 }
@@ -105,7 +123,8 @@ impl R3StateOp {
                 if self.offset.is_none() {
                     return fail("clip-enable requires offset");
                 }
-                validate_coordinate(self.offset.unwrap_or(f64::NAN), "clip-enable offset").map(|_| ())
+                validate_coordinate(self.offset.unwrap_or(f64::NAN), "clip-enable offset")
+                    .map(|_| ())
             }
             "clip-move" => {
                 if self.offset.is_none() {
@@ -114,7 +133,9 @@ impl R3StateOp {
                 validate_coordinate(self.offset.unwrap_or(f64::NAN), "clip-move offset").map(|_| ())
             }
             "box-enable" => {
-                let Some(boxed) = &self.r#box else { return fail("box-enable requires box {min,max}") };
+                let Some(boxed) = &self.r#box else {
+                    return fail("box-enable requires box {min,max}");
+                };
                 let mut min = [0.0; 3];
                 let mut max = [0.0; 3];
                 for index in 0..3 {
@@ -138,14 +159,20 @@ impl R3StateOp {
 }
 
 pub fn parse_and_validate_r3_state_ops(value: serde_json::Value) -> Result<R3StateOps, String> {
-    let ops: R3StateOps = serde_json::from_value(value).map_err(|error| format!("r3-state ops: {error}"))?;
+    let ops: R3StateOps =
+        serde_json::from_value(value).map_err(|error| format!("r3-state ops: {error}"))?;
     if ops.schema != R3_STATE_OPS_SCHEMA || ops.schema_version != 1 {
         return fail("unsupported schema or schemaVersion");
     }
     if ops.id.is_empty() {
         return fail("id must be a non-empty string");
     }
-    if ops.package_hash.len() != 64 || !ops.package_hash.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()) {
+    if ops.package_hash.len() != 64
+        || !ops
+            .package_hash
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
         return fail("packageHash must be a lowercase sha-256 hex string");
     }
     if ops.steps.is_empty() || ops.steps.len() > MAX_STEPS {
@@ -154,13 +181,17 @@ pub fn parse_and_validate_r3_state_ops(value: serde_json::Value) -> Result<R3Sta
     let mut previous_at_ms: Option<u64> = None;
     for (index, step) in ops.steps.iter().enumerate() {
         if step.at_ms > 86_400_000 {
-            return fail(format!("step {index} atMs must be an integer in [0, 86400000]"));
+            return fail(format!(
+                "step {index} atMs must be an integer in [0, 86400000]"
+            ));
         }
         if previous_at_ms.is_some_and(|previous| step.at_ms < previous) {
             return fail(format!("step {index} atMs must not move backwards"));
         }
         previous_at_ms = Some(step.at_ms);
-        step.op.validate().map_err(|error| format!("step {index}: {error}"))?;
+        step.op
+            .validate()
+            .map_err(|error| format!("step {index}: {error}"))?;
     }
     Ok(ops)
 }
@@ -175,8 +206,16 @@ fn format_component(value: f64) -> String {
 pub fn clip_field(clip: &ClipState) -> String {
     match clip {
         ClipState::Off => "off".into(),
-        ClipState::Axis { axis, inverted, offset } => {
-            format!("axis:{axis},dir={},off={}", if *inverted { -1 } else { 1 }, format_component(*offset))
+        ClipState::Axis {
+            axis,
+            inverted,
+            offset,
+        } => {
+            format!(
+                "axis:{axis},dir={},off={}",
+                if *inverted { -1 } else { 1 },
+                format_component(*offset)
+            )
         }
         ClipState::Box { min, max } => format!(
             "box:min={},{},{},max={},{},{}",
@@ -203,7 +242,9 @@ pub fn canonical_r3_state_frame(
     replay_revisions: &[u64],
 ) -> Result<(u64, String, ClipState, Option<String>), String> {
     if step_index >= ops.steps.len() {
-        return fail(format!("step index {step_index} is outside the frozen sequence"));
+        return fail(format!(
+            "step index {step_index} is outside the frozen sequence"
+        ));
     }
     let mut clip = ClipState::Off;
     let mut selection: Option<String> = None;
@@ -212,7 +253,13 @@ pub fn canonical_r3_state_frame(
         match op.kind.as_str() {
             "clip-enable" => {
                 clip = ClipState::Axis {
-                    axis: op.axis.as_ref().expect("validated").chars().next().expect("non-empty"),
+                    axis: op
+                        .axis
+                        .as_ref()
+                        .expect("validated")
+                        .chars()
+                        .next()
+                        .expect("non-empty"),
                     inverted: op.inverted.expect("validated"),
                     offset: (op.offset.expect("validated") / QUANTUM).round() * QUANTUM,
                 };
@@ -225,7 +272,12 @@ pub fn canonical_r3_state_frame(
                         offset: (op.offset.expect("validated") / QUANTUM).round() * QUANTUM,
                     };
                 }
-                _ => return fail(format!("clip-move at step {} requires an enabled axis clip", step_index)),
+                _ => {
+                    return fail(format!(
+                        "clip-move at step {} requires an enabled axis clip",
+                        step_index
+                    ));
+                }
             },
             "box-enable" => {
                 let boxed = op.r#box.as_ref().expect("validated");
@@ -244,7 +296,11 @@ pub fn canonical_r3_state_frame(
         }
     }
     let step = &ops.steps[step_index];
-    let revisions = replay_revisions.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
+    let revisions = replay_revisions
+        .iter()
+        .map(u64::to_string)
+        .collect::<Vec<_>>()
+        .join(",");
     let canonical = format!(
         "{}|i={}|t={}|clip={}|sel={}|events={}",
         R3_STATE_FRAME_CONTRACT,
@@ -263,7 +319,11 @@ pub fn canonical_r3_state_frame(
 pub fn axis_clip_plane(clip: &ClipState) -> Result<[f64; 4], String> {
     match clip {
         ClipState::Off => Ok([0.0; 4]),
-        ClipState::Axis { axis, inverted, offset } => {
+        ClipState::Axis {
+            axis,
+            inverted,
+            offset,
+        } => {
             let index = match axis {
                 'x' => 0usize,
                 'y' => 1,
@@ -292,7 +352,10 @@ pub fn axis_clip_field_from_plane(plane: [f32; 4]) -> Result<String, String> {
         return fail("plane has a zero normal with a nonzero offset");
     };
     let normal = plane[index];
-    let other_axes_zero = plane[..3].iter().enumerate().all(|(position, value)| position == index || *value == 0.0);
+    let other_axes_zero = plane[..3]
+        .iter()
+        .enumerate()
+        .all(|(position, value)| position == index || *value == 0.0);
     if !other_axes_zero || normal.abs() != 1.0 {
         return fail("plane is not a unit axis plane; no contract field exists for it");
     }
@@ -302,7 +365,12 @@ pub fn axis_clip_field_from_plane(plane: [f32; 4]) -> Result<String, String> {
         return fail("readback offset exceeds the contract bound");
     }
     let offset = (offset / QUANTUM).round() * QUANTUM;
-    Ok(format!("axis:{},dir={},off={}", ['x', 'y', 'z'][index], dir, format_component(offset)))
+    Ok(format!(
+        "axis:{},dir={},off={}",
+        ['x', 'y', 'z'][index],
+        dir,
+        format_component(offset)
+    ))
 }
 
 #[cfg(test)]
@@ -326,7 +394,13 @@ mod tests {
     }
 
     fn revisions(at_ms: u64) -> Vec<u64> {
-        if at_ms >= 750 { vec![1, 2] } else if at_ms >= 250 { vec![1] } else { vec![] }
+        if at_ms >= 750 {
+            vec![1, 2]
+        } else if at_ms >= 250 {
+            vec![1]
+        } else {
+            vec![]
+        }
     }
 
     #[test]
@@ -342,7 +416,8 @@ mod tests {
             "r3-state-frame-v1|i=5|t=500|clip=off|sel=-|events=1",
         ];
         for (index, expected) in expected.iter().enumerate() {
-            let (_, canonical, _, _) = canonical_r3_state_frame(&ops, index, &revisions(ops.steps[index].at_ms)).unwrap();
+            let (_, canonical, _, _) =
+                canonical_r3_state_frame(&ops, index, &revisions(ops.steps[index].at_ms)).unwrap();
             assert_eq!(&canonical, expected);
         }
     }
@@ -354,34 +429,65 @@ mod tests {
             "steps": [{"atMs": 0, "op": {"kind": "clip-enable", "axis": "x", "inverted": true, "offset": -0.0}}]
         })).unwrap();
         let (_, canonical, _, _) = canonical_r3_state_frame(&ops, 0, &[]).unwrap();
-        assert_eq!(canonical, "r3-state-frame-v1|i=0|t=0|clip=axis:x,dir=-1,off=0.000000|sel=-|events=");
+        assert_eq!(
+            canonical,
+            "r3-state-frame-v1|i=0|t=0|clip=axis:x,dir=-1,off=0.000000|sel=-|events="
+        );
     }
 
     #[test]
     fn rejects_off_grid_out_of_bound_and_unknown_shapes() {
         let mut value = frozen_ops();
         value["steps"][0]["op"]["offset"] = json!(0.1005);
-        assert!(parse_and_validate_r3_state_ops(value).unwrap_err().contains("must sit on the 0.001 grid"));
+        assert!(
+            parse_and_validate_r3_state_ops(value)
+                .unwrap_err()
+                .contains("must sit on the 0.001 grid")
+        );
         let mut value = frozen_ops();
         value["steps"][0]["op"]["offset"] = json!(1500.0);
-        assert!(parse_and_validate_r3_state_ops(value).unwrap_err().contains("contract bound"));
+        assert!(
+            parse_and_validate_r3_state_ops(value)
+                .unwrap_err()
+                .contains("contract bound")
+        );
         let mut value = frozen_ops();
         // serde deserializes JSON null into Option::None, so this reaches the
         // same explicit-requires rejection as a missing field (both ends reject).
         value["steps"][0]["op"]["offset"] = json!(null);
-        assert!(parse_and_validate_r3_state_ops(value).unwrap_err().contains("requires offset"));
+        assert!(
+            parse_and_validate_r3_state_ops(value)
+                .unwrap_err()
+                .contains("requires offset")
+        );
         let mut value = frozen_ops();
         value["steps"][0]["extra"] = json!(1);
-        assert!(parse_and_validate_r3_state_ops(value).unwrap_err().contains("unknown field `extra`"));
+        assert!(
+            parse_and_validate_r3_state_ops(value)
+                .unwrap_err()
+                .contains("unknown field `extra`")
+        );
         let mut value = frozen_ops();
         value["steps"][1]["op"]["targetId"] = json!("-pump");
-        assert!(parse_and_validate_r3_state_ops(value).unwrap_err().contains("targetId"));
+        assert!(
+            parse_and_validate_r3_state_ops(value)
+                .unwrap_err()
+                .contains("targetId")
+        );
         let mut value = frozen_ops();
         value["steps"][2]["atMs"] = json!(50);
-        assert!(parse_and_validate_r3_state_ops(value).unwrap_err().contains("must not move backwards"));
+        assert!(
+            parse_and_validate_r3_state_ops(value)
+                .unwrap_err()
+                .contains("must not move backwards")
+        );
         let mut value = frozen_ops();
         value["packageHash"] = json!("A".repeat(64));
-        assert!(parse_and_validate_r3_state_ops(value).unwrap_err().contains("lowercase sha-256"));
+        assert!(
+            parse_and_validate_r3_state_ops(value)
+                .unwrap_err()
+                .contains("lowercase sha-256")
+        );
     }
 
     #[test]
@@ -399,8 +505,17 @@ mod tests {
             let plane = axis_clip_plane(&clip).unwrap();
             let applied: [f32; 4] = plane.map(|value| value as f32);
             let applied_field = axis_clip_field_from_plane(applied).unwrap();
-            let expected_clip = canonical.split("|clip=").nth(1).unwrap().split('|').next().unwrap();
-            assert_eq!(applied_field, expected_clip, "applied field must restore the contract bytes");
+            let expected_clip = canonical
+                .split("|clip=")
+                .nth(1)
+                .unwrap()
+                .split('|')
+                .next()
+                .unwrap();
+            assert_eq!(
+                applied_field, expected_clip,
+                "applied field must restore the contract bytes"
+            );
         }
         // A non-axis plane has no contract field and must fail loudly.
         assert!(axis_clip_field_from_plane([0.5, 0.5, 0.0, -1.0]).is_err());
@@ -425,7 +540,11 @@ mod tests {
             "schema": R3_STATE_OPS_SCHEMA, "schemaVersion": 1, "id": "r3", "packageHash": "a".repeat(64),
             "steps": [{"atMs": 0, "op": {"kind": "clip-move", "offset": 1.0}}]
         })).unwrap();
-        assert!(canonical_r3_state_frame(&ops, 0, &[]).unwrap_err().contains("requires an enabled axis clip"));
+        assert!(
+            canonical_r3_state_frame(&ops, 0, &[])
+                .unwrap_err()
+                .contains("requires an enabled axis clip")
+        );
         let boxed = parse_and_validate_r3_state_ops(json!({
             "schema": R3_STATE_OPS_SCHEMA, "schemaVersion": 1, "id": "r3", "packageHash": "a".repeat(64),
             "steps": [
@@ -433,7 +552,11 @@ mod tests {
                 {"atMs": 10, "op": {"kind": "clip-move", "offset": 1.0}}
             ]
         })).unwrap();
-        assert!(canonical_r3_state_frame(&boxed, 1, &[]).unwrap_err().contains("requires an enabled axis clip"));
+        assert!(
+            canonical_r3_state_frame(&boxed, 1, &[])
+                .unwrap_err()
+                .contains("requires an enabled axis clip")
+        );
     }
 
     #[test]
@@ -447,7 +570,11 @@ mod tests {
             let value = (index as f64) * QUANTUM;
             let contract = (value / QUANTUM).round() * QUANTUM;
             let f32_value = contract as f32 as f64;
-            assert_eq!((f32_value / QUANTUM).round() * QUANTUM, contract, "quantum round-trip failed at {contract}");
+            assert_eq!(
+                (f32_value / QUANTUM).round() * QUANTUM,
+                contract,
+                "quantum round-trip failed at {contract}"
+            );
         }
     }
 }

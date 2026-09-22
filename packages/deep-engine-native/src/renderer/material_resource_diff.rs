@@ -61,6 +61,7 @@ pub fn instance_material_words_unchanged(before: &[PbrMaterial], after: &[PbrMat
             && before.base_color == after.base_color
             && before.metallic == after.metallic
             && before.roughness == after.roughness
+            && before.ior == after.ior
             && before.base_color_alpha == after.base_color_alpha
             && before.alpha_cutoff == after.alpha_cutoff
             && before.emissive_factor == after.emissive_factor
@@ -133,6 +134,7 @@ mod tests {
             base_color: [0.1, 0.2, 0.3],
             metallic,
             roughness: 0.6,
+            ior: None,
             base_color_texture: offset.map(|offset| deep_engine_native::contract::TextureSlot {
                 texture: "t".into(),
                 tex_coord: None,

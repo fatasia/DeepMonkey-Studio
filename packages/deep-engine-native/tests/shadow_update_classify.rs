@@ -144,6 +144,7 @@ fn instance_changes_invalidate() {
                 lod: None,
                 cast_shadow: None,
                 receive_shadow: None,
+                outline: None,
             });
         },
     );

@@ -8,7 +8,7 @@
 
 use bytemuck::cast_slice;
 use deep_engine_native::culling_contract::{
-    MAIN_SOLID_MASK, PreparedGpuCulling, GPU_CULLING_INSTANCE_BYTES,
+    GPU_CULLING_INSTANCE_BYTES, MAIN_SOLID_MASK, PreparedGpuCulling,
 };
 use deep_engine_native::mesh_abi::{CAMERA_FAR, CAMERA_FOCAL, CAMERA_NEAR, FrameUniform};
 use deep_engine_native::player_view::PlayerView;
@@ -17,7 +17,9 @@ use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
 
 use crate::gpu_culling::GpuCulling;
-use crate::gpu_occlusion::{footprint_mip_level, projection_terms, OcclusionSource, OCCLUSION_MARGIN};
+use crate::gpu_occlusion::{
+    OCCLUSION_MARGIN, OcclusionSource, footprint_mip_level, projection_terms,
+};
 use crate::gpu_resources::frame_data_with_view;
 use crate::shadow_map::ShadowViewSource;
 
@@ -86,7 +88,13 @@ pub(crate) fn scenario_view(distance: f32) -> PlayerView {
 }
 
 pub(crate) fn frame_for(view: PlayerView) -> FrameUniform {
-    frame_data_with_view(SIZE, view.yaw, view.target, view.distance, Default::default())
+    frame_data_with_view(
+        SIZE,
+        view.yaw,
+        view.target,
+        view.distance,
+        Default::default(),
+    )
 }
 
 /// 网格实例:t 相同,横向 8 × 纵向 8,覆盖视锥中部。
@@ -194,15 +202,26 @@ fn build_culling(
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
     let prepared = prepared(scene.instances.len());
-    let mut culling =
-        GpuCulling::new(&bench.device, &source, &prepared, &scene.frame, &Shadows, enable_readback)
-            .expect("frustum culling builds");
+    let mut culling = GpuCulling::new(
+        &bench.device,
+        &source,
+        &prepared,
+        &scene.frame,
+        &Shadows,
+        enable_readback,
+    )
+    .expect("frustum culling builds");
     if let Some((view, width, height, mip_level)) = hiz {
         culling
             .attach_occlusion(
                 &bench.device,
                 &source,
-                OcclusionSource { view: view.clone(), width, height, mip_level },
+                OcclusionSource {
+                    view: view.clone(),
+                    width,
+                    height,
+                    mip_level,
+                },
                 &scene.frame,
                 enable_readback,
             )
@@ -212,11 +231,7 @@ fn build_culling(
 }
 
 /// encode + submit + poll,取回 (frustum 主视锥幸存数, 遮挡幸存数)。
-fn run_once(
-    culling: &mut GpuCulling,
-    bench: &Bench,
-    frame: &FrameUniform,
-) -> (u32, Option<u32>) {
+fn run_once(culling: &mut GpuCulling, bench: &Bench, frame: &FrameUniform) -> (u32, Option<u32>) {
     culling.update_views(&bench.queue, frame, &Shadows).unwrap();
     let mut encoder = bench
         .device
@@ -239,24 +254,37 @@ fn run_once(
 /// CPU 参考):证据向量取自 TS hiZOcclusionCulling.test.ts。
 #[test]
 fn footprint_mip_level_matches_ts_hiz_occlusion_mip() {
-    assert_eq!(footprint_mip_level(1.0, 8), 0, "1px footprint stays at mip 0");
+    assert_eq!(
+        footprint_mip_level(1.0, 8),
+        0,
+        "1px footprint stays at mip 0"
+    );
     assert_eq!(footprint_mip_level(9.0, 8), 4, "TS vector (9,3,8) -> 4");
     // 2 的幂精确,非幂向上取整;上限夹紧;top=0 锁定 mip 0(场景 D 契约)。
     assert_eq!(footprint_mip_level(8.0, 8), 3);
     assert_eq!(footprint_mip_level(5.0, 8), 3);
     assert_eq!(footprint_mip_level(1024.0, 2), 2);
     assert_eq!(footprint_mip_level(64.0, 0), 0);
-    assert_eq!(footprint_mip_level(0.25, 8), 0, "sub-pixel footprints clamp to mip 0");
+    assert_eq!(
+        footprint_mip_level(0.25, 8),
+        0,
+        "sub-pixel footprints clamp to mip 0"
+    );
     // 非有限输入落保守侧:NaN 归 0 层(最细 = 最少剔),inf 归顶层。
     assert_eq!(footprint_mip_level(f32::NAN, 4), 0);
     assert_eq!(footprint_mip_level(f32::INFINITY, 4), 4);
 }
 
 #[test]
-fn projection_terms_extracts_player_view_camera_exactly() {    let aspect = SIZE.width as f32 / SIZE.height as f32;
+fn projection_terms_extracts_player_view_camera_exactly() {
+    let aspect = SIZE.width as f32 / SIZE.height as f32;
     for yaw in [0.0, 0.55, -1.2, std::f32::consts::PI] {
         for target in [[0.0; 3], [30.0, -12.0, 19.0], [-70.0, 20.0, -40.0]] {
-            let view = PlayerView { yaw, target, ..scenario_view(6.0) };
+            let view = PlayerView {
+                yaw,
+                target,
+                ..scenario_view(6.0)
+            };
             let frame = frame_for(view);
             let terms = projection_terms(&frame).expect("projection terms");
             let close = |actual: f32, expected: f32| {
@@ -280,7 +308,10 @@ fn projection_terms_extracts_player_view_camera_exactly() {    let aspect = SIZE
 fn scenario_all_in_frustum_keeps_every_instance() {
     let bench = pollster::block_on(bench_device());
     let view = scenario_view(6.0);
-    let scene = Scene { instances: grid_instances(view, 6.0), frame: frame_for(view) };
+    let scene = Scene {
+        instances: grid_instances(view, 6.0),
+        frame: frame_for(view),
+    };
     let (_texture, hiz_view) = hiz_pyramid(
         &bench.device,
         &bench.queue,
@@ -301,12 +332,19 @@ fn scenario_all_in_frustum_keeps_every_instance() {
 fn scenario_all_occluded_culls_every_instance() {
     let bench = pollster::block_on(bench_device());
     let view = scenario_view(6.0);
-    let scene = Scene { instances: grid_instances(view, 6.0), frame: frame_for(view) };
+    let scene = Scene {
+        instances: grid_instances(view, 6.0),
+        frame: frame_for(view),
+    };
     let occluder_depth = standard_depth(1.0);
     let (_texture, hiz_view) = hiz_pyramid(
         &bench.device,
         &bench.queue,
-        &[&[occluder_depth; 16], &[occluder_depth; 4], &[occluder_depth]],
+        &[
+            &[occluder_depth; 16],
+            &[occluder_depth; 4],
+            &[occluder_depth],
+        ],
     );
     let mut culling = build_culling(&bench, &scene, Some((&hiz_view, 4, 4, 2)), true);
     let (frustum_visible, occlusion_visible) = run_once(&mut culling, &bench, &scene.frame);
@@ -325,12 +363,19 @@ fn scenario_mixed_depths_split_visibility() {
     let view = scenario_view(6.0);
     let mut instances = grid_instances(view, 2.0);
     instances.extend(grid_instances(view, 4.0));
-    let scene = Scene { instances, frame: frame_for(view) };
+    let scene = Scene {
+        instances,
+        frame: frame_for(view),
+    };
     let occluder_depth = standard_depth(3.0);
     let (_texture, hiz_view) = hiz_pyramid(
         &bench.device,
         &bench.queue,
-        &[&[occluder_depth; 16], &[occluder_depth; 4], &[occluder_depth]],
+        &[
+            &[occluder_depth; 16],
+            &[occluder_depth; 4],
+            &[occluder_depth],
+        ],
     );
     let mut culling = build_culling(&bench, &scene, Some((&hiz_view, 4, 4, 2)), true);
     let (frustum_visible, occlusion_visible) = run_once(&mut culling, &bench, &scene.frame);
@@ -341,8 +386,14 @@ fn scenario_mixed_depths_split_visibility() {
     println!(
         "scenario C mixed: occluder_depth={occluder_depth:.6} front_nearest={front:.6} back_nearest={back:.6} frustum_visible={frustum_visible} occlusion_visible={occlusion_visible:?}"
     );
-    assert!(front + OCCLUSION_MARGIN < occluder_depth, "front half must survive");
-    assert!(occluder_depth + OCCLUSION_MARGIN < back, "back half must be culled");
+    assert!(
+        front + OCCLUSION_MARGIN < occluder_depth,
+        "front half must survive"
+    );
+    assert!(
+        occluder_depth + OCCLUSION_MARGIN < back,
+        "back half must be culled"
+    );
     assert_eq!(frustum_visible, 128);
     assert_eq!(occlusion_visible, Some(64));
 }
@@ -356,7 +407,10 @@ fn scenario_level0_footprint_splits_by_screen_half() {
     let view = scenario_view(6.0);
     let left = packed_instance(world_point(view, 2.0, -1.2, 0.0));
     let right = packed_instance(world_point(view, 2.0, 1.2, 0.0));
-    let scene = Scene { instances: vec![left, right], frame: frame_for(view) };
+    let scene = Scene {
+        instances: vec![left, right],
+        frame: frame_for(view),
+    };
     let occluder_depth = standard_depth(1.0);
     // 4×4 level 0:列 0..2 = 遮挡深度(屏幕左半),列 2..4 = 远平面。
     let mut level0 = [1.0_f32; 16];
@@ -394,9 +448,15 @@ fn performance_frustum_only_versus_frustum_plus_occlusion() {
             instances.push(packed_instance(world_point(view, 6.0, lateral, vertical)));
         }
     }
-    let scene = Scene { instances, frame: frame_for(view) };
-    let (_texture, hiz_view) =
-        hiz_pyramid(&bench.device, &bench.queue, &[&[1.0; 16], &[1.0; 4], &[1.0]]);
+    let scene = Scene {
+        instances,
+        frame: frame_for(view),
+    };
+    let (_texture, hiz_view) = hiz_pyramid(
+        &bench.device,
+        &bench.queue,
+        &[&[1.0; 16], &[1.0; 4], &[1.0]],
+    );
     let mut baseline = build_culling(&bench, &scene, None, false);
     let mut occluded = build_culling(&bench, &scene, Some((&hiz_view, 4, 4, 2)), false);
     let mut base_samples = Vec::new();
@@ -420,11 +480,7 @@ fn performance_frustum_only_versus_frustum_plus_occlusion() {
     );
 }
 
-fn timed(
-    culling: &mut GpuCulling,
-    bench: &Bench,
-    frame: &FrameUniform,
-) -> std::time::Duration {
+fn timed(culling: &mut GpuCulling, bench: &Bench, frame: &FrameUniform) -> std::time::Duration {
     culling.update_views(&bench.queue, frame, &Shadows).unwrap();
     let start = std::time::Instant::now();
     let mut encoder = bench

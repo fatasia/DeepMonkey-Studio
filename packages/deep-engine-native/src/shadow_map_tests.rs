@@ -23,7 +23,7 @@ fn packs_one_frozen_frame_abi_per_cascade_at_dynamic_offsets() {
         CascadedShadowOptions::default(),
     )
     .unwrap();
-    // 动态 offset 步长必须容纳完整 frame ABI（v6 = 1920B）并对齐 256。
+    // 动态 offset 步长必须容纳完整 frame ABI（v7 = 1984B）并对齐 256。
     let stride = FRAME_UNIFORM_BYTES.next_multiple_of(256);
     let packed = pack_shadow_frames(&frame, &plan, stride);
     assert_eq!(packed.len(), stride as usize * plan.cascades.len());

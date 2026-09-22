@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use crate::contract::{PbrMaterial, RenderPacket, TextureResource, TextureSampler, TextureSemantic, TextureSlot, validate_packet};
+use crate::contract::{
+    PbrMaterial, RenderPacket, TextureResource, TextureSampler, TextureSemantic, TextureSlot,
+    validate_packet,
+};
 
 pub use crate::mesh_abi::MATERIAL_UNIFORM_FLOATS;
 pub use crate::pbr_reference::{decode_tangent_normal, occlusion_factor, srgb_channel_to_linear};
@@ -162,7 +165,9 @@ fn prepare_material_rows_with(
 
 /// Prepare only the numeric material uniform; no texture decoding/upload occurs.
 /// C3 uses this for uniform-only incremental updates.
-pub fn prepare_material_uniform(material: &PbrMaterial) -> Result<[f32; MATERIAL_UNIFORM_FLOATS], String> {
+pub fn prepare_material_uniform(
+    material: &PbrMaterial,
+) -> Result<[f32; MATERIAL_UNIFORM_FLOATS], String> {
     let mut uniform = [0.0; MATERIAL_UNIFORM_FLOATS];
     let base = material.base_color_texture.as_ref();
     let mr = material.metallic_roughness_texture.as_ref();
@@ -349,7 +354,10 @@ mod tests {
             .iter_mut()
             .find(|material| material.base_color_texture.is_some())
             .expect("textured fixture has a base-color-mapped material");
-        let missing = format!("{}-missing", target.base_color_texture.as_ref().unwrap().texture);
+        let missing = format!(
+            "{}-missing",
+            target.base_color_texture.as_ref().unwrap().texture
+        );
         target.base_color_texture.as_mut().unwrap().texture = missing;
         assert!(prepare_material_uniform_rows(&packet).is_err());
     }
@@ -380,8 +388,14 @@ mod tests {
             .unwrap()
             .offset = Some([offset[0] + 0.25, offset[1]]);
         let after = prepare_material_uniform_rows(&packet).unwrap();
-        assert_eq!(before[slot_offset].texture_indices, after[slot_offset].texture_indices);
-        assert_eq!(before[slot_offset].normal_mapped, after[slot_offset].normal_mapped);
+        assert_eq!(
+            before[slot_offset].texture_indices,
+            after[slot_offset].texture_indices
+        );
+        assert_eq!(
+            before[slot_offset].normal_mapped,
+            after[slot_offset].normal_mapped
+        );
         assert_eq!(before[slot_offset].id, after[slot_offset].id);
         assert_ne!(before[slot_offset].uniform, after[slot_offset].uniform);
     }
@@ -405,6 +419,7 @@ mod tests {
             base_color: [0.1, 0.2, 0.3],
             metallic: 0.4,
             roughness: 0.6,
+            ior: None,
             base_color_texture: None,
             metallic_roughness_texture: None,
             normal_texture: None,

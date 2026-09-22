@@ -9,15 +9,21 @@ pub(super) fn verify(window: Arc<Window>, proxy: EventLoopProxy<GpuEvent>) {
         ("point", 16.0, 0.0, [0.0, -1.0, 0.0], 0.0),
         ("spot", 16.0, 0.0, [0.0, -1.0, 0.0], 2.0),
         ("spot", 16.0, 0.0, [0.0, 1.0, 0.0], 2.0),
+        ("hemisphere", 2.0, 0.0, [0.0, 1.0, 0.0], 2.0),
+        ("hemisphere", 2.0, 0.0, [0.0, -1.0, 0.0], 2.0),
     ]
     .into_iter()
     .enumerate()
     {
+        let mut local = json!({"kind":kind,"position":[0,4,0],"direction":direction,"radiance":[energy,0,0],"range":range,"decay":decay,"innerCos":0.8,"outerCos":0.5});
+        if kind == "hemisphere" {
+            local["groundRadiance"] = json!([0, 0, energy]);
+        }
         let content = lit_content(
             [0.0; 3],
             Some(
                 json!({"direction":[0,1,0],"radiance":[0,0,0],"exposure":1.05,"shadows":false,
-            "localLights":[{"kind":kind,"position":[0,4,0],"direction":direction,"radiance":[energy,0,0],"range":range,"decay":decay,"innerCos":0.8,"outerCos":0.5}]}),
+            "localLights":[local]}),
             ),
             Some(true),
         );
@@ -63,6 +69,14 @@ pub(super) fn verify(window: Arc<Window>, proxy: EventLoopProxy<GpuEvent>) {
     );
     assert!(different(1, 3) > 100, "authored decay must affect pixels");
     assert!(different(0, 4) > 100, "spot cone must light receivers");
+    assert!(
+        different(0, 6) > 100,
+        "hemisphere sky and ground must shade actual receivers"
+    );
+    assert!(
+        different(6, 7) > 100,
+        "hemisphere direction must swap sky/ground contributions"
+    );
     assert_eq!(
         different(0, 5),
         0,

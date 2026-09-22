@@ -6,9 +6,31 @@
 //! ```
 
 use super::hi_z_pyramid::{
-    HiZPyramid, hi_z_mip_level_count, mip_dimension, reduce_is_anchored, reference_reduce,
+    HiZPyramid, OcclusionHizMode, hi_z_mip_level_count, mip_dimension, parse_occlusion_hiz_mode,
+    reduce_is_anchored, reference_reduce,
 };
 use crate::gpu_occlusion_tests::{bench_device, standard_depth};
+
+#[test]
+fn native_hiz_mode_is_zero_config_auto_with_explicit_overrides() {
+    assert_eq!(parse_occlusion_hiz_mode(None), OcclusionHizMode::Auto);
+    assert_eq!(
+        parse_occlusion_hiz_mode(Some("auto")),
+        OcclusionHizMode::Auto
+    );
+    assert_eq!(
+        parse_occlusion_hiz_mode(Some(" OFF ")),
+        OcclusionHizMode::Disabled
+    );
+    assert_eq!(
+        parse_occlusion_hiz_mode(Some("enabled")),
+        OcclusionHizMode::Enabled
+    );
+    assert_eq!(
+        parse_occlusion_hiz_mode(Some("unexpected")),
+        OcclusionHizMode::Auto
+    );
+}
 
 /// 4x MSAA 主视锥深度,与 `mesh_abi::FORWARD_SAMPLE_COUNT` 一致
 /// (提取 WGSL 内的样本次序 0..4 硬编码与之一一对应)。

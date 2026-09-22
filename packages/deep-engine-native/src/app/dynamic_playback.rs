@@ -1,6 +1,9 @@
 use std::time::Instant;
 
-use crate::player_content::{DynamicPlaybackStep, PlayerContent};
+use crate::{
+    player_content::{DynamicPlaybackStep, PlayerContent},
+    player_state::PlayerState,
+};
 
 use crate::renderer::Renderer;
 
@@ -64,6 +67,7 @@ impl DynamicPlaybackProbe {
         &mut self,
         renderer: &mut Renderer,
         content: &mut PlayerContent,
+        state: &mut PlayerState,
     ) -> Result<(), String> {
         let started = *self.started.get_or_insert_with(Instant::now);
         let elapsed_ms = started.elapsed().as_millis() as u64;
@@ -73,8 +77,13 @@ impl DynamicPlaybackProbe {
             if step_time > elapsed_ms {
                 break;
             }
-            self.steps
-                .push(content.apply_dynamic_playback_step(step_time)?);
+            let previous = content.packet().clone();
+            let step = content.apply_dynamic_playback_step(step_time)?;
+            apply_camera(content, state, renderer, step_time)?;
+            if step.changed_instances > 0 {
+                pollster::block_on(renderer.replace_render_packet(&previous, content))?;
+            }
+            self.steps.push(step);
             self.next_step += 1;
             applied += 1;
         }
@@ -83,8 +92,6 @@ impl DynamicPlaybackProbe {
         }
         // Real render submission for the mutated scene: diff-staged packet
         // update, not a static re-present of unchanged content.
-        let previous = content.packet().clone();
-        pollster::block_on(renderer.replace_render_packet(&previous, content))?;
         Ok(())
     }
 
@@ -125,4 +132,122 @@ impl DynamicPlaybackProbe {
         });
         AfterPresent::Complete(receipt.to_string())
     }
+}
+
+pub(super) struct ProductDynamicPlayback {
+    started: Instant,
+    next_frame: Instant,
+    duration_ms: u64,
+    looping: bool,
+    finished: bool,
+}
+
+pub(super) struct ProductPhysicsPlayback {
+    last_frame: Instant,
+    next_frame: Instant,
+    reported: bool,
+}
+
+impl ProductPhysicsPlayback {
+    pub(super) fn for_content(content: &PlayerContent) -> Option<Self> {
+        if !content.physics_playing() {
+            return None;
+        }
+        let now = Instant::now();
+        Some(Self {
+            last_frame: now,
+            next_frame: now,
+            reported: false,
+        })
+    }
+
+    pub(super) fn wake_at(&self) -> Instant {
+        self.next_frame
+    }
+
+    pub(super) fn before_render(
+        &mut self,
+        renderer: &mut Renderer,
+        content: &mut PlayerContent,
+    ) -> Result<(), String> {
+        let now = Instant::now();
+        let delta = now.duration_since(self.last_frame).as_secs_f64();
+        self.last_frame = now;
+        self.next_frame = now + std::time::Duration::from_millis(16);
+        let previous = content.packet().clone();
+        let changed = content.advance_physics(delta)?;
+        if changed > 0 {
+            pollster::block_on(renderer.replace_render_packet(&previous, content))?;
+            if !self.reported {
+                println!(
+                    "native physics runtime active: fixed step synchronized {changed} render instances"
+                );
+                self.reported = true;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl ProductDynamicPlayback {
+    pub(super) fn for_content(content: &PlayerContent) -> Option<Self> {
+        let (duration_ms, autoplay, looping) = content.dynamic_runtime_playback()?;
+        if !autoplay || duration_ms == 0 {
+            return None;
+        }
+        let now = Instant::now();
+        Some(Self {
+            started: now,
+            next_frame: now,
+            duration_ms,
+            looping,
+            finished: false,
+        })
+    }
+
+    pub(super) fn wake_at(&self) -> Option<Instant> {
+        (!self.finished).then_some(self.next_frame)
+    }
+
+    pub(super) fn before_render(
+        &mut self,
+        renderer: &mut Renderer,
+        content: &mut PlayerContent,
+        state: &mut PlayerState,
+    ) -> Result<(), String> {
+        if self.finished {
+            return Ok(());
+        }
+        let elapsed = self.started.elapsed().as_millis() as u64;
+        let time_ms = if self.looping {
+            elapsed % self.duration_ms
+        } else {
+            elapsed.min(self.duration_ms)
+        };
+        let previous = content.packet().clone();
+        let step = content.apply_dynamic_playback_step(time_ms)?;
+        apply_camera(content, state, renderer, time_ms)?;
+        if step.changed_instances > 0 {
+            pollster::block_on(renderer.replace_render_packet(&previous, content))?;
+        }
+        if !self.looping && elapsed >= self.duration_ms {
+            self.finished = true;
+        }
+        self.next_frame = Instant::now() + std::time::Duration::from_millis(16);
+        Ok(())
+    }
+}
+
+fn apply_camera(
+    content: &PlayerContent,
+    state: &mut PlayerState,
+    renderer: &mut Renderer,
+    time_ms: u64,
+) -> Result<(), String> {
+    let Some(frame) = content.sample_dynamic_camera(time_ms) else {
+        return Ok(());
+    };
+    state.view = state.view.with_eye_target(frame.position, frame.target)?;
+    renderer.set_view(state.view);
+    Ok(())
 }

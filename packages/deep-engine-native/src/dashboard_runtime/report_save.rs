@@ -22,8 +22,9 @@ pub fn save_report_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
     if let Ok(metadata) = fs::symlink_metadata(path)
         && (!metadata.is_file()
             || metadata.file_type().is_symlink()
-            || metadata.permissions().readonly()) {
-            return Err("目标不可写，请选择其他文件".into());
+            || metadata.permissions().readonly())
+    {
+        return Err("目标不可写，请选择其他文件".into());
     }
     let temporary = parent.join(format!(
         ".deep-report-{}-{}.tmp",
@@ -49,7 +50,11 @@ pub fn save_report_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
 }
 
 #[cfg(windows)]
-pub fn choose_report_path(filename: &str, extension: &str, owner: isize) -> Result<Option<PathBuf>, String> {
+pub fn choose_report_path(
+    filename: &str,
+    extension: &str,
+    owner: isize,
+) -> Result<Option<PathBuf>, String> {
     use windows::{
         Win32::UI::Controls::Dialogs::{
             CommDlgExtendedError, GetSaveFileNameW, OFN_EXPLORER, OFN_NOCHANGEDIR,

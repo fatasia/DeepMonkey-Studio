@@ -29,7 +29,7 @@ pub enum ImeOutcome {
 }
 
 /// Adapter bound to one editor; owns the composition window lifecycle.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct WinitImeAdapter {
     composition: CompositionState,
 }

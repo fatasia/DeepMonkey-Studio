@@ -87,7 +87,7 @@ fn render_entry_profile(
     } else {
         size
     };
-    let source = ForwardTargets::new(device, source_size);
+    let source = ForwardTargets::new(device, source_size, false);
     assert_eq!(source.resolved_texture().width(), source_size.width);
     assert_eq!(source.resolved_texture().height(), source_size.height);
     let settings = if compact {
@@ -113,6 +113,7 @@ fn render_entry_profile(
         bloom
             .as_ref()
             .map(|bloom| (bloom.output_view(), bloom.settings().intensity)),
+        None,
         None,
     );
     assert_eq!(output.uses_bloom(), !compact);

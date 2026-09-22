@@ -10,8 +10,10 @@ use wgpu::util::DeviceExt;
 // WGSL 工件(逐字节复制自 R4 证据 kernels/,哈希来自 R2/R4 evidence.json)
 // ---------------------------------------------------------------------------
 
-pub const WGSL_ANCHORED_MIN: &str = include_str!("../../assets/shaders/dcir_hi_z_first_stage_min_v1.wgsl");
-pub const WGSL_ANCHORED_MAX: &str = include_str!("../../assets/shaders/dcir_hi_z_first_stage_max_v1.wgsl");
+pub const WGSL_ANCHORED_MIN: &str =
+    include_str!("../../assets/shaders/dcir_hi_z_first_stage_min_v1.wgsl");
+pub const WGSL_ANCHORED_MAX: &str =
+    include_str!("../../assets/shaders/dcir_hi_z_first_stage_max_v1.wgsl");
 pub const WGSL_VARIABLE_MIN: &str =
     include_str!("../../assets/shaders/dcir_hi_z_variable_reduce_min_v1.wgsl");
 pub const WGSL_VARIABLE_MAX: &str =
@@ -213,7 +215,11 @@ impl NativeHarness {
     pub fn run_reduce(&self, level: &ReduceLevel, mode: Mode, source: &[u8]) -> Vec<u8> {
         let (sw, sh) = (level.src[0] as usize, level.src[1] as usize);
         let (tw, th) = (level.dst[0] as usize, level.dst[1] as usize);
-        assert_eq!(source.len(), sw * sh * 4, "source bytes must match r32f extent");
+        assert_eq!(
+            source.len(),
+            sw * sh * 4,
+            "source bytes must match r32f extent"
+        );
         // 上传/回读都按行 256 对齐(与 Web 端 readback 口径一致),本地去填充。
         let upload_row = align256(sw * 4);
         let mut upload = vec![0_u8; upload_row * sh];
@@ -239,8 +245,12 @@ impl NativeHarness {
                 contents: bytemuck::cast_slice(&[sw as u32, sh as u32, tw as u32, th as u32]),
                 usage: wgpu::BufferUsages::UNIFORM,
             });
-        let bind_group =
-            self.bind_reduce(self.pipeline(level.kind, mode), &source_texture, &target_texture, &uniform);
+        let bind_group = self.bind_reduce(
+            self.pipeline(level.kind, mode),
+            &source_texture,
+            &target_texture,
+            &uniform,
+        );
         let readback_row = align256(tw * 4);
         let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("DCIR HiZ readback"),
@@ -263,7 +273,11 @@ impl NativeHarness {
                 },
             },
             source_texture.as_image_copy(),
-            wgpu::Extent3d { width: sw as u32, height: sh as u32, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width: sw as u32,
+                height: sh as u32,
+                depth_or_array_layers: 1,
+            },
         );
         self.encode_dispatch(&mut encoder, level, mode, &bind_group);
         encoder.copy_texture_to_buffer(
@@ -276,7 +290,11 @@ impl NativeHarness {
                     rows_per_image: Some(th as u32),
                 },
             },
-            wgpu::Extent3d { width: tw as u32, height: th as u32, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width: tw as u32,
+                height: th as u32,
+                depth_or_array_layers: 1,
+            },
         );
         let submission = self.queue.submit([encoder.finish()]);
         let _ = submission; // 单队列顺序提交:等待"最近一次提交"即本次提交(见 submit_and_wait 注释)
@@ -389,7 +407,10 @@ impl NativeHarness {
 
     pub fn assert_no_gpu_errors(&self, context: &str) {
         let errors = self.gpu_errors.lock().unwrap();
-        assert!(errors.is_empty(), "uncaptured GPU errors during {context}: {errors:?}");
+        assert!(
+            errors.is_empty(),
+            "uncaptured GPU errors during {context}: {errors:?}"
+        );
     }
 }
 
