@@ -36,6 +36,8 @@ pub mod pbr_texture;
 pub mod platform_text;
 pub mod player_view;
 pub mod probe_gi_abi;
+/// F3 探针网格头合同与三线性采样 CPU 参考（与 WGSL 逐式对拍）。
+pub mod probe_gi_grid;
 /// F3 探针 storage/bind 合同。bin target 另在 main.rs 声明同名私有模块
 /// (与 probe_gi_abi 同一源文件双编译模式),renderer 的 crate:: 引用走 bin 侧。
 pub mod probe_gi_storage;

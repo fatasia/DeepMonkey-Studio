@@ -64,8 +64,7 @@ fn ies_factor(lightIndex: u32, surfaceToLight: vec3f, lightDirection: vec3f) -> 
 // frame.lightDirection.w 是保留开关通道:0 = 关(旧包默认),直接返回零,
 // 逐位保持既有光照结果;无有效探针同样返回零。逐记录线性扫描只服务当前
 // 最小切片,网格加速与三线性留给 producer 接入后的后续切片。
-fn probe_gi_irradiance(world: vec3f) -> vec3f {
-  if (frame.lightDirection.w <= 0.0) { return vec3f(0.0); }
+fn probe_gi_nearest_irradiance(world: vec3f) -> vec3f {
   let record_count = arrayLength(&probe_gi) / PROBE_GI_RECORD_FLOATS;
   var best_distance_squared = -1.0;
   var best_base = 0u;
@@ -81,6 +80,79 @@ fn probe_gi_irradiance(world: vec3f) -> vec3f {
   }
   if (best_distance_squared < 0.0) { return vec3f(0.0); }
   return probe_gi[best_base].xyz;
+}
+// F3 网格三线性模式:record 0 是网格头(origin/spacing、gridSize、
+// maxPosition/probeCount),探针从 record 1 开始,线性下标
+// (z*gridY + y)*gridX + x。该模式 positionOffset 语义是重定位增量
+// (探针世界位置 = origin + cell*spacing + offset),与 Web storage-record
+// 路径一致;最近探针模式仍把 positionOffset 当预烘焙世界位置,两模式不同。
+// 数学逐式对齐 Web sampleIrradianceProbeClipmap 单层路径:三线性 × validity
+// × Chebyshev × 法线权重(pow(cos,3));半球判断用原始着色点,0.2 格法线
+// 偏移只进可见性测试。头/世界位置/记录数任一非法一律返回零(fail-closed)。
+fn probe_gi_grid_trilinear(world: vec3f, normal: vec3f) -> vec3f {
+  let origin = probe_gi[0u].xyz;
+  let spacing = probe_gi[0u].w;
+  let grid_size_f = probe_gi[1u].xyz;
+  let base_records = probe_gi[1u].w;
+  let max_position = probe_gi[2u].xyz;
+  let probe_count_f = probe_gi[2u].w;
+  if (!(spacing > 0.0 && spacing <= 1000000.0)) { return vec3f(0.0); }
+  if (!all(grid_size_f == floor(grid_size_f)) || !(all(grid_size_f >= vec3f(2.0)) && all(grid_size_f <= vec3f(64.0)))) { return vec3f(0.0); }
+  let grid_size = vec3u(grid_size_f);
+  if (probe_count_f != f32(grid_size.x * grid_size.y * grid_size.z)) { return vec3f(0.0); }
+  if (!(base_records == 1.0) || !all(world >= origin) || !all(world <= max_position)) { return vec3f(0.0); }
+  let record_count = arrayLength(&probe_gi) / PROBE_GI_RECORD_FLOATS;
+  if (record_count < 1u + u32(probe_count_f)) { return vec3f(0.0); }
+  let normal_length = length(normal);
+  let n = select(vec3f(0.0, 1.0, 0.0), normal / max(normal_length, 0.000001),
+    normal_length > 0.000001);
+  let receiver = world + n * spacing * 0.2;
+  let coordinate = clamp((world - origin) / spacing, vec3f(0.0), vec3f(grid_size - vec3u(1u)));
+  let low = min(vec3u(floor(coordinate)), grid_size - vec3u(2u));
+  let fraction = clamp(coordinate - vec3f(low), vec3f(0.0), vec3f(1.0));
+  var sum = vec3f(0.0);
+  var total_weight = 0.0;
+  for (var corner = 0u; corner < 8u; corner = corner + 1u) {
+    let bits = vec3u(corner & 1u, (corner >> 1u) & 1u, (corner >> 2u) & 1u);
+    let cell = low + bits;
+    let axis_weight = mix(vec3f(1.0) - fraction, fraction, vec3f(bits));
+    let trilinear = axis_weight.x * axis_weight.y * axis_weight.z;
+    if (!(trilinear > 0.0)) { continue; }
+    let linear = (cell.z * grid_size.y + cell.y) * grid_size.x + cell.x;
+    let base = (1u + linear) * PROBE_GI_RECORD_FLOATS;
+    let validity = clamp(probe_gi[base].w, 0.0, 1.0);
+    if (!(validity > 0.0)) { continue; }
+    let probe_position = origin + vec3f(cell) * spacing + probe_gi[base + 2u].xyz;
+    let distance = length(receiver - probe_position);
+    let mean_distance = clamp(probe_gi[base + 1u].x, 0.0, 1000000.0);
+    var visibility = 1.0;
+    if (distance > mean_distance) {
+      let variance = clamp(probe_gi[base + 1u].y, spacing * spacing * 0.0001, 1000000000000.0);
+      let delta = distance - mean_distance;
+      visibility = max(clamp(probe_gi[base + 1u].z, 0.0, 1.0),
+        variance / max(variance + delta * delta, 0.000001));
+    }
+    let to_probe = probe_position - world;
+    let length_to_probe = length(to_probe);
+    var normal_weight = 1.0;
+    if (length_to_probe > 0.000001) {
+      let cosine = dot(to_probe, n) / length_to_probe;
+      normal_weight = select(0.0, pow(cosine, 3.0), cosine > 0.0);
+    }
+    let weight = trilinear * validity * visibility * normal_weight;
+    sum = sum + max(probe_gi[base].xyz, vec3f(0.0)) * weight;
+    total_weight = total_weight + weight;
+  }
+  if (total_weight < 0.001) { return vec3f(0.0); }
+  return clamp(sum / total_weight, vec3f(0.0), vec3f(65504.0));
+}
+// frame.lightDirection.w 开关通道:0 = 关(旧包默认,逐位不变),
+// 1 = 最近探针扁平扫描,<1.5 走该路径;>=1.5 = 网格三线性模式。
+fn probe_gi_irradiance(world: vec3f, normal: vec3f) -> vec3f {
+  let mode = frame.lightDirection.w;
+  if (mode <= 0.0) { return vec3f(0.0); }
+  if (mode >= 1.5) { return probe_gi_grid_trilinear(world, normal); }
+  return probe_gi_nearest_irradiance(world);
 }
 fn section_rejected(world: vec3f) -> bool {
   return dot(section_plane.xyz, world) + section_plane.w < 0.0;
@@ -384,7 +456,7 @@ fn direct_brdf_f0(n: vec3f, v: vec3f, l: vec3f, base: vec3f, metal: f32, rough: 
     color += (1.0 - f) * (1.0 - metal) * base * irradiance * ambient_occlusion * global_illumination;
     // F3:探针 GI 作为环境漫射的近场补偿叠加进 ambient;开关为 0 时
     // probe_gi_irradiance 返回零,加零不改既有结果。
-    let probe_irradiance = probe_gi_irradiance(input.world);
+    let probe_irradiance = probe_gi_irradiance(input.world, normal);
     color += base * (1.0 - metal) * probe_irradiance * ambient_occlusion / 3.141592653589793;
     let reflection = safe_normalize(reflect(-view, normal), normal);
     let max_specular_lod = f32(textureNumLevels(specular_environment) - 1u);
