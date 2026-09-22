@@ -90,6 +90,7 @@ mod player_state;
 // 缺此声明时 bin target 编译失败(probe_gi_storage 的 crate:: 引用无法解析)。
 mod probe_gi_abi;
 mod probe_gi_storage;
+mod probe_gi_grid;
 #[cfg(test)]
 mod prototype_gpu_tests;
 mod publication_verification;

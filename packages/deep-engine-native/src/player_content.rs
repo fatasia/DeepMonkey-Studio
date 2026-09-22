@@ -62,6 +62,8 @@ pub struct PlayerContent {
     /// 不在加载阶段把动画误降级成静态几何。
     #[allow(dead_code)]
     pub dynamic_runtime: Option<deep_engine_native::runtime_package::DynamicSceneRuntime>,
+    /// F3:环境携带的探针网格记录(网格头 + 探针);None = 无探针 GI。
+    pub probe_grid_records: Option<Vec<deep_engine_native::probe_gi_abi::IrradianceProbeRecord>>,
     /// R11 动画状态机宿主：装载包时按持久活动态启动 clip、应用持久参数首条
     /// 转场；之后仅在参数更新时推进。无状态机场景为 `None`，零开销。
     animation_controller:
@@ -197,6 +199,7 @@ impl PlayerContent {
             author_grading: None,
             shader_packages: Vec::new(),
             material_bindings: Vec::new(),
+            probe_grid_records: None,
             dynamic_runtime: None,
             animation_controller: None,
             physics: None,
@@ -225,6 +228,7 @@ impl PlayerContent {
             shader_packages,
             material_bindings,
             dynamic_runtime,
+            probe_grid_records,
             ..
         } = package;
         // 图表包：ChartIR 经包校验后重建运行时；展示列表由图表呈现，与静态 deep2d 入口互斥。
@@ -314,6 +318,7 @@ impl PlayerContent {
             shader_packages,
             material_bindings,
             dynamic_runtime,
+            probe_grid_records,
             animation_controller,
             physics,
             runtime_package,

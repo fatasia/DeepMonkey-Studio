@@ -135,6 +135,8 @@ pub struct LoadedRuntimePackage {
     pub shader_packages: Vec<DeepShaderPackageV2>,
     pub material_bindings: Vec<RuntimeMaterialShaderBinding>,
     pub dynamic_runtime: Option<super::DynamicSceneRuntime>,
+    /// F3:环境探针网格记录(网格头 + 探针);None = 无探针 GI。
+    pub probe_grid_records: Option<Vec<crate::probe_gi_abi::IrradianceProbeRecord>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

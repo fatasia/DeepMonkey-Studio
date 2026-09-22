@@ -15,7 +15,7 @@ export function validateRuntimeEnvironment(value: unknown, id: string, revision:
     const hasFog = object.fog !== undefined;
     fields(object, ["schema", "schemaVersion", "id", "revision", "kind", "backgroundSrgb", "outputTransform",
       ...(hdr ? ["ibl"] : []), ...(object.schemaVersion === 7 ? ["fog"] : [])],
-      ["lighting", "staticLightmap", ...(studio ? ["fog"] : [])], path);
+      ["lighting", "staticLightmap", "irradianceProbes", ...(studio ? ["fog"] : [])], path);
     const pointShadow = object.schemaVersion === 5;
     const shadows = pointShadow || object.schemaVersion === 4;
     const many = shadows || object.schemaVersion === 3;
@@ -74,6 +74,7 @@ export function validateRuntimeEnvironment(value: unknown, id: string, revision:
         path, "Invalid authored fog.");
     }
     if (object.staticLightmap !== undefined) validateStaticLightmap(object.staticLightmap, `${path}.staticLightmap`);
+    if (object.irradianceProbes !== undefined) validateIrradianceProbes(object.irradianceProbes, `${path}.irradianceProbes`);
     const color = array(object.backgroundSrgb, `${path}.backgroundSrgb`, 3);
     requireValue(color.length === 3 && color.every(channel => typeof channel === "number"
       && Number.isFinite(channel) && channel >= 0 && channel <= 1), path, "Invalid sRGB background.");
@@ -173,4 +174,50 @@ function validateStaticLightmap(value: unknown, path: string): void {
     && Number.isSafeInteger(width) && (width as number) >= 1 && (width as number) <= 16384
     && Number.isSafeInteger(height) && (height as number) >= 1 && (height as number) <= 16384,
     path, "Invalid static lightmap descriptor.");
+}
+
+/** F3 探针网格校验:网格/预算/探针字段与 Web 打包器和 Native 解码合同一致,fail-closed。 */
+function validateIrradianceProbes(value: unknown, path: string): void {
+  const object = record(value, path);
+  fields(object, ["schema", "schemaVersion", "origin", "spacing", "gridSize", "probes"], [], path);
+  requireValue(object.schema === "deep-engine.probe-grid" && object.schemaVersion === 1,
+    path, "Unsupported probe grid schema.");
+  const spacing = object.spacing as number;
+  const gridSize = object.gridSize as number[];
+  const origin = object.origin as number[];
+  const probes = array(object.probes, `${path}.probes`, 65_535);
+  requireValue(typeof spacing === "number" && Number.isFinite(spacing) && spacing > 0 && spacing <= 1_000_000,
+    path, "Invalid probe grid spacing.");
+  requireValue(origin.length === 3 && origin.every(v => typeof v === "number" && Number.isFinite(v) && Math.abs(v) <= 1_000_000_000),
+    path, "Invalid probe grid origin.");
+  requireValue(gridSize.length === 3 && gridSize.every(v => Number.isSafeInteger(v) && (v as number) >= 2 && (v as number) <= 64),
+    path, "Invalid probe grid size.");
+  requireValue(probes.length === (gridSize[0] as number) * (gridSize[1] as number) * (gridSize[2] as number),
+    path, "Probe count must equal the grid volume.");
+  const maxPosition = [0, 1, 2].map(axis => (origin[axis] as number) + (gridSize[axis] as number) * spacing);
+  requireValue(maxPosition.every(v => Number.isFinite(v) && Math.abs(v) <= 1_000_000_000),
+    path, "Invalid probe grid extent.");
+  for (const [index, probe] of probes.entries()) {
+    const probePath = `${path}.probes[${index}]`;
+    const item = record(probe, probePath);
+    fields(item, ["irradiance", "validity", "meanDistance", "distanceVariance"], ["occlusionFloor", "positionOffset"], probePath);
+    const irradiance = item.irradiance as number[];
+    requireValue(irradiance.length === 3 && irradiance.every(v => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 65_504),
+      probePath, "Invalid probe irradiance.");
+    requireValue(typeof item.validity === "number" && Number.isFinite(item.validity) && item.validity >= 0 && item.validity <= 1,
+      probePath, "Invalid probe validity.");
+    requireValue(typeof item.meanDistance === "number" && Number.isFinite(item.meanDistance) && item.meanDistance >= 0 && item.meanDistance <= 1_000_000,
+      probePath, "Invalid probe mean distance.");
+    requireValue(typeof item.distanceVariance === "number" && Number.isFinite(item.distanceVariance) && item.distanceVariance >= 0 && item.distanceVariance <= 1_000_000_000_000,
+      probePath, "Invalid probe distance variance.");
+    if (item.occlusionFloor !== undefined) {
+      requireValue(typeof item.occlusionFloor === "number" && Number.isFinite(item.occlusionFloor) && item.occlusionFloor >= 0 && item.occlusionFloor <= 1,
+        probePath, "Invalid probe occlusion floor.");
+    }
+    if (item.positionOffset !== undefined) {
+      const offset = item.positionOffset as number[];
+      requireValue(offset.length === 3 && offset.every(v => typeof v === "number" && Number.isFinite(v) && Math.abs(v) <= spacing),
+        probePath, "Invalid probe relocation offset.");
+    }
+  }
 }

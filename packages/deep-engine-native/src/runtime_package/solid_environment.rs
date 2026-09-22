@@ -576,3 +576,170 @@ mod tests {
         [0.0, 0.5, 1.0].map(inverse_output)
     }
 }
+
+
+/// F3 探针网格解码:环境 JSON 的 `irradianceProbes` 载荷 → 网格头 + 探针记录
+/// 扁平数组(与 Web packNativeProbeGridRecords 同合同);非法输入 fail-closed。
+pub(super) fn decode_probe_grid(
+    environment: &Value,
+) -> Result<Option<Vec<crate::probe_gi_abi::IrradianceProbeRecord>>, String> {
+    use crate::probe_gi_abi::IrradianceProbeRecord;
+    use crate::probe_gi_grid::{ProbeGiGridError, ProbeGiGridHeader};
+    let Some(raw) = environment.get("irradianceProbes") else {
+        return Ok(None);
+    };
+    let object = raw
+        .as_object()
+        .ok_or_else(|| "probe grid payload must be an object".to_string())?;
+    if object.get("schema").and_then(Value::as_str) != Some("deep-engine.probe-grid")
+        || object.get("schemaVersion").and_then(Value::as_u64) != Some(1)
+    {
+        return Err("unsupported probe grid schema".into());
+    }
+    let origin = object
+        .get("origin")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "probe grid origin must be an array".to_string())?;
+    let grid = object
+        .get("gridSize")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "probe grid size must be an array".to_string())?;
+    let probes = object
+        .get("probes")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "probe grid probes must be an array".to_string())?;
+    let spacing = object
+        .get("spacing")
+        .and_then(Value::as_f64)
+        .ok_or_else(|| "probe grid spacing must be finite".to_string())?;
+    let point = |values: &[Value], name: &str| -> Result<[f32; 3], String> {
+        values
+            .iter()
+            .map(|value| {
+                value
+                    .as_f64()
+                    .map(|value| value as f32)
+                    .ok_or_else(|| format!("probe grid {name} must be finite"))
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(|values| [values[0], values[1], values[2]])
+    };
+    let origin = point(origin, "origin")?;
+    let grid_size = [
+        u32::try_from(
+            grid.first()
+                .and_then(Value::as_u64)
+                .ok_or_else(|| "probe grid size must be unsigned integers [2,64]".to_string())?,
+        )
+        .map_err(|_| "probe grid size must be unsigned integers [2,64]".to_string())?,
+        u32::try_from(
+            grid.get(1)
+                .and_then(Value::as_u64)
+                .ok_or_else(|| "probe grid size must be unsigned integers [2,64]".to_string())?,
+        )
+        .map_err(|_| "probe grid size must be unsigned integers [2,64]".to_string())?,
+        u32::try_from(
+            grid.get(2)
+                .and_then(Value::as_u64)
+                .ok_or_else(|| "probe grid size must be unsigned integers [2,64]".to_string())?,
+        )
+        .map_err(|_| "probe grid size must be unsigned integers [2,64]".to_string())?,
+    ];
+    let header = ProbeGiGridHeader {
+        origin,
+        spacing: spacing as f32,
+        grid_size,
+        probe_count: probes.len() as u32,
+    }
+    .encode()
+    .map_err(|error: ProbeGiGridError| format!("probe grid header rejected: {error:?}"))?;
+    let mut records = vec![header];
+    for (index, probe) in probes.iter().enumerate() {
+        let item = probe
+            .as_object()
+            .ok_or_else(|| format!("probe record {index} must be an object"))?;
+        let irradiance = point(
+            item.get("irradiance")
+                .and_then(Value::as_array)
+                .ok_or_else(|| format!("probe record {index} irradiance must be an array"))?,
+            "irradiance",
+        )?;
+        let read = |name: &str| -> Result<f32, String> {
+            item.get(name)
+                .and_then(Value::as_f64)
+                .map(|value| value as f32)
+                .ok_or_else(|| format!("probe record {index} {name} must be finite"))
+        };
+        let mut record = IrradianceProbeRecord::zero();
+        record.irradiance = irradiance;
+        record.validity = read("validity")?;
+        record.mean_distance = read("meanDistance")?;
+        record.distance_variance = read("distanceVariance")?;
+        record.occlusion_floor = item
+            .get("occlusionFloor")
+            .and_then(Value::as_f64)
+            .map(|value| value as f32)
+            .unwrap_or(0.0);
+        if let Some(offset) = item.get("positionOffset").and_then(Value::as_array) {
+            record.position_offset = point(offset, "positionOffset")?;
+        }
+        record
+            .validate()
+            .map_err(|error| format!("probe record {index} rejected: {error:?}"))?;
+        records.push(record);
+    }
+    Ok(Some(records))
+}
+
+
+#[cfg(test)]
+mod probe_grid_tests {
+    use super::*;
+
+    #[test]
+    fn decodes_grid_into_header_and_records() {
+        let environment = serde_json::json!({
+            "irradianceProbes": {
+                "schema": "deep-engine.probe-grid", "schemaVersion": 1,
+                "origin": [-3, -2, -3], "spacing": 2, "gridSize": [2, 2, 2],
+                "probes": [
+                    {"irradiance":[0.5,0.25,0.125],"validity":1,"meanDistance":1000000,"distanceVariance":0},
+                    {"irradiance":[0.5,0.25,0.125],"validity":1,"meanDistance":1000000,"distanceVariance":0},
+                    {"irradiance":[0.5,0.25,0.125],"validity":1,"meanDistance":1000000,"distanceVariance":0},
+                    {"irradiance":[0.5,0.25,0.125],"validity":1,"meanDistance":1000000,"distanceVariance":0},
+                    {"irradiance":[0.5,0.25,0.125],"validity":1,"meanDistance":1000000,"distanceVariance":0},
+                    {"irradiance":[0.5,0.25,0.125],"validity":1,"meanDistance":1000000,"distanceVariance":0},
+                    {"irradiance":[0.5,0.25,0.125],"validity":1,"meanDistance":1000000,"distanceVariance":0},
+                    {"irradiance":[0.5,0.25,0.125],"validity":1,"meanDistance":1000000,"distanceVariance":0}
+                ]
+            }
+        });
+        let records = decode_probe_grid(&environment).unwrap().expect("grid must decode");
+        assert_eq!(records.len(), 9);
+        // 头解码合同:网格头 + 8 探针。
+        let header = crate::probe_gi_grid::ProbeGiGridHeader::decode(&records[0]).unwrap();
+        assert_eq!(header.probe_count, 8);
+        assert_eq!(header.grid_size, [2, 2, 2]);
+        // 缺字段(无 irradianceProbes)→ None;坏 schema → Err。
+        assert!(decode_probe_grid(&serde_json::json!({})).unwrap().is_none());
+        assert!(decode_probe_grid(&serde_json::json!({
+            "irradianceProbes": {"schema": "wrong", "schemaVersion": 1}
+        })).is_err());
+        // 探针记录非法(validity 越界)→ Err。
+        let bad = serde_json::json!({
+            "irradianceProbes": {"schema": "deep-engine.probe-grid", "schemaVersion": 1,
+                "origin": [-3, -2, -3], "spacing": 2, "gridSize": [2, 2, 2],
+                "probes": [
+                    {"irradiance":[0.5,0.25,0.125],"validity":2,"meanDistance":1,"distanceVariance":0},
+                    {"irradiance":[0.5,0.25,0.125],"validity":1,"meanDistance":1,"distanceVariance":0},
+                    {"irradiance":[0.5,0.25,0.125],"validity":1,"meanDistance":1,"distanceVariance":0},
+                    {"irradiance":[0.5,0.25,0.125],"validity":1,"meanDistance":1,"distanceVariance":0},
+                    {"irradiance":[0.5,0.25,0.125],"validity":1,"meanDistance":1,"distanceVariance":0},
+                    {"irradiance":[0.5,0.25,0.125],"validity":1,"meanDistance":1,"distanceVariance":0},
+                    {"irradiance":[0.5,0.25,0.125],"validity":1,"meanDistance":1,"distanceVariance":0},
+                    {"irradiance":[0.5,0.25,0.125],"validity":1,"meanDistance":1,"distanceVariance":0}
+                ]}
+        });
+        assert!(decode_probe_grid(&bad).is_err());
+    }
+}

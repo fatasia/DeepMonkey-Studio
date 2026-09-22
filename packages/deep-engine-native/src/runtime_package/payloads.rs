@@ -51,6 +51,9 @@ pub(super) fn decode(
         payload(&package, render_id)?,
     )
     .map_err(RuntimePackageError)?;
+    let probe_grid_records =
+        solid_environment::decode_probe_grid(payload(&package, &package.entrypoints.environment)?)
+            .map_err(RuntimePackageError)?;
     let solid_environment = decode_background(&package, &package.entrypoints.environment)?;
     let background = solid_environment.as_ref().map(|decoded| decoded.background);
     let fog = solid_environment.as_ref().and_then(|decoded| decoded.fog);
@@ -105,6 +108,7 @@ pub(super) fn decode(
         shader_packages,
         material_bindings: package.material_bindings,
         dynamic_runtime,
+        probe_grid_records,
     })
 }
 

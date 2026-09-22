@@ -135,11 +135,32 @@ pub(super) async fn create_renderer(
     // F3:旧包/空场景不创建真实 storage(None);非空探针在
     // frame.lightDirection.w 保留通道写 1 开启采样(零=关,旧包逐位不变)。
     // 开关必须在 frame_buffer 固化前写入 uniform。
-    let probe_gi_storage = ProbeGiStorage::new(&device, &[])
+    // F3:优先消费环境探针网格(网格头模式,开关=2);旧包/空场景不创建真实
+    // storage(None),开关保持 0,逐位不变。开关必须在 frame_buffer 固化前写入。
+    let probe_grid_records = content
+        .probe_grid_records
+        .as_deref()
+        .filter(|records| !records.is_empty())
+        .map(|records| records.to_vec());
+    // bin 侧 probe_gi_abi 与 lib 的记录是同一 96B POD 布局的两份类型:
+    // 经字节切片转译,避免双编译类型的路径不一致。
+    let records: &[crate::probe_gi_abi::IrradianceProbeRecord] = match probe_grid_records.as_deref() {
+        Some(records) if !records.is_empty() => bytemuck::cast_slice(records),
+        _ => &[],
+    };
+    let probe_gi_storage = ProbeGiStorage::new(&device, records)
         .map_err(|error| format!("native probe storage contract rejected: {error:?}"))?;
-    if probe_gi_storage.is_some() {
+    if !records.is_empty() {
+        // 网格头模式(>=1.5):首条记录是合法网格头;旧扁平模式保留 1.0 通道语义。
         frame[crate::probe_gi_storage::FRAME_PROBE_GI_ENABLE_ROW]
-            [crate::probe_gi_storage::FRAME_PROBE_GI_ENABLE_LANE] = 1.0;
+            [crate::probe_gi_storage::FRAME_PROBE_GI_ENABLE_LANE] =
+            if records.len() > 1
+                && crate::probe_gi_grid::ProbeGiGridHeader::decode(&records[0]).is_ok()
+            {
+                2.0
+            } else {
+                1.0
+            };
     }
     let frame_buffer = resources::frame_buffer(&device, &frame);
     let ies_buffer = resources::ies_buffer(&device, content.lighting.as_ref())?;

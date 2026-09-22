@@ -13,6 +13,23 @@ export interface RuntimeStaticLightmapDescriptor {
   readonly width: number;
   readonly height: number;
 }
+/** F3 探针网格载荷：与 Native probe_gi_grid 网格头/记录合同一致（单层）。 */
+export interface RuntimeIrradianceProbeGrid {
+  readonly schema: "deep-engine.probe-grid";
+  readonly schemaVersion: 1;
+  readonly origin: readonly [number, number, number];
+  readonly spacing: number;
+  readonly gridSize: readonly [number, number, number];
+  readonly probes: readonly RuntimeIrradianceProbe[];
+}
+export interface RuntimeIrradianceProbe {
+  readonly irradiance: readonly [number, number, number];
+  readonly validity: number;
+  readonly meanDistance: number;
+  readonly distanceVariance: number;
+  readonly occlusionFloor?: number;
+  readonly positionOffset?: readonly [number, number, number];
+}
 /** 固定输出变换的纯色背景；不携带直射灯或全局照明状态。 */
 export interface RuntimeSolidEnvironment {
   readonly schema: "deep-engine.solid-environment";
@@ -26,6 +43,8 @@ export interface RuntimeSolidEnvironment {
   readonly lighting?: RuntimeAuthoredLighting;
   /** B6 静态贴图描述符；缺失时表示没有烘焙光照，不应推断为黑色贴图。 */
   readonly staticLightmap?: RuntimeStaticLightmapDescriptor;
+  /** F3 探针网格：缺失表示无探针 GI，不得推断为全黑环境补偿。 */
+  readonly irradianceProbes?: RuntimeIrradianceProbeGrid;
   /** v7 作者雾：与 Web PbrFog exp2 变体同语义（线性 RGB、符号相机深度、透明混合前合成）。 */
   readonly fog?: RuntimeAuthorFog;
 }
