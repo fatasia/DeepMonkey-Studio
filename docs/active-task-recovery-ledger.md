@@ -2979,3 +2979,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 现状核查：Native 只有 IBL cube/BRDF 与诊断 IBL probe，没有 irradiance volume/probe producer/PBR probe sampling；Web 已有 96B `IrradianceProbeRecord`、64B level metadata、8-tap/预算合同。本切片不重建 IBL，不接 producer/mesh shader。
 - 新增 `packages/deep-engine-native/src/probe_gi_abi.rs` 并注册模块：96B `IrradianceProbeRecord`（前 48B 与 Web 字段逐字节一致，后 48B 保留零区）、ABI version 1、65,536 record/约 6MiB 预算、空场景零分配、批量连续 pack、有限值/范围/保留区 fail-closed。
 - 证据：Native `probe_gi_abi` **6/6**、cargo check --lib 通过；测试断言 Web 字段顺序、确定性、旧无记录包兼容、预算超限拒绝。未接 Native texture/bind group/producer/PBR GI，不能宣称 F3 Native GI 完成。未 push。
+
+### 2026-09-22 F3 ABI 对拍切片收口
+
+- Web `probeNativeAbiGolden.test.ts` 新增跨端 golden：`packIrradianceProbeRecord` 输出 12 个 f32/96B，字段顺序与 Native `probe_gi_abi` 逐字节一致，保留区全零，重复 pack 字节确定性。
+- 证据：Web probe ABI + sampling **10/10**（含既有采样测试）、deep-engine typecheck 通过；Native `probe_gi_abi` **6/6**、cargo check --lib 通过。F3 当前完成的是 ABI/预算/旧包兼容合同切片。
+- 未完成且明确保留：Native probe volume 纹理、binding、producer、PBR GI 混合、动态更新、设备恢复；不能把 ABI 对拍称为 Native GI 画面消费。F2 RT 像素消费同样仍阻断（无正式 RT fragment pipeline/pixel test）。
