@@ -3002,3 +3002,16 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 发布查看器宿主 `viewerEngineRuntimeSupport.applyDynamicRuntimeFrame` 现在传递 `applyVisibility` sink，把 `object-visible` 采样结果映射到既有 `setVisible(id, visible)`（contract 抽象，WebGL/WebGPU 双端共享）。
 - 证据：apps/web typecheck 通过；visibility/viewer playback 回归 **9/9**。B2-a 至此完成合同→下译→采样→产品查看器消费全链；时间轴 UI 可见性关键帧编辑也已提交 `a0a3852`。
 - 边界：Native 端 `object-visible` 消费、UI 增删可见性关键帧的拖拽交互细化仍留后续；未 push。
+
+### 2026-09-23 B2-a 全链与 Native 兼容修复
+
+- Web 发布查看器已真实消费 object-visible 采样（`viewerEngineRuntimeSupport` 经既有 `setVisible` 抽象映射到 WebGL/WebGPU 双端模型节点）；时间轴 Inspector 支持可见性关键帧编辑（跟随上一帧/可见/隐藏，inherit 删除可选字段保持旧快照兼容）。
+- Native 修复真实缺陷：`apply_dynamic_transforms` 遇到未知属性会硬报错，带可见性轨道的包在 Native 播放会中断；已让 `object-visible` 参与采样并映射隐藏目标实例为零矩阵（GPU 光栅自然剔除，不扩实例 ABI），显式可见恢复 TRS。
+- 证据：visibility/viewer playback **9/9**；Native lib **511/511**；apps/web typecheck 通过。边界：Native per-instance 可见位、时间轴拖拽编辑细化仍待后续。
+
+### 2026-09-23 F2 RT 像素消费切片（收口）
+
+- 新增 `native_mesh_rt_fragment_v1.wgsl`：binding10 TLAS + `rayQueryProceed` directional shadow 可见性（静态 opaque/MASK）；独立 RT pipeline 族（`pipeline/rt.rs`），仅在驻留+特性+无自定义 shader 批次同时满足时由 opaque pass 选择 RT bind group，否则逐帧回退栅格（fail-closed）。
+- 接入 `mesh_pass.rs::encode_opaque_pass_rt`、`renderer/frame.rs` RT 分支与栅格回退；`frame_bindings.rs`/`gpu_ibl.rs` 保持普通 ABI 不变（RT 复制 layout 追加 binding10）。
+- 证据：`rt_pixel_tests` 源级合同 3/3（拼接使能行、binding10 对齐、Ray Query 入口、栅格回退保留）+ `rt_pixel_gpu_tests` 真机 Ray Query 设备管线族编译 1/1；`rt_residency` 10/10；bin 全量 **247/247**；lib 全量 **511/511**。既有 dashboard_video_gpu 失败已消失。
+- 边界：同场景 RT/栅格像素对拍与设备恢复证据仍待真实窗口验收；BLEND/变形几何按合同回退栅格。未 push。
