@@ -3249,3 +3249,10 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **修复潜在缺陷**：网格头（padding=baseProbeRecords）本就不在 `pack_records` 逐记录 ABI 校验范围内——旧"网格包→`ProbeGiStorage::new`→pack_records"链路对真实网格包会误拒 init。新增 `ProbeGiStorage::from_packed` + `pack_cascade_records`（头由级联合同先验、探针逐条 ABI 校验），init.rs 网格模式（旧单层+v2）统一走级联打包；开关分派：旧网格头合法或级联合法 → 2.0，声明 v2 但内容非法 → 0.0（fail-closed），旧扁平 → 1.0（逐位不变）。
 - **门禁**：lib **535/0**（1 ignored 既有）、bin **271/0**（`--test-threads=2`，78 ignored 既有）；真机 GPU：单层回归 `probe_grid_trilinear_adds_uniform_ambient_on_real_gpu` 通过 + 新增双层 `probe_grid_two_level_cascade_on_real_gpu` 通过（三帧：关/双层同均匀值/细层 validity=0 落粗层；增量通道比例指纹互换证明采样落粗层，mean_red=0.1109≈base·irr/π）。Web：deep-engine lighting vitest **200/0**（5 skipped 既有，含打包器 19 项）、deep-engine 与 apps/web typecheck 通过。
 - **诚实边界**：级联混合仅实现细+次粗两层（Web 同语义），3/4 层可解码定位但混合仍两层；GPU 双层证据为同均匀值+粗层兜底两态，部分混合系数的逐像素对拍由 CPU 合同测试（0.5 中点精确值）与 WGSL 同式覆盖，未做 GPU 逐像素变系数用例；运行包 JSON 载荷 `irradianceProbes` schema 仍为单层（schemaVersion 1），多层打包到运行包发布的 producer 管道待下一切片；dist 产物未重编译。未 push。
+
+### 2026-09-23 30 分钟自检（第十二轮）：F3 多层级联验收 + 载荷管道补位
+
+- **F3 Native 多层级联完成并验收**（b9684e1d）：v2 布局头协议（保留区声明 levelCount 1..4，旧单层逐位兼容）、decode_probe_grid_cascade（层间 spacing 递增/粗层包含细层/精确记录数 fail-closed）、Rust CPU 混合对拍（细+次粗两层 smoothstep 1.5 格，与 Web MAX_LEVEL_SAMPLE_COUNT=2 同语义）、WGSL 多层遍历（法线非有限收紧返零）、打包器 packNativeProbeGridLevels；**顺手修复**网格头 padding 不在 pack_records 校验内的 init 误拒隐患（from_packed+pack_cascade_records）；真机 GPU 双层用例过（同均匀值增量均匀 + 粗层兜底通道指纹互换）。主线程复跑：probe_gi 族 22/0、打包器 19/0。
+- 门禁：lib 535/0、bin 271/0、lighting 200/0、双端 typecheck 过。
+- **满载补位**：子代理②派 F3 多层载荷发布管道（Web 合同 v2/编译器衔接/Native 分派/端到端测试——级联最后一环）；子代理① V4 Babylon harness 继续在跑。
+- 边界：级联混合仅细+次粗两层（Web 同语义）；变混合系数 GPU 逐像素对拍未做（CPU 合同+WGSL 同式覆盖）；dist 未重编译。
