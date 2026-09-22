@@ -8,6 +8,12 @@
 #[path = "rt_raster_parity_gpu_tests.rs"]
 mod rt_raster_parity_gpu_tests;
 
+// F3 探针 GI 网格三线性像素消费证据,同样挂在本模块下复用
+// request_ray_query_device 与真机测试装配模式。
+#[cfg(test)]
+#[path = "probe_gi_gpu_tests.rs"]
+mod probe_gi_gpu_tests;
+
 use crate::frame_bindings::{create_frame_layouts, create_native_mesh_rt_shader};
 use crate::gpu_textures::create_material_layout;
 use crate::pipeline::create_rt_mesh_pipelines;
