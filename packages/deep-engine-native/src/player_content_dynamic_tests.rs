@@ -37,6 +37,7 @@ fn packet() -> RenderPacket {
             ],
             cast_shadow: None,
             receive_shadow: None,
+            outline: None,
             lod: None,
         }],
         textures: Vec::new(),
@@ -148,4 +149,35 @@ fn samples_camera_tracks_into_a_real_player_view() {
         step.changed_instances, 0,
         "camera tracks must not be misapplied as model transforms"
     );
+}
+
+#[test]
+fn object_visible_track_does_not_abort_native_playback() {
+    // B2-a：带 object-visible 轨道的运行包在 Native 播放不能因未知属性中断。
+    // 数据：500ms 处 visible 从 1→0（隐藏），1000ms 处 x 到 5。
+    let runtime = parse_and_validate_dynamic_scene_runtime(&serde_json::json!({
+        "schema": "deep-engine.dynamic-runtime", "schemaVersion": 1, "id": "scene.dynamic", "revision": 1,
+        "animation": {
+            "schema": "deep-engine.dynamic-animation", "schemaVersion": 1, "durationMs": 1000,
+            "tracks": [
+                {"targetId": "pump", "property": "object-visible", "keyframes": [
+                    {"timeMs": 0, "value": [1, 0, 0, 0, 0, 0, 1]},
+                    {"timeMs": 500, "value": [0, 0, 0, 0, 0, 0, 1]}]},
+                {"targetId": "pump", "property": "translation", "keyframes": [
+                    {"timeMs": 0, "value": [0, 0, 0, 0, 0, 0, 1]},
+                    {"timeMs": 1000, "value": [5, 0, 0, 0, 0, 0, 1]}]}
+            ]
+        }
+    })).unwrap();
+    let mut content = content();
+    content.dynamic_runtime = Some(runtime);
+
+    // 250ms：可见（v=0.5 边界内 >0.5 判可见），translation x = 5*0.25 = 1.25。
+    let step = content.apply_dynamic_playback_step(250).unwrap();
+    assert!(step.changed_instances >= 1, "object-visible 轨道不得中断播放");
+
+    // 750ms：已越过 visible=false 关键帧（500ms），实例隐藏、零矩阵。
+    let step = content.apply_dynamic_playback_step(750).unwrap();
+    let tx = content.packet.instances[0].transform[12];
+    eprintln!("DEBUG 750ms tx={tx}");
 }

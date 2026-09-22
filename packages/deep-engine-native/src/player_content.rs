@@ -660,6 +660,10 @@ fn apply_dynamic_transforms(
 ) -> Result<usize, String> {
     use std::collections::BTreeMap;
     let mut nodes: BTreeMap<&str, DynamicNodeTransform> = BTreeMap::new();
+    // B2-a object-visible：显式可见性关键帧（value[0]>0.5 为可见）。先采样，再在
+    // 变换写入阶段对隐藏目标的实例写零矩阵——退化矩阵会被 GPU 光栅自然剔除，
+    // 不扩实例 ABI；正式 per-instance 可见位仍待后续立项。
+    let mut hidden: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
     for sample in samples {
         let node = nodes.entry(sample.target_id.as_str()).or_default();
         match sample.property.as_str() {
@@ -675,9 +679,14 @@ fn apply_dynamic_transforms(
                 ])
             }
             "scale" => node.scale = Some([sample.value[0], sample.value[1], sample.value[2]]),
-            // B2-a object-visible 是场景级可见性，不是实例变换；正式可见性消费
-            // 由后续可见性切片承接，此处先跳过以避免带该轨道的包在 Native 播放中断。
-            "camera-position" | "camera-target" | "object-visible" => continue,
+            "object-visible" => {
+                if sample.value[0] <= 0.5 {
+                    hidden.insert(sample.target_id.as_str());
+                } else {
+                    hidden.remove(sample.target_id.as_str());
+                }
+            }
+            "camera-position" | "camera-target" => continue,
             other => {
                 return Err(format!(
                     "dynamic playback cannot consume transform property {other:?}"
@@ -691,10 +700,16 @@ fn apply_dynamic_transforms(
             "model-{}/",
             runtime_content_sha256(&serde_json::Value::String((*target_id).to_owned()))
         );
-        let mut transform = dynamic_trs_matrix(node);
-        for axis in 0..3 {
-            transform[12 + axis] += translation_delta[axis];
-        }
+        let hidden_target = hidden.contains(*target_id);
+        let mut transform = if hidden_target {
+            [0.0; 16]
+        } else {
+            let mut transform = dynamic_trs_matrix(node);
+            for axis in 0..3 {
+                transform[12 + axis] += translation_delta[axis];
+            }
+            transform
+        };
         for instance in &mut packet.instances {
             if instance.id != *target_id && !instance.id.starts_with(&prefix) {
                 continue;
