@@ -3015,3 +3015,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 接入 `mesh_pass.rs::encode_opaque_pass_rt`、`renderer/frame.rs` RT 分支与栅格回退；`frame_bindings.rs`/`gpu_ibl.rs` 保持普通 ABI 不变（RT 复制 layout 追加 binding10）。
 - 证据：`rt_pixel_tests` 源级合同 3/3（拼接使能行、binding10 对齐、Ray Query 入口、栅格回退保留）+ `rt_pixel_gpu_tests` 真机 Ray Query 设备管线族编译 1/1；`rt_residency` 10/10；bin 全量 **247/247**；lib 全量 **511/511**。既有 dashboard_video_gpu 失败已消失。
 - 边界：同场景 RT/栅格像素对拍与设备恢复证据仍待真实窗口验收；BLEND/变形几何按合同回退栅格。未 push。
+
+### 2026-09-22 A1 短切片：cluster indirect executor 真机 draw 证据收口
+
+- 新增 `packages/deep-engine/lab/clusterLodDrawProbe.ts`：DeviceSession 上走 `ClusterLodIndirectExecutor.encode → prepareBundle(×2，二次必须 reused) → render pass executeBundles → drawIndexedIndirect → copyTextureToBuffer` 像素读回；命令字来自同 runner GPU kernel 读回槽位经 Node 侧 `planClusterLodIndirect` 派生（计划派生单一来源）；空白对照（仅 clear 不绘制）覆盖像素必须为 0，任何 validation error/会话诊断非空即 fail-closed。
+- 像素仲裁：`expectedClusterLodDrawCoverage` 按「实际下发的命令字」(indexCount/firstIndex/baseVertex) 在 Node 侧 CPU 光栅化逐相机派生期望覆盖率，GPU 实测 ±0.02 容差对拍。粗层简化几何（顶点聚类边界内收）与部分层前沿天然不满铺，固定下限不 principled（首版全几何并集口径已纠正为逐命令流参考）。
+- runner 微扩 `scripts/clusterLodGpuTest.mjs`（同页第二 evaluate，不重建 harness/算法/合同），`lab/clusterLodGpuProbe.ts` 仅 re-export + 几何载荷/原始层导出；CPU 参考选层对拍合同原样保留作 fallback；src/ 零改动。
+- 证据：`test-output/cluster-lod-gpu-20260920-r1/evidence.json`（字段向后兼容追加 `draw` 与 `verdict.realGpuDrawVerified`）；Chrome 153.0.8010.53 + NVIDIA lovelace 真机 7/7 相机 slots+draws 全 match，GPU 覆盖率与 CPU 命令流参考逐位一致（1 / 0.8799 / 0.6885），clearOnly=0、0 错误 0 诊断、bundle 缓存 reused 全命中；`CPU/GPU agreement verdict: PASSED` + `real GPU draw: PASSED`。
+- 门禁：deep-engine typecheck（src+lab+examples）通过；聚焦 executor/plan/selection vitest 45/45；runtime purity 通过；新增/扩展三个文件均 <300 行（source-size gate 存量失败与本次无关）。
+- 边界：MSAA/depthStencil、多 bindGroup 请求路径未在本探针覆盖；未 push。

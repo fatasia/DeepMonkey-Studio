@@ -13,6 +13,11 @@ import { build } from "esbuild";
 // 同 esbuild bundle 单一来源，防口径分叉）逐槽位精确对拍（u32 相等），并断言：
 // 近距全选细层 / 远距粗层 / 混合前沿 / 阈值扫描单调 / 阈值边界余量 ≥5%。
 // GPU 读回槽位喂 planClusterLodIndirect 派生绘制清单，与期望前沿对拍 —— 间接命令合同同机受检。
+// A1 短切片追加 draw 腿（同一页面第二 evaluate，不重建 harness）：GPU 读回槽位 → Node 侧
+// planClusterLodIndirect 命令字 → ClusterLodIndirectExecutor.encode→prepareBundle(×2 复用)→
+// render pass executeBundles→drawIndexedIndirect→copyTextureToBuffer 像素读回（lab/clusterLodDrawProbe）。
+// 像素仲裁：逐相机按实际下发命令字做 CPU 光栅化参考，GPU 实测覆盖率 ±0.02 容差对拍、
+// 空白对照（仅 clear）必须为 0；CPU 参考选层对拍合同原样保留作 fallback。
 // 证据写入 test-output/cluster-lod-gpu-20260920-r1/。
 
 const packageRoot = fileURLToPath(new URL("../", import.meta.url));
@@ -21,6 +26,9 @@ const outputDirectory = path.join(repoRoot, "test-output", "cluster-lod-gpu-2026
 const chromePath = process.env.BIM_STUDIO_CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const maxAttempts = Number(process.env.CLUSTER_LOD_GPU_TEST_ATTEMPTS ?? 3);
 const MIN_MARGIN = 0.05;
+// draw 腿像素仲裁：逐相机按「实际下发的 indirect 命令字」做 CPU 光栅化参考（expectedClusterLodDrawCoverage），
+// GPU 实测覆盖率与该值容差对拍 —— 漏画（缺 cluster ≈ −0.12 起）与命令字/拼接错位都会大幅偏离。
+const COVERAGE_TOLERANCE = 0.02;
 
 const sha256 = (bytes) => createHash("sha256").update(new Uint8Array(bytes)).digest("hex");
 const base64ToBytes = (value) => Uint8Array.from(Buffer.from(value, "base64"));
@@ -39,7 +47,7 @@ async function startServer(directory) {
   return { server, origin: `http://127.0.0.1:${server.address().port}` };
 }
 
-async function runInBrowser(origin, requests) {
+async function runInBrowser(origin, requests, buildDrawPayload) {
   const require = createRequire(import.meta.url);
   const playwright = require("../../../apps/cloud-render-worker/node_modules/playwright-core/index.js");
   const browser = await playwright.chromium.launch({ executablePath: chromePath, headless: true,
@@ -51,6 +59,20 @@ async function runInBrowser(origin, requests) {
       const module = await import("./probe.bundle.mjs");
       return module.runClusterLodGpuProbe(caseRequests);
     }, requests);
+    // draw 腿（同一页面、同一 bundle）：GPU 读回槽位在 Node 侧派生命令字后再喂给 executor。
+    // 仅在选层腿无错误且 WebGPU 可用时执行；载荷构建失败（槽位派生抛错）时记录原因并判负。
+    if (buildDrawPayload && result.errors.length === 0 && result.cases
+      && Object.keys(result.cases).length > 0) {
+      const drawPayload = buildDrawPayload(result);
+      if (drawPayload) {
+        result.draw = await page.evaluate(async (payload) => {
+          const module = await import("./probe.bundle.mjs");
+          return module.runClusterLodDrawProbe(payload);
+        }, drawPayload);
+      } else {
+        result.drawSkipped = "GPU 读回槽位无法派生 indirect 计划（Node 侧 planClusterLodIndirect 抛错）。";
+      }
+    }
     result.browserVersion = browser.version();
     result.userAgent = await page.evaluate(() => navigator.userAgent);
     return result;
@@ -65,10 +87,39 @@ async function main() {
   await build({ absWorkingDir: packageRoot, entryPoints: ["lab/clusterLodGpuProbe.ts"], bundle: true,
     format: "esm", target: "es2022", outfile: bundlePath, logLevel: "silent" });
   const module = await import(pathToFileURL(bundlePath));
-  await writeFile(path.join(bundleDirectory, "probe.html"), `<!doctype html><title>Cluster LOD GPU probe</title>`);
+  await writeFile(path.join(bundleDirectory, "probe.html"),
+    `<!doctype html><html><head><title>Cluster LOD GPU probe</title></head><body></body></html>`);
 
   const specs = module.buildClusterLodCases();
   const requests = module.buildClusterLodRequests(specs);
+  // draw 腿期望：几何载荷（base64 → 浏览器）+ 原始层几何（Node 侧 CPU 光栅化参考）。
+  const drawExpectation = module.buildClusterLodDrawExpectation();
+  // 每次尝试的逐相机期望覆盖率（buildDrawPayload 按 GPU 读回槽位派生命令字后填充）。
+  let drawExpectedByKey = new Map();
+  // draw 腿载荷：GPU 读回槽位 → Node 侧 planClusterLodIndirect 命令字（派生失败该相机不入载荷，
+  // 选层对拍会判负）；期望覆盖率按同一命令流在 Node 侧光栅化派生。
+  const buildDrawPayload = (probe) => {
+    drawExpectedByKey = new Map();
+    const cameras = [];
+    for (const spec of specs) {
+      const backends = probe.cases[spec.name] ?? [];
+      spec.cameras.forEach(({ label }, cameraIndex) => {
+        const backend = backends[cameraIndex];
+        if (!backend) return;
+        try {
+          const words = Uint32Array.from(new Uint32Array(base64ToBytes(backend.selectionBase64).buffer.slice(0)));
+          const plan = module.planClusterLodIndirect(spec.dag, words, spec.levels);
+          const expectedCoverage = module.expectedClusterLodDrawCoverage(drawExpectation.levels,
+            plan.draws.map(draw => ({ indexCount: draw.indirectCommand[0], firstIndex: draw.indirectCommand[2],
+              baseVertex: draw.indirectCommand[3] })));
+          drawExpectedByKey.set(`${spec.name}/${label}`, expectedCoverage);
+          cameras.push({ case: spec.name, label, drawCount: plan.drawCount,
+            commands: plan.draws.map(draw => [...draw.indirectCommand]) });
+        } catch { /* 该相机槽位非法：跳过 draw 腿，失败由选层对拍与 drawVerified 仲裁 */ }
+      });
+    }
+    return cameras.length ? { geometry: drawExpectation.geometry, cameras } : null;
+  };
   // CPU 参考（Node 侧，同一 bundle 单一来源）：逐机位预算槽位/前沿/阈值边界余量。
   const references = new Map(specs.map((spec) => [spec.name, {
     spec,
@@ -82,7 +133,7 @@ async function main() {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const { server, origin } = await startServer(bundleDirectory);
     try {
-      probe = await runInBrowser(origin, requests);
+      probe = await runInBrowser(origin, requests, buildDrawPayload);
       if (probe.errors.length === 0) break;
     } catch (error) {
       probe = { errors: [String(error instanceof Error ? error.message : error)], cases: {},
@@ -100,6 +151,9 @@ async function main() {
   await writeFile(path.join(outputDirectory, "clusterLodSelection.wgsl"), wgsl);
 
   const SENTINEL = 0xffff_ffff;
+  // draw 腿结果索引与整体可见性（仅在 draw evaluate 实际执行时非空）。
+  const draw = probe.draw ?? null;
+  const drawByKey = new Map((draw?.cameras ?? []).map(entry => [`${entry.case}/${entry.label}`, entry]));
   const caseResults = [];
   let gate = Boolean(probe.cases) && Object.keys(probe.cases).length === specs.length && probe.errors.length === 0;
   for (const spec of specs) {
@@ -136,6 +190,16 @@ async function main() {
       previousWords = gpuWords; previousMaxLevel = maxFrontierLevel;
       const minMargin = reference.minMargins[cameraIndex];
       const marginOk = minMargin >= MIN_MARGIN;
+      // draw 腿仲裁：executor 消费 GPU 读回槽位派生的命令字真机绘制；判据 = drawCount 一致 +
+      // bundle 缓存复用命中 + 空白对照干净 + GPU 覆盖率与该命令流的 CPU 光栅化参考在容差内一致。
+      const drawResult = drawByKey.get(`${spec.name}/${label}`) ?? null;
+      const drawExpected = drawExpectedByKey.get(`${spec.name}/${label}`) ?? null;
+      const drawCoverageOk = drawResult !== null && drawExpected !== null
+        && Math.abs(drawResult.coverage - drawExpected) <= COVERAGE_TOLERANCE;
+      const drawPassed = draw !== null && drawResult !== null && plan !== null
+        && draw.errors.length === 0 && draw.sessionDiagnostics.length === 0
+        && draw.clearOnlyCoveredPixels === 0 && drawResult.drawCount === plan.drawCount
+        && drawResult.bundleReused === true && drawCoverageOk;
       const passed = backend !== undefined && backend.faults === 0 && slotAgreement && drawsAgreement
         && levelAgreement && allSlotsSelected && monotoneOk && marginOk
         && probe.validationMessages.length === 0;
@@ -145,6 +209,10 @@ async function main() {
         gpuFrontierDraws: plan ? plan.draws.map(draw => [draw.nodeId, draw.level]) : null,
         expectedDraws: expectation.expectedDraws ?? null, maxFrontierLevel, levelAgreement,
         allSlotsSelected, monotoneOk, minMargin: Number(minMargin.toFixed(4)), marginOk,
+        drawCoverage: drawResult ? Number(drawResult.coverage.toFixed(4)) : null,
+        drawExpectedCoverage: drawExpected !== null ? Number(drawExpected.toFixed(4)) : null,
+        drawCoveredPixels: drawResult?.coveredPixels ?? null, drawDrawCount: drawResult?.drawCount ?? null,
+        drawBundleReused: drawResult?.bundleReused ?? null, drawPassed,
         gpuSelectionSha256: backend ? sha256(base64ToBytes(backend.selectionBase64)) : null,
         cpuSelectionSha256: sha256(Uint32Array.from(cpu.selection)),
         firstRawSlots: backend?.firstRawSlots ?? [] };
@@ -155,6 +223,12 @@ async function main() {
   }
 
   const webgpuAvailable = Object.keys(probe.cases ?? {}).length > 0;
+  // draw 腿整体验收：全部相机有结果、无错误/诊断、空白对照干净、逐相机 drawPassed。
+  const totalCameras = specs.reduce((sum, spec) => sum + spec.cameras.length, 0);
+  const drawVerified = draw !== null && draw.errors.length === 0 && draw.sessionDiagnostics.length === 0
+    && draw.clearOnlyCoveredPixels === 0 && draw.cameras.length === totalCameras
+    && caseResults.every(entry => entry.cameras.every(camera => camera.drawPassed === true));
+  gate = gate && drawVerified;
   const evidence = {
     schema: "cluster-lod-gpu-evidence-v1",
     lane: "wave5-cluster-lod-selection-real-gpu", createdAt: new Date().toISOString(),
@@ -167,13 +241,28 @@ async function main() {
       adapter: probe.adapter ?? null, features: probe.features ?? [],
       kernelValidationMessages: probe.validationMessages ?? [], probeErrors: probe.errors },
     cases: caseResults,
+    draw: {
+      runner: "ClusterLodIndirectExecutor",
+      path: "encode → prepareBundle(×2，二次必须 reused) → render pass executeBundles → drawIndexedIndirect → copyTextureToBuffer 读回",
+      target: { size: [128, 128], format: "rgba8unorm", clearColor: [0, 0, 0, 1] },
+      commandsSource: "GPU kernel 读回槽位 → Node planClusterLodIndirect 命令字原样上传（派生单一来源）",
+      coverageArbitration: { tolerance: COVERAGE_TOLERANCE, clearOnly: 0,
+        reference: "逐相机按实际下发命令字（indexCount/firstIndex/baseVertex）在 Node 侧 CPU 光栅化",
+        note: "粗层简化几何与部分层前沿天然不满铺，故期望覆盖率逐相机派生而非固定下限" },
+      adapter: draw?.adapter ?? null, clearOnlyCoveredPixels: draw?.clearOnlyCoveredPixels ?? null,
+      sessionDiagnostics: draw?.sessionDiagnostics ?? [], errors: draw?.errors ?? [],
+      skippedReason: probe.drawSkipped ?? null, verified: drawVerified,
+    },
     verdict: {
-      webgpuAvailable, cpuGpuAgreement: gate,
+      webgpuAvailable, cpuGpuAgreement: gate, realGpuDrawVerified: drawVerified,
+      drawSkipReason: probe.drawSkipped ?? null,
       notes: [
         "CPU 参考与浏览器腿共用同一 esbuild bundle（bake/打包/CPU 选层/前沿与 indirect 计划单一来源，防口径分叉）。",
         "对拍合同：selection 槽位逐节点 u32 精确相等（阈值边界两侧同用 ≤）；f32 与 JS f64 舍入差由案例余量门槛吸收（每个中间层节点屏幕误差距阈值 ≥5%），余量随证据记录。",
         "断言族：近距全选细层 / 远距粗层 / 混合前沿（l1+4×L0 同帧）/ 阈值扫描逐节点单调且最大前沿层级 0→1→2 / faults 哨兵恒 0。",
         "GPU 读回槽位喂 planClusterLodIndirect（间接命令计划）派生绘制清单后与期望前沿对拍 —— 间接合同在真机输出上受检。",
+        "A1 draw 腿（本版新增，字段向后兼容追加）：读回槽位派生命令字原样喂 ClusterLodIndirectExecutor，真机 encode→prepareBundle→executeBundles→drawIndexedIndirect，128×128 rgba8unorm 像素读回仲裁；期望覆盖率按同一命令流在 Node 侧 CPU 光栅化逐相机派生（粗层简化几何与部分层前沿天然不满铺），GPU 实测须在 ±0.02 内一致，空白对照（仅 clear）必须为 0。",
+        "bundle 缓存合同真机受检：同参 prepareBundle 二次调用必须 reused=true。",
         "nodeCount=10 < workgroup 64：每次 dispatch 有越界 lane，顺带受检 kernel 越界守卫。",
         "WGSL 编译诊断（getCompilationInfo 非 info 消息）非空即整批拒绝。",
       ],
@@ -183,9 +272,13 @@ async function main() {
   const summary = caseResults.map((entry) => entry.cameras.map((camera) =>
     `${entry.name}/${camera.camera}: slots=${camera.slotAgreement ? "match" : `MISMATCH(${camera.slotMismatches})`} ` +
     `draws=${camera.drawsAgreement ? "match" : "MISMATCH"} maxLevel=${camera.maxFrontierLevel} ` +
-    `faults=${camera.faults} margin=${camera.minMargin}`).join("\n"));
+    `faults=${camera.faults} margin=${camera.minMargin} ` +
+    `draw=${camera.drawPassed ? `covered=${camera.drawCoverage}` : "FAIL"}${draw?.errors.length ? ` drawErrors=${draw.errors.length}` : ""}`)
+    .join("\n"));
   console.log(summary.join("\n"));
-  console.log(`WebGPU available: ${webgpuAvailable}; CPU/GPU agreement verdict: ${gate ? "PASSED" : "FAILED"}; evidence: ${outputDirectory}`);
+  console.log(`WebGPU available: ${webgpuAvailable}; CPU/GPU agreement verdict: ${gate ? "PASSED" : "FAILED"}; ` +
+    `real GPU draw (executeBundles→drawIndexedIndirect): ${drawVerified ? "PASSED" : "FAILED"}` +
+    `${probe.drawSkipped ? ` (skipped: ${probe.drawSkipped})` : ""}; evidence: ${outputDirectory}`);
   if (!gate) process.exitCode = 1;
 }
 

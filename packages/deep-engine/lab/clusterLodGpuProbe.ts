@@ -6,7 +6,8 @@
  * packClusterLodCamera → createBuffer/bindGroup → select_cluster_lod dispatch → 读回 selection+faults。
  * 数值仲裁在 Node 侧：逐槽位与 CPU 参考（selectClusterLod）精确对拍（u32 相等）+ 近细远粗 +
  * 混合前沿 + 阈值单调 + 阈值边界余量门槛（≥5%，远超 f32 舍入；GPU 读回槽位喂
- * planClusterLodIndirect 派生绘制清单，间接合同同机受检）。
+ * planClusterLodIndirect 派生绘制清单，间接合同同机受检）。A1 短切片追加 draw 腿：GPU 读回槽位 →
+ * Node 侧派生命令字 → clusterLodDrawProbe 让 executor 真机 drawIndexedIndirect 并做像素读回仲裁。
  * 案例几何为 32×16 走廊（8 条带状 L0 cluster）：bake 朴素父子链接产出「金字塔区 l2→l1→c0..c3 +
  * 自由叶区 c4..c7」，自由区保持 L0、金字塔区随阈值 0→1→2 粗化，给出真正的混合层级前沿。
  * nodeCount=10 < workgroup 64：每次 dispatch 有 54 个越界 lane，顺带受检 kernel 的越界守卫。
@@ -24,6 +25,9 @@ export { packClusterLodNodes, packClusterLodCamera, selectClusterLod, clusterScr
   CLUSTER_LOD_SELECTION_WORKGROUP_SIZE } from "../src/rayTracing/clusterLodSelection.js";
 export { planClusterLodIndirect, deriveClusterLodFrontier } from "../src/rayTracing/clusterLodIndirectPlan.js";
 export { emitClusterLodSelectionWgsl, CLUSTER_LOD_SELECTION_ENTRY_POINT } from "../src/rayTracing/clusterLodSelectionKernel.js";
+// A1 短切片：executor 真机 draw 腿（encode→prepareBundle→executeBundles→drawIndexedIndirect→像素读回）。
+export { runClusterLodDrawProbe, expectedClusterLodDrawCoverage, CLUSTER_LOD_DRAW_TARGET,
+  type ClusterLodDrawRequest, type ClusterLodDrawProbeResult } from "./clusterLodDrawProbe.js";
 
 export interface ClusterLodCaseExpectation {
   readonly label: string;
@@ -135,6 +139,22 @@ export interface ClusterLodCaseRequest {
   readonly nodesBase64: string;
   /** 每机位一份 48B 相机 uniform（打包顺序 = spec.cameras 顺序）。 */
   readonly paramsBase64: readonly string[];
+}
+
+/** draw 腿载荷 + 原始层几何：bake 各层几何按 level 升序传输（拼接在浏览器侧执行，与 levelSpans
+ *  合同一致）；levels 原始数组供 Node 侧按命令流做 CPU 光栅化参考（期望覆盖率逐相机派生）。 */
+export function buildClusterLodDrawExpectation(): {
+  readonly geometry: readonly { readonly verticesBase64: string; readonly indicesBase64: string }[];
+  readonly levels: readonly { readonly vertices: Float32Array; readonly indices: Uint32Array }[];
+} {
+  const fixture = corridorFixture();
+  return {
+    geometry: fixture.baked.levelGeometry.map(geometry => ({
+      verticesBase64: toBase64(new Uint8Array(geometry.vertices.buffer, geometry.vertices.byteOffset, geometry.vertices.byteLength)),
+      indicesBase64: toBase64(new Uint8Array(geometry.indices.buffer, geometry.indices.byteOffset, geometry.indices.byteLength)),
+    })),
+    levels: fixture.baked.levelGeometry,
+  };
 }
 
 const toBase64 = (bytes: Uint8Array): string => {
