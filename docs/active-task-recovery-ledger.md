@@ -3178,3 +3178,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **I2 工具坞能力显隐完成**（f87fd49b）：按第四轮语义判定实现——sceneViewerToolsAvailability 纯函数从快照推导（clipping 字段存在性、physics.enabled），缺能力隐藏剖切按钮（隐藏而非置灰），不伪造测量/爆炸维度判定。14/14 测试+tsc 0 错误。
 - **B3 缺口5 调试数据层完成**（d96ed263，主线程）：collectPhysicsCuboidDebugEntries 纯函数+仿真器薄委托；真机 WASM 测试钉死语义——translation() 是世界位姿（含刚体）、局部偏移必须取 translationWrtParent()、移除 body 后残留句柄跳过不产条目。2/2 测试。剩余：渲染线框层（已派代理）+面板开关。
 - **满载布局**：主线程（验收+数据层）+ 子代理×2（B3 渲染线框层、V2 occlusion 诊断排查）。
+
+### 2026-09-23 30 分钟自检（第六轮）：V4 性能基准就绪度盘点
+
+- HEAD=e44638be、工作树干净；两子代理（B3 渲染线框层、V2 occlusion 诊断排查）在跑，主线程做 V4 盘点。
+- **V4 就绪度矩阵**（对照 handoff：Three/Babylon/Unity/Bevy 四对手 × P50/P95/P99/加载/输入延迟/内存/30min 稳定/画质相似度）：
+  - ✅ 已有 harness：Bevy 0.19 配对采样（`test-output/bevy-019-benchmark/paired-evidence.json`：5 轮交替、case/fixture/settings 三 hash 钉死、raw 逐轮样本、provenance 完整）；native-web 配对（`native-web-paired-performance-20260920/`）；进程指标采集（`scripts/benchmarks/run-windows-process-metrics.ps1`）；Bevy runner 源码仓内（`scripts/benchmarks/bevy-0.19.1/`）。
+  - ❌ 缺口：①Babylon/Unity 轨道 harness 不存在（Unity 依赖 V3 插件）；②聚合统计层（P50/P95/P99）在工作区外隔离目录，仓内无可复跑实现；③30 分钟长稳、画质相似度、生产输入延迟三项证据缺失（Bevy 条目已自证 incomplete/eligible=false）。
+  - 下一可执行动作：a) 把配对采样聚合统计（分位数+对比表）落为仓内可复跑脚本并吃既有 paired-evidence.json 出报告；b) Babylon 轨道 harness（Web 侧同夹具）；c) 30min 长稳排期。
+- 门禁续证：本轮无新代码改动，前轮门禁维持（native lib 528/0、bin 262/0；web 25/25+14/14+2/2+tsc 0）。
