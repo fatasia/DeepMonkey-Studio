@@ -34,6 +34,8 @@ export interface WebLightmapResult {
   indirectSamples: number;
   denoised: boolean;
   emissiveStrength: number;
+  /** B6：descriptor 消费方需要的 UV set 与分辨率线索。 */
+  lightmapDescriptorHint: { texCoord: 1; resolution: number; colorSpace: "linear" };
 }
 
 export interface PrimitiveBakeTarget {
@@ -74,7 +76,7 @@ interface LightingScratch {
  * Browser-only, single-atlas static lightmap baker.
  *
  * The generated texture is attached as the standard glTF occlusion texture on
- * TEXCOORD_1, so it survives GLB export and remains usable outside Deep Monkey Studio.
+ * TEXCOORD_1, so it survives GLB export and remains usable outside DeepMonkey Studio.
  * It preserves existing base-color textures and intentionally avoids offline
  * path tracing, UV chart optimization, and multi-bounce GI.
  */
@@ -111,10 +113,10 @@ export async function bakeWebLightmap(
     target.primitive.setAttribute(
       "TEXCOORD_1",
       document
-        .createAccessor("Deep Monkey Studio lightmap UV")
+        .createAccessor("DeepMonkey Studio lightmap UV")
         .setType("VEC2")
         .setArray(atlasUvs)
-        .setBuffer(document.getRoot().listBuffers()[0] ?? document.createBuffer("Deep Monkey Studio lightmap")),
+        .setBuffer(document.getRoot().listBuffers()[0] ?? document.createBuffer("DeepMonkey Studio lightmap")),
     );
     coveredTexels += await rasterizePrimitive(target, atlasUvs, occlusionPixels, linearLighting, covered, resolution, options, acceleration, samplers.get(target.primitive)!);
     if (targetIndex % 12 === 0) {
@@ -133,8 +135,8 @@ export async function bakeWebLightmap(
   dilateTexture(occlusionPixels, covered.slice(), resolution, 3);
   dilateTexture(lightingPixels, covered.slice(), resolution, 3);
   const [occlusionPng, lightingPng] = await Promise.all([encodeTexture(occlusionPixels, resolution), encodeTexture(lightingPixels, resolution)]);
-  const occlusionTexture = document.createTexture("Deep Monkey Studio Occlusion Lightmap").setMimeType("image/png").setImage(occlusionPng);
-  const lightingTexture = document.createTexture("Deep Monkey Studio Colored Lightmap").setMimeType("image/png").setImage(lightingPng);
+  const occlusionTexture = document.createTexture("DeepMonkey Studio Occlusion Lightmap").setMimeType("image/png").setImage(occlusionPng);
+  const lightingTexture = document.createTexture("DeepMonkey Studio Colored Lightmap").setMimeType("image/png").setImage(lightingPng);
   const materials = new Set(targets.map((target) => target.primitive.getMaterial()).filter((material) => material !== null));
   const emissionExtension = document.createExtension(KHRMaterialsEmissiveStrength);
   for (const material of materials) {
@@ -172,6 +174,8 @@ export async function bakeWebLightmap(
     indirectSamples: options.indirectSamples,
     denoised: options.denoise,
     emissiveStrength,
+    /** B6：baker 输出的 UV set 与分辨率可供 staticLightmapDescriptorFromExtras 消费。 */
+    lightmapDescriptorHint: { texCoord: 1, resolution, colorSpace: "linear" as const },
   };
   } finally { acceleration.geometry?.dispose(); }
 }
@@ -181,7 +185,7 @@ export function collectTargets(document: Document): PrimitiveBakeTarget[] {
   let fallbackMaterial = document
     .getRoot()
     .listMaterials()
-    .find((material) => material.getName() === "Deep Monkey Studio lightmap default");
+    .find((material) => material.getName() === "DeepMonkey Studio lightmap default");
   for (const node of document.getRoot().listNodes()) {
     const mesh = node.getMesh();
     if (mesh && !firstMatrixByMesh.has(mesh)) firstMatrixByMesh.set(mesh, new THREE.Matrix4().fromArray(node.getWorldMatrix()));
@@ -195,7 +199,7 @@ export function collectTargets(document: Document): PrimitiveBakeTarget[] {
       const normal = primitive.getAttribute("NORMAL");
       if (primitive.getMode() !== 4 || !position || !normal || position.getCount() !== normal.getCount()) continue;
       if (!primitive.getMaterial()) {
-        fallbackMaterial ??= document.createMaterial("Deep Monkey Studio lightmap default");
+        fallbackMaterial ??= document.createMaterial("DeepMonkey Studio lightmap default");
         primitive.setMaterial(fallbackMaterial);
       }
       targets.push({
