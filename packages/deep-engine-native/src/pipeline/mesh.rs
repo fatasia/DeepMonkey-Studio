@@ -1,10 +1,9 @@
+use super::{MaterialPipelines, RasterPipelines, raster::RasterState};
 use deep_engine_native::mesh_abi::{
     FORWARD_COLOR_FORMAT, FORWARD_DEPTH_FORMAT, FORWARD_SAMPLE_COUNT, GEOMETRY_VERTEX_ATTRIBUTES,
     GEOMETRY_VERTEX_BYTES, INSTANCE_VERTEX_ATTRIBUTES, PACKED_INSTANCE_BYTES,
     TANGENT_VERTEX_ATTRIBUTES, TANGENT_VERTEX_BYTES,
 };
-
-use super::{MaterialPipelines, RasterPipelines, raster::RasterState};
 
 /// DE26/C03 透明语义:Solid 不混合;Straight=glTF core(src-alpha);Premultiplied=RGB one。
 #[derive(Clone, Copy)]

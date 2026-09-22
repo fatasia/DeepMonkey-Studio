@@ -32,6 +32,28 @@ pub fn create_native_mesh_shader(device: &wgpu::Device) -> wgpu::ShaderModule {
     })
 }
 
+/// F2 RT fragment 拼接模块：与普通 mesh shader 完全同源（本体 + 级联阴影），
+/// 仅前置 ray-query 使能行并追加 RT fragment 段（binding 10 TLAS +
+/// `fragment_main_rt`，directional 阴影走硬件 Ray Query）。共享同一份
+/// mesh/shadow 源保证 vertex 阶段与光栅画面逐位同源；模块内包含
+/// `fragment_main_rt` 不影响普通管线继续选择 `fragment_main`。
+pub fn create_native_mesh_rt_shader(device: &wgpu::Device) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Deep Engine native RT mesh fragment shader v1"),
+        source: wgpu::ShaderSource::Wgsl(
+            concat!(
+                "enable wgpu_ray_query;\n",
+                include_str!("../assets/shaders/native_mesh_v1.wgsl"),
+                "\n",
+                include_str!("../assets/shaders/native_cascaded_shadow_v1.wgsl"),
+                "\n",
+                include_str!("../assets/shaders/native_mesh_rt_fragment_v1.wgsl")
+            )
+            .into(),
+        ),
+    })
+}
+
 fn section_layout() -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
         binding: 8,
@@ -139,7 +161,9 @@ fn rt_tlas_layout_entry() -> wgpu::BindGroupLayoutEntry {
         // 未来两类消费方并存:fragment ray-query(像素路径)与 compute
         // ray-query(探针/GI 生产者);layout 不限制到单一 stage。
         visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE,
-        ty: wgpu::BindingType::AccelerationStructure { vertex_return: false },
+        ty: wgpu::BindingType::AccelerationStructure {
+            vertex_return: false,
+        },
         count: None,
     }
 }

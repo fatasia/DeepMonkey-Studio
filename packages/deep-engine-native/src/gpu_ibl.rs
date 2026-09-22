@@ -158,7 +158,12 @@ impl GpuIblEnvironment {
             frame,
             ies,
             shadow,
-            (&self.specular_view, &self.diffuse_view, &self.brdf_lut_view, &self.sampler),
+            (
+                &self.specular_view,
+                &self.diffuse_view,
+                &self.brdf_lut_view,
+                &self.sampler,
+            ),
             true,
         );
         entries.push(wgpu::BindGroupEntry {

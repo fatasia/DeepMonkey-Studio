@@ -7,7 +7,7 @@
 
 use deep_engine_native::contract::AlphaMode;
 use deep_engine_native::hardware_ray_query::{
-    ResidentBlasGeometry, HardwareRayError, build_resident_blas_set, build_tlas_from_blas,
+    HardwareRayError, ResidentBlasGeometry, build_resident_blas_set, build_tlas_from_blas,
 };
 
 use super::Renderer;
@@ -183,7 +183,9 @@ pub(crate) fn classify_rt_batches(
                 (
                     batch.geometry_index,
                     (start + offset) as u32,
-                    row[..12].try_into().expect("packed row carries a 3x4 model"),
+                    row[..12]
+                        .try_into()
+                        .expect("packed row carries a 3x4 model"),
                 )
             })
             .collect::<Vec<(usize, u32, [f32; 12])>>();
@@ -201,12 +203,17 @@ pub(crate) fn classify_rt_batches(
     (classified, excluded_blend, conservative_mask)
 }
 
-/// 驻留产物:BLAS 缓存(几何变更才重建)+ 场景 TLAS(变换变更只重建它)。
+/// 驻留产物:BLAS 缓存(几何变更才重建)+ 场景 TLAS(变换变更只重建它)
+/// + F2 pixel 管线族(opaque/MASK 方向阴影 Ray Query 变体,与驻留同依赖
+/// 设备 RT 特性,故随驻留同生命周期搬运;场景替换重建驻留时原样迁移)。
 #[allow(dead_code)] // plan 字段经 plan()/rebuild_tlas 被 tests 与诊断消费。
 pub(crate) struct RtSceneResidency {
     tlas: wgpu::Tlas,
     blas: Vec<wgpu::Blas>,
     plan: RtScenePlan,
+    /// F2 pixel:opaque/MASK 方向阴影 Ray Query 管线族。仅设备启用 ray
+    /// query 且管线创建成功时存在;缺失时 opaque pass 回退栅格管线。
+    pixel_pipelines: Option<crate::pipeline::RtMeshPipelines>,
 }
 
 impl RtSceneResidency {
@@ -257,6 +264,7 @@ impl RtSceneResidency {
                 tlas,
                 blas,
                 plan,
+                pixel_pipelines: None,
             },
             blas_encoder,
             tlas_encoder,
@@ -311,6 +319,26 @@ impl RtSceneResidency {
     pub(crate) fn blas_count(&self) -> usize {
         self.blas.len()
     }
+
+    /// F2 pixel 管线族访问:opaque pass 分支据此决定是否走 RT 管线。
+    pub(crate) fn pixel_pipelines(&self) -> Option<&crate::pipeline::RtMeshPipelines> {
+        self.pixel_pipelines.as_ref()
+    }
+
+    /// init 在栅格原子事务之外创建 RT 管线族后注入;场景替换重建驻留时
+    /// 由 reestimate 原样迁移(管线族只依赖 device,不依赖场景内容)。
+    pub(super) fn install_pixel_pipelines(
+        &mut self,
+        pipelines: crate::pipeline::RtMeshPipelines,
+    ) {
+        self.pixel_pipelines = Some(pipelines);
+    }
+
+    /// init 的 error scope 捕获到管线族创建错误后丢弃(可能含 invalid
+    /// 资源),opaque pass 据此回退栅格。
+    pub(super) fn drop_pixel_pipelines(&mut self) {
+        self.pixel_pipelines = None;
+    }
 }
 
 impl Renderer {
@@ -318,15 +346,28 @@ impl Renderer {
     /// fail-closed:RT 关闭、frame RT 槽卸下、诊断记录原因,绝不阻塞栅格
     /// 主通路。成功则同步重建 frame RT 绑定(引用 IBL 纹理与 TLAS)。
     pub(super) fn reestablish_rt_residency(&mut self) {
+        // F2 pixel 管线族只依赖 device 能力,不依赖场景内容;跨驻留重建
+        // 先 take 出来原样装回,重建失败时随旧驻留一起关闭(fail-closed)。
+        let pixel_pipelines = self
+            .rt_residency
+            .as_mut()
+            .and_then(|residency| residency.pixel_pipelines.take());
         self.rt_residency = None;
         self.rt_frame_bind_group = None;
         match RtSceneResidency::build(&self.device, &self.scene) {
-            Ok((residency, blas_encoder, tlas_encoder)) => {
+            Ok((mut residency, blas_encoder, tlas_encoder)) => {
                 // BLAS 必须先于 TLAS 完成;单次 submit 内 FIFO 保证执行序。
                 self.queue
                     .submit([blas_encoder.finish(), tlas_encoder.finish()]);
                 self.rt_frame_bind_group = self.rt_frame_bind_group_resource(&residency);
+                residency.pixel_pipelines = pixel_pipelines;
                 self.diagnostics.note_rt_tlas_resident();
+                // F2 pixel:管线族迁移成功且场景无 custom shader 批次时,
+                // 诊断升级为真实像素消费态;否则保持驻留态(含 custom
+                // shader 场景——其批次只能用普通 frame 绑定,整帧回退栅格)。
+                if residency.pixel_pipelines.is_some() && self.scene.shader_materials.is_none() {
+                    self.diagnostics.note_rt_directional_shadow_pixels();
+                }
                 self.rt_residency = Some(residency);
             }
             Err(RtResidencyReject::MissingFeature) => {

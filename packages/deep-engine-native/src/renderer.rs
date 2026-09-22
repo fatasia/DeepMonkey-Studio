@@ -58,6 +58,10 @@ mod material_uniform_fastpath_gpu_tests;
 mod replacement_present;
 mod rt_residency;
 #[cfg(test)]
+mod rt_pixel_gpu_tests;
+#[cfg(test)]
+mod rt_pixel_tests;
+#[cfg(test)]
 mod rt_residency_tests;
 #[cfg(all(test, target_os = "windows"))]
 mod scene_incremental_fastpath_gpu_tests;
@@ -112,6 +116,8 @@ pub struct Renderer {
     /// F2:硬件 RT 驻留(静态实例 BLAS 缓存 + 场景 TLAS)。本切片只做驻留
     /// 与绑定,不做像素消费;任何拒绝 fail-closed 关闭 RT,不阻塞栅格主通路。
     rt_residency: Option<rt_residency::RtSceneResidency>,
+    /// F3: 非空探针才创建的 renderer-owned storage；旧包和空场景保持 None。
+    probe_gi_storage: Option<crate::probe_gi_storage::ProbeGiStorage>,
     shadow_map: ShadowMap,
     ibl: GpuIblEnvironment,
     shadow_cache: ShadowDirtyCache,

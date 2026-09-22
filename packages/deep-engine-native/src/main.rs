@@ -9,6 +9,8 @@ mod bloom_pipeline;
 mod chart_gpu_tests;
 mod cli;
 mod cli_viewer_tools;
+#[cfg(windows)]
+mod dashboard_video_gpu;
 mod deep2d_atlas_gpu;
 #[cfg(test)]
 mod deep2d_clip_gpu_tests;
@@ -73,6 +75,7 @@ mod ibl_probe;
 mod mesh_pass;
 #[cfg(test)]
 mod million_point_gpu_tests;
+mod outline_pass;
 mod output_pass;
 mod pipeline;
 mod player_annotations;
@@ -83,6 +86,10 @@ mod player_measurement;
 mod player_picking;
 mod player_shader_plan;
 mod player_state;
+// F3 GI storage 的 bin 侧依赖:probe_gi_abi 与 lib 共用同一源文件,
+// 缺此声明时 bin target 编译失败(probe_gi_storage 的 crate:: 引用无法解析)。
+mod probe_gi_abi;
+mod probe_gi_storage;
 #[cfg(test)]
 mod prototype_gpu_tests;
 mod publication_verification;

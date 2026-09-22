@@ -36,19 +36,43 @@ pub enum ProbeGiAbiError {
 
 impl IrradianceProbeRecord {
     pub const fn zero() -> Self {
-        Self { irradiance: [0.0; 3], validity: 0.0, mean_distance: 0.0,
-            distance_variance: 0.0, occlusion_floor: 0.0, padding: 0.0,
-            position_offset: [0.0; 3], position_padding: 0.0, reserved: [0.0; 12] }
+        Self {
+            irradiance: [0.0; 3],
+            validity: 0.0,
+            mean_distance: 0.0,
+            distance_variance: 0.0,
+            occlusion_floor: 0.0,
+            padding: 0.0,
+            position_offset: [0.0; 3],
+            position_padding: 0.0,
+            reserved: [0.0; 12],
+        }
     }
 
     pub fn validate(&self) -> Result<(), ProbeGiAbiError> {
-        if !self.irradiance.iter().all(|value| value.is_finite() && *value >= 0.0 && *value <= 65_504.0)
-            || !self.validity.is_finite() || !(0.0..=1.0).contains(&self.validity)
-            || !self.mean_distance.is_finite() || !(0.0..=1_000_000.0).contains(&self.mean_distance)
-            || !self.distance_variance.is_finite() || !(0.0..=1_000_000_000_000.0).contains(&self.distance_variance)
-            || !self.occlusion_floor.is_finite() || !(0.0..=1.0).contains(&self.occlusion_floor)
-            || !self.position_offset.iter().all(|value| value.is_finite() && value.abs() <= 1_000_000.0)
-            || !self.reserved.iter().all(|value| value.is_finite() && *value == 0.0) || self.padding != 0.0 || self.position_padding != 0.0 {
+        if !self
+            .irradiance
+            .iter()
+            .all(|value| value.is_finite() && *value >= 0.0 && *value <= 65_504.0)
+            || !self.validity.is_finite()
+            || !(0.0..=1.0).contains(&self.validity)
+            || !self.mean_distance.is_finite()
+            || !(0.0..=1_000_000.0).contains(&self.mean_distance)
+            || !self.distance_variance.is_finite()
+            || !(0.0..=1_000_000_000_000.0).contains(&self.distance_variance)
+            || !self.occlusion_floor.is_finite()
+            || !(0.0..=1.0).contains(&self.occlusion_floor)
+            || !self
+                .position_offset
+                .iter()
+                .all(|value| value.is_finite() && value.abs() <= 1_000_000.0)
+            || !self
+                .reserved
+                .iter()
+                .all(|value| value.is_finite() && *value == 0.0)
+            || self.padding != 0.0
+            || self.position_padding != 0.0
+        {
             return Err(ProbeGiAbiError::InvalidRecord);
         }
         Ok(())
@@ -68,9 +92,15 @@ pub fn validate_layout() -> Result<(), ProbeGiAbiError> {
 }
 
 pub fn validate_record_count(count: usize) -> Result<usize, ProbeGiAbiError> {
-    if count > PROBE_GI_MAX_RECORDS { return Err(ProbeGiAbiError::RecordBudgetExceeded); }
-    let bytes = count.checked_mul(PROBE_GI_RECORD_BYTES).ok_or(ProbeGiAbiError::RecordBudgetExceeded)?;
-    if bytes > PROBE_GI_MAX_STORAGE_BYTES { return Err(ProbeGiAbiError::RecordBudgetExceeded); }
+    if count > PROBE_GI_MAX_RECORDS {
+        return Err(ProbeGiAbiError::RecordBudgetExceeded);
+    }
+    let bytes = count
+        .checked_mul(PROBE_GI_RECORD_BYTES)
+        .ok_or(ProbeGiAbiError::RecordBudgetExceeded)?;
+    if bytes > PROBE_GI_MAX_STORAGE_BYTES {
+        return Err(ProbeGiAbiError::RecordBudgetExceeded);
+    }
     Ok(bytes)
 }
 
@@ -78,7 +108,9 @@ pub fn pack_records(records: &[IrradianceProbeRecord]) -> Result<Vec<u8>, ProbeG
     validate_layout()?;
     validate_record_count(records.len())?;
     let mut output = Vec::with_capacity(records.len() * PROBE_GI_RECORD_BYTES);
-    for record in records { output.extend_from_slice(&record.to_bytes()?); }
+    for record in records {
+        output.extend_from_slice(&record.to_bytes()?);
+    }
     Ok(output)
 }
 
@@ -92,9 +124,17 @@ mod tests {
     use super::*;
 
     fn sample() -> IrradianceProbeRecord {
-        IrradianceProbeRecord { irradiance: [1.0, 2.0, 3.0], validity: 0.75,
-            mean_distance: 4.0, distance_variance: 5.0, occlusion_floor: 0.1, padding: 0.0,
-            position_offset: [0.2, -0.3, 0.4], position_padding: 0.0, reserved: [0.0; 12] }
+        IrradianceProbeRecord {
+            irradiance: [1.0, 2.0, 3.0],
+            validity: 0.75,
+            mean_distance: 4.0,
+            distance_variance: 5.0,
+            occlusion_floor: 0.1,
+            padding: 0.0,
+            position_offset: [0.2, -0.3, 0.4],
+            position_padding: 0.0,
+            reserved: [0.0; 12],
+        }
     }
 
     #[test]
@@ -107,7 +147,8 @@ mod tests {
     #[test]
     fn packed_words_match_web_field_order() {
         let bytes = sample().to_bytes().unwrap();
-        let words: Vec<f32> = bytes.chunks_exact(4)
+        let words: Vec<f32> = bytes
+            .chunks_exact(4)
             .map(|chunk| f32::from_ne_bytes(chunk.try_into().unwrap()))
             .collect();
         assert_eq!(&words[0..4], &[1.0, 2.0, 3.0, 0.75]);
@@ -117,11 +158,14 @@ mod tests {
 
     #[test]
     fn invalid_values_fail_closed() {
-        let mut invalid = sample(); invalid.validity = 2.0;
+        let mut invalid = sample();
+        invalid.validity = 2.0;
         assert_eq!(invalid.validate(), Err(ProbeGiAbiError::InvalidRecord));
-        invalid = sample(); invalid.mean_distance = f32::NAN;
+        invalid = sample();
+        invalid.mean_distance = f32::NAN;
         assert_eq!(invalid.validate(), Err(ProbeGiAbiError::InvalidRecord));
-        invalid = sample(); invalid.position_offset[0] = 2_000_000.0;
+        invalid = sample();
+        invalid.position_offset[0] = 2_000_000.0;
         assert_eq!(invalid.validate(), Err(ProbeGiAbiError::InvalidRecord));
     }
 
@@ -129,8 +173,14 @@ mod tests {
     fn record_budget_is_bounded_and_empty_scene_is_zero_allocation() {
         assert_eq!(validate_record_count(0).unwrap(), 0);
         assert!(empty_scene_allocation().unwrap().is_empty());
-        assert_eq!(validate_record_count(PROBE_GI_MAX_RECORDS).unwrap(), PROBE_GI_MAX_STORAGE_BYTES);
-        assert_eq!(validate_record_count(PROBE_GI_MAX_RECORDS + 1), Err(ProbeGiAbiError::RecordBudgetExceeded));
+        assert_eq!(
+            validate_record_count(PROBE_GI_MAX_RECORDS).unwrap(),
+            PROBE_GI_MAX_STORAGE_BYTES
+        );
+        assert_eq!(
+            validate_record_count(PROBE_GI_MAX_RECORDS + 1),
+            Err(ProbeGiAbiError::RecordBudgetExceeded)
+        );
     }
 
     #[test]

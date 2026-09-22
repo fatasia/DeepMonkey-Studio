@@ -4,7 +4,7 @@ use super::Renderer;
 use crate::{
     events::RenderOutcome,
     gpu_submission::SubmissionCheck,
-    mesh_pass::{encode_opaque_pass, encode_transparent_pass},
+    mesh_pass::{encode_opaque_pass, encode_opaque_pass_rt, encode_outline_mask, encode_transparent_pass},
     shadow_pass::{
         CascadeScene, CascadeShadowTimestamps, encode_shadow_cascades_parallel,
         shadow_executor_threads,
@@ -23,6 +23,25 @@ impl Renderer {
         if self.size.width == 0 || self.size.height == 0 {
             finish(&mut self.telemetry, token, FrameResult::Skipped);
             return RenderOutcome::Skipped;
+        }
+        #[cfg(windows)]
+        if let (Some(video), Some(painter)) = (&mut self.dashboard_video, &self.deep2d) {
+            if let Err(error) = video
+                .sync_slots(
+                    &self.device,
+                    painter.dashboard_video_slots(),
+                    painter.logical_size(),
+                )
+                .and_then(|_| {
+                    video.update_frame_uniform(&self.queue, (self.size.width, self.size.height));
+                    video.advance(&self.queue).map(|_| ())
+                })
+            {
+                finish(&mut self.telemetry, token, FrameResult::Failed);
+                return RenderOutcome::Failed(format!(
+                    "native dashboard video frame update failed: {error}"
+                ));
+            }
         }
 
         let acquire = timer(token);
@@ -172,16 +191,40 @@ impl Renderer {
 
         gpu_begin(&self.telemetry, GpuSegment::Opaque, &mut encoder);
         let opaque = timer(token);
-        encode_opaque_pass(
-            &mut encoder,
-            &self.forward_targets,
-            &self.frame_bind_group,
-            &self.scene,
-            &self.culling,
-            self.lod.as_ref(),
-            &self.pipelines,
-            self.hi_z.is_some(),
-        );
+        // F2 pixel:opaque/MASK pass 的 RT 分支。全部就绪条件(设备 ray
+        // query、TLAS 驻留、RT frame 绑定、Ray Query 管线族、场景无 custom
+        // shader 批次——custom 只能绑普通 frame layout)任一缺失都回退既有
+        // 栅格路径,逐帧判定,fail-closed。
+        let rt_opaque = match (&self.rt_residency, &self.rt_frame_bind_group) {
+            (Some(residency), Some(bind_group)) if self.scene.shader_materials.is_none() => {
+                residency
+                    .pixel_pipelines()
+                    .map(|pipelines| (pipelines, bind_group))
+            }
+            _ => None,
+        };
+        match rt_opaque {
+            Some((pipelines, rt_bind_group)) => encode_opaque_pass_rt(
+                &mut encoder,
+                &self.forward_targets,
+                rt_bind_group,
+                &self.scene,
+                &self.culling,
+                self.lod.as_ref(),
+                pipelines,
+                self.hi_z.is_some() || self.scene.has_outline(),
+            ),
+            None => encode_opaque_pass(
+                &mut encoder,
+                &self.forward_targets,
+                &self.frame_bind_group,
+                &self.scene,
+                &self.culling,
+                self.lod.as_ref(),
+                &self.pipelines,
+                self.hi_z.is_some() || self.scene.has_outline(),
+            ),
+        }
         record(&mut self.telemetry, token, CpuSegment::Opaque, opaque);
         gpu_end(&mut self.telemetry, GpuSegment::Opaque, true, &mut encoder);
 
@@ -224,6 +267,18 @@ impl Renderer {
             &mut encoder,
         );
 
+        if self.scene.has_outline() {
+            encode_outline_mask(
+                &mut encoder,
+                &self.forward_targets,
+                &self.frame_bind_group,
+                &self.scene,
+                self.outline_mask_pipelines.raw(),
+                &self.culling,
+                self.lod.as_ref(),
+            );
+        }
+
         if let Some(probe) = &self.shadow_probe {
             probe.copy_shadowed(&mut encoder, self.forward_targets.resolved_texture());
         }
@@ -237,6 +292,9 @@ impl Renderer {
             bloom.encode(&mut encoder);
         }
         self.output_pass.draw(&mut encoder, &view);
+        if self.scene.has_outline() {
+            self.outline_pass.draw(&mut encoder, &view);
+        }
         record(
             &mut self.telemetry,
             token,
@@ -254,6 +312,14 @@ impl Renderer {
         gpu_begin(&self.telemetry, GpuSegment::Deep2d, &mut encoder);
         let deep2d = timer(token).filter(|_| has_deep2d);
         if let Some(painter) = &self.deep2d {
+            #[cfg(windows)]
+            painter.draw_with_dashboard_videos(
+                &mut encoder,
+                &view,
+                (self.size.width, self.size.height),
+                self.dashboard_video.as_ref(),
+            );
+            #[cfg(not(windows))]
             painter.draw(&mut encoder, &view, (self.size.width, self.size.height));
         }
         record(&mut self.telemetry, token, CpuSegment::Deep2d, deep2d);
