@@ -1,4 +1,5 @@
 use deep_engine_native::{
+    author_grading::AuthorGrading,
     chart::ChartEpoch,
     contract::RenderPacket,
     deep2d::{Deep2dRuntimeContent, prepare_runtime_content},
@@ -10,6 +11,8 @@ use deep_engine_native::{
     },
     shader_package::DeepShaderPackageV2,
 };
+#[path = "player_content_camera.rs"]
+mod camera;
 #[path = "player_content_chart_entry.rs"]
 mod chart_entry;
 #[cfg(test)]
@@ -51,6 +54,8 @@ pub struct PlayerContent {
     pub lighting: Option<deep_engine_native::scene_lighting::DirectionalLighting>,
     /// v7 作者雾（exp2）；渲染器装配时经 `for_content` 替换宿主雾档。
     pub fog: Option<FogSettings>,
+    /// v9 作者色彩分级（六通道）；非中性时由输出 pass 在固定 ACES 前消费。
+    pub author_grading: Option<AuthorGrading>,
     pub shader_packages: Vec<DeepShaderPackageV2>,
     pub material_bindings: Vec<RuntimeMaterialShaderBinding>,
     /// v7 动态场景通道。先随包进入 PlayerContent，供宿主 replay/交互层消费；
@@ -189,6 +194,7 @@ impl PlayerContent {
             background: None,
             lighting: None,
             fog: None,
+            author_grading: None,
             shader_packages: Vec::new(),
             material_bindings: Vec::new(),
             dynamic_runtime: None,
@@ -215,6 +221,7 @@ impl PlayerContent {
             background,
             lighting,
             fog,
+            author_grading,
             shader_packages,
             material_bindings,
             dynamic_runtime,
@@ -303,6 +310,7 @@ impl PlayerContent {
             background,
             lighting,
             fog,
+            author_grading,
             shader_packages,
             material_bindings,
             dynamic_runtime,
@@ -325,43 +333,6 @@ impl PlayerContent {
 
     pub fn packet(&self) -> &RenderPacket {
         &self.packet
-    }
-
-    pub fn initial_view(&self) -> deep_engine_native::player_view::PlayerView {
-        let mut view = self.authored_view.unwrap_or_default();
-        let delta = self.authored_to_runtime_delta();
-        for axis in 0..3 {
-            view.target[axis] += delta[axis];
-        }
-        view
-    }
-
-    pub fn view_after_reload(
-        &self,
-        previous: &Self,
-        current: deep_engine_native::player_view::PlayerView,
-    ) -> deep_engine_native::player_view::PlayerView {
-        if self.coordinate_frame == previous.coordinate_frame {
-            return if self.authored_view == previous.authored_view {
-                current
-            } else {
-                self.initial_view()
-            };
-        }
-        if !self.same_authored_world_camera(previous) || current.clipping != [0.0; 4] {
-            return self.initial_view();
-        }
-        // Preserve orbit orientation/distance, moving only its local anchor between frames.
-        let translated = previous
-            .local_to_world(current.target.map(f64::from))
-            .and_then(|world| self.world_to_local(world));
-        match translated {
-            Ok(target) => deep_engine_native::player_view::PlayerView {
-                target: target.map(|v| v as f32),
-                ..current
-            },
-            Err(_) => self.initial_view(),
-        }
     }
 
     pub fn coordinate_frame(
@@ -408,16 +379,16 @@ impl PlayerContent {
         }
         let mut packet = self.packet.clone();
         for instance in &mut packet.instances {
-            for axis in 0..3 {
-                instance.transform[12 + axis] += delta[axis];
+            for (axis, value) in delta.iter().enumerate() {
+                instance.transform[12 + axis] += *value;
                 if !instance.transform[12 + axis].is_finite() {
                     return Err("native camera-relative instance rebase overflow".into());
                 }
             }
         }
         let mut next_view = view;
-        for axis in 0..3 {
-            next_view.target[axis] += delta[axis];
+        for (axis, value) in delta.iter().enumerate() {
+            next_view.target[axis] += *value;
         }
         let profile = self
             .coordinate_frame
@@ -494,31 +465,6 @@ impl PlayerContent {
         self.coordinate_frame()
             .map(|frame| frame.origin_array())
             .unwrap_or([0.0; 3])
-    }
-
-    fn same_authored_world_camera(&self, previous: &Self) -> bool {
-        let (Some(next), Some(old)) = (&self.authored_camera, &previous.authored_camera) else {
-            return false;
-        };
-        if next.vertical_fov_degrees != old.vertical_fov_degrees
-            || next.near != old.near
-            || next.far != old.far
-        {
-            return false;
-        }
-        for (next_local, old_local) in [(next.position, old.position), (next.target, old.target)] {
-            let next_world: [f64; 3] =
-                std::array::from_fn(|i| next_local[i] + self.authored_coordinate_origin[i]);
-            let old_world: [f64; 3] =
-                std::array::from_fn(|i| old_local[i] + previous.authored_coordinate_origin[i]);
-            if (0..3).any(|i| {
-                (next_world[i] - old_world[i]).abs()
-                    > deep_engine_native::runtime_coordinates::MAX_ROUND_TRIP_ERROR
-            }) {
-                return false;
-            }
-        }
-        true
     }
 
     pub fn scene_content_key(&self) -> u64 {
@@ -729,7 +675,9 @@ fn apply_dynamic_transforms(
                 ])
             }
             "scale" => node.scale = Some([sample.value[0], sample.value[1], sample.value[2]]),
-            "camera-position" | "camera-target" => continue,
+            // B2-a object-visible 是场景级可见性，不是实例变换；正式可见性消费
+            // 由后续可见性切片承接，此处先跳过以避免带该轨道的包在 Native 播放中断。
+            "camera-position" | "camera-target" | "object-visible" => continue,
             other => {
                 return Err(format!(
                     "dynamic playback cannot consume transform property {other:?}"
