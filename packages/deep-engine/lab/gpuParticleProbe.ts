@@ -3,6 +3,8 @@ import {
   compileGpuParticleEmitters, submitGpuParticleEmitterFrame,
   type DeviceSession, type GpuParticleSeed,
 } from "@bim-studio/deep-engine/webgpu";
+import { PbrParticlePass } from "../src/webgpu/pbrParticlePass.js";
+import { runResourceCleanup } from "../src/webgpu/resourceCleanup.js";
 
 export interface GpuParticleProbeResult {
   readonly action: "gpu-particles";
@@ -15,6 +17,8 @@ export interface GpuParticleProbeResult {
   readonly burstBudgetDegraded: boolean;
   readonly expiredParticleRemoved: boolean;
   readonly failureRetainedActive: boolean;
+  /** A4 真机渲染证据：离屏 HDR 绘制后非背景像素数量；undefined 表示未执行。 */
+  readonly renderedNonBackgroundPixels?: number;
 }
 
 interface ReadParticle { readonly position: readonly number[]; readonly age: number; readonly id: number }
@@ -36,6 +40,7 @@ export async function runGpuParticleProbe(session: DeviceSession): Promise<GpuPa
       burst: { maxEvents: 2, particleBudget: 4 } });
   const stateBytes = runtime.capacityEvidence.capacity * GPU_PARTICLE_STRIDE;
   let readback: GPUBuffer | undefined;
+  let binding: import("@bim-studio/deep-engine/webgpu").GpuParticleRenderBinding | undefined;
   try {
     const deltaTime = 0.25;
     const spawned = await runtime.beginFrame({ deltaTime, acceleration: [0, 0, 0], drag: 0, bursts: [
@@ -49,7 +54,7 @@ export async function runGpuParticleProbe(session: DeviceSession): Promise<GpuPa
     const burstBudgetDegraded = spawned.snapshot?.burstEvidence?.submittedParticleCount === 4
       && spawned.snapshot.burstEvidence.degraded;
     const moved = await submitGpuParticleEmitterFrame(runtime, { deltaTime });
-    const binding = moved.snapshot?.binding;
+    binding = moved.snapshot?.binding;
     if (moved.status !== "committed" || !binding) throw new Error("GPU particle frame did not commit.");
     const beforeFailure = runtime.current;
     const failed = await runtime.beginFrame({ deltaTime: Number.NaN });
@@ -84,12 +89,59 @@ export async function runGpuParticleProbe(session: DeviceSession): Promise<GpuPa
       && Math.abs(particle.position[2]!) < 1e-4 && Math.abs(particle.age - deltaTime) < 1e-4);
     const expiredParticleRemoved = !particles.some(particle => particle.id === 99);
     const expectedAlive = program.particles.length + 4;
+
+    // A4 真机渲染证据：用刚提交的 binding（上一帧模拟结果）在离屏 HDR 上绘制，
+    // 读回 rgba8unorm 像素统计非背景数量；空白对照先证明 clear 干净。
+    // 渲染块必须在 binding 作用域内：binding 声明在外层 try 中，这里直接引用。
+    let renderedNonBackgroundPixels: number | undefined;
+    const pass = new PbrParticlePass(session, "rgba8unorm", "depth24plus");
+    const size = 128;
+    const hdr = session.own(session.device.createTexture({ label: "Deep GPU particle probe HDR",
+      size: { width: size, height: size }, format: "rgba8unorm",
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC }));
+    const depth = session.own(session.device.createTexture({ label: "Deep GPU particle probe depth",
+      size: { width: size, height: size }, format: "depth24plus",
+      usage: GPUTextureUsage.RENDER_ATTACHMENT }));
+    const pixels = session.own(session.device.createBuffer({ label: "Deep GPU particle pixel readback",
+      size: size * size * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ }));
+    try {
+      const blankEncoder = session.device.createCommandEncoder({ label: "particle blank" });
+      const clearPass = blankEncoder.beginRenderPass({ label: "particle blank clear", colorAttachments: [{
+        view: hdr.createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }],
+        depthStencilAttachment: { view: depth.createView(), depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "store" } });
+      clearPass.end();
+      session.device.queue.submit([blankEncoder.finish()]);
+      const drawEncoder = session.device.createCommandEncoder({ label: "particle draw" });
+      pass.encode({ encoder: drawEncoder, colorView: hdr.createView(), depthView: depth.createView(),
+        width: size, height: size,
+        // 正交近似：把场景坐标缩放 0.1 并把 alarm 中心 (0,2,0) 映射到 NDC (0,0,0.5)。
+        camera: { viewProjection: [0.1, 0, 0, 0, 0, 0.1, 0, 0, 0, 0, 0.1, 0, 0, -0.15, 0.5, 1],
+          cameraRight: [1, 0, 0], cameraUp: [0, 1, 0] }, binding });
+      session.device.queue.submit([drawEncoder.finish()]);
+      const drawPassEncoder = session.device.createCommandEncoder({ label: "particle pixel copy" });
+      drawPassEncoder.copyTextureToBuffer({ texture: hdr }, { buffer: pixels, bytesPerRow: size * 4,
+        rowsPerImage: size }, { width: size, height: size });
+      session.device.queue.submit([drawPassEncoder.finish()]);
+      await pixels.mapAsync(GPUMapMode.READ);
+      const texels = new Uint8Array(pixels.getMappedRange().slice(0));
+      pixels.unmap();
+      renderedNonBackgroundPixels = 0;
+      for (let index = 0; index < texels.length; index += 4) {
+        if (texels[index]! > 0 || texels[index + 1]! > 0 || texels[index + 2]! > 0) renderedNonBackgroundPixels += 1;
+      }
+    } finally {
+      runResourceCleanup("Deep GPU particle render probe cleanup failed.", [
+        () => session.release(hdr), () => session.release(depth), () => session.release(pixels),
+        () => pass.dispose(),
+      ]);
+    }
     const success = aliveCount === expectedAlive && indirect[0] === 6 && indirect[1] === expectedAlive
       && presetsVerified && timeContinuous && burstVerified && burstBudgetDegraded
-      && expiredParticleRemoved && failureRetainedActive;
+      && expiredParticleRemoved && failureRetainedActive
+      && (renderedNonBackgroundPixels ?? 0) > 0;
     return Object.freeze({ action: "gpu-particles", success, aliveCount, indirectCount: indirect[1]!,
       presetsVerified, timeContinuous, burstCount, burstBudgetDegraded,
-      expiredParticleRemoved, failureRetainedActive });
+      expiredParticleRemoved, failureRetainedActive, renderedNonBackgroundPixels });
   } finally {
     if (readback?.mapState === "mapped") readback.unmap();
     if (readback) session.release(readback); runtime.dispose();
@@ -105,4 +157,16 @@ function matchesExpected(particles: readonly ReadParticle[], seed: GpuParticleSe
   const expectedPosition = seed.position.map((value, axis) => value + seed.velocity[axis]! * elapsed);
   return Math.abs(particle.age - (unwrappedAge - cycles * seed.lifetime)) < 1e-4
     && expectedPosition.every((value, axis) => Math.abs(particle.position[axis]! - value) < 1e-4);
+}
+
+/** 独立入口：自行打开 DeviceSession，供 headless runner 直接调用。 */
+export async function runGpuParticleProbeStandalone(): Promise<GpuParticleProbeResult> {
+  if (!navigator.gpu) throw new Error("navigator.gpu unavailable.");
+  const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+  if (!adapter) throw new Error("requestAdapter returned null.");
+  const { DeviceSession } = await import("../src/webgpu/deviceSession.js");
+  const canvas = new OffscreenCanvas(8, 8) as unknown as HTMLCanvasElement;
+  const session = await DeviceSession.open(canvas, navigator.gpu, new AbortController().signal);
+  try { return await runGpuParticleProbe(session); }
+  finally { session.dispose(); }
 }
