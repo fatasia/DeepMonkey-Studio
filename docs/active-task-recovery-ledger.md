@@ -3154,3 +3154,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **I2 UI 消费缺口定位**：`degradedCapabilities` 由发布 payload 生成（nativeSceneClientPayload/sceneNativeFrozenPayload，有测试），但全 UI 层零消费。**语义判定（防伪）**：该清单装的是对象/字段降级路径（`report.items[].path`，如 `primitives[3]`），不是工具能力标识——直接映射到 PublishedViewerToolDock 按钮隐藏会语义错位。工具级不可用的正确依据是运行时 player_diagnostics 的 CapabilityStatus（gpu_timestamp_queries/hardware_ray_query 等，Native 侧已有）与场景编译字段完整性。I2 UI 切片需按此语义重定义后再做：工具坞按"场景未编译字段+运行时诊断"驱动显隐，不冒用对象级降级清单。
 - 门禁续证：web tsc 0 错误（上一轮）、native 双门禁绿（第一轮）。
 - 下一可执行动作：两子代理回报后验收提交；I2 UI 切片按上述语义派发（工具坞显隐消费端）；F6 宿主入口切片排队。
+
+### 2026-09-23 V2 Native 正式发布——可行验证切片（ZCode）
+
+- **构建**：`cargo build --release --bin deep-engine-native`，3m53s，**0 错误**（17 条既有 warning）；产物 19,131,904 字节，SHA-256 `e4ae584b94052c852041e71833c0a22eda2eb3f0df78857258eb99a0d34c8278`。
+- **实窗验证（仓库既有 verify-scene-native-window 链：EXE 复制进权限锁死临时目录 → `--verify-package/--report/--nonce/--frames` 真实进程 → 退出码 0 → 报告逐项校验）**：①新编译最小 box 包（2584B，hash `16b528e1…`）10/10 帧 PASS；②HEAD 仓内 fixture `runtime-package-coordinate-origin-a.json`（hash `0a6a0529…`）10/10 帧 PASS。两包均 1200×800 真实窗口、Vulkan / RTX 4060 Laptop（驱动 595.79）、gpuErrorsClean=true、干净退出 <2s；EXE 原生日志证实真实渲染循环（scene cache epoch：geometry/material/instance 真实上传，smoke GPU submission scopes=clean callbacks=clean）；报告 packageHash 与 Node 侧 parseDeepRuntimePackage 逐字节一致＝内容加载对账通过。
+- **Portable 正式发布包**：`package-windows-portable.ps1` 打包链全过（smokeChecks=27、purityPassed=true，zip 56 条目，archiveSha256 `3160d388…`）；portable EXE（SHA-256 `5de84d30…`）同一实窗验证链 10/10 帧 PASS。产物与 zip 落 gitignore 的 artifacts/。
+- **fixture 生成命令漂移（如实记录，未越界修复）**：既有 `scripts/generate-coordinate-origin-fixtures.mts` 断言相机 schema===2，当前编译器已升级 schema 3，脚本运行失败；本切片用同编译链变体脚本生成最小包落 test-output，并以 HEAD 既有 fixture 产物（解析 valid）补证。
+- **失败与边界（诚实声明）**：dashboard 旧产物包走 scene 验证器 60s 超时（EXE 输出 `native GPU occlusion consume indirect template size mismatch` 后未退出）——dashboard 正式链应为 `.dmda` 归档 + `run-dashboard-client-native.mts`，该 occlusion 诊断值得独立排查；设备丢失演练、旧版本恢复、嵌入 overlay 单文件客户端（`--licenses` 在裸/portable EXE 上正确 fail-closed `overlay/no-embedded-package`）、Three WebView、全操作矩阵与画面对拍均未做。无代码改动（构建零错误、验证全过），工作树并行 WIP 未触碰。
+- 证据：`test-output/v2-native-release-20260923/evidence.md`（含全部命令、输出、耗时；gitignore，路径引用不随库分发）。
