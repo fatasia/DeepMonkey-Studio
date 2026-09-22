@@ -206,7 +206,8 @@
     "test:cluster-lod-gpu": "node scripts/clusterLodGpuTest.mjs",
     "test:soft-raster-gpu": "node scripts/softRasterizeGpuTest.mjs",
     "test:probe-occlusion-gpu": "node scripts/probeOcclusionGpuTest.mjs",
-    "test:probe-radiance-gpu": "node scripts/probeRadianceGpuTest.mjs"
+    "test:probe-radiance-gpu": "node scripts/probeRadianceGpuTest.mjs",
+    "test:probe-grid-bake-gpu": "node scripts/probeGridBakeGpuTest.mjs"
   },
   "dependencies": {
     "@webgpu/types": "0.1.72"
