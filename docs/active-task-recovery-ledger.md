@@ -3289,3 +3289,10 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **门禁**：packages/contracts vitest **341/0** + tsc 0 错；apps/web tsc **0 错**；prefabs 全目录 + industrialPrefabFence + industrialPrefabGroundSnap + compileSceneRenderPacket + scenePublicationCompatibility + Inspector **93/93**（其中 linearPrefab 8、geometry 2、fence 3、groundSnap 1 既有全绿）。
 - **诚实边界**：I3 四缺口仍剩两项——道路 junction（路口连接）、道路碰撞体接入，本切片未动；作者态 Inspector 错误条交互链未过浏览器级交互测试（web 无 @testing-library，静态渲染断言+路径层抛错测试覆盖，点击→错误条显示的 DOM 行为未实测）；发布编译无地形数据故不传 groundY 属口径选择（避免把作者已投影到高台表面的点二次压到 y=0），若未来发布侧引入显式基准面字段需重新接线；web 全量 vitest 未跑（改动面收敛，相关面 93+合同 341 全绿）。
 - **边界遵守**：未触碰 compileSceneRuntimePackage/solid_environment/environmentTypes/environment.ts/babylon-web 等并行 WIP 文件；未 push。
+
+### 2026-09-23 30 分钟自检（第十五轮）：V4 矩阵二次纠正（重复建设叫停）
+
+- **发现并叫停重复建设**：第六轮 V4 盘点漏查 `test-output/a01x-*` 目录，误判"Babylon 轨道 harness 不存在"并派发了单侧采集任务。实测 `a01x-babylon-pairing-20260920-r1/` 是**配对级**完整产出（instanced-opaque-pbr-1024、browser-webgpu 轨道、5 轮交替、candidate/reference 双侧、三 hash、visualSimilarity+判定 criteria：cpu-frame-p95 回归阈 5%、相似度 ≥0.92），比派发的单侧方案更完整。已发指令叫停，代理转做 a01x 覆盖度核对并入台账。
+- **二次纠正（合同级）**：台账 2026-09-22 条目已明确——用户规定**复用既有统一 BENCH 规范，不新建平行体系**；BENCH 合同已升级 v2 并失败关闭（Native wgpu+0.19、CPU/GPU P50/P95/P99、30min 长稳 P99、加载到可交互、输入延迟、内存、画质相似度 ≥0.98、正向改善门槛、方向反写拒绝）。第六轮 V4 矩阵中"Babylon 轨道不存在"作废；正确口径：V4 四对手轨道全部应挂接 BENCH v2 合同体系，缺口是**合同 v2 的指标完备度**（长稳/输入延迟/相似度采集）而非缺 harness。第六轮"自建 Babylon harness"动作定性为违反不新建平行体系纪律，已纠正。
+- 失败归因：主线程盘点时只扫了 test-output 顶层目录名未逐目录开箱核对，教训=V4/基准类盘点必须先查 a01x-* 与 BENCH 合同条目再下"缺失"结论。
+- 子代理：I3 贴地/坡度在跑（linearPrefabPath 等文件在途）；Babylon 代理已收指令转覆盖度核对。
