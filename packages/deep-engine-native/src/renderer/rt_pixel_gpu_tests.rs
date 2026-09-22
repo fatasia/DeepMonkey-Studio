@@ -2,11 +2,19 @@
 //! opaque/MASK 管线族,验证 `fragment_main_rt` 拼接模块的 WGSL 合法性与
 //! binding 10 布局对齐。非 RT 适配器上跳过(与 hardware_ray_query 同界)。
 
+// F2 RT/栅格同场景阴影像素对拍作为本模块的子模块挂载,避免改动
+// renderer.rs 的模块清单(该文件在共享工作树中有并行会话的进行中改动)。
+#[cfg(test)]
+#[path = "rt_raster_parity_gpu_tests.rs"]
+mod rt_raster_parity_gpu_tests;
+
 use crate::frame_bindings::{create_frame_layouts, create_native_mesh_rt_shader};
 use crate::gpu_textures::create_material_layout;
 use crate::pipeline::create_rt_mesh_pipelines;
 
-fn request_ray_query_device() -> Option<(wgpu::Device, wgpu::Queue)> {
+/// 真机 ray-query 设备请求;RT/栅格像素对拍(rt_raster_parity_gpu_tests)
+/// 与本文件同界复用。非 RT 适配器返回 None,调用方按测试跳过处理。
+pub(crate) fn request_ray_query_device() -> Option<(wgpu::Device, wgpu::Queue)> {
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
     descriptor.backends = wgpu::Backends::DX12 | wgpu::Backends::VULKAN;
     let instance = wgpu::Instance::new(descriptor);
