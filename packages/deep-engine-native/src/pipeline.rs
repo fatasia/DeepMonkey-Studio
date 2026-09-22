@@ -2,8 +2,12 @@
 mod mesh;
 #[path = "pipeline/raster.rs"]
 mod raster;
+#[path = "pipeline/rt.rs"]
+mod rt;
 #[path = "pipeline/shadow.rs"]
 mod shadow;
+
+pub(crate) use rt::{RtMeshPipelines, create_rt_mesh_pipelines};
 
 use deep_engine_native::{contract::AlphaMode, shadow_cache::ShadowCasterMode};
 use mesh::BlendSemantic;
