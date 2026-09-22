@@ -3388,3 +3388,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **门禁**：deep-engine typecheck 三 tsconfig **0 错误**；vitest src+lab 全量 **3935 通过/0 失败**（44 skip 既有）；node --test 27/0；runtime purity gate passed（746 源）；受影响面 rayTracing+lighting 388/0；apps/web compileSceneRuntimePackage.test.ts 28/28 全绿（F3 编译器输入合同只读验证，未触碰该在途文件）。途中按 source-size gate 纪律把初版 412 行编排文件拆为 math/service 两模块（新文件不进 blocking 列表）。
 - **诚实边界**：①`sourceSizeGate` 当前 failures=117 为 **HEAD 既有状态**（output_pass.rs 等在 HEAD 即 315 行，属并行在途波次文件），非本切片引入，未越界代修；②捕获纹理无距离通道，meanDistance/distanceVariance 输出 0（语义=无距离信息，纯函数已接受显式距离样本供后续切片）；③ambient 由宿主馈送（可接 EnvironmentAmbientReader 真实读回），本切片未在服务内自动接线；④级联多层（SceneIrradianceProbeCascadeBake）不做；⑤UI 烘焙按钮/发布对话框穿透仍未做（bake 输出经编译器合同测试+打包器真机校验双路径验证，但编辑器 UI→服务调用链不在本切片）；⑥空场景（无 opaque 几何）沿 producer 既有 fail-closed 拒绝烘焙，不产 bake。
 - 未 push；并行 WIP（lifecycle.rs、babylon-web、.tmp-*、F4 矩阵在途文件）未触碰。
+
+### 2026-09-23 30 分钟自检（第二十四轮）：F3 烘焙编排验收 + UI 穿透补位
+
+- **F3 探针网格烘焙编排服务验收通过**（2907cb3f+8d262faf）：纯函数层（planProbeGridCapture/probeGridReadbackLayout/decodeProbeGridCapture/aggregateProbeGridBake——validity=捕获覆盖 alpha 不虚构、越界/重复 fail loud、查表与供给顺序无关确定性）+ GPU 编排层（复用 encodeSourceRadiance 一次 dispatch 全网格、packNativeProbeGridRecords 同源校验对账、溢出哨兵拒绝）。**真机 gate TRUE 一次通过**：8/8 探针覆盖、逐 cell GPU/CPU 对拍最差 2.33e-4（f16 容差 1e-3）、两次独立 bake JSON 逐位一致。门禁：3935/0+三 tsconfig 0+node --test 27/0+purity gate 过。主线程复跑 15/15。边界：捕获纹理无距离通道（meanDistance=0）、UI 穿透未做（已派下一切片）。
+- **满载补位**：空闲代理派 F3 烘焙 UI 与发布穿透（面板动作+状态承载+prepareNativeSceneClientPayload 透传，端到端 UI→包内字段）；V1 runner 代理在跑。
