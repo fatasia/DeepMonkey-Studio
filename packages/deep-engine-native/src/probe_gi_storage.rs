@@ -55,6 +55,22 @@ impl ProbeGiStorage {
             return Ok(None);
         }
         let packed = pack_records(records)?;
+        Self::from_packed(device, packed, records.len()).map(Some)
+    }
+
+    /// 用已通过合同校验的打包字节创建 storage。网格三线性模式必须走本入口：
+    /// 网格头记录（padding=baseProbeRecords、v2 布局头合法占用保留区）不在
+    /// `pack_records` 的逐记录 ABI 校验范围内，其结构由 `probe_gi_grid`
+    /// 级联 decode 合同先行校验（见 `pack_cascade_records`）。
+    pub fn from_packed(
+        device: &wgpu::Device,
+        packed: Vec<u8>,
+        record_count: usize,
+    ) -> Result<Self, ProbeGiStorageError> {
+        if packed.is_empty() {
+            validate_record_count(0)?;
+            return Err(ProbeGiStorageError::DeviceLimitExceeded);
+        }
         let byte_len =
             u64::try_from(packed.len()).map_err(|_| ProbeGiStorageError::DeviceLimitExceeded)?;
         if byte_len < PROBE_GI_STORAGE_MIN_BINDING_BYTES
@@ -90,13 +106,13 @@ impl ProbeGiStorage {
                 resource: buffer.as_entire_binding(),
             }],
         });
-        Ok(Some(Self {
+        Ok(Self {
             buffer,
             layout,
             bind_group,
-            record_count: records.len(),
+            record_count,
             byte_len,
-        }))
+        })
     }
 
     pub fn buffer(&self) -> &wgpu::Buffer {

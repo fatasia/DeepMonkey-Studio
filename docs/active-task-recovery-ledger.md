@@ -3239,3 +3239,13 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - HEAD=b755b1e3；子代理①（V4 Babylon harness）与②（F3 多层级联，probe_gi_grid/storage/init 三文件在途）均在跑。
 - **I3 初核**：Web 侧 first/third-person 导航完整（viewerEngineNavigationTools.ts 531 行：三模式切换、avatar、pointer lock）；**精确降级语义已实现有据**——resolveNativeCameraCompatibility 把 avatar 渲染与 ground-solver（stepHeight/maxSlopeAngle）判为 Web-only，Native 回退 orbit 并经 nativeCameraFallback 进兼容报告，符合 handoff"不把 orbit 回退包装成 first/third person 完成"。围栏/道路：parametricFenceGeometry + industrialPrefabFence 测试、道路 prefab 已入库。待深入核对：贴地/样条/道路连接/碰撞/坡度边界/固定 seed 的完备度清单。
 - 下轮：验收 F3 多层与 Babylon 产出；I3 完备度清单核对。
+
+### 2026-09-23 F3 Native 探针网格多层级联（子智能体切片）
+
+- **头协议扩展**：`probe_gi_grid.rs` 新增 v2 布局头（record 0 主 12 字全零，保留区 `[版本2.0, levelCount(1..4), levels起始(恒1), 0...]`），随后每层一个原格式网格头 + 探针按层顺序排布；层头 `baseProbeRecords` 语义扩展为"本层首条探针记录号 = 布局头 + 前面所有层全部记录 + 本层网格头"（旧单层恒 1 逐位不变）。`decode_probe_grid_cascade` 分派旧单层（保留区全零）/v2 布局，fail-closed 校验：未知版本/层数越界/levels 起始≠1/保留字非零/层头占用保留区/baseProbeRecords 不符/粗层 spacing 未严格递增/粗层范围不包含细层/记录流缺失或尾随/总记录数超 65536。
+- **CPU 参考多层混合**：`sample_probe_grid_irradiance` 逐式对齐 Web `sampleIrradianceProbeClipmap`——细层优先，仅紧随次粗层参与（Web `MAX_LEVEL_SAMPLE_COUNT=2`），两层权重 ≥ MIN 时按 `1-smoothstep(0, 1.5 格边界)` 混合（混合公式与 Web mix3 同式 `fine+(coarse-fine)*blend`，WGSL 同式保证 Native CPU/GPU 对拍），细层权重不足单独落粗层。
+- **WGSL**：`native_mesh_v1.wgsl` 的 `probe_gi_grid_trilinear` 重构为布局分派 + 最多 4 层遍历（层头解码/嵌套校验/精确记录数），混合只取细+次粗两层；w 开关三态语义不变；非有限法线从"回退 +y 采样"收紧为返零（与 CPU 参考一致，fail-closed 方向）。
+- **打包器（Web）**：`packNativeProbeGridLevels`（levels 数组，v2 格式，校验层数 1..4、层间嵌套、总预算，全部写字节前 fail-closed）；`packNativeProbeGridRecords` 单层入口重构共用校验/写头函数，输出逐字节不变。
+- **修复潜在缺陷**：网格头（padding=baseProbeRecords）本就不在 `pack_records` 逐记录 ABI 校验范围内——旧"网格包→`ProbeGiStorage::new`→pack_records"链路对真实网格包会误拒 init。新增 `ProbeGiStorage::from_packed` + `pack_cascade_records`（头由级联合同先验、探针逐条 ABI 校验），init.rs 网格模式（旧单层+v2）统一走级联打包；开关分派：旧网格头合法或级联合法 → 2.0，声明 v2 但内容非法 → 0.0（fail-closed），旧扁平 → 1.0（逐位不变）。
+- **门禁**：lib **535/0**（1 ignored 既有）、bin **271/0**（`--test-threads=2`，78 ignored 既有）；真机 GPU：单层回归 `probe_grid_trilinear_adds_uniform_ambient_on_real_gpu` 通过 + 新增双层 `probe_grid_two_level_cascade_on_real_gpu` 通过（三帧：关/双层同均匀值/细层 validity=0 落粗层；增量通道比例指纹互换证明采样落粗层，mean_red=0.1109≈base·irr/π）。Web：deep-engine lighting vitest **200/0**（5 skipped 既有，含打包器 19 项）、deep-engine 与 apps/web typecheck 通过。
+- **诚实边界**：级联混合仅实现细+次粗两层（Web 同语义），3/4 层可解码定位但混合仍两层；GPU 双层证据为同均匀值+粗层兜底两态，部分混合系数的逐像素对拍由 CPU 合同测试（0.5 中点精确值）与 WGSL 同式覆盖，未做 GPU 逐像素变系数用例；运行包 JSON 载荷 `irradianceProbes` schema 仍为单层（schemaVersion 1），多层打包到运行包发布的 producer 管道待下一切片；dist 产物未重编译。未 push。

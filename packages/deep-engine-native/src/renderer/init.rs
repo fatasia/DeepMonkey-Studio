@@ -148,16 +148,45 @@ pub(super) async fn create_renderer(
         Some(records) if !records.is_empty() => bytemuck::cast_slice(records),
         _ => &[],
     };
-    let probe_gi_storage = ProbeGiStorage::new(&device, records)
-        .map_err(|error| format!("native probe storage contract rejected: {error:?}"))?;
+    // F3 多层级联:级联解码覆盖 v2 布局(1..4 层,levelCount=1 与旧单层解码逐位
+    // 一致)与旧单层网格(record 0 保留区全零)。网格流走级联打包——网格头
+    // (padding=baseProbeRecords、v2 布局头合法占用保留区)不在逐记录 ABI 校验
+    // 范围内,其结构由级联合同先验;非网格流(旧扁平最近探针)保留 pack_records。
+    let probe_grid_cascade = if records.is_empty() {
+        None
+    } else {
+        crate::probe_gi_grid::decode_probe_grid_cascade(records).ok()
+    };
+    let probe_gi_storage = match &probe_grid_cascade {
+        Some(_) => {
+            let packed = crate::probe_gi_grid::pack_cascade_records(records)
+                .map_err(|error| format!("native probe grid cascade rejected: {error:?}"))?;
+            Some(
+                ProbeGiStorage::from_packed(&device, packed, records.len()).map_err(|error| {
+                    format!("native probe storage contract rejected: {error:?}")
+                })?,
+            )
+        }
+        None => ProbeGiStorage::new(&device, records)
+            .map_err(|error| format!("native probe storage contract rejected: {error:?}"))?,
+    };
     if !records.is_empty() {
-        // 网格头模式(>=1.5):首条记录是合法网格头;旧扁平模式保留 1.0 通道语义。
+        // 网格头模式(>=1.5):旧单层网格头合法,或 v2 级联布局合法;声明 v2 布局
+        // 但层级内容非法时 fail-closed 归零(不落最近探针,避免头记录被当扁平
+        // 探针采样);旧扁平模式保留 1.0 通道语义。旧包路径逐位不变。
+        let legacy_grid = records.len() > 1
+            && crate::probe_gi_grid::ProbeGiGridHeader::decode(&records[0]).is_ok();
+        let v2_declared = records.len() > 1
+            && records[0]
+                .reserved
+                .first()
+                .map_or(false, |value| *value != 0.0);
         frame[crate::probe_gi_storage::FRAME_PROBE_GI_ENABLE_ROW]
             [crate::probe_gi_storage::FRAME_PROBE_GI_ENABLE_LANE] =
-            if records.len() > 1
-                && crate::probe_gi_grid::ProbeGiGridHeader::decode(&records[0]).is_ok()
-            {
+            if legacy_grid || probe_grid_cascade.is_some() {
                 2.0
+            } else if v2_declared {
+                0.0
             } else {
                 1.0
             };

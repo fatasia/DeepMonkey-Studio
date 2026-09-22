@@ -7,6 +7,11 @@
 //! `base * (1-metal) * irradiance / π` 的确定性常数,通道比例与
 //! irradiance 比例一致。CPU 参考用 `sample_probe_grid_irradiance`
 //! 在三个地面采样点验证同值。非 RT 设备跳过(与同族测试同界)。
+//!
+//! F3 多层级联双层用例:v2 布局头(levelCount=2,细层 2³ sp2 + 粗层 2³ sp8)
+//! 渲染三帧——关 / 双层同均匀值 / 细层权重不足落粗层。同均匀值时级联混合
+//! 值保持不变(增量仍空间均匀);细层 validity=0 时粗层兜底,通道增量比例
+//! 换成粗层指纹(绿/蓝比例互换),证明采样确实穿过级联路径落到粗层。
 
 use crate::{
     forward_targets::ForwardTargets,
@@ -28,7 +33,10 @@ use deep_engine_native::{
     ibl::disabled_probe_environment,
     ies_shading::NativeIesShadingResource,
     probe_gi_abi::IrradianceProbeRecord,
-    probe_gi_grid::{ProbeGiGridHeader, sample_probe_grid_irradiance},
+    probe_gi_grid::{
+        ProbeGiGridHeader, ProbeGiGridLayoutHeader, decode_probe_grid_cascade,
+        sample_probe_grid_irradiance,
+    },
     probe_gi_storage::{FRAME_PROBE_GI_ENABLE_LANE, FRAME_PROBE_GI_ENABLE_ROW},
     pbr_texture::prepare_pbr_resources,
     scene::prepare_scene,
@@ -377,6 +385,315 @@ fn probe_grid_trilinear_adds_uniform_ambient_on_real_gpu() {
     assert!(
         spread < 0.10,
         "均匀探针的增量应空间均匀(相对标准差 {spread} < 0.10),mean_red={mean_red}"
+    );
+}
+
+/// 粗层兜底指纹:绿/蓝通道比例与 PROBE_IRRADIANCE 互换,证明采样确实落到粗层。
+const COARSE_IRRADIANCE: [f32; 3] = [0.5, 0.125, 0.25];
+
+/// v2 双层级联记录流:布局头(2 层) + 细层网格头(origin [-3,-2,-3]、sp2、2³,
+/// base=2) + 8 探针 + 粗层网格头(origin [-7,-6,-7]、sp8、2³,base=11) + 8 探针。
+/// 粗层范围 [-7,9]×[-6,10]×[-7,9] 完全包含细层 [-3,1]×[-2,2]×[-3,1],spacing
+/// 严格递增;地面可见区域全部落在粗层内。
+fn two_level_records(
+    fine_value: [f32; 3],
+    fine_validity: f32,
+    coarse_value: [f32; 3],
+    coarse_validity: f32,
+) -> Vec<IrradianceProbeRecord> {
+    let layout = ProbeGiGridLayoutHeader { level_count: 2, levels_start_record: 1 };
+    let mut records = vec![layout.encode().expect("cascade layout header must encode")];
+    let fine = ProbeGiGridHeader {
+        origin: [-3.0, -2.0, -3.0],
+        spacing: 2.0,
+        grid_size: [2, 2, 2],
+        probe_count: 8,
+    };
+    records.push(fine.encode_with_base(2).expect("fine header must encode"));
+    for _ in 0..fine.probe_count {
+        let mut record = IrradianceProbeRecord::zero();
+        record.irradiance = fine_value;
+        record.validity = fine_validity;
+        record.mean_distance = 1_000_000.0;
+        records.push(record);
+    }
+    let coarse = ProbeGiGridHeader {
+        origin: [-7.0, -6.0, -7.0],
+        spacing: 8.0,
+        grid_size: [2, 2, 2],
+        probe_count: 8,
+    };
+    records.push(coarse.encode_with_base(11).expect("coarse header must encode"));
+    for _ in 0..coarse.probe_count {
+        let mut record = IrradianceProbeRecord::zero();
+        record.irradiance = coarse_value;
+        record.validity = coarse_validity;
+        record.mean_distance = 1_000_000.0;
+        records.push(record);
+    }
+    records
+}
+
+#[test]
+fn probe_grid_two_level_cascade_on_real_gpu() {
+    let Some((device, queue)) = super::request_ray_query_device() else {
+        return;
+    };
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let captured = errors.clone();
+    device.on_uncaptured_error(Arc::new(move |error| {
+        captured.lock().unwrap().push(error.to_string())
+    }));
+
+    // ---- CPU 参考先钉住:级联布局合法、采样值确定性、域外 fail-closed。----
+    // 同均匀值流:任何含采样点处(细层或粗层)都等于共享值(级联混合保值)。
+    let uniform_two = two_level_records(PROBE_IRRADIANCE, 1.0, PROBE_IRRADIANCE, 1.0);
+    let cascade = decode_probe_grid_cascade(&uniform_two).expect("cascade must decode");
+    assert_eq!(cascade.layout.as_ref().expect("v2 layout").level_count, 2);
+    assert_eq!(cascade.header_records, vec![1, 10]);
+    for world in [[-1.0, -1.0, -1.0], [0.0, -1.0, 0.0], [4.0, -1.0, 4.0], [8.5, -1.0, 8.5]] {
+        assert_eq!(
+            sample_probe_grid_irradiance(&uniform_two, world, [0.0, 1.0, 0.0]),
+            PROBE_IRRADIANCE,
+            "双层同均匀值在 {world:?} 应采样为共享值"
+        );
+    }
+    assert_eq!(
+        sample_probe_grid_irradiance(&uniform_two, [-8.0, -1.0, 0.0], [0.0, 1.0, 0.0]),
+        [0.0; 3],
+        "两层范围外的点必须 fail-closed 返零"
+    );
+    // 兜底流:细层 validity=0 → 权重不足,单独落粗层(粗层值指纹)。
+    let coarse_fallback = two_level_records(PROBE_IRRADIANCE, 0.0, COARSE_IRRADIANCE, 1.0);
+    for world in [[-1.0, -1.0, -1.0], [0.0, -1.0, 0.0], [4.0, -1.0, 4.0]] {
+        assert_eq!(
+            sample_probe_grid_irradiance(&coarse_fallback, world, [0.0, 1.0, 0.0]),
+            COARSE_IRRADIANCE,
+            "细层权重不足时 {world:?} 必须单独落粗层"
+        );
+    }
+
+    let packet = ground_packet();
+    let prepared = prepare_scene(&packet).unwrap();
+    let pbr = prepare_pbr_resources(&packet).unwrap();
+    let size = PhysicalSize::new(SIZE, SIZE);
+    let view = PlayerViewLike::default_view();
+    let mut frames: Vec<_> = (0..3)
+        .map(|_| frame_data_with_camera(size, view, FogSettings::default()))
+        .collect();
+    for frame in &mut frames {
+        frame[FRAME_BACKGROUND_ROW][3] = 1.0;
+    }
+    // 三帧只差探针 GI 侧:0 = 关(B1) / 2 = 双层同均匀值(B1) / 2 = 粗层兜底(B2)。
+    frames[0][FRAME_PROBE_GI_ENABLE_ROW][FRAME_PROBE_GI_ENABLE_LANE] = 0.0;
+    frames[1][FRAME_PROBE_GI_ENABLE_ROW][FRAME_PROBE_GI_ENABLE_LANE] = 2.0;
+    frames[2][FRAME_PROBE_GI_ENABLE_ROW][FRAME_PROBE_GI_ENABLE_LANE] = 2.0;
+
+    let layouts = create_frame_layouts(&device);
+    let shadows = create_shadow_map(&device, &layouts.shadow, size, &frames[1], None, view).unwrap();
+    let material_layout = create_material_layout(&device);
+    let pipelines = create_mesh_pipelines(
+        &device,
+        &layouts.frame,
+        &layouts.shadow,
+        &material_layout,
+        &create_native_mesh_shader(&device),
+    );
+    let scene = GpuScene::new(
+        &device,
+        &queue,
+        &material_layout,
+        &packet,
+        scene_content_key(&packet),
+        &prepared,
+        &pbr,
+    )
+    .unwrap();
+    let mut culling = GpuCulling::new(
+        &device,
+        &scene.instance_buffer,
+        &prepare_gpu_culling(&packet, &prepared).unwrap(),
+        &frames[1],
+        &shadows,
+        false,
+    )
+    .unwrap();
+
+    let frame_buffers: Vec<wgpu::Buffer> = frames
+        .iter()
+        .map(|frame| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("probe GI cascade frame uniform"),
+                contents: bytemuck::cast_slice(frame),
+                usage: wgpu::BufferUsages::UNIFORM,
+            })
+        })
+        .collect();
+    let ies = NativeIesShadingResource::prepare(&[], None).unwrap();
+    let ies_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("probe GI cascade IES identity"),
+        contents: ies.bytes(),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+    let ibl = GpuIblEnvironment::new(&device, &queue, &disabled_probe_environment()).unwrap();
+    // 两条真实探针 storage:B1 = 双层同均匀值,B2 = 细层权重不足落粗层。
+    let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("probe GI two-level uniform storage"),
+        contents: bytemuck::cast_slice(&uniform_two),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+    let fallback_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("probe GI two-level fallback storage"),
+        contents: bytemuck::cast_slice(&coarse_fallback),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+    let probe_buffers = [&uniform_buffer, &uniform_buffer, &fallback_buffer];
+    let frame_groups: Vec<wgpu::BindGroup> = (0..3)
+        .map(|index| {
+            ibl.create_frame_bind_group(
+                &device,
+                &layouts.frame,
+                &frame_buffers[index],
+                Some(&ies_buffer),
+                &shadows,
+                Some(probe_buffers[index]),
+                "probe GI cascade frame",
+                true,
+            )
+        })
+        .collect();
+
+    let targets: Vec<ForwardTargets> = (0..3).map(|_| ForwardTargets::new(&device, size, false)).collect();
+    let row_bytes = u64::from(SIZE) * 8;
+    let readbacks: Vec<wgpu::Buffer> = (0..3)
+        .map(|index| {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(&format!("probe GI cascade readback {index}")),
+                size: row_bytes * u64::from(SIZE),
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            })
+        })
+        .collect();
+
+    let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let memory = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+    let internal = device.push_error_scope(wgpu::ErrorFilter::Internal);
+    let mut encoder = device.create_command_encoder(&Default::default());
+    culling.encode(&queue, &mut encoder);
+    for index in 0..3 {
+        encode_opaque_pass(
+            &mut encoder,
+            &targets[index],
+            &frame_groups[index],
+            &scene,
+            &culling,
+            None,
+            &pipelines,
+            false,
+        );
+        encoder.copy_texture_to_buffer(
+            targets[index].resolved_texture().as_image_copy(),
+            wgpu::TexelCopyBufferInfo {
+                buffer: &readbacks[index],
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(row_bytes as u32),
+                    rows_per_image: Some(SIZE),
+                },
+            },
+            targets[index].resolved_texture().size(),
+        );
+    }
+    queue.submit([encoder.finish()]);
+    culling.commit_submission();
+    device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+    for error in [
+        pollster::block_on(internal.pop()),
+        pollster::block_on(memory.pop()),
+        pollster::block_on(validation.pop()),
+    ] {
+        assert!(
+            error.is_none(),
+            "级联帧提交不得产生 GPU 错误: {error:?}"
+        );
+    }
+
+    let off = decode_hdr(&map_readback(&device, &readbacks[0]));
+    let uniform_on = decode_hdr(&map_readback(&device, &readbacks[1]));
+    let fallback_on = decode_hdr(&map_readback(&device, &readbacks[2]));
+
+    // 逐像素差分断言:几何覆盖像素均匀变亮、三通道均为正、天空零差、
+    // 通道比例与幅度指纹分别对账(同均匀值 vs 粗层兜底)。
+    for (name, on, expected) in [
+        ("双层同均匀值", uniform_on, PROBE_IRRADIANCE),
+        ("粗层兜底", fallback_on, COARSE_IRRADIANCE),
+    ] {
+        let mut deltas: Vec<[f32; 3]> = Vec::new();
+        let mut changed = 0usize;
+        let mut positive = 0usize;
+        let mut unchanged = 0usize;
+        for (off_pixel, on_pixel) in off.iter().zip(on.iter()) {
+            let delta =
+                [on_pixel[0] - off_pixel[0], on_pixel[1] - off_pixel[1], on_pixel[2] - off_pixel[2]];
+            let magnitude = delta[0].abs() + delta[1].abs() + delta[2].abs();
+            if magnitude > 1.0 / 512.0 {
+                changed += 1;
+                if delta[0] > 0.0 && delta[1] > 0.0 && delta[2] > 0.0 {
+                    positive += 1;
+                }
+                deltas.push(delta);
+            } else {
+                unchanged += 1;
+            }
+        }
+        assert!(
+            changed > (SIZE * SIZE / 8) as usize,
+            "{name}:几何覆盖像素必须变亮,changed={changed}"
+        );
+        assert_eq!(
+            positive, changed,
+            "{name}:所有差异像素三通道都必须为正增量,positive={positive}/{changed}"
+        );
+        assert!(
+            unchanged > (SIZE * SIZE / 4) as usize,
+            "{name}:非几何像素必须保持零差(级联采样不得泄漏进天空)"
+        );
+        // 通道比例指纹:Δg/Δr、Δb/Δr 必须等于该流采样值的通道比例。
+        let sum_red: f32 = deltas.iter().map(|delta| delta[0]).sum();
+        let sum_green: f32 = deltas.iter().map(|delta| delta[1]).sum();
+        let sum_blue: f32 = deltas.iter().map(|delta| delta[2]).sum();
+        let green_ratio = sum_green / sum_red;
+        let blue_ratio = sum_blue / sum_red;
+        assert!(
+            (green_ratio - expected[1] / expected[0]).abs() < 0.05,
+            "{name}:绿/红增量比例 {green_ratio} 应接近 {}",
+            expected[1] / expected[0]
+        );
+        assert!(
+            (blue_ratio - expected[2] / expected[0]).abs() < 0.05,
+            "{name}:蓝/红增量比例 {blue_ratio} 应接近 {}",
+            expected[2] / expected[0]
+        );
+        // 幅度均匀性:级联混合/兜底采样值空间均匀。地面轮廓的抗锯齿像素
+        // (覆盖率 < 1)会带来小幅低增量,故方差按样本数归一(标准差/均值),
+        // 阈值 0.10 容纳轮廓像素,同时钉死全增量像素 = 同一采样值。
+        let mean_red = sum_red / deltas.len() as f32;
+        let variance: f32 = deltas
+            .iter()
+            .map(|delta| (delta[0] - mean_red) * (delta[0] - mean_red))
+            .sum::<f32>()
+            / deltas.len() as f32;
+        let spread = variance.sqrt() / mean_red;
+        assert!(
+            spread < 0.10,
+            "{name}:增量应空间均匀(相对标准差 {spread} < 0.10),mean_red={mean_red}"
+        );
+    }
+    assert!(
+        errors.lock().unwrap().is_empty(),
+        "设备错误必须为空: {:?}",
+        errors.lock().unwrap()
     );
 }
 

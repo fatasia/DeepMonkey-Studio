@@ -81,34 +81,84 @@ fn probe_gi_nearest_irradiance(world: vec3f) -> vec3f {
   if (best_distance_squared < 0.0) { return vec3f(0.0); }
   return probe_gi[best_base].xyz;
 }
-// F3 网格三线性模式:record 0 是网格头(origin/spacing、gridSize、
+// F3 网格三线性模式(单层旧合同):record 0 是网格头(origin/spacing、gridSize、
 // maxPosition/probeCount),探针从 record 1 开始,线性下标
 // (z*gridY + y)*gridX + x。该模式 positionOffset 语义是重定位增量
 // (探针世界位置 = origin + cell*spacing + offset),与 Web storage-record
 // 路径一致;最近探针模式仍把 positionOffset 当预烘焙世界位置,两模式不同。
-// 数学逐式对齐 Web sampleIrradianceProbeClipmap 单层路径:三线性 × validity
-// × Chebyshev × 法线权重(pow(cos,3));半球判断用原始着色点,0.2 格法线
-// 偏移只进可见性测试。头/世界位置/记录数任一非法一律返回零(fail-closed)。
-fn probe_gi_grid_trilinear(world: vec3f, normal: vec3f) -> vec3f {
-  let origin = probe_gi[0u].xyz;
-  let spacing = probe_gi[0u].w;
-  let grid_size_f = probe_gi[1u].xyz;
-  let base_records = probe_gi[1u].w;
-  let max_position = probe_gi[2u].xyz;
-  let probe_count_f = probe_gi[2u].w;
-  if (!(spacing > 0.0 && spacing <= 1000000.0)) { return vec3f(0.0); }
-  if (!all(grid_size_f == floor(grid_size_f)) || !(all(grid_size_f >= vec3f(2.0)) && all(grid_size_f <= vec3f(64.0)))) { return vec3f(0.0); }
+//
+// F3 v2 多层级联:record 0 是布局头——主 12 字全零,保留区 word12=版本 2.0、
+// word13=levelCount(1..4,细→粗)、word14=levels 起始记录号(恒 1)、word15 及
+// 其余保留字全零;随后每层一个网格头(原格式,保留区全零)+该层探针记录按层
+// 顺序排布。层头 baseProbeRecords = 本层首条探针记录号(布局头 + 前面所有层
+// 全部记录 + 本层网格头;旧单层恒 1)。层间合同:粗层 spacing 严格更大、粗层
+// 范围逐轴包含细层范围;记录流必须恰好排布完声明的层数。
+//
+// 采样数学逐式对齐 Web sampleIrradianceProbeClipmap 与 CPU 参考
+// sample_probe_grid_irradiance:单层 = 三线性 × validity × Chebyshev × 法线
+// 权重(pow(cos,3)),半球判断用原始着色点,0.2 格法线偏移只进可见性测试;
+// 级联 = 细层优先,仅紧随的次粗层参与混合(Web MAX_LEVEL_SAMPLE_COUNT=2),
+// 两层权重都足够时按 1-smoothstep(0,1.5,细层边界格距) 混合,混合公式与
+// Web mix3 同式(fine + (coarse-fine)*blend);细层权重不足而粗层足够时单独
+// 用粗层。头/世界位置/法线/记录流任一非法一律返回零(fail-closed;
+// 非有限法线不再回退到 +y 采样,与 CPU 参考一致直接返零)。
+const PROBE_GI_GRID_LAYOUT_VERSION: f32 = 2.0;
+const PROBE_GI_GRID_MAX_LEVELS: u32 = 4u;
+const PROBE_GI_CASCADE_BLEND_CELLS: f32 = 1.5;
+struct ProbeGiLevel {
+  origin: vec3f,
+  spacing: f32,
+  grid_size: vec3u,
+  base_records: u32,
+  probe_count: u32,
+  valid: u32,
+};
+struct ProbeGiLevelSample {
+  irradiance: vec3f,
+  weight: f32,
+};
+fn probe_gi_grid_invalid_level() -> ProbeGiLevel {
+  return ProbeGiLevel(vec3f(0.0), 0.0, vec3u(0u), 0u, 0u, 0u);
+}
+// 解码一个层级网格头:保留区必须全零、baseProbeRecords 必须指向本层首条
+// 探针、maxPosition 必须 = origin + gridSize*spacing,且本层全部记录必须
+// 落在 storage 内;任一违反返回 valid=0(调用方 fail-closed 返零)。
+fn probe_gi_grid_level_header(header_record: u32, record_count: u32) -> ProbeGiLevel {
+  if (header_record >= record_count) { return probe_gi_grid_invalid_level(); }
+  let base = header_record * PROBE_GI_RECORD_FLOATS;
+  let origin = probe_gi[base].xyz;
+  let spacing = probe_gi[base].w;
+  let grid_size_f = probe_gi[base + 1u].xyz;
+  let base_records_f = probe_gi[base + 1u].w;
+  let max_position = probe_gi[base + 2u].xyz;
+  let probe_count_f = probe_gi[base + 2u].w;
+  // 层级网格头不得占用保留区(保留区只归 record 0 布局头使用)。
+  if (!(all(probe_gi[base + 3u] == vec4f(0.0)) && all(probe_gi[base + 4u] == vec4f(0.0))
+    && all(probe_gi[base + 5u] == vec4f(0.0)))) { return probe_gi_grid_invalid_level(); }
+  if (!(spacing > 0.0 && spacing <= 1000000.0)) { return probe_gi_grid_invalid_level(); }
+  if (!all(grid_size_f == floor(grid_size_f)) || !(all(grid_size_f >= vec3f(2.0)) && all(grid_size_f <= vec3f(64.0)))) { return probe_gi_grid_invalid_level(); }
   let grid_size = vec3u(grid_size_f);
-  if (probe_count_f != f32(grid_size.x * grid_size.y * grid_size.z)) { return vec3f(0.0); }
-  if (!(base_records == 1.0) || !all(world >= origin) || !all(world <= max_position)) { return vec3f(0.0); }
-  let record_count = arrayLength(&probe_gi) / PROBE_GI_RECORD_FLOATS;
-  if (record_count < 1u + u32(probe_count_f)) { return vec3f(0.0); }
-  let normal_length = length(normal);
-  let n = select(vec3f(0.0, 1.0, 0.0), normal / max(normal_length, 0.000001),
-    normal_length > 0.000001);
+  if (probe_count_f != f32(grid_size.x * grid_size.y * grid_size.z)) { return probe_gi_grid_invalid_level(); }
+  if (!(base_records_f == floor(base_records_f))) { return probe_gi_grid_invalid_level(); }
+  let base_records = u32(base_records_f);
+  let probe_count = u32(probe_count_f);
+  if (base_records != header_record + 1u) { return probe_gi_grid_invalid_level(); }
+  if (any(max_position != origin + vec3f(grid_size) * spacing)) { return probe_gi_grid_invalid_level(); }
+  if (header_record + 1u + probe_count > record_count) { return probe_gi_grid_invalid_level(); }
+  return ProbeGiLevel(origin, spacing, grid_size, base_records, probe_count, 1u);
+}
+fn probe_gi_grid_contains(level: ProbeGiLevel, world: vec3f) -> bool {
+  let max_position = level.origin + vec3f(level.grid_size) * level.spacing;
+  return level.valid == 1u && all(world >= level.origin) && all(world <= max_position);
+}
+// 与 CPU sample_grid_level 逐式一致:三线性 × validity × Chebyshev × 法线权重,
+// 权重归一后返回;累计权重不足 MIN 返回零值零权重。
+fn probe_gi_grid_sample_level(level: ProbeGiLevel, world: vec3f, n: vec3f) -> ProbeGiLevelSample {
+  if (level.valid == 0u) { return ProbeGiLevelSample(vec3f(0.0), 0.0); }
+  let spacing = level.spacing;
   let receiver = world + n * spacing * 0.2;
-  let coordinate = clamp((world - origin) / spacing, vec3f(0.0), vec3f(grid_size - vec3u(1u)));
-  let low = min(vec3u(floor(coordinate)), grid_size - vec3u(2u));
+  let coordinate = clamp((world - level.origin) / spacing, vec3f(0.0), vec3f(level.grid_size - vec3u(1u)));
+  let low = min(vec3u(floor(coordinate)), level.grid_size - vec3u(2u));
   let fraction = clamp(coordinate - vec3f(low), vec3f(0.0), vec3f(1.0));
   var sum = vec3f(0.0);
   var total_weight = 0.0;
@@ -118,11 +168,11 @@ fn probe_gi_grid_trilinear(world: vec3f, normal: vec3f) -> vec3f {
     let axis_weight = mix(vec3f(1.0) - fraction, fraction, vec3f(bits));
     let trilinear = axis_weight.x * axis_weight.y * axis_weight.z;
     if (!(trilinear > 0.0)) { continue; }
-    let linear = (cell.z * grid_size.y + cell.y) * grid_size.x + cell.x;
-    let base = (1u + linear) * PROBE_GI_RECORD_FLOATS;
+    let linear = (cell.z * level.grid_size.y + cell.y) * level.grid_size.x + cell.x;
+    let base = (level.base_records + linear) * PROBE_GI_RECORD_FLOATS;
     let validity = clamp(probe_gi[base].w, 0.0, 1.0);
     if (!(validity > 0.0)) { continue; }
-    let probe_position = origin + vec3f(cell) * spacing + probe_gi[base + 2u].xyz;
+    let probe_position = level.origin + vec3f(cell) * spacing + probe_gi[base + 2u].xyz;
     let distance = length(receiver - probe_position);
     let mean_distance = clamp(probe_gi[base + 1u].x, 0.0, 1000000.0);
     var visibility = 1.0;
@@ -143,8 +193,77 @@ fn probe_gi_grid_trilinear(world: vec3f, normal: vec3f) -> vec3f {
     sum = sum + max(probe_gi[base].xyz, vec3f(0.0)) * weight;
     total_weight = total_weight + weight;
   }
-  if (total_weight < 0.001) { return vec3f(0.0); }
-  return clamp(sum / total_weight, vec3f(0.0), vec3f(65504.0));
+  if (total_weight < 0.001) { return ProbeGiLevelSample(vec3f(0.0), 0.0); }
+  return ProbeGiLevelSample(clamp(sum / total_weight, vec3f(0.0), vec3f(65504.0)), total_weight);
+}
+// 与 Web boundaryCells 同式:采样点到本层最近边界的距离(格)。
+fn probe_gi_grid_boundary_cells(level: ProbeGiLevel, world: vec3f) -> f32 {
+  let coordinate = (world - level.origin) / level.spacing;
+  let edge = min(coordinate, vec3f(level.grid_size - vec3u(1u)) - coordinate);
+  return min(edge.x, min(edge.y, edge.z));
+}
+fn probe_gi_grid_trilinear(world: vec3f, normal: vec3f) -> vec3f {
+  let record_count = arrayLength(&probe_gi) / PROBE_GI_RECORD_FLOATS;
+  if (record_count < 2u) { return vec3f(0.0); }
+  // record 0 分派:保留区全零 = 旧单层(record 0 即唯一层网格头,合同逐位不变);
+  // 否则必须是 v2 布局头(主 12 字全零,保留区 [版本,层数,levels 起始,0...])。
+  let layout_words = probe_gi[3u];
+  let reserved_rest_zero = all(probe_gi[4u] == vec4f(0.0)) && all(probe_gi[5u] == vec4f(0.0));
+  var level_count = 1u;
+  var first_header = 0u;
+  if (all(layout_words == vec4f(0.0)) && reserved_rest_zero) {
+    // 旧单层。
+  } else if (layout_words.x == PROBE_GI_GRID_LAYOUT_VERSION && reserved_rest_zero) {
+    if (!(layout_words.y == floor(layout_words.y)) || layout_words.y < 1.0
+      || layout_words.y > 4.0 || layout_words.z != 1.0 || layout_words.w != 0.0) {
+      return vec3f(0.0);
+    }
+    level_count = u32(layout_words.y);
+    first_header = u32(layout_words.z);
+  } else {
+    return vec3f(0.0);
+  }
+  // 逐层解码:层头顺序排布,粗层 spacing 严格更大且范围逐轴包含细层。
+  var headers: array<ProbeGiLevel, PROBE_GI_GRID_MAX_LEVELS>;
+  var cursor = first_header;
+  var selected = level_count;
+  for (var index = 0u; index < level_count; index = index + 1u) {
+    let level = probe_gi_grid_level_header(cursor, record_count);
+    if (level.valid == 0u) { return vec3f(0.0); }
+    if (index > 0u) {
+      let fine = headers[index - 1u];
+      let fine_max = fine.origin + vec3f(fine.grid_size) * fine.spacing;
+      let coarse_max = level.origin + vec3f(level.grid_size) * level.spacing;
+      if (!(level.spacing > fine.spacing) || any(level.origin > fine.origin)
+        || any(coarse_max < fine_max)) {
+        return vec3f(0.0);
+      }
+    }
+    headers[index] = level;
+    if (selected == level_count && probe_gi_grid_contains(level, world)) { selected = index; }
+    cursor = cursor + 1u + level.probe_count;
+  }
+  // 记录流必须恰好排布完声明的层级(无尾随/缺失,与 CPU 合同一致)。
+  if (cursor != record_count) { return vec3f(0.0); }
+  if (selected == level_count) { return vec3f(0.0); }
+  if (!all(world == world) || !all(abs(world) <= vec3f(1000000000.0))) { return vec3f(0.0); }
+  if (!all(normal == normal) || !all(abs(normal) <= vec3f(1000000.0))) { return vec3f(0.0); }
+  let normal_length = length(normal);
+  let n = select(vec3f(0.0, 1.0, 0.0), normal / max(normal_length, 0.000001),
+    normal_length > 0.000001);
+  let fine = probe_gi_grid_sample_level(headers[selected], world, n);
+  // 级联混合只看紧随的次粗层,且要求该层也包含采样点。
+  if (selected + 1u < level_count && probe_gi_grid_contains(headers[selected + 1u], world)) {
+    let coarse = probe_gi_grid_sample_level(headers[selected + 1u], world, n);
+    if (fine.weight >= 0.001 && coarse.weight >= 0.001) {
+      let blend = 1.0 - smoothstep(0.0, PROBE_GI_CASCADE_BLEND_CELLS,
+        probe_gi_grid_boundary_cells(headers[selected], world));
+      return fine.irradiance + (coarse.irradiance - fine.irradiance) * blend;
+    }
+    if (coarse.weight >= 0.001) { return coarse.irradiance; }
+  }
+  if (fine.weight >= 0.001) { return fine.irradiance; }
+  return vec3f(0.0);
 }
 // frame.lightDirection.w 开关通道:0 = 关(旧包默认,逐位不变),
 // 1 = 最近探针扁平扫描,<1.5 走该路径;>=1.5 = 网格三线性模式。
