@@ -144,3 +144,20 @@ renderer.setProbeClipmapEnabled(true); // radianceSource === 'scene' 表示真�
 ### 着色器作者图合同
 
 `@bim-studio/deep-engine` 现公开 WGSL-first 作者图合同：`ShaderGraphAssetV1`、节点 registry、canonical 序列化与 hash、fail-closed 校验、到既有 WGSL 编译器 IR 的确定性 lowering、编辑器诊断 MessageStore、预览准备合同与 SubGraph 依赖清单。可视化编辑器仍在开发；当前合同已被 lowering 测试与 shader 套件覆盖。
+
+### 探针网格 GI（Native 消费链，2026-09-23）
+
+单层探针网格从 Web 打包到 Native 像素消费全链可用：
+
+- **打包**：`packNativeProbeGridRecords(level, probes)`（`deep-engine/lighting`）把 origin/spacing/gridSize + 探针数组编码为 Native binding 11 的"网格头 + 96B 记录"扁平数组；网格 2–64、预算 65,535、字段越界一律 fail-closed。字节布局与 Rust `probe_gi_grid` 头解码合同逐字对拍（10 项测试）。
+- **发布**：`compileSceneRuntimePackage` 可选 `irradianceProbes` 输入——origin 经局部化到包坐标系后随环境载荷发布，evidence 标记 `deep.scene.probe-grid.v1`；缺省不写字段，旧包逐位不变。
+- **消费**：Native `frame.lightDirection.w` 开关通道三态——0 关（逐位不变）/ 1 最近探针 / ≥1.5 网格三线性 8-tap（三线性 × validity × Chebyshev × 法线权重 bias=3；半球判断用原始着色点，0.2 格偏移只进可见性测试）。头/记录数/世界位置任一非法返回零。真机像素证据：`packages/deep-engine-native/test-output/f2-rt-raster-parity-*` 同族装配下的开关帧对拍测试（`probe_grid_trilinear_adds_uniform_ambient_on_real_gpu`）。
+- **边界**：多层 clipmap 级联与 GPU 烘焙编排（捕获→读回→聚合）尚未接线。
+
+### 物理碰撞体调试视图（B3）
+
+`ViewerEngineSimulation.collectPhysicsDebugColliders()` 返回全部已登记 Cuboid 碰撞体的世界位姿/半尺寸/局部偏移（`translationWrtParent` 语义经真机 WASM 测试钉死）；渲染层 `createPhysicsDebugOverlay()` 按刚体类型四色线框（depthTest 关闭、renderOrder 10_000），`setPhysicsDebugVisible(false)` 帧同步早退零开销。物理面板提供"显示碰撞体"开关。未验证边界：真实画面中的视觉表现（headless 无法挂载 renderer）。
+
+### 场景动画播放区间（发布语义）
+
+编辑器时间轴的入点/出点（`SceneAnimationState.playbackRange`）随发布包下译为 `dynamic-animation.playbackRangeMs`（合同校验 0 ≤ in < out ≤ duration 非退化，serde default 兼容旧包）；Native `sample_animation` 与发布查看器采样均钳制进区间。缺省（未设区间）播放整条时间线。
