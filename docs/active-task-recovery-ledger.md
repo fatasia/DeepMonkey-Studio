@@ -3031,3 +3031,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 证据：`test-output/cluster-lod-gpu-20260920-r1/evidence.json`（字段向后兼容追加 `draw` 与 `verdict.realGpuDrawVerified`）；Chrome 153.0.8010.53 + NVIDIA lovelace 真机 7/7 相机 slots+draws 全 match，GPU 覆盖率与 CPU 命令流参考逐位一致（1 / 0.8799 / 0.6885），clearOnly=0、0 错误 0 诊断、bundle 缓存 reused 全命中；`CPU/GPU agreement verdict: PASSED` + `real GPU draw: PASSED`。
 - 门禁：deep-engine typecheck（src+lab+examples）通过；聚焦 executor/plan/selection vitest 45/45；runtime purity 通过；新增/扩展三个文件均 <300 行（source-size gate 存量失败与本次无关）。
 - 边界：MSAA/depthStencil、多 bindGroup 请求路径未在本探针覆盖；未 push。
+
+### 2026-09-23 A4 粒子真机渲染证据（收口）
+
+- 新增 `scripts/gpuParticleRenderTest.mjs`：headless Chrome153/NVIDIA 真机，粒子模拟读回（13/13 活粒子、预设/时序/爆发/过期全对）后经产品 `PbrParticlePass` 离屏 rgba8unorm+depth24plus 绘制，正交相机把 alarm 发射器映射进 NDC，像素读回 **5 个非背景像素**——pass.encode→drawIndirect→混合→像素落盘全链真实 GPU 证据。Gate TRUE，报告 `test-output/gpu-particle-render-20260923/report.json`。
+- 边界：正交映射为证据专用；128×128 中 5 像素与告警脉冲尺寸/透明度物理一致但非产品构图；粒子与深度/后处理交互仍在产品帧循环里待真机页面验收。未 push。
