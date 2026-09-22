@@ -114,6 +114,7 @@ impl GpuIblEnvironment {
         frame: &wgpu::Buffer,
         ies: Option<&wgpu::Buffer>,
         shadow: &ShadowMap,
+        probe_gi: Option<&wgpu::Buffer>,
         label: &'static str,
         include_native_section: bool,
     ) -> wgpu::BindGroup {
@@ -121,6 +122,7 @@ impl GpuIblEnvironment {
             frame,
             ies,
             shadow,
+            probe_gi,
             (
                 &self.specular_view,
                 &self.diffuse_view,
@@ -152,12 +154,14 @@ impl GpuIblEnvironment {
         ies: Option<&wgpu::Buffer>,
         shadow: &ShadowMap,
         tlas: &wgpu::Tlas,
+        probe_gi: Option<&wgpu::Buffer>,
         label: &'static str,
     ) -> wgpu::BindGroup {
         let mut entries = Self::frame_bind_entries(
             frame,
             ies,
             shadow,
+            probe_gi,
             (
                 &self.specular_view,
                 &self.diffuse_view,
@@ -179,10 +183,13 @@ impl GpuIblEnvironment {
 
     /// 普通 frame 绑定的条目构建,`create_frame_bind_group` 与 RT 扩展版共用,
     /// 避免两份条目清单漂移。IBL 视图经参数传入以统一借用生命周期。
+    /// `probe_gi` 为 frame layout binding 11 的探针 storage;native section
+    /// 之外（自定义 shader 合同 layout）没有该槽,传 None 即不产生条目。
     fn frame_bind_entries<'a>(
         frame: &'a wgpu::Buffer,
         ies: Option<&'a wgpu::Buffer>,
         shadow: &'a ShadowMap,
+        probe_gi: Option<&'a wgpu::Buffer>,
         ibl: (
             &'a wgpu::TextureView,
             &'a wgpu::TextureView,
@@ -217,6 +224,12 @@ impl GpuIblEnvironment {
                 binding: 9,
                 resource: ies
                     .expect("native frame requires IES resource")
+                    .as_entire_binding(),
+            });
+            entries.push(wgpu::BindGroupEntry {
+                binding: deep_engine_native::probe_gi_storage::FRAME_PROBE_GI_BINDING,
+                resource: probe_gi
+                    .expect("native frame requires probe GI resource")
                     .as_entire_binding(),
             });
         }

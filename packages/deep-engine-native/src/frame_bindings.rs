@@ -152,6 +152,23 @@ fn frame_layout_entries() -> Vec<wgpu::BindGroupLayoutEntry> {
             },
             count: None,
         },
+        // F3:探针 GI storage(96B 记录流)。0..10 既有槽位不动;空场景由
+        // probe_gi_storage::disabled_frame_buffer 提供全零占位,开关
+        // (frame.lightDirection.w)为 0 时采样分支返回零,旧路径逐位不变。
+        // frame 与 frame_rt 双 layout 共用本清单,RT 槽(10)之后追加。
+        // 本文件同时被测试 crate 以 #[path] 复编译,必须走 lib 路径。
+        wgpu::BindGroupLayoutEntry {
+            binding: deep_engine_native::probe_gi_storage::FRAME_PROBE_GI_BINDING,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: wgpu::BufferSize::new(
+                    deep_engine_native::probe_gi_storage::PROBE_GI_STORAGE_MIN_BINDING_BYTES,
+                ),
+            },
+            count: None,
+        },
     ]
 }
 

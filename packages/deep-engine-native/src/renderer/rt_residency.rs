@@ -390,6 +390,7 @@ impl Renderer {
             Some(&self.ies_buffer),
             &self.shadow_map,
             residency.tlas(),
+            Some(&self.probe_frame_buffer),
             "Deep Engine native RT frame bindings",
         ))
     }

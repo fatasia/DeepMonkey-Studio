@@ -23,6 +23,8 @@ impl IblProbe {
         frame_layout: &wgpu::BindGroupLayout,
         shadow_map: &ShadowMap,
         frame_buffer: &wgpu::Buffer,
+        ies_buffer: &wgpu::Buffer,
+        probe_frame_buffer: &wgpu::Buffer,
         size: PhysicalSize<u32>,
     ) -> Result<Self, String> {
         let disabled_environment =
@@ -31,7 +33,9 @@ impl IblProbe {
             device,
             frame_layout,
             frame_buffer,
+            Some(ies_buffer),
             shadow_map,
+            Some(probe_frame_buffer),
             "Deep Engine native IBL-off frame bindings",
             true,
         );

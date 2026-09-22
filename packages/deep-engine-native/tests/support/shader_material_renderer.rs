@@ -19,7 +19,7 @@ use crate::{
     mesh_pass::encode_mesh_passes,
     pipeline::create_mesh_pipelines,
     player_content::PlayerContent,
-    shadow_pass::encode_shadow_cascades,
+    shadow_pass::{CascadeScene, encode_shadow_cascades},
 };
 
 pub struct Snapshot {
@@ -138,6 +138,23 @@ pub async fn render_reported(
         contents: cast_slice(&frame),
         usage: wgpu::BufferUsages::UNIFORM,
     });
+    let empty: [deep_engine_native::local_lighting::LocalLight; 0] = [];
+    let ies = deep_engine_native::ies_shading::NativeIesShadingResource::prepare(
+        content
+            .lighting
+            .as_ref()
+            .map_or(&empty, |value| value.local_lights.as_slice()),
+        content
+            .lighting
+            .as_ref()
+            .and_then(|value| value.light_profiles.as_deref()),
+    )
+    .unwrap();
+    let ies_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("shader material verification IES"),
+        contents: ies.bytes(),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
     let ibl = GpuIblEnvironment::new(device, queue, &content.environment).unwrap();
     scene
         .replace_shader_materials(device, content, &frame_buffer, &shadows, &ibl)
@@ -194,15 +211,20 @@ pub async fn render_reported(
             &ibl,
         );
     }
+    // F3:验证装配无真实探针,绑定 96B 全零占位,开关为 0。
+    let probe_frame_buffer =
+        deep_engine_native::probe_gi_storage::disabled_frame_buffer(device);
     let frame_group = ibl.create_frame_bind_group(
         device,
         &layouts.frame,
         &frame_buffer,
+        Some(&ies_buffer),
         &shadows,
+        Some(&probe_frame_buffer),
         "LOD verification frame",
         true,
     );
-    let targets = ForwardTargets::new(device, size);
+    let targets = ForwardTargets::new(device, size, false);
     let mut encoder = device.create_command_encoder(&Default::default());
     culling.encode(queue, &mut encoder);
     if let Some(lod) = &lod {
@@ -210,11 +232,13 @@ pub async fn render_reported(
     }
     encode_shadow_cascades(
         &mut encoder,
-        &shadows,
-        &scene,
-        &culling,
-        lod.as_ref(),
-        &pipelines,
+        &CascadeScene {
+            shadow_map: &shadows,
+            scene: &scene,
+            culling: &culling,
+            lod: lod.as_ref(),
+            pipelines: &pipelines,
+        },
         u16::MAX,
     );
     encode_mesh_passes(

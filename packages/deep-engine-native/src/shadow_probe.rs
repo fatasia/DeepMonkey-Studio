@@ -34,6 +34,8 @@ impl ShadowProbe {
         frame_layout: &wgpu::BindGroupLayout,
         shadow_map: &ShadowMap,
         frame_buffer: &wgpu::Buffer,
+        ies_buffer: &wgpu::Buffer,
+        probe_frame_buffer: &wgpu::Buffer,
         ibl: &GpuIblEnvironment,
         size: PhysicalSize<u32>,
     ) -> Self {
@@ -109,6 +111,17 @@ impl ShadowProbe {
                 wgpu::BindGroupEntry {
                     binding: 7,
                     resource: shadow_map.sampling_uniform.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 9,
+                    resource: ies_buffer.as_entire_binding(),
+                },
+                // F3:frame layout binding 11 探针槽;阴影差分与 GI 无关,
+                // 绑占位或真实 storage 都不改变本探针读数。走 lib 路径:
+                // 本文件可能被测试 crate 以 #[path] 复编译。
+                wgpu::BindGroupEntry {
+                    binding: deep_engine_native::probe_gi_storage::FRAME_PROBE_GI_BINDING,
+                    resource: probe_frame_buffer.as_entire_binding(),
                 },
             ],
         });

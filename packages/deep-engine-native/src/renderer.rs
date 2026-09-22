@@ -107,6 +107,11 @@ pub struct Renderer {
     dashboard_video: Option<DashboardVideoGpuCompositor>,
     frame_buffer: wgpu::Buffer,
     ies_buffer: wgpu::Buffer,
+    /// F3:frame layout binding 11 槽位资源。有探针指向真实 storage,
+    /// 空场景/旧包指向 96B 全零占位;switch(frame.lightDirection.w)=0
+    /// 时采样分支返回零。持有它是为了保证所有 frame bind group 的
+    /// 探针条目生命周期与 Renderer 一致。
+    probe_frame_buffer: wgpu::Buffer,
     frame_layout: wgpu::BindGroupLayout,
     frame_bind_group: wgpu::BindGroup,
     /// F2:RT 扩展 frame layout/binding(全部 frame 条目 + TLAS 槽)。仅在
@@ -330,6 +335,7 @@ impl Renderer {
                 &self.shadow_map,
                 &self.frame_buffer,
                 &self.ies_buffer,
+                &self.probe_frame_buffer,
                 &self.ibl,
                 size,
             ));
@@ -343,6 +349,7 @@ impl Renderer {
                     &self.shadow_map,
                     &self.frame_buffer,
                     &self.ies_buffer,
+                    &self.probe_frame_buffer,
                     size,
                 )
                 .expect("validated built-in IBL must rebuild after resize"),

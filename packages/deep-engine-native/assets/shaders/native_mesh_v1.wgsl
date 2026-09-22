@@ -16,6 +16,7 @@ struct Frame {
   localLights: array<LocalLight, 16>,
   localShadowMatrices: array<mat4x4f, 10>,
   fogProjection: vec4f,
+  localShadowSoftness: array<vec4f, 4>,
 };
 struct MaterialTextures {
   base_row_0: vec4f, base_row_1: vec4f,
@@ -26,6 +27,61 @@ struct MaterialTextures {
 };
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(8) var<uniform> section_plane: vec4f;
+@group(0) @binding(9) var<storage, read> iesShading: array<vec4f>;
+// F3:探针 GI storage。每条记录 6 个 vec4f(96B):[0]irradiance.xyz+validity、
+// [1]距离统计、[2]positionOffset.xyz、[3..5]保留零区。0..10 既有绑定不动。
+@group(0) @binding(11) var<storage, read> probe_gi: array<vec4f>;
+const PROBE_GI_RECORD_FLOATS: u32 = 6u;
+const IES_ROW_STRIDE: u32 = 91u;
+const IES_RAD_TO_DEG: f32 = 57.29577951308232;
+
+fn ies_factor(lightIndex: u32, surfaceToLight: vec3f, lightDirection: vec3f) -> f32 {
+  let params = iesShading[lightIndex];
+  if (params.x < 0.0) { return 1.0; }
+  let profile = iesShading[u32(params.w)];
+  let toSurface = -surfaceToLight;
+  let thetaHalf = clamp(round(acos(clamp(dot(toSurface, lightDirection), -1.0, 1.0))
+    * IES_RAD_TO_DEG * 2.0), 0.0, 360.0);
+  let up = select(vec3f(0.0, 1.0, 0.0), vec3f(1.0, 0.0, 0.0), abs(lightDirection.y) > 0.999);
+  let right = normalize(cross(up, lightDirection));
+  let pole = cross(lightDirection, right);
+  var phi = atan2(dot(toSurface, pole), dot(toSurface, right)) * IES_RAD_TO_DEG - params.y * 0.5;
+  phi = phi - floor(phi / 360.0) * 360.0;
+  var gHalf = round(phi * 2.0);
+  if (gHalf >= 720.0) { gHalf = 0.0; }
+  if (profile.w == 2.0 && gHalf > 360.0) { gHalf = 720.0 - gHalf; }
+  if (profile.w == 4.0) { gHalf = gHalf % 360.0; if (gHalf > 180.0) { gHalf = 360.0 - gHalf; } }
+  var row = 0.0;
+  if (profile.w != 1.0) { row = clamp(round(gHalf / profile.z), 0.0, profile.y - 1.0); }
+  let cell = iesShading[u32(profile.x) + u32(row) * IES_ROW_STRIDE + u32(thetaHalf) / 4u];
+  let lane = u32(thetaHalf) % 4u;
+  let value = select(cell.x, select(cell.y, select(cell.z, cell.w, lane == 3u), lane == 2u), lane == 1u);
+  return value * params.z;
+}
+// F3 最小切片:按世界位置取最近探针的 irradiance 近似(不做三线性/等级混合)。
+// 合同:producer 把探针世界位置预烘焙进 record.positionOffset(Web clipmap 的
+// origin + cell*spacing 在打包时并入该字段);validity <= 0 的探针跳过。
+// frame.lightDirection.w 是保留开关通道:0 = 关(旧包默认),直接返回零,
+// 逐位保持既有光照结果;无有效探针同样返回零。逐记录线性扫描只服务当前
+// 最小切片,网格加速与三线性留给 producer 接入后的后续切片。
+fn probe_gi_irradiance(world: vec3f) -> vec3f {
+  if (frame.lightDirection.w <= 0.0) { return vec3f(0.0); }
+  let record_count = arrayLength(&probe_gi) / PROBE_GI_RECORD_FLOATS;
+  var best_distance_squared = -1.0;
+  var best_base = 0u;
+  for (var index = 0u; index < record_count; index = index + 1u) {
+    let base = index * PROBE_GI_RECORD_FLOATS;
+    if (probe_gi[base].w <= 0.0) { continue; }
+    let offset = probe_gi[base + 2u].xyz;
+    let distance_squared = dot(offset - world, offset - world);
+    if (best_distance_squared < 0.0 || distance_squared < best_distance_squared) {
+      best_distance_squared = distance_squared;
+      best_base = base;
+    }
+  }
+  if (best_distance_squared < 0.0) { return vec3f(0.0); }
+  return probe_gi[best_base].xyz;
+}
 fn section_rejected(world: vec3f) -> bool {
   return dot(section_plane.xyz, world) + section_plane.w < 0.0;
 }
@@ -55,6 +111,7 @@ struct VertexOutput {
   @location(5) base_color: vec4f,
   @location(6) @interpolate(flat) material: vec4f,
   @location(7) emissive_alpha: vec4f,
+  @location(8) @interpolate(flat) dielectric: f32,
 };
 
 struct VertexInput {
@@ -102,7 +159,7 @@ fn build_vertex(position: vec3f, normal: vec3f, model_0: vec4f, model_1: vec4f,
   out.world = world; out.normal = world_normal;
   out.tangent = vec4f(world_tangent, tangent.w * material.z);
   out.uv0 = uv0; out.uv1 = uv1; out.base_color = base_color; out.material = material;
-  out.emissive_alpha = emissive_alpha;
+  out.emissive_alpha = emissive_alpha; out.dielectric = dielectric_f0(normal_0.w);
   return out;
 }
 
@@ -169,10 +226,16 @@ fn transformed_uv(uv0: vec2f, uv1: vec2f, row_0: vec4f, row_1: vec4f) -> vec2f {
   if (section_rejected(input.world)) { discard; }
 }
 
-fn local_direct_lighting(world: vec3f, normal: vec3f, view: vec3f, base: vec3f, metal: f32, rough: f32, receiveShadow: bool) -> vec3f {
+fn local_direct_lighting(world: vec3f, normal: vec3f, view: vec3f, base: vec3f, metal: f32, rough: f32, receiveShadow: bool, ao: f32, dielectric: f32) -> vec3f {
   var color = vec3f(0.0);
   for (var index = 0u; index < min(u32(frame.lightingOptions.z), 16u); index++) {
     let source = frame.localLights[index];
+    if (source.directionKind.w == 4.0) {
+      let weight = dot(normal, source.directionKind.xyz) * 0.5 + 0.5;
+      let irradiance = mix(source.positionRange.xyz, source.radianceOuter.rgb, weight);
+      color += irradiance * base * (1.0 - metal) * clamp(ao, 0.0, 1.0) / 3.141592653589793;
+      continue;
+    }
     var direction = source.directionKind.xyz;
     var attenuation = 1.0;
     if (source.directionKind.w >= 2.0) {
@@ -193,16 +256,17 @@ fn local_direct_lighting(world: vec3f, normal: vec3f, view: vec3f, base: vec3f, 
         let inner = source.coneDecay.x;
         var coneWeight = select(0.0, 1.0, cosine >= outer);
         if (inner > outer) { coneWeight = clamp((cosine - outer) / (inner - outer), 0.0, 1.0); }
-        attenuation *= coneWeight * coneWeight * (3.0 - 2.0 * coneWeight);
+        attenuation *= coneWeight * coneWeight * (3.0 - 2.0 * coneWeight)
+          * ies_factor(index, direction, source.directionKind.xyz);
       }
     }
     var visibility = 1.0;
     if (receiveShadow && source.coneDecay.z > 0.0) {
       var shadowIndex = u32(source.coneDecay.z)-1u;
       if (source.directionKind.w == 2.0) { shadowIndex += point_shadow_face(world-source.positionRange.xyz); }
-      visibility = local_spot_visibility(shadowIndex, source.coneDecay.w, world, max(dot(normal,direction),0.0));
+      visibility = local_spot_visibility(shadowIndex, source.coneDecay.w, world, max(dot(normal,direction),0.0), frame.localShadowSoftness[index / 4u][index % 4u]);
     }
-    color += direct_brdf(normal, view, direction, base, metal, rough) * source.radianceOuter.rgb * attenuation * visibility;
+    color += direct_brdf_f0(normal, view, direction, base, metal, rough, dielectric) * source.radianceOuter.rgb * attenuation * visibility;
   }
   return color;
 }
@@ -238,12 +302,17 @@ fn mapped_normal(input: VertexOutput, front_facing: bool) -> vec3f {
     tangent * tangent_normal.x + bitangent * tangent_normal.y + n * tangent_normal.z, n);
 }
 
+fn dielectric_f0(encoded_ior: f32) -> f32 {
+  if (encoded_ior == 0.0 || encoded_ior == 1.5) { return 0.04; }
+  let reflectance = 1.0 - 2.0 / (encoded_ior + 1.0);
+  return reflectance * reflectance;
+}
 fn fresnel(cosine: f32, f0: vec3f) -> vec3f {
   let factor = exp2((-5.55473 * cosine - 6.98316) * cosine);
   return f0 * (1.0 - factor) + factor;
 }
 
-fn direct_brdf(n: vec3f, v: vec3f, l: vec3f, base: vec3f, metal: f32, rough: f32) -> vec3f {
+fn direct_brdf_f0(n: vec3f, v: vec3f, l: vec3f, base: vec3f, metal: f32, rough: f32, dielectric: f32) -> vec3f {
   let h = safe_normalize(v + l, n);
   let nv = clamp(dot(n, v), 0.0001, 1.0); let nl = clamp(dot(n, l), 0.0, 1.0);
   let nh = clamp(dot(n, h), 0.0, 1.0); let vh = clamp(dot(v, h), 0.0, 1.0);
@@ -253,7 +322,7 @@ fn direct_brdf(n: vec3f, v: vec3f, l: vec3f, base: vec3f, metal: f32, rough: f32
   let gv = nl * sqrt(alpha_2 + (1.0 - alpha_2) * nv * nv);
   let gl = nv * sqrt(alpha_2 + (1.0 - alpha_2) * nl * nl);
   let visibility = 0.5 / max(gv + gl, 0.000001);
-  let f = fresnel(vh, mix(vec3f(0.04), base, metal));
+  let f = fresnel(vh, mix(vec3f(dielectric), base, metal));
   let specular = distribution * visibility * f;
   let diffuse = (1.0 - metal) * base / 3.14159265;
   return (diffuse + specular) * nl;
@@ -296,27 +365,37 @@ fn direct_brdf(n: vec3f, v: vec3f, l: vec3f, base: vec3f, metal: f32, rough: f32
   let visibility = select(shadow_visibility(input.world, normal, max(dot(normal, light), 0.0)),
     1.0, flag(input.material.w, 16u) || (authored_light && frame.lightingOptions.y == 0.0));
   let sun = select(vec3f(3.2, 3.0, 2.8), frame.sunColor.rgb, authored_light);
-  var color = direct_brdf(normal, view, light, base, metal, rough)
+  let dielectric = input.dielectric;
+  var color = direct_brdf_f0(normal, view, light, base, metal, rough, dielectric)
     * sun * visibility;
   if (frame.sunColor.w == 3.0) {
-    color += local_direct_lighting(input.world, normal, view, base, metal, rough, !flag(input.material.w,16u));
+    color += local_direct_lighting(input.world, normal, view, base, metal, rough, !flag(input.material.w,16u), ao, dielectric);
   }
-  let nv = clamp(dot(normal, view), 0.001, 1.0);
-  let f0 = mix(vec3f(0.04), base, metal);
-  let f = f0 + (max(vec3f(1.0 - rough), f0) - f0) * pow(1.0 - nv, 5.0);
-  let irradiance = textureSampleLevel(
-    diffuse_environment, environment_sampler, normal, 0.0).rgb;
-  let ambient_occlusion = clamp(ao, 0.0, 1.0);
-  color += (1.0 - f) * (1.0 - metal) * base * irradiance * ambient_occlusion;
-  let reflection = safe_normalize(reflect(-view, normal), normal);
-  let max_specular_lod = f32(textureNumLevels(specular_environment) - 1u);
-  let radiance = textureSampleLevel(
-    specular_environment, environment_sampler, reflection, rough * max_specular_lod).rgb;
-  let dfg = textureSampleLevel(
-    brdf_lut, environment_sampler, vec2f(nv, rough), 0.0).rg;
-  let energy_compensation = vec3f(1.0)
-    + f0 * (1.0 / max(dfg.x + dfg.y, 0.05) - 1.0);
-  color += radiance * (f0 * dfg.x + dfg.y) * energy_compensation * ambient_occlusion;
+  if (frame.background.w > 0.5) {
+    // Zero is the legacy/default value; authored GI uses the reserved
+    // fog-projection W lane without changing the frame ABI size.
+    let global_illumination = select(1.0, frame.fogProjection.w, frame.fogProjection.w > 0.0);
+    let nv = clamp(dot(normal, view), 0.001, 1.0);
+    let f0 = mix(vec3f(dielectric), base, metal);
+    let f = f0 + (max(vec3f(1.0 - rough), f0) - f0) * pow(1.0 - nv, 5.0);
+    let irradiance = textureSampleLevel(
+      diffuse_environment, environment_sampler, normal, 0.0).rgb;
+    let ambient_occlusion = clamp(ao, 0.0, 1.0);
+    color += (1.0 - f) * (1.0 - metal) * base * irradiance * ambient_occlusion * global_illumination;
+    // F3:探针 GI 作为环境漫射的近场补偿叠加进 ambient;开关为 0 时
+    // probe_gi_irradiance 返回零,加零不改既有结果。
+    let probe_irradiance = probe_gi_irradiance(input.world);
+    color += base * (1.0 - metal) * probe_irradiance * ambient_occlusion / 3.141592653589793;
+    let reflection = safe_normalize(reflect(-view, normal), normal);
+    let max_specular_lod = f32(textureNumLevels(specular_environment) - 1u);
+    let radiance = textureSampleLevel(
+      specular_environment, environment_sampler, reflection, rough * max_specular_lod).rgb;
+    let dfg = textureSampleLevel(
+      brdf_lut, environment_sampler, vec2f(nv, rough), 0.0).rg;
+    let energy_compensation = vec3f(1.0)
+      + f0 * (1.0 / max(dfg.x + dfg.y, 0.05) - 1.0);
+    color += radiance * (f0 * dfg.x + dfg.y) * energy_compensation * ambient_occlusion * global_illumination;
+  }
   color += input.emissive_alpha.rgb * emission;
   let exposure = select(1.0, frame.lightingOptions.x, authored_light);
   var surface_color = select(color, base, flag(input.material.w, 64u));
@@ -327,6 +406,20 @@ fn direct_brdf(n: vec3f, v: vec3f, l: vec3f, base: vec3f, metal: f32, rough: f32
     let amount = clamp(1.0 - exp(-optical_depth * optical_depth), 0.0, 1.0);
     surface_color = mix(surface_color, frame.tuning.rgb, amount);
   }
-  return vec4f(surface_color * exposure,
-    select(1.0, alpha, flag(input.material.w, 4u)));
+  let output_alpha = select(1.0, alpha, flag(input.material.w, 4u));
+  return vec4f(surface_color * exposure, output_alpha);
+}
+
+@fragment fn outline_mask_fragment(input: VertexOutput) -> @location(0) vec4f {
+  if (!flag(input.material.w, 256u) || section_rejected(input.world)) { discard; }
+  var sampled_alpha = 1.0;
+  if (material_textures.base_row_0.w > 0.5) {
+    sampled_alpha = textureSample(base_color_map, base_color_sampler,
+      transformed_uv(input.uv0, input.uv1, material_textures.base_row_0, material_textures.base_row_1)).a;
+  }
+  let alpha = input.emissive_alpha.w * sampled_alpha;
+  if (alpha <= 0.001) { discard; }
+  if (flag(input.material.w, 2u) && alpha < input.material.y) { discard; }
+  let coverage = select(1.0, alpha, flag(input.material.w, 4u));
+  return vec4f(coverage, 0.0, 0.0, 1.0);
 }

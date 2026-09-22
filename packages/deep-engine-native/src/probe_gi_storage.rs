@@ -11,6 +11,15 @@ use crate::probe_gi_abi::{
 pub const PROBE_GI_STORAGE_BINDING: u32 = 0;
 pub const PROBE_GI_STORAGE_MIN_BINDING_BYTES: u64 = PROBE_GI_RECORD_BYTES as u64;
 
+/// frame layout 上的探针 storage 槽号;0..10 既有绑定（frame uniform、
+/// 阴影/IBL 纹理、IES、RT TLAS）保持不动,本槽只追加在末尾。
+pub const FRAME_PROBE_GI_BINDING: u32 = 11;
+/// frame uniform 保留开关通道:lightDirection 行（row 11）的 w 分位。
+/// 既有写入方只覆盖 `frame[11][..3]`,所有 shader 从不读取该分位,
+/// 旧包恒为 0 = 探针 GI 关闭,旧行为逐位不变。
+pub const FRAME_PROBE_GI_ENABLE_ROW: usize = 11;
+pub const FRAME_PROBE_GI_ENABLE_LANE: usize = 3;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum ProbeGiStorageError {
     Abi(ProbeGiAbiError),
@@ -107,6 +116,28 @@ impl ProbeGiStorage {
     }
 }
 
+/// frame layout binding 11 的全零占位 buffer（恰好一条 96B 记录,
+/// validity = 0）。空场景/旧包没有真实探针,但 wgpu bind group 必须填满
+/// layout 全部条目,因此用该占位满足绑定;frame 开关为 0 时采样分支
+/// 直接返回零,视觉与旧路径逐位一致。
+pub fn disabled_frame_buffer(device: &wgpu::Device) -> wgpu::Buffer {
+    use wgpu::util::DeviceExt;
+    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Deep Engine native probe GI disabled placeholder"),
+        contents: &[0u8; PROBE_GI_RECORD_BYTES],
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+    })
+}
+
+/// 解析 frame 绑定应使用的探针 storage:有真实探针用真实 buffer,
+/// 否则用占位。占位由调用方持有,生命周期覆盖所有引用它的 bind group。
+pub fn frame_probe_buffer<'a>(
+    storage: Option<&'a ProbeGiStorage>,
+    disabled: &'a wgpu::Buffer,
+) -> &'a wgpu::Buffer {
+    storage.map_or(disabled, |storage| storage.buffer())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,5 +176,21 @@ mod tests {
             pack_records(&[invalid]),
             Err(ProbeGiAbiError::InvalidRecord)
         ));
+    }
+
+    #[test]
+    fn frame_slot_binding_keeps_existing_range_intact() {
+        // 0..10 是既有 frame/RT 绑定;探针槽只允许追加在 11。
+        assert_eq!(FRAME_PROBE_GI_BINDING, 11);
+        assert_eq!(FRAME_PROBE_GI_ENABLE_ROW, 11);
+        assert_eq!(FRAME_PROBE_GI_ENABLE_LANE, 3);
+    }
+
+    #[test]
+    fn disabled_placeholder_is_one_zero_record() {
+        // 占位即一条全零记录:满足 layout min binding 96B,validity=0
+        // 让采样即使被误开也返回零,不产生光照差异。
+        assert_eq!(PROBE_GI_STORAGE_MIN_BINDING_BYTES, 96);
+        assert_eq!(IrradianceProbeRecord::zero().validity, 0.0);
     }
 }

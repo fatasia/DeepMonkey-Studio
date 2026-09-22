@@ -179,7 +179,10 @@ fn bind_pass(
             device,
             frame_layout,
             resources.frame,
+            None,
             resources.shadows,
+            // 自定义 shader 合同 layout 没有 probe 槽(native section 之外)。
+            None,
             "native package forward frame",
             false,
         )],

@@ -3064,3 +3064,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - 新增 `runtimePackage/staticLightmapAdapter.ts`：把 lightmapBaker 写入 glTF 材质的 `bimStudioLightmap` extras 与烘焙纹理资源转为 `RuntimeStaticLightmapDescriptor`；mode/semantic/texCoord/resolution/data 缺失或非法 fail-closed；hash 基于与运行包一致的 texture snapshot 表示（含 uv1 几何存在性校验），保证 descriptor 与包内资源逐字节可对账。
 - 证据：适配器测试 2/2（合法路径过 runtime binding 校验；mode/resolution 非法拒绝）；deep-engine typecheck 通过。未做：自动触发 bake 后接 descriptor 的 UI 链。未 push。
+
+### 2026-09-23 F3 最小切片：探针 storage 接入 forward 合成（最近探针采样）
+
+- 实现：frame layout 追加 binding 11 = 探针 storage（0..10 不动，frame/frame_rt 双 layout 共用）；`probe_gi_storage` 升级为 lib pub 模块并新增 96B 全零占位 `disabled_frame_buffer` 与 `frame_probe_buffer` 解析；shader `native_mesh_v1.wgsl` ambient 段新增 `probe_gi_irradiance`（按世界位置最近探针、validity=0 跳过、无三线性，positionOffset 承载预烘焙探针世界位置）；开关 = frame uniform 保留通道 `lightDirection.w`（全仓无读者、旧包恒 0 = 关，逐位旧行为；renderer 仅在探针非空时写 1）。全部 frame bind group 调用点（init/环境换装/RT/IBL 探针/阴影探针/自定义 shader false 路径/两个 GPU 测试装配）已穿参。
+- 证据：`cargo test --lib` **516/516**（含 probe_gi_storage/probe_gi_abi 合同测试）；`cargo check --lib`、`cargo check --bin` 通过；`outline_gpu` 真机 GPU `--ignored` **3/3**（新 WGSL + 12 槽 frame layout + mesh 管线族在硬件上编译验证）。bind-group 级 GPU 跑（gpu_lod_draw_readback/gpu_shader_material_draw）被既有并行 WIP 阻断（`player_content_camera.rs` 未跟踪新文件引用 `crate::player_picking`，两个测试 crate 缺 `#[path]` 接线；同因 bin 测试目标含 rt_raster_parity 语法错误/deep2d E0282——均非本切片引入，未越界代修）。
+- 边界与共树披露：本切片提交的 init.rs/wgsl/environment_update/shadow_probe/ibl_probe/gpu_shader_materials/tests-support 内含并行会话未提交的 IES/RT/grading 接线行（本切片改动与其同语句/同块，无法分离暂存，已随切片一起过门禁）；探针 GI 的 producer、网格加速、三线性、设备恢复仍留后续切片。未 push。
