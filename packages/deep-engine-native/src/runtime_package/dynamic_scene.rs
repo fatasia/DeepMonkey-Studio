@@ -85,7 +85,17 @@ pub struct DynamicAnimationRuntime {
     pub autoplay: bool,
     #[serde(default)]
     pub r#loop: bool,
+    /// B2-b 区间播放:发布包携带的入点/出点;缺省播放整条时间线。
+    #[serde(default)]
+    pub playback_range_ms: Option<DynamicPlaybackRangeMs>,
     pub tracks: Vec<DynamicAnimationTrack>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DynamicPlaybackRangeMs {
+    pub in_ms: u64,
+    pub out_ms: u64,
 }
 
 fn default_true() -> bool {
@@ -163,7 +173,12 @@ impl DynamicSceneRuntime {
         let Some(animation) = &self.animation else {
             return Vec::new();
         };
-        let time_ms = time_ms.min(animation.duration_ms);
+        // B2-b:发布包携带播放区间时,采样时间钳制进 [in,out];
+        // 缺省保持整条时间线语义(与 Web 引擎区间合同一致)。
+        let time_ms = match animation.playback_range_ms {
+            Some(range) => time_ms.clamp(range.in_ms, range.out_ms),
+            None => time_ms.min(animation.duration_ms),
+        };
         animation
             .tracks
             .iter()
@@ -344,6 +359,11 @@ pub fn parse_and_validate_dynamic_scene_runtime(
         {
             return fail("dynamic animation envelope is invalid");
         }
+        if let Some(range) = &animation.playback_range_ms {
+            if range.in_ms >= range.out_ms || range.out_ms > animation.duration_ms {
+                return fail("dynamic animation playback range is invalid");
+            }
+        }
         for track in &animation.tracks {
             if track.target_id.is_empty()
                 || !matches!(
@@ -519,6 +539,56 @@ mod tests {
         assert!(animation.autoplay);
         assert!(animation.r#loop);
         assert_eq!(animation.tracks[0].property, "camera-position");
+    }
+
+    #[test]
+    fn accepts_playback_range_and_clamps_sampling() {
+        // B2-b:合法区间解析成功,采样时间钳制进 [in,out]。
+        let value = serde_json::json!({"schema":"deep-engine.dynamic-runtime","schemaVersion":1,"id":"scene","revision":1,
+            "animation":{"schema":"deep-engine.dynamic-animation","schemaVersion":1,"durationMs":1000,
+                "playbackRangeMs":{"inMs":200,"outMs":800},
+                "tracks":[{"targetId":"node-a","property":"translation","keyframes":[
+                    {"timeMs":0,"value":[0,0,0,0,0,0,1]},{"timeMs":1000,"value":[1,0,0,0,0,0,1]}]}]}});
+        let runtime = parse_and_validate_dynamic_scene_runtime(&value).unwrap();
+        let parsed_animation = runtime.animation.as_ref().unwrap();
+        let range = parsed_animation.playback_range_ms.expect("playback range must parse");
+        assert_eq!((range.in_ms, range.out_ms), (200, 800));
+        // 采样:区间外请求钳到边界;区间内照常;旧包(缺字段)仍按整条时间线。
+        // 关键帧 x: 0ms→0、1000ms→1 线性。
+        let samples_in = runtime.sample_animation(500);
+        let x_in = samples_in[0].value[0];
+        assert!((x_in - 0.5).abs() < 1e-9, "区间内按原时间采样, got {x_in}");
+        let x_low = runtime.sample_animation(50)[0].value[0];
+        assert!((x_low - 0.2).abs() < 1e-9, "低于入点钳到 inMs=200, got {x_low}");
+        let x_high = runtime.sample_animation(950)[0].value[0];
+        assert!((x_high - 0.8).abs() < 1e-9, "高于出点钳到 outMs=800, got {x_high}");
+        // 旧包无区间字段:100ms 处照常采样。
+        let legacy = parse_and_validate_dynamic_scene_runtime(&serde_json::json!(
+            {"schema":"deep-engine.dynamic-runtime","schemaVersion":1,"id":"scene","revision":1,"animation":animation()}
+        )).unwrap();
+        let x_legacy = legacy.sample_animation(100)[0].value[0];
+        assert!((x_legacy - 0.1).abs() < 1e-9);
+    }
+
+    #[test]
+    fn rejects_degenerate_or_out_of_duration_playback_range() {
+        let build = |in_ms: u64, out_ms: u64| {
+            serde_json::json!({"schema":"deep-engine.dynamic-runtime","schemaVersion":1,"id":"scene","revision":1,
+                "animation":{"schema":"deep-engine.dynamic-animation","schemaVersion":1,"durationMs":1000,
+                    "playbackRangeMs":{"inMs":in_ms,"outMs":out_ms},
+                    "tracks":[{"targetId":"node-a","property":"translation","keyframes":[
+                        {"timeMs":0,"value":[0,0,0,0,0,0,1]}]}]}})
+        };
+        // 退化区间(in>=out)
+        assert!(parse_and_validate_dynamic_scene_runtime(&build(500, 500)).is_err());
+        // 出点越时长
+        assert!(parse_and_validate_dynamic_scene_runtime(&build(200, 1200)).is_err());
+        // 入点负值由 serde u64 拒绝(deny_unknown_fields + 类型)
+        assert!(parse_and_validate_dynamic_scene_runtime(&serde_json::json!({"schema":"deep-engine.dynamic-runtime","schemaVersion":1,"id":"scene","revision":1,
+            "animation":{"schema":"deep-engine.dynamic-animation","schemaVersion":1,"durationMs":1000,
+                "playbackRangeMs":{"inMs":-1,"outMs":800},
+                "tracks":[{"targetId":"node-a","property":"translation","keyframes":[
+                    {"timeMs":0,"value":[0,0,0,0,0,0,1]}]}]}})).is_err());
     }
 
     #[test]
