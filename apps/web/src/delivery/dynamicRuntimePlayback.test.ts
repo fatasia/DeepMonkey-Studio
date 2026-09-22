@@ -45,7 +45,16 @@ describe("dynamic runtime Web consumer", () => {
     expect(sampleDynamicRuntimePackage(packageFixture(), 2_000).timeMs).toBe(1000);
   });
 
-  it("applies one sampled frame to scene, replay, and interaction consumers", () => {
+  it("honors the lowered transition on the ending keyframe", () => {
+    const value = packageFixture();
+    const animation = (value.payloads["scene.dynamic"] as any).animation;
+    animation.tracks[0].keyframes[1].transition = "ease-in";
+    expect(sampleDynamicRuntimePackage(value, 500).transforms.pump?.translation?.[0]).toBe(2.5);
+    animation.tracks[0].keyframes[1].transition = "step";
+    expect(sampleDynamicRuntimePackage(value, 500).transforms.pump?.translation?.[0]).toBe(0);
+  });
+
+
     const calls: string[] = [];
     const frame = applyDynamicRuntimeFrame(packageFixture(), 500, {
       applyTransform: (id, transform) => calls.push(`${id}:${transform.translation?.[0]}`),

@@ -1,13 +1,17 @@
 import type { SceneSnapshot } from "@bim-studio/contracts";
 import { buildDeepRuntimePackage, runtimeContentSha256, serializeDeepRuntimePackage,
   type DeepRuntimePackage, type RuntimeJson, type RuntimePrefilteredIbl } from "@bim-studio/deep-engine/runtime-package";
+import type { DynamicAnimationRuntime, DynamicAnimationTrack } from "@bim-studio/deep-engine/runtime-package";
 import { compileSceneRenderPacket, type CompileSceneRenderOptions, type SceneRenderCompilation } from "./compileSceneRenderPacket";
 import { compileSceneCamera } from "./compileSceneCamera";
 import { compileSceneEnvironment } from "./compileSceneEnvironment";
 import { compileSceneHdrEnvironment } from "./compileSceneHdrEnvironment";
 import { sceneCompilationSource } from "./sceneCompilationSource";
-import { collectDeferredSceneFields, collectDeferredObjectFields } from "./sceneInactiveFields";
-import { localizeSceneCoordinates, type SceneLocalCoordinateFrame } from "./sceneLocalCoordinates";
+import { collectDeferredSceneFields, collectDeferredObjectFields,
+  hasOnlyCompiledCameraConstraintFields } from "./sceneInactiveFields";
+import { localizeSceneCoordinates, worldToLocal, type SceneLocalCoordinateFrame } from "./sceneLocalCoordinates";
+import { compileScenePhysicsRuntime, type CompileScenePhysicsRuntimeOptions } from "./compileScenePhysicsRuntime";
+import { compileSceneAnimationController } from "./compileSceneAnimationController";
 
 const RECIPE = "deep-scene-static-compile-v5";
 function findNonJson(value: unknown, path = "$", seen = new Set<object>()): string | undefined {
@@ -20,40 +24,65 @@ function findNonJson(value: unknown, path = "$", seen = new Set<object>()): stri
   seen.delete(value);
 }
 function stage<T>(name: string, run: () => T): T { try { return run(); } catch (error) { throw new Error(`${name}: ${error instanceof Error ? error.message : String(error)}`); } }
-/** Lower only deterministic object TRS keyframes into the v7 dynamic resource.
- * Camera tracks and clip playback remain deferred until their dedicated
- * consumers exist; silently dropping them would falsify the package.
+/** Lower deterministic camera and object TRS keyframes into the v7 dynamic resource.
+ * Imported model clip playback remains deferred until its dedicated consumer exists.
  * Exported for delivery hosts that play the dynamic channel of an already
  * frozen publication snapshot without recompiling geometry resources.
  */
-export function compileDynamicRuntime(scene: SceneSnapshot): { readonly id: string; readonly revision: number; readonly value: RuntimeJson } | undefined {
+export function compileDynamicRuntime(scene: SceneSnapshot, physicsOptions?: CompileScenePhysicsRuntimeOptions): { readonly id: string; readonly revision: number; readonly value: RuntimeJson } | undefined {
+  const animationRuntime = compileAnimationRuntime(scene);
+  const animationController = compileSceneAnimationController({
+    id: "scene.dynamic",
+    revision: 1,
+    stateMachine: scene.animation?.stateMachine,
+  })?.animationController;
+  const physics = physicsOptions ? compileScenePhysicsRuntime(scene, physicsOptions) : undefined;
+  if (!animationRuntime && !animationController && !physics) return;
+  return { id: "scene.dynamic", revision: 1, value: {
+    schema: "deep-engine.dynamic-runtime", schemaVersion: physics ? 3 : animationController ? 2 : 1,
+    id: "scene.dynamic", revision: 1,
+    ...(animationRuntime ? { animation: animationRuntime } : {}),
+    ...(animationController ? { animationController } : {}),
+    ...(physics ? { physics } : {}),
+  } as unknown as RuntimeJson };
+}
+
+function compileAnimationRuntime(scene: SceneSnapshot): DynamicAnimationRuntime | undefined {
   const animation = scene.animation;
   if (!animation || !Number.isFinite(animation.duration) || animation.duration < 0 || animation.duration > 86_400) return;
   const grouped = new Map<string, typeof animation.models>();
   for (const model of animation.models) grouped.set(model.modelId, [...(grouped.get(model.modelId) ?? []), model]);
-  const tracks = [...grouped.entries()].flatMap(([modelId, frames]) => {
+  const tracks: DynamicAnimationTrack[] = [...grouped.entries()].flatMap(([modelId, frames]) => {
     const sorted = frames.sort((a, b) => a.time - b.time);
     const quat = (x: number, y: number, z: number): readonly [number, number, number, number] => {
       const cx = Math.cos(x / 2), sx = Math.sin(x / 2), cy = Math.cos(y / 2), sy = Math.sin(y / 2), cz = Math.cos(z / 2), sz = Math.sin(z / 2);
       return [sx * cy * cz - cx * sy * sz, cx * sy * cz + sx * cy * sz, cx * cy * sz - sx * sy * cz, cx * cy * cz + sx * sy * sz];
     };
+    const transition = (frame: { transition?: "linear" | "smooth" | "ease-in" | "ease-out" | "step" }) =>
+      frame.transition === undefined ? {} : { transition: frame.transition };
     const translation = sorted.map(frame => {
       const { position } = frame.transform;
-      return { timeMs: Math.round(frame.time * 1000), value: [position.x, position.y, position.z, 0, 0, 0, 1] as const };
+      return { timeMs: Math.round(frame.time * 1000), value: [position.x, position.y, position.z, 0, 0, 0, 1] as const, ...transition(frame) };
     });
-    const rotation = sorted.map(frame => { const q = quat(frame.transform.rotation.x, frame.transform.rotation.y, frame.transform.rotation.z); return { timeMs: Math.round(frame.time * 1000), value: [0, 0, 0, q[0], q[1], q[2], q[3]] as const }; });
-    const scale = sorted.map(frame => ({ timeMs: Math.round(frame.time * 1000), value: [frame.transform.scale.x, frame.transform.scale.y, frame.transform.scale.z, 0, 0, 0, 1] as const }));
+    const rotation = sorted.map(frame => { const q = quat(frame.transform.rotation.x, frame.transform.rotation.y, frame.transform.rotation.z); return { timeMs: Math.round(frame.time * 1000), value: [0, 0, 0, q[0], q[1], q[2], q[3]] as const, ...transition(frame) }; });
+    const scale = sorted.map(frame => ({ timeMs: Math.round(frame.time * 1000), value: [frame.transform.scale.x, frame.transform.scale.y, frame.transform.scale.z, 0, 0, 0, 1] as const, ...transition(frame) }));
     return [
       { targetId: modelId, property: "translation" as const, keyframes: translation.map(({ timeMs, value }) => ({ timeMs, value })) },
       { targetId: modelId, property: "rotation" as const, keyframes: rotation },
       { targetId: modelId, property: "scale" as const, keyframes: scale },
     ];
   });
+  const cameraFrames = [...animation.camera].sort((a, b) => a.time - b.time);
+  if (cameraFrames.length) {
+    tracks.push({ targetId: "scene.camera", property: "camera-position", keyframes: cameraFrames.map(frame => ({
+      timeMs: Math.round(frame.time * 1000), value: [frame.camera.position.x, frame.camera.position.y, frame.camera.position.z, 0, 0, 0, 1],
+    })) });
+    tracks.push({ targetId: "scene.camera", property: "camera-target", keyframes: cameraFrames.map(frame => ({
+      timeMs: Math.round(frame.time * 1000), value: [frame.camera.target.x, frame.camera.target.y, frame.camera.target.z, 0, 0, 0, 1],
+    })) });
+  }
   if (!tracks.length) return;
-  return { id: "scene.dynamic", revision: 1, value: {
-    schema: "deep-engine.dynamic-runtime", schemaVersion: 1, id: "scene.dynamic", revision: 1,
-    animation: { schema: "deep-engine.dynamic-animation", schemaVersion: 1, durationMs: Math.round(animation.duration * 1000), tracks },
-  } as unknown as RuntimeJson };
+  return { schema: "deep-engine.dynamic-animation", schemaVersion: 1, durationMs: Math.round(animation.duration * 1000), autoplay: animation.autoplay !== false, loop: animation.loop, tracks };
 }
 export interface CompileSceneRuntimeOptions extends CompileSceneRenderOptions {
   readonly packageId: string;
@@ -67,7 +96,7 @@ export interface SceneCompilationEvidence {
   readonly compileGraphHash: string;
   /** 对 runtime/package.json 实际 UTF-8 字节计算，与包内 canonical hash 分开。 */
   readonly targetArtifactHash: string;
-  readonly recipe: typeof RECIPE | "deep-scene-static-compile-v4" | "deep-scene-static-compile-v6" | "deep-scene-static-compile-v7" | "deep-scene-static-compile-v8" | "deep-scene-static-compile-v9" | "deep-scene-static-compile-v10" | "deep-scene-static-compile-v11" | "deep-scene-static-compile-v12";
+  readonly recipe: typeof RECIPE | "deep-scene-static-compile-v4" | "deep-scene-static-compile-v6" | "deep-scene-static-compile-v7" | "deep-scene-static-compile-v8" | "deep-scene-static-compile-v9" | "deep-scene-static-compile-v10" | "deep-scene-static-compile-v11" | "deep-scene-static-compile-v12" | "deep-scene-static-compile-v13";
   readonly environmentSource?:{readonly bytes:number;readonly sha256:string};
   readonly localCoordinates: SceneLocalCoordinateFrame;
   readonly maxSourceBytes: number;
@@ -98,12 +127,14 @@ export async function compileSceneRuntimePackage(input: SceneSnapshot,
   const environmentSource=environment?.schemaVersion===6 ? options.hdrEnvironment?.source : undefined;
   if (environment?.schemaVersion===6 && !environmentSource) throw new Error("HDR 来源身份缺失");
   if (environmentSource && (!Number.isSafeInteger(environmentSource.bytes) || environmentSource.bytes<1 || environmentSource.bytes>32*1024**2 || environmentSource.sha256!==environment?.ibl?.source.contentHash.value)) throw new Error("HDR 来源身份或预算无效");
-  const recipe = environment?.schemaVersion === 7 ? "deep-scene-static-compile-v12" : environment?.schemaVersion === 6 ? "deep-scene-static-compile-v11" : environment?.schemaVersion === 5 ? "deep-scene-static-compile-v10" : environment?.schemaVersion === 4 ? "deep-scene-static-compile-v9" : environment?.lighting?.localLights ? "deep-scene-static-compile-v8" : environment?.lighting ? "deep-scene-static-compile-v7" : environment ? "deep-scene-static-compile-v6" : RECIPE;
+  const recipe = environment?.schemaVersion === 8 ? "deep-scene-static-compile-v13" : environment?.schemaVersion === 7 ? "deep-scene-static-compile-v12" : environment?.schemaVersion === 6 ? "deep-scene-static-compile-v11" : environment?.schemaVersion === 5 ? "deep-scene-static-compile-v10" : environment?.schemaVersion === 4 ? "deep-scene-static-compile-v9" : environment?.lighting?.localLights ? "deep-scene-static-compile-v8" : environment?.lighting ? "deep-scene-static-compile-v7" : environment ? "deep-scene-static-compile-v6" : RECIPE;
   const sourceAssets: Array<{ assetId: string; bytes: number; sha256: string }> = [];
   let loadedBytes = environmentSource?.bytes ?? 0;
   if (loadedBytes>(maxSourceBytes ?? 256*1024*1024)) throw new Error("HDR 资源超出场景预算");
   const compiled = await compileSceneRenderPacket(localized.scene, {
+    ...(options.normalizeModel ? { normalizeModel: options.normalizeModel } : {}),
     ...(imageDecoder ? { imageDecoder } : {}), ...(signal ? { signal } : {}),
+    auxiliaryGridOrigin: worldToLocal({ x: 0, y: 0, z: 0 }, localized.frame.origin, "environment.grid.origin"),
     ...(maxSourceBytes === undefined ? {} : { maxSourceBytes }),
     async loadModel(assetId, loadSignal) {
       const loaded = await loadModel(assetId, loadSignal);
@@ -116,7 +147,7 @@ export async function compileSceneRuntimePackage(input: SceneSnapshot,
       return bytes;
     } });
   signal?.throwIfAborted();
-  const dynamicRuntime = compileDynamicRuntime(scene);
+  const dynamicRuntime = compileDynamicRuntime(localized.scene, { objectBindings: compiled.objectBindings, coordinateOrigin: localized.frame.origin });
   const runtimePackage = stage("package build", () => buildDeepRuntimePackage({ packageId, packageVersion, camera, ...(environment ? { environment } : {}), ...(dynamicRuntime ? { dynamicRuntime } : {}),
     renderPacket: { id: "scene.main", revision: 1, value: compiled.packet } }));
   const nonJson = findNonJson(runtimePackage); if (nonJson) throw new Error(`runtime package non-JSON at ${nonJson}`);
@@ -134,14 +165,39 @@ export async function compileSceneRuntimePackage(input: SceneSnapshot,
   signal?.throwIfAborted();
   // 雾随 environment v7 编译，但 weather 字段只被部分消费（粒子/曝光因子未接），
   // 必须继续保留在 deferred 列表里，不能因雾已编译而从 deferred 移除。
-  const deferredSceneFields = collectDeferredSceneFields(semantic).filter(field => !(environment && field === "environment") && !(environment?.lighting && field === "lighting") && !(field === "clipping" && camera.schemaVersion === 3 && camera.clippingPlane));
-  const deferredObjectFields = collectDeferredObjectFields(scene);
+  const physicsCompiled = Boolean(dynamicRuntime && scene.physics?.enabled);
+  const compiledDynamicValue = dynamicRuntime?.value as { readonly animation?: unknown; readonly animationController?: unknown } | undefined;
+  const animationCompiled = Boolean((compiledDynamicValue?.animation || compiledDynamicValue?.animationController)
+    && !scene.animation?.models.some(frame => frame.animation));
+  const orbitConstraintsCompiled = (camera.schemaVersion === 4 || camera.schemaVersion === 5) && camera.controls?.mode === "orbit"
+    && scene.cameraConstraints !== undefined && hasOnlyCompiledCameraConstraintFields(scene.cameraConstraints);
+  const cameraViewsCompiled = camera.schemaVersion === 5 && camera.cameraViews !== undefined
+    && camera.defaultCameraViewId === scene.defaultCameraViewId;
+  const compiledPhysicsBodyIds = new Set([...scene.models, ...scene.primitives]
+    .filter(item => physicsCompiled && item.physics?.type !== "none" && item.physics !== undefined).map(item => item.modelId));
+  const deferredSceneFields = collectDeferredSceneFields(semantic).filter(field =>
+    !(environment && field === "environment")
+    && !(environment?.lighting && field === "lighting")
+    && !(animationCompiled && field === "animation")
+    && !(physicsCompiled && field === "physics")
+    && !(orbitConstraintsCompiled && field === "cameraConstraints")
+    && !(cameraViewsCompiled && (field === "cameraViews" || field === "defaultCameraViewId"))
+    && !(field === "clipping" && (camera.schemaVersion === 3 || camera.schemaVersion === 4 || camera.schemaVersion === 5) && camera.clippingPlane));
+  const deferredObjectFields = collectDeferredObjectFields(scene).map(item => ({ ...item,
+    fields: item.fields.filter(field => !(field === "physics" && compiledPhysicsBodyIds.has(item.nodeId))) }))
+    .filter(item => item.fields.length > 0);
   return { runtimePackage, packageJson, evidence: { schemaVersion: 1, scope: "static-render-packet", recipe,
     localCoordinates: localized.frame, maxSourceBytes: maxSourceBytes ?? 256 * 1024 * 1024,
     sourceSemanticHash, compileGraphHash, targetArtifactHash, sourceAssets, ...(environmentSource ? {environmentSource} : {}),
     objectBindings: compiled.objectBindings, compiledSceneFields: [{ field: "camera", capability: "deep.scene.camera.v1", resourceId: camera.id },
-      ...(dynamicRuntime ? [{ field: "animation", capability: "deep.scene.dynamic-runtime.v1", resourceId: dynamicRuntime.id }] : []),
-      ...(camera.schemaVersion === 3 && camera.clippingPlane ? [{ field: "clipping", capability: "deep.scene.section-plane.v1", resourceId: camera.id }] : []),
+      ...(orbitConstraintsCompiled ? [{ field: "cameraConstraints", capability: "deep.scene.camera.v1", resourceId: camera.id }] : []),
+      ...(cameraViewsCompiled ? [
+        { field: "cameraViews", capability: "deep.scene.camera-views.v1", resourceId: camera.id },
+        { field: "defaultCameraViewId", capability: "deep.scene.camera-views.v1", resourceId: camera.id },
+      ] : []),
+      ...(animationCompiled ? [{ field: "animation", capability: "deep.scene.dynamic-runtime.v1", resourceId: dynamicRuntime!.id }] : []),
+      ...(physicsCompiled ? [{ field: "physics", capability: "deep.scene.physics-runtime.v1", resourceId: dynamicRuntime!.id }] : []),
+      ...((camera.schemaVersion === 3 || camera.schemaVersion === 4 || camera.schemaVersion === 5) && camera.clippingPlane ? [{ field: "clipping", capability: "deep.scene.section-plane.v1", resourceId: camera.id }] : []),
       ...(environment ? [{ field: "environment", capability: environment.schemaVersion===6 ? "deep.scene.hdr-environment.v1" : "deep.scene.solid-environment.v1", resourceId: environment.id }] : []),
       ...(environment?.lighting ? [{ field: "lighting", capability: environment.schemaVersion === 6 ? "deep.scene.hdr-lighting.v1" : environment.schemaVersion === 5 ? "deep.scene.point-shadow.v1" : environment.schemaVersion === 4 ? "deep.scene.spot-shadow.v1" : environment.lighting.localLights ? "deep.scene.multi-light.v1" : "deep.scene.directional-light.v1", resourceId: environment.id }] : [])],
     deferredSceneFields, deferredObjectFields } };
