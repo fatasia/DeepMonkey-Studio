@@ -3171,3 +3171,10 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **测试**：`sceneViewerToolsAvailability.test.ts` 4 项（无字段双不可用／带 clipping 可用／physics.enabled 三态／判定对象不伪造测量与爆炸维度）；`PublishedViewerToolDock.test.tsx` +2（缺能力隐藏剖切且测量/爆炸保持显示、带字段正常渲染）；既有首用例即"缺省显示剖切"兼容钉子。
 - **门禁**：apps/web `tsc --noEmit` 0 错误；vitest 新增+相关 14/14（ToolDock 4、availability 4、sceneViewerDelivery 2、applySceneViewerSnapshot 4）。
 - **诚实边界**：①SceneViewerRoot 历史无专属组件测试，本切片不补重型根组件挂载测试，靠 tsc+依赖链测试覆盖；②测量（`measurements` 是已有测量数据的存在性，不能反推交互测量工具是否可用）与爆炸（纯引擎运行时能力，快照无编译字段）不可由快照形状诚实判定，按钮保持显示、判定对象不含这两个维度，不伪造；③观察到 `compileSceneCamera` 当前不产出 `camera.clippingPlane`，故 `deep.scene.section-plane.v1` 暂不会出现在 compiledSceneFields——本切片以快照字段存在性为判定准绳（与 WebGL 查看器 `engine.setClipping` 消费一致），Native section-plane 载荷生产接线属其他切片；④工作树并行他人 WIP（viewerEngineSimulation.ts、rapierPhysicsDebugView.*、.tmp-*）未触碰、未入库；未 push。
+
+### 2026-09-23 30 分钟自检（第五轮）：V2/I2 代理产出验收 + B3 调试数据层
+
+- **V2 Native 发布验证完成**（1dc7c39f）：release EXE 3m53s 零错误构建（19.1MB）+ 三路实窗验证全过（新编译包/HEAD fixture/portable EXE：1200×800 真窗、Vulkan/RTX4060、10/10 帧、gpuErrorsClean、干净退出<2s）+ portable 打包 27 项 smoke 全过。诚实边界：dashboard 旧产物走 scene 验证器 60s 超时（occlusion consume indirect template size mismatch）——已派专职代理排查收敛；设备丢失演练/Three WebView 下载链等属 V2 其余子项。
+- **I2 工具坞能力显隐完成**（f87fd49b）：按第四轮语义判定实现——sceneViewerToolsAvailability 纯函数从快照推导（clipping 字段存在性、physics.enabled），缺能力隐藏剖切按钮（隐藏而非置灰），不伪造测量/爆炸维度判定。14/14 测试+tsc 0 错误。
+- **B3 缺口5 调试数据层完成**（d96ed263，主线程）：collectPhysicsCuboidDebugEntries 纯函数+仿真器薄委托；真机 WASM 测试钉死语义——translation() 是世界位姿（含刚体）、局部偏移必须取 translationWrtParent()、移除 body 后残留句柄跳过不产条目。2/2 测试。剩余：渲染线框层（已派代理）+面板开关。
+- **满载布局**：主线程（验收+数据层）+ 子代理×2（B3 渲染线框层、V2 occlusion 诊断排查）。
