@@ -15,6 +15,7 @@ import type {
 } from "@bim-studio/scene-sdk";
 import { assertBehaviorSourceAccess, assertNoDynamicModuleImports, hardenSceneBehaviorWorkerGlobals } from "./sceneBehaviorSandbox";
 import { behaviorScriptSource } from "../behavior/behaviorScriptSource";
+import { behaviorSourceLocation } from "../behavior/sceneBehaviorWorkerProtocol";
 
 type LifecycleContext = {
   sceneId: string;
@@ -91,7 +92,8 @@ async function handleRequest(request: SceneBehaviorWorkerRequest): Promise<void>
     await invokeLifecycle(request.lifecycle, request.invocationId, request.elapsedMs, request.deltaMs, request.event, request.data);
   } catch (reason) {
     const error = reason instanceof Error ? reason : new Error(String(reason));
-    send({ type: "behavior.error", ...("invocationId" in request ? { invocationId: request.invocationId } : {}), message: error.message, ...(error.stack ? { stack: error.stack } : {}) });
+    const location = behaviorSourceLocation(error.stack, activeModule?.id);
+    send({ type: "behavior.error", ...("invocationId" in request ? { invocationId: request.invocationId } : {}), message: error.message, ...(error.stack ? { stack: error.stack } : {}), ...(location ? { location } : {}) });
   }
 }
 
@@ -150,15 +152,16 @@ async function compileBehavior(module: SceneBehaviorModule): Promise<Partial<Rec
     await assertNoDynamicModuleImports(dependency.code, `依赖 ${dependency.specifier}：`);
   }
   const lifecycleNames: SceneScriptLifecycle[] = ["onStart", "onUpdate", "onFixedUpdate", "onData", "onEvent", "onStop", "onDispose"];
-  const AsyncFunction = Object.getPrototypeOf(async function () { /* sandbox compiler */ }).constructor as new (...arguments_: string[]) => (...values: unknown[]) => Promise<unknown>;
+  const AsyncFunction = Object.getPrototypeOf(async function () { /* 沙箱编译器 */ }).constructor as new (...arguments_: string[]) => (...values: unknown[]) => Promise<unknown>;
+  const consoleApi = createConsoleApi();
   const studio = createStudioApi();
   const net = createNetworkApi();
   const proxyFetch = (endpoint: string, options?: StudioNetworkFetchOptions) => net.fetch(endpoint, options);
   if (/\b(?:import|export)\s/.test(module.code)) {
     return compileModuleBehavior(module, lifecycleNames, { studio, net, proxyFetch });
   }
-  const factory = new AsyncFunction("THREE", "studio", "net", "fetch", `"use strict";\n${module.code}\nreturn { ${lifecycleNames.map((name) => `${name}: typeof ${name} === "function" ? ${name} : undefined`).join(", ")} };\n//# sourceURL=${behaviorScriptSource(module).url}`);
-  return await factory(THREE, studio, net, proxyFetch) as Partial<Record<SceneScriptLifecycle, LifecycleHandler>>;
+  const factory = new AsyncFunction("THREE", "studio", "net", "fetch", "console", `"use strict";\n${module.code}\nreturn { ${lifecycleNames.map((name) => `${name}: typeof ${name} === "function" ? ${name} : undefined`).join(", ")} };\n//# sourceURL=${behaviorScriptSource(module).url}`);
+  return await factory(THREE, studio, net, proxyFetch, consoleApi) as Partial<Record<SceneScriptLifecycle, LifecycleHandler>>;
 }
 
 async function compileModuleBehavior(
@@ -170,7 +173,7 @@ async function compileModuleBehavior(
   const objectUrls: string[] = [];
   const scopeKey = `__bim_studio_behavior_${crypto.randomUUID().replaceAll("-", "")}`;
   try {
-    Reflect.set(workerScope, scopeKey, { THREE, ...builtins });
+    Reflect.set(workerScope, scopeKey, { THREE, ...builtins, console: createConsoleApi() });
     dependencyUrls.set("three", createThreeModuleUrl(objectUrls, scopeKey));
     for (const dependency of module.dependencies ?? []) {
       await verifyDependencyIntegrity(dependency.code, dependency.integrity);
@@ -179,7 +182,9 @@ async function compileModuleBehavior(
       dependencyUrls.set(dependency.specifier, url);
     }
     const source = rewriteModuleImports(module.code, dependencyUrls);
-    const prelude = `const { THREE, studio, net, proxyFetch: fetch } = globalThis[${JSON.stringify(scopeKey)}];\n`;
+    const prelude = `const { THREE, studio, net, proxyFetch: fetch, console: consoleApi } = globalThis[${JSON.stringify(scopeKey)}];
+const console = consoleApi;
+`;
     const exported = `\nexport default { ${lifecycleNames.map((name) => `${name}: typeof ${name} === "function" ? ${name} : undefined`).join(", ")} };`;
     const entryUrl = URL.createObjectURL(new Blob([`${prelude}${source}${exported}\n//# sourceURL=${behaviorScriptSource(module).url}`], { type: "text/javascript" }));
     objectUrls.push(entryUrl);
@@ -370,7 +375,40 @@ function emitEvent(name: string, payload?: JsonValue): void {
 }
 
 function log(message: string, payload?: unknown) {
-  send({ type: "behavior.log", level: "info", message: String(message), ...(isJsonValue(payload) ? { data: payload } : {}) });
+  emitLog("info", message, payload);
+}
+
+function createConsoleApi() {
+  const api = {
+    debug: (...values: unknown[]) => emitConsoleLog("debug", values),
+    info: (...values: unknown[]) => emitConsoleLog("info", values),
+    warn: (...values: unknown[]) => emitConsoleLog("warn", values),
+    error: (...values: unknown[]) => emitConsoleLog("error", values),
+  };
+  return Object.freeze(api);
+}
+
+function emitConsoleLog(level: "debug" | "info" | "warn" | "error", values: unknown[]) {
+  const [first, ...rest] = values;
+  const message = rest.length ? values.map(formatConsoleValue).join(" ") : formatConsoleValue(first);
+  const data = rest.length === 1 && isJsonValue(rest[0]) ? rest[0] : undefined;
+  emitLog(level, message, data);
+}
+
+function formatConsoleValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value instanceof Error) return value.message;
+  if (value === undefined) return "undefined";
+  try {
+    const serialized = JSON.stringify(value);
+    return serialized === undefined ? String(value) : serialized;
+  } catch {
+    return String(value);
+  }
+}
+
+function emitLog(level: "debug" | "info" | "warn" | "error", message: unknown, data?: unknown) {
+  send({ type: "behavior.log", level, message: formatConsoleValue(message), ...(isJsonValue(data) ? { data } : {}) });
 }
 
 function rejectPendingRequests(message: string) {

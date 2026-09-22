@@ -68,8 +68,14 @@ export function analyzeSceneScript(
   const issues: SceneScriptIssue[] = [];
 
   if (!lifecycle.length) issues.push({ code: "missing-lifecycle", severity: "error", message: "没有找到可运行的生命周期函数（例如 onStart 或 onUpdate）", line: 1, column: 1, endColumn: 1 });
-  for (const capability of missingCapabilities) issues.push({ code: "missing-capability", severity: "warning", message: `代码使用了 ${capability}，但脚本尚未声明该能力`, line: 1, column: 1, endColumn: 1 });
-  for (const permission of missingPermissions) issues.push({ code: "missing-permission", severity: "warning", message: `代码需要 ${permission} 权限，运行前请补齐`, line: 1, column: 1, endColumn: 1 });
+  for (const capability of missingCapabilities) {
+    const position = firstRulePosition(executableCode, CAPABILITY_RULES.find((rule) => rule.capability === capability)?.pattern);
+    issues.push({ code: "missing-capability", severity: "warning", message: `代码使用了 ${capability}，但脚本尚未声明该能力`, line: position.line, column: position.column, endColumn: position.column + capability.length });
+  }
+  for (const permission of missingPermissions) {
+    const position = firstRulePosition(executableCode, PERMISSION_RULES.find((rule) => rule.permission === permission)?.pattern);
+    issues.push({ code: "missing-permission", severity: "warning", message: `代码需要 ${permission} 权限，运行前请补齐`, line: position.line, column: position.column, endColumn: position.column + permission.length });
+  }
 
   const objectIds = new Set(context.targets.filter((item) => item.kind === "object").map((item) => item.id));
   const componentIds = new Set(context.targets.filter((item) => item.kind === "component").map((item) => item.id));
@@ -158,6 +164,14 @@ function collectUnknownCalls(code: string, pattern: RegExp, known: ReadonlySet<s
       endColumn: position.column + value.length
     });
   }
+}
+
+function firstRulePosition(source: string, pattern: RegExp | undefined): { line: number; column: number } {
+  if (!pattern) return { line: 1, column: 1 };
+  pattern.lastIndex = 0;
+  const match = pattern.exec(source);
+  pattern.lastIndex = 0;
+  return sourcePosition(source, match?.index ?? 0);
 }
 
 function sourcePosition(source: string, offset: number): { line: number; column: number } {

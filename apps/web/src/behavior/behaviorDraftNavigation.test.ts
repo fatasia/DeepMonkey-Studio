@@ -17,6 +17,12 @@ const draft = (name: string): ScriptModule => ({
 });
 
 describe("flushPendingBehaviorDraft", () => {
+  it("retains the draft when the target becomes locked before navigation", () => {
+    const value = draft("Locked target");
+    const pending = { current: value as ScriptModule | undefined };
+    expect(flushPendingBehaviorDraft(pending, () => false)).toBe("write-rejected");
+    expect(pending.current).toBe(value);
+  });
   it("commits a valid draft once and clears the navigation guard", () => {
     const pending = { current: draft("设备告警") as ScriptModule | undefined };
     const upsert = vi.fn();

@@ -51,7 +51,7 @@ export function SceneBehaviorPanel(props: {
   hasSession?: boolean;
   canStep?: boolean;
   onStep?: () => void;
-  onUpsert: (script: ScriptModule) => void;
+  onUpsert: (script: ScriptModule) => void | boolean;
   autoSaveEnabled: boolean;
   onAutoSaveChange: (enabled: boolean) => void;
   onSaveWorkspace: () => void | Promise<unknown>;
@@ -241,10 +241,13 @@ export function SceneBehaviorPanel(props: {
   }
   async function applyChanges() {
     if (!draft || !draft.name.trim() || savingRef.current) return;
+    if (props.onUpsert(draft) === false) {
+      setActionFeedback(tr(props.locale, "挂载对象已锁定，草稿已保留", "The target is locked; the draft was retained"));
+      return;
+    }
     const operation = captureOperation();
     savingRef.current = true;
     setSaving(true);
-    props.onUpsert(draft);
     setAiDraftInserted(false);
     setAiDraftUndo(undefined);
     setActionFeedback(tr(props.locale, "正在保存脚本…", "Saving script…"));

@@ -2871,3 +2871,13 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **复用纪律**：不新增第二套 shader compiler；`ShaderGraphAssetV1` 经 `lowerShaderGraphAsset` 进入既有 `ShaderStageGraph`/`ShaderNode` IR，后续继续复用现有 `validateShaderAsset`、`compileShaderPass`、WGSL backend、variants 与 shader package executor。
 - 新增 `shaderGraph/lowering.ts`：确定性拓扑排序、节点 config → 既有 ShaderNode lowering、stage outputs lowering、cycle/missing-edge/invalid graph fail-closed；新增 3 项 lowering 测试。
 - Shader Graph S1/S2 合计 7/7 通过，deep-engine typecheck 通过。当前仍未做可视化画布、Blackboard、Preview scheduler、SubGraph、节点级 MessageStore；这些继续按 Shader S3 排期。未 push。
+
+
+### 2026-09-22 B1 脚本编辑器收口（ZCode）
+
+- 复用既有 Worker 沙箱、`behavior.log` 合同、`behaviorSourceLocation`、`sceneScriptAnalysis` 与 Monaco 类型注入；本轮未重建编辑器。
+- Worker 沙箱新增受控 `console.debug/info/warn/error`，只注入冻结的最小 console API，统一经既有 `behavior.log` 协议输出，`ctx.log` 保持 info；未向脚本暴露宿主 console 或额外宿主能力。错误协议补充可选源码位置，模块脚本的 console prelude 行偏移同步修正。
+- 静态缺失 capability/permission 诊断改为锚定首个匹配源码位置，不再固定 line 1；新增协议行号与分析器行号回归测试。
+- Monaco 现有 `checkJs: false` 保持不变；实测现有默认脚本与 SDK fixtures 在 `checkJs=false/true` 均无误报，未扩大普通 JavaScript 的类型检查范围。
+- 证据：B1 聚焦测试 5 文件 **34/34**；Monaco checkJs 探针 **1/1**（真实 fixtures 两种模式均无诊断）。`pnpm --filter web typecheck` 仍被工作树既有 `apps/web/src/delivery/dynamicRuntimePlayback.test.ts:67` 语法错误阻断，非本轮文件。未 push。
+- 未尽边界：本轮未实现 Worker 真机集成测试（Vitest 无 Dedicated Worker/Blob import 环境）；未做性能基准，原因是变更仅为每次日志序列化与静态诊断首匹配，暂无现成 Worker benchmark harness。

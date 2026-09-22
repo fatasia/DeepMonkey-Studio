@@ -10,12 +10,12 @@ export interface PendingBehaviorDraftRef {
  */
 export function flushPendingBehaviorDraft(
   pendingRef: PendingBehaviorDraftRef,
-  upsert: (draft: ScriptModule) => void,
-): "unchanged" | "saved" | "name-required" {
+  upsert: (draft: ScriptModule) => void | boolean,
+): "unchanged" | "saved" | "name-required" | "write-rejected" {
   const draft = pendingRef.current;
   if (!draft) return "unchanged";
   if (!draft.name.trim()) return "name-required";
-  upsert(draft);
+  if (upsert(draft) === false) return "write-rejected";
   pendingRef.current = undefined;
   return "saved";
 }

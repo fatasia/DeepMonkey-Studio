@@ -156,4 +156,4 @@ export type SceneBehaviorWorkerResponse =
   | ({ type: "behavior.network.request" } & SceneBehaviorNetworkRequest)
   | ({ type: "behavior.capability.request" } & SceneBehaviorCapabilityRequest)
   | { type: "behavior.log"; level: SceneBehaviorLogLevel; message: string; data?: JsonValue }
-  | { type: "behavior.error"; invocationId?: string; message: string; stack?: string };
+  | { type: "behavior.error"; invocationId?: string; message: string; stack?: string; location?: { line: number; column: number } };

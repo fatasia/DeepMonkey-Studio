@@ -17,6 +17,18 @@ const context = {
 };
 
 describe("analyzeSceneScript", () => {
+  it("anchors missing capability and permission diagnostics to the matching source line", () => {
+    const result = analyzeSceneScript(`
+
+const target = studio.object("pump-01");
+const value = studio.getData("temperature");`, { ...script, capabilities: [], permissions: [] }, context);
+    expect(result.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "missing-capability", line: 3 }),
+      expect.objectContaining({ code: "missing-permission", line: 4 }),
+    ]));
+  });
+
+
   it.each([undefined, { kind: "scene" as const }, { kind: "object" as const, id: "pump-01" }, { kind: "component" as const, id: "unity-01" }])("creates a valid default script for target %j", target => {
     const analysis = analyzeSceneScript(defaultBehaviorCode(target), {
       ...script, ...(target ? { target } : {}), lifecycle: ["onStart", "onUpdate", "onDispose"],

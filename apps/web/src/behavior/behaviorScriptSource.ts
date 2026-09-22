@@ -3,6 +3,6 @@ export function behaviorScriptSource(module: { id: string; code: string }) {
   const moduleSyntax = /\b(?:import|export)\s/.test(module.code);
   return {
     url: `industrial-studio-behavior-${encodeURIComponent(module.id)}.${moduleSyntax ? "mjs" : "js"}`,
-    lineOffset: moduleSyntax ? 1 : 3,
+    lineOffset: moduleSyntax ? 2 : 3,
   };
 }
