@@ -3302,3 +3302,11 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **I3 贴地投影+坡度边界验收通过**（b173d50d）：贴地投影纯函数（启用贴地且有有限基准面才归 y，不虚构地形；发布编译不传 groundY 的口径已写明）、坡度边界 fail-closed（atan2 坡角、阈值对齐导航口径缺省 50°、闭合段同约束、1e-9 容差恰好等于放行、Inspector alert 错误条+坡度上限输入）。主线程复跑 linearPrefab 10/10 绿。门禁：contracts 341/341、web 93/93、tsc 0。
 - **满载补位**：空闲代理派 I3 最后两缺口——道路 junction（T/十字等宽盖板，克制范围）+ 道路碰撞体接入（复用分段数据+既有 cuboid 模式）；另一代理 a01x 覆盖度核对收尾中。
 - I3 六项清单进度：样条✓ seed✓ 门位✓ 贴地✓ 坡度✓ → 剩 junction+碰撞（在跑）。
+
+### 2026-09-23 自检（第十五轮）附：a01x Babylon 轨道覆盖度核对（V4 补位子代理，协调者叫停后收尾）
+
+- **纠正第八轮 V4 矩阵缺口①判定：Babylon 轨道 harness 已存在，属重复建设**——`test-output/a01x-babylon-pairing-20260920-r1/`（evidence.json + pass-1/pass-2.json + vendor bundle）已含 case=`instanced-opaque-pbr-1024/baseline-equivalent`、track=browser-webgpu、5 轮 candidate=deep-webgpu / reference=babylon-webgpu 冷热交替、逐轮三 hash、双侧 visual-similarity 与合同 criteria；本任务新写的 `scripts/benchmarks/babylon-web/`（未跟踪、留置不删不提交）与之重复，已停止开发。
+- **覆盖度（按 `scripts/benchmarks/paired-summary.mjs` 14 项指标口径核对 pass-1 records）**：有——cpu-frame-p50/p95/p99 双侧 5 轮全实测、visual-similarity（中位 0.8376）；缺——gpu-frame-p50/p95/p99（双侧 null：babylon timestampSupport=false、deep 通道 unavailable）、input-latency-p95、cold-start、load-to-interactive、long-run-frame-p99、peak-host/peak-gpu-bytes（records 无 processMetrics）。
+- **判定状态：evaluation=invalid / outcome=withheld**（"visual fidelity gate failed"：0.8376 < 0.92 合同下限，排名按合同抑制；pass-2.json 未进入聚合，stability measured=false）——harness 结构在，**可用胜出证据仍不在**，不得据此宣称对 Babylon 领先。
+- **schema 口径差异**：a01x 证据为 `deep-monkey.a01x-babylon-pairing.v1`（records/pass 层级、camelCase 指标），非 bevy 轨道 `deep-engine.competitive-benchmark.paired-raw` v2（rounds[].candidate/reference 直挂 snake_case 指标）——paired-summary.mjs 不能直接消费；进 V4 聚合需先落一层字段映射适配（缺失指标如实标"未采集"）或统一 schema。
+- 下一可执行动作：a01x 链路补 babylon 侧 GPU 时间戳通道、处理视觉相似度低于合同下限（修复对齐或按合同降级），落仓 paired-evidence 适配层；30min 长稳与进程内存采集仍缺（与本轮发现的 V4 缺口②③一致）。
