@@ -7,6 +7,8 @@ use deep_engine_native::{
 };
 use winit::{dpi::PhysicalSize, event_loop::EventLoopProxy, window::Window};
 
+#[cfg(windows)]
+use crate::dashboard_video_gpu::DashboardVideoGpuCompositor;
 use crate::{
     bloom_pass::{BloomPass, BloomTargets},
     deep2d_gpu::Deep2dGpuPainter,
@@ -21,6 +23,7 @@ use crate::{
     gpu_scene_cache::GpuSceneCache,
     gpu_submission::GpuFailures,
     ibl_probe::IblProbe,
+    outline_pass::{OutlineMaskPipelines, OutlinePass},
     output_pass::OutputPass,
     pipeline::MeshPipelines,
     player_content::PlayerContent,
@@ -53,12 +56,17 @@ mod material_resource_diff;
 #[cfg(all(test, target_os = "windows"))]
 mod material_uniform_fastpath_gpu_tests;
 mod replacement_present;
-mod scene_instance_diff;
+mod rt_residency;
+#[cfg(test)]
+mod rt_residency_tests;
 #[cfg(all(test, target_os = "windows"))]
 mod scene_incremental_fastpath_gpu_tests;
+mod scene_instance_diff;
 pub(crate) mod scene_update;
 mod scene_update_stage;
 mod section_readback;
+#[cfg(all(test, target_os = "windows"))]
+mod shadow_parallel_gpu_tests;
 #[cfg(all(test, target_os = "windows"))]
 mod solid_environment_tests;
 pub(crate) use section_readback::SectionReadback;
@@ -91,9 +99,19 @@ pub struct Renderer {
     culling: GpuCulling,
     lod: Option<GpuLod>,
     deep2d: Option<Deep2dGpuPainter>,
+    #[cfg(windows)]
+    dashboard_video: Option<DashboardVideoGpuCompositor>,
     frame_buffer: wgpu::Buffer,
+    ies_buffer: wgpu::Buffer,
     frame_layout: wgpu::BindGroupLayout,
     frame_bind_group: wgpu::BindGroup,
+    /// F2:RT 扩展 frame layout/binding(全部 frame 条目 + TLAS 槽)。仅在
+    /// 选定 device 启用 ray query 时创建;栅格/阴影管线继续用普通 frame 绑定。
+    rt_frame_layout: Option<wgpu::BindGroupLayout>,
+    rt_frame_bind_group: Option<wgpu::BindGroup>,
+    /// F2:硬件 RT 驻留(静态实例 BLAS 缓存 + 场景 TLAS)。本切片只做驻留
+    /// 与绑定,不做像素消费;任何拒绝 fail-closed 关闭 RT,不阻塞栅格主通路。
+    rt_residency: Option<rt_residency::RtSceneResidency>,
     shadow_map: ShadowMap,
     ibl: GpuIblEnvironment,
     shadow_cache: ShadowDirtyCache,
@@ -110,10 +128,13 @@ pub struct Renderer {
     hi_z: Option<hi_z_pyramid::HiZPyramid>,
     bloom: Option<BloomPass>,
     output_pass: OutputPass,
+    outline_pass: OutlinePass,
+    outline_mask_pipelines: OutlineMaskPipelines,
     frame: FrameUniform,
     fog: FogSettings,
     yaw: f32,
     view: PlayerView,
+    coordinate_frame_revision: u64,
     telemetry: Option<crate::telemetry::FrameTelemetry>,
     diagnostics: crate::player_diagnostics::PlayerDiagnostics,
     /// 构造期固定分配档位；resize沿用同一档位，内容跨档由完整重建处理。
@@ -121,8 +142,68 @@ pub struct Renderer {
 }
 
 impl Renderer {
+    fn sync_outline_resources(&mut self) {
+        self.forward_targets
+            .set_outline_enabled(&self.device, self.scene.has_outline());
+        self.outline_pass.rebind(
+            &self.device,
+            self.forward_targets.outline.as_ref().map(|outline| {
+                (
+                    &outline.mask_view,
+                    &outline.depth_view,
+                    &self.forward_targets.depth_view,
+                )
+            }),
+        );
+    }
+
     pub fn render(&mut self, verify_submission: bool) -> crate::events::RenderOutcome {
-        self.render_internal(verify_submission, true)
+        let outcome = self.render_internal(verify_submission, true);
+        #[cfg(windows)]
+        if self
+            .dashboard_video
+            .as_ref()
+            .is_some_and(DashboardVideoGpuCompositor::has_autoplay)
+        {
+            self.window.request_redraw();
+        }
+        outcome
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn suspend_dashboard_video(&mut self) -> Result<(), String> {
+        match self.dashboard_video.as_mut() {
+            Some(video) => video.suspend(&self.queue),
+            None => Ok(()),
+        }
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn resume_dashboard_video(&mut self) -> Result<(), String> {
+        match self.dashboard_video.as_mut() {
+            Some(video) => video.resume(),
+            None => Ok(()),
+        }
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn control_dashboard_video(
+        &mut self,
+        node_id: &str,
+        command: deep_engine_native::dashboard_runtime::DashboardVideoCommand,
+    ) -> Result<deep_engine_native::dashboard_runtime::DashboardVideoAdvance, String> {
+        let result = self
+            .dashboard_video
+            .as_mut()
+            .ok_or("dashboard video compositor is unavailable")?
+            .control(node_id, &self.queue, command)?;
+        self.window.request_redraw();
+        Ok(result)
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn dashboard_video_duration_100ns(&self, node_id: &str) -> Option<i64> {
+        self.dashboard_video.as_ref()?.duration_100ns(node_id)
     }
     pub async fn new(
         window: Arc<Window>,
@@ -155,8 +236,14 @@ impl Renderer {
             return Ok(());
         }
         if size.width == 0 || size.height == 0 {
+            #[cfg(windows)]
+            self.suspend_dashboard_video()?;
             self.size = size;
             return Ok(());
+        }
+        #[cfg(windows)]
+        if self.size.width == 0 || self.size.height == 0 {
+            self.resume_dashboard_video()?;
         }
         let validation = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let memory = self.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
@@ -164,6 +251,7 @@ impl Renderer {
         let mut next_forward = ForwardTargets::new(
             &self.device,
             content_profile::forward_size(self.content_profile.compact_forward_targets, size),
+            self.scene.has_outline(),
         );
         let next_bloom: Option<BloomTargets> = self
             .bloom
@@ -203,6 +291,16 @@ impl Renderer {
             bloom.publish_resize(targets);
         }
         self.output_pass.publish_rebind(next_output);
+        self.outline_pass.rebind(
+            &self.device,
+            self.forward_targets.outline.as_ref().map(|outline| {
+                (
+                    &outline.mask_view,
+                    &outline.depth_view,
+                    &self.forward_targets.depth_view,
+                )
+            }),
+        );
         self.frame = crate::gpu_resources::frame_data_with_camera(size, self.view, self.fog);
         if let Some(lighting) = &self.lighting {
             lighting.apply(&mut self.frame);
@@ -225,6 +323,7 @@ impl Renderer {
                 &self.frame_layout,
                 &self.shadow_map,
                 &self.frame_buffer,
+                &self.ies_buffer,
                 &self.ibl,
                 size,
             ));
@@ -237,6 +336,7 @@ impl Renderer {
                     &self.frame_layout,
                     &self.shadow_map,
                     &self.frame_buffer,
+                    &self.ies_buffer,
                     size,
                 )
                 .expect("validated built-in IBL must rebuild after resize"),
@@ -267,7 +367,7 @@ impl Renderer {
     }
 
     /// 按当前前向目标尺寸重建 HiZ 金字塔并把遮挡判定/消费链重挂到新源
-    /// (resize 路径;开关关闭时返回 None)。事务失败整体报错,不留半挂载。
+    /// (resize 路径;显式关闭时返回 None)。事务失败整体报错,不留半挂载。
     fn rebuild_hi_z(&mut self) -> Result<Option<hi_z_pyramid::HiZPyramid>, String> {
         if !hi_z_pyramid::occlusion_hiz_enabled() {
             return Ok(None);
@@ -286,13 +386,42 @@ impl Renderer {
             &self.frame,
             true,
         )?;
-        self.culling
-            .attach_occlusion_consume(
-                &self.device,
-                &self.scene.instance_buffer,
-                ConsumeReadbackMode::Counts,
-            )?;
+        self.culling.attach_occlusion_consume(
+            &self.device,
+            &self.scene.instance_buffer,
+            ConsumeReadbackMode::Counts,
+        )?;
         Ok(Some(pyramid))
+    }
+
+    pub fn publish_coordinate_rebase(
+        &mut self,
+        view: PlayerView,
+        revision: u64,
+    ) -> Result<(), String> {
+        if revision != self.coordinate_frame_revision.saturating_add(1) {
+            return Err(format!(
+                "native coordinate revision must advance exactly once (current={}, candidate={revision})",
+                self.coordinate_frame_revision
+            ));
+        }
+        self.set_view(view);
+        self.shadow_cache.invalidate();
+        self.shadow_version.bump_scene();
+        if let Some(lod) = self.lod.as_mut() {
+            lod.reset_history(&self.queue);
+        }
+        // Recreate a far-cleared pyramid so no depth from the prior local frame
+        // can occlude the rebased scene. Disabled HiZ remains the zero-cost path.
+        self.hi_z = self.rebuild_hi_z()?;
+        // Native currently has no TAA or DDGI temporal accumulators. The
+        // coordinate revision is still explicit so those consumers must join
+        // this transaction when they are introduced.
+        if let Some(telemetry) = self.telemetry.as_mut() {
+            telemetry.reset_barrier();
+        }
+        self.coordinate_frame_revision = revision;
+        Ok(())
     }
 
     pub fn set_view(&mut self, view: PlayerView) {

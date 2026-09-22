@@ -117,6 +117,76 @@ impl GpuIblEnvironment {
         label: &'static str,
         include_native_section: bool,
     ) -> wgpu::BindGroup {
+        let entries = Self::frame_bind_entries(
+            frame,
+            ies,
+            shadow,
+            (
+                &self.specular_view,
+                &self.diffuse_view,
+                &self.brdf_lut_view,
+                &self.sampler,
+            ),
+            include_native_section,
+        );
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(label),
+            layout,
+            entries: if include_native_section {
+                &entries
+            } else {
+                &entries[1..]
+            },
+        })
+    }
+
+    /// RT 扩展 frame 绑定:条目 0..9 与普通 frame 绑定完全一致,追加
+    /// binding 10 = 场景 TLAS(`frame_rt` layout)。TLAS 驻留由
+    /// renderer::rt_residency 建立后才调用;栅格管线不消费本绑定。
+    #[allow(clippy::too_many_arguments)] // 与 create_frame_bind_group 同形,多一个 TLAS。
+    pub fn create_rt_frame_bind_group(
+        &self,
+        device: &wgpu::Device,
+        layout: &wgpu::BindGroupLayout,
+        frame: &wgpu::Buffer,
+        ies: Option<&wgpu::Buffer>,
+        shadow: &ShadowMap,
+        tlas: &wgpu::Tlas,
+        label: &'static str,
+    ) -> wgpu::BindGroup {
+        let mut entries = Self::frame_bind_entries(
+            frame,
+            ies,
+            shadow,
+            (&self.specular_view, &self.diffuse_view, &self.brdf_lut_view, &self.sampler),
+            true,
+        );
+        entries.push(wgpu::BindGroupEntry {
+            binding: crate::frame_bindings::FRAME_RT_TLAS_BINDING,
+            resource: tlas.as_binding(),
+        });
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(label),
+            layout,
+            entries: &entries,
+        })
+    }
+
+    /// 普通 frame 绑定的条目构建,`create_frame_bind_group` 与 RT 扩展版共用,
+    /// 避免两份条目清单漂移。IBL 视图经参数传入以统一借用生命周期。
+    fn frame_bind_entries<'a>(
+        frame: &'a wgpu::Buffer,
+        ies: Option<&'a wgpu::Buffer>,
+        shadow: &'a ShadowMap,
+        ibl: (
+            &'a wgpu::TextureView,
+            &'a wgpu::TextureView,
+            &'a wgpu::TextureView,
+            &'a wgpu::Sampler,
+        ),
+        include_native_section: bool,
+    ) -> Vec<wgpu::BindGroupEntry<'a>> {
+        let (specular_view, diffuse_view, brdf_lut_view, sampler) = ibl;
         let mut entries = vec![
             wgpu::BindGroupEntry {
                 binding: 8,
@@ -128,10 +198,10 @@ impl GpuIblEnvironment {
             },
             texture_entry(1, &shadow.view),
             sampler_entry(2, &shadow.sampler),
-            texture_entry(3, &self.specular_view),
-            texture_entry(4, &self.diffuse_view),
-            texture_entry(5, &self.brdf_lut_view),
-            sampler_entry(6, &self.sampler),
+            texture_entry(3, specular_view),
+            texture_entry(4, diffuse_view),
+            texture_entry(5, brdf_lut_view),
+            sampler_entry(6, sampler),
             wgpu::BindGroupEntry {
                 binding: 7,
                 resource: shadow.sampling_uniform.as_entire_binding(),
@@ -145,15 +215,7 @@ impl GpuIblEnvironment {
                     .as_entire_binding(),
             });
         }
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some(label),
-            layout,
-            entries: if include_native_section {
-                &entries
-            } else {
-                &entries[1..]
-            },
-        })
+        entries
     }
 
     pub fn specular_view(&self) -> &wgpu::TextureView {

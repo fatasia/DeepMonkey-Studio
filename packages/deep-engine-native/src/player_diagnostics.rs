@@ -7,12 +7,49 @@
 use serde::Serialize;
 
 use crate::{player_content::PlayerContent, renderer::RendererFeatures};
+use deep_engine_native::hardware_ray_query::ray_query_device_ready;
 
 mod content_identity;
 use content_identity::ContentIdentity;
 
-pub const TELEMETRY_WARMUP_FRAMES: u8 = 2;
-pub const TELEMETRY_SAMPLE_FRAMES: u8 = 6;
+pub const TELEMETRY_WARMUP_FRAMES: u16 = 2;
+pub const TELEMETRY_SAMPLE_FRAMES: u16 = 6;
+
+/// Evidence runs may lengthen the bounded telemetry window without changing the
+/// ordinary smoke-test defaults. Values stay capped by the telemetry ring so a
+/// caller cannot silently discard the beginning of the requested window.
+pub fn telemetry_warmup_frames() -> u16 {
+    bounded_frame_count(
+        "DEEP_ENGINE_TELEMETRY_WARMUP_FRAMES",
+        TELEMETRY_WARMUP_FRAMES,
+        1,
+    )
+}
+
+pub fn telemetry_sample_frames() -> u16 {
+    bounded_frame_count(
+        "DEEP_ENGINE_TELEMETRY_SAMPLE_FRAMES",
+        TELEMETRY_SAMPLE_FRAMES,
+        2,
+    )
+}
+
+pub fn telemetry_surface_size() -> Option<winit::dpi::PhysicalSize<u32>> {
+    let value = std::env::var("DEEP_ENGINE_TELEMETRY_VIEWPORT").ok()?;
+    let (width, height) = value.split_once('x')?;
+    let width = width.parse::<u32>().ok()?;
+    let height = height.parse::<u32>().ok()?;
+    (width >= 64 && height >= 64 && width <= 8192 && height <= 8192)
+        .then(|| winit::dpi::PhysicalSize::new(width, height))
+}
+
+fn bounded_frame_count(name: &str, fallback: u16, minimum: u16) -> u16 {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .filter(|value| (minimum..=512).contains(value))
+        .unwrap_or(fallback)
+}
 
 #[derive(Debug, Serialize)]
 pub struct PlayerDiagnostics {
@@ -53,6 +90,18 @@ impl PlayerDiagnostics {
         } else {
             CapabilityStatus::enabled("gpu_timestamp_queries")
         };
+        let ray_query = if !adapter_features.contains(wgpu::Features::EXPERIMENTAL_RAY_QUERY) {
+            CapabilityStatus::degraded("hardware_ray_query", "adapter_feature_unavailable")
+        } else if !device_features.contains(wgpu::Features::EXPERIMENTAL_RAY_QUERY) {
+            CapabilityStatus::degraded("hardware_ray_query", "device_feature_not_enabled")
+        } else if ray_query_device_ready(adapter_features, device_features) {
+            // The adapter/device can execute the experimental query probe, but
+            // the production renderer still uses raster shadows and does not
+            // expose RT pixels as a finished scene capability.
+            CapabilityStatus::degraded("hardware_ray_query", "probe_only_renderer_raster")
+        } else {
+            CapabilityStatus::degraded("hardware_ray_query", "feature_contract_mismatch")
+        };
         Self {
             schema: "deep-engine.native-player-report",
             version: 1,
@@ -85,6 +134,7 @@ impl PlayerDiagnostics {
             },
             capabilities: vec![
                 timestamp,
+                ray_query,
                 CapabilityStatus::configured(
                     "bloom",
                     renderer_features.bloom.is_active(),
@@ -107,8 +157,8 @@ impl PlayerDiagnostics {
                 ),
             ],
             sampling: SamplingMetadata {
-                warmup_frames: TELEMETRY_WARMUP_FRAMES,
-                sample_frames: TELEMETRY_SAMPLE_FRAMES,
+                warmup_frames: telemetry_warmup_frames(),
+                sample_frames: telemetry_sample_frames(),
                 cpu_clock: "std::time::Instant",
                 gpu_metric_policy: "timestamp_queries_only; unavailable metrics are degraded",
             },
@@ -119,6 +169,27 @@ impl PlayerDiagnostics {
         let mut report = serde_json::to_value(self).expect("Player diagnostics serialize");
         report["metrics"] = metrics;
         report
+    }
+
+    /// F2:正式 Renderer 已建立真实场景 TLAS 驻留。状态仍非完成态——像素
+    /// 消费(阴影/反射/GI 着色)未接入,因此保持 degraded,只把原因从
+    /// probe_only_renderer_raster 升级为 tlas_resident_pixel_pending。
+    pub(crate) fn note_rt_tlas_resident(&mut self) {
+        self.note_rt("tlas_resident_pixel_pending");
+    }
+
+    /// F2:RT 驻留被拒(预算/空场景/几何校验),fail-closed 记录精确原因;
+    /// 能力缺失(MissingFeature)维持既有 adapter/device 原因,不覆盖。
+    pub(crate) fn note_rt_tlas_rejected(&mut self, reason: &'static str) {
+        self.note_rt(reason);
+    }
+
+    fn note_rt(&mut self, reason: &'static str) {
+        for capability in &mut self.capabilities {
+            if capability.name == "hardware_ray_query" {
+                capability.reason = Some(reason);
+            }
+        }
     }
 }
 
@@ -192,8 +263,8 @@ impl CapabilityStatus {
 
 #[derive(Debug, Serialize)]
 struct SamplingMetadata {
-    warmup_frames: u8,
-    sample_frames: u8,
+    warmup_frames: u16,
+    sample_frames: u16,
     cpu_clock: &'static str,
     gpu_metric_policy: &'static str,
 }
