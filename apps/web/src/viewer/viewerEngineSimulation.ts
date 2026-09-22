@@ -6,6 +6,7 @@ import { ViewerEngineRig } from "./viewerEngineRig";
 import { mountRapierJoint, normalizePhysicsJoints, removeMountedRapierJoint } from "./rapierPhysicsJoint";
 import { configureCharacterController, moveRapierCharacter, mountRapierCharacterController, removeMountedRapierCharacter } from "./rapierCharacterController";
 import { resolvePhysicsCollisionDispatches, type PhysicsColliderOwners } from "./rapierPhysicsCollisionEvents";
+import { collectPhysicsCuboidDebugEntries } from "./rapierPhysicsDebugView";
 
 function cloneCharacter(state: SceneCharacterControllerState): SceneCharacterControllerState {
   return {
@@ -262,6 +263,16 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
   getSceneAnimation(): SceneAnimationState {
       return structuredClone(this.sceneAnimation);
     }
+  /**
+   * B3 缺口 5：收集全部碰撞体的世界包围盒数据供调试线框层消费。
+   * 纯读取、不触碰渲染器；物理关闭或世界未挂载时返回空数组，
+   * 调用方据此隐藏调试层。实现在 rapierPhysicsDebugView（脱离类可单测）。
+   */
+  collectPhysicsDebugColliders() {
+    const world = this.physicsWorld;
+    if (!world || !this.rapier) return [];
+    return collectPhysicsCuboidDebugEntries(world, this.rapier, this.physicsColliderOwners);
+  }
   setSceneAnimation(animation: SceneAnimationState): void {
       this.sceneAnimation = {
         duration: Math.max(animation.duration, 0.1),
