@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { validateRuntimeEnvironment } from "./environment.js";
+import { buildDeepRuntimePackage, parseDeepRuntimePackage } from "./index.js";
 
 describe("static lightmap runtime descriptor", () => {
   const base = () => ({ schema: "deep-engine.solid-environment", schemaVersion: 8,
@@ -11,6 +12,14 @@ describe("static lightmap runtime descriptor", () => {
   it("accepts a validated descriptor without changing legacy environment identity", () => {
     expect(() => validateRuntimeEnvironment(base(), "scene.environment", 1, "$.environment")).not.toThrow();
   });
+  it("survives runtime package build and serialize/parse round-trip", () => {
+    const env = base();
+    const packet = { geometries: [], materials: [], instances: [] } as never;
+    const value = buildDeepRuntimePackage({ packageId: "lightmap", packageVersion: "1.0.0", renderPacket: { id: "scene", revision: 1, value: packet }, environment: env });
+    expect(value.payloads["scene.environment"]).toMatchObject({ staticLightmap: env.staticLightmap });
+    expect(parseDeepRuntimePackage(JSON.stringify(value)).valid).toBe(true);
+  });
+
   it("rejects invalid hash, UV set and dimensions fail-closed", () => {
     for (const patch of [
       { textureHash: { algorithm: "sha256", value: "bad" } },
