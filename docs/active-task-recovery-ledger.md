@@ -3256,3 +3256,11 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 门禁：lib 535/0、bin 271/0、lighting 200/0、双端 typecheck 过。
 - **满载补位**：子代理②派 F3 多层载荷发布管道（Web 合同 v2/编译器衔接/Native 分派/端到端测试——级联最后一环）；子代理① V4 Babylon harness 继续在跑。
 - 边界：级联混合仅细+次粗两层（Web 同语义）；变混合系数 GPU 逐像素对拍未做（CPU 合同+WGSL 同式覆盖）；dist 未重编译。
+
+### 2026-09-23 30 分钟自检（第十三轮）：I3 完备度深核
+
+- **I3 六项清单判定**（围栏/道路线性预制体链，linearPrefabPath/Geometry/Instancing + compileLinearPrefabRenderPacket）：
+  - ✅ 已落地有测试：样条分段路径（canonicalPoints→tessellation，作者预览与发布编译同源确定性）、固定 seed（path.seed+stablePathGateIndex 门位确定性）、围栏门位连接（gateIndex/gateWidthM）、实例化复用、发布下译进 RenderPacket（compileLinearPrefabRenderPacket）；路径含 y 维度（坡向中点/长度三维 hypot）。
+  - ❌ 缺口：贴地投影（地形跟随）、坡度/跳跃边界（stepHeight/maxSlopeAngle 与线性路径的组合约束）、道路 junction（路口连接）、道路碰撞体接入。这四项是 I3 剩余的精确差距，作后续切片输入。
+- 子代理在途：F3 多层载荷管道（编译器/solid_environment/environmentTypes 四文件）、V4 Babylon harness（run-babylon-web-benchmark.mjs 已产出，采集/报告阶段）。
+- 下轮：验收两代理产出；V1 三端对拍准备启动。
