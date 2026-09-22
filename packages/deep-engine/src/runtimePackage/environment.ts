@@ -14,7 +14,7 @@ export function validateRuntimeEnvironment(value: unknown, id: string, revision:
     const hasFog = object.fog !== undefined;
     fields(object, ["schema", "schemaVersion", "id", "revision", "kind", "backgroundSrgb", "outputTransform",
       ...(hdr ? ["ibl"] : []), ...(object.schemaVersion === 7 ? ["fog"] : [])],
-      ["lighting", ...(studio ? ["fog"] : [])], path);
+      ["lighting", "staticLightmap", ...(studio ? ["fog"] : [])], path);
     const pointShadow = object.schemaVersion === 5;
     const shadows = pointShadow || object.schemaVersion === 4;
     const many = shadows || object.schemaVersion === 3;
