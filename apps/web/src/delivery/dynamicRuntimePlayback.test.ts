@@ -54,7 +54,7 @@ describe("dynamic runtime Web consumer", () => {
     expect(sampleDynamicRuntimePackage(value, 500).transforms.pump?.translation?.[0]).toBe(0);
   });
 
-
+  it("applies one sampled frame to scene, replay, and interaction consumers", () => {
     const calls: string[] = [];
     const frame = applyDynamicRuntimeFrame(packageFixture(), 500, {
       applyTransform: (id, transform) => calls.push(`${id}:${transform.translation?.[0]}`),
