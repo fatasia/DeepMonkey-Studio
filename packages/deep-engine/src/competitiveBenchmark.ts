@@ -36,6 +36,11 @@ export interface CompetitiveEngineSummary {
   readonly triangles: number;
   readonly resources: number;
   readonly deviceErrors: readonly string[];
+  /**
+   * 长稳相位帧时 P99（毫秒，帧间隔口径、含调度让步）；仅长稳 pass（longRunMinutes>0）
+   * 的收尾轮次携带。缺省 = 未采集（对应 bevy 轨道 long-run-frame-p99-ms 缺失语义）。
+   */
+  readonly longRunFrameP99Ms?: number;
 }
 
 export interface CompetitiveRoundEvidence {

@@ -26,6 +26,12 @@ export interface CompetitiveBenchmarkOptions {
   readonly warmupFrames: number;
   readonly cpuSampleFrames: number;
   readonly gpuSampleFrames: number;
+  /**
+   * 长稳相位时长（分钟，墙钟）。缺省/0 = 关闭；正式 V4 口径 30 分钟。
+   * 开启时在配对轮次全部完成后，对 candidate/reference 串行各渲染指定墙钟时长，
+   * 以帧间隔（含调度让步）口径采 long-run-frame-p99，注入收尾轮次双侧 summary。
+   */
+  readonly longRunMinutes?: number;
   readonly trajectory?: BenchmarkTrajectory;
   /** Declared provenance of each GPU timestamp channel; the Deep/Three defaults keep the A04 wording. */
   readonly timingSources?: { readonly candidateSource: string; readonly referenceSource: string };
@@ -34,7 +40,7 @@ export interface CompetitiveBenchmarkOptions {
 export interface CompetitiveBenchmarkProgress {
   readonly round: number;
   readonly engine: BenchmarkBackend["id"];
-  readonly phase: "warmup" | "cpu" | "gpu" | "capture";
+  readonly phase: "warmup" | "cpu" | "gpu" | "capture" | "long-run";
 }
 
 export interface CompetitiveBenchmarkReport {
@@ -48,6 +54,7 @@ export interface CompetitiveBenchmarkReport {
   readonly visual: typeof BENCHMARK_VISUAL_METHOD;
   readonly fidelity: readonly BenchmarkFidelityCheck[];
   readonly rounds: readonly CompetitiveRoundEvidence[];
+  readonly longRun: CompetitiveLongRunEvidence | null;
   readonly sampleWindows: readonly Readonly<{ round: number; candidate: SampleWindow; reference: SampleWindow }>[];
   readonly channelGaps: readonly BenchmarkChannelGap[];
   readonly cpuBreakdown: readonly Readonly<{ round: number; candidate: CpuStageSummary;
@@ -61,6 +68,23 @@ interface Quantiles { readonly p50: number; readonly p95: number; readonly p99: 
 export interface CpuStageSummary { readonly renderCallMs: Quantiles; readonly statisticsReadMs: Quantiles }
 interface Measured { readonly summary: CompetitiveEngineSummary; readonly image: BenchmarkImage;
   readonly cpuStages: CpuStageSummary; readonly window: SampleWindow }
+
+/** 单引擎长稳相位证据：帧间隔分位数（含调度让步）+ 样本量 + 实际墙钟。 */
+export interface CompetitiveLongRunEngineEvidence {
+  readonly frameP50Ms: number;
+  readonly frameP95Ms: number;
+  readonly frameP99Ms: number;
+  readonly sampleCount: number;
+  readonly wallClockMs: number;
+}
+
+/** 长稳相位汇总：candidate/reference 串行各渲染 longRunMinutes 分钟墙钟。 */
+export interface CompetitiveLongRunEvidence {
+  readonly minutes: number;
+  readonly sampleMode: "frame-interval-including-yield";
+  readonly candidate: CompetitiveLongRunEngineEvidence;
+  readonly reference: CompetitiveLongRunEngineEvidence;
+}
 
 export const DEFAULT_COMPETITIVE_BENCHMARK_OPTIONS = Object.freeze({
   pairRounds: 5, warmupFrames: 20, cpuSampleFrames: 90, gpuSampleFrames: 15,
@@ -118,6 +142,18 @@ export async function runCompetitiveBenchmark(fixture: BenchmarkSceneFixture,
     images.push(Object.freeze({ round, candidate: imageSummary(candidateRun.image), reference: imageSummary(referenceRun.image) }));
     cpuBreakdown.push(Object.freeze({ round, candidate: candidateRun.cpuStages, reference: referenceRun.cpuStages }));
   }
+  // 长稳相位（可选）：配对轮次全部完成后，candidate/reference 串行各渲染 longRunMinutes
+  // 分钟墙钟。结果注入收尾轮次双侧 summary（longRunFrameP99Ms）并随报告携带完整元数据；
+  // 非收尾轮次不回填该字段——只有实际被长稳测量覆盖的轮次才允许携带，防止覆盖度虚标。
+  const longRun = options.longRunMinutes && options.longRunMinutes > 0
+    ? await runLongRunPhase(candidate, reference, options, signal, progress, replay)
+    : null;
+  if (longRun) {
+    const last = rounds[rounds.length - 1]!;
+    rounds[rounds.length - 1] = Object.freeze({ ...last,
+      candidate: Object.freeze({ ...last.candidate, longRunFrameP99Ms: longRun.candidate.frameP99Ms }),
+      reference: Object.freeze({ ...last.reference, longRunFrameP99Ms: longRun.reference.frameP99Ms }) });
+  }
   const runtimeErrors = [...pageErrors, ...candidate.errors(), ...reference.errors()];
   const evaluation = evaluateCompetitiveBenchmark(definition, rounds, fidelity, runtimeErrors, options.pairRounds);
   return Object.freeze({ schema: 1, case: definition, fixture: compactFixture(fixture, fixtureHash),
@@ -130,6 +166,7 @@ export async function runCompetitiveBenchmark(fixture: BenchmarkSceneFixture,
       referenceSource: options.timingSources?.referenceSource
         ?? "three@0.185.1 WebGPUTimestampQueryPool: Number(endTime - startTime) / 1e6" }),
     visual: BENCHMARK_VISUAL_METHOD, fidelity, rounds: Object.freeze(rounds),
+    longRun,
     sampleWindows: Object.freeze(sampleWindows),
     channelGaps: compareBenchmarkWindows(sampleWindows),
     cpuBreakdown: Object.freeze(cpuBreakdown),
@@ -191,6 +228,56 @@ function recordCpuStages(stats: BenchmarkFrameStats, renderCall: number[], stati
   renderCall.push(renderCallMs); statisticsRead.push(statisticsReadMs);
 }
 
+/**
+ * 长稳相位：candidate → reference 串行（与首轮 A/B 顺序一致），每引擎先复热再连续渲染
+ * longRunMinutes 分钟墙钟。帧时取「帧间隔」口径（本帧开始到下一帧开始的墙钟差，含每
+ * 30 帧一次的调度让步），对齐 bevy 轨道 long-run 的 frame-interval 语义；页内同步渲染
+ * 无 vsync 钳制，该间隔反映 submit 节奏 + 让步/GC 抖动，不做 vsync 换算（如实标注）。
+ * 轨迹按 600 帧一圈连续循环回放，避免长稳期间画面冻结在单一姿态。
+ */
+async function runLongRunPhase(candidate: BenchmarkBackend, reference: BenchmarkBackend,
+  options: CompetitiveBenchmarkOptions, signal?: AbortSignal,
+  progress?: (value: CompetitiveBenchmarkProgress) => void,
+  replay?: (frame: number, count: number) => TrajectoryCameraPose): Promise<CompetitiveLongRunEvidence> {
+  const round = options.pairRounds;
+  progress?.({ round, engine: candidate.id, phase: "long-run" });
+  const candidateRun = await measureLongRun(candidate, options, signal, replay);
+  progress?.({ round, engine: reference.id, phase: "long-run" });
+  const referenceRun = await measureLongRun(reference, options, signal, replay);
+  return Object.freeze({ minutes: options.longRunMinutes!, sampleMode: "frame-interval-including-yield" as const,
+    candidate: candidateRun, reference: referenceRun });
+}
+
+const LONG_RUN_TRAJECTORY_LOOP_FRAMES = 600;
+
+async function measureLongRun(backend: BenchmarkBackend, options: CompetitiveBenchmarkOptions,
+  signal?: AbortSignal, replay?: (frame: number, count: number) => TrajectoryCameraPose)
+  : Promise<CompetitiveLongRunEngineEvidence> {
+  // 复热：长稳相位开始前画面/着色器已就绪，但 capture 回读等动作可能引入状态扰动，重走预热。
+  for (let index = 0; index < options.warmupFrames; index++) {
+    signal?.throwIfAborted(); if (replay) backend.setCamera!(replay(index, options.warmupFrames)); backend.render();
+    if (index % 30 === 29) await yieldTask();
+  }
+  await backend.settle();
+  const deadline = performance.now() + options.longRunMinutes! * 60_000;
+  const startedAt = performance.now();
+  const intervals: number[] = [];
+  let previous = startedAt;
+  for (let frames = 0;; frames++) {
+    signal?.throwIfAborted();
+    if (replay) backend.setCamera!(replay(frames % LONG_RUN_TRAJECTORY_LOOP_FRAMES, LONG_RUN_TRAJECTORY_LOOP_FRAMES));
+    backend.render();
+    const now = performance.now();
+    intervals.push(now - previous); previous = now;
+    if (now >= deadline) break;
+    if (frames % 30 === 29) await yieldTask();
+  }
+  await backend.settle();
+  const values = summarize(intervals);
+  return Object.freeze({ frameP50Ms: values.p50, frameP95Ms: values.p95, frameP99Ms: values.p99,
+    sampleCount: intervals.length, wallClockMs: previous - startedAt });
+}
+
 function summarize(values: readonly number[]) {
   if (!values.length || values.some(value => !Number.isFinite(value) || value < 0)) throw new Error("Benchmark samples are invalid.");
   const sorted = [...values].sort((left, right) => left - right);
@@ -223,5 +310,10 @@ function validateOptions(options: CompetitiveBenchmarkOptions): void {
     || ![options.warmupFrames, options.cpuSampleFrames, options.gpuSampleFrames]
       .every(value => Number.isSafeInteger(value) && value >= 0)
     || options.warmupFrames < 10 || options.cpuSampleFrames < 30) throw new RangeError("Benchmark sample plan is below the evidence floor.");
+  // 长稳时长：缺省/0 = 关闭；开启时上限 60 分钟（正式 V4 口径 30，管道验证用更短时长）。
+  if (options.longRunMinutes !== undefined
+    && (!Number.isFinite(options.longRunMinutes) || options.longRunMinutes <= 0 || options.longRunMinutes > 60)) {
+    throw new RangeError("longRunMinutes must be within (0, 60] minutes when provided.");
+  }
 }
 function yieldTask(): Promise<void> { return new Promise(resolve => setTimeout(resolve, 0)); }

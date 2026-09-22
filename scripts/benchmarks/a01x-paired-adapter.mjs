@@ -19,6 +19,8 @@ import { summarizeEvidence } from "./paired-summary.mjs";
 
 // camelCase → paired-summary 口径（snake_case）的显式映射。只搬聚合指标，
 // warmupFrames/drawCalls/cpuStages 等元数据与过程量不进指标表，防止污染报告行。
+// longRunFrameP99Ms 仅长稳 pass 的收尾轮携带（其余轮缺键如实缺失），映射到
+// bevy 轨道 long-run-frame-p99-ms 同名字段。
 const METRIC_MAP = {
   cpuFrameP50Ms: "cpu-frame-p50-ms",
   cpuFrameP95Ms: "cpu-frame-p95-ms",
@@ -26,6 +28,7 @@ const METRIC_MAP = {
   gpuFrameP50Ms: "gpu-frame-p50-ms",
   gpuFrameP95Ms: "gpu-frame-p95-ms",
   gpuFrameP99Ms: "gpu-frame-p99-ms",
+  longRunFrameP99Ms: "long-run-frame-p99-ms",
 };
 
 // visualSimilarity 是轮级字段，语义为 candidate 画面相对 reference 基准的相似度，
@@ -130,6 +133,13 @@ export function adaptA01xPass(passDoc, options = {}) {
     suppression: buildSuppression(record),
     // 稳定性口径如实透传（如 measured=false + 原因），paired-summary 有则展示。
     ...(evidenceDoc?.stability ? { stability: evidenceDoc.stability } : {}),
+    // 记录级 processMetrics 原样透传（缺采样不带键）：Chrome 树共享口径——Deep 与
+    // Babylon 同页同树渲染，peak/mean 为双侧共享总量，不可按引擎拆分，因此不作轮级
+    // 指标注入（防止覆盖度虚标），由 paired-summary 作块级标注。
+    ...(record.processMetrics ? { processMetrics: record.processMetrics } : {}),
+    // 记录级 longRun 元数据透传（时长/口径/样本量）：表内 long-run-frame-p99 行来自
+    // 收尾轮指标映射，这里补充口径说明防止把短跑长稳误读为正式 30 分钟口径。
+    ...(record.longRun ? { longRun: record.longRun } : {}),
   };
 }
 

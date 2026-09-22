@@ -56,7 +56,7 @@ function show(message: string, error = false): void {
 }
 
 function progress(value: CompetitiveBenchmarkProgress): void {
-  const phase = { warmup: "预热", cpu: "CPU 采样", gpu: "GPU 时间戳", capture: "画面回读" }[value.phase];
+  const phase = { warmup: "预热", cpu: "CPU 采样", gpu: "GPU 时间戳", capture: "画面回读", "long-run": "长稳采样" }[value.phase];
   show(`第 ${value.round} 轮 · ${value.engine} · ${phase}`);
 }
 

@@ -43,6 +43,27 @@ const stabilityLines = (stability) => {
   return [stability.measured ? "- 稳定性: 已测量" : `- 稳定性: 未测量${stability.reason ? `（${stability.reason}）` : ""}`];
 };
 
+const formatBytes = (value) =>
+  typeof value === "number" && Number.isFinite(value) ? `${(value / 1048576).toFixed(1)} MB` : "未采集";
+
+// 进程内存口径透传（a01x 适配输入可带 processMetrics，bevy 输入无此字段则不输出）：
+// Chrome 树共享口径——双引擎同页同树渲染，peak/mean 是双侧共享总量、不可按引擎拆分，
+// 因此作块级标注而非轮级指标行，防止把共享总量误读成单引擎占用或覆盖度虚标。
+const processMetricsLines = (processMetrics) => {
+  if (!processMetrics?.sampled) return [];
+  const lines = [`- 进程内存（Chrome 树，双引擎同树共享，不可按引擎拆分）: peak-host ${formatBytes(processMetrics.peakHostBytes)} · mean-host ${formatBytes(processMetrics.meanHostBytes)} · peak-gpu ${formatBytes(processMetrics.peakGpuBytes)}（${processMetrics.sampleCount ?? "?"} 样本 @ ${processMetrics.sampleIntervalMilliseconds ?? "?"}ms）`];
+  if (processMetrics.gpuCounterError) lines.push(`  - GPU 计数器未产出: ${processMetrics.gpuCounterError}`);
+  if (processMetrics.samplerError) lines.push(`  - 采样器异常: ${processMetrics.samplerError}`);
+  return lines;
+};
+
+// 长稳口径透传（a01x 适配输入可带 longRun）：表内 long-run-frame-p99 行只出现在收尾轮，
+// 这里补充时长与采样口径，防止把短跑长稳误读为正式 30 分钟口径。
+const longRunLines = (longRun) => {
+  if (!longRun) return [];
+  return [`- 长稳: long-run ${longRun.minutes} 分钟/引擎（${longRun.sampleMode} 口径）；30 分钟为正式 V4 口径`];
+};
+
 export function summarizeEvidence(evidence, inputLabel) {
   const rounds = evidence.rounds ?? [];
   if (!Array.isArray(rounds) || rounds.length === 0) {
@@ -98,6 +119,8 @@ export function summarizeEvidence(evidence, inputLabel) {
     `- 轮数: ${rounds.length}；fixtureHash=${caseInfo.fixtureHash?.slice(0, 12) ?? "?"} settingsHash=${caseInfo.settingsHash?.slice(0, 12) ?? "?"}`,
     `- 口径: 表内为 跨轮中位数 / P95（样本轮数）；缺失指标如实标"未采集"，不虚构。`,
     ...stabilityLines(evidence.stability),
+    ...processMetricsLines(evidence.processMetrics),
+    ...longRunLines(evidence.longRun),
     "",
     "| 指标 | candidate (Deep) | reference (对手) |",
     "|---|---|---|",
