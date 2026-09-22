@@ -161,6 +161,12 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
   const [simulationStudy, setSimulationStudy] = useState<PlantLiteStudyRecord>();
   const [simulationFrame, setSimulationFrame] = useState<PlantLitePlaybackFrame | null>(null);
   const [simulationTrack, setSimulationTrack] = useState(false);
+  // B3 缺口 5：碰撞体调试线框开关——React 状态触发重渲染，引擎是事实来源；
+  // 引擎重建（渲染后端切换）后经 effect 把当前开关重新应用到新引擎，避免状态漂移。
+  const [physicsDebugVisible, setPhysicsDebugVisible] = useState(false);
+  useEffect(() => {
+    engine?.setPhysicsDebugVisible(physicsDebugVisible);
+  }, [engine, physicsDebugVisible]);
   const [directorWorkspace, setDirectorWorkspace] = useState<SceneDirectorWorkspace>("timeline");
   const resolveSimulationPosition = useCallback((id: string) => engine?.getModelTransform(id)?.position, [engine, controller.bindings.state.revision]);
   const activeSimulationStudy = route.view === "studio" && simulationPanelId && simulationStudy?.model?.sceneBinding?.sceneId === activeScene?.id ? simulationStudy : undefined;
@@ -421,6 +427,8 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
             })) } : {})}
           onChange={changePhysics}
           onSelectedBodyChange={changeSelectedPhysics}
+          debugVisible={physicsDebugVisible}
+          onDebugVisibleChange={setPhysicsDebugVisible}
           onReset={() => {
             engine?.resetPhysics();
             setRevision((value) => value + 1);

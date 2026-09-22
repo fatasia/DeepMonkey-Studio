@@ -3192,3 +3192,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - `scripts/benchmarks/paired-summary.mjs`：吃既有 paired-evidence.json 出跨轮分位数报告（中位/P95/样本轮数），缺失指标（Deep 侧 cold-start/load-to-interactive/input-latency）如实标"未采集"。已对 Bevy 0.19 现存 5 轮证据实跑出报告：`test-output/bevy-019-benchmark/paired-summary.md`——量化确认 V4 缺口：Deep 轨道缺冷启动/加载到可交互/输入延迟三指标采集。
 - 子代理×2 仍在跑（B3 渲染线框层、V2 occlusion 诊断排查），满载维持。
+
+### 2026-09-22 B3 缺口 5 消费端：物理碰撞体调试线框渲染层 + 面板开关（ZCode）
+
+- **渲染层**（新增 `apps/web/src/viewer/rapierPhysicsDebugOverlay.ts`）：`createPhysicsDebugOverlay()` 自包含线框池——共享一份 `EdgesGeometry(BoxGeometry(1,1,1))` 棱线 + 四种 `LineBasicMaterial`（dynamic 橙红 0xff7043 / fixed 青 0x4dd0e1 / kinematic 紫 0xba68c8 / 无主地面 蓝灰 0x78909c），每碰撞体一个 LineSegments（`helper:physics-collider-debug` 根、`raycast` 置空、renderOrder 10_000 与导航碰撞调试同档、depthTest=false）。`sync(entries, kindOf)` 每帧同步：世界中心=刚体平移+旋转后的 centerOffset、尺寸=2×半边长、朝向=刚体四元数；数量收缩只隐藏不销毁（池按峰值复用）。
+- **引擎接线**：字段与场景挂载在 `viewerEngineCore.ts`（构造期 `scene.add`，沿 navigationCollisionDebugGroup 既有模式）；`viewerEngineSimulation.ts` 新增 `setPhysicsDebugVisible(enabled)`（关闭整组隐藏+帧同步早退零开销；开启立即同步一次并 `requestRender`）、`isPhysicsDebugVisible()`、`protected updatePhysicsDebugView()`（按 `physicsBodyStates` 解析线框颜色）；`viewerEngineRuntime.ts` animate 在 `updatePhysics` 后逐帧调用；`viewerEngineLifecycle.ts` dispose 统一释放共享几何/材质。
+- **UI 消费**：`ScenePhysicsPanel` 新增可选 `debugVisible`/`onDebugVisibleChange` props 与"显示碰撞体/隐藏碰撞体"按钮（physics-global 行，active 高亮同既有按钮模式；不随物理启停禁用——暂停/关闭时检查碰撞体布局是合法场景）；`AppStudioViewport` 用本地 state + effect 接线（引擎为事实来源，渲染后端切换重建引擎后 effect 把当前开关重新应用，避免状态漂移）。合同层（contracts/ScenePhysicsState）未动，无 Native 契约面影响。
+- **测试**：新增 `rapierPhysicsDebugOverlay.test.ts` 5 项（位姿换算含旋转偏移、按类型着色、池隐藏复用、开关显隐、dispose 摘除）；`ScenePhysicsPanel.test.tsx` +1（开关文案/高亮切换，静态标记断言 active 计数=2）。
+- **门禁**：apps/web `tsc --noEmit` 0 错误；vitest 相关 33/33（overlay 5 + 数据层 2 + 面板 4 + 物理族回归 22）。
+- **诚实边界**：真实浏览器画面中的线框视觉表现未验证（ViewerEngine 构造需真实 container/renderer，headless 无法挂载）——渲染表现以数据面单测+tsc 覆盖，列为本切片未验证边界；开关点击→引擎调用的 React 集成无挂载测试，靠 tsc+props 契约覆盖；面板关闭后线框保持显示（与导航碰撞调试开关同语义，重开面板可关）。

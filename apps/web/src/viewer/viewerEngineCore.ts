@@ -89,6 +89,7 @@ import { ConservativeOcclusion } from "./conservativeOcclusion";
 import { installOcclusionDrawFilter } from "./occlusionDrawFilter";
 import { ViewerOffscreenController } from "./viewerOffscreenController";
 import { PhysicsWorldHost } from "./physicsWorldHost";
+import { createPhysicsDebugOverlay } from "./rapierPhysicsDebugOverlay";
 
 /** ViewerEngine 的共享状态与跨模块契约，具体能力由职责层逐级实现。 */
 export abstract class ViewerEngineCore extends ViewerEngineContract {
@@ -143,6 +144,9 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
   protected physicsState: ScenePhysicsState = { enabled: false, playing: false, gravity: { x: 0, y: -9.81, z: 0 } };
   protected readonly physicsBodyStates = new Map<string, ScenePhysicsBodyState>();
   protected readonly physicsBodies = new Map<string, PhysicsBodyRuntime>();
+  /** B3 缺口 5：碰撞体调试线框层；关闭时整组隐藏且帧同步直接早退（零开销）。 */
+  protected readonly physicsDebugOverlay = createPhysicsDebugOverlay();
+  protected physicsDebugVisible = false;
   protected fragments: FRAGS.FragmentsModels | undefined;
   protected importer: FRAGS.IfcImporter | undefined;
   protected fragmentApi: typeof import("@thatopen/fragments") | undefined;
@@ -386,6 +390,9 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
     this.navigationCollisionDebugGroup.name = "navigation-collision-debug";
     this.navigationCollisionDebugGroup.visible = false;
     this.scene.add(this.navigationCollisionDebugGroup);
+    // B3 缺口 5：调试线框根节点随场景创建一次，显隐由 setPhysicsDebugVisible 控制。
+    this.physicsDebugOverlay.object.visible = false;
+    this.scene.add(this.physicsDebugOverlay.object);
     this.scene.add(this.xrRig);
     this.xrRig.add(this.camera);
 

@@ -18,6 +18,9 @@ interface ScenePhysicsPanelProps {
   selectedPosition?: Vector3Value | undefined;
   selectedBody?: ScenePhysicsBodyState | undefined;
   bodyOptions?: readonly { id: string; name: string; type: ScenePhysicsBodyState["type"] }[];
+  /** B3 缺口 5：碰撞体调试线框当前状态（引擎为事实来源，经控制器同步）。 */
+  debugVisible?: boolean;
+  onDebugVisibleChange?: (visible: boolean) => void;
   onChange: (next: ScenePhysicsState) => void;
   onSelectedBodyChange: (patch: Partial<ScenePhysicsBodyState>) => void;
   onReset: () => void;
@@ -91,6 +94,15 @@ export function ScenePhysicsPanel(props: ScenePhysicsPanelProps) {
         </button>
         <button disabled={!value.enabled} onClick={props.onReset}>
           {tr(locale, "重置", "Reset")}
+        </button>
+        <button
+          className={props.debugVisible ? "active" : ""}
+          title={tr(locale, "线框显示全部物理碰撞体（含默认地面）", "Wireframe all physics colliders (default ground included)")}
+          onClick={() => props.onDebugVisibleChange?.(!props.debugVisible)}
+        >
+          {props.debugVisible
+            ? tr(locale, "隐藏碰撞体", "Hide colliders")
+            : tr(locale, "显示碰撞体", "Show colliders")}
         </button>
       </div>
       <label className="physics-gravity">

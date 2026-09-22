@@ -273,6 +273,30 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
     if (!world || !this.rapier) return [];
     return collectPhysicsCuboidDebugEntries(world, this.rapier, this.physicsColliderOwners);
   }
+  /**
+   * B3 缺口 5：碰撞体调试线框开关。关闭时整组 visible=false 且帧同步入口直接
+   * 早退（不再收集碰撞数据，零开销）；开启时立即同步一次并请求重绘，不等下一帧。
+   */
+  setPhysicsDebugVisible(enabled: boolean): void {
+    this.physicsDebugVisible = enabled;
+    this.physicsDebugOverlay.setVisible(enabled);
+    if (!enabled) return;
+    this.updatePhysicsDebugView();
+    this.requestRender();
+  }
+  isPhysicsDebugVisible(): boolean {
+    return this.physicsDebugVisible;
+  }
+  /** 每帧同步调试线框位姿与数量；未开启时直接返回，物理数据面零轮询。 */
+  protected updatePhysicsDebugView(): void {
+    if (!this.physicsDebugVisible) return;
+    this.physicsDebugOverlay.sync(this.collectPhysicsDebugColliders(), (entry) => {
+      // 无主碰撞体=默认地面；有主按刚体类型着色，登记缺失兜底按静态处理。
+      if (entry.modelId === null) return "ground";
+      const type = this.physicsBodyStates.get(entry.modelId)?.type;
+      return type === "dynamic" || type === "kinematic" ? type : "fixed";
+    });
+  }
   setSceneAnimation(animation: SceneAnimationState): void {
       this.sceneAnimation = {
         duration: Math.max(animation.duration, 0.1),

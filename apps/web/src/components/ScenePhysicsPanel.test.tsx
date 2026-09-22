@@ -4,7 +4,13 @@ import { describe, expect, it, vi } from "vitest";
 import { ScenePhysicsPanel } from "./ScenePhysicsPanel";
 
 const body = { type: "dynamic" as const, mass: 2, friction: 0.5, restitution: 0.1 };
-const callbacks = { onChange: vi.fn(), onSelectedBodyChange: vi.fn(), onReset: vi.fn(), onClose: vi.fn() };
+const callbacks = {
+  onChange: vi.fn(),
+  onSelectedBodyChange: vi.fn(),
+  onReset: vi.fn(),
+  onClose: vi.fn(),
+  onDebugVisibleChange: vi.fn(),
+};
 
 describe("ScenePhysicsPanel joints", () => {
   it("offers a world revolute mount for a selected dynamic body", () => {
@@ -55,5 +61,16 @@ describe("ScenePhysicsPanel joints", () => {
     const css = await readFile(new URL("../styles/scene-environment.css", import.meta.url), "utf8");
     expect(css).toMatch(/\.physics-panel\s*\{[^}]*max-height:[^;}]+;[^}]*overflow:\s*auto/);
     expect(css).toMatch(/@media \(max-width: 760px\)[\s\S]*\.physics-panel\s*\{[^}]*width:\s*min\(300px,calc\(100% - 16px\)\)/);
+  });
+
+  it("B3 缺口 5：提供碰撞体调试线框开关，随状态切换文案与高亮", () => {
+    const base = { locale: "zh-CN" as const, value: { enabled: true, playing: false, gravity: { x: 0, y: -9.81, z: 0 } }, ...callbacks };
+    const off = renderToStaticMarkup(<ScenePhysicsPanel {...base} />);
+    expect(off).toContain("显示碰撞体");
+    expect(off).not.toContain("隐藏碰撞体");
+    const on = renderToStaticMarkup(<ScenePhysicsPanel {...base} debugVisible />);
+    expect(on).toContain("隐藏碰撞体");
+    // 启用按钮 + 碰撞体开关共两处高亮，静态标记即可确认开关拿到了 active 态。
+    expect(on.match(/class="active"/g)).toHaveLength(2);
   });
 });

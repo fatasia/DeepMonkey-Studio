@@ -85,6 +85,8 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
     this.updateModelRig();
     this.updateXRLocomotion(delta);
     this.updatePhysics(delta);
+    // B3 缺口 5：碰撞体调试线框逐帧跟随（未开启时内部直接早退）。
+    this.updatePhysicsDebugView();
     this.updateModelEffects(delta);
     this.updateMaterialUvAnimations(delta);
     this.updateIndustrialMotionRoutes(delta);
