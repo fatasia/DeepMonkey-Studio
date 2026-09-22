@@ -3083,3 +3083,7 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 图像证据：`test-output/f2-rt-raster-parity-{raster,rt,diff8x}.ppm`，8x 差值图目视仅阴影轮廓线细点。
 - 门禁：bin 全量 251/251、lib 516/516、renderer::rt 家族 15/15。
 - **F2 核心证据链已完备**：BLAS/TLAS 驻留（10/10）→ RT fragment shader（源级合同 3/3 + 真机管线编译）→ opaque RT 分支/回退（bin 全量）→ **RT/栅格像素对拍（99.88% 一致）**。设备恢复、BLEND 回退、动态场景证据为后续边界。未 push。
+
+### 2026-09-23 A4 粒子多预设渲染证据扩展
+
+- `lab/gpuParticleProbe.ts` 渲染证据从 alarm 单一取景扩展为 alarm-pulse / expanding-ring / flow-line 三预设各自专属取景：`PbrParticlePass` 走 drawIndirect 一次画全部活粒子、无法按发射器筛实例，故新增 `orthoEvidenceCamera` 证据相机按预设区域取景（alarm scale 1 心 (0,2)、ring scale 0.15 心 (10,0)、flow scale 0.25 心 (22,2)；边界按发射器公式+寿命回卷的确定性位置计算，非目标预设与爆发粒子全部推出 NDC 被裁剪），逐预设复用 rgba8unorm+depth24plus+空白对照资源模式渲染并读回非背景像素，结果新增 `expandingRingRenderedNonBackgroundPixels`/`flowLineRenderedNonBackgroundPixels` 且 success 要求三预设像素均 >0；deep-engine typecheck（src+lab+examples）通过；三预设真机像素数待下次 runner 取证。未 push。
