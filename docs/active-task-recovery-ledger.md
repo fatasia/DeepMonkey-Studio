@@ -3059,3 +3059,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 已核对文档：交接 F 段与能力扩展计划与台账一致；F7 排除不变。
 - 30 分钟自检 automation 已按用户指令更新为 30 分钟 recurring 并启用。
 - 下一动作：两 lane 返回后立即验证、按逐文件纪律提交；若失败按精确阻断转主线程补齐。未 push、未 reset/clean/checkout。
+
+### 2026-09-23 B6 适配器切片：bimStudioLightmap extras → runtime descriptor
+
+- 新增 `runtimePackage/staticLightmapAdapter.ts`：把 lightmapBaker 写入 glTF 材质的 `bimStudioLightmap` extras 与烘焙纹理资源转为 `RuntimeStaticLightmapDescriptor`；mode/semantic/texCoord/resolution/data 缺失或非法 fail-closed；hash 基于与运行包一致的 texture snapshot 表示（含 uv1 几何存在性校验），保证 descriptor 与包内资源逐字节可对账。
+- 证据：适配器测试 2/2（合法路径过 runtime binding 校验；mode/resolution 非法拒绝）；deep-engine typecheck 通过。未做：自动触发 bake 后接 descriptor 的 UI 链。未 push。
