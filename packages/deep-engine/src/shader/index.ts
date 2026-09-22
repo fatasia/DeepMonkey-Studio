@@ -4,3 +4,4 @@ export * from "./surface.js";
 export * from "./validation.js";
 export * from "./variants.js";
 export * from "./compiler.js";
+export * from "../shaderGraph/index.js";

@@ -2857,3 +2857,11 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **实现**：新增 `webgpu/pbrParticlePass.ts`——预乘 alpha 混合（src=one/dst=one-minus-src-alpha，与着色器 `rgb*alpha` 输出匹配）、深度测试开/写入关（粒子被几何遮挡、自身不写深度）、`drawIndirect` 消费模拟阶段的原子计数（CPU 不读回实例数）、相机 uniform 96B（viewProjection + cameraRight/Up）。目标格式随 HDR 目标，深度格式随调用方。
 - **证据**：4 项单测（管线混合/深度状态、间接绘制参数与相机 uniform 字节、非正尺寸与销毁后编码拒绝、会话未就绪 fail-closed）；deep-engine 全量回归 **3734/3734**。
 - **边界**：本切片只提供渲染 pass，**尚未接入 PbrRenderer 帧循环与发布链**（需在渲染循环内创建运行时、每帧提交模拟、在透明物体后绘制）——属下一片；粒子不与探针 GI 交互（粒子不写入探针捕获）；无碰撞/物理交互。未 push。
+
+### 2026-09-22 Shader S1：WGSL-first 作者图合同与 Registry（ZCode）
+
+- **现状核查**：仓内已有约 8,064 行 shader 基础设施——`shader/types.ts`（ShaderNode/StageGraph/Pass/Technique/DeepShaderAsset/Variant/SourceMap）、`shader/compilerWgsl.ts`（真实 WGSL 代码生成）、`shader/graphValidation.ts`、`shader/variants.ts`、`shaderAuthoring/`（DeepSL parser/compiler/package adapter）、`shaderPresets/`、`shaderPackageExecutor`。**没有重建 compiler**。
+- **外部架构审计**：Babylon Node Material（Apache-2.0）可参考 `NodeMaterialBlock`/ConnectionPoint/Block registry/BuildState/WGSL backend/Preview；Unity Shader Graph（Unity Companion License）可参考 GraphData + JsonData/JsonRef、Node/Slot/Edge 分离、Target/SubTarget、GraphRequirements、PreviewManager、MessageManager。Unity Shader Graph 源码无 WGSL backend 证据，不作为 WGSL 方案；只借鉴高层职责，禁止复制代码。
+- **本切片**：新增 `shaderGraph/graphTypes.ts`（作者 Graph Asset V1，显式 stage/nodes/edges/target）、`nodeRegistry.ts`（WGSL-first 节点元数据 registry，lowering 前的 display/category/ports/stage/preview 描述）、`graphSerialization.ts`（canonical JSON/sha256/clone）、`graphValidation.ts`（重复节点、未知/阶段不兼容节点、缺失 edge fail-closed）、`index.ts`，并从 `shader/index.ts` 公开导出。**仍复用既有 ShaderNode/DeepShaderAsset/compiler，未引入第二套编译器**。
+- **证据**：S1 测试 4 项（canonical/hash round-trip、registry、invalid graph、100 节点预算），与既有 shader 测试合计 243/243；deep-engine typecheck 通过。性能：100 节点纯校验 <16ms。
+- **真实未尽**：暂无可视化编辑器、显式 GraphDocument → DeepShaderAsset lowering、SubGraph、Blackboard、Preview scheduler、Target/SubTarget UI、节点级 MessageStore；这些按 Shader S2/S3 后续切片推进。未 push。
