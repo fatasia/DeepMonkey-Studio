@@ -2889,3 +2889,11 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **现状核查**：仓内没有 SubGraph 资产/依赖闭包机制（既有 `shaderAuthoring` 是 DeepSL 文本前端，`shader` 是编译 IR；两者均非可复用子图资产）。
 - 新增 `shaderGraph/subgraph.ts`：`ShaderGraphSubGraphAssetV1` 输入/输出/内嵌 graph/依赖声明；稳定依赖 manifest（按 id 排序、每个 graph SHA-256 hash）；缺依赖与循环依赖 fail-closed。新增 2 项测试。
 - Shader Graph S1–S4 当前 9/9，deep-engine typecheck 通过。未实现递归 lowering/子图端口映射/可视化 SubGraph 节点，保留为后续 UI/Lowering 增量，未复制 Babylon/Unity 代码。未 push。
+
+### 2026-09-22 Shader/A4/B2/B3 收口复核（ZCode）
+
+- Shader S3/S4 已落地：编辑器诊断 MessageStore、预览准备合同、SubGraph 依赖 manifest；复用既有 WGSL compiler，不引入第二套后端。Shader Graph 9/9，deep-engine typecheck 通过。SubGraph hash 已修正为覆盖完整资产接口与依赖声明，避免缓存身份碰撞。
+- A4 粒子已接入 PBR 产品帧循环：可选 emitters 创建既有 GPU runtime，固定步长模拟异步提交，消费上一帧 committed binding，HDR/depth `drawIndirect`，CPU 不回读实例数。粒子 pass 4/4，deep-engine 全量回归 3744/3744。
+- B2-b Web/Native transition 保真：作者 keyframe transition 贯穿 runtime schema 与 Web/Native 采样（linear/smooth/ease-in/ease-out/step）；Web playback 7/7，Native dynamic-scene 8/8，旧包可选字段兼容。
+- B3-b 已由并行会话并入 HEAD `006c6fe`（不重写、不补空提交）：kinematic Web/Native builder、PhysicsWorldHost、角色控制器 Web 接线、运行包契约与测试。定向 Web 19 + 角色/编译 6 + Deep runtime 8 + contracts 18 + Native 4 + physics-validate 19 通过；apps/web tsc、Native cargo check 通过。Native 角色控制器若无对应消费能力保持边界，不伪造跨端完成。
+- 本次核查纠正：test-output 历史树副本会制造假失败，所有最终门禁均按真实源码目录执行；Native bin 全量保留既有 dashboard_video_gpu 1 项失败，未将其伪装为本轮通过。
