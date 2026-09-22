@@ -3187,3 +3187,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
   - ❌ 缺口：①Babylon/Unity 轨道 harness 不存在（Unity 依赖 V3 插件）；②聚合统计层（P50/P95/P99）在工作区外隔离目录，仓内无可复跑实现；③30 分钟长稳、画质相似度、生产输入延迟三项证据缺失（Bevy 条目已自证 incomplete/eligible=false）。
   - 下一可执行动作：a) 把配对采样聚合统计（分位数+对比表）落为仓内可复跑脚本并吃既有 paired-evidence.json 出报告；b) Babylon 轨道 harness（Web 侧同夹具）；c) 30min 长稳排期。
 - 门禁续证：本轮无新代码改动，前轮门禁维持（native lib 528/0、bin 262/0；web 25/25+14/14+2/2+tsc 0）。
+
+### 2026-09-23 30 分钟自检（第七轮）：V4 聚合统计落仓
+
+- `scripts/benchmarks/paired-summary.mjs`：吃既有 paired-evidence.json 出跨轮分位数报告（中位/P95/样本轮数），缺失指标（Deep 侧 cold-start/load-to-interactive/input-latency）如实标"未采集"。已对 Bevy 0.19 现存 5 轮证据实跑出报告：`test-output/bevy-019-benchmark/paired-summary.md`——量化确认 V4 缺口：Deep 轨道缺冷启动/加载到可交互/输入延迟三指标采集。
+- 子代理×2 仍在跑（B3 渲染线框层、V2 occlusion 诊断排查），满载维持。
