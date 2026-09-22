@@ -1,5 +1,5 @@
 import type { ShaderGraphAssetV1 } from "./graphTypes.js";
-import { canonicalShaderGraphJson, shaderGraphHash } from "./graphSerialization.js";
+import { canonicalShaderJson, sha256Hex } from "../shader/canonical.js";
 
 export interface ShaderGraphSubGraphInput {
   readonly id: string;
@@ -38,10 +38,13 @@ export function buildShaderGraphDependencyManifest(root: ShaderGraphSubGraphAsse
     for (const id of dependencyIds) {
       const dependency = resolve(id);
       if (!dependency) throw new Error(`Shader SubGraph dependency ${id} is missing.`);
+      if (dependency.id !== id) throw new Error(`Shader SubGraph dependency ${id} resolved to ${dependency.id}.`);
       visit(dependency);
     }
     active.delete(asset.id); visited.add(asset.id);
-    assets.push({ id: asset.id, hash: shaderGraphHash(asset.graph) });
+    assets.push({ id: asset.id, hash: sha256Hex({ schemaVersion: asset.schemaVersion, id: asset.id,
+      label: asset.label, inputs: asset.inputs, outputs: asset.outputs, graph: asset.graph,
+      dependencies: [...new Set(asset.dependencies)].sort() }) });
   };
   visit(root);
   assets.sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
@@ -49,5 +52,7 @@ export function buildShaderGraphDependencyManifest(root: ShaderGraphSubGraphAsse
 }
 
 export function canonicalShaderGraphSubGraphJson(asset: ShaderGraphSubGraphAssetV1): string {
-  return canonicalShaderGraphJson(asset.graph);
+  return canonicalShaderJson({ schemaVersion: asset.schemaVersion, id: asset.id, label: asset.label,
+    inputs: asset.inputs, outputs: asset.outputs, graph: asset.graph,
+    dependencies: [...new Set(asset.dependencies)].sort() });
 }
