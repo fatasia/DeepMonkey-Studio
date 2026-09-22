@@ -12,6 +12,7 @@ import {
 } from "../rendererCapabilities";
 import { applySceneViewerSnapshot } from "./applySceneViewerSnapshot";
 import { startSceneViewerDynamicPlayback } from "./sceneViewerDynamicPlayback";
+import { sceneViewerToolsAvailability } from "./sceneViewerToolsAvailability";
 import { sceneViewerDeliveryManifest } from "./sceneViewerDelivery";
 import { applyDocumentBranding } from "../branding/documentBranding";
 import { PublishedModelCredits } from "./PublishedModelCredits";
@@ -20,6 +21,10 @@ import { PublishedModelCredits } from "./PublishedModelCredits";
 export function SceneViewerRoot() {
   const manifest = sceneViewerDeliveryManifest();
   if (!manifest) return <div className="scene-viewer-fatal">只读场景清单未初始化</div>;
+  // 工具级可用性按发布快照的场景编译字段完整性判定一次（对应运行包 capability
+  // deep.scene.section-plane.v1 / deep.scene.physics-runtime.v1）；未编译进包的
+  // 能力直接隐藏工具入口，而不是显示后点击报错。清单是模块单例，判定结果恒定。
+  const toolsAvailability = sceneViewerToolsAvailability(manifest.publication.snapshot);
   const viewportRef = useRef<HTMLDivElement>(null);
   const [engine, setEngine] = useState<ViewerEngine>();
   const [backend, setBackend] = useState<RendererBackend>();
@@ -172,6 +177,7 @@ export function SceneViewerRoot() {
           onFullscreen={() => void (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen())}
           onStartXR={(mode) => void engine?.startXR(mode).catch((reason) => setError(message(reason)))}
           xrUnavailableReason={xrUnavailableReason}
+          toolsAvailability={toolsAvailability}
         />
       )}
       {objectPanelOpen && engine && (

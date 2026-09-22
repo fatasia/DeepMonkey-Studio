@@ -3163,3 +3163,11 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **fixture 生成命令漂移（如实记录，未越界修复）**：既有 `scripts/generate-coordinate-origin-fixtures.mts` 断言相机 schema===2，当前编译器已升级 schema 3，脚本运行失败；本切片用同编译链变体脚本生成最小包落 test-output，并以 HEAD 既有 fixture 产物（解析 valid）补证。
 - **失败与边界（诚实声明）**：dashboard 旧产物包走 scene 验证器 60s 超时（EXE 输出 `native GPU occlusion consume indirect template size mismatch` 后未退出）——dashboard 正式链应为 `.dmda` 归档 + `run-dashboard-client-native.mts`，该 occlusion 诊断值得独立排查；设备丢失演练、旧版本恢复、嵌入 overlay 单文件客户端（`--licenses` 在裸/portable EXE 上正确 fail-closed `overlay/no-embedded-package`）、Three WebView、全操作矩阵与画面对拍均未做。无代码改动（构建零错误、验证全过），工作树并行 WIP 未触碰。
 - 证据：`test-output/v2-native-release-20260923/evidence.md`（含全部命令、输出、耗时；gitignore，路径引用不随库分发）。
+
+### 2026-09-22 I2 切片：发布查看器工具坞按场景能力完整性显隐（消费端）
+
+- **语义落地（承第四轮判定）**：不消费 `degradedCapabilities`（对象/字段降级路径清单，语义错位禁用）；工具级显隐改由发布快照的**场景编译字段完整性**推导。新增纯函数 `sceneViewerToolsAvailability(snapshot)`（`apps/web/src/delivery/sceneViewerToolsAvailability.ts`）：`clippingAvailable = snapshot.clipping !== undefined`（对应运行包 capability `deep.scene.section-plane.v1`——compileSceneRuntimePackage 仅在快照携带 clipping 时经相机载荷下发剖切平面）；`physicsAvailable = snapshot.physics?.enabled === true`（对应 `deep.scene.physics-runtime.v1`；enabled 但无可编译刚体的场景在发布编译期已被拒绝，不会成为发布快照，故 enabled 即载荷在）。
+- **消费端接线**：`SceneViewerRoot` 判定一次并把 `toolsAvailability` 传入 `PublishedViewerToolDock` 新 prop；`clippingAvailable === false` 时剖切入口**不渲染**（隐藏而非禁用置灰）；prop 缺省视为全部可用，兼容既有调用与测试。物理维度当前工具坞无专属按钮（物理经动态播放通道消费），随判定一并下发预留，props 注释写明。
+- **测试**：`sceneViewerToolsAvailability.test.ts` 4 项（无字段双不可用／带 clipping 可用／physics.enabled 三态／判定对象不伪造测量与爆炸维度）；`PublishedViewerToolDock.test.tsx` +2（缺能力隐藏剖切且测量/爆炸保持显示、带字段正常渲染）；既有首用例即"缺省显示剖切"兼容钉子。
+- **门禁**：apps/web `tsc --noEmit` 0 错误；vitest 新增+相关 14/14（ToolDock 4、availability 4、sceneViewerDelivery 2、applySceneViewerSnapshot 4）。
+- **诚实边界**：①SceneViewerRoot 历史无专属组件测试，本切片不补重型根组件挂载测试，靠 tsc+依赖链测试覆盖；②测量（`measurements` 是已有测量数据的存在性，不能反推交互测量工具是否可用）与爆炸（纯引擎运行时能力，快照无编译字段）不可由快照形状诚实判定，按钮保持显示、判定对象不含这两个维度，不伪造；③观察到 `compileSceneCamera` 当前不产出 `camera.clippingPlane`，故 `deep.scene.section-plane.v1` 暂不会出现在 compiledSceneFields——本切片以快照字段存在性为判定准绳（与 WebGL 查看器 `engine.setClipping` 消费一致），Native section-plane 载荷生产接线属其他切片；④工作树并行他人 WIP（viewerEngineSimulation.ts、rapierPhysicsDebugView.*、.tmp-*）未触碰、未入库；未 push。

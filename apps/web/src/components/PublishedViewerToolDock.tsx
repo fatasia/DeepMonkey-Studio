@@ -19,6 +19,7 @@ import {
 import { translate as tr, type AppLocale } from "../i18n";
 import type { NavigationMode } from "../viewer/ViewerEngine";
 import type { StandardView } from "../viewer/ViewerEngine";
+import type { SceneViewerToolsAvailability } from "../delivery/sceneViewerToolsAvailability";
 import { ToolButton } from "./AppFormControls";
 
 interface PublishedViewerToolDockProps {
@@ -47,6 +48,14 @@ interface PublishedViewerToolDockProps {
   onStartXR: (mode: "immersive-vr" | "immersive-ar") => void;
   /** XR 静态门槛不满足时的禁用原因；缺省表示可尝试进入（设备级支持由会话请求最终裁决）。 */
   xrUnavailableReason?: string | undefined;
+  /**
+   * 工具级能力可用性：由发布快照的场景编译字段完整性推导（运行包 capability，
+   * 如 deep.scene.section-plane.v1），与对象/字段降级清单 degradedCapabilities 无关。
+   * 缺省视为全部可用，兼容未接判定的调用方；`clippingAvailable === false` 时
+   * 剖切入口不渲染（未编译能力隐藏而不是显示后报错）。`physicsAvailable`
+   * 当前由动态播放通道在根组件消费，工具坞暂无物理专属按钮，预留。
+   */
+  toolsAvailability?: SceneViewerToolsAvailability | undefined;
 }
 
 /**
@@ -88,7 +97,10 @@ export function PublishedViewerToolDock(props: PublishedViewerToolDockProps) {
         <ToolButton title={tr(locale, "对象与属性", "Objects and properties")} active={props.objectPanelOpen} onClick={() => props.onObjectPanelOpenChange(!props.objectPanelOpen)} icon={<ListTree size={19} />} />
         <span className="viewer-tool-separator" />
         <ToolButton title={tr(locale, "测量标尺", "Measure")} active={props.measureEnabled} onClick={props.onMeasurementToggle} icon={<Ruler size={19} />} />
-        <ToolButton title={tr(locale, "剖切查看", "Section view")} active={props.clippingEnabled} onClick={props.onClippingToggle} icon={<ScanLine size={19} />} />
+        {/* 快照未携带剖切字段（未编译 deep.scene.section-plane.v1）时隐藏剖切入口。 */}
+        {(props.toolsAvailability?.clippingAvailable ?? true) && (
+          <ToolButton title={tr(locale, "剖切查看", "Section view")} active={props.clippingEnabled} onClick={props.onClippingToggle} icon={<ScanLine size={19} />} />
+        )}
         <ToolButton title={tr(locale, "模型爆炸", "Explode model")} active={props.explosionActive} onClick={props.onExplosionToggle} icon={<Layers3 size={19} />} />
         <span className="viewer-tool-separator" />
         <ToolButton title={tr(locale, "更多视图工具", "More view tools")} active={moreOpen} onClick={() => setMoreOpen((open) => !open)} icon={<MoreHorizontal size={19} />} />
