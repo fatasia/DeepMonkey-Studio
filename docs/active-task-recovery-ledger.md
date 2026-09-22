@@ -1,4 +1,6 @@
 
+- 2026-09-22 B1 脚本诊断 AST 定位升级：`sceneScriptAnalysis` 全部诊断行列改由 TypeScript compiler AST（`ts.createSourceFile` + `getLineAndCharacterOfPosition`）统一换算，missing-capability/missing-permission/unknown-reference/unsupported-api 全部锚定真实源码位置，`ctx.self` 隐式推断与挂载目标缺失不再回退 line 1，诊断代码/severity/文案不变；compiler 位于懒加载编辑器 chunk 不进首屏。sceneScriptAnalysis 17/17、studio+sceneScriptDraft 127 项、Web tsc 通过；vite 生产构建与 bundle 预算门禁未跑，未 push。
+
 - 2026-09-22 B6 静态光照最小消费切片：复用已验证 `RuntimeStaticLightmapDescriptor` 与运行包纹理资源，不重建 baker。Web 运行包绑定新增 UV0/UV1 存在性 fail-closed；Native 运行包加载器新增静态光照描述符、纹理语义/尺寸/SHA-256/UV 校验入口；Web roundtrip 与缺纹理/hash/UV 回归 24 项通过，Web tsc 通过。Native cargo check 被并行域既有 `probe_gi_abi` bin 导入错误阻断；未提交、未 push。
 
 - 2026-09-22 B3-b 物理能力扩展收口：复用既有 Rapier 固定步进宿主与运行包，不重建物理底座。`PhysicsBodyType`/场景验证/Deep runtime v3/Native runtime 校验贯通 `kinematic`；Web 使用 `kinematicPositionBased` 并挂载 Rapier 角色控制器，Native 使用 `kinematic_position_based` 消费刚体但角色控制器明确 `degraded`（Native 未调用 Rapier 控制器 API）。未知类型、角色字段错配和非法参数 fail-closed。Web 物理 19 项、Deep runtime 8 项、contracts 18 项、Native native_physics 4 项、physics-validate 19 项及 Web tsc/Native cargo check 通过；固定 1/60 与 0.2s 追赶上限无回退。16384 bodies ≤4ms 尚未取得新实测，继续列项目级性能后验收。

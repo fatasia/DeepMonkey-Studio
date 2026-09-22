@@ -28,6 +28,21 @@ const value = studio.getData("temperature");`, { ...script, capabilities: [], pe
     ]));
   });
 
+  it("anchors ctx.self inferred declarations and stale mount targets to the ctx.self expression", () => {
+    const code = "function onStart(ctx) {\n  ctx.self?.show();\n}";
+    // 能力与权限都由 ctx.self 隐式推断，规则正则命中不了，必须锚定到 ctx.self 而不是回退文件首。
+    const attached = analyzeSceneScript(code, { ...script, target: { kind: "object" as const, id: "pump-01" }, capabilities: [], permissions: [] }, context);
+    expect(attached.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "missing-capability", line: 2, column: 3 }),
+      expect.objectContaining({ code: "missing-permission", line: 2, column: 3 }),
+    ]));
+
+    const staleTarget = analyzeSceneScript(code, { ...script, target: { kind: "object" as const, id: "retired-pump" } }, context);
+    expect(staleTarget.issues).toContainEqual(
+      expect.objectContaining({ code: "unknown-reference", severity: "error", line: 2, column: 3, endColumn: 11 }),
+    );
+  });
+
 
   it.each([undefined, { kind: "scene" as const }, { kind: "object" as const, id: "pump-01" }, { kind: "component" as const, id: "unity-01" }])("creates a valid default script for target %j", target => {
     const analysis = analyzeSceneScript(defaultBehaviorCode(target), {
@@ -136,5 +151,12 @@ function onStart() {}`, script, context);
     expect(analysis.lifecycle).toEqual(["onStart"]);
     expect(analysis.capabilities).toEqual([]);
     expect(analysis.issues).toEqual([]);
+  });
+
+  it("multi-line strings and CRLF keep diagnostics on the real source position", () => {
+    // 编译器 AST 换算行列：CRLF 与模板字符串中的换行都不再靠手写切分推导。
+    const analysis = analyzeSceneScript('function onStart() {\r\n  ctx.log(`multi\r\nline`);\r\n  studio.object("retired-pump").focus();\r\n}', script, context);
+    // 锚定到字符串字面量本身：line 4 col 18 = "retired-pump" 的起始位置。
+    expect(analysis.issues).toContainEqual(expect.objectContaining({ code: "unknown-reference", line: 4, column: 18, endColumn: 30 }));
   });
 });

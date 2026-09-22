@@ -1,3 +1,4 @@
+import * as ts from "typescript";
 import type { ApplicationScriptLifecycle, ApplicationScriptPermission, ScriptModule } from "@bim-studio/contracts";
 import type { SceneCapability } from "@bim-studio/scene-sdk";
 import type { SceneScriptIntelligenceContext } from "./sceneScriptContext";
@@ -54,6 +55,10 @@ export function analyzeSceneScript(
   context: SceneScriptIntelligenceContext,
 ): SceneScriptAnalysis {
   const executableCode = maskJavaScriptComments(code);
+  // 遮蔽只服务正则识别（保持长度不变）；行列定位统一交给编译器 AST，两者共享同一套字符偏移。
+  const positions = new SceneScriptPositions(code);
+  // ctx.self 是唯一隐式引用挂载目标的写法：规则正则命中不了它时，用它作为诊断兜底锚点。
+  const ctxSelfOffset = positions.firstCtxSelfOffset();
   const lifecycle = LIFECYCLE_NAMES.filter((name) => new RegExp(`\\b(?:async\\s+)?function\\s+${name}\\s*\\(|\\b(?:const|let|var)\\s+${name}\\s*=`).test(executableCode));
   const capabilities = CAPABILITY_RULES.filter((rule) => rule.pattern.test(executableCode)).map((rule) => rule.capability);
   const permissions = PERMISSION_RULES.filter((rule) => rule.pattern.test(executableCode)).map((rule) => rule.permission);
@@ -69,11 +74,11 @@ export function analyzeSceneScript(
 
   if (!lifecycle.length) issues.push({ code: "missing-lifecycle", severity: "error", message: "没有找到可运行的生命周期函数（例如 onStart 或 onUpdate）", line: 1, column: 1, endColumn: 1 });
   for (const capability of missingCapabilities) {
-    const position = firstRulePosition(executableCode, CAPABILITY_RULES.find((rule) => rule.capability === capability)?.pattern);
+    const position = anchorPosition(executableCode, positions, ctxSelfOffset, CAPABILITY_RULES.find((rule) => rule.capability === capability)?.pattern);
     issues.push({ code: "missing-capability", severity: "warning", message: `代码使用了 ${capability}，但脚本尚未声明该能力`, line: position.line, column: position.column, endColumn: position.column + capability.length });
   }
   for (const permission of missingPermissions) {
-    const position = firstRulePosition(executableCode, PERMISSION_RULES.find((rule) => rule.permission === permission)?.pattern);
+    const position = anchorPosition(executableCode, positions, ctxSelfOffset, PERMISSION_RULES.find((rule) => rule.permission === permission)?.pattern);
     issues.push({ code: "missing-permission", severity: "warning", message: `代码需要 ${permission} 权限，运行前请补齐`, line: position.line, column: position.column, endColumn: position.column + permission.length });
   }
 
@@ -85,18 +90,22 @@ export function analyzeSceneScript(
   if (script.target && script.target.kind !== "scene") {
     const attachedTargetExists = context.targets.some((item) => item.kind === script.target?.kind && item.id === script.target.id);
     if (!attachedTargetExists) {
+      // 挂载目标缺失本质是元数据错误；只要脚本里真的写了 ctx.self，就锚定到该表达式便于编辑器跳转，
+      // 否则才回退文件首（此时源码中没有任何可指向的位置）。
+      const anchor = ctxSelfOffset !== undefined ? positions.at(ctxSelfOffset) : { line: 1, column: 1 };
       issues.push({
         code: "unknown-reference",
         severity: "error",
         message: `脚本挂载目标“${script.target.id}”不存在，请重新选择对象或资源`,
-        line: 1,
-        column: 1,
-        endColumn: 1,
+        line: anchor.line,
+        column: anchor.column,
+        endColumn: ctxSelfOffset !== undefined ? anchor.column + "ctx.self".length : 1,
       });
     }
   }
   if (usesAttachedTarget && (!script.target || script.target.kind === "scene")) {
-    const position = sourcePosition(executableCode, executableCode.search(/\bctx\.self\b/));
+    // 正则负责存在性判定（沿用旧行为），AST 负责给出精确位置；字符串误报等罕见路径仍回退正则偏移。
+    const position = positions.at(ctxSelfOffset ?? Math.max(0, executableCode.search(/\bctx\.self\b/)));
     issues.push({
       code: "unsupported-api",
       severity: "error",
@@ -106,27 +115,27 @@ export function analyzeSceneScript(
       endColumn: position.column + "ctx.self".length,
     });
   }
-  collectUnknownCalls(executableCode, /\b(?:studio|ctx)\.object\s*\(\s*(["'])([^"']+)\1/g, objectIds, "场景对象", issues);
-  collectUnknownCalls(executableCode, /\bstudio\.component\s*\(\s*(["'])([^"']+)\1/g, componentIds, "页面组件", issues);
-  collectUnknownCalls(executableCode, /\bstudio\.unity\s*\(\s*(["'])([^"']+)\1/g, new Set(context.targets.filter((item) => item.runtime === "unity").map((item) => item.id)), "Unity 组件", issues);
-  collectUnknownCalls(executableCode, /\bstudio\.scene\.open\s*\(\s*(["'])([^"']+)\1/g, sceneIds, "场景", issues);
-  collectUnknownCalls(executableCode, /\bstudio\.page\.open\s*\(\s*(["'])([^"']+)\1/g, pageIds, "页面", issues);
-  collectUnknownCalls(executableCode, /\bstudio\.camera\.applyView\s*\(\s*(["'])([^"']+)\1/g, cameraViewIds, "相机视角", issues);
-  collectUnknownCalls(executableCode, /\b(?:studio|ctx)\.getData\s*\(\s*(["'])([^"']+)\1/g, new Set(context.dataKeys), "数据键", issues);
-  collectUnknownCalls(executableCode, /\b(?:studio|ctx)\.setData\s*\(\s*(["'])([^"']+)\1/g, new Set(context.dataKeys), "数据键", issues);
-  collectUnknownCalls(executableCode, /\b(?:studio|ctx)\.emit\s*\(\s*(["'])([^"']+)\1/g, new Set(context.eventNames), "事件", issues);
-  collectUnknownCalls(executableCode, /\bctx\.event\?*\.name\s*={2,3}\s*(["'])([^"']+)\1/g, new Set(context.eventNames), "事件", issues);
-  collectUnsupportedWorkerApis(executableCode, issues);
+  collectUnknownCalls(executableCode, /\b(?:studio|ctx)\.object\s*\(\s*(["'])([^"']+)\1/g, objectIds, "场景对象", issues, positions);
+  collectUnknownCalls(executableCode, /\bstudio\.component\s*\(\s*(["'])([^"']+)\1/g, componentIds, "页面组件", issues, positions);
+  collectUnknownCalls(executableCode, /\bstudio\.unity\s*\(\s*(["'])([^"']+)\1/g, new Set(context.targets.filter((item) => item.runtime === "unity").map((item) => item.id)), "Unity 组件", issues, positions);
+  collectUnknownCalls(executableCode, /\bstudio\.scene\.open\s*\(\s*(["'])([^"']+)\1/g, sceneIds, "场景", issues, positions);
+  collectUnknownCalls(executableCode, /\bstudio\.page\.open\s*\(\s*(["'])([^"']+)\1/g, pageIds, "页面", issues, positions);
+  collectUnknownCalls(executableCode, /\bstudio\.camera\.applyView\s*\(\s*(["'])([^"']+)\1/g, cameraViewIds, "相机视角", issues, positions);
+  collectUnknownCalls(executableCode, /\b(?:studio|ctx)\.getData\s*\(\s*(["'])([^"']+)\1/g, new Set(context.dataKeys), "数据键", issues, positions);
+  collectUnknownCalls(executableCode, /\b(?:studio|ctx)\.setData\s*\(\s*(["'])([^"']+)\1/g, new Set(context.dataKeys), "数据键", issues, positions);
+  collectUnknownCalls(executableCode, /\b(?:studio|ctx)\.emit\s*\(\s*(["'])([^"']+)\1/g, new Set(context.eventNames), "事件", issues, positions);
+  collectUnknownCalls(executableCode, /\bctx\.event\?*\.name\s*={2,3}\s*(["'])([^"']+)\1/g, new Set(context.eventNames), "事件", issues, positions);
+  collectUnsupportedWorkerApis(executableCode, issues, positions);
 
   return { lifecycle, capabilities: uniqueCapabilities, permissions: uniquePermissions, missingCapabilities, missingPermissions, issues };
 }
 
-function collectUnsupportedWorkerApis(code: string, issues: SceneScriptIssue[]): void {
+function collectUnsupportedWorkerApis(code: string, issues: SceneScriptIssue[], positions: SceneScriptPositions): void {
   for (const rule of WORKER_UNSUPPORTED_API) {
     for (const match of code.matchAll(rule.pattern)) {
       const expression = match[0];
       if (!expression) continue;
-      const position = sourcePosition(code, match.index ?? 0);
+      const position = positions.at(match.index ?? 0);
       issues.push({
         code: "unsupported-api",
         severity: "error",
@@ -148,13 +157,13 @@ export function applySceneScriptDeclarations(script: ScriptModule, analysis: Sce
   };
 }
 
-function collectUnknownCalls(code: string, pattern: RegExp, known: ReadonlySet<string>, label: string, issues: SceneScriptIssue[]): void {
+function collectUnknownCalls(code: string, pattern: RegExp, known: ReadonlySet<string>, label: string, issues: SceneScriptIssue[], positions: SceneScriptPositions): void {
   if (!known.size) return;
   for (const match of code.matchAll(pattern)) {
     const value = match[2];
     if (!value || known.has(value)) continue;
     const literalOffset = (match.index ?? 0) + (match[0]?.indexOf(value) ?? 0);
-    const position = sourcePosition(code, literalOffset);
+    const position = positions.at(literalOffset);
     issues.push({
       code: "unknown-reference",
       severity: "warning",
@@ -166,18 +175,50 @@ function collectUnknownCalls(code: string, pattern: RegExp, known: ReadonlySet<s
   }
 }
 
-function firstRulePosition(source: string, pattern: RegExp | undefined): { line: number; column: number } {
-  if (!pattern) return { line: 1, column: 1 };
-  pattern.lastIndex = 0;
-  const match = pattern.exec(source);
-  pattern.lastIndex = 0;
-  return sourcePosition(source, match?.index ?? 0);
+/** 优先锚定规则首次命中的位置；规则未命中（如 ctx.self 隐式推断的声明）回退 ctx.self 表达式，最后才是文件首。 */
+function anchorPosition(source: string, positions: SceneScriptPositions, ctxSelfOffset: number | undefined, pattern: RegExp | undefined): { line: number; column: number } {
+  if (pattern) {
+    pattern.lastIndex = 0;
+    const match = pattern.exec(source);
+    pattern.lastIndex = 0;
+    if (match) return positions.at(match.index);
+  }
+  return positions.at(ctxSelfOffset ?? 0);
 }
 
-function sourcePosition(source: string, offset: number): { line: number; column: number } {
-  const before = source.slice(0, Math.max(0, offset));
-  const lines = before.split("\n");
-  return { line: lines.length, column: (lines.at(-1)?.length ?? 0) + 1 };
+/**
+ * 基于 TypeScript 编译器 AST 的定位器：所有诊断行列由 compiler 统一计算
+ * （getLineAndCharacterOfPosition），不再手写按 "\n" 切分，天然兼容 CRLF 与多行字符串。
+ * 本模块位于懒加载的脚本编辑器 chunk，compiler 不会进入首屏包体。
+ */
+class SceneScriptPositions {
+  private readonly sourceFile: ts.SourceFile;
+
+  constructor(private readonly code: string) {
+    this.sourceFile = ts.createSourceFile("scene-script.ts", code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  }
+
+  /** 把字符偏移换算成 1 起始行列；偏移越界时夹取到源码范围内。 */
+  at(offset: number): { line: number; column: number } {
+    const safe = Math.max(0, Math.min(offset, this.code.length));
+    const { line, character } = this.sourceFile.getLineAndCharacterOfPosition(safe);
+    return { line: line + 1, column: character + 1 };
+  }
+
+  /** 第一个真实 ctx.self 属性访问的起始偏移；脚本未出现该表达式（如只出现在字符串里）时返回 undefined。 */
+  firstCtxSelfOffset(): number | undefined {
+    let found: number | undefined;
+    const visit = (node: ts.Node): void => {
+      if (found !== undefined) return;
+      if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "ctx" && node.name.text === "self") {
+        found = node.getStart(this.sourceFile);
+        return;
+      }
+      ts.forEachChild(node, visit);
+    };
+    ts.forEachChild(this.sourceFile, visit);
+    return found;
+  }
 }
 
 function unique<T extends string>(values: readonly T[]): T[] {
