@@ -230,6 +230,15 @@ impl GpuCulling {
         let Some(occlusion) = &self.occlusion else {
             return Err("native GPU occlusion consume requires the occlusion stage".into());
         };
+        if self.candidate_count == 0 {
+            // 空 3D 场景(纯 deep2d/dashboard 组合包)没有 draw 可紧凑:消费链
+            // 整体跳过挂载,而不是让模板尺寸合同对「nonempty 垫零 template
+            // vs 空批次区间表」误报。draw 侧行为与未接线逐字节一致
+            // (compact_batch_survivors 恒 None);非空场景合同不变。
+            self.consume = None;
+            self.survivors = None;
+            return Ok(());
+        }
         let stage = OcclusionConsumeStage::new(
             device,
             source_instances,

@@ -204,12 +204,26 @@ pub fn recover(
     }
 }
 
+/// `--verify-package` 只验证 scene 发布候选。dashboard 内容包的正式链是
+/// `.dmda` 归档 + `run-dashboard-client-native`(`--package` 播放);误入
+/// scene 验证器的 dashboard 包在此快速 fail-closed 拒绝——空 3D 场景的
+/// dashboard 包不该被 scene 渲染链消费,更不该在初始化失败后挂到超时。
+fn reject_non_scene_content(content: &PlayerContent) -> Result<(), String> {
+    if content.dashboard.is_some() {
+        return Err(
+            "runtime package verification requires a scene package; dashboard packages verify through the .dmda archive chain (run-dashboard-client-native)".into(),
+        );
+    }
+    Ok(())
+}
+
 pub fn verify(
     path: &Path,
     verification: crate::publication_verification::Verification,
 ) -> Result<(), String> {
     // Exact candidate verification never recovers a different LKG package.
     let package = load(path)?;
+    reject_non_scene_content(&package.content)?;
     let bloom = renderer::entry_bloom(&package.content);
     app::run_verification(package.content, verification.bind_hash(package.hash), bloom)
 }
@@ -374,6 +388,22 @@ fn report(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Dashboard 内容包误入 `--verify-package` 必须在进入渲染前被明确拒绝
+    /// (指向 `.dmda` + run-dashboard-client-native 正式链),而不是让空 3D
+    /// 场景走进 scene 渲染链后在初始化阶段报错甚至挂到验证器超时。
+    #[test]
+    fn verification_rejects_dashboard_content_before_any_rendering() {
+        let golden = deep_engine_native::runtime_package::parse_and_validate_runtime_package(
+            include_bytes!("../../deep-engine/fixtures/dashboard-composition-v1.json").as_slice(),
+        )
+        .unwrap();
+        let content = PlayerContent::from_package(golden).unwrap();
+        assert!(content.dashboard.is_some(), "golden is a dashboard package");
+        let error = reject_non_scene_content(&content).unwrap_err();
+        assert!(error.contains("scene package"), "{error}");
+        assert!(error.contains("run-dashboard-client-native"), "{error}");
+    }
 
     fn fixture() -> Vec<u8> {
         std::fs::read(

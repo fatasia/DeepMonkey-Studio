@@ -62,7 +62,12 @@ impl ApplicationHandler<GpuEvent> for NativeApp {
         }
         if self.renderer.is_none() {
             self.initialize_renderer();
-            if self.smoke_frame && self.state.failure.is_some() {
+            // smoke 与发布验证都必须 fail-fast:初始化失败即退出事件循环,
+            // 让 run_internal 的 failure 检查转成非零退出;否则验证模式下
+            // ControlFlow::Wait 等不到事件,进程挂到验证器超时被杀。
+            if (self.smoke_frame || self.state.verification.is_some())
+                && self.state.failure.is_some()
+            {
                 event_loop.exit();
                 return;
             }

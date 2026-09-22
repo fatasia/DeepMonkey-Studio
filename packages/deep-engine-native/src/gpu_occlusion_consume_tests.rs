@@ -623,3 +623,67 @@ fn consume_metrics_feed_empty_batch_skip_gate() {
         "camera/view update invalidates the previous-frame snapshot"
     );
 }
+
+/// 空 3D 场景(0 实例,纯 deep2d/dashboard 组合包的 render packet 形态):
+/// 挂载消费链必须整体跳过返回 Ok,而不是让模板尺寸合同对「nonempty 垫零
+/// template vs 空批次区间表」误报(consume indirect template size mismatch);
+/// draw 侧行为与未接线一致(survivors 恒 None)。
+#[test]
+#[ignore = "requires a real GPU; run explicitly with --ignored"]
+fn empty_scene_consume_mount_skips_instead_of_template_mismatch() {
+    let bench = pollster::block_on(bench_device());
+    let view = scenario_view(6.0);
+    let scene = Scene {
+        instances: Vec::new(),
+        frame: frame_for(view),
+    };
+    let empty = PreparedGpuCulling {
+        bounds: Vec::new(),
+        metadata: Vec::new(),
+        indirect_template: Vec::new(),
+    };
+    // 与生产场景缓存同口径:空场景的 instance buffer 垫 1 行,wgpu 不收 0 大小绑定。
+    let source = bench
+        .device
+        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("R4 empty scene consume test instances"),
+            contents: &[0u8; GPU_CULLING_INSTANCE_BYTES as usize],
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        });
+    let mut culling = GpuCulling::new(
+        &bench.device,
+        &source,
+        &empty,
+        &scene.frame,
+        &Shadows,
+        false,
+    )
+    .expect("empty scene culling builds");
+    let (_texture, hiz_view) = hiz_pyramid(&bench.device, &bench.queue, &[&[1.0; 16], &[1.0; 4], &[1.0]]);
+    culling
+        .attach_occlusion(
+            &bench.device,
+            &source,
+            OcclusionSource {
+                view: hiz_view,
+                width: 4,
+                height: 4,
+                mip_level: 2,
+            },
+            &scene.frame,
+            false,
+        )
+        .expect("occlusion stage builds for an empty scene");
+    culling
+        .attach_occlusion_consume(&bench.device, &source, ConsumeReadbackMode::Counts)
+        .expect("empty scene consume must skip mounting, not reject the template contract");
+    assert!(
+        culling.consume_summary().is_none(),
+        "consume chain stays unmounted for an empty scene"
+    );
+    assert_eq!(
+        culling.compact_batch_survivors(0, 0),
+        None,
+        "empty scene survivors stay unknown = draw as-is"
+    );
+}
