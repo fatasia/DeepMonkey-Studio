@@ -3147,3 +3147,10 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **测试**(`compileSceneRuntimePackage.test.ts` 新增 4 项)：①带探针输入产出合法 `irradianceProbes` 包（origin=作者−frame 逐轴断言、探针数据保真、证据字段在位、`parseDeepRuntimePackage` valid）；②缺省与显式 null 均无该字段且 packageHash 逐位一致（旧包语义不变）；③数量与网格体积不符被拒且失败信息可读（正则断言完整错误链）；④非法探针字段（validity<0）写包前 fail-closed。
 - **门禁**：apps/web `tsc --noEmit` 0 错误；`compileSceneRuntimePackage.test.ts` 25/25（21 旧+4 新）、`sceneClientPackagePreparedNative.test.ts` + `sceneNativeFrozenPayload.test.ts` 25/25；deep-engine `tsc --noEmit` 0 错误。
 - **诚实边界**：场景 UI 无探针烘焙按钮，发布选项层（`SceneClientPackageOptions`/`ScenePublicationDialog`）未穿透——生产者工作流以编译器 API + `prepareNativeSceneClientPayload` 服务参数为界；本切片不生产探针数据（GPU 一跳辐射捕获→读回→网格聚合的离线烘焙编排尚不存在），只保证合法数据进包、非法数据可读拒绝；冻结发布路径（`prepareFrozenNativeScenePayload` 复用历史字节）不涉及探针；多层 clipmap 级联仍按打包器单层合同边界未动。未 push。
+
+### 2026-09-23 30 分钟自检（第四轮）：I2 缺口定位与语义判定
+
+- HEAD=ea6e5909；子代理①活跃（compileSceneRuntimePackage.ts 在途改写）、②在 release 构建中，满载无空闲。
+- **I2 UI 消费缺口定位**：`degradedCapabilities` 由发布 payload 生成（nativeSceneClientPayload/sceneNativeFrozenPayload，有测试），但全 UI 层零消费。**语义判定（防伪）**：该清单装的是对象/字段降级路径（`report.items[].path`，如 `primitives[3]`），不是工具能力标识——直接映射到 PublishedViewerToolDock 按钮隐藏会语义错位。工具级不可用的正确依据是运行时 player_diagnostics 的 CapabilityStatus（gpu_timestamp_queries/hardware_ray_query 等，Native 侧已有）与场景编译字段完整性。I2 UI 切片需按此语义重定义后再做：工具坞按"场景未编译字段+运行时诊断"驱动显隐，不冒用对象级降级清单。
+- 门禁续证：web tsc 0 错误（上一轮）、native 双门禁绿（第一轮）。
+- 下一可执行动作：两子代理回报后验收提交；I2 UI 切片按上述语义派发（工具坞显隐消费端）；F6 宿主入口切片排队。
