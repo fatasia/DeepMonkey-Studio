@@ -2996,3 +2996,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 实现：合同 `ModelKeyframe.visibility?`；runtime 新增 `object-visible` 属性通道（7 元组首分量 0/1，0.5 阈值）并解析校验；`compileSceneRuntimePackage` 仅在存在显式可见关键帧时下译该轨道（不伪造默认轨道）；`sampleDynamicRuntimePackage` 输出 `visibleTargets`；`applyDynamicRuntimeFrame` 经可选 `applyVisibility` sink 应用，缺省宿主静默跳过（不伪装已应用）。
 - 证据：新增可见性轨道测试 2 项 + 既有 playback/compile/viewer 回归，合计 **36/36**；contracts/deep-engine/apps-web 三包 typecheck 通过。step/transition 语义由既有 dynamicTransitionAmount 承载。
 - 边界：时间轴面板 UI 增加可见性关键帧编辑、Native 端 object-visible 消费仍待后续切片；本切片只完成合同→下译→Web 播放真实消费链。未 push。
+
+### 2026-09-23 B2-a 收口：发布查看器消费可见性轨道
+
+- 发布查看器宿主 `viewerEngineRuntimeSupport.applyDynamicRuntimeFrame` 现在传递 `applyVisibility` sink，把 `object-visible` 采样结果映射到既有 `setVisible(id, visible)`（contract 抽象，WebGL/WebGPU 双端共享）。
+- 证据：apps/web typecheck 通过；visibility/viewer playback 回归 **9/9**。B2-a 至此完成合同→下译→采样→产品查看器消费全链；时间轴 UI 可见性关键帧编辑也已提交 `a0a3852`。
+- 边界：Native 端 `object-visible` 消费、UI 增删可见性关键帧的拖拽交互细化仍留后续；未 push。

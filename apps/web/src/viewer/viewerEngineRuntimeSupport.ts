@@ -36,6 +36,10 @@ export abstract class ViewerEngineRuntimeSupport extends ViewerEngineTimelineRun
         });
       },
       ...(onReplayEvent ? { applyReplayEvent: onReplayEvent } : {}),
+      // B2-a 可见性轨道：发布查看器把采样结果映射到已加载模型节点。
+      applyVisibility: (targetId, visible) => {
+        this.setVisible(targetId, visible);
+      },
     });
   }
 
