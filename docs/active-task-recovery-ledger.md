@@ -1,3 +1,130 @@
+## 2026-09-21 产品复盘与自研引擎对等持续目标
+
+- 2026-09-22 AI 普通问答回执恢复接线：复用既有会话存储，把页面已经展示的有界可靠性快照（等级、Trace/指纹、来源标签、警告、上下文发送计数）随回答保存，并在刷新/重开会话时恢复；API 对枚举、字符串、数量与字符预算严格校验，旧消息无该字段保持兼容。合同类型检查、API 路由 4 项、Web 会话/请求 9 项通过。该快照只用于解释历史回答，不替代重新执行 Capability；真实供应商回执、页面刷新、双主题与全量发布仍留项目级后验收。
+
+- 2026-09-22 道路/围栏上层消费纠偏：RenderPacket 已消费 `prefab + placementPath`，但发布兼容审计的 `projectedObjectFields` 漏记 `prefab`，导致合法道路对象被误报为 `deep.scene.uncompiled.v1`。现已纳入投影字段，并补充 `road.straight` 路径回归；`scenePublicationCompatibility` 17 项通过。该切片解除误报，不扩大为 Native 正式 EXE 或完整道路拓扑验收。
+- 2026-09-22 发布工具栏能力边界：Native 复用已有快捷键（1–9 相机视图、M 测量、C/X/Y/Z/PageUp/PageDown 剖切、Home 复位、F11 全屏、点击选择），当前没有第二套可见工具栏，未实现能力不生成按钮。Web `PublishedViewerToolDock` 在 XR 不可用时直接隐藏 VR/AR 按钮，避免展示不可操作入口；组件定向测试 2/2 通过。
+- 2026-09-22 Native 发布降级策略纠偏：可选能力缺失（导航扩展、作者色彩分级、未接入后处理/对象字段）不再使客户端包整体失败；兼容报告保留 `degraded` 原因与补齐路径，Native 交付门允许显式 `allowNativeDegraded`，资源/哈希/运行证据等核心错误仍阻断。发布兼容 43/43、Native 包准备/归档 27/27 通过。目标是包可运行、未支持能力不出按钮，而不是伪造功能已支持。
+- 2026-09-22 降级边界收紧：只有明确列出的可选场景字段（当前 `postProcessing`、`weather`、`measurements`、`annotations`）可标记 `degraded` 并允许 Native 包继续交付；导航、相机、对象映射、资源和未知字段仍为 `blocked`，防止“能打包”掩盖运行时不可读。Web 发布兼容与交付门 43/43、类型检查通过。
+- 2026-09-22 Native 打包可运行回退：API 候选服务不再因存在可选未编译项直接返回 blocked；经真实 Native 窗口证据后，`confirmation-required/degraded` 候选继续登记，核心包身份、资源、哈希、窗口证据和对象映射错误仍阻断。相机编译新增显式回退：Native 不支持 avatar 或步高/坡度求解时写入可读 orbit 控制，保留 deferred 原因，不修改作者快照；相机/运行包定向 27/27、API 候选 32/32 通过。正式 EXE 仍待终验。
+- 2026-09-22 Native manifest 能力透传：运行包 manifest 现在写入排序后的 `degradedCapabilities`，冻结包与新编译包一致；运行时/上层可直接按清单隐藏不可用入口，不依赖猜测。冻结 Native 包含天气降级的复验 34/34 通过。
+- 2026-09-22 Native 可运行降级链回归：API 候选、候选路由、独立 EXE、候选注册 4 文件 54/54；Web 客户端包/冻结包/Native 准备/冻结 payload/交付门 5 文件 73/73。降级候选可登记，核心阻断仍保持拒绝。
+- 2026-09-22 Native 相机回退类型收口：`cameraFallback` 改用实际公开合同 `CameraState` / `NavigationSettingsState`，修复首次 Web 类型检查中错误引用私有类型的问题；Web typecheck 及相机/冻结 payload 17/17 通过。
+
+- 2026-09-22 导航方向纠错：`runtime_navigation` 原先把 `basis[2]` 取反，导致前进与真实 eye→target 相反；修正方向并新增多 yaw / 两模式向量回归，同时禁止无效/暂停 dt 修改跳跃状态。5/5 定向测试通过，替代此前仅 3 项且遗漏方向语义的证据；窗口输入与地形碰撞尚未接通。
+
+- 2026-09-22 Native 导航窗口输入前置接线：复用既有 winit `WindowEvent`、NativeApp redraw 时钟和 `resolve_camera_motion`，为 first/third person 接入 WASD、QE、Shift、Space 的按下/释放状态；集合状态避免相反键释放误清，失焦清理全部输入，orbit 路径不变。`cargo check --bin deep-engine-native` 与 runtime_navigation 5/5 通过。因发布预检仍 fail-closed（真实三角碰撞/坡度与正式导航消费未完成），不标记 Native 导航支持完成。
+
+- 2026-09-22 导航连续帧修复：输入按下后的首个 redraw 可能没有有效 dt，现保持输入状态并继续请求 redraw，避免运动停在零 dt 首帧；Native bin check 通过。
+
+- 2026-09-22 纹理数组性能复核：确认“实例材质索引 + 一次共享材质表绑定”已在现有生产消费者中实现，未重复建设；3 文件/20 项定向回归通过。真实 RTX/Lovelace + Chrome 153 A/B 像素逐通道 0 diff，但 array CPU P50 2.20ms 对 D2 1.90ms、GPU P50 0.391168ms 对 0.389120ms，上传多 131,072B、驻留多 196,612B，继续否决本版本性能提升，不宣称超过 Unity。
+
+- 2026-09-22 Deep2D combo 图表上层接入：复用现有 ChartIR 与 Native 多轴渲染器，`lowerDashboardChart` 现在把 combo 图表生成 `axis.y.secondary`；默认最后系列或显式 `secondaryAxisSeries` 按名称映射到次 Y 轴，显式名称无匹配时 fail-closed。Web lower/compiler 与 `renderChartFrame` 消费回归 16/16；修复并行色彩测试夹具的默认后处理字段后，Web 类型检查通过，图表+发布兼容测试 32/32。
+
+- **2026-09-22 待办纠偏（覆盖聊天中重复列出的旧缺陷）**：当前 Web `tsc --noEmit` 退出 0，`AiContextDeliveryEvidence.labels` 已接受 undefined，Logo 报告里的 TS2375 仅为历史阻断；不再安排修复。P3-05-D1 已有 `7b8d84b` 修复，当前 `runtime_package_startup.rs` 恢复分支保留呈现后提交的 `pending_lkg` 及回归测试，不重新开发；正式产物恢复仍参加最终验收。模型/思考强度普通问答与 Agent 链已有实现，AI 保留最终页面/真实执行/恢复验证。SDK 仓外消费门禁已经通过，只处理未满足的 API/GUI/Native 嵌入边界和文档。静音视频解码、播放控制与 seek 已接通，剩余音频和正式窗口一致性。完整后处理/材质/shader 系统的成本咨询不独立扩张为重建任务，按已授权增强与缺口推进。
+
+- **2026-09-22 AI 缺陷状态复核**：`AiContextDeliveryEvidence` 与 `AssistantModelControls` 定向回归 6/6 通过，Web 类型检查退出 0；实际模型/思考档位的上游执行回执、完整页面刷新恢复、双主题和正式服务链仍保留最终验收，未扩大为“AI 全部完成”。
+
+- **2026-09-22 Deep Native 导航数学合同增量**：新增 `runtime_navigation` 纯步进模块，复用 `PlayerView` 与现有 `RuntimeCameraControls`，覆盖前后/横移归一、冲刺、fly 垂直、重力、跳跃、落地和 `dt` 上限；3/3 定向测试通过。该模块尚未接入真实窗口按键状态、帧时钟和三角碰撞世界，firstPerson/thirdPerson 发布预检继续 fail-closed，不计生产能力完成。
+
+- **2026-09-22 当前执行顺序（用户最新校正）**：①动态 GI / 探针 / 光追生产闭环；② Native 自动遮挡闭环；③围栏 / 道路完整作者链；④ Deep 2D 与 Web GUI 最终一致；⑤ Deep 3D 跨端画面、元素与键鼠一致；⑥光照、烘焙、材质、色彩增强；⑦属性面板缺失定义与编辑能力；⑧底层能力到上层入口 / 发布消费者审计；⑨极致性能与零配置高画质；⑩独立引擎 API / SDK；⑪ AI 助手终验；⑫缓存与服务运行态复验；⑬ Three WebView / Deep Native 发布终验；⑭项目插件导出的 Unity WebGL 包在 Deep Web 中验证；⑮ Three / Babylon / Unity / Bevy 正式基准；⑯既有文档中心收口；⑰全量测试与最终一次清理。第④⑤项由原第⑦⑧项前移到原第④项之前；图层统一及目录上方空隙已完成，不重新开发，只在最终集中验收。
+
+- 2026-09-22 顺序调整后的并行收口：GI / Ray / Native HiZ 遮挡完成真实接线切片；围栏道路完成路径、样条、贴地、固定 seed、单事务撤销和 Deep Web/Native RenderPacket；Deep2D 下拉选择新增复用既有 option value 的键入搜索、IME commit、候选窗定位和确认提交；Deep3D 多相机视图新增同一 scene-camera v5 资源、默认视角、Native 数字键 1–9 切换。各切片均保留正式 EXE、DPI/主题、画面对拍和跨设备终验，不把聚焦证据扩大为全量完成。
+
+- 00:35 Deep Native orbit 相机发布合同收口：Runtime Camera v4 的作者 `cameraConstraints`（含 `collisionEnabled=true` 与 `collisionRadius`）由编译证据映射到既有 `scene.camera` / `deep.scene.camera.v1`，同一份 Native camera runtime evidence 可证明相机姿态与 orbit 碰撞约束，不再产生 uncompiled blocker；未来未知约束字段仍失败关闭。`firstPerson` / `thirdPerson` 继续以精确模式原因阻断，非默认 `navigationSettings` 继续明确列出尚未执行的 walk/fly、冲刺、重力、跳跃、步高与坡度参数。真实“机器人 A · 部件拆解与健康”夹具的下一 uncompiled blocker 已推进到 `cameraViews`，其自定义导航参数仍保持阻断。Web 4 文件 76 项聚焦测试与 typecheck 通过；真实页面点击发布、正式 Native 产物和 first/third person 运行能力未在本切片验收。
+
+- 用户将 Bevy 加入最终正式性能胜出验收，并于 2026-09-22 明确删除 UE、Godot 测试基准。最终实测对手为 Three、Babylon、Unity、Bevy；UE、Godot 只保留架构调研参考，不下载、不安装、不参与排名或能力分母。Unity 复用本机安装；Bevy 固定版本与 SHA 后放在工作区外隔离缓存，不污染项目依赖、系统 PATH 或产品包。复用既有统一 BENCH 规范，不新建平行体系；Bevy 挑战轨固定 0.19。可执行合同已升级 v2 并失败关闭：只接受 Native wgpu + 0.19，必须齐备 CPU/GPU P50/P95/P99、整帧和 30 分钟长稳 P99、加载到可交互、输入延迟、主机/GPU 峰值内存和画质相似度，CPU/GPU P95/P99 必须设置正向改善门槛，画质相似度下限不得低于 0.98，指标方向反写也会拒绝；四对手矩阵同时校验 Bevy 版本/后端。17 文件 138 项聚焦回归及 Deep typecheck 通过。Bevy runner 与正式胜出证据尚未完成，不得宣称已超越。
+- 用户新增独立 SDK 目标：学习 Bevy 的分层、按需模块组合与 App/插件生命周期；第三方可通过公开 API 使用引擎，不依赖 Studio 编辑器。复用现有 Deep 包导出、PbrRenderer 和外部 SDK 归档门禁；本轮待办为统一宿主入口、模块生命周期、外部独立消费者、GUI/输入合同及 Native 嵌入边界。文档页新增 `deep-engine-sdk`，区分现有 API 与待交付能力。现有外部消费者门禁仅覆盖原 SDK 包，不能当作 Deep SDK 已验收证据。
+
+- 用户最新确认持续目标：先完成通用引擎、强 GUI、零配置默认优秀与高度灵活配置的实现及生产接线，最后统一全量测试。GUI 与 Web 一致性包含布局、字体、色彩、控件状态、焦点、键鼠/触控、滚动、剪贴板、IME、DPI 和事件行为；实现期仅执行必要编译与关键回归。已有任务范围及 Native 不支持 Unity 的排除项保持，不能用局部测试替代正式发布验收。
+- 00:09 Deep2D 视频控制核心：Media Foundation 从真实 MP4 读取 100ns duration，并用 Source Reader 完成有界 seek；Runtime/compositor/Renderer bridge 支持作者 autoplay 初态、play/pause/toggle、绝对/相对 seek，暂停不推进，继续播放保持单调展示时间，反向 seek 用 presentation offset 防止 GPU PTS 倒退。独立键盘映射覆盖 Space/Enter、左右键、Home/End，拖动比例严格夹取。真实 `line-loop.mp4` 的 MF 3/3、DX12 compositor 1/1、bin check 通过，loop/fit/slot 替换不回归。未改 `window_events.rs`；正式窗口事件和可见控制条未接，故 `playback-controls`/`seek` blocker 暂不解除；音频继续明确 blocked。
+- 00:20 Deep2D 视频正式 Renderer 合成：Dashboard composite 为视频节点保留空层，EXE Renderer 从正式 `PlayerContent.dashboard` 创建 MF/GPU compositor，在同一 Deep2D ordered pass 按 layer、节点 frame、clip 合成动态纹理；每帧按 serial 去重上传，slot/尺寸不变不重建，零尺寸 suspend、恢复 resume，换包/设备恢复走 Renderer 原子重建释放旧 reader/纹理。真实 `line-loop.mp4` 经 DX12 合成目标回读到非黑解码像素，GPU 聚焦 1/1、连续 Runtime/cover-contain-fill 1/1、bin check 通过。音频、作者 controls/seek 仍保持 blocker；正式 EXE 实窗与长稳留最终验收。
+- 23:45 Deep Native 对象轮廓闭环：作者 `outline` 由实例 bit256 驱动独立对象 mask + selected-depth pass，屏幕空间 composite 保持 Web Viewer 的可见边 `#4d9fff`、遮挡边 `#234a71` 与 2px/2.5 强度；未选对象不出轮廓，透明/alpha-mask/裁切继续消费正式 PBR 语义，custom shader 的主颜色管线保持单 RT。无 outline 场景不分配 R8 mask/selected-depth，也不编码 mask/composite，移除默认 MRT 带宽税。RTX 4060 Vulkan 的 outline 3/3、custom shader 1/1、透明像素 1/1，Native check/no-run 与 Web 33 项发布编译回归、typecheck 通过。真实 showcase 生成器的“机器人 A · 部件拆解与健康”预检已无 generic effects blocker；下一精确未编译字段为 `cameraConstraints`（随后为 cameraViews/dataBindings/defaultCameraViewId 等）。该证据是同源真实场景编译预检，不替代浏览器页面点击发布或正式 EXE 实窗。
+- 23:37 Deep2D 视频连续 Runtime 切片：`DashboardRuntime::prepare_video_playback()` 持有 Media Foundation Source Reader，以外部单调时钟选择真实 PTS、连续更新 `Bgra8UnormSrgb` texture serial，EOF 重建 reader 并保持跨 loop 展示时间递增；作者 autoplay/muted/loop 与 cover/contain/fill 已冻结，窗口生命周期 suspend/resume 冻结时钟。MF 显式只选择视频 stream，非静音失败关闭并登记 `audio-output`；静音打包资源只移除 decoder/frame update/media clock 缺口，仍保留 controls/seek blocker。真实 39,837B H.264 样本在正式 Dashboard Runtime 路径验证 13 秒跨循环、暂停恢复、fit 与并发释放，Native 3/3、Web 18/18、Deep 6/6、包回读 1/1及三端编译通过。正式 EXE 可见合成、音频、seek/controls 与长稳仍未完成。
+- 23:02 Deep2D 视频 Native 首帧切片：未新增第三方解码器，复用固定 `windows=0.62.2` 的 Media Foundation/StructuredStorage features；内容寻址 MP4 在解码边界再次核验长度、SHA 与 32 MiB 上限，经内存 ByteStream→SourceReader（请求 hardware transforms）→RGB32，冻结顶向紧密 BGRA、100 ns PTS 和不猜测缺失源色彩元数据的合同，再上传 `Bgra8UnormSrgb` COPY_DST 纹理。仓内真实 H.264 `line-loop.mp4` 解得 960×540、PTS=0 首帧，DX12 GPU 逐行回读与解码缓冲一致；篡改内容地址失败关闭，2/2。该原语尚未接 Dashboard 连续呈现，播放仍强制 `blocked/unavailable`；媒体时钟、连续帧、seek、controls、音画同步与正式 EXE 窗口播放未完成。
+- 22:59 纹理数组正式消费者首轮 A/B 得出否决证据：RTX/Lovelace、Chrome 153，256 材质/纹理、4096 实例、256 批，150 次 CPU/侧与 75 次 GPU timestamp/侧；两侧像素逐通道 0 diff 且 SHA 相同。D2 CPU P50/P95/P99=`1.90/2.70/5.50ms`，array=`2.20/4.00/4.50ms`；GPU D2=`0.3891/0.3922/0.4004ms`，array=`0.3912/0.3932/0.3973ms`。array 将 bind-group identity/unique group 从 256 降到 1，但因逐材质动态 offset，`setBindGroup(1)` 仍为 256；上传与估算驻留反而多 131,072B 与 196,612B。证据在 `test-output/texture-array-ab-20260921/evidence.json`。因此本版不计性能提升，下一切片改为实例材质索引+一次材质表绑定后复测。
+- 22:52 纹理数组生产消费者闭环：`PacketBuffers` 已把共享 texture-array 材质表接入静态/变形正式绘制，binding 10/13 使用设备对齐的动态偏移；压缩、溢出或不兼容批次成对回退 D2 pipeline，staging/取消/更新/驻留切换/释放生命周期完整。14 个相关文件 122 项及最终消费者/WGSL 74 项通过（4 项既有条件跳过），Deep Engine 双 tsconfig 通过。Chrome 153 真 WebGPU 创建静态/变形各 18 个主 pipeline，validation scope 无错误；实际提交 1×1 两层数组 draw，以 `[256,256]` 动态偏移读取第二层，回读 RGBA=`[0,255,0,255]`。生产门禁 blockers 已清空；尚未做正式大场景 A/B，不宣称性能倍数。
+- 22:47 Deep2D 视频资源第二切片：项目内上传并绑定的 `video/mp4` 已进入发布冻结清单，保留 SHA-256/字节数/节点 owner；compiler 只接受 leading `ftyp` 且含 isom/iso2/mp41/mp42 品牌的 ISO BMFF，按 `media.<sha256>` 去重入包、revision 固定 1、总预算 32 MiB。Native 独立复核 canonical base64、长度、SHA、格式和 owner，损坏字节失败关闭；远程 URL 继续为 unresolved。API 45、Web 17、Deep 42、compiler 6 项及 Native 4+1 项通过，三 TS 包 typecheck 与 Native check 通过。播放仍为 `blocked/unavailable`；轨道/codec、解码、帧纹理、音画时钟、controls、seek、实窗和正式产物播放均未完成。
+- 22:30 Deep2D 视频首条真实合同：正式 Dashboard 编译把作者 video 的 URI、fit/autoplay/muted/loop 与运行节点身份写入 v1 诊断；Deep Engine/Native 双端仅允许 `blocked/unavailable`，强制 `packaged:false` 并登记 decoder、帧纹理更新、媒体时钟、controls、seek 五项缺口，拒绝伪造 ready/已打包状态。Web 16 项、Deep Engine 41 项、Native 校验 4 项+跨语言包回读 1 项及三端类型/编译检查通过，见 [报告](reports/deep2d-video-diagnostic-v1-2026-09-21.md)。尚无视频字节入包、解码、音画时钟、seek、真实窗口或正式产物播放，不宣称 Native 视频支持或静帧支持。
+- 22:24 过长源码继续治理：连续拆分 `operations.ts` 501→459、`chromiumRuntime.ts` 501→382、`commandValidation.ts` 517→324、`connectorGateway.ts` 505→432、`SceneBehaviorHost.ts` 521→454；记录工具、WebRTC 会话、字段校验、绑定选择、Worker 协议各自成模块并保持原入口兼容。对应 199 项定向测试通过，5890 文件 800 行门禁通过，`>500` 清单从 84 降至 79。Web 全量 typecheck 当前被并行在途的 texture-array consumer 精确可选属性诊断阻断，本轮行为宿主文件无诊断。
+- 22:19 纹理数组生产接线推进：审计确认既有 Web/Native 数组资源合同尚无正式 PBR 消费者，生产 bootstrap 先对未完成开关失败关闭。数组索引 uniform 从 group1/binding11 迁到 binding13，保留 11/12 给当前/上一帧 deformation stream；共享材质表把 160B 参数行与 32B 数组索引行按设备动态偏移对齐聚合，相同数组组合复用 bind group，overflow/缺失分配整组回退。第四切片已完成静态+deformation 的 array PBR pipeline variant 并接 production pipeline-set，同时校正 WGSL maps 0..4 / samplers 5..9 与 Web/Native ABI 漂移、补齐 deformation IOR dielectric。35 项管线测试、18 项共享表测试、13 项 ABI 测试、Native 7 项+真 GPU descriptor 1 项及 Deep Engine typecheck 通过；门禁仅剩 `packet-material-array-consumer`，尚未宣称生产接线完成或性能倍数。
+- 22:16 道路正式上层首链：新增 `road` kind、`road.straight` 目录资源与直路参数合同（长度、车行道、车道数、路肩、路面、标线），缩略图和场景复用同一有界几何生成器，Inspector 可编辑并按签名重建/释放旧几何。最长 500m×12 车道的最多 1232 段标线合并为一个 `InstancedMesh`，整条路仅 4 个几何子对象。Contracts 4 项、合并 Web 7 文件 98 项通过；默认宽度和 980px 实窗确认资源发现、插入、六参数及无裁切。当前仅直路；样条/弯道、端点吸附、路口、贴地、连续铺设事务和 Native 发布仍未完成。
+- 22:08 空间清理：审计发现 `packages/deep-engine-native/target` 占 125.83 GB（debug 120.39 GB，其中 incremental 51.41 GB、历史 PDB 50.96 GB）。已通过 `cargo clean --manifest-path packages/deep-engine-native/Cargo.toml` 清除整套可重建 Rust 构建缓存，目录已移除；保留源码、锁文件、真实样本和 `test-output` 验收证据。
+- 22:05 Deep 静态场景效果接线：按 Web Viewer 现有真实语义，将 `glow` / `edgeLight` 投影为效果色 HDR emissive（辉光强度×0.8，边缘光×1.4）并继续交给 Bloom；基础体和 GLB 模型均接通。`outline` 仍保持发布硬阻断，等待对象掩码后处理，未用壳层近似冒充像素级轮廓。两个发布编译测试文件 38 项及 Web 类型检查通过。
+- 22:03 Deep Native 原子发布预检补候选租约门禁：`ready` 候选的 `expiresAt` 无效或已过期时在 `publishScene` 前失败关闭，提示重新验证；兼容报告、候选 ID 和 unsupported 门禁均未放宽。发布/兼容/任务状态 3 文件 93 项通过。
+- 21:57 并行收口：全仓源码体量扫描补入 `.mts/.cts`，发现并拆分此前漏扫的 `verify-dashboard-upgrade-rollback-chain.mts`（909→702 行），夹具/HTTP会话与检查点/像素/证据分别抽为 89/151 行模块；Node 5/5、专项 tsc、5867 文件源码体量门禁与 diff-check 通过。场景资源面板接入服务端目录分类，“环境搭建”48 项可直接发现围栏/地面等资产；围栏既有参数化插入链已完整，不重复建设，道路仍只有 box 示例，缺正式 road 作者合同/样条/端点/吸附/路口能力。资源/目录、发布、Native 投影等合并定向 5 文件 89 项通过。
+- 21:50 Deep Native 页面预检推进：Web→Native 基础体投影此前将底层 `RenderPacket`/Native PBR 已支持的 `ior` 误判为未适配字段；现严格校验有限 float32 且 `>=1` 后原值透传，33 项 RenderPacket/正式 Native 准备测试与 Web 类型检查通过。真实页面用同一“机器人 A · 部件拆解与健康”重跑后，`ior` 阻断已消失，下一真实阻断精确落在肩部对象已启用的 glow/outline/edgeLight 扩展外观；当前不忽略这些作者效果，正式 Native 产物仍未通过。
+- 21:46 可见性 buffer / 软光栅画质修复：后备微三角的材质行此前先单独写入 GPU，随后被包含零初始化尾部的主材质表整段覆盖，导致后备几何可见但材质参数归零。现把硬件与后备 slot 行合并为单次上传，并新增“唯一材质表写入且后备行值完整”的回归；可见性/编码/特性 3 文件 30 项与 Deep Engine 类型检查通过。该结果修复正确性，不等同于已取得 Unity 对比性能成绩。
+- 21:41 真实“仅发布”链路复验：在场景管理打开未发布的“机器人 A · 部件拆解与健康”，发布弹窗默认选择 WebGPU/高画质/显示工具栏/仅发布；点击发布后保存、发布与弹窗关闭均成功，卡片切换为“已发布”并更新变更时间。发布区标题为“发布方式”，首项为“仅发布”，不存在把首项误称为客户端打包的问题。此前弹窗未关闭属于 Three WebView/Deep Native 失败后的残留状态，不能归因为仅发布主路径；显式保存失败仍需在弹窗内给出明确错误，不能静默返回。
+
+- Dashboard 离线包能力原因链已补齐：Web 编译器已有的逐对象 `reasons` 经 `scripts/dashboard-content-compiler.mjs`、服务端 `DashboardPublicationCapabilityReport`、候选 HTTP metadata 到 `DashboardOfflinePackageEntry` 全链透传；字段为可选加法，schema v1、旧候选和仅有 `deferredFields` 的编译器保持兼容。页面优先显示真实原因并保留字段回退；定向 API/Web 测试与类型检查见 [报告](reports/dashboard-offline-capability-reasons-2026-09-21.md)。未做浏览器视觉验收或正式 EXE 实窗验收。
+
+- 20:42 健康检查故障修复：未设置 `MEDIA_GATEWAY_CONTROL_URL` 时，实时视频健康项返回 `not-configured`/“未配置媒体网关控制地址”，不再用默认 `127.0.0.1:9997` 伪造连接失败；显式配置不可达地址仍返回 `offline` 并保留真实端点。Web 探针新增当前 `DeepMonkey Studio` index shell 的健康回归。服务观测与 Web 身份 15/15、`liveMonitorRoutes.test.ts` 2/2 通过。实时视频端到端播放、正式页面和 Native 窗口回归仍待。
+- 20:46 真实页面复核：本地 `http://localhost:5173/` 通过设置→性能与维护看到缩略图缓存与服务器打包缓存两组管理；设置→服务健康显示 API/Web/PostgreSQL/对象存储健康、实时视频未配置，Web 不再出现“HTTP 200 页面标识不匹配”。浏览器页面未执行真实媒体播放或 Native 正式包下载，不能扩大为端到端发布通过。
+
+- 19:00 性能/材质增量：Native 阴影指纹缓存已补齐 scene transform-only 的真实 prepare（重建 culling/LOD/casters 但复用 GPU 资源），uniform-only 仅在阴影相关性不变时保留快路径；对拍像素一致，Rust shadow 相关测试通过，release 数值基准尚未出，不宣称性能倍数。Deep IOR shader 回归断言已更新为 F0 路径，Web/Deep 类型检查通过。完整页面与正式包回归仍待。
+
+- 18:58 高级材质 IOR 切片：SceneMaterialState/验证、单选 Inspector、材质槽源值恢复、Three Physical 材质升级与纹理元数据迁移、发布覆盖已接通；Deep GLB KHR IOR 与 `deep.pbr.mesh.v5` 命名 ABI 已接入，旧 v1/custom shader 非默认 IOR 明确预检阻断，默认1.5保持旧画面。Web17、contracts18、Deep PBR shader23（3 skip）及 Deep 类型检查通过。正式页面/Native 画面对拍未验，详见 inspector-editability-audit 报告。
+
+- Native 2D 文本+下拉混合筛选已接生产编译与 Runtime：同目标取交集，任一顺序/清空保留另一条件，共享图表单次事务更新；复用原始行派生的 select 变体，保留跨维度下拉聚合。Web 14 项及类型检查、Native 7 个不同输入测试通过，混合焦点/IME取消有定向证据。任意跨维度文本、通用作者按钮焦点、CSS/DPR及正式窗口/页面打包对拍仍待，见 reports/deep2d-text-input-v1-2026-09-21.md。
+
+- 18:34 AI终态缺陷修复：HTTP 200 中的失败/未完成、输出上限截断与流提前断开不再被正文非空掩盖；收到 DONE 即释放上游连接。保留失败前片段，禁止正文后拼接备用回答。协议/provider/HTTP failover/service 3文件31项与API类型检查通过，见AI执行信息报告。
+
+- 18:32 AI执行信息切片收口：Agent逐步provider独立回调→checkpoint磁盘恢复→折叠详情；普通流新增execution事件，停止/失败保留回执，failover先清旧回执，迟到事件拒绝。修复Responses嵌套usage丢失。定向验证见reports/ai-execution-details-2026-09-21.md；实际页面与正式生成留最终验收。Native软阴影已有真实GPU差异证据；材质IOR、混合筛选及阴影指纹缓存分别并行在途，未计完成。
+
+- 18:25 按用户最新指令，取消 Native 支持 Unity 的方案及相关兼容性验收；保留 Unity WebGL 原包在 Deep Web 的测试，以及 Native 自研场景打包、画面与键鼠一致性验收。Agent 决策回执已接 provider 独立回调、checkpoint 和折叠详情，编排器 9 项/API provider 14 项通过；真实页面与磁盘重启恢复尚未验收。
+
+- 18:20 普通AI问答执行详情已贯通provider→service→回答折叠详情→会话保存/恢复，分别记录实际发送协议/档位与服务商回执；缺回执不推断，failover清旧信息。API30/Web21定向测试与两端类型检查通过，见reports/ai-execution-details-2026-09-21.md；Agent逐步回执和停止流部分信息仍待。灯光半球/距离衰减链已完成定向验证并有Native GPU通过证据，Native软阴影继续补，正式页面打包仍未验。
+
+- 18:15 AI模型信息修复：OpenAI兼容provider从普通/流式响应保留上游报告的model，流新增model事件，assistantService及遥测优先用该值；备用模型接管时清除主请求旧model/usage，未报告时沿用请求配置。26项API定向测试通过；这不是独立证明供应商内部执行身份，思考强度回执与Agent逐步信息仍待。Native输入剪贴板/拖选/Shift扩选/双击词选已接，4项Runtime与bins检查通过；真实系统剪贴板/窗口/IME与正式包最终验收未执行。
+
+- 18:12 多选材质接线：SceneMultiMaterialEditor按所有实际材质槽聚合混合值，支持roughness/metalness/emissiveIntensity/normalScale/doubleSided/wireframe；按单字段覆盖各槽、保留其他差异、提交时重查锁定、一次历史事务。与多选变换及数值控件共10项测试通过。材质槽单选与异步贴图目标捕获由代理收尾，见reports/material-slot-editing-2026-09-21.md；非glTF/Fragments槽、恢复源材质、高级PBR、页面与正式包对拍仍待。
+
+- 18:11 Inspector 多选区域按职责抽为 SceneMultiSelectionInspector，复用既有布局与新多选变换，去掉“只能单选编辑详细属性”的旧提示。材质槽接口已在单选 ObjectAppearanceEditor 接入；槽级真实加载/发布与异步贴图目标保护由并行切片收尾。Unity Deep Web 报告已登记原真实包及哈希，当前子任务浏览器不可用，实际加载/插件交互留最终浏览器验收；未用测试桩冒充真实包。Native 输入继续补剪贴板与拖选。
+
+- 用户最新取消 Native 支持 Unity：不再执行 Unity Player 托管、WebView 集成、Unity 到 Native 转换新路线及 Unity Native 兼容性检查。保留本项目插件导出 Unity WebGL 包在自研 Deep Web 环境中的验证。此决定覆盖下面较早的“Native 也检查”记录，不影响自研场景 Native 元素/画面/键鼠/页面打包目标。
+- 18:08 多选变换首段接线：SceneMultiTransformEditor 复用原变换API/坐标系/历史，混合值留空、按轴统一设值、其余轴保留、提交时重查锁定、显式历史flush分离相邻事务。DeferredNumberInput支持未定义混合值，7项关键测试通过。完整多选材质/公共属性与正式页面撤销持久化仍待。Native text-v1首条正式输入链已通过定向检查，完整IME/剪贴板/焦点/画面对等未完成，见reports/deep2d-text-input-v1-2026-09-21.md。
+
+- 用户纠正 Unity 测试对象：是通过本项目插件导出的 Unity WebGL 包，不是 Unity 插件包。复用此前 Three Web 环境验证的真实包，在自研 Deep Web 环境追加加载/显示/交互验证；Native 也做兼容性检查并记录支持/不支持及原因，但用户明确不要求 Native 必须支持 Unity WebGL 包。此例外仅针对该外部运行包，不放宽自研场景元素的 Native 对等门槛。
+
+- 用户最新强调 Native 最终必须完整检查实际页面打包兼容性，不能再出现声称功能完成但页面无法发布。已在 deep-web-parity-contract 增加页面→预检→服务端构建→下载→新目录解压→离线正式程序→元素/键鼠/画面→同画质性能硬门禁；本轮能力被预检阻断也算未完成，不能以明确拒绝替代兼容交付。正式产物身份及内容/任务/哈希必须串联。
+
+- 18:01 设置维护保存修复：PerformanceMaintenancePanel 等服务端确认后更新开关，失败恢复最后已保存值；同步在途锁防重复提交、未修改不写、onError引用变化不重载覆盖草稿。3项定向测试通过；Web类型检查本轮启动。灯光审计更正：IES与softness已有独立子组件，缺项仅distance/decay/penumbra/groundColor；对应报告已修，禁止重复建设。
+- AI Agent 模型/思考强度已接前端→服务端能力校验→checkpoint→恢复，备用模型清主模型强度，目录更新校正失效选择；API25/Web13测试与两端类型检查通过（代理报告）。上游实际模型/强度回执仍待，不把请求选项当执行回执。Native text-v1已到编译/运行/宿主IME链，点击定位及候选位置继续在途，完整输入一致性未完成。
+
+- 用户确认属性面板审计缺口本轮全部补足（reports/inspector-editability-audit-2026-09-21.md），同时要求合理排版、统一UI、清晰层级与完整用户体验。范围包含多选公共字段、材质槽/作用域、灯光漏接参数、高级材质、色彩/烘焙、作者自定义属性、对象专属参数及统一编辑交互；待核查项先对照现有能力，禁止重复建设或以基础PBR小切片替代全部交付。完整双主题/窄面板/失败与发布回归集中最终。
+
+- 用户追加3D属性面板参考Unity开放材质等可配置能力。已补 product-engine-ai-upgrade §10：多材质槽、共享/独立作用域、多选混合值、常用/高级参数、完整撤销/持久化/发布链。先复用 MaterialTextureSettings 与既有 Inspector；材质/色彩代理优先审计并补真实消费者缺口，不另建面板，不把只读运行句柄作为用户参数。
+
+- 用户最新明确扩展：光照、烘焙、材质、色彩对标一线引擎的增强升级全部纳入本轮正式范围。performance-quality-architecture D1 已补材质 PBR/透射/涂层、纹理与法线语义、线性 HDR/曝光/白平衡/色调映射/输出色彩、Deep Web/Native 发布一致性与动态画质验收。实施沿用既有能力，图层和 AI 优先级不变；无实测前不宣称达到或超过对标引擎。
+
+- 17:56 资源发现与目录收尾：SceneResourceBrowser 跨范围搜索提示复用内置预制体目录，可从平台搜索“围栏”跳转插入；3D 编组行修正六子项对应网格列，移除重复组图标。SceneResourceBrowser.interaction / FlatSceneObjectList / SceneSelectionBar 共 8 项通过。删除本轮临时 layer-drag-trace 与 main.tsx 查询入口；双主题/尺寸视觉统一终验。围栏参数实体由并行切片完成，证据见 reports/fence-runtime-integration-2026-09-21.md（16 项定向测试与 Web 类型检查）；Native prefab 与门动作仍未完成。
+- AI 会话前端追加会话租约、跨账号/项目重试隔离、停止部分回答续问上下文，14 项测试及 Web 类型检查通过，见 reports/ai-session-persistence-2026-09-21.md。模型/思考强度普通问答链已存在；Agent override、备用模型强度隔离、目录刷新失效选项正在补，不能重复建设选择器。Native text-v1 真实输入与发布接线仍在途。
+- 用户补充光照与性能目标已进入 performance-quality-architecture 的 D1：一线烘焙/光照制作与效果验收、同硬件同画质 Unity/Babylon 对比；这些是待交付要求，尚无超越结论。3D/2D/topology 路由认证及服务恢复读取已补 16 项定向测试，完整页面回归待最终执行。
+
+- 17:37 用户最新截图明确为目录上方空隙：SceneSelectionBar改为0/1选中不挂载，多选显示，隔离模式保留退出操作；删除visibility:hidden保留高度规则，4项关键测试通过。用户要求不重复建设、非必要验证统一最后：后续只做根因定位/关键行为/类型检查，不重复全量与截图。启动认证3次失败后停止重试已改有上限退避，旧token迟到与换账号取消保护17tests通过/Web类型检查通过；场景路由读取恢复仍在补。
+- 17:27 整合Web第三轮：696文件4089测试通过、3跳过，91.59s，证据test-output/layer-unification-integrated-web-tests-r3.log。真实二维总览页相邻拖放已产生drop/commit，顺序交换→一次撤销→重做→自动保存→刷新一致；随后反向拖放恢复原顺序并手动保存。旧长距离失败轨迹缺末端drop，不能据此判定业务故障。服务watch父62640仍活跃，API改动后子47240自动恢复/health200。AI停止幂等真实磁盘+HTTP17测试/API类型检查通过，报告reports/ai-stop-recovery-audit-2026-09-21.md；普通问答会话恢复仍待。
+- 17:21 用户最新三维目录留白已修：非多选隐藏勾选列，叶节点移除空展开占位，恢复16px类型图标、12px名称；1280真实普通/多选/清除截图与28定向测试通过，窄屏及双主题仍待验（viewport覆盖未实际生效）。SystemCenter已拆为137/178/261/195行四模块，9项配置测试通过；系统performance路由重载遗漏由并行agent修复，12项路由测试通过。
+- 第二轮整合 Web 全量：691 文件、4058 项通过，3 项跳过，耗时 99.31s（`test-output/layer-unification-integrated-web-tests-r2.log`，16:57 启动）；覆盖已修右键 hook 与导航 fixture 回归。后续资源拖放、AI 上下文在途改动须各自复验。原生 HTML 与真实二维拖放 Hook 对照已取得成功 drop/commit，早先失败轨迹缺末端有效悬停，不能据此判定业务重排故障；完整产品目录拖放、保存刷新仍待实测。诊断页 `apps/web/tests/layer-drag-browser.html` 仅开发模式，记录真实事件而非注入事件。
+
+- 用户追加性能要求：后续性能阶段统一推进到系统级验收，同时改善效果；覆盖加载、CPU/GPU、内存/显存、交互和正式产物，按同场景同硬件证据逐项消除瓶颈，不以局部跑分或降画质替代。已写入性能画质架构方案；不改变图层统一优先顺序。
+
+- 图层集成复验（16:52）：全量 Web 4031 通过、3 失败、3 跳过；失败均已定位为新增 hook 后右键测试直调组件、导航 fixture 缺真实 store 状态，修正后 3 文件 16 项通过，仍待最终整合全量复跑。3D 根排序已完成保存/恢复/撤销接线及 8 文件 42 项定向验证；实际鼠标拖放尚未验收，主线程正在复测“产生历史但目录不变”和二维无反馈现象，不计完成。App 运行副作用参数改为复用权威 appState，移除重复透传清单；Web 类型检查、全仓 5624 源文件 800 行门禁通过。AI 模型选择真实页面可操作，修正控件贴边，1280/980 宽度截图复核通过；未发送有效生成请求，完整 AI 页面验收仍待。
+
+- AI 会话覆盖复验（16:45）：模型目录异常格式与响应体超时、畸形请求 500、目录降级无重试入口已修；API 23 项 / Web 15 项定向测试及两端类型检查通过。真实 4100 health 200，匿名目录 401，认证目录 200 / 27 模型 / 无敏感字段；普通与 SSE 各 4 种无效请求全部 JSON 400，未发有效收费生成。服务诊断：原 watch 父进程 62640 会替换 API 子进程，16:45 实际监听者 88584；人工副本错误日志为 EADDRINUSE，后续恢复先查端口监听者与 watch 父进程，不能仅据旧 PID 消失重复启动。证据和限制见 `reports/ai-session-options-audit-2026-09-21.md`。
+
+- 最新执行要求：用户要求按连续 24 小时冲刺目标快速并行推进，图层统一优先；AI 升级按依赖并行。此前 3–6 周粗估未经任务实测校准，已撤回，不作为排期基准；进度以实际实现和验收证据更新，完整目标不缩减。
+- 用户已明确将本轮全部方案与发现的问题设为持续目标，并授权多线程并行。权威增量方案：[产品与AI](specs/product-engine-ai-upgrade-2026-09-21.md)、[性能画质架构](specs/performance-quality-architecture-2026-09-21.md)、[Deep对等合同](specs/deep-web-parity-contract-2026-09-21.md)、[Deep2D缺口审计](reports/deep2d-web-parity-audit-2026-09-21.md)。自研Deep2D/3D须对齐Web作者内容、效果、数据行为及键鼠，性能画质不退化；WebView不纳入自研复刻能力判断。
+- 已完成：SceneOutliner/AI面板/Native ray_backend/DashboardComponentPreview职责拆分；发布分组改“发布方式”；清理421份旧PDB约65.3GiB；旧报告纠正2434ms其实为Tauri工作台而非Deep Native。Web全量3943通过/3跳过（缓存后续新增改动须复验）；Rust ray_backend 7通过，Web构建与bundle预算、repository门禁通过。
+- 已完成：缓存管理 API 已重载并在页面读取到真实打包缓存统计，缓存按钮与标题样式、健康检查品牌误报已修复；本地 MediaMTX 恢复，服务页 Web/API/实时视频等显示健康。视频流实际播放仍归端到端验收。
+- 本轮待办（用户最新排序）：图层统一优先，AI 按依赖顺序随后。图层折叠后 Ctrl/Cmd 追加选择保留隐藏成员，适配器清理已删除实体；2026-09-21 三个相关测试文件 20 项通过，Web 类型检查通过。页面实测发现后加载 dashboard-workspace.css 覆盖五列分组布局，已修正源样式；1280/980px 截图和 DOM 检查确认五个控件同排。锁定项目录选中/检查器只读、统一键盘、拖放与事务验收仍待完成，不能将此选择切片视为图层统一全部完成。
+- 图层追加进展：2D 目录已允许选中锁定项，锁定保持选择；属性编辑区只读，内容控制器拒绝锁定写入，共享示例数据含锁定成员时禁止整组更新。真实页面验证名称/坐标/内容及新建联动均禁用，验收用锁定已撤销，旧验收分组已解组恢复。2D 已接公共方向键/折叠导航，实测组头到两个成员逐行移焦与左右折叠展开；3D 两根对象移焦已观察到 DOM 焦点变化。全量 Web 在 16:23 启动版本通过 3990 项、跳过 3 项（678 文件通过），证据 `test-output/layer-unification-web-tests.log`；之后在途的多选拖放、3D 行为工作台锁定和键盘同步焦点修复仍需增量复验。
+- 图层集成复验（16:28）：7 文件 43 项定向测试、Web 类型检查、repository 门禁通过。2D 多选拖放按目录相对顺序整体移动未锁项，使用真实 ApplicationStore 验证一次撤销/重做，锁定组或排序空间不足有状态提示。3D 检查器交互编辑只读、删除命令锁保护、锁定对象/图层的作者拾取过滤已落代码；页面验证概览与事件禁用，验收锁定已撤销。剩余：行为工作台命令级锁校验仍在补齐，三段拖放落点/取消、3D 根顺序持久化、快速离散动作历史边界和大目录浏览器验收；详见 `reports/layer-drag-audit-2026-09-21.md`。
+- 图层追加复验（16:31）：行为工作台保存/删除/批量替换命令已核对新旧挂载目标锁态，拒绝时保留草稿，文档导航直接写入入口同样保护；相关四文件 17 项主线程复验通过。3D 右键未选对象先同步选择，已有多选不清空；真实页面已确认地面选中后右键箱体，检查器随即指向箱体，Esc 关闭菜单。2D 拖放落点/取消、离散历史事务在并行实现；3D 根排序合同正在补专用作者字段，尚未接通保存恢复与UI，不能宣称根排序完成。
+- 离散历史真实 React 复验：开发夹具 `apps/web/tests/scene-history-transaction.html` 同一次点击内 2.1ms 连续两次编组重命名，依次撤销得到“第一次 / 初始”，重做得到“第一次 / 第二次”，同值动作不新增历史；刷新后连续变化仍合为一条撤销，回到“初始场景”。此证据覆盖真实 hook + React 提交 + 组织命令，尚不替代正式目录复杂拖放的保存恢复回归。
+- 本轮待办：Deep2D实际允许带degraded/有理由blocked产物打包，不能视为对等通过；输入框未接Dashboard IME，视频无作者到播放器通路，下拉为受限展开列表，图表及整页焦点有明确差距，按审计修复。双客户端页面场景发布v6/v7及再次下载操作通过，但完整新产物键鼠/画面对照未完成。
+- 项目级后验收：deep-engine 300行门禁仍有89阻断（本轮基线），大量500行以上文件尚需治理；不得把800行通过当作全部拆分完成。性能架构收益需实测，各研究项遵循专项实验退出条件。
+
 ## 2026-09-21 GLM 极致交付检查点
 
 - **用户战略指令（覆盖旧口径）**：①主力在引擎（Native wgpu）与打包客户端，Web 做不了的平台能力不强求；②产品定位不限 BIM/工业，**开放世界纳入目标负载域、不限制用户场景**；③任务队列按"先易+承接后续"排波次执行（合同层→快赢→核心工程→接线→Native 主战场→完整验收）。最终验收新增：全量测试+双客户端打包（Deep Native/Three WebView）+鼠标键盘交互与 Web 一致+性能极致；内部 AI 助手升级到极致（harness/agent/模型切换/思考深度/模型列表/failover），UI 交互不许变差。
@@ -2625,3 +2752,62 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 已收口的新增切片：分页虚拟几何 CPU demand/residency、Web/Native camera-relative rebase、RenderGraph 帧内复用与 MRT 裁剪、材质参数池、SSR 粗糙锥与共享时域可信度、设备自适应、本地有界遥测、内容寻址 Shader/PSO 预热、MCP 设置/presence/分页场景资源、R12 通用 GPU readback、背景网格双客户端发布链。
 - 仍不得宣称完成：GPU feedback/稀疏虚拟几何、Native 多线程编码、完整 bindless/纹理虚拟化、完整反射层级、更强 DDGI/多灯体积时域、R12 产品白名单、MCP 浏览器写事务、双客户端完整交互/同画质性能终验。
 - 工作树包含大量共享 dirty/untracked；禁止 reset/clean/checkout 覆盖，按交接文档逐 hunk 复核。
+
+### 2026-09-21 香槟色羊驼 Logo
+默认 Web/客户端/打包品牌资源已替换为用户选定稿，PNG 母版保真、SVG 嵌入原图。品牌与仓库门禁、两轮 24 张页面截图、16 项打包测试及 Native 六尺寸资源读回通过。现有 AI 组件 TS2375 阻断桌面安装包重建，API 502 阻断登录后管理页复验。详见 docs/reports/product-alpaca-logo-2026-09-21.md。未 commit/push。
+
+- 2026-09-21：修复 appRoute 的 systemTabs allowlist 遗漏 performance，性能设置 URL 在刷新后保留页签；新增无项目 / 含特殊字符项目的 routePath → readRoute 往返回归，appRoute 定向测试通过。仅 appRoute.ts / appRoute.test.ts，文件已释放。
+- 18:20 材质源恢复已接：glTF 源参数/逐项恢复、精确线性色恢复意图、源纹理 UV/采样保留，修复 UV 动画共享纹理污染及恢复后仍播放。25 项消费/发布/UI + 2 项精确颜色 + 12 项合同通过，Web tsc 通过；见 reports/material-source-restoration-2026-09-21.md。页面撤销和正式 Native 对拍仍待集中验收。
+- 19:12 Native retained-control keyboard path：共享 `Button`、`Toggle`、`Checkbox` 状态机现在消费 Enter/Space，禁用/加载状态吞掉激活，键盘激活会清除待释放的指针 press，避免一次操作触发两次。`cargo test controls -- --nocapture` 通过（Native 7 项相关测试；全量过滤运行还带出既有测试，exit 0）。这证明控件状态语义，不等于作者 Dashboard 按钮已完成发布消费；作者按钮仍需进入 Dashboard runtime 合同、焦点表与正式页面回归。
+- 20:00 门禁与缓存回归：`pnpm quality:source-size` 当前 5722 个源文件全部通过 800 行上限；`pnpm --filter @bim-studio/api exec vitest run src/cacheManagementRoutes.test.ts` 4/4 通过。缓存接口与源文件体量门禁保持绿；Web/native 正式窗口和发布产物仍需最终实机验收，未以这些聚焦证据扩大结论。
+- 20:07 Deep2D 媒体缺口收口：视频节点不再误送 `lowerDashboardChart`，正式 raster 编译会明确记录“需要媒体解码器、纹理更新时钟和播放器状态合同”，保留容器 chrome 但不伪造视频像素/播放能力。新增正式编译回归，Web raster 16/16 通过，Web typecheck 通过。视频播放仍是未实现能力，后续必须接解码、纹理更新、音画时钟、播放/暂停/seek 和 Native 离线包回归，不能用静态截图替代。
+- 20:11 Native/Three 客户端归档合同回归：`pnpm test:scene-client` 161/161 通过，覆盖 ZIP 字节、路径/CRC/符号链接/资源 provenance、Three WebView 与 Deep Native target 匹配，以及 scene compilation/report/runtime hash 绑定。该命令证明归档合同与目标隔离，不等于真实正式 EXE 窗口已启动并完成画面对拍；窗口回归仍保留在最终门禁。
+- 20:13 Deep Native Dashboard runtime 聚焦回归：`cargo test dashboard --manifest-path packages/deep-engine-native/Cargo.toml --lib` 31/31 通过，覆盖文本编辑/IME/剪贴板/鼠标选区、多输入交集、select 弹层与取消、表格分页排序导出焦点、图表命中/裁剪和失败候选保留 LKG。仍未把这批运行库测试扩大为正式 EXE 窗口画面对拍或系统 IME 候选窗验收。
+- 20:18 发布按钮文案复验：`ScenePublicationDialog` 的三项目标聚焦测试 3/3 通过，首项明确显示“仅发布”，并保留 Three WebView / Deep Native 的独立客户端描述；未把仅发布误标为客户端打包。
+
+- 2026-09-22 Native orbit 碰撞闭环：复用现有 picking 的实例变换、作者 LOD 与三角遍历，旋转/俯仰/缩放/初始/聚焦/drop/live reload 均执行整段碰撞；section 裁掉表面不参与，空场景零成本。`collisionEnabled=true` 与 radius 已进入现有相机发布合同并解除 blocker；firstPerson/thirdPerson 与未执行 walk/fly 参数继续精确阻断。Picking/collision 12、PlayerContent 7、camera contract 6，发布预检 76 与核心回归 36 通过；`player_content.rs` 已拆至 735 行。
+- 2026-09-22 独立 Deep Engine SDK 仓外门禁：`pnpm gate:deep-engine-consumer` 完成 dist 打包、工作区外空 store 离线安装、NodeNext/Bundler 类型、Node 插件生命周期及 Chrome 153 真 WebGPU 两帧。修复 `TRANSIENT_ATTACHMENT` 与采样/拷贝用途混用导致 HDR attachment validation failure/黑帧的生产根因；present-color GPU 读回 138,463 个非背景像素，validation/console/page errors 为零。Playwright compositor screenshot 偏黑不作为像素证据，报告只采用同一生产 frame encoder 的 GPU readback。
+- 2026-09-22 Deep2D 视频控制生产接线：Media Foundation 连续解码与 seek 之上新增可见播放/暂停、进度轨与拖动控制；窗口输入接 Space/Enter、左右键、Home/End，视频焦点避免落入三维相机。静音打包视频合同由 `limited` 升为 `ready`，音频继续单项阻断。输入 2、DX12 合成 1、媒体 3、TS 合同 6、Web 编译/文档聚焦 31 通过，正式 EXE 窗口与系统输入留最终验收。
+- 2026-09-22 现有文档中心新增“引擎借鉴与设计理念”“引擎性能与画质基准”入口；Deep Engine SDK 文档同步仓外消费门禁。正式基准只含 Three/Babylon/Unity/Bevy 0.19，UE/Godot 只作架构研究且不运行、不排名。
+- 2026-09-22 安全空间清理：核对 `test-output/codex-2026-09-05` 的文档引用与进程占用后，仅删除 120 个无引用、无占用的 `postgres-writeback-*` 隔离测试临时目录，释放 4.695 GiB；保留该目录中的性能报告、视觉截图和工业格式证据。Rust 渲染任务仍在编译，未清理其 `target` 缓存。
+- 2026-09-22 继续清理可重建产物：确认活动构建未引用目标后，删除 `apps/desktop/.scene-viewer-build`、`apps/desktop/src-tauri/target` 与 `scripts/p03-04-device-matrix/harness/target`，释放 11.413 GiB；保留 harness 源码/Cargo.lock、正式测试证据和当前仍在使用的 `packages/deep-engine-native/target`。本轮累计释放 16.108 GiB。
+- 2026-09-22 Deep2D `select-v1` 键入搜索接线：复用已发布 `option.value`、既有字形池与原子筛选事务，新增 900 ms Unicode 前缀/包含定位、英文键盘文本、系统 IME commit 与候选窗位置；只移动待确认高亮，Enter 后才提交，超时/Esc/Tab/方向键/鼠标关闭会清理查询。Native 单选聚焦测试 7/7、Dashboard Runtime 同族回归 30/30、bins 编译通过；多选、级联和正式 EXE 的真实 IME/多 DPI 画面对拍仍是后续边界。
+- 2026-09-22 色彩管理增量：复用现有后处理链新增 `ScenePostProcessingState.temperature/tint`，已接合同校验、默认值、Inspector、WebGL Composer 与 Deep WebGPU author color binding；Deep Native 对非零值显式阻断，避免静默丢字段。定向回归与类型检查通过，三端正式页面/下载产物对拍保留最终验收。
+- 2026-09-22 服务健康修复：健康探针原本只接受带空格的 `Deep Monkey Studio` 标题，而实际 `index.html` 使用正式品牌名 `DeepMonkey Studio`，导致截图中的 HTTP 200 被误报为“页面标识不匹配”。身份校验已兼容两种历史/当前拼写；服务健康与页面身份 15 项回归通过。
+- 2026-09-22 缓存 UI 收口：刷新统计与清除缓存按钮沿用现有设计令牌，增加主操作/危险操作的可见状态、悬停和禁用反馈；不改变已有清理语义。
+- 2026-09-22 Inspector 增量：复用现有碰撞状态与快照/历史链，在单选模型概览补入碰撞检测开关；锁定态禁用，子构件不重复显示模型级字段。Web 类型检查与选择栏回归通过，双主题/真实键鼠留最终验收。
+- 2026-09-22 Native 色彩消费审计：Deep Native 当前真实消费范围仍为 Bloom/雾/ACES，未实现作者后处理色彩分级。发布预检补齐 hue/saturation/brightness/contrast/temperature/tint 任一非零值的精确阻断诊断，避免静默丢效果；中性值零成本沿用现有路径。`scenePublicationCompatibility.test.ts` 16/16 通过，详见 `docs/reports/native-postprocessing-color-audit-2026-09-22.md`。
+- 2026-09-22 Native 可用降级发布：已知 firstPerson/thirdPerson 相机在 Native 编译链回退 orbit 时，发布审计将 camera/navigationSettings 标记为 `degraded`，保留基础场景浏览并由 manifest 暴露 `degradedCapabilities`；未知字段、资源映射错误和真正未消费能力仍保持 `blocked`。兼容性/门禁/冻结包聚焦回归 63/63 通过，Web typecheck 通过。
+
+- 2026-09-22 GI 上层接线精确补缺：compileSceneLighting 原先仅校验编辑器 globalIlluminationIntensity，Builtin IBL 运行包未携带该值；现扩展 RuntimeAuthoredLighting.globalIlluminationIntensity 可选合同、运行包验证与 Deep Web 编译输出，保留独立接收端光照强度语义。定向 Web lighting 15/15、Deep Engine environment 16/16、typecheck 通过。
+- 2026-09-22 Native GI 消费接线：Native DirectionalLighting 现在接受并校验运行包的 globalIlluminationIntensity，并通过现有 frame ABI 的保留 fogProjection.w 通道驱动 native_mesh_v1 的间接漫反射/镜面反射倍率；不改变旧包（零值仍为 1.0）。Web 环境/发布回归 42/42，Native solid-environment 6、scene_lighting 3、native_mesh_abi 4 通过。
+
+- 2026-09-22 光追能力诊断上层接线：rendererCapabilities 仅识别实验性 WebGPU acceleration-structure/ray-query/rt-pipeline 特性，复用既有 resolveRayTracingDecision，未识别时明确保留软件 BVH/TLAS 回退；rendererReadiness 展示 tier 与回退信息，不伪造硬件支持。定向 rendererCapabilities 17/17、apps/web typecheck 通过。
+
+- 2026-09-22 Native 硬件 RT 生产准备：锁定 wgpu 30.0.1 已确认 EXPERIMENTAL_RAY_QUERY、BLAS/TLAS API 存在；GpuContext 仅在当前选定 adapter 宣布该 feature 时请求并启用，PlayerDiagnostics 输出 hardware_ray_query 状态。Windows D3D12_OPTIONS5 探针单独提供 DXR 能力诊断，不冒充当前 wgpu adapter 已启用。Native cargo check 与 ray capability 单测通过；真实 BLAS/TLAS/阴影消费仍在接线中。
+
+- 2026-09-22 Native 硬件 RT 加速结构首个真实执行切片：新增 hardware_ray_query.rs，使用 wgpu 30.0.1 的 Device::create_blas/create_tlas 与 CommandEncoder::build_acceleration_structures 构建真实索引三角形 BLAS/TLAS；不支持 EXPERIMENTAL_RAY_QUERY 时 fail-closed，CPU ray_backend 保留回退。GpuContext 已按选定 adapter 条件启用 feature。cargo check 通过；真实 GPU 提交/射线命中与主渲染消费者仍待定向 GPU 门禁。
+
+- 2026-09-22 Native RT 几何接口扩展：hardware_ray_query 从固定测试三角形抽取为 build_indexed_scene(position xyz/index u32/affine transform) 通用入口，与 Native RenderPacket 几何流兼容，并增加空/越界/非三角索引 fail-closed 校验；旧 probe 复用该入口。cargo check 通过。正式 Renderer 仍待将场景实例批量映射为 TLAS 与 Ray Query pass。
+
+- 2026-09-22 Native Ray Query WGSL 消费契约：hardware_ray_query 新增 native-only wgpu_ray_query shader module，绑定 acceleration_structure 与 storage hit 写回，使用 RayDesc/rayQueryProceed/rayQueryGetCommittedIntersection；普通栅格 shader 不引入该扩展。Native cargo check 通过；需要真实支持 RT 的 GPU 创建 shader/pipeline 并做命中回读，尚未宣称像素消费完成。
+
+- 2026-09-22 Native RT compute 消费接线：hardware_ray_query 新增 acceleration_structure/storage hit bind-group layout、compute pipeline 创建与 encode_ray_query_probe，使用同一 bind-group layout 避免 pipeline/layout 漂移；真实 dispatch 通过 wgpu queue 提交后可回读 hit[0]。cargo check 通过；尚未在本机 GPU 上运行回读，也未接正式 Renderer frame。
+
+- 2026-09-22 Native 硬件 RT 真机命中闭环：wgpu DeviceDescriptor 增加 ExperimentalFeatures::enabled 与 adapter RT limits（此前真实设备创建因实验 token/limits 缺省失败，已修复）；DX12/Vulkan 选定适配器真实提交 BLAS/TLAS + Ray Query compute，GPU 回读 hit[0]==1 命中三角形。定向 cargo test hardware_ray_query 1/1 通过。正式 Renderer 阴影/反射/GI 消费仍待接线。
+
+- 2026-09-22 Native RT 几何驻留准备：GpuGeometry 的既有顶点/索引缓冲增加 BLAS_INPUT usage，后续 BLAS 可复用正式 RenderPacket GPU 缓冲，避免硬件 RT 再次上传几何；不改变普通栅格 usage，cargo check 通过。尚未接 Renderer 的实例级 TLAS。
+- 2026-09-22 Native 硬件 RT 状态校准：选定 wgpu adapter 支持时，GpuContext 已在真实 DeviceDescriptor 中启用 EXPERIMENTAL_RAY_QUERY 与 adapter RT limits；hardware_ray_query 已通过真实 BLAS/TLAS 构建、WGSL ray-query dispatch 与 GPU readback 命中验证（targeted cargo test 1/1），PlayerDiagnostics 已报告 enabled/degraded。正式 Renderer 当前仍保留栅格主通路，实例级 TLAS 与阴影/反射/GI 像素消费未接入，因此不宣称全场景硬件光追渲染完成。
+- 2026-09-22 Native RT 驻留几何 helper 收口：`build_indexed_scene_from_buffers` 复用 GpuGeometry 的 10-float/40-byte 顶点布局，通用 xyz 测试路径保留 12-byte stride；避免 BLAS 读取生产缓冲时错位。cargo check 与真实 GPU ray-query 命中回读 1/1 通过。当前状态是硬件加速结构与独立 Ray Query probe 已可用，正式 mesh 阴影/反射尚未替换为 RT shader，仍保持栅格主路径与 CPU/BVH 回退。
+- 2026-09-22 Native RT 实例级 TLAS 接口：新增 `build_tlas_from_blas`，复用已驻留 BLAS，以实例变换、custom index、mask 构建场景 TLAS；实例变换更新不再需要重传几何。`cargo check` 通过，正式 Renderer 尚未把该接口接入阴影/反射/GI 像素 pass。
+- 2026-09-22 Native Hi-Z 零配置策略：既有上一帧 Hi-Z、相机变化后一帧保守旁路和 compact 消费链已具备；`occlusion_hiz_enabled` 改为 auto 默认启用，`DEEP_ENGINE_NATIVE_OCCLUSION_HIZ=off|0|false|disabled` 显式关闭，`on|1|true|enabled` 显式开启，未知值按 auto。新增纯解析单测；正式收益阈值仍在最终同设备基准阶段校准。
+- 2026-09-22 Native RT 驻留几何校验：复用既有 `GpuGeometry` 的 `BLAS_INPUT` 顶点/索引缓冲，`build_indexed_scene_from_buffers` 固定使用生产 40-byte stride；新增空缓冲、非三角索引、stride 对齐与 xyz 容量校验，保留旧 12-byte xyz 测试入口。`hardware_ray_query` 相关测试 3/3、Native lib check 通过；正式 Renderer TLAS/阴影消费者仍未接入。
+- 2026-09-22 Native RT 诊断诚实化：即使选定 adapter/device 已真实通过 Ray Query 命中探针，PlayerDiagnostics 也标记为 `degraded/probe_only_renderer_raster`，直到正式 Renderer 的 RT 阴影/反射/GI 像素路径接入；避免把底层硬件能力误报为场景级光追完成。
+
+### 2026-09-22 F1 切片1：Web 一跳场景辐射 GPU 生产者（ZCode）
+
+- `encodeSourceRadiance` 钩子首个真实生产实现：`rayTracing/probeRadianceKernel.ts`（两级 TLAS→BLAS 一跳 Lambert 着色 `albedo×NdotL×直射光/π` + miss 环境项，Fibonacci 确定性方向集 ≤16/探针与 probeOcclusionDirection 同式，栈溢出 atomic 哨兵 fail-closed，8 storage 恰在默认上限内）+ `rayTracing/probeSceneRadianceProducer.ts`（RenderPacket→buildRenderPacketRayScene→packTlasScene 持久上传、逐帧主光锁存、每事务一次 dispatch、批次按 generation 幂等、探针参数缓冲惰性扩容、全透明/形变包软降级 reason、无真实辐射源拒绝捕获保持 IBL 禁止黑色体积）。
+- 产品接线闭环：`ProbeClipmapPbrControllerOptions.sceneRadianceSync`（表面缓存接受后转发，失败不穿透渲染循环）+ `PbrRenderer.createProbeClipmapController`（实现 DeepWebGpuRenderRuntime 产品 GI 工厂——`backend.setProbeClipmapEnabled(true)` 现在产生 `radianceSource=scene` 的真实宿主控制器）+ 渲染帧主光锁存馈送（`resolvePbrSceneLighting.primary` 同源直射光）。
+- 证据：真机 Chrome WebGPU `node scripts/probeRadianceGpuTest.mjs` gate TRUE（`test-output/probe-radiance-gpu-20260922/report.json` + WGSL 证据）——三探针（遮挡下方/开阔天空/遮挡体上方）CPU 参考对拍全部通过（open-sky/above-box 绝对差 2e-4；occluded 在单方向 f32/f64 轮廓翻转界内，翻转量恰为 ambient/8 已归因）、溢出哨兵 0、WGSL 零编译告警、开阔天空能量>遮挡探针、一跳能量存在。单测 9/9、探针族聚焦回归 51/51（adapter/runtime/executor/probeOcclusion）、threeBridge 会话回归 16/16、deep-engine 与 apps/web typecheck 全绿。
+- 边界：环境项当前由宿主馈送零值（环境均值 GPU 读回属下一切片，接口已就绪）；命中点不追第二次阴影射线；MASK 纹理 alpha/BLEND/形变按 RenderPacketRayScene 既有排除/拒绝口径；deformation 包触发软降级（probe GI 关闭回退 IBL，渲染循环不中断）。package.json 的 `test:probe-radiance-gpu` 脚本行与并行会话 hunks 混在同一共享文件，待收拢时统一入库，当前可 `node scripts/probeRadianceGpuTest.mjs` 直跑。未 push。
+- 2026-09-22 剩余任务交接收口：新增 `docs/handoffs/deep-monkey-remaining-work-handoff-2026-09-22.md`，按“功能开发 → 上层接入 → 跨端一致性/打包/全量验收”排序，只保留当前证据显示未完成的事项；已完成项、明确排除项和本交接范围外的清理均不重新排队。后续每个切片必须回填本交接、总账和对应 spec，禁止重复建设。

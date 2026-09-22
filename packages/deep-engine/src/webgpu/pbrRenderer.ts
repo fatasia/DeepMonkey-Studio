@@ -45,7 +45,8 @@ import { encodeRenderGraphEncoderGroup } from "./renderGraphEncoderExecutor.js";
 import type { RenderGraphCompileResult } from "../renderGraph.js";
 import { AdaptiveQualityController, adaptiveShadowMapSize } from "./adaptiveQuality.js";
 import type { CascadedShadowQualityTier } from "../shadows/shadowQuality.js";
-import { ProbeClipmapPbrController } from "./probeClipmapPbrController.js";
+import { ProbeClipmapPbrController, type ProbeClipmapPbrTarget } from "./probeClipmapPbrController.js";
+import { ProbeSceneRadianceProducer } from "../rayTracing/probeSceneRadianceProducer.js";
 import { VisibilityBufferPath } from "./visibilityBufferPass.js";
 import { SoftRasterizeFallback } from "./softRasterizeFallback.js";
 export type { FrameMetrics, PbrRendererOptions, RenderView } from "./pbrRendererTypes.js";
@@ -79,6 +80,8 @@ export class PbrRenderer {
   private probeClipmapBusy = false;
   private readonly probeClipmapAbort = new AbortController();
   private probeClipmapFailed = false;
+  /** Owns the real scene-radiance capture chain (F1) for the product probe-clipmap session. */
+  private probeRadianceProducer: ProbeSceneRadianceProducer | undefined;
   private readonly visibility: VisibilityBufferPath | undefined;
   private readonly adaptiveQuality: AdaptiveQualityController | undefined;
   private readonly preparationPlan: RenderGraphCompileResult;
@@ -155,6 +158,24 @@ export class PbrRenderer {
   async setInstancesValidated(data: Float32Array<ArrayBuffer>, signal?: AbortSignal): Promise<void> { await this.setPacketValidated(spherePacket(data), signal); }
   setDiagnosticsSampling(enabled: boolean): void { this.diagnostics.setEnabled(enabled); } updateInstances(update: InstanceUpdate): void { if (this.packets.updateInstances(update)) this.shadowDirty = true; }
   setProbeClipmap(binding?: Parameters<ForwardPlusPbrRuntime["setProbeClipmap"]>[0]): void { this.lighting.setProbeClipmap(binding); this.historyDirty = true; }
+  /**
+   * Product GI source (DeepWebGpuRenderRuntime contract): installs the real one-bounce
+   * scene-radiance capture chain. Returning a controller without a radiance encoder would
+   * fail closed at the session, so the producer is constructed here with the live device.
+   */
+  createProbeClipmapController(target: ProbeClipmapPbrTarget, deviceEpoch: string): ProbeClipmapPbrController {
+    this.probeRadianceProducer ??= new ProbeSceneRadianceProducer(this.session.device);
+    const producer = this.probeRadianceProducer;
+    return new ProbeClipmapPbrController(target, deviceEpoch, {
+      encodeSourceRadiance: context => producer.encodeSourceRadiance(context),
+      // Soft scene sync: an invalid packet (e.g. a deformation snapshot the ray scene
+      // rejects) records a capture-blocked reason and later captures refuse, instead of
+      // throwing through the session activation and killing the render loop.
+      sceneRadianceSync: packet => {
+        try { producer.syncScene(packet); } catch { /* reason recorded on the producer */ }
+      },
+    });
+  }
   stageEnvironment(source: PbrEnvironmentSource, signal?: AbortSignal): Promise<EnvironmentStageResult> {
     return this.environment.stage(candidateSignal => createPbrEnvironment(this.session, source, candidateSignal), signal); }
   stageShadowMapSize(mapSize: number, signal?: AbortSignal): Promise<EnvironmentStageResult> { return this.shadowState.stage(mapSize, signal); }
@@ -212,6 +233,13 @@ export class PbrRenderer {
     }
     const sceneLighting = resolvePbrSceneLighting(view.lights);
     if (this.mainBindings.update(view.lights, view.fog)) this.historyDirty = true;
+    // F1 scene-radiance latch: the producer packs whatever was latest at capture encode time,
+    // so probes shade with the same primary light the raster pass uses (ambient stays zero
+    // until the environment-average readback slice lands; zero total energy fails closed).
+    this.probeRadianceProducer?.syncLighting({
+      primary: { surfaceToLightWorld: [...sceneLighting.primary.surfaceToLightWorld],
+        color: [...sceneLighting.primary.color], intensity: sceneLighting.primary.intensity },
+      ambient: [0, 0, 0] });
     if (this.pendingHiZ) { this.previousHiZ.failFrame(this.pendingHiZ); this.pendingHiZ = undefined; }
     this.packets.failLodFrame();
     this.packets.cancelDeformationFrame();
@@ -515,6 +543,8 @@ export class PbrRenderer {
     // 可选链：测试以手造对象直调原型 dispose，字段可能不存在。
     this.probeClipmapAbort?.abort();
     this.probeClipmap?.dispose();
+    this.probeRadianceProducer?.dispose();
+    this.probeRadianceProducer = undefined;
     const owners = [this.ground.author, this.outputs, this.environment, this.lighting, this.localShadows,
       this.shadowState, this.previousHiZ, this.transparency, this.postProcess, this.packets, this.targets,
       ...(this.visibility ? [this.visibility] : [])];

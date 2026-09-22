@@ -1,4 +1,5 @@
 /// <reference types="@webgpu/types" />
+import type { RenderPacket } from "../renderPacket.js";
 import type { ProbeClipmapLightingBinding } from "../lighting/pbrLightingBindings.js";
 import {
   MAX_PROBE_SURFACE_FRAME_BOUNDS, ProbeSurfaceCache, compactProbeBounds,
@@ -18,25 +19,41 @@ export interface ProbeClipmapPbrTarget {
   setProbeClipmap(binding?: ProbeClipmapLightingBinding): void;
 }
 
+export interface ProbeClipmapPbrControllerOptions extends ProbeClipmapRuntimeOptions {
+  /**
+   * Scene-radiance scene sync for a real capture producer (F1). Invoked after the surface
+   * cache accepted the packet; a throw propagates and fails the whole sync closed so the
+   * host keeps IBL instead of capturing a stale or partially valid scene.
+   */
+  readonly sceneRadianceSync?: (packet: RenderPacket, revision: number) => void;
+}
+
 /** Atomically publishes only committed GI volumes to a PBR renderer. */
 export class ProbeClipmapPbrController {
   readonly runtime: ProbeClipmapRuntime;
   readonly surfaceCache = new ProbeSurfaceCache();
   readonly packetSurfaceCache = new ProbeSurfaceCachePacketConsumer(this.surfaceCache);
+  private readonly sceneRadianceSync: ProbeClipmapPbrControllerOptions["sceneRadianceSync"];
   private publishedGeneration = -1;
   private disposed = false;
 
   constructor(private readonly target: ProbeClipmapPbrTarget, deviceEpoch: string,
-    options: ProbeClipmapRuntimeOptions = {}) {
+    options: ProbeClipmapPbrControllerOptions = {}) {
     this.runtime = new ProbeClipmapRuntime(target.session, deviceEpoch, options);
+    this.sceneRadianceSync = options.sceneRadianceSync;
   }
 
   get current(): ProbeClipmapRuntimeSnapshot | undefined { return this.runtime.current; }
+  get radianceSource(): ProbeClipmapRuntime["radianceSource"] { return this.runtime.radianceSource; }
   get diagnostics() { return this.runtime.diagnostics; }
   get sceneBounds() { return this.packetSurfaceCache.sceneBounds; }
   upsertSurface(entry: ProbeSurfaceCacheEntry): boolean { return this.surfaceCache.upsert(entry); }
   removeSurface(id: string): boolean { return this.surfaceCache.remove(id); }
-  syncRenderPacket(input: ProbeSurfaceCachePacketInput): boolean { return this.packetSurfaceCache.sync(input); }
+  syncRenderPacket(input: ProbeSurfaceCachePacketInput): boolean {
+    const accepted = this.packetSurfaceCache.sync(input);
+    if (accepted && this.sceneRadianceSync) this.sceneRadianceSync(input.packet, input.revision);
+    return accepted;
+  }
 
   async beginFrame(input: ProbeClipmapRuntimeFrameInput,
     signal?: AbortSignal): Promise<ProbeClipmapRuntimeFrameResult> {
