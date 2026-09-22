@@ -3036,3 +3036,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - 新增 `scripts/gpuParticleRenderTest.mjs`：headless Chrome153/NVIDIA 真机，粒子模拟读回（13/13 活粒子、预设/时序/爆发/过期全对）后经产品 `PbrParticlePass` 离屏 rgba8unorm+depth24plus 绘制，正交相机把 alarm 发射器映射进 NDC，像素读回 **5 个非背景像素**——pass.encode→drawIndirect→混合→像素落盘全链真实 GPU 证据。Gate TRUE，报告 `test-output/gpu-particle-render-20260923/report.json`。
 - 边界：正交映射为证据专用；128×128 中 5 像素与告警脉冲尺寸/透明度物理一致但非产品构图；粒子与深度/后处理交互仍在产品帧循环里待真机页面验收。未 push。
+
+### 2026-09-23 F6 Native 示例与 SDK 文档收口
+
+- Native 首个嵌入示例 `examples/runtime_playback_sample.rs`：解析运行包→校验动态通道→按时间采样动画输出 TRS；cargo check --example 通过。语义与 Web `dynamicRuntimePlayback.ts` canonical 帧一致。
+- SDK 文档 `apps/web/src/docs/deep-engine-sdk.md` 追加本轮新能力：DDGI 探针 GI（真机证据路径）、GPU 粒子（真机证据路径）、Cluster LOD 间接执行（真机像素对拍路径）、静态光照描述符、WGSL-first 作者图合同。全部引用真实命令与产物路径。
