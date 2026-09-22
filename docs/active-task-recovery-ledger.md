@@ -3126,3 +3126,10 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - A2"法线权重泄漏抑制"缺口经核对两端均已闭环（Web probeClipmapTextureSamplingWgsl 8-tap textureLoad + 本会话 Native 网格三线性 pow(cos,3)），禁止重建。
 - 子代理补位×2：①F3 探针网格烘焙接入发布编译器（编译器级生产者工作流）；②V2 Native 正式发布启动验证（release EXE 真实启动链取证）。主线程并行跑门禁与 handoff 状态核对。
 - 剩余（按 handoff）：F3 多层级联、F6 宿主入口/viewerEngineInteraction 拆分、I 系列收口、V1 三端对拍、V3 Unity 插件、V4 四对手基准、V5 全量门禁。
+
+### 2026-09-23 30 分钟自检（第二轮）：I5 验收核对 + 门禁续证
+
+- git 干净，HEAD=89e92c73；两子代理（F3 烘焙入发布编译器、V2 Native 发布验证）仍在途未产出提交。
+- **I5 AI 助手闭环核对通过**：六个能力点全部有实现+测试证据——真实模型目录(aiModelCatalog)、失败切换/回执(aiFailoverPolicy+assistantServiceFailover)、思考强度三级实际生效(reasoningEffort 规范化入决策链)、上下文预算(agentContextBudget,含超大上下文 fail-closed)、工业 Agent 检查点恢复(industrialAgentCheckpointStore/Runtime)、可操作错误与回退。门禁:api src/ai 35 文件 190/0、web src/ai 18 文件 82/0。
+- 边界：会话刷新后快照恢复的浏览器级 UI 验收未做（需真实浏览器门禁）。
+- 下一可执行动作：子代理回报后验收其提交；主线程继续 F6 宿主入口/I4 图层面板核对。
