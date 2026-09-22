@@ -3112,3 +3112,10 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **发现并修复产品级缺陷**（本切片的核心产出）：`gpu_scene.rs` 此前无条件给几何顶点/索引缓冲附加 `BLAS_INPUT` usage，而 wgpu 校验规定该 usage 必须持有 `EXPERIMENTAL_RAY_QUERY` 特征——**无 RT 设备上 `GpuScene::new` 直接创建失败，栅格回退分支根本不可达**（降级测试首跑即暴露此缺陷）。修复为按 `device.features()` 条件附加：RT 设备缓冲 usage 逐位不变，无 RT 设备得到纯栅格可用几何缓冲（驻留构建本就 fail-closed 拒绝，不需要 BLAS 输入）。
 - 门禁：`cargo test --lib` **527/0**（1 ignored，含 hardware_ray_query 5/5）；`cargo test --bin deep-engine-native` 首跑 257/1（render_graph 线程水位断言 83→94，同机并行会话负载抖动，与台账已知抖动一致），串行复跑（--test-threads=2）**258/0**（77 ignored）；rt_ 家族 37/37。
 - 诚实边界：本机只有 ray-query GPU，"无 RT 设备"以同适配器无特征 device 等价模拟（判定路径相同但非物理异构硬件）；设备恢复在驻留/frame 槽/管线族资源层验证，Renderer 结构体持窗口表面无法 headless 构造，整体重建由 app/recovery.rs 既有机制承载，未做真实窗口设备丢失演练；bin 首跑的负载抖动按纪律串行复跑归因。共树披露：`rt_pixel_gpu_tests.rs` 的 probe_gi 子模块挂载为并行 F3 会话已提交改动（95ab4a1b），本切片的挂载编辑叠加其上；并行在途的 `runtime_package/dynamic_scene.rs` 与 `dynamicSceneRuntime.ts` 未触碰。未 push。
+
+### 2026-09-23 收口会话续：F2 设备恢复/回退证据 + F3 载荷全链 + B2-b 三端下译
+
+- **F2**(c2816eb3,子代理)：设备恢复=驻留 drop 后全新 build 自足(探针命中/计划逐槽一致/回退裁决恢复就绪)；BLEND/无 RT 回退=同适配器无特征设备栅格像素与 RT 设备基线 **16384/16384 逐位一致**，全 BLEND 真机 EmptyScene 拒绝；顺带修复 gpu_scene 无条件 BLAS_INPUT 使无 RT 设备 GpuScene 无法创建的产品缺陷。lib 527/0、bin 258/0。边界:本机仅 ray-query GPU,"无 RT 设备"为同适配器无特征等价模拟;恢复验证在资源层,未做真窗口设备丢失演练。
+- **F3 载荷全链**(7b31759+8315fbc3)：Web `packNativeProbeGridRecords` 打包器(96B 小端逐字对拍 Rust 头合同,10 测试) → 环境 `irradianceProbes` 载荷类型+校验(网格 2..64/预算 65535/字段 fail-closed) → Native `decode_probe_grid` 解码 → PlayerContent 贯通 renderer init(网格头合法即写开关 2.0,旧包 0 逐位不变;bin/lib 双编译记录经 96B POD 字节切片转译)。lib 528/0、bin 262/0。剩余:Web 场景→烘焙→包的生产者工作流(打包器已备)、多层级联。
+- **B2-b 三端**(82c0f2f+0f2174ab)：dynamic-animation ABI 增 `playbackRangeMs`(0≤in<out≤duration 非退化,serde default 兼容旧包),发布编译器下译编辑器区间,Native sample_animation 钳入 [in,out]。Web 9+24 项、Native 3 项测试。发布查看器 transport 经引擎 setSceneAnimation 区间合同自动生效。
+- 门禁：native lib 528/0 + bin 262/0(--test-threads=2)；deep-engine/contracts/web/api 维持此前全绿。未 push。
