@@ -22,6 +22,7 @@ import type { DeviceSession } from "../src/webgpu/deviceSession.js";
 import { emitProbeRadianceKernelWgsl } from "../src/rayTracing/probeRadianceKernel.js";
 
 export { emitProbeRadianceKernelWgsl };
+export { runKernelDirectionDump } from "./probeKernelDirectionDump.js";
 
 export interface ProbeRadianceGpuResult {
   readonly probes: readonly {
@@ -66,7 +67,7 @@ function radianceCasePacket(): RenderPacket {
   const h = 0.5, lo = -h, hi = h; // box centered at [0, 1.5, 0], world-space vertices, identity transform
   const cy = 1.5;
   const v = (x: number, y: number, z: number): number[] => [x, cy + y, z];
-  const boxFaces: number[][] = [
+  const boxFaces: number[][][] = [
     [[lo, hi, lo], [lo, hi, hi], [hi, hi, hi], [lo, hi, lo], [hi, hi, hi], [hi, hi, lo]], // top +y
     [[lo, lo, lo], [hi, lo, lo], [hi, lo, hi], [lo, lo, lo], [hi, lo, hi], [lo, lo, hi]], // bottom -y
     [[lo, lo, hi], [hi, lo, hi], [hi, hi, hi], [lo, lo, hi], [hi, hi, hi], [lo, hi, hi]], // +z

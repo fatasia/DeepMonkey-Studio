@@ -2823,4 +2823,14 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - capture filter 合同扩展（缺省零值 = 与上一合同逐位等价）：uniform 32→48B 新增 `energyClamp`（每通道相对历史的单帧最大变化界，0 关闭；底线 epsilon 0.05 保证暗历史仍可增亮）与 `staticIrradianceHysteresis`（非 dynamic 探针的受限反馈权重，0 保持纯新值）；filterIrradiance 混合后按 `clamp(blended, history±clamp×max(history,floor))` 钳制，坏捕获可闪不可爆。受限性来源 = hysteresis<1 的几何衰减 ((1-h)^n) + 既有 invalidation/epoch 历史失效链，无帧计数纹理依赖。
 - 透传链：WebGpuProbeCaptureOptions.energyClamp/staticIrradianceHysteresis → adapter 校验（validateProbeEnergyClamp ≥0、hysteresis ∈[0,1)）→ ProbeClipmapRuntime 透传；runtime 选项扩展自动到达 ProbeClipmapPbrController/产品工厂。
 - 证据：adapter 钉测 2 项（扩展 uniform 通道值 + 缺省零值与 fail-fast 校验、hasHistory=false 时权重正确零化）；探针链回归 30/30；真机 gate 复跑 TRUE（WGSL 扩展后零编译告警、三探针对拍/哨兵/ambient 全保持）。未 push。
+
+### 2026-09-22 F1 缺陷修正：方向集合同漂移（此前 gate 容差掩盖，ZCode）
+
+- **缺陷**：`probeRadianceKernel` 原在 WGSL 内用 f32 `acos/sin/cos` 重算 Fibonacci 方向，与 CPU 仲裁基准 `probeOcclusionDirection`（f64）产生可见差异。实测 8 方向中有 1 条掠射射线在 GPU 命中而 CPU 未命中（或反向），使 occluded 探针均值偏差 7.5e-3。
+- **此前误判（诚实记录）**：该偏差一度被归因为"f32/f64 精度翻转"并在 gate 中用 `flipAllowance = maxContribution/directionCount` 放行。**这个归因是错的**——翻转不是不可避免的数值噪声，而是内核合同漂移：方向集本应由 CPU 单一定义。
+- **根因定位手段**：新增 lab 证据探针 `runKernelDirectionDump`，用生产内核源码 + 追加只读调试入口，把逐方向 `(hit, t, prim, instance)` 落到 storage buffer 与 CPU `traceTlasClosest` 逐条对拍。首轮即暴露 1/8 失配；修复后 8/8 一致。
+- **修复**：方向集改由 CPU 计算（`probeOcclusionDirection` 单一权威）经 uniform 上传，WGSL 只做 `params.directions[ordinal].xyz` 查表，不再自行推导。uniform 64B→320B（16B 头 + 3×16B 灯光/环境 + 16×16B 方向表）。
+- **门禁收紧**：`probeRadianceGpuTest.mjs` 删除 `flipAllowance` 放行逻辑，改为**零容忍**（仅保留 f16 存储量化的 1e-3 绝对下限）；新增 `directionParity` 断言（逐方向 hit/miss 必须与 CPU 全等），作为独立 gate 项，防止同类漂移再被容差掩盖。
+- **修复后实测**：三探针偏差 occluded 7.498e-3→2.03e-4、open-sky 2.00e-4、above-box 1.19e-4；逐方向失配 0；gate TRUE（哨兵 0、WGSL 零告警、ambient 确定性保持）。单测新增 320B 布局与方向表长度校验，回归 29/29。
+- **同族排查**：`probeOcclusionRayExtension` 的 CPU 路径本就以 `probeOcclusionDirection` 为准（无 GPU 侧重算），无同类缺陷；Native `hardware_ray_query` 的射线由 CPU 传入，无此问题。未 push。
 - 2026-09-22 剩余任务交接收口：新增 `docs/handoffs/deep-monkey-remaining-work-handoff-2026-09-22.md`，按“功能开发 → 上层接入 → 跨端一致性/打包/全量验收”排序，只保留当前证据显示未完成的事项；已完成项、明确排除项和本交接范围外的清理均不重新排队。后续每个切片必须回填本交接、总账和对应 spec，禁止重复建设。

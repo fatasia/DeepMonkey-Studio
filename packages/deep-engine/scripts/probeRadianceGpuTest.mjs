@@ -48,7 +48,8 @@ async function runInBrowser(origin) {
       const module = await import("./probe.bundle.mjs");
       const radiance = await module.runProbeRadianceGpuProbe();
       const ambient = await module.runAmbientGpuProbe();
-      return { ...radiance, ambient };
+      const kernelDump = await module.runKernelDirectionDump();
+      return { ...radiance, ambient, kernelDump };
     });
     result.browserVersion = browser.version();
     return result;
@@ -58,14 +59,15 @@ async function runInBrowser(origin) {
 }
 
 function probeMatchesCpu(gpu, cpu, flipAllowance) {
-  // One-flip allowance (computed in-bundle from the CPU per-direction contributions) covers
-  // a single f32/f64 silhouette flip; the absolute floor covers f16 storage quantization.
+  // No-tolerance contract: with the CPU direction table the kernel hit set matches the CPU
+  // reference exactly, so only f16 storage quantization may differ (abs floor 1e-3).
+  // flipAllowance stays reported as the "would-be" budget that must now go unused.
   const deltas = gpu.map((value, axis) => {
     const delta = Math.abs(value - cpu[axis]);
     return { gpu: value, cpu: cpu[axis], absoluteDelta: delta,
       relativeDelta: delta / Math.max(Math.abs(cpu[axis]), 1e-4) };
   });
-  const passed = deltas.every(delta => delta.absoluteDelta <= flipAllowance);
+  const passed = deltas.every(delta => delta.absoluteDelta <= 1e-3);
   const worstAbsoluteDelta = Math.max(...deltas.map(delta => delta.absoluteDelta));
   const worstRelativeDelta = Math.max(...deltas.map(delta => delta.relativeDelta));
   return { passed, worstAbsoluteDelta, worstRelativeDelta, deltas };
@@ -102,6 +104,11 @@ async function main() {
     flipAllowance: entry.flipAllowance, maxContribution: entry.maxContribution,
     ...probeMatchesCpu(entry.gpu, entry.cpu, entry.flipAllowance) }));
   const ambient = probe.ambient ?? { value: [0, 0, 0], repeatDelta: [1, 1, 1], positive: false };
+  // Direction-level parity: the production kernel (with the CPU direction table) must agree
+  // with the CPU reference on every direction's hit/miss; this is the assertion that caught
+  // the WGSL-side f32 trigonometry drift, so it gates the evidence explicitly.
+  const kernelDump = probe.kernelDump ?? { mismatches: [-1] };
+  const directionParity = Array.isArray(kernelDump.mismatches) && kernelDump.mismatches.length === 0;
   const ambientDeterministic = ambient.repeatDelta.every(delta => delta <= 1e-6);
   const gate = comparisons.length === 3
     && comparisons.every(comparison => comparison.passed)
@@ -110,12 +117,14 @@ async function main() {
     && probe.oneBounceEnergyPresent === true
     && ambient.positive === true
     && ambientDeterministic === true
+    && directionParity === true
     && probe.validationMessages.length === 0;
   const report = {
     gate, adapter: probe.adapter, browserVersion: probe.browserVersion,
     overflowSentinel: probe.overflowSentinel,
     rawHalfWords: probe.rawHalfWords ?? [],
     ambient, ambientDeterministic,
+    directionParity, kernelMismatches: kernelDump.mismatches,
     validationMessages: probe.validationMessages,
     openSkyExceedsOccluded: probe.openSkyExceedsOccluded,
     oneBounceEnergyPresent: probe.oneBounceEnergyPresent,

@@ -45,8 +45,12 @@ export const PROBE_RADIANCE_BINDINGS = Object.freeze([
   { binding: 9, name: "stackOverflows", type: "storage" },
 ] as const);
 
-/** params uniform 的 CPU 打包（probeRadianceKernel 布局的唯一写侧）。 */
-export const PROBE_RADIANCE_UNIFORM_BYTES = 4 * 4 + 4 * 4 * 3;
+/**
+ * params uniform 的 CPU 打包（probeRadianceKernel 布局的唯一写侧）。
+ * 布局：16B 头部 + 3×16B 灯光/环境 vec4 + 16×16B 方向表 = 320B
+ * （array<vec4f,16> 在 uniform 中按 16B 对齐，尾随 vec4 不额外填充）。
+ */
+export const PROBE_RADIANCE_UNIFORM_BYTES = 4 * 4 + 4 * 4 * 3 + PROBE_RADIANCE_MAX_DIRECTIONS * 4 * 4;
 export const PROBE_RADIANCE_PROBE_PARAM_BYTES = 32;
 
 export interface ProbeRadianceUniformInput {
@@ -59,9 +63,18 @@ export interface ProbeRadianceUniformInput {
   readonly lightColor: readonly [number, number, number];
   readonly lightIntensity: number;
   readonly ambient: readonly [number, number, number];
+  /**
+   * 方向集由 CPU 计算（probeOcclusionDirection 单一来源），GPU 只做查表。
+   * 不这样做的话 shader 内的 f32 三角函数会与 CPU f64 方向产生可见偏差，
+   * 让掠射射线在两侧命中不同面（实测：8 方向中有 1 条不同）。
+   */
+  readonly directions: readonly (readonly [number, number, number])[];
 }
 
 export function packProbeRadianceUniform(input: ProbeRadianceUniformInput): ArrayBuffer {
+  if (input.directions.length < input.directionCount) {
+    throw new RangeError("Probe radiance uniform requires one direction per sample.");
+  }
   const data = new ArrayBuffer(PROBE_RADIANCE_UNIFORM_BYTES);
   new Uint32Array(data, 0, 3).set([input.updateCount, input.directionCount, input.rayMask]);
   new Float32Array(data, 12, 1)[0] = input.tMax;
@@ -69,6 +82,10 @@ export function packProbeRadianceUniform(input: ProbeRadianceUniformInput): Arra
   floats.set([...input.surfaceToLight, input.lightIntensity], 4);
   floats.set([...input.lightColor, 0], 8);
   floats.set([...input.ambient, 0], 12);
+  // 16 lanes at float offset 16, packed by ordinal; lanes past directionCount stay zero.
+  input.directions.slice(0, PROBE_RADIANCE_MAX_DIRECTIONS).forEach((direction, ordinal) => {
+    floats.set([direction[0], direction[1], direction[2], 0], 16 + ordinal * 4);
+  });
   return data;
 }
 
@@ -119,6 +136,10 @@ struct RadianceParams {
   lightDirIntensity: vec4f,
   lightColor: vec4f,
   ambient: vec4f,
+  // CPU-computed direction table (probeOcclusionDirection is the single authority).
+  // The shader never derives directions itself: f32 trigonometry in WGSL would drift
+  // from the CPU f64 reference and flip grazing hits (measured: 1 of 8 rays).
+  directions: array<vec4f, ${PROBE_RADIANCE_MAX_DIRECTIONS}>,
 }
 
 @group(0) @binding(0) var<storage, read> nodes: array<BvhNode>;
@@ -234,7 +255,8 @@ fn traceBlas(origin: vec3f, dir: vec3f, inv: vec3f, tMaxLocal: f32, nodeBase: u3
   return bestT;
 }
 
-// Fibonacci sphere direction: same formula/order as probeOcclusionDirection on the CPU.
+// Fibonacci sphere direction: CPU reference only (kept for the kernel's self-check test);
+// the production path reads params.directions instead of recomputing in f32.
 fn fibonacciDirection(ordinal: u32, count: u32) -> vec3f {
   let k = (f32(ordinal) + 0.5) / f32(count);
   let phi = acos(1.0 - 2.0 * k);
@@ -254,7 +276,7 @@ fn ${PROBE_RADIANCE_ENTRY_POINT}(@builtin(global_invocation_id) gid: vec3u) {
   var sum = vec3f(0.0, 0.0, 0.0);
   var overflowed = false;
   for (var ordinal: u32 = 0u; ordinal < params.directionCount; ordinal = ordinal + 1u) {
-    let dir = fibonacciDirection(ordinal, params.directionCount);
+    let dir = params.directions[ordinal].xyz;
     let inv = vec3f(1.0 / dir.x, 1.0 / dir.y, 1.0 / dir.z);
     var prim = SENTINEL;
     var instance = SENTINEL;

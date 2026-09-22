@@ -26,6 +26,7 @@ import {
 import {
   buildRenderPacketRayScene, RENDER_PACKET_GI_RAY_MASK, type RenderPacketRayScene,
 } from "./renderPacketRayScene.js";
+import { probeOcclusionDirection } from "./probeOcclusionRayExtension.js";
 import { packTlasScene, type TlasPackedScene } from "./tlasLayout.js";
 
 /** 渲染帧锁存给生产者的真实辐射输入（PbrRenderer 逐帧馈送）。 */
@@ -208,7 +209,11 @@ export class ProbeSceneRadianceProducer {
       rayMask: RENDER_PACKET_GI_RAY_MASK, tMax: this.maxDistance,
       surfaceToLight: direction,
       lightColor: primary?.color ?? [0, 0, 0], lightIntensity: primary?.intensity ?? 0,
-      ambient: light.ambient }));
+      ambient: light.ambient,
+      // CPU authority: the same probeOcclusionDirection the CPU reference uses, so the
+      // GPU never recomputes (and never drifts from) the direction set.
+      directions: Array.from({ length: this.directionCount }, (_, ordinal) =>
+        probeOcclusionDirection(ordinal, this.directionCount)) }));
     this.device.queue.writeBuffer(probeParams, 0, packProbeRadianceProbeParams(updates.map(
       update => ({ position: update.position, layer: layerOf(update),
         cellX: update.localCell[0], cellY: update.localCell[1] }))));

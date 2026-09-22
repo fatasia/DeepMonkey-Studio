@@ -7,6 +7,7 @@ import {
   emitProbeRadianceKernelWgsl, packProbeRadianceProbeParams, packProbeRadianceUniform,
   PROBE_RADIANCE_UNIFORM_BYTES,
 } from "./probeRadianceKernel.js";
+import { probeOcclusionDirection } from "./probeOcclusionRayExtension.js";
 import {
   ProbeSceneRadianceProducer, type ProbeRadianceLighting,
 } from "./probeSceneRadianceProducer.js";
@@ -92,10 +93,13 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("probe radiance kernel packing", () => {
-  it("packs the 64-byte uniform with u32 head, tMax bitcast and three vec4 lanes", () => {
+  const directions = Array.from({ length: 8 }, (_, ordinal) =>
+    probeOcclusionDirection(ordinal, 8));
+
+  it("packs the 320-byte uniform with u32 head, tMax bitcast, three vec4 lanes and the CPU direction table", () => {
     const data = packProbeRadianceUniform({ updateCount: 3, directionCount: 8, rayMask: 1,
       tMax: 12.5, surfaceToLight: [0, 1, 0], lightColor: [1, 0.9, 0.8], lightIntensity: 2.5,
-      ambient: [0.05, 0.06, 0.07] });
+      ambient: [0.05, 0.06, 0.07], directions });
     expect(data.byteLength).toBe(PROBE_RADIANCE_UNIFORM_BYTES);
     expect(new Uint32Array(data, 0, 3)).toEqual(new Uint32Array([3, 8, 1]));
     const floats = new Float32Array(data);
@@ -105,6 +109,19 @@ describe("probe radiance kernel packing", () => {
     expect(floats[11]).toBe(0);
     expect(floats[12]).toBeCloseTo(0.05); expect(floats[13]).toBeCloseTo(0.06);
     expect(floats[14]).toBeCloseTo(0.07); expect(floats[15]).toBe(0);
+    // Direction lanes start at float offset 16, one vec4 per ordinal.
+    directions.forEach((direction, ordinal) => {
+      expect(floats[16 + ordinal * 4]).toBeCloseTo(direction[0]);
+      expect(floats[16 + ordinal * 4 + 1]).toBeCloseTo(direction[1]);
+      expect(floats[16 + ordinal * 4 + 2]).toBeCloseTo(direction[2]);
+      expect(floats[16 + ordinal * 4 + 3]).toBe(0);
+    });
+  });
+
+  it("rejects a direction table shorter than the declared direction count", () => {
+    expect(() => packProbeRadianceUniform({ updateCount: 1, directionCount: 8, rayMask: 1,
+      tMax: 1, surfaceToLight: [0, 1, 0], lightColor: [1, 1, 1], lightIntensity: 1,
+      ambient: [0, 0, 0], directions: directions.slice(0, 4) })).toThrow(/one direction per sample/);
   });
 
   it("packs one 32-byte record per probe with position, layer and texel cell", () => {
