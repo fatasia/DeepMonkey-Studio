@@ -264,3 +264,8 @@ A4 (粒子/SDF)  A5 (蒙皮)  B1 其余  B2-a/c  B3-b/c  A3 (RT 像素消费)
 
 - 图编译 debounce ≤300ms；100 节点 lowering P95 ≤16ms（不含 GPU pipeline 编译）；变体数量超预算在编辑器阻断；只重编译受影响 pass；Preview 使用 LKG，不阻塞主渲染帧。
 - 运行时不动态解析 JSON、不保留编辑器 node object；资产发布前 canonical hash + 依赖闭包，运行包使用已编译 WGSL/package。
+
+### 2026-09-22 A1/B6 二次现状核查结果
+
+- **A1 虚拟几何**：已有 `clusterLodBake.ts`、`clusterLodSelectionKernel.ts`、`clusterLodIndirectPlan.ts`、分页 residency/gpuResidencyExecutor、soft-raster visibility fallback。真实缺口不是 LOD/cluster 从零建设，而是 WebGPU cluster kernel → resident cluster buffers → render bundle/indirect draw 的生产接线；GPU feedback→CPU demand/residency 闭环和 Native cluster 消费仍缺。最小下一片只做 WebGPU cluster 生产接线，复用现有 bake/DAG/selection/indirect/residency 合同，不扩微三角完整光栅。
+- **B6 烘焙光照**：已有 `apps/web/src/optimizer/lightmapBaker.ts`（单图集/UV1/AO/阴影/单跳 diffuse/降噪/膨胀）、probe baker/incremental/regions、Native 已消费 glTF occlusion+emissive 烘焙 GLB。真实缺口是统一跨 Web/Native 的静态光照 runtime/package descriptor（纹理引用、UV set、色彩/强度、schema/hash）；UV2 真 atlas、GPU/offline baker、probe record 消费接线、跨端亮度/噪声质量列后续。证据：`test-output/native-baked-gi-20260918-r2/evidence.json`、`test-output/baking-probe-20260919-r1/evidence.json`；跨端 GI-on SSIM 0.063、MAE 0.175，不能宣称跨端视觉一致。
