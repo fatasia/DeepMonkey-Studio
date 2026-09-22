@@ -15,7 +15,9 @@ export const INTERACTION_TRIGGERS: SceneInteractionTrigger[] = [
   "pointerLeave",
   "animationStart",
   "animationEnd",
-  "routePointReached"
+  "routePointReached",
+  "collisionStart",
+  "collisionEnd"
 ];
 
 export const OBJECT_INTERACTION_ACTIONS: SceneInteractionActionType[] = ["visibility", "color", "opacity", "focus", "animation", "prefabAction", "cameraView", "navigateScene", "message", "dashboard", "setData", "openUrl"];
@@ -163,7 +165,9 @@ export function triggerLabel(trigger: SceneInteractionTrigger, locale: "zh-CN" |
     pointerLeave: ["鼠标离开", "Pointer leave"],
     animationStart: ["动画开始", "Animation start"],
     animationEnd: ["动画结束", "Animation end"],
-    routePointReached: ["路线到点", "Route point reached"]
+    routePointReached: ["路线到点", "Route point reached"],
+    collisionStart: ["碰撞开始", "Collision start"],
+    collisionEnd: ["碰撞结束", "Collision end"]
   };
   return labels[trigger][locale === "zh-CN" ? 0 : 1];
 }

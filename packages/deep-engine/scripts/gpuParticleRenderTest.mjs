@@ -78,9 +78,14 @@ async function main() {
   await writeFile(path.join(outputDirectory, "report.json"), JSON.stringify(probe, null, 2));
 
   const gate = probe.success === true
-    && (probe.renderedNonBackgroundPixels ?? 0) > 0;
+    && (probe.renderedNonBackgroundPixels ?? 0) > 0
+    // A4 多预设证据：三个发射器预设都必须在各自专属取景下产出非背景像素。
+    && (probe.expandingRingRenderedNonBackgroundPixels ?? 0) > 0
+    && (probe.flowLineRenderedNonBackgroundPixels ?? 0) > 0;
   console.log(JSON.stringify({ gate, success: probe.success, aliveCount: probe.aliveCount,
     indirectCount: probe.indirectCount, renderedNonBackgroundPixels: probe.renderedNonBackgroundPixels,
+    expandingRingRenderedNonBackgroundPixels: probe.expandingRingRenderedNonBackgroundPixels,
+    flowLineRenderedNonBackgroundPixels: probe.flowLineRenderedNonBackgroundPixels,
     presetsVerified: probe.presetsVerified, timeContinuous: probe.timeContinuous,
     burstBudgetDegraded: probe.burstBudgetDegraded }, null, 2));
   if (!gate) throw new Error("GPU particle render gate failed; see report.json.");

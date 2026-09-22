@@ -1,7 +1,7 @@
 import type * as FRAGS from "@thatopen/fragments";
 import * as THREE from "three";
 import type { ClippingGroup } from "three/webgpu";
-import type { RigidBody, World as RapierWorld } from "@dimforge/rapier3d-compat";
+import type { EventQueue, RigidBody, World as RapierWorld } from "@dimforge/rapier3d-compat";
 import { CompatibleGLTFLoader as GLTFLoader } from "./CompatibleGLTFLoader";
 import { configureGltfKtx2 } from "./gltfKtx2Support";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
@@ -135,6 +135,10 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
   protected readonly physicsJoints = new Map<string, MountedRapierJoint>();
   protected physicsInit: Promise<void> | undefined;
   protected readonly physicsHost = new PhysicsWorldHost();
+  /** B3-c：Rapier 碰撞事件队列；autoDrain 关闭，由 dispatchPhysicsCollisionEvents 统一 drain。 */
+  protected physicsEventQueue: EventQueue | undefined;
+  /** B3-c：碰撞体句柄 → 归属（对象 id 或 null=地面）；碰撞事件归属解析的唯一事实来源。 */
+  protected readonly physicsColliderOwners = new Map<number, string | null>();
   protected lastPhysicsUiUpdate = 0;
   protected physicsState: ScenePhysicsState = { enabled: false, playing: false, gravity: { x: 0, y: -9.81, z: 0 } };
   protected readonly physicsBodyStates = new Map<string, ScenePhysicsBodyState>();

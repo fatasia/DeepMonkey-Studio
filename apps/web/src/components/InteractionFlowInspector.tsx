@@ -20,7 +20,7 @@ import { translate as tr, type AppLocale } from "../i18n";
 import { defaultInteractionCode } from "../interactionState";
 import { ProfessionalCodeEditor } from "./ProfessionalCodeEditor";
 
-const TRIGGERS: SceneInteractionTrigger[] = ["click", "doubleClick", "contextMenu", "pointerEnter", "pointerLeave", "load", "animationStart", "animationEnd", "routePointReached"];
+const TRIGGERS: SceneInteractionTrigger[] = ["click", "doubleClick", "contextMenu", "pointerEnter", "pointerLeave", "load", "animationStart", "animationEnd", "routePointReached", "collisionStart", "collisionEnd"];
 const ACTION_TYPES: SceneInteractionActionType[] = [
   "focus",
   "visibility",
@@ -537,6 +537,8 @@ function triggerLabel(locale: AppLocale, trigger: SceneInteractionTrigger): stri
     animationStart: ["动画开始", "Animation start"],
     animationEnd: ["动画结束", "Animation end"],
     routePointReached: ["路线到点", "Route point reached"],
+    collisionStart: ["碰撞开始", "Collision start"],
+    collisionEnd: ["碰撞结束", "Collision end"],
   };
   return tr(locale, ...labels[trigger]);
 }

@@ -510,6 +510,14 @@ describe("assertApplicationDocument", () => {
     expect(() => assertApplicationDocument(application)).not.toThrow();
   });
 
+  it("accepts physics collision start/end triggers", () => {
+    const application = structuredClone(interactionApplication);
+    application.interactions[0]!.trigger = "collisionStart";
+    expect(() => assertApplicationDocument(application)).not.toThrow();
+    application.interactions[0]!.trigger = "collisionEnd";
+    expect(() => assertApplicationDocument(application)).not.toThrow();
+  });
+
   it("rejects an unknown interaction transition", () => {
     const application = structuredClone(interactionApplication);
     application.interactions[0]!.actions[0]!.transition = {

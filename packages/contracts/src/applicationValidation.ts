@@ -34,7 +34,7 @@ type JsonObject = Record<string, unknown>;
 type Validator = (value: unknown, path: string) => void;
 
 const MODEL_FORMATS = supportedExtensions;
-const INTERACTION_TRIGGERS = ["load", "click", "doubleClick", "contextMenu", "pointerEnter", "pointerLeave", "animationStart", "animationEnd", "routePointReached"] as const;
+const INTERACTION_TRIGGERS = ["load", "click", "doubleClick", "contextMenu", "pointerEnter", "pointerLeave", "animationStart", "animationEnd", "routePointReached", "collisionStart", "collisionEnd"] as const;
 const INTERACTION_ACTION_TYPES = [
   "visibility",
   "color",
@@ -185,6 +185,18 @@ function validatePage(value: unknown, path: string): void {
   optional(object, "appearance", validateDashboardPageAppearance, path);
   optional(object, "templateSource", validateDashboardTemplateSource, path);
   optional(object, "guides", (guides, guidesPath) => expectArray(guides, guidesPath, validateDashboardGuide), path);
+  optional(object, "rootLayerOrder", (order, orderPath) => {
+    const seen = new Set<string>();
+    expectArray(order, orderPath, (entry, entryPath) => {
+      const ref = expectObject(entry, entryPath);
+      for (const key of Object.keys(ref)) if (key !== "kind" && key !== "id") invalid(`${entryPath}.${key}`, "不属于根图层引用");
+      requiredLiteral(ref, "kind", ["group", "node"], entryPath); required(ref, "id", expectString, entryPath);
+      if (!String(ref.id).trim()) invalid(`${entryPath}.id`, "不能为空");
+      const key = `${ref.kind}:${ref.id}`;
+      if (seen.has(key)) invalid(entryPath, "根图层引用重复");
+      seen.add(key);
+    });
+  }, path);
   required(
     object,
     "nodes",

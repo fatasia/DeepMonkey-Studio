@@ -8,6 +8,7 @@ import type {
 } from "@bim-studio/contracts";
 import type { LayerTreeNode, RendererBackend } from "./viewerTypes";
 import type { ModelFireEffectRuntime } from "./modelFireEffect";
+import type { MountedRapierCharacter } from "./rapierCharacterController";
 
 /** ViewerEngine 的内部运行类型与默认值，和渲染生命周期分离，便于单独审查。 */
 export interface RendererInfoLike {
@@ -59,6 +60,10 @@ export interface NavigationViewState { position: Vector3; target: Vector3; }
 export interface PhysicsBodyRuntime {
   body: RigidBody;
   initialTransform: ModelTransform;
+  /** 仅 kinematic 刚体挂角色控制器；fixed/dynamic 恒为 undefined。 */
+  character?: MountedRapierCharacter;
+  /** B3-c：主碰撞体句柄，碰撞事件按它反查场景对象；移除 body 时同步注销。 */
+  colliderHandle: number;
 }
 
 export interface ModelEffectRuntime {

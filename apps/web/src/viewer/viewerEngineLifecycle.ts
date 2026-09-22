@@ -86,6 +86,9 @@ export abstract class ViewerEngineLifecycle extends ViewerEngineNavigationTools 
     this.spaceVisuals.clear();
     this.disposeSceneLightProxies();
     this.physicsHost.dispose();
+    // 事件队列的 WASM 内存由 host.dispose 的 backend 闭包释放，这里只清引用与归属表。
+    this.physicsEventQueue = undefined;
+    this.physicsColliderOwners.clear();
     this.physicsWorld = undefined;
     this.physicsGroundBody = undefined;
     this.physicsJoints.clear();

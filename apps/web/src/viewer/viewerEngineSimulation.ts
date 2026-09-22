@@ -1,10 +1,11 @@
 import * as THREE from "three";
 import type { SceneAnimationState, SceneCharacterControllerState, ScenePhysicsBodyState, ScenePhysicsState } from "@bim-studio/contracts";
-import { normalizeAnimationFrameRate } from "./timeline";
+import { normalizeAnimationFrameRate, normalizeSceneAnimationPlaybackRange } from "./timeline";
 import { applyTransform, objectTransform } from "./sceneObjectUtils";
 import { ViewerEngineRig } from "./viewerEngineRig";
 import { mountRapierJoint, normalizePhysicsJoints, removeMountedRapierJoint } from "./rapierPhysicsJoint";
 import { configureCharacterController, moveRapierCharacter, mountRapierCharacterController, removeMountedRapierCharacter } from "./rapierCharacterController";
+import { resolvePhysicsCollisionDispatches, type PhysicsColliderOwners } from "./rapierPhysicsCollisionEvents";
 
 function cloneCharacter(state: SceneCharacterControllerState): SceneCharacterControllerState {
   return {
@@ -114,18 +115,24 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
         }
         if (this.rendererDisposalStarted) return;
         const world = new rapier.World({ ...this.physicsState.gravity });
+        // B3-c：autoDrain 必须关——host.advance 的固定步进追赶循环里一步会跑多次
+        // world.step，autoDrain=true 会把中间步的碰撞事件在下一个 step 前静默清掉。
+        const eventQueue = new rapier.EventQueue(false);
         const attached = this.physicsHost.attach({
           setGravity: (gravity) => { world.gravity = { ...gravity }; },
-          step: (timestep) => { world.timestep = timestep; world.step(); },
-          dispose: () => world.free(),
+          step: (timestep) => { world.timestep = timestep; world.step(eventQueue); },
+          dispose: () => { eventQueue.free(); world.free(); },
         });
-        if (!attached) { world.free(); return; }
+        if (!attached) { eventQueue.free(); world.free(); return; }
         this.rapier = rapier;
         this.physicsWorld = world;
+        this.physicsEventQueue = eventQueue;
         const groundBody = world.createRigidBody(rapier.RigidBodyDesc.fixed());
         this.physicsGroundBody = groundBody;
         const ground = rapier.ColliderDesc.cuboid(5_000, 0.05, 5_000).setTranslation(0, -0.05, 0).setFriction(0.9);
-        world.createCollider(ground, groundBody);
+        const groundCollider = world.createCollider(ground, groundBody);
+        // 地面不是场景对象，只登记为 null 归属：碰撞事件里作为对端来源，自身不派发。
+        this.physicsColliderOwners.set(groundCollider.handle, null);
         for (const [id, state] of this.physicsBodyStates) if (state.type !== "none" && !this.physicsBodies.has(id)) this.createPhysicsBody(id, state);
         this.rebuildPhysicsJoints();
       })().finally(() => { this.physicsInit = undefined; });
@@ -158,20 +165,25 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
         Math.max(Math.abs(half.x), 0.01),
         Math.max(Math.abs(half.y), 0.01),
         Math.max(Math.abs(half.z), 0.01)
-      ).setTranslation(offset.x, offset.y, offset.z).setFriction(state.friction).setRestitution(state.restitution);
+      ).setTranslation(offset.x, offset.y, offset.z).setFriction(state.friction).setRestitution(state.restitution)
+        // B3-c：没有该标志 Rapier 不生成碰撞事件；body 侧启用后与地面/其它 body 的接触都会入队。
+        .setActiveEvents(rapier.ActiveEvents.COLLISION_EVENTS);
       if (state.type === "dynamic") collider.setMass(state.mass);
       const colliderHandle = world.createCollider(collider, body);
+      this.physicsColliderOwners.set(colliderHandle.handle, id);
       // 角色控制器只挂在 kinematic 刚体上；它靠宿主调用 setNextKinematicTranslation 移动。
       const character = state.type === "kinematic"
         ? mountRapierCharacterController(world, colliderHandle, state.character)
         : undefined;
-      this.physicsBodies.set(id, { body, initialTransform: objectTransform(object), ...(character ? { character } : {}) });
+      this.physicsBodies.set(id, { body, colliderHandle: colliderHandle.handle, initialTransform: objectTransform(object), ...(character ? { character } : {}) });
     }
   protected removePhysicsBody(id: string): void {
       this.removePhysicsJointsForBody(id);
       const runtime = this.physicsBodies.get(id);
       if (runtime?.character && this.physicsWorld) removeMountedRapierCharacter(this.physicsWorld, runtime.character);
       if (runtime && this.physicsWorld) this.physicsWorld.removeRigidBody(runtime.body);
+      // 先注销句柄再删 body：同一帧内 drain 到的移除残留事件会被解析成“对端不可解析”。
+      if (runtime) this.physicsColliderOwners.delete(runtime.colliderHandle);
       this.physicsBodies.delete(id);
     }
   protected rebuildPhysicsBody(id: string): void {
@@ -209,6 +221,8 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
       const world = this.physicsWorld;
       if (!world || !this.physicsState.enabled || !this.physicsState.playing) return;
       this.physicsHost.advance(delta);
+      // 追赶循环内的多步事件已在队列里累积，统一在这里 drain 并派发给交互脚本。
+      this.dispatchPhysicsCollisionEvents();
       for (const [id, runtime] of this.physicsBodies) {
         if (this.physicsBodyStates.get(id)?.type !== "dynamic") continue;
         const object = this.models.get(id)?.object;
@@ -226,6 +240,25 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
         this.lastPhysicsUiUpdate = now;
       }
     }
+  /**
+   * B3-c 物理可观测性：把 Rapier 原始碰撞事件解析成 collisionStart/collisionEnd
+   * 交互脚本触发。payload.other 携带对端对象 id（地面/不可解析为 null），脚本经
+   * `ctx.event.payload.other` 读取；世界清除后队列不存在时静默跳过。
+   */
+  protected dispatchPhysicsCollisionEvents(): void {
+      const queue = this.physicsEventQueue;
+      if (!queue) return;
+      queue.drainCollisionEvents((handle1: number, handle2: number, started: boolean) => {
+        const owners: PhysicsColliderOwners = this.physicsColliderOwners;
+        for (const dispatch of resolvePhysicsCollisionDispatches(handle1, handle2, started, owners)) {
+          this.dispatchInteraction(
+            dispatch.started ? "collisionStart" : "collisionEnd",
+            { kind: "object", modelId: dispatch.modelId },
+            { payload: { other: dispatch.other } },
+          );
+        }
+      });
+    }
   getSceneAnimation(): SceneAnimationState {
       return structuredClone(this.sceneAnimation);
     }
@@ -235,6 +268,7 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
         loop: animation.loop,
         pingPong: animation.pingPong ?? false,
         playbackSpeed: THREE.MathUtils.clamp(animation.playbackSpeed ?? 1, 0.1, 4),
+        ...(animation.playbackRange !== undefined ? { playbackRange: animation.playbackRange } : {}),
         frameRate: normalizeAnimationFrameRate(animation.frameRate),
         snapToFrames: animation.snapToFrames ?? false,
         cameraInterpolation: animation.cameraInterpolation ?? "smooth",
@@ -243,20 +277,27 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
         camera: [...animation.camera].sort((a, b) => a.time - b.time),
         models: [...animation.models].sort((a, b) => a.time - b.time)
       };
-      this.sceneAnimationTime = Math.min(this.sceneAnimationTime, this.sceneAnimation.duration);
+      // 播放头同步收敛进新的播放区间，避免缩小区间后残留越界时间。
+      const range = normalizeSceneAnimationPlaybackRange(this.sceneAnimation.playbackRange, this.sceneAnimation.duration);
+      this.sceneAnimationTime = THREE.MathUtils.clamp(this.sceneAnimationTime, range.inPoint, range.outPoint);
       this.updateCameraPathHelper();
       this.onAnimationChange?.(this.sceneAnimationTime, this.sceneAnimationPlaying);
     }
   seekSceneAnimation(time: number): void {
-      this.sceneAnimationTime = THREE.MathUtils.clamp(time, 0, this.sceneAnimation.duration);
+      const range = normalizeSceneAnimationPlaybackRange(this.sceneAnimation.playbackRange, this.sceneAnimation.duration);
+      this.sceneAnimationTime = THREE.MathUtils.clamp(time, range.inPoint, range.outPoint);
       this.applySceneAnimationFrame(this.sceneAnimationTime);
       this.onAnimationChange?.(this.sceneAnimationTime, this.sceneAnimationPlaying);
     }
   playSceneAnimation(): void {
       if (this.sceneAnimation.camera.length === 0 && this.sceneAnimation.models.length === 0) return;
-      if (this.sceneAnimationTime >= this.sceneAnimation.duration) {
-        this.sceneAnimationTime = 0;
-        this.sceneAnimationDirection = 1;
+      const range = normalizeSceneAnimationPlaybackRange(this.sceneAnimation.playbackRange, this.sceneAnimation.duration);
+      if (this.sceneAnimationDirection > 0 && this.sceneAnimationTime >= range.outPoint) {
+        // 正向播放到出点后重新播放：回到入点起步。
+        this.sceneAnimationTime = range.inPoint;
+      } else if (this.sceneAnimationDirection < 0 && this.sceneAnimationTime <= range.inPoint) {
+        // 倒放到入点后重新播放：从出点反向起步。
+        this.sceneAnimationTime = range.outPoint;
       }
       const wasPlaying = this.sceneAnimationPlaying;
       this.sceneAnimationPlaying = true;
@@ -283,5 +324,9 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
     }
   isSceneAnimationPlaying(): boolean {
       return this.sceneAnimationPlaying;
+    }
+  setSceneAnimationDirection(direction: 1 | -1): void {
+      // 只切换方向不改播放状态：播放中立即掉头，暂停时由下一次 play 决定起步边界。
+      this.sceneAnimationDirection = direction >= 0 ? 1 : -1;
     }
 }

@@ -41,7 +41,9 @@ export function resolvePreferredScriptTarget(
 
 const BUILTIN_EVENTS = [
   "click", "doubleClick", "pointerEnter", "pointerLeave", "dataChange",
-  "sceneReady", "animationStart", "animationEnd"
+  "sceneReady", "animationStart", "animationEnd",
+  // B3-c 物理可观测性：碰撞事件由物理运行时派发，payload.other 为对端对象 id（地面为 null）。
+  "collisionStart", "collisionEnd"
 ];
 
 /**

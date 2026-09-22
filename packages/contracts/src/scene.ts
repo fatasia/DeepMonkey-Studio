@@ -582,6 +582,14 @@ export interface SceneAnimationStateMachineState {
   transitions?: SceneAnimationClipTransitionState[];
 }
 
+/** 区间播放范围（秒）。出点必须大于入点，越界或退化值按整条时间线处理。 */
+export interface SceneAnimationPlaybackRange {
+  /** 入点；循环、往返与停止的下边界。 */
+  inPoint: number;
+  /** 出点；循环、往返与停止的上边界。 */
+  outPoint: number;
+}
+
 export interface SceneAnimationState {
   duration: number;
   /** 发布预览进入场景后是否自动播放时间线。 */
@@ -589,6 +597,8 @@ export interface SceneAnimationState {
   loop: boolean;
   pingPong?: boolean;
   playbackSpeed?: number;
+  /** 区间播放；缺省播放整条时间线 [0, duration]。 */
+  playbackRange?: SceneAnimationPlaybackRange;
   /** Timeline authoring frame rate. Defaults to 30 when frame snapping is enabled. */
   frameRate?: number;
   /** Quantize playhead and newly authored keyframes to exact frames. */
@@ -629,7 +639,8 @@ export interface SceneEngineeringAnalysisState {
 }
 
 
-export type SceneInteractionTrigger = "load" | "click" | "doubleClick" | "contextMenu" | "pointerEnter" | "pointerLeave" | "animationStart" | "animationEnd" | "routePointReached";
+// collisionStart/collisionEnd 由物理运行时在碰撞开始/结束时派发，payload.other 为对端模型 id（地面为 null）。
+export type SceneInteractionTrigger = "load" | "click" | "doubleClick" | "contextMenu" | "pointerEnter" | "pointerLeave" | "animationStart" | "animationEnd" | "routePointReached" | "collisionStart" | "collisionEnd";
 
 export type SceneInteractionTarget = {
   kind: "object";
