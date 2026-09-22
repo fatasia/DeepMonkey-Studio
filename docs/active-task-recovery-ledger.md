@@ -3227,3 +3227,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **示例覆盖**：Node 侧 `validateDynamicSceneRuntime`（v1 合法输入通过 + schemaVersion=99 fail-closed 定位 `$.schema`）与 `packNativeProbeGridRecords`（2x2x2 网格 → (1+8)×96=864 字节，网格头 origin/spacing/gridSize/count 逐字对位 + probe-count-mismatch 抛错）；Browser 侧同一对纯逻辑导出的 ESM bundle，页面自运行结果写入 DOM 并挂 `window.__F6_STANDALONE_RESULT__`，驱动断言模块调用与 DOM 输出一致、console/pageerror 为零。
 - **证据**：`test-output/f6-standalone-20260923/`（report.json status=passed、run-node-example.log 以 `F6-NODE-STANDALONE:ALL-OK` 结束、npm-install-offline.log、browser-standalone.png 截图含 JSON 结果、browser-result.json browserVersion=153.0.8010.53、pack sha256 各 tarball）。仓内零依赖改动：pnpm-lock/根 package.json 未动（git status 无跟踪文件修改），临时工作区在 `%TEMP%/f6-standalone-*`。
 - **诚实边界**：浏览器示例只做模块加载+纯函数执行，未做真 WebGPU 渲染（既有 gate:deep-engine-consumer 的 Chrome 真 WebGPU 两帧+GPU readback 已覆盖渲染证据，两者互补）；插件启停/兼容矩阵、统一宿主入口、viewerEngineInteraction 拆分、文档中心可运行样例仍按 handoff F6 剩余推进；npm 链验证覆盖 install--offline 零注册表访问，未模拟"无 npm 缓存全新机器"以外的代理/防火墙形态；驱动运行中发现并绕过 MSYS GNU tar 把 `C:\` 归档当远程主机的问题（子进程 PATH 前置系统 bsdtar，仅驱动内生效，共享 gate lib 未改）；既有 sourceSizeGate 在 deep-engine-native 侧的既有 ERROR（player_content.rs 等）为 HEAD 既有状态，与本切片无关（本切片新增文件均不在其扫描集或行数阈值内）。
+
+### 2026-09-23 30 分钟自检（第十轮）：F6 仓外示例验收 + 文档同步 + F3 多层补位
+
+- **I6 文档中心同步**（主线程）：deep-engine-sdk.md 补三节——F3 探针网格 Native 消费链（打包/发布/消费/边界四段，全部以已提交代码与证据路径为准）、B3 物理调试视图、B2 播放区间发布语义；docsCatalog 8/8 过。
+- **F6 仓外独立消费示例验收通过**（919f9468）：复用既有 gate 打包 lib（tarball 私有性/sha256 断言保留），Node 例（validateDynamicSceneRuntime + packNativeProbeGridRecords 真实执行，主线程复跑输出 ALL-OK）+ Browser 例（headless Chrome 加载断言+截图）；离线 npm 安装链带断网探针（registry 127.0.0.1:9）零错误。证据 test-output/f6-standalone-20260923/（status=passed）。边界：浏览器侧未做真 WebGPU 渲染（由既有 gate 覆盖）；F6 剩余=插件启停/宿主入口/interaction 拆分。
+- **满载补位**：子代理②派 F3 Native 探针网格多层级联（头协议扩展+Rust 多层 decode/CPU 混合对拍+WGSL 细粗两层混合对齐 Web smoothstep 1.5 格+打包器多层输入；单层兼容逐位不变）；子代理① V4 Babylon harness 在跑。
