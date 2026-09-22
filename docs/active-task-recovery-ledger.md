@@ -3310,3 +3310,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **判定状态：evaluation=invalid / outcome=withheld**（"visual fidelity gate failed"：0.8376 < 0.92 合同下限，排名按合同抑制；pass-2.json 未进入聚合，stability measured=false）——harness 结构在，**可用胜出证据仍不在**，不得据此宣称对 Babylon 领先。
 - **schema 口径差异**：a01x 证据为 `deep-monkey.a01x-babylon-pairing.v1`（records/pass 层级、camelCase 指标），非 bevy 轨道 `deep-engine.competitive-benchmark.paired-raw` v2（rounds[].candidate/reference 直挂 snake_case 指标）——paired-summary.mjs 不能直接消费；进 V4 聚合需先落一层字段映射适配（缺失指标如实标"未采集"）或统一 schema。
 - 下一可执行动作：a01x 链路补 babylon 侧 GPU 时间戳通道、处理视觉相似度低于合同下限（修复对齐或按合同降级），落仓 paired-evidence 适配层；30min 长稳与进程内存采集仍缺（与本轮发现的 V4 缺口②③一致）。
+
+### 2026-09-23 30 分钟自检（第十七轮）：a01x 覆盖度验收 + 适配层补位
+
+- **a01x Babylon 覆盖度核对验收通过**（5784a286）：轨道结构完整（5 轮冷热交替/三 hash/双侧 visual-similarity+criteria）但**判定 invalid/withheld**——视觉相似度中位 0.8376 < 合同下限 0.92，排名按合同抑制，不得宣称对 Babylon 领先。缺失指标：GPU 时间戳（babylon timestampSupport=false）、输入延迟、冷启动、加载、长稳、进程内存。schema 与 bevy 轨道不同构（a01x v1 camelCase records/pass 层级），聚合需适配层。
+- **满载补位**：空闲代理派 a01x 适配层（camelCase records → paired-summary 输入 + 判定抑制显著标注，真实数据实跑验证）；另一代理 I3 junction+碰撞在跑。
+- 该代理中途排掉的实测坑（esbuild 须 CLI+splitting、FreeCamera 默认朝 +Z、headless 须 whenReadyAsync、WebGPU 截图须 RTT 读回）留在留置代码供 a01x 链路复用，不入库。
