@@ -7,6 +7,8 @@ export const DEEP_GI_MAX_LEVEL_SAMPLE_COUNT = 2;
 export const DEEP_GI_MAX_PROBE_FETCHES = 16;
 export const DEEP_GI_CASCADE_BLEND_CELLS = 1.5;
 export const DEEP_GI_NORMAL_BIAS_CELLS = 0.2;
+/** DDGI 法线权重陡峭度：越大越抑制斜向（背面）探针，是泄漏抑制的主控参数。 */
+export const DEEP_GI_NORMAL_WEIGHT_BIAS = 3;
 export const DEEP_GI_MIN_SAMPLE_WEIGHT = 0.001;
 
 /** Read-only group-3 library; resource binding is deferred until the GI renderer slice. */
@@ -56,6 +58,19 @@ fn deepGiVisibility(record: DeepGiProbeRecord, receiver: vec3f, probePosition: v
   let chebyshev = variance / max(variance + delta * delta, 0.000001);
   return select(max(clamp(record.visibility.z, 0.0, 1.0), chebyshev), 1.0, distance <= meanDistance);
 }
+// DDGI normal weight (leak suppression, mirrors probeClipmapSampling.probeNormalWeight):
+// only probes in the receiver's facing hemisphere contribute, weighted by cosine^bias.
+// The hemisphere test uses the original shading point (worldPosition), never the
+// bias-offset receiver: the bias only serves the visibility test, and measuring the
+// hemisphere from it would reject every probe at a grid-edge surface facing outward.
+fn deepGiNormalWeight(probePosition: vec3f, shadingPoint: vec3f, normal: vec3f) -> f32 {
+  let toProbe = probePosition - shadingPoint;
+  let lengthToProbe = length(toProbe);
+  if (!(lengthToProbe > 0.000001)) { return 1.0; }
+  let cosine = dot(toProbe, normal) / lengthToProbe;
+  if (!(cosine > 0.0)) { return 0.0; }
+  return pow(cosine, ${DEEP_GI_NORMAL_WEIGHT_BIAS}.0);
+}
 fn deepGiSampleLevel(levelIndex: u32, worldPosition: vec3f, worldNormal: vec3f) -> DeepGiLevelSample {
   let level = deepGiLevels[levelIndex];
   if (!deepGiContains(level, worldPosition)) { return DeepGiLevelSample(vec3f(0.0), 0.0); }
@@ -82,7 +97,8 @@ fn deepGiSampleLevel(levelIndex: u32, worldPosition: vec3f, worldNormal: vec3f) 
       || !deepGiFinite3(record.relocation.xyz, 1000000.0)) { continue; }
     let probePosition = level.originSpacing.xyz + vec3f(cell) * level.originSpacing.w + record.relocation.xyz;
     let weight = trilinear * clamp(validity, 0.0, 1.0)
-      * deepGiVisibility(record, receiver, probePosition, level.originSpacing.w);
+      * deepGiVisibility(record, receiver, probePosition, level.originSpacing.w)
+      * deepGiNormalWeight(probePosition, worldPosition, normal);
     irradiance += max(record.irradianceValidity.xyz, vec3f(0.0)) * weight; totalWeight += weight;
   }
   if (!(totalWeight >= ${DEEP_GI_MIN_SAMPLE_WEIGHT})) { return DeepGiLevelSample(vec3f(0.0), 0.0); }

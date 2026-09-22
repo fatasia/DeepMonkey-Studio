@@ -44,15 +44,15 @@
 
 ### A2. Lumen 级动态 GI
 
-**现状核查（2026-09-22）**：F1 已交付探针一跳场景辐射（`probeSceneRadianceProducer`）+ 环境均值读回 + 能量钳制 + 受限历史反馈 + 产品宿主接线，真机 gate TRUE。已有 `probeRelocationResolver`、`probeSurfaceCache`、`ProbeClipmapUpdateScheduler`、Web `pbrPostProcessChain` 的 SSR（粗糙锥 + 共享时域可信度）。**F1 是探针一跳 + 时域滤波，不是 Lumen 的屏幕空间 + RT 混合。**
+**现状核查（2026-09-22，二次核查修正）**：F1 已交付探针一跳场景辐射（`probeSceneRadianceProducer`）+ 环境均值读回 + 能量钳制 + 受限历史反馈 + 产品宿主接线，真机 gate TRUE。**二次核查发现：三线性插值已实现**（`lighting/probeClipmapTextureSamplingWgsl.ts` 的 `deepGiTextureLevelSample` 做双线性 xy + 双 z 层 mix；`deepGiSampleTexture` 再做层级混合与边界 blend；`probeClipmapSampling.ts` 有 CPU 对应实现与测试）。此前本文档写的"DDGI 三线性待做"是误判——**禁止重建**。
 
-**缺口**：① DDGI 三线性插值（当前 filter 是单 texel 均值）；② 泄漏抑制（需要三线性基础才能做有意义的泄漏数学）；③ 屏幕空间 GI（SSGI）通道；④ RT GI 与探针的混合策略；⑤ 多灯体积时域（台账已列待办）。
+**真实缺口**：① **泄漏抑制**（DDGI 法线权重未实现：当前用 `textureSampleLevel` 做双线性，无法对 8 个探针分别施加法线权重；标准 DDGI 需手动 8-tap + `pow(max(dot(probeDir, normal), 0), bias)` 权重）；② 屏幕空间 GI（SSGI）通道；③ RT GI 与探针的混合策略；④ 多灯体积时域（台账已列待办）。
 
-**价值**：极高。决定室内光照真实度，是"真实感"战场的核心。
+**价值**：极高。泄漏抑制是 DDGI 画质的关键——室外光漏进室内、亮区漏到暗区是最明显的伪影；SSGI 决定室内细节光照。
 
-**工作量**：15–25 天（DDGI 三线性 + 泄漏 5–8 天 / SSGI 5–8 天 / RT GI 混合 3–5 天 / 多灯时域 2–4 天）。
+**工作量**：泄漏抑制（8-tap 法线权重 + Chebyshev 反向检测）3–5 天 / SSGI 5–8 天 / RT GI 混合 3–5 天 / 多灯时域 2–4 天。
 
-**性能要求**：探针更新在 GPU 内闭环，不引入 CPU 读回同步点；SSGI 半分辨率 + 时域累积；目标 GI 开销 ≤ 帧时间 25%。
+**性能要求**：8-tap 手动采样取代单次双线性会增采样开销，必须实测（目标：GI 采样 ≤ 帧时间 15%）；探针更新在 GPU 内闭环，不引入 CPU 读回同步点。
 
 ---
 
@@ -163,6 +163,23 @@
 - **B3-a 跨端一致性（最高价值，先做）**：修复缺口 7（Web 发布查看器消费 physics runtime 通道）+ 缺口 9（Native 补静态地面）。这修复的是"发布后物理不生效"与"两端行为不一致"的真实缺陷。约 3–5 天。
 - **B3-b 能力扩展（高价值）**：kinematic 刚体 + 角色控制器（缺口 2）、复合/凸包碰撞体（缺口 1）、关节扩展（缺口 3）。约 8–12 天。
 - **B3-c 可观测性（中价值）**：物理调试可视化（缺口 5）+ 事件回调（缺口 6）+ per-body 参数（缺口 4）。约 5–7 天。
+
+#### B3-b 切片（kinematic 刚体 + 角色控制器）现状核查（2026-09-22，本切片开工前实测）
+
+按六步核查（关键词 `kinematic` / `CharacterController` / `character_controller`，范围 `packages/*/src`、`apps/*/src`，含未跟踪文件）：
+
+1. **全仓 grep**：`kinematic` 仅命中机器人运动学（`RobotKinematicsControl.tsx`、`robotWorkcellCycleBudget.ts` 的 `kinematic-cycle-budget-v1`）与 rapier 依赖自身——**物理 kinematic 刚体零命中**；`CharacterController` / `character_controller` 在 `packages/*/src`、`apps/*/src` **零命中**。
+2. **契约层**：`packages/contracts/src/scene.ts:45` `PhysicsBodyType = "none" | "fixed" | "dynamic"`（无 kinematic）；`ScenePhysicsBodyState` 只有 `type/mass/friction/restitution`，**无角色控制器字段**；`packages/deep-engine/src/runtimePackage/dynamicSceneRuntime.ts:57-59` `DynamicPhysicsBodyRuntime.type` 同为两值；`packages/contracts/src/sceneValidation.ts:382` `requiredLiteral(object, "type", ["none","fixed","dynamic"])` 是第三个 fail-closed 闸门。
+3. **依赖**：Web `@dimforge/rapier3d-compat 0.19.3`（`apps/web/package.json:40`）、Native `rapier3d 0.35.3`（enhanced-determinism）。**两侧 API 均存在但未被使用**——实测 `apps/web` 内 `node -e` 调用确认 `world.createCharacterController(offset)`、`setMaxSlopeClimbAngle`、`enableAutostep`、`enableSnapToGround`、`computeColliderMovement`、`setApplyImpulsesToDynamicBodies`、`RigidBodyDesc.kinematicPositionBased`、`setNextKinematicTranslation`、`computedGrounded` 全部为 function；Native `rapier3d-0.35.3/src/control/character_controller.rs` 有 `KinematicCharacterController`（`pub up/offset/slide/autostep/max_slope_climb_angle/min_slope_slide_angle/snap_to_ground`、`move_shape`），**但未在 `prelude.rs` 重导出**，须走 `rapier3d::control::KinematicCharacterController` 全路径。
+4. **消费方**：`viewerEngineSimulation.ts` 的 `createPhysicsBody` 只有 `dynamic()` / `fixed()` 二元分支；`native_physics.rs:162` 同样二元；`compileScenePhysicsRuntime.ts` 的 filter 仅放行 `fixed`/`dynamic` 且把 `state.type as "fixed" | "dynamic"` 硬转型。
+5. **测试与证据**：Web 侧有 `physicsWorldHost.test.ts`、`rapierPhysicsJoint.test.ts`、`compileScenePhysicsRuntime.test.ts`、`ScenePhysicsPanel.test.tsx`；Native 侧 `native_physics.rs` 3 项、`dynamicSceneRuntime.test.ts` 有 v3 physics 用例；`physics-validate/` 240 步逐位对拍（F04–F07）。**kinematic / 角色控制器用例为零**。
+6. **规格文档**：本文件 B3 节 + `docs/active-task-recovery-ledger.md` 2026-09-22 条目；`characterMotion.ts`（`slideAgainstSurface` / `isWalkableSurface`）是**相机漫游的自研碰撞**，走 mesh raycast，与 Rapier 角色控制器**不是同一系统**，本切片不改它（属缺口 8）。
+
+**核查结论——已有（不重建）**：Rapier 双端生产级刚体/关节/碰撞体下译与确定性对拍链路完整；`PhysicsWorldHost` 固定步长时钟、`normalizePhysicsJoints` 归一化模式、`dynamic_scene_physics.rs` 的 fail-closed 校验与 `physics-validate` 场景 spec 单一来源纪律都可直接扩展。
+
+**真实缺口（本切片）**：① 三处 `type` 枚举与三处消费分支都不认 kinematic；② 角色控制器在两端零实现、契约零字段；③ 无 kinematic / 角色控制器测试；④ 无 kinematic 步进开销实测。
+
+**诚实边界（不在本切片伪造）**：Native 侧角色控制器虽有 `rapier3d` API，但 `native_physics.rs` 的渲染同步只回写 `dynamic` body（`sync_packet` 的 `if !binding.dynamic { continue }`），kinematic body 需要宿主显式调 `set_next_kinematic_translation` 才有运动；**本切片只让 Native 消费 kinematic 刚体（静态位姿、可被 dynamic 碰撞），角色控制器在 Native 侧明确记为 degraded 且不消费**，不假装已实现。
 
 **性能要求**：物理步进固定 1/60 且不与渲染帧耦合（已有）；碰撞体形状升级后必须保持 16384 body 上限内的步进 ≤4ms；Native 与 Web 的逐位确定性必须由 `physics-validate` 扩展用例守住（新增形状/关节后必须补对拍）。
 

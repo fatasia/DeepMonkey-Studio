@@ -2,7 +2,8 @@ import { DEEP_GI_PROBE_LEVEL_BYTES, DEEP_GI_PROBE_RECORD_BYTES,
   type ProbeClipmapLevel, type ProbeClipmapProfile, type ProbeVector3 } from "./probeClipmapPlan.js";
 import { DEEP_GI_CASCADE_BLEND_CELLS, DEEP_GI_LEVEL_METADATA_BINDING, DEEP_GI_MAX_PROBE_FETCHES,
   DEEP_GI_MIN_SAMPLE_WEIGHT, DEEP_GI_NORMAL_BIAS_CELLS, DEEP_GI_PROBE_STORAGE_BINDING,
-  DEEP_GI_SAMPLING_ABI_VERSION, DEEP_GI_SAMPLING_BIND_GROUP } from "./probeClipmapSamplingWgsl.js";
+  DEEP_GI_SAMPLING_ABI_VERSION, DEEP_GI_SAMPLING_BIND_GROUP,
+  DEEP_GI_NORMAL_WEIGHT_BIAS } from "./probeClipmapSamplingWgsl.js";
 
 export interface IrradianceProbeRecord {
   readonly irradiance: ProbeVector3;
@@ -111,13 +112,35 @@ function sampleLevel(level: ProbeClipmapLevel, base: number, position: ProbeVect
     const offset = record.positionOffset ?? [0, 0, 0], probePosition = cell.map((value, axis) => level.origin[axis]!
       + value * level.spacing + offset[axis]!);
     const visibility = visibilityWeight(record, receiver, probePosition, level.spacing);
-    const weight = trilinear * clamp(record.validity, 0, 1) * visibility;
+    // The hemisphere test uses the ORIGINAL shading point, not the bias-offset receiver:
+    // the bias exists only to avoid self-shadowing in the visibility test, and measuring
+    // the hemisphere from it can push the reference past the probe column (a surface at
+    // the grid edge facing outward would then reject every probe).
+    const normalWeight = probeNormalWeight(probePosition, position, normal);
+    const weight = trilinear * clamp(record.validity, 0, 1) * visibility * normalWeight;
     for (let channel = 0; channel < 3; channel++) sum[channel]! += Math.max(0, record.irradiance[channel]!) * weight;
     total += weight; probes++;
   }
   if (total < DEEP_GI_MIN_SAMPLE_WEIGHT) return { irradiance: [0, 0, 0], weight: 0, probes };
   return { irradiance: [clamp(sum[0]! / total, 0, 65_504), clamp(sum[1]! / total, 0, 65_504),
     clamp(sum[2]! / total, 0, 65_504)], weight: total, probes };
+}
+
+/**
+ * DDGI 法线权重（泄漏抑制核心）：只让位于接收面正半球的探针参与混合。
+ * 标准 DDGI 形式 `pow(max(dot(probeDirection, normal), 0), bias)`，其中 probeDirection
+ * 是接收点指向探针的单位向量；bias 越大越陡峭（越抑制斜向探针）。
+ * 与 Chebyshev 可见性测试互补：后者按距离方差剔除被遮挡的探针，本函数按半球朝向
+ * 剔除"背面探针"——室外探针经此不会把光漏进室内背光面。
+ */
+function probeNormalWeight(probePosition: readonly number[], shadingPoint: readonly number[],
+  normal: readonly number[]): number {
+  const toProbe = probePosition.map((value, axis) => value - shadingPoint[axis]!);
+  const length = Math.hypot(...toProbe);
+  if (!(length > 1e-6)) return 1;
+  const cosine = toProbe.reduce((sum, value, axis) => sum + value * normal[axis]!, 0) / length;
+  if (!(cosine > 0)) return 0;
+  return Math.pow(cosine, DEEP_GI_NORMAL_WEIGHT_BIAS);
 }
 
 function visibilityWeight(record: IrradianceProbeRecord, receiver: readonly number[], probe: readonly number[], spacing: number): number {

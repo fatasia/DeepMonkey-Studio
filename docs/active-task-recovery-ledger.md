@@ -2842,3 +2842,11 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **B3-a 发布物理通道缺陷修复**（`94e7a7a`）：`compileSceneDynamicRuntimePackage` 此前调用 `compileDynamicRuntime` 时不传 physics 选项，导致发布场景的作者物理在 Web 查看器路径被静默丢弃（Native 正常消费该通道）。修复后查看器接受冻结的 objectBindings + coordinateOrigin；physics-only 快照（无动画轨道）也会在共享 presentation 时钟上启动播放；未提供绑定时 fail-closed 报错而非发布丢失物理的场景。新增 2 项钉测，delivery 源码回归 741/741。
 - **Native 全量**：lib 504/504、bin 234/234 通过。
 - **能力扩展计划**（`0baa2c5`）：`docs/handoffs/engine-capability-expansion-plan-2026-09-22.md` 记录 A1–A5/B6/B1/B2/B3 全部任务、现状核查结论（B1 脚本编辑器已有 Monaco+沙箱+静态分析、B2 已有 502 行导演台、B3 已有 Rapier 双端+physics-validate 逐位对拍）、优化方案分期与性能要求；工作区 AGENTS.md 增加"现状核查前置"强制纪律与三个反例。未 push。
+
+### 2026-09-22 A2 切片：DDGI 法线权重（泄漏抑制，ZCode）
+
+- **现状核查（二次修正）**：三线性插值、Chebyshev 可见性、层级混合、边界 smoothstep **均已存在**（`lighting/probeClipmapSampling.ts` 的 CPU 8-tap 与 `probeClipmapSamplingWgsl.ts` 的 GPU 8-tap）。此前计划文档写的"DDGI 三线性待做"是误判，已修正。**真实缺口是法线权重**——DDGI 泄漏抑制的核心。
+- **实现**：三处同步加 `probeNormalWeight` / `deepGiNormalWeight` / `deepGiTextureNormalWeight`，标准 DDGI 形式 `pow(max(dot(toProbe, normal), 0), bias)`，bias=3（新常量 `DEEP_GI_NORMAL_WEIGHT_BIAS`）。半球测试以**原始着色点**为参考（不是 normalBias 偏置后的接收点）——偏置只服务可见性自遮挡，用它测半球会把网格边缘朝外表面的探针全部拒绝（实测发现并修正）。
+- **纹理采样路径重构**：`probeClipmapTextureSamplingWgsl.ts` 原用 `textureSampleLevel`（单次硬件双线性），无法逐探针加权 → 改为 8 次 `textureLoad` + 显式三线性权重。该路径不携带 meanDistance/variance 通道，故**不伪造 Chebyshev**（保留在 storage-record 路径），只加法线权重与 validity。
+- **证据**：泄漏场景专测（亮探针在下半球、暗在上半球 → 朝上接收面读到 0，朝下读到亮值，倾斜法线落在两者之间）；零法线退化用例（权重 no-op）；三线性测试期望按新语义更新（朝上接收面读 y=1 探针）。迁移测试按新语义重写（法线权重使正半球只剩 x=1 列探针）。**回归 1507/1507**（lighting + webgpu 全量）；真机 GPU gate 复跑 TRUE（parity 0 失配、哨兵 0、WGSL 零告警）。性能实测：CPU 参考采样 5.03 µs/次（20 万次 1006ms），GPU 侧为 8 次 textureLoad 无 CPU 开销。
+- **边界**：`DEEP_GI_NORMAL_WEIGHT_BIAS=3` 是经验起点，需在真实场景收敛观察中校准；纹理路径仍无 Chebyshev（需扩展纹理通道承载 meanDistance/variance，属后续切片）；SSGI 与 RT GI 混合仍未做。未 push。

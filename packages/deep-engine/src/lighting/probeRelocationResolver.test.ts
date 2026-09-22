@@ -42,6 +42,9 @@ describe("probe relocation resolver", () => {
     expect(decoded[1]).toBe(0); expect(decoded[2]).toBe(0);
 
     // 采样闭环：只有贴墙探针带偏移，权重向逸出方向（+x 侧接收点）倾斜。
+    // DDGI 语义（2026-09-22 法线权重接入后）：接收面法线 +x，只有 x=1 列探针在正半球
+    // （法线权重 ~1），其余探针被半球测试清零；贴墙探针被 Chebyshev 压制后仍有低残留权重，
+    // 迁移把它移到接收点后可见度恢复 1，总权重显著提升且辐照度由该探针主导。
     const levels = probe.levels.slice(0, 2);
     const baseRecords = (offset: ProbeVector3 | undefined): (IrradianceProbeRecord | undefined)[] =>
       Array.from({ length: 64 }, (_, linear) => linear >= 32 ? undefined : {
@@ -55,11 +58,16 @@ describe("probe relocation resolver", () => {
     const relocated = sampleIrradianceProbeClipmap({ worldPosition: [0.9, 0, 1], worldNormal: [1, 0, 0],
       levels, records: baseRecords([decoded[0]!, decoded[1]!, decoded[2]!]) });
     expect(plain.fallback).toBe(false); expect(relocated.selectedLevel).toBe(0);
-    expect(relocated.irradiance[0]).toBeGreaterThan(plain.irradiance[0]);
-    expect(relocated.irradiance[1]).toBeLessThan(plain.irradiance[1]);
+    // 迁移前贴墙探针被遮挡，权重被 Chebyshev 压到很低；迁移后可见度大幅恢复。
+    // 闭式：三线性权重 1（fraction 已饱和到 corner），可见度 = Chebyshev(0.1 距离, 0.05 均值)
+    // = 1e-4 / (1e-4 + 0.0025) ≈ 0.0385，法线权重 1 → 合计 ≈ 0.0385… 但迁移后探针被移到
+    // 接收点处（距离 ≈ 0 ≤ meanDistance）→ 可见度 1，总权重回到 1 附近。
     expect(relocated.accumulatedWeight).toBeGreaterThan(plain.accumulatedWeight);
-    // 解析闭式：偏移后贴墙探针距离接收点 0 ≤ meanDistance → 可见度权重 1。
-    expect(relocated.accumulatedWeight).toBeCloseTo(1, 5);
+    expect(relocated.accumulatedWeight).toBeGreaterThan(0.85);
+    expect(plain.accumulatedWeight).toBeLessThan(0.1);
+    // 辐照度由贴墙探针（红）主导；未迁移时同色但权重低，颜色比例一致。
+    expect(relocated.irradiance[0]).toBeCloseTo(1, 5);
+    expect(relocated.irradiance[1]).toBeCloseTo(0, 5);
   });
 
   it("is idempotent once probes are safe", () => {

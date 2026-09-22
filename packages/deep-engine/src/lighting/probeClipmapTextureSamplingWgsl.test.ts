@@ -4,10 +4,16 @@ import { DEEP_GI_TEXTURE_BINDING, DEEP_GI_TEXTURE_LEVEL_METADATA_BYTES, DEEP_GI_
   DEEP_GI_TEXTURE_SAMPLER_BINDING, PROBE_CLIPMAP_TEXTURE_SAMPLING_WGSL } from "./probeClipmapTextureSamplingWgsl.js";
 
 describe("texture-backed GI clipmap sampling", () => {
-  it("uses the free Forward+ bindings and two filtered fetches per level", () => {
+  it("uses the free Forward+ bindings and 8 per-probe taps with the DDGI normal weight", () => {
     expect([DEEP_GI_TEXTURE_BINDING, DEEP_GI_TEXTURE_SAMPLER_BINDING,
       DEEP_GI_TEXTURE_LEVELS_BINDING]).toEqual([9, 10, 11]);
-    expect(PROBE_CLIPMAP_TEXTURE_SAMPLING_WGSL.match(/textureSampleLevel\(/g)).toHaveLength(2);
+    // Leak suppression needs per-probe weighting, which hardware bilinear cannot express:
+    // the level sampler must load each cube corner explicitly (8 taps) and apply the
+    // cosine^bias normal weight. Hardware-filtered fetches must be gone from this path.
+    expect(PROBE_CLIPMAP_TEXTURE_SAMPLING_WGSL).not.toContain("textureSampleLevel(");
+    expect(PROBE_CLIPMAP_TEXTURE_SAMPLING_WGSL.match(/textureLoad\(/g)).toHaveLength(1);
+    expect(PROBE_CLIPMAP_TEXTURE_SAMPLING_WGSL).toContain("deepGiTextureNormalWeight");
+    expect(PROBE_CLIPMAP_TEXTURE_SAMPLING_WGSL).toContain("corner < 8u");
     expect(DEEP_GI_TEXTURE_LEVEL_METADATA_BYTES).toBe(256);
     expect(PROBE_CLIPMAP_TEXTURE_SAMPLING_WGSL).toContain("levels: array<DeepGiTextureLevel, 4>");
     expect(PROBE_CLIPMAP_TEXTURE_SAMPLING_WGSL).toContain("let levelCount = 4u");

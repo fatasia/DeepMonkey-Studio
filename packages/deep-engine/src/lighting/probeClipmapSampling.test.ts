@@ -40,8 +40,43 @@ describe("GI Lite probe clipmap sampling", () => {
     ]));
     const sample = sampleIrradianceProbeClipmap({ worldPosition: [0.5, 0.5, 0.5], worldNormal: [0, 1, 0],
       levels: [fine], records });
-    expect(sample).toMatchObject({ irradiance: [0.5, 0.5, 0.5], selectedLevel: 0,
+    // All eight corners stay bounded/fetched, but the DDGI normal weight suppresses the
+    // below-hemisphere probes (y=0), so an upward-facing receiver reads the y=1 probes only.
+    expect(sample).toMatchObject({ irradiance: [0.5, 1, 0.5], selectedLevel: 0,
       cascadeBlend: 0, sampledProbeCount: 8, fallback: false });
+  });
+
+  it("suppresses leaking probes behind the receiver hemisphere", () => {
+    // Leak scenario: bright (outdoor) irradiance sits below the receiver while the
+    // above-hemisphere probes are dark. Without the normal weight the average would be
+    // pulled toward the bright side; DDGI must follow the facing hemisphere.
+    const fine = level(0, [0, 0, 0], 1, [2, 2, 2]);
+    const records = Array.from({ length: 8 }, (_, corner) => {
+      const bits = [corner & 1, (corner >> 1) & 1, (corner >> 2) & 1];
+      return record(bits[1] === 0 ? [10, 10, 10] : [0, 0, 0]);
+    });
+    const upward = sampleIrradianceProbeClipmap({ worldPosition: [0.5, 0.5, 0.5], worldNormal: [0, 1, 0],
+      levels: [fine], records });
+    expect(upward.irradiance).toEqual([0, 0, 0]);
+    const downward = sampleIrradianceProbeClipmap({ worldPosition: [0.5, 0.5, 0.5], worldNormal: [0, -1, 0],
+      levels: [fine], records });
+    expect(downward.irradiance).toEqual([10, 10, 10]);
+    // A tilted normal blends both hemispheres: with the receiver at the cell corner the
+    // above-hemisphere probes stay in front of a 45-degree normal, so the result lands
+    // strictly between the dark upper probes and the bright lower ones.
+    const tilted = sampleIrradianceProbeClipmap({ worldPosition: [0.5, 0.05, 0.5], worldNormal: [0.7071, 0.7071, 0],
+      levels: [fine], records });
+    expect(tilted.irradiance[0]).toBeGreaterThan(0);
+    expect(tilted.irradiance[0]).toBeLessThanOrEqual(10);
+  });
+
+  it("keeps the normal weight a no-op for a degenerate zero normal", () => {
+    const fine = level(0, [0, 0, 0], 1, [2, 2, 2]);
+    const records = Array.from({ length: 8 }, () => record([1, 1, 1]));
+    const sample = sampleIrradianceProbeClipmap({ worldPosition: [0.5, 0.5, 0.5], worldNormal: [0, 0, 0],
+      levels: [fine], records });
+    expect(sample.irradiance).toEqual([1, 1, 1]);
+    expect(sample.fallback).toBe(false);
   });
 
   it("selects the finest containing level and smoothly blends its boundary into the next level", () => {
