@@ -48,6 +48,10 @@ import type { CascadedShadowQualityTier } from "../shadows/shadowQuality.js";
 import { ProbeClipmapPbrController, type ProbeClipmapPbrTarget } from "./probeClipmapPbrController.js";
 import { ProbeSceneRadianceProducer } from "../rayTracing/probeSceneRadianceProducer.js";
 import { EnvironmentAmbientReader, type EnvironmentAmbient } from "./environmentAmbientReader.js";
+import { PbrParticlePass } from "./pbrParticlePass.js";
+import { createGpuParticleRuntimeFromEmitters, submitGpuParticleEmitterFrame } from "./gpuParticleEmitters.js";
+import type { GpuParticleRuntime } from "./gpuParticleRuntime.js";
+import { PBR_DEPTH_FORMAT, PBR_HDR_FORMAT } from "./renderTargets.js";
 import { VisibilityBufferPath } from "./visibilityBufferPass.js";
 import { SoftRasterizeFallback } from "./softRasterizeFallback.js";
 export type { FrameMetrics, PbrRendererOptions, RenderView } from "./pbrRendererTypes.js";
@@ -87,6 +91,10 @@ export class PbrRenderer {
   private environmentAmbient: EnvironmentAmbient = Object.freeze([0, 0, 0]);
   private ambientReader: EnvironmentAmbientReader | undefined;
   private ambientEnvironment: StudioEnvironment | undefined;
+  /** Optional GPU particle simulation; committed binding is consumed one frame later. */
+  private readonly particleRuntime: GpuParticleRuntime | undefined;
+  private readonly particlePass: PbrParticlePass | undefined;
+  private particleBusy = false;
   private readonly visibility: VisibilityBufferPath | undefined;
   private readonly adaptiveQuality: AdaptiveQualityController | undefined;
   private readonly preparationPlan: RenderGraphCompileResult;
@@ -107,6 +115,16 @@ export class PbrRenderer {
     this.diagnostics = new PbrRendererDiagnostics(session);
     this.adaptiveQuality = options.adaptiveQuality ? new AdaptiveQualityController(options.adaptiveQuality) : undefined;
     if (options.adaptiveQuality?.enabled) this.diagnostics.setEnabled(true);
+    if (options.particleEmitters?.length) {
+      const setup = createGpuParticleRuntimeFromEmitters(session,
+        `pbr-particles-${probeClipmapDeviceEpoch(session.device)}`, options.particleEmitters,
+        options.particleRuntime);
+      this.particleRuntime = setup.runtime;
+      this.particlePass = new PbrParticlePass(session, PBR_HDR_FORMAT, PBR_DEPTH_FORMAT);
+    } else {
+      this.particleRuntime = undefined;
+      this.particlePass = undefined;
+    }
     this.probeClipmap = options.probeClipmap === undefined ? undefined
       : new ProbeClipmapPbrController(this, probeClipmapDeviceEpoch(session.device), options.probeClipmap);
     const fallback = pipelines.textureArrayFallback;
@@ -211,7 +229,14 @@ export class PbrRenderer {
     try { this.probeClipmap.syncRenderPacket({ packet, revision }); }
     catch { this.probeClipmapFailed = true; this.probeClipmap.dispose(); }
   }
-  /** Fire-and-forget GI update; a still-busy frame is skipped by budget, never queued unboundedly. */
+  /** Fire-and-forget particle simulation; the previous committed binding is drawn this frame. */
+  private driveParticles(frame: number): void {
+    const runtime = this.particleRuntime;
+    if (!runtime || this.particleBusy) return;
+    this.particleBusy = true;
+    void submitGpuParticleEmitterFrame(runtime, { frame, deltaTime: 1 / 60 })
+      .catch(() => undefined).finally(() => { this.particleBusy = false; });
+  }
   private driveProbeClipmap(frame: number, size: { readonly width: number; readonly height: number },
     cameraPosition: readonly [number, number, number], cameraCut: boolean): void {
     const controller = this.probeClipmap;
@@ -300,6 +325,7 @@ export class PbrRenderer {
     let captureOpen = false;
     try {
       const frameNumber = this.frame + 1;
+      this.driveParticles(frameNumber);
       this.driveProbeClipmap(frameNumber, size, view.eye, history.cameraCut);
       const capturePlan = this.frameCapture ? this.captureForFrame(size, drawProfile.hasTransparent, postProcess, directClear !== undefined) : undefined;
       if (this.frameCapture && capturePlan) {
@@ -377,6 +403,19 @@ export class PbrRenderer {
       this.ground.mesh, this.ground.instance, directClear !== undefined);
     drawCalls += groundStats.drawCalls; triangles += groundStats.triangles;
     main.end();
+    // Particle simulation commits asynchronously; consume the latest committed binding here.
+    // A one-frame simulation-to-render latency avoids queue stalls and keeps particle count
+    // fully GPU-driven (drawIndirect never reads instance count back to JS).
+    const particleBinding = this.particleRuntime?.current?.binding;
+    if (this.particlePass && particleBinding) {
+      this.particlePass.encode({ encoder, colorView: this.targets.hdr, depthView: this.targets.depth,
+        width: size.width, height: size.height,
+        camera: { viewProjection: [...frameState.depthViewProjection],
+          cameraRight: [frameState.worldToView[0]!, frameState.worldToView[4]!, frameState.worldToView[8]!],
+          cameraUp: [frameState.worldToView[1]!, frameState.worldToView[5]!, frameState.worldToView[9]!] },
+        binding: particleBinding });
+      drawCalls++; triangles += 2;
+    }
     const gridTriangles = this.ground.author.encode(encoder, this.targets.hdr, this.targets.depth, frameState.depthViewProjection, frameState.worldToView, view.authorGrid);
     if (gridTriangles) { drawCalls++; triangles += gridTriangles; }
     // P0-2 可见性合成（opt-in）：仅 HDR 管线路径；directDisplay 与 authorGrid 快路径保持逐字节不变。
@@ -560,6 +599,8 @@ export class PbrRenderer {
     this.probeClipmap?.dispose();
     this.probeRadianceProducer?.dispose();
     this.probeRadianceProducer = undefined;
+    this.particlePass?.dispose();
+    this.particleRuntime?.dispose();
     const owners = [this.ground.author, this.outputs, this.environment, this.lighting, this.localShadows,
       this.shadowState, this.previousHiZ, this.transparency, this.postProcess, this.packets, this.targets,
       ...(this.visibility ? [this.visibility] : [])];

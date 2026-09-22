@@ -11,6 +11,7 @@ import type { DeviceResourceMemorySnapshot } from "./deviceResourceMemory.js";
 import type { PbrFrameCaptureOptions } from "./pbrFrameCapture.js";
 import type { AdaptiveQualityHotspotSummary, AdaptiveQualityOptions, AdaptiveQualityState } from "./adaptiveQuality.js";
 import type { ProbeClipmapRuntimeOptions } from "./probeClipmapRuntime.js";
+import type { GpuParticleEmitter, GpuParticleEmitterRuntimeOptions } from "./gpuParticleEmitters.js";
 
 export interface RenderView extends PbrFrameUniformView {
   readonly authorGrid?: AuthorGridView | undefined;
@@ -36,6 +37,9 @@ export interface PbrRendererOptions {
   readonly adaptiveQuality?: AdaptiveQualityOptions;
   /** Omitted keeps probe GI off; present installs the DDGI/surface-cache runtime into the PBR loop. */
   readonly probeClipmap?: ProbeClipmapRuntimeOptions;
+  /** Optional GPU particle emitters; simulation runs one frame ahead and renders indirectly. */
+  readonly particleEmitters?: readonly GpuParticleEmitter[];
+  readonly particleRuntime?: GpuParticleEmitterRuntimeOptions;
 }
 
 export interface FrameMetrics {
