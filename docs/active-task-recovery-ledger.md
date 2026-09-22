@@ -2932,3 +2932,25 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 主线程已提交 `5cf9269` Preview LKG 缓存：错误预览保留上一份成功结果；该合同未接产品 UI/GPU preview，不计产品级 Shader Graph 完成。
 - 共享工作树仍有其他并行 WIP（gpuParticleRuntime/gpuParticleIndirectDcir 等），本轮未触碰；禁止把 WIP 计入进度。F2 RT 像素消费、F3 Native GI、A4 真机画面、A1 真 GPU draw、B6 真实纹理消费均未验证。
 - 下一可执行动作：在支持模型/网络条件满足时重新启动短 A1/B6 lane；否则主线程优先补 A4 真机粒子证据或 F2 Native RT 像素消费的最小 shader probe，仍先查入口再实现。未 push、未 reset/clean/checkout。
+
+### 2026-09-22 20 分钟自检：当前状态、门禁与文档漂移
+
+- 已读取 `deep-monkey-remaining-work-handoff-2026-09-22.md`、`engine-capability-expansion-plan-2026-09-22.md`、本台账，检查 git status/recent commits；当前没有有效运行中的子任务，最近 A1/B6 lane 受模型/TLS失败，未产生代码。
+- 聚焦门禁：Preview LKG、ShaderGraph、B6 static lightmap descriptor、A1 cluster indirect executor、A4 particle pass **44/44**；deep-engine typecheck 通过。
+- 已提交且有真实证据：A1 executor 34/34（模拟设备，不含真实 GPU draw）；B6 descriptor build/serialize/parse 3/3（未接 baker 自动生成或 Web/Native renderer 纹理消费）；A4 粒子产品接线（未取得真机产品画面）；Shader S1-S4（合同/下译/缓存，未接可视化编辑器）。这些只按合同/测试计入，不宣称完整产品能力。
+- 文档漂移：handoff F1/F2/F4 段仍保留旧的“缺口/未完成”文字，台账较新；本轮不大范围重写旧交接，避免覆盖并行文档，后续按切片逐段校准。F7 继续排除。
+- 工作树仍有 `gpuParticleRuntime*`、`gpuParticleIndirectDcir*` 等其他并行 WIP，未触碰、未计入完成；F2 RT 像素消费、F3 Native GI、A1 真 GPU draw、B6 实际纹理消费仍未验证。
+- 下一动作：不重复 A1/B6 合同；主线程优先补 A4 真机 GPU 证据或 F2 RT shader 最小 probe，取决于可用真实入口；每轮只做一个可验证消费者切片。本轮未 push、未 reset/clean/checkout。
+
+### 2026-09-22 极速并行收口记录
+
+- 粒子 WIP 已核查后收口：复用既有 GPU particle runtime/indirect contract，提交 `1bf3067`，粒子 runtime/DCIR 聚焦 **10/10**，apps/web typecheck 通过；未把粒子真机画面证据误报为完成，产品画面仍待真机 runner。
+- F2/F3 短核查子任务正在运行；主线程未重复修改 RT/GI 文件，等待入口与测试命令后再选最小切片。两条任务均为短只读核查，不扩实现范围。
+- 当前自检相关聚焦门禁仍为：ShaderGraph/Preview/A1 indirect/B6 descriptor/particle **44/44**；历史 test-output 副本不计入。未 push、未 reset/clean/checkout。
+
+### 2026-09-22 极速并行自检：粒子 DCIR、F2/F3 入口确认
+
+- 粒子共享 WIP 已复核并提交 `1bf3067`：复用既有 GPU 粒子模拟，DCIR 间接命令合同与 runtime 回归 **10/10**；未伪造真机产品画面。
+- F2 短核查确认：binding 10 `frame_rt` 已存在，驻留/TLAS/绑定已存在，但 `mesh_pass.rs`/`renderer/frame.rs` 仍只传普通 frame bind group，正式 `native_mesh_v1.wgsl` 无 Ray Query；正式像素消费需要独立 RT fragment WGSL + pipeline + opaque pass 分支 + 栅格回退，当前无正式 RT pixel test，暂不改动。
+- F3 短核查确认：Native 只有 specular/diffuse IBL/BRDF LUT ABI、IBL probe on/off 差分；`global_illumination_intensity` 仅走 frame 保留 lane，无探针体积/GI producer。最小方向是复用预留 binding 10/TLAS，新增 indirect producer 和 forward 合成，暂不伪造完成。
+- 聚焦门禁：粒子/Shader/A1/B6 **47/47**，deep-engine typecheck 通过；F7 继续排除；未 push、未 reset/clean/checkout。
