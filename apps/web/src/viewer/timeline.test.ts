@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeAnimationFrameRate, sampleCameraKeyframes, sampleModelAnimationKeyframes, sampleModelKeyframes, snapAnimationTime } from "./timeline";
+import { advanceSceneAnimationTime, normalizeAnimationFrameRate, normalizeSceneAnimationPlaybackRange, sampleCameraKeyframes, sampleModelAnimationKeyframes, sampleModelKeyframes, sampleSceneAnimation, snapAnimationTime } from "./timeline";
 
 describe("timeline sampling", () => {
   it("uses each outgoing camera segment's transition including exact hold boundaries", () => {
@@ -81,5 +81,66 @@ describe("timeline sampling", () => {
     ];
     expect(sampleModelAnimationKeyframes(frames, 4)).toEqual({ clipId: "Weld", time: 2.5 });
     expect(sampleModelAnimationKeyframes(frames, 0)).toEqual({ clipId: "Weld", time: 0.5 });
+  });
+});
+
+describe("scene animation playback range", () => {
+  it("falls back to the full timeline when the range is missing or degenerate", () => {
+    expect(normalizeSceneAnimationPlaybackRange(undefined, 10)).toEqual({ inPoint: 0, outPoint: 10 });
+    expect(normalizeSceneAnimationPlaybackRange({ inPoint: 4, outPoint: 4 }, 10)).toEqual({ inPoint: 0, outPoint: 10 });
+    expect(normalizeSceneAnimationPlaybackRange({ inPoint: 6, outPoint: 2 }, 10)).toEqual({ inPoint: 0, outPoint: 10 });
+    expect(normalizeSceneAnimationPlaybackRange({ inPoint: -2, outPoint: 99 }, 10)).toEqual({ inPoint: 0, outPoint: 10 });
+  });
+
+  it("keeps a valid sub-range clamped into the timeline", () => {
+    expect(normalizeSceneAnimationPlaybackRange({ inPoint: 2, outPoint: 8 }, 10)).toEqual({ inPoint: 2, outPoint: 8 });
+    expect(normalizeSceneAnimationPlaybackRange({ inPoint: -1, outPoint: 5 }, 10)).toEqual({ inPoint: 0, outPoint: 5 });
+    expect(normalizeSceneAnimationPlaybackRange({ inPoint: 2, outPoint: 50 }, 10)).toEqual({ inPoint: 2, outPoint: 10 });
+  });
+
+  it("limits sampleSceneAnimation input to the playback range and absorbs snap overshoot", () => {
+    const animation = { duration: 10, playbackRange: { inPoint: 2, outPoint: 8 }, frameRate: 30, snapToFrames: true };
+    expect(sampleSceneAnimation(animation, 0)).toBe(2);
+    expect(sampleSceneAnimation(animation, 30)).toBe(8);
+    expect(sampleSceneAnimation(animation, 5)).toBe(5);
+    // 出点 7.99 在 30fps 下吸附会溢出到 8.0，必须被拉回区间内。
+    expect(sampleSceneAnimation({ ...animation, playbackRange: { inPoint: 2, outPoint: 7.99 } }, 7.99)).toBe(7.99);
+  });
+
+  it("clamps sampling to the full timeline when no range is set", () => {
+    expect(sampleSceneAnimation({ duration: 4, frameRate: 30, snapToFrames: false }, 99)).toBe(4);
+    expect(sampleSceneAnimation({ duration: 4, frameRate: 30, snapToFrames: false }, -3)).toBe(0);
+  });
+
+  it("advances forward playback and stops at the out point without looping", () => {
+    const range = { inPoint: 2, outPoint: 8 };
+    const running = advanceSceneAnimationTime({ time: 3, delta: 0.5, speed: 2, direction: 1, loop: false, pingPong: false, range });
+    expect(running).toEqual({ time: 4, direction: 1, stop: false });
+    const stopped = advanceSceneAnimationTime({ time: 7.9, delta: 0.2, speed: 1, direction: 1, loop: false, pingPong: false, range });
+    expect(stopped.time).toBe(8);
+    expect(stopped.stop).toBe(true);
+  });
+
+  it("plays in reverse and stops at the in point without looping", () => {
+    const range = { inPoint: 2, outPoint: 8 };
+    const running = advanceSceneAnimationTime({ time: 5, delta: 0.5, speed: 2, direction: -1, loop: false, pingPong: false, range });
+    expect(running).toEqual({ time: 4, direction: -1, stop: false });
+    const stopped = advanceSceneAnimationTime({ time: 2.1, delta: 0.2, speed: 1, direction: -1, loop: false, pingPong: false, range });
+    expect(stopped.time).toBe(2);
+    expect(stopped.stop).toBe(true);
+  });
+
+  it("wraps loop playback inside the range in both directions", () => {
+    const range = { inPoint: 2, outPoint: 8 };
+    expect(advanceSceneAnimationTime({ time: 7.5, delta: 1, speed: 1, direction: 1, loop: true, pingPong: false, range }).time).toBeCloseTo(2.5);
+    expect(advanceSceneAnimationTime({ time: 2.5, delta: 1, speed: 1, direction: -1, loop: true, pingPong: false, range }).time).toBeCloseTo(7.5);
+  });
+
+  it("bounces ping-pong playback between the range bounds once when not looping", () => {
+    const range = { inPoint: 2, outPoint: 8 };
+    const bounced = advanceSceneAnimationTime({ time: 7.5, delta: 1, speed: 1, direction: 1, loop: false, pingPong: true, range });
+    expect(bounced).toEqual({ time: 8, direction: -1, stop: false });
+    const returned = advanceSceneAnimationTime({ time: 2.2, delta: 0.5, speed: 1, direction: -1, loop: false, pingPong: true, range });
+    expect(returned).toEqual({ time: 2, direction: 1, stop: true });
   });
 });

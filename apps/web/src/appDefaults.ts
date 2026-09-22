@@ -62,6 +62,10 @@ export const DEFAULT_POST_PROCESSING: ScenePostProcessingState = {
   ssaoIntensity: 1,
   gtao: true,
   gtaoIntensity: 0.72,
+  screenSpaceReflection: false,
+  ssrSteps: 32,
+  ssrThickness: 0.01,
+  ssrMaxDistance: 2,
   bloom: false,
   bloomStrength: 0.35,
   bloomThreshold: 0.9,
@@ -81,7 +85,9 @@ export const DEFAULT_POST_PROCESSING: ScenePostProcessingState = {
   hue: 0,
   saturation: 0,
   brightness: 0,
-  contrast: 0
+  contrast: 0,
+  temperature: 0,
+  tint: 0
 };
 
 export const DEFAULT_PHYSICS: ScenePhysicsState = {

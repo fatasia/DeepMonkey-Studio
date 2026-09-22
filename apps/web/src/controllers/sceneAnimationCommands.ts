@@ -54,7 +54,18 @@ export function createSceneAnimationCommands(context: SceneEditorControllerConte
   function toggleSceneAnimation() {
     if (!engine) return;
     if (animationPlaying) engine.pauseSceneAnimation();
-    else engine.playSceneAnimation();
+    else {
+      // 播放按钮固定为正向起步，避免上次倒放的方向残留；倒放走独立入口。
+      engine.setSceneAnimationDirection(1);
+      engine.playSceneAnimation();
+    }
+  }
+
+  function reverseSceneAnimation() {
+    if (!engine) return;
+    // 倒放：暂停时从当前区间边界反向起步，播放中立即掉头。
+    engine.setSceneAnimationDirection(-1);
+    if (!animationPlaying) engine.playSceneAnimation();
   }
 
   function deleteKeyframe(id: string) {
@@ -65,5 +76,5 @@ export function createSceneAnimationCommands(context: SceneEditorControllerConte
     });
   }
 
-  return { updateSceneAnimation, addCameraKeyframe, addModelKeyframe, toggleSceneAnimation, deleteKeyframe };
+  return { updateSceneAnimation, addCameraKeyframe, addModelKeyframe, toggleSceneAnimation, reverseSceneAnimation, deleteKeyframe };
 }

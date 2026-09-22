@@ -7,6 +7,7 @@ import { ViewerEngineRuntimeSupport } from "./viewerEngineRuntimeSupport";
 import { updateAnnotationVisualPresentation } from "./sceneOverlayVisuals";
 import { visibleAnnotationLabelIds } from "./annotationLabelLayout";
 import { nextFrameCadence } from "./viewerFrameCadence";
+import { advanceSceneAnimationTime, normalizeSceneAnimationPlaybackRange } from "./timeline";
 import { resolveOrbitCameraRange } from "./cameraFraming";
 import { sceneGridCloseupOpacity } from "./sceneGrid";
 import { updateViewerDeviceSignals } from "./viewerDeviceSignals";
@@ -59,19 +60,20 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
     this.updateCompletedModelAnimations();
     if (this.sceneAnimationPlaying) {
       const speed = this.sceneAnimation.playbackSpeed ?? 1;
-      this.sceneAnimationTime += delta * speed * this.sceneAnimationDirection;
-      if (this.sceneAnimationTime >= this.sceneAnimation.duration || this.sceneAnimationTime <= 0) {
-        if (this.sceneAnimation.pingPong) {
-          this.sceneAnimationTime = THREE.MathUtils.clamp(this.sceneAnimationTime, 0, this.sceneAnimation.duration);
-          this.sceneAnimationDirection *= -1;
-          if (!this.sceneAnimation.loop && this.sceneAnimationDirection > 0) this.pauseSceneAnimation();
-        } else if (this.sceneAnimation.loop) {
-          this.sceneAnimationTime = (this.sceneAnimationTime + this.sceneAnimation.duration) % this.sceneAnimation.duration;
-        } else {
-          this.sceneAnimationTime = this.sceneAnimationDirection > 0 ? this.sceneAnimation.duration : 0;
-          this.pauseSceneAnimation();
-        }
-      }
+      // 区间播放：入点/出点把循环折回、往返反弹与单次停止的边界收敛到 [inPoint, outPoint]，倒放共用同一语义。
+      const range = normalizeSceneAnimationPlaybackRange(this.sceneAnimation.playbackRange, this.sceneAnimation.duration);
+      const advance = advanceSceneAnimationTime({
+        time: this.sceneAnimationTime,
+        delta,
+        speed,
+        direction: this.sceneAnimationDirection > 0 ? 1 : -1,
+        loop: this.sceneAnimation.loop,
+        pingPong: this.sceneAnimation.pingPong ?? false,
+        range,
+      });
+      this.sceneAnimationTime = advance.time;
+      this.sceneAnimationDirection = advance.direction;
+      if (advance.stop) this.pauseSceneAnimation();
       this.applySceneAnimationFrame(this.sceneAnimationTime);
       if (now - this.lastAnimationNotify > 80 || !this.sceneAnimationPlaying) {
         this.lastAnimationNotify = now;

@@ -5,6 +5,8 @@ import type {
   ModelAnimationKeyframeState,
   ModelKeyframe,
   ModelTransform,
+  SceneAnimationPlaybackRange,
+  SceneAnimationState,
   Vector3Value
 } from "@bim-studio/contracts";
 
@@ -17,6 +19,70 @@ export function snapAnimationTime(time: number, frameRate: number | undefined, e
   if (!enabled) return time;
   const fps = normalizeAnimationFrameRate(frameRate);
   return Math.round(time * fps) / fps;
+}
+
+/** 把任意播放区间收敛到合法子区间；越界值夹到时间线内，出点不大于入点时回落整条时间线。 */
+export function normalizeSceneAnimationPlaybackRange(
+  range: SceneAnimationPlaybackRange | undefined,
+  duration: number,
+): SceneAnimationPlaybackRange {
+  const inPoint = Math.min(Math.max(range?.inPoint ?? 0, 0), duration);
+  const outPoint = Math.min(Math.max(range?.outPoint ?? duration, 0), duration);
+  if (!(outPoint > inPoint)) return { inPoint: 0, outPoint: duration };
+  return { inPoint, outPoint };
+}
+
+/** 时间线采样入口：把任意输入时间收敛到播放区间后再交给关键帧采样器，吸附到帧的溢出同样不得越出区间。 */
+export function sampleSceneAnimation(
+  animation: Pick<SceneAnimationState, "duration" | "playbackRange" | "frameRate" | "snapToFrames">,
+  time: number,
+): number {
+  const range = normalizeSceneAnimationPlaybackRange(animation.playbackRange, animation.duration);
+  const snapped = snapAnimationTime(Math.min(Math.max(time, range.inPoint), range.outPoint), animation.frameRate, animation.snapToFrames ?? false);
+  return Math.min(Math.max(snapped, range.inPoint), range.outPoint);
+}
+
+export interface SceneAnimationAdvanceInput {
+  /** 当前播放头（秒）。 */
+  time: number;
+  delta: number;
+  speed: number;
+  /** 播放方向：1 正向，-1 倒放。 */
+  direction: 1 | -1;
+  loop: boolean;
+  pingPong: boolean;
+  /** 已规范化的播放区间，调用方保证 outPoint > inPoint。 */
+  range: SceneAnimationPlaybackRange;
+}
+
+export interface SceneAnimationAdvanceResult {
+  time: number;
+  direction: 1 | -1;
+  /** 到达边界且不再循环时为真，调用方应暂停播放。 */
+  stop: boolean;
+}
+
+/** 推进一帧播放头：循环折回、往返反弹与单次停止都以播放区间为边界，正向与倒放共用同一套语义。 */
+export function advanceSceneAnimationTime(input: SceneAnimationAdvanceInput): SceneAnimationAdvanceResult {
+  const direction = input.direction;
+  let time = input.time + input.delta * input.speed * direction;
+  if (time >= input.range.outPoint || time <= input.range.inPoint) {
+    if (input.pingPong) {
+      time = Math.min(Math.max(time, input.range.inPoint), input.range.outPoint);
+      const flipped = direction > 0 ? -1 : 1;
+      // 非循环往返在回到正向那一刻结束，保持与整条时间线一致的一次往返语义。
+      if (!input.loop && flipped > 0) return { time, direction: flipped, stop: true };
+      return { time, direction: flipped, stop: false };
+    }
+    if (input.loop) {
+      // 双取模把正向与反向的越界都折回区间内，与整条时间线循环的环绕语义一致。
+      const span = input.range.outPoint - input.range.inPoint;
+      time = input.range.inPoint + (((time - input.range.inPoint) % span) + span) % span;
+      return { time, direction, stop: false };
+    }
+    return { time: direction > 0 ? input.range.outPoint : input.range.inPoint, direction, stop: true };
+  }
+  return { time, direction, stop: false };
 }
 
 function clampProgress(value: number): number {

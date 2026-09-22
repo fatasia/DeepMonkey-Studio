@@ -39,4 +39,41 @@ describe("scene animation commands", () => {
     expect(engine.getModelTransform).toHaveBeenCalledWith("track-object");
     expect(setSceneAnimation.mock.calls[0]?.[0].models[0]).toMatchObject({ modelId: "track-object", time: 2 });
   });
+
+  it("reverse play flips direction and starts playback while forward play resets the direction", () => {
+    const engine = { setSceneAnimationDirection: vi.fn(), playSceneAnimation: vi.fn(), pauseSceneAnimation: vi.fn() };
+    const commands = createSceneAnimationCommands({
+      engine,
+      sceneAnimation: structuredClone(DEFAULT_ANIMATION),
+      animationTime: 0,
+      animationPlaying: false,
+      setSceneAnimation: vi.fn(),
+      setMessage: vi.fn(),
+    } as unknown as SceneEditorControllerContext);
+
+    commands.reverseSceneAnimation();
+    expect(engine.setSceneAnimationDirection).toHaveBeenLastCalledWith(-1);
+    expect(engine.playSceneAnimation).toHaveBeenCalledTimes(1);
+
+    commands.toggleSceneAnimation();
+    expect(engine.setSceneAnimationDirection).toHaveBeenLastCalledWith(1);
+    expect(engine.playSceneAnimation).toHaveBeenCalledTimes(2);
+  });
+
+  it("reverse during playback flips direction without restarting or pausing", () => {
+    const engine = { setSceneAnimationDirection: vi.fn(), playSceneAnimation: vi.fn(), pauseSceneAnimation: vi.fn() };
+    const commands = createSceneAnimationCommands({
+      engine,
+      sceneAnimation: structuredClone(DEFAULT_ANIMATION),
+      animationTime: 3,
+      animationPlaying: true,
+      setSceneAnimation: vi.fn(),
+      setMessage: vi.fn(),
+    } as unknown as SceneEditorControllerContext);
+
+    commands.reverseSceneAnimation();
+    expect(engine.setSceneAnimationDirection).toHaveBeenCalledWith(-1);
+    expect(engine.playSceneAnimation).not.toHaveBeenCalled();
+    expect(engine.pauseSceneAnimation).not.toHaveBeenCalled();
+  });
 });
