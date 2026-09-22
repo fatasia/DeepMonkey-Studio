@@ -19,7 +19,6 @@ import { streamAssistantHttp } from "./ai/streamAssistantHttp.js";
 import { AssistantSessionStore } from "./ai/assistantSessionStore.js";
 import { registerAssistantSessionRoutes } from "./ai/assistantSessionRoutes.js";
 import { httpDisconnectScope } from "./httpDisconnectScope.js";
-import { registerCacheManagementRoutes } from "./cacheManagementRoutes.js";
 import { assistantSessionCatalog, resolveAssistantSessionOptions, AssistantSessionOptionError, type AssistantSessionOptions } from "./ai/assistantSessionOptions.js";
 import { mergeAiSettingsDraft, publicAiSettings, resolveAiSettings } from "./ai/aiRuntimeSettings.js";
 import { fetchProviderModels } from "./ai/aiModelCatalog.js";
@@ -70,7 +69,8 @@ export async function registerSystemRoutes(
   dependencies: { assistant?: AssistantService; aiTelemetry?: AiTelemetryRing } = {},
 ): Promise<void> {
   const brandingDirectory = path.join(dataDir, "branding");
-  registerCacheManagementRoutes(app);
+  // 缓存管理路由由 routes.ts 统一注册；此处重复注册会让 Fastify 抛
+  // "Method 'GET' already declared"，发布依赖路由等整包测试因此挂掉。
   if (store.listUsers().length === 0) {
     const now = new Date().toISOString();
     await store.saveUser({

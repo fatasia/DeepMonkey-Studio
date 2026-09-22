@@ -19,6 +19,8 @@ async function openStore() {
 }
 
 describe.skipIf(!tools)("metadata CAS on real isolated PostgreSQL", () => {
+  // 真库并发用例在多 worker 并行时受 PG 初始化与锁等待抖动影响，统一放宽到 60s。
+  vi.setConfig({ testTimeout: 60_000 });
   beforeAll(async () => {
     fixture = await createIsolatedPostgres();
     await fixture.client.query("CREATE TABLE bim_studio_state (id SMALLINT PRIMARY KEY CHECK(id=1), document JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");

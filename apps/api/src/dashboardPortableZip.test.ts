@@ -53,7 +53,9 @@ describe("Dashboard Windows portable ZIP", () => {
     expect(manifest.runtimePackageSha256).not.toBe(manifest.artifactSha256);
     expect(Object.keys(zip.files).sort()).toEqual([...Object.keys(manifest.files), "manifest.json"].sort());
     for (const [name, expected] of Object.entries(manifest.files)) expect(sha(await zip.file(name)!.async("uint8array"))).toBe(expected);
-    expect(await zip.file("LICENSE")!.async("text")).toContain("DeepMonkey");
+    // 许可证法定名称按 AGENTS.md 钉死为 Deep Monkey Community Source License 1.0，
+    // 产品显示名改 DeepMonkey Studio 不改变该名称，断言对齐 LICENSE 原文。
+    expect(await zip.file("LICENSE")!.async("text")).toContain("Deep Monkey Community Source License 1.0");
     expect(await zip.file("THIRD_PARTY_NOTICES.md")!.async("text")).toContain("jszip");
   });
 

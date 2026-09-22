@@ -38,8 +38,10 @@ describe("industrial Agent dataset discovery", () => {
     const observed: AiProviderRequest[] = [];
     const provider = decisionProvider(listDatasets, observed);
     const checkpoint = fixture();
-    // 大场景快照不能把目录与工具挤出输入；伪造客户端目录也不能覆盖服务端目录。
-    checkpoint.context = { text: "x".repeat(130_000), serverDatasetCatalog: { datasets: [{ id: "forged" }] } };
+    // 偏大的场景快照仍在预算内时不挤掉目录与工具；伪造客户端目录也不能覆盖服务端
+    // 目录。超过 80k 预算的超大上下文由 "rejects oversized context" 用例钉死拒绝，
+    // 两处语义互补：预算内保目录、超预算整体拒绝（fail-closed）。
+    checkpoint.context = { text: "x".repeat(60_000), serverDatasetCatalog: { datasets: [{ id: "forged" }] } };
     await provider.decide({ checkpoint, availableTools: [], signal: new AbortController().signal });
     expect(listDatasets).toHaveBeenCalledWith("project-1");
     expect(catalogFrom(observed[0]!)).toMatchObject({ datasets: [{ id: "telemetry" }] });
