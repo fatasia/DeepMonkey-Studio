@@ -20,6 +20,7 @@ export * from "./probeClipmapPlan.js";
 export * from "./probeClipmapResources.js";
 export * from "./probeClipmapSampling.js";
 export * from "./probeClipmapSamplingWgsl.js";
+export * from "./nativeProbeGridPacker.js";
 export * from "./probeClipmapTextureSamplingWgsl.js";
 export * from "./probeClipmapUpdateScheduler.js";
 export * from "./probeClipmapCaptureExecutor.js";
