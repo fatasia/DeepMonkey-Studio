@@ -197,3 +197,62 @@ A4 (粒子/SDF)  A5 (蒙皮)  B1 其余  B2-a/c  B3-b/c  A3 (RT 像素消费)
 ```
 
 **共同纪律**：每个切片完成后必须更新本文件、`docs/active-task-recovery-ledger.md` 与相关 spec；每个切片必须有真机/实测证据，不接受"应该可以"。
+
+---
+
+## 4. Shader / WGSL 一等公民专项（新增，2026-09-22 用户指令）
+
+### 4.1 现状核查（先于任何实现，已完成）
+
+**仓内已有（禁止重复建设）**：
+
+- `packages/deep-engine/src/shader/types.ts` 已有完整 Shader IR：`ShaderProperty`、`ShaderResourceBinding`、`ShaderNode`、`ShaderStageGraph`、`ShaderPass`、`ShaderTechnique`、`DeepShaderAsset`、`ShaderKeyword`、`ShaderVariantPlan`、`ShaderSourceMapEntry`、`ShaderCompileResult`、`ShaderCompilerDataLayout`。
+- `packages/deep-engine/src/shader/compiler.ts` / `compilerAnalysis.ts` / `compilerWgsl.ts` 已有图排序、绑定收集、验证、WGSL 代码生成；`shader/variants.ts` 已有变体规划。
+- `packages/deep-engine/src/shaderAuthoring/` 已有 DeepSL 文本前端、解析器、诊断、编译器、WGSL package adapter、PBR/Unlit/CSM/辅助 pass 适配；约 8,000 行（含测试）。
+- `shaderPresets/` 已有 Standard Surface / Unlit 图预设；`webgpu/shaderPackageExecutor.ts` 已有 shader package 执行；`shaderAbi/` 已有多版本 ABI（V1–V4）。
+- GPU/WGSL 是现有生产主路径：PBR shader、后处理、探针、粒子均为 WGSL 字符串 + WebGPU pipeline，不能再引入 GLSL-first 或第三方商业 shader compiler。
+
+**真实缺口（不重建已有 compiler）**：
+
+1. **无产品级可视化 Shader Graph 编辑器**：仅有 `PlantLiteNodeEditor`（非 shader graph）；没有节点画布、端口拖线、图缩放/框选/撤销、节点搜索。
+2. **无稳定图资产序列化/版本迁移 UI**：现有 `DeepShaderAsset` 是引擎 IR，但没有作者侧 JSON 资产 schema、版本迁移、hash/依赖闭包 UI。
+3. **节点注册与反射不完整**：编译器有 `ShaderNode` union，但没有类似 Babylon `BlockNodeData` / Unity NodeClassCache 的 editor metadata registry（displayName/category/ports/preview/target constraints）。
+4. **无 Blackboard/Property Inspector**：`ShaderProperty` 合同存在，但缺作者侧属性面板、默认值/范围/材质实例覆盖、关键词 UI。
+5. **无 SubGraph / reusable node library**：已有 preset graph 是代码构造，没有可嵌套、可复用、可版本化的作者子图。
+6. **无 Target/SubTarget 图级约束与多 pass 选择 UI**：已有 `ShaderPass`/`ShaderTechnique`/capabilities 合同，但缺类似 Unity Target/SubTarget 的产品选择层；应复用既有 compiler capabilities。
+7. **无节点级预览与错误定位**：已有 compiler diagnostics/source map，但没有节点/端口级错误回显、Naga/validation 输出绑定到图节点、隔离预览材质。
+8. **无图资产的性能/变体预算可视化**：已有 variant plan、binding/layout、source map，缺编辑器中的 shader cost（节点数、纹理采样、varying、变体数、uniform/storage bytes）面板。
+
+### 4.2 外部架构审计结论（只借鉴结构，不复制代码）
+
+- **Babylon Node Editor/NME（Apache 2.0）**：源码中 `BlockNodeData` 把运行时 `NodeMaterialBlock` 映射为编辑器 node data；`ConnectionPointPortData` 统一端口方向、类型兼容性、连接/断开、错误消息；`GlobalState` 持有 NodeMaterial、预览和 build/error observable。其 `packages/tools/nodeEditor/src/graphSystem/` 可借鉴“运行时节点 ↔ 编辑器节点元数据适配层”和独立 Preview/Log 面板。Babylon 另有独立 node-editor、node-geometry-editor、node-particle-editor、node-render-graph-editor 包，说明材质/粒子/渲染图可共享 graph canvas 但保持领域 block registry。
+- **Unity Shader Graph（Unity Graphics 仓库，ShaderGraph 包含独立 LICENSE.md）**：`Editor/Data/Graphs/GraphData.cs` 用 `JsonObject` + `JsonData<T>` 序列化 properties、keywords、dropdowns、categories、nodes，并维护 added/removed/moved 增量集合；`AbstractMaterialNode` 持有 `MaterialSlot`；`MultiJsonInternal` 用类型信息注册/恢复派生 JSON 对象。`Editor/Generation/Target.cs` 把 `IsActive/Setup/GetFields/GetActiveBlocks/GetPropertiesGUI/CollectShaderProperties/ProcessPreviewMaterial/IsNodeAllowedByTarget` 作为 Target 扩展点；`SubTarget.cs` 做管线/材质子目标分层。可借鉴 GraphData/Target/SubTarget/Slot/diagnostic 分层，不复制 C# 实现或序列化格式。
+- **WGSL 结论**：Unity Shader Graph 源码与目录没有 WGSL/WebGPU backend 证据，不应把 Unity 的代码生成当 WGSL 方案；Babylon 的现有 NodeMaterial runtime/Node Editor 可参考 WebGPU 领域分层，但本仓库的 WGSL compiler 已有且应继续作为一等公民。
+
+### 4.3 最小增量架构（性能优先，不重写 compiler）
+
+**Phase S1：作者图合同 + registry（3–5 天）**
+
+- 新增 `packages/deep-engine/src/shaderGraph/`（仅合同与纯逻辑，单文件 <300 行）：
+  - `graphTypes.ts`：`ShaderGraphAssetV1`、`ShaderGraphNode`（引用既有 `ShaderNode`）、`ShaderGraphEdge`、`ShaderGraphProperty`、`ShaderGraphTarget`、`ShaderGraphDiagnostic`。
+  - `nodeRegistry.ts`：节点元数据 registry（display/category/ports/type/target/preview），编译时把 graph asset lowering 到既有 `ShaderStageGraph`，**不新增第二个 compiler**。
+  - `graphSerialization.ts`：canonical JSON、schema version、迁移、SHA-256 dependency/hash manifest。
+  - `graphBudget.ts`：节点/边/采样/varying/variant/绑定预算，复用既有 compiler analysis。
+- 测试：canonical determinism、版本迁移、未知节点 fail-closed、端口类型矩阵、预算边界、lowering 与既有 preset graph 字节/语义对拍。
+
+**Phase S2：编辑器（5–8 天）**
+
+- 复用现有 `PlantLiteNodeEditor` 的画布交互基础（先核查是否可泛化），新增 `ShaderGraphEditor`：节点/端口/拖线/搜索/框选/撤销；registry 驱动渲染，不把节点组件写死。
+- Blackboard 复用 `ShaderGraphAssetV1.properties`，Inspector 写入单一资产入口；错误面板消费既有 source map + compiler diagnostics。
+- 只做 Web 编辑器，不在 Native 重建 UI。
+
+**Phase S3：预览/Target/SubGraph（5–8 天）**
+
+- Preview：复用 `PbrRenderer`/离屏 frame capture，图变更增量 compile + debounce 300ms；失败保留上一个可用 shader（LKG），不黑屏。
+- Target/SubTarget：只做已有生产 pass 的 target（PBR forward/depth/shadow/picking + unlit），把 `ShaderTargetRequirements`/`ShaderPass` 作为唯一权限来源；未知 capability 显式阻断。
+- SubGraph：资产引用 + canonical dependency closure，不复制 node，编译前展开到既有 IR，循环依赖 fail-closed。
+
+**性能硬指标**：
+
+- 图编译 debounce ≤300ms；100 节点 lowering P95 ≤16ms（不含 GPU pipeline 编译）；变体数量超预算在编辑器阻断；只重编译受影响 pass；Preview 使用 LKG，不阻塞主渲染帧。
+- 运行时不动态解析 JSON、不保留编辑器 node object；资产发布前 canonical hash + 依赖闭包，运行包使用已编译 WGSL/package。
