@@ -3316,3 +3316,14 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **a01x Babylon 覆盖度核对验收通过**（5784a286）：轨道结构完整（5 轮冷热交替/三 hash/双侧 visual-similarity+criteria）但**判定 invalid/withheld**——视觉相似度中位 0.8376 < 合同下限 0.92，排名按合同抑制，不得宣称对 Babylon 领先。缺失指标：GPU 时间戳（babylon timestampSupport=false）、输入延迟、冷启动、加载、长稳、进程内存。schema 与 bevy 轨道不同构（a01x v1 camelCase records/pass 层级），聚合需适配层。
 - **满载补位**：空闲代理派 a01x 适配层（camelCase records → paired-summary 输入 + 判定抑制显著标注，真实数据实跑验证）；另一代理 I3 junction+碰撞在跑。
 - 该代理中途排掉的实测坑（esbuild 须 CLI+splitting、FreeCamera 默认朝 +Z、headless 须 whenReadyAsync、WebGPU 截图须 RTT 读回）留在留置代码供 a01x 链路复用，不入库。
+
+### 2026-09-23 a01x 配对适配层落地（V4 补位子代理，f9813569）
+
+- **交付**：`scripts/benchmarks/a01x-paired-adapter.mjs`（新，204 行）——把 a01x pass 文件（records[].rounds[] camelCase）转为 paired-summary 可消费的 paired-raw 形状：显式指标映射 cpu/gpu-frame-p50/p95/p99（null 原样保留=如实缺失，非指标元数据不搬运），轮级 visualSimilarity 注入 candidate 侧 `visual-similarity`（reference 侧不回填，自比=1 无信息量），evaluation invalid/withheld 翻译为 suppression（理由取 benchmark.criteria 未通过项+case.criteria 合同阈值），`--evidence` 可选补充 stability 透传与 referenceVersion；pass-1/pass-2 各自独立适配并在 source 标注。`paired-summary.mjs`（151 行）主体包为导出 `summarizeEvidence`，三处有输入才输出的扩展（suppression 首行抑制标注/stability 行/extra 指标追加行），bevy 输入输出经合成样本 diff 逐字节一致。
+- **真实数据实跑**（pass-1 + evidence，报告 `test-output/a01x-babylon-pairing-20260920-r1/paired-summary-adapter.md`，gitignore 不入库）：报告首行显著标注**【判定抑制】invalid/withheld——排名按合同抑制（visual-similarity 中位 0.837636 低于合同下限 0.92；issues: visual fidelity gate failed）**；candidate cpu-frame-p95 **0.200/0.380 (5轮)**、visual-similarity **0.838/0.838 (5轮)**、reference cpu-frame-p99 0.600/2.380；缺失清单 gpu-frame 三分位+frame-p99+input-latency+cold-start+load-to-interactive 双侧全缺、visual-similarity reference 侧未采集、稳定性未测量（可用 pass 少于 2）。独立重算 3 项指标值与报告一致（不经适配器，防循环论证）；--summary 直连与两步式输出一致（仅输入标签行如实不同）；pass-2 适配验证 visualSim=0 如实透传+抑制激活。
+- **诚实边界**：pass-2 的 visualSimilarity=0 按上游数据原样透传（其"测量失败 vs 真实为 0"语义由上游 schema 决定，适配层不解读）；paired-summary 的 ENOENT 从裸栈改为人话报错（退出码均非零，行为兼容）；records>1 的 pass 形状 fail loud 未做聚合（实际 schema 每 pass 一 record）；台账条目未单独提交（任务指定 git add 仅两个脚本文件）；未触碰 babylon-web/ 留置 WIP 与 lifecycle.rs 等并行在途文件；未 push。
+
+### 2026-09-23 30 分钟自检（第十八轮）：a01x 适配层验收
+
+- **a01x 适配层验收通过**（f9813569）：适配器显式映射表（null 原样保留不虚构、visualSimilarity 只注入 candidate 侧不回填 reference、invalid/withheld→suppression 携带合同阈值理由）；paired-summary bevy 兼容用合成样本改前/改后 diff 逐字节一致证明；真实数据独立重算 3 项防循环论证全一致；失败路径（无参/非法形状/未知参数）退出码实测。报告关键数字：Deep cpu-frame-p95 0.200/0.380ms、visual-similarity 0.838<0.92 抑制激活、GPU 三分位/输入延迟/冷启动/长稳/内存双侧全缺。主线程复跑 bevy 输出正常。
+- **满载补位**：空闲代理派 a01x 进程内存+长稳采集接线（复用 run-windows-process-metrics.ps1 挂进 a01x 链路 processMetrics，让适配层 stability/内存行有真实数据）；另一代理 I3 junction+碰撞在跑。
