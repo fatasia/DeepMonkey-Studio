@@ -1,4 +1,6 @@
 
+- 2026-09-22 B6 静态光照最小消费切片：复用已验证 `RuntimeStaticLightmapDescriptor` 与运行包纹理资源，不重建 baker。Web 运行包绑定新增 UV0/UV1 存在性 fail-closed；Native 运行包加载器新增静态光照描述符、纹理语义/尺寸/SHA-256/UV 校验入口；Web roundtrip 与缺纹理/hash/UV 回归 24 项通过，Web tsc 通过。Native cargo check 被并行域既有 `probe_gi_abi` bin 导入错误阻断；未提交、未 push。
+
 - 2026-09-22 B3-b 物理能力扩展收口：复用既有 Rapier 固定步进宿主与运行包，不重建物理底座。`PhysicsBodyType`/场景验证/Deep runtime v3/Native runtime 校验贯通 `kinematic`；Web 使用 `kinematicPositionBased` 并挂载 Rapier 角色控制器，Native 使用 `kinematic_position_based` 消费刚体但角色控制器明确 `degraded`（Native 未调用 Rapier 控制器 API）。未知类型、角色字段错配和非法参数 fail-closed。Web 物理 19 项、Deep runtime 8 项、contracts 18 项、Native native_physics 4 项、physics-validate 19 项及 Web tsc/Native cargo check 通过；固定 1/60 与 0.2s 追赶上限无回退。16384 bodies ≤4ms 尚未取得新实测，继续列项目级性能后验收。
 ## 2026-09-21 产品复盘与自研引擎对等持续目标
 
@@ -2985,3 +2987,5 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - Web `probeNativeAbiGolden.test.ts` 新增跨端 golden：`packIrradianceProbeRecord` 输出 12 个 f32/96B，字段顺序与 Native `probe_gi_abi` 逐字节一致，保留区全零，重复 pack 字节确定性。
 - 证据：Web probe ABI + sampling **10/10**（含既有采样测试）、deep-engine typecheck 通过；Native `probe_gi_abi` **6/6**、cargo check --lib 通过。F3 当前完成的是 ABI/预算/旧包兼容合同切片。
 - 未完成且明确保留：Native probe volume 纹理、binding、producer、PBR GI 混合、动态更新、设备恢复；不能把 ABI 对拍称为 Native GI 画面消费。F2 RT 像素消费同样仍阻断（无正式 RT fragment pipeline/pixel test）。
+
+- 2026-09-22 F3 Native probe storage 最小切片：新增 renderer-owned 96B probe storage/bind 合同；空场景与旧包不分配，记录校验/预算 fail-closed。尚未接 shader/producer；cargo test/check 被仓库既有 runtime_package 编译错误阻断，未提交。

@@ -18,7 +18,8 @@ describe("static lightmap runtime descriptor", () => {
       data: new Uint8Array([255, 255, 255, 255]) };
     env.staticLightmap = { ...env.staticLightmap, width: 1, height: 1,
       textureHash: { algorithm: "sha256", value: runtimeContentSha256({ ...texture, data: Array.from(texture.data) }) } };
-    const packet = { geometries: [], materials: [], instances: [], textures: [texture] } as never;
+    const geometry = { id: "geo", revision: 1, vertices: new Float32Array([0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]), uv1: new Float32Array([0, 0, 1, 0, 0, 1]), indices: new Uint32Array([0, 1, 2]) };
+    const packet = { geometries: [geometry], materials: [], instances: [], textures: [texture] } as never;
     const value = buildDeepRuntimePackage({ packageId: "lightmap", packageVersion: "1.0.0", renderPacket: { id: "scene", revision: 1, value: packet }, environment: env });
     expect(value.payloads["scene.environment"]).toMatchObject({ staticLightmap: env.staticLightmap });
     expect(parseDeepRuntimePackage(JSON.stringify(value)).valid).toBe(true);
@@ -28,6 +29,10 @@ describe("static lightmap runtime descriptor", () => {
     const absent = { ...env, staticLightmap: { ...env.staticLightmap, textureId: "absent" } };
     expect(() => buildDeepRuntimePackage({ packageId: "lightmap", packageVersion: "1.0.0",
       renderPacket: { id: "scene", revision: 1, value: packet }, environment: absent })).toThrow(/missing/);
+    const noUv = { ...env, staticLightmap: { ...env.staticLightmap, uvSet: 0 } };
+    const noUvGeometry = { ...geometry }; delete (noUvGeometry as { uv0?: Float32Array; uv1?: Float32Array }).uv1;
+    expect(() => buildDeepRuntimePackage({ packageId: "lightmap", packageVersion: "1.0.0",
+      renderPacket: { id: "scene", revision: 1, value: { ...packet, geometries: [noUvGeometry] } }, environment: noUv })).toThrow(/UV set/);
   });
 
   it("rejects invalid hash, UV set and dimensions fail-closed", () => {

@@ -1,6 +1,30 @@
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::fog::FogSettings;
+use crate::runtime_package::runtime_content_sha256;
+
+/// 已验证的静态光照贴图描述符；仅绑定运行包中的真实纹理与 UV 流。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub(super) struct StaticLightmapDescriptor {
+    schema: String,
+    schema_version: u32,
+    texture_id: String,
+    texture_hash: ContentHash,
+    uv_set: u8,
+    color_space: String,
+    intensity: f64,
+    width: u32,
+    height: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ContentHash {
+    algorithm: String,
+    value: String,
+}
 
 /// 解码后的纯色环境：作者背景色（已抵消固定 ACES）与可选作者雾、作者色彩分级。
 #[derive(Debug, Clone, Copy)]
@@ -8,6 +32,82 @@ pub(super) struct DecodedSolidEnvironment {
     pub(super) background: [f64; 3],
     pub(super) fog: Option<FogSettings>,
     pub(super) grading: Option<crate::author_grading::AuthorGrading>,
+}
+
+pub(super) fn validate_static_lightmap(
+    environment: &Value,
+    render_packet: &Value,
+) -> Result<Option<StaticLightmapDescriptor>, String> {
+    let Some(raw) = environment.get("staticLightmap") else {
+        return Ok(None);
+    };
+    let descriptor: StaticLightmapDescriptor = serde_json::from_value(raw.clone())
+        .map_err(|error| format!("static lightmap descriptor: {error}"))?;
+    if descriptor.schema != "deep-engine.static-lightmap"
+        || descriptor.schema_version != 1
+        || descriptor.texture_id.is_empty()
+        || descriptor.texture_hash.algorithm != "sha256"
+        || !descriptor
+            .texture_hash
+            .value
+            .chars()
+            .all(|value| value.is_ascii_hexdigit())
+        || descriptor.texture_hash.value.len() != 64
+        || descriptor.uv_set > 1
+        || !matches!(descriptor.color_space.as_str(), "linear" | "srgb")
+        || !descriptor.intensity.is_finite()
+        || !(0.0..=64.0).contains(&descriptor.intensity)
+        || descriptor.width == 0
+        || descriptor.height == 0
+        || descriptor.width > 16_384
+        || descriptor.height > 16_384
+    {
+        return Err("invalid static lightmap descriptor".into());
+    }
+    let textures = render_packet
+        .get("textures")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "static lightmap render packet textures are missing".to_string())?;
+    let texture = textures
+        .iter()
+        .find(|value| value.get("id").and_then(Value::as_str) == Some(&descriptor.texture_id))
+        .ok_or_else(|| {
+            format!(
+                "static lightmap texture {} is missing",
+                descriptor.texture_id
+            )
+        })?;
+    let semantic = texture.get("semantic").and_then(Value::as_str);
+    if !matches!(semantic, Some("occlusion") | Some("emissive")) {
+        return Err("static lightmap texture must use occlusion or emissive semantic".into());
+    }
+    if texture.get("width").and_then(Value::as_u64) != Some(u64::from(descriptor.width))
+        || texture.get("height").and_then(Value::as_u64) != Some(u64::from(descriptor.height))
+    {
+        return Err("static lightmap texture dimensions differ from descriptor".into());
+    }
+    if runtime_content_sha256(texture) != descriptor.texture_hash.value {
+        return Err("static lightmap texture hash does not match descriptor".into());
+    }
+    let key = if descriptor.uv_set == 0 { "uv0" } else { "uv1" };
+    let has_uv = render_packet
+        .get("geometries")
+        .and_then(Value::as_array)
+        .is_some_and(|geometries| {
+            geometries.iter().any(|geometry| {
+                geometry
+                    .get(key)
+                    .and_then(Value::as_array)
+                    .is_some_and(|values| values.len() >= 6)
+            })
+        });
+    if !has_uv {
+        return Err(format!(
+            "static lightmap UV{} is missing",
+            descriptor.uv_set
+        ));
+    }
+    Ok(Some(descriptor))
 }
 
 /// 天气雾合同 v1（见 web 侧 compileSceneWeatherFog）：exp2 唯一合法 kind，
@@ -188,7 +288,9 @@ pub(super) fn decode(
         .color_grading
         .map(|grading| {
             grading.grading().map_err(|error| {
-                super::RuntimePackageError(format!("solid environment author color grading: {error}"))
+                super::RuntimePackageError(format!(
+                    "solid environment author color grading: {error}"
+                ))
             })
         })
         .transpose()?;
@@ -350,7 +452,9 @@ mod tests {
         let grading = decoded.grading.expect("v9 declares author color grading");
         assert_eq!(
             grading.pack(),
-            [1.0, 0.0, 1.0, 0.0, 30.0, 0.5, -0.25, 0.1, 0.8, -0.4, 0.0, 0.0]
+            [
+                1.0, 0.0, 1.0, 0.0, 30.0, 0.5, -0.25, 0.1, 0.8, -0.4, 0.0, 0.0
+            ]
         );
         // temperature/tint 缺省 = 精确中性通道，与显式 0 等价。
         let mut minimal = grading_source();
@@ -359,14 +463,21 @@ mod tests {
         let decoded = decode(&minimal, "scene.environment", 1).unwrap();
         assert_eq!(
             decoded.grading.unwrap().pack(),
-            [1.0, 0.0, 1.0, 0.0, -45.0, 0.25, 0.05, 0.05, 0.0, 0.0, 0.0, 0.0]
+            [
+                1.0, 0.0, 1.0, 0.0, -45.0, 0.25, 0.05, 0.05, 0.0, 0.0, 0.0, 0.0
+            ]
         );
         // lighting 与 fog 在 v9 仍可选（studio 语义延续）。
         let mut with_light = grading_source();
         with_light["lighting"] = serde_json::json!({"direction":[0,1,0],"radiance":[0,0,0],
             "exposure":1.05,"shadows":false});
         assert!(decode(&with_light, "scene.environment", 1).is_ok());
-        assert!(decode(&grading_source(), "scene.environment", 1).unwrap().fog.is_some());
+        assert!(
+            decode(&grading_source(), "scene.environment", 1)
+                .unwrap()
+                .fog
+                .is_some()
+        );
         // 六通道全零也是合法 v9（作者显式中性），pack 恒中性。
         let mut neutral = grading_source();
         neutral["colorGrading"] = serde_json::json!({"hue":0,"saturation":0,

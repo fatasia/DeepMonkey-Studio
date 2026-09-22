@@ -146,6 +146,14 @@ export function validateRuntimeStaticLightmapBinding(environment: unknown, rende
     `${path}.staticLightmap.textureId`, "Static lightmap texture must use an occlusion or emissive slot.");
   requireValue(textureObject.width === descriptor.width && textureObject.height === descriptor.height,
     `${path}.staticLightmap`, "Static lightmap dimensions differ from the texture resource.");
+  const uvSet = descriptor.uvSet;
+  const geometries = array(packet.geometries, "$.renderPacket.geometries");
+  const hasUv = geometries.some((candidate: unknown) => {
+    const geometry = record(candidate, "$.renderPacket.geometries[]");
+    const values = geometry[uvSet === 0 ? "uv0" : "uv1"];
+    return Array.isArray(values) && values.length >= 6;
+  });
+  requireValue(hasUv, `${path}.staticLightmap.uvSet`, "Static lightmap UV set is missing from the render packet geometry.");
   requireValue(runtimeContentSha256(textureObject) === record(descriptor.textureHash, `${path}.staticLightmap.textureHash`).value,
     `${path}.staticLightmap.textureHash`, "Static lightmap texture hash does not match the render packet.");
 }

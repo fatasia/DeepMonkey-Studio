@@ -46,9 +46,18 @@ pub(super) fn decode(
         .map(|id| decode_dynamic_runtime(&package, id))
         .transpose()?;
     let environment = decode_environment(&package, &package.entrypoints.environment)?;
+    solid_environment::validate_static_lightmap(
+        payload(&package, &package.entrypoints.environment)?,
+        payload(&package, render_id)?,
+    )
+    .map_err(RuntimePackageError)?;
     let solid_environment = decode_background(&package, &package.entrypoints.environment)?;
     let background = solid_environment.as_ref().map(|decoded| decoded.background);
-    let fog = solid_environment.and_then(|decoded| decoded.fog);
+    let fog = solid_environment.as_ref().and_then(|decoded| decoded.fog);
+    // v9 作者色彩分级：仅纯色环境 v9 档声明时存在，旧包恒 None（精确中性）。
+    let author_grading = solid_environment
+        .as_ref()
+        .and_then(|decoded| decoded.grading);
     let lighting = if background.is_some() {
         solid_environment::lighting(payload(&package, &package.entrypoints.environment)?)
     } else {
@@ -92,6 +101,7 @@ pub(super) fn decode(
         background,
         lighting,
         fog,
+        author_grading,
         shader_packages,
         material_bindings: package.material_bindings,
         dynamic_runtime,
@@ -131,6 +141,15 @@ fn decode_environment(
 ) -> Result<crate::ibl::PreparedIblEnvironment, RuntimePackageError> {
     let descriptor = descriptor(package, id, RuntimeResourceKind::IblEnvironment)?;
     if decode_background(package, id)?.is_some() {
+        // v8/v9 都是内置 IBL 的 studio 语义（v9 仅追加作者色彩分级）。
+        if payload(package, id)?
+            .get("schemaVersion")
+            .and_then(Value::as_u64)
+            .map(|version| version == 8 || version == 9)
+            .unwrap_or(false)
+        {
+            return Ok(builtin_default_environment());
+        }
         if let Some(ibl) = payload(package, id)?.get("ibl") {
             return super::prefiltered_ibl::decode(ibl, descriptor).map_err(RuntimePackageError);
         }
