@@ -24,6 +24,7 @@ import { captureSceneThumbnail } from "../studio/sceneThumbnailCapture";
 import { workspaceSaveFailureGuidance } from "../studio/workspaceSaveProtection";
 import { createWorkspaceRecoveryDraft, deleteWorkspaceRecoveryDraft, writeWorkspaceRecoveryDraft } from "../studio/workspaceRecoveryStore";
 import { normalizeSceneCoordinates } from "../viewer/sceneCoordinates";
+import { normalizeSceneEngineeringAnalysis } from "../viewer/engineeringAnalysisState";
 import { createBrowserCooperativeWorkScheduler } from "../cooperativeWorkScheduler";
 import type { ScenePersistenceControllerContext } from "./scenePersistenceControllerContext";
 import { shouldRecycleWebGpuRenderer, webGpuSceneReplacementThreshold } from "../viewer/webGpuRendererLifecyclePolicy";
@@ -77,6 +78,7 @@ export function createScenePersistenceController(context: ScenePersistenceContro
     setNavigationSettings,
     setPhysics,
     setPostProcessing,
+    setEngineeringAnalysis,
     setRevision,
     setRendererGeneration,
     setRendererSwitching,
@@ -96,6 +98,7 @@ export function createScenePersistenceController(context: ScenePersistenceContro
     setSelectedLightId,
     setSelectedSpace,
     setSelectionSets,
+    setRootLayerOrder,
     setViewerLoadState,
     setWeather,
   } = context;
@@ -239,6 +242,7 @@ export function createScenePersistenceController(context: ScenePersistenceContro
       setSelectedSpace(undefined);
       setSceneOrganizationSelection(new Set());
       setSelectionSets(structuredClone(scene.selectionSets ?? []));
+      setRootLayerOrder?.(scene.rootLayerOrder ? structuredClone(scene.rootLayerOrder) : undefined);
       setLastDeletedSelectionSet(undefined);
       const loadSceneModel = async (item: SceneSnapshot["models"][number]) => {
         const record = sceneProject.models.find((model) => model.id === getSceneModelAssetId(item));
@@ -294,6 +298,8 @@ export function createScenePersistenceController(context: ScenePersistenceContro
       const nextPostProcessing = { ...DEFAULT_POST_PROCESSING, ...scene.postProcessing };
       const nextPhysics = { ...DEFAULT_PHYSICS, ...scene.physics, gravity: { ...DEFAULT_PHYSICS.gravity, ...scene.physics?.gravity } };
       const nextDashboard = normalizeDashboardState(scene.dashboard);
+      // P5/P7：净空/限高规则与 QTO 分类口径随场景恢复；未知字段拒绝、非法条目丢弃。
+      const nextEngineeringAnalysis = normalizeSceneEngineeringAnalysis(scene.engineeringAnalysis);
       engine.setWeather(nextWeather);
       engine.setGlobalLighting(nextLighting);
       engine.setSceneEnvironment(nextEnvironment);
@@ -310,6 +316,7 @@ export function createScenePersistenceController(context: ScenePersistenceContro
       setPostProcessing(nextPostProcessing);
       setPhysics(nextPhysics);
       setSceneDashboard(nextDashboard);
+      setEngineeringAnalysis(nextEngineeringAnalysis);
       setAnimationTime(0);
       setAnimationPlaying(false);
       const nextClipping = scene.clipping ?? DEFAULT_CLIPPING;

@@ -4,6 +4,7 @@ import type { SceneArtifactOptions } from "./scenePublicationArtifactRecord";
 import type { SceneArtifactRunResult } from "./scenePublicationArtifactRunner";
 import type { PreparedSceneClientPackage } from "../delivery/sceneClientPackage";
 import type {
+  SceneRootLayerRef,
   ApplicationDocument,
   CameraConstraintsState,
   CameraViewState,
@@ -18,6 +19,7 @@ import type {
   SceneCoordinateSystemState,
   SceneDashboardState,
   SceneDataBindingState,
+  SceneEngineeringAnalysisState,
   SceneEnvironmentState,
   SceneInteractionScriptState,
   ScenePhysicsState,
@@ -58,10 +60,13 @@ export interface ScenePersistenceControllerContext {
   defaultCameraViewId: string | undefined;
   sceneCoordinates: SceneCoordinateSystemState;
   sceneDashboard: SceneDashboardState;
+  engineeringAnalysis: SceneEngineeringAnalysisState;
   sceneDataBindings: SceneDataBindingState[];
   sceneAssetBindings: SceneAssetBindingState[];
   sceneInteractions: SceneInteractionScriptState[];
   selectionSets: SceneSelectionSetState[];
+  rootLayerOrder?: SceneRootLayerRef[] | undefined;
+  setRootLayerOrder?: Setter<SceneRootLayerRef[] | undefined>;
   configuredDefaultEnvironment: SceneEnvironmentState;
   studioPublishMode: NonNullable<SceneSnapshot["publicationMode"]>;
   studioPublishPerformance: NonNullable<SceneSnapshot["publicationPerformance"]>;
@@ -106,6 +111,7 @@ export interface ScenePersistenceControllerContext {
   setNavigationSettings: Setter<NavigationSettingsState>;
   setPhysics: Setter<ScenePhysicsState>;
   setPostProcessing: Setter<ScenePostProcessingState>;
+  setEngineeringAnalysis: Setter<SceneEngineeringAnalysisState>;
   setProject: Setter<ProjectRecord | undefined>;
   setProjects: Setter<ProjectRecord[]>;
   setRevision: Setter<number>;

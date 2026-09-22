@@ -1,7 +1,10 @@
-import type { SceneSelectionSetState } from "@bim-studio/contracts";
+import type { SceneRootLayerRef, SceneSelectionSetState } from "@bim-studio/contracts";
+import { moveSceneRootLayers, normalizeSceneRootLayerOrder } from "../components/sceneRootLayerOrder";
 import { translate as tr } from "../i18n";
 import type { SceneEditorControllerContext } from "./sceneEditorControllerContext";
 import { synchronizeSelectionFromOutliner } from "./sceneSelectionSynchronization";
+import { selectLayerIds, visibleLayerIds, type LayerSelectionIntent } from "../components/layerSelection";
+import { createSceneRootEntryMover } from "./sceneRootEntryCommands";
 
 /** 场景树、选择集和编组命令；只改变组织状态，不持有页面 UI 状态。 */
 export function createSceneOrganizationCommands(context: SceneEditorControllerContext) {
@@ -37,27 +40,13 @@ export function createSceneOrganizationCommands(context: SceneEditorControllerCo
 
   function selectSceneOrganizationObject(
     id: string,
-    options: { additive?: boolean; range?: boolean } = {},
+    options: LayerSelectionIntent = {},
   ) {
-    const orderedIds = sceneOrganizationObjects.map((item) => item.id);
+    const available = new Set(sceneOrganizationObjects.map(item => item.id));
+    const orderedIds = options.orderedIds?.filter(id => available.has(id)) ?? [...available];
     if (!orderedIds.includes(id)) return;
 
-    let requestedIds: string[];
-    if (options.range) {
-      const currentIds = [...sceneOrganizationSelection].filter((itemId) => orderedIds.includes(itemId));
-      const anchorId = currentIds.at(-1) ?? id;
-      const anchorIndex = orderedIds.indexOf(anchorId);
-      const targetIndex = orderedIds.indexOf(id);
-      const rangeIds = orderedIds.slice(Math.min(anchorIndex, targetIndex), Math.max(anchorIndex, targetIndex) + 1);
-      requestedIds = options.additive ? [...new Set([...currentIds, ...rangeIds])] : rangeIds;
-    } else if (options.additive) {
-      requestedIds = [...sceneOrganizationSelection];
-      const index = requestedIds.indexOf(id);
-      if (index >= 0) requestedIds.splice(index, 1);
-      else requestedIds.push(id);
-    } else {
-      requestedIds = sceneOrganizationSelection.size === 1 && sceneOrganizationSelection.has(id) ? [] : [id];
-    }
+    const requestedIds = selectLayerIds(orderedIds, [...sceneOrganizationSelection].filter(id => available.has(id)), id, options, options.anchorId);
     replaceSceneOrganizationSelection(requestedIds);
   }
 
@@ -130,27 +119,51 @@ export function createSceneOrganizationCommands(context: SceneEditorControllerCo
     commitOrganizationChange(`创建编组“${next.name}”`);
   }
 
-  function moveSceneObjectsToGroup(ids: string[], groupId?: string, beforeObjectId?: string) {
-    const moving = [...new Set(ids)].filter((id) => sceneOrganizationObjects.some((item) => item.id === id && !item.locked));
+  function moveSceneObjectsToGroup(ids: string[], groupId?: string, beforeObjectId?: string, position: "before" | "after" = "before") {
+    const requested = new Set(ids);
+    if (sceneOrganizationObjects.some(item => requested.has(item.id) && item.locked)) return;
+    if (beforeObjectId && sceneOrganizationObjects.some(item => item.id === beforeObjectId && item.locked)) return;
+    const destination = groupId ? selectionSets.find(item => item.kind === "group" && item.id === groupId) : undefined;
+    if (destination && destination.objectIds.some(id => sceneOrganizationObjects.some(item => item.id === id && item.locked))) return;
+    if (beforeObjectId && (groupId ? !destination?.objectIds.includes(beforeObjectId)
+      : selectionSets.some(item => item.kind === "group" && item.objectIds.includes(beforeObjectId)))) return;
+    const ordered = visibleLayerIds(sceneOrganizationObjects.filter(item => item.kind === "model").map(item => item.id)
+      .concat(sceneOrganizationObjects.filter(item => item.kind !== "model").map(item => item.id)),
+    selectionSets.filter(group => group.kind === "group"), new Set(), context.rootLayerOrder);
+    const moving = ordered.filter(id => requested.has(id) && sceneOrganizationObjects.some(item => item.id === id && !item.locked));
     if (groupId && !selectionSets.some(item => item.kind === "group" && item.id === groupId)) return;
     if (!moving.length) return;
-    setSelectionSets((items) => items.map((item) => {
+    if (beforeObjectId && moving.includes(beforeObjectId)) return;
+    if (beforeObjectId && !sceneOrganizationObjects.some(item => item.id === beforeObjectId)) return;
+    const nextGroups = selectionSets.map((item) => {
       if (item.kind !== "group") return item;
-      const remaining = item.objectIds.filter((id) => !moving.includes(id));
+      const remaining = item.objectIds.filter(id => !moving.includes(id));
       if (item.id !== groupId) return { ...item, objectIds: remaining };
-      const beforeIndex = beforeObjectId ? remaining.indexOf(beforeObjectId) : -1;
-      const objectIds = beforeIndex < 0
-        ? [...remaining, ...moving]
-        : [...remaining.slice(0, beforeIndex), ...moving, ...remaining.slice(beforeIndex)];
-      return { ...item, objectIds };
-    }));
+      const targetIndex = beforeObjectId ? remaining.indexOf(beforeObjectId) : -1;
+      const index = targetIndex < 0 ? remaining.length : targetIndex + (position === "after" ? 1 : 0);
+      return { ...item, objectIds: [...remaining.slice(0, index), ...moving, ...remaining.slice(index)] };
+    });
+    if (!groupId && context.setRootLayerOrder) {
+      const available = rootReferences(nextGroups);
+      const normalized = normalizeSceneRootLayerOrder(context.rootLayerOrder, available);
+      const current = [...normalized.filter(ref => ref.kind !== "object" || !moving.includes(ref.id)),
+        ...moving.map(id => ({ kind: "object" as const, id }))];
+      const targetIndex = beforeObjectId ? current.findIndex(ref => ref.kind === "object" && ref.id === beforeObjectId) : -1;
+      const before = targetIndex < 0 ? undefined : current[targetIndex + (position === "after" ? 1 : 0)];
+      context.setRootLayerOrder(moveSceneRootLayers(current, available, moving.map(id => ({ kind: "object", id })), before));
+    }
+    setSelectionSets(nextGroups);
     setMessage(groupId
       ? tr(locale, `已移动 ${moving.length} 个对象到编组`, `Moved ${moving.length} objects into the group`)
-      : tr(locale, `已将 ${moving.length} 个对象移出编组`, `Moved ${moving.length} objects out of groups`));
-    commitOrganizationChange(groupId ? "移动对象到编组" : "将对象移出编组");
+      : beforeObjectId
+        ? tr(locale, `已调整 ${moving.length} 个对象的目录顺序`, `Reordered ${moving.length} objects`)
+        : tr(locale, `已将 ${moving.length} 个对象移出编组`, `Moved ${moving.length} objects out of groups`));
+    commitOrganizationChange(groupId ? "移动对象到编组" : beforeObjectId ? "调整场景对象顺序" : "将对象移出编组");
   }
 
   function reorderSceneGroup(id: string, beforeId?: string) {
+    if (hasLockedGroupMember(id)) return;
+    context.setRootLayerOrder?.(moveSceneRootLayers(context.rootLayerOrder, rootReferences(selectionSets), [{ kind: "group", id }], beforeId ? { kind: "group", id: beforeId } : undefined));
     setSelectionSets((items) => {
       const source = items.find((item) => item.id === id && item.kind === "group");
       if (!source) return items;
@@ -171,6 +184,7 @@ export function createSceneOrganizationCommands(context: SceneEditorControllerCo
   }
 
   function updateSceneSelectionSet(id: string) {
+    if (hasLockedGroupMember(id)) return;
     const objectIds = selectedObjectIds();
     if (!objectIds.length) return;
     const current = selectionSets.find((item) => item.id === id);
@@ -188,6 +202,7 @@ export function createSceneOrganizationCommands(context: SceneEditorControllerCo
   }
 
   function deleteSceneSelectionSet(id: string) {
+    if (hasLockedGroupMember(id)) return;
     const current = selectionSets.find((item) => item.id === id);
     if (current) setLastDeletedSelectionSet(current);
     setSelectionSets((items) => items.filter((item) => item.id !== id));
@@ -207,22 +222,45 @@ export function createSceneOrganizationCommands(context: SceneEditorControllerCo
     return sceneOrganizationObjects.filter((item) => sceneOrganizationSelection.has(item.id)).map((item) => item.id);
   }
 
+  function rootReferences(groups: readonly SceneSelectionSetState[]): SceneRootLayerRef[] {
+    const actualGroups = groups.filter(group => group.kind === "group");
+    const grouped = new Set(actualGroups.flatMap(group => group.objectIds));
+    const objects = sceneOrganizationObjects.filter(item => !grouped.has(item.id));
+    // 与旧目录一致：模型实例先于基础元素；新增字段只改变作者目录。
+    const refs: SceneRootLayerRef[] = [...actualGroups.map(group => ({ kind: "group" as const, id: group.id })),
+      ...objects.filter(item => item.kind === "model").map(item => ({ kind: "object" as const, id: item.id })),
+      ...objects.filter(item => item.kind !== "model").map(item => ({ kind: "object" as const, id: item.id }))];
+    return [...refs, ...(context.rootLayerOrder ?? []).filter(ref => ref.kind !== "object" && ref.kind !== "group")];
+  }
+
+  function hasLockedGroupMember(id: string): boolean {
+    const group = selectionSets.find(item => item.id === id && item.kind === "group");
+    if (!group?.objectIds.some(objectId => sceneOrganizationObjects.some(item => item.id === objectId && item.locked))) return false;
+    setMessage(tr(locale, "编组包含锁定对象，请先解锁", "Unlock the group members before changing its structure"));
+    return true;
+  }
+
+  function discrete<Args extends unknown[]>(action: (...args: Args) => void): (...args: Args) => void {
+    return (...args) => context.runSceneEdit ? context.runSceneEdit(() => action(...args)) : action(...args);
+  }
+
   return {
     replaceSceneOrganizationSelection,
     selectSceneOrganizationObject,
     toggleSceneOrganizationObject,
-    setSceneObjectsVisible,
-    setSceneObjectsLocked,
-    isolateSceneObjects,
-    restoreSceneObjectIsolation,
-    createSceneSelectionSet,
-    createSceneGroup,
-    moveSceneObjectsToGroup,
-    reorderSceneGroup,
-    renameSceneGroup,
-    updateSceneSelectionSet,
+    setSceneObjectsVisible: discrete(setSceneObjectsVisible),
+    setSceneObjectsLocked: discrete(setSceneObjectsLocked),
+    isolateSceneObjects: discrete(isolateSceneObjects),
+    restoreSceneObjectIsolation: discrete(restoreSceneObjectIsolation),
+    createSceneSelectionSet: discrete(createSceneSelectionSet),
+    createSceneGroup: discrete(createSceneGroup),
+    moveSceneObjectsToGroup: discrete(moveSceneObjectsToGroup),
+    moveSceneRootEntries: discrete(createSceneRootEntryMover(context, commitOrganizationChange)),
+    reorderSceneGroup: discrete(reorderSceneGroup),
+    renameSceneGroup: discrete(renameSceneGroup),
+    updateSceneSelectionSet: discrete(updateSceneSelectionSet),
     applySceneSelectionSet,
-    deleteSceneSelectionSet,
-    restoreDeletedSceneSelectionSet,
+    deleteSceneSelectionSet: discrete(deleteSceneSelectionSet),
+    restoreDeletedSceneSelectionSet: discrete(restoreDeletedSceneSelectionSet),
   };
 }

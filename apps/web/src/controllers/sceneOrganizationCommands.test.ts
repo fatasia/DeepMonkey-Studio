@@ -4,6 +4,36 @@ import { createSceneOrganizationCommands } from "./sceneOrganizationCommands";
 import type { SceneEditorControllerContext } from "./sceneEditorControllerContext";
 
 describe("场景组织命令", () => {
+  it.each(["deleteSceneSelectionSet", "reorderSceneGroup", "updateSceneSelectionSet"] as const)("protects locked group members from %s without creating an undo entry", action => {
+    const setSelectionSets = vi.fn();
+    const recordSceneEdit = vi.fn();
+    const commands = createSceneOrganizationCommands({
+      locale: "zh-CN", selectionSets: [{ id: "group", name: "Mixed", kind: "group", objectIds: ["locked", "free"] }],
+      sceneOrganizationObjects: ["locked", "free"].map(id => ({ id, name: id, kind: "primitive", visible: true, locked: id === "locked" })),
+      sceneOrganizationSelection: new Set(["free"]), setSelectionSets, recordSceneEdit, setMessage: vi.fn(),
+    } as unknown as SceneEditorControllerContext);
+    commands[action]("group");
+    expect(setSelectionSets).not.toHaveBeenCalled();
+    expect(recordSceneEdit).not.toHaveBeenCalled();
+  });
+  it.each([{ additive: true }, { additive: true, range: true }])("preserves folded selections and drops deleted objects for %j", intent => {
+    let selection = new Set(["folded", "deleted"]);
+    const select = vi.fn();
+    const commands = createSceneOrganizationCommands({
+      engine: { select }, locale: "zh-CN",
+      sceneOrganizationObjects: ["folded", "visible"].map(id => ({ id, name: id, kind: "primitive", visible: true, locked: false })),
+      sceneOrganizationSelection: selection, selectionSets: [],
+      setSceneOrganizationSelection: (next: SetStateAction<Set<string>>) => {
+        selection = typeof next === "function" ? next(selection) : next;
+      },
+    } as unknown as SceneEditorControllerContext);
+
+    commands.selectSceneOrganizationObject("visible", { ...intent, orderedIds: ["visible"], anchorId: "folded" });
+
+    expect([...selection]).toEqual(["folded", "visible"]);
+    expect(select).toHaveBeenCalledWith("visible");
+  });
+
   it("keeps the scene tree and property inspector on the same single selection", () => {
     const select = vi.fn();
     let selection = new Set<string>();
@@ -47,7 +77,7 @@ describe("场景组织命令", () => {
     expect([...selection]).toEqual(["base", "arm"]);
   });
 
-  it("clears a single object selection when the selected row is clicked again", () => {
+  it("keeps the clicked row selected without additive modifiers", () => {
     let selection = new Set(["base"]);
     const select = vi.fn();
     const commands = createSceneOrganizationCommands({
@@ -61,8 +91,8 @@ describe("场景组织命令", () => {
 
     commands.selectSceneOrganizationObject("base");
 
-    expect(select).toHaveBeenCalledWith(undefined);
-    expect([...selection]).toEqual([]);
+    expect(select).toHaveBeenCalledWith("base");
+    expect([...selection]).toEqual(["base"]);
   });
 
   it("selects a contiguous Shift range and keeps the last clicked object primary", () => {

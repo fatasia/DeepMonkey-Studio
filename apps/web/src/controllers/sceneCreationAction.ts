@@ -11,6 +11,7 @@ import {
 import { DEFAULT_DASHBOARD_STATE } from "../components/dashboardState";
 import { DEFAULT_NAVIGATION_SETTINGS } from "../navigationSettings";
 import { DEFAULT_SCENE_COORDINATES } from "../viewer/sceneCoordinates";
+import { DEFAULT_ENGINEERING_ANALYSIS } from "../viewer/engineeringAnalysisState";
 import type { ScenePersistenceControllerContext } from "./scenePersistenceControllerContext";
 
 type SceneCreationContext = Pick<
@@ -37,6 +38,7 @@ type SceneCreationContext = Pick<
   | "setNavigationMode"
   | "setNavigationSettings"
   | "setPhysics"
+  | "setEngineeringAnalysis"
   | "setPostProcessing"
   | "setRevision"
   | "setSceneAnimation"
@@ -53,6 +55,7 @@ type SceneCreationContext = Pick<
   | "setSelectedAnnotationId"
   | "setSelectedLightId"
   | "setSelectionSets"
+  | "setRootLayerOrder"
   | "setWeather"
 >;
 
@@ -83,6 +86,7 @@ export function createSceneCreationAction(context: SceneCreationContext, openSce
     setNavigationMode,
     setNavigationSettings,
     setPhysics,
+    setEngineeringAnalysis,
     setPostProcessing,
     setRevision,
     setSceneAnimation,
@@ -99,6 +103,7 @@ export function createSceneCreationAction(context: SceneCreationContext, openSce
     setSelectedAnnotationId,
     setSelectedLightId,
     setSelectionSets,
+    setRootLayerOrder,
     setWeather,
   } = context;
 
@@ -129,6 +134,7 @@ export function createSceneCreationAction(context: SceneCreationContext, openSce
     setSelected(undefined);
     setSceneOrganizationSelection(new Set());
     setSelectionSets([]);
+    setRootLayerOrder?.(undefined);
     setLastDeletedSelectionSet(undefined);
     setCameraViews([]);
     setCameraConstraints(DEFAULT_CAMERA_CONSTRAINTS);
@@ -156,6 +162,7 @@ export function createSceneCreationAction(context: SceneCreationContext, openSce
       postProcessing: DEFAULT_POST_PROCESSING,
       physics: DEFAULT_PHYSICS,
       animation: DEFAULT_ANIMATION,
+      engineeringAnalysis: structuredClone(DEFAULT_ENGINEERING_ANALYSIS),
       dashboard: structuredClone(DEFAULT_DASHBOARD_STATE),
       dataBindings: [],
       interactions: [],
@@ -177,10 +184,12 @@ export function createSceneCreationAction(context: SceneCreationContext, openSce
     setSceneDataBindingRuntime({});
     setSceneInteractions([]);
     setSelectionSets([]);
+    setRootLayerOrder?.(undefined);
     setSceneEnvironment(configuredDefaultEnvironment);
     setSceneCoordinates(DEFAULT_SCENE_COORDINATES);
     setPostProcessing(DEFAULT_POST_PROCESSING);
     setPhysics(DEFAULT_PHYSICS);
+    setEngineeringAnalysis(structuredClone(DEFAULT_ENGINEERING_ANALYSIS));
     setSceneAnimation(DEFAULT_ANIMATION);
     setCameraViews([]);
     setDefaultCameraViewId(undefined);

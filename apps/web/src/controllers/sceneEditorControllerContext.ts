@@ -1,5 +1,6 @@
 import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from "react";
 import type {
+  SceneRootLayerRef,
   CameraConstraintsState,
   CameraViewState,
   ClippingState,
@@ -14,6 +15,7 @@ import type {
   SceneAnnotationState,
   SceneCoordinateSystemState,
   SceneDataBindingState,
+  SceneEngineeringAnalysisState,
   SceneEnvironmentState,
   SceneFloorState,
   SceneInteractionScriptState,
@@ -49,6 +51,8 @@ export interface SceneEditorControllerContext {
   sceneOrganizationObjects: SceneOrganizationObject[];
   sceneOrganizationSelection: Set<string>;
   selectionSets: SceneSelectionSetState[];
+  rootLayerOrder?: SceneRootLayerRef[] | undefined;
+  setRootLayerOrder?: Setter<SceneRootLayerRef[] | undefined>;
   lastDeletedSelectionSet: SceneSelectionSetState | undefined;
   annotations: SceneAnnotationState[];
   annotationEnabled: boolean;
@@ -90,6 +94,8 @@ export interface SceneEditorControllerContext {
   setSceneEnvironment: Setter<SceneEnvironmentState>;
   setPostProcessing: Setter<ScenePostProcessingState>;
   setPhysics: Setter<ScenePhysicsState>;
+  engineeringAnalysis: SceneEngineeringAnalysisState;
+  setEngineeringAnalysis: Setter<SceneEngineeringAnalysisState>;
   setEnvironmentOpen: Setter<boolean>;
   setSelectedLightId: Setter<string>;
   setCameraViews: Setter<CameraViewState[]>;
@@ -104,4 +110,5 @@ export interface SceneEditorControllerContext {
   setXrPanelOpen: Setter<boolean>;
   setSceneAnimation: Setter<SceneAnimationState>;
   recordSceneEdit: (label: string) => void;
+  runSceneEdit?: (change: () => void) => void;
 }

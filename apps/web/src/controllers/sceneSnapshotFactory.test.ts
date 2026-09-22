@@ -54,6 +54,7 @@ describe("scene snapshot factory", () => {
       sceneAssetBindings: [],
       sceneInteractions: [],
       selectionSets: [],
+      rootLayerOrder: [{ kind: "object", id: "marker-1" }, { kind: "object", id: "pump-1" }],
       selected: undefined,
       selectedLayerId: undefined,
       selectedAnnotationId: undefined,
@@ -67,5 +68,6 @@ describe("scene snapshot factory", () => {
     expect(snapshot?.simulationEntities).not.toBe(simulationEntities);
     expect(snapshot?.thumbnail).toBe("data:image/jpeg;base64,previous");
     expect(snapshot?.publicationToolbarVisible).toBe(false);
+    expect(snapshot?.rootLayerOrder).toEqual([{ kind: "object", id: "marker-1" }, { kind: "object", id: "pump-1" }]);
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
 import {
   Box,
   Check,
@@ -24,6 +24,7 @@ import type { SceneSelectionSetState } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import { WindowedSceneRows } from "./WindowedSceneRows";
 import { SceneSelectionBar } from "./SceneSelectionBar";
+import { handleLayerTreeKeyDown, layerKeyboardOccupied } from "./layerKeyboard";
 
 export interface SceneOrganizationObject {
   id: string;
@@ -69,6 +70,7 @@ export function SceneOrganizationPanel(props: Props) {
   const [draggingIds, setDraggingIds] = useState<string[]>([]);
   const [dropTarget, setDropTarget] = useState("");
   const [contextTarget, setContextTarget] = useState<ContextTarget>();
+  const contextOpener = useRef<HTMLElement | null>(null);
   const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
   const groups = props.selectionSets.filter((item) => item.kind === "group");
   const savedSets = props.selectionSets.filter((item) => item.kind !== "group");
@@ -127,6 +129,7 @@ export function SceneOrganizationPanel(props: Props) {
   function openContext(event: MouseEvent, target: Omit<ContextTarget, "x" | "y">) {
     event.preventDefault();
     event.stopPropagation();
+    contextOpener.current = event.currentTarget as HTMLElement;
     if (target.type === "object" && !props.selectedIds.has(target.id)) props.onSelect([target.id]);
     setContextTarget({ ...target, x: Math.min(event.clientX, window.innerWidth - 220), y: Math.min(event.clientY, window.innerHeight - 270) });
   }
@@ -138,6 +141,7 @@ export function SceneOrganizationPanel(props: Props) {
         key={item.id}
         className={`scene-tree-row object ${selected ? "selected" : ""} ${dropTarget === `object:${item.id}` ? "drop-target" : ""}`}
         role="treeitem"
+        data-layer-keyboard-row=""
         tabIndex={0}
         aria-selected={selected}
         aria-level={groupId ? 2 : 1}
@@ -154,6 +158,7 @@ export function SceneOrganizationPanel(props: Props) {
         }}
         onClick={(event) => selectObject(event, item.id)}
         onKeyDown={(event) => {
+          if (layerKeyboardOccupied(event)) return;
           if (event.key !== "Enter" && event.key !== " ") return;
           event.preventDefault();
           selectObject(event, item.id);
@@ -172,7 +177,12 @@ export function SceneOrganizationPanel(props: Props) {
   }
 
   return (
-    <section className="scene-organization-panel scene-tree-manager" aria-label={tr(props.locale, "场景图层与编组", "Scene layers and groups")}>
+    <section className="scene-organization-panel scene-tree-manager" aria-label={tr(props.locale, "场景图层与编组", "Scene layers and groups")} onKeyDownCapture={event => {
+      if (event.key !== "Escape" || !contextTarget || layerKeyboardOccupied(event)) return;
+      event.preventDefault(); event.stopPropagation(); setContextTarget(undefined);
+      const opener = contextOpener.current;
+      (opener?.matches('[tabindex="0"]') ? opener : opener?.querySelector<HTMLElement>('.scene-tree-name'))?.focus();
+    }}>
       <div className="scene-organization-search">
         <Search size={13} />
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={tr(props.locale, "搜索场景元素", "Search scene elements")} aria-label={tr(props.locale, "搜索场景元素", "Search scene elements")} />
@@ -187,7 +197,7 @@ export function SceneOrganizationPanel(props: Props) {
           onClear={() => props.onSelect([])}
         />}
 
-      <div className="scene-tree" role="tree" aria-label={tr(props.locale, "场景元素树", "Scene element tree")}>
+      <div className="scene-tree" role="tree" onKeyDown={handleLayerTreeKeyDown} aria-label={tr(props.locale, "场景元素树", "Scene element tree")}>
         {groups.map((group) => {
           const members = group.objectIds.map((id) => objectsById.get(id)).filter((item): item is SceneOrganizationObject => Boolean(item));
           const visibleMembers = members.filter(matches);
@@ -198,6 +208,7 @@ export function SceneOrganizationPanel(props: Props) {
               className={`scene-tree-group ${dropTarget === `group:${group.id}` ? "drop-target" : ""}`}
               key={group.id}
               role="treeitem"
+              data-layer-keyboard-group=""
               aria-expanded={open}
               aria-level={1}
               draggable
@@ -212,9 +223,9 @@ export function SceneOrganizationPanel(props: Props) {
                 setDropTarget("");
               }}
             >
-              <div className="scene-tree-row group" onContextMenu={(event) => openContext(event, { type: "group", id: group.id })}>
+              <div data-layer-keyboard-row="" className="scene-tree-row group" onContextMenu={(event) => openContext(event, { type: "group", id: group.id })}>
                 <GripVertical className="scene-tree-grip" size={12} />
-                <button className="scene-tree-expander" aria-label={open ? tr(props.locale, `收起编组“${group.name}”`, `Collapse group “${group.name}”`) : tr(props.locale, `展开编组“${group.name}”`, `Expand group “${group.name}”`)} onClick={() => toggleExpanded(group.id)}>{open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</button>
+                <button data-layer-expander="" className="scene-tree-expander" aria-label={open ? tr(props.locale, `收起编组“${group.name}”`, `Collapse group “${group.name}”`) : tr(props.locale, `展开编组“${group.name}”`, `Expand group “${group.name}”`)} onClick={() => toggleExpanded(group.id)}>{open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</button>
                 <span className="scene-tree-type">{open ? <FolderOpen size={13} /> : <Folder size={13} />}</span>
                 <button className="scene-tree-name" onClick={() => props.onApplySelectionSet(group.id)}><strong>{group.name}</strong><small>{members.length}</small></button>
               </div>
@@ -282,7 +293,7 @@ function GroupContextMenu(props: Props & { group: SceneSelectionSetState; object
     <button onClick={() => run(() => { const name = window.prompt(tr(props.locale, "重命名编组", "Rename group"), group.name); if (name) props.onRenameGroup(group.id, name); })}><Group size={13} />{tr(props.locale, "重命名", "Rename")}</button>
     <button onClick={() => run(() => props.onShow(group.objectIds, !members.some((item) => item.visible)))}>{members.some((item) => item.visible) ? <EyeOff size={13} /> : <Eye size={13} />}{members.some((item) => item.visible) ? tr(props.locale, "隐藏编组", "Hide group") : tr(props.locale, "显示编组", "Show group")}</button>
     <button onClick={() => run(() => props.onLock(group.objectIds, !members.every((item) => item.locked)))}>{members.every((item) => item.locked) ? <Unlock size={13} /> : <Lock size={13} />}{members.every((item) => item.locked) ? tr(props.locale, "解锁编组", "Unlock group") : tr(props.locale, "锁定编组", "Lock group")}</button>
-    <button onClick={() => run(() => { props.onMoveObjects(group.objectIds); props.onDeleteSelectionSet(group.id); })}><Layers3 size={13} />{tr(props.locale, "解组并保留元素", "Ungroup and keep elements")}</button>
+    <button onClick={() => run(() => props.onDeleteSelectionSet(group.id))}><Layers3 size={13} />{tr(props.locale, "解组并保留元素", "Ungroup and keep elements")}</button>
     <button className="danger" onClick={() => run(() => props.onDeleteSelectionSet(group.id))}><Trash2 size={13} />{tr(props.locale, "删除编组", "Delete group")}</button>
   </>;
 }

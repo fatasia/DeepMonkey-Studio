@@ -18,6 +18,7 @@ type SceneSnapshotSource = Pick<
   | "sceneAssetBindings"
   | "sceneInteractions"
   | "selectionSets"
+  | "rootLayerOrder"
   | "selected"
   | "selectedLayerId"
   | "selectedAnnotationId"
@@ -45,6 +46,7 @@ export function makeSceneSnapshot(source: SceneSnapshotSource): SceneSnapshot | 
     sceneAssetBindings,
     sceneInteractions,
     selectionSets,
+    rootLayerOrder,
     selected,
     selectedLayerId,
     selectedAnnotationId,
@@ -94,6 +96,7 @@ export function makeSceneSnapshot(source: SceneSnapshotSource): SceneSnapshot | 
     assetBindings: sceneAssetBindings,
     interactions: sceneInteractions,
     selectionSets,
+    ...(rootLayerOrder ? { rootLayerOrder: structuredClone(rootLayerOrder) } : {}),
     // 仿真输入不属于引擎对象；显式复制，避免保存遗漏或后续编辑污染历史快照。
     ...(activeScene?.simulationEntities ? { simulationEntities: structuredClone(activeScene.simulationEntities) } : {}),
     ...(activeScene?.thumbnail ? { thumbnail: activeScene.thumbnail } : {}),

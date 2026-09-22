@@ -1,16 +1,20 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { SceneSelectionBar } from "./SceneSelectionBar";
-import { readFileSync } from "node:fs";
 
 describe("SceneSelectionBar", () => {
-  it("reserves the same toolbar layout while empty and removes its actions from interaction", () => {
+  it.each([{ selectedObjects: [] }, { selectedObjects: [{ id: "one" }] }])("does not mount batch controls for zero or one object: %j", ({ selectedObjects }) => {
     const noop = () => undefined;
-    const html = renderToStaticMarkup(<SceneSelectionBar locale="zh-CN" selectedObjects={[]}
+    const html = renderToStaticMarkup(<SceneSelectionBar locale="zh-CN" selectedObjects={selectedObjects}
       onGroup={noop} onShow={noop} onLock={noop} onClear={noop} />);
-    expect(html).toContain('aria-hidden="true"'); expect(html).toContain('inert=""');
-    const css = readFileSync(new URL("../styles/scene-workspace-hierarchy.css", import.meta.url), "utf8");
-    expect(css).toMatch(/\.scene-tree-selection-bar:not\(\.visible\)\{display:flex;visibility:hidden;pointer-events:none\}/);
+    expect(html).toBe("");
+  });
+  it("keeps the isolation exit available after selection is cleared", () => {
+    const noop = () => undefined;
+    const html = renderToStaticMarkup(<SceneSelectionBar locale="zh-CN" selectedObjects={[]} isolationActive
+      onRestoreIsolation={noop} onGroup={noop} onShow={noop} onLock={noop} onClear={noop} />);
+    expect(html).toContain("恢复隔离前状态");
+    expect(html).not.toContain('aria-hidden="true"');
   });
   it("keeps selection-only actions visible and secondary batch actions in overflow", () => {
     const noop = () => undefined;
