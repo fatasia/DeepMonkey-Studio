@@ -17,6 +17,7 @@ struct Frame {
   localLights: array<LocalLight, 16>,
   localShadowMatrices: array<mat4x4f, 10>,
   fogProjection: vec4f,
+  localShadowSoftness: array<vec4f, 4>,
 };
 @group(0) @binding(5) var<uniform> frame: Frame;
 
@@ -31,6 +32,53 @@ struct OutputVertex { @builtin(position) position: vec4f };
 fn aces(color: vec3f) -> vec3f {
   return clamp((color * (2.51 * color + 0.03)) / (color * (2.43 * color + 0.59) + 0.14),
     vec3f(0.0), vec3f(1.0));
+}
+
+// 作者色彩分级六通道（hue/saturation/brightness/contrast/temperature/tint）。
+// 逐式镜像 Web applyPbrAuthorColorEffects（TS 仲裁基准），在固定 ACES 之前的
+// HDR 线性域应用（bloom/雾合成之后、色调映射之前，与 Web OutputPass 顺序一致）；
+// 全零 uniform 下有限输入逐位恒等（精确中性）。
+struct AuthorGrading {
+  switches: vec4f,
+  grading: vec4f,
+  whiteBalance: vec4f,
+};
+@group(0) @binding(6) var<uniform> author_grading: AuthorGrading;
+
+fn author_grading_apply(source: vec3f) -> vec3f {
+  var color = source;
+  if (author_grading.switches.z > 0.5) {
+    let grading = author_grading.grading;
+    if (grading.x != 0.0) {
+      // hue：Three r185 HueSaturation 旋转矩阵，π 与 TS 同款截断字面量。
+      let angle = grading.x / 180.0 * 3.14159265;
+      let s = sin(angle);
+      let c = cos(angle);
+      let weights = (vec3f(2.0 * c, -sqrt(3.0) * s - c, sqrt(3.0) * s - c) + 1.0) / 3.0;
+      color = vec3f(dot(color, weights.xyz), dot(color, weights.zxy), dot(color, weights.yzx));
+    }
+    let average = (color.r + color.g + color.b) / 3.0;
+    // saturation：正值走 (0,1) 压缩，其余（含 0 与负值）线性。
+    if (grading.y > 0.0) {
+      color += (average - color) * (1.0 - 1.0 / (1.001 - grading.y));
+    } else {
+      color += (average - color) * (-grading.y);
+    }
+    if (grading.z != 0.0 || grading.w != 0.0) {
+      color += grading.z;
+      color = (color - 0.5) * (grading.w + 1.0) + 0.5;
+    }
+    let wb = author_grading.whiteBalance;
+    if (wb.x != 0.0 || wb.y != 0.0) {
+      let gains = vec3f(1.0 + wb.x * 0.14 + wb.y * 0.07,
+        1.0 - wb.y * 0.12, 1.0 - wb.x * 0.14 + wb.y * 0.07);
+      let luma = dot(color, vec3f(0.2126, 0.7152, 0.0722));
+      color *= gains;
+      // TS 仲裁基准：分母取 |balancedLuminance| 下限 1e-6，保持原亮度。
+      color = color * luma / max(abs(dot(color, vec3f(0.2126, 0.7152, 0.0722))), 0.000001);
+    }
+  }
+  return color;
 }
 
 fn linear_to_srgb(linear: vec3f) -> vec3f {
@@ -58,10 +106,10 @@ fn fogged_hdr(position: vec4f) -> vec4f {
 
 @fragment fn fragment_srgb_target(input: OutputVertex) -> @location(0) vec4f {
   let hdr = fogged_hdr(input.position);
-  return vec4f(aces(hdr.rgb), hdr.a);
+  return vec4f(aces(author_grading_apply(hdr.rgb)), hdr.a);
 }
 
 @fragment fn fragment_unorm_target(input: OutputVertex) -> @location(0) vec4f {
   let hdr = fogged_hdr(input.position);
-  return vec4f(linear_to_srgb(aces(hdr.rgb)), hdr.a);
+  return vec4f(linear_to_srgb(aces(author_grading_apply(hdr.rgb))), hdr.a);
 }

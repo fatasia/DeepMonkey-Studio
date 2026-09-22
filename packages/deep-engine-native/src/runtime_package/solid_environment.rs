@@ -2,11 +2,12 @@ use serde::Deserialize;
 
 use crate::fog::FogSettings;
 
-/// 解码后的纯色环境：作者背景色（已抵消固定 ACES）与可选作者雾。
+/// 解码后的纯色环境：作者背景色（已抵消固定 ACES）与可选作者雾、作者色彩分级。
 #[derive(Debug, Clone, Copy)]
 pub(super) struct DecodedSolidEnvironment {
     pub(super) background: [f64; 3],
     pub(super) fog: Option<FogSettings>,
+    pub(super) grading: Option<crate::author_grading::AuthorGrading>,
 }
 
 /// 天气雾合同 v1（见 web 侧 compileSceneWeatherFog）：exp2 唯一合法 kind，
@@ -37,6 +38,35 @@ impl AuthorFog {
     }
 }
 
+/// 作者色彩分级六通道 wire 合同（v9 档）：hue/saturation/brightness/contrast
+/// 必填，temperature/tint 为可选扩展（缺省 0，与 Web `colorGrading` 同形）。
+/// 数值校验在 `AuthorGrading::new` 里 fail-fast，与 TS `scalar()` 范围一致。
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct AuthorColorGrading {
+    hue: f32,
+    saturation: f32,
+    brightness: f32,
+    contrast: f32,
+    #[serde(default)]
+    temperature: Option<f32>,
+    #[serde(default)]
+    tint: Option<f32>,
+}
+
+impl AuthorColorGrading {
+    fn grading(self) -> Result<crate::author_grading::AuthorGrading, String> {
+        crate::author_grading::AuthorGrading::new(
+            self.hue,
+            self.saturation,
+            self.brightness,
+            self.contrast,
+            self.temperature.unwrap_or(0.0),
+            self.tint.unwrap_or(0.0),
+        )
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct SolidEnvironment {
@@ -53,6 +83,10 @@ struct SolidEnvironment {
     ibl: Option<serde_json::Value>,
     #[serde(default)]
     fog: Option<AuthorFog>,
+    /// v9 作者色彩分级；旧档声明该字段在 decode 档位门被拒（档位名必须
+    /// 真实描述包内容，与 fog 的档位门同一纪律）。
+    #[serde(default)]
+    color_grading: Option<AuthorColorGrading>,
 }
 
 pub(super) fn decode(
@@ -101,6 +135,19 @@ pub(super) fn decode(
                 && source.fog.is_some()
                 && lighting.is_none_or(|light| light.validate().is_ok())
         }
+        (8, lighting) => {
+            source.output_transform == "native-aces-studio-v8"
+                && lighting.is_none_or(|light| light.validate().is_ok())
+                && source.ibl.is_none()
+        }
+        // v9 是作者色彩分级档：继承 v8 studio 语义（builtin IBL、fog 可选），
+        // colorGrading 必须声明；数值/范围非法走下方专属错误消息（与 fog 同路径）。
+        (9, lighting) => {
+            source.output_transform == "native-aces-grading-v9"
+                && source.color_grading.is_some()
+                && lighting.is_none_or(|light| light.validate().is_ok())
+                && source.ibl.is_none()
+        }
         _ => false,
     };
     if source.schema != "deep-engine.solid-environment"
@@ -110,14 +157,18 @@ pub(super) fn decode(
         || source.revision != revision
         || revision != 1
         || source.kind
-            != if source.schema_version == 6 {
+            != if matches!(source.schema_version, 8 | 9) {
+                "solid-background-builtin-ibl"
+            } else if source.schema_version == 6 {
                 "solid-background-prefiltered-ibl"
             } else {
                 "solid-background-no-ibl"
             }
         || (source.schema_version != 6 && value.get("ibl").is_some())
-        // deny-unknown 不覆盖已声明的 Option 字段：非 v7 档声明 fog 一律拒绝。
-        || (source.schema_version != 7 && value.get("fog").is_some())
+        // deny-unknown 不覆盖已声明的 Option 字段：非 v7/v8/v9 档声明 fog、
+        // 非 v9 档声明 colorGrading 一律拒绝（档位名必须真实描述包内容）。
+        || (![7, 8, 9].contains(&source.schema_version) && value.get("fog").is_some())
+        || (source.schema_version != 9 && value.get("colorGrading").is_some())
         || source
             .background_srgb
             .iter()
@@ -133,10 +184,19 @@ pub(super) fn decode(
             })
         })
         .transpose()?;
+    let grading = source
+        .color_grading
+        .map(|grading| {
+            grading.grading().map_err(|error| {
+                super::RuntimePackageError(format!("solid environment author color grading: {error}"))
+            })
+        })
+        .transpose()?;
     // Three 的 Color 背景不经 tone mapping；抵消现有固定 ACES，保持作者 sRGB。
     Ok(DecodedSolidEnvironment {
         background: source.background_srgb.map(inverse_output),
         fog,
+        grading,
     })
 }
 
@@ -253,6 +313,122 @@ mod tests {
         assert!(parsed.is_ok(), "{parsed:?}");
         assert!(lighting_valid.is_ok(), "{lighting_valid:?}");
         assert!(decode(&lit, "scene.environment", 1).is_ok());
+    }
+
+    #[test]
+    fn builtin_studio_profile_keeps_background_fog_and_lighting_contract() {
+        let mut value = fog_source();
+        value["schemaVersion"] = serde_json::json!(8);
+        value["kind"] = serde_json::json!("solid-background-builtin-ibl");
+        value["outputTransform"] = serde_json::json!("native-aces-studio-v8");
+        value["lighting"] = serde_json::json!({"direction":[0,1,0],"radiance":[1,1,1],
+            "exposure":1.05,"shadows":true,"globalIlluminationIntensity":0.8});
+        let decoded = decode(&value, "scene.environment", 1).unwrap();
+        assert!(decoded.fog.is_some());
+        assert!(decoded.grading.is_none());
+        assert!(lighting(&value).is_some());
+        let mut wrong = value;
+        wrong["kind"] = serde_json::json!("solid-background-no-ibl");
+        assert!(decode(&wrong, "scene.environment", 1).is_err());
+    }
+
+    fn grading_source() -> serde_json::Value {
+        let mut value = fog_source();
+        value["schemaVersion"] = serde_json::json!(9);
+        value["kind"] = serde_json::json!("solid-background-builtin-ibl");
+        value["outputTransform"] = serde_json::json!("native-aces-grading-v9");
+        value["colorGrading"] = serde_json::json!({"hue":30,"saturation":0.5,
+            "brightness":-0.25,"contrast":0.1,"temperature":0.8,"tint":-0.4});
+        value
+    }
+
+    /// v9 档：六通道解码进 AuthorGrading，temperature/tint 可选缺省 0，
+    /// lighting/fog 与 v8 一样可选兼容。
+    #[test]
+    fn grading_profile_decodes_six_channels_with_optional_channels_defaulting_to_zero() {
+        let decoded = decode(&grading_source(), "scene.environment", 1).unwrap();
+        let grading = decoded.grading.expect("v9 declares author color grading");
+        assert_eq!(
+            grading.pack(),
+            [1.0, 0.0, 1.0, 0.0, 30.0, 0.5, -0.25, 0.1, 0.8, -0.4, 0.0, 0.0]
+        );
+        // temperature/tint 缺省 = 精确中性通道，与显式 0 等价。
+        let mut minimal = grading_source();
+        minimal["colorGrading"] = serde_json::json!({"hue":-45,"saturation":0.25,
+            "brightness":0.05,"contrast":0.05});
+        let decoded = decode(&minimal, "scene.environment", 1).unwrap();
+        assert_eq!(
+            decoded.grading.unwrap().pack(),
+            [1.0, 0.0, 1.0, 0.0, -45.0, 0.25, 0.05, 0.05, 0.0, 0.0, 0.0, 0.0]
+        );
+        // lighting 与 fog 在 v9 仍可选（studio 语义延续）。
+        let mut with_light = grading_source();
+        with_light["lighting"] = serde_json::json!({"direction":[0,1,0],"radiance":[0,0,0],
+            "exposure":1.05,"shadows":false});
+        assert!(decode(&with_light, "scene.environment", 1).is_ok());
+        assert!(decode(&grading_source(), "scene.environment", 1).unwrap().fog.is_some());
+        // 六通道全零也是合法 v9（作者显式中性），pack 恒中性。
+        let mut neutral = grading_source();
+        neutral["colorGrading"] = serde_json::json!({"hue":0,"saturation":0,
+            "brightness":0,"contrast":0,"temperature":0,"tint":0});
+        let decoded = decode(&neutral, "scene.environment", 1).unwrap();
+        assert!(decoded.grading.unwrap().is_neutral());
+    }
+
+    /// 旧包兼容与 fail-closed：旧档带 colorGrading 拒绝、v9 缺字段/越界/
+    /// 未知字段/变换名错误拒绝。
+    #[test]
+    fn grading_contract_stays_fail_closed_for_legacy_and_invalid_packages() {
+        // v8 及更早档声明 colorGrading → 档位门拒绝（未升级 outputTransform 的包
+        // 不能夹带新效果）。
+        let mut legacy_v8 = grading_source();
+        legacy_v8["schemaVersion"] = serde_json::json!(8);
+        legacy_v8["outputTransform"] = serde_json::json!("native-aces-studio-v8");
+        assert!(decode(&legacy_v8, "scene.environment", 1).is_err());
+        let mut legacy_v7 = grading_source();
+        legacy_v7["schemaVersion"] = serde_json::json!(7);
+        legacy_v7["outputTransform"] = serde_json::json!("native-aces-fog-v7");
+        assert!(decode(&legacy_v7, "scene.environment", 1).is_err());
+        let mut legacy_v1 = source();
+        legacy_v1["colorGrading"] = grading_source()["colorGrading"].clone();
+        assert!(decode(&legacy_v1, "scene.environment", 1).is_err());
+        // v9 缺 colorGrading 拒绝。
+        let mut without = grading_source();
+        without.as_object_mut().unwrap().remove("colorGrading");
+        assert!(decode(&without, "scene.environment", 1).is_err());
+        // 数值非法：越界、缺必填通道、未知字段、字符串数字。
+        for (key, value) in [
+            ("hue", serde_json::json!(180.1)),
+            ("saturation", serde_json::json!(-1.1)),
+            ("brightness", serde_json::json!(1.0001)),
+            ("contrast", serde_json::json!("0.1")),
+            ("temperature", serde_json::json!(1.0001)),
+            ("tint", serde_json::json!(-1.0001)),
+            ("extra", serde_json::json!(true)),
+            // JSON 大数在 f32 反序列化后成为 inf，必须被有限性校验拦下。
+            ("brightness", serde_json::json!(1e300)),
+        ] {
+            let mut invalid = grading_source();
+            invalid["colorGrading"][key] = value;
+            assert!(decode(&invalid, "scene.environment", 1).is_err(), "{key}");
+        }
+        let mut missing = grading_source();
+        missing["colorGrading"]
+            .as_object_mut()
+            .unwrap()
+            .remove("saturation");
+        assert!(decode(&missing, "scene.environment", 1).is_err());
+        // 变换名/kind 错误与 kind 档位语义保持 fail-closed。
+        let mut wrong_transform = grading_source();
+        wrong_transform["outputTransform"] = serde_json::json!("native-aces-studio-v8");
+        assert!(decode(&wrong_transform, "scene.environment", 1).is_err());
+        let mut wrong_kind = grading_source();
+        wrong_kind["kind"] = serde_json::json!("solid-background-no-ibl");
+        assert!(decode(&wrong_kind, "scene.environment", 1).is_err());
+        // v9 声明 ibl 拒绝（builtin IBL 语义继承 v8）。
+        let mut with_ibl = grading_source();
+        with_ibl["ibl"] = serde_json::json!({"schema":"x"});
+        assert!(decode(&with_ibl, "scene.environment", 1).is_err());
     }
 
     #[test]

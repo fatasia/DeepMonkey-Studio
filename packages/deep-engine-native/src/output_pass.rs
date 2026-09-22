@@ -7,12 +7,17 @@ const BLOOM_SHADER: &str = include_str!("../assets/shaders/native_output_bloom_v
 const FOG_SHADER: &str = include_str!("../assets/shaders/native_output_fog_v1.wgsl");
 const BLOOM_FOG_SHADER: &str = include_str!("../assets/shaders/native_output_bloom_fog_v1.wgsl");
 
+/// 作者色彩分级 uniform 字节数：3 × vec4（switches/grading/whiteBalance），
+/// 与 Web `packPbrAuthorColorEffects` 的 12-float 布局逐位一致。
+const AUTHOR_GRADING_BYTES: u64 = std::mem::size_of::<[f32; 12]>() as u64;
+
 pub struct OutputPass {
     texture_layout: wgpu::BindGroupLayout,
     texture_bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
     bloom_intensity: Option<wgpu::Buffer>,
     bloom_sampler: Option<wgpu::Sampler>,
+    grading_buffer: wgpu::Buffer,
     fog_enabled: bool,
 }
 
@@ -23,6 +28,9 @@ impl OutputPass {
         hdr_view: &wgpu::TextureView,
         bloom: Option<(&wgpu::TextureView, f32)>,
         fog: Option<(&wgpu::TextureView, &wgpu::Buffer)>,
+        // 作者色彩分级的 12-float 打包；None（未启用或六通道全零中性）时
+        // 上传全零 uniform——shader 分支精确恒等，宿主不改变任何管线状态。
+        grading: Option<[f32; 12]>,
     ) -> Self {
         let bloom_enabled = bloom.is_some();
         let fog_enabled = fog.is_some();
@@ -42,6 +50,11 @@ impl OutputPass {
                 ..Default::default()
             })
         });
+        let grading_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Deep Engine native author color grading controls"),
+            contents: bytemuck::bytes_of(&grading.unwrap_or([0.0; 12])),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Deep Engine native HDR output shader v1"),
             source: wgpu::ShaderSource::Wgsl(output_shader(bloom_enabled, fog_enabled).into()),
@@ -59,6 +72,7 @@ impl OutputPass {
             bloom.map(|(view, _)| view),
             bloom_sampler.as_ref(),
             bloom_intensity.as_ref(),
+            &grading_buffer,
             fog,
         );
         Self {
@@ -67,6 +81,7 @@ impl OutputPass {
             pipeline,
             bloom_intensity,
             bloom_sampler,
+            grading_buffer,
             fog_enabled,
         }
     }
@@ -99,6 +114,7 @@ impl OutputPass {
             bloom_view,
             self.bloom_sampler.as_ref(),
             self.bloom_intensity.as_ref(),
+            &self.grading_buffer,
             fog,
         ))
     }
@@ -194,6 +210,18 @@ fn create_layout(
             count: None,
         });
     }
+    // 作者色彩分级在全部四个变体上恒定绑定（48 字节）：零值时 shader 分支
+    // 精确中性，管线/绑定结构不随分级启用而变化，resize 事务零影响。
+    entries.push(wgpu::BindGroupLayoutEntry {
+        binding: 6,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: wgpu::BufferSize::new(AUTHOR_GRADING_BYTES),
+        },
+        count: None,
+    });
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("Deep Engine native output texture layout"),
         entries: &entries,
@@ -244,6 +272,7 @@ fn create_texture_bind_group(
     bloom_view: Option<&wgpu::TextureView>,
     sampler: Option<&wgpu::Sampler>,
     intensity: Option<&wgpu::Buffer>,
+    grading: &wgpu::Buffer,
     fog: Option<(&wgpu::TextureView, &wgpu::Buffer)>,
 ) -> wgpu::BindGroup {
     let mut entries = vec![wgpu::BindGroupEntry {
@@ -274,6 +303,10 @@ fn create_texture_bind_group(
             resource: frame.as_entire_binding(),
         });
     }
+    entries.push(wgpu::BindGroupEntry {
+        binding: 6,
+        resource: grading.as_entire_binding(),
+    });
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("Deep Engine native resolved HDR output bindings"),
         layout,

@@ -1,5 +1,6 @@
 pub mod adapter_n1;
 pub mod asset_package;
+pub mod author_grading;
 pub mod behavior_extension;
 pub mod behavior_ir;
 pub mod bloom;
@@ -10,10 +11,13 @@ pub mod compat_x;
 pub mod contract;
 pub mod culling_contract;
 pub mod dashboard_runtime;
+#[cfg(windows)]
+pub mod dashboard_video;
 pub mod deep2d;
 pub mod executable_overlay;
 pub mod fog;
 pub mod half_decode;
+pub mod hardware_ray_query;
 pub mod host_capabilities;
 pub mod ibl;
 pub mod ies_shading;
@@ -32,9 +36,13 @@ pub mod pbr_texture;
 pub mod platform_text;
 pub mod player_view;
 pub mod ray_backend;
+pub mod ray_tracing_capability;
 pub mod replay;
 pub mod runtime_camera;
 pub mod runtime_coordinates;
+pub mod runtime_navigation;
+#[cfg(test)]
+mod runtime_navigation_tests;
 pub mod runtime_package;
 pub mod scene;
 mod scene_alpha;

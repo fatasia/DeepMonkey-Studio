@@ -332,9 +332,28 @@ mod tests {
         );
         assert_eq!(report["metrics"]["gpu"]["status"], "degraded");
         assert!(report["metrics"]["gpu"].get("segments").is_none());
-        assert_eq!(report["capabilities"][1]["status"], "enabled");
-        assert_eq!(report["capabilities"][2]["status"], "disabled");
-        assert_eq!(report["capabilities"][3]["status"], "disabled");
+        // hardware_ray_query stays degraded by design: the device may execute the query
+        // probe, but the production renderer exposes no RT pixels yet (F2 residency only).
+        assert_eq!(report["capabilities"][1]["name"], "hardware_ray_query");
+        assert_eq!(report["capabilities"][1]["status"], "degraded");
+        // Configured capabilities report their own run-configuration state; assert by name
+        // instead of list position so reordering the capability list cannot silently pass.
+        let capability = |name: &str| {
+            report["capabilities"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|entry| entry["name"] == name)
+                .unwrap_or_else(|| panic!("capability {name} missing from the report"))
+                .clone()
+        };
+        // Bloom defaults to active; the probe features stay off in this run configuration.
+        assert_eq!(capability("bloom")["status"], "enabled");
+        assert_eq!(capability("exponential_fog")["status"], "disabled");
+        assert_eq!(capability("exponential_fog")["reason"], "disabled_by_run_configuration");
+        assert_eq!(capability("exponential_fog")["status"], "disabled");
+        assert_eq!(capability("shadow_differential_probe")["status"], "disabled");
+        assert_eq!(capability("ibl_differential_probe")["status"], "disabled");
     }
 
     #[test]
