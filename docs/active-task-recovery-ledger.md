@@ -2834,3 +2834,11 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **修复后实测**：三探针偏差 occluded 7.498e-3→2.03e-4、open-sky 2.00e-4、above-box 1.19e-4；逐方向失配 0；gate TRUE（哨兵 0、WGSL 零告警、ambient 确定性保持）。单测新增 320B 布局与方向表长度校验，回归 29/29。
 - **同族排查**：`probeOcclusionRayExtension` 的 CPU 路径本就以 `probeOcclusionDirection` 为准（无 GPU 侧重算），无同类缺陷；Native `hardware_ray_query` 的射线由 CPU 传入，无此问题。未 push。
 - 2026-09-22 剩余任务交接收口：新增 `docs/handoffs/deep-monkey-remaining-work-handoff-2026-09-22.md`，按“功能开发 → 上层接入 → 跨端一致性/打包/全量验收”排序，只保留当前证据显示未完成的事项；已完成项、明确排除项和本交接范围外的清理均不重新排队。后续每个切片必须回填本交接、总账和对应 spec，禁止重复建设。
+
+### 2026-09-22 F2/F4/B3-a 收口 + 能力扩展计划（ZCode）
+
+- **F2 RT 驻留切片**（`d1df110`）：`renderer/rt_residency.rs` 纯计划核（设备无关，10/10 测试）——按几何去重 BLAS、BLEND 整族排除、MASK 保守包含、零三角几何排除、实例/三角形预算 fail-closed、空场景拒绝、变换与 custom_index 保真、机器可读拒绝原因；驻留侧复用 `GpuGeometry` 的 BLAS_INPUT 缓冲构建 BLAS 集与场景 TLAS，transform-only TLAS 重建复用 BLAS 缓存；frame bind group 仅在 adapter 暴露特性时增加 AccelerationStructure 槽。诊断保持 degraded（`tlas_resident_pixel_pending`）——像素消费未接线，不宣称场景级光追。
+- **F4 作者色彩分级消费**（`2a68dc6`）：`author_grading.rs` 349 行 5 测试——六通道（hue/saturation/brightness/contrast/temperature/tint）在 f32 容差内镜像 Web 参考；`pack()` 与 `packPbrAuthorColorEffects` 逐位一致；中性输入逐位恒等（旧路径零成本）。output pass 增加 12-float uniform，在 HDR 线性域、ACES 之前应用。诊断测试改为按名称断言能力状态（不再依赖列表索引），并明确记录 hardware_ray_query 为 degraded 是设计意图。
+- **B3-a 发布物理通道缺陷修复**（`94e7a7a`）：`compileSceneDynamicRuntimePackage` 此前调用 `compileDynamicRuntime` 时不传 physics 选项，导致发布场景的作者物理在 Web 查看器路径被静默丢弃（Native 正常消费该通道）。修复后查看器接受冻结的 objectBindings + coordinateOrigin；physics-only 快照（无动画轨道）也会在共享 presentation 时钟上启动播放；未提供绑定时 fail-closed 报错而非发布丢失物理的场景。新增 2 项钉测，delivery 源码回归 741/741。
+- **Native 全量**：lib 504/504、bin 234/234 通过。
+- **能力扩展计划**（`0baa2c5`）：`docs/handoffs/engine-capability-expansion-plan-2026-09-22.md` 记录 A1–A5/B6/B1/B2/B3 全部任务、现状核查结论（B1 脚本编辑器已有 Monaco+沙箱+静态分析、B2 已有 502 行导演台、B3 已有 Rapier 双端+physics-validate 逐位对拍）、优化方案分期与性能要求；工作区 AGENTS.md 增加"现状核查前置"强制纪律与三个反例。未 push。
