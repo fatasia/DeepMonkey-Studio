@@ -2924,3 +2924,11 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - A1 executor `f10adf8` 已有 34/34 与 typecheck，但真实 GPU draw/driver 异步验证未完成；新 A1 lane 无有效结果，不重复启动同一实现。
 - B6 descriptor `c978f36/2147f64/955e37d` 已有 runtime schema、fail-closed、build/serialize/parse round-trip 3/3；新 B6 lane因 TLS 失败无结果；baker 自动生成和 Web/Native renderer 实际消费仍未完成。
 - 未验证边界：A1 真机绘制、B6 真实纹理消费、粒子真机产品画面、F2 RT 像素消费、F3 Native GI。下一动作按可验证优先级选择 B6 消费映射或 A1 真机证据，不重复建设。
+
+### 2026-09-22 20 分钟自检：当前状态与下一动作
+
+- 已读取交接文档、能力扩展计划、最新台账；检查 git status/recent commits；确认当前没有正在运行的子任务。A1/B6 新 lane 分别因当前账户不支持 `gpt-5.6-sol` 与 TLS 连接失败终止，均无代码产出，不能计入完成率。
+- 聚焦门禁：ShaderGraph/Preview/A1 indirect/B6 descriptor 49/49；deep-engine typecheck 通过。A1 executor 仍只有模拟设备证据 34/34，真实 GPU draw 未验证；B6 descriptor 仍只完成 schema/build/round-trip，未接 baker 自动生成或 Web/Native 纹理消费。
+- 主线程已提交 `5cf9269` Preview LKG 缓存：错误预览保留上一份成功结果；该合同未接产品 UI/GPU preview，不计产品级 Shader Graph 完成。
+- 共享工作树仍有其他并行 WIP（gpuParticleRuntime/gpuParticleIndirectDcir 等），本轮未触碰；禁止把 WIP 计入进度。F2 RT 像素消费、F3 Native GI、A4 真机画面、A1 真 GPU draw、B6 真实纹理消费均未验证。
+- 下一可执行动作：在支持模型/网络条件满足时重新启动短 A1/B6 lane；否则主线程优先补 A4 真机粒子证据或 F2 Native RT 像素消费的最小 shader probe，仍先查入口再实现。未 push、未 reset/clean/checkout。
