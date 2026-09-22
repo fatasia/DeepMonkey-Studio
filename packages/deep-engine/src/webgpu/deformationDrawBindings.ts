@@ -1,6 +1,7 @@
 import type { GpuDeformationHistoryResult } from "./gpuDeformationHistoryTypes.js";
 import type { MaterialBinding } from "./materialBindings.js";
 import type { Pipelines } from "./pipelines.js";
+import type { TextureArrayMaterialTableRow } from "./textureArrayMaterialTable.js";
 
 interface CachedBinding {
   readonly current: GPUBuffer;
@@ -11,14 +12,15 @@ interface CachedBinding {
 
 /** Borrows pose/material resources. At most three double-buffer combinations per pose/material are retained. */
 export class DeformationDrawBindings {
-  private readonly poses = new Map<string, Map<MaterialBinding | undefined, CachedBinding[]>>();
+  private readonly poses = new Map<string, Map<MaterialBinding | GPUBindGroup | undefined, CachedBinding[]>>();
   private disposed = false;
 
   constructor(private readonly device: GPUDevice, private readonly pipelines: Pipelines) {
     if (!pipelines.deformationPlainLayout) throw new Error("Deformation pipeline layouts are unavailable.");
   }
 
-  get(poseId: string, streams: GpuDeformationHistoryResult, material?: MaterialBinding): GPUBindGroup {
+  get(poseId: string, streams: GpuDeformationHistoryResult,
+    material?: MaterialBinding | TextureArrayMaterialTableRow): GPUBindGroup {
     if (this.disposed) throw new Error("Deformation draw bindings are disposed.");
     if (!poseId.trim()) throw new Error("Deformation pose id is required.");
     const bytes = streams.vertexCount * 48;
@@ -31,25 +33,29 @@ export class DeformationDrawBindings {
         throw new Error("Deformation draw requires complete unmapped storage buffers.");
       }
     }
-    if (material?.normal && !streams.hasTangents) throw new Error("Normal-mapped deformation requires deformed tangents.");
-    const materials = this.poses.get(poseId), cached = materials?.get(material) ?? [];
+    if (material && "normal" in material && material.normal && !streams.hasTangents)
+      throw new Error("Normal-mapped deformation requires deformed tangents.");
+    const cacheKey = material && "materialRow" in material ? material.group : material;
+    const materials = this.poses.get(poseId), cached = materials?.get(cacheKey) ?? [];
     const found = cached.find(item => item.current === streams.current && item.previous === streams.previous
       && item.vertexCount === streams.vertexCount);
     if (found) return found.group;
     const group = this.device.createBindGroup({ label: "Deep deformation material and pose",
-      layout: material ? this.pipelines.materialLayout.material : this.pipelines.deformationPlainLayout!,
-      entries: [...(material ? textureEntries(material) : []),
+      layout: material ? "materialRow" in material ? this.pipelines.materialLayout.material
+        : (this.pipelines.textureArrayFallback ?? this.pipelines).materialLayout.material
+        : this.pipelines.deformationPlainLayout!,
+      entries: [...(material ? "materialRow" in material ? arrayEntries(material) : textureEntries(material) : []),
         { binding: 11, resource: { buffer: streams.current, size: bytes } },
         { binding: 12, resource: { buffer: streams.previous, size: bytes } }],
     });
     const next = [...cached.slice(-2), { current: streams.current, previous: streams.previous, vertexCount: streams.vertexCount, group }];
-    const target = materials ?? new Map<MaterialBinding | undefined, CachedBinding[]>();
-    target.set(material, next); this.poses.set(poseId, target);
+    const target = materials ?? new Map<MaterialBinding | GPUBindGroup | undefined, CachedBinding[]>();
+    target.set(cacheKey, next); this.poses.set(poseId, target);
     return group;
   }
 
   /** Call after packet/material publication to drop retired borrowed identities. */
-  retain(active: ReadonlyMap<string, ReadonlySet<MaterialBinding | undefined>>): void {
+  retain(active: ReadonlyMap<string, ReadonlySet<MaterialBinding | GPUBindGroup | undefined>>): void {
     if (this.disposed) throw new Error("Deformation draw bindings are disposed.");
     for (const [poseId, materials] of this.poses) {
       const retained = active.get(poseId);
@@ -60,6 +66,11 @@ export class DeformationDrawBindings {
   }
 
   dispose(): void { this.disposed = true; this.poses.clear(); }
+}
+
+function arrayEntries(row: TextureArrayMaterialTableRow): GPUBindGroupEntry[] {
+  return [...row.textureEntries,
+    { binding: 10, resource: { buffer: row.table } }];
 }
 
 function textureEntries(material: MaterialBinding): GPUBindGroupEntry[] {

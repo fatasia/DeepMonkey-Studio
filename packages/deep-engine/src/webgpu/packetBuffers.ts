@@ -1,4 +1,5 @@
-import { prepareRenderPacket, type InstanceUpdate, type PreparedPacket,
+import { STOCK_MATERIAL_INSTANCE_OPTIONS } from "../materialInstanceAbi.js";
+import { prepareRenderPacket, type InstanceUpdate, type PreparedBatch, type PreparedPacket,
   type RenderPacket } from "../renderPacket.js";
 import type { DeviceSession } from "./deviceSession.js";
 import type { Pipelines } from "./pipelines.js";
@@ -30,8 +31,10 @@ import { failWithResourceCleanup, runResourceCleanup } from "./resourceCleanup.j
 import { PacketDeformationState } from "./packetDeformationState.js";
 import { PacketValidatedPublication } from "./packetValidatedPublication.js";
 import { compileMaterialEffectLedger, type MaterialEffectLedgerSnapshot } from "./materialEffectLedger.js";
+import { PacketTextureArrayConsumer, type PacketTextureArrayStage } from "./packetTextureArrayConsumer.js";
 
 const cancelled = (): DOMException => new DOMException("Packet update cancelled or superseded.", "AbortError");
+type TextureArrayPacketStage = StagedPacketBuffers & { readonly arrayStage?: PacketTextureArrayStage };
 export { GPU_CULLING_MIN_INSTANCES } from "./packetCulling.js";
 /** 投影资源事务；异步载入校验后发布，同步低层入口只保证同步异常回滚。 */
 export class PacketBuffers {
@@ -54,8 +57,10 @@ export class PacketBuffers {
   private shadowLod: PacketShadowLodResources | undefined;
   private readonly resident = new ResidentPacketBufferState();
   private materialEffects: MaterialEffectLedgerSnapshot | undefined;
+  private readonly textureArrays: PacketTextureArrayConsumer | undefined;
   constructor(private readonly session: DeviceSession, materialLayout?: MaterialLayouts, deformationPipelines?: Pipelines,
-    private readonly meshletsEnabled = false, private readonly meshletVisibility = false) {
+    private readonly meshletsEnabled = false, private readonly meshletVisibility = false,
+    textureArrayLayout?: GPUBindGroupLayout) {
     this.deformation = new PacketDeformationState(session, deformationPipelines);
     this.deformationStaticSources = new DeformationStaticSources(session);
     this.lodInputs = new PacketLodSceneCache(session);
@@ -63,6 +68,7 @@ export class PacketBuffers {
     this.textureLookup = this.textures;
     this.culling = new PacketCullingResources(session);
     this.materials = new MaterialBindingPool(session, materialLayout);
+    this.textureArrays = textureArrayLayout ? new PacketTextureArrayConsumer(session, textureArrayLayout) : undefined;
   }
 
   /** Monotonic revision of successfully published visibility-affecting author state. */
@@ -73,7 +79,7 @@ export class PacketBuffers {
   get materialBindingStats() { return this.materials.stats; }
   set(packet: RenderPacket): boolean {
     const generation = this.beginMutation();
-    const prepared = prepareRenderPacket(packet);
+    const prepared = prepareRenderPacket(packet, STOCK_MATERIAL_INSTANCE_OPTIONS);
     const ledger = compileMaterialEffectLedger(packet, prepared.batches);
     return this.commit(this.stage(prepared), generation, false, ledger);
   }
@@ -104,6 +110,7 @@ export class PacketBuffers {
     const oldGeometries = this.geometries, oldBatches = this.batches;
     this.geometries = current.geometries; this.geometryBounds = current.geometryBounds;
     this.batches = current.batches; this.textureLookup = current.textureLookup;
+    this.textureArrays?.clear();
     this.materialEffects = undefined;
     this.pruneCullingResources(); this.pruneLodInputs();
     this.motionHistory = new Map();
@@ -119,8 +126,13 @@ export class PacketBuffers {
     const generation = this.beginMutation();
     const deformation = this.deformation.validateUpdate(update);
     try {
+      let reusedArrayTable = false;
       const result = updatePacketInstances({
         ...this.residentContext(), textures: this.textureLookup,
+        ...(this.textureArrays ? { decorateBatches: (batches: readonly PreparedBatch[]) => {
+          const decorated = this.textureArrays!.decorateCurrent(batches);
+          reusedArrayTable = decorated !== undefined; return decorated ?? batches;
+        } } : {}),
         ...(this.deformation.snapshot ? { deformation: this.deformation.snapshot } : {}),
         ...(this.deformation.enabled ? {
           commitDeformation: () => this.deformation.update(deformation) } : {}),
@@ -131,7 +143,12 @@ export class PacketBuffers {
       let ledger: MaterialEffectLedgerSnapshot;
       try { ledger = compileMaterialEffectLedger(update, [...result.batches.values()].map(batch => batch.source)); }
       catch (error) { this.batches = result.batches; this.dispose(); throw error; }
-      this.batches = result.batches;
+      if (this.textureArrays && reusedArrayTable) {
+        this.batches = new Map(Array.from(result.batches, ([key, batch]) => {
+          const arrayMaterial = this.batches.get(key)?.arrayMaterial;
+          return [key, arrayMaterial && batch.source.textures ? { ...batch, arrayMaterial } : batch];
+        }));
+      } else this.batches = this.textureArrays?.remap(result.batches) ?? result.batches;
       this.materialEffects = ledger;
       this.motionHistory = new Map(result.historyUpdates);
       this.pruneCullingResources(); this.pruneLodInputs();
@@ -166,7 +183,7 @@ export class PacketBuffers {
   async setValidated(packet: RenderPacket, signal?: AbortSignal): Promise<boolean> {
     if (signal?.aborted) throw cancelled();
     const generation = this.beginMutation();
-    const prepared = prepareRenderPacket(packet);
+    const prepared = prepareRenderPacket(packet, STOCK_MATERIAL_INSTANCE_OPTIONS);
     const ledger = compileMaterialEffectLedger(packet, prepared.batches);
     const { staged, checked } = this.stageValidated(prepared);
     return this.validation.run(checked, signal, () => this.commit(staged, generation, true, ledger),
@@ -179,29 +196,52 @@ export class PacketBuffers {
     return this.generation;
   }
 
-  private stageValidated(prepared: PreparedPacket): { staged: StagedPacketBuffers; checked: Promise<void> } {
+  private stageValidated(prepared: PreparedPacket): { staged: TextureArrayPacketStage; checked: Promise<void> } {
     const result = gpuValidatedStage(this.session.device, () => this.stage(prepared),
       "GPU packet preparation failed");
     return { staged: result.value, checked: result.checked };
   }
 
-  private stage(prepared: PreparedPacket): StagedPacketBuffers {
-    return stagePacketBuffers(this.stagingContext(), prepared);
+  private stage(prepared: PreparedPacket): TextureArrayPacketStage {
+    if (!this.textureArrays) return stagePacketBuffers(this.stagingContext(), prepared);
+    const omitTextureStorage = this.textureArrays.plannedTextureIds(prepared.textures);
+    let arrayStage: PacketTextureArrayStage | undefined;
+    let staged: StagedPacketBuffers | undefined;
+    try {
+      staged = stagePacketBuffers(this.stagingContext(), prepared, (textures, batches) => {
+        arrayStage = this.textureArrays!.stage(this.textures, textures, batches);
+        return arrayStage.batches;
+      }, (textures, id) => this.textureArrays!.stagedBinding(arrayStage!, this.textures, textures, id),
+      omitTextureStorage);
+      const rows = arrayStage!.rows;
+      const batches = new Map(Array.from(staged.batches, ([key, batch]) => {
+        const arrayMaterial = rows.get(key); return [key, arrayMaterial ? { ...batch, arrayMaterial } : batch];
+      }));
+      return { ...staged, batches, arrayStage: arrayStage! };
+    } catch (error) {
+      if (arrayStage) this.textureArrays.rollback(arrayStage);
+      if (staged) discardPacketBufferStage(this.stagingContext(), staged);
+      throw error;
+    }
   }
-  private rollback(staged: StagedPacketBuffers): void {
-    discardPacketBufferStage(this.stagingContext(), staged);
+  private rollback(staged: TextureArrayPacketStage): void {
+    runResourceCleanup("Packet buffer rollback failed.", [
+      () => { if (staged.arrayStage) this.textureArrays!.rollback(staged.arrayStage); },
+      () => discardPacketBufferStage(this.stagingContext(), staged),
+    ]);
   }
 
-  private commit(staged: StagedPacketBuffers, generation: number, gpuValidated = false,
+  private commit(staged: TextureArrayPacketStage, generation: number, gpuValidated = false,
     materialEffects?: MaterialEffectLedgerSnapshot): boolean {
     if (staged.settled || generation !== this.generation || this.disposed || this.session.state !== "ready") {
       this.rollback(staged); throw cancelled();
     }
     const bounds = packetGeometryBounds(staged.geometries);
     this.textures.publishPrepared(staged.textures);
+    if (staged.arrayStage) this.textureArrays!.publish(staged.arrayStage);
     this.deformation.publish(staged.deformation, staged.deformationSnapshot, staged.deformationBoundsProfiles);
     if (gpuValidated) staged.deformation?.publishValidatedSources();
-    this.textureLookup = this.textures;
+    this.textureLookup = this.textureArrays?.lookup(this.textures) ?? this.textures;
     staged.settled = true;
     const previousResident = this.resident.detachActive();
     const oldGeometries = this.geometries, oldBatches = this.batches;
@@ -301,7 +341,8 @@ export class PacketBuffers {
       ...batches.flatMap(value => [() => this.session.release(value.buffer),
         () => this.session.release(value.previousBuffer), () => this.materials.release(value.material)]),
       () => this.culling.dispose(), () => lod?.dispose(), () => shadowLod?.dispose(),
-      () => this.lodInputs.clear(), () => this.textures.dispose(), () => activeResident?.projection.release()]);
+      () => this.lodInputs.clear(), () => this.textureArrays?.clear(), () => this.textures.dispose(),
+      () => activeResident?.projection.release()]);
   }
 
   private pruneCullingResources(): void { this.culling.prune(this.batches); }

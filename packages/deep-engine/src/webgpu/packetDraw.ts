@@ -39,7 +39,10 @@ export function drawPacketBatches(
     : (source.alphaMode === "BLEND") === (phase === "transparent"));
   const draws = candidates.map(cached => {
     const dynamic = resolveDeformationDraw(cached.source, phase, authorShadow, deformation);
-    const selected = dynamic?.pipelines ?? pipelines;
+    const materialNeeded = (phase !== "shadow" && cached.source.textures !== undefined)
+      || (cached.source.alphaMode === "MASK" && cached.source.textures?.baseColor !== undefined);
+    const selected = dynamic?.pipelines ?? (materialNeeded && !cached.arrayMaterial
+      ? pipelines.textureArrayFallback ?? pipelines : pipelines);
     const pipeline = phase === "shadow" ? shadowPipeline(selected, cached.source, authorShadow)
       : mainPipeline(selected, cached.source, phase === "display", directionalOnly);
     const cullingPhase = phase === "shadow" ? "shadow" : "opaque";
@@ -50,14 +53,25 @@ export function drawPacketBatches(
     return { cached, dynamic, pipeline, dynamicCuller };
   });
   let drawCalls = 0, triangles = 0;
+  let activePipeline: GPURenderPipeline | undefined;
+  let activeMaterialGroup: GPUBindGroup | undefined;
   for (const { cached, dynamic, pipeline, dynamicCuller } of draws) {
     const { source, buffer, previousBuffer } = cached;
     const shadowMaterial = phase === "shadow"
       && source.alphaMode === "MASK"
       && source.textures?.baseColor !== undefined;
-    pass.setPipeline(pipeline);
-    if (dynamic) pass.setBindGroup(1, dynamic.group);
-    else if ((phase !== "shadow" && source.textures) || shadowMaterial) pass.setBindGroup(1, cached.material!.group);
+    if (pipeline !== activePipeline) {
+      pass.setPipeline(pipeline); activePipeline = pipeline;
+      // Different pipeline layouts may disturb group 1; only dedupe within a stable pipeline run.
+      activeMaterialGroup = undefined;
+    }
+    const arrayMaterial = !dynamic && ((phase !== "shadow" && source.textures) || shadowMaterial)
+      ? cached.arrayMaterial : undefined;
+    const materialGroup = dynamic ? dynamic.group : arrayMaterial?.group
+      ?? ((phase !== "shadow" && source.textures) || shadowMaterial ? cached.material!.group : undefined);
+    if (materialGroup && materialGroup !== activeMaterialGroup) {
+      pass.setBindGroup(1, materialGroup); activeMaterialGroup = materialGroup;
+    }
     if (source.lod) {
       const draws = lod?.draws(source.key);
       if (!draws) throw new Error(`LOD batch was not encoded for this frame: ${source.key}`);

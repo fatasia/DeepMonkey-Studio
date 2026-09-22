@@ -7,6 +7,8 @@ import { PBR_DEPTH_FORMAT, PBR_HDR_FORMAT, PBR_MAIN_SAMPLE_COUNT, PBR_OPAQUE_ATT
 import { weightedOitColorTargets } from "./weightedOit.js";
 import { CASCADED_SHADOW_UNIFORM_BYTES } from "../shadows/cascadedShadowShader.js";
 import { createPbrOutputShaderProvenance, type PbrOutputShaderProvenance } from "./pbrOutputShaderProvenance.js";
+import { composeTextureArraySceneShader } from "./textureArrayWgsl.js";
+import { textureArrayMaterialTableLayoutEntries } from "./textureArrayMaterialTable.js";
 
 export const PBR_FRAME_UNIFORM_FLOATS = 96;
 export const PBR_FRAME_UNIFORM_BYTES = PBR_FRAME_UNIFORM_FLOATS * 4;
@@ -36,6 +38,8 @@ export interface Pipelines {
   readonly materialLayout: MaterialLayouts;
   readonly cascadedShadowLayout: GPUBindGroupLayout;
   readonly deformationPlainLayout?: GPUBindGroupLayout;
+  /** Conventional D2 variant used by materials that cannot enter an array. */
+  readonly textureArrayFallback?: Pipelines;
 }
 
 export type MainMaterialMode = "plain" | "material" | "normal";
@@ -77,13 +81,16 @@ const shadowMaskBuffers: GPUVertexBufferLayout[] = [
 export async function createPipelines(device: GPUDevice, format: GPUTextureFormat,
   forwardPlusLayout: GPUBindGroupLayout, writeGeometryBuffers = true,
   directDisplayNoEffects = false, directDisplayOneCascade = false,
-  options: { readonly deformation?: boolean } = {}): Promise<Pipelines> {
+  options: { readonly deformation?: boolean; readonly textureArrays?: boolean } = {}): Promise<Pipelines> {
   const deformation = options.deformation === true;
+  const textureArrays = options.textureArrays === true;
   if (deformation && !writeGeometryBuffers) throw new Error("Deformation pipelines require geometry buffers for motion history.");
   const poseEntries: GPUBindGroupLayoutEntry[] = deformation ? [11, 12].map(binding => ({
     binding, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage", minBindingSize: 48 },
   })) : [];
-  const module = device.createShaderModule({ label: "Deep PBR", code: deformation ? deformedSceneShader : sceneShader });
+  const source = deformation ? deformedSceneShader : sceneShader;
+  const module = device.createShaderModule({ label: textureArrays ? "Deep PBR texture arrays" : "Deep PBR",
+    code: textureArrays ? composeTextureArraySceneShader(source) : source });
   const outputModule = device.createShaderModule({ label: "Deep HDR output", code: outputShader });
   for (const shader of [module, outputModule]) {
     const info = await shader.getCompilationInfo();
@@ -101,7 +108,9 @@ export async function createPipelines(device: GPUDevice, format: GPUTextureForma
     { binding: 7, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform", minBindingSize: 64 } },
     { binding: 8, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform", minBindingSize: 32 } },
   ] });
-  const material = device.createBindGroupLayout({ entries: [
+  const material = device.createBindGroupLayout({ entries: textureArrays
+    ? [...textureArrayMaterialTableLayoutEntries(), ...poseEntries]
+    : [
     { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {} },
     { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
     { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} },
@@ -113,8 +122,8 @@ export async function createPipelines(device: GPUDevice, format: GPUTextureForma
     { binding: 8, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
     { binding: 9, visibility: GPUShaderStage.FRAGMENT, texture: {} },
     { binding: 10, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
-    ...poseEntries,
-  ] });
+      ...poseEntries,
+    ] });
   const emptyMaterialLayout = device.createBindGroupLayout({ label: "Deep plain material group 1", entries: poseEntries });
   const cascadedShadowLayout = device.createBindGroupLayout({ label: "Deep cascaded shadow group 2", entries: [
     { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,

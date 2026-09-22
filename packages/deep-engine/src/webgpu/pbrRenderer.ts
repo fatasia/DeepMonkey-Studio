@@ -101,7 +101,10 @@ export class PbrRenderer {
     if (options.adaptiveQuality?.enabled) this.diagnostics.setEnabled(true);
     this.probeClipmap = options.probeClipmap === undefined ? undefined
       : new ProbeClipmapPbrController(this, probeClipmapDeviceEpoch(session.device), options.probeClipmap);
-    this.packets = new PacketBuffers(session, pipelines.materialLayout, deformationPipelines, options.meshlets === true, features.visibilityBuffer);
+    const fallback = pipelines.textureArrayFallback;
+    this.packets = new PacketBuffers(session, (fallback ?? pipelines).materialLayout,
+      deformationPipelines, options.meshlets === true, features.visibilityBuffer,
+      fallback ? pipelines.materialLayout.material : undefined);
     this.writeGeometryBuffers = features.ambientOcclusion || features.screenSpaceReflection || features.volumetricFog || features.temporalAa
       || !!deformationPipelines;
     this.ground = createPbrGround(session);

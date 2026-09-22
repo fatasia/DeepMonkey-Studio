@@ -74,15 +74,16 @@ export class PacketDeformationState {
     const sources = new Map(this.current!.sources.map(source => [source.id, source]));
     const poses = new Map(this.current!.poses.map(pose => [pose.id, pose]));
     const bounds = new Map<string, DeformationBoundsEnvelope>();
-    const retained = new Map<string, Set<MaterialBinding | undefined>>();
-    for (const { source: batch, material } of batches.values()) {
+    const retained = new Map<string, Set<MaterialBinding | GPUBindGroup | undefined>>();
+    for (const { source: batch, material, arrayMaterial } of batches.values()) {
       if (batch.pose === undefined) continue;
       const pose = poses.get(batch.pose), geometry = geometries.get(batch.geometry);
       const source = pose && sources.get(pose.source);
       if (!source || !geometry || source.geometry !== batch.geometry) throw new Error("Deformation bounds source is missing.");
       bounds.set(batch.key, deformationBoundsEnvelope(source, pose!, geometry.center, geometry.radius, this.profiles.get(source.id)));
-      const materials = retained.get(batch.pose) ?? new Set<MaterialBinding | undefined>();
-      materials.add(material); materials.add(undefined); retained.set(batch.pose, materials);
+      const materials = retained.get(batch.pose) ?? new Set<MaterialBinding | GPUBindGroup | undefined>();
+      materials.add(material); if (arrayMaterial) materials.add(arrayMaterial.group);
+      materials.add(undefined); retained.set(batch.pose, materials);
     }
     this.bindings!.retain(retained);
     this.active.encode(encoder);
@@ -96,10 +97,14 @@ export class PacketDeformationState {
         if (!this.encoded || this.disposed) throw new Error("Deformation must be encoded before drawing.");
         const streams = this.active!.drawStreams(batch.pose!);
         if (!streams) throw new Error("Deformation draw streams are missing.");
-        const material = phase !== "shadow" || (batch.alphaMode === "MASK" && batch.textures?.baseColor)
-          ? batches.get(batch.key)?.material : undefined;
+        const cached = batches.get(batch.key);
+        const materialNeeded = (phase !== "shadow" && batch.textures !== undefined)
+          || (batch.alphaMode === "MASK" && batch.textures?.baseColor !== undefined);
+        const arrayMaterial = materialNeeded ? cached?.arrayMaterial : undefined;
+        const material = arrayMaterial ?? (materialNeeded ? cached?.material : undefined);
+        const selected = arrayMaterial ? this.pipelines! : this.pipelines!.textureArrayFallback ?? this.pipelines!;
         return { pose: batch.pose!, stale: streams.stale,
-          pipelines: authorShadow ? authoredShadowPipelines(this.pipelines!) : this.pipelines!,
+          pipelines: authorShadow ? authoredShadowPipelines(selected) : selected,
           group: this.bindings!.get(batch.pose!, streams, material) };
       },
       dynamicCulling: (batch, phase, cascade) => culling.dynamicPhase(batch, phase, cascade),
