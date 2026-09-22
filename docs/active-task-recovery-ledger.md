@@ -3411,3 +3411,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
   - **能力矩阵**：`capability-matrix.md` + `capability-matrix.json`（schema `deep-monkey.v1-tri-endpoint-matrix.v1`）；第一版维度=加载/渲染后端/帧产出/GPU错误/包hash一致，逐端 attempts 记录失败与已试路径；EXE sha256、Chrome 版本、环境探测（WebGL renderer/WebGPU adapter info）随证据落盘。
 - **诚实边界**：①逐像素画质比较与输入轨迹对拍第一版显式不做（矩阵 boundary 字段写明；首轮 Native 与 Web 画面存在曝光/明暗差异，属待对拍差异，不以降画质掩盖、本轮不下画质结论）；②Three WebView 同内容证据为 **WebView2 真实进程渲染器级**（EXE 内嵌 publication 为历史构建内容未重打包），EXE 级同内容需以冻结 publication 重跑 `bundle:scene-viewer`，列为后续动作；③runner 首跑实测 tsx 解析 deep-engine 包导出漂移（并行波次演进致 dist 陈旧缺 `packNativeProbeGridLevels`），已按 verify-dynamic-runtime-replay 的 development 条件口径实现**检测后自拉起重跑**（不改包导出映射、不触碰并行 WIP 文件）；④相机为静止 orbit 同机位，相机/输入轨迹回放未做；⑤Web/WebView 端渲染走 vite dev server 宿主（gi-crossend-matrix 同口径），非完整发布静态站构建。
 - **可复跑验证**：同命令两轮，输出结构一致、fixture hash 一致、3/3 端全绿。未 push；test-output 不入库；并行 WIP（babylon-web、.tmp-*、probeGridBake* 等）未触碰。
+
+### 2026-09-23 30 分钟自检（第二十六轮）：V1 runner 验收 + V3 Unity 端到端补位
+
+- **V1 三端统一对拍 runner 验收通过**（2117d033+2552c958）：冻结 box 场景两轮复跑运行包 SHA 逐字节一致（packageId scene.v1-tri-endpoint、2664B）；**首轮 3/3 端全绿超门禁（≥2 端）**——Web headless Chrome webgpu+webgl 双后端 8/8 帧、Three WebView 真实 Tauri EXE CDP 实窗 8/8、Deep Native V2 release EXE Vulkan 真窗 8/8 全部 GPU 错误干净+hash 一致；capability-matrix.md/json 含失败明细与环境探测；runner 复跑命令可重复。边界：逐像素画质与输入轨迹对拍第一版显式不做（Native/Web 曝光差异如实待对拍）；WebView 内嵌 publication 为历史构建（EXE 级同内容需重跑 bundle:scene-viewer）；宿主为 vite dev server 口径。
+- **满载补位**：空闲代理派 V3 Unity WebGL 本机导出+托管端到端（Unity 版本/WebGL 模块自查→最小工程 batchmode 导出→托管链→headless 五项验证，能验几项验几项如实留证）；F3 烘焙 UI 穿透代理在跑。
