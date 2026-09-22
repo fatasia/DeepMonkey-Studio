@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>F6 Deep Engine 浏览器独立示例</title>
+</head>
+<body>
+  <!-- 第三方独立使用示例（Browser 侧）：
+       1. 先用 esbuild 把同目录 browser-standalone.mjs 打包成 browser-standalone.bundle.mjs：
+          npx esbuild examples/browser-standalone.mjs --bundle --format=esm --target=es2022 --outfile=browser-standalone.bundle.mjs
+       2. 用任意静态服务器托管本目录，浏览器打开本页即可看到 JSON 结果。
+       本页只做模块加载 + 纯函数执行，不需要 WebGPU 设备。 -->
+  <h1>Deep Engine 浏览器独立消费</h1>
+  <pre id="standalone-output">running</pre>
+  <script type="module" src="./browser-standalone.bundle.mjs"></script>
+</body>
+</html>
