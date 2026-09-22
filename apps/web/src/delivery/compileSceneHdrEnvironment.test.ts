@@ -14,6 +14,14 @@ it("HDR author semantics reject background panorama and unsupported GI without c
   expect(compileSceneHdrDescriptor(environment,{...lighting,globalIlluminationEnabled:true})).toBeUndefined();
   expect(compileSceneHdrDescriptor(environment,{...lighting,reflectionsEnabled:false})).toBeUndefined();
 });
+// F4 对拍缺口修复：v6 载荷不携带 environmentIntensity（RuntimePrefilteredIbl 无强度
+// 字段），非默认值曾被静默丢弃；现在一律 fail-closed 拒绝编译，让 environment 留在
+// deferred 由门禁显式阻断（失败不静默丢字段）。
+it("fails closed on non-default environment intensity instead of silently dropping it",()=>{
+  expect(compileSceneHdrDescriptor({...environment,environmentIntensity:1.4},lighting)).toBeUndefined();
+  expect(compileSceneHdrDescriptor({...environment,environmentIntensity:0},lighting)).toBeUndefined();
+  expect(compileSceneHdrDescriptor({...environment,environmentIntensity:undefined},lighting)?.schemaVersion).toBe(6);
+});
 it("freezes HDR source identity, lighting and prefiltered payload into v11",async()=>{
   const fixture=JSON.parse(readFileSync(new URL("../../../../packages/deep-engine-native/tests/fixtures/runtime-package-prefiltered-ibl-v1.json",import.meta.url),"utf8"));
   const payload={...fixture.payloads[fixture.entrypoints.environment],id:"scene.environment"} as RuntimePrefilteredIbl;

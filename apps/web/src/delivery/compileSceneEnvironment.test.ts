@@ -106,6 +106,94 @@ describe("authored solid environment", () => {
     expect(assess(erased).items.some(item => item.path === "environment" && item.status === "blocked")).toBe(true);
     expect(assess({ ...evidence, recipe: "deep-scene-static-compile-v5" }).status).toBe("blocked");
   });
+  // F4 逐字段对拍：作者色彩分级六通道随 v9 档贯通运行包（Native AuthorGrading 消费），
+  // 中性输入保持旧档字节不变，非法数值退回旧档并留在 deferred（失败不静默）。
+  const gradingState = (channels: Partial<NonNullable<SceneSnapshot["postProcessing"]>> = {}) => ({
+    enabled: true, smaa: true, ssao: false, ssaoIntensity: 1, bloom: false, bloomStrength: .35, bloomThreshold: .9,
+    ...channels });
+  it("lowers non-neutral author grading into the v9 profile for both plain and studio environments", async () => {
+    const graded = scene();
+    graded.postProcessing = gradingState({ colorGrading: true, hue: -30, saturation: .5, brightness: -.25,
+      contrast: .1, temperature: .8, tint: -.4 });
+    const plain = await compileSceneRuntimePackage(graded, options);
+    expect(plain.evidence.recipe).toBe("deep-scene-static-compile-v14");
+    const payload = plain.runtimePackage.payloads["scene.environment"];
+    expect(payload).toMatchObject({ schemaVersion: 9, kind: "solid-background-no-ibl", outputTransform: "native-aces-grading-v9",
+      colorGrading: { hue: -30, saturation: .5, brightness: -.25, contrast: .1, temperature: .8, tint: -.4 } });
+    expect(parseDeepRuntimePackage(plain.packageJson).valid).toBe(true);
+    const report = assessCompiledScenePublication(graded, { compilation: plain.evidence, fixtureId: "grading", platform: "windows-x64" });
+    // 分级能力已按 deep.scene.author-grading.v1 编译（不再落入 uncompiled）；
+    // blocked 只因缺 Native 窗口运行证据，与既有 capability 同一纪律。
+    const gradingEntry = report.items.find(item => item.path === "postProcessing" && item.capability === "deep.scene.author-grading.v1");
+    expect(gradingEntry?.capability).toBe("deep.scene.author-grading.v1");
+    expect(gradingEntry?.reason).not.toContain("同时标记");
+    expect(report.items.some(item => item.path === "postProcessing" && item.capability === "deep.scene.uncompiled.v1"
+      && item.status === "degraded")).toBe(true);
+
+    const studioGraded = scene();
+    studioGraded.environment = { gridVisible: true, skybox: "studio", backgroundColor: "#202a31" };
+    studioGraded.postProcessing = gradingState({ colorGrading: true, brightness: .5 });
+    const studio = await compileSceneRuntimePackage(studioGraded, options);
+    expect(studio.evidence.recipe).toBe("deep-scene-static-compile-v14");
+    expect(studio.runtimePackage.payloads["scene.environment"]).toMatchObject({
+      schemaVersion: 9, kind: "solid-background-builtin-ibl", outputTransform: "native-aces-grading-v9",
+      colorGrading: { brightness: .5 } });
+  });
+  it("combines author grading with weather fog or lighting inside the same v9 payload", async () => {
+    // 合同事实：非 sunny 天气灯光整体不编译（compileSceneLighting 拒绝），因此
+    // 雾+分级、灯光+分级分别成包；两者都随 v9 档携带，不互相挤出。
+    const fogGraded = { ...scene(), weather: "fog" } as SceneSnapshot;
+    fogGraded.postProcessing = gradingState({ colorGrading: true, saturation: .25 });
+    const fogRun = await compileSceneRuntimePackage(fogGraded, options);
+    expect(fogRun.evidence.recipe).toBe("deep-scene-static-compile-v14");
+    expect(fogRun.runtimePackage.payloads["scene.environment"]).toMatchObject({
+      schemaVersion: 9, kind: "solid-background-no-ibl", outputTransform: "native-aces-grading-v9",
+      colorGrading: { saturation: .25 } });
+    expect(fogRun.runtimePackage.payloads["scene.environment"]).toHaveProperty("fog");
+    expect(parseDeepRuntimePackage(fogRun.packageJson).valid).toBe(true);
+
+    const litGraded = scene();
+    litGraded.lighting = { enabled: true, intensity: 1, shadowsEnabled: false, reflectionsEnabled: false,
+      globalIlluminationEnabled: false, lights: [{ id: "sun", name: "主方向光", type: "directional", color: "#ffffff",
+        enabled: true, position: { x: 8, y: 12, z: 6 }, target: { x: 0, y: 0, z: 0 }, intensity: 2, castShadow: false }] };
+    litGraded.postProcessing = gradingState({ colorGrading: true, saturation: .25 });
+    const litRun = await compileSceneRuntimePackage(litGraded, options);
+    expect(litRun.runtimePackage.payloads["scene.environment"]).toMatchObject({
+      schemaVersion: 9, kind: "solid-background-no-ibl", outputTransform: "native-aces-grading-v9" });
+    expect(litRun.runtimePackage.payloads["scene.environment"]).toHaveProperty("lighting");
+  });
+  it("keeps neutral grading on legacy profiles and defers invalid grading channels instead of silently dropping them", async () => {
+    // 显式开启但六通道全零 = 精确中性 → 旧档字节不变。
+    const neutral = scene();
+    neutral.postProcessing = gradingState({ colorGrading: true, hue: 0, saturation: 0, brightness: 0, contrast: 0, temperature: 0, tint: 0 });
+    const neutralRun = await compileSceneRuntimePackage(neutral, options);
+    expect(neutralRun.evidence.recipe).toBe("deep-scene-static-compile-v6");
+    expect(neutralRun.runtimePackage.payloads["scene.environment"]).toMatchObject({ schemaVersion: 1 });
+    // 非法通道（脚本写入越界值）→ 退回旧档编译，字段留在 deferred 由门禁显式声明。
+    const invalid = scene();
+    invalid.postProcessing = gradingState({ colorGrading: true, hue: 500 });
+    const invalidRun = await compileSceneRuntimePackage(invalid, options);
+    expect(invalidRun.evidence.recipe).toBe("deep-scene-static-compile-v6");
+    expect(invalidRun.evidence.compiledSceneFields.some(entry => entry.field === "postProcessing")).toBe(false);
+    expect(invalidRun.evidence.deferredSceneFields).toContain("postProcessing");
+    const invalidReport = assessCompiledScenePublication(invalid, { compilation: invalidRun.evidence, fixtureId: "invalid-grading", platform: "windows-x64" });
+    expect(invalidReport.items.filter(item => item.path === "postProcessing").some(item => item.status === "degraded")).toBe(true);
+  });
+  it("marks compiled spot PCSS softness as degraded because Native renders hard PCF shadows", async () => {
+    const source = scene();
+    source.lighting = { enabled: true, intensity: 1, shadowsEnabled: true, reflectionsEnabled: false,
+      globalIlluminationEnabled: false, lights: [{ id: "spot", name: "射灯", type: "spot", color: "#ffffff",
+        enabled: true, position: { x: 0, y: 5, z: 0 }, target: { x: 0, y: 0, z: 0 }, intensity: 2,
+        castShadow: true, shadowSoftness: .6, angle: .6, penumbra: .3 }] };
+    const result = await compileSceneRuntimePackage(source, options);
+    // 柔化参数随 v4 档载荷携带（Native 解码合法）但渲染尚未消费：必须显式 degraded，不允许静默。
+    const payload = result.runtimePackage.payloads["scene.environment"] as { lighting?: { localLights?: Array<{ shadowSoftness?: number }> } };
+    expect(payload.lighting?.localLights?.[0]?.shadowSoftness).toBe(.6);
+    const report = assessCompiledScenePublication(source, { compilation: result.evidence, fixtureId: "pcss", platform: "windows-x64" });
+    const lighting = report.items.find(item => item.path === "lighting");
+    expect(lighting?.status).toBe("degraded");
+    expect(lighting?.reason).toContain("PCSS 阴影柔化");
+  });
 });
 
 describe("authored weather fog compilation", () => {

@@ -13,23 +13,43 @@ export function validateRuntimeEnvironment(value: unknown, id: string, revision:
   const object = record(value, path);
   if (object.schema === "deep-engine.solid-environment") {
     const hdr = object.schemaVersion === 6;
-    const fogged = object.schemaVersion === 7 || object.schemaVersion === 8;
+    // v7 显雾必填；v8 studio 与 v9 分级档沿袭 v7 的雾语义但雾可选。
+    const fogged = object.schemaVersion === 7 || object.schemaVersion === 8 || object.schemaVersion === 9;
     const studio = object.schemaVersion === 8;
+    // v9 作者色彩分级档：colorGrading 必须声明；kind 允许 no-ibl 与 builtin-ibl
+    // （studio 语义延续），与 Native solid_environment decode 档位门同一合同。
+    const grading = object.schemaVersion === 9;
     const hasFog = object.fog !== undefined;
     fields(object, ["schema", "schemaVersion", "id", "revision", "kind", "backgroundSrgb", "outputTransform",
-      ...(hdr ? ["ibl"] : []), ...(object.schemaVersion === 7 ? ["fog"] : [])],
-      ["lighting", "staticLightmap", "irradianceProbes", ...(studio ? ["fog"] : [])], path);
+      ...(hdr ? ["ibl"] : []), ...(object.schemaVersion === 7 ? ["fog"] : []), ...(grading ? ["colorGrading"] : [])],
+      ["lighting", "staticLightmap", "irradianceProbes", ...(studio || grading ? ["fog"] : [])], path);
     const pointShadow = object.schemaVersion === 5;
     const shadows = pointShadow || object.schemaVersion === 4;
     const many = shadows || object.schemaVersion === 3;
     const lit = many || object.schemaVersion === 2;
     const fogLit = fogged && object.lighting !== undefined;
-    // v7 的 author fog 是合同必需项：显式 undefined 与缺失一致，均 fail-closed（v8 studio 才可选）。
+    // v7 的 author fog 是合同必需项：显式 undefined 与缺失一致，均 fail-closed（v8/v9 才可选）。
     requireValue(!(object.schemaVersion === 7 && object.fog === undefined), path, "v7 requires author fog.");
     requireValue((hdr || lit || fogged || object.schemaVersion === 1) && object.id === id && id === "scene.environment"
-      && object.revision === 1 && revision === 1 && object.kind === (studio ? "solid-background-builtin-ibl" : hdr ? "solid-background-prefiltered-ibl" : "solid-background-no-ibl")
-      && object.outputTransform === (studio ? "native-aces-studio-v8" : fogged ? "native-aces-fog-v7" : hdr ? "native-aces-hdr-v6" : pointShadow ? "native-aces-local-shadows-v5" : shadows ? "native-aces-spot-shadows-v4" : many ? "native-aces-lights-v3" : lit ? "native-aces-light-v2" : "native-aces-v1")
+      && object.revision === 1 && revision === 1
+      && object.kind === (grading ? object.kind // v9 的 kind 在下方 grading 块内显式校验双档位。
+        : studio ? "solid-background-builtin-ibl" : hdr ? "solid-background-prefiltered-ibl" : "solid-background-no-ibl")
+      && object.outputTransform === (grading ? "native-aces-grading-v9" : studio ? "native-aces-studio-v8" : fogged ? "native-aces-fog-v7" : hdr ? "native-aces-hdr-v6" : pointShadow ? "native-aces-local-shadows-v5" : shadows ? "native-aces-spot-shadows-v4" : many ? "native-aces-lights-v3" : lit ? "native-aces-light-v2" : "native-aces-v1")
       && (hdr || lit || fogged || !Object.hasOwn(object, "lighting")), path, "Unsupported solid environment profile.");
+    if (grading) {
+      // v9 双 kind：builtin-ibl（继承 v8 studio）或 no-ibl（普通纯色场景），二者之外拒绝。
+      requireValue(object.kind === "solid-background-no-ibl" || object.kind === "solid-background-builtin-ibl",
+        path, "Unsupported solid environment profile.");
+      const channels = record(object.colorGrading, `${path}.colorGrading`);
+      fields(channels, ["hue", "saturation", "brightness", "contrast"], ["temperature", "tint"], `${path}.colorGrading`);
+      // 六通道范围与 Native AuthorGrading::new / 属性面板三方一致：hue ±180 度，其余 ±1。
+      const inRange = (value: unknown, min: number, max: number): value is number =>
+        typeof value === "number" && Number.isFinite(value) && value >= min && value <= max;
+      requireValue(inRange(channels.hue, -180, 180)
+        && (["saturation", "brightness", "contrast"] as const).every(key => inRange(channels[key], -1, 1))
+        && (["temperature", "tint"] as const).every(key => channels[key] === undefined || inRange(channels[key], -1, 1)),
+        `${path}.colorGrading`, "Invalid authored color grading.");
+    }
     if (hdr) {
       validateRuntimePrefilteredIbl(object.ibl,id,revision,`${path}.ibl`);
       const light = record(object.lighting, `${path}.lighting`);

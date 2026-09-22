@@ -240,8 +240,9 @@ pub(super) fn decode(
                 && lighting.is_none_or(|light| light.validate().is_ok())
                 && source.ibl.is_none()
         }
-        // v9 是作者色彩分级档：继承 v8 studio 语义（builtin IBL、fog 可选），
-        // colorGrading 必须声明；数值/范围非法走下方专属错误消息（与 fog 同路径）。
+        // v9 是作者色彩分级档：colorGrading 必须声明；继承 v8 的 studio（builtin
+        // IBL）语义，同时允许 no-ibl（普通纯色场景的分级，雾/灯光同样可选）。
+        // 数值/范围非法走下方专属错误消息（与 fog 同路径）。
         (9, lighting) => {
             source.output_transform == "native-aces-grading-v9"
                 && source.color_grading.is_some()
@@ -257,10 +258,20 @@ pub(super) fn decode(
         || source.revision != revision
         || revision != 1
         || source.kind
-            != if matches!(source.schema_version, 8 | 9) {
+            != if source.schema_version == 8 {
                 "solid-background-builtin-ibl"
             } else if source.schema_version == 6 {
                 "solid-background-prefiltered-ibl"
+            } else if source.schema_version == 9 {
+                // v9 双 kind：builtin-ibl（studio 语义延续）或 no-ibl（普通纯色
+                // 场景的分级）；两者之外在下方同一失败路径拒绝。
+                if source.kind == "solid-background-builtin-ibl"
+                    || source.kind == "solid-background-no-ibl"
+                {
+                    source.kind.as_str()
+                } else {
+                    ""
+                }
             } else {
                 "solid-background-no-ibl"
             }
@@ -447,8 +458,7 @@ mod tests {
     /// v9 档：六通道解码进 AuthorGrading，temperature/tint 可选缺省 0，
     /// lighting/fog 与 v8 一样可选兼容。
     #[test]
-    fn grading_profile_decodes_six_channels_with_optional_channels_defaulting_to_zero() {
-        let decoded = decode(&grading_source(), "scene.environment", 1).unwrap();
+    fn grading_profile_decodes_six_channels_with_optional_channels_defaulting_to_zero() {        let decoded = decode(&grading_source(), "scene.environment", 1).unwrap();
         let grading = decoded.grading.expect("v9 declares author color grading");
         assert_eq!(
             grading.pack(),
@@ -530,11 +540,14 @@ mod tests {
             .remove("saturation");
         assert!(decode(&missing, "scene.environment", 1).is_err());
         // 变换名/kind 错误与 kind 档位语义保持 fail-closed。
+        // （no-ibl 现在是 v9 的合法 kind，见
+        // grading_profile_admits_plain_no_ibl_kind_and_rejects_unknown_kinds；
+        // 这里用 prefiltered-ibl——HDR v6 专属档——验证 kind 仍然 fail-closed。）
         let mut wrong_transform = grading_source();
         wrong_transform["outputTransform"] = serde_json::json!("native-aces-studio-v8");
         assert!(decode(&wrong_transform, "scene.environment", 1).is_err());
         let mut wrong_kind = grading_source();
-        wrong_kind["kind"] = serde_json::json!("solid-background-no-ibl");
+        wrong_kind["kind"] = serde_json::json!("solid-background-prefiltered-ibl");
         assert!(decode(&wrong_kind, "scene.environment", 1).is_err());
         // v9 声明 ibl 拒绝（builtin IBL 语义继承 v8）。
         let mut with_ibl = grading_source();
@@ -574,6 +587,31 @@ mod tests {
 
     fn source_background_after_inverse_output() -> [f64; 3] {
         [0.0, 0.5, 1.0].map(inverse_output)
+    }
+
+    /// F4 逐字段对拍：v9 档扩展 no-ibl kind——普通纯色场景（非 studio）的作者
+    /// 分级 + 可选雾/灯光在同一载荷携带；三档 kind 之外仍拒绝。
+    #[test]
+    fn grading_profile_admits_plain_no_ibl_kind_and_rejects_unknown_kinds() {
+        // no-ibl v9（Web compileSceneEnvironment 对 skybox:none 场景的输出形态）。
+        let mut plain = grading_source();
+        plain["kind"] = serde_json::json!("solid-background-no-ibl");
+        let decoded = decode(&plain, "scene.environment", 1).unwrap();
+        assert!(decoded.grading.is_some());
+        assert!(decoded.fog.is_some());
+        // 雾可选：普通场景无天气时不声明 fog 仍然合法。
+        let mut without_fog = plain.clone();
+        without_fog.as_object_mut().unwrap().remove("fog");
+        assert!(decode(&without_fog, "scene.environment", 1).is_ok());
+        // lighting 同样可选。
+        let mut lit = plain;
+        lit["lighting"] = serde_json::json!({"direction":[0,1,0],"radiance":[0,0,0],
+            "exposure":1.05,"shadows":false});
+        assert!(decode(&lit, "scene.environment", 1).is_ok());
+        // 三档 kind 之外（prefiltered-ibl 是 HDR v6 专属）拒绝。
+        let mut wrong = grading_source();
+        wrong["kind"] = serde_json::json!("solid-background-prefiltered-ibl");
+        assert!(decode(&wrong, "scene.environment", 1).is_err());
     }
 }
 

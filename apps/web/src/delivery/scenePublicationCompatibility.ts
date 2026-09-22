@@ -23,21 +23,42 @@ const COMPILED_FIELD_CAPABILITIES = {
   clipping: new Set(["deep.scene.section-plane.v1"]),
   animation: new Set(["deep.scene.dynamic-runtime.v1"]),
   environment: new Set(["deep.scene.solid-environment.v1", "deep.scene.hdr-environment.v1"]),
+  // F4 作者色彩分级：postProcessing 域内 colorGrading 六通道随 v9 环境档编译，
+  // 域内其余后处理（bloom/ssao/ssr 等）仍在 deferred 里按字段声明降级。
+  postProcessing: new Set(["deep.scene.author-grading.v1"]),
   lighting: new Set([
     "deep.scene.directional-light.v1", "deep.scene.multi-light.v1", "deep.scene.spot-shadow.v1",
     "deep.scene.point-shadow.v1", "deep.scene.hdr-lighting.v1",
   ]),
 } as const;
 
+/** 与编译器 compileAuthorColorGrading 同一中性判定；非法数值不算可编译分级。 */
+function hasActiveAuthorColorGrading(scene: SceneSnapshot): boolean {
+  const state = scene.postProcessing;
+  if (state?.colorGrading !== true) return false;
+  const channels = [state.hue, state.saturation, state.brightness, state.contrast, state.temperature, state.tint].map(value => value ?? 0);
+  if (!Number.isFinite(channels[0]!) || Math.abs(channels[0]!) > 180
+    || channels.slice(1).some(value => !Number.isFinite(value) || Math.abs(value) > 1)) return false;
+  return channels.some(value => value !== 0);
+}
+
 const COMPILED_RECIPES = new Set([
   "deep-scene-static-compile-v4", "deep-scene-static-compile-v5", "deep-scene-static-compile-v6",
   "deep-scene-static-compile-v7", "deep-scene-static-compile-v8", "deep-scene-static-compile-v9",
   "deep-scene-static-compile-v10", "deep-scene-static-compile-v11", "deep-scene-static-compile-v12",
-  "deep-scene-static-compile-v13",
+  "deep-scene-static-compile-v13", "deep-scene-static-compile-v14",
 ]);
+
+/** 与编译器 compileSceneLighting 同一 PCSS 触发条件；用于已编译灯光的柔化降级标记。 */
+function hasAuthoredSpotSoftness(scene: SceneSnapshot): boolean {
+  return scene.lighting?.lights?.some(light => light.enabled && light.type === "spot"
+    && light.castShadow && (light.shadowSoftness ?? 0) > 0) === true;
+}
 
 function expectedRecipe(scene: SceneSnapshot, compilation: SceneCompilationEvidence): string {
   const fields = new Map((compilation.compiledSceneFields ?? []).map(entry => [entry.field, entry.capability]));
+  if (hasActiveAuthorColorGrading(scene)
+    && fields.get("environment") === "deep.scene.solid-environment.v1") return "deep-scene-static-compile-v14";
   if (scene.environment?.skybox === "studio"
     && fields.get("environment") === "deep.scene.solid-environment.v1") return "deep-scene-static-compile-v13";
   if (fields.get("environment") === "deep.scene.hdr-environment.v1") return "deep-scene-static-compile-v11";
@@ -132,13 +153,13 @@ export function assessCompiledScenePublication(scene: SceneSnapshot, options: Co
     const expectedResource = entry.field === "camera" || entry.field === "cameraConstraints" || entry.field === "cameraViews"
       || entry.field === "defaultCameraViewId" || entry.field === "clipping" ? "scene.camera"
       : entry.field === "animation" ? "scene.dynamic"
-      : entry.field === "environment" || entry.field === "lighting" ? "scene.environment" : undefined;
+      : entry.field === "environment" || entry.field === "lighting" || entry.field === "postProcessing" ? "scene.environment" : undefined;
     const capabilities = entry.field in COMPILED_FIELD_CAPABILITIES
       ? COMPILED_FIELD_CAPABILITIES[entry.field as keyof typeof COMPILED_FIELD_CAPABILITIES] : undefined;
     const known = expectedResource !== undefined && entry.resourceId === expectedResource
       && capabilities?.has(entry.capability) === true;
     const sharesEnvironmentResource = entry.resourceId === "scene.environment"
-      && entry.field === "lighting" && fields.has("environment");
+      && (entry.field === "lighting" || entry.field === "postProcessing") && fields.has("environment");
     const sharesCameraResource = entry.resourceId === "scene.camera"
       && ["cameraConstraints", "cameraViews", "defaultCameraViewId", "clipping"].includes(entry.field)
       && fields.has("camera");
@@ -150,11 +171,25 @@ export function assessCompiledScenePublication(scene: SceneSnapshot, options: Co
           ? `Deep Native 将该导航模式回退为 orbit；人物、步高和坡度参数不生效。`
           : entry.field === "camera" && selectedCameraMode !== "orbit"
             ? `Deep Native 尚未实现 ${selectedCameraMode} 相机导航模式；当前仅支持 orbit。`
+          // F4 部分编译域：postProcessing 的 colorGrading 已进运行包，域内
+          // 其余后处理保持降级声明，不算"同时标记"矛盾。
+          : entry.field === "postProcessing"
+            ? "作者色彩分级已随运行包编译；bloom/ssao/gtao/ssr/暗角等其余后处理仅由 Studio Deep WebGPU 编辑器消费。"
           : "场景字段同时标记为已编译和未编译。"
         : undefined;
     fields.add(entry.field); resources.add(entry.resourceId);
-    items.push(item(scene.id, entry.field || "$fields", known ? entry.capability : CAPABILITIES.uncompiled, reason,
-      nativeCameraFallback && entry.field === "camera" && deferredSceneFields.has(entry.field) ? "degraded" : undefined));
+    // spot shadowSoftness 随 v3-v5 档载荷携带但 Native 渲染尚未消费（硬 PCF），
+    // 必须显式降级标记，不允许静默丢柔化参数。
+    const pcssDegraded = entry.field === "lighting" && hasAuthoredSpotSoftness(scene);
+    // F4 部分编译域：postProcessing 的 colorGrading 条目按已编译能力报告
+    // （supported，等待运行证据）；域内其余后处理的降级由 deferred 条目承载。
+    const partialGrading = entry.field === "postProcessing" && deferredSceneFields.has(entry.field);
+    items.push(item(scene.id, entry.field || "$fields", known ? entry.capability : CAPABILITIES.uncompiled,
+      pcssDegraded
+        ? "Deep Native 尚未实现作者 PCSS 阴影柔化参数消费；该效果当前仅由 Studio Deep WebGPU 运行。"
+        : partialGrading ? undefined : reason,
+      nativeCameraFallback && entry.field === "camera" && deferredSceneFields.has(entry.field)
+        || pcssDegraded ? "degraded" : undefined));
   }
   // camera 是保存快照的必填语义；删掉 deferred 记录不能使它从预检中消失。
   if (!fields.has("camera") && !deferredSceneFields.has("camera")) {
@@ -168,13 +203,15 @@ export function assessCompiledScenePublication(scene: SceneSnapshot, options: Co
         ? `Deep Native 尚未实现 ${selectedCameraMode} 相机导航模式；当前仅支持 orbit。`
       : field === "navigationSettings"
         ? "Deep Native 尚未执行 firstPerson/thirdPerson 的 walk/fly、冲刺、重力、跳跃、步高和坡度导航参数。"
-      : field === "postProcessing" && scene.postProcessing?.enabled && (scene.postProcessing.screenSpaceReflection
-        || (scene.postProcessing.colorGrading && [scene.postProcessing.hue, scene.postProcessing.saturation,
-          scene.postProcessing.brightness, scene.postProcessing.contrast, scene.postProcessing.temperature,
-          scene.postProcessing.tint].some(value => (value ?? 0) !== 0)))
-      ? scene.postProcessing.screenSpaceReflection
+      : field === "postProcessing" && scene.postProcessing?.enabled && scene.postProcessing.screenSpaceReflection
         ? "Deep Native 尚未实现 SSR 深度/法线/HDR 合成消费；该效果当前仅由 Studio Deep WebGPU 运行。"
-        : "Deep Native 尚未实现作者色彩分级后处理消费（色相/饱和度/亮度/对比度/色温/色调）；该效果当前仅由 Studio Deep WebGPU 与 WebGL 运行。"
+      : field === "postProcessing" && compiledFieldNames.has("postProcessing")
+        ? "作者色彩分级已随运行包编译；bloom/ssao/gtao/ssr/暗角等其余后处理仅由 Studio Deep WebGPU 编辑器消费。"
+      : field === "postProcessing" && scene.postProcessing?.colorGrading
+        && [scene.postProcessing.hue, scene.postProcessing.saturation, scene.postProcessing.brightness,
+          scene.postProcessing.contrast, scene.postProcessing.temperature, scene.postProcessing.tint]
+          .some(value => (value ?? 0) !== 0)
+        ? "当前编译档未携带作者色彩分级（如 HDR v6 档）；该效果仍由 Studio Deep WebGPU/WebGL 编辑器消费，发布查看不生效。"
       : field === "lighting" && scene.lighting?.lights?.some(light => light.enabled && light.type === "spot"
         && light.castShadow && (light.shadowSoftness ?? 0) > 0)
         ? "Deep Native 尚未实现作者 PCSS 阴影柔化参数消费；该效果当前仅由 Studio Deep WebGPU 运行。"

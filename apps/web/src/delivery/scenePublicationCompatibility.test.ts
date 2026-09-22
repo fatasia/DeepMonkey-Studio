@@ -45,19 +45,31 @@ describe("compiled scene publication audit", () => {
     expect(uncompiled.find(item => item.path === "navigationSettings")?.reason)
       .toContain("walk/fly、冲刺、重力、跳跃、步高和坡度");
   });
-  it("reports the exact Native blocker for every non-neutral color grading channel", async () => {
+  it("compiles non-neutral author color grading into the v9 payload and keeps the rest of the domain degraded", async () => {
     const source = scene();
+    source.environment = { gridVisible: false, skybox: "none", backgroundColor: "#172126" };
     source.postProcessing = { ...DEFAULT_POST_PROCESSING, enabled: true, colorGrading: true, hue: 12, saturation: 0, brightness: 0,
       contrast: 0, temperature: 0, tint: 0 };
     const compiled = await compileSceneRuntimePackage(source, {
       packageId: "native-color-grading", packageVersion: "1.0.0", loadModel: vi.fn(),
     });
+    // F4 逐字段对拍修复：非中性分级随 v9 环境档进运行包（deep.scene.author-grading.v1），
+    // 不再整域降级；postProcessing 域内其余后处理仍显式声明未编译。
+    expect(compiled.evidence.recipe).toBe("deep-scene-static-compile-v14");
+    expect(compiled.evidence.compiledSceneFields).toContainEqual({
+      field: "postProcessing", capability: "deep.scene.author-grading.v1", resourceId: "scene.environment" });
+    expect(compiled.runtimePackage.payloads["scene.environment"]).toMatchObject({
+      schemaVersion: 9, outputTransform: "native-aces-grading-v9",
+      colorGrading: { hue: 12, saturation: 0, brightness: 0, contrast: 0, temperature: 0, tint: 0 } });
     const report = assessCompiledScenePublication(source, {
       compilation: compiled.evidence, fixtureId: "native-color-grading", platform: "windows-x64",
     });
+    const gradingEntry = report.items.find(item => item.path === "postProcessing" && item.capability === "deep.scene.author-grading.v1");
+    expect(gradingEntry).toBeDefined();
+    expect(gradingEntry?.reason).not.toContain("同时标记");
     expect(report.items).toContainEqual(expect.objectContaining({
       path: "postProcessing", status: "degraded",
-      reason: "Deep Native 尚未实现作者色彩分级后处理消费（色相/饱和度/亮度/对比度/色温/色调）；该效果当前仅由 Studio Deep WebGPU 与 WebGL 运行。",
+      reason: "作者色彩分级已随运行包编译；bloom/ssao/gtao/ssr/暗角等其余后处理仅由 Studio Deep WebGPU 编辑器消费。",
     }));
   });
   it("uses existing Native camera evidence for orbit collision constraints and precisely blocks unsupported navigation", async () => {

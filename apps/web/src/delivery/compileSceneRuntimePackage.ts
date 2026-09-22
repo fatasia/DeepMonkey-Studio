@@ -140,7 +140,7 @@ export interface SceneCompilationEvidence {
   readonly compileGraphHash: string;
   /** 对 runtime/package.json 实际 UTF-8 字节计算，与包内 canonical hash 分开。 */
   readonly targetArtifactHash: string;
-  readonly recipe: typeof RECIPE | "deep-scene-static-compile-v4" | "deep-scene-static-compile-v6" | "deep-scene-static-compile-v7" | "deep-scene-static-compile-v8" | "deep-scene-static-compile-v9" | "deep-scene-static-compile-v10" | "deep-scene-static-compile-v11" | "deep-scene-static-compile-v12" | "deep-scene-static-compile-v13";
+  readonly recipe: typeof RECIPE | "deep-scene-static-compile-v4" | "deep-scene-static-compile-v6" | "deep-scene-static-compile-v7" | "deep-scene-static-compile-v8" | "deep-scene-static-compile-v9" | "deep-scene-static-compile-v10" | "deep-scene-static-compile-v11" | "deep-scene-static-compile-v12" | "deep-scene-static-compile-v13" | "deep-scene-static-compile-v14";
   readonly environmentSource?:{readonly bytes:number;readonly sha256:string};
   readonly localCoordinates: SceneLocalCoordinateFrame;
   readonly maxSourceBytes: number;
@@ -167,14 +167,14 @@ export async function compileSceneRuntimePackage(input: SceneSnapshot,
   const sourceSemanticHash = stage("source hash", () => runtimeContentSha256(semantic));
   const localized = localizeSceneCoordinates(scene);
   const camera = compileSceneCamera(localized.scene, localized.frame);
-  const authoredEnvironment = options.hdrEnvironment ? compileSceneHdrEnvironment(scene.environment,scene.lighting,options.hdrEnvironment.payload,scene.weather,localized.frame.origin) : compileSceneEnvironment(scene.environment, scene.lighting, scene.weather, localized.frame.origin);
+  const authoredEnvironment = options.hdrEnvironment ? compileSceneHdrEnvironment(scene.environment,scene.lighting,options.hdrEnvironment.payload,scene.weather,localized.frame.origin) : compileSceneEnvironment(scene.environment, scene.lighting, scene.weather, localized.frame.origin, scene.postProcessing);
   // F3:探针网格烘焙结果(可选)经 Native 打包器校验后随环境载荷发布;缺省完全不写该字段。
   const irradianceProbes = compileSceneIrradianceProbes(options.irradianceProbes, localized.frame.origin);
   const environment = authoredEnvironment && irradianceProbes ? { ...authoredEnvironment, irradianceProbes } : authoredEnvironment;
   const environmentSource=environment?.schemaVersion===6 ? options.hdrEnvironment?.source : undefined;
   if (environment?.schemaVersion===6 && !environmentSource) throw new Error("HDR 来源身份缺失");
   if (environmentSource && (!Number.isSafeInteger(environmentSource.bytes) || environmentSource.bytes<1 || environmentSource.bytes>32*1024**2 || environmentSource.sha256!==environment?.ibl?.source.contentHash.value)) throw new Error("HDR 来源身份或预算无效");
-  const recipe = environment?.schemaVersion === 8 ? "deep-scene-static-compile-v13" : environment?.schemaVersion === 7 ? "deep-scene-static-compile-v12" : environment?.schemaVersion === 6 ? "deep-scene-static-compile-v11" : environment?.schemaVersion === 5 ? "deep-scene-static-compile-v10" : environment?.schemaVersion === 4 ? "deep-scene-static-compile-v9" : environment?.lighting?.localLights ? "deep-scene-static-compile-v8" : environment?.lighting ? "deep-scene-static-compile-v7" : environment ? "deep-scene-static-compile-v6" : RECIPE;
+  const recipe = environment?.schemaVersion === 9 ? "deep-scene-static-compile-v14" : environment?.schemaVersion === 8 ? "deep-scene-static-compile-v13" : environment?.schemaVersion === 7 ? "deep-scene-static-compile-v12" : environment?.schemaVersion === 6 ? "deep-scene-static-compile-v11" : environment?.schemaVersion === 5 ? "deep-scene-static-compile-v10" : environment?.schemaVersion === 4 ? "deep-scene-static-compile-v9" : environment?.lighting?.localLights ? "deep-scene-static-compile-v8" : environment?.lighting ? "deep-scene-static-compile-v7" : environment ? "deep-scene-static-compile-v6" : RECIPE;
   const sourceAssets: Array<{ assetId: string; bytes: number; sha256: string }> = [];
   let loadedBytes = environmentSource?.bytes ?? 0;
   if (loadedBytes>(maxSourceBytes ?? 256*1024*1024)) throw new Error("HDR 资源超出场景预算");
@@ -246,6 +246,9 @@ export async function compileSceneRuntimePackage(input: SceneSnapshot,
       ...(physicsCompiled ? [{ field: "physics", capability: "deep.scene.physics-runtime.v1", resourceId: dynamicRuntime!.id }] : []),
       ...((camera.schemaVersion === 3 || camera.schemaVersion === 4 || camera.schemaVersion === 5) && camera.clippingPlane ? [{ field: "clipping", capability: "deep.scene.section-plane.v1", resourceId: camera.id }] : []),
       ...(environment ? [{ field: "environment", capability: environment.schemaVersion===6 ? "deep.scene.hdr-environment.v1" : "deep.scene.solid-environment.v1", resourceId: environment.id }] : []),
+      // F4 作者色彩分级：v9 档随环境载荷编译；postProcessing 域内其余后处理
+      // 仍留在 deferredSceneFields，由门禁按"部分编译"逐字段声明。
+      ...(environment?.schemaVersion === 9 ? [{ field: "postProcessing", capability: "deep.scene.author-grading.v1", resourceId: environment.id }] : []),
       ...(irradianceProbes ? [{ field: "irradianceProbes", capability: "deep.scene.probe-grid.v1", resourceId: environment!.id }] : []),
       ...(environment?.lighting ? [{ field: "lighting", capability: environment.schemaVersion === 6 ? "deep.scene.hdr-lighting.v1" : environment.schemaVersion === 5 ? "deep.scene.point-shadow.v1" : environment.schemaVersion === 4 ? "deep.scene.spot-shadow.v1" : environment.lighting.localLights ? "deep.scene.multi-light.v1" : "deep.scene.directional-light.v1", resourceId: environment.id }] : [])],
     deferredSceneFields, deferredObjectFields } };

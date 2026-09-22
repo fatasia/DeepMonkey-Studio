@@ -59,13 +59,13 @@ export interface RuntimeIrradianceProbe {
 /** 固定输出变换的纯色背景；不携带直射灯或全局照明状态。 */
 export interface RuntimeSolidEnvironment {
   readonly schema: "deep-engine.solid-environment";
-  readonly schemaVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+  readonly schemaVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
   readonly id: "scene.environment";
   readonly revision: 1;
   readonly kind: "solid-background-no-ibl" | "solid-background-prefiltered-ibl" | "solid-background-builtin-ibl";
   readonly ibl?: RuntimePrefilteredIbl;
   readonly backgroundSrgb: readonly [number, number, number];
-  readonly outputTransform: "native-aces-v1" | "native-aces-light-v2" | "native-aces-lights-v3" | "native-aces-spot-shadows-v4" | "native-aces-local-shadows-v5" | "native-aces-hdr-v6" | "native-aces-fog-v7" | "native-aces-studio-v8";
+  readonly outputTransform: "native-aces-v1" | "native-aces-light-v2" | "native-aces-lights-v3" | "native-aces-spot-shadows-v4" | "native-aces-local-shadows-v5" | "native-aces-hdr-v6" | "native-aces-fog-v7" | "native-aces-studio-v8" | "native-aces-grading-v9";
   readonly lighting?: RuntimeAuthoredLighting;
   /** B6 静态贴图描述符；缺失时表示没有烘焙光照，不应推断为黑色贴图。 */
   readonly staticLightmap?: RuntimeStaticLightmapDescriptor;
@@ -73,6 +73,23 @@ export interface RuntimeSolidEnvironment {
   readonly irradianceProbes?: RuntimeIrradianceProbeGrid;
   /** v7 作者雾：与 Web PbrFog exp2 变体同语义（线性 RGB、符号相机深度、透明混合前合成）。 */
   readonly fog?: RuntimeAuthorFog;
+  /** v9 作者色彩分级：仅 v9 档允许声明，且必须声明（缺失即旧档）。 */
+  readonly colorGrading?: RuntimeAuthorColorGrading;
+}
+
+/**
+ * v9 作者色彩分级六通道 wire 合同：与属性面板（ScenePostProcessingEditor）、
+ * Web postProcessingRuntime 与 Native `AuthorGrading::new` 三方同范围——
+ * hue ∈ [-180,180]（度），其余五通道 ∈ [-1,1]；temperature/tint 与四基础通道
+ * 同形可选，缺省按 0（中性）消费。全零 = 精确中性（编译器不升级档位）。
+ */
+export interface RuntimeAuthorColorGrading {
+  readonly hue: number;
+  readonly saturation: number;
+  readonly brightness: number;
+  readonly contrast: number;
+  readonly temperature?: number;
+  readonly tint?: number;
 }
 /** 版本化作者雾 v1：密度≥0，颜色为线性 RGB；不含高度衰减（Web 天气雾无此维度）。 */
 export interface RuntimeAuthorFog {

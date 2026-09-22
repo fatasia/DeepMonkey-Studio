@@ -88,3 +88,38 @@ it("v7 requires a valid author fog and keeps lighting optional", () => {
   expect(() => check({ ...source(), schemaVersion: 7, outputTransform: "native-aces-fog-v7",
     fog, ibl: {} })).toThrow();
 });
+
+// F4 逐字段对拍：v9 作者色彩分级档（六通道）与 Native solid_environment decode
+// 同一合同——colorGrading 必须声明、kind 双档（no-ibl / builtin-ibl）、
+// fog/lighting 可选、旧档声明 colorGrading 一律拒绝。
+it("v9 requires the six-channel author grading and admits both no-ibl and builtin-ibl kinds", () => {
+  const grading = { hue: -30, saturation: 0.5, brightness: -0.25, contrast: 0.1, temperature: 0.8, tint: -0.4 };
+  const value = { ...source(), schemaVersion: 9, outputTransform: "native-aces-grading-v9", colorGrading: grading };
+  const check = (v: unknown) => validateRuntimeEnvironment(v, value.id, 1, "$");
+  // no-ibl（普通纯色场景）与 builtin-ibl（studio 语义延续）双 kind 均合法。
+  expect(() => check(value)).not.toThrow();
+  expect(() => check({ ...value, kind: "solid-background-builtin-ibl" })).not.toThrow();
+  // lighting / fog 可选（与 v8 语义一致），带局部灯时走同一阶梯校验。
+  const lighting = { direction: [0, 0.6, 0.8], radiance: [2, 1, 0], exposure: 1.05, shadows: false };
+  expect(() => check({ ...value, lighting })).not.toThrow();
+  const fog = { schemaVersion: 1, kind: "exp2", colorLinearRgb: [0.38, 0.47, 0.49], density: 0.018 };
+  expect(() => check({ ...value, fog })).not.toThrow();
+  expect(() => check({ ...value, fog, lighting })).not.toThrow();
+  // 非法形态：kind 三档之外、缺 colorGrading、通道越界/非有限/未知字段、
+  // outputTransform 不匹配、prefiltered-ibl kind、声明 ibl。
+  for (const patch of [{ kind: "solid-background-prefiltered-ibl" }, { outputTransform: "native-aces-studio-v8" },
+    { outputTransform: "native-aces-fog-v7" }, { ibl: {} }]) {
+    expect(() => check({ ...value, ...patch }), JSON.stringify(patch)).toThrow();
+  }
+  const without = { ...value }; delete (without as Record<string, unknown>).colorGrading;
+  expect(() => check(without)).toThrow();
+  for (const channel of [{ hue: 180.1 }, { hue: -180.1 }, { hue: NaN }, { hue: Infinity },
+    { saturation: -1.1 }, { brightness: 1.01 }, { contrast: "0.1" }, { temperature: 1.0001 },
+    { tint: -1.0001 }, { temperature: NaN }, { extra: true }]) {
+    expect(() => check({ ...value, colorGrading: { ...grading, ...channel } }), JSON.stringify(channel)).toThrow();
+  }
+  // 旧档声明 colorGrading 一律拒绝（档位名必须真实描述包内容）。
+  expect(() => check({ ...source(), colorGrading: grading })).toThrow();
+  expect(() => check({ ...source(), schemaVersion: 8, kind: "solid-background-builtin-ibl",
+    outputTransform: "native-aces-studio-v8", colorGrading: grading })).toThrow();
+});
