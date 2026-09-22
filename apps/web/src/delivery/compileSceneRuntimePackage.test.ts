@@ -320,3 +320,61 @@ describe("scene runtime compilation evidence", () => {
     expect(result.evidence.deferredSceneFields).not.toContain("animation");
   });
 });
+
+describe("F3 probe grid bake delivery", () => {
+  /** 2×2×2 网格、8 支确定性探针;origin 用非零作者坐标,顺带证明编译器做了局部化。 */
+  function probeBake(origin: readonly [number, number, number] = [4, 5, 6]) {
+    const probes = Array.from({ length: 8 }, (_, index) => ({
+      irradiance: [index, index * 2, index * 3] as readonly [number, number, number],
+      validity: 1, meanDistance: index * 0.5, distanceVariance: index,
+    }));
+    return { origin, spacing: 1.5, gridSize: [2, 2, 2] as readonly [number, number, number], probes };
+  }
+  function withEnvironment(): SceneSnapshot {
+    return { ...withModel(), environment: { gridVisible: true, backgroundColor: "#101010", skybox: "none" } };
+  }
+
+  it("writes a valid probe grid into the environment payload with a localized origin", async () => {
+    const result = await compileSceneRuntimePackage(withEnvironment(), { ...options, irradianceProbes: probeBake() });
+    expect(parseDeepRuntimePackage(result.packageJson)).toMatchObject({ valid: true });
+    const environment = result.runtimePackage.payloads["scene.environment"] as any;
+    const frameOrigin = result.evidence.localCoordinates.origin;
+    // 打包 origin = 作者 origin − 局部化 frame origin,与相机/几何同一坐标系。
+    expect(environment.irradianceProbes).toMatchObject({
+      schema: "deep-engine.probe-grid", schemaVersion: 1,
+      origin: [4 - frameOrigin.x, 5 - frameOrigin.y, 6 - frameOrigin.z],
+      spacing: 1.5, gridSize: [2, 2, 2],
+    });
+    expect(environment.irradianceProbes.probes).toHaveLength(8);
+    expect(environment.irradianceProbes.probes[3].irradiance).toEqual([3, 6, 9]);
+    expect(result.evidence.compiledSceneFields).toContainEqual({
+      field: "irradianceProbes", capability: "deep.scene.probe-grid.v1", resourceId: "scene.environment" });
+  });
+
+  it("omits irradianceProbes entirely when absent or explicitly null", async () => {
+    const input = withEnvironment();
+    const baseline = await compileSceneRuntimePackage(input, options);
+    const explicitNull = await compileSceneRuntimePackage(input, { ...options, irradianceProbes: null });
+    for (const result of [baseline, explicitNull]) {
+      const environment = result.runtimePackage.payloads["scene.environment"] as any;
+      expect(Object.hasOwn(environment, "irradianceProbes")).toBe(false);
+      expect(result.evidence.compiledSceneFields).not.toContainEqual(expect.objectContaining({ field: "irradianceProbes" }));
+    }
+    expect(baseline.runtimePackage.packageHash.value).toBe(explicitNull.runtimePackage.packageHash.value);
+  });
+
+  it("fails compilation with a readable message when probe count mismatches the grid volume", async () => {
+    const bake = probeBake();
+    const bad = { ...bake, probes: bake.probes.slice(0, 7) };
+    await expect(compileSceneRuntimePackage(withEnvironment(), { ...options, irradianceProbes: bad }))
+      .rejects.toThrowError(/environment irradianceProbes: native-probe-grid: probe-count-mismatch 7 != 8/);
+  });
+
+  it("fails closed on an out-of-range probe record before any package bytes are written", async () => {
+    const bake = probeBake();
+    const probes = [...bake.probes];
+    probes[2] = { ...probes[2]!, validity: -0.5 };
+    await expect(compileSceneRuntimePackage(withEnvironment(), { ...options, irradianceProbes: { ...bake, probes } }))
+      .rejects.toThrowError(/invalid-probe-record/);
+  });
+});

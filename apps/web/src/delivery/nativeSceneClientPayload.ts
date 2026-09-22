@@ -1,15 +1,22 @@
 import type { SceneSnapshot } from "@bim-studio/contracts";
 import { runtimeContentSha256 } from "@bim-studio/deep-engine/runtime-package";
 import { browserImageDecoder } from "./browserImageDecoder";
-import { compileSceneRuntimePackage } from "./compileSceneRuntimePackage";
+import { compileSceneRuntimePackage, type SceneIrradianceProbeBake } from "./compileSceneRuntimePackage";
 import { assessCompiledScenePublication } from "./scenePublicationCompatibility";
+
+/** F3 探针网格烘焙透传选项；缺省不携带探针，包语义与历史一致。 */
+export interface NativeSceneClientPayloadOptions {
+  readonly irradianceProbes?: SceneIrradianceProbeBake | null;
+}
 
 /** 构建产物与发布可用性分别记录；没有窗口验证证据的产物仍为blocked。 */
 export async function prepareNativeSceneClientPayload(scene: SceneSnapshot,
-  loadModel: (assetId: string, signal: AbortSignal) => Promise<Uint8Array>, signal: AbortSignal) {
+  loadModel: (assetId: string, signal: AbortSignal) => Promise<Uint8Array>, signal: AbortSignal,
+  options?: NativeSceneClientPayloadOptions) {
   const compiled = await compileSceneRuntimePackage(scene, {
     packageId: `scene.${runtimeContentSha256(scene.id)}`, packageVersion: "1.0.0",
     loadModel, signal, imageDecoder: browserImageDecoder,
+    ...(options?.irradianceProbes ? { irradianceProbes: options.irradianceProbes } : {}),
   });
   signal.throwIfAborted();
   const report = assessCompiledScenePublication(scene, { compilation: compiled.evidence,

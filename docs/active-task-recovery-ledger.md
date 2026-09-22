@@ -3139,3 +3139,11 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - web tsc 0 错误续证；I4 场景大纲多选（SceneOutlinerPanel，B5 批次）已入。
 - **I2 初核**：degradedCapabilities 在 delivery 层（nativeSceneClientPayload/sceneNativeFrozenPayload）已实现并有测试；SystemCenter 设置面板体系在。未核边界：UI 组件层按 manifest 逐按钮隐藏的覆盖度。
 - 子代理×2 仍在途（F3 烘焙入编译器、V2 发布验证），主线程并行完成 I5 验收（上轮）+ I2 初核 + 全部门禁续证。
+
+### 2026-09-23 F3 生产者工作流：探针网格烘焙接入发布编译器
+
+- **编译器可选输入**(`apps/web/src/delivery/compileSceneRuntimePackage.ts`)：`CompileSceneRuntimeOptions` 新增 `irradianceProbes?: SceneIrradianceProbeBake | null`（origin/spacing/gridSize/probes，形状对齐 `RuntimeIrradianceProbeGrid` 数据段，schema 由编译器盖章）。组装点在环境编译之后：origin 先经 `worldToLocal` 局部化（与相机/几何同一 frame，round-trip fail-closed），再以 Native 打包器 `packNativeProbeGridRecords`（96B 记录合同，与 Rust probe_gi_grid 逐字对齐）先行校验（stage 包裹，失败信息形如 `environment irradianceProbes: native-probe-grid: probe-count-mismatch 7 != 8`），合法才写入环境 JSON 的 `irradianceProbes` 字段；载荷随后经 `buildDeepRuntimePackage → validateRuntimeEnvironment → validateIrradianceProbes` 二道校验（与 staticLightmap 同款验证路径）。缺省/null 完全不写该字段；`compileGraphHash` 的 environmentHash 联动更新；evidence.compiledSceneFields 增加 `{field:"irradianceProbes", capability:"deep.scene.probe-grid.v1"}`。
+- **发布服务挂点**(`apps/web/src/delivery/nativeSceneClientPayload.ts`)：`prepareNativeSceneClientPayload` 新增可选第 4 参 `NativeSceneClientPayloadOptions.irradianceProbes` 透传编译器；上方 `sceneClientPackage`/UI 层未穿透（见诚实边界）。
+- **测试**(`compileSceneRuntimePackage.test.ts` 新增 4 项)：①带探针输入产出合法 `irradianceProbes` 包（origin=作者−frame 逐轴断言、探针数据保真、证据字段在位、`parseDeepRuntimePackage` valid）；②缺省与显式 null 均无该字段且 packageHash 逐位一致（旧包语义不变）；③数量与网格体积不符被拒且失败信息可读（正则断言完整错误链）；④非法探针字段（validity<0）写包前 fail-closed。
+- **门禁**：apps/web `tsc --noEmit` 0 错误；`compileSceneRuntimePackage.test.ts` 25/25（21 旧+4 新）、`sceneClientPackagePreparedNative.test.ts` + `sceneNativeFrozenPayload.test.ts` 25/25；deep-engine `tsc --noEmit` 0 错误。
+- **诚实边界**：场景 UI 无探针烘焙按钮，发布选项层（`SceneClientPackageOptions`/`ScenePublicationDialog`）未穿透——生产者工作流以编译器 API + `prepareNativeSceneClientPayload` 服务参数为界；本切片不生产探针数据（GPU 一跳辐射捕获→读回→网格聚合的离线烘焙编排尚不存在），只保证合法数据进包、非法数据可读拒绝；冻结发布路径（`prepareFrozenNativeScenePayload` 复用历史字节）不涉及探针；多层 clipmap 级联仍按打包器单层合同边界未动。未 push。

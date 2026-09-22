@@ -1,6 +1,8 @@
 import type { SceneSnapshot } from "@bim-studio/contracts";
 import { buildDeepRuntimePackage, runtimeContentSha256, serializeDeepRuntimePackage,
-  type DeepRuntimePackage, type RuntimeJson, type RuntimePrefilteredIbl } from "@bim-studio/deep-engine/runtime-package";
+  type DeepRuntimePackage, type RuntimeJson, type RuntimePrefilteredIbl,
+  type RuntimeIrradianceProbe, type RuntimeIrradianceProbeGrid } from "@bim-studio/deep-engine/runtime-package";
+import { packNativeProbeGridRecords } from "@bim-studio/deep-engine/lighting";
 import type { DynamicAnimationRuntime, DynamicAnimationTrack } from "@bim-studio/deep-engine/runtime-package";
 import { compileSceneRenderPacket, type CompileSceneRenderOptions, type SceneRenderCompilation } from "./compileSceneRenderPacket";
 import { compileSceneCamera } from "./compileSceneCamera";
@@ -96,10 +98,24 @@ function compileAnimationRuntime(scene: SceneSnapshot): DynamicAnimationRuntime 
     ...(range ? { playbackRangeMs: { inMs: Math.round(range.inPoint * 1000), outMs: Math.round(range.outPoint * 1000) } } : {}),
   };
 }
+/**
+ * F3 探针网格烘焙结果（发布编译器可选输入）：数据段形状对齐 RuntimeIrradianceProbeGrid，
+ * schema/schemaVersion 由编译器盖章（调用方只提供烘焙数据，不能伪造载荷身份）。
+ * origin 为场景作者坐标（与烘焙时的场景坐标系一致），编译器随包局部化到局部坐标系。
+ */
+export interface SceneIrradianceProbeBake {
+  readonly origin: readonly [number, number, number];
+  readonly spacing: number;
+  readonly gridSize: readonly [number, number, number];
+  readonly probes: readonly RuntimeIrradianceProbe[];
+}
+
 export interface CompileSceneRuntimeOptions extends CompileSceneRenderOptions {
   readonly packageId: string;
   readonly packageVersion: string;
   readonly hdrEnvironment?: {readonly payload:RuntimePrefilteredIbl;readonly source:{readonly bytes:number;readonly sha256:string}};
+  /** F3 探针网格烘焙结果；缺省或 null 不写环境 irradianceProbes 字段，旧包语义逐位不变。 */
+  readonly irradianceProbes?: SceneIrradianceProbeBake | null;
 }
 export interface SceneCompilationEvidence {
   readonly schemaVersion: 1;
@@ -135,7 +151,10 @@ export async function compileSceneRuntimePackage(input: SceneSnapshot,
   const sourceSemanticHash = stage("source hash", () => runtimeContentSha256(semantic));
   const localized = localizeSceneCoordinates(scene);
   const camera = compileSceneCamera(localized.scene, localized.frame);
-  const environment = options.hdrEnvironment ? compileSceneHdrEnvironment(scene.environment,scene.lighting,options.hdrEnvironment.payload,scene.weather,localized.frame.origin) : compileSceneEnvironment(scene.environment, scene.lighting, scene.weather, localized.frame.origin);
+  const authoredEnvironment = options.hdrEnvironment ? compileSceneHdrEnvironment(scene.environment,scene.lighting,options.hdrEnvironment.payload,scene.weather,localized.frame.origin) : compileSceneEnvironment(scene.environment, scene.lighting, scene.weather, localized.frame.origin);
+  // F3:探针网格烘焙结果(可选)经 Native 打包器校验后随环境载荷发布;缺省完全不写该字段。
+  const irradianceProbes = compileSceneIrradianceProbes(options.irradianceProbes, localized.frame.origin);
+  const environment = authoredEnvironment && irradianceProbes ? { ...authoredEnvironment, irradianceProbes } : authoredEnvironment;
   const environmentSource=environment?.schemaVersion===6 ? options.hdrEnvironment?.source : undefined;
   if (environment?.schemaVersion===6 && !environmentSource) throw new Error("HDR 来源身份缺失");
   if (environmentSource && (!Number.isSafeInteger(environmentSource.bytes) || environmentSource.bytes<1 || environmentSource.bytes>32*1024**2 || environmentSource.sha256!==environment?.ibl?.source.contentHash.value)) throw new Error("HDR 来源身份或预算无效");
@@ -211,8 +230,34 @@ export async function compileSceneRuntimePackage(input: SceneSnapshot,
       ...(physicsCompiled ? [{ field: "physics", capability: "deep.scene.physics-runtime.v1", resourceId: dynamicRuntime!.id }] : []),
       ...((camera.schemaVersion === 3 || camera.schemaVersion === 4 || camera.schemaVersion === 5) && camera.clippingPlane ? [{ field: "clipping", capability: "deep.scene.section-plane.v1", resourceId: camera.id }] : []),
       ...(environment ? [{ field: "environment", capability: environment.schemaVersion===6 ? "deep.scene.hdr-environment.v1" : "deep.scene.solid-environment.v1", resourceId: environment.id }] : []),
+      ...(irradianceProbes ? [{ field: "irradianceProbes", capability: "deep.scene.probe-grid.v1", resourceId: environment!.id }] : []),
       ...(environment?.lighting ? [{ field: "lighting", capability: environment.schemaVersion === 6 ? "deep.scene.hdr-lighting.v1" : environment.schemaVersion === 5 ? "deep.scene.point-shadow.v1" : environment.schemaVersion === 4 ? "deep.scene.spot-shadow.v1" : environment.lighting.localLights ? "deep.scene.multi-light.v1" : "deep.scene.directional-light.v1", resourceId: environment.id }] : [])],
     deferredSceneFields, deferredObjectFields } };
+}
+
+/**
+ * F3:探针网格烘焙结果 → 运行包环境 irradianceProbes 载荷。
+ * 先把 origin 从作者坐标局部化(与相机/几何同一 frame),再用 Native 打包器
+ * `packNativeProbeGridRecords`(96B 记录合同,与 Rust probe_gi_grid 逐字对齐)先行校验:
+ * 网格越界/数量与网格体积不符/探针字段越界都会在写包前 fail-closed 抛出可读错误;
+ * 载荷随后还会经 buildDeepRuntimePackage → validateRuntimeEnvironment 的
+ * irradianceProbes 校验路径二道把关(与 staticLightmap 同款验证路径)。
+ * 缺省/null 输入返回 undefined,环境载荷完全不写该字段。
+ */
+function compileSceneIrradianceProbes(bake: SceneIrradianceProbeBake | null | undefined,
+  frameOrigin: { readonly x: number; readonly y: number; readonly z: number }): RuntimeIrradianceProbeGrid | undefined {
+  if (!bake) return undefined;
+  const local = worldToLocal({ x: bake.origin[0], y: bake.origin[1], z: bake.origin[2] }, frameOrigin,
+    "environment.irradianceProbes.origin");
+  const origin: readonly [number, number, number] = [local.x, local.y, local.z];
+  const gridSize: readonly [number, number, number] = [bake.gridSize[0], bake.gridSize[1], bake.gridSize[2]];
+  const grid: RuntimeIrradianceProbeGrid = Object.freeze({
+    schema: "deep-engine.probe-grid", schemaVersion: 1,
+    origin, spacing: bake.spacing, gridSize,
+    probes: Object.freeze(bake.probes.map(probe => Object.freeze({ ...probe }))),
+  });
+  stage("environment irradianceProbes", () => packNativeProbeGridRecords(grid, grid.probes));
+  return grid;
 }
 
 async function byteHash(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
