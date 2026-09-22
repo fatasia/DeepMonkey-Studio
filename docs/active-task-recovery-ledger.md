@@ -3075,3 +3075,11 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 ### 2026-09-23 F2 剩余最短切片：同场景 RT/栅格阴影像素对拍（ZCode，收口）
 
 - 新增 `renderer/rt_raster_parity_gpu_tests.rs`（挂 `rt_pixel_gpu_tests` 子模块，未动并行 WIP 的 renderer.rs 模块清单）：同一 RenderPacket（地面+悬浮箱）各渲染一帧——栅格走级联阴影 pass+`fragment_main`，RT 走 `RtSceneResidency::build` TLAS+`fragment_main_rt`（与 reestablish_rt_residency 同路径），单 submit FIFO 消费同一份 culling indirect；真机 ray-query 设备 65536px 对拍 **99.883% 逐像素一致**，方向合同（RT shadowed ⇒ 栅格 shadowed）**内部违例 0**、边界违例 36px（0.0549% ≤ 0.2% 预算，CSM 深度偏置的预期亚纹素回缩）、反向 raster_only 41px（0.0626%），mean|Δlum|=0.000206、max|Δlum|=0.300（仅阴影轮廓）；图像证据 `test-output/f2-rt-raster-parity-{raster,rt,diff8x}.ppm`（8x 放大差值图仅阴影轮廓线细点）；bin 全量 **251/251**、lib **516/516**（F3 条目提到的 rt_raster_parity 语法错误为本文件当时写入中态，现已收口）。未 push。
+
+### 2026-09-23 F2 RT/栅格像素对拍完成（收口）
+
+- 子智能体提交 `f2cfdfe`：同场景 RT fragment Ray Query vs 栅格 CSM 像素对拍，真机 ray-query 设备 65536 像素。
+- 量化结果：逐像素一致 99.883%（65459/65536）；方向合同违例 0（硬断言）；边界违例 36px（0.055%≤0.2% CSM 亚纹素预期）；反向栅格独有 41px（0.063%≤2% PCF 软边缘）；mean|Δlum|=0.000206。
+- 图像证据：`test-output/f2-rt-raster-parity-{raster,rt,diff8x}.ppm`，8x 差值图目视仅阴影轮廓线细点。
+- 门禁：bin 全量 251/251、lib 516/516、renderer::rt 家族 15/15。
+- **F2 核心证据链已完备**：BLAS/TLAS 驻留（10/10）→ RT fragment shader（源级合同 3/3 + 真机管线编译）→ opaque RT 分支/回退（bin 全量）→ **RT/栅格像素对拍（99.88% 一致）**。设备恢复、BLEND 回退、动态场景证据为后续边界。未 push。
