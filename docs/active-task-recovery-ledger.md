@@ -2954,3 +2954,28 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - F2 短核查确认：binding 10 `frame_rt` 已存在，驻留/TLAS/绑定已存在，但 `mesh_pass.rs`/`renderer/frame.rs` 仍只传普通 frame bind group，正式 `native_mesh_v1.wgsl` 无 Ray Query；正式像素消费需要独立 RT fragment WGSL + pipeline + opaque pass 分支 + 栅格回退，当前无正式 RT pixel test，暂不改动。
 - F3 短核查确认：Native 只有 specular/diffuse IBL/BRDF LUT ABI、IBL probe on/off 差分；`global_illumination_intensity` 仅走 frame 保留 lane，无探针体积/GI producer。最小方向是复用预留 binding 10/TLAS，新增 indirect producer 和 forward 合成，暂不伪造完成。
 - 聚焦门禁：粒子/Shader/A1/B6 **47/47**，deep-engine typecheck 通过；F7 继续排除；未 push、未 reset/clean/checkout。
+
+### 2026-09-22 20 分钟自检：聚焦门禁 54/54
+
+- 已重新读取交接/能力扩展计划/台账，检查 dev-studio 分支、git status、最近提交和有效子任务；没有有效运行中的子任务，A1/B6 agent 未产生新代码，F7 继续排除。
+- 当前相关聚焦门禁 **54/54**（粒子 runtime/DCIR/pass、Shader Preview LKG、B6 static lightmap descriptor、A1 indirect executor/plan），deep-engine typecheck 通过。
+- 已完成且可计入证据：粒子 DCIR 合同、A1 indirect executor 模拟设备合同、B6 descriptor schema/build/round-trip、Shader preview LKG 合同。未完成消费者：A1 真实 GPU draw、B6 baker→Web/Native texture 消费、粒子真机产品画面、F2 RT pixel、F3 Native probe GI。
+- 当前 git status 仍有其他并行 WIP（gpuParticleRuntime/gpuParticleIndirectDcir 等），本轮未覆盖、未重建、未强行提交。未 push、未 reset/clean/checkout。
+- 下一执行顺序：先收回真实 GPU/A1 或 B6 消费 lane；若无法取得证据，主线程转 F2/F3 最小 shader/ABI 合同，保持 fail-closed，不把合同测试包装成端到端完成。
+
+### 2026-09-22 A1 真机证据短核查
+
+- 复用现有 `test:cluster-lod-gpu` Chrome153/NVIDIA WebGPU harness 实测通过：4 案例、6 机位，selection/draw plan 全匹配，faults=0，WebGPU available=true；证据 `test-output/cluster-lod-gpu-20260920-r1/evidence.json`。
+- 但该 runner 未调用 `ClusterLodIndirectExecutor`，缺真实 render pass、pipeline、顶点/索引 buffer、render target 和像素 readback；executor mock 测试实际 **25/25**。因此 A1 executor 仍不能宣称真实 GPU draw 完成；强行新增 runner 超出本次短切片边界，保持阻断。
+
+### 2026-09-22 F2/F3 短核查收口
+
+- F2 最小下一片明确：在 `renderer/frame.rs` opaque fragment 主路径接入既有 `rt_residency.rs` TLAS 与 `frame_bindings.rs` binding10，仅覆盖静态 opaque/MASK directional shadow；不重复驻留合同。真实阻断是缺 RT fragment pipeline/Ray Query、同场景 RT/栅格像素回读、设备不支持/恢复证据。
+- F3 最小下一片明确：先做 Web 96B probe record 布局映射到 Native 的 ABI 对拍夹具，覆盖空场景零分配、旧 IBL 包兼容、版本/预算/降级字段；不重建 `GpuIblEnvironment`/IBL。真实阻断是 Native 缺探针纹理/采样 binding、radiance producer、PBR GI 混合与设备恢复保护。
+- 当前 A1 聚焦证据已收口：现有真机只证明 selection/indirect plan，executor 25/25 mock；真实 GPU draw 仍阻断。B6 descriptor 已有 builder texture/hash fail-closed 消费测试；baker 自动生成和 renderer 采样仍未做。
+
+### 2026-09-22 F3 最小切片：Native 96B 探针 ABI 合同
+
+- 现状核查：Native 只有 IBL cube/BRDF 与诊断 IBL probe，没有 irradiance volume/probe producer/PBR probe sampling；Web 已有 96B `IrradianceProbeRecord`、64B level metadata、8-tap/预算合同。本切片不重建 IBL，不接 producer/mesh shader。
+- 新增 `packages/deep-engine-native/src/probe_gi_abi.rs` 并注册模块：96B `IrradianceProbeRecord`（前 48B 与 Web 字段逐字节一致，后 48B 保留零区）、ABI version 1、65,536 record/约 6MiB 预算、空场景零分配、批量连续 pack、有限值/范围/保留区 fail-closed。
+- 证据：Native `probe_gi_abi` **6/6**、cargo check --lib 通过；测试断言 Web 字段顺序、确定性、旧无记录包兼容、预算超限拒绝。未接 Native texture/bind group/producer/PBR GI，不能宣称 F3 Native GI 完成。未 push。

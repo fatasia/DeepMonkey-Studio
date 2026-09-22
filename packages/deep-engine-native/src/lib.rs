@@ -34,6 +34,7 @@ pub mod pbr_brdf;
 pub mod pbr_reference;
 pub mod pbr_texture;
 pub mod platform_text;
+pub mod probe_gi_abi;
 pub mod player_view;
 pub mod ray_backend;
 pub mod ray_tracing_capability;
