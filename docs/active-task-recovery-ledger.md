@@ -2850,3 +2850,10 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **纹理采样路径重构**：`probeClipmapTextureSamplingWgsl.ts` 原用 `textureSampleLevel`（单次硬件双线性），无法逐探针加权 → 改为 8 次 `textureLoad` + 显式三线性权重。该路径不携带 meanDistance/variance 通道，故**不伪造 Chebyshev**（保留在 storage-record 路径），只加法线权重与 validity。
 - **证据**：泄漏场景专测（亮探针在下半球、暗在上半球 → 朝上接收面读到 0，朝下读到亮值，倾斜法线落在两者之间）；零法线退化用例（权重 no-op）；三线性测试期望按新语义更新（朝上接收面读 y=1 探针）。迁移测试按新语义重写（法线权重使正半球只剩 x=1 列探针）。**回归 1507/1507**（lighting + webgpu 全量）；真机 GPU gate 复跑 TRUE（parity 0 失配、哨兵 0、WGSL 零告警）。性能实测：CPU 参考采样 5.03 µs/次（20 万次 1006ms），GPU 侧为 8 次 textureLoad 无 CPU 开销。
 - **边界**：`DEEP_GI_NORMAL_WEIGHT_BIAS=3` 是经验起点，需在真实场景收敛观察中校准；纹理路径仍无 Chebyshev（需扩展纹理通道承载 meanDistance/variance，属后续切片）；SSGI 与 RT GI 混合仍未做。未 push。
+
+### 2026-09-22 A4 切片：粒子渲染 pass 接线（ZCode）
+
+- **现状核查**：粒子**模拟与间接绘制已完整存在**——`gpuParticleRuntime.ts`（298 行，双缓冲 compacted 发布 + indirect DCIR）、`gpuParticleWgsl.ts`（compute 三段 + billboard 渲染 WGSL）、`gpuParticleEmitters.ts`（199 行，alarm-pulse/expanding-ring/flow-line 预设）、`gpuParticleBurstStage.ts`（爆发事件），共 1390 行 + 4 个测试文件。**真实缺口**：全仓只有 lab probe 构造运行时，**产品渲染循环从未画过粒子**（渲染管线零消费方）。
+- **实现**：新增 `webgpu/pbrParticlePass.ts`——预乘 alpha 混合（src=one/dst=one-minus-src-alpha，与着色器 `rgb*alpha` 输出匹配）、深度测试开/写入关（粒子被几何遮挡、自身不写深度）、`drawIndirect` 消费模拟阶段的原子计数（CPU 不读回实例数）、相机 uniform 96B（viewProjection + cameraRight/Up）。目标格式随 HDR 目标，深度格式随调用方。
+- **证据**：4 项单测（管线混合/深度状态、间接绘制参数与相机 uniform 字节、非正尺寸与销毁后编码拒绝、会话未就绪 fail-closed）；deep-engine 全量回归 **3734/3734**。
+- **边界**：本切片只提供渲染 pass，**尚未接入 PbrRenderer 帧循环与发布链**（需在渲染循环内创建运行时、每帧提交模拟、在透明物体后绘制）——属下一片；粒子不与探针 GI 交互（粒子不写入探针捕获）；无碰撞/物理交互。未 push。
