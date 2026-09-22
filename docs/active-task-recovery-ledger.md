@@ -3206,3 +3206,17 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - **B3 缺口5 渲染线框层验收通过**（08deed1a）：rapierPhysicsDebugOverlay 自包含线框池（共享 EdgesGeometry+按刚体类型四色、depthTest=false+renderOrder 10k、helper: 命名+raycast 置空）；位姿换算与数据层真机语义逐条对齐（世界中心=刚体平移+旋转后 centerOffset）；setPhysicsDebugVisible 关闭帧同步早退零开销；ScenePhysicsPanel"显示碰撞体"开关接入；引擎重建后自动重应用。门禁：tsc 0 错误、33/33 测试（主线程复跑聚焦 6/6）。边界：headless 无法挂真实 container，画面视觉表现未验证。
 - **满载补位**：子代理①派 V4 Babylon Web 轨道采集 harness（对齐 bevy 轨道 evidence schema，独立基准目录固定版本，单侧采集诚实记录口径差异）；子代理② V2 occlusion 诊断排查继续在跑。
+
+### 2026-09-23 V2 Native 发布验证 occlusion 诊断排查收敛（e14035bd）
+
+- **现象**：dashboard 旧产物包（`test-output/dashboard-author-main-build-20260916/runtime-package.json`，`packageId=dashboard.*`、schemaVersion 5、renderPacket instances=0）走 scene 验证器 `--verify-package` 时 60s 超时：EXE 打印 `native GPU occlusion consume indirect template size mismatch` 后挂起不退出（v2-native-release-20260923 evidence §6.1）。
+- **根因（三层叠加，均实测/代码直证）**：① dashboard 内容包误入 scene 验证器——`--verify-package` 无包内容形态判定，dashboard 包是合法 runtime package 能通过加载进 scene 渲染链（其正式链是 `.dmda` 归档 + `run-dashboard-client-native`，`--package` 播放）；② 空 3D 场景 consume 断言误报——`GpuCulling::new` 对空 template 走 `nonempty` 垫零成 20B，而 `batch_ranges_from_metadata` 返回空表（长度 0），HiZ 默认 auto 挂载消费链时断言 `20 != 0×20` 必炸（gpu_occlusion_consume.rs:87）；③ 验证模式 fail-open——`app/lifecycle.rs resumed` 仅 smoke 模式在 renderer init 失败时 `event_loop.exit()`，验证模式（smoke_frame=false）失败只记 failure 打 stderr，ControlFlow::Wait 等不到事件挂到超时被杀。
+- **处置（三重 fail-closed，e14035bd）**：修 1 `GpuCulling::attach_occlusion_consume` 对 `candidate_count==0` 整体跳过挂载返回 Ok（空场景无 draw 可紧凑；非空场景尺寸合同逐字节不变）；修 2 验证模式 init 失败同样退出事件循环→`run_internal` 返回 Err→exit(1)（修挂起，对任何 init 失败保底 fail-fast）；修 3 `runtime_package_startup::verify` 新增 `reject_non_scene_content` 对 dashboard 包在渲染前明确拒绝并指向 `.dmda` + run-dashboard-client-native 正式链。
+- **端到端复核（RTX 4060 真机）**：修复后 `--verify-package` + dashboard 包 → 立即打印拒绝原因、exit=1（原挂起 60s）；release EXE `--smoke-package` + dashboard 包 → renderer init 全链通过（`GPU culling prepared: candidates=0 batches=0`、HiZ 链 OK、Deep2d 全链 prepared、GPU submission clean、真实呈现）exit=0——顺带修复 dashboard 包 `--package` 播放路径同一 init 失败（此前会黑屏报 GPU initialization failed）。
+- **门禁**：bin 263/0（--test-threads=2）+ lib 528/0；GPU ignored 族 consume 7/7、occlusion 13/13（含新增空场景回归用例 `empty_scene_consume_mount_skips_instead_of_template_mismatch`）；bin 测试新增 `verification_rejects_dashboard_content_before_any_rendering`；我的 4 文件 fmt 干净。HEAD 场景链不受影响：非空场景断言逻辑与挂载行为未动，consume/occlusion GPU 全族复跑全绿。
+- **诚实边界**：修 2（事件循环退出）无直接单测——winit 事件循环行为无法 headless 单测，靠端到端复核（verify 快速 exit=1）实证；debug 构建跑 dashboard 包在 init 深处栈溢出（debug 栈帧巨大所致，release 正常，未深查属 debug 构建既有限制）；既有 lint 漂移未越界修：`cargo clippy` lib 侧 `author_grading.rs:15` 近似 PI、`cargo fmt --check` examples/runtime_playback_sample.rs（均 HEAD 既有非本轮引入）；`--verify-package` 对"非 dashboard 但 0 实例的 scene 包"现在可正常走完验证（修 1 生效），该形态的实窗呈现未单独采样验证。
+
+### 2026-09-23 30 分钟自检（第九轮）：V2 occlusion 修复验收 + F6 补位
+
+- **V2 occlusion 三层根因修复验收通过**（e14035bd）：①入口分类缺失（dashboard 包合法可过加载直进 scene 链）②空场景 GpuCulling 模板垫零 20B vs 空批次表断言误报（非尺寸合同漂移）③验证模式 init 失败 fail-open 挂起真因。三重 fail-closed：空场景跳过 occlusion 挂载（非空场景逐字节不变）、验证模式 init 失败退出事件循环 exit(1)、--verify-package 对 dashboard 内容快速拒绝指向 .dmda 链。真机端到端：修复后立即报错 exit=1（原挂 60s）；release --smoke-package+dashboard 包 exit=0——**顺带修复 dashboard 包 --package 播放黑屏**。门禁：bin 263/0+lib 528/0（主线程复跑 lib 528/0 确认）。
+- **满载补位**：子代理②派 F6 仓外独立消费示例（Node 校验器+浏览器 bundle 两例真实运行,离线安装链）；子代理① V4 Babylon 轨道 harness 在跑。
