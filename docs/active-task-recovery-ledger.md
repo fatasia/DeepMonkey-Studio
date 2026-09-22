@@ -3119,3 +3119,10 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **F3 载荷全链**(7b31759+8315fbc3)：Web `packNativeProbeGridRecords` 打包器(96B 小端逐字对拍 Rust 头合同,10 测试) → 环境 `irradianceProbes` 载荷类型+校验(网格 2..64/预算 65535/字段 fail-closed) → Native `decode_probe_grid` 解码 → PlayerContent 贯通 renderer init(网格头合法即写开关 2.0,旧包 0 逐位不变;bin/lib 双编译记录经 96B POD 字节切片转译)。lib 528/0、bin 262/0。剩余:Web 场景→烘焙→包的生产者工作流(打包器已备)、多层级联。
 - **B2-b 三端**(82c0f2f+0f2174ab)：dynamic-animation ABI 增 `playbackRangeMs`(0≤in<out≤duration 非退化,serde default 兼容旧包),发布编译器下译编辑器区间,Native sample_animation 钳入 [in,out]。Web 9+24 项、Native 3 项测试。发布查看器 transport 经引擎 setSceneAnimation 区间合同自动生效。
 - 门禁：native lib 528/0 + bin 262/0(--test-threads=2)；deep-engine/contracts/web/api 维持此前全绿。未 push。
+
+### 2026-09-23 30 分钟自检（收口后续）：满载补位与门禁复核
+
+- git 干净（仅 .tmp-*/r10-compat-check 草稿）；HEAD=b4e25ffb；聚焦门禁复核：native lib 528/0、bin 262/0(--test-threads=2)、source-size 6009 文件/上限 800 行/无豁免全部通过。
+- A2"法线权重泄漏抑制"缺口经核对两端均已闭环（Web probeClipmapTextureSamplingWgsl 8-tap textureLoad + 本会话 Native 网格三线性 pow(cos,3)），禁止重建。
+- 子代理补位×2：①F3 探针网格烘焙接入发布编译器（编译器级生产者工作流）；②V2 Native 正式发布启动验证（release EXE 真实启动链取证）。主线程并行跑门禁与 handoff 状态核对。
+- 剩余（按 handoff）：F3 多层级联、F6 宿主入口/viewerEngineInteraction 拆分、I 系列收口、V1 三端对拍、V3 Unity 插件、V4 四对手基准、V5 全量门禁。
