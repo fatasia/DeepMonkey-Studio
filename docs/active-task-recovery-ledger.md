@@ -3342,3 +3342,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **门禁数字**：apps/web tsc 0 错误；受影响面 vitest 153 文件 **932 通过/0 失败**（+1 既有 skip），新增 9 测试（junction 4+物理 5）全绿；packages/contracts tsc 0 错误 + vitest 342 通过（含新增 junction 校验 1 例）。
 - **诚实边界**：①junction 只做等宽同材质方形盖板衔接 T/十字，无圆角/高差/复杂立交；两条独立道路实例的交汇靠作者在其中一条的路径点上打标（不做跨实例几何自动求交）；盖板顶面比路面高 4mm（防 z-fight 的确定性选择）；②碰撞体不含路口盖板独立碰撞（分段 cuboids 并集已覆盖交汇区）；路肩 2cm 落差被拉平为车行道顶单面；非均匀缩放+偏航的剪切与既有单包围盒口径一致未特殊处理；③发布 Native 物理通道仍是 render-bounds 实例包围盒口径（schema 未动，道路 Author fixed 体在 Native 走实例级 cuboid；Web 发布查看器与编辑器同走本次分段路径）；④junction 勾选与"路口"文案未过浏览器视觉闭环（本任务无浏览器工具，仅有组件级测试）。
 - 工作树并行 WIP（babylon 配对/deep-engine benchmark/.tmp-*）未触碰；未 push。
+
+### 2026-09-23 30 分钟自检（第二十轮）：I3 junction+碰撞验收 + F4 矩阵补位
+
+- **I3 道路 junction+碰撞验收通过**（b0431311）：契约级 junction 标记（fail-closed）、等宽方形盖板（4mm 确定性抬高防 z-fight，预览/发布两端字节级同源，重复构建矩阵一致有测试）、fixed 道路分段 cuboid 碰撞（dynamic/kinematic 回退整包围盒不改语义、extraColliderHandles 随 removePhysicsBody 同批注销、真 Rapier WASM 测试钉死）。主线程复跑聚焦 4/4。门禁：web 932/0（153 文件）、contracts 342、双端 tsc 0。**I3 六项清单全部清零**。边界：无圆角/高差/跨实例自动求交；Native 物理通道仍 render-bounds 口径；junction UI 未过浏览器视觉闭环。
+- **满载补位**：空闲代理派 F4 逐字段对拍矩阵（作者字段全集→四段链路状态标注落 docs/specs，静默丢失字段=缺陷类逐个修复带测试）；另一代理 a01x 内存采集在跑。
