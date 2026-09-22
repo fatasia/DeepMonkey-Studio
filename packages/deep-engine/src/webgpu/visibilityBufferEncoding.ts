@@ -1,3 +1,4 @@
+import { MATERIAL_IOR_FLOAT_OFFSET } from "../materialInstanceAbi.js";
 import { unpackLocalTriangle } from "../geometry/localTriangle.js";
 import type { MeshletBuildResult } from "../geometry/types.js";
 
@@ -57,6 +58,7 @@ export const INSTANCE_ROW_FLOATS = 36;
 export const VISIBILITY_SLOT_ROW_FLOATS = 16;
 
 export interface VisibilitySlotRow {
+  readonly encodedIor?: number;
   /** colorMetal：rgb = 基础色，w = metal。 */
   readonly colorMetal: readonly [number, number, number, number];
   /** material：x = roughness，y = alphaCutoff，z = doubleSided，w = flags。 */
@@ -70,12 +72,12 @@ export function visibilitySlotRowFromInstance(instanceRow: Float32Array): Visibi
   if (instanceRow.length < INSTANCE_ROW_FLOATS) throw new Error("Visibility slot row needs a full 36-float instance row.");
   const quad = (offset: number): [number, number, number, number] =>
     [instanceRow[offset]!, instanceRow[offset + 1]!, instanceRow[offset + 2]!, instanceRow[offset + 3]!];
-  return { colorMetal: quad(24), material: quad(28), emissiveAlpha: quad(32) };
+  return { encodedIor: instanceRow[MATERIAL_IOR_FLOAT_OFFSET]!, colorMetal: quad(24), material: quad(28), emissiveAlpha: quad(32) };
 }
 
 export function packVisibilitySlotRow(row: VisibilitySlotRow, target = new Float32Array(VISIBILITY_SLOT_ROW_FLOATS)): Float32Array {
   target.set(row.colorMetal, 0); target.set(row.material, 4); target.set(row.emissiveAlpha, 8);
-  target.set([0, 0, 0, 0], 12);
+  target.set([row.encodedIor ?? 0, 0, 0, 0], 12);
   return target;
 }
 
@@ -84,7 +86,7 @@ export function unpackVisibilitySlotRow(packed: Float32Array, slot: number): Vis
   const quad = (offset: number): [number, number, number, number] =>
     [packed[offset]!, packed[offset + 1]!, packed[offset + 2]!, packed[offset + 3]!];
   void slot;
-  return { colorMetal: quad(0), material: quad(4), emissiveAlpha: quad(8) };
+  return { ...(packed[12] ? { encodedIor: packed[12] } : {}), colorMetal: quad(0), material: quad(4), emissiveAlpha: quad(8) };
 }
 
 export interface VisibilityMeshletLayout {

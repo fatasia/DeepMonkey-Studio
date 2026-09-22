@@ -47,6 +47,7 @@ import { AdaptiveQualityController, adaptiveShadowMapSize } from "./adaptiveQual
 import type { CascadedShadowQualityTier } from "../shadows/shadowQuality.js";
 import { ProbeClipmapPbrController } from "./probeClipmapPbrController.js";
 import { VisibilityBufferPath } from "./visibilityBufferPass.js";
+import { SoftRasterizeFallback } from "./softRasterizeFallback.js";
 export type { FrameMetrics, PbrRendererOptions, RenderView } from "./pbrRendererTypes.js";
 export class PbrRenderer {
   readonly id = "deep-webgpu";
@@ -114,7 +115,8 @@ export class PbrRenderer {
     this.transientTextures = new PbrTransientTexturePool(session, options.transientTextureBudgetBytes); this.targets = new RenderTargets(session, pipelines.output.getBindGroupLayout(0), this.outputs.buffer, this.transientTextures);
     this.features = features;
     // P0-2 可见性切片（opt-in）：共享 frame uniform 与 transient 池；默认 features.visibilityBuffer=false 时不构建。
-    this.visibility = features.visibilityBuffer ? new VisibilityBufferPath(session, this.transientTextures, this.frameBuffer) : undefined;
+    this.visibility = features.visibilityBuffer ? new VisibilityBufferPath(session, this.transientTextures, this.frameBuffer,
+      features.softRasterizeFallback ? new SoftRasterizeFallback(session) : undefined) : undefined;
     if (this.visibility) void this.visibility.ensure();
     this.preparationPlan = compilePbrFrameGraph({ transparency: true, features,
       writeGeometryBuffers: this.writeGeometryBuffers });

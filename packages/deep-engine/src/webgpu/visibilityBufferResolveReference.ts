@@ -1,4 +1,5 @@
 import { isValidVisibilityPixel, type VisibilitySlotRow } from "./visibilityBufferEncoding.js";
+import { dielectricF0 } from "../materialDielectric.js";
 
 /**
  * 可见性 resolve 的 CPU 参考实现 —— 与 VISIBILITY_RESOLVE_WGSL 逐公式对拍。
@@ -43,7 +44,7 @@ const safeNormalize = (value: readonly number[], fallback: readonly [number, num
 
 /** GGX + 相关 Smith + Schlick，与 PBR_DIRECT_LIGHTING_WGSL 的 brdf 同式。 */
 export function referenceBrdf(n: readonly number[], v: readonly number[], l: readonly number[],
-  base: readonly number[], metal: number, rough: number): [number, number, number] {
+  base: readonly number[], metal: number, rough: number, ior = 1.5): [number, number, number] {
   const h = safeNormalize([v[0]! + l[0]!, v[1]! + l[1]!, v[2]! + l[2]!], [n[0]!, n[1]!, n[2]!]);
   const nv = clamp(dot(n, v), 0.0001, 1.0), nl = clamp(dot(n, l), 0.0, 1.0);
   const nh = clamp(dot(n, h), 0.0, 1.0), vh = clamp(dot(v, h), 0.0, 1.0);
@@ -56,7 +57,7 @@ export function referenceBrdf(n: readonly number[], v: readonly number[], l: rea
   // f0 = mix(0.04, base, metal)；f = f0*(1-factor) + factor —— 与 WGSL fresnel 同式（exp2 = 2^x）。
   const factor = Math.pow(2, (-5.55473 * vh - 6.98316) * vh);
   const f = [0, 1, 2].map(index => {
-    const f0 = 0.04 * (1.0 - metal) + base[index]! * metal;
+    const f0 = dielectricF0(ior) * (1.0 - metal) + base[index]! * metal;
     return f0 * (1.0 - factor) + factor;
   });
   const specular = [0, 1, 2].map(index => f[index]! * visibility * distribution);
@@ -80,7 +81,7 @@ export function resolveVisibilityPixelReference(pixel: ResolveReferencePixel,
   if (dot(normal, view) < 0.0) normal = negate(normal);
   const rough = clamp(entry.material[0]!, 0.06, 1.0) + (pixel.geometryRoughness ?? 0);
   const light = safeNormalize(uniforms.lightDirection, [0, 1, 0]);
-  const direct = referenceBrdf(normal, view, light, entry.colorMetal, entry.colorMetal[3]!, rough);
+  const direct = referenceBrdf(normal, view, light, entry.colorMetal, entry.colorMetal[3]!, rough, entry.encodedIor || 1.5);
   const strength = uniforms.sunColor[3]!;
   const color = [0, 1, 2].map(index => direct[index]! * uniforms.sunColor[index]! * strength + entry.emissiveAlpha[index]!);
   return [color[0]!, color[1]!, color[2]!, 1.0];

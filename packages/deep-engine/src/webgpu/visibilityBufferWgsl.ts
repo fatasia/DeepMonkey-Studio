@@ -5,6 +5,9 @@ import { PBR_DIRECT_LIGHTING_WGSL } from "./pbrDirectLightingWgsl.js";
  *
  * 位布局合同见 visibilityBufferEncoding.ts 头注释；三段与 CPU 参考解析
  * （visibilityBufferResolveReference.ts）逐公式对拍。
+ * 软光栅后备（features.softRasterizeFallback，默认关）：resolve 模块含后备变体入口
+ * fragmentVisibilityResolveFallback，消费 softRasterizeFallback 三缓冲（binding 3..5），
+ * 着色公式与主变体同一 shadeVisibility（单一来源）。
  * 诚实边界（本切片 deferred，不在 shader 里假装存在）：阴影图采样、clustered 光源、
  * IBL/环境、雾、AO/SSR 输入、法线贴图与逐实例逐像素插值属性（normal/uv）。
  */
@@ -14,7 +17,8 @@ export const VISIBILITY_RASTER_WGSL = /* wgsl */ `
 struct FrameView { currentViewProjection: mat4x4f };
 @group(0) @binding(0) var<uniform> frameView: FrameView;
 struct VisibilityMeta { slot: u32, reserved0: u32, reserved1: u32, reserved2: u32 };
-@group(1) @binding(0) var<uniform> meta: VisibilityMeta;
+// 变量名不可用 meta：已被列入 WGSL 保留字（真机 Chrome/Tint 拒绝编译）。
+@group(1) @binding(0) var<uniform> visibilityMeta: VisibilityMeta;
 
 struct RasterInput {
   @location(0) position: vec3f,
@@ -32,7 +36,7 @@ struct RasterOutput {
   var out: RasterOutput;
   // 与 pbrShader.vertexMain 相同的表达式与求值顺序：保证与 forward 深度逐位可比。
   out.clip = frameView.currentViewProjection * vec4f(world, 1.0);
-  out.slot = meta.slot;
+  out.slot = visibilityMeta.slot;
   out.triangle = v.carrier & 0xffu;
   return out;
 }
@@ -60,6 +64,11 @@ struct VisibilityMaterialSlot {
   colorMetal: vec4f, material: vec4f, emissiveAlpha: vec4f, reserved: vec4f,
 };
 @group(2) @binding(0) var<storage, read> materials: array<VisibilityMaterialSlot>;
+// 软光栅后备三缓冲（softRasterizeFallback binding 3..5 同源）：仅后备变体入口引用，
+// 主入口（layout:"auto"）的派生布局与行为不受影响。
+@group(1) @binding(3) var<storage, read> fallbackSlot: array<u32>;
+@group(1) @binding(4) var<storage, read> fallbackPacked: array<u32>;
+@group(1) @binding(5) var<storage, read> fallbackDepth: array<f32>;
 
 fn isVisibilityCovered(slot: u32, packedTriangle: u32) -> bool {
   return slot != 0xffffffffu && (packedTriangle & ~0xffu) == 0u && packedTriangle < 126u;
@@ -73,26 +82,48 @@ fn worldFromDepth(uv: vec2f, depth: f32) -> vec3f {
   let uv = vec2f(f32((index << 1u) & 2u), f32(index & 2u));
   return vec4f(uv * 2.0 - vec2f(1.0), 0.0, 1.0);
 }
-// 第一切片：albedo(slot 表) + 深度重建平面法线 + 太阳直射 GGX + 自发光；
-// 哨兵像素原样透传 forward 颜色（等价零回归回落）。
-@fragment fn fragmentVisibilityResolve(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
-  let pixel = vec2u(fragCoord.xy);
-  let forward = textureLoad(sceneColor, pixel, 0);
-  let ids = textureLoad(visibilityMap, pixel, 0);
-  if (!isVisibilityCovered(ids.x, ids.y)) { return forward; }
-  let depth = textureLoad(sceneDepth, pixel, 0);
-  let uv = (vec2f(pixel) + vec2f(0.5)) / resolve.targetSize.xy;
+// 着色公式单一来源：主变体与后备变体逐公式共用（禁止双写分叉）；
+// albedo(slot 表) + 深度重建平面法线 + 太阳直射 GGX + 自发光。
+fn shadeVisibility(slot: u32, packedTriangle: u32, depth: f32, uv: vec2f) -> vec4f {
   let world = worldFromDepth(uv, depth);
   let view = safeNormalize(resolve.eye.xyz - world, vec3f(0.0, 0.0, 1.0));
   var normal = normalize(cross(dpdx(world), dpdy(world)));
   normal = select(normal, -normal, dot(normal, view) < 0.0);
-  let entry = materials[ids.x];
+  let entry = materials[slot];
   let rough = clamp(entry.material.x, 0.06, 1.0) + deepGeometryRoughness(normal);
   let light = safeNormalize(resolve.lightDirection.xyz, vec3f(0.0, 1.0, 0.0));
-  var color = brdf(normal, view, light, entry.colorMetal.rgb, entry.colorMetal.w, rough)
+  var color = brdfWithDielectricF0(normal, view, light, entry.colorMetal.rgb, entry.colorMetal.w, rough, deepDielectricF0(entry.reserved.x))
     * resolve.sunColor.rgb * resolve.sunColor.w;
   color += entry.emissiveAlpha.rgb;
   return vec4f(color, 1.0);
+}
+// 第一切片主变体：哨兵像素原样透传 forward 颜色（等价零回归回落）。
+// 先无条件着色再 select：dpdx/dpdy 只能处于 uniform control flow（Tint uniformity 分析，
+// 真机编译受检）；哨兵像素的多余一次着色被丢弃，storage 越界索引由 robustness 置零不 trap。
+@fragment fn fragmentVisibilityResolve(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
+  let pixel = vec2u(fragCoord.xy);
+  let ids = textureLoad(visibilityMap, pixel, 0);
+  let forward = textureLoad(sceneColor, pixel, 0);
+  let depth = textureLoad(sceneDepth, pixel, 0);
+  let uv = (vec2f(pixel) + vec2f(0.5)) / resolve.targetSize.xy;
+  let shaded = shadeVisibility(ids.x, ids.y, depth, uv);
+  return select(forward, shaded, isVisibilityCovered(ids.x, ids.y));
+}
+// 后备变体（features.softRasterizeFallback）：软光栅三缓冲命中像素（slot ≠ 哨兵）优先，
+// 深度取后备 depth 通道、着色与主变体同一公式；未命中像素与主变体逐公式一致。
+@fragment fn fragmentVisibilityResolveFallback(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
+  let pixel = vec2u(fragCoord.xy);
+  let index = pixel.y * u32(resolve.targetSize.x) + pixel.x;
+  let softSlot = fallbackSlot[index];
+  let useSoft = softSlot != 0xffffffffu;
+  let ids = textureLoad(visibilityMap, pixel, 0);
+  let forward = textureLoad(sceneColor, pixel, 0);
+  let depth = select(textureLoad(sceneDepth, pixel, 0), fallbackDepth[index], useSoft);
+  let uv = (vec2f(pixel) + vec2f(0.5)) / resolve.targetSize.xy;
+  let slot = select(ids.x, softSlot, useSoft);
+  let packed = select(ids.y, fallbackPacked[index], useSoft);
+  let shaded = shadeVisibility(slot, packed, depth, uv);
+  return select(select(forward, shaded, isVisibilityCovered(ids.x, ids.y)), shaded, useSoft);
 }
 `;
 

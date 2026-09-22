@@ -6,6 +6,7 @@ import type { PacketLodResources } from "./packetLodResources.js";
 import { packVisibilitySlotRow, visibilitySlotRowFromInstance, INSTANCE_ROW_FLOATS,
   invertMat4, VISIBILITY_ATTACHMENT_FORMAT, VISIBILITY_CLEAR_SLOT, VISIBILITY_SLOT_ROW_FLOATS } from "./visibilityBufferEncoding.js";
 import { VISIBILITY_RASTER_WGSL, VISIBILITY_RESOLVE_WGSL, VISIBILITY_BLIT_WGSL } from "./visibilityBufferWgsl.js";
+import { type SoftRasterFallbackFrameInput, SoftRasterizeFallback } from "./softRasterizeFallback.js";
 import type { PbrTransientTextureHandle, PbrTransientTexturePool } from "./pbrTransientTexturePool.js";
 import { runResourceCleanup } from "./resourceCleanup.js";
 
@@ -28,6 +29,8 @@ export interface VisibilityFrameRequest {
   /** 当前帧 96 浮点 frame uniform 内容（PBR_FRAME_FLOAT_OFFSETS 布局，同缓冲同值）。 */
   readonly frameData: Float32Array;
   readonly inputs: VisibilityDrawInputs;
+  /** 软光栅后备输入（超误差 cluster 三角打包，softRasterizeFallback 合同）；undefined=本帧无后备。 */
+  readonly softRaster?: SoftRasterFallbackFrameInput;
 }
 
 export interface VisibilityFrameStats {
@@ -35,6 +38,8 @@ export interface VisibilityFrameStats {
   readonly drawCalls: number;
   /** 因容量/布局不满足而留在 forward 路径的候选绘制数。 */
   readonly skippedDraws: number;
+  /** 软光栅后备实际写入三角数；仅在后备 pass 真正编码的帧存在。 */
+  readonly fallbackTriangles?: number;
 }
 
 interface VisibilityResources {
@@ -55,6 +60,10 @@ interface VisibilityResources {
  * ① meshlet id 光栅化（与 forward 共享深度，less-equal 只写 forward 已见表面）
  * ② 全屏材质还原（slot 表 albedo + 深度重建法线 + 太阳直射；哨兵像素透传 forward）
  * ③ HDR 回写（composite → targets.hdr，后续后处理与透明合成不变）。
+ * 软光栅后备（features.softRasterizeFallback，默认关，softRasterizeFallback.ts 合同）：
+ * 在 ② 之前插入 soft_rasterize compute pass——选层后仍超误差阈值的 cluster 微三角写
+ * visibility 三缓冲（slot 接在硬件之后），② 改走后备变体入口消费三缓冲；关闭或本帧
+ * 无超误差输入时编码序列与既有三段完全一致（合同测试受检）。
  * 流水线未就绪/失败/无覆盖 slot 时跳过对应段并如实计数 —— forward 输出原样成立。
  */
 export class VisibilityBufferPath {
@@ -66,7 +75,7 @@ export class VisibilityBufferPath {
   private failure: string | undefined;
 
   constructor(private readonly session: DeviceSession, private readonly transient: PbrTransientTexturePool,
-    private readonly frameBuffer: GPUBuffer) {}
+    private readonly frameBuffer: GPUBuffer, private readonly softRasterize?: SoftRasterizeFallback) {}
 
   get failureReason(): string | undefined { return this.failure; }
 
@@ -84,6 +93,8 @@ export class VisibilityBufferPath {
     const module = device.createShaderModule({ label: "Deep visibility raster", code: VISIBILITY_RASTER_WGSL });
     const resolveModule = device.createShaderModule({ label: "Deep visibility resolve", code: VISIBILITY_RESOLVE_WGSL });
     const blitModule = device.createShaderModule({ label: "Deep visibility blit", code: VISIBILITY_BLIT_WGSL });
+    // 软光栅后备（opt-in）：复用同一 resolve 模块建变体管线；失败只关后备，不拖垮主路径。
+    await this.softRasterize?.ensure(undefined, resolveModule);
     for (const shader of [module, resolveModule, blitModule]) {
       const info = await shader.getCompilationInfo();
       const errors = info.messages.filter(message => message.type === "error");
@@ -199,6 +210,21 @@ export class VisibilityBufferPath {
           }
         }
       } finally { pass.end(); }
+      // 软光栅后备（材质还原之前）：超误差 cluster 微三角经 kernel 写 visibility 三缓冲，
+      // slot 接在硬件 slot 之后、材质表行同表追加；未就绪/入参 fail-closed 时零后备。
+      let fallbackTriangles: number | undefined;
+      const fallbackInput = request.softRaster;
+      if (fallbackInput !== undefined && this.softRasterize !== undefined
+        && slot + fallbackInput.triangleCount <= MAX_VISIBILITY_SLOTS) {
+        fallbackTriangles = this.softRasterize.encodeRaster(encoder, fallbackInput, slot, request.width, request.height);
+        if (fallbackTriangles !== undefined) {
+          // 合并到本帧唯一一次材质表上传。若先单独写后备行，再上传扩展后的 table，
+          // table 的零初始化尾部会覆盖后备材质，造成微三角可见但颜色/参数归零。
+          table.set(fallbackInput.slotRows.subarray(0, fallbackTriangles * VISIBILITY_SLOT_ROW_FLOATS),
+            slot * VISIBILITY_SLOT_ROW_FLOATS);
+          slot += fallbackTriangles;
+        }
+      }
       if (!slot) return { slotCount: 0, drawCalls: 0, skippedDraws };
       device.queue.writeBuffer(resources.metaUniform, 0, meta, 0, slot * 4);
       device.queue.writeBuffer(resources.materialTable, 0, table, 0, slot * VISIBILITY_SLOT_ROW_FLOATS);
@@ -213,13 +239,17 @@ export class VisibilityBufferPath {
         width: request.width, height: request.height, sampleCount: 1,
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
       try {
+        // 后备编码成功 → resolve 走后备变体（三缓冲命中像素优先）；否则主变体原样。
+        const fallbackActive = fallbackTriangles !== undefined && this.softRasterize?.resolvePipeline !== undefined;
+        const resolvePipeline = fallbackActive ? this.softRasterize!.resolvePipeline! : this.resolvePipeline!;
         const resolve = encoder.beginRenderPass({ label: "Deep visibility resolve", colorAttachments: [{
           view: composite.view, clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: "clear", storeOp: "store" }] });
-        resolve.setPipeline(this.resolvePipeline);
+        resolve.setPipeline(resolvePipeline);
         resolve.setBindGroup(0, resources.resolveGroup);
-        resolve.setBindGroup(1, device.createBindGroup({ layout: this.resolvePipeline.getBindGroupLayout(1), entries: [
+        resolve.setBindGroup(1, device.createBindGroup({ layout: resolvePipeline.getBindGroupLayout(1), entries: [
           { binding: 0, resource: visibility.view }, { binding: 1, resource: request.depthView },
-          { binding: 2, resource: request.hdrView }] }));
+          { binding: 2, resource: request.hdrView },
+          ...(fallbackActive ? this.softRasterize!.resolveEntries() : [])] }));
         resolve.setBindGroup(2, resources.tableGroup);
         resolve.draw(3);
         resolve.end();
@@ -231,12 +261,14 @@ export class VisibilityBufferPath {
         blit.draw(3);
         blit.end();
       } finally { this.transient.release(composite); }
-      return { slotCount: slot, drawCalls, skippedDraws };
+      return fallbackTriangles === undefined ? { slotCount: slot, drawCalls, skippedDraws }
+        : { slotCount: slot, drawCalls, skippedDraws, fallbackTriangles };
     } finally { this.transient.release(visibility); }
   }
 
   dispose(): void {
     this.rasterPipelines.clear(); this.resolvePipeline = undefined; this.blitPipeline = undefined;
+    this.softRasterize?.dispose();
     const resources = this.resources; this.resources = undefined;
     if (resources) {
       runResourceCleanup("Visibility buffer disposal failed.", [
