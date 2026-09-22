@@ -3009,6 +3009,13 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - Native 修复真实缺陷：`apply_dynamic_transforms` 遇到未知属性会硬报错，带可见性轨道的包在 Native 播放会中断；已让 `object-visible` 参与采样并映射隐藏目标实例为零矩阵（GPU 光栅自然剔除，不扩实例 ABI），显式可见恢复 TRS。
 - 证据：visibility/viewer playback **9/9**；Native lib **511/511**；apps/web typecheck 通过。边界：Native per-instance 可见位、时间轴拖拽编辑细化仍待后续。
 
+### 2026-09-23 F2 RT draw 链补提交与 HEAD 断链修复（ZCode）
+
+- 事实核对：`302f3df`（并行会话打包）收录了本会话写入共享工作树的 F2 RT pixel 文件（shader/pipeline family/mesh_pass 分支/frame 分支/测试），但漏掉 `pipeline.rs`（`mod rt` 注册）与 `gpu_scene_draw.rs`（已被同提交的 `mesh_pass.rs` 消费的 `draw_solid_rt` 与 outline draw 路径），且 `renderer/init.rs` 的 RT 接线（rt_frame_layout 驻留绑定、RT pixel 管线创建、诊断升级）仍未提交——临时 worktree 实测 HEAD 依赖未提交的 IES/grading/probe/Cargo.toml(rapier3d) 资源面，独立编译不过。
+- 本轮提交 `4b42f72`：补齐 draw 侧断点（`pipeline.rs` 注册 + `gpu_scene_draw.rs` 的 `draw_solid_rt`/outline indirect draw），使 `encode_opaque_pass_rt` 与 `encode_outline_mask` 的被调方进入仓库；init 接线留在工作树，归属并行会话的 IES/grading/probe 收尾批（替其收尾会纳入未验证工作，不越界）。
+- 复验证据：`cargo check --lib` 干净；`renderer::rt_pixel` 4/4（含真机 Ray Query 设备管线族编译）、`renderer::rt_residency_tests` 10/10、`hardware_ray_query` 4/4（RTX 真机 probe）、`mesh_abi` 4/4。未 push、未 reset/clean，工作树其余并行 WIP 未触碰。
+- 剩余精确缺口：`renderer/init.rs` RT 接线提交（依赖面：resources::ies_buffer、output_pass author_grading、probe_gi_storage 构造行，归并行资源面收尾批）；RT/栅格同场景像素对拍与设备恢复证据仍待真实窗口验收。
+
 ### 2026-09-23 F2 RT 像素消费切片（收口）
 
 - 新增 `native_mesh_rt_fragment_v1.wgsl`：binding10 TLAS + `rayQueryProceed` directional shadow 可见性（静态 opaque/MASK）；独立 RT pipeline 族（`pipeline/rt.rs`），仅在驻留+特性+无自定义 shader 批次同时满足时由 opaque pass 选择 RT bind group，否则逐帧回退栅格（fail-closed）。
