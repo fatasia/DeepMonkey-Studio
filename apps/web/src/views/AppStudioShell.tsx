@@ -350,6 +350,7 @@ function createAppStudioController({ bindings }: { bindings: AppViewBindings }) 
     addCameraKeyframe,
     addModelKeyframe,
     toggleSceneAnimation,
+    reverseSceneAnimation,
     deleteKeyframe,
   } = sceneEditor;
   const {
@@ -608,6 +609,7 @@ function createAppStudioController({ bindings }: { bindings: AppViewBindings }) 
     toggleMeasurement,
     toggleModelTree,
     toggleSceneAnimation,
+    reverseSceneAnimation,
     toggleSceneOrganizationObject,
     transformMode,
     updateAnnotation,

@@ -3095,3 +3095,4 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 倒放按钮复用既有 `sceneAnimationDirection`（合同新增 `setSceneAnimationDirection`，播放按钮固定正向起步）；区间播放新增合同 `SceneAnimationPlaybackRange`（入点/出点，越界或退化回落整条时间线），采样输入经 `sampleSceneAnimation` 收敛进区间（含帧吸附溢出回夹），循环/往返/停止边界由纯函数 `advanceSceneAnimationTime` 统一裁决，正向与倒放共用同一语义。
 - 证据：contracts typecheck 通过、apps/web typecheck 全绿；聚焦 vitest **41/41**（timeline 区间 8 项新增 + 命令倒放 2 项新增 + 动画/状态机/下译/可见性回归）。
 - 边界：发布侧 playbackRange 下译与发布查看器 transport 属 B2-b 范畴；未 push。
+- 收口（同日跟进）：`4e9a95a` 已收编合同/runtime/命令主链；本提交补齐其缺失的倒放按钮与区间入点/出点 UI、壳层接线、`setSceneAnimationDirection` abstract 声明、`applySceneAnimationFrame` 采样门接线，并修复 scene.ts 被打包出的双份 `SceneAnimationPlaybackRange` 接口块；与并行状态机/工程分析 WIP 同文件共存的行已按 hunk 分离暂存，并行 WIP 全部保留工作树；HEAD 既有 apps/web typecheck 358 处错误（并行拆分提交所致，含 deep-engine volumetricFog 91 处）非本切片引入。未 push。

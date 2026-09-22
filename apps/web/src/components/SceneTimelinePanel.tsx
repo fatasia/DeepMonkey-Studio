@@ -27,6 +27,7 @@ interface Props {
   modelNames: ReadonlyMap<string, string>;
   onClose: () => void;
   onPlayPause: () => void;
+  onReversePlay?: () => void;
   onSeek: (time: number) => void;
   onChange: (animation: SceneAnimationState) => void;
   onRecordCamera: (time?: number) => string | void;
@@ -109,6 +110,20 @@ function SceneAnimationTimeline(props: Props) {
 
   function seekTimeline(time: number) {
     props.onSeek(snapAnimationTime(Math.min(duration, Math.max(0, time)), frameRate, props.animation.snapToFrames));
+  }
+
+  function updatePlaybackRange(inPoint: number, outPoint: number) {
+    const next = {
+      inPoint: Math.min(Math.max(Number.isFinite(inPoint) ? inPoint : 0, 0), duration),
+      outPoint: Math.min(Math.max(Number.isFinite(outPoint) ? outPoint : duration, 0), duration),
+    };
+    if (next.outPoint <= next.inPoint || (next.inPoint <= 0 && next.outPoint >= duration)) {
+      // 退化或恢复整条时间线时清除区间，避免场景文档携带无效果字段。
+      const { playbackRange: _cleared, ...rest } = props.animation;
+      props.onChange(rest);
+      return;
+    }
+    update({ playbackRange: next });
   }
 
   function deleteFrame(id: string) {
@@ -274,6 +289,10 @@ function SceneAnimationTimeline(props: Props) {
         <button className="timeline-play" title={props.playing ? tr(props.locale, "暂停", "Pause") : tr(props.locale, "播放", "Play")} onClick={props.onPlayPause}>
           {props.playing ? <Pause size={15} /> : <Play size={15} />}
         </button>
+        {/* 倒放按钮固定占位，未接处理器时禁用，保证 transport 网格列数稳定。 */}
+        <button className="timeline-reverse" title={tr(props.locale, "倒放", "Reverse play")} disabled={!props.onReversePlay} onClick={() => props.onReversePlay?.()}>
+          <Play size={13} style={{ transform: "scaleX(-1)" }} />
+        </button>
         <span className="timeline-time">{props.animation.snapToFrames ? `F${Math.round(props.currentTime * frameRate)}` : `${props.currentTime.toFixed(2)}s`}</span>
         <span className="timeline-transport-space" />
         <span className="timeline-auto-key" title={tr(props.locale, "移动镜头或拖动对象后，在播放头自动建立或更新关键帧", "Moving the camera or an object creates or updates a keyframe at the playhead")}><CircleDot size={12} />{tr(props.locale, "自动关键帧", "Auto Key")}</span>
@@ -344,6 +363,30 @@ function SceneAnimationTimeline(props: Props) {
               step="0.5"
               value={props.animation.duration}
               onChange={(event) => update({ duration: Math.max(0.1, Number(event.target.value) || 0.1) })}
+            />
+            <i>s</i>
+          </label>
+          <label>
+            <span>{tr(props.locale, "区间入点", "Range in point")}</span>
+            <input
+              type="number"
+              min="0"
+              max={Math.max(0, (props.animation.playbackRange?.outPoint ?? duration) - 0.1)}
+              step="0.1"
+              value={props.animation.playbackRange?.inPoint ?? 0}
+              onChange={(event) => updatePlaybackRange(Number(event.target.value), props.animation.playbackRange?.outPoint ?? duration)}
+            />
+            <i>s</i>
+          </label>
+          <label>
+            <span>{tr(props.locale, "区间出点", "Range out point")}</span>
+            <input
+              type="number"
+              min={Math.min(duration, (props.animation.playbackRange?.inPoint ?? 0) + 0.1)}
+              max={duration}
+              step="0.1"
+              value={props.animation.playbackRange?.outPoint ?? duration}
+              onChange={(event) => updatePlaybackRange(props.animation.playbackRange?.inPoint ?? 0, Number(event.target.value))}
             />
             <i>s</i>
           </label>

@@ -2,13 +2,14 @@ import * as THREE from "three";
 import type { SceneIKConstraintState } from "@bim-studio/contracts";
 import { solveBoneChainIK } from "./ik";
 import { applyTransform } from "./sceneObjectUtils";
-import { sampleCameraKeyframes, sampleModelAnimationKeyframes, sampleModelKeyframes, snapAnimationTime } from "./timeline";
+import { sampleCameraKeyframes, sampleModelAnimationKeyframes, sampleModelKeyframes, sampleSceneAnimation } from "./timeline";
 import { ViewerEngineEnvironment } from "./viewerEngineEnvironment";
 
 /** 时间线、骨骼和相机路径运行时。 */
 export abstract class ViewerEngineTimelineRuntime extends ViewerEngineEnvironment {
   protected applySceneAnimationFrame(time: number): void {
-    const sampleTime = snapAnimationTime(time, this.sceneAnimation.frameRate, this.sceneAnimation.snapToFrames);
+    // 采样输入先经播放区间收敛：越界 seek 与吸附溢出都不会让关键帧采样越过入点/出点。
+    const sampleTime = sampleSceneAnimation(this.sceneAnimation, time);
     const camera = sampleCameraKeyframes(
       this.sceneAnimation.camera,
       sampleTime,

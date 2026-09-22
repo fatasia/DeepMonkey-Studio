@@ -590,14 +590,6 @@ export interface SceneAnimationPlaybackRange {
   outPoint: number;
 }
 
-/** 区间播放范围（秒）。出点必须大于入点，越界或退化值按整条时间线处理。 */
-export interface SceneAnimationPlaybackRange {
-  /** 入点；循环、往返与停止的下边界。 */
-  inPoint: number;
-  /** 出点；循环、往返与停止的上边界。 */
-  outPoint: number;
-}
-
 export interface SceneAnimationState {
   duration: number;
   /** 发布预览进入场景后是否自动播放时间线。 */
@@ -605,8 +597,6 @@ export interface SceneAnimationState {
   loop: boolean;
   pingPong?: boolean;
   playbackSpeed?: number;
-  /** 区间播放；缺省播放整条时间线 [0, duration]。 */
-  playbackRange?: SceneAnimationPlaybackRange;
   /** 区间播放；缺省播放整条时间线 [0, duration]。 */
   playbackRange?: SceneAnimationPlaybackRange;
   /** Timeline authoring frame rate. Defaults to 30 when frame snapping is enabled. */

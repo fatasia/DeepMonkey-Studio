@@ -95,6 +95,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
     rendererBackend,
     rendererSwitching,
     replaceCameraView,
+    reverseSceneAnimation,
     route,
     sceneAnimation,
     sceneBehaviorOpen,
@@ -557,6 +558,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           modelNames={loadedModelNames}
           onClose={() => setAnimationOpen(false)}
           onPlayPause={toggleSceneAnimation}
+          onReversePlay={reverseSceneAnimation}
           onSeek={(time) => engine?.seekSceneAnimation(time)}
           onChange={updateSceneAnimation}
           onRecordCamera={addCameraKeyframe}

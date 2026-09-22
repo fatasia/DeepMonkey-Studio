@@ -283,6 +283,8 @@ export abstract class ViewerEngineContract {
   abstract playSceneAnimation(): void;
   abstract pauseSceneAnimation(): void;
   abstract isSceneAnimationPlaying(): boolean;
+  /** 设置时间线播放方向：1 正向，-1 倒放；只改方向不改播放状态。 */
+  abstract setSceneAnimationDirection(direction: 1 | -1): void;
   abstract searchComponents(filter: ComponentFilter, limit?: number): ComponentRecord[];
   abstract getComponentFacets(): ComponentFacets;
   abstract getComponentCount(): number;
