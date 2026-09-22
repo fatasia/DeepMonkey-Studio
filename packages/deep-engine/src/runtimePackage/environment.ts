@@ -40,7 +40,7 @@ export function validateRuntimeEnvironment(value: unknown, id: string, revision:
       const light = record(object.lighting, `${path}.lighting`);
       // v3-v5 阶梯强制 localLights；v7 灯光沿用完整阶梯能力但 localLights 可选（同 v2）。
       const withLocals = many || (fogLit && light.localLights !== undefined);
-      fields(light, ["direction", "radiance", "exposure", "shadows", ...(withLocals ? ["localLights"] : [])], withLocals ? ["lightProfiles"] : [], path);
+      fields(light, ["direction", "radiance", "exposure", "shadows", ...(withLocals ? ["localLights"] : [])], withLocals ? ["lightProfiles", "globalIlluminationIntensity"] : ["globalIlluminationIntensity"], path);
       if (withLocals) {
         if (lit) {
           validateLocalLights(light.localLights, `${path}.lighting.localLights`, shadows, pointShadow);
@@ -58,7 +58,9 @@ export function validateRuntimeEnvironment(value: unknown, id: string, revision:
         && Math.abs((direction as number[]).reduce((sum, v) => sum + v*v, 0) - 1) < 0.0001
         && radiance.length === 3 && radiance.every(v => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 256)
         && typeof light.exposure === "number" && light.exposure >= 0.55 && light.exposure <= 1.55
-        && typeof light.shadows === "boolean", path, "Invalid authored directional lighting.");
+        && typeof light.shadows === "boolean"
+        && (light.globalIlluminationIntensity === undefined || (typeof light.globalIlluminationIntensity === "number"
+          && Number.isFinite(light.globalIlluminationIntensity) && light.globalIlluminationIntensity >= 0 && light.globalIlluminationIntensity <= 16)), path, "Invalid authored directional lighting.");
     }
     if (hasFog) {
       const fog = record(object.fog, `${path}.fog`);
@@ -70,6 +72,7 @@ export function validateRuntimeEnvironment(value: unknown, id: string, revision:
         && typeof fog.density === "number" && Number.isFinite(fog.density) && fog.density >= 0 && fog.density <= 8,
         path, "Invalid authored fog.");
     }
+    if (object.staticLightmap !== undefined) validateStaticLightmap(object.staticLightmap, `${path}.staticLightmap`);
     const color = array(object.backgroundSrgb, `${path}.backgroundSrgb`, 3);
     requireValue(color.length === 3 && color.every(channel => typeof channel === "number"
       && Number.isFinite(channel) && channel >= 0 && channel <= 1), path, "Invalid sRGB background.");
@@ -127,4 +130,21 @@ export function validateRuntimePrefilteredIbl(value: unknown, id: string, revisi
 function dimension(value: unknown, path: string): number {
   const size = integer(value, 1, 2048, path);
   requireValue((size & (size - 1)) === 0, path, "IBL dimensions must be powers of two."); return size;
+}
+
+function validateStaticLightmap(value: unknown, path: string): void {
+  const object = record(value, path);
+  fields(object, ["schema", "schemaVersion", "textureId", "textureHash", "uvSet", "colorSpace", "intensity", "width", "height"], [], path);
+  const hash = record(object.textureHash, `${path}.textureHash`);
+  fields(hash, ["algorithm", "value"], [], `${path}.textureHash`);
+  const width = object.width, height = object.height;
+  requireValue(object.schema === "deep-engine.static-lightmap" && object.schemaVersion === 1
+    && typeof object.textureId === "string" && object.textureId.length > 0
+    && hash.algorithm === "sha256" && typeof hash.value === "string" && /^[0-9a-f]{64}$/.test(hash.value)
+    && (object.uvSet === 0 || object.uvSet === 1)
+    && (object.colorSpace === "linear" || object.colorSpace === "srgb")
+    && typeof object.intensity === "number" && Number.isFinite(object.intensity) && object.intensity >= 0 && object.intensity <= 64
+    && Number.isSafeInteger(width) && (width as number) >= 1 && (width as number) <= 16384
+    && Number.isSafeInteger(height) && (height as number) >= 1 && (height as number) <= 16384,
+    path, "Invalid static lightmap descriptor.");
 }
