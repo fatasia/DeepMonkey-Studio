@@ -6,12 +6,13 @@ import source from "../../../../packages/deep-engine/fixtures/dashboard-layout-s
 import { compileDashboardRasterContent } from "./compileDashboardRasterContent";
 import type { DashboardRasterCompileInput, DashboardRasterHost, DashboardTextRasterRequest, DashboardRasterResult } from "./dashboardRasterTypes";
 
-function fixture(type: "text" | "image" | "value" | "shape" = "text"): DashboardRasterCompileInput {
+function fixture(type: "text" | "image" | "value" | "shape" | "video" = "text"): DashboardRasterCompileInput {
   const document: unknown = structuredClone(source); assertDashboardDocument(document);
   document.application.scripts = []; document.application.interactions = [];
   const node: DashboardDataWidgetNode = { id: "sample", kind: "data-widget", zIndex: 7,
     frame: { x: 50, y: 60, width: 36, height: 36 },
-    widget: { type, title: "标题", content: "", key: "sample", unit: "%", color: "#123456", borderWidth: 0 } };
+    widget: { type, title: "标题", content: "", key: "sample", unit: "%", color: "#123456", borderWidth: 0,
+      ...(type === "video" ? { videoUrl: "/media/frozen.mp4", videoFit: "contain" as const } : {}) } };
   document.application.pages[0]!.nodes = [node];
   const bytes = new Uint8Array([1, 2, 3]);
   return { document: document as DashboardDocument, packageId: "test.dashboard", packageVersion: "1.0.0", locale: "zh-CN",
@@ -39,6 +40,59 @@ function payload(result: Awaited<ReturnType<typeof compileDashboardRasterContent
   return Object.values(result.package.payloads).find((value: any) => value.schema === "deep-engine.deep2d-runtime") as any;
 }
 describe("frozen dashboard raster orchestration", () => {
+  it("keeps unresolved video explicit for the Native dynamic media layer", async () => {
+    const result = await compileDashboardRasterContent(fixture("video"), host().adapter);
+    const report = result.capabilityReport.objects[0]!;
+    expect(report.contentCompiled).toBe(false);
+    expect(report.reasons.join(" ")).toContain("Native dynamic media layer");
+    expect(report.reasons.join(" ")).not.toContain("作者图表类型");
+    const dashboard = result.package.payloads[result.package.entrypoints.dashboard!] as any;
+    expect(dashboard.videos).toEqual([{ nodeId: result.nodeBindings[0]!.runtimeNodeId, sourceNodeId: "sample",
+      source: { uri: "/media/frozen.mp4", availability: "external-unresolved", packaged: false, resourceId: null },
+      playback: { fit: "contain", autoplay: true, muted: true, loop: true },
+      state: { status: "blocked", transport: "unavailable", positionSeconds: 0, durationSeconds: null,
+        reason: "native-video-runtime-unavailable",
+        missingCapabilities: ["video-decoder", "frame-texture-update", "media-clock", "playback-controls", "seek"] } }]);
+    expect(validateDeepRuntimePackage(result.package).valid).toBe(true);
+  });
+  it("packages a content-addressed MP4 container with ready muted playback", async () => {
+    const input = fixture("video"), bytes = Uint8Array.of(
+      0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d,
+      0, 0, 0, 0, 0x69, 0x73, 0x6f, 0x6d, 0x6d, 0x70, 0x34, 0x32,
+    );
+    const sha256 = sha256Bytes(bytes);
+    const bound = { ...input,
+      assets: { ...input.assets, video: { bytes, sha256, mime: "video/mp4", identity: { id: "video", revision: 7 } } },
+      nodeAssets: { ...input.nodeAssets, sample: { ...input.nodeAssets.sample, video: "video" } } };
+    const result = await compileDashboardRasterContent(bound, host().adapter);
+    const dashboard = result.package.payloads[result.package.entrypoints.dashboard!] as any;
+    expect(dashboard.media).toEqual([expect.objectContaining({ id: `media.${sha256}`, revision: 1,
+      format: "mp4-isobmff", mime: "video/mp4", byteLength: 24, sha256 })]);
+    expect(dashboard.videos[0]).toMatchObject({ source: { availability: "packaged", packaged: true,
+      resourceId: `media.${sha256}` }, state: { status: "ready", transport: "autoplay",
+        reason: "native-video-runtime-ready", missingCapabilities: [] } });
+    expect(validateDeepRuntimePackage(result.package).valid).toBe(true);
+  });
+  it("keeps poster-only and audible author intent behind precise capability blockers", async () => {
+    const input = fixture("video"), node = input.document.application.pages[0]!.nodes[0] as DashboardDataWidgetNode;
+    node.widget.videoAutoplay = false;
+    const bytes = Uint8Array.of(0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d,
+      0, 0, 0, 0, 0x69, 0x73, 0x6f, 0x6d, 0x6d, 0x70, 0x34, 0x32);
+    const sha256 = sha256Bytes(bytes), bound = { ...input,
+      assets: { ...input.assets, video: { bytes, sha256, mime: "video/mp4", identity: { id: "video", revision: 7 } } },
+      nodeAssets: { ...input.nodeAssets, sample: { ...input.nodeAssets.sample, video: "video" } } };
+    let result = await compileDashboardRasterContent(bound, host().adapter);
+    let dashboard = result.package.payloads[result.package.entrypoints.dashboard!] as any;
+    expect(dashboard.videos[0].state).toMatchObject({ status: "ready", transport: "poster",
+      reason: "native-video-runtime-ready", missingCapabilities: [] });
+    node.widget.videoMuted = false;
+    result = await compileDashboardRasterContent(bound, host().adapter);
+    dashboard = result.package.payloads[result.package.entrypoints.dashboard!] as any;
+    expect(dashboard.videos[0].state).toMatchObject({ status: "blocked", transport: "unavailable",
+      reason: "native-video-audio-unavailable",
+      missingCapabilities: ["audio-output"] });
+    expect(validateDeepRuntimePackage(result.package).valid).toBe(true);
+  });
   it("composes frozen page images above the system color and below author nodes", async () => {
     const input = fixture("shape"), page = input.document.application.pages[0]!;
     page.width = 320; page.height = 320;

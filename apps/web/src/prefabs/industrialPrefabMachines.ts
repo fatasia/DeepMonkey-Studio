@@ -122,7 +122,7 @@ function modularFence(): IndustrialPrefabDefinition {
     number("gateWidthM", "门宽", "Gate width", 1.2, "m", 0, 12, 0.1),
     select("panel", "围栏类型", "Panel", "mesh", ["mesh", "solid", "glass", "electronic"]),
     bool("intrusionDetection", "入侵检测", "Intrusion detection", false),
-  ], actions([["open-gate", "打开门", "Open gate"], ["close-gate", "关闭门", "Close gate"]]), ["gateOpen", "intrusion", "faultCode"]);
+  ], actions([["open-gate", "打开门", "Open gate"], ["close-gate", "关闭门", "Close gate"]]), ["gateOpen", "intrusion", "faultCode"], { pathCapable: true });
 }
 
 function accessParameters() {

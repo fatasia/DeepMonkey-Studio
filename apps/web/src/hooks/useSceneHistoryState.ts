@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import type { SceneSnapshot } from "@bim-studio/contracts";
 import { SceneAuthoringHistory } from "../studio/sceneAuthoringHistory";
 import type { WorkspaceRecoveryDraft } from "../studio/workspaceRecoveryStore";
+import { runSceneHistoryTransaction } from "../studio/sceneHistoryTransaction";
 
 interface SceneHistoryStateOptions {
   activeScene: SceneSnapshot | undefined;
@@ -60,6 +62,11 @@ export function useSceneHistoryState({ activeScene, routeView, sceneBehaviorActi
 
   sceneHistoryRecordRef.current = scheduleSceneHistoryEdit;
 
+  function runSceneHistoryEdit(change: () => void): void {
+    if (routeView !== "studio" || sceneHistoryApplyingRef.current || sceneBehaviorActive || animationPlaying) { change(); return; }
+    runSceneHistoryTransaction(change, flushSceneHistoryEdit, flushSync);
+  }
+
   function adoptFirstSavedScene(saved: SceneSnapshot): void {
     flushSceneHistoryEdit();
     sceneHistoryRef.current.adoptSceneIdentity(saved);
@@ -78,6 +85,7 @@ export function useSceneHistoryState({ activeScene, routeView, sceneBehaviorActi
     sceneHistoryRecordRef,
     sceneHistoryRevision,
     flushSceneHistoryEdit,
+    runSceneHistoryEdit,
     adoptFirstSavedScene,
   };
 }

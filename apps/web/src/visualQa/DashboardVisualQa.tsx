@@ -2,6 +2,7 @@ import { useState, useSyncExternalStore } from "react";
 import { ApplicationStore, type StudioCommand } from "@bim-studio/studio-core";
 import type { ApplicationDocument, ApplicationObjectRef, ProjectRecord } from "@bim-studio/contracts";
 import { DashboardWorkspace } from "../components/DashboardWorkspace";
+import { useGlobalDialogEscape } from "../hooks/useGlobalDialogEscape";
 
 const now = "2026-08-25T12:00:00.000Z";
 const initialApplication: ApplicationDocument = {
@@ -42,6 +43,7 @@ const initialApplication: ApplicationDocument = {
 const project: ProjectRecord = { id: "visual-qa", name: "智能工厂运营中心", description: "Dashboard visual QA", models: [], createdAt: now, updatedAt: now };
 
 export default function DashboardVisualQa() {
+  useGlobalDialogEscape();
   const [store] = useState(() => new ApplicationStore(initialApplication));
   const state = useSyncExternalStore((listener) => store.subscribe(listener), () => store.getState());
   const application = state.document!;

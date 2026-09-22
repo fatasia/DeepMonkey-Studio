@@ -136,7 +136,7 @@ describe("explicit author DevTools sessions", () => {
 
   it("maps encoded module identities and preserves source identity across re-runs", () => {
     const source = behaviorScriptSource({ id: "line\nbreak/测试", code: "export function onStart() {}" });
-    expect(source).toEqual({ url: "industrial-studio-behavior-line%0Abreak%2F%E6%B5%8B%E8%AF%95.mjs", lineOffset: 1 });
+    expect(source).toEqual({ url: "industrial-studio-behavior-line%0Abreak%2F%E6%B5%8B%E8%AF%95.mjs", lineOffset: 2 });
     expect(behaviorScriptSource({ id: "line\nbreak/测试", code: "export function onStart() { return 2; }" })).toEqual(source);
     const { worker, host, ready } = setup(); ready(); host.resume();
     worker.emit({ type: "behavior.error", message: "test", stack: "at onStart (industrial-studio-behavior-debug%3Atest.js:6:7)" });

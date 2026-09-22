@@ -57,6 +57,15 @@ describe("scene client explicit resources", () => {
     input.environment.environmentMapUrl = "data:image/png;base64,AA==";
     expect(selectSceneClientResources(project(), [input], []).resources).toEqual([]);
   });
+  it("freezes shipped showcase media without treating arbitrary paths as project assets", () => {
+    const input = scene(), widget = { id: "camera", key: "camera", type: "video" as const, title: "Camera", unit: "", x: 0, y: 0, w: 320, h: 180, width: 320, height: 180,
+      videoUrl: "/showcase/live-monitor.html?camera=robot-a" };
+    input.dashboard = { side: "right", width: 320, backgroundColor: "#000000", backgroundOpacity: 1, blur: 0, borderRadius: 0, widgets: [widget] };
+    expect(selectSceneClientResources(project(), [input], []).resources.map(resource => resource.url))
+      .toEqual(["/showcase/live-monitor.html?camera=robot-a"]);
+    widget.videoUrl = "/showcase/../secret.txt";
+    expect(() => selectSceneClientResources(project(), [input], [])).toThrow(/URL 未登记/);
+  });
   it("deduplicates identical URLs while retaining all byte claims and copies records", () => {
     const input = scene(); input.models = [instance(), instance("second", "unused")];
     const source = project(); source.models[1]!.manifest!.geometryUrl = source.models[0]!.manifest!.geometryUrl!;

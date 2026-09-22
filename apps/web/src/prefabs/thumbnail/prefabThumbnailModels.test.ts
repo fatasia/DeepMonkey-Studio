@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { IndustrialPrefabDefinition } from "@bim-studio/contracts";
 import { INDUSTRIAL_PREFAB_CATALOG, industrialPrefabDefinition } from "../industrialPrefabCatalog";
 import { prefabThumbnailVariant } from "./prefabThumbnailKit";
-import { buildIndustrialPrefabThumbnailModel, disposeThumbnailModel } from "./prefabThumbnailModels";
+import { buildIndustrialPrefabThumbnailModel, INDUSTRIAL_PREFAB_THUMBNAIL_KINDS, disposeThumbnailModel } from "./prefabThumbnailModels";
 
 function buildOrThrow(id: string): { definition: IndustrialPrefabDefinition; model: THREE.Group } {
   const definition = industrialPrefabDefinition(id);
@@ -21,8 +21,8 @@ function withParameterOverride(base: IndustrialPrefabDefinition, key: string, va
 }
 
 describe("industrial prefab thumbnail models", () => {
-  it("全量目录(120 个预制体)都能产出几何有效的小样", () => {
-    expect(INDUSTRIAL_PREFAB_CATALOG.length).toBe(120);
+  it("全量目录(121 个预制体)都能产出几何有效的小样", () => {
+    expect(INDUSTRIAL_PREFAB_CATALOG.length).toBe(121);
     const kinds = new Set<string>();
     for (const definition of INDUSTRIAL_PREFAB_CATALOG) {
       kinds.add(definition.kind);
@@ -42,7 +42,7 @@ describe("industrial prefab thumbnail models", () => {
       expect(meshes, `${definition.id} 应包含网格`).toBeGreaterThan(0);
       expect(() => disposeThumbnailModel(model!)).not.toThrow();
     }
-    expect(kinds.size).toBe(14); // 14 种 kind 全覆盖
+    expect([...kinds].sort()).toEqual([...INDUSTRIAL_PREFAB_THUMBNAIL_KINDS].sort()); // kind 全覆盖,与构建器表对账
   });
 
   it("family 分型会改变轮廓(机器人族、输送布局、公用工程族)", () => {

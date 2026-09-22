@@ -1,4 +1,6 @@
 import type { AssistantMode } from "../api";
+import type { AiContextDelivery } from "@bim-studio/contracts";
+import { readContextDelivery } from "./assistantContextDelivery";
 import type { BimAssistantPreparedContext } from "../bimAssistant";
 
 export type AssistantSourceState = "ready" | "partial" | "unavailable";
@@ -32,6 +34,8 @@ export type AssistantVerificationGrade =
   | "unverified";
 
 export interface AssistantReliabilitySummary {
+  contextDelivery?: AiContextDelivery;
+  contextSourceLabels?: Record<string, string>;
   grade: AssistantVerificationGrade;
   contextTrust: "client-snapshot" | "server-evidence" | "capability-result";
   traceId?: string;
@@ -45,6 +49,7 @@ export interface AssistantReliabilitySummary {
 }
 
 interface ReliabilityMetadata {
+  contextDelivery?: unknown;
   traceId?: unknown;
   verification?: unknown;
   inputRisk?: unknown;
@@ -163,7 +168,9 @@ export function assistantReliabilityFromResponse(
   const contextFingerprint = stringValue(metadata.contextFingerprint);
   const contextAvailable = sourceLabels.length > 0 || Boolean(bimEvidence);
   const limitedBim = mode === "bim" && bimEvidence?.confidence === "insufficient";
+  const contextDelivery = readContextDelivery(metadata.contextDelivery);
   return {
+    ...(contextDelivery ? { contextDelivery, contextSourceLabels: Object.fromEntries(sources.map((source) => [source.id, source.label])) } : {}),
     grade: verificationGrade({
       evidenceCount,
       ...(verification ? { verification } : {}),

@@ -91,3 +91,12 @@
 @media (prefers-reduced-motion: reduce) {
   .app-shell .right-panel :is(.toggle i::after, .structured-properties summary svg) { transition: none; }
 }
+
+.app-shell .right-panel .material-editor > .material-scalar-control { grid-template-columns: 54px minmax(0, 1fr) 64px; }
+.app-shell .right-panel .material-scalar-control .material-scalar-value { min-width: 0; width: 100%; font-variant-numeric: tabular-nums; }
+
+.app-shell .right-panel .material-scope-control { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; align-items: center; }
+.app-shell .right-panel .material-scope-control select { min-width: 0; width: 100%; }
+
+.app-shell .right-panel .material-source-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-block: 6px; }
+.app-shell .right-panel .material-source-actions > * { min-width: 0; flex: 1 1 100px; }

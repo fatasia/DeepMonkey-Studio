@@ -1,0 +1,18 @@
+.system-performance-maintenance header > div { display: grid; gap: 3px; min-width: 0; }
+.system-performance-maintenance header > div > strong,
+.system-performance-maintenance header > div > small { display: block; }
+.cache-management-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.cache-management-actions button {
+  display: inline-flex; min-height: 34px; align-items: center; justify-content: center;
+  gap: 6px; padding: 0 11px; color: var(--text); border: 1px solid var(--line-strong);
+  border-radius: 7px; background: var(--surface-2); font: inherit; cursor: pointer;
+}
+.cache-management-actions button:hover:not(:disabled) { color: var(--text-strong); border-color: var(--accent); }
+.cache-management-actions .cache-refresh { border-color: color-mix(in srgb, var(--accent) 62%, var(--line-strong)); background: color-mix(in srgb, var(--accent) 12%, var(--surface-2)); }
+.cache-management-actions .cache-clear:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, var(--surface-2)); }
+.cache-management-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cache-management-actions button:disabled { opacity: .5; cursor: not-allowed; }
+.system-performance-maintenance section[aria-label] > p { margin: 0; font-variant-numeric: tabular-nums; }
+.system-performance-maintenance section[aria-label] > small { color: var(--text-muted); }
+.system-performance-maintenance section[aria-label] > [role="alert"] { color: var(--danger); overflow-wrap: anywhere; }
+.system-performance-maintenance section[aria-label] > [role="status"]:empty { display: none; }

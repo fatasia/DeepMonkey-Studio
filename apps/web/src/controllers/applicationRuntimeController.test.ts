@@ -76,6 +76,25 @@ describe("scene editor destination", () => {
 });
 
 describe("applicationRuntimeController script replacement", () => {
+  it("rejects single writes, retargeting, deletion and atomic batch replacement of locked targets", async () => {
+    const source = migrateSceneSnapshotV1(pureFixture as SceneSnapshot);
+    const node = source.pages[0]!.nodes[0]!;
+    node.locked = true;
+    const attached = { ...script("attached", "Locked target"), target: { kind: "component" as const, id: node.id } };
+    source.scripts = [attached];
+    const session = new ApplicationSession(); session.openDocument(source);
+    const controller = createApplicationRuntimeController(controllerContext(session, source, vi.fn()));
+    const save = vi.spyOn(api, "saveApplication");
+    expect(controller.upsertBehaviorScript({ ...attached, code: "changed" })).toBe(false);
+    expect(controller.upsertBehaviorScript({ ...attached, target: { kind: "scene" } })).toBe(false);
+    controller.deleteBehaviorScript(attached.id);
+    await expect(controller.replaceBehaviorScripts([script("other", "Other")])).rejects.toThrow("目标已锁定");
+    expect(session.getDocument()?.scripts).toEqual([attached]);
+    expect(session.store.getState().dirty).toBe(false);
+    expect(save).not.toHaveBeenCalled();
+    expect(controller.upsertBehaviorScript(script("other", "Other"))).toBe(true);
+    expect(session.getDocument()?.scripts).toHaveLength(2);
+  });
   it("saves a frozen application without trying to mutate its scene thumbnail", async () => {
     const source = migrateSceneSnapshotV1(pureFixture as SceneSnapshot);
     const session = new ApplicationSession(); session.openDocument(source);

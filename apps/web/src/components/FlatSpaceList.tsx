@@ -37,7 +37,6 @@ export function FlatSpaceList(props: FlatSpaceListProps) {
             className={`asset-row scene-object-row ${visible ? "" : "muted"}`}
             key={space.id}
           >
-            <span className="model-expander" />
             <button className="asset-main" onClick={() => props.onFocus(space)}>
               <span className="scene-object-badge">
                 <DoorOpen size={15} />

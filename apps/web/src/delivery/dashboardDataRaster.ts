@@ -10,10 +10,17 @@ import type { DashboardRasterCompileInput, DashboardRasterEvidence, DashboardRas
 
 export class DashboardDataUnavailable extends Error {}
 
-export async function rasterDataContent(node: DashboardDataWidgetNode, content: Deep2dRuntimePackage,
-  input: DashboardRasterCompileInput, host: DashboardRasterHost) {
+/**
+ * Validates a frozen data view and prepares the exact text requests used by
+ * rasterDataContent. Table compilation uses this pass to prewarm its unique
+ * text batch without allocating any pixels or mutating runtime content.
+ */
+export function prepareDashboardDataRaster(node: DashboardDataWidgetNode, input: DashboardRasterCompileInput) {
   const data = input.data?.[node.id];
-  if (!data || !("layout" in data) || node.widget.semanticBinding) throw new DashboardDataUnavailable("Frozen resolved metric and measured Web layout are required");
+  const scale: 1 | 2 = input.textRasterScale === undefined || input.textRasterScale === 1 ? 1 : input.textRasterScale;
+  if (scale !== 1 && scale !== 2) throw new DashboardDataUnavailable("Text raster scale must be 1 or 2");
+  if (!data || !("layout" in data) || node.widget.semanticBinding)
+    throw new DashboardDataUnavailable("Frozen resolved metric and measured Web layout are required");
   if (node.widget.type === "table" && node.widget.report?.freezeFirstColumn && !data.layout.paint)
     throw new DashboardDataUnavailable("Sticky table cells require ordered background/text composition");
   let paint;
@@ -29,6 +36,7 @@ export async function rasterDataContent(node: DashboardDataWidgetNode, content: 
     if ((box.whiteSpace === "normal" || box.whiteSpace === "nowrap") && /[\t\r\n\f]| {2,}|^ | $/.test(value.text))
       throw new DashboardDataUnavailable("CSS whitespace collapsing requires a separate text pass");
     const width = Math.ceil(box.rect[2]), height = Math.ceil(box.rect[3]);
+    rasterExtent(width * scale, height * scale);
     const clip = width === box.rect[2] && height === box.rect[3] ? box.clip : intersectBox(box.rect, box.clip);
     return { box, key, text: value.text, source, clip };
   });
@@ -39,13 +47,35 @@ export async function rasterDataContent(node: DashboardDataWidgetNode, content: 
     if (background.color.length !== 4 || background.color.some(v => !Number.isFinite(v) || v < 0 || v > 1))
       throw new DashboardDataUnavailable("Invalid measured background color");
   }
+  const requests = boxes.map(({ box, text, source }) => {
+    if (!source) return undefined;
+    const fonts = box.fonts.map(ref => {
+      const font = input.assets[ref];
+      if (!font || font.faceIndex === undefined) throw new DashboardDataUnavailable("Missing measured text font");
+      return font;
+    });
+    if (!fonts.length) throw new DashboardDataUnavailable("Measured text font is required");
+    const request = { ...box.style, fontSize: box.style.fontSize * scale, lineHeight: box.style.lineHeight * scale,
+      text, locale: input.locale, width: Math.ceil(box.rect[2]) * scale, height: Math.ceil(box.rect[3]) * scale,
+      verticalAlign: box.verticalAlign, wrap: box.wrap };
+    return { ...request, fonts, requestHash: runtimeContentSha256({ ...request, fonts: fonts.map(assetIdentity) }) };
+  });
+  if (requests.reduce((sum, request) => sum + (request ? request.width * request.height * 4 : 0), 0) > 64 * 1024 * 1024)
+    throw new DashboardDataUnavailable("Data atlas byte budget exceeded");
+  return { data, scale, paint, boxes, requests };
+}
+
+export async function rasterDataContent(node: DashboardDataWidgetNode, content: Deep2dRuntimePackage,
+  input: DashboardRasterCompileInput, host: DashboardRasterHost) {
+  const { data, scale, paint, boxes, requests } = prepareDashboardDataRaster(node, input);
+  await host.prewarmText?.(requests.filter((request): request is NonNullable<typeof request> => request !== undefined));
   const layers: Array<{ content: Deep2dRuntimePackage; clip: DashboardDataTextBox["clip"] }> = [{
     content, clip: null }];
   const nextLayer = (clip: DashboardDataTextBox["clip"]) => {
     const previous = layers.length > 1 ? layers.at(-1) : undefined;
     if (previous && JSON.stringify(previous.clip) === JSON.stringify(clip)) return previous;
     const id = `layer.${runtimeContentSha256([content.id, layers.length])}`;
-    const layer = { clip, content: { ...content, id,
+    const layer = { clip, content: { ...content, id, schemaVersion: 2, composition: "z-ordered",
       displayList: { ...content.displayList, id: `${id}.paths`, resources: [], commands: [] },
       atlases: [], quads: [] } as Deep2dRuntimePackage };
     layers.push(layer);
@@ -68,32 +98,35 @@ export async function rasterDataContent(node: DashboardDataWidgetNode, content: 
           zOrder: paintIndex, transform: [1, 0, 0, 1, 0, 0], fill: background.color }] } };
       continue;
     }
-    const { box, key, text, source, clip } = boxes[entry.index]!;
+    const { box, key, source, clip } = boxes[entry.index]!;
     if (!source) continue;
-    const fonts = box.fonts.map(ref => { const font = input.assets[ref];
-      if (!font || font.faceIndex === undefined) throw new DashboardDataUnavailable("Missing measured text font"); return font; });
-    if (!fonts.length) throw new DashboardDataUnavailable("Measured text font is required");
-    const width = Math.ceil(box.rect[2]), height = Math.ceil(box.rect[3]);
+    const request = requests[entry.index]!;
+    const { fonts, width, height, requestHash } = request;
     totalBytes += width * height * 4;
     if (totalBytes > 64 * 1024 * 1024) throw new DashboardDataUnavailable("Data atlas byte budget exceeded");
-    const requestHash = runtimeContentSha256({ text, role: box.role, box, metricHash: data.source.contentSha256,
-      locale: input.locale, fonts: fonts.map(assetIdentity) });
-    const result = verifyRaster(await host.rasterizeText(structuredClone({ ...box.style, requestHash, text,
-      locale: input.locale, width, height, verticalAlign: box.verticalAlign, wrap: box.wrap, fonts })),
+    const result = verifyRaster(await host.rasterizeText(structuredClone(request)),
       requestHash, width, height, fonts);
     const group = box.buttonGroup;
-    const pixels = group ? compositeDashboardButtonGroup(group, { rect: box.rect, width, height, rgba: result.rgba }) : result;
+    const pixels = group ? compositeDashboardButtonGroup({ ...group, rect: [group.rect[0] * scale, group.rect[1] * scale,
+      group.rect[2] * scale, group.rect[3] * scale], radius: group.radius * scale, borderWidth: group.borderWidth * scale },
+      { rect: [box.rect[0] * scale, box.rect[1] * scale, box.rect[2] * scale, box.rect[3] * scale], width, height, rgba: result.rgba },
+      { width: Math.ceil(group.rect[2]) * scale, height: Math.ceil(group.rect[3]) * scale }) : result;
     if (group) { totalBytes += pixels.rgba.byteLength; if (totalBytes > 64 * 1024 * 1024) throw new DashboardDataUnavailable("Data atlas byte budget exceeded"); }
     const pixelSha256 = group ? sha256Bytes(pixels.rgba) : result.sha256;
-    const layer = nextLayer(group ? box.clip : clip);
+    const destination = [group?.rect[0] ?? box.rect[0], group?.rect[1] ?? box.rect[1], pixels.width / scale, pixels.height / scale] as const;
+    const measuredClip = group ? box.clip : clip;
+    const effectiveClip = measuredClip && !(destination[0] >= measuredClip[0] && destination[1] >= measuredClip[1]
+      && destination[0] + destination[2] <= measuredClip[0] + measuredClip[2]
+      && destination[1] + destination[3] <= measuredClip[1] + measuredClip[3]) ? measuredClip : null;
+    const layer = nextLayer(effectiveClip);
     const atlases = [...layer.content.atlases], quads = [...layer.content.quads];
-    const id = `raster.${key}`;
+    const id = `raster.${runtimeContentSha256([content.id, key])}`;
     atlases.push({ id, revision: content.revision, kind: "image", format: "rgba8unorm-srgb", width: pixels.width, height: pixels.height,
       sampling: "linear", dataBase64: base64(pixels.rgba) });
     quads.push({ id: `${id}.quad`, atlasId: id, zOrder: paintIndex, transform: [1, 0, 0, 1, 0, 0],
-      source: [0, 0, pixels.width, pixels.height], destination: [group?.rect[0] ?? box.rect[0], group?.rect[1] ?? box.rect[1], pixels.width, pixels.height], color: [1, 1, 1, 1] });
+      source: [0, 0, pixels.width, pixels.height], destination, color: [1, 1, 1, 1] });
     layer.content = { ...layer.content, atlases, quads };
-    evidence.push({ nodeId: node.id, atlasId: id, requestHash, sourceSha256: result.sourceSha256, pixelSha256,
+    evidence.push({ nodeId: node.id, atlasId: id, textRasterScale: scale, requestHash, sourceSha256: result.sourceSha256, pixelSha256,
       ...(group ? { composition: { id: "dashboard-button-group-v1" as const, sourcePixelSha256: result.sha256,
         outputPixelSha256: pixelSha256, sourceRgbaBase64: base64(result.rgba), sourceWidth: width, sourceHeight: height,
         recipe: { group, textRect: box.rect, role: box.role },
@@ -122,8 +155,8 @@ function cropBox(box: DashboardDataTextBox) {
     && Math.min(y + h, clip[1] + clip[3]) > Math.max(y, clip[1]);
 }
 function validateStyle(box: DashboardDataTextBox): void {
-  if (box.buttonGroup && box.role.kind !== "previous" && box.role.kind !== "next")
-    throw new DashboardDataUnavailable("Isolated button groups require a pagination role");
+  if (box.buttonGroup && box.role.kind !== "previous" && box.role.kind !== "next" && box.role.kind !== "tool")
+    throw new DashboardDataUnavailable("Isolated button groups require a pagination or export tool role");
   const style = box.style;
   if (!Number.isFinite(style.fontSize) || style.fontSize <= 0 || !Number.isFinite(style.lineHeight) || style.lineHeight <= 0
     || !Number.isInteger(style.fontWeight) || style.fontWeight < 1 || style.fontWeight > 1000

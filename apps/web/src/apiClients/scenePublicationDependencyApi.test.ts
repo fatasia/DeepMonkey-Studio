@@ -2,6 +2,25 @@ import { expect, it, vi } from "vitest";
 import { createScenePublicationDependencyApi } from "./scenePublicationDependencyApi";
 import type { SceneSnapshot } from "@bim-studio/contracts";
 const url = `/api/projects/p/scenes/s/publications/1/dependencies/resources/${"a".repeat(64)}`;
+it("downloads an exact published Scene EXE with bounded authenticated POST", async () => {
+ const open = vi.fn().mockResolvedValue(new Response(new Uint8Array(64), { headers: { "content-length": "64" } }));
+ const api = createScenePublicationDependencyApi(vi.fn(), open), controller = new AbortController();
+ const blob = await api.downloadSceneExecutable("p/a", "s b", 3, controller.signal, { applicationName: "Client" });
+ expect(blob.size).toBe(64); expect(open.mock.lastCall![0]).toBe("/api/projects/p%2Fa/scenes/s%20b/publications/3/native-executable");
+ expect(JSON.parse(open.mock.lastCall![1].body)).toEqual({ branding: { applicationName: "Client" } });
+ controller.abort(); expect(open.mock.lastCall![1].signal.aborted).toBe(true);
+});
+it.each([undefined, "0", "65", "9999999999"])("rejects missing or inconsistent EXE length %s", async length => {
+ const open = vi.fn().mockResolvedValue(new Response(new Uint8Array(64), { headers: length ? { "content-length": length } : {} }));
+ const api = createScenePublicationDependencyApi(vi.fn(), open);
+ await expect(api.downloadSceneExecutable("p", "s", 1, new AbortController().signal)).rejects.toThrow();
+});
+it("preserves server branding rejection and does not prepare another candidate", async () => {
+ const open = vi.fn().mockResolvedValue(new Response(JSON.stringify({ message: "图标像素损坏" }), { status: 400 }));
+ const request = vi.fn(), api = createScenePublicationDependencyApi(request, open);
+ await expect(api.downloadSceneExecutable("p", "s", 1, new AbortController().signal)).rejects.toThrow("图标像素损坏");
+ expect(request).not.toHaveBeenCalled();
+});
 it("creates a Native candidate through authenticated POST with the exact saved snapshot", async () => {
  const result = { status: "blocked", report: { reason: "test" } };
  const request = vi.fn().mockResolvedValue(result); const api = createScenePublicationDependencyApi(request, vi.fn());

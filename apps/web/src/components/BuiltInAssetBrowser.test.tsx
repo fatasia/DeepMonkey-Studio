@@ -49,8 +49,8 @@ describe("BuiltInAssetBrowser", () => {
     expect(html).not.toContain("dashboard-library-preview-mark");
   });
 
-  it("organizes catalogs into Fanruan-style category chips with counts", () => {
-    // 分类行参考帆软"大类清晰+计数徽章":2D=用途大类,模板=行业 9 大类+分层筛选,预制体=kind。
+  it("organizes catalogs into external-reference-style category chips with counts", () => {
+    // 分类行参考外部参考"大类清晰+计数徽章":2D=用途大类,模板=行业 9 大类+分层筛选,预制体=kind。
     const twoD = renderToStaticMarkup(
       <BuiltInAssetBrowser kind="2d" locale="zh-CN" editorAvailable onOpenEditor={() => undefined} />,
     );

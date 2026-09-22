@@ -241,6 +241,8 @@ export abstract class ViewerEngineContract {
   abstract getGlobalLighting(): GlobalLightingState;
   abstract setGlobalLighting(state: GlobalLightingState): void;
   abstract getSelectionMaterial(): SceneMaterialState;
+  abstract getModelMaterialStates(id: string): SceneMaterialState[];
+  abstract getSelectionMaterialSlots(): import("./materialSlots").SelectionMaterialSlot[];
   abstract setSelectionMaterial(patch: SceneMaterialState): void;
   abstract getModelMaterialState(id: string): SceneMaterialState | undefined;
   abstract getModelMaterialOverride(id: string): SceneMaterialState | undefined;

@@ -6,7 +6,7 @@ import type {
   SceneCoordinateSystemState, SceneDashboardState, SceneDataBindingState,
   SceneEnvironmentState, SceneInteractionScriptState, ScenePhysicsState,
   SceneEngineeringAnalysisState,
-  ScenePostProcessingState, SceneSelectionSetState, SceneSnapshot,
+  ScenePostProcessingState, SceneSelectionSetState, SceneSnapshot, SceneRootLayerRef,
   ScriptModule, SystemBrandingSettings, SystemUserRecord, TopologyScadaRuntimeState, WeatherMode
 } from "@bim-studio/contracts";
 import {
@@ -231,6 +231,7 @@ export function useAppState() {
   const [inspectorTab, setInspectorTab] = useState<"overview" | "data" | "behavior">("overview");
   const [sceneOrganizationSelection, setSceneOrganizationSelection] = useState<Set<string>>(new Set());
   const [selectionSets, setSelectionSets] = useState<SceneSelectionSetState[]>([]);
+  const [rootLayerOrder, setRootLayerOrder] = useState<SceneRootLayerRef[] | undefined>();
   const [lastDeletedSelectionSet, setLastDeletedSelectionSet] = useState<SceneSelectionSetState>();
   const [projectDialogMode, setProjectDialogMode] = useState<"create" | "rename">();
   const [newProjectName, setNewProjectName] = useState("");
@@ -316,7 +317,7 @@ export function useAppState() {
     sceneBehaviorOpen, setSceneBehaviorOpen, sceneBehaviorLayout, setSceneBehaviorLayout, sceneBehaviorActive, setSceneBehaviorActive,
     sceneBehaviorPaused, setSceneBehaviorPaused, sceneBehaviorEntries, setSceneBehaviorEntries,
     sceneBehaviorLogs, setSceneBehaviorLogs, inspectorTab, setInspectorTab,
-    sceneOrganizationSelection, setSceneOrganizationSelection, selectionSets, setSelectionSets,
+    sceneOrganizationSelection, setSceneOrganizationSelection, selectionSets, setSelectionSets, rootLayerOrder, setRootLayerOrder,
     lastDeletedSelectionSet, setLastDeletedSelectionSet, projectDialogMode, setProjectDialogMode,
     newProjectName, setNewProjectName, newProjectDescription, setNewProjectDescription,
     primitiveColors, interactionTargetOptions, showError, rendererDiagnostics,

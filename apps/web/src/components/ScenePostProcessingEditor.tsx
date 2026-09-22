@@ -64,6 +64,9 @@ export function ScenePostProcessingEditor({
         >
           GTAO
         </button>
+        <button disabled={!controlsEnabled} className={value.screenSpaceReflection ? "active" : ""}
+          title={tr(locale, "仅 Deep WebGPU 消费；Three WebView 与 Deep Native 暂不支持", "Deep WebGPU only; Three WebView and Deep Native are not supported")}
+          onClick={() => update({ screenSpaceReflection: !value.screenSpaceReflection })}>SSR</button>
         <button
           disabled={!controlsEnabled}
           className={value.bloom ? "active" : ""}
@@ -138,6 +141,16 @@ export function ScenePostProcessingEditor({
           onChange={(next) => update({ gtaoIntensity: next })}
         />
       )}
+      {value.screenSpaceReflection && <>
+        <EffectRange label={tr(locale, "SSR 步数", "SSR steps")} disabled={!value.enabled}
+          min={8} max={128} step={1} value={value.ssrSteps ?? 32} digits={0} onChange={ssrSteps => update({ ssrSteps })} />
+        <EffectRange label={tr(locale, "命中厚度", "Hit thickness")} disabled={!value.enabled}
+          min={0.001} max={0.1} step={0.001} value={value.ssrThickness ?? 0.01} digits={3} onChange={ssrThickness => update({ ssrThickness })} />
+        <EffectRange label={tr(locale, "追踪距离", "Trace distance")} disabled={!value.enabled}
+          min={0.25} max={4} step={0.05} value={value.ssrMaxDistance ?? 2} digits={2} onChange={ssrMaxDistance => update({ ssrMaxDistance })} />
+        <small>{tr(locale, "仅 Deep WebGPU 运行；Three WebView 与 Deep Native 会在发布检查中明确阻断。",
+          "Deep WebGPU only; publication checks block Three WebView and Deep Native explicitly.")}</small>
+      </>}
       {value.bloom && (
         <>
           <EffectRange
@@ -240,6 +253,8 @@ export function ScenePostProcessingEditor({
           <EffectRange label={tr(locale, "饱和度", "Saturation")} disabled={!value.enabled} min={-1} max={1} step={0.01} value={value.saturation ?? 0} digits={2} onChange={(next) => update({ saturation: next })} />
           <EffectRange label={tr(locale, "亮度", "Brightness")} disabled={!value.enabled} min={-1} max={1} step={0.01} value={value.brightness ?? 0} digits={2} onChange={(next) => update({ brightness: next })} />
           <EffectRange label={tr(locale, "对比度", "Contrast")} disabled={!value.enabled} min={-1} max={1} step={0.01} value={value.contrast ?? 0} digits={2} onChange={(next) => update({ contrast: next })} />
+          <EffectRange label={tr(locale, "色温", "Temperature")} disabled={!value.enabled} min={-1} max={1} step={0.01} value={value.temperature ?? 0} digits={2} onChange={(next) => update({ temperature: next })} />
+          <EffectRange label={tr(locale, "色调偏移", "Tint")} disabled={!value.enabled} min={-1} max={1} step={0.01} value={value.tint ?? 0} digits={2} onChange={(next) => update({ tint: next })} />
         </>
       )}
     </div>

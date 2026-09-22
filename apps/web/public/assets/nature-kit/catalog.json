@@ -1,0 +1,1983 @@
+{
+  "schema": "deep-engine.v11-nature-kit-catalog",
+  "schemaVersion": 1,
+  "source": "https://kenney.nl/assets/nature-kit",
+  "archiveSha256": "fa7974a0d342bfe63c38664ba9f8ec1a4aab8ea25f099bdc56870e33588c4d9d",
+  "license": "CC0",
+  "selectedCount": 48,
+  "entries": [
+    {
+      "id": "kenney.nature-kit.tree_blocks",
+      "category": "trees",
+      "sourcePath": "Models/GLTF format/tree_blocks.glb",
+      "sourceSha256": "cb74bda3024bbe396c01b3d5b381a93e6d7c73241079868c19ac420ad52e475c",
+      "contentHash": "cb74bda3024bbe396c01b3d5b381a93e6d7c73241079868c19ac420ad52e475c",
+      "bytes": 10128,
+      "metrics": {
+        "valid": true,
+        "bytes": 10128,
+        "sha256": "cb74bda3024bbe396c01b3d5b381a93e6d7c73241079868c19ac420ad52e475c",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 132,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.6,
+          "y": 1.18500006,
+          "z": 0.6
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.tree_blocks.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_blocks_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_blocks_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_blocks_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_blocks_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.tree_blocks_dark",
+      "category": "trees",
+      "sourcePath": "Models/GLTF format/tree_blocks_dark.glb",
+      "sourceSha256": "fa47040f418e9985c237a670524d0b29e2c01380c76fe1204ad89665b69fa670",
+      "contentHash": "fa47040f418e9985c237a670524d0b29e2c01380c76fe1204ad89665b69fa670",
+      "bytes": 10132,
+      "metrics": {
+        "valid": true,
+        "bytes": 10132,
+        "sha256": "fa47040f418e9985c237a670524d0b29e2c01380c76fe1204ad89665b69fa670",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 132,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.6,
+          "y": 1.18500006,
+          "z": 0.6
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.tree_blocks_dark.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_blocks_dark_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_blocks_dark_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_blocks_dark_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_blocks_dark_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.tree_blocks_fall",
+      "category": "trees",
+      "sourcePath": "Models/GLTF format/tree_blocks_fall.glb",
+      "sourceSha256": "0f79f7f11578cfb0e3669468f09c86f0953bceb1b2ced3cb8ed2a2bb4ff2021b",
+      "contentHash": "0f79f7f11578cfb0e3669468f09c86f0953bceb1b2ced3cb8ed2a2bb4ff2021b",
+      "bytes": 18368,
+      "metrics": {
+        "valid": true,
+        "bytes": 18368,
+        "sha256": "0f79f7f11578cfb0e3669468f09c86f0953bceb1b2ced3cb8ed2a2bb4ff2021b",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 264,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.6,
+          "y": 1.18500006,
+          "z": 0.6
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.tree_blocks_fall.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_blocks_fall_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_blocks_fall_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_blocks_fall_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_blocks_fall_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.tree_cone",
+      "category": "trees",
+      "sourcePath": "Models/GLTF format/tree_cone.glb",
+      "sourceSha256": "90be4d214ee2cbf79d317677cb87fc11dac9873b73e446b75e8c12825a374272",
+      "contentHash": "90be4d214ee2cbf79d317677cb87fc11dac9873b73e446b75e8c12825a374272",
+      "bytes": 10924,
+      "metrics": {
+        "valid": true,
+        "bytes": 10924,
+        "sha256": "90be4d214ee2cbf79d317677cb87fc11dac9873b73e446b75e8c12825a374272",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 132,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.529663682,
+          "y": 1.43033278,
+          "z": 0.529663682
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.tree_cone.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_cone_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_cone_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_cone_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_cone_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.tree_cone_dark",
+      "category": "trees",
+      "sourcePath": "Models/GLTF format/tree_cone_dark.glb",
+      "sourceSha256": "b5c22416b8b37cfa9af04b89657a95c10a1ca45ff8e84afff3a19ae5a01c1ade",
+      "contentHash": "b5c22416b8b37cfa9af04b89657a95c10a1ca45ff8e84afff3a19ae5a01c1ade",
+      "bytes": 19940,
+      "metrics": {
+        "valid": true,
+        "bytes": 19940,
+        "sha256": "b5c22416b8b37cfa9af04b89657a95c10a1ca45ff8e84afff3a19ae5a01c1ade",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 264,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.529663682,
+          "y": 1.43033278,
+          "z": 0.529663682
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.tree_cone_dark.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_cone_dark_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_cone_dark_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_cone_dark_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_cone_dark_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.tree_cone_fall",
+      "category": "trees",
+      "sourcePath": "Models/GLTF format/tree_cone_fall.glb",
+      "sourceSha256": "bd1d2833ef7a838fc27224c6f4a7cb0bb0680e1896f1c1f122814a8424e4c694",
+      "contentHash": "bd1d2833ef7a838fc27224c6f4a7cb0bb0680e1896f1c1f122814a8424e4c694",
+      "bytes": 10916,
+      "metrics": {
+        "valid": true,
+        "bytes": 10916,
+        "sha256": "bd1d2833ef7a838fc27224c6f4a7cb0bb0680e1896f1c1f122814a8424e4c694",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 132,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.529663682,
+          "y": 1.43033278,
+          "z": 0.529663682
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.tree_cone_fall.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_cone_fall_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_cone_fall_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_cone_fall_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_cone_fall_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.tree_default",
+      "category": "trees",
+      "sourcePath": "Models/GLTF format/tree_default.glb",
+      "sourceSha256": "562d29638c902de3c7bee465d3a53bb77117efbc392ae04ed894faf6b5dc691d",
+      "contentHash": "562d29638c902de3c7bee465d3a53bb77117efbc392ae04ed894faf6b5dc691d",
+      "bytes": 9428,
+      "metrics": {
+        "valid": true,
+        "bytes": 9428,
+        "sha256": "562d29638c902de3c7bee465d3a53bb77117efbc392ae04ed894faf6b5dc691d",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 114,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.755000054,
+          "y": 1.70788741,
+          "z": 0.653849
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.tree_default.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_default_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_default_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_default_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_default_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.tree_default_dark",
+      "category": "trees",
+      "sourcePath": "Models/GLTF format/tree_default_dark.glb",
+      "sourceSha256": "f2dc452b8fa98e68e3f892526b7d3f5e8d27d6acf4dd3c6f4b3795d64b879cce",
+      "contentHash": "f2dc452b8fa98e68e3f892526b7d3f5e8d27d6acf4dd3c6f4b3795d64b879cce",
+      "bytes": 9436,
+      "metrics": {
+        "valid": true,
+        "bytes": 9436,
+        "sha256": "f2dc452b8fa98e68e3f892526b7d3f5e8d27d6acf4dd3c6f4b3795d64b879cce",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 114,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.755000054,
+          "y": 1.70788741,
+          "z": 0.653849
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.tree_default_dark.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_default_dark_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_default_dark_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_default_dark_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_default_dark_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.tree_default_fall",
+      "category": "trees",
+      "sourcePath": "Models/GLTF format/tree_default_fall.glb",
+      "sourceSha256": "f8e90ed7f7771644998a7c361302213af04350150b3ea0631e8384d26506efa2",
+      "contentHash": "f8e90ed7f7771644998a7c361302213af04350150b3ea0631e8384d26506efa2",
+      "bytes": 16940,
+      "metrics": {
+        "valid": true,
+        "bytes": 16940,
+        "sha256": "f8e90ed7f7771644998a7c361302213af04350150b3ea0631e8384d26506efa2",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 228,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.755000054,
+          "y": 1.70788741,
+          "z": 0.653849
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.tree_default_fall.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_default_fall_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_default_fall_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_default_fall_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_default_fall_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.tree_detailed",
+      "category": "trees",
+      "sourcePath": "Models/GLTF format/tree_detailed.glb",
+      "sourceSha256": "c041daf2f0fb1d49e4325227cbcd58667adbe51e9b55e8c1f0a94b74cc521b3b",
+      "contentHash": "c041daf2f0fb1d49e4325227cbcd58667adbe51e9b55e8c1f0a94b74cc521b3b",
+      "bytes": 31412,
+      "metrics": {
+        "valid": true,
+        "bytes": 31412,
+        "sha256": "c041daf2f0fb1d49e4325227cbcd58667adbe51e9b55e8c1f0a94b74cc521b3b",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 3,
+        "materialCount": 3,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 402,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.84711504,
+          "y": 1.332417,
+          "z": 0.761602491
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.tree_detailed.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_detailed_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_detailed_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_detailed_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_detailed_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.tree_detailed_dark",
+      "category": "trees",
+      "sourcePath": "Models/GLTF format/tree_detailed_dark.glb",
+      "sourceSha256": "1e2211dc6483b1d8a32130c3441afa108d4075f0d851825620fba85d2dc6e5d7",
+      "contentHash": "1e2211dc6483b1d8a32130c3441afa108d4075f0d851825620fba85d2dc6e5d7",
+      "bytes": 31416,
+      "metrics": {
+        "valid": true,
+        "bytes": 31416,
+        "sha256": "1e2211dc6483b1d8a32130c3441afa108d4075f0d851825620fba85d2dc6e5d7",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 3,
+        "materialCount": 3,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 402,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.84711504,
+          "y": 1.332417,
+          "z": 0.761602491
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.tree_detailed_dark.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_detailed_dark_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_detailed_dark_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_detailed_dark_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_detailed_dark_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.tree_detailed_fall",
+      "category": "trees",
+      "sourcePath": "Models/GLTF format/tree_detailed_fall.glb",
+      "sourceSha256": "eafa885b824c1ffcf7782e9d4084403130135b6b4ed82c90881b354ae9c987a8",
+      "contentHash": "eafa885b824c1ffcf7782e9d4084403130135b6b4ed82c90881b354ae9c987a8",
+      "bytes": 31404,
+      "metrics": {
+        "valid": true,
+        "bytes": 31404,
+        "sha256": "eafa885b824c1ffcf7782e9d4084403130135b6b4ed82c90881b354ae9c987a8",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 3,
+        "materialCount": 3,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 402,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.84711504,
+          "y": 1.332417,
+          "z": 0.761602491
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.tree_detailed_fall.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_detailed_fall_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_detailed_fall_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_detailed_fall_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.tree_detailed_fall_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.grass",
+      "category": "shrubs",
+      "sourcePath": "Models/GLTF format/grass.glb",
+      "sourceSha256": "260e41d3e5f2472492ed7b475c5b92a30b13ce2bad408535b5ff50574d4575e7",
+      "contentHash": "260e41d3e5f2472492ed7b475c5b92a30b13ce2bad408535b5ff50574d4575e7",
+      "bytes": 11496,
+      "metrics": {
+        "valid": true,
+        "bytes": 11496,
+        "sha256": "260e41d3e5f2472492ed7b475c5b92a30b13ce2bad408535b5ff50574d4575e7",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 1,
+        "materialCount": 1,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 132,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.381074,
+          "y": 0.254,
+          "z": 0.392182798
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.grass.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.grass_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.grass_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.grass_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.grass_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.grass_large",
+      "category": "shrubs",
+      "sourcePath": "Models/GLTF format/grass_large.glb",
+      "sourceSha256": "af49a595624abca7249824eeefb944d4baf974abeeb5b16110d175da3563d6cd",
+      "contentHash": "af49a595624abca7249824eeefb944d4baf974abeeb5b16110d175da3563d6cd",
+      "bytes": 18504,
+      "metrics": {
+        "valid": true,
+        "bytes": 18504,
+        "sha256": "af49a595624abca7249824eeefb944d4baf974abeeb5b16110d175da3563d6cd",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 1,
+        "materialCount": 1,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 224,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.408997834,
+          "y": 0.254,
+          "z": 0.407888984
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.grass_large.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.grass_large_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.grass_large_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.grass_large_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.grass_large_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.grass_leafs",
+      "category": "shrubs",
+      "sourcePath": "Models/GLTF format/grass_leafs.glb",
+      "sourceSha256": "8bc4c0b17c2e64c34e1acbf7c4a2fd8c04cfcd7155328e61767887b2ced112c7",
+      "contentHash": "8bc4c0b17c2e64c34e1acbf7c4a2fd8c04cfcd7155328e61767887b2ced112c7",
+      "bytes": 4608,
+      "metrics": {
+        "valid": true,
+        "bytes": 4608,
+        "sha256": "8bc4c0b17c2e64c34e1acbf7c4a2fd8c04cfcd7155328e61767887b2ced112c7",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 1,
+        "materialCount": 1,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 36,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.234485998,
+          "y": 0.14250000000000018,
+          "z": 0.25730825199999996
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.grass_leafs.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.grass_leafs_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.grass_leafs_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.grass_leafs_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.grass_leafs_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.grass_leafsLarge",
+      "category": "shrubs",
+      "sourcePath": "Models/GLTF format/grass_leafsLarge.glb",
+      "sourceSha256": "a68b9b3d9639afaeb4ace840d5a8e3f21ffc4e8afc1eab15566500fbb2bee3e3",
+      "contentHash": "a68b9b3d9639afaeb4ace840d5a8e3f21ffc4e8afc1eab15566500fbb2bee3e3",
+      "bytes": 13988,
+      "metrics": {
+        "valid": true,
+        "bytes": 13988,
+        "sha256": "a68b9b3d9639afaeb4ace840d5a8e3f21ffc4e8afc1eab15566500fbb2bee3e3",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 1,
+        "materialCount": 1,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 144,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.475897134,
+          "y": 0.14250000000000018,
+          "z": 0.487308234
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.grass_leafsLarge.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.grass_leafsLarge_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.grass_leafsLarge_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.grass_leafsLarge_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.grass_leafsLarge_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.ground_grass",
+      "category": "shrubs",
+      "sourcePath": "Models/GLTF format/ground_grass.glb",
+      "sourceSha256": "da741e8ab34ca70c0c85ccda21538558a798188db2f1e265885bcdd226a5cca2",
+      "contentHash": "da741e8ab34ca70c0c85ccda21538558a798188db2f1e265885bcdd226a5cca2",
+      "bytes": 1576,
+      "metrics": {
+        "valid": true,
+        "bytes": 1576,
+        "sha256": "da741e8ab34ca70c0c85ccda21538558a798188db2f1e265885bcdd226a5cca2",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 1,
+        "materialCount": 1,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 2,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1,
+          "y": 0,
+          "z": 1
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.ground_grass.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.ground_grass_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.ground_grass_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.ground_grass_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.ground_grass_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.plant_bush",
+      "category": "shrubs",
+      "sourcePath": "Models/GLTF format/plant_bush.glb",
+      "sourceSha256": "ae7b1beb39e242b13f5f29e3ec23ef21034b814f82297b8aa00a9bf4e1b09590",
+      "contentHash": "ae7b1beb39e242b13f5f29e3ec23ef21034b814f82297b8aa00a9bf4e1b09590",
+      "bytes": 4396,
+      "metrics": {
+        "valid": true,
+        "bytes": 4396,
+        "sha256": "ae7b1beb39e242b13f5f29e3ec23ef21034b814f82297b8aa00a9bf4e1b09590",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 1,
+        "materialCount": 1,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 32,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.396,
+          "y": 0.244443581,
+          "z": 0.396
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.plant_bush.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bush_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bush_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bush_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bush_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.plant_bushDetailed",
+      "category": "shrubs",
+      "sourcePath": "Models/GLTF format/plant_bushDetailed.glb",
+      "sourceSha256": "2e0487020d68ccf664435db9d829c78ae00e6d2785ee3ec10b9f89cc70a10406",
+      "contentHash": "2e0487020d68ccf664435db9d829c78ae00e6d2785ee3ec10b9f89cc70a10406",
+      "bytes": 10172,
+      "metrics": {
+        "valid": true,
+        "bytes": 10172,
+        "sha256": "2e0487020d68ccf664435db9d829c78ae00e6d2785ee3ec10b9f89cc70a10406",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 1,
+        "materialCount": 1,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 104,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.602543712,
+          "y": 0.360410929,
+          "z": 0.602543712
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.plant_bushDetailed.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bushDetailed_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bushDetailed_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bushDetailed_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bushDetailed_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.plant_bushLarge",
+      "category": "shrubs",
+      "sourcePath": "Models/GLTF format/plant_bushLarge.glb",
+      "sourceSha256": "10e1d9fbf29d96d1d1a56fb2ce25ae66537505101759229afe01ae22c6c45e02",
+      "contentHash": "10e1d9fbf29d96d1d1a56fb2ce25ae66537505101759229afe01ae22c6c45e02",
+      "bytes": 6436,
+      "metrics": {
+        "valid": true,
+        "bytes": 6436,
+        "sha256": "10e1d9fbf29d96d1d1a56fb2ce25ae66537505101759229afe01ae22c6c45e02",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 1,
+        "materialCount": 1,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 60,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.37431,
+          "y": 0.24293302,
+          "z": 0.3356878
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.plant_bushLarge.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bushLarge_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bushLarge_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bushLarge_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bushLarge_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.plant_bushLargeTriangle",
+      "category": "shrubs",
+      "sourcePath": "Models/GLTF format/plant_bushLargeTriangle.glb",
+      "sourceSha256": "098af3618e20e5a2cb5f6e24a7c67c0a80663f989137d86430bc9e2b1b2d52e4",
+      "contentHash": "098af3618e20e5a2cb5f6e24a7c67c0a80663f989137d86430bc9e2b1b2d52e4",
+      "bytes": 4564,
+      "metrics": {
+        "valid": true,
+        "bytes": 4564,
+        "sha256": "098af3618e20e5a2cb5f6e24a7c67c0a80663f989137d86430bc9e2b1b2d52e4",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 1,
+        "materialCount": 1,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 39,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.40769074899999996,
+          "y": 0.169327542,
+          "z": 0.470760704
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.plant_bushLargeTriangle.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bushLargeTriangle_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bushLargeTriangle_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bushLargeTriangle_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bushLargeTriangle_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.plant_bushSmall",
+      "category": "shrubs",
+      "sourcePath": "Models/GLTF format/plant_bushSmall.glb",
+      "sourceSha256": "a9620a7d1fb165ae68d323676f80dbb2a9e3aafb21110d18d18d90b07026b91d",
+      "contentHash": "a9620a7d1fb165ae68d323676f80dbb2a9e3aafb21110d18d18d90b07026b91d",
+      "bytes": 3212,
+      "metrics": {
+        "valid": true,
+        "bytes": 3212,
+        "sha256": "a9620a7d1fb165ae68d323676f80dbb2a9e3aafb21110d18d18d90b07026b91d",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 1,
+        "materialCount": 1,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 16,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.382977158,
+          "y": 0.2072925,
+          "z": 0.336342276
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.plant_bushSmall.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bushSmall_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bushSmall_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bushSmall_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bushSmall_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.plant_bushTriangle",
+      "category": "shrubs",
+      "sourcePath": "Models/GLTF format/plant_bushTriangle.glb",
+      "sourceSha256": "e944e19adda28436fdc63d77019aa490e6591358659a14abea8aa654181fc417",
+      "contentHash": "e944e19adda28436fdc63d77019aa490e6591358659a14abea8aa654181fc417",
+      "bytes": 3956,
+      "metrics": {
+        "valid": true,
+        "bytes": 3956,
+        "sha256": "e944e19adda28436fdc63d77019aa490e6591358659a14abea8aa654181fc417",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 1,
+        "materialCount": 1,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 30,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.364432247,
+          "y": 0.295536965,
+          "z": 0.4135922
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.plant_bushTriangle.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bushTriangle_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bushTriangle_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bushTriangle_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_bushTriangle_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.plant_flatShort",
+      "category": "shrubs",
+      "sourcePath": "Models/GLTF format/plant_flatShort.glb",
+      "sourceSha256": "5885f6bb6ce004eb7ccc887fd30b7671492a94be76ffeb1e64c07c47d6b7bae1",
+      "contentHash": "5885f6bb6ce004eb7ccc887fd30b7671492a94be76ffeb1e64c07c47d6b7bae1",
+      "bytes": 3936,
+      "metrics": {
+        "valid": true,
+        "bytes": 3936,
+        "sha256": "5885f6bb6ce004eb7ccc887fd30b7671492a94be76ffeb1e64c07c47d6b7bae1",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 1,
+        "materialCount": 1,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 44,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.277619868,
+          "y": 0.2350794,
+          "z": 0.277619868
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.plant_flatShort.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_flatShort_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_flatShort_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_flatShort_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.plant_flatShort_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.cliff_blockSlopeHalfWalls_rock",
+      "category": "fences",
+      "sourcePath": "Models/GLTF format/cliff_blockSlopeHalfWalls_rock.glb",
+      "sourceSha256": "95a25398990b978071d461998c442c034feb517ecea6538e88ed2ee957a2c3e6",
+      "contentHash": "95a25398990b978071d461998c442c034feb517ecea6538e88ed2ee957a2c3e6",
+      "bytes": 8880,
+      "metrics": {
+        "valid": true,
+        "bytes": 8880,
+        "sha256": "95a25398990b978071d461998c442c034feb517ecea6538e88ed2ee957a2c3e6",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 106,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1,
+          "y": 0.5,
+          "z": 1
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.cliff_blockSlopeHalfWalls_rock.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockSlopeHalfWalls_rock_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockSlopeHalfWalls_rock_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockSlopeHalfWalls_rock_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockSlopeHalfWalls_rock_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.cliff_blockSlopeHalfWalls_stone",
+      "category": "fences",
+      "sourcePath": "Models/GLTF format/cliff_blockSlopeHalfWalls_stone.glb",
+      "sourceSha256": "afc1db3ed3cde8d7bb5669f220ea4e6998b59414208bc046e6356829fac581a0",
+      "contentHash": "afc1db3ed3cde8d7bb5669f220ea4e6998b59414208bc046e6356829fac581a0",
+      "bytes": 8884,
+      "metrics": {
+        "valid": true,
+        "bytes": 8884,
+        "sha256": "afc1db3ed3cde8d7bb5669f220ea4e6998b59414208bc046e6356829fac581a0",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 106,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1,
+          "y": 0.5,
+          "z": 1
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.cliff_blockSlopeHalfWalls_stone.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockSlopeHalfWalls_stone_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockSlopeHalfWalls_stone_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockSlopeHalfWalls_stone_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockSlopeHalfWalls_stone_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.cliff_blockSlopeWalls_rock",
+      "category": "fences",
+      "sourcePath": "Models/GLTF format/cliff_blockSlopeWalls_rock.glb",
+      "sourceSha256": "055776add47ad3a13c53900a728ace7533c02f7afa27fdb57557ca117d44a55d",
+      "contentHash": "055776add47ad3a13c53900a728ace7533c02f7afa27fdb57557ca117d44a55d",
+      "bytes": 8900,
+      "metrics": {
+        "valid": true,
+        "bytes": 8900,
+        "sha256": "055776add47ad3a13c53900a728ace7533c02f7afa27fdb57557ca117d44a55d",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 106,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.cliff_blockSlopeWalls_rock.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockSlopeWalls_rock_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockSlopeWalls_rock_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockSlopeWalls_rock_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockSlopeWalls_rock_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.cliff_blockSlopeWalls_stone",
+      "category": "fences",
+      "sourcePath": "Models/GLTF format/cliff_blockSlopeWalls_stone.glb",
+      "sourceSha256": "cd2c3d5ce44db2705146b0992ba494ab5d625136ff4e10dab6b94f67f600e3a6",
+      "contentHash": "cd2c3d5ce44db2705146b0992ba494ab5d625136ff4e10dab6b94f67f600e3a6",
+      "bytes": 8904,
+      "metrics": {
+        "valid": true,
+        "bytes": 8904,
+        "sha256": "cd2c3d5ce44db2705146b0992ba494ab5d625136ff4e10dab6b94f67f600e3a6",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 106,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.cliff_blockSlopeWalls_stone.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockSlopeWalls_stone_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockSlopeWalls_stone_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockSlopeWalls_stone_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockSlopeWalls_stone_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.fence_bend",
+      "category": "fences",
+      "sourcePath": "Models/GLTF format/fence_bend.glb",
+      "sourceSha256": "3f46171bdfbc8878b59216102bf4ac67f7ca35e9b66420604199b3e305321fef",
+      "contentHash": "3f46171bdfbc8878b59216102bf4ac67f7ca35e9b66420604199b3e305321fef",
+      "bytes": 16276,
+      "metrics": {
+        "valid": true,
+        "bytes": 16276,
+        "sha256": "3f46171bdfbc8878b59216102bf4ac67f7ca35e9b66420604199b3e305321fef",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 240,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1,
+          "y": 0.3450273,
+          "z": 1
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.fence_bend.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_bend_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_bend_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_bend_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_bend_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.fence_bendCenter",
+      "category": "fences",
+      "sourcePath": "Models/GLTF format/fence_bendCenter.glb",
+      "sourceSha256": "07963bccfd2f69aafdeb5165cfb0b20937cb390b9770a38c9b469ffd0f0dd745",
+      "contentHash": "07963bccfd2f69aafdeb5165cfb0b20937cb390b9770a38c9b469ffd0f0dd745",
+      "bytes": 20016,
+      "metrics": {
+        "valid": true,
+        "bytes": 20016,
+        "sha256": "07963bccfd2f69aafdeb5165cfb0b20937cb390b9770a38c9b469ffd0f0dd745",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 3,
+        "materialCount": 3,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 298,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1,
+          "y": 0.3450273,
+          "z": 1
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.fence_bendCenter.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_bendCenter_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_bendCenter_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_bendCenter_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_bendCenter_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.fence_corner",
+      "category": "fences",
+      "sourcePath": "Models/GLTF format/fence_corner.glb",
+      "sourceSha256": "f37060de68c5680e518183d44e7ac498e0bfe7b04f3fe71e355d8a4670ef83f1",
+      "contentHash": "f37060de68c5680e518183d44e7ac498e0bfe7b04f3fe71e355d8a4670ef83f1",
+      "bytes": 8644,
+      "metrics": {
+        "valid": true,
+        "bytes": 8644,
+        "sha256": "f37060de68c5680e518183d44e7ac498e0bfe7b04f3fe71e355d8a4670ef83f1",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 116,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1,
+          "y": 0.3450273,
+          "z": 1
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.fence_corner.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_corner_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_corner_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_corner_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_corner_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.fence_gate",
+      "category": "fences",
+      "sourcePath": "Models/GLTF format/fence_gate.glb",
+      "sourceSha256": "34d10d5620179b8a211a01eea837caa828c0782422f0b408e1a5838788888436",
+      "contentHash": "5c8a7e6f730bd096a71dd0ce867b495be5f5a08b85579905c52aace9f895b8a3",
+      "bytes": 26680,
+      "metrics": {
+        "valid": true,
+        "bytes": 26680,
+        "sha256": "5c8a7e6f730bd096a71dd0ce867b495be5f5a08b85579905c52aace9f895b8a3",
+        "generator": "glTF-Transform v4.4.2",
+        "sceneCount": 1,
+        "nodeCount": 3,
+        "meshCount": 2,
+        "primitiveCount": 5,
+        "materialCount": 3,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 524,
+        "externalUris": [],
+        "extensionsUsed": [],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1,
+          "y": 0.5153084397315979,
+          "z": 0.4999999999999971
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.fence_gate.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_gate_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_gate_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_gate_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_gate_SW.png"
+      ],
+      "groundedDerived": true
+    },
+    {
+      "id": "kenney.nature-kit.fence_planks",
+      "category": "fences",
+      "sourcePath": "Models/GLTF format/fence_planks.glb",
+      "sourceSha256": "2db68f60d24443dbeab05dedd92fcc665d0e21bd261c6a668ea9022a732a06a9",
+      "contentHash": "2db68f60d24443dbeab05dedd92fcc665d0e21bd261c6a668ea9022a732a06a9",
+      "bytes": 7720,
+      "metrics": {
+        "valid": true,
+        "bytes": 7720,
+        "sha256": "2db68f60d24443dbeab05dedd92fcc665d0e21bd261c6a668ea9022a732a06a9",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 1,
+        "materialCount": 1,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 96,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1,
+          "y": 0.3450273,
+          "z": 0.09590000000000004
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.fence_planks.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_planks_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_planks_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_planks_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_planks_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.fence_planksDouble",
+      "category": "fences",
+      "sourcePath": "Models/GLTF format/fence_planksDouble.glb",
+      "sourceSha256": "0bbc8fe43f7a1d20de8ff2d687b5b08675beacb431e43ebbb0b1705b9c684f55",
+      "contentHash": "0bbc8fe43f7a1d20de8ff2d687b5b08675beacb431e43ebbb0b1705b9c684f55",
+      "bytes": 11160,
+      "metrics": {
+        "valid": true,
+        "bytes": 11160,
+        "sha256": "0bbc8fe43f7a1d20de8ff2d687b5b08675beacb431e43ebbb0b1705b9c684f55",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 1,
+        "materialCount": 1,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 152,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1,
+          "y": 0.3450273,
+          "z": 0.059863531000000025
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.fence_planksDouble.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_planksDouble_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_planksDouble_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_planksDouble_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_planksDouble_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.fence_simple",
+      "category": "fences",
+      "sourcePath": "Models/GLTF format/fence_simple.glb",
+      "sourceSha256": "ecaf6c29532aa9fd305a8ef71df769d60748bd797f2eb1c63bdefc4edb8062a7",
+      "contentHash": "ecaf6c29532aa9fd305a8ef71df769d60748bd797f2eb1c63bdefc4edb8062a7",
+      "bytes": 5712,
+      "metrics": {
+        "valid": true,
+        "bytes": 5712,
+        "sha256": "ecaf6c29532aa9fd305a8ef71df769d60748bd797f2eb1c63bdefc4edb8062a7",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 64,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1,
+          "y": 0.3450273,
+          "z": 0.07
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.fence_simple.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_simple_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_simple_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_simple_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_simple_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.fence_simpleCenter",
+      "category": "fences",
+      "sourcePath": "Models/GLTF format/fence_simpleCenter.glb",
+      "sourceSha256": "dd2eba4993ee8f3777685ce09a2652a7af4e592604002188f2440da4217c85b5",
+      "contentHash": "dd2eba4993ee8f3777685ce09a2652a7af4e592604002188f2440da4217c85b5",
+      "bytes": 8660,
+      "metrics": {
+        "valid": true,
+        "bytes": 8660,
+        "sha256": "dd2eba4993ee8f3777685ce09a2652a7af4e592604002188f2440da4217c85b5",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 116,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1,
+          "y": 0.3450273,
+          "z": 0.07
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.fence_simpleCenter.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_simpleCenter_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_simpleCenter_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_simpleCenter_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.fence_simpleCenter_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.bridge_center_stone",
+      "category": "ground",
+      "sourcePath": "Models/GLTF format/bridge_center_stone.glb",
+      "sourceSha256": "f3681603a3d6523f8298da7d4c8d00e653c6028136c3427af07952fa3ca10519",
+      "contentHash": "f3681603a3d6523f8298da7d4c8d00e653c6028136c3427af07952fa3ca10519",
+      "bytes": 5076,
+      "metrics": {
+        "valid": true,
+        "bytes": 5076,
+        "sha256": "f3681603a3d6523f8298da7d4c8d00e653c6028136c3427af07952fa3ca10519",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 52,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1,
+          "y": 0.2999999999999998,
+          "z": 1
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.bridge_center_stone.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_center_stone_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_center_stone_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_center_stone_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_center_stone_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.bridge_center_stoneRound",
+      "category": "ground",
+      "sourcePath": "Models/GLTF format/bridge_center_stoneRound.glb",
+      "sourceSha256": "ec0e73f593a3230b9f10bfe69dec5e95c8c031f1a1a81e1a308501ef3a70e68c",
+      "contentHash": "ec0e73f593a3230b9f10bfe69dec5e95c8c031f1a1a81e1a308501ef3a70e68c",
+      "bytes": 5080,
+      "metrics": {
+        "valid": true,
+        "bytes": 5080,
+        "sha256": "ec0e73f593a3230b9f10bfe69dec5e95c8c031f1a1a81e1a308501ef3a70e68c",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 52,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1,
+          "y": 0.19999999999999998,
+          "z": 1
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.bridge_center_stoneRound.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_center_stoneRound_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_center_stoneRound_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_center_stoneRound_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_center_stoneRound_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.bridge_side_stone",
+      "category": "ground",
+      "sourcePath": "Models/GLTF format/bridge_side_stone.glb",
+      "sourceSha256": "2da6236082152f843a29393225be8bbbd28abacf597acc35704c0bb393bc4127",
+      "contentHash": "2da6236082152f843a29393225be8bbbd28abacf597acc35704c0bb393bc4127",
+      "bytes": 11408,
+      "metrics": {
+        "valid": true,
+        "bytes": 11408,
+        "sha256": "2da6236082152f843a29393225be8bbbd28abacf597acc35704c0bb393bc4127",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 152,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1.02,
+          "y": 0.40000000000000024,
+          "z": 1.04
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.bridge_side_stone.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_side_stone_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_side_stone_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_side_stone_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_side_stone_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.bridge_side_stoneRound",
+      "category": "ground",
+      "sourcePath": "Models/GLTF format/bridge_side_stoneRound.glb",
+      "sourceSha256": "26554af65f17af00b12246aa950f267fd940cd0b3973314ee767f6a458687005",
+      "contentHash": "26554af65f17af00b12246aa950f267fd940cd0b3973314ee767f6a458687005",
+      "bytes": 13540,
+      "metrics": {
+        "valid": true,
+        "bytes": 13540,
+        "sha256": "26554af65f17af00b12246aa950f267fd940cd0b3973314ee767f6a458687005",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 198,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1.02,
+          "y": 0.4500000000000024,
+          "z": 1.04
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.bridge_side_stoneRound.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_side_stoneRound_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_side_stoneRound_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_side_stoneRound_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_side_stoneRound_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.bridge_stone",
+      "category": "ground",
+      "sourcePath": "Models/GLTF format/bridge_stone.glb",
+      "sourceSha256": "b8b311f525ad616fcdebb6463db8b0c7710af58eb45308b54c08bcb290a2315e",
+      "contentHash": "b8b311f525ad616fcdebb6463db8b0c7710af58eb45308b54c08bcb290a2315e",
+      "bytes": 17708,
+      "metrics": {
+        "valid": true,
+        "bytes": 17708,
+        "sha256": "b8b311f525ad616fcdebb6463db8b0c7710af58eb45308b54c08bcb290a2315e",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 252,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1.04,
+          "y": 0.4,
+          "z": 1.04
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.bridge_stone.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_stone_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_stone_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_stone_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_stone_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.bridge_stoneNarrow",
+      "category": "ground",
+      "sourcePath": "Models/GLTF format/bridge_stoneNarrow.glb",
+      "sourceSha256": "ea011dbaa2926013456c001ac93d24be07c2b1bed98fe5b24aae372f68c5ff24",
+      "contentHash": "ea011dbaa2926013456c001ac93d24be07c2b1bed98fe5b24aae372f68c5ff24",
+      "bytes": 17724,
+      "metrics": {
+        "valid": true,
+        "bytes": 17724,
+        "sha256": "ea011dbaa2926013456c001ac93d24be07c2b1bed98fe5b24aae372f68c5ff24",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 252,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1.04,
+          "y": 0.35,
+          "z": 0.84
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.bridge_stoneNarrow.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_stoneNarrow_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_stoneNarrow_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_stoneNarrow_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_stoneNarrow_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.bridge_stoneRound",
+      "category": "ground",
+      "sourcePath": "Models/GLTF format/bridge_stoneRound.glb",
+      "sourceSha256": "0b2254c5eb59a5fac2c7185cdc9af8efb941a31f0c0fb5a3fabaeb60c0108b41",
+      "contentHash": "0b2254c5eb59a5fac2c7185cdc9af8efb941a31f0c0fb5a3fabaeb60c0108b41",
+      "bytes": 22552,
+      "metrics": {
+        "valid": true,
+        "bytes": 22552,
+        "sha256": "0b2254c5eb59a5fac2c7185cdc9af8efb941a31f0c0fb5a3fabaeb60c0108b41",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 360,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1.04,
+          "y": 0.45,
+          "z": 1.04
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.bridge_stoneRound.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_stoneRound_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_stoneRound_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_stoneRound_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_stoneRound_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.bridge_stoneRoundNarrow",
+      "category": "ground",
+      "sourcePath": "Models/GLTF format/bridge_stoneRoundNarrow.glb",
+      "sourceSha256": "b29d3c2a235861651296e5fb4be6bde4f17b3206d452a83cdafe6e4d90dcffda",
+      "contentHash": "b29d3c2a235861651296e5fb4be6bde4f17b3206d452a83cdafe6e4d90dcffda",
+      "bytes": 22564,
+      "metrics": {
+        "valid": true,
+        "bytes": 22564,
+        "sha256": "b29d3c2a235861651296e5fb4be6bde4f17b3206d452a83cdafe6e4d90dcffda",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 360,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1.04,
+          "y": 0.4,
+          "z": 0.84
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.bridge_stoneRoundNarrow.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_stoneRoundNarrow_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_stoneRoundNarrow_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_stoneRoundNarrow_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.bridge_stoneRoundNarrow_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.campfire_stones",
+      "category": "ground",
+      "sourcePath": "Models/GLTF format/campfire_stones.glb",
+      "sourceSha256": "54869db23243a3f4905bc00bd4cd93b1037b28556ab3ef93e7a893a093791e35",
+      "contentHash": "54869db23243a3f4905bc00bd4cd93b1037b28556ab3ef93e7a893a093791e35",
+      "bytes": 17344,
+      "metrics": {
+        "valid": true,
+        "bytes": 17344,
+        "sha256": "54869db23243a3f4905bc00bd4cd93b1037b28556ab3ef93e7a893a093791e35",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 1,
+        "materialCount": 1,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 264,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 0.540837899,
+          "y": 0.07775100000000011,
+          "z": 0.515507042
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.campfire_stones.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.campfire_stones_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.campfire_stones_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.campfire_stones_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.campfire_stones_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.cliff_blockCave_rock",
+      "category": "ground",
+      "sourcePath": "Models/GLTF format/cliff_blockCave_rock.glb",
+      "sourceSha256": "2c373a596840a4f3bffa1aba7a93d7da9d2aa1dded54f7a9966e4e4b3fce7d43",
+      "contentHash": "2c373a596840a4f3bffa1aba7a93d7da9d2aa1dded54f7a9966e4e4b3fce7d43",
+      "bytes": 5432,
+      "metrics": {
+        "valid": true,
+        "bytes": 5432,
+        "sha256": "2c373a596840a4f3bffa1aba7a93d7da9d2aa1dded54f7a9966e4e4b3fce7d43",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 56,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.cliff_blockCave_rock.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockCave_rock_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockCave_rock_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockCave_rock_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockCave_rock_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.cliff_blockCave_stone",
+      "category": "ground",
+      "sourcePath": "Models/GLTF format/cliff_blockCave_stone.glb",
+      "sourceSha256": "f02a4190d8428722f00583dc751168c84fb1227bac35c517f2dcad58cb327c7a",
+      "contentHash": "f02a4190d8428722f00583dc751168c84fb1227bac35c517f2dcad58cb327c7a",
+      "bytes": 5436,
+      "metrics": {
+        "valid": true,
+        "bytes": 5436,
+        "sha256": "f02a4190d8428722f00583dc751168c84fb1227bac35c517f2dcad58cb327c7a",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 56,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.cliff_blockCave_stone.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockCave_stone_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockCave_stone_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockCave_stone_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockCave_stone_SW.png"
+      ],
+      "groundedDerived": false
+    },
+    {
+      "id": "kenney.nature-kit.cliff_blockDiagonal_rock",
+      "category": "ground",
+      "sourcePath": "Models/GLTF format/cliff_blockDiagonal_rock.glb",
+      "sourceSha256": "32b61e963ba99695624f213e4d893c5d2ac028dd831ba65bcd220ee5a6006114",
+      "contentHash": "32b61e963ba99695624f213e4d893c5d2ac028dd831ba65bcd220ee5a6006114",
+      "bytes": 2564,
+      "metrics": {
+        "valid": true,
+        "bytes": 2564,
+        "sha256": "32b61e963ba99695624f213e4d893c5d2ac028dd831ba65bcd220ee5a6006114",
+        "generator": "UniGLTF-1.27",
+        "sceneCount": 1,
+        "nodeCount": 2,
+        "meshCount": 1,
+        "primitiveCount": 2,
+        "materialCount": 2,
+        "textureCount": 0,
+        "animationCount": 0,
+        "triangleCount": 8,
+        "externalUris": [],
+        "extensionsUsed": [
+          "KHR_materials_unlit"
+        ],
+        "extensionsRequired": [],
+        "dimensions": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "qualityTier": "light"
+      },
+      "modelUrl": "/assets/nature-kit/models/kenney.nature-kit.cliff_blockDiagonal_rock.glb",
+      "thumbnails": [
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockDiagonal_rock_NE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockDiagonal_rock_NW.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockDiagonal_rock_SE.png",
+        "/assets/nature-kit/thumbnails/kenney.nature-kit.cliff_blockDiagonal_rock_SW.png"
+      ],
+      "groundedDerived": false
+    }
+  ],
+  "admission": {
+    "geometry": "audited",
+    "units": "meters",
+    "groundedDerivedFenceGate": true,
+    "productDragDrop": "pending",
+    "saveRefreshReopen": "pending"
+  }
+}

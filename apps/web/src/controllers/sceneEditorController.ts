@@ -277,6 +277,7 @@ export function createSceneEditorController(context: SceneEditorControllerContex
   }
 
   function deletePrimitive(id: string) {
+    if (!engine || engine.isModelLocked(id)) return;
     engine?.removeModel(id);
     removeObjectInteractions(id);
     primitiveColors.current.delete(id);

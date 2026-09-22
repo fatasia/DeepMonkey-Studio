@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Mesh, Vector3 } from "three";
+import { Color, Mesh, Vector3 } from "three";
 import type { PrimitiveKind, PrimitiveState, SceneSnapshot } from "@bim-studio/contracts";
 import { buildDeepRuntimePackage, validateDeepRuntimePackage } from "@bim-studio/deep-engine/runtime-package";
 import { sceneSnapshotToRenderPacket } from "./sceneSnapshotRenderPacket";
@@ -16,6 +16,24 @@ function scene(primitives: PrimitiveState[]): SceneSnapshot {
 }
 
 describe("snapshot primitive render projection", () => {
+  it("accepts saved neutral material and disabled effect defaults without changing the packet", () => {
+    const item = primitive();
+    const defaults = { ...item, material: { hue: 0, saturation: 0, brightness: 0, contrast: 0, normalScale: 1, wireframe: false },
+      effects: { outline: false, glow: false, xray: false, scanline: false, heatmap: false, edgeLight: false,
+        dissolve: 0, intensity: 1, color: "#36a3ff" } };
+    expect(sceneSnapshotToRenderPacket(scene([defaults]))).toEqual(sceneSnapshotToRenderPacket(scene([item])));
+    for (const material of [{ hue: 1 }, { saturation: 0.1 }, { brightness: 0.1 }, { contrast: 0.1 }, { wireframe: true }]) {
+      expect(() => sceneSnapshotToRenderPacket(scene([{ ...item, material }]))).toThrow(/材质需要适配/);
+    }
+    const outlined = sceneSnapshotToRenderPacket(scene([{ ...defaults,
+      effects: { ...defaults.effects, glow: true, outline: true, edgeLight: true } }]));
+    expect(outlined.instances[0]!.outline).toBe(true);
+    const effect = sceneSnapshotToRenderPacket(scene([{ ...defaults,
+      effects: { ...defaults.effects, glow: true, edgeLight: true, color: "#f4c76b", intensity: 0.52 } }])).materials[0]!;
+    expect(effect.emissiveFactor).toEqual(new Color("#f4c76b").toArray());
+    expect(effect.emissiveStrength).toBeCloseTo(0.728, 6);
+  });
+
   it("rejects a large primitive scale even with a precisely represented root position", () => {
     const item = primitive("large"); item.transform.position = { x: 0, y: 0, z: 0 };
     item.transform.rotation = { x: 0, y: 0, z: 0 }; item.transform.scale = { x: 1e8 + 0.25, y: 1, z: 1 };
@@ -46,6 +64,31 @@ describe("snapshot primitive render projection", () => {
     }
   });
 
+  it.each(["road", "fence"] as const)("compiles a deterministic path-authored %s for Deep Web and Native", kind => {
+    const item = { ...primitive(`${kind}-path`), opacity: 0.65, material: { roughness: 0.24 }, transform: { position: { x: 2, y: 0, z: 3 },
+      rotation: { x: 0, y: 0.2, z: 0 }, scale: { x: 1, y: 1, z: 1 } }, prefab: {
+      definitionId: kind === "road" ? "road.straight" : "fence.modular", definitionVersion: "1.0.0", kind,
+      parameters: kind === "road" ? { lengthM: 20, carriagewayWidthM: 7, laneCount: 2, shoulderWidthM: 0.75,
+        surface: "asphalt", marking: "center" } : { heightM: 1.8, postSpacingM: 2, gateWidthM: 1.2, panel: "mesh" },
+      operatingState: "idle" as const,
+      placementPath: { points: [
+        { id: "a", position: { x: 0, y: 0, z: 0 } },
+        { id: "b", position: { x: 8, y: 0.5, z: 0 } },
+        { id: "c", position: { x: 14, y: 0, z: 6 } },
+      ], interpolation: "catmull-rom" as const, closed: false, snapToGround: false, seed: 77 },
+    } } satisfies PrimitiveState;
+    const first = sceneSnapshotToRenderPacket(scene([item]));
+    const second = sceneSnapshotToRenderPacket(scene([structuredClone(item)]));
+    expect(first).toEqual(second);
+    expect(first.instances.length).toBeGreaterThan(3);
+    expect(first.instances.every(instance => instance.id.startsWith(`${kind}-path/prefab/part/`))).toBe(true);
+    expect(first.geometries.length).toBeLessThan(first.instances.length);
+    expect(first.materials.every(material => material.alphaMode === "BLEND" && material.roughness === 0.24)).toBe(true);
+    const value = buildDeepRuntimePackage({ packageId: `snapshot.${kind}`, packageVersion: "1.0.0",
+      renderPacket: { id: "scene", revision: 1, value: first } });
+    expect(validateDeepRuntimePackage(JSON.parse(JSON.stringify(value))).valid).toBe(true);
+  });
+
   it("matches author XYZ rotation with translation and negative nonuniform scale", () => {
     const item = primitive(), object = new Mesh(), { position: p, rotation: r, scale: s } = item.transform;
     object.position.set(p.x, p.y, p.z); object.rotation.set(r.x, r.y, r.z); object.scale.set(s.x, s.y, s.z);
@@ -67,9 +110,13 @@ describe("snapshot primitive render projection", () => {
 
   it("applies explicit author overrides and clamps supported PBR values", () => {
     const item = { ...primitive(), colorOverride: "#ff0000", material: { color: "#00ff00", roughness: 2,
-      metalness: -1, emissive: "#0000ff", emissiveIntensity: 12, doubleSided: true } };
+      metalness: -1, ior: 2.4, emissive: "#0000ff", emissiveIntensity: 12, doubleSided: true } };
     expect(sceneSnapshotToRenderPacket(scene([item])).materials[0]).toMatchObject({ baseColor: [0, 1, 0],
-      roughness: 1, metallic: 0, emissiveFactor: [0, 0, 1], emissiveStrength: 10, doubleSided: true });
+      roughness: 1, metallic: 0, ior: 2.4, emissiveFactor: [0, 0, 1], emissiveStrength: 10, doubleSided: true });
+  });
+
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])("rejects invalid primitive IOR %s", ior => {
+    expect(() => sceneSnapshotToRenderPacket(scene([{ ...primitive(), material: { ior } }]))).toThrow(/折射率/);
   });
 
   it("is deterministic for input order and does not mutate the source", () => {

@@ -1,6 +1,7 @@
 import type { IndustrialPrefabDefinition } from "@bim-studio/contracts";
 import { CAMERA_PREFABS } from "./industrialPrefabCamera";
 import { CONVEYOR_PREFABS } from "./industrialPrefabConveyance";
+import { ENVIRONMENT_PREFABS } from "./industrialPrefabEnvironment";
 import { MACHINE_PREFABS } from "./industrialPrefabMachines";
 import { MOBILE_PREFABS } from "./industrialPrefabMobile";
 import { ROBOT_PREFABS } from "./industrialPrefabRobots";
@@ -14,6 +15,7 @@ import { UTILITY_PREFABS } from "./industrialPrefabUtilities";
 export const INDUSTRIAL_PREFAB_CATALOG: readonly IndustrialPrefabDefinition[] = [
   ...ROBOT_PREFABS,
   ...CONVEYOR_PREFABS,
+  ...ENVIRONMENT_PREFABS,
   ...MOBILE_PREFABS,
   ...MACHINE_PREFABS,
   ...UTILITY_PREFABS,

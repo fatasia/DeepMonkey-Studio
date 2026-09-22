@@ -37,6 +37,7 @@ import type { SceneBehaviorLogEntry } from "../components/SceneBehaviorPanel";
 import { translate as tr, type AppLocale } from "../i18n";
 import type { AppRoute } from "../appRoute";
 import type { ViewerEngine } from "../viewer/ViewerEngine";
+import { lockedBehaviorScriptChange } from "../behavior/behaviorScriptLockPolicy";
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
 
@@ -193,10 +194,15 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
   }
 
   function upsertBehaviorScript(script: ScriptModule) {
+    const previous = applicationSessionRef.current.store.getState().document?.scripts ?? [];
+    if (!canWriteBehaviorScripts([...previous.filter(item => item.id !== script.id), script])) return false;
     dispatchApplicationCommand(createUpsertScriptModuleCommand(script));
+    return true;
   }
 
   function deleteBehaviorScript(scriptId: string) {
+    const previous = applicationSessionRef.current.store.getState().document?.scripts ?? [];
+    if (!canWriteBehaviorScripts(previous.filter(item => item.id !== scriptId))) return;
     if (sceneBehaviorEntries.some((entry) => entry.module.id === scriptId)) stopSceneBehaviors();
     dispatchApplicationCommand(createDeleteScriptModuleCommand(scriptId));
   }
@@ -212,6 +218,7 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
   }
 
   async function replaceBehaviorScripts(scripts: readonly ScriptModule[]) {
+    if (!canWriteBehaviorScripts(scripts)) throw new Error(tr(locale, "目标已锁定，脚本未应用", "Target locked; scripts were not applied"));
     const previous = applicationSessionRef.current.store.getState().document?.scripts ?? [];
     if (sceneBehaviorEntries.length) stopSceneBehaviors();
     dispatchApplicationCommand(createReplaceScriptModulesCommand(scripts));
@@ -223,6 +230,15 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
     // 保存失败只恢复脚本字段，保留等待期间用户对页面、场景等其他内容的修改。
     dispatchApplicationCommand(createReplaceScriptModulesCommand(previous));
     throw new Error(tr(locale, "远端脚本未能保存，已恢复原脚本", "Remote scripts were not saved; the original scripts were restored"));
+  }
+
+  function canWriteBehaviorScripts(scripts: readonly ScriptModule[]): boolean {
+    const document = applicationSessionRef.current.store.getState().document;
+    if (!document) return false;
+    const locked = lockedBehaviorScriptChange(document, scripts, engine, activeScene?.id);
+    if (!locked) return true;
+    setMessage(tr(locale, `“${locked.name}”的挂载对象已锁定，草稿已保留`, `The target of “${locked.name}” is locked; the draft was retained`));
+    return false;
   }
 
 

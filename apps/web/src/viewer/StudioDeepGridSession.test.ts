@@ -6,6 +6,7 @@ function fixture() {
   const pixels = new Uint8ClampedArray(16).fill(128), getImageData = vi.fn(() => ({ data: pixels }));
   const canvas = { width: 2, height: 2, getContext: () => ({ getImageData }) };
   const texture = new THREE.CanvasTexture(canvas as unknown as HTMLCanvasElement); texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = THREE.NearestFilter; texture.anisotropy = 1;
   const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
   const grid = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), material); grid.name = "helper:grid"; grid.renderOrder = -10;
   grid.rotation.x = -Math.PI / 2; grid.updateMatrixWorld(true);

@@ -100,6 +100,14 @@ describe("client package cancellation", () => {
     await exportSceneClientPackage({ ...input, target: "three-webview" });
     expect(mocks.file.mock.calls.some(([path]) => path.startsWith("native/"))).toBe(false);
   });
+  it("uses one deterministic ZIP timestamp without transient folder entries", async () => {
+    const input = options();
+    input.scene.createdAt = "2026-09-20T10:50:01.999Z";
+    await exportSceneClientPackage({ ...input, target: "three-webview" });
+    const dates = mocks.file.mock.calls.map(([, , config]) => (config as { date: Date }).date.toISOString());
+    expect(new Set(dates)).toEqual(new Set(["2026-09-20T10:50:00.000Z"]));
+    expect(mocks.file.mock.calls.every(([, , config]) => (config as { createFolders: boolean }).createFolders === false)).toBe(true);
+  });
   it("round-trips the downloaded archive through real ZIP encoding and verifies every indexed byte", async () => {
     const { default: JSZip } = await vi.importActual<{ default: typeof import("jszip") }>("jszip");
     const archive = new JSZip();

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AiExecutionDetails } from "./AiExecutionDetails";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -30,6 +31,7 @@ import {
 } from "../ai/industrialAgentViewModel";
 import "./IndustrialAgentWorkspace.css";
 import { IndustrialAgentContinuation } from "./IndustrialAgentContinuation";
+import { AssistantModelControls, type AssistantSessionOptions } from "./AssistantModelControls";
 
 const DEFAULT_BUDGET = { maxSteps: 10, maxToolCalls: 6, maxDurationMs: 90_000 };
 
@@ -42,6 +44,7 @@ export function IndustrialAgentWorkspace(props: {
 }) {
   const { locale, projectId, context, surface = "assistant" } = props;
   const [objective, setObjective] = useState("");
+  const [modelOptions, setModelOptions] = useState<AssistantSessionOptions>({});
   const [tools, setTools] = useState<AgentToolDefinition[]>([]);
   const [selectedToolIds, setSelectedToolIds] = useState<Set<string>>(new Set());
   const [checkpoint, setCheckpoint] = useState<AgentCheckpoint>();
@@ -144,6 +147,7 @@ export function IndustrialAgentWorkspace(props: {
       if (!isCurrent()) return;
       const next = await client.startIndustrialAgentRun(projectId, {
         objective: runObjective,
+        modelOptions,
         context,
         allowedToolIds: toolIds,
         budget: DEFAULT_BUDGET,
@@ -199,6 +203,7 @@ export function IndustrialAgentWorkspace(props: {
 
       {!checkpoint ? (
         <div className="industrial-agent-start">
+          <AssistantModelControls locale={locale} mode="platform" value={modelOptions} onChange={setModelOptions} disabled={busy} />
           <label>
             <span>{t("用一句话说明要完成的目标", "Describe the outcome in one sentence")}</span>
             <textarea
@@ -354,7 +359,7 @@ export function IndustrialAgentRunView(props: {
       )}
       <details className="industrial-agent-history">
         <summary>{t("查看决策与工具记录", "Decision and tool history")}<span>{checkpoint.decisions.length + checkpoint.toolRecords.length}<ChevronDown size={13} /></span></summary>
-        <ol>{checkpoint.decisions.map((record) => <li key={`decision-${record.step}`}><b>{record.step}</b><span>{record.decision.rationale}</span></li>)}</ol>
+        <ol>{checkpoint.decisions.map((record) => <li key={`decision-${record.step}`}><b>{record.step}</b><span>{record.decision.rationale}{record.execution && <AiExecutionDetails locale={props.locale} execution={record.execution} />}</span></li>)}</ol>
       </details>
       <footer className="industrial-agent-run-actions">
         {!terminal && checkpoint.status !== "awaiting-approval" && <><button type="button" disabled={props.busy} onClick={() => props.onAction("refresh")}><RefreshCw size={13} />{t("刷新", "Refresh")}</button>{checkpoint.status !== "awaiting-input" && <button type="button" disabled={props.busy} onClick={() => props.onAction("resume")}><Play size={13} />{t("从检查点继续", "Resume checkpoint")}</button>}<button type="button" disabled={props.busy} onClick={() => props.onAction("cancel")}><PauseCircle size={13} />{t("取消", "Cancel")}</button></>}

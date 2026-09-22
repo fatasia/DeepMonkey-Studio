@@ -72,6 +72,7 @@ export function modelInstanceHarness() {
     models, modelRoot, modelLoads, gltfLoader, animationClips, camera, readOnlyMode: false,
     fragmentModels: new Map(), mixers: new Map(), animationClipSelection: new Map(), animationEnabledIds: new Set(),
     modelAnimationPlaybackStates: new Map(), floorStates: floors, spaceVisuals: new Map(),
+    physicsState: { enabled: false, playing: false, gravity: { x: 0, y: -9.81, z: 0 } },
     physicsBodyStates: new Map(), modelEffectRuntimes: new Map(), modelEffects: new Map(), spatialAudioStates: new Map(),
     layerObjects: new Map(), layerStates: new Map(), componentRecords: new Map(), modelColorOverrides: new Map(),
     modelMaterialOverrides: new Map(), modelRigStates: new Map(), modelBoneRestRotations: new Map(), modelPrefabStates: new Map(),

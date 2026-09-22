@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Activity, Wrench } from "lucide-react";
 import type { SystemBrandingSettings } from "@bim-studio/contracts";
 import { api } from "../api";
 import { ViewerPerformanceSettings } from "./ViewerPerformanceSettings";
+import { CacheManagementSettings } from "./CacheManagementSettings";
+import { ServerCacheSettings } from "./ServerCacheSettings";
 import { translate as tr, type AppLocale } from "../i18n";
 
 type Translate = (zh: string, en: string) => string;
@@ -20,35 +22,49 @@ export function PerformanceMaintenancePanel({ locale, onError }: {
   const [maintenanceMessage, setMaintenanceMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const saving = useRef(false);
+  const confirmed = useRef({ maintenanceEnabled: false, maintenanceMessage: "" });
+  const reportError = useRef(onError);
+  reportError.current = onError;
 
   useEffect(() => {
     let cancelled = false;
     void api.getBranding().then((branding: SystemBrandingSettings) => {
       if (cancelled) return;
+      confirmed.current = { maintenanceEnabled: branding.maintenanceEnabled, maintenanceMessage: branding.maintenanceMessage };
       setMaintenanceEnabled(branding.maintenanceEnabled);
       setMaintenanceMessage(branding.maintenanceMessage);
       setLoaded(true);
     }).catch((reason: unknown) => {
-      if (!cancelled) onError(reason instanceof Error ? reason.message : String(reason));
+      if (!cancelled) reportError.current(reason instanceof Error ? reason.message : String(reason));
     });
     return () => { cancelled = true; };
-  }, [onError]);
+  }, []);
 
   async function saveMaintenance(next: { maintenanceEnabled: boolean; maintenanceMessage: string }): Promise<void> {
+    if (!loaded || saving.current) return;
+    if (next.maintenanceEnabled === confirmed.current.maintenanceEnabled && next.maintenanceMessage === confirmed.current.maintenanceMessage) return;
+    saving.current = true;
     setBusy(true);
     try {
       const saved = await api.saveBranding(next);
+      confirmed.current = { maintenanceEnabled: saved.maintenanceEnabled, maintenanceMessage: saved.maintenanceMessage };
       setMaintenanceEnabled(saved.maintenanceEnabled);
       setMaintenanceMessage(saved.maintenanceMessage);
     } catch (reason: unknown) {
-      onError(reason instanceof Error ? reason.message : String(reason));
+      setMaintenanceEnabled(confirmed.current.maintenanceEnabled);
+      setMaintenanceMessage(confirmed.current.maintenanceMessage);
+      reportError.current(reason instanceof Error ? reason.message : String(reason));
     } finally {
+      saving.current = false;
       setBusy(false);
     }
   }
 
   return <div className="system-performance-maintenance">
     <ViewerPerformanceSettings locale={locale} />
+    <CacheManagementSettings locale={locale} />
+    <ServerCacheSettings locale={locale} />
     <section>
       <header>
         <Activity size={16} />
@@ -62,7 +78,6 @@ export function PerformanceMaintenancePanel({ locale, onError }: {
           <input type="checkbox" disabled={!loaded || busy} checked={maintenanceEnabled}
             onChange={(event) => {
               const next = event.currentTarget.checked;
-              setMaintenanceEnabled(next);
               void saveMaintenance({ maintenanceEnabled: next, maintenanceMessage });
             }} />
           <span>

@@ -6,7 +6,6 @@ import {
   createInsertDashboardNodesCommand,
   createUpdateDashboardNodeFrameCommand,
   createUpdateDashboardNodeFramesCommand,
-  createUpdateDashboardNodeOrderCommand,
   createUpdateDashboardNodeStateCommand,
   createUpdateDashboardNodeStatesCommand,
   createUpdateDashboardPageGuidesCommand,
@@ -28,6 +27,9 @@ import {
   type SelectionRect
 } from "./dashboardWorkspaceModel";
 import { beginDashboardNodeTransform } from "./dashboardNodeTransform";
+import { createDashboardLayerDropCommand } from "./dashboardLayerDrop";
+import { createDashboardLayerArrangeCommand, createDashboardGroupingCommand } from "./dashboardLayerArrange";
+import type { LayerDropIntent } from "./layerDropIntent";
 import type { DashboardCanvasControllerContext } from "./dashboardCanvasTypes";
 
 /** 集中管理画布坐标、选择、吸附与图层操作，页面组件只负责产品编排。 */
@@ -152,7 +154,7 @@ export function createDashboardCanvasController(context: DashboardCanvasControll
   }
 
   function beginNodeTransform(event: ReactPointerEvent<HTMLButtonElement>, node: WidgetNode, mode: "move" | "resize") {
-    // Alt+拖拽=复制并拖动副本（对标 FVS alt+拖拽）：同步插入同位克隆，手势无缝接管克隆体。
+    // Alt+拖拽=复制并拖动副本（对标 大屏参考 alt+拖拽）：同步插入同位克隆，手势无缝接管克隆体。
     if (event.altKey && mode === "move" && !node.locked) {
       const topZIndex = Math.max(0, ...page.nodes.map((item) => item.zIndex));
       const usedNames = new Set(page.nodes.map((item) => dashboardNodeIdentity(item).toLocaleLowerCase()));
@@ -288,10 +290,6 @@ export function createDashboardCanvasController(context: DashboardCanvasControll
   function toggleLayerLock(node: WidgetNode) {
     const locked = !node.locked;
     onCommand(createUpdateDashboardNodeStateCommand(page.id, node.id, { locked, selectable: !locked }));
-    if (!locked || !selectedNodeIds.includes(node.id)) return;
-    const remaining = selectedNodeIds.filter((id) => id !== node.id);
-    setSelectedNodeIds(remaining);
-    onSelectionChange(remaining.map((id) => ({ kind: "widget", id })));
   }
 
   function nudgeSelectedNodes(dx: number, dy: number) {
@@ -328,18 +326,21 @@ export function createDashboardCanvasController(context: DashboardCanvasControll
   }
 
   function groupSelectedNodes(ids = selectedNodeIds) {
-    const nodes = page.nodes.filter((node) => ids.includes(node.id) && node.locked !== true);
+    const nodes = page.nodes.filter((node) => ids.includes(node.id));
+    if (nodes.some(node => node.locked)) return;
     if (nodes.length < 2) return;
     const groupId = `group:${crypto.randomUUID()}`;
     const groupName = `${tr(locale, "编组", "Group")} ${dashboardGroups.length + 1}`;
-    onCommand(createUpdateDashboardNodeStatesCommand(page.id, nodes.map((node) => ({ nodeId: node.id, state: { groupId, groupName } })), `编组 ${nodes.length} 个二维组件`));
+    const command = createDashboardGroupingCommand(page, nodes.map(node => node.id), { id: groupId, name: groupName });
+    if (command) onCommand(command);
   }
 
   function ungroupSelectedNodes(ids = selectedNodeIds) {
     const groups = new Set(page.nodes.filter(node => ids.includes(node.id) && node.groupId).map(node => node.groupId));
-    const nodes = page.nodes.filter((node) => groups.has(node.groupId) && node.groupId && node.locked !== true);
-    if (nodes.length === 0) return;
-    onCommand(createUpdateDashboardNodeStatesCommand(page.id, nodes.map((node) => ({ nodeId: node.id, state: { groupId: null, groupName: null } })), `解组 ${nodes.length} 个二维组件`));
+    const nodes = page.nodes.filter((node) => groups.has(node.groupId) && node.groupId);
+    if (nodes.length === 0 || nodes.some(node => node.locked)) return;
+    const command = createDashboardGroupingCommand(page, nodes.map(node => node.id));
+    if (command) onCommand(command);
   }
 
   function renameDashboardGroup(group: { id: string; nodes: readonly WidgetNode[]; label: string }) {
@@ -358,40 +359,14 @@ export function createDashboardCanvasController(context: DashboardCanvasControll
   }
 
   function reorderNodeIds(nodeIds: readonly string[], direction: "front" | "forward" | "backward" | "back") {
-    const selected = new Set(page.nodes.filter((node) => nodeIds.includes(node.id) && node.locked !== true).map((node) => node.id));
-    if (selected.size === 0) return;
-    const ordered = [...page.nodes].sort((left, right) => left.zIndex - right.zIndex);
-    if (direction === "front" || direction === "back") {
-      const picked = ordered.filter((node) => selected.has(node.id));
-      const rest = ordered.filter((node) => !selected.has(node.id));
-      ordered.splice(0, ordered.length, ...(direction === "front" ? [...rest, ...picked] : [...picked, ...rest]));
-    } else if (direction === "forward") {
-      for (let index = ordered.length - 2; index >= 0; index -= 1) {
-        if (selected.has(ordered[index]!.id) && !selected.has(ordered[index + 1]!.id)) [ordered[index], ordered[index + 1]] = [ordered[index + 1]!, ordered[index]!];
-      }
-    } else {
-      for (let index = 1; index < ordered.length; index += 1) {
-        if (selected.has(ordered[index]!.id) && !selected.has(ordered[index - 1]!.id)) [ordered[index - 1], ordered[index]] = [ordered[index]!, ordered[index - 1]!];
-      }
-    }
-    const order = ordered.map((node, zIndex) => ({ nodeId: node.id, zIndex })).filter(({ nodeId, zIndex }) => page.nodes.find((node) => node.id === nodeId)!.zIndex !== zIndex);
-    if (order.length > 0) onCommand(createUpdateDashboardNodeOrderCommand(page.id, order));
+    const command = createDashboardLayerArrangeCommand(page, nodeIds, direction);
+    if (command) onCommand(command);
   }
 
-  function reorderLayerByDrop(sourceId: string, targetId?: string) {
-    if (sourceId === targetId) return;
-    const displayed = [...page.nodes].sort((left, right) => right.zIndex - left.zIndex);
-    const source = displayed.find((node) => node.id === sourceId);
-    const target = displayed.find((node) => node.id === targetId);
-    if (!source || source.locked || (targetId && !target)) return;
-    const withoutSource = displayed.filter((node) => node.id !== sourceId);
-    const insertionIndex = withoutSource.findIndex((node) => node.id === targetId);
-    withoutSource.splice(insertionIndex < 0 ? withoutSource.length : insertionIndex, 0, source);
-    const order = [...withoutSource].reverse().map((node, zIndex) => ({ nodeId: node.id, zIndex }));
-    onCommand(createUpdateDashboardNodeStatesCommand(page.id, order.map(item => ({ nodeId: item.nodeId, state: {
-      zIndex: item.zIndex,
-      ...(item.nodeId === sourceId ? { groupId: target?.groupId ?? null, groupName: target?.groupName ?? null } : {}),
-    } })), "移动二维图层"));
+  function reorderLayerByDrop(sourceId: string, targetId?: string, intent?: LayerDropIntent) {
+    const result = createDashboardLayerDropCommand(page.id, page.nodes, selectedNodeIds, sourceId, targetId, intent, page.rootLayerOrder);
+    if (result.command) onCommand(result.command);
+    return result.reason;
   }
 
   function contextNodeIds(): string[] {
@@ -441,7 +416,7 @@ export function createDashboardCanvasController(context: DashboardCanvasControll
   }
 
   function beginMarqueeSelection(event: ReactPointerEvent<HTMLDivElement>) {
-    // 主流约定（对标 FVS/Figma）：空白画布普通拖拽即框选，无需先按 Shift 或切换工具；
+    // 主流约定（对标 大屏参考/Figma）：空白画布普通拖拽即框选，无需先按 Shift 或切换工具；
     // 点在组件上时不拦截，交还组件自身的选择/拖动处理。
     const onNode = (event.target as HTMLElement).closest?.(".dashboard-node");
     if (event.button !== 0 || (!marqueeMode && onNode)) return;

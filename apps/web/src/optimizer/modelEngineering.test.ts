@@ -30,6 +30,8 @@ describe("model engineering", () => {
     expect(modelVersionChain({ ...a, optimization: { sourceModelId: "a" } } as ModelRecord, [a])).toHaveLength(1);
   });
   it("restores recorded controls and layer operations, rejecting unsafe work sizes", () => {
+    expect(readProcessingRecipe(recipe({ lightmapIndirectSamples: 64 }), options).options.lightmapIndirectSamples).toBe(64);
+    for (const lightmapIndirectSamples of [-1, 63, 65, 100000]) expect(() => readProcessingRecipe(recipe({ lightmapIndirectSamples }), options)).toThrow();
     expect(readProcessingRecipe(recipe(), options)).toEqual({ options, edits: [{ id: 0, action: "rename", name: "泵" }] });
     for (const patch of [{ textureSize: 100_000 }, { simplifyRatio: -1 }, { lightmapResolution: 8192 }, { bakeLights: Array(9).fill({}) }, { command: "run" }]) expect(() => readProcessingRecipe(recipe(patch), options)).toThrow();
     expect(() => readProcessingRecipe({ ...recipe(), layerEditsJson: '[{"id":-1,"action":"delete"}]' }, options)).toThrow();

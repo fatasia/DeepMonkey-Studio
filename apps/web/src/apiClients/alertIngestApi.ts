@@ -24,6 +24,11 @@ export interface AlertRuleDto {
   threshold: number;
 }
 
+interface AlertStateResponseDto {
+  ok: boolean;
+  states: AlertStateSnapshotDto[];
+}
+
 export interface ReplaySeries {
   revision: string;
   entries: Array<{ at: number; values: Record<string, number> }>;
@@ -32,7 +37,10 @@ export interface ReplaySeries {
 export function createAlertIngestApi(request: AlertIngestRequest) {
   return {
     fetchRules: (projectId: string) => request<AlertRuleDto[]>(`/api/projects/${encodeURIComponent(projectId)}/alert-rules`),
-    fetchState: (projectId: string) => request<AlertStateSnapshotDto[]>(`/api/projects/${encodeURIComponent(projectId)}/alert-state`),
+    fetchState: async (projectId: string) => {
+      const response = await request<AlertStateResponseDto>(`/api/projects/${encodeURIComponent(projectId)}/alert-state`);
+      return response.states;
+    },
     acknowledge: (projectId: string, ruleId: string) =>
       request<{ ok: boolean }>(`/api/projects/${encodeURIComponent(projectId)}/alert-rules/${encodeURIComponent(ruleId)}/acknowledge`, {
         method: "POST", headers: { "content-type": "application/json" }, body: "{}",

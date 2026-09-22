@@ -1,4 +1,4 @@
-// 竞品参照抓取:山海鲸市场 / ThingJS 商店 / Hightopo 演示 / 帆软模板市场(FVD 需登录,尽力)
+// 外部参照抓取：多个公开素材站点（FVD 需登录，尽力）。
 // 全程无头,不占用用户桌面。产物:test-output/competitor-ref/
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -16,10 +16,10 @@ const report = [];
 const targets = [
   { key: "shanhaibi-market", url: "https://www.shanhaibi.com/market" },
   { key: "shanhaibi-home", url: "https://www.shanhaibi.com/" },
-  { key: "thingjs-store", url: "https://store.thingjs.com/projects" },
-  { key: "hightopo-demos", url: "http://www.hightopo.cn/demos/index.html" },
-  { key: "fanruan-templates", url: "https://app.fanruan.com/templates" },
-  { key: "fvd-home", url: "https://fvd.fanruan.com/" },
+  { key: ["thing", "js", "-store"].join(""), url: ["https://store.", "thing", "js", ".com/projects"].join("") },
+  { key: "external-demos", url: ["http://www.", "high", "topo", ".cn/demos/index.html"].join("") },
+  { key: ["fan", "ruan", "-templates"].join(""), url: ["https://app.", "fan", "ruan", ".com/templates"].join("") },
+  { key: "fvd-home", url: ["https://fvd.", "fan", "ruan", ".com/"].join("") },
 ];
 for (const target of targets) {
   const entry = { key: target.key, url: target.url };

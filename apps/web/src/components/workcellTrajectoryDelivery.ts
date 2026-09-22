@@ -24,7 +24,7 @@ export interface WorkcellTrajectoryRiskInterval extends WorkcellTrajectorySegmen
 
 export interface WorkcellTrajectoryDeliveryPackage {
   schema: typeof WORKCELL_TRAJECTORY_DELIVERY_SCHEMA;
-  generatedBy: "Deep Monkey Studio";
+  generatedBy: "DeepMonkey Studio";
   generatedAt: string;
   packageId: string;
   units: {
@@ -138,7 +138,7 @@ export function buildWorkcellTrajectoryDelivery(
 
   return {
     schema: WORKCELL_TRAJECTORY_DELIVERY_SCHEMA,
-    generatedBy: "Deep Monkey Studio",
+    generatedBy: "DeepMonkey Studio",
     generatedAt: new Date(generatedAt).toISOString(),
     packageId: `trajectory-evidence:${packageFingerprint.slice(-16)}`,
     units: {

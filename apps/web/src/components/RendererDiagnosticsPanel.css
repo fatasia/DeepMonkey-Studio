@@ -338,6 +338,44 @@
   line-height: 1.5;
 }
 
+.renderer-source-map {
+  display: grid;
+  gap: 8px;
+  margin: 0 10px 10px;
+  padding: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.renderer-source-map > header,
+.renderer-source-map > header > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.renderer-source-map > header > span { justify-content: flex-start; }
+.renderer-source-map > header svg { color: var(--accent); }
+.renderer-source-map > header strong { font-size: 12px; }
+.renderer-source-map > header small,
+.renderer-source-map-empty { color: var(--text-muted); font-size: 12px; }
+.renderer-source-map-empty { margin: 0; line-height: 1.5; }
+.renderer-source-map-query { display: grid; grid-template-columns: minmax(0, 1fr) 112px; gap: 6px; }
+.renderer-source-map-query label { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: 6px; }
+.renderer-source-map-query label:focus-within { border-color: var(--accent); }
+.renderer-source-map-query input,
+.renderer-source-map-query select { min-width: 0; height: 30px; color: var(--text-strong); border: 0; outline: 0; background: transparent; font-size: 12px; }
+.renderer-source-map-query input { width: 100%; }
+.renderer-source-map-query select { padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface-2); }
+.renderer-source-map-results { display: grid; gap: 4px; max-height: 220px; margin: 0; padding: 0; overflow: auto; list-style: none; }
+.renderer-source-map-results li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; padding: 7px; border-left: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); background: var(--surface-2); }
+.renderer-source-map-results li > span { display: grid; min-width: 0; }
+.renderer-source-map-results strong,
+.renderer-source-map-results li > span small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.renderer-source-map-results strong { font: 12px/1.4 ui-monospace, monospace; }
+.renderer-source-map-results code { color: var(--accent); font-size: 12px; }
+.renderer-source-map-results li > small { grid-column: 1 / -1; color: var(--text-muted); font-size: 12px; }
+
 .renderer-option-list {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -447,4 +485,5 @@
     width: calc(100% - 16px);
     max-height: calc(100vh - 66px);
   }
+  .renderer-source-map-query { grid-template-columns: 1fr; }
 }

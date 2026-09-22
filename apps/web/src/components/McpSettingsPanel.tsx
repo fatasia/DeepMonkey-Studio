@@ -96,7 +96,7 @@ export function McpSettingsPanel({ locale, client = api }: { locale: AppLocale; 
         {data.resources.length > 0 && <div className="mcp-resource-list">{data.resources.map(resource => <article key={resource.uri}><span><strong>{resource.title ?? resource.name}</strong><small>{resource.description}</small></span><code title={resource.uri}>{resource.uri}</code></article>)}</div>}
         {data.tools.length ? <div className="mcp-tool-list">{data.tools.map(tool => {
           const capability = capabilities.get(tool.name.replace(/^industrial\./, ""));
-          return <article key={tool.name}><span><strong>{tool.title}</strong><code>{tool.name}</code></span><div>{capability?.permissions.map(permission => <i key={permission}>{permission}</i>)}</div><small>{tool.annotations.readOnlyHint ? t("只读 · 幂等", "Read-only · idempotent") : t("执行能力 · 结果可追溯", "Executable · traceable")}</small></article>;
+          return <article key={tool.name}><span><strong>{tool.title}</strong><code>{tool.name}</code></span><div>{capability?.permissions.map(permission => <i key={permission}>{permission}</i>)}</div><small>{tool.annotations?.readOnlyHint ? t("只读 · 幂等", "Read-only · idempotent") : t("执行能力 · 结果可追溯", "Executable · traceable")}</small></article>;
         })}</div> : <div className="mcp-empty"><Wrench /><strong>{t("当前账号没有可用工具", "No tools available to this account")}</strong><span>{t("检查账号角色与项目授权后重试。", "Check the account role and project access, then retry.")}</span></div>}
         {data.resourcesSupported && data.resources.length === 0 && <div className="mcp-resource-empty">{t("暂无活跃编辑器资源。打开场景、二维页面或拓扑编辑器后再检查。", "No active editor resources. Open a scene, dashboard, or topology editor, then check again.")}</div>}
       </section>

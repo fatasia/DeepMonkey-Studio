@@ -17,6 +17,8 @@ import { applyGroupedOrSelected } from "./sceneAppearanceDispatch";
 import type { SceneEditorControllerContext } from "./sceneEditorControllerContext";
 import { mergeModelEffectsPatch, type ModelEffectsPatch } from "../viewer/modelEffectState";
 
+const materialTextureSlotTargets = new WeakMap<object, { modelId: string; slotId: string }>();
+
 type SetSceneObjectsVisible = (ids: string[], visible: boolean) => void;
 
 /** 环境、灯光、材质和对象外观命令；统一处理单选与编组语义。 */
@@ -193,11 +195,13 @@ export function createSceneAppearanceCommands(context: SceneEditorControllerCont
 
   async function uploadMaterialTexture(file?: File) {
     if (!file || !project || !selected) return;
+    const kind = materialTextureKindRef.current;
+    const slotTarget = materialTextureSlotTargets.get(materialTextureKindRef);
+    materialTextureSlotTargets.delete(materialTextureKindRef);
     setBusy(true);
     try {
       const asset = await api.uploadImageAsset(project.id, file);
-      const kind = materialTextureKindRef.current;
-      updateSelectionMaterial(
+      const patch: SceneMaterialState =
         kind === "baseColor"
           ? { baseColorMapUrl: asset.url, baseColorMapName: asset.name }
           : kind === "normal"
@@ -208,8 +212,16 @@ export function createSceneAppearanceCommands(context: SceneEditorControllerCont
                 ? { ambientOcclusionMapUrl: asset.url, ambientOcclusionMapName: asset.name }
                 : kind === "roughness"
                   ? { roughnessMapUrl: asset.url, roughnessMapName: asset.name }
-                  : { metalnessMapUrl: asset.url, metalnessMapName: asset.name },
-      );
+                  : { metalnessMapUrl: asset.url, metalnessMapName: asset.name };
+      if (slotTarget) {
+        if (!engine || !engine.listModels().some(model => model.id === slotTarget.modelId) || engine.isModelLocked(slotTarget.modelId)) {
+          throw new Error(tr(locale, "目标对象已删除或锁定，贴图未应用", "The target was deleted or locked; texture was not applied"));
+        }
+        const saved = engine.getModelMaterialOverride(slotTarget.modelId);
+        engine.setModelMaterial(slotTarget.modelId, { slotOverrides: { ...saved?.slotOverrides,
+          [slotTarget.slotId]: { ...saved?.slotOverrides?.[slotTarget.slotId], ...patch } } });
+        setRevision(value => value + 1);
+      } else updateSelectionMaterial(patch);
       setMessage(tr(locale, `材质贴图“${asset.name}”已应用`, `Material texture “${asset.name}” applied`));
     } catch (reason) {
       showError(reason);
@@ -219,7 +231,9 @@ export function createSceneAppearanceCommands(context: SceneEditorControllerCont
     }
   }
 
-  function chooseMaterialTexture(kind: SceneEditorControllerContext["materialTextureKindRef"]["current"]) {
+  function chooseMaterialTexture(kind: SceneEditorControllerContext["materialTextureKindRef"]["current"], slotId?: string) {
+    materialTextureSlotTargets.delete(materialTextureKindRef);
+    if (slotId && selected) materialTextureSlotTargets.set(materialTextureKindRef, { modelId: selected.id, slotId });
     materialTextureKindRef.current = kind;
     materialTextureRef.current?.click();
   }

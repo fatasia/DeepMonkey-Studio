@@ -109,6 +109,6 @@ function PublicationDialog({ bindings }: { bindings: AppViewBindings }) {
     onPerformanceChange={state.setStudioPublishPerformance}
     onClientTargetChange={state.setStudioPublishClientTarget}
     onCancel={() => state.setStudioPublishOpen(false)}
-    onPublish={(toolbarVisible, clientTarget) => scenePersistence.publishActiveScene(studioPublishMode, studioPublishPerformance, toolbarVisible, clientTarget)}
+            onPublish={(toolbarVisible, clientTarget, branding) => scenePersistence.publishActiveScene(studioPublishMode, studioPublishPerformance, toolbarVisible, clientTarget, branding)}
   />;
 }

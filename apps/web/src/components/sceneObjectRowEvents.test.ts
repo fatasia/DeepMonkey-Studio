@@ -3,6 +3,15 @@ import { focusSceneObjectRow, selectSceneObjectRow } from "./sceneObjectRowEvent
 
 const click = (detail = 1, modifiers = {}) => ({ detail, ctrlKey: false, metaKey: false, shiftKey: false, ...modifiers });
 describe("scene row selection and focus", () => {
+  it("carries visible directory order and keeps the first click as Shift anchor", () => {
+    const scope = { dataset: { layerOrder: '["a","c","d"]' } as Record<string, string> };
+    const currentTarget = { closest: () => scope } as unknown as HTMLElement;
+    const select = vi.fn();
+    selectSceneObjectRow({ ...click(), currentTarget }, "a", undefined, select);
+    selectSceneObjectRow({ ...click(1, { shiftKey: true }), currentTarget }, "d", undefined, select);
+    selectSceneObjectRow({ ...click(1, { shiftKey: true }), currentTarget }, "c", undefined, select);
+    expect(select).toHaveBeenLastCalledWith("c", { additive: false, range: true, orderedIds: ["a", "c", "d"], anchorId: "a" });
+  });
   it.each([0, 1])("preserves ordinary and keyboard click %s toggle semantics", detail => {
     const select = vi.fn(), engine = { select: vi.fn(), focusModel: vi.fn(() => true) };
     selectSceneObjectRow(click(detail), "cube", engine, select);

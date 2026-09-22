@@ -39,4 +39,44 @@ describe("IndustrialPrefabInspector", () => {
     expect(html).toContain("添加路线点");
     expect(html).toContain("重播");
   });
+
+  it("renders the formal straight-road parameters through the existing property editor", () => {
+    const engine = {
+      getIndustrialPrefabState: () => ({
+        definitionId: "road.straight",
+        definitionVersion: "1.0.0",
+        kind: "road",
+        parameters: {
+          lengthM: 20,
+          carriagewayWidthM: 7,
+          laneCount: 2,
+          shoulderWidthM: 0.75,
+          surface: "asphalt",
+          marking: "center",
+        },
+        operatingState: "idle",
+        placementPath: {
+          points: [{ id: "start", position: { x: 0, y: 0, z: 0 } }, { id: "end", position: { x: 20, y: 0, z: 0 } }],
+          interpolation: "linear", closed: false, snapToGround: true, seed: 42,
+        },
+      }),
+      setIndustrialPrefabState: vi.fn(),
+      executeIndustrialPrefabAction: vi.fn(),
+    } as unknown as ViewerEngine;
+
+    const html = renderToStaticMarkup(<IndustrialPrefabInspector locale="zh-CN" engine={engine} modelId="road-1" disabled={false} onChange={vi.fn()} />);
+    expect(html).toContain("参数化直路");
+    expect(html).toContain("道路长度");
+    expect(html).toContain("车行道宽度");
+    expect(html).toContain("车道数");
+    expect(html).toContain("路肩宽度");
+    expect(html).toContain("路面材质");
+    expect(html).toContain("道路标线");
+    expect(html).toContain('min="2"');
+    expect(html).toContain('max="500"');
+    expect(html).toContain("铺设路径");
+    expect(html).toContain("平滑样条");
+    expect(html).toContain("固定种子");
+    expect(html).toContain("添加端点");
+  });
 });

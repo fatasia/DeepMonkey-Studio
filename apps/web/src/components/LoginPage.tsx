@@ -4,7 +4,7 @@ import type {
   SystemBrandingSettings,
   SystemUserRecord,
 } from "@bim-studio/contracts";
-import { api, setAuthToken } from "../api";
+import { api, getAuthToken, setAuthToken } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
 import { loginErrorMessage } from "./loginErrorMessage";
 
@@ -47,6 +47,7 @@ export function LoginPage({
           <span className="login-brand-name">{branding.systemName}</span>
         </h1>
         {branding.loginSubtitle && <p>{branding.loginSubtitle}</p>}
+        {getAuthToken() && <p role="status">{tr(locale, "正在恢复已有会话，服务连接恢复后会自动进入。", "Restoring your session. You will enter automatically when the service reconnects.")}</p>}
         {branding.maintenanceEnabled && (
           <aside>{branding.maintenanceMessage}</aside>
         )}

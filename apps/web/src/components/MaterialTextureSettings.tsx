@@ -1,3 +1,4 @@
+import { sourceTexturePatch } from "../viewer/sourceMaterialReset";
 import type { SceneMaterialState } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 
@@ -93,7 +94,7 @@ export function MaterialTextureSettings({ locale, disabled, material, onChange }
         />
       )}
       <UvAnimationSettings locale={locale} disabled={disabled} material={material} onChange={onChange} />
-      <button disabled={disabled} onClick={() => onChange(clearTexturePatch())}>
+      <button disabled={disabled} onClick={() => onChange(sourceTexturePatch())}>
         {tr(locale, "恢复模型原始贴图", "Restore original textures")}
       </button>
     </>
@@ -181,26 +182,4 @@ function TextureRange({ locale, label, value, min, max, step, disabled, format, 
       <output>{format ? format(value) : value.toFixed(2)}</output>
     </label>
   );
-}
-
-function clearTexturePatch(): SceneMaterialState {
-  return {
-    baseColorMapUrl: "",
-    baseColorMapName: "",
-    normalMapUrl: "",
-    normalMapName: "",
-    emissiveMapUrl: "",
-    emissiveMapName: "",
-    ambientOcclusionMapUrl: "",
-    ambientOcclusionMapName: "",
-    roughnessMapUrl: "",
-    roughnessMapName: "",
-    metalnessMapUrl: "",
-    metalnessMapName: "",
-    textureRepeatX: 1,
-    textureRepeatY: 1,
-    textureOffsetX: 0,
-    textureOffsetY: 0,
-    textureRotation: 0,
-  };
 }

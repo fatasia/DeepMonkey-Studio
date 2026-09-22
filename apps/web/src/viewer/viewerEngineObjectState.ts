@@ -1,3 +1,5 @@
+import { materialStateForSlot, restoreMaterialSourceColors } from "./materialSlots";
+import { materialIor, prepareMaterialIor } from "./materialIor";
 import * as THREE from "three";
 import type { SceneLayerState, SceneMaterialScreenState, SceneMaterialShaderEffect, SceneMaterialState } from "@bim-studio/contracts";
 import { buildComponentRecords, type ComponentRecord } from "./analysis";
@@ -121,6 +123,7 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
         ...(material.normalScale?.isVector2 ? { normalScale: material.normalScale.x } : {}),
         ...(typeof material.roughness === "number" ? { roughness: material.roughness } : {}),
         ...(typeof material.metalness === "number" ? { metalness: material.metalness } : {}),
+        ...(materialIor(material) === undefined ? {} : { ior: materialIor(material)! }),
         ...(material.emissive?.isColor
           ? { emissive: `#${material.emissive.getHexString()}`, emissiveIntensity: material.emissiveIntensity }
           : {}),
@@ -131,11 +134,19 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
     return result;
   }
 
-  protected applyMaterialState(object: THREE.Object3D, state: SceneMaterialState): void {
+  protected applyMaterialState(object: THREE.Object3D, patch: SceneMaterialState): void {
     detachSharedPrimitiveMaterials(object, this.collisionOriginalMaterials);
+    prepareMaterialIor(object, patch, this.collisionOriginalMaterials, (source, target) => {
+      const textures = this.originalMaterialTextures.get(source);
+      if (textures) this.originalMaterialTextures.set(target, textures);
+      const screen = this.modelScreenOriginals.get(source);
+      if (screen) this.modelScreenOriginals.set(target, screen);
+    });
     object.traverse((child) => {
       for (const source of this.materialsForMesh(child as THREE.Mesh)) {
         const material = source as THREE.MeshStandardMaterial;
+        const state = materialStateForSlot(patch, material);
+        if (!state) continue;
         applyMaterialColorAdjustment(material, state);
         this.applyMaterialTexture(material, "map", "studioBaseColorMapUrl", state.baseColorMapUrl, state, true);
         this.applyMaterialTexture(material, "normalMap", "studioNormalMapUrl", state.normalMapUrl, state, false);
@@ -147,8 +158,10 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
           material.userData.studioUvAnimation = structuredClone(state.uvAnimation);
           material.userData.studioUvAnimationElapsed = 0;
         }
+        if (state.screen?.enabled === false) this.applyModelScreen(material, state.screen);
         applyMaterialNumbers(material, state);
-        this.applyModelScreen(material, state.screen);
+        restoreMaterialSourceColors(material, state);
+        if (state.screen?.enabled !== false) this.applyModelScreen(material, state.screen);
         material.needsUpdate = true;
       }
     });
@@ -192,7 +205,9 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
     state: SceneMaterialState,
     srgb: boolean,
   ): void {
-    if (url === undefined && !hasMaterialTextureTransformPatch(state)) return;
+    const transformChanged = hasMaterialTextureTransformPatch(state);
+    const animate = state.uvAnimation?.enabled === true;
+    if (url === undefined && !transformChanged && !animate) return;
     if (
       url === undefined
       && isModelScreenTexture(material[slot])
@@ -210,7 +225,7 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
     writeMaterialTextureTransform(material.userData, transform);
     if (!requestedUrl) {
       delete material.userData[metadataKey];
-      if (url !== undefined) {
+      if (url !== undefined && !animate) {
         this.disposeManagedMaterialTexture(material[slot]);
         material[slot] = originals[slot] ?? null;
         material.needsUpdate = true;
@@ -221,7 +236,7 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
       const current = material[slot];
       const texture = current?.userData.studioManagedTextureTransform ? current : source.clone();
       texture.userData.studioManagedTextureTransform = true;
-      applyMaterialTextureTransform(texture, transform);
+      if (transformChanged) applyMaterialTextureTransform(texture, transform);
       material[slot] = texture;
       material.needsUpdate = true;
       return;

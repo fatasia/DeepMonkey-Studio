@@ -33,6 +33,9 @@ export interface SceneClientPackageOptions {
   progress?: (message: string) => void;
   prepared?: PreparedSceneClientPackage;
   publication?: PublishedSceneRecord;
+  branding?: import("../components/clientPackageBranding").ClientPackageBranding;
+  /** 桌面构建器消费同一份已校验 ZIP；缺省仍按历史行为直接下载。 */
+  archiveConsumer?: (archive: Blob, fileName: string, counts: Omit<SceneClientPackageResult, "fileName" | "target">) => Promise<SceneClientPackageResult>;
 }
 
 export interface SceneClientPackageResult {
@@ -98,6 +101,14 @@ function freezePackageOptions(options: SceneClientPackageOptions): SceneClientPa
 
 async function preparePackageDelivery(options: SceneClientPackageOptions, purpose: "delivery" | "diagnostic") {
   options = freezePackageOptions(options);
+  if (options.target === "three-webview" && options.scene.postProcessing?.enabled
+    && options.scene.postProcessing.screenSpaceReflection) {
+    throw new Error("Three WebView 尚未实现 SSR 深度/法线/HDR 合成消费；请关闭 SSR 或使用 Studio Deep WebGPU。");
+  }
+  if (options.target === "three-webview" && options.scene.lighting?.lights?.some(light => light.enabled
+    && light.type === "spot" && light.castShadow && (light.shadowSoftness ?? 0) > 0)) {
+    throw new Error("Three WebView 尚未实现作者 PCSS 阴影柔化；请将阴影柔化设为 0 或使用 Studio Deep WebGPU。");
+  }
   const signal = options.signal ?? new AbortController().signal;
   const progress = options.progress ?? (() => undefined);
   signal.throwIfAborted();
@@ -172,7 +183,7 @@ async function preparePackageDelivery(options: SceneClientPackageOptions, purpos
       return new Uint8Array(bytes);
     }, signal) : undefined;
   signal.throwIfAborted();
-  if (native && purpose === "delivery") assertScenePublicationDeliverable(native.report);
+  if (native && purpose === "delivery") assertScenePublicationDeliverable(native.report, { allowNativeDegraded: true });
   validateSceneClientArchivePaths([...files.map(file => file.path), ...(native?.files.map(file => file.path) ?? []),
     "scene.json", "applications.json", "project.json", "runtime.json", "README.txt"]);
   const preparationSignal = signal;
@@ -180,7 +191,7 @@ async function preparePackageDelivery(options: SceneClientPackageOptions, purpos
     const signal = delivery.signal ? AbortSignal.any([preparationSignal, delivery.signal]) : preparationSignal;
     const progress = delivery.progress ?? options.progress ?? (() => undefined);
     signal.throwIfAborted();
-    if (native && purpose === "delivery") assertScenePublicationDeliverable(native.report);
+    if (native && purpose === "delivery") assertScenePublicationDeliverable(native.report, { allowNativeDegraded: true });
     const payloads: SceneClientArchiveFile[] = [
       ...files, ...(native?.files ?? []),
       { path: "scene.json", content: JSON.stringify(rewrite(delivery.scene), null, 2) },
@@ -210,23 +221,36 @@ async function preparePackageDelivery(options: SceneClientPackageOptions, purpos
     // ZIP 时间与构建时间不参与内容身份；每个实际负载文件均按 UTF-8/原始字节校验。
     const contentHash = runtimeContentSha256({ metadata: JSON.parse(JSON.stringify(metadata)),
       files: fileEntries.map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 })) });
-    const manifest = { ...metadata, generatedAt: new Date().toISOString(), files: fileEntries,
+    const generatedAt = stableArchiveTimestamp(delivery);
+    const manifest = { ...metadata, generatedAt: generatedAt.toISOString(), files: fileEntries,
       contentHash: { algorithm: "sha256", value: contentHash } };
     const { default: JSZip } = await import("jszip");
     signal.throwIfAborted();
     const zip = new JSZip();
-    for (const file of payloads) zip.file(file.path, file.content);
-    zip.file("manifest.json", JSON.stringify(manifest, null, 2));
+    for (const file of payloads) zip.file(file.path, file.content, { date: generatedAt, createFolders: false });
+    zip.file("manifest.json", JSON.stringify(manifest, null, 2), { date: generatedAt, createFolders: false });
     progress("正在生成客户端包");
     signal.throwIfAborted();
     const blob = await zip.generateAsync({ type: "blob", compression: "STORE" });
     signal.throwIfAborted();
     const fileName = `${safeName(options.scene.name)}.${options.target}${purpose === "diagnostic" ? ".diagnostic" : ""}.bimscene.zip`;
+    const counts = { assetCount: files.length, applicationCount: applications.length, connectionCount: runtime.connections.length };
+    if (delivery.archiveConsumer) return delivery.archiveConsumer(blob, fileName, counts);
     downloadBlob(blob, fileName);
     progress(`${purpose === "diagnostic" ? "诊断包" : "客户端包"}已下载：${fileName}`);
-    return { fileName, target: options.target, assetCount: files.length, applicationCount: applications.length, connectionCount: runtime.connections.length };
+    return { fileName, target: options.target, ...counts };
   };
   return { deliver, expectation };
+}
+
+function stableArchiveTimestamp(options: SceneClientPackageOptions): Date {
+  const timestamp = [options.publication?.publishedAt, options.scene.publishedAt,
+    options.scene.updatedAt, options.scene.createdAt].map(value => value ? Date.parse(value) : NaN)
+    .find(Number.isFinite) ?? NaN;
+  // ZIP DOS timestamps start at 1980 and have two-second precision. Normalizing here keeps
+  // identical published inputs byte-identical so the desktop builder cache can be reused.
+  const value = Number.isFinite(timestamp) ? Math.max(timestamp, Date.UTC(1980, 0, 1)) : Date.UTC(1980, 0, 1);
+  return new Date(Math.floor(value / 2_000) * 2_000);
 }
 
 function packageIdentity(options: SceneClientPackageOptions): string {
@@ -242,7 +266,7 @@ function transportHash(value: unknown): string { return runtimeContentSha256(JSO
 function safeName(value: string): string { return value.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-").replace(/\s+/g, " ").trim().slice(0, 96) || "scene"; }
 function readme(target: Exclude<SceneClientPackageTarget, "none">, renderer: SceneClientPackageOptions["renderer"], reconfigureCount: number): string {
   const entry = target === "three-webview" ? "apps/desktop bundle:scene-viewer" : "packages/deep-engine-native 的原生 wgpu 启动器";
-  return [`Deep Monkey Studio 场景客户端包`, `交付目标：${target}`, `渲染策略：${renderer}`, `入口：${entry}`,
+  return [`DeepMonkey Studio 场景客户端包`, `交付目标：${target}`, `渲染策略：${renderer}`, `入口：${entry}`,
     target === "deep-native"
       ? '解压后可在包目录校验运行包：deep-engine-native.exe --headless-package "native/runtime-package.json"。窗口加载使用 --package；实际支持范围见能力报告。'
       : "二维、三维和场景绑定已写入包内。",

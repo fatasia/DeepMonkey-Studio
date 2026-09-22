@@ -23,9 +23,14 @@ describe("Studio Deep author environment projection", () => {
     expect(result.view.exposure).toBe(1.3);
     expect(result.view.lights).toEqual({ directional: [], points: [], spots: [] });
     expect(result.renderer.features).toMatchObject({ environment: false, fog: false, groundGrid: false,
-      ambientOcclusion: false, temporalAa: false, bloom: false, vignette: false });
+      ambientOcclusion: false, screenSpaceReflection: false, temporalAa: false, bloom: false, vignette: false });
     input.floorColor.setRGB(1, 0, 0);
     expect(result.view.floor).not.toEqual(input.floorColor.toArray());
+  });
+  it("allocates SSR only for active authored Deep WebGPU state", () => {
+    const input = fixture(); input.postProcessing = { ...post, enabled: true, screenSpaceReflection: true,
+      ssrSteps: 64, ssrThickness: 0.02, ssrMaxDistance: 3 };
+    expect(projectStudioDeepEnvironment(input).renderer.features?.screenSpaceReflection).toBe(true);
   });
   it("preserves authored intensity while reporting absent decoded IBL", () => {
     const input = fixture();
@@ -82,6 +87,7 @@ describe("Studio Deep resolved world light projection", () => {
     const scene = new THREE.Scene(), sun = new THREE.DirectionalLight();
     const point = new THREE.PointLight("#ffffff", 1, 20);
     const spot = new THREE.SpotLight("#ffffff", 1, 20);
+    spot.userData.authorLightId = "spot-1"; spot.userData.shadowSoftness = 0.5;
     sun.castShadow = point.castShadow = spot.castShadow = true;
     spot.position.y = 4;
     scene.add(sun, sun.target, point, spot, spot.target); scene.updateMatrixWorld(true);
@@ -91,9 +97,9 @@ describe("Studio Deep resolved world light projection", () => {
     expect(disabled.lights.points).toHaveLength(1);
     expect(disabled.lights.spots).toHaveLength(1);
     expect([sun.castShadow, point.castShadow, spot.castShadow]).toEqual([true, true, true]);
-    expect(projectStudioDeepLights(scene, 0xffffffff, true).issues.map(issue => issue.code)).toEqual([
-      "local-shadow-policy", "local-shadow-policy",
-    ]);
+    const enabled = projectStudioDeepLights(scene, 0xffffffff, true);
+    expect(enabled.issues.map(issue => issue.code)).toEqual(["point-shadow-policy"]);
+    expect(enabled.lights.spots?.[0]?.shadow).toEqual({ key: "author:spot-1", softness: 0.5 });
   });
   it("preserves a non-shadowing authored sun without default shadow diagnostics", () => {
     const scene = new THREE.Scene(), sun = new THREE.DirectionalLight("#ffffff", 2);
@@ -139,28 +145,32 @@ describe("Studio Deep resolved world light projection", () => {
     const before = point.matrixWorld.toArray();
     const result = projectStudioDeepLights(scene);
     expect(result.lights.points).toEqual([{ positionWorld: [5, 4, 6], range: 20,
-      color: point.color.toArray(), intensity: 3.4 }]);
+      color: point.color.toArray(), intensity: 3.4, decay: 2 }]);
     expect(result.issues).toEqual([]);
     expect(point.matrixWorld.toArray()).toEqual(before);
   });
   it("preserves spot direction and penumbra while reporting shadow parameter gaps", () => {
     const scene = new THREE.Scene(), spot = new THREE.SpotLight("#eeeeee", 2, 10, Math.PI / 4, 0.5, 2);
     spot.position.set(0, 4, 0); spot.target.position.set(0, 0, 0); spot.castShadow = true;
+    spot.userData.authorLightId = "spot-author"; spot.userData.shadowSoftness = 0.75;
     scene.add(spot, spot.target); scene.updateMatrixWorld(true);
     const result = projectStudioDeepLights(scene);
     expect(result.lights.spots?.[0]).toMatchObject({ directionWorld: [0, -1, 0],
       innerConeCos: Math.cos(Math.PI / 8), outerConeCos: Math.cos(Math.PI / 4) });
-    expect(result.issues.map(issue => issue.code)).toEqual([
-      "local-shadow-policy",
-    ]);
+    expect(result.lights.spots?.[0]?.shadow).toEqual({ key: "author:spot-author", softness: 0.75 });
+    expect(result.issues).toEqual([]);
   });
   it("does not invent ranges for infinite lights or include hidden ancestors", () => {
     const scene = new THREE.Scene(), group = new THREE.Group();
     group.visible = false; group.add(new THREE.AmbientLight()); scene.add(group);
     scene.add(new THREE.PointLight("#ffffff", 1, 0)); scene.updateMatrixWorld(true);
     const result = projectStudioDeepLights(scene);
-    expect(result.lights.points).toEqual([]);
-    expect(result.issues.map(issue => issue.code)).toEqual(["unsupported-light-attenuation"]);
+    // 衰减合同升级：distance=0 表示无截止距离（range 原样透传 0，不虚构范围值），
+    // decay 走 Three 默认 2；隐藏祖先经 traverseVisible 排除，ambient 键因此缺省。
+    expect(result.lights.points).toEqual([{ positionWorld: [0, 0, 0], range: 0,
+      color: [1, 1, 1], intensity: 1, decay: 2 }]);
+    expect(result.lights.ambient).toBeUndefined();
+    expect(result.issues).toEqual([]);
   });
   it("rejects unsupported and invalid lights without dropping diagnostics", () => {
     const scene = new THREE.Scene(), point = new THREE.PointLight();

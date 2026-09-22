@@ -95,6 +95,8 @@
 .scene-resource-card small { color:var(--text-muted);font-size:8px; }
 .scene-resource-card > button { display:grid;width:24px;height:24px;padding:0;place-items:center;color:var(--on-accent);border:0;border-radius:5px;background:var(--accent);cursor:pointer; }
 .scene-resource-card > button:disabled { opacity:.45;cursor:default; }
+.scene-resource-drop-target { display:flex;align-items:center;gap:8px;min-height:36px;padding:8px;color:var(--text-muted);border:1px dashed var(--line-strong);border-radius:7px;background:var(--surface-1);font-size:12px; }
+.scene-resource-card[draggable="true"],.scene-resource-row[draggable="true"] { cursor:grab; }
 .scene-resource-pager { display:flex;align-items:center;justify-content:center;gap:9px;color:var(--text-muted);font-size:9px; }
 .scene-resource-pager button { width:26px;height:24px;padding:0;color:var(--text);border:1px solid var(--line);border-radius:5px;background:var(--surface-2);cursor:pointer; }
 .scene-resource-pager button:disabled { opacity:.3; }
@@ -106,6 +108,9 @@
 .scene-resource-scopes { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px; }
 .scene-resource-scopes button { min-width:0;height:28px;padding:0 5px;overflow:hidden;color:var(--text-muted);border:1px solid var(--line);border-radius:5px;background:var(--surface-2);font-size:9px;text-overflow:ellipsis;white-space:nowrap;cursor:pointer; }
 .scene-resource-scopes button:hover,.scene-resource-scopes button.active { color:var(--text-strong);border-color:color-mix(in srgb,var(--accent) 52%,var(--line));background:var(--accent-soft); }
+.scene-resource-category { display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:8px;color:var(--text-muted);font-size:10px; }
+.scene-resource-category select { min-width:0;height:30px;padding:0 8px;color:var(--text);border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);font:inherit;cursor:pointer; }
+.scene-resource-category select:hover,.scene-resource-category select:focus-visible { border-color:color-mix(in srgb,var(--accent) 52%,var(--line));outline:none; }
 .scene-resource-list { display: flex; flex-direction: column; gap: 5px; }
 .scene-resource-row { align-items: center; min-height: 72px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; display: grid; gap: 10px; grid-template-columns: 64px minmax(0,1fr) auto; padding: 7px; }
 .scene-resource-row > img, .scene-resource-row > .scene-resource-icon, .scene-resource-row > .scene-prefab-thumbnail { background: var(--surface-3); border: 1px solid var(--line-strong); border-radius: 6px; display: grid; height: 56px; object-fit: cover; place-items: center; width: 64px; }
@@ -123,6 +128,9 @@
 .prefab-thumbnail-image { opacity:0;transition:opacity .18s ease; }
 .prefab-thumbnail-image.is-ready { opacity:1; }
 @media (prefers-reduced-motion: reduce) { .prefab-thumbnail-image { transition:none; } }
+@media (max-width:800px) {
+  .scene-resource-floating { top:64px;left:12px;width:calc(100vw - 24px);max-height:calc(100vh - 76px); }
+}
 .scene-resource-use-hint { max-width:54px;color:#688087;font-size:8px;line-height:1.25;text-align:right; }
 .scene-resource-more { width:100%;height:30px;color:#9fc3ca;border:1px dashed #35505a;border-radius:6px;background:#141e22;font-size:9px;cursor:pointer; }
 .scene-resource-more:hover { color:#d5edf1;border-color:#3a7784;background:#17292f; }
@@ -143,3 +151,7 @@
 .component-result-list strong { color: #cbd1d5; font-size: 9px; }
 .component-result-list small { margin-top: 3px; color: #657078; font-size: 8px; }
 .component-no-result { display: block; padding: 13px; color: #68737a; text-align: center; font-size: 9px; }
+
+.scene-resource-prefab-match { display:flex;align-items:center;gap:7px;width:calc(100% - 16px);margin:4px 8px;padding:8px;text-align:left;color:var(--accent);background:var(--accent-soft);border:1px solid var(--line);border-radius:var(--radius-sm);cursor:pointer; }
+.scene-resource-prefab-match span { min-width:0;line-height:1.5; }
+.scene-resource-prefab-match svg { flex-shrink:0; }

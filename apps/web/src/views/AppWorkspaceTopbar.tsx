@@ -57,6 +57,7 @@ export function AppWorkspaceTopbar({ bindings, tools }: { bindings: AppViewBindi
   const { switchProjectById, openProjectDialog, changeRendererBackend, navigate } = actions;
   const flushBehaviorDraft = () => {
     const result = flushPendingBehaviorDraft(state.pendingBehaviorDraftRef, upsertBehaviorScript);
+    if (result === "write-rejected") return false;
     if (result === "name-required") {
       state.setError(tr(locale, "请先填写脚本名称，再离开脚本编辑器", "Enter a script name before leaving the script editor"));
       return false;

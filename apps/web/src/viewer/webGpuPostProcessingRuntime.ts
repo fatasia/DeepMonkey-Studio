@@ -38,6 +38,8 @@ interface RuntimeControls {
   saturation?: NumericUniform;
   brightness?: NumericUniform;
   contrast?: NumericUniform;
+  temperature?: NumericUniform;
+  tint?: NumericUniform;
 }
 
 /**
@@ -191,11 +193,20 @@ export class WebGpuPostProcessingRuntime implements ViewerPostProcessingRuntime 
       controls.saturation = saturationValue;
       controls.brightness = brightnessValue;
       controls.contrast = contrastValue;
+      const temperatureValue = uniform(state.temperature ?? 0);
+      const tintValue = uniform(state.tint ?? 0);
+      controls.temperature = temperatureValue;
+      controls.tint = tintValue;
       const adjusted = adjustSaturation(adjustHue(result.rgb, hueValue), saturationValue)
         .add(brightnessValue)
         .sub(0.5)
         .mul(contrastValue)
         .add(0.5)
+        .mul(vec3(
+          temperatureValue.mul(0.14).add(tintValue.mul(0.07)).add(1),
+          tintValue.mul(-0.12).add(1),
+          temperatureValue.mul(-0.14).add(tintValue.mul(0.07)).add(1),
+        ))
         .max(0);
       result = vec4(adjusted, result.a);
     }
@@ -244,6 +255,8 @@ export class WebGpuPostProcessingRuntime implements ViewerPostProcessingRuntime 
     if (this.#controls.saturation) this.#controls.saturation.value = (state.saturation ?? 0) + 1;
     if (this.#controls.brightness) this.#controls.brightness.value = state.brightness ?? 0;
     if (this.#controls.contrast) this.#controls.contrast.value = (state.contrast ?? 0) + 1;
+    if (this.#controls.temperature) this.#controls.temperature.value = state.temperature ?? 0;
+    if (this.#controls.tint) this.#controls.tint.value = state.tint ?? 0;
   }
 }
 

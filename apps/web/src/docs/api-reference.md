@@ -119,8 +119,8 @@ curl https://worker.example.com/v1/sessions \
 
 本项目只借鉴公开的交互和 API 组织方式，不复制第三方品牌视觉或代码：
 
-- [ThingJS 摄像机与场景制作文档](https://docs.thingjs.com/)：对象观察、相机飞行和园区级场景组织。
-- [帆软 FVS 画布编辑及自适应](https://help.fanruan.com/)：画布、分页和等比自适应的说明方式。
+- 本产品相机与场景工作流说明：对象观察、相机飞行和园区级场景组织。
+- 本产品画布与自适应说明：画布、分页和等比自适应的实现边界。
 - [Three.js WebGLRenderer](https://threejs.org/docs/pages/WebGLRenderer.html)：`HTMLCanvasElement | OffscreenCanvas`、裁剪面和渲染器诊断边界。
 - [Tripo Developers API](https://developers.tripo3d.ai/)：V3 生成任务 API；Tripo 官方已公告 V2 将于 **2026 年 10 月 1 日** 退休。
 - [腾讯混元 API 概览](https://cloud.tencent.com/document/product/1729/101848)：腾讯云 API 版本、请求和错误码入口。

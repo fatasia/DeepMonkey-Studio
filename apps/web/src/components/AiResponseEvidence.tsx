@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, ChevronDown, FileClock, ShieldCheck } from "lucide-react";
 import type { AssistantReliabilitySummary } from "../ai/assistantReliability";
 import { translate as tr, type AppLocale } from "../i18n";
+import { AiContextDeliveryEvidence } from "./AiContextDeliveryEvidence";
 
 interface AiResponseEvidenceProps {
   locale: AppLocale;
@@ -67,7 +68,8 @@ export function AiResponseEvidence({ locale, reliability }: AiResponseEvidencePr
             </div>
           )}
         </dl>
-        {reliability.sourceLabels.length > 0 && (
+        {reliability.contextDelivery && <AiContextDeliveryEvidence receipt={reliability.contextDelivery} labels={reliability.contextSourceLabels} locale={locale} />}
+        {!reliability.contextDelivery && reliability.sourceLabels.length > 0 && (
           <p>
             <ShieldCheck size={12} />
             {t("本次涉及：", "Sources in scope: ")}

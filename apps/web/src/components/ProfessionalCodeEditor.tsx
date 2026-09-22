@@ -157,7 +157,7 @@ export function ProfessionalCodeEditor({
         startColumn: issue.column,
         endLineNumber: issue.line,
         endColumn: Math.max(issue.column + 1, issue.endColumn),
-        source: "Deep Monkey Studio",
+        source: "DeepMonkey Studio",
       })),
     );
     return () => api.editor.setModelMarkers(model, "bim-studio-scene-analysis", []);
@@ -186,7 +186,7 @@ export function ProfessionalCodeEditor({
     if (onOpenDocs)
       editor.addAction({
         id: "bim-studio.open-script-docs",
-        label: tr(locale, "Deep Monkey Studio：打开场景 API 文档", "Deep Monkey Studio: Open scene API docs"),
+        label: tr(locale, "DeepMonkey Studio：打开场景 API 文档", "DeepMonkey Studio: Open scene API docs"),
         keybindings: [api.KeyMod.CtrlCmd | api.KeyCode.F1],
         run: () => actionsRef.current.onOpenDocs?.(),
       });
@@ -200,7 +200,7 @@ export function ProfessionalCodeEditor({
         startColumn: issue.column,
         endLineNumber: issue.line,
         endColumn: Math.max(issue.column + 1, issue.endColumn),
-        source: "Deep Monkey Studio",
+        source: "DeepMonkey Studio",
       })),
     );
     editor.focus();
@@ -309,7 +309,7 @@ export function ProfessionalCodeEditor({
           theme={theme}
           value={value}
           onChange={(next) => onChange(next ?? "")}
-          onValidate={(markers) => setLanguageDiagnostics(markers.filter((marker) => marker.severity >= monacoApi.MarkerSeverity.Warning && marker.source !== "Deep Monkey Studio").map((marker) => ({ code: `language-${marker.code}`, severity: marker.severity >= monacoApi.MarkerSeverity.Error ? "error" : "warning", message: marker.message, line: marker.startLineNumber, column: marker.startColumn, endColumn: marker.endColumn })))}
+          onValidate={(markers) => setLanguageDiagnostics(markers.filter((marker) => marker.severity >= monacoApi.MarkerSeverity.Warning && marker.source !== "DeepMonkey Studio").map((marker) => ({ code: `language-${marker.code}`, severity: marker.severity >= monacoApi.MarkerSeverity.Error ? "error" : "warning", message: marker.message, line: marker.startLineNumber, column: marker.startColumn, endColumn: marker.endColumn })))}
           loading={<div className="professional-code-loading">{tr(locale, "正在加载代码智能服务…", "Loading code intelligence…")}</div>}
           options={{
             automaticLayout: true,

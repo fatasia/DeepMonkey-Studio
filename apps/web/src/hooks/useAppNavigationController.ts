@@ -3,6 +3,7 @@ import type { ProjectRecord, SceneSnapshot } from "@bim-studio/contracts";
 import { api } from "../api";
 import { createUpsertScriptModuleCommand } from "@bim-studio/studio-core";
 import { flushPendingBehaviorDraft } from "../behavior/behaviorDraftNavigation";
+import { lockedBehaviorScriptChange } from "../behavior/behaviorScriptLockPolicy";
 import { docsPath } from "../docs/docsRoute";
 import { REVIT_VERSION_STORAGE_KEY } from "../appDefaults";
 import { readRoute, routeHistoryState, routePath, type AppRoute } from "../appRoute";
@@ -105,8 +106,14 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
     if (route.view !== "docs") {
       try {
         const result = flushPendingBehaviorDraft(state.pendingBehaviorDraftRef, draft => {
+          const document = state.applicationSessionRef.current.store.getState().document;
+          if (document && lockedBehaviorScriptChange(document, [...document.scripts.filter(script => script.id !== draft.id), draft], engine, activeScene?.id)) {
+            setError("挂载对象已锁定，草稿已保留，请先解锁");
+            return false;
+          }
           state.applicationSessionRef.current.store.dispatch(createUpsertScriptModuleCommand(draft));
         });
+        if (result === "write-rejected") return;
         if (result === "name-required") {
           setError("请先填写脚本名称，再离开脚本编辑器");
           return;

@@ -420,6 +420,7 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
   if (!currentUser) return null;
   const flushBehaviorDraft = () => {
     const result = flushPendingBehaviorDraft(state.pendingBehaviorDraftRef, upsertBehaviorScript);
+    if (result === "write-rejected") return false;
     if (result === "name-required") {
       state.setError(tr(locale, "请先填写脚本名称，再离开脚本编辑器", "Enter a script name before leaving the script editor"));
       return false;
@@ -652,7 +653,10 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
             </div>
           }
         >
-          <SystemCenter locale={locale} currentUser={currentUser} projects={projects} initialTab={systemInitialTab} onBack={() => navigate({ view: "manager" })} />
+          <SystemCenter locale={locale} currentUser={currentUser} projects={projects}
+            initialTab={route.systemTab ?? systemInitialTab}
+            onTabChange={systemTab => navigate({ view: "system", systemTab }, true)}
+            onBack={() => navigate({ view: "manager" })} />
         </Suspense>
       )}
       {route.view === "branding" && currentUser.role === "admin" && (

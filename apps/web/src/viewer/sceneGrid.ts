@@ -1,7 +1,9 @@
 import * as THREE from "three";
 
 const GRID_WORLD_SIZE = 200;
-const GRID_TEXTURE_SIZE = 1024;
+// 双端固定网格上限为 2048；每米至少 10 texels，近景不再放大低分辨率线条。
+// 2000 / 200m = 恰好 10 texels/m，避免 2048 带来的非整数线距抖动。
+const GRID_TEXTURE_SIZE = 2000;
 const MINOR_STEP = 1;
 const MAJOR_STEP = 10;
 
@@ -43,8 +45,11 @@ export function createSceneGrid(): THREE.Mesh {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.magFilter = THREE.LinearFilter;
+  // 放大时禁止线性插值把单 texel 网格扩散成灰色宽边；远景仍由三线性 mipmap 抗摩尔纹。
+  texture.magFilter = THREE.NearestFilter;
   texture.generateMipmaps = true;
+  // Oblique CAD views need anisotropic sampling to keep one-texel minor lines distinct.
+  // Three clamps this request to the adapter limit, so low-end devices keep a valid path.
   texture.anisotropy = 8;
 
   const material = new THREE.MeshBasicMaterial({
@@ -82,7 +87,7 @@ function drawGridLines(context: CanvasRenderingContext2D, layout: SceneGridLayou
 }
 
 function worldToPixel(coordinate: number, layout: SceneGridLayout): number {
-  return ((coordinate + layout.worldSize / 2) / layout.worldSize) * layout.textureSize;
+  return ((coordinate + layout.worldSize / 2) / layout.worldSize) * layout.textureSize + 0.5;
 }
 
 function drawLine(

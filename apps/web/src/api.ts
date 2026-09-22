@@ -59,6 +59,7 @@ import { createIndustrialAgentApi } from "./apiClients/industrialAgentApi.js";
 import { createSemanticModelApi } from "./apiClients/semanticModelApi.js";
 import { isRecoverableStudioRead } from "./apiClients/studioReadRecovery.js";
 import { createAuthenticationRecheck } from "./apiClients/authenticationRecheck.js";
+import { createAssistantSessionApi } from "./apiClients/assistantSessionApi.js";
 import { createAiApi } from "./apiClients/aiApi.js";
 import type {
   ScriptGitCommit,
@@ -140,6 +141,7 @@ export function getAuthToken() {
 export function setAuthToken(token?: string, remember = true) {
   if (token) runtimeHost.setAccessToken(token, remember);
   else runtimeHost.clearAccessToken();
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("bim-auth-changed"));
 }
 
 export function getMcpEndpoint(): string {
@@ -353,6 +355,8 @@ export const api = {
   pushScriptGit: (projectId: string) =>
     request<ScriptGitPushResult>(`/api/projects/${encodeURIComponent(projectId)}/script-git/push`, { method: "POST" }),
   getBranding: () => request<SystemBrandingSettings>("/api/public/branding"),
+  getPackagingCache: () => request<{ entries: number; bytes: number; skippedEntries: number }>("/api/admin/cache/three-scene-viewer"),
+  clearPackagingCache: () => request<{ removedEntries: number; removedBytes: number; skippedEntries: number }>("/api/admin/cache/three-scene-viewer", { method: "DELETE" }),
   saveBranding: (settings: Partial<SystemBrandingSettings>) =>
     request<SystemBrandingSettings>("/api/admin/branding", {
       method: "PATCH",
@@ -686,6 +690,7 @@ export const api = {
   ...createIndustrialAgentApi(request),
   ...createSemanticModelApi(request),
   ...createModeling3dApi(request),
+  ...createAssistantSessionApi(request),
   ...createAiApi(request, (url, init) => serverClient.open(url, init)),
 };
 

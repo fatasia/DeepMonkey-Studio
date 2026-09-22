@@ -14,6 +14,24 @@ function publication(): PublishedSceneRecord {
 }
 
 describe("scene artifact record", () => {
+  it("separates standalone EXE identity from archive delivery for both clients", () => {
+    const archive = createSceneArtifactRecord(publication(), { ...options, target: "deep-native" });
+    const executable = createSceneArtifactRecord(publication(), { ...options, target: "deep-native", format: "executable" });
+    expect(executable.key).not.toBe(archive.key); expect(recoverSceneArtifactRecord(executable).format).toBe("executable");
+    const webview = createSceneArtifactRecord(publication(), { ...options, format: "executable" });
+    expect(webview.format).toBe("executable"); expect(webview.key).not.toBe(createSceneArtifactRecord(publication(), options).key);
+  });
+  it("freezes branding for exact retry and separates custom identities without changing the default key", () => {
+    const source = publication(), branding = { applicationName: "客户园区" };
+    const original = createSceneArtifactRecord(source, options);
+    const branded = createSceneArtifactRecord(source, { ...options, branding });
+    branding.applicationName = "changed";
+    expect(branded.branding?.applicationName).toBe("客户园区");
+    expect(branded.key).not.toBe(original.key);
+    expect(createSceneArtifactRecord(source, { ...options, branding: {} }).key).toBe(original.key);
+    expect(recoverSceneArtifactRecord(branded).branding).toEqual({ applicationName: "客户园区" });
+    expect(() => recoverSceneArtifactRecord({ ...branded, branding: { applicationName: "tampered" } })).toThrow();
+  });
   it("stores only stable publication metadata and the existing snapshot fingerprint", () => {
     const source = publication();
     const record = createSceneArtifactRecord(source, options);

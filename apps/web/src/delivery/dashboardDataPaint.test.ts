@@ -44,7 +44,8 @@ it("validates paint before requesting pixels and retains runtime layer budgets",
 });
 it("preserves the total node budget when alternating paint needs separate clip layers", async () => {
   const value = fixture(), original = value.input.document.application.pages[0]!.nodes[0]!;
-  const textBoxes = value.textBoxes.map(box => ({ ...box, clip: box.rect }));
+  const textBoxes = value.textBoxes.map(box => ({ ...box,
+    clip: [box.rect[0], box.rect[1], box.rect[2] - 1, box.rect[3]] as const }));
   const backgrounds = textBoxes.map(box => ({ rect: box.rect, color: [0, 0, 0, 1] as const }));
   const paint = textBoxes.flatMap((_, index) => [{ kind: "text" as const, index }, { kind: "background" as const, index }]);
   const data = { ...value.data, layout: { textBoxes, backgrounds, paint } };
@@ -52,4 +53,25 @@ it("preserves the total node budget when alternating paint needs separate clip l
   value.input.document.application.pages[0]!.nodes = authored;
   await expect(compileDashboardRasterContent({ ...value.input, data: Object.fromEntries(authored.map(node => [node.id, data])) }, value.host))
     .rejects.toThrow(/node budget|bounded array/i);
+});
+it("coalesces redundant clips without dropping alternating paint or exceeding the node budget", async () => {
+  const value = fixture(), original = value.input.document.application.pages[0]!.nodes[0]!;
+  const textBoxes = value.textBoxes.map(box => ({ ...box, clip: box.rect }));
+  const backgrounds = textBoxes.map(box => ({ rect: box.rect, color: [0, 0, 0, 1] as const }));
+  const paint = textBoxes.flatMap((_, index) => [{ kind: "text" as const, index }, { kind: "background" as const, index }]);
+  const data = { ...value.data, layout: { textBoxes, backgrounds, paint } };
+  const authored = Array.from({ length: 19 }, (_, index) => ({ ...structuredClone(original), id: `kpi-${index}` }));
+  value.input.document.application.pages[0]!.nodes = authored;
+  const result = await compileDashboardRasterContent({ ...value.input,
+    data: Object.fromEntries(authored.map(node => [node.id, data])) }, value.host);
+  const dashboard = result.package.payloads[result.package.entrypoints.dashboard!] as any;
+  expect(dashboard.pages[0].nodes).toHaveLength(39);
+  expect(result.capabilityReport.contentCompiled).toBe(19);
+  const layers = Object.values(result.package.payloads)
+    .filter((item: any) => item.schema === "deep-engine.deep2d-runtime" && item.quads.length) as any[];
+  expect(layers).toHaveLength(19);
+  for (const layer of layers) {
+    expect(layer.quads.map((quad: any) => quad.zOrder)).toEqual([0, 2, 4]);
+    expect(layer.displayList.commands.map((command: any) => command.zOrder)).toEqual([1, 3, 5]);
+  }
 });

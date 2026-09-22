@@ -19,10 +19,17 @@ export interface DashboardRasterTextStyle {
 export interface DashboardRasterNodeAssets {
   readonly fonts?: readonly string[];
   readonly image?: string;
+  readonly video?: string;
   /** Computed inherited Web styles, frozen by the host; authored values take precedence. */
   readonly textStyle?: DashboardRasterTextStyle;
 }
 export interface DashboardRasterCompileInput {
+  readonly tableViews?: readonly { readonly nodeId: string; readonly families: readonly (readonly (
+    Omit<import("./dashboardTableInteractionPlan").DashboardTableOrderPlan, "pages"> & { readonly pages: readonly DashboardFrozenData[] }
+  )[])[] }[];
+  readonly filterData?: readonly { readonly value: string; readonly data: Readonly<Record<string, DashboardFrozenData>> }[];
+  /** Physical text pixels per logical unit; frozen into compiler identity. */
+  readonly textRasterScale?: 1 | 2;
   readonly document: DashboardDocument;
   readonly packageId: string;
   readonly packageVersion: string;
@@ -83,11 +90,16 @@ export interface DashboardRasterResult {
   readonly clipped?: boolean;
 }
 export interface DashboardRasterHost {
+  traceCompilation?(value: unknown): void;
+  prewarmText?(requests: readonly DashboardTextRasterRequest[]): Promise<void>;
   rasterizeText(request: DashboardTextRasterRequest): Promise<DashboardRasterResult>;
   decodeImage(request: DashboardImageRasterRequest): Promise<DashboardRasterResult>;
   decodePageBackground?(request: DashboardPageImageRasterRequest): Promise<DashboardRasterResult>;
 }
 export interface DashboardRasterEvidence {
+  readonly tableView?: { readonly nodeId: string; readonly family: number; readonly order: number; readonly page: number };
+  readonly filterOptionIndex?: number;
+  readonly textRasterScale?: 1 | 2;
   readonly composition?: { readonly id: "dashboard-button-group-v1"; readonly sourcePixelSha256: string;
     readonly outputPixelSha256: string; readonly recipeSha256: string; readonly sourceRgbaBase64: string;
     readonly sourceWidth: number; readonly sourceHeight: number;

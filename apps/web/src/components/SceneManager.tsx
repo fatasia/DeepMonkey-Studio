@@ -208,8 +208,12 @@ function useSceneManagerController({
     publicationPendingRef.current = true;
     setBusy(true);
     const target = publishTarget;
+    // 本地 EXE 不是云会话。旧场景可能保存过 cloud 模式；选择客户端交付时
+    // 必须以本地 WebGL 运行时提交，不能静默沿用旧模式去请求 GPU Worker。
+    const submittedMode = clientTarget === "deep-native" ? "webgpu-preferred"
+      : clientTarget === "three-webview" && publishMode === "cloud" ? "webgl" : publishMode;
     try {
-      const published = await onPublish(target, publishMode, publishPerformance, toolbarVisible, clientTarget);
+      const published = await onPublish(target, submittedMode, publishPerformance, toolbarVisible, clientTarget);
       if (published) setPublishTarget(undefined);
     } finally {
       publicationPendingRef.current = false;

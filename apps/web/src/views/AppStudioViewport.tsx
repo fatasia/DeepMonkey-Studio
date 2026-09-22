@@ -69,6 +69,8 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
     defaultCameraViewId,
     deleteKeyframe,
     engine,
+    engineeringAnalysis,
+    changeEngineeringAnalysis,
     environmentMapRef,
     environmentOpen,
     explosionFactor,
@@ -371,6 +373,9 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           locale={locale}
           sceneName={sceneName}
           models={engine.listModels()}
+          value={engineeringAnalysis}
+          onChange={changeEngineeringAnalysis}
+          onFocusObject={(id) => engine.focusModel(id)}
           onClose={() => setEngineeringOpen(false)}
         />
       )}

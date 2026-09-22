@@ -9,6 +9,14 @@
   margin-bottom: 12px;
 }
 
+.ai-assistant-panel:not(.agent-active) { grid-template-rows: auto auto minmax(0, 1fr) auto auto; }
+.ai-assistant-panel.agent-active { grid-template-rows: auto auto minmax(0, 1fr); }
+
+.ai-context-disclosure > summary > span:first-child { flex: 1; }
+.ai-context-disclosure > summary strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-context-disclosure > summary > span:last-child { flex-shrink: 0; }
+.ai-message-scope { display: block; overflow: hidden; color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+
 .ai-context-disclosure > summary,
 .ai-response-evidence > summary {
   display: flex;

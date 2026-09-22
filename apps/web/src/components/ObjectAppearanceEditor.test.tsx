@@ -42,6 +42,8 @@ describe("ObjectAppearanceEditor", () => {
     );
 
     expect(html).toContain("工程塑料");
+    expect(html).toContain("粗糙度 数值");
+    expect(html).toContain("金属度 数值");
     expect(html).toContain("基础色贴图");
     expect(html).toContain("贴图变换");
     expect(html).toContain("环境遮蔽贴图");

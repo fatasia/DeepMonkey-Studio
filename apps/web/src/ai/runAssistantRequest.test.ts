@@ -19,6 +19,13 @@ function setup() {
 }
 
 describe("assistant request lifecycle", () => {
+  it("passes session overrides to the stream without changing shared settings", async () => {
+    const { client, input } = setup();
+    input.sessionOptions = { model: "selected", reasoningEffort: "deep" };
+    client.streamAssistant.mockResolvedValue({ text: "ok", model: "selected" });
+    await runAssistantRequest(input);
+    expect(client.streamAssistant.mock.calls[0]?.[4]).toMatchObject(input.sessionOptions);
+  });
   it("does not prepare or request anything when already cancelled", async () => {
     const { controller, client, input } = setup();
     input.prepareBim = vi.fn();

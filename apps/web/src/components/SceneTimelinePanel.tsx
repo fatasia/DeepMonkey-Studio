@@ -13,6 +13,7 @@ import type { ViewerEngine } from "../viewer/ViewerEngine";
 import { useTimelineCameraRecording } from "./useTimelineCameraRecording";
 import { useTimelineModelRecording } from "./useTimelineModelRecording";
 import { removeTimelineTrack, type TimelineTrackId } from "./timelineTrackEditing";
+import { SceneAnimationStateMachineEditor } from "./SceneAnimationStateMachineEditor";
 
 export type SceneDirectorWorkspace = "timeline" | "shots" | "navigation";
 
@@ -355,6 +356,7 @@ function SceneAnimationTimeline(props: Props) {
 
       {settingsOpen && (
         <div className="timeline-settings">
+          <SceneAnimationStateMachineEditor {...(props.engine ? { engine: props.engine } : {})} locale={props.locale} animation={props.animation} onChange={props.onChange} />
           <label>
             <span>{tr(props.locale, "总时长", "Duration")}</span>
             <input

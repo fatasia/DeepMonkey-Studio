@@ -1,4 +1,4 @@
-import { AlignCenterHorizontal, AlignCenterVertical, Box, Braces, ChevronRight, Layers3, Lock, MousePointer2, Space, Trash2 } from "lucide-react";
+import { Box, Braces, ChevronRight, Layers3, Lock, MousePointer2, Trash2 } from "lucide-react";
 import { explosionModeName } from "../appPresentation";
 import { publishLocalSceneData } from "../sceneDataBridge";
 import { translate as tr } from "../i18n";
@@ -11,6 +11,7 @@ import { ObjectAppearanceEditor } from "../components/ObjectAppearanceEditor";
 import { SceneAnnotationInspector } from "../components/SceneAnnotationInspector";
 import { SceneDataBindingEditor } from "../components/SceneDataBindingEditor";
 import { SceneInspectorInfo } from "../components/SceneInspectorInfo";
+import { SceneMultiSelectionInspector } from "../components/SceneMultiSelectionInspector";
 import { SceneResultLists } from "../components/SceneResultLists";
 import { SceneSpaceInspector } from "../components/SceneSpaceInspector";
 import { SpatialAudioEditor } from "../components/SpatialAudioEditor";
@@ -39,7 +40,6 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
     inspectorTab,
     interactionTargetOptions,
     locale,
-    layoutSelectedObjects,
     measurements,
     message,
     openDataCenter,
@@ -48,11 +48,11 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
     project,
     removeObjectInteractions,
     rendererBackend,
+    recordSceneEdit,
     sceneCoordinates,
     sceneDataBindingRuntime,
     sceneDataBindings,
     sceneInteractions,
-    sceneOrganizationObjects,
     sceneOrganizationSelection,
     sceneStatistics,
     scenes,
@@ -112,39 +112,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
           onDelete={() => deleteAnnotation(selectedAnnotation.id)}
         />
       ) : sceneOrganizationSelection.size > 1 ? (
-        <div className="inspector-content inspector-multi-selection">
-          <div className="inspector-selection-context">
-            <span className="inspector-selection-icon"><Layers3 size={16} /></span>
-            <span>
-              <strong>{tr(locale, `已选择 ${sceneOrganizationSelection.size} 个对象`, `${sceneOrganizationSelection.size} objects selected`)}</strong>
-              <small>{tr(locale, "场景目录多选", "Scene outliner selection")}</small>
-            </span>
-          </div>
-          <div className="inspector-selection-list">
-            {sceneOrganizationObjects
-              .filter((item) => sceneOrganizationSelection.has(item.id))
-              .slice(0, 8)
-              .map((item) => <span title={item.name} key={item.id}>{item.name}</span>)}
-            {sceneOrganizationSelection.size > 8 && <small>+{sceneOrganizationSelection.size - 8}</small>}
-          </div>
-          <section className="inspector-multi-layout" aria-label={tr(locale, "多选布局", "Multi-selection layout")}>
-            <header><span><AlignCenterHorizontal size={14} /><strong>{tr(locale, "布局", "Layout")}</strong></span><small>{tr(locale, "以主选对象对齐", "Align to primary")}</small></header>
-            <div>
-              {(["x", "y", "z"] as const).map((axis) => <button key={axis} type="button" onClick={() => layoutSelectedObjects("align", axis)}><AlignCenterVertical size={12} />{axis.toUpperCase()} {tr(locale, "对齐", "Align")}</button>)}
-            </div>
-            <div>
-              {(["x", "z"] as const).map((axis) => <button key={axis} type="button" disabled={sceneOrganizationSelection.size < 3} onClick={() => layoutSelectedObjects("distribute", axis)}><Space size={12} />{axis.toUpperCase()} {tr(locale, "等距", "Distribute")}</button>)}
-            </div>
-            <small>{tr(locale, "等距保留两端位置；锁定对象不会移动。", "Distribution preserves both ends; locked objects stay in place.")}</small>
-          </section>
-          <div className="inspector-context-note">
-            <Layers3 size={18} />
-            <span>
-              <strong>{tr(locale, "批量操作已集中在左侧目录", "Batch actions stay in the outliner")}</strong>
-              <small>{tr(locale, "可直接编组、显示、隐藏、锁定或右键管理；选择单个对象后在此编辑详细属性。", "Group, show, hide, lock or use the context menu there; select one object to edit detailed properties here.")}</small>
-            </span>
-          </div>
-        </div>
+        <SceneMultiSelectionInspector controller={controller} />
       ) : selectedSpace ? (
         <SceneSpaceInspector
           locale={locale}
@@ -198,6 +166,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                 <input
                   disabled={selectionLocked}
                   value={selectionName}
+                  data-layer-rename-scope="scene" data-layer-rename-id={JSON.stringify([selected.id, selectedLayerId && selectedLayerId !== "root" ? selectedLayerId : null])}
                   onChange={(event) => {
                     engine?.renameSelection(event.target.value);
                     setRevision((value) => value + 1);
@@ -234,6 +203,24 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                     {selectionLocked ? tr(locale, "已锁定", "Locked") : tr(locale, "未锁定", "Unlocked")}
                   </button>
                 </label>
+                {(!selectedLayerId || selectedLayerId === "root") && selected.kind === "model" && engine && (
+                  <label className="field">
+                    <span>{tr(locale, "碰撞检测", "Collision")}</span>
+                    <button
+                      className={`toggle ${engine.isCollisionEnabled(selected.id) ? "on" : ""}`}
+                      disabled={selectionLocked}
+                      onClick={() => {
+                        const enabled = !engine.isCollisionEnabled(selected.id);
+                        engine.setCollisionEnabled(selected.id, enabled);
+                        recordSceneEdit(enabled ? "开启对象碰撞检测" : "关闭对象碰撞检测");
+                        setRevision((value) => value + 1);
+                      }}
+                    >
+                      <i />
+                      {engine.isCollisionEnabled(selected.id) ? tr(locale, "已开启", "Enabled") : tr(locale, "已关闭", "Disabled")}
+                    </button>
+                  </label>
+                )}
               </div>
               <label className="field compact-opacity">
                 <span>{tr(locale, "透明度", "Opacity")}</span>
@@ -253,7 +240,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
           )}
           {inspectorTab === "overview" && engine && (
             <RobotSceneInspector key={`${activeScene?.id}:${selected.id}`} locale={locale} engine={engine} modelId={selected.id}
-              disabled={selectionLocked || bindings.state.busy} onChange={() => setRevision(value => value + 1)} />
+                  disabled={selectionLocked || bindings.state.busy} onChange={() => setRevision(value => value + 1)} />
           )}
           {inspectorTab === "data" && project && activeScene && (
             <SceneDataBindingEditor
@@ -286,6 +273,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
               <summary>{tr(locale, "外观、特效与动画", "Appearance, effects & animation")}</summary>
               <div className="inspector-collapsible-body">
                 <ObjectAppearanceEditor
+                  materialSlots={engine?.getSelectionMaterialSlots() ?? []}
                   locale={locale}
                   rendererBackend={rendererBackend}
                   disabled={selectionLocked}
@@ -334,7 +322,8 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                   <ModelAnimationControl locale={locale} engine={engine} modelId={selected.id} disabled={selectionLocked} onChange={() => setRevision((value) => value + 1)} />
                 )}
                 {engine && (
-                  <IndustrialPrefabInspector locale={locale} engine={engine} modelId={selected.id} disabled={selectionLocked} onChange={() => setRevision((value) => value + 1)} />
+                  <IndustrialPrefabInspector locale={locale} engine={engine} modelId={selected.id} disabled={selectionLocked}
+                    onChange={() => setRevision((value) => value + 1)} onCommit={recordSceneEdit} />
                 )}
                 {engine?.hasSkeleton(selected.id) && (
                   <ModelRigControl locale={locale} engine={engine} modelId={selected.id} disabled={selectionLocked} onChange={() => setRevision((value) => value + 1)} />
@@ -406,7 +395,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                       <small>{tr(locale, "为当前对象挂载生命周期与业务事件", "Attach lifecycle logic and business events")}</small>
                     </span>
                   </span>
-                  <button onClick={() => setSceneBehaviorOpen(true)}>
+                  <button disabled={selectionLocked} onClick={() => setSceneBehaviorOpen(true)}>
                     {activeApplication?.scripts.filter((script) => script.target?.kind !== "scene" && script.target?.id === selectedBehaviorTarget?.id).length ?? 0}{" "}
                     {tr(locale, "个行为", "behaviors")}
                     <ChevronRight size={13} />
@@ -414,6 +403,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                 </section>
                 <InteractionEditor
                   locale={locale}
+                  disabled={selectionLocked}
                   target={{ kind: "object", modelId: selected.id, ...(selectedLayerId && selectedLayerId !== "root" ? { layerId: selectedLayerId } : {}) }}
                   targetName={selectionName || selected.name}
                   interactions={sceneInteractions}

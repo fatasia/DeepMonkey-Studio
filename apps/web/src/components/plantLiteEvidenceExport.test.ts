@@ -17,7 +17,7 @@ describe("Plant Lite engineering evidence export", () => {
 
     expect(evidence).toMatchObject({
       schema: "bim-studio.plant-lite-engineering-evidence.v1",
-      generatedBy: "Deep Monkey Studio",
+      generatedBy: "DeepMonkey Studio",
       exportedAt: "2026-09-03T00:30:00.000Z",
       lineage: { baselineRelationship: "comparison-baseline", baseline: { id: "baseline-01" } },
       run: {

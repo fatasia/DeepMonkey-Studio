@@ -13,5 +13,6 @@
 .view-orientation-cube .cube-actions button:focus-visible { outline:none; border-color:color-mix(in srgb, var(--accent) 58%, transparent); box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent); }
 @media (prefers-reduced-motion: reduce) { .view-orientation-cube .cube-inner, .view-orientation-cube .cube-actions button { transition:none; } }
 @container studio-scene (max-width:1000px) {
-  .app-shell .scene-tool-dock { left:16px; right:auto; width:max-content !important; max-width:calc(100% - 168px); transform:none; flex-wrap:wrap !important; justify-content:flex-start; }
+  /* 快捷按钮向下避让，保留工具坞相对画布居中的布局。 */
+  .view-orientation-cube .cube-actions { top:calc(100% + 24px); bottom:auto; }
 }

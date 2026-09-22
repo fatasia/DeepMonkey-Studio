@@ -85,9 +85,9 @@ it("does not read or export after cancellation", async () => {
   expect(mocks.bytes).not.toHaveBeenCalled();
 });
 
-it("rejects an uncompiled weather field after all source evidence is rebound", async () => {
+it("preserves an active uncompiled weather field as a Native degraded capability", async () => {
   const { scene, record, compiled } = await fixture();
-  scene.weather = "sunny";
+  scene.weather = "cloudy";
   const native = record.nativeCompiled!, evidence = native.compilationEvidence;
   evidence.sourceSemanticHash = runtimeContentSha256(sceneCompilationSource(scene));
   const runtime = compiled.runtimePackage;
@@ -100,5 +100,7 @@ it("rejects an uncompiled weather field after all source evidence is rebound", a
   Object.assign(native.compatibilityReport, { fixtureId, contentFingerprint: evidence.sourceSemanticHash,
     compileGraphHash: evidence.compileGraphHash, evidence: native.compatibilityReport.evidence.map(proof => ({ ...proof,
       fixtureId, sourceSemanticHash: evidence.sourceSemanticHash, compileGraphHash: evidence.compileGraphHash })) });
-  await expect(prepareFrozenNativeScenePayload(scene, record, new AbortController().signal)).rejects.toThrow();
+  const result = await prepareFrozenNativeScenePayload(scene, record, new AbortController().signal);
+  expect(result.report.status).toBe("confirmation-required");
+  expect(result.manifest.degradedCapabilities).toContain("weather");
 });

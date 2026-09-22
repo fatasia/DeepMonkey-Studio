@@ -1,3 +1,4 @@
+import { buildParametricFence, fenceShape } from "../parametricFenceGeometry";
 import * as THREE from "three";
 import type { ModelKit, PrefabThumbnailVariant } from "./prefabThumbnailKit";
 import { ballAt, boneMaterial, boxAt, cylAt, grilleAt, stackLightAt, subgroupAt, tubeAt } from "./prefabThumbnailKit";
@@ -38,23 +39,11 @@ export function buildAccessControlModel(kit: ModelKit, variant: PrefabThumbnailV
 
 /** 参数化围栏:立柱 + 网片(金属网格 / 玻璃 / 实板 / 电子围栏)。 */
 export function buildFenceModel(kit: ModelKit, variant: PrefabThumbnailVariant): THREE.Group {
-  const g = kit.group;
-  for (const x of [-0.8, 0, 0.8]) {
-    boxAt(g, kit.metal, 0.05, 1.1, 0.05, x, 0.55, 0);
-    boxAt(g, kit.dark, 0.1, 0.03, 0.1, x, 0.015, 0);
-  }
-  boxAt(g, kit.metal, 1.68, 0.04, 0.04, 0, 1.12, 0); // 顶横梁
-  const panel = variant.panel ?? "mesh";
-  if (panel === "glass") {
-    boxAt(g, kit.glass, 1.56, 0.95, 0.015, 0, 0.58, 0);
-  } else if (panel === "solid") {
-    boxAt(g, kit.bodyDeep, 1.56, 0.95, 0.02, 0, 0.58, 0);
-  } else {
-    for (let i = 0; i < 13; i++) boxAt(g, kit.metal, 0.016, 1.0, 0.016, -0.72 + i * 0.12, 0.56, 0); // 竖网条
-    for (const y of [0.22, 0.56, 0.9]) boxAt(g, kit.metal, 1.6, 0.016, 0.02, 0, y, 0); // 横筋
-  }
-  if (panel === "electronic") boxAt(g, kit.lampWarn, 1.6, 0.02, 0.02, 0, 1.06, 0.02);
-  return g;
+  const fence = buildParametricFence(fenceShape({ panel: variant.panel, heightM: variant.height }), {
+    metal: kit.metal, dark: kit.dark, panel: variant.panel === "glass" ? kit.glass : kit.bodyDeep, warning: kit.lampWarn,
+  });
+  kit.group.add(fence);
+  return kit.group;
 }
 
 /** 仓储:托盘货架 / 重力流利架 / 穿梭车立体库 / 垂直提升货柜 / 料仓 / 立体库货柜。 */

@@ -17,7 +17,7 @@
 .dashboard-template-grid article small { color: var(--text-muted); font-size: 11px; letter-spacing: normal; }
 /* 面板为三行 grid(header/筛选/内容);内容分支统一收进滚动容器,保持行模板不被打乱 */
 .dashboard-template-body { min-height: 0; overflow: auto; padding-bottom: 14px; }
-/* 主题套件入口横排:套件色渐变卡 + 量化徽章(对标帆软 visuals 套件层的信息架构,配色原创) */
+/* 主题套件入口横排:套件色渐变卡 + 量化徽章(对标外部参考 visuals 套件层的信息架构,配色原创) */
 .dashboard-template-suites { display: flex; gap: 10px; overflow-x: auto; padding: 12px 16px 10px; scrollbar-width: thin; }
 .dashboard-template-suite {
   flex: 0 0 208px;
@@ -47,7 +47,7 @@
 .dashboard-template-suite-active button:hover { color: var(--text-strong); border-color: var(--line-strong); }
 /* 搜索 + 行业分组 + 类型三控件同行(覆盖 dashboard-workspace.css 的两列模板) */
 .dashboard-template-filters { grid-template-columns: minmax(0, 1fr) 168px 140px; }
-/* 推荐分区:山海鲸式横排滚动行;flex 行高由最高卡片决定,预览定高避免塌陷。 */
+/* 推荐分区:外部参考式横排滚动行;flex 行高由最高卡片决定,预览定高避免塌陷。 */
 .dashboard-template-section { min-width: 0; padding-inline: 16px; }
 .dashboard-template-section + .dashboard-template-section { margin-top: 18px; }
 .dashboard-template-section-head { display: flex; align-items: baseline; gap: 10px; padding: 2px 2px 10px; }

@@ -328,4 +328,14 @@ describe("clearance-height rule and report export (P5 slice 3)", () => {
     expect(report.findings[1]?.status).toBe("skipped");
     expect(report.passed).toBe(true);
   });
+
+  it("neutralizes spreadsheet formulas in authored report fields", () => {
+    const report = runSpatialValidation([boxAt("=object", "storage", 1)], [
+      { kind: "clearance-height", id: "+rule", label: "@limit", targets: "storage", maxHeightMetres: 4 },
+    ]);
+    const csv = reportToCsv(report);
+    expect(csv).toContain("'+rule,'@limit");
+    expect(csv).toContain("'=object");
+    expect(csv).toContain(",2.5,");
+  });
 });

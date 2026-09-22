@@ -1,0 +1,6 @@
+.ai-assistant-panel .ai-message-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.ai-assistant-panel .ai-message-actions > button { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 4px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text-muted); font-size: 12px; cursor: pointer; }
+.ai-assistant-panel .ai-message-actions > button:hover { color: var(--text-strong); border-color: var(--accent); }
+.ai-assistant-panel .ai-message-actions > button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ai-assistant-panel .ai-message-actions > button:disabled { cursor: wait; opacity: .65; }
+.ai-assistant-panel .ai-message-actions > span { color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }

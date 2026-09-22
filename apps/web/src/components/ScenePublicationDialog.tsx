@@ -5,6 +5,7 @@ import { translate as tr, type AppLocale } from "../i18n";
 import { useDialogEscape } from "../hooks/useGlobalDialogEscape";
 import { usePublicationDialogFocus } from "../hooks/usePublicationDialogFocus";
 import type { SceneClientPackageTarget } from "../delivery/sceneClientPackage";
+import type { ClientPackageBranding } from "./clientPackageBranding";
 import type { useScenePublicationArtifacts } from "../hooks/useScenePublicationArtifacts";
 import { ScenePublicationArtifacts } from "./ScenePublicationArtifacts";
 import { ScenePublicationFailure } from "./ScenePublicationFailure";
@@ -31,7 +32,7 @@ interface ScenePublicationDialogProps {
   onPerformanceChange: (performance: PublicationPerformance) => void;
   onCancel: () => void;
   onClientTargetChange?: (target: SceneClientPackageTarget) => void;
-  onPublish: (toolbarVisible: boolean, clientTarget: SceneClientPackageTarget) => void | Promise<void>;
+  onPublish: (toolbarVisible: boolean, clientTarget: SceneClientPackageTarget, branding?: ClientPackageBranding) => void | Promise<void>;
 }
 
 /** 管理中心与编辑器共用同一发布决策 UI，避免渲染策略和保真文案分叉。 */
@@ -149,12 +150,12 @@ export function ScenePublicationDialog(props: ScenePublicationDialogProps) {
               onClick={() => setToolbarVisible(false)}
             />
           </div>
-          <div className="publication-section-heading compact" title={tr(locale, "发布后下载可审计的客户端包，包含二维、三维、资源和脱敏数据运行时", "Download an auditable client package after publishing, including 2D, 3D, assets and redacted data runtime")}>
-            <div><strong>{tr(locale, "客户端打包", "Client package")}</strong></div>
+          <div className="publication-section-heading compact" title={tr(locale, "仅发布网页版本，或同时生成可下载的客户端。", "Publish a web version, or also build a downloadable client.")}>
+            <div><strong>{tr(locale, "发布方式", "Publication method")}</strong></div>
           </div>
           <div className="publication-mode-options">
             <ModeButton icon={<Download size={16} />} active={(props.clientTarget ?? "none") === "none"} disabled={Boolean(busy)} title={tr(locale, "仅发布", "Publish only")} description={tr(locale, "只创建网页发布版本，不下载客户端包。", "Create the web publication without downloading a client package.")} onClick={() => props.onClientTargetChange?.("none")} />
-            <ModeButton icon={<Globe2 size={16} />} active={props.clientTarget === "three-webview"} disabled={Boolean(busy)} title="Three WebView" description={tr(locale, "打包原有 Three.js/WebView 客户端，发布后下载 .bimscene 包。", "Package the existing Three.js/WebView client as a .bimscene archive.")} onClick={() => props.onClientTargetChange?.("three-webview")} />
+            <ModeButton icon={<Globe2 size={16} />} active={props.clientTarget === "three-webview"} disabled={Boolean(busy)} title="Three WebView" description={tr(locale, "构建独立 Windows 客户端，发布后直接下载 EXE。", "Build a standalone Windows client and download the EXE after publishing.")} onClick={() => props.onClientTargetChange?.("three-webview")} />
             <ModeButton icon={<Cpu size={16} />} active={props.clientTarget === "deep-native"} disabled={Boolean(busy)} title="Deep Native" description={tr(locale, "服务端编译并验证 Native 窗口，通过后下载 Windows 原生运行包。", "Compile and verify a Native window on the server, then download the Windows runtime package.")} onClick={() => props.onClientTargetChange?.("deep-native")} />
           </div>
           {props.mode === "cloud" && props.cloudConfigured !== true && props.cloudHint && (

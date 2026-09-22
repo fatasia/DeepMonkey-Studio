@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "r
 import type { DataEvent, NotificationSeverity } from "@bim-studio/contracts";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
+import { createAlertIngestApi } from "../apiClients/alertIngestApi";
 import { DeviceSignalView } from "../components/DeviceSignalView";
 import "./AlertIngestPanel.css";
 
@@ -58,12 +59,13 @@ export function AlertIngestPanel({ projectId, request, locale }: {
   const [states, setStates] = useState<AlertStateSnapshot[]>([]);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | undefined>();
+  const api = useMemo(() => createAlertIngestApi(request), [request]);
 
   const refresh = useCallback(async () => {
     try {
       const [rules, states] = await Promise.all([
-        request<AlertRuleSummary[]>(`/api/projects/${projectId}/alert-rules`),
-        request<AlertStateSnapshot[]>(`/api/projects/${projectId}/alert-state`),
+        api.fetchRules(projectId),
+        api.fetchState(projectId),
       ]);
       setRules(rules);
       setStates(states);
@@ -71,33 +73,33 @@ export function AlertIngestPanel({ projectId, request, locale }: {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     }
-  }, [projectId, request]);
+  }, [api, projectId]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
   const acknowledge = useCallback(async (ruleId: string) => {
     setPending(ruleId);
     try {
-      await request(`/api/projects/${projectId}/alert-rules/${ruleId}/acknowledge`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      await api.acknowledge(projectId, ruleId);
       await refresh();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setPending(null);
     }
-  }, [projectId, request, refresh]);
+  }, [api, projectId, refresh]);
 
   const removeRule = useCallback(async (ruleId: string) => {
     setPending(ruleId);
     try {
-      await request(`/api/projects/${projectId}/alert-rules/${ruleId}`, { method: "DELETE" });
+      await api.removeRule(projectId, ruleId);
       await refresh();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setPending(null);
     }
-  }, [projectId, request, refresh]);
+  }, [api, projectId, refresh]);
 
   const statesByRule = useMemo(() => new Map(states.map((state) => [state.ruleId, state])), [states]);
   const activeCount = states.filter((state) => state.status === "active").length;

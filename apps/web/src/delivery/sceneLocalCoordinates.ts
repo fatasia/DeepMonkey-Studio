@@ -60,6 +60,7 @@ export function localizeSceneCoordinates(input: SceneSnapshot, origin?: SceneCoo
   };
   camera(scene.camera, "camera");
   scene.cameraViews?.forEach((view, index) => camera(view.camera, `cameraViews[${index}].camera`));
+  scene.animation?.camera.forEach((frameValue, index) => camera(frameValue.camera, `animation.camera[${index}].camera`));
   return { scene, frame };
 }
 

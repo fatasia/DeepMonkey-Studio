@@ -20,6 +20,9 @@ export function AiContextDisclosure({ locale, mode, context, sources, loading }:
   const target = assistantWorkspaceTarget(context);
   const readiness = assistantContextReadiness(sources);
   const t = (zh: string, en: string) => tr(locale, zh, en);
+  const scope = [target.scene?.name ?? target.scene?.id, target.script?.name ?? target.script?.id,
+    target.selected?.name ?? target.selected?.id].filter(Boolean).join(" · ")
+    || target.project?.name || target.project?.id || t("全平台", "Platform");
   const targetItems = [
     target.project?.name ? { icon: Database, label: t("项目", "Project"), value: target.project.name } : undefined,
     target.scene?.name ? { icon: Layers3, label: t("场景", "Scene"), value: target.scene.name } : undefined,
@@ -43,7 +46,7 @@ export function AiContextDisclosure({ locale, mode, context, sources, loading }:
       <summary>
         <span>
           <Database size={13} />
-          <strong>{t("本次读取范围", "Context used for this request")}</strong>
+          <strong title={`${t("本次读取范围", "Context used for this request")} · ${scope}`}>{scope}</strong>
         </span>
         <span className={loading ? "loading" : readiness.unavailable > 0 ? "partial" : "ready"}>
           {loading

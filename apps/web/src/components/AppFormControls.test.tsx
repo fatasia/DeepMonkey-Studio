@@ -3,6 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import { DeferredNumberInput, TransformFields } from "./AppFormControls";
 
 describe("inspector numeric controls", () => {
+  it("shows mixed values as an empty draft rather than a fabricated zero", () => {
+    const html = renderToStaticMarkup(<DeferredNumberInput value={undefined} placeholder="混合" onCommit={vi.fn()} />);
+    expect(html).toContain('placeholder="混合"');
+    expect(html).toContain('value=""');
+    expect(html).not.toContain("undefined");
+  });
   it("gives repeated axes a contextual name and explicit unit", () => {
     const html = renderToStaticMarkup(
       <TransformFields title="位置" suffix="m" transform={{ x: 1.125, y: -2.375, z: 0 }} onChange={vi.fn()} />,

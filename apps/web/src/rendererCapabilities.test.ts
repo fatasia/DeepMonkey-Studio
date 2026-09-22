@@ -36,6 +36,30 @@ describe("renderer capability probe", () => {
     expect(requestAdapter).toHaveBeenCalledWith({ powerPreference: "high-performance" });
     expect(loseContext).toHaveBeenCalledOnce();
   });
+
+  it("records experimental RT features and keeps the software fallback explicit", async () => {
+    const loseContext = vi.fn();
+    const requestAdapter = vi.fn().mockResolvedValue({
+      info: { vendor: "Test", device: "RT adapter" },
+      features: new Set(["acceleration-structure", "ray-query"]),
+      limits: {},
+    });
+    vi.stubGlobal("document", {
+      createElement: () => ({
+        getContext: () => ({ getExtension: () => ({ loseContext }) }),
+      }),
+    });
+    vi.stubGlobal("window", { isSecureContext: true });
+    vi.stubGlobal("navigator", { gpu: { requestAdapter } });
+
+    const result = await probeRendererCapabilities();
+
+    expect(result.rayTracing).toMatchObject({
+      tier: "query",
+      features: { "acceleration-structure": true, "ray-query": true, "rt-pipeline": false },
+    });
+    expect(result.rayTracingDecision).toMatchObject({ enabled: true, tier: "query", fallbacks: ["software-shadows"] });
+  });
 });
 
 describe("renderer readiness", () => {

@@ -40,4 +40,17 @@ describe("PublishedViewerToolDock", () => {
     expect(html).not.toContain("移动");
     expect(html).not.toContain("材质");
   });
+
+  it("XR 不可用时不渲染不可操作的按钮", () => {
+    const html = renderToStaticMarkup(<PublishedViewerToolDock
+      locale="zh-CN" open navigationMode="orbit" measureEnabled={false} clippingEnabled={false}
+      explosionActive={false} avatarVisible={false} infoEnabled={false} objectPanelOpen={false}
+      xrUnavailableReason="当前设备不支持 WebXR" onOpenChange={vi.fn()} onFitAll={vi.fn()}
+      onNavigationChange={vi.fn()} onMeasurementToggle={vi.fn()} onClippingToggle={vi.fn()}
+      onExplosionToggle={vi.fn()} onAvatarToggle={vi.fn()} onInfoToggle={vi.fn()}
+      onObjectPanelOpenChange={vi.fn()} onStandardView={vi.fn()} onFullscreen={vi.fn()}
+      onStartXR={vi.fn()} />);
+    expect(html).not.toContain("进入 VR");
+    expect(html).not.toContain("进入 AR");
+  });
 });

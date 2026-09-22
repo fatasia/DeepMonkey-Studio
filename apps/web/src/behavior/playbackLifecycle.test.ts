@@ -158,7 +158,8 @@ describe("playback lifecycle ownership", () => {
     const port = new WorkerPort(); const host = new SceneBehaviorHost(port);
     host.start(module(), "scene"); port.ready();
     port.emit({ type: "behavior.error", message: "boom", stack: "at onStart (industrial-studio-behavior-module.mjs:5:7)" });
-    expect(host.diagnostics().lastErrorLocation).toEqual({ line: 4, column: 7 });
+    // module 包装 prelude 现为 2 行（THREE/studio 解构 + console 绑定），生成第 5 行 = 源码第 3 行。
+    expect(host.diagnostics().lastErrorLocation).toEqual({ line: 3, column: 7 });
   });
   it("automounts only enabled current-page modules and preserves global state on page changes", async () => {
     vi.useFakeTimers();

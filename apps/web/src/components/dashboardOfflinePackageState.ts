@@ -1,7 +1,7 @@
 /** Dashboard 离线运行包对话框的纯状态机与错误映射;视图只消费事件与渲染。 */
 import type { ApplicationDocument } from "@bim-studio/contracts";
 
-export type DashboardCandidateDownloadFormat = "exe" | "zip" | "dmda";
+export type DashboardCandidateDownloadFormat = "exe" | "zip" | "dmda" | "web";
 export type DashboardCandidateErrorCode = "candidate_stale" | "candidate_timeout" | "candidate_concurrent"
   | "candidate_invalid" | "candidate_expired";
 export type DashboardCandidateFailureCode = DashboardCandidateErrorCode | "candidate_rejected";
@@ -34,6 +34,8 @@ export interface DashboardCandidateObjectReport {
   readonly nodeId: string;
   readonly status: "supported" | "degraded" | "blocked";
   readonly deferredFields: readonly string[];
+  /** Optional server/compiler diagnostics; absent on legacy candidate responses. */
+  readonly reasons?: readonly string[];
 }
 
 export interface DashboardCandidatePrepared {

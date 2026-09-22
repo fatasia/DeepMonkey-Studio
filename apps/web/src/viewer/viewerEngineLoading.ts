@@ -309,6 +309,9 @@ export abstract class ViewerEngineLoading extends ViewerEngineRobot {
       if (!model) return;
       this.removePhysicsBody(id);
       this.physicsBodyStates.delete(id);
+      const physicsJoints = (this.physicsState.joints ?? []).filter((joint) => joint.bodyId !== id && joint.connectedBodyId !== id);
+      const { joints: _discardedPhysicsJoints, ...physics } = this.physicsState;
+      this.physicsState = physicsJoints.length ? { ...physics, joints: physicsJoints } : physics;
       this.restoreModelEffectMaterials(id);
       this.modelEffectRuntimes.delete(id);
       this.modelEffects.delete(id);

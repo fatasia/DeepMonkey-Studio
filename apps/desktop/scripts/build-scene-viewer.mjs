@@ -2,6 +2,8 @@ import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promi
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import { resolveSceneViewerBranding, stageSceneViewerIcon } from "./scene-viewer-branding.mjs";
+import { readSceneViewerArchiveSource } from "./scene-viewer-archive-source.mjs";
 import {
   assertSceneViewerViteManifest,
   createSceneViewerPayload,
@@ -10,6 +12,7 @@ import {
   injectDeliveryMarker,
   pruneSceneViewerFrontend,
   resolveSceneViewerBuildPaths,
+  resolveSceneViewerProductName,
   sceneViewerWebBuildEnvironment,
   sha256,
   writeSceneViewerPayload,
@@ -21,9 +24,16 @@ const workspaceDirectory = path.resolve(desktopDirectory, "../..");
 const options = parseArguments(process.argv.slice(2));
 
 async function main() {
-  const source = await fetchPublishedSource(options);
+  const source = options.clientPackage ? await readSceneViewerArchiveSource(options.clientPackage) : await fetchPublishedSource(options);
+  if (source.resources) options.frozenResources = source.resources;
+  if (options.clientPackage) {
+    options.clientBrandingPackage ??= options.clientPackage;
+    if (options.renderer === "published") options.renderer = source.manifest.renderer;
+    if (options.toolbar === "published") options.toolbar = source.manifest.toolbarVisible ? "show" : "hide";
+  }
+  const branding = await resolveSceneViewerBranding(options, source.publication);
   const packageId = options.packageId ?? sha256(`${source.publication.sceneId}:${source.publication.publishedAt}`).slice(0, 16).toLowerCase();
-  const productName = options.productName ?? `${safeProductName(source.publication.name)} 浏览器`;
+  const productName = resolveSceneViewerProductName(branding.applicationName);
   const identifier = options.identifier ?? `com.industrialstudio.sceneviewer.${packageId}`;
   const { buildRoot, frontendDirectory, generatedWebDist, webDist } = resolveSceneViewerBuildPaths(
     desktopDirectory,
@@ -33,6 +43,7 @@ async function main() {
 
   await rm(buildRoot, { recursive: true, force: true });
   await mkdir(buildRoot, { recursive: true });
+  const iconPath = await stageSceneViewerIcon(branding, buildRoot);
   if (!options.webDist) {
     await run(
       "pnpm",
@@ -46,10 +57,24 @@ async function main() {
   const viteManifest = JSON.parse(await readFile(path.join(frontendDirectory, ".vite", "manifest.json"), "utf8"));
   assertSceneViewerViteManifest(viteManifest);
 
-  const payload = await createSceneViewerPayload(source, {
+  // 发布字段未指定时使用产品默认品牌，不继承服务器管理页的全局品牌。
+  const payload = await createSceneViewerPayload({ ...source, branding: options.brandingFile ? source.branding : undefined }, {
     ...options,
     packageId,
   });
+  if (branding.applicationName) {
+    payload.manifest.branding.systemName = productName;
+    payload.manifest.branding.browserTitle = productName;
+  }
+  if (branding.iconIco) {
+    const digest = sha256(branding.iconIco);
+    const icon = { originalUrl: "branding/icon.ico", localUrl: `/delivery/assets/${digest.slice(0, 16).toLowerCase()}-client-icon.ico`,
+      sha256: digest, bytes: branding.iconIco.byteLength };
+    payload.downloaded.push({ ...icon, content: branding.iconIco });
+    payload.manifest.assets.push(icon);
+    payload.manifest.branding.iconUrl = icon.localUrl;
+    payload.manifest.branding.logoUrl = icon.localUrl;
+  }
   const pruning = await pruneSceneViewerFrontend(frontendDirectory, payload.manifest, viteManifest);
   await writeFile(path.join(frontendDirectory, ".vite", "manifest.json"), `${JSON.stringify(viteManifest, null, 2)}\n`, "utf8");
   const frontendBytesAfterPruning = await directoryBytes(frontendDirectory);
@@ -60,6 +85,7 @@ async function main() {
   const configPath = path.join(desktopDirectory, "src-tauri", "scene-viewer.generated.conf.json");
   const overlay = createTauriOverlay({
     productName,
+    iconPath,
     identifier,
     version: options.version ?? "0.1.0",
     frontendDist: `../.scene-viewer-build/${packageId}/frontend`,
@@ -68,6 +94,7 @@ async function main() {
   await writeFile(path.join(buildRoot, "build-evidence.json"), `${JSON.stringify({
     packageId,
     productName,
+    iconSha256: branding.iconIco ? sha256(branding.iconIco) : null,
     identifier,
     sceneId: source.publication.sceneId,
     projectId: source.publication.projectId,
@@ -114,10 +141,6 @@ function parseArguments(args) {
 
 function toCamelCase(value) {
   return value.replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase());
-}
-
-function safeProductName(value) {
-  return value.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim().slice(0, 64) || "场景";
 }
 
 async function directoryBytes(directory) {

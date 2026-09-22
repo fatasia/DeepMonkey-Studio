@@ -6,9 +6,21 @@ import type {
   AiProviderSettings,
   AiTelemetrySummary,
 } from "@bim-studio/contracts";
+import { readAssistantStream } from "./assistantStream";
 
 type ApiRequest = <T>(url: string, init?: RequestInit) => Promise<T>;
 type ApiOpen = (url: string, init?: RequestInit) => Promise<Response>;
+export interface AssistantSessionOptions { model?: string; reasoningEffort?: "minimal" | "standard" | "deep" }
+interface AssistantStreamOptions extends AssistantSessionOptions {
+  projectId?: string;
+  signal?: AbortSignal;
+  onExecution?: (execution: AiAssistantResponse["execution"]) => void;
+}
+export interface AssistantSessionCatalog {
+  defaultModel: string;
+  models: Array<{ id: string; reasoningEfforts: Array<NonNullable<AssistantSessionOptions["reasoningEffort"]>> }>;
+  catalogAvailable: boolean;
+}
 
 export type AssistantMode =
   | "platform"
@@ -26,7 +38,7 @@ async function streamAssistant(
   question: string,
   context: unknown,
   onDelta: (delta: string) => void,
-  options: { projectId?: string; signal?: AbortSignal } = {},
+  options: AssistantStreamOptions = {},
 ): Promise<AiAssistantResponse> {
   const response = await open("/api/ai/assistant/stream", {
     method: "POST",
@@ -34,49 +46,17 @@ async function streamAssistant(
       "content-type": "application/json",
       accept: "text/event-stream",
     },
-    body: JSON.stringify({ mode, question, context, ...(options.projectId ? { projectId: options.projectId } : {}) }),
+    body: JSON.stringify({ mode, question, context, ...(options.projectId ? { projectId: options.projectId } : {}),
+      ...(options.model ? { model: options.model } : {}), ...(options.reasoningEffort ? { reasoningEffort: options.reasoningEffort } : {}) }),
     ...(options.signal ? { signal: options.signal } : {}),
   });
-  if (!response.body) throw new Error("浏览器不支持流式响应");
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done });
-    const events = buffer.split(/\r?\n\r?\n/);
-    buffer = events.pop() ?? "";
-    for (const block of events) {
-      const event = block
-        .split(/\r?\n/)
-        .find((line) => line.startsWith("event:"))
-        ?.slice(6)
-        .trim();
-      const data = block
-        .split(/\r?\n/)
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trimStart())
-        .join("\n");
-      if (!data) continue;
-      const payload = JSON.parse(data) as
-        | { delta?: string; message?: string }
-        | AiAssistantResponse;
-      if (event === "delta" && "delta" in payload && payload.delta)
-        onDelta(payload.delta);
-      if (event === "error")
-        throw new Error(
-          "message" in payload ? payload.message : "AI 流式请求失败",
-        );
-      if (event === "done") return payload as AiAssistantResponse;
-    }
-    if (done) break;
-  }
-  throw new Error("AI 流式响应意外结束");
+  return readAssistantStream(response, onDelta, options.signal, options.onExecution);
 }
 
 /** AI 助手、模型目录与 AI 数据绑定接口保持在独立领域客户端，避免共享 API 门面继续膨胀。 */
 export function createAiApi(request: ApiRequest, open: ApiOpen) {
   return {
+    getAssistantModels: () => request<AssistantSessionCatalog>("/api/ai/assistant/models"),
     getAiSettings: () => request<AiProviderSettings>("/api/admin/ai-settings"),
     saveAiSettings: (settings: Partial<AiProviderSettings>) =>
       request<AiProviderSettings>("/api/admin/ai-settings", {
@@ -109,7 +89,7 @@ export function createAiApi(request: ApiRequest, open: ApiOpen) {
       question: string,
       context: unknown,
       onDelta: (delta: string) => void,
-      options: { projectId?: string; signal?: AbortSignal } = {},
+      options: AssistantStreamOptions = {},
     ) => streamAssistant(open, mode, question, context, onDelta, options),
     listAiDataBindings: (projectId: string) =>
       request<AiDataBinding[]>(`/api/projects/${projectId}/ai-data-bindings`),

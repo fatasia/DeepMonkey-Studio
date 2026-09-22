@@ -34,6 +34,7 @@ export function DashboardInspectorContent() {
             <span>{tr(locale, "组件名称（页面内唯一）", "Component name (unique on page)")}</span>
             <input
               key={`${selectedNode.id}:name:${selectedNode.name ?? ""}`}
+              data-layer-rename-scope="dashboard" data-layer-rename-id={selectedNode.id}
               defaultValue={nodeIdentity(selectedNode)}
               onFocus={() => setNodeNameError("")}
               onBlur={(event) => commitNodeName(event.currentTarget.value)}

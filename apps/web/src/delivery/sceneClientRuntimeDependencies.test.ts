@@ -100,12 +100,16 @@ describe("selectSceneClientRuntimeDependencies", () => {
     expect(select(project, [scene], []).datasets).toEqual([]);
   });
 
-  it("rejects data-capable worker scripts and legacy flows without guessing their code", () => {
+  it("rejects dynamic data lookups and legacy flows without blocking declared lifecycle data", () => {
     const { project, app } = fixture();
     app.scripts = [{ enabled: true, code: "ctx.getData(key)", runtime: "worker-sandbox", permissions: ["data.read"] }] as typeof app.scripts;
     expect(() => select(project, [], [app])).toThrow(/scripts\[0\].*unsupported/);
-    app.scripts[0]!.permissions = ["scene.read"];
+    app.scripts[0]!.code = "function onData(ctx) { ctx.log('sample', ctx.data); }";
     expect(select(project, [], [app]).datasets).toEqual([]);
+    app.scripts[0]!.code = "ctx.getData('declared.key')";
+    expect(select(project, [], [app]).datasets).toEqual([]);
+    app.scripts[0]!.permissions = ["network.connect"];
+    expect(() => select(project, [], [app])).toThrow(/scripts\[0\].*unsupported/);
     app.interactions = [{ enabled: true, legacyScript: { script: { code: "loadData()" } } }] as typeof app.interactions;
     expect(() => select(project, [], [app])).toThrow(/legacyScript.*unsupported/);
   });

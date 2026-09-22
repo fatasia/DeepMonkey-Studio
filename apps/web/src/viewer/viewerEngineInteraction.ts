@@ -28,8 +28,14 @@ import { applyViewerDeviceSignal } from "./viewerDeviceSignals";
 import { annotationLocalAnchor, annotationWorldAnchor } from "./annotationAnchor";
 import { bindPresentationPerformance, getPresentationPerformance, enablePresentationGpuTiming,
   type PresentationPerformanceSource } from "./viewerPresentationPerformance";
-import { clearIndustrialPrefabProxy, ensureIndustrialPrefabProxy } from "./industrialPrefabProxy";
+import { clearIndustrialPrefabProxy, ensureIndustrialPrefabProxy, industrialPrefabProxyGroundOffset } from "./industrialPrefabProxy";
 import { detachSharedGltfResources } from "./sharedGltfAssets";
+import {
+  applyModelAnimationLoopPolicy, controlAnimation, getAnimationPlayback, getModelAnimationPlaybackState,
+  hasAnimation, listAnimationClips, restartModelAnimationActions, setModelAnimationPlaybackState,
+  transitionAnimationClip, updateCompletedModelAnimations,
+  type AnimationControl, type AnimationPlayback, type AnimationContext,
+} from "./viewerEngineAnimation";
 
 /** Interaction 职责层。 */
 export abstract class ViewerEngineInteraction extends ViewerEngineCore {
@@ -208,9 +214,9 @@ export abstract class ViewerEngineInteraction extends ViewerEngineCore {
       }
       return;
     }
-    const next = structuredClone(state);
+    const next = this.snapPrefabPlacementPath(modelId, structuredClone(state));
     this.modelPrefabStates.set(modelId, next);
-    if (ensureIndustrialPrefabProxy(model.object, next.kind)) {
+    if (ensureIndustrialPrefabProxy(model.object, next)) {
       this.rebuildComponentIndex(modelId);
       this.markShadowMapDirty();
     }
@@ -228,6 +234,28 @@ export abstract class ViewerEngineInteraction extends ViewerEngineCore {
     });
     // 运行中或暂停中的快照需要恢复确定位置；空闲对象保持作者摆放位置。
     if (next.operatingState === "running" || next.operatingState === "paused") this.applyIndustrialMotionSample(modelId, sample, route.orientToPath);
+  }
+  private snapPrefabPlacementPath(modelId: string, state: IndustrialPrefabInstanceState): IndustrialPrefabInstanceState {
+    const path = state.placementPath, model = this.models.get(modelId);
+    if (!path?.snapToGround || !model) return state;
+    model.object.updateWorldMatrix(true, true);
+    const targets = this.visibleModelObjects().filter(object => object !== model.object);
+    if (!targets.length) return state;
+    const inverse = model.object.matrixWorld.clone().invert();
+    const proxyOffsetY = industrialPrefabProxyGroundOffset(model.object);
+    const groundRaycaster = new THREE.Raycaster();
+    groundRaycaster.near = 0;
+    groundRaycaster.far = 20_000;
+    const points = path.points.map(point => {
+      const world = new THREE.Vector3(point.position.x, point.position.y + proxyOffsetY, point.position.z)
+        .applyMatrix4(model.object.matrixWorld);
+      groundRaycaster.set(new THREE.Vector3(world.x, world.y + 10_000, world.z), new THREE.Vector3(0, -1, 0));
+      const hit = groundRaycaster.intersectObjects(targets, true)[0];
+      if (!hit) return point;
+      const local = hit.point.clone().applyMatrix4(inverse);
+      return { ...point, position: { x: point.position.x, y: local.y - proxyOffsetY, z: point.position.z } };
+    });
+    return { ...state, placementPath: { ...path, points } };
   }
   executeIndustrialPrefabAction(modelId: string, action: IndustrialPrefabRuntimeAction): void {
     const current = this.modelPrefabStates.get(modelId);
@@ -637,101 +665,26 @@ export abstract class ViewerEngineInteraction extends ViewerEngineCore {
     }
     return false;
   }
-  hasAnimation(id: string): boolean {
-    return this.mixers.has(id);
-  }
-  listAnimationClips(id: string): Array<{ id: string; name: string; duration: number }> {
-    return (this.animationClips.get(id) ?? []).map((clip) => ({ id: clip.name || clip.uuid, name: clip.name || clip.uuid, duration: clip.duration }));
-  }
-  getAnimationPlayback(id: string): { clipId?: string; time: number; duration: number; playing: boolean; autoplay: boolean; loopMode: "once" | "loop" } | undefined {
-    const mixer = this.mixers.get(id);
-    const clips = this.animationClips.get(id) ?? [];
-    if (!mixer || clips.length === 0) return undefined;
-    const selectedId = this.animationClipSelection.get(id);
-    const selected = selectedId ? clips.find((clip) => (clip.name || clip.uuid) === selectedId) : clips[0];
-    const duration = Math.max(0, selected?.duration ?? Math.max(...clips.map((clip) => clip.duration)));
-    const policy = this.getModelAnimationPlaybackState(id);
-    const time = duration > 0 ? (policy.loopMode === "loop" ? mixer.time % duration : Math.min(mixer.time, duration)) : mixer.time;
-    return {
-      ...(selected ? { clipId: selected.name || selected.uuid } : {}),
-      time,
-      duration,
-      playing: this.animationEnabledIds.has(id) && mixer.timeScale !== 0,
-      ...policy,
-    };
-  }
+  hasAnimation(id: string): boolean { return hasAnimation(this as unknown as AnimationContext, id); }
+  listAnimationClips(id: string): Array<{ id: string; name: string; duration: number }> { return listAnimationClips(this as unknown as AnimationContext, id); }
+  getAnimationPlayback(id: string): AnimationPlayback | undefined { return getAnimationPlayback(this as unknown as AnimationContext, id); }
   getModelAnimationPlaybackState(id: string): SceneModelAnimationPlaybackState {
-    return structuredClone(this.modelAnimationPlaybackStates.get(id) ?? { autoplay: true, loopMode: "loop" });
+    return getModelAnimationPlaybackState(this as unknown as AnimationContext, id);
   }
   setModelAnimationPlaybackState(id: string, state: SceneModelAnimationPlaybackState): void {
-    const next: SceneModelAnimationPlaybackState = { autoplay: Boolean(state.autoplay), loopMode: state.loopMode === "once" ? "once" : "loop" };
-    this.modelAnimationPlaybackStates.set(id, next);
-    this.applyModelAnimationLoopPolicy(id);
-    const model = this.models.get(id);
-    if (model) this.onModelChange?.(model);
+    setModelAnimationPlaybackState(this as unknown as AnimationContext, id, state);
   }
   protected applyModelAnimationLoopPolicy(id: string, clips = this.animationClips.get(id) ?? []): void {
-    const mixer = this.mixers.get(id);
-    if (!mixer) return;
-    const policy = this.getModelAnimationPlaybackState(id);
-    for (const clip of clips) {
-      const action = mixer.clipAction(clip);
-      action.clampWhenFinished = policy.loopMode === "once";
-      action.setLoop(policy.loopMode === "once" ? THREE.LoopOnce : THREE.LoopRepeat, policy.loopMode === "once" ? 1 : Infinity);
-    }
+    applyModelAnimationLoopPolicy(this as unknown as AnimationContext, id, clips);
   }
   protected restartModelAnimationActions(id: string): void {
-    const mixer = this.mixers.get(id);
-    const clips = this.animationClips.get(id) ?? [];
-    if (!mixer) return;
-    const activeId = this.animationClipSelection.get(id);
-    const active = activeId ? clips.filter((clip) => (clip.name || clip.uuid) === activeId) : clips;
-    this.applyModelAnimationLoopPolicy(id, active);
-    active.forEach((clip) => mixer.clipAction(clip).reset().play());
+    restartModelAnimationActions(this as unknown as AnimationContext, id);
   }
   protected updateCompletedModelAnimations(): void {
-    for (const id of [...this.animationEnabledIds]) {
-      if (this.getModelAnimationPlaybackState(id).loopMode !== "once") continue;
-      const mixer = this.mixers.get(id);
-      const clips = this.animationClips.get(id) ?? [];
-      const selectedId = this.animationClipSelection.get(id);
-      const active = selectedId ? clips.filter((clip) => (clip.name || clip.uuid) === selectedId) : clips;
-      if (!mixer || active.length === 0 || active.some((clip) => mixer.existingAction(clip)?.isRunning())) continue;
-      this.animationEnabledIds.delete(id);
-      const model = this.models.get(id);
-      if (model) this.onModelChange?.(model);
-      queueMicrotask(() => this.dispatchObjectLifecycle("animationEnd", id));
-    }
+    updateCompletedModelAnimations(this as unknown as AnimationContext);
   }
-  controlAnimation(id: string, control: { action: "play" | "pause" | "stop" | "seek"; clipId?: string; time?: number }): boolean {
-    const mixer = this.mixers.get(id);
-    const clips = this.animationClips.get(id) ?? [];
-    if (!mixer || clips.length === 0) return false;
-    const selected = control.clipId ? clips.find((clip) => clip.name === control.clipId || clip.uuid === control.clipId) : undefined;
-    if (control.clipId && !selected) return false;
-    if (selected) this.animationClipSelection.set(id, selected.name || selected.uuid);
-    const activeId = this.animationClipSelection.get(id);
-    const active = activeId ? clips.find((clip) => (clip.name || clip.uuid) === activeId) : undefined;
-    if (control.action === "play") {
-      mixer.stopAllAction();
-      this.applyModelAnimationLoopPolicy(id, active ? [active] : clips);
-      (active ? [active] : clips).forEach((clip) => mixer.clipAction(clip).reset().play());
-      mixer.timeScale = 1;
-      this.animationEnabledIds.add(id);
-    } else if (control.action === "pause") {
-      mixer.timeScale = 0;
-      this.animationEnabledIds.delete(id);
-    } else if (control.action === "stop") {
-      mixer.stopAllAction();
-      mixer.setTime(0);
-      mixer.timeScale = 0;
-      this.animationEnabledIds.delete(id);
-    } else {
-      if (control.time === undefined || !Number.isFinite(control.time) || control.time < 0) return false;
-      mixer.setTime(control.time);
-    }
-    const model = this.models.get(id);
-    if (model) this.onModelChange?.(model);
-    return true;
+  controlAnimation(id: string, control: AnimationControl): boolean { return controlAnimation(this as unknown as AnimationContext, id, control); }
+  transitionAnimationClip(id: string, fromClipId: string, toClipId: string, durationSeconds: number): boolean {
+    return transitionAnimationClip(this as unknown as AnimationContext, id, fromClipId, toClipId, durationSeconds);
   }
 }

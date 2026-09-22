@@ -18,6 +18,17 @@ function scene(): SceneSnapshot {
 }
 
 describe("SceneAuthoringHistory", () => {
+  it("undoes root order and group membership together, then restores the saved order on redo", () => {
+    const history = new SceneAuthoringHistory();
+    const baseline = { ...scene(), selectionSets: [{ id: "g", kind: "group" as const, name: "Group", objectIds: ["child"] }] };
+    const moved = { ...baseline, selectionSets: [{ ...baseline.selectionSets[0]!, objectIds: [] }],
+      rootLayerOrder: [{ kind: "object" as const, id: "child" }, { kind: "group" as const, id: "g" }] };
+    history.reset(baseline);
+    expect(history.record(moved, "移出编组并排序")).toBe(true);
+    expect(history.undo()).toEqual(baseline);
+    expect(history.redo()).toEqual(moved);
+    expect(baseline).not.toHaveProperty("rootLayerOrder");
+  });
   it("keeps draft undo and redo while adopting the first saved identity", () => {
     const history = new SceneAuthoringHistory();
     const baseline = scene(); history.reset(baseline);

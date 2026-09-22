@@ -55,12 +55,16 @@ describe("explicit project submission recovery", () => {
 });
 
 describe("documentation navigation preserves author work", () => {
-  function docsFixture(name = "draft.js") {
+  function docsFixture(name = "draft.js", locked = false) {
     const base = fixture();
-    const draft = { ...createSdkExampleScript("lifecycle", [], () => "draft"), name, code: "UNSAVED" };
+    const draft = { ...createSdkExampleScript("lifecycle", [], () => "draft"), name, code: "UNSAVED",
+      ...(locked ? { target: { kind: "component" as const, id: "locked-node" } } : {}),
+    };
     const dispatch = vi.fn();
     const state = { ...base.state, route: { view: "dashboard", projectId: "p", applicationId: "a", pageId: "one" },
-      pendingBehaviorDraftRef: { current: draft }, applicationSessionRef: { current: { store: { dispatch } } },
+      pendingBehaviorDraftRef: { current: draft }, applicationSessionRef: { current: { store: { dispatch,
+        getState: () => ({ document: { scripts: [], pages: [{ nodes: [{ id: "locked-node", locked }] }], scenes: [] } }),
+      } } },
     } as unknown as AppState;
     const controller = useAppNavigationController({ state, sceneSnapshotFactoryRef: { current: undefined } });
     return { state, controller, dispatch };
@@ -90,5 +94,13 @@ describe("documentation navigation preserves author work", () => {
     expect(failed.state.showError).toHaveBeenCalled();
     expect(failed.state.setRoute).not.toHaveBeenCalled();
     expect(failed.state.pendingBehaviorDraftRef.current?.code).toBe("UNSAVED");
+  });
+  it("preserves a locked target draft without saving or leaving the editor", () => {
+    const { controller, state, dispatch } = docsFixture("locked.js", true);
+    controller.openDocs("sdk-examples");
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(state.setRoute).not.toHaveBeenCalled();
+    expect(state.pendingBehaviorDraftRef.current?.code).toBe("UNSAVED");
+    expect(state.setError).toHaveBeenCalledWith("挂载对象已锁定，草稿已保留，请先解锁");
   });
 });

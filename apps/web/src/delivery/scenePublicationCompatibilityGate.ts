@@ -15,7 +15,8 @@ export class ScenePublicationCompatibilityError extends Error {
 }
 
 /** 只消费内部可信检查器结果；不验证证据来源或替代检查器的场景覆盖审计。 */
-export function assertScenePublicationDeliverable(report: ScenePublicationCompatibilityReport): void {
+export function assertScenePublicationDeliverable(report: ScenePublicationCompatibilityReport,
+  options: { readonly allowNativeDegraded?: boolean } = {}): void {
   let verified: ScenePublicationCompatibilityReport;
   try {
     if (report.schemaVersion !== 1 || !["ready", "blocked", "confirmation-required"].includes(report.status)) {
@@ -31,6 +32,7 @@ export function assertScenePublicationDeliverable(report: ScenePublicationCompat
   }
   if (report.status === "ready" && verified.status === "ready") return;
   const blocked = report.status === "blocked" || verified.status === "blocked";
+  if (!blocked && options.allowNativeDegraded && verified.target === "deep-native") return;
   const issues = verified.items.filter(item => item.status === "blocked" || item.status === "degraded"
     || (item.status === "webview-only" && verified.target === "deep-native"));
   const summary = blocked ? "发布兼容检查未通过，客户端无法交付。"

@@ -5,6 +5,7 @@ import type { SceneSnapshot } from "@bim-studio/contracts";
 import { parseDeepRuntimePackage, runtimeContentSha256 } from "@bim-studio/deep-engine/runtime-package";
 import { compileSceneRuntimePackage } from "./compileSceneRuntimePackage";
 import { applyDynamicRuntimeFrame } from "./dynamicRuntimePlayback";
+import { DynamicAnimationControllerPlayer } from "./dynamicAnimationControllerPlayback";
 
 function scene(): SceneSnapshot {
   return { schemaVersion: 1, id: "source", projectId: "project", name: "fixture", primitives: [], models: [], measurements: [],
@@ -18,6 +19,92 @@ function withModel(): SceneSnapshot {
 }
 
 describe("scene runtime compilation evidence", () => {
+  it("carries the saved animation controller through the formal package and Web player", async () => {
+    const input = withModel();
+    input.animation = {
+      duration: 0,
+      loop: false,
+      camera: [],
+      models: [],
+      stateMachine: {
+        enabled: true,
+        initialStateId: "idle",
+        activeStateId: "idle",
+        transitionDuration: 0.25,
+        states: [
+          { id: "idle", name: "Idle", modelId: "instance", clipId: "Idle", loop: true },
+          { id: "work", name: "Work", modelId: "instance", clipId: "Work", loop: true },
+        ],
+        parameters: { advance: false },
+        transitions: [{ id: "idle-work", fromStateId: "idle", toStateId: "work", parameter: "advance", equals: true }],
+      },
+    };
+    const result = await compileSceneRuntimePackage(input, options);
+    expect(parseDeepRuntimePackage(result.packageJson)).toMatchObject({ valid: true });
+    expect(result.runtimePackage.payloads[result.runtimePackage.entrypoints.dynamicRuntime!]).toMatchObject({
+      schemaVersion: 2,
+      animationController: {
+        schemaVersion: 1,
+        activeStateId: "idle",
+        transitionDurationMs: 250,
+        parameters: { advance: false },
+      },
+    });
+    expect(result.evidence.compiledSceneFields).toContainEqual({
+      field: "animation",
+      capability: "deep.scene.dynamic-runtime.v1",
+      resourceId: "scene.dynamic",
+    });
+    expect(result.evidence.deferredSceneFields).not.toContain("animation");
+    const transitions: unknown[] = [];
+    const player = new DynamicAnimationControllerPlayer(result.runtimePackage, {
+      playClip: () => true,
+      transitionClip: transition => (transitions.push(transition), true),
+    });
+    expect(player.start()).toBe(true);
+    expect(player.setParameter("advance", true)).toBe(true);
+    expect(player.evaluate()).toMatchObject({ applied: true, activeStateId: "work" });
+    expect(transitions).toEqual([{
+      modelId: "instance",
+      fromClipId: "Idle",
+      toClipId: "Work",
+      durationMs: 250,
+      loop: true,
+    }]);
+  });
+
+  it("does not misreport a disabled controller as compiled when physics creates the dynamic resource", async () => {
+    const input = withModel();
+    input.models[0]!.physics = { type: "dynamic", mass: 1, friction: 0.5, restitution: 0 };
+    input.physics = { enabled: true, playing: false, gravity: { x: 0, y: -9.81, z: 0 } };
+    input.animation = { duration: 0, loop: false, camera: [], models: [], stateMachine: {
+      enabled: false, initialStateId: "idle", activeStateId: "idle", transitionDuration: 0.2,
+      states: [{ id: "idle", name: "Idle", modelId: "instance", clipId: "Idle", loop: true }],
+    } };
+    const result = await compileSceneRuntimePackage(input, options);
+    expect(result.evidence.deferredSceneFields).toContain("animation");
+    expect(result.evidence.compiledSceneFields).not.toContainEqual(expect.objectContaining({ field: "animation" }));
+  });
+
+  it("compiles authored rigid bodies and joints into the validated v3 dynamic runtime", async () => {
+    const input = withModel();
+    input.models[0]!.physics = { type: "dynamic", mass: 2, friction: 0.5, restitution: 0.1 };
+    input.physics = { enabled: true, playing: true, gravity: { x: 0, y: -9.81, z: 0 }, joints: [{
+      id: "joint-a", kind: "revolute", bodyId: "instance", worldAnchor: { x: 0, y: 1, z: 0 },
+      localAnchor: { x: 0, y: 1, z: 0 }, axis: { x: 0, y: 1, z: 0 },
+      limits: { enabled: true, min: -1, max: 1 }, motor: { enabled: true, targetVelocity: 2, strength: 4 },
+    }] };
+    const result = await compileSceneRuntimePackage(input, options);
+    expect(parseDeepRuntimePackage(result.packageJson)).toMatchObject({ valid: true });
+    const payload = result.runtimePackage.payloads[result.runtimePackage.entrypoints.dynamicRuntime!];
+    expect(payload).toMatchObject({ schemaVersion: 3, physics: { schemaVersion: 1, playing: true,
+      bodies: [{ id: "instance", type: "dynamic", collider: { kind: "render-bounds", instanceIds: [expect.any(String)] } }],
+      joints: [{ id: "joint-a", solver: "impulse", connectedBodyId: null }] } });
+    expect(result.evidence.compiledSceneFields).toContainEqual({ field: "physics", capability: "deep.scene.physics-runtime.v1", resourceId: "scene.dynamic" });
+    expect(result.evidence.deferredSceneFields).not.toContain("physics");
+    expect(result.evidence.deferredObjectFields).not.toContainEqual(expect.objectContaining({ nodeId: "instance", fields: expect.arrayContaining(["physics"]) }));
+  });
+
   it.each(["mode", "avatar", "unknown"])("keeps uncompiled camera %s semantics deferred", async kind => {
     const input = withModel();
     if (kind === "mode") input.camera.mode = "firstPerson";
@@ -26,6 +113,31 @@ describe("scene runtime compilation evidence", () => {
     const result = await compileSceneRuntimePackage(input, options);
     expect(result.evidence.deferredSceneFields).toContain("camera");
     expect(result.evidence.compiledSceneFields[0]!.capability).toBe("deep.scene.camera.v1");
+  });
+  it("accounts for authored orbit collision constraints while keeping navigation settings deferred", async () => {
+    const input = withModel();
+    input.cameraConstraints = { minDistance: 1, maxDistance: 80, minPolarAngle: 5, maxPolarAngle: 165,
+      nearClip: 0.02, farClip: 5000, collisionEnabled: true, collisionRadius: 0.45 };
+    input.navigationSettings = { walkSpeed: 7, flySpeed: 11, sprintMultiplier: 3, eyeHeight: 1.8,
+      gravity: 10, jumpSpeed: 6, stepHeight: 0.4, maxSlopeAngle: 42 };
+    const result = await compileSceneRuntimePackage(input, options);
+    expect(result.runtimePackage.payloads["scene.camera"]).toMatchObject({ schemaVersion: 4, controls: {
+      mode: "orbit", collisionEnabled: true, collisionRadius: 0.45, minDistance: 1, maxDistance: 80,
+    } });
+    expect(result.evidence.compiledSceneFields).toContainEqual({
+      field: "cameraConstraints", capability: "deep.scene.camera.v1", resourceId: "scene.camera",
+    });
+    expect(result.evidence.deferredSceneFields).not.toContain("cameraConstraints");
+    expect(result.evidence.deferredSceneFields).toContain("navigationSettings");
+  });
+  it("does not claim future camera constraint fields as compiled", async () => {
+    const input = withModel();
+    input.cameraConstraints = { minDistance: 1, maxDistance: 80, minPolarAngle: 5, maxPolarAngle: 165,
+      nearClip: 0.02, farClip: 5000, collisionEnabled: true, collisionRadius: 0.45 };
+    Object.assign(input.cameraConstraints, { futureCollisionShape: "capsule" });
+    const result = await compileSceneRuntimePackage(input, options);
+    expect(result.evidence.compiledSceneFields).not.toContainEqual(expect.objectContaining({ field: "cameraConstraints" }));
+    expect(result.evidence.deferredSceneFields).toContain("cameraConstraints");
   });
   it("produces a real runtime file with independently verified input and artifact hashes", async () => {
     const result = await compileSceneRuntimePackage(withModel(), options);
@@ -64,9 +176,11 @@ describe("scene runtime compilation evidence", () => {
     expect(farFrame).not.toEqual(nearFrame);
     for (const [index, source] of [near, far].entries()) {
       // Framed camera payloads use the current v3 contract. v3 keeps the
-      // coordinate-frame fields and leaves room for the optional section
-      // plane; do not regress the compiler back to the retired v2 output.
+      // Unconfigured orbit scenes retain the v3 framed contract. v4 is used
+      // only when author controls exist, so unsupported controls cannot turn
+      // an otherwise compatible package into a runtime-only failure.
       expect(cameras[index].schemaVersion).toBe(3);
+      expect(cameras[index].controls).toBeUndefined();
       for (const key of ["position", "target"] as const) {
         expect(cameras[index][key].map((value: number, axis: number) =>
           value + cameras[index].coordinateFrame.origin[["x", "y", "z"][axis]!]))
@@ -183,5 +297,24 @@ describe("scene runtime compilation evidence", () => {
       translation: [1, 0, 0], scale: [1.5, 1.5, 1.5],
       rotationQuaternion: [0, expect.closeTo(Math.sin(Math.PI / 8)), 0, expect.closeTo(Math.cos(Math.PI / 8))],
     } });
+  });
+
+  it("compiles local-coordinate camera animation with autoplay and loop metadata", async () => {
+    const input = scene();
+    input.camera = { mode: "orbit", position: { x: 1e9 + 10, y: 1e9 + 5, z: 1e9 + 20 }, target: { x: 1e9, y: 1e9, z: 1e9 } };
+    input.animation = { duration: 2, autoplay: true, loop: false, models: [], camera: [
+      { id: "camera-0", time: 0, camera: structuredClone(input.camera) },
+      { id: "camera-1", time: 2, camera: { ...structuredClone(input.camera), position: { x: 1e9 + 20, y: 1e9 + 10, z: 1e9 + 30 }, target: { x: 1e9 + 2, y: 1e9 + 1, z: 1e9 } } },
+    ] };
+    const result = await compileSceneRuntimePackage(input, options);
+    const dynamic = result.runtimePackage.payloads["scene.dynamic"] as any;
+    expect(dynamic.animation).toMatchObject({ durationMs: 2000, autoplay: true, loop: false });
+    expect(dynamic.animation.tracks.map((track: any) => track.property)).toEqual(["camera-position", "camera-target"]);
+    expect(dynamic.animation.tracks[0].keyframes.map((frame: any) => frame.value.slice(0, 3))).toEqual([[10, 5, 20], [20, 10, 30]]);
+    const applied: unknown[] = [];
+    const frame = applyDynamicRuntimeFrame(result.runtimePackage, 1000, { applyTransform: () => undefined, applyCamera: camera => applied.push(camera) });
+    expect(frame.transforms).toEqual({});
+    expect(applied).toEqual([{ position: [15, 7.5, 25], target: [1, 0.5, 0] }]);
+    expect(result.evidence.deferredSceneFields).not.toContain("animation");
   });
 });

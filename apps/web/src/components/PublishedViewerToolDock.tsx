@@ -112,24 +112,12 @@ export function PublishedViewerToolDock(props: PublishedViewerToolDockProps) {
             <ToolButton title={props.avatarVisible ? tr(locale, "隐藏人物", "Hide avatar") : tr(locale, "显示人物", "Show avatar")} active={props.avatarVisible} onClick={props.onAvatarToggle} icon={props.avatarVisible ? <Eye size={18} /> : <EyeOff size={18} />} />
             <ToolButton title={tr(locale, "场景信息", "Scene information")} active={props.infoEnabled} onClick={props.onInfoToggle} icon={<Info size={18} />} />
             <ToolButton title={tr(locale, "全屏浏览", "Fullscreen")} active={false} onClick={props.onFullscreen} icon={<Maximize2 size={18} />} />
-            <ToolButton
-              title={props.xrUnavailableReason
-                ? tr(locale, "进入 VR", "Enter VR") + " · " + props.xrUnavailableReason
-                : tr(locale, "进入 VR", "Enter VR")}
-              active={false}
-              disabled={Boolean(props.xrUnavailableReason)}
-              onClick={() => props.onStartXR("immersive-vr")}
-              icon={<span className="xr-tool-label">VR</span>}
-            />
-            <ToolButton
-              title={props.xrUnavailableReason
-                ? tr(locale, "进入 AR", "Enter AR") + " · " + props.xrUnavailableReason
-                : tr(locale, "进入 AR", "Enter AR")}
-              active={false}
-              disabled={Boolean(props.xrUnavailableReason)}
-              onClick={() => props.onStartXR("immersive-ar")}
-              icon={<span className="xr-tool-label">AR</span>}
-            />
+            {!props.xrUnavailableReason && <>
+              <ToolButton title={tr(locale, "进入 VR", "Enter VR")} active={false}
+                onClick={() => props.onStartXR("immersive-vr")} icon={<span className="xr-tool-label">VR</span>} />
+              <ToolButton title={tr(locale, "进入 AR", "Enter AR")} active={false}
+                onClick={() => props.onStartXR("immersive-ar")} icon={<span className="xr-tool-label">AR</span>} />
+            </>}
           </div>
         </div>
       )}

@@ -7,7 +7,7 @@ export function ApplicationErrorFallback({ startup = false }: { startup?: boolea
     <main className="application-error" role="alert">
       <section>
         <span className="application-error-symbol" aria-hidden="true">!</span>
-        <p className="application-error-kicker">Deep Monkey Studio</p>
+        <p className="application-error-kicker">DeepMonkey Studio</p>
         <h1>{english ? startup ? "Unable to start the application" : "This page could not be displayed"
           : startup ? "应用未能启动" : "当前页面暂时无法显示"}</h1>
         <p>{english

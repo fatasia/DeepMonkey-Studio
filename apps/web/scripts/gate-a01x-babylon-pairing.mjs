@@ -92,6 +92,11 @@ const server = createServer((request, response) => {
   };
   let filePath;
   let contentType;
+  if (pathname === "/favicon.ico") {
+    // Chrome 请求 favicon；返回空 204，避免控制台 404 被记为有效性失败。
+    response.writeHead(204, { "cache-control": "no-store" }).end();
+    return;
+  }
   if (pathname.startsWith("/vendor/")) {
     const vendorName = pathname.slice("/vendor/".length);
     if (!/^[\w.-]+\.js$/.test(vendorName)) { response.writeHead(403).end(); return; }
@@ -226,6 +231,11 @@ async function runPass(pass) {
       throw failure;
     }
     const notes = await page.evaluate(() => window.__a01xBabylonPairing.mappingNotes());
+    // TEMP-DIAG(a01x-sim): dump stashed capture luminance diagnostics.
+    try {
+      const diag = await page.evaluate(() => window.__a01xBabylonDiag ?? []);
+      for (const item of diag.slice(-2)) console.log(`[a01x-diag] ${item}`);
+    } catch { /* diag stash unavailable */ }
     for (const message of outcome.errors ?? []) errors.push(`page-collected: ${message}`);
     const reportErrors = outcome.result.report?.rounds
       ?.map(round => [round.candidate.deviceErrors, round.reference.deviceErrors]).flat(2) ?? [];

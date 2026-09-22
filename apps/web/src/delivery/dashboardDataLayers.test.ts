@@ -11,11 +11,24 @@ function authoredNodes(result: Awaited<ReturnType<typeof compileDashboardRasterC
 }
 it("keeps interleaved clips in separate consecutive layers", async () => {
   const value = fixture();
-  value.textBoxes.forEach((box, index) => { value.textBoxes[index] = { ...box, clip: index === 1 ? [0,0,100.5,40] : [0,0,120.2,40] }; });
+  // Each box ends at y=27; these clips remove the final pixel row.
+  value.textBoxes.forEach((box, index) => { value.textBoxes[index] = { ...box, clip: index === 1 ? [0,0,100.5,26] : [0,0,120.2,26] }; });
   const result = await compileDashboardRasterContent(value.input, value.host);
-  expect(authoredNodes(result).map(node => node.clip)).toEqual([null,[0,0,120.2,40],[0,0,100.5,40],[0,0,120.2,40]]);
+  expect(authoredNodes(result).map(node => node.clip)).toEqual([null,[0,0,120.2,26],[0,0,100.5,26],[0,0,120.2,26]]);
   expect(result.nodeBindings[0]!.runtimeNodeIds).toHaveLength(4);
   expect(result.nodeBindings[0]!.runtimeNodeIds[0]).toBe(result.nodeBindings[0]!.runtimeNodeId);
+});
+it("coalesces fully-contained clips without changing atlas pixels or quad extents", async () => {
+  const value = fixture(), baseline = await compileDashboardRasterContent(value.input, value.host);
+  value.textBoxes.forEach((box, index) => {
+    value.textBoxes[index] = { ...box, clip: index === 1 ? [0, 0, 100.5, 40] : [0, 0, 120.2, 40] };
+  });
+  const actual = await compileDashboardRasterContent(value.input, value.host);
+  const payloads = (result: typeof actual) => Object.values(result.package.payloads)
+    .filter((item: any) => item.schema === "deep-engine.deep2d-runtime") as any[];
+  expect(payloads(actual).flatMap(item => item.atlases)).toEqual(payloads(baseline).flatMap(item => item.atlases));
+  expect(payloads(actual).flatMap(item => item.quads)).toEqual(payloads(baseline).flatMap(item => item.quads));
+  expect(authoredNodes(actual).map(node => node.clip)).toEqual([null, null]);
 });
 it("keeps each author group contiguous for equal and negative authored z", async () => {
   const value = fixture(), first = value.input.document.application.pages[0]!.nodes[0]!;
@@ -44,7 +57,12 @@ it("connects a frozen chart metric to the C1 chart envelope without claiming app
   const metric = { samples: [{ time: 0, value: 7 }, { time: 1, value: 9 }] };
   const data = { source: { ...value.data.source, contentSha256: runtimeContentSha256(metric) }, metric };
   const result = await compileDashboardRasterContent({ ...value.input, data: { kpi: data } }, value.host);
-  const chartId = authoredNodes(result)[0].chart;
+  const chartNodes = authoredNodes(result).filter(node => node.chart !== null);
+  expect(chartNodes).toHaveLength(1);
+  expect(chartNodes[0].id).toBe(result.nodeBindings[0]!.runtimeNodeId);
+  expect(chartNodes[0].frame).toEqual([37, 47, 126, 66]);
+  expect(authoredNodes(result).some(node => node.deep2d && node.chart === null)).toBe(true);
+  const chartId = chartNodes[0].chart;
   expect(result.package.payloads[chartId]).toMatchObject({ schema: "deep-engine.chart-runtime", schemaVersion: 1 });
   expect(result.capabilityReport.contentCompiled).toBe(1);
   expect(result.capabilityReport.objects[0]).toMatchObject({ contentCompiled: true, status: "degraded" });

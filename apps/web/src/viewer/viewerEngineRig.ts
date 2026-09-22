@@ -1,3 +1,5 @@
+import { materialSlotId, readMaterialSlot, sourceMaterialState, mergeMaterialPatch, type SelectionMaterialSlot } from "./materialSlots";
+import { materialIor } from "./materialIor";
 import * as THREE from "three";
 import type { GlobalLightingState, SceneEnvironmentState, SceneFloorState, SceneIKConstraintState, SceneMaterialState, SceneModelEffectsState, ScenePostProcessingState, SceneRigState, Vector3Value, WeatherMode } from "@bim-studio/contracts";
 import { sceneWeatherFog } from "@bim-studio/contracts";
@@ -184,6 +186,32 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
       this.applyLighting();
       void this.applyEnvironment();
     }
+  getModelMaterialStates(id: string): SceneMaterialState[] {
+      const model = this.models.get(id);
+      if (!model) return [];
+      const seen = new Set<THREE.Material>();
+      const states: SceneMaterialState[] = [];
+      model.object.traverse(child => {
+        for (const material of this.materialsForMesh(child as THREE.Mesh)) {
+          if (seen.has(material)) continue;
+          seen.add(material);
+          states.push(readMaterialSlot(material));
+        }
+      });
+      return states;
+    }
+  getSelectionMaterialSlots(): SelectionMaterialSlot[] {
+      const selected = this.getSelected();
+      if (!selected || this.inspectedObject && this.inspectedObject !== selected.object || this.selectedFragmentNodeId) return [];
+      const slots = new Map<string, SelectionMaterialSlot>();
+      selected.object.traverse(child => {
+        for (const material of this.materialsForMesh(child as THREE.Mesh)) {
+          const id = materialSlotId(material);
+          if (id && !slots.has(id)) slots.set(id, { id, name: material.name || `Material ${Number(id.slice(5)) + 1}`, material: readMaterialSlot(material), ...(sourceMaterialState(material) ? { sourceMaterial: sourceMaterialState(material)! } : {}) });
+        }
+      });
+      return [...slots.values()].sort((a, b) => Number(a.id.slice(5)) - Number(b.id.slice(5)));
+    }
   getSelectionMaterial(): SceneMaterialState {
       const selected = this.getSelected();
       const object = this.inspectedObject ?? selected?.object;
@@ -206,6 +234,7 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
           ...(standard.normalScale?.isVector2 ? { normalScale: standard.normalScale.x } : {}),
           ...(typeof standard.roughness === "number" ? { roughness: standard.roughness } : {}),
           ...(typeof standard.metalness === "number" ? { metalness: standard.metalness } : {}),
+          ...(materialIor(standard) === undefined ? {} : { ior: materialIor(standard)! }),
           ...(standard.emissive ? { emissive: `#${standard.emissive.getHexString()}`, emissiveIntensity: standard.emissiveIntensity } : {}),
           ...(typeof standard.wireframe === "boolean" ? { wireframe: standard.wireframe } : {}),
           doubleSided: standard.side === THREE.DoubleSide
@@ -231,9 +260,12 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
         return;
       }
       this.restoreModelEffectMaterials(selected.id);
-      this.applyMaterialState(object, patch);
-      if (object !== selected.object) this.updateLayerState(selected.id, String(object.userData.layerNodeId), { material: patch });
-      else this.modelMaterialOverrides.set(selected.id, { ...this.modelMaterialOverrides.get(selected.id), ...structuredClone(patch) });
+      const previous = object === selected.object ? this.modelMaterialOverrides.get(selected.id)
+        : this.layerStates.get(selected.id)?.get(String(object.userData.layerNodeId))?.material;
+      const merged = mergeMaterialPatch(previous, patch);
+      this.applyMaterialState(object, merged);
+      if (object !== selected.object) this.updateLayerState(selected.id, String(object.userData.layerNodeId), { material: merged });
+      else this.modelMaterialOverrides.set(selected.id, merged);
       selected.object.updateWorldMatrix(true, true);
       this.rebuildModelEffects(selected.id);
       this.markShadowMapDirty();
@@ -251,8 +283,9 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
       const model = this.models.get(id);
       if (!model || this.isModelLocked(id)) return;
       this.restoreModelEffectMaterials(id);
-      this.applyMaterialState(model.object, patch);
-      this.modelMaterialOverrides.set(id, { ...this.modelMaterialOverrides.get(id), ...structuredClone(patch) });
+      const merged = mergeMaterialPatch(this.modelMaterialOverrides.get(id), patch);
+      this.applyMaterialState(model.object, merged);
+      this.modelMaterialOverrides.set(id, merged);
       model.object.updateWorldMatrix(true, true);
       this.rebuildModelEffects(id);
       this.markShadowMapDirty();
@@ -317,7 +350,9 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
         hue: THREE.MathUtils.clamp(state.hue ?? 0, -180, 180),
         saturation: THREE.MathUtils.clamp(state.saturation ?? 0, -1, 1),
         brightness: THREE.MathUtils.clamp(state.brightness ?? 0, -1, 1),
-        contrast: THREE.MathUtils.clamp(state.contrast ?? 0, -1, 1)
+        contrast: THREE.MathUtils.clamp(state.contrast ?? 0, -1, 1),
+        temperature: THREE.MathUtils.clamp(state.temperature ?? 0, -1, 1),
+        tint: THREE.MathUtils.clamp(state.tint ?? 0, -1, 1)
       };
       void this.syncPostProcessing();
     }

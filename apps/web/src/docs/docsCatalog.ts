@@ -5,6 +5,9 @@ import dashboardScene from "./dashboard-scene.md?raw";
 import dataPipeline from "./data-pipeline.md?raw";
 import deploymentOperations from "./deployment-operations.md?raw";
 import deepEngine from "./deep-engine.md?raw";
+import deepEngineSdk from "./deep-engine-sdk.md?raw";
+import engineDesignInfluences from "./engine-design-influences.md?raw";
+import engineBenchmarks from "./engine-benchmarks.md?raw";
 import aiModeling3dApi from "./ai-modeling3d-api.md?raw";
 import aiWorkflows from "./ai-workflows.md?raw";
 import apiReference from "./api-reference.md?raw";
@@ -33,6 +36,9 @@ export const docsDocuments = createDocsCatalog([
   { id: "dashboard-scene", category: "快速开始", order: 10, version: DOCS_VERSION, markdown: dashboardScene },
   { id: "runtime-and-extensions", category: "快速开始", order: 11, version: DOCS_VERSION, markdown: runtimeAndExtensions },
   { id: "deep-engine", category: "快速开始", order: 12, version: DOCS_VERSION, markdown: deepEngine },
+  { id: "deep-engine-sdk", category: "快速开始", order: 13, version: DOCS_VERSION, markdown: deepEngineSdk },
+  { id: "engine-design-influences", category: "快速开始", order: 14, version: DOCS_VERSION, markdown: engineDesignInfluences },
+  { id: "engine-benchmarks", category: "快速开始", order: 15, version: DOCS_VERSION, markdown: engineBenchmarks },
   { id: "resource-workflow", category: "资源与编辑", order: 20, version: DOCS_VERSION, markdown: resourceWorkflow },
   { id: "model-import", category: "资源与编辑", order: 20.5, version: DOCS_VERSION, markdown: modelImport },
   { id: "media-widgets", category: "资源与编辑", order: 21, version: DOCS_VERSION, markdown: mediaWidgets },

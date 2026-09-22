@@ -43,7 +43,7 @@ pnpm desktop:verify-bundle
 
 ## 从发布页打包客户端
 
-发布对话框的“客户端打包”提供三个目标：
+发布对话框的“发布方式”提供三个选项：
 
 - **仅发布**：只生成网页发布版本。
 - **Three WebView**：下载现有 Three.js/WebView 交付包素材。

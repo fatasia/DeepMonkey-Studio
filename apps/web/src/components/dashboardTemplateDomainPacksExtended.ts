@@ -2,7 +2,7 @@ import type { DashboardTemplateDomain } from "./dashboardTemplateTypes";
 import { domainMetrics, type DomainMetricRows } from "./dashboardTemplateDomainPacks";
 
 /**
- * 扩量行业域(第 13-20 域 + 波次 B 第 29-32 域):行业色调对齐帆软官方映射(党建=红、零售电商=红黄、
+ * 扩量行业域(第 13-20 域 + 波次 B 第 29-32 域):行业色调对齐外部参考官方映射(党建=红、零售电商=红黄、
  * 金融=深蓝等),accent 与既有 12 域的等距色环错开——近邻对(青蓝 vs 水务、红 vs 安全、橙 vs 质量)依靠
  * 色相偏移 + 明度饱和差 + surface 冷暖三重区分,规则与既有 12 域一致。
  * surface 仍为同色相深底(明度 6-9%),保证封面渐变的"域色空气感"。

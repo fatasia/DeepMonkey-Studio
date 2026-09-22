@@ -29,7 +29,7 @@ export function renderPprWorkInstructionHtml(
 <header class="document-header"><p class="eyebrow">ELECTRONIC WORK INSTRUCTION · EWI</p><h1>${escapeHtml(preview.planName)}</h1><div class="meta"><span>版本/状态：${escapeHtml(options.documentLabel)}</span><span>导出时间：${escapeHtml(options.generatedAt)}</span></div></header>
 <section class="summary"><div><strong>${preview.operations.length}</strong><span>已编制作业工序</span></div><div><strong>${preview.totalStepCount}</strong><span>操作步骤</span></div><div><strong>${preview.totalQualityControlCount}</strong><span>质量控制点</span></div></section>
 ${operations || '<p class="empty">当前计划尚未编制电子作业指导书。</p>'}
-<footer class="document-footer">Deep Monkey Studio 工艺规划离线副本 · 内容来自当前工艺计划快照；场景/对象仅保留可追溯 ID。</footer>
+<footer class="document-footer">DeepMonkey Studio 工艺规划离线副本 · 内容来自当前工艺计划快照；场景/对象仅保留可追溯 ID。</footer>
 </main></body></html>`;
 }
 

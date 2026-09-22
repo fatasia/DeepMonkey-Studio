@@ -121,6 +121,6 @@ export interface DashboardTemplateDefinition {
   tags?: readonly DashboardTemplateTag[];
   /** 静态默认 standard;行业包归属由 dashboardTemplateTiers 按行业包目录动态解析,展示一律用解析结果。 */
   tier?: DashboardTemplateTier;
-  /** 主题套件 id(帆软 visuals 页"主题套件"聚合层的对标,见 dashboardTemplateSuites)。 */
+  /** 主题套件 id(外部参考 visuals 页"主题套件"聚合层的对标,见 dashboardTemplateSuites)。 */
   suite?: string;
 }

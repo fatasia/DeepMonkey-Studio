@@ -37,8 +37,8 @@ export function StructuredProperties({ locale, entries, emptyText }: { locale: A
   </div>;
 }
 
-export function DeferredNumberInput({ value, onCommit, min, max, step, disabled, className, ariaLabel }: {
-  value: number;
+export function DeferredNumberInput({ value, onCommit, min, max, step, disabled, className, ariaLabel, placeholder }: {
+  value: number | undefined;
   onCommit: (value: number) => void;
   min?: number;
   max?: number;
@@ -46,12 +46,14 @@ export function DeferredNumberInput({ value, onCommit, min, max, step, disabled,
   disabled?: boolean;
   className?: string;
   ariaLabel?: string;
+  placeholder?: string;
 }) {
-  const [draft, setDraft] = useState(String(value));
+  const formatted = value === undefined ? "" : String(value);
+  const [draft, setDraft] = useState(formatted);
   const focused = useRef(false);
   const cancelled = useRef(false);
   useEffect(() => {
-    if (!focused.current) setDraft(String(value));
+    if (!focused.current) setDraft(formatted);
   }, [value]);
 
   function commit() {
@@ -59,12 +61,12 @@ export function DeferredNumberInput({ value, onCommit, min, max, step, disabled,
     // Esc 触发 blur 在本次 React 更新之前执行，不能用上一帧草稿回写对象。
     if (cancelled.current) {
       cancelled.current = false;
-      setDraft(String(value));
+      setDraft(formatted);
       return;
     }
     const parsed = Number(draft);
     if (draft.trim() === "" || !Number.isFinite(parsed)) {
-      setDraft(String(value));
+      setDraft(formatted);
       return;
     }
     const next = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, parsed));
@@ -80,6 +82,7 @@ export function DeferredNumberInput({ value, onCommit, min, max, step, disabled,
   return <input
     className={className}
     aria-label={ariaLabel}
+    placeholder={placeholder}
     disabled={disabled}
     type="text"
     inputMode="decimal"
@@ -99,7 +102,7 @@ export function DeferredNumberInput({ value, onCommit, min, max, step, disabled,
       if (event.key === "Escape") {
         event.stopPropagation();
         cancelled.current = true;
-        setDraft(String(value));
+        setDraft(formatted);
         event.currentTarget.blur();
       }
     }}

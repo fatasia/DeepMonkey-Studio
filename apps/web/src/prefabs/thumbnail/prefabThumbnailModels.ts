@@ -13,6 +13,7 @@ import {
   buildValveModel,
 } from "./prefabThumbnailModelsProcess";
 import { buildDosingStationModel, buildHeatExchangerModel, buildSoftenerModel, buildTankModel } from "./prefabThumbnailModelsProcess2";
+import { buildRoadModel } from "./prefabThumbnailModelsEnvironment";
 import {
   buildAccessControlModel,
   buildAgvModel,
@@ -63,10 +64,14 @@ const BUILDERS: Record<IndustrialPrefabKind, ModelBuilder> = {
   "access-control": buildAccessControlModel,
   display: buildDisplayModel,
   fence: buildFenceModel,
+  road: buildRoadModel,
   sensor: buildSensorModel,
   camera: buildCameraModel,
   storage: buildStorageModel,
 };
+
+/** 构建器 kind 全集;测试据此断言目录覆盖,新增 kind 时无须改测试硬编码。 */
+export const INDUSTRIAL_PREFAB_THUMBNAIL_KINDS = Object.keys(BUILDERS) as IndustrialPrefabKind[];
 
 /** utility 按设备族分流:泵/阀/风机/空压机/换热器/储罐/软水/加药;柜体族归电气构建器。 */
 function buildUtilityModel(kit: ModelKit, variant: PrefabThumbnailVariant): THREE.Group {

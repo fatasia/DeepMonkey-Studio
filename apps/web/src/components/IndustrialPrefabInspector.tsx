@@ -5,6 +5,7 @@ import type {
   IndustrialPrefabParameterDefinition,
   IndustrialPrefabRuntimeAction,
   SceneMotionRoutePoint,
+  SceneLinearPrefabPathPoint,
 } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import { INDUSTRIAL_PREFAB_CATALOG, industrialPrefabDefinition } from "../prefabs/industrialPrefabCatalog";
@@ -17,21 +18,25 @@ export function IndustrialPrefabInspector({
   modelId,
   disabled,
   onChange,
+  onCommit,
 }: {
   locale: AppLocale;
   engine: ViewerEngine;
   modelId: string;
   disabled: boolean;
   onChange: () => void;
+  onCommit?: (label: string) => void;
 }) {
   const state = engine.getIndustrialPrefabState(modelId);
   if (!state) return <AttachPrefab locale={locale} engine={engine} modelId={modelId} disabled={disabled} onChange={onChange} />;
   const definition = industrialPrefabDefinition(state.definitionId);
   const route = state.motionRoute;
+  const placementPath = state.placementPath;
 
-  function save(next: IndustrialPrefabInstanceState) {
+  function save(next: IndustrialPrefabInstanceState, label = "更新工业预制体") {
     engine.setIndustrialPrefabState(modelId, next);
     onChange();
+    onCommit?.(label);
   }
 
   function run(action: IndustrialPrefabRuntimeAction) {
@@ -121,6 +126,51 @@ export function IndustrialPrefabInspector({
             </div>
           </section>
         )}
+        {placementPath && (
+          <section className="industrial-route-editor industrial-placement-path-editor">
+            <header>
+              <div>
+                <strong>{tr(locale, "铺设路径", "Placement path")}</strong>
+                <small>{tr(locale, "编辑围栏或道路端点；样条和贴地使用同一发布合同", "Edit fence or road points with the same spline and ground contract used for publishing")}</small>
+              </div>
+              <label>
+                <input type="checkbox" disabled={disabled} checked={placementPath.snapToGround}
+                  onChange={(event) => save({ ...state, placementPath: { ...placementPath, snapToGround: event.target.checked } }, "更新铺设贴地方式")} />
+                {tr(locale, "贴地", "Snap to ground")}
+              </label>
+            </header>
+            <div className="industrial-route-playback">
+              <label><span>{tr(locale, "路径类型", "Path type")}</span>
+                <select disabled={disabled} value={placementPath.interpolation}
+                  onChange={(event) => save({ ...state, placementPath: { ...placementPath,
+                    interpolation: event.target.value as typeof placementPath.interpolation } }, "更新铺设路径类型")}>
+                  <option value="linear">{tr(locale, "直线折线", "Linear")}</option>
+                  <option value="catmull-rom">{tr(locale, "平滑样条", "Smooth spline")}</option>
+                </select>
+              </label>
+              <label><input type="checkbox" disabled={disabled} checked={placementPath.closed}
+                onChange={(event) => save({ ...state, placementPath: { ...placementPath, closed: event.target.checked } }, "更新铺设闭环")} />
+                {tr(locale, "闭合", "Closed")}
+              </label>
+              <NumberField label={tr(locale, "固定种子", "Fixed seed")} value={placementPath.seed} min={0}
+                max={0xffff_ffff} step={1} disabled={disabled}
+                onChange={(value) => save({ ...state, placementPath: { ...placementPath, seed: Math.trunc(value) } }, "更新铺设种子")} />
+            </div>
+            <div className="industrial-route-points">
+              {placementPath.points.map((point, index) => <PathPointRow key={point.id} locale={locale}
+                point={point} index={index} disabled={disabled} deleteDisabled={disabled || placementPath.points.length <= 2}
+                onChange={(next) => save({ ...state, placementPath: { ...placementPath,
+                  points: placementPath.points.map(candidate => candidate.id === point.id ? next : candidate) } }, "编辑铺设端点")}
+                onDelete={() => placementPath.points.length > 2 && save({ ...state, placementPath: { ...placementPath,
+                  points: placementPath.points.filter(candidate => candidate.id !== point.id) } }, "删除铺设端点")} />)}
+              <button disabled={disabled || placementPath.points.length >= 512}
+                onClick={() => save({ ...state, placementPath: { ...placementPath,
+                  points: [...placementPath.points, nextPathPoint(placementPath.points)] } }, "添加铺设端点")}>
+                <Plus size={12} /> {tr(locale, "添加端点", "Add point")}
+              </button>
+            </div>
+          </section>
+        )}
         <button className="industrial-prefab-remove" disabled={disabled} onClick={() => { engine.setIndustrialPrefabState(modelId, undefined); onChange(); }}>
           <Trash2 size={12} /> {tr(locale, "移除预制体配置", "Remove prefab configuration")}
         </button>
@@ -156,20 +206,38 @@ function ParameterField({ locale, definition, value, disabled, onChange }: { loc
   if (definition.kind === "boolean") return <label><input type="checkbox" disabled={disabled} checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} /><span>{name}</span></label>;
   if (definition.kind === "select") return <label><span>{name}</span><select disabled={disabled} value={String(value)} onChange={(event) => onChange(event.target.value)}>{definition.options?.map((option) => <option key={option}>{option}</option>)}</select></label>;
   if (definition.kind === "text") return <label><span>{name}</span><input type="text" disabled={disabled} value={String(value)} onChange={(event) => onChange(event.target.value)} /></label>;
-  return <NumberField label={name} {...(definition.unit ? { unit: definition.unit } : {})} value={typeof value === "number" ? value : 0} {...(definition.min === undefined ? {} : { min: definition.min })} {...(definition.step === undefined ? {} : { step: definition.step })} disabled={disabled} onChange={onChange} />;
+  return <NumberField label={name} {...(definition.unit ? { unit: definition.unit } : {})} value={typeof value === "number" ? value : 0} {...(definition.min === undefined ? {} : { min: definition.min })} {...(definition.max === undefined ? {} : { max: definition.max })} {...(definition.step === undefined ? {} : { step: definition.step })} disabled={disabled} onChange={onChange} />;
 }
 
-function NumberField({ label, unit, value, min, step, disabled, onChange }: { label: string; unit?: string; value: number; min?: number; step?: number; disabled: boolean; onChange: (value: number) => void }) {
-  return <label><span>{label}</span><input type="number" disabled={disabled} value={value} {...(min === undefined ? {} : { min })} step={step ?? 0.1} onChange={(event) => onChange(Number(event.target.value))} />{unit && <i>{unit}</i>}</label>;
+function NumberField({ label, unit, value, min, max, step, disabled, onChange }: { label: string; unit?: string; value: number; min?: number; max?: number; step?: number; disabled: boolean; onChange: (value: number) => void }) {
+  return <label><span>{label}</span><input type="number" disabled={disabled} value={value} {...(min === undefined ? {} : { min })} {...(max === undefined ? {} : { max })} step={step ?? 0.1} onChange={(event) => {
+    const numeric = Number(event.target.value);
+    if (!Number.isFinite(numeric)) return;
+    onChange(Math.min(max ?? Number.POSITIVE_INFINITY, Math.max(min ?? Number.NEGATIVE_INFINITY, numeric)));
+  }} />{unit && <i>{unit}</i>}</label>;
 }
 
 function RoutePointRow({ locale, point, index, disabled, onChange, onDelete }: { locale: AppLocale; point: SceneMotionRoutePoint; index: number; disabled: boolean; onChange: (point: SceneMotionRoutePoint) => void; onDelete: () => void }) {
   return <div className="industrial-route-point"><strong>P{index + 1}</strong>{(["x", "y", "z"] as const).map((axis) => <label key={axis}><span>{axis.toUpperCase()}</span><input type="number" disabled={disabled} value={point.position[axis]} step="0.1" onChange={(event) => onChange({ ...point, position: { ...point.position, [axis]: Number(event.target.value) } })} /></label>)}<label><span>{tr(locale, "停留", "Wait")}</span><input type="number" disabled={disabled} min="0" step="0.1" value={point.waitSeconds ?? 0} onChange={(event) => onChange({ ...point, waitSeconds: Math.max(0, Number(event.target.value)) })} /></label><button disabled={disabled} title={tr(locale, "删除路线点", "Delete point")} onClick={onDelete}><Trash2 size={11} /></button></div>;
 }
 
+function PathPointRow({ locale, point, index, disabled, deleteDisabled, onChange, onDelete }: { locale: AppLocale; point: SceneLinearPrefabPathPoint; index: number; disabled: boolean; deleteDisabled: boolean; onChange: (point: SceneLinearPrefabPathPoint) => void; onDelete: () => void }) {
+  return <div className="industrial-route-point"><strong>P{index + 1}</strong>{(["x", "y", "z"] as const).map(axis =>
+    <label key={axis}><span>{axis.toUpperCase()}</span><input type="number" disabled={disabled}
+      value={point.position[axis]} step="0.1" onChange={(event) => {
+        const value = Number(event.target.value);
+        if (Number.isFinite(value)) onChange({ ...point, position: { ...point.position, [axis]: value } });
+      }} /></label>)}<button disabled={deleteDisabled} title={tr(locale, "删除铺设端点", "Delete placement point")} onClick={onDelete}><Trash2 size={11} /></button></div>;
+}
+
 function nextRoutePoint(points: SceneMotionRoutePoint[]): SceneMotionRoutePoint {
   const previous = points.at(-1)?.position ?? { x: 0, y: 0, z: 0 };
   return { id: crypto.randomUUID(), position: { ...previous, x: previous.x + 5 }, waitSeconds: 0 };
+}
+
+function nextPathPoint(points: SceneLinearPrefabPathPoint[]): SceneLinearPrefabPathPoint {
+  const previous = points.at(-1)?.position ?? { x: 0, y: 0, z: 0 };
+  return { id: crypto.randomUUID(), position: { ...previous, x: previous.x + 5 } };
 }
 
 function operatingStateLabel(locale: AppLocale, state: IndustrialPrefabInstanceState["operatingState"]): string {

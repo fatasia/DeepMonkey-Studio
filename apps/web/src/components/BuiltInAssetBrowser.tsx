@@ -50,7 +50,7 @@ export function BuiltInAssetBrowser({ kind, locale, editorAvailable, onOpenEdito
   }, [kind, locale]);
   const allItems = useMemo(() => createItems(kind, locale), [kind, locale]);
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  // 分类(参考帆软:大类清晰+计数徽章)与搜索叠加过滤;模板分支再叠加分层筛选(行业包/标准)。
+  // 分类(大类清晰+计数徽章)与搜索叠加过滤;模板分支再叠加分层筛选(行业包/标准)。
   const items = useMemo(() => allItems.filter((item) => {
     if (category !== "all" && item.categoryKey !== category) return false;
     if (kind === "template" && tier !== "all" && resolveTemplateTier(item.id) !== tier) return false;
@@ -163,13 +163,13 @@ interface BuiltInItem {
   meta: string;
   searchText: string;
   preview: React.ReactNode;
-  /** 分类键(参考帆软"大类清晰"组织):2D=用途大类,模板=行业 9 大类,预制体=kind。 */
+  /** 分类键(大类清晰组织):2D=用途大类,模板=行业 9 大类,预制体=kind。 */
   categoryKey?: string;
   /** 仅模板分支:封面下方的特征标签行(来自布局结构的诚实推导)。 */
   tags?: readonly { zh: string; en: string }[];
 }
 
-/** 2D 预设的 category 到帆软式大类(大类清晰、同级互斥)的映射。 */
+/** 2D 预设的语义大类映射(大类清晰、同级互斥)。 */
 function buildCategoryChips(items: BuiltInItem[], kind: BuiltInAssetKind, locale: AppLocale): Array<{ key: string; label: string; count: number }> {
   const counts = new Map<string, number>();
   for (const item of items) {

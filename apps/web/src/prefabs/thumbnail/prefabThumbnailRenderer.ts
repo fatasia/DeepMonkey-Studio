@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { createThumbnailCache, thumbnailCacheGeneration } from "../../settings/thumbnailCache";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import type { IndustrialPrefabDefinition } from "@bim-studio/contracts";
@@ -21,7 +22,7 @@ import { prefabModelMatchFor, prefabModelPreviewUrl } from "./prefabModelMatches
  * - Box3 包围球自动取景,三档构图(平视 3/4 / 高俯视 / 侧低)按变体轮换,
  *   主体占画面 72~82%(FRAMING 取 1/0.82~1/0.72),禁止满幅顶格;
  * - 冷/暖两套场景氛围(渐变噪点背景 + 渐隐网格站台 + 接触阴影)与两套布光
- *   (主光角度/色温)按 kind 交替,轮廓光按域色微调 —— 对标 ThingJS 封面的
+ *   (主光角度/色温)按 kind 交替,轮廓光按域色微调 —— 对标 预制体参考 封面的
  *   环境/光照多样性,同时背景始终与 --bg-0 萤和;
  * - definitionId 级缓存,重复进入面板零渲染成本;GLB 源模型按 assetId 复用
  *   (克隆渲染、原件缓存,上限 FIFO 淘汰),失败资产会话内不再重试;
@@ -49,7 +50,7 @@ export type PrefabThumbnailPainter = (model: THREE.Group) => string | undefined;
 /** 可注入的 GLB 源加载器:真实实现走 asset-library preview;测试注入假实现验证回退。 */
 export type PrefabGlbSourceLoader = (assetId: string) => Promise<THREE.Group>;
 
-const cache = new Map<string, string>();
+const cache = createThumbnailCache("industrial-prefabs");
 const pending = new Map<string, Promise<string | undefined>>();
 const queue: RenderJob[] = [];
 let pumpScheduled = false;
@@ -76,11 +77,12 @@ export function getPrefabThumbnail(definition: IndustrialPrefabDefinition): Prom
   if (hit) return Promise.resolve(hit);
   const inFlight = pending.get(definition.id);
   if (inFlight) return inFlight;
+  const generation = thumbnailCacheGeneration();
   const task = new Promise<string | undefined>((resolve) => {
     queue.push({ definition, resolve });
   }).then((dataUrl) => {
     pending.delete(definition.id);
-    if (dataUrl) cache.set(definition.id, dataUrl);
+    if (dataUrl && generation === thumbnailCacheGeneration()) cache.set(definition.id, dataUrl);
     return dataUrl;
   });
   pending.set(definition.id, task);
@@ -449,7 +451,7 @@ function createBackdropTexture(mode: SceneMode): THREE.CanvasTexture {
   return texture;
 }
 
-/** 渐隐网格站台纹理:底盘色 + 细网格线,再经径向遮罩向边缘完全淡出(山海鲸水位,禁生硬平铺)。 */
+/** 渐隐网格站台纹理:底盘色 + 细网格线,再经径向遮罩向边缘完全淡出(外部参考水位,禁生硬平铺)。 */
 function createGroundTexture(mode: SceneMode): THREE.CanvasTexture {
   const size = 256;
   const canvas = document.createElement("canvas");

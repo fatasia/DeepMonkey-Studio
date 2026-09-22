@@ -31,13 +31,14 @@ export function lowerDashboardChart(input: {
   const { widget, data } = input;
   if (!input.nodeId || !Number.isSafeInteger(input.revision) || input.revision < 1)
     reject("node", "图表必须绑定有效作者节点与 revision");
-  if (!["bar", "line", "scatter", "pie"].includes(widget.type))
+  if (!["bar", "line", "scatter", "pie", "combo"].includes(widget.type))
     reject("widget.type", "该作者图表类型尚无等价 ChartIR lowering");
   if (widget.semanticBinding) reject("widget.semanticBinding", "语义绑定尚需明确的解析后作者配置快照");
   if (widget.analysis?.drillFields?.length) reject("widget.analysis.drillFields", "钻取状态尚未编译");
   if (widget.chart?.stacked) reject("widget.chart.stacked", "ChartIR 尚未表达堆叠");
   if (widget.chart?.showDataLabels) reject("widget.chart.showDataLabels", "ChartIR 尚未表达数据标签");
-  if (widget.chart?.secondaryAxisSeries?.length) reject("widget.chart.secondaryAxisSeries", "作者双轴映射尚未编译");
+  if (widget.chart?.secondaryAxisSeries?.length && widget.type !== "combo")
+    reject("widget.chart.secondaryAxisSeries", "双轴映射仅适用于组合图");
   for (const key of Object.keys(widget.chart ?? {})) {
     if (!["stacked", "showDataLabels", "showLegend", "secondaryAxisSeries"].includes(key))
       reject(`widget.chart.${key}`, "未知作者图表配置");
@@ -70,14 +71,26 @@ export function lowerDashboardChart(input: {
     reject("data.metric", "超过 20 类的饼图需先统一 Web 截取语义"); return blocked();
   }
   const selected = widget.type === "pie" ? values.slice(0, 1) : values;
+  const secondaryNames = new Set(widget.chart?.secondaryAxisSeries ?? []);
+  // Keep the Web author's default: an explicit list wins; otherwise the last
+  // combo series uses the secondary value axis.
+  const secondaryIndex = widget.type === "combo"
+    ? (secondaryNames.size ? values.findIndex(item => secondaryNames.has(item.name)) : values.length - 1)
+    : -1;
+  if (widget.type === "combo" && secondaryNames.size && values.some(item => !secondaryNames.has(item.name))
+    && values.every(item => !secondaryNames.has(item.name))) {
+    reject("widget.chart.secondaryAxisSeries", "双轴系列名称未匹配冻结数据系列"); return blocked();
+  }
   selected.forEach((item, index) => {
     const datasetId = `data.${index}`;
     datasets.push({ id: datasetId, dimensions: ["category", "value"],
       rows: categories.map((category, row) => [widget.type === "scatter" ? row : category, item.values[row]!]) });
+    const secondary = widget.type === "combo" && (secondaryNames.size ? secondaryNames.has(item.name) : index === secondaryIndex);
     series.push(widget.type === "pie"
       ? { id: `series.${index}`, label: item.name, type: "pie", datasetId, name: "category", value: "value" }
-      : { id: `series.${index}`, label: item.name, type: widget.type as "line" | "bar" | "scatter",
-        datasetId, x: "category", y: "value", xAxisId: "axis.x", yAxisId: "axis.y" });
+      : { id: `series.${index}`, label: item.name,
+        type: widget.type === "combo" ? (secondary ? "line" : "bar") : widget.type as "line" | "bar" | "scatter",
+        datasetId, x: "category", y: "value", xAxisId: "axis.x", yAxisId: secondary ? "axis.y.secondary" : "axis.y" });
   });
   const readable = Boolean(widget.fontSize && Number.isFinite(widget.fontSize));
   const showLegend = widget.type === "scatter" ? false
@@ -85,7 +98,8 @@ export function lowerDashboardChart(input: {
   const compiled = compileChartSpec({ schemaVersion: 1, id, datasets, series,
     axes: widget.type === "pie" ? [] : [
       { id: "axis.x", channel: "x", scale: widget.type === "scatter" ? "linear" : "category" },
-      { id: "axis.y", channel: "y", scale: "linear" }],
+      { id: "axis.y", channel: "y", scale: "linear" },
+      ...(widget.type === "combo" && secondaryIndex >= 0 ? [{ id: "axis.y.secondary", channel: "y" as const, scale: "linear" as const }] : [])],
     legend: { visible: showLegend, position: readable ? "bottom" : "top" },
     tooltip: { enabled: true, trigger: widget.type === "pie" || widget.type === "scatter" ? "item" : "axis" },
   });

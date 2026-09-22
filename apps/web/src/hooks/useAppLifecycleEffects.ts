@@ -20,6 +20,7 @@ import {
 } from "../delivery/sceneViewerDelivery";
 import { applyDocumentBranding } from "../branding/documentBranding";
 import { canAutomaticallyChangeRenderer } from "../viewer/rendererBackendPreference";
+import { useEditorPresence } from "./useEditorPresence.js";
 
 type ApplicationController = ReturnType<typeof createApplicationRuntimeController>;
 type PersistenceController = ReturnType<typeof createScenePersistenceController>;
@@ -34,6 +35,7 @@ interface AppLifecycleEffectsOptions {
 
 /** 集中处理会话、自动保存、品牌和发布渲染策略等应用生命周期副作用。 */
 export function useAppLifecycleEffects({ state, saveActiveApplication, saveScene, changeRendererBackend }: AppLifecycleEffectsOptions) {
+  useEditorPresence(state);
   const {
     activeApplication,
     activeScene,
@@ -136,6 +138,7 @@ export function useAppLifecycleEffects({ state, saveActiveApplication, saveScene
     let cancelled = false;
     let retryTimer: number | undefined;
     let restoreAttempts = 0;
+    const restoreToken = getAuthToken();
     const requireLogin = () => {
       // 会话失效也终止本次启动恢复，避免旧请求或重试重新写回已失效用户。
       cancelled = true;
@@ -155,24 +158,22 @@ export function useAppLifecycleEffects({ state, saveActiveApplication, saveScene
     } else if (!getAuthToken()) setAuthReady(true);
     else {
       const restoreSession = () => {
-        if (cancelled) return;
+        if (cancelled || getAuthToken() !== restoreToken) return;
         void api.me().then((user) => {
-          if (cancelled) return;
+          if (cancelled || getAuthToken() !== restoreToken) return;
           setCurrentUser(user);
           setAuthReady(true);
         }).catch(() => {
-          if (cancelled) return;
+          if (cancelled || getAuthToken() !== restoreToken) return;
           // 401 交给统一二次复核；断网和 5xx 保持凭据并等待服务恢复，不跳回登录页。
           if (!getAuthToken()) {
             setAuthReady(true);
             return;
           }
-          if (++restoreAttempts >= 3) {
-            // 服务不可达时不能把整个工作台卡在“验证本地会话”；保留凭据供下一次登录重试。
-            setAuthReady(true);
-            return;
-          }
-          retryTimer = window.setTimeout(restoreSession, 2_000);
+          if (++restoreAttempts === 3) setAuthReady(true);
+          // 三次失败后开放登录入口，同时退避恢复原会话；不能在服务恢复后停留在登录页。
+          const retryDelay = Math.min(30_000, 2_000 * 2 ** Math.min(4, Math.max(0, restoreAttempts - 2)));
+          retryTimer = window.setTimeout(restoreSession, retryDelay);
         });
       };
       restoreSession();

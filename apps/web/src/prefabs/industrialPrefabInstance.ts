@@ -23,7 +23,8 @@ export function industrialPrefabPrimitiveVisual(kind: IndustrialPrefabKind): Ind
   if (kind === "conveyor") return visual("box", "#2b9c8b", [1.8, 0.3, 0.55], 0.3);
   if (kind === "agv") return visual("box", "#318f7d", [0.7, 0.28, 0.5], 0.28);
   if (kind === "vehicle") return visual("box", "#337fd1", [1.25, 0.45, 0.65], 0.45);
-  if (kind === "fence") return visual("box", "#329b8b", [1.5, 0.7, 0.08], 0.7);
+  if (kind === "fence") return visual("box", "#329b8b", [1, 1, 1], 1);
+  if (kind === "road") return visual("box", "#53616a", [1, 1, 1], 1);
   if (kind === "access-control") return visual("box", "#347ebc", [0.55, 1, 0.18], 1);
   if (kind === "display") return visual("box", "#2b8f91", [0.8, 0.5, 0.08], 0.8);
   if (kind === "storage") return visual("box", "#258e75", [0.8, 0.9, 0.55], 0.9);
@@ -45,6 +46,18 @@ export function createIndustrialPrefabInstance(
     kind: definition.kind,
     parameters,
     operatingState: "idle",
+    ...(definition.pathCapable ? {
+      placementPath: {
+        points: [
+          { id: createId(), position: { x: 0, y: 0, z: 0 } },
+          { id: createId(), position: { x: pathLength(definition.kind, parameters), y: 0, z: 0 } },
+        ],
+        interpolation: "linear" as const,
+        closed: false,
+        snapToGround: true,
+        seed: stableSeed(definition.id),
+      },
+    } : {}),
     ...(definition.routeCapable ? {
       motionRoute: {
         enabled: true,
@@ -61,6 +74,18 @@ export function createIndustrialPrefabInstance(
       },
     } : {}),
   };
+}
+
+function pathLength(kind: IndustrialPrefabKind, parameters: Record<string, string | number | boolean>): number {
+  if (kind === "road") return numeric(parameters.lengthM, 20);
+  if (kind === "fence") return numeric(parameters.postSpacingM, 2) * 2 + numeric(parameters.gateWidthM, 0);
+  return 5;
+}
+
+function stableSeed(value: string): number {
+  let result = 2166136261;
+  for (let index = 0; index < value.length; index++) result = Math.imul(result ^ value.charCodeAt(index), 16777619);
+  return result >>> 0;
 }
 
 function visual(

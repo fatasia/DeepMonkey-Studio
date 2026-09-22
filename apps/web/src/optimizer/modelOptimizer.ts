@@ -3,6 +3,7 @@ import { center, dedup, draco, prune, simplify, textureCompress, unwrap, weld } 
 import { MeshoptSimplifier } from "meshoptimizer";
 import { bakeWebLightmap, type WebLightmapResult } from "./lightmapBaker";
 import { preserveOptimizationCredit } from "./modelOptimizationCredit";
+import { separateLightmapInstances } from "./lightmapInstances";
 import { optimizerIO } from "./modelOptimizerIO";
 import { migrateLegacyMaterials } from "./legacyGltfMaterials";
 import { compressKtx2Textures, type Ktx2Quality } from "./ktx2Encoder";
@@ -26,7 +27,7 @@ export interface ModelOptimizationOptions {
   lightmapAoSamples: 4 | 8;
   lightmapShadows: boolean;
   lightmapShadowSamples: 1 | 4 | 8;
-  lightmapIndirectSamples: 0 | 2 | 4;
+  lightmapIndirectSamples: 0 | 2 | 4 | 64;
   lightmapDenoise: boolean;
   origin: "keep" | "center" | "ground";
   removeUnused: boolean;
@@ -124,6 +125,7 @@ export async function optimizeModelFile(
     onProgress?.("正在烘焙顶点光照");
     bakeVertexLighting(document, { strength: options.bakeStrength, ambient: options.bakeAmbient, ambientColor: options.bakeAmbientColor, lights: options.bakeLights });
   } else if (options.bakeEnabled) {
+    separateLightmapInstances(document);
     onProgress?.("正在自动展开 UV2 光照图集");
     try {
       await unwrapLightmapUvs(document);

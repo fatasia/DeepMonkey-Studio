@@ -19,6 +19,10 @@ export function sha256(value) {
   return createHash("sha256").update(value).digest("hex").toUpperCase();
 }
 
+export function resolveSceneViewerProductName(requested) {
+  return requested?.trim() || "Deep Monkey Studio";
+}
+
 /**
  * 只读包的临时 Web 产物必须与普通 Web dist 隔离；同时先约束 packageId，
  * 避免后续递归清理把路径带出 `.scene-viewer-build`。
@@ -194,9 +198,20 @@ export function createTauriOverlay(options) {
         csp: "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ipc:; worker-src 'self' blob:",
         capabilities: ["scene-viewer"],
       },
-      windows: [{ label: "main", title: options.productName, width: 1440, height: 900, minWidth: 900, minHeight: 600, center: true, resizable: true }],
+      // 桌面 setup hook 统一创建主窗；只读入口没有编辑器的自绘标题栏。
+      windows: [{ label: "main", title: options.productName, create: false, decorations: true,
+        width: 1440, height: 900, minWidth: 900, minHeight: 600, center: true, resizable: true }],
     },
-    bundle: { windows: { nsis: { installMode: "perMachine", displayLanguageSelector: true, startMenuFolder: options.productName }, wix: { language: "zh-CN" } } },
+    bundle: {
+      ...(options.iconPath ? { icon: [options.iconPath] } : {}),
+      windows: {
+        nsis: {
+          installMode: "perMachine", displayLanguageSelector: true, startMenuFolder: options.productName,
+          ...(options.iconPath ? { installerIcon: options.iconPath, uninstallerIcon: options.iconPath } : {}),
+        },
+        wix: { language: "zh-CN" },
+      },
+    },
   };
 }
 
@@ -256,6 +271,14 @@ function looksLikeResource(value) {
 async function downloadResources(urls, options) {
   const result = [];
   for (const originalUrl of urls) {
+    if (options.frozenResources) {
+      const bytes = options.frozenResources.get(originalUrl);
+      if (!bytes) throw new Error(`冻结包缺少资源：${originalUrl}`);
+      const digest = sha256(bytes);
+      const localUrl = `/delivery/assets/${digest.slice(0, 16).toLowerCase()}-${safeName(path.basename(originalUrl))}`;
+      result.push({ originalUrl, localUrl, sha256: digest, bytes: bytes.length, content: bytes });
+      continue;
+    }
     const resolved = new URL(originalUrl, options.apiOrigin ?? "http://127.0.0.1");
     if (!['http:', 'https:'].includes(resolved.protocol)) throw new Error(`资源协议不受支持：${originalUrl}`);
     const sameOrigin = options.apiOrigin && resolved.origin === new URL(options.apiOrigin).origin;

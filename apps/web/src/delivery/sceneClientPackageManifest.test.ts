@@ -86,14 +86,15 @@ describe("scene package content manifest", () => {
     expect(manifest.contentHash).toEqual({ algorithm: "sha256", value: contentHash(manifest) });
   });
 
-  it("keeps content identity stable when only generation and ZIP dates change", async () => {
+  it("keeps archive timestamps and content identity stable across wall-clock changes", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-09-15T00:00:00Z"));
     const first = await archive();
     vi.setSystemTime(new Date("2026-09-17T05:00:00Z"));
     const second = await archive();
-    expect(first.manifest.generatedAt).not.toBe(second.manifest.generatedAt);
-    expect(first.zip.file("scene.json")!.date.getTime()).not.toBe(second.zip.file("scene.json")!.date.getTime());
+    expect(first.manifest.generatedAt).toBe("2026-09-15T00:00:00.000Z");
+    expect(second.manifest.generatedAt).toBe(first.manifest.generatedAt);
+    expect(second.zip.file("scene.json")!.date.getTime()).toBe(first.zip.file("scene.json")!.date.getTime());
     expect(first.manifest.contentHash).toEqual(second.manifest.contentHash);
     expect(first.manifest.files).toEqual(second.manifest.files);
   });

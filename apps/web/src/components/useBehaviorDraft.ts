@@ -9,7 +9,7 @@ export function useBehaviorDraft(options: {
   scripts: readonly ScriptModule[];
   preferredTarget?: SceneScriptTarget;
   initialSelectedId?: string;
-  onUpsert: (script: ScriptModule) => void;
+  onUpsert: (script: ScriptModule) => void | boolean;
   onInvalidName: () => void;
 }) {
   const [selectedId, setSelectedId] = useState(() => options.scripts.find(script => targetMatches(script.target, options.preferredTarget))?.id
@@ -36,8 +36,7 @@ export function useBehaviorDraft(options: {
     const current = latest.current;
     if (!current.dirty || !current.draft) return true;
     if (!current.draft.name.trim()) { current.onInvalidName(); return false; }
-    current.onUpsert(current.draft);
-    return true;
+    return current.onUpsert(current.draft) !== false;
   }
 
   function activate(script: ScriptModule) {
@@ -57,7 +56,7 @@ export function useBehaviorDraft(options: {
 
   function addScripts(scripts: readonly ScriptModule[], selectFirst = true) {
     if (!scripts.length || !live.current || !prepareLeave()) return false;
-    scripts.forEach(latest.current.onUpsert);
+    if (scripts.some(script => latest.current.onUpsert(script) === false)) return false;
     if (selectFirst) { setPendingScript(scripts[0]); activate(scripts[0]!); }
     return true;
   }

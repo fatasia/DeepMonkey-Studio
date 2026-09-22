@@ -100,6 +100,23 @@ describe("dashboard offline entry publication authority", () => {
     click("离线包"); render(); await flush(); click("开始准备");
     expect(harness.prepare.mock.calls[0]![2].entryPageId).toBe("published-home");
   });
+  it("shows each degraded or blocked field as the capability reason", async () => {
+    harness.prepare.mockResolvedValueOnce({ candidateId: "candidate-1", applicationRevision: 7,
+      objects: [
+        { nodeId: "chart", status: "degraded", deferredFields: ["widget.title", "widget.options"],
+          reasons: ["Frozen chart data is compiled into ChartIR; Web appearance remains deferred"] },
+        { nodeId: "video", status: "blocked", deferredFields: ["widget.video"],
+          reasons: ["Video playback requires a media decoder, texture update clock and player state contract"] },
+      ], expiresAt: "2026-09-17T01:00:00Z" });
+    click("离线包"); render(); await flush(); click("开始准备"); await flush();
+    const text = render().map(label).join(" ");
+    expect(text).toContain("降级原因");
+    expect(text).toContain("Frozen chart data is compiled into ChartIR");
+    expect(text).toContain("widget.title、widget.options");
+    expect(text).toContain("阻断原因");
+    expect(text).toContain("Video playback requires a media decoder");
+    expect(text).toContain("widget.video");
+  });
   it("ignores a late download error body after a newer preparation starts", async () => {
     let finish!: (value: unknown) => void;
     harness.prepare.mockResolvedValueOnce({ candidateId: "first", applicationRevision: 7, objects: [], expiresAt: "2026-09-17T01:00:00Z" });

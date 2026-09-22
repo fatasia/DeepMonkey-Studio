@@ -78,6 +78,32 @@ describe("app route", () => {
     expect(routePath({ view: "operations", operationsTab: "whatif" })).toBe("/operations?task=whatif");
   });
 
+  it.each([undefined, "factory / 2"])("round-trips performance settings after reload with project %s", (projectId) => {
+    const route = { view: "system" as const, systemTab: "performance" as const, ...(projectId ? { projectId } : {}) };
+    const url = new URL(routePath(route), "http://localhost");
+    expect(url.searchParams.get("tab")).toBe("performance");
+    const originalWindow = globalThis.window;
+    Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { pathname: url.pathname, search: url.search }, history: { state: null } } });
+    try { expect(readRoute()).toEqual(route); }
+    finally { Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow }); }
+  });
+
+  it("keeps the MCP settings section in a shareable route", () => {
+    expect(routePath({ view: "system", systemTab: "mcp" })).toBe("/system?tab=mcp");
+    const originalWindow = globalThis.window;
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: { location: { pathname: "/system", search: "?tab=mcp" }, history: { state: null } },
+    });
+    try {
+      expect(readRoute()).toEqual({ view: "system", systemTab: "mcp" });
+      globalThis.window.location.search = "?tab=unknown";
+      expect(readRoute()).toEqual({ view: "system" });
+    } finally {
+      Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+    }
+  });
+
   it("restores only known operations tasks from the URL", () => {
     const originalWindow = globalThis.window;
     Object.defineProperty(globalThis, "window", {

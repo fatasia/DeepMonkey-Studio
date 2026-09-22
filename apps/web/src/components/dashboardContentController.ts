@@ -149,7 +149,7 @@ export function createDashboardContentController(context: DashboardContentContro
   }
 
   async function uploadComponentBackground(file: File | undefined) {
-    if (!file || !selectedNode || selectedNode.kind !== "data-widget") return;
+    if (!file || !selectedNode || selectedNode.locked || selectedNode.kind !== "data-widget") return;
     const nodeId = selectedNode.id;
     const current = structuredClone(selectedNode.widget);
     const { api } = await import("../api");
@@ -159,7 +159,7 @@ export function createDashboardContentController(context: DashboardContentContro
   }
 
   function clearComponentBackground() {
-    if (!selectedNode || selectedNode.kind !== "data-widget") return;
+    if (!selectedNode || selectedNode.locked || selectedNode.kind !== "data-widget") return;
     const widget = { ...selectedNode.widget };
     delete widget.componentBackgroundImageUrl;
     delete widget.componentBackgroundImageName;
@@ -167,7 +167,7 @@ export function createDashboardContentController(context: DashboardContentContro
   }
 
   function applyComponentBackground(asset: (typeof DASHBOARD_COMPONENT_BACKGROUNDS)[number]) {
-    if (!selectedNode || selectedNode.kind !== "data-widget") return;
+    if (!selectedNode || selectedNode.locked || selectedNode.kind !== "data-widget") return;
     updateDataWidget({ componentBackgroundImageUrl: asset.url, componentBackgroundImageName: dashboardComponentBackgroundText(asset, locale), componentBackgroundImageFit: "stretch", componentBackgroundImagePosition: "center", componentBackgroundImageRepeat: false });
   }
 
@@ -260,14 +260,14 @@ export function createDashboardContentController(context: DashboardContentContro
   }
 
   function updateSceneViewport(patch: Partial<Pick<Extract<WidgetNode, { kind: "scene-viewport" }>, "sceneId" | "cameraViewId" | "renderMode" | "interactionPolicy">>) {
-    if (!selectedNode || selectedNode.kind !== "scene-viewport") return;
+    if (!selectedNode || selectedNode.locked || selectedNode.kind !== "scene-viewport") return;
     const next = { sceneId: selectedNode.sceneId, renderMode: selectedNode.renderMode, interactionPolicy: selectedNode.interactionPolicy, ...(selectedNode.cameraViewId ? { cameraViewId: selectedNode.cameraViewId } : {}), ...patch };
     if (!next.cameraViewId) delete next.cameraViewId;
     onCommand(createUpdateDashboardSceneViewportCommand(page.id, selectedNode.id, next));
   }
 
   function commitNodeName(value: string) {
-    if (!selectedNode) return;
+    if (!selectedNode || selectedNode.locked) return;
     const name = value.trim();
     if (!name) {
       setNodeNameError(tr(locale, "组件名称不能为空", "Component name is required"));
@@ -283,10 +283,11 @@ export function createDashboardContentController(context: DashboardContentContro
   }
 
   function updateDataWidget(patch: Partial<DashboardDataWidgetConfig>) {
-    if (!selectedNode || selectedNode.kind !== "data-widget") return;
+    if (!selectedNode || selectedNode.locked || selectedNode.kind !== "data-widget") return;
     // 同一模板实例的示例快照一起更新；一个撤销命令，重复插入的模板互不影响。
     const sourceId = selectedNode.widget.sampleData?.sourceId;
     if (patch.sampleData && sourceId) {
+      if (page.nodes.some(node => node.kind === "data-widget" && node.widget.sampleData?.sourceId === sourceId && node.locked)) return;
       onCommand(createUpdateDashboardDataWidgetsCommand(page.id, page.nodes.flatMap(node =>
         node.kind === "data-widget" && node.widget.sampleData?.sourceId === sourceId
           ? [{ nodeId: node.id, widget: { ...node.widget, sampleData: { ...patch.sampleData!, sourceId } } }] : []), tr(locale, "修改示例数据", "Edit sample data")));
@@ -296,7 +297,7 @@ export function createDashboardContentController(context: DashboardContentContro
   }
 
   function selectDataProduct(value: string) {
-    if (!selectedNode || selectedNode.kind !== "data-widget") return;
+    if (!selectedNode || selectedNode.locked || selectedNode.kind !== "data-widget") return;
     const next = { ...selectedNode.widget };
     delete next.datasetId;
     delete next.pipelineId;

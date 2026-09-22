@@ -1,3 +1,6 @@
+import { MaterialScopeEditor } from "./MaterialScopeEditor";
+import type { SelectionMaterialSlot } from "../viewer/materialSlots";
+import { DeferredNumberInput } from "./AppFormControls";
 import type {
   SceneMaterialState,
   SceneModelEffectsState,
@@ -27,8 +30,10 @@ interface ObjectAppearanceEditorProps {
   effects?: SceneModelEffectsState;
   onMaterialChange: (patch: SceneMaterialState) => void;
   onEffectsChange: (patch: Partial<SceneModelEffectsState>) => void;
-  onChooseTexture: (kind: MaterialTextureKind) => void;
+  onChooseTexture: (kind: MaterialTextureKind, slotId?: string) => void;
   projectAssets?: ProjectAssetRecord[];
+  materialSlots?: readonly SelectionMaterialSlot[];
+
 }
 
 const MATERIAL_PRESETS: ReadonlyArray<{
@@ -74,7 +79,16 @@ const TEXTURE_CONTROLS: ReadonlyArray<{
 ];
 
 /** 对象外观编辑器仅处理材质和视觉特效，不承担选择、数据绑定或场景保存。 */
-export function ObjectAppearanceEditor({
+export function ObjectAppearanceEditor(props: ObjectAppearanceEditorProps) {
+  return <MaterialScopeEditor locale={props.locale} disabled={props.disabled} material={props.material}
+    slots={props.materialSlots ?? []} onChange={props.onMaterialChange}>
+    {(material, onMaterialChange, slotId) => <ObjectAppearanceFields {...props}
+      material={material} onMaterialChange={onMaterialChange}
+      onChooseTexture={kind => props.onChooseTexture(kind, slotId)} />}
+  </MaterialScopeEditor>;
+}
+
+function ObjectAppearanceFields({
   locale,
   rendererBackend,
   disabled,
@@ -145,6 +159,13 @@ export function ObjectAppearanceEditor({
           disabled={disabled}
           onChange={(value) => onMaterialChange({ metalness: value })}
         />
+
+        <label className="material-range" title={tr(locale, "控制非金属表面的反射强度；默认 1.5", "Controls dielectric surface reflectance; default 1.5")}>
+          <span>{tr(locale, "折射率", "Index of refraction")}</span>
+          <DeferredNumberInput value={material.ior} min={1} step={0.01}
+            ariaLabel={tr(locale, "折射率", "Index of refraction")} disabled={disabled || material.ior === undefined}
+            onCommit={ior => { if (ior >= 1 && Number.isFinite(Math.fround(ior))) onMaterialChange({ ior }); }} />
+        </label>
 
         <label className="material-emissive">
           <span>{tr(locale, "自发光", "Emissive")}</span>
@@ -292,7 +313,7 @@ function MaterialRange({
   onChange: (value: number) => void;
 }) {
   return (
-    <label>
+    <label className="material-scalar-control">
       <span>{tr(locale, ...label)}</span>
       <input
         disabled={disabled || value === undefined}
@@ -303,7 +324,14 @@ function MaterialRange({
         value={value ?? 0}
         onChange={(event) => onChange(Number(event.target.value))}
       />
-      <output>{value?.toFixed(2) ?? "—"}</output>
+      <DeferredNumberInput
+        className="material-scalar-value"
+        ariaLabel={`${tr(locale, ...label)} ${tr(locale, "数值", "value")}`}
+        min={0} max={1} step={0.01}
+        disabled={disabled || value === undefined}
+        value={value ?? 0}
+        onCommit={onChange}
+      />
     </label>
   );
 }

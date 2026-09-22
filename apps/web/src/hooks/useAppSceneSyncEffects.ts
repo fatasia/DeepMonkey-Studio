@@ -9,6 +9,7 @@ import { createTopologyRuntimeFailure, createTopologyRuntimeSnapshot, groupTopol
 import { focusViewerTargetWhenReady } from "../studio/workspaceTargetNavigation";
 import { deleteWorkspaceRecoveryDraft, readWorkspaceRecoveryDraft, type WorkspaceRecoveryDraft } from "../studio/workspaceRecoveryStore";
 import type { createScenePersistenceController } from "../controllers/scenePersistenceController";
+import { recoverSceneRouteRead } from "./sceneRouteRecovery";
 
 type PersistenceController = ReturnType<typeof createScenePersistenceController>;
 
@@ -79,10 +80,12 @@ export function useAppSceneSyncEffects({ state, recoveryDecisionRef, setRecovery
       }
       return;
     }
-    let cancelled = false;
-    void Promise.all([api.getProject(projectId), api.getApplication(projectId, applicationId)])
-      .then(([nextProject, application]) => {
-        if (cancelled) return;
+    if (!currentUser) return;
+    return recoverSceneRouteRead({
+      read: () => Promise.all([api.getProject(projectId), api.getApplication(projectId, applicationId)]),
+      apply: async ([nextProject, application]) => {
+        const current = applicationSessionRef.current.store.getState().document;
+        if (current?.metadata.projectId === projectId && current.metadata.id === applicationId) return;
         const page = application.pages.find((candidate) => candidate.id === pageId) ?? application.pages[0];
         if (!page) throw new Error("应用没有可编辑的二维页面");
         setProject(nextProject);
@@ -92,24 +95,27 @@ export function useAppSceneSyncEffects({ state, recoveryDecisionRef, setRecovery
         applicationSessionRef.current.openDocument(application);
         if (page.id !== pageId)
           navigate({ view: "dashboard", projectId, applicationId, pageId: page.id, ...(route.dashboardView ? { dashboardView: route.dashboardView } : {}) }, true);
-      })
-      .catch((reason) => {
-        if (!cancelled) showError(reason);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [route.view, route.projectId, route.applicationId, route.pageId, activeApplication?.pages]);
+      },
+      onError: showError,
+    });
+  }, [route.view, route.projectId, route.applicationId, route.pageId, activeApplication?.pages, currentUser?.id]);
 
   useEffect(() => {
     if (route.view !== "topology" || !route.projectId || !route.applicationId || !route.topologyId) return;
     const { projectId, applicationId, topologyId } = route;
-    const opened = applicationSessionRef.current.store.getState().document;
-    let cancelled = false;
-    const loadDocument = opened?.metadata.projectId === projectId && opened.metadata.id === applicationId ? Promise.resolve(opened) : api.getApplication(projectId, applicationId);
-    void Promise.all([api.getProject(projectId), loadDocument, api.listDatasets(projectId), api.listDataPipelines(projectId)])
-      .then(([nextProject, application, datasets, pipelines]) => {
-        if (cancelled) return;
+    if (!currentUser) return;
+    const currentDocument = () => {
+      const document = applicationSessionRef.current.store.getState().document;
+      return document?.metadata.projectId === projectId && document.metadata.id === applicationId ? document : undefined;
+    };
+    return recoverSceneRouteRead({
+      read: () => Promise.all([
+        api.getProject(projectId), currentDocument() ?? api.getApplication(projectId, applicationId),
+        api.listDatasets(projectId), api.listDataPipelines(projectId),
+      ]),
+      apply: async ([nextProject, fetchedApplication, datasets, pipelines]) => {
+        // The document may have been edited while datasets or a retry were in flight.
+        const application = currentDocument() ?? fetchedApplication;
         const topology = application.topologies.find((candidate) => candidate.id === topologyId) ?? application.topologies[0];
         if (!topology) throw new Error("应用没有可编辑的拓扑文档");
         setProject(nextProject);
@@ -133,14 +139,10 @@ export function useAppSceneSyncEffects({ state, recoveryDecisionRef, setRecovery
           })),
         ]);
         if (topology.id !== topologyId) navigate({ view: "topology", projectId, applicationId, topologyId: topology.id }, true);
-      })
-      .catch((reason) => {
-        if (!cancelled) showError(reason);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [route.view, route.projectId, route.applicationId, route.topologyId]);
+      },
+      onError: showError,
+    });
+  }, [route.view, route.projectId, route.applicationId, route.topologyId, currentUser?.id]);
 
   useEffect(() => {
     if (route.view !== "topology" || !project || !activeTopology) {
@@ -187,34 +189,29 @@ export function useAppSceneSyncEffects({ state, recoveryDecisionRef, setRecovery
     const workspaceKey = `${engine.scene.uuid}:${route.projectId ?? "browse"}:${route.applicationId ?? "scene"}:${sceneId}`;
     const applicationMatches = !route.applicationId || activeApplication?.metadata.id === route.applicationId;
     if (activeScene?.id === sceneId && applicationMatches && engine.hasRestoredSceneSnapshot(sceneId)) return;
+    if (!currentUser) return;
     if (sceneWorkspaceLoadRef.current === workspaceKey) return;
     sceneWorkspaceLoadRef.current = workspaceKey;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const [result, application] = await Promise.all([
+    const cancelRead = recoverSceneRouteRead({
+      read: () => Promise.all([
           api.getSceneForBrowse(sceneId),
           route.projectId && route.applicationId ? api.getApplication(route.projectId, route.applicationId) : Promise.resolve(undefined),
-        ]);
-        if (cancelled) return;
+        ]),
+      apply: async ([result, application]) => {
         setProject(result.project);
         setProjects((items) =>
           items.some((item) => item.id === result.project.id) ? items.map((item) => (item.id === result.project.id ? result.project : item)) : [...items, result.project],
         );
         if (application) applicationSessionRef.current.openDocument(application);
         await applyScene(result.scene, false, result.project, false, false, true);
-      } catch (reason) {
-        if (!cancelled) {
-          sceneWorkspaceLoadRef.current = undefined;
-          showError(reason);
-        }
-      }
-    })();
+      },
+      onError: showError,
+    });
     return () => {
-      cancelled = true;
-      if (activeScene?.id !== sceneId && sceneWorkspaceLoadRef.current === workspaceKey) sceneWorkspaceLoadRef.current = undefined;
+      cancelRead();
+      if (sceneWorkspaceLoadRef.current === workspaceKey) sceneWorkspaceLoadRef.current = undefined;
     };
-  }, [route.view, route.projectId, route.applicationId, route.sceneId, engine, activeScene?.id, showError]);
+  }, [route.view, route.projectId, route.applicationId, route.sceneId, engine, activeScene?.id, currentUser?.id, showError]);
 
   useEffect(() => {
     const pending = pendingSceneFocusRef.current;

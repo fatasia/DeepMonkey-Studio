@@ -36,6 +36,7 @@ export function InteractionEditor({
   pageOptions = [],
   cameraViewOptions = [],
   intelligence,
+  disabled = false,
   onChange,
   onTest,
   onOpenDocs,
@@ -49,6 +50,7 @@ export function InteractionEditor({
   pageOptions?: InteractionChoiceOption[];
   cameraViewOptions?: InteractionChoiceOption[];
   intelligence?: SceneScriptIntelligenceContext;
+  disabled?: boolean;
   onChange: (interactions: SceneInteractionScriptState[]) => void;
   onTest: (script: SceneInteractionScriptState) => void;
   onOpenDocs?: () => void;
@@ -66,16 +68,17 @@ export function InteractionEditor({
   function selectTrigger(trigger: SceneInteractionTrigger) {
     setSelectedTrigger(trigger);
     if (targetScripts.some((script) => script.trigger === trigger)) return;
+    if (disabled) return;
     onChange([...interactions, createInteractionScript(target, trigger)]);
   }
 
   function updateSelected(patch: Partial<SceneInteractionScriptState>) {
-    if (!selected) return;
+    if (!selected || disabled) return;
     onChange(interactions.map((script) => (script.id === selected.id ? { ...script, ...patch } : script)));
   }
 
   function removeSelected() {
-    if (!selected) return;
+    if (!selected || disabled) return;
     onChange(interactions.filter((script) => script.id !== selected.id));
   }
 
@@ -120,7 +123,7 @@ export function InteractionEditor({
           {INTERACTION_TRIGGERS.map((trigger) => {
             const script = targetScripts.find((item) => item.trigger === trigger);
             return (
-              <button key={trigger} className={`${selectedTrigger === trigger ? "selected" : ""} ${script?.enabled ? "enabled" : ""}`} onClick={() => selectTrigger(trigger)}>
+              <button key={trigger} disabled={disabled && !script} className={`${selectedTrigger === trigger ? "selected" : ""} ${script?.enabled ? "enabled" : ""}`} onClick={() => selectTrigger(trigger)}>
                 <i />
                 {triggerLabel(trigger, locale)}
               </button>
@@ -128,7 +131,7 @@ export function InteractionEditor({
           })}
         </div>
         {selected && (
-          <div className="interaction-code-editor">
+          <fieldset className="interaction-code-editor" disabled={disabled} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
             <header>
               <label>
                 <input type="checkbox" checked={selected.enabled} onChange={(event) => updateSelected({ enabled: event.target.checked })} />
@@ -173,7 +176,7 @@ export function InteractionEditor({
             </section>
             <details className="interaction-advanced">
               <summary>{tr(locale, "高级 JavaScript", "Advanced JavaScript")}</summary>
-              <ProfessionalCodeEditor
+              {disabled ? <pre tabIndex={0} aria-label={tr(locale, "只读事件脚本", "Read-only event script")} style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{selected.code}</pre> : <ProfessionalCodeEditor
                 compact
                 locale={locale}
                 path={`bim-studio://interaction/${selected.id}.js`}
@@ -183,7 +186,7 @@ export function InteractionEditor({
                 onChange={(code) => updateSelected({ code })}
                 onRun={() => onTest(selected)}
                 {...(onOpenDocs ? { onOpenDocs } : {})}
-              />
+              />}
               <small>
                 {tr(
                   locale,
@@ -210,7 +213,7 @@ export function InteractionEditor({
                 </button>
               </div>
             </footer>
-          </div>
+          </fieldset>
         )}
       </div>
     </details>

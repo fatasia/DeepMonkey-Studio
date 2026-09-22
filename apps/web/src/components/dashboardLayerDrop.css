@@ -1,0 +1,8 @@
+.dashboard-layer-tree [data-layer-drop] { position: relative; }
+.dashboard-layer-tree .dashboard-layer-row[data-layer-drop="before"]::before,
+.dashboard-layer-tree .dashboard-layer-row[data-layer-drop="after"]::after { content: ""; position: absolute; left: 0; right: 0; width: auto; height: 2px; border: 0; background: var(--accent); pointer-events: none; z-index: 1; }
+.dashboard-layer-tree .dashboard-layer-row[data-layer-drop="before"]::before { top: 0; }
+.dashboard-layer-tree .dashboard-layer-row[data-layer-drop="after"]::after { bottom: 0; }
+.dashboard-layer-tree [data-layer-drop="inside"] { outline: 1px solid var(--accent); outline-offset: -1px; background: var(--accent-soft); }
+.dashboard-layer-tree .scene-layer-root-drop[data-layer-drop="after"] { outline: 1px solid var(--accent); outline-offset: -1px; background: var(--accent-soft); }
+.dashboard-layer-tree [data-layer-drop="invalid"] { cursor: not-allowed; outline: 1px dashed var(--text-muted); outline-offset: -1px; }

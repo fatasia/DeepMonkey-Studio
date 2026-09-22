@@ -1,5 +1,6 @@
 import * as THREE from "three";
-import type { RenderView } from "@bim-studio/deep-engine/webgpu";
+import type { RenderView, SpotLightIes } from "@bim-studio/deep-engine/webgpu";
+import type { RuntimeLightProfile } from "@bim-studio/deep-engine/runtime-package";
 import { projectStudioDirectionalShadow } from "./studioDeepDirectionalShadow";
 
 export interface StudioDeepEnvironmentIssue {
@@ -10,6 +11,43 @@ export interface StudioDeepEnvironmentIssue {
 
 type Lights = NonNullable<RenderView["lights"]>;
 type Vec3 = readonly [number, number, number];
+
+/** E02：Three SpotLight 的 IES 载体（object.userData.ies）合同验证；非法即 issue。 */
+function readSpotIes(object: THREE.Object3D, path: string,
+  report: (code: string, message: string) => void): SpotLightIes | undefined {
+  const carrier = (object as unknown as { userData?: { ies?: unknown } }).userData?.ies;
+  if (carrier === undefined) return undefined;
+  if (!carrier || typeof carrier !== "object" || Array.isArray(carrier)) {
+    report("invalid-light-ies", "灯光 userData.ies 必须是对象。"); return undefined;
+  }
+  const value = carrier as Record<string, unknown>;
+  const allowed = ["profileId", "rotationDeg", "scaleFactor"];
+  if (Object.keys(value).some(key => !allowed.includes(key)) || typeof value.profileId !== "string" || !value.profileId) {
+    report("invalid-light-ies", "userData.ies 必须携带非空 profileId（仅支持 profileId/rotationDeg/scaleFactor）。"); return undefined;
+  }
+  const rotation = value.rotationDeg;
+  if (rotation !== undefined && (typeof rotation !== "number" || !Number.isFinite(rotation) || rotation < 0 || rotation >= 360 || Math.abs(rotation * 2 - Math.round(rotation * 2)) > 1e-6)) {
+    report("invalid-light-ies", "userData.ies.rotationDeg 必须位于 0.5° 网格且在 [0,360)。"); return undefined;
+  }
+  const scale = value.scaleFactor;
+  if (scale !== undefined && (typeof scale !== "number" || !Number.isFinite(scale) || scale < 0 || scale > 10)) {
+    report("invalid-light-ies", "userData.ies.scaleFactor 必须在 [0,10]。"); return undefined;
+  }
+  return { profileId: value.profileId,
+    ...(rotation === undefined ? {} : { rotationDeg: rotation }),
+    ...(scale === undefined ? {} : { scaleFactor: scale }) };
+}
+
+/** E02：场景级 lightProfiles 载荷（scene.userData.lightProfiles）原样透传；
+ * 引用闭合与量化网格由引擎打包层（packIesShading）强制。 */
+function readSceneLightProfiles(scene: THREE.Scene, report: (code: string, message: string) => void): RuntimeLightProfile[] | undefined {
+  const carrier = (scene as unknown as { userData?: { lightProfiles?: unknown } }).userData?.lightProfiles;
+  if (carrier === undefined) return undefined;
+  if (!Array.isArray(carrier) || carrier.some(profile => !profile || typeof profile !== "object" || typeof (profile as RuntimeLightProfile).profileId !== "string")) {
+    report("invalid-light-profiles", "scene.userData.lightProfiles 必须是 lightProfile 对象数组。"); return undefined;
+  }
+  return carrier as RuntimeLightProfile[];
+}
 
 /** Reads resolved world matrices; the author frame must update matrices before calling. */
 export function projectStudioDeepLights(scene: THREE.Scene, cameraLayerMask = 0xffffffff, shadowsEnabled = true,
@@ -22,6 +60,8 @@ export function projectStudioDeepLights(scene: THREE.Scene, cameraLayerMask = 0x
   const ambient: { color: Vec3; intensity: number }[] = [];
   const hemisphere: { directionWorld: Vec3; skyColor: Vec3; groundColor: Vec3; intensity: number }[] = [];
   const issues: StudioDeepEnvironmentIssue[] = [];
+  const reportScene = (code: string, message: string) => issues.push({ code, path: "scene.userData", message });
+  const lightProfiles = readSceneLightProfiles(scene, reportScene);
   scene.traverseVisible(object => {
     if (!(object instanceof THREE.Light) || object.intensity === 0) return;
     if ((object.layers.mask & cameraLayerMask) === 0) return;
@@ -70,25 +110,31 @@ export function projectStudioDeepLights(scene: THREE.Scene, cameraLayerMask = 0x
     if (!(object instanceof THREE.PointLight) && !(object instanceof THREE.SpotLight)) {
       report("unsupported-light-type", `Deep 尚未接入 ${object.type}。`); return;
     }
-    if (object.decay !== 2 || !Number.isFinite(object.distance) || object.distance <= 0) {
-      report("unsupported-light-attenuation", "Deep 局部光要求有限正距离和平方反比衰减，无法等价表示无限距离或其他衰减。");
+    if (!Number.isFinite(object.decay) || object.decay < 0 || object.decay > 4 || !Number.isFinite(object.distance) || object.distance < 0) {
+      report("unsupported-light-attenuation", "灯光距离必须非负，衰减指数必须在 0–4 之间。");
       return;
     }
     if (![position.x, position.y, position.z].every(Number.isFinite)) {
       report("invalid-light-position", "灯光世界坐标必须为有限数。"); return;
     }
-    const local = { ...common, positionWorld: position.toArray() as unknown as Vec3, range: object.distance };
-    if (shadowsEnabled && object.castShadow) report("local-shadow-policy", "局部阴影尚未映射作者偏移、分辨率和投影相机参数。");
+    const local = { ...common, positionWorld: position.toArray() as unknown as Vec3, range: object.distance, decay: object.decay };
     if (object instanceof THREE.SpotLight) {
-      if (!Number.isFinite(object.angle) || object.angle <= 0 || object.angle >= Math.PI / 2
+      if (!Number.isFinite(object.angle) || object.angle <= 0 || object.angle > Math.PI / 2
         || !Number.isFinite(object.penumbra) || object.penumbra < 0 || object.penumbra > 1) {
         report("invalid-spot-cone", "聚光角度或半影超出 Deep 支持范围。"); return;
       }
       const directionWorld = direction(object.target);
+      // E02：userData.ies 载体（无 userData → undefined，路径不变）。
+      const ies = readSpotIes(object, path, report);
+      const shadow = readSpotShadow(object, shadowsEnabled, path, report);
       if (directionWorld) spots.push({ ...local, directionWorld,
-        innerConeCos: Math.cos(object.angle * (1 - object.penumbra)), outerConeCos: Math.cos(object.angle) });
+        innerConeCos: Math.cos(object.angle * (1 - object.penumbra)), outerConeCos: Math.cos(object.angle),
+        ...(ies ? { ies } : {}), ...(shadow ? { shadow } : {}) });
       if (object.map) report("spot-texture", "Deep 尚未接入聚光灯投影贴图。");
-    } else points.push(local);
+    } else {
+      if (shadowsEnabled && object.castShadow) report("point-shadow-policy", "Deep WebGPU 当前只支持聚光灯局部阴影；点光六面阴影未接入。");
+      points.push(local);
+    }
   });
   const casters = directional.filter(light => light.castShadow);
   if (casters.length > 1) issues.push({ code: "directional-shadow-count", path: "lights.directional",
@@ -98,5 +144,19 @@ export function projectStudioDeepLights(scene: THREE.Scene, cameraLayerMask = 0x
     directional.unshift(...directional.splice(index, 1));
   }
   return { lights: { directional, points, spots,
-    ...(ambient.length ? { ambient } : {}), ...(hemisphere.length ? { hemisphere } : {}) }, issues };
+    ...(ambient.length ? { ambient } : {}), ...(hemisphere.length ? { hemisphere } : {}),
+    ...(lightProfiles?.length ? { lightProfiles } : {}) }, issues };
+}
+
+function readSpotShadow(light: THREE.SpotLight, shadowsEnabled: boolean, path: string,
+  report: (code: string, message: string) => void) {
+  if (!shadowsEnabled || !light.castShadow) return undefined;
+  const authorId = light.userData.authorLightId, softness = light.userData.shadowSoftness ?? 0;
+  if (typeof authorId !== "string" || !/^[0-9A-Za-z][0-9A-Za-z._:-]{0,121}$/.test(authorId)) {
+    report("invalid-local-shadow-id", `${path} 缺少有界稳定的作者灯光 ID。`); return undefined;
+  }
+  if (typeof softness !== "number" || !Number.isFinite(softness) || softness < 0 || softness > 1) {
+    report("invalid-local-shadow-softness", `${path}.shadowSoftness 必须在 [0,1] 内。`); return undefined;
+  }
+  return { key: `author:${authorId}`, softness };
 }

@@ -13,6 +13,19 @@ const tools: AgentToolDefinition[] = [{
 }];
 
 describe("IndustrialAgentRunView", () => {
+  it("shows provider execution per decision while old checkpoints remain readable", () => {
+    const checkpoint = fixture();
+    checkpoint.decisions = [{ step: 1, decidedAt: checkpoint.createdAt,
+      decision: { kind: "stop", rationale: "done", code: "done", message: "done" },
+      execution: { protocol: "responses", requestedModel: "alias", reportedModel: "served-snapshot", reasoningEffortSent: "high", servedBy: "fallback", failoverCategory: "rate-limit" } }];
+    const html = render(checkpoint);
+    expect(html).toContain("served-snapshot");
+    expect(html).toContain("备用模型接管");
+    expect(html).toContain("主模型限流");
+    expect(html).toContain("未返回");
+    delete checkpoint.decisions[0]!.execution;
+    expect(render(checkpoint)).not.toContain("模型与思考设置");
+  });
   it("offers bounded recovery only for transport decisions, never arbitrary failed tools", () => {
     const checkpoint = fixture();
     checkpoint.status = "failed";

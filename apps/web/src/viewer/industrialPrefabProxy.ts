@@ -1,5 +1,8 @@
+import { buildParametricFence, fenceShape } from "../prefabs/parametricFenceGeometry";
+import { buildStraightRoad, straightRoadShape } from "../prefabs/parametricRoadGeometry";
+import { buildLinearPrefabGeometry } from "../prefabs/linearPrefabGeometry";
 import * as THREE from "three";
-import type { IndustrialPrefabKind } from "@bim-studio/contracts";
+import type { IndustrialPrefabKind, IndustrialPrefabInstanceState } from "@bim-studio/contracts";
 
 const originalMaterials = new WeakMap<THREE.Mesh, THREE.Material | THREE.Material[]>();
 const PROXY_MARKER = "industrialPrefabProxy";
@@ -8,20 +11,34 @@ const PROXY_MARKER = "industrialPrefabProxy";
  * 只为没有 GLB 外观的基础元素补充可辨识程序化外观；上传模型仍保留作者资产。
  * 代理挂在持久化根对象下，因此选取、变换、碰撞和工业参数仍指向同一个稳定 ID。
  */
-export function ensureIndustrialPrefabProxy(root: THREE.Object3D, kind: IndustrialPrefabKind): boolean {
+export function ensureIndustrialPrefabProxy(root: THREE.Object3D, state: IndustrialPrefabKind | IndustrialPrefabInstanceState): boolean {
+  const kind = typeof state === "string" ? state : state.kind;
+  const shape = kind === "fence"
+    ? fenceShape(typeof state === "string" ? {} : state.parameters)
+    : kind === "road" ? straightRoadShape(typeof state === "string" ? {} : state.parameters) : undefined;
+  const signature = JSON.stringify({ shape: shape ?? kind,
+    ...(typeof state === "string" || !state.placementPath ? {} : { placementPath: state.placementPath }) });
   const mesh = root as THREE.Mesh;
   if (!mesh.isMesh || !root.userData.primitiveKind) return false;
   const current = root.children.find((child) => child.userData[PROXY_MARKER]) as THREE.Group | undefined;
-  if (current?.userData.prefabKind === kind) return false;
+  if (current?.userData.geometrySignature === signature) return false;
   clearIndustrialPrefabProxy(root);
 
   const original = mesh.material;
   if (!originalMaterials.has(mesh)) originalMaterials.set(mesh, original);
   const color = materialColor(original) ?? new THREE.Color("#318f86");
   mesh.material = new THREE.MeshBasicMaterial({ color, visible: false });
-  const proxy = buildProxy(kind, color);
+  const proxy = typeof state !== "string" && state.placementPath
+    ? buildLinearProxy(state, color)
+    : kind === "fence" && shape
+      ? buildFenceProxy(shape as ReturnType<typeof fenceShape>, color)
+      : kind === "road" && shape ? buildRoadProxy(shape as ReturnType<typeof straightRoadShape>) : buildProxy(kind, color);
+  if (shape) {
+    proxy.position.y = industrialPrefabProxyGroundOffset(root);
+  }
   proxy.userData[PROXY_MARKER] = true;
   proxy.userData.prefabKind = kind;
+  proxy.userData.geometrySignature = signature;
   root.add(proxy);
   return true;
 }
@@ -129,4 +146,49 @@ function disposeProxy(root: THREE.Object3D): void {
 
 function disposeMaterial(value: THREE.Material | THREE.Material[]): void {
   for (const material of Array.isArray(value) ? value : [value]) material.dispose();
+}
+
+function buildFenceProxy(shape: ReturnType<typeof fenceShape>, color: THREE.Color): THREE.Group {
+  return buildParametricFence(shape, fenceMaterials(shape.panel, color));
+}
+
+/** Local Y offset shared by preview generation and author-point ground projection. */
+export function industrialPrefabProxyGroundOffset(root: THREE.Object3D): number {
+  const mesh = root as THREE.Mesh;
+  if (!mesh.isMesh || !mesh.geometry) return 0;
+  mesh.geometry.computeBoundingBox();
+  return mesh.geometry.boundingBox?.min.y ?? 0;
+}
+
+function buildRoadProxy(shape: ReturnType<typeof straightRoadShape>): THREE.Group {
+  return buildStraightRoad(shape, roadMaterials(shape.surface));
+}
+
+function buildLinearProxy(state: IndustrialPrefabInstanceState, color: THREE.Color): THREE.Group {
+  const geometry = state.kind === "fence"
+    ? buildLinearPrefabGeometry(state, fenceMaterials(fenceShape(state.parameters).panel, color))
+    : buildLinearPrefabGeometry(state, roadMaterials(straightRoadShape(state.parameters).surface));
+  if (!geometry) throw new Error("Path placement requires a fence or road prefab.");
+  return geometry;
+}
+
+function fenceMaterials(panelKind: ReturnType<typeof fenceShape>["panel"], color: THREE.Color) {
+  const metal = material(color, 0.45, 0.55);
+  const dark = material(color.clone().multiplyScalar(0.35), 0.7, 0.2);
+  const panel = panelKind === "glass"
+    ? new THREE.MeshStandardMaterial({ color, roughness: 0.12, metalness: 0, transparent: true, opacity: 0.35, depthWrite: false })
+    : metal;
+  const warning = panelKind === "electronic"
+    ? new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.6, roughness: 0.45 })
+    : metal;
+  return { metal, dark, panel, warning };
+}
+
+function roadMaterials(surfaceKind: ReturnType<typeof straightRoadShape>["surface"]) {
+  const surfaceColor = surfaceKind === "concrete" ? new THREE.Color("#7d8180") : new THREE.Color("#34393c");
+  return {
+    surface: material(surfaceColor, surfaceKind === "concrete" ? 0.82 : 0.9, 0),
+    shoulder: material(surfaceColor.clone().multiplyScalar(0.72), 0.95, 0),
+    marking: material(new THREE.Color("#e7dfbf"), 0.68, 0),
+  };
 }

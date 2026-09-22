@@ -8,7 +8,7 @@ describe("SceneManagerView product surface", () => {
   it("keeps the thumbnail primary and exposes the five frequent scene actions", () => {
     const scene = createScene();
     const html = renderToStaticMarkup(<SceneManagerView controller={{
-      branding: { systemName: "Deep Monkey Studio", iconUrl: "/brand/app-icon-industrial.svg", copyright: "Deep Monkey Studio" },
+      branding: { systemName: "DeepMonkey Studio", iconUrl: "/brand/app-icon-industrial.svg", copyright: "DeepMonkey Studio" },
       busy: false,
       cloudConfigured: false,
       cloudSceneLinks: {},
@@ -35,7 +35,7 @@ describe("SceneManagerView product surface", () => {
       visibleScenes: [scene],
     } as unknown as SceneManagerController} />);
 
-    expect(html).toContain("Deep Monkey Studio");
+    expect(html).toContain("DeepMonkey Studio");
     expect(html).toContain('role="status"');
     expect(html).toContain("页面不存在，已返回项目工作台");
     expect(html).toContain('aria-label="关闭页面提示"');
@@ -55,7 +55,7 @@ describe("SceneManagerView product surface", () => {
 
   it("gives topology preview cards a task-oriented accessible name", () => {
     const html = renderToStaticMarkup(<SceneManagerView controller={{
-      branding: { systemName: "Deep Monkey Studio", iconUrl: "/brand/app-icon-industrial.svg", copyright: "Deep Monkey Studio" },
+      branding: { systemName: "DeepMonkey Studio", iconUrl: "/brand/app-icon-industrial.svg", copyright: "DeepMonkey Studio" },
       busy: false,
       cloudConfigured: false,
       cloudSceneLinks: {},
@@ -96,7 +96,7 @@ describe("SceneManagerView product surface", () => {
   ])("keeps one scene creation emphasis for a $name directory", ({ scenes, visibleScenes, toolbarClass, emptyAction }) => {
     const project = { id: "project-1", name: "装配项目", description: "", models: [], createdAt: "2026-09-06", updatedAt: "2026-09-06" };
     const html = renderToStaticMarkup(<SceneManagerView controller={{
-      branding: { systemName: "Deep Monkey Studio", iconUrl: "/brand/app-icon-industrial.svg", copyright: "Deep Monkey Studio" },
+      branding: { systemName: "DeepMonkey Studio", iconUrl: "/brand/app-icon-industrial.svg", copyright: "DeepMonkey Studio" },
       busy: false,
       cloudConfigured: false,
       cloudSceneLinks: {},

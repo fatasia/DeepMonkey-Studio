@@ -57,7 +57,8 @@ export function projectStudioDeepEnvironment(input: StudioDeepEnvironmentInput):
   }
   return {
     renderer: { features: { environment: environmentEnabled, fog: Boolean(scene.fog), groundGrid: false,
-      ambientOcclusion: post.enabled && Boolean(post.ssao || post.gtao), temporalAa: false,
+      ambientOcclusion: post.enabled && Boolean(post.ssao || post.gtao),
+      screenSpaceReflection: post.enabled && Boolean(post.screenSpaceReflection), temporalAa: false,
       occlusionCulling: true, bloom: post.enabled && post.bloom, vignette: post.enabled && Boolean(post.vignette),
       toneMapping: "three-aces-r185" },
       ...(environmentEnabled && input.preparedEnvironment ? { environment: input.preparedEnvironment } : {}) },

@@ -12,6 +12,7 @@ export interface StartIndustrialAgentRunInput {
   context: unknown;
   allowedToolIds: string[];
   budget?: Partial<AgentBudget>;
+  modelOptions?: import("./aiApi").AssistantSessionOptions;
 }
 
 /** 工业 Agent 的浏览器端调用集中在一个边界，避免组件自行拼接审批或项目作用域。 */

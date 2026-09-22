@@ -7,6 +7,7 @@ import { readBooleanPreference, writeBooleanPreference } from "../hooks/usePersi
 import { translate as tr } from "../i18n";
 import { useDialogEscape } from "../hooks/useGlobalDialogEscape";
 import { FlatSceneObjectList } from "../components/FlatSceneObjectList";
+import { useLayerRenameFocus } from "../components/useLayerRenameFocus";
 import { useSceneAssetNavigation } from "../optimizer/useSceneAssetNavigation";
 import { modelAssetOptimizerRoute } from "../optimizer/modelAssetNavigation";
 import { ModelTreeItem } from "../components/ModelTreeItem";
@@ -28,6 +29,7 @@ import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "
 import "../styles/workspacePanelAnchors.css";
 
 export function AppStudioShellView({ controller }: { controller: AppStudioController }) {
+  const focusRename = useLayerRenameFocus("scene");
   const assetWorkflow = useSceneAssetNavigation(controller.bindings);
   const instances = useSceneModelInstances(controller.bindings);
   // 三维视口是核心工作区，资源树和属性检查器按需收起，避免遮挡模型。
@@ -93,6 +95,7 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
     createDeviceLayout,
     createSceneGroup,
     moveSceneObjectsToGroup,
+    moveSceneRootEntries,
     deleteSceneSelectionSet,
     defaultCameraViewId,
     deleteAnnotation,
@@ -191,6 +194,7 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
     selectionProperties,
     selectionScope,
     selectionSets,
+    rootLayerOrder,
     selectionVisible,
     setAiAssistantOpen,
     setAnimationOpen,
@@ -363,8 +367,10 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
   useEffect(() => {
     if (route.view !== "studio") return;
     const removeSelection = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
       if (event.key !== "Delete" && event.key !== "Backspace") return;
       const target = event.target;
+      if (target instanceof HTMLElement && target.closest('[data-layer-keyboard-row]')) return;
       if (target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) return;
       if (document.querySelector('[role="dialog"], [data-escape-dialog]')) return;
       if (selectedLayerId && selectedLayerId !== "root" && selected) {
@@ -565,9 +571,14 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
               selectedAnnotationId={selectedAnnotationId}
               spaces={spaces}
               groups={selectionSets}
+              rootLayerOrder={rootLayerOrder}
               organizationObjects={sceneOrganizationObjects}
               onRevision={() => setRevision((value) => value + 1)}
               onObjectSelect={selectSceneOrganizationObject}
+              onObjectRename={(id, layerId) => focusRename(JSON.stringify([id, layerId && layerId !== "root" ? layerId : null]), () => {
+                if (layerId) engine?.selectLayer(id, layerId); else selectSceneOrganizationObject(id);
+                setInspectorTab("overview"); setRightPanelOpen(true);
+              })}
               onLightSelect={setSelectedLightId}
               onLightUpdate={updateLight}
               onLightTransform={selectLightForTransform}
@@ -597,6 +608,7 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
               onCreateGroup={ids => createSceneGroup("", ids)}
               onUngroup={deleteSceneSelectionSet}
               onMoveObjects={moveSceneObjectsToGroup}
+              onMoveRootEntries={moveSceneRootEntries}
               onGroupVisibilityChange={setSceneObjectsVisible}
               onGroupLockChange={setSceneObjectsLocked}
             />

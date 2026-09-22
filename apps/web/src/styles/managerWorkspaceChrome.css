@@ -191,7 +191,7 @@
 
 .manager-scene-count { color: var(--muted); font: 11px/1.2 "Segoe UI Variable", sans-serif; }
 
-@media (max-width: 1380px) {
+@media (max-width: 1500px) {
   .manager-header {
     min-height: 70px;
     flex-wrap: nowrap;
@@ -254,7 +254,7 @@
 .manager-copy-notice { margin: 0 0 12px; color: var(--accent); }
 
 /* 紧凑屏分成上下两条导航，系统动作始终可见，不能把整页撑出横向滚动。 */
-@media (max-width: 1000px) {
+@media (max-width: 1100px) {
   .manager-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto auto; gap: 6px 10px; height: auto; min-height: 104px; padding: 10px 12px; overflow: visible; }
   .manager-brand { grid-column: 1; grid-row: 1; min-width: 0; margin: 0; }
   .manager-project-switch { grid-column: 2; grid-row: 1; min-width: 0; max-width: 240px; width: 100%; }

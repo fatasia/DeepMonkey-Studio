@@ -179,7 +179,11 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
           busy={busy}
           onModeChange={setPublishMode}
           onPerformanceChange={setPublishPerformance}
-          onClientTargetChange={setPublishClientTarget}
+          onClientTargetChange={(target) => {
+            setPublishClientTarget(target);
+            if (target === "deep-native") setPublishMode("webgpu-preferred");
+            else if (target === "three-webview" && publishMode === "cloud") setPublishMode("webgl");
+          }}
           onCancel={() => setPublishTarget(undefined)}
           onPublish={(toolbarVisible, clientTarget) => submitPublish(toolbarVisible, clientTarget)}
         />

@@ -27,6 +27,27 @@ function deferred<T>() {
 }
 
 describe("scene artifact runner", () => {
+  it("routes executable records to the EXE downloader without changing legacy archive retries", async () => {
+    const f = fixture(), executable = vi.fn().mockResolvedValue({ ...f.result, fileName: "scene.exe" });
+    const runner = createSceneArtifactRunner({ ...f.deps, exportExecutable: executable });
+    const record = createSceneArtifactRecord(f.publication, { target: "deep-native", renderer: "webgl", toolbarVisible: false, format: "executable" });
+    expect((await runner.run(record)).result?.fileName).toBe("scene.exe");
+    expect(executable).toHaveBeenCalledOnce(); expect(f.deps.exportPackage).not.toHaveBeenCalled();
+    await runner.run(f.record); expect(f.deps.exportPackage).toHaveBeenCalledOnce();
+    expect((await createSceneArtifactRunner(f.deps).run(record)).record.error).toBe("Scene EXE 下载器未配置");
+  });
+  it("retains frozen branding on failed delivery and an exact-version retry", async () => {
+    const f = fixture();
+    const record = createSceneArtifactRecord(f.publication, { target: "three-webview", renderer: "webgl", toolbarVisible: true,
+      branding: { applicationName: "客户园区" } });
+    f.deps.exportPackage.mockRejectedValueOnce(new Error("download unavailable"));
+    const failed = await f.runner.run(record);
+    expect(failed.record.status).toBe("failed");
+    expect((await f.runner.run(failed.record)).record.status).toBe("ready");
+    expect(f.deps.exportPackage.mock.calls.map(([options]) => options.branding)).toEqual([
+      { applicationName: "客户园区" }, { applicationName: "客户园区" },
+    ]);
+  });
   it("passes the first opaque handle by identity without persisting or reusing it on an ordinary retry", async () => {
     const f = fixture(), prepared = Object.freeze({ identity: () => undefined }) as unknown as PreparedSceneClientPackage;
     const replacement = Object.freeze({ identity: () => undefined }) as unknown as PreparedSceneClientPackage;

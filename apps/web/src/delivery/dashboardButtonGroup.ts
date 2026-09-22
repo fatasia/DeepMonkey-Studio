@@ -21,13 +21,14 @@ export function captureDashboardButtonGroup(element: HTMLElement, style: CSSStyl
 /** Source-over inside an isolated RGBA control, followed by one group-opacity operation. */
 export function compositeDashboardButtonGroup(group: DashboardButtonGroup, text: {
   readonly rect: CaptureRect; readonly width: number; readonly height: number; readonly rgba: Uint8Array;
-}) {
+}, extent?: { readonly width: number; readonly height: number }) {
   const [left, top, logicalWidth, logicalHeight] = group.rect;
-  const width = Math.ceil(logicalWidth), height = Math.ceil(logicalHeight);
+  const width = extent?.width ?? Math.ceil(logicalWidth), height = extent?.height ?? Math.ceil(logicalHeight);
   if (!Number.isSafeInteger(text.width) || !Number.isSafeInteger(text.height) || text.width < 1 || text.height < 1
     || text.width * text.height > 1_048_576 || text.rgba.length !== text.width * text.height * 4 || text.rect.some(value => !Number.isFinite(value)))
     throw new Error("Invalid pagination text pixels");
-  if (group.rect.some(value => !Number.isFinite(value)) || width <= 0 || height <= 0 || width * height > 1_048_576
+  if (group.rect.some(value => !Number.isFinite(value)) || !Number.isSafeInteger(width) || !Number.isSafeInteger(height)
+    || width < Math.ceil(logicalWidth) || height < Math.ceil(logicalHeight) || width <= 0 || height <= 0 || width * height > 1_048_576
     || !Number.isFinite(group.radius) || group.radius < 0 || !Number.isFinite(group.borderWidth) || group.borderWidth < 0
     || !Number.isFinite(group.opacity) || group.opacity < 0 || group.opacity > 1
     || [group.background, group.border].some(color => color.length !== 4 || color.some(value => !Number.isInteger(value) || value < 0 || value > 255)))

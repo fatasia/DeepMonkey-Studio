@@ -72,7 +72,7 @@ function dashboardGeometry(page: DashboardPageDocument, primaryRatio: number) {
   const metricHeight = Math.max(1, Math.min(132, page.height * 0.14));
   const chartTop = metricTop + metricHeight + gap;
   const availableHeight = Math.max(1, page.height - chartTop - margin);
-  // 主视觉带占剩余高度的 66%(1080 基准下约 45% 画布高):对标 FVS/山海鲸"中心主视觉支配版面",
+  // 主视觉带占剩余高度的 66%(1080 基准下约 45% 画布高):对标 大屏参考/外部参考"中心主视觉支配版面",
   // 底部明细带相应收紧为紧凑数据条(仍可容纳 4-6 行)。
   const chartHeight = Math.max(1, Math.min(540, availableHeight * 0.66));
   const primaryWidth = width * primaryRatio - gap / 2;

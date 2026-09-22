@@ -171,13 +171,22 @@
 .manager-topology-grid article>div strong { overflow:hidden;color:#e2e8ea;font-size:11px;text-overflow:ellipsis;white-space:nowrap; }
 .manager-topology-grid article>div small { overflow:hidden;color:#748187;font-size:8px;text-overflow:ellipsis;white-space:nowrap; }
 .manager-topology-grid article>.button { align-self:center;margin-right:10px; }
-@media (max-width: 1380px) {
+@media (max-width: 1500px) {
   .manager-header { height:auto;min-height:58px;flex-wrap:wrap;gap:4px;padding:8px 14px; }
   .manager-primary-nav { order:3;width:100%;margin:4px 0 0;overflow-x:auto; }
   .manager-capability-nav { margin-left:auto; }
   .manager-content { padding-top:24px; }
 }
-@media (max-width: 860px) {
+@media (max-width: 1100px) {
+  .manager-header { display:flex; flex-wrap:nowrap; gap:6px; height:70px; min-height:70px; padding:8px 12px; overflow-x:auto; overflow-y:hidden; scrollbar-width:none; }
+  .manager-header::-webkit-scrollbar { display:none; }
+  .manager-brand { flex:0 0 auto; min-width:0; margin:0; }
+  .manager-project-switch { flex:0 0 170px; min-width:0; max-width:200px; }
+  .manager-project-switch > select { min-width:0; width:100%; }
+  .manager-utility-nav { flex:0 0 auto; margin-left:auto; padding-left:4px; }
+  .manager-primary-nav { order:initial; flex:0 0 auto; width:auto; margin:0; overflow:visible; }
+  .manager-capability-nav { flex:0 0 auto; margin-left:auto; padding-left:8px; justify-content:flex-end; }
+  .manager-primary-nav button > span, .manager-capability-nav button > span { display:none; }
   .manager-capability-nav button { width:29px;padding:0;justify-content:center;font-size:0; }
   .manager-topology-grid { grid-template-columns:1fr 1fr; }
   .manager-project-bar { grid-template-columns:minmax(160px,1fr) auto auto; }

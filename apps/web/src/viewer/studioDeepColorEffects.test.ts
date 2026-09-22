@@ -7,13 +7,20 @@ const state: ScenePostProcessingState = { enabled: true, smaa: false, ssao: fals
 
 describe("Studio author color effects", () => {
   it("turns default AO and bloom off unless those author passes are active", () => {
-    expect(readStudioDeepPostProcess(state, true)).toEqual({ ambientOcclusion: false, bloom: false });
+    expect(readStudioDeepPostProcess(state, true)).toEqual({ ambientOcclusion: false, screenSpaceReflection: false, bloom: false });
     const enabled = { ...state, ssao: true, bloom: true };
-    expect(readStudioDeepPostProcess(enabled, true)).toEqual({ ambientOcclusion: true, bloom: true,
+    expect(readStudioDeepPostProcess(enabled, true)).toEqual({ ambientOcclusion: true, screenSpaceReflection: false, bloom: true,
       authorBloom: { strength: 0.35, threshold: 0.9 } });
-    expect(readStudioDeepPostProcess({ ...enabled, enabled: false }, true)).toEqual({ ambientOcclusion: false, bloom: false });
-    expect(readStudioDeepPostProcess(enabled, false)).toEqual({ ambientOcclusion: false, bloom: false });
-    expect(readStudioDeepPostProcess({ ...state, gtao: true }, true)).toEqual({ ambientOcclusion: true, bloom: false });
+    expect(readStudioDeepPostProcess({ ...enabled, enabled: false }, true)).toEqual({ ambientOcclusion: false, screenSpaceReflection: false, bloom: false });
+    expect(readStudioDeepPostProcess(enabled, false)).toEqual({ ambientOcclusion: false, screenSpaceReflection: false, bloom: false });
+    expect(readStudioDeepPostProcess({ ...state, gtao: true }, true)).toEqual({ ambientOcclusion: true, screenSpaceReflection: false, bloom: false });
+  });
+  it("compiles bounded author SSR quality into the Deep per-frame profile", () => {
+    const result = readStudioDeepPostProcess({ ...state, screenSpaceReflection: true,
+      ssrSteps: 64, ssrThickness: 0.02, ssrMaxDistance: 3 }, true);
+    expect(result).toMatchObject({ screenSpaceReflection: true,
+      screenSpaceReflectionProfile: { steps: 64, thicknessScale: 0.02, maxDistanceScale: 3 } });
+    expect(Object.isFrozen(result.screenSpaceReflectionProfile)).toBe(true);
   });
   it("snapshots exact Bloom strength/threshold, including zero, without substituting legacy defaults", () => {
     const source = { ...state, bloom: true, bloomStrength: 0, bloomThreshold: 0 };
@@ -28,11 +35,11 @@ describe("Studio author color effects", () => {
     const source = { ...state, vignette: true, vignetteDarkness: 2, colorGrading: true,
       hue: -170, saturation: -0.4, brightness: 0.3, contrast: 0.6 };
     expect(readStudioDeepColorEffects(source, true)).toEqual({ vignette: { darkness: 2 },
-      colorGrading: { hue: -170, saturation: -0.4, brightness: 0.3, contrast: 0.6 } });
+      colorGrading: { hue: -170, saturation: -0.4, brightness: 0.3, contrast: 0.6, temperature: 0, tint: 0 } });
   });
   it("uses the same missing-value defaults as the author runtime", () => {
     expect(readStudioDeepColorEffects({ ...state, vignette: true, colorGrading: true }, true))
-      .toEqual({ vignette: { darkness: 1.2 }, colorGrading: { hue: 0, saturation: 0, brightness: 0, contrast: 0 } });
+      .toEqual({ vignette: { darkness: 1.2 }, colorGrading: { hue: 0, saturation: 0, brightness: 0, contrast: 0, temperature: 0, tint: 0 } });
   });
   it("disables preview effects when the author disables postprocessing or Composer is not active", () => {
     const enabled = { ...state, vignette: true, colorGrading: true };

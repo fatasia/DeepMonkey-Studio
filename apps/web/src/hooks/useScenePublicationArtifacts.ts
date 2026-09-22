@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { PublishedSceneRecord } from "@bim-studio/contracts";
 import { api } from "../api";
 import { exportSceneClientPackage, type PreparedSceneClientPackage } from "../delivery/sceneClientPackage";
+import { exportSceneStandaloneExecutable } from "../delivery/sceneStandaloneExecutable";
 import { createSceneArtifactRecord, type SceneArtifactOptions, type SceneArtifactRecord } from "../controllers/scenePublicationArtifactRecord";
 import { createSceneArtifactRunner, type SceneArtifactRunResult } from "../controllers/scenePublicationArtifactRunner";
 import { restoreSceneArtifactRecords, saveSceneArtifactRecord } from "../controllers/scenePublicationArtifactStore";
@@ -49,7 +50,7 @@ export function useScenePublicationArtifacts(ownerId: string | undefined) {
     dispose(session.current);
     const value: ArtifactSession = { ownerId, active: true, records: new Map(), restores: new Map(), pending: new Map(), loading: 0, error: undefined,
       runner: createSceneArtifactRunner({ loadHistory: (projectId, sceneId) => api.listScenePublications(projectId, sceneId),
-        exportPackage: exportSceneClientPackage, saveRecord: record => saveSceneArtifactRecord(ownerId, record),
+        exportPackage: exportSceneClientPackage, exportExecutable: exportSceneStandaloneExecutable, saveRecord: record => saveSceneArtifactRecord(ownerId, record),
         onChange: record => { if (current(value)) { value.records.set(record.key, record); publish(value); } },
       }) };
     session.current = value; publish(value); return value;

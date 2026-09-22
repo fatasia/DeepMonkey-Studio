@@ -1,9 +1,11 @@
 import { DashboardDataUnavailable, rasterDataContent } from "./dashboardDataRaster";
+import { rasterFilterOptions } from "./dashboardFilterRaster";
 import type { DashboardDataWidgetNode } from "@bim-studio/contracts";
 import { runtimeContentSha256, type Deep2dRuntimePackage } from "@bim-studio/deep-engine/runtime-package";
 import { lowerDashboardWidget } from "./dashboardWidgetContent";
 import { parseHexColor, DASHBOARD_CONTENT_INSET } from "./dashboardShapeContent";
 import { assetIdentity, base64, rasterExtent, verifyRaster } from "./dashboardRasterValidation";
+import { dashboardTextRasterScale } from "./dashboardRasterDensity";
 import type { DashboardRasterCompileInput, DashboardRasterEvidence, DashboardRasterHost,
   DashboardRasterResult, DashboardRasterTextStyle } from "./dashboardRasterTypes";
 
@@ -30,7 +32,8 @@ export async function rasterNode(node: DashboardDataWidgetNode, id: string, revi
     } else if (width <= 0 || height <= 0) reasons.push("Content box is empty");
     else if (node.widget.semanticBinding) reasons.push("Semantic binding requires a frozen resolved widget snapshot");
     else {
-      const pixels = { width: Math.ceil(width), height: Math.ceil(height) };
+      const scale = node.widget.type === "text" ? dashboardTextRasterScale(input.textRasterScale) : 1;
+      const pixels = { width: Math.ceil(width) * scale, height: Math.ceil(height) * scale };
       rasterExtent(pixels.width, pixels.height);
       const binding = input.nodeAssets[node.id];
       if (!binding) reasons.push("Frozen node resource binding is missing");
@@ -48,7 +51,8 @@ export async function rasterNode(node: DashboardDataWidgetNode, id: string, revi
             try { style = textStyle(node, binding.textStyle); }
             catch (error) { reasons.push(error instanceof Error ? error.message : String(error)); }
             if (style) {
-            const source = { ...pixels, ...style, text, locale: input.locale,
+            const source = { ...pixels, ...style, fontSize: style.fontSize * scale, lineHeight: style.lineHeight * scale,
+              textRasterScale: scale, text, locale: input.locale,
               verticalAlign: "center" as const, wrap: "word-or-glyph" as const, fonts: fonts.map(assetIdentity) };
             const requestHash = runtimeContentSha256(source);
             result = verifyRaster(await host.rasterizeText(structuredClone({ ...source, requestHash, fonts })),
@@ -74,20 +78,34 @@ export async function rasterNode(node: DashboardDataWidgetNode, id: string, revi
             width: result.width, height: result.height, sampling: "linear", dataBase64: base64(result.rgba) }],
           quads: [{ id: `${id}.quad`, zOrder: 1, transform: [1, 0, 0, 1, 0, 0], atlasId,
             source: [0, 0, result.width, result.height], destination: [inset, inset,
-              node.widget.type === "text" ? result.width : width, node.widget.type === "text" ? result.height : height], color: [1, 1, 1, 1] }] };
-          if (node.widget.type === "text" && (width !== result.width || height !== result.height)) {
+              node.widget.type === "text" ? result.width / scale : width, node.widget.type === "text" ? result.height / scale : height], color: [1, 1, 1, 1] }] };
+          if (node.widget.type === "text" && (width !== result.width / scale || height !== result.height / scale)) {
             const textId = `${id}.text`;
             layers = [{ content: { ...content, atlases: [], quads: [] }, clip: null },
               { content: { ...content, id: textId, displayList: { ...content.displayList, id: `${textId}.paths`,
                 resources: [], commands: [] } }, clip: [inset, inset, width, height] }];
           }
-          evidence = [{ nodeId: node.id, atlasId, requestHash: result.requestHash, sourceSha256: result.sourceSha256,
+          evidence = [{ nodeId: node.id, atlasId, ...(node.widget.type === "text" ? { textRasterScale: scale } : {}), requestHash: result.requestHash, sourceSha256: result.sourceSha256,
             pixelSha256: result.sha256, producer: result.producer,
             ...(result.producerEvidence ? { producerEvidence: result.producerEvidence } : {}), usedFaces: result.usedFaces ?? [],
             lines: result.lines ?? [], clipped: result.clipped ?? false }];
           contentCompiled = true;
         }
       }
+    }
+  } else if (node.widget.type === "filter" && node.widget.filterMode === "text") {
+    reasons.push("Text input requires a validated frozen-font runtime profile");
+  } else if (node.widget.type === "video") {
+    reasons.push("Video pixels are reserved for the Native dynamic media layer instead of the static Deep2D raster node; audio, playback controls and seek remain unavailable");
+  } else if (node.widget.type === "filter") {
+    try {
+      const result = await rasterFilterOptions(node, content, input, host, rasterNode);
+      content = result.content; evidence = result.evidence; contentCompiled = true;
+      compiledFields.push("widget.options.text");
+      reasons.push("Frozen option text compiled; interaction requires a validated frozen filter profile");
+    } catch (error) {
+      contentCompiled = false;
+      reasons.push(error instanceof Error ? error.message : String(error));
     }
   } else if (node.widget.type === "value" || node.widget.type === "table") {
     try {
@@ -135,3 +153,6 @@ function textStyle(node: DashboardDataWidgetNode, inherited: DashboardRasterText
     throw new Error("Invalid frozen text style");
   return value;
 }
+
+/** Stable public result shape for table/filter compilers that split raster layers. */
+export type RasterNodeResult = Awaited<ReturnType<typeof rasterNode>>;

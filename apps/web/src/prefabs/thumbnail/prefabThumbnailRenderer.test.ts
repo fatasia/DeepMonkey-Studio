@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IndustrialPrefabDefinition } from "@bim-studio/contracts";
 import { industrialPrefabDefinition } from "../industrialPrefabCatalog";
+import { clearThumbnailCaches, inspectThumbnailCaches } from "../../settings/thumbnailCache";
 import {
   __setPrefabThumbnailGlbLoaderForTests,
   __setPrefabThumbnailPainterForTests,
@@ -17,6 +18,20 @@ afterEach(() => {
 });
 
 describe("prefab thumbnail renderer queue/cache/fallback", () => {
+  it("清理期间的排队缩略图仍交付调用方，但不会重新填回缓存", async () => {
+    const painter = vi.fn(() => "data:image/webp;cache-test");
+    __setPrefabThumbnailPainterForTests(painter);
+    const pending = getPrefabThumbnail(agv);
+    clearThumbnailCaches();
+    await expect(pending).resolves.toBe("data:image/webp;cache-test");
+    expect(inspectThumbnailCaches().entries).toBe(0);
+    await getPrefabThumbnail(agv);
+    expect(painter).toHaveBeenCalledTimes(2);
+    expect(inspectThumbnailCaches().entries).toBe(1);
+    clearThumbnailCaches();
+    await getPrefabThumbnail(agv);
+    expect(painter).toHaveBeenCalledTimes(3);
+  });
   it("同一 definitionId 只渲染一次,缓存命中返回同一 dataURL", async () => {
     let calls = 0;
     __setPrefabThumbnailPainterForTests((model) => {

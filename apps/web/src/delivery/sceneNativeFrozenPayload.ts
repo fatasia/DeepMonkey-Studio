@@ -25,7 +25,9 @@ export async function prepareFrozenNativeScenePayload(input: SceneSnapshot, depe
   const runtime = parsed.value, compilation = native.compilationEvidence as unknown as SceneCompilationEvidence;
   const report = assessCompiledScenePublication(scene, { compilation, runtimeEvidence: native.compatibilityReport.evidence,
     fixtureId: native.compatibilityReport.fixtureId, platform: native.compatibilityReport.platform });
-  assertScenePublicationDeliverable(report);
+  // Native may carry an explicit degraded report for optional features; core
+  // package identity and runtime evidence are still revalidated above.
+  assertScenePublicationDeliverable(report, { allowNativeDegraded: true });
   const cameraHash = runtime.resources.find(resource => resource.kind === "scene-camera")?.contentHash.value;
   const renderPacketHash = runtime.resources.find(resource => resource.kind === "render-packet")?.contentHash.value;
   if (!cameraHash || !renderPacketHash || compilation.compileGraphHash !== runtimeContentSha256({
@@ -39,7 +41,8 @@ export async function prepareFrozenNativeScenePayload(input: SceneSnapshot, depe
   signal.throwIfAborted();
   return { report,
     manifest: { kind: "deep-engine.runtime-package", schemaVersion: runtime.schemaVersion, path: "native/runtime-package.json",
-      packageHash: runtime.packageHash, status: report.status, reportPath: "native/compatibility-report.json" },
+      packageHash: runtime.packageHash, status: report.status, reportPath: "native/compatibility-report.json",
+      degradedCapabilities: report.items.filter(item => item.status === "degraded").map(item => item.path).sort() },
     files: [{ path: "native/runtime-package.json", content: packageJson },
       { path: "native/compilation-evidence.json", content: JSON.stringify(compilation, null, 2) },
       { path: "native/compatibility-report.json", content: JSON.stringify(report, null, 2) }] };

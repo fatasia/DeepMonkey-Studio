@@ -110,6 +110,32 @@
 .dashboard-page-delete,
 .dashboard-layer-action { min-width: 28px; width: 28px; min-height: 28px; height: 28px; }
 
+/* 编组行含折叠、名称和三个动作；固定动作轨道，窄目录只截断名称。 */
+.dashboard-group-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) repeat(3, 28px);
+  gap: 0;
+}
+.dashboard-group-row > .dashboard-layer-action {
+  min-width: 28px;
+  max-width: 28px;
+  padding: 0;
+}
+.dashboard-group-row > .dashboard-group-select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0 4px;
+  gap: 4px;
+  overflow: hidden;
+}
+.dashboard-group-row > .dashboard-group-select > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .dashboard-component-search { height: 34px; font-size: 12px; }
 .dashboard-template-library-trigger { min-height: 52px; }
 .dashboard-template-library-trigger strong { font-size: 12px; }

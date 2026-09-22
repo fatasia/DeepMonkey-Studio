@@ -1,6 +1,8 @@
 import type { PublishedSceneRecord } from "@bim-studio/contracts";
 import { createEvidenceFingerprint } from "@bim-studio/studio-core";
 import type { SceneClientPackageTarget } from "../delivery/sceneClientPackage";
+import type { ClientPackageBranding } from "../components/clientPackageBranding";
+import { freezeSceneClientBranding } from "../delivery/sceneClientBranding";
 
 export type SceneArtifactStatus = "preparing" | "building" | "ready" | "failed" | "cancelled";
 
@@ -8,6 +10,8 @@ export interface SceneArtifactOptions {
   target: Exclude<SceneClientPackageTarget, "none">;
   renderer: "webgl" | "webgpu-preferred";
   toolbarVisible: boolean;
+  branding?: ClientPackageBranding;
+  format?: "executable";
 }
 
 /** 仅定位已发布场景快照，不表示项目资源与应用依赖已冻结。 */
@@ -29,11 +33,14 @@ export interface SceneArtifactRecord extends SceneArtifactOptions {
 export function createSceneArtifactRecord(publication: PublishedSceneRecord, options: SceneArtifactOptions): SceneArtifactRecord {
   assertPublication(publication);
   assertOptions(options);
+  const branding = freezeSceneClientBranding(options.branding);
   const record: SceneArtifactRecord = {
     schemaVersion: 1, key: "", projectId: publication.projectId, sceneId: publication.sceneId,
     publicationVersion: publication.version!, publishedAt: publication.publishedAt,
     snapshotFingerprint: createEvidenceFingerprint(publication.snapshot),
     target: options.target, renderer: options.renderer, toolbarVisible: options.toolbarVisible,
+    ...(branding ? { branding } : {}),
+    ...(options.format ? { format: options.format } : {}),
     status: "preparing", attemptId: 0, updatedAt: new Date().toISOString(),
   };
   record.key = artifactKey(record);
@@ -62,8 +69,9 @@ export function recoverSceneArtifactRecord(record: SceneArtifactRecord): SceneAr
   return { ...record, status: "failed", errorCode: "interrupted", error: "上次打包已中断，请重试。", updatedAt: new Date().toISOString() };
 }
 
-function artifactKey(record: Pick<SceneArtifactRecord, "projectId" | "sceneId" | "publicationVersion" | "publishedAt" | "target" | "renderer" | "toolbarVisible">): string {
-  return `scene-artifact:${JSON.stringify([record.projectId, record.sceneId, record.publicationVersion, record.publishedAt, record.target, record.renderer, record.toolbarVisible])}`;
+function artifactKey(record: Pick<SceneArtifactRecord, "projectId" | "sceneId" | "publicationVersion" | "publishedAt" | "target" | "renderer" | "toolbarVisible" | "branding" | "format">): string {
+  return `scene-artifact:${JSON.stringify([record.projectId, record.sceneId, record.publicationVersion, record.publishedAt, record.target, record.renderer, record.toolbarVisible,
+    ...(record.branding ? [createEvidenceFingerprint(record.branding)] : []), ...(record.format ? [record.format] : [])])}`;
 }
 
 function assertPublication(publication: PublishedSceneRecord): void {
@@ -84,6 +92,8 @@ export function assertSceneArtifactRecord(record: SceneArtifactRecord): void {
 }
 
 function assertOptions(options: SceneArtifactOptions): void {
+  if (options.format !== undefined && options.format !== "executable") throw new Error("客户端交付格式无效");
+  freezeSceneClientBranding(options.branding);
   if (!["three-webview", "deep-native"].includes(options.target) || !["webgl", "webgpu-preferred"].includes(options.renderer)
     || typeof options.toolbarVisible !== "boolean") throw new Error("客户端打包目标或渲染配置无效。");
 }

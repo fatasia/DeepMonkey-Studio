@@ -1,5 +1,6 @@
 import type { AskDataQueryDraftResult, AskDataQueryReadResult, SceneDashboardState } from "@bim-studio/contracts";
 import type { api, AssistantMode } from "../api";
+import type { AssistantSessionOptions } from "../apiClients/aiApi";
 import type { BimAssistantPreparedContext } from "../bimAssistant";
 import { translate as tr, type AppLocale } from "../i18n";
 import { assistantReliabilityFromResponse, queryCapabilityReliability, type AssistantContextSource, type AssistantReliabilitySummary } from "./assistantReliability";
@@ -7,6 +8,7 @@ import { assistantReliabilityFromResponse, queryCapabilityReliability, type Assi
 export interface AssistantRequestResult {
   text: string;
   model?: string;
+  execution?: import("@bim-studio/contracts").AiAssistantResponse["execution"];
   dashboard?: SceneDashboardState;
   prepared?: BimAssistantPreparedContext;
   reliability: AssistantReliabilitySummary;
@@ -18,13 +20,15 @@ export async function runAssistantRequest(input: {
   mode: AssistantMode;
   prompt: string;
   projectId?: string;
+  sessionOptions?: AssistantSessionOptions;
   locale: AppLocale;
   context: unknown;
   platformContext: unknown;
   sources: AssistantContextSource[];
-  recentConversation: Array<{ mode: AssistantMode; question: string; answer: string }>;
+  recentConversation: Array<{ mode: AssistantMode; question: string; answer: string; scope?: string }>;
   signal: AbortSignal;
   onDelta: (delta: string) => void;
+  onExecution?: (execution: AssistantRequestResult["execution"]) => void;
   onPrepared?: (prepared: BimAssistantPreparedContext) => void;
   prepareBim?: (question: string) => Promise<BimAssistantPreparedContext>;
 }): Promise<AssistantRequestResult> {
@@ -56,7 +60,8 @@ export async function runAssistantRequest(input: {
   const result = await client.streamAssistant(mode, prompt, {
     workspace: input.context, platform: input.platformContext, contextTrust: "client-snapshot",
     ...(prepared ? { bimEvidence: prepared } : {}), recentConversation: input.recentConversation,
-  }, (delta) => { if (!signal.aborted) input.onDelta(delta); }, { ...(projectId ? { projectId } : {}), signal });
+  }, (delta) => { if (!signal.aborted) input.onDelta(delta); }, { ...input.sessionOptions, ...(projectId ? { projectId } : {}), signal,
+    onExecution: execution => { if (!signal.aborted) input.onExecution?.(execution); } });
   signal.throwIfAborted();
   const sources: AssistantContextSource[] = prepared
     ? [...input.sources, { id: "bim-evidence-snapshot", label: t("BIM 构件匹配快照", "BIM component match snapshot"),
@@ -64,6 +69,7 @@ export async function runAssistantRequest(input: {
     : input.sources;
   return {
     text: result.text, model: result.model,
+    ...(result.execution ? { execution: result.execution } : {}),
     ...(result.dashboard ? { dashboard: result.dashboard } : {}), ...(prepared ? { prepared } : {}),
     reliability: assistantReliabilityFromResponse(result, mode, sources, prepared),
   };

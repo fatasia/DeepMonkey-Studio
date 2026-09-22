@@ -186,13 +186,29 @@ function ObjectSummary({ locale, objects }: {
         `${summary.total} objects: ${summary.blocked} blocked / ${summary.degraded} degraded`)}
     </p>
     {notable.length > 0 && <ul>
-      {notable.map(object => <li key={object.nodeId}>
-        <span className={`dashboard-offline-status is-${object.status}`}>{object.status}</span>
-        <code>{object.nodeId}</code>
-        {object.deferredFields.length > 0 && <span className="dashboard-offline-deferred">
-          {tr(locale, `未编译 ${object.deferredFields.length} 项字段`, `${object.deferredFields.length} fields not compiled`)}
-        </span>}
-      </li>)}
+      {notable.map(object => {
+        const reasons = object.reasons ?? [];
+        return <li key={object.nodeId}>
+          <span className={`dashboard-offline-status is-${object.status}`}>{object.status}</span>
+          <code>{object.nodeId}</code>
+          {(reasons.length > 0 || object.deferredFields.length > 0) && <span className="dashboard-offline-deferred">
+            <span className="dashboard-offline-reason-label">
+              {object.status === "blocked"
+                ? tr(locale, "阻断原因", "Blocked because")
+                : tr(locale, "降级原因", "Degraded because")}
+              {reasons.length > 0
+                ? tr(locale, "：", ": ")
+                : tr(locale, `：${object.deferredFields.length} 项字段未编译`, `: ${object.deferredFields.length} fields were not compiled`)}
+            </span>
+            {reasons.length > 0 && <span className="dashboard-offline-deferred-fields" title={reasons.join("; ")}>
+              {reasons.join("；")}
+            </span>}
+            <span className="dashboard-offline-deferred-fields" title={object.deferredFields.join(", ")}>
+              {object.deferredFields.join("、")}
+            </span>
+          </span>}
+        </li>;
+      })}
     </ul>}
   </div>;
 }

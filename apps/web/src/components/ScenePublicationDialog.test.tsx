@@ -41,6 +41,9 @@ describe("ScenePublicationDialog", () => {
     expect(html).toContain("高画质");
     expect(html).toContain("极速模式");
     expect(html).toContain("发布不会覆盖草稿");
+    expect(html).toContain(">发布方式<");
+    expect(html).toContain(">仅发布<");
+    expect(html).not.toContain(">客户端打包<");
     expect(html).toContain("Three WebView");
     expect(html).toContain("Deep Native");
     expect(html).toContain('aria-pressed="true"');

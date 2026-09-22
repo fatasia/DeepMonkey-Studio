@@ -5,6 +5,7 @@ import { assertSceneArtifactRecord, resolveSceneArtifactPublication, type SceneA
 export interface SceneArtifactRunnerDependencies {
   loadHistory(projectId: string, sceneId: string): Promise<PublishedSceneRecord[]>;
   exportPackage: typeof exportSceneClientPackage;
+  exportExecutable?: typeof exportSceneClientPackage;
   saveRecord(record: SceneArtifactRecord): Promise<void>;
   onChange?: (record: SceneArtifactRecord) => void;
 }
@@ -56,10 +57,13 @@ export function createSceneArtifactRunner(deps: SceneArtifactRunnerDependencies)
       const publication = resolveSceneArtifactPublication(record, history);
       await persist("building");
       signal.throwIfAborted();
-      const result = await abortable(deps.exportPackage({
+      const exporter = record.format === "executable" ? deps.exportExecutable : deps.exportPackage;
+      if (!exporter) throw new Error("Scene EXE 下载器未配置");
+      const result = await abortable(exporter({
         projectId: record.projectId, scene: publication.snapshot, target: record.target,
         publication,
         renderer: record.renderer, toolbarVisible: record.toolbarVisible, signal,
+        ...(record.branding ? { branding: record.branding } : {}),
         ...(prepared === undefined ? {} : { prepared }),
       }), signal);
       signal.throwIfAborted();

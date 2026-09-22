@@ -15,7 +15,7 @@ export const EXPANDED_DASHBOARD_TEMPLATE_DOMAINS: readonly DashboardTemplateDoma
     nameEn: "Power grid dispatch",
     categoryZh: "电力电网",
     categoryEn: "Power grid",
-    /* 电光青 hsl(182,68%,52%):填补生产青(171°)与水务青蓝(194°)之间的空隙,行业色对齐帆软"电网=青绿"。 */
+    /* 电光青 hsl(182,68%,52%):填补生产青(171°)与水务青蓝(194°)之间的空隙,行业色对齐外部参考"电网=青绿"。 */
     accent: "#31d2d7",
     surface: "#0c2226",
     metrics: domainMetrics([
@@ -117,7 +117,7 @@ export const EXPANDED_DASHBOARD_TEMPLATE_DOMAINS: readonly DashboardTemplateDoma
     nameEn: "Environmental monitoring",
     categoryZh: "环保监测",
     categoryEn: "Environment",
-    /* 环保绿 hsl(145,58%,50%):填补园区绿(128°)与碳薄荷(158°)之间的空隙,行业色对齐帆软"环保=青绿"。 */
+    /* 环保绿 hsl(145,58%,50%):填补园区绿(128°)与碳薄荷(158°)之间的空隙,行业色对齐外部参考"环保=青绿"。 */
     accent: "#4ab588",
     surface: "#0f231c",
     metrics: domainMetrics([

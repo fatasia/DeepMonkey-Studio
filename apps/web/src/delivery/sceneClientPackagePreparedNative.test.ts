@@ -161,9 +161,9 @@ describe("prepared Native package with test-only window evidence", () => {
     expect(mocks.download).not.toHaveBeenCalled();
   });
 
-  it("does not prepare a deliverable handle when matching test evidence still requires confirmation", async () => {
+  it("prepares a Native deliverable handle when only optional capabilities are degraded", async () => {
     mocks.degraded = true;
-    await expect(track(prepareSceneClientPackage(options()))).rejects.toMatchObject({ code: "publication-confirmation-required" });
+    await expect(track(prepareSceneClientPackage(options()))).resolves.toBeDefined();
     expect(prepareNativeSceneClientPayload).toHaveBeenCalledTimes(1);
     expect(mocks.download).not.toHaveBeenCalled();
   });

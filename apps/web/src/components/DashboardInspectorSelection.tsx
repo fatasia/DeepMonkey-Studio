@@ -20,7 +20,7 @@ const INSPECTOR_TABS: ReadonlyArray<[InspectorTab, string, string]> = [
 
 /** 只负责编排各类属性页；具体业务编辑逻辑由对应子面板维护。 */
 export function DashboardInspectorSelection() {
-  const { application, deleteSelectedNodes, inspectorTab, locale, onCommand, onNodeInteraction, page, selectedNode, selectedNodeIds, setInspectorTab } = useDashboardWorkspace();
+  const { application, deleteSelectedNodes, inspectorTab, locale, onCommand, onNodeInteraction, page, selectedNode, selectedNodeIds, setInspectorTab, toggleLayerLock } = useDashboardWorkspace();
 
   if (!selectedNode) {
     return (
@@ -54,6 +54,11 @@ export function DashboardInspectorSelection() {
         ))}
       </nav>
 
+      {selectedNode.locked && <div className="dashboard-inspector-lock-notice">
+        <span>{tr(locale, "图层已锁定 · 只读", "Layer locked · Read only")}</span>
+        <button type="button" onClick={() => toggleLayerLock(selectedNode)}>{tr(locale, "解锁图层", "Unlock layer")}</button>
+      </div>}
+      <fieldset className="dashboard-inspector-fields" disabled={selectedNode.locked === true} aria-label={tr(locale, "组件属性", "Component properties")}>
       <DashboardInspectorContent />
       <DashboardInspectorBulkData />
       <DashboardSampleGroupEditor />
@@ -75,6 +80,7 @@ export function DashboardInspectorSelection() {
           onTest={(trigger) => onNodeInteraction(selectedNode.id, trigger)}
         />
       )}
+      </fieldset>
       <section className="dashboard-inspector-section">
         <button className="dashboard-delete-node" disabled={!hasUnlockedSelection} onClick={deleteSelectedNodes}>
           <Minus size={13} />

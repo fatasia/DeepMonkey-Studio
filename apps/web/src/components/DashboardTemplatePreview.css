@@ -1,4 +1,4 @@
-/* 商用封面(FVS/山海鲸封面语言):域 surface → 更深渐变底 + 细网格/点阵双纹理(向边缘渐隐)
+/* 商用封面(大屏参考/外部参考封面语言):域 surface → 更深渐变底 + 细网格/点阵双纹理(向边缘渐隐)
    + 域 accent 光晕 + 暗角(UV vignette)。封面内部是"深色大屏孤岛":亮暗主题下都保持深色观感,
    卡片容器(外层 article)随主题融入。SVG 内另有角部括弧/地平线/流线(见 CoverScene)。 */
 .dashboard-template-card-preview.template-layout-preview {
@@ -15,7 +15,7 @@
     radial-gradient(120% 96% at 50% 116%, rgba(2, 6, 9, .55), transparent 58%),
     linear-gradient(158deg, color-mix(in srgb, var(--template-surface) 58%, #04080b) 0%, var(--template-surface) 52%, color-mix(in srgb, var(--template-surface) 72%, var(--template-accent) 12%) 100%);
 }
-/* 细网格 + 点阵双纹理 + 径向 mask 渐隐(对标山海鲸地面网格渐隐的"空气感") */
+/* 细网格 + 点阵双纹理 + 径向 mask 渐隐(对标外部参考地面网格渐隐的"空气感") */
 .template-layout-preview::before {
   content: "";
   position: absolute;
@@ -72,7 +72,7 @@
 .template-layout-preview .cover-num { fill: #f4f8f9; font-variant-numeric: tabular-nums; }
 .template-layout-preview .cover-rank-num { fill: #06121a; font-weight: 700; font-variant-numeric: tabular-nums; }
 
-/* 商用分层徽章(封面左上,对标山海鲸金色冠标角标的位置语言,配色从 --accent 派生) */
+/* 商用分层徽章(封面左上,对标外部参考金色冠标角标的位置语言,配色从 --accent 派生) */
 .dashboard-template-tier-badge {
   position: absolute;
   z-index: 2;

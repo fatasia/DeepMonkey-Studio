@@ -61,7 +61,7 @@ export function DashboardWorkspaceTemplateLibrary() {
     panelRef.current?.querySelector<HTMLInputElement>("input")?.focus();
     return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
   }, [templateLibraryOpen]);
-  // 封面缩略图统一用标准 1920×1080 基准(对标山海鲸/帆软市场卡的统一 16:9 封面),
+  // 封面缩略图统一用标准 1920×1080 基准(对标外部参考/外部参考市场卡的统一 16:9 封面),
   // 插入仍按当前画布真实尺寸适配(insertDashboardTemplate → createDashboardTemplateNodes)。
   const cardProps = { locale, favoriteTemplateIds, onToggle: toggleTemplateFavorite, onInsert: (id: string) => { insertDashboardTemplate(id); setTemplateLibraryOpen(false); } };
   return (
@@ -114,7 +114,7 @@ export function DashboardWorkspaceTemplateLibrary() {
           </div>
           {/* 面板是三行 grid(header/筛选/内容);所有内容分支包进同一滚动容器,避免破坏行模板。 */}
           <div className="dashboard-template-body">
-            {/* 主题套件入口横排(帆软 visuals 页套件层的对标):色族聚合 + 量化徽章,点击过滤。 */}
+            {/* 主题套件入口横排(外部参考 visuals 页套件层的对标):色族聚合 + 量化徽章,点击过滤。 */}
             <div className="dashboard-template-suites" role="group" aria-label={tr(locale, "主题套件", "Theme suites")}>
               {suiteCards.map(({ suite: candidate, stats }) => (
                 <button key={candidate.id} type="button" aria-pressed={suiteId === candidate.id}

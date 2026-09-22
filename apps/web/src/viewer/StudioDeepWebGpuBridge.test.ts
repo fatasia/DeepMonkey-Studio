@@ -5,6 +5,7 @@ import type { ViewerEngine } from "./ViewerEngine";
 import { StudioDeepWebGpuBridge } from "./StudioDeepWebGpuBridge";
 import type { PresentationPerformanceSource } from "./viewerPresentationPerformance";
 import { DEFAULT_POST_PROCESSING } from "../appDefaults";
+import { readStudioFrameCaptureSnapshot, setStudioFrameCaptureRequested } from "./studioFrameCaptureDiagnostics";
 
 type BridgeModule = typeof import("@bim-studio/deep-engine/three-bridge");
 type Deferred<T> = { promise: Promise<T>; resolve(value: T): void; reject(reason: unknown): void };
@@ -24,6 +25,7 @@ function makeBackend() {
     prepareScene: vi.fn().mockResolvedValue({ frame: 1 }),
     sync: vi.fn<() => Promise<DeepWebGpuSyncResult>>().mockResolvedValue(syncResult()),
     render: vi.fn((_view: unknown) => ({ frame: 1 })),
+    setProbeClipmapEnabled: vi.fn(),
     dispose: vi.fn(),
     runtime: { session: { state: "ready", device: { lost: deviceLoss.promise } }, validateFrame: vi.fn().mockResolvedValue({ frame: 1 }) },
   };
@@ -55,6 +57,7 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
 
   afterEach(() => {
     for (const bridge of bridges) bridge.dispose();
+    setStudioFrameCaptureRequested(false);
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
@@ -129,6 +132,21 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     for (let settle = 0; settle < 17; settle++) await frame(false);
   }
 
+  it("allocates author frame capture only for an explicitly opened diagnostics session", async () => {
+    const regular = setup();
+    await activate(regular.bridge);
+    expect(regular.create.mock.calls[0]![0].renderer.frameCapture).toBeUndefined();
+    expect(readStudioFrameCaptureSnapshot().available).toBe(false);
+
+    setStudioFrameCaptureRequested(true);
+    const diagnostic = setup();
+    await activate(diagnostic.bridge);
+    expect(diagnostic.create.mock.calls[0]![0].renderer.frameCapture?.session).toBeDefined();
+    expect(readStudioFrameCaptureSnapshot().available).toBe(true);
+    diagnostic.bridge.dispose();
+    expect(readStudioFrameCaptureSnapshot().available).toBe(false);
+  });
+
   it("establishes performance samples from submitted Deep frames through temporal settling", async () => {
     const f = setup();
     await activate(f.bridge);
@@ -159,6 +177,21 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     expect(f.first.render.mock.calls[0]![0]).toBe(args[3]);
     expect(f.first.render.mock.calls.at(-1)![0]).toBe(args[3]);
     expect(f.bridge.activeBackend).toBe("webgpu");
+  });
+
+  it("tracks the authored GI switch through the published Deep backend lifecycle", async () => {
+    const f = setup();
+    let enabled = true;
+    f.viewer.getGlobalLighting = () => ({ enabled: true, globalIlluminationEnabled: enabled }) as never;
+    await activate(f.bridge);
+    expect(f.create.mock.calls[0]![0].renderer.probeClipmap).toBeUndefined();
+    expect(f.first.setProbeClipmapEnabled).toHaveBeenCalledWith(true);
+    enabled = false;
+    for (const notify of authorFrames) notify();
+    await microtasks();
+    expect(f.first.setProbeClipmapEnabled).toHaveBeenLastCalledWith(false);
+    f.bridge.dispose();
+    expect(f.first.dispose).toHaveBeenCalledOnce();
   });
 
   async function replace(bridge: StudioDeepWebGpuBridge) {

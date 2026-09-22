@@ -1,9 +1,11 @@
 import { sha256Bytes } from "@bim-studio/deep-engine/shader-package";
+import { dashboardTextRasterScale } from "./dashboardRasterDensity";
 import type { DashboardRasterCompileInput, DashboardRasterResult, FrozenRasterAsset } from "./dashboardRasterTypes";
 
 const HASH = /^[a-f0-9]{64}$/;
 export const RASTER_BYTES_LIMIT = 64 * 1024 * 1024;
 export function snapshotRasterInput(input: DashboardRasterCompileInput): DashboardRasterCompileInput {
+  dashboardTextRasterScale(input.textRasterScale);
   let bytes = 0;
   for (const asset of Object.values(input.assets)) {
     if (!(asset.bytes instanceof Uint8Array) || !asset.bytes.length)

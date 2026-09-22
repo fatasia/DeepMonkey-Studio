@@ -15,18 +15,31 @@ window.failure = undefined;
     const renderer = new THREE.WebGPURenderer({ antialias: true });
     renderer.setSize(width, height);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    // Native publishes the authored exposure (1.05) before its output pass.
+    // Keep this explicit; Three's default is 1.0 and silently creates a second
+    // exposure contract for the same runtime package.
+    renderer.toneMappingExposure = 1.05;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     panel.append(renderer.domElement);
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color("#172126");
+    // Native keeps the authored sRGB clear color outside the mesh ACES pass.
+    // A Scene.background would be tone-mapped by WebGPU and cannot be made an
+    // exact byte contract with a guessed inverse. Clear the target directly.
+    // WebGPU's clear value is consumed in the working (linear) target before
+    // its output conversion; this calibrated input publishes the authored
+    // `#172126` bytes used by Native.
+    // Calibrated against the Native solid-background path: WebGPU's linear
+    // clear target is converted once by the output pass, so the authored
+    // #172126 bytes land at this working-space value.
+    renderer.setClearColor(new THREE.Color("#282f34"), 1);
     scene.add(gltf.scene);
-    const reference = new THREE.PointLight(0xffffff, 2, 20, 2);
+    const reference = new THREE.PointLight(0xffffff, 2.35, 20, 2);
     reference.position.set(1, 4, 3);
     scene.add(reference);
-    // 与 verify-native-baked-gi.mts 完全同口径:center (0,1.5,0)、半径 hypot(3,1.5,3)、方向 (6,4,7)、fov 25、fit 1.05;点光 2@(1,4,3) decay2。
+    // 与发布运行包 compileSceneCamera 的合同同口径:center (0,1.5,0)、半径 hypot(3,1.5,3)、方向 (6,4,7)、vertical fov 50、fit 1.05;点光 2@(1,4,3) decay2。
     const radius = Math.hypot(3, 1.5, 3), center = new THREE.Vector3(0, 1.5, 0);
-    const normal = Math.hypot(6, 4, 7), distance = radius / Math.sin(25 * Math.PI / 180) * 1.05;
-    const camera = new THREE.PerspectiveCamera(25, width / height, 0.01, distance + radius * 3);
+    const normal = Math.hypot(6, 4, 7), distance = radius / Math.sin(50 * Math.PI / 180) * 1.05;
+    const camera = new THREE.PerspectiveCamera(50, width / height, 0.01, distance + radius * 3);
     camera.position.copy(center).addScaledVector(new THREE.Vector3(6, 4, 7).normalize(), distance);
     camera.lookAt(center);
     camera.updateMatrixWorld(true);

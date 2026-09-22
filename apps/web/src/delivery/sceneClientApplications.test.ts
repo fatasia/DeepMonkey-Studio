@@ -62,13 +62,13 @@ describe("scene client application closure", () => {
     expect(selected.scenes[0]).toEqual(migrateSceneSnapshotV1(root).scenes[0]);
     expect(app.scenes[0]!.name).toBe("Stale root");
   });
-  it("rejects old object interactions against the saved root after that object was removed", () => {
+  it("prunes old object interactions against the saved root after that object was removed", () => {
     const { root, app } = fixture();
     app.scenes[0]!.primitives = [{ modelId: "removed", kind: "box", name: "Old", visible: true, opacity: 1, color: "#ffffff",
       transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } } }];
     app.interactions.push({ id: "stale", name: "Stale", enabled: true, trigger: "click",
       source: { kind: "object", sceneId: "root", modelId: "removed" }, actions: [] });
-    expect(() => selectSceneClientApplications(root, [app])).toThrow(/applications\[root\].interactions\[0\].source.*场景对象不存在/);
+    expect(selectSceneClientApplications(root, [app]).applications[0]!.interactions).toEqual([]);
   });
   it("selects a page-only application through the root scene dashboard action", () => {
     const root = scene(), app = migrateSceneSnapshotV1(scene("other"));
@@ -117,14 +117,24 @@ describe("scene client application closure", () => {
     ] };
     expect(selectSceneClientApplications(root, [app]).applications[0]!.spatialNavigation!.nodes).toHaveLength(2);
   });
-  it.each(["cross-project", "missing-page", "missing-scene", "duplicate-page", "missing-parent", "missing-source"])("rejects %s with an identifiable path", condition => {
+  it("keeps reachable 3D navigation while pruning a deleted optional dashboard page", () => {
+    const { root, app } = fixture();
+    app.spatialNavigation = { cacheLimit: 1, rootNodeIds: ["campus"], nodes: [
+      { id: "campus", name: "园区", kind: "campus", sceneId: root.id, dashboardPageId: "deleted-page", loadPolicy: "focus" },
+    ] };
+    const selected = selectSceneClientApplications(root, [app]);
+    expect(selected.unresolved).toEqual([]);
+    expect(selected.applications[0]!.spatialNavigation!.nodes).toEqual([
+      { id: "campus", name: "园区", kind: "campus", sceneId: root.id, loadPolicy: "focus" },
+    ]);
+  });
+  it.each(["cross-project", "missing-page", "missing-scene", "duplicate-page", "missing-parent"])("rejects %s with an identifiable path", condition => {
     const { root, app } = fixture();
     if (condition === "cross-project") app.metadata.projectId = "foreign";
     if (condition === "missing-page") link(app, "page:root", "absent");
     if (condition === "missing-scene") app.pages[0]!.nodes[0] = { ...app.pages[0]!.nodes[0]!, sceneId: "absent" } as typeof app.pages[0]["nodes"][number];
     if (condition === "duplicate-page") app.pages.push(app.pages[0]!);
     if (condition === "missing-parent") app.spatialNavigation = { cacheLimit: 1, rootNodeIds: ["node"], nodes: [{ id: "node", name: "Node", kind: "floor", parentId: "absent", loadPolicy: "focus" }] };
-    if (condition === "missing-source") link(app, "absent", "page:root");
     expect(() => selectSceneClientApplications(root, [app])).toThrow(/applications\[root\]/);
   });
   it("preserves all associated pages for opaque enabled scripts and returns an explicit unresolved reason", () => {
@@ -135,12 +145,12 @@ describe("scene client application closure", () => {
     expect(result.applications[0]!.pages).toHaveLength(2);
     expect(result.unresolved[0]).toMatchObject({ applicationId: "root", path: "applications[root].scripts[0]" });
   });
-  it.each(["scene.read", "scene.write"] as const)("uses the enforced worker permission boundary for %s", permission => {
+  it.each(["scene.read", "scene.write"] as const)("accepts frozen-scene worker permissions for %s", permission => {
     const { root, app } = fixture();
     app.scripts.push({ id: "worker", name: "Worker", enabled: true, runtime: "worker-sandbox", apiVersion: "1.0", entrypoint: "behavior",
       code: "opaqueCode()", lifecycle: [], capabilities: ["studio.scene"], permissions: [permission] });
     const selected = selectSceneClientApplications(root, [app]);
-    expect(selected.unresolved.length).toBe(permission === "scene.read" ? 0 : 1);
-    expect(selected.applications[0]!.pages.length).toBe(permission === "scene.read" ? 1 : 2);
+    expect(selected.unresolved).toEqual([]);
+    expect(selected.applications[0]!.pages).toHaveLength(1);
   });
 });

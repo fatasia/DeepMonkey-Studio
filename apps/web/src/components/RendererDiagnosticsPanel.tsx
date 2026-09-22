@@ -327,6 +327,19 @@ function trDetail(locale: AppLocale, detail: string): string {
     "产品 WebGPU 路径尚未完成 WebXR 实机验收，XR 会话继续使用 WebGL": "The product WebGPU path has not passed WebXR device validation; XR sessions continue to use WebGL",
     "XR 会话挂载在本后端：WebXR 进入、控制器选择与双目渲染均走 WebGL": "XR sessions mount on this backend: WebXR entry, controller selection and stereo rendering all run on WebGL",
     "Deep WebGPU 激活期间 XR 入口不可用；浏览器端 WebGPU-XR 会话特性尚未落地，属诚实降级而非缺陷": "The XR entry is unavailable while Deep WebGPU is active; browser-side WebGPU-XR session support has not landed yet — an honest fallback, not a defect",
+    "未取得硬件光追能力快照；使用软件 BVH/TLAS 路径": "No hardware ray-tracing capability snapshot yet; using the software BVH/TLAS path",
   };
-  return locale === "zh-CN" ? detail : (translations[detail] ?? detail);
+  if (locale === "zh-CN") return detail;
+  const mapped = translations[detail];
+  if (mapped) return mapped;
+  // 硬件光追决策行是模板字符串（tier/fallbacks 动态拼接），静态映射覆盖不到，按前缀拼装英文。
+  const tierLine = /^硬件光追能力：(.+?)；(?:保留回退：(.+)|无回退)$/.exec(detail);
+  if (tierLine) {
+    return `Hardware ray tracing capability: ${tierLine[1]}; ${tierLine[2] ? `fallbacks retained: ${tierLine[2].replaceAll("、", ", ")}` : "no fallback"}`;
+  }
+  const unavailableLine = /^硬件光追不可用；保留(.+)路径$/.exec(detail);
+  if (unavailableLine?.[1]) {
+    return `Hardware ray tracing unavailable; retaining the ${unavailableLine[1].replaceAll("、", ", ")} path`;
+  }
+  return detail;
 }

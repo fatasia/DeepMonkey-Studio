@@ -4,6 +4,8 @@ import { Color } from "three";
 import { primitiveGeometry } from "../viewer/primitiveGeometry";
 import { sceneModelMatrix } from "./sceneModelMatrix";
 import { createSceneGeometryPrecisionValidator } from "./sceneGeometryPrecision";
+import { isNeutralMaterialField, staticSceneEffectEmissive, unsupportedStaticSceneEffectFields } from "./sceneNeutralAppearance";
+import { compileLinearPrefabRenderPacket } from "./compileLinearPrefabRenderPacket";
 
 /** 基础体静态绘制投影；相机、环境、行为与二维语义由发布编译器分别处理。 */
 export function sceneSnapshotToRenderPacket(scene: SceneSnapshot): RenderPacket {
@@ -17,38 +19,63 @@ export function sceneSnapshotToRenderPacket(scene: SceneSnapshot): RenderPacket 
     if (!primitive.modelId || ids.has(primitive.modelId)) throw new Error(`重复或缺少基础体 ID：${primitive.modelId}`);
     ids.add(primitive.modelId);
     if (!primitive.visible) continue;
+    const matrix = sceneModelMatrix(primitive.transform, primitive.modelId);
+    if (primitive.prefab) {
+      assertPrimitiveExtensions(primitive, true);
+      const compiled = compileLinearPrefabRenderPacket(primitive, matrix);
+      for (const geometry of compiled.geometries) geometries.set(geometry.id, geometry);
+      materials.push(...compiled.materials);
+      instances.push(...compiled.instances);
+      for (const instance of compiled.instances) verifyGeometryPrecision(geometries.get(instance.geometry)!, instance.transform,
+        `primitives[${primitive.modelId}].${instance.id}`);
+      continue;
+    }
     const geometryId = `primitive:${primitive.kind}`;
     const material = primitiveMaterial(primitive);
     if (!geometries.has(geometryId)) geometries.set(geometryId, geometryResource(primitive.kind, geometryId));
     materials.push(material);
-    const matrix = sceneModelMatrix(primitive.transform, primitive.modelId);
     verifyGeometryPrecision(geometries.get(geometryId)!, matrix.elements, `primitives[${primitive.modelId}]`);
     instances.push({ id: primitive.modelId, geometry: geometryId, material: material.id,
-      transform: new Float32Array(matrix.elements), castShadow: true, receiveShadow: true });
+      transform: new Float32Array(matrix.elements), castShadow: true, receiveShadow: true,
+      ...(primitive.effects?.outline ? { outline: true } : {}) });
   }
   return { geometries: [...geometries.values()].sort((a, b) => compare(a.id, b.id)), materials, instances };
 }
 
 function primitiveMaterial(item: PrimitiveState): RenderPacket["materials"][number] {
   const state = item.material;
-  const supported = new Set(["color", "roughness", "metalness", "emissive", "emissiveIntensity", "doubleSided"]);
+  const supported = new Set(["color", "roughness", "metalness", "ior", "emissive", "emissiveIntensity", "doubleSided"]);
   for (const [key, value] of Object.entries(state ?? {})) {
-    if (value !== undefined && !supported.has(key)) throw new Error(`基础体 ${item.modelId} 的材质需要适配：${key}`);
+    if (value !== undefined && !supported.has(key) && !isNeutralMaterialField(key, value)) throw new Error(`基础体 ${item.modelId} 的材质需要适配：${key}`);
   }
   // 会改变几何或外观的配置不能静默丢弃。
-  if (item.prefab || item.layers?.length || item.effects || item.rig || item.explosionFactor) {
-    throw new Error(`基础体 ${item.modelId} 的扩展外观需要适配`);
-  }
+  assertPrimitiveExtensions(item, false);
   const baseColor = linearColor(state?.color ?? item.colorOverride ?? item.color, item.modelId);
   const opacity = finite(item.opacity, item.modelId);
   if (opacity < 0 || opacity > 1) throw new Error(`基础体 ${item.modelId} 的透明度超出 0..1`);
+  const ior = state?.ior;
+  if (ior !== undefined && (!Number.isFinite(ior) || !Number.isFinite(Math.fround(ior)) || ior < 1)) {
+    throw new Error(`基础体 ${item.modelId} 的折射率必须为不小于 1 的有限数值`);
+  }
+  const effectEmissive = staticSceneEffectEmissive(item.effects);
   return { id: `material:${item.modelId}`, baseColor,
     metallic: clamp(state?.metalness ?? 0.05, 1, item.modelId),
     roughness: clamp(state?.roughness ?? 0.72, 1, item.modelId),
+    ...(ior === undefined ? {} : { ior }),
     baseColorAlpha: opacity, alphaMode: opacity < 0.999 ? "BLEND" : "OPAQUE",
     doubleSided: state?.doubleSided ?? false,
-    emissiveFactor: linearColor(state?.emissive ?? "#000000", item.modelId),
-    emissiveStrength: clamp(state?.emissiveIntensity ?? 1, 10, item.modelId) };
+    emissiveFactor: linearColor(effectEmissive?.color ?? state?.emissive ?? "#000000", item.modelId),
+    emissiveStrength: effectEmissive?.strength ?? clamp(state?.emissiveIntensity ?? 1, 10, item.modelId) };
+}
+
+function assertPrimitiveExtensions(item: PrimitiveState, allowPrefab: boolean): void {
+  const activeEffects = unsupportedStaticSceneEffectFields(item.effects);
+  if ((!allowPrefab && item.prefab) || item.layers?.length || activeEffects.length || item.rig || item.explosionFactor) {
+    const fields = [!allowPrefab && item.prefab ? "prefab" : undefined, item.layers?.length ? "layers" : undefined,
+      ...activeEffects, item.rig ? "rig" : undefined, item.explosionFactor ? "explosionFactor" : undefined]
+      .filter((value): value is string => value !== undefined);
+    throw new Error(`基础体 ${item.modelId} 的扩展外观需要适配：${fields.join(", ")}`);
+  }
 }
 
 function linearColor(value: string, id: string): [number, number, number] {

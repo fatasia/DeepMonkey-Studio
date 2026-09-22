@@ -5,7 +5,11 @@ import type { RenderView } from "@bim-studio/deep-engine/webgpu";
 export function readStudioDeepPostProcess(state: ScenePostProcessingState,
   composerActive: boolean): NonNullable<RenderView["postProcess"]> {
   const bloom = composerActive && state.enabled && Boolean(state.bloom);
+  const screenSpaceReflection = composerActive && state.enabled && Boolean(state.screenSpaceReflection);
   return Object.freeze({ ambientOcclusion: composerActive && state.enabled && Boolean(state.ssao || state.gtao),
+    screenSpaceReflection,
+    ...(screenSpaceReflection ? { screenSpaceReflectionProfile: Object.freeze({ steps: state.ssrSteps ?? 32,
+      thicknessScale: state.ssrThickness ?? 0.01, maxDistanceScale: state.ssrMaxDistance ?? 2 }) } : {}),
     bloom, ...(bloom ? { authorBloom: Object.freeze({ strength: state.bloomStrength, threshold: state.bloomThreshold }) } : {}) });
 }
 
@@ -16,6 +20,7 @@ export function readStudioDeepColorEffects(state: ScenePostProcessingState,
   return Object.freeze({
     ...(state.vignette ? { vignette: Object.freeze({ darkness: state.vignetteDarkness ?? 1.2 }) } : {}),
     ...(state.colorGrading ? { colorGrading: Object.freeze({ hue: state.hue ?? 0,
-      saturation: state.saturation ?? 0, brightness: state.brightness ?? 0, contrast: state.contrast ?? 0 }) } : {}),
+      saturation: state.saturation ?? 0, brightness: state.brightness ?? 0, contrast: state.contrast ?? 0,
+      temperature: state.temperature ?? 0, tint: state.tint ?? 0 }) } : {}),
   });
 }

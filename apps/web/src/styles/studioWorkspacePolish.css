@@ -366,3 +366,23 @@
   font-size: 10px;
   line-height: 1.45;
 }
+
+/* 对象叶节点不留展开占位；只有多选时才显示独立勾选列。 */
+.app-shell .scene-object-directory:not([data-multiselect="true"]) .scene-row-selection-mark { display: none; }
+.app-shell .scene-object-directory .asset-row { padding-inline: 8px; }
+.app-shell .scene-object-directory .asset-main { gap: 7px; padding-inline: 0; }
+.app-shell .scene-object-directory .scene-object-badge {
+  display: grid;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 20px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+}
+.app-shell .scene-object-directory .asset-copy strong { font-size: 12px; font-weight: 500; }
+.app-shell .scene-object-directory .model-expander { min-width: 16px; width: 16px; flex-basis: 16px; margin-right: 7px; }
+.app-shell .scene-object-directory .asset-row:hover { background: var(--surface-2); }
+.app-shell .scene-object-directory .asset-row.selected { background: var(--accent-soft); }
+.app-shell .scene-object-directory .mini-button { margin-left: 3px; }

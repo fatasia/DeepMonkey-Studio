@@ -25,6 +25,17 @@ describe("scene publication delivery gate", () => {
     expect(assertScenePublicationDeliverable(source)).toBeUndefined(); expect(source).toEqual(before);
   });
 
+  it("allows an explicitly degraded Native delivery while retaining the report", () => {
+    const source = report();
+    const degraded = { ...source, status: "confirmation-required" as const,
+      items: [...source.items, { ...source.items[0]!, objectId: source.sceneId, path: "postProcessing",
+        capability: "deep.scene.uncompiled.v1", status: "degraded" as const,
+        evidenceIds: [], reason: "功能未接入", remediation: "隐藏对应入口" }] };
+    expect(() => assertScenePublicationDeliverable(degraded, { allowNativeDegraded: true })).not.toThrow();
+    expect(() => assertScenePublicationDeliverable(degraded)).toThrow(/需审核降级方案/);
+    expect(() => assertScenePublicationDeliverable({ ...degraded, evidence: [] }, { allowNativeDegraded: true })).toThrow(/运行证据/);
+  });
+
   it.each(["blocked", "degraded", "webview-only"] as const)("rejects ready summary concealing %s items", status => {
     const source = report();
     const error = failure({ ...source, items: [{ ...source.items[0]!, status, reason: "对象不支持", remediation: "换用已验证路径" }] });

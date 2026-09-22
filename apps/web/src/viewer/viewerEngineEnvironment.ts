@@ -6,6 +6,7 @@ import { shouldRenderSceneLightProxy } from "./viewerTypes";
 import { createSceneGrid } from "./sceneGrid";
 import { updateSceneLightDirectionLine } from "./sceneLightDirectionLine";
 import { configureDirectionalShadow } from "./sceneShadowQuality";
+import { applyLightIes, applySceneIesProfiles } from "./studioIesAuthorCarriers";
 import { DEFAULT_SCENE_LIGHTS } from "./viewerEngineTypes";
 import { ViewerEngineRendering } from "./viewerEngineRendering";
 
@@ -186,6 +187,7 @@ export abstract class ViewerEngineEnvironment extends ViewerEngineRendering {
       this.scheduleRendererPipelineWarmup();
     }
   protected syncSceneLights(): void {
+      applySceneIesProfiles(this.scene, this.lightingState);
       this.disposeSceneLightProxies();
       for (const light of this.sceneLights.values()) {
         if (light.parent) light.parent.remove(light);
@@ -226,6 +228,9 @@ export abstract class ViewerEngineEnvironment extends ViewerEngineRendering {
         light.name = `scene-light:${state.id}`;
         light.position.set(state.position?.x ?? 0, state.position?.y ?? 6, state.position?.z ?? 0);
         if (state.type === "rectArea") light.lookAt(state.target?.x ?? 0, state.target?.y ?? 0, state.target?.z ?? 0);
+        applyLightIes(light, state);
+        light.userData.authorLightId = state.id;
+        if (state.type === "spot") light.userData.shadowSoftness = state.shadowSoftness ?? 0;
         light.visible = state.enabled;
         if ("castShadow" in light) light.castShadow = Boolean(state.castShadow);
         this.sceneLights.set(state.id, light);

@@ -103,13 +103,32 @@
 .timeline-frame-inspector :is(footer,.timeline-frame-fields) > button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .timeline-frame-inspector :is(footer,.timeline-frame-fields) > button:disabled { opacity:.45; cursor:not-allowed; }
 .timeline-frame-inspector > footer button.danger { color:var(--danger); border-color:color-mix(in srgb,var(--danger) 38%,var(--line)); }
-.timeline-settings { display: grid; grid-template-columns: repeat(3,minmax(125px,1fr)) repeat(3,auto); align-items: end; gap: 8px; padding: 8px 10px 10px; border-top: 1px solid var(--line); background: var(--surface-1); }
+.timeline-settings { display: grid; grid-template-columns: repeat(auto-fit,minmax(110px,1fr)); align-items: end; gap: 8px; padding: 8px 10px 10px; border-top: 1px solid var(--line); background: var(--surface-1); }
 .timeline-settings label { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px; color: var(--text-muted); font-size: 9px; }
 .timeline-settings label > span { grid-column: 1 / 3; }
 .timeline-settings input[type="number"],.timeline-settings select { width: 100%; min-width: 0; height: 27px; padding: 0 6px; color: var(--text-strong); border: 1px solid var(--line-strong); border-radius: 5px; outline: 0; background: var(--surface-2); font-size: 9px; }
 .timeline-settings i { font-style: normal; }
-.timeline-settings .timeline-check { display: flex; align-items: center; align-self: center; gap: 4px; white-space: nowrap; }
+.timeline-settings .timeline-check { display: flex; align-items: center; align-self: center; gap: 4px; }
 .timeline-settings .timeline-check input { accent-color: var(--accent); }
+.timeline-state-machine { grid-column:1 / -1; display:grid; grid-template-columns:minmax(180px,1fr) auto; align-items:center; gap:7px 12px; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--surface-2); }
+.timeline-state-machine > header { grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.timeline-state-machine > header > span,.timeline-state-machine button { display:inline-flex; align-items:center; gap:5px; }
+.timeline-state-machine > header > span { color:var(--text-strong); }
+.timeline-state-machine > small { grid-column:1 / -1; color:var(--text-muted); }
+.timeline-state-create { justify-self:start; min-height:27px; padding:0 8px; color:var(--text-strong); border:1px solid var(--line-strong); border-radius:5px; background:var(--surface-3); cursor:pointer; }
+.timeline-state-list { display:flex; flex-wrap:wrap; gap:5px; min-width:0; }
+.timeline-state-list button { min-height:27px; max-width:160px; padding:0 8px; color:var(--text-muted); border:1px solid var(--line); border-radius:5px; background:var(--surface-1); cursor:pointer; }
+.timeline-state-list button span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.timeline-state-list button.active { color:var(--accent); border-color:color-mix(in srgb,var(--accent) 42%,var(--line)); background:var(--accent-soft); }
+.timeline-state-list button:disabled { opacity:.45; cursor:not-allowed; }
+.timeline-state-duration { display:grid; grid-template-columns:auto 64px auto !important; align-items:center; }
+.timeline-state-duration > span { grid-column:auto !important; }
+.timeline-state-machine > p { grid-column:1 / -1; display:flex; align-items:center; gap:5px; margin:0; color:var(--danger); font-size:9px; }
+.timeline-state-conditions { grid-column:1 / -1; display:flex; align-items:center; flex-wrap:wrap; gap:7px; padding-top:7px; border-top:1px solid var(--line-subtle); }
+.timeline-state-conditions button { min-height:27px; padding:0 8px; color:var(--text); border:1px solid var(--line-strong); border-radius:5px; background:var(--surface-3); cursor:pointer; }
+.timeline-state-conditions button:hover:not(:disabled) { color:var(--accent); border-color:var(--accent); }
+.timeline-state-conditions button:disabled { opacity:.45; cursor:not-allowed; }
+.timeline-state-conditions small { color:var(--text-faint); font-variant-numeric:tabular-nums; }
 @media (max-width: 900px) {
   .timeline-panel { bottom: 44px; width: calc(100% - 16px); max-height: calc(100% - 70px); }
   .timeline-panel-resizable { right: 8px; left: 8px; width: auto; min-width: 0; min-height: 170px; }

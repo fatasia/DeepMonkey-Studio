@@ -24,7 +24,7 @@ export function UnifiedAssetLibraryPage({ controller }: { controller: SceneManag
   const { locale, onOpen, project, refreshLibraryModels, sortedScenes } = controller;
   const firstScene = sortedScenes[0];
   const projectAssetCount = (project?.models.length ?? 0) + (project?.assets?.length ?? 0);
-  // 页面头部概览统计(对标帆软市场头部 + 山海鲸分类树计数徽章):模型库总数走一次轻量请求,
+  // 页面头部概览统计(对标外部参考市场头部 + 外部参考分类树计数徽章):模型库总数走一次轻量请求,
   // 其余三类取内置目录同步长度,均为真实计数;请求失败时显示 “—”,禁止编造占位数。
   const [libraryCount, setLibraryCount] = useState<number>();
   useEffect(() => {

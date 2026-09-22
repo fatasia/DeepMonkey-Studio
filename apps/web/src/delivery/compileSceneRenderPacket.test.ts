@@ -1,8 +1,9 @@
+import { sourceMaterialPatch } from "../viewer/sourceMaterialReset";
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import type { SceneSnapshot, SceneModelState } from "@bim-studio/contracts";
+import type { PrimitiveState, SceneSnapshot, SceneModelState } from "@bim-studio/contracts";
 import { buildDeepRuntimePackage, validateDeepRuntimePackage } from "@bim-studio/deep-engine/runtime-package";
-import { Matrix4, Object3D } from "three";
+import { Color, Matrix4, Object3D } from "three";
 import sharp from "sharp";
 import { compileSceneRenderPacket } from "./compileSceneRenderPacket";
 
@@ -29,6 +30,21 @@ function scene(models: SceneModelState[]): SceneSnapshot {
 }
 
 describe("saved scene GLB compilation", () => {
+  it("binds every procedural road part to one author object without asset IO", async () => {
+    const road = { modelId: "road", name: "Road", kind: "box", visible: true, opacity: 1, color: "#808080",
+      transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } },
+      prefab: { definitionId: "road.straight", definitionVersion: "1.0.0", kind: "road", operatingState: "idle",
+        parameters: { lengthM: 20, carriagewayWidthM: 7, laneCount: 2, shoulderWidthM: 0.75, surface: "asphalt", marking: "center" },
+        placementPath: { points: [{ id: "a", position: { x: 0, y: 0, z: 0 } },
+          { id: "b", position: { x: 12, y: 0, z: 3 } }], interpolation: "linear", closed: false,
+          snapToGround: false, seed: 9 } } } satisfies PrimitiveState;
+    const loadModel = vi.fn(async () => box);
+    const result = await compileSceneRenderPacket({ ...scene([]), primitives: [road] }, { loadModel });
+    expect(loadModel).not.toHaveBeenCalled();
+    expect(result.objectBindings).toEqual([{ nodeId: "road", instanceIds: result.packet.instances.map(instance => instance.id) }]);
+    expect(result.objectBindings[0]!.instanceIds.length).toBeGreaterThan(0);
+  });
+
   it.each(["scale", "rotation"])("rejects internal GLB large vertices with %s precision loss", async kind => {
     const bytes = Buffer.from(box), jsonLength = bytes.readUInt32LE(12);
     const gltf = JSON.parse(bytes.subarray(20, 20 + jsonLength).toString("utf8"));
@@ -146,4 +162,90 @@ describe("saved scene GLB compilation", () => {
     await expect(compileSceneRenderPacket(scene([model("one")]), { loadModel: async () => new Uint8Array(20) })).rejects.toThrow();
     await expect(compileSceneRenderPacket(scene([{ ...model("one"), material: { wireframe: true } }]), { loadModel })).rejects.toThrow(/扩展外观/);
   });
+});
+
+
+describe("authored material publication", () => {
+  it("projects saved glow and edge-light to the same HDR emissive contract as the Web viewer", async () => {
+    const effects = { outline: false, glow: true, xray: false, scanline: false, heatmap: false,
+      dissolve: 0, edgeLight: true, color: "#f4c76b", intensity: 0.52 };
+    const result = await compileSceneRenderPacket(scene([{ ...model("effect"), effects }]), { loadModel: async () => box });
+    const material = result.packet.materials[0]!;
+    expect(material.emissiveFactor).toEqual(new Color("#f4c76b").toArray());
+    expect(material.emissiveStrength).toBeCloseTo(0.728, 6);
+    const outlined = await compileSceneRenderPacket(scene([{ ...model("outline"), effects: { ...effects, outline: true } }]),
+      { loadModel: async () => box });
+    expect(outlined.packet.instances.every(instance => instance.outline === true)).toBe(true);
+  });
+
+  it("preserves saved PBR overrides per instance through the runtime package", async () => {
+    const authored = { ...model("painted"), colorOverride: "#ffffff", material: {
+      color: "#808080", roughness: 0.23, metalness: 0.74,
+      emissive: "#804020", emissiveIntensity: 3.5, doubleSided: true,
+    } };
+    const saved = JSON.parse(JSON.stringify(scene([authored, model("original")])));
+    const result = await compileSceneRenderPacket(saved, { loadModel: async () => box });
+    const binding = result.objectBindings.find(item => item.nodeId === "painted")!;
+    const instance = result.packet.instances.find(item => item.id === binding.instanceIds[0])!;
+    const material = result.packet.materials.find(item => item.id === instance.material)!;
+    const gray = new Color("#808080");
+    expect(material).toMatchObject({ baseColor: [gray.r, gray.g, gray.b], roughness: 0.23, metallic: 0.74,
+      emissiveStrength: 3.5, doubleSided: true });
+    expect(material.emissiveFactor).toEqual(new Color("#804020").toArray());
+    const other = result.packet.materials.find(item => item.id !== material.id)!;
+    expect(other.roughness).not.toBe(0.23);
+    const runtime = buildDeepRuntimePackage({ packageId: "material.scene", packageVersion: "1.0.0",
+      renderPacket: { id: "scene", revision: 1, value: result.packet } });
+    expect(validateDeepRuntimePackage(JSON.parse(JSON.stringify(runtime))).valid).toBe(true);
+    const restored = await compileSceneRenderPacket(scene([model("painted")]), { loadModel: async () => box });
+    expect(restored.packet.materials[0]!.roughness).toBe(other.roughness);
+  });
+  it("continues refusing unsupported authored maps and non-finite values", async () => {
+    await expect(compileSceneRenderPacket(scene([{ ...model("map"), material: { normalMapUrl: "/normal.png" } }]),
+      { loadModel: async () => box })).rejects.toThrow(/normalMapUrl/);
+    await expect(compileSceneRenderPacket(scene([{ ...model("bad"), material: { roughness: NaN } }]),
+      { loadModel: async () => box })).rejects.toThrow(/有限数值/);
+  });
+});
+
+
+describe("source material slot publication", () => {
+  it("round-trips an isolated override among two identically named material slots", async () => {
+    const jsonLength = box.readUInt32LE(12);
+    const gltf = JSON.parse(box.subarray(20, 20 + jsonLength).toString("utf8"));
+    gltf.materials[0].name = "Paint";
+    gltf.materials.push(structuredClone(gltf.materials[0]));
+    gltf.meshes[0].primitives.push({ ...gltf.meshes[0].primitives[0], material: 1 });
+    const json = Buffer.from(JSON.stringify(gltf));
+    const padded = Buffer.alloc(Math.ceil(json.length / 4) * 4, 0x20); json.copy(padded);
+    const rest = box.subarray(20 + jsonLength), header = Buffer.from(box.subarray(0, 20));
+    header.writeUInt32LE(20 + padded.length + rest.length, 8); header.writeUInt32LE(padded.length, 12);
+    const bytes = Buffer.concat([header, padded, rest]);
+    const saved = JSON.parse(JSON.stringify(scene([{ ...model("a"), material: {
+      roughness: 0.8, slotOverrides: { "gltf:1": { roughness: 0.15, metalness: 0.9 } },
+    } }, model("b")])));
+    const result = await compileSceneRenderPacket(saved, { loadModel: async () => bytes });
+    const aIds = result.objectBindings.find(item => item.nodeId === "a")!.instanceIds;
+    const aMaterials = result.packet.instances.filter(item => aIds.includes(item.id))
+      .map(instance => result.packet.materials.find(material => material.id === instance.material)!);
+    expect(aMaterials.find(material => material.id.endsWith("/material/0"))!.roughness).toBe(0.8);
+    expect(aMaterials.find(material => material.id.endsWith("/material/1"))).toMatchObject({ roughness: 0.15, metallic: 0.9 });
+    expect(result.packet.materials.filter(material => !aMaterials.includes(material)).every(material => material.roughness !== 0.15)).toBe(true);
+    const runtime = buildDeepRuntimePackage({ packageId: "slots.scene", packageVersion: "1.0.0",
+      renderPacket: { id: "scene", revision: 1, value: result.packet } });
+    expect(validateDeepRuntimePackage(JSON.parse(JSON.stringify(runtime))).valid).toBe(true);
+  });
+  it("rejects stale source slots instead of silently publishing the wrong surface", async () => {
+    await expect(compileSceneRenderPacket(scene([{ ...model("a"), material: {
+      slotOverrides: { "gltf:999": { roughness: 0.2 } },
+    } }]), { loadModel: async () => box })).rejects.toThrow(/材质槽不在源资源/);
+  });
+});
+
+
+it("publishes restored source textures and scalar slot values after save/reload", async () => {
+  const original = await compileSceneRenderPacket(scene([model("a")]), { loadModel: async () => box });
+  const restored = { ...model("a"), material: { slotOverrides: { "gltf:0": sourceMaterialPatch({ roughness: original.packet.materials[0]!.roughness }) } } };
+  const result = await compileSceneRenderPacket(JSON.parse(JSON.stringify(scene([restored]))), { loadModel: async () => box });
+  expect(result.packet.materials[0]).toMatchObject(original.packet.materials[0]!);
 });

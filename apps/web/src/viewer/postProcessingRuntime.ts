@@ -92,6 +92,8 @@ export class PostProcessingRuntime implements ViewerPostProcessingRuntime {
     this.#brightnessContrastPass.enabled = state.enabled && Boolean(state.colorGrading);
     this.setUniform(this.#brightnessContrastPass.uniforms, "brightness", state.brightness ?? 0);
     this.setUniform(this.#brightnessContrastPass.uniforms, "contrast", state.contrast ?? 0);
+    this.setUniform(this.#brightnessContrastPass.uniforms, "temperature", state.temperature ?? 0);
+    this.setUniform(this.#brightnessContrastPass.uniforms, "tint", state.tint ?? 0);
     this.#smaaPass.enabled = state.enabled && state.smaa;
     this.#fxaaPass.enabled = state.enabled && Boolean(state.fxaa);
   }
@@ -156,8 +158,11 @@ export class PostProcessingRuntime implements ViewerPostProcessingRuntime {
 }
 
 const BRIGHTNESS_CONTRAST_SHADER = {
-  uniforms: { tDiffuse: { value: null }, brightness: { value: 0 }, contrast: { value: 0 } },
+  uniforms: { tDiffuse: { value: null }, brightness: { value: 0 }, contrast: { value: 0 }, temperature: { value: 0 }, tint: { value: 0 } },
   vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-  fragmentShader: `uniform sampler2D tDiffuse; uniform float brightness; uniform float contrast; varying vec2 vUv;
-    void main(){ vec4 color=texture2D(tDiffuse,vUv); color.rgb+=brightness; color.rgb=(color.rgb-0.5)*(contrast+1.0)+0.5; gl_FragColor=color; }`,
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float brightness; uniform float contrast; uniform float temperature; uniform float tint; varying vec2 vUv;
+    void main(){ vec4 color=texture2D(tDiffuse,vUv); color.rgb+=brightness; color.rgb=(color.rgb-0.5)*(contrast+1.0)+0.5;
+      float luma=dot(color.rgb,vec3(0.2126,0.7152,0.0722));
+      vec3 gains=vec3(1.0+temperature*0.14+tint*0.07,1.0-tint*0.12,1.0-temperature*0.14+tint*0.07);
+      color.rgb*=gains; color.rgb*=luma/max(dot(color.rgb,vec3(0.2126,0.7152,0.0722)),0.000001); gl_FragColor=color; }`,
 };

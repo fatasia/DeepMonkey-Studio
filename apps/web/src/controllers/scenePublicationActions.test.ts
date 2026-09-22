@@ -75,6 +75,17 @@ describe("scene publication actions", () => {
     const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; }); return { promise, resolve, reject };
   }
 
+  it("freezes client branding before save without putting it into the published scene", async () => {
+    const { actions, context } = setup();
+    const branding = { applicationName: "客户园区" };
+    exportPackage.mockResolvedValue({ fileName: "client.zip" });
+    const operation = actions.publishActiveScene("webgl", "standard", true, "three-webview", branding);
+    branding.applicationName = "late mutation";
+    await operation;
+    expect(context.buildPublicationArtifact.mock.calls[0]![1].branding).toEqual({ applicationName: "客户园区" });
+    expect(apiMocks.saveScene.mock.calls[0]![0]).not.toHaveProperty("branding");
+  });
+
   it.each(["blocked", "ready"])("refuses an unsupported object even when candidate status is %s", async status => {
     const { actions, context } = setup();
     const candidate = readyCandidate();
@@ -106,6 +117,15 @@ describe("scene publication actions", () => {
     expect(apiMocks.publishScene).not.toHaveBeenCalled(); expect(context.showError).toHaveBeenCalledOnce();
   });
 
+  it.each(["invalid", "2000-01-01T00:00:00.000Z"])("rejects an expired Native candidate lease: %s", async expiresAt => {
+    const { actions, context } = setup();
+    candidateMock.mockResolvedValue({ ...readyCandidate(), expiresAt });
+    await expect(actions.publishScene(scene, "webgl", "standard", true, "deep-native")).rejects.toThrow("候选已过期");
+    expect(apiMocks.publishScene).not.toHaveBeenCalled();
+    expect(context.buildPublicationArtifact).not.toHaveBeenCalled();
+    expect(context.showError).toHaveBeenCalledWith(expect.objectContaining({ message: "Native 发布候选已过期，请重新验证" }));
+  });
+
   it.each(["identity", "generation"])("does not surface late prepare rejection in a changed %s", async change => {
     const { actions, context } = setup(), preparation = deferred<object>();
     candidateMock.mockReturnValueOnce(preparation.promise);
@@ -132,6 +152,15 @@ describe("scene publication actions", () => {
     expect(context.setScenes).toHaveBeenCalledOnce();
     const update = context.setScenes.mock.calls[0]![0] as (items: SceneSnapshot[]) => SceneSnapshot[];
     expect(update([scene])).toEqual([published]);
+  });
+
+  it("builds a local Three client when the optional cloud worker is unavailable", async () => {
+    const { actions, context } = setup();
+    context.enablePublishedCloudScene.mockRejectedValueOnce(new Error("尚未配置真实 GPU Worker 与访问令牌"));
+    exportPackage.mockResolvedValueOnce({ fileName: "scene.three-webview.exe" });
+    expect(await actions.publishActiveScene("cloud", "standard", true, "three-webview")).toBeUndefined();
+    expect(context.buildPublicationArtifact).toHaveBeenCalledOnce();
+    expect(context.showError).not.toHaveBeenCalled();
   });
 
   it.each(["ready", "failed", "cancelled", "rejected"] as const)("isolates late artifact %s results after scene departure", async status => {
@@ -180,7 +209,7 @@ describe("scene publication actions", () => {
     expect(apiMocks.publishScene).toHaveBeenCalledWith(scene.projectId, scene.id, configured,
       { clientTarget: "deep-native", nativeCandidateId: "server-candidate" });
     expect(context.buildPublicationArtifact).toHaveBeenCalledWith(expect.objectContaining({ snapshot: published }),
-      { target: "deep-native", renderer: "webgpu-preferred", toolbarVisible: false });
+      { target: "deep-native", renderer: "webgpu-preferred", toolbarVisible: false, format: "executable" });
   });
 
   it.each(["switch", "reopen"])("stops a delayed preparation after scene %s", async (change) => {
@@ -251,7 +280,7 @@ describe("scene publication actions", () => {
     expect(context.setScenes).toHaveBeenCalledOnce();
     expect(context.showError).toHaveBeenCalledExactlyOnceWith(failure);
     expect(context.setMessage).toHaveBeenLastCalledWith("场景“装配线”已发布 · 客户端包生成失败");
-    expect(exportPackage).toHaveBeenCalledWith({ projectId: scene.projectId, scene: published, target: "deep-native", renderer: "webgpu-preferred", toolbarVisible: false });
+    expect(exportPackage).toHaveBeenCalledWith({ projectId: scene.projectId, scene: published, target: "deep-native", renderer: "webgpu-preferred", toolbarVisible: false, format: "executable" });
     expect(apiMocks.publishScene).toHaveBeenCalledOnce();
   });
 
@@ -272,7 +301,8 @@ describe("scene publication actions", () => {
     else await expect(operation).rejects.toThrow("历史资源不可用");
     expect(apiMocks.saveScene).toHaveBeenCalledOnce();
     expect(apiMocks.publishScene).toHaveBeenCalledOnce();
-    expect(context.buildPublicationArtifact).toHaveBeenCalledWith(expect.objectContaining({ version: 1 }), { target: "three-webview", renderer: "webgl", toolbarVisible: true });
+    expect(context.buildPublicationArtifact).toHaveBeenCalledWith(expect.objectContaining({ version: 1 }),
+      { target: "three-webview", renderer: "webgl", toolbarVisible: true, format: "executable" });
     expect(context.setStudioPublishOpen).not.toHaveBeenCalled();
     expect(context.setMessage).toHaveBeenLastCalledWith(expect.stringContaining(status === "cancelled" ? "已取消" : "生成失败"));
     if (status === "cancelled") expect(context.showError).not.toHaveBeenCalled();
@@ -304,13 +334,15 @@ describe("scene publication actions", () => {
     if (stage === "save") expect(candidateMock).not.toHaveBeenCalled();
   });
 
-  it("does not publish when saving the active draft is cancelled", async () => {
+  it("propagates an active-draft save failure to the publication dialog without reporting it twice", async () => {
     const { actions, saveCurrentScene, context } = setup();
     saveCurrentScene.mockResolvedValue(undefined);
-    await actions.publishActiveScene();
+    await expect(actions.publishActiveScene()).rejects.toThrow("场景保存失败，无法发布，请修复保存错误后重试");
+    expect(apiMocks.saveScene).not.toHaveBeenCalled();
     expect(apiMocks.publishScene).not.toHaveBeenCalled();
     expect(exportPackage).not.toHaveBeenCalled();
     expect(context.setStudioPublishOpen).not.toHaveBeenCalled();
+    expect(context.showError).not.toHaveBeenCalled();
   });
 
   function navigation(targetSceneId: string): NonNullable<SceneSnapshot["interactions"]> {

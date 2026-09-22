@@ -22,6 +22,8 @@
 .dashboard-offline-status.is-degraded { color: #1c1c1c; background: var(--warning, #e0a83c); }
 .dashboard-offline-objects code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dashboard-offline-deferred { flex: none; color: var(--text-muted); font-size: 12px; }
+.dashboard-offline-reason-label { display: block; color: var(--text-muted); }
+.dashboard-offline-deferred-fields { display: block; max-width: 290px; overflow: hidden; color: var(--text-strong); text-overflow: ellipsis; white-space: nowrap; }
 .dashboard-offline-downloads { display: flex; gap: 8px; }
 .dashboard-offline-downloads button { min-height: 32px; padding: 6px 14px; cursor: pointer; color: var(--text-strong);
   background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: var(--radius-xs); }

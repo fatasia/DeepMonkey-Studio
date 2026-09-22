@@ -59,7 +59,7 @@ export function readProcessingRecipe(record: ModelProcessingRecord, defaults: Mo
     || ![512, 1024, 2048, 4096].includes(options.textureSize) || ![256, 512, 1024].includes(options.lightmapResolution)
     || !["webp", "jpeg", "original", "ktx2-uastc", "ktx2-etc1s"].includes(options.textureFormat) || !["keep", "center", "ground"].includes(options.origin)
     || !["vertex", "lightmap"].includes(options.bakeMode) || !range(options.bakeStrength, 0, 1) || !range(options.bakeAmbient, 0, 1)
-    || ![4, 8].includes(options.lightmapAoSamples) || ![1, 4, 8].includes(options.lightmapShadowSamples) || ![0, 2, 4].includes(options.lightmapIndirectSamples)
+    || ![4, 8].includes(options.lightmapAoSamples) || ![1, 4, 8].includes(options.lightmapShadowSamples) || ![0, 2, 4, 64].includes(options.lightmapIndirectSamples)
     || !/^#[a-f\d]{6}$/i.test(options.bakeAmbientColor) || !Array.isArray(options.bakeLights) || options.bakeLights.length > 8
     || options.bakeLights.some(light => !light || typeof light.id !== "string" || typeof light.name !== "string" || typeof light.enabled !== "boolean" || !["directional", "point"].includes(light.type)
       || !/^#[a-f\d]{6}$/i.test(light.color) || !range(light.intensity, 0, 100) || !range(light.range, 0, 1_000_000)

@@ -1,35 +1,32 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Activity, AlertTriangle, Bot, Box, Database, Focus, Layers3, LayoutDashboard, LoaderCircle, MessageSquare, RotateCcw, ScanSearch, Send, Sparkles, Square, Trash2, Workflow, X } from "lucide-react";
+import { AiAssistantMessages } from "./AiAssistantMessages";
+import { AiAssistantComposer } from "./AiAssistantComposer";
+import { AssistantModelControls, type AssistantSessionOptions } from "./AssistantModelControls";
+import { useAssistantScroll } from "../ai/useAssistantScroll";
+import { assistantContextSources } from "../ai/assistantContextSources";
+import { useFloatingPanelDrag } from "../hooks/useFloatingPanelDrag";
+import { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Bot, LayoutDashboard, MessageSquare, RotateCcw, Sparkles, Workflow, X } from "lucide-react";
 import type { SceneDashboardState } from "@bim-studio/contracts";
-import { api, type AssistantMode } from "../api";
+import { type AssistantMode } from "../api";
 import type { BimAssistantPreparedContext } from "../bimAssistant";
 import { translate as tr, type AppLocale } from "../i18n";
 import { AiChangeConfirmation } from "./AiChangeConfirmation";
 import { AskDataQuickQuery } from "./AskDataQuickQuery";
 import { AiCapabilityCatalog } from "./AiCapabilityCatalog";
 import type { AiWorkspaceTask } from "../ai/capabilityCatalog";
+import { assistantModeTabs } from "../ai/assistantModeTabs";
 import { assistantSuggestions } from "../ai/assistantSuggestions";
 import {
   assistantWorkspaceTarget,
-  type AssistantContextSource,
-  type AssistantReliabilitySummary,
 } from "../ai/assistantReliability";
 import { useAiProjectContext } from "../ai/useAiProjectContext";
-import { runAssistantRequest } from "../ai/runAssistantRequest";
+import { useAssistantSessions } from "../ai/useAssistantSessions";
+import { useAssistantChatRun } from "../ai/useAssistantChatRun";
+import { AiAssistantSessionControls } from "./AiAssistantSessionControls";
 import { AiContextDisclosure } from "./AiContextDisclosure";
-import { AiResponseEvidence } from "./AiResponseEvidence";
 import { BimAssistantEvidence, type BimAssistantAction } from "./BimAssistantEvidence";
 import { IndustrialAgentWorkspace } from "./IndustrialAgentWorkspace";
 import "./AiAssistantReliability.css";
-
-type ConversationItem = {
-  id: string;
-  mode: AssistantMode;
-  question: string;
-  answer: string;
-  model?: string;
-  reliability: AssistantReliabilitySummary;
-};
 
 interface AiAssistantPanelProps {
   locale: AppLocale;
@@ -56,76 +53,32 @@ export function AiAssistantPanel({
 }: AiAssistantPanelProps) {
   const [mode, setMode] = useState<AssistantMode>(() => surface === "studio" ? "scene" : "platform");
   const [experience, setExperience] = useState<"chat" | "agent">("chat");
+  const [sessionOptions, setSessionOptions] = useState<AssistantSessionOptions>({});
   const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState("");
-  const [conversation, setConversation] = useState<ConversationItem[]>([]);
-  const [dashboard, setDashboard] = useState<SceneDashboardState>();
   const [confirmDashboard, setConfirmDashboard] = useState(false);
-  const [bimEvidence, setBimEvidence] = useState<BimAssistantPreparedContext>();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-  const [lastPrompt, setLastPrompt] = useState("");
   const [applyBusy, setApplyBusy] = useState(false);
   const [applyError, setApplyError] = useState<string>();
   const [applyNotice, setApplyNotice] = useState<string>();
-  const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | undefined>(undefined);
-  const panelRef = useRef<HTMLElement>(null);
-  const dragRef = useRef<{ pointerId: number; offsetX: number; offsetY: number } | undefined>(undefined);
-  const previousUserSelectRef = useRef<string | undefined>(undefined);
-  const requestAbort = useRef<AbortController | undefined>(undefined);
+  const panelDrag = useFloatingPanelDrag<HTMLElement>();
   const { platformContext, contextSources, datasets, platformLoaded, projectMissing } = useAiProjectContext(projectId, locale);
   const t = (zh: string, en: string) => tr(locale, zh, en);
   const workspaceTarget = useMemo(() => assistantWorkspaceTarget(context), [context]);
-  const effectiveSources = useMemo<AssistantContextSource[]>(() => {
-    const workspaceSources: AssistantContextSource[] = [
-      workspaceTarget.scene
-        ? {
-            id: "workspace-scene",
-            label: tr(locale, "当前三维场景快照", "Current 3D scene snapshot"),
-            state: "ready",
-            kind: "snapshot",
-            ...(workspaceTarget.scene.modelCount === undefined ? {} : { count: workspaceTarget.scene.modelCount }),
-          }
-        : undefined,
-      workspaceTarget.selected
-        ? {
-            id: "workspace-selection",
-            label: tr(locale, "当前选中对象", "Current selected object"),
-            state: "ready",
-            kind: "snapshot",
-            count: 1,
-          }
-        : undefined,
-      workspaceTarget.dashboardWidgetCount !== undefined
-        ? {
-            id: "workspace-dashboard",
-            label: tr(locale, "当前二维看板草稿", "Current 2D dashboard draft"),
-            state: "ready",
-            kind: "snapshot",
-            count: workspaceTarget.dashboardWidgetCount,
-        }
-        : undefined,
-      workspaceTarget.script
-        ? {
-            id: "workspace-script",
-            label: tr(locale, "当前脚本快照", "Current script snapshot"),
-            state: "ready",
-            kind: "snapshot",
-            count: 1,
-          }
-        : undefined,
-      workspaceTarget.simulation
-        ? {
-            id: "workspace-simulation",
-            label: tr(locale, "当前仿真任务快照", "Current simulation snapshot"),
-            state: "ready",
-            kind: "snapshot",
-            count: 1,
-          }
-        : undefined,
-    ].filter((source): source is AssistantContextSource => Boolean(source));
-    return [...workspaceSources, ...contextSources];
-  }, [contextSources, locale, workspaceTarget]);
+  const effectiveSources = useMemo(() => assistantContextSources(workspaceTarget, contextSources, locale), [contextSources, locale, workspaceTarget]);
+  const requestScope = JSON.stringify([projectId, workspaceTarget.scene?.id, workspaceTarget.script?.id, workspaceTarget.selected?.id, mode]);
+  const scopeLabel = [workspaceTarget.project?.name, workspaceTarget.scene?.name, workspaceTarget.script?.name,
+    workspaceTarget.selected?.name ?? workspaceTarget.selected?.id].filter(Boolean).join(" · ");
+  const sessions = useAssistantSessions(projectId, JSON.stringify([workspaceTarget.scene?.id, workspaceTarget.script?.id]));
+  const { conversation } = sessions;
+  const { answer, setAnswer, execution, busy, stopped, setStopped, error, setError, lastPrompt, setLastPrompt, lastScope,
+    dashboard, setDashboard, bimEvidence, setBimEvidence, requestAbort, cancelRequest, ask } = useAssistantChatRun({
+    sessions, projectId, requestScope: `${requestScope}:${sessions.identity}`, scopeLabel, scopeId: workspaceTarget.scene?.id ?? workspaceTarget.script?.id,
+    question, setQuestion, mode, locale, context, platformContext, sources: effectiveSources, sessionOptions,
+    prepareBim: onPrepareBimContext,
+    onBegin: () => { messageScroll.follow(); setApplyNotice(undefined); setApplyError(undefined); setConfirmDashboard(false); },
+  });
+  const messageScroll = useAssistantScroll(`${conversation.length}:${answer}:${busy}:${error ?? ""}:${stopped}:${experience}`,
+    conversation.length > 0 || busy || Boolean(answer || error) || stopped);
+
 
   useEffect(() => {
     if (mode === "component" && !workspaceTarget.selected) setMode(surface === "studio" ? "scene" : "platform");
@@ -133,29 +86,25 @@ export function AiAssistantPanel({
 
   useEffect(() => {
     cancelRequest();
-    setConversation([]);
     setAnswer("");
     setQuestion("");
     setLastPrompt("");
+    setStopped(false);
+    messageScroll.follow();
     setError(undefined);
     setDashboard(undefined);
     setConfirmDashboard(false);
     setBimEvidence(undefined);
     setApplyNotice(undefined);
-    setDragPosition(undefined);
+    panelDrag.reset();
     return () => {
-      requestAbort.current?.abort();
-      requestAbort.current = undefined;
-      if (previousUserSelectRef.current !== undefined) {
-        document.body.style.userSelect = previousUserSelectRef.current;
-        previousUserSelectRef.current = undefined;
-      }
+      void cancelRequest();
     };
   }, [projectId, workspaceTarget.scene?.id, workspaceTarget.script?.id]);
 
   useEffect(() => {
     const dismiss = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
       event.preventDefault();
       if (confirmDashboard) setConfirmDashboard(false);
       else { cancelRequest(); onClose(); }
@@ -164,110 +113,16 @@ export function AiAssistantPanel({
     return () => window.removeEventListener("keydown", dismiss);
   }, [confirmDashboard, onClose]);
 
-  function cancelRequest() {
-    requestAbort.current?.abort();
-    requestAbort.current = undefined;
-    setBusy(false);
-  }
-
-  function dragBounds() {
-    const panel = panelRef.current;
-    const parent = panel?.offsetParent as HTMLElement | null;
-    const rect = parent?.getBoundingClientRect();
-    return rect
-      ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
-      : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
-  }
-
-  function handleDragStart(event: ReactPointerEvent<HTMLElement>) {
-    if ((event.target as HTMLElement).closest("button, input, textarea, a")) return;
-    const panel = panelRef.current;
-    if (!panel) return;
-    const bounds = dragBounds();
-    const rect = panel.getBoundingClientRect();
-    dragRef.current = {
-      pointerId: event.pointerId,
-      offsetX: event.clientX - rect.left,
-      offsetY: event.clientY - rect.top,
-    };
-    previousUserSelectRef.current = document.body.style.userSelect;
-    document.body.style.userSelect = "none";
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setDragPosition({
-      x: Math.max(8, rect.left - bounds.left),
-      y: Math.max(8, rect.top - bounds.top),
-    });
-  }
-
-  function handleDragMove(event: ReactPointerEvent<HTMLElement>) {
-    const drag = dragRef.current;
-    const panel = panelRef.current;
-    if (!drag || drag.pointerId !== event.pointerId || !panel) return;
-    const bounds = dragBounds();
-    const rect = panel.getBoundingClientRect();
-    const maxX = Math.max(8, bounds.width - rect.width - 8);
-    const maxY = Math.max(8, bounds.height - rect.height - 8);
-    setDragPosition({
-      x: Math.min(maxX, Math.max(8, event.clientX - bounds.left - drag.offsetX)),
-      y: Math.min(maxY, Math.max(8, event.clientY - bounds.top - drag.offsetY)),
-    });
-  }
-
-  function handleDragEnd(event: ReactPointerEvent<HTMLElement>) {
-    if (dragRef.current?.pointerId !== event.pointerId) return;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    dragRef.current = undefined;
-    if (previousUserSelectRef.current !== undefined) {
-      document.body.style.userSelect = previousUserSelectRef.current;
-      previousUserSelectRef.current = undefined;
-    }
-  }
-
-  async function ask(retryPrompt?: string) {
-    const prompt = (retryPrompt ?? question).trim();
-    if (!prompt || requestAbort.current) return;
-    const controller = new AbortController();
-    requestAbort.current = controller;
-    const isCurrent = () => requestAbort.current === controller && !controller.signal.aborted;
-    setLastPrompt(prompt);
-    if (!retryPrompt) setQuestion("");
-    setBusy(true);
-    setError(undefined);
-    setApplyNotice(undefined);
-    setApplyError(undefined);
+  useEffect(() => {
     setDashboard(undefined);
     setConfirmDashboard(false);
     setBimEvidence(undefined);
-    setAnswer("");
-    try {
-      let streamed = "";
-      const result = await runAssistantRequest({
-        client: api, mode, prompt, locale, context, platformContext, sources: effectiveSources,
-        ...(projectId ? { projectId } : {}),
-        ...(onPrepareBimContext ? { prepareBim: onPrepareBimContext } : {}),
-        recentConversation: conversation.slice(-6).map(({ mode, question, answer }) => ({ mode, question, answer })),
-        signal: controller.signal,
-        onPrepared: (prepared) => { if (isCurrent()) setBimEvidence(prepared); },
-        onDelta: (delta) => { if (isCurrent()) { streamed += delta; setAnswer(streamed); } },
-      });
-      if (!isCurrent()) return;
-      setAnswer(result.text);
-      setDashboard(result.dashboard);
-      setBimEvidence(result.prepared);
-      setConversation((current) => [
-        ...current,
-        { id: `${Date.now()}`, mode, question: prompt, answer: result.text, reliability: result.reliability,
-          ...(result.model ? { model: result.model } : {}) },
-      ].slice(-12));
-    } catch (reason) {
-      if (isCurrent()) setError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      if (requestAbort.current === controller) {
-        requestAbort.current = undefined;
-        setBusy(false);
-      }
-    }
-  }
+    if (!requestAbort.current) return;
+    cancelRequest();
+    setQuestion((draft) => draft || lastPrompt);
+    setStopped(true);
+  }, [workspaceTarget.selected?.id]);
+
   async function applyDashboardDraft() {
     if (!dashboard || !onApplyDashboard) return;
     setApplyBusy(true);
@@ -284,41 +139,23 @@ export function AiAssistantPanel({
     }
   }
 
-  const tabs = useMemo(() => {
-    if (surface === "studio") {
-      return [
-        { id: "scene" as const, label: t("场景", "Scene"), icon: Box },
-        ...(workspaceTarget.selected ? [{ id: "component" as const, label: t("对象", "Object"), icon: Focus }] : []),
-        { id: "bim" as const, label: "BIM", icon: Layers3 },
-        { id: "operations" as const, label: t("仿真运营", "Simulation"), icon: Activity },
-        ...(onApplyDashboard ? [{ id: "dashboard" as const, label: t("看板", "Dashboard"), icon: LayoutDashboard }] : []),
-        { id: "sql" as const, label: t("问数据", "Ask Data"), icon: Database },
-      ];
-    }
-    return [
-      { id: "platform" as const, label: t("全平台", "Platform"), icon: Sparkles },
-      { id: "operations" as const, label: t("运营", "Operations"), icon: Activity },
-      { id: "vision" as const, label: t("视觉", "Vision"), icon: ScanSearch },
-      { id: "bim" as const, label: "BIM", icon: Box },
-      { id: "sql" as const, label: t("问数据", "Ask Data"), icon: Database },
-    ];
-  }, [locale, onApplyDashboard, surface, workspaceTarget.selected]);
+  const tabs = assistantModeTabs(locale, surface, Boolean(workspaceTarget.selected), Boolean(onApplyDashboard));
   const suggestions = assistantSuggestions(mode, locale);
   const latestReliability = conversation.at(-1)?.reliability;
 
   return (
     <aside
-      ref={panelRef}
+      ref={panelDrag.panelRef}
       className={`ai-assistant-panel ai-assistant-${surface} ${experience === "agent" ? "agent-active" : ""}`}
-      style={dragPosition ? { left: `${dragPosition.x}px`, top: `${dragPosition.y}px`, right: "auto", bottom: "auto" } : undefined}
+      style={panelDrag.style}
     >
       <header
         data-drag-handle="true"
         title={t("拖动标题栏移动助手面板", "Drag the title bar to move the assistant panel")}
-        onPointerDown={handleDragStart}
-        onPointerMove={handleDragMove}
-        onPointerUp={handleDragEnd}
-        onPointerCancel={handleDragEnd}
+        onPointerDown={panelDrag.onPointerDown}
+        onPointerMove={panelDrag.onPointerMove}
+        onPointerUp={panelDrag.onPointerUp}
+        onPointerCancel={panelDrag.onPointerCancel}
       >
         <div>
           <Bot size={18} />
@@ -327,21 +164,6 @@ export function AiAssistantPanel({
           </span>
         </div>
         <div className="ai-assistant-header-actions">
-          {conversation.length > 0 && (
-            <button
-              title={t("清空对话", "Clear conversation")}
-              aria-label={t("清空对话", "Clear conversation")}
-              disabled={busy}
-              onClick={() => {
-                setConversation([]);
-                setAnswer("");
-                setError(undefined);
-                setApplyNotice(undefined);
-              }}
-            >
-              <Trash2 size={14} />
-            </button>
-          )}
           <button aria-label={t("关闭 AI 助手", "Close AI assistant")} title={t("关闭 AI 助手", "Close AI assistant")} onClick={() => { cancelRequest(); onClose(); }}>
             <X size={15} />
           </button>
@@ -366,6 +188,7 @@ export function AiAssistantPanel({
             aria-pressed={mode === id}
             onClick={() => {
               setMode(id);
+              setStopped(false);
               setAnswer("");
               setDashboard(undefined);
               setConfirmDashboard(false);
@@ -377,10 +200,14 @@ export function AiAssistantPanel({
           </button>
         ))}
       </nav>
-      <div className="ai-assistant-body">
+      <div className="ai-assistant-body" ref={messageScroll.bodyRef} onScroll={messageScroll.onScroll}>
         {experience === "agent" ? (
           <IndustrialAgentWorkspace locale={locale} {...(projectId ? { projectId } : {})} context={context} />
         ) : <>
+          <AiAssistantSessionControls locale={locale} sessions={sessions} disabled={busy} onSwitch={() => {
+            void cancelRequest(); setAnswer(""); setLastPrompt(""); setQuestion(""); setStopped(false); setError(undefined);
+            setDashboard(undefined); setConfirmDashboard(false); setBimEvidence(undefined);
+          }} />
           <AiContextDisclosure
           locale={locale}
           mode={mode}
@@ -421,26 +248,9 @@ export function AiAssistantPanel({
             </div>
           </div>
         )}
-        {conversation.map((item) => (
-          <section className="ai-conversation-turn" key={item.id}>
-            <div className="ai-user-message">{item.question}</div>
-            <article>
-              <small>{item.model ?? t("模型回答", "Model response")}</small>
-              <p>{item.answer}</p>
-              <AiResponseEvidence locale={locale} reliability={item.reliability} />
-            </article>
-          </section>
-        ))}
-        {(busy || error) && lastPrompt && <section className="ai-conversation-turn" aria-label={t("当前请求", "Current request")}>
-          <div className="ai-user-message">{lastPrompt}</div>
-          {busy && !answer && <article role="status"><LoaderCircle className="spin" size={14} /> {t("正在处理，请稍候…", "Working on your request…")}</article>}
-        </section>}
-        {answer && (conversation.at(-1)?.answer !== answer || busy) && (
-          <article className="ai-streaming-answer">
-            <small>{busy ? t("正在基于项目证据分析", "Analyzing project evidence") : t("模型回答", "Model response")}</small>
-            <p>{answer}</p>
-          </article>
-        )}
+        <AiAssistantMessages locale={locale} conversation={conversation} busy={busy} error={error}
+          stopped={stopped} lastPrompt={lastPrompt} lastScope={lastScope} answer={answer} execution={execution}
+          onRetry={() => void ask(lastPrompt)} />
         {dashboard && onApplyDashboard && !confirmDashboard && (
           <button className="primary ai-apply-dashboard" onClick={() => setConfirmDashboard(true)}>
             <LayoutDashboard size={13} />
@@ -482,24 +292,14 @@ export function AiAssistantPanel({
           )}
         </>}
       </div>
-      {experience === "chat" && <footer>
-        <textarea
-          aria-label={t("向 AI 助手提问", "Ask the AI assistant")}
-          value={question}
-          onChange={(event) => setQuestion(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              void ask();
-            }
-          }}
-          placeholder={t("问模型、事件、风险、数据或下一步动作……", "Ask about models, events, risks, data or next actions…")}
-        />
-        {busy ? <button aria-label={t("停止生成", "Stop generating")} title={t("停止生成", "Stop generating")} onClick={() => {
+      {experience === "chat" && <AssistantModelControls locale={locale} mode={mode} value={sessionOptions}
+        onChange={setSessionOptions} disabled={busy} />}
+      {experience === "chat" && <AiAssistantComposer locale={locale} question={question} busy={busy}
+        onChange={setQuestion} onSend={() => { if (!sessions.loading) void ask(); }} onStop={() => {
           cancelRequest();
-          setApplyNotice(t("请求已停止，未应用任何更改。", "Request stopped; no changes were applied."));
-        }}><Square size={15} /></button> : <button aria-label={t("发送", "Send")} title={t("发送", "Send")} disabled={!question.trim()} onClick={() => void ask()}><Send size={15} /></button>}
-      </footer>}
+          setStopped(true);
+          setQuestion((draft) => draft || lastPrompt);
+        }} />}
     </aside>
   );
 }

@@ -27,7 +27,7 @@ export function DesktopWindowFrame({ children }: { children: ReactNode }) {
         onDoubleClick={() => runWindowAction("maximize")}
       >
         <span className="desktop-window-mark" aria-hidden="true" />
-        <strong data-tauri-drag-region>Deep Monkey Studio</strong>
+        <strong data-tauri-drag-region>DeepMonkey Studio</strong>
         <span data-tauri-drag-region>桌面工作台</span>
       </div>
       <div className="desktop-window-controls" role="group" aria-label="窗口控制">

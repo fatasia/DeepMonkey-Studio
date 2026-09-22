@@ -1,6 +1,7 @@
 import type { ResourcePreviewDefinition } from "./resourcePreviewRuntime";
+import { createThumbnailCache, thumbnailCacheGeneration } from "../settings/thumbnailCache";
 
-const cache = new Map<string, string>();
+const cache = createThumbnailCache("project-resources");
 const pending = new Map<string, Promise<string | undefined>>();
 let tail = Promise.resolve();
 
@@ -8,9 +9,10 @@ let tail = Promise.resolve();
 export function projectResourceThumbnail(definition: ResourcePreviewDefinition, key: string): Promise<string | undefined> {
   if (cache.has(key)) return Promise.resolve(cache.get(key));
   if (pending.has(key)) return pending.get(key)!;
+  const generation = thumbnailCacheGeneration();
   const result = tail.then(() => render(definition)).catch(() => undefined).then(url => {
     pending.delete(key);
-    if (url) {
+    if (url && generation === thumbnailCacheGeneration()) {
       cache.set(key, url);
       if (cache.size > 80) cache.delete(cache.keys().next().value!);
     }

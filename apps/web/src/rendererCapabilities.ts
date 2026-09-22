@@ -1,4 +1,5 @@
 import { requiresWebGlPublicationEffects, sceneRequiresWebGlPublicationEffects, type SceneSnapshot } from "@bim-studio/contracts";
+import { resolveRayTracingDecision, type RayTracingCapabilities, type RayTracingDecision } from "@bim-studio/deep-engine";
 import type { RendererBackend } from "./viewer/ViewerEngine";
 import { xrEntryBlockReasons } from "./viewer/xrSession";
 
@@ -14,6 +15,11 @@ export interface RendererCapabilityProbe {
   maxComputeInvocationsPerWorkgroup?: number;
   timestampQuery: boolean;
   shaderF16: boolean;
+  /** Hardware ray tracing capability snapshot.  WebGPU currently exposes this
+   * only on experimental adapters; absence is reported as a deterministic
+   * software fallback rather than inferred from the API presence. */
+  rayTracing?: RayTracingCapabilities;
+  rayTracingDecision?: RayTracingDecision;
 }
 
 export interface RendererProjectRequirements {
@@ -94,6 +100,7 @@ export async function probeRendererCapabilities(): Promise<RendererCapabilityPro
   }
   const info = adapter?.info;
   const adapterName = [info?.vendor, info?.architecture, info?.device, info?.description].filter(Boolean).join(" · ");
+  const rayTracing = adapter ? rayTracingCapabilities(adapter, adapterName || "unknown-adapter") : undefined;
   return {
     secureContext: window.isSecureContext,
     webgl2,
@@ -101,12 +108,32 @@ export async function probeRendererCapabilities(): Promise<RendererCapabilityPro
     webgpuAdapter: Boolean(adapter),
     timestampQuery: adapter?.features?.has("timestamp-query") ?? false,
     shaderF16: adapter?.features?.has("shader-f16") ?? false,
+    ...(rayTracing === undefined ? {} : { rayTracing, rayTracingDecision: resolveRayTracingDecision(rayTracing) }),
     ...(adapterName ? { adapterName } : {}),
     ...(adapter?.limits?.maxTextureDimension2D ? { maxTextureDimension2D: adapter.limits.maxTextureDimension2D } : {}),
     ...(adapter?.limits?.maxBindGroups ? { maxBindGroups: adapter.limits.maxBindGroups } : {}),
     ...(adapter?.limits?.maxStorageBufferBindingSize ? { maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize } : {}),
     ...(adapter?.limits?.maxComputeInvocationsPerWorkgroup ? { maxComputeInvocationsPerWorkgroup: adapter.limits.maxComputeInvocationsPerWorkgroup } : {})
   };
+}
+
+/**
+ * WebGPU has no stable ray-tracing feature names yet. Probe the names used by
+ * current experimental implementations explicitly; never treat a generic
+ * WebGPU adapter as RT-capable. This keeps the diagnostics honest while the
+ * software BVH/TLAS paths remain the production fallback.
+ */
+function rayTracingCapabilities(adapter: AdapterLike, adapterId: string): RayTracingCapabilities {
+  const has = (names: readonly string[]) => names.some((name) => adapter.features?.has(name) === true);
+  const accelerationStructure = has(["acceleration-structure", "ray-tracing", "chromium-experimental-ray-tracing"]);
+  const rayQuery = has(["ray-query", "chromium-experimental-ray-query"]);
+  const rayPipeline = has(["rt-pipeline", "ray-tracing-pipeline", "chromium-experimental-ray-tracing-pipeline"]);
+  const tier = accelerationStructure && rayPipeline ? "pipeline" : accelerationStructure && rayQuery ? "query" : "none";
+  return Object.freeze({ schemaVersion: 1, adapterId, tier,
+    features: Object.freeze({ "acceleration-structure": accelerationStructure, "ray-query": rayQuery, "rt-pipeline": rayPipeline }),
+    // No standard limit is exposed; 0 is an explicit unknown/unsupported
+    // value, never an invented budget.
+    maxAccelerationStructureBytes: 0 });
 }
 
 /**
@@ -152,7 +179,12 @@ export function rendererReadiness(probe: RendererCapabilityProbe, project: Rende
       ? "作者后处理或对象轮廓需要逐场景验证；自动发布保留 WebGL"
       : "仅在显式选择时使用；自动默认仍保留 WebGL",
     "产品 WebGPU 路径尚未完成 WebXR 实机验收，XR 会话继续使用 WebGL",
-    "Deep WebGPU 激活期间 XR 入口不可用；浏览器端 WebGPU-XR 会话特性尚未落地，属诚实降级而非缺陷"
+    "Deep WebGPU 激活期间 XR 入口不可用；浏览器端 WebGPU-XR 会话特性尚未落地，属诚实降级而非缺陷",
+    probe.rayTracingDecision
+      ? probe.rayTracingDecision.enabled
+        ? `硬件光追能力：${probe.rayTracingDecision.tier}；${probe.rayTracingDecision.fallbacks.length ? `保留回退：${probe.rayTracingDecision.fallbacks.join("、")}` : "无回退"}`
+        : `硬件光追不可用；保留${probe.rayTracingDecision.fallbacks.join("、")}路径`
+      : "未取得硬件光追能力快照；使用软件 BVH/TLAS 路径"
   ];
   const webgpuAvailable = probe.secureContext && probe.webgpuApi && probe.webgpuAdapter;
   return [{

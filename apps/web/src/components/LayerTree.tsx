@@ -84,6 +84,7 @@ function LayerNode({
   return (
     <>
       <div
+        data-layer-keyboard-row="" data-object-id={node.modelId} data-layer-id={node.id}
         className={`layer-node ${selectedNodeId === node.id ? "selected" : ""}`}
         style={{ paddingLeft: `${8 + depth * 15}px` }}
         role="treeitem" aria-level={depth + 1} aria-selected={selectedNodeId === node.id}
@@ -119,7 +120,7 @@ function LayerNode({
           {node.locked ? <Lock size={12} /> : <Unlock size={12} />}
         </button>
         {depth > 0 && (
-          <button className="tree-delete" disabled={node.locked} aria-label={node.locked ? tr(locale, "请先解锁该层", "Unlock the layer first") : tr(locale, "从当前场景删除该层", "Delete layer from scene")} title={node.locked ? tr(locale, "请先解锁该层", "Unlock the layer first") : tr(locale, "从当前场景删除该层", "Delete layer from scene")} onClick={() => onDelete(node)}>
+          <button data-layer-action="delete" className="tree-delete" disabled={node.locked} aria-label={node.locked ? tr(locale, "请先解锁该层", "Unlock the layer first") : tr(locale, "从当前场景删除该层", "Delete layer from scene")} title={node.locked ? tr(locale, "请先解锁该层", "Unlock the layer first") : tr(locale, "从当前场景删除该层", "Delete layer from scene")} onClick={() => onDelete(node)}>
             <Trash2 size={12} />
           </button>
         )}

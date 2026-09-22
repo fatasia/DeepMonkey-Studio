@@ -178,7 +178,7 @@ export abstract class ViewerEnginePointer extends ViewerEngineObjectState {
       }
       disposeViewerObject(object);
     }
-  protected pointerHit(event: PointerEvent): THREE.Intersection | undefined {
+  protected pointerHit(event: PointerEvent, editableOnly = false): THREE.Intersection | undefined {
       const rect = this.renderer.domElement.getBoundingClientRect();
       this.pointerPosition.set(
         ((event.clientX - rect.left) / rect.width) * 2 - 1,
@@ -190,16 +190,23 @@ export abstract class ViewerEnginePointer extends ViewerEngineObjectState {
         const object = this.models.get(id)?.object;
         if (object) excluded.add(object);
       }
-      return this.ordinaryPicking.intersectObjects(this.raycaster, this.visibleModelObjects(), excluded)[0];
+      return this.ordinaryPicking.intersectObjects(this.raycaster, this.visibleModelObjects(), excluded).find(hit => {
+        if (!editableOnly) return true;
+        const modelId = xrHitModelId(hit.object);
+        for (let object: THREE.Object3D | null = hit.object; object; object = object.parent) {
+          if (object.userData.layerLocked) return false;
+        }
+        return !modelId || !this.isLayerLocked(modelId, String(hit.object.userData.layerNodeId ?? "root"));
+      });
     }
-  protected annotationPointerHit(event: PointerEvent): AnnotationPointerHit | undefined {
+  protected annotationPointerHit(event: PointerEvent, editableOnly = false): AnnotationPointerHit | undefined {
       const rect = this.renderer.domElement.getBoundingClientRect();
       this.pointerPosition.set(
         ((event.clientX - rect.left) / rect.width) * 2 - 1,
         -((event.clientY - rect.top) / rect.height) * 2 + 1
       );
       this.raycaster.setFromCamera(this.pointerPosition, this.camera);
-      const roots = [...this.annotations.values()].filter(({ state }) => state.visible).map(({ object }) => object);
+      const roots = [...this.annotations.values()].filter(({ state }) => state.visible && (!editableOnly || !state.locked)).map(({ object }) => object);
       const hit = this.raycaster.intersectObjects(roots, true)[0];
       const object = hit?.object;
       const annotationId = object?.userData.annotationId;
@@ -210,8 +217,8 @@ export abstract class ViewerEnginePointer extends ViewerEngineObjectState {
         dismiss: object.userData.dismissible === true && Boolean(hit.uv && hit.uv.x >= 0.88 && hit.uv.y >= 0.5),
       };
     }
-  protected async scenePointerHit(event: PointerEvent): Promise<PointerSceneHit | undefined> {
-      const ordinary = this.pointerHit(event);
+  protected async scenePointerHit(event: PointerEvent, editableOnly = false): Promise<PointerSceneHit | undefined> {
+      const ordinary = this.pointerHit(event, editableOnly);
       const ordinaryModelId = ordinary?.object.userData.modelId as string | undefined;
       let best: PointerSceneHit | undefined = ordinary ? {
         point: ordinary.point.clone(),
@@ -224,7 +231,15 @@ export abstract class ViewerEnginePointer extends ViewerEngineObjectState {
       const mouse = new THREE.Vector2(event.clientX, event.clientY);
       for (const [modelId, fragmentsModel] of this.fragmentModels) {
         if (!this.models.get(modelId)?.visible) continue;
-        const hit = await fragmentsModel.raycast({ camera: this.camera, mouse, dom: this.renderer.domElement });
+        if (editableOnly && this.isModelLocked(modelId)) continue;
+        const query = { camera: this.camera, mouse, dom: this.renderer.domElement };
+        const hit = editableOnly
+          ? (await fragmentsModel.raycastAll(query))?.filter(candidate => {
+            const nodeId = this.fragmentNodeIdsByLocalId.get(modelId)?.get(candidate.localId)
+              ?? this.ensureFragmentEntry(modelId, candidate.localId);
+            return !nodeId || !this.isLayerLocked(modelId, nodeId);
+          }).sort((a, b) => a.distance - b.distance)[0]
+          : await fragmentsModel.raycast(query);
         if (!hit || (best && best.distance <= hit.distance && ordinaryModelId !== modelId)) continue;
         const fragmentNodeId = this.fragmentNodeIdsByLocalId.get(modelId)?.get(hit.localId)
           ?? this.ensureFragmentEntry(modelId, hit.localId);
@@ -321,7 +336,9 @@ export abstract class ViewerEnginePointer extends ViewerEngineObjectState {
         const lightHit = this.lightProxyPointerHit(event);
         if (lightHit && this.selectSceneLight(lightHit.id, lightHit.handle)) return;
       }
-      const hit = await this.scenePointerHit(event);
+      const editableOnly = !this.readOnlyMode && !this.measureEnabled && !this.annotationPlacementEnabled
+        && !this.primitivePlacementKind && !(this.clippingState.enabled && this.clippingState.mode === "face");
+      const hit = await this.scenePointerHit(event, editableOnly);
       if (this.primitivePlacementKind) {
         if (!hit) return;
         const kind = this.primitivePlacementKind;
@@ -428,7 +445,7 @@ export abstract class ViewerEnginePointer extends ViewerEngineObjectState {
         }
         return;
       }
-      const annotationHit = this.annotationPointerHit(event);
+      const annotationHit = this.annotationPointerHit(event, editableOnly);
       if (annotationHit) {
         if (annotationHit.dismiss) {
           const dismissed = this.updateAnnotation(annotationHit.annotationId, { visible: false });

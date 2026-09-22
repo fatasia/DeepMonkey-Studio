@@ -219,8 +219,6 @@ function useDashboardWorkspaceController({
   const [viewportScroll, setViewportScroll] = useState({ left: 0, top: 0 });
   const [panning, setPanning] = useState(false);
   const [contextMenu, setContextMenu] = useState<DashboardContextMenuState>();
-  const [draggedLayerId, setDraggedLayerId] = useState<string>();
-  const [layerDropTargetId, setLayerDropTargetId] = useState<string>();
   const [libraryDropActive, setLibraryDropActive] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const artboardRef = useRef<HTMLDivElement>(null);
@@ -437,6 +435,7 @@ function useDashboardWorkspaceController({
   useEffect(() => {
     if (runtimePreview) return;
     const handleShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
       const target = event.target;
       if (target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) return;
       const key = event.key.toLowerCase();
@@ -496,6 +495,7 @@ function useDashboardWorkspaceController({
         return;
       }
       if (event.key === "Delete" || event.key === "Backspace") {
+        if (target instanceof HTMLElement && target.closest('[data-layer-keyboard-row]')) return;
         event.preventDefault();
         deleteSelectedNodes();
         return;
@@ -651,7 +651,6 @@ function useDashboardWorkspaceController({
     dirty,
     draftFrames,
     draftGuides,
-    draggedLayerId,
     dropLibraryItem,
     duplicateDashboardPage,
     favoriteTemplateIds,
@@ -664,7 +663,6 @@ function useDashboardWorkspaceController({
     insertDashboardTemplate,
     insertIndustryPack,
     inspectorTab,
-    layerDropTargetId,
     layoutSelectedNodes,
     layoutSelectionCount,
     leftPanelTab,
@@ -721,10 +719,8 @@ function useDashboardWorkspaceController({
     selectedNodeIds,
     selectionRect,
     setContextMenu,
-    setDraggedLayerId,
     setGuidesVisible,
     setInspectorTab,
-    setLayerDropTargetId,
     setLeftPanelTab,
     setLeftPanelOpen,
     setInspectorOpen,

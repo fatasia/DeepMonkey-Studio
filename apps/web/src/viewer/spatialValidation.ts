@@ -456,15 +456,16 @@ export function reportToJson(report: SpatialValidationReport): string {
 
 export function reportToCsv(report: SpatialValidationReport): string {
   const escape = (value: string | number | undefined): string => {
-    const text = String(value ?? "");
+    const raw = String(value ?? "");
+    const text = typeof value === "string" && /^[=+\-@]/.test(raw) ? `'${raw}` : raw;
     return /[",\n]/.test(text) ? `"${text.replaceAll('"', '\"\"')}"` : text;
   };
   const header = ["ruleId", "ruleLabel", "kind", "status", "objectIdA", "objectIdB", "distanceMetres", "marginMetres", "detail"];
   const rows = report.findings.map((finding) => [
     finding.ruleId, finding.ruleLabel, finding.kind, finding.status,
     finding.objectIdA ?? "", finding.objectIdB ?? "",
-    finding.distanceMetres !== undefined ? String(finding.distanceMetres) : "",
-    finding.marginMetres !== undefined ? String(finding.marginMetres) : "",
+    finding.distanceMetres,
+    finding.marginMetres,
     finding.detail,
   ].map(escape).join(","));
   return [header.join(","), ...rows].join("\n");

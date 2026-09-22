@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { DashboardDataWidgetConfig } from "@bim-studio/contracts";
 import { buildDashboardCompositionRuntimePackage, runtimeContentSha256, validateDeepRuntimePackage, type RuntimeJson } from "@bim-studio/deep-engine/runtime-package";
 import { lowerDashboardChart, type DashboardChartFrozenData } from "./lowerDashboardChart";
+import { renderChartFrame } from "./dashboardChartFrame";
 
 const widget: DashboardDataWidgetConfig = { title: "产量", key: "production", type: "bar", unit: "件",
   analysis: { dimensionField: "region", measureField: "value", aggregation: "sum" } };
@@ -46,8 +47,26 @@ describe("frozen author chart lowering", () => {
     expect(large.status).toBe("blocked");
     expect(large.diagnostics[0]?.message).toContain("20");
   });
-  it.each(["area", "combo", "radar", "gauge"] as const)("does not silently convert %s", type => {
+  it.each(["area", "radar", "gauge"] as const)("does not silently convert %s", type => {
     expect(lower({ type }).status).toBe("blocked");
+  });
+  it("lowers Web combo defaults and explicit secondary series to two ChartIR y axes", () => {
+    const data = snapshot({ samples: [], rows: [
+      { region: "A", machine: "产量", value: 4 }, { region: "B", machine: "产量", value: 9 },
+      { region: "A", machine: "能耗", value: 40 }, { region: "B", machine: "能耗", value: 70 },
+    ] });
+    const result = lower({ type: "combo", analysis: { ...widget.analysis!, seriesField: "machine" } }, data);
+    expect(result.status).toBe("degraded");
+    expect(result.chart?.value.axes.map(axis => axis.id)).toEqual(["axis.x", "axis.y", "axis.y.secondary"]);
+    expect(result.chart?.value.series.map(series => [series.label, series.type, "yAxisId" in series ? series.yAxisId : null]))
+      .toEqual([["产量", "bar", "axis.y"], ["能耗", "line", "axis.y.secondary"]]);
+    const explicit = lower({ type: "combo", chart: { secondaryAxisSeries: ["产量"] }, analysis: { ...widget.analysis!, seriesField: "machine" } }, data);
+    expect(explicit.chart?.value.series.map(series => [series.label, series.type, "yAxisId" in series ? series.yAxisId : null]))
+      .toEqual([["产量", "line", "axis.y.secondary"], ["能耗", "bar", "axis.y"]]);
+    const unknown = lower({ type: "combo", chart: { secondaryAxisSeries: ["不存在"] }, analysis: { ...widget.analysis!, seriesField: "machine" } }, data);
+    expect(unknown.status).toBe("blocked");
+    expect(unknown.diagnostics.at(-1)?.path).toBe("widget.chart.secondaryAxisSeries");
+    expect(renderChartFrame(result.chart!.value, 640, 360).commands.length).toBeGreaterThan(0);
   });
   it.each([{ stacked: true }, { showDataLabels: true }, { secondaryAxisSeries: ["产量"] }])("rejects unsupported authored chart configuration %j", chart => {
     expect(lower({ chart }).chart).toBeUndefined();

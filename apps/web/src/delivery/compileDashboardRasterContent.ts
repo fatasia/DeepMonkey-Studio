@@ -1,3 +1,5 @@
+import { compileDashboardTextInputs } from "./dashboardTextInputsCompile";
+import { compileDashboardVideoDiagnostics } from "./dashboardVideoCompile";
 import { buildDashboardCompositionRuntimePackage, runtimeContentSha256,
   type DashboardRuntimePageV1, type Deep2dRuntimePackage, type ChartIrRuntimeValue } from "@bim-studio/deep-engine/runtime-package";
 import { lowerDashboardChart } from "./lowerDashboardChart";
@@ -5,6 +7,11 @@ import { compileDashboardLayouts } from "./compileDashboardLayout";
 import { cssSrgbToLinearColor } from "./dashboardColor";
 import { parseHexColor } from "./dashboardShapeContent";
 import { rasterNode } from "./dashboardRasterNode";
+import { compileFrozenFilterVariants } from "./dashboardFrozenFilter";
+import { dashboardChartContentFrame } from "./dashboardChartContentFrame";
+import { compileFilterStaticVariants } from "./dashboardFilterStaticVariants";
+import { compileDashboardTables } from "./compileDashboardTables";
+import { compactDashboardTables } from "./compactDashboardTables";
 import { compileDashboardPageImage } from "./dashboardPageImage";
 import { assetIdentity, snapshotRasterInput, RASTER_BYTES_LIMIT } from "./dashboardRasterValidation";
 import type { DashboardRasterCompileInput, DashboardRasterEvidence, DashboardRasterHost } from "./dashboardRasterTypes";
@@ -15,6 +22,9 @@ export async function compileDashboardRasterContent(source: DashboardRasterCompi
   const layouts = compileDashboardLayouts(input.document);
   const document = layouts.source, revision = document.application.metadata.revision;
   const first = layouts.pages.find(page => page.pageId === document.entryPageId)!;
+  const filterPlan = compileFrozenFilterVariants(input, new Map(layouts.pages.flatMap(page =>
+    page.nodeBindings.map(binding => [binding.nodeId, binding.layoutId] as const))));
+  const textPlan = compileDashboardTextInputs(input, new Map(layouts.pages.flatMap(page => page.nodeBindings.map(binding => [binding.nodeId, binding.layoutId] as const))));
   const pages: DashboardRuntimePageV1[] = [], deep2d: Deep2dRuntimePackage[] = [], charts: ChartIrRuntimeValue[] = [];
   const objects: Array<Awaited<ReturnType<typeof rasterNode>>["report"]> = [];
   const producerEvidence: DashboardRasterEvidence[] = [];
@@ -22,6 +32,7 @@ export async function compileDashboardRasterContent(source: DashboardRasterCompi
   const pageDeferred: Array<{ pageId: string; fields: string[] }> = [];
   const nodeBindings: Array<{ nodeId: string; runtimeNodeId: string; runtimeNodeIds: string[]; pageId: string; runtimePageId: string }> = [];
   const sourceSemanticHash = runtimeContentSha256({ document, locale: input.locale, nodeAssets: input.nodeAssets,
+    textRasterScale: input.textRasterScale ?? 1,
     ...(input.pageAssets ? { pageAssets: input.pageAssets } : {}),
     ...(input.data ? { data: input.data } : {}),
     assets: Object.fromEntries(Object.entries(input.assets).map(([id, asset]) => [id, assetIdentity(asset)])) });
@@ -38,8 +49,15 @@ export async function compileDashboardRasterContent(source: DashboardRasterCompi
       let layers: Array<{ content: Deep2dRuntimePackage; clip: readonly [number, number, number, number] | null }> | undefined;
       if (node.kind === "data-widget") {
         const result = await rasterNode(node, `${id}.content`, revision, input, host);
+        if (node.widget.type === "filter" && filterPlan.filter?.sourceNodeId !== node.id && !textPlan.inputs?.some(input => input.nodeId === id)) {
+          result.content = { ...result.content, quads: [], atlases: [] };
+          result.layers = [{ content: result.content, clip: null }];
+          result.report.contentCompiled = false;
+          result.report.status = "blocked";
+          result.report.reasons.push((node.widget.filterMode === "text" ? textPlan.reason : filterPlan.reason) ?? "Filter profile unavailable");
+        }
         content = result.content; layers = result.layers;
-        if (!["text", "image", "shape", "value", "table"].includes(node.widget.type)) {
+        if (["bar", "line", "scatter", "pie"].includes(node.widget.type)) {
           const data = input.data?.[node.id];
           const lowered = lowerDashboardChart({ nodeId: id, revision, widget: node.widget, ...(data ? { data } : {}) });
           result.report.reasons.push(...lowered.diagnostics.map(diagnostic => `${diagnostic.path}: ${diagnostic.message}`));
@@ -65,11 +83,18 @@ export async function compileDashboardRasterContent(source: DashboardRasterCompi
       for (const [layerIndex, layer] of (layers ?? [{ content, clip: null }]).entries()) {
         atlasBytes += layer.content.atlases.reduce((sum, atlas) => sum + atlas.width * atlas.height * 4, 0);
         if (atlasBytes > RASTER_BYTES_LIMIT) throw new Error("Dashboard atlas byte budget exceeded");
-        const runtimeId = layerIndex === 0 ? id : `node.${runtimeContentSha256([id, "content-layer", layerIndex])}`;
+        const runtimeId = layerIndex === 0 && !chart ? id : `node.${runtimeContentSha256([id, "content-layer", layerIndex])}`;
         mapping.runtimeNodeIds.push(runtimeId); deep2d.push(layer.content);
         nodes.push({ id: runtimeId, revision, frame: [node.frame.x, node.frame.y, node.frame.width, node.frame.height],
           clip: layer.clip, zOrder: nodes.length + 1, visible: node.visible !== false, hitId: null,
-          deep2d: layer.content.id, chart: layerIndex === 0 ? chart : null, chartSim: null });
+          deep2d: layer.content.id, chart: null, chartSim: null });
+      }
+      if (chart && node.kind === "data-widget") {
+        const frame = dashboardChartContentFrame(node, input);
+        mapping.runtimeNodeIds.push(id);
+        nodes.push({ id, revision, frame, clip: [0, 0, frame[2], frame[3]],
+          zOrder: nodes.length + 1, visible: node.visible !== false, hitId: id,
+          deep2d: null, chart, chartSim: null });
       }
     }
     const background = pageBackground(page, layout.tree.id, revision);
@@ -83,12 +108,52 @@ export async function compileDashboardRasterContent(source: DashboardRasterCompi
     }
     pages.push({ id: layout.tree.id, width: page.width, height: page.height, nodes });
   }
+  const tables = input.tableViews?.length
+    ? await compileDashboardTables(input, host, pages, deep2d, nodeBindings, producerEvidence) : [];
+  const videoPlan = compileDashboardVideoDiagnostics(input, nodeBindings);
   const dashboard = { schema: "deep-engine.dashboard-runtime" as const, schemaVersion: 1 as const,
     id: `dashboard.${runtimeContentSha256(document.application.metadata.id)}`, revision,
-    documentId: document.application.metadata.id, documentRevision: revision, entryPageId: first.tree.id, pages };
+    documentId: document.application.metadata.id, documentRevision: revision, entryPageId: first.tree.id, pages,
+    ...(videoPlan.videos.length ? { videos: videoPlan.videos } : {}),
+    ...(videoPlan.media.length ? { media: videoPlan.media } : {}),
+    ...(tables.length ? { tables } : {}),
+    ...(textPlan.inputs?.length ? textPlan.inputs.length > 1 ? { textInputs: textPlan.inputs } : { textInput: textPlan.input } : {}),
+    ...(filterPlan.filter && objects.find(object => object.nodeId === filterPlan.filter?.sourceNodeId)?.contentCompiled
+      ? { filter: await compileFilterStaticVariants(input, host, filterPlan.filter, pages, deep2d, nodeBindings, producerEvidence) } : {}) };
+  if (textPlan.inputs?.length) {
+    for (const page of pages) for (let index = 0; index < page.nodes.length; index++) {
+      const node = page.nodes[index]!;
+      if (textPlan.inputs.some(input => input.nodeId === node.id)) (page.nodes as typeof node[])[index] = { ...node, hitId: node.id };
+    }
+  }
+  if (dashboard.filter) {
+    const linkedTargets = new Set(input.filterData?.flatMap(option => Object.keys(option.data)) ?? []);
+    for (const object of objects) if (linkedTargets.has(object.nodeId)) {
+      object.reasons = object.reasons.map(reason => reason === "Only the measured static data view is compiled; filtering, paging, sorting, row actions and export remain deferred"
+        ? "Frozen select updates this measured data view; paging, sorting, row actions and export remain deferred" : reason);
+    }
+    for (const page of pages) for (let index = 0; index < page.nodes.length; index++) {
+      const node = page.nodes[index]!;
+      if (node.id === dashboard.filter.nodeId) (page.nodes as typeof node[])[index] = { ...node, hitId: node.id };
+    }
+  }
+  for (const object of objects) if (document.application.pages.some(page => page.nodes.some(node =>
+    node.id === object.nodeId && node.kind === "data-widget" && node.widget.type === "filter")))
+    {
+      const textCompiled = textPlan.inputs?.some(input => input.nodeId === nodeBindings.find(binding => binding.nodeId === object.nodeId)?.runtimeNodeId);
+      const selectCompiled = dashboard.filter?.sourceNodeId === object.nodeId;
+      object.reasons.push(textCompiled ? "Frozen-font text input controls the supported sample chart dataset; full Web CSS parity remains deferred" : selectCompiled && dashboard.filter ? dashboard.filter.options.some(option => option.visibility?.length)
+        ? "Frozen select updates chart rows and measured KPI/table views in one presentation transaction"
+        : "Frozen select controls charts only; KPI/table updates remain deferred"
+        : ("reason" in filterPlan ? filterPlan.reason : "Filter text unavailable; interaction blocked"));
+      if (textCompiled) { object.contentCompiled = true; object.status = "degraded"; }
+      if (!selectCompiled && !textCompiled) { object.contentCompiled = false; object.status = "blocked"; }
+    }
+  if (tables.length) compactDashboardTables(dashboard, deep2d, producerEvidence, nodeBindings);
+  host.traceCompilation?.({ dashboard, deep2d, charts, producerEvidence, nodeBindings });
   const packageValue = buildDashboardCompositionRuntimePackage({ packageId: input.packageId,
     packageVersion: input.packageVersion, dashboard, deep2d, charts, chartSims: [] });
-  const compileGraphHash = runtimeContentSha256({ sourceSemanticHash, pass: "dashboard-frozen-raster-v5", producerEvidence, pageImageEvidence });
+  const compileGraphHash = runtimeContentSha256({ sourceSemanticHash, pass: "dashboard-frozen-raster-v8", producerEvidence, pageImageEvidence });
   return { schemaVersion: 1 as const, scope: "dashboard-frozen-raster" as const, publicationReady: false as const,
     sourceSemanticHash, compileGraphHash, targetArtifactHash: runtimeContentSha256(packageValue), package: packageValue,
     producerEvidence, pageImageEvidence, nodeBindings, capabilityReport: { objects, contentCompiled: objects.filter(o => o.contentCompiled).length,

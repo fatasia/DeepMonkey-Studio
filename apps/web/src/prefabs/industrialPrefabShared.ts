@@ -31,7 +31,7 @@ export function definition(
   parameters: IndustrialPrefabParameterDefinition[],
   prefabActions: IndustrialPrefabActionDefinition[],
   dataPorts: string[],
-  options: { routeCapable?: boolean; rigCapable?: boolean; description?: string } = {},
+  options: { routeCapable?: boolean; pathCapable?: boolean; rigCapable?: boolean; description?: string } = {},
 ): IndustrialPrefabDefinition {
   return {
     id,
@@ -45,6 +45,7 @@ export function definition(
     actions: prefabActions,
     dataPorts,
     routeCapable: options.routeCapable ?? false,
+    pathCapable: options.pathCapable ?? false,
     rigCapable: options.rigCapable ?? false,
   };
 }

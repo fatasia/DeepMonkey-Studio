@@ -4,12 +4,12 @@ import type { SceneDashboardWidgetType, WidgetFrame } from "@bim-studio/contract
 /**
  * 商用封面图形层(纯函数、无状态):按真实插入版式的 frame 渲染"净化图形本体"。
  *
- * 封面对标山海鲸模板市场的"成品大屏截图"观感(FVS 图表规范 + 山海鲸氛围):
+ * 封面对标外部参考模板市场的"成品大屏截图"观感(大屏参考 图表规范 + 外部参考氛围):
  * - 中心主视觉铺满 frame 并带辉光(Halo 双描边 + feGaussianBlur 滤镜,全部从域 accent 派生);
  * - 背景数据纹理(角部光晕括弧 + 地平线辉光 + 稀疏点阵 + 流线)消灭空白感;
  * - 按 layout 视角差异化构图:地图类=区域块+飞线、监控类=仪表簇+状态灯阵、
  *   分析类=大曲线+峰值标注、表格类=斑马纹+迷你条内嵌;
- * - 无坐标轴线、无图例(FVS 净化清单);文字一律浅色固定值(深底对比 ≥4.5:1),
+ * - 无坐标轴线、无图例(大屏参考 净化清单);文字一律浅色固定值(深底对比 ≥4.5:1),
  *   语义状态色取 base.css 深色主题令牌的固定值(封面是"深色大屏孤岛",不随主题翻转)。
  * 所有示意数字仅是封面装饰(确定性伪随机,同一模板恒定),不进入插入节点的数据。
  */
@@ -137,7 +137,7 @@ function trendPoints(frame: WidgetFrame, rand: CoverRandom, count: number): [num
 
 /**
  * 整页氛围层(CoverScene):角部光晕括弧 + 地平线辉光 + 稀疏点阵 + 流线,把
- * 版式间隙与页边变成"数据空气",对标山海鲸的场景氛围(雾/渐隐网格/辉光)。
+ * 版式间隙与页边变成"数据空气",对标外部参考的场景氛围(雾/渐隐网格/辉光)。
  */
 export function CoverScene({ id, width, height, seed }: { id: string; width: number; height: number; seed: string }) {
   const rand = coverRandom(seed);
@@ -163,7 +163,7 @@ export function CoverScene({ id, width, height, seed }: { id: string; width: num
     return <path key={key} d={`M ${width * 0.02} ${y} C ${width * 0.3} ${y - height * bend}, ${width * 0.62} ${y + height * bend}, ${width * 0.98} ${y - height * bend * 0.4}`} fill="none" stroke={accent} strokeWidth={2.6} strokeDasharray="3 13" opacity=".2" strokeLinecap="round" />;
   };
   return <g aria-hidden="true">
-    {/* 顶部极光带:山海鲸头图语言的"场景辉光",横贯页顶再渐隐 */}
+    {/* 顶部极光带:外部参考头图语言的"场景辉光",横贯页顶再渐隐 */}
     <path d={`M ${-width * 0.05} ${height * 0.16} C ${width * 0.25} ${height * 0.02}, ${width * 0.6} ${height * 0.2}, ${width * 1.05} ${height * 0.06} L ${width * 1.05} ${-height * 0.1} L ${-width * 0.05} ${-height * 0.1} Z`}
       fill={accent} opacity=".2" filter={`url(#cover-halo-${id})`} />
     <path d={`M ${-width * 0.05} ${height * 0.15} C ${width * 0.25} ${height * 0.03}, ${width * 0.6} ${height * 0.19}, ${width * 1.05} ${height * 0.07}`}
@@ -416,7 +416,7 @@ function coverChart(type: SceneDashboardWidgetType, frame: WidgetFrame, rand: Co
       </g>;
     }
     case "map": {
-      // 地图类封面:抽象区域块 + 枢纽热点 + 飞线(ThingJS 飞线语言,静态分镜)。
+      // 地图类封面:抽象区域块 + 枢纽热点 + 飞线(预制体参考 飞线语言,静态分镜)。
       // 区域多边形横纵半径分轴计算,避免把宽度单位半径塞进高度分数造成"压扁叶片"。
       const regions = Array.from({ length: 5 }, (_, index) => {
         const cxr = 0.16 + rand() * 0.68, cyr = 0.2 + rand() * 0.6;

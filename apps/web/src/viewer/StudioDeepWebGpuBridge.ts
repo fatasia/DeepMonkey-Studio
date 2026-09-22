@@ -139,7 +139,6 @@ export class StudioDeepWebGpuBridge {
             projection: new module.ThreeProjectionBridge({ hooks: threePrototypeHooks(), capabilities: { authorDeformation: true, authorLod: true } }),
             root: this.projectionRoot(), view, authorChunks: true,
             renderer: { environment: environment.source, deformation: true, meshlets: true,
-              probeClipmap: {},
               adaptiveQuality: { enabled: true, collectHotspots: false },
               shadows: { exactProfile: { cascadeCount: 1, shadowMapSize } },
               features: { environment: true, groundPlane: false,

@@ -1,7 +1,7 @@
 /* =====================================================================
  * 资源中心页面级视觉(素材中心)
- * 对标:山海鲸市场页面氛围(近黑底 + 角部微光 + 细网格 + 满幅密度)与
- * 帆软市场头部(标题 + 定位语 + 概览统计),压进工作台的克制高度。
+ * 对标:外部参考市场页面氛围(近黑底 + 角部微光 + 细网格 + 满幅密度)与
+ * 外部参考市场头部(标题 + 定位语 + 概览统计),压进工作台的克制高度。
  * 纪律:颜色全部来自 base.css 既有令牌 + color-mix 派生,双主题同步成立;
  * 选择器只作用于资源页 DOM(.unified-assets-* / .built-in-* /
  * .scene-manager-page.asset-workspace-active,后者由 SceneManagerView 仅在
@@ -36,7 +36,7 @@
 .unified-assets-scope button.active { color: var(--accent-hover); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--line-strong); }
 
 /* —— 四类资源概览统计 tab(模型/二维/模板/预制体,真实计数 tabular-nums):
-   对标山海鲸分类树的“图标 + 计数徽章”,但保持工作台控件的体量。 —— */
+   对标外部参考分类树的“图标 + 计数徽章”,但保持工作台控件的体量。 —— */
 .unified-assets-kinds { display: flex; gap: 8px; padding: 7px 16px 11px; background: transparent; overflow-x: auto; scrollbar-width: thin; }
 .unified-assets-kinds button { display: inline-flex; min-height: 38px; flex: 0 0 auto; align-items: center; gap: 8px; padding: 0 13px 0 11px; color: var(--text-muted); border: 1px solid var(--line); border-radius: var(--radius-md); background: color-mix(in srgb, var(--surface-2) 60%, transparent); font-size: 12px; cursor: pointer; transition: color 140ms cubic-bezier(0.16, 1, 0.3, 1), border-color 140ms, background 140ms, box-shadow 140ms; }
 .unified-assets-kinds button svg { color: var(--text-faint); transition: color 140ms; }
@@ -268,7 +268,7 @@
   .asset-workspace-active .unified-assets-browser { grid-template-columns:1fr; }
 }
 
-/* —— 资源中心分类行(对标山海鲸分类树计数徽章 + 帆软大类行):
+/* —— 资源中心分类行(对标外部参考分类树计数徽章 + 外部参考大类行):
    横向滚动 chips + 计数,active 胶囊带主色柔光;双主题走令牌派生。 —— */
 .built-in-assets-browser .built-in-category-row { display: flex; gap: 8px; align-items: center; overflow-x: auto; padding: 2px 2px 10px; scrollbar-width: thin; scroll-snap-type: x proximity; }
 .built-in-assets-browser .built-in-category-row button { display: inline-flex; flex: none; align-items: center; gap: 6px; padding: 6px 12px; color: var(--text); border: 1px solid var(--line); border-radius: 999px; background: color-mix(in srgb, var(--surface-2) 55%, transparent); font-size: 12px; cursor: pointer; scroll-snap-align: start; transition: color 120ms cubic-bezier(0.16, 1, 0.3, 1), border-color 120ms, background 120ms, box-shadow 120ms; }

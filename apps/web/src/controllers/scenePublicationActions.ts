@@ -7,6 +7,8 @@ import type { ScenePersistenceControllerContext } from "./scenePersistenceContro
 import type { SceneClientPackageTarget } from "../delivery/sceneClientPackage";
 import { assertScenePublicationDeliverable, ScenePublicationCompatibilityError } from "../delivery/scenePublicationCompatibilityGate";
 import { assessScenePublication } from "../components/publicationReadiness";
+import type { ClientPackageBranding } from "../components/clientPackageBranding";
+import { freezeSceneClientBranding } from "../delivery/sceneClientBranding";
 
 type PublicationContext = Pick<
   ScenePersistenceControllerContext,
@@ -85,13 +87,17 @@ export function createScenePublicationActions(context: PublicationContext, saveS
     performanceProfile: NonNullable<SceneSnapshot["publicationPerformance"]> = studioPublishPerformance,
     toolbarVisible = activeScene?.publicationToolbarVisible !== false,
     clientTarget: SceneClientPackageTarget = "none",
+    branding?: ClientPackageBranding,
   ) {
+    const frozenBranding = freezeSceneClientBranding(branding);
     const owner = getActiveScene();
     const generation = sceneApplyVersionRef.current;
     const saved = await saveScene();
-    if (!saved) return;
+    if (!saved) throw new Error(tr(locale,
+      "场景保存失败，无法发布，请修复保存错误后重试",
+      "The scene could not be saved, so it cannot be published. Fix the save error and try again."));
     if (sceneApplyVersionRef.current !== generation || (owner && (getActiveScene()?.id !== owner.id || getActiveScene()?.projectId !== owner.projectId))) return;
-    const published = await publishScene(saved, mode, performanceProfile, toolbarVisible, clientTarget);
+    const published = await publishScene(saved, mode, performanceProfile, toolbarVisible, clientTarget, frozenBranding);
     const current = getActiveScene();
     if (published && sceneApplyVersionRef.current === generation && current?.id === saved.id && current.projectId === saved.projectId) setStudioPublishOpen(false);
   }
@@ -147,6 +153,7 @@ export function createScenePublicationActions(context: PublicationContext, saveS
     performanceProfile: NonNullable<SceneSnapshot["publicationPerformance"]> = scene.publicationPerformance ?? "standard",
     toolbarVisible = scene.publicationToolbarVisible !== false,
     clientTarget: SceneClientPackageTarget = "none",
+    branding?: ClientPackageBranding,
   ): Promise<boolean> {
     if (!project) return false;
     const generation = sceneApplyVersionRef.current;
@@ -157,6 +164,7 @@ export function createScenePublicationActions(context: PublicationContext, saveS
         && current?.id === owner?.id && current?.projectId === owner?.projectId;
     };
     try {
+      const frozenBranding = freezeSceneClientBranding(branding);
       if (scene.projectId !== project.id) throw new Error(tr(locale, "场景不属于当前项目，请重新打开后发布", "The scene belongs to another project. Reopen it before publishing."));
       const configured = await api.saveScene({
         ...scene,
@@ -181,6 +189,8 @@ export function createScenePublicationActions(context: PublicationContext, saveS
         if (candidate.report.target !== "deep-native" || candidate.report.sceneId !== configured.id) throw new Error("Native 发布候选与当前场景不匹配，请重新验证");
         assertScenePublicationDeliverable(candidate.report);
         if (candidate.status !== "ready" || !candidate.candidateId?.trim()) throw new Error("Native 发布候选尚未准备完成，请重新验证");
+        const expiresAt = Date.parse(candidate.expiresAt);
+        if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new Error("Native 发布候选已过期，请重新验证");
         nativeCandidateId = candidate.candidateId;
       }
       if (!isCurrentRequest()) return false;
@@ -192,16 +202,25 @@ export function createScenePublicationActions(context: PublicationContext, saveS
       const current = getActiveScene();
       if (sceneApplyVersionRef.current === generation && current?.id === scene.id && current.projectId === scene.projectId) setActiveScene(publication.snapshot);
       if (mode === "cloud") {
-        const session = await enablePublishedCloudScene(scene.id);
-        if (!isCurrentRequest()) return false;
-        setMessage(publicationSuccessMessage({ locale, sceneName: scene.name, mode, performanceProfile, cloudViewerReady: Boolean(session.viewerUrl) }));
+        try {
+          const session = await enablePublishedCloudScene(scene.id);
+          if (!isCurrentRequest()) return false;
+          setMessage(publicationSuccessMessage({ locale, sceneName: scene.name, mode, performanceProfile, cloudViewerReady: Boolean(session.viewerUrl) }));
+        } catch (reason) {
+          // 本地客户端包含自身渲染运行时；云 Worker 只影响网页云会话，不能阻断 EXE 生成。
+          if (clientTarget === "none") throw reason;
+          if (!isCurrentRequest()) return false;
+          setMessage(tr(locale, `场景“${scene.name}”已发布 · 云会话未启动，正在生成本地客户端`,
+            `Scene “${scene.name}” published · cloud session unavailable; building the local client`));
+        }
       } else {
         setMessage(publicationSuccessMessage({ locale, sceneName: scene.name, mode, performanceProfile }));
       }
       if (clientTarget !== "none") {
         if (!isCurrentRequest()) return false;
         try {
-          const options = { target: clientTarget, renderer, toolbarVisible };
+          const options = { target: clientTarget, renderer, toolbarVisible, format: "executable" as const,
+            ...(frozenBranding ? { branding: frozenBranding } : {}) };
           const artifact = await context.buildPublicationArtifact(publication, options);
           if (!isCurrentRequest()) return false;
           if (artifact.record.status === "cancelled") {

@@ -1,11 +1,20 @@
 import { Fragment, memo, useCallback, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { sceneRowOffsets, sceneRowScrollDelta, visibleSceneRows, type SceneRowSize } from "./virtualSceneRows";
 import { useSceneTreeWindowing } from "./sceneTreePreference";
+import { focusLayerRow, layerKeyboardOccupied } from "./layerKeyboard";
 import "./WindowedSceneRows.css";
 
 export interface SceneRow extends SceneRowSize { render: () => ReactNode }
 interface Props { rows: readonly SceneRow[]; selectedKey?: string | undefined; rowHeight?: number; enabled?: boolean | undefined }
 const focusable = 'button:not(:disabled),[tabindex="0"],input:not(:disabled),select:not(:disabled)';
+
+function focusRevealedRow(element: HTMLElement, last: boolean, lastLayer: boolean) {
+  const layers = element.querySelectorAll<HTMLElement>('[data-layer-keyboard-row]');
+  if (layers.length && !last) { focusLayerRow(lastLayer ? layers[layers.length - 1] : layers[0]); return; }
+  const controls = element.querySelectorAll<HTMLElement>(focusable);
+  const target = last ? controls[controls.length - 1] : element.querySelector<HTMLElement>('.asset-main,.layer-node-main,.scene-tree-name,[role="treeitem"][tabindex="0"]') ?? controls[0];
+  target?.focus({ preventScroll: true });
+}
 
 /** 复用目录原来的滚动容器。展开行保留挂载，其内部树也按同一视口裁剪。 */
 export function WindowedSceneRows({ rows, selectedKey, rowHeight = 32, enabled }: Props) {
@@ -67,7 +76,7 @@ export function WindowedSceneRows({ rows, selectedKey, rowHeight = 32, enabled }
     if (element) { elements.current.set(key, element); observer.current?.observe(element); }
     else elements.current.delete(key);
   }, []);
-  const reveal = useCallback((key: string, focus = false, last = false) => {
+  const reveal = useCallback((key: string, focus = false, last = false, lastLayer = false) => {
     const index = live.current.rows.findIndex(row => row.key === key), parent = scroll.current;
     if (index < 0 || !parent) return;
     const { offsets: positions } = live.current;
@@ -77,6 +86,9 @@ export function WindowedSceneRows({ rows, selectedKey, rowHeight = 32, enabled }
     // 先使目标挂载，再以真实位置校正；展开/切换列表时旧占位高度可能被浏览器限幅。
     setPendingKey(key);
     if (focus) { setFocusedKey(key); previousFocusIndex.current = index; }
+    // 已挂载行立即移焦；只有虚拟列表尚未挂载的目标才等待下一帧。
+    const mounted = elements.current.get(key);
+    if (focus && mounted) focusRevealedRow(mounted, last, lastLayer);
     if (revealFrame.current) cancelAnimationFrame(revealFrame.current);
     revealFrame.current = requestAnimationFrame(() => {
       revealFrame.current = 0;
@@ -85,9 +97,7 @@ export function WindowedSceneRows({ rows, selectedKey, rowHeight = 32, enabled }
         const rect = element.getBoundingClientRect(), viewportTop = parent.getBoundingClientRect().top + parent.clientTop;
         parent.scrollTop += sceneRowScrollDelta(rect.top, rect.bottom, viewportTop, parent.clientHeight || 600);
         updateViewport();
-        const candidates = element.querySelectorAll<HTMLElement>(focusable);
-        const target = last ? candidates?.[candidates.length - 1] : element?.querySelector<HTMLElement>('.asset-main,.layer-node-main,.scene-tree-name,[role="treeitem"][tabindex="0"]') ?? candidates?.[0];
-        if (focus) target?.focus({ preventScroll: true });
+        if (focus) focusRevealedRow(element, last, lastLayer);
       }
       setPendingKey(undefined);
     });
@@ -106,10 +116,18 @@ export function WindowedSceneRows({ rows, selectedKey, rowHeight = 32, enabled }
 
   function keyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.defaultPrevented || (event.target as HTMLElement).closest('.windowed-scene-rows') !== root.current) return;
-    if ((event.target as HTMLElement).matches('input,textarea,select,[contenteditable="true"]')) return;
+    if (layerKeyboardOccupied(event) || (event.target as HTMLElement).closest('details[open]')) return;
+    if (event.altKey || event.ctrlKey || event.metaKey || (event.shiftKey && event.key !== "Tab")) return;
     const row = (event.target as HTMLElement).closest<HTMLElement>('[data-scene-row-key]');
     const index = rows.findIndex(item => item.key === row?.dataset.sceneRowKey);
     if (index < 0) return;
+    // 一个虚拟行可包含整个编组；先走组内可见行，边界才交还虚拟列表揭示下一行。
+    const layerRows = [...row!.querySelectorAll<HTMLElement>('[data-layer-keyboard-row]')];
+    const layerIndex = layerRows.indexOf((event.target as HTMLElement).closest<HTMLElement>('[data-layer-keyboard-row]')!);
+    const adjacent = event.key === "ArrowDown" ? layerIndex + 1 : event.key === "ArrowUp" ? layerIndex - 1 : -1;
+    if ((event.key === "ArrowDown" || event.key === "ArrowUp") && layerIndex >= 0 && adjacent >= 0 && adjacent < layerRows.length) {
+      event.preventDefault(); event.stopPropagation(); focusLayerRow(layerRows[adjacent]); return;
+    }
     let next = index, last = false;
     if (event.key === "ArrowDown") next++;
     else if (event.key === "ArrowUp") next--;
@@ -122,7 +140,7 @@ export function WindowedSceneRows({ rows, selectedKey, rowHeight = 32, enabled }
       else return;
     } else return;
     if (next < 0 || next >= rows.length) return;
-    event.preventDefault(); event.stopPropagation(); reveal(rows[next]!.key, true, last);
+    event.preventDefault(); event.stopPropagation(); reveal(rows[next]!.key, true, last, event.key === "ArrowUp" || event.key === "End");
   }
 
   const range = virtual ? visibleSceneRows(offsets, viewport.top, viewport.height) : { start: 0, end: rows.length };

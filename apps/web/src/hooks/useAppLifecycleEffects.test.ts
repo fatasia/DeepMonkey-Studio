@@ -190,12 +190,29 @@ describe("asynchronous lifecycle cleanup", () => {
     window.dispatchEvent(new Event("bim-studio-auth-required")); expect(harness.setAuthToken).not.toHaveBeenCalled();
   });
 
-  it("bounds unavailable session retries without deleting the token", async () => {
+  it("backs off unavailable session retries and restores after the service recovers", async () => {
     harness.getAuthToken.mockReturnValue("session"); harness.me.mockRejectedValue(new Error("offline"));
     const app = fixture(); app.render(); await vi.advanceTimersByTimeAsync(4_000);
     expect(harness.me).toHaveBeenCalledTimes(3); expect(app.state.setAuthReady).toHaveBeenCalledExactlyOnceWith(true);
     expect(harness.setAuthToken).not.toHaveBeenCalled(); expect(app.state.setCurrentUser).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(10_000); expect(harness.me).toHaveBeenCalledTimes(3);
+    harness.me.mockResolvedValue({ id: "recovered-user" });
+    await vi.advanceTimersByTimeAsync(4_000); expect(harness.me).toHaveBeenCalledTimes(4);
+    expect(app.state.setCurrentUser).toHaveBeenCalledExactlyOnceWith({ id: "recovered-user" });
+    await vi.advanceTimersByTimeAsync(60_000); expect(harness.me).toHaveBeenCalledTimes(4);
+  });
+
+  it("does not restore a previous account after a new sign-in changes the token", async () => {
+    const user = deferred<unknown>(); harness.getAuthToken.mockReturnValue("old-session"); harness.me.mockReturnValue(user.promise);
+    const app = fixture(); app.render();
+    harness.getAuthToken.mockReturnValue("new-session"); user.resolve({ id: "old-user" }); await Promise.resolve();
+    expect(app.state.setCurrentUser).not.toHaveBeenCalled();
+  });
+
+  it("stops a queued retry after a new sign-in replaces the token", async () => {
+    harness.getAuthToken.mockReturnValue("old-session"); harness.me.mockRejectedValue(new Error("offline"));
+    const app = fixture(); app.render(); await vi.advanceTimersByTimeAsync(0);
+    harness.getAuthToken.mockReturnValue("new-session"); await vi.advanceTimersByTimeAsync(60_000);
+    expect(harness.me).toHaveBeenCalledTimes(1); expect(app.state.setCurrentUser).not.toHaveBeenCalled();
   });
 
   it("removes scheduled session retries on unmount", async () => {

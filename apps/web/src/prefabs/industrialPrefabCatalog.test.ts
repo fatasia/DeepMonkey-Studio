@@ -3,10 +3,10 @@ import type { IndustrialPrefabParameterDefinition } from "@bim-studio/contracts"
 import { INDUSTRIAL_PREFAB_CATALOG, industrialPrefabDefinition } from "./industrialPrefabCatalog";
 
 describe("industrial prefab catalog", () => {
-  it("contains one hundred twenty distinct configurable industrial prefabs", () => {
+  it("contains one hundred twenty-one distinct configurable industrial prefabs", () => {
     const ids = INDUSTRIAL_PREFAB_CATALOG.map((item) => item.id);
 
-    expect(INDUSTRIAL_PREFAB_CATALOG.length).toBe(120);
+    expect(INDUSTRIAL_PREFAB_CATALOG.length).toBe(121);
     expect(new Set(ids).size).toBe(ids.length);
     expect(INDUSTRIAL_PREFAB_CATALOG.every((item) => item.parameters.length > 0 && item.actions.length > 0 && item.dataPorts.length > 0)).toBe(true);
   });
@@ -38,6 +38,7 @@ describe("industrial prefab catalog", () => {
       "camera.vision",
       "display.wall",
       "storage.asrs-shuttle",
+      "road.straight",
       // 2026-09-12 扩量新增:机床四工艺、机器人三族、公用工程四族、过程仪表四族、仓储/输送/无人机
       "machine.gantry-mill",
       "machine.surface-grinder",
@@ -85,6 +86,17 @@ describe("industrial prefab catalog", () => {
     ];
 
     expect([...ids]).toEqual(expect.arrayContaining(expected));
+  });
+
+  it("exposes a bounded editable straight-road contract", () => {
+    const road = industrialPrefabDefinition("road.straight");
+    expect(road).toMatchObject({ kind: "road", routeCapable: false, pathCapable: true, rigCapable: false });
+    expect(industrialPrefabDefinition("fence.modular")).toMatchObject({ pathCapable: true });
+    expect(road?.parameters.map((parameter) => parameter.key)).toEqual([
+      "lengthM", "carriagewayWidthM", "laneCount", "shoulderWidthM", "surface", "marking",
+    ]);
+    expect(road?.parameters.find((parameter) => parameter.key === "lengthM")).toMatchObject({ min: 2, max: 500, unit: "m" });
+    expect(road?.parameters.find((parameter) => parameter.key === "surface")?.options).toEqual(["asphalt", "concrete"]);
   });
 
   it("gives route-capable assets and robots operational controls", () => {

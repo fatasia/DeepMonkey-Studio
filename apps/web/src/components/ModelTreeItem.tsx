@@ -74,7 +74,7 @@ export function ModelTreeItem({
         </button>
         <button
           className="asset-main"
-          title={loaded ? tr(locale, "单击选择，再次单击取消；Ctrl/⌘ 单击多选；Shift 单击连续选择；双击聚焦", "Click to select, click again to clear; Ctrl/⌘-click for multi-select; Shift-click for a range; double-click to focus") : tr(locale, "载入模型", "Load model")}
+          title={loaded ? tr(locale, "单击选择；Ctrl/⌘ 单击切换多选；Shift 连续选择；双击聚焦", "Click to select; Ctrl/⌘-click to toggle selection; Shift-click for a range; double-click to focus") : tr(locale, "载入模型", "Load model")}
           onClick={(event) => {
             if (!loaded) return onLoadModel();
             selectSceneObjectRow(event, model.id, engine, onSelectObject);
@@ -151,6 +151,7 @@ export function ModelTreeItem({
         {loaded && onInstanceActions && <button disabled={optimizing} onClick={onInstanceActions}><Settings2 size={15} /><span>{tr(locale, "实例管理", "Instances")}</span></button>}
         <button
           className="danger"
+          data-layer-action="delete"
           disabled={Boolean(loaded && engine?.isModelLocked(model.id))}
           aria-label={loaded && engine?.isModelLocked(model.id) ? tr(locale, "请先解锁模型", "Unlock the model first") : loaded ? tr(locale, "移除实例", "Remove instance") : tr(locale, "删除素材", "Delete asset")}
           title={loaded && engine?.isModelLocked(model.id) ? tr(locale, "请先解锁模型", "Unlock the model first") : loaded ? tr(locale, "从场景移除，素材保留；可撤销", "Remove from scene, keep asset; undo available") : tr(locale, "删除未使用的素材", "Delete unused asset")}

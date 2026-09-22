@@ -9,6 +9,7 @@ describe("scene creation isolation", () => {
   it("clears previous scene objects and transient light selection before creating", async () => {
     const noop = vi.fn();
     const setSelectedLightId = vi.fn();
+    const setRootLayerOrder = vi.fn();
     const engine = new Proxy({ clearSceneModels: vi.fn(), applyCamera: vi.fn() }, { get: (target, key) => key in target ? target[key as keyof typeof target] : noop });
     const base = {
       engine,
@@ -18,6 +19,7 @@ describe("scene creation isolation", () => {
       primitiveColors: { current: new Map() },
       sortScenesByTime: (items: unknown[]) => items,
       setSelectedLightId,
+      setRootLayerOrder,
     };
     const context = new Proxy(base, { get: (target, key) => key in target ? target[key as keyof typeof target] : noop }) as unknown as ScenePersistenceControllerContext;
     const createScene = createSceneCreationAction(context, vi.fn(async () => undefined));
@@ -27,5 +29,6 @@ describe("scene creation isolation", () => {
     expect(api.saveScene).toHaveBeenCalledOnce();
     expect(engine.clearSceneModels).toHaveBeenCalledOnce();
     expect(setSelectedLightId).toHaveBeenCalledWith("");
+    expect(setRootLayerOrder).toHaveBeenCalledWith(undefined);
   });
 });

@@ -6,7 +6,8 @@ describe("sceneGridLayout", () => {
     const layout = sceneGridLayout();
 
     expect(layout.worldSize).toBe(200);
-    expect(layout.textureSize).toBeGreaterThanOrEqual(1024);
+    expect(layout.textureSize / layout.worldSize * layout.minorStep).toBe(10);
+    expect(layout.textureSize).toBeLessThanOrEqual(2048);
     expect(layout.majorStep / layout.minorStep).toBe(10);
     expect(layout.worldSize % layout.majorStep).toBe(0);
   });
