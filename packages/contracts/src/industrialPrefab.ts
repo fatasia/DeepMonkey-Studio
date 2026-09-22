@@ -50,6 +50,11 @@ export interface SceneLinearPrefabPathState {
   snapToGround: boolean;
   /** Stable uint32 seed for deterministic gates, markings and future path decoration. */
   seed: number;
+  /**
+   * 相邻路径点坡度上限（度），缺省与导航 maxSlopeAngle 缺省口径一致（50°）。
+   * 超限路径 fail-closed 整体拒绝：作者预览与发布编译同走该判定，不允许静默降级。
+   */
+  maxSlopeAngleDegrees?: number;
 }
 
 export interface SceneMotionRoutePoint {

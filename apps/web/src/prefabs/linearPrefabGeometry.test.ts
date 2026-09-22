@@ -21,4 +21,20 @@ describe("linear prefab geometry", () => {
     expect(bounds.min.x).toBeLessThanOrEqual(0);
     expect(bounds.max.x).toBeGreaterThanOrEqual(18);
   });
+
+  it("fail-closes author preview when a path segment exceeds the slope limit", () => {
+    const material = new THREE.MeshStandardMaterial();
+    const steep = (maxSlopeAngleDegrees?: number) => ({ definitionId: "road.straight", definitionVersion: "1.0.0",
+      kind: "road" as const, operatingState: "idle" as const, parameters: {},
+      placementPath: { points: [
+        { id: "a", position: { x: 0, y: 0, z: 0 } }, { id: "b", position: { x: 1, y: 2, z: 0 } },
+      ], interpolation: "linear" as const, closed: false, snapToGround: false, seed: 3,
+      ...(maxSlopeAngleDegrees === undefined ? {} : { maxSlopeAngleDegrees }) } });
+    // 63.4° 超过缺省 50°：作者预览直接拒绝，不生成静默爬坡的几何。
+    expect(() => buildLinearPrefabGeometry(steep(), { metal: material, dark: material, panel: material, warning: material }))
+      .toThrow(/坡度 63\.4° 超过上限 50°/);
+    // 作者显式放宽到 89° 内即可放行，阈值可配置。
+    expect(buildLinearPrefabGeometry(steep(89), { metal: material, dark: material, panel: material, warning: material }))
+      .toBeDefined();
+  });
 });

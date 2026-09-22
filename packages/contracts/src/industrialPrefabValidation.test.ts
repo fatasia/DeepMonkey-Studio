@@ -89,4 +89,25 @@ describe("industrial prefab validation", () => {
       points: [{ id: "a", position: { x: 0, y: 0, z: 0 } }, { id: "b", position: { x: 1, y: 0, z: 0 } }], seed: -1 } }, "prefab"))
       .toThrow(/uint32/);
   });
+
+  it("bounds the optional placement path slope limit to the navigation 0..89 degree range", () => {
+    const value = {
+      definitionId: "fence.modular", definitionVersion: "1.0.0", kind: "fence",
+      parameters: {}, operatingState: "idle",
+      placementPath: { points: [
+        { id: "a", position: { x: 0, y: 0, z: 0 } },
+        { id: "b", position: { x: 4, y: 0, z: 0 } },
+      ], interpolation: "linear", closed: false, snapToGround: false, seed: 1 },
+    };
+    expect(() => validateIndustrialPrefabInstance({ ...value,
+      placementPath: { ...value.placementPath, maxSlopeAngleDegrees: 50 } }, "prefab")).not.toThrow();
+    expect(() => validateIndustrialPrefabInstance({ ...value,
+      placementPath: { ...value.placementPath, maxSlopeAngleDegrees: 89 } }, "prefab")).not.toThrow();
+    expect(() => validateIndustrialPrefabInstance({ ...value,
+      placementPath: { ...value.placementPath, maxSlopeAngleDegrees: -1 } }, "prefab")).toThrow(/0\.\.89/);
+    expect(() => validateIndustrialPrefabInstance({ ...value,
+      placementPath: { ...value.placementPath, maxSlopeAngleDegrees: 90 } }, "prefab")).toThrow(/0\.\.89/);
+    expect(() => validateIndustrialPrefabInstance({ ...value,
+      placementPath: { ...value.placementPath, maxSlopeAngleDegrees: Number.NaN } }, "prefab")).toThrow(/有限数字/);
+  });
 });

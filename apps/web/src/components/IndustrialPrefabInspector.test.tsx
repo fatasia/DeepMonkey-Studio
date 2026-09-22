@@ -77,6 +77,10 @@ describe("IndustrialPrefabInspector", () => {
     expect(html).toContain("铺设路径");
     expect(html).toContain("平滑样条");
     expect(html).toContain("固定种子");
+    // 坡度上限输入缺省展示导航同源口径（50°），作者可显式调整。
+    expect(html).toContain("坡度上限");
+    expect(html).toContain('value="50"');
+    expect(html).toContain('max="89"');
     expect(html).toContain("添加端点");
   });
 });

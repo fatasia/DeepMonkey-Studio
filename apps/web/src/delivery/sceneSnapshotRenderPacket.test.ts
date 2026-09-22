@@ -89,6 +89,21 @@ describe("snapshot primitive render projection", () => {
     expect(validateDeepRuntimePackage(JSON.parse(JSON.stringify(value))).valid).toBe(true);
   });
 
+  it("fail-closes publication when a saved path segment exceeds the slope limit", () => {
+    const item = { ...primitive("steep-road"), prefab: {
+      definitionId: "road.straight", definitionVersion: "1.0.0", kind: "road" as const,
+      parameters: {}, operatingState: "idle" as const,
+      placementPath: { points: [
+        { id: "a", position: { x: 0, y: 0, z: 0 } }, { id: "b", position: { x: 1, y: 2, z: 0 } },
+      ], interpolation: "linear" as const, closed: false, snapToGround: true, seed: 9 } } } satisfies PrimitiveState;
+    // 发布编译没有地形数据：不二次投影（保持作者保存的 y），但坡度边界与作者态同走、同样拒绝。
+    expect(() => sceneSnapshotToRenderPacket(scene([item]))).toThrow(/坡度 63\.4° 超过上限 50°/);
+    // 缺省阈值内的平缓路径正常出包，证明拒绝只来自坡度边界本身。
+    const flat = structuredClone(item);
+    flat.prefab!.placementPath!.points[1]!.position.y = 0.2;
+    expect(sceneSnapshotToRenderPacket(scene([flat])).instances.length).toBeGreaterThan(0);
+  });
+
   it("matches author XYZ rotation with translation and negative nonuniform scale", () => {
     const item = primitive(), object = new Mesh(), { position: p, rotation: r, scale: s } = item.transform;
     object.position.set(p.x, p.y, p.z); object.rotation.set(r.x, r.y, r.z); object.scale.set(s.x, s.y, s.z);

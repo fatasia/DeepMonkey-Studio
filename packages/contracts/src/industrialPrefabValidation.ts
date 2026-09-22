@@ -5,6 +5,7 @@ import {
   expectObject,
   expectString,
   expectStringNumberOrBoolean,
+  invalid,
   optional,
   required,
   requiredLiteral
@@ -44,6 +45,12 @@ function validatePlacementPath(value: unknown, path: string): void {
   if (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xffff_ffff) {
     throw new Error(`${path}.seed must be a uint32`);
   }
+  optional(object, "maxSlopeAngleDegrees", (value, valuePath) => {
+    expectNumber(value, valuePath);
+    const degrees = value as number;
+    // 范围对齐导航 maxSlopeAngle 的归一化口径（0..89），垂直/倒悬不属于可铺设坡度。
+    if (degrees < 0 || degrees > 89) invalid(valuePath, "必须在 0..89 度内");
+  }, path);
 }
 
 function validatePlacementPathPoint(value: unknown, path: string): void {

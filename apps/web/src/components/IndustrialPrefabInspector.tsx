@@ -1,4 +1,5 @@
 import { Pause, Play, Plus, RotateCcw, Square, Trash2 } from "lucide-react";
+import { useState } from "react";
 import type {
   IndustrialPrefabDefinition,
   IndustrialPrefabInstanceState,
@@ -10,6 +11,7 @@ import type {
 import { translate as tr, type AppLocale } from "../i18n";
 import { INDUSTRIAL_PREFAB_CATALOG, industrialPrefabDefinition } from "../prefabs/industrialPrefabCatalog";
 import { createIndustrialPrefabInstance } from "../prefabs/industrialPrefabInstance";
+import { DEFAULT_LINEAR_PREFAB_MAX_SLOPE_ANGLE_DEGREES } from "../prefabs/linearPrefabPath";
 import type { ViewerEngine } from "../viewer/ViewerEngine";
 
 export function IndustrialPrefabInspector({
@@ -27,6 +29,8 @@ export function IndustrialPrefabInspector({
   onChange: () => void;
   onCommit?: (label: string) => void;
 }) {
+  // 路径校验 fail-closed 抛出的错误必须落到作者眼前，而不是炸掉整棵组件树。
+  const [saveError, setSaveError] = useState<string>();
   const state = engine.getIndustrialPrefabState(modelId);
   if (!state) return <AttachPrefab locale={locale} engine={engine} modelId={modelId} disabled={disabled} onChange={onChange} />;
   const definition = industrialPrefabDefinition(state.definitionId);
@@ -34,7 +38,13 @@ export function IndustrialPrefabInspector({
   const placementPath = state.placementPath;
 
   function save(next: IndustrialPrefabInstanceState, label = "更新工业预制体") {
-    engine.setIndustrialPrefabState(modelId, next);
+    try {
+      engine.setIndustrialPrefabState(modelId, next);
+    } catch (cause) {
+      setSaveError(cause instanceof Error ? cause.message : String(cause));
+      return;
+    }
+    setSaveError(undefined);
     onChange();
     onCommit?.(label);
   }
@@ -52,6 +62,7 @@ export function IndustrialPrefabInspector({
         <i data-state={state.operatingState}>{operatingStateLabel(locale, state.operatingState)}</i>
       </summary>
       <div className="industrial-prefab-body">
+        {saveError && <p className="industrial-prefab-save-error" role="alert">{saveError}</p>}
         {definition && (
           <details>
             <summary>{tr(locale, "设备参数", "Device parameters")}</summary>
@@ -155,6 +166,10 @@ export function IndustrialPrefabInspector({
               <NumberField label={tr(locale, "固定种子", "Fixed seed")} value={placementPath.seed} min={0}
                 max={0xffff_ffff} step={1} disabled={disabled}
                 onChange={(value) => save({ ...state, placementPath: { ...placementPath, seed: Math.trunc(value) } }, "更新铺设种子")} />
+              <NumberField label={tr(locale, "坡度上限", "Max slope")} unit="°"
+                value={placementPath.maxSlopeAngleDegrees ?? DEFAULT_LINEAR_PREFAB_MAX_SLOPE_ANGLE_DEGREES} min={0}
+                max={89} step={1} disabled={disabled}
+                onChange={(value) => save({ ...state, placementPath: { ...placementPath, maxSlopeAngleDegrees: value } }, "更新铺设坡度上限")} />
             </div>
             <div className="industrial-route-points">
               {placementPath.points.map((point, index) => <PathPointRow key={point.id} locale={locale}
