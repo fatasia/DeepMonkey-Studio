@@ -86,7 +86,15 @@ function compileAnimationRuntime(scene: SceneSnapshot): DynamicAnimationRuntime 
     })) });
   }
   if (!tracks.length) return;
-  return { schema: "deep-engine.dynamic-animation", schemaVersion: 1, durationMs: Math.round(animation.duration * 1000), autoplay: animation.autoplay !== false, loop: animation.loop, tracks };
+  // B2-b:编辑器播放区间随发布包下译,Native/发布查看器按同一区间采样;
+  // 缺省(未设区间)不写字段,旧包语义不变。
+  const range = animation.playbackRange;
+  return {
+    schema: "deep-engine.dynamic-animation", schemaVersion: 1,
+    durationMs: Math.round(animation.duration * 1000),
+    autoplay: animation.autoplay !== false, loop: animation.loop, tracks,
+    ...(range ? { playbackRangeMs: { inMs: Math.round(range.inPoint * 1000), outMs: Math.round(range.outPoint * 1000) } } : {}),
+  };
 }
 export interface CompileSceneRuntimeOptions extends CompileSceneRenderOptions {
   readonly packageId: string;

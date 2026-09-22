@@ -10,6 +10,15 @@ describe("dynamic scene runtime ABI", () => {
     expect(validateDynamicSceneRuntime({ ...base(), animation: { ...animation, autoplay: true, loop: true, tracks: [{ ...animation.tracks[0], targetId: "scene.camera", property: "camera-position" }] } }).valid).toBe(true);
     expect(validateDynamicSceneRuntime({ ...base(), animation: { ...animation, autoplay: "yes" } }).valid).toBe(false);
   });
+  it("accepts playback ranges inside the duration and rejects degenerate or out-of-range bounds", () => {
+    // B2-b:区间可下译进包;校验层要求 0 <= inMs < outMs <= durationMs。
+    expect(validateDynamicSceneRuntime({ ...base(), animation: { ...animation, playbackRangeMs: { inMs: 200, outMs: 800 } } }).valid).toBe(true);
+    expect(validateDynamicSceneRuntime({ ...base(), animation: { ...animation, playbackRangeMs: { inMs: 800, outMs: 800 } } }).valid).toBe(false);
+    expect(validateDynamicSceneRuntime({ ...base(), animation: { ...animation, playbackRangeMs: { inMs: 200, outMs: 1200 } } }).valid).toBe(false);
+    expect(validateDynamicSceneRuntime({ ...base(), animation: { ...animation, playbackRangeMs: { inMs: 0, outMs: 1000 } } }).valid).toBe(true);
+    expect(validateDynamicSceneRuntime({ ...base(), animation: { ...animation, playbackRangeMs: { inMs: -1, outMs: 800 } } }).valid).toBe(false);
+    expect(validateDynamicSceneRuntime({ ...base(), animation: { ...animation, playbackRangeMs: { inMs: 0, outMs: 800, extra: 1 } } }).valid).toBe(false);
+  });
   it("accepts strictly ordered offline replay revisions", () => { const value = base(); delete (value as { animation?: unknown }).animation; expect(validateDynamicSceneRuntime({ ...value, dataReplay: { schema: "deep-engine.dynamic-data-replay", schemaVersion: 1, channel: "telemetry", events: [{ revision: 1, timeMs: 0, payload: { value: 1 } }] } }).valid).toBe(true); });
   it("rejects unknown fields, unsorted keyframes and duplicate replay revisions", () => {
     expect(validateDynamicSceneRuntime({ ...base(), extra: true }).valid).toBe(false);

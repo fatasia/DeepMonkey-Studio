@@ -263,7 +263,8 @@ describe("scene runtime compilation evidence", () => {
   });
   it("lowers unit-scale model TRS keyframes into the v7 dynamic resource", async () => {
     const input = withModel();
-    input.animation = { duration: 2, loop: true, camera: [], models: [{ id: "frame-0", time: 0, modelId: "instance",
+    // B2-b:区间随发布包下译为毫秒播放区间。
+    input.animation = { duration: 2, loop: true, playbackRange: { inPoint: 0.2, outPoint: 1.5 }, camera: [], models: [{ id: "frame-0", time: 0, modelId: "instance",
       transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } } },
       { id: "frame-1", time: 2, modelId: "instance",
         transform: { position: { x: 1, y: 0, z: 0 }, rotation: { x: 0, y: 0.5, z: 0 }, scale: { x: 1, y: 1, z: 1 } } }] };
@@ -273,6 +274,7 @@ describe("scene runtime compilation evidence", () => {
     const dynamic = result.runtimePackage.payloads["scene.dynamic"] as any;
     expect(dynamic.schema).toBe("deep-engine.dynamic-runtime");
     expect(dynamic.animation.durationMs).toBe(2000);
+    expect(dynamic.animation.playbackRangeMs).toEqual({ inMs: 200, outMs: 1500 });
     expect(dynamic.animation.tracks).toHaveLength(3);
     expect(dynamic.animation.tracks.map((track: any) => track.property)).toEqual(["translation", "rotation", "scale"]);
     expect(dynamic.animation.tracks[0].keyframes.map((frame: any) => frame.timeMs)).toEqual([0, 2000]);

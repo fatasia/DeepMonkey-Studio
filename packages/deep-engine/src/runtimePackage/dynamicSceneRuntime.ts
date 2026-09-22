@@ -19,7 +19,9 @@ export type DynamicAnimationTransition = "linear" | "smooth" | "ease-in" | "ease
 export interface DynamicAnimationKeyframe { readonly timeMs: number; readonly value: DynamicAnimationValue; readonly transition?: DynamicAnimationTransition }
 export type DynamicAnimationProperty = "translation" | "rotation" | "scale" | "camera-position" | "camera-target" | "object-visible";
 export interface DynamicAnimationTrack { readonly targetId: string; readonly property: DynamicAnimationProperty; readonly keyframes: readonly DynamicAnimationKeyframe[] }
-export interface DynamicAnimationRuntime { readonly schema: "deep-engine.dynamic-animation"; readonly schemaVersion: 1; readonly durationMs: number; readonly autoplay?: boolean; readonly loop?: boolean; readonly tracks: readonly DynamicAnimationTrack[] }
+/** B2-b 区间播放:发布包携带的入点/出点(毫秒);缺省播放整条时间线。 */
+export interface DynamicAnimationPlaybackRangeMs { readonly inMs: number; readonly outMs: number }
+export interface DynamicAnimationRuntime { readonly schema: "deep-engine.dynamic-animation"; readonly schemaVersion: 1; readonly durationMs: number; readonly autoplay?: boolean; readonly loop?: boolean; readonly playbackRangeMs?: DynamicAnimationPlaybackRangeMs; readonly tracks: readonly DynamicAnimationTrack[] }
 export interface DynamicDataReplayEvent { readonly revision: number; readonly timeMs: number; readonly payload: RuntimeJson }
 export interface DynamicDataReplayRuntime { readonly schema: "deep-engine.dynamic-data-replay"; readonly schemaVersion: 1; readonly channel: string; readonly events: readonly DynamicDataReplayEvent[] }
 export type DynamicInteractionAction = "select" | "clear-selection" | "clip" | "set-visible";
@@ -89,7 +91,7 @@ function tuple(value: unknown, path: string): DynamicAnimationValue {
 }
 function parseAnimation(value: unknown, path: string): DynamicAnimationRuntime {
   const object = record(value, path);
-  fields(object, ["schema", "schemaVersion", "durationMs", "tracks"], ["autoplay", "loop"], path);
+  fields(object, ["schema", "schemaVersion", "durationMs", "tracks"], ["autoplay", "loop", "playbackRangeMs"], path);
   requireValue(object.schema === "deep-engine.dynamic-animation" && object.schemaVersion === 1, path, "Unsupported animation schema.");
   const durationMs = integer(object.durationMs, 0, 86_400_000, `${path}.durationMs`);
   const tracks = array(object.tracks, `${path}.tracks`, MAX_TRACKS).map((item, index) => {
@@ -112,7 +114,18 @@ function parseAnimation(value: unknown, path: string): DynamicAnimationRuntime {
   requireValue(object.loop === undefined || typeof object.loop === "boolean", `${path}.loop`, "Expected a boolean.");
   const autoplay = object.autoplay as boolean | undefined;
   const loop = object.loop as boolean | undefined;
-  return { schema: "deep-engine.dynamic-animation", schemaVersion: 1, durationMs, ...(autoplay === undefined ? {} : { autoplay }), ...(loop === undefined ? {} : { loop }), tracks };
+  // B2-b:区间可选;必须落在 [0,durationMs] 且非退化(in<out),否则拒绝整包。
+  const rangeObject = object.playbackRangeMs;
+  let playbackRangeMs: DynamicAnimationPlaybackRangeMs | undefined;
+  if (rangeObject !== undefined) {
+    const rangeRecord = record(rangeObject, `${path}.playbackRangeMs`);
+    fields(rangeRecord, ["inMs", "outMs"], [], `${path}.playbackRangeMs`);
+    const inMs = integer(rangeRecord.inMs, 0, durationMs, `${path}.playbackRangeMs.inMs`);
+    const outMs = integer(rangeRecord.outMs, 0, durationMs, `${path}.playbackRangeMs.outMs`);
+    requireValue(inMs < outMs, `${path}.playbackRangeMs`, "Playback range must be non-degenerate.");
+    playbackRangeMs = { inMs, outMs };
+  }
+  return { schema: "deep-engine.dynamic-animation", schemaVersion: 1, durationMs, ...(autoplay === undefined ? {} : { autoplay }), ...(loop === undefined ? {} : { loop }), ...(playbackRangeMs === undefined ? {} : { playbackRangeMs }), tracks };
 }
 function parseReplay(value: unknown, path: string): DynamicDataReplayRuntime {
   const object = record(value, path);
