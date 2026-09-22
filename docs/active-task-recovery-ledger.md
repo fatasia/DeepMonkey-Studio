@@ -2897,3 +2897,21 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - B2-b Web/Native transition 保真：作者 keyframe transition 贯穿 runtime schema 与 Web/Native 采样（linear/smooth/ease-in/ease-out/step）；Web playback 7/7，Native dynamic-scene 8/8，旧包可选字段兼容。
 - B3-b 已由并行会话并入 HEAD `006c6fe`（不重写、不补空提交）：kinematic Web/Native builder、PhysicsWorldHost、角色控制器 Web 接线、运行包契约与测试。定向 Web 19 + 角色/编译 6 + Deep runtime 8 + contracts 18 + Native 4 + physics-validate 19 通过；apps/web tsc、Native cargo check 通过。Native 角色控制器若无对应消费能力保持边界，不伪造跨端完成。
 - 本次核查纠正：test-output 历史树副本会制造假失败，所有最终门禁均按真实源码目录执行；Native bin 全量保留既有 dashboard_video_gpu 1 项失败，未将其伪装为本轮通过。
+
+
+### 2026-09-22T20:47 20 分钟自检：证据口径纠正
+
+- 已复核交接、扩展计划、台账、最近提交与共享工作树；F7 保持排除，不覆盖其他修改。两条旧 A1/B6 子任务因当前账户不支持 gpt-5.6-sol 失败，不能计为后台运行或完成。A1 新接管任务已实际启动，结果未返回；主线程不修改其 executor。
+- 本轮主线程修改 shaderGraph/previewCache.ts：捕获 lowering 的输入数量异常，保留此前成功结果；新增 previewCache.test.ts，覆盖缓存复用、首次失败、失败恢复和 clear。实跑包内 vitest 两文件 6/6；随后 tsc --noEmit -p . 退出码 0，未用 head/tail 隐藏退出码。
+- 未验证边界：该缓存仅保存图降级结果，尚无产品 UI 调用或 GPU 管线预览证据，不计为 Shader Graph 产品完成。A4 粒子需要真机产品画面与帧图兼容证据；B6 描述符往返不等于静态光照实际消费；B2 缓动尚需作者端 transition 归属与双端端点一致性核验。
+- 进度纠正：此前 47%/72% 等数字没有冻结的验收项分母，撤回其作为实测完成率的口径；重复跑绿、独立类型/合同和未消费模块不增加产品完成率。
+- 下一可执行动作：收回 A1 executor 的精确修改与聚焦结果；主线程验证 B2 作者端与运行包采样的 transition 归属，先用失败用例再修复；不新增平行实现。本轮未提交、未 push、未新增自动化。
+
+### 2026-09-22 20 分钟自检：A1/B6 复核与 F2 阻断确认
+
+- 自检范围：交接文档、能力扩展计划、台账、git log/status、真实源码门禁；历史 `test-output` 树副本不计入测试。
+- A1 当前提交 `f10adf8`：复用现有 cluster LOD selection/indirect plan，新增 `clusterLodIndirectExecutor`（GPU command upload、resident geometry validation、render bundle cache、drawIndexedIndirect、dispose/fail-closed）；聚焦 executor+indirect plan **34/34**、deep-engine typecheck 通过。未验证真实 GPU draw/driver async validation，因此不宣称生产 cluster 渲染完成。
+- B6 当前提交 `2147f64`/`955e37d`：静态光照 descriptor 已进入 `RuntimeSolidEnvironment` schema 白名单与 build/serialize/parse round-trip，hash/UV/尺寸/强度非法值 fail-closed；descriptor 仍未由 baker 自动生成或被 Web/Native renderer 实际消费，不宣称 B6 全链完成。
+- 两个 gpt-5.6-sol 后台任务失败：当前 Codex/ChatGPT 账户不支持该模型；未产生代码，不计入进度。后续不再用不支持模型启动子任务。
+- F2 RT 像素消费快速核查：正式 `native_mesh_v1.wgsl`/`mesh_pass.rs` 无 `rayQueryProceed`/`acceleration_structure`；`rt_frame_bind_group` 仅驻留绑定，未被正式 mesh fragment 消费。该切片需要 shader/pipeline/回退/像素对拍，暂不在当前快速窗口内冒充完成。
+- 当前门禁：deep-engine 全量 **3747/3747**；Web 关键真实源码 **21/21**；Native lib **505/505**；Shader/particle/runtime 聚焦全绿。下一动作：继续主线程接 B6 descriptor 消费映射或 A1 真机 executor 证据，先拿真实消费者再计完成率。
