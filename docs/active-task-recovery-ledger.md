@@ -3374,3 +3374,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **门禁数字**：apps/web vitest **4297 通过/0 失败**（3 skip）；deep-engine vitest **3920 通过/0 失败**（44 skip）；typecheck apps/web / deep-engine / contracts 全 0 错误；Rust `cargo test --lib` **540 通过/0 失败**（1 ignored）、`cargo build`（bin deep-engine-native）成功、`cargo test --bins` 0 失败、构建警告修复前后 24=24 无新增。新增测试：TS 5 例（v9 校验/v9 编译 plain+studio/雾+灯组合/中性旧档+非法退档/PCSS degraded/HDR 强度 fail-closed）+ Native 1 例（no-ibl v9），并按扩展后合同更新 2 处旧断言（v9+no-ibl 由拒改为合法、门禁分级文案）。
 - **诚实边界**：①矩阵是静态代码/测试证据对拍，无 Native 窗口实机截图对色；`deep.scene.author-grading.v1` 在门禁仍为"编译完成，等待运行证据"（与全部 capability 同纪律，正式候选需补 native-window evidence）；②shadowSoftness 的 ABI 行写入保留（帧布局合同），消费补齐前由 degraded 声明承担诚实义务；③HDR v6 档本轮不携带分级（门禁显式声明）、环境强度进载荷需新档位、材质槽贴图/UV 动画/屏幕映射维持显式抛错阻断——均为已声明边界非静默；④第二十一轮监视点的 lib 538/1（grading 断言）即本代理在途改动，本轮已随合同扩展更新并通过。
 - 工作树并行 WIP（babylon-web、.tmp-*、lifecycle.rs 等）未触碰；未 push。
+
+### 2026-09-23 30 分钟自检（第二十三轮）：F4 矩阵验收 + 监视点核销
+
+- **F4 逐字段对拍矩阵验收通过**（ad9c8807）：矩阵 6 域 53 行落 docs/specs/f4-field-parity-matrix-2026-09-23.md（五段链路 A/S/C/W/N × ✓/🔶/⛔/–/❗ 口径，每格带证据指针）；**静默丢失 3 处全修**——①色彩分级六通道全链接通（TS 编译端从不生成 colorGrading 而 Native v9 已就绪，链路断在快照→运行包；v9 档/recipe v14/capability deep.scene.author-grading.v1，六通道范围三方一致）②spot shadowSoftness 补 degraded 条 ③environmentIntensity 非 1 fail-closed。**第二十一轮监视点核销：lib 540/0（grading 断言过）**。门禁：web 4297/0、deep-engine 3920/0、三端 tsc 0、cargo lib 540/0+build bin 成功。
+- 边界：无 Native 窗口实机截图对色；author-grading capability 待运行证据（与全部 capability 同纪律）；HDR v6 不携带分级、材质槽贴图/UV 动画显式抛出——均非静默。
+- **满载补位**：空闲代理派 V1 三端统一对拍 runner（冻结 fixture+三端加载+截帧+能力矩阵比较表，复用 gi-crossend-matrix 取证骨架与 V2 实窗链）；F3 烘焙编排代理在跑。
