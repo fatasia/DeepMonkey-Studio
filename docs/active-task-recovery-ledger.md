@@ -3133,3 +3133,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **I5 AI 助手闭环核对通过**：六个能力点全部有实现+测试证据——真实模型目录(aiModelCatalog)、失败切换/回执(aiFailoverPolicy+assistantServiceFailover)、思考强度三级实际生效(reasoningEffort 规范化入决策链)、上下文预算(agentContextBudget,含超大上下文 fail-closed)、工业 Agent 检查点恢复(industrialAgentCheckpointStore/Runtime)、可操作错误与回退。门禁:api src/ai 35 文件 190/0、web src/ai 18 文件 82/0。
 - 边界：会话刷新后快照恢复的浏览器级 UI 验收未做（需真实浏览器门禁）。
 - 下一可执行动作：子代理回报后验收其提交；主线程继续 F6 宿主入口/I4 图层面板核对。
+
+### 2026-09-23 30 分钟自检（第三轮）：I2 初核 + web tsc 续证
+
+- web tsc 0 错误续证；I4 场景大纲多选（SceneOutlinerPanel，B5 批次）已入。
+- **I2 初核**：degradedCapabilities 在 delivery 层（nativeSceneClientPayload/sceneNativeFrozenPayload）已实现并有测试；SystemCenter 设置面板体系在。未核边界：UI 组件层按 manifest 逐按钮隐藏的覆盖度。
+- 子代理×2 仍在途（F3 烘焙入编译器、V2 发布验证），主线程并行完成 I5 验收（上轮）+ I2 初核 + 全部门禁续证。
