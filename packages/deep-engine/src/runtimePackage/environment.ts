@@ -4,6 +4,9 @@ import { visitIblBytes } from "./environmentBytes.js";
 import { validateLocalLights } from "./localLights.js";
 import { validateLightingIes } from "./lightProfiles.js";
 import { runtimeContentSha256 } from "./hash.js";
+// 级联层数/记录预算常量唯一来源是 Native 打包器（与 Rust PROBE_GI_GRID_MAX_LEVELS
+// 及 storage 65536 预算同源），此处禁止另写数字。
+import { NATIVE_PROBE_GRID_MAX_LEVELS, NATIVE_PROBE_GRID_MAX_PROBES } from "../lighting/nativeProbeGridPacker.js";
 
 export const BUILTIN_RUNTIME_IBL_ID = "deep.builtin.studio-ibl.v1";
 export function validateRuntimeEnvironment(value: unknown, id: string, revision: number, path: string): void {
@@ -176,12 +179,58 @@ function validateStaticLightmap(value: unknown, path: string): void {
     path, "Invalid static lightmap descriptor.");
 }
 
-/** F3 探针网格校验:网格/预算/探针字段与 Web 打包器和 Native 解码合同一致,fail-closed。 */
+/**
+ * F3 探针网格校验：按 `levels` 键分派 v1 双形态，fail-closed。
+ * - 单层：网格/预算/探针字段与 Web 打包器和 Native 解码合同一致（旧路径逐位不变）；
+ * - 多层级联：层数 1..=4（Native PROBE_GI_GRID_MAX_LEVELS）、每层走既有单层规则、
+ *   细→粗排序（粗层 spacing 严格更大）、粗层范围逐轴包含细层范围、布局头 +
+ *   全层记录总数不超 Native storage 预算——与 Native decode_probe_grid_cascade
+ *   和 Web packNativeProbeGridLevels 同一套合同；顶层单层字段与 levels 并存
+ *   由 fields() 以未知字段拒绝。
+ */
 function validateIrradianceProbes(value: unknown, path: string): void {
   const object = record(value, path);
-  fields(object, ["schema", "schemaVersion", "origin", "spacing", "gridSize", "probes"], [], path);
   requireValue(object.schema === "deep-engine.probe-grid" && object.schemaVersion === 1,
     path, "Unsupported probe grid schema.");
+  if (object.levels !== undefined) {
+    fields(object, ["schema", "schemaVersion", "levels"], [], path);
+    const levels = array(object.levels, `${path}.levels`, NATIVE_PROBE_GRID_MAX_LEVELS);
+    requireValue(levels.length >= 1, `${path}.levels`, "Probe grid cascade requires at least one level.");
+    const extents: { origin: number[]; max: number[]; spacing: number }[] = [];
+    for (const [index, level] of levels.entries()) {
+      const levelPath = `${path}.levels[${index}]`;
+      const extent = validateProbeGridLevel(record(level, levelPath), levelPath);
+      // 层间嵌套（细→粗）：粗层 spacing 严格更大、粗层范围逐轴包含细层范围
+      // （与 Rust decode_probe_grid_cascade 的 fail-closed 校验一致）。
+      if (index > 0) {
+        const fine = extents[index - 1]!;
+        requireValue(extent.spacing > fine.spacing
+          && extent.origin.every((value, axis) => value <= fine.origin[axis]!)
+          && extent.max.every((value, axis) => value >= fine.max[axis]!),
+          levelPath, "Coarse probe grid level must strictly increase spacing and contain the fine level extent.");
+      }
+      extents.push(extent);
+    }
+    // v2 布局头 + Σ(层头 + 探针) 记录总数不超 Native storage 预算（与打包器一致）。
+    const totalRecords = 1 + levels.reduce((sum: number, level) => {
+      const probes = (level as { probes: unknown[] }).probes as unknown[];
+      return sum + 1 + probes.length;
+    }, 0);
+    requireValue(totalRecords <= NATIVE_PROBE_GRID_MAX_PROBES, `${path}.levels`, "Probe grid record budget exceeded.");
+    return;
+  }
+  fields(object, ["schema", "schemaVersion", "origin", "spacing", "gridSize", "probes"], [], path);
+  validateProbeGridGeometry(object, path);
+}
+
+/** 级联单层校验入口：层不带 schema 身份，字段闭合 + 几何/探针规则。 */
+function validateProbeGridLevel(object: Record<string, unknown>, path: string): { origin: number[]; max: number[]; spacing: number } {
+  fields(object, ["origin", "spacing", "gridSize", "probes"], [], path);
+  return validateProbeGridGeometry(object, path);
+}
+
+/** 几何/探针规则（字段闭合由调用方负责）：返回层范围供级联嵌套检查。 */
+function validateProbeGridGeometry(object: Record<string, unknown>, path: string): { origin: number[]; max: number[]; spacing: number } {
   const spacing = object.spacing as number;
   const gridSize = object.gridSize as number[];
   const origin = object.origin as number[];
@@ -220,4 +269,5 @@ function validateIrradianceProbes(value: unknown, path: string): void {
         probePath, "Invalid probe relocation offset.");
     }
   }
+  return { origin, max: maxPosition, spacing };
 }

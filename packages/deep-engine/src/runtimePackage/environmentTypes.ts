@@ -13,8 +13,20 @@ export interface RuntimeStaticLightmapDescriptor {
   readonly width: number;
   readonly height: number;
 }
-/** F3 探针网格载荷：与 Native probe_gi_grid 网格头/记录合同一致（单层）。 */
-export interface RuntimeIrradianceProbeGrid {
+/**
+ * F3 探针网格载荷：与 Native probe_gi_grid 网格头/记录合同一致。
+ *
+ * v1 双形态（同一 schema、同一 schemaVersion，按 `levels` 键分派，互斥）：
+ * - 单层（`RuntimeIrradianceProbeGridSingle`）：origin/spacing/gridSize/probes，
+ *   旧包形状逐字段不变；声明 levels 视为未知字段拒绝。
+ * - 多层级联（`RuntimeIrradianceProbeGridCascade`）：`levels`（细→粗，1..=4 层，
+ *   每层字段与单层一致），顶层不得再带任何单层字段（并存 fail-closed）。
+ *
+ * 层间规则与 Native `decode_probe_grid_cascade`、Web `packNativeProbeGridLevels`
+ * 的 fail-closed 校验一致：粗层 spacing 严格更大、粗层范围逐轴包含细层范围、
+ * 布局头 + 全层记录总数不超过 Native storage 预算。
+ */
+export interface RuntimeIrradianceProbeGridSingle {
   readonly schema: "deep-engine.probe-grid";
   readonly schemaVersion: 1;
   readonly origin: readonly [number, number, number];
@@ -22,6 +34,20 @@ export interface RuntimeIrradianceProbeGrid {
   readonly gridSize: readonly [number, number, number];
   readonly probes: readonly RuntimeIrradianceProbe[];
 }
+/** 级联单层描述：字段语义与单层载荷一致（层头合同见 Native ProbeGiGridHeader）。 */
+export interface RuntimeIrradianceProbeGridLevel {
+  readonly origin: readonly [number, number, number];
+  readonly spacing: number;
+  readonly gridSize: readonly [number, number, number];
+  readonly probes: readonly RuntimeIrradianceProbe[];
+}
+/** 级联形态：levels 必填（细→粗排序），单层字段一律不得在顶层并存。 */
+export interface RuntimeIrradianceProbeGridCascade {
+  readonly schema: "deep-engine.probe-grid";
+  readonly schemaVersion: 1;
+  readonly levels: readonly RuntimeIrradianceProbeGridLevel[];
+}
+export type RuntimeIrradianceProbeGrid = RuntimeIrradianceProbeGridSingle | RuntimeIrradianceProbeGridCascade;
 export interface RuntimeIrradianceProbe {
   readonly irradiance: readonly [number, number, number];
   readonly validity: number;

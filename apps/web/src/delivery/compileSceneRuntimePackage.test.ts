@@ -377,4 +377,48 @@ describe("F3 probe grid bake delivery", () => {
     await expect(compileSceneRuntimePackage(withEnvironment(), { ...options, irradianceProbes: { ...bake, probes } }))
       .rejects.toThrowError(/invalid-probe-record/);
   });
+
+  /** 两层级联烘焙:细层 spacing 1.5、粗层 spacing 3,粗层范围逐轴包含细层。 */
+  function cascadeBake() {
+    const level = (origin: readonly [number, number, number], spacing: number) => ({
+      origin, spacing, gridSize: [2, 2, 2] as const,
+      probes: Array.from({ length: 8 }, (_, index) => ({
+        irradiance: [index, index * 2, index * 3] as const,
+        validity: 1, meanDistance: index * 0.5, distanceVariance: index,
+      })),
+    });
+    return { levels: [level([4, 5, 6], 1.5), level([2, 3, 4], 3)] };
+  }
+
+  it("writes a v1 cascade payload with per-level localized origins", async () => {
+    const result = await compileSceneRuntimePackage(withEnvironment(), { ...options, irradianceProbes: cascadeBake() });
+    expect(parseDeepRuntimePackage(result.packageJson)).toMatchObject({ valid: true });
+    const environment = result.runtimePackage.payloads["scene.environment"] as any;
+    const frameOrigin = result.evidence.localCoordinates.origin;
+    const payload = environment.irradianceProbes;
+    // v1 级联形态:schema 身份不变、levels 细→粗、顶层单层字段互斥不写。
+    expect(payload).toMatchObject({ schema: "deep-engine.probe-grid", schemaVersion: 1 });
+    expect(Object.hasOwn(payload, "origin")).toBe(false);
+    expect(payload.levels).toHaveLength(2);
+    // 每层 origin 独立局部化(worldToLocal 是纯平移,包含关系不变)。
+    expect(payload.levels[0]).toMatchObject({ spacing: 1.5, origin: [4 - frameOrigin.x, 5 - frameOrigin.y, 6 - frameOrigin.z] });
+    expect(payload.levels[1]).toMatchObject({ spacing: 3, origin: [2 - frameOrigin.x, 3 - frameOrigin.y, 4 - frameOrigin.z] });
+    expect(payload.levels[0].probes).toHaveLength(8);
+    expect(result.evidence.compiledSceneFields).toContainEqual({
+      field: "irradianceProbes", capability: "deep.scene.probe-grid.v1", resourceId: "scene.environment" });
+  });
+
+  it("fails compilation when cascade level order violates strict spacing increase", async () => {
+    const bake = cascadeBake();
+    const broken = { levels: [bake.levels[0]!, { ...bake.levels[1]!, spacing: 1.5 }] };
+    await expect(compileSceneRuntimePackage(withEnvironment(), { ...options, irradianceProbes: broken }))
+      .rejects.toThrowError(/environment irradianceProbes: native-probe-grid: invalid-level-nesting 1/);
+  });
+
+  it("fails compilation when the coarse level does not contain the fine extent", async () => {
+    const bake = cascadeBake();
+    const broken = { levels: [bake.levels[0]!, { ...bake.levels[1]!, origin: [40, 5, 6] as readonly [number, number, number] }] };
+    await expect(compileSceneRuntimePackage(withEnvironment(), { ...options, irradianceProbes: broken }))
+      .rejects.toThrowError(/invalid-level-nesting/);
+  });
 });

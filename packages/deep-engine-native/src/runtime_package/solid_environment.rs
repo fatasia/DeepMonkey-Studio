@@ -578,13 +578,16 @@ mod tests {
 }
 
 
-/// F3 探针网格解码:环境 JSON 的 `irradianceProbes` 载荷 → 网格头 + 探针记录
-/// 扁平数组(与 Web packNativeProbeGridRecords 同合同);非法输入 fail-closed。
+/// F3 探针网格解码:环境 JSON 的 `irradianceProbes` 载荷 → 记录流扁平数组。
+/// v1 双形态按 `levels` 键分派(与 Web 合同一致):
+/// - 旧单层:网格头 + 探针记录(与 Web packNativeProbeGridRecords 同合同),
+///   解析路径逐字不变;
+/// - v2 级联:布局头 + 每层"网格头 + 探针"(与 Web packNativeProbeGridLevels
+///   同合同),最终过 `decode_probe_grid_cascade` 全合同复核。
+/// 非法输入一律 fail-closed。
 pub(super) fn decode_probe_grid(
     environment: &Value,
 ) -> Result<Option<Vec<crate::probe_gi_abi::IrradianceProbeRecord>>, String> {
-    use crate::probe_gi_abi::IrradianceProbeRecord;
-    use crate::probe_gi_grid::{ProbeGiGridError, ProbeGiGridHeader};
     let Some(raw) = environment.get("irradianceProbes") else {
         return Ok(None);
     };
@@ -596,22 +599,74 @@ pub(super) fn decode_probe_grid(
     {
         return Err("unsupported probe grid schema".into());
     }
+    // v1 双形态分派:levels 键存在 = v2 多层级联(顶层单层字段并存会被
+    // 级联合同拒绝);否则旧单层载荷,解析逐字不变。
+    if object.get("levels").is_some() {
+        return decode_probe_grid_cascade_payload(object).map(Some);
+    }
+    let (header, probes) = parse_grid_level(object, &ProbeGridLevelContext::single(), 1)?;
+    let mut records = vec![header];
+    records.extend(probes);
+    Ok(Some(records))
+}
+
+/// 解析错误的定位前缀:单层保持既有逐字错误信息("probe grid"/"probe record"),
+/// 级联层提供层号定位("probe grid level {i}"/"level {i} probe record")。
+struct ProbeGridLevelContext {
+    fields: String,
+    records: String,
+}
+
+impl ProbeGridLevelContext {
+    fn single() -> Self {
+        Self {
+            fields: "probe grid".to_string(),
+            records: "probe record".to_string(),
+        }
+    }
+
+    fn level(index: usize) -> Self {
+        Self {
+            fields: format!("probe grid level {index}"),
+            records: format!("level {index} probe record"),
+        }
+    }
+}
+
+/// 单层/级联层共用的载荷解析:读 origin/gridSize/spacing、编码网格头(编码时
+/// 校验几何合同)、逐条解析并校验探针记录。`base_probe_records` 是写进层头
+/// padding 的"本层首条探针记录号"(单层恒 1;级联 = 布局头 + 前面所有层全部
+/// 记录 + 本层网格头,与 Rust/Web 打包器一致)。返回(网格头记录, 探针记录)。
+fn parse_grid_level(
+    object: &serde_json::Map<String, Value>,
+    context: &ProbeGridLevelContext,
+    base_probe_records: usize,
+) -> Result<
+    (
+        crate::probe_gi_abi::IrradianceProbeRecord,
+        Vec<crate::probe_gi_abi::IrradianceProbeRecord>,
+    ),
+    String,
+> {
+    use crate::probe_gi_abi::IrradianceProbeRecord;
+    use crate::probe_gi_grid::{ProbeGiGridError, ProbeGiGridHeader};
+    let fields_prefix = &context.fields;
     let origin = object
         .get("origin")
         .and_then(Value::as_array)
-        .ok_or_else(|| "probe grid origin must be an array".to_string())?;
+        .ok_or_else(|| format!("{fields_prefix} origin must be an array"))?;
     let grid = object
         .get("gridSize")
         .and_then(Value::as_array)
-        .ok_or_else(|| "probe grid size must be an array".to_string())?;
+        .ok_or_else(|| format!("{fields_prefix} size must be an array"))?;
     let probes = object
         .get("probes")
         .and_then(Value::as_array)
-        .ok_or_else(|| "probe grid probes must be an array".to_string())?;
+        .ok_or_else(|| format!("{fields_prefix} probes must be an array"))?;
     let spacing = object
         .get("spacing")
         .and_then(Value::as_f64)
-        .ok_or_else(|| "probe grid spacing must be finite".to_string())?;
+        .ok_or_else(|| format!("{fields_prefix} spacing must be finite"))?;
     let point = |values: &[Value], name: &str| -> Result<[f32; 3], String> {
         values
             .iter()
@@ -619,31 +674,23 @@ pub(super) fn decode_probe_grid(
                 value
                     .as_f64()
                     .map(|value| value as f32)
-                    .ok_or_else(|| format!("probe grid {name} must be finite"))
+                    .ok_or_else(|| format!("{fields_prefix} {name} must be finite"))
             })
             .collect::<Result<Vec<_>, _>>()
             .map(|values| [values[0], values[1], values[2]])
     };
     let origin = point(origin, "origin")?;
+    let unsigned = |value: Option<u64>| -> Result<u32, String> {
+        u32::try_from(
+            value
+                .ok_or_else(|| format!("{fields_prefix} size must be unsigned integers [2,64]"))?,
+        )
+        .map_err(|_| format!("{fields_prefix} size must be unsigned integers [2,64]"))
+    };
     let grid_size = [
-        u32::try_from(
-            grid.first()
-                .and_then(Value::as_u64)
-                .ok_or_else(|| "probe grid size must be unsigned integers [2,64]".to_string())?,
-        )
-        .map_err(|_| "probe grid size must be unsigned integers [2,64]".to_string())?,
-        u32::try_from(
-            grid.get(1)
-                .and_then(Value::as_u64)
-                .ok_or_else(|| "probe grid size must be unsigned integers [2,64]".to_string())?,
-        )
-        .map_err(|_| "probe grid size must be unsigned integers [2,64]".to_string())?,
-        u32::try_from(
-            grid.get(2)
-                .and_then(Value::as_u64)
-                .ok_or_else(|| "probe grid size must be unsigned integers [2,64]".to_string())?,
-        )
-        .map_err(|_| "probe grid size must be unsigned integers [2,64]".to_string())?,
+        unsigned(grid.first().and_then(Value::as_u64))?,
+        unsigned(grid.get(1).and_then(Value::as_u64))?,
+        unsigned(grid.get(2).and_then(Value::as_u64))?,
     ];
     let header = ProbeGiGridHeader {
         origin,
@@ -651,24 +698,25 @@ pub(super) fn decode_probe_grid(
         grid_size,
         probe_count: probes.len() as u32,
     }
-    .encode()
-    .map_err(|error: ProbeGiGridError| format!("probe grid header rejected: {error:?}"))?;
-    let mut records = vec![header];
+    .encode_with_base(base_probe_records)
+    .map_err(|error: ProbeGiGridError| format!("{fields_prefix} header rejected: {error:?}"))?;
+    let record_prefix = &context.records;
+    let mut parsed = Vec::with_capacity(probes.len());
     for (index, probe) in probes.iter().enumerate() {
         let item = probe
             .as_object()
-            .ok_or_else(|| format!("probe record {index} must be an object"))?;
+            .ok_or_else(|| format!("{record_prefix} {index} must be an object"))?;
         let irradiance = point(
             item.get("irradiance")
                 .and_then(Value::as_array)
-                .ok_or_else(|| format!("probe record {index} irradiance must be an array"))?,
+                .ok_or_else(|| format!("{record_prefix} {index} irradiance must be an array"))?,
             "irradiance",
         )?;
         let read = |name: &str| -> Result<f32, String> {
             item.get(name)
                 .and_then(Value::as_f64)
                 .map(|value| value as f32)
-                .ok_or_else(|| format!("probe record {index} {name} must be finite"))
+                .ok_or_else(|| format!("{record_prefix} {index} {name} must be finite"))
         };
         let mut record = IrradianceProbeRecord::zero();
         record.irradiance = irradiance;
@@ -685,10 +733,68 @@ pub(super) fn decode_probe_grid(
         }
         record
             .validate()
-            .map_err(|error| format!("probe record {index} rejected: {error:?}"))?;
-        records.push(record);
+            .map_err(|error| format!("{record_prefix} {index} rejected: {error:?}"))?;
+        parsed.push(record);
     }
-    Ok(Some(records))
+    Ok((header, parsed))
+}
+
+/// v2 级联载荷(`levels` 键存在)→ v2 记录流:record 0 = 布局头,随后每层
+/// "网格头 + 探针"按细→粗排布(与 Web packNativeProbeGridLevels 同合同)。
+/// 合同:顶层旧单层字段与 levels 并存一律拒绝;层数 1..=4;最后过
+/// `decode_probe_grid_cascade` 全合同复核(粗层 spacing 严格递增、粗层范围
+/// 逐轴包含细层、记录流精确排布、总预算),非法输入 fail-closed。
+fn decode_probe_grid_cascade_payload(
+    object: &serde_json::Map<String, Value>,
+) -> Result<Vec<crate::probe_gi_abi::IrradianceProbeRecord>, String> {
+    use crate::probe_gi_grid::{
+        PROBE_GI_GRID_MAX_LEVELS, ProbeGiGridLayoutHeader, decode_probe_grid_cascade,
+    };
+    for key in ["origin", "spacing", "gridSize", "probes"] {
+        if object.get(key).is_some() {
+            return Err(format!(
+                "cascade probe grid must not declare single-level field {key}"
+            ));
+        }
+    }
+    let levels = object
+        .get("levels")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "probe grid levels must be an array".to_string())?;
+    if levels.is_empty() || levels.len() > PROBE_GI_GRID_MAX_LEVELS {
+        return Err(format!(
+            "probe grid level count {} outside [1, {PROBE_GI_GRID_MAX_LEVELS}]",
+            levels.len()
+        ));
+    }
+    let layout = ProbeGiGridLayoutHeader {
+        level_count: levels.len() as u32,
+        levels_start_record: 1,
+    }
+    .encode()
+    .map_err(|error| format!("probe grid layout header rejected: {error:?}"))?;
+    let mut records = vec![layout];
+    let mut cursor = 1usize; // levels 起始记录号:布局头之后紧跟首层网格头。
+    for (index, level) in levels.iter().enumerate() {
+        let level_object = level
+            .as_object()
+            .ok_or_else(|| format!("probe grid level {index} must be an object"))?;
+        // 本层首条探针记录号 = 当前游标(本层网格头号) + 1。
+        let (header, probes) = parse_grid_level(
+            level_object,
+            &ProbeGridLevelContext::level(index),
+            cursor + 1,
+        )?;
+        records.push(header);
+        cursor += 1;
+        let probe_count = probes.len();
+        records.extend(probes);
+        cursor += probe_count;
+    }
+    // 级联全合同复核:层间嵌套/精确排布/预算,与 renderer init 的装载解码同源。
+    decode_probe_grid_cascade(&records)
+        .map_err(|error| format!("probe grid cascade rejected: {error:?}"))?;
+    Ok(records)
 }
 
 
@@ -741,5 +847,119 @@ mod probe_grid_tests {
                 ]}
         });
         assert!(decode_probe_grid(&bad).is_err());
+    }
+
+    /// 级联层 JSON:2×2×2、8 支确定性探针(与单层测试同探针形状)。
+    fn cascade_level(origin: [f64; 3], spacing: f64, validity: f64) -> serde_json::Value {
+        let probes: Vec<serde_json::Value> = (0..8)
+            .map(|_| {
+                serde_json::json!({
+                    "irradiance": [0.5, 0.25, 0.125],
+                    "validity": validity,
+                    "meanDistance": 1000.0,
+                    "distanceVariance": 0.0
+                })
+            })
+            .collect();
+        serde_json::json!({
+            "origin": origin, "spacing": spacing, "gridSize": [2, 2, 2],
+            "probes": probes
+        })
+    }
+
+    fn cascade_environment(levels: Vec<serde_json::Value>) -> serde_json::Value {
+        serde_json::json!({
+            "irradianceProbes": {
+                "schema": "deep-engine.probe-grid", "schemaVersion": 1,
+                "levels": levels
+            }
+        })
+    }
+
+    /// v2 级联载荷 → 布局头 + 每层"网格头 + 探针"记录流;层头 padding=
+    /// 本层首条探针记录号,记录流可被 renderer 同款 decode_probe_grid_cascade
+    /// 解码(细→粗两层、记录精确排布)。
+    #[test]
+    fn decodes_cascade_levels_into_v2_record_stream() {
+        let environment = cascade_environment(vec![
+            cascade_level([0.0, 0.0, 0.0], 2.0, 1.0),
+            cascade_level([0.0, 0.0, 0.0], 4.0, 1.0),
+        ]);
+        let records = decode_probe_grid(&environment)
+            .unwrap()
+            .expect("cascade must decode");
+        // 布局头 + (层头+8 探针) × 2 层。
+        assert_eq!(records.len(), 1 + (1 + 8) + (1 + 8));
+        let layout = crate::probe_gi_grid::ProbeGiGridLayoutHeader::decode(&records[0]).unwrap();
+        assert_eq!(layout.level_count, 2);
+        assert_eq!(layout.levels_start_record, 1);
+        // 层头 padding = 本层首条探针记录号:细层 = 2(布局头+层头之后),
+        // 粗层 = 11(布局头 + 细层 9 条 + 粗层层头之后)。
+        let fine =
+            crate::probe_gi_grid::ProbeGiGridHeader::decode_with_base(&records[1], 2).unwrap();
+        let coarse =
+            crate::probe_gi_grid::ProbeGiGridHeader::decode_with_base(&records[10], 11).unwrap();
+        assert_eq!(fine.spacing, 2.0);
+        assert_eq!(coarse.spacing, 4.0);
+        // renderer 装载端同款级联解码必须接受该记录流(细→粗、精确排布)。
+        let cascade = crate::probe_gi_grid::decode_probe_grid_cascade(&records).unwrap();
+        assert_eq!(cascade.levels, vec![fine, coarse]);
+        assert_eq!(cascade.header_records, vec![1, 10]);
+    }
+
+    /// 互斥合同:顶层旧单层字段与 levels 并存一律拒绝(fail-closed)。
+    #[test]
+    fn cascade_payload_rejects_single_level_field_coexistence() {
+        let mut environment = cascade_environment(vec![cascade_level([0.0; 3], 2.0, 1.0)]);
+        environment["irradianceProbes"]["origin"] = serde_json::json!([0, 0, 0]);
+        assert!(decode_probe_grid(&environment).is_err());
+        let mut environment = cascade_environment(vec![cascade_level([0.0; 3], 2.0, 1.0)]);
+        environment["irradianceProbes"]["probes"] = serde_json::json!([]);
+        assert!(decode_probe_grid(&environment).is_err());
+    }
+
+    /// 层序/包含性非法:粗层 spacing 未严格递增、粗层范围未逐轴包含细层,
+    /// 都在级联全合同复核处 fail-closed。
+    #[test]
+    fn cascade_payload_rejects_level_order_and_containment_violations() {
+        // 层序非法:粗层 spacing 与细层相等(未严格递增)。
+        let equal_spacing = cascade_environment(vec![
+            cascade_level([0.0, 0.0, 0.0], 2.0, 1.0),
+            cascade_level([0.0, 0.0, 0.0], 2.0, 1.0),
+        ]);
+        let error = decode_probe_grid(&equal_spacing).unwrap_err();
+        assert!(error.contains("cascade rejected"), "{error}");
+        // 包含性非法:粗层 origin 偏移导致范围不再逐轴包含细层。
+        let not_containing = cascade_environment(vec![
+            cascade_level([0.0, 0.0, 0.0], 2.0, 1.0),
+            cascade_level([10.0, 0.0, 0.0], 4.0, 1.0),
+        ]);
+        let error = decode_probe_grid(&not_containing).unwrap_err();
+        assert!(error.contains("cascade rejected"), "{error}");
+    }
+
+    /// 层数越界与层内探针非法:空层表/超 4 层/层内 validity 越界全部拒绝,
+    /// 错误信息带层号定位。
+    #[test]
+    fn cascade_payload_rejects_level_count_and_invalid_records() {
+        let empty = cascade_environment(vec![]);
+        let error = decode_probe_grid(&empty).unwrap_err();
+        assert!(error.contains("level count 0"), "{error}");
+        let five = cascade_environment((0..5).map(|_| cascade_level([0.0; 3], 1.0, 1.0)).collect());
+        assert!(
+            decode_probe_grid(&five)
+                .unwrap_err()
+                .contains("outside [1, 4]")
+        );
+        let invalid_probe = cascade_environment(vec![cascade_level([0.0; 3], 2.0, 2.0)]);
+        let error = decode_probe_grid(&invalid_probe).unwrap_err();
+        assert!(error.contains("level 0 probe record"), "{error}");
+        // 非数组 levels 与缺 schema 一并 fail-closed。
+        let mut not_array = cascade_environment(vec![cascade_level([0.0; 3], 2.0, 1.0)]);
+        not_array["irradianceProbes"]["levels"] = serde_json::json!(1);
+        assert!(decode_probe_grid(&not_array).is_err());
+        let mut wrong_schema = cascade_environment(vec![cascade_level([0.0; 3], 2.0, 1.0)]);
+        wrong_schema["irradianceProbes"]["schema"] = serde_json::json!("wrong");
+        assert!(decode_probe_grid(&wrong_schema).is_err());
     }
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { createRuntimeIblFixture, createRuntimePackageIblInput } from "../../scripts/runtimePackageIblFixture.mjs";
-import { validateRuntimePrefilteredIbl } from "./environment.js";
+import { validateRuntimeEnvironment, validateRuntimePrefilteredIbl } from "./environment.js";
 import { visitIblBytes } from "./environmentBytes.js";
 import { buildDeepRuntimePackage, parseDeepRuntimePackage, serializeDeepRuntimePackage,
   type BuildDeepRuntimePackageInput, type RuntimePrefilteredIbl } from "./index.js";
@@ -48,5 +48,80 @@ describe("prefiltered runtime IBL", () => {
     const value = fixture();
     const mips = Array.from({ length: 12 }, (_, level) => ({ size: 2048 >> level, dataBase64: "" }));
     expect(() => validateRuntimePrefilteredIbl({ ...value, specular: { mips } }, value.id, 1)).toThrow("budget");
+  });
+});
+
+/**
+ * F3 探针网格运行包载荷(环境字段 irradianceProbes)v1 双形态校验:
+ * 单层为既有形状逐位兼容;级联按 levels 键分派,层间合同与 Native
+ * decode_probe_grid_cascade / Web packNativeProbeGridLevels 一致。
+ */
+describe("runtime environment probe grid payload", () => {
+  const solid = (): Record<string, unknown> => ({
+    schema: "deep-engine.solid-environment", schemaVersion: 1, id: "scene.environment", revision: 1,
+    kind: "solid-background-no-ibl", backgroundSrgb: [0.1, 0.2, 0.3], outputTransform: "native-aces-v1",
+  });
+  const probe = (index = 0) => ({
+    irradiance: [index, index * 2, index * 3], validity: 1, meanDistance: index * 0.5, distanceVariance: index,
+  });
+  /** 2×2×2 层:8 支探针;origin 可调以构造包含性非法。 */
+  const level = (origin: readonly number[] = [0, 0, 0], spacing = 2) => ({
+    origin, spacing, gridSize: [2, 2, 2], probes: Array.from({ length: 8 }, (_, index) => probe(index)),
+  });
+  const grid = (payload: Record<string, unknown>) => ({ schema: "deep-engine.probe-grid", schemaVersion: 1, ...payload });
+  const validate = (environment: Record<string, unknown>) =>
+    validateRuntimeEnvironment(environment, "scene.environment", 1, "$.environment");
+
+  it("keeps accepting the legacy single-level payload shape", () => {
+    expect(() => validate({ ...solid(), irradianceProbes: grid(level()) })).not.toThrow();
+  });
+
+  it("accepts a fine-to-coarse cascade whose coarse level contains the fine extent", () => {
+    const payload = grid({ levels: [level([0, 0, 0], 2), level([0, 0, 0], 4)] });
+    expect(() => validate({ ...solid(), irradianceProbes: payload })).not.toThrow();
+  });
+
+  it("rejects a coarse level whose spacing does not strictly increase", () => {
+    const payload = grid({ levels: [level([0, 0, 0], 2), level([0, 0, 0], 2)] });
+    expect(() => validate({ ...solid(), irradianceProbes: payload }))
+      .toThrow("strictly increase spacing and contain the fine level extent");
+  });
+
+  it("rejects a coarse level whose extent does not contain the fine level", () => {
+    const payload = grid({ levels: [level([0, 0, 0], 2), level([10, 0, 0], 4)] });
+    expect(() => validate({ ...solid(), irradianceProbes: payload }))
+      .toThrow("strictly increase spacing and contain the fine level extent");
+  });
+
+  it("rejects cascade payloads that also declare single-level fields", () => {
+    const payload = grid({ levels: [level()], origin: [0, 0, 0] });
+    expect(() => validate({ ...solid(), irradianceProbes: payload })).toThrow("Unknown field");
+    const withProbes = grid({ levels: [level()], probes: [] });
+    expect(() => validate({ ...solid(), irradianceProbes: withProbes })).toThrow("Unknown field");
+  });
+
+  it("rejects cascade level counts outside [1, 4]", () => {
+    expect(() => validate({ ...solid(), irradianceProbes: grid({ levels: [] }) })).toThrow();
+    expect(() => validate({
+      ...solid(),
+      irradianceProbes: grid({ levels: [level([0, 0, 0], 1), level([0, 0, 0], 2), level([0, 0, 0], 4), level([0, 0, 0], 8), level([0, 0, 0], 16)] }),
+    })).toThrow();
+  });
+
+  it("applies the legacy single-level probe rules inside every cascade level", () => {
+    const broken = level();
+    (broken.probes as Array<Record<string, unknown>>)[2]!.validity = 2;
+    const payload = grid({ levels: [level([0, 0, 0], 2), broken] });
+    expect(() => validate({ ...solid(), irradianceProbes: payload })).toThrow("Invalid probe validity");
+  });
+
+  it("enforces the native storage record budget across the whole cascade", () => {
+    // 每层 64×64×8 = 32768 探针:两层合计 1 + 2×(1+32768) > 65535 预算。
+    const wide = (spacing: number) => ({
+      origin: [0, 0, 0], spacing, gridSize: [64, 64, 8],
+      probes: Array.from({ length: 64 * 64 * 8 }, () => probe()),
+    });
+    const payload = grid({ levels: [wide(1), wide(2)] });
+    expect(() => validate({ ...solid(), irradianceProbes: payload })).toThrow("budget");
   });
 });

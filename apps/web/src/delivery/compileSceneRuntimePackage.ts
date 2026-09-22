@@ -1,8 +1,8 @@
 import type { SceneSnapshot } from "@bim-studio/contracts";
 import { buildDeepRuntimePackage, runtimeContentSha256, serializeDeepRuntimePackage,
   type DeepRuntimePackage, type RuntimeJson, type RuntimePrefilteredIbl,
-  type RuntimeIrradianceProbe, type RuntimeIrradianceProbeGrid } from "@bim-studio/deep-engine/runtime-package";
-import { packNativeProbeGridRecords } from "@bim-studio/deep-engine/lighting";
+  type RuntimeIrradianceProbe, type RuntimeIrradianceProbeGrid, type RuntimeIrradianceProbeGridSingle } from "@bim-studio/deep-engine/runtime-package";
+import { packNativeProbeGridRecords, packNativeProbeGridLevels, DEEP_GI_PROBE_RECORD_BYTES } from "@bim-studio/deep-engine/lighting";
 import type { DynamicAnimationRuntime, DynamicAnimationTrack } from "@bim-studio/deep-engine/runtime-package";
 import { compileSceneRenderPacket, type CompileSceneRenderOptions, type SceneRenderCompilation } from "./compileSceneRenderPacket";
 import { compileSceneCamera } from "./compileSceneCamera";
@@ -102,13 +102,29 @@ function compileAnimationRuntime(scene: SceneSnapshot): DynamicAnimationRuntime 
  * F3 探针网格烘焙结果（发布编译器可选输入）：数据段形状对齐 RuntimeIrradianceProbeGrid，
  * schema/schemaVersion 由编译器盖章（调用方只提供烘焙数据，不能伪造载荷身份）。
  * origin 为场景作者坐标（与烘焙时的场景坐标系一致），编译器随包局部化到局部坐标系。
+ *
+ * 双形态（按 `levels` 键区分，互斥，与运行包载荷 v1 合同一致）：
+ * - 单层 `SceneIrradianceProbeGridBake`（既有形状）；
+ * - 级联 `SceneIrradianceProbeCascadeBake`：`levels`（细→粗排序，1..=4 层，
+ *   每层形状与单层一致），层间嵌套与总预算由 Native 打包器
+ *   `packNativeProbeGridLevels` fail-closed 校验。
  */
-export interface SceneIrradianceProbeBake {
+export interface SceneIrradianceProbeGridBake {
   readonly origin: readonly [number, number, number];
   readonly spacing: number;
   readonly gridSize: readonly [number, number, number];
   readonly probes: readonly RuntimeIrradianceProbe[];
 }
+export interface SceneIrradianceProbeLevelBake {
+  readonly origin: readonly [number, number, number];
+  readonly spacing: number;
+  readonly gridSize: readonly [number, number, number];
+  readonly probes: readonly RuntimeIrradianceProbe[];
+}
+export interface SceneIrradianceProbeCascadeBake {
+  readonly levels: readonly SceneIrradianceProbeLevelBake[];
+}
+export type SceneIrradianceProbeBake = SceneIrradianceProbeGridBake | SceneIrradianceProbeCascadeBake;
 
 export interface CompileSceneRuntimeOptions extends CompileSceneRenderOptions {
   readonly packageId: string;
@@ -237,21 +253,55 @@ export async function compileSceneRuntimePackage(input: SceneSnapshot,
 
 /**
  * F3:探针网格烘焙结果 → 运行包环境 irradianceProbes 载荷。
- * 先把 origin 从作者坐标局部化(与相机/几何同一 frame),再用 Native 打包器
- * `packNativeProbeGridRecords`(96B 记录合同,与 Rust probe_gi_grid 逐字对齐)先行校验:
- * 网格越界/数量与网格体积不符/探针字段越界都会在写包前 fail-closed 抛出可读错误;
- * 载荷随后还会经 buildDeepRuntimePackage → validateRuntimeEnvironment 的
- * irradianceProbes 校验路径二道把关(与 staticLightmap 同款验证路径)。
+ * 先把 origin 从作者坐标局部化(与相机/几何同一 frame;worldToLocal 是纯平移,
+ * 级联层间的逐轴包含关系在局部化后不变),再写 v1 双形态载荷(按 levels 键分派,
+ * 与 RuntimeIrradianceProbeGrid 合同一致),并用 Native 打包器先行校验对账:
+ * - 单层走 `packNativeProbeGridRecords`(96B 记录合同,与 Rust probe_gi_grid
+ *   逐字对齐):网格越界/数量与网格体积不符/探针字段越界在写包前 fail-closed;
+ * - 级联走 `packNativeProbeGridLevels`(v2 布局头合同):层数/层间嵌套/总预算
+ *   fail-closed,并按"布局头 + Σ(层头+探针)"核对输出记录数。
+ * 选择保持 JSON 载荷、打包器只做校验对账(字节即弃):既有链路是 JSON 经
+ * buildDeepRuntimePackage → validateRuntimeEnvironment 二道把关,记录流由
+ * Native decode_probe_grid 在装载端重建,单层旧包字节逐位不变。
+ * 载荷随后还会经该校验路径二道把关(与 staticLightmap 同款验证路径)。
  * 缺省/null 输入返回 undefined,环境载荷完全不写该字段。
  */
 function compileSceneIrradianceProbes(bake: SceneIrradianceProbeBake | null | undefined,
   frameOrigin: { readonly x: number; readonly y: number; readonly z: number }): RuntimeIrradianceProbeGrid | undefined {
   if (!bake) return undefined;
+  if ("levels" in bake) {
+    // 多层级联:每层独立局部化 origin,层序(细→粗)与字段原样透传。
+    const levels = bake.levels.map(level => {
+      const local = worldToLocal({ x: level.origin[0], y: level.origin[1], z: level.origin[2] }, frameOrigin,
+        "environment.irradianceProbes.levels.origin");
+      return Object.freeze({
+        origin: Object.freeze([local.x, local.y, local.z] as const),
+        spacing: level.spacing,
+        gridSize: Object.freeze([level.gridSize[0], level.gridSize[1], level.gridSize[2]] as const),
+        probes: Object.freeze(level.probes.map(probe => Object.freeze({ ...probe }))),
+      });
+    });
+    const grid: RuntimeIrradianceProbeGrid = Object.freeze({
+      schema: "deep-engine.probe-grid", schemaVersion: 1, levels: Object.freeze(levels),
+    });
+    stage("environment irradianceProbes", () => {
+      const packed = packNativeProbeGridLevels(levels.map(level => ({
+        level: { origin: level.origin, spacing: level.spacing, gridSize: level.gridSize },
+        probes: level.probes,
+      })));
+      // 对账:输出记录数必须恰为 布局头 + Σ(层头 + 探针)。
+      const expectedRecords = 1 + levels.reduce((sum, level) => sum + 1 + level.probes.length, 0);
+      if (packed.byteLength !== expectedRecords * DEEP_GI_PROBE_RECORD_BYTES) {
+        throw new Error(`native-probe-grid: cascade record count ${packed.byteLength / DEEP_GI_PROBE_RECORD_BYTES} != ${expectedRecords}`);
+      }
+    });
+    return grid;
+  }
   const local = worldToLocal({ x: bake.origin[0], y: bake.origin[1], z: bake.origin[2] }, frameOrigin,
     "environment.irradianceProbes.origin");
   const origin: readonly [number, number, number] = [local.x, local.y, local.z];
   const gridSize: readonly [number, number, number] = [bake.gridSize[0], bake.gridSize[1], bake.gridSize[2]];
-  const grid: RuntimeIrradianceProbeGrid = Object.freeze({
+  const grid: RuntimeIrradianceProbeGridSingle = Object.freeze({
     schema: "deep-engine.probe-grid", schemaVersion: 1,
     origin, spacing: bake.spacing, gridSize,
     probes: Object.freeze(bake.probes.map(probe => Object.freeze({ ...probe }))),
