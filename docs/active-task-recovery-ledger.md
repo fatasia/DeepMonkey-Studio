@@ -2915,3 +2915,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 两个 gpt-5.6-sol 后台任务失败：当前 Codex/ChatGPT 账户不支持该模型；未产生代码，不计入进度。后续不再用不支持模型启动子任务。
 - F2 RT 像素消费快速核查：正式 `native_mesh_v1.wgsl`/`mesh_pass.rs` 无 `rayQueryProceed`/`acceleration_structure`；`rt_frame_bind_group` 仅驻留绑定，未被正式 mesh fragment 消费。该切片需要 shader/pipeline/回退/像素对拍，暂不在当前快速窗口内冒充完成。
 - 当前门禁：deep-engine 全量 **3747/3747**；Web 关键真实源码 **21/21**；Native lib **505/505**；Shader/particle/runtime 聚焦全绿。下一动作：继续主线程接 B6 descriptor 消费映射或 A1 真机 executor 证据，先拿真实消费者再计完成率。
+
+### 2026-09-22 20 分钟自检：A1/B6 lane 失败、Preview LKG 收口
+
+- 自检读取交接文档、能力扩展计划、最新台账、git status/log；F7 继续排除，未 reset/clean/checkout/push。
+- 当前聚焦门禁：ShaderGraph/Preview/A1 indirect/B6 descriptor **49/49**；deep-engine typecheck 通过。
+- 主线程提交 `previewCache`：3 个测试覆盖相同图复用、首次失败、失败后保留上次成功结果和 clear。它仍是编辑器侧 lowering 缓存合同，尚未进入产品 UI/GPU preview，不计完整 Shader Graph 产品完成。
+- A1 executor `f10adf8` 已有 34/34 与 typecheck，但真实 GPU draw/driver 异步验证未完成；新 A1 lane 无有效结果，不重复启动同一实现。
+- B6 descriptor `c978f36/2147f64/955e37d` 已有 runtime schema、fail-closed、build/serialize/parse round-trip 3/3；新 B6 lane因 TLS 失败无结果；baker 自动生成和 Web/Native renderer 实际消费仍未完成。
+- 未验证边界：A1 真机绘制、B6 真实纹理消费、粒子真机产品画面、F2 RT 像素消费、F3 Native GI。下一动作按可验证优先级选择 B6 消费映射或 A1 真机证据，不重复建设。
