@@ -1,4 +1,5 @@
 
+- 2026-09-22 B1 JSDoc 类型检查分级启用：全局 `checkJs:false` 保持不变，显式携带 `// @ts-check` 的脚本由 TypeScript 语言服务在程序级单独开启检查（未检查 JS 进入独立 unchecked 程序、全局名不合并，默认脚本与 checked 脚本共存互不扩散诊断），诊断经既有 marker→`onValidate` 链进入问题面板；新增 `professionalCodeTypeCheck.test.ts` 9 项，用真实语言服务+生产编译选项与 extra lib 钉住合同（默认脚本与全部 SDK 样例加 `@ts-check` 后零误报、带错误 checked 脚本不污染默认脚本、`@ts-nocheck` 逃生门、JSDoc 标注后 `ctx` 纳检、拼错数据键被抓）；相关 vitest 6 文件 42/42、apps/web tsc 通过；生产代码零功能改动仅补合同注释；未 push。
 - 2026-09-22 B1 脚本诊断 AST 定位升级：`sceneScriptAnalysis` 全部诊断行列改由 TypeScript compiler AST（`ts.createSourceFile` + `getLineAndCharacterOfPosition`）统一换算，missing-capability/missing-permission/unknown-reference/unsupported-api 全部锚定真实源码位置，`ctx.self` 隐式推断与挂载目标缺失不再回退 line 1，诊断代码/severity/文案不变；compiler 位于懒加载编辑器 chunk 不进首屏。sceneScriptAnalysis 17/17、studio+sceneScriptDraft 127 项、Web tsc 通过；vite 生产构建与 bundle 预算门禁未跑，未 push。
 
 - 2026-09-22 B6 静态光照最小消费切片：复用已验证 `RuntimeStaticLightmapDescriptor` 与运行包纹理资源，不重建 baker。Web 运行包绑定新增 UV0/UV1 存在性 fail-closed；Native 运行包加载器新增静态光照描述符、纹理语义/尺寸/SHA-256/UV 校验入口；Web roundtrip 与缺纹理/hash/UV 回归 24 项通过，Web tsc 通过。Native cargo check 被并行域既有 `probe_gi_abi` bin 导入错误阻断；未提交、未 push。

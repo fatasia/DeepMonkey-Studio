@@ -44,6 +44,11 @@ export const configureProfessionalCodeServices: BeforeMount = (api) => {
   const typescript = api.languages.typescript;
   if (!typescript?.javascriptDefaults) throw new Error("Monaco JavaScript language service is unavailable");
   typescript.javascriptDefaults.setEagerModelSync(true);
+  // 类型检查分级合同：全局保持 checkJs:false，默认脚本零类型噪声。显式携带
+  // // @ts-check 指令的脚本由 TypeScript 在程序级单独开启检查（未检查 JS 进入
+  // 独立的 unchecked 程序，全局名不与 checked 文件合并），两种脚本共存互不扩散
+  // 诊断；诊断经 Monaco marker → onValidate 进入问题面板。真实夹具行为由
+  // professionalCodeTypeCheck.test.ts 钉住。
   typescript.javascriptDefaults.setCompilerOptions({
     allowNonTsExtensions: true,
     allowJs: true,
