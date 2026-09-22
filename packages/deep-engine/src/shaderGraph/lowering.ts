@@ -8,7 +8,7 @@ export interface ShaderGraphLoweringResult {
   readonly stages?: readonly ShaderStageGraph[];
 }
 
-/** Lowers the editor-facing graph document to the existing WGSL compiler IR. */
+/** 将编辑器图降级到既有 WGSL 编译器 IR。 */
 export function lowerShaderGraphAsset(asset: ShaderGraphAssetV1): ShaderGraphLoweringResult {
   const validation = validateShaderGraphAsset(asset);
   if (!validation.valid) return { success: false, diagnostics: validation.diagnostics };

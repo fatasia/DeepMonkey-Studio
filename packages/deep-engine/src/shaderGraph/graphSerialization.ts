@@ -8,7 +8,7 @@ function canonical(value: unknown): string {
   return `{${Object.keys(record).sort().map(key => `${JSON.stringify(key)}:${canonical(record[key])}`).join(",")}}`;
 }
 
-/** Stable JSON for source control, cache keys and package provenance. */
+/** 用于版本控制、缓存键和运行包来源追踪的稳定 JSON。 */
 export function canonicalShaderGraphJson(asset: ShaderGraphAssetV1): string { return canonical(asset); }
 export function shaderGraphHash(asset: ShaderGraphAssetV1): string { return sha256Hex(asset); }
 export function cloneCanonicalShaderGraph(asset: ShaderGraphAssetV1): ShaderGraphAssetV1 {

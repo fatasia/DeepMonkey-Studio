@@ -1,7 +1,7 @@
 import type { ShaderNode } from "../shader/types.js";
 import type { ShaderGraphNodeMetadata } from "./graphTypes.js";
 
-/** WGSL-first author node registry. Runtime compiler remains the existing shader/compiler.ts. */
+/** WGSL 一等公民的作者节点注册表；运行时仍复用既有 shader/compiler.ts。 */
 const METADATA: readonly ShaderGraphNodeMetadata[] = [
   { op: "literal", label: "Literal", category: "input", stages: ["vertex", "fragment"], preview: "scalar", ports: [] },
   { op: "property", label: "Property", category: "input", stages: ["vertex", "fragment"], preview: "none", ports: [{ name: "value", direction: "output", type: "f32" }] },
