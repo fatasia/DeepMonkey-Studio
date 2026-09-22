@@ -3327,3 +3327,10 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - **a01x 适配层验收通过**（f9813569）：适配器显式映射表（null 原样保留不虚构、visualSimilarity 只注入 candidate 侧不回填 reference、invalid/withheld→suppression 携带合同阈值理由）；paired-summary bevy 兼容用合成样本改前/改后 diff 逐字节一致证明；真实数据独立重算 3 项防循环论证全一致；失败路径（无参/非法形状/未知参数）退出码实测。报告关键数字：Deep cpu-frame-p95 0.200/0.380ms、visual-similarity 0.838<0.92 抑制激活、GPU 三分位/输入延迟/冷启动/长稳/内存双侧全缺。主线程复跑 bevy 输出正常。
 - **满载补位**：空闲代理派 a01x 进程内存+长稳采集接线（复用 run-windows-process-metrics.ps1 挂进 a01x 链路 processMetrics，让适配层 stability/内存行有真实数据）；另一代理 I3 junction+碰撞在跑。
+
+### 2026-09-23 30 分钟自检（第十九轮）：F4 现状核对
+
+- HEAD=4cce8125；子代理在途：I3 junction+碰撞（prefabs/viewerEngine* 文件）、a01x 内存/长稳采集。
+- **F4 现状核对**：作者色彩分级（AuthorGrading 六通道）Native 已完整闭环——CPU `author_grading_apply` 与 Web 逐位镜像（PI 字面量/Rec.709 亮度权重逐式保留，GPU 仅差 1 ulp 融合噪声）、六通道全零=精确中性、运行包载荷贯通（types.rs 字段+solid_environment 解码+数值 fail-fast 与 TS scalar 同范围）、tests/author_grading_gpu.rs 真机测试在。**handoff"非零色彩分级仍会被精确降级"表述已过时**（0923 native 渲染波次 e78393ff 落地）。AO（occlusion 纹理）/反射（specular env）/烘焙（B6 描述符）亦在此前波次落地。
+- F4 精确剩余：handoff 要求的"属性面板→快照→运行包→Web/Native 渲染逐字段对拍表"未成文——建议下一切片产出逐字段对拍证据矩阵（含 exposure/temperature 等分级的逐通道映射），而非新能力。
+- 下轮：验收 I3 junction+碰撞、a01x 内存采集回报。
