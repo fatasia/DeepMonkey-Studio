@@ -3347,3 +3347,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - **I3 道路 junction+碰撞验收通过**（b0431311）：契约级 junction 标记（fail-closed）、等宽方形盖板（4mm 确定性抬高防 z-fight，预览/发布两端字节级同源，重复构建矩阵一致有测试）、fixed 道路分段 cuboid 碰撞（dynamic/kinematic 回退整包围盒不改语义、extraColliderHandles 随 removePhysicsBody 同批注销、真 Rapier WASM 测试钉死）。主线程复跑聚焦 4/4。门禁：web 932/0（153 文件）、contracts 342、双端 tsc 0。**I3 六项清单全部清零**。边界：无圆角/高差/跨实例自动求交；Native 物理通道仍 render-bounds 口径；junction UI 未过浏览器视觉闭环。
 - **满载补位**：空闲代理派 F4 逐字段对拍矩阵（作者字段全集→四段链路状态标注落 docs/specs，静默丢失字段=缺陷类逐个修复带测试）；另一代理 a01x 内存采集在跑。
+
+### 2026-09-23 30 分钟自检（第二十一轮）：门禁回归与在途观察
+
+- **聚焦门禁回归**：native bin **271/0** 绿；lib **538/1**——唯一失败 `grading_contract_stays_fail_closed...`（solid_environment.rs:549，wrong_kind 应拒未拒）位于 F4 矩阵代理**在途工作面**（该文件 06:59 被改、compileSceneEnvironment.ts 07:06 被改，代理活跃中）。处置：不越界修，其收口门禁（任务书明确要求 cargo lib/bin 全绿）将约束其修复；若代理完成时仍未修，主线程接管。监视点已立。
+- 其余：web a01x 内存采集代理在跑；I3 junction 已验收（b0431311）。
