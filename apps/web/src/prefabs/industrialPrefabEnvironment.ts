@@ -1,5 +1,5 @@
 import type { IndustrialPrefabDefinition } from "@bim-studio/contracts";
-import { actions, definition, number, select } from "./industrialPrefabShared";
+import { actions, definition, fixed, number, select } from "./industrialPrefabShared";
 
 /** V11 首条正式道路资源；复用工业预制体的插入、属性编辑与持久化链。 */
 export const ENVIRONMENT_PREFABS: IndustrialPrefabDefinition[] = [
@@ -15,6 +15,8 @@ export const ENVIRONMENT_PREFABS: IndustrialPrefabDefinition[] = [
       number("shoulderWidthM", "路肩宽度", "Shoulder width", 0.75, "m", 0, 5, 0.1),
       select("surface", "路面材质", "Surface", "asphalt", ["asphalt", "concrete"]),
       select("marking", "道路标线", "Road marking", "center", ["none", "center", "lanes"]),
+      // I3 道路碰撞体：厚度为高级项，未设置时物理链使用缺省厚度且快照不新增字段。
+      fixed("colliderThicknessM", "碰撞体厚度", "Collider thickness", 0.16),
     ],
     actions([["reset", "恢复默认参数", "Reset parameters"]]),
     ["lengthM", "carriagewayWidthM", "laneCount", "surface"],

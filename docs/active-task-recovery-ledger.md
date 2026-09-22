@@ -3334,3 +3334,11 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **F4 现状核对**：作者色彩分级（AuthorGrading 六通道）Native 已完整闭环——CPU `author_grading_apply` 与 Web 逐位镜像（PI 字面量/Rec.709 亮度权重逐式保留，GPU 仅差 1 ulp 融合噪声）、六通道全零=精确中性、运行包载荷贯通（types.rs 字段+solid_environment 解码+数值 fail-fast 与 TS scalar 同范围）、tests/author_grading_gpu.rs 真机测试在。**handoff"非零色彩分级仍会被精确降级"表述已过时**（0923 native 渲染波次 e78393ff 落地）。AO（occlusion 纹理）/反射（specular env）/烘焙（B6 描述符）亦在此前波次落地。
 - F4 精确剩余：handoff 要求的"属性面板→快照→运行包→Web/Native 渲染逐字段对拍表"未成文——建议下一切片产出逐字段对拍证据矩阵（含 exposure/temperature 等分级的逐通道映射），而非新能力。
 - 下轮：验收 I3 junction+碰撞、a01x 内存采集回报。
+
+### 2026-09-23 I3 收口：道路 junction 与碰撞体接入（feat 子代理）
+
+- **交付①道路 junction（T/十字）**：合同 `SceneLinearPrefabPathPoint.junction?: boolean`（路口标记，可选布尔，合同层校验 fail-closed）+ `roadJunctionPlates` 纯模块（只解析道路标记，等宽=车行道+双路肩，点序即输出序）+ `buildLinearPrefabGeometry` 在标记点生成同材质方形盖板（厚度同路面板 0.08，顶面=路面顶+4mm 确定性抬高防共面闪烁）。作者预览（industrialPrefabProxy/Inspector 路径点"路口"勾选，仅道路显示）与发布编译（compileLinearPrefabRenderPacket 同走 buildLinearPrefabGeometry，盖板以独立实例入 render packet）字节级同源；同输入重复构建矩阵逐元素一致有测试钉死。
+- **交付②道路碰撞体**：`roadPrefabSegmentColliders` 纯模块复用 `linearPrefabSegments`，每段一个 cuboid 描述（宽=全铺装宽、顶面恒对齐路面顶、厚度取作者 `colliderThicknessM`（合同可选，目录高级项，未设置时 shape 输出不含该字段=既有快照签名兼容）或缺省 0.16）；查看器物理链 `createPhysicsBody` 仅 **fixed** 道路走分段（dynamic/kinematic 维持整包围盒，不静默改质量/角色语义），一个固定刚体挂 N 个分段 cuboid，句柄逐个登记 `physicsColliderOwners`（碰撞事件/调试线框与单碰撞体同语义），`PhysicsBodyRuntime.extraColliderHandles` 扩展句柄随 `removePhysicsBody` 同批注销；路径/参数编辑后 `setIndustrialPrefabState` 立即重建碰撞体。物理关闭时创建路径不被调用，纯函数也不进链路=零开销。真 Rapier WASM 测试钉死：尺寸/偏移/偏航四元数/归属注销/dynamic 回退。
+- **门禁数字**：apps/web tsc 0 错误；受影响面 vitest 153 文件 **932 通过/0 失败**（+1 既有 skip），新增 9 测试（junction 4+物理 5）全绿；packages/contracts tsc 0 错误 + vitest 342 通过（含新增 junction 校验 1 例）。
+- **诚实边界**：①junction 只做等宽同材质方形盖板衔接 T/十字，无圆角/高差/复杂立交；两条独立道路实例的交汇靠作者在其中一条的路径点上打标（不做跨实例几何自动求交）；盖板顶面比路面高 4mm（防 z-fight 的确定性选择）；②碰撞体不含路口盖板独立碰撞（分段 cuboids 并集已覆盖交汇区）；路肩 2cm 落差被拉平为车行道顶单面；非均匀缩放+偏航的剪切与既有单包围盒口径一致未特殊处理；③发布 Native 物理通道仍是 render-bounds 实例包围盒口径（schema 未动，道路 Author fixed 体在 Native 走实例级 cuboid；Web 发布查看器与编辑器同走本次分段路径）；④junction 勾选与"路口"文案未过浏览器视觉闭环（本任务无浏览器工具，仅有组件级测试）。
+- 工作树并行 WIP（babylon 配对/deep-engine benchmark/.tmp-*）未触碰；未 push。

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { SceneAnimationState, SceneCharacterControllerState, ScenePhysicsBodyState, ScenePhysicsState } from "@bim-studio/contracts";
+import type { RigidBody } from "@dimforge/rapier3d-compat";
 import { normalizeAnimationFrameRate, normalizeSceneAnimationPlaybackRange } from "./timeline";
 import { applyTransform, objectTransform } from "./sceneObjectUtils";
 import { ViewerEngineRig } from "./viewerEngineRig";
@@ -7,6 +8,11 @@ import { mountRapierJoint, normalizePhysicsJoints, removeMountedRapierJoint } fr
 import { configureCharacterController, moveRapierCharacter, mountRapierCharacterController, removeMountedRapierCharacter } from "./rapierCharacterController";
 import { resolvePhysicsCollisionDispatches, type PhysicsColliderOwners } from "./rapierPhysicsCollisionEvents";
 import { collectPhysicsCuboidDebugEntries } from "./rapierPhysicsDebugView";
+import { industrialPrefabProxyGroundOffset } from "./industrialPrefabProxy";
+import { roadPrefabSegmentColliders, type RoadPrefabSegmentCollider } from "../prefabs/roadPrefabColliders";
+
+/** 道路分段碰撞体的偏航轴：分段几何只用绕 y 摆放，与世界竖直轴一致。 */
+const ROAD_SEGMENT_Y_AXIS = new THREE.Vector3(0, 1, 0);
 
 function cloneCharacter(state: SceneCharacterControllerState): SceneCharacterControllerState {
   return {
@@ -160,6 +166,16 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
       descriptor.setTranslation(worldPosition.x, worldPosition.y, worldPosition.z).setRotation(worldRotation);
       if (state.type === "dynamic") descriptor.setCcdEnabled(true).setLinearDamping(0.08).setAngularDamping(0.12);
       const body = world.createRigidBody(descriptor);
+      // I3 道路碰撞体：路径式道路按 linearPrefabSegments 每段一个固定 cuboid，
+      // 弯道不再被整路包围盒虚包大片空气。仅 fixed 道路走分段（道路碰撞面是静态语义）；
+      // dynamic/kinematic 与其余对象维持整包围盒路径，不静默改变质量与角色控制器语义。
+      const segmentColliders = state.type === "fixed"
+        ? roadPrefabSegmentColliders(this.modelPrefabStates.get(id))
+        : [];
+      if (segmentColliders.length) {
+        this.createRoadSegmentColliders(id, state, body, segmentColliders, worldScale);
+        return;
+      }
       const half = localSize.multiply(worldScale).multiplyScalar(0.5);
       const offset = localCenter.multiply(worldScale);
       const collider = rapier.ColliderDesc.cuboid(
@@ -178,13 +194,52 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
         : undefined;
       this.physicsBodies.set(id, { body, colliderHandle: colliderHandle.handle, initialTransform: objectTransform(object), ...(character ? { character } : {}) });
     }
+  /**
+   * I3 道路碰撞体：在既有固定刚体上为每个路径分段挂一个带偏航角的 cuboid 碰撞体，
+   * 句柄逐个登记进归属表（碰撞事件/调试线框按对象反查与单碰撞体同语义）。
+   * 道路恒为静态碰撞面，不承载动态质量与角色控制器；物理关闭时本函数不会被调用，零开销。
+   */
+  private createRoadSegmentColliders(id: string, state: ScenePhysicsBodyState, body: RigidBody,
+    segmentColliders: readonly RoadPrefabSegmentCollider[], worldScale: THREE.Vector3): void {
+    const world = this.physicsWorld!, rapier = this.rapier!;
+    const object = this.models.get(id)!.object;
+    // 分段坐标在代理局部系；代理相对根对象只有 y 向落地偏移，换算到根局部后与整包围盒同一套缩放口径。
+    const proxyOffsetY = industrialPrefabProxyGroundOffset(object);
+    const handles: number[] = [];
+    for (const segment of segmentColliders) {
+      const offset = new THREE.Vector3(segment.center.x, segment.center.y + proxyOffsetY, segment.center.z)
+        .multiply(worldScale);
+      // 分段子对象以 rotation.y = -yaw 摆放，碰撞体保持同一旋向（body 帧即根对象世界旋转帧）。
+      const rotation = new THREE.Quaternion().setFromAxisAngle(ROAD_SEGMENT_Y_AXIS, -segment.yawRadians);
+      const collider = rapier.ColliderDesc.cuboid(
+        Math.max(Math.abs(segment.halfExtents.x * worldScale.x), 0.01),
+        Math.max(Math.abs(segment.halfExtents.y * worldScale.y), 0.01),
+        Math.max(Math.abs(segment.halfExtents.z * worldScale.z), 0.01)
+      ).setTranslation(offset.x, offset.y, offset.z).setRotation(rotation)
+        .setFriction(state.friction).setRestitution(state.restitution)
+        .setActiveEvents(rapier.ActiveEvents.COLLISION_EVENTS);
+      const handle = world.createCollider(collider, body).handle;
+      this.physicsColliderOwners.set(handle, id);
+      handles.push(handle);
+    }
+    this.physicsBodies.set(id, {
+      body,
+      colliderHandle: handles[0]!,
+      initialTransform: objectTransform(object),
+      extraColliderHandles: handles.slice(1),
+    });
+  }
   protected removePhysicsBody(id: string): void {
       this.removePhysicsJointsForBody(id);
       const runtime = this.physicsBodies.get(id);
       if (runtime?.character && this.physicsWorld) removeMountedRapierCharacter(this.physicsWorld, runtime.character);
       if (runtime && this.physicsWorld) this.physicsWorld.removeRigidBody(runtime.body);
       // 先注销句柄再删 body：同一帧内 drain 到的移除残留事件会被解析成“对端不可解析”。
-      if (runtime) this.physicsColliderOwners.delete(runtime.colliderHandle);
+      // I3 道路碰撞体：主句柄之外的分段碰撞体句柄同批注销，归属表不留悬挂条目。
+      if (runtime) {
+        this.physicsColliderOwners.delete(runtime.colliderHandle);
+        for (const handle of runtime.extraColliderHandles ?? []) this.physicsColliderOwners.delete(handle);
+      }
       this.physicsBodies.delete(id);
     }
   protected rebuildPhysicsBody(id: string): void {

@@ -64,6 +64,11 @@ export interface PhysicsBodyRuntime {
   character?: MountedRapierCharacter;
   /** B3-c：主碰撞体句柄，碰撞事件按它反查场景对象；移除 body 时同步注销。 */
   colliderHandle: number;
+  /**
+   * I3 道路碰撞体：路径式道路一个刚体挂多个分段 cuboid，这里存主碰撞体之外的句柄，
+   * 与主句柄同表登记归属、同批注销；普通单碰撞体刚体不携带该字段。
+   */
+  extraColliderHandles?: readonly number[];
 }
 
 export interface ModelEffectRuntime {

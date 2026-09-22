@@ -220,6 +220,11 @@ export abstract class ViewerEngineInteraction extends ViewerEngineCore {
       this.rebuildComponentIndex(modelId);
       this.markShadowMapDirty();
     }
+    // I3 道路碰撞体：路径式道路的分段 cuboid 源于铺设路径，路径或参数变化后立即重建，
+    // 避免物理碰撞面与路面几何漂移；物理世界未挂载或未配置刚体时重建内部自行早退。
+    if (next.kind === "road" && next.placementPath && this.physicsBodyStates.get(modelId)?.type !== "none") {
+      this.rebuildPhysicsBody(modelId);
+    }
     const route = next.motionRoute;
     if (!route) return;
     const plan = buildMotionRoutePlan(route);

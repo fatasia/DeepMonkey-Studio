@@ -93,7 +93,7 @@ describe("industrial prefab catalog", () => {
     expect(road).toMatchObject({ kind: "road", routeCapable: false, pathCapable: true, rigCapable: false });
     expect(industrialPrefabDefinition("fence.modular")).toMatchObject({ pathCapable: true });
     expect(road?.parameters.map((parameter) => parameter.key)).toEqual([
-      "lengthM", "carriagewayWidthM", "laneCount", "shoulderWidthM", "surface", "marking",
+      "lengthM", "carriagewayWidthM", "laneCount", "shoulderWidthM", "surface", "marking", "colliderThicknessM",
     ]);
     expect(road?.parameters.find((parameter) => parameter.key === "lengthM")).toMatchObject({ min: 2, max: 500, unit: "m" });
     expect(road?.parameters.find((parameter) => parameter.key === "surface")?.options).toEqual(["asphalt", "concrete"]);

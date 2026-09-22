@@ -24,7 +24,10 @@ export type IndustrialPrefabRuntimeAction = "dispatch" | "pause" | "resume" | "s
 export type RoadSurface = "asphalt" | "concrete";
 export type RoadMarking = "none" | "center" | "lanes";
 
-/** 首条道路作者合同；弯道、端点连接和路口使用后续独立合同扩展。 */
+/**
+ * 首条道路作者合同；junction 交汇由路径点标记承担（见 SceneLinearPrefabPathPoint.junction），
+ * 弯道圆角与复杂立交仍留给后续独立合同扩展。
+ */
 export interface StraightRoadPrefabParameters {
   lengthM: number;
   carriagewayWidthM: number;
@@ -32,6 +35,11 @@ export interface StraightRoadPrefabParameters {
   shoulderWidthM: number;
   surface: RoadSurface;
   marking: RoadMarking;
+  /**
+   * 道路碰撞体厚度（米）。仅作者显式设置时出现；未设置时消费端使用缺省厚度，
+   * 碰撞体顶面恒对齐车行道路面顶，保证角色/载具站立高度与视觉一致。
+   */
+  colliderThicknessM?: number;
 }
 
 export interface SceneLinearPrefabPathPoint {
@@ -39,6 +47,11 @@ export interface SceneLinearPrefabPathPoint {
   id: string;
   /** Position in the prefab root's local coordinate system. */
   position: Vector3Value;
+  /**
+   * 路口标记：该点为 T/十字等道路交汇中心，道路在此生成等宽方形路口盖板，
+   * 消除支路端头与主路的错缝。仅道路消费；围栏等其余线性预制体忽略该标记。
+   */
+  junction?: boolean;
 }
 
 /** Shared structural path for fences and roads; separate from moving-object routes. */

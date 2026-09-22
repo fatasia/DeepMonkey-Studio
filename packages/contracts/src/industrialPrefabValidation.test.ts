@@ -110,4 +110,21 @@ describe("industrial prefab validation", () => {
     expect(() => validateIndustrialPrefabInstance({ ...value,
       placementPath: { ...value.placementPath, maxSlopeAngleDegrees: Number.NaN } }, "prefab")).toThrow(/有限数字/);
   });
+
+  it("accepts a boolean junction mark on placement points and rejects wrong types", () => {
+    const value = {
+      definitionId: "road.straight", definitionVersion: "1.0.0", kind: "road",
+      parameters: {}, operatingState: "idle",
+      placementPath: { points: [
+        { id: "a", position: { x: 0, y: 0, z: 0 } },
+        { id: "b", position: { x: 4, y: 0, z: 0 }, junction: true },
+      ], interpolation: "linear", closed: false, snapToGround: false, seed: 1 },
+    };
+    // I3 道路 junction：合法标记放行，非布尔标记在合同层 fail-closed。
+    expect(() => validateIndustrialPrefabInstance(value, "prefab")).not.toThrow();
+    expect(() => validateIndustrialPrefabInstance({ ...value,
+      placementPath: { ...value.placementPath, points: [
+        { id: "a", position: { x: 0, y: 0, z: 0 } }, { id: "b", position: { x: 4, y: 0, z: 0 }, junction: "yes" } ] } }, "prefab"))
+      .toThrow();
+  });
 });

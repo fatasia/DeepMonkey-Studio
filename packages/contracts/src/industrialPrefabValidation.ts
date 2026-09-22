@@ -64,6 +64,8 @@ function validatePlacementPathPoint(value: unknown, path: string): void {
       if (!Number.isFinite(coordinate)) throw new Error(`${positionPath}.${axis} must be finite`);
     }
   }, path);
+  // I3 道路 junction：路口标记是可选布尔；类型不对的标记在合同层即拒绝，不进几何链路。
+  optional(object, "junction", expectBoolean, path);
 }
 
 function validateParameterValues(value: unknown, path: string): void {

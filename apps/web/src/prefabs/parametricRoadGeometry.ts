@@ -7,6 +7,11 @@ export interface RoadMaterials {
   marking: THREE.Material;
 }
 
+/** 车行道面片顶面相对路径点的抬高量：路面板高 0.08、中心 y=0.04。碰撞体与路口盖板共用该基准。 */
+export const ROAD_CARRIAGEWAY_TOP_M = 0.08;
+/** 路口盖板相对路面顶的确定性抬高：避免与下方路面板共面 z-fighting，量级对标道路标线的抬起语义。 */
+export const ROAD_JUNCTION_PLATE_LIFT_M = 0.004;
+
 /** 外部快照也必须被压入有界、有限且可渲染的直路参数。 */
 export function straightRoadShape(parameters: Record<string, unknown> = {}): StraightRoadPrefabParameters {
   const finite = (key: string, fallback: number, min: number, max: number) => {
@@ -15,6 +20,11 @@ export function straightRoadShape(parameters: Record<string, unknown> = {}): Str
   };
   const surface: RoadSurface = parameters.surface === "concrete" ? "concrete" : "asphalt";
   const marking: RoadMarking = parameters.marking === "none" || parameters.marking === "lanes" ? parameters.marking : "center";
+  // 碰撞体厚度仅作者显式给出时进入 shape：既有快照的序列化签名与测试断言保持字节级兼容。
+  const rawThickness = parameters.colliderThicknessM;
+  const colliderThicknessM = typeof rawThickness === "number" && Number.isFinite(rawThickness)
+    ? Math.min(2, Math.max(0.04, rawThickness))
+    : undefined;
   return {
     lengthM: finite("lengthM", 20, 2, 500),
     carriagewayWidthM: finite("carriagewayWidthM", 7, 2.5, 30),
@@ -22,6 +32,7 @@ export function straightRoadShape(parameters: Record<string, unknown> = {}): Str
     shoulderWidthM: finite("shoulderWidthM", 0.75, 0, 5),
     surface,
     marking,
+    ...(colliderThicknessM === undefined ? {} : { colliderThicknessM }),
   };
 }
 

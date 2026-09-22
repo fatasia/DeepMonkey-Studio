@@ -173,7 +173,8 @@ export function IndustrialPrefabInspector({
             </div>
             <div className="industrial-route-points">
               {placementPath.points.map((point, index) => <PathPointRow key={point.id} locale={locale}
-                point={point} index={index} disabled={disabled} deleteDisabled={disabled || placementPath.points.length <= 2}
+                point={point} index={index} disabled={disabled} allowJunction={state.kind === "road"}
+                deleteDisabled={disabled || placementPath.points.length <= 2}
                 onChange={(next) => save({ ...state, placementPath: { ...placementPath,
                   points: placementPath.points.map(candidate => candidate.id === point.id ? next : candidate) } }, "编辑铺设端点")}
                 onDelete={() => placementPath.points.length > 2 && save({ ...state, placementPath: { ...placementPath,
@@ -236,13 +237,20 @@ function RoutePointRow({ locale, point, index, disabled, onChange, onDelete }: {
   return <div className="industrial-route-point"><strong>P{index + 1}</strong>{(["x", "y", "z"] as const).map((axis) => <label key={axis}><span>{axis.toUpperCase()}</span><input type="number" disabled={disabled} value={point.position[axis]} step="0.1" onChange={(event) => onChange({ ...point, position: { ...point.position, [axis]: Number(event.target.value) } })} /></label>)}<label><span>{tr(locale, "停留", "Wait")}</span><input type="number" disabled={disabled} min="0" step="0.1" value={point.waitSeconds ?? 0} onChange={(event) => onChange({ ...point, waitSeconds: Math.max(0, Number(event.target.value)) })} /></label><button disabled={disabled} title={tr(locale, "删除路线点", "Delete point")} onClick={onDelete}><Trash2 size={11} /></button></div>;
 }
 
-function PathPointRow({ locale, point, index, disabled, deleteDisabled, onChange, onDelete }: { locale: AppLocale; point: SceneLinearPrefabPathPoint; index: number; disabled: boolean; deleteDisabled: boolean; onChange: (point: SceneLinearPrefabPathPoint) => void; onDelete: () => void }) {
+function PathPointRow({ locale, point, index, disabled, deleteDisabled, allowJunction = false, onChange, onDelete }: { locale: AppLocale; point: SceneLinearPrefabPathPoint; index: number; disabled: boolean; deleteDisabled: boolean; allowJunction?: boolean; onChange: (point: SceneLinearPrefabPathPoint) => void; onDelete: () => void }) {
   return <div className="industrial-route-point"><strong>P{index + 1}</strong>{(["x", "y", "z"] as const).map(axis =>
     <label key={axis}><span>{axis.toUpperCase()}</span><input type="number" disabled={disabled}
       value={point.position[axis]} step="0.1" onChange={(event) => {
         const value = Number(event.target.value);
         if (Number.isFinite(value)) onChange({ ...point, position: { ...point.position, [axis]: value } });
-      }} /></label>)}<button disabled={deleteDisabled} title={tr(locale, "删除铺设端点", "Delete placement point")} onClick={onDelete}><Trash2 size={11} /></button></div>;
+      }} /></label>)}{allowJunction &&
+    <label title={tr(locale, "标记为 T/十字路口中心，道路在此生成等宽方形路口盖板衔接支路端头", "Marks a T/crossing center where the road emits an equal-width junction plate to bridge branch ends")}>
+      <span>{tr(locale, "路口", "Junction")}</span><input type="checkbox" disabled={disabled} checked={point.junction ?? false}
+        onChange={(event) => {
+          // 取消勾选时移除键而不是写 false，持久化快照与既有未标记数据保持同形。
+          const { junction: _junction, ...rest } = point;
+          onChange(event.target.checked ? { ...point, junction: true } : rest);
+        }} /></label>}<button disabled={deleteDisabled} title={tr(locale, "删除铺设端点", "Delete placement point")} onClick={onDelete}><Trash2 size={11} /></button></div>;
 }
 
 function nextRoutePoint(points: SceneMotionRoutePoint[]): SceneMotionRoutePoint {
