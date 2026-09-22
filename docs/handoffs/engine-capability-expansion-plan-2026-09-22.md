@@ -183,6 +183,14 @@
 
 **性能要求**：物理步进固定 1/60 且不与渲染帧耦合（已有）；碰撞体形状升级后必须保持 16384 body 上限内的步进 ≤4ms；Native 与 Web 的逐位确定性必须由 `physics-validate` 扩展用例守住（新增形状/关节后必须补对拍）。
 
+#### B3-c 收口记录（2026-09-22，事件回调切片）
+
+- **范围**：缺口 6（事件回调）——物理事件回调（碰撞开始/结束）暴露给脚本 `ctx`。缺口 5（调试可视化）与缺口 4（per-body 参数）不在本切片，仍待。
+- **实现（不重建物理底座）**：复用既有 `PhysicsWorldHost` 固定 1/60 时钟与 `createPhysicsBody` 的 AABB 碰撞体。新增纯逻辑模块 `apps/web/src/viewer/rapierPhysicsCollisionEvents.ts`（句柄→对象归属解析，脱离 WASM 可单测）；`viewerEngineSimulation.ts` 在 `ensurePhysicsWorld` 挂 `EventQueue`（autoDrain 关闭——追赶循环一步多跑 `world.step`，autoDrain 会丢中间步事件）、body 碰撞体加 `ActiveEvents.COLLISION_EVENTS`、地面登记为 null 归属只作对端、`updatePhysics` 追加统一 drain 派发 `dispatchInteraction("collisionStart"/"collisionEnd", …, { payload: { other } })`；lifecycle 释放队列内存并清归属表。
+- **合同与消费**：`SceneInteractionTrigger` 增加 `collisionStart`/`collisionEnd`（`scene.ts` + `applicationValidation.ts` 白名单 + 钉测）；交互 UI 下拉/双语标签（`interactionState.ts`、`InteractionFlowInspector.tsx`）与脚本补全 `BUILTIN_EVENTS`（`sceneScriptContext.ts`）同步。脚本经既有 `runInteractionScript` 的 `ctx.event.payload.other` 读取对端对象 id。
+- **验证**：contracts 定向 96 项、Web 物理/交互定向 21 项（含新模块 5 项）通过；并行工作区含 700+ 未提交文件无法全量 typecheck，改以"HEAD+本切片"纯净快照验证——contracts tsc 全绿，Web tsc 中本切片文件零错误（残余错误均来自并行 B2-a 播放区间半成品的文件间咬合）。
+- **落地归属（诚实记录）**：B3-c 代码内容已随并行会话提交 `025495c`（消息为 A4 粒子证据，且混入 B2-a playbackRange/rootLayerOrder 内容）一并进入 HEAD；按 B3-b 先例不重写历史、不补空提交，B3-c 完成归属以台账与本节为准。未 push。
+
 #### B3-b 收口记录（2026-09-22）
 
 - **已完成（不重建）**：沿用 WIP 的 Web `PhysicsBodyType`、Deep Engine dynamic runtime v3、Native `dynamic_scene_physics.rs` fail-closed 校验、`PhysicsWorldHost` 固定 1/60 时钟与 Rapier 依赖；补齐 `kinematic` 合同、运行包字符段、Web `kinematicPositionBased` 与 Native `kinematic_position_based` builder。
