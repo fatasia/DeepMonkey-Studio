@@ -65,7 +65,7 @@ fn rt_directional_visibility(world: vec3f, light: vec3f) -> f32 {
   var color = direct_brdf_f0(normal, view, light, base, metal, rough, dielectric)
     * sun * visibility;
   if (frame.sunColor.w == 3.0) {
-    color += local_direct_lighting(input.world, normal, view, base, metal, rough, !flag(input.material.w,16u), ao, dielectric);
+    color += local_direct_lighting(input.world, normal, view, base, metal, rough, !flag(input.material.w,16u), ao, dielectric, input.clip);
   }
   if (frame.background.w > 0.5) {
     // Zero is the legacy/default value; authored GI uses the reserved

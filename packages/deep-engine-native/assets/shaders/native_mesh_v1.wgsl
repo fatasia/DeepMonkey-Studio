@@ -31,6 +31,9 @@ struct MaterialTextures {
 // F3:探针 GI storage。每条记录 6 个 vec4f(96B):[0]irradiance.xyz+validity、
 // [1]距离统计、[2]positionOffset.xyz、[3..5]保留零区。0..10 既有绑定不动。
 @group(0) @binding(11) var<storage, read> probe_gi: array<vec4f>;
+// Cluster storage ABI v1 is resident for every Native frame. Invalid or empty
+// plans fall back to the legacy authored-light order without changing output.
+@group(0) @binding(12) var<storage, read> cluster_grid: array<u32>;
 const PROBE_GI_RECORD_FLOATS: u32 = 6u;
 const IES_ROW_STRIDE: u32 = 91u;
 const IES_RAD_TO_DEG: f32 = 57.29577951308232;
@@ -417,9 +420,18 @@ fn transformed_uv(uv0: vec2f, uv1: vec2f, row_0: vec4f, row_1: vec4f) -> vec2f {
   if (section_rejected(input.world)) { discard; }
 }
 
-fn local_direct_lighting(world: vec3f, normal: vec3f, view: vec3f, base: vec3f, metal: f32, rough: f32, receiveShadow: bool, ao: f32, dielectric: f32) -> vec3f {
+fn local_direct_lighting(world: vec3f, normal: vec3f, view: vec3f, base: vec3f, metal: f32, rough: f32, receiveShadow: bool, ao: f32, dielectric: f32, screen: vec4f) -> vec3f {
   var color = vec3f(0.0);
-  for (var index = 0u; index < min(u32(frame.lightingOptions.z), 16u); index++) {
+  let cluster_valid = cluster_grid[0u] == 1u && cluster_grid[1u] == 64u && cluster_grid[2u] == 16u;
+  let ndc = screen.xy / max(screen.w, 0.00001);
+  let tile_x = min(u32(clamp(ndc.x * 0.5 + 0.5, 0.0, 0.999999) * 8.0), 7u);
+  let tile_y = min(u32(clamp(0.5 - ndc.y * 0.5, 0.0, 0.999999) * 8.0), 7u);
+  let tile_base = 4u + (tile_y * 8u + tile_x) * 17u;
+  var light_count = min(u32(frame.lightingOptions.z), 16u);
+  if (cluster_valid) { light_count = min(cluster_grid[tile_base], 16u); }
+  for (var slot = 0u; slot < 16u; slot++) {
+    if (slot >= light_count) { break; }
+    let index = select(slot, cluster_grid[tile_base + 1u + slot], cluster_valid);
     let source = frame.localLights[index];
     if (source.directionKind.w == 4.0) {
       let weight = dot(normal, source.directionKind.xyz) * 0.5 + 0.5;
@@ -560,7 +572,7 @@ fn direct_brdf_f0(n: vec3f, v: vec3f, l: vec3f, base: vec3f, metal: f32, rough: 
   var color = direct_brdf_f0(normal, view, light, base, metal, rough, dielectric)
     * sun * visibility;
   if (frame.sunColor.w == 3.0) {
-    color += local_direct_lighting(input.world, normal, view, base, metal, rough, !flag(input.material.w,16u), ao, dielectric);
+    color += local_direct_lighting(input.world, normal, view, base, metal, rough, !flag(input.material.w,16u), ao, dielectric, input.clip);
   }
   if (frame.background.w > 0.5) {
     // Zero is the legacy/default value; authored GI uses the reserved

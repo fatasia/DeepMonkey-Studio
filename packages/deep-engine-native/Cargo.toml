@@ -33,6 +33,7 @@ windows = { version = "=0.62.2", features = ["Win32_Media_MediaFoundation", "Win
 # `windows::core::implement` expands to `::windows_core::` paths, which needs
 # windows-core as a direct dependency (already locked at 0.62.2).
 windows-core = { version = "=0.62.2" }
+rodio = { version = "=0.22.2", default-features = false, features = ["playback", "mp4"] }
 
 [profile.release]
 codegen-units = 1

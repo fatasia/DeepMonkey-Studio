@@ -25,6 +25,33 @@ fn v2_bytes() -> Vec<u8> {
     serde_json::to_vec(&value).unwrap()
 }
 
+fn dynamic_v7_bytes(revision: u64) -> Vec<u8> {
+    let mut value: Value = serde_json::from_slice(&v1_bytes()).unwrap();
+    let id = "scene.dynamic";
+    value["schemaVersion"] = json!(7);
+    value["packageVersion"] = json!(format!("1.0.{revision}"));
+    value["materialBindings"] = json!([]);
+    value["entrypoints"]["dynamicRuntime"] = json!(id);
+    value["payloads"][id] = json!({
+        "schema": "deep-engine.dynamic-runtime", "schemaVersion": 1, "id": id,
+        "revision": revision + 1,
+        "animation": { "schema": "deep-engine.dynamic-animation", "schemaVersion": 1,
+            "durationMs": 1000, "tracks": [{ "targetId": "pump", "property": "translation",
+                "keyframes": [{ "timeMs": 0, "value": [0, 0, 0, 0, 0, 0, 1] },
+                    { "timeMs": 1000, "value": [revision as f64 + 1.0, 0, 0, 0, 0, 0, 1] }] }] }
+    });
+    value["resources"].as_array_mut().unwrap().push(json!({
+        "id": id, "kind": "dynamic-runtime", "revision": revision + 1,
+        "contentHash": { "algorithm": "sha256", "value": "0".repeat(64) }
+    }));
+    value["resources"]
+        .as_array_mut()
+        .unwrap()
+        .sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
+    reseal(&mut value);
+    serde_json::to_vec(&value).unwrap()
+}
+
 /// 去掉 deep2d 布局对象:入口置空并移除资源与载荷,重封后是合法包。
 fn stripped_bytes() -> Vec<u8> {
     let mut value: Value = serde_json::from_slice(&v1_bytes()).unwrap();
@@ -280,7 +307,7 @@ fn operation_count_mismatch_is_truncation() {
 fn unsupported_target_schema_keeps_the_old_version() {
     let (base_bytes, target_bytes) = (v1_bytes(), v2_bytes());
     let manifest = build_runtime_package_delta(&base_bytes, &target_bytes).unwrap();
-    for version in [6, 7, 0] {
+    for version in [6, 8, 0] {
         let mut tampered = manifest_value(&manifest);
         tampered["targetSchemaVersion"] = json!(version);
         let (reason, message) =
@@ -299,6 +326,39 @@ fn unsupported_target_schema_keeps_the_old_version() {
     assert_eq!(
         reason,
         RuntimePackageDeltaRejectionReason::ManifestSchemaUnsupported
+    );
+}
+
+#[test]
+fn dynamic_runtime_v7_delta_updates_and_reuses_its_entrypoint_dependency() {
+    let (base_bytes, target_bytes) = (dynamic_v7_bytes(0), dynamic_v7_bytes(1));
+    parse_and_validate_runtime_package(&base_bytes).unwrap();
+    let target = parse_and_validate_runtime_package(&target_bytes).unwrap();
+    let manifest = build_runtime_package_delta(&base_bytes, &target_bytes).unwrap();
+    let value = manifest_value(&manifest);
+    assert_eq!(value["targetSchemaVersion"], json!(7));
+    assert_eq!(
+        value["entrypoints"]["dynamicRuntime"],
+        json!("scene.dynamic")
+    );
+    assert_eq!(value["operations"].as_array().unwrap().len(), 1);
+    let mut missing_runtime = value.clone();
+    missing_runtime["entrypoints"]["dynamicRuntime"] = json!("scene.ghost");
+    let (reason, message) =
+        rejected_reason(&base_bytes, &serde_json::to_vec(&missing_runtime).unwrap());
+    assert_eq!(
+        reason,
+        RuntimePackageDeltaRejectionReason::MissingDependency
+    );
+    assert!(message.contains("scene.ghost"), "{message}");
+    let delta = applied(&base_bytes, &manifest);
+    assert_eq!(delta.package.package_hash, target.package_hash);
+    assert_eq!(delta.package.dynamic_runtime.as_ref().unwrap().revision, 2);
+    assert_eq!(
+        plan_runtime_package_diff(&delta.package, &target)
+            .unwrap()
+            .reused,
+        target.resource_index.len()
     );
 }
 

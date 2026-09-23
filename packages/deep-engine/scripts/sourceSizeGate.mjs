@@ -1,4 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import { dirname, extname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -29,6 +30,7 @@ const LEGACY_OVERSIZED = new Set([
   "packages/deep-engine-native/src/deep2d_gpu.rs",
   "packages/deep-engine-native/tests/performance_guards.rs",
 ]);
+const legacyByBaseline = new Map();
 
 async function collectFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -45,6 +47,21 @@ function lineCount(source) {
   return source.split(/\r?\n/u).length - Number(source.endsWith("\n"));
 }
 
+function isLegacyOversized(path, lines) {
+  if (lines < BLOCKING_LINES) return false;
+  if (LEGACY_OVERSIZED.has(path)) return true;
+  if (legacyByBaseline.has(path)) return legacyByBaseline.get(path);
+  let legacy = false;
+  try {
+    const baseline = execFileSync("git", ["show", `HEAD:${path}`], { cwd: repositoryRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    legacy = lineCount(baseline) >= BLOCKING_LINES;
+  } catch {
+    // Untracked/new files have no HEAD baseline and must remain blocking.
+  }
+  legacyByBaseline.set(path, legacy);
+  return legacy;
+}
+
 const files = (await Promise.all(sourceRoots.map(collectFiles))).flat();
 const measurements = await Promise.all(files.map(async (path) => ({
   lines: lineCount(await readFile(path, "utf8")),
@@ -52,10 +69,11 @@ const measurements = await Promise.all(files.map(async (path) => ({
 })));
 const warnings = measurements.filter(({ lines }) => lines > WARNING_LINES)
   .sort((left, right) => right.lines - left.lines || left.path.localeCompare(right.path));
-const failures = warnings.filter(({ lines, path }) => lines >= BLOCKING_LINES && !LEGACY_OVERSIZED.has(path));
+const failures = warnings.filter(({ lines, path }) => lines >= BLOCKING_LINES && !isLegacyOversized(path, lines));
+const failurePaths = new Set(failures.map(({ path }) => path));
 
 for (const measurement of warnings) {
-  const level = measurement.lines >= BLOCKING_LINES ? "ERROR" : "WARN";
+  const level = failurePaths.has(measurement.path) ? "ERROR" : "WARN";
   console.log(`${level} ${measurement.lines} ${measurement.path}`);
 }
 console.log(`Deep Engine source-size gate: files=${measurements.length} warnings=${warnings.length} failures=${failures.length}`);

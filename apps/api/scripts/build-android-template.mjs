@@ -49,7 +49,9 @@ try {
   const loaded = await new JSZip().loadAsync(readFileSync(baseApk));
   for (const entry of Object.values(loaded.files)) {
     if (entry.dir) continue;
-    zip.file(entry.name, await entry.async("uint8array"), { date: new Date("2000-01-01T00:00:00Z"), createFolders: false });
+    // targetSdk 30+:resources.arsc 必须未压缩;.so 保持 STORED 配合 zipalign -p 页对齐。
+    const stored = /.arsc$|.so$/i.test(entry.name);
+    zip.file(entry.name, await entry.async("uint8array"), { date: new Date("2000-01-01T00:00:00Z"), createFolders: false, compression: stored ? "STORE" : "DEFLATE" });
   }
   for (const abi of abis) {
     zip.file(`lib/${abi}/${soName}`, readFileSync(soPaths.get(abi)), { date: new Date("2000-01-01T00:00:00Z"), createFolders: false, compression: "STORE" });

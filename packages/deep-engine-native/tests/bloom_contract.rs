@@ -20,7 +20,12 @@ fn bloom_contract_is_hdr_first_and_has_an_exact_disabled_mode() {
     assert!(bloom.contains("bloom.threshold * bloom.soft_knee"));
     assert!(output.contains("hdr.rgb + glow"));
     assert!(output.contains("textureSampleLevel(bloom_color, bloom_sampler"));
-    assert!(output.find("hdr.rgb + glow").unwrap() < output.find("aces(hdr.rgb)").unwrap());
+    // F4 色彩分级后 tonemap 调用点为 aces(author_grading_apply(hdr.rgb))：
+    // bloom glow 必须在 ACES 之前合成（合同不变，断言随输出链同步）。
+    assert!(
+        output.find("hdr.rgb + glow").unwrap()
+            < output.find("aces(author_grading_apply(hdr.rgb))").unwrap()
+    );
     assert!(pass.contains("if !settings.is_active()"));
     assert!(pass.contains("return Ok(None)"));
     assert!(!BloomSettings::DISABLED.validate().unwrap().is_active());
@@ -58,11 +63,30 @@ fn fog_is_a_separate_opt_in_hdr_variant_before_aces() {
             "select(optical_depth, optical_depth * optical_depth, frame.fogProjection.z == 2.0)"
         ));
         assert!(shader.contains("1.0 - exp(-metric)"));
+        assert!(shader.contains("frame.fogProfile.y"));
+        assert!(shader.contains("frame.fogProfile.z"));
+        assert!(shader.contains("step_count"));
+        assert!(shader.contains("let sample_height = frame.eye.y + ray.y * sample_distance"));
+        assert!(shader.contains("exp(-max(sample_height, 0.0) / frame.fogProfile.y)"));
+        assert!(shader.contains("let step_transmittance = exp(-density * step_distance)"));
+        // F4 色彩分级后 tonemap 调用点同步（雾变体同合同：雾在 ACES 之前）。
         assert!(
-            shader.find("let hdr = fogged_hdr").unwrap() < shader.find("aces(hdr.rgb)").unwrap()
+            shader.find("let hdr = fogged_hdr").unwrap()
+                < shader.find("aces(author_grading_apply(hdr.rgb))").unwrap()
         );
     }
     assert!(bloom_fog.contains("mix(hdr.rgb + glow, frame.tuning.rgb, amount)"));
+}
+
+#[test]
+fn clustered_lighting_shader_consumes_the_resident_tile_plan() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mesh = fs::read_to_string(root.join("assets/shaders/native_mesh_v1.wgsl")).unwrap();
+    assert!(mesh.contains("@binding(12) var<storage, read> cluster_grid"));
+    assert!(mesh.contains("cluster_valid"));
+    assert!(mesh.contains("tile_x = min(u32(clamp(ndc.x * 0.5 + 0.5"));
+    assert!(mesh.contains("tile_y = min(u32(clamp(0.5 - ndc.y * 0.5"));
+    assert!(mesh.contains("cluster_grid[tile_base + 1u + slot]"));
 }
 
 #[test]

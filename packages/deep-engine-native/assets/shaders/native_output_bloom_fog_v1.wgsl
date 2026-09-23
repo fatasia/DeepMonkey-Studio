@@ -18,6 +18,7 @@ struct Frame {
   localShadowMatrices: array<mat4x4f, 10>,
   fogProjection: vec4f,
   localShadowSoftness: array<vec4f, 4>,
+  fogProfile: vec4f,
 };
 @group(0) @binding(5) var<uniform> frame: Frame;
 
@@ -100,7 +101,36 @@ fn fogged_hdr(position: vec4f) -> vec4f {
   let distance = near * far / max(far - depth * (far - near), 0.0001);
   let optical_depth = frame.tuning.w * distance;
   let metric = select(optical_depth, optical_depth * optical_depth, frame.fogProjection.z == 2.0);
-  let amount = clamp(1.0 - exp(-metric), 0.0, 1.0);
+  var amount = clamp(1.0 - exp(-metric), 0.0, 1.0);
+  if (frame.fogProjection.z == 1.0) {
+    let extent = vec2f(textureDimensions(hdr_color));
+    let ndc = vec2f(2.0 * position.x / extent.x - 1.0,
+      1.0 - 2.0 * position.y / extent.y);
+    let right_projection = vec3f(frame.view[0].x, frame.view[1].x, frame.view[2].x);
+    let up_projection = vec3f(frame.view[0].y, frame.view[1].y, frame.view[2].y);
+    let forward = normalize(vec3f(frame.view[0].w, frame.view[1].w, frame.view[2].w));
+    let ray = normalize(forward + ndc.x * right_projection / dot(right_projection, right_projection)
+      + ndc.y * up_projection / dot(up_projection, up_projection));
+    let ray_distance = distance / max(dot(ray, forward), 0.01);
+    let step_count = clamp(u32(round(frame.fogProfile.x)), 1u, 64u);
+    let step_distance = ray_distance / f32(step_count);
+    let g = clamp(frame.fogProfile.z, -0.99, 0.99);
+    let sun_direction = normalize(frame.lightDirection.xyz);
+    let cosine = dot(ray, sun_direction);
+    let phase = clamp((1.0 - g * g) / pow(max(1.0 + g * g - 2.0 * g * cosine, 0.01), 1.5), 0.0, 4.0);
+    var transmittance = 1.0;
+    var integrated = 0.0;
+    for (var step = 0u; step < 64u; step++) {
+      if (step >= step_count) { break; }
+      let sample_distance = (f32(step) + 0.5) * step_distance;
+      let sample_height = frame.eye.y + ray.y * sample_distance;
+      let density = frame.tuning.w * exp(-max(sample_height, 0.0) / frame.fogProfile.y);
+      let step_transmittance = exp(-density * step_distance);
+      integrated += transmittance * (1.0 - step_transmittance) * phase;
+      transmittance *= step_transmittance;
+    }
+    amount = clamp(integrated, 0.0, 1.0);
+  }
   return vec4f(mix(hdr.rgb + glow, frame.tuning.rgb, amount), hdr.a);
 }
 

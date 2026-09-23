@@ -630,6 +630,8 @@ struct AudioSoakDrift {
     max_100ns: i64,
     sum_100ns: i64,
     samples: usize,
+    /// 逃逸样本(>阈值):(t 秒, 漂移 100ns),用于定位单次尖峰成因。
+    escapes: Vec<(f64, i64)>,
 }
 
 // Real-time soak shared by the 30 s formal gate and the 30-minute stability
@@ -645,6 +647,7 @@ fn formal_soak_av_drift(
         max_100ns: 0,
         sum_100ns: 0,
         samples: 0,
+        escapes: Vec::new(),
     };
     while start.elapsed() < soak {
         let tick = Duration::from_secs(1) + start.elapsed();
@@ -656,6 +659,9 @@ fn formal_soak_av_drift(
             let direct = (audio - video).abs();
             let wrapped = duration - direct;
             let drift = direct.min(wrapped);
+            if drift > 1_000_000 {
+                stats.escapes.push((start.elapsed().as_secs_f64(), drift));
+            }
             stats.max_100ns = stats.max_100ns.max(drift);
             stats.sum_100ns += drift;
             stats.samples += 1;
