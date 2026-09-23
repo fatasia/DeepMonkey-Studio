@@ -1,0 +1,29 @@
+[package]
+name = "deep-engine-wasm"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.93"
+description = "DeepMonkey engine core compiled to WebAssembly (WebGPU backend)"
+license-file = "../../LICENSE"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "=0.2.128"
+wasm-bindgen-futures = "=0.4.78"
+web-sys = { version = "=0.3.105", features = ["Window", "HtmlCanvasElement", "GpuCanvasContext"] }
+js-sys = "=0.3.105"
+console_error_panic_hook = "=0.1.7"
+bytemuck = { version = "=1.25.2", features = ["derive"] }
+# wgpu web:仅 WebGPU+GL 后端,不含 dx12/metal/vulkan 原生后端,体积优先。
+wgpu = { version = "=30.0.1", default-features = false, features = ["std", "parking_lot", "webgpu", "wgsl"] }
+
+[profile.wasm-release]
+inherits = "release"
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
