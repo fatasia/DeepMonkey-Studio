@@ -1,7 +1,7 @@
 const ACTIONS = new Set(["start", "stop", "restart", "status", "check", "deploy", "undeploy", "help"]);
 const TARGETS = new Set(["client", "web", "api"]);
 const STORE_OPTIONS = {
-  "--metadata-store": new Set(["json", "postgres"]),
+  "--metadata-store": new Set(["json", "sqlite", "postgres"]),
   "--object-store": new Set(["local", "minio"]),
 };
 
@@ -127,6 +127,7 @@ export function studioHelp() {
   return `DeepMonkey Studio 统一运行入口（Windows / Linux）
 
 用法：
+  pnpm dev                         快速 Web 开发（core-only）
   pnpm studio start [client|web|api] [选项]
   pnpm studio stop
   pnpm studio restart [client|web|api] [选项]
@@ -147,7 +148,7 @@ export function studioHelp() {
   --api-origin <HTTP(S) Origin> 使用已有远程 API；Web 不再代启本地 API
   --web-host <地址>             Web 监听地址，默认 0.0.0.0
   --web-port <端口>             Web 端口，默认 5173
-  --metadata-store json|postgres
+  --metadata-store json|sqlite|postgres
   --object-store local|minio
   --skip-infra                  不代启本地 PostgreSQL / MinIO
   --https                       Web 模式使用 .env 中配置的 HTTPS 证书
@@ -158,6 +159,7 @@ export function studioHelp() {
   --no-open                     就绪后不打开浏览器
 
 示例：
+  pnpm dev
   pnpm studio start client
   pnpm studio start web --api-port 4200 --web-port 5200
   pnpm studio start api --metadata-store postgres --object-store minio

@@ -40,7 +40,14 @@ await writeFile(path.join(output, "readiness.json"), `${JSON.stringify(readiness
 const require = createRequire(new URL("../apps/api/package.json", import.meta.url));
 const sharp = require("sharp");
 const prepared = [];
-for (const name of ["LocalPreheater", "LocalBim"]) {
+let localAssets: { name: string }[] = [];
+try {
+  const localManifest = JSON.parse(await readFile(path.join(output, "sources.json"), "utf8")) as { assets?: { name: string }[] };
+  localAssets = Array.isArray(localManifest.assets) ? localManifest.assets : [];
+} catch (error) {
+  if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+}
+for (const { name } of localAssets) {
   const bytes = new Uint8Array(await readFile(path.join(output, `${name}.glb`)));
   const packet = await decodeTexturedGlb(bytes, { async decode(image) {
     const { data, info } = await sharp(image.data).ensureAlpha().raw().toBuffer({ resolveWithObject: true });

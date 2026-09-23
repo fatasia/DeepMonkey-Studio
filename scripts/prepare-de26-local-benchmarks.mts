@@ -17,9 +17,13 @@ const manifest = JSON.parse(await readFile(path.join(root, "packages/deep-engine
 const output = path.resolve(root, process.argv[2] ?? "test-output/de26-local-assets-20260918");
 await mkdir(output, { recursive: true });
 const entries = [];
+const unavailable = [];
 for (const [id, name] of [["asset.bim.baked-scene", "LocalBim"], ["asset.factory.preheater-far-origin", "LocalPreheater"]]) {
   const asset = manifest.manifests.find((item: any) => item.id === id);
-  if (!asset) throw new Error(`Missing frozen source ${id}`);
+  if (!asset) {
+    unavailable.push({ id, reason: "local source asset was withdrawn; replace it with an approved benchmark asset" });
+    continue;
+  }
   const source = new Uint8Array(await readFile(asset.source.path));
   if (hash(source) !== asset.source.sha256 || source.byteLength !== asset.source.bytes) throw new Error(`Frozen source changed: ${id}`);
   const document = await io.readBinary(source);
@@ -40,5 +44,5 @@ for (const [id, name] of [["asset.bim.baked-scene", "LocalBim"], ["asset.factory
     preparation: "gltf-transform@4.4.2 dequantize; draco3dgltf@1.5.7 decode; source transforms/materials preserved",
     license: asset.license });
 }
-await writeFile(path.join(output, "sources.json"), JSON.stringify({ schema: 1, assets: entries }, null, 2));
-console.log(JSON.stringify({ output, assets: entries }, null, 2));
+await writeFile(path.join(output, "sources.json"), JSON.stringify({ schema: 1, assets: entries, unavailable }, null, 2));
+console.log(JSON.stringify({ output, assets: entries, unavailable }, null, 2));

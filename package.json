@@ -13,6 +13,7 @@
   },
   "scripts": {
     "studio": "node scripts/studio.mjs",
+    "dev": "node scripts/studio.mjs start web --core-only",
     "clean:generated": "node scripts/clean-generated.mjs --apply",
     "clean:generated:preview": "node scripts/clean-generated.mjs",
     "backup:production": "node scripts/backup-production.mjs",
@@ -40,6 +41,8 @@
     "gate:deep-engine-editor": "pnpm --filter @bim-studio/deep-engine typecheck && pnpm --filter @bim-studio/deep-engine test && pnpm --filter @bim-studio/deep-engine build && pnpm --filter @bim-studio/web typecheck && pnpm --filter @bim-studio/web test src/viewer/measurement.test.ts src/viewer/cameraFraming.test.ts src/viewer/cameraFramingIntegration.test.ts src/viewer/StudioDeepWebGpuBridge.test.ts src/viewer/StudioDeepWebGpuBridge.environment.test.ts src/viewer/StudioDeepWebGpuBridge.lights.test.ts src/viewer/StudioDeepShadowSession.test.ts src/viewer/StudioDeepPerformance.test.ts src/viewer/viewerEngineDeepOverlayRoots.test.ts src/components/DocsCenter.test.tsx src/docs/docsCatalog.test.ts --run && pnpm test:unity-bridge",
     "audit:licenses": "node --test scripts/audit-third-party-licenses.test.mjs && node scripts/audit-third-party-licenses.mjs",
     "quality:public-brand": "node --test scripts/check-public-brand-isolation.test.mjs && node scripts/check-public-brand-isolation.mjs && node scripts/check-product-brand.mjs",
+    "docs:wiki:check": "node scripts/sync-docs-wiki.mjs --check",
+    "docs:wiki:export": "node scripts/sync-docs-wiki.mjs --export",
     "test:unity-bridge": "node --test tools/unity/unity-bridge.test.mjs tools/unity/unity-package-archive.test.mjs",
     "verify:battery-onnx-candidates": "pnpm --filter @bim-studio/api verify:battery-onnx-candidates",
     "battery:native:dev": "cargo run --manifest-path apps/battery-native-runtime/Cargo.toml",
@@ -65,6 +68,11 @@
     "assets:audit:external-models": "node scripts/audit-external-industrial-models.mjs",
     "assets:audit:test": "node --test scripts/lib/glbAudit.test.mjs scripts/lib/assetThumbnailAudit.test.mjs scripts/lib/assetQualityAudit.test.mjs scripts/lib/environmentAssetPublication.test.mjs scripts/lib/atomicAssetDownload.test.mjs scripts/lib/sourceBModelPolicy.test.mjs scripts/lib/sourceBModelSync.test.mjs",
     "assets:sync:open-packs": "node scripts/sync-open-asset-packs.mjs",
+    "assets:seed:database": "node scripts/seed-open-database.mjs",
+    "init": "node scripts/init-open-source.mjs",
+    "init:open-source": "node scripts/init-open-source.mjs",
+    "assets:verify:open": "node scripts/verify-open-asset-delivery.mjs",
+    "assets:import": "node scripts/import-open-asset-pack.mjs",
     "assets:sync:environment-materials": "node scripts/sync-environment-material-library.mjs",
     "quality:size-ledger": "node scripts/fixtures/run-size-ledger.mjs"
   },

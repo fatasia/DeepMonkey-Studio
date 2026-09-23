@@ -1,6 +1,6 @@
 # Deep2D 对照 Web 作者效果与交互审计
 
-**视频后续更新（2026-09-22）：** 正式编译链已把作者视频资源引用与播放意图写入 v1 能力合同；项目内 MP4 可经发布冻结、内容寻址、32 MiB 预算与 ISO BMFF `ftyp` 探测进入运行包。Windows Native Dashboard Runtime 使用 Media Foundation 连续解码真实 H.264 MP4，按单调时钟与 PTS 更新 BGRA sRGB GPU 纹理，并已接入持续播放、暂停、绝对/相对 seek、循环、fit 与窗口生命周期暂停恢复。GPU 合成器现在绘制可见播放按钮和进度条；正式窗口事件把点击、拖动、Space/Enter、左右键、Home/End 接到同一控制命令，视频焦点优先于三维相机。已打包且静音的资源状态升级为 `ready/autoplay|poster`，不再伪留 controls/seek blocker；非静音仍精确阻断 `audio-output`。Media Foundation、运行时、输入命中和 DX12 合成聚焦测试通过；正式发布 EXE 的可见窗口、系统输入回放和音频仍留最终集中验收。
+**视频后续更新（2026-09-23）：** 正式编译链已把作者视频资源引用与播放意图写入 v1 能力合同；项目内 MP4 可经发布冻结、内容寻址、32 MiB 预算与 ISO BMFF `ftyp` 探测进入运行包。Windows Native Dashboard Runtime 使用 Media Foundation 连续解码真实 H.264 MP4，按单调时钟与 PTS 更新 BGRA sRGB GPU 纹理，并已接入持续播放、暂停、绝对/相对 seek、循环、fit 与窗口生命周期暂停恢复。GPU 合成器现在绘制可见播放按钮和进度条；正式窗口事件把点击、拖动、Space/Enter、左右键、Home/End 接到同一控制命令，视频焦点优先于三维相机。已打包且静音的资源状态升级为 `ready/autoplay|poster`，不再伪留 controls/seek blocker；Native rodio AAC 已通过默认设备、设备切换、30 秒长稳和音画同步证据；Web 无头真实音频与正式发布包窗口回放仍留最终集中验收。
 
 **文本输入后续更新：** 正式 Dashboard 编译与 Native Runtime 已接 `text-v1`，含冻结字体、文本编辑、IME 与有界 sample 图表筛选。基本链路关键测试通过；剪贴板、完整键鼠、CSS/主题/DPR 与正式产物实机尚未完成，见 [文本输入切片](deep2d-text-input-v1-2026-09-21.md)。下文输入框“尚未接线”是此次更新前的基线。
 
