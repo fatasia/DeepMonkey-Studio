@@ -122,8 +122,9 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
   };
 
   private drawAuthorScene(delta: number, offscreenFrame: boolean): void {
+    // 相机连续运动时节流遮挡重算（≥40ms 一次）；节流帧清空剔除集全量绘制，绝不应用过期姿态的剔除结果。
     this.conservativeOcclusion.update(this.modelRoot, this.camera,
-      this.clippingState.enabled || this.hasContinuousRenderActivity(), this.getSelected()?.object);
+      this.clippingState.enabled || this.hasContinuousRenderActivity(), this.getSelected()?.object, { minIntervalMs: 40 });
     try {
       this.repeatedAssetBatcher.begin(this.models.values(), this.conservativeOcclusion.culled);
       if (offscreenFrame) {

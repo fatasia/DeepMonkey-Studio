@@ -281,6 +281,15 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
     }
   protected emitCameraChange(force = false): void {
       if (!this.onCameraChange) return;
+      // 快速路径：相机原始数值逐位未变时，签名串(toFixed 确定性)必然与上一帧相同，
+      // 直接早退，避免每帧 2 次 Vector clone、6 次 toFixed 与字符串拼接。
+      const position = this.camera.position, target = this.orbit.target, mode = this.navigationMode;
+      const raw: readonly [number, number, number, number, number, number, string] =
+        [position.x, position.y, position.z, target.x, target.y, target.z, mode];
+      const previousRaw = this.lastCameraRaw;
+      if (!force && previousRaw && previousRaw[0] === raw[0] && previousRaw[1] === raw[1] && previousRaw[2] === raw[2]
+        && previousRaw[3] === raw[3] && previousRaw[4] === raw[4] && previousRaw[5] === raw[5] && previousRaw[6] === raw[6]) return;
+      this.lastCameraRaw = raw;
       const state = this.getCameraState();
       const signature = `${state.position.x.toFixed(4)}:${state.position.y.toFixed(4)}:${state.position.z.toFixed(4)}:${state.target.x.toFixed(4)}:${state.target.y.toFixed(4)}:${state.target.z.toFixed(4)}:${state.mode}`;
       if (!force && signature === this.lastCameraSignature) return;

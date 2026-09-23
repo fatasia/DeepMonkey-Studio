@@ -2,6 +2,18 @@ import * as THREE from "three";
 import type { LoadedSceneModel } from "./viewerTypes";
 
 interface Batch { mesh: THREE.InstancedMesh; sources: THREE.Mesh[]; }
+/** 每网格分组键缓存：矩阵与标志未变化时复用上一帧的 key 字符串，避免每帧两次模板字符串分配。 */
+interface MeshGroupKeyCache {
+  material: THREE.Material;
+  geometryUuid: string;
+  castShadow: number;
+  receiveShadow: number;
+  frustumCulled: number;
+  layersMask: number;
+  materialId: number;
+  matrixWorld: THREE.Matrix4;
+  key: string;
+}
 const DEFAULT_BEFORE_RENDER = THREE.Object3D.prototype.onBeforeRender;
 const DEFAULT_BEFORE_COMPILE = THREE.Material.prototype.onBeforeCompile;
 const SPATIAL_CELL_SIZE = 32;
@@ -15,6 +27,7 @@ export class RepeatedAssetBatcher {
   private readonly matrix = new THREE.Matrix4();
   private readonly previous = new THREE.Matrix4();
   private readonly materialIds = new Map<string, number>();
+  private meshKeys = new WeakMap<THREE.Mesh, MeshGroupKeyCache>();
   private nextMaterialId = 0;
   private sourceCount = 0;
   private batchCount = 0;
@@ -52,11 +65,28 @@ export class RepeatedAssetBatcher {
         this.matrix.multiplyMatrices(this.inverseRoot, mesh.matrixWorld);
         if (hasShear(this.matrix)) return;
         // 空间分桶保留粗粒度裁剪，远处设备不会因一个巨大批次全部进入绘制。
+        // 键派生按网格缓存：材质/几何/标志/世界矩阵均未变化时直接复用上一帧 key，跳过字符串构造。
+        const cache = this.meshKeys.get(mesh);
+        if (cache && cache.material === material && cache.materialId === materialId
+          && cache.geometryUuid === mesh.geometry.uuid
+          && cache.castShadow === Number(mesh.castShadow) && cache.receiveShadow === Number(mesh.receiveShadow)
+          && cache.frustumCulled === Number(mesh.frustumCulled) && cache.layersMask === mesh.layers.mask
+          && cache.matrixWorld.equals(mesh.matrixWorld)) {
+          const group = groups.get(cache.key);
+          if (group) group.push(mesh); else groups.set(cache.key, [mesh]);
+          return;
+        }
         const e = mesh.matrixWorld.elements;
         const cell = `${Math.floor(e[12]! / SPATIAL_CELL_SIZE)},${Math.floor(e[13]! / SPATIAL_CELL_SIZE)},${Math.floor(e[14]! / SPATIAL_CELL_SIZE)}`;
         const key = `${mesh.geometry.uuid}:${materialId}:${Number(mesh.castShadow)}:${Number(mesh.receiveShadow)}:${Number(mesh.frustumCulled)}:${mesh.layers.mask}:${cell}`;
         const group = groups.get(key);
         if (group) group.push(mesh); else groups.set(key, [mesh]);
+        this.meshKeys.set(mesh, {
+          material, geometryUuid: mesh.geometry.uuid,
+          castShadow: Number(mesh.castShadow), receiveShadow: Number(mesh.receiveShadow),
+          frustumCulled: Number(mesh.frustumCulled), layersMask: mesh.layers.mask,
+          materialId, matrixWorld: mesh.matrixWorld.clone(), key,
+        });
       });
     }
     const used = new Set<string>();
@@ -98,8 +128,7 @@ export class RepeatedAssetBatcher {
     this.root.visible = this.batchCount > 0;
     if (this.batchCount > 0) this.parent.add(this.root);
     // 外观组合不无限保留；当前帧的数值分组完成后可重新编号。
-    if (this.materialIds.size > 2_048) { this.clear(); this.materialIds.clear(); this.nextMaterialId = 0; }
-  }
+    if (this.materialIds.size > 2_048) { this.clear(); this.materialIds.clear(); this.nextMaterialId = 0; }  }
 
   end(): void {
     for (const source of this.hidden) source.visible = true;
@@ -121,6 +150,8 @@ export class RepeatedAssetBatcher {
     this.end();
     for (const batch of this.batches.values()) this.release(batch);
     this.batches.clear(); this.sourceCount = 0; this.batchCount = 0;
+    // materialIds 重编号会使缓存 key 中的数值失效，分组键缓存整体重建。
+    this.meshKeys = new WeakMap();
   }
 
   dispose(): void { this.clear(); this.root.removeFromParent(); this.materialIds.clear(); }

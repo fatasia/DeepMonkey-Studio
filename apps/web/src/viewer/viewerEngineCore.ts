@@ -346,6 +346,8 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
   protected cameraPathHelper: THREE.Group | undefined;
   protected lastAnimationNotify = 0;
   protected lastCameraSignature = "";
+  /** 相机原始数值缓存：数值未变时签名串必然相同，可跳过 clone/toFixed/字符串构造直接早退。 */
+  protected lastCameraRaw: readonly [number, number, number, number, number, number, string] | undefined;
   protected interactionScripts: SceneInteractionScriptState[] = [];
   protected hoverInteractionTargets: SceneInteractionTarget[] = [];
   protected pointerMoveSequence = 0;
