@@ -3487,3 +3487,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 当前并行工作区含 Native/V5/F4 历史在途文件，主线程不触碰、不覆盖。
 - 新补位两个独立收口：F6 插件生命周期/兼容矩阵审计（已有实现则只补测试/文档，禁止重建）；F5 Native 音频输出 blocker 评估（已有输出则补合同测试，无输出则 fail-closed 能力报告，不引入大音频引擎）。
 - 主线程同时运行 F5 dashboardMedia/docs、plugin-runtime、deep-engine host/runtime 聚焦门禁。
+
+### 2026-09-23 F/I 主线程收口：F6 公开矩阵+生命周期边界完成
+
+- 主线程接管子线程后，F6 真实缺口收口：`packages/plugin-runtime/src/index.ts` 公开导出 `compatibilityMatrix`；`registry.test.ts` 新增并发 enable/disable 禁止双激活、激活失败清理后允许重试、缺失宿主 capability 注册前 fail-closed 三项边界测试。plugin-runtime 全量 **40/40**、tsc 0。
+- F5 Native 音频盘点结论：真实 WASAPI/MF 音频输出仍未实现，但现有 Native 合同已显式 fail-closed（`audio-output`/`native-video-audio-unavailable`），Web 音轨计划+Native 轨道探测已由 d39f7fb3 覆盖；按“不引入大音频引擎/不重复建设”原则，本线程不再加码，剩余明确为平台音频输出单独项目。
