@@ -21,7 +21,7 @@ wgpu = { version = "=30.0.1", default-features = false, features = ["std", "park
 winit = { version = "=0.30.13", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Networking_WinSock", "Win32_Security", "Win32_Security_Isolation", "Win32_Security_Authorization", "Win32_System_Pipes", "Win32_System_WindowsProgramming", "Win32_System_SystemServices", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Diagnostics_ProcessSnapshotting", "Win32_System_Diagnostics_Debug", "Win32_System_Kernel", "Win32_System_Diagnostics_ToolHelp"] }
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_System_Com", "Win32_Networking_WinSock", "Win32_Security", "Win32_Security_Isolation", "Win32_Security_Authorization", "Win32_System_Pipes", "Win32_System_WindowsProgramming", "Win32_System_SystemServices", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Diagnostics_ProcessSnapshotting", "Win32_System_Diagnostics_Debug", "Win32_System_Kernel", "Win32_System_Diagnostics_ToolHelp"] }
 # 波次5 render_graph_tests:ToolHelp 线程快照用于「executor 线程池清理」
 # 证据(批次前后 OS 线程数水位)。既有固定版本的 feature flag 追加,
 # 无新包、Cargo.lock 不变(同 P1-16 先例)。

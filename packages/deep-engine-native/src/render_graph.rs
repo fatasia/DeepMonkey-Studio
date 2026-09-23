@@ -272,8 +272,13 @@ pub fn execute_graph_batch<'scope, A: Send>(
 
     thread::scope(|scope| {
         // worker 是只捕获共享引用的闭包(Copy):每个 executor 线程领一份。
+        // spawn 的线程命名 deep-executor:水位测试按名计数,对并行测试中
+        // 其它子系统(wgpu/MF/音频)创建的线程免疫。
         for _ in 1..used_threads {
-            scope.spawn(worker);
+            scope.spawn(|| {
+                set_executor_thread_name();
+                worker();
+            });
         }
         // 调用线程自身也是一个 executor:单节点批次不付线程创建成本。
         worker();
@@ -385,3 +390,21 @@ mod tests {
         assert!(boxed.to_string().contains("device lost"));
     }
 }
+
+/// 执行器线程统一命名(windows:SetThreadDescription 伪句程即当前线程)。
+/// 供 render_graph_tests 按名计数,替代进程级线程快照(对并行测试敏感)。
+#[cfg(windows)]
+pub(crate) fn set_executor_thread_name() {
+    use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadDescription};
+    let wide: Vec<u16> = "deep-executor"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    unsafe {
+        SetThreadDescription(GetCurrentThread(), wide.as_ptr());
+    }
+}
+
+#[cfg(not(windows))]
+pub(crate) fn set_executor_thread_name() {}
+

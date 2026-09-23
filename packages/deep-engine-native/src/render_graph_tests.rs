@@ -177,14 +177,24 @@ fn panicked_node_becomes_failed_node_and_batch_is_cancelled() {
     );
 }
 
-/// 本进程当前 OS 线程数(Windows ToolHelp 线程快照)。
-/// scoped executor 的清理证据:批次结束后线程数必须回到批次前水位。
+/// 当前进程内名为 `deep-executor` 的执行器线程数(ToolHelp 枚举 tid →
+/// OpenThread → GetThreadDescription 按名匹配)。只统计执行器自己的线程:
+/// 对并行测试中其它子系统(wgpu/MF/音频)创建的线程免疫——这是水位用例
+/// 并行 flaky 的根因修复(t2 下误报 readings 漂移 10→27)。
 #[cfg(windows)]
-fn process_thread_count() -> usize {
+fn executor_thread_count() -> usize {
     use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Com::CoTaskMemFree;
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
     };
+    use windows_sys::Win32::System::Threading::{
+        GetThreadDescription, OpenThread, THREAD_QUERY_LIMITED_INFORMATION,
+    };
+    const EXECUTOR_NAME: &[u16] = &[
+        b'd' as u16, b'e' as u16, b'e' as u16, b'p' as u16, b'-' as u16, b'e' as u16, b'x' as u16,
+        b'e' as u16, b'c' as u16, b'u' as u16, b't' as u16, b'o' as u16, b'r' as u16,
+    ];
 
     unsafe {
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
@@ -198,7 +208,25 @@ fn process_thread_count() -> usize {
         let mut alive = Thread32First(snapshot, &mut entry) != 0;
         while alive {
             if entry.th32OwnerProcessID == current_pid {
-                count += 1;
+                let handle = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, 0, entry.th32ThreadID);
+                if !handle.is_null() {
+                    let mut description = std::ptr::null_mut();
+                    if GetThreadDescription(handle, &mut description) == 0 && !description.is_null()
+                    {
+                        let mut matched = true;
+                        for (index, expected) in EXECUTOR_NAME.iter().enumerate() {
+                            if *description.add(index) != *expected {
+                                matched = false;
+                                break;
+                            }
+                        }
+                        if matched {
+                            count += 1;
+                        }
+                    }
+                    CoTaskMemFree(description.cast());
+                    CloseHandle(handle);
+                }
             }
             alive = Thread32Next(snapshot, &mut entry) != 0;
         }
@@ -222,7 +250,7 @@ fn executor_threads_are_fully_joined_after_every_batch() {
         execute_graph_batch(jobs_for(8, 200_000), 4)
             .into_artifacts()
             .unwrap();
-        readings.push(high_water_thread_count());
+        readings.push(executor_thread_count());
     }
     let first = readings[0];
     let last = readings[readings.len() - 1];
@@ -237,7 +265,7 @@ fn executor_threads_are_fully_joined_after_every_batch() {
 fn high_water_thread_count() -> usize {
     (0..5)
         .map(|_| {
-            let count = process_thread_count();
+            let count = executor_thread_count();
             thread::sleep(Duration::from_millis(40));
             count
         })
