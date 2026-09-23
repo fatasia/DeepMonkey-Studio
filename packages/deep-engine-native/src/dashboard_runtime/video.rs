@@ -158,17 +158,23 @@ impl DashboardVideoPlayback {
             _ => return Err("invalid dashboard video fit".into()),
         };
         let texture = DashboardVideoFrameTexture::new(device, queue, &first)?;
+        let duration_100ns = decoder.duration_100ns();
         let audio = if diagnostic.playback.muted {
             None
         } else {
             let bytes = crate::deep2d::runtime_base64::decode(&media.data_base64)
                 .map_err(|error| format!("dashboard audio media: {error}"))?;
-            Some(DashboardAudioTrack::from_mp4(bytes, diagnostic.playback.r#loop)?)
+            // 音频循环周期对齐视频 PTS 周期(100ns -> Duration)。
+            let loop_duration = if diagnostic.playback.r#loop && duration_100ns > 0 {
+                Some(Duration::from_nanos(duration_100ns as u64 * 100))
+            } else {
+                None
+            };
+            Some(DashboardAudioTrack::from_mp4(bytes, diagnostic.playback.r#loop, loop_duration)?)
         };
         if diagnostic.playback.autoplay {
             if let Some(audio) = &audio { audio.play(); }
         }
-        let duration_100ns = decoder.duration_100ns();
         Ok(Self {
             decoder,
             audio,

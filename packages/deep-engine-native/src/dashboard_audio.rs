@@ -10,6 +10,7 @@ use std::{io::Cursor, time::Duration};
 pub struct DashboardAudioTrack {
     _device: rodio::MixerDeviceSink,
     player: Player,
+    loop_duration: Option<Duration>,
     duration: Option<Duration>,
     bytes: Vec<u8>,
     loop_enabled: bool,
@@ -18,11 +19,13 @@ pub struct DashboardAudioTrack {
 }
 
 impl DashboardAudioTrack {
-    pub fn from_mp4(bytes: Vec<u8>, loop_enabled: bool) -> Result<Self, String> {
+    /// loop_duration:视频 PTS 循环周期。音频源截齐到该周期再无限循环,
+    /// 消除编解码 padding 尾巴造成的回绕相位跳(实测恒 500ms)。
+    pub fn from_mp4(bytes: Vec<u8>, loop_enabled: bool, loop_duration: Option<Duration>) -> Result<Self, String> {
         let device = DeviceSinkBuilder::from_default_device()
             .and_then(|builder| builder.open_stream())
             .map_err(|error| format!("open default audio output: {error}"))?;
-        Self::from_mp4_with_device(bytes, loop_enabled, device, "default", Duration::ZERO)
+        Self::from_mp4_with_device(bytes, loop_enabled, device, "default", Duration::ZERO, loop_duration)
     }
 
     fn from_mp4_with_device(
@@ -31,6 +34,7 @@ impl DashboardAudioTrack {
         device: rodio::MixerDeviceSink,
         device_name: impl Into<String>,
         start_position: Duration,
+        loop_duration: Option<Duration>,
     ) -> Result<Self, String> {
         let decoder = Decoder::builder()
             .with_byte_len(bytes.len() as u64)
@@ -41,19 +45,17 @@ impl DashboardAudioTrack {
             .map_err(|error| format!("decode MP4 AAC audio: {error}"))?;
         let duration = decoder.total_duration();
         let player = Player::connect_new(device.mixer());
-        if start_position.is_zero() {
-            if loop_enabled {
-                player.append(decoder.repeat_infinite());
-            } else {
-                player.append(decoder);
-            }
+        // 单一类型链:skip_duration(0) 等价恒等;take_duration 截齐循环周期,
+        // 让音频回绕与视频 PTS 回绕同步(无 loop_duration 时截到自然时长)。
+        let skip = if start_position.is_zero() { Duration::ZERO } else { start_position };
+        let period = loop_duration.unwrap_or_else(|| duration.unwrap_or(Duration::from_secs(1)));
+        let source = decoder
+            .skip_duration(skip)
+            .take_duration(period.max(Duration::from_millis(1)));
+        if loop_enabled {
+            player.append(source.repeat_infinite());
         } else {
-            let decoder = decoder.skip_duration(start_position);
-            if loop_enabled {
-                player.append(decoder.repeat_infinite());
-            } else {
-                player.append(decoder);
-            }
+            player.append(source);
         }
         player.pause();
         Ok(Self {
@@ -62,6 +64,7 @@ impl DashboardAudioTrack {
             duration,
             bytes,
             loop_enabled,
+            loop_duration,
             volume: 1.0,
             device_name: device_name.into(),
         })
@@ -122,6 +125,7 @@ impl DashboardAudioTrack {
             sink,
             requested_name.to_string(),
             start_position,
+            self.loop_duration,
         )?;
         track.player.set_volume(self.volume);
         Ok(track)
