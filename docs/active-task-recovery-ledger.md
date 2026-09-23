@@ -3460,3 +3460,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **行为回归对比（拆分前后受影响面 vitest，11 文件 43 测试逐一对齐）**：拆分前 43/43 全绿 → 拆分后 43/43 全绿（viewerAnimationTransition/sceneAnimationStateMachineRuntime/industrialPrefabGroundSnap/viewerFramePresentation/viewerEngineDeepOverlayRoots/SceneCommandExecutor/ViewerSceneCommandPort/sceneAnimationCommands/sceneSnapshotFactory/sceneViewerDynamicPlayback/editorSceneWriteDriver）。
 - **门禁**：apps/web tsc 0 错误；deep-engine tsc 三 project（主/lab/examples）0 错误；apps/web vitest 全量 729 文件 4321 passed/3 skipped/0 failed；deep-engine vitest 全量 486 文件 3938 passed/44 skipped/0 failed；runtimePurityGate PASS；deep-engine sourceSizeGate failures=116 与 HEAD 存量基线一致（新增 host.ts/host.test.ts/viewerEngineAnimationControl.ts 均 <300 行，零新增超限）；根 800 行门禁失败 2 项（probe_gi_grid.rs 908、solid_environment.rs 1003）均为 HEAD 存量、本切片未触碰。
 - **诚实边界**：①interaction 其余域（annotation/设备消息/工业预制体/交互脚本/可见性过渡/数据消息）未拆，按 handoff"先动画域、再评估 annotation/设备消息域"留待后续切片；②viewerEngineCore 的 sceneAnimation 状态字段（场景时间线动画域）仍在 core+simulation，属另一稳定边界、本次不动；③host.ts 为既有能力分组 re-export，未新增能力，粒子/探针 clipmap 能力此前只能经 `./webgpu` 子入口或主 index 部分触达，现经 `./host` 有统一文档化入口；④smoke 测试在 node 环境验证符号与纯逻辑可用性，GPU 渲染证据仍由既有真机 gate 覆盖；⑤根 800 行门禁 2 项存量失败与 deep-engine 300 行门禁 116 项存量失败如实保留，未做无关清理。
+
+### 2026-09-23 30 分钟自检（第三十轮）：F6 宿主入口验收 + V1 逐像素补位
+
+- **F6 收口验收通过**（92d8ab10）：统一宿主入口 host.ts（五主题分组 re-export+JSDoc，package.json ./host 子入口发布态实测生成，smoke 3 例防漂移双向+真实调用 fail-closed）；viewerEngineAnimationControl 拆分（10 方法逐字保留、公开签名不变、695→666 行、拆分前后 43 测试对齐）。主线程复跑 smoke 3/3。门禁：web 全量 4321/0、deep-engine 3938/0、三 project tsc 0、300 行门禁零新增超限。边界：interaction 其余域按 handoff 节奏待后续。
+- **满载补位**：空闲代理派 V1 逐像素基线+输入轨迹对拍（SSIM/分块均方差两两相似度+归一化前后双数值+差异热图；三机位确定性轨迹跨端同参截帧；第一版建立基线不判胜负）；在跑：F5 收口、V5 预检。
