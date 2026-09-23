@@ -134,3 +134,69 @@ fn clipboard_mutations_and_pointer_selection_share_editor_history() {
     assert!(Arc::ptr_eq(&before, &runtime.content));
     assert_eq!(runtime.input_value(), "all");
 }
+
+#[test]
+fn composing_ime_blocks_keyboard_edits_until_commit() {
+    // 组合期间物理键盘编辑必须被抑制:文档、已提交数据与修订号全部不动,
+    // 保证 IME 组合串(候选窗中的文字)不会以任何形式提前上屏。
+    // fixture 字体是拉丁字体,组合串用拉丁输入法(如德语)的 composition 形态。
+    let mut runtime = DashboardRuntime::new(fixture()).unwrap();
+    runtime.input_focus(true).unwrap();
+    runtime
+        .input_ime(Ime::Preedit("h".into(), None))
+        .unwrap();
+    assert_eq!(runtime.input_preedit(), "h");
+    let value_before = runtime.input_value().to_string();
+    let revision_before = runtime.revision;
+    // 组合中字符键与退格被组合闸拦下(返回 false 表示未消费、未修改)
+    assert!(!runtime.input_key("KeyX", Some("x"), false, false).unwrap());
+    assert!(!runtime
+        .input_key("Backspace", None, false, false)
+        .unwrap());
+    assert_eq!(runtime.input_value(), value_before);
+    assert_eq!(runtime.input_preedit(), "h");
+    assert_eq!(runtime.revision, revision_before);
+    // 组合串更新只改 preedit,依旧不触发数据提交
+    runtime
+        .input_ime(Ime::Preedit("hallo".into(), None))
+        .unwrap();
+    assert_eq!(runtime.input_value(), value_before);
+    assert_eq!(runtime.input_preedit(), "hallo");
+    // 提交后组合闸打开,组合串清空并作为普通编辑进入数据
+    runtime.input_ime(Ime::Commit("hallo".into())).unwrap();
+    assert_eq!(runtime.input_preedit(), "");
+    assert_eq!(runtime.input_value(), "hallo");
+    assert!(runtime.input_key("End", None, false, false).unwrap());
+}
+
+#[test]
+fn preedit_renders_placeholder_and_pushes_caret() {
+    // 组合文本必须作为占位渲染:caret 为组合串让位(排版可见),
+    // 且输入框内容层在有组合串时产出不同的光栅内容。
+    let mut runtime = DashboardRuntime::new(fixture()).unwrap();
+    runtime.input_focus(true).unwrap();
+    let base_caret = runtime.input_caret_rect().unwrap().unwrap();
+    let base_content = runtime.input_content().unwrap().expect("input content");
+    runtime
+        .input_ime(Ime::Preedit("hallo".into(), None))
+        .unwrap();
+    let composed_caret = runtime.input_caret_rect().unwrap().unwrap();
+    let composed_content = runtime
+        .input_content()
+        .unwrap()
+        .expect("input content during composition");
+    // 组合占位把可见 caret 推向右侧(为候选文本让位)
+    assert!(composed_caret[0] > base_caret[0]);
+    // 占位文本进入显示列表(内容层重新光栅化,产出不同内容),但不进入已提交值
+    assert_ne!(base_content, composed_content);
+    assert_eq!(runtime.input_value(), "");
+    // 提交后组合串转为已提交值,caret 保持让位后的位置
+    runtime.input_ime(Ime::Commit("hallo".into())).unwrap();
+    assert_eq!(runtime.input_value(), "hallo");
+    assert!(runtime
+        .input_caret_rect()
+        .unwrap()
+        .unwrap()[0]
+        >= composed_caret[0]);
+    crate::deep2d::prepare_runtime_content(runtime.content()).unwrap();
+}

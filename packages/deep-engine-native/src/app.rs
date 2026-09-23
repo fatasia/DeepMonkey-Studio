@@ -59,6 +59,7 @@ mod selection_probe;
 mod shadow_update_probe;
 mod state_ops_playback;
 mod text_scale;
+mod touch_pointer;
 mod watch_thread;
 mod window_events;
 #[cfg(all(test, windows))]
@@ -87,6 +88,8 @@ pub use state_ops_playback::StateOpsSpec;
 
 struct NativeApp {
     input_gesture: dashboard::InputGesture,
+    /// 触控→指针动作的跟踪器;触屏手势与鼠标左键共用同一条处理链。
+    touch_pointer: touch_pointer::TouchPointerTracker,
     #[cfg(windows)]
     dashboard_video_input: dashboard_video_input::VideoInput,
     input_modifiers: winit::keyboard::ModifiersState,
@@ -338,6 +341,7 @@ impl NativeApp {
         Self {
             input_modifiers: winit::keyboard::ModifiersState::empty(),
             input_gesture: dashboard::InputGesture::default(),
+            touch_pointer: touch_pointer::TouchPointerTracker::new(),
             #[cfg(windows)]
             dashboard_video_input: dashboard_video_input::VideoInput::default(),
             chart_probe,

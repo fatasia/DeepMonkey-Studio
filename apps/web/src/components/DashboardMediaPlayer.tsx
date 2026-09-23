@@ -4,6 +4,8 @@ import type { DashboardDataWidgetConfig } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import {
   advancePlaybackWatchdog,
+  applyVideoAudioState,
+  audioTrackPlan,
   browserMediaUrl,
   effectivePlaybackOptions,
   initialPlaybackWatchdogState,
@@ -137,11 +139,14 @@ export function StreamVideo({ src, fit, autoplay, muted, loop, controls, locale 
   const reconnectAttemptRef = useRef(0);
   const safe = browserMediaUrl(src, pageProtocol());
   const playback = effectivePlaybackOptions(autoplay, muted);
+  // 音轨计划:作者未静音时,自动播放被拦截后的用户手势会恢复有声。
+  const audio = audioTrackPlan(muted, playback.autoplay);
 
   function retryPlayback() {
     const video = ref.current;
     if (failure?.kind === "autoplay" && video) {
-      video.muted = true;
+      // 点击重试即用户手势:作者未静音时直接以有声播放;作者静音保持静音。
+      applyVideoAudioState(video, !audio.soundOnUserGesture, 1);
       void video
         .play()
         .then(() => setFailure(undefined))
@@ -221,8 +226,10 @@ export function StreamVideo({ src, fit, autoplay, muted, loop, controls, locale 
     const beginPlayback = () => {
       if (!shouldRequestAutoplay(playback.autoplay, video.paused, video.readyState, playRequestPending) || disposed) return;
       playRequestPending = true;
-      video.muted = true;
-      video.defaultMuted = true;
+      // 按音轨计划应用初始静音态:作者未静音且非自动播放时直接有声起播,
+      // 自动播放仍先静音规避浏览器策略(有声在用户手势内恢复)。
+      applyVideoAudioState(video, audio.startMuted, 1);
+      video.defaultMuted = audio.startMuted;
       void video
         .play()
         .then(() => {
@@ -232,7 +239,9 @@ export function StreamVideo({ src, fit, autoplay, muted, loop, controls, locale 
           if (!disposed)
             setFailure({
               kind: "autoplay",
-              text: tr(locale, "画面已就绪，浏览器需要一次点击才能开始播放。", "The stream is ready; the browser requires one click to start playback."),
+              text: audio.soundOnUserGesture
+                ? tr(locale, "画面已就绪，点击以开启声音并播放。", "The stream is ready; click to start playback with sound.")
+                : tr(locale, "画面已就绪，浏览器需要一次点击才能开始播放。", "The stream is ready; the browser requires one click to start playback."),
             });
         })
         .finally(() => {
@@ -320,7 +329,7 @@ export function StreamVideo({ src, fit, autoplay, muted, loop, controls, locale 
       video.removeAttribute("src");
       video.load();
     };
-  }, [attempt, locale, playback.autoplay, safe.ok ? safe.url : ""]);
+  }, [attempt, locale, playback.autoplay, muted, safe.ok ? safe.url : ""]);
 
   if (!safe.ok) return <MediaMessage locale={locale} icon="video" message={mediaUrlErrorMessage(safe.reason, locale)} />;
   return (

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DashboardDataWidgetConfig, VisionSourceRecord } from "@bim-studio/contracts";
-import { advancePlaybackWatchdog, browserMediaUrl, effectivePlaybackOptions, initialPlaybackWatchdogState, isHlsUrl, isPlaybackWaiting, liveSourceUrl, mediaReconnectDelay, mediaReferenceFromVisionSource, mediaReferenceFromWidget, shouldRequestAutoplay } from "./dashboardMedia";
+import { advancePlaybackWatchdog, applyVideoAudioState, audioTrackPlan, browserMediaUrl, effectivePlaybackOptions, initialPlaybackWatchdogState, isHlsUrl, isPlaybackWaiting, liveSourceUrl, mediaReconnectDelay, mediaReferenceFromVisionSource, mediaReferenceFromWidget, shouldRequestAutoplay } from "./dashboardMedia";
 
 describe("dashboard media references", () => {
   it("keeps live ingest separate from its browser playback URL", () => {
@@ -53,6 +53,34 @@ describe("dashboard video policy", () => {
   it("forces autoplaying video to be muted", () => {
     expect(effectivePlaybackOptions(true, false)).toEqual({ autoplay: true, muted: true });
     expect(effectivePlaybackOptions(false, false)).toEqual({ autoplay: false, muted: false });
+  });
+
+  it("keeps authored-muted video silent in every playback mode", () => {
+    // 静音态确定性行为:作者要求静音时,无论是否自动播放都全程静音且不解锁。
+    expect(audioTrackPlan(true, true)).toEqual({ startMuted: true, soundOnUserGesture: false });
+    expect(audioTrackPlan(true, false)).toEqual({ startMuted: true, soundOnUserGesture: false });
+  });
+
+  it("plans sound recovery through a user gesture only when autoplay was muted", () => {
+    // 自动播放先静音规避策略,用户手势内恢复作者的有声意愿。
+    expect(audioTrackPlan(false, true)).toEqual({ startMuted: true, soundOnUserGesture: true });
+    // 非自动播放由用户在控制条内触发(自带手势),直接有声起播。
+    expect(audioTrackPlan(false, false)).toEqual({ startMuted: false, soundOnUserGesture: false });
+  });
+
+  it("applies audio state deterministically with volume clamped to [0,1]", () => {
+    const video = { muted: false, volume: 0.5 };
+    applyVideoAudioState(video, true, 0.25);
+    expect(video).toEqual({ muted: true, volume: 0.25 });
+    // 越界与非有限音量都收敛到确定值,不把坏数据传进媒体元素。
+    applyVideoAudioState(video, false, 1.5);
+    expect(video.volume).toBe(1);
+    applyVideoAudioState(video, false, -2);
+    expect(video.volume).toBe(0);
+    applyVideoAudioState(video, false, Number.NaN);
+    expect(video.volume).toBe(1);
+    applyVideoAudioState(video, false, Number.POSITIVE_INFINITY);
+    expect(video.volume).toBe(1);
   });
 
   it("starts once media metadata is ready and avoids concurrent play requests", () => {

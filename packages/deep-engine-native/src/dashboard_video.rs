@@ -24,6 +24,15 @@ pub struct DashboardVideoColorContract {
     pub output_transfer: &'static str,
 }
 
+/// 源音频轨道探测结果:只判定"源里有没有音轨、采样率多少"。
+/// 音频输出(播放出声)仍是登记缺口(audio-output);本探测不改变
+/// 强制静音的播放合同,只把无声原因显式化,供诊断与测试消费。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DashboardVideoAudioTrackProbe {
+    /// 首个音频流的采样率(Hz);容器缺失该元数据时为 0。
+    pub sample_rate: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodedDashboardVideoFrame {
     pub width: u32,
@@ -185,6 +194,12 @@ impl DashboardVideoDecoder {
 
     pub fn duration_100ns(&self) -> i64 {
         self.inner.duration_100ns()
+    }
+
+    /// 源音频轨道探测:None 表示容器无音轨(如纯 H.264 样本);
+    /// Some 记录采样率。探测不改变静音播放合同。
+    pub fn audio_track(&self) -> Option<DashboardVideoAudioTrackProbe> {
+        self.inner.audio_track()
     }
 
     pub fn seek(&mut self, position_100ns: i64) -> Result<(), String> {

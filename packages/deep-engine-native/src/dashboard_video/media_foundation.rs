@@ -1,12 +1,16 @@
-use super::{DashboardVideoColorContract, DashboardVideoPixelFormat, DecodedDashboardVideoFrame};
+use super::{
+    DashboardVideoAudioTrackProbe, DashboardVideoColorContract, DashboardVideoPixelFormat,
+    DecodedDashboardVideoFrame,
+};
 use std::sync::{Mutex, OnceLock};
 use windows::Win32::{
     Media::MediaFoundation::{
-        IMFAttributes, IMFByteStream, IMFMediaBuffer, IMFSourceReader, MF_BYTESTREAM_CONTENT_TYPE,
-        MF_BYTESTREAM_ORIGIN_NAME, MF_MT_DEFAULT_STRIDE, MF_MT_FRAME_SIZE, MF_MT_MAJOR_TYPE,
-        MF_MT_SUBTYPE, MF_MT_TRANSFER_FUNCTION, MF_MT_VIDEO_NOMINAL_RANGE, MF_MT_VIDEO_PRIMARIES,
-        MF_MT_YUV_MATRIX, MF_PD_DURATION, MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS,
-        MF_SOURCE_READER_ALL_STREAMS, MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING,
+        IMFAttributes, IMFByteStream, IMFMediaBuffer, IMFMediaType, IMFSourceReader,
+        MF_BYTESTREAM_CONTENT_TYPE, MF_BYTESTREAM_ORIGIN_NAME, MF_MT_AUDIO_SAMPLES_PER_SECOND,
+        MF_MT_DEFAULT_STRIDE, MF_MT_FRAME_SIZE, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE,
+        MF_MT_TRANSFER_FUNCTION, MF_MT_VIDEO_NOMINAL_RANGE, MF_MT_VIDEO_PRIMARIES, MF_MT_YUV_MATRIX,
+        MF_PD_DURATION, MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, MF_SOURCE_READER_ALL_STREAMS,
+        MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING, MF_SOURCE_READER_FIRST_AUDIO_STREAM,
         MF_SOURCE_READER_FIRST_VIDEO_STREAM, MF_SOURCE_READER_MEDIASOURCE,
         MF_SOURCE_READERF_ENDOFSTREAM, MF_VERSION, MFCreateAttributes,
         MFCreateMFByteStreamOnStreamEx, MFCreateMediaType, MFCreateSourceReaderFromByteStream,
@@ -122,6 +126,9 @@ struct ReaderState {
     stride: i32,
     color: DashboardVideoColorContract,
     duration_100ns: i64,
+    /// 源音频轨道探测结果。音频输出尚未实现(audio-output 登记缺口),
+    /// 该字段只把"无声"从隐式默认变成对源的显式判定,不改变静音播放合同。
+    audio_track: Option<DashboardVideoAudioTrackProbe>,
 }
 
 pub(super) struct MediaFoundationVideoDecoder {
@@ -154,6 +161,10 @@ impl MediaFoundationVideoDecoder {
 
     pub(super) fn duration_100ns(&self) -> i64 {
         self.state.duration_100ns
+    }
+
+    pub(super) fn audio_track(&self) -> Option<DashboardVideoAudioTrackProbe> {
+        self.state.audio_track
     }
 
     pub(super) fn seek(&mut self, position_100ns: i64) -> Result<(), String> {
@@ -244,6 +255,15 @@ unsafe fn open(bytes: &[u8]) -> Result<ReaderState, String> {
     if duration_100ns <= 0 {
         return Err("packaged MP4 has invalid duration".into());
     }
+    // 音频轨道探测:在禁用全部流之前读取首个音频流的媒体类型。
+    // 只读元数据、不选择该流,探测失败(无音轨)是正常路径而非错误。
+    let audio_track = unsafe { reader.GetNativeMediaType(MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32, 0) }
+        .ok()
+        .map(|audio_type: IMFMediaType| DashboardVideoAudioTrackProbe {
+            // 采样率读取失败保持 0,不因元数据缺失拒绝整段媒体。
+            sample_rate: unsafe { audio_type.GetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND) }
+                .unwrap_or(0),
+        });
     unsafe {
         reader
             .SetStreamSelection(MF_SOURCE_READER_ALL_STREAMS.0 as u32, false)
@@ -305,6 +325,7 @@ unsafe fn open(bytes: &[u8]) -> Result<ReaderState, String> {
         stride,
         color,
         duration_100ns,
+        audio_track,
     })
 }
 

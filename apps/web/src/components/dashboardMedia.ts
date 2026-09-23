@@ -88,6 +88,32 @@ export function effectivePlaybackOptions(autoplay: boolean, muted: boolean): { a
   return { autoplay, muted: autoplay || muted };
 }
 
+/** 视频音轨计划:决定播放器初始静音态与"用户手势开启声音"的确定性合同。 */
+export interface VideoAudioPlan {
+  /** 初始静音态:作者要求静音,或需要自动播放规避浏览器策略时必然为 true。 */
+  startMuted: boolean;
+  /** 自动播放被浏览器拦截后,用户手势(点击重试)内是否恢复作者的有声意愿。 */
+  soundOnUserGesture: boolean;
+}
+
+/**
+ * 作者静音设置与浏览器自动播放策略的合成决策。
+ * 作者要求静音时保持全程静音(确定性,不提供解锁);
+ * 作者未静音且自动播放时先静音起播,手势内恢复有声;
+ * 作者未静音且不自动播放时,播放由用户在控制条内触发(自带手势),直接有声。
+ */
+export function audioTrackPlan(authorMuted: boolean, autoplay: boolean): VideoAudioPlan {
+  if (authorMuted) return { startMuted: true, soundOnUserGesture: false };
+  if (autoplay) return { startMuted: true, soundOnUserGesture: true };
+  return { startMuted: false, soundOnUserGesture: false };
+}
+
+/** 把音量/静音合同确定性地应用到媒体元素:静音为布尔直设,音量夹取 [0,1]。 */
+export function applyVideoAudioState(video: { muted: boolean; volume: number }, muted: boolean, volume: number): void {
+  video.muted = muted;
+  video.volume = Number.isFinite(volume) ? Math.min(1, Math.max(0, volume)) : 1;
+}
+
 /** Guard repeated HLS/native readiness events from issuing concurrent play requests. */
 export function shouldRequestAutoplay(autoplay: boolean, paused: boolean, readyState: number, requestPending: boolean): boolean {
   return autoplay && paused && readyState >= 1 && !requestPending;

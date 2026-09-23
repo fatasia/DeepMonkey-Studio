@@ -5,7 +5,9 @@ use deep_engine_native::{
         DashboardRuntime, DashboardVideoCommand, dashboard_video_drag_command,
         dashboard_video_key_command,
     },
-    dashboard_video::{DashboardVideoFrameTexture, decode_first_packaged_mp4_frame},
+    dashboard_video::{
+        DashboardVideoFrameTexture, DashboardVideoDecoder, decode_first_packaged_mp4_frame,
+    },
     runtime_package::{
         DashboardNode, DashboardPage, DashboardRuntimeV1, DashboardVideoDiagnostic,
         DashboardVideoMedia, DashboardVideoPlayback as DashboardVideoIntent, DashboardVideoSource,
@@ -15,11 +17,17 @@ use deep_engine_native::{
 use std::{collections::BTreeMap, path::PathBuf, time::Duration};
 
 const SAMPLE_SHA256: &str = "cc0f524262f2ae97402ca8280556059c3d60cb3d25fec9309ff3b55ca974f593";
+/// 合成音轨样本 `tests/fixtures/audio-track-sample.mp4` 的内容哈希。
+/// 样本档案(来源/授权/格式/预期内容)见 tests/fixtures/README.md。
+const AUDIO_SAMPLE_SHA256: &str = "81afc6e84e23536c6b1056f84051a8fa3fb4eafbb4280c0c89ef7eea1e43dc9f";
+
+fn fixture_path(relative: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative)
+}
 
 fn sample_bytes() -> Vec<u8> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../apps/web/public/showcase/line-loop.mp4");
-    std::fs::read(path).expect("real H.264 MP4 fixture")
+    std::fs::read(fixture_path("../../apps/web/public/showcase/line-loop.mp4"))
+        .expect("real H.264 MP4 fixture")
 }
 
 fn packaged_media(bytes: &[u8]) -> DashboardVideoMedia {
@@ -222,6 +230,44 @@ fn decode_boundary_rejects_content_address_mismatch() {
     let mut media = packaged_media(&bytes);
     media.sha256.replace_range(..2, "00");
     assert!(decode_first_packaged_mp4_frame(&media).is_err());
+}
+
+fn media_from_fixture(bytes: &[u8], sha256: &str) -> DashboardVideoMedia {
+    DashboardVideoMedia {
+        id: format!("media.{sha256}"),
+        revision: 1,
+        format: "mp4-isobmff".into(),
+        mime: "video/mp4".into(),
+        byte_length: bytes.len(),
+        sha256: sha256.into(),
+        data_base64: base64(bytes),
+    }
+}
+
+#[test]
+fn silent_sample_reports_no_audio_track() {
+    // 无音轨的纯 H.264 样本必须显式报告"无音轨",无声原因是源属性而非默认遗漏。
+    let bytes = sample_bytes();
+    let mut decoder = DashboardVideoDecoder::new(&media_from_fixture(&bytes, SAMPLE_SHA256))
+        .expect("open silent sample");
+    assert_eq!(decoder.audio_track(), None);
+    assert!(decoder.next_frame().unwrap().is_some());
+}
+
+#[test]
+fn synthetic_audio_sample_probes_track_and_sample_rate() {
+    // 合成 AAC 样本验证音轨探测管道:音轨存在性 + 采样率读取。
+    // 音频"播放出声"仍是登记缺口(audio-output),本测试只收口探测合同。
+    let bytes = std::fs::read(fixture_path("tests/fixtures/audio-track-sample.mp4"))
+        .expect("synthetic audio-track fixture");
+    let mut decoder = DashboardVideoDecoder::new(&media_from_fixture(&bytes, AUDIO_SAMPLE_SHA256))
+        .expect("open synthetic audio sample");
+    let track = decoder
+        .audio_track()
+        .expect("synthetic sample must expose its audio track");
+    assert_eq!(track.sample_rate, 44_100);
+    // 音轨存在不影响视频解码与静音播放合同。
+    assert!(decoder.next_frame().unwrap().is_some());
 }
 
 #[test]
