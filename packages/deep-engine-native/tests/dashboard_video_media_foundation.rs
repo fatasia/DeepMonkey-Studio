@@ -607,6 +607,12 @@ fn formal_exe_audio_thirty_minute_stability_soak() {
         playback.audio_position_100ns(),
         stats.samples,
     );
+    // 逃逸时间分布:区分回绕残差(聚集在循环周期整数倍附近)、设备抖动
+    // (随机散布)与重同步暂态(紧跟恢复点)。
+    println!(
+        "audio soak escapes (t_seconds, drift_100ns): {:?}",
+        stats.escapes
+    );
     // 证据先于断言落盘:长稳失败也必须留下可审计的偏差记录。
     let passed = stats.max_100ns <= 1_500_000;
     let evidence = format!(
