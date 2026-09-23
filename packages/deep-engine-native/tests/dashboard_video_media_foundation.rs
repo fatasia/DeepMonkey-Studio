@@ -74,8 +74,8 @@ fn runtime_with_fit(
             r#loop: loop_enabled,
         },
         state: DashboardVideoState {
-            status: if muted { "ready" } else { "blocked" }.into(),
-            transport: if muted {
+            status: if muted || media.id == format!("media.{AUDIO_SAMPLE_SHA256}") { "ready" } else { "blocked" }.into(),
+            transport: if muted || media.id == format!("media.{AUDIO_SAMPLE_SHA256}") {
                 if autoplay { "autoplay" } else { "poster" }
             } else {
                 "unavailable"
@@ -83,13 +83,13 @@ fn runtime_with_fit(
             .into(),
             position_seconds: 0.0,
             duration_seconds: None,
-            reason: if muted {
+            reason: if muted || media.id == format!("media.{AUDIO_SAMPLE_SHA256}") {
                 "native-video-runtime-ready"
             } else {
                 "native-video-audio-unavailable"
             }
             .into(),
-            missing_capabilities: if muted {
+            missing_capabilities: if muted || media.id == format!("media.{AUDIO_SAMPLE_SHA256}") {
                 vec![]
             } else {
                 vec!["audio-output".into()]
@@ -257,7 +257,8 @@ fn silent_sample_reports_no_audio_track() {
 #[test]
 fn synthetic_audio_sample_probes_track_and_sample_rate() {
     // 合成 AAC 样本验证音轨探测管道:音轨存在性 + 采样率读取。
-    // 音频"播放出声"仍是登记缺口(audio-output),本测试只收口探测合同。
+    // 音频轨道探测是编译/校验合同；真实设备出声仍由单独的 ignored
+    // hardware test 取证。
     let bytes = std::fs::read(fixture_path("tests/fixtures/audio-track-sample.mp4"))
         .expect("synthetic audio-track fixture");
     let mut decoder = DashboardVideoDecoder::new(&media_from_fixture(&bytes, AUDIO_SAMPLE_SHA256))
@@ -456,8 +457,209 @@ fn formal_dashboard_runtime_advances_real_frames_on_a_monotonic_muted_loop() {
         audible_dashboard
             .prepare_video_playback("node.video", &device, &queue, start)
             .is_err(),
-        "audio is not implemented, so unmuted playback must fail closed"
+        "a packaged video without an audio track must fail closed when authored unmuted"
     );
+}
+
+#[test]
+#[ignore = "requires a Windows default audio output device"]
+fn real_audio_track_enters_native_playback_and_follows_transport() {
+    let bytes = std::fs::read(fixture_path("tests/fixtures/audio-track-sample.mp4"))
+        .expect("synthetic AAC audio-track fixture");
+    let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = wgpu::Backends::DX12;
+    let instance = wgpu::Instance::new(descriptor);
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: None,
+        force_fallback_adapter: false,
+        apply_limit_buckets: false,
+    }))
+    .expect("DX12 hardware adapter");
+    let (device, queue) =
+        pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
+            .expect("DX12 device");
+    let dashboard = runtime(
+        media_from_fixture(&bytes, AUDIO_SAMPLE_SHA256),
+        true,
+        false,
+        true,
+    );
+    let mut playback = dashboard
+        .prepare_video_playback("node.video", &device, &queue, Duration::from_secs(1))
+        .expect("default audio output and AAC decoder");
+    assert!(!playback.is_muted());
+    assert!(playback.is_playing());
+    let paused = playback
+        .control(
+            &queue,
+            Duration::from_secs(1),
+            DashboardVideoCommand::Pause,
+        )
+        .expect("pause audio and video together");
+    assert!(!paused.playing);
+    let resumed = playback
+        .control(
+            &queue,
+            Duration::from_secs(2),
+            DashboardVideoCommand::Play,
+        )
+        .expect("resume audio and video together");
+    assert!(resumed.playing);
+}
+
+#[test]
+#[ignore = "requires a Windows default audio output device"]
+fn formal_exe_audio_device_switch_long_stability_and_av_sync() {
+    let bytes = std::fs::read(fixture_path("tests/fixtures/audio-track-sample.mp4"))
+        .expect("synthetic AAC audio-track fixture");
+    let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = wgpu::Backends::DX12;
+    let instance = wgpu::Instance::new(descriptor);
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: None,
+        force_fallback_adapter: false,
+        apply_limit_buckets: false,
+    }))
+    .expect("DX12 hardware adapter");
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
+        .expect("DX12 device");
+    let dashboard = runtime(media_from_fixture(&bytes, AUDIO_SAMPLE_SHA256), true, false, true);
+    let mut playback = dashboard
+        .prepare_video_playback("node.video", &device, &queue, Duration::from_secs(1))
+        .expect("default audio output and AAC decoder");
+    let devices = deep_engine_native::dashboard_audio::DashboardAudioTrack::output_devices()
+        .expect("enumerate Windows output devices");
+    assert!(!devices.is_empty(), "at least the default output must be listed");
+    let initial_device = playback.audio_device_name().unwrap_or("unknown").to_string();
+    let mut switched = false;
+    for device_name in devices.iter().filter(|name| name.as_str() != initial_device) {
+        playback
+            .switch_audio_device(&queue, Duration::from_secs(1), device_name)
+            .expect("switch audio device and preserve transport");
+        assert_eq!(playback.audio_device_name(), Some(device_name.as_str()));
+        switched = true;
+        break;
+    }
+
+    // Real-time soak: advance the same packaged EXE playback path for 30 s,
+    // sample the output clock and bound A/V drift to 150 ms.
+    let max_drift_100ns = formal_soak_av_drift(&mut playback, &queue, Duration::from_secs(30)).max_100ns;
+    println!("audio formal clocks: video={} audio={:?} drift={}", playback.state().position_100ns, playback.audio_position_100ns(), max_drift_100ns);
+    assert!(max_drift_100ns <= 1_500_000, "A/V drift exceeded 150 ms: {max_drift_100ns} 100ns");
+    println!(
+        "formal native EXE audio: device={initial_device}; switched={switched}; soak_seconds=30; max_av_drift_ms={:.1}",
+        max_drift_100ns as f64 / 10_000.0
+    );
+}
+
+#[test]
+#[ignore = "requires a Windows default audio output device; real-time 30-minute soak"]
+fn formal_exe_audio_thirty_minute_stability_soak() {
+    let soak_seconds = std::env::var("DEEP_AUDIO_SOAK_SECONDS")
+        .ok()
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .filter(|seconds| *seconds > 0)
+        .unwrap_or(1800);
+    let bytes = std::fs::read(fixture_path("tests/fixtures/audio-track-sample.mp4"))
+        .expect("synthetic AAC audio-track fixture");
+    let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = wgpu::Backends::DX12;
+    let instance = wgpu::Instance::new(descriptor);
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: None,
+        force_fallback_adapter: false,
+        apply_limit_buckets: false,
+    }))
+    .expect("DX12 hardware adapter");
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
+        .expect("DX12 device");
+    let dashboard = runtime(media_from_fixture(&bytes, AUDIO_SAMPLE_SHA256), true, false, true);
+    let mut playback = dashboard
+        .prepare_video_playback("node.video", &device, &queue, Duration::from_secs(1))
+        .expect("default audio output and AAC decoder");
+    let devices = deep_engine_native::dashboard_audio::DashboardAudioTrack::output_devices()
+        .expect("enumerate Windows output devices");
+    assert!(!devices.is_empty(), "at least the default output must be listed");
+    let initial_device = playback.audio_device_name().unwrap_or("unknown").to_string();
+    let mut switched = false;
+    for device_name in devices.iter().filter(|name| name.as_str() != initial_device) {
+        playback
+            .switch_audio_device(&queue, Duration::from_secs(1), device_name)
+            .expect("switch audio device and preserve transport");
+        assert_eq!(playback.audio_device_name(), Some(device_name.as_str()));
+        switched = true;
+        break;
+    }
+
+    let stats = formal_soak_av_drift(&mut playback, &queue, Duration::from_secs(soak_seconds));
+    let max_drift_ms = stats.max_100ns as f64 / 10_000.0;
+    let mean_drift_ms = if stats.samples > 0 {
+        stats.sum_100ns as f64 / stats.samples as f64 / 10_000.0
+    } else {
+        0.0
+    };
+    println!(
+        "audio 30-minute clocks: video={} audio={:?} samples={} max_drift_ms={max_drift_ms:.1} mean_drift_ms={mean_drift_ms:.1}",
+        playback.state().position_100ns,
+        playback.audio_position_100ns(),
+        stats.samples,
+    );
+    assert!(stats.max_100ns <= 1_500_000, "A/V drift exceeded 150 ms over {soak_seconds} s: {} 100ns", stats.max_100ns);
+    let evidence = format!(
+        "{{\n  \"schema\": \"deep-engine.native-audio-30min-soak-evidence\",\n  \"date\": \"2026-09-23\",\n  \"test\": \"formal_exe_audio_thirty_minute_stability_soak\",\n  \"result\": \"passed\",\n  \"platform\": \"Windows DX12\",\n  \"device\": \"{initial_device}\",\n  \"deviceSwitch\": {switched},\n  \"soakSeconds\": {soak_seconds},\n  \"samples\": {},\n  \"maxAvDriftMs\": {max_drift_ms:.1},\n  \"meanAvDriftMs\": {mean_drift_ms:.1},\n  \"avDriftLimitMs\": 150.0\n}}\n",
+        stats.samples
+    );
+    std::fs::write(
+        fixture_path("../../test-output/native-audio-30min-soak-evidence-2026-09-23.json"),
+        evidence,
+    )
+    .expect("write 30-minute soak evidence JSON");
+    println!(
+        "formal native EXE audio 30-minute soak: device={initial_device}; switched={switched}; soak_seconds={soak_seconds}; samples={}; max_av_drift_ms={max_drift_ms:.1}; mean_av_drift_ms={mean_drift_ms:.1}",
+        stats.samples
+    );
+}
+
+struct AudioSoakDrift {
+    max_100ns: i64,
+    sum_100ns: i64,
+    samples: usize,
+}
+
+// Real-time soak shared by the 30 s formal gate and the 30-minute stability
+// soak: advance the packaged EXE playback path, sample the output clock and
+// bound A/V drift to 150 ms.
+fn formal_soak_av_drift(
+    playback: &mut deep_engine_native::dashboard_runtime::DashboardVideoPlayback,
+    queue: &wgpu::Queue,
+    soak: Duration,
+) -> AudioSoakDrift {
+    let start = std::time::Instant::now();
+    let mut stats = AudioSoakDrift {
+        max_100ns: 0,
+        sum_100ns: 0,
+        samples: 0,
+    };
+    while start.elapsed() < soak {
+        let tick = Duration::from_secs(1) + start.elapsed();
+        let state = playback.advance_to(queue, tick).expect("stable media advance");
+        if let Some(audio) = playback.audio_position_100ns() {
+            let duration = playback.duration_100ns().max(1);
+            let video = state.position_100ns.rem_euclid(duration);
+            let audio = audio.rem_euclid(duration);
+            let direct = (audio - video).abs();
+            let wrapped = duration - direct;
+            let drift = direct.min(wrapped);
+            stats.max_100ns = stats.max_100ns.max(drift);
+            stats.sum_100ns += drift;
+            stats.samples += 1;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    stats
 }
 
 fn base64(bytes: &[u8]) -> String {
