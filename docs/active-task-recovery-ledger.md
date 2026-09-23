@@ -358,7 +358,7 @@
 
 - P2-02完成 `f4e8ebb`：冻结ZRender 6.1.0动态bar rect子集认证——4帧序列（initial/data-replace/x-window/y-window）逐值对拍（容差同golden 1e-9），跨实例双跑outputHash流一致；blocked九项（formatter/image/tooltip/animation/非rect/legend/类目增删/dataZoom组件/值越界clip）全部测试证据不静默；ECharts类目窗口(count-1)取整与Native行带公式差异由lane重投影确定性基元承担，非对齐窗口与值越界fail-closed拒绝。16/16+邻居experiments 81+delivery 593绿；版本锁定6.1.0升级即全量重认证。[spec](specs/deep2d-p2-02-zrender-chartir-rect-certification-2026-09-18.md)
 
-- P3-01 delta合同：runtime_package/delta.rs+delta_manifest.rs——`deep-engine.runtime-package-delta` v1（base/target哈希+operations upsert/remove，复用diff.rs归并计划字节确定）；apply纯函数幂等短路→base错位→schema域→先删后插→入口依赖闭包点名→内容寻址终检→parse_and_validate兜底，产物=完整v2等价字节直进既有预热/present管道；十种结构化拒绝（迟到/丢包截断/条数不符/schema不兼容）保留旧版。16项测试含apply产物==全量v2解析（包哈希相等+残差diff空）。lib 341/bin 128/clippy/fmt绿。遗留：watch接线切片（热路径manifest嗅探+LKG基线取回）——apply_runtime_package_delta(lkg_bytes,manifest)一调即接。
+- P3-01 delta合同与watch接线已于2026-09-18收口（见 `specs/deep2d-delta-watch-closure-2026-09-18.md`）：标准包通过 schema 嗅探、已呈现 LKG 基线、既有资源 diff/预热/present 与呈现后检查点提交；实验 X v6 保持专用入口。2026-09-23 资源增量复核发现运行包 schema v7 动态场景发布后，delta 白名单仍只收 v1-v5，且依赖闭包遗漏 `dynamicRuntime`；已扩到 v7 并补全入口识别，v6 仍拒绝。详见 `reports/resource-incremental-update-audit-2026-09-23.md` 与 `runtime_package_delta` v7 合同测试。
 
 - P3-03：behavior_extension签名扩展——HMAC-SHA256对称发布方认证（RFC 4231四条官方向量+超块长密钥分支；非公钥签名已声明），注册管线单次原子判定（形状→台账前置→签名→ABI协商→能力门控→预算预留→入账，失败先于写台账无半状态），撤销终态黑名单（同id不可复活、在途命令settle得Cancelled），ExtensionHost<T>托管CommandBus门控submit（在册→授权→超时份额→容量→总线透传不重包），CompatibilityReport含缺失权限与逐维预算差额。零新增依赖（复用仓内手写SHA-256加finish_bytes/sha256_bytes）。21条测试全过；lib 362绿。遗留：公钥签名/跨信任域/独立分发打包、在册升级、TS对称面。
 
@@ -646,7 +646,7 @@
 ### 2026-09-17 交接#5 工业格式 PLAN-02 Windows 离线试构建与体量记录(GLM;构建可行性记录,未集成)
 
 - 已完成(全部实测,无预计):[报告](specs/industrial-format-plan02-build-trial-2026-09-17.md)。工具链事实:**本机无 MSVC(VS2019 只剩 Installer)、无 cmake,唯一 C++ 链是 MinGW-w64 GCC 15.1.0**。逐库:① **laz-perf 3.4.0 成功零补丁**——静态库 0.67 MB(15 TU,3 s),上游 readlaz 读锁定样本 autzen_trim.laz 92 ms/峰值 RSS 6.9 MB、1.2-with-color.copc.laz 130 ms/14.6 MB(-static 自包含 exe);② **openNURBS v8.35 失败(192/199 TU,不可链接)**——2 处构建定义级修正(UNICODE/Win10 SDK 宏)+1 处构建副本补丁(lock.h atomic brace 初始化,GCC15 拒拷贝初始化)后打包出 13.5 MB 库,但链接报 **3,141 个 undefined reference**,根因=7 个文件平台分支只覆盖 MSVC/Linux(sprintf_l 家族/qsort_r/localtime_r/CoCreateGuid 分支/KNOWNFOLDERID/`L#c` 宏),头文件消费面(example_read.o)反而通过;③ libE57Format v3.4.0 **被硬依赖 XercesC 3.2 阻断**(PLAN-01 锁定遗漏,已记入下一步),公共头 6 个手工补生成头后全部编译通过;④ 3d-tiles-renderer v0.5.2 离线 `pnpm install` 失败(ERR_PNPM_NO_OFFLINE_META @babylonjs/loaders);⑤ rhino3dm 三个 submodule 全空按约束跳过;⑥ PDAL 源码包本就未下载;⑦ rvt-rs/parasolid-kit/cadmpeg 离线 cargo 全失败(Cargo.lock 在但本地缓存无 crate 源码)。
-- **D 盘 RVT 盘点(只盘点不解析)**:深扫 37 个唯一 RVT 共 4,963.3 MB、0 个 RFA;**28 个约 4.5 GB 在 D:\[已脱敏]\项目\[已脱敏]([已脱敏]二 A/B 区、[已脱敏]车间二,土建+机电分层分文件,含 .0001 等版本备份)**——正好补 PLAN-01"RVT 学科覆盖不足";另有仓内 5 个 Autodesk 官方样例(建筑/机电/结构)。37 个均为 OLE/CFB 容器,4 MB 头窗口内未检出 Revit 版本字符串(版本需流级解析,列入下一步)。Top 20 候选清单在报告 §6.3,完整 CSV 在 `build-trial/rvt-inventory-deep.csv`(data/ 不入 git)。
+- **D 盘 RVT 盘点(只盘点不解析)**:深扫 37 个唯一 RVT 共 4,963.3 MB、0 个 RFA;**28 个约 4.5 GB 客户私有 RVT(路径已脱敏,已按用户指令排除出语料)**——正好补 PLAN-01"RVT 学科覆盖不足";另有仓内 5 个 Autodesk 官方样例(建筑/机电/结构)。37 个均为 OLE/CFB 容器,4 MB 头窗口内未检出 Revit 版本字符串(版本需流级解析,列入下一步)。Top 20 候选清单在报告 §6.3,完整 CSV 在 `build-trial/rvt-inventory-deep.csv`(data/ 不入 git)。
 - **边界(如实)**:openNURBS 无 MSVC 复测,当前结论仅对 MinGW GCC 15.1 成立;峰值 RSS 为 1 ms 轮询采样近似;openNURBS 1 处补丁在 data/ 构建副本上(生产源码零改动,git 仅 add 本报告与总账);Rust 系未联网 vendor,结论限于离线口径。
 - **下一步**:MSVC 机器复测 openNURBS+libE57Format(+XercesC)并记体量/RSS/hash(PLAN-01 停止条件#1 正解);锁定缺口补齐(XercesC、rhino3dm submodule、PDAL 完整包、cargo vendor);[已脱敏] RVT 挑 8~10 个登记 manifest+SHA-256;3D Tiles C++ 候选重新选型或 vendor 锁定 TS 依赖。
 
@@ -3492,3 +3492,86 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - 主线程接管子线程后，F6 真实缺口收口：`packages/plugin-runtime/src/index.ts` 公开导出 `compatibilityMatrix`；`registry.test.ts` 新增并发 enable/disable 禁止双激活、激活失败清理后允许重试、缺失宿主 capability 注册前 fail-closed 三项边界测试。plugin-runtime 全量 **40/40**、tsc 0。
 - F5 Native 音频盘点结论：真实 WASAPI/MF 音频输出仍未实现，但现有 Native 合同已显式 fail-closed（`audio-output`/`native-video-audio-unavailable`），Web 音轨计划+Native 轨道探测已由 d39f7fb3 覆盖；按“不引入大音频引擎/不重复建设”原则，本线程不再加码，剩余明确为平台音频输出单独项目。
+
+### 2026-09-23 F5 音频轻量化首片更新
+
+- Native 已从“仅探测/显式 fail-closed”推进到轻量输出首片：Windows 目标引入 rodio 0.22（仅 playback + mp4 features），`DashboardAudioTrack` 使用默认系统设备、MP4 内 AAC、播放/暂停/停止/音量/seek；视频播放、暂停、seek 共用控制入口，静音视频不创建音频轨。
+- 合同与编译诊断已同步为 packaged MP4 可播放；Web 仍由浏览器原生 `<video>` 承担。
+- 未完成边界：真实发布 EXE 出声、设备失败/切换恢复、长稳、音画偏差和真实浏览器 codec 矩阵仍需证据；因此仍不标记 F5 全部完成。
+
+### 2026-09-23 当前轮：上层消费与编辑器入口收口
+
+- **P0 轻量 Frame Graph/Profiler**：`PbrRenderer` 在诊断采样开启时复用既有执行计划，向 `FrameMetrics.frameGraphReceipt` 产出当前帧 pass 顺序与覆盖回执；没有逐 pass timestamp 时每项保持 `unavailable`，不填零。`StudioDeepPerformance` 透传，`RendererDiagnosticsPanel` 展示计划/已计时/待查询摘要，导出诊断证据自动携带回执。
+- **P1 音视频合同**：Web 编译、TS 运行包校验、Native 校验均要求未静音打包 MP4 真实存在 `hdlr=soun`；静音 MP4 可 ready，无音轨有声意图固定为 `native-video-audio-unavailable`/`audio-output`。TS/Native 均覆盖“合法容器不等于存在音轨”的回归测试。
+- **编辑器消费矩阵复核**：渲染质量沿用 `SceneEnvironmentPanel`→`SceneLightingEditor`/`ScenePostProcessingEditor`；对象材质/粒子/动画/空间音频沿用 `AppStudioInspector`；物理、导航、时间线沿用专用面板；资源增量不另造设置页，继续走已有重导入/驻留/发布流程。新能力未建立平行面板。
+- **验证**：Web 定向组件/交付测试 21/21；deep-engine 音视频合同 8/8，三 tsconfig typecheck 通过；Native `dashboard_video_media_foundation` 5 passed/1 ignored，Native validator audio probe 1/1，cargo check 通过。视觉 QA 访问 `?__visualQa=viewer` 可用；诊断面板真实编辑器截图因本地 API 502/登录门无法进入，保留为 V5 视觉闭环项。
+- **（历史记录）体积雾属性接线**：已有 Deep WebGPU `VolumetricFogPass`、场景环境后处理面板，本轮将其接入 `ScenePostProcessingState`/校验、默认参数、`readStudioDeepPostProcess` 每帧 profile、`StudioDeepWebGpuBridge` feature allocation 和后处理属性面板；Native publication compatibility 对该字段给出明确 degraded 原因。Web 定向测试 11/11、contracts 场景校验 18/18、Web typecheck 通过，`git diff --check` 通过。当时 Native 体积雾尚未实现；后续已由固定 8 步轻量切片推进。
+- **自研 XR 选型修正**：现有 WebXR 是 Three WebGL 路线（`viewerEngineRig`/`WebGLRenderer.xr`），Deep WebGPU 因缺 `xrCompatible` adapter、每眼 view 和外部 projection texture 接口而不能消费 XR；Native wgpu 当前自建 device/window surface，无 OpenXR。轻量优先候选是 WebXR + WebGPU Binding POC，但其 W3C 编辑草案标为 unstable，目标头显需实测；Native OpenXR 需先做与 wgpu 图形设备/交换链互操作 POC。保留 Three WebGL WebXR，不在本轮实现自研 XR。
+- **Native 质量能力回执**：`PlayerDiagnostics`/`native-player-report` 增加 `clustered_lighting`、`dynamic_gi`、`volumetric_fog`、`unified_quality_profile`、`frame_graph_receipt` 的稳定 `degraded` 原因码，避免将探针 GI/作者指数雾等局部消费误报为跨端完成；Native bin 定向诊断测试 1/1、`cargo check --bin deep-engine-native` 通过（保留既有 warning）。
+- **剩余**：Native clustered lighting、ray-query 动态辐射更新/多反弹 GI、完整体积光照/阴影雾与跨端统一质量档仍需真实生产消费者/跨端证据（Native 探针 GI storage/采样、直射辐照度 seed、作者指数/Exp2 雾 output pass、受限 8 步体积雾和 Native-only Bloom 预算子集已有消费，不重复建设）；Native 默认设备出声、设备切换、长稳和音画同步仍需目标 Windows EXE 证据；V5 最终门禁最后执行。明确排除百万构件/点云/3D Tiles/大坐标流式、协作、更多平台、新增 XR 实现和 Native 云渲染。
+
+### 2026-09-23 开源交付线：文档、Docker 与素材
+
+- 用户要求把最终测试后的详细文档统一到 GitHub Wiki 与系统 `/docs`，补齐 SDK/API 和关键操作截图；当前系统文档中心已有 `docsCatalog`、SDK/API 页面和 `apps/web/public/docs-assets` 图片，但 GitHub Wiki 远端 `https://github.com/fatasia/bim-studio.wiki.git` 当前不存在/未启用，需先建立 canonical 文档源和可复跑同步/检查脚本。
+- Docker 现状核查：仓库没有 Dockerfile 或 Compose，`docs/native-deployment.md` 明确要求 Node 24 + pnpm、PostgreSQL、MinIO 原生服务；评估目标为无外部私有依赖的 `web+api` 镜像、PostgreSQL/MinIO compose、healthcheck、持久卷和 `.env.example`，可选 Revit/DWG/Native/AI worker 不塞进默认镜像。
+- 素材现状核查：Git 跟踪的发布静态资源为 `apps/web/public/assets/nature-kit` 242 个文件（含目录和许可证）、`public/samples` 8 个样本文件、`public/showcase` 3 个演示文件；2D 组件/模板/工业预制体主要由 `apps/web/src` 代码目录生成。`data/` 被 `.gitignore` 排除，外部模型 catalog 和缓存不会随 GitHub clone 进入，不能宣称启动后拥有完整外部素材库。
+- 许可证阻塞：当前 `LICENSE`/`LICENSING.md` 明确是 `LicenseRef-Deep-Monkey-Community-1.0` source-available，不是 OSI 开源；若要以严格意义开源发布，须先完成许可证决策和全部第三方素材再分发审计。
+### 2026-09-23 开源交付复核与按需打包方案
+
+系统文档中心现登记 31 篇离线文章，`pnpm docs:wiki:check` 与 Wiki 导出测试通过；GitHub Wiki 远端仍未启用，因此只保留可复跑导出，不向不存在的仓库推送。素材验证 `pnpm assets:verify:open` 通过，`assets:audit:test` 为 24/24；clean clone 可获得 Nature Kit、模板/二维组件代码、公开样例和随仓库模型，`data/` 外部模型库不自动出现；当前无跟踪字体文件。Docker 按用户最新授权暂不制作、不构建，保留 `container-deployment` 评估文档，待核心能力、全量测试和发布验证完成后再执行镜像任务。按需打包方案新增三档：Deep Engine SDK、Scene Viewer（复用既有 `build:scene-viewer`）、Full Studio。
+### 2026-09-23 当前轮：敏感场景清理、物理面板与轻量诊断回执收口
+
+- 按用户授权清理项目元数据与 MinIO 中命中的敏感工业素材；`D:\Download` 未再操作。MinIO 扩大范围复扫删除 14 个模型前缀、40 个对象，目标模型路径关键词命中为 0。
+- 删除项目内 14 条命中场景记录及其发布历史：园区/车间/产线/机器人演示场景、`666666` 和 QA 园区场景。应用文档保留独立内嵌快照；删除后复扫 `scene-viewport` 与空间导航引用，应用内部引用校验通过，剩余场景关键词命中为 0。
+- P0 轻量 Native 诊断新增真实 `frame_pass_receipt`：复用现有七段 GPU timestamp，记录提交后的执行/跳过计数和跳过原因；无采样保持 `unavailable`。`frame_graph_receipt` 仍明确为 degraded，未宣称 DAG。Native telemetry 7/7、GPU telemetry 2/2、player diagnostics 2/2、cargo check 通过。
+- P1 物理编辑闭环补齐 `kinematic` 刚体和 Web 角色控制器属性：角度在面板按度编辑、保存为弧度；切离 kinematic 或关闭控制器时清除 `character`，Native 限制在面板显式提示。定向 Web 4 文件 18/18、typecheck、diff-check 通过。
+- 视觉复核发现并修复 480px 窄屏物理浮窗被工作区裁切：窄屏使用 fixed 定位并避开顶部工具条，桌面定位保持原行为。浏览器已验证桌面面板交互、控制器展开/折叠、撤销；修复后组件回归 18/18。
+
+### 2026-09-23 当前轮：Agent DAG、素材包导入与 Native Frame Graph 回执
+
+- 复用既有 `IndustrialAgentOrchestrator` 工具白名单、审批、取消、检查点和证据回执；新增 `runAgentTaskDag`，编排场景写入→截图→验证→有限修正，检测缺失/重复/循环依赖，支持取消和有界修正。orchestrator 测试 22/22、typecheck 通过。
+- 新增 `pnpm assets:import -- <目录或ZIP> --target=<素材目录>`：要求 `pack.manifest.json`、`catalog.json`、`audit.json` 和逐文件 SHA-256；导入做路径越界、published 状态和原子替换校验。素材包测试通过。MinIO 仍复用 `ASSET_LIBRARY_DIR` 目录索引与项目导入对象存储，不把未审计缓存公开。
+- `pnpm init` SQLite 隔离真实 smoke 已通过：初始化公开元数据后同命令启动 Web/API 健康，随后关闭隔离实例；JSON/SQLite/种子/素材包测试共 4/4 通过。本机 PostgreSQL 未做连接成功声明。
+- Native telemetry 已真实产出 `frame_pass_receipt` 时，`native-player-report` 将 `frame_graph_receipt` 标为 `configured`；无运行时 receipt 仍保持 degraded。Native bin 诊断测试 3/3 通过。
+- Native 轻量体积雾首片已接入：运行包/Deep WebGPU `PbrFog` 接受 `kind: "volumetric"`，Native 与 WebGPU 输出阶段均执行固定 8 步线性深度积分；复用现有 HDR/深度绑定，不引入 froxel 纹理。Native solid-environment 测试 15/15、Deep Engine 雾测试 38/38、Web typecheck 通过。完整体积光照、阴影雾和真实跨端视觉对拍仍未完成。
+
+### 2026-09-23 Native P0 渲染缺口复核：质量档子集落地
+
+- 六步现状核查确认：Native 已有局部灯光（最多 16 盏）、探针 GI storage/最近探针/级联网格采样和直射辐照度 seed producer；`native_mesh_v1.wgsl` 仍是逐片元局部灯光循环，未发现 clustered-lighting 构建、cluster buffer 或正式 cluster 消费。仍没有 ray-query 动态辐射捕获/更新与多反弹 producer；不能把 seed 或静态探针采样写成完整动态 GI。
+- 新增 `packages/deep-engine-native/src/renderer/quality_profile.rs`：显式 `DEEP_ENGINE_QUALITY_PROFILE=performance|balanced|quality|high|ultra` 在 GPU 资源创建前解析（`quality` 与 `high` 等价）；四档对 Bloom 强度/半径设确定性上限，未修改作者雾、探针、阴影语义。非法档位 fail-closed；未设置时保持旧行为。
+- `native-player-report` 的 `unified_quality_profile` 在有效档位下返回 `enabled` 并携带档位原因；无档位仍返回 `degraded/cross_endpoint_quality_profile_missing`，避免把 Native-only 子集误报为跨端完成。
+- 证据：`cargo test --bin deep-engine-native quality_profile` 3/3；`cargo test --bin deep-engine-native player_diagnostics` 4/4。剩余：Native clustered lighting 正式生产消费者、ray-query 动态辐射更新/多反弹 GI，以及 Web↔Native 同构质量档/帧资源预算回执与对拍。
+
+### 2026-09-23 Deep Engine 全量回归复跑
+
+- 体积雾新增模式分支使旧 `pbrFogIntegration` 字符串位置断言误指向 Author Fog 内部 Exp2 分支；断言已改为检查 `deepApplySceneFog` 的场景级 dispatch 顺序，不改变运行逻辑。
+- Deep Engine 全量：487 个测试文件，3941 passed / 44 skipped / 0 failed；扫描器、runtime purity gate 和 source-size gate 均通过（126 warnings、0 failures）。
+### 2026-09-23 场景质量档接入上层消费
+
+- `ScenePostProcessingState.qualityProfile` 新增 `performance|balanced|quality|ultra` 可选合同；三维编辑器后处理属性面板提供“自适应/性能/均衡/质量/极高”选择，未选择时保持旧的自适应行为。
+- Deep WebGPU 将场景质量档转换为确定性的 SSR、DDGI、体积雾、阴影、LOD 与 residency 预算；Native 环境变量支持同名 `quality`（映射既有 `high`），仍明确不冒充 Native 全量跨端统一消费。
+- `ViewerEngineRig.setPostProcessing` 现在保留 `qualityProfile`，`rendererPipelineSignature` 将其纳入 renderer identity，切换属性面板质量档会触发正确的后端预算重建，不再只改快照字段。
+- 验证：Deep Engine adaptiveQuality 10/10；ScenePostProcessingEditor 3/3；Web `tsc --noEmit` 通过。剩余仍是 Native clustered lighting、ray-query 动态辐射更新/多反弹 GI、完整体积光照/阴影雾和跨端帧/资源预算对拍。
+### 2026-09-23 Native 云渲染范围校正
+
+- 用户明确放弃 Native `wgpu` 直接云渲染/像素流接入；不再新增 Native 编码器、WebRTC Producer、GPU 帧读回和输入回传链。
+- 云渲染继续复用现有 `apps/cloud-render-worker` Chromium/WebGPU + WebRTC 路径；Native 端保持本地发布与本地窗口能力。该范围调整不影响 Web 云渲染控制面、硬件编码证据和播放器测试。
+
+### 2026-09-23 Native GI 诊断语义与回归收口
+
+- **现状核查**：`native_gi_producer` 已在 Native renderer init 消费探针网格并生成直射光 irradiance seed；`player_diagnostics` 仍把 dynamic GI 标成 degraded，但原先的 `native_dynamic_gi_producer_missing` 已与实际状态不符。真实缺口是 ray-query 动态辐射更新和多反弹传输；clustered lighting 仍无按屏幕簇的光源索引消费，均不重复建设已有 16 灯局部光照循环。
+- **本轮完成**：诊断原因码改为 `native_ray_query_dynamic_update_missing`；当 seed 成功时回执 `native_direct_light_seed_only`；新增回归测试覆盖两种状态，避免已接入能力再次被报告为完全缺失。
+- **证据**：`cargo test --bin deep-engine-native --quiet` 通过 286 passed / 78 ignored；`player_diagnostics` 聚焦测试 5/5；`cargo check --bin deep-engine-native --quiet` 通过；相关文件 `packages/deep-engine-native/src/renderer/native_gi_producer.rs`、`renderer/init.rs`、`player_diagnostics.rs`。
+
+### 2026-09-23 体积雾 profile 跨端消费收口
+
+- **现状核查**：属性面板已有 `volumetricFogSteps`、`volumetricFogHeight`、`volumetricFogAnisotropy`，Deep WebGPU 已消费；运行包 `RuntimeAuthorFog` 与 Native `FogSettings` 之前只接收 `kind/color/density`，这三个编辑值在 Native 发布链会被丢弃。
+- **本轮完成**：运行包新增可选 `steps/height/anisotropy` 字段与 1–64、1–256、[-0.99,0.99] 合同；编译器从属性面板传值；Native `FogSettings` 写入现有 v7 uniform padding，output/bloom-fog shader 消费有界步数、各向异性和高度密度缩放。由于轻量输出 pass 没有 world-y 重建，高度语义已在渲染质量审计中明确为屏幕空间密度缩放，不冒充完整高度雾/体积光照。
+- **证据**：Web 体积雾/属性面板测试 33/33；Deep Engine 全量 487 文件、3942 passed、44 skipped；Native 全量 287 passed、78 ignored；Native `bloom_contract` 4/4；源码尺寸门禁 failures=0。
+- **后续画质校正**：Native output/bloom-fog shader 利用现有 frame 投影列、eye 和深度重建逐像素世界视线，在每一步按世界 `y` 与作者 `height` 计算指数高度密度；各向异性按光照方向的 Henyey–Greenstein 相函数近似，步数现在对沿视线变化的介质采样有实际影响。仍是屏幕空间单次散射近似，不具备体积阴影/froxel。两个 WGSL 文件经 `naga` 校验通过，shader contract 断言同步。
+
+### 2026-09-23 Native clustered-lighting 规划合同首片
+
+- **现状核查**：Native 已有固定最多 16 盏局部灯的 frame uniform 与逐片元循环，但没有按屏幕簇的索引规划或 GPU storage 消费；Web Forward+ 不重复建设。
+- **本轮完成**：新增 `clustered_lighting::ClusterGrid`，固定 8×8 屏幕 tile、每 tile 16 个索引、视锥内 point/spot 投影、确定性顺序和溢出计数；Native renderer init 对有局部灯场景生成该规划，GPU binding 12 写入固定 storage，并由 mesh/RT fragment 按像素 tile lookup 消费；无效或空计划仍回退旧 16 灯顺序。
+- **证据**：ClusterGrid CPU 对拍/相机后方剔除/固定 storage 打包 3/3；`pack_storage` 输出 4 字头 + 64×17 u32 固定布局并有版本、容量校验；frame layout 与 `GpuIblEnvironment` 已创建并写入 cluster storage；Native mesh shader 与 RT 拼接模块通过 naga 校验，bloom contract 5/5，PlayerDiagnostics 7/7，能力保持 degraded（`native_cluster_lookup_no_visual_evidence`）等待跨 GPU 像素/性能证据；`cargo check --bin deep-engine-native`、`cargo test --lib clustered_lighting` 与 `git diff --check` 通过。
