@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { buildPbrFrameExecutionPlan, createPbrFrameReceipt } from "@bim-studio/deep-engine/webgpu";
 import { RendererDiagnosticsPanel } from "./RendererDiagnosticsPanel";
 import { rendererReadiness } from "../rendererCapabilities";
 
@@ -99,6 +100,26 @@ describe("RendererDiagnosticsPanel", () => {
     expect(html).toContain("WEBGPU"); expect(html).toContain("deep-webgpu");
     expect(html).toContain("—"); expect(html).not.toContain("WEBGL");
     expect(html).not.toContain("GPU P95");
+  });
+  it("surfaces the live Frame Graph receipt and keeps unqueried pass timings explicit", () => {
+    const plan = buildPbrFrameExecutionPlan({ width: 640, height: 360 }, { transparency: false });
+    const receipt = createPbrFrameReceipt(7, plan, [], 10, 17);
+    const frame = { frame: 7, cpuSubmitMs: 1, drawCalls: 19, triangles: 321, width: 640, height: 360, resources: 0,
+      shadowUpdated: false, cameraCut: false, postProcessPasses: 0, weightedOit: false, hiZMipLevels: 0,
+      occlusionCulling: false, frustumCulledBatches: 0, hiZOccludedBatches: 0, lodSelectionBatches: 0,
+      lodIndirectDraws: 0, lightCount: 0, lightClusters: 0, shadowTier: "none", shadowDepthBytes: 0,
+      frameGraphReceipt: receipt };
+    const html = renderToStaticMarkup(<RendererDiagnosticsPanel locale="en-US" current="webgpu" desired="webgpu"
+      switchPhase="idle" switchMessage={undefined} switching={false} checking={false} probe={undefined} readiness={[]}
+      onClose={vi.fn()} onRefresh={vi.fn()} onSwitch={vi.fn()} performance={{ sampleCount: 3, sampleWindowMs: 48,
+        fps: 62.5, frameTimeMs: { p50: 16, p95: 16, p99: 16, maximum: 16 }, over33msRate: 0, over50msRate: 0,
+        ignoredBackgroundFrames: 0, pressureSignals: [], renderer: { backend: "webgpu", drawCalls: 19, triangles: 321,
+          points: 0, lines: 0, viewportPixels: 800000, pixelRatio: 1.25, activeFeatures: ["deep-webgpu"] },
+        deep: { frame } }} />);
+    expect(html).toContain("Frame Graph receipt");
+    expect(html).toContain(`>${receipt.passOrder.length}</strong> planned passes`);
+    expect(html).toContain(`>${receipt.samples.length}</strong> awaiting timing`);
+    expect(html).toContain("no zero timings are invented");
   });
   it("uses the current short stability and visual sign-off wording in English", () => {
     const html = renderToStaticMarkup(

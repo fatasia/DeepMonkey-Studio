@@ -209,6 +209,7 @@ function PerformanceSummary({ locale, snapshot }: { locale: AppLocale; snapshot:
         </span>
         {renderer.activeFeatures.length > 0 && <span>{renderer.activeFeatures.join(" · ")}</span>}
       </div>
+      {snapshot.deep?.frame.frameGraphReceipt && <FrameGraphSummary locale={locale} receipt={snapshot.deep.frame.frameGraphReceipt} />}
       {renderer.adaptiveRenderScale && <AdaptiveQualityStatus locale={locale} state={renderer.adaptiveRenderScale} />}
       {snapshot.pressureSignals.length > 0 ? (
         <ul className="renderer-pressure-signals">
@@ -228,6 +229,28 @@ function PerformanceSummary({ locale, snapshot }: { locale: AppLocale; snapshot:
       <small className="renderer-attribution-note">
         {tr(locale, "负载线索用于缩小排查范围，不替代浏览器 Performance / GPU Profile。", "Load signals narrow the search; they do not replace a Performance/GPU profile.")}
       </small>
+    </section>
+  );
+}
+
+function FrameGraphSummary({ locale, receipt }: {
+  locale: AppLocale;
+  receipt: NonNullable<NonNullable<FramePerformanceSnapshot["deep"]>["frame"]["frameGraphReceipt"]>;
+}) {
+  const measured = receipt.samples.filter(sample => sample.availability === "measured").length;
+  const unavailable = receipt.samples.length - measured;
+  return (
+    <section className="renderer-frame-graph-summary" aria-label={tr(locale, "帧图回执", "Frame Graph receipt")}>
+      <header>
+        <strong>{tr(locale, "Frame Graph 回执", "Frame Graph receipt")}</strong>
+        <small>frame {receipt.frame}</small>
+      </header>
+      <div>
+        <span><strong>{receipt.passOrder.length}</strong>{tr(locale, "个计划 Pass", " planned passes")}</span>
+        <span><strong>{measured}</strong>{tr(locale, "个已计时", " timed")}</span>
+        <span><strong>{unavailable}</strong>{tr(locale, "个待查询", " awaiting timing")}</span>
+      </div>
+      <small>{tr(locale, "未取得逐 Pass timestamp 时保留 unavailable，不伪造零耗时。", "Per-pass samples stay unavailable until timestamp queries exist; no zero timings are invented.")}</small>
     </section>
   );
 }

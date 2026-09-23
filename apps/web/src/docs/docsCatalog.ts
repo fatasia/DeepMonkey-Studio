@@ -4,6 +4,9 @@ import behaviorScript from "./behavior-script.md?raw";
 import dashboardScene from "./dashboard-scene.md?raw";
 import dataPipeline from "./data-pipeline.md?raw";
 import deploymentOperations from "./deployment-operations.md?raw";
+import containerDeployment from "./container-deployment.md?raw";
+import openSourceAssets from "./open-source-assets.md?raw";
+import onDemandPackaging from "./on-demand-packaging.md?raw";
 import deepEngine from "./deep-engine.md?raw";
 import deepEngineSdk from "./deep-engine-sdk.md?raw";
 import engineDesignInfluences from "./engine-design-influences.md?raw";
@@ -19,6 +22,7 @@ import serverPublish from "./server-publish.md?raw";
 import simulationCommissioning from "./simulation-commissioning.md?raw";
 import studioApi from "./studio-api.md?raw";
 import sdkExamples from "./sdk-examples.md?raw";
+import sdkApiOverview from "./sdk-api-overview.md?raw";
 import topologyResources from "./topology-resources.md?raw";
 import troubleshooting from "./troubleshooting.md?raw";
 import gettingStarted from "./getting-started.md?raw";
@@ -50,15 +54,19 @@ export const docsDocuments = createDocsCatalog([
   { id: "studio-api", category: "数据与 AI", order: 34, version: DOCS_VERSION, markdown: studioApi },
   { id: "sdk-examples", category: "数据与 AI", order: 35, version: DOCS_VERSION, markdown: sdkExamples },
   { id: "api-reference", category: "数据与 AI", order: 36, version: DOCS_VERSION, markdown: apiReference },
+  { id: "sdk-api-overview", category: "数据与 AI", order: 37, version: DOCS_VERSION, markdown: sdkApiOverview },
   { id: "industrial-planning", category: "工业任务", order: 40, version: DOCS_VERSION, markdown: industrialPlanning },
   { id: "agv-runtime-simulation", category: "工业任务", order: 41, version: DOCS_VERSION, markdown: agvRuntimeSimulation },
   { id: "simulation-commissioning", category: "工业任务", order: 42, version: DOCS_VERSION, markdown: simulationCommissioning },
   { id: "server-publish", category: "交付与运维", order: 50, version: DOCS_VERSION, markdown: serverPublish },
   { id: "deployment-operations", category: "交付与运维", order: 51, version: DOCS_VERSION, markdown: deploymentOperations },
+  { id: "container-deployment", category: "交付与运维", order: 51.5, version: DOCS_VERSION, markdown: containerDeployment },
   { id: "troubleshooting", category: "交付与运维", order: 52, version: DOCS_VERSION, markdown: troubleshooting },
   { id: "faq", category: "交付与运维", order: 53, version: DOCS_VERSION, markdown: faq },
   { id: "contributing", category: "参与项目", order: 60, version: DOCS_VERSION, markdown: contributing },
-  { id: "community", category: "参与项目", order: 61, version: DOCS_VERSION, markdown: community }
+  { id: "community", category: "参与项目", order: 61, version: DOCS_VERSION, markdown: community },
+  { id: "open-source-assets", category: "参与项目", order: 62, version: DOCS_VERSION, markdown: openSourceAssets }
+  , { id: "on-demand-packaging", category: "参与项目", order: 63, version: DOCS_VERSION, markdown: onDemandPackaging }
 ]);
 
 export const docsCategories = groupDocsByCategory(docsDocuments);

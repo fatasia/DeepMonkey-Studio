@@ -90,7 +90,16 @@ try {
     else report.consoleErrors.push(message.text());
   });
   page.on("pageerror", (error) => report.pageErrors.push(error.message));
-  page.on("requestfailed", (request) => report.requestFailures.push(`${request.method()} ${request.url()} · ${request.failure()?.errorText ?? "unknown"}`));
+  page.on("requestfailed", (request) => {
+    const failure = request.failure()?.errorText ?? "unknown";
+    // Scene-driver step/snapshot calls are intentionally cancelled when the
+    // editor route is replaced. They are lifecycle aborts, not broken asset
+    // requests, so keep the gate focused on actionable network failures.
+    const expectedEditorAbort = failure === "net::ERR_ABORTED"
+      && request.method() === "POST"
+      && /\/api\/editor-scene-driver\/[^/]+\/(?:next|snapshot-request)$/.test(new URL(request.url()).pathname);
+    if (!expectedEditorAbort) report.requestFailures.push(`${request.method()} ${request.url()} · ${failure}`);
+  });
 
   await loginAndCreateProject(page, productOrigin, report);
   const projectId = report.projectId;

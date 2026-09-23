@@ -1,15 +1,27 @@
 import type { ScenePostProcessingState } from "@bim-studio/contracts";
-import type { RenderView } from "@bim-studio/deep-engine/webgpu";
+import { DEFAULT_PBR_VOLUMETRIC_FOG_PROFILE, type PbrVolumetricFogProfile, type RenderView } from "@bim-studio/deep-engine/webgpu";
 
 /** 开关和 Bloom 参数取自实际作者状态；AO 算法参数仍需单独接入。 */
 export function readStudioDeepPostProcess(state: ScenePostProcessingState,
   composerActive: boolean): NonNullable<RenderView["postProcess"]> {
   const bloom = composerActive && state.enabled && Boolean(state.bloom);
   const screenSpaceReflection = composerActive && state.enabled && Boolean(state.screenSpaceReflection);
+  const volumetricFog = composerActive && state.enabled && Boolean(state.volumetricFog);
+  const volumetricFogProfile: PbrVolumetricFogProfile | undefined = volumetricFog ? Object.freeze({
+    ...DEFAULT_PBR_VOLUMETRIC_FOG_PROFILE,
+    medium: Object.freeze({
+      ...DEFAULT_PBR_VOLUMETRIC_FOG_PROFILE.medium,
+      baseExtinction: state.volumetricFogDensity ?? DEFAULT_PBR_VOLUMETRIC_FOG_PROFILE.medium.baseExtinction,
+      scaleHeight: state.volumetricFogHeight ?? DEFAULT_PBR_VOLUMETRIC_FOG_PROFILE.medium.scaleHeight,
+      anisotropy: state.volumetricFogAnisotropy ?? DEFAULT_PBR_VOLUMETRIC_FOG_PROFILE.medium.anisotropy,
+    }),
+    ...(state.volumetricFogSteps === undefined ? {} : { steps: state.volumetricFogSteps }),
+  }) : undefined;
   return Object.freeze({ ambientOcclusion: composerActive && state.enabled && Boolean(state.ssao || state.gtao),
     screenSpaceReflection,
     ...(screenSpaceReflection ? { screenSpaceReflectionProfile: Object.freeze({ steps: state.ssrSteps ?? 32,
       thicknessScale: state.ssrThickness ?? 0.01, maxDistanceScale: state.ssrMaxDistance ?? 2 }) } : {}),
+    ...(volumetricFogProfile ? { volumetricFog: true, volumetricFogProfile } : {}),
     bloom, ...(bloom ? { authorBloom: Object.freeze({ strength: state.bloomStrength, threshold: state.bloomThreshold }) } : {}) });
 }
 

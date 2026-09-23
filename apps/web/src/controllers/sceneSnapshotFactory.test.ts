@@ -6,6 +6,12 @@ import { makeSceneSnapshot } from "./sceneSnapshotFactory";
 describe("scene snapshot factory", () => {
   it("collects model, primitive and publication state without changing the editor", () => {
     const primitiveColors = { current: new Map([["marker-1", "#11aa77"]]) };
+    const authoredPhysics = {
+      type: "kinematic" as const, mass: 1, friction: 0.6, restitution: 0.05,
+      character: { offset: 0.02, maxSlopeClimbAngle: Math.PI / 4,
+        autostep: { enabled: true, maxHeight: 0.25, minWidth: 0.18, includeDynamicBodies: false },
+        snapToGround: { enabled: true, distance: 0.2 } },
+    };
     const simulationEntities: SimulationEntityState[] = [{ id: "path-1", kind: "path", name: "送料路线", targetModelId: "marker-1", points: [[0, 0, 0], [3, 0, 0]], speed: 1, loopMode: "once" }];
     const engine = {
       listModels: () => [
@@ -23,7 +29,7 @@ describe("scene snapshot factory", () => {
       getSpatialAudioState: () => undefined,
       isModelLocked: () => false,
       getModelEffects: () => [],
-      getPhysicsBodyState: () => undefined,
+      getPhysicsBodyState: (id: string) => id === "pump-1" ? authoredPhysics : { type: "none", mass: 1, friction: 0.7, restitution: 0.15 },
       isCollisionEnabled: () => false,
       getExplosionFactor: () => 0,
       getExplosionMode: () => "radial" as const,
@@ -63,6 +69,7 @@ describe("scene snapshot factory", () => {
 
     expect(snapshot).toMatchObject({ id: "scene-1", name: "装配线", publishedAt: "2026-08-31T00:00:00.000Z" });
     expect(snapshot?.models[0]).toMatchObject({ modelId: "pump-1", sourceName: "pump.glb", material: { roughness: 0.4 } });
+    expect(snapshot?.models[0]?.physics).toEqual(authoredPhysics);
     expect(snapshot?.primitives[0]).toMatchObject({ modelId: "marker-1", color: "#11aa77" });
     expect(snapshot?.simulationEntities).toEqual(simulationEntities);
     expect(snapshot?.simulationEntities).not.toBe(simulationEntities);

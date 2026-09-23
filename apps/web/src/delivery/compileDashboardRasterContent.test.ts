@@ -73,9 +73,10 @@ describe("frozen dashboard raster orchestration", () => {
         reason: "native-video-runtime-ready", missingCapabilities: [] } });
     expect(validateDeepRuntimePackage(result.package).valid).toBe(true);
   });
-  it("keeps poster-only and audible author intent behind precise capability blockers", async () => {
+  it("keeps poster-only intent and blocks an unmuted video-only container", async () => {
     const input = fixture("video"), node = input.document.application.pages[0]!.nodes[0] as DashboardDataWidgetNode;
     node.widget.videoAutoplay = false;
+    node.widget.videoMuted = true;
     const bytes = Uint8Array.of(0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d,
       0, 0, 0, 0, 0x69, 0x73, 0x6f, 0x6d, 0x6d, 0x70, 0x34, 0x32);
     const sha256 = sha256Bytes(bytes), bound = { ...input,
@@ -89,8 +90,7 @@ describe("frozen dashboard raster orchestration", () => {
     result = await compileDashboardRasterContent(bound, host().adapter);
     dashboard = result.package.payloads[result.package.entrypoints.dashboard!] as any;
     expect(dashboard.videos[0].state).toMatchObject({ status: "blocked", transport: "unavailable",
-      reason: "native-video-audio-unavailable",
-      missingCapabilities: ["audio-output"] });
+      reason: "native-video-audio-unavailable", missingCapabilities: ["audio-output"] });
     expect(validateDeepRuntimePackage(result.package).valid).toBe(true);
   });
   it("composes frozen page images above the system color and below author nodes", async () => {

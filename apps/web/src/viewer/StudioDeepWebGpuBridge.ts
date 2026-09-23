@@ -129,6 +129,7 @@ export class StudioDeepWebGpuBridge {
         create: async (module, signal) => {
           signal.throwIfAborted();
           environment = await prepareStudioDeepEnvironmentSource(this.viewer.scene, signal);
+          const postProcessing = this.viewer.getPostProcessing();
           updateAuthorProjectionState(this.viewer.scene, this.viewer.camera, signal);
           const view = this.viewReader.renderView(module, canvas);
           shadowMapSize = view.lights?.directional?.[0]?.shadow?.mapSize
@@ -139,10 +140,16 @@ export class StudioDeepWebGpuBridge {
             projection: new module.ThreeProjectionBridge({ hooks: threePrototypeHooks(), capabilities: { authorDeformation: true, authorLod: true } }),
             root: this.projectionRoot(), view, authorChunks: true,
             renderer: { environment: environment.source, deformation: true, meshlets: true,
-              adaptiveQuality: { enabled: true, collectHotspots: false },
+              adaptiveQuality: {
+                enabled: true,
+                collectHotspots: false,
+                ...(postProcessing.qualityProfile
+                  ? { overrides: module.adaptiveQualityOverridesForProfile(postProcessing.qualityProfile) }
+                  : {}),
+              },
               shadows: { exactProfile: { cascadeCount: 1, shadowMapSize } },
               features: { environment: true, groundPlane: false,
-              groundGrid: false, screenSpaceReflection: true, toneMapping: "three-aces-r185" },
+                groundGrid: false, screenSpaceReflection: true, volumetricFog: true, toneMapping: "three-aces-r185" },
               ...(frameCaptureSession ? { frameCapture: { session: frameCaptureSession,
                 readbacks: { requests: [{ resourceId: "present-color" as const }, { resourceId: "linear-depth" as const }] },
                 onReadbackResults: createStudioFrameReadbackListener() } } : {}) },

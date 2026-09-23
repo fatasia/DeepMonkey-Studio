@@ -21,6 +21,14 @@ describe("rendererPipelineSignature", () => {
     (withTexture.children[0] as THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>).material.map = new THREE.Texture();
     expect(rendererPipelineSignature(withTexture, "webgl")).not.toBe(baseline);
   });
+
+  it("includes the authored quality profile in the renderer identity", () => {
+    const scene = primitiveScene("#ff0000");
+    const baseline = rendererPipelineSignature(scene, "webgpu");
+    const postProcessing = { enabled: true, smaa: true, ssao: false, ssaoIntensity: 1, bloom: false, bloomStrength: 0.35, bloomThreshold: 0.9, qualityProfile: "quality" as const };
+    const quality = rendererPipelineSignature(scene, "webgpu", postProcessing);
+    expect(quality).not.toBe(baseline);
+  });
 });
 
 function primitiveScene(color: string): THREE.Scene {

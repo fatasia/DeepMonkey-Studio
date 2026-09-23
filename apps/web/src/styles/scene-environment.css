@@ -50,6 +50,8 @@
 .post-processing-control { grid-template-columns: minmax(0,1fr); }
 .post-effect-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(56px,1fr)); gap: 5px; }
 .post-effect-grid button { min-width: 0; padding: 0 4px; font-size: 10px; }
+.post-quality-select { display: flex; align-items: center; justify-content: space-between; gap: 8px; grid-column: 1 / -1; color: var(--text-muted); font-size: 10px; }
+.post-quality-select select { min-width: 112px; padding: 4px 6px; color: var(--text-primary); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; }
 .post-processing-control .light-parameter { display: grid; grid-template-columns: 72px minmax(0,1fr) 38px; align-items: center; gap: 7px; min-height: 30px; color: #7f8b91; font-size: 10px; }
 .environment-map-row { display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 6px; align-items: center; }
 .environment-map-row > div { min-width: 0; }
@@ -146,9 +148,10 @@
   .navigation-setting-grid { grid-template-columns: repeat(2,1fr); }
   .navigation-hint { bottom: 10px; max-width: calc(100% - 16px); }
   .navigation-hint > span:not(.navigation-hint-status) { display: none; }
-  .physics-panel { top: 66px; left: 8px; width: min(300px,calc(100% - 16px)); max-height: calc(100% - 82px); }
+  .physics-panel { position: fixed; top: 152px; left: 8px; right: 8px; width: auto; max-height: calc(100vh - 168px); max-height: calc(100dvh - 168px); }
 }
 @media (max-width: 720px) {
+  .manager-showcase-grid { grid-template-columns: 1fr; }
   .manager-showcase { grid-template-columns: 42px minmax(0,1fr); }
   .manager-showcase-action { grid-column: 1 / -1; width: 100%; }
 }

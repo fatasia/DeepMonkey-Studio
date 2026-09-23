@@ -22,6 +22,16 @@ describe("Studio author color effects", () => {
       screenSpaceReflectionProfile: { steps: 64, thicknessScale: 0.02, maxDistanceScale: 3 } });
     expect(Object.isFrozen(result.screenSpaceReflectionProfile)).toBe(true);
   });
+  it("compiles author volumetric fog into a frozen Deep profile", () => {
+    const result = readStudioDeepPostProcess({ ...state, volumetricFog: true,
+      volumetricFogSteps: 56, volumetricFogDensity: 0.02, volumetricFogHeight: 32,
+      volumetricFogAnisotropy: -0.2 }, true);
+    expect(result).toMatchObject({ volumetricFog: true,
+      volumetricFogProfile: { steps: 56,
+        medium: { baseExtinction: 0.02, scaleHeight: 32, anisotropy: -0.2 } } });
+    expect(Object.isFrozen(result.volumetricFogProfile)).toBe(true);
+    expect(Object.isFrozen(result.volumetricFogProfile?.medium)).toBe(true);
+  });
   it("snapshots exact Bloom strength/threshold, including zero, without substituting legacy defaults", () => {
     const source = { ...state, bloom: true, bloomStrength: 0, bloomThreshold: 0 };
     const result = readStudioDeepPostProcess(source, true);

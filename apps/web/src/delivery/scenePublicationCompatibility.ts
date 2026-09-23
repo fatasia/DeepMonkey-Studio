@@ -203,6 +203,8 @@ export function assessCompiledScenePublication(scene: SceneSnapshot, options: Co
         ? `Deep Native 尚未实现 ${selectedCameraMode} 相机导航模式；当前仅支持 orbit。`
       : field === "navigationSettings"
         ? "Deep Native 尚未执行 firstPerson/thirdPerson 的 walk/fly、冲刺、重力、跳跃、步高和坡度导航参数。"
+      : field === "postProcessing" && scene.postProcessing?.enabled && scene.postProcessing.volumetricFog
+        ? "Deep Native 尚未实现体积雾步进与散射合成消费；该效果当前仅由 Studio Deep WebGPU 运行。"
       : field === "postProcessing" && scene.postProcessing?.enabled && scene.postProcessing.screenSpaceReflection
         ? "Deep Native 尚未实现 SSR 深度/法线/HDR 合成消费；该效果当前仅由 Studio Deep WebGPU 运行。"
       : field === "postProcessing" && compiledFieldNames.has("postProcessing")

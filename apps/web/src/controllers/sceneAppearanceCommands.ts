@@ -1,5 +1,6 @@
 import type {
   GlobalLightingState,
+  SceneCharacterControllerState,
   SceneEngineeringAnalysisState,
   SceneEnvironmentState,
   SceneLightState,
@@ -20,6 +21,22 @@ import { mergeModelEffectsPatch, type ModelEffectsPatch } from "../viewer/modelE
 const materialTextureSlotTargets = new WeakMap<object, { modelId: string; slotId: string }>();
 
 type SetSceneObjectsVisible = (ids: string[], visible: boolean) => void;
+
+type ScenePhysicsBodyPatch = Omit<Partial<ScenePhysicsBodyState>, "character"> & {
+  character?: SceneCharacterControllerState | undefined;
+};
+
+/** Applies an editor patch while keeping character settings valid only on kinematic bodies. */
+export function mergeScenePhysicsBodyPatch(current: ScenePhysicsBodyState, patch: ScenePhysicsBodyPatch): ScenePhysicsBodyState {
+  const { character, ...bodyPatch } = patch;
+  const next: ScenePhysicsBodyState = { ...current, ...bodyPatch };
+  if (Object.prototype.hasOwnProperty.call(patch, "character")) {
+    if (character === undefined) delete next.character;
+    else next.character = character;
+  }
+  if (next.type !== "kinematic") delete next.character;
+  return next;
+}
 
 /** 环境、灯光、材质和对象外观命令；统一处理单选与编组语义。 */
 export function createSceneAppearanceCommands(context: SceneEditorControllerContext, setSceneObjectsVisible: SetSceneObjectsVisible) {
@@ -88,10 +105,11 @@ export function createSceneAppearanceCommands(context: SceneEditorControllerCont
     recordSceneEdit("更新工程分析规则");
   }
 
-  function changeSelectedPhysics(patch: Partial<ScenePhysicsBodyState>) {
+  function changeSelectedPhysics(patch: ScenePhysicsBodyPatch) {
     if (!engine || !selected || !selectedPhysics) return;
+    const nextPhysics = mergeScenePhysicsBodyPatch(selectedPhysics, patch);
     void engine
-      .setPhysicsBodyState(selected.id, { ...selectedPhysics, ...patch })
+      .setPhysicsBodyState(selected.id, nextPhysics)
       .then(() => {
         setRevision((value) => value + 1);
         recordSceneEdit("更新对象物理参数");

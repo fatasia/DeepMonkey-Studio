@@ -79,6 +79,7 @@ export function AssetLibraryBrowser({ locale, projectId, projectModels, projectA
               type="button"
               className="unified-assets-search-clear"
               aria-label={tr(locale, "清空资源搜索", "Clear asset search")}
+              title={tr(locale, "清空资源搜索", "Clear asset search")}
               onClick={() => catalog.updateSearch("")}
             >
               <X size={13} />

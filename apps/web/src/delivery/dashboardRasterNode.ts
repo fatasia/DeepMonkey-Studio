@@ -96,7 +96,7 @@ export async function rasterNode(node: DashboardDataWidgetNode, id: string, revi
   } else if (node.widget.type === "filter" && node.widget.filterMode === "text") {
     reasons.push("Text input requires a validated frozen-font runtime profile");
   } else if (node.widget.type === "video") {
-    reasons.push("Video pixels are reserved for the Native dynamic media layer instead of the static Deep2D raster node; audio, playback controls and seek remain unavailable");
+    reasons.push("Video pixels are reserved for the Native dynamic media layer instead of the static Deep2D raster node; playback, audio and seek are diagnosed by the dynamic media contract");
   } else if (node.widget.type === "filter") {
     try {
       const result = await rasterFilterOptions(node, content, input, host, rasterNode);

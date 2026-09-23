@@ -26,15 +26,19 @@ describe("local documentation catalog", () => {
       "studio-api",
       "sdk-examples",
       "api-reference",
+      "sdk-api-overview",
       "industrial-planning",
       "agv-runtime-simulation",
       "simulation-commissioning",
       "server-publish",
       "deployment-operations",
+      "container-deployment",
       "troubleshooting",
       "faq",
       "contributing",
-      "community"
+      "community",
+      "open-source-assets",
+      "on-demand-packaging"
     ]);
     expect(docsDocuments.every((document) => document.version === DOCS_VERSION)).toBe(true);
     expect(docsCategories).toHaveLength(6);

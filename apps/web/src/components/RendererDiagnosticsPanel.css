@@ -259,6 +259,45 @@
   color: var(--text-muted);
   font-size: 12px;
 }
+.renderer-frame-graph-summary {
+  display: grid;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.renderer-frame-graph-summary > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.renderer-frame-graph-summary > header strong,
+.renderer-frame-graph-summary > div strong {
+  color: var(--text-strong);
+  font-size: 12px;
+}
+.renderer-frame-graph-summary > header small,
+.renderer-frame-graph-summary > small {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.renderer-frame-graph-summary > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+.renderer-frame-graph-summary > div span {
+  display: grid;
+  gap: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.renderer-frame-graph-summary > div strong {
+  font-variant-numeric: tabular-nums;
+}
 .renderer-quality-guard {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);

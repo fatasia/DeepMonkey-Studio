@@ -24,7 +24,7 @@ export function compileSceneEnvironment(value: unknown, authorLighting?: unknown
   const lighting = compileSceneLighting(authorLighting, weather, origin, builtinStudio);
   const shadows = lighting?.localLights?.some(light => light.castShadow);
   const pointShadow = lighting?.localLights?.some(light => light.castShadow && light.kind === "point");
-  const fog = compileSceneWeatherFog(weather);
+  const fog = compileSceneWeatherFog(weather, postProcessing);
   // F4 作者色彩分级：非中性六通道随 v9 档进运行包（Native AuthorGrading 消费），
   // 不再静默丢弃；中性/关闭保持旧档字节逐位不变。
   const grading = compileAuthorColorGrading(postProcessing);
@@ -67,12 +67,20 @@ function compileAuthorColorGrading(postProcessing: unknown): RuntimeAuthorColorG
 
 /** 天气雾合同 v1 → 运行包作者雾；sRGB→linear 与灯光颜色同一变换。
  * 粒子天气（rain/snow/storm）的粒子无法离线编译，整档不编译雾，weather 继续 deferred。 */
-export function compileSceneWeatherFog(weather: unknown): RuntimeAuthorFog | undefined {
+export function compileSceneWeatherFog(weather: unknown, postProcessing?: unknown): RuntimeAuthorFog | undefined {
   if (typeof weather !== "string" || !isParticleFreeWeather(weather as WeatherMode)) return undefined;
   const fog = sceneWeatherFog(weather as WeatherMode);
   const colorLinearRgb = [1, 3, 5].map(offset => {
     const v = parseInt(fog.colorSrgbHex.slice(offset, offset + 2), 16) / 255;
     return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
   }) as [number, number, number];
-  return { schemaVersion: 1, kind: "exp2", colorLinearRgb, density: fog.density };
+  const volumetric = postProcessing && typeof postProcessing === "object" && !Array.isArray(postProcessing)
+    && (postProcessing as ScenePostProcessingState).enabled === true
+    && (postProcessing as ScenePostProcessingState).volumetricFog === true;
+  if (!volumetric) return { schemaVersion: 1, kind: "exp2", colorLinearRgb, density: fog.density };
+  const state = postProcessing as ScenePostProcessingState;
+  return { schemaVersion: 1, kind: "volumetric", colorLinearRgb, density: fog.density,
+    steps: state.volumetricFogSteps ?? 48,
+    height: state.volumetricFogHeight ?? 64,
+    anisotropy: state.volumetricFogAnisotropy ?? 0.3 };
 }

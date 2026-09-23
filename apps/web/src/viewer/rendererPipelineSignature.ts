@@ -93,6 +93,7 @@ function safeProgramKey(material: THREE.Material): string {
 function postProcessingVariant(state?: ScenePostProcessingState): string {
   if (!state?.enabled) return "off";
   return [
+    `quality=${state.qualityProfile ?? "adaptive"}`,
     "smaa", "fxaa", "ssao", "gtao", "screenSpaceReflection", "bloom", "outline", "depthOfField",
     "vignette", "filmGrain", "afterimage",
   ].filter((key) => Boolean(state[key as keyof ScenePostProcessingState])).join(",") || "enabled";

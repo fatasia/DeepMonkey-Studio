@@ -72,6 +72,20 @@ describe("compiled scene publication audit", () => {
       reason: "作者色彩分级已随运行包编译；bloom/ssao/gtao/ssr/暗角等其余后处理仅由 Studio Deep WebGPU 编辑器消费。",
     }));
   });
+  it("reports the exact Native degradation for Deep WebGPU volumetric fog", async () => {
+    const source = scene();
+    source.postProcessing = { ...DEFAULT_POST_PROCESSING, enabled: true, volumetricFog: true };
+    const compiled = await compileSceneRuntimePackage(source, {
+      packageId: "native-volumetric-fog", packageVersion: "1.0.0", loadModel: vi.fn(),
+    });
+    const report = assessCompiledScenePublication(source, {
+      compilation: compiled.evidence, fixtureId: "native-volumetric-fog", platform: "windows-x64",
+    });
+    expect(report.items).toContainEqual(expect.objectContaining({
+      path: "postProcessing", status: "degraded",
+      reason: "Deep Native 尚未实现体积雾步进与散射合成消费；该效果当前仅由 Studio Deep WebGPU 运行。",
+    }));
+  });
   it("uses existing Native camera evidence for orbit collision constraints and precisely blocks unsupported navigation", async () => {
     const source = scene();
     source.cameraConstraints = { minDistance: 1, maxDistance: 80, minPolarAngle: 5, maxPolarAngle: 165,

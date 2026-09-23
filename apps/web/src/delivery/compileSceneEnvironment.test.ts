@@ -222,6 +222,17 @@ describe("authored weather fog compilation", () => {
     expect(payload.schemaVersion).toBe(7);
     expect(payload.fog?.density).toBeGreaterThan(0);
   });
+  it("promotes the editor volumetric-fog toggle into the shared runtime contract", async () => {
+    const source = fogScene("fog");
+    source.postProcessing = { enabled: true, volumetricFog: true, volumetricFogSteps: 56,
+      volumetricFogHeight: 32, volumetricFogAnisotropy: -0.2 } as never;
+    const payload = (await compileSceneRuntimePackage(source, options)).runtimePackage.payloads["scene.environment"] as {
+      fog?: { kind: string; steps?: number; height?: number; anisotropy?: number } };
+    expect(payload.fog?.kind).toBe("volumetric");
+    expect(payload.fog?.steps).toBe(56);
+    expect(payload.fog?.height).toBe(32);
+    expect(payload.fog?.anisotropy).toBe(-0.2);
+  });
   it.each(["rain", "snow", "storm"] as const)("keeps particle weathers fully deferred without fog: %s", async weather => {
     const result = await compileSceneRuntimePackage(fogScene(weather), options);
     const payload = result.runtimePackage.payloads["scene.environment"] as { schemaVersion: number; fog?: unknown };

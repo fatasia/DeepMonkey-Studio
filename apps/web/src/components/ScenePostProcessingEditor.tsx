@@ -36,6 +36,28 @@ export function ScenePostProcessingEditor({
         </button>
       </div>
       <div className="post-effect-grid">
+        <label className="post-quality-select">
+          <span>{tr(locale, "质量档", "Quality profile")}</span>
+          <select
+            disabled={!controlsEnabled}
+            value={value.qualityProfile ?? "adaptive"}
+            onChange={(event) => {
+              const next = event.target.value;
+              if (next === "adaptive") {
+                const { qualityProfile: _qualityProfile, ...withoutProfile } = value;
+                onChange(withoutProfile);
+              } else {
+                onChange({ ...value, qualityProfile: next as NonNullable<ScenePostProcessingState["qualityProfile"]> });
+              }
+            }}
+          >
+            <option value="adaptive">{tr(locale, "自适应", "Adaptive")}</option>
+            <option value="performance">{tr(locale, "性能", "Performance")}</option>
+            <option value="balanced">{tr(locale, "均衡", "Balanced")}</option>
+            <option value="quality">{tr(locale, "质量", "Quality")}</option>
+            <option value="ultra">{tr(locale, "极高", "Ultra")}</option>
+          </select>
+        </label>
         <button
           disabled={!controlsEnabled}
           className={value.smaa ? "active" : ""}
@@ -67,6 +89,9 @@ export function ScenePostProcessingEditor({
         <button disabled={!controlsEnabled} className={value.screenSpaceReflection ? "active" : ""}
           title={tr(locale, "仅 Deep WebGPU 消费；Three WebView 与 Deep Native 暂不支持", "Deep WebGPU only; Three WebView and Deep Native are not supported")}
           onClick={() => update({ screenSpaceReflection: !value.screenSpaceReflection })}>SSR</button>
+        <button disabled={!controlsEnabled} className={value.volumetricFog ? "active" : ""}
+          title={tr(locale, "Deep WebGPU 完整消费；Deep Native 使用受限 8 步屏幕空间积分；Three WebView 降级为作者雾", "Deep WebGPU uses the full profile; Deep Native uses bounded 8-step screen-space integration; Three WebView falls back to author fog")}
+          onClick={() => update({ volumetricFog: !value.volumetricFog })}>{tr(locale, "体积雾", "Volumetric fog")}</button>
         <button
           disabled={!controlsEnabled}
           className={value.bloom ? "active" : ""}
@@ -150,6 +175,21 @@ export function ScenePostProcessingEditor({
           min={0.25} max={4} step={0.05} value={value.ssrMaxDistance ?? 2} digits={2} onChange={ssrMaxDistance => update({ ssrMaxDistance })} />
         <small>{tr(locale, "仅 Deep WebGPU 运行；Three WebView 与 Deep Native 会在发布检查中明确阻断。",
           "Deep WebGPU only; publication checks block Three WebView and Deep Native explicitly.")}</small>
+      </>}
+      {value.volumetricFog && <>
+        <EffectRange label={tr(locale, "雾采样步数", "Fog steps")} disabled={!value.enabled}
+          min={32} max={64} step={1} value={value.volumetricFogSteps ?? 48} digits={0}
+          onChange={volumetricFogSteps => update({ volumetricFogSteps })} />
+        <EffectRange label={tr(locale, "雾密度", "Fog density")} disabled={!value.enabled}
+          min={0} max={0.1} step={0.001} value={value.volumetricFogDensity ?? 0.006} digits={3}
+          onChange={volumetricFogDensity => update({ volumetricFogDensity })} />
+        <EffectRange label={tr(locale, "高度尺度", "Height scale")} disabled={!value.enabled}
+          min={1} max={256} step={1} value={value.volumetricFogHeight ?? 64} digits={0}
+          onChange={volumetricFogHeight => update({ volumetricFogHeight })} />
+        <EffectRange label={tr(locale, "各向异性", "Anisotropy")} disabled={!value.enabled}
+          min={-0.9} max={0.9} step={0.01} value={value.volumetricFogAnisotropy ?? 0.3} digits={2}
+          onChange={volumetricFogAnisotropy => update({ volumetricFogAnisotropy })} />
+        <small>{tr(locale, "Deep WebGPU 使用完整参数；Deep Native 使用受限 8 步积分；Three WebView 发布时降级为作者雾。", "Deep WebGPU uses the full profile; Deep Native uses bounded 8-step integration; Three WebView falls back to author fog at publication.")}</small>
       </>}
       {value.bloom && (
         <>

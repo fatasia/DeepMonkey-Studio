@@ -754,7 +754,7 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
             void openTopologyEditor(application, topologyId);
           }}
           onVisionCenter={() => navigate({ view: "vision" })}
-          onOperationsCenter={() => navigate({ view: "operations" })}
+          onOperationsCenter={(operationsTab) => navigate({ view: "operations", ...(operationsTab ? { operationsTab } : {}) })}
           onAiAssistant={() => setAiAssistantOpen(true)}
           onDocs={() => openDocs()}
           onSystem={() => {

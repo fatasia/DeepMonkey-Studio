@@ -1,5 +1,5 @@
 import { DASHBOARD_VIDEO_AUDIO_BLOCKED_CAPABILITIES, DASHBOARD_VIDEO_READY_CAPABILITIES,
-  DASHBOARD_VIDEO_REQUIRED_CAPABILITIES, bytesToBase64, probeDashboardVideoMedia,
+  DASHBOARD_VIDEO_REQUIRED_CAPABILITIES, bytesToBase64, hasDashboardVideoAudioTrack, probeDashboardVideoMedia,
   type DashboardVideoDiagnosticV1, type DashboardVideoMediaV1 } from "@bim-studio/deep-engine/runtime-package";
 import type { DashboardRasterCompileInput } from "./dashboardRasterTypes";
 
@@ -36,7 +36,8 @@ export function compileDashboardVideoDiagnostics(input: DashboardRasterCompileIn
       media.set(resourceId, item);
     }
     const autoplay = node.widget.videoAutoplay !== false, muted = node.widget.videoMuted !== false;
-    const state = resourceId && muted
+    const audioReady = Boolean(asset && hasDashboardVideoAudioTrack(asset.bytes));
+    const state = resourceId && (muted || audioReady)
       ? { status: "ready" as const, transport: autoplay ? "autoplay" as const : "poster" as const,
           positionSeconds: 0 as const, durationSeconds: null, reason: "native-video-runtime-ready" as const,
           missingCapabilities: DASHBOARD_VIDEO_READY_CAPABILITIES }
@@ -44,7 +45,7 @@ export function compileDashboardVideoDiagnostics(input: DashboardRasterCompileIn
         ? { status: "blocked" as const, transport: "unavailable" as const, positionSeconds: 0 as const,
             durationSeconds: null, reason: "native-video-audio-unavailable" as const,
             missingCapabilities: DASHBOARD_VIDEO_AUDIO_BLOCKED_CAPABILITIES }
-        : { status: "blocked" as const, transport: "unavailable" as const, positionSeconds: 0 as const,
+      : { status: "blocked" as const, transport: "unavailable" as const, positionSeconds: 0 as const,
             durationSeconds: null, reason: uri === null ? "source-missing" as const : "native-video-runtime-unavailable" as const,
             missingCapabilities: DASHBOARD_VIDEO_REQUIRED_CAPABILITIES };
     return [{ nodeId: runtimeId, sourceNodeId: node.id,

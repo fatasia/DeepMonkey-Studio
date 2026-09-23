@@ -46,6 +46,9 @@ describe("industrial showcase bundle", () => {
     expect(animatedScenes).toHaveLength(2);
     expect(animatedScenes.every((scene) => scene.animation?.loop && scene.animation.pingPong)).toBe(true);
     expect(scenes.some((scene) => scene.primitives.some((primitive) => primitive.name.includes("AGV-01")))).toBe(true);
+    const prefabIds = scenes.flatMap((scene) => scene.primitives.flatMap((primitive) => primitive.prefab?.definitionId ? [primitive.prefab.definitionId] : []));
+    expect(prefabIds).toEqual(expect.arrayContaining(["robot.articulated-6", "agv.carrier", "agv.amr", "conveyor.straight"]));
+    expect(scenes.flatMap((scene) => scene.primitives).filter((primitive) => primitive.prefab).every((primitive) => primitive.prefab?.parameters)).toBe(true);
     expect(application.topologies[0]?.nodes.map((node) => node.kind)).toEqual(["source", "process", "buffer", "sink", "agv"]);
     expect(application.scripts[0]).toMatchObject({ runtime: "worker-sandbox", enabled: true });
   });

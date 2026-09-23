@@ -13,6 +13,7 @@ import {
   FileUp,
   FilePenLine,
   Gauge,
+  Route,
   Settings,
   History,
   Languages,
@@ -218,7 +219,7 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
             <ScanSearch size={14} />
             <span>{tr(locale, "视觉", "Vision")}</span>
           </button>
-          <button aria-label={tr(locale, "智能运营", "Intelligent operations")} title={tr(locale, "智能运营", "Intelligent operations")} disabled={!project} onClick={onOperationsCenter}>
+          <button aria-label={tr(locale, "智能运营", "Intelligent operations")} title={tr(locale, "智能运营", "Intelligent operations")} disabled={!project} onClick={() => onOperationsCenter()}>
             <Activity size={14} />
             <span>{tr(locale, "智能运营", "Operations")}</span>
           </button>
@@ -501,35 +502,89 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
         )}
 
         {managerTab === "examples" && (
-          <section className="manager-showcase" aria-label={tr(locale, "内置综合案例", "Built-in showcase")}>
-            <div className="manager-showcase-icon">
-              <Factory size={25} />
-            </div>
-            <div className="manager-showcase-copy">
-              <span className="eyebrow">EDITABLE SHOWCASE</span>
-              <strong>{tr(locale, "智造园区综合案例", "Smart industrial campus")}</strong>
-              <p>
-                {tr(
-                  locale,
-                  "一键创建 4K 看板、四级 2D/3D 场景、楼层与部件拆解、巡检视角、AGV、图片/视频/实时监控，以及直连 HTTP/WebSocket 数据。",
-                  "Create an editable 4K dashboard, four connected 2D/3D levels, floor and component decomposition, inspection cameras, AGVs, media, monitoring, and direct HTTP/WebSocket data.",
-                )}
-              </p>
-            </div>
-            <div className="manager-showcase-tags">
-              <span>4K 2D</span>
-              <span>LIVE 3D</span>
-              <span>AGV</span>
-              <span>HTTP / WS</span>
-            </div>
-            <button className="button primary manager-showcase-action" disabled={!project || showcaseBusy} onClick={() => void createShowcase()}>
-              {showcaseBusy ? <RefreshCw className="spin" size={16} /> : showcaseExists ? <Eye size={16} /> : <Plus size={16} />}
-              {showcaseBusy
-                ? tr(locale, "正在打开…", "Opening…")
-                : showcaseExists
-                  ? tr(locale, "打开已创建案例", "Open existing showcase")
-                  : tr(locale, "创建可编辑案例", "Create editable showcase")}
-            </button>
+          <section className="manager-showcase-grid" aria-label={tr(locale, "内置综合案例", "Built-in showcases")}>
+            <article className="manager-showcase">
+              <div className="manager-showcase-icon">
+                <Factory size={25} />
+              </div>
+              <div className="manager-showcase-copy">
+                <span className="eyebrow">EDITABLE SHOWCASE · 01</span>
+                <strong>{tr(locale, "智造园区综合案例", "Smart industrial campus")}</strong>
+                <p>
+                  {tr(
+                    locale,
+                    "一键创建 4K 看板、四级 2D/3D 场景、楼层与部件拆解、巡检视角、AGV、图片/视频/实时监控，以及直连 HTTP/WebSocket 数据。",
+                    "Create an editable 4K dashboard, four connected 2D/3D levels, inspection cameras, AGVs, media, monitoring, and direct HTTP/WebSocket data.",
+                  )}
+                </p>
+              </div>
+              <div className="manager-showcase-tags">
+                <span>4K 2D</span>
+                <span>LIVE 3D</span>
+                <span>AGV</span>
+                <span>HTTP / WS</span>
+              </div>
+              <button className="button primary manager-showcase-action" disabled={!project || showcaseBusy} onClick={() => void createShowcase()}>
+                {showcaseBusy ? <RefreshCw className="spin" size={16} /> : showcaseExists ? <Eye size={16} /> : <Plus size={16} />}
+                {showcaseBusy
+                  ? tr(locale, "正在打开…", "Opening…")
+                  : showcaseExists
+                    ? tr(locale, "打开已创建案例", "Open existing showcase")
+                    : tr(locale, "创建可编辑案例", "Create editable showcase")}
+              </button>
+            </article>
+            <article className="manager-showcase manager-showcase-secondary">
+              <div className="manager-showcase-icon">
+                <Gauge size={25} />
+              </div>
+              <div className="manager-showcase-copy">
+                <span className="eyebrow">OPERATIONS SHOWCASE · 02</span>
+                <strong>{tr(locale, "设备运维与能效案例", "Operations and energy case")}</strong>
+                <p>
+                  {tr(
+                    locale,
+                    "从设备台账、实时指标、告警诊断到维修工单，展示工业数据如何进入可追溯的运维流程，并可继续编辑数据、规则与证据。",
+                    "Trace industrial data from equipment records and live metrics to diagnosis and maintenance work orders, with editable data, rules, and evidence.",
+                  )}
+                </p>
+              </div>
+              <div className="manager-showcase-tags">
+                <span>ASSET LEDGER</span>
+                <span>DIAGNOSIS</span>
+                <span>ENERGY</span>
+                <span>EVIDENCE</span>
+              </div>
+              <button className="button manager-showcase-action" disabled={!project} onClick={() => onOperationsCenter()}>
+                <Activity size={16} />
+                {tr(locale, "打开运维案例", "Open operations case")}
+              </button>
+            </article>
+            <article className="manager-showcase manager-showcase-tertiary">
+              <div className="manager-showcase-icon">
+                <Route size={25} />
+              </div>
+              <div className="manager-showcase-copy">
+                <span className="eyebrow">LOGISTICS SIMULATION · 03</span>
+                <strong>{tr(locale, "仓储物流与路径仿真案例", "Warehouse logistics and routing")}</strong>
+                <p>
+                  {tr(
+                    locale,
+                    "从订单波次、库位容量到 AGV 路径与拥堵风险，直接编辑工况并运行仿真，查看吞吐、等待和设备利用率证据。",
+                    "Edit order waves, storage capacity, AGV routes, and congestion conditions, then run a simulation with throughput, wait-time, and utilization evidence.",
+                  )}
+                </p>
+              </div>
+              <div className="manager-showcase-tags">
+                <span>AGV ROUTING</span>
+                <span>WHAT-IF</span>
+                <span>THROUGHPUT</span>
+                <span>EDITABLE</span>
+              </div>
+              <button className="button manager-showcase-action" disabled={!project} onClick={() => onOperationsCenter("logistics")}>
+                <Route size={16} />
+                {tr(locale, "打开物流仿真", "Open logistics simulation")}
+              </button>
+            </article>
           </section>
         )}
 

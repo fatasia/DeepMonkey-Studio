@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { EnginePerformanceTelemetry, type FrameMetrics } from "@bim-studio/deep-engine/webgpu";
+import { buildPbrFrameExecutionPlan, createPbrFrameReceipt, EnginePerformanceTelemetry, type FrameMetrics } from "@bim-studio/deep-engine/webgpu";
 import { StudioDeepPerformance } from "./StudioDeepPerformance";
 import { bindPresentationPerformance, enablePresentationGpuTiming, getPresentationBenchmarkSampleWindow,
   getPresentationPerformance } from "./viewerPresentationPerformance";
@@ -63,6 +63,15 @@ describe("Deep presentation performance", () => {
     source.setGpuTimingEnabled(false); source.setGpuTimingEnabled(true);
     expect(source.snapshot().gpuFrameTime?.sampleCount).toBe(0);
     source.dispose(); expect(setDiagnosticsSampling).toHaveBeenLastCalledWith(false);
+  });
+  it("carries the bounded frame graph receipt into exported Deep diagnostics without inventing pass timings", () => {
+    const source = new StudioDeepPerformance({});
+    const plan = buildPbrFrameExecutionPlan({ width: 1000, height: 800 }, { transparency: false });
+    const receipt = createPbrFrameReceipt(9, plan, [], 10, 16);
+    source.record({ ...frame(9), frameGraphReceipt: receipt }, 800, true); tick(0);
+    expect(source.snapshot().deep?.frame.frameGraphReceipt).toEqual(receipt);
+    expect(receipt.samples.every(sample => sample.availability === "unavailable" && sample.samplesMs.length === 0)).toBe(true);
+    source.dispose();
   });
   it("binds only the active source and preserves an already-open diagnostics preference", () => {
     const owner = {}, first = new StudioDeepPerformance({}), second = new StudioDeepPerformance({});

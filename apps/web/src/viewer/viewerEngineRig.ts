@@ -321,6 +321,7 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
   setPostProcessing(state: ScenePostProcessingState): void {
       this.postProcessingState = {
         enabled: state.enabled,
+        ...(state.qualityProfile ? { qualityProfile: state.qualityProfile } : {}),
         smaa: state.smaa ?? false,
         fxaa: state.fxaa ?? false,
         ssao: state.ssao ?? false,

@@ -11,6 +11,8 @@ import type {
   SceneSnapshot,
 } from "@bim-studio/contracts";
 import { createIndustrialShowcasePages, directSceneBinding, httpBinding, websocketBinding } from "./industrialShowcasePages";
+import { createIndustrialPrefabInstance } from "../prefabs/industrialPrefabInstance";
+import { industrialPrefabDefinition } from "../prefabs/industrialPrefabCatalog";
 
 export interface IndustrialShowcaseBundle {
   application: ApplicationDocument;
@@ -319,12 +321,12 @@ function createLineScene(options: ShowcaseOptions, sceneId: string): SceneSnapsh
   const primitives = [
     primitive(`${prefix}-line-ground`, "产线地坪", "box", "#26343a", [0, -0.25, 0], [34, 0.4, 18]),
     primitive(`${prefix}-line-source`, "Source · 上料", "box", "#4d7897", [-12, 1, 0], [3.5, 2, 4]),
-    primitive(`${prefix}-line-process`, "Process · 总装", "box", "#b78947", [-3, 1.3, 0], [6, 2.6, 5]),
+    primitive(`${prefix}-line-process`, "Process · 总装", "box", "#b78947", [-3, 1.3, 0], [6, 2.6, 5], { prefabDefinitionId: "conveyor.straight" }),
     primitive(`${prefix}-line-buffer`, "Buffer · WIP", "box", "#6d8794", [6, 0.65, 0], [5, 1.3, 5]),
     primitive(`${prefix}-line-sink`, "Sink · 下线", "box", "#5a8a6f", [13, 1, 0], [3.5, 2, 4]),
-    primitive(`${prefix}-line-robot`, "机器人 A", "cylinder", "#d4a84f", [-3, 3.1, 0], [1.1, 3.6, 1.1], { effects: "#f0bd57" }),
-    primitive(agvId, "AGV-01 · 实时位置", "box", "#54d69a", [-12, 0.55, -5], [2.1, 0.7, 1.25], { effects: "#54d69a" }),
-    primitive(`${prefix}-agv-02`, "AGV-02 · 实时位置", "box", "#d9ad55", [12, 0.55, 1], [2.1, 0.7, 1.25]),
+    primitive(`${prefix}-line-robot`, "机器人 A", "cylinder", "#d4a84f", [-3, 3.1, 0], [1.1, 3.6, 1.1], { effects: "#f0bd57", prefabDefinitionId: "robot.articulated-6" }),
+    primitive(agvId, "AGV-01 · 实时位置", "box", "#54d69a", [-12, 0.55, -5], [2.1, 0.7, 1.25], { effects: "#54d69a", prefabDefinitionId: "agv.carrier" }),
+    primitive(`${prefix}-agv-02`, "AGV-02 · 实时位置", "box", "#d9ad55", [12, 0.55, 1], [2.1, 0.7, 1.25], { prefabDefinitionId: "agv.amr" }),
     primitive(`${prefix}-agv-route-north`, "AGV 路网北段", "box", "#3e5660", [0, 0.02, -5], [26, 0.05, 0.3]),
     primitive(`${prefix}-agv-route-south`, "AGV 路网南段", "box", "#3e5660", [0, 0.02, 5], [26, 0.05, 0.3]),
     primitive(`${prefix}-agv-route-east`, "AGV 路网东段", "box", "#3e5660", [12, 0.02, 0], [0.3, 0.05, 10]),
@@ -412,8 +414,13 @@ function primitive(
   color: string,
   position: [number, number, number],
   scale: [number, number, number],
-  options: { collisionEnabled?: boolean; opacity?: number; rotation?: [number, number, number]; effects?: string } = {},
+  options: { collisionEnabled?: boolean; opacity?: number; rotation?: [number, number, number]; effects?: string; prefabDefinitionId?: string } = {},
 ): PrimitiveState {
+  const prefabDefinition = options.prefabDefinitionId ? industrialPrefabDefinition(options.prefabDefinitionId) : undefined;
+  let pathPoint = 0;
+  const prefab = prefabDefinition
+    ? createIndustrialPrefabInstance(prefabDefinition, { x: position[0], y: position[1], z: position[2] }, () => `${modelId}:path-${pathPoint++}`)
+    : undefined;
   return {
     modelId,
     name,
@@ -427,6 +434,7 @@ function primitive(
     ...(options.effects
       ? { effects: { outline: true, glow: true, xray: false, scanline: false, heatmap: false, dissolve: 0, edgeLight: true, color: options.effects, intensity: 0.52 } }
       : {}),
+    ...(prefab ? { prefab } : {}),
   };
 }
 

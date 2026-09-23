@@ -1,4 +1,5 @@
 import type { SceneSnapshot } from "@bim-studio/contracts";
+import { isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { SceneManagerController } from "./SceneManager";
@@ -89,6 +90,47 @@ describe("SceneManagerView product surface", () => {
     expect(html).toContain('title="打开拓扑 · 总装线物流拓扑"');
   });
 
+  it("shows three runnable capability cases in the examples tab", () => {
+    const project = { id: "project-1", name: "装配项目", description: "", models: [], createdAt: "2026-09-06", updatedAt: "2026-09-06" };
+    const html = renderToStaticMarkup(<SceneManagerView controller={{
+      branding: { systemName: "DeepMonkey Studio", iconUrl: "/brand/app-icon-industrial.svg", copyright: "DeepMonkey Studio" },
+      busy: false, cloudConfigured: false, cloudSceneLinks: {}, cloudScenePolicies: {}, isAdmin: false,
+      locale: "zh-CN", managerTab: "examples", name: "", project, projects: [project], scenes: [], sortedScenes: [], visibleScenes: [],
+      publicationVersions: [], publishMode: "webgl", publishPerformance: "standard", showcaseBusy: false, showcaseExists: false,
+      topologies: [], userName: "审计用户", versionBusy: false, sceneSearch: "", sceneSort: "updated", sceneStatusFilter: "all",
+    } as unknown as SceneManagerController} />);
+
+    expect(html).toContain("智造园区综合案例");
+    expect(html).toContain("设备运维与能效案例");
+    expect(html).toContain("仓储物流与路径仿真案例");
+    expect(html).toContain("打开物流仿真");
+    expect(html).toContain("AGV ROUTING");
+    expect(html).toContain("打开运维案例");
+    expect(html).toContain("ASSET LEDGER");
+    expect(html).toContain('aria-label="内置综合案例"');
+  });
+
+  it("routes the operations and logistics case buttons to their intended operations tabs", () => {
+    const project = { id: "project-1", name: "装配项目", description: "", models: [], createdAt: "2026-09-06", updatedAt: "2026-09-06" };
+    const openedTabs: (string | undefined)[] = [];
+    const controller = {
+      branding: { systemName: "DeepMonkey Studio", iconUrl: "/brand/app-icon-industrial.svg", copyright: "DeepMonkey Studio" },
+      busy: false, cloudConfigured: false, cloudSceneLinks: {}, cloudScenePolicies: {}, isAdmin: false,
+      locale: "zh-CN", managerTab: "examples", name: "", project, projects: [project], scenes: [], sortedScenes: [], visibleScenes: [],
+      publicationVersions: [], publishMode: "webgl", publishPerformance: "standard", showcaseBusy: false, showcaseExists: false,
+      topologies: [], userName: "审计用户", versionBusy: false, sceneSearch: "", sceneSort: "updated", sceneStatusFilter: "all",
+      onOperationsCenter: (tab?: string) => openedTabs.push(tab),
+    } as unknown as SceneManagerController;
+
+    const view = SceneManagerView({ controller });
+    const caseButtons = collectButtons(view).filter((button) => String(button.props.className).includes("manager-showcase-action"));
+    expect(caseButtons).toHaveLength(3);
+    caseButtons[1]?.props.onClick?.({} as never);
+    caseButtons[2]?.props.onClick?.({} as never);
+
+    expect(openedTabs).toEqual([undefined, "logistics"]);
+  });
+
   it.each([
     { name: "genuinely empty", scenes: [], visibleScenes: [], toolbarClass: "button", emptyAction: true },
     { name: "filtered empty", scenes: [createScene()], visibleScenes: [], toolbarClass: "button primary", emptyAction: false },
@@ -130,6 +172,13 @@ describe("SceneManagerView product surface", () => {
     expect(html.match(/<button[^>]*class="button primary"/g)).toHaveLength(1);
   });
 });
+
+function collectButtons(node: ReactNode): React.ReactElement<{ className?: string; onClick?: (event: never) => void }>[] {
+  if (Array.isArray(node)) return node.flatMap(collectButtons);
+  if (!isValidElement<{ className?: string; onClick?: (event: never) => void; children?: ReactNode }>(node)) return [];
+  const children = collectButtons(node.props.children);
+  return node.type === "button" ? [node, ...children] : children;
+}
 
 function buttonClass(html: string, label: string): string | undefined {
   const button = [...html.matchAll(/<button\b[^>]*>[\s\S]*?<\/button>/g)]

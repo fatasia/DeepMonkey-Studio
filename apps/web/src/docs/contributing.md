@@ -29,7 +29,9 @@ pnpm build
 
 一篇文档解决一个用户任务，按“前提 → 操作 → 预期结果 → 排障 → 下一步”组织。按钮名称使用当前产品文案，代码示例来自实际 API；尚未支持的能力写清适用范围。
 
-页面正文随应用离线分发。内部链接使用 `/docs/文档ID#章节`，示意图放在 `apps/web/public/docs-assets`，章节标题变动后更新引用。新增文章需在 `docsCatalog.ts` 注册分类与顺序，并更新目录测试。
+页面正文随应用离线分发，并作为 GitHub Wiki 镜像的唯一来源。内部链接使用 `/docs/文档ID#章节`，示意图放在 `apps/web/public/docs-assets`；Wiki 导出会把图片复制到同名相对目录，保证镜像不依赖可变分支 URL。新增文章需在 `docsCatalog.ts` 注册分类与顺序，并更新目录测试；改文后运行 `pnpm docs:wiki:check`，发布文档时运行 `pnpm docs:wiki:export`。
+
+操作截图只放脱敏、可公开的稳定图片到 `docs-assets`，不得把 `test-output`、客户模型、令牌、私人地址或临时登录画面嵌入文章。截图的来源、生成提交和对应验证命令写在文章或发布证据里；测试运行截图仍留在本地证据目录，文档以文字链接描述证据位置，不将临时产物复制成产品文档图片。
 
 ```bash
 pnpm --filter @bim-studio/web test src/docs/docsCatalog.test.ts src/components/DocsCenter.test.tsx

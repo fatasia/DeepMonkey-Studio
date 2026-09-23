@@ -69,7 +69,8 @@ export interface SceneManagerProps {
   onCreateTopology: () => void;
   onOpenTopology: (applicationId: string, topologyId: string) => void;
   onVisionCenter: () => void;
-  onOperationsCenter: () => void;
+  /** 打开智能运营工作区；可选标签用于案例页直达对应能力。 */
+  onOperationsCenter: (tab?: "maintenance" | "commissioning" | "battery" | "logistics" | "energy" | "whatif" | "monitoring") => void;
   onAiAssistant: () => void;
   onDocs: () => void;
   onSystem: () => void;
