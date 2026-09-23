@@ -3437,3 +3437,11 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **对抗自查修复一处真缺陷**：publishScene 会向 publication.snapshot 写入发布决策三元组，exportSceneClientPackage 携带的正是该快照——键未剔除时"烘焙→发布"必然哈希失配静默丢探针；修复后新增回归测试钉死。
 - **门禁**：apps/web tsc 0 错误、deep-engine tsc 0 错误；apps/web vitest 全量 4321 passed/3 skipped/0 failed（含 sceneClientPackagePreparedNative 真编译链回归）；deep-engine src 全量 3826 passed/44 skipped；runtimePurityGate PASS（746 browser/651 native）；新增测试 28 个（会话态 5、runner 合同 9、UI 面板 9+2、LightingEditor 集成 1、其余为本轮修复回归）。
 - **诚实边界**：①真机全链（UI 点击→真 GPU 烘焙→真包）未验证，无浏览器/真机取证环境，列未验证边界；②会话态 ambient 宿主馈 [0,0,0]，EnvironmentAmbientReader 真实环境读回属后续切片，无方向光场景被服务 fail-closed 拒绝并在 UI 如实报错；③服务端 Native 发布候选（api.createNativeSceneCandidate）与冻结发布重打包（prepareFrozenNativeScenePayload）不携带会话烘焙——前者在服务端编译无法读取页面会话，后者必须与原发布一致；④烘焙进度为阶段型（compile-scene/request-gpu/capture/store），GPU 内部无细粒度回调；⑤sourceSizeGate 失败 116 项为 HEAD 存量（stash 对照实测基线同值），与本次改动无关且失败清单不含本切片文件。
+
+### 2026-09-23 30 分钟自检（第二十八轮）：F3 UI 穿透验收 + 进度量化
+
+- **F3 烘焙 UI 与发布穿透验收通过**（a2b63feb）：面板（参数缺省/预检/阶段进度/覆盖率摘要）→ runner（纯 CPU 编译+独立 requestDevice 不依赖 viewport）→ 发布会话态（键=严格源投影哈希剔除发布决策三元组，LRU 4，场景语义一变即失配）→ resolveProbeGridPayloadInput 透传优先级。**对抗自查修复真缺陷**：publishScene 向 snapshot 写三元组致"烘焙→发布"哈希失配静默丢探针——已修+回归钉死。门禁：web 全量 **4321/0**、deep-engine 3826/0、双端 tsc 0、28 新测试（主线程复跑 14/14）。边界：真机 UI 全链未验证（GPU 段由 2907cb3f 真机 gate 覆盖）。
+- **F3 探针 GI 全链正式闭环**：捕获→读回→聚合→编排→编译器→发布透传→UI 全通。
+- **进度量化**（口径=进入真实消费者且有测试/证据）：F 系列 ~93%（F1/F2 100%、F3 97%、F4 92%、F5 88%、F6 75%）；I 系列 ~93%（I3 六项清零、I5 六能力点、I4 落地；I2/I6 收口待）；V 系列 ~70%（V1 runner 3/3 端、V2 三路实窗、V3 五项 5/5、V4 采集层✓正式跑待、V5 预检中）。**总体 ≈86%**。剩余精确清单：V4 正式跑、V5 终验、F6 宿主入口、F5 IME/触控/音频、V1 逐像素+输入轨迹、F3 距离通道/级联烘焙、author-grading 运行证据。
+- 门禁：native lib 540/0、bin 271/0、web 4321/0、deep-engine 3826/0。
+- **满载**：F4 矩阵代理（收尾）、a01x 内存代理（收尾）；V5 预检与剩余切片由下轮补位。
