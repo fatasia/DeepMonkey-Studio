@@ -5,7 +5,7 @@ This checklist prepares Deep Monkey Studio for a public repository. The license 
 ## Ownership and licensing
 
 - [ ] Confirm the legal name of the project owner and the copyright ownership or authorization for every first-party component.
-- [ ] Have counsel review DMCSL-1.0 in the jurisdictions where enforcement matters, especially the definitions and evidence thresholds for Organization, Covered Misconduct, Affiliate, Restricted Use, and Covered Product.
+- [ ] Have counsel review the MIT with Ethical Restrictions license (`DMS-MIT-ER-1.0`) in the jurisdictions where enforcement matters, especially the definitions and evidence thresholds for Organization, Covered Violation, conspiracy/material-assistance, termination, and reinstatement in LICENSE Part 2.
 - [ ] Verify every dependency, model, font, icon, sample, and bundled asset has redistribution rights and accurate attribution in `THIRD_PARTY_NOTICES.md`.
 - [ ] Run `pnpm audit:licenses`; review and document any newly reported incomplete, ambiguous, or reciprocal license before release.
 - [ ] Remove material that cannot be publicly redistributed, including proprietary SDKs, customer models, licensed datasets, and vendor binaries.

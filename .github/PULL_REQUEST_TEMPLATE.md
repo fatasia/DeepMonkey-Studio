@@ -23,4 +23,4 @@
 - [ ] New dependencies and assets have reviewed licenses and attribution.
 - [ ] No credentials, customer data, build output, or local validation artifacts are included.
 - [ ] Performance or compatibility claims include reproducible evidence.
-- [ ] I have the right to submit this contribution and license my contribution under DMCSL-1.0.
+- [ ] I have the right to submit this contribution and license my contribution under the project license (MIT with Ethical Restrictions, `DMS-MIT-ER-1.0`; see LICENSE).

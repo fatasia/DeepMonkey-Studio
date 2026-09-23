@@ -1,189 +1,129 @@
-Deep Monkey Community Source License 1.0
-DMCSL-1.0
+Deep Monkey Studio License — MIT with Ethical Restrictions
+License identifier: DMS-MIT-ER-1.0
 
 Copyright (c) 2026 Deep Monkey Studio contributors
 
-This License applies to all first-party applications, packages, tools, scripts,
-documentation, and assets in this repository unless a file or adjacent notice
-identifies material as a Third-Party Component under a different license.
+STATUS. This license combines the MIT License (Part 1) with additional
+ethical restrictions (Part 2). Because of Part 2, the combination is a
+source-available license: it is NOT an Open Source license as defined by
+the Open Source Initiative (OSI), it is not OSI Approved, and it must not
+be represented as Open Source or Free Software. Automated detectors
+(GitHub, license scanners) may display "Other" for this file. This
+trade-off is intentional; see LICENSING.md for the rationale.
 
-This license is a source-available license. It is not an Open Source license as
-defined by the Open Source Initiative and must not be represented as OSI
-Approved, Open Source, or Free Software.
+The English text below is the only controlling text. Any translation
+(including LICENSE.zh-CN.md) is provided for convenience only.
 
-By exercising any permission granted below, You accept and agree to be bound by
-this License.
+PART 1 — MIT LICENSE
 
-1. Definitions
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
 
-"Affiliate" means an entity that directly or indirectly controls, is controlled
-by, or is under common control with another entity. "Control" means ownership of
-more than fifty percent of the voting interests, the power to appoint a majority
-of the governing body, or the practical power to direct management and policies.
+The above copyright notice and this permission notice, including the
+Ethical Restrictions in Part 2, shall be included in all copies or
+substantial portions of the Software.
 
-"Commercial Use" means use that is intended for, supports, or is reasonably
-expected to produce commercial advantage, operational advantage, or monetary
-compensation for You or another person. It includes internal business use,
-production use, use in research and development for a commercial business,
-customer delivery, consulting, integration, managed services, software as a
-service, hosted access, paid training, and use in manufacturing or operations.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-"Covered Product" means the Software, a modification or derivative work of the
-Software, or a product or service that embeds, links to, incorporates, or is
-specifically adapted to operate with a substantial portion of the Software.
-Independent software that communicates with the Software only through a
-documented, general-purpose network protocol or command-line interface is not a
-Covered Product solely because of that communication.
+PART 2 — ETHICAL RESTRICTIONS (ADDITIONAL TERMS)
+
+2.1 Condition. The permissions in Part 1 are granted subject to the
+additional condition in this Part 2. These terms are informed by the
+United Nations Guiding Principles on Business and Human Rights ("UNGP"),
+the fundamental Conventions of the International Labour Organization
+("ILO"), and international humanitarian law.
+
+2.2 Definitions.
 
 "Organization" means any corporation, company, partnership, institution,
-government body, nonprofit body, or other legal entity, together with its
-Affiliates.
+government body, nonprofit body, or other legal entity, together with
+its affiliates and any person acting on its behalf or for its benefit,
+including employees, contractors, agents, and intermediaries.
 
-"ILO Fundamental Rights" means the principles stated in the International
-Labour Organization Declaration on Fundamental Principles and Rights at Work,
-adopted in 1998 and amended in 2022, as published by the ILO at
-https://www.ilo.org/topics-and-sectors/fundamental-principles-and-rights-work:
-freedom of association and effective recognition of collective bargaining; the
-elimination of forced or compulsory labor; the effective abolition of child
-labor; elimination of discrimination in employment and occupation; and a safe
-and healthy working environment.
+"Covered Violation" means that an Organization, or a person acting on
+its behalf or for its benefit, commits, conspires in, or knowingly and
+materially assists any of the following:
 
-"Covered Misconduct" means that an Organization does one or more of the
-following:
+  a. Forced or compulsory labor in all its forms, including debt
+     bondage, human trafficking, document confiscation, and work
+     extracted by coercion or threat of penalty (ILO Forced Labour
+     Convention, 1930 (No. 29) and Abolition of Forced Labour
+     Convention, 1957 (No. 105));
 
-  a. fails to pay wages, bonuses, performance compensation, overtime, employer
-     social-insurance contributions, or mandatory benefits fully and on time as
-     required by law, contract, or an announced compensation policy;
+  b. Child labor that deprives children of their childhood, potential,
+     or dignity, or that is harmful to physical or mental development,
+     including the worst forms of child labor (ILO Minimum Age
+     Convention, 1973 (No. 138) and Worst Forms of Child Labour
+     Convention, 1999 (No. 182));
 
-  b. uses forced labor, coercion, threats, document confiscation, retaliation,
-     unlawful discrimination or harassment, child labor, or unsafe working
-     conditions, or violates the ILO Fundamental Rights;
+  c. Systematic discrimination in employment or occupation on the basis
+     of race, color, sex, religion, political opinion, national
+     extraction, social origin, disability, or other status, where it
+     constitutes a denial of fundamental human rights (ILO Discrimination
+     (Employment and Occupation) Convention, 1958 (No. 111));
 
-  c. unlawfully collects workers' or users' personal information, or violates
-     employment, workplace-safety, privacy, data-protection, or
-     consumer-protection law;
+  d. War crimes, crimes against humanity, genocide, or other serious
+     violations of international humanitarian law, including knowing
+     and material assistance to parties engaged in such conduct; or
 
-  d. exploits users through deception, coercion, hidden or unauthorized charges,
-     knowingly unsafe products or services, misuse of personal data, or denial
-     of remedies required by law; or
+  e. Any other conduct that a reasonable person would recognize as a
+     severe violation of the human rights principles stated in the
+     UNGP, of comparable gravity to the conduct in items a through d.
 
-  e. 视用户为韭菜，视员工为家奴
+2.3 Effect of a Covered Violation. An Organization that commits, conspires
+in, or knowingly and materially assists a Covered Violation during any
+period of its use receives no permission from this License, and any
+permission previously granted to that Organization under this License
+terminates automatically and retroactively to the date the Covered
+Violation began. No such Organization or any person acting for its
+benefit may use, copy, modify, distribute, sublicense, sell, deploy, or
+exercise any other right in Part 1, directly or indirectly, through
+affiliates, contractors, or other third parties.
 
-"Licensor" means each copyright holder that licenses a contribution to the
-Software under this License.
+2.4 No Cure; Reinstatement. A Covered Violation under this Part 2 has no
+cure period. Rights may be reinstated only by a written and signed
+statement from the copyright holders, or a majority of them, acting in
+their sole discretion.
 
-"Restricted Organization" means an Organization that engages in Covered
-Misconduct during any part of the relevant use.
+2.5 Severability and Narrow Construction. If a provision of this Part 2
+is held unenforceable, it is reduced to the minimum extent necessary and
+the remaining provisions continue in effect. This Part 2 is construed
+narrowly: conduct not described in Section 2.2 does not affect the
+permissions in Part 1. Ordinary commercial activity, lawful competition,
+and lawful employment practices are not Covered Violations.
 
-"Restricted Use" means use by, for, under contract with, or primarily for the
-benefit of a Restricted Organization, including use through an employee,
-contractor, agent, supplier, customer, intermediary, or other third party.
+PART 3 — SCOPE AND GENERAL TERMS
 
-"Software" means the source code, object code, documentation, and original assets
-distributed with this License, excluding Third-Party Components.
+3.1 Third-Party Components. The license above applies to first-party
+applications, packages, tools, scripts, documentation, and assets in
+this repository. Dependencies, fonts, icons, models, sample assets, and
+other third-party material are excluded and remain governed solely by
+their own licenses, as documented in THIRD_PARTY_NOTICES.md and in
+license files stored next to the corresponding assets.
 
-"Third-Party Components" means material identified in THIRD_PARTY_NOTICES.md or
-otherwise accompanied by a different license. Those components remain governed
-only by their respective licenses.
+3.2 Contributions. Unless a separate written agreement states otherwise,
+any contribution intentionally submitted for inclusion in the Software
+is licensed by its copyright holder under this entire License
+(Part 1 and Part 2). Submitting a contribution does not transfer
+copyright ownership.
 
-"You" means the individual or legal entity exercising permissions under this
-License.
+3.3 Trademarks. This License does not grant permission to use the names,
+logos, service marks, or trademarks of Deep Monkey Studio or any
+Licensor, except as reasonably necessary to describe the origin of the
+Software and to reproduce required notices.
 
-2. General Copyright and Patent Grant
-
-Subject to this License, each Licensor grants You a worldwide, non-exclusive,
-royalty-free copyright license to use, reproduce, modify, prepare derivative
-works of, publicly display, publicly perform, and distribute the Software in
-source or object form, and to permit recipients to exercise those rights under
-this License.
-
-Each Licensor also grants You a worldwide, non-exclusive, royalty-free patent
-license under patent claims that the Licensor can license and that are
-necessarily infringed by its contribution alone or by combination of its
-contribution with the Software. This patent license terminates for a party that
-institutes patent litigation alleging that the Software or a contribution to it
-infringes a patent.
-
-3. Users Outside the Restricted Scope
-
-If You are not a Restricted Organization and the use is not Restricted Use, You
-may exercise the permissions in Section 2 for any purpose, including Commercial
-Use. You are not required to publish Your modifications or source code.
-Distribution remains subject to the notice requirements in Section 5.
-
-For clarity, an Organization that does not engage in Covered Misconduct is
-outside the restricted scope and receives the same rights as every other
-unrestricted user.
-
-4. Prohibited Use
-
-A Restricted Organization may not use, copy, modify, distribute, deploy, access,
-evaluate, test, research, or otherwise exercise any permission under this
-License. No person may make Restricted Use on its behalf or for its benefit.
-Publishing source code, paying a fee, using an Affiliate or contractor, or
-structuring the use through another person creates no exception.
-
-5. Distribution and Notices
-
-When You distribute the Software or a Covered Product, You must:
-
-  a. provide a copy of this License;
-  b. retain copyright, attribution, patent, trademark, and license notices;
-  c. state that You changed the Software if You distribute a modified version;
-  d. identify the source location of the version distributed when source is made
-     available; and
-  e. comply with all applicable Third-Party Component licenses.
-
-You may apply additional terms to Your own material only if those terms do not
-purport to remove or weaken the rights and conditions that apply to the Software
-under this License.
-
-6. Contributions
-
-Unless a separate written agreement states otherwise, any intentionally
-submitted contribution accepted into the Software is licensed under this License
-by its copyright holder. No contribution transfers copyright ownership by
-itself.
-
-7. Trademarks
-
-This License does not grant permission to use names, logos, service marks, or
-trademarks of Deep Monkey Studio or any Licensor, except as reasonably necessary
-to describe the origin of the Software and reproduce required notices.
-
-8. Compliance and Termination
-
-Your rights terminate automatically when You violate this License. If this is
-Your first violation and You cure it completely within thirty days after You
-discover it or receive notice, Your rights are reinstated automatically as of the
-date of cure. A Licensor may provide a different reinstatement in writing.
-
-Sections that by their nature should survive termination, including Sections 7,
-9, 10, and 11, survive.
-
-9. Disclaimer of Warranty
-
-TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE SOFTWARE IS PROVIDED "AS IS" AND
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, EXPRESS, IMPLIED, OR STATUTORY,
-INCLUDING WARRANTIES OF TITLE, NON-INFRINGEMENT, MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE, ACCURACY, OR RELIABILITY. YOU BEAR ALL RISK ARISING FROM USE
-OF THE SOFTWARE.
-
-10. Limitation of Liability
-
-TO THE MAXIMUM EXTENT PERMITTED BY LAW, NO LICENSOR OR CONTRIBUTOR WILL BE LIABLE
-FOR ANY DIRECT, INDIRECT, SPECIAL, INCIDENTAL, CONSEQUENTIAL, EXEMPLARY, OR
-PUNITIVE DAMAGES, OR FOR LOSS OF PROFITS, REVENUE, DATA, GOODWILL, OR BUSINESS
-INTERRUPTION, ARISING FROM OR RELATED TO THE SOFTWARE OR THIS LICENSE, UNDER ANY
-LEGAL THEORY, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-11. Interpretation
-
-If a provision of this License is unenforceable, it will be reformed only to the
-minimum extent necessary, and the remaining provisions will continue in effect.
-No waiver is effective unless written by the relevant Licensor. Headings are for
-convenience only.
-
-The complete permissions and conditions are stated in this English text. Any
-translation is provided for convenience; if a translation conflicts with this
-text, this English text controls to the extent permitted by applicable law.
+3.4 Distribution Notices. When You distribute the Software or a product
+that incorporates it, You must (a) include a copy of this License,
+(b) retain all copyright, attribution, and license notices, and
+(c) state significant changes You made to the Software.

@@ -4,7 +4,11 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, extname, isAbsolute, join, normalize, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const LICENSE_ID = "LicenseRef-Deep-Monkey-Community-1.0";
+export const LICENSE_ID = "LicenseRef-Deep-Monkey-MIT-ER-1.0";
+// Transition window: the root package.json still carries the predecessor
+// license id (DMCSL-1.0). It is accepted with a warning until the main
+// session updates the manifest; any other value fails.
+export const LEGACY_LICENSE_IDS = ["LicenseRef-Deep-Monkey-Community-1.0"];
 
 export const REQUIRED_FILES = [
   "README.md",
@@ -47,26 +51,23 @@ const LARGE_FILE_EXCEPTIONS_PATH = "config/repository-large-file-exceptions.json
 
 const REQUIRED_TEXT = {
   "LICENSE": [
-    "Deep Monkey Community Source License 1.0",
-    "not an Open Source license",
-    '"Organization" means any corporation',
-    "Covered Misconduct",
-    "Declaration on Fundamental Principles and Rights at Work",
-    "https://www.ilo.org/topics-and-sectors/fundamental-principles-and-rights-work",
-    "performance compensation, overtime",
-    "unlawfully collects workers' or users' personal information",
-    "视用户为韭菜，视员工为家奴",
-    "social-insurance contributions",
-    "consumer-protection law",
-    "A Restricted Organization may not use, copy, modify, distribute, deploy, access",
-    "No person may make Restricted Use",
-    "Publishing source code, paying a fee",
-    "all first-party applications, packages, tools, scripts",
+    "MIT with Ethical Restrictions",
+    "License identifier: DMS-MIT-ER-1.0",
+    "NOT an Open Source license as defined by",
+    "PART 1 — MIT LICENSE",
+    "PART 2 — ETHICAL RESTRICTIONS",
+    "PART 3 — SCOPE AND GENERAL TERMS",
+    "United Nations Guiding Principles on Business and Human Rights",
+    "Forced or compulsory labor",
+    "child labor",
+    "War crimes, crimes against humanity",
+    "No Cure; Reinstatement",
+    "THIRD_PARTY_NOTICES.md",
   ],
-  "README.md": ["[简体中文](README.md)", "[English](README.en.md)", "pnpm gate:repository", "对于非受限企业与个人为 MIT 协议"],
+  "README.md": ["[简体中文](README.md)", "[English](README.en.md)", "pnpm gate:repository", "MIT License + Ethical Restrictions", "source-available"],
   "LICENSE.zh-CN.md": ["受约束不当行为", "ILO 基本劳动权利", "国际劳工组织关于工作中基本原则和权利宣言", "加班报酬", "奖金、绩效报酬", "非法收集职工或用户个人信息", "社会保险", "盘剥用户", "5. 视用户为韭菜，视员工为家奴", "未实施受约束不当行为", "受限组织不得使用、复制、修改、分发、部署、访问、评估、测试、研究本软件", "公开源码、支付费用"],
   "README.en.md": ["[简体中文](README.md)", "source-available", "Publishing source or paying a fee creates no exception"],
-  "LICENSING.md": ["Usage matrix", "source-available", "Prohibited for every purpose"],
+  "LICENSING.md": ["Usage matrix", "source-available", "DMS-MIT-ER-1.0", "not OSI open source", "MIT License + Ethical Restrictions"],
   "CONTRIBUTING.md": ["Contribution certification", "pnpm gate:repository", "CHANGELOG.md"],
   "GOVERNANCE.md": ["Project Steward", "default branch must be protected", "Semantic Versioning"],
   "SECURITY.md": ["Do not disclose", "private vulnerability reporting"],
@@ -165,7 +166,11 @@ export function validateRepository(root) {
   if (existsSync(join(root, "package.json"))) {
     try {
       const manifest = JSON.parse(read(root, "package.json"));
-      if (manifest.license !== LICENSE_ID) fail(`package.json license must be ${LICENSE_ID}`);
+      if (LEGACY_LICENSE_IDS.includes(manifest.license)) {
+        console.warn(`[transition] package.json license is ${manifest.license}; update it to ${LICENSE_ID} (see LICENSING.md)`);
+      } else if (manifest.license !== LICENSE_ID) {
+        fail(`package.json license must be ${LICENSE_ID}`);
+      }
       if (manifest.repository?.url !== "git+https://github.com/fatasia/bim-studio.git") fail("package.json repository URL is missing or incorrect");
       if (!manifest.scripts?.["gate:repository"]?.includes("check-repository-governance")) fail("package.json must expose gate:repository");
       for (const script of ["verify:release", "verify:gpu-release"]) {
@@ -180,7 +185,7 @@ export function validateRepository(root) {
   for (const path of existingPackageFiles(root)) {
     try {
       const license = JSON.parse(read(root, path)).license;
-      if (path !== "package.json" && license && license !== LICENSE_ID && !license.startsWith("SEE LICENSE IN ")) {
+      if (path !== "package.json" && license && license !== LICENSE_ID && !LEGACY_LICENSE_IDS.includes(license) && !license.startsWith("SEE LICENSE IN ")) {
         fail(`${path} declares conflicting first-party license: ${license}`);
       }
     } catch (error) {
