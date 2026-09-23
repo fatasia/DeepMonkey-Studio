@@ -294,5 +294,5 @@ pub(crate) fn pack_shadow_frames(
 }
 
 #[cfg(test)]
-#[path = "shadow_map_tests.rs"]
+#[path = "../shadow_map_tests.rs"]
 mod tests;

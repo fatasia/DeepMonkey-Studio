@@ -25,7 +25,15 @@ pub(crate) async fn create_gpu_context(
     request_timestamps: bool,
 ) -> Result<GpuContext, String> {
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
-    descriptor.backends = wgpu::Backends::DX12 | wgpu::Backends::METAL | wgpu::Backends::VULKAN;
+    // wasm:浏览器 WebGPU(必要时 GL 兜底);桌面:DX12/Metal/Vulkan 各取所长。
+    #[cfg(target_arch = "wasm32")]
+    {
+        descriptor.backends = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        descriptor.backends = wgpu::Backends::DX12 | wgpu::Backends::METAL | wgpu::Backends::VULKAN;
+    }
     let instance = wgpu::Instance::new(descriptor);
     let surface = instance
         .create_surface(window.clone())

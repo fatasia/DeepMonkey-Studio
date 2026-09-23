@@ -15,5 +15,5 @@ pub use contract::*;
 pub use host::XCompatibilityHost;
 
 #[cfg(test)]
-#[path = "compat_x_tests.rs"]
+#[path = "../compat_x_tests.rs"]
 mod tests;
