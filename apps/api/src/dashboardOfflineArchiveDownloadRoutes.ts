@@ -4,6 +4,11 @@ import type { PublishedApplicationRecord } from "@bim-studio/contracts";
 import { createDashboardWebStaticPackage } from "./dashboardWebStaticPackage.js";
 import { createDashboardPortableZip } from "./dashboardPortableZip.js";
 import { createDashboardStandaloneExecutable } from "./dashboardStandaloneExecutable.js";
+import {
+  createDashboardAndroidApk,
+  type DashboardAndroidApkDependencies,
+  type DashboardAndroidSigningConfig,
+} from "./dashboardAndroidApk.js";
 import { parseClientPackageBranding, type ClientPackageBranding } from "./clientPackageBranding.js";
 import {
   createDashboardOfflineArchive,
@@ -45,6 +50,8 @@ export interface DashboardOfflineArchiveDownloadDependencies {
   };
   /** Web 静态包下载的部署侧供给；未配置时不注册 web-package 路由。 */
   readonly webStatic?: DashboardWebStaticDownloadDependencies;
+  /** 场景安卓发布:模板 APK + build-tools + 部署默认签名;未配置时不注册 android-apk 路由。 */
+  readonly android?: DashboardAndroidApkDependencies;
 }
 
 export interface DashboardWebStaticDownloadDependencies {
@@ -83,11 +90,11 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
     || typeof webStatic.readResourceObject !== "function")) {
     throw new Error("Dashboard web package download requires an absolute static root and object reader");
   }
-  const formats = ["dmda", ...(portable ? ["zip", "exe"] : []), ...(webStatic ? ["web"] : [])] as const;
+  const formats = ["dmda", ...(portable ? ["zip", "exe"] : []), ...(webStatic ? ["web"] : []), ...(dependencies.android ? ["apk"] : [])] as const;
   for (const format of formats) {
-  const endpoint = format === "exe" ? "standalone-executable" : format === "zip" ? "portable-zip" : format === "web" ? "web-package" : "offline-archive";
-  app.route<{ Params: RouteParams; Body: { branding?: unknown } }>({
-    method: format === "exe" || format === "zip" ? ["GET", "POST"] : "GET",
+  const endpoint = format === "exe" ? "standalone-executable" : format === "zip" ? "portable-zip" : format === "web" ? "web-package" : format === "apk" ? "android-apk" : "offline-archive";
+  app.route<{ Params: RouteParams; Body: { branding?: unknown; signing?: unknown } }>({
+    method: format === "exe" || format === "zip" || format === "apk" ? ["GET", "POST"] : "GET",
     url: `/api/projects/:projectId/applications/:applicationId/dashboard-candidates/:candidateId/${endpoint}`,
     bodyLimit: 3 * 1024 ** 2,
     handler: async (request, reply) => {
@@ -100,13 +107,15 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
         return reply.code(400).send({ message: "Dashboard 下载不接受查询参数" });
       }
       let branding: ClientPackageBranding | undefined;
+      let signing: DashboardAndroidSigningConfig | undefined;
       if (request.method === "POST") {
         try {
           if (!request.body || typeof request.body !== "object" || Array.isArray(request.body)
-            || Object.keys(request.body).some(key => key !== "branding")) throw new Error("客户端打包请求无效");
+            || Object.keys(request.body).some(key => key !== "branding" && key !== "signing")) throw new Error("客户端打包请求无效");
           branding = await parseClientPackageBranding(request.body.branding, request.signal);
+          signing = await parseAndroidSigningRequest(request.body.signing, dependencies.android, request.signal);
         } catch (error) {
-          return reply.code(400).send({ code: "invalid_client_branding", message: error instanceof Error ? error.message : "客户端品牌设置无效" });
+          return reply.code(400).send({ code: "invalid_client_branding", message: error instanceof Error ? error.message : "客户端打包请求无效" });
         }
       }
 
@@ -154,7 +163,9 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
           const packagingOptions = { signal: request.signal, ...(expectedSha256 === undefined ? {} : { expectedSha256 }), ...(branding ? { branding } : {}) };
           bytes = format === "zip"
             ? await createZip(archiveBytes, executable!, packagingOptions)
-            : format === "exe" ? await createExecutable(archiveBytes, executable!, packagingOptions) : archiveBytes;
+            : format === "exe" ? await createExecutable(archiveBytes, executable!, packagingOptions)
+            : format === "apk" ? (await createDashboardAndroidApk(archiveBytes, dependencies.android!, { signal: request.signal, ...(signing === undefined ? {} : { signing }) })).apk
+            : archiveBytes;
         }
         request.signal.throwIfAborted();
         // 清单读取及 ZIP 压缩均可能等待；发送前重查 TTL 和候选撤销状态。
@@ -168,6 +179,7 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
           .header("content-length", String(bytes.byteLength))
           .header("x-content-type-options", "nosniff")
           .type(format === "exe" ? "application/vnd.microsoft.portable-executable"
+            : format === "apk" ? "application/vnd.android.package-archive"
             : format === "zip" || format === "web" ? "application/zip" : "application/octet-stream")
           .send(Buffer.from(bytes));
       } catch {
@@ -178,8 +190,44 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
   }
 }
 
-function sendLookupFailure(reply: { code(statusCode: number): { send(payload: unknown): unknown } }, reason: unknown): unknown {
-  if (reason instanceof DashboardNativeCandidateExpiredError) {
+/** 请求级签名配置:完整携带(keystoreBase64+口令+别名)时覆盖部署默认;
+ * 只携带部分字段或缺省时回退部署默认签名;口令只在内存中出现。 */
+async function parseAndroidSigningRequest(
+  input: unknown,
+  android: DashboardAndroidApkDependencies | undefined,
+  signal?: AbortSignal,
+): Promise<DashboardAndroidSigningConfig | undefined> {
+  if (input === undefined || input === null) return undefined;
+  if (typeof input !== "object" || Array.isArray(input)) throw new Error("Android 签名配置无效");
+  const value = input as Record<string, unknown>;
+  const keystoreBase64 = value.keystoreBase64;
+  const storePassword = value.storePassword;
+  const keyAlias = value.keyAlias;
+  const keyPassword = value.keyPassword;
+  if (typeof storePassword !== "string" || !storePassword || storePassword.length > 256
+    || typeof keyAlias !== "string" || !keyAlias || keyAlias.length > 128
+    || (keyPassword !== undefined && (typeof keyPassword !== "string" || keyPassword.length > 256))) {
+    throw new Error("Android 签名配置无效");
+  }
+  let keystore: Uint8Array;
+  if (keystoreBase64 === undefined) {
+    const fallback = await android?.defaultSigning?.();
+    if (!fallback) throw new Error("Android APK 打包需要上传 keystore 或在部署侧配置默认签名");
+    keystore = fallback.keystore;
+  } else {
+    if (typeof keystoreBase64 !== "string" || keystoreBase64.length === 0 || keystoreBase64.length > 512 * 1024
+      || !/^[A-Za-z0-9+/\r\n]+={0,2}$/.test(keystoreBase64)) {
+      throw new Error("Android keystore 必须是不超过 512KB 的 base64 内容");
+    }
+    const bytes = Buffer.from(keystoreBase64, "base64");
+    if (bytes.byteLength === 0) throw new Error("Android keystore base64 无法解码");
+    keystore = new Uint8Array(bytes);
+  }
+  signal?.throwIfAborted();
+  return { keystore, storePassword, keyAlias, ...(keyPassword === undefined ? {} : { keyPassword }) };
+}
+
+function sendLookupFailure(reply: { code(statusCode: number): { send(payload: unknown): unknown } }, reason: unknown): unknown {  if (reason instanceof DashboardNativeCandidateExpiredError) {
     return reply.code(410).send({ code: "candidate_expired", message: "Dashboard 候选版本已过期，请重新生成" });
   }
   if (reason instanceof DashboardNativeCandidateNotFoundError || reason instanceof DashboardNativeCandidateAuthorityError) {

@@ -26,7 +26,7 @@ export async function registerDashboardPublicationCandidateRoutes(
   app: FastifyInstance,
   service?: Pick<DashboardNativeCandidateService, "prepare">,
   registry?: Pick<DashboardNativeCandidateRegistry, "register">,
-  downloadFormats: readonly ("exe" | "zip" | "dmda" | "web")[] = ["dmda"],
+  downloadFormats: readonly ("exe" | "zip" | "dmda" | "web" | "apk")[] = ["dmda"],
 ): Promise<void> {
   app.post<{ Params: RouteParams; Body: CandidateBody }>(
     "/api/projects/:projectId/applications/:applicationId/dashboard-candidates",

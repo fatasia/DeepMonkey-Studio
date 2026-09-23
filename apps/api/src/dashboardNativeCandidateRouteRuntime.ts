@@ -11,6 +11,7 @@ import {
 } from "./dashboardNativeCandidateRuntime.js";
 import { registerDashboardOfflineArchiveDownloadRoutes,
   type DashboardWebStaticDownloadDependencies } from "./dashboardOfflineArchiveDownloadRoutes.js";
+import type { DashboardAndroidApkDependencies } from "./dashboardAndroidApk.js";
 import { registerDashboardPublicationCandidateRoutes } from "./dashboardPublicationCandidateRoutes.js";
 
 export interface DashboardNativeCandidateRouteRuntimeDependencies {
@@ -27,6 +28,8 @@ export interface DashboardNativeCandidateRouteRuntimeDependencies {
   readonly nativeExecutableSha256?: string;
   /** Web 静态包下载的部署侧供给；省略时不注册 web-package 下载。 */
   readonly webStatic?: DashboardWebStaticDownloadDependencies;
+  /** 场景安卓发布:模板 APK + build-tools + 部署默认签名;省略时不注册 android-apk 下载。 */
+  readonly androidApk?: DashboardAndroidApkDependencies;
 }
 
 export interface DashboardNativeCandidateRouteRuntime {
@@ -47,12 +50,14 @@ export async function registerDashboardNativeCandidateRouteRuntime(
   const registry = dependencies.registry ?? createDashboardNativeCandidateRegistry(dependencies.registryOptions);
   await registerDashboardPublicationCandidateRoutes(app, runtime.service, registry,
     [...(dependencies.nativeExecutable ? ["exe", "zip"] as const : []),
-      ...(dependencies.webStatic ? ["web"] as const : []), "dmda"]);
+      ...(dependencies.webStatic ? ["web"] as const : []),
+      ...(dependencies.androidApk ? ["apk"] as const : []), "dmda"]);
   await registerDashboardOfflineArchiveDownloadRoutes(app, {
     registry,
     ...(dependencies.nativeExecutable === undefined ? {} : { portable: { nativeExecutable: dependencies.nativeExecutable,
       ...(dependencies.nativeExecutableSha256 === undefined ? {} : { expectedSha256: dependencies.nativeExecutableSha256 }) } }),
     ...(dependencies.webStatic === undefined ? {} : { webStatic: dependencies.webStatic }),
+    ...(dependencies.androidApk === undefined ? {} : { android: dependencies.androidApk }),
     readFreezeManifest: async ({ record, signal }) => {
       signal?.throwIfAborted();
       const manifest = record.candidate.freezeManifest;

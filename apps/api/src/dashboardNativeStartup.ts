@@ -13,6 +13,7 @@ import { createDashboardPublishedFontCatalog, type DashboardPublishedFontConfigu
 import { registerDashboardNativeCandidateRouteRuntime } from "./dashboardNativeCandidateRouteRuntime.js";
 import { createDashboardWebStaticDeployment, isDashboardWebStaticDeploymentConfig,
   type DashboardWebStaticDeploymentConfig } from "./dashboardWebStaticDeployment.js";
+import type { DashboardAndroidApkDependencies } from "./dashboardAndroidApk.js";
 
 interface DashboardDeploymentConfig {
   readonly nativeExecutable: string;
@@ -25,6 +26,18 @@ interface DashboardDeploymentConfig {
    */
   readonly layoutCapture?: { readonly chromePath: string; readonly capturePageDirectory?: string };
   readonly webStatic?: DashboardWebStaticDeploymentConfig;
+  /** 场景安卓发布:模板 APK、build-tools 与部署默认签名(口令属于服务端部署域)。 */
+  readonly androidApk?: DashboardAndroidApkDeploymentConfig;
+}
+
+export interface DashboardAndroidApkDeploymentConfig {
+  readonly templateApkPath: string;
+  readonly templateApkSha256?: string;
+  readonly buildToolsPath: string;
+  readonly keystorePath: string;
+  readonly keystoreStorePassword: string;
+  readonly keystoreKeyAlias: string;
+  readonly keystoreKeyPassword?: string;
 }
 
 /** Only the server startup environment selects this file; HTTP cannot select executable code. */
@@ -65,6 +78,7 @@ export async function registerConfiguredDashboardNative(app: FastifyInstance, de
       nativeExecutable: deployment.nativeExecutable,
       nativeExecutableSha256,
       ...(webStatic ? { webStatic } : {}),
+      ...(deployment.androidApk ? { androidApk: createAndroidApkDependencies(deployment.androidApk) } : {}),
     });
   } catch (error) {
     // 路由注册失败时启动整体失败,托管的捕获页服务不能悬空到进程退出。
@@ -86,7 +100,8 @@ export async function readDashboardDeploymentConfig(file: string): Promise<Dashb
     || typeof value.configuration.locale !== "string" || !value.configuration.locale.trim()
     || typeof value.configuration.packageVersion !== "string" || !value.configuration.packageVersion.trim()
     || !isValidLayoutCaptureConfig(value.layoutCapture)
-    || (value.webStatic !== undefined && !isDashboardWebStaticDeploymentConfig(value.webStatic))) {
+    || (value.webStatic !== undefined && !isDashboardWebStaticDeploymentConfig(value.webStatic))
+    || !isValidAndroidApkConfig(value.androidApk)) {
     throw new Error("Dashboard deployment requires a Windows player, device fingerprint, locale and package version");
   }
   return value;
@@ -98,4 +113,32 @@ function isValidLayoutCaptureConfig(value: DashboardDeploymentConfig["layoutCapt
     && typeof value.chromePath === "string" && path.isAbsolute(value.chromePath)
     && (value.capturePageDirectory === undefined
       || typeof value.capturePageDirectory === "string" && path.isAbsolute(value.capturePageDirectory));
+}
+
+function isValidAndroidApkConfig(value: DashboardDeploymentConfig["androidApk"]): boolean {
+  if (value === undefined) return true;
+  const passwordsAreStrings = typeof value.keystoreStorePassword === "string" && value.keystoreStorePassword.length > 0
+    && (value.keystoreKeyPassword === undefined || typeof value.keystoreKeyPassword === "string");
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    && typeof value.templateApkPath === "string" && path.isAbsolute(value.templateApkPath)
+    && (value.templateApkSha256 === undefined || /^[a-f0-9]{64}$/.test(value.templateApkSha256))
+    && typeof value.buildToolsPath === "string" && path.isAbsolute(value.buildToolsPath)
+    && typeof value.keystorePath === "string" && path.isAbsolute(value.keystorePath)
+    && typeof value.keystoreKeyAlias === "string" && value.keystoreKeyAlias.length > 0
+    && passwordsAreStrings;
+}
+
+/** 部署默认签名:keystore 字节按需读取;口令停留在部署配置域,不进日志不进下载。 */
+function createAndroidApkDependencies(config: DashboardAndroidApkDeploymentConfig): DashboardAndroidApkDependencies {
+  return {
+    templateApkPath: config.templateApkPath,
+    ...(config.templateApkSha256 === undefined ? {} : { templateApkSha256: config.templateApkSha256 }),
+    buildToolsPath: config.buildToolsPath,
+    defaultSigning: async () => ({
+      keystore: new Uint8Array(await readFile(config.keystorePath)),
+      storePassword: config.keystoreStorePassword,
+      keyAlias: config.keystoreKeyAlias,
+      ...(config.keystoreKeyPassword === undefined ? {} : { keyPassword: config.keystoreKeyPassword }),
+    }),
+  };
 }
