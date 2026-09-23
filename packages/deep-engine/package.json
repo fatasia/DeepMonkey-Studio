@@ -143,6 +143,14 @@
       "types": "./dist/runtimePackage/index.d.ts",
       "default": "./dist/runtimePackage/index.js"
     },
+    "./host": {
+      "development": {
+        "types": "./src/host.ts",
+        "default": "./src/host.ts"
+      },
+      "types": "./dist/host.d.ts",
+      "default": "./dist/host.js"
+    },
     "./shader-cache": {
       "development": {
         "types": "./src/shaderCache/index.ts",

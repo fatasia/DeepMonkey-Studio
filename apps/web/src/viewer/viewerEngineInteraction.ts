@@ -8,7 +8,6 @@ import type {
   SceneInteractionActionState,
   SceneInteractionTarget,
   SceneInteractionTrigger,
-  SceneModelAnimationPlaybackState,
   SceneVisualTransitionState,
 } from "@bim-studio/contracts";
 import { isVectorValue } from "./bimMetadata";
@@ -20,7 +19,7 @@ import { type InteractionEventDetail, type LoadedSceneModel, type RendererBacken
 import type { RendererInstance } from "./viewerRendererTypes";
 import { readHeapSnapshot } from "./viewerHeapSnapshot";
 import { normalizeVisualTransition, visibilityTransitionSample } from "./visibilityTransition";
-import { ViewerEngineCore } from "./viewerEngineCore";
+import { ViewerEngineAnimationControl } from "./viewerEngineAnimationControl";
 import { buildMotionRoutePlan, sampleMotionRoute, type MotionRouteSample } from "../prefabs/motionRoutePlayer";
 import { mergeModelEffectsPatch, type ModelEffectsPatch } from "./modelEffectState";
 import { normalizeMaterialDataPatch } from "./materialDataPatch";
@@ -30,15 +29,9 @@ import { bindPresentationPerformance, getPresentationPerformance, enablePresenta
   type PresentationPerformanceSource } from "./viewerPresentationPerformance";
 import { clearIndustrialPrefabProxy, ensureIndustrialPrefabProxy, industrialPrefabProxyGroundOffset } from "./industrialPrefabProxy";
 import { detachSharedGltfResources } from "./sharedGltfAssets";
-import {
-  applyModelAnimationLoopPolicy, controlAnimation, getAnimationPlayback, getModelAnimationPlaybackState,
-  hasAnimation, listAnimationClips, restartModelAnimationActions, setModelAnimationPlaybackState,
-  transitionAnimationClip, updateCompletedModelAnimations,
-  type AnimationControl, type AnimationPlayback, type AnimationContext,
-} from "./viewerEngineAnimation";
 
-/** Interaction 职责层。 */
-export abstract class ViewerEngineInteraction extends ViewerEngineCore {
+/** Interaction 职责层。模型动画控制域已拆至 viewerEngineAnimationControl.ts（F6 结构治理），经继承混入保持公开 API 不变。 */
+export abstract class ViewerEngineInteraction extends ViewerEngineAnimationControl {
   getRendererBackend(): RendererBackend {
     return this.presentationRendererBackend;
   }
@@ -669,27 +662,5 @@ export abstract class ViewerEngineInteraction extends ViewerEngineCore {
       return Boolean(this.updateAnnotation(target.annotationId, { description: value }));
     }
     return false;
-  }
-  hasAnimation(id: string): boolean { return hasAnimation(this as unknown as AnimationContext, id); }
-  listAnimationClips(id: string): Array<{ id: string; name: string; duration: number }> { return listAnimationClips(this as unknown as AnimationContext, id); }
-  getAnimationPlayback(id: string): AnimationPlayback | undefined { return getAnimationPlayback(this as unknown as AnimationContext, id); }
-  getModelAnimationPlaybackState(id: string): SceneModelAnimationPlaybackState {
-    return getModelAnimationPlaybackState(this as unknown as AnimationContext, id);
-  }
-  setModelAnimationPlaybackState(id: string, state: SceneModelAnimationPlaybackState): void {
-    setModelAnimationPlaybackState(this as unknown as AnimationContext, id, state);
-  }
-  protected applyModelAnimationLoopPolicy(id: string, clips = this.animationClips.get(id) ?? []): void {
-    applyModelAnimationLoopPolicy(this as unknown as AnimationContext, id, clips);
-  }
-  protected restartModelAnimationActions(id: string): void {
-    restartModelAnimationActions(this as unknown as AnimationContext, id);
-  }
-  protected updateCompletedModelAnimations(): void {
-    updateCompletedModelAnimations(this as unknown as AnimationContext);
-  }
-  controlAnimation(id: string, control: AnimationControl): boolean { return controlAnimation(this as unknown as AnimationContext, id, control); }
-  transitionAnimationClip(id: string, fromClipId: string, toClipId: string, durationSeconds: number): boolean {
-    return transitionAnimationClip(this as unknown as AnimationContext, id, fromClipId, toClipId, durationSeconds);
   }
 }
