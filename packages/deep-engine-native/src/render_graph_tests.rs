@@ -211,19 +211,24 @@ fn process_thread_count() -> usize {
 #[cfg(windows)]
 fn executor_threads_are_fully_joined_after_every_batch() {
     // scoped executor 的清理由 join 语义保证;这里以 OS 线程高水位观测,
-    // 防御「后台线程泄漏」回归。泄漏的表现是水位单调抬升(每批 3~4 条
-    // 永久残留),而 cargo test 并行跑其它测试带来的水位漂移在前后两个
-    // 采样窗口近似对称 —— 所以比较「批前高水位 vs 批后高水位」。
-    let baseline_high = high_water_thread_count();
+    // 防御「后台线程泄漏」回归。泄漏的表现是水位随批次单调抬升(每批 3~4 条
+    // 永久残留)。cargo test 并行下,其它测试(wgpu 驱动线程、Media Foundation
+    // 解码线程)会在两个采样窗口之间创建**常驻**线程,「批前 vs 批后」单对比
+    // 的漂移对称假设不成立(V5 预检 2026-09-23 实测误报)。改为对 6 批各采样
+    // 一次、比较序列首尾:泄漏使尾批抬升 ≥12 条,容差 6 仍可检出,而批间
+    // 漂移不再被累计进单一差值。
+    let mut readings = Vec::new();
     for _ in 0..6 {
         execute_graph_batch(jobs_for(8, 200_000), 4)
             .into_artifacts()
             .unwrap();
+        readings.push(high_water_thread_count());
     }
-    let after_high = high_water_thread_count();
+    let first = readings[0];
+    let last = readings[readings.len() - 1];
     assert!(
-        after_high <= baseline_high + 2,
-        "batch executor must not leak threads: before={baseline_high} after={after_high}"
+        last <= first + 6,
+        "batch executor must not leak threads: first={first} last={last} readings={readings:?}"
     );
 }
 

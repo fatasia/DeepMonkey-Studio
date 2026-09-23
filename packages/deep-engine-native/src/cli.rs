@@ -22,7 +22,15 @@ use crate::runtime_package_startup;
 use crate::{deep2d_interleave_probe, fog_cli, shader_package_probe};
 
 pub fn execute() -> Result<(), String> {
-    let mut args = env::args_os().skip(1);
+    execute_from(env::args_os().skip(1))
+}
+
+/// android_main 等无 env::args 的入口共用同一命令分派;迭代器不含程序名。
+pub fn execute_from<I>(args: I) -> Result<(), String>
+where
+    I: IntoIterator<Item = std::ffi::OsString>,
+{
+    let mut args = args.into_iter();
     let first = args.next();
     let command = first
         .as_deref()

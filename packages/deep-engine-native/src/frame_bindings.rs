@@ -169,6 +169,19 @@ fn frame_layout_entries() -> Vec<wgpu::BindGroupLayoutEntry> {
             },
             count: None,
         },
+        // Native clustered-lighting storage ABI v1. The buffer is always
+        // bound (an empty fixed grid when no local lights exist) so frame
+        // bind groups remain structurally stable across scene updates.
+        wgpu::BindGroupLayoutEntry {
+            binding: 12,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: wgpu::BufferSize::new(4 * (4 + 64 * 17)),
+            },
+            count: None,
+        },
     ]
 }
 

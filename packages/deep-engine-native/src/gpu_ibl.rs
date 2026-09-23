@@ -4,6 +4,7 @@ use deep_engine_native::ibl::{
 };
 
 use crate::{half_float::f32_to_f16, shadow_map::ShadowMap};
+use wgpu::util::DeviceExt;
 
 const IBL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
@@ -15,6 +16,7 @@ pub struct GpuIblEnvironment {
     diffuse_view: wgpu::TextureView,
     brdf_lut_view: wgpu::TextureView,
     sampler: wgpu::Sampler,
+    cluster_storage: wgpu::Buffer,
     pub id: String,
     pub revision: u32,
     pub summary: IblSummary,
@@ -90,6 +92,12 @@ impl GpuIblEnvironment {
             anisotropy_clamp: 1,
             border_color: None,
         });
+        let empty_clusters = vec![0u32; 4 + 64 * 17];
+        let cluster_storage = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Deep Engine native clustered-light storage v1"),
+            contents: bytemuck::cast_slice(&empty_clusters),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        });
         Ok(Self {
             _specular: specular,
             _diffuse: diffuse,
@@ -98,12 +106,18 @@ impl GpuIblEnvironment {
             diffuse_view,
             brdf_lut_view,
             sampler,
+            cluster_storage,
             id: source.id.clone(),
             revision: source.revision,
             summary,
             identity: Self::source_identity(source),
             resident_bytes,
         })
+    }
+
+    pub fn write_cluster_grid(&self, queue: &wgpu::Queue, grid: &deep_engine_native::clustered_lighting::ClusterGrid) {
+        let words = grid.pack_storage();
+        queue.write_buffer(&self.cluster_storage, 0, bytemuck::cast_slice(&words));
     }
 
     #[allow(clippy::too_many_arguments)] // GPU 测试装配天然多参。
@@ -118,7 +132,7 @@ impl GpuIblEnvironment {
         label: &'static str,
         include_native_section: bool,
     ) -> wgpu::BindGroup {
-        let entries = Self::frame_bind_entries(
+        let entries = self.frame_bind_entries(
             frame,
             ies,
             shadow,
@@ -157,7 +171,7 @@ impl GpuIblEnvironment {
         probe_gi: Option<&wgpu::Buffer>,
         label: &'static str,
     ) -> wgpu::BindGroup {
-        let mut entries = Self::frame_bind_entries(
+        let mut entries = self.frame_bind_entries(
             frame,
             ies,
             shadow,
@@ -186,6 +200,7 @@ impl GpuIblEnvironment {
     /// `probe_gi` 为 frame layout binding 11 的探针 storage;native section
     /// 之外（自定义 shader 合同 layout）没有该槽,传 None 即不产生条目。
     fn frame_bind_entries<'a>(
+        &'a self,
         frame: &'a wgpu::Buffer,
         ies: Option<&'a wgpu::Buffer>,
         shadow: &'a ShadowMap,
@@ -231,6 +246,10 @@ impl GpuIblEnvironment {
                 resource: probe_gi
                     .expect("native frame requires probe GI resource")
                     .as_entire_binding(),
+            });
+            entries.push(wgpu::BindGroupEntry {
+                binding: 12,
+                resource: self.cluster_storage.as_entire_binding(),
             });
         }
         entries

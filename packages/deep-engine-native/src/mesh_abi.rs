@@ -9,6 +9,8 @@ pub const FRAME_V1_BYTES: u64 = 208;
 pub const FRAME_UNIFORM_FLOATS: usize = 60 + 16 * 16 + 10 * 16 + 4 + 16;
 pub const FRAME_FOG_PROJECTION_ROW: usize = 119;
 pub const FRAME_LOCAL_SOFTNESS_ROW: usize = 120;
+/// Optional bounded volumetric profile; appended in the existing v7 padding.
+pub const FRAME_FOG_PROFILE_ROW: usize = 121;
 pub const FRAME_UNIFORM_BYTES: u64 = (FRAME_UNIFORM_FLOATS * size_of::<f32>()) as u64;
 pub const FRAME_MEMBER_BYTE_OFFSETS: [u64; 7] = [0, 64, 128, 144, 160, 176, 192];
 pub type FrameUniform = [[f32; 4]; FRAME_UNIFORM_FLOATS / 4];
@@ -118,6 +120,7 @@ pub fn frame_uniform_with_fog(aspect: f32, yaw: f32, fog: crate::fog::FogSetting
     let mut frame = frame_uniform(aspect, yaw);
     frame[12] = fog.frame_tuning();
     frame[FRAME_FOG_PROJECTION_ROW] = fog.frame_projection(CAMERA_NEAR, CAMERA_FAR);
+    frame[FRAME_FOG_PROFILE_ROW] = fog.frame_profile();
     frame
 }
 

@@ -185,7 +185,13 @@ impl Renderer {
             );
         } else {
             gpu_begin(&self.telemetry, GpuSegment::Shadow, &mut encoder);
-            gpu_end(&mut self.telemetry, GpuSegment::Shadow, false, &mut encoder);
+            gpu_end(
+                &mut self.telemetry,
+                GpuSegment::Shadow,
+                false,
+                Some("shadow_cache_clean"),
+                &mut encoder,
+            );
             record(&mut self.telemetry, token, CpuSegment::Shadow, None);
         }
 
@@ -225,7 +231,13 @@ impl Renderer {
             ),
         }
         record(&mut self.telemetry, token, CpuSegment::Opaque, opaque);
-        gpu_end(&mut self.telemetry, GpuSegment::Opaque, true, &mut encoder);
+        gpu_end(
+            &mut self.telemetry,
+            GpuSegment::Opaque,
+            true,
+            None,
+            &mut encoder,
+        );
 
         // R4 生产接线:HiZ 金字塔在 opaque 后立即生成(深度已完整;
         // transparent 深度不写入,不参与遮挡源)。遮挡判定 dispatch 在下一帧
@@ -238,7 +250,13 @@ impl Renderer {
             pyramid.encode(&mut encoder);
         }
         record(&mut self.telemetry, token, CpuSegment::HiZ, hi_z);
-        gpu_end(&mut self.telemetry, GpuSegment::HiZ, has_hiz, &mut encoder);
+        gpu_end(
+            &mut self.telemetry,
+            GpuSegment::HiZ,
+            has_hiz,
+            (!has_hiz).then_some("hiz_not_allocated"),
+            &mut encoder,
+        );
 
         let has_transparent = self.scene.has_transparent();
         gpu_begin(&self.telemetry, GpuSegment::Transparent, &mut encoder);
@@ -263,6 +281,7 @@ impl Renderer {
             &mut self.telemetry,
             GpuSegment::Transparent,
             has_transparent,
+            (!has_transparent).then_some("no_transparent_geometry"),
             &mut encoder,
         );
 
@@ -304,6 +323,7 @@ impl Renderer {
             &mut self.telemetry,
             GpuSegment::Postprocess,
             true,
+            None,
             &mut encoder,
         );
 
@@ -326,6 +346,7 @@ impl Renderer {
             &mut self.telemetry,
             GpuSegment::Deep2d,
             has_deep2d,
+            (!has_deep2d).then_some("no_deep2d_content"),
             &mut encoder,
         );
 
@@ -343,6 +364,9 @@ impl Renderer {
                 .chain(shadow_buffers)
                 .chain(std::iter::once(encoder.finish())),
         );
+        if let Some(telemetry) = self.telemetry.as_mut() {
+            telemetry.gpu_submitted_frame();
+        }
         if culling_updated {
             self.culling.commit_submission();
         }
@@ -463,9 +487,10 @@ fn gpu_end(
     telemetry: &mut Option<FrameTelemetry>,
     segment: GpuSegment,
     active: bool,
+    skip_reason: Option<&'static str>,
     encoder: &mut wgpu::CommandEncoder,
 ) {
     if let Some(telemetry) = telemetry {
-        telemetry.gpu_end(segment, active, encoder);
+        telemetry.gpu_end(segment, active, skip_reason, encoder);
     }
 }

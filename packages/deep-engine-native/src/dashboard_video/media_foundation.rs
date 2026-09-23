@@ -126,8 +126,7 @@ struct ReaderState {
     stride: i32,
     color: DashboardVideoColorContract,
     duration_100ns: i64,
-    /// 源音频轨道探测结果。音频输出尚未实现(audio-output 登记缺口),
-    /// 该字段只把"无声"从隐式默认变成对源的显式判定,不改变静音播放合同。
+    /// 源音频轨道探测结果；实际输出由 dashboard runtime 的轻量系统音频轨承担。
     audio_track: Option<DashboardVideoAudioTrackProbe>,
 }
 

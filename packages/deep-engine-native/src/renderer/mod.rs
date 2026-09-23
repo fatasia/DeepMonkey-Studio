@@ -53,10 +53,12 @@ mod hi_z_pyramid_tests;
 mod init;
 mod init_report;
 mod material_resource_diff;
+mod native_gi_producer;
 #[cfg(all(test, target_os = "windows"))]
 mod material_uniform_fastpath_gpu_tests;
 mod replacement_present;
 mod rt_residency;
+pub(crate) mod quality_profile;
 #[cfg(test)]
 mod rt_pixel_gpu_tests;
 #[cfg(test)]
@@ -316,6 +318,7 @@ impl Renderer {
         if let Some(lighting) = &self.lighting {
             lighting.apply(&mut self.frame);
         }
+        self.refresh_cluster_grid();
         update_shadow_map(
             &mut self.shadow_map,
             &self.queue,
@@ -456,6 +459,7 @@ impl Renderer {
         if let Some(lighting) = &self.lighting {
             lighting.apply(&mut self.frame);
         }
+        self.refresh_cluster_grid();
         update_shadow_map(
             &mut self.shadow_map,
             &self.queue,
@@ -483,5 +487,17 @@ impl Renderer {
             .expect("validated caster set must remain finite after camera update");
         self.queue
             .write_buffer(&self.frame_buffer, 0, cast_slice(&self.frame));
+    }
+
+    fn refresh_cluster_grid(&self) {
+        if let Some(lighting) = &self.lighting {
+            let grid = deep_engine_native::clustered_lighting::ClusterGrid::build(
+                &lighting.local_lights,
+                self.view,
+                self.size.width,
+                self.size.height,
+            );
+            self.ibl.write_cluster_grid(&self.queue, &grid);
+        }
     }
 }

@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, time::Instant};
 
 use serde::Serialize;
 
-use crate::telemetry_gpu::{GpuFrameTiming, GpuReadback};
+use crate::telemetry_gpu::{GpuFrameTiming, GpuReadback, GpuSegment};
 
 #[path = "telemetry_sample_window.rs"]
 mod sample_window;
@@ -116,6 +116,13 @@ struct SegmentRing {
     dropped: u64,
 }
 
+#[derive(Default)]
+struct StageActivity {
+    executed_frames: u64,
+    skipped_frames: u64,
+    skip_reasons: BTreeMap<&'static str, u64>,
+}
+
 impl SegmentRing {
     fn new() -> Self {
         Self {
@@ -147,6 +154,7 @@ pub struct FrameTelemetry {
     reset_generation: u64,
     rings: [SegmentRing; CpuSegment::ALL.len()],
     frames: FrameCounts,
+    submitted_frames: u64,
     /// 已提交(commit)的 packet 更新数;`SceneUpdate`/`ResourcePrepare`
     /// 环的 coverage 分母。
     packet_updates: u64,
@@ -158,6 +166,9 @@ pub struct FrameTelemetry {
     frame_intervals: SegmentRing,
     gpu_unavailable_reason: Option<&'static str>,
     gpu: Option<GpuFrameTiming>,
+    stage_activity: [StageActivity; GpuSegment::ALL.len()],
+    current_stage_mask: u8,
+    current_skip_reasons: [Option<&'static str>; GpuSegment::ALL.len()],
 }
 
 impl FrameTelemetry {
@@ -170,6 +181,7 @@ impl FrameTelemetry {
             reset_generation: 0,
             rings: std::array::from_fn(|_| SegmentRing::new()),
             frames: FrameCounts::default(),
+            submitted_frames: 0,
             packet_updates: 0,
             deep2d_updates: 0,
             late_samples: 0,
@@ -178,11 +190,16 @@ impl FrameTelemetry {
             frame_intervals: SegmentRing::new(),
             gpu_unavailable_reason: (!supported).then_some("timestamp_query_unsupported"),
             gpu: supported.then(|| GpuFrameTiming::new(device, queue, device_epoch)),
+            stage_activity: std::array::from_fn(|_| StageActivity::default()),
+            current_stage_mask: 0,
+            current_skip_reasons: [None; GpuSegment::ALL.len()],
         }
     }
 
     pub fn begin_frame(&mut self) -> SampleToken {
         self.frames.attempted += 1;
+        self.current_stage_mask = 0;
+        self.current_skip_reasons = [None; GpuSegment::ALL.len()];
         self.token()
     }
 
@@ -231,6 +248,7 @@ impl FrameTelemetry {
     }
 
     pub fn gpu_begin_frame(&mut self, token: SampleToken, encoder: &mut wgpu::CommandEncoder) {
+        self.mark_stage_executed(GpuSegment::Frame);
         if let Some(gpu) = self.gpu.as_mut() {
             gpu.begin_frame(token, encoder);
         }
@@ -250,8 +268,14 @@ impl FrameTelemetry {
         &mut self,
         segment: crate::telemetry_gpu::GpuSegment,
         active: bool,
+        skip_reason: Option<&'static str>,
         encoder: &mut wgpu::CommandEncoder,
     ) {
+        if active {
+            self.mark_stage_executed(segment);
+        } else {
+            self.mark_stage_skipped(segment, skip_reason.unwrap_or("inactive_segment"));
+        }
         if let Some(gpu) = self.gpu.as_mut() {
             gpu.end(segment, active, encoder);
         }
@@ -260,6 +284,7 @@ impl FrameTelemetry {
     /// 并行编码路径:只做帧记账,Frame 起点时间戳延迟到实际承载帧工作
     /// 的第一条 command buffer(pre CB 或首个级联 CB)写入。
     pub fn gpu_begin_frame_deferred(&mut self, token: SampleToken) {
+        self.mark_stage_executed(GpuSegment::Frame);
         if let Some(gpu) = self.gpu.as_mut() {
             gpu.begin_frame_deferred(token);
         }
@@ -273,6 +298,11 @@ impl FrameTelemetry {
 
     /// 并行段只翻活跃掩码,不写时间戳(时间戳已由 stamper 写在级联 CB)。
     pub fn gpu_mark_segment(&mut self, segment: crate::telemetry_gpu::GpuSegment, active: bool) {
+        if active {
+            self.mark_stage_executed(segment);
+        } else {
+            self.mark_stage_skipped(segment, "inactive_segment");
+        }
         if let Some(gpu) = self.gpu.as_mut() {
             gpu.mark(segment, active);
         }
@@ -284,15 +314,26 @@ impl FrameTelemetry {
         }
     }
 
+    /// Commit this frame's stage observations after the renderer successfully
+    /// submits the command buffers that contain those stages.
+    pub fn gpu_submitted_frame(&mut self) {
+        self.submitted_frames += 1;
+        self.record_stage_activity();
+    }
+
     pub fn reset_barrier(&mut self) {
         self.reset_generation = self.reset_generation.wrapping_add(1);
         self.frames = FrameCounts::default();
+        self.submitted_frames = 0;
         self.packet_updates = 0;
         self.deep2d_updates = 0;
         self.late_samples = 0;
         self.window_started_at = Instant::now();
         self.last_presented_at = None;
         self.frame_intervals.clear();
+        self.stage_activity = std::array::from_fn(|_| StageActivity::default());
+        self.current_stage_mask = 0;
+        self.current_skip_reasons = [None; GpuSegment::ALL.len()];
         for ring in &mut self.rings {
             ring.clear();
         }
@@ -347,14 +388,47 @@ impl FrameTelemetry {
                 .copied(),
             &gpu,
         );
+        let frame_pass_receipt =
+            frame_pass_receipt(self.submitted_frames, &self.stage_activity, &gpu);
         serde_json::json!({
             "schema": "deep-engine.native-telemetry", "version": 1,
             "device_epoch": self.device_epoch, "reset_generation": self.reset_generation,
             "window_capacity": RING_CAPACITY, "frames": self.frames,
+            "submitted_frames": self.submitted_frames,
             "packet_updates": self.packet_updates, "deep2d_updates": self.deep2d_updates,
             "late_cpu_samples": self.late_samples, "cpu": cpu, "gpu": gpu,
             "benchmark_sample_window": benchmark_sample_window,
+            "frame_pass_receipt": frame_pass_receipt,
         })
+    }
+
+    fn mark_stage_executed(&mut self, segment: GpuSegment) {
+        let index = segment.index();
+        self.current_stage_mask |= 1 << index;
+        self.current_skip_reasons[index] = None;
+    }
+
+    fn mark_stage_skipped(&mut self, segment: GpuSegment, reason: &'static str) {
+        let index = segment.index();
+        if self.current_stage_mask & (1 << index) == 0 {
+            self.current_skip_reasons[index] = Some(reason);
+        }
+    }
+
+    fn record_stage_activity(&mut self) {
+        for segment in GpuSegment::ALL {
+            let index = segment.index();
+            let activity = &mut self.stage_activity[index];
+            if self.current_stage_mask & (1 << index) != 0 {
+                activity.executed_frames += 1;
+            } else {
+                activity.skipped_frames += 1;
+                *activity
+                    .skip_reasons
+                    .entry(self.current_skip_reasons[index].unwrap_or("stage_not_observed"))
+                    .or_default() += 1;
+            }
+        }
     }
 
     fn token(&self) -> SampleToken {
@@ -363,6 +437,71 @@ impl FrameTelemetry {
             reset_generation: self.reset_generation,
         }
     }
+}
+
+fn frame_pass_receipt(
+    submitted_frames: u64,
+    activity: &[StageActivity; GpuSegment::ALL.len()],
+    gpu: &GpuReadback,
+) -> serde_json::Value {
+    let stages = GpuSegment::ALL
+        .into_iter()
+        .enumerate()
+        .map(|(index, segment)| {
+            let activity = &activity[index];
+            let execution_status = match (activity.executed_frames, activity.skipped_frames) {
+                (0, 0) => "unobserved",
+                (executed, 0) if executed == submitted_frames => "executed",
+                (0, skipped) if skipped == submitted_frames => "skipped",
+                (executed, skipped) if executed + skipped == submitted_frames => "mixed",
+                _ => "partial",
+            };
+            let timing = match gpu.segments.get(segment.name()) {
+                Some(stats) if stats.samples > 0 => serde_json::json!({
+                    "availability": "measured",
+                    "sampleCount": stats.samples,
+                    "p50Ns": stats.p50_ns,
+                    "p95Ns": stats.p95_ns,
+                    "p99Ns": stats.p99_ns,
+                    "maxNs": stats.max_ns,
+                }),
+                _ => {
+                    let reason = if activity.executed_frames == 0 {
+                        "stage_not_executed_in_window".to_owned()
+                    } else {
+                        gpu.reason.clone().unwrap_or_else(|| {
+                            if gpu.samples > 0 {
+                                "no_stage_timestamp_samples_in_window".to_owned()
+                            } else {
+                                "no_gpu_timestamp_samples_in_window".to_owned()
+                            }
+                        })
+                    };
+                    serde_json::json!({
+                        "availability": "unavailable",
+                        "sampleCount": 0,
+                        "reason": reason,
+                    })
+                }
+            };
+            serde_json::json!({
+                "id": segment.name(),
+                "execution": {
+                    "status": execution_status,
+                    "executedFrames": activity.executed_frames,
+                    "skippedFrames": activity.skipped_frames,
+                    "skipReasons": activity.skip_reasons,
+                },
+                "timing": timing,
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "schema": "deep-engine.native-frame-pass-receipt",
+        "version": 1,
+        "submittedFrames": submitted_frames,
+        "stages": stages,
+    })
 }
 
 fn duration_ns(start: Instant, end: Instant) -> u64 {

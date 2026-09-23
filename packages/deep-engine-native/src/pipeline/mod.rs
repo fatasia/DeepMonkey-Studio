@@ -1,10 +1,10 @@
-#[path = "pipeline/mesh.rs"]
+#[path = "mesh.rs"]
 mod mesh;
-#[path = "pipeline/raster.rs"]
+#[path = "raster.rs"]
 mod raster;
-#[path = "pipeline/rt.rs"]
+#[path = "rt.rs"]
 mod rt;
-#[path = "pipeline/shadow.rs"]
+#[path = "shadow.rs"]
 mod shadow;
 
 pub(crate) use rt::{RtMeshPipelines, create_rt_mesh_pipelines};

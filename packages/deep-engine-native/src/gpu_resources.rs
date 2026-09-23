@@ -19,6 +19,7 @@ pub fn frame_data_with_fog(size: PhysicalSize<u32>, yaw: f32, fog: FogSettings) 
         deep_engine_native::mesh_abi::CAMERA_NEAR,
         deep_engine_native::mesh_abi::CAMERA_FAR,
     );
+    frame[deep_engine_native::mesh_abi::FRAME_FOG_PROFILE_ROW] = fog.frame_profile();
     frame
 }
 
@@ -66,8 +67,10 @@ pub fn frame_data_with_camera(
     frame[8] = [eye[0], eye[1], eye[2], 1.0];
     frame[deep_engine_native::mesh_abi::FRAME_FOG_PROJECTION_ROW] =
         fog.frame_projection(view.near, view.far);
+    frame[deep_engine_native::mesh_abi::FRAME_FOG_PROFILE_ROW] = fog.frame_profile();
     frame
 }
+
 
 pub fn shadow_camera(
     size: PhysicalSize<u32>,

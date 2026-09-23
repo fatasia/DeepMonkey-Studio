@@ -8,7 +8,7 @@ use deep_engine_native::{
     scene_bounds::SceneWorldBounds,
 };
 use wgpu::util::DeviceExt;
-#[path = "shadow_map/section_bindings.rs"]
+#[path = "section_bindings.rs"]
 mod section_bindings;
 
 pub(crate) const DEPTH_BIAS: f32 = 0.00075;

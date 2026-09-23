@@ -44,7 +44,7 @@ pub(super) enum RuntimePackageDeltaOperation {
     },
 }
 
-const ENTRYPOINT_ID_KEYS: [&str; 8] = [
+const ENTRYPOINT_ID_KEYS: [&str; 9] = [
     "renderPacket",
     "deep2d",
     "environment",
@@ -53,6 +53,7 @@ const ENTRYPOINT_ID_KEYS: [&str; 8] = [
     "chartSim",
     "dashboard",
     "experimentalX",
+    "dynamicRuntime",
 ];
 
 pub(super) fn parse_delta_manifest(

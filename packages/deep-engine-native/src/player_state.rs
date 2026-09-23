@@ -5,7 +5,7 @@ pub use deep_engine_native::player_view::PlayerView;
 pub struct PlayerState {
     pub view: PlayerView,
     pub camera_controls: deep_engine_native::runtime_camera::RuntimeCameraControls,
-    pub verification: Option<crate::publication_verification::Verification>,
+    pub verification: Option<crate::publication_record::Verification>,
     pub failure: Option<String>,
     pub selected: Option<String>,
     pub selected_point: Option<[f32; 3]>,

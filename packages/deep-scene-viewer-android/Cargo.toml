@@ -1,0 +1,28 @@
+[package]
+name = "deep-scene-viewer-android"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.93"
+description = "DeepMonkey scene viewer Android shell (NativeActivity cdylib)"
+license-file = "../../LICENSE"
+publish = false
+
+# 场景安卓发布首片:NativeActivity 需要 cdylib(.so)入口,而播放器主体
+# 在 deep-engine-native 的 bin 树里。本壳 crate 用 #[path] 镜像该模块树,
+# 以 cdylib 形式链接同一份实现;不在本 crate 内复制任何播放器代码。
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+name = "deep_scene_viewer"
+
+[dependencies]
+deep-engine-native = { path = "../deep-engine-native" }
+bytemuck = "=1.25.2"
+pollster = "=1.0.1"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = { version = "=1.0.151", features = ["float_roundtrip"] }
+unicode-segmentation = "=1.13.3"
+wgpu = { version = "=30.0.1", default-features = false, features = ["std", "parking_lot", "vulkan", "wgsl"] }
+# android-native-activity 在壳 crate 必须启用:native-activity 胶水经 winit 接入。
+winit = { version = "=0.30.13", default-features = false, features = ["rwh_06", "android-native-activity"] }
+android-activity = { version = "=0.6.0", default-features = false, features = ["native-activity"] }

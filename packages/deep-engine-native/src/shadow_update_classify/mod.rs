@@ -7,9 +7,9 @@
 
 use deep_engine_native::contract::RenderPacket;
 
-#[path = "shadow_update_classify/packet_diff.rs"]
+#[path = "packet_diff.rs"]
 mod packet_diff;
-#[path = "shadow_update_classify/value_compare.rs"]
+#[path = "value_compare.rs"]
 mod value_compare;
 
 use packet_diff::{geometries_changed, instances_changed, materials_changed, textures_changed};

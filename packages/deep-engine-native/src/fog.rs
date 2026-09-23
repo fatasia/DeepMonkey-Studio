@@ -3,6 +3,12 @@ pub struct FogSettings {
     color: [f32; 3],
     density: f32,
     exp2: bool,
+    /// 受预算约束的屏幕空间体积近似：沿当前像素的线性深度做固定步数积分。
+    /// 它不是 froxel/体积光照管线，诊断和文档会保留这个边界。
+    volumetric: bool,
+    volumetric_steps: u32,
+    volumetric_height: f32,
+    volumetric_anisotropy: f32,
 }
 
 impl FogSettings {
@@ -10,6 +16,10 @@ impl FogSettings {
         color: [0.0; 3],
         density: 0.0,
         exp2: false,
+        volumetric: false,
+        volumetric_steps: 8,
+        volumetric_height: 64.0,
+        volumetric_anisotropy: 0.0,
     };
     pub const MAX_DENSITY: f32 = 8.0;
     pub const MAX_HDR_CHANNEL: f32 = 64.0;
@@ -34,7 +44,41 @@ impl FogSettings {
             color,
             density,
             exp2: false,
+            volumetric: false,
+            volumetric_steps: 8,
+            volumetric_height: 64.0,
+            volumetric_anisotropy: 0.0,
         })
+    }
+
+    /// 轻量 Native 体积雾：输出阶段固定 8 步深度积分，避免引入 froxel
+    /// 纹理和独立光照体积；适合普通工业场景的空气感，不宣称全局体积光。
+    pub fn volumetric(density: f32, color: [f32; 3]) -> Result<Self, String> {
+        Self::volumetric_with_profile(density, color, 8, 64.0, 0.0)
+    }
+
+    pub fn volumetric_with_profile(
+        density: f32,
+        color: [f32; 3],
+        steps: u32,
+        height: f32,
+        anisotropy: f32,
+    ) -> Result<Self, String> {
+        let mut fog = Self::exponential(density, color)?;
+        if !(1..=64).contains(&steps) {
+            return Err("volumetric fog steps must be within 1..=64".into());
+        }
+        if !height.is_finite() || !(1.0..=256.0).contains(&height) {
+            return Err("volumetric fog height must be within 1..=256".into());
+        }
+        if !anisotropy.is_finite() || !(-0.99..=0.99).contains(&anisotropy) {
+            return Err("volumetric fog anisotropy must be within -0.99..=0.99".into());
+        }
+        fog.volumetric = true;
+        fog.volumetric_steps = steps;
+        fog.volumetric_height = height;
+        fog.volumetric_anisotropy = anisotropy;
+        Ok(fog)
     }
 
     /// 作者雾在片元 HDR 域合成，透明混合之前处理，背景不受影响。
@@ -48,12 +92,16 @@ impl FogSettings {
         self.exp2
     }
 
+    pub fn is_volumetric(self) -> bool {
+        self.volumetric
+    }
+
     pub fn requires_output_pass(self) -> bool {
         !self.exp2 && self.density > 0.0
     }
 
     pub fn frame_projection(self, near: f32, far: f32) -> [f32; 4] {
-        [near, far, if self.exp2 { 2.0 } else { 0.0 }, 0.0]
+        [near, far, if self.exp2 { 2.0 } else if self.volumetric { 1.0 } else { 0.0 }, 0.0]
     }
 
     pub fn color(self) -> [f32; 3] {
@@ -91,6 +139,15 @@ impl FogSettings {
 
     pub fn frame_tuning(self) -> [f32; 4] {
         [self.color[0], self.color[1], self.color[2], self.density]
+    }
+
+    pub fn frame_profile(self) -> [f32; 4] {
+        [
+            self.volumetric_steps as f32,
+            self.volumetric_height,
+            self.volumetric_anisotropy,
+            if self.volumetric { 1.0 } else { 0.0 },
+        ]
     }
 }
 
@@ -181,5 +238,25 @@ mod tests {
         for axis in 0..3 {
             assert!((mixed[axis] - reference[axis]).abs() < 1e-6);
         }
+    }
+
+    #[test]
+    fn volumetric_mode_is_bounded_and_uses_linear_projection_flag() {
+        let fog = FogSettings::volumetric(0.12, [0.2, 0.3, 0.4]).unwrap();
+        assert!(fog.is_volumetric());
+        assert!(!fog.is_authored());
+        assert!(fog.requires_output_pass());
+        assert_eq!(fog.frame_projection(0.1, 100.0), [0.1, 100.0, 1.0, 0.0]);
+        assert!(fog.amount(10.0).unwrap() > 0.0);
+        assert_eq!(fog.frame_profile(), [8.0, 64.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn volumetric_profile_is_validated_and_preserved_in_frame_data() {
+        let fog = FogSettings::volumetric_with_profile(0.12, [0.2, 0.3, 0.4], 48, 32.0, -0.2).unwrap();
+        assert_eq!(fog.frame_profile(), [48.0, 32.0, -0.2, 1.0]);
+        assert!(FogSettings::volumetric_with_profile(0.1, [0.0; 3], 0, 64.0, 0.0).is_err());
+        assert!(FogSettings::volumetric_with_profile(0.1, [0.0; 3], 48, 0.0, 0.0).is_err());
+        assert!(FogSettings::volumetric_with_profile(0.1, [0.0; 3], 48, 64.0, 1.0).is_err());
     }
 }

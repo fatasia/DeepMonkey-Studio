@@ -41,9 +41,14 @@ pub(super) async fn create_renderer(
     renderer_id: u64,
     content: &PlayerContent,
     view: PlayerView,
-    features: RendererFeatures,
+    mut features: RendererFeatures,
     activate_surface: bool,
 ) -> Result<Renderer, String> {
+    // Resolve the optional Native quality profile before any GPU allocation so
+    // the diagnostics, pass graph and resource budgets observe the same values.
+    if let Some(profile) = super::quality_profile::requested()? {
+        features = super::quality_profile::apply(features, profile);
+    }
     if features.shadow_probe && features.ibl_probe {
         return Err("shadow and IBL differential probes cannot run in the same frame".into());
     }
@@ -97,9 +102,20 @@ pub(super) async fn create_renderer(
         content.environment.provenance,
         deep_engine_native::ibl::IblProvenance::DisabledProbe
     ));
-    if let Some(lighting) = &content.lighting {
+    let cluster_plan = if let Some(lighting) = &content.lighting {
         lighting.apply(&mut frame);
-    }
+        // Build the bounded screen-tile plan now so diagnostics and later GPU
+        // storage wiring share one deterministic assignment contract.
+        diagnostics.note_native_cluster_plan();
+        deep_engine_native::clustered_lighting::ClusterGrid::build(
+            &lighting.local_lights,
+            view,
+            size.width,
+            size.height,
+        )
+    } else {
+        deep_engine_native::clustered_lighting::ClusterGrid::default()
+    };
     let validation_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
     let memory_scope = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
     let internal_scope = device.push_error_scope(wgpu::ErrorFilter::Internal);
@@ -137,14 +153,22 @@ pub(super) async fn create_renderer(
     // 开关必须在 frame_buffer 固化前写入 uniform。
     // F3:优先消费环境探针网格(网格头模式,开关=2);旧包/空场景不创建真实
     // storage(None),开关保持 0,逐位不变。开关必须在 frame_buffer 固化前写入。
-    let probe_grid_records = content
+    let mut probe_grid_records = content
         .probe_grid_records
         .as_deref()
         .filter(|records| !records.is_empty())
         .map(|records| records.to_vec());
+    if let (Some(records), Some(lighting)) = (probe_grid_records.as_mut(), content.lighting.as_ref()) {
+        let native_records: &mut [crate::probe_gi_abi::IrradianceProbeRecord] =
+            bytemuck::cast_slice_mut(records.as_mut_slice());
+        if super::native_gi_producer::produce_direct_irradiance(native_records, lighting) {
+            diagnostics.note_native_gi_direct_seed();
+        }
+    }
     // bin 侧 probe_gi_abi 与 lib 的记录是同一 96B POD 布局的两份类型:
     // 经字节切片转译,避免双编译类型的路径不一致。
-    let records: &[crate::probe_gi_abi::IrradianceProbeRecord] = match probe_grid_records.as_deref() {
+    let records: &[crate::probe_gi_abi::IrradianceProbeRecord] = match probe_grid_records.as_deref()
+    {
         Some(records) if !records.is_empty() => bytemuck::cast_slice(records),
         _ => &[],
     };
@@ -204,6 +228,8 @@ pub(super) async fn create_renderer(
     let mut scene_cache = GpuSceneCache::new(&device, renderer_id)
         .with_budget(crate::gpu_scene_cache::default_budget(&device));
     let candidate = GpuIblEnvironment::new(&device, &queue, &content.environment).and_then(|ibl| {
+        ibl.write_cluster_grid(&queue, &cluster_plan);
+        diagnostics.note_native_cluster_lookup();
         let frame_bind_group = ibl.create_frame_bind_group(
             &device,
             &frame_layout,

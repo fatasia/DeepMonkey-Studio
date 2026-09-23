@@ -23,7 +23,7 @@ pub enum GpuSegment {
 }
 
 impl GpuSegment {
-    const ALL: [Self; 7] = [
+    pub(crate) const ALL: [Self; 7] = [
         Self::Frame,
         Self::Shadow,
         Self::Opaque,
@@ -33,11 +33,11 @@ impl GpuSegment {
         Self::HiZ,
     ];
 
-    fn index(self) -> usize {
+    pub(crate) fn index(self) -> usize {
         self as usize
     }
 
-    fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Frame => "frame",
             Self::Shadow => "shadow",
@@ -328,6 +328,9 @@ impl GpuFrameTiming {
         }
         let mut segments = BTreeMap::new();
         for segment in GpuSegment::ALL {
+            if values[segment.index()].is_empty() {
+                continue;
+            }
             segments.insert(
                 segment.name(),
                 stats_from(

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 场景安卓查看器模板:NativeActivity 直载 cdylib,无 dex(hasCode=false);
+     场景包经发布链注入 assets/runtime-package.json 后重签。 -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.deepmonkey.sceneviewer"
+    android:versionCode="1"
+    android:versionName="0.1.0">
+  <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="35"/>
+  <uses-feature android:glEsVersion="0x00030000" android:required="true"/>
+  <application
+      android:label="DeepMonkey Scene Viewer"
+      android:hasCode="false"
+      android:extractNativeLibs="false">
+    <activity android:name="android.app.NativeActivity"
+        android:label="DeepMonkey Scene Viewer"
+        android:exported="true"
+        android:configChanges="orientation|keyboardHidden|screenSize|smallestScreenSize|screenLayout|uiMode|density">
+      <meta-data android:name="android.app.lib_name" android:value="deep_scene_viewer"/>
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN"/>
+        <category android:name="android.intent.category.LAUNCHER"/>
+      </intent-filter>
+    </activity>
+  </application>
+</manifest>

@@ -23,6 +23,7 @@ pub(super) fn validate(
         return fail("invalid dashboard video diagnostic budget");
     }
     let mut media_by_id = HashMap::new();
+    let mut media_bytes_by_id = HashMap::new();
     let mut media_bytes = 0usize;
     for item in media {
         let bytes = crate::deep2d::runtime_base64::decode(&item.data_base64)
@@ -42,6 +43,7 @@ pub(super) fn validate(
         {
             return fail("invalid content-addressed dashboard MP4 media");
         }
+        media_bytes_by_id.insert(item.id.as_str(), bytes);
     }
     let nodes = pages
         .iter()
@@ -65,12 +67,20 @@ pub(super) fn validate(
             "source-missing"
         };
         let packaged = video.source.packaged;
+        let audio_ready = packaged
+            && (video.playback.muted
+                || video
+                    .source
+                    .resource_id
+                    .as_deref()
+                    .and_then(|id| media_bytes_by_id.get(id))
+                    .is_some_and(|bytes| has_audio_track(bytes)));
         let (expected_status, expected_transport, expected_reason, expected_missing): (
             &str,
             &str,
             &str,
             &[&str],
-        ) = if packaged && video.playback.muted {
+        ) = if packaged && audio_ready {
             (
                 "ready",
                 if video.playback.autoplay {
@@ -82,12 +92,7 @@ pub(super) fn validate(
                 &READY,
             )
         } else if packaged {
-            (
-                "blocked",
-                "unavailable",
-                "native-video-audio-unavailable",
-                &AUDIO_BLOCKED,
-            )
+            ("blocked", "unavailable", "native-video-audio-unavailable", &AUDIO_BLOCKED)
         } else {
             ("blocked", "unavailable", unavailable_reason, &REQUIRED)
         };
@@ -150,4 +155,93 @@ pub(crate) fn is_mp4_isobmff(bytes: &[u8]) -> bool {
         || (16..length)
             .step_by(4)
             .any(|offset| supported(&bytes[offset..offset + 4]))
+}
+
+fn has_audio_track(bytes: &[u8]) -> bool {
+    const CONTAINERS: [&[u8; 4]; 10] = [
+        b"moov", b"trak", b"mdia", b"minf", b"stbl", b"edts", b"dinf", b"mvex", b"moof",
+        b"traf",
+    ];
+    fn walk(bytes: &[u8], start: usize, end: usize, depth: u8, found: &mut bool) -> bool {
+        if depth > 12 {
+            return false;
+        }
+        let mut offset = start;
+        while offset + 8 <= end {
+            let size32 = u32::from_be_bytes(bytes[offset..offset + 4].try_into().unwrap());
+            let kind = &bytes[offset + 4..offset + 8];
+            let (header, size) = if size32 == 1 {
+                if offset + 16 > end {
+                    return false;
+                }
+                let high = u64::from(u32::from_be_bytes(bytes[offset + 8..offset + 12].try_into().unwrap()));
+                let low = u64::from(u32::from_be_bytes(bytes[offset + 12..offset + 16].try_into().unwrap()));
+                (16usize, (high << 32) | low)
+            } else if size32 == 0 {
+                (8usize, (end - offset) as u64)
+            } else {
+                (8usize, u64::from(size32))
+            };
+            let Ok(size) = usize::try_from(size) else { return false; };
+            if size < header || offset.checked_add(size).is_none_or(|value| value > end) {
+                return false;
+            }
+            let content_start = offset + header;
+            let content_end = offset + size;
+            if kind == b"hdlr" && content_start + 12 <= content_end
+                && &bytes[content_start + 8..content_start + 12] == b"soun"
+            {
+                *found = true;
+            }
+            if CONTAINERS.iter().any(|container| kind == container.as_slice())
+                && !walk(bytes, content_start, content_end, depth + 1, found)
+            {
+                return false;
+            }
+            offset = content_end;
+        }
+        offset == end
+    }
+    let mut found = false;
+    walk(bytes, 0, bytes.len(), 0, &mut found) && found
+}
+
+#[cfg(test)]
+mod tests {
+    use super::has_audio_track;
+
+    fn box4(kind: &[u8; 4], payload: &[u8]) -> Vec<u8> {
+        let size = u32::try_from(payload.len() + 8).unwrap();
+        let mut value = Vec::with_capacity(size as usize);
+        value.extend_from_slice(&size.to_be_bytes());
+        value.extend_from_slice(kind);
+        value.extend_from_slice(payload);
+        value
+    }
+
+    fn join(parts: &[Vec<u8>]) -> Vec<u8> {
+        parts.iter().flat_map(|part| part.iter().copied()).collect()
+    }
+
+    #[test]
+    fn audio_probe_distinguishes_soun_from_vide_and_keeps_valid_traversal_false() {
+        let mut video_handler = vec![0; 12];
+        video_handler[8..12].copy_from_slice(b"vide");
+        let video = box4(
+            b"moov",
+            &box4(b"trak", &box4(b"mdia", &box4(b"hdlr", &video_handler))),
+        );
+        assert!(!has_audio_track(&video));
+
+        let mut audio_handler = vec![0; 12];
+        audio_handler[8..12].copy_from_slice(b"soun");
+        let audio = box4(
+            b"moov",
+            &join(&[
+                box4(b"trak", &box4(b"mdia", &box4(b"hdlr", &video_handler))),
+                box4(b"trak", &box4(b"mdia", &box4(b"hdlr", &audio_handler))),
+            ]),
+        );
+        assert!(has_audio_track(&audio));
+    }
 }

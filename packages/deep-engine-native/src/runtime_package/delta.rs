@@ -38,7 +38,8 @@ pub const DEEP_RUNTIME_PACKAGE_DELTA_SCHEMA: &str = "deep-engine.runtime-package
 pub const DEEP_RUNTIME_PACKAGE_DELTA_SCHEMA_VERSION: u32 = 1;
 /// 标准 `parse_and_validate_runtime_package` 接受的包版本域;v6 属实验 X 专用
 /// 加载器,与标准 delta 合同互斥。
-const SUPPORTED_TARGET_SCHEMA_VERSIONS: [u32; 5] = [1, 2, 3, 4, 5];
+const SUPPORTED_TARGET_SCHEMA_VERSIONS: [u32; 6] =
+    [1, 2, 3, 4, 5, super::DEEP_RUNTIME_PACKAGE_DYNAMIC_VERSION];
 
 /// delta 应用产物:完整 v2 等价包,已通过既有解析校验,可直接进入既有
 /// 预热/present/提交管道。

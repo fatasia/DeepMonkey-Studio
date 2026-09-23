@@ -90,6 +90,15 @@ impl PlayerDiagnostics {
         } else {
             CapabilityStatus::enabled("gpu_timestamp_queries")
         };
+        let quality_profile = match crate::renderer::quality_profile::requested() {
+            Ok(Some(profile)) => {
+                CapabilityStatus::enabled_with_reason("unified_quality_profile", profile.as_str())
+            }
+            _ => CapabilityStatus::degraded(
+                "unified_quality_profile",
+                "cross_endpoint_quality_profile_missing",
+            ),
+        };
         let ray_query = if !adapter_features.contains(wgpu::Features::EXPERIMENTAL_RAY_QUERY) {
             CapabilityStatus::degraded("hardware_ray_query", "adapter_feature_unavailable")
         } else if !device_features.contains(wgpu::Features::EXPERIMENTAL_RAY_QUERY) {
@@ -135,6 +144,30 @@ impl PlayerDiagnostics {
             capabilities: vec![
                 timestamp,
                 ray_query,
+                // Keep the Native boundary explicit. Probe GI and author fog are
+                // real consumers; volumetric fog is only configured when the
+                // bounded screen-space integration is selected.
+                CapabilityStatus::degraded(
+                    "clustered_lighting",
+                    "native_clustered_lighting_not_wired",
+                ),
+                CapabilityStatus::degraded(
+                    "dynamic_gi",
+                    "native_ray_query_dynamic_update_missing",
+                ),
+                if renderer_features.fog.is_volumetric() {
+                    CapabilityStatus::enabled_with_reason(
+                        "volumetric_fog",
+                        "bounded_screen_space_steps",
+                    )
+                } else {
+                    CapabilityStatus::degraded("volumetric_fog", "native_volumetric_fog_not_wired")
+                },
+                quality_profile,
+                CapabilityStatus::degraded(
+                    "frame_graph_receipt",
+                    "native_frame_graph_receipt_missing",
+                ),
                 CapabilityStatus::configured(
                     "bloom",
                     renderer_features.bloom.is_active(),
@@ -167,7 +200,22 @@ impl PlayerDiagnostics {
 
     pub fn with_metrics(&self, metrics: serde_json::Value) -> serde_json::Value {
         let mut report = serde_json::to_value(self).expect("Player diagnostics serialize");
+        let has_frame_pass_receipt = metrics.get("frame_pass_receipt").is_some();
         report["metrics"] = metrics;
+        // Telemetry already emits a lightweight, ordered pass receipt. Promote the
+        // capability only when that runtime evidence is present; this remains
+        // distinct from per-pass GPU timestamps and a full dependency graph.
+        if has_frame_pass_receipt {
+            if let Some(capability) = report["capabilities"].as_array_mut().and_then(|items| {
+                items
+                    .iter_mut()
+                    .find(|item| item["name"] == "frame_graph_receipt")
+            }) {
+                capability["status"] = serde_json::Value::String("configured".into());
+                capability["reason"] =
+                    serde_json::Value::String("native_frame_pass_receipt".into());
+            }
+        }
         report
     }
 
@@ -189,6 +237,44 @@ impl PlayerDiagnostics {
     /// fail-closed 丢弃并记录精确原因;栅格主通路不受影响。
     pub(crate) fn note_rt_pixel_rejected(&mut self) {
         self.note_rt("rt_pixel_pipeline_rejected");
+    }
+
+    /// Native probe records can be refreshed from authored direct lighting,
+    /// but ray-query capture and multi-bounce transport are still absent.
+    pub(crate) fn note_native_gi_direct_seed(&mut self) {
+        if let Some(capability) = self
+            .capabilities
+            .iter_mut()
+            .find(|item| item.name == "dynamic_gi")
+        {
+            capability.status = "degraded";
+            capability.reason = Some("native_direct_light_seed_only");
+        }
+    }
+
+    /// CPU cluster planning is bounded and deterministic.
+    pub(crate) fn note_native_cluster_plan(&mut self) {
+        if let Some(capability) = self
+            .capabilities
+            .iter_mut()
+            .find(|item| item.name == "clustered_lighting")
+        {
+            capability.status = "degraded";
+            capability.reason = Some("native_cluster_plan_cpu_only");
+        }
+    }
+
+    /// The storage buffer and tile lookup are wired, but cross-GPU visual and
+    /// performance evidence is still required before promoting this capability.
+    pub(crate) fn note_native_cluster_lookup(&mut self) {
+        if let Some(capability) = self
+            .capabilities
+            .iter_mut()
+            .find(|item| item.name == "clustered_lighting")
+        {
+            capability.status = "degraded";
+            capability.reason = Some("native_cluster_lookup_no_visual_evidence");
+        }
     }
 
     /// F2:RT 驻留被拒(预算/空场景/几何校验),fail-closed 记录精确原因;
@@ -270,6 +356,14 @@ impl CapabilityStatus {
             Self::enabled(name)
         } else {
             Self::disabled(name, reason)
+        }
+    }
+
+    fn enabled_with_reason(name: &'static str, reason: &'static str) -> Self {
+        Self {
+            name,
+            status: "enabled",
+            reason: Some(reason),
         }
     }
 }
@@ -373,6 +467,30 @@ mod tests {
             "disabled"
         );
         assert_eq!(capability("ibl_differential_probe")["status"], "disabled");
+        assert_eq!(
+            capability("clustered_lighting"),
+            serde_json::json!({
+                "name": "clustered_lighting",
+                "status": "degraded",
+                "reason": "native_clustered_lighting_not_wired"
+            })
+        );
+        assert_eq!(
+            capability("dynamic_gi")["reason"],
+            "native_ray_query_dynamic_update_missing"
+        );
+        assert_eq!(
+            capability("volumetric_fog")["reason"],
+            "native_volumetric_fog_not_wired"
+        );
+        assert_eq!(
+            capability("unified_quality_profile")["reason"],
+            "cross_endpoint_quality_profile_missing"
+        );
+        assert_eq!(
+            capability("frame_graph_receipt")["reason"],
+            "native_frame_graph_receipt_missing"
+        );
     }
 
     #[test]
@@ -389,5 +507,111 @@ mod tests {
         let report = diagnostics.with_metrics(serde_json::json!({}));
         assert_eq!(report["capabilities"][0]["status"], "enabled");
         assert!(report["capabilities"][0].get("reason").is_none());
+    }
+
+    #[test]
+    fn report_promotes_frame_graph_receipt_only_with_runtime_pass_evidence() {
+        let diagnostics = PlayerDiagnostics::new(
+            wgpu::AdapterInfo::new(wgpu::DeviceType::IntegratedGpu, wgpu::Backend::Dx12),
+            wgpu::Features::empty(),
+            wgpu::Features::empty(),
+            features(true),
+            &content(),
+        );
+        let report = diagnostics.with_metrics(serde_json::json!({
+            "frame_pass_receipt": { "schema": "deep-engine.native-frame-pass-receipt", "stages": [] }
+        }));
+        let capability = report["capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["name"] == "frame_graph_receipt")
+            .unwrap();
+        assert_eq!(capability["status"], "configured");
+        assert_eq!(capability["reason"], "native_frame_pass_receipt");
+    }
+
+    #[test]
+    fn report_marks_bounded_volumetric_fog_only_when_selected() {
+        let mut selected = features(true);
+        selected.fog = FogSettings::volumetric(0.08, [0.2, 0.3, 0.4]).unwrap();
+        let diagnostics = PlayerDiagnostics::new(
+            wgpu::AdapterInfo::new(wgpu::DeviceType::IntegratedGpu, wgpu::Backend::Dx12),
+            wgpu::Features::empty(),
+            wgpu::Features::empty(),
+            selected,
+            &content(),
+        );
+        let capability = diagnostics.with_metrics(serde_json::json!({}))["capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["name"] == "volumetric_fog")
+            .unwrap()
+            .clone();
+        assert_eq!(capability["status"], "enabled");
+        assert_eq!(capability["reason"], "bounded_screen_space_steps");
+    }
+
+    #[test]
+    fn report_distinguishes_direct_gi_seed_from_missing_dynamic_update() {
+        let mut diagnostics = PlayerDiagnostics::new(
+            wgpu::AdapterInfo::new(wgpu::DeviceType::IntegratedGpu, wgpu::Backend::Dx12),
+            wgpu::Features::empty(),
+            wgpu::Features::empty(),
+            features(true),
+            &content(),
+        );
+        diagnostics.note_native_gi_direct_seed();
+        let capability = diagnostics.with_metrics(serde_json::json!({}))["capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["name"] == "dynamic_gi")
+            .unwrap()
+            .clone();
+        assert_eq!(capability["status"], "degraded");
+        assert_eq!(capability["reason"], "native_direct_light_seed_only");
+    }
+
+    #[test]
+    fn report_distinguishes_cpu_cluster_plan_from_gpu_consumer() {
+        let mut diagnostics = PlayerDiagnostics::new(
+            wgpu::AdapterInfo::new(wgpu::DeviceType::IntegratedGpu, wgpu::Backend::Dx12),
+            wgpu::Features::empty(),
+            wgpu::Features::empty(),
+            features(true),
+            &content(),
+        );
+        diagnostics.note_native_cluster_plan();
+        let capability = diagnostics.with_metrics(serde_json::json!({}))["capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["name"] == "clustered_lighting")
+            .unwrap()
+            .clone();
+        assert_eq!(capability["status"], "degraded");
+        assert_eq!(capability["reason"], "native_cluster_plan_cpu_only");
+    }
+
+    #[test]
+    fn report_keeps_cluster_lookup_degraded_until_visual_evidence_exists() {
+        let mut diagnostics = PlayerDiagnostics::new(
+            wgpu::AdapterInfo::new(wgpu::DeviceType::IntegratedGpu, wgpu::Backend::Dx12),
+            wgpu::Features::empty(),
+            wgpu::Features::empty(),
+            features(true),
+            &content(),
+        );
+        diagnostics.note_native_cluster_lookup();
+        let capability = diagnostics.with_metrics(serde_json::json!({}))["capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["name"] == "clustered_lighting")
+            .unwrap()
+            .clone();
+        assert_eq!(capability["reason"], "native_cluster_lookup_no_visual_evidence");
     }
 }

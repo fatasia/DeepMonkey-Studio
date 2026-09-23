@@ -12,6 +12,20 @@ pub(super) fn run_internal(
     dynamic_playback: Option<DynamicPlaybackSpec>,
     state_ops: Option<super::StateOpsSpec>,
 ) -> Result<(), String> {
+    // android:native-activity 要求把 AndroidApp 交给 winit;其余平台保持原路径。
+    #[cfg(target_os = "android")]
+    let event_loop = {
+        use winit::platform::android::EventLoopBuilderExtAndroid;
+        let app = crate::ANDROID_APP
+            .get()
+            .expect("android app must be registered by android_main")
+            .clone();
+        EventLoop::<GpuEvent>::with_user_event()
+            .with_android_app(app)
+            .build()
+            .map_err(|error| format!("event loop creation failed: {error}"))?
+    };
+    #[cfg(not(target_os = "android"))]
     let event_loop = EventLoop::<GpuEvent>::with_user_event()
         .build()
         .map_err(|error| format!("event loop creation failed: {error}"))?;

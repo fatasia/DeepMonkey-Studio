@@ -1,5 +1,5 @@
-//! Windows MP4 frame preparation primitives. Dashboard playback remains gated
-//! until the media clock, scheduler, controls, and seek contract are complete.
+//! Windows MP4 frame preparation primitives. Video frames remain decoded by
+//! Media Foundation; the dashboard runtime owns transport and optional audio.
 
 use crate::runtime_package::DashboardVideoMedia;
 
@@ -24,9 +24,8 @@ pub struct DashboardVideoColorContract {
     pub output_transfer: &'static str,
 }
 
-/// 源音频轨道探测结果:只判定"源里有没有音轨、采样率多少"。
-/// 音频输出(播放出声)仍是登记缺口(audio-output);本探测不改变
-/// 强制静音的播放合同,只把无声原因显式化,供诊断与测试消费。
+/// 源音频轨道探测结果:判定源里有没有音轨、采样率多少。
+/// 实际输出由 dashboard runtime 的轻量系统音频轨承担。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DashboardVideoAudioTrackProbe {
     /// 首个音频流的采样率(Hz);容器缺失该元数据时为 0。
@@ -197,7 +196,7 @@ impl DashboardVideoDecoder {
     }
 
     /// 源音频轨道探测:None 表示容器无音轨(如纯 H.264 样本);
-    /// Some 记录采样率。探测不改变静音播放合同。
+    /// Some 记录采样率，供 runtime 选择音频输出路径。
     pub fn audio_track(&self) -> Option<DashboardVideoAudioTrackProbe> {
         self.inner.audio_track()
     }

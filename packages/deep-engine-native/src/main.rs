@@ -93,6 +93,7 @@ mod probe_gi_storage;
 mod probe_gi_grid;
 #[cfg(test)]
 mod prototype_gpu_tests;
+mod publication_record;
 mod publication_verification;
 mod render_graph;
 #[cfg(test)]
