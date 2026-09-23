@@ -3575,3 +3575,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **现状核查**：Native 已有固定最多 16 盏局部灯的 frame uniform 与逐片元循环，但没有按屏幕簇的索引规划或 GPU storage 消费；Web Forward+ 不重复建设。
 - **本轮完成**：新增 `clustered_lighting::ClusterGrid`，固定 8×8 屏幕 tile、每 tile 16 个索引、视锥内 point/spot 投影、确定性顺序和溢出计数；Native renderer init 对有局部灯场景生成该规划，GPU binding 12 写入固定 storage，并由 mesh/RT fragment 按像素 tile lookup 消费；无效或空计划仍回退旧 16 灯顺序。
 - **证据**：ClusterGrid CPU 对拍/相机后方剔除/固定 storage 打包 3/3；`pack_storage` 输出 4 字头 + 64×17 u32 固定布局并有版本、容量校验；frame layout 与 `GpuIblEnvironment` 已创建并写入 cluster storage；Native mesh shader 与 RT 拼接模块通过 naga 校验，bloom contract 5/5，PlayerDiagnostics 7/7，能力保持 degraded（`native_cluster_lookup_no_visual_evidence`）等待跨 GPU 像素/性能证据；`cargo check --bin deep-engine-native`、`cargo test --lib clustered_lighting` 与 `git diff --check` 通过。
+
+### 2026-09-24 夜间并行批次(GLM 主线程+4 子代理)
+
+- **音频长稳真实发现**:30 分钟 soak 首跑失败(max 500ms/mean 263.7ms)——根因=音频设备钟与系统钟 ~200ppm 晶振差无有效重同步,既有 try_seek 把 rodio "not supported" 吞成成功。修复=阈值 100ms 重同步(seek 优先/不支持则 reopen-at-position,回绕取最短方向+单测)+用户 seek 同修+证据先于断言落盘。30s 正式测试 140.4→95.9ms;30min 复跑 mean 46.3ms 但 max 仍 500ms(单次逃逸待插桩),V4 长稳门槛未过,如实保留 fail 证据(test-output/native-audio-30min-soak-evidence-2026-09-23.json)。
+- **场景安卓发布 MVP**:deep-scene-viewer-android cdylib 壳(#[path] 镜像 bin 树 99 模块零复制)+NativeActivity 入口+资产物化;aarch64/x86_64 双架构 .so 链接成功;模板 APK 组装脚本(aapt2+zipalign -p+apksigner,40.8MiB)+apps/api dashboardAndroidApk 注入重签服务+android-apk 路由+发布页 UI(可选请求级签名)。瘦身纪律:opt-level 3 性能保持,只取 fat LTO/panic abort/strip 零代价收益;源 crate 统一 mod.rs 风格(6 处 git mv)。安卓 E2E(模拟器安装/渲染验证)与 wasm spike(用户授权,测试收口后启动)在途。
+- **夜间四 Lane 收工并分批落库**:A=UI 交互(浮点噪声/拓扑空态/480px 遮挡,10 维自评 9.0)、B=性能(遮挡/合批/相机快速路径,5000 对象 webgpu p50 -6.9%,一次诚实回退)、C=开源文档(LICENSE=DMS-MIT-ER-1.0 MIT+伦理限制、README 徽章+功能列表、Wiki 导出断链修复)、D=开箱链(三存储 JSON/SQLite/PG18.3 全链 smoke、ZIP 导入真实修复、素材导入 1 正例 5 反例)。
+- **隐私清理(用户指令)**:工作树客户人名/项目名/路径清零(c445c395),两份含客户素材清单的 09-17 过程文档已删;git 历史含敏感串且 4 提交已在 origin/dev-studio——收尾执行 filter-repo replace-text+强推,公开发布推荐新仓干净初始提交,过程文档/AI 记忆/会话日志按用户指令清除(08:30 前)。
+- **CI**:新增 studio.yml(contracts/api/web);与 deep-engine.yml/repository-governance.yml 构成公开三徽章。
+- **在途**:模板 APK 模拟器 E2E;全局测试矩阵(api/contracts/web/native 全量);bin executor 水位用例隔离复跑(负载敏感,非回归);30min soak 插桩定位单次 500ms 逃逸。
