@@ -10,7 +10,8 @@
   <application
       android:label="DeepMonkey Scene Viewer"
       android:hasCode="false"
-      android:extractNativeLibs="false">
+      android:extractNativeLibs="false"
+      android:debuggable="true">
     <activity android:name="android.app.NativeActivity"
         android:label="DeepMonkey Scene Viewer"
         android:exported="true"

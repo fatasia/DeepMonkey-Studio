@@ -326,13 +326,13 @@ static ANDROID_APP: std::sync::OnceLock<android_activity::AndroidApp> = std::syn
 
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
-fn android_main(app: &android_activity::AndroidApp) {
-    let mut log = android_file_log(app, "android_main");
-    if ANDROID_APP.set(app.clone()).is_err() {
-        log.write("android app already set");
-        return;
-    }
-    let package_path = match materialize_scene_package(app) {
+fn android_main(mut app: android_activity::AndroidApp) {
+    // AndroidApp::internal_data_path 在该环境必崩(SIGSEGV,已符号化证实):
+    // 应用自有目录改用字面路径 + create_dir_all,不触碰该 API。
+    let data_dir = std::path::PathBuf::from("/data/data/com.deepmonkey.sceneviewer/files");
+    let _ = std::fs::create_dir_all(&data_dir);
+    let mut log = android_file_log::FileLog::open(Some(data_dir.as_path()), "android_main");
+    let package_path = match materialize_scene_package(&app, &data_dir) {
         Ok(path) => path,
         Err(error) => {
             log.write(&format!("scene package missing: {error}"));
@@ -340,6 +340,11 @@ fn android_main(app: &android_activity::AndroidApp) {
         }
     };
     log.write(&format!("package ready: {}", package_path.display()));
+    // android-activity 0.6 的 android_main 按值收取 AndroidApp(引用签名=胶水按值传+按引用解=SIGSEGV)。
+    if ANDROID_APP.set(app).is_err() {
+        log.write("android app already set");
+        return;
+    }
     let args = [
         std::ffi::OsString::from("--package"),
         package_path.into_os_string(),
@@ -354,6 +359,7 @@ fn android_main(app: &android_activity::AndroidApp) {
 #[cfg(target_os = "android")]
 fn materialize_scene_package(
     app: &android_activity::AndroidApp,
+    data_dir: &std::path::Path,
 ) -> Result<std::path::PathBuf, String> {
     use std::io::Read;
     let mut asset = app
@@ -364,24 +370,13 @@ fn materialize_scene_package(
     asset
         .read_to_end(&mut bytes)
         .map_err(|error| format!("asset read failed: {error}"))?;
-    let dir = app
-        .internal_data_path()
-        .ok_or("android internal data path unavailable")?;
-    let path = dir.join("runtime-package.json");
+    let path = data_dir.join("runtime-package.json");
     std::fs::write(&path, &bytes).map_err(|error| format!("package write failed: {error}"))?;
     Ok(path)
 }
 
-/// 无 android_logger 依赖的文件日志:`<internal_data>/deep-native.log`,
+/// 无 android_logger 依赖的文件日志:`<data_dir>/deep-native.log`,
 /// 调试期 `adb shell run-as <pkg> cat files/deep-native.log` 可取。
-#[cfg(target_os = "android")]
-fn android_file_log(
-    app: &android_activity::AndroidApp,
-    marker: &str,
-) -> android_file_log::FileLog {
-    android_file_log::FileLog::open(app.internal_data_path().as_deref(), marker)
-}
-
 #[cfg(target_os = "android")]
 mod android_file_log {
     use std::io::Write;

@@ -65,6 +65,12 @@ pub(crate) async fn create_gpu_context(
     }
     let available_limits = adapter.limits();
     let mut required_limits = wgpu::Limits::default();
+    // 下限设备(模拟器 SwiftShader、部分手机驱动)的 UBO 绑定上限可能只有
+    // 16KiB:请求值收敛到适配器实际能力,避免设备创建被整体拒绝;
+    // 桌面主路适配器通常 ≥64KiB,不受影响。
+    required_limits.max_uniform_buffer_binding_size = required_limits
+        .max_uniform_buffer_binding_size
+        .min(available_limits.max_uniform_buffer_binding_size);
     if required_features.contains(wgpu::Features::EXPERIMENTAL_RAY_QUERY) {
         required_limits.max_blas_primitive_count = available_limits.max_blas_primitive_count;
         required_limits.max_blas_geometry_count = available_limits.max_blas_geometry_count;
