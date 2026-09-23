@@ -3584,3 +3584,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **隐私清理(用户指令)**:工作树客户人名/项目名/路径清零(c445c395),两份含客户素材清单的 09-17 过程文档已删;git 历史含敏感串且 4 提交已在 origin/dev-studio——收尾执行 filter-repo replace-text+强推,公开发布推荐新仓干净初始提交,过程文档/AI 记忆/会话日志按用户指令清除(08:30 前)。
 - **CI**:新增 studio.yml(contracts/api/web);与 deep-engine.yml/repository-governance.yml 构成公开三徽章。
 - **在途**:模板 APK 模拟器 E2E;全局测试矩阵(api/contracts/web/native 全量);bin executor 水位用例隔离复跑(负载敏感,非回归);30min soak 插桩定位单次 500ms 逃逸。
+
+### 2026-09-24 凌晨补遗:Android E2E 与 wasm 三方案
+
+- **Android 模拟器 E2E 全通**:镜像直链补齐后 WHPX 模拟器 34s 启动;E2E APK(真实场景包注入)安装→启动→资产物化→schema fail-closed→preflight OK→wgpu Vulkan 设备→渲染循环运行(截屏=场景环境色上屏)。途中修复三真 bug:android_main 按值签名(0.6,引用式=SIGSEGV 已符号化证实)、internal_data_path SEGV(改字面 files 目录)、UBO limits 收敛到适配器(SwiftShader 16KiB)。
+- **wasm 三方案 spike 完成**:deep-engine-wasm(WebGPU 后端 instanced PBR)编译链全通;同机真 GPU 三车道对比:Three 143.7fps / wasm 143.6fps(p50 6.9ms 打平,均触 144Hz);wasm 体积 153.6KB(wasm)+58KB(JS);渲染链修三处(stride 32/uniform 96B 对齐/P·V 乘法与透视 z 行标准式)。
+- **在途遗留**:30min 音频 soak 逃逸=音频源时长与视频循环周期差 ~0.5s(整 500ms 恒定,回绕相位跳,重同步在拉回);bins 水位用例并行 flaky(t1 全绿 289/0);场景内容级渲染(包内仅 12 三角)与真机触控取证待后续。
