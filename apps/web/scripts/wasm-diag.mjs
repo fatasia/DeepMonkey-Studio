@@ -1,0 +1,10 @@
+import pw from "../../../node_modules/.pnpm/playwright-core@1.62.1/node_modules/playwright-core/index.js";
+const browser = await pw.chromium.launch({ headless: true, executablePath: "C:/Program Files/Google/Chrome/Application/chrome.exe", args: ["--enable-unsafe-webgpu", "--enable-features=Vulkan", "--no-sandbox"] });
+const page = await browser.newPage();
+page.on("pageerror", e => console.log("[pageerror]", String(e).slice(0, 400)));
+page.on("console", m => console.log("[console:" + m.type() + "]", m.text().slice(0, 400)));
+await page.goto("http://localhost:5177/dev/wasm-bench.html", { waitUntil: "load" });
+await page.locator('button[data-lane="wasm"]').click();
+await page.waitForTimeout(6000);
+console.log("errBox:", await page.locator("#err").textContent());
+await browser.close();

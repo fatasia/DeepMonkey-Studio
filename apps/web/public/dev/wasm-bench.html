@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeepMonkey 三方案渲染对比 bench(Three WebGL / Rust wasm / 参数)</title>
+<script type="importmap">
+{ "imports": { "three": "/node_modules/three/build/three.module.js" } }
+</script>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #0b1114; color: #a7b2b8; font: 13px/1.5 "Segoe UI", "Microsoft YaHei", sans-serif; }
+  #bar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: #11191d; border-bottom: 1px solid rgba(167,183,190,.14); }
+  #bar strong { color: #e6ecef; margin-right: 8px; }
+  button { min-height: 30px; padding: 4px 14px; cursor: pointer; color: #e6ecef; background: #172126; border: 1px solid rgba(167,183,190,.26); border-radius: 4px; }
+  button.active { color: #0b1114; background: #3ec6c1; border-color: #3ec6c1; font-weight: 600; }
+  #stats { margin-left: auto; font-variant-numeric: tabular-nums; color: #e6ecef; }
+  #stats b { color: #3ec6c1; }
+  canvas { display: block; width: 100vw; height: calc(100vh - 47px); }
+  #err { position: fixed; inset: auto 12px 12px 12px; color: #e27478; white-space: pre-wrap; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <strong>渲染方案</strong>
+  <button data-lane="three" class="active">Three WebGL</button>
+  <button data-lane="wasm">Rust wasm (WebGPU)</button>
+  <span id="stats">等待启动…</span>
+</div>
+<canvas id="view"></canvas>
+<pre id="err"></pre>
+<script type="module">
+const stats = document.getElementById("stats");
+const errBox = document.getElementById("err");
+const canvas = document.getElementById("view");
+const SAMPLE_SECONDS = 12;
+let stopLane = null, currentLane = "";
+
+function report(name, frames, elapsed, samples) {
+  if (!samples.length) return;
+  samples.sort((a, b) => a - b);
+  const p = q => samples[Math.min(samples.length - 1, Math.floor(samples.length * q))];
+  const p50 = p(.5).toFixed(2), p99 = p(.99).toFixed(2);
+  const fps = (frames / elapsed).toFixed(1);
+  stats.innerHTML = `${name} · ${fps} fps · p50 <b>${p50}ms</b> · p99 <b>${p99}ms</b> · ${frames} 帧 / ${elapsed.toFixed(1)}s`;
+  window.__benchResult = { lane: name, fps: Number(fps), p50: Number(p50), p99: Number(p99), frames, elapsed };
+}
+
+async function runThree() {
+  const THREE = await import("three");
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setSize(innerWidth, innerHeight, false);
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0b1114);
+  const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 60);
+  const geo = new THREE.BoxGeometry(1, 1, 1);
+  const mat = new THREE.MeshStandardMaterial({ roughness: .55, metalness: .1 });
+  const mesh = new THREE.InstancedMesh(geo, mat, 5000);
+  const side = Math.ceil(Math.cbrt(5000));
+  const dummy = new THREE.Object3D();
+  const seeds = [];
+  for (let i = 0; i < 5000; i++) {
+    const gx = i % side, gz = Math.floor(i / side) % side, gy = Math.floor(i / (side * side));
+    seeds.push({ x: gx - side / 2, y: gy - side / 2 - 6, z: gz - side / 2, s: .05 + (i % 7) * .02, k: (i % 11) / 11 });
+    mesh.setColorAt(i, new THREE.Color(.25 + (i % 5) * .11, .55 + (gz % 5) * .08, .65 + (gx % 5) * .07));
+  }
+  scene.add(mesh);
+  const key = new THREE.DirectionalLight(0xffffff, 2.2); key.position.set(4.5, 8.5, 3.5); scene.add(key);
+  scene.add(new THREE.AmbientLight(0x2a333a, 1.4));
+  return (t) => {
+    for (let i = 0; i < 5000; i++) {
+      const s = seeds[i];
+      dummy.position.set(s.x * .16, s.y * .16 + Math.sin(t * .8 + s.x * .35 + s.z * .21) * .12, s.z * .16);
+      dummy.rotation.set(0, t * (.2 + s.k * .15), 0);
+      dummy.scale.setScalar(s.s);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    camera.position.set(Math.sin(t) * 2.4, 1.5 + Math.sin(t) * .3, 2.6 + Math.cos(t) * .4);
+    camera.lookAt(0, .2, 0);
+    renderer.render(scene, camera);
+  };
+}
+
+async function runWasm() {
+  const mod = await import("/dev/pkg/deep_engine_wasm.js");
+  await mod.default();
+  const viewer = await new mod.Viewer(canvas);
+  return (t) => viewer.render_frame(canvas.width, canvas.height, t);
+}
+
+const lanes = {
+  three: { label: "Three WebGL", run: runThree, perFrame: true },
+  wasm: { label: "Rust wasm (WebGPU)", run: runWasm, perFrame: false },
+};
+
+async function switchLane(name) {
+  if (stopLane) { stopLane(); stopLane = null; }
+  currentLane = name;
+  errBox.textContent = "";
+  stats.textContent = "启动中…";
+  document.querySelectorAll("#bar button").forEach(b => b.classList.toggle("active", b.dataset.lane === name));
+  try {
+    const lane = lanes[name];
+    const draw = await lane.run();
+    let frames = 0, start = performance.now(), last = start, samples = [];
+    const loop = (now) => {
+      if (currentLane !== name) return;
+      draw((now - start) / 1000);
+      if (now - last >= 2) { samples.push(now - last); last = now; frames++; }
+      if (now - start < SAMPLE_SECONDS * 1000) requestAnimationFrame(loop);
+      else { report(lane.label, frames, (now - start) / 1000, samples); stopLane = null; }
+    };
+    stopLane = () => { currentLane = ""; };
+    requestAnimationFrame(loop);
+  } catch (e) {
+    errBox.textContent = String(e?.message ?? e);
+    stats.textContent = "失败";
+  }
+}
+document.querySelectorAll("#bar button").forEach(b => b.onclick = () => switchLane(b.dataset.lane));
+window.__benchReady = true;
+// 三车道由外部 bench 驱动或手动点击;不自动起帧,避免 canvas 上下文互斥。
+</script>
+</body>
+</html>
