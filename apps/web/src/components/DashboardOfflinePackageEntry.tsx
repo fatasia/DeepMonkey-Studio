@@ -8,6 +8,7 @@ import { useDashboardWorkspace } from "./dashboardWorkspaceContext";
 import { dashboardCandidateAuthority, dashboardCandidateFilename, downloadFailureGuidance, initialDashboardOfflinePackageState, mapDashboardCandidateError,
   reduceDashboardOfflinePackage, summarizeCandidateObjects, type DashboardCandidateDownloadFormat,
   type DashboardCandidateObjectReport, type DashboardOfflinePackageEvent, type DashboardPublicationPointer } from "./dashboardOfflinePackageState";
+import type { DashboardCandidateAndroidSigning } from "../apiClients/dashboardPublicationApi";
 import "./DashboardOfflinePackageDialog.css";
 
 /** 作者端离线运行包入口:发布后的应用可在此准备候选并下载单 EXE/ZIP/DMDA。 */
@@ -36,6 +37,9 @@ function DashboardOfflinePackageDialog({ locale, projectId, applicationId, onClo
   const escape = useDialogEscape(onClose);
   const [state, dispatch] = useReducer(reduceDashboardOfflinePackage, undefined, initialDashboardOfflinePackageState);
   const [downloadBusy, setDownloadBusy] = useState<DashboardCandidateDownloadFormat | undefined>();
+  // Android 请求级签名;keystore 留空时服务端用部署默认签名,不强制作者上传。
+  const [signing, setSigning] = useState<{ keystore?: File; storePassword: string; keyAlias: string; keyPassword: string }>(
+    { storePassword: "", keyAlias: "", keyPassword: "" });
   const ticket = useRef(0), controller = useRef<AbortController | undefined>(undefined), focused = useRef<HTMLElement>(null);
 
   const run = useCallback((event: DashboardOfflinePackageEvent) => dispatch(event), []);
@@ -80,13 +84,25 @@ function DashboardOfflinePackageDialog({ locale, projectId, applicationId, onClo
     return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
   }, []);
 
-  const download = useCallback((format: DashboardCandidateDownloadFormat, candidateId: string) => {
+  const download = useCallback(async (format: DashboardCandidateDownloadFormat, candidateId: string) => {
     if (downloadBusy) return;
     const sequence = ++ticket.current;
     const active = new AbortController();
     controller.current = active;
     setDownloadBusy(format);
-    api.openDashboardCandidateDownload(projectId, applicationId, candidateId, format, active.signal)
+    let signingRequest: DashboardCandidateAndroidSigning | undefined;
+    if (format === "apk" && signing.keystore && signing.storePassword && signing.keyAlias) {
+      const bytes = new Uint8Array(await signing.keystore.arrayBuffer());
+      let binary = "";
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      signingRequest = {
+        keystoreBase64: btoa(binary),
+        storePassword: signing.storePassword,
+        keyAlias: signing.keyAlias,
+        ...(signing.keyPassword ? { keyPassword: signing.keyPassword } : {}),
+      };
+    }
+    api.openDashboardCandidateDownload(projectId, applicationId, candidateId, format, active.signal, undefined, signingRequest)
       .then(async response => {
         if (sequence !== ticket.current) return;
         if (!response.ok) {
@@ -113,7 +129,7 @@ function DashboardOfflinePackageDialog({ locale, projectId, applicationId, onClo
         run({ type: "failed", error: mapDashboardCandidateError(reason) });
       })
       .finally(() => { if (sequence === ticket.current) setDownloadBusy(undefined); });
-  }, [applicationId, downloadBusy, projectId, run]);
+  }, [applicationId, downloadBusy, projectId, run, signing]);
 
   const pointer = state.phase === "idle" || state.phase === "preparing" || state.phase === "ready" || state.phase === "failed"
     ? state.pointer : undefined;
@@ -157,7 +173,38 @@ function DashboardOfflinePackageDialog({ locale, projectId, applicationId, onClo
             </button>
             <button type="button" disabled={Boolean(downloadBusy)} onClick={() => download("zip", state.candidate.candidateId)}>ZIP</button>
             <button type="button" disabled={Boolean(downloadBusy)} onClick={() => download("dmda", state.candidate.candidateId)}>DMDA</button>
+            <button type="button" disabled={Boolean(downloadBusy)}
+              title={tr(locale, "打包场景安卓查看器 APK;视频媒体在安卓首片降级", "Package the Android scene viewer APK; video media is degraded on the first Android slice")}
+              onClick={() => download("apk", state.candidate.candidateId)}>
+              {downloadBusy === "apk" ? tr(locale, "打包中…", "Packaging…") : tr(locale, "安卓 APK", "Android APK")}
+            </button>
           </div>
+          <details className="dashboard-offline-signing">
+            <summary>{tr(locale, "Android 签名（可选，留空使用服务器默认签名）", "Android signing (optional; server default when empty)")}</summary>
+            <label className="dashboard-offline-signing-row">
+              <span>keystore</span>
+              <input type="file" accept=".keystore,.jks,.p12,application/octet-stream"
+                onChange={event => setSigning(previous => ({
+                  ...previous,
+                  ...(event.target.files?.[0] ? { keystore: event.target.files[0] } : {}),
+                }))} />
+            </label>
+            <label className="dashboard-offline-signing-row">
+              <span>{tr(locale, "keystore 口令", "Keystore password")}</span>
+              <input type="password" autoComplete="off" value={signing.storePassword}
+                onChange={event => setSigning(previous => ({ ...previous, storePassword: event.target.value }))} />
+            </label>
+            <label className="dashboard-offline-signing-row">
+              <span>{tr(locale, "别名", "Alias")}</span>
+              <input type="text" value={signing.keyAlias}
+                onChange={event => setSigning(previous => ({ ...previous, keyAlias: event.target.value }))} />
+            </label>
+            <label className="dashboard-offline-signing-row">
+              <span>{tr(locale, "key 口令（可选）", "Key password (optional)")}</span>
+              <input type="password" autoComplete="off" value={signing.keyPassword}
+                onChange={event => setSigning(previous => ({ ...previous, keyPassword: event.target.value }))} />
+            </label>
+          </details>
         </>}
         <div className="dashboard-offline-footer">
           {(state.phase === "ready" || state.phase === "failed") && pointer && dashboardCandidateAuthority(pointer) &&
