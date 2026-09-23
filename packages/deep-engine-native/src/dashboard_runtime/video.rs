@@ -1,5 +1,6 @@
 use super::DashboardRuntime;
 use crate::{
+    dashboard_audio::DashboardAudioTrack,
     dashboard_video::{
         DashboardVideoDecoder, DashboardVideoFrameTexture, DecodedDashboardVideoFrame,
     },
@@ -74,9 +75,10 @@ pub struct DashboardVideoPlacement {
     pub uv: [f32; 4],
 }
 
-/// Muted playback with explicit author/runtime play, pause and bounded seek.
+/// Packaged playback with explicit author/runtime play, pause and bounded seek.
 pub struct DashboardVideoPlayback {
     decoder: DashboardVideoDecoder,
+    audio: Option<DashboardAudioTrack>,
     texture: DashboardVideoFrameTexture,
     pending: Option<(i64, DecodedDashboardVideoFrame)>,
     fit: DashboardVideoFit,
@@ -112,9 +114,6 @@ impl DashboardRuntime {
             .find(|video| video.node_id == node_id)
             .ok_or("dashboard video node missing")?;
         let media = packaged_media(self, diagnostic)?;
-        if !diagnostic.playback.muted {
-            return Err("dashboard Native video requires authored muted playback".into());
-        }
         DashboardVideoPlayback::new(diagnostic, media, device, queue, monotonic_now)
     }
 }
@@ -159,9 +158,20 @@ impl DashboardVideoPlayback {
             _ => return Err("invalid dashboard video fit".into()),
         };
         let texture = DashboardVideoFrameTexture::new(device, queue, &first)?;
+        let audio = if diagnostic.playback.muted {
+            None
+        } else {
+            let bytes = crate::deep2d::runtime_base64::decode(&media.data_base64)
+                .map_err(|error| format!("dashboard audio media: {error}"))?;
+            Some(DashboardAudioTrack::from_mp4(bytes, diagnostic.playback.r#loop)?)
+        };
+        if diagnostic.playback.autoplay {
+            if let Some(audio) = &audio { audio.play(); }
+        }
         let duration_100ns = decoder.duration_100ns();
         Ok(Self {
             decoder,
+            audio,
             texture,
             pending: None,
             fit,
@@ -216,6 +226,7 @@ impl DashboardVideoPlayback {
             let Some((absolute, frame)) = next else {
                 if !self.loop_enabled {
                     self.ended = true;
+                    if let Some(audio) = &self.audio { audio.pause(); }
                     settled = true;
                     break;
                 }
@@ -255,6 +266,24 @@ impl DashboardVideoPlayback {
         if !settled {
             return Err("dashboard video advance exceeded its frame decode budget".into());
         }
+        // 音频设备钟与系统钟存在 ~200ppm 晶振差,长稳播放会让音画偏差线性
+        // 累积(30s 证据 140ms,30min 实测 500ms)。超过阈值即重同步:
+        // 后端支持原地 seek 就把音频拉回媒体钟;不支持(rodio 任意源队列)
+        // 就从当前媒体位置重开音频源——绝不把"不支持"当成已对齐。
+        let drift = self.audio_media_clock_drift_100ns(target_100ns);
+        if drift.abs() > AUDIO_RESYNC_THRESHOLD_100NS {
+            let target = self.audio_position_for_media_clock(target_100ns);
+            if let Some(audio) = self.audio.as_mut() {
+                let device_name = audio.device_name().to_string();
+                if !audio.try_seek(target)? {
+                    let reopened = audio.reopen_on_device_at(&device_name, target)?;
+                    *audio = reopened;
+                    if self.playing {
+                        audio.play();
+                    }
+                }
+            }
+        }
         let updated = if let Some((absolute, mut frame)) = latest {
             frame.timestamp_100ns = absolute
                 .checked_add(self.presentation_offset_100ns)
@@ -272,7 +301,7 @@ impl DashboardVideoPlayback {
     }
 
     pub fn is_muted(&self) -> bool {
-        true
+        self.audio.is_none()
     }
 
     pub fn autoplay(&self) -> bool {
@@ -283,8 +312,46 @@ impl DashboardVideoPlayback {
         self.playing && !self.ended && self.lifecycle_suspended_at.is_none()
     }
 
+    /// Switches the native output device without rebuilding the video decoder.
+    /// The new sink is aligned to the current media clock before it is resumed.
+    pub fn switch_audio_device(
+        &mut self,
+        queue: &wgpu::Queue,
+        monotonic_now: Duration,
+        device_name: &str,
+    ) -> Result<DashboardVideoAdvance, String> {
+        let Some(current) = self.audio.take() else {
+            return Err("dashboard video has no audio track".into());
+        };
+        let was_playing = self.playing && self.lifecycle_suspended_at.is_none();
+        let replacement = match current.reopen_on_device(device_name) {
+            Ok(track) => track,
+            Err(error) => {
+                self.audio = Some(current);
+                return Err(error);
+            }
+        };
+        if was_playing { replacement.play(); }
+        self.audio = Some(replacement);
+        self.last_clock = monotonic_now;
+        // Force a presentation tick so callers can verify the video clock was
+        // not reset while the output stream changed.
+        self.advance_to(queue, monotonic_now)
+    }
+
     pub fn duration_100ns(&self) -> i64 {
         self.duration_100ns
+    }
+
+    pub fn audio_device_name(&self) -> Option<&str> {
+        self.audio.as_ref().map(|audio| audio.device_name())
+    }
+
+    pub fn audio_position_100ns(&self) -> Option<i64> {
+        self.audio.as_ref().map(|audio| {
+            let nanos = audio.position().as_nanos() / 100;
+            i64::try_from(nanos).unwrap_or(i64::MAX)
+        })
     }
 
     pub fn loop_enabled(&self) -> bool {
@@ -333,6 +400,7 @@ impl DashboardVideoPlayback {
             .checked_add(self.position_100ns)
             .ok_or("dashboard video pause clock overflow")?;
         self.started_at = monotonic_now;
+        if let Some(audio) = &self.audio { audio.pause(); }
         Ok(())
     }
 
@@ -351,6 +419,7 @@ impl DashboardVideoPlayback {
             .ok_or("dashboard video play clock overflow")?;
         self.started_at = monotonic_now;
         self.last_clock = monotonic_now;
+        if let Some(audio) = &self.audio { audio.play(); }
         Ok(())
     }
 
@@ -366,6 +435,19 @@ impl DashboardVideoPlayback {
                 .saturating_sub(self.frame_interval_100ns.max(1)),
         );
         self.decoder.seek(target)?;
+        let target_position = self.audio_position_for_media_clock(target);
+        if let Some(audio) = self.audio.as_mut() {
+            let device_name = audio.device_name().to_string();
+            if !audio.try_seek(target_position)? {
+                // rodio 任意源队列不支持原地 seek:从目标位置重开音频源,
+                // 否则 seek 后音频停留在旧位置,音画永久失同步。
+                let reopened = audio.reopen_on_device_at(&device_name, target_position)?;
+                *audio = reopened;
+                if self.playing {
+                    audio.play();
+                }
+            }
+        }
         self.pending = None;
         let mut selected = None;
         for _ in 0..MAX_DECODED_FRAMES_PER_ADVANCE {
@@ -405,6 +487,7 @@ impl DashboardVideoPlayback {
     ) -> Result<DashboardVideoAdvance, String> {
         let state = self.advance_to(queue, monotonic_now)?;
         self.lifecycle_suspended_at = Some(monotonic_now);
+        if let Some(audio) = &self.audio { audio.pause(); }
         Ok(state)
     }
 
@@ -422,6 +505,9 @@ impl DashboardVideoPlayback {
             .checked_add(monotonic_now - suspended_at)
             .ok_or("dashboard video lifecycle clock overflow")?;
         self.last_clock = monotonic_now;
+        if self.playing {
+            if let Some(audio) = &self.audio { audio.play(); }
+        }
         Ok(())
     }
 
@@ -480,6 +566,59 @@ impl DashboardVideoPlayback {
             playing: self.is_playing(),
             duration_100ns: self.duration_100ns,
         }
+    }
+
+    fn audio_position_for_media_clock(&self, absolute_100ns: i64) -> Duration {
+        let position = if self.loop_enabled && self.duration_100ns > 0 {
+            absolute_100ns.rem_euclid(self.duration_100ns)
+        } else {
+            absolute_100ns.max(0)
+        };
+        Duration::from_nanos((position as u64).saturating_mul(100))
+    }
+
+    /// 音频设备消费位置与媒体钟的带符号差(同一绝对时间线,循环回绕取最短方向)。
+    fn audio_media_clock_drift_100ns(&self, target_100ns: i64) -> i64 {
+        let Some(audio) = &self.audio else { return 0 };
+        let position = duration_100ns(audio.position()).unwrap_or(0);
+        wrapped_delta_100ns(
+            self.loop_base_100ns + position - target_100ns,
+            self.duration_100ns.max(1),
+        )
+    }
+}
+
+/// 音画重同步阈值:偏差超过即触发(先原地 seek,不支持则重开音频源)。
+/// 取 100ms,低于 150ms 正式验收门槛,给重同步动作本身留出余量。
+const AUDIO_RESYNC_THRESHOLD_100NS: i64 = 1_000_000;
+
+/// 媒体重同步用的最短带符号回绕差:音视频各自回绕不同步时,
+/// 只按最短方向拉齐,绝不把钟拨整整一圈。
+fn wrapped_delta_100ns(delta: i64, period: i64) -> i64 {
+    let direct = delta.rem_euclid(period);
+    if direct * 2 <= period {
+        direct
+    } else {
+        direct - period
+    }
+}
+
+#[cfg(test)]
+mod audio_resync_tests {
+    use super::wrapped_delta_100ns;
+
+    #[test]
+    fn wrapped_delta_picks_shortest_direction_across_loop_boundary() {
+        let period = 1_000_000;
+        // 音频已回绕到 0.1s,媒体钟还在 99.0s:最短方向是 +0.2s(向前拉齐)。
+        assert_eq!(wrapped_delta_100ns(10_000 - 990_000, period), 20_000);
+        // 镜像:媒体钟在 0.1s,音频在 99.0s:最短方向是 -0.2s。
+        assert_eq!(wrapped_delta_100ns(990_000 - 10_000, period), -20_000);
+        assert_eq!(wrapped_delta_100ns(200_000, period), 200_000);
+        assert_eq!(wrapped_delta_100ns(-200_000, period), -200_000);
+        assert_eq!(wrapped_delta_100ns(0, period), 0);
+        // 恰好半周期:归一到非负方向。
+        assert_eq!(wrapped_delta_100ns(500_000, period), 500_000);
     }
 }
 

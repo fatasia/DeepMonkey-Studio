@@ -607,9 +607,11 @@ fn formal_exe_audio_thirty_minute_stability_soak() {
         playback.audio_position_100ns(),
         stats.samples,
     );
-    assert!(stats.max_100ns <= 1_500_000, "A/V drift exceeded 150 ms over {soak_seconds} s: {} 100ns", stats.max_100ns);
+    // 证据先于断言落盘:长稳失败也必须留下可审计的偏差记录。
+    let passed = stats.max_100ns <= 1_500_000;
     let evidence = format!(
-        "{{\n  \"schema\": \"deep-engine.native-audio-30min-soak-evidence\",\n  \"date\": \"2026-09-23\",\n  \"test\": \"formal_exe_audio_thirty_minute_stability_soak\",\n  \"result\": \"passed\",\n  \"platform\": \"Windows DX12\",\n  \"device\": \"{initial_device}\",\n  \"deviceSwitch\": {switched},\n  \"soakSeconds\": {soak_seconds},\n  \"samples\": {},\n  \"maxAvDriftMs\": {max_drift_ms:.1},\n  \"meanAvDriftMs\": {mean_drift_ms:.1},\n  \"avDriftLimitMs\": 150.0\n}}\n",
+        "{{\n  \"schema\": \"deep-engine.native-audio-30min-soak-evidence\",\n  \"date\": \"2026-09-23\",\n  \"test\": \"formal_exe_audio_thirty_minute_stability_soak\",\n  \"result\": \"{}\",\n  \"platform\": \"Windows DX12\",\n  \"device\": \"{initial_device}\",\n  \"deviceSwitch\": {switched},\n  \"soakSeconds\": {soak_seconds},\n  \"samples\": {},\n  \"maxAvDriftMs\": {max_drift_ms:.1},\n  \"meanAvDriftMs\": {mean_drift_ms:.1},\n  \"avDriftLimitMs\": 150.0,\n  \"resync\": \"threshold-100ms; in-place seek first, reopen-at-position fallback\"\n}}\n",
+        if passed { "passed" } else { "failed" },
         stats.samples
     );
     std::fs::write(
@@ -617,6 +619,7 @@ fn formal_exe_audio_thirty_minute_stability_soak() {
         evidence,
     )
     .expect("write 30-minute soak evidence JSON");
+    assert!(passed, "A/V drift exceeded 150 ms over {soak_seconds} s: {} 100ns", stats.max_100ns);
     println!(
         "formal native EXE audio 30-minute soak: device={initial_device}; switched={switched}; soak_seconds={soak_seconds}; samples={}; max_av_drift_ms={max_drift_ms:.1}; mean_av_drift_ms={mean_drift_ms:.1}",
         stats.samples
