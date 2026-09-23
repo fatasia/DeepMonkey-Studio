@@ -18,6 +18,14 @@ declare global {
     sceneSnapshotJson?: string;
     /** runner 注入的目标帧数（1..120）。 */
     frameTarget?: string;
+    /**
+     * 确定性相机轨迹注入点（输入轨迹对拍切片）：runner 经 evaluate 以同参数驱动三端相机。
+     * 参数为 orbit 球坐标（yaw/pitch 弧度、radius 场景单位）+ 目标点；内部走与场景快照同一条
+     * applyCamera 路径，机位生效后等满 3 个真实 presentation 帧再 resolve，保证随后截图不是过渡帧。
+     */
+    setCameraPose?: (pose: {
+      yaw: number; pitch: number; radius: number; targetX: number; targetY: number; targetZ: number;
+    }) => Promise<void>;
   }
 }
 
@@ -39,6 +47,29 @@ declare global {
     // 与发布查看器同一条消费路径：快照进真实引擎场景图。
     await applySceneViewerSnapshot(engine, snapshot, { id: "v1-tri-endpoint", models: [] } as never, {});
     engine.setContinuousRender("v1-tri-endpoint", true);
+
+    // 轨迹注入口挂载：三端（Web headless Chrome / Three WebView）共用同一页面与同一实现，
+    // 与 Native 端"每机位一份冻结 fixture"的等效口径形成同参数对拍（runner 侧记录两种执行方式）。
+    window.setCameraPose = pose => new Promise<void>((resolve, reject) => {
+      try {
+        const cosPitch = Math.cos(pose.pitch);
+        engine.applyCamera({
+          mode: "orbit",
+          position: {
+            x: pose.targetX + pose.radius * Math.sin(pose.yaw) * cosPitch,
+            y: pose.targetY + pose.radius * Math.sin(pose.pitch),
+            z: pose.targetZ + pose.radius * Math.cos(pose.yaw) * cosPitch,
+          },
+          target: { x: pose.targetX, y: pose.targetY, z: pose.targetZ },
+        });
+        // 等满 3 个真实 presentation 帧再 resolve：确保相机矩阵已上传且新机位已实际呈现。
+        let settled = 0;
+        const stop = engine.subscribePresentationFrames(() => {
+          settled += 1;
+          if (settled >= 3) { stop(); resolve(); }
+        });
+      } catch (error) { reject(error instanceof Error ? error : new Error(String(error))); }
+    });
 
     const presentations: Array<{ frame: number; elapsedMs: number; drawCalls: number | null }> = [];
     const startedAt = performance.now();

@@ -3472,3 +3472,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **证据链**：①旧 release EXE（V2 时代构建，不含 v9）对分级包直接拒绝 `unsupported solid environment identity`；②重建 release EXE（含 F4 v9 全链）后同一包 verify-scene-native-window **接受并渲染成功**（Vulkan/RTX 4060 真窗、gpuErrorsClean、presentedFrames，on/off 双包 verify.json 落盘）；③v9 档进包断言（environmentOutputTransform=native-aces-grading-v9）+ lib 540/0（含 author_grading_gpu 真机逐位对拍）。
 - **边界（如实）**：截图级 on/off 像素 diff 未取得——captureNativePlayerWindow 在该包上报 "empty player client rect"（窗口匹配调试未完成，已试命令与失败输出在 test-output/author-grading-evidence-20260923/）。解码接受级+GPU 逐位测试已构成"v9 档真实进入 Native"的运行证据；像素级留待 V1 逐像素对拍代理的截帧路径复用。
 - 教训沉淀：EXE 陈旧问题再现——**实窗取证前必须核对 release EXE 构建时间与 HEAD 距离**（本次重建 4m23s）。
+
+### 2026-09-23 V1 收口切片：逐像素画质基线 + 输入轨迹对拍（三端 runner 扩展）
+
+- **交付**（runner=`scripts/verify-v1-tri-endpoint-matrix.mts` 扩展 + 新库 `scripts/lib/pixelParity.mjs` + harness `apps/web/scripts/v1-tri-endpoint-page.ts` 增 `window.setCameraPose` 注入点，全部中文注释）：V1 显式后续两项收敛，runner 同命令复跑可重现两段新证据；产物落 `test-output/v1-tri-endpoint-20260923/pixel-input-parity/`（gitignore）+ `capability-matrix.{md,json}` 新增两节。
+- **逐像素基线（切片 4，pose0 同机位）**：口径=分块 SSIM（16×9=144 块、每块 60×60 均匀窗、sRGB 亮度灰度、L=255），全帧统一重采样 960×540；数值全脚本计算，两轮复跑仅第 4 位小数抖动（0.4036/0.4037）。实测：Web(WebGPU) vs Native **0.4037→线性校准后 0.4854**；Web(WebGL) vs Native **0.4091→0.4838**；Web vs WebView 同后端 **0.9944 / 0.9986**（校准 a≈1.000、b≈0——两端曝光一致，几乎逐像素相同）。
+- **归一化口径**：以配对参照端做全图最小二乘 right≈a·left+b（clamp[0,255] 后重算 SSIM）。Web vs Native 的 a≈0.21、b≈21 证实 Native 画面系统性偏亮（上轮"曝光/明暗差异待对拍"从印象变为数值）；线性校准仅吸收部分差异（0.40→0.49），残余为色调映射/AA 非线性差异——两套数值并列落盘（pixel-parity.json pairs[].calibration），不择一、不判胜负。
+- **输入轨迹对拍（切片 5）**：确定性 orbit 轨迹 yaw 0.5404（=夹具原始机位 atan2(3,5) 解析还原 (3,2,5)，pose0 与基线共用）→0.8750→1.2000，pitch=asin(1/√35)、radius=√35 固定；Web/WebView 同页面 evaluate 注入同参数（applyCamera 同一路径，每机位等满 3 presentation 帧再截图）；**Native 为固定机位三帧等效**（verify 脚本相机由 fixture 决定不支持动态轨迹：pose1/2 各编译独立冻结 fixture（独立 packageId/packageHash）+ verify + 实窗截帧，已注明不冒充同字节）。三机位跨端：Web vs Native 0.4037/0.5605/0.8386（校准后 0.4854/0.6228/0.9399）；Web vs WebView 0.9893/0.9863/0.9901。差异热图 10 张（960×540 PNG，块上色）随证据落盘。
+- **门禁**：3/3 端 PASS（≥2 端）；apps/web tsc 0 错误；pose0 运行包三轮复跑 SHA-256 逐字节一致（125fb6b7…，冻结确定性保持）。
+- **诚实边界**：①数值定位=建立基线，不设达标线、不下画质胜负结论；②Native 轨迹为固定机位等效口径（机位包与 pose0 包 hash 不同，场景内容与相机参数相同）；③WebView 同内容证据仍为 WebView2 渲染器级（EXE 内嵌 publication 未重打包）；④Native 实窗截帧存在非确定性瞬时失败（client rect 瞬空）已加固定一次重试（本轮全部一次成功）；⑤WebView2 物理像素帧下采样到 960×540 会吸收部分 AA/锐度差异，属对拍口径一部分。
