@@ -60,7 +60,7 @@ P0：统一 Agent Tool Registry、任务 DAG、执行回执、场景截图和验
 
 - Windows 桌面客户端（WebView2）：源码开发要求 Rust stable 与 MSVC Build Tools；已安装客户端本地工作台不要求 Node/Python/PostgreSQL/MinIO。
 - Native 播放器运行包与质量档（GPU 资源创建前裁决 Bloom 预算上限，`native-player-report` 回执实际档位）。
-- Linux 服务器支持 Web/API/Deploy 目标；平台徽章中的 Android 为已启动的原生发布方向，当前文档基线见[原生发布架构分析](docs/specs/原生发布架构分析-2026-09-15.md)。
+- Linux 服务器支持 Web/API/Deploy 目标；Android 场景 APK 发布(发布页一键打包/签名/下载)与 Rust wasm 第三渲染方案已于 2026-09-24 完成首个实测闭环(模拟器 E2E 全通、三方案同机对比、wasm+胶水 211.6KB);平台基线见[原生发布架构分析](docs/specs/原生发布架构分析-2026-09-15.md)。
 
 ### 发布与离线包
 
