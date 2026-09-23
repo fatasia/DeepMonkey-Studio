@@ -161,3 +161,7 @@ renderer.setProbeClipmapEnabled(true); // radianceSource === 'scene' 表示真�
 ### 场景动画播放区间（发布语义）
 
 编辑器时间轴的入点/出点（`SceneAnimationState.playbackRange`）随发布包下译为 `dynamic-animation.playbackRangeMs`（合同校验 0 ≤ in < out ≤ duration 非退化，serde default 兼容旧包）；Native `sample_animation` 与发布查看器采样均钳制进区间。缺省（未设区间）播放整条时间线。
+
+### 独立消费示例（可运行）
+
+仓外空工作区离线消费链已验证：`packages/deep-engine/examples/node-standalone.mjs`（运行包校验 + 探针网格打包器）与 `examples/browser-standalone.mjs`（ESM bundle + headless Chrome 断言）。全链驱动：`node packages/deep-engine/scripts/standaloneConsumerExamples.mjs`（重建 dist → pnpm pack 双 tarball → npm 离线安装（断网探针）→ Node 例运行 → 浏览器例截图），证据样例 `test-output/f6-standalone-20260923/`。
