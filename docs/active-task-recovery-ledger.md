@@ -3481,3 +3481,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **输入轨迹对拍（切片 5）**：确定性 orbit 轨迹 yaw 0.5404（=夹具原始机位 atan2(3,5) 解析还原 (3,2,5)，pose0 与基线共用）→0.8750→1.2000，pitch=asin(1/√35)、radius=√35 固定；Web/WebView 同页面 evaluate 注入同参数（applyCamera 同一路径，每机位等满 3 presentation 帧再截图）；**Native 为固定机位三帧等效**（verify 脚本相机由 fixture 决定不支持动态轨迹：pose1/2 各编译独立冻结 fixture（独立 packageId/packageHash）+ verify + 实窗截帧，已注明不冒充同字节）。三机位跨端：Web vs Native 0.4037/0.5605/0.8386（校准后 0.4854/0.6228/0.9399）；Web vs WebView 0.9893/0.9863/0.9901。差异热图 10 张（960×540 PNG，块上色）随证据落盘。
 - **门禁**：3/3 端 PASS（≥2 端）；apps/web tsc 0 错误；pose0 运行包三轮复跑 SHA-256 逐字节一致（125fb6b7…，冻结确定性保持）。
 - **诚实边界**：①数值定位=建立基线，不设达标线、不下画质胜负结论；②Native 轨迹为固定机位等效口径（机位包与 pose0 包 hash 不同，场景内容与相机参数相同）；③WebView 同内容证据仍为 WebView2 渲染器级（EXE 内嵌 publication 未重打包）；④Native 实窗截帧存在非确定性瞬时失败（client rect 瞬空）已加固定一次重试（本轮全部一次成功）；⑤WebView2 物理像素帧下采样到 960×540 会吸收部分 AA/锐度差异，属对拍口径一部分。
+
+### 2026-09-23 F/I 快速收尾继续：F6/F5 blocker 定向收口启动
+
+- 当前并行工作区含 Native/V5/F4 历史在途文件，主线程不触碰、不覆盖。
+- 新补位两个独立收口：F6 插件生命周期/兼容矩阵审计（已有实现则只补测试/文档，禁止重建）；F5 Native 音频输出 blocker 评估（已有输出则补合同测试，无输出则 fail-closed 能力报告，不引入大音频引擎）。
+- 主线程同时运行 F5 dashboardMedia/docs、plugin-runtime、deep-engine host/runtime 聚焦门禁。
