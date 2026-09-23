@@ -265,7 +265,8 @@
 .dashboard-topology-widget circle.bound { fill: #62c494; }
 .dashboard-topology-widget text { fill: #e3e9eb; font-size: 11px; }
 .dashboard-topology-widget text.kind { fill: #829299; font-size: 10px; }
-.dashboard-topology-empty { display: grid; height: 100%; place-items: center; align-content: center; gap: 7px; color: #75858c; font-size: 10px; }
+.dashboard-topology-empty { display: grid; height: 100%; place-items: center; align-content: center; gap: 8px; margin: 10px; color: #8b9aa1; font-size: 11px; text-align: center; border: 1px dashed #3d4a51; border-radius: 6px; background-color: rgba(16,23,26,.72); background-image: radial-gradient(circle,#2a373d 1px,transparent 1px); background-size: 16px 16px; }
+.dashboard-topology-empty small { max-width: 180px; color: #6d7d85; font-size: 9px; line-height: 1.5; }
 .dashboard-page-viewport-editor { display: grid; gap: 10px; }
 .dashboard-compact-page-settings { display: none; margin-top: 8px; border: 1px solid #303b40; border-radius: 5px; background: #111719; }
 .dashboard-compact-page-settings > summary { display: flex; min-height: 30px; align-items: center; justify-content: space-between; padding: 0 7px; color: #89969c; font-size: 8px; cursor: pointer; }
@@ -551,4 +552,16 @@
   .dashboard-compact-page-settings { display: block; }
   .workspace-mode-switch button { padding: 0 6px; }
   .dashboard-workspace-title { display: none; }
+}
+
+/* 窄屏(手机宽度)顶栏换行:模式切换独立成行可横滚,避免动作组叠压“三维/脚本”入口。
+   实测 480px 下 actions 组(w≈499px)以 visible 溢出盖住 mode-switch 按钮,导致点击命中动作组。 */
+@media (max-width: 640px) {
+  .dashboard-workspace { grid-template-rows: auto minmax(0,1fr) 34px; }
+  .dashboard-workspace-topbar { position: relative; z-index: calc(var(--layer-panel) + 13); flex-wrap: wrap; height: auto; min-height: 54px; padding: 6px 8px; row-gap: 6px; }
+  .workspace-mode-switch { order: 10; flex: 1 1 100%; margin-left: 0; overflow-x: auto; scrollbar-width: none; }
+  .dashboard-workspace-actions { flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .dashboard-data-entry { padding: 0 6px; }
+  /* 属性抽屉(top:52px 固定)在换行顶栏下下移,避免常态盖住第二行导航;导航本身已在更高层。 */
+  .dashboard-workspace:not(.inspector-collapsed) .dashboard-inspector-panel { top: auto; bottom: 32px; max-height: calc(100% - 150px); }
 }

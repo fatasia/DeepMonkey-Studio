@@ -17,7 +17,7 @@ import { resolveSemanticWidget } from "./dashboardSemanticBinding";
 import { buildSemanticMetric } from "./dashboardSemanticMetrics";
 import { buildDashboardDataProductRefreshPlans } from "./dataRefreshPolicy";
 import { DashboardDatasetRefreshQueue, type DashboardRefreshResult } from "./dashboardDatasetRefreshQueue";
-import { dashboardJsonRecord as jsonRecord, dashboardJsonValue as jsonValue, finiteDashboardNumber as toFiniteNumber } from "./dashboardWidgetValues";
+import { dashboardJsonRecord as jsonRecord, dashboardJsonValue as jsonValue, finiteDashboardNumber as toFiniteNumber, dashboardDisplayNumber } from "./dashboardWidgetValues";
 import { applyDashboardFilters, DashboardDesignState, DashboardDrillChart, DashboardReportTable } from "./DashboardWidgetVisualization";
 
 export {
@@ -288,7 +288,7 @@ export function DashboardWidgetView({
         <header>
           <span>{widget.title}</span>
           <strong>
-            {value}
+            {dashboardDisplayNumber(value)}
             {widget.unit}
           </strong>
         </header>

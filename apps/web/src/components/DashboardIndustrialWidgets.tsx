@@ -2,6 +2,7 @@ import { useId, type CSSProperties } from "react";
 import type { DashboardDataWidgetConfig } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import { buildDashboardReport, conditionalStyle, type DashboardAnalysisResult } from "./dashboardAnalytics";
+import { dashboardDisplayNumber, dashboardDisplayText } from "./dashboardWidgetValues";
 import type { DashboardMetric } from "./DashboardWidgetRuntime";
 
 export function DashboardDigitalFlip({
@@ -15,7 +16,7 @@ export function DashboardDigitalFlip({
   compact: boolean;
   onActivate: () => void;
 }) {
-  const raw = analysis.value === undefined || analysis.value === null ? "—" : String(analysis.value);
+  const raw = dashboardDisplayText(analysis.value);
   const characters = [...raw];
   const style = conditionalStyle(widget.conditionalRules, analysis.rows[0] ?? {}, analysis.value);
   return (
@@ -91,7 +92,7 @@ export function DashboardLiquidFill({
       <span>
         <small>{widget.title}</small>
         <strong>
-          {numeric}
+          {dashboardDisplayNumber(numeric)}
           <em>{widget.unit}</em>
         </strong>
         <i>

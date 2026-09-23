@@ -376,6 +376,7 @@ function DashboardTopologyView({
       <div className="dashboard-topology-empty">
         <Workflow size={24} />
         <span>选择拓扑文档</span>
+        <small>选中此组件后，在右侧属性中绑定要展示的拓扑视图</small>
       </div>
     );
   const bounds = topology.nodes.reduce(
