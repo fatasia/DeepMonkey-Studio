@@ -71,6 +71,45 @@ describe("PluginRegistry", () => {
     expect(registry.get("acme.factory-tools")).toMatchObject({ manifest: { name: "Factory tools" }, diagnostics: [] });
   });
 
+  it("rejects concurrent enable/disable transitions without double activation", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const activate = vi.fn(async () => { await gate; return { deactivate() {} }; });
+    const registry = new PluginRegistry(hostPolicy());
+    registry.register(pluginManifest(), activate);
+    const first = registry.enable("acme.factory-tools");
+    await Promise.resolve();
+    await expect(registry.enable("acme.factory-tools")).resolves.toMatchObject({ ok: false, code: "invalid-state" });
+    await expect(registry.disable("acme.factory-tools")).resolves.toMatchObject({ ok: false, code: "invalid-state" });
+    release();
+    await expect(first).resolves.toMatchObject({ ok: true, plugin: { status: "enabled" } });
+    expect(activate).toHaveBeenCalledOnce();
+  });
+
+  it("cleans failed activation and permits a later retry", async () => {
+    let attempts = 0;
+    const registry = new PluginRegistry(hostPolicy());
+    registry.register(pluginManifest(), () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("first activation failed");
+      return { deactivate() {} };
+    });
+    await expect(registry.enable("acme.factory-tools")).resolves.toMatchObject({ ok: false, code: "activation-failed" });
+    expect(registry.listCapabilities()).toEqual([]);
+    await expect(registry.enable("acme.factory-tools")).resolves.toMatchObject({ ok: true, plugin: { status: "enabled" } });
+    expect(attempts).toBe(2);
+  });
+
+  it("fails closed before activation when a declared capability is not supported", async () => {
+    const activate = vi.fn();
+    const registry = new PluginRegistry(hostPolicy({ capabilities: ["scene.read"] }));
+    const result = registry.register(pluginManifest({ capabilities: ["scene.read", "converter.execute"] }), activate);
+    expect(result).toMatchObject({ ok: false, code: "incompatible" });
+    await expect(registry.enable("acme.factory-tools")).resolves.toMatchObject({ ok: false, code: "incompatible" });
+    expect(activate).not.toHaveBeenCalled();
+  });
+
+
   it("registers manifest-declared capabilities and removes them on disable", async () => {
     const manifest = pluginManifest({
       permissions: ["scene.read", "scene.write", "data.read"],

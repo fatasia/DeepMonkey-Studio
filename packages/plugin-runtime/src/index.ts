@@ -1,4 +1,5 @@
 export * from "./compatibility.js";
+export * from "./compatibilityMatrix.js";
 export * from "./capability.js";
 export * from "./capabilitySchema.js";
 export * from "./aiProvider.js";
