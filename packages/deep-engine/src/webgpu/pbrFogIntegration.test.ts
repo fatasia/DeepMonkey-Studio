@@ -40,7 +40,10 @@ describe("PBR author fog GPU integration", () => {
     const gate = sceneShader.indexOf("if (flag(materialFlags, 32u)) { return color; }");
     expect(gate).toBeGreaterThan(sceneShader.indexOf("fn deepApplySceneFog"));
     expect(sceneShader).toContain("return deepApplySceneFog(select(color, baseInput, flag(materialFlags, 64u)), world, materialFlags)");
-    expect(gate).toBeLessThan(sceneShader.indexOf("deepFog.colorMode.w < 2.5"));
+    // The authored fog helper now has its own Exp2/volumetric mode branches;
+    // assert ordering against the scene-level dispatch instead of an inner
+    // helper branch whose position may legitimately precede the opt-out gate.
+    expect(gate).toBeLessThan(sceneShader.indexOf("deepFog.colorMode.w < 4.5"));
     for (const entry of ["fragmentMain", "fragmentMainColor", "fragmentMainTransparent", "fragmentMainDisplay",
       "fragmentMaterial", "fragmentMaterialColor", "fragmentMaterialTransparent", "fragmentMaterialDisplay"]) {
       const start = sceneShader.indexOf(`@fragment fn ${entry}(`);

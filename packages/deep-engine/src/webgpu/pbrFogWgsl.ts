@@ -7,15 +7,23 @@ fn deepApplyAuthorFog(color: vec3f, viewDepth: f32) -> vec3f {
   var factor = 0.0;
   if (deepFog.colorMode.w < 1.5) {
     factor = smoothstep(deepFog.parameters.x, deepFog.parameters.y, viewDepth);
-  } else {
+  } else if (deepFog.colorMode.w < 2.5) {
     let opticalDepth = deepFog.parameters.z * viewDepth;
     factor = 1.0 - exp(-opticalDepth * opticalDepth);
+  } else {
+    let opticalDepth = deepFog.parameters.z * viewDepth;
+    let stepDepth = opticalDepth / 8.0;
+    var transmittance = 1.0;
+    for (var step = 0; step < 8; step++) {
+      transmittance *= exp(-stepDepth);
+    }
+    factor = 1.0 - transmittance;
   }
   return mix(color, deepFog.colorMode.rgb, factor);
 }
 fn deepApplySceneFog(color: vec3f, world: vec3f, materialFlags: f32) -> vec3f {
   if (flag(materialFlags, 32u)) { return color; }
-  if (deepFog.colorMode.w < 2.5) { return deepApplyAuthorFog(color, -(frame.worldToView * vec4f(world, 1.0)).z); }
+  if (deepFog.colorMode.w < 4.5) { return deepApplyAuthorFog(color, -(frame.worldToView * vec4f(world, 1.0)).z); }
   if (frame.tuning.w <= 0.0) { return color; }
   let distance = length(frame.eye.xyz - world); let fog = 1.0 - exp(-pow(distance * frame.tuning.w, 2.0));
   return mix(color, frame.background.rgb, min(fog, 0.95));

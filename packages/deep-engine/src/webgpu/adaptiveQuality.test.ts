@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AdaptiveQualityController, adaptiveShadowMapSize, type AdaptiveQualitySample } from "./adaptiveQuality.js";
+import { AdaptiveQualityController, adaptiveQualityOverridesForProfile, adaptiveShadowMapSize, type AdaptiveQualitySample } from "./adaptiveQuality.js";
 
 const sample = (frame: number, changes: Partial<AdaptiveQualitySample> = {}): AdaptiveQualitySample => ({
   frame, sampleCount: 128, cpuP95Ms: 10, cpuP99Ms: 13, gpuP95Ms: 12, gpuP99Ms: 15, longFrameCount: 0,
@@ -45,5 +45,14 @@ describe("adaptiveShadowMapSize", () => {
   ];
   it.each(cases)("tier %s with author %p yields %p", (tier, author, expected) => {
     expect(adaptiveShadowMapSize(tier, author)).toBe(expected);
+  });
+});
+
+describe("authored quality profiles", () => {
+  it("maps scene profiles to deterministic adaptive budgets", () => {
+    expect(adaptiveQualityOverridesForProfile("performance")).toMatchObject({ fogSteps: 32, lodDetailScale: 0.6 });
+    expect(adaptiveQualityOverridesForProfile("balanced")).toMatchObject({ fogSteps: 40, shadowTier: "balanced" });
+    expect(adaptiveQualityOverridesForProfile("quality")).toMatchObject({ fogSteps: 48, shadowTier: "high" });
+    expect(adaptiveQualityOverridesForProfile("ultra")).toMatchObject({ fogSteps: 64, shadowTier: "ultra" });
   });
 });

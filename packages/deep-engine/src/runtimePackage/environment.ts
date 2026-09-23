@@ -88,13 +88,20 @@ export function validateRuntimeEnvironment(value: unknown, id: string, revision:
     }
     if (hasFog) {
       const fog = record(object.fog, `${path}.fog`);
-      fields(fog, ["schemaVersion", "kind", "colorLinearRgb", "density"], [], `${path}.fog`);
+      fields(fog, ["schemaVersion", "kind", "colorLinearRgb", "density"], ["steps", "height", "anisotropy"], `${path}.fog`);
       const color = array(fog.colorLinearRgb, `${path}.fog.colorLinearRgb`, 3);
       // 通道与密度上限与 Native FogSettings(MAX_HDR_CHANNEL=64 / MAX_DENSITY=8)一致。
-      requireValue(fog.schemaVersion === 1 && fog.kind === "exp2"
+      requireValue(fog.schemaVersion === 1 && (fog.kind === "exp2" || fog.kind === "volumetric")
         && color.length === 3 && color.every(v => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 64)
         && typeof fog.density === "number" && Number.isFinite(fog.density) && fog.density >= 0 && fog.density <= 8,
         path, "Invalid authored fog.");
+      if (fog.kind === "volumetric") {
+        if (fog.steps !== undefined) requireValue(typeof fog.steps === "number" && Number.isInteger(fog.steps) && fog.steps >= 1 && fog.steps <= 64, `${path}.fog.steps`, "Invalid volumetric steps.");
+        if (fog.height !== undefined) requireValue(typeof fog.height === "number" && Number.isFinite(fog.height) && fog.height >= 1 && fog.height <= 256, `${path}.fog.height`, "Invalid volumetric height.");
+        if (fog.anisotropy !== undefined) requireValue(typeof fog.anisotropy === "number" && Number.isFinite(fog.anisotropy) && fog.anisotropy >= -0.99 && fog.anisotropy <= 0.99, `${path}.fog.anisotropy`, "Invalid volumetric anisotropy.");
+      } else {
+        requireValue(fog.steps === undefined && fog.height === undefined && fog.anisotropy === undefined, `${path}.fog`, "Exp2 fog cannot declare volumetric profile.");
+      }
     }
     if (object.staticLightmap !== undefined) validateStaticLightmap(object.staticLightmap, `${path}.staticLightmap`);
     if (object.irradianceProbes !== undefined) validateIrradianceProbes(object.irradianceProbes, `${path}.irradianceProbes`);

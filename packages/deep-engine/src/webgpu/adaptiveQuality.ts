@@ -13,6 +13,8 @@ export interface AdaptiveQualityKnobs {
 
 export interface AdaptiveQualityOverrides extends Partial<AdaptiveQualityKnobs> {}
 
+export type AuthoredQualityProfile = "performance" | "balanced" | "quality" | "ultra";
+
 export interface AdaptiveQualityOptions {
   readonly enabled?: boolean;
   readonly targetFrameMs?: number;
@@ -68,6 +70,12 @@ const PROFILES: readonly Readonly<AdaptiveQualityKnobs>[] = Object.freeze([
   Object.freeze({ ssrConeLevels: 4, ddgiUpdateBudget: 32, fogSteps: 40, shadowTier: "balanced", lodDetailScale: 0.75, residencyBudgetScale: 0.8 }),
   Object.freeze({ ssrConeLevels: 3, ddgiUpdateBudget: 16, fogSteps: 32, shadowTier: "performance", lodDetailScale: 0.6, residencyBudgetScale: 0.7 }),
 ]);
+
+/** Convert the scene-authored quality name into deterministic adaptive budgets. */
+export function adaptiveQualityOverridesForProfile(profile: AuthoredQualityProfile): AdaptiveQualityOverrides {
+  const index = profile === "performance" ? 3 : profile === "balanced" ? 2 : profile === "quality" ? 1 : 0;
+  return Object.freeze({ ...PROFILES[index] });
+}
 
 /** Hysteretic, cooldown-bound controller. It never disables an effect or drops objects. */
 export class AdaptiveQualityController {

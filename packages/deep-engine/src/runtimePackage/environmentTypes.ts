@@ -94,9 +94,13 @@ export interface RuntimeAuthorColorGrading {
 /** 版本化作者雾 v1：密度≥0，颜色为线性 RGB；不含高度衰减（Web 天气雾无此维度）。 */
 export interface RuntimeAuthorFog {
   readonly schemaVersion: 1;
-  readonly kind: "exp2";
+  readonly kind: "exp2" | "volumetric";
   readonly colorLinearRgb: readonly [number, number, number];
   readonly density: number;
+  /** Bounded volumetric profile; omitted for exp2 fog and legacy payloads. */
+  readonly steps?: number;
+  readonly height?: number;
+  readonly anisotropy?: number;
 }
 /** E02 IES 集成：lighting 节载荷合同。lightProfiles 与 localLights 同节，
  * 灯通过 ies.profileId 引用 profile，构建/验证层强制引用闭合。 */

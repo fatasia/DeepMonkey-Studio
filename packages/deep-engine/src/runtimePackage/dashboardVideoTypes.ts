@@ -21,8 +21,9 @@ export interface DashboardVideoMediaV1 {
 }
 
 /**
- * Native capability contract. Packaged, muted media supports playback,
- * keyboard/pointer controls and bounded seek. Audio remains fail-closed.
+ * Native capability contract. Packaged MP4 supports playback, keyboard/pointer
+ * controls and bounded seek; an authored unmuted clip must also contain an
+ * audio track that the Native system decoder can open.
  */
 export interface DashboardVideoDiagnosticV1 {
   readonly nodeId: string;

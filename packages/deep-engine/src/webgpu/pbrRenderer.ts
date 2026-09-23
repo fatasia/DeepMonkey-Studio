@@ -36,7 +36,8 @@ import { LocalSpotShadowRuntime } from "./localSpotShadowRuntime.js";
 import { pbrDirectDisplayClear } from "./pbrDirectDisplay.js";
 import { createPbrGround, drawPbrGround, type PbrGroundResources } from "./pbrGroundPass.js";
 import { PbrTransientTexturePool } from "./pbrTransientTexturePool.js";
-import { buildPbrFrameExecutionPlan, collectActualPbrFramePasses, assertPlanMatchesActual } from "./pbrFramePlanExecutor.js";
+import { buildPbrFrameExecutionPlan, collectActualPbrFramePasses, assertPlanMatchesActual,
+  createPbrFrameReceipt } from "./pbrFramePlanExecutor.js";
 import { PbrFrameCapture } from "./pbrFrameCapture.js";
 import type { PbrFrameReadbackResult } from "./pbrFrameCaptureReadback.js";
 import type { FrameCaptureSession } from "../r12/frameCapture.js";
@@ -331,7 +332,11 @@ export class PbrRenderer {
       const frameNumber = this.frame + 1;
       this.driveParticles(frameNumber);
       this.driveProbeClipmap(frameNumber, size, view.eye, history.cameraCut);
-      const capturePlan = this.frameCapture ? this.captureForFrame(size, drawProfile.hasTransparent, postProcess, directClear !== undefined) : undefined;
+      // The same cached plan powers explicit captures and the lightweight live
+      // Frame Graph receipt. Diagnostics stay opt-in, so ordinary frames pay
+      // neither plan construction nor receipt allocation.
+      const capturePlan = (this.frameCapture || this.performanceTelemetry.enabled)
+        ? this.captureForFrame(size, drawProfile.hasTransparent, postProcess, directClear !== undefined) : undefined;
       if (this.frameCapture && capturePlan) {
         this.frameCapture.begin(`frame-${frameNumber}`, capturePlan.plan);
         captureOpen = true;
@@ -504,6 +509,13 @@ export class PbrRenderer {
       occlusionCulling: opaqueCulling.occlusionBatches > 0,
       frustumCulledBatches: opaqueCulling.frustumBatches, hiZOccludedBatches: opaqueCulling.occlusionBatches, lodSelectionBatches: lodStats.selectionBatches, lodIndirectDraws: lodStats.indirectDraws,
       lightCount: lighting?.lightCount ?? 0, lightClusters: lighting?.grid.clusterCount ?? 0,
+      ...(capturePlan && this.performanceTelemetry.enabled ? {
+        // Timestamp queries currently cover the frame as a whole. Keep each
+        // pass explicitly unavailable instead of manufacturing zero timings;
+        // the upper layer can still inspect plan order, mappings and coverage.
+        frameGraphReceipt: createPbrFrameReceipt(frameNumber, capturePlan.plan, [], begin,
+          Math.max(performance.now(), begin + 0.001)),
+      } : {}),
       ...this.shadows.metrics };
     this.sampleAdaptiveQuality(metrics);
     if (!this.adaptiveQuality) return metrics;

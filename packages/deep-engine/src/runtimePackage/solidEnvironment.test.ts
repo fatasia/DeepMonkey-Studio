@@ -76,11 +76,14 @@ it("v7 requires a valid author fog and keeps lighting optional", () => {
   const local = { kind: "spot", position: [0, 4, 3], direction: [0, -0.8, -0.6], radiance: [4, 4, 4],
     range: 12, decay: 2, innerCos: 0.8, outerCos: 0.5, castShadow: true };
   expect(() => check({ ...value, lighting: { ...lighting, localLights: [local] } })).not.toThrow();
+  const volumetric = { ...fog, kind: "volumetric", steps: 56, height: 32, anisotropy: -0.2 };
+  expect(() => check({ ...value, fog: volumetric })).not.toThrow();
   for (const patch of [{ schemaVersion: 2 }, { outputTransform: "native-aces-hdr-v6" },
     { fog: { ...fog, schemaVersion: 2 } }, { fog: { ...fog, kind: "linear" } },
     { fog: { ...fog, colorLinearRgb: [0, 0] } }, { fog: { ...fog, colorLinearRgb: [-0.1, 0, 0] } },
     { fog: { ...fog, colorLinearRgb: [65, 0, 0] } }, { fog: { ...fog, density: -0.1 } },
-    { fog: { ...fog, density: 8.1 } }, { fog: { ...fog, density: NaN } }, { fog: undefined },
+    { fog: { ...fog, density: 8.1 } }, { fog: { ...fog, density: NaN } }, { fog: { ...volumetric, steps: 65 } },
+    { fog: { ...volumetric, height: 0 } }, { fog: { ...volumetric, anisotropy: 1 } }, { fog: undefined },
     { fog: { ...fog, extra: true } }]) {
     expect(() => check({ ...value, ...patch }), JSON.stringify(patch)).toThrow();
   }

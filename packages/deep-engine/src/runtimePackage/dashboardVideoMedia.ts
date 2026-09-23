@@ -20,6 +20,62 @@ export function probeDashboardVideoMedia(bytes: Uint8Array, mime: string): "mp4-
   return "mp4-isobmff";
 }
 
+/**
+ * Returns whether the bounded MP4 contains an audio `trak`.
+ *
+ * This is intentionally a container-level probe, not a codec decoder. The
+ * Native runtime still validates and decodes the AAC track with its system
+ * decoder; the authoring contract only needs to avoid claiming audible
+ * playback for a video-only MP4.
+ */
+export function hasDashboardVideoAudioTrack(bytes: Uint8Array): boolean {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const containers = new Set(["moov", "trak", "mdia", "minf", "stbl", "edts", "dinf", "mvex", "moof", "traf"]);
+  let found = false;
+  const walk = (start: number, end: number, depth: number): boolean => {
+    if (depth > 12) return false;
+    let offset = start;
+    while (offset + 8 <= end) {
+      const header = readBoxHeader(view, offset, end);
+      if (!header) return false;
+      const { type, contentStart, contentEnd } = header;
+      if (type === "hdlr" && contentStart + 12 <= contentEnd) {
+        const handler = ascii(view, contentStart + 8, 4);
+        if (handler === "soun") found = true;
+      }
+      if (containers.has(type) && !walk(contentStart, contentEnd, depth + 1)) return false;
+      offset = contentEnd;
+    }
+    return offset === end;
+  };
+  return walk(0, view.byteLength, 0) && found;
+}
+
+function readBoxHeader(view: DataView, offset: number, end: number):
+  { type: string; contentStart: number; contentEnd: number } | undefined {
+  if (offset + 8 > end) return;
+  const size32 = view.getUint32(offset, false);
+  const type = ascii(view, offset + 4, 4);
+  let headerBytes = 8;
+  let size = size32;
+  if (size32 === 1) {
+    if (offset + 16 > end) return;
+    const high = view.getUint32(offset + 8, false), low = view.getUint32(offset + 12, false);
+    size = high * 0x1_0000_0000 + low;
+    headerBytes = 16;
+  } else if (size32 === 0) {
+    size = end - offset;
+  }
+  if (!Number.isSafeInteger(size) || size < headerBytes || offset + size > end) return;
+  return { type, contentStart: offset + headerBytes, contentEnd: offset + size };
+}
+
+function ascii(view: DataView, offset: number, length: number): string {
+  let value = "";
+  for (let index = 0; index < length; index += 1) value += String.fromCharCode(view.getUint8(offset + index));
+  return value;
+}
+
 export function validateDashboardVideoMedia(value: unknown, path: string): Map<string, DashboardVideoMediaV1> {
   const media = array(value, path, 32), byId = new Map<string, DashboardVideoMediaV1>();
   requireValue(media.length > 0, path, "Packaged video media must not be empty.");
@@ -53,4 +109,8 @@ export function bytesToBase64(bytes: Uint8Array): string {
   for (let offset = 0; offset < bytes.length; offset += 8192)
     binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
   return btoa(binary);
+}
+
+export function base64ToBytes(encoded: string): Uint8Array {
+  return Uint8Array.from(atob(encoded), character => character.charCodeAt(0));
 }

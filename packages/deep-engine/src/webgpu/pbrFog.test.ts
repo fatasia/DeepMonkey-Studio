@@ -3,6 +3,7 @@ import { packPbrFog, pbrFogFactor, snapshotPbrFog, validatePbrFog, type PbrFog }
 
 const linear: PbrFog = { kind: "linear", color: [2, 0.5, 0], near: 10, far: 30 };
 const exp2: PbrFog = { kind: "exp2", color: [0.2, 0.3, 0.4], density: 0.018 };
+const volumetric: PbrFog = { kind: "volumetric", color: [0.2, 0.3, 0.4], density: 0.018 };
 
 describe("author PBR fog contract", () => {
   it("encodes explicit no-fog without inventing weather defaults", () => {
@@ -35,6 +36,12 @@ describe("author PBR fog contract", () => {
 
   it.each([0, 1, 10, 100, 1000])("matches density-squared exp2 at depth %s without the old 0.95 cap", depth => {
     expect(pbrFogFactor(exp2, depth)).toBeCloseTo(1 - Math.exp(-(0.018 ** 2) * depth ** 2), 14);
+  });
+
+  it("uses the bounded linear-depth volume contract", () => {
+    expect([...packPbrFog(volumetric).slice(3, 6)]).toEqual([4, 0, 0]);
+    expect(pbrFogFactor(volumetric, 10)).toBeCloseTo(1 - Math.exp(-0.018 * 10), 14);
+    expect(snapshotPbrFog(volumetric)).toEqual(volumetric);
   });
 
   it("preserves signed camera depth and zero-density behavior", () => {

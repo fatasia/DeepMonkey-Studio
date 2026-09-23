@@ -43,6 +43,8 @@ export interface PbrRendererOptions {
 }
 
 export interface FrameMetrics {
+  /** Optional bounded Frame Graph execution coverage for diagnostics; pass timing remains unavailable until queried per pass. */
+  readonly frameGraphReceipt?: import("./pbrFramePlanExecutor.js").PbrFrameExecutionReceipt;
   readonly meshletPasses?: number;
   readonly meshletDispatches?: number;
   readonly meshletFallbackReasons?: readonly string[];

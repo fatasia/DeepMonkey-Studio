@@ -1,6 +1,7 @@
 import { DASHBOARD_VIDEO_AUDIO_BLOCKED_CAPABILITIES, DASHBOARD_VIDEO_READY_CAPABILITIES,
   DASHBOARD_VIDEO_REQUIRED_CAPABILITIES, type DashboardVideoDiagnosticV1,
   type DashboardVideoMediaV1 } from "./dashboardVideoTypes.js";
+import { base64ToBytes, hasDashboardVideoAudioTrack } from "./dashboardVideoMedia.js";
 import { array, fields, record, requireValue, string } from "./primitives.js";
 import type { DashboardRuntimePageV1 } from "./dashboardCompositionTypes.js";
 
@@ -42,13 +43,15 @@ export function validateDashboardVideos(value: unknown, pages: readonly Dashboar
     const state = record(video.state, `${itemPath}.state`);
     fields(state, ["status", "transport", "positionSeconds", "durationSeconds", "reason", "missingCapabilities"], [], `${itemPath}.state`);
     const missing = array(state.missingCapabilities, `${itemPath}.state.missingCapabilities`, DASHBOARD_VIDEO_REQUIRED_CAPABILITIES.length);
-    const expected = packaged && playback.muted === true
+    const packagedMedia = packaged && typeof source.resourceId === "string" ? media.get(source.resourceId) : undefined;
+    const audioReady = Boolean(packagedMedia && hasDashboardVideoAudioTrack(base64ToBytes(packagedMedia.dataBase64)));
+    const expected = packaged && (playback.muted === true || audioReady)
       ? { status: "ready", transport: playback.autoplay === true ? "autoplay" : "poster",
           reason: "native-video-runtime-ready", missing: DASHBOARD_VIDEO_READY_CAPABILITIES }
       : packaged
         ? { status: "blocked", transport: "unavailable", reason: "native-video-audio-unavailable",
             missing: DASHBOARD_VIDEO_AUDIO_BLOCKED_CAPABILITIES }
-        : { status: "blocked", transport: "unavailable",
+      : { status: "blocked", transport: "unavailable",
             reason: source.uri === null ? "source-missing" : "native-video-runtime-unavailable",
             missing: DASHBOARD_VIDEO_REQUIRED_CAPABILITIES };
     requireValue(state.status === expected.status && state.transport === expected.transport

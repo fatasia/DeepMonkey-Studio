@@ -12,6 +12,8 @@ export type { BackendCanvasHost, BackendCanvasLease, BackendCanvasSurface,
   CanvasBoundBackend } from "./BackendCanvasDeck.js";
 export { threeRenderView } from "./threeRenderView.js";
 export type { ThreePerspectiveCameraSource, ThreeRenderViewSource } from "./threeRenderView.js";
+export { adaptiveQualityOverridesForProfile } from "../webgpu/adaptiveQuality.js";
+export type { AuthoredQualityProfile } from "../webgpu/adaptiveQuality.js";
 export { threeObjectCollection } from "./threeObjectCollection.js";
 export { CameraRelativeCoordinates } from "./cameraRelativeCoordinates.js";
 export type { CameraRelativeCoordinateSnapshot } from "./cameraRelativeCoordinates.js";

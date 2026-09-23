@@ -19,7 +19,7 @@ export { buildDashboardCompositionRuntimePackage } from "./dashboardComposition.
 export { dashboardRuntimePageId } from "./dashboardAuthorIdentity.js";
 export * from "./dashboardCompositionTypes.js";
 export * from "./dashboardVideoTypes.js";
-export { DASHBOARD_VIDEO_MEDIA_BYTES_LIMIT, bytesToBase64, probeDashboardVideoMedia } from "./dashboardVideoMedia.js";
+export { DASHBOARD_VIDEO_MEDIA_BYTES_LIMIT, base64ToBytes, bytesToBase64, hasDashboardVideoAudioTrack, probeDashboardVideoMedia } from "./dashboardVideoMedia.js";
 export type * from "./dashboardTableTypes.js";
 export { DashboardCandidateController } from "./dashboardCandidateController.js";
 export type * from "./dashboardCandidateTypes.js";

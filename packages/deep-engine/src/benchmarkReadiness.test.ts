@@ -59,15 +59,16 @@ describe("DE26 asset readiness inventory", () => {
     expect(report.assets.every((asset) => asset.status === "measured")).toBe(true);
   });
 
-  it("keeps the checked-in fixture honestly unverified when coverage is complete", () => {
+  it("keeps the checked-in fixture blocked after local industrial GLBs are withdrawn", () => {
     const manifests = JSON.parse(readFileSync(path.join(fixtureRoot, "manifests-v1.json"), "utf8"))
       .manifests as BenchmarkAssetManifest[];
     const trajectories = JSON.parse(readFileSync(path.join(fixtureRoot, "trajectories-v1.json"), "utf8"))
       .trajectories as BenchmarkTrajectory[];
     const report = buildBenchmarkReadinessInventory({ manifests, trajectories });
-    expect(report.status).toBe("unverified");
-    expect(report.checks.find((check) => check.id === "required-load-classes")?.status).toBe("measured");
-    expect(report.checks.find((check) => check.id === "task-coverage")?.status).toBe("measured");
+    expect(report.status).toBe("blocked");
+    expect(report.checks.find((check) => check.id === "minimum-asset-count")?.status).toBe("blocked");
+    expect(report.checks.find((check) => check.id === "required-load-classes")?.status).toBe("blocked");
+    expect(report.checks.find((check) => check.id === "task-coverage")?.status).toBe("blocked");
     expect(report.checks.find((check) => check.id === "source-integrity")?.status).toBe("unverified");
     expect(report.checks.find((check) => check.id === "measured-stats")?.status).toBe("unverified");
   });
