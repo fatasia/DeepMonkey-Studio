@@ -5,7 +5,7 @@ const chromium = pw.chromium;
 import { mkdirSync, writeFileSync } from "node:fs";
 
 const BASE = process.env.BENCH_URL ?? "http://localhost:5173";
-const OUT = new URL("../../../../test-output/glm-night-20260923/", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
+const OUT = new URL("../../../test-output/glm-night-20260923/", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 mkdirSync(OUT + "bench3/", { recursive: true });
 
 const browser = await chromium.launch({

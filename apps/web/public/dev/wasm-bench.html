@@ -33,6 +33,9 @@
 const stats = document.getElementById("stats");
 const errBox = document.getElementById("err");
 const canvas = document.getElementById("view");
+function fitCanvas() { canvas.width = innerWidth; canvas.height = innerHeight - 47; }
+fitCanvas();
+addEventListener("resize", fitCanvas);
 const SAMPLE_SECONDS = 12;
 let stopLane = null, currentLane = "";
 

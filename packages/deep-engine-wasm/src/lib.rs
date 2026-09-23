@@ -22,7 +22,7 @@ struct InstanceData {
 struct Uniforms {
     view_proj: [[f32; 4]; 4],
     time: f32,
-    pad: [f32; 3],
+    pad: [f32; 7],
 }
 
 const WGSL: &str = r#"
@@ -39,6 +39,17 @@ struct VSOut {
     @location(1) color: vec3<f32>,
     @location(2) world: vec3<f32>,
 };
+
+@vertex
+fn vs_debug(@builtin(vertex_index) vi: u32) -> VSOut {
+    var pts = array(vec3<f32>(-1.0, -1.0, 0.2), vec3<f32>(3.0, -1.0, 0.2), vec3<f32>(-1.0, 3.0, 0.2));
+    var out: VSOut;
+    out.clip = vec4<f32>(pts[vi], 1.0);
+    out.normal = vec3<f32>(0.0, 0.0, 1.0);
+    out.color = vec3<f32>(0.95, 0.3, 0.25);
+    out.world = vec3<f32>(0.0);
+    return out;
+}
 
 @vertex
 fn vs_main(
@@ -135,13 +146,13 @@ fn view_projection(aspect: f32, time: f32) -> [[f32; 4]; 4] {
     let proj = [
         [f / aspect, 0.0, 0.0, 0.0],
         [0.0, f, 0.0, 0.0],
-        [0.0, 0.0, far / (near - far), -1.0],
-        [0.0, 0.0, far * near / (near - far), 0.0],
+        [0.0, 0.0, (far + near) / (near - far), -1.0],
+        [0.0, 0.0, 2.0 * far * near / (near - far), 0.0],
     ];
     let mut out = [[0.0_f32; 4]; 4];
     for (r, vr) in view.iter().enumerate() {
         for c in 0..4 {
-            out[r][c] = proj[r][0] * vr[0] + proj[r][1] * vr[1] + proj[r][2] * vr[2] + proj[r][3] * vr[3];
+            out[r][c] = proj[r][0] * view[c][0] + proj[r][1] * view[c][1] + proj[r][2] * view[c][2] + proj[r][3] * view[c][3];
         }
     }
     out
@@ -173,11 +184,11 @@ fn instance_data() -> Vec<InstanceData> {
         let gy = i / (side * side);
         instances.push(InstanceData {
             position: [
-                gx as f32 - side as f32 / 2.0,
-                gy as f32 - side as f32 / 2.0 - 1.0,
-                gz as f32 - side as f32 / 2.0,
+                (gx as f32 - side as f32 / 2.0) * 0.32,
+                (gy as f32 - side as f32 / 2.0) * 0.32,
+                (gz as f32 - side as f32 / 2.0) * 0.32,
             ],
-            scale: 0.05 + (i % 7) as f32 * 0.004,
+            scale: 0.09 + (i % 7) as f32 * 0.008,
             color: [
                 0.25 + (i % 5) as f32 * 0.11,
                 0.55 + (gz % 5) as f32 * 0.08,
@@ -220,7 +231,7 @@ impl Viewer {
             .await
             .map_err(|e| JsValue::from_str(&format!("device: {e}")))?;
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("deep-wasm-pbr"),
+            label: Some("deep-wasm-pbr-v2-32stride"),
             source: wgpu::ShaderSource::Wgsl(WGSL.into()),
         });
         let bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -253,7 +264,7 @@ impl Viewer {
                 attributes: &[wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x3, offset: 0, shader_location: 1 }],
             }),
             Some(wgpu::VertexBufferLayout {
-                array_stride: 28,
+                array_stride: 32,
                 step_mode: wgpu::VertexStepMode::Instance,
                 attributes: &[
                     wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x3, offset: 0, shader_location: 2 },
@@ -337,6 +348,26 @@ impl Viewer {
         })
     }
 
+    /// 调试用:返回已知点 (0,-1,0) 在 t=1.0 的裁剪坐标与 w。
+    #[wasm_bindgen]
+    pub fn debug_clip(&self) -> Vec<f32> {
+        let aspect = 16.0 / 9.0;
+        let m = view_projection(aspect, 1.0);
+        let world = [0.0_f32, -1.0, 0.0, 1.0];
+        let mut clip = [0.0_f32; 4];
+        for r in 0..4 {
+            clip[r] = m[r][0] * world[0] + m[r][1] * world[1] + m[r][2] * world[2] + m[r][3] * world[3];
+        }
+        clip.to_vec()
+    }
+
+    /// 调试用:顶点/实例缓冲字节数。
+    #[wasm_bindgen]
+    pub fn debug_buffer_bytes(&self) -> u32 {
+        let gpu = self.gpu.as_ref().expect("gpu");
+        (gpu.mesh_pos.size() + gpu.instances.size()) as u32
+    }
+
     /// 每帧:time 秒;canvas 尺寸变化时自动重建深度缓冲。
     #[wasm_bindgen]
     pub fn render_frame(&mut self, canvas_width: u32, canvas_height: u32, time: f32) -> Result<(), JsValue> {
@@ -370,13 +401,21 @@ impl Viewer {
             gpu.depth = Some(depth.create_view(&wgpu::TextureViewDescriptor::default()));
             gpu.size = size;
         }
+        // WGSL mat4x4 按列读取内存;行式数学结果上传前转置,否则等价乘了转置矩阵。
+        let m = view_projection(size.0 as f32 / size.1 as f32, time);
+        let mut transposed = [[0.0_f32; 4]; 4];
+        for (r, row) in m.iter().enumerate() {
+            for (c, value) in row.iter().enumerate() {
+                transposed[c][r] = *value;
+            }
+        }
         gpu.queue.write_buffer(
             &gpu.uniforms,
             0,
             bytemuck::bytes_of(&Uniforms {
-                view_proj: view_projection(size.0 as f32 / size.1 as f32, time),
+                view_proj: transposed,
                 time,
-                pad: [0.0; 3],
+                pad: [0.0; 7],
             }),
         );
         let frame = match gpu.surface.get_current_texture() {
