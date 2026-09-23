@@ -53,3 +53,5 @@ Thumbs.db
 apps/desktop/.scene-viewer-build/
 apps/desktop/src-tauri/scene-viewer.generated.conf.json
 dev/pkg/
+
+apps/web/public/dev/pkg/
