@@ -10,6 +10,9 @@ import { indexSceneClientArchiveFiles, validateSceneClientArchivePaths, type Sce
 import { selectSceneClientDependencyInputs } from "@bim-studio/studio-core";
 import { verifySceneClientResource } from "./sceneClientResources";
 import { loadFrozenSceneClientDependencies, frozenSceneResourceUrl } from "./sceneClientFrozenDependencies";
+import { probeGridBakeForPayload } from "./probeGridBakePublicationSession";
+import type { SceneIrradianceProbeBake } from "./compileSceneRuntimePackage";
+import type { NativeSceneClientPayloadOptions } from "./nativeSceneClientPayload";
 
 declare const preparedPackageIdentity: unique symbol;
 /** 仅当前页面内有效的一次性交付句柄，不进入历史记录或持久化。 */
@@ -36,6 +39,12 @@ export interface SceneClientPackageOptions {
   branding?: import("../components/clientPackageBranding").ClientPackageBranding;
   /** 桌面构建器消费同一份已校验 ZIP；缺省仍按历史行为直接下载。 */
   archiveConsumer?: (archive: Blob, fileName: string, counts: Omit<SceneClientPackageResult, "fileName" | "target">) => Promise<SceneClientPackageResult>;
+  /**
+   * F3 探针网格烘焙结果（显式透传通道）。缺省（undefined）时按场景语义哈希查
+   * 发布会话态（probeGridBakePublicationSession）；显式 null 强制不带；两处都没有
+   * 则包内不写 irradianceProbes，包语义与历史逐位一致。
+   */
+  irradianceProbes?: SceneIrradianceProbeBake | null;
 }
 
 export interface SceneClientPackageResult {
@@ -92,6 +101,16 @@ export async function exportSceneClientDiagnosticPackage(options: SceneClientPac
   const result = await deliver(frozen);
   const { fileName, ...counts } = result;
   return { ...counts, diagnosticFileName: fileName, kind: "scene-client-diagnostic" as const };
+}
+
+/**
+ * F3：解析 Deep Native 编译携带的探针烘焙输入。显式透传（含显式 null 强制不带）
+ * 优先；缺省时按场景语义哈希查发布会话态，查不到即 null（包语义与历史一致）。
+ * 纯函数：状态承载与透传的单测入口。
+ */
+export function resolveProbeGridPayloadInput(scene: SceneSnapshot,
+  explicit?: SceneIrradianceProbeBake | null): NativeSceneClientPayloadOptions {
+  return { irradianceProbes: explicit !== undefined ? explicit : probeGridBakeForPayload(scene) ?? null };
 }
 
 function freezePackageOptions(options: SceneClientPackageOptions): SceneClientPackageOptions {
@@ -174,6 +193,7 @@ async function preparePackageDelivery(options: SceneClientPackageOptions, purpos
   signal.throwIfAborted();
   const native = options.target === "deep-native"
     ? frozen?.nativeCompiled
+      // 冻结发布重打包消费服务端已编译产物，必须与原发布一致，不混入本会话烘焙。
       ? await (await import("./sceneNativeFrozenPayload")).prepareFrozenNativeScenePayload(options.scene, frozen, signal)
       : await (await import("./nativeSceneClientPayload")).prepareNativeSceneClientPayload(options.scene, async (assetId, loadSignal) => {
       loadSignal.throwIfAborted();
@@ -181,7 +201,9 @@ async function preparePackageDelivery(options: SceneClientPackageOptions, purpos
       const bytes = model?.manifest?.geometryUrl ? sourceBuffers.get(model.manifest.geometryUrl) : undefined;
       if (!bytes) throw new Error(`Native 编译缺少模型资源：${assetId}`);
       return new Uint8Array(bytes);
-    }, signal) : undefined;
+    }, signal,
+    // F3：显式透传优先，否则按场景语义哈希查会话态（场景编辑后哈希失配自然不带）。
+    resolveProbeGridPayloadInput(options.scene, options.irradianceProbes)) : undefined;
   signal.throwIfAborted();
   if (native && purpose === "delivery") assertScenePublicationDeliverable(native.report, { allowNativeDegraded: true });
   validateSceneClientArchivePaths([...files.map(file => file.path), ...(native?.files.map(file => file.path) ?? []),

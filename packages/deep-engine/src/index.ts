@@ -87,6 +87,11 @@ export type { BackendPreparation, BackendRevisionBarrier, BackendStateRevision,
 export { BackendPreferenceController } from "./backendPreference.js";
 export { resolveRayTracingCapability } from "./rayTracingCapability.js";
 export type { RayTracingBackend, RayTracingCapability } from "./rayTracingCapability.js";
+// F3 探针网格烘焙服务：编辑器 UI（apps/web）经主入口调用 GPU 编排与网格参数类型。
+export { ProbeGridBakeService } from "./rayTracing/probeGridBakeService.js";
+export type { ProbeGridBakeEvidence, ProbeGridBakeServiceOptions } from "./rayTracing/probeGridBakeService.js";
+export type { ProbeGridBakeGrid } from "./rayTracing/probeGridBakeMath.js";
+export type { ProbeRadianceLighting } from "./rayTracing/probeSceneRadianceProducer.js";
 export type { BackendPreferenceResult, BackendPreferenceSnapshot,
   BackendPreferenceStore } from "./backendPreference.js";
 export { MAX_EMISSIVE_STRENGTH, prepareInstanceUpdate, prepareRenderPacket } from "./renderPacket.js";

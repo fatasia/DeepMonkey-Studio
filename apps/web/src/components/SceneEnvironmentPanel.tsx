@@ -1,4 +1,5 @@
 import { Cloud, CloudFog, CloudLightning, CloudRain, Eye, EyeOff, Snowflake, Sun, X } from "lucide-react";
+import type { ProbeGridBakeGrid } from "@bim-studio/deep-engine";
 import type {
   GlobalLightingState,
   SceneCoordinateSystemState,
@@ -14,6 +15,7 @@ import { applySceneEnvironmentPreset, SCENE_ENVIRONMENT_PRESETS } from "../envir
 import { translate as tr, type AppLocale } from "../i18n";
 import { SceneCoordinateEditor } from "./SceneCoordinateEditor";
 import { SceneLightingEditor } from "./SceneLightingEditor";
+import type { ProbeGridBakeUiState } from "./SceneProbeGridBakePanel";
 import { ScenePostProcessingEditor } from "./ScenePostProcessingEditor";
 import { ProjectEnvironmentResourcePicker } from "./ProjectAppearanceResources";
 import { useFloatingPanelDrag } from "../hooks/useFloatingPanelDrag";
@@ -37,6 +39,9 @@ interface SceneEnvironmentPanelProps {
   onAddLight: (type: SceneLightState["type"]) => void;
   onUpdateLight: (id: string, patch: Partial<SceneLightState>) => void;
   onRemoveLight: (id: string) => void;
+  /** F3 探针网格烘焙：可选；透传给灯光编辑器的 GI 区块。 */
+  probeBakeState?: ProbeGridBakeUiState;
+  onBakeProbeGrid?: (grid: ProbeGridBakeGrid) => void;
   projectAssets?: ProjectAssetRecord[];
   onClose?: () => void;
 }
@@ -241,6 +246,8 @@ export function SceneEnvironmentPanel(props: SceneEnvironmentPanelProps) {
         onAddLight={props.onAddLight}
         onUpdateLight={props.onUpdateLight}
         onRemoveLight={props.onRemoveLight}
+        {...(props.probeBakeState && props.onBakeProbeGrid
+          ? { probeBakeState: props.probeBakeState, onBakeProbeGrid: props.onBakeProbeGrid } : {})}
       />
       <ScenePostProcessingEditor
         locale={locale}

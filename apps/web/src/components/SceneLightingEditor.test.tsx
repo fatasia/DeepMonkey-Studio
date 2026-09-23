@@ -2,7 +2,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { GlobalLightingState, SceneLightState } from "@bim-studio/contracts";
 import { SceneLightingEditor } from "./SceneLightingEditor";
-
 const directionLight = {
   id: "sun",
   name: "主方向光",
@@ -64,4 +63,26 @@ describe("SceneLightingEditor", () => {
     expect(renderIes()).toContain("Deep WebGPU PCSS");
     expect(render("sun")).not.toContain("阴影柔化");
   });
+  it("renders the F3 probe-grid bake block only when the parent wires it in", () => {
+    const baked = renderWithProbeBake({ kind: "done", probeCount: 8, coveredCount: 8, coverage: 1 });
+    expect(baked).toContain("烘焙探针网格");
+    expect(baked).toContain("探针 8 · 覆盖 8/8（100%）");
+    // 未接线时不得出现烘焙区块（管理中心等其他使用方不受影响）。
+    expect(render("sun")).not.toContain("烘焙探针网格");
+  });
 });
+
+function renderWithProbeBake(state: { kind: "done"; probeCount: number; coveredCount: number; coverage: number }) {
+  return renderToStaticMarkup(<SceneLightingEditor
+    locale="zh-CN"
+    lighting={{ enabled: true, intensity: 1, shadowsEnabled: true, reflectionsEnabled: true, lights: [directionLight] } as GlobalLightingState}
+    selectedLightId="sun"
+    onLightingChange={vi.fn()}
+    onSelectLight={vi.fn()}
+    onAddLight={vi.fn()}
+    onUpdateLight={vi.fn()}
+    onRemoveLight={vi.fn()}
+    probeBakeState={state}
+    onBakeProbeGrid={vi.fn()}
+  />);
+}

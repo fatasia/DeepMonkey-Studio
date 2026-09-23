@@ -1,11 +1,14 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { getSceneModelAssetId, type PlantLiteStudyRecord } from "@bim-studio/contracts";
 import type { CameraState } from "@bim-studio/contracts";
+import type { ProbeGridBakeGrid } from "@bim-studio/deep-engine";
 import { LoaderCircle } from "lucide-react";
 import { DEFAULT_NAVIGATION_SETTINGS } from "../navigationSettings";
 import { normalizeDashboardState } from "../components/dashboardState";
 import { translate as tr } from "../i18n";
+import { runProbeGridBake } from "../delivery/probeGridBakeRunner";
+import type { ProbeGridBakeUiState } from "../components/SceneProbeGridBakePanel";
 import { AiAssistantPanel } from "../components/AiAssistantPanel";
 import { CameraNavigationPanel } from "../components/CameraNavigationPanel";
 import { SceneClippingPanel } from "../components/SceneClippingPanel";
@@ -167,6 +170,29 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
   useEffect(() => {
     engine?.setPhysicsDebugVisible(physicsDebugVisible);
   }, [engine, physicsDebugVisible]);
+  // F3 探针网格烘焙：UI 状态与执行回调。结果由 runner 存入发布会话态，
+  // Deep Native 打包（exportSceneClientPackage → prepareNativeSceneClientPayload）
+  // 按场景语义哈希自动携带；场景/项目切换即回到 idle，烘焙中的旧任务回执被丢弃。
+  const [probeBake, setProbeBake] = useState<ProbeGridBakeUiState>({ kind: "idle" });
+  const probeBakeOwnerRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    probeBakeOwnerRef.current = project?.id && activeScene ? `${project.id}/${activeScene.id}` : undefined;
+    setProbeBake({ kind: "idle" });
+  }, [project?.id, activeScene?.id]);
+  const bakeProbeGrid = useCallback((grid: ProbeGridBakeGrid) => {
+    if (!activeScene || !project) return;
+    const ownerKey = `${project.id}/${activeScene.id}`;
+    setProbeBake({ kind: "running", phase: "compile-scene" });
+    runProbeGridBake({ scene: activeScene, models: project.models, grid })
+      .then(outcome => {
+        if (probeBakeOwnerRef.current === ownerKey) setProbeBake({ kind: "done",
+          probeCount: outcome.probeCount, coveredCount: outcome.coveredCount, coverage: outcome.coverage });
+      })
+      .catch(reason => {
+        if (probeBakeOwnerRef.current === ownerKey) setProbeBake({ kind: "error",
+          message: reason instanceof Error ? reason.message : String(reason) });
+      });
+  }, [activeScene, project]);
   const [directorWorkspace, setDirectorWorkspace] = useState<SceneDirectorWorkspace>("timeline");
   const resolveSimulationPosition = useCallback((id: string) => engine?.getModelTransform(id)?.position, [engine, controller.bindings.state.revision]);
   const activeSimulationStudy = route.view === "studio" && simulationPanelId && simulationStudy?.model?.sceneBinding?.sceneId === activeScene?.id ? simulationStudy : undefined;
@@ -406,6 +432,8 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           onAddLight={addLight}
           onUpdateLight={updateLight}
           onRemoveLight={removeLight}
+          probeBakeState={probeBake}
+          onBakeProbeGrid={bakeProbeGrid}
           onClose={() => setEnvironmentOpen(false)}
         />
       )}

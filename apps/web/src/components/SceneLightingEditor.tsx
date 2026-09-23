@@ -1,5 +1,7 @@
 import { SceneLightEditor } from "./SceneLightEditor";
+import { SceneProbeGridBakePanel, type ProbeGridBakeUiState } from "./SceneProbeGridBakePanel";
 import { Lightbulb } from "lucide-react";
+import type { ProbeGridBakeGrid } from "@bim-studio/deep-engine";
 import type {
   GlobalLightingState,
   SceneLightState,
@@ -15,6 +17,9 @@ interface SceneLightingEditorProps {
   onAddLight: (type: SceneLightState["type"]) => void;
   onUpdateLight: (id: string, patch: Partial<SceneLightState>) => void;
   onRemoveLight: (id: string) => void;
+  /** F3 探针网格烘焙：可选；提供时在 GI 行下方显示烘焙区块。 */
+  probeBakeState?: ProbeGridBakeUiState;
+  onBakeProbeGrid?: (grid: ProbeGridBakeGrid) => void;
 }
 
 
@@ -120,6 +125,14 @@ export function SceneLightingEditor(props: SceneLightingEditorProps) {
           {(lighting.globalIlluminationIntensity ?? 0.45).toFixed(2)}
         </output>
       </div>
+      {props.probeBakeState && props.onBakeProbeGrid && (
+        <SceneProbeGridBakePanel
+          locale={locale}
+          state={props.probeBakeState}
+          onBake={props.onBakeProbeGrid}
+          disabled={!lighting.globalIlluminationEnabled}
+        />
+      )}
       <div className="light-system">
         <div className="light-system-head">
           <span>{tr(locale, "光源", "Lights")}</span>
