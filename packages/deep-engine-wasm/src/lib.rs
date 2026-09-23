@@ -231,7 +231,7 @@ impl Viewer {
             .await
             .map_err(|e| JsValue::from_str(&format!("device: {e}")))?;
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("deep-wasm-pbr-v2-32stride"),
+            label: Some("deep-wasm-pbr"),
             source: wgpu::ShaderSource::Wgsl(WGSL.into()),
         });
         let bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
