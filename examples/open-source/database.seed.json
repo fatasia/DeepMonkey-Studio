@@ -1,0 +1,81 @@
+{
+  "projects": [
+    {
+      "id": "default",
+      "name": "示例项目",
+      "description": "Deep Monkey Studio 开源示例项目",
+      "models": [],
+      "assets": [],
+      "dataConnections": [
+        {
+          "id": "example-postgresql",
+          "projectId": "default",
+          "name": "本机 PostgreSQL 示例",
+          "type": "postgresql",
+          "enabled": true,
+          "config": { "host": "127.0.0.1", "port": 5432, "database": "bim_studio", "user": "postgres", "passwordEnv": "POSTGRES_PASSWORD" },
+          "createdAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:00:00.000Z"
+        },
+        {
+          "id": "example-http",
+          "projectId": "default",
+          "name": "HTTP 设备接口示例",
+          "type": "http",
+          "enabled": true,
+          "config": { "method": "GET", "url": "/api/demo/sensors" },
+          "createdAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:00:00.000Z"
+        }
+      ],
+      "datasets": [
+        {
+          "id": "example-postgresql-metrics",
+          "projectId": "default",
+          "connectionId": "example-postgresql",
+          "name": "PostgreSQL · 设备运行趋势",
+          "query": "SELECT recorded_at, device_id, temperature, pressure, running FROM bim_studio_demo_metrics ORDER BY recorded_at DESC LIMIT 60",
+          "refreshSeconds": 5,
+          "fields": [
+            { "key": "recorded_at", "label": "时间", "type": "datetime" },
+            { "key": "device_id", "label": "设备", "type": "string" },
+            { "key": "temperature", "label": "温度", "type": "number", "unit": "℃" },
+            { "key": "pressure", "label": "压力", "type": "number", "unit": "kPa" },
+            { "key": "running", "label": "运行状态", "type": "boolean" }
+          ],
+          "createdAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:00:00.000Z"
+        },
+        {
+          "id": "example-http-metrics",
+          "projectId": "default",
+          "connectionId": "example-http",
+          "name": "HTTP · 实时设备状态",
+          "sourceKey": "items",
+          "refreshSeconds": 3,
+          "fields": [
+            { "key": "recorded_at", "label": "时间", "type": "datetime" },
+            { "key": "device_id", "label": "设备", "type": "string" },
+            { "key": "temperature", "label": "温度", "type": "number", "unit": "℃" },
+            { "key": "pressure", "label": "压力", "type": "number", "unit": "kPa" },
+            { "key": "running", "label": "运行状态", "type": "boolean" }
+          ],
+          "createdAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:00:00.000Z"
+        }
+      ],
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z"
+    }
+  ],
+  "scenes": [],
+  "publishedScenes": [],
+  "scenePublicationHistory": [],
+  "scenePublicationDependencies": [],
+  "applications": [],
+  "publishedApplications": [],
+  "applicationPublicationPointers": [],
+  "users": [],
+  "auditLogs": [],
+  "dataEndpointSecrets": {}
+}

@@ -1,6 +1,6 @@
 # 从零开发与原生部署
 
-Deep Monkey Studio 不使用 Docker。开发、联调、健康检查和生产部署统一从 `pnpm studio` 进入；内部仍按平台调用经过验证的进程守护适配器，但开发者无需记忆第二套命令。
+Deep Monkey Studio 当前以 `pnpm studio` 作为开发、联调、健康检查和原生生产部署入口；Docker 镜像延后到全部核心能力、全量测试和发布验证完成后再制作。内部仍按平台调用经过验证的进程守护适配器，开发者无需记忆第二套原生命令。
 
 ## 1. 环境要求
 
@@ -48,7 +48,9 @@ cp .env.example .env
 个人开发和离线演示优先使用本地存储，不要求安装 PostgreSQL 或 MinIO：
 
 ```dotenv
-METADATA_STORE=json
+METADATA_STORE=sqlite
+# SQLite 单机模式；也可以改为 json 或 postgres
+SQLITE_DATABASE=./data/database.sqlite
 OBJECT_STORE=local
 API_PORT=4100
 BIM_STUDIO_WEB_HOST=0.0.0.0
@@ -75,6 +77,17 @@ pnpm studio start api
 ```
 
 `client` 会启动 API、Web 和 Tauri 开发客户端，只支持 Windows。安装包中的“本地工作台”是另一种运行形态：项目保存在客户端 IndexedDB，无需填写服务 IP，也不依赖 Node、PostgreSQL、MinIO 或 Python；需要协作、数据服务和在线发布时才连接服务器 Origin。
+
+### Native 质量档（可选）
+
+Native 播放器默认保持运行包和既有 Bloom 参数。需要在固定设备上限制后处理预算时，可在启动前设置：
+
+```powershell
+$env:DEEP_ENGINE_QUALITY_PROFILE = "performance" # performance|balanced|quality|high|ultra
+pnpm studio start client
+```
+
+该档位在 GPU 资源创建前裁决 Bloom 强度与半径上限，并在 `native-player-report` 回执实际档位；未设置时不改变旧行为。它是 Native 预算子集，不代表 Web 与 Native 已经具备同构质量档；clustered lighting、ray-query 动态辐射更新/多反弹 GI 和跨端预算对拍仍按 P0 任务验收。
 
 ## 4. 唯一运行入口
 
@@ -145,9 +158,49 @@ BIM_STUDIO_SESSION_SECRET=<至少32位随机密钥>
 WEB_ORIGIN=https://studio.example.com
 ```
 
+元数据有三种模式：`json` 适合临时开发和最小离线演示；`sqlite` 适合 Windows/Linux 单机、便携包和一键初始化；`postgres` 适合生产多进程与多实例。SQLite 使用 Node 24 内置 `node:sqlite`，数据库文件可用 `SQLITE_DATABASE` 指定，JSON 文档可通过 SQLite JSON1 函数查询。PostgreSQL 的连接地址、端口、数据库名、用户名和密码分别由 `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_DATABASE`、`POSTGRES_USER`、`POSTGRES_PASSWORD` 设置；不要把真实密码提交到 Git，使用 `.env`、systemd EnvironmentFile、Windows 服务账户或密钥管理器注入。
+
+元数据后端与对象存储是两项独立设置：`METADATA_STORE=json|sqlite|postgres` 选择元数据位置，`OBJECT_STORE=local|minio` 选择模型及附件对象位置。`local` 将对象保存在 `DATA_DIR` 下；`minio` 通过 MinIO Client (`mc`) 访问 endpoint 和 bucket。可用组合包括单机 `sqlite + local` 与生产 `postgres + minio`；生产部署统一采用后者。`json + minio` 或 `postgres + local` 虽可配置，不能替代推荐生产拓扑。
+
 API 会初始化所需表和 Bucket，并在首次切换时迁移原本地数据但不删除源文件。生产账号应使用最小权限的专属服务用户；建库、恢复和临时 Bucket 验证所需的维护账号只在命令执行时注入，不长期写入 `.env`。
 
-在 Windows 本机开发中，启动器可尝试启动已安装的 PostgreSQL 服务和通过 `MINIO_SERVER_PATH` 配置的 MinIO。Linux 若服务未运行，会直接提示运维先启动相应 systemd 服务，不会绕过系统服务管理。
+### 裸机首次启用（Windows）
+
+1. 安装 PostgreSQL 16+、MinIO Server、MinIO Client (`mc`)、Git、Node.js 24 和 pnpm 11.18，并启动 PostgreSQL 与 MinIO 服务。
+2. 创建专用数据库和服务账号，以及具有目标 Bucket 读写权限的 MinIO 服务账号；首次初始化时，`POSTGRES_USER` 还需能连接 `postgres` 管理库并在目标库不存在时创建数据库。首次初始化后可收紧数据库权限；不要让 API 长期使用默认管理员凭据。
+3. 从 `.env.example` 复制 `.env`，填写 `POSTGRES_HOST/PORT/DATABASE/USER/PASSWORD`、`MINIO_ENDPOINT/ACCESS_KEY/SECRET_KEY/BUCKET`，并设置 `METADATA_STORE=postgres`、`OBJECT_STORE=minio`。
+4. 执行 `pnpm install --frozen-lockfile`，再执行 `pnpm run init`。该命令在 PostgreSQL 写入无密钥系统种子和公开智造园区案例，随后启动 Web/API；API 会用 `mc` 确保配置的 Bucket 存在。已有元数据不会覆盖。
+5. 浏览器打开 `http://localhost:5173`，用系统管理员配置登录；健康检查使用 `pnpm studio check`。
+
+PowerShell 示例：
+
+```powershell
+Copy-Item .env.example .env
+$env:METADATA_STORE = "postgres"
+$env:OBJECT_STORE = "minio"
+# .env 还需填写数据库、MinIO endpoint/账号/bucket 及 mc 路径（如不在 PATH）
+pnpm install --frozen-lockfile
+pnpm run init
+```
+
+### 裸机首次启用（Linux）
+
+1. 安装 Git、Node.js 24、Corepack/pnpm、PostgreSQL 16+、MinIO Server 和 MinIO Client (`mc`)；使用 systemd 管理 PostgreSQL/MinIO，确保服务开机启动。
+2. `git clone` 后执行 `pnpm install --frozen-lockfile`，复制 `.env.example` 为 `.env`，填写生产凭据和 `WEB_ORIGIN`。
+3. 确认 `psql` 可连接 PostgreSQL（初始化账号有创建目标库的权限），MinIO endpoint 可达且 `mc` 可用，再执行 `pnpm run init`。首次启动 API 会确保配置的 Bucket 存在；Linux 默认不自动打开浏览器，服务地址为 `.env` 中的 API/Web 端口。
+4. 需要长期运行时执行 `pnpm studio deploy --check`，确认配置后再执行 `pnpm studio deploy`，由 systemd 托管 API/Web。
+
+```bash
+cp .env.example .env
+export METADATA_STORE=postgres OBJECT_STORE=minio
+pnpm install --frozen-lockfile
+pnpm run init
+pnpm studio check
+```
+
+单机不需要 PostgreSQL/MinIO 时，将 `METADATA_STORE=sqlite`、`OBJECT_STORE=local`，可选设置 `SQLITE_DATABASE=./data/database.sqlite`，同样执行 `pnpm run init`；这适合本地开发、演示和便携交付，不作为多实例生产拓扑。
+
+在 Windows 本机开发中，启动器可尝试启动已安装的 PostgreSQL 服务和通过 `MINIO_SERVER_PATH` 配置的 MinIO；`mc` 仍需安装并可从 PATH 或 `MINIO_MC_PATH` 找到。Linux 若服务未运行，会直接提示运维先启动相应 systemd 服务，不会绕过系统服务管理。
 
 ## 6. 构建与发布前检查
 

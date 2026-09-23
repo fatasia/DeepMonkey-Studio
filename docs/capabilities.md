@@ -117,4 +117,4 @@ pnpm studio undeploy
 
 ### PostgreSQL 与 MinIO
 
-默认仍可使用本地 JSON 和本地文件。设置 `METADATA_STORE=postgres` 后，API 会初始化 PostgreSQL 状态表，并在首次启动时导入原有 `data/database.json`；设置 `OBJECT_STORE=minio` 后，会创建存储桶并迁移原有 `data/projects` 文件。连接参数参见 `.env.example`，迁移过程不会删除原文件，便于回退。
+默认仍可使用本地 JSON 和本地文件。`METADATA_STORE=sqlite` 时使用 Node 24 内置 SQLite，适合单机；设置 `METADATA_STORE=postgres` 后，API 会初始化 PostgreSQL 状态表，并在首次启动时导入原有 `data/database.json`；设置 `OBJECT_STORE=minio` 后，会创建存储桶并迁移原有 `data/projects` 文件。连接参数参见 `.env.example`，迁移过程不会删除原文件，便于回退。

@@ -1,0 +1,174 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-23T07:46:01.023Z",
+  "repository": {
+    "cleanClone": "git clone + pnpm install --frozen-lockfile",
+    "trackedFiles": 7282,
+    "trackedAssets": {
+      "files": 464,
+      "bytes": 112222056,
+      "byExtension": {
+        ".jpg": {
+          "files": 1,
+          "bytes": 163759
+        },
+        ".onnx": {
+          "files": 6,
+          "bytes": 63216095
+        },
+        ".f32": {
+          "files": 2,
+          "bytes": 9248768
+        },
+        ".json": {
+          "files": 180,
+          "bytes": 3865642
+        },
+        ".png": {
+          "files": 210,
+          "bytes": 27240661
+        },
+        ".glb": {
+          "files": 55,
+          "bytes": 5779088
+        },
+        ".svg": {
+          "files": 8,
+          "bytes": 2661538
+        },
+        ".mp4": {
+          "files": 2,
+          "bytes": 46505
+        }
+      }
+    },
+    "ignoredRoots": [
+      "data/",
+      "apps/web/public/wasm/",
+      "apps/web/public/draco/",
+      "apps/web/public/basis/"
+    ]
+  },
+  "bundled": [
+    {
+      "id": "nature-kit",
+      "root": "apps/web/public/assets/nature-kit",
+      "status": "ready",
+      "license": "CC0-1.0",
+      "delivery": "Nature Kit 48 个 GLB 与 192 个缩略图随 Web 静态包交付",
+      "modelCount": 48,
+      "bytes": 584152
+    },
+    {
+      "id": "vision-sample",
+      "root": "apps/api/assets/vision-sample",
+      "status": "ready",
+      "license": "Apache-2.0",
+      "delivery": "API 视觉样例随仓库交付，启动后不下载",
+      "fileCount": 4,
+      "binaryCount": 0
+    },
+    {
+      "id": "deep-engine-lab-fixtures",
+      "root": "packages/deep-engine/lab/assets",
+      "status": "ready",
+      "license": "per-file upstream notices",
+      "delivery": "渲染器 Lab 样例随仓库交付，仅用于测试与开发",
+      "modelCount": 7,
+      "bytes": 5194936
+    },
+    {
+      "id": "battery-models",
+      "root": "apps/api/models/battery",
+      "status": "ready",
+      "license": "仓库模型说明及上游许可证以目录文件为准",
+      "delivery": "电池推理模型随仓库交付；仅在启用电池运行时的部署中加载",
+      "fileCount": 9,
+      "binaryCount": 8
+    }
+  ],
+  "codeCatalogs": [
+    {
+      "id": "dashboard-templates",
+      "source": "apps/web/src/components/dashboardTemplateCatalog.ts",
+      "status": "ready",
+      "delivery": "模板定义编译进 Web bundle；不依赖外部下载；测试断言 317 个模板"
+    },
+    {
+      "id": "dashboard-2d-components",
+      "source": "apps/web/src/components/dashboardWorkspaceModel.ts",
+      "status": "ready",
+      "delivery": "二维组件/装饰定义编译进 Web bundle；导入后存入场景文档"
+    },
+    {
+      "id": "industry-template-packs",
+      "source": "apps/web/src/components/industryTemplatePackCatalog.ts",
+      "status": "ready",
+      "delivery": "行业模板包与样例数据编译进 Web bundle；不依赖外部素材目录"
+    },
+    {
+      "id": "nature-kit-catalog",
+      "source": "apps/web/public/assets/nature-kit/catalog.json",
+      "status": "ready",
+      "delivery": "API 默认回退到随包 Nature Kit 目录"
+    }
+  ],
+  "optional": [
+    {
+      "id": "external-open-packs",
+      "root": "data/external-assets/open-packs",
+      "status": "optional",
+      "license": "见各自目录的来源审计",
+      "delivery": "CC0 包同步缓存被 .gitignore 排除；运行 assets:sync:open-packs 后才可用",
+      "presentOnDisk": true,
+      "gitTrackedFiles": 0
+    },
+    {
+      "id": "industrial-source-a",
+      "root": "data/external-assets/source-a",
+      "status": "optional",
+      "license": "见各自目录的来源审计",
+      "delivery": "外部工业模型目录被 .gitignore 排除；需配置 ASSET_LIBRARY_DIR 并导入经过许可审计的目录",
+      "presentOnDisk": true,
+      "gitTrackedFiles": 0
+    },
+    {
+      "id": "industrial-source-b",
+      "root": "data/external-assets/source-b",
+      "status": "optional",
+      "license": "见各自目录的来源审计",
+      "delivery": "外部社区模型目录被 .gitignore 排除；需先同步并通过质量/许可证审计",
+      "presentOnDisk": true,
+      "gitTrackedFiles": 0
+    },
+    {
+      "id": "environment-materials",
+      "root": "data/external-assets/environment-materials",
+      "status": "optional",
+      "license": "见各自目录的来源审计",
+      "delivery": "环境材质库被 .gitignore 排除；运行 assets:sync:environment-materials 后才可用",
+      "presentOnDisk": true,
+      "gitTrackedFiles": 0
+    },
+    {
+      "id": "format-fixtures",
+      "root": "data/external-assets/format-fixtures",
+      "status": "optional",
+      "license": "见各自目录的来源审计",
+      "delivery": "工业格式测试样本被 .gitignore 排除；仅用于开发/验收，不作为产品素材库",
+      "presentOnDisk": true,
+      "gitTrackedFiles": 0
+    }
+  ],
+  "startupContract": {
+    "apiDefaultAssetLibrary": "data/external-assets/source-a",
+    "natureKitFallback": "apps/web/public/assets/nature-kit",
+    "assetLibraryLoad": "API 启动只注册路径；首次 GET /api/asset-library 时惰性读取各目录 catalog/audit，后续按文件变更刷新缓存",
+    "automaticNetworkSync": false,
+    "cleanCloneResult": "模板/二维组件/Nature Kit/视觉样例/Deep Engine Lab fixtures 可用；工业模型、开放扩展包、环境材质和格式样本需单独同步"
+  },
+  "verification": {
+    "status": "passed",
+    "failures": []
+  }
+}
