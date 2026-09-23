@@ -1,0 +1,76 @@
+name: Studio (web + api)
+
+on:
+  pull_request:
+    paths:
+      - "apps/web/**"
+      - "apps/api/**"
+      - "packages/contracts/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/studio.yml"
+  push:
+    branches: [main, dev-studio]
+    paths:
+      - "apps/web/**"
+      - "apps/api/**"
+      - "packages/contracts/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/studio.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: studio-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @bim-studio/contracts typecheck
+      - run: pnpm --filter @bim-studio/contracts test
+
+  api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @bim-studio/api typecheck
+      - run: pnpm --filter @bim-studio/api test
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @bim-studio/web typecheck
+      - run: pnpm --filter @bim-studio/web test
+      - run: pnpm --filter @bim-studio/web build
