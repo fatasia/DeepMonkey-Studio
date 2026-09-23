@@ -87,7 +87,7 @@ export function serviceLogExportText(result: ServiceLogQueryResult, filters: Ser
 }
 
 export async function collectServiceHealth(): Promise<ServiceHealthRecord[]> {
-  const metadataStore = process.env.METADATA_STORE === "postgres" ? "postgres" : "json";
+  const metadataStore = process.env.METADATA_STORE === "postgres" ? "postgres" : process.env.METADATA_STORE === "sqlite" ? "sqlite" : "json";
   const objectStore = process.env.OBJECT_STORE === "minio" ? "minio" : "local";
   const mediaEndpoint = process.env.MEDIA_GATEWAY_CONTROL_URL?.trim();
   return Promise.all([
@@ -118,7 +118,7 @@ export async function createDiagnosticSnapshot(dataDir: string): Promise<SystemD
       architecture: process.arch,
       nodeVersion: process.version,
       uptimeSeconds: Math.round(process.uptime()),
-      metadataStore: process.env.METADATA_STORE === "postgres" ? "postgres" : "json",
+      metadataStore: process.env.METADATA_STORE === "postgres" ? "postgres" : process.env.METADATA_STORE === "sqlite" ? "sqlite" : "json",
       objectStore: process.env.OBJECT_STORE === "minio" ? "minio" : "local",
     },
     health,

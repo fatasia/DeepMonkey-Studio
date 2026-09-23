@@ -476,6 +476,8 @@ export interface SceneFloorState {
 
 export interface ScenePostProcessingState {
   enabled: boolean;
+  /** Cross-endpoint authored quality budget. Omitted keeps adaptive defaults. */
+  qualityProfile?: "performance" | "balanced" | "quality" | "ultra";
   smaa: boolean;
   fxaa?: boolean;
   ssao: boolean;
@@ -490,6 +492,16 @@ export interface ScenePostProcessingState {
   ssrThickness?: number;
   /** Maximum trace distance as a multiple of scene extent, [0.25,4]. */
   ssrMaxDistance?: number;
+  /** Deep WebGPU height fog; other clients must report unsupported instead of dropping it. */
+  volumetricFog?: boolean;
+  /** Ray-march samples, integer [32,64]. */
+  volumetricFogSteps?: number;
+  /** Base extinction coefficient for the exponential medium, [0,100]. */
+  volumetricFogDensity?: number;
+  /** Exponential height scale, >0. */
+  volumetricFogHeight?: number;
+  /** Henyey-Greenstein anisotropy, [-0.99,0.99]. */
+  volumetricFogAnisotropy?: number;
   bloom: boolean;
   bloomStrength: number;
   bloomThreshold: number;

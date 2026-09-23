@@ -36,7 +36,8 @@ export interface AppConfig {
   /** 可离线部署的统一素材目录，不会打进 Web 静态包。 */
   assetLibraryDir: string;
   metadata: {
-    provider: "json" | "postgres";
+    provider: "json" | "sqlite" | "postgres";
+    sqlite: { path: string };
     postgres: {
       host: string;
       port: number;
@@ -106,7 +107,8 @@ export function loadConfig(): AppConfig {
       : existsSync(bundledSceneViewerBuilder) ? { threeSceneViewerBuilderScript: bundledSceneViewerBuilder } : {}),
     assetLibraryDir,
     metadata: {
-      provider: process.env.METADATA_STORE === "postgres" ? "postgres" : "json",
+      provider: process.env.METADATA_STORE === "postgres" ? "postgres" : process.env.METADATA_STORE === "sqlite" ? "sqlite" : "json",
+      sqlite: { path: path.resolve(process.cwd(), process.env.SQLITE_DATABASE ?? path.join(dataDir, "database.sqlite")) },
       postgres: {
         host: process.env.POSTGRES_HOST ?? "127.0.0.1",
         port: Number(process.env.POSTGRES_PORT ?? 5432),

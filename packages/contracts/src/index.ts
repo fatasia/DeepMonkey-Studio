@@ -187,7 +187,7 @@ export interface SystemDiagnosticSnapshot {
     architecture: string;
     nodeVersion: string;
     uptimeSeconds: number;
-    metadataStore: "json" | "postgres";
+    metadataStore: "json" | "sqlite" | "postgres";
     objectStore: "local" | "minio";
   };
   health: ServiceHealthRecord[];

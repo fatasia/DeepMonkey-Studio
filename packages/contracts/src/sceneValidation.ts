@@ -611,14 +611,20 @@ function validatePostProcessing(value: unknown, path: string): void {
   const object = expectObject(value, path);
   for (const key of ["enabled", "smaa", "ssao", "bloom"] as const) required(object, key, expectBoolean, path);
   for (const key of ["ssaoIntensity", "bloomStrength", "bloomThreshold"] as const) required(object, key, expectNumber, path);
-  for (const key of ["fxaa", "gtao", "screenSpaceReflection", "outline", "depthOfField", "vignette", "filmGrain", "afterimage", "colorGrading"] as const) optional(object, key, expectBoolean, path);
-  for (const key of ["gtaoIntensity", "ssrSteps", "ssrThickness", "ssrMaxDistance", "outlineStrength", "focusDistance", "aperture", "maxBlur", "vignetteDarkness", "filmGrainIntensity", "afterimageDamp", "hue", "saturation", "brightness", "contrast", "temperature", "tint"] as const) {
+  for (const key of ["fxaa", "gtao", "screenSpaceReflection", "volumetricFog", "outline", "depthOfField", "vignette", "filmGrain", "afterimage", "colorGrading"] as const) optional(object, key, expectBoolean, path);
+  optionalLiteral(object, "qualityProfile", ["performance", "balanced", "quality", "ultra"], path);
+  for (const key of ["gtaoIntensity", "ssrSteps", "ssrThickness", "ssrMaxDistance", "volumetricFogSteps", "volumetricFogDensity", "volumetricFogHeight", "volumetricFogAnisotropy", "outlineStrength", "focusDistance", "aperture", "maxBlur", "vignetteDarkness", "filmGrainIntensity", "afterimageDamp", "hue", "saturation", "brightness", "contrast", "temperature", "tint"] as const) {
     optional(object, key, expectNumber, path);
   }
   if (object.ssrSteps !== undefined && (typeof object.ssrSteps !== "number" || !Number.isInteger(object.ssrSteps)
     || object.ssrSteps < 8 || object.ssrSteps > 128)) invalid(`${path}.ssrSteps`, "必须为 [8,128] 内的整数");
   if (typeof object.ssrThickness === "number" && (object.ssrThickness < 0.001 || object.ssrThickness > 0.1)) invalid(`${path}.ssrThickness`, "必须在 [0.001,0.1] 内");
   if (typeof object.ssrMaxDistance === "number" && (object.ssrMaxDistance < 0.25 || object.ssrMaxDistance > 4)) invalid(`${path}.ssrMaxDistance`, "必须在 [0.25,4] 内");
+  if (object.volumetricFogSteps !== undefined && (typeof object.volumetricFogSteps !== "number" || !Number.isInteger(object.volumetricFogSteps)
+      || object.volumetricFogSteps < 32 || object.volumetricFogSteps > 64)) invalid(`${path}.volumetricFogSteps`, "必须为 [32,64] 内的整数");
+  if (typeof object.volumetricFogDensity === "number" && (object.volumetricFogDensity < 0 || object.volumetricFogDensity > 100)) invalid(`${path}.volumetricFogDensity`, "必须在 [0,100] 内");
+  if (typeof object.volumetricFogHeight === "number" && object.volumetricFogHeight <= 0) invalid(`${path}.volumetricFogHeight`, "必须大于 0");
+  if (typeof object.volumetricFogAnisotropy === "number" && (object.volumetricFogAnisotropy < -0.99 || object.volumetricFogAnisotropy > 0.99)) invalid(`${path}.volumetricFogAnisotropy`, "必须在 [-0.99,0.99] 内");
 }
 
 function validateScenePhysics(value: unknown, path: string): void {
