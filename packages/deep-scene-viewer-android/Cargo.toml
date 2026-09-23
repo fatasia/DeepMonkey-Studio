@@ -26,3 +26,14 @@ wgpu = { version = "=30.0.1", default-features = false, features = ["std", "park
 # android-native-activity 在壳 crate 必须启用:native-activity 胶水经 winit 接入。
 winit = { version = "=0.30.13", default-features = false, features = ["rwh_06", "android-native-activity"] }
 android-activity = { version = "=0.6.0", default-features = false, features = ["native-activity"] }
+
+# 安卓发布档:保持 release 性能档(opt-level 3),只取零性能代价的体积收益
+# (fat LTO/单 codegen/panic abort/strip)。进一步瘦身(如 opt-level "s")
+# 必须先过性能门禁(帧时 P50/P99、长稳)再采用。
+[profile.android-release]
+inherits = "release"
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
