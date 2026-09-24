@@ -11,14 +11,24 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+deep-engine-native = { path = "../deep-engine-native" }
 wasm-bindgen = "=0.2.128"
 wasm-bindgen-futures = "=0.4.78"
-web-sys = { version = "=0.3.105", features = ["Window", "HtmlCanvasElement", "GpuCanvasContext"] }
+web-sys = { version = "=0.3.105", features = ["Window", "HtmlCanvasElement", "GpuCanvasContext", "Document", "Element"] }
 js-sys = "=0.3.105"
 console_error_panic_hook = "=0.1.7"
 bytemuck = { version = "=1.25.2", features = ["derive"] }
-# wgpu web:仅 WebGPU+GL 后端,不含 dx12/metal/vulkan 原生后端,体积优先。
+cosmic-text = { version = "=0.19.0", default-features = false, features = ["std", "swash"] }
+pollster = "=1.0.1"
+rapier3d = { version = "=0.35.3", default-features = false, features = ["enhanced-determinism"] }
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = { version = "=1.0.151", features = ["float_roundtrip"] }
+unicode-segmentation = "=1.13.3"
+web-time = "=1.1.0"
+# wgpu web:仅 WebGPU 后端,不含 dx12/metal/vulkan 原生后端,体积优先。
 wgpu = { version = "=30.0.1", default-features = false, features = ["std", "parking_lot", "webgpu", "wgsl"] }
+# 镜像树直接使用 winit(web 后端为 wasm 默认)。
+winit = { version = "=0.30.13", default-features = false, features = ["rwh_06"] }
 
 [profile.wasm-release]
 inherits = "release"

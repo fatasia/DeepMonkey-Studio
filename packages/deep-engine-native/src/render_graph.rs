@@ -53,7 +53,23 @@ impl BatchCancel {
 }
 
 /// 单节点编码体:只读共享输入,产物经返回值交回。
+// wasm:作业退化为非 Send(单线程顺序执行);桌面保留 Send 供 scoped 并行。
+#[cfg(not(target_arch = "wasm32"))]
+/// Send 约束的 wasm 兼容开关:native 上等价 A: Send(全量 blanket);
+/// wasm32 上作业单线程顺序执行,约束置空(wgpu web 后端类型非 Send)。
+#[cfg(not(target_arch = "wasm32"))]
+pub trait GraphSend: Send {}
+#[cfg(not(target_arch = "wasm32"))]
+impl<T: Send> GraphSend for T {}
+#[cfg(target_arch = "wasm32")]
+pub trait GraphSend {}
+#[cfg(target_arch = "wasm32")]
+impl<T> GraphSend for T {}
+
+#[cfg(not(target_arch = "wasm32"))]
 type JobRun<'scope, A> = Box<dyn FnOnce(&BatchCancel) -> Result<A, String> + Send + 'scope>;
+#[cfg(target_arch = "wasm32")]
+type JobRun<'scope, A> = Box<dyn FnOnce(&BatchCancel) -> Result<A, String> + 'scope>;
 
 /// 单个编码节点。`name` 只用于错误定位;`run` 只允许读共享输入,产物经
 /// 返回值交回 —— 这是对「无数据竞争」的静态约束:闭包要跨线程发送,
@@ -66,7 +82,7 @@ pub struct GraphJob<'scope, A> {
 impl<'scope, A> GraphJob<'scope, A> {
     pub fn new(
         name: impl Into<String>,
-        run: impl FnOnce(&BatchCancel) -> Result<A, String> + Send + 'scope,
+        run: impl FnOnce(&BatchCancel) -> Result<A, String> + GraphSend + 'scope,
     ) -> Self {
         Self {
             name: name.into(),
@@ -202,7 +218,7 @@ impl<A> BatchReport<A> {
 /// - 返回报告里 `outcomes.len() == jobs.len()`,固定节点序。
 /// - 线程生命周期由 `std::thread::scope` 约束:批次结束前必然全部 join,
 ///   不留后台线程(清理由类型系统保证,`render_graph_tests` 另有观测)。
-pub fn execute_graph_batch<'scope, A: Send>(
+pub fn execute_graph_batch<'scope, A: GraphSend>(
     jobs: Vec<GraphJob<'scope, A>>,
     threads: usize,
 ) -> BatchReport<A> {
@@ -270,6 +286,17 @@ pub fn execute_graph_batch<'scope, A: Send>(
         sink[index] = Some(outcome);
     };
 
+    // wasm:wgpu web 后端类型非 Send,作业不能跨线程——退化为单线程顺序
+    // 执行(同一作业队列,总量不变);桌面保持并行 scoped 线程。
+    #[cfg(target_arch = "wasm32")]
+    {
+        set_executor_thread_name();
+        for _ in 1..used_threads {
+            worker();
+        }
+        worker();
+    }
+    #[cfg(not(target_arch = "wasm32"))]
     thread::scope(|scope| {
         // worker 是只捕获共享引用的闭包(Copy):每个 executor 线程领一份。
         // spawn 的线程命名 deep-executor:水位测试按名计数,对并行测试中
@@ -303,7 +330,7 @@ pub fn execute_graph_batch<'scope, A: Send>(
 /// (层间 happens-before),层内并行、结果按固定节点序。
 /// 任一层失败即取消后续所有层(整批取消语义)。
 #[allow(dead_code)] // Native RenderGraph 层级执行合同(对应 Web R6-3 组间有序/组内并行),由 render_graph_tests 驱动。
-pub fn execute_graph_levels<A: Send>(
+pub fn execute_graph_levels<'scope, A: GraphSend>(
     levels: Vec<Vec<GraphJob<'_, A>>>,
     threads: usize,
 ) -> Result<Vec<Vec<A>>, GraphBatchError> {
