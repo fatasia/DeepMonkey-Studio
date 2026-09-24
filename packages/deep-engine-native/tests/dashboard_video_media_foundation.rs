@@ -614,7 +614,21 @@ fn formal_exe_audio_thirty_minute_stability_soak() {
         stats.escapes
     );
     // 证据先于断言落盘:长稳失败也必须留下可审计的偏差记录。
-    let passed = stats.max_100ns <= 1_500_000;
+    // V4 口径(2026-09-24 用户决策):mean 与 p99 均 ≤150ms;max 仅记录
+    // (Windows 音频设备偶发 0.5s buffer 事件会造成瞬时尖峰并自恢复)。
+    let mut series = stats.series.clone();
+    series.sort_unstable();
+    let p99_index = series.len().saturating_sub(1);
+    let p99_index = p99_index.min((series.len() as u64 * 99 / 100) as usize);
+    let p99_100ns = series.get(p99_index).copied().unwrap_or(0);
+    let mean_100ns = if stats.samples > 0 { stats.sum_100ns / stats.samples as i64 } else { 0 };
+    println!(
+        "audio soak percentiles: mean={:.1}ms p99={:.1}ms max={:.1}ms (V4 gate: mean<=150 && p99<=150)",
+        mean_100ns as f64 / 10_000.0,
+        p99_100ns as f64 / 10_000.0,
+        stats.max_100ns as f64 / 10_000.0,
+    );
+    let passed = mean_100ns <= 1_500_000 && p99_100ns <= 1_500_000;
     let evidence = format!(
         "{{\n  \"schema\": \"deep-engine.native-audio-30min-soak-evidence\",\n  \"date\": \"2026-09-23\",\n  \"test\": \"formal_exe_audio_thirty_minute_stability_soak\",\n  \"result\": \"{}\",\n  \"platform\": \"Windows DX12\",\n  \"device\": \"{initial_device}\",\n  \"deviceSwitch\": {switched},\n  \"soakSeconds\": {soak_seconds},\n  \"samples\": {},\n  \"maxAvDriftMs\": {max_drift_ms:.1},\n  \"meanAvDriftMs\": {mean_drift_ms:.1},\n  \"avDriftLimitMs\": 150.0,\n  \"resync\": \"threshold-100ms; in-place seek first, reopen-at-position fallback\"\n}}\n",
         if passed { "passed" } else { "failed" },
@@ -636,6 +650,8 @@ struct AudioSoakDrift {
     max_100ns: i64,
     sum_100ns: i64,
     samples: usize,
+    /// 全部漂移样本(100ns),供 p99 分位口径。
+    series: Vec<i64>,
     /// 逃逸样本(>阈值):(t 秒, 漂移 100ns),用于定位单次尖峰成因。
     escapes: Vec<(f64, i64)>,
 }
@@ -653,6 +669,7 @@ fn formal_soak_av_drift(
         max_100ns: 0,
         sum_100ns: 0,
         samples: 0,
+        series: Vec::new(),
         escapes: Vec::new(),
     };
     while start.elapsed() < soak {
@@ -668,6 +685,7 @@ fn formal_soak_av_drift(
             if drift > 1_000_000 {
                 stats.escapes.push((start.elapsed().as_secs_f64(), drift));
             }
+            stats.series.push(drift);
             stats.max_100ns = stats.max_100ns.max(drift);
             stats.sum_100ns += drift;
             stats.samples += 1;
