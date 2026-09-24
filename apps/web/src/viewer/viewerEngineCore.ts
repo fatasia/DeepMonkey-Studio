@@ -111,6 +111,7 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
   onNavigationRecovery?: () => void;
   onNavigationDiagnosticsChange?: (diagnostics: NavigationCollisionDiagnostics) => void;
   onCameraChange?: (state: CameraState) => void;
+  private readonly cameraChangeListeners = new Set<(state: CameraState) => void>();
   onPointerInfoChange?: (info: PointerInfo | undefined) => void;
   onAnimationChange?: (time: number, playing: boolean) => void;
   onLightingChange?: (lighting: GlobalLightingState) => void;
@@ -125,6 +126,29 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
   protected readonly conservativeOcclusion = new ConservativeOcclusion();
   protected releaseOcclusionFilter: (() => void) | undefined;
   protected readonly offscreen: ViewerOffscreenController;
+
+  /**
+   * Adds a view-local camera observer without creating another camera store.
+   * The legacy callback remains for the low-rate inspector readout; lightweight
+   * viewport chrome can follow the engine directly without committing App.
+   */
+  subscribeCameraChange(listener: (state: CameraState) => void): () => void {
+    this.cameraChangeListeners.add(listener);
+    return () => this.cameraChangeListeners.delete(listener);
+  }
+
+  getCameraProjectionState(): { readonly verticalFovDegrees: number; readonly near: number; readonly far: number } {
+    return { verticalFovDegrees: this.camera.fov, near: this.camera.near, far: this.camera.far };
+  }
+
+  protected hasCameraChangeObservers(): boolean {
+    return this.onCameraChange !== undefined || this.cameraChangeListeners.size > 0;
+  }
+
+  protected publishCameraChange(state: CameraState): void {
+    this.onCameraChange?.(state);
+    for (const listener of this.cameraChangeListeners) listener(state);
+  }
   /** Runtime 职责层覆盖:返回需要主线程补绘的叠加标签。 */
   protected overlaySpritesProvider: () => THREE.Sprite[] = () => [];
   protected readonly pointerPosition = new THREE.Vector2();
@@ -249,6 +273,9 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
   protected selectedId: string | undefined;
   protected inspectedObject: THREE.Object3D | undefined;
   protected navigationMode: NavigationMode = "orbit";
+  /** Deep 演示后端接管视口手势时为 false;OrbitControls 只在 intent 与导航模式同时允许时启用。 */
+  protected viewportOrbitIntent = true;
+  protected transformDragging = false;
   protected selectionScope: SelectionScope = "model";
   protected measureEnabled = false;
   protected annotationPlacementEnabled = false;
@@ -410,7 +437,8 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
     this.transform = new TransformControls(this.camera, this.renderer.domElement);
     this.scene.add(this.transform.getHelper());
     this.transform.addEventListener("dragging-changed", (event) => {
-      this.orbit.enabled = !event.value && this.navigationMode !== "firstPerson";
+      this.transformDragging = Boolean(event.value);
+      this.orbit.enabled = this.viewportOrbitIntent && !event.value && this.navigationMode !== "firstPerson";
       const selected = this.getSelected();
       if (selected && this.fragmentModels.has(selected.id)) this.syncFragmentsTransformState(selected.id, Boolean(event.value));
       if (selected && !event.value && this.inspectedObject === selected.object) {

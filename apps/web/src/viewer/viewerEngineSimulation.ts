@@ -403,7 +403,7 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
   pauseSceneAnimation(): void {
       const wasPlaying = this.sceneAnimationPlaying;
       this.sceneAnimationPlaying = false;
-      this.orbit.enabled = this.navigationMode !== "firstPerson";
+      this.orbit.enabled = this.viewportOrbitIntent && this.navigationMode !== "firstPerson";
       this.updateTransformAccess();
       this.onAnimationChange?.(this.sceneAnimationTime, false);
       if (wasPlaying) {

@@ -34,6 +34,15 @@ import { writeRobotPose } from "./robotPoseRuntime";
 
 /** NavigationTools 职责层。 */
 export abstract class ViewerEngineNavigationTools extends ViewerEngineMeasurements {
+  /** TransformControls 是否正在拖拽;Deep 输入会话据此抑制视口手势。 */
+  get isTransformDragging(): boolean { return this.transformDragging; }
+
+  /** Deep 演示后端的视口手势接管开关;WebGL 兼容模式必须恢复 true。 */
+  setViewportOrbitEnabled(enabled: boolean): void {
+    this.viewportOrbitIntent = enabled;
+    this.orbit.enabled = enabled && this.navigationMode !== "firstPerson";
+  }
+
   select(id: string | undefined): void {
     this.selectedSceneLight = undefined;
     this.focusedSpaceKey = undefined;

@@ -275,7 +275,7 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
   }
   protected configureNavigationControls(mode: NavigationMode): void {
     this.camera.up.set(0, 1, 0);
-    this.orbit.enabled = mode !== "firstPerson";
+    this.orbit.enabled = this.viewportOrbitIntent && mode !== "firstPerson";
     if (mode === "thirdPerson") {
       this.orbit.minDistance = Math.max(2.2, this.cameraConstraints.minDistance);
       this.orbit.maxDistance = Math.max(this.orbit.minDistance, Math.min(12, this.cameraConstraints.maxDistance));
