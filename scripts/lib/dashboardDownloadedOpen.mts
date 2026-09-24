@@ -6,7 +6,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { runDashboardOfflineNative } from "../../apps/api/src/dashboardOfflineNativeProcess.js";
 import { parseDeepRuntimePackage } from "../../packages/deep-engine/src/runtimePackage/index.ts";
-import { createNativeWindowVerifier } from "./nativeWindowVerifier.mjs";
+import { createDashboardNativeProcessVerifier } from "./nativeWindowVerifier.mjs";
 
 /** Real player processes; instrumentation only observes stdout and stops after presentation. */
 export async function verifyDashboardDownloadedOpen(directory: string, archive: Uint8Array, expectedArtifact: Uint8Array,
@@ -15,7 +15,8 @@ export async function verifyDashboardDownloadedOpen(directory: string, archive: 
   const packagePath = path.join(directory, "extracted/runtime-package.json");
   const sha = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
   assert.equal(sha(readFileSync(packagePath)), sha(expectedArtifact));
-  const zipWindow = await createNativeWindowVerifier(parseDeepRuntimePackage)({ packagePath, nativeExecutable: executable, frames: 3, signal: undefined });
+  // 下载解包出的是 dashboard 运行包:窗口验证必须走 dashboard 链命令(scene 命令对它 fail-closed)。
+  const zipWindow = await createDashboardNativeProcessVerifier(parseDeepRuntimePackage)({ packagePath, nativeExecutable: executable, frames: 3, signal: undefined });
   const output = path.join(directory, "dmda-open"); await mkdir(output);
   const controller = new AbortController(), finished = new Error("Acceptance stopped after Native present");
   let log = "", presented = false, launchedHash = "", processHandle: ChildProcess | undefined;

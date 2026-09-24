@@ -48,6 +48,13 @@ pub fn load(path: &Path) -> Result<PreparedRuntimePackage, String> {
     Ok(prepared)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn load_bytes(bytes: &[u8]) -> Result<PreparedRuntimePackage, String> {
+    let package = deep_engine_native::runtime_package::parse_and_validate_runtime_package(bytes)
+        .map_err(|error| error.to_string())?;
+    prepare(package)
+}
+
 pub fn load_embedded(path: &Path) -> Result<Option<PreparedRuntimePackage>, String> {
     let mut executable =
         std::fs::File::open(path).map_err(|error| format!("overlay/open: {error}"))?;
@@ -205,13 +212,25 @@ pub fn recover(
 }
 
 /// `--verify-package` 只验证 scene 发布候选。dashboard 内容包的正式链是
-/// `.dmda` 归档 + `run-dashboard-client-native`(`--package` 播放);误入
-/// scene 验证器的 dashboard 包在此快速 fail-closed 拒绝——空 3D 场景的
-/// dashboard 包不该被 scene 渲染链消费,更不该在初始化失败后挂到超时。
+/// `.dmda` 归档 + `run-dashboard-client-native`(`--package` 播放)与
+/// `--verify-dashboard-package`(同域验证);误入 scene 验证器的 dashboard 包
+/// 在此快速 fail-closed 拒绝——空 3D 场景的 dashboard 包不该被 scene 渲染链
+/// 消费,更不该在初始化失败后挂到超时。
 fn reject_non_scene_content(content: &PlayerContent) -> Result<(), String> {
     if content.dashboard.is_some() {
         return Err(
-            "runtime package verification requires a scene package; dashboard packages verify through the .dmda archive chain (run-dashboard-client-native)".into(),
+            "runtime package verification requires a scene package; dashboard packages verify through the .dmda archive chain (run-dashboard-client-native, --verify-dashboard-package)".into(),
+        );
+    }
+    Ok(())
+}
+
+/// `--verify-dashboard-package` 的对称方向:只接受 dashboard 内容包。
+/// scene 发布候选的验证入口仍是 `--verify-package`,两者不得互相串链。
+fn reject_non_dashboard_content(content: &PlayerContent) -> Result<(), String> {
+    if content.dashboard.is_none() {
+        return Err(
+            "dashboard package verification requires a dashboard package; scene candidates verify through --verify-package".into(),
         );
     }
     Ok(())
@@ -224,6 +243,21 @@ pub fn verify(
     // Exact candidate verification never recovers a different LKG package.
     let package = load(path)?;
     reject_non_scene_content(&package.content)?;
+    let bloom = renderer::entry_bloom(&package.content);
+    app::run_verification(package.content, verification.bind_hash(package.hash), bloom)
+}
+
+/// Dashboard 正式链的窗口验证:与 scene `verify` 共用同一套
+/// `publication_verification` 报告机制(nonce、呈现帧、GPU 干净、设备指纹、
+/// draw layers),只差内容方向——验证前先拒绝非 dashboard 包,防止 scene
+/// 候选误入 dashboard 验证命令。
+pub fn verify_dashboard(
+    path: &Path,
+    verification: crate::publication_verification::Verification,
+) -> Result<(), String> {
+    // Exact candidate verification never recovers a different LKG package.
+    let package = load(path)?;
+    reject_non_dashboard_content(&package.content)?;
     let bloom = renderer::entry_bloom(&package.content);
     app::run_verification(package.content, verification.bind_hash(package.hash), bloom)
 }
@@ -403,6 +437,27 @@ mod tests {
         let error = reject_non_scene_content(&content).unwrap_err();
         assert!(error.contains("scene package"), "{error}");
         assert!(error.contains("run-dashboard-client-native"), "{error}");
+        // 对称方向:同一 dashboard 包必须被 dashboard 验证入口接受。
+        assert!(reject_non_dashboard_content(&content).is_ok());
+    }
+
+    /// Dashboard 验证入口必须拒绝 scene 内容——两个验证命令互不串链,
+    /// 任何方向的内容错配都在渲染前 fail-closed。
+    #[test]
+    fn dashboard_verification_rejects_scene_content_before_any_rendering() {
+        let fixture = deep_engine_native::runtime_package::parse_and_validate_runtime_package(
+            std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/runtime-package-v1.json"))
+            .unwrap()
+            .as_slice(),
+        )
+        .unwrap();
+        let content = PlayerContent::from_package(fixture).unwrap();
+        assert!(content.dashboard.is_none(), "fixture is a scene package");
+        let error = reject_non_dashboard_content(&content).unwrap_err();
+        assert!(error.contains("dashboard package"), "{error}");
+        assert!(error.contains("--verify-package"), "{error}");
+        assert!(reject_non_scene_content(&content).is_ok());
     }
 
     fn fixture() -> Vec<u8> {

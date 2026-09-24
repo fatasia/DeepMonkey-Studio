@@ -8,7 +8,7 @@ import { dashboardDataRequestId } from "../apps/api/src/dashboardPublishedClosur
 import { runtimeContentSha256, parseDeepRuntimePackage } from "../packages/deep-engine/src/runtimePackage/index.ts";
 import { serveDashboardHeadingPreview } from "./lib/dashboardHeadingPreview.mjs";
 import { createDashboardChromiumLayoutHost } from "./lib/dashboardChromiumLayoutHost.mjs";
-import { createNativeWindowVerifier } from "./lib/nativeWindowVerifier.mjs";
+import { createDashboardNativeProcessVerifier } from "./lib/nativeWindowVerifier.mjs";
 
 const root = process.cwd();
 const nativeExecutable = process.env.C2_NATIVE_EXECUTABLE;
@@ -79,7 +79,8 @@ await assert.rejects(interrupted);
 const recovered = await captureHost.capture(request);
 assert.equal(recovered.layout.textBoxes.length, 2);
 await writeFile(path.join(output, "package.json"), result.artifact);
-const nativeWindow = process.env.C2_VERIFY_WINDOW === "1" ? await createNativeWindowVerifier(parseDeepRuntimePackage)({
+// dashboard 候选窗口验证走 .dmda 正式链命令;scene `--verify-package` 对 dashboard 内容 fail-closed。
+const nativeWindow = process.env.C2_VERIFY_WINDOW === "1" ? await createDashboardNativeProcessVerifier(parseDeepRuntimePackage)({
   packagePath: path.join(output, "package.json"), nativeExecutable, frames: 3,
 }) : undefined;
 await writeFile(path.join(output, "result.json"), JSON.stringify({ fontSha256, configuration: compiler.configuration,

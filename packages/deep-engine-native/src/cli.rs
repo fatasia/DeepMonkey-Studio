@@ -134,7 +134,9 @@ where
             );
             Ok(())
         }
-        Some("--verify-package") => crate::publication_verification::execute(args),
+        Some(command @ ("--verify-package" | "--verify-dashboard-package")) => {
+            crate::publication_verification::execute(args, command == "--verify-dashboard-package")
+        }
         Some("--verify-x-worker") => {
             reject_extra(args)?;
             crate::x_worker_cli::run()

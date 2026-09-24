@@ -2,11 +2,19 @@
 use std::{ffi::OsString, fs, path::PathBuf};
 
 // 数据结构与序列化逻辑在 publication_record（无服务层依赖，可被 player_state
-// 等底层状态引用）；本模块只保留 --verify-package 服务入口。
+// 等底层状态引用）；本模块只保留 --verify-package / --verify-dashboard-package
+// 服务入口。
 pub use crate::publication_record::Verification;
 
-pub fn execute(mut args: impl Iterator<Item = OsString>) -> Result<(), String> {
-    let package = crate::player_cli::required_path(&mut args, "--verify-package")?;
+/// `dashboard=false` 验证 scene 发布候选,`dashboard=true` 验证 dashboard
+/// 内容包(.dmda 正式链的窗口验证孪生)。内容方向由各自的
+/// runtime_package_startup 入口 fail-closed 把关。
+pub fn execute(mut args: impl Iterator<Item = OsString>, dashboard: bool) -> Result<(), String> {
+    let package = if dashboard {
+        crate::player_cli::required_path(&mut args, "--verify-dashboard-package")?
+    } else {
+        crate::player_cli::required_path(&mut args, "--verify-package")?
+    };
     let mut value = |flag: &str| -> Result<OsString, String> {
         if args.next().as_deref() != Some(std::ffi::OsStr::new(flag)) {
             return Err(format!("expected {flag}"));
@@ -25,7 +33,11 @@ pub fn execute(mut args: impl Iterator<Item = OsString>) -> Result<(), String> {
         .map_err(|_| "invalid frame count")?;
     crate::player_cli::reject_extra(args)?;
     let verification = Verification::new(report, nonce, frames)?;
-    crate::runtime_package_startup::verify(&package, verification)
+    if dashboard {
+        crate::runtime_package_startup::verify_dashboard(&package, verification)
+    } else {
+        crate::runtime_package_startup::verify(&package, verification)
+    }
 }
 
 #[cfg(test)]

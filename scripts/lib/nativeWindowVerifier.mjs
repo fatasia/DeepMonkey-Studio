@@ -8,9 +8,14 @@ import { spawn } from "node:child_process";
 const hash = bytes => createHash("sha256").update(bytes).digest("hex");
 const check = (value, message) => { if (!value) throw new Error(`Native 窗口验证失败：${message}`); };
 
-/** 本机一次验证记录；不构成远程授权或正式发布状态。 */
-export function createNativeWindowVerifier(parseDeepRuntimePackage) {
-return async function verifySceneNativeWindow({ packagePath, nativeExecutable, frames = 3, signal }, { spawnProcess = spawn, timeoutMs = 60_000 } = {}) {
+/**
+ * 一个本机验证记录；不构成远程授权或正式发布状态。
+ * verifyCommand 把 scene 与 dashboard 两条验证链物理分开：scene 发布候选走
+ * `--verify-package`，dashboard 内容包（.dmda 正式链）走 `--verify-dashboard-package`，
+ * 两者互不串链；不支持该命令的旧 native 程序在进程层失败 → 调用方 fail-closed。
+ */
+function createProcessWindowVerifier(parseDeepRuntimePackage, verifyCommand) {
+return async function verifyNativeWindow({ packagePath, nativeExecutable, frames = 3, signal }, { spawnProcess = spawn, timeoutMs = 60_000 } = {}) {
   signal?.throwIfAborted();
   check(packagePath && nativeExecutable, "缺少运行包或可执行文件路径");
   check(Number.isSafeInteger(frames) && frames >= 1 && frames <= 120, "frames 必须为 1..120");
@@ -31,7 +36,7 @@ return async function verifySceneNativeWindow({ packagePath, nativeExecutable, f
     await writeFile(privateExecutable, executableBytes, { flag: "wx", mode: 0o500 });
     check(hash(await readFile(privateExecutable)) === executableSha256, "可执行程序副本校验失败");
     check(hash(await readFile(candidate)) === sourceSha256, "候选运行包在启动前发生变化");
-    await runProcess(spawnProcess, privateExecutable, ["--verify-package", candidate, "--report", reportPath, "--nonce", nonce, "--frames", String(frames)], directory, timeoutMs, signal);
+    await runProcess(spawnProcess, privateExecutable, [verifyCommand, candidate, "--report", reportPath, "--nonce", nonce, "--frames", String(frames)], directory, timeoutMs, signal);
     check(hash(await readFile(candidate)) === sourceSha256, "候选运行包在验证期间发生变化");
     check(hash(await boundedRead(privateExecutable, 512 * 1024 ** 2, signal)) === executableSha256, "可执行程序在验证期间发生变化");
     signal?.throwIfAborted();
@@ -46,6 +51,16 @@ return async function verifySceneNativeWindow({ packagePath, nativeExecutable, f
       packageHash, nonce, requestedFrames: frames, report, verifiedAt: new Date().toISOString() };
   } finally { await rm(directory, { recursive: true, force: true }); }
 };
+}
+
+/** scene 发布候选的窗口验证（`--verify-package`）。 */
+export function createNativeWindowVerifier(parseDeepRuntimePackage) {
+  return createProcessWindowVerifier(parseDeepRuntimePackage, "--verify-package");
+}
+
+/** dashboard 内容包的窗口验证（.dmda 正式链的 `--verify-dashboard-package`）。 */
+export function createDashboardNativeProcessVerifier(parseDeepRuntimePackage) {
+  return createProcessWindowVerifier(parseDeepRuntimePackage, "--verify-dashboard-package");
 }
 
 async function boundedRead(file, maxBytes, signal) {
