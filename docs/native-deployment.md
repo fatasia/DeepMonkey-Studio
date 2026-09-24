@@ -76,7 +76,7 @@ pnpm studio start web
 pnpm studio start api
 ```
 
-`client` 会启动 API、Web 和 Tauri 开发客户端，只支持 Windows。安装包中的“本地工作台”是另一种运行形态：项目保存在客户端 IndexedDB，无需填写服务 IP，也不依赖 Node、PostgreSQL、MinIO 或 Python；需要协作、数据服务和在线发布时才连接服务器 Origin。
+`client` 会启动 API、Web 和 Tauri 开发客户端，只支持 Windows。安装包中的“本地工作台”会启动随包交付的完整本地 API，项目元数据保存在 SQLite，模型、图片与发布产物使用本地文件存储。用户无需填写服务 IP，也无需另行安装 Node、PostgreSQL、MinIO 或 Python；需要团队协作时再切换到服务器连接，编辑、数据源、AI、导入导出与发布入口保持一致。
 
 ### Native 质量档（可选）
 

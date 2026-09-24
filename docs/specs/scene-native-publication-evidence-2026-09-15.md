@@ -1,6 +1,6 @@
 # Native 发布候选与窗口证据
 
-日期：2026-09-15。服务端候选编译、正常窗口验证、发布租约及 HTTP/浏览器接线已实现；完整浏览器发布到正式 ZIP 下载验收仍为本轮待办。
+日期：2026-09-15；2026-09-24 更新。服务端候选编译、正常窗口验证、发布租约及 HTTP/浏览器接线已实现；正式交付为内嵌运行包的 Windows EXE，不再以 ZIP 作为 Scene Native 的最终下载格式。
 
 ## 部署
 
@@ -13,6 +13,8 @@ pnpm --filter @bim-studio/api start
 ```
 
 API build 和 predev 调用 `scripts/build-native-scene-compiler.mjs`，在 `apps/api/dist/native-scene-compiler/` 生成编译 worker、窗口验证模块及 SHA-256 清单。运行时校验模块字节，不读取 Web 源码或临时构建。源文件 hash 清单用于审计。开发测试在各自临时目录构建，不依赖已有 dist。
+
+`NATIVE_SCENE_VERIFIER_EXECUTABLE` 只决定新候选使用哪一版窗口程序。2026-09-24 起，候选通过后会把该次精确 EXE 字节按 SHA-256 冻结到项目私有对象库；新发布的再次下载不依赖当前服务路径，服务升级也不能替换历史发布引擎。旧记录没有冻结 EXE 时继续使用配置路径并严格核对原 SHA-256。
 
 编译器复用 Web v5 转换和兼容检查，使用服务端冻结 GLB；独立 Worker 限时 60 秒，源资源上限 256 MiB，纹理解码沿用 API 的 sharp。窗口 runner 与 CLI 共用核心，复制包及 EXE 到私有临时目录，记录实际执行副本 SHA，生成随机 nonce；超时或取消终止子进程，等待 close 后清理。
 

@@ -2,7 +2,70 @@
 
 > 写给接手的 GPT 会话。上一棒:GLM 夜间循环(2026-09-23 21:00 ~ 09-24 09:00,32+ 提交)。
 > 仓库:D:/Documents/bim/bim-studio,分支 dev-studio,远端已同步(7872f075 → 1a5f4779)。
-> 用户当前指令:wasm 完整集成急速推进(原 TS 全功能保留不降级);素材库全量打包已上传 GitHub Release;许可证 GitHub 显示 MIT。
+> 用户当前指令:wasm 完整集成急速推进(原 TS 全功能保留不降级);素材库分卷由用户手动上传,自动上传必须保持停止;许可证 GitHub 显示 MIT。
+
+## 2026-09-24 Codex 接手现状核查
+
+### 已有（不重建）
+
+- `deep-engine-wasm` 已镜像 Native 全模块并通过 `wasm32-unknown-unknown` 编译；`GraphSend`、Web 时钟分支、`GpuEvent::WasmRendererReady`、W1 优化脚本与 W2 `engine.html`/`engine-glue.js` 已存在。
+- Native 的运行包字节校验入口 `parse_and_validate_runtime_package`、播放器内容装配 `PlayerContent::from_package`、winit 应用状态和真实 `Renderer` 均已存在；本轮只补 Web 装载和异步生命周期，不另建渲染器。
+- 字体冻结/审计底座已在 `platform_text/raster/frozen_fonts.rs`，不引入第二套字体系统。
+- 素材库三卷已在本地生成；`.003` 的本地 SHA-256 与 GitHub Release 服务端 digest 一致。
+- 根 `LICENSE`/README 主入口已切到 MIT，但许可证尾项并未全部完成：`apps/battery-native-runtime/Cargo.toml`、Web 社区文档、portable 文案及部分 fixture/脚本仍有旧 `LicenseRef` / `source-available` 文案；历史 fixture 是否迁移需按兼容性单独判断，不能把全仓状态写成已完成。
+
+### 真实缺口与本轮验收
+
+1. GitHub Release 三卷的本地大小/SHA-256 已固定；2026-09-24 最新只读核查为 `.001/.003 uploaded` 且 digest 与本地一致，`.002 starter`，由用户手动续传，不得重启自动上传或改变分卷。
+2. 全引擎 Web 入口、运行包内存注入、winit canvas 交接、异步 Renderer 初始化回装、停止/错误状态已经补齐；bench 只保留为对比入口。
+3. WebGPU 初始化和提交错误作用域已改为浏览器异步链，不再在 wasm 主线程用 `pollster::block_on` 等待 GPU；同步诊断 readback 暂不在 wasm 帧尾执行，不影响渲染提交。
+4. 浏览器字体使用现有冻结字体合同：JS 注入 locale/bytes/SHA-256/faceIndex，完整验证后发布；无字体的 chart/dashboard 启动明确失败，不静默使用空 fontdb，也不把 16MB 字体硬编码进引擎。
+5. 真实运行包浏览器 E2E、输入画面变化、控制台、`wasm-opt -Oz` 与压缩体积证据均已补齐；当前主要剩项是后续按模块拆分/懒加载做首包瘦身，不属于本轮正确性阻塞。
+
+## 2026-09-24 正式产品接入现状核查（WASM / Native / Android / 开源）
+
+### 已有（复用，不重建）
+
+- Studio 已有 `StudioDeepWebGpuBridge`、`BackendCanvasDeck`、`rendererBackendPreference` 和 `useAppRuntimeEffects` 的候选画布、状态快照、失败回退与偏好提交链；正式接入必须扩展这条链，禁止另建平行状态机。
+- `compileSceneRuntimePackage` / `buildDeepRuntimePackage` / `serializeDeepRuntimePackage` 已能从作者场景生成 Native/WASM 共用运行包；WASM 不新增第二种场景合同。
+- `deep-engine-wasm` 已提供 `set_scene_package`、`start_scene_viewer`、`stop_scene_viewer`、`engine_canvas` 和冻结字体注入；`apps/web/public/dev/pkg` 已有 `-Oz` 发布产物。
+- Native/Android 已有候选包、Windows portable/standalone、Android 模板 APK 与服务端下载代码；本轮先查产品入口和部署配置缺口，不重复实现打包器。
+- UI 沿用 `base.css` 令牌和现有 Renderer 切换控件；对标西门子式克制状态表达与 Unity 的后端切换体验，不新增装饰性面板。
+
+### 真实缺口与验收
+
+1. `RendererBackend` 仍只有 `webgl | webgpu`，正式 Studio 没有 `wasm` 能力探测、选择项或持久化语义。
+2. WASM 只由 `/dev/engine.html` 消费；需新增复用现有候选 Canvas/回退合同的 `StudioDeepWasmBridge`，并把当前场景运行包交给 wasm，而不是另建编辑器。
+3. WASM 导出目前是整包启动/停止合同，不具备 Studio 全量细粒度编辑 API；本轮验收采用“Three 作者态继续权威、WASM 候选画布按已提交场景包重建”的明确模式，编辑期间保持作者功能，不伪装成增量命令已全接通。
+4. Native 与 Android 打包能力虽存在，但产品入口、部署配置、下载/启动链仍需分别做真实核查与修复；不得仅凭历史 test-output 宣称当前可用。
+5. 最终门禁必须覆盖底层合同→Web 入口→切换/回退→发布 API→产物下载/启动，并补 1920/1280/980/480 双轮浏览器截图、控制台 0 error、相关全量测试和开源准备度报告。
+
+## 2026-09-24 Tauri 双模式现状核查
+
+### 已有（复用，不重建）
+
+- `DesktopConnectionGate` 已提供“本地工作台 / 连接企业服务器”启动选择，`desktopRuntimeMode` 已持久化选择；服务器不可达时可留在本地模式。
+- `DesktopLocalApi` / `IndexedDbDesktopLocalWorkspaceStore` 已承接一部分项目、场景、二维应用、模型与脚本功能；这是旧的本地子集实现，不作为完整本地版目标继续扩建。
+- Tauri 宿主生产入口已经固定为包内 `../../web/dist`，没有远程页面权限；服务器配置与令牌只经受限 command 暴露。
+- API 已有完整 SQLite metadata store、本地 object store、数据源、AI、转换、Native/Android 发布等正式路由；本地版应托管这套 API，不复制能力。
+- 现有 `.bimproject` 项目交付链已覆盖场景、二维应用、模型、资源、脚本依赖、数据连接、数据集和管道，并具备哈希校验、身份重映射、断点续导和凭据剔除；不新增第二种导出包格式。
+
+### 真实缺口与本轮修复
+
+1. `webviewInstallMode=downloadBootstrapper` 仍让缺少 WebView2 的机器在安装时依赖网络；改为 `offlineInstaller`，确保安装和运行均可断网完成。
+2. 桌面产物门禁此前只检查 IFC/Draco 旧资源，未锁定正式 WASM 引擎和 Draco GLTF 解码器；已把 `engine-wasm/deep_engine_wasm.{js,wasm}` 与 `draco_decoder_gltf.wasm` 加入必备资源。
+3. 产物门禁新增生产入口必须为本地 `web/dist`、WebView2 必须是离线/固定运行时，以及 `index.html` 不得引用远程脚本/样式的断言。
+4. 现有 IndexedDB 子集不满足目标。真实缺口是由 Tauri 启动并管理同一套完整 API，配置为 SQLite + 本地文件存储；本地与服务器模式只切换 API origin，页面与功能实现保持一致。
+5. Native/Android 打包继续复用现有 API 发布链，本地版不得另建打包器；SQLite 本地项目与 SaaS 项目均使用现有 `.bimproject` 双向迁移，数据源密钥由目标环境重新配置。
+
+### 本轮实施与验证
+
+- `start_local_api` 已接通包内 Node + 完整 API：随机回环端口、SQLite、本地对象目录、进程级管理令牌、健康等待、日志与宿主退出清理均已实现。
+- Web 本地模式已改走真实 HTTP `ServerClient`；IndexedDB API 只保留兼容测试，不再承接产品请求。
+- API sidecar 构建采用 injected workspace deploy，修复 legacy deploy 会污染共享根 `node_modules` 的问题；干净重建后根 TypeScript/Vitest 工具仍完整。
+- 真实 sidecar 验证通过：health 200、无令牌 401、本地 admin 令牌、项目创建与重启恢复、30 行 demo SQLite 数据、API 1.0 和 Tauri Origin CORS。
+- Tauri release `build --no-bundle` 已通过：54,471,168 字节主程序，`target/release/local-api/` 已复制 Node 与完整 API 资源；sidecar 生命周期已拆入独立 `local_api.rs`。
+- 证据与边界见 `docs/reports/tauri-local-api-integration-2026-09-24.md`。Native/Android 不另建实现，正式包仍需把既有播放器、APK 模板、签名工具和部署清单组成可搬迁资源闭包。
 
 ## 一、状态总览(全部真实测量,证据在 test-output/glm-night-20260923/)
 
@@ -32,12 +95,13 @@
 - 模板 APK:scripts/build-android-template.mjs(aapt2+zipalign -p+apksigner,资源 arsc/so STORED);API 服务 dashboardAndroidApk.ts(注入+重签+android-apk 路由+发布页 UI 签名面板)。
 - **模拟器 E2E 全通**:安装→启动→资产物化→schema fail-closed→preflight→wgpu Vulkan 设备→渲染循环→**触控交互**(adb 滑动→相机旋转→画面变化,touch-before/after.png)。
 - 三真 bug 修复:android_main 按值签名(0.6)、internal_data_path SEGV(改字面 files 目录)、UBO limits 收敛到适配器(SwiftShader 16KiB)。
-- 遗留:GitHub Release 分卷上传进行中(asset-library-v1,3 卷 4.38GB,后台任务);真机(arm64)触控取证。
+- Android 本轮门禁已完成：用户于 2026-09-24 明确不要求物理真机；双 ABI 构建/签名与 x86_64 模拟器安装、启动、渲染、触控为验收依据。素材库分卷已由用户手动上传完成，不得重启自动上传。
 
-### 3. wasm 第三方案(spike 完成,集成进行中——见第三节)
+### 3. wasm 第三方案(spike 与全引擎集成均完成——见第三节)
 - bench viewer:WebGPU 后端 instanced PBR,153.6KB wasm+58KB JS(Oz 后 135.8KB),143.6fps 与 Three 打平,截图实证。
 - 优化管线:scripts/wasm-optimize.mjs(W1 交付)+ build-wasm-bundle.mjs。
-- **全引擎镜像集成编译关通过**:deep-engine-wasm crate 内 full_mods 99 模块 #[path] 镜像提升至 crate 根,全依赖补齐,GraphSend 标记 trait,0 error。
+- **全引擎镜像集成运行关通过**:`deep-engine-wasm` 99 模块镜像使用真实 `NativeApp + Renderer`；运行包字节注入、异步 WebGPU 初始化、页面/引擎 canvas 双模式、停止事件、输入交互和字体字节注入已接通。
+- `-Oz` 发布包:wasm 5799.9KB + JS 111.2KB；合计 raw 5.77MiB、gzip 2241.2KB、Brotli 1595.4KB。153.6KB 是早期隔离 bench，不是 99 模块全引擎体积。
 
 ### 4. 四条子代理 Lane
 - A=UI 交互:浮点噪声/拓扑空态/480px 遮挡三组根因修复。
@@ -55,31 +119,32 @@
 - 过程文档归档出仓:D:/Documents/bim/archive-process-docs-20260924/;AI 记忆备份:D:/Documents/bim/archive-ai-memory-20260924/(记忆目录已清空);旧会话产物 565MB 已删。
 - 注意:当前会话日志 model-io-sess_68937393-*.jsonl 在 ~/.zcode/cli/rollout/,关闭后手动删。
 
-## 三、wasm 完整集成:精确剩余工作(用户拍板立项后执行)
+## 三、wasm 完整集成:本轮完成状态与后续优化
 
-已完成:全树 wasm32 编译 0 error(99 模块 #[path] 镜像在 deep-engine-wasm crate 根)、GraphSend 标记 trait(native=Send 约束/wasm 置空)、ControlFlow 五点 web_time 分支、GpuEvent::WasmRendererReady 事件变体已预置(events.rs,cfg wasm)。
+本轮七项全部完成，不再使用原文 2-3 周估时：
 
-剩余(按依赖序,估算合计 2-3 周全职;并行多路可压缩到 ~1.5 周):
-1. **两段式渲染器初始化**(1-2 天):renderer_lifecycle.rs `initialize_renderer` 的 pollster::block_on(Renderer::new(...)) 在 wasm 主线程非法。方案:cfg(wasm) 走 spawn_local 异步初始化,完成经 GpuEvent::WasmRendererReady 回装;NativeApp 需加 cfg(wasm) 接收端字段;content 以 Arc<PlayerContent> 穿透(PublishedState<Arc<PlayerContent>>,构造点 app/mod.rs:363 一处)。
-2. **场景包内存注入**(半天):JS `set_scene_package(bytes)` → 深层 load_and_validate 的 fs 读 cfg(wasm) 改读 OnceLock(deep-engine-native lib 加 pub static + setter;wasm 壳的 wasm_bindgen setter 调它)。
-3. **winit web canvas 交接**(1 天):window_attributes()(lifecycle.rs resumed)cfg(wasm) 加 with_canvas(W2 已给双模式设计与源码行号,见 w2-report.md)。
-4. **字体注入**(1 天):W2 实证 fontdb web 静默载 0 字体(无 fontique);需 FontSystem::new_with_fonts 显式注入字体字节(包内带字体或 JS 传字节)。
-5. **执行器 wasm 单线程退化**(已完成编译层;运行时性能调优另计)。
-6. **端到端浏览器联调**:engine.html 胶水页(W2 已建,EngineSurface 适配层)接真入口;真实场景包渲染截屏;触控/输入映射(W2 已设计 5 条差异对策)。
-7. **极致优化**(用户硬要求):wasm-opt Oz 管线已建(W1);simd128 评估=体积中性暂不启用;atomics 需 COOP/COEP 不建议;体积门禁口径=bindgen 后(bench 基线 135.8KB)。
+1. **两段式渲染器初始化**：wasm 使用 `spawn_local` 执行 `Renderer::new`，释放内容快照后经 `GpuEvent::WasmRendererReady` 下一微任务回装；首次 resize 的 layout epoch 延后合并。
+2. **场景包内存注入**：导出 `set_scene_package(bytes)`，先走权威解析/校验，再由 `runtime_package_startup::load_bytes` 装配真实 `PlayerContent`。
+3. **winit web canvas 交接**：支持页面传入 canvas 和引擎创建 canvas；导出 `engine_canvas(handle)` 供宿主认领。
+4. **字体注入**：导出 `clear_runtime_fonts()` / `add_runtime_font(locale, bytes, sha256, faceIndex)`；复用 `FrozenFontInput` 与 `from_frozen_fonts` 的 32 face / 64MiB / SHA-256 / face / selector 校验。`engine-glue.js` 支持 `runtimeFonts` 和启动前 `setRuntimeFonts()`；真实 Noto CJK 16,437,364 字节注入通过，`runtimeFontFaces=1`。
+5. **执行器 wasm 单线程退化**：编译与真实浏览器运行均通过；WebGPU error scope 改为异步收集，未用阻塞轮询冒充支持。
+6. **端到端浏览器联调**：真实运行包 `scene.author-grading-evidence-off` 成功渲染；960×640；拖拽前后截图 SHA-256 不同；`inputChangedFrame=true`；控制台 error/warning 均为 0。
+7. **发布优化**：`wasm-release + wasm-bindgen + wasm-opt -Oz` 通过。产物合计 raw 5911.1KB(5.77MiB)、gzip 2241.2KB、Brotli 1595.4KB。证据在 `test-output/wasm-full-engine/bundle-sizes.json`、`browser-e2e.json` 和前后截图。
+
+非阻塞后续：按加载域拆 core/3D/Deep2D/dashboard/physics 并懒加载，目标是把首屏 loader/core 降到数百 KB；不得把 153.6KB 隔离 bench 当作全引擎体积。浏览器帧尾同步诊断 readback 需另做异步回传队列，当前渲染、剔除与 HiZ 提交不受影响。
 
 ## 四、环境与命令速查
 
 - 三方案对比页:http://localhost:5177/dev/wasm-bench.html(采集:apps/web/scripts/wasm-bench-run.mjs)
 - 素材库 API:Bearer token(login admin/admin→/api/auth/login),GET /api/asset-library?limit=200&offset=N(共 1776 项,全 GLB,2.61GB)
 - 素材库物理库:data/external-assets/source-a(models 2.7G/thumbnails 73M/thumbnails-normalized 105M/catalog/audit 含 sha256/pack.manifest 已生成)
-- 素材包 Release:https://github.com/fatasia/bim-studio/releases/tag/asset-library-v1(3 卷 4.38GB 上传中)
+- 素材包 Release:https://github.com/fatasia/bim-studio/releases/tag/asset-library-v1；`.001/.003` 已上传并核对 digest，`.002` 由用户手动上传中，自动上传已停止。
 - 音频长稳重跑:`DEEP_AUDIO_SOAK_SECONDS=1800 cargo test --test dashboard_video_media_foundation formal_exe_audio_thirty_minute_stability_soak -- --ignored --nocapture`(在 packages/deep-engine-native)
 - Android 模拟器:AVD deep-test,WHPX 加速,adb 在 D:/Soft/adb/platform-tools(Git Bash 下 adb shell 参数加引号+MSYS_NO_PATHCONV=1)
 
 ## 五、诚实声明
 
 - 30min 长稳 max 口径未过(三轮 400-500ms,定性=设备事件);mean 口径已切且达标(探针)。
-- wasm 集成未完成:上表 1-7 全部为待办,当前只有编译基线+设计。
-- Android Release 上传未完(后台进行中);GitHub 服务端可能缓存旧 SHA 孤儿提交(彻底清除需 Support 或新仓)。
+- wasm 本轮 1-7 已完成并有真实浏览器证据；5.77MiB 是完整 99 模块引擎 raw 体积，Brotli 网络口径约 1.56MiB。首包进一步瘦身需要模块拆分，不是修正一个编译参数即可降回 bench 的数百 KB。
+- 素材库 `.002` 手动上传尚未完成服务端 digest；不得把 `starter` 写成完成。GitHub 服务端可能缓存旧 SHA 孤儿提交(彻底清除需 Support 或新仓)。
 - 工作树剩余未跟踪:scripts/benchmarks/babylon-web/(留置)、bindgen 产物(gitignored)。

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="143" height="24" viewBox="0 0 143 24" role="img" aria-label="Deep Engine CI workflow">
+  <title>Deep Engine CI workflow</title>
+  <rect width="143" height="24" rx="6" fill="#1b292f"/>
+  <rect x="0.5" y="0.5" width="142" height="23" rx="5.5" fill="none" stroke="#39535c"/>
+  <circle cx="13" cy="12" r="4" fill="#60b7c3"/>
+  <text x="25" y="16" fill="#eef5f6" font-family="Arial, sans-serif" font-size="11" font-weight="600">Deep Engine CI</text>
+</svg>
