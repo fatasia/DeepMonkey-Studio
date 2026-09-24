@@ -17,6 +17,8 @@ import { StudioDeepShadowSession } from "./StudioDeepShadowSession";
 import { StudioDeepPerformance } from "./StudioDeepPerformance";
 import { StudioDeepRenderView } from "./StudioDeepRenderView";
 import { updateAuthorProjectionState } from "./authorLodSelection";
+import { DeepCameraController } from "./deepCameraController";
+import { DeepCameraInputSession } from "./deepCameraInputSession";
 import { createDeepCanvas, prepareAuthorInputCanvas, captureAuthorStyle, restoreAuthorStyle,
   type AuthorCanvasStyle } from "./studioDeepPresentationCanvas";
 import type { FrameCaptureSession } from "@bim-studio/deep-engine";
@@ -81,6 +83,10 @@ export class StudioDeepWebGpuBridge {
   private cameraFramesSubmitted = 0;
   private cameraFramesCoalesced = 0;
   private cameraMaxInFlight = 0;
+  private controller: DeepCameraController | undefined;
+  private inputSession: DeepCameraInputSession | undefined;
+  private gestureActive = false;
+  private lastGestureTickAt: number | undefined;
 
   constructor(
     private readonly viewer: ViewerEngine,
@@ -260,6 +266,7 @@ export class StudioDeepWebGpuBridge {
     this.viewer.setPresentationRendererBackend("webgpu");
     this.failureReported = false;
     this.lastCameraSnapshot = cameraSnapshot(this.viewer);
+    this.takeoverGesture();
     // 静止视口没有帧回调，设备丢失必须主动通知，不能等待下一次用户输入。
     const session = (backend.runtime as { session?: RuntimeSession }).session;
     void session?.device?.lost.then((info) => {
@@ -299,6 +306,7 @@ export class StudioDeepWebGpuBridge {
     releaseStudioFrameCaptureSession(frameCaptureSession);
     this.syncPending = undefined;
     this.syncAgain = undefined;
+    this.releaseGesture();
     this.lastCameraSnapshot = undefined;
     this.cameraFramesInFlight = 0;
     this.pendingCameraView = undefined;
@@ -452,6 +460,45 @@ export class StudioDeepWebGpuBridge {
     this.viewer.scene.updateMatrixWorld(true);
     this.viewer.camera.updateMatrixWorld(true);
   }
+
+  /** 视口手势接管:Deep 画布持有输入,作者画布降级为透传目标(拾取/gizmo 零损失)。 */
+  private takeoverGesture(): void {
+    const state = this.viewer.getCameraState?.();
+    const controller = this.controller ??= new DeepCameraController({
+      verticalFovDegrees: this.viewer.getCameraProjectionState?.().verticalFovDegrees ?? 50,
+    });
+    if (state) controller.setPose([state.position.x, state.position.y, state.position.z],
+      [state.target.x, state.target.y, state.target.z]);
+    if (this.viewer.enableViewportGestureTakeover?.() !== true || !this.deepCanvas) return;
+    this.gestureActive = true;
+    this.deepCanvas.style.pointerEvents = "auto";
+    this.authorCanvas.style.pointerEvents = "none";
+    this.inputSession ??= new DeepCameraInputSession(this.deepCanvas, controller, () => this.applyGesturePose(), {
+      forwardTo: this.authorCanvas,
+      suppressGesture: () => this.viewer.isViewportGestureSuppressed?.() === true,
+    });
+    this.inputSession.attach();
+  }
+
+  private releaseGesture(): void {
+    if (!this.gestureActive) return;
+    this.gestureActive = false;
+    this.lastGestureTickAt = undefined;
+    this.inputSession?.detach();
+    if (this.deepCanvas) this.deepCanvas.style.pointerEvents = "none";
+    this.authorCanvas.style.pointerEvents = "auto";
+    this.viewer.disableViewportGestureTakeover?.();
+  }
+
+  /** 手势帧:控制器推进后把姿态写回作者相机(单一事实源),由既有 fast path 出帧。 */
+  private readonly applyGesturePose = (): void => {
+    if (!this.gestureActive || !this.controller) return;
+    const now = performance.now();
+    const dt = this.lastGestureTickAt === undefined ? 16 : Math.min(100, now - this.lastGestureTickAt);
+    this.lastGestureTickAt = now;
+    this.controller.tick(dt);
+    this.viewer.applyViewportCameraPose?.(this.controller.getPose());
+  };
 
   private scheduleCameraSettle(): void {
     this.cancelCameraSettle();

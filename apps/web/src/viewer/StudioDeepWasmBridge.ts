@@ -2,6 +2,11 @@ import type { CameraState } from "@bim-studio/contracts";
 import type { RendererBackend } from "./viewerTypes";
 import { captureAuthorStyle, createDeepCanvas, prepareAuthorInputCanvas, restoreAuthorStyle,
   type AuthorCanvasStyle } from "./studioDeepPresentationCanvas";
+import { DeepCameraController, type CameraPose } from "./deepCameraController";
+import { DeepCameraInputSession } from "./deepCameraInputSession";
+
+/** 视口手势接管期间的引擎中立相机姿态(世界单位)。 */
+export type ViewportCameraPose = CameraPose;
 
 export interface DeepWasmRuntimeModule {
   default(input?: RequestInfo | URL | Response | BufferSource | WebAssembly.Module): Promise<unknown>;
@@ -29,6 +34,12 @@ export interface StudioDeepWasmAuthorHost {
   getCameraProjectionState(): { readonly verticalFovDegrees: number; readonly near: number; readonly far: number };
   setPresentationRendererBackend(backend: RendererBackend): void;
   subscribePresentationFrames(listener: () => void): () => void;
+  /** 视口手势接管:宿主停用 OrbitControls 并返回 true;接管期间经 applyViewportCameraPose 写回姿态。 */
+  enableViewportGestureTakeover?(): boolean;
+  disableViewportGestureTakeover?(): void;
+  /** gizmo 拖拽进行中时抑制视口手势(转发仍发生)。 */
+  isViewportGestureSuppressed?(): boolean;
+  applyViewportCameraPose?(pose: ViewportCameraPose): void;
 }
 
 export interface StudioWasmSwitchResult {
@@ -53,6 +64,10 @@ export class StudioDeepWasmBridge {
   private lastCameraSnapshot: readonly number[] | undefined;
   private generation = 0;
   private closed = false;
+  private controller: DeepCameraController | undefined;
+  private inputSession: DeepCameraInputSession | undefined;
+  private gestureActive = false;
+  private lastGestureTickAt: number | undefined;
 
   constructor(
     private readonly viewer: StudioDeepWasmAuthorHost,
@@ -166,6 +181,7 @@ export class StudioDeepWasmBridge {
     if (this.closed) return;
     this.closed = true;
     this.cancelPendingSwitch();
+    this.releaseGesture();
     this.unsubscribeFrame?.();
     this.unsubscribeFrame = undefined;
     this.cancelCameraSync();
@@ -187,9 +203,45 @@ export class StudioDeepWasmBridge {
     this.unsubscribeFrame?.();
     this.unsubscribeFrame = this.viewer.subscribePresentationFrames(this.queueCameraSync);
     this.syncCamera(true);
+    this.takeoverGesture();
+  }
+
+  /** 视口手势接管:Deep 画布持有输入,作者画布降级为透传目标(拾取/gizmo 零损失)。 */
+  private takeoverGesture(): void {
+    const projection = this.viewer.getCameraProjectionState();
+    const state = this.viewer.getCameraState();
+    this.controller ??= new DeepCameraController({ verticalFovDegrees: projection.verticalFovDegrees });
+    this.controller.setPose([state.position.x, state.position.y, state.position.z],
+      [state.target.x, state.target.y, state.target.z]);
+    if (this.viewer.enableViewportGestureTakeover?.() !== true || !this.canvas) {
+      // 宿主拒绝(如导航模式不支持):保持既有输入路径,不视为失败。
+      this.controller.setPose([state.position.x, state.position.y, state.position.z],
+        [state.target.x, state.target.y, state.target.z]);
+      return;
+    }
+    this.gestureActive = true;
+    this.canvas.style.pointerEvents = "auto";
+    // 作者画布不再持有输入:事件由 Deep 画布接收并克隆转发回来(拾取/gizmo 链零损失)。
+    this.authorCanvas.style.pointerEvents = "none";
+    this.inputSession ??= new DeepCameraInputSession(this.canvas, this.controller, () => this.queueCameraSync(), {
+      forwardTo: this.authorCanvas,
+      suppressGesture: () => this.viewer.isViewportGestureSuppressed?.() === true,
+    });
+    this.inputSession.attach();
+  }
+
+  private releaseGesture(): void {
+    if (!this.gestureActive) return;
+    this.gestureActive = false;
+    this.lastGestureTickAt = undefined;
+    this.inputSession?.detach();
+    if (this.canvas) this.canvas.style.pointerEvents = "none";
+    this.authorCanvas.style.pointerEvents = "auto";
+    this.viewer.disableViewportGestureTakeover?.();
   }
 
   private publishWebGl(): void {
+    this.releaseGesture();
     this.unsubscribeFrame?.();
     this.unsubscribeFrame = undefined;
     this.cancelCameraSync();
@@ -202,9 +254,12 @@ export class StudioDeepWasmBridge {
   private readonly queueCameraSync = (): void => {
     // 订阅回调本身每作者帧只触发一次;再排 rAF 会把相机同步推到下一帧,
     // 凭空增加一帧输入延迟。sameCameraSnapshot 的 ε 去重已兜住冗余 FFI。
-    if (typeof globalThis.requestAnimationFrame !== "function") {
-      this.syncCamera(false);
-      return;
+    if (this.gestureActive && this.controller) {
+      const now = performance.now();
+      const dt = this.lastGestureTickAt === undefined ? 16 : Math.min(100, now - this.lastGestureTickAt);
+      this.lastGestureTickAt = now;
+      this.controller.tick(dt);
+      this.viewer.applyViewportCameraPose?.(this.controller.getPose());
     }
     this.syncCamera(false);
   };
