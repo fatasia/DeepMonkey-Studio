@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeepMonkey wasm 全引擎入口胶水(engine-glue)</title>
+<style>
+  /* 与 wasm-bench.html 同一令牌族:深底 #0b1114 / 强调 #3ec6c1 / 错误 #e27478。 */
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #0b1114; color: #a7b2b8; font: 13px/1.5 "Segoe UI", "Microsoft YaHei", sans-serif; }
+  #bar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: #11191d; border-bottom: 1px solid rgba(167,183,190,.14); flex-wrap: wrap; }
+  #bar strong { color: #e6ecef; margin-right: 8px; }
+  button { min-height: 30px; padding: 4px 14px; cursor: pointer; color: #e6ecef; background: #172126; border: 1px solid rgba(167,183,190,.26); border-radius: 4px; }
+  button:hover { border-color: rgba(62,198,193,.6); }
+  button.mode { min-width: 168px; }
+  button.mode b { color: #3ec6c1; }
+  #status { font-variant-numeric: tabular-nums; color: #e6ecef; }
+  #status b { color: #3ec6c1; }
+  #meta { margin-left: auto; color: #6d7a82; font-size: 12px; white-space: pre; }
+  #host { position: relative; width: 100vw; height: calc(100vh - 47px); }
+  #host canvas { display: block; width: 100%; height: 100%; outline: none; }
+  #host canvas:focus-visible { outline: 1px solid rgba(62,198,193,.55); }
+  #err { position: fixed; inset: auto 12px 12px 12px; max-height: 45vh; overflow: auto; margin: 0;
+         padding: 8px 10px; background: rgba(43,17,19,.92); border: 1px solid rgba(226,116,120,.45);
+         border-radius: 6px; color: #e27478; white-space: pre-wrap; font: 12px/1.5 Consolas, monospace; }
+  #filebar { position: fixed; inset: auto 12px auto 12px; display: flex; gap: 8px; align-items: center;
+             padding: 6px 10px; background: rgba(17,25,29,.92); border: 1px solid rgba(167,183,190,.2); border-radius: 6px; }
+  #filebar label { cursor: pointer; }
+  #filebar input { color: #a7b2b8; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <strong>全引擎 wasm 入口</strong>
+  <button id="start">启动</button>
+  <button id="stop">停止</button>
+  <button id="mode" class="mode" title="canvas 交接模式:page=页面传入 canvas;engine=引擎自建 canvas(winit with_canvas(None))">canvas 模式:<b>page</b></button>
+  <span id="status">未启动</span>
+  <span id="meta">glue W2 · /dev/pkg/deep_engine_wasm.js</span>
+</div>
+<div id="host"></div>
+<div id="filebar">
+  <label>本地场景包注入(full-engine 就绪后可用):<input id="pkgfile" type="file" accept=".json,.bin,.deeppkg"></label>
+</div>
+<pre id="err" hidden></pre>
+<script type="module">
+  import { bootEngine } from "/dev/engine-glue.js";
+
+  const params = new URLSearchParams(location.search);
+  const canvasMode = params.get("canvas") === "engine" ? "engine" : "page";
+  const modeButton = document.getElementById("mode");
+  modeButton.innerHTML = `canvas 模式:<b>${canvasMode}</b>`;
+
+  bootEngine({
+    statusEl: document.getElementById("status"),
+    errBox: document.getElementById("err"),
+    host: document.getElementById("host"),
+    modeButton,
+    startButton: document.getElementById("start"),
+    stopButton: document.getElementById("stop"),
+    fileInput: document.getElementById("pkgfile"),
+    canvasMode,
+  }).then((state) => {
+    globalThis.__engineGlueReady = true;
+    if (params.get("autostart") === "1") state.start();
+  });
+</script>
+</body>
+</html>
