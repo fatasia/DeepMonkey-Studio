@@ -3608,3 +3608,14 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **最终轮公平对比(安静环境)**:WASM 输入 p95 7.2ms 三轮保持与 WebGL 打平、静置 p95 7.1 打平;WebGPU 拖尾三轮稳定(静置 13.8/输入 27.8/submit 16.5)确认为首要优化目标;WASM pointer→submit 口径三轮 11.0→36.8→58.7 波动且 GPU 完成 8.1ms——判定为 wasm 内部自持循环节拍支配的口径疑点,不作胜负证据,后续 wasm 侧插桩定位。黑帧三轮均为 0。
 - **桌面验证代理结论合入**:三产物哈希实测(EXE 3a4c96e5…/NSIS dcb671e4…/MSI 5611a273…);bundle 内 native 与最终 base acbb870d… 一致;首帧两轮 242 帧白闪 0/中白底黑 0(主窗 907/1125ms 深色呈现)——交接 §2"最终二进制视觉验收未闭合"**已闭合**;smoke EXIT=0;0 产品缺陷+3 工程观察项;未验证项如实清单见 `test-output/desktop-publication-verification-2026-09-25/report.md`。
 - 交接五项本轮状态:P0-1=调用图+公平门禁+切片交付(替换未完成,天级);P0-2=完成(安装卸载生命周期除外);P0-3=冻结轮全绿;P0-4=完成;P0-5=完成(未 up 已声明)。外发仍 NO-GO(素材逐资产审计/全历史 secrets 扫描/远端 CI 未做)。
+
+### 2026-09-25 持续批次(用户指令:核心引擎优化最高优先级,其余能收尾就收尾;多路并行)
+
+- **Docker 实机验证发现并修复真问题**:MinIO 官方自 2025-10-23 停发社区 Docker 镜像(minio/minio 全部 tag 含历史 tag 从 Hub 与 quay 移除,实测 pull 全 404)。compose 改用 bitnamilegacy digest 固定快照(sha256:451fe685…,APP_VERSION=2025.5.24),数据目录适配 /bitnami/minio;实机 up→pg_isready accepting+minio healthy→down -v 全过。deployment.md 补镜像来源与"不含 nginx"范围声明。提交 751b59f6。
+- **Android 联测(代理)**:发布链零退化(verify-android-publication 复跑字节级一致 c175d9f3…,双 ABI aapt2 实测,模拟器 RTX 4060 Vulkan 渲染通过);stricter 联测暴露 D1/D2 两个真实缺口。
+- **D1 修复(代理,提交 c3cda2ea)**:APK POST 无条件解析 branding 而 Web 只发 {signing} → 签名模式发布页下载必 400。选 API 侧缺省宽容(branding 对 APK 零消费、GET 先例、无安全损失),显式携带仍严格 400;补 POST 正例/反例 4 例。
+- **D2 修复(代理,提交 b16d0672)**:dashboard 候选链被 native fail-closed 阻断(8a9f15a9 起 scene --verify-package 拒绝 dashboard 内容,而 .dmda 链没有 verify 入口)。native 新增 --verify-dashboard-package(复用 Verification 报告机制,窗口呈现语义不降级,入口反向拒绝 scene 包);同族清剿 chart-heading/downloaded-open 两处串链;真实 dashboard v5 包命令级冒烟(Vulkan 窗口 3 帧+nonce/设备指纹报告)与装配级冒烟(201+receipt)全过。**遗留:桌面 bundle 内 native exe 需下次构建更新**。
+- **secrets/素材审计(代理,报告 b9278ae5)**:gitleaks 8.30.1 全历史 1026 提交 0 真实凭据(五项公开阻断之秘密扫描可关闭);隐私轴确认 filter-repo 未执行、按 e9c34aca 决策走新仓干净初始提交;素材 Release 面许可覆盖 13.6% 仍不达标;corpus-manifest 旧 DMCSL 口径已同步。
+- **核心引擎切片(提交 5d813ac4/38665a1e/f368b250)**:①相机手势帧场景字段缓存(200ms TTL,灯光/雾/环境遍历摘出手势路径,尾随全量 sync 追平);②引擎中立 DeepCameraController(球坐标+阻尼+限位,零 Three 依赖,OrbitControls 手感等价,5 单测)+DeepCameraInputSession(手势映射+双指捏合,3 单测)——八条路径第 2 条的纯逻辑层+输入会话已备,接线到 Studio 视口为下一轮;③runner 提交间隔序列插桩。
+- **插桩轮数据(安静窗口)**:wasm 内部静置降频实锤(输入期仅 18 次 submit、4.4s 级间隔)——pointer→submit 35-58ms 口径系内部循环节拍非宿主延迟;WebGPU submitGap p50=0(一帧多提交)指向拖尾新刀口:合并每帧提交/收敛重绘节流。输入 p95 wasm 7.2 vs webgl 7.3 保持打平,黑帧全 0。
+- **测量纪律**:并发代理环境数据作废两轮(webgl 参考线自身翻倍),性能结论只取安静窗口。
