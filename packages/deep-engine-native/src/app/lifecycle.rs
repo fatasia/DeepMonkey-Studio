@@ -36,7 +36,13 @@ impl ApplicationHandler<GpuEvent> for NativeApp {
                 self.request_redraw();
             }
             event_loop
-                .set_control_flow(winit::event_loop::ControlFlow::WaitUntil(wake_at.max(now)));
+                .set_control_flow({
+            #[cfg(not(target_arch = "wasm32"))]
+            let flow = winit::event_loop::ControlFlow::WaitUntil(wake_at.max(now));
+            #[cfg(target_arch = "wasm32")]
+            let flow = crate::wasm_compat::control_flow_until(wake_at.max(now));
+            flow
+                });
         }
     }
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {

@@ -175,7 +175,13 @@ pub(super) fn presented(app: &mut NativeApp, outcome: RenderOutcome) -> Result<b
 fn schedule(app: &mut NativeApp, event_loop: &ActiveEventLoop, wake: Option<Instant>) {
     app.dashboard_wake_at = wake;
     app.chart_sim_scheduled = wake.is_some();
-    event_loop.set_control_flow(wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil));
+    {
+            #[cfg(not(target_arch = "wasm32"))]
+            let flow = wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil);
+            #[cfg(target_arch = "wasm32")]
+            let flow = wake.map_or(winit::event_loop::ControlFlow::Wait, |w| crate::wasm_compat::control_flow_until(w));
+            event_loop.set_control_flow(flow);
+        }
 }
 fn retry_delay(committed: bool, due: u64, elapsed: u64) -> Duration {
     if committed {

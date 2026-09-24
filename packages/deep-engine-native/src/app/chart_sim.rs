@@ -88,7 +88,13 @@ pub(super) fn tick(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
     }
     pump(app, &mut host, Instant::now());
     if let Some(wake) = host.wake_at {
-        event_loop.set_control_flow(ControlFlow::WaitUntil(wake));
+        {
+            #[cfg(not(target_arch = "wasm32"))]
+            let flow = ControlFlow::WaitUntil(wake);
+            #[cfg(target_arch = "wasm32")]
+            let flow = crate::wasm_compat::control_flow_until(wake);
+            event_loop.set_control_flow(flow);
+        }
         app.chart_sim_scheduled = true;
     }
     app.content.active_mut().chart_sim = Some(host);

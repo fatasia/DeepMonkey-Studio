@@ -273,7 +273,11 @@ pub(super) fn retry(
         .as_ref()
         .and_then(|transport| transport.retry.as_ref())
     {
-        event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(*wake));
+        #[cfg(not(target_arch = "wasm32"))]
+        let flow = winit::event_loop::ControlFlow::WaitUntil(*wake);
+        #[cfg(target_arch = "wasm32")]
+        let flow = crate::wasm_compat::control_flow_until(*wake);
+        event_loop.set_control_flow(flow);
         true
     } else {
         false

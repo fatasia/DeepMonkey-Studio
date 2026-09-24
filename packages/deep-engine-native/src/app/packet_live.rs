@@ -151,7 +151,11 @@ pub(super) fn retry(
         return false;
     };
     if now < *deadline {
-        event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(*deadline));
+        #[cfg(not(target_arch = "wasm32"))]
+        let flow = winit::event_loop::ControlFlow::WaitUntil(*deadline);
+        #[cfg(target_arch = "wasm32")]
+        let flow = crate::wasm_compat::control_flow_until(*deadline);
+        event_loop.set_control_flow(flow);
         return true;
     }
     let (_, generation, candidate) = transport.retry.take().unwrap();
@@ -161,7 +165,13 @@ pub(super) fn retry(
         .as_ref()
         .and_then(|t| t.retry.as_ref())
     {
-        event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(*deadline));
+        {
+            #[cfg(not(target_arch = "wasm32"))]
+            let flow = winit::event_loop::ControlFlow::WaitUntil(*deadline);
+            #[cfg(target_arch = "wasm32")]
+            let flow = crate::wasm_compat::control_flow_until(*deadline);
+            event_loop.set_control_flow(flow);
+        }
         return true;
     }
     false
