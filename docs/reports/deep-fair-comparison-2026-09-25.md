@@ -1,0 +1,63 @@
+# Deep vs Three WebGL 同场景公平对比与 P0 推进报告(2026-09-25)
+
+执行:GLM(继续 `docs/handoffs/codex-to-glm-2026-09-25.md` 交接)。本报告记录本轮新增证据;既有报告(`engine-switch-integration-2026-09-24.md` 等)是各自时刻的快照,不自动覆盖本轮事实。
+
+## 1. 公平性能门禁(P0-1a):新建 runner + 首轮基线
+
+### 现状核查(交接 §4 的三项缺口已确认)
+
+- `gate-render-engine-comparison.mjs`:只比 Three WebGL vs Three WebGPU(裸引擎夹具),Deep 引擎不在 `engines` 数组内,不能充当 Deep 胜出证据(交接已指出,本轮核实)。
+- `engine-switch-integration-e2e.mjs`:有 input→present 指标与黑帧守卫,但场景/相机不固定(依赖开发 fixture 项目漂移位姿),无跨后端像素记录。
+- `deep-gpu-stage-smoke.mjs`:单球诊断,不反映 Studio 同画质。
+
+### 新建:`apps/web/scripts/gate-deep-fair-comparison.mjs`
+
+- 协议:三后端(webgl/webgpu/wasm)在同一真实 Studio 页面、同一 fixture 场景上,每后端先"适应整个场景"复位相机,再依次执行:静置 120 帧 rAF 采样 → 三个固定位姿(前/右/顶,经方位魔方面按钮确定性触发)双拍像素 → 相同 120 步正弦拖拽轨迹的 pointer→submit/GPU 完成 p50/95/99 → 16 帧合成器采样的黑帧/亮度守卫。
+- 守卫:黑帧=0、亮度下限、同后端同位姿双拍 SSIM≥0.99(确定性)。跨后端 SSIM/MAE 只记录不判(交接纪律:跨引擎画风差异不作失败依据)。
+- 判定纪律:核心指标(静置 p50/p95、输入 p50/p95、pointer→submit p95、黑帧)全部不劣于 WebGL 才输出 `exceeds=true`;禁止从切换成功推导胜出。
+- 产物:`test-output/deep-fair-comparison/report.json`、`report.md`、每后端×位姿 PNG。
+
+### 首轮基线(2026-09-24T18:33Z,dev 服务器,守卫全过 0 失败)
+
+| 后端 | 静置 P50/P95 ms | 输入 P50/P95 ms | pointer→submit P95 ms | 黑帧 |
+|---|---|---|---|---|
+| webgl(参考) | 7.00 / 7.20 | 7.00 / 7.20 | 1.60 | 0 |
+| deep-webgpu | 7.00 / 13.90 | 7.10 / 27.90 | 15.80 | 0 |
+| deep-wasm | 7.00 / 7.20 | 6.90 / 7.20 | 11.00 | 0 |
+
+诚实结论:**"全面超过"尚未达成**。WASM 帧时间(p50/p95)已与 WebGL 打平;WebGPU 拖尾(静置 p95 +6.7ms、输入 p95 +20.7ms)与两 Deep 后端的提交延迟是明确瓶颈。像素:WASM MAE 4.6–8.4%,WebGPU 17.8–23.6%(画风差异记录在案)。
+
+## 2. P0-1b 本轮优化切片(以实测瓶颈为目标)
+
+1. **WASM 相机同步减一帧**(`StudioDeepWasmBridge.queueCameraSync`):订阅回调本就每作者帧只触发一次,原实现再排 rAF 把相机同步推迟一帧(~16ms 结构性延迟)。改为同步执行,`sameCameraSnapshot` ε 去重兜底冗余 FFI。测试 3/3 通过。
+2. **flight limit 1 vs 2 A/B(诚实回退)**:假设"在飞上限 2 排队放大 submit 拖尾",改默认 1 后重跑 runner,submit p95 反而恶化(WebGPU 15.8→19.9),且当时两个子代理正在本机录制桌面首帧(GPU 抢占污染数据)。数据不支持假设,已回退默认 2(合同测试锁定),在最终安静环境冻结轮复核。
+3. **view 构建冗余清理**(`StudioDeepRenderView.renderViewSource`):`readStudioDeepFog` 每帧双读(一次喂网格会话、一次进 view),提取单次调用。地面网格 `getImageData` 已有 version 键控缓存(现状核查确认,不重复建设)。
+4. **夹具合同修复(同族排查)**:并行会话的相机快速路径优化把"作者场景矩阵刷新"职责移到 presenter(`presentViewerFrame` 每帧 `scene.updateMatrixWorld()` 后才通知桥;桥只补刷相机节点)。`lights`/`environment` 两个桥测试夹具直接调用桥回调、未补 presenter 职责,导致灯光移动后阴影 viewProjection 断言稳定失败(**非产品回归,是夹具漂移**)。修复:夹具在通知桥前补 `scene.updateMatrixWorld(true)`,与产品合同对齐。修复后桥测试族 53/53、Web 全量 4372/4372。
+
+## 3. Deep 纯编辑调用图(P0-1b 主线,本轮完成侦察)
+
+八条仍锚定 Three 的权威路径(证据 file:line 见本轮侦察记录,关键点):
+
+1. 作者态单一事实源:变换/材质/骨骼/gizmo 回写直接写 THREE 对象(`viewerEngineObjects.ts:330`、`viewerEngineRig.ts:253-293`、`viewerEngineCore.ts:445-472`),文档快照从 Three 读出(`captureSceneModelState.ts:12`)。
+2. 输入/相机:OrbitControls/指针事件绑定作者画布(`viewerEngineCore.ts:425-433,565-571`);Deep 画布 `pointerEvents:none`(`studioDeepPresentationCanvas.ts`)。WASM 桥的 `StudioDeepWasmAuthorHost` 缝是现成引擎中立模板。
+3. 拾取:全部 `THREE.Raycaster` + three-mesh-bvh(`viewerEnginePointer.ts:181-262`、`ordinaryPicking.ts:60-77`),Deep 无拾取查询 API。
+4. gizmo:TransformControls 操纵数学全在 Three(`viewerEngineCore.ts:434-472`);Deep 侧每帧 CPU 投影顶点(`viewerEngineInteraction.ts:84-98`)。
+5. overlay:选择框/测量/注释/灯光代理均为 Three 对象投影。
+6. 每帧环境读取:灯光/雾/曝光/LOD 每帧从 Three 场景读出(`StudioDeepRenderView.ts:65-92`、`viewerFramePresentation.ts:22-26`)。
+7. 帧循环所有权:Deep 监听器由 Three `animate()` 通知;仅 WASM 自持循环。
+8. 收尾依赖:XR、离屏作者渲染、设备丢失恢复快照均以作者画布为前提。
+
+替换顺序按依赖:1(作者态命令层)→ 2(相机/输入缝)→ 3(拾取 API)→ 4(gizmo 原生化)→ 5(overlay 自绘)→ 6(文档驱动环境)→ 7(帧循环)→ 8。**这是天级工程,本轮交付了侦察+模板定位+两个可验证切片,未完成全部替换——不宣称 Deep 纯编辑完成。**
+
+## 4. 本轮其它 P0 完成项
+
+- **P0-4 仓库治理(完成)**:README 增量补 `MIT License + Ethical Restrictions` 与 `source-available` 门禁文本;`LICENSE.zh-CN.md` 从旧 DMCSL-1.0 全文重写为 DMS-MIT-ER-1.0 中文便读版;`LICENSING.md` 三处过时说明更新;`CONTRIBUTING.md` 贡献条款、`apps/web/src/docs/community.md`、`apps/battery-native-runtime/Cargo.toml`(license-file)同步;`AGENTS.md` 治理段记录 2026-09-25 用户决策;`verify-dashboard-standalone.mjs` 的 `--licenses` 断言更新为 MIT+ETHICAL RESTRICTIONS;工业 worker 许可审计夹具标签更新;旧 `LicenseRef-Deep-Monkey-Community-1.0` 在生成侧清零(仅保留门禁只读兼容)。`pnpm gate:repository` 与 `pnpm audit:licenses`(529 包)双通过。
+- **P0-2 Tauri 闭包(主体完成)**:最终 Native base(acbb870d…,09-24 17:50)之上重跑 `prepare-local-api-runtime`(507 包部署+11258 非运行时文件剪枝)→ Tauri release → NSIS(`DeepMonkey Studio_0.1.0_x64-setup.exe`,446,340,981 B)+ MSI(`DeepMonkey Studio_0.1.0_x64_zh-CN.msi`,513,290,695 B;旧现场 MSI 目录为空)→ `verify:bundle` 通过。桌面 EXE 59,761,152 B(09-25 02:31)。首帧视觉验收与安装链证据见 `test-output/desktop-publication-verification-2026-09-25/`(本轮桌面验证代理产出)。
+- **P0-3 全局回归**:API 全量 1562 passed / 0 failed(33.7s);Web 全量 4372 passed / 0 failed(夹具修复后复跑)。最终冻结后按需复跑。
+
+## 5. 剩余缺口(诚实清单)
+
+1. Deep 纯编辑 8 条路径替换(天级,见 §3 顺序)——未完成。
+2. "全面超过"未达成:WebGPU 拖尾与 Deep 提交延迟需按 §1 基线继续优化;最终冻结轮需在无并行负载环境重跑 runner 取证。
+3. Android 与最终本地安装版联测发布入口、全历史 secrets 扫描、素材逐资产许可审计(外发 NO-GO 项,交接 §4/§5)。
+4. NSIS/MSI 的真实安装链(安装→启动→2D/3D/发布)证据以桌面验证代理产出为准,缺项如实记录。
