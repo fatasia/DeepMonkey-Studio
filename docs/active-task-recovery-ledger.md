@@ -3619,3 +3619,12 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **核心引擎切片(提交 5d813ac4/38665a1e/f368b250)**:①相机手势帧场景字段缓存(200ms TTL,灯光/雾/环境遍历摘出手势路径,尾随全量 sync 追平);②引擎中立 DeepCameraController(球坐标+阻尼+限位,零 Three 依赖,OrbitControls 手感等价,5 单测)+DeepCameraInputSession(手势映射+双指捏合,3 单测)——八条路径第 2 条的纯逻辑层+输入会话已备,接线到 Studio 视口为下一轮;③runner 提交间隔序列插桩。
 - **插桩轮数据(安静窗口)**:wasm 内部静置降频实锤(输入期仅 18 次 submit、4.4s 级间隔)——pointer→submit 35-58ms 口径系内部循环节拍非宿主延迟;WebGPU submitGap p50=0(一帧多提交)指向拖尾新刀口:合并每帧提交/收敛重绘节流。输入 p95 wasm 7.2 vs webgl 7.3 保持打平,黑帧全 0。
 - **测量纪律**:并发代理环境数据作废两轮(webgl 参考线自身翻倍),性能结论只取安静窗口。
+
+### 2026-09-25 视口手势接管轮(八条路径第 2 条落地)
+
+- **输入接管(提交 3217b92d/63db52ce)**:ViewerEngine 暴露 isTransformDragging+setViewportOrbitEnabled(intent 层,四个 orbit.enabled 写点全部感知);WebGPU/WASM 双桥 takeover——Deep 画布 pointerEvents=auto 持有输入,DeepCameraInputSession(左键轨道/右键或 Shift 平移/滚轮/双指捏合)驱动引擎中立控制器,姿态经 applyViewportCameraPose 写回 viewer.camera+orbit.target(单一事实源不变),ε 去重后走既有 set_viewer_camera/cameraSnapshot 链;原始事件克隆转发作者画布(拾取/hover/gizmo 零损失),gizmo 拖拽抑制手势;宿主拒绝接管时优雅降级为旧路径。e2e 合同更新:输入持有者=当前后端画布。
+- **证据**:takeover 3/3+桥族 35/35+Web 全量 4388/4388+engine-switch e2e passed(接管后)。
+- **插桩轮数据(安静窗口,报告 §输入接管轮前一轮)**:wasm 内部静置降频实锤(输入期 18 次 submit、4.4s 级间隔)——pointer→submit 大值系内部循环节拍非宿主延迟;WebGPU submitGap p50=0 指向一帧多提交。
+- **接管轮数据(安静窗口)**:WebGPU pointer→submit 15.8→**4.2ms(-73%,接近 WebGL 1.3)**;WASM 输入 p95 7.2 vs webgl 7.2 持续打平;WebGPU 输入 p95 拖尾 27.7-34.8 三轮稳定,定位为一帧多提交 GPU 排队(submitGap p50=0),下一刀=渲染器提交合并/收敛重绘节流(需 GPU profiler 专项)。
+- **桌面 bundle 随 D2 native 重建**:native release 48633d85…(含 --verify-dashboard-package)、桌面 EXE 57fe71ed…、NSIS 445,423,665 B、MSI 512,422,343 B;verify:bundle 过。首帧视觉验收基于旧包证据,新包未复录(记录为待办)。
+- **下一轮切片**:第 3 条拾取 API(runtime package CPU raycast,包内几何+节点映射);WebGPU 提交合并专项;首帧新包复录。
