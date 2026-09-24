@@ -205,7 +205,7 @@ async function measureInputTrajectory(page, bounds, backend, presentCanvas) {
   await page.evaluate(() => {
     const state = { intervals: [], longTasks: [], pointerEvents: 0, active: true, last: performance.now(),
       pointerSerial: 0, pointerAt: 0, backendSerial: 0, gpuFenceSerial: 0,
-      pointerToBackendSubmit: [], pointerToGpuComplete: [] };
+      pointerToBackendSubmit: [], pointerToGpuComplete: [], submitTimestamps: [] };
     const tick = now => {
       if (!state.active) return;
       state.intervals.push(now - state.last);
@@ -222,6 +222,8 @@ async function measureInputTrajectory(page, bounds, backend, presentCanvas) {
       state.pointerAt = performance.now();
     };
     const recordBackend = queue => {
+      state.submitTimestamps.push(performance.now());
+      if (state.submitTimestamps.length > 400) state.submitTimestamps.shift();
       if (!state.active || state.pointerSerial === state.backendSerial) return;
       state.backendSerial = state.pointerSerial;
       const pointerAt = state.pointerAt;
@@ -292,6 +294,11 @@ async function measureInputTrajectory(page, bounds, backend, presentCanvas) {
       return ordered[Math.min(ordered.length - 1, Math.floor(ordered.length * ratio))] ?? null;
     };
     const summarize = values => ({ samples: values.length, p50Ms: at(values, 0.5), p95Ms: at(values, 0.95), p99Ms: at(values, 0.99) });
+    // submit 间隔序列:定性内部渲染循环节拍(相机静止时 wasm 是否降频/跳帧)。
+    const submitGaps = [];
+    for (let index = 1; index < session.state.submitTimestamps.length; index++) {
+      submitGaps.push(session.state.submitTimestamps[index]! - session.state.submitTimestamps[index - 1]!);
+    }
     delete window.__fairInput;
     return { sampledFrames: sorted.length, pointerEvents: session.state.pointerEvents,
       p50FrameMs: sorted[Math.floor(sorted.length * 0.5)] ?? 0,
@@ -300,7 +307,8 @@ async function measureInputTrajectory(page, bounds, backend, presentCanvas) {
       maxFrameMs: sorted[sorted.length - 1] ?? 0,
       longTaskCount: session.state.longTasks.length,
       pointerToBackendSubmit: summarize(session.state.pointerToBackendSubmit),
-      pointerToGpuComplete: summarize(session.state.pointerToGpuComplete) };
+      pointerToGpuComplete: summarize(session.state.pointerToGpuComplete),
+      submitGap: summarize(submitGaps) };
   });
   const luminance = [];
   for (const frame of frames) {

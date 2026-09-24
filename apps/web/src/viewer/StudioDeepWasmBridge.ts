@@ -223,6 +223,9 @@ export class StudioDeepWasmBridge {
         state.position.x, state.position.y, state.position.z,
         state.target.x, state.target.y, state.target.z,
         focal, projection.near, projection.far);
+      // 测量插桩:公平对比 runner 用它关联"宿主相机已应用"与 wasm 内部下一次
+      // submit,解释 pointer→submit 的口径(内部自持循环节拍)。
+      performance.mark("deep-wasm:camera-sync-applied");
     } catch (reason) {
       const error = reason instanceof Error ? reason : new Error(String(reason));
       this.publishWebGl();
