@@ -76,9 +76,9 @@
 
 ## 公开源码治理与仓库门禁
 
-- 本仓库的唯一项目许可证为根目录 `LICENSE` 中的 `Deep Monkey Community Source License 1.0`，SPDX 自定义标识为 `LicenseRef-Deep-Monkey-Community-1.0`；第三方组件继续按其各自许可证和 `THIRD_PARTY_NOTICES.md` 管理。
+- 本仓库的唯一项目许可证为根目录 `LICENSE`（MIT 正文）加 `LICENSE-RESTRICTIONS.md`（伦理限制附加条款）构成的 `MIT License + Ethical Restrictions`，标识 `DMS-MIT-ER-1.0`；第三方组件继续按其各自许可证和 `THIRD_PARTY_NOTICES.md` 管理。
 - 该许可证按企业行为设置使用条件，因此项目对外统一称“公开源码”或“source-available”，不得标注为 OSI Approved、OSI Open Source、Free Software 或使用会造成同等误解的徽章和宣传语。
-- 任何企业实施 `LICENSE` 定义的 Covered Misconduct 时即成为受限组织；未实施这些行为的企业以及个人按普通非受限用户处理。
+- 2026-09-25 用户决策：许可切换为标准 MIT 正文附加伦理限制（弃用旧 Deep Monkey Community Source License 1.0 的商业使用/受覆盖产品/受限组织/三十日补救等企业条款，改用 Hippocratic 3.0 风格人权条款）。任何企业实施 `LICENSE-RESTRICTIONS.md` 定义的受覆盖侵犯行为时即成为受限组织；未实施这些行为的企业以及个人按普通非受限用户处理。
 - 受限组织不得以任何方式使用本项目，包括内部使用、评估、测试和研究，也不得通过代理、关联企业、承包商、客户、供应商或其他第三方使用。公开源码、支付费用或商业买断均不构成例外。
 - 许可证正文、受限主体、商业使用定义或公开源码义务属于项目根本政策，只有用户明确授权才能修改；任何修改必须同时更新 `LICENSE.zh-CN.md`、`LICENSING.md`、`README.md`、本节、门禁断言和变更日志。
 - 每个 Pull Request 必须说明问题、范围、验证证据、文档影响和许可证/第三方依赖影响。用户可感知行为、公共合同、部署方式或治理规则发生变化时，同一 Pull Request 必须更新相应文档和 `CHANGELOG.md` 的 `Unreleased`。
