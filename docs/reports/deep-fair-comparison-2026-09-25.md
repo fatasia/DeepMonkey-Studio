@@ -45,6 +45,8 @@
 
 视口手势接管(提交 63db52ce)后:WebGPU pointer→submit 从 15.8 降至 4.2ms——手势事件由 Deep 画布直驱引擎中立控制器、消除了 OrbitControls 的中间帧,提交延迟接近 WebGL 量级;WASM 用户感知帧节奏(输入 p95 7.2ms)持续与 WebGL 打平。**剩余明确缺口:WebGPU 输入 p95 拖尾(27.7–34.8ms 三轮稳定)由一帧多提交的 GPU 排队主导**(submitGap p50=0 实测),下一刀在 deep-engine 渲染器的提交合并/收敛重绘节流,需 GPU profiler 专项。
 
+**提交合并调查(本轮)**:`pbrRenderer.render()` 主路径已是单 encoder 单提交(收敛 preparation commandBuffers 与主命令为一次 `queue.submit`);runner 观测的多 submit 来自调用编排——TAA 收敛重绘(`TemporalFrameSettler.restart` 的 draw 快照重放)、`onSubmittedWorkDone` 补位(`completeCameraFrame` 重放 pending view)与手势帧提交叠加。因此优化对象不是"合并 encoder"而是**调用编排节流**:收敛重绘上限、补位重放与新手势帧的合并策略。该结论已具备,实施留待渲染器专项(需每 pass GPU 计时验证不伤画质)。
+
 ### 插桩轮(2026-09-25 凌晨,安静窗口,gesture 缓存生效,守卫全过)
 
 | 后端 | 静置 P50/P95 ms | 输入 P50/P95 ms | pointer→submit P95 ms | submit 间隔 p50/p95 ms(样本) | 黑帧 |
