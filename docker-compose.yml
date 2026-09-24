@@ -1,0 +1,68 @@
+# Deep Monkey Studio —— 一键基础设施交付(仅 PostgreSQL + MinIO)。
+#
+# 覆盖范围:本文件只提供存储基础设施(持久卷 + 健康检查)。应用本体(Web/API/桌面)
+# 没有官方镜像,仍按 docs/native-deployment.md 的裸机方式运行(`pnpm studio start`)。
+# 镜像边界评估见 apps/web/src/docs/container-deployment.md,操作步骤见 docs/deployment.md。
+#
+# 凭据纪律:所有密码/密钥只从仓库根 `.env` 注入(compose 自动读取),
+# 真实 `.env` 已被 .gitignore 忽略,严禁把真实凭据写入任何仓库文件。
+# 存储拓扑固定为 PostgreSQL + MinIO,后台管理账号约定保持 admin/admin
+# (BIM_STUDIO_ADMIN_PASSWORD,由 .env 注入,与本文件无关)。
+
+name: bim-studio
+
+services:
+  postgres:
+    # 固定上游主版本镜像;升级前先读 docs/deployment.md 的"升级注意"。
+    image: postgres:18-alpine
+    container_name: bim-studio-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 必须在 .env 中设置}
+      POSTGRES_DB: ${POSTGRES_DATABASE:-bim_studio}
+    ports:
+      # 宿主机端口复用 .env 的 POSTGRES_PORT(应用连接同一端口)。
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # PostgreSQL 18+ 镜像的数据目录在 /var/lib/postgresql/18/docker,
+      # 官方推荐把整个 /var/lib/postgresql 挂到命名卷,升级小版本不丢数据。
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DATABASE}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  minio:
+    # 固定上游 RELEASE tag;不要使用 latest。
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: bim-studio-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      # Root 凭据来自 .env 的 MINIO_ROOT_*;单节点部署中请把应用使用的
+      # MINIO_ACCESS_KEY/MINIO_SECRET_KEY 设置为与这里完全一致。
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER 必须在 .env 中设置}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD 必须在 .env 中设置(至少 8 个字符)}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      # mc ready local 由镜像内置别名检查本实例就绪状态。
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+volumes:
+  # 卷名显式固定(不随 compose 项目名或目录名漂移):
+  # `docker compose down` 不会删除卷;`docker compose down -v` 会删除全部数据,严禁随手执行。
+  postgres-data:
+    name: ${BIM_STUDIO_POSTGRES_VOLUME:-bim_studio_postgres_data}
+  minio-data:
+    name: ${BIM_STUDIO_MINIO_VOLUME:-bim_studio_minio_data}
