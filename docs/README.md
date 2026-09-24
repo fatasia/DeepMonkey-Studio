@@ -11,10 +11,8 @@
 | 创建应用 | [首个场景](../apps/web/src/docs/dashboard-scene.md)、[模型导入](../apps/web/src/docs/model-import.md) |
 | 连接数据与 AI | [数据中心](../apps/web/src/docs/data-pipeline.md)、[视觉 AI](vision-quickstart.md) |
 | 发布与恢复 | [发布指南](../apps/web/src/docs/server-publish.md)、[故障恢复](../apps/web/src/docs/troubleshooting.md)、[常见问题](../apps/web/src/docs/faq.md) |
-| SDK、只读 Viewer 与按需交付 | [SDK/API 总览](../apps/web/src/docs/sdk-api-overview.md)、[按需打包方案](specs/on-demand-packaging-plan-2026-09-23.md)、[开源素材交付](open-source-assets-and-delivery.md) |
 | 容器化评估 | [容器部署评估](../apps/web/src/docs/container-deployment.md)（镜像制作延后） |
 | 维护 GitHub Wiki 镜像 | [Wiki 镜像说明](wiki-mirroring.md)（文档中心是唯一事实源，Wiki 只做导出） |
-| Vibe World Agent | [本轮任务规格](specs/vibe-world-agent-plan-2026-09-23.md) |
 
 ## 三维格式接入设计
 

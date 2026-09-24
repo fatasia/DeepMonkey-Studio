@@ -4,11 +4,11 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, extname, isAbsolute, join, normalize, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const LICENSE_ID = "LicenseRef-Deep-Monkey-MIT-ER-1.0";
+export const LICENSE_ID = "MIT";
 // Transition window: the root package.json still carries the predecessor
 // license id (DMCSL-1.0). It is accepted with a warning until the main
 // session updates the manifest; any other value fails.
-export const LEGACY_LICENSE_IDS = ["LicenseRef-Deep-Monkey-Community-1.0"];
+export const LEGACY_LICENSE_IDS = ["LicenseRef-Deep-Monkey-Community-1.0", "LicenseRef-Deep-Monkey-MIT-ER-1.0"];
 
 export const REQUIRED_FILES = [
   "README.md",
@@ -26,6 +26,7 @@ export const REQUIRED_FILES = [
   "MAINTAINERS.md",
   "ROADMAP.md",
   "docs/README.md",
+  "LICENSE-RESTRICTIONS.md",
   "docs/development.md",
   "docs/documentation.md",
   "docs/platform-architecture.md",
@@ -51,21 +52,21 @@ const LARGE_FILE_EXCEPTIONS_PATH = "config/repository-large-file-exceptions.json
 
 const REQUIRED_TEXT = {
   "LICENSE": [
-    "MIT with Ethical Restrictions",
-    "License identifier: DMS-MIT-ER-1.0",
-    "NOT an Open Source license as defined by",
-    "PART 1 — MIT LICENSE",
+    "MIT License",
+    "Copyright (c) 2026 Deep Monkey Studio contributors",
+    "ETHICAL RESTRICTIONS",
+    "LICENSE-RESTRICTIONS.md",
+  ],
+  "LICENSE-RESTRICTIONS.md": [
     "PART 2 — ETHICAL RESTRICTIONS",
-    "PART 3 — SCOPE AND GENERAL TERMS",
     "United Nations Guiding Principles on Business and Human Rights",
     "Forced or compulsory labor",
     "child labor",
     "War crimes, crimes against humanity",
     "No Cure; Reinstatement",
-    "THIRD_PARTY_NOTICES.md",
   ],
   "README.md": ["[简体中文](README.md)", "[English](README.en.md)", "pnpm gate:repository", "MIT License + Ethical Restrictions", "source-available"],
-  "LICENSE.zh-CN.md": ["受约束不当行为", "ILO 基本劳动权利", "国际劳工组织关于工作中基本原则和权利宣言", "加班报酬", "奖金、绩效报酬", "非法收集职工或用户个人信息", "社会保险", "盘剥用户", "5. 视用户为韭菜，视员工为家奴", "未实施受约束不当行为", "受限组织不得使用、复制、修改、分发、部署、访问、评估、测试、研究本软件", "公开源码、支付费用"],
+  "LICENSE.zh-CN.md.legacy": ["受约束不当行为", "ILO 基本劳动权利", "国际劳工组织关于工作中基本原则和权利宣言", "加班报酬", "奖金、绩效报酬", "非法收集职工或用户个人信息", "社会保险", "盘剥用户", "5. 视用户为韭菜，视员工为家奴", "未实施受约束不当行为", "受限组织不得使用、复制、修改、分发、部署、访问、评估、测试、研究本软件", "公开源码、支付费用"],
   "README.en.md": ["[简体中文](README.md)", "source-available", "Publishing source or paying a fee creates no exception"],
   "LICENSING.md": ["Usage matrix", "source-available", "DMS-MIT-ER-1.0", "not OSI open source", "MIT License + Ethical Restrictions"],
   "CONTRIBUTING.md": ["Contribution certification", "pnpm gate:repository", "CHANGELOG.md"],
