@@ -9,10 +9,17 @@ describe("dashboard client branding transport", () => {
     await api.openDashboardCandidateDownload("p", "a", "c", format, signal, branding);
     expect(open.mock.calls[0]![1]).toEqual({ method: "POST", signal, headers: { "content-type": "application/json" }, body: JSON.stringify({ branding }) });
   });
-  it.each(["exe", "zip", "web", "dmda"] as const)("keeps default %s as GET", async format => {
+  it.each(["exe", "zip", "web", "dmda", "apk"] as const)("keeps default %s as GET", async format => {
     const open = vi.fn().mockResolvedValue(new Response()), api = createDashboardPublicationApi(vi.fn(), open);
     await api.openDashboardCandidateDownload("p", "a", "c", format);
     expect(open.mock.calls[0]![1]).toEqual({});
+  });
+  it("POSTs Android signing for apk downloads and keeps branding out of the body", async () => {
+    const open = vi.fn().mockResolvedValue(new Response());
+    const api = createDashboardPublicationApi(vi.fn(), open), signal = new AbortController().signal;
+    const signing = { keystoreBase64: "BwgJCQ==", storePassword: "s3cret", keyAlias: "release" };
+    await api.openDashboardCandidateDownload("p", "a", "c", "apk", signal, undefined, signing);
+    expect(open.mock.calls[0]![1]).toEqual({ method: "POST", signal, headers: { "content-type": "application/json" }, body: JSON.stringify({ signing }) });
   });
   it.each(["web", "dmda"] as const)("does not send Windows branding to %s", async format => {
     const open = vi.fn().mockResolvedValue(new Response()), api = createDashboardPublicationApi(vi.fn(), open);

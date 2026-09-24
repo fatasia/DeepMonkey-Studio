@@ -52,6 +52,8 @@ export interface DashboardOfflineArchiveDownloadDependencies {
   readonly webStatic?: DashboardWebStaticDownloadDependencies;
   /** 场景安卓发布:模板 APK + build-tools + 部署默认签名;未配置时不注册 android-apk 路由。 */
   readonly android?: DashboardAndroidApkDependencies;
+  /** 仅用于组合测试替换 APK 生成器；生产默认使用正式 Android 打包实现。 */
+  readonly createAndroidApk?: typeof createDashboardAndroidApk;
 }
 
 export interface DashboardWebStaticDownloadDependencies {
@@ -85,6 +87,7 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
   }
   const createZip = portable?.createZip ?? createDashboardPortableZip;
   const createExecutable = portable?.createExecutable ?? createDashboardStandaloneExecutable;
+  const createAndroidApk = dependencies.createAndroidApk ?? createDashboardAndroidApk;
   const webStatic = dependencies.webStatic;
   if (webStatic && (!path.isAbsolute(webStatic.webStaticRoot) || typeof webStatic.readPublication !== "function"
     || typeof webStatic.readResourceObject !== "function")) {
@@ -112,11 +115,21 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
         try {
           if (!request.body || typeof request.body !== "object" || Array.isArray(request.body)
             || Object.keys(request.body).some(key => key !== "branding" && key !== "signing")) throw new Error("客户端打包请求无效");
-          branding = await parseClientPackageBranding(request.body.branding, request.signal);
+          // branding 键缺省 = 无品牌覆盖(与 GET 一致,APK 请求级签名只携带 signing);
+          // 显式携带时(含 null/undefined 字面量)仍须通过完整解析,杜绝跨品牌注入。
+          if ("branding" in request.body) {
+            branding = await parseClientPackageBranding(request.body.branding, request.signal);
+          }
           signing = await parseAndroidSigningRequest(request.body.signing, dependencies.android, request.signal);
         } catch (error) {
           return reply.code(400).send({ code: "invalid_client_branding", message: error instanceof Error ? error.message : "客户端打包请求无效" });
         }
+      }
+      if (format === "apk" && signing === undefined && !dependencies.android?.defaultSigning) {
+        return reply.code(400).send({
+          code: "android_signing_required",
+          message: "Android APK 需要上传完整 keystore、口令和别名；当前服务器未配置默认签名",
+        });
       }
 
       let record: DashboardNativeCandidateRecord;
@@ -152,6 +165,13 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
           bytes = await createDashboardWebStaticPackage({ publication, freezeManifest,
             readResourceObject: objectKey => webStatic!.readResourceObject(objectKey, request.signal),
             licensedFonts: webStatic!.licensedFonts, webStaticRoot: webStatic!.webStaticRoot, signal: request.signal });
+        } else if (format === "apk") {
+          // Android NativeActivity 直接把该资产交给 `--package`，因此必须注入候选
+          // 的权威运行包字节，不能把仅供离线分发的 DMDA 外层归档冒充运行包。
+          bytes = (await createAndroidApk(record.candidate.artifact.artifact, dependencies.android!, {
+            signal: request.signal,
+            ...(signing === undefined ? {} : { signing }),
+          })).apk;
         } else {
           const archive = (dependencies.createArchive ?? createDashboardOfflineArchive)({
             freezeManifest,
@@ -164,7 +184,6 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
           bytes = format === "zip"
             ? await createZip(archiveBytes, executable!, packagingOptions)
             : format === "exe" ? await createExecutable(archiveBytes, executable!, packagingOptions)
-            : format === "apk" ? (await createDashboardAndroidApk(archiveBytes, dependencies.android!, { signal: request.signal, ...(signing === undefined ? {} : { signing }) })).apk
             : archiveBytes;
         }
         request.signal.throwIfAborted();
@@ -191,7 +210,7 @@ export async function registerDashboardOfflineArchiveDownloadRoutes(
 }
 
 /** 请求级签名配置:完整携带(keystoreBase64+口令+别名)时覆盖部署默认;
- * 只携带部分字段或缺省时回退部署默认签名;口令只在内存中出现。 */
+ * 缺省时由调用方决定是否允许使用部署默认签名;口令只在内存中出现。 */
 async function parseAndroidSigningRequest(
   input: unknown,
   android: DashboardAndroidApkDependencies | undefined,

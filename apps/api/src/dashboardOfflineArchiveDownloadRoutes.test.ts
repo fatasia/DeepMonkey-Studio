@@ -37,6 +37,8 @@ async function fixture(options: {
   readonly serializeArchive?: ReturnType<typeof vi.fn>;
   readonly portable?: DashboardOfflineArchiveDownloadDependencies["portable"];
   readonly webStatic?: DashboardOfflineArchiveDownloadDependencies["webStatic"];
+  readonly android?: DashboardOfflineArchiveDownloadDependencies["android"];
+  readonly createAndroidApk?: DashboardOfflineArchiveDownloadDependencies["createAndroidApk"];
 } = {}) {
   const app = createApiServer();
   if (options.user) app.addHook("preHandler", async request => { request.systemUser = options.user as never; });
@@ -46,7 +48,9 @@ async function fixture(options: {
   const serializeArchive = options.serializeArchive ?? vi.fn(() => Uint8Array.of(0x44, 0x4d, 0x44, 0x41));
   await registerDashboardOfflineArchiveDownloadRoutes(app, { registry, readFreezeManifest: readFreezeManifest as never,
     createArchive: createArchive as never, serializeArchive: serializeArchive as never, portable: options.portable,
-    ...(options.webStatic === undefined ? {} : { webStatic: options.webStatic }) });
+    ...(options.webStatic === undefined ? {} : { webStatic: options.webStatic }),
+    ...(options.android === undefined ? {} : { android: options.android }),
+    ...(options.createAndroidApk === undefined ? {} : { createAndroidApk: options.createAndroidApk }) });
   return { app, registry, readFreezeManifest, createArchive, serializeArchive };
 }
 
@@ -216,6 +220,93 @@ describe("dashboard offline archive download routes", () => {
       expect(f.registry.read).toHaveBeenCalledTimes(2);
       expect((await f.app.inject({ method: "GET", url: path })).statusCode).toBe(200);
       expect(createZip).toHaveBeenCalledTimes(1);
+    } finally { await f.app.close(); }
+  });
+
+  it("injects the authoritative runtime package into APK instead of the DMDA distribution archive", async () => {
+    const createAndroidApk = vi.fn(async () => ({
+      apk: Uint8Array.of(0x50, 0x4b, 0x03, 0x04),
+      scenePackageSha256: "1".repeat(64),
+      templateApkSha256: "2".repeat(64),
+    }));
+    const android = {
+      templateApkPath: nodePath.resolve("template.apk"),
+      buildToolsPath: nodePath.resolve("build-tools"),
+      defaultSigning: async () => ({
+        keystore: Uint8Array.of(1), storePassword: "store", keyAlias: "alias",
+      }),
+    };
+    const f = await fixture({ user: editor, android, createAndroidApk });
+    try {
+      const apkPath = path.replace("offline-archive", "android-apk");
+      const response = await f.app.inject({ method: "GET", url: apkPath });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["content-type"]).toBe("application/vnd.android.package-archive");
+      expect(response.rawPayload).toEqual(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+      expect(createAndroidApk).toHaveBeenCalledWith(Uint8Array.of(1, 2, 3), android, {
+        signal: expect.any(AbortSignal),
+      });
+      expect(f.createArchive).not.toHaveBeenCalled();
+      expect(f.serializeArchive).not.toHaveBeenCalled();
+    } finally { await f.app.close(); }
+  });
+
+  it("serves POST APK with per-request signing when branding is absent, and keeps explicit branding strict", async () => {
+    const createAndroidApk = vi.fn(async () => ({
+      apk: Uint8Array.of(0x50, 0x4b, 0x03, 0x04),
+      scenePackageSha256: "1".repeat(64),
+      templateApkSha256: "2".repeat(64),
+    }));
+    const android = {
+      templateApkPath: nodePath.resolve("template.apk"),
+      buildToolsPath: nodePath.resolve("build-tools"),
+      defaultSigning: async () => ({
+        keystore: Uint8Array.of(1), storePassword: "store", keyAlias: "alias",
+      }),
+    };
+    const f = await fixture({ user: editor, android, createAndroidApk });
+    try {
+      const apkPath = path.replace("offline-archive", "android-apk");
+      const response = await f.app.inject({ method: "POST", url: apkPath, payload: {
+        signing: { keystoreBase64: Buffer.from(Uint8Array.of(7, 8, 9)).toString("base64"), storePassword: "s3cret", keyAlias: "release", keyPassword: "key-pass" },
+      } });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["content-type"]).toBe("application/vnd.android.package-archive");
+      expect(createAndroidApk).toHaveBeenCalledWith(Uint8Array.of(1, 2, 3), android, {
+        signal: expect.any(AbortSignal),
+        signing: { keystore: Uint8Array.of(7, 8, 9), storePassword: "s3cret", keyAlias: "release", keyPassword: "key-pass" },
+      });
+      // 缺省宽容不放松显式严格:显式 branding: null 仍按无效品牌拒绝。
+      const explicitNull = await f.app.inject({ method: "POST", url: apkPath, payload: {
+        signing: { keystoreBase64: "BwgJCQ==", storePassword: "s3cret", keyAlias: "release" }, branding: null } });
+      expect(explicitNull.statusCode).toBe(400);
+      expect(explicitNull.json().code).toBe("invalid_client_branding");
+      expect(createAndroidApk).toHaveBeenCalledTimes(1);
+    } finally { await f.app.close(); }
+  });
+
+  it("rejects an unsigned APK POST when the deployment has no default signing", async () => {
+    const createAndroidApk = vi.fn(async () => ({
+      apk: new Uint8Array(), scenePackageSha256: "1".repeat(64), templateApkSha256: "2".repeat(64),
+    }));
+    const f = await fixture({ user: editor, createAndroidApk,
+      android: { templateApkPath: nodePath.resolve("template.apk"), buildToolsPath: nodePath.resolve("build-tools") } });
+    try {
+      const apkPath = path.replace("offline-archive", "android-apk");
+      const response = await f.app.inject({ method: "POST", url: apkPath, payload: {} });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({ code: "android_signing_required" });
+      expect(createAndroidApk).not.toHaveBeenCalled();
+    } finally { await f.app.close(); }
+  });
+
+  it("treats a POST without a branding field like GET for EXE packaging", async () => {
+    const createExecutable = vi.fn(async () => Uint8Array.of(0x4d, 0x5a));
+    const f = await fixture({ user: editor, portable: { nativeExecutable: executable, createExecutable } });
+    try {
+      const response = await f.app.inject({ method: "POST", url: exePath, payload: {} });
+      expect(response.statusCode).toBe(200);
+      expect(createExecutable).toHaveBeenCalledWith(expect.any(Uint8Array), executable, { signal: expect.any(AbortSignal) });
     } finally { await f.app.close(); }
   });
 
