@@ -3628,3 +3628,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **接管轮数据(安静窗口)**:WebGPU pointer→submit 15.8→**4.2ms(-73%,接近 WebGL 1.3)**;WASM 输入 p95 7.2 vs webgl 7.2 持续打平;WebGPU 输入 p95 拖尾 27.7-34.8 三轮稳定,定位为一帧多提交 GPU 排队(submitGap p50=0),下一刀=渲染器提交合并/收敛重绘节流(需 GPU profiler 专项)。
 - **桌面 bundle 随 D2 native 重建**:native release 48633d85…(含 --verify-dashboard-package)、桌面 EXE 57fe71ed…、NSIS 445,423,665 B、MSI 512,422,343 B;verify:bundle 过。首帧视觉验收基于旧包证据,新包未复录(记录为待办)。
 - **下一轮切片**:第 3 条拾取 API(runtime package CPU raycast,包内几何+节点映射);WebGPU 提交合并专项;首帧新包复录。
+
+### 2026-09-25 提交合并调查(性能专项前置)
+
+- `pbrRenderer.render()` 主路径确认为单 encoder 单提交(pbrRenderer.ts:499 将 preparation commandBuffers 与主 commands 合并一次 `queue.submit`);公平 runner 观测的一帧多 submit 源自**调用编排**:TAA 收敛重绘(TemporalFrameSettler.restart 重放 draw 快照)、onSubmittedWorkDone 补位(completeCameraFrame 重放 pendingCameraView)与手势帧提交叠加。优化对象为调用编排节流(收敛重绘上限/补位合并),实施需每 pass GPU 计时防画质回退——渲染器专项,提交 37f7a0bd 记录结论。
+- 拾取 API(第 3 条)现状:deep-engine 无拾取查询能力(runtimePackage 结构未含节点级 raycast 映射),新建需编译器保留 nodeId→mesh 实例映射+CPU raycast+命中排序,4-8h 级专项,规格待写。
