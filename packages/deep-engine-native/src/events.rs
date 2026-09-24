@@ -9,6 +9,10 @@ pub enum GpuEvent {
         message: String,
     },
     SmokeTimeout,
+    /// wasm:wgpu web 后端异步初始化完成的回装事件。Renderer 不要求 Send
+    /// (web 事件循环与初始化同线程)。
+    #[cfg(target_arch = "wasm32")]
+    WasmRendererReady(Result<Box<crate::renderer::Renderer>, String>),
     /// A watched RenderPacket file changed and validated; the payload carries the
     /// fully prepared content and a monotonic watcher generation. Delivery is
     /// best-effort: closing the window drops pending updates and keeps the last
