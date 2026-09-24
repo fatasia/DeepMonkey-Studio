@@ -36,13 +36,15 @@ services:
       start_period: 20s
 
   minio:
-    # 固定上游 RELEASE tag;不要使用 latest。
-    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    # MinIO 官方自 2025-10-23 起停止发布社区版 Docker 镜像(minio/minio 与 quay
+    # 的全部 tag 已从 registry 移除,历史 tag 亦不可再拉取)。改用 Bitnami legacy
+    # 快照并以 digest 固定(APP_VERSION=2025.5.24,即 MinIO RELEASE.2025-05-24):
+    # digest 不可变,保证可复现拉取;该快照不再更新,升级策略见 docs/deployment.md。
+    image: bitnamilegacy/minio@sha256:451fe6858cb770cc9d0e77ba811ce287420f781c7c1b806a386f6896471a349c
     container_name: bim-studio-minio
     restart: unless-stopped
-    command: server /data --console-address ":9001"
     environment:
-      # Root 凭据来自 .env 的 MINIO_ROOT_*;单节点部署中请把应用使用的
+      # Bitnami 镜像与官方一致接受 MINIO_ROOT_*;单节点部署中请把应用使用的
       # MINIO_ACCESS_KEY/MINIO_SECRET_KEY 设置为与这里完全一致。
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER 必须在 .env 中设置}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD 必须在 .env 中设置(至少 8 个字符)}
@@ -50,9 +52,10 @@ services:
       - "${MINIO_API_PORT:-9000}:9000"
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
-      - minio-data:/data
+      # Bitnami 镜像的数据目录是 /bitnami/minio(不是官方镜像的 /data)。
+      - minio-data:/bitnami/minio
     healthcheck:
-      # mc ready local 由镜像内置别名检查本实例就绪状态。
+      # 镜像 PATH 已内置 minio-client 的 mc;mc ready local 检查本实例就绪状态。
       test: ["CMD", "mc", "ready", "local"]
       interval: 15s
       timeout: 5s

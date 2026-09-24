@@ -5,6 +5,8 @@
 ## 覆盖范围(先读)
 
 - **只交付基础设施**:Compose 内只有 PostgreSQL 与 MinIO 两个服务。应用本体(Web/API/桌面客户端)当前没有官方镜像,仍然按原生方式运行:`pnpm studio start`(开发)或 `pnpm studio deploy`(Linux 生产)。不要把未验证的临时应用镜像用于生产。
+- **不包含反向代理(nginx/caddy)**:HTTPS 终结、域名与统一入口属于部署环境职责,由宿主网关或云负载均衡承担;Compose 只暴露 PostgreSQL 与 MinIO 端口。未来做 SaaS 多实例统一入口时另行立项(倾向 caddy 自动 HTTPS)。
+- **MinIO 镜像来源(2025-10-23 起)**:MinIO 官方已停止发布社区版 Docker 镜像,`minio/minio` 的全部 tag(含历史 tag)已从 Docker Hub 与 quay.io 移除,不可再拉取。本仓库改用 Bitnami legacy 快照并以 **digest 固定**(`APP_VERSION=2025.5.24`,即 MinIO RELEASE.2025-05-24),保证可复现拉取;该快照不再获得更新,升级需评估自行构建或商业支持,见下方"升级注意"。注意 Bitnami 镜像数据目录为 `/bitnami/minio`(非官方 `/data`),Compose 已适配。
 - **存储拓扑固定**:生产为 PostgreSQL + MinIO;单机开发仍推荐 SQLite + 本地对象目录,不要求 Docker。多实例生产必须使用 PostgreSQL + MinIO。
 - **凭据只经 `.env` 注入**:Compose 从仓库根 `.env` 读取全部密码与密钥;真实 `.env` 已被 `.gitignore` 忽略,严禁把真实凭据写入任何仓库文件。后台管理账号约定保持 `BIM_STUDIO_ADMIN_PASSWORD=admin` 默认值,生产环境应在 `.env` 中改为强密码。
 
@@ -29,7 +31,7 @@ docker compose up -d
 docker compose ps        # postgres 与 minio 状态均应为 healthy
 ```
 
-镜像 tag 固定(`postgres:18-alpine`、`minio/minio:RELEASE.*`),数据写入显式命名的卷 `bim_studio_postgres_data`、`bim_studio_minio_data`,不随项目名或目录名漂移。默认只暴露 `POSTGRES_PORT`、`MINIO_API_PORT`(9000)与 `MINIO_CONSOLE_PORT`(9001)。
+镜像固定(`postgres:18-alpine` 主版本 tag;MinIO 为 Bitnami legacy digest 固定快照,原因见"覆盖范围"),数据写入显式命名的卷 `bim_studio_postgres_data`、`bim_studio_minio_data`,不随项目名或目录名漂移。默认只暴露 `POSTGRES_PORT`、`MINIO_API_PORT`(9000)与 `MINIO_CONSOLE_PORT`(9001)。
 
 ## 3. 初始化系统元数据
 
