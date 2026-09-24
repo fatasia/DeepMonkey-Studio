@@ -12,8 +12,9 @@ describe("Studio Deep bridge author lighting", () => {
   let raf: Map<number, FrameRequestCallback>;
   let authorFrames: Set<() => void>;
   let bridges: StudioDeepWebGpuBridge[];
+  let scenes: THREE.Scene[];
   beforeEach(() => {
-    raf = new Map(); authorFrames = new Set(); bridges = [];
+    raf = new Map(); authorFrames = new Set(); bridges = []; scenes = [];
     let frameId = 0;
     vi.stubGlobal("navigator", { gpu: {} });
     vi.stubGlobal("document", { createElement: canvas, addEventListener: vi.fn(), removeEventListener: vi.fn() });
@@ -28,10 +29,15 @@ describe("Studio Deep bridge author lighting", () => {
   async function settle() { for (let index = 0; index < 20; index++) await Promise.resolve(); }
   async function frame() {
     const callbacks = [...raf.values()]; raf.clear(); callbacks.forEach(callback => callback(16));
-    await settle(); authorFrames.forEach(callback => callback()); await settle();
+    await settle();
+    // 产品里 presentViewerFrame 在通知桥之前刷新作者场景矩阵;夹具直接调用
+    // 桥回调,必须补齐同一职责,否则灯光矩阵仍是上一帧的。
+    scenes.forEach(scene => scene.updateMatrixWorld(true));
+    authorFrames.forEach(callback => callback()); await settle();
   }
   function fixture() {
     const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera();
+    scenes.push(scene);
     scene.background = new THREE.Color("#123456");
     const authorCanvas = canvas(), container = { clientWidth: 640, clientHeight: 480, append: vi.fn() };
     const backend = { setProbeClipmapEnabled: vi.fn(), prepareScene: vi.fn(async (_root: unknown, _view: RenderView) => ({ frame: 1 })),

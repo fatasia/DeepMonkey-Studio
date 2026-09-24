@@ -26,8 +26,9 @@ function canvas() {
 describe("Studio Deep bridge environment staging", () => {
   let frames: Map<number, FrameRequestCallback>, authorFrames: Set<() => void>;
   let bridges: StudioDeepWebGpuBridge[];
+  let scenes: THREE.Scene[];
   beforeEach(() => {
-    frames = new Map(); authorFrames = new Set(); bridges = []; let id = 0;
+    frames = new Map(); authorFrames = new Set(); bridges = []; scenes = []; let id = 0;
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     vi.stubGlobal("navigator", { gpu: {} });
     vi.stubGlobal("document", { createElement: canvas, addEventListener: vi.fn(), removeEventListener: vi.fn() });
@@ -39,10 +40,15 @@ describe("Studio Deep bridge environment staging", () => {
   async function preparePixels() { await settle(); await vi.advanceTimersByTimeAsync(1); await settle(); }
   async function frame() {
     const pending = [...frames.values()]; frames.clear(); pending.forEach(callback => callback(16));
-    await settle(); authorFrames.forEach(callback => callback()); await settle();
+    await settle();
+    // 产品里 presentViewerFrame 在通知桥之前刷新作者场景矩阵;夹具直接调用
+    // 桥回调,必须补齐同一职责。
+    scenes.forEach(scene => scene.updateMatrixWorld(true));
+    authorFrames.forEach(callback => callback()); await settle();
   }
   function fixture() {
     const scene = new THREE.Scene(); scene.background = new THREE.Color().setRGB(0.1, 0.2, 0.3);
+    scenes.push(scene);
     scene.environment = texture(2); scene.environmentIntensity = 0.4;
     const authorCanvas = canvas(), camera = new THREE.PerspectiveCamera();
     const backend = { setProbeClipmapEnabled: vi.fn(), sync: vi.fn(async () => ({ status: "committed", update: "instances", packet: {} })),
