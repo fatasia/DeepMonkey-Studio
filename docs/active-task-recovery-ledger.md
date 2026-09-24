@@ -3590,3 +3590,21 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **Android 模拟器 E2E 全通**:镜像直链补齐后 WHPX 模拟器 34s 启动;E2E APK(真实场景包注入)安装→启动→资产物化→schema fail-closed→preflight OK→wgpu Vulkan 设备→渲染循环运行(截屏=场景环境色上屏)。途中修复三真 bug:android_main 按值签名(0.6,引用式=SIGSEGV 已符号化证实)、internal_data_path SEGV(改字面 files 目录)、UBO limits 收敛到适配器(SwiftShader 16KiB)。
 - **wasm 三方案 spike 完成**:deep-engine-wasm(WebGPU 后端 instanced PBR)编译链全通;同机真 GPU 三车道对比:Three 143.7fps / wasm 143.6fps(p50 6.9ms 打平,均触 144Hz);wasm 体积 153.6KB(wasm)+58KB(JS);渲染链修三处(stride 32/uniform 96B 对齐/P·V 乘法与透视 z 行标准式)。
 - **在途遗留**:30min 音频 soak 逃逸=音频源时长与视频循环周期差 ~0.5s(整 500ms 恒定,回绕相位跳,重同步在拉回);bins 水位用例并行 flaky(t1 全绿 289/0);场景内容级渲染(包内仅 12 三角)与真机触控取证待后续。
+
+### 2026-09-25 凌晨批次(GLM 续 codex-to-glm-2026-09-25 交接)
+
+- **P0-4 许可证口径统一(完成)**:README 增量补齐门禁短语;`LICENSE.zh-CN.md` 从旧 DMCSL-1.0 全文重写为 DMS-MIT-ER-1.0 中文便读版(MIT 正文+伦理限制,对齐 LICENSE/LICENSE-RESTRICTIONS.md);`LICENSING.md` 三处过时说明(中文版 pending/包元数据 LicenseRef 约定/根 package.json Pending)更新;CONTRIBUTING 贡献条款、community.md、battery Cargo.toml(license-file)、verify-dashboard-standalone `--licenses` 断言、工业 worker 许可夹具标签同步;AGENTS.md 治理段记录 09-25 用户决策。`gate:repository`+`audit:licenses`(529 包)双过。README 双件大块并行改动未整批纳入,仅 hunk 修正许可尾段(工作树)。
+- **P0-1a 公平性能门禁(交付)**:新建 `apps/web/scripts/gate-deep-fair-comparison.mjs`——同场景同相机(适应场景复位+魔方面固定位姿前/右/顶)双拍像素守卫(自身确定性 SSIM≥0.99)、同 120 步正弦轨迹 pointer→submit/GPU 完成 p50/95/99、黑帧/亮度硬守卫;跨后端 SSIM 只记录(画风差异不判)。首轮基线(守卫全过):WASM 帧时间 p50/p95 已打平 WebGL(6.9-7.2 vs 7.0-7.2ms);WebGPU 拖尾(静置 p95 13.9、输入 p95 27.9ms)与两 Deep 提交延迟(wasm 11.0/webgpu 15.8 vs webgl 1.6ms)为瓶颈;黑帧 0。**"全面超过"未达成,不宣称。**产物 `test-output/deep-fair-comparison/`。
+- **P0-1b 切片**:①WASM 相机同步去掉多余 rAF 合帧(订阅每作者帧仅一次通知,rAF 把 sync 推迟一帧;ε 去重兜底),测试 3/3;②flight limit 1 vs 2 A/B:limit=1 submit p95 恶化(15.8→19.9,受并行桌面首帧录制 GPU 抢占污染)且不成立,诚实回退默认 2;③`StudioDeepRenderView` fog 双读清理(混并行 extent 缓存 hunk,不单独提交);④grid getImageData 已有 version 缓存(现状核查,不重建)。**八条 Three 权威路径调用图完成**(作者态/输入/拾取/gizmo/相机/overlay/每帧环境读取/帧循环,file:line 证据在 `docs/reports/deep-fair-comparison-2026-09-25.md` §3),替换顺序 1→8 已列,天级工程未完成,不宣称 Deep 纯编辑达成。
+- **夹具漂移修复(同族)**:并行相机快速路径把场景矩阵刷新职责移到 presenter 后,`lights`/`environment` 桥测试夹具直接调桥回调未补该职责→灯移阴影 viewProjection 断言稳定失败(非产品回归)。夹具补 `scene.updateMatrixWorld(true)` 对齐合同;桥测试族 53/53、Web 全量 4372/4372 复绿。已提交 67204393。
+- **P0-2 Tauri 闭包(主体完成)**:最终 Native base(acbb870d…)上重跑 prepare-local-api-runtime(507 包+剪枝 11258 文件)→Tauri release→NSIS 446,340,981 B+MSI 513,290,695 B(旧现场 MSI 空)→verify:bundle 过。首帧两轮与启动链证据由桌面验证代理产出(test-output/desktop-publication-verification-2026-09-25/)。
+- **P0-5 Docker(完成)**:根 docker-compose.yml(PG18-alpine+MinIO 固定 tag、命名卷、健康检查、凭据硬注入)+.env.example 增量+docs/deployment.md+双 README Quick deploy(README 段留工作树待并行基链);compose config 双实机校验过、未 up 已声明。已提交 aca4d83c。
+- **提交**:3d24259f(license 治理)/67204393(夹具)/eb3816bd(runner+报告)/aca4d83c(docker),均未 push;StudioDeepWasmBridge.ts(未跟踪并行文件+本轮 sync 优化)、StudioDeepRenderView.ts、StudioDeepWebGpuBridge.ts(并行相机快速路径)留工作树待基链落库。
+- **在途**:桌面验证代理(首帧两轮/启动链/哈希);最终冻结轮 API+Web 全量;最终轮 runner 需安静环境(无 GPU 抢占)。
+
+### 2026-09-25 收口补充
+
+- **最终冻结轮全量**:API 1562 passed/0 failed(41.0s)+ Web 4372 passed/0 failed(103.5s)+ Web tsc 干净——含本轮全部源码改动(夹具修复/WASM sync 减帧/fog 单读/limit 回退 2)的冻结态证据。
+- **最终轮公平对比(安静环境)**:WASM 输入 p95 7.2ms 三轮保持与 WebGL 打平、静置 p95 7.1 打平;WebGPU 拖尾三轮稳定(静置 13.8/输入 27.8/submit 16.5)确认为首要优化目标;WASM pointer→submit 口径三轮 11.0→36.8→58.7 波动且 GPU 完成 8.1ms——判定为 wasm 内部自持循环节拍支配的口径疑点,不作胜负证据,后续 wasm 侧插桩定位。黑帧三轮均为 0。
+- **桌面验证代理结论合入**:三产物哈希实测(EXE 3a4c96e5…/NSIS dcb671e4…/MSI 5611a273…);bundle 内 native 与最终 base acbb870d… 一致;首帧两轮 242 帧白闪 0/中白底黑 0(主窗 907/1125ms 深色呈现)——交接 §2"最终二进制视觉验收未闭合"**已闭合**;smoke EXIT=0;0 产品缺陷+3 工程观察项;未验证项如实清单见 `test-output/desktop-publication-verification-2026-09-25/report.md`。
+- 交接五项本轮状态:P0-1=调用图+公平门禁+切片交付(替换未完成,天级);P0-2=完成(安装卸载生命周期除外);P0-3=冻结轮全绿;P0-4=完成;P0-5=完成(未 up 已声明)。外发仍 NO-GO(素材逐资产审计/全历史 secrets 扫描/远端 CI 未做)。

@@ -25,7 +25,15 @@
 | deep-webgpu | 7.00 / 13.90 | 7.10 / 27.90 | 15.80 | 0 |
 | deep-wasm | 7.00 / 7.20 | 6.90 / 7.20 | 11.00 | 0 |
 
-诚实结论:**"全面超过"尚未达成**。WASM 帧时间(p50/p95)已与 WebGL 打平;WebGPU 拖尾(静置 p95 +6.7ms、输入 p95 +20.7ms)与两 Deep 后端的提交延迟是明确瓶颈。像素:WASM MAE 4.6–8.4%,WebGPU 17.8–23.6%(画风差异记录在案)。
+### 最终冻结轮(2026-09-25 凌晨,安静环境,含 WASM 相机同步减帧优化,守卫全过)
+
+| 后端 | 静置 P50/P95 ms | 输入 P50/P95 ms | pointer→submit P95 ms | pointer→GPU 完成 P95 ms | 黑帧 |
+|---|---|---|---|---|---|
+| webgl(参考) | 7.00 / 7.10 | 7.00 / 7.20 | 1.30 | - | 0 |
+| deep-webgpu | 7.00 / 13.80 | 7.00 / 27.80 | 16.50 | 67.80 | 0 |
+| deep-wasm | 7.00 / 7.10 | 6.90 / 7.20 | 58.70(口径疑点) | 8.10 | 0 |
+
+诚实结论:**"全面超过"尚未达成**。可感知帧节奏(输入 p50/p95 帧时间)上 WASM 三轮均打平 WebGL(7.2 vs 7.2ms),静置 p95 同样打平(7.1);**WebGPU 拖尾三轮稳定复现**(静置 p95 13.8-13.9、输入 p95 27.7-27.9、submit 15.8-16.5)是最明确的优化目标。WASM 的 pointer→submit 三轮波动大(11.0→36.8→58.7)而 GPU 完成仅 8.1ms:该口径受 wasm 内部自持渲染循环节拍支配(相机不变时疑似降频/跳帧),样本统计不稳,**不作为胜负证据**,后续需在 wasm 侧插桩定位提交节拍。像素:WASM MAE 4.6–8.4%,WebGPU 17.8–23.6%(画风差异记录在案)。
 
 ## 2. P0-1b 本轮优化切片(以实测瓶颈为目标)
 
@@ -52,7 +60,11 @@
 ## 4. 本轮其它 P0 完成项
 
 - **P0-4 仓库治理(完成)**:README 增量补 `MIT License + Ethical Restrictions` 与 `source-available` 门禁文本;`LICENSE.zh-CN.md` 从旧 DMCSL-1.0 全文重写为 DMS-MIT-ER-1.0 中文便读版;`LICENSING.md` 三处过时说明更新;`CONTRIBUTING.md` 贡献条款、`apps/web/src/docs/community.md`、`apps/battery-native-runtime/Cargo.toml`(license-file)同步;`AGENTS.md` 治理段记录 2026-09-25 用户决策;`verify-dashboard-standalone.mjs` 的 `--licenses` 断言更新为 MIT+ETHICAL RESTRICTIONS;工业 worker 许可审计夹具标签更新;旧 `LicenseRef-Deep-Monkey-Community-1.0` 在生成侧清零(仅保留门禁只读兼容)。`pnpm gate:repository` 与 `pnpm audit:licenses`(529 包)双通过。
-- **P0-2 Tauri 闭包(主体完成)**:最终 Native base(acbb870d…,09-24 17:50)之上重跑 `prepare-local-api-runtime`(507 包部署+11258 非运行时文件剪枝)→ Tauri release → NSIS(`DeepMonkey Studio_0.1.0_x64-setup.exe`,446,340,981 B)+ MSI(`DeepMonkey Studio_0.1.0_x64_zh-CN.msi`,513,290,695 B;旧现场 MSI 目录为空)→ `verify:bundle` 通过。桌面 EXE 59,761,152 B(09-25 02:31)。首帧视觉验收与安装链证据见 `test-output/desktop-publication-verification-2026-09-25/`(本轮桌面验证代理产出)。
+- **P0-2 Tauri 闭包(完成)**:最终 Native base(acbb870d…,09-24 17:50)之上重跑 `prepare-local-api-runtime`(507 包部署+11258 非运行时文件剪枝)→ Tauri release → NSIS + MSI(旧现场 MSI 目录为空)→ `verify:bundle` 通过。桌面验证代理完成最终二进制验收:
+  - 哈希(SHA-256 实测):桌面 EXE `3a4c96e5…b06a1`、NSIS `dcb671e4…ed65d3`、MSI `5611a273…016ab4`;bundle 内 native EXE 与最终 Native base 哈希一致(证明新包基于最终 base,非旧 428d2f30… 包)。
+  - 首帧两轮(PowerShell 15ms 轮询首窗+50ms×120 帧 PrintWindow/全屏交叉帧):round1 主窗 907ms 以纯深色 `#0b1114` 出现、round2 1125ms;242 帧白闪 0、中白/底黑 0,UI 2156/2267ms 渲染完成——**交接 §2"最终二进制视觉验收未闭合"已闭合**。
+  - 启动链:`smoke-local-publication-runtime.mjs` EXIT=0(auth 200、发布与 Three 下载 200、启动器身份校验、SQLite sidecar);进程 0 残留。
+  - 未验证项(如实声明):NSIS/MSI 实际安装卸载生命周期、安装包内部 PDB、<15ms 轮询间隙超短白闪、Factory Viewer GUI。3 条工程观察项(缺桌面专用首帧脚本、release 残留 5.4MB PDB、Tao 辅助窗先现)记录于 `test-output/desktop-publication-verification-2026-09-25/report.md`。
 - **P0-3 全局回归**:API 全量 1562 passed / 0 failed(33.7s);Web 全量 4372 passed / 0 failed(夹具修复后复跑)。最终冻结后按需复跑。
 
 ## 5. 剩余缺口(诚实清单)
