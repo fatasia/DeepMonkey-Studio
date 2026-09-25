@@ -3744,3 +3744,10 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - dashboardPortableZip 打包清单读取已删除的 LICENSE-RESTRICTIONS.md → ENOENT(API 全量 6 失败);修复=移除该条目+断言改为"含 DMCSL 1.0 且不含 RESTRICTIONS"(对齐 6f4ee1e5 时代清单);同族扫描确认无其他活消费方。修复后 API 全量 1580/0(industrialFormat 隔离过,全量时为负载 flake)。提交 fbaee379。
 - 三套件当前冻结态:API 1580+Web 4462+deep-engine 3855 全绿。
+
+### 2026-09-25 会话收尾(批次 18)
+
+- **两代理配额中断**:Shader 工具链与交互/功能全检均"exceed quota limit",未留源码(交互全检仅 88 个截图/探针文件于 test-output/interaction-functional-audit-2026-09-25/,无 report.md)——两项为接手后第一优先重跑。
+- **收尾完成**:三套件冻结绿(API 1580/Web 4462/deep-engine 3855)+三门禁绿;烘焙①②闭合;命令层八原语+20 写点收口;license 恢复全同步;产物新鲜度门禁上线。65 提交未 push。
+- **交接文档**:`docs/handoffs/glm-to-gpt-2026-09-25.md`(快照/用户指令时间线/已交付清单/任务队列/已知风险/快速上手)。
+- 会话剩余能力有限,不再发射新代理;Shader 工具链与交互全检留给接手方(设计输入已在交接文档 W2⑤ 节)。
