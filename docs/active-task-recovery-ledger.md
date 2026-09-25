@@ -3669,3 +3669,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - **节点映射透传(代理,提交 2d55a2bb)**:RenderPacket.objectBindings(作者面)+RuntimePackage 包顶层(持久化,V1-V7 全版本继承);关键决策:native envelope deny_unknown_fields→映射提升包顶层+payload 剥离,native 同步 serde default+镜像校验(不改则新包被 native 全线拒绝);pick 无映射时 degraded 显式声明,不冒充节点身份;校验双层不变量(nodeId 全局唯一/instanceIds 唯一)。测试:TS 434+26+71+342、cargo 556 全绿。
 - 拾取链现状:编译器→包→pickScene 全链 nodeId 可用;PbrRenderer.pick 接线与发布查看器宿主消费为后续(前者因 gpuTimer 工作树禁改,后者待 Deep 模式拾取切换)。
+
+### 2026-09-25 批 0 落地与整树冻结(批次 6)
+
+- **命令层批 0(代理,提交 c2437e19)**:命令总线(同步串行冲刷/id/环形日志/回放)+ViewerEngineCommandApplier(原样调既有 setter,连带触发点不变)+图层可见性 UI 接线;21/21 测试;零行为变化、零公共合同变更。
+- **跨域回归排查**:sceneClientPackagePreparedNative 测试报 objectBindings Unknown field——根因是 **deep-engine dist 陈旧**(scripts 子进程走非 development 条件的 dist/,不含新字段);重建 dist 后 14/14 绿。教训:runtimePackage schema 变更后必须重建 dist 才能被 scripts 链消费。
+- **Web 全量整树确认:4412 passed/0 failed**(批 0+映射透传+新 dist)。
