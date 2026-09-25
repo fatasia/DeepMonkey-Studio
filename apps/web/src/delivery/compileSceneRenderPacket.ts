@@ -10,6 +10,7 @@ import { worldToLocal } from "./sceneLocalCoordinates";
 import { createSceneGeometryPrecisionValidator } from "./sceneGeometryPrecision";
 import { sceneHexToLinearRgb, staticSceneEffectEmissive, unsupportedStaticSceneEffectFields } from "./sceneNeutralAppearance";
 import { compileSceneAuxiliaryGrid } from "./compileSceneAuxiliaryGrid";
+import { readSceneModelMaterialState } from "./sceneAuthorMaterialState";
 
 export interface CompileSceneRenderOptions {
   readonly loadModel: (assetId: string, signal: AbortSignal) => Promise<Uint8Array>;
@@ -75,7 +76,11 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
       geometries.push(...source.geometries); textures.push(...source.textures ?? []);
       for (const geometry of source.geometries) sourceGeometries.set(geometry.id, geometry);
     }
-    assertMaterialSlotsResolve(source.materials, model.material, model.modelId);
+    // Runtime compilation consumes the persisted author contract. It must not
+    // read the live Three material through ViewerEngine, because WASM/Native
+    // publication has no viewer instance.
+    const authoredMaterial = readSceneModelMaterialState(scene, model.modelId);
+    assertMaterialSlotsResolve(source.materials, authoredMaterial, model.modelId);
     const materialMap = new Map<string, string>(), prefix = `model-${runtimeContentSha256(model.modelId)}`;
     const color = model.colorOverride ? sceneHexToLinearRgb(model.colorOverride) : undefined;
     const effectEmissive = staticSceneEffectEmissive(model.effects);
@@ -89,7 +94,7 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
       }
       const id = `${prefix}/${material.id}`;
       materials.push({ ...applySourceMaterialOverrides({ ...material,
-        ...(color ? { baseColor: color } : {}) }, model.material, model.modelId), id,
+        ...(color ? { baseColor: color } : {}) }, authoredMaterial, model.modelId), id,
         ...(effectColor ? { emissiveFactor: effectColor,
           emissiveStrength: effectEmissive!.strength } : {}),
         baseColorAlpha: model.opacity, alphaMode: blended ? "BLEND" : masked ? "MASK" : "OPAQUE" });
