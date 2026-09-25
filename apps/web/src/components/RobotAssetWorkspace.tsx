@@ -9,6 +9,8 @@ import { downloadBlob } from "../browserDownload";
 import { ModelImportInput } from "./ModelImportInput";
 import { RobotAssetPreview } from "./RobotAssetPreview";
 import { RobotJointPreview } from "./RobotJointPreview";
+import { dispatchRobotPoseCommand } from "../commands/engineCommandApplier";
+import { robotPoseCommand } from "../commands/engineEditCommand";
 import { RobotAssetMediaActions } from "./RobotAssetMediaActions";
 import { SecondaryPageBack } from "./SecondaryPageBack";
 import "./RobotAssetWorkspace.css";
@@ -57,7 +59,8 @@ export function RobotAssetWorkspace({ locale, model, project, onBack, onImport, 
     <div className="robot-asset-body"><RobotAssetPreview locale={locale} model={model} onReady={setEngine} />
       <aside>
         <RobotAssetMediaActions locale={locale} model={model} engine={engine} disabled={busy} />
-        {engine && <RobotJointPreview locale={locale} engine={engine} modelId={model.id} disabled={busy} onChange={() => revise(value => value + 1)} />}
+        {engine && <RobotJointPreview locale={locale} engine={engine} modelId={model.id} disabled={busy} onChange={() => revise(value => value + 1)}
+          onPoseCommand={values => dispatchRobotPoseCommand(engine, robotPoseCommand(locale, model.id, values))} />}
         <section className="robot-package-actions" aria-label={t("模型压缩", "Model compression")}>
           <h2>{t("无损压缩", "Lossless compression")}</h2>
           <span>{(model.size / 1024).toFixed(1)} KB{result ? ` → ${(result.size / 1024).toFixed(1)} KB` : ""}</span>

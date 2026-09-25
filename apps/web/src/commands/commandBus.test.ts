@@ -45,6 +45,16 @@ describe("CommandBus", () => {
     expect(bus.getRevision()).toBe(1);
   });
 
+  it("publishWithResult 保留 setter 的 boolean 拒绝语义且仍写入命令日志", () => {
+    const bus = new CommandBus();
+    const applier = { apply: vi.fn(() => false) };
+    const outcome = bus.publishWithResult(visibilityInput("m1", "l1", true), applier);
+    expect(outcome.result).toBe(false);
+    expect(outcome.command.id).toBe("editcmd-1");
+    expect(bus.getRevision()).toBe(1);
+    expect(bus.getLog()).toHaveLength(1);
+  });
+
   it("命令 id 单调分配,baseRevision 记录发出时所见 revision", () => {
     const bus = new CommandBus();
     const applier = recordingApplier();

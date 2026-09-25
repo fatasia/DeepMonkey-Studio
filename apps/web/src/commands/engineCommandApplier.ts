@@ -35,7 +35,7 @@ export class ViewerEngineCommandApplier implements EngineEditCommandApplier {
 
   constructor(private readonly engine: ViewerEngine) {}
 
-  apply(command: EngineEditCommand): void {
+  apply(command: EngineEditCommand): unknown {
     switch (command.kind) {
       case "setTransform":
         this.applySetTransform(command);
@@ -59,8 +59,7 @@ export class ViewerEngineCommandApplier implements EngineEditCommandApplier {
         this.engine.setPhysicsState(command.physics);
         return;
       case "setRobotPose":
-        this.engine.setRobotPose(command.target.modelId, command.values);
-        return;
+        return this.engine.setRobotPose(command.target.modelId, command.values);
       case "deleteSelection":
         this.applyDeleteSelection(command);
         return;
@@ -218,4 +217,15 @@ export function dispatchEngineEditCommand(engine: ViewerEngine | undefined, inpu
     applierCache.set(engine, applier);
   }
   sceneCommandBus.publish(input, applier);
+}
+
+/** 机器人作者姿态命令入口；保留 setRobotPose 的 boolean 拒绝语义供 UI 消费。 */
+export function dispatchRobotPoseCommand(engine: ViewerEngine | undefined, input: Extract<EngineEditCommandInput, { kind: "setRobotPose" }>): boolean {
+  if (!engine) return false;
+  let applier = applierCache.get(engine);
+  if (!applier) {
+    applier = new ViewerEngineCommandApplier(engine);
+    applierCache.set(engine, applier);
+  }
+  return sceneCommandBus.publishWithResult(input, applier).result === true;
 }

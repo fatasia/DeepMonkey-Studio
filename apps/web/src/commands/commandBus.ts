@@ -4,7 +4,7 @@ export type { AppliedEngineEditCommand } from "./engineEditCommand";
 
 /** 命令执行器;由发布方提供(批 0 形态:接线点绑定 engine,见 engineCommandApplier)。 */
 export interface EngineEditCommandApplier {
-  apply(command: EngineEditCommand): void;
+  apply(command: EngineEditCommand): unknown;
 }
 
 /** 订阅事件:命令应用完成后发出,revision 为该命令的文档序位(1 起)。 */
@@ -33,7 +33,7 @@ export class CommandBus {
   private seq = 0;
   private readonly logLimit: number;
   private readonly log: AppliedEngineEditCommand[] = [];
-  private readonly queue: Array<{ command: EngineEditCommand; applier: EngineEditCommandApplier }> = [];
+  private readonly queue: Array<{ command: EngineEditCommand; applier: EngineEditCommandApplier; onResult?: (value: unknown) => void }> = [];
   private readonly listeners = new Set<CommandBusListener>();
   private flushing = false;
 
@@ -51,14 +51,20 @@ export class CommandBus {
    * applier 抛错时错误向调用方传播(与直调等价),队列中未执行命令被清空。
    */
   publish(input: EngineEditCommandInput, applier: EngineEditCommandApplier): EngineEditCommand {
+    return this.publishWithResult(input, applier).command;
+  }
+
+  /** 发布并保留 applier 的结果；姿态等 setter 以 false 表示拒绝，调用点需消费该语义。 */
+  publishWithResult(input: EngineEditCommandInput, applier: EngineEditCommandApplier): { command: EngineEditCommand; result: unknown } {
     const command = {
       ...input,
       id: `editcmd-${++this.seq}`,
       baseRevision: this.revision,
     } as EngineEditCommand;
-    this.queue.push({ command, applier });
+    let result: unknown;
+    this.queue.push({ command, applier, onResult: value => { result = value; } });
     this.flush();
-    return command;
+    return { command, result };
   }
 
   /** 订阅应用后事件;返回退订函数,重复退订安全。 */
@@ -93,7 +99,8 @@ export class CommandBus {
     try {
       while (this.queue.length > 0) {
         const item = this.queue.shift()!;
-        item.applier.apply(item.command);
+        const result = item.applier.apply(item.command);
+        item.onResult?.(result);
         this.revision += 1;
         this.appendLog({ command: item.command, revision: this.revision });
       }

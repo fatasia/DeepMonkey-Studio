@@ -9,13 +9,14 @@ import "./RobotJointPreview.css";
 export function robotJointDisplay(joint: RobotJointDefinition, value: number): number { return joint.type === "prismatic" ? value : value * 180 / Math.PI; }
 export function robotJointSI(joint: RobotJointDefinition, value: number): number { return joint.type === "prismatic" ? value : value * Math.PI / 180; }
 
-export function RobotJointPreview({ locale, engine, modelId, disabled = false, disabledReason, onChange }: {
+export function RobotJointPreview({ locale, engine, modelId, disabled = false, disabledReason, onChange, onPoseCommand }: {
   locale: AppLocale;
   engine: Pick<ViewerEngine, "getRobotDefinition" | "getRobotPose" | "setRobotPose">;
   modelId: string;
   disabled?: boolean;
   disabledReason?: string;
   onChange: () => void;
+  onPoseCommand?: (values: Record<string, number>) => boolean;
 }) {
   const definition = engine.getRobotDefinition(modelId), pose = engine.getRobotPose(modelId) ?? {};
   const initial = useRef(pose), [error, setError] = useState(""), [, revise] = useState(0);
@@ -28,7 +29,9 @@ export function RobotJointPreview({ locale, engine, modelId, disabled = false, d
   const commit = (values: Record<string, number>) => {
     if (disabled) return;
     try {
-      if (engine.setRobotPose(modelId, values)) { setError(""); revise(value => value + 1); onChange(); }
+      const accepted = onPoseCommand ? onPoseCommand(values) : engine.setRobotPose(modelId, values);
+      if (accepted) { setError(""); revise(value => value + 1); onChange(); }
+      else setError(tr(locale, "姿态未应用（实例可能已锁定或不可编辑）", "Pose was not applied; the instance may be locked or unavailable"));
     } catch (reason) { setError(reason instanceof Error ? reason.message : tr(locale, "姿态设置失败", "Could not update pose")); }
   };
   return <details className="robot-joint-preview" open>

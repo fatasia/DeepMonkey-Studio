@@ -278,7 +278,7 @@ export function physicsStateCommand(locale: AppLocale, physics: ScenePhysicsStat
 }
 
 /** 机器人/骨骼姿态命令工厂:等价直调 setRobotPose(modelId, values)。 */
-export function robotPoseCommand(locale: AppLocale, modelId: string, values: Record<string, number>): EngineEditCommandInput {
+export function robotPoseCommand(locale: AppLocale, modelId: string, values: Record<string, number>): Omit<SetRobotPoseCommand, "id" | "baseRevision"> {
   return { kind: "setRobotPose", label: tr(locale, "编辑姿态", "Edit pose"), target: { modelId }, values };
 }
 
