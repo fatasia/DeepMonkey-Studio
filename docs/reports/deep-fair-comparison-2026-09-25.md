@@ -47,6 +47,8 @@
 
 **提交合并调查(本轮)**:`pbrRenderer.render()` 主路径已是单 encoder 单提交(收敛 preparation commandBuffers 与主命令为一次 `queue.submit`);runner 观测的多 submit 来自调用编排——TAA 收敛重绘(`TemporalFrameSettler.restart` 的 draw 快照重放)、`onSubmittedWorkDone` 补位(`completeCameraFrame` 重放 pending view)与手势帧提交叠加。因此优化对象不是"合并 encoder"而是**调用编排节流**:收敛重绘上限、补位重放与新手势帧的合并策略。该结论已具备,实施留待渲染器专项(需每 pass GPU 计时验证不伤画质)。
 
+**节流实施轮(2026-09-25,提交 671d2eb5,安静窗口,守卫全过)**:桥编排节流落地——主路径去重(发起 sync 的帧不再预画,呈现成为该 view 唯一提交)+补位合并(GPU 完成不再即时重放,由最新 view 自然覆盖)。桥族 78/78、viewer 目录 839 过、Web 全量 4388。实测:pointer→submit 4.2→**3.8ms**(距 WebGL 1.2ms 一步之遥)、静置 p95 13.8 持平、Long Task 0;**输入 p95 拖尾 27.8 三轮不变**——CPU/编排侧已榨干,剩余拖尾为 GPU 完成队列深度(pointer→GPU 完成 ~100ms 恒定),属渲染器管线深度(多 pass 链)与 swapchain 帧节奏,优化需 GPU 计时专项,编排侧优化到头。
+
 ### 插桩轮(2026-09-25 凌晨,安静窗口,gesture 缓存生效,守卫全过)
 
 | 后端 | 静置 P50/P95 ms | 输入 P50/P95 ms | pointer→submit P95 ms | submit 间隔 p50/p95 ms(样本) | 黑帧 |

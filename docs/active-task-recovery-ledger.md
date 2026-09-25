@@ -3641,3 +3641,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **引擎中立拾取合同(本线程,提交 8bb19266)**:contracts 增 ScenePickingHit/Query,342/342。
 - **手势缓存刷新修正(提交 0bebcebd)**:全量构建同步刷新缓存,拖拽中编辑下一手势帧生效;4/4。
 - **在途代理**:拾取 API(deep-engine picking 模块)、拖尾节流(桥编排)、全仓 typecheck 已 EXIT=0。
+
+### 2026-09-25 拾取+节流收口(快速并行批次 3)
+
+- **拾取 API(代理,提交 07872a31)**:PbrRenderer.pick+pickScene 纯核心(Möller–Trumbore/实例逆变换/背剔镜像一致/热循环零分配);17/17+deep-engine 全量 3855 绿;映射现状:CPU 几何全链可用,nodeId→instance 映射在编译器已算出未透传(API 如实返回 instanceId,节点映射留桥接侧)。
+- **拖尾节流(代理,提交 671d2eb5)**:主路径去重(sync 帧不预画)+补位合并(GPU 完成不即时重放);桥族 78/78+viewer 839+全量 4388。实测 quiet-window:submit 3.8ms(基线 15.8,-76%);输入 p95 27.8 三轮不变——CPU/编排侧到头,剩余拖尾=GPU 完成队列深度(~100ms 恒定),需 GPU 计时专项。
+- 合同拾取(8bb19266)/手势缓存刷新(0bebcebd)/LOD 幂等(42d4ad5a)同批;全仓 typecheck EXIT=0;新包首帧复录两轮通过。
