@@ -127,12 +127,26 @@ export class DeepCameraInputSession {
   private forward(event: Event): void {
     const forwardTo = this.options.forwardTo;
     if (!forwardTo) return;
-    if (event instanceof PointerEvent || event instanceof MouseEvent) {
-      forwardTo.dispatchEvent(new MouseEvent(event.type, {
+    if ((typeof PointerEvent !== "undefined" && event instanceof PointerEvent) || event instanceof MouseEvent) {
+      const init = {
         clientX: event.clientX, clientY: event.clientY, button: event.button,
         buttons: event.buttons, shiftKey: event.shiftKey, ctrlKey: event.ctrlKey,
         altKey: event.altKey, metaKey: event.metaKey, view: window, bubbles: true,
-      }));
+      };
+      // TransformControls listens to PointerEvents. Preserve the pointer
+      // identity while retaining a MouseEvent fallback for jsdom and older
+      // embedded webviews that do not expose PointerEvent.
+      if (typeof PointerEvent !== "undefined" && event.type.startsWith("pointer")) {
+        forwardTo.dispatchEvent(new PointerEvent(event.type, {
+          ...init,
+          pointerId: event instanceof PointerEvent ? event.pointerId : 0,
+          pointerType: event instanceof PointerEvent ? event.pointerType : "mouse",
+          isPrimary: event instanceof PointerEvent ? event.isPrimary : true,
+          pressure: event instanceof PointerEvent ? event.pressure : event.buttons ? 0.5 : 0,
+        }));
+      } else {
+        forwardTo.dispatchEvent(new MouseEvent(event.type, init));
+      }
       return;
     }
     forwardTo.dispatchEvent(new Event(event.type, { bubbles: true }));
