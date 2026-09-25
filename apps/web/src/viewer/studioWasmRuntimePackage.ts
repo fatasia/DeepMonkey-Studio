@@ -17,7 +17,7 @@ export async function compileStudioWasmRuntimePackage(
     packageVersion: "1.0.0",
     // Share the publication session's strict scene-semantic key: restored bakes
     // flow to WASM through the same validated Runtime Package environment.
-    ...(probeGridBakeForPayload(scene) ? { irradianceProbes: probeGridBakeForPayload(scene) } : {}),
+    irradianceProbes: probeGridBakeForPayload(scene) ?? null,
     signal,
     imageDecoder: browserImageDecoder,
     normalizeModel: normalizeStudioWasmModel,

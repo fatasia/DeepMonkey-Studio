@@ -16,9 +16,9 @@ import { xrControllerRay, xrHitModelId } from "./xrInput";
 /** Pointer 职责层。 */
 export abstract class ViewerEnginePointer extends ViewerEngineObjectState {
   protected readonly ordinaryPicking = createOrdinaryPicking(this);
-  private deepPointerPick?: (origin: readonly [number, number, number],
-    direction: readonly [number, number, number], editableOnly: boolean) => DeepPointerPickResult;
-  private lastDeepPickResult?: DeepPointerPickResult;
+  private deepPointerPick: ((origin: readonly [number, number, number],
+    direction: readonly [number, number, number], editableOnly: boolean) => DeepPointerPickResult) | undefined;
+  private lastDeepPickResult: DeepPointerPickResult | undefined;
 
   setDeepPointerPick(source: typeof this.deepPointerPick): void {
     this.deepPointerPick = source;

@@ -345,13 +345,17 @@ export class StudioDeepWebGpuBridge {
     catch (reason) { return { available: false, reason: reason instanceof Error ? reason.message : String(reason), fallbackToAuthor: true }; }
     if (!result.available) return { available: false, reason: result.reason, fallbackToAuthor: true };
     const hit = result.hits[0];
-    if (!hit) return { available: true, degraded: result.degraded, fallbackToAuthor: false };
+    if (!hit) return result.degraded
+      ? { available: true, degraded: result.degraded, fallbackToAuthor: false }
+      : { available: true, fallbackToAuthor: false };
     const source = this.projectionBridge?.sourceForInstanceId(hit.instanceId) as unknown as
       { userData?: Record<string, unknown>; parent?: unknown } | undefined;
     const modelId = source ? authorModelId(source) : undefined;
     if (!modelId) return { available: true, degraded: [...(result.degraded ?? []), "node-mapping-unavailable:deep-hit-not-selectable"], fallbackToAuthor: true };
-    return { available: true, degraded: result.degraded, hit: { point: new THREE.Vector3(...hit.point), distance: hit.distance,
-      objectName: modelId, modelId }, fallbackToAuthor: false };
+    const picked = { point: new THREE.Vector3(...hit.point), distance: hit.distance, objectName: modelId, modelId };
+    return result.degraded
+      ? { available: true, degraded: result.degraded, hit: picked, fallbackToAuthor: false }
+      : { available: true, hit: picked, fallbackToAuthor: false };
   }
 
   private readonly renderPresentationFrame = (): void => {
