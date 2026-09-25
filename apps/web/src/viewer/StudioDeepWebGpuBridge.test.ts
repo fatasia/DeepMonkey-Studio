@@ -163,11 +163,13 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     const packet = { geometries: [], materials: [], instances: [] } as unknown as RenderPacket;
     const provider = vi.fn(async () => packet);
     const f = setup(undefined, provider);
+    const sceneMatrixUpdate = vi.spyOn(f.scene, "updateMatrixWorld");
     await activate(f.bridge);
     expect(provider).toHaveBeenCalledOnce();
     expect(f.create.mock.calls[0]![0].renderPacket).toBe(packet);
     expect(f.create.mock.calls[0]![0].root).toBeUndefined();
     expect(f.create.mock.calls[0]![0].projection).toBeUndefined();
+    expect(sceneMatrixUpdate).not.toHaveBeenCalled();
   });
 
   it("renders immutable author packets without a settled-frame Three sync", async () => {
