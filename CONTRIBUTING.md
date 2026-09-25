@@ -55,6 +55,6 @@ The [maintainers](MAINTAINERS.md) decide whether a change is ready under [GOVERN
 
 ## Contribution certification
 
-By submitting a contribution, you certify that you created it or have the right to submit it; that it does not knowingly include undisclosed third-party material, confidential information, or credentials; and that you license your copyrightable contribution under [DMS-MIT-ER-1.0](LICENSE) (MIT License + Ethical Restrictions) as described in its contribution terms. You retain copyright in your contribution unless a separate written agreement says otherwise.
+By submitting a contribution, you certify that you created it or have the right to submit it; that it does not knowingly include undisclosed third-party material, confidential information, or credentials; and that you license your copyrightable contribution under [DMCSL-1.0](LICENSE) as described in Section 7 of the license. You retain copyright in your contribution unless a separate written agreement says otherwise.
 
 If your employer or another party may own the contribution, obtain authorization before submitting it.

@@ -2,7 +2,7 @@
 name = "battery-native-runtime"
 version = "0.1.0"
 edition = "2024"
-license-file = "../../LICENSE"
+license = "LicenseRef-Deep-Monkey-Community-1.0"
 
 [dependencies]
 anyhow = "1.0.100"

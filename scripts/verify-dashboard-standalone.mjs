@@ -15,8 +15,7 @@ const localAppData = path.join(output, "local-app-data");
 // Strip developer runtimes from PATH and isolate the player's recovery checkpoint.
 const env = { ...process.env, LOCALAPPDATA: localAppData, PATH: path.join(process.env.SystemRoot ?? "C:/Windows", "System32") };
 const licenses = execFileSync(executable, ["--licenses"], { env, windowsHide: true, encoding: "utf8", timeout: 15_000 });
-assert(licenses.includes("MIT License"));
-assert(licenses.includes("ETHICAL RESTRICTIONS"));
+assert(licenses.includes("Deep Monkey Community Source License"));
 await writeFile(path.join(output, "licenses.txt"), licenses);
 assert.deepEqual(await readdir(path.dirname(executable)), [path.basename(executable)], "Player directory must contain only the EXE");
 let log = "", presented = false;

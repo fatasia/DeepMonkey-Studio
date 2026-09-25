@@ -30,6 +30,6 @@ Deep Monkey Studio 通过 Issue 讨论问题，通过 Pull Request 审查改动�
 
 ## 使用许可与署名
 
-本项目采用 MIT License + Ethical Restrictions（标识 `DMS-MIT-ER-1.0`）：MIT 正文附加伦理限制条款，对外称为公开源码或 source-available。具体使用权以仓库[LICENSE](https://github.com/fatasia/bim-studio/blob/HEAD/LICENSE)为准，第三方依赖继续遵循各自许可证。
+本项目采用 Deep Monkey Community Source License 1.0，对外称为公开源码或 source-available。具体使用权以仓库[LICENSE](https://github.com/fatasia/bim-studio/blob/HEAD/LICENSE)为准，第三方依赖继续遵循各自许可证。
 
 重新分发前阅读[许可说明](https://github.com/fatasia/bim-studio/blob/HEAD/LICENSING.md)和[第三方声明](https://github.com/fatasia/bim-studio/blob/HEAD/THIRD_PARTY_NOTICES.md)。贡献流程见[开发与贡献](/docs/contributing)。

@@ -50,9 +50,9 @@ async function main() {
     const firstParty = id === root.id;
     return {
       name: pkg.name, version: pkg.version,
-      // 第一方根 crate 由仓库 LICENSE(MIT with Ethical Restrictions, DMS-MIT-ER-1.0)与 Cargo.toml license-file 声明,不由 crates.io 元数据提供。
-      license: firstParty ? "MIT + Ethical Restrictions (DMS-MIT-ER-1.0)" : (pkg.license ?? "NOASSERTION"),
-      licenseSource: firstParty ? "repository LICENSE + Cargo.toml license-file" : "crates.io metadata",
+      // 第一方根 crate 由仓库 LICENSE(DMCSL-1.0)与 Cargo.toml license 声明,不由 crates.io 元数据提供。
+      license: firstParty ? "LicenseRef-Deep-Monkey-Community-1.0" : (pkg.license ?? "NOASSERTION"),
+      licenseSource: firstParty ? "repository LICENSE + Cargo.toml license" : "crates.io metadata",
       repository: pkg.repository ?? null,
     };
   }).sort((a, b) => a.name.localeCompare(b.name));
