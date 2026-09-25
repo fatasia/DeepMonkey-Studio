@@ -1,8 +1,11 @@
 import type {
   ModelFormatCapability,
-  ModelFormatFamily,
   ModelFormatFidelityDimension,
-  ModelFormatScope
+  ModelFormatFidelityLevel,
+  ModelFormatFamily,
+  ModelFormatRuntimeFacts,
+  ModelFormatScope,
+  ModelFormatValidationEvidence
 } from "./modelFormatCapability.js";
 
 const COMMON_VISUAL_FIDELITY = [
@@ -31,10 +34,20 @@ interface CatalogDefinition {
   scope: ModelFormatScope;
   dimensions?: readonly ModelFormatFidelityDimension[];
   reason: string;
+  /** 已落地的内置运行事实；没有该字段的格式一律保持 planned/unavailable/unverified。 */
+  runtime?: {
+    facts: ModelFormatRuntimeFacts;
+    validatedFidelity: Partial<Record<ModelFormatFidelityDimension, ModelFormatFidelityLevel>>;
+    evidence: readonly ModelFormatValidationEvidence[];
+  };
 }
+
+/** 运行事实核查时点；更新内置转换链路或样本矩阵时必须同步推进。 */
+const RUNTIME_FACTS_CHECKED_AT = "2026-09-25T00:00:00.000Z";
 
 function declaredCapability(definition: CatalogDefinition): ModelFormatCapability {
   const excluded = definition.scope === "excluded";
+  const runtime = definition.runtime;
   return {
     id: definition.id,
     label: definition.label,
@@ -43,16 +56,18 @@ function declaredCapability(definition: CatalogDefinition): ModelFormatCapabilit
     direction: "import",
     scope: definition.scope,
     // 这是能力目标目录，不是运行时支持矩阵；没有证据时一律不声明已经可用。
-    implementationStatus: excluded ? "excluded" : "planned",
-    runtimeStatus: excluded ? "not-applicable" : "unavailable",
-    validationStatus: excluded ? "not-applicable" : "unverified",
+    // 已内置的运行事实只覆盖受控子集，验证状态止步于 fixture-validated。
+    implementationStatus: runtime ? "implemented" : excluded ? "excluded" : "planned",
+    runtimeStatus: runtime ? "degraded" : excluded ? "not-applicable" : "unavailable",
+    validationStatus: runtime ? "fixture-validated" : excluded ? "not-applicable" : "unverified",
     fidelityTargets: (definition.dimensions ?? COMMON_VISUAL_FIDELITY).map((dimension) => ({
       dimension,
       minimum: dimension === "pmi" || dimension === "materials-and-textures" ? "partial" : "full",
       required: dimension !== "pmi"
     })),
-    validatedFidelity: {},
-    validationEvidence: [],
+    validatedFidelity: runtime?.validatedFidelity ?? {},
+    validationEvidence: runtime?.evidence ?? [],
+    ...(runtime ? { runtimeFacts: runtime.facts } : {}),
     decisionReason: definition.reason
   };
 }
@@ -96,7 +111,32 @@ export const MODEL_FORMAT_CAPABILITY_CATALOG: readonly ModelFormatCapability[] =
   }),
   declaredCapability({
     id: "jt", label: "JT", extensions: ["jt"], family: "product-structure", scope: "core",
-    dimensions: PRECISE_CAD_FIDELITY, reason: "大型工业装配、LOD、属性与 PMI 的高价值入口"
+    dimensions: PRECISE_CAD_FIDELITY, reason: "大型工业装配、LOD、属性与 PMI 的高价值入口",
+    runtime: {
+      facts: {
+        profileId: "builtin-jt-lod0-visual-complete",
+        qualityTier: "visual-complete",
+        losses: ["geometry.uv", "vertex.colors"],
+        notes: [
+          "engine:builtin-jt-worker(container+toc+lsg+lod0-tristrip+topomesh)",
+          "coverage:lod0-triangle-mesh+assembly-instances+material-resolution",
+          "normals:computed-vertex-normals",
+          "samples:jt-9.5+jt-10.3"
+        ]
+      },
+      validatedFidelity: {
+        "visual-geometry": "partial",
+        "assembly-hierarchy": "full",
+        "instances-and-transforms": "full",
+        "object-properties": "partial",
+        "materials-and-textures": "partial",
+        "coordinate-system": "partial"
+      },
+      evidence: [
+        { id: "jt-9.5-occurrence-fixture", kind: "fixture", reference: "apps/api/src/jtOccurrenceAcceptance.test.ts#voyager-coffee-maker-jt9.5.jt", checkedAt: RUNTIME_FACTS_CHECKED_AT },
+        { id: "jt-10.3-inspection-fixture", kind: "fixture", reference: "apps/api/src/jtInspectionAcceptance.test.ts#voyager-example-block-jt10.3.jt", checkedAt: RUNTIME_FACTS_CHECKED_AT }
+      ]
+    }
   }),
   declaredCapability({
     id: "usd", label: "OpenUSD", extensions: ["usd", "usda", "usdc", "usdz"], family: "scene-description", scope: "core",
@@ -140,7 +180,26 @@ export const MODEL_FORMAT_CAPABILITY_CATALOG: readonly ModelFormatCapability[] =
   }),
   declaredCapability({
     id: "parasolid", label: "X_T / X_B", extensions: ["x_t", "x_b", "xmt_txt", "xmt_bin"], family: "precise-cad", scope: "optional",
-    dimensions: PRECISE_CAD_FIDELITY, reason: "精确几何价值高，但自研实现成本和版本风险需单独治理"
+    dimensions: PRECISE_CAD_FIDELITY, reason: "精确几何价值高，但自研实现成本和版本风险需单独治理",
+    runtime: {
+      facts: {
+        profileId: "builtin-x-t-revolved-subset",
+        qualityTier: "visual-complete",
+        losses: ["brep.trim", "surface.beyond-parsed-families", "entity.names", "entity.colors", "assembly.instances"],
+        notes: [
+          "engine:builtin-xt-text-parser",
+          "signed-subset:schema-SCH_2401231_20000_1300-coaxial-revolved(plane+cylinder+cone+torus)",
+          "generic-parser:packages/xt-reader(plane+cylinder+cone+sphere+transform,validation-gated)",
+          "encoding:format-text-only;legacy-SCH_901000-not-parsed",
+          "samples:cadconvert-small.x_t+asmith-hinges-corpus"
+        ]
+      },
+      validatedFidelity: { "visual-geometry": "partial", "coordinate-system": "partial" },
+      evidence: [
+        { id: "x-t-revolved-fixture", kind: "fixture", reference: "apps/api/src/xtTextSubsetParser.test.ts#cadconvert-small.x_t", checkedAt: RUNTIME_FACTS_CHECKED_AT },
+        { id: "x-t-generic-regression", kind: "integration", reference: "test-output/xt-generic-parser-regression-20260925.json", checkedAt: RUNTIME_FACTS_CHECKED_AT }
+      ]
+    }
   }),
   declaredCapability({
     id: "rvt", label: "RVT", extensions: ["rvt"], family: "bim", scope: "optional",

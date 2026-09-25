@@ -8,7 +8,7 @@ import {
 
 describe("model format capability contract", () => {
   it("covers the high-value neutral format families without claiming runtime support", () => {
-    for (const extension of ["glb", "step", "ifc", "jt", "usd", "dxf", "dwg", "fbx"]) {
+    for (const extension of ["glb", "step", "ifc", "usd", "dxf", "dwg", "fbx"]) {
       const capability = findModelFormatCapability(extension);
       expect(capability, extension).toBeDefined();
       expect(capability?.scope, extension).toBe("core");
@@ -16,6 +16,24 @@ describe("model format capability contract", () => {
       expect(capability?.validationStatus, extension).toBe("unverified");
       expect(isModelFormatProductionReady(capability!), extension).toBe(false);
     }
+  });
+
+  it("records bounded runtime facts for builtin jt and x_t chains without production readiness", () => {
+    for (const extension of ["jt", "x_t"]) {
+      const capability = findModelFormatCapability(extension);
+      expect(capability, extension).toBeDefined();
+      expect(capability?.implementationStatus, extension).toBe("implemented");
+      expect(capability?.runtimeStatus, extension).toBe("degraded");
+      expect(capability?.validationStatus, extension).toBe("fixture-validated");
+      expect(capability?.runtimeFacts?.qualityTier, extension).toBe("visual-complete");
+      expect(capability?.runtimeFacts?.losses.length, extension).toBeGreaterThan(0);
+      expect(capability?.validationEvidence.length, extension).toBeGreaterThan(0);
+      // 受控子集不等于生产可用：仍缺 production-validated 与全维保真证据。
+      expect(isModelFormatProductionReady(capability!), extension).toBe(false);
+      expect(MODEL_FORMAT_CAPABILITY_CATALOG.flatMap(validateModelFormatCapability)).toEqual([]);
+    }
+    expect(findModelFormatCapability("jt")?.runtimeFacts?.losses).toContain("geometry.uv");
+    expect(findModelFormatCapability("x_t")?.runtimeFacts?.notes.join("\n")).toContain("generic-parser");
   });
 
   it("normalizes dotted and uppercase extensions", () => {

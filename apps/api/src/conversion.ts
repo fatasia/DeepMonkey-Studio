@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { access, copyFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { ModelFormat, ModelManifest, ModelRecord, ViewerKind } from "@bim-studio/contracts";
+import type { ConversionQualityDraft, ModelFormat, ModelManifest, ModelRecord, ViewerKind } from "@bim-studio/contracts";
 import type { AppConfig, CommandProviderConfig } from "./config.js";
 import type { ObjectStore } from "./objects.js";
 import type { MetadataStore } from "./store.js";
@@ -11,6 +11,7 @@ import { auditConverterOutput } from "./converterOutputAudit.js";
 import { convertXtTextSubsetToGlb } from "./xtTextSubsetConverter.js";
 import { runBuiltinJtWorker } from "./builtinJtWorkerExecutor.js";
 import { writeXtTextInspectionArtifact } from "./xtTextInspection.js";
+import { buildJtLod0ReadyQuality, buildXtRevolvedReadyQuality, sha256File } from "./conversionQualityDraft.js";
 import { RobotSourceProvider } from "./RobotSourceProvider.js";
 import { ConversionTaskService } from "./conversionTasks.js";
 import { createModelConversionRegistration, submitModelConversion } from "./modelConversionAdapter.js";
@@ -22,6 +23,8 @@ export interface ConversionContext {
   signal?: AbortSignal;
   registerResourceExit?: ((exit: Promise<void>) => void) | undefined;
   workerLimits?: { timeoutMs: number; maxMemoryMb: number; maxCpuPercent: number };
+  /** 转换成功(ready)时上报质量草稿；sourceHash 由执行器回填，转换器不得自行声称。 */
+  reportQuality?: ((draft: ConversionQualityDraft) => void) | undefined;
 }
 
 export interface ConversionProvider {
@@ -282,7 +285,7 @@ class XtTextSubsetProvider implements ConversionProvider {
     private readonly objects: ObjectStore,
   ) {}
 
-  async convert({ model, modelDir, sourcePath }: ConversionContext): Promise<void> {
+  async convert({ model, modelDir, sourcePath, reportQuality }: ConversionContext): Promise<void> {
     const outputDir = path.join(modelDir, "output");
     await this.store.updateModel(model.projectId, model.id, {
       status: "processing",
@@ -331,6 +334,14 @@ class XtTextSubsetProvider implements ConversionProvider {
     };
     await writeManifest(modelDir, manifest);
     await this.objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
+    // 质量声明基于已发布产物：转换器先把 sidecar 与 GLB 写完再计算证据哈希。
+    reportQuality?.(await buildXtRevolvedReadyQuality({
+      outputDir,
+      meshCount: result.meshCount,
+      triangleCount: result.triangleCount,
+      bodyCount: result.bodyCount,
+      faceCount: result.faceCount,
+    }));
     await this.store.updateModel(model.projectId, model.id, {
       status: "ready",
       progress: 100,
@@ -348,7 +359,7 @@ class JtStructureProvider implements ConversionProvider {
     private readonly objects: ObjectStore,
   ) {}
 
-  async convert({ model, modelDir, sourcePath, signal, registerResourceExit, workerLimits }: ConversionContext): Promise<void> {
+  async convert({ model, modelDir, sourcePath, signal, registerResourceExit, workerLimits, reportQuality }: ConversionContext): Promise<void> {
     const outputDir = path.join(modelDir, "output");
     await this.store.updateModel(model.projectId, model.id, {
       status: "processing",
@@ -392,6 +403,15 @@ class JtStructureProvider implements ConversionProvider {
     };
     await writeManifest(modelDir, manifest);
     await this.objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
+    // 质量声明基于已发布产物；JT 的法线在转换时计算，损失只列真实缺失的 UV 与顶点色。
+    reportQuality?.(await buildJtLod0ReadyQuality({
+      outputDir,
+      meshCount: result.meshCount,
+      triangleCount: result.triangleCount,
+      instanceCount: result.instanceCount,
+      tocEntryCount: inspection.toc.entryCount,
+      assemblyNodeCount: inspection.assembly.nodeCount,
+    }));
     await this.store.updateModel(model.projectId, model.id, {
       status: "ready",
       progress: 100,

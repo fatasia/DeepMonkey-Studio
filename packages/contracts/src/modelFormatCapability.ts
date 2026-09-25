@@ -55,6 +55,20 @@ export interface ModelFormatValidationEvidence {
   checkedAt: string;
 }
 
+/**
+ * 内置运行事实注记：目录对已落地转换链路的机读快照。
+ * 它只描述“当前内置实现能做什么”，不改变生产可用判定——后者仍要求 production-validated。
+ */
+export interface ModelFormatRuntimeFacts {
+  /** 与 ConversionQualityReport.profileId 同构，指向可产出的最高质量档。 */
+  profileId: string;
+  qualityTier: import("./conversionQuality.js").ConversionQualityTier;
+  /** 相对源格式的保真损失，机器可读标签（如 geometry.uv）。 */
+  losses: readonly string[];
+  /** 覆盖范围注记：解析的 schema/曲面族/结构层级等，机器可读前缀约定 `key:value`。 */
+  notes: readonly string[];
+}
+
 export interface ModelFormatCapability {
   id: string;
   label: string;
@@ -68,6 +82,7 @@ export interface ModelFormatCapability {
   fidelityTargets: readonly ModelFormatFidelityTarget[];
   validatedFidelity: Partial<Record<ModelFormatFidelityDimension, ModelFormatFidelityLevel>>;
   validationEvidence: readonly ModelFormatValidationEvidence[];
+  runtimeFacts?: ModelFormatRuntimeFacts;
   decisionReason: string;
 }
 
@@ -116,6 +131,14 @@ export function validateModelFormatCapability(capability: ModelFormatCapability)
   if (excluded && capability.validationStatus !== "not-applicable") issues.push("排除格式的验证状态必须为 not-applicable");
   if (capability.validationStatus === "production-validated" && capability.validationEvidence.length === 0) {
     issues.push("生产验证必须提供可追溯证据");
+  }
+  // 运行事实注记必须有已实现身份与可追溯证据，否则退化为无证据的能力宣称。
+  if (capability.runtimeFacts) {
+    if (capability.implementationStatus !== "implemented") issues.push("运行事实注记要求实现状态为 implemented");
+    if (capability.validationStatus === "unverified" || capability.validationStatus === "not-applicable") {
+      issues.push("运行事实注记要求至少 fixture-validated");
+    }
+    if (capability.validationEvidence.length === 0) issues.push("运行事实注记必须携带验证证据");
   }
   return issues;
 }

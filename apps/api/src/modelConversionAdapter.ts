@@ -3,7 +3,7 @@ import { createReadStream } from "node:fs";
 import { lstat, mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import type { ConversionArtifactKind, ImportSourceFormat, ModelFormat, ModelRecord } from "@bim-studio/contracts";
+import type { ConversionArtifactKind, ConversionQualityDraft, ImportSourceFormat, ModelFormat, ModelRecord } from "@bim-studio/contracts";
 import type { AppConfig } from "./config.js";
 import type { ConversionContext, ConversionProvider } from "./conversion.js";
 import type { ConversionTaskService, ConverterExecutionContext, ConverterPluginRegistration } from "./conversionTasks.js";
@@ -82,8 +82,10 @@ export function createModelConversionRegistration(
         const value = Reflect.get(target, key); return typeof value === "function" ? value.bind(target) : value;
       } });
       const stagedObjects = await attemptObjects(objects, context, prefix, attemptPrefix, attemptDir, remap);
+      let qualityDraft: ConversionQualityDraft | undefined;
       await provider(stagedStore, stagedObjects).convert({ model, sourcePath, modelDir: attemptDir,
-        signal: context.signal, registerResourceExit: context.registerResourceExit, workerLimits: limits });
+        signal: context.signal, registerResourceExit: context.registerResourceExit, workerLimits: limits,
+        reportQuality: draft => { qualityDraft = draft; } });
       context.signal.throwIfAborted();
       if (updates.status === "failed") throw new Error(updates.message ?? "模型转换失败");
       if (updates.status !== "ready" && updates.status !== "waiting_converter") throw new Error("转换器未返回最终模型状态");
@@ -92,6 +94,10 @@ export function createModelConversionRegistration(
         checks: [{ dimension: "geometry", passed: false, reason: updates.message ?? "未生成可发布几何" }],
         losses: ["geometry.missing"], approximations: [],
       });
+      // ready 模型只接受转换器如实申报的质量草稿；源哈希必须绑定已核验的输入。
+      if (updates.status === "ready" && qualityDraft && sourceFormat) {
+        context.reportQuality({ ...qualityDraft, sourceHash: context.task.input.sha256! });
+      }
       for (const file of await files(attemptDir)) {
         context.signal.throwIfAborted();
         const relative = path.relative(attemptDir, file).split(path.sep).join("/");

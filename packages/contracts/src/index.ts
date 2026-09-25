@@ -34,6 +34,7 @@ export * from "./modelFormatCatalog.js";
 export * from "./ppr.js";
 export * from "./fingerprint.js";
 export * from "./simulationEngine.js";
+export * from "./plantExperiment.js";
 export * from "./digitalThread.js";
 export * from "./assetLibrary.js";
 export * from "./notification.js";
