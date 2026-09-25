@@ -45,6 +45,17 @@
 .environment-switches button { width: 100%; }
 .environment-gi-row { grid-template-columns: 82px 64px minmax(0,1fr) 34px; gap: 7px; }
 .environment-gi-row small { grid-column: 2 / 5; color: #6f7c82; font-size: 10px; line-height: 1.5; }
+/* GI 探针烘焙区块:数字字段与右侧属性检查器同一套输入观感(高度/边框/背景/焦点色),令牌驱动。 */
+.environment-control .probe-bake-panel { grid-template-columns: 82px minmax(0,1fr); align-items: center; }
+.probe-bake-fields { display: grid; gap: 5px; }
+.probe-bake-fields > label { display: grid; grid-template-columns: 32px repeat(3, minmax(0,1fr)); align-items: center; gap: 5px; color: var(--text-muted); font-size: 10px; }
+.probe-bake-fields > label > input { min-width: 0; width: 100%; height: 28px; padding: 0 7px; color: var(--text-strong); border: 1px solid var(--line-strong); border-radius: 5px; outline: none; background: var(--surface-1); font-size: 11px; font-variant-numeric: tabular-nums; }
+.probe-bake-fields > label > input:hover:not(:disabled) { border-color: var(--accent); }
+.probe-bake-fields > label > input:focus { border-color: var(--accent); }
+.probe-bake-fields > label > input:disabled { cursor: not-allowed; opacity: .38; }
+.probe-bake-panel > button { grid-column: 2; justify-self: start; }
+.probe-bake-panel > small { grid-column: 1 / -1; margin: 0; color: var(--text-muted); font-size: 10px; line-height: 1.5; }
+.probe-bake-panel > small.probe-bake-error { color: var(--danger); }
 .post-processing-control,.environment-map-row,.light-system { padding: 11px 13px; border-top: 0; border-bottom: 1px solid #303a40; }
 .post-processing-control > small { display: block; margin-top: 7px; color: #738087; font-size: 10px; line-height: 1.55; }
 .post-processing-control { grid-template-columns: minmax(0,1fr); }

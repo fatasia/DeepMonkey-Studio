@@ -139,6 +139,29 @@ html, body, #root { width: 100%; height: 100%; margin: 0; overflow: hidden; }
 @media (max-width:1180px){.app-workspace-frame.behavior-split .topbar .workspace-breadcrumb,.app-workspace-frame.behavior-split .topbar .topbar-auto-save{display:none}.app-workspace-frame.behavior-split .topbar-actions .action-label{display:none}.app-workspace-frame.behavior-split .topbar-actions > .compact-action{width:32px;padding:0}}
 button, input, select { font: inherit; }
 button { color: inherit; }
+/* 数字输入统一基线(2026-09-25 UI 一致性审计):全仓 input[type="number"] 一律无原生 spinner,
+   套用设计系统字段观感(令牌驱动,明暗主题自动跟随)。基线特异性 0-1-1,base.css 又是最早导入,
+   任何业务侧更具体或同特异性的后续规则(如 .field input、.probe-bake-fields input)按原样覆盖,
+   已有统一样式的字段不受影响;此处只为"漏样式"的原生 spinner 兜底。 */
+input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+  min-height: 28px;
+  padding: 0 6px;
+  color: var(--text-strong);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xs);
+  background: var(--surface-1);
+  font-variant-numeric: tabular-nums;
+}
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"]:focus { border-color: var(--accent); }
+input[type="number"]:disabled { cursor: not-allowed; opacity: .38; }
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,

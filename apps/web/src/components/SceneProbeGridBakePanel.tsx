@@ -2,6 +2,7 @@ import { useState } from "react";
 import { LoaderCircle, Scan } from "lucide-react";
 import type { ProbeGridBakeGrid } from "@bim-studio/deep-engine";
 import { translate as tr, type AppLocale } from "../i18n";
+import { DeferredNumberInput } from "./AppFormControls";
 import type { ProbeGridBakePhase } from "../delivery/probeGridBakeRunner";
 
 /** 烘焙动作的 UI 状态（由父级持有：烘焙执行在视口容器，不在面板内）。 */
@@ -72,25 +73,25 @@ export function SceneProbeGridBakePanel(props: SceneProbeGridBakePanelProps) {
         <label>
           {tr(locale, "原点", "Origin")}
           {origin.map((value, axis) => (
-            <input key={axis} type="number" step="0.5" value={value} disabled={busy}
-              aria-label={tr(locale, `网格原点${"XYZ"[axis]}`, `Grid origin ${"XYZ"[axis]}`)}
-              onChange={(event) => setOrigin(current => current.map((item, index) =>
-                index === axis ? event.target.value : item) as [string, string, string])} />
+            <DeferredNumberInput key={axis} step={0.5} value={Number(value)} disabled={busy}
+              ariaLabel={tr(locale, `网格原点${"XYZ"[axis]}`, `Grid origin ${"XYZ"[axis]}`)}
+              onCommit={(next) => setOrigin(current => current.map((item, index) =>
+                index === axis ? String(next) : item) as [string, string, string])} />
           ))}
         </label>
         <label>
           {tr(locale, "间距", "Spacing")}
-          <input type="number" step="0.5" min="0.5" value={spacing} disabled={busy}
-            aria-label={tr(locale, "探针间距（世界单位）", "Probe spacing (world units)")}
-            onChange={(event) => setSpacing(event.target.value)} />
+          <DeferredNumberInput step={0.5} min={0.5} value={Number(spacing)} disabled={busy}
+            ariaLabel={tr(locale, "探针间距（世界单位）", "Probe spacing (world units)")}
+            onCommit={(next) => setSpacing(String(next))} />
         </label>
         <label>
           {tr(locale, "数量", "Count")}
           {gridSize.map((value, axis) => (
-            <input key={axis} type="number" step="1" min="2" max="64" value={value} disabled={busy}
-              aria-label={tr(locale, `网格数量${"XYZ"[axis]}`, `Grid count ${"XYZ"[axis]}`)}
-              onChange={(event) => setGridSize(current => current.map((item, index) =>
-                index === axis ? event.target.value : item) as [string, string, string])} />
+            <DeferredNumberInput key={axis} step={1} min={2} max={64} value={Number(value)} disabled={busy}
+              ariaLabel={tr(locale, `网格数量${"XYZ"[axis]}`, `Grid count ${"XYZ"[axis]}`)}
+              onCommit={(next) => setGridSize(current => current.map((item, index) =>
+                index === axis ? String(next) : item) as [string, string, string])} />
           ))}
         </label>
       </div>
