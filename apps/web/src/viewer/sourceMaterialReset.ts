@@ -12,6 +12,6 @@ export function sourceTexturePatch(): SceneMaterialState {
   };
 }
 export function sourceMaterialPatch(source: SceneMaterialState): SceneMaterialState {
-  return { ...source, ...sourceTexturePatch(), sourceColor: true, sourceEmissive: true, shaderEffect: undefined,
+  return { ...source, ...sourceTexturePatch(), sourceColor: true, sourceEmissive: true, shaderEffect: undefined, customShader: undefined,
     screen: { enabled: false, sourceType: "image", url: "", autoplay: false, loopMode: "once", muted: true, emissiveIntensity: 1 } };
 }

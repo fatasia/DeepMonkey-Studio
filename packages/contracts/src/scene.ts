@@ -138,6 +138,8 @@ export interface SceneLayerState {
 }
 
 export interface SceneMaterialState {
+  /** Bound DeepSL source; compiled into a shader package when publishing this material. */
+  customShader?: { source: string } | undefined;
   /** Preserve source linear color precision when restoring authored glTF materials. */
   sourceColor?: boolean;
   sourceEmissive?: boolean;

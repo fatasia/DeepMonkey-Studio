@@ -120,6 +120,7 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
         ...materialColorAdjustmentState(material),
         ...materialTextureState(material),
         ...(material.userData.studioShaderEffect ? { shaderEffect: structuredClone(material.userData.studioShaderEffect) } : {}),
+        ...(material.userData.studioCustomShader ? { customShader: structuredClone(material.userData.studioCustomShader) } : {}),
         ...(material.normalScale?.isVector2 ? { normalScale: material.normalScale.x } : {}),
         ...(typeof material.roughness === "number" ? { roughness: material.roughness } : {}),
         ...(typeof material.metalness === "number" ? { metalness: material.metalness } : {}),
@@ -392,6 +393,7 @@ function materialTextureState(material: THREE.MeshStandardMaterial): SceneMateri
     ...(typeof data.studioMetalnessMapUrl === "string" ? { metalnessMapUrl: data.studioMetalnessMapUrl } : {}),
     ...materialTextureTransformState(data),
     ...(data.studioShaderEffect ? { shaderEffect: structuredClone(data.studioShaderEffect) } : {}),
+    ...(data.studioCustomShader ? { customShader: structuredClone(data.studioCustomShader) } : {}),
     ...(data.studioUvAnimation ? { uvAnimation: structuredClone(data.studioUvAnimation) } : {}),
     ...(data.studioScreenState ? { screen: structuredClone(data.studioScreenState) } : {}),
   };
@@ -415,6 +417,8 @@ function applyMaterialNumbers(material: THREE.MeshStandardMaterial, state: Scene
   if (state.wireframe !== undefined) material.wireframe = state.wireframe;
   if (state.doubleSided !== undefined) material.side = state.doubleSided ? THREE.DoubleSide : THREE.FrontSide;
   applyMaterialShaderEffect(material, state.shaderEffect);
+  if (state.customShader === undefined) delete material.userData.studioCustomShader;
+  else material.userData.studioCustomShader = structuredClone(state.customShader);
 }
 
 /**

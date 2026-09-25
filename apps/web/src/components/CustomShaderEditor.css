@@ -1,0 +1,13 @@
+.custom-shader-editor { border-block: 1px solid var(--line-subtle); margin-block: 8px; padding-block: 4px 8px; }
+.custom-shader-editor summary { display: flex; align-items: center; justify-content: space-between; min-height: 32px; cursor: pointer; color: var(--text-strong); }
+.custom-shader-editor summary small { color: var(--text-muted); font-size: 11px; }
+.custom-shader-editor > label { display: block; margin: 8px 0 4px; color: var(--text); font-size: 12px; }
+.custom-shader-editor textarea { box-sizing: border-box; width: 100%; min-height: 160px; resize: vertical; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-1); color: var(--text-strong); font: 12px/1.5 ui-monospace, Consolas, monospace; }
+.custom-shader-editor textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.custom-shader-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.custom-shader-actions button { min-height: 32px; padding-inline: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--text-strong); cursor: pointer; }
+.custom-shader-actions button:nth-child(2) { border-color: var(--accent); color: var(--accent); }
+.custom-shader-actions button:disabled { opacity: .45; cursor: not-allowed; }
+.custom-shader-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.custom-shader-result { display: grid; gap: 3px; margin-top: 8px; padding: 8px; border: 1px solid var(--line-subtle); border-radius: 6px; color: var(--text); font-size: 11px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.custom-shader-result strong { color: var(--text-strong); }

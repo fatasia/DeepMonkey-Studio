@@ -14,6 +14,7 @@ export interface DeepWasmRuntimeModule {
   start_scene_viewer(canvas?: HTMLCanvasElement | null): number;
   stop_scene_viewer(handle: number): void;
   update_scene_viewer(handle: number, bytes: Uint8Array): void;
+  update_editor_overlay?(handle: number, revision: number, vertices: Float32Array): void;
   set_viewer_camera(handle: number, positionX: number, positionY: number, positionZ: number,
     targetX: number, targetY: number, targetZ: number, focal: number, near: number, far: number): void;
   viewer_ready_generation(): number;
@@ -25,6 +26,7 @@ export interface StudioDeepWasmBridgeOptions {
   readonly loadModule?: () => Promise<DeepWasmRuntimeModule>;
   readonly preparationTimeoutMs?: number;
   readonly onRuntimeFailure?: (error: Error) => void;
+  readonly readEditorOverlay?: (width: number, height: number, pixelRatio: number) => { revision: number; vertices: Float32Array };
 }
 
 /** Engine-neutral author seam used while the editor authority migrates off Three. */
@@ -62,6 +64,7 @@ export class StudioDeepWasmBridge {
   private unsubscribeFrame: (() => void) | undefined;
   private cameraFrame: number | undefined;
   private lastCameraSnapshot: readonly number[] | undefined;
+  private lastOverlayRevision = -1;
   private generation = 0;
   private closed = false;
   private controller: DeepCameraController | undefined;
@@ -202,6 +205,12 @@ export class StudioDeepWasmBridge {
     this.viewer.setPresentationRendererBackend("wasm");
     this.unsubscribeFrame?.();
     this.unsubscribeFrame = this.viewer.subscribePresentationFrames(this.queueCameraSync);
+    try { this.syncEditorOverlay(); }
+    catch (reason) {
+      const error = reason instanceof Error ? reason : new Error(String(reason));
+      this.publishWebGl();
+      this.options.onRuntimeFailure?.(error);
+    }
     this.syncCamera(true);
     this.takeoverGesture();
   }
@@ -261,8 +270,24 @@ export class StudioDeepWasmBridge {
       this.controller.tick(dt);
       this.viewer.applyViewportCameraPose?.(this.controller.getPose());
     }
+    try { this.syncEditorOverlay(); }
+    catch (reason) {
+      const error = reason instanceof Error ? reason : new Error(String(reason));
+      this.publishWebGl();
+      this.options.onRuntimeFailure?.(error);
+      return;
+    }
     this.syncCamera(false);
   };
+
+  private syncEditorOverlay(): void {
+    if (this.activeBackendValue !== "wasm" || !this.module || this.handle === undefined || !this.module.update_editor_overlay || !this.options.readEditorOverlay) return;
+    const snapshot = this.options.readEditorOverlay(this.canvas?.clientWidth ?? 1, this.canvas?.clientHeight ?? 1, devicePixelRatio || 1);
+    if (!Number.isSafeInteger(snapshot.revision) || snapshot.revision < this.lastOverlayRevision) throw new Error("Editor overlay revision went backwards.");
+    if (snapshot.revision === this.lastOverlayRevision) return;
+    this.module.update_editor_overlay(this.handle, snapshot.revision, snapshot.vertices);
+    this.lastOverlayRevision = snapshot.revision;
+  }
 
   private syncCamera(force: boolean): void {
     if (this.activeBackendValue !== "wasm" || !this.module || this.handle === undefined) return;

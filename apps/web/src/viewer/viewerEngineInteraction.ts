@@ -91,7 +91,7 @@ export abstract class ViewerEngineInteraction extends ViewerEngineAnimationContr
     // 排除其 CPU 投影以避免双重绘制;本方法只被 Deep WebGPU 渲染帧消费,
     // WebGL 从不调用,故排除不影响 WebGL 呈现。angle 测量(含预览)与剖切盒
     // 尚无原生原语,必须继续走 Three 投影;排除条件与原语采集共用同一判定。
-    const nativeHelpers = this.presentationRendererBackend === "webgpu";
+    const nativeHelpers = this.presentationRendererBackend === "webgpu" || this.presentationRendererBackend === "wasm";
     const nativeMeasurement = (object: THREE.Object3D): boolean => {
       if (!nativeHelpers) return false;
       const state = object.userData.measurement as MeasurementState | undefined;
@@ -695,4 +695,3 @@ export abstract class ViewerEngineInteraction extends ViewerEngineAnimationContr
     return false;
   }
 }
-

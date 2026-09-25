@@ -13,6 +13,7 @@ import { ModelScreenEditor } from "./ModelScreenEditor";
 import { ModelEffectsEditor } from "./ModelEffectsEditor";
 import { MaterialTextureSettings } from "./MaterialTextureSettings";
 import { ProjectMaterialResourcePicker } from "./ProjectAppearanceResources";
+import { CustomShaderEditor } from "./CustomShaderEditor";
 
 export type MaterialTextureKind =
   | "baseColor"
@@ -290,6 +291,7 @@ function ObjectAppearanceFields({
             </>
           )}
         </details>
+        <CustomShaderEditor locale={locale} disabled={disabled} material={material} onChange={onMaterialChange} />
       </div>
 
       <ModelScreenEditor locale={locale} disabled={disabled} screen={material.screen} onChange={onMaterialChange} />

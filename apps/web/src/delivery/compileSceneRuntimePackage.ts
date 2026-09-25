@@ -14,6 +14,7 @@ import { collectDeferredSceneFields, collectDeferredObjectFields,
 import { localizeSceneCoordinates, worldToLocal, type SceneLocalCoordinateFrame } from "./sceneLocalCoordinates";
 import { compileScenePhysicsRuntime, type CompileScenePhysicsRuntimeOptions } from "./compileScenePhysicsRuntime";
 import { compileSceneAnimationController } from "./compileSceneAnimationController";
+import { compileSceneCustomShaders } from "./sceneCustomShader";
 
 const RECIPE = "deep-scene-static-compile-v5";
 function findNonJson(value: unknown, path = "$", seen = new Set<object>()): string | undefined {
@@ -195,7 +196,9 @@ export async function compileSceneRuntimePackage(input: SceneSnapshot,
     } });
   signal?.throwIfAborted();
   const dynamicRuntime = compileDynamicRuntime(localized.scene, { objectBindings: compiled.objectBindings, coordinateOrigin: localized.frame.origin });
+  const customShaders = stage("shader compile", () => compileSceneCustomShaders(localized.scene, compiled.packet));
   const runtimePackage = stage("package build", () => buildDeepRuntimePackage({ packageId, packageVersion, camera, ...(environment ? { environment } : {}), ...(dynamicRuntime ? { dynamicRuntime } : {}),
+    ...(customShaders.shaderPackages.length ? { shaderPackages: customShaders.shaderPackages, materialBindings: customShaders.materialBindings } : {}),
     renderPacket: { id: "scene.main", revision: 1, value: compiled.packet } }));
   const nonJson = findNonJson(runtimePackage); if (nonJson) throw new Error(`runtime package non-JSON at ${nonJson}`);
   const packageJson = serializeDeepRuntimePackage(runtimePackage);
@@ -207,6 +210,7 @@ export async function compileSceneRuntimePackage(input: SceneSnapshot,
     ...(environmentSource ? {environmentSource} : {}),
     cameraHash: runtimePackage.resources.find(resource => resource.kind === "scene-camera")!.contentHash.value,
     renderPacketHash: runtimePackage.resources.find(resource => resource.kind === "render-packet")!.contentHash.value,
+    ...(customShaders.shaderPackages.length ? { shaderPackageHashes: customShaders.shaderPackages.map(shader => runtimeContentSha256(shader.value)) } : {}),
     ...(dynamicRuntime ? { dynamicRuntimeHash: runtimePackage.resources.find(resource => resource.kind === "dynamic-runtime")!.contentHash.value } : {}) });
   const targetArtifactHash = await byteHash(new TextEncoder().encode(packageJson));
   signal?.throwIfAborted();
