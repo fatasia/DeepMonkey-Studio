@@ -41,7 +41,11 @@
 
 ## 系统介绍 · 从 Vibe Coding 到 Vibe World
 
-[![Watch DeepMonkey Studio introduction](https://fatasia.github.io/DeepMonkey-Studio/poster.png)](https://fatasia.github.io/DeepMonkey-Studio/video.html)
+## 演示视频
+
+https://github.com/user-attachments/assets/63f8cce2-0360-4ba9-a2cb-92086a57aca3
+
+[高清网页版播放器](https://fatasia.github.io/DeepMonkey-Studio/video.html)
 
 [▶ 直接打开视频](https://fatasia.github.io/DeepMonkey-Studio/deepmonkey-studio-intro.mp4) · 3 分 22 秒 · [字幕](docs/assets/system-intro/zh-CN.srt)
 

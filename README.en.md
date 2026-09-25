@@ -37,7 +37,11 @@ The project uses the broadest possible MIT license so anyone can use it freely (
 
 [Documentation](docs/README.md) · [Contributing](CONTRIBUTING.md) · [Support](SUPPORT.md)
 
-[![Watch DeepMonkey Studio introduction](https://fatasia.github.io/DeepMonkey-Studio/poster.png)](https://fatasia.github.io/DeepMonkey-Studio/video.html)
+## Demo video
+
+https://github.com/user-attachments/assets/63f8cce2-0360-4ba9-a2cb-92086a57aca3
+
+[HD web player](https://fatasia.github.io/DeepMonkey-Studio/video.html)
 
 License designation: **MIT License + Ethical Restrictions** (source-available).
 
