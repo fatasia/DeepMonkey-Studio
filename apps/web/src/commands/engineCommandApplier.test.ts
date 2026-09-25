@@ -7,7 +7,7 @@ import {
   ViewerEngineCommandApplier,
   dispatchEngineEditCommand,
 } from "./engineCommandApplier";
-import { layerLockCommand, layerVisibilityCommand, modelTransformCommand, selectionRenameCommand, selectionTransformCommand, selectionVisibilityCommand } from "./engineEditCommand";
+import { layerLockCommand, layerVisibilityCommand, modelMaterialCommand, modelTransformCommand, selectionMaterialCommand, selectionRenameCommand, selectionTransformCommand, selectionVisibilityCommand } from "./engineEditCommand";
 
 /**
  * 引擎桩:实现批 0/批 1/批 2 applier 触达的 setter 与选择查询,逐次记录调用(method + 参数快照)。
@@ -15,7 +15,7 @@ import { layerLockCommand, layerVisibilityCommand, modelTransformCommand, select
  * selectionIsFragment 模拟引擎内部守卫:fragment 构件选中时 applySelectionTransform 静默拒绝
  * (不记录调用、不触发连带),用于批 2 的降级路径外部等价测试。
  */
-function stubEngine(options: { selectedId?: string; selectionLocked?: boolean; selectedLayerId?: string; selectionIsFragment?: boolean } = {}) {
+function stubEngine(options: { selectedId?: string; selectionLocked?: boolean; selectedLayerId?: string; selectionIsFragment?: boolean; modelLocked?: boolean } = {}) {
   const calls: string[] = [];
   const engine = {
     getSelected(): { id: string } | undefined {
@@ -26,6 +26,9 @@ function stubEngine(options: { selectedId?: string; selectionLocked?: boolean; s
     },
     isSelectionLocked(): boolean {
       return options.selectionLocked ?? false;
+    },
+    isModelLocked(): boolean {
+      return options.modelLocked ?? false;
     },
     getSelectedLayerId(): string | undefined {
       return options.selectedLayerId;
@@ -55,6 +58,14 @@ function stubEngine(options: { selectedId?: string; selectionLocked?: boolean; s
     },
     renameSelection(name: string): void {
       calls.push(`renameSelection:${name}`);
+    },
+    setSelectionMaterial(patch: unknown): void {
+      if (options.selectionLocked) return;
+      calls.push(`setSelectionMaterial:${JSON.stringify(patch)}`);
+    },
+    setModelMaterial(id: string, patch: unknown): void {
+      if (options.modelLocked) return;
+      calls.push(`setModelMaterial:${id}:${JSON.stringify(patch)}`);
     },
   };
   return { engine: engine as unknown as ViewerEngine, calls };
@@ -610,3 +621,34 @@ function dispatchVisibility(engine: ViewerEngine, modelId: string, layerId: stri
   if (!last) throw new Error("dispatch 后总线日志为空");
   return { id: last.command.id, baseRevision: last.command.baseRevision };
 }
+
+describe("ViewerEngineCommandApplier 批 3(setMaterialState 收编)", () => {
+  const patch = { color: "#224488", roughness: 0.35, metallic: 0.8 };
+
+  it("selection 模式与直调 setSelectionMaterial 逐参数等价(含锁定静默 no-op)", () => {
+    const { engine, calls } = stubEngine({ selectedId: "m-1" });
+    dispatchEngineEditCommand(engine, selectionMaterialCommand("zh-CN", { modelId: "m-1" }, patch));
+    expect(calls).toEqual([`setSelectionMaterial:${JSON.stringify(patch)}`]);
+
+    const locked = stubEngine({ selectedId: "m-1", selectionLocked: true });
+    dispatchEngineEditCommand(locked.engine, selectionMaterialCommand("zh-CN", { modelId: "m-1" }, patch));
+    expect(locked.calls).toEqual([]);
+  });
+
+  it("model 模式与直调 setModelMaterial 逐参数等价(含锁定静默 no-op)", () => {
+    const { engine, calls } = stubEngine({});
+    dispatchEngineEditCommand(engine, modelMaterialCommand("zh-CN", "m-9", patch));
+    expect(calls).toEqual([`setModelMaterial:m-9:${JSON.stringify(patch)}`]);
+
+    const locked = stubEngine({ modelLocked: true });
+    dispatchEngineEditCommand(locked.engine, modelMaterialCommand("zh-CN", "m-9", patch));
+    expect(locked.calls).toEqual([]);
+  });
+
+  it("空 patch 拒绝且零 setter 调用(fail-closed)", () => {
+    const { engine, calls } = stubEngine({ selectedId: "m-1" });
+    expect(() => dispatchEngineEditCommand(engine, selectionMaterialCommand("zh-CN", { modelId: "m-1" }, {})))
+      .toThrow(/patch 为空/);
+    expect(calls).toEqual([]);
+  });
+});

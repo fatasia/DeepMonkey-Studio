@@ -1,6 +1,6 @@
 import type { ViewerEngine } from "../viewer/ViewerEngine";
 import { sceneCommandBus, type EngineEditCommandApplier } from "./commandBus";
-import type { EngineEditCommand, EngineEditCommandInput, SetTransformCommand, SetVisibilityCommand } from "./engineEditCommand";
+import type { EngineEditCommand, EngineEditCommandInput, SetMaterialStateCommand, SetTransformCommand, SetVisibilityCommand } from "./engineEditCommand";
 import { EngineTransformAuthoring, transformGraphNodeId } from "./engineTransformGraph";
 
 /**
@@ -42,6 +42,9 @@ export class ViewerEngineCommandApplier implements EngineEditCommandApplier {
         return;
       case "setLayerState":
         this.applySetVisibility(command);
+        return;
+      case "setMaterialState":
+        this.applySetMaterial(command);
         return;
     }
   }
@@ -90,6 +93,25 @@ export class ViewerEngineCommandApplier implements EngineEditCommandApplier {
       rotation: [transform.rotation.x, transform.rotation.y, transform.rotation.z],
       scale: [transform.scale.x, transform.scale.y, transform.scale.z],
     });
+  }
+
+  /**
+   * 批 3(setMaterialState 收编):patch 原样转交既有材质 setter——引擎内部的
+   * mergeMaterialPatch 合并、restoreModelEffectMaterials、updateLayerState、
+   * rebuildModelEffects、markShadowMapDirty、onModelChange 连带全部原样触发;
+   * 锁定/未选中静默 no-op 与直调一致(材质无 graph 前置校验通道,不 fail-fast)。
+   */
+  private applySetMaterial(command: SetMaterialStateCommand): void {
+    if (Object.keys(command.patch).length === 0) {
+      throw new UnsupportedEngineEditCommandError(
+        `命令 ${command.id}(${command.kind})的 patch 为空;材质命令必须携带至少一个外观字段`,
+      );
+    }
+    if (command.mode === "model") {
+      this.engine.setModelMaterial(command.target.modelId, command.patch);
+      return;
+    }
+    this.engine.setSelectionMaterial(command.patch);
   }
 
   private applySetVisibility(command: SetVisibilityCommand): void {

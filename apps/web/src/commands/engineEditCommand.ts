@@ -1,4 +1,4 @@
-import type { ModelTransform, SceneLayerState } from "@bim-studio/contracts";
+import type { ModelTransform, SceneLayerState, SceneMaterialState } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 
 /**
@@ -64,7 +64,24 @@ export interface SetVisibilityCommand extends EngineEditCommandBase {
   readonly mode?: "selection";
 }
 
-export type EngineEditCommand = SetTransformCommand | SetVisibilityCommand;
+/**
+ * 外观命令(kind 对齐设计文档 §3 的 "setAppearance" 材质分支;批 3)。
+ * patch 口径 = SceneMaterialState 的既有合并语义(引擎内部 mergeMaterialPatch,
+ * 未指定字段保持现值)——与直调 setSelectionMaterial/setModelMaterial 的 patch
+ * 形态逐字段一致;slotOverrides 递归结构由引擎内部处理,命令层原样透传。
+ *
+ * mode(缺省 "selection"):
+ * - "selection":等价直调 setSelectionMaterial(patch)(含其内部锁定/构件分支语义)。
+ * - "model":等价直调 setModelMaterial(modelId, patch)。
+ */
+export interface SetMaterialStateCommand extends EngineEditCommandBase {
+  readonly kind: "setMaterialState";
+  readonly target: EngineEditCommandTarget;
+  readonly patch: SceneMaterialState;
+  readonly mode?: "selection" | "model";
+}
+
+export type EngineEditCommand = SetTransformCommand | SetVisibilityCommand | SetMaterialStateCommand;
 
 /** 已应用命令的日志条目:revision 为该命令应用完成后的文档序位(1 起)。 */
 export interface AppliedEngineEditCommand {
@@ -158,6 +175,39 @@ export function selectionTransformCommand(
     label: tr(locale, "编辑三维对象", "Edit 3D object"),
     target,
     transform,
+  };
+}
+
+/**
+ * 选中对象材质命令工厂(mode "selection"):等价直调 setSelectionMaterial(patch);
+ * 属性面板材质编辑与未来的材质选择器共用同一 label。
+ */
+export function selectionMaterialCommand(
+  locale: AppLocale,
+  target: EngineEditCommandTarget,
+  patch: SetMaterialStateCommand["patch"],
+): EngineEditCommandInput {
+  return {
+    kind: "setMaterialState",
+    mode: "selection",
+    label: tr(locale, "编辑对象材质", "Edit object material"),
+    target,
+    patch,
+  };
+}
+
+/** 模型材质命令工厂(mode "model"):等价直调 setModelMaterial(modelId, patch)。 */
+export function modelMaterialCommand(
+  locale: AppLocale,
+  modelId: string,
+  patch: SetMaterialStateCommand["patch"],
+): EngineEditCommandInput {
+  return {
+    kind: "setMaterialState",
+    mode: "model",
+    label: tr(locale, "编辑对象材质", "Edit object material"),
+    target: { modelId },
+    patch,
   };
 }
 
