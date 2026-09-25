@@ -1,6 +1,7 @@
 import type { SceneSnapshot } from "@bim-studio/contracts";
 import type { ScenePersistenceControllerContext } from "./scenePersistenceControllerContext";
 import { captureSceneModelState } from "../viewer/captureSceneModelState";
+import { validateSceneSnapshotTransforms } from "../viewer/sceneTransformProjection";
 
 type SceneSnapshotSource = Pick<
   ScenePersistenceControllerContext,
@@ -56,7 +57,7 @@ export function makeSceneSnapshot(source: SceneSnapshotSource): SceneSnapshot | 
 
   const now = new Date().toISOString();
   const currentModels = engine.listModels();
-  return {
+  const snapshot: SceneSnapshot = {
     schemaVersion: 1,
     id: activeScene?.id ?? crypto.randomUUID(),
     projectId: project.id,
@@ -110,4 +111,6 @@ export function makeSceneSnapshot(source: SceneSnapshotSource): SceneSnapshot | 
     createdAt: activeScene?.createdAt ?? now,
     updatedAt: now,
   };
+  validateSceneSnapshotTransforms(snapshot);
+  return snapshot;
 }
