@@ -6,6 +6,7 @@ on:
       - "apps/web/**"
       - "apps/api/**"
       - "packages/contracts/**"
+      - "packages/scene-sdk/**"
       - "pnpm-lock.yaml"
       - ".github/workflows/studio.yml"
   push:
@@ -14,6 +15,7 @@ on:
       - "apps/web/**"
       - "apps/api/**"
       - "packages/contracts/**"
+      - "packages/scene-sdk/**"
       - "pnpm-lock.yaml"
       - ".github/workflows/studio.yml"
   workflow_dispatch:
@@ -78,6 +80,7 @@ jobs:
       - run: pnpm --filter @bim-studio/contracts build
       - run: pnpm --filter @bim-studio/studio-core build
       - run: pnpm --filter @bim-studio/server-sdk build
+      - run: pnpm --filter @bim-studio/scene-sdk build
       - run: pnpm --filter @bim-studio/web typecheck
       - run: pnpm --filter @bim-studio/web test
       - run: pnpm --filter @bim-studio/web build
