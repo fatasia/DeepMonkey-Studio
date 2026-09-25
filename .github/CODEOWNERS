@@ -1,0 +1,11 @@
+# Default reviewers for repository-wide policy, release, and security changes.
+* @fatasia
+
+# Keep release and security controls under explicit ownership.
+/.github/ @fatasia
+/SECURITY.md @fatasia
+/LICENSE @fatasia
+/LICENSE.zh-CN.md @fatasia
+/LICENSING.md @fatasia
+/THIRD_PARTY_NOTICES.md @fatasia
+/docs/open-source-release-checklist.md @fatasia

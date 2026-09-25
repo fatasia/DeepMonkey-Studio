@@ -4,6 +4,8 @@ All notable changes to Deep Monkey Studio are recorded here. The format follows 
 
 ## Unreleased
 
+- Add explicit CODEOWNERS coverage for repository policy, security, licensing, and release files; align the pull request contribution attestation with the current project license without restating a superseded legal identifier.
+
 - Add the 3-minute Chinese system introduction video, cover and subtitles to the README, covering asset import, data integration, AI workflows, Deep Engine and delivery.
 
 - Add a fair same-scene comparison harness (`apps/web/scripts/gate-deep-fair-comparison.mjs`) that resets the camera through the studio UI, samples static frame pacing, fixed-pose pixel determinism guards and an identical 120-step input trajectory across the WebGL, Deep WebGPU and Deep WASM backends, reporting pointer-to-submit/GPU-completion percentiles with black-frame and luminance guards; the first baseline shows WASM frame pacing at parity with WebGL while Deep WebGPU tail latency and both Deep submit paths remain the measured bottlenecks.
