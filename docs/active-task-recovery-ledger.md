@@ -3739,3 +3739,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - **服务端持久化+发布一致性(代理,提交 c4583ba7)**:PUT/GET /api/scenes/:sceneId/probe-bake(内容寻址 (sceneId,sourceHash)→gzip 原子落盘,不进 MetadataStore,64MB 上限,每场景 4 份)+ Web 回填(失败静默降级会话态)+ 服务端候选链一致(优先级三档:显式>持久化>无;native-scene-compiler-worker 复用 web 哈希函数注入,失配产物逐位一致)。测试:API 19+56、Web 5+59、真实 worker 编译注入 64 探针、双侧 tsc。
 - 烘焙三链闭合:①UI 接线(51c3b8f2)②服务端持久化+一致性(c4583ba7)③WASM 查看器消费留 W2⑥。
+
+### 2026-09-25 license 恢复遗漏消费方修复(批次 17)
+
+- dashboardPortableZip 打包清单读取已删除的 LICENSE-RESTRICTIONS.md → ENOENT(API 全量 6 失败);修复=移除该条目+断言改为"含 DMCSL 1.0 且不含 RESTRICTIONS"(对齐 6f4ee1e5 时代清单);同族扫描确认无其他活消费方。修复后 API 全量 1580/0(industrialFormat 隔离过,全量时为负载 flake)。提交 fbaee379。
+- 三套件当前冻结态:API 1580+Web 4462+deep-engine 3855 全绿。
