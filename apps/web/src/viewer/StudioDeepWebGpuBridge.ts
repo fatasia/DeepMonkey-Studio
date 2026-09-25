@@ -441,14 +441,6 @@ export class StudioDeepWebGpuBridge {
     // 相机手势帧:true 启用 viewReader 的场景字段缓存(200ms TTL),场景编辑由
     // 尾随 sync 以全量 source 追平;实测场景遍历是输入拖尾的主嫌疑之一。
     view = this.viewReader.renderViewDirect(canvas, true)): void {
-    // Temporal settle and live camera frames share one WebGPU queue. Do not
-    // submit a camera frame beside a settle submission; the latest view is
-    // retained and consumed by the next author frame after completion.
-    if (this.settleFrameInFlight && this.settleFrameBackend === backend) {
-      this.pendingCameraView = view;
-      this.cameraFramesCoalesced++;
-      return;
-    }
     if (this.cameraFramesInFlight >= this.cameraFrameInFlightLimit) {
       // Replace, never append: stale camera poses have no semantic value after
       // newer input. Scene/material edits are preserved by the trailing sync.
@@ -492,7 +484,7 @@ export class StudioDeepWebGpuBridge {
     view = this.viewReader.renderViewDirect(canvas), settle = true): void {
     const draw = (): boolean => {
       if (this.deepBackend !== backend) return false;
-      if (settle && (this.settleFrameInFlight && this.settleFrameBackend === backend || this.cameraFramesInFlight > 0)) return false;
+      if (settle && this.settleFrameInFlight && this.settleFrameBackend === backend) return false;
       backend.setProbeClipmapEnabled(this.probeClipmapEnabled());
       const metrics = backend.render(view);
       if (metrics) this.performanceSource?.record(metrics, view.width, document.visibilityState !== "hidden");
