@@ -415,6 +415,15 @@ export class StudioDeepWebGpuBridge {
       this.cancelCameraSettle();
       if (!cameraChanged) this.viewReader.invalidateProjectionBounds();
       const view = this.viewReader.renderViewDirect(canvas);
+      // An immutable RenderPacket backend has no author hierarchy to sync. The
+      // generic sync call is intentionally retained for the legacy Three path,
+      // but awaiting its already-committed no-op here adds a promise turn to
+      // every settled frame and widens pointer-to-submit latency. Render the
+      // packet directly while preserving the same bounded TAA settle sequence.
+      if (backend.projection === undefined) {
+        this.renderCommittedFrame(backend, canvas, view);
+        return;
+      }
       // 一帧一提交节流:发起 sync 的帧不在同步路径预画同一 view。sync 完成后的
       // renderCommittedFrame 才是这份 view 的唯一呈现(资源上传后的画面)。尾随与
       // 资源 sync 只发生在相机静止之后,呈现晚一个 sync 周期不可感知;手势进行中

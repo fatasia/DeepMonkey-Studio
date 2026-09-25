@@ -24,6 +24,11 @@ function makeBackend() {
   const queueDone = vi.fn(() => Promise.resolve());
   return {
     deviceLoss, queueDone,
+    // Legacy test backends model the Three projection path. The independent
+    // packet path is covered by the creation contract test above; keeping an
+    // explicit projection marker here prevents those lifecycle tests from
+    // accidentally taking the packet fast path.
+    projection: {},
     prepareScene: vi.fn().mockResolvedValue({ frame: 1 }),
     sync: vi.fn<() => Promise<DeepWebGpuSyncResult>>().mockResolvedValue(syncResult()),
     render: vi.fn((_view: unknown) => ({ frame: 1 })),
@@ -163,6 +168,21 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     expect(f.create.mock.calls[0]![0].renderPacket).toBe(packet);
     expect(f.create.mock.calls[0]![0].root).toBeUndefined();
     expect(f.create.mock.calls[0]![0].projection).toBeUndefined();
+  });
+
+  it("renders immutable author packets without a settled-frame Three sync", async () => {
+    const packet = { geometries: [], materials: [], instances: [] } as unknown as RenderPacket;
+    const f = setup(undefined, async () => packet);
+    await activate(f.bridge);
+    // The test factory uses a plain lifecycle double; mark it as the backend
+    // shape produced by DeepWebGpuBackend.create({ renderPacket }).
+    (f.first as unknown as { projection?: unknown }).projection = undefined;
+    f.first.sync.mockClear();
+    f.first.render.mockClear();
+    for (const notify of authorFrames) notify();
+    await microtasks();
+    expect(f.first.sync).not.toHaveBeenCalled();
+    expect(f.first.render).toHaveBeenCalled();
   });
 
   it("establishes performance samples from submitted Deep frames through temporal settling", async () => {
