@@ -6,6 +6,10 @@ function visibilityInput(modelId: string, layerId: string, visible: boolean): En
   return { kind: "setLayerState", label: "切换图层可见性", target: { modelId, layerId }, patch: { visible } };
 }
 
+function inverseVisibilityInput(modelId: string, layerId: string, visible: boolean): EngineEditCommandInput {
+  return { kind: "setLayerState", label: "inverse", target: { modelId, layerId }, patch: { visible } };
+}
+
 function transformInput(modelId: string): EngineEditCommandInput {
   return {
     kind: "setTransform",
@@ -53,6 +57,28 @@ describe("CommandBus", () => {
     expect(outcome.command.id).toBe("editcmd-1");
     expect(bus.getRevision()).toBe(1);
     expect(bus.getLog()).toHaveLength(1);
+  });
+
+  it("undo/redo 应用 inverse，revision 单调且失败时保持栈原子", () => {
+    const bus = new CommandBus();
+    const applied: string[] = [];
+    const applier = { apply: vi.fn((command: EngineEditCommand) => {
+      applied.push(command.kind === "setLayerState" ? String(command.patch.visible) : command.kind);
+    }) };
+    const command = bus.publish({ ...visibilityInput("m1", "l1", false), inverse: inverseVisibilityInput("m1", "l1", true) }, applier);
+    expect(bus.undo(command, applier)).toBe(true);
+    expect(applied).toEqual(["false", "true"]);
+    expect(bus.getRevision()).toBe(2);
+    expect(bus.redo(command, applier)).toBe(true);
+    expect(applied).toEqual(["false", "true", "false"]);
+    expect(bus.getRevision()).toBe(3);
+    expect(bus.undo(command, applier)).toBe(true);
+    const failing = new CommandBus();
+    let badCalls = 0;
+    const bad = { apply: vi.fn(() => { if (++badCalls > 1) throw new Error("inverse failed"); }) };
+    failing.publish({ ...visibilityInput("m1", "l1", false), inverse: inverseVisibilityInput("m1", "l1", true) }, bad);
+    expect(failing.undo(command, bad)).toBe(false);
+    expect(failing.getRevision()).toBe(1);
   });
 
   it("命令 id 单调分配,baseRevision 记录发出时所见 revision", () => {

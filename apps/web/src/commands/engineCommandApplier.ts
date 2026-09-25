@@ -227,5 +227,15 @@ export function dispatchRobotPoseCommand(engine: ViewerEngine | undefined, input
     applier = new ViewerEngineCommandApplier(engine);
     applierCache.set(engine, applier);
   }
-  return sceneCommandBus.publishWithResult(input, applier).result === true;
+  const previous = engine.getRobotPose(input.target.modelId) ?? {};
+  const commandInput = input.inverse ? input : {
+    ...input,
+    inverse: {
+      kind: "setRobotPose" as const,
+      label: input.label,
+      target: input.target,
+      values: previous,
+    },
+  };
+  return sceneCommandBus.publishWithResult(commandInput, applier).result === true;
 }

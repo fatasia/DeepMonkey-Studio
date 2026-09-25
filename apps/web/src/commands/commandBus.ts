@@ -20,6 +20,8 @@ export interface CommandBusOptions {
   readonly logLimit?: number;
 }
 
+type HistoryEntry = { command: EngineEditCommand; applier: EngineEditCommandApplier };
+
 /**
  * 引擎中立编辑命令总线(设计文档 docs/specs/engine-neutral-command-layer-design-2026-09-25.md 批 0)。
  *
@@ -56,15 +58,39 @@ export class CommandBus {
 
   /** 发布并保留 applier 的结果；姿态等 setter 以 false 表示拒绝，调用点需消费该语义。 */
   publishWithResult(input: EngineEditCommandInput, applier: EngineEditCommandApplier): { command: EngineEditCommand; result: unknown } {
+    return this.publishInternal(input, applier, true);
+  }
+
+  /** Apply a command's inverse as a new monotonic command; caller owns history pointers. */
+  undo(command: EngineEditCommand, applier: EngineEditCommandApplier): boolean {
+    if (!command.inverse || this.flushing) return false;
+    try { return this.publishInternal(command.inverse, applier, false).result !== false; } catch { return false; }
+  }
+
+  /** Re-apply an existing command as a new monotonic command; caller owns redo stack. */
+  redo(command: EngineEditCommand, applier: EngineEditCommandApplier): boolean {
+    if (this.flushing) return false;
+    try { return this.publishInternal(this.withoutInverse(command), applier, false).result !== false; } catch { return false; }
+  }
+
+  private publishInternal(input: EngineEditCommandInput, applier: EngineEditCommandApplier, recordHistory: boolean): { command: EngineEditCommand; result: unknown } {
     const command = {
       ...input,
       id: `editcmd-${++this.seq}`,
       baseRevision: this.revision,
     } as EngineEditCommand;
     let result: unknown;
-    this.queue.push({ command, applier, onResult: value => { result = value; } });
+    this.queue.push({ command, applier, onResult: value => {
+      result = value;
+      // false is a legitimate setter rejection (RobotPose); publish still logs it for parity.
+    } });
     this.flush();
     return { command, result };
+  }
+
+  private withoutInverse(command: EngineEditCommand): EngineEditCommandInput {
+    const { id: _id, baseRevision: _baseRevision, inverse: _inverse, ...input } = command;
+    return input as EngineEditCommandInput;
   }
 
   /** 订阅应用后事件;返回退订函数,重复退订安全。 */

@@ -20,6 +20,8 @@ export interface EngineEditCommandBase {
   readonly baseRevision: number;
   /** 撤销菜单文案;批 0 无撤销 UI,仅入日志。 */
   readonly label: string;
+  /** Optional inverse input. Undo applies it as a new monotonic command. */
+  readonly inverse?: EngineEditCommandInput;
 }
 
 export interface EngineEditCommandTarget {
