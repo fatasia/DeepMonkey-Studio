@@ -1,9 +1,0 @@
-[build]
-incremental = false
-
-[net]
-retry = 2
-
-[registries.crates-io]
-protocol = "sparse"
-
