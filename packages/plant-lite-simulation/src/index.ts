@@ -3,3 +3,5 @@ export * from "./model.js";
 export * from "./capacity.js";
 export * from "./transportNetworkTemplate.js";
 export * from "./enginePort.js";
+export * from "./experimentDesign.js";
+export * from "./experimentAnalysis.js";

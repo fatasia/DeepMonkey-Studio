@@ -173,4 +173,34 @@ export function golden12KanbanPull(): PlantLiteModel {
   };
 }
 
+/**
+ * golden-13 实验矩阵基准:前段高波动工位 + 线间缓存 + 后段限速工位。
+ * 两个天然因子——后段工时(吞吐强单调下降)与线间缓存容量(内核工位产出池无界,
+ * 只改变缓存水位与点指纹,不改变串联吞吐——这正是"加缓存不加产出"的工程事实);
+ * 供实验矩阵/参数扫描的黄金断言使用,本身不含统计语义。
+ */
+export function golden13ExperimentMatrix(): PlantLiteModel {
+  return {
+    id: "golden-13-experiment-matrix",
+    name: "黄金样例 13 · 实验矩阵",
+    nodes: [
+      { id: "src", name: "来料", kind: "source", interarrivalTime: { kind: "deterministic", value: 0.55 } },
+      { id: "st-a", name: "前段加工", kind: "station", processingTime: { kind: "normal", mean: 0.85, standardDeviation: 0.22, minimum: 0.2 }, resourceId: "mc-a" },
+      { id: "buf", name: "线间缓存", kind: "queue-buffer", capacity: 8 },
+      { id: "st-b", name: "后段加工", kind: "station", processingTime: { kind: "deterministic", value: 1 }, resourceId: "mc-b" },
+      { id: "snk", name: "出货", kind: "sink" },
+    ],
+    edges: [
+      { id: "e1", from: "src", to: "st-a" },
+      { id: "e2", from: "st-a", to: "buf" },
+      { id: "e3", from: "buf", to: "st-b" },
+      { id: "e4", from: "st-b", to: "snk" },
+    ],
+    resources: [
+      { id: "mc-a", name: "机床 A", kind: "equipment", capacity: 1 },
+      { id: "mc-b", name: "机床 B", kind: "equipment", capacity: 1 },
+    ],
+  };
+}
+
 export const GOLDEN_LIMITS = LIMITS;
