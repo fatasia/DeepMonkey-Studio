@@ -20,14 +20,16 @@ function deferred<T>(): Deferred<T> {
 // 本组仅验证宿主生命周期；真实 GPU/packet 验收由 Deep 引擎测试负责。
 function makeBackend() {
   const deviceLoss = deferred<{ message: string; reason: string }>();
+  const queueDone = vi.fn(() => Promise.resolve());
   return {
-    deviceLoss,
+    deviceLoss, queueDone,
     prepareScene: vi.fn().mockResolvedValue({ frame: 1 }),
     sync: vi.fn<() => Promise<DeepWebGpuSyncResult>>().mockResolvedValue(syncResult()),
     render: vi.fn((_view: unknown) => ({ frame: 1 })),
     setProbeClipmapEnabled: vi.fn(),
     dispose: vi.fn(),
-    runtime: { session: { state: "ready", device: { lost: deviceLoss.promise } }, validateFrame: vi.fn().mockResolvedValue({ frame: 1 }) },
+    runtime: { session: { state: "ready", device: { lost: deviceLoss.promise,
+      queue: { onSubmittedWorkDone: queueDone } } }, validateFrame: vi.fn().mockResolvedValue({ frame: 1 }) },
   };
 }
 
@@ -179,6 +181,89 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     expect(f.bridge.activeBackend).toBe("webgpu");
   });
 
+  it("renders camera-only frames without scene sync and performs one trailing correctness sync", async () => {
+    const f = setup(); await activate(f.bridge);
+    f.first.sync.mockClear(); f.first.render.mockClear();
+    const matrixUpdate = vi.spyOn(f.scene, "updateMatrixWorld");
+    f.scene.updateMatrixWorld(); matrixUpdate.mockClear();
+    f.camera.position.x = 2;
+    for (const notify of authorFrames) notify();
+    await microtasks();
+    expect(matrixUpdate).not.toHaveBeenCalled();
+    expect(f.first.sync).not.toHaveBeenCalled();
+    expect(f.first.render).toHaveBeenCalledTimes(1);
+    expect(f.first.render.mock.calls[0]![0]).toMatchObject({ eye: [2, 0, 0] });
+
+    const edited = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial());
+    f.scene.add(edited);
+    await new Promise(resolve => setTimeout(resolve, 90));
+    await microtasks();
+    expect(f.first.sync).toHaveBeenCalledTimes(1);
+    expect((f.first.sync.mock.calls[0] as unknown as unknown[])[0]).toBe(f.scene);
+    edited.geometry.dispose(); edited.material.dispose();
+  });
+
+  it("keeps gesture camera frames out of the temporal settle sequence until input rests", async () => {
+    const f = setup(); await activate(f.bridge);
+    f.first.sync.mockClear(); f.first.render.mockClear();
+    // 手势相机帧 settle=false:呈现一次,不重启 TAA 收敛重绘(拖拽期一帧一提交)。
+    f.camera.position.x = 1;
+    for (const notify of authorFrames) notify();
+    await microtasks();
+    expect(f.first.render).toHaveBeenCalledTimes(1);
+    expect(f.first.sync).not.toHaveBeenCalled();
+    // 后续浏览器帧零收敛重绘、零 sync:手势帧没有重启 settler(残余 rAF 是
+    // 性能采样回调,不是收敛序列)。
+    for (let idle = 0; idle < 3; idle++) await frame(false);
+    expect(f.first.render).toHaveBeenCalledTimes(1);
+    expect(f.first.sync).not.toHaveBeenCalled();
+    // 输入静止 → 80ms 尾随 sync:上传完成的那一帧才呈现,并启动有界收敛序列。
+    await new Promise(resolve => setTimeout(resolve, 90));
+    await microtasks();
+    expect(f.first.sync).toHaveBeenCalledTimes(1);
+    const settledView = f.first.render.mock.calls.at(-1)![0];
+    const rendersBeforeSettle = f.first.render.mock.calls.length;
+    for (let settle = 0; settle < 17; settle++) await frame(false);
+    expect(f.first.render).toHaveBeenCalledTimes(rendersBeforeSettle + 16);
+    expect(f.first.render.mock.calls.at(-1)![0]).toBe(settledView);
+    await frame(false);
+    expect(f.first.render).toHaveBeenCalledTimes(rendersBeforeSettle + 16);
+    expect(frames.size).toBe(0);
+  });
+
+  it("merges pending camera replay into the next author frame instead of an immediate resubmit", async () => {
+    const f = setup(); await activate(f.bridge);
+    const fences = [deferred<void>(), deferred<void>(), deferred<void>()];
+    f.first.queueDone.mockReset()
+      .mockReturnValueOnce(fences[0]!.promise)
+      .mockReturnValueOnce(fences[1]!.promise)
+      .mockReturnValueOnce(fences[2]!.promise);
+    f.first.render.mockClear();
+    for (let x = 1; x <= 5; x++) {
+      f.camera.position.x = x;
+      for (const notify of authorFrames) notify();
+      await microtasks();
+    }
+    expect(f.first.render).toHaveBeenCalledTimes(2);
+    expect(f.bridge.diagnostics?.cameraFlow).toMatchObject({ inFlight: 2, maxInFlight: 2,
+      submitted: 2, coalesced: 3, pendingLatest: true, limit: 2 });
+    // GPU 完成回调只释放在飞名额:不再即时重放 pending,避免与作者帧提交相邻
+    // 形成一帧双提交(拖尾主体)。
+    fences[0]!.resolve(); await microtasks();
+    expect(f.first.render).toHaveBeenCalledTimes(2);
+    expect(f.bridge.diagnostics?.cameraFlow).toMatchObject({ inFlight: 1, maxInFlight: 2,
+      submitted: 2, pendingLatest: true });
+    // 下一作者帧以最新 view 一次提交,并清空补位缓存。
+    f.camera.position.x = 6;
+    for (const notify of authorFrames) notify();
+    await microtasks();
+    expect(f.first.render).toHaveBeenCalledTimes(3);
+    expect(f.first.render.mock.calls.at(-1)![0]).toMatchObject({ eye: [6, 0, 0] });
+    expect(f.bridge.diagnostics?.cameraFlow).toMatchObject({ inFlight: 2, maxInFlight: 2,
+      submitted: 3, pendingLatest: false });
+    fences[1]!.resolve(); fences[2]!.resolve(); await microtasks();
+  });
+
   it("tracks the authored GI switch through the published Deep backend lifecycle", async () => {
     const f = setup();
     let enabled = true;
@@ -210,12 +295,12 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     ]), new THREE.LineBasicMaterial({ depthTest: false, toneMapped: false }));
     let selected = true;
     f.viewer.getDeepEditorOverlayRoots = () => selected ? [selection] : [];
+    // 发起 sync 的作者帧不再预画(一帧一提交),基线取 mockClear 前最后一笔。
+    const baseline = f.first.render.mock.calls.at(-1)![0] as { editorOverlay: { revision: number } };
     f.first.render.mockClear();
-    let revision = 0;
     f.first.render.mockImplementation((input: unknown) => {
       const view = input as { editorOverlay: { revision: number } };
-      if (view.editorOverlay.revision < revision) throw new Error("Editor overlay revision went backwards.");
-      revision = view.editorOverlay.revision;
+      if (view.editorOverlay.revision < baseline.editorOverlay.revision) throw new Error("Editor overlay revision went backwards.");
       return { frame: 1 };
     });
     for (const notify of authorFrames) notify();
@@ -225,12 +310,12 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     for (const notify of authorFrames) notify();
     const cleared = f.first.render.mock.calls.at(-1)![0] as { editorOverlay: { revision: number; vertices: Float32Array } };
     if (change === "selection") expect(cleared.editorOverlay.vertices).toHaveLength(0);
-    expect(cleared.editorOverlay.revision).toBeGreaterThan((f.first.render.mock.calls[0]![0] as typeof cleared).editorOverlay.revision);
+    expect(cleared.editorOverlay.revision).toBeGreaterThan(baseline.editorOverlay.revision);
     pending.resolve(syncResult()); await microtasks();
     for (let settle = 0; settle < 3; settle++) await frame(false);
     expect(f.failure).not.toHaveBeenCalled();
     expect(f.bridge.activeBackend).toBe("webgpu");
-    expect(f.first.render.mock.calls.slice(1).every(([input]) =>
+    expect(f.first.render.mock.calls.every(([input]) =>
       (input as typeof cleared).editorOverlay.revision >= cleared.editorOverlay.revision)).toBe(true);
     selection.geometry.dispose(); selection.material.dispose();
   });

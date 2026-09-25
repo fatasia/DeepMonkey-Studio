@@ -355,6 +355,10 @@ export class StudioDeepWebGpuBridge {
       this.cancelCameraSettle();
       if (!cameraChanged) this.viewReader.invalidateProjectionBounds();
       const view = this.viewReader.renderViewDirect(canvas);
+      // 一帧一提交节流:发起 sync 的帧不在同步路径预画同一 view。sync 完成后的
+      // renderCommittedFrame 才是这份 view 的唯一呈现(资源上传后的画面)。尾随与
+      // 资源 sync 只发生在相机静止之后,呈现晚一个 sync 周期不可感知;手势进行中
+      // 走相机路径,不经过这里。
       if (!this.syncPending) {
         this.syncPending = backend;
         void backend.sync(this.projectionRoot(), this.viewer.camera.layers.mask, undefined, view)
@@ -375,8 +379,11 @@ export class StudioDeepWebGpuBridge {
               this.renderDeepFrame();
             }
           });
-      } else this.syncAgain = backend;
-      this.renderCommittedFrame(backend, canvas, view);
+      } else {
+        // sync 在飞期间的唯一画面推进:按最新 view 直绘,不重复发起 sync。
+        this.syncAgain = backend;
+        this.renderCommittedFrame(backend, canvas, view);
+      }
     } catch (reason) {
       this.failRuntime(reason);
     }
@@ -389,6 +396,8 @@ export class StudioDeepWebGpuBridge {
     if (this.cameraFramesInFlight >= this.cameraFrameInFlightLimit) {
       // Replace, never append: stale camera poses have no semantic value after
       // newer input. Scene/material edits are preserved by the trailing sync.
+      // 消费时机由 renderDeepFrame 驱动(下一作者帧相机路径覆盖/主路径呈现后
+      // 清空),GPU 完成回调不做即时重放——见 completeCameraFrame 的合并注释。
       this.pendingCameraView = view;
       this.cameraFramesCoalesced++;
       return;
@@ -405,22 +414,22 @@ export class StudioDeepWebGpuBridge {
     const session = (backend.runtime as { session?: RuntimeSession }).session;
     const completion = session?.device?.queue?.onSubmittedWorkDone();
     if (!completion) {
-      this.completeCameraFrame(backend, canvas);
+      this.completeCameraFrame(backend);
       return;
     }
-    void completion.then(() => this.completeCameraFrame(backend, canvas)).catch(reason => {
+    void completion.then(() => this.completeCameraFrame(backend)).catch(reason => {
       if (this.deepBackend === backend) this.failRuntime(reason);
     });
   }
 
-  private completeCameraFrame(backend: DeepWebGpuBackend, canvas: HTMLCanvasElement): void {
-    if (this.deepBackend !== backend || this.deepCanvas !== canvas) return;
+  /** GPU 完成回调:只释放一个在飞名额。补位画面的合并策略见函数体注释。 */
+  private completeCameraFrame(backend: DeepWebGpuBackend): void {
+    if (this.deepBackend !== backend) return;
     this.cameraFramesInFlight = Math.max(0, this.cameraFramesInFlight - 1);
-    const pending = this.pendingCameraView;
-    if (!pending) return;
-    this.pendingCameraView = undefined;
-    try { this.renderLatestCameraFrame(backend, canvas, pending); }
-    catch (reason) { this.failRuntime(reason); }
+    // 补位合并:不在 GPU 完成回调里立即重放 pending——那会与同一渲染帧的作者帧
+    // 提交相邻,形成一帧双提交(submitGap=0 的拖尾主体)。pending 保留到下一次
+    // renderDeepFrame:相机路径以更新的 view 覆盖并在呈现后清空;主路径呈现后同样
+    // 清空。手势输入逐帧驱动作者回调,80ms 尾随 sync 兜底,不会滞留旧画面。
   }
 
   private renderCommittedFrame(backend: DeepWebGpuBackend, canvas: HTMLCanvasElement,
@@ -437,7 +446,12 @@ export class StudioDeepWebGpuBridge {
       }
     };
     draw();
+    // 呈现已覆盖到这份(更新的)view:待补位的旧相机帧不再有价值,清空以避免
+    // 在后续回调里回放旧画面。失败路径(throw)不清,由异常处理接管。
+    this.pendingCameraView = undefined;
     // 只重绘这一份快照以收敛TAA；不重扫Box3、不上传资源、不推进作者动画。
+    // 手势相机帧(settle=false)不重启收敛序列;收敛只在相机静止(主路径/尾随
+    // sync)后发生,且每轮有界(frames 默认 16,构造硬限 1..120)。
     if (settle) this.temporalSettler.restart(draw);
   }
 
