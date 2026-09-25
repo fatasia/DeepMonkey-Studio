@@ -3,7 +3,10 @@ use std::{
     path::Path,
 };
 
-use super::{super::RuntimePackageError, io_failure};
+use super::super::RuntimePackageError;
+
+#[cfg(windows)]
+use super::io_failure;
 
 #[cfg(unix)]
 pub(super) type FileIdentity = (u64, u64);

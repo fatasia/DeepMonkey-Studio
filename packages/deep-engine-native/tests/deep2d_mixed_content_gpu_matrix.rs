@@ -5,6 +5,7 @@
 //! Bin-side painter modules are reassembled via `#[path]`.
 
 #![allow(dead_code)]
+#![cfg(windows)]
 
 #[path = "../src/deep2d_atlas_gpu.rs"]
 mod deep2d_atlas_gpu;

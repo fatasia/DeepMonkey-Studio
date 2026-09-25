@@ -41,7 +41,17 @@ for (const { inputs, allowedDependencies } of buildInputs) {
 const exportsManifest = JSON.parse(await readFile(path.join(root, "package.json"), "utf8")).exports ?? {};
 const knownEntryPoints = new Set(Object.keys(exportsManifest).map((entry) => (entry === "." ? "" : entry.replace(/^\.\//, ""))));
 
-const rawHits = execFileSync("rg", ["-n", "--glob", "*.{ts,tsx,js,mjs,json}", "@bim-studio/deep-engine|packages/deep-engine", "apps"], { cwd: path.resolve(root, "../.."), encoding: "utf8" });
+const repoRoot = path.resolve(root, "../..");
+let rawHits = "";
+try {
+  rawHits = execFileSync("git", ["grep", "-n", "-E", "@bim-studio/deep-engine|packages/deep-engine", "--", "apps"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+} catch (error) {
+  if (error.status !== 1) throw error;
+  rawHits = error.stdout ?? "";
+}
 const audit = new Map();
 const violations = [];
 for (const line of rawHits.split(/\r?\n/).filter(Boolean)) {
