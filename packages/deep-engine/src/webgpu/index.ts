@@ -124,6 +124,8 @@ export { ResidentPacketPublisher } from "./residentPacketPublisher.js";
 export type { ResidentPacketCandidate } from "./residentPacketPublisher.js";
 export { createPacketGeometryBounds } from "./packetGeometryBounds.js";
 export type { PacketGeometryBounds, PacketGeometryBoundsSource } from "./packetGeometryBounds.js";
+export { pickScene, pickingUnavailable, normalizePickRay } from "./picking.js";
+export type { PickHit, PickOptions, PickResult, PickSceneView } from "./picking.js";
 export { createResidentPacketTextureLookup } from "./packetTextureLookup.js";
 export type { PacketTextureLookup } from "./packetTextureLookup.js";
 export { stageResidentPacketBuffers, commitResidentPacketBufferStage,

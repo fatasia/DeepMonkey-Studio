@@ -44,6 +44,8 @@ export class PacketBuffers {
   private disposed = false;
   private generation = 0;
   private sceneRevision = 0;
+  /** 任一次成功发布(全量或驻留投影)后为真;拾取据此区分"未上传"与"空场景"。 */
+  private publishedScene = false;
   private motionHistory = new Map<string, Float32Array<ArrayBuffer>>();
   private readonly validation = new PacketValidatedPublication();
   private readonly deformation: PacketDeformationState;
@@ -73,6 +75,8 @@ export class PacketBuffers {
 
   /** Monotonic revision of successfully published visibility-affecting author state. */
   get visibilityRevision(): number { return this.sceneRevision; }
+  /** True once any packet publication (full or resident projection) has landed; never resets while alive. */
+  get scenePublished(): boolean { return this.publishedScene; }
   /** Last author-to-upload material reconciliation; absent for externally resident projections. */
   get materialEffectLedger(): MaterialEffectLedgerSnapshot | undefined { return this.materialEffects; }
   /** Live production material residency/bind-group telemetry; counters are monotonic for this renderer epoch. */
@@ -107,6 +111,7 @@ export class PacketBuffers {
     if (!transition) return false;
     const { current, previous } = transition;
     this.deformation.publish(undefined, undefined);
+    this.publishedScene = true;
     const oldGeometries = this.geometries, oldBatches = this.batches;
     this.geometries = current.geometries; this.geometryBounds = current.geometryBounds;
     this.batches = current.batches; this.textureLookup = current.textureLookup;
@@ -246,6 +251,7 @@ export class PacketBuffers {
     const previousResident = this.resident.detachActive();
     const oldGeometries = this.geometries, oldBatches = this.batches;
     this.geometries = staged.geometries; this.geometryBounds = bounds; this.batches = staged.batches;
+    this.publishedScene = true;
     this.materialEffects = materialEffects;
     this.pruneCullingResources(); this.pruneLodInputs();
     this.motionHistory = new Map();
@@ -329,6 +335,7 @@ export class PacketBuffers {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true; this.generation++;
+    this.publishedScene = false;
     const context = this.residentContext();
     const geometries = [...this.geometries.values()], batches = [...this.batches.values()];
     const lod = this.lod, shadowLod = this.shadowLod; this.lod = undefined; this.shadowLod = undefined;

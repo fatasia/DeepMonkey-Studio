@@ -7,6 +7,7 @@ import { RenderTargets } from "./renderTargets.js";
 import type { StudioEnvironment } from "./studioEnvironment.js";
 import { PacketBuffers } from "./packetBuffers.js";
 import type { InstanceUpdate, RenderPacket } from "../renderPacket.js";
+import { pickScene, pickingUnavailable, type PickOptions, type PickResult } from "./picking.js";
 import { spherePacket } from "./spherePacket.js";
 import { CameraFrameHistory } from "./cameraFrameHistory.js";
 import { PbrPostProcessChain, type PbrPostProcessInput } from "./pbrPostProcessChain.js";
@@ -182,6 +183,21 @@ export class PbrRenderer {
   cancelResidentPacketStage(): void { this.packets.cancelPendingPacketStage(); }
   async setInstancesValidated(data: Float32Array<ArrayBuffer>, signal?: AbortSignal): Promise<void> { await this.setPacketValidated(spherePacket(data), signal); }
   setDiagnosticsSampling(enabled: boolean): void { this.diagnostics.setEnabled(enabled); } updateInstances(update: InstanceUpdate): void { if (this.packets.updateInstances(update)) this.shadowDirty = true; }
+  /**
+   * 第 3 条权威路径:CPU 拾取查询(同步)。线性遍历当前发布场景,复杂度
+   * O(实例 × 三角形),边界与精度限制见 webgpu/picking.ts 头注;不可用时返回
+   * unavailable + 原因(不抛糊错),输入契约违例(非法射线)才抛精确错误。
+   */
+  pick(origin: ArrayLike<number>, direction: ArrayLike<number>, options: PickOptions = {}): PickResult {
+    let inputs: ReturnType<PacketBuffers["visibilityInputs"]>;
+    try { inputs = this.packets.visibilityInputs(); }
+    catch (error) { return pickingUnavailable(`packet resources inaccessible (${(error as Error).message})`); }
+    if (!this.packets.scenePublished) return pickingUnavailable("no render packet published");
+    const notes = this.packets.drawProfile().hasDeformation
+      ? ["deformation-active:instances-picked-at-base-pose"] : undefined;
+    return pickScene({ batches: inputs.batches, geometries: inputs.geometries,
+      ...(notes ? { degradedNotes: notes } : {}) }, origin, direction, options);
+  }
   setProbeClipmap(binding?: Parameters<ForwardPlusPbrRuntime["setProbeClipmap"]>[0]): void { this.lighting.setProbeClipmap(binding); this.historyDirty = true; }
   /**
    * Product GI source (DeepWebGpuRenderRuntime contract): installs the real one-bounce
