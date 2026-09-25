@@ -81,6 +81,7 @@ jobs:
       - run: pnpm --filter @bim-studio/studio-core build
       - run: pnpm --filter @bim-studio/server-sdk build
       - run: pnpm --filter @bim-studio/scene-sdk build
+      - run: pnpm --filter @bim-studio/docs-runtime build
       - run: pnpm --filter @bim-studio/web typecheck
       - run: pnpm --filter @bim-studio/web test
       - run: pnpm --filter @bim-studio/web build
