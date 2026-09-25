@@ -49,7 +49,7 @@ describe("Deep editor overlay roots", () => {
     expect(roots).not.toContain(distance);
     // angle 测量与预览的圆弧现由 Deep 原生原语呈现。
     expect(roots).not.toContain(angle);
-    expect(roots).toContain(clippingHelper);
+    expect(roots).not.toContain(clippingHelper);
     expect(roots).toContain(annotation);
   });
 
@@ -67,5 +67,20 @@ describe("Deep editor overlay roots", () => {
       } as unknown as ViewerEngineInteraction);
       expect(roots).toContain(measurementPreview);
     }
+  });
+
+  it("exposes only an enabled box clipping helper to the Deep primitive collector", () => {
+    const box = new THREE.Box3(new THREE.Vector3(-1, -1, -1), new THREE.Vector3(1, 1, 1));
+    const clippingHelper = { box };
+    const call = (clippingState: Record<string, unknown>) => ViewerEngineInteraction.prototype.getDeepClippingBox.call({
+      clippingState, clippingHelper, presentationRendererBackend: "webgpu"
+    } as unknown as ViewerEngineInteraction);
+    expect(call({ enabled: true, mode: "box", showHelper: true })).toBe(box);
+    expect(call({ enabled: false, mode: "box", showHelper: true })).toBeUndefined();
+    expect(call({ enabled: true, mode: "plane", showHelper: true })).toBeUndefined();
+    expect(call({ enabled: true, mode: "box", showHelper: false })).toBeUndefined();
+    expect(ViewerEngineInteraction.prototype.getDeepClippingBox.call({
+      clippingState: { enabled: true, mode: "box", showHelper: true }, clippingHelper, presentationRendererBackend: "webgl"
+    } as unknown as ViewerEngineInteraction)).toBeUndefined();
   });
 });

@@ -23,6 +23,7 @@ function viewer(overrides: Partial<DeepOverlayPrimitiveViewer> = {}): DeepOverla
 describe("deep overlay primitive collector", () => {
   it("collects selection box, gizmo and measurement vertices in that order", () => {
     const primitives = collectDeepOverlayPrimitives(viewer({
+      getDeepClippingBox: () => new THREE.Box3(new THREE.Vector3(-0.5, -0.5, -0.5), new THREE.Vector3(0.5, 0.5, 0.5)),
       getDeepTransformGizmoInput: () => ({ matrix: new THREE.Matrix4(), mode: "translate" }),
       getDeepMeasurementSegmentInputs: () => [
         { a: new THREE.Vector3(0, 0, 0), b: new THREE.Vector3(1, 0, 0), preview: false },
@@ -30,12 +31,13 @@ describe("deep overlay primitive collector", () => {
           angle: [new THREE.Vector3(), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0)] },
       ],
     }), 128, 128, 1);
-    expect(primitives).toHaveLength(4);
+    expect(primitives).toHaveLength(5);
     expect(primitives[0]!.length).toBe(12 * 18 * 8); // 选择盒
-    expect(primitives[1]!.length).toBe(3 * 4 * 18 * 8); // gizmo 箭头
-    expect(primitives[2]!.length).toBe(5 * 18 * 8); // 测量线段
-    expect(primitives[3]!.length).toBeGreaterThan(5 * 18 * 8); // 角度圆弧
-    expect(primitives[3]!.length % (18 * 8)).toBe(0);
+    expect(primitives[1]!.length).toBe(12 * 18 * 8); // 剖切盒
+    expect(primitives[2]!.length).toBe(3 * 4 * 18 * 8); // gizmo 箭头
+    expect(primitives[3]!.length).toBe(5 * 18 * 8); // 测量线段
+    expect(primitives[4]!.length).toBeGreaterThan(5 * 18 * 8); // 角度圆弧
+    expect(primitives[4]!.length % (18 * 8)).toBe(0);
   });
 
   it("skips absent selection boxes, hidden gizmos and degenerate segments without producing holes", () => {

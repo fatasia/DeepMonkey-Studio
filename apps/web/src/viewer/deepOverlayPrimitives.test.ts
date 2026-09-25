@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { mergeDeepOverlayVertices, projectDeepMeasurementAngle, projectDeepMeasurementSegment, projectDeepSelectionBox,
+import { mergeDeepOverlayVertices, projectDeepClippingBox, projectDeepMeasurementAngle, projectDeepMeasurementSegment, projectDeepSelectionBox,
   projectDeepTransformGizmo } from "./deepOverlayPrimitives";
 import { OVERLAY_VERTEX_LIMIT } from "./studioDeepOverlayGeometry";
 
@@ -60,6 +60,19 @@ describe("deep overlay selection box primitive", () => {
     const vertices = projectDeepSelectionBox(crossing, headOnCamera(), 128, 128, 1);
     expect(vertices.length).toBeGreaterThan(0);
     expect(vertices.length % 8).toBe(0);
+    expect([...vertices].every(Number.isFinite)).toBe(true);
+  });
+});
+
+describe("deep overlay clipping box primitive", () => {
+  it("emits the same 12-edge contract with clipping color and opacity", () => {
+    const vertices = projectDeepClippingBox(unitBox(), headOnCamera(), 128, 128, 1);
+    expect(vertices.length).toBe(12 * 18 * 8);
+    const color = lineCenterColor(vertices);
+    expect(color.r).toBeCloseTo(0xf6 / 255, 4);
+    expect(color.g).toBeCloseTo(0xc4 / 255, 4);
+    expect(color.b).toBeCloseTo(0x53 / 255, 4);
+    expect(color.a).toBeCloseTo(0.9, 5);
     expect([...vertices].every(Number.isFinite)).toBe(true);
   });
 });
