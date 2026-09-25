@@ -52,6 +52,9 @@ export interface DeepWebGpuBackendCreateRequest extends DeepWebGpuBackendOptions
   readonly projection: ThreeProjectionBridge;
   readonly root: ThreeObjectSource;
   readonly view: RenderView;
+  /** Optional immutable packet compiled from SceneSnapshot. When present the
+   * backend bypasses ThreeProjectionBridge for initial publication. */
+  readonly renderPacket?: RenderPacket;
   readonly renderer?: PbrRendererOptions;
   readonly signal?: AbortSignal;
 }
@@ -126,12 +129,20 @@ export class DeepWebGpuBackend {
       runtime.dispose();
       throw abortError("Deep backend creation cancelled.");
     }
-    return DeepWebGpuBackend.prepare(runtime, validated.projection, validated.root, validated.view, {
-      ...(validated.cameraLayerMask === undefined ? {} : { cameraLayerMask: validated.cameraLayerMask }), signal,
+    const backend = new DeepWebGpuBackend(runtime, validated.projection, {
+      ...(validated.cameraLayerMask === undefined ? {} : { cameraLayerMask: validated.cameraLayerMask }),
       ...(renderer.shadows === undefined ? {} : { expectedShadows: renderer.shadows }),
       ...(authorChunks === undefined ? {} : { authorChunks }),
       ...(renderer.meshlets === undefined ? {} : { meshlets: renderer.meshlets }),
     });
+    try {
+      if (validated.renderPacket) {
+        await backend.prepareRenderPacket(validated.renderPacket, validated.view, signal);
+        return backend;
+      }
+      await backend.prepareScene(validated.root, validated.view, validated.cameraLayerMask, signal);
+      return backend;
+    } catch (error) { backend.dispose(); throw error; }
   }
 
   /** 接管已创建的 GPU runtime，并且只返回通过场景投影和首帧门禁的候选。 */
@@ -168,6 +179,23 @@ export class DeepWebGpuBackend {
     const frame = await this.runtime.validateFrame(view);
     this.shadowSelectionValue = shadowSelection(frame, this.expectedShadows);
     if (signal?.aborted) throw abortError("Deep backend preparation cancelled.");
+    return frame;
+  }
+
+  /** Publish a packet compiled from SceneSnapshot without traversing a Three
+   * hierarchy. This is the independent author path; the legacy scene path
+   * remains available through prepareScene/sync. */
+  async prepareRenderPacket(packet: RenderPacket, view: RenderView, signal?: AbortSignal): Promise<FrameMetrics> {
+    this.assertOpen();
+    signal?.throwIfAborted();
+    const candidate = this.coordinates.candidate(view.eye);
+    const localPacket = this.coordinates.localizePacket(packet, candidate);
+    await this.runtime.setPacketValidated(localPacket, signal);
+    if (signal?.aborted) throw abortError("Deep backend packet preparation cancelled.");
+    this.coordinates.commit(candidate);
+    this.committedPacket = localPacket;
+    const frame = await this.runtime.validateFrame(this.coordinates.localizeView(view, candidate));
+    this.shadowSelectionValue = shadowSelection(frame, this.expectedShadows);
     return frame;
   }
 

@@ -63,6 +63,18 @@ describe("DeepWebGpuBackend", () => {
     expect(backend.shadowSelection).toEqual({ selectedTier: "high", estimatedDepthTextureBytes: 64 * 1024 * 1024 });
   });
 
+  it("publishes a precompiled RenderPacket without traversing the Three author tree", async () => {
+    const author = mesh(), source = bridge();
+    author.updateWorldMatrix(true, true);
+    const projected = source.project(author, { cameraLayerMask: 1 });
+    if (!projected.ok) throw new Error("expected packet projection");
+    const target = runtime(), backend = new DeepWebGpuBackend(target, bridge());
+    await backend.prepareRenderPacket(projected.packet, view);
+    expect(target.setPacketValidated).toHaveBeenCalledOnce();
+    expect(target.validateFrame).toHaveBeenCalledOnce();
+    expect(target.packets[0]!.instances).toHaveLength(projected.packet.instances.length);
+  });
+
   it("does not render a rejected author scene during switch preparation", async () => {
     const target = runtime(), backend = new DeepWebGpuBackend(target, bridge());
     const author = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshLambertMaterial());
