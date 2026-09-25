@@ -10,6 +10,7 @@ import { layerVisibilityCommand } from "../commands/engineEditCommand";
 import { normalizeDashboardState } from "../components/dashboardState";
 import { translate as tr } from "../i18n";
 import { runProbeGridBake } from "../delivery/probeGridBakeRunner";
+import { storeProbeGridBake } from "../delivery/probeGridBakePublicationSession";
 import type { ProbeGridBakeUiState } from "../components/SceneProbeGridBakePanel";
 import { AiAssistantPanel } from "../components/AiAssistantPanel";
 import { CameraNavigationPanel } from "../components/CameraNavigationPanel";
@@ -54,7 +55,6 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
     branding,
     busy,
     cameraConstraints,
-    cameraInfo,
     cameraViews,
     changeCameraConstraints,
     changeClippingMode,
@@ -187,6 +187,9 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
     setProbeBake({ kind: "running", phase: "compile-scene" });
     runProbeGridBake({ scene: activeScene, models: project.models, grid })
       .then(outcome => {
+        // 烘焙成功即入发布会话(键=编译器严格源投影哈希):发布链 probeGridBakeForPayload
+        // 才能取到探针数据。此前只更新 UI 状态,发布时 lookup 必然落空——烘焙→发布断链。
+        storeProbeGridBake(activeScene, outcome);
         if (probeBakeOwnerRef.current === ownerKey) setProbeBake({ kind: "done",
           probeCount: outcome.probeCount, coveredCount: outcome.coveredCount, coverage: outcome.coverage });
       })
@@ -213,7 +216,6 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
   const viewerExplosionTargets = (engine?.listModels() ?? loadedModels).filter((model) => model.kind === "model");
   const [viewerExplosion, setViewerExplosion] = useState(false);
   const viewerExplosionActive = viewerExplosion && Boolean(engine && viewerExplosionTargets.length > 0);
-  const cubeOrientation = getCubeOrientation(cameraInfo);
   // XR 的后端事实来源是引擎作者渲染器（XR 仅挂 WebGL），而非用户后端偏好。
   const xrAuthorBackend = engine?.getAuthorRendererBackend() ?? "webgl";
   const xrUnavailableReasons = xrSessionAvailability({
@@ -287,15 +289,14 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           <LoaderCircle className="spin" size={18} />{" "}
           <span>
             {" "}
-            {tr(locale, "正在初始化", "Initializing")} {rendererBackend === "webgpu" ? "Deep WebGPU Beta" : "WebGL"}{" "}
+            {tr(locale, "正在初始化", "Initializing")} {rendererBackend === "wasm" ? "Deep WASM" : rendererBackend === "webgpu" ? "Deep WebGPU Beta" : "WebGL"}{" "}
           </span>{" "}
         </div>
       )}
       {route.view === "studio" && engine && (
-        <ViewOrientationCube
+        <EngineViewOrientationCube
+          engine={engine}
           locale={locale}
-          azimuthDeg={cubeOrientation.azimuthDeg}
-          elevationDeg={cubeOrientation.elevationDeg}
           hasSelection={Boolean(selected)}
           onStandardView={(view) => engine.setStandardView(view)}
           onFitAll={() => engine.fitAll()}
@@ -677,4 +678,48 @@ function getCubeOrientation(camera?: CameraState): { azimuthDeg: number; elevati
     azimuthDeg: Math.atan2(dx, dz) * 180 / Math.PI,
     elevationDeg: Math.atan2(dy, horizontalDistance) * 180 / Math.PI,
   };
+}
+
+interface EngineViewOrientationCubeProps {
+  readonly engine: NonNullable<AppStudioController["engine"]>;
+  readonly locale: Parameters<typeof ViewOrientationCube>[0]["locale"];
+  readonly hasSelection: boolean;
+  readonly onStandardView: Parameters<typeof ViewOrientationCube>[0]["onStandardView"];
+  readonly onFitAll: () => void;
+  readonly onFitSelected: () => void;
+  readonly onOptimizeView: () => void;
+}
+
+/** Keeps high-frequency orientation updates inside the tiny viewport control. */
+export function EngineViewOrientationCube(props: EngineViewOrientationCubeProps) {
+  const [camera, setCamera] = useState<CameraState>(() => props.engine.getCameraState());
+  const innerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const initial = props.engine.getCameraState();
+    setCamera(initial);
+    let settleTimer: number | undefined;
+    const unsubscribe = props.engine.subscribeCameraChange((next) => {
+      const nextOrientation = getCubeOrientation(next);
+      // The cube's visual rotation is compositor-only. Updating the element
+      // directly keeps it attached to every camera frame without committing
+      // the React tree on every pointer sample; React catches up once after the
+      // gesture so face semantics and accessibility state stay authoritative.
+      if (innerRef.current) innerRef.current.style.transform = `rotateX(${-nextOrientation.elevationDeg}deg) rotateY(${-nextOrientation.azimuthDeg}deg)`;
+      if (settleTimer !== undefined) window.clearTimeout(settleTimer);
+      settleTimer = window.setTimeout(() => {
+        settleTimer = undefined;
+        setCamera(next);
+      }, 80);
+    });
+    return () => {
+      if (settleTimer !== undefined) window.clearTimeout(settleTimer);
+      unsubscribe();
+    };
+  }, [props.engine]);
+  const orientation = getCubeOrientation(camera);
+  return <ViewOrientationCube locale={props.locale} azimuthDeg={orientation.azimuthDeg}
+    elevationDeg={orientation.elevationDeg} hasSelection={props.hasSelection}
+    innerRef={innerRef}
+    onStandardView={props.onStandardView} onFitAll={props.onFitAll}
+    onFitSelected={props.onFitSelected} onOptimizeView={props.onOptimizeView} />;
 }
