@@ -159,6 +159,9 @@ export function DashboardInspectorContent() {
                       title: event.currentTarget.value,
                     });
                 }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                }}
               />
             </label>
             {(selectedNode.widget.type === "text" || selectedNode.widget.type === "shape" || selectedNode.widget.type === "decoration") && (

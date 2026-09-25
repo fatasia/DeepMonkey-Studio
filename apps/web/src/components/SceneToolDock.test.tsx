@@ -18,6 +18,7 @@ describe("SceneToolDock", () => {
         navigationMode="orbit"
         transformMode="translate"
         hasSelection={true}
+        hasModelSelection={true}
         selectionScope="model"
         measureEnabled={false}
         annotationEnabled={false}
@@ -70,4 +71,5 @@ describe("SceneToolDock", () => {
     expect(html).not.toContain("剖切模型");
     expect(html).not.toContain("行为脚本");
   });
+
 });

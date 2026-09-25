@@ -45,6 +45,8 @@ interface SceneToolDockProps {
   transformMode: TransformMode;
   /** 没有选中可编辑对象时不显示变换模式，避免工具看似可用但点击无效。 */
   hasSelection: boolean;
+  /** 模型爆炸只作用于选中的模型。 */
+  hasModelSelection: boolean;
   selectionScope: SelectionScope;
   measureEnabled: boolean;
   annotationEnabled: boolean;
@@ -282,6 +284,8 @@ export function SceneToolDock(props: SceneToolDockProps) {
           label={tr(props.locale, "模型爆炸", "Explode model")}
           icon={<Layers3 size={15} />}
           active={props.explosionActive}
+          disabled={!props.hasModelSelection}
+          disabledReason={tr(props.locale, "请先选择模型", "Select a model first")}
           onClick={() => run(props.onExplosionToggle)}
         />
         <MenuAction
@@ -459,11 +463,15 @@ function MenuAction({
   label,
   icon,
   active = false,
+  disabled = false,
+  disabledReason,
   onClick,
 }: {
   label: string;
   icon: ReactNode;
   active?: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
   onClick: () => void;
 }) {
   return (
@@ -471,6 +479,8 @@ function MenuAction({
       type="button"
       role="menuitem"
       className={`scene-tool-menu-action ${active ? "active" : ""}`}
+      disabled={disabled}
+      title={disabled ? disabledReason : undefined}
       onClick={onClick}
     >
       <span>{icon}</span>

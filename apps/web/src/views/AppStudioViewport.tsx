@@ -366,6 +366,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           navigationMode={navigationMode}
           transformMode={transformMode}
           hasSelection={Boolean(selected)}
+          hasModelSelection={selected?.kind === "model"}
           selectionScope={selectionScope}
           measureEnabled={measureEnabled}
           annotationEnabled={annotationEnabled}

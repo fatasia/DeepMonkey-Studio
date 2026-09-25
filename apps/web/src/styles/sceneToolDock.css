@@ -143,6 +143,16 @@
   background: #2a3439;
 }
 
+.scene-tool-menu-action:disabled {
+  color: var(--text-muted);
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.scene-tool-menu-action:disabled:hover {
+  background: transparent;
+}
+
 .scene-tool-menu-action > span {
   display: grid;
   place-items: center;
