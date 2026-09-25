@@ -51,7 +51,16 @@ export interface FramePerformanceSnapshot {
   gpuFrameTime?: import("./gpuFrameTimeMonitor").GpuFrameTimeSnapshot;
   /** Deep's own submitted-frame evidence, not the hidden author renderer's counters. */
   deep?: { readonly frame: import("@bim-studio/deep-engine/webgpu").FrameMetrics;
-    readonly timings?: import("@bim-studio/deep-engine/webgpu").EnginePerformanceTelemetrySnapshot };
+    readonly timings?: import("@bim-studio/deep-engine/webgpu").EnginePerformanceTelemetrySnapshot;
+    /** Backend-owned diagnostics; only fields with a real producer are present. */
+    readonly diagnostics?: { readonly probeClipmap?: {
+      readonly requested: boolean; readonly active: boolean;
+      readonly radianceSource: "scene" | "unavailable"; readonly pending: boolean;
+      readonly packetRevision: number; readonly sceneInstanceCount: number;
+      readonly capture?: { readonly frame: number; readonly updates: number;
+        readonly committedBatches: number; readonly committedUpdates: number };
+      readonly failure?: string;
+    } } };
   pressureSignals: PerformancePressureSignal[];
 }
 

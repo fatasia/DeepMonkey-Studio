@@ -268,6 +268,10 @@ export class StudioDeepWebGpuBridge {
     this.frameCaptureSession = frameCaptureSession;
     publishStudioFrameCaptureSession(frameCaptureSession);
     this.performanceSource = new StudioDeepPerformance(backend.runtime as ConstructorParameters<typeof StudioDeepPerformance>[0]);
+    this.performanceSource.setDiagnosticsSource(() => {
+      const diagnostics = backend.diagnostics;
+      return diagnostics.probeClipmap ? { probeClipmap: diagnostics.probeClipmap } : undefined;
+    });
     this.viewer.setPresentationPerformanceSource(this.performanceSource);
     this.environmentSession = environmentSession;
     this.shadowSession = new StudioDeepShadowSession({ initialMapSize: shadowMapSize,

@@ -73,6 +73,17 @@ describe("Deep presentation performance", () => {
     expect(receipt.samples.every(sample => sample.availability === "unavailable" && sample.samplesMs.length === 0)).toBe(true);
     source.dispose();
   });
+  it("carries backend-owned probe clipmap diagnostics without inventing capture data", () => {
+    const source = new StudioDeepPerformance({});
+    source.setDiagnosticsSource(() => ({ probeClipmap: { requested: true, active: false,
+      radianceSource: "unavailable", pending: false, packetRevision: 3, sceneInstanceCount: 12,
+      failure: "Studio probe GI requires a real scene-radiance encoder." } }));
+    source.record(frame(9), 800, true); tick(0);
+    expect(source.snapshot().deep?.diagnostics).toEqual({ probeClipmap: {
+      requested: true, active: false, radianceSource: "unavailable", pending: false,
+      packetRevision: 3, sceneInstanceCount: 12, failure: "Studio probe GI requires a real scene-radiance encoder." } });
+    source.dispose();
+  });
   it("binds only the active source and preserves an already-open diagnostics preference", () => {
     const owner = {}, first = new StudioDeepPerformance({}), second = new StudioDeepPerformance({});
     const firstToggle = vi.spyOn(first, "setGpuTimingEnabled"), secondToggle = vi.spyOn(second, "setGpuTimingEnabled");

@@ -11,6 +11,17 @@ interface DeepDiagnostics {
     samples?(stage: "gpu-frame"): readonly number[] };
 }
 
+export interface StudioDeepRuntimeDiagnostics {
+  readonly probeClipmap?: {
+    readonly requested: boolean; readonly active: boolean;
+    readonly radianceSource: "scene" | "unavailable"; readonly pending: boolean;
+    readonly packetRevision: number; readonly sceneInstanceCount: number;
+    readonly capture?: { readonly frame: number; readonly updates: number;
+      readonly committedBatches: number; readonly committedUpdates: number };
+    readonly failure?: string;
+  };
+}
+
 /** Samples only submitted Deep frames. Missing per-kind GPU counts remain unavailable. */
 export class StudioDeepPerformance implements PresentationPerformanceSource {
   private readonly monitor = new FramePerformanceMonitor();
@@ -20,6 +31,7 @@ export class StudioDeepPerformance implements PresentationPerformanceSource {
   private pendingFrame: number | undefined;
   private pendingTicket: object | undefined;
   private closed = false;
+  private diagnosticsSource: (() => StudioDeepRuntimeDiagnostics | undefined) | undefined;
   private readonly samples = new StudioDeepSampleWindow();
   private readonly inputEvents = ["pointerdown", "pointermove", "pointerup", "wheel", "keydown", "keyup", "input", "change", "click"];
   private readonly inputObserved = () => this.samples.recordInput();
@@ -53,6 +65,9 @@ export class StudioDeepPerformance implements PresentationPerformanceSource {
     if (typeof window !== "undefined") for (const event of this.inputEvents) window.removeEventListener(event, this.inputObserved, { capture: true });
     this.setGpuTimingEnabled(false); this.pause();
   }
+  setDiagnosticsSource(source: (() => StudioDeepRuntimeDiagnostics | undefined) | undefined): void {
+    this.diagnosticsSource = source;
+  }
   pause(): void {
     if (this.pendingFrame !== undefined) cancelAnimationFrame(this.pendingFrame);
     this.pendingFrame = undefined; this.pendingTicket = undefined;
@@ -83,7 +98,9 @@ export class StudioDeepPerformance implements PresentationPerformanceSource {
         ...(frame && !frame.shadowUpdated ? ["cached-shadows"] : [])] }, heap, mainThread);
     const timings = this.runtime.performanceTelemetry?.snapshot();
     const gpu = timings?.stages["gpu-frame"];
-    return { ...snapshot, ...(frame ? { deep: { frame: { ...frame }, ...(timings ? { timings } : {}) } } : {}),
+    const diagnostics = this.diagnosticsSource?.();
+    return { ...snapshot, ...(frame ? { deep: { frame: { ...frame }, ...(timings ? { timings } : {}),
+      ...(diagnostics ? { diagnostics } : {}) } } : {}),
       ...(this.runtime.gpuTimer?.supported ? { gpuFrameTime: { supported: true, sampleCount: gpu?.samples ?? 0,
         p50Ms: gpu?.p50Ms ?? 0, p95Ms: gpu?.p95Ms ?? 0, maximumMs: gpu?.maximumMs ?? 0 } } : {}) };
   }

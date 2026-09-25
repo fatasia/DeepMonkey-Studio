@@ -122,7 +122,7 @@ export function RendererDiagnosticsPanel(props: Props) {
           </div>
           <SwitchStatus locale={props.locale} current={props.current} desired={props.desired} phase={props.switchPhase} message={props.switchMessage} />
           <PerformanceSummary locale={props.locale} snapshot={props.performance} />
-          {props.performance?.deep && <DeepRuntimeSummary locale={props.locale} frame={props.performance.deep.frame} />}
+          {props.performance?.deep && <DeepRuntimeSummary locale={props.locale} frame={props.performance.deep.frame} diagnostics={props.performance.deep.diagnostics} />}
           {props.frameCapture && <FrameCaptureSourceMapPanel locale={props.locale} readbacks={props.frameReadbacks}
             {...props.frameCapture} />}
           <footer>
@@ -141,13 +141,15 @@ export function RendererDiagnosticsPanel(props: Props) {
   );
 }
 
-function DeepRuntimeSummary({ locale, frame }: {
+function DeepRuntimeSummary({ locale, frame, diagnostics }: {
   locale: AppLocale;
   frame: NonNullable<NonNullable<FramePerformanceSnapshot["deep"]>["frame"]>;
+  diagnostics?: NonNullable<FramePerformanceSnapshot["deep"]>["diagnostics"];
 }) {
   const memory = frame.deviceResourceMemory;
   const transient = frame.transientTextures;
   const adaptive = frame.adaptiveQuality;
+  const probes = diagnostics?.probeClipmap;
   return (
     <section className="renderer-deep-summary" aria-label={tr(locale, "Deep 运行证据", "Deep runtime evidence")}>
       <header>
@@ -161,8 +163,10 @@ function DeepRuntimeSummary({ locale, frame }: {
         <Metric label={tr(locale, "时域历史", "Temporal history")} value={frame.cameraCut ? tr(locale, "已重置", "Reset") : tr(locale, "保持", "Retained")} />
         {memory && <Metric label={tr(locale, "设备资源", "Device resources")} value={`${formatBytes(memory.estimatedBytes)} / ${memory.admission ? formatBytes(memory.admission.budgetBytes) : "—"}`} warning={Boolean(memory.admission && memory.admission.budgetBytes > 0 && memory.estimatedBytes / memory.admission.budgetBytes > .9)} />}
         {transient && <Metric label={tr(locale, "瞬态纹理", "Transient textures")} value={`${transient.acquireCount} · ${formatBytes(transient.residentBytes)}`} />}
+        {probes && <Metric label={tr(locale, "DDGI Clipmap", "DDGI clipmap")} value={probes.active ? tr(locale, "运行中", "Active") : probes.requested ? tr(locale, "不可用", "Unavailable") : tr(locale, "未请求", "Not requested")} warning={Boolean(probes.failure || (probes.requested && !probes.active))} />}
       </div>
       {adaptive && <small className="renderer-deep-note">{adaptive.explanation}</small>}
+      {probes && <small className="renderer-deep-note">{probes.radianceSource} · {probes.sceneInstanceCount} instances · {probes.capture ? `${probes.capture.committedUpdates} committed updates` : "capture pending"}{probes.failure ? ` · ${probes.failure}` : ""}</small>}
     </section>
   );
 }
