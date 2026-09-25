@@ -3730,3 +3730,7 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - 批 3-5 UI 写点接线:sceneAppearanceCommands(changeLighting/SceneEnvironment/Physics/updateSelectionMaterial/updateSelectedEffects)+SceneMultiMaterialEditor 共 6 处直调改走 dispatchEngineEditCommand;RobotJointPreview 因依赖 setRobotPose boolean 返回暂缓(等价优先);persistence/creation 恢复与默认流按惯例保持直调。证据:controllers+commands+components 1817/1817+多选材质 3/3+tsc(非在途域)干净。
 - W1① 剩余:批 6 结构命令(deleteSelectedLayer×3,批 2 已列原因)待 W1 代理切片。
+
+### 2026-09-25 批 6 切片落地(批次 15,主线程)
+
+- DeleteSelection 命令+applier+三调用点接线(ModelTreeItem/AppStudioInspector/AppStudioShellView);编排留调用点、引擎变更走总线;套件 1818/1818。命令层八条原语全部就绪、全部 UI 编辑写点(批 0-6 共 20 处)收编完成——W1① 命令层收口(undo 命令逆放与 robot boolean 语义留后续声明)。
