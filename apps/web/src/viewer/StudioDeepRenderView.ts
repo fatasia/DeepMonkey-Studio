@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { RenderPacket } from "@bim-studio/deep-engine";
 import type { RenderView } from "@bim-studio/deep-engine/webgpu";
 import type { ViewerEngine } from "./ViewerEngine";
 import type { StudioDeepEnvironmentSession } from "./StudioDeepEnvironmentSession";
@@ -43,6 +44,15 @@ export class StudioDeepRenderView {
     private readonly shadowSession: () => StudioDeepShadowSession | undefined) {}
   reset(): void { this.editorOverlay.dispose(); this.grid.dispose(); this.projectionExtent = undefined; this.cachedGestureSource = undefined; }
   invalidateProjectionBounds(): void { this.projectionExtent = undefined; this.cachedGestureSource = undefined; }
+  /**
+   * Supplies bounds for the immutable packet path.  This keeps Deep WebGPU
+   * view construction from traversing the author Three hierarchy merely to
+   * derive an orbit extent.
+   */
+  setIndependentPacketBounds(packet: RenderPacket): void {
+    this.projectionExtent = packetExtent(packet);
+    this.cachedGestureSource = undefined;
+  }
   /** Deep 原生编辑辅助图形(切片 A/B/C)顶点来源;未注册时保持纯 Three 投影行为。 */
   setDeepOverlayPrimitiveSource(source: DeepOverlayPrimitiveSource | undefined): void {
     this.deepOverlayPrimitives = source;
@@ -131,3 +141,27 @@ export class StudioDeepRenderView {
 
 }
 function tuple(value: THREE.Vector3): [number, number, number] { return [value.x, value.y, value.z]; }
+
+function packetExtent(packet: RenderPacket): number {
+  const bounds = new Map<string, [number, number, number, number, number, number]>();
+  for (const geometry of packet.geometries) {
+    const b: [number, number, number, number, number, number] = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+    for (let offset = 0; offset < geometry.vertices.length; offset += 6) {
+      b[0] = Math.min(b[0], geometry.vertices[offset]!); b[1] = Math.min(b[1], geometry.vertices[offset + 1]!); b[2] = Math.min(b[2], geometry.vertices[offset + 2]!);
+      b[3] = Math.max(b[3], geometry.vertices[offset]!); b[4] = Math.max(b[4], geometry.vertices[offset + 1]!); b[5] = Math.max(b[5], geometry.vertices[offset + 2]!);
+    }
+    bounds.set(geometry.id, b);
+  }
+  let max = 1;
+  for (const instance of packet.instances) {
+    const b = bounds.get(instance.geometry); if (!b || !Number.isFinite(b[0])) continue;
+    const m = instance.transform;
+    for (const x of [b[0], b[3]]) for (const y of [b[1], b[4]]) for (const z of [b[2], b[5]]) {
+      const px = m[0]! * x + m[4]! * y + m[8]! * z + m[12]!;
+      const py = m[1]! * x + m[5]! * y + m[9]! * z + m[13]!;
+      const pz = m[2]! * x + m[6]! * y + m[10]! * z + m[14]!;
+      max = Math.max(max, Math.abs(px), Math.abs(py), Math.abs(pz));
+    }
+  }
+  return max;
+}

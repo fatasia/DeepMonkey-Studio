@@ -98,6 +98,8 @@ export class StudioDeepWebGpuBridge {
   private gestureActive = false;
   private lastGestureTickAt: number | undefined;
   private readonly gizmoInteraction: DeepGizmoInteraction;
+  /** True after an immutable SceneSnapshot packet was accepted for this session. */
+  private independentPacketPath = false;
 
   constructor(
     private readonly viewer: ViewerEngine,
@@ -178,13 +180,15 @@ export class StudioDeepWebGpuBridge {
           environment = await prepareStudioDeepEnvironmentSource(this.viewer.scene, signal);
           markSwitchPhase("deep-webgpu:environment-ready");
           const postProcessing = this.viewer.getPostProcessing();
-          updateAuthorProjectionState(this.viewer.scene, this.viewer.camera, signal);
+          const authorRenderPacket = this.options.authorRenderPacket
+            ? await this.options.authorRenderPacket(signal) : undefined;
+          this.independentPacketPath = authorRenderPacket !== undefined;
+          if (!authorRenderPacket) updateAuthorProjectionState(this.viewer.scene, this.viewer.camera, signal);
+          else this.viewReader.setIndependentPacketBounds(authorRenderPacket);
           const view = this.viewReader.renderView(module, canvas);
           shadowMapSize = view.lights?.directional?.[0]?.shadow?.mapSize
             ?? studioDeepShadowMapSize(this.viewer.scene, this.viewer.camera.layers.mask);
           frameCaptureSession = createRequestedStudioFrameCaptureSession();
-          const authorRenderPacket = this.options.authorRenderPacket
-            ? await this.options.authorRenderPacket(signal) : undefined;
           // A compiled SceneSnapshot packet is a complete Deep input. Keep the
           // Three projection bridge out of this path so geometry, materials,
           // hierarchy and transforms are never read from the author scene.
@@ -217,7 +221,7 @@ export class StudioDeepWebGpuBridge {
         },
         prepare: async (backend, signal) => {
           await nextFrame(signal);
-          updateAuthorProjectionState(this.viewer.scene, this.viewer.camera, signal);
+          if (!this.independentPacketPath) updateAuthorProjectionState(this.viewer.scene, this.viewer.camera, signal);
           // create 期间作者仍可编辑；重新投影并验证当前相机，而非发布创建时的快照。
           // 这不是 revision 锁：验证期间的连续动画仍由发布后的作者帧订阅追平。
           const latestView = this.viewReader.renderViewDirect(canvas);
@@ -280,6 +284,7 @@ export class StudioDeepWebGpuBridge {
     this.authorCanvas.style.opacity = "0";
     this.deepCanvas = canvas;
     this.deepBackend = backend;
+    this.independentPacketPath = backend.usesIndependentPacket;
     this.frameCaptureSession = frameCaptureSession;
     publishStudioFrameCaptureSession(frameCaptureSession);
     this.performanceSource = new StudioDeepPerformance(backend.runtime as ConstructorParameters<typeof StudioDeepPerformance>[0]);
@@ -319,6 +324,7 @@ export class StudioDeepWebGpuBridge {
   private releaseDeep(): void {
     this.viewer.setDeepPointerPick?.(undefined);
     this.projectionBridge = undefined;
+    this.independentPacketPath = false;
     this.viewer.setPresentationPerformanceSource(undefined);
     this.performanceSource?.dispose();
     this.performanceSource = undefined;
@@ -562,7 +568,7 @@ export class StudioDeepWebGpuBridge {
   }
 
   private updateAuthorMatrices(): void {
-    this.viewer.scene.updateMatrixWorld(true);
+    if (!this.independentPacketPath) this.viewer.scene.updateMatrixWorld(true);
     this.viewer.camera.updateMatrixWorld(true);
   }
 
