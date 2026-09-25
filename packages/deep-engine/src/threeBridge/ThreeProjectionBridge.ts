@@ -41,12 +41,6 @@ export class ThreeProjectionBridge {
     this.authorLod = options.capabilities?.authorLod === true;
   }
 
-  /** Resolve an already projected author object without allocating a new projection identity. */
-  objectIdFor(object: ThreeObjectSource): string | undefined {
-    const id = this.identities.get(object);
-    return id === undefined ? undefined : `object-${id}`;
-  }
-
   /** 数组原位改动遵循 Three needsUpdate/version；替换 attribute / data / array 也自动失效。 */
   project(root: ThreeObjectSource, options: { readonly cameraLayerMask: number }): ProjectionResult {
     const epoch = ++this.epoch;
