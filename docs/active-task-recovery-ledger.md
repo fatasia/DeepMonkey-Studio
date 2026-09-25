@@ -3680,3 +3680,11 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - **批 1(代理,提交 069c0ea6)**:SetTransform 对接 SceneTransformGraph 权威(只读消费,零改动)——EngineTransformAuthoring 按引擎实例持 graph,create/update/flush 校验+单调 stateRevision 后原样调 setter;Three 写回保持命令原欧拉值(逐位等价优先);全量 TRS 决策(基线不可信,Partial 留批 2+);4 处变换 UI 接线(sceneEditorController 单选/图层/对齐分布+SceneMultiTransformEditor)。证据:Web 全量 4427/0(基线 4412+15 新增)、graph 对拍 1e-9/1e-12、deep-engine scene 48 绿。
 - 遗留:gizmo 拖拽流未收编(批 1 刻意范围外);fragment 构件选中不可预检(需引擎补"变换目标"查询);非法 TRS fail-fast 为设计意图差异;Partial/undo 逆放/Gateway 对接留批 2+。
+
+### 2026-09-25 性能冲刺与全测启动(批次 8;用户指令:守护取消,全力性能+全面测试)
+
+- **WASM 切换回归修复**:公平 runner 抓到映射透传后 wasm 切换失败(陈旧 wasm 二进制 deny_unknown_fields 拒绝 objectBindings)——重建 wasm bundle(镜像 native 模块,#path)后三后端全过。教训:runtimePackage schema 变更需同步重建 wasm 产物。
+- **拖拽平滑度定案(新指标)**:相邻呈现帧灰度差→重复帧率。实测三后端 distinctFrameRatio 全部 1.0(50fps 有效,零重复帧)——WASM 拖拽掉帧疑点证伪,三引擎视觉平滑度打平。wasm pointer→submit 本轮 3.1ms(与 WebGL 1.9 同档)。
+- **license 恢复(用户指令,提交 e8772299/cff38a93)**:DMCSL-1.0 全面恢复(LICENSE/中文版/LICENSING/双 README/AGENTS/贡献条款/社区文档/审计断言/unity 镜像/READINESS);LICENSE-RESTRICTIONS.md 移除;package.json 回 LicenseRef-Deep-Monkey-Community-1.0;双门禁过。
+- **全面测试(用户指令)**:UI/视觉一致性全检+属性面板输入框不一致 P0 修复(代理在途);交互/功能全检(因并发代理限额被拒,待空位补发);性能平滑度已定案。
+- 30 分钟守护按用户指令取消;WebGPU 拖尾 GPU 专项仍归属并行会话 gpuTimer 工作。
