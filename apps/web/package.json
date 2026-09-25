@@ -59,7 +59,7 @@
     "monaco-editor": "^0.57.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "replicad": "1.0.0",
+    "replicad": "1.1.0",
     "replicad-opencascadejs": "1.0.0",
     "three": "0.185.1",
     "three-mesh-bvh": "^0.9.14",
