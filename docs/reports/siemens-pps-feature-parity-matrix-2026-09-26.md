@@ -47,7 +47,7 @@
 | MBOM + BOP 管理(what to make & how) | **部分**(轻量平替) | ppr.ts:PprBopVersion/PprOperation/PprComponent + ppr-lite-engine |
 | MBOM 零件分配到工序 + BOE 资源指定 | **部分** | PprOperationComponentRef/PprOperationResourceAssignment 数据结构在;分配工具链弱 |
 | EBOM-MBOM 对账/变更影响(accountability check) | **部分(机制刚落地)** | digitalThread:版本/冻结/基线漂移/断链诊断(golden-09);缺:设计变更自动传播闭环 UI |
-| 工时估算(MTM/TiCon)+ **线平衡**(Takt 目标优化) | **缺失**(线平衡大项) | PprOperation 有工时形态;无 MTM 库、无线平衡求解/显示 |
+| 工时估算(MTM/TiCon)+ **线平衡**(Takt 目标优化) | **部分**(初版勘误:线平衡已有确定性实现) | `ppr-lite-engine/lineBalancing.ts`:targetTakt/工位负载/理论最少工位数(与西门子 Capacity=takt×工人数 同型);缺:MTM 工时库、约束检查器、交互式平衡闭环 |
 | EWI 电子作业指导书(2D/3D 可视化、版本自动更新) | **部分**(轻量平替) | workInstructions.ts + PprElectronicWorkInstruction(workInstructions 测试) |
 | 跨工厂工艺复用 | **部分** | 模板/资产库/项目复制 |
 | 工艺资源库 MRL(切削刀具/NX CAM 连接) | **缺失** | 无 CAM 域 |
@@ -57,7 +57,7 @@
 ## 结论:真实差距的优先级(修正后)
 
 1. **P0-A Plant 类库与层级建模**(对象继承/嵌套/改类即改实例)——Plant Simulation 的建模根基,当前完全缺失,是"平替"叙事的最大单点风险。
-2. **P0-B 线平衡 + MTM 工时**(PD 核心卖点)+ Sankey/甘特(Plant 标配输出)。
+2. **P0-B 线平衡增强**(MTM 工时接入+约束检查器+平衡闭环;基础求解已在 `lineBalancing.ts`)+ Sankey/甘特(Plant 标配输出)。
 3. **P0-C OLP 与多机器人同步**(PS 核心)——先做确定性 emulated controller + 少数品牌程序往返。
 4. **P1 真实 PLC Live 连接**(现有确定性回放层之上)、人体模型与可视性分析、Gantt/Sankey 渲染。
 5. **P1 规模标定**(对象数 500/4000/更多档位的容量与性能曲线,补官方档位对照)。
