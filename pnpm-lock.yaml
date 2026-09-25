@@ -192,9 +192,6 @@ importers:
       '@types/node':
         specifier: ^24.10.0
         version: 24.13.3
-      '@webgpu/types':
-        specifier: 0.1.72
-        version: 0.1.72
       '@types/nodemailer':
         specifier: ^8.0.1
         version: 8.0.1
@@ -207,6 +204,9 @@ importers:
       '@types/ws':
         specifier: ^8.5.10
         version: 8.18.1
+      '@webgpu/types':
+        specifier: 0.1.72
+        version: 0.1.72
       tsx:
         specifier: ^4.21.0
         version: 4.23.1
@@ -303,7 +303,7 @@ importers:
         version: 2.11.1
       '@thatopen/fragments':
         specifier: 3.4.5
-        version: 3.4.5(three@0.185.1(patch_hash=9fda16ec002347dc9c74981d01e891278d3b27e57f3987792221b92d7f075b16))(web-ifc@0.0.77)
+        version: 3.4.5(three@0.185.1(patch_hash=9fda16ec002347dc9c74981d01e891278d3b27e57f3987792221b92d7f075b16))(web-ifc@0.0.78)
       draco3dgltf:
         specifier: 1.5.7
         version: 1.5.7
@@ -362,8 +362,8 @@ importers:
         specifier: 1.0.1
         version: 1.0.1
       web-ifc:
-        specifier: 0.0.77
-        version: 0.0.77
+        specifier: 0.0.78
+        version: 0.0.78
     devDependencies:
       '@types/react':
         specifier: ^19.2.0
@@ -3608,8 +3608,8 @@ packages:
   watlas@1.0.1:
     resolution: {integrity: sha512-TmB++BFqEQY19cPNby5iszACZd8t6uauB7YdObkqhWarhed79OMPS8wufoDSo0p85A/8QW/aqZwEJf+nD4emSw==}
 
-  web-ifc@0.0.77:
-    resolution: {integrity: sha512-VzQ0W/Iiqbidxn1ECUvz6qJ6p2sXBVNcOsUOBCETzy77psAH6yFLKQm74aXabkx3JH4OvFVHe8k1qS6+Z2zl1w==}
+  web-ifc@0.0.78:
+    resolution: {integrity: sha512-LGKMNYFVNyz9vVERN0iz+zvPQJqT7MEGBxslzcuuhwDDOA116LmJLKkg8sZ5SEvQJSc5NRVMWgpRNkDmuoQoJg==}
 
   webcrypto-core@1.9.2:
     resolution: {integrity: sha512-gsXecm82UQNlTBURJGuqOWy1Ww08S3kZUcr3aOJS02Pk0xLtkfeUAVC0u0xhgdonFme80edSJUIJyuvL/7250Q==}
@@ -4615,14 +4615,14 @@ snapshots:
 
   '@tediousjs/connection-string@1.1.0': {}
 
-  '@thatopen/fragments@3.4.5(three@0.185.1(patch_hash=9fda16ec002347dc9c74981d01e891278d3b27e57f3987792221b92d7f075b16))(web-ifc@0.0.77)':
+  '@thatopen/fragments@3.4.5(three@0.185.1(patch_hash=9fda16ec002347dc9c74981d01e891278d3b27e57f3987792221b92d7f075b16))(web-ifc@0.0.78)':
     dependencies:
       earcut: 3.2.3
       flatbuffers: 25.2.10
       lru-cache: 11.1.0
       pako: 2.1.0
       three: 0.185.1(patch_hash=9fda16ec002347dc9c74981d01e891278d3b27e57f3987792221b92d7f075b16)
-      web-ifc: 0.0.77
+      web-ifc: 0.0.78
 
   '@tweenjs/tween.js@23.1.3': {}
 
@@ -6982,7 +6982,7 @@ snapshots:
 
   watlas@1.0.1: {}
 
-  web-ifc@0.0.77: {}
+  web-ifc@0.0.78: {}
 
   webcrypto-core@1.9.2:
     dependencies:

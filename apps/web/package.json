@@ -65,7 +65,7 @@
     "three-mesh-bvh": "^0.9.14",
     "urdf-loader": "0.13.1",
     "watlas": "1.0.1",
-    "web-ifc": "0.0.77"
+    "web-ifc": "0.0.78"
   },
   "devDependencies": {
     "@types/react": "^19.2.0",
