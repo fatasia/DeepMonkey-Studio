@@ -359,10 +359,10 @@ pub fn parse_and_validate_dynamic_scene_runtime(
         {
             return fail("dynamic animation envelope is invalid");
         }
-        if let Some(range) = &animation.playback_range_ms {
-            if range.in_ms >= range.out_ms || range.out_ms > animation.duration_ms {
-                return fail("dynamic animation playback range is invalid");
-            }
+        if let Some(range) = &animation.playback_range_ms
+            && (range.in_ms >= range.out_ms || range.out_ms > animation.duration_ms)
+        {
+            return fail("dynamic animation playback range is invalid");
         }
         for track in &animation.tracks {
             if track.target_id.is_empty()

@@ -126,6 +126,8 @@ impl GpuScene {
         }
     }
 
+    // 间接绘制装配天然多参,与 draw 主路径同形,不做参数对象化。
+    #[allow(clippy::too_many_arguments)]
     fn draw_outline_indirect<'a>(
         &'a self,
         pass: &mut wgpu::RenderPass<'a>,

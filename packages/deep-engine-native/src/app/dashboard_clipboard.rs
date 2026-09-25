@@ -30,7 +30,7 @@ pub(super) fn read(owner: HWND) -> Result<String, String> {
             .map_err(|e| format!("Clipboard has no Unicode text: {e}"))?;
         let memory = HGLOBAL(handle.0);
         let bytes = GlobalSize(memory);
-        if bytes == 0 || bytes > MAX_BYTES || bytes % 2 != 0 {
+        if bytes == 0 || bytes > MAX_BYTES || !bytes.is_multiple_of(2) {
             return Err("Clipboard text exceeds the input byte budget".into());
         }
         let ptr = GlobalLock(memory).cast::<u16>();

@@ -166,10 +166,12 @@ pub(crate) fn plan_gpu_scene(scene: &GpuScene) -> Result<RtScenePlan, RtResidenc
 /// 纯批次分类:BLEND 整批排除、MASK 保守计入(opaque 同路),返回
 /// (驻留候选实例, BLEND 排除数, MASK 保守包含数)。与 GpuScene 解耦,
 /// 便于脱离 device 单测钉死口径。
+/// (批内序号, firstInstance, 列主序 transform 12 floats)的驻留候选实例行。
+type ClassifiedRtBatches = Vec<(usize, u32, [f32; 12])>;
 pub(crate) fn classify_rt_batches(
     batches: &[deep_engine_native::scene::DrawBatch],
     packed: &[deep_engine_native::scene::PackedInstance],
-) -> (Vec<(usize, u32, [f32; 12])>, u32, u32) {
+) -> (ClassifiedRtBatches, u32, u32) {
     let mut classified = Vec::new();
     let mut excluded_blend = 0u32;
     let mut conservative_mask = 0u32;
@@ -203,8 +205,8 @@ pub(crate) fn classify_rt_batches(
     (classified, excluded_blend, conservative_mask)
 }
 
-/// 驻留产物:BLAS 缓存(几何变更才重建)+ 场景 TLAS(变换变更只重建它)
-/// + F2 pixel 管线族(opaque/MASK 方向阴影 Ray Query 变体,与驻留同依赖
+/// 驻留产物:BLAS 缓存(几何变更才重建)、场景 TLAS(变换变更只重建它)
+/// 与 F2 pixel 管线族(opaque/MASK 方向阴影 Ray Query 变体,与驻留同依赖
 /// 设备 RT 特性,故随驻留同生命周期搬运;场景替换重建驻留时原样迁移)。
 #[allow(dead_code)] // plan 字段经 plan()/rebuild_tlas 被 tests 与诊断消费。
 pub(crate) struct RtSceneResidency {

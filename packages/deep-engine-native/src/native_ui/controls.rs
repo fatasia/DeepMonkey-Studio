@@ -72,12 +72,12 @@ pub struct Button {
 
 impl Button {
     pub fn handle(&mut self, event: &ControlEvent) -> Option<ControlResponse> {
-        if let ControlEvent::KeyInput(key) = event {
-            if interactive(self.disabled, self.loading) && matches!(key.as_str(), "Enter" | "Space")
-            {
-                self.press.pressed = false;
-                return Some(ControlResponse::Clicked);
-            }
+        if let ControlEvent::KeyInput(key) = event
+            && interactive(self.disabled, self.loading)
+            && matches!(key.as_str(), "Enter" | "Space")
+        {
+            self.press.pressed = false;
+            return Some(ControlResponse::Clicked);
         }
         press_cycle(
             interactive(self.disabled, self.loading),
@@ -102,13 +102,13 @@ pub struct Toggle {
 
 impl Toggle {
     pub fn handle(&mut self, event: &ControlEvent) -> Option<ControlResponse> {
-        if let ControlEvent::KeyInput(key) = event {
-            if interactive(self.disabled, self.loading) && matches!(key.as_str(), "Enter" | "Space")
-            {
-                self.press.pressed = false;
-                self.checked = !self.checked;
-                return Some(ControlResponse::Toggled(self.checked));
-            }
+        if let ControlEvent::KeyInput(key) = event
+            && interactive(self.disabled, self.loading)
+            && matches!(key.as_str(), "Enter" | "Space")
+        {
+            self.press.pressed = false;
+            self.checked = !self.checked;
+            return Some(ControlResponse::Toggled(self.checked));
         }
         press_cycle(
             interactive(self.disabled, self.loading),
@@ -134,13 +134,13 @@ pub struct Checkbox {
 
 impl Checkbox {
     pub fn handle(&mut self, event: &ControlEvent) -> Option<ControlResponse> {
-        if let ControlEvent::KeyInput(key) = event {
-            if interactive(self.disabled, self.loading) && matches!(key.as_str(), "Enter" | "Space")
-            {
-                self.press.pressed = false;
-                self.checked = !self.checked;
-                return Some(ControlResponse::Toggled(self.checked));
-            }
+        if let ControlEvent::KeyInput(key) = event
+            && interactive(self.disabled, self.loading)
+            && matches!(key.as_str(), "Enter" | "Space")
+        {
+            self.press.pressed = false;
+            self.checked = !self.checked;
+            return Some(ControlResponse::Toggled(self.checked));
         }
         press_cycle(
             interactive(self.disabled, self.loading),
@@ -183,8 +183,10 @@ mod tests {
             toggle.handle(&ControlEvent::KeyInput("Space".into())),
             Some(ControlResponse::Toggled(false))
         );
-        let mut checkbox = Checkbox::default();
-        checkbox.checked = true;
+        let mut checkbox = Checkbox {
+            checked: true,
+            ..Checkbox::default()
+        };
         assert_eq!(
             checkbox.handle(&ControlEvent::KeyInput("Space".into())),
             Some(ControlResponse::Toggled(false))

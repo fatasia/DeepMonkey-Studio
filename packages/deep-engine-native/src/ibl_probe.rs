@@ -17,6 +17,8 @@ pub struct IblProbe {
 }
 
 impl IblProbe {
+    // IBL 环境装配天然多参,与 frame bind group 布局逐项对应,不做参数对象化。
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,

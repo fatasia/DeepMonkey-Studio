@@ -40,6 +40,7 @@ impl PlayerContent {
         ))
     }
 
+    #[allow(dead_code)] // 相机视图计数合同访问器,由取证/诊断路径消费。
     pub fn camera_view_count(&self) -> usize {
         self.authored_camera
             .as_ref()

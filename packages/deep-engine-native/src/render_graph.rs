@@ -330,7 +330,7 @@ pub fn execute_graph_batch<'scope, A: GraphSend>(
 /// (层间 happens-before),层内并行、结果按固定节点序。
 /// 任一层失败即取消后续所有层(整批取消语义)。
 #[allow(dead_code)] // Native RenderGraph 层级执行合同(对应 Web R6-3 组间有序/组内并行),由 render_graph_tests 驱动。
-pub fn execute_graph_levels<'scope, A: GraphSend>(
+pub fn execute_graph_levels<A: GraphSend>(
     levels: Vec<Vec<GraphJob<'_, A>>>,
     threads: usize,
 ) -> Result<Vec<Vec<A>>, GraphBatchError> {
@@ -354,6 +354,20 @@ fn panic_message(panic: Box<dyn Any + Send>) -> String {
         format!("job panicked: {message}")
     } else {
         "job panicked".to_owned()
+    }
+}
+
+/// 执行器线程统一命名(windows:SetThreadDescription 伪句程即当前线程)。
+/// 供 render_graph_tests 按名计数,替代进程级线程快照(对并行测试敏感)。
+#[cfg(windows)]
+pub(crate) fn set_executor_thread_name() {
+    use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadDescription};
+    let wide: Vec<u16> = "deep-executor"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    unsafe {
+        SetThreadDescription(GetCurrentThread(), wide.as_ptr());
     }
 }
 
@@ -415,20 +429,6 @@ mod tests {
         let boxed: Box<dyn std::error::Error> = Box::new(error.clone());
         assert!(boxed.to_string().contains("shadow-cascade-3"));
         assert!(boxed.to_string().contains("device lost"));
-    }
-}
-
-/// 执行器线程统一命名(windows:SetThreadDescription 伪句程即当前线程)。
-/// 供 render_graph_tests 按名计数,替代进程级线程快照(对并行测试敏感)。
-#[cfg(windows)]
-pub(crate) fn set_executor_thread_name() {
-    use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadDescription};
-    let wide: Vec<u16> = "deep-executor"
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect();
-    unsafe {
-        SetThreadDescription(GetCurrentThread(), wide.as_ptr());
     }
 }
 

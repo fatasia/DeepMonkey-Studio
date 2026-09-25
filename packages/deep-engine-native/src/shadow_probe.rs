@@ -29,6 +29,8 @@ pub struct ShadowProbe {
 }
 
 impl ShadowProbe {
+    // 阴影探针装配天然多参,与 frame layout 逐项对应,不做参数对象化。
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         device: &wgpu::Device,
         frame_layout: &wgpu::BindGroupLayout,

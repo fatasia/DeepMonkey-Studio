@@ -100,12 +100,12 @@ impl Session {
 impl Drop for Session {
     fn drop(&mut self) {
         unsafe {
-            if self.mf_started {
-                if let Ok(mut leases) = MF_LIFETIME.get_or_init(|| Mutex::new(0)).lock() {
-                    *leases = leases.saturating_sub(1);
-                    if *leases == 0 {
-                        let _ = MFShutdown();
-                    }
+            if self.mf_started
+                && let Ok(mut leases) = MF_LIFETIME.get_or_init(|| Mutex::new(0)).lock()
+            {
+                *leases = leases.saturating_sub(1);
+                if *leases == 0 {
+                    let _ = MFShutdown();
                 }
             }
             if self.com_initialized {

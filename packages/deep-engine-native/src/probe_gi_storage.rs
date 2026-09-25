@@ -3,6 +3,10 @@
 //! 该模块只负责把已验证的 96B 探针记录拥有化为 Native storage buffer，
 //! 不改变既有 IBL frame layout，也不宣称已经接入着色器采样。
 
+// 绑定合同先行落库:着色采样消费方在后续切片接入,窄特性目标只驱动
+// 拥有化/绑定合同,故模块级放行 dead_code。
+#![allow(dead_code)]
+
 use crate::probe_gi_abi::{
     IrradianceProbeRecord, PROBE_GI_RECORD_BYTES, ProbeGiAbiError, pack_records,
     validate_record_count,
@@ -36,6 +40,9 @@ impl From<ProbeGiAbiError> for ProbeGiStorageError {
 ///
 /// `None` 表示没有探针，调用方不得为旧包或空场景创建占位 buffer。
 /// 该对象不跨设备复用，设备恢复时必须随 Renderer 一起重建。
+// layout/bind_group/record_count/byte_len 是绑定合同驻留状态;窄特性目标
+// 只走 buffer() 读路径,完整目标经访问器消费。
+#[allow(dead_code)]
 pub struct ProbeGiStorage {
     buffer: wgpu::Buffer,
     layout: wgpu::BindGroupLayout,
@@ -74,7 +81,7 @@ impl ProbeGiStorage {
         let byte_len =
             u64::try_from(packed.len()).map_err(|_| ProbeGiStorageError::DeviceLimitExceeded)?;
         if byte_len < PROBE_GI_STORAGE_MIN_BINDING_BYTES
-            || byte_len > device.limits().max_storage_buffer_binding_size as u64
+            || byte_len > device.limits().max_storage_buffer_binding_size
         {
             return Err(ProbeGiStorageError::DeviceLimitExceeded);
         }
@@ -118,15 +125,19 @@ impl ProbeGiStorage {
     pub fn buffer(&self) -> &wgpu::Buffer {
         &self.buffer
     }
+    #[allow(dead_code)] // 绑定合同访问器:窄特性目标只消费 buffer()。
     pub fn layout(&self) -> &wgpu::BindGroupLayout {
         &self.layout
     }
+    #[allow(dead_code)]
     pub fn bind_group(&self) -> &wgpu::BindGroup {
         &self.bind_group
     }
+    #[allow(dead_code)]
     pub fn record_count(&self) -> usize {
         self.record_count
     }
+    #[allow(dead_code)]
     pub fn byte_len(&self) -> u64 {
         self.byte_len
     }

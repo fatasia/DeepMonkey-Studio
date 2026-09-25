@@ -110,15 +110,15 @@ pub(in crate::app) fn key(app: &mut NativeApp, key: KeyCode) -> bool {
         KeyCode::Escape => Some("Escape"),
         _ => None,
     };
-    if let Some(select_key) = select_key {
-        if runtime.select_accepts_key(select_key) {
-            apply(app, |candidate| {
-                candidate
-                    .select_key(select_key)
-                    .map(|changed| changed.unwrap_or(false))
-            });
-            return true;
-        }
+    if let Some(select_key) = select_key
+        && runtime.select_accepts_key(select_key)
+    {
+        apply(app, |candidate| {
+            candidate
+                .select_key(select_key)
+                .map(|changed| changed.unwrap_or(false))
+        });
+        return true;
     }
     let runtime = app.content.active().dashboard.as_ref().unwrap();
     match key {

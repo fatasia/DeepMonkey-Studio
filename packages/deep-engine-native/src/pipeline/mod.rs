@@ -7,6 +7,9 @@ mod rt;
 #[path = "shadow.rs"]
 mod shadow;
 
+// create_rt_mesh_pipelines 仅在含 renderer/init 的目标被消费;部分窄特性
+// 测试目标只取 RtMeshPipelines,故对整行放行 unused_imports。
+#[allow(unused_imports)]
 pub(crate) use rt::{RtMeshPipelines, create_rt_mesh_pipelines};
 
 use deep_engine_native::{contract::AlphaMode, shadow_cache::ShadowCasterMode};

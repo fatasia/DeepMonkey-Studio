@@ -180,7 +180,7 @@ fn object_visible_track_does_not_abort_native_playback() {
     );
 
     // 750ms：已越过 visible=false 关键帧（500ms），实例隐藏、零矩阵。
-    let step = content.apply_dynamic_playback_step(750).unwrap();
+    let _step = content.apply_dynamic_playback_step(750).unwrap();
     let tx = content.packet.instances[0].transform[12];
     eprintln!("DEBUG 750ms tx={tx}");
 }

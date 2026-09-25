@@ -128,6 +128,7 @@ pub struct Renderer {
     /// 与绑定,不做像素消费;任何拒绝 fail-closed 关闭 RT,不阻塞栅格主通路。
     rt_residency: Option<rt_residency::RtSceneResidency>,
     /// F3: 非空探针才创建的 renderer-owned storage；旧包和空场景保持 None。
+    #[allow(dead_code)] // F3 存储驻留合同:窄特性目标不消费,完整目标经访问器读取。
     probe_gi_storage: Option<crate::probe_gi_storage::ProbeGiStorage>,
     shadow_map: ShadowMap,
     ibl: GpuIblEnvironment,

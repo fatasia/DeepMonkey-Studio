@@ -50,7 +50,7 @@ pub fn create_ray_query_probe_pipeline(
     let shader = create_ray_query_shader(device);
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("native hardware ray-query pipeline layout"),
-        bind_group_layouts: &[Some(&bind_layout)],
+        bind_group_layouts: &[Some(bind_layout)],
         immediate_size: 0,
     });
     device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -264,15 +264,16 @@ mod tests {
             experimental_features: unsafe { wgpu::ExperimentalFeatures::enabled() },
             required_limits: {
                 let available = adapter.limits();
-                let mut limits = wgpu::Limits::default();
-                limits.max_blas_primitive_count = available.max_blas_primitive_count;
-                limits.max_blas_geometry_count = available.max_blas_geometry_count;
-                limits.max_tlas_instance_count = available.max_tlas_instance_count;
-                limits.max_acceleration_structures_per_shader_stage =
-                    available.max_acceleration_structures_per_shader_stage;
-                limits.max_buffers_and_acceleration_structures_per_shader_stage =
-                    available.max_buffers_and_acceleration_structures_per_shader_stage;
-                limits
+                wgpu::Limits {
+                    max_blas_primitive_count: available.max_blas_primitive_count,
+                    max_blas_geometry_count: available.max_blas_geometry_count,
+                    max_tlas_instance_count: available.max_tlas_instance_count,
+                    max_acceleration_structures_per_shader_stage: available
+                        .max_acceleration_structures_per_shader_stage,
+                    max_buffers_and_acceleration_structures_per_shader_stage: available
+                        .max_buffers_and_acceleration_structures_per_shader_stage,
+                    ..Default::default()
+                }
             },
             ..Default::default()
         }))
@@ -515,8 +516,8 @@ pub fn build_indexed_scene(
     {
         return Err(HardwareRayError::MissingFeature);
     }
-    if positions.len() % 3 != 0
-        || indices.len() % 3 != 0
+    if !positions.len().is_multiple_of(3)
+        || !indices.len().is_multiple_of(3)
         || indices.is_empty()
         || indices
             .iter()
@@ -626,10 +627,10 @@ fn build_indexed_scene_from_buffers_with_stride(
                 wgpu::BlasGeometrySizeDescriptors::Triangles { descriptors } => &descriptors[0],
                 _ => unreachable!(),
             },
-            vertex_buffer: &vertex_buffer,
+            vertex_buffer,
             first_vertex: 0,
             vertex_stride,
-            index_buffer: Some(&index_buffer),
+            index_buffer: Some(index_buffer),
             first_index: Some(0),
             transform_buffer: None,
             transform_buffer_offset: None,

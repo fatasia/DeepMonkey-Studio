@@ -176,10 +176,10 @@ impl DashboardVideoPlayback {
                 loop_duration,
             )?)
         };
-        if diagnostic.playback.autoplay {
-            if let Some(audio) = &audio {
-                audio.play();
-            }
+        if diagnostic.playback.autoplay
+            && let Some(audio) = &audio
+        {
+            audio.play();
         }
         Ok(Self {
             decoder,
@@ -527,10 +527,10 @@ impl DashboardVideoPlayback {
             .checked_add(monotonic_now - suspended_at)
             .ok_or("dashboard video lifecycle clock overflow")?;
         self.last_clock = monotonic_now;
-        if self.playing {
-            if let Some(audio) = &self.audio {
-                audio.play();
-            }
+        if self.playing
+            && let Some(audio) = &self.audio
+        {
+            audio.play();
         }
         Ok(())
     }
@@ -629,6 +629,11 @@ fn wrapped_delta_100ns(delta: i64, period: i64) -> i64 {
     }
 }
 
+fn duration_100ns(duration: Duration) -> Result<i64, String> {
+    let ticks = duration.as_nanos() / 100;
+    i64::try_from(ticks).map_err(|_| "dashboard video media clock overflow".into())
+}
+
 #[cfg(test)]
 mod audio_resync_tests {
     use super::{AUDIO_RESYNC_THRESHOLD_100NS, wrapped_delta_100ns};
@@ -636,7 +641,10 @@ mod audio_resync_tests {
     #[test]
     fn resync_before_one_output_buffer_can_become_a_p99_escape() {
         assert_eq!(AUDIO_RESYNC_THRESHOLD_100NS, 500_000);
-        assert!(500_000 < 1_000_000);
+        // 重同步阈值必须严格小于一个输出缓冲周期(100 ms),否则永远等不到
+        // p99 逃逸窗口。绑定局部量而非字面量比较,避免恒真断言。
+        let one_output_buffer_100ns: i64 = 1_000_000;
+        assert!(AUDIO_RESYNC_THRESHOLD_100NS < one_output_buffer_100ns);
     }
 
     #[test]
@@ -652,9 +660,4 @@ mod audio_resync_tests {
         // 恰好半周期:归一到非负方向。
         assert_eq!(wrapped_delta_100ns(500_000, period), 500_000);
     }
-}
-
-fn duration_100ns(duration: Duration) -> Result<i64, String> {
-    let ticks = duration.as_nanos() / 100;
-    i64::try_from(ticks).map_err(|_| "dashboard video media clock overflow".into())
 }

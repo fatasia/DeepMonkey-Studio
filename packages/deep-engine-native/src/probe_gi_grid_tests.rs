@@ -16,23 +16,13 @@ fn uniform_records(
 ) -> Vec<IrradianceProbeRecord> {
     let head = header(grid, spacing);
     let mut records = vec![head.encode().unwrap()];
-    for index in 0..head.probe_count {
+    for _ in 0..head.probe_count {
         let mut record = IrradianceProbeRecord::zero();
         record.irradiance = irradiance;
         record.validity = 1.0;
         record.mean_distance = 1_000_000.0; // Chebyshev 恒通过
-        let linear = index;
-        let x = linear % grid[0];
-        let y = (linear / grid[0]) % grid[1];
-        let z = linear / (grid[0] * grid[1]);
         // 重定位增量置于零：探针世界位置 = origin + cell*spacing。
-        let cell = [x as f32, y as f32, z as f32];
-        record.position_offset = [
-            head.origin[0] + cell[0] * spacing - (head.origin[0] + cell[0] * spacing),
-            0.0,
-            0.0,
-        ];
-        let _ = cell;
+        record.position_offset = [0.0, 0.0, 0.0];
         records.push(record);
     }
     records

@@ -106,7 +106,7 @@ impl DashboardRuntime {
 fn word_at(text: &str, caret: usize) -> (usize, usize) {
     text.split_word_bound_indices()
         .find(|(start, word)| *start <= caret && caret < start + word.len())
-        .or_else(|| text.split_word_bound_indices().last())
+        .or_else(|| text.split_word_bound_indices().next_back())
         .map(|(start, word)| (start, start + word.len()))
         .unwrap_or((0, 0))
 }

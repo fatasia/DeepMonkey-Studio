@@ -206,7 +206,7 @@ pub(super) async fn create_renderer(
             && records[0]
                 .reserved
                 .first()
-                .map_or(false, |value| *value != 0.0);
+                .is_some_and(|value| *value != 0.0);
         frame[crate::probe_gi_storage::FRAME_PROBE_GI_ENABLE_ROW]
             [crate::probe_gi_storage::FRAME_PROBE_GI_ENABLE_LANE] =
             if legacy_grid || probe_grid_cascade.is_some() {

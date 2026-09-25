@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
 use winit::{
-    event::{ElementState, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent},
+    event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::ActiveEventLoop,
     keyboard::{KeyCode, PhysicalKey},
     window::WindowId,
@@ -157,10 +157,8 @@ pub(super) fn handle(
         WindowEvent::Occluded(false) => app.request_redraw(),
         WindowEvent::RedrawRequested => redraw(app, event_loop),
         WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Released => {
-            if let PhysicalKey::Code(key) = event.physical_key
-                && app.navigation_key(key, false)
-            {
-                return;
+            if let PhysicalKey::Code(key) = event.physical_key {
+                app.navigation_key(key, false);
             }
         }
         WindowEvent::KeyboardInput { event, .. }

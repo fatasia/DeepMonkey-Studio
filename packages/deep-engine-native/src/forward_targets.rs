@@ -6,6 +6,9 @@ use winit::dpi::PhysicalSize;
 pub const OUTLINE_MASK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
 pub const OUTLINE_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
+// outline/forward 测试装配合同:部分窄特性目标只消费其中一组视图字段,
+// 其余字段与方法作为 target 结构完整性驻留,故条目级放行 dead_code。
+#[allow(dead_code)]
 pub struct OutlineTargets {
     _mask: wgpu::Texture,
     _depth: wgpu::Texture,
@@ -13,6 +16,7 @@ pub struct OutlineTargets {
     pub depth_view: wgpu::TextureView,
 }
 
+#[allow(dead_code)]
 pub struct ForwardTargets {
     pub background: Option<[f64; 3]>,
     hdr: wgpu::Texture,
@@ -24,6 +28,8 @@ pub struct ForwardTargets {
     pub outline: Option<OutlineTargets>,
 }
 
+// 窄特性目标只驱动 new()/targets(),其余访问器为完整装配合同驻留。
+#[allow(dead_code)]
 impl ForwardTargets {
     pub fn new(device: &wgpu::Device, size: PhysicalSize<u32>, outline: bool) -> Self {
         let extent = wgpu::Extent3d {

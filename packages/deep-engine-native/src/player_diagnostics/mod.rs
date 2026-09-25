@@ -202,16 +202,15 @@ impl PlayerDiagnostics {
         // Telemetry already emits a lightweight, ordered pass receipt. Promote the
         // capability only when that runtime evidence is present; this remains
         // distinct from per-pass GPU timestamps and a full dependency graph.
-        if has_frame_pass_receipt {
-            if let Some(capability) = report["capabilities"].as_array_mut().and_then(|items| {
+        if has_frame_pass_receipt
+            && let Some(capability) = report["capabilities"].as_array_mut().and_then(|items| {
                 items
                     .iter_mut()
                     .find(|item| item["name"] == "frame_graph_receipt")
-            }) {
-                capability["status"] = serde_json::Value::String("configured".into());
-                capability["reason"] =
-                    serde_json::Value::String("native_frame_pass_receipt".into());
-            }
+            })
+        {
+            capability["status"] = serde_json::Value::String("configured".into());
+            capability["reason"] = serde_json::Value::String("native_frame_pass_receipt".into());
         }
         report
     }

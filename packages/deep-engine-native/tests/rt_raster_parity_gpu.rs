@@ -149,15 +149,16 @@ fn request_ray_query_device() -> Option<(wgpu::Device, wgpu::Queue)> {
         experimental_features: unsafe { wgpu::ExperimentalFeatures::enabled() },
         required_limits: {
             let available = adapter.limits();
-            let mut limits = wgpu::Limits::default();
-            limits.max_blas_primitive_count = available.max_blas_primitive_count;
-            limits.max_blas_geometry_count = available.max_blas_geometry_count;
-            limits.max_tlas_instance_count = available.max_tlas_instance_count;
-            limits.max_acceleration_structures_per_shader_stage =
-                available.max_acceleration_structures_per_shader_stage;
-            limits.max_buffers_and_acceleration_structures_per_shader_stage =
-                available.max_buffers_and_acceleration_structures_per_shader_stage;
-            limits
+            wgpu::Limits {
+                max_blas_primitive_count: available.max_blas_primitive_count,
+                max_blas_geometry_count: available.max_blas_geometry_count,
+                max_tlas_instance_count: available.max_tlas_instance_count,
+                max_acceleration_structures_per_shader_stage: available
+                    .max_acceleration_structures_per_shader_stage,
+                max_buffers_and_acceleration_structures_per_shader_stage: available
+                    .max_buffers_and_acceleration_structures_per_shader_stage,
+                ..Default::default()
+            }
         },
         ..Default::default()
     }))

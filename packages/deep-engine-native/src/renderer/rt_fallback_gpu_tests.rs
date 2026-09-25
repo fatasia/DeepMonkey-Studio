@@ -104,15 +104,16 @@ fn request_rt_and_plain_devices() -> Option<(wgpu::Device, wgpu::Queue, wgpu::De
             experimental_features: unsafe { wgpu::ExperimentalFeatures::enabled() },
             required_limits: {
                 let available = adapter.limits();
-                let mut limits = wgpu::Limits::default();
-                limits.max_blas_primitive_count = available.max_blas_primitive_count;
-                limits.max_blas_geometry_count = available.max_blas_geometry_count;
-                limits.max_tlas_instance_count = available.max_tlas_instance_count;
-                limits.max_acceleration_structures_per_shader_stage =
-                    available.max_acceleration_structures_per_shader_stage;
-                limits.max_buffers_and_acceleration_structures_per_shader_stage =
-                    available.max_buffers_and_acceleration_structures_per_shader_stage;
-                limits
+                wgpu::Limits {
+                    max_blas_primitive_count: available.max_blas_primitive_count,
+                    max_blas_geometry_count: available.max_blas_geometry_count,
+                    max_tlas_instance_count: available.max_tlas_instance_count,
+                    max_acceleration_structures_per_shader_stage: available
+                        .max_acceleration_structures_per_shader_stage,
+                    max_buffers_and_acceleration_structures_per_shader_stage: available
+                        .max_buffers_and_acceleration_structures_per_shader_stage,
+                    ..Default::default()
+                }
             },
             ..Default::default()
         }))
@@ -151,6 +152,7 @@ struct RasterChain {
 impl RasterChain {
     /// 建链:布局/材质 layout/场景/管线族/剔除/帧绑定/读回缓冲,与
     /// rt_raster_parity_gpu_tests 的栅格侧完全同构。
+    #[allow(clippy::too_many_arguments)] // 栅格链装配天然多参,与 parity 用例同构。
     fn build(
         device: wgpu::Device,
         queue: wgpu::Queue,

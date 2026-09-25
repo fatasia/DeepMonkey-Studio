@@ -273,6 +273,7 @@ fn executor_threads_are_fully_joined_after_every_batch() {
 
 /// 采样窗口内的线程数高水位(5 个样本,间隔 40ms)。
 #[cfg(windows)]
+#[allow(dead_code)] // 长稳取证助手:仅 soak 取证路径显式调用。
 fn high_water_thread_count() -> usize {
     (0..5)
         .map(|_| {

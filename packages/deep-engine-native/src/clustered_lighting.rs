@@ -153,7 +153,7 @@ mod tests {
         let mut lights = std::array::from_fn(|_| LocalLight::default());
         lights[0] = point([0.0, 0.0, 0.0], 4.0);
         let grid = ClusterGrid::build(&lights, PlayerView::default(), 800, 600);
-        assert!(grid.counts.iter().any(|count| *count == 1));
+        assert!(grid.counts.contains(&1));
         assert_eq!(grid.overflowed, 0);
         assert_eq!(
             grid,

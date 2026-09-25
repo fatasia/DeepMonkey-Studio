@@ -706,7 +706,7 @@ fn apply_dynamic_transforms(
             runtime_content_sha256(&serde_json::Value::String((*target_id).to_owned()))
         );
         let hidden_target = hidden.contains(*target_id);
-        let mut transform = if hidden_target {
+        let transform = if hidden_target {
             [0.0; 16]
         } else {
             let mut transform = dynamic_trs_matrix(node);

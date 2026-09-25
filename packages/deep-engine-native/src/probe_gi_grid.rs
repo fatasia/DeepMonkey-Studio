@@ -13,7 +13,13 @@
 //! - `reserved[1]` = levelCount（1..=4，细→粗顺序）
 //! - `reserved[2]` = levels 起始记录号（首个层级网格头所在记录，本版本恒 1）
 //! - `reserved[3..12]` 必须全零（fail-closed）
+//!
 //! 随后每层一个网格头记录（原格式，保留区全零），探针记录按层顺序排布。
+
+// 编码/解码合同与 CPU 三线性采样参考先行落库:着色采样消费方在后续切片
+// 接入,窄特性目标只驱动解码合同,故模块级放行 dead_code。
+#![allow(dead_code)]
+//!
 //! 层头 `baseProbeRecords` 语义扩展为"本层首条探针记录号"= 布局头 + 前面所有层
 //! 全部记录（各层头+探针）+ 本层网格头；旧单层下恒 1，与现合同逐位一致。
 //!
@@ -77,7 +83,7 @@ pub enum ProbeGiGridError {
 
 impl From<ProbeGiAbiError> for ProbeGiGridError {
     fn from(value: ProbeGiAbiError) -> Self {
-        Self::RecordBudgetExceeded(value.into())
+        Self::RecordBudgetExceeded(value)
     }
 }
 
@@ -156,7 +162,8 @@ impl ProbeGiGridHeader {
 
     fn validate(&self) -> Result<(), ProbeGiGridError> {
         let finite_bounded = |value: f32, limit: f32| value.is_finite() && value.abs() <= limit;
-        if !(finite_bounded(self.spacing, 1_000_000.0) && self.spacing > 0.0)
+        if !finite_bounded(self.spacing, 1_000_000.0)
+            || self.spacing <= 0.0
             || !self
                 .origin
                 .iter()
@@ -307,7 +314,7 @@ pub fn decode_probe_grid_cascade(
             // 层间健全性：粗层间距严格更大，粗层范围逐轴包含细层范围。
             let fine_max = fine.max_position();
             let coarse_max = header.max_position();
-            if !(header.spacing > fine.spacing)
+            if header.spacing <= fine.spacing
                 || (0..3).any(|axis| {
                     header.origin[axis] > fine.origin[axis] || coarse_max[axis] < fine_max[axis]
                 })
@@ -409,7 +416,9 @@ fn sample_grid_level(
             };
             trilinear *= weight;
         }
-        if !(trilinear > 0.0) {
+        // partial_cmp 而非取反比较:浮点可能为 NaN(来自脏输入),NaN 必须与
+        // 非正数一样跳过,取反比较的写法会被 clippy 判为难以阅读。
+        if trilinear.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
             continue;
         }
         let linear = (cell[2] * header.grid_size[1] + cell[1]) * header.grid_size[0] + cell[0];
@@ -418,7 +427,7 @@ fn sample_grid_level(
         }
         let record = &records[header_record + 1 + linear as usize];
         let validity = record.validity.clamp(0.0, 1.0);
-        if !(validity > 0.0) {
+        if validity.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
             continue;
         }
         let probe_position = [
@@ -465,8 +474,8 @@ fn sample_grid_level(
             1.0
         };
         let weight = trilinear * validity * visibility * normal_weight;
-        for axis in 0..3 {
-            sum[axis] += record.irradiance[axis].max(0.0) * weight;
+        for (sum_axis, irradiance) in sum.iter_mut().zip(record.irradiance) {
+            *sum_axis += irradiance.max(0.0) * weight;
         }
         total_weight += weight;
     }

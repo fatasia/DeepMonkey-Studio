@@ -1,5 +1,5 @@
 //! Explicit normal-window verification of one immutable publication candidate.
-use std::{ffi::OsString, fs, path::PathBuf};
+use std::{ffi::OsString, path::PathBuf};
 
 // 数据结构与序列化逻辑在 publication_record（无服务层依赖，可被 player_state
 // 等底层状态引用）；本模块只保留 --verify-package / --verify-dashboard-package
@@ -43,6 +43,7 @@ pub fn execute(mut args: impl Iterator<Item = OsString>, dashboard: bool) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::sync::atomic::{AtomicU32, Ordering};
     static SEQUENCE: AtomicU32 = AtomicU32::new(0);
     fn destination() -> PathBuf {

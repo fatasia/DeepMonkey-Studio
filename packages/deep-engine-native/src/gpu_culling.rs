@@ -267,6 +267,7 @@ impl GpuCulling {
 
     /// Whether main-view draws currently consume compacted HiZ output. False
     /// for the one-frame safety refresh after a camera/frustum change.
+    #[allow(dead_code)] // 剔除状态合同访问器,由窄特性目标外的调用方消费。
     pub fn occlusion_consume_active(&self) -> bool {
         self.consume.is_some() && !self.occlusion_bypass
     }

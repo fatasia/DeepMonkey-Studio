@@ -367,6 +367,7 @@ mod tests;
 ///   解析路径逐字不变;
 /// - v2 级联:布局头 + 每层"网格头 + 探针"(与 Web packNativeProbeGridLevels
 ///   同合同),最终过 `decode_probe_grid_cascade` 全合同复核。
+///
 /// 非法输入一律 fail-closed。
 pub(super) fn decode_probe_grid(
     environment: &Value,

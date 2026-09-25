@@ -130,6 +130,7 @@ impl GpuScene {
     /// C3 transform-only 快路径:对受影响行重算词 0..24(模型列主序 + 逆转置法线)
     /// 与镜像符号词 30,材质词(24..36 除 30)保持不变;随后按升序连续段合并
     /// partial-write 整行(144B)进 GPU 实例缓冲。奇异性合同与 prepare_scene 一致。
+    #[allow(dead_code)] // C3 transform-only 快路径合同,由窄特性目标消费。
     pub(crate) fn write_instance_transforms(
         &mut self,
         queue: &wgpu::Queue,
@@ -283,12 +284,13 @@ impl GpuGeometry {
         let blas_input = device
             .features()
             .contains(wgpu::Features::EXPERIMENTAL_RAY_QUERY);
-        let vertex_usage = wgpu::BufferUsages::VERTEX
-            | (blas_input.then_some(wgpu::BufferUsages::BLAS_INPUT))
-                .unwrap_or(wgpu::BufferUsages::empty());
-        let index_usage = wgpu::BufferUsages::INDEX
-            | (blas_input.then_some(wgpu::BufferUsages::BLAS_INPUT))
-                .unwrap_or(wgpu::BufferUsages::empty());
+        let blas_usage = if blas_input {
+            wgpu::BufferUsages::BLAS_INPUT
+        } else {
+            wgpu::BufferUsages::empty()
+        };
+        let vertex_usage = wgpu::BufferUsages::VERTEX | blas_usage;
+        let index_usage = wgpu::BufferUsages::INDEX | blas_usage;
         let vertex_count = geometry.vertices.len() / 6;
         let mut vertices = Vec::<[f32; GEOMETRY_VERTEX_FLOATS]>::with_capacity(vertex_count);
         let mut tangents = geometry

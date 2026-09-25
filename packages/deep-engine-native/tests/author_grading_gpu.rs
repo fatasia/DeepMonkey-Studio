@@ -175,7 +175,7 @@ fn compile_variant_outputs(device: &wgpu::Device, source: &wgpu::TextureView) {
         view_formats: &[],
     });
     let depth_view = depth.create_view(&Default::default());
-    let fog = FogSettings::exponential(1.0, [0.05, 0.1, 4.0]).unwrap();
+    let _fog = FogSettings::exponential(1.0, [0.05, 0.1, 4.0]).unwrap();
     let frame = frame_uniform(1.0, 0.0);
     let frame_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("author grading probe frame"),

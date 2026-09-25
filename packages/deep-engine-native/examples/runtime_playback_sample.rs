@@ -31,7 +31,7 @@ fn main() {
         "durationMs={} tracks={} loop={}",
         runtime.animation.as_ref().map_or(0, |a| a.duration_ms),
         runtime.animation.as_ref().map_or(0, |a| a.tracks.len()),
-        runtime.animation.as_ref().map_or(false, |a| a.r#loop),
+        runtime.animation.as_ref().is_some_and(|a| a.r#loop),
     );
     for sample in runtime.sample_animation(time_ms) {
         println!(

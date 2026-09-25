@@ -162,7 +162,6 @@ fn real_mp4_frames_compose_through_the_deep2d_gpu_pass() {
     std::thread::sleep(Duration::from_millis(50));
     assert!(!compositor.advance(&queue).unwrap());
     assert_eq!(compositor.uploaded_frames(), paused_uploaded);
-    uploaded = paused_uploaded;
     assert!(
         compositor
             .control("node.video", &queue, DashboardVideoCommand::Play)

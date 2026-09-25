@@ -1,3 +1,7 @@
+// RT 扩展 frame layout 绑定合同:部分窄特性目标只消费普通 frame layout,
+// shadow/rt 变体作为双 layout 合同驻留,故模块级放行 dead_code。
+#![allow(dead_code)]
+
 use deep_engine_native::{
     cascaded_shadow::CASCADED_SHADOW_UNIFORM_BYTES, mesh_abi::FRAME_UNIFORM_BYTES,
 };

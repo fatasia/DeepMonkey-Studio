@@ -152,7 +152,7 @@ pub(crate) fn is_mp4_isobmff(bytes: &[u8]) -> bool {
         return false;
     }
     let length = u32::from_be_bytes(bytes[0..4].try_into().unwrap()) as usize;
-    if &bytes[4..8] != b"ftyp" || length < 16 || length > bytes.len() || length % 4 != 0 {
+    if &bytes[4..8] != b"ftyp" || length < 16 || length > bytes.len() || !length.is_multiple_of(4) {
         return false;
     }
     let supported = |brand: &[u8]| matches!(brand, b"isom" | b"iso2" | b"mp41" | b"mp42");

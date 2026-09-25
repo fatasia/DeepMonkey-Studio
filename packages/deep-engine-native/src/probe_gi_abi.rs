@@ -4,6 +4,10 @@
 //! 0..3 irradiance.xyz + validity，4..7 meanDistance + distanceVariance +
 //! occlusionFloor + padding，8..11 positionOffset.xyz + padding，总计 96 字节。
 
+// F3 合同先行落库:着色采样消费方在后续切片接入,窄特性目标只驱动
+// 编码/解码/打包合同,故模块级放行 dead_code(与 render_graph 同一惯例)。
+#![allow(dead_code)]
+
 use std::mem::size_of;
 
 pub const PROBE_GI_ABI_VERSION: u32 = 1;

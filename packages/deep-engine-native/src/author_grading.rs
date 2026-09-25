@@ -12,6 +12,10 @@
 //! 宿主侧不写非零 uniform、渲染路径不增加状态。
 
 /// TS 侧 hue 旋转使用的截断 π 字面量（非 f32::consts::PI，逐式镜像必须保留）。
+// clippy::approx_constant / clippy::excessive_precision 都会把该字面量改写为
+// f32::consts::PI 或最短表示,但这是与 TS 实现的逐式镜像合同,字面量必须
+// 逐字保留(f32 值不受影响)。
+#[allow(clippy::approx_constant, clippy::excessive_precision)]
 const AUTHOR_PI: f32 = 3.14159265;
 /// Rec.709 亮度权重，与 Web temperature/tint 亮度保持项同源。
 const LUMA_WEIGHTS: [f32; 3] = [0.2126, 0.7152, 0.0722];

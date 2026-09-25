@@ -27,8 +27,8 @@ impl Renderer {
             return RenderOutcome::Skipped;
         }
         #[cfg(windows)]
-        if let (Some(video), Some(painter)) = (&mut self.dashboard_video, &self.deep2d) {
-            if let Err(error) = video
+        if let (Some(video), Some(painter)) = (&mut self.dashboard_video, &self.deep2d)
+            && let Err(error) = video
                 .sync_slots(
                     &self.device,
                     painter.dashboard_video_slots(),
@@ -38,12 +38,11 @@ impl Renderer {
                     video.update_frame_uniform(&self.queue, (self.size.width, self.size.height));
                     video.advance(&self.queue).map(|_| ())
                 })
-            {
-                finish(&mut self.telemetry, token, FrameResult::Failed);
-                return RenderOutcome::Failed(format!(
-                    "native dashboard video frame update failed: {error}"
-                ));
-            }
+        {
+            finish(&mut self.telemetry, token, FrameResult::Failed);
+            return RenderOutcome::Failed(format!(
+                "native dashboard video frame update failed: {error}"
+            ));
         }
 
         let acquire = timer(token);

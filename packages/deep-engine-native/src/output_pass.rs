@@ -11,6 +11,9 @@ const BLOOM_FOG_SHADER: &str = include_str!("../assets/shaders/native_output_blo
 /// 与 Web `packPbrAuthorColorEffects` 的 12-float 布局逐位一致。
 const AUTHOR_GRADING_BYTES: u64 = std::mem::size_of::<[f32; 12]>() as u64;
 
+// texture_layout/bloom_sampler/grading_buffer 在部分窄特性测试目标里仅作为
+// rebind 合同的驻留状态存在;完整目标里被 prepare_rebind/publish_rebind 消费。
+#[allow(dead_code)]
 pub struct OutputPass {
     texture_layout: wgpu::BindGroupLayout,
     texture_bind_group: wgpu::BindGroup,
@@ -94,6 +97,8 @@ impl OutputPass {
         self.fog_enabled
     }
 
+    // rebind 合同:窄特性测试目标不驱动,完整目标由 author grading 波次消费。
+    #[allow(dead_code)]
     pub fn prepare_rebind(
         &self,
         device: &wgpu::Device,
@@ -119,6 +124,7 @@ impl OutputPass {
         ))
     }
 
+    #[allow(dead_code)] // 同 prepare_rebind:窄特性测试目标不驱动的 rebind 合同。
     pub fn publish_rebind(&mut self, binding: wgpu::BindGroup) {
         self.texture_bind_group = binding;
     }
@@ -265,6 +271,8 @@ fn create_pipeline(
     })
 }
 
+// Bloom/grading/fog 绑定组装配天然多参,拆分会破坏与 pass 布局的逐项对应。
+#[allow(clippy::too_many_arguments)]
 fn create_texture_bind_group(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,

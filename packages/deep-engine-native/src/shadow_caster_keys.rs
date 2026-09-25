@@ -34,14 +34,14 @@ impl ShadowCasterSet {
             .map(|index| {
                 let matrix = views.shadow_view_projection(index);
                 let bits = matrix.map(|row| row.map(f32::to_bits));
-                if let Some(cached) = &cache[index] {
-                    if cached.matrix == bits {
-                        return Ok(ShadowCascadeKey {
-                            view: cached.view,
-                            casters: cached.casters,
-                            shader: shader_revision,
-                        });
-                    }
+                if let Some(cached) = &cache[index]
+                    && cached.matrix == bits
+                {
+                    return Ok(ShadowCascadeKey {
+                        view: cached.view,
+                        casters: cached.casters,
+                        shader: shader_revision,
+                    });
                 }
                 let planes = frustum_planes(matrix)?;
                 let mut view = std::collections::hash_map::DefaultHasher::new();
