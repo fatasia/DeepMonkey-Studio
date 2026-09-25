@@ -143,7 +143,7 @@ Web 与 Windows 客户端不能因公共接口 401、网络波动或临时服务
 ### 阶段 A：全量自动化门禁（预计 2.5-3.5 小时，含构建）
 
 ```powershell
-Set-Location 'D:\Documents\bim\bim-studio'
+Set-Location '<repository-root>'
 pnpm typecheck
 pnpm test
 pnpm build

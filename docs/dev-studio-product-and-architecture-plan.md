@@ -743,7 +743,7 @@ M0 至 M9 完全串行估算为 75 至 89 周，约 17 至 21 个月；这是包
 
 ### M8：工厂物流仿真插件，8 至 10 周
 
-M8 参考 Siemens Tecnomatix Plant Simulation 的离散事件物料流主线，并提炼 `D:\Documents\ChatGPT\IoT` 旧版中已经验证的实验、校准和分析能力。它是可选扩展插件，不是 M0 至 M7 主系统的运行依赖；首版以小而完整的纵向切片为目标，不要求一次覆盖下列全部高级能力。插件未安装、禁用、卸载、运行失败或版本不兼容时，2D/3D 编辑、Data Hub、模型转换、保存和发布必须保持原有行为，不得向 Studio Core、场景文档或数据逻辑注入不可移除的行业特例。
+M8 参考 Siemens Tecnomatix Plant Simulation 的离散事件物料流主线，并提炼 `external IoT prototype workspace` 旧版中已经验证的实验、校准和分析能力。它是可选扩展插件，不是 M0 至 M7 主系统的运行依赖；首版以小而完整的纵向切片为目标，不要求一次覆盖下列全部高级能力。插件未安装、禁用、卸载、运行失败或版本不兼容时，2D/3D 编辑、Data Hub、模型转换、保存和发布必须保持原有行为，不得向 Studio Core、场景文档或数据逻辑注入不可移除的行业特例。
 
 - 新增 `FactoryFlowPlugin` 与 `SimulationStudyDocument`；研究只引用现有场景对象、拓扑节点、资产和 Data Hub 数据产品的稳定 ID。
 - 提供轻量对象库：Source、Sink、Process、Assembly、Buffer、Store、Conveyor、Transfer、Merge/Split、ResourcePool、Worker、AGV/Forklift、ShiftCalendar 和 Failure；对象实现均为插件，不进入场景核心特例。

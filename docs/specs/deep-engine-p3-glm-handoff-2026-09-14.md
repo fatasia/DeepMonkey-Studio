@@ -10,7 +10,7 @@ P3 的交付是 Windows 原生 Deep2D、GUI 与图表：在同一个 wgpu device
 
 ## 2. 权威资料与当前基线
 
-工作目录：`D:\Documents\bim\bim-studio`。编写本交接时 HEAD 为 `cd9850b`，工作树有大量未提交改动；仅拉取该提交不能获得当前基线。接手前记录实际 HEAD、相关文件 diff/hash、依赖版本和测试结果。
+工作目录：`<repository-root>`。编写本交接时 HEAD 为 `cd9850b`，工作树有大量未提交改动；仅拉取该提交不能获得当前基线。接手前记录实际 HEAD、相关文件 diff/hash、依赖版本和测试结果。
 
 按以下顺序读取：
 

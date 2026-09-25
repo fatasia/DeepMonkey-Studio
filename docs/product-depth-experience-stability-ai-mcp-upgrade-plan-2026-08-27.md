@@ -595,9 +595,9 @@ MCP adapter 只做协议转换、schema 暴露、授权映射和结果裁剪。�
 
 | 工程 | 本地位置 | 已确认的高价值内核 | 主要技术边界 |
 |---|---|---|---|
-| IoT-NB | `D:\Documents\ChatGPT\IoT` | 预测维护、确定性信号与故障注入、虚拟调试用例、结果对比、证据回放、模型漂移 | Vue/Tauri UI、巨型 Store、Rust Runtime、Edge Agent 和重复协议驱动均不迁移；核心逻辑按合同重构为 TypeScript Worker |
-| FATHOM | `D:\Documents\ChatGPT\fathom` | 已完成对比，不作为集成来源 | 与主工程 Data Hub、数据集/管道、SQL 助手、运营分析、权限和审计重叠；明确放弃代码、模型、服务和 UI 迁移 |
-| 分子元宇宙 | `D:\Documents\New project 3` | SOCFormer、BMSFormer、BatteryMFormer、格式适配、域判断、置信门、SOC/SOH/RUL、短时数字孪生、PINO/PINN/TwinMoE/SPM 双轨运行与发布门禁 | 首期通过插件网关复用现有 Python 服务并保持全部运行逻辑；ONNX 只在逐模型等价门禁通过后替换对应 transport |
+| IoT-NB | `external IoT prototype workspace` | 预测维护、确定性信号与故障注入、虚拟调试用例、结果对比、证据回放、模型漂移 | Vue/Tauri UI、巨型 Store、Rust Runtime、Edge Agent 和重复协议驱动均不迁移；核心逻辑按合同重构为 TypeScript Worker |
+| FATHOM | `external FATHOM workspace` | 已完成对比，不作为集成来源 | 与主工程 Data Hub、数据集/管道、SQL 助手、运营分析、权限和审计重叠；明确放弃代码、模型、服务和 UI 迁移 |
+| 分子元宇宙 | `external research workspace` | SOCFormer、BMSFormer、BatteryMFormer、格式适配、域判断、置信门、SOC/SOH/RUL、短时数字孪生、PINO/PINN/TwinMoE/SPM 双轨运行与发布门禁 | 首期通过插件网关复用现有 Python 服务并保持全部运行逻辑；ONNX 只在逐模型等价门禁通过后替换对应 transport |
 
 严格结论：当前只整合 IoT-NB 与分子元宇宙两项能力。FATHOM 的“本体/问数”不作为第三套系统引入；主工程继续使用现有 Data Hub，并按实际缺口补轻量查询计划、证据和权限校验。简单增加“预测维护”“问数”“电池 AI”三个菜单，只会重复当前广而不深的问题。
 

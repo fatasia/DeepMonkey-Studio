@@ -13,7 +13,7 @@
 在项目根目录 `.env` 或系统环境变量中设置：
 
 ```text
-REVIT_BATCH_PROCESSOR_PATH=C:\Users\name\AppData\Local\RevitBatchProcessor\BatchRvt.exe
+REVIT_BATCH_PROCESSOR_PATH=%LOCALAPPDATA%\RevitBatchProcessor\BatchRvt.exe
 RVT_CONVERTER_COMMAND=node
 RVT_CONVERTER_ARGS=["tools/revit-agent/agent.mjs","--input","{input}","--output","{output}"]
 ```
