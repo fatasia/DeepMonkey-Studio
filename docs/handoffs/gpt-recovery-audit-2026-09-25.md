@@ -24,7 +24,7 @@
 | 已完成 | W1 gizmo 交互数学 | `deepGizmoInteraction`、`deepCameraInputSession`、WebGPU/WASM bridge | translate/rotate/scale 命中与操纵在 Deep 侧消费，TransformControls 事件不再转发；3 项纯数学测试通过 |
 | 已完成 | W3 诊断上层 | `StudioDeepPerformance` → `FramePerformanceSnapshot` → `RendererDiagnosticsPanel` | clustered light、DDGI budget、residency scale、temporal camera-cut、资源/瞬态纹理、probe clipmap 真实字段可见 |
 | 本轮剩余 | 交互/视觉全检收口 | `test-output/interaction-functional-audit-2026-09-25/` | M2/M3/M4 主路径通过；M1 旧脚本仍点击当前 disabled 的无模型爆炸按钮，需按新语义重录；Shader/gizmo/WASM 新 UI 需两轮截图与评分 |
-| 本轮剩余 | W3 音频 30min soak | Native `dashboard_video_media_foundation` | 既有 500ms 设备事件逃逸已有定性和 p99 口径；需完成/记录 1800s ignored soak 证据 |
+| 按用户指令移除 | W3 音频长稳 soak | Native `dashboard_video_media_foundation` | 本轮明确不做长时稳定性 soak；保留 focused、20s/60s 结果和已知 Windows 输出队列瞬态，不作为当前发布阻断 |
 | 明确限制 | Native clustered lighting 视觉证据、temporal validity ratio | 现有 Native/Hi-Z 诊断 | 运行链已有能力，但缺真实 GPU 像素/validity ratio 生产证据；不伪造指标，需外部 GPU capture/设备样本 |
 | 项目级后验收 | 全站统一体验、性能长稳、对外发布 | `bim-studio/AGENTS.md` 最终门禁 | 需全部核心功能闭合后的整体验收 |
 
@@ -60,3 +60,10 @@
 - Native 音频 `b73790ec`：重同步阈值从 100ms 前移到 50ms，避免 Windows 输出缓冲完整逃逸；focused 2/2，20s DX12 soak：max 96.4ms、mean 40.5ms、p99 92.7ms、escapes 0。1800s 正式 soak 的旧结果 p99 156.2ms，需后续长跑复验修复收益。
 - `cd115556`：runtime render packet 编译按稳定 `SceneSnapshot.models[].modelId` 读取并复制材质作者态，Deep/WASM/Native 不再从 ViewerEngine/Three 材质 setter 读取；定向编译测试 23/23，Web tsc 已通过。
 - API 串行全量：1580 passed / 13 skipped；Web 全量：4485 passed / 3 skipped。串行运行消除了 JT/X_T 的资源竞争假失败。
+
+## 2026-09-25 追加：当前开源前置核查
+
+- Three 脱离：`78e28943` 已把 `ViewerEngine` 作者变换状态从 Three 矩阵中分离，加载、写回、删除和持久化消费统一走 `authorModelTransforms`；Deep 的 `ThreeProjectionBridge` 仍承担几何、材质、层级和骨骼投影，不能宣称完全独立。
+- Native 发布：Cargo 单测 10/10；本地 API runtime bundle 已生成。MSI/NSIS 仍需按当前 Web 产物重打并通过 `verify:bundle` 与 local publication smoke，完成后才可收口。
+- 开源治理：`pnpm audit:licenses`、`pnpm docs:wiki:check`、`pnpm quality:public-brand` 通过；`pnpm gate:repository` 当前失败项为许可证元数据与治理口径不一致，以及 37.6 MB 介绍视频缺少大文件发布例外。许可证目标和大文件分发策略需在公开前统一。
+- 当前不宣称性能全面超过 Three：WebGPU GPU completion 已显著改善（P50/P95 15.1/31.1ms），但输入 P95/submit gap 仍略高于 WebGL；需继续完成 Deep RenderPacket 路径脱 Three 后再重跑公平矩阵。

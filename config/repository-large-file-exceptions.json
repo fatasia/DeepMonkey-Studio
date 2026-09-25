@@ -15,6 +15,11 @@
       "path": "apps/web/public/samples/multiscale-battery-assessment-tempest-lfp-280ah-700cycle.csv",
       "reason": "Required public validation sample for the bundled 280 Ah LFP aging workflow.",
       "sha256": "632D30BAEA05BAC80E1BEAF9762C70DA24793BC675AA9C55FE0381448B2952A5"
+    },
+    {
+      "path": "docs/assets/system-intro/deepmonkey-studio-intro.mp4",
+      "reason": "Public documentation video linked from README; retained as a release-facing binary asset with a fixed content hash.",
+      "sha256": "D14F0AF869BE44FDA468E1E8E87838278D8C99B26CFA60C4B62154E4CDE10D9E"
     }
   ]
 }
