@@ -3725,3 +3725,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - W2 产品闭环:⑤Shader 工具链(WGSL 编辑 UI→预览→绑定→快照保存(追加可选字段)→运行包 shaderPackages 编译发布);⑥烘焙 WASM 查看器探针消费(Rust 侧)。
 - W3 引擎能力上层化:⑦DDGI 动态化上层开关(光源移动 GI 实时响应);⑧诊断面板补全(residency/SpatialAA/temporalValidity/clustered 统计可见);⑨clustered lighting 控制面+Native 视觉证据;⑩音频 30min soak 插桩定位 500ms 逃逸。
 - 依赖关系:W1①先行(命令层是②③④消费的命令通道);⑤⑥可与 W1 并行(不同文件域);⑦⑧⑨在 gpuTimer/渲染器专项后收益最大。
+
+### 2026-09-25 W1① 接线推进(批次 14,主线程)
+
+- 批 3-5 UI 写点接线:sceneAppearanceCommands(changeLighting/SceneEnvironment/Physics/updateSelectionMaterial/updateSelectedEffects)+SceneMultiMaterialEditor 共 6 处直调改走 dispatchEngineEditCommand;RobotJointPreview 因依赖 setRobotPose boolean 返回暂缓(等价优先);persistence/creation 恢复与默认流按惯例保持直调。证据:controllers+commands+components 1817/1817+多选材质 3/3+tsc(非在途域)干净。
+- W1① 剩余:批 6 结构命令(deleteSelectedLayer×3,批 2 已列原因)待 W1 代理切片。
