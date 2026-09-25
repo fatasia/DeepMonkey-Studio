@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeepWebGpuSyncResult } from "@bim-studio/deep-engine/three-bridge";
+import type { RenderPacket } from "@bim-studio/deep-engine";
 import type { ViewerEngine } from "./ViewerEngine";
 import { StudioDeepWebGpuBridge } from "./StudioDeepWebGpuBridge";
 import type { PresentationPerformanceSource } from "./viewerPresentationPerformance";
@@ -86,7 +87,7 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     await microtasks();
   }
 
-  function setup(load?: () => Promise<BridgeModule>) {
+  function setup(load?: () => Promise<BridgeModule>, authorRenderPacket?: () => Promise<RenderPacket>) {
     const first = makeBackend();
     const second = makeBackend();
     const create = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second);
@@ -124,6 +125,7 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     const failure = vi.fn();
     const bridge = new StudioDeepWebGpuBridge(viewer, container as unknown as HTMLElement, {
       loadModule: load ?? (() => Promise.resolve(module)), onRuntimeFailure: failure,
+      ...(authorRenderPacket ? { authorRenderPacket: () => authorRenderPacket() } : {}),
     });
     bridges.push(bridge);
     return { bridge, first, second, create, module, authorCanvas, container, presentation, failure, subscribe, unsubscribe, scene, camera, viewer };
@@ -150,6 +152,16 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     expect(readStudioFrameCaptureSnapshot().available).toBe(true);
     diagnostic.bridge.dispose();
     expect(readStudioFrameCaptureSnapshot().available).toBe(false);
+  });
+
+  it("passes a precompiled author packet to Deep while retaining the Three fallback root", async () => {
+    const packet = { geometries: [], materials: [], instances: [] } as unknown as RenderPacket;
+    const provider = vi.fn(async () => packet);
+    const f = setup(undefined, provider);
+    await activate(f.bridge);
+    expect(provider).toHaveBeenCalledOnce();
+    expect(f.create.mock.calls[0]![0].renderPacket).toBe(packet);
+    expect(f.create.mock.calls[0]![0].root).toBe(f.scene);
   });
 
   it("establishes performance samples from submitted Deep frames through temporal settling", async () => {

@@ -23,7 +23,7 @@ import { DeepGizmoInteraction } from "./deepGizmoInteraction";
 import { createDeepCanvas, prepareAuthorInputCanvas, captureAuthorStyle, restoreAuthorStyle,
   type AuthorCanvasStyle } from "./studioDeepPresentationCanvas";
 import { collectDeepOverlayPrimitives } from "./deepOverlayPrimitiveSource";
-import type { FrameCaptureSession } from "@bim-studio/deep-engine";
+import type { FrameCaptureSession, RenderPacket } from "@bim-studio/deep-engine";
 import { createRequestedStudioFrameCaptureSession, createStudioFrameReadbackListener,
   publishStudioFrameCaptureSession, releaseStudioFrameCaptureSession } from "./studioFrameCaptureDiagnostics";
 
@@ -44,6 +44,9 @@ export interface StudioDeepWebGpuBridgeOptions {
   readonly preparationTimeoutMs?: number;
   /** Maximum submitted camera views awaiting GPU queue completion. */
   readonly cameraFrameInFlightLimit?: 1 | 2;
+  /** Optional packet compiled from SceneSnapshot; when provided Deep skips
+   * Three scene projection for candidate publication. */
+  readonly authorRenderPacket?: (signal: AbortSignal) => Promise<RenderPacket | undefined>;
 }
 
 export interface StudioRendererSwitchResult {
@@ -186,10 +189,13 @@ export class StudioDeepWebGpuBridge {
             // the independent author store into RenderPacket instances.
             authorTransformResolver: source => resolveAuthorWorldTransform(this.viewer, source),
           });
+          const authorRenderPacket = this.options.authorRenderPacket
+            ? await this.options.authorRenderPacket(signal) : undefined;
           const backend = await module.DeepWebGpuBackend.create({
             canvas, gpu: navigator.gpu,
             projection: this.projectionBridge,
             root: this.projectionRoot(), view, authorChunks: true,
+            ...(authorRenderPacket ? { renderPacket: authorRenderPacket } : {}),
             renderer: { environment: environment.source, deformation: true, meshlets: true,
               adaptiveQuality: {
                 enabled: true,
