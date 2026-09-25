@@ -3709,3 +3709,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **②服务端持久化(排队,等空位)**:API 场景挂接的 bake 资源端点(PUT/GET 按 sceneId+sourceHash 内容寻址,压缩,现有对象存储)+加载回填会话+服务端候选路径读取——刷新不丢与两条发布路径一致。不进快照(25MB 决策台账)。
 - **③Shader 工具链(排队)**:deep-engine shaderPackage builder/pipeline 已在,缺编辑器 UI→预览→绑定→保存→发布闭环。
 - 命令层批 3/4/5 切片一已落(95a23e0f/7c1ca785/d6294a8c,48/48);UI 写点接线待空位。
+
+### 2026-09-25 路径 4/5 切片落地(批次 13)
+
+- **辅助图形原生化(代理,提交 88b0573b)**:DeepOverlayPrimitives 纯几何生成——切片 A 选择盒(12 边,Box3Helper 颜色合同复刻)、B 测量线(两端十字刻度)、C gizmo 呈现层(轴向箭头+48 段环,屏幕等占比);roots 排除替代 visible=false(WebGL 语义零改动+回退自动恢复);桥纯追加(staged 0 删除)。22 新测试+viewer 856 绿+对抗自查修 3 自引入缺陷。
+- 遗留:浏览器截图闭环未做(单测级证据);WASM 模式无 editorOverlay 通道(需 Rust 侧,后续批);angle 测量/剖切盒/标注/灯光代理/gizmo 交互数学仍 Three。
