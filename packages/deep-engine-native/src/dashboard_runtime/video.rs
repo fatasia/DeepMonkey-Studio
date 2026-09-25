@@ -613,8 +613,10 @@ impl DashboardVideoPlayback {
 }
 
 /// 音画重同步阈值:偏差超过即触发(先原地 seek,不支持则重开音频源)。
-/// 取 100ms,低于 150ms 正式验收门槛,给重同步动作本身留出余量。
-const AUDIO_RESYNC_THRESHOLD_100NS: i64 = 1_000_000;
+/// Windows 默认输出流通常带约 50ms 的设备队列；把重同步点放在该队列
+/// 延迟附近可以在设备重建/时钟跳变后及时拉回媒体钟，避免 100ms 阈值
+/// 允许一次完整的输出缓冲逃逸进入长期 p99。
+const AUDIO_RESYNC_THRESHOLD_100NS: i64 = 500_000;
 
 /// 媒体重同步用的最短带符号回绕差:音视频各自回绕不同步时,
 /// 只按最短方向拉齐,绝不把钟拨整整一圈。
@@ -629,7 +631,13 @@ fn wrapped_delta_100ns(delta: i64, period: i64) -> i64 {
 
 #[cfg(test)]
 mod audio_resync_tests {
-    use super::wrapped_delta_100ns;
+    use super::{wrapped_delta_100ns, AUDIO_RESYNC_THRESHOLD_100NS};
+
+    #[test]
+    fn resync_before_one_output_buffer_can_become_a_p99_escape() {
+        assert_eq!(AUDIO_RESYNC_THRESHOLD_100NS, 500_000);
+        assert!(500_000 < 1_000_000);
+    }
 
     #[test]
     fn wrapped_delta_picks_shortest_direction_across_loop_boundary() {
