@@ -50,6 +50,9 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    env:
+      # Keep recovery tests isolated and portable across Linux and Windows.
+      LOCALAPPDATA: ${{ runner.temp }}/deep-engine-local-app-data
     defaults:
       run:
         working-directory: packages/deep-engine-native
