@@ -297,7 +297,7 @@ async function measureInputTrajectory(page, bounds, backend, presentCanvas) {
     // submit 间隔序列:定性内部渲染循环节拍(相机静止时 wasm 是否降频/跳帧)。
     const submitGaps = [];
     for (let index = 1; index < session.state.submitTimestamps.length; index++) {
-      submitGaps.push(session.state.submitTimestamps[index]! - session.state.submitTimestamps[index - 1]!);
+      submitGaps.push(session.state.submitTimestamps[index] - session.state.submitTimestamps[index - 1]);
     }
     delete window.__fairInput;
     return { sampledFrames: sorted.length, pointerEvents: session.state.pointerEvents,
@@ -311,19 +311,40 @@ async function measureInputTrajectory(page, bounds, backend, presentCanvas) {
       submitGap: summarize(submitGaps) };
   });
   const luminance = [];
+  const greyBuffers = [];
   for (const frame of frames) {
     const { data } = await sharp(frame).greyscale().raw().toBuffer({ resolveWithObject: true });
+    greyBuffers.push(data);
     let sum = 0, nearBlack = 0;
     for (const value of data) { sum += value; if (value < 4) nearBlack++; }
     luminance.push({ mean: sum / data.length, nearBlackRatio: nearBlack / data.length });
   }
+  // 拖拽平滑度:相邻呈现帧的灰度平均绝对差;低于阈值的相邻对视为"重复帧"
+  // (合成器复现上一帧)。有效帧率 = 采样窗口 × (1 - 重复率)。
+  const duplicateThreshold = 0.35;
+  let duplicates = 0;
+  const diffs = [];
+  for (let index = 1; index < greyBuffers.length; index++) {
+    const a = greyBuffers[index - 1], b = greyBuffers[index];
+    let total = 0;
+    const stride = 4; // 每第 4 像素抽样,足够分辨重复帧
+    let count = 0;
+    for (let offset = 0; offset < a.length; offset += stride) { total += Math.abs(a[offset] - b[offset]); count++; }
+    const meanDiff = total / count;
+    diffs.push(meanDiff);
+    if (meanDiff < duplicateThreshold) duplicates++;
+  }
+  const distinctRatio = diffs.length ? 1 - duplicates / diffs.length : 0;
   const medianMean = [...luminance].map(item => item.mean).sort((a, b) => a - b)[Math.floor(luminance.length / 2)] ?? 0;
   const blackFrames = luminance.filter(item => item.mean < Math.max(2, medianMean * 0.25)).length;
   const lastPath = `${output}input-${backend}-last.png`;
   await sharp(frames.at(-1)).toFile(lastPath);
   report.guards.push(...(blackFrames > 0 ? [{ type: "blackFrames", backend, blackFrames }] : []));
   report.guards.push(...(medianMean < 5 ? [{ type: "luminanceFloor", backend, medianMean }] : []));
-  return { ...timing, blackFrames, medianMeanLuminance: Number(medianMean.toFixed(2)) };
+  return { ...timing, blackFrames, medianMeanLuminance: Number(medianMean.toFixed(2)),
+    dragSmoothness: { sampledFrames: frames.length, duplicateFrames: duplicates,
+      distinctFrameRatio: Number(distinctRatio.toFixed(3)),
+      effectiveFps: Number((frames.length * distinctRatio * 1000 / (frames.length * 20)).toFixed(1)) } };
 }
 
 function evaluateVerdict() {
