@@ -484,7 +484,10 @@ export class StudioDeepWebGpuBridge {
     view = this.viewReader.renderViewDirect(canvas), settle = true): void {
     const draw = (): boolean => {
       if (this.deepBackend !== backend) return false;
-      if (settle && this.settleFrameInFlight && this.settleFrameBackend === backend) return false;
+      // Settle work waits behind live camera submissions, but never blocks
+      // input itself. This keeps pointer latency bounded while preventing a
+      // TAA retry from creating an adjacent queue submission.
+      if (settle && ((this.settleFrameInFlight && this.settleFrameBackend === backend) || this.cameraFramesInFlight > 0)) return false;
       backend.setProbeClipmapEnabled(this.probeClipmapEnabled());
       const metrics = backend.render(view);
       if (metrics) this.performanceSource?.record(metrics, view.width, document.visibilityState !== "hidden");
