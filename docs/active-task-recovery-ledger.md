@@ -3702,3 +3702,10 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - **README Docker 整合(用户指令)**:§8 与独立「快速部署」节合并为一节,口径更新为「一键部署(已支持)」(cp .env → compose up → pnpm init 三步+镜像来源),双 README 同步;gate 过。
 - **UI 全检(代理,提交 59da497c)**:用户指认的属性面板输入框不一致 P0 修复(SceneProbeGridBakePanel 5 个裸 number input→DeferredNumberInput+令牌样式);机制级同族清剿——base.css 新增 input[type=number] 统一基线,覆盖全仓 102 处扫描中 53 处漏样式字段;明暗双主题 19 张截图审计(test-output/ui-consistency-audit-2026-09-25/)。未修大项如实记录:浅色主题 dashboard 检查器硬编码、历史裸色值未令牌化、2D 宽高小数溢出。
+
+### 2026-09-25 用户双优先级启动(批次 12)
+
+- **烘焙发布一致性接线①(主线程)**:bakeProbeGrid 回调补 storeProbeGridBake(outcome 直存)——烘焙→发布断链闭合。缺口定位:回调只更新 UI 状态,发布会话机制(store/lookup/forPayload,源投影哈希键控)从未被喂入。
+- **②服务端持久化(排队,等空位)**:API 场景挂接的 bake 资源端点(PUT/GET 按 sceneId+sourceHash 内容寻址,压缩,现有对象存储)+加载回填会话+服务端候选路径读取——刷新不丢与两条发布路径一致。不进快照(25MB 决策台账)。
+- **③Shader 工具链(排队)**:deep-engine shaderPackage builder/pipeline 已在,缺编辑器 UI→预览→绑定→保存→发布闭环。
+- 命令层批 3/4/5 切片一已落(95a23e0f/7c1ca785/d6294a8c,48/48);UI 写点接线待空位。
