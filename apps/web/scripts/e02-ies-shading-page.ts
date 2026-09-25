@@ -1,4 +1,4 @@
-// E02 IES 着色确定性门禁的 Web 侧宿主(设计 docs/specs/e02-ies-integration-design-2026-09-19.md §3.2/§3.3,
+// E02 IES 着色确定性门禁的 Web 侧宿主，合同与实现保持在同一运行时模块内，
 // 纪律同 r3-state-runtime-page):真实 ViewerEngine + 真实 StudioDeepWebGpuBridge——Deep Forward+ 是
 // IES WGSL(deepSpotIesFactor)的唯一消费路径,由应用层桥激活,裸 ViewerEngine 不经过它。
 // 每个用例:场景级 lightProfiles + spot userData.ies 载体 → 真实投影 projectStudioDeepLights →

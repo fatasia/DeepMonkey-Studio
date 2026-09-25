@@ -32,7 +32,6 @@
     "gate:repository": "node --test scripts/check-repository-governance.test.mjs && node scripts/check-repository-governance.mjs",
     "gate:artifact-freshness": "node scripts/check-runtime-artifact-freshness.mjs",
     "verify:scene-client": "node scripts/verify-scene-client-package.mjs",
-    "verify:mainline-closure": "node scripts/verify-mainline-closure.mjs",
     "run:scene-native": "node scripts/run-scene-client-native.mjs",
     "test:scene-client": "node --test scripts/lib/sceneClientArchive*.test.mjs scripts/verify-scene-client-package.test.mjs",
     "gate:deep-p0:browser": "pnpm --filter @bim-studio/deep-engine typecheck && pnpm --filter @bim-studio/deep-engine test && pnpm --filter @bim-studio/deep-engine build && pnpm --filter @bim-studio/deep-engine lab:build && pnpm --filter @bim-studio/deep-engine lab:isolation",

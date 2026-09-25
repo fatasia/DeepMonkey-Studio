@@ -2,7 +2,7 @@
 # 素材库大卷稳健上传:gh release upload 带自动重试,单卷成功才算数。
 # .003 已传;本轮补 .001/.002(各 1.9GB)。
 REPO="--repo fatasia/bim-studio"
-LOG=/d/Documents/bim/bim-studio/test-output/glm-night-20260923/release-upload-final.log
+LOG=/d/Documents/bim/bim-studio/test-output/runs/20260923/release-upload-final.log
 F1="D:/Documents/bim/asset-pack/out/deepmonkey-asset-library-v1.7z.001"
 F2="D:/Documents/bim/asset-pack/out/deepmonkey-asset-library-v1.7z.002"
 : > "$LOG"

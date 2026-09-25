@@ -17,7 +17,7 @@ import { LocalObjectStore } from "../src/objects.js";
 import { createApiServer } from "../src/serverOptions.js";
 import { auditGlbGeometry } from "../src/converterOutputAudit.js";
 
-const root = fileURLToPath(new URL("../../../", import.meta.url)), parent = path.join(root, "test-output/codex-2026-09-05");
+const root = fileURLToPath(new URL("../../../", import.meta.url)), parent = path.join(root, "test-output/runs/2026-09-05");
 await mkdir(parent, { recursive: true }); const output = await mkdtemp(path.join(parent, "api-legacy-glb-"));
 const dataDir = path.join(output, "data"), store = new JsonStore(dataDir); await store.init();
 const objects = new LocalObjectStore(dataDir), config = loadConfig(); config.dataDir = dataDir;

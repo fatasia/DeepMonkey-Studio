@@ -5,7 +5,7 @@ import playwright from "../../cloud-render-worker/node_modules/playwright-core/i
 
 // 隔离浏览器真实登录；只注入 AI 传输响应，不调用模型、写入场景或改品牌配置。
 const origin = process.env.BIM_STUDIO_QA_ORIGIN ?? "http://127.0.0.1:5173";
-const output = fileURLToPath(new URL("../../../test-output/codex-2026-09-05/ai-lifecycle/", import.meta.url));
+const output = fileURLToPath(new URL("../../../test-output/runs/2026-09-05/ai-lifecycle/", import.meta.url));
 await mkdir(output, { recursive: true });
 const browser = await playwright.chromium.launch({ executablePath: process.env.BIM_STUDIO_CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe", headless: true });
 const report = { createdAt: new Date().toISOString(), cases: [] };

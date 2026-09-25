@@ -46,7 +46,7 @@ queued -> running -> succeeded
    \-> waiting_converter -> cancelled
 ```
 
-RVT、Parasolid X_T 与 JT 的历史技术边界见[格式接入决策](./rvt-xt-jt-format-integration-decision-2026-08-30.md)。当前实施以[工业三维格式接入工作计划](./specs/industrial-3d-format-work-plan-2026-09-16.md)为准：自研/开源、本地离线，不以商业 SDK 或许可证服务器作为依赖或回退。公开规范不等于生产级开源解析器，页面必须区分“格式已声明”“Provider 已检测”“样本已验证”三种状态。
+RVT、Parasolid X_T 与 JT 的支持边界以本文和运行时能力探测为准：自研/开源、本地离线，不以商业 SDK 或许可证服务器作为依赖或回退。格式声明、Provider 检测和样本验证在产品中分别展示，不能把格式名称当成完整解析能力。
 
 ## 当前纵向切片边界
 

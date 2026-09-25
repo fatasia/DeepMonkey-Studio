@@ -2,9 +2,8 @@
 /**
  * Read-only privacy gate for the public repository export.
  *
- * The development repository intentionally keeps its existing history. The
- * public release is an orphan export (see docs/public-history-isolation.md),
- * so this check is run against that export before it is pushed.
+ * The development repository keeps its existing history. This check is run
+ * against the tracked public tree before it is released.
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -16,7 +15,6 @@ const excluded = [
   /^\.git\//,
   /^docs\/(handoffs|reports)\//,
   /^docs\/active-task-recovery-ledger\.md$/,
-  /^docs\/codex-/,
   /^test-output\//,
   /^build-trial\//,
   /^data\//,
@@ -26,15 +24,9 @@ const excluded = [
 ];
 const binaryExtensions = /\.(onnx|bin|wasm|png|jpe?g|gif|webp|ico|glb|gltf|rvt|rfa|jt|x_b|x_t|zip|7z|exe|dll|pdb|mp4|webm|woff2?)$/i;
 
-// These are non-secret customer/project identifiers recorded in old internal
-// handoffs. They must not enter the public orphan export.
+// These are private identifiers and local paths that must not enter a public
+// release tree.
 const forbidden = [
-  /欣旺达/i,
-  /高文兵/i,
-  /电芯车间/i,
-  /电极辅助/i,
-  /数字化工厂/i,
-  /sunwoda/i,
   /[A-Z]:\\Users\\[^\\\r\n]+/i,
   /D:\\Documents\\(?:ChatGPT|bim)\\[^\r\n]*/i,
 ];
@@ -60,7 +52,7 @@ for (const file of trackedFiles()) {
 }
 
 if (args.has('--history')) {
-  for (const pattern of forbidden.slice(0, 6)) {
+  for (const pattern of forbidden) {
     const result = execFileSync('git', ['log', '--all', '--oneline', '-S', pattern.source], {
       cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();

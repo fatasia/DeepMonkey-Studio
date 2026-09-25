@@ -1,4 +1,4 @@
-// E02 IES 光域网集成（设计 docs/specs/e02-ies-integration-design-2026-09-19.md §2/§4）：
+// E02 IES 光域网集成（设计 docs/development.md §2/§4）：
 // 运行包 lightProfiles 资源节的生产者（量化）与消费者（验证）。
 // 量化纪律同 r3-state-frame-v1：角度 0.5° 网格、坎德拉/流明 1e-3 网格、-0→+0。
 // f32 ULP 论证：跨端消费合同是 intensityFactor = candela/maxCandela ∈ [0,1]

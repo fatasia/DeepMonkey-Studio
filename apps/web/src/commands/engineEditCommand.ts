@@ -5,7 +5,7 @@ import { translate as tr, type AppLocale } from "../i18n";
  * 作者态编辑命令(引擎中立,批 0)。
  *
  * 合同留在仓内(apps/web/src/commands),按设计文档
- * docs/specs/engine-neutral-command-layer-design-2026-09-25.md §3 不进 packages/contracts;
+ * docs/development.md §3 不进 packages/contracts;
  * 字段口径直接复用 contracts 的 ModelTransform / SceneLayerState,不另造形状。
  * 批 0 只含 SetTransform 与 SetVisibility 两个原语,其余原语按批次追加。
  * 批 2(SetVisibility 收编):SetVisibility 扩展 locked/name 字段与 selection 模式,

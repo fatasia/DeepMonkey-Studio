@@ -1,4 +1,4 @@
-// E02 IES 着色确定性门禁驱动(设计 docs/specs/e02-ies-integration-design-2026-09-19.md §3.2/§3.3,
+// E02 IES 着色确定性门禁驱动，
 // 模式同 scripts/verify-gi-bake.mjs):vite 裸服 apps/web + 系统 Chrome(playwright)驱动
 // apps/web/scripts/e02-ies-shading-page.ts——真实 ViewerEngine + Deep Forward+ 桥。
 // 用例矩阵:2 场景(真实 BEGA 旋转对称 / 合成四瓣对称 4)× 变体(baseline/rot45/scale05/plain)
@@ -208,7 +208,7 @@ try {
   const evidence = {
     schema: "deep-monkey.e02-ies-shading-evidence",
     contract: "e02-ies-frame-v1",
-    design: "docs/specs/e02-ies-integration-design-2026-09-19.md §3.2/§3.3",
+    design: "runtime light profile contract",
     createdAt: new Date().toISOString(),
     scenarios: {
       "e02-ies-real-bega-20260919": { profileId: "real.bega-50975-6k3", source: "真实公开光域网样本(BEGA,fixtures/ies/007cfb11e343e2f42e3b476be4ab684e.ies)" },

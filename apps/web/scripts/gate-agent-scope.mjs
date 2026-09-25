@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import playwright from "../../cloud-render-worker/node_modules/playwright-core/index.js";
 
 const origin = "http://127.0.0.1:5173";
-const output = fileURLToPath(new URL("../../../test-output/codex-2026-09-05/agent-scope/", import.meta.url));
+const output = fileURLToPath(new URL("../../../test-output/runs/2026-09-05/agent-scope/", import.meta.url));
 await mkdir(output, { recursive: true });
 const browser = await playwright.chromium.launch({ executablePath: "C:/Program Files/Google/Chrome/Application/chrome.exe", headless: true });
 const report = { createdAt: new Date().toISOString(), boundary: "Agent responses are isolated fixtures; no actual model or tool execution", cases: [] };

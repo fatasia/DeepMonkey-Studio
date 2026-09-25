@@ -8,12 +8,12 @@
 // r32float texel-load 合同(与 webgpu 侧 copy 内核保留手写的同一理由);
 // 第 1 级起的缩减链复用已认证的 DCIR 工件(dcir_hi_z_*_min_v1.wgsl)。
 //
-// 转换方案(记录在 docs/specs/r4-occlusion-culling-2026-09-20.md §HiZ):
+// 转换方案(记录在 docs/development.md §HiZ):
 // copy_texture 不可行(multisampled 禁 COPY_SRC 且格式须一致),wgpu render
 // pass 的 resolve_target 不支持深度;本内核在一次全屏 render pass 内采样
 // MSAA 深度重写为 r32float 颜色,免中间 depth32float 纹理与 frag_depth。
 //
-// 确定性纪律(docs/specs/r2-shader-ir-design-2026-09-19.md §4):
+// 确定性纪律(docs/development.md §4):
 //   - 4 样本按 0..3 固定次序 min 展开(定序,与样本数常量 4 = 4x MSAA 一致);
 //   - 无共享内存、无原子;±0 由 min 保持,缩减链内核负责 +0 规范化。
 

@@ -1,6 +1,6 @@
 # R10 物理选型验证:Rapier 同源内核跨端确定性(2026-09-20 r1)
 
-依据 `docs/specs/de26-full-gap-analysis-2026-09-19.md` 6.3 节(Rapier/Avian 路线)。
+依据当前物理运行时合同和 `packages/plant-lite-simulation` 的验证用例。
 本目录是**独立验证 crate**,不接入主 crate `deep-engine-native` 的构建;选型通过后再决定晋升。
 
 ## 结论(一句话)

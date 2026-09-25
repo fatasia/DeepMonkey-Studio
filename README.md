@@ -25,13 +25,13 @@
 
 一开始俺只想完善一下 3D 编辑器，搞着搞着就弄成了完整的平台引擎。
 
-对他的定位不仅是数字孪生和 3D 工作台，而是未来元宇宙、AI4S、世界模型的承接层（毕竟 GPT-6、Fable 5 都已经很夯了）。
+面向元宇宙、AI for Science、世界模型的开源底座。
 上层包括：2D 编辑器、3D 编辑器、脚本编辑器和插件；
-底层包括：自研引擎、数据中台、AI 中台和大模型 Harness。
+底层包括：自研引擎、数据平台和可组合的模型适配能力。
 
 底层对 WebGPU、渲染、工业与 BIM 模型做了很多优化，模块独立简洁，可以单独作为一个 SDK 使用。
 
-在开发测试过程中，AI 在网上下了很多工业模型，若无意侵权，万分抱歉，我会直接从项目中删除。
+开发测试使用的第三方工业模型均按来源和许可记录；如发现权利问题，请提交 Issue，我们会及时处理。
 
 项目使用最宽泛的 MIT 协议，任何人都可以随意使用（技术的发展离不开行业专家大拿的支持），仅对忽视员工人权的特定企业例外（详见 [LICENSE.zh-CN.md](LICENSE.zh-CN.md)）。
 
@@ -407,7 +407,7 @@ Deep Engine 包含 TypeScript WebGPU 内核、Rust `wgpu` 原生执行器与 WAS
 
 ## 鸣谢
 
-感谢所有依赖项目的维护者和贡献者，特别是 [Three.js](https://github.com/mrdoob/three.js)、[Orillusion](https://github.com/Orillusion/orillusion) 和 [Unity](https://github.com/Unity-Technologies)——本项目在渲染、引擎架构和编辑器交互上从它们身上学到了很多。也感谢 [OpenAI](https://github.com/openai) 和[智谱 GLM](https://github.com/zai-org) 活动期间提供的 Token 支持。
+感谢所有依赖项目的维护者和贡献者，特别是 [Three.js](https://github.com/mrdoob/three.js)、[Orillusion](https://github.com/Orillusion/orillusion) 和 [Unity](https://github.com/Unity-Technologies)。本项目在渲染、引擎架构和编辑器交互上受益于开源社区的长期积累。
 
 
 

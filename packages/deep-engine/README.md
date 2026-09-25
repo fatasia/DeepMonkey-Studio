@@ -26,7 +26,7 @@ Deep Engine 是 Deep Monkey Studio 的 WebGPU 引擎与跨端合同包。除 hea
 - `./shader-cache` 提供与 namespace、compiler、target、ABI 和 package/pass cache key 严格绑定的内容 LRU 与设备 pipeline LRU。内容层可注入异步原子 `ShaderPackageCacheStore`，支持损坏/过期驱逐、同 key 并发去重和 allowlist 预热；显式调用 `createIndexedDbShaderPackageCacheStore` 后可启用浏览器持久化 CAS，其完整事务同时负责 schema/content hash 复核、有界字节与条目预算、确定性 LRU、损坏项清除和取消。设备 epoch 变化只清理 GPU 本地对象；WebGPU module、pipeline 和 device handle 永不进入 IndexedDB。native `ShaderDiskCache` 已完成 Windows 原子 no-clobber 发布、实例锁、generation 回退、CRC/hash 复核、预算/LRU 与取消边界；仍需接入原生 package executor 的实际预热调用。
 - DeepSL Standard 的固定 ABI adapter 已覆盖 OPAQUE/MASK/BLEND、单面/双面、五个 glTF core 纹理槽、UV0/UV1 变换、TBN normal、AO 与 emissive。它为 `deep.pbr.mesh.v1` 生成有界 forward/shadow 变体，也可选择 `deep.pbr.mesh.v2` 的四级 CSM 布局；BLEND 明确不投影。材质默认值和纹理参数分别进入 144B instance 与 160B material ABI，发布前反向核对 Frame208、绑定、顶点流、入口点、attachment 和完整 pipeline layout。统一 `adaptDeepSlToShaderPackage` 入口也能生成可执行 Unlit Package：支持 baseColor/emissive factor 与纹理、UV0/UV1 变换、OPAQUE/MASK/BLEND 和镜像/双面变体；MASK 的颜色与阴影共用 alpha 判定，BLEND 不生成 shadow。不适用于 Unlit 的 metallic/roughness/MR/normal/AO 声明会返回机器可读错误，不会静默忽略。
 
-实现路线见 [复审执行方案](../../docs/specs/deep-engine-execution-plan-2026-09-12.md)。
+实现边界和开发命令见 [开发指南](../../docs/development.md)。
 渲染图是 headless 合同，不是 GPU executor；切换测试不代表真实 canvas 无黑帧。
 `DeepSceneState` 用于状态合同验证，尚未用于产品作者对象图，快照也不应作为逐帧数据通道。
 取消信号仅属于一次后端准备/交接请求，后端激活后不得把它用作持续运行的生命周期信号。
@@ -37,7 +37,7 @@ Deep Engine 是 Deep Monkey Studio 的 WebGPU 引擎与跨端合同包。除 hea
 pnpm --filter @bim-studio/deep-engine typecheck
 pnpm --filter @bim-studio/deep-engine test
 pnpm --filter @bim-studio/deep-engine build
-pnpm --filter @bim-studio/deep-engine inventory:three docs/specs/deep-engine-three-source-inventory-2026-09-12.json
+pnpm --filter @bim-studio/deep-engine inventory:three test-output/diagnostics/three-source-inventory.json
 pnpm --filter @bim-studio/deep-engine lab:build
 pnpm --filter @bim-studio/deep-engine lab:isolation
 pnpm --filter @bim-studio/deep-engine lab:serve

@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { build } from "esbuild";
 
-// R2 跨后端着色 IR 真机对拍 runner（设计: docs/specs/r2-shader-ir-design-2026-09-19.md §6）。
+// R2 跨后端着色 IR 真机对拍 runner（设计: docs/development.md §6）。
 // 单一 DCIR 源 → WGSL(WebGPU) 与 GLSL(WebGL2) 在同一 headless Chrome 内真实执行,
 // 与 CPU 参考实现三方对拍; 证据写入 test-output/r2-shader-ir-20260919-r1/。
 // 与并行确定性重放测试错峰: 失败自动重试(4s 间隔), 每案例 GPU 用时毫秒级。

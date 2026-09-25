@@ -1,6 +1,6 @@
 /**
  * DCIR v0（Deep Compute IR）：跨后端确定性 compute 内核的类型化节点 DAG。
- * 设计依据与 op 白名单语义合同见 `docs/specs/r2-shader-ir-design-2026-09-19.md` §2.3/§4。
+ * 设计依据与 op 白名单语义合同见 `docs/development.md` §2.3/§4。
  * 节点表必须按依赖序排列；两个发射器（WGSL/GLSL）按同一顺序逐节点展开，保证求值顺序同构。
  */
 

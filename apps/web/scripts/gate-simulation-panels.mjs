@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import playwright from "../../cloud-render-worker/node_modules/playwright-core/index.js";
 
 // 仅内存视觉夹具；验证四个真实面板的布局/折叠，不把它当成仿真正确性验收。
-const output = fileURLToPath(new URL("../../../test-output/codex-2026-09-05/simulation-panels/", import.meta.url));
+const output = fileURLToPath(new URL("../../../test-output/runs/2026-09-05/simulation-panels/", import.meta.url));
 await mkdir(output, { recursive: true });
 const browser = await playwright.chromium.launch({ executablePath: process.env.BIM_STUDIO_CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe", headless: true });
 const report = { createdAt: new Date().toISOString(), cases: [] };

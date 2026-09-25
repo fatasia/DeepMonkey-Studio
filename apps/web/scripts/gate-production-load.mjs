@@ -5,7 +5,7 @@ import playwright from "../../cloud-render-worker/node_modules/playwright-core/i
 import { createProductServer } from "./onlineFlowProductServer.mjs";
 
 // 复用既有生产静态服务器；独占测试端口，不替换 5173 开发实例。
-const output = fileURLToPath(new URL("../../../test-output/codex-2026-09-05/production-load/", import.meta.url));
+const output = fileURLToPath(new URL("../../../test-output/runs/2026-09-05/production-load/", import.meta.url));
 const dist = fileURLToPath(new URL("../dist", import.meta.url));
 const server = createProductServer(dist, "http://127.0.0.1:4100");
 await new Promise((resolve, reject) => { server.once("error", reject); server.listen(4174, "127.0.0.1", resolve); });

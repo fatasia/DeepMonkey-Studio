@@ -14,7 +14,7 @@
 | 容器化评估 | [容器部署评估](../apps/web/src/docs/container-deployment.md)（镜像制作延后） |
 | 维护 GitHub Wiki 镜像 | [Wiki 镜像说明](wiki-mirroring.md)（文档中心是唯一事实源，Wiki 只做导出） |
 
-## 三维格式接入设计
+## 三维格式与插件
 
-[七方向三维格式工作计划](specs/industrial-3d-format-work-plan-2026-09-16.md)是统一执行入口，先看依赖边界、阶段和验收门槛；
-[七方向内置接入总方案](specs/jt-xt-rvt-offline-integration-plan-2026-09-16.md)涵盖 JT、X_T、RVT 与四类扩展；[点云、3D Tiles、3DM、SolidWorks 接入细案](specs/additional-four-formats-integration-plan-2026-09-16.md)列出追加任务与验收，[格式价值排序](specs/high-value-3d-formats-2026-09-16.md)说明后续投资建议。以上为设计文档，实际已支持能力仍以[格式支持说明](converter-plugin-and-format-support.md)为准。
+格式解析边界、离线限制和当前支持范围见[格式支持说明](converter-plugin-and-format-support.md)。
+插件运行时和扩展入口见[插件运行时基础](plugin-runtime-foundation.md)；产线流程扩展见[工厂流程插件](factory-flow-plugin.md)。

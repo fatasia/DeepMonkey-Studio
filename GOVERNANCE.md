@@ -15,7 +15,7 @@ Roles are earned through sustained, constructive contribution. Access can be rem
 
 ## Decisions
 
-Routine fixes and small features are decided in Pull Request review. Major architecture changes, public contract changes, data migrations, new trust boundaries, or anything with continuing maintenance cost require a design note under `docs/specs/` first. The note states the problem, constraints, chosen design, alternatives, compatibility, migration, rollback, and verification plan.
+Routine fixes and small features are decided in Pull Request review. Major architecture changes, public contract changes, data migrations, new trust boundaries, or anything with continuing maintenance cost require a design note under `docs/` first. The note states the problem, constraints, chosen design, alternatives, compatibility, migration, rollback, and verification plan.
 
 Maintainers seek technical consensus. When that fails, the responsible maintainer records the competing evidence and a recommendation, and the Project Steward decides. Urgent security fixes may merge with limited public detail and get a follow-up record after coordinated disclosure.
 

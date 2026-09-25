@@ -6,7 +6,7 @@
 //   visibility_flags[id] = 1 表示「视锥内且未被遮挡」;其余槽位保持 0
 //   (flags 由 CPU 侧每次 encode 前整段清零,见 GpuOcclusionStage::encode)。
 //
-// 确定性纪律(docs/specs/r2-shader-ir-design-2026-09-19.md §4):
+// 确定性纪律(docs/development.md §4):
 //   - 全步定序:判定只依赖本线程输入;矩形最小值采样按 y/x 固定次序展开;
 //   - 无 workgroup 共享内存、无原子操作(写槽位按 invocation id 一一对应);
 //   - 深度约定:标准 Z(clip.z/w ∈ [0,1],越小越近),HiZ 为 min 缩减

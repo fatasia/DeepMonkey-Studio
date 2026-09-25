@@ -29,7 +29,7 @@ if (await shader.count()) {
   const intensity = shader.locator("input[type='range']");
   if (await intensity.count()) await intensity.first().fill("2.5");
   await page.waitForTimeout(1200);
-  await page.screenshot({ path: "../../test-output/codex-2026-09-05/shader-effect-verify.png" });
+  await page.screenshot({ path: "../../test-output/runs/2026-09-05/shader-effect-verify.png" });
   // 读取面板状态
   const state = await page.evaluate(() => {
     const details = document.querySelector(".material-shader-effect");

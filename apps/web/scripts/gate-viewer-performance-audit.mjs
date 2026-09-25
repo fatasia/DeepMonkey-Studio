@@ -6,7 +6,7 @@ import playwright from "../../cloud-render-worker/node_modules/playwright-core/i
 import { buildVisualQaArtifact, createStaticServer } from "./productBrowserSupport.mjs";
 
 const webRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
-const parent = resolve(webRoot, "../../test-output/codex-2026-09-05");
+const parent = resolve(webRoot, "../../test-output/runs/2026-09-05");
 mkdirSync(parent, { recursive: true });
 // 每轮独立目录，保留以往性能证据；不替换正式 dist 或用户浏览器实例。
 const output = mkdtempSync(resolve(parent, "viewer-performance-"));

@@ -10,7 +10,7 @@ interface SemanticModelRouteDependencies {
 
 type SemanticModelBody = Partial<SemanticModelRecord> | undefined;
 
-/** 语义模型 CRUD；校验规则见 docs/specs/S1-001-semantic-model-contract.md。revision 由服务端控制：创建为 1，每次保存 +1。 */
+/** 语义模型 CRUD；校验规则由 contracts 与服务端共同执行。revision 由服务端控制：创建为 1，每次保存 +1。 */
 export async function registerSemanticModelRoutes(app: FastifyInstance, dependencies: SemanticModelRouteDependencies): Promise<void> {
   const { store } = dependencies;
   const projectIdOf = (request: FastifyRequest) => (request.params as { projectId: string }).projectId;

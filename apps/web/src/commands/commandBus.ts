@@ -23,7 +23,7 @@ export interface CommandBusOptions {
 type HistoryEntry = { command: EngineEditCommand; applier: EngineEditCommandApplier };
 
 /**
- * 引擎中立编辑命令总线(设计文档 docs/specs/engine-neutral-command-layer-design-2026-09-25.md 批 0)。
+ * 引擎中立编辑命令总线(设计文档 docs/development.md 批 0)。
  *
  * 零行为变化约束:publish 同步冲刷队列(发布返回时命令已执行完毕),
  * 与"UI 直调引擎 setter"的时序逐点一致;异步合帧是后续批次(§4)的事,批 0 不做。

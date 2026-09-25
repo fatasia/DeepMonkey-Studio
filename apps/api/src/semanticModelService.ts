@@ -33,7 +33,7 @@ export function resolveSemanticSourceFields(
   return { status: "ok", fields: [...dataset.fields, ...computed] };
 }
 
-/** 保存前校验；返回全部问题，空数组表示通过。规则见 docs/specs/S1-001-semantic-model-contract.md §4。 */
+/** 保存前校验；返回全部问题，空数组表示通过。 */
 export function validateSemanticModel(
   model: SemanticModelRecord,
   ctx: SemanticModelValidationContext,

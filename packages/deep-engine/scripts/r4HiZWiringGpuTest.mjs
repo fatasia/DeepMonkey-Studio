@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { build } from "esbuild";
 
-// R4 生产 HiZ 接线真机对拍 runner（R4 前置切片,接续 docs/specs/r2-shader-ir-design-2026-09-19.md §7 路线 2）。
+// R4 生产 HiZ 接线真机对拍 runner（R4 前置切片,接续 docs/development.md §7 路线 2）。
 // golden 手写 reduce WGSL（迁移前原文）与 DCIR 生产内核在同一 headless Chrome 内、同输入、同金字塔
 // 尺寸下逐级对拍；GLSL 降级（WebGL2/ANGLE）按 R2 合同验证第一档；timestamp 记账新旧路径 GPU 时间。
 // 证据写入 test-output/r4-hiz-wiring-20260919-r1/。

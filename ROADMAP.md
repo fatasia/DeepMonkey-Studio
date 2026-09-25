@@ -24,4 +24,4 @@ Experimental work needs explicit inputs, unsupported cases and reproducible resu
 
 Open a feature proposal with the user problem, current workaround, expected result and maintenance cost. Maintainers may request a design note before scheduling work. An accepted proposal has no delivery date until a release milestone explicitly states one.
 
-Read [CHANGELOG.md](CHANGELOG.md) for implemented changes, [capabilities](docs/capabilities.md) for feature details and [the Deep Engine plan](docs/specs/deep-engine-execution-plan-2026-09-15.md) for engineering work in progress.
+Read [CHANGELOG.md](CHANGELOG.md) for implemented changes, [capabilities](docs/capabilities.md) for feature details, and [the development guide](docs/development.md) for the supported engineering workflow.

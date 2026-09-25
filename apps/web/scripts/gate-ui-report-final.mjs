@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import playwright from "../../cloud-render-worker/node_modules/playwright-core/index.js";
 
 const origin = process.env.BIM_STUDIO_QA_ORIGIN ?? "http://127.0.0.1:5173";
-const output = fileURLToPath(new URL("../../../test-output/codex-2026-09-05/report-final/", import.meta.url));
+const output = fileURLToPath(new URL("../../../test-output/runs/2026-09-05/report-final/", import.meta.url));
 await mkdir(output, { recursive: true });
 const browser = await playwright.chromium.launch({ executablePath: process.env.BIM_STUDIO_CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe", headless: true });
 const report = { createdAt: new Date().toISOString(), cases: [] };

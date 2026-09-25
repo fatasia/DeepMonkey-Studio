@@ -1,5 +1,5 @@
 //! R2 切片 2:Native wgpu 第三端 harness —— DCIR HiZ reduce 内核在 Native wgpu 上的
-//! 三端逐位一致性认证(设计 `docs/specs/r2-shader-ir-design-2026-09-19.md` §4/§6/§7)。
+//! 三端逐位一致性认证(设计 `docs/development.md` §4/§6/§7)。
 //!
 //! 合同(与 Web 侧已认证 kernel 生成逻辑零改动,只消费其 WGSL 工件):
 //! 1. WGSL 文本 = `assets/shaders/dcir_hi_z_*.wgsl`,逐字节来自 R4 证据

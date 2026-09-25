@@ -248,7 +248,7 @@ export async function collectNativeUiInventory(workspace) {
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
 if (isMain) {
   const workspace = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-  const target = resolve(workspace, process.argv[2] ?? "docs/specs/deep-engine-native-ui-source-inventory-2026-09-12.json");
+  const target = resolve(workspace, process.argv[2] ?? "test-output/diagnostics/native-ui-source-inventory.json");
   const report = await collectNativeUiInventory(workspace);
   await mkdir(dirname(target), { recursive: true });
   await writeFile(target, `${JSON.stringify(report, null, 2)}\n`);

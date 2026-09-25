@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 批次 F 全量门禁序列 runner：按交接文档第 5 节顺序逐条执行，中间失败继续后续项，
+ * 批次 F 全量门禁序列 runner：按验证顺序逐条执行，中间失败继续后续项，
  * 汇总 JSON 报告（逐项 exit code/耗时/输出尾部）到 test-output/batch-f-gate-<时间戳>/。
  * 用法：node scripts/batchFGateRun.mjs [--quick]（--quick 跳过 test/build 长项只跑快速门禁）。
  */

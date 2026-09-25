@@ -183,7 +183,7 @@ const evidence = {
       : null,
     processMetricsScope: "Chrome 浏览器进程树（host）：Deep 与 Babylon 同页同树渲染，peak/mean 为双侧共享总量，不可按引擎拆分；GPU 专用内存按树内 pid 计数器尽力求和，失败不致命。",
     execution: "串行独占：同一时刻仅一个页面、一个 WebGPU device；每 pass 独立浏览器上下文",
-    schemaAnchor: "records 与 docs/specs/de26-a04-a08-paired-runtime-2026-09-18.md 的 A03/A04 schema 同构",
+    schemaAnchor: "records 与运行时 A03/A04 schema 同构",
   },
   mappingNotes: [],
   passes: [],

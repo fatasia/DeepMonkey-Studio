@@ -28,5 +28,5 @@ const m = await page.evaluate(() => {
   return out;
 });
 console.log(JSON.stringify(m, null, 1));
-await page.screenshot({ path: "D:/Documents/bim/bim-studio/test-output/glm-night-20260923/prefab-overflow.png" });
+await page.screenshot({ path: "D:/Documents/bim/bim-studio/test-output/runs/20260923/prefab-overflow.png" });
 await browser.close();

@@ -28,7 +28,7 @@ async function reservePort() {
 export async function createIsolatedPostgres() {
   const executables = postgresFixtureTools();
   if (!executables) throw new Error(missingPostgresFixtureMessage);
-  const parent = resolve(import.meta.dirname, "../../../test-output/codex-2026-09-05"); await mkdir(parent, { recursive: true });
+  const parent = resolve(import.meta.dirname, "../../../test-output/runs/2026-09-05"); await mkdir(parent, { recursive: true });
   const output = await mkdtemp(resolve(parent, "postgres-writeback-"));
   const cluster = resolve(output, "cluster"), port = await reservePort();
   await run(executables.initdb, ["-D", cluster, "-U", "writeback_test", "-A", "trust", "--encoding=UTF8", "--no-locale"]);

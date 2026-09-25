@@ -5,7 +5,7 @@ import playwright from "../../cloud-render-worker/node_modules/playwright-core/i
 
 // 原项目只读回归；全部视图操作必须零业务写入。测试主题仅替换浏览器收到的品牌响应。
 const origin = process.env.BIM_STUDIO_QA_ORIGIN ?? "http://127.0.0.1:5173";
-const output = fileURLToPath(new URL("../../../test-output/codex-2026-09-05/topology/", import.meta.url));
+const output = fileURLToPath(new URL("../../../test-output/runs/2026-09-05/topology/", import.meta.url));
 await mkdir(output, { recursive: true });
 const browser = await playwright.chromium.launch({ executablePath: process.env.BIM_STUDIO_CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe", headless: true });
 const report = { createdAt: new Date().toISOString(), cases: [] };

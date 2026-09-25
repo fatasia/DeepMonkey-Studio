@@ -25,13 +25,13 @@
 
 At first, I just wanted to improve the 3D editor. One thing led to another, and it became a full platform engine.
 
-I see it as more than a digital twin and 3D workspace: it is a foundation for future metaverses, AI4S, and world models (GPT-6 and Fable 5 are already pretty impressive, after all).
+It is an open-source foundation for metaverses, AI for Science, and world models.
 The upper layer includes a 2D editor, 3D editor, script editor, and plugins;
-the lower layer includes our own engine, data platform, AI platform, and large-model Harness.
+the lower layer includes our own engine, data platform, and composable model adapters.
 
 Under the hood, we have made many optimizations for WebGPU, rendering, and industrial and BIM models. The modules are independent and simple enough to use separately as an SDK.
 
-During development and testing, AI downloaded many industrial models from the internet. If any of them inadvertently infringe on someone's rights, I sincerely apologize and will remove them from the project.
+Third-party industrial models used for development and testing are recorded with their source and license. Please open an Issue if you find a rights concern.
 
 The project uses the broadest possible MIT license so anyone can use it freely (technological progress depends on the support of industry experts), with an exception only for certain companies that disregard employees' human rights (see [LICENSE.zh-CN.md](LICENSE.zh-CN.md)).
 
@@ -405,7 +405,7 @@ Source-available under the custom [Deep Monkey Community Source License 1.0](LIC
 
 ## Acknowledgements
 
-Thanks to the maintainers and contributors of every project we depend on, especially [Three.js](https://github.com/mrdoob/three.js), [Orillusion](https://github.com/Orillusion/orillusion), and [Unity](https://github.com/Unity-Technologies). We have learned a great deal from them about rendering, engine architecture, and editor interaction. Thanks also to [OpenAI](https://github.com/openai) and [Zhipu GLM](https://github.com/zai-org) for providing tokens during their events.
+Thanks to the maintainers and contributors of every project we depend on, especially [Three.js](https://github.com/mrdoob/three.js), [Orillusion](https://github.com/Orillusion/orillusion), and [Unity](https://github.com/Unity-Technologies). This project benefits from the open-source community's work on rendering, engine architecture, and editor interaction.
 
 
 

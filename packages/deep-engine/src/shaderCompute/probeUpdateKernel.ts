@@ -2,7 +2,7 @@ import type { ProbeUpdate } from "../lighting/probeClipmapPlan.js";
 
 /**
  * GI 探针更新 kernel 的 DCIR 形式设计桩（R4 第二个 compute 消费点，本切片**未实现**）。
- * 设计依据：`docs/specs/r2-shader-ir-design-2026-09-19.md` §5（探针迁 IR 的合同）与
+ * 设计依据：`docs/development.md` §5（探针迁 IR 的合同）与
  * `webgpu/webgpuProbeCaptureWgsl.ts` 现行手写实现（filterIrradiance / buildMip）。
  *
  * 设计（DCIR v1 形态，v0 缺以下 op，本切片不冒进）：

@@ -11,7 +11,7 @@ import { bundleConsumer, checkBrowser } from "./lib/sdkConsumerBrowser.mjs";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const workspace = await mkdtemp(join(tmpdir(), "bim-sdk-consumer-"));
 assert.ok(!isWithin(root, workspace), "Consumer must be outside the monorepo");
-const reportDir = join(root, "test-output/codex-2026-09-06", `sdk-consumer-${workspace.split(/[\\/]/).at(-1).replace("bim-sdk-consumer-", "")}`);
+const reportDir = join(root, "test-output/runs/2026-09-06", `sdk-consumer-${workspace.split(/[\\/]/).at(-1).replace("bim-sdk-consumer-", "")}`);
 await mkdir(reportDir, { recursive: true });
 console.log(`[sdk-consumer] external directory: ${workspace}\n[sdk-consumer] evidence: ${reportDir}`);
 const report = { status: "running", workspace, reportDir, node: process.version, startedAt: new Date().toISOString() };

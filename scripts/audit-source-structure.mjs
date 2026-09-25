@@ -31,7 +31,7 @@ for (const file of paths) {
 }
 oversizedFiles.sort((a, b) => b.lines - a.lines);
 functions.sort((a, b) => b.lines - a.lines);
-const output = path.resolve("test-output/codex-2026-09-05/source-structure");
+const output = path.resolve("test-output/runs/2026-09-05/source-structure");
 mkdirSync(output, { recursive: true });
 const report = { createdAt: new Date().toISOString(), scannedFiles, parsedFiles, boundary: "All listed source file sizes; TS/JS AST function spans only. Long JSX and tests need ownership review, not mechanical splitting. Rust/C#/Python function bodies not parsed.", oversizedFiles, functions };
 writeFileSync(path.join(output, "report.json"), JSON.stringify(report, null, 2));

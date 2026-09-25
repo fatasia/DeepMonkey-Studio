@@ -1,6 +1,6 @@
 //! R4 生产接线:MSAA 深度 resolve → HiZ 金字塔(r32float,min 缩减,标准 Z)。
 //!
-//! 消费链(docs/specs/r4-occlusion-culling-2026-09-20.md §2.2)已就绪等待本输入:
+//! 消费链(docs/development.md §2.2)已就绪等待本输入:
 //! 本模块产出 [`OcclusionSource`] 契约的真实纹理——r32float 2D mip 链,
 //! 第 0 层 = 主视锥全分辨率深度(min over 4x MSAA 样本),第 i 层 = 上一层的
 //! min 缩减,一路降到 1×1(层数公式与 webgpu 侧 `hiZPyramid.ts` 一致)。
@@ -24,7 +24,7 @@
 //! 边界(如实):上一帧深度滞尾意味着相机大幅前推时存在滞后误剔窗口,
 //! 1e-6 裕量不覆盖运动补偿;定档与补偿属精度-召回联测切片。
 //!
-//! 确定性纪律(docs/specs/r2-shader-ir-design-2026-09-19.md §4):
+//! 确定性纪律(docs/development.md §4):
 //! 全步定序(min 按固定次序展开)、无原子、无共享内存;±0 由缩减链内核
 //! `select(v, 0.0, v == 0.0)` 规范化为 +0。
 //!

@@ -4,7 +4,7 @@ Thanks for helping improve Deep Monkey Studio. A few things to know before you s
 
 ## Before you write code
 
-- Search existing Issues, Pull Requests, and [docs/specs](docs/specs) to avoid duplicating work.
+- Search existing Issues, Pull Requests, and the [documentation index](docs/README.md) to avoid duplicating work.
 - Open an Issue first for anything big: new features, public contract changes, migrations, new dependencies, or changes to stored data. Small bug fixes and doc corrections can go straight to a Pull Request.
 - One Pull Request, one coherent change. Leave unrelated edits in the branch alone.
 - Security problems go through the private process in [SECURITY.md](SECURITY.md), not a public Issue.
@@ -45,7 +45,7 @@ pnpm build
 
 Browser, GPU, asset, data, and release changes have additional `gate:*` scripts — check the root `package.json` for the ones that apply. List the commands you ran and their outcomes in the Pull Request, and don't mark an unrun check as passed.
 
-Maintainers may ask for a smaller change, stronger evidence, or a design note under `docs/specs/` when the decision affects future contributors.
+Maintainers may ask for a smaller change, stronger evidence, or a design note under `docs/` when the decision affects future contributors.
 
 ## Review and follow-up
 

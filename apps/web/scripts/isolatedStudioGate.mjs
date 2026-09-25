@@ -10,7 +10,7 @@ import { captureProcessOutput, reservePort, waitForHealth } from "./onlineFlowAu
 /** 独立端口、独立数据目录和登录上下文；不访问正常开发 API 的业务数据。 */
 export async function createIsolatedStudioGate(name, options = {}) {
   const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
-  const parent = resolve(root, "test-output/codex-2026-09-05");
+  const parent = resolve(root, "test-output/runs/2026-09-05");
   await mkdir(parent, { recursive: true });
   const output = await mkdtemp(resolve(parent, `${name}-`));
   const apiOrigin = `http://127.0.0.1:${await reservePort()}`;

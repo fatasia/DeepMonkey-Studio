@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import playwright from "../../cloud-render-worker/node_modules/playwright-core/index.js";
 
-const output = fileURLToPath(new URL("../../../test-output/codex-2026-09-05/simulation-state/", import.meta.url));
+const output = fileURLToPath(new URL("../../../test-output/runs/2026-09-05/simulation-state/", import.meta.url));
 await mkdir(output, { recursive: true });
 const report = { createdAt: new Date().toISOString(), cases: [] };
 const browser = await playwright.chromium.launch({ executablePath: "C:/Program Files/Google/Chrome/Application/chrome.exe", headless: true });

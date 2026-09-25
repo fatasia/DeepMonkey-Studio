@@ -7,8 +7,8 @@ import { createIsolatedStudioGate } from "./isolatedStudioGate.mjs";
 import { createScene, observeDiagnostics, themeContext } from "./gateModelInstancesSupport.mjs";
 
 // PDFium renders the generated PDF itself; pdfplumber measures its text in paper points.
-// Override on hosts without the bundled Codex Python runtime (requires pdfplumber/pypdfium2).
-const bundledPython = resolve(process.env.LOCALAPPDATA ?? "", "../../.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe");
+// Override on hosts without the bundled Python runtime (requires pdfplumber/pypdfium2).
+const bundledPython = resolve(process.env.LOCALAPPDATA ?? "", "../../.cache/workspace-runtimes/dependencies/python/python.exe");
 const python = process.env.BIM_STUDIO_PDF_PYTHON ?? (existsSync(bundledPython) ? bundledPython : "python");
 const decodePdf = String.raw`
 import json, sys, pdfplumber, pypdfium2 as pdfium
