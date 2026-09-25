@@ -77,3 +77,11 @@
 - 公平基准低样本复跑（20 静置/20 输入，当前 HEAD `5999e64b`）：WebGPU 静置 P50/P95 `6.9/7.1ms`，优于 WebGL `7.0/7.2ms`；但 WebGPU 输入 P95 `34.7ms`、pointer→submit P95 `34.5ms`，仍高于 WebGL `21.1ms`/`1.6ms`，`exceeds.webgpu=false`。本轮优化改善了独立 packet 稳定帧微任务开销，但尚不足以宣称全面超过 Three。
 - 接入真实 `compileSceneRenderPacket` provider 后复跑（20/20，当前 HEAD `d040a516`）：WebGPU 三视角 SSIM 提升至 `0.64–0.72`，黑帧 0；静置 P95 `7.1ms`，输入 P95 `13.9ms`，但 pointer→submit P95 `74.3ms`、submitGap P95 `77.8ms`，仍未达到全面超过 WebGL 的门槛。资源上传/首轮编译拖尾是下一性能专项。
 - 回归收口：API 全量 `1580 passed / 13 skipped`；Web 全量 `4492 passed / 3 skipped`。Web 架构扫描在全量并发下曾超过 30 秒，`18f9fe27` 将其测试上限调整为 120 秒后全量通过。
+
+## 2026-09-25 最终收口：Three 脱离、性能与公开历史隔离
+
+- `75436aba`：独立 `RenderPacket` 路径直接从 packet 几何/实例变换计算 orbit bounds，跳过 Three 根节点 bounds 遍历、作者投影刷新与独立路径 `scene.updateMatrixWorld`；兼容 Three fallback 保持不变。
+- `601ca4d9`：新增回归断言，独立 packet 路径不调用 `scene.updateMatrixWorld`；StudioDeepWebGpuBridge 36/36、Deep bridge/backend 30/30、Web tsc 通过。
+- 最终公平基准（10 静置/10 输入，Chrome WebGPU）：静置 P95 `7.0ms`，WebGL `7.1ms`；输入帧 P95 `7.2ms`，WebGL `7.2ms`；无黑帧。WebGPU `pointer→submit` P95 `63.4ms`、submit gap P95 `55.4ms`，仍不能宣称端到端全面超过 Three/WebGL；本轮已完成安全的 Three CPU 热路径削减，不引入损伤画质的激进背压。
+- `71c50451`：新增 `docs/public-history-isolation.md` 与只读 `scripts/verify-public-history.mjs`，公开候选树扫描 7361 个文件通过；开发历史不重写，公开发布采用隔离的 orphan `public-main` 导出，并清理公开文档中的本机绝对路径。
+- 依赖审计与仓库治理门禁保持通过；许可证按用户指令不修改。
