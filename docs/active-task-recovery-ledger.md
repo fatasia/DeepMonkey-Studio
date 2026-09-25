@@ -3688,3 +3688,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **license 恢复(用户指令,提交 e8772299/cff38a93)**:DMCSL-1.0 全面恢复(LICENSE/中文版/LICENSING/双 README/AGENTS/贡献条款/社区文档/审计断言/unity 镜像/READINESS);LICENSE-RESTRICTIONS.md 移除;package.json 回 LicenseRef-Deep-Monkey-Community-1.0;双门禁过。
 - **全面测试(用户指令)**:UI/视觉一致性全检+属性面板输入框不一致 P0 修复(代理在途);交互/功能全检(因并发代理限额被拒,待空位补发);性能平滑度已定案。
 - 30 分钟守护按用户指令取消;WebGPU 拖尾 GPU 专项仍归属并行会话 gpuTimer 工作。
+
+### 2026-09-25 命令层批 2(批次 9)
+
+- **批 2(代理,提交 7fe2654a)**:全仓 19 处直调写点核查——14 处 UI 写点收编(模型/元素/图层显隐锁定、批量、重命名、发布视口、SceneViewerRoot),5 处跳过(deleteSelectedLayer×3 归批 6 结构命令;脚本面 studioApi/behavior 非编辑写点;rollback 事务逆算子);命令合同追加 selection 模式与 locked/name 字段;fragment 构件变换预检评估=引擎无公开只读查询,维持批 1 降级记账形态。证据:定向 67/67+tsc 绿+全量 4440 过(1 失败为并行负载下 architecture 超时,隔离 11.4s 过,与本批无关)。
+- 接力序列:路径 4+5(gizmo 原生化+overlay 自绘)已发射;批 3 材质等 UI 全检空位。
