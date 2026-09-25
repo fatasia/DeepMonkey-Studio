@@ -118,7 +118,7 @@ export class StudioDeepRenderView {
       roughness: 1,
       lights: this.shadowSession()?.lights(lighting.lights) ?? lighting.lights,
     };
-    if (cameraGesture) this.cachedGestureSource = { source, at: performance.now() };
+    if (cameraGesture || this.cachedGestureSource !== undefined) this.cachedGestureSource = { source, at: performance.now() };
     return source;
   }
 

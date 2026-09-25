@@ -71,4 +71,16 @@ describe("StudioDeepRenderView camera-gesture cache", () => {
     expect(firstLightCallCount()).toBe(5);
     expect((view.renderViewDirect(canvas, true) as RenderView).lights).toEqual({ directional: [], points: [], spots: [] });
   });
+
+  it("refreshes the gesture cache from full reads so scene edits surface on the next gesture frame", () => {
+    view.renderViewDirect(canvas, true);
+    expect(firstLightCallCount()).toBe(1);
+    // 手势期之外的完整构建(sync 尾随路径)刷新缓存:拖拽中的编辑在下一次手势帧立即生效,
+    // 因此第二次手势调用复用刚刷新的缓存而不是再遍历一次。
+    view.renderViewDirect(canvas);
+    expect(firstLightCallCount()).toBe(2);
+    const refreshed = view.renderViewDirect(canvas, true);
+    expect(firstLightCallCount()).toBe(2);
+    expect(refreshed.lights).toEqual({ directional: [], points: [], spots: [] });
+  });
 });
