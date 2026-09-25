@@ -41,9 +41,9 @@
 
 ## 系统介绍 · 从 Vibe Coding 到 Vibe World
 
-<video controls preload="metadata" poster="https://raw.githubusercontent.com/fatasia/DeepMonkey-Studio/main/docs/assets/system-intro/poster.png" width="960"><source src="https://github.com/fatasia/DeepMonkey-Studio/releases/download/v0.1.0/deepmonkey-studio-intro.mp4" type="video/mp4" /></video>
+<video controls preload="metadata" poster="https://fatasia.github.io/DeepMonkey-Studio/poster.png" width="960"><source src="https://fatasia.github.io/DeepMonkey-Studio/deepmonkey-studio-intro.mp4" type="video/mp4" /></video>
 
-[▶ 直接打开视频](https://github.com/fatasia/DeepMonkey-Studio/releases/download/v0.1.0/deepmonkey-studio-intro.mp4) · 3 分 22 秒 · [字幕](docs/assets/system-intro/zh-CN.srt)
+[▶ 直接打开视频](https://fatasia.github.io/DeepMonkey-Studio/deepmonkey-studio-intro.mp4) · 3 分 22 秒 · [字幕](docs/assets/system-intro/zh-CN.srt)
 
 从模型接入、轻量化与数据连接，到 AI 工作流、自研引擎和多端交付。
 
@@ -404,5 +404,6 @@ Deep Engine 包含 TypeScript WebGPU 内核、Rust `wgpu` 原生执行器与 WAS
 ## 鸣谢
 
 感谢所有依赖项目的维护者和贡献者，特别是 [Three.js](https://github.com/mrdoob/three.js)、[Orillusion](https://github.com/Orillusion/orillusion) 和 [Unity](https://github.com/Unity-Technologies)——本项目在渲染、引擎架构和编辑器交互上从它们身上学到了很多。也感谢 [OpenAI](https://github.com/openai) 和[智谱 GLM](https://github.com/zai-org) 活动期间提供的 Token 支持。
+
 
 
