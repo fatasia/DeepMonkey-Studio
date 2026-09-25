@@ -34,3 +34,10 @@
 - 拾取车道：Web viewer/Deep 桥的拾取输入与发布查看器拾取及测试；交付 Deep 模式 nodeId 命中和降级证据。不得修改 Shader、WASM 和 GPU 计时文件。
 - WASM 车道：`packages/deep-engine-wasm/src`、Web WASM 桥及测试；交付 overlay/探针消费证据。不得修改 Shader、拾取和 GPU 计时文件。
 - 主线程：交互/视觉复验、音频 soak 证据、统合验证和总账更新。遇到共享文件先按文件域暂存，不交叉暂存。
+
+## 2026-09-25 15:08 验收更新
+
+- W2 发布闭环补证：`compileSceneRuntimePackage` 对带 `customShader` 的模型生成 `shaderPackages` 与 `materialBindings`，绑定的 `packageId/entrypoint` 一致；定向发布/烘焙/持久化测试 15/15，通过新增发布验证 1/1。
+- W3 姿态命令补齐：`RobotJointPreview` 与 `RobotSceneInspector` 经 `robotPoseCommand` 进入 `CommandBus`；`setRobotPose` 的 `false` 拒绝结果由 UI 消费并显示错误；命令/姿态定向测试 64/64。
+- 当前命令层撤销仍由 `SceneAuthoringHistory` 的整快照路径承载；规格中的“每条命令携带 inverse”是后续目标态，不计入本轮已完成能力。
+- 总验收：artifact freshness 通过；Web 全量剩余架构扫描超时与电池样本 manifest 校验环境失败，W1/W2/W3 定向集均通过；Native 1800 秒音频 soak 正在运行。
