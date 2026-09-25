@@ -189,6 +189,7 @@ function appliedOf(applier: ReturnType<typeof recordingApplier>): string[] {
     }
     if (command.kind === "setSceneEnv") return `setSceneEnv`;
     if (command.kind === "setLighting") return `setLighting`;
+    if (command.kind === "setPhysicsState") return `setPhysicsState`;
     return `setTransform:${command.target.modelId}`;
   });
 }

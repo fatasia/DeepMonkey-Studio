@@ -1,6 +1,6 @@
 import type { ViewerEngine } from "../viewer/ViewerEngine";
 import { sceneCommandBus, type EngineEditCommandApplier } from "./commandBus";
-import type { EngineEditCommand, EngineEditCommandInput, SetGlobalLightingCommand, SetMaterialStateCommand, SetSceneEnvironmentCommand, SetTransformCommand, SetVisibilityCommand } from "./engineEditCommand";
+import type { EngineEditCommand, EngineEditCommandInput, SetGlobalLightingCommand, SetMaterialStateCommand, SetModelEffectsCommand, SetPhysicsStateCommand, SetRobotPoseCommand, SetSceneEnvironmentCommand, SetTransformCommand, SetVisibilityCommand } from "./engineEditCommand";
 import { EngineTransformAuthoring, transformGraphNodeId } from "./engineTransformGraph";
 
 /**
@@ -51,6 +51,15 @@ export class ViewerEngineCommandApplier implements EngineEditCommandApplier {
         return;
       case "setLighting":
         this.engine.setGlobalLighting(command.lighting);
+        return;
+      case "setModelEffects":
+        this.engine.setModelEffects(command.target.modelId, command.effects);
+        return;
+      case "setPhysicsState":
+        this.engine.setPhysicsState(command.physics);
+        return;
+      case "setRobotPose":
+        this.engine.setRobotPose(command.target.modelId, command.values);
         return;
     }
   }

@@ -1,4 +1,4 @@
-import type { GlobalLightingState, ModelTransform, SceneEnvironmentState, SceneLayerState, SceneMaterialState } from "@bim-studio/contracts";
+import type { GlobalLightingState, ModelTransform, SceneEnvironmentState, SceneLayerState, SceneMaterialState, SceneModelEffectsState, ScenePhysicsState } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 
 /**
@@ -96,7 +96,31 @@ export interface SetGlobalLightingCommand extends EngineEditCommandBase {
   readonly lighting: GlobalLightingState;
 }
 
-export type EngineEditCommand = SetTransformCommand | SetVisibilityCommand | SetMaterialStateCommand | SetSceneEnvironmentCommand | SetGlobalLightingCommand;
+/** 模型效果命令(批 5 切片):全量态,等价直调 setModelEffects(modelId, state)。 */
+export interface SetModelEffectsCommand extends EngineEditCommandBase {
+  readonly kind: "setModelEffects";
+  readonly target: EngineEditCommandTarget;
+  readonly effects: SceneModelEffectsState;
+}
+
+/**
+ * 物理场命令(批 5 切片):全量态,等价直调 setPhysicsState(state)。
+ * 单体 body 状态 setter 是异步事务(setPhysicsBodyState Promise),命令层本轮
+ * 不收编异步写点(同步串行总线合同),归后续切片。
+ */
+export interface SetPhysicsStateCommand extends EngineEditCommandBase {
+  readonly kind: "setPhysicsState";
+  readonly physics: ScenePhysicsState;
+}
+
+/** 机器人/骨骼姿态命令(批 5 切片):等价直调 setRobotPose(modelId, values)。 */
+export interface SetRobotPoseCommand extends EngineEditCommandBase {
+  readonly kind: "setRobotPose";
+  readonly target: EngineEditCommandTarget;
+  readonly values: Record<string, number>;
+}
+
+export type EngineEditCommand = SetTransformCommand | SetVisibilityCommand | SetMaterialStateCommand | SetSceneEnvironmentCommand | SetGlobalLightingCommand | SetModelEffectsCommand | SetPhysicsStateCommand | SetRobotPoseCommand;
 
 /** 已应用命令的日志条目:revision 为该命令应用完成后的文档序位(1 起)。 */
 export interface AppliedEngineEditCommand {
@@ -224,6 +248,21 @@ export function modelMaterialCommand(
     target: { modelId },
     patch,
   };
+}
+
+/** 模型效果命令工厂:等价直调 setModelEffects(modelId, state)。 */
+export function modelEffectsCommand(locale: AppLocale, modelId: string, effects: SceneModelEffectsState): EngineEditCommandInput {
+  return { kind: "setModelEffects", label: tr(locale, "编辑模型效果", "Edit model effects"), target: { modelId }, effects };
+}
+
+/** 物理场命令工厂:等价直调 setPhysicsState(state)。 */
+export function physicsStateCommand(locale: AppLocale, physics: ScenePhysicsState): EngineEditCommandInput {
+  return { kind: "setPhysicsState", label: tr(locale, "编辑物理场", "Edit physics"), physics };
+}
+
+/** 机器人/骨骼姿态命令工厂:等价直调 setRobotPose(modelId, values)。 */
+export function robotPoseCommand(locale: AppLocale, modelId: string, values: Record<string, number>): EngineEditCommandInput {
+  return { kind: "setRobotPose", label: tr(locale, "编辑姿态", "Edit pose"), target: { modelId }, values };
 }
 
 /** 场景环境命令工厂:等价直调 setSceneEnvironment(state)。 */
