@@ -15,3 +15,13 @@
 *.png binary
 *.webp binary
 *.zip binary
+
+# Battery release manifests record byte-level hashes from the published CRLF
+# payloads. Keep these text files stable across Git checkouts and archives.
+apps/api/models/battery/*.runtime-adapter.json text eol=crlf
+apps/web/public/samples/multiscale-battery-assessment-demo.csv text eol=crlf
+apps/web/public/samples/multiscale-battery-assessment-lfp-demo.csv text eol=crlf
+apps/web/public/samples/multiscale-battery-assessment-engineering-nmc-demo.csv text eol=crlf
+apps/web/public/samples/multiscale-battery-assessment-engineering-lfp-demo.csv text eol=crlf
+apps/web/public/samples/multiscale-battery-assessment-pack-demo.csv text eol=crlf
+apps/web/public/samples/multiscale-battery-assessment-tempest-lfp-280ah-700cycle.csv text eol=crlf

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import playwright from "../../cloud-render-worker/node_modules/playwright-core/index.js";
 import sharp from "sharp";
 import { compareImageFiles } from "./renderImageSimilarity.mjs";
@@ -18,8 +20,13 @@ const route = `/studio/${sceneId}?project=${projectId}`;
 const staticSamples = Number(process.env.FAIR_STATIC_SAMPLES ?? 120);
 const inputSteps = Number(process.env.FAIR_INPUT_STEPS ?? 120);
 const poses = (process.env.FAIR_POSES ?? "前,右,顶").split(",").map(name => name.trim()).filter(Boolean);
-const output = fileURLToPath(new URL("../../../test-output/deep-fair-comparison/", import.meta.url));
+const output = process.env.FAIR_OUTPUT_DIR
+  ? `${process.env.FAIR_OUTPUT_DIR.replace(/[\\/]$/u, "")}/`
+  : fileURLToPath(new URL("../../../test-output/deep-fair-comparison/", import.meta.url));
 await mkdir(output, { recursive: true });
+const gitHead = await promisify(execFile)("git", ["rev-parse", "HEAD"], {
+  cwd: fileURLToPath(new URL("../../..", import.meta.url)),
+}).then(result => result.stdout.trim()).catch(() => "unknown");
 
 const login = await fetch(`${apiOrigin}/api/auth/login`, {
   method: "POST",
@@ -39,6 +46,12 @@ const report = {
   schema: "deep-monkey.deep-fair-comparison.v1",
   createdAt: new Date().toISOString(),
   route,
+  gitHead,
+  rendererSettings: {
+    browser: "Chrome --enable-unsafe-webgpu --enable-features=Vulkan,UseSkiaRenderer",
+    temporalSettleGpuBackpressure: true,
+    cameraFrameInFlightLimit: process.env.DEEP_CAMERA_FRAME_IN_FLIGHT_LIMIT ?? "default",
+  },
   protocol: { staticSamples, inputSteps, poses, referenceBackend: "webgl" },
   backends: {},
   pixelParity: [],
