@@ -1,3 +1,4 @@
+#![cfg(windows)]
 #![allow(dead_code)]
 
 #[path = "../src/forward_targets.rs"]

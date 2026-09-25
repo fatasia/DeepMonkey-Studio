@@ -1,3 +1,4 @@
+#![cfg(windows)]
 //! P1-01 全局 Epoch:事务化提交、同源数据推进与失败保持(CPU,无 GPU 依赖)。
 // PlayerContent 属 bin target(lib 不导出),按 tests/player_shader_plan.rs 先例拉入源文件;
 // 拉入的 bin 侧字段在测试 target 必然 dead_code,与先例同样放行。

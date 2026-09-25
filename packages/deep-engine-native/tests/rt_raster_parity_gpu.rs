@@ -1,3 +1,4 @@
+#![cfg(windows)]
 //! F2 RT/栅格同场景阴影像素对拍(真机 ray-query 设备):
 //! 同一 RenderPacket(接收地面 + 悬浮遮挡箱)各渲染一帧——
 //! 栅格:级联阴影 pass 写深度图 + `fragment_main` 采样 CSM 可见性;

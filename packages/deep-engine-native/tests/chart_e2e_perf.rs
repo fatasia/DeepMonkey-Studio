@@ -1,3 +1,4 @@
+#![cfg(windows)]
 //! P1-10 端到端 CPU/GPU 性能基线:真实窗口(Vulkan,1280×720)下 8 系列 × 8192 行
 //! 折线图的七类场景。渲染走生产入口 `chart::presentation::present_chart`(几何 +
 //! tooltip 文字 + 图例同链路),每帧拆分:CPU prepare(内容变更、栅格化、stage、编码

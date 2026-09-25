@@ -1,3 +1,4 @@
+#![cfg(windows)]
 #![allow(dead_code)]
 
 #[path = "support/author_lod_draw.rs"]

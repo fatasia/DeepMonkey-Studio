@@ -1,3 +1,4 @@
+#![cfg(windows)]
 #![allow(dead_code)]
 
 #[path = "../src/player_content.rs"]
