@@ -42,7 +42,7 @@ The repository-only scene-client archive verifier also uses `yauzl` 3.4.0 (MIT, 
 | MobileNet V2 preset weights | ONNX opset 12 | Apache-2.0 | https://huggingface.co/onnxmodelzoo/mobilenetv2-12 |
 | Pyronear early-smoke preset weights | 1.0.0 | Apache-2.0 | https://huggingface.co/pyronear/yolo11s_sensitive-detector |
 | `sharp` / `@img/sharp-win32-x64` platform package (transitive, Node-side optional) | 0.35.x | Apache-2.0; bundled libvips components include LGPL-3.0-or-later | https://github.com/lovell/sharp |
-| @img/sharp-libvips-linux-x64 (transitive platform package) | 1.3.3 | LGPL-3.0-or-later (bundled libvips) | https://github.com/lovell/sharp |
+| `@img/sharp-libvips-linux-x64` (transitive platform package) | 1.3.3 | LGPL-3.0-or-later (bundled libvips) | https://github.com/lovell/sharp |
 | `dxf-parser` | 1.1.2 | MIT | https://github.com/gdsestimating/dxf-parser |
 | `occt-import-js` | 0.0.23 | LGPL-2.1 | https://github.com/kovacsv/occt-import-js |
 | `replicad` | 1.0.0 | MIT | https://replicad.xyz |
