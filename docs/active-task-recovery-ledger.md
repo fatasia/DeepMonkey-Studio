@@ -3653,3 +3653,9 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - 八条 Three 权威路径推进:第 2 条(相机/输入)**已落地**——Deep 模式输入完全由引擎中立控制器驱动,e2e 合同更新;第 3 条(拾取)**引擎侧已落地**(PbrRenderer.pick,节点映射留桥接);第 6 条(每帧环境/LOD)已做 gesture 缓存+LOD 幂等;其余(作者态命令层/gizmo 原生化/overlay 自绘/帧循环完全解耦)为专项,规格与调查结论均已落档。
 - 性能:submit 1.6→3.8ms 内收敛到接近 WebGL(1.2);WASM 帧节奏四轮打平;剩余唯一拖尾=GPU 完成队列深度(~100ms,多 pass 管线),编排侧已到头,需 GPU 计时专项。
 - 发布材料:桌面三包为最终 native(48633d85…)重建版,首帧复录两轮 0 白闪;Docker 一键 compose 实机验证过(MinIO 镜像下架应急);公开 NO-GO 仅剩素材许可与隐私轴新仓路线(用户明确素材暂不管)。
+
+### 2026-09-25 并行批次 4(映射透传+命令层设计+全局冻结)
+
+- deep-engine 全量复跑(拾取提交后):3855 passed/0 failed(45s);API 全量 EXIT=0(34s)——两大套件冻结绿。
+- 在途:节点映射透传代理(runtimePackage 可选 objectBindings→pick 透出 nodeId,旧包 fail-closed);命令层设计文档代理(路径 1 只读设计,docs/specs)。
+- 碰撞纪律:packages/deep-engine/src/webgpu/{pbrRenderer,gpuTimer}.ts 的 GPU 计时改动属另一并行会话在途工作,本会话及代理均已声明不触碰。
