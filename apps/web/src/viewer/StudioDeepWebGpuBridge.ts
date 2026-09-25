@@ -420,7 +420,8 @@ export class StudioDeepWebGpuBridge {
       // but awaiting its already-committed no-op here adds a promise turn to
       // every settled frame and widens pointer-to-submit latency. Render the
       // packet directly while preserving the same bounded TAA settle sequence.
-      if (backend.projection === undefined) {
+      if (backend.usesIndependentPacket === true
+        || (backend.usesIndependentPacket === undefined && this.options.authorRenderPacket !== undefined)) {
         this.renderCommittedFrame(backend, canvas, view);
         return;
       }

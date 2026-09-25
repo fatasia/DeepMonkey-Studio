@@ -191,7 +191,7 @@ export abstract class ViewerEngineRuntimeSupport extends ViewerEngineTimelineRun
     if (!model) return false;
     const previous = this.getModelTransform(id);
     if (previous) {
-      this.authorModelTransforms.set(id, structuredClone({
+      this.authorModelTransforms?.set(id, structuredClone({
         position: transform.position ? { x: transform.position[0], y: transform.position[1], z: transform.position[2] } : previous.position,
         rotation: transform.rotation ? { x: transform.rotation[0], y: transform.rotation[1], z: transform.rotation[2] } : previous.rotation,
         scale: transform.scale ? { x: transform.scale[0], y: transform.scale[1], z: transform.scale[2] } : previous.scale,

@@ -472,10 +472,10 @@ export abstract class ViewerEngineNavigationTools extends ViewerEngineMeasuremen
   getModelTransform(id: string): ModelTransform | undefined {
     const object = this.models.get(id)?.object;
     if (!object) return undefined;
-    const authored = this.authorModelTransforms.get(id);
+    const authored = this.authorModelTransforms?.get(id);
     if (authored) return structuredClone(authored);
     const initial = objectTransform(object);
-    this.authorModelTransforms.set(id, structuredClone(initial));
+    this.authorModelTransforms?.set(id, structuredClone(initial));
     return structuredClone(initial);
   }
   applyModelState(

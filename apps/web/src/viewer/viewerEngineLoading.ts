@@ -334,7 +334,7 @@ export abstract class ViewerEngineLoading extends ViewerEngineRobot {
       // 统一释放路径会保留查看器级共享几何；逐对象直接 dispose 会让同类设备反复上传 GPU。
       if (!preserveObject) this.disposeObject(model.object);
       this.models.delete(id);
-      this.authorModelTransforms.delete(id);
+      this.authorModelTransforms?.delete(id);
       const fragmentsModel = this.fragmentModels.get(id);
       if (fragmentsModel) {
         void fragmentsModel.resetHighlight().finally(() => fragmentsModel.dispose());

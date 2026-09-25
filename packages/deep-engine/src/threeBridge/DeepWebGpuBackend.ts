@@ -225,6 +225,7 @@ export class DeepWebGpuBackend {
   }
 
   get shadowSelection(): DeepWebGpuShadowSelection | undefined { return this.shadowSelectionValue; }
+  get usesIndependentPacket(): boolean { return this.independentPacket; }
   /** Resolves a packet instance to its author node without a Three object. */
   modelIdForInstanceId(instanceId: string): string | undefined {
     for (const binding of this.committedPacket?.objectBindings ?? []) {
