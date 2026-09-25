@@ -35,6 +35,7 @@ import type {
   ScenePostProcessingState,
   SceneRigState,
   SceneSpatialAudioState,
+  ModelTransform,
   SkyboxPreset,
   WeatherMode,
 } from "@bim-studio/contracts";
@@ -153,6 +154,12 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
   protected overlaySpritesProvider: () => THREE.Sprite[] = () => [];
   protected readonly pointerPosition = new THREE.Vector2();
   protected readonly models = new Map<string, LoadedSceneModel>();
+  /**
+   * Author transform state owned by the editor contract. Rendering objects are
+   * projections of this map; persistence and Deep runtimes can consume it
+   * without reading Three transforms back from the scene graph.
+   */
+  protected readonly authorModelTransforms = new Map<string, ModelTransform>();
   protected readonly modelLoads = new ModelLoadCoordinator<LoadedSceneModel>();
   protected rapier: (typeof import("@dimforge/rapier3d-compat"))["default"] | undefined;
   protected physicsWorld: RapierWorld | undefined;

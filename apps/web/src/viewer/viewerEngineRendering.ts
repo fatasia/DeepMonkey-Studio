@@ -5,7 +5,7 @@ import type { WebGPURenderer } from "three/webgpu";
 import { scalarText } from "./bimMetadata";
 import { dxfDrawingExtents, dxfPoints, dxfUnitName, dxfUnitScale, pointsIntersectExtents, type DxfDocument } from "./dxfGeometry";
 import { collectSpatialLocalIds, fragmentItemProperties, fragmentPropertyValue, humanizeIfcCategory } from "./fragmentTree";
-import { isFiniteBox, visibleObjectBox } from "./sceneObjectUtils";
+import { isFiniteBox, objectTransform, visibleObjectBox } from "./sceneObjectUtils";
 import { heatMapColor } from "./viewerStateUtils";
 import type { ViewerPostProcessingRuntime } from "./viewerPostProcessingRuntime";
 import { type LayerTreeNode, type LoadedSceneModel } from "./viewerTypes";
@@ -304,6 +304,7 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
       this.modelRoot.add(object);
       const loaded = { id, name, object, kind, visible: true, opacity: 1 } satisfies LoadedSceneModel;
       this.models.set(id, loaded);
+      this.authorModelTransforms.set(id, structuredClone(objectTransform(object)));
       this.layerObjects.set(id, objects);
       this.layerStates.set(id, new Map());
       this.captureModelBoneRestPose(id);

@@ -330,6 +330,7 @@ export abstract class ViewerEngineObjects extends ViewerEngineBim {
       if (!model || !object || this.isSelectionLocked()) return;
       if (this.selectedFragmentNodeId && this.selectedFragmentNodeId !== "root") return;
       applyTransform(object, transform);
+      if (object === model.object) this.authorModelTransforms.set(model.id, structuredClone(transform));
       object.updateWorldMatrix(true, true);
       if (object !== model.object) {
         this.updateLayerState(model.id, String(object.userData.layerNodeId), { transform });
