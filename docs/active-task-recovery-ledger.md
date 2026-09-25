@@ -3675,3 +3675,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - **命令层批 0(代理,提交 c2437e19)**:命令总线(同步串行冲刷/id/环形日志/回放)+ViewerEngineCommandApplier(原样调既有 setter,连带触发点不变)+图层可见性 UI 接线;21/21 测试;零行为变化、零公共合同变更。
 - **跨域回归排查**:sceneClientPackagePreparedNative 测试报 objectBindings Unknown field——根因是 **deep-engine dist 陈旧**(scripts 子进程走非 development 条件的 dist/,不含新字段);重建 dist 后 14/14 绿。教训:runtimePackage schema 变更后必须重建 dist 才能被 scripts 链消费。
 - **Web 全量整树确认:4412 passed/0 failed**(批 0+映射透传+新 dist)。
+
+### 2026-09-25 命令层批 1(批次 7)
+
+- **批 1(代理,提交 069c0ea6)**:SetTransform 对接 SceneTransformGraph 权威(只读消费,零改动)——EngineTransformAuthoring 按引擎实例持 graph,create/update/flush 校验+单调 stateRevision 后原样调 setter;Three 写回保持命令原欧拉值(逐位等价优先);全量 TRS 决策(基线不可信,Partial 留批 2+);4 处变换 UI 接线(sceneEditorController 单选/图层/对齐分布+SceneMultiTransformEditor)。证据:Web 全量 4427/0(基线 4412+15 新增)、graph 对拍 1e-9/1e-12、deep-engine scene 48 绿。
+- 遗留:gizmo 拖拽流未收编(批 1 刻意范围外);fragment 构件选中不可预检(需引擎补"变换目标"查询);非法 TRS fail-fast 为设计意图差异;Partial/undo 逆放/Gateway 对接留批 2+。
