@@ -74,3 +74,4 @@
 - `90571b89`：独立 RenderPacket 稳定帧跳过已提交 packet 的无效异步 sync/promise turn；保留旧 Three sync、GPU backpressure 与 16 帧 TAA settle。StudioDeepWebGpuBridge focused 36/36；全面超过 Three 仍需重跑同场景公平 benchmark 证明。
 - `d1601273`：生产依赖升级后 `pnpm audit --prod` 为 0 high / 0 moderate / 0 low / 0 critical；API typecheck 通过，数据集成/生产预检 17/17。
 - `69626c36`：新增 `.github/CODEOWNERS`，更新 PR 模板和 CHANGELOG；仓库治理通过。许可证按用户指令保持 DMCSL/source-available，不改法律目标。
+- 公平基准低样本复跑（20 静置/20 输入，当前 HEAD `5999e64b`）：WebGPU 静置 P50/P95 `6.9/7.1ms`，优于 WebGL `7.0/7.2ms`；但 WebGPU 输入 P95 `34.7ms`、pointer→submit P95 `34.5ms`，仍高于 WebGL `21.1ms`/`1.6ms`，`exceeds.webgpu=false`。本轮优化改善了独立 packet 稳定帧微任务开销，但尚不足以宣称全面超过 Three。
