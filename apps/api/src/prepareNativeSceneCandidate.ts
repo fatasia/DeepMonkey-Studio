@@ -7,6 +7,7 @@ import { captureScenePublicationDependencies } from "./scenePublicationDependenc
 import { assertCapturedSceneDependencies } from "./scenePublicationDependencyStore.js";
 import { scenePublicationJsonEqual } from "./scenePublicationStore.js";
 import { compileNativeSceneCandidate } from "./nativeSceneCandidateCompiler.js";
+import { listProbeGridBakeCandidates } from "./probeGridBakeStore.js";
 
 /** 冻结输入后只读取私有内容地址；窗口验证与发布提交由上层分别执行。 */
 export async function prepareNativeSceneCandidate(options: {
@@ -38,7 +39,13 @@ export async function prepareNativeSceneCandidate(options: {
   if (hdrResource && (hdrResource.bytes>32*1024**2 || totalBytes+hdrResource.bytes>256*1024**2)) throw new Error("HDR 或场景总字节超出预算");
   const hdrAsset=capture.inputs.project.assets?.find(asset=>asset.url===scene.environment?.environmentMapUrl);
   const hdrSource=hdrResource ? {bytes:await readFrozenResource(options.objects,hdrResource,signal),license:hdrAsset?.libraryOrigin?.license ?? "Project-provided HDR asset; redistribution rights remain with its owner"} : undefined;
-  const compiled = await compile({ scene, models, ...(hdrSource ? {hdrSource} : {}), ...(options.nativeExecutable ? {nativeExecutable:options.nativeExecutable} : {}), ...(signal ? { signal } : {}) });
+  // F3 探针烘焙持久化候选：读取失败按降级处理（不带探针继续验证），与 UI 会话路径
+  // 的"查不到就不带"同一语义；命中判定由编译线程按当前场景语义哈希精确执行。
+  const probeBakeCandidates = await listProbeGridBakeCandidates({ dataDir: options.dataDir, sceneId: scene.id })
+    .catch(() => [] as Awaited<ReturnType<typeof listProbeGridBakeCandidates>>);
+  const compiled = await compile({ scene, models, ...(hdrSource ? {hdrSource} : {}),
+    ...(probeBakeCandidates.length ? { probeBakeCandidates } : {}),
+    ...(options.nativeExecutable ? {nativeExecutable:options.nativeExecutable} : {}), ...(signal ? { signal } : {}) });
   signal?.throwIfAborted();
   if (!scenePublicationJsonEqual(options.store.getScene(scene.projectId, scene.id), scene)) {
     throw new Error("场景在编译期间已变化，请重新验证");

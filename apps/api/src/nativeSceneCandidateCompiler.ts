@@ -4,11 +4,17 @@ import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
 import type { SceneSnapshot, ScenePublicationCompatibilityReport, PublicationCapabilityEvidence } from "@bim-studio/contracts";
+import type { ProbeGridBakeCandidate } from "./probeGridBakeStore.js";
 
 export interface NativeSceneCandidateInput {
   scene: SceneSnapshot;
   models: ReadonlyMap<string, Uint8Array>;
   hdrSource?:{bytes:Uint8Array;license:string};
+  /**
+   * F3 探针烘焙持久化候选（gzip 原始字节，键=浏览器端编译器严格源投影哈希）。
+   * 编译线程按当前场景语义哈希只解压命中那份；失配/为空即不带，包语义与历史一致。
+   */
+  probeBakeCandidates?: ReadonlyArray<ProbeGridBakeCandidate>;
   nativeExecutable?:string;
   packageId?: string;
   packageVersion?: string;
@@ -75,6 +81,7 @@ async function compileCandidate(input: NativeSceneCandidateInput, directory: URL
     const worker = new Worker(new URL(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`), {
       workerData: { scene, models, packageId: input.packageId, packageVersion: input.packageVersion, maxSourceBytes,
         hdrSource:input.hdrSource,nativeExecutable:input.nativeExecutable,
+        ...(input.probeBakeCandidates ? { probeBakeCandidates: input.probeBakeCandidates } : {}),
         ...(assessment ? { assessmentOnly: true, ...assessment } : {}) },
       // 自包含产物不继承开发进程的 tsx/watch loader 或条件参数。
       execArgv: [],

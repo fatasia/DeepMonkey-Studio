@@ -11,6 +11,7 @@ import { normalizeDashboardState } from "../components/dashboardState";
 import { translate as tr } from "../i18n";
 import { runProbeGridBake } from "../delivery/probeGridBakeRunner";
 import { storeProbeGridBake } from "../delivery/probeGridBakePublicationSession";
+import { fetchPersistedProbeGridBake, persistProbeGridBake } from "../delivery/probeGridBakePersistence";
 import type { ProbeGridBakeUiState } from "../components/SceneProbeGridBakePanel";
 import { AiAssistantPanel } from "../components/AiAssistantPanel";
 import { CameraNavigationPanel } from "../components/CameraNavigationPanel";
@@ -181,6 +182,23 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
     probeBakeOwnerRef.current = project?.id && activeScene ? `${project.id}/${activeScene.id}` : undefined;
     setProbeBake({ kind: "idle" });
   }, [project?.id, activeScene?.id]);
+  // F3 持久化回填:场景加载/切换时异步 GET 服务端持久化烘焙,命中即写回发布会话态
+  // (probeGridBakeForPayload 随后可取到)。哈希用当前场景语义计算,场景已变化时服务端
+  // 自然失配(404),不命中不报错、不阻塞渲染;切换走人后过期回执被丢弃。
+  useEffect(() => {
+    if (!activeScene) return;
+    const ownerKey = project?.id ? `${project.id}/${activeScene.id}` : undefined;
+    let subscribed = true;
+    fetchPersistedProbeGridBake(activeScene).then(entry => {
+      if (!entry || !subscribed || probeBakeOwnerRef.current !== ownerKey) return;
+      storeProbeGridBake(activeScene, entry);
+      // 仅在 idle 时呈现回填状态,避免覆盖同场景内已开始的烘焙进度。
+      setProbeBake(current => current.kind !== "idle" ? current : { kind: "done",
+        probeCount: entry.probeCount, coveredCount: entry.coveredCount,
+        coverage: entry.probeCount > 0 ? entry.coveredCount / entry.probeCount : 0 });
+    }).catch(() => undefined);
+    return () => { subscribed = false; };
+  }, [project?.id, activeScene?.id]);
   const bakeProbeGrid = useCallback((grid: ProbeGridBakeGrid) => {
     if (!activeScene || !project) return;
     const ownerKey = `${project.id}/${activeScene.id}`;
@@ -190,6 +208,9 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
         // 烘焙成功即入发布会话(键=编译器严格源投影哈希):发布链 probeGridBakeForPayload
         // 才能取到探针数据。此前只更新 UI 状态,发布时 lookup 必然落空——烘焙→发布断链。
         storeProbeGridBake(activeScene, outcome);
+        // F3 持久化:异步上送服务端(按 sceneId+sourceHash 内容寻址),失败静默降级
+        // =维持会话态,只 console.warn;不阻塞回执,也不影响本次会话内的发布。
+        void persistProbeGridBake(activeScene, outcome);
         if (probeBakeOwnerRef.current === ownerKey) setProbeBake({ kind: "done",
           probeCount: outcome.probeCount, coveredCount: outcome.coveredCount, coverage: outcome.coverage });
       })

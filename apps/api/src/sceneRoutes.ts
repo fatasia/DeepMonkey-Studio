@@ -10,11 +10,16 @@ import { scenePublicationJsonEqual } from "./scenePublicationStore.js";
 import { CloudRenderControlError } from "./cloudRenderControl.js";
 import { registerNativeSceneCandidateRoutes, type NativeSceneCandidateService } from "./nativeSceneCandidateRoutes.js";
 import { registerSceneStandaloneExecutableRoutes } from "./sceneStandaloneExecutableRoutes.js";
+import { registerProbeGridBakeRoutes } from "./probeGridBakeRoutes.js";
 import { registerThreeSceneViewerExecutableRoutes } from "./threeSceneViewerExecutableRoutes.js";
 
 interface SceneRouteDependencies {
   store: MetadataStore;
   deliveryStorage?: { objects: ObjectStore; dataDir: string };
+  /** F3 探针烘焙持久化根目录；缺省不注册 probe-bake 端点（与 deliveryStorage 同为可选依赖）。 */
+  probeBakeDataDir?: string;
+  /** 测试注入小字节上限用；生产缺省 64MB。 */
+  probeBakeMaxBytes?: number;
   nativeCandidates?: NativeSceneCandidateService;
   nativeExecutable?: string;
   threeSceneViewerBuilderScript?: string;
@@ -26,6 +31,10 @@ interface SceneRouteDependencies {
 export async function registerSceneRoutes(app: FastifyInstance, dependencies: SceneRouteDependencies): Promise<void> {
   const { store, beforeDiscardPublication, afterPublish } = dependencies;
   await registerNativeSceneCandidateRoutes(app, dependencies.nativeCandidates);
+  if (dependencies.probeBakeDataDir) {
+    await registerProbeGridBakeRoutes(app, { store, dataDir: dependencies.probeBakeDataDir,
+      ...(dependencies.probeBakeMaxBytes ? { maxBytes: dependencies.probeBakeMaxBytes } : {}) });
+  }
   if (dependencies.deliveryStorage) await registerScenePublicationDependencyRoutes(app, { store, ...dependencies.deliveryStorage });
   if (dependencies.deliveryStorage && dependencies.nativeExecutable) await registerSceneStandaloneExecutableRoutes(app,
     { store, objects: dependencies.deliveryStorage.objects, nativeExecutable: dependencies.nativeExecutable });

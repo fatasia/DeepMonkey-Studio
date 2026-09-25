@@ -10,6 +10,7 @@ import type {
   SceneSnapshot,
   SceneClientDependencyExpectation,
 } from "@bim-studio/contracts";
+import type { ProbeGridBakePersistRecord } from "../delivery/probeGridBakePersistence";
 
 type ApiRequest = <T>(url: string, init?: RequestInit) => Promise<T>;
 
@@ -181,5 +182,20 @@ export function createModelSceneApi(request: ApiRequest) {
       request<void>(`/api/projects/${projectId}/scenes/${sceneId}`, {
         method: "DELETE",
       }),
+    /** F3 探针烘焙持久化：按（sceneId, sourceHash）内容寻址上送；同 hash 覆盖写即幂等。 */
+    saveProbeGridBake: (sceneId: string, record: ProbeGridBakePersistRecord) =>
+      request<{ sourceHash: string; bytes: number; compressedBytes: number }>(
+        `/api/scenes/${encodeURIComponent(sceneId)}/probe-bake`,
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(record),
+        },
+      ),
+    /** 未命中（404=无）由调用方降级处理；此处把 404 归一为 undefined 之外的状态交上层 catch。 */
+    loadProbeGridBake: (sceneId: string, sourceHash: string) =>
+      request<ProbeGridBakePersistRecord>(
+        `/api/scenes/${encodeURIComponent(sceneId)}/probe-bake?sourceHash=${encodeURIComponent(sourceHash)}`,
+      ),
   };
 }

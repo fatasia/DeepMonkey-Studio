@@ -77,4 +77,24 @@ it("rejects stale source before capture and cancellation before reads", async ()
  await expect(prepareNativeSceneCandidate({ ...f, signal: AbortSignal.abort() }, compiler)).rejects.toThrow();
  expect(read).not.toHaveBeenCalled(); expect(compiler).not.toHaveBeenCalled();
 });
+it("loads persisted probe-bake candidates from disk and forwards gzip bytes to the compiler", async () => {
+ // web 侧会话键函数（服务端不做投影复刻，键以浏览器计算结果透传存储）。
+ const { probeGridBakeSourceHash } = await import("../../../apps/web/src/delivery/probeGridBakePublicationSession");
+ const { storeProbeGridBakeDocument } = await import("./probeGridBakeStore.js");
+ const { gunzipSync } = await import("node:zlib");
+ const f = await fixture();
+ const sourceHash = probeGridBakeSourceHash(f.scene);
+ await storeProbeGridBakeDocument({ dataDir: f.dataDir, sceneId: f.scene.id,
+   document: { sourceHash, bake: { origin: [0, 0, 0], spacing: 4, gridSize: [2, 2, 2], probes: [] }, probeCount: 0 } });
+ const compiler = vi.fn(async () => compiled);
+ await prepareNativeSceneCandidate(f, compiler);
+ const input = compiler.mock.calls[0]![0]!;
+ expect(input.probeBakeCandidates).toHaveLength(1);
+ expect(input.probeBakeCandidates![0]!.sourceHash).toBe(sourceHash);
+ expect(JSON.parse(gunzipSync(Buffer.from(input.probeBakeCandidates![0]!.gzip)).toString("utf8")).sourceHash).toBe(sourceHash);
+ // 无持久化目录时不传候选键（语义=不带探针继续验证）。
+ const empty = await fixture(), emptyCompiler = vi.fn(async () => compiled);
+ await prepareNativeSceneCandidate(empty, emptyCompiler);
+ expect(emptyCompiler.mock.calls[0]![0]!.probeBakeCandidates).toBeUndefined();
+});
 
