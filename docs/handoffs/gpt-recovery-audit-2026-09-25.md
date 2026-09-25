@@ -67,3 +67,10 @@
 - Native 发布：Cargo 单测 10/10；本地 API runtime bundle 已生成。MSI/NSIS 仍需按当前 Web 产物重打并通过 `verify:bundle` 与 local publication smoke，完成后才可收口。
 - 开源治理：`pnpm audit:licenses`、`pnpm docs:wiki:check`、`pnpm quality:public-brand` 通过；`pnpm gate:repository` 当前失败项为许可证元数据与治理口径不一致，以及 37.6 MB 介绍视频缺少大文件发布例外。许可证目标和大文件分发策略需在公开前统一。
 - 当前不宣称性能全面超过 Three：WebGPU GPU completion 已显著改善（P50/P95 15.1/31.1ms），但输入 P95/submit gap 仍略高于 WebGL；需继续完成 Deep RenderPacket 路径脱 Three 后再重跑公平矩阵。
+
+## 2026-09-25 追加：独立路径、漏洞与安全治理
+
+- `a33f03c4`：当 Studio 提供 `authorRenderPacket` 时，Deep 创建路径不再创建或持有 Three projection/root；拾取通过 RenderPacket `objectBindings` 恢复 `modelId`。Three 仅保留兼容回退；离线 primitive 编译仍可使用 Three，不属于运行时权威依赖。
+- `90571b89`：独立 RenderPacket 稳定帧跳过已提交 packet 的无效异步 sync/promise turn；保留旧 Three sync、GPU backpressure 与 16 帧 TAA settle。StudioDeepWebGpuBridge focused 36/36；全面超过 Three 仍需重跑同场景公平 benchmark 证明。
+- `d1601273`：生产依赖升级后 `pnpm audit --prod` 为 0 high / 0 moderate / 0 low / 0 critical；API typecheck 通过，数据集成/生产预检 17/17。
+- `69626c36`：新增 `.github/CODEOWNERS`，更新 PR 模板和 CHANGELOG；仓库治理通过。许可证按用户指令保持 DMCSL/source-available，不改法律目标。
