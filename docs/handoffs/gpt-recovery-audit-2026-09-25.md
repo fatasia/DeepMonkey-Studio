@@ -49,3 +49,8 @@
 - 第二轮 `deep-fair-comparison-serialized-2026-09-25` 受 WebGL 并发 long task 污染，已明确丢弃，不用于性能结论。
 - 电池制品 EOL 修复后 API battery/capability 8/8、Web battery sample 3/3；根因与复现写入 `docs/reports/battery-manifest-eol-audit-2026-09-25.md`。
 - 当前全量 API 仍有 JT/X_T worker 时序、临时目录锁、嵌入纹理解码超时、Windows ZIP 进程路径和 local bare Git 清理失败；这些不是本轮 W1/W2/W3 变更回归，需在独立稳定环境收口。
+
+## 2026-09-25 15:33 脱离 Three 迁移切片
+
+- `7be6f77c`：作者 `ApplicationDocument → SceneSnapshot` 持久化边界统一经过 `SceneTransformGraph` 与 `validateSceneSnapshotTransforms`，非法有限值在进入 Deep runtime 前拒绝；定向 factory/graph 测试 8/8。
+- 该切片只收紧作者快照的 Deep graph 合同，不宣称全面脱离 Three。材质/骨骼 setter 与 WebGPU projection bridge 仍需后续按依赖矩阵迁移。
