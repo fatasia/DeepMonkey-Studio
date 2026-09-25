@@ -54,3 +54,9 @@
 
 - `7be6f77c`：作者 `ApplicationDocument → SceneSnapshot` 持久化边界统一经过 `SceneTransformGraph` 与 `validateSceneSnapshotTransforms`，非法有限值在进入 Deep runtime 前拒绝；定向 factory/graph 测试 8/8。
 - 该切片只收紧作者快照的 Deep graph 合同，不宣称全面脱离 Three。材质/骨骼 setter 与 WebGPU projection bridge 仍需后续按依赖矩阵迁移。
+
+## 2026-09-25 15:40 音频与材质迁移更新
+
+- Native 音频 `b73790ec`：重同步阈值从 100ms 前移到 50ms，避免 Windows 输出缓冲完整逃逸；focused 2/2，20s DX12 soak：max 96.4ms、mean 40.5ms、p99 92.7ms、escapes 0。1800s 正式 soak 的旧结果 p99 156.2ms，需后续长跑复验修复收益。
+- `cd115556`：runtime render packet 编译按稳定 `SceneSnapshot.models[].modelId` 读取并复制材质作者态，Deep/WASM/Native 不再从 ViewerEngine/Three 材质 setter 读取；定向编译测试 23/23，Web tsc 已通过。
+- API 串行全量：1580 passed / 13 skipped；Web 全量：4485 passed / 3 skipped。串行运行消除了 JT/X_T 的资源竞争假失败。
