@@ -37,7 +37,7 @@ The project uses the broadest possible MIT license so anyone can use it freely (
 
 [Documentation](docs/README.md) · [Contributing](CONTRIBUTING.md) · [Support](SUPPORT.md)
 
-<video controls preload="metadata" poster="https://fatasia.github.io/DeepMonkey-Studio/poster.png" width="960"><source src="https://fatasia.github.io/DeepMonkey-Studio/deepmonkey-studio-intro.mp4" type="video/mp4" /></video>
+[![Watch DeepMonkey Studio introduction](https://fatasia.github.io/DeepMonkey-Studio/poster.png)](https://fatasia.github.io/DeepMonkey-Studio/video.html)
 
 License designation: **MIT License + Ethical Restrictions** (source-available).
 
@@ -402,6 +402,7 @@ Source-available under the custom [Deep Monkey Community Source License 1.0](LIC
 ## Acknowledgements
 
 Thanks to the maintainers and contributors of every project we depend on, especially [Three.js](https://github.com/mrdoob/three.js), [Orillusion](https://github.com/Orillusion/orillusion), and [Unity](https://github.com/Unity-Technologies). We have learned a great deal from them about rendering, engine architecture, and editor interaction. Thanks also to [OpenAI](https://github.com/openai) and [Zhipu GLM](https://github.com/zai-org) for providing tokens during their events.
+
 
 
 
