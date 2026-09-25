@@ -3664,3 +3664,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - 设计文档落盘(docs/specs/engine-neutral-command-layer-design-2026-09-25.md):现状约 30 个写 THREE 对象入口归并为 7 个编辑原语(SetTransform/SetAppearance/SetLightProp/SetVisibility/SetSceneEnv/SetPhysics/SetRigPose+结构命令);批 0-6 迁移计划,批 0(命令总线+applier 原样调现有 setter)行为零变化可先行;关键发现:revision 是 React useState 计数器非文档属性、deep-engine 已有 SceneTransformGraph/SceneChangeset/SceneMutationGateway(v1)但 Web 作者链零消费——命令层为向上扩展。
 - **待用户批准的 5 项公共合同变更**(实施前置):①SceneSnapshot 单调 revision;②contracts SceneEditCommand 原语包;③WASM RuntimePackage 增量段(旧包 fail-closed);④保存协议命令日志+baseRevision+delta;⑤SceneModelState 口径显式化(破坏性部分)。批 0/1 不涉公共合同的部分(仓内类型+现有 setter 包装)是否先行,待用户示意。
+
+### 2026-09-25 映射透传收口(批次 5)
+
+- **节点映射透传(代理,提交 2d55a2bb)**:RenderPacket.objectBindings(作者面)+RuntimePackage 包顶层(持久化,V1-V7 全版本继承);关键决策:native envelope deny_unknown_fields→映射提升包顶层+payload 剥离,native 同步 serde default+镜像校验(不改则新包被 native 全线拒绝);pick 无映射时 degraded 显式声明,不冒充节点身份;校验双层不变量(nodeId 全局唯一/instanceIds 唯一)。测试:TS 434+26+71+342、cargo 556 全绿。
+- 拾取链现状:编译器→包→pickScene 全链 nodeId 可用;PbrRenderer.pick 接线与发布查看器宿主消费为后续(前者因 gpuTimer 工作树禁改,后者待 Deep 模式拾取切换)。
