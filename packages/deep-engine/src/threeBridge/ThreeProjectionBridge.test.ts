@@ -26,6 +26,15 @@ describe("Three author projection", () => {
     expect(a.position).toBe(author.position); expect(a.matrixWorld).toBe(author.matrix); expect(root.children).toBe(author.children);
     expect(update).not.toHaveBeenCalled(); expect(dispose).not.toHaveBeenCalled(); expect(materialDispose).not.toHaveBeenCalled();
   });
+  it("retains instance to author source mapping after a packet is acknowledged", () => {
+    const target = bridge(), root = new THREE.Group(), object = mesh(); root.add(object);
+    const result = accepted(target.project(root, { cameraLayerMask: 1 }));
+    result.acknowledge();
+    const instanceId = result.packet.instances[0]!.id;
+    expect(target.sourceForInstanceId(instanceId)).toBe(object);
+    target.clear();
+    expect(target.sourceForInstanceId(instanceId)).toBeUndefined();
+  });
   it("keeps IDs stable while scripts change the same object transform and material factors", () => {
     const target = bridge(), a = mesh(), first = project(target, a); expect(first.update).toBe("full"); first.acknowledge();
     const moveFromClosure = () => { a.position.x += 4; a.material.roughness = 0.3; }; moveFromClosure();

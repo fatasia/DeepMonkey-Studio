@@ -8,7 +8,7 @@ import { toValue, visibleObjectBox } from "./sceneObjectUtils";
 import { sameRuntimeInteractionTarget } from "./viewerStateUtils";
 import { createAnnotationVisual, createMeasurementVisual, disposeViewerObject } from "./sceneOverlayVisuals";
 import { type AnnotationPointerHit, type InteractionEventDetail, type LoadedSceneModel } from "./viewerTypes";
-import { type PointerSceneHit } from "./viewerEngineTypes";
+import { type DeepPointerPickResult, type PointerSceneHit } from "./viewerEngineTypes";
 import { ViewerEngineObjectState } from "./viewerEngineObjectState";
 import { createOrdinaryPicking } from "./ordinaryPicking";
 import { xrControllerRay, xrHitModelId } from "./xrInput";
@@ -16,6 +16,16 @@ import { xrControllerRay, xrHitModelId } from "./xrInput";
 /** Pointer 职责层。 */
 export abstract class ViewerEnginePointer extends ViewerEngineObjectState {
   protected readonly ordinaryPicking = createOrdinaryPicking(this);
+  private deepPointerPick?: (origin: readonly [number, number, number],
+    direction: readonly [number, number, number], editableOnly: boolean) => DeepPointerPickResult;
+  private lastDeepPickResult?: DeepPointerPickResult;
+
+  setDeepPointerPick(source: typeof this.deepPointerPick): void {
+    this.deepPointerPick = source;
+    this.lastDeepPickResult = undefined;
+  }
+
+  getDeepPointerPickResult(): DeepPointerPickResult | undefined { return this.lastDeepPickResult; }
 
   setPickingAccelerationEnabled(enabled: boolean): void { this.ordinaryPicking.setEnabled(enabled); }
 
@@ -221,9 +231,21 @@ export abstract class ViewerEnginePointer extends ViewerEngineObjectState {
       };
     }
   protected async scenePointerHit(event: PointerEvent, editableOnly = false): Promise<PointerSceneHit | undefined> {
-      const ordinary = this.pointerHit(event, editableOnly);
+      let deep: DeepPointerPickResult | undefined;
+      if (this.presentationRendererBackend === "webgpu" && this.deepPointerPick) {
+        const rect = this.renderer.domElement.getBoundingClientRect();
+        this.pointerPosition.set(((event.clientX - rect.left) / rect.width) * 2 - 1,
+          -((event.clientY - rect.top) / rect.height) * 2 + 1);
+        this.raycaster.setFromCamera(this.pointerPosition, this.camera);
+        const origin = this.raycaster.ray.origin, direction = this.raycaster.ray.direction;
+        deep = this.deepPointerPick([origin.x, origin.y, origin.z],
+          [direction.x, direction.y, direction.z], editableOnly);
+        this.lastDeepPickResult = deep;
+      }
+      const useAuthor = !deep || !deep.available || deep.fallbackToAuthor === true;
+      const ordinary = useAuthor ? this.pointerHit(event, editableOnly) : undefined;
       const ordinaryModelId = ordinary?.object.userData.modelId as string | undefined;
-      let best: PointerSceneHit | undefined = ordinary ? {
+      let best: PointerSceneHit | undefined = deep?.available && !useAuthor ? deep.hit : ordinary ? {
         point: ordinary.point.clone(),
         distance: ordinary.distance,
         objectName: ordinary.object.name || ordinary.object.type,

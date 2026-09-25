@@ -76,6 +76,7 @@ export class StudioDeepWebGpuBridge {
   private performanceSource: StudioDeepPerformance | undefined;
   private frameCaptureSession: FrameCaptureSession | undefined;
   private readonly viewReader: StudioDeepRenderView;
+  private projectionBridge: import("@bim-studio/deep-engine/three-bridge").ThreeProjectionBridge | undefined;
   private readonly temporalSettler = new TemporalFrameSettler({ initialDelayFrames: 1,
     onSettled: () => this.performanceSource?.pause(), onError: reason => this.failRuntime(reason) });
   private readonly cameraFrameInFlightLimit: 1 | 2;
@@ -172,9 +173,10 @@ export class StudioDeepWebGpuBridge {
           shadowMapSize = view.lights?.directional?.[0]?.shadow?.mapSize
             ?? studioDeepShadowMapSize(this.viewer.scene, this.viewer.camera.layers.mask);
           frameCaptureSession = createRequestedStudioFrameCaptureSession();
+          this.projectionBridge = new module.ThreeProjectionBridge({ hooks: threePrototypeHooks(), capabilities: { authorDeformation: true, authorLod: true } });
           const backend = await module.DeepWebGpuBackend.create({
             canvas, gpu: navigator.gpu,
-            projection: new module.ThreeProjectionBridge({ hooks: threePrototypeHooks(), capabilities: { authorDeformation: true, authorLod: true } }),
+            projection: this.projectionBridge,
             root: this.projectionRoot(), view, authorChunks: true,
             renderer: { environment: environment.source, deformation: true, meshlets: true,
               adaptiveQuality: {
@@ -270,6 +272,7 @@ export class StudioDeepWebGpuBridge {
       onReady: this.renderDeepFrame, onFailure: error => this.failRuntime(error) });
     this.activeBackendValue = "webgpu";
     this.viewer.setPresentationRendererBackend("webgpu");
+    this.viewer.setDeepPointerPick((origin, direction) => this.pickDeep(backend, origin, direction));
     this.failureReported = false;
     this.lastCameraSnapshot = cameraSnapshot(this.viewer);
     this.takeoverGesture();
@@ -292,6 +295,8 @@ export class StudioDeepWebGpuBridge {
   }
 
   private releaseDeep(): void {
+    this.viewer.setDeepPointerPick(undefined);
+    this.projectionBridge = undefined;
     this.viewer.setPresentationPerformanceSource(undefined);
     this.performanceSource?.dispose();
     this.performanceSource = undefined;
@@ -325,6 +330,27 @@ export class StudioDeepWebGpuBridge {
       try { clean?.(); } catch (error) { errors.push(error); }
     }
     if (errors.length) throw new AggregateError(errors, "Deep renderer cleanup failed.");
+  }
+
+  private pickDeep(backend: DeepWebGpuBackend, origin: readonly [number, number, number],
+    direction: readonly [number, number, number]): import("./viewerEngineTypes").DeepPointerPickResult {
+    const runtime = backend.runtime as unknown as {
+      pick?: (origin: ArrayLike<number>, direction: ArrayLike<number>, options?: { maxHits?: number }) =>
+        { available: false; reason: string } | { available: true; hits: readonly { instanceId: string; point: readonly [number, number, number]; distance: number }[]; degraded?: readonly string[] };
+    };
+    if (typeof runtime.pick !== "function") return { available: false, reason: "Deep runtime does not expose picking.", fallbackToAuthor: true };
+    let result;
+    try { result = runtime.pick(origin, direction, { maxHits: 1 }); }
+    catch (reason) { return { available: false, reason: reason instanceof Error ? reason.message : String(reason), fallbackToAuthor: true }; }
+    if (!result.available) return { available: false, reason: result.reason, fallbackToAuthor: true };
+    const hit = result.hits[0];
+    if (!hit) return { available: true, degraded: result.degraded, fallbackToAuthor: false };
+    const source = this.projectionBridge?.sourceForInstanceId(hit.instanceId) as unknown as
+      { userData?: Record<string, unknown>; parent?: unknown } | undefined;
+    const modelId = source ? authorModelId(source) : undefined;
+    if (!modelId) return { available: true, degraded: [...(result.degraded ?? []), "node-mapping-unavailable:deep-hit-not-selectable"], fallbackToAuthor: true };
+    return { available: true, degraded: result.degraded, hit: { point: new THREE.Vector3(...hit.point), distance: hit.distance,
+      objectName: modelId, modelId }, fallbackToAuthor: false };
   }
 
   private readonly renderPresentationFrame = (): void => {
@@ -555,6 +581,16 @@ function cameraSnapshot(viewer: ViewerEngine): readonly number[] {
   return [camera.position.x, camera.position.y, camera.position.z,
     target.x, target.y, target.z, camera.fov, camera.zoom, camera.near, camera.far,
     camera.up.x, camera.up.y, camera.up.z];
+}
+
+function authorModelId(source: { userData?: Record<string, unknown>; parent?: unknown }): string | undefined {
+  let current: { userData?: Record<string, unknown>; parent?: unknown } | undefined = source;
+  for (let depth = 0; current && depth < 64; depth++) {
+    const value = current.userData?.modelId;
+    if (typeof value === "string" && value.length > 0) return value;
+    current = current.parent as typeof current;
+  }
+  return undefined;
 }
 
 function sameSnapshot(a: readonly number[], b: readonly number[] | undefined, epsilon = 1e-6): boolean {

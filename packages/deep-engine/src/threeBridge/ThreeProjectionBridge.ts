@@ -24,6 +24,7 @@ export class ThreeProjectionBridge {
   private acceptedTopology: ProjectionTopology | undefined;
   private acceptedRoot: ThreeObjectSource | undefined;
   private acceptedCameraLayerMask: number | undefined;
+  private acceptedInstanceSources = new Map<string, ThreeObjectSource>();
   private initialized = false;
   private readonly hooks: ThreeProjectionHooks;
   private readonly textureProjector = new ThreeTextureProjector(source => this.id(source, "texture"));
@@ -38,6 +39,12 @@ export class ThreeProjectionBridge {
     this.hooks = { ...options.hooks };
     this.authorDeformation = options.capabilities?.authorDeformation === true;
     this.authorLod = options.capabilities?.authorLod === true;
+  }
+
+  /** Resolve an already projected author object without allocating a new projection identity. */
+  objectIdFor(object: ThreeObjectSource): string | undefined {
+    const id = this.identities.get(object);
+    return id === undefined ? undefined : `object-${id}`;
   }
 
   /** 数组原位改动遵循 Three needsUpdate/version；替换 attribute / data / array 也自动失效。 */
@@ -119,8 +126,14 @@ export class ThreeProjectionBridge {
       settled = true; this.accepted = candidates; this.acceptedMaterials = materials; this.acceptedTextures = textures;
       this.acceptedFragments = fragments; this.acceptedTopology = topology; this.acceptedRoot = root;
       this.acceptedCameraLayerMask = options.cameraLayerMask; this.textureProjector.acceptProjection();
+      this.acceptedInstanceSources = buildInstanceSourceMap(topology?.order ?? [], this.acceptedFragments, this.id.bind(this));
       this.deformationProjector.accept(deformation); this.initialized = true; return true;
     } };
+  }
+
+  /** Resolve a packed instance id back to its author object for host-side selection. */
+  sourceForInstanceId(instanceId: string): ThreeObjectSource | undefined {
+    return this.acceptedInstanceSources.get(instanceId);
   }
 
   /** Reprojects only SceneChangeset-owned dirty objects while retaining the accepted packet cache. */
@@ -209,6 +222,7 @@ export class ThreeProjectionBridge {
       settled = true; this.accepted = new Map(packetGeometries.map(value => [value.resource.id, value]));
       this.acceptedMaterials = new Map([...materialIds].map(id => [id, allMaterials.get(id)!]));
       this.acceptedTextures = new Map(packetTextures.map(value => [value.id, value])); this.acceptedFragments = fragments;
+      this.acceptedInstanceSources = buildInstanceSourceMap(topology.order, this.acceptedFragments, this.id.bind(this));
       this.textureProjector.acceptProjection(); this.initialized = true; return true;
     } };
   }
@@ -250,7 +264,7 @@ export class ThreeProjectionBridge {
   /** 清理自己的投影，不触碰作者几何/材质，也不触发任何 dispose 事件。 */
   clear(): void { this.epoch++; this.accepted.clear(); this.acceptedMaterials.clear(); this.acceptedTextures.clear();
     this.acceptedFragments.clear(); this.acceptedTopology = undefined; this.acceptedRoot = undefined;
-    this.acceptedCameraLayerMask = undefined; this.textureProjector.clear(); this.deformationProjector.clear(); this.lodProjector.clear(); this.initialized = false; }
+    this.acceptedCameraLayerMask = undefined; this.acceptedInstanceSources.clear(); this.textureProjector.clear(); this.deformationProjector.clear(); this.lodProjector.clear(); this.initialized = false; }
 
   private extract(object: ThreeObjectSource, objectId: string, geometries: Map<string, CachedGeometry>,
     materials: Map<string, ProjectedMaterial>,
@@ -297,4 +311,16 @@ export class ThreeProjectionBridge {
     if (id === undefined) { id = ++this.nextIdentity; this.identities.set(value, id); }
     return `${prefix}-${id}`;
   }
+}
+
+function buildInstanceSourceMap(order: readonly ThreeObjectSource[], fragments: ReadonlyMap<ThreeObjectSource, readonly RenderInstance[]>,
+  objectId: (value: object, prefix: string) => string): Map<string, ThreeObjectSource> {
+  const result = new Map<string, ThreeObjectSource>();
+  for (const object of order) {
+    const id = objectId(object, "object");
+    for (const instance of fragments.get(object) ?? []) result.set(instance.id, object);
+    // LOD projections reuse the parent identity, so prefix matching covers those instances too.
+    for (const instance of fragments.get(object) ?? []) if (!result.has(`${id}/${instance.id}`)) result.set(`${id}/${instance.id}`, object);
+  }
+  return result;
 }

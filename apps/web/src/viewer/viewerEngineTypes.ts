@@ -55,6 +55,12 @@ export interface PointerSceneHit {
   fragmentNodeId?: string;
 }
 
+/** Deep presentation picking is optional; unavailable or unmapped results retain the author fallback. */
+export type DeepPointerPickResult =
+  | { readonly available: false; readonly reason: string; readonly fallbackToAuthor?: boolean }
+  | { readonly available: true; readonly hit?: PointerSceneHit; readonly degraded?: readonly string[];
+      readonly fallbackToAuthor?: boolean };
+
 export interface NavigationViewState { position: Vector3; target: Vector3; }
 
 export interface PhysicsBodyRuntime {
