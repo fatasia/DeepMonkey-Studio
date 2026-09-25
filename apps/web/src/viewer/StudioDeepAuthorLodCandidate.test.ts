@@ -78,7 +78,10 @@ describe("Studio candidate author LOD capture ordering (GPU backend mocked)", ()
       listeners: f.listeners, drawAuthor: () => { throw new Error("unexpected WebGL draw"); },
       updateAuthorMatrices: () => { f.scene.updateMatrixWorld(true); f.camera.updateMatrixWorld(true); },
       updateAuthorLods: () => updateAuthorLodSelection(f.scene, f.camera) });
-    await f.flush(); f.tick(); await f.flush(); expect(f.update).toHaveBeenCalledTimes(3);
+    await f.flush(); f.tick(); await f.flush();
+    // 相机未动时 LOD 重选按幂等跳过(缓存合同);选择结果不变即满足捕获语义。
+    expect(f.update).toHaveBeenCalledTimes(2);
+    expect(f.selection()).toEqual([0]);
   });
   it("cancels between RAF resolution and catch-up continuation without touching author selection", async () => {
     const f = fixture(), operation = f.bridge.switchTo("webgpu"); await f.flush();
@@ -104,8 +107,11 @@ describe("Studio candidate author LOD capture ordering (GPU backend mocked)", ()
     };
     authorFrame(20); authorFrame(2); expect(selections).toEqual([[1]]);
     commit({ status: "committed" }); await f.flush();
-    expect(selections).toEqual([[1], [0]]); expect(f.update).toHaveBeenCalledTimes(4);
-    f.tick(); await f.flush(); expect(f.update).toHaveBeenCalledTimes(4);
+    expect(selections).toEqual([[1], [0]]);
+    // 相机回到 z=2 与 candidate 捕获同位姿:LOD 重选按幂等跳过(缓存合同),捕获读到的 [0] 由 z=20 帧的真实重选推进。
+    expect(f.update).toHaveBeenCalledTimes(2);
+    f.tick(); await f.flush(); expect(f.update).toHaveBeenCalledTimes(2);
+    expect(f.selection()).toEqual([0]);
   });
   it("leaves manual zero or multiple selected levels unchanged at both candidate captures", async () => {
     const f = fixture(); f.lod.autoUpdate = false; f.lod.levels.forEach(level => { level.object.visible = false; });
