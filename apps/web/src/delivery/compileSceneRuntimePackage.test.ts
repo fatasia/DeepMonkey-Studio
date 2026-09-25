@@ -13,12 +13,35 @@ function scene(): SceneSnapshot {
 }
 const bytes = readFileSync(new URL("../../../../packages/deep-engine/lab/assets/Box.glb", import.meta.url));
 const options = { packageId: "scene.compiled", packageVersion: "1.0.0", loadModel: async () => bytes };
+const CUSTOM_SHADER = `shader deep.material {
+  surface standard;
+  baseColor [0.12, 0.42, 0.9, 1];
+  metallic 0.65;
+  roughness 0.24;
+  alpha opaque;
+  doubleSided false;
+  baseColorTexture off;
+}`;
 function withModel(): SceneSnapshot {
   return { ...scene(), models: [{ modelId: "instance", assetModelId: "asset", name: "model", visible: true, opacity: 1,
     transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } } }] };
 }
 
 describe("scene runtime compilation evidence", () => {
+  it("publishes a bound DeepSL shader package with its material binding", async () => {
+    const input = withModel();
+    input.models[0]!.material = { customShader: { source: CUSTOM_SHADER } };
+    const result = await compileSceneRuntimePackage(input, options);
+    const runtime = parseDeepRuntimePackage(result.packageJson);
+    expect(runtime).toMatchObject({ valid: true });
+    if (!runtime.valid) return;
+    expect(runtime.value.entrypoints.shaderPackages).toHaveLength(1);
+    expect(runtime.value.materialBindings).toHaveLength(1);
+    expect(runtime.value.materialBindings[0]).toMatchObject({ techniqueId: "webgpu" });
+    expect(runtime.value.entrypoints.shaderPackages[0]).toMatch(/^deep\.scene\.[a-f0-9]{32}$/);
+    expect(runtime.value.entrypoints.shaderPackages[0]).toBe(runtime.value.materialBindings[0]!.packageId);
+  });
+
   it("carries the saved animation controller through the formal package and Web player", async () => {
     const input = withModel();
     input.animation = {
