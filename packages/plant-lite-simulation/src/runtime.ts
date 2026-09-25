@@ -1,12 +1,17 @@
-import type { Availability, PlantLiteNode, PlantLiteReplication, PlantLiteModel, SimulationLimits } from "./model.js";
+import type { Availability, PlantLiteNode, PlantLiteReplication, PlantLiteModel, PlantLiteResource, SimulationLimits } from "./model.js";
 import { plantLiteEffectiveCapacity, plantLiteRequiredResourceIds } from "./capacity.js";
 import { advancePlantLiteEnergy, createPlantLiteEnergyState } from "./energyRuntime.js";
 import { SimulationEventQueue } from "./eventQueue.js";
+import { buildKanbanGateIndexes, isKanbanBuffer, kanbanAcceptsSourceArrival, registerKanbanWithdrawal, type KanbanBufferNode } from "./kanbanRuntime.js";
 import { addPlantLiteOperatingMinutes, isPlantLiteAvailableAt, unionPlantLiteAvailabilities } from "./operatingCalendar.js";
 import { mixSeed, sample, seedNumber, Random } from "./random.js";
+import { buildSplitPlans, isSplitNode, selectSplitRouteOrder } from "./splitRouting.js";
 import type { ChangeoverEventData, Item, NodeState, ResourceState, Runtime, SimulationEvent } from "./runtimeTypes.js";
 import type { PlantLiteTraceRecorder } from "./trace.js";
 import { TransportNetworkScheduler } from "./transportNetwork.js";
+
+/** split 输入队列默认容量；与工位 queueCapacity 缺省值保持一致。 */
+const SPLIT_QUEUE_CAPACITY = 100;
 
 export function runReplication(
   model: PlantLiteModel,
@@ -77,6 +82,8 @@ function createRuntime(model: PlantLiteModel, seed: number, limits: Required<Sim
     productionOrderQueues: createProductionOrderQueues(model),
     leadTotal: 0,
     wipArea: 0,
+    kanbanPullArmed: new Set<string>(),
+    ...buildIndexes(model),
     ...(energy ? { energy } : {}),
     ...(trace ? { trace } : {}),
     ...(model.transportNetwork ? { transport: new TransportNetworkScheduler(model.transportNetwork, model) } : {}),
@@ -86,6 +93,60 @@ function createRuntime(model: PlantLiteModel, seed: number, limits: Required<Sim
   initializeOutgoing(runtime);
   initializeEvents(runtime);
   return runtime;
+}
+
+/** 一次性推导模型级索引;全部保持 model.nodes/model.resources 原顺序,语义与逐次线性查找一致。 */
+function buildIndexes(model: PlantLiteModel): Pick<Runtime,
+  | "nodeIndex" | "processingNodes" | "sourceNodes" | "resourceDefs"
+  | "requiredByNode" | "effectiveCapacityByNode" | "operatingAvailabilityByResource" | "hasWorkerPools"
+  | "splitPlans" | "kanbanGatesBySource" | "kanbanGatedSourcesByNode"> {
+  const nodeIndex = new Map<string, PlantLiteNode>();
+  const processingNodes: Runtime["processingNodes"] = [];
+  const sourceNodes: Runtime["sourceNodes"] = [];
+  for (const node of model.nodes) {
+    if (nodeIndex.has(node.id)) throw new Error(`duplicate node ${node.id}`);
+    nodeIndex.set(node.id, node);
+    if (node.kind === "station" || node.kind === "transport") processingNodes.push(node);
+    if (node.kind === "source") sourceNodes.push(node);
+  }
+  const resourceDefs = new Map<string, PlantLiteResource>();
+  for (const resource of model.resources ?? []) {
+    if (resourceDefs.has(resource.id)) throw new Error(`duplicate resource ${resource.id}`);
+    resourceDefs.set(resource.id, resource);
+  }
+  const requiredByNode = new Map<string, string[]>();
+  const effectiveCapacityByNode = new Map<string, number>();
+  for (const node of processingNodes) {
+    requiredByNode.set(node.id, plantLiteRequiredResourceIds(node));
+    effectiveCapacityByNode.set(node.id, plantLiteEffectiveCapacity(model, node));
+  }
+  const operatingAvailabilityByResource = new Map<string, Availability | undefined>();
+  for (const resource of resourceDefs.values()) {
+    operatingAvailabilityByResource.set(resource.id, computeResourceOperatingAvailability(model, resource));
+  }
+  const kanbanGates = buildKanbanGateIndexes(model, nodeIndex);
+  return {
+    nodeIndex,
+    processingNodes,
+    sourceNodes,
+    resourceDefs,
+    requiredByNode,
+    effectiveCapacityByNode,
+    operatingAvailabilityByResource,
+    hasWorkerPools: processingNodes.some((node) => node.kind === "station" && node.workerResourceId !== undefined),
+    splitPlans: buildSplitPlans(model),
+    kanbanGatesBySource: kanbanGates.gatesBySource,
+    kanbanGatedSourcesByNode: kanbanGates.gatedSourcesByNode,
+  };
+}
+
+/** 与 runtime.resourceOperatingAvailability 同语义的模型级纯函数;求解期结果不可变故预计算。 */
+function computeResourceOperatingAvailability(model: PlantLiteModel, resource: PlantLiteResource): Availability | undefined {
+  if (resource.availability?.shifts?.length) return resource.availability;
+  if (resource.kind !== "equipment") return undefined;
+  const stations = model.nodes.filter((node): node is Extract<typeof node, { kind: "station" }> =>
+    node.kind === "station" && node.resourceId === resource.id);
+  return unionPlantLiteAvailabilities(stations.map((station) => station.availability));
 }
 
 function initializeOutgoing(runtime: Runtime): void {
@@ -135,6 +196,11 @@ function handleArrival(runtime: Runtime, event: SimulationEvent): void {
   if (hasProductionOrders && !order) {
     const releaseMinute = nextProductionOrderReleaseMinute(runtime, node.id);
     if (releaseMinute !== undefined) schedule(runtime, releaseMinute, "arrival", node.id);
+    return;
+  }
+  // 看板门控：无可用卡时本件不投放、节拍链挂起，等待取走补卡后按节拍唤醒。
+  if (!kanbanAcceptsSourceArrival(runtime, runtime.kanbanGatesBySource.get(node.id))) {
+    runtime.kanbanPullArmed.add(node.id);
     return;
   }
   runtime.created += 1;
@@ -229,6 +295,10 @@ function drainAndStart(runtime: Runtime): void {
 function drainNetwork(runtime: Runtime): boolean {
   let changed = false;
   for (const node of runtime.model.nodes) {
+    if (isSplitNode(node)) {
+      if (drainViaSplitRoutes(runtime, node)) changed = true;
+      continue;
+    }
     const items = isBuffer(node) ? nodeState(runtime, node.id).input : nodeState(runtime, node.id).output;
     const item = items[0];
     if (!item) continue;
@@ -239,11 +309,44 @@ function drainNetwork(runtime: Runtime): boolean {
       traceItem(runtime, "item-exit", item, node.id);
       traceItem(runtime, "item-enter", item, target.id);
       if (target.kind === "sink") traceItem(runtime, "item-complete", item, target.id);
+      if (isKanbanBuffer(node)) wakeGatedSources(runtime, node);
       changed = true;
       break;
     }
   }
   return changed;
+}
+
+/** split 按预计算计划路由：份额轮转序 → 兜底序，全部拒绝则保件阻塞且不推进轮转记账。 */
+function drainViaSplitRoutes(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "split" }>): boolean {
+  const plan = runtime.splitPlans.get(node.id);
+  if (!plan) return false;
+  const state = nodeState(runtime, node.id);
+  const item = state.input[0];
+  if (!item) return false;
+  const delivered = state.routeDelivered ?? (state.routeDelivered = plan.targets.map(() => 0));
+  for (const routeIndex of selectSplitRouteOrder(plan, delivered)) {
+    const target = findNode(runtime, plan.targets[routeIndex]!);
+    if (!accept(runtime, target, item)) continue;
+    state.input.shift();
+    delivered[routeIndex] = (delivered[routeIndex] ?? 0) + 1;
+    traceItem(runtime, "item-exit", item, node.id);
+    traceItem(runtime, "item-enter", item, target.id);
+    if (target.kind === "sink") traceItem(runtime, "item-complete", item, target.id);
+    return true;
+  }
+  return false;
+}
+
+/** 看板取走补卡后按源节拍唤醒被门控挂起的 source；未挂起（节拍链在跑）的源不重复唤醒。 */
+function wakeGatedSources(runtime: Runtime, node: KanbanBufferNode): void {
+  for (const sourceId of registerKanbanWithdrawal(runtime, node)) {
+    const source = runtime.nodeIndex.get(sourceId);
+    if (source?.kind !== "source") continue;
+    // 已达最大投放量的源不再唤醒，避免拉动信号绕过 maxItems 限额。
+    if (source.maxItems !== undefined && nodeState(runtime, sourceId).generated >= source.maxItems) continue;
+    schedule(runtime, runtime.now + sample(source.interarrivalTime, runtime.random), "arrival", sourceId);
+  }
 }
 
 function accept(runtime: Runtime, target: PlantLiteNode, item: Item): boolean {
@@ -271,7 +374,7 @@ function accept(runtime: Runtime, target: PlantLiteNode, item: Item): boolean {
     return true;
   }
   const state = nodeState(runtime, target.id);
-  const capacity = isBuffer(target) ? target.capacity : target.queueCapacity ?? 100;
+  const capacity = isBuffer(target) ? target.capacity : target.kind === "split" ? SPLIT_QUEUE_CAPACITY : target.queueCapacity ?? 100;
   if (state.input.length >= capacity) return false;
   state.input.push(item);
   return true;
@@ -319,23 +422,23 @@ function scheduleNextProductionOrderArrival(runtime: Runtime, source: Extract<Pl
 
 function startReadyNodes(runtime: Runtime): void {
   // 没有人工池时完整保留旧派工顺序与求解结果。
-  if (!runtime.model.nodes.some((node) => node.kind === "station" && node.workerResourceId)) {
+  if (!runtime.hasWorkerPools) {
     startReadyNodesInModelOrder(runtime);
     return;
   }
-  for (const node of runtime.model.nodes) {
-    if ((node.kind !== "station" && node.kind !== "transport") || (node.kind === "station" && node.workerResourceId)) continue;
+  for (const node of runtime.processingNodes) {
+    if (node.kind === "station" && node.workerResourceId) continue;
     startAvailableWork(runtime, node);
   }
   // 共享人工池按最早进入系统的工件优先，避免上游工位长期占满人员造成下游饥饿。
   while (true) {
-    const ready = runtime.model.nodes
+    const ready = runtime.processingNodes
       .map((node, index) => ({ node, index }))
       .filter((entry): entry is { node: Extract<PlantLiteNode, { kind: "station" }>; index: number } =>
         entry.node.kind === "station"
         && Boolean(entry.node.workerResourceId)
         && nodeState(runtime, entry.node.id).input.length > 0
-        && nodeState(runtime, entry.node.id).active < plantLiteEffectiveCapacity(runtime.model, entry.node)
+        && nodeState(runtime, entry.node.id).active < nodeCapacity(runtime, entry.node)
         && canAcquire(runtime, entry.node))
       .sort((left, right) => {
         const leftItem = nodeState(runtime, left.node.id).input[0];
@@ -349,15 +452,14 @@ function startReadyNodes(runtime: Runtime): void {
 }
 
 function startReadyNodesInModelOrder(runtime: Runtime): void {
-  for (const node of runtime.model.nodes) {
-    if (node.kind !== "station" && node.kind !== "transport") continue;
+  for (const node of runtime.processingNodes) {
     startAvailableWork(runtime, node);
   }
 }
 
 function startAvailableWork(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "station" | "transport" }>): void {
   const state = nodeState(runtime, node.id);
-  const capacity = plantLiteEffectiveCapacity(runtime.model, node);
+  const capacity = nodeCapacity(runtime, node);
   while (state.input.length > 0 && state.active < capacity && canAcquire(runtime, node)) startOne(runtime, node);
 }
 
@@ -449,7 +551,7 @@ function advance(runtime: Runtime, target: number): void {
     runtime.wipArea += (runtime.created - runtime.completed - runtime.scrapped) * measuredElapsed;
     for (const node of runtime.model.nodes) advanceNode(runtime, node, measuredElapsed);
     for (const resource of runtime.model.resources ?? []) {
-      advanceResource(runtime, resource.id, resourceOperatingAvailability(runtime, resource.id), resource.capacity, measuredElapsed);
+      advanceResource(runtime, resource.id, operatingAvailability(runtime, resource.id), resource.capacity, measuredElapsed);
     }
   }
   runtime.now = target;
@@ -466,7 +568,10 @@ function advanceNode(runtime: Runtime, node: PlantLiteNode, elapsed: number): vo
     // 非抢占任务可跨班完成；把实际加班占用计入分母，避免计划利用率虚高到 100% 以上。
     state.availableArea += state.active * elapsed;
   }
-  if (isBuffer(node) ? state.input.length >= node.capacity : state.output.length > 0) state.blocked += elapsed;
+  // split 的积压在 input（容量判断与队列统计同口径）；有件未投出即处于阻塞。
+  if (isBuffer(node) ? state.input.length >= node.capacity : isSplitNode(node) ? state.input.length > 0 : state.output.length > 0) {
+    state.blocked += elapsed;
+  }
   if (
     (node.kind === "station" || node.kind === "transport")
     && state.input.length === 0
@@ -487,7 +592,7 @@ function advanceResource(runtime: Runtime, resourceId: string, availability: Ava
 
 function canAcquire(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "station" | "transport" }>): boolean {
   if (!isOperational(runtime, node)) return false;
-  return plantLiteRequiredResourceIds(node).every((resourceId) => {
+  return requiredResourceIds(runtime, node).every((resourceId) => {
     const resource = resourceState(runtime, resourceId);
     return resource.busy < resourceDefinition(runtime, resourceId).capacity - resource.failedUnits.size;
   });
@@ -495,7 +600,7 @@ function canAcquire(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "stat
 
 function isOperational(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "station" | "transport" }>): boolean {
   if (!isScheduled(runtime, node)) return false;
-  return plantLiteRequiredResourceIds(node).every((resourceId) => {
+  return requiredResourceIds(runtime, node).every((resourceId) => {
     const resource = resourceState(runtime, resourceId);
     return resource.failedUnits.size < resourceDefinition(runtime, resourceId).capacity;
   });
@@ -503,16 +608,16 @@ function isOperational(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "s
 
 function isScheduled(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "station" | "transport" }>): boolean {
   if (node.kind === "station" && !isPlantLiteAvailableAt(runtime.now, node.availability)) return false;
-  return plantLiteRequiredResourceIds(node).every((resourceId) =>
-    isPlantLiteAvailableAt(runtime.now, resourceOperatingAvailability(runtime, resourceId)));
+  return requiredResourceIds(runtime, node).every((resourceId) =>
+    isPlantLiteAvailableAt(runtime.now, operatingAvailability(runtime, resourceId)));
 }
 
 function acquireResource(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "station" | "transport" }>): void {
-  for (const resourceId of plantLiteRequiredResourceIds(node)) resourceState(runtime, resourceId).busy += 1;
+  for (const resourceId of requiredResourceIds(runtime, node)) resourceState(runtime, resourceId).busy += 1;
 }
 
 function releaseResource(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "station" | "transport" }>): void {
-  for (const resourceId of plantLiteRequiredResourceIds(node)) resourceState(runtime, resourceId).busy -= 1;
+  for (const resourceId of requiredResourceIds(runtime, node)) resourceState(runtime, resourceId).busy -= 1;
 }
 
 function scheduleAvailability(runtime: Runtime, id: string, availability: Availability | undefined): void {
@@ -553,17 +658,8 @@ function scheduleNextFailure(runtime: Runtime, resourceId: string, unitIndex: nu
   const profile = resourceDefinition(runtime, resourceId).failure;
   if (!profile) return;
   const operatingMinutes = sample(profile.timeToFailure, runtime.random);
-  const at = addPlantLiteOperatingMinutes(from, operatingMinutes, resourceOperatingAvailability(runtime, resourceId));
+  const at = addPlantLiteOperatingMinutes(from, operatingMinutes, operatingAvailability(runtime, resourceId));
   schedule(runtime, at, "failure", resourceId, undefined, unitIndex);
-}
-
-function resourceOperatingAvailability(runtime: Runtime, resourceId: string): Availability | undefined {
-  const resource = resourceDefinition(runtime, resourceId);
-  if (resource.availability?.shifts?.length) return resource.availability;
-  if (resource.kind !== "equipment") return undefined;
-  const stations = runtime.model.nodes.filter((node): node is Extract<typeof node, { kind: "station" }> =>
-    node.kind === "station" && node.resourceId === resourceId);
-  return unionPlantLiteAvailabilities(stations.map((station) => station.availability));
 }
 
 function isBuffer(node: PlantLiteNode): node is Extract<PlantLiteNode, { kind: "buffer" | "queue-buffer" }> {
@@ -571,7 +667,7 @@ function isBuffer(node: PlantLiteNode): node is Extract<PlantLiteNode, { kind: "
 }
 
 function findNode(runtime: Runtime, nodeId: string): PlantLiteNode {
-  const node = runtime.model.nodes.find((item) => item.id === nodeId);
+  const node = runtime.nodeIndex.get(nodeId);
   if (!node) throw new Error(`unknown node ${nodeId}`);
   return node;
 }
@@ -588,14 +684,24 @@ function resourceState(runtime: Runtime, resourceId: string): ResourceState {
   return state;
 }
 
-function resourceDefinition(runtime: Runtime, resourceId: string) {
-  const resource = (runtime.model.resources ?? []).find((item) => item.id === resourceId);
+function resourceDefinition(runtime: Runtime, resourceId: string): PlantLiteResource {
+  const resource = runtime.resourceDefs.get(resourceId);
   if (!resource) throw new Error(`unknown resource ${resourceId}`);
   return resource;
 }
 
 function nodeCapacity(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "station" | "transport" }>): number {
-  return plantLiteEffectiveCapacity(runtime.model, node);
+  return runtime.effectiveCapacityByNode.get(node.id)
+    ?? plantLiteEffectiveCapacity(runtime.model, node);
+}
+
+/** 派工热路径使用预计算的资源需求;单次调用方(如初始化)可走原函数。 */
+function requiredResourceIds(runtime: Runtime, node: Extract<PlantLiteNode, { kind: "station" | "transport" }>): string[] {
+  return runtime.requiredByNode.get(node.id) ?? plantLiteRequiredResourceIds(node);
+}
+
+function operatingAvailability(runtime: Runtime, resourceId: string): Availability | undefined {
+  return runtime.operatingAvailabilityByResource.get(resourceId);
 }
 
 function emptyNodeState(): NodeState {

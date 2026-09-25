@@ -7,6 +7,14 @@ import type {
   PlantLiteResource,
 } from "./modelTypes.js";
 import { validateSceneBinding } from "./sceneBindingValidation.js";
+import {
+  appendSplitAdjacency,
+  appendSplitIncoming,
+  validateKanbanCard,
+  validateSplitEdges,
+  validateSplitNodeShape,
+  validateSplitReferences,
+} from "./splitKanbanValidation.js";
 import { validateTransportNetwork } from "./transportNetworkValidation.js";
 
 export function validatePlantLiteModel(input: unknown): PlantLiteModelValidation {
@@ -48,6 +56,9 @@ export function validatePlantLiteModel(input: unknown): PlantLiteModelValidation
   const adjacency = new Map<string, string[]>();
   const edges = input.edges as unknown[];
   edges.forEach((value, index) => validateEdge(value, index, edgeIds, nodeIds, adjacency, issues));
+  validateSplitReferences(nodes, issues);
+  validateSplitEdges(edges, nodes, issues);
+  if (!issues.length) appendSplitAdjacency(nodes as PlantLiteNode[], adjacency);
   if (!issues.length) validateFlowEnds(nodes as PlantLiteNode[], edges as PlantLiteEdge[], issues);
   if (!issues.length && hasCycle([...nodeIds], adjacency)) {
     issues.push({ path: "$.edges", message: "流图必须无环" });
@@ -79,11 +90,15 @@ function validateNode(
   validateUniqueText(value.id, `${path}.id`, ids, issues);
   validateText(value.name, `${path}.name`, issues);
   if (value.kind === "source") return validateSource(value, path, issues);
-  if (value.kind === "buffer" || value.kind === "queue-buffer") return validatePositiveInteger(value.capacity, `${path}.capacity`, issues);
+  if (value.kind === "buffer" || value.kind === "queue-buffer") {
+    validatePositiveInteger(value.capacity, `${path}.capacity`, issues);
+    return validateKanbanCard(value.kanban, `${path}.kanban`, issues);
+  }
+  if (value.kind === "split") return validateSplitNodeShape(value, path, issues);
   if (value.kind === "sink") return;
   if (value.kind === "station") return validateStation(value, path, resources, resourceKinds, productTypeIds, issues);
   if (value.kind === "transport") return validateTransport(value, path, resources, resourceKinds, issues);
-  issues.push({ path: `${path}.kind`, message: "必须是 source、station、transport、queue-buffer 或 sink" });
+  issues.push({ path: `${path}.kind`, message: "必须是 source、station、transport、queue-buffer、split 或 sink" });
 }
 
 function validateSource(value: Record<string, unknown>, path: string, issues: PlantLiteModelIssue[]): void {
@@ -325,14 +340,17 @@ function validateFlowEnds(nodes: PlantLiteNode[], edges: PlantLiteEdge[], issues
   const sinks = nodes.filter((node) => node.kind === "sink");
   if (!sources.length) issues.push({ path: "$.nodes", message: "必须包含至少一个 source" });
   if (!sinks.length) issues.push({ path: "$.nodes", message: "必须包含至少一个 sink" });
+  appendSplitIncoming(nodes, incoming);
   for (const node of nodes) {
     if (node.kind === "source" && incoming.has(node.id)) issues.push({ path: `$.nodes.${node.id}`, message: "source 不能有入边" });
     if (node.kind === "sink" && outgoing.has(node.id)) issues.push({ path: `$.nodes.${node.id}`, message: "sink 不能有出边" });
     if (node.kind !== "source" && !incoming.has(node.id)) issues.push({ path: `$.nodes.${node.id}`, message: "非 source 节点必须有入边" });
-    if (node.kind !== "sink" && !outgoing.has(node.id)) issues.push({ path: `$.nodes.${node.id}`, message: "非 sink 节点必须有出边" });
+    // split 的流转由 routes 定义，不要求 edges 出边。
+    if (node.kind !== "sink" && node.kind !== "split" && !outgoing.has(node.id)) issues.push({ path: `$.nodes.${node.id}`, message: "非 sink 节点必须有出边" });
   }
   const adjacency = new Map<string, string[]>();
   for (const edge of edges) adjacency.set(edge.from, [...(adjacency.get(edge.from) ?? []), edge.to]);
+  appendSplitAdjacency(nodes, adjacency);
   const reachable = new Set<string>();
   const pending = sources.map((node) => node.id);
   while (pending.length) {

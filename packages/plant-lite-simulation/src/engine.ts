@@ -2,6 +2,7 @@ import {
   assertPlantLiteModel,
   type PlantLiteExperiment,
   type PlantLiteExperimentResult,
+  type PlantLiteRunOptions,
   type SimulationLimits,
 } from "./model.js";
 import { replicationMetrics, summarizeExperiment } from "./metrics.js";
@@ -18,7 +19,7 @@ const MAX_EVENTS = 1_000_000;
 const MAX_REPLICATIONS = 1_000;
 
 /** 同步内核不发起 I/O；服务端应在 Worker 中调用它，并传入协作取消回调。 */
-export function runPlantLiteExperiment(input: PlantLiteExperiment, options: { shouldCancel?: () => boolean } = {}): PlantLiteExperimentResult {
+export function runPlantLiteExperiment(input: PlantLiteExperiment, options: PlantLiteRunOptions = {}): PlantLiteExperimentResult {
   const model = assertPlantLiteModel(input.model);
   const replications = normalizeReplications(input.replications);
   const limits = normalizeLimits(input.limits, model.resources?.reduce((sum, resource) => sum + resource.capacity, 0) ?? 0);
@@ -31,6 +32,7 @@ export function runPlantLiteExperiment(input: PlantLiteExperiment, options: { sh
     const seed = mixSeed(rootSeed, index);
     const recorder = traceOptions?.replication === index ? createTraceRecorder(index, seed, traceOptions) : undefined;
     runs.push(runReplication(model, index, seed, limits, options.shouldCancel, (runtime, termination, reason) => replicationMetrics(runtime, index, seed, termination, reason), recorder));
+    options.onReplicationCompleted?.(runs.length, replications);
     if (recorder) representativeTrace = recorder.finish();
   }
   return { ...summarizeExperiment(input.seed, runs), ...(representativeTrace ? { representativeTrace } : {}) };

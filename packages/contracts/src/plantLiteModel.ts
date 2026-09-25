@@ -116,13 +116,36 @@ export interface PlantLiteBufferNode extends PlantLiteNodeBase {
   /** queue-buffer 是首选名称；buffer 保留为兼容别名。 */
   kind: "buffer" | "queue-buffer";
   capacity: number;
+  /** 配置后按看板拉动工作：cardCount × cardQuantity 为最大在库，下游每取走 cardQuantity 件释放一张卡。 */
+  kanban?: PlantLiteKanbanCard;
+}
+
+/** 看板卡参数；两个字段都必须为正整数。 */
+export interface PlantLiteKanbanCard {
+  cardCount: number;
+  cardQuantity: number;
+}
+
+export interface PlantLiteSplitRoute {
+  /** 路由目标；不得指向 source。 */
+  to: string;
+  /** 份额 0..1；配置了份额的路合计必须为 1，份额为 0 的路不投。 */
+  share?: number;
+  /** 未配份额的兜底路顺序；省略按 0，数值小的先试。 */
+  priority?: number;
+}
+
+export interface PlantLiteSplitNode extends PlantLiteNodeBase {
+  kind: "split";
+  /** routes 即出边：配置了 routes 的 split 不得再在 edges 中声明出边。 */
+  routes: PlantLiteSplitRoute[];
 }
 
 export interface PlantLiteSinkNode extends PlantLiteNodeBase {
   kind: "sink";
 }
 
-export type PlantLiteNode = PlantLiteSourceNode | PlantLiteStationNode | PlantLiteTransportNode | PlantLiteBufferNode | PlantLiteSinkNode;
+export type PlantLiteNode = PlantLiteSourceNode | PlantLiteStationNode | PlantLiteTransportNode | PlantLiteBufferNode | PlantLiteSplitNode | PlantLiteSinkNode;
 
 export interface PlantLiteEdge {
   id: string;

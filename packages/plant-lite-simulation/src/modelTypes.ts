@@ -4,6 +4,7 @@ import type {
   PlantLiteDistribution,
   PlantLiteEdge,
   PlantLiteFailureProfile,
+  PlantLiteKanbanCard,
   PlantLiteModel,
   PlantLiteNode,
   PlantLiteProductType,
@@ -14,6 +15,8 @@ import type {
   PlantLiteSimulationLimits,
   PlantLiteSinkNode,
   PlantLiteSourceNode,
+  PlantLiteSplitNode,
+  PlantLiteSplitRoute,
   PlantLiteStationNode,
   PlantLiteTraceCaptureOptions,
   PlantLiteTraceEvent,
@@ -29,16 +32,22 @@ export type SourceNode = PlantLiteSourceNode;
 export type StationNode = PlantLiteStationNode;
 export type TransportNode = PlantLiteTransportNode;
 export type BufferNode = PlantLiteBufferNode;
+export type SplitNode = PlantLiteSplitNode;
+export type SplitRoute = PlantLiteSplitRoute;
+export type KanbanCard = PlantLiteKanbanCard;
 export type SinkNode = PlantLiteSinkNode;
 export type SimulationLimits = PlantLiteSimulationLimits;
 export type {
   PlantLiteEdge,
+  PlantLiteKanbanCard,
   PlantLiteModel,
   PlantLiteNode,
   PlantLiteProductType,
   PlantLiteProductionOrder,
   PlantLiteReplicationTrace,
   PlantLiteResource,
+  PlantLiteSplitNode,
+  PlantLiteSplitRoute,
   PlantLiteTraceLimits,
   PlantLiteTraceEvent,
 };
@@ -56,6 +65,8 @@ export type PlantLiteTraceOptions = PlantLiteTraceCaptureOptions;
 export interface PlantLiteRunOptions {
   /** 调用方可在 worker、请求断开或协作调度器让出时返回 true。 */
   shouldCancel?: () => boolean;
+  /** 每轮 replication 完成后回调,仅供端口层发进度;不参与任何统计语义。 */
+  onReplicationCompleted?: (completedReplications: number, totalReplications: number) => void;
 }
 
 export type SimulationTermination = "completed" | "cancelled" | "limit-reached";
@@ -70,6 +81,10 @@ export interface NodeRunMetrics {
   changeoverCount: number;
   /** 该重复中资源被换型占用的实际分钟。 */
   changeoverMinutes: number;
+  /** 仅 split 节点：按 routes.to 汇总本重复成功投递件数，用于验证份额路由分布。 */
+  routeDelivered?: Array<{ to: string; items: number }>;
+  /** 仅配置看板的缓冲区：本重复从在库流向下游的累计件数。 */
+  kanbanWithdrawn?: number;
 }
 
 export interface ResourceRunMetrics {

@@ -6,6 +6,7 @@ import type {
 } from "./model.js";
 import { confidenceInterval95 } from "./statistics.js";
 import { plantLiteEnergyMetrics } from "./energyRuntime.js";
+import { isKanbanBuffer } from "./kanbanRuntime.js";
 import type { NodeState, Runtime } from "./runtimeTypes.js";
 
 export function replicationMetrics(
@@ -27,6 +28,11 @@ export function replicationMetrics(
       starvedMinutes: state.starved,
       changeoverCount: state.changeoverCount,
       changeoverMinutes: state.changeoverArea,
+      // 仅 split 与看板缓冲输出扩展指标；旧模型输出保持逐位不变。
+      ...(node.kind === "split" && state.routeDelivered
+        ? { routeDelivered: node.routes.map((route, index) => ({ to: route.to, items: state.routeDelivered![index] ?? 0 })) }
+        : {}),
+      ...(isKanbanBuffer(node) ? { kanbanWithdrawn: state.withdrawn ?? 0 } : {}),
     };
   });
   const resources = (runtime.model.resources ?? []).map((resource) => {

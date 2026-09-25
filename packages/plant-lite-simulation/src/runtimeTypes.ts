@@ -1,4 +1,4 @@
-import type { PlantLiteModel, PlantLiteProductionOrder, SimulationLimits } from "./model.js";
+import type { Availability, PlantLiteModel, PlantLiteNode, PlantLiteProductionOrder, PlantLiteResource, SimulationLimits } from "./model.js";
 import type { Random } from "./random.js";
 import type { PlantLiteTraceRecorder } from "./trace.js";
 import type { SimulationEventQueue } from "./eventQueue.js";
@@ -37,6 +37,10 @@ export interface NodeState {
   qualityInspected: number;
   qualityPassed: number;
   qualityScrapped: number;
+  /** 仅 split 节点：按 routes 数组序累计各路成功投递件数，作为无随机轮转的记账状态。 */
+  routeDelivered?: number[];
+  /** 仅配置看板的缓冲区：累计从在库流向下游的件数（含预热期）。 */
+  withdrawn?: number;
 }
 
 export interface ResourceState {
@@ -112,7 +116,41 @@ export interface Runtime {
   productionOrderQueues: Map<string, PlantLiteProductionOrder[]>;
   leadTotal: number;
   wipArea: number;
+  /** 已被看板门控拦下、等待补货卡唤醒的 source id；拉动唤醒时从中移除并重排节拍。 */
+  kanbanPullArmed: Set<string>;
   trace?: PlantLiteTraceRecorder;
   energy?: EnergyState;
   transport?: TransportNetworkScheduler;
+  /**
+   * 模型级预计算索引:以下字段全部由 createRuntime 一次性推导,内容在求解期不可变。
+   * 求解循环热路径禁止 linear find、全量过滤与重复数组分配;
+   * 索引必须保持 model.nodes/model.resources 的原顺序,遍历语义与旧实现逐位一致。
+   */
+  nodeIndex: Map<string, PlantLiteNode>;
+  /** station+transport 节点,按模型顺序;派工与推进循环专用。 */
+  processingNodes: Array<Extract<PlantLiteNode, { kind: "station" | "transport" }>>;
+  sourceNodes: Array<Extract<PlantLiteNode, { kind: "source" }>>;
+  resourceDefs: Map<string, PlantLiteResource>;
+  requiredByNode: Map<string, string[]>;
+  effectiveCapacityByNode: Map<string, number>;
+  operatingAvailabilityByResource: Map<string, Availability | undefined>;
+  hasWorkerPools: boolean;
+  /** split 节点的路由计划：目标序、归一份额与兜底序，按模型顺序一次性推导。 */
+  splitPlans: Map<string, SplitRoutePlan>;
+  /** sourceId → 门控它的看板缓冲节点 id 列表（沿上游第一个 source）；无看板模型为空表。 */
+  kanbanGatesBySource: Map<string, string[]>;
+  /** 看板缓冲节点 id → 被其门控的 source id 列表；取走补卡时按此唤醒。 */
+  kanbanGatedSourcesByNode: Map<string, string[]>;
+}
+
+/** split 路由的预计算形态；shareRoutes 参与份额轮转，fallbackRoutes 只作兜底。 */
+export interface SplitRoutePlan {
+  /** routes 数组序的目标节点 id。 */
+  targets: string[];
+  /** routes 数组序的归一份额；未配份额记 0，仅 shareRoutes 参与轮转。 */
+  shares: number[];
+  /** 配置了正份额的路下标，保持数组序。 */
+  shareRoutes: number[];
+  /** 未配份额的兜底路下标，按 priority 升序、数组序破平。 */
+  fallbackRoutes: number[];
 }
