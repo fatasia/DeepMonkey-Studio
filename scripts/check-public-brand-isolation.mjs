@@ -21,7 +21,6 @@ const defaultRoots = [
   "README.md",
   "THIRD_PARTY_NOTICES.md",
   "bim-studio.ps1",
-  "logo-layers-20260804.svg",
 ];
 const roots = (configuredRoots.length ? configuredRoots : defaultRoots)
   .map((path) => resolve(repositoryRoot, path));
