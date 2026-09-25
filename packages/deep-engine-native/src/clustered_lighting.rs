@@ -2,7 +2,10 @@
 //!
 //! Fixed 8x8 screen tiles feed the Native raster and RT fragment shaders.
 
-use crate::{local_lighting::{LocalLight, LocalLightKind, MAX_LOCAL_LIGHTS}, player_view::PlayerView};
+use crate::{
+    local_lighting::{LocalLight, LocalLightKind, MAX_LOCAL_LIGHTS},
+    player_view::PlayerView,
+};
 
 pub const CLUSTER_GRID_X: usize = 8;
 pub const CLUSTER_GRID_Y: usize = 8;
@@ -18,37 +21,67 @@ pub struct ClusterGrid {
 
 impl Default for ClusterGrid {
     fn default() -> Self {
-        Self { indices: [[0; MAX_LIGHTS_PER_CLUSTER]; CLUSTER_GRID_X * CLUSTER_GRID_Y], counts: [0; CLUSTER_GRID_X * CLUSTER_GRID_Y], overflowed: 0 }
+        Self {
+            indices: [[0; MAX_LIGHTS_PER_CLUSTER]; CLUSTER_GRID_X * CLUSTER_GRID_Y],
+            counts: [0; CLUSTER_GRID_X * CLUSTER_GRID_Y],
+            overflowed: 0,
+        }
     }
 }
 
 impl ClusterGrid {
-    pub fn build(lights: &[LocalLight; MAX_LOCAL_LIGHTS], view: PlayerView, width: u32, height: u32) -> Self {
+    pub fn build(
+        lights: &[LocalLight; MAX_LOCAL_LIGHTS],
+        view: PlayerView,
+        width: u32,
+        height: u32,
+    ) -> Self {
         let mut grid = Self::default();
         let aspect = width.max(1) as f32 / height.max(1) as f32;
         let [right, up, forward] = view.basis();
         for (index, light) in lights.iter().enumerate() {
-            if light.kind == LocalLightKind::Disabled { continue; }
-            let bounds = if matches!(light.kind, LocalLightKind::Directional | LocalLightKind::Hemisphere) || light.range <= 0.0 {
+            if light.kind == LocalLightKind::Disabled {
+                continue;
+            }
+            let bounds = if matches!(
+                light.kind,
+                LocalLightKind::Directional | LocalLightKind::Hemisphere
+            ) || light.range <= 0.0
+            {
                 (0, CLUSTER_GRID_X as i32 - 1, 0, CLUSTER_GRID_Y as i32 - 1)
             } else {
-                let relative = [light.position[0] - view.eye()[0], light.position[1] - view.eye()[1], light.position[2] - view.eye()[2]];
-                let depth = relative[0] * forward[0] + relative[1] * forward[1] + relative[2] * forward[2];
-                if !depth.is_finite() || depth + light.range < view.near || depth - light.range > view.far { continue; }
+                let relative = [
+                    light.position[0] - view.eye()[0],
+                    light.position[1] - view.eye()[1],
+                    light.position[2] - view.eye()[2],
+                ];
+                let depth =
+                    relative[0] * forward[0] + relative[1] * forward[1] + relative[2] * forward[2];
+                if !depth.is_finite()
+                    || depth + light.range < view.near
+                    || depth - light.range > view.far
+                {
+                    continue;
+                }
                 if depth <= view.near + light.range {
                     (0, CLUSTER_GRID_X as i32 - 1, 0, CLUSTER_GRID_Y as i32 - 1)
                 } else {
-                    let horizontal = relative[0] * right[0] + relative[1] * right[1] + relative[2] * right[2];
+                    let horizontal =
+                        relative[0] * right[0] + relative[1] * right[1] + relative[2] * right[2];
                     let vertical = relative[0] * up[0] + relative[1] * up[1] + relative[2] * up[2];
                     let closest = (depth - light.range).max(view.near);
                     let center_x = horizontal * view.focal / (depth * aspect);
                     let center_y = vertical * view.focal / depth;
                     let radius_x = light.range * view.focal / (closest * aspect);
                     let radius_y = light.range * view.focal / closest;
-                    let min_x = (((center_x - radius_x) * 0.5 + 0.5) * CLUSTER_GRID_X as f32).floor() as i32;
-                    let max_x = (((center_x + radius_x) * 0.5 + 0.5) * CLUSTER_GRID_X as f32).floor() as i32;
-                    let min_y = (((-center_y - radius_y) * 0.5 + 0.5) * CLUSTER_GRID_Y as f32).floor() as i32;
-                    let max_y = (((-center_y + radius_y) * 0.5 + 0.5) * CLUSTER_GRID_Y as f32).floor() as i32;
+                    let min_x = (((center_x - radius_x) * 0.5 + 0.5) * CLUSTER_GRID_X as f32)
+                        .floor() as i32;
+                    let max_x = (((center_x + radius_x) * 0.5 + 0.5) * CLUSTER_GRID_X as f32)
+                        .floor() as i32;
+                    let min_y = (((-center_y - radius_y) * 0.5 + 0.5) * CLUSTER_GRID_Y as f32)
+                        .floor() as i32;
+                    let max_y = (((-center_y + radius_y) * 0.5 + 0.5) * CLUSTER_GRID_Y as f32)
+                        .floor() as i32;
                     (min_x, max_x, min_y, max_y)
                 }
             };
@@ -102,7 +135,17 @@ mod tests {
     use super::*;
 
     fn point(position: [f32; 3], range: f32) -> LocalLight {
-        LocalLight { kind: LocalLightKind::Point, position, direction: [0.0, -1.0, 0.0], radiance: [1.0; 3], range, decay: 2.0, inner_cos: 1.0, outer_cos: 0.0, ..Default::default() }
+        LocalLight {
+            kind: LocalLightKind::Point,
+            position,
+            direction: [0.0, -1.0, 0.0],
+            radiance: [1.0; 3],
+            range,
+            decay: 2.0,
+            inner_cos: 1.0,
+            outer_cos: 0.0,
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -112,7 +155,10 @@ mod tests {
         let grid = ClusterGrid::build(&lights, PlayerView::default(), 800, 600);
         assert!(grid.counts.iter().any(|count| *count == 1));
         assert_eq!(grid.overflowed, 0);
-        assert_eq!(grid, ClusterGrid::build(&lights, PlayerView::default(), 800, 600));
+        assert_eq!(
+            grid,
+            ClusterGrid::build(&lights, PlayerView::default(), 800, 600)
+        );
     }
 
     #[test]
@@ -126,8 +172,16 @@ mod tests {
             light.radiance[0] = index as f32 + 1.0;
         }
         let crowded = ClusterGrid::build(&lights, PlayerView::default(), 800, 600);
-        assert_eq!(crowded.overflowed, 0, "the authored 16-light budget fits the 16-slot tile cap");
-        assert!(crowded.counts.iter().all(|count| *count as usize <= MAX_LIGHTS_PER_CLUSTER));
+        assert_eq!(
+            crowded.overflowed, 0,
+            "the authored 16-light budget fits the 16-slot tile cap"
+        );
+        assert!(
+            crowded
+                .counts
+                .iter()
+                .all(|count| *count as usize <= MAX_LIGHTS_PER_CLUSTER)
+        );
     }
 
     #[test]

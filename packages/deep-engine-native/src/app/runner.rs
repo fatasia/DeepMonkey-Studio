@@ -143,6 +143,48 @@ pub fn run(
     )
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn spawn_wasm(
+    content: PlayerContent,
+) -> Result<winit::event_loop::EventLoopProxy<GpuEvent>, String> {
+    use winit::platform::web::EventLoopExtWebSys;
+
+    let event_loop = EventLoop::<GpuEvent>::with_user_event()
+        .build()
+        .map_err(|error| format!("event loop creation failed: {error}"))?;
+    event_loop.set_control_flow(ControlFlow::Wait);
+    let proxy = event_loop.create_proxy();
+    let bloom = crate::renderer::entry_bloom(&content);
+    let app = NativeApp::new(
+        content,
+        proxy.clone(),
+        NativeAppSetup {
+            smoke_frame: false,
+            features: RendererFeatures {
+                bloom,
+                fog: deep_engine_native::fog::FogSettings::DISABLED,
+                shadow_probe: false,
+                ibl_probe: false,
+                telemetry: false,
+            },
+            shadow_update_probe: None,
+            dynamic_playback: None,
+            state_ops: None,
+            packet_live_probe: None,
+            packet_live_transport: None,
+            package_live_transport: None,
+            telemetry_report: false,
+            telemetry_prepare_replay: None,
+            selection_probe: false,
+            section_probe: false,
+            occlusion_probe: false,
+            chart_key_probe: false,
+        },
+    );
+    event_loop.spawn_app(app);
+    Ok(proxy)
+}
+
 /// `--smoke-dynamic-package`: real-window playback of the package's dynamic
 /// runtime channel. The wall clock drives the fixed step grid; every applied
 /// step mutates the packet and is re-submitted to the GPU before the next

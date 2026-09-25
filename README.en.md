@@ -11,15 +11,14 @@
 
 [简体中文](README.md) · [English](README.en.md)
 
-[![Deep Engine CI](docs/assets/badges/deep-engine-ci.svg)](.github/workflows/deep-engine.yml)
-[![Studio web + API](docs/assets/badges/studio-ci.svg)](.github/workflows/studio.yml)
-[![Repository governance](docs/assets/badges/repository-governance.svg)](.github/workflows/repository-governance.yml)
+[![Deep Engine](https://github.com/fatasia/bim-studio/actions/workflows/deep-engine.yml/badge.svg?branch=main)](https://github.com/fatasia/bim-studio/actions/workflows/deep-engine.yml)
+[![Studio web + API](https://github.com/fatasia/bim-studio/actions/workflows/studio.yml/badge.svg?branch=main)](https://github.com/fatasia/bim-studio/actions/workflows/studio.yml)
+[![Repository governance](https://github.com/fatasia/bim-studio/actions/workflows/repository-governance.yml/badge.svg?branch=main)](https://github.com/fatasia/bim-studio/actions/workflows/repository-governance.yml)
 [![License: MIT with Ethical Restrictions](https://img.shields.io/badge/license-MIT%20with%20Ethical%20Restrictions-blue.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-Web%20%7C%20Windows%20%7C%20Android-4c8ddc)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)
 ![Rust](https://img.shields.io/badge/Rust-stable-dea584)
 ![React](https://img.shields.io/badge/React-19-61dafb)
-![Three.js](https://img.shields.io/badge/Three.js-0.185-black)
 ![WebGPU](https://img.shields.io/badge/WebGPU-ready-9c5bd1)
 
 ## A note from the author

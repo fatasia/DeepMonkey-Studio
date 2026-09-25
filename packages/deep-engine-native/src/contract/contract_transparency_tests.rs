@@ -71,6 +71,16 @@ fn premultiplied_blend_roundtrips_with_batch_and_flag_bits() {
 }
 
 #[test]
+fn material_fog_false_roundtrips_with_browser_flag_bit() {
+    let mut material = glass(None, "OPAQUE");
+    material["fog"] = json!(false);
+    let packet = parse(packet_json(json!([material]))).expect("fog flag must parse");
+    validate_packet(&packet).expect("boolean fog flag must validate");
+    let scene = prepare_scene(&packet).expect("scene must prepare");
+    assert_eq!(scene.instances[0][31], 1.0 + 32.0);
+}
+
+#[test]
 fn premultiplied_alpha_outside_blend_fails_closed() {
     for alpha_mode in ["OPAQUE", "MASK"] {
         for premultiplied in [false, true] {

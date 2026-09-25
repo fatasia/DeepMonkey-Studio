@@ -18,7 +18,7 @@ export interface XrEntryGate {
 }
 
 export function xrBackendLabel(backend: RendererBackend): string {
-  return backend === "webgpu" ? "Deep WebGPU" : "Three WebGL";
+  return backend === "webgpu" ? "Deep WebGPU" : backend === "wasm" ? "Deep WASM" : "Three WebGL";
 }
 
 /** 进入前的静态门槛；返回 undefined 表示可继续请求会话，否则为精确原因。 */
@@ -35,7 +35,7 @@ export function describeXrEntryBlock(gate: XrEntryGate): string | undefined {
 export function xrEntryBlockReasons(gate: XrEntryGate): string[] {
   const reasons: string[] = [];
   if (gate.authorBackend !== "webgl") {
-    reasons.push(`XR 会话仅 Three WebGL 渲染后端支持；Deep WebGPU 激活期间不可用`);
+    reasons.push(`XR 会话仅 Three WebGL 渲染后端支持；${xrBackendLabel(gate.authorBackend)} 激活期间不可用`);
   }
   if (!gate.secureContext) reasons.push("需要 HTTPS 或 localhost 安全上下文");
   if (!gate.webxrApi) reasons.push("浏览器未暴露 WebXR API（navigator.xr）");

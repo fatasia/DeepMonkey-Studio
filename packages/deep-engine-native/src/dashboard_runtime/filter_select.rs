@@ -9,7 +9,7 @@ pub(super) struct SelectState {
     pub first: usize,
     pub hovered: Option<usize>,
     pub typeahead: String,
-    pub typeahead_deadline: Option<std::time::Instant>,
+    pub typeahead_deadline: Option<web_time::Instant>,
 }
 
 impl SelectState {

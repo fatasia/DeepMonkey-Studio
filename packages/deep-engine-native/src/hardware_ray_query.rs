@@ -148,7 +148,10 @@ mod tests {
         // 双双缺失(F2 回退切片):真实无 RT 设备上适配器与设备都不带特征,
         // 能力判定必须 fail-closed 为 false——这是 renderer 侧一切降级决策
         // (frame_rt layout 不创建、驻留不建、帧循环回退栅格)的源头。
-        assert!(!ray_query_device_ready(wgpu::Features::empty(), wgpu::Features::empty()));
+        assert!(!ray_query_device_ready(
+            wgpu::Features::empty(),
+            wgpu::Features::empty()
+        ));
         assert!(ray_query_device_ready(feature, feature));
     }
 
@@ -166,10 +169,9 @@ mod tests {
         else {
             return;
         };
-        let (device, _queue) = pollster::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor::default(),
-        ))
-        .expect("adapter must create a plain device");
+        let (device, _queue) =
+            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
+                .expect("adapter must create a plain device");
         assert!(
             !device
                 .features()

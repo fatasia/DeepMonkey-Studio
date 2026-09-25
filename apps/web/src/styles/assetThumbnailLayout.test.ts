@@ -20,4 +20,12 @@ describe("asset thumbnail layout contract", () => {
   it("keeps environment panoramas covering their preview instead of changing model fitting", () => {
     expect(rule(".unified-asset-card.dimension-environment .unified-asset-preview img")).toMatch(/object-fit:\s*cover/);
   });
+
+  it("contains built-in category overflow without widening the asset workspace", () => {
+    expect(rule(".asset-workspace-active .built-in-assets-browser")).toMatch(/grid-template-columns:\s*minmax\(0,1fr\)/);
+    expect(rule(".built-in-assets-browser .built-in-category-row")).toMatch(/min-width:\s*0/);
+    expect(rule(".built-in-assets-browser .built-in-category-row")).toMatch(/max-width:\s*100%/);
+    expect(rule(".built-in-assets-browser .built-in-category-row")).toMatch(/grid-column:\s*1\s*\/\s*-1/);
+    expect(rule(".built-in-assets-browser .built-in-category-row")).toMatch(/overflow-x:\s*auto/);
+  });
 });

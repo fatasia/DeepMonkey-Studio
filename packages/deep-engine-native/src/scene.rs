@@ -186,6 +186,7 @@ pub fn prepare_scene(packet: &RenderPacket) -> Result<PreparedScene, String> {
                     double_sided,
                     instance.receive_shadow,
                     material.shading_model,
+                    material.fog,
                 ) + 256.0 * f32::from(instance.outline == Some(true)),
             ),
         ));
@@ -272,6 +273,7 @@ pub fn recompute_surface_flags(
         double_sided,
         receive_shadow,
         material.shading_model,
+        material.fog,
     ) + if material.alpha_mode == Some(AlphaMode::Blend) && material.alpha_cutoff.is_some() {
         2.0
     } else {
@@ -345,6 +347,7 @@ mod transform_update_tests {
             alpha_cutoff: None,
             double_sided: None,
             premultiplied_alpha: None,
+            fog: None,
         }
     }
 
@@ -377,6 +380,7 @@ mod transform_update_tests {
             alpha_cutoff: None,
             double_sided: None,
             premultiplied_alpha: None,
+            fog: None,
         };
         for alpha_mode in [
             None,
@@ -389,39 +393,43 @@ mod transform_update_tests {
                     for cutoff in [None, Some(0.4)] {
                         for unlit in [None, Some(crate::contract::ShadingModel::Unlit)] {
                             for receive in [None, Some(true), Some(false)] {
-                                material.alpha_mode = alpha_mode;
-                                material.double_sided = double_sided;
-                                material.premultiplied_alpha = premultiplied;
-                                material.alpha_cutoff = cutoff;
-                                material.shading_model = unlit;
-                                let packed = pack_instance(
-                                    &[
-                                        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
-                                        0.0, 0.0, 0.0, 1.0,
-                                    ],
-                                    inverse_transpose3(
+                                for fog in [None, Some(true), Some(false)] {
+                                    material.alpha_mode = alpha_mode;
+                                    material.double_sided = double_sided;
+                                    material.premultiplied_alpha = premultiplied;
+                                    material.alpha_cutoff = cutoff;
+                                    material.shading_model = unlit;
+                                    material.fog = fog;
+                                    let packed = pack_instance(
                                         &[
                                             1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
                                             0.0, 0.0, 0.0, 0.0, 1.0,
                                         ],
+                                        inverse_transpose3(
+                                            &[
+                                                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+                                                1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                                            ],
+                                            1.0,
+                                        ),
+                                        &material,
                                         1.0,
-                                    ),
-                                    &material,
-                                    1.0,
-                                    surface_flags(
-                                        material.alpha_mode.unwrap_or(AlphaMode::Opaque),
-                                        material.alpha_mode == Some(AlphaMode::Blend)
-                                            && material.premultiplied_alpha.unwrap_or(false),
-                                        material.double_sided.unwrap_or(false),
-                                        receive,
-                                        material.shading_model,
-                                    ),
-                                );
-                                assert_eq!(
-                                    packed[31],
-                                    recompute_surface_flags(&material, receive),
-                                    "word 31 mismatch for {material:?} receive={receive:?}"
-                                );
+                                        surface_flags(
+                                            material.alpha_mode.unwrap_or(AlphaMode::Opaque),
+                                            material.alpha_mode == Some(AlphaMode::Blend)
+                                                && material.premultiplied_alpha.unwrap_or(false),
+                                            material.double_sided.unwrap_or(false),
+                                            receive,
+                                            material.shading_model,
+                                            material.fog,
+                                        ),
+                                    );
+                                    assert_eq!(
+                                        packed[31],
+                                        recompute_surface_flags(&material, receive),
+                                        "word 31 mismatch for {material:?} receive={receive:?}"
+                                    );
+                                }
                             }
                         }
                     }

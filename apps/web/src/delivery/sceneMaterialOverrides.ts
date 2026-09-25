@@ -1,7 +1,6 @@
 import type { SceneMaterialState } from "@bim-studio/contracts";
 import type { RenderPacket } from "@bim-studio/deep-engine";
-import { Color } from "three";
-import { isNeutralMaterialField } from "./sceneNeutralAppearance";
+import { isNeutralMaterialField, sceneHexToLinearRgb } from "./sceneNeutralAppearance";
 
 type Material = RenderPacket["materials"][number];
 const scalarFields = new Set(["color", "roughness", "metalness", "ior", "emissive", "emissiveIntensity", "doubleSided", "normalScale", "sourceColor", "sourceEmissive", "customShader"]);
@@ -50,8 +49,7 @@ function bounded(value: number, max: number, id: string): number {
 }
 function linearColor(value: string, id: string): [number, number, number] {
   if (typeof value !== "string" || !/^#[\da-f]{6}$/i.test(value)) throw new Error(`对象 ${id} 的材质颜色必须为 #RRGGBB`);
-  const color = new Color(value);
-  return [color.r, color.g, color.b];
+  return sceneHexToLinearRgb(value);
 }
 
 export function sourceMaterialSlot(id: string): string | undefined {

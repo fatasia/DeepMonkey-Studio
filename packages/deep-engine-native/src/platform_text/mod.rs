@@ -9,7 +9,10 @@ pub mod ime_winit;
 pub mod layout;
 pub mod raster;
 mod raster_wire;
+pub use raster::runtime_text_rasterizer;
 pub use raster::{RasterizedText, TextRasterRequest, TextRasterizer};
+#[cfg(target_arch = "wasm32")]
+pub use raster::{add_runtime_font, clear_runtime_fonts};
 pub use raster_wire::{
     TEXT_RASTER_REQUEST_MAX_BYTES, measure_glyph_run_json, rasterize_text_batch_json,
     rasterize_text_json,

@@ -1,9 +1,10 @@
 import type { ScenePostProcessingState } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
+import type { RendererBackend } from "../viewer/ViewerEngine";
 
 interface ScenePostProcessingEditorProps {
   locale: AppLocale;
-  rendererBackend: "webgl" | "webgpu";
+  rendererBackend: RendererBackend;
   value: ScenePostProcessingState;
   onChange: (next: ScenePostProcessingState) => void;
 }
@@ -14,7 +15,7 @@ export function ScenePostProcessingEditor({
   value,
   onChange,
 }: ScenePostProcessingEditorProps) {
-  const available = rendererBackend === "webgl" || rendererBackend === "webgpu";
+  const available = rendererBackend === "webgl" || rendererBackend === "webgpu" || rendererBackend === "wasm";
   const controlsEnabled = value.enabled;
   const update = (patch: Partial<ScenePostProcessingState>) =>
     onChange({ ...value, ...patch });

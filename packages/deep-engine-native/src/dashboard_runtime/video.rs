@@ -170,10 +170,16 @@ impl DashboardVideoPlayback {
             } else {
                 None
             };
-            Some(DashboardAudioTrack::from_mp4(bytes, diagnostic.playback.r#loop, loop_duration)?)
+            Some(DashboardAudioTrack::from_mp4(
+                bytes,
+                diagnostic.playback.r#loop,
+                loop_duration,
+            )?)
         };
         if diagnostic.playback.autoplay {
-            if let Some(audio) = &audio { audio.play(); }
+            if let Some(audio) = &audio {
+                audio.play();
+            }
         }
         Ok(Self {
             decoder,
@@ -232,7 +238,9 @@ impl DashboardVideoPlayback {
             let Some((absolute, frame)) = next else {
                 if !self.loop_enabled {
                     self.ended = true;
-                    if let Some(audio) = &self.audio { audio.pause(); }
+                    if let Some(audio) = &self.audio {
+                        audio.pause();
+                    }
                     settled = true;
                     break;
                 }
@@ -337,7 +345,9 @@ impl DashboardVideoPlayback {
                 return Err(error);
             }
         };
-        if was_playing { replacement.play(); }
+        if was_playing {
+            replacement.play();
+        }
         self.audio = Some(replacement);
         self.last_clock = monotonic_now;
         // Force a presentation tick so callers can verify the video clock was
@@ -406,7 +416,9 @@ impl DashboardVideoPlayback {
             .checked_add(self.position_100ns)
             .ok_or("dashboard video pause clock overflow")?;
         self.started_at = monotonic_now;
-        if let Some(audio) = &self.audio { audio.pause(); }
+        if let Some(audio) = &self.audio {
+            audio.pause();
+        }
         Ok(())
     }
 
@@ -425,7 +437,9 @@ impl DashboardVideoPlayback {
             .ok_or("dashboard video play clock overflow")?;
         self.started_at = monotonic_now;
         self.last_clock = monotonic_now;
-        if let Some(audio) = &self.audio { audio.play(); }
+        if let Some(audio) = &self.audio {
+            audio.play();
+        }
         Ok(())
     }
 
@@ -493,7 +507,9 @@ impl DashboardVideoPlayback {
     ) -> Result<DashboardVideoAdvance, String> {
         let state = self.advance_to(queue, monotonic_now)?;
         self.lifecycle_suspended_at = Some(monotonic_now);
-        if let Some(audio) = &self.audio { audio.pause(); }
+        if let Some(audio) = &self.audio {
+            audio.pause();
+        }
         Ok(state)
     }
 
@@ -512,7 +528,9 @@ impl DashboardVideoPlayback {
             .ok_or("dashboard video lifecycle clock overflow")?;
         self.last_clock = monotonic_now;
         if self.playing {
-            if let Some(audio) = &self.audio { audio.play(); }
+            if let Some(audio) = &self.audio {
+                audio.play();
+            }
         }
         Ok(())
     }

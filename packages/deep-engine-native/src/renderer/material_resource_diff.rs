@@ -68,6 +68,7 @@ pub fn instance_material_words_unchanged(before: &[PbrMaterial], after: &[PbrMat
             && before.alpha_mode == after.alpha_mode
             && before.double_sided == after.double_sided
             && before.premultiplied_alpha == after.premultiplied_alpha
+            && before.fog == after.fog
     })
 }
 
@@ -152,6 +153,7 @@ mod tests {
             alpha_cutoff: None,
             double_sided: None,
             premultiplied_alpha: None,
+            fog: None,
         }
     }
 

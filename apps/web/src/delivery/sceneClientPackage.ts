@@ -13,6 +13,7 @@ import { loadFrozenSceneClientDependencies, frozenSceneResourceUrl } from "./sce
 import { probeGridBakeForPayload } from "./probeGridBakePublicationSession";
 import type { SceneIrradianceProbeBake } from "./compileSceneRuntimePackage";
 import type { NativeSceneClientPayloadOptions } from "./nativeSceneClientPayload";
+import { decodeSceneClientIcon, freezeSceneClientBranding } from "./sceneClientBranding";
 
 declare const preparedPackageIdentity: unique symbol;
 /** 仅当前页面内有效的一次性交付句柄，不进入历史记录或持久化。 */
@@ -114,12 +115,15 @@ export function resolveProbeGridPayloadInput(scene: SceneSnapshot,
 }
 
 function freezePackageOptions(options: SceneClientPackageOptions): SceneClientPackageOptions {
+  const branding = freezeSceneClientBranding(options.branding);
   return { ...options, scene: structuredClone(options.scene),
-    ...(options.publication ? { publication: structuredClone(options.publication) } : {}) };
+    ...(options.publication ? { publication: structuredClone(options.publication) } : {}),
+    ...(branding ? { branding } : {}) };
 }
 
 async function preparePackageDelivery(options: SceneClientPackageOptions, purpose: "delivery" | "diagnostic") {
   options = freezePackageOptions(options);
+  const branding = freezeSceneClientBranding(options.branding);
   if (options.target === "three-webview" && options.scene.postProcessing?.enabled
     && options.scene.postProcessing.screenSpaceReflection) {
     throw new Error("Three WebView 尚未实现 SSR 深度/法线/HDR 合成消费；请关闭 SSR 或使用 Studio Deep WebGPU。");
@@ -214,8 +218,10 @@ async function preparePackageDelivery(options: SceneClientPackageOptions, purpos
     const progress = delivery.progress ?? options.progress ?? (() => undefined);
     signal.throwIfAborted();
     if (native && purpose === "delivery") assertScenePublicationDeliverable(native.report, { allowNativeDegraded: true });
+    const brandedIcon = branding?.iconDataUrl ? decodeSceneClientIcon(branding.iconDataUrl) : undefined;
     const payloads: SceneClientArchiveFile[] = [
       ...files, ...(native?.files ?? []),
+      ...(brandedIcon ? [{ path: brandedIcon.path, content: Uint8Array.from(brandedIcon.content).buffer }] : []),
       { path: "scene.json", content: JSON.stringify(rewrite(delivery.scene), null, 2) },
       { path: "applications.json", content: JSON.stringify(rewrite(applications), null, 2) },
       { path: "project.json", content: JSON.stringify(rewrite({ id: project.id, name: project.name, description: project.description, models, assets }), null, 2) },
@@ -239,6 +245,8 @@ async function preparePackageDelivery(options: SceneClientPackageOptions, purpos
       nativeRuntime: native?.manifest,
       capabilities: native ? { status: native.manifest.status, reportPath: native.manifest.reportPath }
         : { twoD: true, threeD: true, dataBindings: true, liveConnections: runtime.reconfigureConnectionIds.length === 0 },
+      ...(branding ? { branding: { ...(branding.applicationName ? { applicationName: branding.applicationName } : {}),
+        ...(brandedIcon ? { iconPath: brandedIcon.path } : {}) } } : {}),
     };
     // ZIP 时间与构建时间不参与内容身份；每个实际负载文件均按 UTF-8/原始字节校验。
     const contentHash = runtimeContentSha256({ metadata: JSON.parse(JSON.stringify(metadata)),
@@ -280,7 +288,7 @@ function packageIdentity(options: SceneClientPackageOptions): string {
   const source = options.target === "deep-native" ? sceneCompilationSource(options.scene) : JSON.parse(JSON.stringify(options.scene)) as Record<string, unknown>;
   delete source.updatedAt; delete source.publishedAt;
   return runtimeContentSha256({ projectId: options.projectId, target: options.target, renderer: options.renderer,
-    toolbarVisible: options.toolbarVisible, source });
+    toolbarVisible: options.toolbarVisible, ...(options.branding ? { branding: options.branding } : {}), source });
 }
 
 function transportHash(value: unknown): string { return runtimeContentSha256(JSON.parse(JSON.stringify(value))); }

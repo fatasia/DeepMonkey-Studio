@@ -161,8 +161,41 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
         .map(|renderer| renderer.render(verify));
     if let Some(RenderOutcome::Failed(error)) = outcome.as_ref() {
         app.state.failure = Some(error.clone());
+        eprintln!("native frame failed: {error}");
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            app.startup_frame_pending = false;
+            if app.smoke_frame || app.state.verification.is_some() {
+                event_loop.exit();
+            } else if let Some(window) = app.window.as_ref() {
+                // A hidden first-frame failure must remain diagnosable and
+                // recoverable through the existing R rebuild action.
+                crate::window_chrome::set_title(
+                    window,
+                    "Deep Engine Native Viewer — first frame failed (press R to rebuild)",
+                );
+                window.set_visible(true);
+            }
+        }
+        #[cfg(target_arch = "wasm32")]
         event_loop.exit();
         return;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if app.startup_frame_pending
+        && matches!(outcome, Some(RenderOutcome::Presented))
+        && let Some(window) = &app.window
+    {
+        // Publish only a fully presented frame; repeated calls after surface
+        // recovery are harmless and never expose an unpainted client area.
+        app.startup_frame_pending = false;
+        crate::window_chrome::set_title(window, "");
+        if let Err(error) = crate::window_chrome::reveal_presented_window(window) {
+            // The helper always leaves the window visible. Keep rendering and
+            // retain diagnostics instead of turning a compositor optimisation
+            // into a fatal startup condition.
+            eprintln!("native first-frame compositor staging failed: {error}");
+        }
     }
     if matches!(outcome, Some(RenderOutcome::Presented))
         && let Some(notice) = crate::runtime_package_startup::presented(app.content.active_mut())

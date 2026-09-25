@@ -28,13 +28,9 @@ use crate::{
     renderer::rt_residency::{RtSceneResidency, rt_opaque_ready},
 };
 use deep_engine_native::{
-    fog::FogSettings,
-    hardware_ray_query::encode_ray_query_for_tlas,
-    ibl::disabled_probe_environment,
-    ies_shading::NativeIesShadingResource,
-    pbr_texture::prepare_pbr_resources,
-    player_view::PlayerView,
-    scene::prepare_scene,
+    fog::FogSettings, hardware_ray_query::encode_ray_query_for_tlas,
+    ibl::disabled_probe_environment, ies_shading::NativeIesShadingResource,
+    pbr_texture::prepare_pbr_resources, player_view::PlayerView, scene::prepare_scene,
 };
 use std::sync::{Arc, Mutex};
 use wgpu::util::DeviceExt;
@@ -116,7 +112,13 @@ fn rt_residency_rebuild_after_device_loss_is_self_sufficient() {
     assert_eq!(plan_a.instances.len(), 2, "both opaque instances resident");
     assert_eq!(blas_count_a, 2, "ground + box = one BLAS each");
     queue.submit([blas_encoder_a.finish(), tlas_encoder_a.finish()]);
-    let hit_a = probe_hit(&device, &queue, &probe_result, &probe_readback, residency_a.tlas());
+    let hit_a = probe_hit(
+        &device,
+        &queue,
+        &probe_result,
+        &probe_readback,
+        residency_a.tlas(),
+    );
     assert_eq!(hit_a, 1, "initial TLAS must answer the ray-query probe");
 
     // ---- 阶段 B:模拟设备丢失——旧 Renderer 连同其全部 RT 资源析构 ----
@@ -140,7 +142,13 @@ fn rt_residency_rebuild_after_device_loss_is_self_sufficient() {
         "rebuild BLAS cache must match the initial geometry dedup"
     );
     queue.submit([blas_encoder_b.finish(), tlas_encoder_b.finish()]);
-    let hit_b = probe_hit(&device, &queue, &probe_result, &probe_readback, residency_b.tlas());
+    let hit_b = probe_hit(
+        &device,
+        &queue,
+        &probe_result,
+        &probe_readback,
+        residency_b.tlas(),
+    );
     assert_eq!(
         hit_b, 1,
         "rebuilt TLAS must answer the probe without the dropped residency"
@@ -149,11 +157,7 @@ fn rt_residency_rebuild_after_device_loss_is_self_sufficient() {
     // ---- 阶段 C:重建后的 frame RT 槽恢复(生产路径的槽位状态机)----
     // 干净态:刚重建、槽未挂、管线族未装——逐帧裁决必须回退栅格,绝不
     // 使用半途状态。
-    let ready_before_slot = rt_opaque_ready::<wgpu::BindGroup>(
-        Some(&residency_b),
-        None,
-        false,
-    );
+    let ready_before_slot = rt_opaque_ready::<wgpu::BindGroup>(Some(&residency_b), None, false);
     assert!(
         ready_before_slot.is_none(),
         "rebuilt residency without the frame RT slot must fall back to raster"
@@ -165,10 +169,12 @@ fn rt_residency_rebuild_after_device_loss_is_self_sufficient() {
         .frame_rt
         .expect("ray-query device must expose the RT frame layout");
     let size = PhysicalSize::new(SIZE, SIZE);
-    let view = PlayerView { yaw: 0.55, ..Default::default() };
+    let view = PlayerView {
+        yaw: 0.55,
+        ..Default::default()
+    };
     let frame = frame_data_with_camera(size, view, FogSettings::default());
-    let shadows =
-        create_shadow_map(&device, &layouts.shadow, size, &frame, None, view).unwrap();
+    let shadows = create_shadow_map(&device, &layouts.shadow, size, &frame, None, view).unwrap();
     let frame_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("F2 recovery frame uniform"),
         contents: bytemuck::cast_slice(&frame),
@@ -199,8 +205,7 @@ fn rt_residency_rebuild_after_device_loss_is_self_sufficient() {
         &create_native_mesh_rt_shader(&device),
     );
     residency_b.install_pixel_pipelines(rt_pipelines);
-    let ready_after_recovery =
-        rt_opaque_ready(Some(&residency_b), Some(&rt_group), false);
+    let ready_after_recovery = rt_opaque_ready(Some(&residency_b), Some(&rt_group), false);
     assert!(
         ready_after_recovery.is_some(),
         "after re-binding the frame RT slot and reinstalling pipelines the frame loop must take the RT branch again"

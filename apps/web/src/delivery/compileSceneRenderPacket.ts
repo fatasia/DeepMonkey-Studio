@@ -1,14 +1,14 @@
 import { applySourceMaterialOverrides, assertStaticMaterialOverrides, assertMaterialSlotsResolve } from "./sceneMaterialOverrides";
 import { getSceneModelAssetId, type SceneModelState, type SceneSnapshot } from "@bim-studio/contracts";
 import { prepareRenderPacket, type RenderPacket } from "@bim-studio/deep-engine";
+import { multiplySceneMatrices } from "@bim-studio/deep-engine/scene";
 import { decodeTexturedGlb, type GltfImageDecoder } from "@bim-studio/deep-engine/gltf";
 import { runtimeContentSha256 } from "@bim-studio/deep-engine/runtime-package";
-import { Color, Matrix4 } from "three";
-import { sceneModelMatrix } from "./sceneModelMatrix";
+import { sceneModelMatrixValues } from "./sceneModelMatrixValues";
 import { sceneSnapshotToRenderPacket } from "./sceneSnapshotRenderPacket";
 import { worldToLocal } from "./sceneLocalCoordinates";
 import { createSceneGeometryPrecisionValidator } from "./sceneGeometryPrecision";
-import { staticSceneEffectEmissive, unsupportedStaticSceneEffectFields } from "./sceneNeutralAppearance";
+import { sceneHexToLinearRgb, staticSceneEffectEmissive, unsupportedStaticSceneEffectFields } from "./sceneNeutralAppearance";
 import { compileSceneAuxiliaryGrid } from "./compileSceneAuxiliaryGrid";
 
 export interface CompileSceneRenderOptions {
@@ -57,7 +57,7 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
     signal.throwIfAborted();
     if (!model.visible) { objectBindings.push({ nodeId: model.modelId, instanceIds: [] }); continue; }
     assertStaticModel(model);
-    const root = sceneModelMatrix(model.transform, model.modelId), assetId = getSceneModelAssetId(model);
+    const root = sceneModelMatrixValues(model.transform, model.modelId), assetId = getSceneModelAssetId(model);
     let source = assets.get(assetId);
     if (!source) {
       const bytes = await options.loadModel(assetId, signal);
@@ -77,9 +77,9 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
     }
     assertMaterialSlotsResolve(source.materials, model.material, model.modelId);
     const materialMap = new Map<string, string>(), prefix = `model-${runtimeContentSha256(model.modelId)}`;
-    const color = model.colorOverride ? new Color(model.colorOverride) : undefined;
+    const color = model.colorOverride ? sceneHexToLinearRgb(model.colorOverride) : undefined;
     const effectEmissive = staticSceneEffectEmissive(model.effects);
-    const effectColor = effectEmissive ? new Color(effectEmissive.color) : undefined;
+    const effectColor = effectEmissive ? sceneHexToLinearRgb(effectEmissive.color) : undefined;
     // 发布查看器的 applyModelState 会显式应用实例透明度，包括 1。
     for (const material of source.materials) {
       const masked = material.alphaMode === "MASK";
@@ -89,8 +89,8 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
       }
       const id = `${prefix}/${material.id}`;
       materials.push({ ...applySourceMaterialOverrides({ ...material,
-        ...(color ? { baseColor: [color.r, color.g, color.b] as const } : {}) }, model.material, model.modelId), id,
-        ...(effectColor ? { emissiveFactor: [effectColor.r, effectColor.g, effectColor.b] as const,
+        ...(color ? { baseColor: color } : {}) }, model.material, model.modelId), id,
+        ...(effectColor ? { emissiveFactor: effectColor,
           emissiveStrength: effectEmissive!.strength } : {}),
         baseColorAlpha: model.opacity, alphaMode: blended ? "BLEND" : masked ? "MASK" : "OPAQUE" });
       materialMap.set(material.id, id);
@@ -98,14 +98,14 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
     const instanceIds: string[] = [];
     for (const instance of source.instances) {
       const id = `${prefix}/${instance.id}`;
-      const composed = new Matrix4().multiplyMatrices(root, new Matrix4().fromArray(Array.from(instance.transform)));
+      const composed = multiplySceneMatrices(root, instance.transform);
       // GLB 内部变换与作者根变换合成后，再核对最终平移的 Float32 精度。
-      worldToLocal({ x: composed.elements[12]!, y: composed.elements[13]!, z: composed.elements[14]! },
+      worldToLocal({ x: composed[12], y: composed[13], z: composed[14] },
         { x: 0, y: 0, z: 0 }, `models[${model.modelId}].instances[${instance.id}].position`);
-      const transform = new Float32Array(composed.elements);
+      const transform = new Float32Array(composed);
       const geometry = sourceGeometries.get(instance.geometry);
       if (!geometry) throw new Error(`对象 ${model.modelId} 缺少几何 ${instance.geometry}`);
-      verifyGeometryPrecision(geometry, composed.elements, `models[${model.modelId}].instances[${instance.id}]`);
+      verifyGeometryPrecision(geometry, composed, `models[${model.modelId}].instances[${instance.id}]`);
       instances.push({ ...instance, id, transform, material: materialMap.get(instance.material)!,
         ...(model.effects?.outline ? { outline: true } : {}) });
       instanceIds.push(id);

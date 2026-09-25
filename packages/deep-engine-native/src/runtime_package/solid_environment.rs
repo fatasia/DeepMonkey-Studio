@@ -361,8 +361,6 @@ fn inverse_output(srgb: f64) -> f64 {
 #[path = "solid_environment_tests.rs"]
 mod tests;
 
-
-
 /// F3 探针网格解码:环境 JSON 的 `irradianceProbes` 载荷 → 记录流扁平数组。
 /// v1 双形态按 `levels` 键分派(与 Web 合同一致):
 /// - 旧单层:网格头 + 探针记录(与 Web packNativeProbeGridRecords 同合同),
@@ -581,7 +579,6 @@ fn decode_probe_grid_cascade_payload(
         .map_err(|error| format!("probe grid cascade rejected: {error:?}"))?;
     Ok(records)
 }
-
 
 #[cfg(test)]
 #[path = "solid_environment_probe_grid_tests.rs"]

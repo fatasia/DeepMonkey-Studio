@@ -281,7 +281,7 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
       this.selectionHelper = undefined;
     }
   protected emitCameraChange(force = false): void {
-      if (!this.onCameraChange) return;
+      if (!this.hasCameraChangeObservers()) return;
       // 快速路径：相机原始数值逐位未变时，签名串(toFixed 确定性)必然与上一帧相同，
       // 直接早退，避免每帧 2 次 Vector clone、6 次 toFixed 与字符串拼接。
       const position = this.camera.position, target = this.orbit.target, mode = this.navigationMode;
@@ -295,7 +295,7 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
       const signature = `${state.position.x.toFixed(4)}:${state.position.y.toFixed(4)}:${state.position.z.toFixed(4)}:${state.target.x.toFixed(4)}:${state.target.y.toFixed(4)}:${state.target.z.toFixed(4)}:${state.mode}`;
       if (!force && signature === this.lastCameraSignature) return;
       this.lastCameraSignature = signature;
-      this.onCameraChange(state);
+      this.publishCameraChange(state);
     }
   protected registerObject(id: string, name: string, object: THREE.Object3D, kind: LoadedSceneModel["kind"]): LoadedSceneModel {
       object.name = name;

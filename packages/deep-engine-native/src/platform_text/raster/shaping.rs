@@ -10,7 +10,7 @@ impl TextRasterizer {
         font_size: f32,
         line_height: f32,
     ) -> Result<f32, String> {
-        let started = self.profile.as_ref().map(|_| std::time::Instant::now());
+        let started = self.profile.as_ref().map(|_| web_time::Instant::now());
         let result = self.measure_uncached(text, family, font_size, line_height);
         if let (Some(started), Some(profile)) = (started, &mut self.profile) {
             profile.measure_calls += 1;
@@ -66,7 +66,7 @@ impl TextRasterizer {
         request: TextRasterRequest<'_>,
         scale: f32,
     ) -> Result<RasterizedText, String> {
-        let started = self.profile.as_ref().map(|_| std::time::Instant::now());
+        let started = self.profile.as_ref().map(|_| web_time::Instant::now());
         let result = self.rasterize_uncached(request, scale);
         if let (Some(started), Some(profile)) = (started, &mut self.profile) {
             profile.raster_calls += 1;

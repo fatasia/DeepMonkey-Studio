@@ -659,7 +659,11 @@ fn empty_scene_consume_mount_skips_instead_of_template_mismatch() {
         false,
     )
     .expect("empty scene culling builds");
-    let (_texture, hiz_view) = hiz_pyramid(&bench.device, &bench.queue, &[&[1.0; 16], &[1.0; 4], &[1.0]]);
+    let (_texture, hiz_view) = hiz_pyramid(
+        &bench.device,
+        &bench.queue,
+        &[&[1.0; 16], &[1.0; 4], &[1.0]],
+    );
     culling
         .attach_occlusion(
             &bench.device,

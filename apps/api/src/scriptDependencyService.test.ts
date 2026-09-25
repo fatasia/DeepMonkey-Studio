@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { LocalObjectStore } from "./objects";
-import { ScriptDependencyService } from "./scriptDependencyService";
+import { bundleSource, ScriptDependencyService } from "./scriptDependencyService";
 
 const temporaryDirectories: string[] = [];
 
@@ -20,6 +20,15 @@ describe("ScriptDependencyService", () => {
     expect(dependency.integrity).toMatch(/^sha256-/);
     const code = await readFile(path.join(directory, "projects", "project-1", "script-dependencies", dependency.id, "index.mjs"), "utf8");
     expect(code).toContain("speed = 12");
+  });
+
+  it("项目迁移导入已打包模块时保持字节身份", async () => {
+    const { directory, service } = await fixture();
+    const bundled = Buffer.from(`${await bundleSource("export const speed = 12;", "math.js")}`);
+    const dependency = await service.installPreparedUpload("project-1", "@plant/math", "math.mjs", bundled);
+    const stored = await readFile(path.join(directory, "projects", "project-1", "script-dependencies", dependency.id, "index.mjs"));
+    expect(stored).toEqual(bundled);
+    expect(dependency.size).toBe(bundled.byteLength);
   });
 
   it("在启动 npm 前拒绝浮动版本与越界模块名", async () => {

@@ -1,6 +1,7 @@
 import type { DataMessage } from "@bim-studio/contracts";
 import { parseDashboardMessages } from "./components/dashboardMessages";
 import { connectSceneDataSocket, type SceneDataSocket } from "./adapters/sceneDataSocket";
+import { runtimeHost } from "./adapters/runtimeHost";
 import { getAuthToken } from "./api";
 
 export type SceneDataBridgeStatus = "connecting" | "online" | "offline";
@@ -77,7 +78,7 @@ function connect(projectId: string, channel: ProjectChannel) {
       updateStatus(channel, "offline");
       if (!channel.stopped && channel.messageListeners.size > 0) channel.reconnectTimer = window.setTimeout(() => connect(projectId, channel), Math.min(10_000, 800 * 2 ** channel.retry++));
     }
-  });
+  }, runtimeHost.getServerProfile().baseUrl);
   channel.socket = next;
 }
 

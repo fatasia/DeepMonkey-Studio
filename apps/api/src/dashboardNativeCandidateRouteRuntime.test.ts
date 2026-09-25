@@ -9,6 +9,7 @@ import { parseDeepRuntimePackage, serializeDeepRuntimePackage } from "@bim-studi
 import source from "../../../packages/deep-engine/fixtures/dashboard-layout-source-v1.json";
 import { LocalObjectStore } from "./objects.js";
 import { registerDashboardNativeCandidateRouteRuntime } from "./dashboardNativeCandidateRouteRuntime.js";
+import type { DashboardAndroidApkDependencies } from "./dashboardAndroidApk.js";
 import type { DashboardWebStaticDownloadDependencies } from "./dashboardOfflineArchiveDownloadRoutes.js";
 import { createApiServer } from "./serverOptions.js";
 import { parseDashboardOfflineArchive } from "./dashboardOfflineArchiveBytes.js";
@@ -31,7 +32,8 @@ function published(): PublishedApplicationRecord {
     applicationRevision: authority.applicationRevision, document: document.application, publishedAt: "2026-09-16T12:00:00.000Z" };
 }
 
-async function fixture(portable = false, webStatic?: DashboardWebStaticDownloadDependencies) {
+async function fixture(portable = false, webStatic?: DashboardWebStaticDownloadDependencies,
+  androidApk?: DashboardAndroidApkDependencies) {
   const directory = await mkdtemp(path.join(tmpdir(), "dashboard-route-runtime-")); cleanup.push(directory);
   const objectKey = "projects/project-golden/assets/font.woff2", font = Uint8Array.of(1, 2, 3);
   const objectPath = path.join(directory, objectKey);
@@ -59,7 +61,8 @@ async function fixture(portable = false, webStatic?: DashboardWebStaticDownloadD
   if (portable) await writeFile(nativeExecutable, pe);
   app.addHook("preHandler", async request => { request.systemUser = { id: "editor", role: "editor", projectIds: [authority.projectId], enabled: true } as never; });
   const registered = await registerDashboardNativeCandidateRouteRuntime(app, { nativeExecutable: portable ? nativeExecutable : undefined,
-    ...(portable ? { nativeExecutableSha256: sha(pe) } : {}), ...(webStatic === undefined ? {} : { webStatic }), runtime: { store, objects: new LocalObjectStore(directory), closure, compiler,
+    ...(portable ? { nativeExecutableSha256: sha(pe) } : {}), ...(webStatic === undefined ? {} : { webStatic }),
+    ...(androidApk === undefined ? {} : { androidApk }), runtime: { store, objects: new LocalObjectStore(directory), closure, compiler,
     expectedDeviceFingerprintSha256: "a".repeat(64), verifier: { verify: async input => ({ verifier: "native-dashboard-window-v1",
       authority, freezeManifestSha256: input.candidate.manifest.manifestSha256, sourceSemanticHash: input.sourceSemanticHash,
       compileGraphHash: input.compileGraphHash, targetArtifactHash: input.targetArtifactHash, fixtureSha256: "b".repeat(64),
@@ -125,6 +128,26 @@ describe("dashboard Native candidate route runtime", () => {
     const configured = await fixture(false, webStatic);
     try {
       expect(configured.app.printRoutes()).toContain("web-package");
+    } finally { await configured.app.close(); }
+  });
+
+  it("advertises Android only when configured and reports request-scoped signing", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "dashboard-android-route-")); cleanup.push(directory);
+    const configured = await fixture(false, undefined, {
+      templateApkPath: path.join(directory, "template.apk"), buildToolsPath: path.join(directory, "build-tools"),
+    });
+    const base = `/api/projects/${authority.projectId}/applications/${authority.applicationId}/dashboard-candidates`;
+    try {
+      expect(configured.app.printRoutes()).toContain("android-apk");
+      const prepared = await configured.app.inject({ method: "POST", url: base, payload: {
+        publicationId: authority.publicationId, applicationRevision: authority.applicationRevision, entryPageId: authority.entryPageId,
+      } });
+      expect(prepared.statusCode, prepared.body).toBe(201);
+      expect(prepared.json()).toMatchObject({ downloadFormats: ["apk", "dmda"], androidSigningMode: "client-required" });
+      const unsigned = await configured.app.inject({ method: "GET",
+        url: `${base}/${prepared.json().candidateId}/android-apk` });
+      expect(unsigned.statusCode).toBe(400);
+      expect(unsigned.json()).toMatchObject({ code: "android_signing_required" });
     } finally { await configured.app.close(); }
   });
 });

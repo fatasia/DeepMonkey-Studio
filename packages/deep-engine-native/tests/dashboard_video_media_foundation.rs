@@ -6,7 +6,7 @@ use deep_engine_native::{
         dashboard_video_key_command,
     },
     dashboard_video::{
-        DashboardVideoFrameTexture, DashboardVideoDecoder, decode_first_packaged_mp4_frame,
+        DashboardVideoDecoder, DashboardVideoFrameTexture, decode_first_packaged_mp4_frame,
     },
     runtime_package::{
         DashboardNode, DashboardPage, DashboardRuntimeV1, DashboardVideoDiagnostic,
@@ -19,7 +19,8 @@ use std::{collections::BTreeMap, path::PathBuf, time::Duration};
 const SAMPLE_SHA256: &str = "cc0f524262f2ae97402ca8280556059c3d60cb3d25fec9309ff3b55ca974f593";
 /// 合成音轨样本 `tests/fixtures/audio-track-sample.mp4` 的内容哈希。
 /// 样本档案(来源/授权/格式/预期内容)见 tests/fixtures/README.md。
-const AUDIO_SAMPLE_SHA256: &str = "81afc6e84e23536c6b1056f84051a8fa3fb4eafbb4280c0c89ef7eea1e43dc9f";
+const AUDIO_SAMPLE_SHA256: &str =
+    "81afc6e84e23536c6b1056f84051a8fa3fb4eafbb4280c0c89ef7eea1e43dc9f";
 
 fn fixture_path(relative: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative)
@@ -74,7 +75,12 @@ fn runtime_with_fit(
             r#loop: loop_enabled,
         },
         state: DashboardVideoState {
-            status: if muted || media.id == format!("media.{AUDIO_SAMPLE_SHA256}") { "ready" } else { "blocked" }.into(),
+            status: if muted || media.id == format!("media.{AUDIO_SAMPLE_SHA256}") {
+                "ready"
+            } else {
+                "blocked"
+            }
+            .into(),
             transport: if muted || media.id == format!("media.{AUDIO_SAMPLE_SHA256}") {
                 if autoplay { "autoplay" } else { "poster" }
             } else {
@@ -491,19 +497,11 @@ fn real_audio_track_enters_native_playback_and_follows_transport() {
     assert!(!playback.is_muted());
     assert!(playback.is_playing());
     let paused = playback
-        .control(
-            &queue,
-            Duration::from_secs(1),
-            DashboardVideoCommand::Pause,
-        )
+        .control(&queue, Duration::from_secs(1), DashboardVideoCommand::Pause)
         .expect("pause audio and video together");
     assert!(!paused.playing);
     let resumed = playback
-        .control(
-            &queue,
-            Duration::from_secs(2),
-            DashboardVideoCommand::Play,
-        )
+        .control(&queue, Duration::from_secs(2), DashboardVideoCommand::Play)
         .expect("resume audio and video together");
     assert!(resumed.playing);
 }
@@ -523,18 +521,33 @@ fn formal_exe_audio_device_switch_long_stability_and_av_sync() {
         apply_limit_buckets: false,
     }))
     .expect("DX12 hardware adapter");
-    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
-        .expect("DX12 device");
-    let dashboard = runtime(media_from_fixture(&bytes, AUDIO_SAMPLE_SHA256), true, false, true);
+    let (device, queue) =
+        pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
+            .expect("DX12 device");
+    let dashboard = runtime(
+        media_from_fixture(&bytes, AUDIO_SAMPLE_SHA256),
+        true,
+        false,
+        true,
+    );
     let mut playback = dashboard
         .prepare_video_playback("node.video", &device, &queue, Duration::from_secs(1))
         .expect("default audio output and AAC decoder");
     let devices = deep_engine_native::dashboard_audio::DashboardAudioTrack::output_devices()
         .expect("enumerate Windows output devices");
-    assert!(!devices.is_empty(), "at least the default output must be listed");
-    let initial_device = playback.audio_device_name().unwrap_or("unknown").to_string();
+    assert!(
+        !devices.is_empty(),
+        "at least the default output must be listed"
+    );
+    let initial_device = playback
+        .audio_device_name()
+        .unwrap_or("unknown")
+        .to_string();
     let mut switched = false;
-    for device_name in devices.iter().filter(|name| name.as_str() != initial_device) {
+    for device_name in devices
+        .iter()
+        .filter(|name| name.as_str() != initial_device)
+    {
         playback
             .switch_audio_device(&queue, Duration::from_secs(1), device_name)
             .expect("switch audio device and preserve transport");
@@ -545,9 +558,18 @@ fn formal_exe_audio_device_switch_long_stability_and_av_sync() {
 
     // Real-time soak: advance the same packaged EXE playback path for 30 s,
     // sample the output clock and bound A/V drift to 150 ms.
-    let max_drift_100ns = formal_soak_av_drift(&mut playback, &queue, Duration::from_secs(30)).max_100ns;
-    println!("audio formal clocks: video={} audio={:?} drift={}", playback.state().position_100ns, playback.audio_position_100ns(), max_drift_100ns);
-    assert!(max_drift_100ns <= 1_500_000, "A/V drift exceeded 150 ms: {max_drift_100ns} 100ns");
+    let max_drift_100ns =
+        formal_soak_av_drift(&mut playback, &queue, Duration::from_secs(30)).max_100ns;
+    println!(
+        "audio formal clocks: video={} audio={:?} drift={}",
+        playback.state().position_100ns,
+        playback.audio_position_100ns(),
+        max_drift_100ns
+    );
+    assert!(
+        max_drift_100ns <= 1_500_000,
+        "A/V drift exceeded 150 ms: {max_drift_100ns} 100ns"
+    );
     println!(
         "formal native EXE audio: device={initial_device}; switched={switched}; soak_seconds=30; max_av_drift_ms={:.1}",
         max_drift_100ns as f64 / 10_000.0
@@ -574,18 +596,33 @@ fn formal_exe_audio_thirty_minute_stability_soak() {
         apply_limit_buckets: false,
     }))
     .expect("DX12 hardware adapter");
-    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
-        .expect("DX12 device");
-    let dashboard = runtime(media_from_fixture(&bytes, AUDIO_SAMPLE_SHA256), true, false, true);
+    let (device, queue) =
+        pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
+            .expect("DX12 device");
+    let dashboard = runtime(
+        media_from_fixture(&bytes, AUDIO_SAMPLE_SHA256),
+        true,
+        false,
+        true,
+    );
     let mut playback = dashboard
         .prepare_video_playback("node.video", &device, &queue, Duration::from_secs(1))
         .expect("default audio output and AAC decoder");
     let devices = deep_engine_native::dashboard_audio::DashboardAudioTrack::output_devices()
         .expect("enumerate Windows output devices");
-    assert!(!devices.is_empty(), "at least the default output must be listed");
-    let initial_device = playback.audio_device_name().unwrap_or("unknown").to_string();
+    assert!(
+        !devices.is_empty(),
+        "at least the default output must be listed"
+    );
+    let initial_device = playback
+        .audio_device_name()
+        .unwrap_or("unknown")
+        .to_string();
     let mut switched = false;
-    for device_name in devices.iter().filter(|name| name.as_str() != initial_device) {
+    for device_name in devices
+        .iter()
+        .filter(|name| name.as_str() != initial_device)
+    {
         playback
             .switch_audio_device(&queue, Duration::from_secs(1), device_name)
             .expect("switch audio device and preserve transport");
@@ -621,7 +658,11 @@ fn formal_exe_audio_thirty_minute_stability_soak() {
     let p99_index = series.len().saturating_sub(1);
     let p99_index = p99_index.min((series.len() as u64 * 99 / 100) as usize);
     let p99_100ns = series.get(p99_index).copied().unwrap_or(0);
-    let mean_100ns = if stats.samples > 0 { stats.sum_100ns / stats.samples as i64 } else { 0 };
+    let mean_100ns = if stats.samples > 0 {
+        stats.sum_100ns / stats.samples as i64
+    } else {
+        0
+    };
     println!(
         "audio soak percentiles: mean={:.1}ms p99={:.1}ms max={:.1}ms (V4 gate: mean<=150 && p99<=150)",
         mean_100ns as f64 / 10_000.0,
@@ -639,7 +680,11 @@ fn formal_exe_audio_thirty_minute_stability_soak() {
         evidence,
     )
     .expect("write 30-minute soak evidence JSON");
-    assert!(passed, "A/V drift exceeded 150 ms over {soak_seconds} s: {} 100ns", stats.max_100ns);
+    assert!(
+        passed,
+        "A/V drift exceeded 150 ms over {soak_seconds} s: {} 100ns",
+        stats.max_100ns
+    );
     println!(
         "formal native EXE audio 30-minute soak: device={initial_device}; switched={switched}; soak_seconds={soak_seconds}; samples={}; max_av_drift_ms={max_drift_ms:.1}; mean_av_drift_ms={mean_drift_ms:.1}",
         stats.samples
@@ -674,7 +719,9 @@ fn formal_soak_av_drift(
     };
     while start.elapsed() < soak {
         let tick = Duration::from_secs(1) + start.elapsed();
-        let state = playback.advance_to(queue, tick).expect("stable media advance");
+        let state = playback
+            .advance_to(queue, tick)
+            .expect("stable media advance");
         if let Some(audio) = playback.audio_position_100ns() {
             let duration = playback.duration_100ns().max(1);
             let video = state.position_100ns.rem_euclid(duration);

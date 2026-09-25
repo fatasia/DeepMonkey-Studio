@@ -1,6 +1,7 @@
 //! Opt-in, fixed-window telemetry for one native renderer/device epoch.
 
-use std::{collections::BTreeMap, time::Instant};
+use std::collections::BTreeMap;
+use web_time::Instant;
 
 use serde::Serialize;
 

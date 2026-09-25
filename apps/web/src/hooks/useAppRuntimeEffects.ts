@@ -402,7 +402,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
         } catch (reason) {
           showError(new Error(`渲染后端已启用，但偏好保存失败：${reason instanceof Error ? reason.message : String(reason)}`));
         }
-        setMessage(pending.recoveryMessage ?? `已切换到 ${engine.getRendererBackend() === "webgpu" ? "Deep WebGPU Beta" : "WebGL"}，场景状态已恢复`);
+        setMessage(pending.recoveryMessage ?? `已切换到 ${rendererBackendLabel(engine.getRendererBackend())}，场景状态已恢复`);
       })
       .then(() => {
         setRendererActiveBackend(engine.getRendererBackend());

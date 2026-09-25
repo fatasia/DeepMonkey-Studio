@@ -1,0 +1,36 @@
+# GPT 接手现状核查（2026-09-25）
+
+依据 `glm-to-gpt-2026-09-25.md`、`active-task-recovery-ledger.md` 末尾批次、`codex-to-glm-2026-09-25.md`、`engine-neutral-command-layer-design-2026-09-25.md`，并核对 `git log`、`git status --short`、`git diff --stat`。当前 HEAD `fdb383ee`；工作树仍包含其他会话的大量修改，均按文件域保护，未做清理或回滚。
+
+## 现状核查
+
+1. **源码与未跟踪文件**：已搜 `packages/*/src`、`apps/*/src` 的 `customShader|shaderEffect|shaderPackages|pickScene|editorOverlay|probeGridBake`，并检查 `git status --short` 的 `??`。`ObjectAppearanceEditor` 仅有枚举式 `shaderEffect`；Deep `pickScene` 已存在；WebGPU `editorOverlay` 已接；烘焙持久化文件已有。未跟踪文件含 WASM、浏览器测试脚本及其他会话产物，禁止抢占。
+2. **契约层**：`packages/contracts/src/scene.ts` 已有 `SceneMaterialState.shaderEffect`、`customShader`、`ScenePickingHit/Query`；`packages/deep-engine/src/runtimePackage/types.ts` 已有 `shaderPackages`（上限 128），`packages/deep-engine/src/webgpu/editorOverlayTypes.ts` 已有 WebGPU 顶点合同。WASM overlay 使用同一 8-float 顶点合同，探针字段沿既有 RuntimePackage 入口传递。
+3. **依赖**：`package.json`、`apps/web/package.json`、`packages/deep-engine/package.json`、`packages/deep-engine-wasm/Cargo.toml` 已核对。Three、deep-engine Shader Package、wgpu/wasm-bindgen 已在用，以下切片无需新增库。
+4. **消费方**：`viewerEngineObjectState.ts` 消费材质状态；运行包 builder 消费 `shaderPackages`/`materialBindings`；WebGPU/WASM 桥消费 `editorOverlay`；`probeGridBakePublicationSession` 被发布链消费；Deep WebGPU 点击已走 `pickScene` 并经实例映射恢复作者 `nodeId`，缺映射明确降级。
+5. **测试证据**：交接冻结基线 API 1580、Web 4462、deep-engine 3855；`test-output/ui-consistency-audit-2026-09-25/` 有 UI 证据，`test-output/interaction-functional-audit-2026-09-25/` 有截图/探针但缺报告；已有 picking、runtimePackage、probeGridBake 测试。后续只跑受改动影响的最相关门禁，再进行必要的全量收口。
+6. **规格**：以总账末尾 W1/W2/W3 队列和交接最新优先级为准；命令层设计的未实施公共合同议题不冒充已完成。工业格式计划与本轮切片无直接改动关系。
+
+## 已完成 / 本轮剩余 / 明确阻塞 / 项目级后验收
+
+| 状态 | 项目 | 实现入口与证据 | 未满足条件 / 预计文件域 |
+| --- | --- | --- | --- |
+| 已完成 | 命令层八原语与 20 UI 写点 | 总账批次 15，`apps/web/src/viewer/engineEditCommand*` | 不重建 |
+| 已完成 | 烘焙 UI 接线、服务端持久化、发布一致性 | 总账批次 16，`probeGridBake*` | 不重建 |
+| 已完成 | Shader 正式工具链 | `CustomShaderEditor`、`sceneCustomShader`、`compileSceneRuntimePackage`、`shaderPackages/materialBindings` | DeepSL 编辑/诊断/绑定/解除绑定/快照保存/发布阻断；预览只显示真实诊断与 PassCacheKey，不伪造像素 |
+| 已完成 | Deep 拾取消费 | `pickScene`、`ScenePickingHit`、Deep WebGPU 桥、`ThreeProjectionBridge` | Deep 编辑点击消费命中，实例映射恢复作者 `nodeId`；无映射明确 degraded/fallback；聚焦 38+33 项通过 |
+| 已完成 | WASM overlay 与探针消费 | `deep-engine-wasm/src/lib.rs`、Native editor overlay、Web WASM 桥 | overlay FFI/渲染 pass、探针 runtime package 编译接线；Rust/WASM/bundle/freshness 门禁通过 |
+| 已完成 | W1 辅助图形 | `deepOverlayPrimitives`、`deepOverlayPrimitiveSource`、`viewerEngineInteraction` | 选择盒、两点/角度测量、剖切盒、标注 pin/marker、灯光代理 native overlay；标注文字保留作者标签投影 |
+| 已完成 | W1 gizmo 交互数学 | `deepGizmoInteraction`、`deepCameraInputSession`、WebGPU/WASM bridge | translate/rotate/scale 命中与操纵在 Deep 侧消费，TransformControls 事件不再转发；3 项纯数学测试通过 |
+| 已完成 | W3 诊断上层 | `StudioDeepPerformance` → `FramePerformanceSnapshot` → `RendererDiagnosticsPanel` | clustered light、DDGI budget、residency scale、temporal camera-cut、资源/瞬态纹理、probe clipmap 真实字段可见 |
+| 本轮剩余 | 交互/视觉全检收口 | `test-output/interaction-functional-audit-2026-09-25/` | M2/M3/M4 主路径通过；M1 旧脚本仍点击当前 disabled 的无模型爆炸按钮，需按新语义重录；Shader/gizmo/WASM 新 UI 需两轮截图与评分 |
+| 本轮剩余 | W3 音频 30min soak | Native `dashboard_video_media_foundation` | 既有 500ms 设备事件逃逸已有定性和 p99 口径；需完成/记录 1800s ignored soak 证据 |
+| 明确限制 | Native clustered lighting 视觉证据、temporal validity ratio | 现有 Native/Hi-Z 诊断 | 运行链已有能力，但缺真实 GPU 像素/validity ratio 生产证据；不伪造指标，需外部 GPU capture/设备样本 |
+| 项目级后验收 | 全站统一体验、性能长稳、对外发布 | `bim-studio/AGENTS.md` 最终门禁 | 需全部核心功能闭合后的整体验收 |
+
+## 并行文件边界与产物
+
+- Shader 车道：`packages/contracts/src/scene.ts`、`apps/web/src/components/ObjectAppearanceEditor*`、材质作者态/发布转换器及其测试；交付保存→恢复→编译发布证据和 UI 视觉报告。不得修改拾取、WASM 和 GPU 计时文件。
+- 拾取车道：Web viewer/Deep 桥的拾取输入与发布查看器拾取及测试；交付 Deep 模式 nodeId 命中和降级证据。不得修改 Shader、WASM 和 GPU 计时文件。
+- WASM 车道：`packages/deep-engine-wasm/src`、Web WASM 桥及测试；交付 overlay/探针消费证据。不得修改 Shader、拾取和 GPU 计时文件。
+- 主线程：交互/视觉复验、音频 soak 证据、统合验证和总账更新。遇到共享文件先按文件域暂存，不交叉暂存。

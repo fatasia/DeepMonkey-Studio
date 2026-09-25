@@ -556,23 +556,38 @@ pub mod bench {
 
     fn unit_cube() -> (Vec<[f32; 3]>, Vec<[f32; 3]>, Vec<u32>) {
         let positions: Vec<[f32; 3]> = vec![
-            [-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5],
-            [-0.5, -0.5, -0.5], [0.5, -0.5, -0.5], [0.5, 0.5, -0.5], [-0.5, 0.5, -0.5],
+            [-0.5, -0.5, 0.5],
+            [0.5, -0.5, 0.5],
+            [0.5, 0.5, 0.5],
+            [-0.5, 0.5, 0.5],
+            [-0.5, -0.5, -0.5],
+            [0.5, -0.5, -0.5],
+            [0.5, 0.5, -0.5],
+            [-0.5, 0.5, -0.5],
         ];
         let normals: Vec<[f32; 3]> = vec![
-            [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0],
-            [0.0, 0.0, -1.0], [0.0, 0.0, -1.0], [0.0, 0.0, -1.0], [0.0, 0.0, -1.0],
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, -1.0],
+            [0.0, 0.0, -1.0],
+            [0.0, 0.0, -1.0],
+            [0.0, 0.0, -1.0],
         ];
         let indices: Vec<u32> = vec![
-            0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6,
-            3, 2, 6, 3, 6, 7, 1, 5, 6, 1, 6, 2,
-            0, 4, 5, 0, 5, 1, 0, 3, 7, 0, 7, 4,
+            0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 3, 2, 6, 3, 6, 7, 1, 5, 6, 1, 6, 2, 0, 4, 5, 0, 5,
+            1, 0, 3, 7, 0, 7, 4,
         ];
         (positions, normals, indices)
     }
 
     fn view_projection(aspect: f32, time: f32) -> [[f32; 4]; 4] {
-        let eye = [time.sin() * 2.4, 1.5 + time.sin() * 0.3, 2.6 + time.cos() * 0.4];
+        let eye = [
+            time.sin() * 2.4,
+            1.5 + time.sin() * 0.3,
+            2.6 + time.cos() * 0.4,
+        ];
         let center = [0.0_f32, 0.2, 0.0];
         let up = [0.0_f32, 1.0, 0.0];
         let z: [f32; 3] = [eye[0] - center[0], eye[1] - center[1], eye[2] - center[2]];
@@ -613,7 +628,10 @@ pub mod bench {
         let mut out = [[0.0_f32; 4]; 4];
         for (r, vr) in view.iter().enumerate() {
             for c in 0..4 {
-                out[r][c] = proj[r][0] * view[c][0] + proj[r][1] * view[c][1] + proj[r][2] * view[c][2] + proj[r][3] * view[c][3];
+                out[r][c] = proj[r][0] * view[c][0]
+                    + proj[r][1] * view[c][1]
+                    + proj[r][2] * view[c][2]
+                    + proj[r][3] * view[c][3];
             }
         }
         out
@@ -717,21 +735,45 @@ pub mod bench {
                 Some(wgpu::VertexBufferLayout {
                     array_stride: 12,
                     step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x3, offset: 0, shader_location: 0 }],
+                    attributes: &[wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x3,
+                        offset: 0,
+                        shader_location: 0,
+                    }],
                 }),
                 Some(wgpu::VertexBufferLayout {
                     array_stride: 12,
                     step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x3, offset: 0, shader_location: 1 }],
+                    attributes: &[wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x3,
+                        offset: 0,
+                        shader_location: 1,
+                    }],
                 }),
                 Some(wgpu::VertexBufferLayout {
                     array_stride: 32,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
-                        wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x3, offset: 0, shader_location: 2 },
-                        wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32, offset: 12, shader_location: 3 },
-                        wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x3, offset: 16, shader_location: 4 },
-                        wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32, offset: 28, shader_location: 5 },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x3,
+                            offset: 0,
+                            shader_location: 2,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32,
+                            offset: 12,
+                            shader_location: 3,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x3,
+                            offset: 16,
+                            shader_location: 4,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32,
+                            offset: 28,
+                            shader_location: 5,
+                        },
                     ],
                 }),
             ];
@@ -774,10 +816,26 @@ pub mod bench {
             });
 
             let (positions, normals, indices) = unit_cube();
-            let mesh_pos = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: None, contents: bytemuck::cast_slice(&positions), usage: wgpu::BufferUsages::VERTEX });
-            let mesh_nrm = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: None, contents: bytemuck::cast_slice(&normals), usage: wgpu::BufferUsages::VERTEX });
-            let indices_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: None, contents: bytemuck::cast_slice(&indices), usage: wgpu::BufferUsages::INDEX });
-            let instances = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: None, contents: bytemuck::cast_slice(&instance_data()), usage: wgpu::BufferUsages::VERTEX });
+            let mesh_pos = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::cast_slice(&positions),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+            let mesh_nrm = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::cast_slice(&normals),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+            let indices_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::cast_slice(&indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
+            let instances = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::cast_slice(&instance_data()),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
             let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
                 label: None,
                 size: std::mem::size_of::<Uniforms>() as u64,
@@ -786,7 +844,10 @@ pub mod bench {
             });
             let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 layout: &bind_layout,
-                entries: &[wgpu::BindGroupEntry { binding: 0, resource: uniforms.as_entire_binding() }],
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniforms.as_entire_binding(),
+                }],
                 label: None,
             });
             Ok(Self {
@@ -817,7 +878,10 @@ pub mod bench {
             let world = [0.0_f32, -1.0, 0.0, 1.0];
             let mut clip = [0.0_f32; 4];
             for r in 0..4 {
-                clip[r] = m[r][0] * world[0] + m[r][1] * world[1] + m[r][2] * world[2] + m[r][3] * world[3];
+                clip[r] = m[r][0] * world[0]
+                    + m[r][1] * world[1]
+                    + m[r][2] * world[2]
+                    + m[r][3] * world[3];
             }
             clip.to_vec()
         }
@@ -831,8 +895,16 @@ pub mod bench {
 
         /// 每帧:time 秒;canvas 尺寸变化时自动重建深度缓冲。
         #[wasm_bindgen]
-        pub fn render_frame(&mut self, canvas_width: u32, canvas_height: u32, time: f32) -> Result<(), JsValue> {
-            let gpu = self.gpu.as_mut().ok_or_else(|| JsValue::from_str("viewer dropped"))?;
+        pub fn render_frame(
+            &mut self,
+            canvas_width: u32,
+            canvas_height: u32,
+            time: f32,
+        ) -> Result<(), JsValue> {
+            let gpu = self
+                .gpu
+                .as_mut()
+                .ok_or_else(|| JsValue::from_str("viewer dropped"))?;
             let size = (canvas_width.max(1), canvas_height.max(1));
             if gpu.size != size {
                 gpu.surface.configure(
@@ -851,7 +923,11 @@ pub mod bench {
                 );
                 let depth = gpu.device.create_texture(&wgpu::TextureDescriptor {
                     label: None,
-                    size: wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 },
+                    size: wgpu::Extent3d {
+                        width: size.0,
+                        height: size.1,
+                        depth_or_array_layers: 1,
+                    },
                     mip_level_count: 1,
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
@@ -880,11 +956,16 @@ pub mod bench {
                 }),
             );
             let frame = match gpu.surface.get_current_texture() {
-                wgpu::CurrentSurfaceTexture::Success(frame) | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
+                wgpu::CurrentSurfaceTexture::Success(frame)
+                | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
                 other => return Err(JsValue::from_str(&format!("acquire: {other:?}"))),
             };
-            let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
-            let mut encoder = gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+            let view = frame
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
+            let mut encoder = gpu
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
             {
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: None,
@@ -893,13 +974,24 @@ pub mod bench {
                         resolve_target: None,
                         depth_slice: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.043, g: 0.066, b: 0.078, a: 1.0 }),
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 0.043,
+                                g: 0.066,
+                                b: 0.078,
+                                a: 1.0,
+                            }),
                             store: wgpu::StoreOp::Store,
                         },
                     })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: gpu.depth.as_ref().ok_or_else(|| JsValue::from_str("depth missing"))?,
-                        depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
+                        view: gpu
+                            .depth
+                            .as_ref()
+                            .ok_or_else(|| JsValue::from_str("depth missing"))?,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Store,
+                        }),
                         stencil_ops: None,
                     }),
                     timestamp_writes: None,
@@ -919,6 +1011,6 @@ pub mod bench {
             Ok(())
         }
     }
-
 }
+#[cfg(feature = "bench-viewer")]
 pub use bench::Viewer;

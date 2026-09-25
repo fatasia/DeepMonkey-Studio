@@ -379,8 +379,15 @@ fn materialize_scene_package(
 /// 调试期 `adb shell run-as <pkg> cat files/deep-native.log` 可取。
 #[cfg(target_os = "android")]
 mod android_file_log {
+    use std::ffi::CString;
     use std::io::Write;
+    use std::os::raw::c_char;
     use std::path::Path;
+
+    #[link(name = "log")]
+    unsafe extern "C" {
+        fn __android_log_write(priority: i32, tag: *const c_char, text: *const c_char) -> i32;
+    }
 
     pub(crate) struct FileLog(Option<std::fs::File>);
     impl FileLog {
@@ -400,6 +407,11 @@ mod android_file_log {
             if let Some(file) = self.0.as_mut() {
                 let _ = writeln!(file, "{line}");
             }
+            let tag = CString::new("DeepMonkey").expect("static Android log tag");
+            let text = CString::new(line.replace('\0', "�")).expect("NUL was replaced");
+            // Android log priority 4 = INFO. Keep logcat as a production-safe diagnostic
+            // path because release APKs deliberately disable `run-as` access.
+            unsafe { __android_log_write(4, tag.as_ptr(), text.as_ptr()) };
         }
     }
 }

@@ -19,7 +19,7 @@ import { registerDataEndpointRuntime } from "./dataEndpointRuntime.js";
 import { loadOrCreateServerInstanceId, registerServerMetaRoute } from "./serverMeta.js";
 import { registerSystemRoutes } from "./system.js";
 import { registerVisionRoutes, VisionEngine } from "./vision.js";
-import { createApiServer } from "./serverOptions.js";
+import { API_CORS_METHODS, createApiServer } from "./serverOptions.js";
 import { registerConversionTaskRoutes } from "./conversionTaskRoutes.js";
 import { ConversionTaskService } from "./conversionTasks.js";
 import { HttpCloudRenderWorkerClient } from "@bim-studio/server-sdk";
@@ -164,7 +164,7 @@ export async function buildApp() {
   await cloudRender.init();
 
   await app.register(websocket, { options: { maxPayload: 256 * 1024, perMessageDeflate: false } });
-  await app.register(cors, { origin: config.webOrigin });
+  await app.register(cors, { origin: config.webOrigin, methods: [...API_CORS_METHODS] });
   await app.register(multipart, {
     limits: { fileSize: 2 * 1024 * 1024 * 1024, files: 1 }
   });

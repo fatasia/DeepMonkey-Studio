@@ -36,7 +36,7 @@ export function useAssistantSessions(projectId: string | undefined, scopeKey: st
         if (!current(expected, version)) return;
         messages.push(...page.messages.map(message => ({ id: message.id, mode: message.mode, question: message.question,
           answer: message.answer, status: message.status, ...(message.model ? { model: message.model } : {}), ...(message.execution ? { execution: message.execution } : {}),
-          ...(message.reliability ? { reliability: message.reliability } : {}) })));
+          ...(message.scope ? { scope: message.scope } : {}), ...(message.reliability ? { reliability: message.reliability } : {}) })));
         after = page.nextCursor;
       } while (after);
       activeId.current = id; setSessionId(id); setConversation(messages);

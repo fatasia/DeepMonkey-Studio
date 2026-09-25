@@ -60,6 +60,17 @@ describe("PBR render targets backed by the frame transient pool", () => {
     f.targets.commitFrame();
   });
 
+  it("retains the fixed MRT signature when the renderer writes geometry buffers", () => {
+    const f = fixture();
+    f.targets.beginFrame({ width: 128, height: 72 }, [
+      { id: "opaque-hdr", descriptor: "rgba16float", external: false, aliasKey: "full-rgba16float",
+        firstUse: 0, lastUse: 1, transientSlot: 0 },
+    ], true);
+    expect(f.textures.slice(0, 4).map(texture => texture.descriptor.format)).toEqual(PBR_OPAQUE_ATTACHMENT_FORMATS);
+    expect(f.textures).toHaveLength(5);
+    f.targets.commitFrame();
+  });
+
   it("discards every acquired target when bind-group publication fails", () => {
     const f = fixture(); f.targets.beginFrame({ width: 16, height: 16 }); f.targets.commitFrame();
     const previous = [...f.textures];

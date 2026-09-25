@@ -33,6 +33,21 @@ pub(super) use keyboard::legend_snapshot;
 pub(super) use keyboard::{chart_key, chart_legend_focus};
 use redraw::redraw;
 
+/// Hidden product windows may not receive an OS `RedrawRequested`. Startup
+/// recovery calls the same render transaction from a user event, keeping the
+/// window hidden until `RenderOutcome::Presented` publishes it.
+pub(super) fn force_startup_redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
+    redraw(app, event_loop);
+}
+
+/// Studio already coalesces camera input to one event per browser animation
+/// frame. Rendering that event immediately avoids scheduling a second web
+/// `RedrawRequested` turn while preserving the exact normal redraw transaction.
+#[cfg(target_arch = "wasm32")]
+pub(super) fn present_wasm_camera(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
+    redraw(app, event_loop);
+}
+
 pub(super) fn handle(
     app: &mut NativeApp,
     event_loop: &ActiveEventLoop,
@@ -106,10 +121,11 @@ pub(super) fn handle(
         WindowEvent::Touch(touch) => {
             // 触控统一:触屏单指手势与鼠标左键走完全相同的处理链,
             // 点击、文本聚焦、拖动选区在鼠标/触控/键盘三种输入下语义一致。
-            let Some((action, position)) = app
-                .touch_pointer
-                .on_touch(touch.id, touch.phase, [touch.location.x, touch.location.y])
-            else {
+            let Some((action, position)) = app.touch_pointer.on_touch(
+                touch.id,
+                touch.phase,
+                [touch.location.x, touch.location.y],
+            ) else {
                 return;
             };
             match action {

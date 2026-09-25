@@ -1,5 +1,6 @@
 use super::{NativeApp, apply};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use web_time::Instant;
 
 #[derive(Default)]
 pub(in crate::app) struct InputGesture {

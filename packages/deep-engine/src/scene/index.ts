@@ -6,6 +6,7 @@ export { SceneMutationGateway,
   type SceneMutationCommandParser, type SceneMutationExecution, type SceneMutationGatewayOptions,
   type SceneMutationIssue, type SceneMutationIssueReason, type SceneMutationPreparation } from "./SceneMutationGateway.js";
 export { DEEP_SCENE_TRANSFORM_LIMITS } from "./validation.js";
+export { localTransformMatrix, multiplySceneMatrices } from "./math.js";
 export {
   SceneTransformGraphError,
   type SceneLocalMatrix,

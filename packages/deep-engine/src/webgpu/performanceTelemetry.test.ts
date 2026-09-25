@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { EnginePerformanceTelemetry } from "./performanceTelemetry.js";
 
 describe("EnginePerformanceTelemetry", () => {
+  it("retains optional coarse GPU spans beside whole-frame time", () => {
+    const telemetry = new EnginePerformanceTelemetry(16, true);
+    telemetry.record({ frame: 1, timings: {
+      "gpu-frame": 8, "gpu-shadow-opaque": 2, "gpu-intermediate": 4, "gpu-output": 2,
+    } });
+    expect(telemetry.snapshot().stages["gpu-intermediate"]).toMatchObject({ samples: 1, p95Ms: 4 });
+    expect(telemetry.samples("gpu-output")).toEqual([2]);
+  });
   it("exposes retained raw samples in frame order without synthesizing missing stages", () => {
     const telemetry = new EnginePerformanceTelemetry(16, true);
     telemetry.record({ frame: 8, timings: { "gpu-frame": 4 } });

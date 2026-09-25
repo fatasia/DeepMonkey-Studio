@@ -19,13 +19,25 @@ function sample() {
     transform: { position: { x: 1, y: 2, z: 3 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } } }];
   const project = { id: scene.projectId, name: "交付原项目", description: "离线示例", createdAt: scene.createdAt, updatedAt: scene.updatedAt,
     models: [{ id: "asset-old", name: "设备.ifc", status: "ready", sourceUrl: "/original.ifc", manifest: { geometryUrl: "/assets/model.glb" } }],
+    assets: [{ id: "image-old", projectId: scene.projectId, kind: "image", name: "工艺图", fileName: "process.png",
+      mimeType: "image/png", size: 5, url: "/assets/process.png", createdAt: scene.createdAt, updatedAt: scene.updatedAt }],
     dataConnections: [{ id: "connection-old", projectId: scene.projectId, name: "生产连接", type: "postgresql", enabled: true,
       config: { password: "private-secret", passwordEnv: "DB_SECRET", url: "postgres://private" }, createdAt: scene.createdAt, updatedAt: scene.updatedAt }],
     datasets: [{ id: "dataset-old", projectId: scene.projectId, connectionId: "connection-old", name: "趋势", refreshSeconds: 10, fields: [], createdAt: scene.createdAt, updatedAt: scene.updatedAt }],
+    dataPipelines: [{ id: "pipeline-old", projectId: scene.projectId, name: "生产趋势",
+      nodes: [{ id: "source", type: "source", name: "来源", datasetId: "dataset-old", position: { x: 0, y: 0 } },
+        { id: "output", type: "output", name: "输出", position: { x: 200, y: 0 } }],
+      edges: [{ id: "source-output", sourceNodeId: "source", targetNodeId: "output" }], createdAt: scene.createdAt, updatedAt: scene.updatedAt }],
   } as unknown as ProjectRecord;
   const application = migrateSceneSnapshotV1(scene);
+  application.scriptDependencies = [{ id: "dependency-old", specifier: "@plant/math", source: "upload", requested: "@plant/math",
+    fileName: "plant-math.mjs", assetUrl: "/api/projects/original/script-dependencies/dependency-old/content",
+    integrity: "sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=", size: 18, installedAt: scene.createdAt }];
   const document = createProjectTransfer(project, [scene], [application]);
-  return { project, scene, application, document, archive: { document, files: new Map([[document.files[0]!.id, new File(["model"], "设备.glb")]]) } satisfies ProjectTransferArchive };
+  const contents = new Map(document.files.map(file => [file.id, new File([
+    document.dependencies.some(item => item.fileId === file.id) ? "export const sum=1" : file.name.endsWith(".png") ? "image" : "model",
+  ], file.name)]));
+  return { project, scene, application, document, archive: { document, files: contents } satisfies ProjectTransferArchive };
 }
 
 function client() {
@@ -41,19 +53,29 @@ function client() {
     getApplication: vi.fn(async (_project: string, id: string) => { const value = applications.get(id); if (!value) throw new Error("404"); return value; }),
     createApplication: vi.fn(async (document: ApplicationDocument) => { assertApplicationDocument(document); applications.set(document.metadata.id, document); return document; }),
     saveApplication: vi.fn(async (document: ApplicationDocument) => { applications.set(document.metadata.id, document); return document; }),
-    uploadImageAsset: vi.fn(), uploadVideoAsset: vi.fn(), uploadEnvironmentMap: vi.fn(), uploadMaterialAsset: vi.fn(), uploadScriptDependency: vi.fn(), renameAsset: vi.fn(),
+    uploadImageAsset: vi.fn(async (id: string, file: File) => ({ id: "new-image-0", projectId: id, kind: "image", name: file.name,
+      fileName: file.name, mimeType: file.type || "image/png", size: file.size, url: "/assets/new-process.png", createdAt: "now", updatedAt: "now" })),
+    uploadVideoAsset: vi.fn(), uploadEnvironmentMap: vi.fn(), uploadMaterialAsset: vi.fn(),
+    uploadScriptDependency: vi.fn(async (_id: string, specifier: string, file: File) => ({ id: "new-dependency-0", specifier,
+      source: "upload", requested: specifier, fileName: file.name, assetUrl: "/script-dependencies/new-dependency-0/content",
+      integrity: "sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=", size: file.size, installedAt: "now" })),
+    renameAsset: vi.fn(),
   };
   return { result, projects, applications, savedScenes, api: result as unknown as ConstructorParameters<typeof ProjectTransferImport>[1] };
 }
 
 describe("project transfer", () => {
   it("exports an allowlist and removes credentials while keeping page content and stable object identities", () => {
-    const { document, application } = sample();
+    const { document, application, project } = sample();
     expect(document.applications[0]?.pages).toEqual(application.pages);
     expect(JSON.stringify(document)).not.toMatch(/private-secret|DB_SECRET|postgres:\/\/private/);
     expect(document.runtime.connections[0]).toMatchObject({ enabled: false, config: {} });
     expect(document.files[0]?.name).toBe("设备.glb");
     expect(document.models).toHaveLength(1);
+    expect(document.assets).toEqual([expect.objectContaining({ originalId: "image-old", kind: "image" })]);
+    expect(document.dependencies).toEqual([expect.objectContaining({ originalId: "dependency-old", specifier: "@plant/math" })]);
+    expect(document.runtime.datasets).toEqual([expect.objectContaining({ id: "dataset-old", connectionId: "connection-old" })]);
+    expect(document.runtime.pipelines).toEqual([expect.objectContaining({ id: "pipeline-old", projectId: project.id })]);
     expect(sanitizeTransferContent({ url: "https://user:pw@host/path?token=secret&x=1", headers: { Authorization: "secret" } }))
       .toEqual({ url: "https://host/path?x=1" });
     validateProjectTransfer(document);
@@ -83,6 +105,10 @@ describe("project transfer", () => {
     expect(fake.result.uploadModel).toHaveBeenCalledTimes(1);
     expect(fake.savedScenes[0]?.models[0]).toMatchObject({ modelId: "instance-A", assetModelId: "new-model-0" });
     expect(fake.result.createDataConnection).toHaveBeenCalledWith(imported.id, expect.objectContaining({ enabled: false, config: {} }));
+    expect(fake.result.uploadImageAsset).toHaveBeenCalledTimes(1);
+    expect(fake.result.uploadScriptDependency).toHaveBeenCalledWith(imported.id, "@plant/math", expect.any(File), { prepared: true });
+    expect(fake.result.saveDataPipeline).toHaveBeenCalledWith(imported.id, expect.objectContaining({ projectId: imported.id,
+      id: expect.not.stringMatching(/^pipeline-old$/), nodes: [expect.objectContaining({ datasetId: expect.not.stringMatching(/^dataset-old$/) }), expect.anything()] }));
     const saved = [...fake.applications.values()][0]!;
     expect(saved.metadata.projectId).toBe(imported.id);
     expect(saved.scenes[0]?.models[0]?.modelId).toBe("instance-A");
@@ -91,6 +117,24 @@ describe("project transfer", () => {
     // A completed package can create another independent copy; only unfinished imports resume.
     await new ProjectTransferImport(archive, fake.api).run("交付副本二", new AbortController().signal, vi.fn());
     expect(fake.result.createProject).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses the same import contract in both local and SaaS directions", async () => {
+    const local = client(); const saas = client();
+    const localResult = await new ProjectTransferImport(sample().archive, local.api).run("本地副本", new AbortController().signal, vi.fn());
+    const saasResult = await new ProjectTransferImport(sample().archive, saas.api).run("服务器副本", new AbortController().signal, vi.fn());
+    for (const target of [local, saas]) {
+      expect(target.result.uploadModel).toHaveBeenCalledTimes(1);
+      expect(target.result.uploadImageAsset).toHaveBeenCalledTimes(1);
+      expect(target.result.uploadScriptDependency).toHaveBeenCalledTimes(1);
+      expect(target.result.createDataConnection).toHaveBeenCalledTimes(1);
+      expect(target.result.createDataset).toHaveBeenCalledTimes(1);
+      expect(target.result.saveDataPipeline).toHaveBeenCalledTimes(1);
+      expect(target.result.saveScene).toHaveBeenCalledTimes(1);
+      expect(target.result.createApplication).toHaveBeenCalledTimes(1);
+    }
+    expect(localResult.name).toBe("本地副本");
+    expect(saasResult.name).toBe("服务器副本");
   });
 
   it("blocks missing files and cancellation before creation", async () => {

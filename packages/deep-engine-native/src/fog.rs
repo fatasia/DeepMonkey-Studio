@@ -101,7 +101,18 @@ impl FogSettings {
     }
 
     pub fn frame_projection(self, near: f32, far: f32) -> [f32; 4] {
-        [near, far, if self.exp2 { 2.0 } else if self.volumetric { 1.0 } else { 0.0 }, 0.0]
+        [
+            near,
+            far,
+            if self.exp2 {
+                2.0
+            } else if self.volumetric {
+                1.0
+            } else {
+                0.0
+            },
+            0.0,
+        ]
     }
 
     pub fn color(self) -> [f32; 3] {
@@ -253,7 +264,8 @@ mod tests {
 
     #[test]
     fn volumetric_profile_is_validated_and_preserved_in_frame_data() {
-        let fog = FogSettings::volumetric_with_profile(0.12, [0.2, 0.3, 0.4], 48, 32.0, -0.2).unwrap();
+        let fog =
+            FogSettings::volumetric_with_profile(0.12, [0.2, 0.3, 0.4], 48, 32.0, -0.2).unwrap();
         assert_eq!(fog.frame_profile(), [48.0, 32.0, -0.2, 1.0]);
         assert!(FogSettings::volumetric_with_profile(0.1, [0.0; 3], 0, 64.0, 0.0).is_err());
         assert!(FogSettings::volumetric_with_profile(0.1, [0.0; 3], 48, 0.0, 0.0).is_err());

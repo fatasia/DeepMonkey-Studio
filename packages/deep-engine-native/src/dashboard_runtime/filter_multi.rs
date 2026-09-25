@@ -74,7 +74,10 @@ impl DashboardRuntime {
             .collect();
         let selected: Vec<usize> = self.selected_options.iter().copied().collect();
         // 校验已保证所有 option 的目标集合与数据集标识一致,以首个 option 为参照遍历目标。
-        let reference = filter.options.first().ok_or("invalid frozen filter profile")?;
+        let reference = filter
+            .options
+            .first()
+            .ok_or("invalid frozen filter profile")?;
         let mut plans = Vec::new();
         for target in &reference.updates {
             if text_targets.contains(&target.node_id) {
@@ -102,8 +105,10 @@ impl DashboardRuntime {
                         .cloned()
                         .collect();
                     for index in &selected[1..] {
-                        let option =
-                            filter.options.get(*index).ok_or("filter option out of range")?;
+                        let option = filter
+                            .options
+                            .get(*index)
+                            .ok_or("filter option out of range")?;
                         let rows = &option
                             .updates
                             .iter()

@@ -1,18 +1,20 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { readDashboardWindowsExecutable } from "./dashboardWindowsExecutable.js";
+import { readDashboardWindowsExecutable, validateDashboardWindowsExecutable } from "./dashboardWindowsExecutable.js";
 import { applyNativeExecutableBranding } from "./nativeExecutableBranding.js";
 import type { ClientPackageBranding } from "./clientPackageBranding.js";
 
 export interface NativeExecutableOptions { signal?: AbortSignal; expectedSha256?: string; branding?: ClientPackageBranding }
 
 /** Callers validate domain authority before invoking this byte-packaging boundary. */
-export async function embedVerifiedNativeArtifact(artifact: Uint8Array, nativeExecutable: string,
+export async function embedVerifiedNativeArtifact(artifact: Uint8Array, nativeExecutable: string | Uint8Array,
   options: NativeExecutableOptions = {}): Promise<Uint8Array> {
   options.signal?.throwIfAborted();
   if (!artifact.byteLength || artifact.byteLength > 256 * 1024 ** 2) throw new Error("Embedded Native payload exceeds 256 MiB or is empty");
   const payload = Buffer.from(artifact);
-  const executable = await readDashboardWindowsExecutable(nativeExecutable, options.signal, options.expectedSha256);
+  const executable = typeof nativeExecutable === "string"
+    ? await readDashboardWindowsExecutable(nativeExecutable, options.signal, options.expectedSha256)
+    : validateDashboardWindowsExecutable(nativeExecutable, options.expectedSha256, options.signal);
   if (executable.length >= 48 && executable.subarray(-48, -40).equals(Buffer.from("DMDASH01", "ascii"))) {
     throw new Error("Native executable already contains a Dashboard overlay");
   }

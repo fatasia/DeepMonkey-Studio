@@ -15,8 +15,7 @@
 use crate::{
     forward_targets::ForwardTargets,
     frame_bindings::{
-        FrameLayouts, create_frame_layouts, create_native_mesh_rt_shader,
-        create_native_mesh_shader,
+        FrameLayouts, create_frame_layouts, create_native_mesh_rt_shader, create_native_mesh_shader,
     },
     gpu_culling::GpuCulling,
     gpu_ibl::GpuIblEnvironment,
@@ -181,9 +180,8 @@ impl RasterChain {
             &material_layout,
             &create_native_mesh_shader(&device),
         );
-        let shadow_map =
-            create_shadow_map(&device, &layouts.shadow, size, frame, None, view)
-                .expect("shadow map must build");
+        let shadow_map = create_shadow_map(&device, &layouts.shadow, size, frame, None, view)
+            .expect("shadow map must build");
         let culling = GpuCulling::new(
             &device,
             &scene.instance_buffer,
@@ -293,10 +291,7 @@ impl RasterChain {
             .chunks_exact(8)
             .map(|pixel| {
                 let channel = |lane: usize| {
-                    half_to_f32(u16::from_le_bytes([
-                        pixel[lane * 2],
-                        pixel[lane * 2 + 1],
-                    ]))
+                    half_to_f32(u16::from_le_bytes([pixel[lane * 2], pixel[lane * 2 + 1]]))
                 };
                 [channel(0), channel(1), channel(2)]
             })
@@ -375,17 +370,14 @@ fn device_without_ray_query_feature_stays_on_raster_and_matches_baseline() {
         view,
     );
     let mut rt_chain = RasterChain::build(
-        rt_device,
-        rt_queue,
-        &packet,
-        &prepared,
-        &pbr,
-        &frame,
-        size,
-        view,
+        rt_device, rt_queue, &packet, &prepared, &pbr, &frame, size, view,
     );
-    let plain_validation = plain_chain.device.push_error_scope(wgpu::ErrorFilter::Validation);
-    let rt_validation = rt_chain.device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let plain_validation = plain_chain
+        .device
+        .push_error_scope(wgpu::ErrorFilter::Validation);
+    let rt_validation = rt_chain
+        .device
+        .push_error_scope(wgpu::ErrorFilter::Validation);
     plain_chain.render_frame();
     rt_chain.render_frame();
     let plain_pixels = plain_chain.read_pixels();
@@ -413,8 +405,14 @@ fn device_without_ray_query_feature_stays_on_raster_and_matches_baseline() {
         .iter()
         .filter(|rgb| luminance(rgb) < 0.05 * lit_scale)
         .count();
-    assert!(lit_scale > 0.2, "baseline must receive direct sun: {lit_scale}");
-    assert!(shadow_band > 50, "baseline must contain shadows: {shadow_band}");
+    assert!(
+        lit_scale > 0.2,
+        "baseline must receive direct sun: {lit_scale}"
+    );
+    assert!(
+        shadow_band > 50,
+        "baseline must contain shadows: {shadow_band}"
+    );
     // RGBA16F 在 1.0 附近的 ulp 是 2^-10;给 2 ulp 容差。
     let tau = 2.0 / 512.0;
     let total = rt_pixels.len();

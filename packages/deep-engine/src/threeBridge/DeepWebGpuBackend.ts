@@ -171,6 +171,19 @@ export class DeepWebGpuBackend {
     return frame;
   }
 
+  /** Validate the already-published packet against the latest author camera.
+   * Studio uses this after candidate creation so a slow full scene projection
+   * is not repeated merely because the author viewport advanced one frame. */
+  async prepareView(view: RenderView, signal?: AbortSignal): Promise<FrameMetrics> {
+    this.assertOpen();
+    signal?.throwIfAborted();
+    const localView = this.coordinates.localizeView(view, this.coordinates.current);
+    const frame = await this.runtime.validateFrame(localView);
+    if (signal?.aborted) throw abortError("Deep backend preparation cancelled.");
+    this.shadowSelectionValue = shadowSelection(frame, this.expectedShadows);
+    return frame;
+  }
+
   get shadowSelection(): DeepWebGpuShadowSelection | undefined { return this.shadowSelectionValue; }
   get chunkStreaming() { return this.chunks?.diagnostics; }
   get probeClipmapFailure(): unknown { return this.probeClipmap?.failure; }

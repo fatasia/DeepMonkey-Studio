@@ -154,7 +154,7 @@ impl DashboardRuntime {
             simulations,
             legend_pages: BTreeMap::new(),
             anchors: BTreeMap::new(),
-            text: Arc::new(Mutex::new(TextRasterizer::new())),
+            text: Arc::new(Mutex::new(crate::platform_text::runtime_text_rasterizer()?)),
             content: Arc::new(Deep2dRuntimeContent::Composite(initial)),
             hits: Vec::new(),
             revision: 1,

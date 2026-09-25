@@ -2,9 +2,9 @@
  * 全引擎 wasm 入口胶水(deep-engine-wasm W2)。
  *
  * 职责:
- *   1. 加载 /dev/pkg/deep_engine_wasm.js 并初始化;
+ *   1. 加载 /engine-wasm/deep_engine_wasm.js 并初始化;
  *   2. 通过唯一的适配层(adaptEngine)把"当前 pkg 的导出形态"归一成稳定接口;
- *   3. fetch 真实场景包字节(runtime-package.json)并注入引擎;
+ *   3. 可选注入经 SHA-256 固定的字体字节,再 fetch 真实场景包字节并注入引擎;
  *   4. 启动渲染(全引擎:winit 自驱事件循环;bench Viewer:JS 驱动 rAF);
  *   5. 错误面板:Rust Err / panic / 未捕获异常全部落面板供调试。
  *
@@ -22,7 +22,7 @@
  * (与 wasm-bench.html 的 window.__benchResult 同风格,供采集脚本读取。)
  */
 
-const WASM_MODULE_URL = "/dev/pkg/deep_engine_wasm.js";
+const WASM_MODULE_URL = "/engine-wasm/deep_engine_wasm.js";
 
 /** 场景包候选来源,按序尝试;全部失败则提供文件选择回退。 */
 const PACKAGE_URL_CANDIDATES = [
@@ -128,6 +128,7 @@ function captureGlobalErrors(panel) {
  *   stopViewer      (Handle) => void                   (Handle) => void
  *   engineCanvas    (Handle) => HTMLCanvasElement|null (Handle) => 入参 canvas
  *   sceneInjectable true                              false
+ *   runtimeFonts   JS 字节注入(若导出存在)              不支持
  *
  * 全引擎 Handle 是模块句柄;bench Handle 是 Viewer 实例(含 free())。
  */
@@ -155,14 +156,37 @@ function adaptEngine(mod) {
       if (typeof probe === "function") return probe(handle) ?? null;
       return null;
     };
-    return { kind: "full-engine", sceneInjectable: true, setScenePackage, startViewer, stopViewer, engineCanvas };
+    const clearRuntimeFontsExport = mod.clear_runtime_fonts ?? mod.clearRuntimeFonts;
+    const addRuntimeFontExport = mod.add_runtime_font ?? mod.addRuntimeFont;
+    const runtimeFonts =
+      typeof clearRuntimeFontsExport === "function" && typeof addRuntimeFontExport === "function";
+    const clearRuntimeFonts = () => {
+      if (!runtimeFonts) throw new Error("当前 full-engine 构建不支持运行时字体字节注入。");
+      clearRuntimeFontsExport();
+    };
+    const addRuntimeFont = (locale, bytes, sha256, faceIndex = 0) => {
+      if (!runtimeFonts) throw new Error("当前 full-engine 构建不支持运行时字体字节注入。");
+      return addRuntimeFontExport(locale, bytes, sha256, faceIndex);
+    };
+    return {
+      kind: "full-engine",
+      sceneInjectable: true,
+      runtimeFonts,
+      setScenePackage,
+      startViewer,
+      stopViewer,
+      engineCanvas,
+      clearRuntimeFonts,
+      addRuntimeFont,
+    };
   }
 
   if (typeof mod.Viewer === "function") {
-    // 当前 /dev/pkg 内的 bench 首片:场景不可注入,JS 驱动渲染循环。
+    // bench 首片:场景不可注入,JS 驱动渲染循环。
     return {
       kind: "bench-viewer",
       sceneInjectable: false,
+      runtimeFonts: false,
       setScenePackage: async () => {
         throw new Error("bench-viewer 构建不支持场景包注入(内置 bench 场景);全引擎入口未就绪。");
       },
@@ -273,6 +297,27 @@ async function runFullEngine(surface, canvasMode, hostCanvas, packageBytes, stat
   return { handle };
 }
 
+function injectRuntimeFonts(surface, fonts) {
+  if (!fonts?.length) return 0;
+  if (!surface.runtimeFonts) {
+    throw new Error("页面提供了 runtimeFonts,但当前引擎构建没有字体注入导出。");
+  }
+  surface.clearRuntimeFonts();
+  let count = 0;
+  for (const font of fonts) {
+    if (!(font.bytes instanceof Uint8Array)) {
+      throw new Error("runtimeFonts[].bytes 必须是 Uint8Array。");
+    }
+    count = surface.addRuntimeFont(
+      font.locale,
+      font.bytes,
+      font.sha256,
+      font.faceIndex ?? 0,
+    );
+  }
+  return count;
+}
+
 /**
  * bench Viewer 回退路径:JS 驱动 rAF;DPR 感知,尺寸变化时把物理像素同步给
  * render_frame(其内部按 canvas.width/height 重建深度缓冲)。
@@ -333,6 +378,7 @@ export async function bootEngine(ui) {
     fps: null,
     running: false,
     canvasMode: ui.canvasMode,
+    runtimeFontFaces: 0,
   };
   globalThis.__engineGlue = state;
 
@@ -370,7 +416,12 @@ export async function bootEngine(ui) {
       status.set("加载 wasm 模块…");
       const mod = await loadEngineModule(panel);
       const surface = adaptEngine(mod); // 签名适配集中点
-      state.surface = { kind: surface.kind, sceneInjectable: surface.sceneInjectable };
+      state.surface = {
+        kind: surface.kind,
+        sceneInjectable: surface.sceneInjectable,
+        runtimeFonts: surface.runtimeFonts,
+      };
+      state.runtimeFontFaces = injectRuntimeFonts(surface, ui.runtimeFonts);
       status.set(`wasm 就绪(surface=${surface.kind})`);
 
       // 场景包:fetch 真实字节 + SHA-256 校验;不可注入时跳过并明示。
@@ -480,6 +531,10 @@ export async function bootEngine(ui) {
 
   state.start = start;
   state.stop = stopActive;
+  state.setRuntimeFonts = (fonts) => {
+    if (state.running) throw new Error("请先停止引擎,再替换运行时字体包。");
+    ui.runtimeFonts = fonts;
+  };
   state.panel = panel;
   return state;
 }

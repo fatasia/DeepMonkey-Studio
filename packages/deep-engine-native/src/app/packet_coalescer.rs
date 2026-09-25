@@ -6,7 +6,7 @@
 //! ever publishes; superseded and failed generations keep the last correct frame
 //! drawable until a newer generation lands.
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, sync::Arc};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SubmitDecision {
@@ -97,29 +97,36 @@ impl UpdateCoalescer {
 #[derive(Debug)]
 pub struct PublishedState<T> {
     generation: u64,
-    value: T,
+    value: Arc<T>,
 }
 
 impl<T> PublishedState<T> {
     pub fn new(value: T) -> Self {
         Self {
             generation: 0,
-            value,
+            value: Arc::new(value),
         }
     }
 
     pub fn active(&self) -> &T {
-        &self.value
+        self.value.as_ref()
     }
 
+    #[track_caller]
     pub fn active_mut(&mut self) -> &mut T {
-        &mut self.value
+        Arc::get_mut(&mut self.value)
+            .expect("published content cannot mutate while an async snapshot is retained")
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn snapshot(&self) -> Arc<T> {
+        self.value.clone()
     }
 
     pub fn publish(&mut self, generation: u64, value: T) {
         debug_assert!(generation > self.generation);
         self.generation = generation;
-        self.value = value;
+        self.value = Arc::new(value);
     }
 }
 

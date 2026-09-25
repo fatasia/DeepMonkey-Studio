@@ -24,6 +24,7 @@ export interface AssistantWorkspaceTarget {
   selected?: { id?: string; name?: string; kind?: string };
   script?: { id?: string; name?: string; language?: string; revision?: number };
   simulation?: { id?: string; name?: string; status?: string };
+  dashboard?: { id?: string; name?: string };
   dashboardWidgetCount?: number;
 }
 
@@ -70,6 +71,8 @@ export function assistantWorkspaceTarget(context: unknown): AssistantWorkspaceTa
   const script = asRecord(record?.script);
   const simulation = asRecord(record?.simulation);
   const widgets = Array.isArray(dashboard?.widgets) ? dashboard.widgets : undefined;
+  const dashboardId = stringValue(dashboard?.id);
+  const dashboardName = stringValue(dashboard?.name);
   const projectId = stringValue(project?.id);
   const projectName = stringValue(project?.name);
   const sceneId = stringValue(scene?.id);
@@ -132,6 +135,7 @@ export function assistantWorkspaceTarget(context: unknown): AssistantWorkspaceTa
           },
         }
       : {}),
+    ...(dashboardId || dashboardName ? { dashboard: { ...(dashboardId ? { id: dashboardId } : {}), ...(dashboardName ? { name: dashboardName } : {}) } } : {}),
     ...(widgets ? { dashboardWidgetCount: widgets.length } : {}),
   };
 }

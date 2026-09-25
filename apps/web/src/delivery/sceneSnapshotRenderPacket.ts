@@ -1,10 +1,10 @@
 import type { PrimitiveState, SceneSnapshot } from "@bim-studio/contracts";
 import type { RenderPacket } from "@bim-studio/deep-engine";
-import { Color } from "three";
+import { Matrix4 } from "three";
 import { primitiveGeometry } from "../viewer/primitiveGeometry";
-import { sceneModelMatrix } from "./sceneModelMatrix";
+import { sceneModelMatrixValues } from "./sceneModelMatrixValues";
 import { createSceneGeometryPrecisionValidator } from "./sceneGeometryPrecision";
-import { isNeutralMaterialField, staticSceneEffectEmissive, unsupportedStaticSceneEffectFields } from "./sceneNeutralAppearance";
+import { isNeutralMaterialField, sceneHexToLinearRgb, staticSceneEffectEmissive, unsupportedStaticSceneEffectFields } from "./sceneNeutralAppearance";
 import { compileLinearPrefabRenderPacket } from "./compileLinearPrefabRenderPacket";
 
 /** 基础体静态绘制投影；相机、环境、行为与二维语义由发布编译器分别处理。 */
@@ -19,10 +19,10 @@ export function sceneSnapshotToRenderPacket(scene: SceneSnapshot): RenderPacket 
     if (!primitive.modelId || ids.has(primitive.modelId)) throw new Error(`重复或缺少基础体 ID：${primitive.modelId}`);
     ids.add(primitive.modelId);
     if (!primitive.visible) continue;
-    const matrix = sceneModelMatrix(primitive.transform, primitive.modelId);
+    const matrix = sceneModelMatrixValues(primitive.transform, primitive.modelId);
     if (primitive.prefab) {
       assertPrimitiveExtensions(primitive, true);
-      const compiled = compileLinearPrefabRenderPacket(primitive, matrix);
+      const compiled = compileLinearPrefabRenderPacket(primitive, new Matrix4().fromArray(matrix));
       for (const geometry of compiled.geometries) geometries.set(geometry.id, geometry);
       materials.push(...compiled.materials);
       instances.push(...compiled.instances);
@@ -34,9 +34,9 @@ export function sceneSnapshotToRenderPacket(scene: SceneSnapshot): RenderPacket 
     const material = primitiveMaterial(primitive);
     if (!geometries.has(geometryId)) geometries.set(geometryId, geometryResource(primitive.kind, geometryId));
     materials.push(material);
-    verifyGeometryPrecision(geometries.get(geometryId)!, matrix.elements, `primitives[${primitive.modelId}]`);
+    verifyGeometryPrecision(geometries.get(geometryId)!, matrix, `primitives[${primitive.modelId}]`);
     instances.push({ id: primitive.modelId, geometry: geometryId, material: material.id,
-      transform: new Float32Array(matrix.elements), castShadow: true, receiveShadow: true,
+      transform: new Float32Array(matrix), castShadow: true, receiveShadow: true,
       ...(primitive.effects?.outline ? { outline: true } : {}) });
   }
   return { geometries: [...geometries.values()].sort((a, b) => compare(a.id, b.id)), materials, instances };
@@ -80,8 +80,7 @@ function assertPrimitiveExtensions(item: PrimitiveState, allowPrefab: boolean): 
 
 function linearColor(value: string, id: string): [number, number, number] {
   if (!/^#[\da-f]{6}$/i.test(value)) throw new Error(`基础体 ${id} 的颜色必须为 #RRGGBB：${value}`);
-  const color = new Color(value);
-  return [color.r, color.g, color.b];
+  return sceneHexToLinearRgb(value);
 }
 
 function geometryResource(kind: PrimitiveState["kind"], id: string): RenderPacket["geometries"][number] {

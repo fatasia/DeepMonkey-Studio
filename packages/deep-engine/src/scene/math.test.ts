@@ -42,6 +42,18 @@ describe("scene transform math", () => {
     expect(invertAffineSceneMatrix([1e-15, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])).not.toBeNull();
   });
 
+  it("composes a render-packet typed-array transform without a Three matrix", () => {
+    const root = localTransformMatrix({
+      kind: "trs", translation: [10, 20, 30], rotation: [0, 0, 0, 1], scale: [2, 3, 4],
+    });
+    const child = new Float32Array([
+      1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 5, 6, 7, 1,
+    ]);
+    expect(multiplySceneMatrices(root, child)).toEqual([
+      2, 0, 0, 0, 0, 3, 0, 0, 0, 0, 4, 0, 20, 38, 58, 1,
+    ]);
+  });
+
   it("uses inverse-transpose normals for shear", () => {
     const shear: SceneMatrix4 = [
       1, 0, 0, 0,

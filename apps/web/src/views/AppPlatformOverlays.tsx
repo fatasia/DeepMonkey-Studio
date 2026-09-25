@@ -8,14 +8,15 @@ import { DigitalTwinPanel } from "../components/DigitalTwinPanel";
 import { WorkspaceRecoveryDialog } from "../components/WorkspaceRecoveryDialog";
 import { ApplicationRecoveryDialog } from "../components/ApplicationRecoveryDialog";
 import type { AppViewBindings } from "./appViewBindings";
+import { dashboardDraftPageContext, validateDashboardDraft } from "../ai/dashboardDraft";
 
-const assistantViews = new Set(["manager", "optimizer", "data", "vision", "operations"]);
-const utilityViews = new Set([...assistantViews, "system"]);
+const assistantViews = new Set(["manager", "dashboard", "optimizer", "data", "vision", "operations"]);
+const utilityViews = new Set(["manager", "optimizer", "data", "vision", "operations", "system"]);
 type OperationsAiTask = Extract<AiWorkspaceTask, { workspace: "operations" }>;
 
 export function AppPlatformOverlays({ bindings }: { bindings: AppViewBindings }) {
   const { state, recovery, actions } = bindings;
-  const { activeApplication, currentUser, locale, project, route, scenes } = state;
+  const { activeApplication, activeDashboardPage, applicationState, currentUser, locale, project, route, scenes } = state;
   if (!currentUser) return null;
 
   const assistantVisible = state.aiAssistantOpen && assistantViews.has(route.view);
@@ -28,7 +29,21 @@ export function AppPlatformOverlays({ bindings }: { bindings: AppViewBindings })
           locale={locale}
           projectId={project?.id}
           surface="platform"
-          context={{
+          context={route.view === "dashboard" && activeApplication && activeDashboardPage ? {
+            dashboardDraftVersion: 1,
+            project: project ? { id: project.id, name: project.name } : undefined,
+            projectId: activeApplication.metadata.projectId,
+            applicationId: activeApplication.metadata.id,
+            currentView: "dashboard",
+            dashboard: { id: activeDashboardPage.id, name: activeDashboardPage.name, widgets: activeDashboardPage.nodes.map(node => ({ id: node.id, kind: node.kind, name: node.name })) },
+            page: dashboardDraftPageContext(activeDashboardPage),
+            selection: applicationState.selection,
+            selected: (() => {
+              const selectedId = applicationState.selection.find(item => item.kind === "widget")?.id;
+              const selected = activeDashboardPage.nodes.find(node => node.id === selectedId);
+              return selected ? { id: selected.id, name: selected.name ?? selected.id, kind: selected.kind } : undefined;
+            })(),
+          } : {
             project: project ? { id: project.id, name: project.name } : undefined,
             currentView: route.view,
             scenes: scenes.map((scene) => ({
@@ -38,6 +53,21 @@ export function AppPlatformOverlays({ bindings }: { bindings: AppViewBindings })
               publishedAt: scene.publishedAt,
             })),
           }}
+          {...(route.view === "dashboard" && activeApplication && activeDashboardPage
+            ? {
+                onValidateDashboardPageDraft: (draft: unknown, datasets: Parameters<typeof validateDashboardDraft>[3]) => {
+                  const validated = validateDashboardDraft(draft, activeApplication, activeDashboardPage, datasets);
+                  return { changeCount: validated.diff.length, labels: validated.diff.map(change => change.title) };
+                },
+                ...(currentUser.role !== "viewer" ? {
+                  onApplyDashboardPageDraft: (draft: unknown, datasets: Parameters<typeof validateDashboardDraft>[3]) => {
+                    const validated = validateDashboardDraft(draft, activeApplication, activeDashboardPage, datasets);
+                    if (!validated.command) throw new Error(tr(locale, "没有可应用的二维变更", "There are no 2D changes to apply"));
+                    bindings.applicationRuntime.dispatchApplicationCommand(validated.command);
+                  },
+                } : {}),
+              }
+            : {})}
           {...(project
             ? {
                 onOpenWorkspaceTask: (task: OperationsAiTask) => {

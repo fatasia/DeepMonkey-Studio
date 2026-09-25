@@ -9,9 +9,9 @@ export interface AuthorCanvasStyle {
 }
 
 /** The author canvas retains input; a separately prepared canvas owns Deep presentation. */
-export function createDeepCanvas(container: HTMLElement): HTMLCanvasElement {
+export function createDeepCanvas(container: HTMLElement, backend = "deep-webgpu"): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
-  canvas.dataset.rendererBackend = "deep-webgpu";
+  canvas.dataset.rendererBackend = backend;
   Object.assign(canvas.style, {
     position: "absolute", inset: "0", width: "100%", height: "100%",
     visibility: "hidden", opacity: "0", pointerEvents: "none", zIndex: "0",

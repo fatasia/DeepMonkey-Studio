@@ -29,7 +29,7 @@ export function SceneViewerRoot() {
   const toolsAvailability = sceneViewerToolsAvailability(manifest.publication.snapshot);
   const viewportRef = useRef<HTMLDivElement>(null);
   const [engine, setEngine] = useState<ViewerEngine>();
-  const [backend, setBackend] = useState<RendererBackend>();
+  const [backend, setBackend] = useState<Exclude<RendererBackend, "wasm">>();
   const [models, setModels] = useState<LoadedSceneModel[]>([]);
   const [selected, setSelected] = useState<LoadedSceneModel>();
   const [status, setStatus] = useState("正在检查图形能力");

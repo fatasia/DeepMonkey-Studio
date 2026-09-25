@@ -6,7 +6,7 @@ import { assistantContextSources } from "../ai/assistantContextSources";
 import { useFloatingPanelDrag } from "../hooks/useFloatingPanelDrag";
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Bot, LayoutDashboard, MessageSquare, RotateCcw, Sparkles, Workflow, X } from "lucide-react";
-import type { SceneDashboardState } from "@bim-studio/contracts";
+import type { DataDatasetRecord, SceneDashboardState } from "@bim-studio/contracts";
 import { type AssistantMode } from "../api";
 import type { BimAssistantPreparedContext } from "../bimAssistant";
 import { translate as tr, type AppLocale } from "../i18n";
@@ -36,6 +36,8 @@ interface AiAssistantPanelProps {
   onPrepareBimContext?: (question: string) => Promise<BimAssistantPreparedContext>;
   onBimAction?: (action: BimAssistantAction, context: BimAssistantPreparedContext, componentId?: string) => void;
   onApplyDashboard?: (dashboard: SceneDashboardState) => void;
+  onValidateDashboardPageDraft?: (draft: unknown, datasets: readonly DataDatasetRecord[]) => { changeCount: number; labels: string[] };
+  onApplyDashboardPageDraft?: (draft: unknown, datasets: readonly DataDatasetRecord[]) => void;
   onOpenWorkspaceTask?: (task: Extract<AiWorkspaceTask, { workspace: "operations" }>) => void;
   onClose: () => void;
 }
@@ -48,10 +50,12 @@ export function AiAssistantPanel({
   onPrepareBimContext,
   onBimAction,
   onApplyDashboard,
+  onValidateDashboardPageDraft,
+  onApplyDashboardPageDraft,
   onOpenWorkspaceTask,
   onClose,
 }: AiAssistantPanelProps) {
-  const [mode, setMode] = useState<AssistantMode>(() => surface === "studio" ? "scene" : "platform");
+  const [mode, setMode] = useState<AssistantMode>(() => assistantWorkspaceTarget(context).workspace === "dashboard" ? "dashboard" : surface === "studio" ? "scene" : "platform");
   const [experience, setExperience] = useState<"chat" | "agent">("chat");
   const [sessionOptions, setSessionOptions] = useState<AssistantSessionOptions>({});
   const [question, setQuestion] = useState("");
@@ -59,22 +63,30 @@ export function AiAssistantPanel({
   const [applyBusy, setApplyBusy] = useState(false);
   const [applyError, setApplyError] = useState<string>();
   const [applyNotice, setApplyNotice] = useState<string>();
+  const [dashboardPageDraft, setDashboardPageDraft] = useState<{ raw: unknown; changeCount: number; labels: string[] }>();
   const panelDrag = useFloatingPanelDrag<HTMLElement>();
   const { platformContext, contextSources, datasets, platformLoaded, projectMissing } = useAiProjectContext(projectId, locale);
   const t = (zh: string, en: string) => tr(locale, zh, en);
   const workspaceTarget = useMemo(() => assistantWorkspaceTarget(context), [context]);
+  const requestContext = useMemo(() => mode === "dashboard" && workspaceTarget.workspace === "dashboard"
+    ? { ...(context as Record<string, unknown>), datasets: datasets.map(dataset => ({ id: dataset.id, name: dataset.name, fields: dataset.fields })) }
+    : context, [context, datasets, mode, workspaceTarget.workspace]);
   const effectiveSources = useMemo(() => assistantContextSources(workspaceTarget, contextSources, locale), [contextSources, locale, workspaceTarget]);
-  const requestScope = JSON.stringify([projectId, workspaceTarget.scene?.id, workspaceTarget.script?.id, workspaceTarget.selected?.id, mode]);
-  const scopeLabel = [workspaceTarget.project?.name, workspaceTarget.scene?.name, workspaceTarget.script?.name,
+  const requestScope = JSON.stringify([projectId, workspaceTarget.scene?.id, workspaceTarget.dashboard?.id, workspaceTarget.script?.id, workspaceTarget.selected?.id, mode]);
+  const scopeLabel = [workspaceTarget.project?.name, workspaceTarget.scene?.name, workspaceTarget.dashboard?.name, workspaceTarget.script?.name,
     workspaceTarget.selected?.name ?? workspaceTarget.selected?.id].filter(Boolean).join(" · ");
-  const sessions = useAssistantSessions(projectId, JSON.stringify([workspaceTarget.scene?.id, workspaceTarget.script?.id]));
+  const sessions = useAssistantSessions(projectId, JSON.stringify([workspaceTarget.scene?.id, workspaceTarget.dashboard?.id, workspaceTarget.script?.id]));
   const { conversation } = sessions;
   const { answer, setAnswer, execution, busy, stopped, setStopped, error, setError, lastPrompt, setLastPrompt, lastScope,
     dashboard, setDashboard, bimEvidence, setBimEvidence, requestAbort, cancelRequest, ask } = useAssistantChatRun({
-    sessions, projectId, requestScope: `${requestScope}:${sessions.identity}`, scopeLabel, scopeId: workspaceTarget.scene?.id ?? workspaceTarget.script?.id,
-    question, setQuestion, mode, locale, context, platformContext, sources: effectiveSources, sessionOptions,
+    sessions, projectId, requestScope: `${requestScope}:${sessions.identity}`, scopeLabel, scopeId: workspaceTarget.scene?.id ?? workspaceTarget.dashboard?.id ?? workspaceTarget.script?.id,
+    question, setQuestion, mode, locale, context: requestContext, platformContext, sources: effectiveSources, sessionOptions,
     prepareBim: onPrepareBimContext,
-    onBegin: () => { messageScroll.follow(); setApplyNotice(undefined); setApplyError(undefined); setConfirmDashboard(false); },
+    ...(onValidateDashboardPageDraft ? { onDashboardPageDraft: (raw: unknown) => {
+      const preview = onValidateDashboardPageDraft(raw, datasets);
+      setDashboardPageDraft({ raw, ...preview });
+    } } : {}),
+    onBegin: () => { messageScroll.follow(); setApplyNotice(undefined); setApplyError(undefined); setConfirmDashboard(false); setDashboardPageDraft(undefined); },
   });
   const messageScroll = useAssistantScroll(`${conversation.length}:${answer}:${busy}:${error ?? ""}:${stopped}:${experience}`,
     conversation.length > 0 || busy || Boolean(answer || error) || stopped);
@@ -93,6 +105,7 @@ export function AiAssistantPanel({
     messageScroll.follow();
     setError(undefined);
     setDashboard(undefined);
+    setDashboardPageDraft(undefined);
     setConfirmDashboard(false);
     setBimEvidence(undefined);
     setApplyNotice(undefined);
@@ -100,7 +113,7 @@ export function AiAssistantPanel({
     return () => {
       void cancelRequest();
     };
-  }, [projectId, workspaceTarget.scene?.id, workspaceTarget.script?.id]);
+  }, [projectId, workspaceTarget.scene?.id, workspaceTarget.dashboard?.id, workspaceTarget.script?.id]);
 
   useEffect(() => {
     const dismiss = (event: KeyboardEvent) => {
@@ -115,6 +128,7 @@ export function AiAssistantPanel({
 
   useEffect(() => {
     setDashboard(undefined);
+    setDashboardPageDraft(undefined);
     setConfirmDashboard(false);
     setBimEvidence(undefined);
     if (!requestAbort.current) return;
@@ -130,6 +144,7 @@ export function AiAssistantPanel({
     try {
       await Promise.resolve(onApplyDashboard(dashboard));
       setDashboard(undefined);
+      setDashboardPageDraft(undefined);
       setConfirmDashboard(false);
       setApplyNotice(t("已写入当前看板草稿，尚未保存或发布。", "Applied to the current dashboard draft; it has not been saved or published."));
     } catch (reason) {
@@ -139,7 +154,24 @@ export function AiAssistantPanel({
     }
   }
 
-  const tabs = assistantModeTabs(locale, surface, Boolean(workspaceTarget.selected), Boolean(onApplyDashboard));
+  async function applyDashboardPageDraft() {
+    if (!dashboardPageDraft || !onApplyDashboardPageDraft) return;
+    setApplyBusy(true);
+    setApplyError(undefined);
+    try {
+      await Promise.resolve(onApplyDashboardPageDraft(dashboardPageDraft.raw, datasets));
+      setDashboardPageDraft(undefined);
+      setConfirmDashboard(false);
+      setApplyNotice(t("已应用到当前二维页面，可撤销；尚未保存或发布。", "Applied to the current 2D page and can be undone; it has not been saved or published."));
+    } catch (reason) {
+      setApplyError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setApplyBusy(false);
+    }
+  }
+
+  const dashboardModeAvailable = Boolean(onApplyDashboard || onValidateDashboardPageDraft);
+  const tabs = assistantModeTabs(locale, surface, Boolean(workspaceTarget.selected), dashboardModeAvailable);
   const suggestions = assistantSuggestions(mode, locale);
   const latestReliability = conversation.at(-1)?.reliability;
 
@@ -160,7 +192,7 @@ export function AiAssistantPanel({
         <div>
           <Bot size={18} />
           <span>
-            <strong>{t("平台 AI 助手", "Platform AI Assistant")}</strong>
+            <strong>{workspaceTarget.workspace === "dashboard" ? t("二维 AI 助手", "2D AI Assistant") : t("平台 AI 助手", "Platform AI Assistant")}</strong>
           </span>
         </div>
         <div className="ai-assistant-header-actions">
@@ -191,6 +223,7 @@ export function AiAssistantPanel({
               setStopped(false);
               setAnswer("");
               setDashboard(undefined);
+              setDashboardPageDraft(undefined);
               setConfirmDashboard(false);
               setError(undefined);
               setApplyError(undefined);
@@ -257,6 +290,12 @@ export function AiAssistantPanel({
             {t("查看并应用", "Review & apply")}
           </button>
         )}
+        {dashboardPageDraft && onApplyDashboardPageDraft && !confirmDashboard && (
+          <button className="primary ai-apply-dashboard" onClick={() => setConfirmDashboard(true)}>
+            <LayoutDashboard size={13} />
+            {t("查看并应用二维变更", "Review & apply 2D changes")}
+          </button>
+        )}
         {dashboard && onApplyDashboard && confirmDashboard && (
           <AiChangeConfirmation
             locale={locale}
@@ -270,6 +309,20 @@ export function AiAssistantPanel({
               setApplyError(undefined);
             }}
             onConfirm={() => void applyDashboardDraft()}
+          />
+        )}
+        {dashboardPageDraft && onApplyDashboardPageDraft && confirmDashboard && (
+          <AiChangeConfirmation
+            locale={locale}
+            widgetCount={dashboardPageDraft.changeCount}
+            widgetLabels={dashboardPageDraft.labels}
+            evidenceLabels={latestReliability?.sourceLabels ?? []}
+            changeDescription={t(`修改 ${dashboardPageDraft.changeCount} 个二维组件`, `Change ${dashboardPageDraft.changeCount} 2D components`)}
+            scopeDescription={t("当前二维页面草稿", "Current 2D page draft")}
+            busy={applyBusy}
+            {...(applyError ? { error: applyError } : {})}
+            onCancel={() => { setConfirmDashboard(false); setApplyError(undefined); }}
+            onConfirm={() => void applyDashboardPageDraft()}
           />
         )}
         {applyNotice && <div className="ai-assistant-apply-notice" role="status">{applyNotice}</div>}
@@ -295,6 +348,7 @@ export function AiAssistantPanel({
       {experience === "chat" && <AssistantModelControls locale={locale} mode={mode} value={sessionOptions}
         onChange={setSessionOptions} disabled={busy} />}
       {experience === "chat" && <AiAssistantComposer locale={locale} question={question} busy={busy}
+        sendDisabled={sessions.loading} disabledReason={t("正在恢复会话，请稍候", "Restoring the conversation; please wait")}
         onChange={setQuestion} onSend={() => { if (!sessions.loading) void ask(); }} onStop={() => {
           cancelRequest();
           setStopped(true);

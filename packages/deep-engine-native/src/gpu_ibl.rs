@@ -115,7 +115,11 @@ impl GpuIblEnvironment {
         })
     }
 
-    pub fn write_cluster_grid(&self, queue: &wgpu::Queue, grid: &deep_engine_native::clustered_lighting::ClusterGrid) {
+    pub fn write_cluster_grid(
+        &self,
+        queue: &wgpu::Queue,
+        grid: &deep_engine_native::clustered_lighting::ClusterGrid,
+    ) {
         let words = grid.pack_storage();
         queue.write_buffer(&self.cluster_storage, 0, bytemuck::cast_slice(&words));
     }

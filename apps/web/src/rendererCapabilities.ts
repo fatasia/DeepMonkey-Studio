@@ -27,15 +27,16 @@ export interface RendererProjectRequirements {
 }
 
 export interface PublishedRendererDecision {
-  backend: RendererBackend;
+  backend: "webgl" | "webgpu";
   reason: "publication-webgl" | "webgpu-unavailable" | "preserve-authored-effects" | "webgpu-preferred";
 }
 
 /** `auto` 从兼容后端启动，待发布快照加载后再执行能力与画质守卫。 */
 export function initialRendererBackend(queryValue: string | null, storedValue: string | null): RendererBackend {
+  if (queryValue === "wasm") return "wasm";
   if (queryValue === "webgpu") return "webgpu";
   if (queryValue === "webgl" || queryValue === "auto") return "webgl";
-  return storedValue === "webgpu" ? "webgpu" : "webgl";
+  return storedValue === "webgpu" || storedValue === "wasm" ? storedValue : "webgl";
 }
 
 /** 从持久化场景中提取仍需 WebGL 发布守卫的作者效果。 */
@@ -165,40 +166,38 @@ export async function resolvePublishedRenderer(
   return selectPublishedRenderer(mode, capabilities.secureContext && capabilities.webgpuApi && capabilities.webgpuAdapter, requirements);
 }
 
-export function rendererReadiness(probe: RendererCapabilityProbe, project: RendererProjectRequirements): RendererReadiness[] {
+export function rendererReadiness(probe: RendererCapabilityProbe, _project: RendererProjectRequirements): RendererReadiness[] {
   const webglDetails = [
-    project.postProcessingEnabled ? "当前后处理与真实对象轮廓完整可用" : "模型、材质、拾取与动画完整可用",
-    "XR 会话挂载在本后端：WebXR 进入、控制器选择与双目渲染均走 WebGL",
-    "作为生产兼容后端保留"
+    "Three.js WebGL 2，编辑与生态兼容",
+    "完整材质、后处理、拾取、动画与 WebXR",
   ];
   const webgpuDetails = [
-    !probe.secureContext ? "需要 HTTPS 或 localhost 安全上下文" : "安全上下文可用",
-    !probe.webgpuApi ? "浏览器未暴露 WebGPU API" : !probe.webgpuAdapter ? "未找到可用的高性能 GPU 适配器" : "GPU 适配器可用",
-    "Studio 使用 Deep WebGPU 投影画布；材质、环境与作者辅助层仍需逐场景验收",
-    project.postProcessingEnabled
-      ? "作者后处理或对象轮廓需要逐场景验证；自动发布保留 WebGL"
-      : "仅在显式选择时使用；自动默认仍保留 WebGL",
-    "产品 WebGPU 路径尚未完成 WebXR 实机验收，XR 会话继续使用 WebGL",
-    "Deep WebGPU 激活期间 XR 入口不可用；浏览器端 WebGPU-XR 会话特性尚未落地，属诚实降级而非缺陷",
-    probe.rayTracingDecision
-      ? probe.rayTracingDecision.enabled
-        ? `硬件光追能力：${probe.rayTracingDecision.tier}；${probe.rayTracingDecision.fallbacks.length ? `保留回退：${probe.rayTracingDecision.fallbacks.join("、")}` : "无回退"}`
-        : `硬件光追不可用；保留${probe.rayTracingDecision.fallbacks.join("、")}路径`
-      : "未取得硬件光追能力快照；使用软件 BVH/TLAS 路径"
+    "自研 WebGPU：PBR、阴影、环境、后处理",
+    "GPU 驱动大场景，内置帧图与性能诊断",
   ];
   const webgpuAvailable = probe.secureContext && probe.webgpuApi && probe.webgpuAdapter;
+  const wasmDetails = [
+    "Rust/WASM 全引擎，与 Native 共用内核",
+    "浏览器本地运行，支持离线与跨端交付",
+  ];
   return [{
     backend: "webgl",
     ready: probe.webgl2,
     level: probe.webgl2 ? "ready" : "unavailable",
-    summary: probe.webgl2 ? "生产兼容，功能完整" : "当前环境无法创建 WebGL 2 上下文",
+    summary: probe.webgl2 ? "完整编辑，兼容性强" : "当前环境无法创建 WebGL 2 上下文",
     details: webglDetails
   }, {
     backend: "webgpu",
     ready: webgpuAvailable,
     // 设备可创建不等于 Deep 产品验收，持续保持 limited。
     level: !webgpuAvailable ? "unavailable" : "limited",
-    summary: !webgpuAvailable ? "当前设备不可用" : project.postProcessingEnabled ? "可试用，存在场景限制" : "可试用，需逐场景验收",
+    summary: !webgpuAvailable ? "当前设备不可用" : "现代 GPU 管线，面向大场景",
     details: webgpuDetails
+  }, {
+    backend: "wasm",
+    ready: webgpuAvailable,
+    level: webgpuAvailable ? "ready" : "unavailable",
+    summary: webgpuAvailable ? "Rust 内核，跨端本地运行" : "当前设备不可用",
+    details: wasmDetails,
   }];
 }

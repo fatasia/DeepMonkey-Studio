@@ -14,7 +14,7 @@ pub(super) fn prepare(
     };
     let mut output = prepare_runtime_content(&Deep2dRuntimeContent::DisplayList(empty))?;
     for (layer_index, layer) in value.layers().iter().enumerate() {
-        let timer = std::time::Instant::now();
+        let timer = web_time::Instant::now();
         let mut part = match cache.as_deref_mut() {
             Some(cache) => {
                 if let Some(prepared) = cache.prepared_package(&layer.content) {

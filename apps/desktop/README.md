@@ -2,14 +2,18 @@
 
 M7 的 Tauri 2 薄宿主。它打包 `apps/web` 的同一份静态产物，只负责桌面系统边界，不复制编辑器业务逻辑。
 
-当前基础切片提供：
+客户端启动时提供两种明确模式，二者复用同一套编辑器，不复制业务逻辑：
 
-- 本地静态前端，不加载远程页面；
-- 单一可变服务器配置，校验 HTTP(S) 地址并持久化到应用配置目录；
-- 仅向主窗口开放三条服务器配置命令；
-- 无 shell、任意文件系统或远程页面 Tauri 权限。
+- **本地工作台**：Tauri 启动包内的完整 `@bim-studio/api`，元数据写入 SQLite，大文件写入本地对象目录；项目、2D/3D、脚本、数据源、AI 和发布页面均使用正式 HTTP API；
+- **连接服务器**：启动时或之后配置 HTTP(S) 地址，切换到团队服务器；页面、合同和请求路径不变；
+- 生产前端始终从安装包内 `frontendDist` 加载，不加载远程页面；
+- 单一可变服务器配置经过地址校验并持久化到应用配置目录；
+- 本地 API 只监听随机回环端口，宿主为每次进程生成管理令牌；非回环请求与错误令牌均拒绝；
+- 仅向主窗口开放服务器配置、凭据和本地 API 启动命令，无前端可用的 shell、任意文件系统或远程页面权限。
 
-当前桌面交付边界：服务器配置安全校验、同源静态前端和 Windows NSIS/MSI 安装包。服务器配置采用临时文件同步、旧配置备份和异常中断恢复，重复修改在 Windows 上不会依赖覆盖式 `rename`。安装包使用 per-machine 安装模式，WebView2 缺失时由 bootstrapper 引导安装；正式签名、自动更新和转换 sidecar 仍需按部署环境单独接入，不能在没有证书与发布服务时伪造已完成。
+本地工作区固定在应用数据目录的 `workspace/`：`metadata.sqlite` 是权威元数据，`data/` 保存模型、附件、转换结果和发布产物，`logs/local-api.log` 保存本地服务日志。旧 IndexedDB 适配器只用于历史数据迁移和兼容测试，产品请求不再走该子集实现。现有 `.bimproject` 是本地与服务器双向迁移的唯一项目包格式；导入目标会重新分配身份，数据源凭据按既有安全规则不写入项目包。
+
+当前桌面交付边界：完整本地 API、服务器配置安全校验、包内静态前端和 Windows NSIS/MSI 安装包。Native/Android 发布仍复用 API 的既有发布链和同一运行包，不在客户端复制打包器；正式发行必须同时提供相应的 Native 播放器、Android 模板与签名工具资源。安装包使用 per-machine 模式并内嵌 WebView2 离线安装器，首次安装和日常运行都不要求联网；代价是安装包约增加 127 MB。正式代码签名与自动更新仍需按发布环境接入。
 
 ```powershell
 pnpm install
@@ -17,7 +21,7 @@ pnpm --filter @bim-studio/desktop build
 pnpm --filter @bim-studio/desktop dev
 ```
 
-`dev` 会启动同一套 `@bim-studio/web` Vite 前端；`bundle` 会先生产构建 Web，再生成桌面包。
+`dev` 会启动同一套 `@bim-studio/web` Vite 前端；`bundle` 会先构建并部署完整 API sidecar、复制当前 Node 运行时、生产构建 Web，再生成桌面包。
 
 ```powershell
 pnpm --filter @bim-studio/desktop bundle
@@ -70,4 +74,4 @@ pnpm bundle:scene-viewer -- `
 pnpm verify:scene-viewer -- .scene-viewer-build/<package-id>
 ```
 
-安装后浏览不依赖线上加载本项目资源。默认 WebView2 bootstrapper 仍可能在目标机缺少 WebView2 Runtime 时联网安装运行时；这是安装器依赖，不是场景资源依赖。
+安装后浏览不依赖线上加载本项目资源。WebView2 使用内嵌离线安装器，目标机缺少 Runtime 时也不需要联网下载。

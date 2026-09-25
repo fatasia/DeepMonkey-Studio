@@ -38,6 +38,7 @@ export interface DashboardWorkspaceProps {
   onOpen3D?: (sceneId: string, view: DashboardViewState) => void;
   onOpenTopology: (topologyId: string | undefined, nodeId: string, view: DashboardViewState) => void;
   onOpenData: () => void;
+  onAiAssistant?: () => void;
   onOpenScripts?: (selection: readonly ApplicationObjectRef[]) => void;
   scriptOpen?: boolean;
   onCloseScripts?: () => void;

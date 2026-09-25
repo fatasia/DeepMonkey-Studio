@@ -44,7 +44,6 @@ import { runtimeHost } from "./adapters/runtimeHost.js";
 import { networkStatusMonitor } from "./appStatus/networkStatusMonitor";
 import { createScenePublicationDependencyApi } from "./apiClients/scenePublicationDependencyApi.js";
 import { createDashboardPublicationApi } from "./apiClients/dashboardPublicationApi.js";
-import { desktopLocalApiFetch, setDesktopLocalExternalModuleFetch } from "./adapters/desktopLocalApi.js";
 import { isLocalDesktopMode } from "./adapters/desktopRuntimeMode.js";
 import { createIndustrialApi } from "./apiClients/industrialApi.js";
 import { createMcpApi } from "./apiClients/mcpApi.js";
@@ -74,8 +73,6 @@ import {
   sceneViewerDeliveryServerProfile,
 } from "./delivery/sceneViewerDelivery.js";
 
-setDesktopLocalExternalModuleFetch((input, init) => globalThis.fetch(input, init));
-
 /** 在线模式的统一出口接入连接状态监控:5xx/网络错误计失败,成功或 4xx 计健康(见 S5)。 */
 const monitoredWebFetch: typeof globalThis.fetch = (input, init) =>
   globalThis.fetch(input, init).then(
@@ -93,9 +90,7 @@ const monitoredWebFetch: typeof globalThis.fetch = (input, init) =>
 const desktopAwareFetch = (input: RequestInfo | URL, init?: RequestInit) =>
   isSceneViewerDeliveryRuntime()
     ? sceneViewerDeliveryFetch(input, init)
-    : isLocalDesktopMode()
-      ? desktopLocalApiFetch(input, init)
-      : monitoredWebFetch(input, init);
+    : monitoredWebFetch(input, init);
 
 const STARTUP_MANIFEST_TIMEOUT_MS = 15_000;
 const UNITY_UPLOAD_TIMEOUT_MS = 10 * 60_000;
@@ -321,10 +316,11 @@ export const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ url, specifier }),
     }),
-  uploadScriptDependency: (projectId: string, specifier: string, file: File) => {
+  uploadScriptDependency: (projectId: string, specifier: string, file: File, options: { prepared?: boolean } = {}) => {
     const body = new FormData();
     body.append("file", file);
-    return request<ApplicationScriptDependency>(`/api/projects/${encodeURIComponent(projectId)}/script-dependencies/upload?specifier=${encodeURIComponent(specifier)}`, { method: "POST", body });
+    const prepared = options.prepared ? "&prepared=1" : "";
+    return request<ApplicationScriptDependency>(`/api/projects/${encodeURIComponent(projectId)}/script-dependencies/upload?specifier=${encodeURIComponent(specifier)}${prepared}`, { method: "POST", body });
   },
   readScriptDependency: async (projectId: string, dependencyId: string) =>
     (await serverClient.open(`/api/projects/${encodeURIComponent(projectId)}/script-dependencies/${encodeURIComponent(dependencyId)}/content`)).text(),

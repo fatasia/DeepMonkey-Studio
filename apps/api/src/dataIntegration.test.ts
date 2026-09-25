@@ -6,6 +6,7 @@ import * as XLSX from "xlsx";
 import type { DataConnectionRecord, DataDatasetRecord } from "@bim-studio/contracts";
 import {
   applyComputedFields,
+  demoSensorRows,
   hasBuiltInDataConnector,
   hasWritableDataConnector,
   inferFieldType,
@@ -34,6 +35,12 @@ const dataset: DataDatasetRecord = {
 };
 
 describe("computed dataset fields", () => {
+  it("serves the built-in telemetry demo without PostgreSQL in SQLite desktop mode", async () => {
+    const rows = await demoSensorRows({ metadata: { provider: "sqlite" } } as never);
+    expect(rows).toHaveLength(30);
+    expect(rows[0]).toMatchObject({ device_id: "AHU-01", running: false });
+  });
+
   it("discovers sparse fields across the sampled rows instead of trusting only row one", () => {
     expect(inferDatasetFields([{ device: "A", temperature: null }, { device: "B", temperature: 24, alarm: true }])).toEqual([
       { key: "device", label: "device", type: "string" },

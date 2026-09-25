@@ -9,9 +9,19 @@ export interface SceneDataSocketHandlers {
   onClose(): void;
 }
 
-export function connectSceneDataSocket(projectId: string, accessToken: string | undefined, handlers: SceneDataSocketHandlers): SceneDataSocket {
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const url = `${protocol}//${window.location.host}/api/projects/${encodeURIComponent(projectId)}/data/ws`;
+export function sceneDataWebSocketUrl(serverBaseUrl: string, projectId: string): string {
+  const url = new URL(`/api/projects/${encodeURIComponent(projectId)}/data/ws`, serverBaseUrl);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString();
+}
+
+export function connectSceneDataSocket(
+  projectId: string,
+  accessToken: string | undefined,
+  handlers: SceneDataSocketHandlers,
+  serverBaseUrl: string,
+): SceneDataSocket {
+  const url = sceneDataWebSocketUrl(serverBaseUrl, projectId);
   const socket = accessToken ? new WebSocket(url, `bim-studio-auth.${accessToken}`) : new WebSocket(url);
   socket.addEventListener("open", handlers.onOpen);
   socket.addEventListener("message", (event) => handlers.onMessage(event.data));

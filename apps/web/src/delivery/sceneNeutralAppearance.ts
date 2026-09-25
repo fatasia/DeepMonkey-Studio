@@ -6,6 +6,18 @@ const neutralMaterial: Readonly<Record<string, number | boolean>> = {
   textureOffsetX: 0, textureOffsetY: 0, textureRotation: 0,
 };
 
+/** Saved scene colors are CSS sRGB; Deep material packets use linear RGB. */
+export function sceneHexToLinearRgb(value: string): [number, number, number] {
+  if (!/^#[\da-f]{6}$/i.test(value)) throw new Error(`场景颜色必须为 #RRGGBB：${value}`);
+  // Keep authored 3D material values byte-for-byte compatible with the current Three color transfer.
+  const linear = (offset: number) => {
+    const channel = parseInt(value.slice(offset, offset + 2), 16) / 255;
+    return channel < 0.04045 ? channel * 0.0773993808
+      : Math.pow(channel * 0.9478672986 + 0.0521327014, 2.4);
+  };
+  return [linear(1), linear(3), linear(5)];
+}
+
 /** 编辑器会保存默认值；仅精确中性值可省略，未知或激活的外观仍交给能力门禁。 */
 export function isNeutralMaterialField(key: string, value: unknown): boolean {
   if (/^(baseColor|normal|emissive|ambientOcclusion|roughness|metalness)Map(Url|Name)$/.test(key) && value === "") return true;

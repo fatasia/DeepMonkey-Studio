@@ -12,7 +12,9 @@ mod scaled_tests;
 mod shaping;
 mod styled;
 mod styled_types;
-pub use frozen_fonts::FrozenTextRasterizer;
+pub use frozen_fonts::{FrozenTextRasterizer, runtime_text_rasterizer};
+#[cfg(target_arch = "wasm32")]
+pub use frozen_fonts::{add_runtime_font, clear_runtime_fonts};
 pub use measure::{
     GLYPH_MEASURE_MAX_ATLAS_DIMENSION, GLYPH_MEASURE_MAX_CELLS, GLYPH_MEASURE_MAX_LINES,
     GlyphMeasureLine, GlyphMeasureRequest, MeasuredGlyphLine, MeasuredGlyphPlacement,
@@ -89,7 +91,7 @@ impl TextRasterizer {
     /// P1-19 探针复用:这段文字按当前系统整体字体能力成形时是否零 `.notdef`。
     /// 图表轴/图例在光栅化前用它拦截缺字,按 fail-closed 语义报错而不是画方框。
     pub fn shapes_without_missing_glyphs(&mut self, family: &str, text: &str) -> bool {
-        let started = self.profile.as_ref().map(|_| std::time::Instant::now());
+        let started = self.profile.as_ref().map(|_| web_time::Instant::now());
         let result = super::font_capability::text_shapes_without_missing_glyphs(
             &mut self.fonts,
             family,

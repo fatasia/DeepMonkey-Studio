@@ -359,9 +359,11 @@ export class PbrRenderer {
       }
       const allocationPlan = this.allocationPlanFor(drawProfile.hasTransparent, postProcess, directClear !== undefined);
       // Capture can append readbacks outside the production graph; keep its resources physically distinct.
-      this.targets.beginFrame(size, this.frameCapture ? [] : allocationPlan.resources);
+      this.targets.beginFrame(size, this.frameCapture ? [] : allocationPlan.resources, this.writeGeometryBuffers);
     let lighting: ReturnType<ForwardPlusPbrRuntime["prepareAndEncode"]> | undefined;
-    const preparation = directionalDisplay ? undefined : encodeRenderGraphEncoderGroup(device,
+    // Static packets have no deformation work. Encode their light assignment in the main
+    // command buffer instead of allocating and submitting an empty parallel encoder.
+    const preparation = directionalDisplay || !drawProfile.hasDeformation ? undefined : encodeRenderGraphEncoderGroup(device,
       this.preparationPlan, this.preparationGroupIndex, new Map([
         ["deform", ({ encoder }) => this.packets.encodeDeformation(encoder)],
         ["cluster-lights", ({ encoder }) => {
@@ -372,14 +374,21 @@ export class PbrRenderer {
         }],
       ]), { encoderLabelPrefix: "Deep PBR prepare" });
     const encoder = device.createCommandEncoder({ label: "Deep frame" });
-    if (!preparation) this.packets.encodeDeformation(encoder);
+    if (!preparation && drawProfile.hasDeformation) this.packets.encodeDeformation(encoder);
+    if (!preparation && !directionalDisplay) lighting = this.lighting.prepareAndEncode(encoder, {
+      viewportWidth: size.width, viewportHeight: size.height,
+      near: frameState.projection.near, far: frameState.projection.far,
+      verticalFovRadians: frameState.projection.verticalFovRadians,
+      lights: transformWorldLightsToView(sceneLighting.clustered, frameState.worldToView),
+    });
     const visibility = pbrVisibilityInput(view, frameState.projection, size.width, size.height, history.cameraCut,
       this.adaptiveQuality?.state().knobs.lodDetailScale ?? 1);
     const previousHiZ = hiZPlan ? this.previousHiZ.occlusionView(hiZPlan) : undefined;
     const mainFrustum = visibility.frustum, lodStats = this.packets.encodeLod(encoder,
       previousHiZ ? { ...visibility.lod, previousHiZ } : visibility.lod);
     const lodWork = new PbrLodWork(lodStats);
-    const timing = this.gpuTimer.begin(this.frame + 1);
+    const detailedTiming = directClear === undefined && !view.editorOverlay?.vertices.length;
+    const timing = this.gpuTimer.begin(this.frame + 1, detailedTiming);
     const timingStart = timing ? { timestampWrites: { querySet: timing.queries, beginningOfPassWriteIndex: 0 } } : {};
     const shadowFrame = this.shadows.prepare({ eye: view.eye, target: view.target, ...(view.up ? { up: view.up } : {}),
       verticalFovRadians: frameState.projection.verticalFovRadians, aspect: size.width / size.height,
@@ -413,7 +422,9 @@ export class PbrRenderer {
     let present: PbrPresentReceipt | undefined = directClear ? this.outputs.acquirePresent(this.performanceTelemetry.enabled) : undefined;
     const mainTimestamps = directClear && timing && !view.editorOverlay?.vertices.length ? { querySet: timing.queries,
       ...(!shadowUpdated ? { beginningOfPassWriteIndex: 0 } : {}), endOfPassWriteIndex: 1 }
-      : !shadowUpdated && timing ? timingStart.timestampWrites : undefined;
+      : timing && !directClear ? { querySet: timing.queries,
+        ...(!shadowUpdated ? { beginningOfPassWriteIndex: 0 } : {}), endOfPassWriteIndex: 2 }
+        : !shadowUpdated && timing ? timingStart.timestampWrites : undefined;
     const main = beginPbrOpaquePass(encoder, { targets: this.targets, background: directClear ?? view.background,
       writeGeometryBuffers: this.writeGeometryBuffers, drawBackground: this.mainBindings.prepareBackground(view, this.environment.current, size.width / size.height, this.writeGeometryBuffers),
       ...(present ? { directDisplayView: present.view } : {}), ...(mainTimestamps ? { timestampWrites: mainTimestamps } : {}) });
@@ -477,8 +488,12 @@ export class PbrRenderer {
       : this.postProcess.encodeFinal(postProcessInput, temporalInput);
     if (!directClear) {
       present = this.outputs.present(encoder, finalEffects.color, view.authorColorEffects, this.performanceTelemetry.enabled,
-        view.editorOverlay?.vertices.length ? undefined : timing?.queries, this.frameCapture !== undefined);
+        view.editorOverlay?.vertices.length ? undefined : timing?.queries, this.frameCapture !== undefined,
+        detailedTiming && timing !== undefined);
       drawCalls += this.features.spatialAa ? 2 : 1; triangles += this.features.spatialAa ? 2 : 1;
+    }
+    if (this.mainBindings.encodeDisplayBackground(encoder, present!.view, this.targets.depth, view,
+      this.environment.current, size.width / size.height)) { drawCalls++; triangles++;
     }
     const overlayTriangles = this.outputs.encodeEditorOverlay(encoder, present!.view, view.editorOverlay, timing?.queries);
     if (overlayTriangles) { drawCalls++; triangles += overlayTriangles; }

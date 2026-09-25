@@ -12,7 +12,8 @@ export interface NativeSceneWindowEvidence {
   requestedFrames: number;
   verifiedAt: string;
   report: { schemaVersion: 1; scope: "native-window"; packageHash: string; nonce: string;
-    width: number; height: number; presentedFrames: number; backend: string; gpuErrorsClean: true };
+    width: number; height: number; presentedFrames: number; backend: string; gpuErrorsClean: true;
+    device?: Record<string, unknown>; deviceFingerprintSha256?: string };
 }
 
 /** 配置来自服务启动设置；调用请求只能传入服务器私有候选文件和取消信号。 */

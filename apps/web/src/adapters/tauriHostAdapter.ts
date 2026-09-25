@@ -1,11 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { AuthStore, NamedServerProfile } from "@bim-studio/server-sdk";
-import { isLocalDesktopMode, localDesktopApiOrigin } from "./desktopRuntimeMode.js";
+import { isLocalDesktopMode } from "./desktopRuntimeMode.js";
 
 export type TauriInvoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
+export interface DesktopLocalApiConnection { baseUrl: string; accessToken: string; }
 
 export class TauriHostAdapter implements AuthStore {
   private profile: NamedServerProfile | undefined;
+  private localConnection: DesktopLocalApiConnection | undefined;
   private accessToken = "";
 
   constructor(
@@ -29,11 +31,18 @@ export class TauriHostAdapter implements AuthStore {
 
   getServerProfile(): NamedServerProfile {
     if (isLocalDesktopMode(this.browserWindow)) {
-      return { id: "desktop-local", name: "本地工作台", baseUrl: localDesktopApiOrigin() };
+      if (!this.localConnection) throw new Error("本地 API 尚未启动");
+      return { id: "desktop-local", name: "本地工作台", baseUrl: this.localConnection.baseUrl };
     }
     const profile = this.currentServerProfile();
     if (!profile) throw new Error("尚未配置服务器，请先完成连接向导");
     return profile;
+  }
+
+  async startLocalApi(): Promise<NamedServerProfile> {
+    this.localConnection = await this.invokeCommand<DesktopLocalApiConnection>("start_local_api");
+    this.accessToken = this.localConnection.accessToken;
+    return { id: "desktop-local", name: "本地工作台", baseUrl: this.localConnection.baseUrl };
   }
 
   async saveServerProfile(profile: NamedServerProfile): Promise<NamedServerProfile> {

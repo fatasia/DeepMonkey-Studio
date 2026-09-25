@@ -34,9 +34,9 @@ describe("Studio author environment render view", () => {
     expect(() => readStudioDeepEnvironmentView(scene(), false)).toThrow("纯色背景显示域合成");
   });
 
-  it("rejects sRGB sky without a composer but enables its tone mapping with a composer", () => {
+  it("routes sRGB sky to display-space composition without a composer and tone maps it with a composer", () => {
     const author = scene(); author.background = sky(THREE.SRGBColorSpace);
-    expect(() => readStudioDeepEnvironmentView(author, false)).toThrow("sRGB 天空显示域合成");
+    expect(readStudioDeepEnvironmentView(author, false).panoramaBackground).toMatchObject({ toneMapped: false });
     expect(readStudioDeepEnvironmentView(author, true).panoramaBackground).toMatchObject({ toneMapped: true });
   });
 

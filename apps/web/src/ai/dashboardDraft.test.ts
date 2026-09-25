@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { migrateSceneSnapshotV1, type DashboardDataWidgetConfig, type SceneSnapshot, type DataDatasetRecord } from "@bim-studio/contracts";
 import fixture from "../../../../test-fixtures/scene-v1-pure-3d.json";
 import { dashboardDraftPageContext, validateDashboardDraft } from "./dashboardDraft";
-import { dashboardDraftFailure, dashboardDraftStreamText } from "./useDashboardAiDraft";
 
 const document = migrateSceneSnapshotV1(fixture as SceneSnapshot), page = document.pages[0]!;
 const dataset: DataDatasetRecord = { id: "actual", projectId: document.metadata.projectId, connectionId: "connection", name: "实际产量", createdAt: "now", updatedAt: "now", refreshSeconds: 0, fields: [{ key: "output", label: "产量", type: "number" }, { key: "line", label: "产线", type: "string" }] };
@@ -41,15 +40,5 @@ describe("AI canvas proposal validation", () => {
       widget: { ...add.widget, type: "bar", unit: "件", directBinding: { headers: { Authorization: "secret" } } as never, sampleData: { rows: [{ output: 999 }] } as never } as DashboardDataWidgetConfig }] });
     expect(JSON.stringify(context)).not.toContain("secret"); expect(JSON.stringify(context)).not.toContain("999");
     expect(context.nodes[0]!.editable).toBe(false);
-  });
-  it("extracts streamed summary text without exposing raw JSON", () => {
-    expect(dashboardDraftStreamText('{"text":"正在生成')).toBe("正在生成");
-    expect(dashboardDraftStreamText('{"text":"产量\\n趋势","dashboardPageDraft":')).toBe("产量\n趋势");
-    expect(dashboardDraftStreamText('{"text":"末尾\\')).toBe("末尾");
-    expect(dashboardDraftStreamText('{"dashboardPageDraft":')).toBe("");
-  });
-  it("uses actionable English feedback without leaking raw localized validation errors", () => {
-    const message = dashboardDraftFailure("en-US", new Error("数据集不存在字段：私有字段"));
-    expect(message).toContain("dataset fields"); expect(message).not.toMatch(/[\u4e00-\u9fff]/);
   });
 });

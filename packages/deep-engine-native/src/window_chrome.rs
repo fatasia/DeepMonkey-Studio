@@ -87,6 +87,102 @@ pub fn set_title(window: &Window, status: &str) {
     window.set_title(&title(status));
 }
 
+/// Hidden product windows are shown only after their first successful present.
+/// Disable DWM's fade animation before that handoff so the compositor never
+/// blends the fully rendered player with whatever white/black window is behind
+/// it. The window remains opaque and keeps the normal system title bar.
+#[cfg(target_os = "windows")]
+pub fn disable_show_transition(window: &Window) -> Result<(), String> {
+    use windows::Win32::{
+        Foundation::HWND,
+        Graphics::Dwm::{DWMWA_TRANSITIONS_FORCEDISABLED, DwmSetWindowAttribute},
+    };
+    use windows::core::BOOL;
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    let handle = window.window_handle().map_err(|error| error.to_string())?;
+    let RawWindowHandle::Win32(handle) = handle.as_raw() else {
+        return Err("native Windows player has no Win32 window handle".into());
+    };
+    let disabled = BOOL(1);
+    unsafe {
+        DwmSetWindowAttribute(
+            HWND(handle.hwnd.get() as *mut _),
+            DWMWA_TRANSITIONS_FORCEDISABLED,
+            (&disabled as *const BOOL).cast(),
+            std::mem::size_of::<BOOL>() as u32,
+        )
+        .map_err(|error| error.to_string())
+    }
+}
+
+/// Publish a frame that was rendered while the product window was hidden.
+///
+/// DWM does not necessarily commit a hidden swapchain before `ShowWindow`.
+/// Showing it at its final position can therefore expose one compositor frame
+/// of the dark window background before the already-presented scene arrives.
+/// Stage the window off-screen for one DWM composition, then move the opaque,
+/// composed surface to its intended position. This is only used for the first
+/// successful product frame; later presents follow the normal winit path.
+#[cfg(target_os = "windows")]
+pub fn reveal_presented_window(window: &Window) -> Result<(), String> {
+    use windows::Win32::{
+        Foundation::{HWND, RECT},
+        Graphics::Dwm::DwmFlush,
+        UI::WindowsAndMessaging::{
+            GetWindowRect, HWND_TOP, SET_WINDOW_POS_FLAGS, SWP_NOACTIVATE, SWP_NOSENDCHANGING,
+            SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
+        },
+    };
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    let handle = window.window_handle().map_err(|error| error.to_string())?;
+    let RawWindowHandle::Win32(handle) = handle.as_raw() else {
+        window.set_visible(true);
+        return Err("native Windows player has no Win32 window handle".into());
+    };
+    let hwnd = HWND(handle.hwnd.get() as *mut _);
+    let mut original = RECT::default();
+    unsafe { GetWindowRect(hwnd, &mut original) }.map_err(|error| {
+        window.set_visible(true);
+        error.to_string()
+    })?;
+    let flags: SET_WINDOW_POS_FLAGS =
+        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOSENDCHANGING;
+    unsafe { SetWindowPos(hwnd, Some(HWND_TOP), -10_000, -10_000, 0, 0, flags) }.map_err(
+        |error| {
+            window.set_visible(true);
+            error.to_string()
+        },
+    )?;
+    window.set_visible(true);
+    let staged = unsafe { DwmFlush() };
+    let restored = unsafe {
+        SetWindowPos(
+            hwnd,
+            Some(HWND_TOP),
+            original.left,
+            original.top,
+            0,
+            0,
+            flags,
+        )
+    };
+    if let Err(error) = restored {
+        return Err(error.to_string());
+    }
+    if let Err(error) = staged {
+        return Err(error.to_string());
+    }
+    unsafe { DwmFlush() }.map_err(|error| error.to_string())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn reveal_presented_window(window: &Window) -> Result<(), String> {
+    window.set_visible(true);
+    Ok(())
+}
+
 pub fn fullscreen_key(window: &Window, key: KeyCode) -> bool {
     let Some(enabled) = fullscreen_action(key, window.fullscreen().is_some()) else {
         return false;

@@ -446,6 +446,8 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
     deliveryStorage: { objects, dataDir },
     probeBakeDataDir: dataDir,
     ...(config.nativeSceneVerifierExecutable ? { nativeExecutable: config.nativeSceneVerifierExecutable } : {}),
+    ...(config.threeSceneViewerLauncherExecutable
+      ? { threeSceneViewerLauncherExecutable: config.threeSceneViewerLauncherExecutable } : {}),
     ...(config.threeSceneViewerBuilderScript ? { threeSceneViewerBuilderScript: config.threeSceneViewerBuilderScript } : {}),
     ...(config.nativeSceneVerifierExecutable ? { nativeCandidates: createNativeSceneCandidateService({ store, objects, dataDir,
       nativeExecutable:config.nativeSceneVerifierExecutable,

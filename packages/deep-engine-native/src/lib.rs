@@ -11,11 +11,11 @@ pub mod clustered_lighting;
 pub mod compat_x;
 pub mod contract;
 pub mod culling_contract;
+#[cfg(windows)]
+pub mod dashboard_audio;
 pub mod dashboard_runtime;
 #[cfg(windows)]
 pub mod dashboard_video;
-#[cfg(windows)]
-pub mod dashboard_audio;
 pub mod deep2d;
 pub mod executable_overlay;
 pub mod fog;

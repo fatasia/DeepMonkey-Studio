@@ -13,9 +13,11 @@ const time = "2026-09-15T10:00:00.000Z";
 function nativeCompiled(): SceneNativeCompiledPublication {
   const source = "a".repeat(64), graph = "b".repeat(64), artifact = "c".repeat(64), fixtureId = `scene-${source}`;
   const capabilities = ["deep.scene.runtime.v1", "deep.scene.camera.v1", "deep.scene.dynamic-runtime.v1"];
+  const executable = "e".repeat(64);
   return { runtimePackage: { key: `projects/default/publication-resources/sha256/${artifact}`, bytes: 100, sha256: artifact },
+    executable: { key: `projects/default/publication-resources/sha256/${executable}`, bytes: 1024, sha256: executable },
     compilationEvidence: { sourceSemanticHash: source, compileGraphHash: graph, targetArtifactHash: artifact },
-    compilerSha256: "d".repeat(64), executableSha256: "e".repeat(64), verifiedAt: time,
+    compilerSha256: "d".repeat(64), executableSha256: executable, verifiedAt: time,
     compatibilityReport: { schemaVersion: 1, target: "deep-native", sceneId: "scene-1", status: "ready",
       platform: "windows-x64", fixtureId, contentFingerprint: source, compileGraphHash: graph, targetArtifactHash: artifact,
       capabilityProfileVersion: "deep-scene-compiled-v1",
@@ -131,7 +133,7 @@ it("persists Native artifact pointers across restart and restore without exposin
   expect(reload.getScenePublicationDependencies("default", "scene-1", 2)).toBeUndefined();
 });
 
-it.each(["foreign-key", "bad-runtime-hash", "empty-bytes", "oversize", "bad-compiler", "bad-executable", "bad-date",
+it.each(["foreign-key", "bad-runtime-hash", "empty-bytes", "oversize", "bad-compiler", "bad-executable", "foreign-executable-key", "mismatched-executable-hash", "bad-date",
   "foreign-scene", "wrong-target", "blocked", "wrong-platform", "source", "graph", "artifact", "fixture", "missing-proof", "forged-proof", "extra-proof", "missing-camera"])
   ("rejects Native identity corruption before committing: %s", async failure => {
     const { store, request } = await fixture(), native = nativeCompiled();
@@ -141,6 +143,8 @@ it.each(["foreign-key", "bad-runtime-hash", "empty-bytes", "oversize", "bad-comp
     if (failure === "oversize") native.runtimePackage.bytes = 256 * 1024 ** 2 + 1;
     if (failure === "bad-compiler") native.compilerSha256 = "invalid";
     if (failure === "bad-executable") native.executableSha256 = "E".repeat(64);
+    if (failure === "foreign-executable-key") native.executable!.key = native.executable!.key.replace("default", "other");
+    if (failure === "mismatched-executable-hash") native.executable!.sha256 = "f".repeat(64);
     if (failure === "bad-date") native.verifiedAt = "invalid";
     const changes: Record<string, object> = { "foreign-scene": { sceneId: "other" }, "wrong-target": { target: "three-webview" },
       blocked: { status: "blocked" }, "wrong-platform": { platform: "linux" }, source: { contentFingerprint: "f".repeat(64) },

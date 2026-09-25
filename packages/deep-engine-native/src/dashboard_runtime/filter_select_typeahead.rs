@@ -1,5 +1,6 @@
 use super::*;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use web_time::Instant;
 
 const TYPEAHEAD_TIMEOUT: Duration = Duration::from_millis(900);
 const TYPEAHEAD_MAX_CHARS: usize = 64;

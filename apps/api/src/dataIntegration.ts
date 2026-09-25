@@ -128,6 +128,9 @@ function recordConnectorFailure(connection: DataConnectionRecord, error: unknown
 }
 
 export async function ensureDemoMetrics(config: AppConfig): Promise<void> {
+  // SQLite/JSON desktop mode has no bundled PostgreSQL daemon. The connector
+  // catalog remains available, but boot must not require `psql`.
+  if (config.metadata.provider !== "postgres") return;
   const statement = `
     CREATE TABLE IF NOT EXISTS bim_studio_demo_metrics (
       recorded_at TIMESTAMPTZ NOT NULL,
@@ -200,7 +203,8 @@ function finiteBetween(value: unknown, fallback: number, minimum: number, maximu
 
 async function previewDatasetAttempt(config: AppConfig, connection: DataConnectionRecord, dataset: DataDatasetRecord): Promise<Array<Record<string, unknown>>> {
   let rows: Array<Record<string, unknown>>;
-  if (connection.type === "postgresql") rows = await previewPostgres(config, connection, dataset);
+  if (connection.id === "example-postgresql" && config.metadata.provider !== "postgres") rows = localDemoSensorRows();
+  else if (connection.type === "postgresql") rows = await previewPostgres(config, connection, dataset);
   else if (MYSQL_PROTOCOL_CONNECTORS.has(connection.type)) rows = await previewMysql(connection, dataset);
   else if (connection.type === "sqlserver") rows = await previewSqlServer(connection, dataset);
   else if (connection.type === "oracle") rows = await previewOracle(connection, dataset);
@@ -233,12 +237,23 @@ async function previewDatasetAttempt(config: AppConfig, connection: DataConnecti
 }
 
 export async function demoSensorRows(config: AppConfig): Promise<Array<Record<string, unknown>>> {
+  if (config.metadata.provider !== "postgres") return localDemoSensorRows();
   const output = await runPostgres(
     config.metadata.postgres,
     `SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json)::text FROM (SELECT recorded_at, device_id, temperature, pressure, running FROM bim_studio_demo_metrics ORDER BY recorded_at DESC LIMIT 30) t;`,
     true,
   );
   return parseRows(output);
+}
+
+function localDemoSensorRows(now = Date.now()): Array<Record<string, unknown>> {
+  return Array.from({ length: 30 }, (_, index) => ({
+    recorded_at: new Date(now - index * 60_000).toISOString(),
+    device_id: `AHU-${String((index % 3) + 1).padStart(2, "0")}`,
+    temperature: Math.round((22 + Math.sin(index / 4) * 5 + index % 3) * 10) / 10,
+    pressure: Math.round((101 + Math.cos(index / 5) * 8) * 10) / 10,
+    running: index % 7 !== 0,
+  }));
 }
 
 async function previewPostgres(config: AppConfig, connection: DataConnectionRecord, dataset: DataDatasetRecord): Promise<Array<Record<string, unknown>>> {

@@ -6,13 +6,13 @@
   "build": {
     "beforeDevCommand": "pnpm --filter @bim-studio/web dev",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "pnpm --filter @bim-studio/web build",
+    "beforeBuildCommand": "node scripts/prepare-local-api-runtime.mjs && pnpm --filter @bim-studio/web build",
     "frontendDist": "../../web/dist"
   },
   "app": {
     "security": {
       "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http: https: data: blob:; media-src 'self' http: https: blob:; connect-src 'self' ipc: http: https: ws: wss:; worker-src 'self' blob:",
-      "capabilities": ["desktop-main", "desktop-script-editor"]
+      "capabilities": ["desktop-main", "desktop-script-editor", "scene-viewer"]
     },
     "windows": [
       {
@@ -26,12 +26,16 @@
         "center": true,
         "resizable": true,
         "decorations": false,
-        "shadow": false
+        "shadow": false,
+        "backgroundColor": [11, 17, 20, 255]
       }
     ]
   },
   "bundle": {
     "active": true,
+    "resources": {
+      "../local-api-bundle": "local-api"
+    },
     "targets": ["nsis", "msi"],
     "icon": [
       "icons/32x32.png",
@@ -42,7 +46,7 @@
     ],
     "windows": {
       "webviewInstallMode": {
-        "type": "downloadBootstrapper"
+        "type": "offlineInstaller"
       },
       "nsis": {
         "installMode": "perMachine",

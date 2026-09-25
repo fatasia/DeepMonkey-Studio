@@ -142,7 +142,10 @@ fn real_mp4_frames_compose_through_the_deep2d_gpu_pass() {
     let mut settled = 0usize;
     while compositor.advance(&queue).unwrap() {
         settled += 1;
-        assert!(settled < 8, "video advance must settle, not stream without pacing");
+        assert!(
+            settled < 8,
+            "video advance must settle, not stream without pacing"
+        );
         uploaded = compositor.uploaded_frames();
     }
     assert_eq!(compositor.uploaded_frames(), uploaded);

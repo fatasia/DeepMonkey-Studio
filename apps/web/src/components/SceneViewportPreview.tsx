@@ -86,7 +86,7 @@ export function SceneViewportPreview({
     setError("");
     void import("../viewer/ViewerEngine")
       .then(async ({ ViewerEngine }) => {
-        if (rendererBackend === "webgl") return ViewerEngine.create(container, "webgl");
+        if (rendererBackend !== "webgpu") return ViewerEngine.create(container, "webgl");
         try {
           return await ViewerEngine.create(container, "webgpu");
         } catch {

@@ -64,6 +64,17 @@ describe("TauriHostAdapter", () => {
     browserWindow.__TAURI_INTERNALS__ = {};
     expect(isTauriRuntime(browserWindow)).toBe(true);
   });
+
+  it("uses the managed SQLite API origin and per-process token in local mode", async () => {
+    const browserWindow = createWindowWithMode("local");
+    const adapter = new TauriHostAdapter(browserWindow, async <T>(command: string) => {
+      if (command === "start_local_api") return { baseUrl: "http://127.0.0.1:43125", accessToken: "local-token" } as T;
+      throw new Error(`unexpected command ${command}`);
+    });
+    await expect(adapter.startLocalApi()).resolves.toEqual({ id: "desktop-local", name: "本地工作台", baseUrl: "http://127.0.0.1:43125" });
+    expect(adapter.getServerProfile().baseUrl).toBe("http://127.0.0.1:43125");
+    expect(adapter.getAccessToken()).toBe("local-token");
+  });
 });
 
 function profile(): NamedServerProfile {
@@ -72,4 +83,10 @@ function profile(): NamedServerProfile {
 
 function createWindow(): Window {
   return new EventTarget() as unknown as Window;
+}
+
+function createWindowWithMode(mode: string): Window {
+  const browserWindow = new EventTarget() as Window & { localStorage: Storage };
+  browserWindow.localStorage = { getItem: () => mode, setItem: vi.fn(), removeItem: vi.fn(), clear: vi.fn(), key: vi.fn(), length: 1 };
+  return browserWindow;
 }

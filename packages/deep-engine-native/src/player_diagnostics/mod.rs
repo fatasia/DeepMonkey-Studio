@@ -151,10 +151,7 @@ impl PlayerDiagnostics {
                     "clustered_lighting",
                     "native_clustered_lighting_not_wired",
                 ),
-                CapabilityStatus::degraded(
-                    "dynamic_gi",
-                    "native_ray_query_dynamic_update_missing",
-                ),
+                CapabilityStatus::degraded("dynamic_gi", "native_ray_query_dynamic_update_missing"),
                 if renderer_features.fog.is_volumetric() {
                     CapabilityStatus::enabled_with_reason(
                         "volumetric_fog",
@@ -192,7 +189,7 @@ impl PlayerDiagnostics {
             sampling: SamplingMetadata {
                 warmup_frames: telemetry_warmup_frames(),
                 sample_frames: telemetry_sample_frames(),
-                cpu_clock: "std::time::Instant",
+                cpu_clock: "web_time::Instant",
                 gpu_metric_policy: "timestamp_queries_only; unavailable metrics are degraded",
             },
         }
@@ -612,6 +609,9 @@ mod tests {
             .find(|entry| entry["name"] == "clustered_lighting")
             .unwrap()
             .clone();
-        assert_eq!(capability["reason"], "native_cluster_lookup_no_visual_evidence");
+        assert_eq!(
+            capability["reason"],
+            "native_cluster_lookup_no_visual_evidence"
+        );
     }
 }

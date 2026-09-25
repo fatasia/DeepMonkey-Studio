@@ -72,6 +72,8 @@ describe("createDashboardAndroidApk", () => {
       });
       expect(result.apk.byteLength).toBeGreaterThan(0);
       expect(result.scenePackageSha256).toMatch(/^[a-f0-9]{64}$/);
+      const published = await JSZip.loadAsync(result.apk);
+      expect(await published.file(ANDROID_SCENE_ASSET_PATH)!.async("uint8array")).toEqual(scene);
     },
     120_000,
   );

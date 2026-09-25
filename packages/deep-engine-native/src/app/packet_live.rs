@@ -24,7 +24,7 @@ pub(super) struct PacketLiveTransport {
     _watcher: super::watch_thread::WatchThread,
     mailbox: LatestMailbox<WatchedPacket>,
     published_key: Arc<AtomicU64>,
-    retry: Option<(std::time::Instant, u64, WatchedPacket)>,
+    retry: Option<(web_time::Instant, u64, WatchedPacket)>,
 }
 
 const PRESENT_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(100);
@@ -106,7 +106,7 @@ fn apply(app: &mut NativeApp, generation: u64, candidate: WatchedPacket) {
             .present_render_packet_update(staged)?;
         if !super::dashboard::presented(app, outcome)? {
             app.packet_live_transport.as_mut().unwrap().retry = Some((
-                std::time::Instant::now() + PRESENT_RETRY_DELAY,
+                web_time::Instant::now() + PRESENT_RETRY_DELAY,
                 generation,
                 candidate,
             ));
@@ -142,7 +142,7 @@ fn apply(app: &mut NativeApp, generation: u64, candidate: WatchedPacket) {
 pub(super) fn retry(
     app: &mut NativeApp,
     event_loop: &winit::event_loop::ActiveEventLoop,
-    now: std::time::Instant,
+    now: web_time::Instant,
 ) -> bool {
     let Some(transport) = app.packet_live_transport.as_mut() else {
         return false;
@@ -151,11 +151,7 @@ pub(super) fn retry(
         return false;
     };
     if now < *deadline {
-        #[cfg(not(target_arch = "wasm32"))]
-        let flow = winit::event_loop::ControlFlow::WaitUntil(*deadline);
-        #[cfg(target_arch = "wasm32")]
-        let flow = crate::wasm_compat::control_flow_until(*deadline);
-        event_loop.set_control_flow(flow);
+        event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(*deadline));
         return true;
     }
     let (_, generation, candidate) = transport.retry.take().unwrap();
@@ -165,13 +161,7 @@ pub(super) fn retry(
         .as_ref()
         .and_then(|t| t.retry.as_ref())
     {
-        {
-            #[cfg(not(target_arch = "wasm32"))]
-            let flow = winit::event_loop::ControlFlow::WaitUntil(*deadline);
-            #[cfg(target_arch = "wasm32")]
-            let flow = crate::wasm_compat::control_flow_until(*deadline);
-            event_loop.set_control_flow(flow);
-        }
+        event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(*deadline));
         return true;
     }
     false

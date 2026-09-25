@@ -55,6 +55,14 @@
       "types": "./dist/app/index.d.ts",
       "default": "./dist/app/index.js"
     },
+    "./scene": {
+      "development": {
+        "types": "./src/scene/index.ts",
+        "default": "./src/scene/index.ts"
+      },
+      "types": "./dist/scene/index.d.ts",
+      "default": "./dist/scene/index.js"
+    },
     "./gltf": {
       "development": {
         "types": "./src/gltf/index.ts",

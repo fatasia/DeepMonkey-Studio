@@ -23,7 +23,6 @@ export function readStudioDeepEnvironmentView(scene: THREE.Scene, composerActive
   if (!(scene.background instanceof THREE.Texture)) throw new Error("Deep 尚未接入透明场景背景。");
   if (scene.backgroundBlurriness !== 0) throw new Error("Deep 尚未接入作者天空模糊参数。");
   const toneMapped = composerActive || scene.background.colorSpace !== THREE.SRGBColorSpace;
-  if (!toneMapped) throw new Error("Deep 尚未接入无后处理路径的 sRGB 天空显示域合成。");
   const rotation = new THREE.Matrix3().setFromMatrix4(new THREE.Matrix4()
     .makeRotationFromEuler(scene.backgroundRotation)).transpose().toArray();
   const panoramaBackground = { intensity: scene.backgroundIntensity, rotation, toneMapped };

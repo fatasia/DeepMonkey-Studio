@@ -55,3 +55,6 @@ apps/desktop/src-tauri/scene-viewer.generated.conf.json
 dev/pkg/
 
 apps/web/public/dev/pkg/
+apps/web/public/engine-wasm/
+apps/desktop/.local-api-runtime/
+apps/desktop/local-api-bundle/

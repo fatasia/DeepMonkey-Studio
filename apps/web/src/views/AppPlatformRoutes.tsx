@@ -487,6 +487,7 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
             },
           ))}
           onOpenData={openDataCenter}
+          onAiAssistant={() => setAiAssistantOpen(true)}
           onOpenScripts={(selection) => {
             applicationSessionRef.current.store.setSelection(selection);
             setSceneBehaviorOpen(true);

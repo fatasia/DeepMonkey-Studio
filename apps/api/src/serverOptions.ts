@@ -9,6 +9,9 @@ export const API_ROUTER_OPTIONS: NonNullable<FastifyServerOptions["routerOptions
   maxParamLength: 160
 };
 
+/** Browser/Tauri clients use the full REST mutation surface across origins. */
+export const API_CORS_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] as const;
+
 export function createApiServer(options: FastifyServerOptions = {}): FastifyInstance {
   return Fastify({
     ...options,

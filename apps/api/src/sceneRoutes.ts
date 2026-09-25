@@ -22,6 +22,7 @@ interface SceneRouteDependencies {
   probeBakeMaxBytes?: number;
   nativeCandidates?: NativeSceneCandidateService;
   nativeExecutable?: string;
+  threeSceneViewerLauncherExecutable?: string;
   threeSceneViewerBuilderScript?: string;
   beforeDiscardPublication?: (publication: PublishedSceneRecord) => Promise<void>;
   afterPublish?: (publication: PublishedSceneRecord) => Promise<void>;
@@ -36,10 +37,14 @@ export async function registerSceneRoutes(app: FastifyInstance, dependencies: Sc
       ...(dependencies.probeBakeMaxBytes ? { maxBytes: dependencies.probeBakeMaxBytes } : {}) });
   }
   if (dependencies.deliveryStorage) await registerScenePublicationDependencyRoutes(app, { store, ...dependencies.deliveryStorage });
-  if (dependencies.deliveryStorage && dependencies.nativeExecutable) await registerSceneStandaloneExecutableRoutes(app,
-    { store, objects: dependencies.deliveryStorage.objects, nativeExecutable: dependencies.nativeExecutable });
-  if (dependencies.threeSceneViewerBuilderScript) await registerThreeSceneViewerExecutableRoutes(app,
-    { store, builderScript: dependencies.threeSceneViewerBuilderScript });
+  if (dependencies.deliveryStorage) await registerSceneStandaloneExecutableRoutes(app,
+    { store, objects: dependencies.deliveryStorage.objects,
+      ...(dependencies.nativeExecutable ? { nativeExecutable: dependencies.nativeExecutable } : {}) });
+  await registerThreeSceneViewerExecutableRoutes(app,
+    { store,
+      ...(dependencies.threeSceneViewerLauncherExecutable
+        ? { launcherExecutable: dependencies.threeSceneViewerLauncherExecutable } : {}),
+      ...(dependencies.threeSceneViewerBuilderScript ? { builderScript: dependencies.threeSceneViewerBuilderScript } : {}) });
 
   app.get<{ Params: { projectId: string } }>("/api/projects/:projectId/scenes", async (request) =>
     store.listScenes(request.params.projectId)

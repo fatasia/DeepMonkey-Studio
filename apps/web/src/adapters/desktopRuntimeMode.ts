@@ -1,7 +1,16 @@
 export type DesktopRuntimeMode = "local" | "server";
 
 const STORAGE_KEY = "bim-studio.desktop-runtime-mode";
-const LOCAL_API_ORIGIN = "https://local.industrial-studio.invalid";
+const LEGACY_LOCAL_API_ORIGIN = "https://local.industrial-studio.invalid";
+
+/**
+ * Stable synthetic origin used only by the legacy IndexedDB API adapter and
+ * its migration tests. Product Tauri requests use the loopback HTTP origin
+ * returned by `start_local_api` instead.
+ */
+export function localDesktopApiOrigin(): string {
+  return LEGACY_LOCAL_API_ORIGIN;
+}
 
 export function readDesktopRuntimeMode(browserWindow: Window = window): DesktopRuntimeMode | undefined {
   let value: string | null = null;
@@ -24,9 +33,4 @@ export function storeDesktopRuntimeMode(mode: DesktopRuntimeMode, browserWindow:
 
 export function isLocalDesktopMode(browserWindow: Window = window): boolean {
   return readDesktopRuntimeMode(browserWindow) === "local";
-}
-
-/** 本地工作台仍复用 ServerClient 的路径与错误合同，但请求由本地存储适配器接管。 */
-export function localDesktopApiOrigin(): string {
-  return LOCAL_API_ORIGIN;
 }

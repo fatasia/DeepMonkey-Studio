@@ -38,14 +38,16 @@ export class PbrOutputBindings {
   }
 
   encode(encoder: GPUCommandEncoder, source: GPUTexture, present: GPUTextureView,
-    effects?: PbrAuthorColorEffects, queries?: GPUQuerySet): void {
+    effects?: PbrAuthorColorEffects, queries?: GPUQuerySet, detailedTiming = false): void {
     if (this.disposed) throw new Error("PBR output is disposed.");
     this.author.update(effects);
     const binding = this.binding(source);
     if (this.spatialAaEnabled) this.spatialAa ??= new SpatialAaPresent(this.session);
     const displayTarget = this.spatialAa?.prepare(source.width, source.height) ?? present;
     const pass = encoder.beginRenderPass({ label: "Deep display output",
-      ...(!this.spatialAa && queries ? { timestampWrites: { querySet: queries, endOfPassWriteIndex: 1 } } : {}),
+      ...(queries ? { timestampWrites: { querySet: queries,
+        ...(detailedTiming ? { beginningOfPassWriteIndex: 3 } : {}),
+        ...(!this.spatialAa ? { endOfPassWriteIndex: 1 } : {}) } } : {}),
       colorAttachments: [{ view: displayTarget, loadOp: "clear", storeOp: "store" }] });
     try {
       pass.setPipeline(this.pipelines.output); pass.setBindGroup(0, binding);
@@ -62,9 +64,9 @@ export class PbrOutputBindings {
   }
 
   present(encoder: GPUCommandEncoder, source: GPUTexture, effects: PbrAuthorColorEffects | undefined,
-    measure: boolean, queries?: GPUQuerySet, captureSource = false): PbrPresentReceipt {
+    measure: boolean, queries?: GPUQuerySet, captureSource = false, detailedTiming = false): PbrPresentReceipt {
     const surface = this.acquirePresent(measure);
-    this.encode(encoder, source, surface.view, effects, queries);
+    this.encode(encoder, source, surface.view, effects, queries, detailedTiming);
     // A logical present containing SpatialAA has multiple shader owners; keep it unmapped.
     if (captureSource && !this.spatialAaEnabled) {
       const provenance = this.pipelines.outputShaderProvenance;

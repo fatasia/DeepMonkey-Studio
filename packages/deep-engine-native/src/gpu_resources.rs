@@ -71,7 +71,6 @@ pub fn frame_data_with_camera(
     frame
 }
 
-
 pub fn shadow_camera(
     size: PhysicalSize<u32>,
     frame: &FrameUniform,

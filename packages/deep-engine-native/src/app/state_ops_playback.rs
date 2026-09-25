@@ -5,7 +5,7 @@
 //! applied step mutates the real `PlayerState`/`PlayerView` (with a real
 //! `set_view` GPU submission for clipping changes) and is read back through
 //! the f32 pipeline to prove the contract survives the native float width.
-use std::time::Instant;
+use web_time::Instant;
 
 use crate::player_content::PlayerContent;
 use crate::player_state::PlayerState;

@@ -38,9 +38,18 @@ fn rt_reject_reasons_stay_machine_readable() {
         RtResidencyReject::MissingFeature.reason(),
         "adapter_feature_unavailable"
     );
-    assert_eq!(RtResidencyReject::EmptyScene.reason(), "tlas_no_resident_instances");
-    assert_eq!(RtResidencyReject::BudgetExceeded.reason(), "tlas_budget_exceeded");
-    assert_eq!(RtResidencyReject::GeometryInvalid.reason(), "tlas_geometry_rejected");
+    assert_eq!(
+        RtResidencyReject::EmptyScene.reason(),
+        "tlas_no_resident_instances"
+    );
+    assert_eq!(
+        RtResidencyReject::BudgetExceeded.reason(),
+        "tlas_budget_exceeded"
+    );
+    assert_eq!(
+        RtResidencyReject::GeometryInvalid.reason(),
+        "tlas_geometry_rejected"
+    );
 }
 
 /// RT opaque 分支的就绪要素与回退语义(源级钉死):encode_opaque_pass_rt

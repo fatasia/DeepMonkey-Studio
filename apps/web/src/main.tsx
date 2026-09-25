@@ -10,8 +10,12 @@ import { loadSceneViewerDeliveryManifest } from "./api";
 import { markStartup } from "./startupTimeline";
 import { exposeStartupEvidenceCollector } from "./startupEvidence";
 import { DesktopWindowFrame } from "./components/DesktopWindowFrame";
+import { isPublishedApplicationRoute } from "./bootstrapRoute";
 
-const sceneViewerBuild = import.meta.env.VITE_SCENE_VIEWER_BUILD === "true";
+// The installed desktop launcher injects the same immutable delivery marker at
+// runtime, so it can reuse this build without compiling one Tauri binary per scene.
+const sceneViewerBuild = import.meta.env.VITE_SCENE_VIEWER_BUILD === "true"
+  || Boolean(document.querySelector('meta[name="scene-viewer-delivery"]'));
 const root = createRoot(document.getElementById("root")!);
 function renderRoot(children: ReactNode) {
   root.render(
@@ -40,12 +44,10 @@ async function bootstrap(): Promise<void> {
 }
 
 async function renderStudioApplication(): Promise<void> {
-  const [, { PublishedApplicationRoot }] = await Promise.all([
-    import("./editorStyles"),
-    import("./delivery/PublishedApplicationRoot"),
-  ]);
+  await import("./editorStyles");
   markStartup("editor-styles-loaded");
-  if (/^\/apps(?:\/|$)/.test(window.location.pathname)) {
+  if (isPublishedApplicationRoute(window.location.pathname)) {
+    const { PublishedApplicationRoot } = await import("./delivery/PublishedApplicationRoot");
     markStartup("studio-render-start");
     renderRoot(<PublishedApplicationRoot />);
     return;

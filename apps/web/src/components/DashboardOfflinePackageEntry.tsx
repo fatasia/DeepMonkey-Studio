@@ -133,6 +133,7 @@ function DashboardOfflinePackageDialog({ locale, projectId, applicationId, onClo
 
   const pointer = state.phase === "idle" || state.phase === "preparing" || state.phase === "ready" || state.phase === "failed"
     ? state.pointer : undefined;
+  const androidSigningComplete = Boolean(signing.keystore && signing.storePassword && signing.keyAlias);
   return <div ref={escape} className="dialog-backdrop dashboard-offline-dialog">
     <section ref={focused} tabIndex={-1} role="dialog" aria-modal="false" aria-label={tr(locale, "离线运行包", "Offline runtime package")}>
       <header className="dashboard-offline-heading">
@@ -168,19 +169,30 @@ function DashboardOfflinePackageDialog({ locale, projectId, applicationId, onClo
             {tr(locale, "有效期至", "Valid until")} {new Date(state.candidate.expiresAt).toLocaleTimeString(locale)}
           </p>
           <div className="dashboard-offline-downloads">
-            <button type="button" className="primary" disabled={Boolean(downloadBusy)} onClick={() => download("exe", state.candidate.candidateId)}>
+            {state.candidate.downloadFormats.includes("exe") && <button type="button" className="primary"
+              disabled={Boolean(downloadBusy)} onClick={() => download("exe", state.candidate.candidateId)}>
               {downloadBusy === "exe" ? tr(locale, "下载中…", "Downloading…") : tr(locale, "下载单文件 EXE", "Download single EXE")}
-            </button>
-            <button type="button" disabled={Boolean(downloadBusy)} onClick={() => download("zip", state.candidate.candidateId)}>ZIP</button>
-            <button type="button" disabled={Boolean(downloadBusy)} onClick={() => download("dmda", state.candidate.candidateId)}>DMDA</button>
-            <button type="button" disabled={Boolean(downloadBusy)}
-              title={tr(locale, "打包场景安卓查看器 APK;视频媒体在安卓首片降级", "Package the Android scene viewer APK; video media is degraded on the first Android slice")}
+            </button>}
+            {state.candidate.downloadFormats.includes("zip") && <button type="button" disabled={Boolean(downloadBusy)}
+              onClick={() => download("zip", state.candidate.candidateId)}>ZIP</button>}
+            {state.candidate.downloadFormats.includes("web") && <button type="button" disabled={Boolean(downloadBusy)}
+              onClick={() => download("web", state.candidate.candidateId)}>{tr(locale, "网页包", "Web package")}</button>}
+            {state.candidate.downloadFormats.includes("dmda") && <button type="button" disabled={Boolean(downloadBusy)}
+              onClick={() => download("dmda", state.candidate.candidateId)}>DMDA</button>}
+            {state.candidate.downloadFormats.includes("apk") && <button type="button"
+              disabled={Boolean(downloadBusy) || state.candidate.androidSigningMode === "client-required" && !androidSigningComplete}
+              title={state.candidate.androidSigningMode === "client-required" && !androidSigningComplete
+                ? tr(locale, "请先展开下方签名设置，上传 keystore 并填写口令与别名", "Upload a keystore and enter its password and alias below")
+                : tr(locale, "打包场景安卓查看器 APK；视频媒体在 Android 首片降级", "Package the Android scene viewer APK; video media is degraded on the first Android slice")}
               onClick={() => download("apk", state.candidate.candidateId)}>
               {downloadBusy === "apk" ? tr(locale, "打包中…", "Packaging…") : tr(locale, "安卓 APK", "Android APK")}
-            </button>
+            </button>}
           </div>
-          <details className="dashboard-offline-signing">
-            <summary>{tr(locale, "Android 签名（可选，留空使用服务器默认签名）", "Android signing (optional; server default when empty)")}</summary>
+          {state.candidate.downloadFormats.includes("apk") && <details className="dashboard-offline-signing"
+            open={state.candidate.androidSigningMode === "client-required"}>
+            <summary>{state.candidate.androidSigningMode === "client-required"
+              ? tr(locale, "Android 签名（此部署必须填写）", "Android signing (required by this deployment)")
+              : tr(locale, "Android 签名（可选，留空使用服务器默认签名）", "Android signing (optional; server default when empty)")}</summary>
             <label className="dashboard-offline-signing-row">
               <span>keystore</span>
               <input type="file" accept=".keystore,.jks,.p12,application/octet-stream"
@@ -204,7 +216,7 @@ function DashboardOfflinePackageDialog({ locale, projectId, applicationId, onClo
               <input type="password" autoComplete="off" value={signing.keyPassword}
                 onChange={event => setSigning(previous => ({ ...previous, keyPassword: event.target.value }))} />
             </label>
-          </details>
+          </details>}
         </>}
         <div className="dashboard-offline-footer">
           {(state.phase === "ready" || state.phase === "failed") && pointer && dashboardCandidateAuthority(pointer) &&

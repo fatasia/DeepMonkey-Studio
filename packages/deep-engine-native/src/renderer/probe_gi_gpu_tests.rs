@@ -26,19 +26,19 @@ use crate::{
     player_shader_plan::scene_content_key,
 };
 use deep_engine_native::{
-    culling_contract::prepare_gpu_culling,
     contract::{RenderPacket, validate_packet},
+    culling_contract::prepare_gpu_culling,
     fog::FogSettings,
     half_decode::half_to_f32,
     ibl::disabled_probe_environment,
     ies_shading::NativeIesShadingResource,
+    pbr_texture::prepare_pbr_resources,
     probe_gi_abi::IrradianceProbeRecord,
     probe_gi_grid::{
         ProbeGiGridHeader, ProbeGiGridLayoutHeader, decode_probe_grid_cascade,
         sample_probe_grid_irradiance,
     },
     probe_gi_storage::{FRAME_PROBE_GI_ENABLE_LANE, FRAME_PROBE_GI_ENABLE_ROW},
-    pbr_texture::prepare_pbr_resources,
     scene::prepare_scene,
 };
 use std::sync::{Arc, Mutex};
@@ -120,7 +120,9 @@ fn probe_grid_records() -> Vec<IrradianceProbeRecord> {
 /// 提交完成后把 RGBA16F 读回缓冲 map 出原始字节(256*8 行距恰 256 对齐)。
 fn map_readback(device: &wgpu::Device, buffer: &wgpu::Buffer) -> Vec<u8> {
     let (sender, receiver) = std::sync::mpsc::channel();
-    buffer.map_async(wgpu::MapMode::Read, .., move |result| sender.send(result).unwrap());
+    buffer.map_async(wgpu::MapMode::Read, .., move |result| {
+        sender.send(result).unwrap()
+    });
     device
         .poll(wgpu::PollType::Wait {
             submission_index: None,
@@ -180,7 +182,10 @@ fn probe_grid_trilinear_adds_uniform_ambient_on_real_gpu() {
     let pbr = prepare_pbr_resources(&packet).unwrap();
     let size = PhysicalSize::new(SIZE, SIZE);
     let view = PlayerViewLike::default_view();
-    let mut frames = [frame_data_with_camera(size, view, FogSettings::default()), frame_data_with_camera(size, view, FogSettings::default())];
+    let mut frames = [
+        frame_data_with_camera(size, view, FogSettings::default()),
+        frame_data_with_camera(size, view, FogSettings::default()),
+    ];
     for frame in &mut frames {
         // 环境分支必须开启(background.w > 0.5),探针 GI 项在其内部;
         // 两帧共用同一 disabled IBL 纹理,IBL 环境项在逐像素差中相互抵消,
@@ -192,7 +197,8 @@ fn probe_grid_trilinear_adds_uniform_ambient_on_real_gpu() {
     frames[1][FRAME_PROBE_GI_ENABLE_ROW][FRAME_PROBE_GI_ENABLE_LANE] = 2.0;
 
     let layouts = create_frame_layouts(&device);
-    let shadows = create_shadow_map(&device, &layouts.shadow, size, &frames[1], None, view).unwrap();
+    let shadows =
+        create_shadow_map(&device, &layouts.shadow, size, &frames[1], None, view).unwrap();
     let material_layout = create_material_layout(&device);
     let pipelines = create_mesh_pipelines(
         &device,
@@ -259,7 +265,9 @@ fn probe_grid_trilinear_adds_uniform_ambient_on_real_gpu() {
         })
         .to_vec();
 
-    let targets: Vec<ForwardTargets> = (0..2).map(|_| ForwardTargets::new(&device, size, false)).collect();
+    let targets: Vec<ForwardTargets> = (0..2)
+        .map(|_| ForwardTargets::new(&device, size, false))
+        .collect();
     let row_bytes = u64::from(SIZE) * 8;
     let readbacks: Vec<wgpu::Buffer> = (0..2)
         .map(|index| {
@@ -324,7 +332,11 @@ fn probe_grid_trilinear_adds_uniform_ambient_on_real_gpu() {
     let mut positive = 0usize;
     let mut unchanged = 0usize;
     for (off_pixel, on_pixel) in off.iter().zip(on.iter()) {
-        let delta = [on_pixel[0] - off_pixel[0], on_pixel[1] - off_pixel[1], on_pixel[2] - off_pixel[2]];
+        let delta = [
+            on_pixel[0] - off_pixel[0],
+            on_pixel[1] - off_pixel[1],
+            on_pixel[2] - off_pixel[2],
+        ];
         let magnitude = delta[0].abs() + delta[1].abs() + delta[2].abs();
         if magnitude > 1.0 / 512.0 {
             changed += 1;
@@ -341,8 +353,7 @@ fn probe_grid_trilinear_adds_uniform_ambient_on_real_gpu() {
         "探针 GI 打开后几何覆盖像素必须变亮,changed={changed}"
     );
     assert_eq!(
-        positive,
-        changed,
+        positive, changed,
         "所有差异像素的三个通道都必须为正增量,positive={positive}/{changed}"
     );
     // 天空/背景无几何:探针 GI 不应泄漏进空像素,这部分必须保持零差。
@@ -401,7 +412,10 @@ fn two_level_records(
     coarse_value: [f32; 3],
     coarse_validity: f32,
 ) -> Vec<IrradianceProbeRecord> {
-    let layout = ProbeGiGridLayoutHeader { level_count: 2, levels_start_record: 1 };
+    let layout = ProbeGiGridLayoutHeader {
+        level_count: 2,
+        levels_start_record: 1,
+    };
     let mut records = vec![layout.encode().expect("cascade layout header must encode")];
     let fine = ProbeGiGridHeader {
         origin: [-3.0, -2.0, -3.0],
@@ -423,7 +437,11 @@ fn two_level_records(
         grid_size: [2, 2, 2],
         probe_count: 8,
     };
-    records.push(coarse.encode_with_base(11).expect("coarse header must encode"));
+    records.push(
+        coarse
+            .encode_with_base(11)
+            .expect("coarse header must encode"),
+    );
     for _ in 0..coarse.probe_count {
         let mut record = IrradianceProbeRecord::zero();
         record.irradiance = coarse_value;
@@ -451,7 +469,12 @@ fn probe_grid_two_level_cascade_on_real_gpu() {
     let cascade = decode_probe_grid_cascade(&uniform_two).expect("cascade must decode");
     assert_eq!(cascade.layout.as_ref().expect("v2 layout").level_count, 2);
     assert_eq!(cascade.header_records, vec![1, 10]);
-    for world in [[-1.0, -1.0, -1.0], [0.0, -1.0, 0.0], [4.0, -1.0, 4.0], [8.5, -1.0, 8.5]] {
+    for world in [
+        [-1.0, -1.0, -1.0],
+        [0.0, -1.0, 0.0],
+        [4.0, -1.0, 4.0],
+        [8.5, -1.0, 8.5],
+    ] {
         assert_eq!(
             sample_probe_grid_irradiance(&uniform_two, world, [0.0, 1.0, 0.0]),
             PROBE_IRRADIANCE,
@@ -490,7 +513,8 @@ fn probe_grid_two_level_cascade_on_real_gpu() {
     frames[2][FRAME_PROBE_GI_ENABLE_ROW][FRAME_PROBE_GI_ENABLE_LANE] = 2.0;
 
     let layouts = create_frame_layouts(&device);
-    let shadows = create_shadow_map(&device, &layouts.shadow, size, &frames[1], None, view).unwrap();
+    let shadows =
+        create_shadow_map(&device, &layouts.shadow, size, &frames[1], None, view).unwrap();
     let material_layout = create_material_layout(&device);
     let pipelines = create_mesh_pipelines(
         &device,
@@ -563,7 +587,9 @@ fn probe_grid_two_level_cascade_on_real_gpu() {
         })
         .collect();
 
-    let targets: Vec<ForwardTargets> = (0..3).map(|_| ForwardTargets::new(&device, size, false)).collect();
+    let targets: Vec<ForwardTargets> = (0..3)
+        .map(|_| ForwardTargets::new(&device, size, false))
+        .collect();
     let row_bytes = u64::from(SIZE) * 8;
     let readbacks: Vec<wgpu::Buffer> = (0..3)
         .map(|index| {
@@ -613,10 +639,7 @@ fn probe_grid_two_level_cascade_on_real_gpu() {
         pollster::block_on(memory.pop()),
         pollster::block_on(validation.pop()),
     ] {
-        assert!(
-            error.is_none(),
-            "级联帧提交不得产生 GPU 错误: {error:?}"
-        );
+        assert!(error.is_none(), "级联帧提交不得产生 GPU 错误: {error:?}");
     }
 
     let off = decode_hdr(&map_readback(&device, &readbacks[0]));
@@ -634,8 +657,11 @@ fn probe_grid_two_level_cascade_on_real_gpu() {
         let mut positive = 0usize;
         let mut unchanged = 0usize;
         for (off_pixel, on_pixel) in off.iter().zip(on.iter()) {
-            let delta =
-                [on_pixel[0] - off_pixel[0], on_pixel[1] - off_pixel[1], on_pixel[2] - off_pixel[2]];
+            let delta = [
+                on_pixel[0] - off_pixel[0],
+                on_pixel[1] - off_pixel[1],
+                on_pixel[2] - off_pixel[2],
+            ];
             let magnitude = delta[0].abs() + delta[1].abs() + delta[2].abs();
             if magnitude > 1.0 / 512.0 {
                 changed += 1;
@@ -706,6 +732,9 @@ trait DefaultView {
 }
 impl DefaultView for deep_engine_native::player_view::PlayerView {
     fn default_view() -> Self {
-        Self { yaw: 0.55, ..Default::default() }
+        Self {
+            yaw: 0.55,
+            ..Default::default()
+        }
     }
 }

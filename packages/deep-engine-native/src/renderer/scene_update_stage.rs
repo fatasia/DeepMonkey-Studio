@@ -99,7 +99,7 @@ impl Renderer {
                 prepare_ns: 0,
             });
         };
-        let prepare_started = std::time::Instant::now();
+        let prepare_started = web_time::Instant::now();
         let validation = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let memory = self.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
         let internal = self.device.push_error_scope(wgpu::ErrorFilter::Internal);
@@ -209,7 +209,7 @@ impl Renderer {
         // 批处理/派生数据/阴影 stage),resource_upload = GPU 资源创建与上传
         // 暂存(stage_scoped 闭包 + 错误域 pop,含内嵌校验等待的墙钟时间)。
         // 两段都随 payload 走,由 publish(唯一提交点)记入遥测。
-        let prepare_started = std::time::Instant::now();
+        let prepare_started = web_time::Instant::now();
         let packet = content.packet();
         // C3 快路径判别:实例 diff + 几何/纹理 id+revision 守卫先行,任一不过
         // 回落全量路径。四条互斥快路径:transform-only 与 uniform-only 材质
@@ -392,7 +392,7 @@ impl Renderer {
         )?;
         let scene_update_ns =
             u64::try_from(prepare_started.elapsed().as_nanos()).unwrap_or(u64::MAX);
-        let staging_started = std::time::Instant::now();
+        let staging_started = web_time::Instant::now();
         let validation = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let memory = self.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
         let internal = self.device.push_error_scope(wgpu::ErrorFilter::Internal);
@@ -508,7 +508,7 @@ impl Renderer {
         {
             return Ok(None);
         }
-        let prepare_started = std::time::Instant::now();
+        let prepare_started = web_time::Instant::now();
         let prepared = prepare_scene(packet)?;
         let culling = prepare_gpu_culling(packet, &prepared)?;
         let lod = prepare_gpu_lod(packet, &prepared)?;
@@ -523,7 +523,7 @@ impl Renderer {
         let shadow_relevance = classify_shadow_relevance(previous_packet, packet);
         let scene_update_ns =
             u64::try_from(prepare_started.elapsed().as_nanos()).unwrap_or(u64::MAX);
-        let staging_started = std::time::Instant::now();
+        let staging_started = web_time::Instant::now();
         let validation = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let memory = self.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
         let internal = self.device.push_error_scope(wgpu::ErrorFilter::Internal);
@@ -622,7 +622,7 @@ impl Renderer {
         staged: StagedRenderPacketUpdate,
     ) -> Result<GpuSceneCacheMetrics, String> {
         if let StagedRenderPacketUpdate::MaterialUniformRefresh(staged) = &staged {
-            let upload_started = std::time::Instant::now();
+            let upload_started = web_time::Instant::now();
             self.scene
                 .pbr
                 .write_material_uniforms(&self.queue, &staged.rows)?;
@@ -639,7 +639,7 @@ impl Renderer {
             return Ok(GpuSceneCacheMetrics::default());
         }
         if let StagedRenderPacketUpdate::ShadowFlagRefresh(staged) = &staged {
-            let upload_started = std::time::Instant::now();
+            let upload_started = web_time::Instant::now();
             self.scene
                 .write_instance_shadow_flags(&self.queue, &staged.rows)?;
             let resource_upload_ns =

@@ -75,6 +75,8 @@ use package_live::PackageLiveTransport;
 use packet_coalescer::{PublishedState, UpdateCoalescer};
 use packet_live::PacketLiveTransport;
 use packet_live_probe::PacketLiveProbe;
+#[cfg(target_arch = "wasm32")]
+pub use runner::spawn_wasm;
 pub use runner::{
     PackageLiveSpec, PacketLiveSpec, run, run_chart_keyboard_smoke, run_dynamic_playback, run_fog,
     run_occlusion_smoke, run_package_live, run_package_telemetry_smoke, run_packet_live,
@@ -97,6 +99,14 @@ struct NativeApp {
     proxy: EventLoopProxy<GpuEvent>,
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
+    /// A normal native candidate has not presented its first frame yet. Smoke
+    /// and publication verification retain their existing fail-fast path.
+    #[cfg(not(target_arch = "wasm32"))]
+    startup_frame_pending: bool,
+    #[cfg(target_arch = "wasm32")]
+    renderer_initializing: bool,
+    #[cfg(target_arch = "wasm32")]
+    deferred_layout_bump: bool,
     next_renderer_id: u64,
     smoke_frame: bool,
     features: RendererFeatures,
@@ -129,10 +139,10 @@ struct NativeApp {
     /// 去重依据:同尺寸重复事件(ScaleFactorChanged 回环、平台重发)不得推进版本。
     last_resize: Option<winit::dpi::PhysicalSize<u32>>,
     chart_sim_scheduled: bool,
-    dashboard_wake_at: Option<std::time::Instant>,
+    dashboard_wake_at: Option<web_time::Instant>,
     navigation_input: NavigationInput,
     navigation_state: NavigationState,
-    navigation_clock: Option<std::time::Instant>,
+    navigation_clock: Option<web_time::Instant>,
     navigation_pressed: HashSet<winit::keyboard::KeyCode>,
     #[cfg(windows)]
     x_runtime: Option<x_runtime::Runtime>,
@@ -364,6 +374,12 @@ impl NativeApp {
             proxy,
             window: None,
             renderer: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            startup_frame_pending: false,
+            #[cfg(target_arch = "wasm32")]
+            renderer_initializing: false,
+            #[cfg(target_arch = "wasm32")]
+            deferred_layout_bump: false,
             next_renderer_id: 1,
             smoke_frame: setup.smoke_frame,
             features: setup.features,
@@ -419,7 +435,16 @@ impl NativeApp {
     /// first/third-person modes and remains harmless while Native preflight
     /// fail-closes those modes.
     pub(super) fn step_navigation(&mut self) {
-        let now = std::time::Instant::now();
+        let controls = self.content.active().camera_controls();
+        if !matches!(
+            controls.mode,
+            deep_engine_native::runtime_camera::RuntimeCameraMode::FirstPerson
+                | deep_engine_native::runtime_camera::RuntimeCameraMode::ThirdPerson
+        ) {
+            self.navigation_clock = None;
+            return;
+        }
+        let now = web_time::Instant::now();
         let dt = self
             .navigation_clock
             .replace(now)
@@ -433,14 +458,6 @@ impl NativeApp {
             {
                 self.request_redraw();
             }
-            return;
-        }
-        let controls = self.content.active().camera_controls();
-        if !matches!(
-            controls.mode,
-            deep_engine_native::runtime_camera::RuntimeCameraMode::FirstPerson
-                | deep_engine_native::runtime_camera::RuntimeCameraMode::ThirdPerson
-        ) {
             return;
         }
         let previous = self.state.view;
@@ -559,6 +576,13 @@ impl NativeApp {
         // 溢出为不可恢复终态:revision 耗尽即无法再表达布局变化,按失败收口。
         if self.last_resize != Some(size) {
             self.last_resize = Some(size);
+            #[cfg(target_arch = "wasm32")]
+            if self.renderer_initializing {
+                self.deferred_layout_bump = true;
+            } else if let Err(error) = self.content.active_mut().epoch.bump_layout() {
+                self.state.failed(error);
+            }
+            #[cfg(not(target_arch = "wasm32"))]
             if let Err(error) = self.content.active_mut().epoch.bump_layout() {
                 self.state.failed(error);
             }

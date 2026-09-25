@@ -1,7 +1,6 @@
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::sync::{Arc, Mutex};
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Duration;
 
 /// 回调直接记录失败，烟测不依赖尚未被窗口事件循环消费的消息。
 #[derive(Clone, Default)]
@@ -46,22 +45,48 @@ impl SubmissionCheck {
         submission: wgpu::SubmissionIndex,
         failures: &GpuFailures,
     ) -> Result<(), String> {
-        let completion = device.poll(wgpu::PollType::Wait {
-            submission_index: Some(submission),
-            timeout: Some(Duration::from_secs(5)),
-        });
-        let errors = [
-            pollster::block_on(self.internal.pop()),
-            pollster::block_on(self.memory.pop()),
-            pollster::block_on(self.validation.pop()),
-        ];
-        completion.map_err(|error| format!("native GPU submission did not complete: {error}"))?;
-        if let Some(error) = errors.into_iter().flatten().next() {
-            return Err(format!("native GPU submission rejected: {error}"));
+        #[cfg(target_arch = "wasm32")]
+        {
+            // Browser WebGPU completion and error-scope resolution are promise
+            // based. Blocking here deadlocks the single JS event-loop thread.
+            // Keep the frame path non-blocking and publish scoped failures into
+            // the same sticky failure channel for the next frame/event.
+            let pending_failures = failures.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let errors = [
+                    self.internal.pop().await,
+                    self.memory.pop().await,
+                    self.validation.pop().await,
+                ];
+                if let Some(error) = errors.into_iter().flatten().next() {
+                    pending_failures.record(format!("web GPU submission rejected: {error}"));
+                }
+            });
+            let _ = (device, submission);
+            return failures
+                .check()
+                .map_err(|error| format!("web GPU callback failed: {error}"));
         }
-        failures
-            .check()
-            .map_err(|error| format!("native GPU callback failed: {error}"))
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let completion = device.poll(wgpu::PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(5)),
+            });
+            let errors = [
+                pollster::block_on(self.internal.pop()),
+                pollster::block_on(self.memory.pop()),
+                pollster::block_on(self.validation.pop()),
+            ];
+            completion
+                .map_err(|error| format!("native GPU submission did not complete: {error}"))?;
+            if let Some(error) = errors.into_iter().flatten().next() {
+                return Err(format!("native GPU submission rejected: {error}"));
+            }
+            failures
+                .check()
+                .map_err(|error| format!("native GPU callback failed: {error}"))
+        }
     }
 }
 

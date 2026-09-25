@@ -14,6 +14,7 @@ export function useAssistantChatRun(input: {
   question: string; setQuestion: (value: string) => void; mode: AssistantMode; locale: AppLocale; context: unknown; platformContext: unknown;
   sources: AssistantContextSource[]; sessionOptions: AssistantSessionOptions; onBegin: () => void;
   prepareBim: ((question: string) => Promise<BimAssistantPreparedContext>) | undefined;
+  onDashboardPageDraft?: (draft: unknown) => void;
 }) {
   const [answer, setAnswer] = useState(""); const [busy, setBusy] = useState(false);
   const [execution, setExecution] = useState<AssistantConversationItem["execution"]>();
@@ -50,7 +51,7 @@ export function useAssistantChatRun(input: {
     let streamed = "";
     let lastExecution: AssistantConversationItem["execution"];
     let saved: Awaited<ReturnType<typeof input.sessions.begin>>;
-    const snapshot = { question: prompt, answer: "", mode: input.mode, status: "streaming" as const, ...(input.scopeId ? { scope: input.scopeId } : {}) };
+    const snapshot = { question: prompt, answer: "", mode: input.mode, status: "streaming" as const, ...(input.scopeLabel ? { scope: input.scopeLabel } : {}) };
     let ended = false;
     async function finish(status: "completed" | "stopped" | "failed", model?: string, execution = lastExecution,
       reliability?: AssistantConversationItem["reliability"]) {
@@ -78,6 +79,7 @@ export function useAssistantChatRun(input: {
         onDelta: delta => { if (isCurrent()) { streamed += delta; setAnswer(streamed); saved?.writer.update({ ...snapshot, answer: streamed, ...(lastExecution ? { execution: lastExecution } : {}) }); } },
       });
       if (!isCurrent()) return;
+      if (result.dashboardPageDraft) input.onDashboardPageDraft?.(result.dashboardPageDraft);
       streamed = result.text;
       await finish("completed", result.model, result.execution, result.reliability);
       if (!isCurrent()) return;

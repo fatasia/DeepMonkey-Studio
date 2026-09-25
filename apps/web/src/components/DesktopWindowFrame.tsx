@@ -26,7 +26,7 @@ export function DesktopWindowFrame({ children }: { children: ReactNode }) {
         data-tauri-drag-region
         onDoubleClick={() => runWindowAction("maximize")}
       >
-        <span className="desktop-window-mark" aria-hidden="true" />
+        <img className="desktop-window-logo" src="/brand/logo-titlebar.png" alt="" aria-hidden="true" data-tauri-drag-region />
         <strong data-tauri-drag-region>DeepMonkey Studio</strong>
         <span data-tauri-drag-region>桌面工作台</span>
       </div>

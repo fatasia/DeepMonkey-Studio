@@ -79,6 +79,9 @@ pub struct PbrMaterial {
     /// DE26/C03 透明语义:作者 RGB 已按 alpha 预乘。仅 alpha_mode=Blend 合法(validate 把关)。
     #[serde(default, deserialize_with = "present")]
     pub premultiplied_alpha: Option<bool>,
+    /// 缺省/true 接受场景雾；false 与 Browser 实例 ABI 的 bit 32 对齐。
+    #[serde(default, deserialize_with = "present")]
+    pub fog: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

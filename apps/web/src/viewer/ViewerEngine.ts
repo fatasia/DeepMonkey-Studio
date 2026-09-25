@@ -35,7 +35,7 @@ export class ViewerEngine extends ViewerEngineModelDiff {
     this.startRuntime();
   }
 
-  static async create(container: HTMLElement, requestedBackend: RendererBackend = "webgl"): Promise<ViewerEngine> {
+  static async create(container: HTMLElement, requestedBackend: Exclude<RendererBackend, "wasm"> = "webgl"): Promise<ViewerEngine> {
     if (requestedBackend === "webgpu") {
       if (!("gpu" in navigator)) throw new Error("当前浏览器或显卡不支持 WebGPU");
       const { ClippingGroup, WebGPURenderer } = await import("three/webgpu");

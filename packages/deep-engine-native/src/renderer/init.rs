@@ -158,7 +158,9 @@ pub(super) async fn create_renderer(
         .as_deref()
         .filter(|records| !records.is_empty())
         .map(|records| records.to_vec());
-    if let (Some(records), Some(lighting)) = (probe_grid_records.as_mut(), content.lighting.as_ref()) {
+    if let (Some(records), Some(lighting)) =
+        (probe_grid_records.as_mut(), content.lighting.as_ref())
+    {
         let native_records: &mut [crate::probe_gi_abi::IrradianceProbeRecord] =
             bytemuck::cast_slice_mut(records.as_mut_slice());
         if super::native_gi_producer::produce_direct_irradiance(native_records, lighting) {

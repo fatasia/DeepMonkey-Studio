@@ -27,6 +27,7 @@ export async function registerDashboardPublicationCandidateRoutes(
   service?: Pick<DashboardNativeCandidateService, "prepare">,
   registry?: Pick<DashboardNativeCandidateRegistry, "register">,
   downloadFormats: readonly ("exe" | "zip" | "dmda" | "web" | "apk")[] = ["dmda"],
+  androidSigningMode?: "server-default" | "client-required",
 ): Promise<void> {
   app.post<{ Params: RouteParams; Body: CandidateBody }>(
     "/api/projects/:projectId/applications/:applicationId/dashboard-candidates",
@@ -48,7 +49,11 @@ export async function registerDashboardPublicationCandidateRoutes(
           AbortSignal.any([disconnect.signal, AbortSignal.timeout(180_000)]),
         );
         reply.header("cache-control", "private, no-store");
-        return reply.code(201).send({ ...candidateMetadata(registry.register(candidate), candidate), downloadFormats });
+        return reply.code(201).send({
+          ...candidateMetadata(registry.register(candidate), candidate),
+          downloadFormats,
+          ...(downloadFormats.includes("apk") && androidSigningMode ? { androidSigningMode } : {}),
+        });
       } catch (reason) {
         return reply.code(409).send({
           code: candidateErrorCode(reason),

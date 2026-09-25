@@ -112,6 +112,13 @@ pub(super) fn style(value: cosmic_text::Style) -> TextFontStyle {
     }
 }
 impl FrozenTextRasterizer {
+    /// Consume the audited frozen-font producer as the ordinary runtime
+    /// rasterizer. Browser hosts use this after JS has supplied the exact font
+    /// bytes; no system-font discovery is involved.
+    pub fn into_rasterizer(self) -> TextRasterizer {
+        self.inner
+    }
+
     pub(super) fn primary(&self, request: &StyledTextRequest) -> Result<&UsedFontFace, String> {
         let (id, face) = self
             .identities
@@ -140,5 +147,68 @@ impl FrozenTextRasterizer {
             return Err("primary family selector resolves to another frozen font face".into());
         }
         Ok(face)
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[derive(Clone)]
+struct RuntimeFontBundle {
+    locale: String,
+    fonts: Vec<FrozenFontInput>,
+}
+
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+    static RUNTIME_FONT_BUNDLE: std::cell::RefCell<Option<RuntimeFontBundle>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Remove all browser-hosted runtime fonts. The next chart/dashboard startup
+/// will fail closed until a new audited bundle is supplied.
+#[cfg(target_arch = "wasm32")]
+pub fn clear_runtime_fonts() {
+    RUNTIME_FONT_BUNDLE.with(|slot| *slot.borrow_mut() = None);
+}
+
+/// Append one browser-hosted font face. The complete candidate bundle is
+/// validated before publication, so a bad hash/face never poisons the active
+/// bundle and renderer recovery can safely recreate rasterizers from it.
+#[cfg(target_arch = "wasm32")]
+pub fn add_runtime_font(locale: &str, font: FrozenFontInput) -> Result<usize, String> {
+    let candidate = RUNTIME_FONT_BUNDLE.with(|slot| {
+        let active = slot.borrow();
+        let mut candidate = active.clone().unwrap_or_else(|| RuntimeFontBundle {
+            locale: locale.to_owned(),
+            fonts: Vec::new(),
+        });
+        if candidate.locale != locale {
+            return Err::<RuntimeFontBundle, String>(
+                "runtime font locale must be identical for every face".into(),
+            );
+        }
+        candidate.fonts.push(font);
+        Ok(candidate)
+    })?;
+    // Reuse the frozen producer's count, byte budget, SHA-256, font parsing,
+    // face-index and selector checks rather than creating a second contract.
+    TextRasterizer::from_frozen_fonts(&candidate.locale, candidate.fonts.clone())?;
+    let count = candidate.fonts.len();
+    RUNTIME_FONT_BUNDLE.with(|slot| *slot.borrow_mut() = Some(candidate));
+    Ok(count)
+}
+
+/// Construct a runtime rasterizer from browser-supplied bytes. Native builds
+/// retain system-font discovery; wasm deliberately has no implicit fallback.
+pub fn runtime_text_rasterizer() -> Result<TextRasterizer, String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        Ok(TextRasterizer::new())
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let bundle = RUNTIME_FONT_BUNDLE
+            .with(|slot| slot.borrow().clone())
+            .ok_or("wasm chart/dashboard requires injected runtime font bytes")?;
+        TextRasterizer::from_frozen_fonts(&bundle.locale, bundle.fonts)
+            .map(FrozenTextRasterizer::into_rasterizer)
     }
 }

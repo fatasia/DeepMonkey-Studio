@@ -30,7 +30,7 @@ export function localTransformMatrix(transform: SceneLocalTransform): SceneMatri
   ]);
 }
 
-export function multiplySceneMatrices(left: SceneMatrix4, right: SceneMatrix4): SceneMatrix4 {
+export function multiplySceneMatrices(left: SceneMatrix4, right: ArrayLike<number>): SceneMatrix4 {
   const output = new Array<number>(16);
   for (let column = 0; column < 4; column += 1) {
     const offset = column * 4;

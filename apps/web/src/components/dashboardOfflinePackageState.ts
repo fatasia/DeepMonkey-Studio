@@ -47,6 +47,8 @@ export interface DashboardCandidatePrepared {
   readonly freezeManifestSha256: string;
   readonly targetArtifactHash: string;
   readonly objects: readonly DashboardCandidateObjectReport[];
+  readonly downloadFormats: readonly DashboardCandidateDownloadFormat[];
+  readonly androidSigningMode?: "server-default" | "client-required";
 }
 
 export interface DashboardPublicationPointer {

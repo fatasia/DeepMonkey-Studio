@@ -51,4 +51,17 @@ describe("AiAssistantPanel", () => {
     expect(chrome).toContain(".ai-assistant-panel > nav { display: flex; align-items: center;");
     expect(reliability).toMatch(/\.ai-assistant-experience\s*\{[\s\S]*?display: flex;[\s\S]*?flex: 0 0 auto;/);
   });
+
+  it("reuses the shared assistant workflow for the 2D workspace", () => {
+    const html = renderToStaticMarkup(<AiAssistantPanel locale="zh-CN" projectId="project-1" surface="platform"
+      context={{ project: { id: "project-1", name: "工厂" }, currentView: "dashboard", dashboard: { id: "page-1", name: "总览", widgets: [{ id: "kpi" }] } }}
+      onValidateDashboardPageDraft={() => ({ changeCount: 1, labels: ["产量"] })}
+      onApplyDashboardPageDraft={vi.fn()} onClose={vi.fn()} />);
+    expect(html).toContain("二维 AI 助手");
+    expect(html).toContain('title="二维" aria-label="二维" aria-pressed="true"');
+    expect(html).toContain("当前二维看板草稿");
+    expect(html).toContain("会话模型");
+    expect(html).toContain("会话思考档位");
+    expect(html).toContain("向 AI 助手提问");
+  });
 });

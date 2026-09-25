@@ -9,9 +9,9 @@
 //! 回退栅格，不阻塞渲染器创建。
 
 use deep_engine_native::mesh_abi::{
-    FORWARD_COLOR_FORMAT, FORWARD_DEPTH_FORMAT, FORWARD_SAMPLE_COUNT,
-    GEOMETRY_VERTEX_ATTRIBUTES, GEOMETRY_VERTEX_BYTES, INSTANCE_VERTEX_ATTRIBUTES,
-    PACKED_INSTANCE_BYTES, TANGENT_VERTEX_ATTRIBUTES, TANGENT_VERTEX_BYTES,
+    FORWARD_COLOR_FORMAT, FORWARD_DEPTH_FORMAT, FORWARD_SAMPLE_COUNT, GEOMETRY_VERTEX_ATTRIBUTES,
+    GEOMETRY_VERTEX_BYTES, INSTANCE_VERTEX_ATTRIBUTES, PACKED_INSTANCE_BYTES,
+    TANGENT_VERTEX_ATTRIBUTES, TANGENT_VERTEX_BYTES,
 };
 
 use super::raster::RasterState;
@@ -72,10 +72,7 @@ pub(crate) fn create_rt_mesh_pipelines(
         write_mask: wgpu::ColorWrites::ALL,
     })];
     let create = |raster: RasterState, normal_mapped: bool| {
-        let label = format!(
-            "Deep Engine native RT {} mesh pipeline",
-            raster.label
-        );
+        let label = format!("Deep Engine native RT {} mesh pipeline", raster.label);
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some(&label),
             layout: Some(&pipeline_layout),

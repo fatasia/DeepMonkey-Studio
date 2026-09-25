@@ -25,7 +25,10 @@ pub(crate) fn produce_direct_irradiance(
     } else {
         cascade.header_records.iter().copied().collect()
     };
-    let multiplier = lighting.global_illumination_intensity.unwrap_or(1.0).max(0.0);
+    let multiplier = lighting
+        .global_illumination_intensity
+        .unwrap_or(1.0)
+        .max(0.0);
     let scale = 0.5 * PI * multiplier * lighting.exposure;
     for (index, record) in records.iter_mut().enumerate() {
         if headers.contains(&index) || record.validity <= 0.0 {
@@ -45,20 +48,34 @@ mod tests {
 
     fn lighting() -> DirectionalLighting {
         DirectionalLighting {
-            direction: [0.0, 1.0, 0.0], radiance: [2.0, 4.0, 8.0], exposure: 1.0,
-            shadows: true, global_illumination_intensity: Some(0.5),
-            local_lights: std::array::from_fn(|_| deep_engine_native::local_lighting::LocalLight::default()),
+            direction: [0.0, 1.0, 0.0],
+            radiance: [2.0, 4.0, 8.0],
+            exposure: 1.0,
+            shadows: true,
+            global_illumination_intensity: Some(0.5),
+            local_lights: std::array::from_fn(|_| {
+                deep_engine_native::local_lighting::LocalLight::default()
+            }),
             light_profiles: None,
         }
     }
 
     #[test]
     fn produces_direct_irradiance_and_preserves_probe_metadata() {
-        let header = ProbeGiGridHeader { origin: [0.0; 3], spacing: 2.0, grid_size: [2, 2, 2], probe_count: 8 };
+        let header = ProbeGiGridHeader {
+            origin: [0.0; 3],
+            spacing: 2.0,
+            grid_size: [2, 2, 2],
+            probe_count: 8,
+        };
         let mut records = vec![header.encode().unwrap()];
         records.extend((0..8).map(|index| IrradianceProbeRecord {
-            validity: 1.0, mean_distance: 3.0, distance_variance: 4.0, occlusion_floor: 0.1,
-            position_offset: [index as f32, 1.0, 2.0], ..IrradianceProbeRecord::zero()
+            validity: 1.0,
+            mean_distance: 3.0,
+            distance_variance: 4.0,
+            occlusion_floor: 0.1,
+            position_offset: [index as f32, 1.0, 2.0],
+            ..IrradianceProbeRecord::zero()
         }));
         let before = records[1];
         assert!(produce_direct_irradiance(&mut records, &lighting()));

@@ -137,6 +137,7 @@ describe("DashboardWorkspace", () => {
       onEnterScene={() => undefined}
       onOpenTopology={() => undefined}
       onOpenData={() => undefined}
+      onAiAssistant={() => undefined}
       onSelectionChange={() => undefined}
       onFilterChange={() => undefined}
       onVariableChange={() => undefined}
@@ -162,6 +163,7 @@ describe("DashboardWorkspace", () => {
     expect(html).not.toContain("dashboard-page-row");
     expect(html).toContain('aria-label="复制当前页面"');
     expect(html).toContain('aria-label="删除当前页面"');
+    expect(html).toContain('aria-label="二维 AI 助手"');
     expect(html).toContain("纯三维 看板");
     expect(html).toContain("dashboard-page-tabs"); // 2026-09-05 用户决策反转：底部页签恢复
     expect(html).not.toContain("空格/中键平移");

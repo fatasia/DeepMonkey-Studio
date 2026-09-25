@@ -22,7 +22,7 @@ pub(super) fn assemble(
         .transpose()?;
     let deep2d = match chart.as_ref() {
         Some(chart) => {
-            let mut rasterizer = deep_engine_native::platform_text::TextRasterizer::new();
+            let mut rasterizer = deep_engine_native::platform_text::runtime_text_rasterizer()?;
             let list = deep_engine_native::chart::presentation::present_chart(
                 chart,
                 &mut rasterizer,

@@ -22,6 +22,7 @@ pollster = "=1.0.1"
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = { version = "=1.0.151", features = ["float_roundtrip"] }
 unicode-segmentation = "=1.13.3"
+web-time = "=1.1.0"
 wgpu = { version = "=30.0.1", default-features = false, features = ["std", "parking_lot", "vulkan", "wgsl"] }
 # android-native-activity 在壳 crate 必须启用:native-activity 胶水经 winit 接入。
 winit = { version = "=0.30.13", default-features = false, features = ["rwh_06", "android-native-activity"] }

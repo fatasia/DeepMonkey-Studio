@@ -35,11 +35,22 @@ export async function hydrateDesktopServer(): Promise<{
   handshake?: ServerHandshakeResult;
 }> {
   if (!desktop) return {};
+  if (readDesktopRuntimeMode() === "local") {
+    await desktop.startLocalApi();
+    return {};
+  }
   const profile = await desktop.hydrateServerProfile();
   if (!profile) return {};
   const handshake = await verifyServerProfile(profile, desktop);
   if (handshake.status === "connected") await desktop.saveServerProfile(handshake.profile);
   return { profile, handshake };
+}
+
+export async function connectDesktopLocal(): Promise<NamedServerProfile> {
+  if (!desktop) throw new Error("当前不是 Tauri 客户端");
+  const profile = await desktop.startLocalApi();
+  storeDesktopRuntimeMode("local");
+  return profile;
 }
 
 export async function connectDesktopServer(profile: NamedServerProfile): Promise<ServerHandshakeResult> {

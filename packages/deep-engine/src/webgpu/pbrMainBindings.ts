@@ -54,7 +54,16 @@ export class PbrMainBindings {
     writeGeometryBuffers: boolean): ((pass: GPURenderPassEncoder) => void) | undefined {
     if (!view.panoramaBackground) return undefined;
     this.backgroundPass ??= new PbrBackgroundPass(this.session, writeGeometryBuffers);
+    if (view.panoramaBackground.toneMapped === false) return undefined;
     return this.backgroundPass.prepare(view, environment, aspect);
+  }
+
+  encodeDisplayBackground(encoder: GPUCommandEncoder, target: GPUTextureView, depth: GPUTextureView,
+    view: PbrFrameUniformView, environment: StudioEnvironment, aspect: number): boolean {
+    if (view.panoramaBackground?.toneMapped !== false) return false;
+    this.backgroundPass ??= new PbrBackgroundPass(this.session, true);
+    this.backgroundPass.encodeDisplay(encoder, target, depth, view, environment, aspect);
+    return true;
   }
 
   private createBinding(environment: StudioEnvironment, shadows = this.shadows): GPUBindGroup {

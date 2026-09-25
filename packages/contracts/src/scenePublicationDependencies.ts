@@ -4,6 +4,8 @@ import type { ScenePublicationCompatibilityReport } from "./scenePublicationComp
 /** 仅由服务端候选编译和窗口验证流程生成，不接受发布请求自行声明。 */
 export interface SceneNativeCompiledPublication {
   runtimePackage: { key: string; bytes: number; sha256: string };
+  /** 新发布冻结窗口验证使用的精确 EXE；旧记录仅保留 executableSha256。 */
+  executable?: { key: string; bytes: number; sha256: string };
   compilationEvidence: Record<string, unknown>;
   compatibilityReport: ScenePublicationCompatibilityReport;
   compilerSha256: string;

@@ -44,7 +44,7 @@ pub(super) struct PackageLiveTransport {
     _watcher: super::watch_thread::WatchThread,
     mailbox: LatestMailbox<WatchedPackage>,
     published: Arc<RwLock<RuntimePackageSnapshot>>,
-    retry: Option<(std::time::Instant, u64, WatchedPackage, RetryKind)>,
+    retry: Option<(web_time::Instant, u64, WatchedPackage, RetryKind)>,
 }
 
 pub(super) fn start(
@@ -223,7 +223,7 @@ fn apply_deep2d(app: &mut NativeApp, generation: u64, candidate: WatchedPackage)
         match super::dashboard::presented(app, outcome) {
             Ok(false) => {
                 app.package_live_transport.as_mut().unwrap().retry = Some((
-                    std::time::Instant::now() + PRESENT_RETRY_DELAY,
+                    web_time::Instant::now() + PRESENT_RETRY_DELAY,
                     generation,
                     candidate,
                     RetryKind::Deep2d,
@@ -241,7 +241,7 @@ fn apply_deep2d(app: &mut NativeApp, generation: u64, candidate: WatchedPackage)
 pub(super) fn retry(
     app: &mut NativeApp,
     event_loop: &winit::event_loop::ActiveEventLoop,
-    now: std::time::Instant,
+    now: web_time::Instant,
 ) -> bool {
     let Some(transport) = app.package_live_transport.as_mut() else {
         return false;
@@ -273,11 +273,7 @@ pub(super) fn retry(
         .as_ref()
         .and_then(|transport| transport.retry.as_ref())
     {
-        #[cfg(not(target_arch = "wasm32"))]
-        let flow = winit::event_loop::ControlFlow::WaitUntil(*wake);
-        #[cfg(target_arch = "wasm32")]
-        let flow = crate::wasm_compat::control_flow_until(*wake);
-        event_loop.set_control_flow(flow);
+        event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(*wake));
         true
     } else {
         false
@@ -317,7 +313,7 @@ fn apply_incremental(app: &mut NativeApp, generation: u64, candidate: WatchedPac
             .present_render_packet_update(staged)?;
         if !super::dashboard::presented(app, outcome)? {
             app.package_live_transport.as_mut().unwrap().retry = Some((
-                std::time::Instant::now() + PRESENT_RETRY_DELAY,
+                web_time::Instant::now() + PRESENT_RETRY_DELAY,
                 generation,
                 candidate,
                 RetryKind::Scene,

@@ -142,17 +142,13 @@ fn composing_ime_blocks_keyboard_edits_until_commit() {
     // fixture 字体是拉丁字体,组合串用拉丁输入法(如德语)的 composition 形态。
     let mut runtime = DashboardRuntime::new(fixture()).unwrap();
     runtime.input_focus(true).unwrap();
-    runtime
-        .input_ime(Ime::Preedit("h".into(), None))
-        .unwrap();
+    runtime.input_ime(Ime::Preedit("h".into(), None)).unwrap();
     assert_eq!(runtime.input_preedit(), "h");
     let value_before = runtime.input_value().to_string();
     let revision_before = runtime.revision;
     // 组合中字符键与退格被组合闸拦下(返回 false 表示未消费、未修改)
     assert!(!runtime.input_key("KeyX", Some("x"), false, false).unwrap());
-    assert!(!runtime
-        .input_key("Backspace", None, false, false)
-        .unwrap());
+    assert!(!runtime.input_key("Backspace", None, false, false).unwrap());
     assert_eq!(runtime.input_value(), value_before);
     assert_eq!(runtime.input_preedit(), "h");
     assert_eq!(runtime.revision, revision_before);
@@ -193,10 +189,6 @@ fn preedit_renders_placeholder_and_pushes_caret() {
     // 提交后组合串转为已提交值,caret 保持让位后的位置
     runtime.input_ime(Ime::Commit("hallo".into())).unwrap();
     assert_eq!(runtime.input_value(), "hallo");
-    assert!(runtime
-        .input_caret_rect()
-        .unwrap()
-        .unwrap()[0]
-        >= composed_caret[0]);
+    assert!(runtime.input_caret_rect().unwrap().unwrap()[0] >= composed_caret[0]);
     crate::deep2d::prepare_runtime_content(runtime.content()).unwrap();
 }

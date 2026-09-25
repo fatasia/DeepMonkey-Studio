@@ -28,8 +28,8 @@ use crate::{
     shadow_pass::{CascadeScene, encode_shadow_cascades},
 };
 use deep_engine_native::{
-    culling_contract::prepare_gpu_culling,
     contract::{RenderPacket, validate_packet},
+    culling_contract::prepare_gpu_culling,
     fog::FogSettings,
     half_decode::half_to_f32,
     ibl::disabled_probe_environment,
@@ -69,13 +69,69 @@ pub(crate) fn parity_packet() -> RenderPacket {
     };
     // 地面绕序与箱顶面同款(外向 CCW):叉积验证 (D-A)×(C-A) = +y,
     // 从上方(相机侧)看为正面;初始版本沿用底面序导致整面被背面剔除。
-    push_face([0.0, 1.0, 0.0], [[-6.0, -1.0, -6.0], [-6.0, -1.0, 6.0], [6.0, -1.0, 6.0], [6.0, -1.0, -6.0]]);
-    push_face([0.0, -1.0, 0.0], [[-0.5, -0.6, -0.4], [0.5, -0.6, -0.4], [0.5, -0.6, 0.6], [-0.5, -0.6, 0.6]]);
-    push_face([0.0, 1.0, 0.0], [[-0.5, 0.4, -0.4], [-0.5, 0.4, 0.6], [0.5, 0.4, 0.6], [0.5, 0.4, -0.4]]);
-    push_face([1.0, 0.0, 0.0], [[0.5, -0.6, -0.4], [0.5, 0.4, -0.4], [0.5, 0.4, 0.6], [0.5, -0.6, 0.6]]);
-    push_face([-1.0, 0.0, 0.0], [[-0.5, -0.6, 0.6], [-0.5, 0.4, 0.6], [-0.5, 0.4, -0.4], [-0.5, -0.6, -0.4]]);
-    push_face([0.0, 0.0, 1.0], [[-0.5, -0.6, 0.6], [0.5, -0.6, 0.6], [0.5, 0.4, 0.6], [-0.5, 0.4, 0.6]]);
-    push_face([0.0, 0.0, -1.0], [[0.5, -0.6, -0.4], [-0.5, -0.6, -0.4], [-0.5, 0.4, -0.4], [0.5, 0.4, -0.4]]);
+    push_face(
+        [0.0, 1.0, 0.0],
+        [
+            [-6.0, -1.0, -6.0],
+            [-6.0, -1.0, 6.0],
+            [6.0, -1.0, 6.0],
+            [6.0, -1.0, -6.0],
+        ],
+    );
+    push_face(
+        [0.0, -1.0, 0.0],
+        [
+            [-0.5, -0.6, -0.4],
+            [0.5, -0.6, -0.4],
+            [0.5, -0.6, 0.6],
+            [-0.5, -0.6, 0.6],
+        ],
+    );
+    push_face(
+        [0.0, 1.0, 0.0],
+        [
+            [-0.5, 0.4, -0.4],
+            [-0.5, 0.4, 0.6],
+            [0.5, 0.4, 0.6],
+            [0.5, 0.4, -0.4],
+        ],
+    );
+    push_face(
+        [1.0, 0.0, 0.0],
+        [
+            [0.5, -0.6, -0.4],
+            [0.5, 0.4, -0.4],
+            [0.5, 0.4, 0.6],
+            [0.5, -0.6, 0.6],
+        ],
+    );
+    push_face(
+        [-1.0, 0.0, 0.0],
+        [
+            [-0.5, -0.6, 0.6],
+            [-0.5, 0.4, 0.6],
+            [-0.5, 0.4, -0.4],
+            [-0.5, -0.6, -0.4],
+        ],
+    );
+    push_face(
+        [0.0, 0.0, 1.0],
+        [
+            [-0.5, -0.6, 0.6],
+            [0.5, -0.6, 0.6],
+            [0.5, 0.4, 0.6],
+            [-0.5, 0.4, 0.6],
+        ],
+    );
+    push_face(
+        [0.0, 0.0, -1.0],
+        [
+            [0.5, -0.6, -0.4],
+            [-0.5, -0.6, -0.4],
+            [-0.5, 0.4, -0.4],
+            [0.5, 0.4, -0.4],
+        ],
+    );
     let (ground_vertices, box_vertices) = vertices.split_at(24);
     let (ground_indices, box_indices) = indices.split_at(6);
     // box 索引在 push_face 里沿全局顶点编号递增;切分成独立几何后必须
@@ -119,7 +175,9 @@ pub(crate) fn parity_packet() -> RenderPacket {
 /// rt_fallback_gpu_tests 的跨设备栅格对拍复用同一读回助手。
 pub(crate) fn map_readback(device: &wgpu::Device, buffer: &wgpu::Buffer) -> Vec<u8> {
     let (sender, receiver) = std::sync::mpsc::channel();
-    buffer.map_async(wgpu::MapMode::Read, .., move |result| sender.send(result).unwrap());
+    buffer.map_async(wgpu::MapMode::Read, .., move |result| {
+        sender.send(result).unwrap()
+    });
     device
         .poll(wgpu::PollType::Wait {
             submission_index: None,
@@ -162,7 +220,10 @@ fn rt_and_raster_shadows_agree_directionally_same_scene() {
     let prepared = prepare_scene(&packet).unwrap();
     let pbr = prepare_pbr_resources(&packet).unwrap();
     let size = PhysicalSize::new(SIZE, SIZE);
-    let view = PlayerView { yaw: 0.55, ..Default::default() };
+    let view = PlayerView {
+        yaw: 0.55,
+        ..Default::default()
+    };
     let mut frame = frame_data_with_camera(size, view, FogSettings::default());
     frame[FRAME_BACKGROUND_ROW][3] = 0.0;
     let layouts = create_frame_layouts(&device);
@@ -237,7 +298,11 @@ fn rt_and_raster_shadows_agree_directionally_same_scene() {
     let (residency, blas_encoder, tlas_encoder) =
         RtSceneResidency::build(&device, &scene).expect("parity scene must stay resident");
     let plan = residency.plan();
-    assert_eq!(plan.instances.len(), 2, "both opaque instances must enter TLAS");
+    assert_eq!(
+        plan.instances.len(),
+        2,
+        "both opaque instances must enter TLAS"
+    );
     assert_eq!(plan.triangles, 14, "ground 2 + box 12 triangles");
     assert_eq!(plan.excluded_blend_instances, 0);
     queue.submit([blas_encoder.finish(), tlas_encoder.finish()]);
@@ -304,7 +369,10 @@ fn rt_and_raster_shadows_agree_directionally_same_scene() {
         &rt_pipelines,
         false,
     );
-    for (target, readback) in [(&targets_raster, &raster_readback), (&targets_rt, &rt_readback)] {
+    for (target, readback) in [
+        (&targets_raster, &raster_readback),
+        (&targets_rt, &rt_readback),
+    ] {
         encoder.copy_texture_to_buffer(
             target.resolved_texture().as_image_copy(),
             wgpu::TexelCopyBufferInfo {
@@ -418,7 +486,10 @@ fn rt_and_raster_shadows_agree_directionally_same_scene() {
     let rt_only_shadowed = rt_only_shadowed_pixels.len();
     // 场景有效性:直射光确实照亮画面,近黑区域大量存在(阴影/天空),
     // 被照亮地面构成第三带;三带齐全才说明对拍画面真实。
-    assert!(lit_scale > 0.2, "scene must receive direct sun: lit={lit_scale}");
+    assert!(
+        lit_scale > 0.2,
+        "scene must receive direct sun: lit={lit_scale}"
+    );
     assert!(
         rt_dark > 200 && raster_dark > 200,
         "shadow must exist in both frames: rt_dark={rt_dark} raster_dark={raster_dark}"

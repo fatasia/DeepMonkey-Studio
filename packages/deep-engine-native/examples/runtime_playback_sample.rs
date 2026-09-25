@@ -9,7 +9,7 @@
 //! 语义与 Web `dynamicRuntimePlayback.ts` 的 canonical 帧一致（同一 SHA-256 合同）。
 
 use deep_engine_native::runtime_package::{
-    parse_and_validate_dynamic_scene_runtime, DynamicSceneRuntime,
+    DynamicSceneRuntime, parse_and_validate_dynamic_scene_runtime,
 };
 
 fn main() {
@@ -24,8 +24,7 @@ fn main() {
         .unwrap_or(0);
 
     let raw = std::fs::read(&path).expect("读取运行包失败");
-    let value: serde_json::Value =
-        serde_json::from_slice(&raw).expect("运行包不是合法 JSON");
+    let value: serde_json::Value = serde_json::from_slice(&raw).expect("运行包不是合法 JSON");
     let runtime = load_dynamic_channel(&value).expect("动态通道解码失败");
 
     println!(

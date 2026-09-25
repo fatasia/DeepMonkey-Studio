@@ -26,7 +26,7 @@ export async function registerScriptDependencyRoutes(
     },
   );
 
-  app.post<{ Params: ProjectParams; Querystring: { specifier?: string } }>(
+  app.post<{ Params: ProjectParams; Querystring: { specifier?: string; prepared?: string } }>(
     "/api/projects/:projectId/script-dependencies/upload",
     async (request, reply) => {
       if (!requireProject(dependencies.store, request.params.projectId, reply)) return reply;
@@ -36,7 +36,9 @@ export async function registerScriptDependencyRoutes(
       if (!file) return reply.code(400).send({ message: "请选择 JavaScript 文件" });
       const source = await file.toBuffer();
       if (file.file.truncated) return reply.code(413).send({ message: "JavaScript 文件不能超过 4 MB" });
-      return runInstall(reply, () => dependencies.service.installUpload(request.params.projectId, specifier, file.filename, source));
+      return runInstall(reply, () => request.query.prepared === "1"
+        ? dependencies.service.installPreparedUpload(request.params.projectId, specifier, file.filename, source)
+        : dependencies.service.installUpload(request.params.projectId, specifier, file.filename, source));
     },
   );
 

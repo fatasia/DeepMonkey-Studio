@@ -6,20 +6,19 @@
 
 <p align="center">
   Vibe World | AI 元宇宙底座<br />
-  你创造的世界 我将他留下来
+  你创造的世界 我将他留下来<!--  -->
 </p>
 
 [简体中文](README.md) · [English](README.en.md)
 
-[![Deep Engine CI](docs/assets/badges/deep-engine-ci.svg)](.github/workflows/deep-engine.yml)
-[![Studio web + API](docs/assets/badges/studio-ci.svg)](.github/workflows/studio.yml)
-[![Repository governance](docs/assets/badges/repository-governance.svg)](.github/workflows/repository-governance.yml)
+[![Deep Engine](https://github.com/fatasia/bim-studio/actions/workflows/deep-engine.yml/badge.svg?branch=main)](https://github.com/fatasia/bim-studio/actions/workflows/deep-engine.yml)
+[![Studio web + API](https://github.com/fatasia/bim-studio/actions/workflows/studio.yml/badge.svg?branch=main)](https://github.com/fatasia/bim-studio/actions/workflows/studio.yml)
+[![Repository governance](https://github.com/fatasia/bim-studio/actions/workflows/repository-governance.yml/badge.svg?branch=main)](https://github.com/fatasia/bim-studio/actions/workflows/repository-governance.yml)
 [![License: MIT with Ethical Restrictions](https://img.shields.io/badge/license-MIT%20with%20Ethical%20Restrictions-blue.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-Web%20%7C%20Windows%20%7C%20Android-4c8ddc)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)
 ![Rust](https://img.shields.io/badge/Rust-stable-dea584)
 ![React](https://img.shields.io/badge/React-19-61dafb)
-![Three.js](https://img.shields.io/badge/Three.js-0.185-black)
 ![WebGPU](https://img.shields.io/badge/WebGPU-ready-9c5bd1)
 
 ## 作者的话
@@ -44,7 +43,7 @@
 
 [![观看 DeepMonkey Studio 系统介绍视频](docs/assets/system-intro/poster.png)](docs/assets/system-intro/deepmonkey-studio-intro.mp4?raw=true)
 
-[▶ 观看介绍视频](docs/assets/system-intro/deepmonkey-studio-intro.mp4?raw=true) · 3 分 22 秒 · 中文女声 · 1080p · [字幕](docs/assets/system-intro/zh-CN.srt)
+[▶ 观看介绍视频](docs/assets/system-intro/deepmonkey-studio-intro.mp4?raw=true) · 3 分 22 秒 · [字幕](docs/assets/system-intro/zh-CN.srt)
 
 从模型接入、轻量化与数据连接，到 AI 工作流、自研引擎和多端交付。
 
@@ -400,9 +399,7 @@ Deep Engine 包含 TypeScript WebGPU 内核、Rust `wgpu` 原生执行器与 WAS
 
 ## 许可
 
-对于非受限企业与个人为 MIT 协议。但任何企业只要存在许可证所列的劳动、薪酬、个人信息或用户权益问题，即属受限组织，不得以任何方式使用本项目，也不得通过关联公司、承包商等第三方间接使用；公开源码或付费都不构成例外。
-
-因此本项目是 source-available，不是 OSI 意义上的开源许可证。完整条款以英文 [Deep Monkey Community Source License 1.0](LICENSE) 为准，中文说明见 [LICENSE.zh-CN.md](LICENSE.zh-CN.md) 与 [LICENSING.md](LICENSING.md)，第三方组件许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+对于非受限企业与个人为 MIT 协议。但任何企业只要存在许可证所列的劳动、薪酬、个人信息或用户权益问题，即属受限组织，不得以任何方式使用本项目，也不得通过关联公司、承包商等第三方间接使用；公开源码或付费都不构成例外[LICENSE.zh-CN.md](LICENSE.zh-CN.md) 。
 
 ## 鸣谢
 

@@ -68,8 +68,16 @@ describe("renderer readiness", () => {
       { secureContext: false, webgl2: true, webgpuApi: true, webgpuAdapter: false, timestampQuery: false, shaderF16: false },
       { postProcessingEnabled: false },
     );
-    expect(result[1]).toMatchObject({ backend: "webgpu", ready: false, level: "unavailable" });
-    expect(result[1]?.details).toContain("需要 HTTPS 或 localhost 安全上下文");
+    expect(result[1]).toMatchObject({
+      backend: "webgpu",
+      ready: false,
+      level: "unavailable",
+      summary: "当前设备不可用",
+    });
+    expect(result[1]?.details).toEqual([
+      "自研 WebGPU：PBR、阴影、环境、后处理",
+      "GPU 驱动大场景，内置帧图与性能诊断",
+    ]);
   });
 
   it("reports the Deep projection boundary while retaining the publication guard", () => {
@@ -78,7 +86,7 @@ describe("renderer readiness", () => {
       { postProcessingEnabled: true },
     );
     expect(result[1]).toMatchObject({ backend: "webgpu", ready: true, level: "limited" });
-    expect(result[1]?.details).toContain("Studio 使用 Deep WebGPU 投影画布；材质、环境与作者辅助层仍需逐场景验收");
+    expect(result[1]?.details).toHaveLength(2);
   });
 
   it("separates scene publication readiness from full product parity", () => {
@@ -86,9 +94,11 @@ describe("renderer readiness", () => {
       { secureContext: true, webgl2: true, webgpuApi: true, webgpuAdapter: true, timestampQuery: true, shaderF16: true },
       { postProcessingEnabled: false },
     );
-    expect(result[1]).toMatchObject({ backend: "webgpu", ready: true, level: "limited", summary: "可试用，需逐场景验收" });
-    expect(result[1]?.details).toContain("仅在显式选择时使用；自动默认仍保留 WebGL");
-    expect(result[1]?.details).toContain("产品 WebGPU 路径尚未完成 WebXR 实机验收，XR 会话继续使用 WebGL");
+    expect(result[1]).toMatchObject({ backend: "webgpu", ready: true, level: "limited", summary: "现代 GPU 管线，面向大场景" });
+    expect(result[1]?.details).toEqual([
+      "自研 WebGPU：PBR、阴影、环境、后处理",
+      "GPU 驱动大场景，内置帧图与性能诊断",
+    ]);
   });
 });
 
@@ -169,6 +179,8 @@ describe("initial renderer selection", () => {
     expect(initialRendererBackend("auto", "webgpu")).toBe("webgl");
     expect(initialRendererBackend("webgl", "webgpu")).toBe("webgl");
     expect(initialRendererBackend("webgpu", "webgl")).toBe("webgpu");
+    expect(initialRendererBackend("wasm", "webgl")).toBe("wasm");
+    expect(initialRendererBackend(null, "wasm")).toBe("wasm");
   });
 });
 
@@ -194,12 +206,13 @@ describe("XR session availability", () => {
     expect(result.reasons).toContain("浏览器未暴露 WebXR API（navigator.xr）");
   });
 
-  it("keeps the WebGL readiness row and Deep WebGPU row explicit about XR", () => {
+  it("keeps the readiness rows focused on engine capabilities", () => {
     const result = rendererReadiness(
       { secureContext: true, webgl2: true, webgpuApi: true, webgpuAdapter: true, timestampQuery: true, shaderF16: true },
       { postProcessingEnabled: false },
     );
-    expect(result[0]?.details).toContain("XR 会话挂载在本后端：WebXR 进入、控制器选择与双目渲染均走 WebGL");
-    expect(result[1]?.details).toContain("Deep WebGPU 激活期间 XR 入口不可用；浏览器端 WebGPU-XR 会话特性尚未落地，属诚实降级而非缺陷");
+    expect(result[0]?.details).toContain("完整材质、后处理、拾取、动画与 WebXR");
+    expect(result[1]?.details).toContain("GPU 驱动大场景，内置帧图与性能诊断");
+    expect(result[2]).toMatchObject({ backend: "wasm", ready: true, level: "ready" });
   });
 });

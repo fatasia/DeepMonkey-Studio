@@ -14,6 +14,7 @@
     "allow-clear-server-profile",
     "allow-get-auth-token",
     "allow-set-auth-token",
-    "allow-clear-auth-token"
+    "allow-clear-auth-token",
+    "allow-start-local-api"
   ]
 }

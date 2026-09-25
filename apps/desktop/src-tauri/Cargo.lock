@@ -98,8 +98,11 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 name = "bim-studio-desktop"
 version = "0.1.0"
 dependencies = [
+ "getrandom 0.3.4",
+ "percent-encoding",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "url",

@@ -1,5 +1,5 @@
 import type { DeviceSession } from "./deviceSession.js";
-import { GpuTimer } from "./gpuTimer.js";
+import { GpuTimer, type GpuTiming } from "./gpuTimer.js";
 import { EnginePerformanceTelemetry } from "./performanceTelemetry.js";
 
 /** Keeps optional diagnostics off the renderer's allocation-sensitive default path. */
@@ -8,7 +8,7 @@ export class PbrRendererDiagnostics {
   readonly gpuTimer: GpuTimer;
 
   constructor(session: DeviceSession) {
-    this.gpuTimer = new GpuTimer(session, timing => this.recordGpu(timing.frame, timing.milliseconds));
+    this.gpuTimer = new GpuTimer(session, timing => this.recordGpu(timing));
   }
 
   setEnabled(enabled: boolean): void {
@@ -34,9 +34,16 @@ export class PbrRendererDiagnostics {
     });
   }
 
-  private recordGpu(frame: number, milliseconds: number): void {
+  private recordGpu(timing: GpuTiming): void {
     try {
-      this.performance.recordStage(frame, "gpu-frame", milliseconds);
+      this.performance.record({ frame: timing.frame, timings: {
+        "gpu-frame": timing.milliseconds,
+        ...(timing.stages ? {
+          "gpu-shadow-opaque": timing.stages.shadowOpaqueMs,
+          "gpu-intermediate": timing.stages.intermediateMs,
+          "gpu-output": timing.stages.outputMs,
+        } : {}),
+      } });
     } catch (error) {
       if (!(error instanceof RangeError) || !error.message.includes("evicted")) throw error;
     }

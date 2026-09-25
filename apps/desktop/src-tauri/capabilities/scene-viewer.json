@@ -2,6 +2,6 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "scene-viewer",
   "description": "Read-only capability set for a bundled single-scene viewer.",
-  "windows": ["main"],
+  "windows": ["main", "scene-viewer"],
   "permissions": ["core:default"]
 }

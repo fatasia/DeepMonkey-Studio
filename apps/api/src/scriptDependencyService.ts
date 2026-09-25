@@ -71,6 +71,16 @@ export class ScriptDependencyService {
     return this.persist(projectId, { specifier, source: "upload", requested: fileName, fileName: `${safeFileName(specifier)}.mjs`, code });
   }
 
+  /** `.bimproject` carries the already bundled immutable module; validate it without bundling it a second time. */
+  async installPreparedUpload(projectId: string, specifierInput: string, fileName: string, source: Buffer): Promise<ApplicationScriptDependency> {
+    validateResourceId(projectId, "projectId");
+    const specifier = validateSpecifier(specifierInput, "模块名");
+    assertSource(source, fileName);
+    const code = source.toString("utf8");
+    await bundleSource(code, fileName);
+    return this.persist(projectId, { specifier, source: "upload", requested: fileName, fileName: `${safeFileName(specifier)}.mjs`, code });
+  }
+
   async installExternal(projectId: string, input: { url: string; specifier: string }): Promise<ApplicationScriptDependency> {
     validateResourceId(projectId, "projectId");
     const specifier = validateSpecifier(input.specifier, "模块名");

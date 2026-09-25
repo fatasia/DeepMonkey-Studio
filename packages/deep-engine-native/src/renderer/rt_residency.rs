@@ -327,10 +327,7 @@ impl RtSceneResidency {
 
     /// init 在栅格原子事务之外创建 RT 管线族后注入;场景替换重建驻留时
     /// 由 reestimate 原样迁移(管线族只依赖 device,不依赖场景内容)。
-    pub(super) fn install_pixel_pipelines(
-        &mut self,
-        pipelines: crate::pipeline::RtMeshPipelines,
-    ) {
+    pub(super) fn install_pixel_pipelines(&mut self, pipelines: crate::pipeline::RtMeshPipelines) {
         self.pixel_pipelines = Some(pipelines);
     }
 

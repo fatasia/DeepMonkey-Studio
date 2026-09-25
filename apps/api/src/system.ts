@@ -91,12 +91,15 @@ export async function registerSystemRoutes(
     if (pathname === "/health" || pathname === "/api/meta" || pathname === "/api/auth/login" || pathname.startsWith("/api/public/") || pathname.startsWith("/assets/")) return;
     if (!pathname.startsWith("/api/")) return;
     const token = authToken(request);
-    const session = token ? resolveSession(token) : undefined;
-    if (!session || session.expiresAt <= Date.now()) {
+    const desktopLocalAdmin = token && isDesktopLocalToken(token, request.ip)
+      ? store.findUserByUsername("admin")
+      : undefined;
+    const session = desktopLocalAdmin ? undefined : token ? resolveSession(token) : undefined;
+    if (!desktopLocalAdmin && (!session || session.expiresAt <= Date.now())) {
       if (token) sessions.delete(token);
       return reply.code(401).send({ message: `请先登录 ${resolveBrandingSettings(store).systemName}` });
     }
-    const stored = store.getUser(session.userId);
+    const stored = desktopLocalAdmin ?? store.getUser(session!.userId);
     if (!stored?.enabled) return reply.code(401).send({ message: "用户已停用，请重新登录" });
     request.systemUser = publicUser(stored);
     const branding = resolveBrandingSettings(store);
@@ -374,6 +377,22 @@ export async function registerSystemRoutes(
       scope.dispose();
     }
   });
+}
+
+/** Tauri 本地 API 的一次性令牌只接受显式 desktop-local 部署和回环请求。 */
+export function isDesktopLocalToken(
+  token: string,
+  remoteAddress: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (environment.BIM_STUDIO_DEPLOYMENT_MODE !== "desktop-local" || !isLoopbackAddress(remoteAddress)) return false;
+  const expected = environment.BIM_STUDIO_DESKTOP_LOCAL_TOKEN?.trim() ?? "";
+  if (expected.length < 32 || token.length !== expected.length) return false;
+  return timingSafeEqual(Buffer.from(token), Buffer.from(expected));
+}
+
+function isLoopbackAddress(value: string): boolean {
+  return value === "::1" || value === "localhost" || value.startsWith("127.") || value.startsWith("::ffff:127.");
 }
 
 function aiBlockedPayload(reason: AiReliabilityBlockedError) {

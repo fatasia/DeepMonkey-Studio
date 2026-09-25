@@ -17,8 +17,13 @@ rapier3d = { version = "=0.35.3", default-features = true, features = ["enhanced
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = { version = "=1.0.151", features = ["float_roundtrip"] }
 unicode-segmentation = "=1.13.3"
+web-time = "=1.1.0"
 wgpu = { version = "=30.0.1", default-features = false, features = ["std", "parking_lot", "dx12", "metal", "vulkan", "wgsl"] }
 winit = { version = "=0.30.13", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = "=0.4.78"
+web-sys = { version = "=0.3.105", features = ["HtmlCanvasElement"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_System_Com", "Win32_Networking_WinSock", "Win32_Security", "Win32_Security_Isolation", "Win32_Security_Authorization", "Win32_System_Pipes", "Win32_System_WindowsProgramming", "Win32_System_SystemServices", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Diagnostics_ProcessSnapshotting", "Win32_System_Diagnostics_Debug", "Win32_System_Kernel", "Win32_System_Diagnostics_ToolHelp"] }
@@ -29,7 +34,7 @@ windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Syst
 # provider/client COM interfaces, so provider objects use the `windows` crate.
 # 0.62.2 is already locked as a transitive dependency (wgpu/dx12), so this adds
 # feature flags to a locked version — no new package, Cargo.lock unchanged.
-windows = { version = "=0.62.2", features = ["Win32_Media_MediaFoundation", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_LibraryLoader", "Win32_System_Ole", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Variant", "Win32_UI_Accessibility", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Controls_Dialogs", "Win32_Graphics_Direct3D", "Win32_Graphics_Direct3D12"] }
+windows = { version = "=0.62.2", features = ["Win32_Media_MediaFoundation", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_LibraryLoader", "Win32_System_Ole", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Variant", "Win32_UI_Accessibility", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Controls_Dialogs", "Win32_Graphics_Direct3D", "Win32_Graphics_Direct3D12", "Win32_Graphics_Dwm"] }
 # `windows::core::implement` expands to `::windows_core::` paths, which needs
 # windows-core as a direct dependency (already locked at 0.62.2).
 windows-core = { version = "=0.62.2" }

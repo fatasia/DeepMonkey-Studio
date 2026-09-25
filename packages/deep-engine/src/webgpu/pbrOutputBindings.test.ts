@@ -58,6 +58,15 @@ describe("PBR output pass ownership", () => {
       timestampWrites: { querySet: queries, endOfPassWriteIndex: 1 } }));
     output.dispose(); expect(f.owned.size).toBe(0);
   });
+  it("writes the diagnostic output-start query only when coarse timing is enabled", () => {
+    const f = fixture(), output = new PbrOutputBindings(f.session, f.pipelines, () => 0, false);
+    const queries = {} as GPUQuerySet;
+    output.encode(f.encoder as unknown as GPUCommandEncoder, f.source, f.surface, {}, queries, true);
+    expect(f.encoder.beginRenderPass).toHaveBeenCalledWith(expect.objectContaining({
+      timestampWrites: { querySet: queries, beginningOfPassWriteIndex: 3, endOfPassWriteIndex: 1 },
+    }));
+    output.dispose();
+  });
   it("owns both uniforms, caches source bindings and encodes display timestamps", () => {
     const f = fixture(), output = new PbrOutputBindings(f.session, f.pipelines, () => 0), queries = {} as GPUQuerySet;
     expect(f.owned.size).toBe(2);

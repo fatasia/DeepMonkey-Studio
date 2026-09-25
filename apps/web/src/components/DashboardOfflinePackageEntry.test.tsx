@@ -102,6 +102,7 @@ describe("dashboard offline entry publication authority", () => {
   });
   it("shows each degraded or blocked field as the capability reason", async () => {
     harness.prepare.mockResolvedValueOnce({ candidateId: "candidate-1", applicationRevision: 7,
+      downloadFormats: ["dmda"],
       objects: [
         { nodeId: "chart", status: "degraded", deferredFields: ["widget.title", "widget.options"],
           reasons: ["Frozen chart data is compiled into ChartIR; Web appearance remains deferred"] },
@@ -119,12 +120,26 @@ describe("dashboard offline entry publication authority", () => {
   });
   it("ignores a late download error body after a newer preparation starts", async () => {
     let finish!: (value: unknown) => void;
-    harness.prepare.mockResolvedValueOnce({ candidateId: "first", applicationRevision: 7, objects: [], expiresAt: "2026-09-17T01:00:00Z" });
+    harness.prepare.mockResolvedValueOnce({ candidateId: "first", applicationRevision: 7,
+      downloadFormats: ["exe", "dmda"], objects: [], expiresAt: "2026-09-17T01:00:00Z" });
     harness.download.mockResolvedValue({ ok: false, status: 409, json: () => new Promise(done => { finish = done; }) });
     click("离线包"); render(); await flush(); click("开始准备"); await flush();
     click("下载单文件 EXE"); await flush(); click("重新准备");
     finish({ code: "candidate_expired", message: "old request" }); await flush();
     expect(render().some(node => node.type === "button" && label(node.props.children) === "取消")).toBe(true);
     expect(render().some(node => node.props.role === "alert")).toBe(false);
+  });
+  it("renders only server-advertised targets and requires author signing when configured", async () => {
+    harness.prepare.mockResolvedValueOnce({ candidateId: "android", applicationRevision: 7,
+      downloadFormats: ["apk", "dmda"], androidSigningMode: "client-required",
+      objects: [], expiresAt: "2026-09-17T01:00:00Z" });
+    click("离线包"); render(); await flush(); click("开始准备"); await flush();
+    const nodes = render();
+    expect(nodes.some(node => node.type === "button" && label(node.props.children) === "下载单文件 EXE")).toBe(false);
+    expect(nodes.some(node => node.type === "button" && label(node.props.children) === "ZIP")).toBe(false);
+    expect(nodes.some(node => node.type === "button" && label(node.props.children) === "DMDA")).toBe(true);
+    const apk = nodes.find(node => node.type === "button" && label(node.props.children) === "安卓 APK");
+    expect(apk?.props.disabled).toBe(true);
+    expect(nodes.some(node => node.type === "summary" && label(node.props.children).includes("必须填写"))).toBe(true);
   });
 });

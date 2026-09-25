@@ -43,6 +43,29 @@ export abstract class ViewerEngineNavigationTools extends ViewerEngineMeasuremen
     this.orbit.enabled = enabled && this.navigationMode !== "firstPerson";
   }
 
+  /** 深色演示后端的手势接管缝:停用 OrbitControls,姿态经 applyViewportCameraPose 写回。 */
+  enableViewportGestureTakeover(): boolean {
+    if (this.navigationMode !== "orbit") return false;
+    this.setViewportOrbitEnabled(false);
+    return true;
+  }
+
+  disableViewportGestureTakeover(): void {
+    this.setViewportOrbitEnabled(true);
+  }
+
+  isViewportGestureSuppressed(): boolean {
+    return this.transformDragging;
+  }
+
+  /** 引擎中立姿态写回:相机单一事实源仍是 viewer.camera + orbit.target。 */
+  applyViewportCameraPose(pose: { readonly eye: readonly [number, number, number]; readonly target: readonly [number, number, number] }): void {
+    this.camera.position.set(pose.eye[0], pose.eye[1], pose.eye[2]);
+    this.orbit.target.set(pose.target[0], pose.target[1], pose.target[2]);
+    this.camera.updateMatrixWorld(true);
+    this.cameraCollisionDirty = true;
+  }
+
   select(id: string | undefined): void {
     this.selectedSceneLight = undefined;
     this.focusedSpaceKey = undefined;

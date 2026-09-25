@@ -46,8 +46,8 @@ export function assistantSuggestions(mode: AssistantMode, locale: AppLocale): st
   }
   if (mode === "dashboard") {
     return [
-      t("生成设备风险、视觉质量和能耗综合看板", "Create an asset risk, visual quality, and energy dashboard"),
-      t("生成当前场景设备运行监控看板", "Create an operations dashboard for assets in this scene"),
+      t("根据当前数据目录优化这个二维页面", "Improve this 2D page using the current data catalog"),
+      t("检查当前选中组件的布局、字段与单位", "Check the selected component's layout, fields, and units"),
     ];
   }
   return [

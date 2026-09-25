@@ -86,7 +86,7 @@ export interface StudioViewerAPI {
   scene: {
     open(sceneId: string, newTab?: boolean): void;
     statistics(): unknown;
-    rendererBackend(): "webgl" | "webgpu" | undefined;
+    rendererBackend(): "webgl" | "webgpu" | "wasm" | undefined;
     getWeather(): WeatherMode | undefined;
     setWeather(mode: WeatherMode): void;
     getEnvironment(): SceneEnvironmentState | undefined;
@@ -365,7 +365,7 @@ interface StudioAPI {
   scene: {
     open(sceneId: ProjectSceneId, newTab?: boolean): void;
     statistics(): unknown;
-    rendererBackend(): "webgl" | "webgpu" | undefined;
+    rendererBackend(): "webgl" | "webgpu" | "wasm" | undefined;
     getWeather(): WeatherMode | undefined;
     setWeather(mode: WeatherMode): void;
     getEnvironment(): unknown;

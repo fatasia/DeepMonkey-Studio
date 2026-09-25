@@ -3,8 +3,8 @@
 //! 不得反向依赖验证服务（player_cli/app 栈），否则 `#[path]` 重组装的测试
 //! crate 无法闭合传递依赖（V5 预检 2026-09-23 同族修复）。
 use serde::Serialize;
-use std::{fs, io::Write, path::PathBuf};
 use std::fs::OpenOptions;
+use std::{fs, io::Write, path::PathBuf};
 
 pub struct Verification {
     report: PathBuf,

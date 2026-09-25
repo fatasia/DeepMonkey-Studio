@@ -8,6 +8,7 @@ const pointer: DashboardPublicationPointer = { id: "pub-1", projectId: "p", appl
 const candidate: DashboardCandidatePrepared = { candidateId: "cand-1", createdAt: "2026-09-16T12:00:01.000Z",
   expiresAt: "2026-09-16T13:00:01.000Z", applicationRevision: 3, entryPageId: "page-main",
   freezeManifestSha256: "a".repeat(64), targetArtifactHash: "b".repeat(64),
+  downloadFormats: ["exe", "zip", "dmda"],
   objects: [{ nodeId: "n1", status: "supported", deferredFields: [] },
     { nodeId: "n2", status: "degraded", deferredFields: ["widget.filter"] },
     { nodeId: "n3", status: "blocked", deferredFields: ["scene"] }] };

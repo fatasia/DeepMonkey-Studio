@@ -51,7 +51,10 @@ export async function registerDashboardNativeCandidateRouteRuntime(
   await registerDashboardPublicationCandidateRoutes(app, runtime.service, registry,
     [...(dependencies.nativeExecutable ? ["exe", "zip"] as const : []),
       ...(dependencies.webStatic ? ["web"] as const : []),
-      ...(dependencies.androidApk ? ["apk"] as const : []), "dmda"]);
+      ...(dependencies.androidApk ? ["apk"] as const : []), "dmda"],
+    dependencies.androidApk
+      ? dependencies.androidApk.defaultSigning ? "server-default" : "client-required"
+      : undefined);
   await registerDashboardOfflineArchiveDownloadRoutes(app, {
     registry,
     ...(dependencies.nativeExecutable === undefined ? {} : { portable: { nativeExecutable: dependencies.nativeExecutable,

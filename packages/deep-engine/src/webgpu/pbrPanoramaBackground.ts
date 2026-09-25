@@ -12,7 +12,7 @@ const IDENTITY = [1, 0, 0, 0, 1, 0, 0, 0, 1] as const;
 
 export function validatePanoramaBackground(value: PanoramaBackground): void {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Panorama background must be an object.");
-  if (value.toneMapped !== undefined && value.toneMapped !== true) throw new RangeError("Untonemapped panorama requires display-space background composition.");
+  if (value.toneMapped !== undefined && typeof value.toneMapped !== "boolean") throw new TypeError("Panorama toneMapped must be boolean.");
   const intensity = value.intensity ?? 1;
   if (!Number.isFinite(intensity) || intensity < 0 || intensity > 64) throw new RangeError("Panorama intensity must be in 0..64.");
   const r = value.rotation ?? IDENTITY;
@@ -60,6 +60,15 @@ fn panoramaColor(ndc: vec2f) -> vec4f {
   return vec4f(textureSampleLevel(panorama, panoramaSampler, uv, 0.0).rgb * settings.forward.w, 1.0);
 }
 @fragment fn color(v: Vertex) -> @location(0) vec4f { return panoramaColor(v.ndc); }
+fn linearToSrgb(value: vec3f) -> vec3f {
+  let linear = max(value, vec3f(0.0));
+  let high = 1.055 * pow(linear, vec3f(1.0 / 2.4)) - 0.055;
+  let low = linear * 12.92;
+  return select(high, low, linear <= vec3f(0.0031308));
+}
+@fragment fn display(v: Vertex) -> @location(0) vec4f {
+  return vec4f(linearToSrgb(panoramaColor(v.ndc).rgb), 1.0);
+}
 struct Mrt { @location(0) color: vec4f, @location(1) depth: f32,
   @location(2) normal: vec4f, @location(3) motion: vec2f };
 @fragment fn mrt(v: Vertex) -> Mrt { return Mrt(panoramaColor(v.ndc), 0.0, vec4f(0.0), vec2f(0.0)); }

@@ -174,7 +174,10 @@ fn object_visible_track_does_not_abort_native_playback() {
 
     // 250ms：可见（v=0.5 边界内 >0.5 判可见），translation x = 5*0.25 = 1.25。
     let step = content.apply_dynamic_playback_step(250).unwrap();
-    assert!(step.changed_instances >= 1, "object-visible 轨道不得中断播放");
+    assert!(
+        step.changed_instances >= 1,
+        "object-visible 轨道不得中断播放"
+    );
 
     // 750ms：已越过 visible=false 关键帧（500ms），实例隐藏、零矩阵。
     let step = content.apply_dynamic_playback_step(750).unwrap();

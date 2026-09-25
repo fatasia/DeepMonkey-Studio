@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { BimAssistantPreparedContext } from "../bimAssistant";
-import { runAssistantRequest } from "./runAssistantRequest";
+import { dashboardAssistantStreamText, runAssistantRequest } from "./runAssistantRequest";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -25,6 +25,22 @@ describe("assistant request lifecycle", () => {
     client.streamAssistant.mockResolvedValue({ text: "ok", model: "selected" });
     await runAssistantRequest(input);
     expect(client.streamAssistant.mock.calls[0]?.[4]).toMatchObject(input.sessionOptions);
+  });
+  it("uses the shared stream while exposing only dashboard summary text and returning the page draft", async () => {
+    const { client, input } = setup();
+    input.mode = "dashboard";
+    const draft = { version: 1, pageId: "page-1", changes: [] };
+    client.streamAssistant.mockImplementation(async (_mode, _prompt, _context, onDelta) => {
+      onDelta('{"text":"正在生成');
+      onDelta('\\n二维草案","dashboardPageDraft":');
+      return { text: "正在生成\n二维草案", model: "selected", dashboardPageDraft: draft };
+    });
+    const result = await runAssistantRequest(input);
+    expect(input.onDelta).toHaveBeenCalledWith("正在生成");
+    expect(input.onDelta).toHaveBeenCalledWith("\n二维草案");
+    expect(input.onDelta).not.toHaveBeenCalledWith(expect.stringContaining("dashboardPageDraft"));
+    expect(result.dashboardPageDraft).toEqual(draft);
+    expect(dashboardAssistantStreamText('{"text":"产量\\n趋势","dashboardPageDraft":')).toBe("产量\n趋势");
   });
   it("does not prepare or request anything when already cancelled", async () => {
     const { controller, client, input } = setup();

@@ -434,4 +434,3 @@ pub(crate) fn set_executor_thread_name() {
 
 #[cfg(not(windows))]
 pub(crate) fn set_executor_thread_name() {}
-

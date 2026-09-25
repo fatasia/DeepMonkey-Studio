@@ -108,8 +108,12 @@ public class NativeWinCapture {
     EnumWindows((hwnd, data) => {
       uint owner; GetWindowThreadProcessId(hwnd, out owner); RECT client;
       if (owner == processId && IsWindowVisible(hwnd) && GetClientRect(hwnd, out client)) {
-        long candidate = (long)(client.Right - client.Left) * (client.Bottom - client.Top);
-        if (candidate > area || selected == IntPtr.Zero) { selected = hwnd; area = candidate; }
+        int width = client.Right - client.Left, height = client.Bottom - client.Top;
+        // winit/IME can expose a visible 18x18 helper before the compositor
+        // publishes the real player. Never let that transient stop the poll.
+        if (width < 320 || height < 240) { return true; }
+        long candidate = (long)width * height;
+        if (candidate > area) { selected = hwnd; area = candidate; }
       }
       return true;
     }, IntPtr.Zero);
@@ -135,7 +139,10 @@ public class NativeWinCapture {
 [NativeWinCapture]::SetProcessDPIAware() | Out-Null
 $proc = Get-Process -Id $ProcId -ErrorAction Stop
 $hwnd = [NativeWinCapture]::PlayerWindow([uint32]$ProcId)
-for ($attempt = 0; $hwnd -eq [IntPtr]::Zero -and $attempt -lt 10; $attempt++) {
+# Release players compile the full PBR pipeline before publishing their first
+# window frame. Allow that real startup path to finish instead of treating a
+# correctly hidden candidate as a missing window during a cold driver launch.
+for ($attempt = 0; $hwnd -eq [IntPtr]::Zero -and $attempt -lt 150; $attempt++) {
   Start-Sleep -Milliseconds 200
   $hwnd = [NativeWinCapture]::PlayerWindow([uint32]$ProcId)
 }

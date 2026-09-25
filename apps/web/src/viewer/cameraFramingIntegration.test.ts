@@ -22,6 +22,21 @@ function fixture() {
 }
 
 describe("camera framing engine integration", () => {
+  it("publishes camera changes to a view-local subscriber without replacing the inspector callback", () => {
+    const { engine } = fixture();
+    const local = vi.fn(), inspector = vi.fn();
+    Object.assign(engine, { cameraChangeListeners: new Set(), onCameraChange: inspector });
+    const unsubscribe = engine.subscribeCameraChange(local);
+    const state = engine.getCameraState();
+    (engine as unknown as { publishCameraChange(value: typeof state): void }).publishCameraChange(state);
+    expect(local).toHaveBeenCalledWith(state);
+    expect(inspector).toHaveBeenCalledWith(state);
+    unsubscribe();
+    (engine as unknown as { publishCameraChange(value: typeof state): void }).publishCameraChange(state);
+    expect(local).toHaveBeenCalledTimes(1);
+    expect(inspector).toHaveBeenCalledTimes(2);
+  });
+
   it("focuses translated primitives through the same registered-object path without changing author transforms", () => {
     const { engine, camera, orbit, object, models } = fixture();
     object.position.set(9.93, 1, -0.423);

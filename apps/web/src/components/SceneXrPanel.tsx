@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import { translate as tr, type AppLocale } from "../i18n";
 import { useFloatingPanelDrag } from "../hooks/useFloatingPanelDrag";
 import { xrBackendLabel, xrEntryBlockReasons } from "../viewer/xrSession";
+import type { RendererBackend } from "../viewer/ViewerEngine";
 
 export type SceneXrMode = "immersive-vr" | "immersive-ar";
 
@@ -16,7 +17,7 @@ export interface SceneXrCapabilities {
 interface SceneXrPanelProps {
   locale: AppLocale;
   /** 引擎实际承载 XR 的作者渲染后端（非用户偏好）。 */
-  rendererBackend: "webgl" | "webgpu";
+  rendererBackend: RendererBackend;
   capabilities: SceneXrCapabilities;
   activeMode?: SceneXrMode | undefined;
   onStart: (mode: SceneXrMode) => void;

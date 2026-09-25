@@ -14,6 +14,7 @@ import { sceneViewerDeliveryRoute } from "../delivery/sceneViewerDelivery";
 import { useManagerDirectoryController } from "./useManagerDirectoryController";
 import { carriesProjectContext, rememberProjectContext } from "../projectNavigationContext";
 import { stageRendererPreference } from "../viewer/rendererBackendPreference";
+import { rendererBackendLabel } from "../viewer/rendererBackendLabel";
 
 interface AppNavigationControllerOptions {
   state: AppState;
@@ -155,16 +156,16 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
 
   function changeRendererBackend(next: RendererBackend, options: { persistPreference?: boolean; message?: string } = {}) {
     if (next === rendererBackend || rendererSwitching || !engine) return;
-    if (next === "webgpu" && (!("gpu" in navigator) || !window.isSecureContext)) {
+    if (next !== "webgl" && (!("gpu" in navigator) || !window.isSecureContext)) {
       showError(new Error("当前浏览器、显卡或访问地址不支持 WebGPU，请使用新版 Chrome/Edge 和 HTTPS"));
       return;
     }
     stageRendererPreference(rendererPreferenceCommitRef, next, options.persistPreference !== false);
     setRendererSwitchPhase("preparing");
-    setRendererSwitchMessage(`正在准备 ${next === "webgpu" ? "Deep WebGPU Beta" : "WebGL 2"}；当前画布仍在使用 ${rendererActiveBackend === "webgpu" ? "Deep WebGPU Beta" : "WebGL 2"}`);
+    setRendererSwitchMessage(`正在准备 ${rendererBackendLabel(next)}；当前画布仍在使用 ${rendererBackendLabel(rendererActiveBackend)}`);
     setRendererBackend(next);
     setRendererSwitching(true);
-    setMessage(options.message ?? `正在切换到 ${next === "webgpu" ? "Deep WebGPU（Beta）" : "WebGL"}`);
+    setMessage(options.message ?? `正在切换到 ${rendererBackendLabel(next)}`);
   }
 
   useEffect(() => {

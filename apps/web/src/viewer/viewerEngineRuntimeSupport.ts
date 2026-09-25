@@ -99,10 +99,10 @@ export abstract class ViewerEngineRuntimeSupport extends ViewerEngineTimelineRun
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     const policy = {
-      backend: this.rendererBackend,
+      backend: this.rendererBackend === "webgpu" ? "webgpu" : "webgl",
       drawingBufferInitialized: this.drawingBufferInitialized,
       shadowsEnabled: Boolean(this.lightingState?.enabled && this.lightingState.shadowsEnabled),
-    };
+    } as const;
     if (pixelRatioChanged && canChangeRendererPixelRatio(policy)) {
       this.renderer.setPixelRatio(pixelRatio);
       this.postProcessing?.setPixelRatio(pixelRatio);
@@ -117,7 +117,7 @@ export abstract class ViewerEngineRuntimeSupport extends ViewerEngineTimelineRun
   protected applyRendererPixelRatio(pixelRatio: number): void {
     if (Math.abs(this.renderer.getPixelRatio() - pixelRatio) < 0.001) return;
     if (!canChangeRendererPixelRatio({
-      backend: this.rendererBackend,
+      backend: this.rendererBackend === "webgpu" ? "webgpu" : "webgl",
       drawingBufferInitialized: this.drawingBufferInitialized,
       shadowsEnabled: Boolean(this.lightingState?.enabled && this.lightingState.shadowsEnabled),
     })) return;
@@ -161,7 +161,7 @@ export abstract class ViewerEngineRuntimeSupport extends ViewerEngineTimelineRun
       ...(this.shadowUpdateGovernor.snapshot().mode === "cached" ? ["cached-shadows"] : []),
     ];
     return {
-      backend: this.rendererBackend,
+      backend: this.rendererBackend === "webgpu" ? "webgpu" : "webgl",
       drawCalls: normalizedRendererDrawCalls(this.rendererBackend, info?.render),
       triangles: info?.render?.triangles ?? 0,
       points: info?.render?.points ?? 0,

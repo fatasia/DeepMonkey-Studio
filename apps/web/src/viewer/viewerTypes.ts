@@ -12,7 +12,7 @@ export type NavigationMode = CameraState["mode"];
 export type MeasureMode = NonNullable<MeasurementState["kind"]>;
 export type StandardView = "top" | "bottom" | "left" | "right" | "front" | "back";
 export type SelectionScope = "model" | "component";
-export type RendererBackend = "webgl" | "webgpu";
+export type RendererBackend = "webgl" | "webgpu" | "wasm";
 
 export interface RendererDeviceLossInfo {
   api: "WebGPU";

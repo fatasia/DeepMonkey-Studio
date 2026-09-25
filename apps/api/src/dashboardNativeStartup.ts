@@ -14,10 +14,17 @@ import { registerDashboardNativeCandidateRouteRuntime } from "./dashboardNativeC
 import { createDashboardWebStaticDeployment, isDashboardWebStaticDeploymentConfig,
   type DashboardWebStaticDeploymentConfig } from "./dashboardWebStaticDeployment.js";
 import type { DashboardAndroidApkDependencies } from "./dashboardAndroidApk.js";
+import { createNativeSceneWindowVerifier, type NativeSceneWindowEvidence } from "./nativeSceneWindowVerifier.js";
+
+interface RuntimeLocalDeviceFingerprintConfig {
+  readonly mode: "runtime-local";
+  readonly probePackagePath: string;
+}
 
 interface DashboardDeploymentConfig {
   readonly nativeExecutable: string;
-  readonly expectedDeviceFingerprintSha256: string;
+  readonly expectedDeviceFingerprintSha256?: string;
+  readonly deviceFingerprint?: RuntimeLocalDeviceFingerprintConfig;
   readonly configuration: Record<string, unknown> & { locale: string; packageVersion: string };
   readonly fontCatalog?: DashboardPublishedFontConfiguration;
   /**
@@ -34,9 +41,13 @@ export interface DashboardAndroidApkDeploymentConfig {
   readonly templateApkPath: string;
   readonly templateApkSha256?: string;
   readonly buildToolsPath: string;
-  readonly keystorePath: string;
-  readonly keystoreStorePassword: string;
-  readonly keystoreKeyAlias: string;
+  /**
+   * Optional deployment-owned signing identity. Omit all three fields to
+   * require a request-scoped keystore from the authoring client.
+   */
+  readonly keystorePath?: string;
+  readonly keystoreStorePassword?: string;
+  readonly keystoreKeyAlias?: string;
   readonly keystoreKeyPassword?: string;
 }
 
@@ -46,6 +57,7 @@ export async function registerConfiguredDashboardNative(app: FastifyInstance, de
 }, deploymentFile = process.env.DASHBOARD_NATIVE_DEPLOYMENT_FILE) {
   if (!deploymentFile) return;
   const deployment = await readDashboardDeploymentConfig(deploymentFile);
+  const expectedDeviceFingerprintSha256 = await resolveDashboardDeviceFingerprint(deployment);
   const webStatic = deployment.webStatic
     ? await createDashboardWebStaticDeployment(deployment.webStatic, dependencies.store, dependencies.objects) : undefined;
   const fonts = deployment.fontCatalog ? createDashboardPublishedFontCatalog(deployment.fontCatalog, dependencies.objects) : undefined;
@@ -73,7 +85,7 @@ export async function registerConfiguredDashboardNative(app: FastifyInstance, de
       runtime: { store: dependencies.store, objects: dependencies.objects,
         closure: createDashboardPublishedClosure(dependencies.store, dependencies.config, fonts ? { fonts } : {}),
         compiler: bindings.compiler, verifier: bindings.verifier,
-        expectedDeviceFingerprintSha256: deployment.expectedDeviceFingerprintSha256,
+        expectedDeviceFingerprintSha256,
         ...(layoutCapture ? { layoutCapture: { host: layoutCapture.host, locale: layoutCapture.locale } } : {}) },
       nativeExecutable: deployment.nativeExecutable,
       nativeExecutableSha256,
@@ -94,8 +106,7 @@ export async function readDashboardDeploymentConfig(file: string): Promise<Dashb
   const value = JSON.parse(await readFile(file, "utf8")) as DashboardDeploymentConfig;
   if (!value || typeof value !== "object" || typeof value.nativeExecutable !== "string"
     || !path.isAbsolute(value.nativeExecutable) || path.extname(value.nativeExecutable).toLowerCase() !== ".exe"
-    || typeof value.expectedDeviceFingerprintSha256 !== "string"
-    || !/^[a-f0-9]{64}$/.test(value.expectedDeviceFingerprintSha256)
+    || !isValidDeviceFingerprintConfig(value)
     || !value.configuration || typeof value.configuration !== "object" || Array.isArray(value.configuration)
     || typeof value.configuration.locale !== "string" || !value.configuration.locale.trim()
     || typeof value.configuration.packageVersion !== "string" || !value.configuration.packageVersion.trim()
@@ -105,6 +116,32 @@ export async function readDashboardDeploymentConfig(file: string): Promise<Dashb
     throw new Error("Dashboard deployment requires a Windows player, device fingerprint, locale and package version");
   }
   return value;
+}
+
+export async function resolveDashboardDeviceFingerprint(deployment: Pick<DashboardDeploymentConfig,
+  "nativeExecutable" | "expectedDeviceFingerprintSha256" | "deviceFingerprint">,
+environment = process.env,
+verify: (packagePath: string, signal?: AbortSignal) => Promise<NativeSceneWindowEvidence>
+  = createNativeSceneWindowVerifier({ nativeExecutable: deployment.nativeExecutable, frames: 1 })) {
+  if (deployment.expectedDeviceFingerprintSha256) return deployment.expectedDeviceFingerprintSha256;
+  if (deployment.deviceFingerprint?.mode !== "runtime-local" || environment.BIM_STUDIO_DEPLOYMENT_MODE !== "desktop-local") {
+    throw new Error("Runtime-local Dashboard device discovery is limited to desktop-local deployment");
+  }
+  const evidence = await verify(deployment.deviceFingerprint.probePackagePath, AbortSignal.timeout(60_000));
+  const fingerprint = evidence.report.deviceFingerprintSha256;
+  if (typeof fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(fingerprint)) {
+    throw new Error("Native runtime did not report a valid device fingerprint");
+  }
+  return fingerprint;
+}
+
+function isValidDeviceFingerprintConfig(value: DashboardDeploymentConfig): boolean {
+  const fixed = typeof value.expectedDeviceFingerprintSha256 === "string"
+    && /^[a-f0-9]{64}$/.test(value.expectedDeviceFingerprintSha256);
+  const runtime = value.deviceFingerprint?.mode === "runtime-local"
+    && typeof value.deviceFingerprint.probePackagePath === "string"
+    && path.isAbsolute(value.deviceFingerprint.probePackagePath);
+  return (fixed || runtime) && !(fixed && runtime);
 }
 
 function isValidLayoutCaptureConfig(value: DashboardDeploymentConfig["layoutCapture"]): boolean {
@@ -117,15 +154,16 @@ function isValidLayoutCaptureConfig(value: DashboardDeploymentConfig["layoutCapt
 
 function isValidAndroidApkConfig(value: DashboardDeploymentConfig["androidApk"]): boolean {
   if (value === undefined) return true;
-  const passwordsAreStrings = typeof value.keystoreStorePassword === "string" && value.keystoreStorePassword.length > 0
-    && (value.keystoreKeyPassword === undefined || typeof value.keystoreKeyPassword === "string");
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    && typeof value.templateApkPath === "string" && path.isAbsolute(value.templateApkPath)
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const signingFields = [value.keystorePath, value.keystoreStorePassword, value.keystoreKeyAlias];
+  const hasDefaultSigning = signingFields.every(field => typeof field === "string" && field.length > 0);
+  const hasNoDefaultSigning = signingFields.every(field => field === undefined);
+  return typeof value.templateApkPath === "string" && path.isAbsolute(value.templateApkPath)
     && (value.templateApkSha256 === undefined || /^[a-f0-9]{64}$/.test(value.templateApkSha256))
     && typeof value.buildToolsPath === "string" && path.isAbsolute(value.buildToolsPath)
-    && typeof value.keystorePath === "string" && path.isAbsolute(value.keystorePath)
-    && typeof value.keystoreKeyAlias === "string" && value.keystoreKeyAlias.length > 0
-    && passwordsAreStrings;
+    && (hasNoDefaultSigning || hasDefaultSigning && path.isAbsolute(value.keystorePath!))
+    && (value.keystoreKeyPassword === undefined
+      || hasDefaultSigning && typeof value.keystoreKeyPassword === "string" && value.keystoreKeyPassword.length > 0);
 }
 
 /** 部署默认签名:keystore 字节按需读取;口令停留在部署配置域,不进日志不进下载。 */
@@ -134,11 +172,13 @@ function createAndroidApkDependencies(config: DashboardAndroidApkDeploymentConfi
     templateApkPath: config.templateApkPath,
     ...(config.templateApkSha256 === undefined ? {} : { templateApkSha256: config.templateApkSha256 }),
     buildToolsPath: config.buildToolsPath,
-    defaultSigning: async () => ({
-      keystore: new Uint8Array(await readFile(config.keystorePath)),
-      storePassword: config.keystoreStorePassword,
-      keyAlias: config.keystoreKeyAlias,
-      ...(config.keystoreKeyPassword === undefined ? {} : { keyPassword: config.keystoreKeyPassword }),
-    }),
+    ...(config.keystorePath && config.keystoreStorePassword && config.keystoreKeyAlias ? {
+      defaultSigning: async () => ({
+        keystore: new Uint8Array(await readFile(config.keystorePath!)),
+        storePassword: config.keystoreStorePassword!,
+        keyAlias: config.keystoreKeyAlias!,
+        ...(config.keystoreKeyPassword === undefined ? {} : { keyPassword: config.keystoreKeyPassword }),
+      }),
+    } : {}),
   };
 }

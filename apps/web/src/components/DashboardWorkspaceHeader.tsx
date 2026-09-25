@@ -1,8 +1,7 @@
-import { ArrowLeft, Database, Eye, LayoutDashboard, Redo2, Rocket, Save, Undo2 } from "lucide-react";
+import { ArrowLeft, Bot, Database, Eye, LayoutDashboard, Redo2, Rocket, Save, Undo2 } from "lucide-react";
 import { translate as tr } from "../i18n";
 import { WorkspaceModeSwitch } from "./WorkspaceModeSwitch";
 import { useDashboardWorkspace } from "./dashboardWorkspaceContext";
-import { DashboardAiDraftEntry } from "./DashboardAiDraftEntry";
 import { DashboardOfflinePackageEntry } from "./DashboardOfflinePackageEntry";
 
 export function DashboardWorkspaceHeader() {
@@ -20,6 +19,7 @@ export function DashboardWorkspaceHeader() {
     onBack,
     onOpen3D,
     onOpenData,
+    onAiAssistant,
     onOpenScripts,
     scriptOpen,
     onCloseScripts,
@@ -65,7 +65,7 @@ export function DashboardWorkspaceHeader() {
         {tr(locale, "数据", "Data")}
       </button>
       <div className="dashboard-workspace-actions">
-        <DashboardAiDraftEntry />
+        {onAiAssistant && <button type="button" aria-label={tr(locale, "二维 AI 助手", "2D AI assistant")} title={tr(locale, "二维 AI 助手", "2D AI assistant")} onClick={onAiAssistant}><Bot size={15} /></button>}
         <DashboardOfflinePackageEntry />
         {onAutoSaveChange && (
           <label className="dashboard-auto-save" title={tr(locale, "修改后自动保存项目", "Automatically save project changes")}>

@@ -1,9 +1,8 @@
 import * as THREE from "three";
 
 const GRID_WORLD_SIZE = 200;
-// 双端固定网格上限为 2048；每米至少 10 texels，近景不再放大低分辨率线条。
-// 2000 / 200m = 恰好 10 texels/m，避免 2048 带来的非整数线距抖动。
-const GRID_TEXTURE_SIZE = 2000;
+// Deep 的确定性 mip 链要求 2 的幂；取合同上限 2048 保留最高近景清晰度。
+const GRID_TEXTURE_SIZE = 2048;
 const MINOR_STEP = 1;
 const MAJOR_STEP = 10;
 

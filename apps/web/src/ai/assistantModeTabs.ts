@@ -14,6 +14,7 @@ export function assistantModeTabs(locale: AppLocale, surface: "studio" | "platfo
     }
     return [
       { id: "platform" as const, label: t("全平台", "Platform"), icon: Sparkles },
+      ...(onApplyDashboard ? [{ id: "dashboard" as const, label: t("二维", "2D"), icon: LayoutDashboard }] : []),
       { id: "operations" as const, label: t("运营", "Operations"), icon: Activity },
       { id: "vision" as const, label: t("视觉", "Vision"), icon: ScanSearch },
       { id: "bim" as const, label: "BIM", icon: Box },

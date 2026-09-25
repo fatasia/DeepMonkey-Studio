@@ -7,6 +7,7 @@ fn main() {
             "get_auth_token",
             "set_auth_token",
             "clear_auth_token",
+            "start_local_api",
         ]),
     ))
     .expect("failed to build Deep Monkey Studio desktop host");

@@ -31,7 +31,7 @@ describe("assistant session restoration", () => {
     expect(h.messages).toHaveBeenLastCalledWith("p", "s", "m1");
     expect(state.conversation.map(item => item.status)).toEqual(["stopped", "interrupted"]);
     expect(state.conversation[0]!.reliability).toMatchObject({ grade: "limited", warnings: ["服务回退"] });
-    expect(state.conversation[0]).not.toHaveProperty("scope");
+    expect(state.conversation[0]).toHaveProperty("scope", "secret-id");
     expect(state.loading).toBe(false);
   });
   it("ignores old-project loads and a cancelled load after choosing a new conversation", async () => {

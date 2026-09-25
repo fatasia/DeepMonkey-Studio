@@ -249,7 +249,11 @@ fn plan_kernel_rebuild_carries_no_history_between_builds() {
     assert_ne!(middle, first, "sanity: the interleaved scene differs");
     // B 的预算表从 0 开始、与 A 的槽位无交集,证明没有跨构建累加状态。
     assert_eq!(
-        middle.instances.iter().map(|i| i.blas_slot).collect::<Vec<_>>(),
+        middle
+            .instances
+            .iter()
+            .map(|i| i.blas_slot)
+            .collect::<Vec<_>>(),
         vec![0]
     );
     let rebuilt = plan_rt_scene(&scene_a.0, &scene_a.1).expect("scene A rebuild must plan");
@@ -260,8 +264,16 @@ fn plan_kernel_rebuild_carries_no_history_between_builds() {
     // 槽位派生只看几何首用序:重建后同一几何仍然拿到同一槽位号,
     // 但那是重新计算的结果,不是旧实例的复用(无全局计数器/缓存)。
     assert_eq!(
-        rebuilt.instances.iter().map(|i| i.blas_slot).collect::<Vec<_>>(),
-        first.instances.iter().map(|i| i.blas_slot).collect::<Vec<_>>()
+        rebuilt
+            .instances
+            .iter()
+            .map(|i| i.blas_slot)
+            .collect::<Vec<_>>(),
+        first
+            .instances
+            .iter()
+            .map(|i| i.blas_slot)
+            .collect::<Vec<_>>()
     );
 }
 

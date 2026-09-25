@@ -32,7 +32,7 @@
 //! `1 - smoothstep(0, 1.5 格边界距离)` 混合（Web `DEEP_GI_CASCADE_BLEND_CELLS`），
 //! 细层权重不足而粗层足够时单独用粗层。
 
-use crate::probe_gi_abi::{IrradianceProbeRecord, ProbeGiAbiError, PROBE_GI_RECORD_FLOATS};
+use crate::probe_gi_abi::{IrradianceProbeRecord, PROBE_GI_RECORD_FLOATS, ProbeGiAbiError};
 
 /// 网格头占用的记录数；旧单层合同的探针记录从该下标开始。
 pub const PROBE_GI_GRID_HEADER_RECORDS: usize = 1;
@@ -137,7 +137,9 @@ impl ProbeGiGridHeader {
             return Err(ProbeGiGridError::InvalidHeader);
         }
         if header.probe_count as usize
-            != header.grid_size[0] as usize * header.grid_size[1] as usize * header.grid_size[2] as usize
+            != header.grid_size[0] as usize
+                * header.grid_size[1] as usize
+                * header.grid_size[2] as usize
         {
             return Err(ProbeGiGridError::ProbeCountMismatch);
         }
@@ -155,17 +157,25 @@ impl ProbeGiGridHeader {
     fn validate(&self) -> Result<(), ProbeGiGridError> {
         let finite_bounded = |value: f32, limit: f32| value.is_finite() && value.abs() <= limit;
         if !(finite_bounded(self.spacing, 1_000_000.0) && self.spacing > 0.0)
-            || !self.origin.iter().all(|value| finite_bounded(*value, 1_000_000_000.0))
+            || !self
+                .origin
+                .iter()
+                .all(|value| finite_bounded(*value, 1_000_000_000.0))
         {
             return Err(ProbeGiGridError::InvalidHeader);
         }
         if self.grid_size.iter().any(|size| *size < 2 || *size > 64) {
             return Err(ProbeGiGridError::InvalidHeader);
         }
-        if !self.max_position().iter().all(|value| finite_bounded(*value, 1_000_000_000.0)) {
+        if !self
+            .max_position()
+            .iter()
+            .all(|value| finite_bounded(*value, 1_000_000_000.0))
+        {
             return Err(ProbeGiGridError::InvalidHeader);
         }
-        let count = self.grid_size[0] as usize * self.grid_size[1] as usize * self.grid_size[2] as usize;
+        let count =
+            self.grid_size[0] as usize * self.grid_size[1] as usize * self.grid_size[2] as usize;
         if count != self.probe_count as usize || count > PROBE_GI_MAX_GRID_PROBES {
             return Err(ProbeGiGridError::ProbeCountMismatch);
         }
@@ -271,8 +281,12 @@ pub fn decode_probe_grid_cascade(
     } else {
         Some(ProbeGiGridLayoutHeader::decode(&records[0])?)
     };
-    let level_count = layout.as_ref().map_or(1, |layout| layout.level_count as usize);
-    let mut cursor = layout.as_ref().map_or(0, |layout| layout.levels_start_record as usize);
+    let level_count = layout
+        .as_ref()
+        .map_or(1, |layout| layout.level_count as usize);
+    let mut cursor = layout
+        .as_ref()
+        .map_or(0, |layout| layout.levels_start_record as usize);
     let mut levels: Vec<ProbeGiGridHeader> = Vec::with_capacity(level_count);
     let mut header_records: Vec<usize> = Vec::with_capacity(level_count);
     // 首层 baseProbeRecords = 本层网格头(1) + 前面所有层记录(布局头计入"前面记录")。
@@ -311,7 +325,11 @@ pub fn decode_probe_grid_cascade(
     if cursor != records.len() {
         return Err(ProbeGiGridError::InvalidHeader);
     }
-    Ok(ProbeGiGridCascade { layout, levels, header_records })
+    Ok(ProbeGiGridCascade {
+        layout,
+        levels,
+        header_records,
+    })
 }
 
 /// 级联布局的 storage 字节打包：探针记录逐条走 ABI validate，头记录（v2 布局头
@@ -325,7 +343,9 @@ pub fn pack_cascade_records(
     // 头记录 = record 0（v2 布局头或旧单层网格头）+ 各层网格头,均由级联
     // decode 合同校验,不经 ABI 逐记录检查（布局头合法占用保留区）。
     let header_indices: Vec<usize> = if cascade.layout.is_some() {
-        std::iter::once(0usize).chain(cascade.header_records.iter().copied()).collect()
+        std::iter::once(0usize)
+            .chain(cascade.header_records.iter().copied())
+            .collect()
     } else {
         cascade.header_records.clone()
     };
@@ -359,7 +379,10 @@ fn sample_grid_level(
     world: [f32; 3],
     n: [f32; 3],
 ) -> ProbeGiLevelSample {
-    let zero = ProbeGiLevelSample { irradiance: [0.0; 3], weight: 0.0 };
+    let zero = ProbeGiLevelSample {
+        irradiance: [0.0; 3],
+        weight: 0.0,
+    };
     let spacing = header.spacing;
     let receiver = [
         world[0] + n[0] * spacing * PROBE_GI_NORMAL_BIAS_CELLS,
@@ -379,7 +402,11 @@ fn sample_grid_level(
             let low = (coordinate.floor() as u32).min(header.grid_size[axis] - 2);
             cell[axis] = low + bits[axis];
             fraction[axis] = (coordinate - low as f32).clamp(0.0, 1.0);
-            let weight = if bits[axis] == 1 { fraction[axis] } else { 1.0 - fraction[axis] };
+            let weight = if bits[axis] == 1 {
+                fraction[axis]
+            } else {
+                1.0 - fraction[axis]
+            };
             trilinear *= weight;
         }
         if !(trilinear > 0.0) {
@@ -424,9 +451,11 @@ fn sample_grid_level(
             probe_position[2] - world[2],
         ];
         let length_to_probe =
-            (to_probe[0] * to_probe[0] + to_probe[1] * to_probe[1] + to_probe[2] * to_probe[2]).sqrt();
+            (to_probe[0] * to_probe[0] + to_probe[1] * to_probe[1] + to_probe[2] * to_probe[2])
+                .sqrt();
         let normal_weight = if length_to_probe > 0.000_001 {
-            let cosine = (to_probe[0] * n[0] + to_probe[1] * n[1] + to_probe[2] * n[2]) / length_to_probe;
+            let cosine =
+                (to_probe[0] * n[0] + to_probe[1] * n[1] + to_probe[2] * n[2]) / length_to_probe;
             if cosine > 0.0 {
                 cosine.powf(PROBE_GI_NORMAL_WEIGHT_BIAS)
             } else {
@@ -482,8 +511,12 @@ pub fn sample_probe_grid_irradiance(
     if records.len() < PROBE_GI_GRID_HEADER_RECORDS + 1 {
         return zero;
     }
-    if !world.iter().all(|value| value.is_finite() && value.abs() <= 1_000_000_000.0)
-        || !normal.iter().all(|value| value.is_finite() && value.abs() <= 1_000_000.0)
+    if !world
+        .iter()
+        .all(|value| value.is_finite() && value.abs() <= 1_000_000_000.0)
+        || !normal
+            .iter()
+            .all(|value| value.is_finite() && value.abs() <= 1_000_000.0)
     {
         return zero;
     }
@@ -491,9 +524,14 @@ pub fn sample_probe_grid_irradiance(
         Ok(cascade) => cascade,
         Err(_) => return zero,
     };
-    let normal_length = (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
+    let normal_length =
+        (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
     let n = if normal_length > 0.000_001 {
-        [normal[0] / normal_length.max(0.000_001), normal[1] / normal_length.max(0.000_001), normal[2] / normal_length.max(0.000_001)]
+        [
+            normal[0] / normal_length.max(0.000_001),
+            normal[1] / normal_length.max(0.000_001),
+            normal[2] / normal_length.max(0.000_001),
+        ]
     } else {
         [0.0, 1.0, 0.0]
     };
@@ -524,8 +562,7 @@ pub fn sample_probe_grid_irradiance(
             world,
             n,
         );
-        if fine.weight >= PROBE_GI_MIN_SAMPLE_WEIGHT
-            && coarse.weight >= PROBE_GI_MIN_SAMPLE_WEIGHT
+        if fine.weight >= PROBE_GI_MIN_SAMPLE_WEIGHT && coarse.weight >= PROBE_GI_MIN_SAMPLE_WEIGHT
         {
             let blend = 1.0
                 - cascade_smoothstep(

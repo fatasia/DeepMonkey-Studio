@@ -24,14 +24,18 @@ fn single_select_package_stays_untouched_by_multi_select_state() {
         serde_json::from_value::<crate::runtime_package::DashboardFrozenFilter>(value)
             .expect("frozen filter must parse")
     };
-    assert!(!parse(serde_json::json!({
-        "nodeId": "n", "sourceNodeId": "s", "key": "k", "options": []
-    }))
-    .multi_select);
-    assert!(parse(serde_json::json!({
-        "nodeId": "n", "sourceNodeId": "s", "key": "k", "multiSelect": true, "options": []
-    }))
-    .multi_select);
+    assert!(
+        !parse(serde_json::json!({
+            "nodeId": "n", "sourceNodeId": "s", "key": "k", "options": []
+        }))
+        .multi_select
+    );
+    assert!(
+        parse(serde_json::json!({
+            "nodeId": "n", "sourceNodeId": "s", "key": "k", "multiSelect": true, "options": []
+        }))
+        .multi_select
+    );
 
     let loaded = super::filter_tests::fixture();
     assert!(!loaded.document.filter.as_ref().unwrap().multi_select);
@@ -66,7 +70,11 @@ fn multi_select_toggles_intersect_updates_and_restore_pristine_rows() {
     // 叠加选 1:交集 = option1 的单行子集,且保持基准行序。
     assert!(runtime.toggle_filter_option(1).unwrap());
     assert_eq!(
-        runtime.selected_options().iter().copied().collect::<Vec<_>>(),
+        runtime
+            .selected_options()
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
         vec![0, 1]
     );
     let intersected = &runtime.chart(&target).unwrap().source().datasets[0].rows;
@@ -89,7 +97,11 @@ fn invalid_toggle_index_fails_closed() {
     // 越界索引:拒绝且已选集合、版本与合成内容完全不变。
     assert!(runtime.toggle_filter_option(99).is_err());
     assert_eq!(
-        runtime.selected_options().iter().copied().collect::<Vec<_>>(),
+        runtime
+            .selected_options()
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
         vec![0]
     );
     assert_eq!(runtime.revision, revision);
@@ -111,7 +123,11 @@ fn pointer_click_on_multi_select_list_toggles_in_one_transaction() {
     let mut runtime = DashboardRuntime::new(multi_fixture()).unwrap();
     assert!(runtime.toggle_filter_pointer(0, Some(0)).unwrap());
     assert_eq!(
-        runtime.selected_options().iter().copied().collect::<Vec<_>>(),
+        runtime
+            .selected_options()
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
         vec![0]
     );
     assert!(runtime.toggle_filter_pointer(0, Some(0)).unwrap());

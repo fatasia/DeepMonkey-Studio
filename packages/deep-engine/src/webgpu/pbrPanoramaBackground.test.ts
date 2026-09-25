@@ -34,8 +34,9 @@ describe("HDR panorama background", () => {
   it.each([-1, NaN, Infinity, 65])("rejects invalid intensity %s", intensity => {
     expect(() => validatePanoramaBackground({ intensity })).toThrow("intensity");
   });
-  it("explicitly rejects non-tone-mapped composition until its display-layer path exists", () => {
-    expect(() => validatePanoramaBackground({ toneMapped: false })).toThrow("display-space");
+  it("accepts explicit display-space panorama composition", () => {
+    expect(() => validatePanoramaBackground({ toneMapped: false })).not.toThrow();
+    expect(() => validatePanoramaBackground({ toneMapped: "false" as unknown as boolean })).toThrow("boolean");
   });
   it("excludes panorama from direct presentation even with all post effects off", () => {
     const features = resolvePbrRendererFeatures({ ambientOcclusion: false, temporalAa: false, spatialAa: false,
@@ -45,6 +46,7 @@ describe("HDR panorama background", () => {
   });
   it("keeps background depth empty for geometry/transparent composition and avoids display encoding", () => {
     expect(PBR_PANORAMA_WGSL).toContain("Mrt(panoramaColor(v.ndc), 0.0, vec4f(0.0), vec2f(0.0))");
-    expect(PBR_PANORAMA_WGSL).not.toMatch(/toneMap|Srgb|exposure/);
+    expect(PBR_PANORAMA_WGSL).not.toMatch(/toneMap|exposure/);
+    expect(PBR_PANORAMA_WGSL).toContain("@fragment fn display");
   });
 });

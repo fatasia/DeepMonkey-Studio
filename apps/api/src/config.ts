@@ -32,6 +32,8 @@ export interface AppConfig {
   dataDir: string;
   /** 仅服务启动配置；请求不能提供可执行程序路径。 */
   nativeSceneVerifierExecutable?: string;
+  /** 固定的通用 Three WebView 启动器；场景内容以校验过的只读尾包附加，不触发源码编译。 */
+  threeSceneViewerLauncherExecutable?: string;
   threeSceneViewerBuilderScript?: string;
   /** 可离线部署的统一素材目录，不会打进 Web 静态包。 */
   assetLibraryDir: string;
@@ -102,6 +104,8 @@ export function loadConfig(): AppConfig {
     dataDir,
     ...(process.env.NATIVE_SCENE_VERIFIER_EXECUTABLE?.trim()
       ? { nativeSceneVerifierExecutable: path.resolve(process.env.NATIVE_SCENE_VERIFIER_EXECUTABLE.trim()) } : {}),
+    ...(process.env.THREE_SCENE_VIEWER_LAUNCHER_EXECUTABLE?.trim()
+      ? { threeSceneViewerLauncherExecutable: path.resolve(process.env.THREE_SCENE_VIEWER_LAUNCHER_EXECUTABLE.trim()) } : {}),
     ...(process.env.THREE_SCENE_VIEWER_BUILDER_SCRIPT?.trim()
       ? { threeSceneViewerBuilderScript: path.resolve(process.env.THREE_SCENE_VIEWER_BUILDER_SCRIPT.trim()) }
       : existsSync(bundledSceneViewerBuilder) ? { threeSceneViewerBuilderScript: bundledSceneViewerBuilder } : {}),

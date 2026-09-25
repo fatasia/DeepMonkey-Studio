@@ -93,7 +93,7 @@ fn defer(
     renderer: Option<Box<Renderer>>,
 ) {
     app.package_live_transport.as_mut().unwrap().retry = Some((
-        std::time::Instant::now() + PRESENT_RETRY_DELAY,
+        web_time::Instant::now() + PRESENT_RETRY_DELAY,
         generation,
         candidate,
         RetryKind::Full(renderer),

@@ -95,7 +95,9 @@ export class ProjectTransferImport {
       }
     });
     for (const dependency of document.dependencies) await this.step(`dependency:${dependency.originalId}`, `导入脚本依赖 ${dependency.specifier}`, signal, progress, async () => {
-      mapping.dependencies[dependency.originalId] = await this.client.uploadScriptDependency(mapping.projectId, dependency.specifier, this.file(dependency.fileId));
+      mapping.dependencies[dependency.originalId] = await this.client.uploadScriptDependency(
+        mapping.projectId, dependency.specifier, this.file(dependency.fileId), { prepared: true },
+      );
     });
     for (const connection of document.runtime.connections) await this.step(`connection:${connection.id}`, `准备数据连接 ${connection.name}`, signal, progress, async () => {
       await this.client.createDataConnection(mapping.projectId, { ...connection, id: mapping.identities[connection.id]!, projectId: mapping.projectId,

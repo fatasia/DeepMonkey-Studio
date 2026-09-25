@@ -8,13 +8,14 @@ use windows::Win32::{
         IMFAttributes, IMFByteStream, IMFMediaBuffer, IMFMediaType, IMFSourceReader,
         MF_BYTESTREAM_CONTENT_TYPE, MF_BYTESTREAM_ORIGIN_NAME, MF_MT_AUDIO_SAMPLES_PER_SECOND,
         MF_MT_DEFAULT_STRIDE, MF_MT_FRAME_SIZE, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE,
-        MF_MT_TRANSFER_FUNCTION, MF_MT_VIDEO_NOMINAL_RANGE, MF_MT_VIDEO_PRIMARIES, MF_MT_YUV_MATRIX,
-        MF_PD_DURATION, MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, MF_SOURCE_READER_ALL_STREAMS,
-        MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING, MF_SOURCE_READER_FIRST_AUDIO_STREAM,
-        MF_SOURCE_READER_FIRST_VIDEO_STREAM, MF_SOURCE_READER_MEDIASOURCE,
-        MF_SOURCE_READERF_ENDOFSTREAM, MF_VERSION, MFCreateAttributes,
-        MFCreateMFByteStreamOnStreamEx, MFCreateMediaType, MFCreateSourceReaderFromByteStream,
-        MFMediaType_Video, MFSTARTUP_FULL, MFShutdown, MFStartup, MFVideoFormat_RGB32,
+        MF_MT_TRANSFER_FUNCTION, MF_MT_VIDEO_NOMINAL_RANGE, MF_MT_VIDEO_PRIMARIES,
+        MF_MT_YUV_MATRIX, MF_PD_DURATION, MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS,
+        MF_SOURCE_READER_ALL_STREAMS, MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING,
+        MF_SOURCE_READER_FIRST_AUDIO_STREAM, MF_SOURCE_READER_FIRST_VIDEO_STREAM,
+        MF_SOURCE_READER_MEDIASOURCE, MF_SOURCE_READERF_ENDOFSTREAM, MF_VERSION,
+        MFCreateAttributes, MFCreateMFByteStreamOnStreamEx, MFCreateMediaType,
+        MFCreateSourceReaderFromByteStream, MFMediaType_Video, MFSTARTUP_FULL, MFShutdown,
+        MFStartup, MFVideoFormat_RGB32,
     },
     System::Com::{
         COINIT_MULTITHREADED, CoInitializeEx, CoUninitialize, IStream, STREAM_SEEK_SET,
@@ -256,13 +257,14 @@ unsafe fn open(bytes: &[u8]) -> Result<ReaderState, String> {
     }
     // 音频轨道探测:在禁用全部流之前读取首个音频流的媒体类型。
     // 只读元数据、不选择该流,探测失败(无音轨)是正常路径而非错误。
-    let audio_track = unsafe { reader.GetNativeMediaType(MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32, 0) }
-        .ok()
-        .map(|audio_type: IMFMediaType| DashboardVideoAudioTrackProbe {
-            // 采样率读取失败保持 0,不因元数据缺失拒绝整段媒体。
-            sample_rate: unsafe { audio_type.GetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND) }
-                .unwrap_or(0),
-        });
+    let audio_track =
+        unsafe { reader.GetNativeMediaType(MF_SOURCE_READER_FIRST_AUDIO_STREAM.0 as u32, 0) }
+            .ok()
+            .map(|audio_type: IMFMediaType| DashboardVideoAudioTrackProbe {
+                // 采样率读取失败保持 0,不因元数据缺失拒绝整段媒体。
+                sample_rate: unsafe { audio_type.GetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND) }
+                    .unwrap_or(0),
+            });
     unsafe {
         reader
             .SetStreamSelection(MF_SOURCE_READER_ALL_STREAMS.0 as u32, false)

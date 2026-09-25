@@ -9,6 +9,7 @@
     "bundle:scene-viewer": "node scripts/build-scene-viewer.mjs",
     "verify:scene-viewer": "node scripts/verify-scene-viewer-package.mjs",
     "test:scene-viewer": "node --test scripts/scene-viewer-package-core.test.mjs",
+    "smoke:local-publication": "node scripts/smoke-local-publication-runtime.mjs",
     "verify:bundle": "node scripts/verify-bundle.mjs",
     "typecheck": "cargo check --manifest-path src-tauri/Cargo.toml",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml"

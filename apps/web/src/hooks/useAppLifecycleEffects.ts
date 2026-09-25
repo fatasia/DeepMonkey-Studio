@@ -215,9 +215,10 @@ export function useAppLifecycleEffects({ state, saveActiveApplication, saveScene
   useEffect(() => {
     if (!engine || route.view === "published"
       || !canAutomaticallyChangeRenderer(rendererSwitchPhase, rendererSwitching)) return;
-    const stored = window.localStorage.getItem(RENDERER_BACKEND_STORAGE_KEY) === "webgpu" ? "webgpu" : "webgl";
+    const storedValue = window.localStorage.getItem(RENDERER_BACKEND_STORAGE_KEY);
+    const stored = storedValue === "webgpu" || storedValue === "wasm" ? storedValue : "webgl";
     if (stored !== rendererBackend) {
-      void changeRendererBackend(stored, { persistPreference: false, message: `已恢复用户渲染偏好：${stored === "webgpu" ? "Deep WebGPU Beta" : "WebGL"}` });
+      void changeRendererBackend(stored, { persistPreference: false, message: `已恢复用户渲染偏好：${stored === "wasm" ? "Deep WASM" : stored === "webgpu" ? "Deep WebGPU Beta" : "WebGL"}` });
     }
   }, [engine, rendererBackend, rendererSwitching, rendererSwitchPhase, route.view]);
 }

@@ -431,6 +431,7 @@ mod tests {
             alpha_cutoff: None,
             double_sided: None,
             premultiplied_alpha: None,
+            fog: None,
         };
         let packet = RenderPacket {
             schema: crate::contract::CONTRACT_SCHEMA.into(),

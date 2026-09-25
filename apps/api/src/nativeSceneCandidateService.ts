@@ -12,6 +12,7 @@ import { assessVerifiedNativeSceneCandidate } from "./nativeSceneCandidateCompil
 import { createNativeSceneCandidateRegistry } from "./nativeSceneCandidateRegistry.js";
 import { storePublicationResourceBytes } from "./publicationResourceSnapshot.js";
 import { scenePublicationJsonEqual } from "./scenePublicationStore.js";
+import { readDashboardWindowsExecutable } from "./dashboardWindowsExecutable.js";
 
 interface Dependencies {
   store: MetadataStore; objects: ObjectStore; dataDir: string;
@@ -73,10 +74,15 @@ export function createNativeSceneCandidateService(dependencies: Dependencies) {
         assertCurrent();
         const resource = await storePublicationResourceBytes({ ...dependencies, projectId: scene.projectId,
           expected: { bytes: content.length, sha256: artifactHash }, ...(signal ? { signal } : {}) }, content);
+        if (!dependencies.nativeExecutable) throw new Error("Native 验证程序未配置");
+        const executableBytes = await readDashboardWindowsExecutable(dependencies.nativeExecutable, signal, verified.executableSha256);
+        const executable = await storePublicationResourceBytes({ ...dependencies, projectId: scene.projectId,
+          expected: { bytes: executableBytes.length, sha256: verified.executableSha256 }, maxBytes: 512 * 1024 ** 2,
+          ...(signal ? { signal } : {}) }, executableBytes);
         signal?.throwIfAborted();
         assertCurrent();
         const registered = registry.register({ actorId, scene, ...(expectedPublication ? { expectedPublication } : {}),
-          capture: { ...capture, nativeCompiled: { runtimePackage: resource, compilationEvidence: compiled.evidence,
+          capture: { ...capture, nativeCompiled: { runtimePackage: resource, executable, compilationEvidence: compiled.evidence,
             compatibilityReport: report, compilerSha256: compiled.compilerSha256,
             executableSha256: verified.executableSha256, verifiedAt: verified.verifiedAt } } });
         return { status: "ready" as const, ...registered, report };

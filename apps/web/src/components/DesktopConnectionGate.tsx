@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { DEFAULT_PRODUCT_BRANDING } from "@bim-studio/contracts";
 import type { NamedServerProfile, ServerHandshakeResult } from "@bim-studio/server-sdk";
 import { CheckCircle2, Cloud, HardDrive, LoaderCircle, RefreshCw, Server, ShieldCheck, WifiOff } from "lucide-react";
-import { connectDesktopServer, currentDesktopRuntimeMode, hydrateDesktopServer, isDesktopRuntime, selectDesktopRuntimeMode } from "../adapters/runtimeHost.js";
+import { connectDesktopLocal, connectDesktopServer, currentDesktopRuntimeMode, hydrateDesktopServer, isDesktopRuntime, selectDesktopRuntimeMode } from "../adapters/runtimeHost.js";
 import "./DesktopConnectionGate.css";
 
 const DEFAULT_PRODUCT_NAME = DEFAULT_PRODUCT_BRANDING.systemName;
@@ -39,8 +39,10 @@ export function DesktopConnectionGate({ children }: { children: ReactNode }) {
   if (state.status === "ready") return children;
   if (state.status === "loading") return <DesktopLoading />;
   if (state.status === "choose") return <DesktopModeChooser state={state} onLocal={() => {
-    selectDesktopRuntimeMode("local");
-    setState({ status: "ready" });
+    setState({ status: "loading" });
+    void connectDesktopLocal().then(() => setState({ status: "ready" })).catch(error => {
+      setState({ status: "choose", handshake: unreachableHandshake(error) });
+    });
   }} onServer={() => setState({ status: "configure", ...(state.profile ? { profile: state.profile } : {}), ...(state.handshake ? { handshake: state.handshake } : {}) })} />;
   return <DesktopServerWizard state={state} onConnected={() => setState({ status: "ready" })} />;
 }
@@ -60,21 +62,21 @@ function DesktopModeChooser({ state, onLocal, onServer }: {
         <span className="desktop-gate-mark"><img src={DEFAULT_PRODUCT_BRANDING.iconUrl} alt="" /></span>
         <span><small>{DEFAULT_DESKTOP_LABEL}</small><strong>选择工作方式</strong></span>
       </header>
-      <p className="desktop-gate-intro">不填写服务地址也能完整开始设计。需要团队协作、工业 AI 或在线发布时，再连接企业服务器。</p>
+      <p className="desktop-gate-intro">本地工作台与服务器使用同一套编辑、数据源、AI 和发布能力；区别只在数据保存到本机还是团队服务器。</p>
       <div className="desktop-mode-options">
         <button className="desktop-mode-option desktop-mode-primary" onClick={onLocal}>
           <span className="desktop-mode-icon"><HardDrive size={22} /></span>
-          <span><strong>本地工作台</strong><small>项目、2D、3D 与脚本保存在本机；可导出单文件包，之后上传到服务器发布。</small></span>
+          <span><strong>本地工作台</strong><small>SQLite 与文件存储均在本机；支持数据源、AI、Native/Android 发布及项目包迁移。</small></span>
           <em>无需 IP · 推荐首次使用</em>
         </button>
         <button className="desktop-mode-option" onClick={onServer}>
           <span className="desktop-mode-icon"><Cloud size={22} /></span>
-          <span><strong>连接企业服务器</strong><small>登录在线项目，使用协作、数据服务、AI、转换与统一发布能力。</small></span>
+          <span><strong>连接企业服务器</strong><small>连接团队项目和共享数据；编辑、转换与发布入口和本地模式一致。</small></span>
           <em>{state.profile ? `上次：${state.profile.baseUrl}` : "填写服务 IP 或域名"}</em>
         </button>
       </div>
       {state.handshake && state.handshake.status !== "connected" && <p className="desktop-mode-note"><WifiOff size={15} />上次服务器当前不可用，本地工作台仍可正常使用。</p>}
-      <footer>工作方式可在系统菜单中切换；本地工作台不会伪造云端、AI 或现场数据结果。</footer>
+      <footer>项目可通过 .bimproject 在本地与服务器间双向迁移；数据源凭据需在目标环境重新配置。</footer>
     </section>
   </main>;
 }

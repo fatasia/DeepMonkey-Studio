@@ -44,7 +44,8 @@ export class RenderTargets {
 
   /** Opens the real frame allocation scope. Resources return to the pool only after commitFrame(queue.submit). */
   beginFrame(size: SurfaceSize,
-    resourceLifetimes?: readonly import("../renderGraph.js").RenderResourceLifetime[]): void {
+    resourceLifetimes?: readonly import("../renderGraph.js").RenderResourceLifetime[],
+    requireGeometryBuffers = false): void {
     if (this.disposed) throw new Error("PBR render targets are disposed.");
     if (this.handles.length || this.pool.frameOpen) throw new Error("PBR render target frame is already open.");
     const resized = this.dimensions !== undefined
@@ -55,7 +56,11 @@ export class RenderTargets {
     const attachmentUsage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
     try {
       const planned = resourceLifetimes === undefined ? undefined : new Set(resourceLifetimes.map(resource => resource.id));
-      const needs = (resourceId: string): boolean => planned === undefined || planned.has(resourceId);
+      // The opaque MRT pipeline has a fixed four-target signature. A graph may
+      // prune later consumers, but WebGPU still requires every declared color
+      // attachment when that pipeline is encoded.
+      const needs = (resourceId: string): boolean => requireGeometryBuffers
+        || planned === undefined || planned.has(resourceId);
       const acquire = (resourceId: string, format: GPUTextureFormat, usage = attachmentUsage) => this.pool.acquire({
         resourceId, format, width: size.width, height: size.height, sampleCount: PBR_MAIN_SAMPLE_COUNT, usage,
       });

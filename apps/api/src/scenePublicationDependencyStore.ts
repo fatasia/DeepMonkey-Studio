@@ -80,6 +80,12 @@ function assertNativeCompiled(projectId: string, native: SceneNativeCompiledPubl
     || typeof native.verifiedAt !== "string" || !Number.isFinite(Date.parse(native.verifiedAt))
     || !validHash(runtime.sha256) || !Number.isSafeInteger(runtime.bytes) || runtime.bytes < 1 || runtime.bytes > 256 * 1024 ** 2
     || runtime.key !== `projects/${projectId}/publication-resources/sha256/${runtime.sha256}`) throw new Error("Native 编译产物描述无效");
+  const executable = native.executable;
+  if (executable !== undefined && (!validHash(executable.sha256) || executable.sha256 !== native.executableSha256
+    || !Number.isSafeInteger(executable.bytes) || executable.bytes < 64 || executable.bytes > 512 * 1024 ** 2
+    || executable.key !== `projects/${projectId}/publication-resources/sha256/${executable.sha256}`)) {
+    throw new Error("Native 编译程序快照描述无效");
+  }
   if (report.schemaVersion !== 1 || report.target !== "deep-native" || report.status !== "ready" || report.platform !== "windows-x64"
     || (sceneId !== undefined && report.sceneId !== sceneId) || !report.sceneId?.trim()
     || !validHash(evidence.sourceSemanticHash) || !validHash(evidence.compileGraphHash) || !validHash(evidence.targetArtifactHash)

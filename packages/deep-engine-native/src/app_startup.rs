@@ -2,12 +2,86 @@ use winit::{dpi::PhysicalSize, window::WindowAttributes};
 
 use crate::renderer::Renderer;
 
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+    static WASM_CANVAS: std::cell::RefCell<Option<web_sys::HtmlCanvasElement>> = const { std::cell::RefCell::new(None) };
+    static WASM_WINDOW_CANVAS: std::cell::RefCell<Option<web_sys::HtmlCanvasElement>> = const { std::cell::RefCell::new(None) };
+    static WASM_RENDERER_READY_GENERATION: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    static WASM_RENDERER_FAILURE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn set_wasm_canvas(canvas: Option<web_sys::HtmlCanvasElement>) {
+    WASM_CANVAS.with(|slot| *slot.borrow_mut() = canvas);
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn remember_wasm_window_canvas(window: &winit::window::Window) {
+    use winit::platform::web::WindowExtWebSys;
+    WASM_WINDOW_CANVAS.with(|slot| *slot.borrow_mut() = window.canvas());
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn wasm_window_canvas() -> Option<web_sys::HtmlCanvasElement> {
+    WASM_WINDOW_CANVAS.with(|slot| slot.borrow().clone())
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn mark_wasm_renderer_ready() {
+    WASM_RENDERER_FAILURE.with(|slot| *slot.borrow_mut() = None);
+    WASM_RENDERER_READY_GENERATION.with(|value| value.set(value.get().wrapping_add(1)));
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn begin_wasm_renderer_attempt() {
+    WASM_RENDERER_FAILURE.with(|slot| *slot.borrow_mut() = None);
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn mark_wasm_renderer_failed(message: String) {
+    WASM_RENDERER_FAILURE.with(|slot| *slot.borrow_mut() = Some(message));
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn wasm_renderer_ready_generation() -> u32 {
+    WASM_RENDERER_READY_GENERATION.with(std::cell::Cell::get)
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn wasm_renderer_failure() -> Option<String> {
+    WASM_RENDERER_FAILURE.with(|slot| slot.borrow().clone())
+}
+
 pub fn window_attributes(smoke_frame: bool) -> WindowAttributes {
     let attributes = winit::window::Window::default_attributes()
         .with_title(crate::window_chrome::title("正在打开"))
         .with_theme(Some(winit::window::Theme::Dark))
         .with_inner_size(winit::dpi::LogicalSize::new(960, 640))
         .with_min_inner_size(winit::dpi::LogicalSize::new(480, 320));
+    #[cfg(target_arch = "wasm32")]
+    let attributes = {
+        use winit::platform::web::WindowAttributesExtWebSys;
+        let canvas = WASM_CANVAS.with(|slot| slot.borrow().clone());
+        let attributes = if let Some(canvas) = canvas.as_ref() {
+            // An injected Studio canvas already owns its CSS layout. The fixed
+            // desktop default (960x640) used to overwrite that backing surface,
+            // so WASM rendered a different aspect/area from WebGL and WebGPU.
+            // Give winit the live logical viewport; it applies device scale to
+            // the backing texture and continues to handle later resize events.
+            let width = canvas.client_width();
+            let height = canvas.client_height();
+            if width > 0 && height > 0 {
+                attributes.with_inner_size(winit::dpi::LogicalSize::new(width, height))
+            } else {
+                attributes
+            }
+        } else {
+            attributes
+        };
+        attributes
+            .with_canvas(canvas.clone())
+            .with_append(canvas.is_none())
+    };
     #[cfg(target_os = "windows")]
     let attributes = {
         use winit::platform::windows::{IconExtWindows, WindowAttributesExtWindows};

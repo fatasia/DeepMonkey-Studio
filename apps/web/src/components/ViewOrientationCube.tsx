@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type Ref } from "react";
 import { Focus, Maximize2, Sparkles } from "lucide-react";
 import { translate as tr, type AppLocale } from "../i18n";
 import type { StandardView } from "../viewer/ViewerEngine";
@@ -15,6 +15,8 @@ export interface ViewOrientationCubeProps {
   onFitAll: () => void;
   onFitSelected: () => void;
   onOptimizeView: () => void;
+  /** Optional imperative target for high-frequency camera-only rotation. */
+  innerRef?: Ref<HTMLDivElement>;
 }
 
 const FACES: Array<{ view: StandardView; label: string; en: string; transform: string; normal: readonly [number, number, number] }> = [
@@ -92,7 +94,7 @@ export function ViewOrientationCube(props: ViewOrientationCubeProps) {
         onPointerDown={onPointerDown}
         onDoubleClick={() => setDrag({ x: 0, y: 0 })}
       >
-        <div className="cube-inner" style={{ transform: `rotateX(${rotX}deg) rotateY(${rotY}deg)` }}>
+        <div ref={props.innerRef} className="cube-inner" style={{ transform: `rotateX(${rotX}deg) rotateY(${rotY}deg)` }}>
           {FACES.map((face) => (
             <button
               key={face.view}

@@ -1,6 +1,6 @@
 use deep_engine_native::chart::ChartRuntime;
 use deep_engine_native::chart::simulation::{ChartSimFixture, ChartSimulationSource};
-use std::time::Instant;
+use web_time::Instant;
 
 /// 时钟与订阅归属于内容；换包直接销毁，设备恢复保留已提交的位置。
 pub struct ChartSimHost {

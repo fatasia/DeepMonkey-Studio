@@ -1,6 +1,7 @@
 use super::NativeApp;
 use crate::player_content::chart_sim::ChartSimHost;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use web_time::Instant;
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 
 /// 积压追赶节奏:每次唤醒至多提交一帧,最快 10ms 一帧,不忙等也不跳样本。
@@ -88,13 +89,7 @@ pub(super) fn tick(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
     }
     pump(app, &mut host, Instant::now());
     if let Some(wake) = host.wake_at {
-        {
-            #[cfg(not(target_arch = "wasm32"))]
-            let flow = ControlFlow::WaitUntil(wake);
-            #[cfg(target_arch = "wasm32")]
-            let flow = crate::wasm_compat::control_flow_until(wake);
-            event_loop.set_control_flow(flow);
-        }
+        event_loop.set_control_flow(ControlFlow::WaitUntil(wake));
         app.chart_sim_scheduled = true;
     }
     app.content.active_mut().chart_sim = Some(host);

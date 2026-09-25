@@ -192,8 +192,19 @@ fn executor_thread_count() -> usize {
         GetThreadDescription, OpenThread, THREAD_QUERY_LIMITED_INFORMATION,
     };
     const EXECUTOR_NAME: &[u16] = &[
-        b'd' as u16, b'e' as u16, b'e' as u16, b'p' as u16, b'-' as u16, b'e' as u16, b'x' as u16,
-        b'e' as u16, b'c' as u16, b'u' as u16, b't' as u16, b'o' as u16, b'r' as u16,
+        b'd' as u16,
+        b'e' as u16,
+        b'e' as u16,
+        b'p' as u16,
+        b'-' as u16,
+        b'e' as u16,
+        b'x' as u16,
+        b'e' as u16,
+        b'c' as u16,
+        b'u' as u16,
+        b't' as u16,
+        b'o' as u16,
+        b'r' as u16,
     ];
 
     unsafe {

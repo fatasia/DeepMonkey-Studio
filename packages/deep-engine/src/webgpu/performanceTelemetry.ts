@@ -5,6 +5,9 @@ export const ENGINE_TIMING_STAGES = Object.freeze([
   "frame-encode",
   "queue-submit",
   "gpu-frame",
+  "gpu-shadow-opaque",
+  "gpu-intermediate",
+  "gpu-output",
   "present-acquire",
 ] as const);
 

@@ -22,6 +22,10 @@ const buildTools = process.env.DEEP_ANDROID_BUILD_TOOLS
   ?? path.join(sdk, "build-tools", existsSync(path.join(sdk, "build-tools", "35.0.0")) ? "35.0.0" : "34.0.0");
 const platform = path.join(sdk, "platforms", "android-36", "android.jar");
 const shellDir = path.join(repoRoot, "packages", "deep-scene-viewer-android");
+const java = process.env.JAVA_HOME
+  ? path.join(process.env.JAVA_HOME, "bin", process.platform === "win32" ? "java.exe" : "java")
+  : "java";
+const apksigner = ["-Xmx1024M", "-Xss1m", "-jar", path.join(buildTools, "lib", "apksigner.jar")];
 const abis = (flag("--abi") ?? "arm64-v8a,x86_64").split(",");
 
 const jniLibAbi = { "arm64-v8a": "aarch64-linux-android", "x86_64": "x86_64-linux-android" };
@@ -71,14 +75,14 @@ try {
       "-storepass", "deepmonkey-template",
       "-dname", "CN=DeepMonkey Template, O=DeepMonkey, C=CN"], { stdio: "inherit" });
   }
-  // apksigner 是 .bat:Node ≥ 20 需 shell:true;口令为模板测试口令,发布由服务端重签覆盖。
-  execFileSync(path.join(buildTools, "apksigner.bat"), ["sign",
+  // 直接运行官方 JAR，避免 `.bat + shell:true` 的参数拼接风险。口令仅用于模板，发布会重签。
+  execFileSync(java, [...apksigner, "sign",
     "--min-sdk-version", "24",
     "--ks", keystore, "--ks-key-alias", "deepmonkey-template",
     "--ks-pass", "pass:deepmonkey-template", "--key-pass", "pass:deepmonkey-template",
-    "--out", out, aligned], { stdio: "inherit", shell: true, windowsHide: true });
-  execFileSync(path.join(buildTools, "apksigner.bat"), ["verify", "--min-sdk-version", "24", out],
-    { stdio: "inherit", shell: true, windowsHide: true });
+    "--out", out, aligned], { stdio: "inherit", windowsHide: true });
+  execFileSync(java, [...apksigner, "verify", "--min-sdk-version", "24", out],
+    { stdio: "inherit", windowsHide: true });
 
   const bytes = readFileSync(out);
   console.log(`template apk: ${out}`);

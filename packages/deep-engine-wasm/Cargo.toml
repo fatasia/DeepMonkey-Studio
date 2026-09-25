@@ -7,6 +7,13 @@ description = "DeepMonkey engine core compiled to WebAssembly (WebGPU backend)"
 license-file = "../../LICENSE"
 publish = false
 
+[features]
+default = []
+# The 5,000-cube comparison surface is only for /dev/wasm-bench.html. The
+# Studio product bundle uses the full Native-mirror viewer below and must not
+# retain this second renderer, its shaders, or its exported wasm-bindgen ABI.
+bench-viewer = []
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 
@@ -32,7 +39,7 @@ winit = { version = "=0.30.13", default-features = false, features = ["rwh_06"] 
 
 [profile.wasm-release]
 inherits = "release"
-opt-level = "s"
+opt-level = "z"
 lto = "fat"
 codegen-units = 1
 panic = "abort"

@@ -8,6 +8,8 @@ interface AiChangeConfirmationProps {
   evidenceLabels?: string[];
   busy?: boolean;
   error?: string;
+  changeDescription?: string;
+  scopeDescription?: string;
   onCancel: () => void;
   onConfirm: () => void;
 }
@@ -23,6 +25,8 @@ export function AiChangeConfirmation({
   evidenceLabels = [],
   busy = false,
   error,
+  changeDescription,
+  scopeDescription,
   onCancel,
   onConfirm,
 }: AiChangeConfirmationProps) {
@@ -38,8 +42,8 @@ export function AiChangeConfirmation({
         </span>
       </header>
       <dl>
-        <div><dt>{t("变更内容", "Change")}</dt><dd>{t(`生成 ${widgetCount} 个看板组件`, `Generate ${widgetCount} dashboard widgets`)}</dd></div>
-        <div><dt>{t("影响范围", "Scope")}</dt><dd>{t("当前场景的二维看板草稿", "2D dashboard draft in the current scene")}</dd></div>
+        <div><dt>{t("变更内容", "Change")}</dt><dd>{changeDescription ?? t(`生成 ${widgetCount} 个看板组件`, `Generate ${widgetCount} dashboard widgets`)}</dd></div>
+        <div><dt>{t("影响范围", "Scope")}</dt><dd>{scopeDescription ?? t("当前场景的二维看板草稿", "2D dashboard draft in the current scene")}</dd></div>
         <div><dt>{t("风险等级", "Risk")}</dt><dd>{t("低 · 不会自动保存或发布", "Low · does not save or publish automatically")}</dd></div>
         <div><dt>{t("不会修改", "Unchanged")}</dt><dd>{t("三维对象、脚本与数据源", "3D objects, scripts, and data sources")}</dd></div>
       </dl>

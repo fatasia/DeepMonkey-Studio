@@ -43,11 +43,11 @@ export interface DashboardAndroidApkResult {
 }
 
 /**
- * 场景安卓发布首片:把自包含 DMDA 归档注入模板 APK 的固定资产位,
- * 经 zipalign 对齐后用 apksigner 重签。签名口令只在内存中出现,不落盘不进日志。
+ * 场景安卓发布首片:把候选的权威 Deep Runtime Package 注入模板 APK 的固定资产位,
+ * 经 zipalign 对齐后用 apksigner 重签。签名口令只暂存在独占临时目录，finally 清理且不进日志。
  */
 export async function createDashboardAndroidApk(
-  archiveBytes: Uint8Array,
+  runtimePackageBytes: Uint8Array,
   dependencies: DashboardAndroidApkDependencies,
   options: DashboardAndroidApkOptions = {},
 ): Promise<DashboardAndroidApkResult> {
@@ -64,10 +64,10 @@ export async function createDashboardAndroidApk(
   if (dependencies.templateApkSha256 !== undefined && sha256(templateBytes) !== dependencies.templateApkSha256) {
     throw new Error("Android template APK SHA-256 mismatch");
   }
-  const injected = await injectSceneAsset(templateBytes, archiveBytes, options.signal);
+  const injected = await injectSceneAsset(templateBytes, runtimePackageBytes, options.signal);
   return {
     apk: await alignAndSign(injected, dependencies.buildToolsPath, signing, options.signal),
-    scenePackageSha256: sha256(archiveBytes),
+    scenePackageSha256: sha256(runtimePackageBytes),
     templateApkSha256: sha256(templateBytes),
   };
 }
@@ -80,7 +80,7 @@ export async function createDashboardAndroidApk(
  */
 export async function injectSceneAsset(
   templateBytes: Uint8Array,
-  archiveBytes: Uint8Array,
+  runtimePackageBytes: Uint8Array,
   signal?: AbortSignal,
 ): Promise<Uint8Array> {
   const template = await JSZip.loadAsync(templateBytes);
@@ -89,7 +89,7 @@ export async function injectSceneAsset(
       template.remove(name);
     }
   }
-  template.file(ANDROID_SCENE_ASSET_PATH, archiveBytes, {
+  template.file(ANDROID_SCENE_ASSET_PATH, runtimePackageBytes, {
     date: new Date("2000-01-01T00:00:00Z"),
     createFolders: false,
   });
@@ -132,24 +132,26 @@ async function alignAndSign(
     await writeFile(keyPassPath, signing.keyPassword ?? signing.storePassword, "utf8");
     signal?.throwIfAborted();
     await execFileAsync(path.join(buildToolsPath, "zipalign.exe"), ["-f", "-p", "4", unalignedPath, alignedPath], { signal });
+    const apksigner = apksignerJava(buildToolsPath);
     await execFileAsync(
-      path.join(buildToolsPath, "apksigner.bat"),
+      apksigner.executable,
       [
+        ...apksigner.prefix,
         "sign",
         "--min-sdk-version", "24",
-        "--ks", shellQuote(keystorePath),
-        "--ks-key-alias", shellQuote(signing.keyAlias),
-        "--ks-pass", `file:${shellQuote(storePassPath)}`,
-        "--key-pass", `file:${shellQuote(keyPassPath)}`,
-        "--out", shellQuote(signedPath),
-        shellQuote(alignedPath),
+        "--ks", keystorePath,
+        "--ks-key-alias", signing.keyAlias,
+        "--ks-pass", `file:${storePassPath}`,
+        "--key-pass", `file:${keyPassPath}`,
+        "--out", signedPath,
+        alignedPath,
       ],
-      { signal, shell: true, windowsHide: true },
+      { signal, windowsHide: true },
     );
     await execFileAsync(
-      path.join(buildToolsPath, "apksigner.bat"),
-      ["verify", "--min-sdk-version", "24", shellQuote(signedPath)],
-      { signal, shell: true, windowsHide: true },
+      apksigner.executable,
+      [...apksigner.prefix, "verify", "--min-sdk-version", "24", signedPath],
+      { signal, windowsHide: true },
     );
     return new Uint8Array(await readFile(signedPath));
   } finally {
@@ -157,7 +159,10 @@ async function alignAndSign(
   }
 }
 
-/** shell:true 下 Node 不做参数引用;含空格的路径(用户名等)必须自带引号。 */
-function shellQuote(value: string): string {
-  return /\s/.test(value) ? `"${value}"` : value;
+/** 直接运行官方 apksigner.jar，避免 `.bat + shell:true` 的参数拼接与注入风险。 */
+function apksignerJava(buildToolsPath: string): { executable: string; prefix: readonly string[] } {
+  const executable = process.env.JAVA_HOME
+    ? path.join(process.env.JAVA_HOME, "bin", process.platform === "win32" ? "java.exe" : "java")
+    : "java";
+  return { executable, prefix: ["-Xmx1024M", "-Xss1m", "-jar", path.join(buildToolsPath, "lib", "apksigner.jar")] };
 }

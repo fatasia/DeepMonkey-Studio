@@ -20,6 +20,13 @@ describe("single scene presentation renderer", () => {
     expect(f.calls).toEqual(["matrices", "present"]);
     expect(f.frame.drawAuthor).not.toHaveBeenCalled(); expect(f.listener).toHaveBeenCalledOnce();
   });
+  it("does not traverse the hidden Three scene for WASM camera presentation", () => {
+    const f = fixture();
+    presentViewerFrame({ ...f.frame, presentationBackend: "wasm" });
+    expect(f.calls).toEqual(["present"]);
+    expect(f.frame.updateAuthorMatrices).not.toHaveBeenCalled();
+    expect(f.listener).toHaveBeenCalledOnce();
+  });
   it("publishes the latest animated world transform and camera after skipping the draw", () => {
     const f = fixture(), scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera();
     const parent = new THREE.Group(), model = new THREE.Object3D(); parent.add(model); scene.add(parent);

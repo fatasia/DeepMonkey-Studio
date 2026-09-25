@@ -34,13 +34,12 @@
   app-region: drag;
 }
 
-.desktop-window-mark {
-  width: 7px;
-  height: 7px;
+.desktop-window-logo {
+  width: 20px;
+  height: 20px;
   flex: 0 0 auto;
-  border-radius: 2px;
-  background: var(--accent);
-  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 44%, transparent);
+  object-fit: contain;
+  pointer-events: none;
 }
 
 .desktop-window-drag-region strong {

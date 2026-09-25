@@ -19,10 +19,11 @@ import type { ProbeGridBakeUiState } from "./SceneProbeGridBakePanel";
 import { ScenePostProcessingEditor } from "./ScenePostProcessingEditor";
 import { ProjectEnvironmentResourcePicker } from "./ProjectAppearanceResources";
 import { useFloatingPanelDrag } from "../hooks/useFloatingPanelDrag";
+import type { RendererBackend } from "../viewer/ViewerEngine";
 
 interface SceneEnvironmentPanelProps {
   locale: AppLocale;
-  rendererBackend: "webgl" | "webgpu";
+  rendererBackend: RendererBackend;
   coordinates: SceneCoordinateSystemState;
   weather: WeatherMode;
   environment: SceneEnvironmentState;

@@ -46,7 +46,7 @@ pub struct PlayerContent {
     pub chart: Option<deep_engine_native::chart::ChartRuntime>,
     pub chart_text_scale: f64,
     pub dashboard: Option<deep_engine_native::dashboard_runtime::DashboardRuntime>,
-    pub dashboard_started: Option<std::time::Instant>,
+    pub dashboard_started: Option<web_time::Instant>,
     pub epoch: ChartEpoch,
     pub chart_sim: Option<chart_sim::ChartSimHost>,
     pub environment: PreparedIblEnvironment,
@@ -153,7 +153,7 @@ impl PlayerContent {
             instances: Vec::new(),
             textures: Vec::new(),
         };
-        let mut rasterizer = deep_engine_native::platform_text::TextRasterizer::new();
+        let mut rasterizer = deep_engine_native::platform_text::runtime_text_rasterizer()?;
         let list = deep_engine_native::chart::presentation::present_chart(
             &chart,
             &mut rasterizer,

@@ -152,10 +152,55 @@ export function stripRustTrivia(code) {
     .replace(/b?'(?:\\.|[^'\\])'/g, (value) => " ".repeat(value.length));
 }
 
+/**
+ * Mask items which rustc excludes from the native target. The purity gate is a
+ * Windows-native gate, so browser APIs behind an exact wasm32 cfg are not part
+ * of the scanned runtime. This is deliberately narrower than an allowlist:
+ * cfg(any(...)), cfg_attr, Windows/Linux items and unguarded APIs still fail.
+ */
+export function stripWasm32OnlyItems(code) {
+  const structural = stripRustTrivia(code);
+  const ranges = [];
+  const attribute = /#\s*\[\s*cfg\s*\(\s*target_arch\s*=\s*["']wasm32["']\s*\)\s*\]/g;
+  for (const match of code.matchAll(attribute)) {
+    const start = match.index ?? 0;
+    let cursor = start + match[0].length;
+    while (/\s/.test(structural[cursor] ?? "")) cursor++;
+    const brace = structural.indexOf("{", cursor);
+    const semicolon = structural.indexOf(";", cursor);
+    if (semicolon >= 0 && (brace < 0 || semicolon < brace)) {
+      ranges.push([start, semicolon + 1]);
+      continue;
+    }
+    if (brace < 0) {
+      ranges.push([start, structural.length]);
+      continue;
+    }
+    let depth = 0;
+    let end = structural.length;
+    for (let index = brace; index < structural.length; index++) {
+      if (structural[index] === "{") depth++;
+      else if (structural[index] === "}" && --depth === 0) {
+        end = index + 1;
+        break;
+      }
+    }
+    ranges.push([start, end]);
+  }
+  if (!ranges.length) return code;
+  const characters = code.split("");
+  for (const [start, end] of ranges) {
+    for (let index = start; index < end; index++) {
+      if (characters[index] !== "\n" && characters[index] !== "\r") characters[index] = " ";
+    }
+  }
+  return characters.join("");
+}
+
 export function scanNativeRuntime(sources) {
   const issues = [];
   for (const { file, code } of sources) {
-    const stripped = stripRustTrivia(code);
+    const stripped = stripRustTrivia(stripWasm32OnlyItems(code));
     for (const match of stripped.matchAll(/\b[A-Za-z_][A-Za-z0-9_]*\b/g)) {
       const value = match[0].toLowerCase();
       if (!nativeDeniedIdentifiers.has(value) && !value.startsWith("webgl")) continue;
@@ -199,6 +244,10 @@ export function scanCargoManifest(code, file = "Cargo.toml") {
     const header = line.match(/^\[([^\]]+)\]$/);
     if (header) { section = header[1].toLowerCase(); continue; }
     if (!/(?:^|\.)dependencies$|(?:^|\.)build-dependencies$/.test(section) || /(?:^|\.)dev-dependencies$/.test(section)) continue;
+    // The Windows native dependency tree is checked separately below. An
+    // exact wasm32 target table cannot enter that runtime and belongs to the
+    // browser-hosted WASM crate path, not the native executable.
+    if (/^target\.["']cfg\(target_arch\s*=\s*["']wasm32["']\)["']\.(?:build-)?dependencies$/.test(section)) continue;
     const assignment = line.match(/^(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))\s*=\s*(.+)$/);
     if (!assignment) continue;
     const declared = assignment[1] ?? assignment[2] ?? assignment[3];

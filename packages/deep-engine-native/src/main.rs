@@ -89,8 +89,8 @@ mod player_state;
 // F3 GI storage 的 bin 侧依赖:probe_gi_abi 与 lib 共用同一源文件,
 // 缺此声明时 bin target 编译失败(probe_gi_storage 的 crate:: 引用无法解析)。
 mod probe_gi_abi;
-mod probe_gi_storage;
 mod probe_gi_grid;
+mod probe_gi_storage;
 #[cfg(test)]
 mod prototype_gpu_tests;
 mod publication_record;

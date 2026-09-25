@@ -55,7 +55,7 @@ pub(crate) fn requested() -> Result<Option<NativeQualityProfile>, String> {
         return Ok(None);
     };
     let value = value.to_str().ok_or_else(|| {
-            "DEEP_ENGINE_QUALITY_PROFILE must be valid UTF-8 (performance|balanced|quality|high|ultra)"
+        "DEEP_ENGINE_QUALITY_PROFILE must be valid UTF-8 (performance|balanced|quality|high|ultra)"
             .to_string()
     })?;
     NativeQualityProfile::parse(value)

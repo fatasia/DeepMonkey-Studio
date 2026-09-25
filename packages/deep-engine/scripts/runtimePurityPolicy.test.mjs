@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { RUNTIME_PURITY_ALLOWLIST, scanCargoManifest, scanNativeDependencyTree, scanNativeRuntime, scanPackageManifest, scanTypeScriptRuntime, stripRustTrivia } from "./runtimePurityPolicy.mjs";
+import { RUNTIME_PURITY_ALLOWLIST, scanCargoManifest, scanNativeDependencyTree, scanNativeRuntime, scanPackageManifest, scanTypeScriptRuntime, stripRustTrivia, stripWasm32OnlyItems } from "./runtimePurityPolicy.mjs";
 
 test("rejects static, aliased, dynamic, CommonJS, re-export, WebGL and DOM baggage", () => {
   const issues = scanTypeScriptRuntime([{ file: "src/core.ts", code: `
@@ -86,6 +86,20 @@ test("native scanner ignores comments and literals but rejects executable identi
   assert.deepEqual(scanNativeRuntime([{ file: "src/main.rs", code: source }]).map(({ detail }) => detail), ["tauri", "web_sys", "orillusion"]);
 });
 
+test("native scanner excludes only exact wasm32 cfg items", () => {
+  const source = `
+    #[cfg(target_arch = "wasm32")]
+    thread_local! { static CANVAS: web_sys::HtmlCanvasElement = browser_canvas(); }
+    #[cfg(target_arch = "wasm32")]
+    pub fn canvas() -> web_sys::HtmlCanvasElement { web_sys::window().unwrap() }
+    #[cfg(target_os = "linux")]
+    pub fn shell() { web_sys::window(); }
+    pub fn native() { wasm_bindgen::throw_str("blocked"); }
+  `;
+  assert.equal(stripWasm32OnlyItems(source).split("\n").length, source.split("\n").length);
+  assert.deepEqual(scanNativeRuntime([{ file: "src/main.rs", code: source }]).map(({ detail }) => detail), ["web_sys", "wasm_bindgen"]);
+});
+
 test("resolved Windows dependency tree blocks browser and GL fallback bindings", () => {
   const issues = scanNativeDependencyTree(["wgpu v30.0.1", "web-sys v0.3", "wasm_bindgen-futures v0.4", "webkit2gtk-sys v2", "glutin v0.32", "winit v0.30"]);
   assert.deepEqual(issues.map(({ detail }) => detail), ["web-sys", "wasm_bindgen-futures", "webkit2gtk-sys", "glutin"]);
@@ -102,6 +116,17 @@ test("Cargo manifest blocks target-specific and aliased browser shells while all
     wasm-bindgen = "1"
   `);
   assert.deepEqual(issues.map(({ detail }) => detail), ["tauri", "webkit2gtk"]);
+});
+
+test("Cargo manifest excludes exact wasm32 target dependencies from the native gate", () => {
+  const issues = scanCargoManifest(`
+    [target.'cfg(target_arch = "wasm32")'.dependencies]
+    wasm-bindgen-futures = "0.4"
+    web-sys = "0.3"
+    [target.'cfg(target_os = "linux")'.dependencies]
+    webkit2gtk = "2"
+  `);
+  assert.deepEqual(issues.map(({ detail }) => detail), ["webkit2gtk"]);
 });
 
 test("Cargo manifest rejects wgpu defaults and WebGL or browser backend features", () => {

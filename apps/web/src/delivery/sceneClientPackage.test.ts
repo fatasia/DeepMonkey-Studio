@@ -100,6 +100,17 @@ describe("client package cancellation", () => {
     await exportSceneClientPackage({ ...input, target: "three-webview" });
     expect(mocks.file.mock.calls.some(([path]) => path.startsWith("native/"))).toBe(false);
   });
+  it("freezes the delivery brand and indexes its icon in the client archive", async () => {
+    const iconDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAEAQH/2Oa9WQAAAABJRU5ErkJggg==";
+    await exportSceneClientPackage({ ...options(), target: "three-webview",
+      branding: { applicationName: "Factory Viewer", iconDataUrl } });
+    const files = new Map(mocks.file.mock.calls.map(([name, content]) => [name, content]));
+    const manifest = JSON.parse(files.get("manifest.json") as string);
+    expect(manifest.branding).toEqual({ applicationName: "Factory Viewer", iconPath: "branding/icon.png" });
+    expect(files.get("branding/icon.png")).toBeInstanceOf(ArrayBuffer);
+    expect(manifest.files).toContainEqual(expect.objectContaining({ path: "branding/icon.png", bytes: expect.any(Number),
+      sha256: expect.stringMatching(/^[a-f0-9]{64}$/) }));
+  });
   it("uses one deterministic ZIP timestamp without transient folder entries", async () => {
     const input = options();
     input.scene.createdAt = "2026-09-20T10:50:01.999Z";

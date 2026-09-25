@@ -92,7 +92,12 @@ pub(super) fn validate(
                 &READY,
             )
         } else if packaged {
-            ("blocked", "unavailable", "native-video-audio-unavailable", &AUDIO_BLOCKED)
+            (
+                "blocked",
+                "unavailable",
+                "native-video-audio-unavailable",
+                &AUDIO_BLOCKED,
+            )
         } else {
             ("blocked", "unavailable", unavailable_reason, &REQUIRED)
         };
@@ -159,8 +164,7 @@ pub(crate) fn is_mp4_isobmff(bytes: &[u8]) -> bool {
 
 fn has_audio_track(bytes: &[u8]) -> bool {
     const CONTAINERS: [&[u8; 4]; 10] = [
-        b"moov", b"trak", b"mdia", b"minf", b"stbl", b"edts", b"dinf", b"mvex", b"moof",
-        b"traf",
+        b"moov", b"trak", b"mdia", b"minf", b"stbl", b"edts", b"dinf", b"mvex", b"moof", b"traf",
     ];
     fn walk(bytes: &[u8], start: usize, end: usize, depth: u8, found: &mut bool) -> bool {
         if depth > 12 {
@@ -174,26 +178,35 @@ fn has_audio_track(bytes: &[u8]) -> bool {
                 if offset + 16 > end {
                     return false;
                 }
-                let high = u64::from(u32::from_be_bytes(bytes[offset + 8..offset + 12].try_into().unwrap()));
-                let low = u64::from(u32::from_be_bytes(bytes[offset + 12..offset + 16].try_into().unwrap()));
+                let high = u64::from(u32::from_be_bytes(
+                    bytes[offset + 8..offset + 12].try_into().unwrap(),
+                ));
+                let low = u64::from(u32::from_be_bytes(
+                    bytes[offset + 12..offset + 16].try_into().unwrap(),
+                ));
                 (16usize, (high << 32) | low)
             } else if size32 == 0 {
                 (8usize, (end - offset) as u64)
             } else {
                 (8usize, u64::from(size32))
             };
-            let Ok(size) = usize::try_from(size) else { return false; };
+            let Ok(size) = usize::try_from(size) else {
+                return false;
+            };
             if size < header || offset.checked_add(size).is_none_or(|value| value > end) {
                 return false;
             }
             let content_start = offset + header;
             let content_end = offset + size;
-            if kind == b"hdlr" && content_start + 12 <= content_end
+            if kind == b"hdlr"
+                && content_start + 12 <= content_end
                 && &bytes[content_start + 8..content_start + 12] == b"soun"
             {
                 *found = true;
             }
-            if CONTAINERS.iter().any(|container| kind == container.as_slice())
+            if CONTAINERS
+                .iter()
+                .any(|container| kind == container.as_slice())
                 && !walk(bytes, content_start, content_end, depth + 1, found)
             {
                 return false;

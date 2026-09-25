@@ -2,14 +2,15 @@
 /**
  * build-wasm-bundle.mjs — deep-engine-wasm 一键产物管线
  *
- *   cargo build(--profile <p>) → wasm-bindgen --target web → wasm-opt(可档位) → 拷贝到 apps/web/public/dev/pkg/ → 体积表
+ *   cargo build(--profile <p>) → wasm-bindgen --target web → wasm-opt(可档位) → 拷贝到 apps/web/public/engine-wasm/ → 体积表
  *
  * 用法:
  *   node scripts/build-wasm-bundle.mjs [--profile wasm-release|release|debug] [--opt Oz|Os|O3|none]
- *        [--target wasm32-unknown-unknown] [--out-dir <dir>] [--no-install] [--no-opt] [--keep-going] [--json <file>]
+ *        [--target wasm32-unknown-unknown] [--features <cargo-features>] [--out-dir <dir>]
+ *        [--no-install] [--no-opt] [--keep-going] [--json <file>]
  *
  * 默认:--profile wasm-release --opt Oz --target wasm32-unknown-unknown
- * 安装目录:apps/web/public/dev/pkg/(可用 --out-dir 覆盖;--no-install 只构建输出体积表不拷贝)
+ * 安装目录:apps/web/public/engine-wasm/(可用 --out-dir 覆盖;--no-install 只构建输出体积表不拷贝)
  *
  * 依赖:cargo、wasm-bindgen(~/.cargo/bin)、binaryen wasm-opt(定位规则同 scripts/wasm-optimize.mjs,
  *       约定 %USERPROFILE%/.cache/binaryen/binaryen-version_<n>/bin/wasm-opt.exe;缺失时 --opt 自动降级为 none 并告警)。
@@ -31,8 +32,9 @@ const repo = resolve(dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Z
 const crateDir = join(repo, "packages", "deep-engine-wasm");
 const profile = argOf("--profile") ?? "wasm-release";
 const target = argOf("--target") ?? "wasm32-unknown-unknown";
+const features = argOf("--features");
 let opt = argOf("--opt") ?? "Oz";
-const outDir = argOf("--out-dir") ? resolve(argOf("--out-dir")) : join(repo, "apps", "web", "public", "dev", "pkg");
+const outDir = argOf("--out-dir") ? resolve(argOf("--out-dir")) : join(repo, "apps", "web", "public", "engine-wasm");
 const noInstall = has("--no-install");
 const keepGoing = has("--keep-going");
 const jsonOut = argOf("--json");
@@ -79,8 +81,12 @@ if (opt.toLowerCase() !== "none" && !wasmOpt) {
 
 // 2) cargo build(尊重 CARGO_TARGET_DIR,避免与其它会话的共享 target 互相冲洗增量缓存)
 const targetDir = process.env.CARGO_TARGET_DIR ?? join(crateDir, "target");
-const cargoRes = run("cargo", ["build", "--profile", profile, "--target", target], { cwd: crateDir });
-const wasmRaw = join(targetDir, target, profile, "deep_engine_wasm.wasm");
+const cargoArgs = ["build", "--profile", profile, "--target", target];
+if (features) cargoArgs.push("--features", features);
+const cargoRes = run("cargo", cargoArgs, { cwd: crateDir });
+// Cargo's built-in `dev` profile writes to `target/<triple>/debug`.
+const cargoProfileDir = profile === "dev" ? "debug" : profile;
+const wasmRaw = join(targetDir, target, cargoProfileDir, "deep_engine_wasm.wasm");
 if (!cargoRes || !existsSync(wasmRaw)) {
   console.error(`[build-wasm-bundle] cargo 产物缺失: ${wasmRaw}`);
   process.exit(1);
@@ -128,7 +134,9 @@ if (wasmE && jsE) {
   console.log(`参考:Unity WebGL 同级产物 7-10 MiB+(gzip 前);本引擎 wasm+js raw=${((wasmE.raw + jsE.raw) / 1048576).toFixed(2)} MiB`);
 }
 if (jsonOut) {
-  writeFileSync(resolve(jsonOut), JSON.stringify({ profile, target, opt, outDir: finalDir, entries, at: new Date().toISOString() }, null, 2));
-  console.log(`\n[json] ${resolve(jsonOut)}`);
+  const jsonPath = resolve(jsonOut);
+  mkdirSync(dirname(jsonPath), { recursive: true });
+  writeFileSync(jsonPath, JSON.stringify({ profile, target, features: features ?? null, opt, outDir: finalDir, entries, at: new Date().toISOString() }, null, 2));
+  console.log(`\n[json] ${jsonPath}`);
 }
 if (!noInstall) console.log(`[build-wasm-bundle] 已安装到 ${outDir}(Vite public 静态目录,import 路径不变)`);

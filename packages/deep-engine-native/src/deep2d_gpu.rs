@@ -139,7 +139,7 @@ impl Deep2dGpuPainter {
         previous: Option<&Self>,
         context: Option<Deep2dFrameContext>,
     ) -> Result<Self, String> {
-        let timing = std::time::Instant::now();
+        let timing = web_time::Instant::now();
         #[cfg(windows)]
         let dashboard_video_slots = dashboard_video_slots(content)?;
         let path_cache = previous.map(|p| p.path_cache.clone()).unwrap_or_else(|| {

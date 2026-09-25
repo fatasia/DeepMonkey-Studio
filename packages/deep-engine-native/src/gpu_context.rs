@@ -38,9 +38,13 @@ pub(crate) async fn create_gpu_context(
     let surface = instance
         .create_surface(window.clone())
         .map_err(|error| format!("surface creation failed: {error}"))?;
+    #[cfg(target_arch = "wasm32")]
+    let power_preference = wgpu::PowerPreference::None;
+    #[cfg(not(target_arch = "wasm32"))]
+    let power_preference = wgpu::PowerPreference::HighPerformance;
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
+            power_preference,
             compatible_surface: Some(&surface),
             force_fallback_adapter: false,
             ..Default::default()

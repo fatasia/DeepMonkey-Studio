@@ -10,8 +10,16 @@ export interface AssistantRequestResult {
   model?: string;
   execution?: import("@bim-studio/contracts").AiAssistantResponse["execution"];
   dashboard?: SceneDashboardState;
+  dashboardPageDraft?: unknown;
   prepared?: BimAssistantPreparedContext;
   reliability: AssistantReliabilitySummary;
+}
+
+/** Dashboard providers stream a JSON envelope; expose only its human-readable text through the shared message flow. */
+export function dashboardAssistantStreamText(content: string): string {
+  const match = /"text"\s*:\s*"((?:\\.|[^"\\])*)/.exec(content);
+  if (!match) return "";
+  try { return JSON.parse(`"${match[1]}"`) as string; } catch { return ""; }
 }
 
 /** 一次请求从本地 BIM 准备、问数规划到流式读取共用取消信号；每个 await 后检查所有权。 */
@@ -57,10 +65,19 @@ export async function runAssistantRequest(input: {
   const prepared = mode === "bim" && input.prepareBim ? await input.prepareBim(prompt) : undefined;
   signal.throwIfAborted();
   if (prepared) input.onPrepared?.(prepared);
+  let dashboardRaw = "";
+  let dashboardVisible = "";
   const result = await client.streamAssistant(mode, prompt, {
     workspace: input.context, platform: input.platformContext, contextTrust: "client-snapshot",
     ...(prepared ? { bimEvidence: prepared } : {}), recentConversation: input.recentConversation,
-  }, (delta) => { if (!signal.aborted) input.onDelta(delta); }, { ...input.sessionOptions, ...(projectId ? { projectId } : {}), signal,
+  }, (delta) => {
+    if (signal.aborted) return;
+    if (mode !== "dashboard") { input.onDelta(delta); return; }
+    dashboardRaw += delta;
+    const next = dashboardAssistantStreamText(dashboardRaw);
+    if (next.startsWith(dashboardVisible) && next.length > dashboardVisible.length) input.onDelta(next.slice(dashboardVisible.length));
+    dashboardVisible = next;
+  }, { ...input.sessionOptions, ...(projectId ? { projectId } : {}), signal,
     onExecution: execution => { if (!signal.aborted) input.onExecution?.(execution); } });
   signal.throwIfAborted();
   const sources: AssistantContextSource[] = prepared
@@ -71,6 +88,7 @@ export async function runAssistantRequest(input: {
     text: result.text, model: result.model,
     ...(result.execution ? { execution: result.execution } : {}),
     ...(result.dashboard ? { dashboard: result.dashboard } : {}), ...(prepared ? { prepared } : {}),
+    ...(result.dashboardPageDraft ? { dashboardPageDraft: result.dashboardPageDraft } : {}),
     reliability: assistantReliabilityFromResponse(result, mode, sources, prepared),
   };
 }

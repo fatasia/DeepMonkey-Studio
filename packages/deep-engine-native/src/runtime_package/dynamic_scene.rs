@@ -368,7 +368,11 @@ pub fn parse_and_validate_dynamic_scene_runtime(
             if track.target_id.is_empty()
                 || !matches!(
                     track.property.as_str(),
-                    "translation" | "rotation" | "scale" | "camera-position" | "camera-target"
+                    "translation"
+                        | "rotation"
+                        | "scale"
+                        | "camera-position"
+                        | "camera-target"
                         | "object-visible"
                 )
                 || track.keyframes.is_empty()
@@ -551,7 +555,9 @@ mod tests {
                     {"timeMs":0,"value":[0,0,0,0,0,0,1]},{"timeMs":1000,"value":[1,0,0,0,0,0,1]}]}]}});
         let runtime = parse_and_validate_dynamic_scene_runtime(&value).unwrap();
         let parsed_animation = runtime.animation.as_ref().unwrap();
-        let range = parsed_animation.playback_range_ms.expect("playback range must parse");
+        let range = parsed_animation
+            .playback_range_ms
+            .expect("playback range must parse");
         assert_eq!((range.in_ms, range.out_ms), (200, 800));
         // 采样:区间外请求钳到边界;区间内照常;旧包(缺字段)仍按整条时间线。
         // 关键帧 x: 0ms→0、1000ms→1 线性。
@@ -559,9 +565,15 @@ mod tests {
         let x_in = samples_in[0].value[0];
         assert!((x_in - 0.5).abs() < 1e-9, "区间内按原时间采样, got {x_in}");
         let x_low = runtime.sample_animation(50)[0].value[0];
-        assert!((x_low - 0.2).abs() < 1e-9, "低于入点钳到 inMs=200, got {x_low}");
+        assert!(
+            (x_low - 0.2).abs() < 1e-9,
+            "低于入点钳到 inMs=200, got {x_low}"
+        );
         let x_high = runtime.sample_animation(950)[0].value[0];
-        assert!((x_high - 0.8).abs() < 1e-9, "高于出点钳到 outMs=800, got {x_high}");
+        assert!(
+            (x_high - 0.8).abs() < 1e-9,
+            "高于出点钳到 outMs=800, got {x_high}"
+        );
         // 旧包无区间字段:100ms 处照常采样。
         let legacy = parse_and_validate_dynamic_scene_runtime(&serde_json::json!(
             {"schema":"deep-engine.dynamic-runtime","schemaVersion":1,"id":"scene","revision":1,"animation":animation()}

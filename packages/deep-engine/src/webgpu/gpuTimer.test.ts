@@ -2,13 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GpuTimer } from "./gpuTimer.js";
 import type { DeviceSession } from "./deviceSession.js";
 
-function fixture(supported = true, onTiming?: (timing: { frame: number; milliseconds: number }) => void) {
+function fixture(supported = true, onTiming?: (timing: { frame: number; milliseconds: number }) => void,
+  timestamps: readonly bigint[] = [1_000_000_000_000_000n, 1_000_000_002_500_000n]) {
   const resources: unknown[] = [];
   const readbacks: Array<{ mapAsync: ReturnType<typeof vi.fn>; getMappedRange: () => ArrayBuffer; mapState: string; unmap: ReturnType<typeof vi.fn> }> = [];
   const device = { features: new Set(supported ? ["timestamp-query"] : []), createQuerySet: vi.fn(() => ({ destroy: vi.fn() })),
     createBuffer: vi.fn(() => {
       const buffer = { mapState: "unmapped", mapAsync: vi.fn(async () => { buffer.mapState = "mapped"; }),
-        getMappedRange: () => new BigUint64Array([1_000_000_000_000_000n, 1_000_000_002_500_000n]).buffer,
+        getMappedRange: () => new BigUint64Array(timestamps).buffer,
         unmap: vi.fn(() => { buffer.mapState = "unmapped"; }), destroy: vi.fn() };
       readbacks.push(buffer); return buffer;
     }) };
@@ -41,6 +42,23 @@ describe("asynchronous GPU timing", () => {
     expect(observed).toHaveBeenCalledWith({ frame: 7, milliseconds: 2.5 });
     expect(f.readbacks[1]!.unmap).toHaveBeenCalledOnce();
     expect(await f.timer.collect(8, 9)).toEqual([]);
+  });
+
+  it("records coarse PBR GPU spans only when all four timestamps are ordered", async () => {
+    const observed = vi.fn();
+    const base = 1_000_000_000_000_000n;
+    const f = fixture(true, observed, [base, base + 8_000_000n, base + 2_000_000n, base + 6_000_000n]);
+    f.timer.enabled = true;
+    const frame = f.timer.begin(9, true)!;
+    const encoder = { resolveQuerySet: vi.fn(), copyBufferToBuffer: vi.fn() };
+    frame.resolve(encoder as unknown as GPUCommandEncoder);
+    expect(f.device.createQuerySet).toHaveBeenCalledWith(expect.objectContaining({ count: 4 }));
+    expect(encoder.resolveQuerySet).toHaveBeenCalledWith(frame.queries, 0, 4, expect.anything(), 0);
+    expect(encoder.copyBufferToBuffer).toHaveBeenCalledWith(expect.anything(), 0, expect.anything(), 0, 32);
+    frame.read();
+    expect(await f.timer.collect(9, 9)).toEqual([{ frame: 9, milliseconds: 8,
+      stages: { shadowOpaqueMs: 2, intermediateMs: 4, outputMs: 2 } }]);
+    expect(observed).toHaveBeenCalledOnce();
   });
 
   it("skips measurement rather than allocating beyond three busy readbacks", async () => {
