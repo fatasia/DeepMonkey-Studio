@@ -778,3 +778,22 @@ export interface PublishedSceneRecord {
   publishedAt: string;
   version?: number;
 }
+
+/** 引擎中立拾取命中:Deep 拾取 API 与既有 Three 拾取共享的返回合同。 */
+export interface ScenePickingHit {
+  /** 命中的对象 id;Deep 侧为编译器保留的节点标识,Three 侧为对象路径 id。 */
+  readonly objectId: string;
+  /** 命中点世界坐标。 */
+  readonly point: readonly [number, number, number];
+  /** 视点到命中点的距离(世界单位,升序排序键)。 */
+  readonly distance: number;
+}
+
+/** 引擎中立拾取查询入参;归一化射线方向由调用方保证。 */
+export interface ScenePickingQuery {
+  readonly origin: readonly [number, number, number];
+  readonly direction: readonly [number, number, number];
+  readonly maxDistance?: number;
+  /** 返回前 N 个命中(默认 1,即最近命中)。 */
+  readonly limit?: number;
+}
