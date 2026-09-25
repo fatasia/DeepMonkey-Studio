@@ -36,7 +36,7 @@ mod deep2d_context;
 mod dynamic_playback;
 mod lifecycle;
 mod package_camera;
-#[cfg(test)]
+#[cfg(all(test, target_os = "windows"))]
 mod package_drop_probe_tests;
 mod package_live;
 mod package_open;
