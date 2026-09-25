@@ -341,9 +341,17 @@ pnpm studio status
 
 `deploy` manages Web and API through systemd. Remove the deployment with `pnpm studio undeploy`. See [Native development and deployment](docs/native-deployment.md) for production, backup, restore, HTTPS, and rollback procedures.
 
-### 8. Docker
+### 8. Docker one-command deployment (supported)
 
-The repository does not currently ship an official `Dockerfile` or Compose deployment. Do not use an unverified ad-hoc image in production. Run the application through the bare-metal `pnpm studio` commands above. PostgreSQL and MinIO may run separately in containers as long as their addresses are reachable from the settings in `.env`. Until an official container release is available, use the native Windows/Linux deployment and release gates. As of 2026-09-25, the repository root provides a `docker-compose.yml` that delivers the PostgreSQL + MinIO infrastructure with one command (pinned images, persistent volumes, health checks; no application image), see the [Deployment guide](docs/deployment.md).
+One-command Docker deployment is now supported: the root `docker-compose.yml` delivers the PostgreSQL + MinIO storage infrastructure (pinned image versions, explicitly named persistent volumes, `pg_isready`/`mc ready` health checks, credentials injected only through `.env`). The application itself still runs through the bare-metal `pnpm studio` entry above:
+
+```bash
+cp .env.example .env   # fill in POSTGRES_PASSWORD, MINIO_ROOT_*, and other credentials
+docker compose up -d   # start PostgreSQL + MinIO
+pnpm run init          # initialize system metadata and start Web/API
+```
+
+Health checks, backup/restore, upgrade cautions and the image provenance note (MinIO stopped publishing official community images; this repository pins a digest-fixed compatible snapshot) are covered in the [Deployment guide](docs/deployment.md).
 
 ### 9. Common commands
 
@@ -369,18 +377,6 @@ The repository does not currently ship an official `Dockerfile` or Compose deplo
 - When changing shared contracts, scene formats, data migrations, or publication logic, update consumers, tests, documentation, and `CHANGELOG.md` together. Types or mock data alone do not establish a finished product capability.
 - Check provenance, hashes, and redistribution terms before adding models, fonts, images, dependencies, or asset packs. Never commit customer models, production data, logs, or credentials.
 - Run focused tests for affected packages before `pnpm gate:repository`. Also run the complete `pnpm verify:release` when shared contracts or the publication path change.
-
-## Quick deploy
-
-For single-node self-hosted storage, the root-level `docker-compose.yml` starts the PostgreSQL + MinIO infrastructure with one command (pinned images, persistent volumes, health checks); the application itself still runs bare-metal:
-
-```bash
-cp .env.example .env   # fill in POSTGRES_PASSWORD, MINIO_ROOT_*, and other credentials
-docker compose up -d   # infrastructure only
-pnpm run init          # seed system metadata and start Web/API
-```
-
-See the [Deployment guide](docs/deployment.md) for full steps, health checks, backup/restore, and upgrade notes.
 
 ## Documentation
 

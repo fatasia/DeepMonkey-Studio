@@ -40,6 +40,14 @@
 
 ![Deep Monkey Studio 平台总体架构](apps/web/public/docs-assets/generated/platform-architecture-business-v2.png)
 
+## 系统介绍 · 从 Vibe Coding 到 Vibe World
+
+[![观看 DeepMonkey Studio 系统介绍视频](docs/assets/system-intro/poster.png)](docs/assets/system-intro/deepmonkey-studio-intro.mp4?raw=true)
+
+[▶ 观看介绍视频](docs/assets/system-intro/deepmonkey-studio-intro.mp4?raw=true) · 3 分 22 秒 · 中文女声 · 1080p · [字幕](docs/assets/system-intro/zh-CN.srt)
+
+从模型接入、轻量化与数据连接，到 AI 工作流、自研引擎和多端交付。
+
 ## 功能亮点
 
 - **为 AI 构建的工业工作空间**：场景、构件、数据、语义、脚本和运行状态都有稳定合同，AI 能理解当前项目，也能通过受控工具执行修改、运行分析、验证结果并交付，而不是只做聊天问答。
@@ -337,9 +345,17 @@ pnpm studio status
 
 `deploy` 使用 systemd 托管 Web/API；停止部署使用 `pnpm studio undeploy`。完整生产、备份、恢复、HTTPS 和回滚步骤见[从零开发与原生部署](docs/native-deployment.md)。
 
-### 8. Docker
+### 8. Docker 一键部署（已支持）
 
-仓库当前没有正式 `Dockerfile` 或 Compose 交付物，不要把未验证的临时镜像用于生产。应用本体使用上面的 `pnpm studio` 裸机入口；PostgreSQL 和 MinIO 可以单独运行在容器中，只要 `.env` 中的连接地址可达。正式容器方案完成前，以原生 Windows/Linux 部署和发布门禁为准。2026-09-25 起，仓库根提供 `docker-compose.yml` 一键交付 PostgreSQL + MinIO 基础设施（固定镜像、持久卷、健康检查，不含应用镜像），见[部署指南](docs/deployment.md)。
+现在已支持一键 Docker 部署：仓库根的 `docker-compose.yml` 交付 PostgreSQL + MinIO 存储基础设施（固定镜像版本、显式命名持久卷、`pg_isready`/`mc ready` 健康检查、凭据仅经 `.env` 注入）。应用本体仍按上面的 `pnpm studio` 裸机入口运行：
+
+```bash
+cp .env.example .env   # 填好 POSTGRES_PASSWORD 与 MINIO_ROOT_* 等凭据
+docker compose up -d   # 启动 PostgreSQL + MinIO
+pnpm run init          # 初始化系统元数据并启动 Web/API
+```
+
+健康检查、备份恢复、升级注意与镜像来源说明（MinIO 官方社区镜像已停止发布，本仓库使用 digest 固定的兼容快照）见[部署指南](docs/deployment.md)。
 
 ### 9. 常用命令
 
@@ -365,18 +381,6 @@ pnpm studio status
 - 修改公共 contracts、场景格式、数据迁移或发布逻辑时同步更新消费者、测试、文档和 `CHANGELOG.md`；不要用只有类型或假数据的实现声明产品能力完成。
 - 引入模型、字体、图片、依赖或素材包前检查来源、哈希和再分发许可；客户模型、生产数据、日志和凭据不得提交。
 - 提交前先跑受影响包的聚焦测试，再跑 `pnpm gate:repository`；触及公共合同或发布链时继续运行完整 `pnpm verify:release`。
-
-## 快速部署
-
-单机自托管存储时，仓库根的 `docker-compose.yml` 一键启动 PostgreSQL + MinIO 基础设施（固定镜像、持久卷、健康检查），应用本体仍按裸机方式运行：
-
-```bash
-cp .env.example .env   # 填好 POSTGRES_PASSWORD 与 MINIO_ROOT_* 等凭据
-docker compose up -d   # 仅启动基础设施
-pnpm run init          # 初始化系统元数据并启动 Web/API
-```
-
-完整步骤、健康检查、备份恢复与升级注意见[部署指南](docs/deployment.md)。
 
 ## 文档
 
