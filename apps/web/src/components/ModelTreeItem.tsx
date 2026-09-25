@@ -1,7 +1,7 @@
 import { Box, Check, ChevronDown, ChevronRight, Eye, EyeOff, Focus, Gauge, Layers3, Lock, Pause, Play, ScanLine, Settings2, Trash2, Unlock } from "lucide-react";
 import type { ModelRecord, SceneFloorState } from "@bim-studio/contracts";
 import { dispatchEngineEditCommand } from "../commands/engineCommandApplier";
-import { layerLockCommand, layerVisibilityCommand } from "../commands/engineEditCommand";
+import { layerLockCommand, layerVisibilityCommand, selectionDeleteCommand } from "../commands/engineEditCommand";
 import { translate as tr, type AppLocale } from "../i18n";
 import { statusText } from "../appPresentation";
 import { LayerTree } from "./LayerTree";
@@ -218,7 +218,7 @@ export function ModelTreeItem({
           onDelete={(node) => {
             if (!window.confirm(`从当前场景删除图层“${node.name}”吗？`)) return;
             engine?.selectLayer(model.id, node.id);
-            engine?.deleteSelectedLayer();
+            dispatchEngineEditCommand(engine, selectionDeleteCommand(locale, { modelId: model.id }));
             onRemoveObjectInteractions(model.id, node.id);
             onSetRevision();
           }}

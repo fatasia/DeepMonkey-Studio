@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { dispatchEngineEditCommand } from "../commands/engineCommandApplier";
+import { selectionDeleteCommand } from "../commands/engineEditCommand";
 import { STUDIO_INSPECTOR_STORAGE_KEY, STUDIO_LEFT_PANEL_STORAGE_KEY } from "../appDefaults";
 import { ModelImportInput } from "../components/ModelImportInput";
 import { UploadedResourceThumbnails } from "../components/UploadedResourceThumbnails";
@@ -376,7 +378,7 @@ export function AppStudioShellView({ controller }: { controller: AppStudioContro
       if (selectedLayerId && selectedLayerId !== "root" && selected) {
         if (selectionLocked) { setMessage(tr(locale, "请先解锁当前图层", "Unlock the selected layer first")); return; }
         event.preventDefault();
-        engine?.deleteSelectedLayer();
+        dispatchEngineEditCommand(engine, selectionDeleteCommand(locale, { modelId: selected.id }));
         removeObjectInteractions(selected.id, selectedLayerId);
         setRevision((value) => value + 1);
         setMessage(tr(locale, `图层“${selectionName || selectedLayerId}”已从场景删除`, `Layer “${selectionName || selectedLayerId}” was removed from the scene`));

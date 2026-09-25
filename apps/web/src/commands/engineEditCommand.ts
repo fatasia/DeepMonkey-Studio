@@ -120,7 +120,19 @@ export interface SetRobotPoseCommand extends EngineEditCommandBase {
   readonly values: Record<string, number>;
 }
 
-export type EngineEditCommand = SetTransformCommand | SetVisibilityCommand | SetMaterialStateCommand | SetSceneEnvironmentCommand | SetGlobalLightingCommand | SetModelEffectsCommand | SetPhysicsStateCommand | SetRobotPoseCommand;
+/**
+ * 选中对象删除命令(批 6 结构命令切片;selection 作用域)。
+ * 等价直调 deleteSelectedLayer():引擎内部含锁定守卫/fragment 分支/选中复位/连带;
+ * boolean 结果在三个 UI 调用点均未消费,applier 按现状吞掉(失败也入日志——
+ * 与直调"静默失败后调用点继续编排"逐点一致;undo 命令化后续批次再收紧)。
+ * 调用点自身的编排(selectLayer 前置/removeObjectInteractions/revision)留在原地。
+ */
+export interface DeleteSelectionCommand extends EngineEditCommandBase {
+  readonly kind: "deleteSelection";
+  readonly target: EngineEditCommandTarget;
+}
+
+export type EngineEditCommand = SetTransformCommand | SetVisibilityCommand | SetMaterialStateCommand | SetSceneEnvironmentCommand | SetGlobalLightingCommand | SetModelEffectsCommand | SetPhysicsStateCommand | SetRobotPoseCommand | DeleteSelectionCommand;
 
 /** 已应用命令的日志条目:revision 为该命令应用完成后的文档序位(1 起)。 */
 export interface AppliedEngineEditCommand {
@@ -248,6 +260,11 @@ export function modelMaterialCommand(
     target: { modelId },
     patch,
   };
+}
+
+/** 选中对象删除命令工厂:等价直调 deleteSelectedLayer()(编排留在调用点)。 */
+export function selectionDeleteCommand(locale: AppLocale, target: EngineEditCommandTarget): EngineEditCommandInput {
+  return { kind: "deleteSelection", label: tr(locale, "删除选中对象", "Delete selected object"), target };
 }
 
 /** 模型效果命令工厂:等价直调 setModelEffects(modelId, state)。 */

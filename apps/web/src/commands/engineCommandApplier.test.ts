@@ -7,7 +7,7 @@ import {
   ViewerEngineCommandApplier,
   dispatchEngineEditCommand,
 } from "./engineCommandApplier";
-import { layerLockCommand, layerVisibilityCommand, modelMaterialCommand, modelTransformCommand, selectionMaterialCommand, selectionRenameCommand, selectionTransformCommand, selectionVisibilityCommand } from "./engineEditCommand";
+import { layerLockCommand, layerVisibilityCommand, modelMaterialCommand, modelTransformCommand, selectionMaterialCommand, selectionRenameCommand, selectionTransformCommand, selectionVisibilityCommand, selectionDeleteCommand } from "./engineEditCommand";
 
 /**
  * 引擎桩:实现批 0/批 1/批 2 applier 触达的 setter 与选择查询,逐次记录调用(method + 参数快照)。
@@ -58,6 +58,11 @@ function stubEngine(options: { selectedId?: string; selectionLocked?: boolean; s
     },
     renameSelection(name: string): void {
       calls.push(`renameSelection:${name}`);
+    },
+    deleteSelectedLayer(): boolean {
+      if (options.selectionLocked) return false;
+      calls.push("deleteSelectedLayer");
+      return true;
     },
     setSelectionMaterial(patch: unknown): void {
       if (options.selectionLocked) return;
@@ -650,5 +655,13 @@ describe("ViewerEngineCommandApplier 批 3(setMaterialState 收编)", () => {
     expect(() => dispatchEngineEditCommand(engine, selectionMaterialCommand("zh-CN", { modelId: "m-1" }, {})))
       .toThrow(/patch 为空/);
     expect(calls).toEqual([]);
+  });
+});
+
+describe("ViewerEngineCommandApplier 批 6(deleteSelection 结构命令切片)", () => {
+  it("selection 作用域删除与直调 deleteSelectedLayer 等价,结果吞掉入日志", () => {
+    const { engine, calls } = stubEngine({ selectedId: "m-1" });
+    dispatchEngineEditCommand(engine, selectionDeleteCommand("zh-CN", { modelId: "m-1" }));
+    expect(calls).toEqual(["deleteSelectedLayer"]);
   });
 });

@@ -1,6 +1,6 @@
 import type { ViewerEngine } from "../viewer/ViewerEngine";
 import { sceneCommandBus, type EngineEditCommandApplier } from "./commandBus";
-import type { EngineEditCommand, EngineEditCommandInput, SetGlobalLightingCommand, SetMaterialStateCommand, SetModelEffectsCommand, SetPhysicsStateCommand, SetRobotPoseCommand, SetSceneEnvironmentCommand, SetTransformCommand, SetVisibilityCommand } from "./engineEditCommand";
+import type { DeleteSelectionCommand, EngineEditCommand, EngineEditCommandInput, SetGlobalLightingCommand, SetMaterialStateCommand, SetModelEffectsCommand, SetPhysicsStateCommand, SetRobotPoseCommand, SetSceneEnvironmentCommand, SetTransformCommand, SetVisibilityCommand } from "./engineEditCommand";
 import { EngineTransformAuthoring, transformGraphNodeId } from "./engineTransformGraph";
 
 /**
@@ -61,7 +61,15 @@ export class ViewerEngineCommandApplier implements EngineEditCommandApplier {
       case "setRobotPose":
         this.engine.setRobotPose(command.target.modelId, command.values);
         return;
+      case "deleteSelection":
+        this.applyDeleteSelection(command);
+        return;
     }
+  }
+
+  /** 批 6(deleteSelection):boolean 结果按现状吞掉——三个调用点均未消费,失败入日志与直调一致。 */
+  private applyDeleteSelection(command: DeleteSelectionCommand): void {
+    this.engine.deleteSelectedLayer();
   }
 
   private applySetTransform(command: SetTransformCommand): void {

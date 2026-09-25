@@ -1,7 +1,7 @@
 import { Box, Braces, ChevronRight, Layers3, Lock, MousePointer2, Trash2 } from "lucide-react";
 import { explosionModeName } from "../appPresentation";
 import { dispatchEngineEditCommand } from "../commands/engineCommandApplier";
-import { layerLockCommand, selectionRenameCommand } from "../commands/engineEditCommand";
+import { layerLockCommand, selectionDeleteCommand, selectionRenameCommand } from "../commands/engineEditCommand";
 import { publishLocalSceneData } from "../sceneDataBridge";
 import { translate as tr } from "../i18n";
 import { InteractionEditor } from "../components/InteractionEditor";
@@ -442,7 +442,7 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
               disabled={selectionLocked}
               onClick={() => {
                 if (selectedLayerId && selectedLayerId !== "root") {
-                  engine?.deleteSelectedLayer();
+                  dispatchEngineEditCommand(engine, selectionDeleteCommand(locale, { modelId: selected.id }));
                   removeObjectInteractions(selected.id, selectedLayerId);
                   setRevision((value) => value + 1);
                   setMessage(tr(locale, `图层“${selectionName || selectedLayerId}”已从场景删除`, `Layer “${selectionName || selectedLayerId}” was removed from the scene`));
