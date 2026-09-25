@@ -41,8 +41,6 @@ The project uses the broadest possible MIT license so anyone can use it freely (
 
 https://github.com/user-attachments/assets/63f8cce2-0360-4ba9-a2cb-92086a57aca3
 
-[HD web player](https://fatasia.github.io/DeepMonkey-Studio/video.html)
-
 License designation: **MIT License + Ethical Restrictions** (source-available).
 
 ![Deep Monkey Studio platform architecture](apps/web/public/docs-assets/generated/platform-architecture-gold.png)
