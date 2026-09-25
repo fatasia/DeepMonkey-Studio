@@ -3693,3 +3693,7 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - **批 2(代理,提交 7fe2654a)**:全仓 19 处直调写点核查——14 处 UI 写点收编(模型/元素/图层显隐锁定、批量、重命名、发布视口、SceneViewerRoot),5 处跳过(deleteSelectedLayer×3 归批 6 结构命令;脚本面 studioApi/behavior 非编辑写点;rollback 事务逆算子);命令合同追加 selection 模式与 locked/name 字段;fragment 构件变换预检评估=引擎无公开只读查询,维持批 1 降级记账形态。证据:定向 67/67+tsc 绿+全量 4440 过(1 失败为并行负载下 architecture 超时,隔离 11.4s 过,与本批无关)。
 - 接力序列:路径 4+5(gizmo 原生化+overlay 自绘)已发射;批 3 材质等 UI 全检空位。
+
+### 2026-09-25 批 3 切片一(主线程,批次 10)
+
+- SetMaterialState 命令+applier(selection/model 双模式,引擎内 mergeMaterialPatch 合并与全部连带原样;与直调逐参数等价);30/30+tsc。UI 材质写点(AppStudioInspector/材质选择器)接线待 UI 全检代理完成后补(同文件域避碰)。
