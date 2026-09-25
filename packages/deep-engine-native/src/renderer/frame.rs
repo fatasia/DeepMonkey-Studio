@@ -1,10 +1,12 @@
-use std::time::Instant;
+use web_time::Instant;
 
 use super::Renderer;
 use crate::{
     events::RenderOutcome,
     gpu_submission::SubmissionCheck,
-    mesh_pass::{encode_opaque_pass, encode_opaque_pass_rt, encode_outline_mask, encode_transparent_pass},
+    mesh_pass::{
+        encode_opaque_pass, encode_opaque_pass_rt, encode_outline_mask, encode_transparent_pass,
+    },
     shadow_pass::{
         CascadeScene, CascadeShadowTimestamps, encode_shadow_cascades_parallel,
         shadow_executor_threads,
@@ -350,6 +352,9 @@ impl Renderer {
             &mut encoder,
         );
 
+        #[cfg(target_arch = "wasm32")]
+        self.editor_overlay.encode(&mut encoder, &view);
+
         super::frame_probes::encode_differential_probes(self, &mut encoder);
         if let (Some(telemetry), Some(token)) = (self.telemetry.as_mut(), token) {
             telemetry.gpu_finish_frame(token, &mut encoder);
@@ -391,6 +396,7 @@ impl Renderer {
             }
             println!("native smoke GPU submission complete: scopes=clean callbacks=clean");
         }
+        #[cfg(not(target_arch = "wasm32"))]
         match self.culling.take_metrics(&self.device) {
             Ok(Some(metrics)) => metrics.report(),
             Ok(None) => {}
@@ -403,6 +409,7 @@ impl Renderer {
         // (挂载时启用 readback 的如实观测;含每帧一次 map+poll 的诊断成本,
         // 属 opt-in 开关路径)。顺带刷新空批次跳过的计数快照;只观测,
         // 不做自动校准。
+        #[cfg(not(target_arch = "wasm32"))]
         match self.culling.take_occlusion_metrics(&self.device) {
             Ok(Some(metrics)) => metrics.report(),
             Ok(None) => {}

@@ -51,18 +51,20 @@ mod hi_z_pyramid;
 #[cfg(test)]
 mod hi_z_pyramid_tests;
 mod init;
+#[cfg(target_arch = "wasm32")]
+mod editor_overlay;
 mod init_report;
 mod material_resource_diff;
-mod native_gi_producer;
 #[cfg(all(test, target_os = "windows"))]
 mod material_uniform_fastpath_gpu_tests;
-mod replacement_present;
-mod rt_residency;
+mod native_gi_producer;
 pub(crate) mod quality_profile;
+mod replacement_present;
 #[cfg(test)]
 mod rt_pixel_gpu_tests;
 #[cfg(test)]
 mod rt_pixel_tests;
+mod rt_residency;
 #[cfg(test)]
 mod rt_residency_tests;
 #[cfg(all(test, target_os = "windows"))]
@@ -105,6 +107,8 @@ pub struct Renderer {
     culling: GpuCulling,
     lod: Option<GpuLod>,
     deep2d: Option<Deep2dGpuPainter>,
+    #[cfg(target_arch = "wasm32")]
+    editor_overlay: editor_overlay::EditorOverlay,
     #[cfg(windows)]
     dashboard_video: Option<DashboardVideoGpuCompositor>,
     frame_buffer: wgpu::Buffer,
@@ -155,6 +159,10 @@ pub struct Renderer {
 }
 
 impl Renderer {
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn set_editor_overlay(&mut self, vertices: &[f32], revision: u64) -> Result<(), String> {
+        self.editor_overlay.update(&self.device, vertices, revision)
+    }
     fn sync_outline_resources(&mut self) {
         self.forward_targets
             .set_outline_enabled(&self.device, self.scene.has_outline());

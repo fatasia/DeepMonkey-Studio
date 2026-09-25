@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Dispatch, type MutableRefObject, type RefObject, type SetStateAction } from "react";
+import { startTransition, useEffect, useRef, useState, type Dispatch, type MutableRefObject, type RefObject, type SetStateAction } from "react";
 import type {
   ApplicationDocument,
   ApplicationObjectRef,
@@ -23,6 +23,7 @@ import { DirectBindingRuntime } from "../directBindingRuntime";
 import { writeLastWorkspace } from "../studio/lastWorkspacePreference";
 import { publishApplicationInteractionEffects } from "../studio/applicationInteractionHost";
 import { publishLocalSceneData, subscribeSceneData, type SceneDataBridgeStatus } from "../sceneDataBridge";
+import { createCameraInfoPublisher } from "./cameraInfoPublisher";
 import { readRoute, type AppRoute } from "../appRoute";
 import { translate as tr, type AppLocale } from "../i18n";
 import { ApplicationSession } from "../studio/applicationSession";
@@ -33,6 +34,12 @@ import { isSceneViewerDeliveryRuntime } from "../delivery/sceneViewerDelivery";
 import { synchronizeSelectionFromViewport } from "../controllers/sceneSelectionSynchronization";
 import { commitRendererPreference, type PendingRendererPreference } from "../viewer/rendererBackendPreference";
 import { StudioDeepWebGpuBridge } from "../viewer/StudioDeepWebGpuBridge";
+import { StudioDeepWasmBridge } from "../viewer/StudioDeepWasmBridge";
+import { compileStudioWasmRuntimePackage } from "../viewer/studioWasmRuntimePackage";
+import { collectDeepOverlayPrimitives } from "../viewer/deepOverlayPrimitiveSource";
+import { mergeDeepOverlayVertices } from "../viewer/deepOverlayPrimitives";
+import { projectStudioEditorOverlay } from "../viewer/studioDeepEditorOverlay";
+import { rendererBackendLabel } from "../viewer/rendererBackendLabel";
 import { useAppInteractionEffects } from "./useAppInteractionEffects";
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
@@ -52,6 +59,7 @@ interface AppRuntimeEffectsContext {
   rendererBackend: RendererBackend;
   rendererActiveBackend: RendererBackend;
   rendererGeneration: number;
+  revision: number;
   engine: ViewerEngine | undefined;
   route: AppRoute;
   locale: AppLocale;
@@ -128,6 +136,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     rendererBackend,
     rendererActiveBackend,
     rendererGeneration,
+    revision,
     engine,
     route,
     locale,
@@ -195,14 +204,18 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
   } = context;
   const [viewportMountRetry, setViewportMountRetry] = useState(0);
   const deepBridgeRef = useRef<StudioDeepWebGpuBridge | undefined>(undefined);
+  const wasmBridgeRef = useRef<StudioDeepWasmBridge | undefined>(undefined);
+  const wasmRefreshRevisionRef = useRef(-1);
   const rendererRecoveryContextRef = useRef({
     activeScene,
+    project,
     readOnly: route.view !== "studio",
     fastRuntime: route.view === "published" && activeScene?.publicationPerformance === "fast",
     captureSceneSnapshot,
   });
   rendererRecoveryContextRef.current = {
     activeScene,
+    project,
     readOnly: route.view !== "studio",
     fastRuntime: route.view === "published" && activeScene?.publicationPerformance === "fast",
     captureSceneSnapshot,
@@ -419,31 +432,78 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
         setMessage("Deep WebGPU 运行失败，已回到 WebGL");
       },
     });
+    let wasmOverlayRevision = 0;
+    let wasmPreviousOverlay: Float32Array | undefined;
+    const wasmBridge = new StudioDeepWasmBridge(engine, viewportRef.current, {
+      readEditorOverlay: (width, height, pixelRatio) => {
+        const vertices = mergeDeepOverlayVertices(
+          projectStudioEditorOverlay(engine.getDeepEditorOverlayRoots(), engine.camera, width * pixelRatio, height * pixelRatio, pixelRatio),
+          collectDeepOverlayPrimitives(engine, width, height, pixelRatio));
+        if (wasmPreviousOverlay && wasmPreviousOverlay.length === vertices.length
+          && wasmPreviousOverlay.every((value, index) => value === vertices[index])) {
+          return { revision: wasmOverlayRevision, vertices: wasmPreviousOverlay };
+        }
+        wasmPreviousOverlay = vertices;
+        return { revision: ++wasmOverlayRevision, vertices };
+      },
+      compilePackage: (signal) => {
+        const latest = rendererRecoveryContextRef.current;
+        const scene = latest.captureSceneSnapshot() ?? latest.activeScene;
+        if (!scene || !latest.project) throw new Error("当前工作区没有可编译的场景或项目资源");
+        return compileStudioWasmRuntimePackage(scene, latest.project, signal);
+      },
+      onRuntimeFailure: (reason) => {
+        rendererPreferenceCommitRef.current = "webgl";
+        try { commitRendererPreference(rendererPreferenceCommitRef, "webgl"); }
+        catch (error) { showError(error); }
+        setRendererBackend("webgl");
+        setRendererActiveBackend("webgl");
+        setRendererSwitching(false);
+        setRendererSwitchPhase("failed");
+        setRendererSwitchMessage(`Deep WASM 运行失败，已保留作者状态并回到 WebGL 2：${reason.message}`);
+        setMessage("Deep WASM 运行失败，已回到 WebGL");
+      },
+    });
     deepBridgeRef.current = bridge;
+    wasmBridgeRef.current = wasmBridge;
     return () => {
       if (deepBridgeRef.current === bridge) deepBridgeRef.current = undefined;
+      if (wasmBridgeRef.current === wasmBridge) wasmBridgeRef.current = undefined;
+      wasmBridge.dispose();
       bridge.dispose();
     };
   }, [engine, showError]);
 
   useEffect(() => {
     const bridge = deepBridgeRef.current;
-    if (!engine || !bridge || rendererBackend === rendererActiveBackend) return;
+    const wasmBridge = wasmBridgeRef.current;
+    if (!engine || !bridge || !wasmBridge || rendererBackend === rendererActiveBackend) return;
     let cancelled = false;
     setRendererSwitching(true);
     setRendererSwitchPhase("preparing");
-    setRendererSwitchMessage(`正在准备 ${rendererBackend === "webgpu" ? "Deep WebGPU Beta" : "WebGL 2"}；当前画布仍可用`);
-    void bridge.switchTo(rendererBackend).then((result) => {
+    setRendererSwitchMessage(`正在准备 ${rendererBackendLabel(rendererBackend)}；当前画布仍可用`);
+    const switchRenderer = async () => {
+      if (rendererBackend === "wasm") {
+        const retired = await bridge.switchTo("webgl");
+        if (retired.status === "failed") return retired;
+        return wasmBridge.switchTo("wasm");
+      }
+      const retired = await wasmBridge.switchTo("webgl");
+      if (retired.status === "failed") return retired;
+      return bridge.switchTo(rendererBackend);
+    };
+    void switchRenderer().then((result) => {
       if (cancelled) return;
       if (result.status === "switched" || result.status === "unchanged") {
+        if (result.activeBackend === "wasm") wasmRefreshRevisionRef.current = revision;
         setRendererActiveBackend(result.activeBackend);
         try { commitRendererPreference(rendererPreferenceCommitRef, result.activeBackend); }
         catch (reason) { showError(reason); }
         setRendererSwitchPhase("idle");
         setRendererSwitchMessage(undefined);
-        setMessage(`${result.activeBackend === "webgpu" ? "Deep WebGPU Beta" : "WebGL"} 已启用`);
+        setMessage(`${rendererBackendLabel(result.activeBackend)} 已启用`);
       } else if (result.status === "failed") {
-        const persistFallback = rendererPreferenceCommitRef.current === "webgpu";
+        const persistFallback = rendererPreferenceCommitRef.current === rendererBackend;
         rendererPreferenceCommitRef.current = persistFallback ? "webgl" : undefined;
         if (persistFallback) {
           try { commitRendererPreference(rendererPreferenceCommitRef, "webgl"); }
@@ -452,21 +512,49 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
         setRendererBackend("webgl");
         setRendererActiveBackend("webgl");
         setRendererSwitchPhase("failed");
-        setRendererSwitchMessage(`Deep WebGPU 准备失败，WebGL 2 未中断：${result.error ?? "未知错误"}`);
-        setMessage("Deep WebGPU 准备失败，已保留 WebGL 画布");
+        setRendererSwitchMessage(`${rendererBackendLabel(rendererBackend)} 准备失败，WebGL 2 未中断：${result.error ?? "未知错误"}`);
+        setMessage(`${rendererBackendLabel(rendererBackend)} 准备失败，已保留 WebGL 画布`);
       }
     }).catch((reason) => {
       if (!cancelled) showError(reason);
     }).finally(() => {
       if (!cancelled) setRendererSwitching(false);
     });
-    return () => { cancelled = true; bridge.cancelPendingSwitch(); };
-  }, [engine, rendererBackend, rendererActiveBackend, showError]);
+    return () => { cancelled = true; bridge.cancelPendingSwitch(); wasmBridge.cancelPendingSwitch(); };
+  }, [engine, rendererBackend, rendererActiveBackend, revision, showError]);
+
+  useEffect(() => {
+    const bridge = wasmBridgeRef.current;
+    if (!bridge || rendererActiveBackend !== "wasm" || wasmRefreshRevisionRef.current === revision) return;
+    const timer = window.setTimeout(() => {
+      void bridge.refresh().then((result) => {
+        if (result.status === "switched" || result.status === "unchanged") {
+          wasmRefreshRevisionRef.current = revision;
+          return;
+        }
+        if (result.status === "failed") {
+          setRendererBackend("webgl");
+          setRendererActiveBackend("webgl");
+        }
+      }).catch(showError);
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [rendererActiveBackend, revision, showError]);
 
   useEffect(() => {
     if (!engine) return;
-    engine.onCameraChange = setCameraInfo;
-    setCameraInfo(engine.getCameraState());
+    // Camera input and viewport chrome subscribe directly to the engine. Only
+    // the optional inspector readout crosses top-level App state, at a low rate.
+    const cameraInfoPublisher = infoEnabled ? createCameraInfoPublisher((state) => {
+      startTransition(() => setCameraInfo(state));
+    }, 250) : undefined;
+    if (cameraInfoPublisher) {
+      engine.onCameraChange = cameraInfoPublisher.push;
+      setCameraInfo(engine.getCameraState());
+    } else {
+      delete engine.onCameraChange;
+      setCameraInfo(undefined);
+    }
     if (infoEnabled) {
       engine.onPointerInfoChange = setPointerInfo;
     } else {
@@ -474,6 +562,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
       setPointerInfo(undefined);
     }
     return () => {
+      cameraInfoPublisher?.dispose();
       delete engine.onCameraChange;
       delete engine.onPointerInfoChange;
     };

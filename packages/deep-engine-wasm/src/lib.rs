@@ -1,24 +1,144 @@
 //! DeepMonkey wasm:全引擎镜像集成 + 三方案对比 bench viewer。
 //! 镜像模块必须位于 crate 根(bin 树的 crate::app 等路径依赖此布局)。
 
-/// wasm 兼容缝隙:winit web 后端的 ControlFlow 用 web_time::Instant(时钟
-/// 与 std::time::Instant 不同源),按剩余时长在 web 时钟上重建。
-#[cfg(target_arch = "wasm32")]
-pub mod wasm_compat {
-    pub fn control_flow_until(
-        wake: std::time::Instant,
-    ) -> winit::event_loop::ControlFlow {
-        let remaining = wake.saturating_duration_since(std::time::Instant::now());
-        winit::event_loop::ControlFlow::WaitUntil(web_time::Instant::now() + remaining)
-    }
+use wasm_bindgen::prelude::*;
 
-    pub fn control_flow_from(
-        flow: winit::event_loop::ControlFlow,
-    ) -> winit::event_loop::ControlFlow {
-        flow
+thread_local! {
+    static SCENE_PACKAGE: std::cell::RefCell<Option<Vec<u8>>> = const { std::cell::RefCell::new(None) };
+    static VIEWER_SESSIONS: std::cell::RefCell<std::collections::BTreeMap<u32, winit::event_loop::EventLoopProxy<events::GpuEvent>>> = const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
+    static NEXT_VIEWER_SESSION: std::cell::Cell<u32> = const { std::cell::Cell::new(1) };
+}
+
+#[wasm_bindgen]
+pub fn set_scene_package(bytes: &[u8]) -> Result<(), JsValue> {
+    deep_engine_native::runtime_package::parse_and_validate_runtime_package(bytes)
+        .map_err(|error| JsValue::from_str(&error.to_string()))?;
+    SCENE_PACKAGE.with(|slot| *slot.borrow_mut() = Some(bytes.to_vec()));
+    Ok(())
+}
+
+/// Reset the browser-hosted font bundle before injecting a new locale/font set.
+#[wasm_bindgen]
+pub fn clear_runtime_fonts() {
+    deep_engine_native::platform_text::clear_runtime_fonts();
+}
+
+/// Supply one exact font face from JavaScript. SHA-256, face index, byte/count
+/// budgets and selector ambiguity are validated before the bundle is published.
+#[wasm_bindgen]
+pub fn add_runtime_font(
+    locale: String,
+    bytes: &[u8],
+    sha256: String,
+    face_index: u32,
+) -> Result<u32, JsValue> {
+    let font = deep_engine_native::platform_text::FrozenFontInput {
+        bytes: bytes.to_vec(),
+        sha256,
+        face_index,
+    };
+    deep_engine_native::platform_text::add_runtime_font(&locale, font)
+        .and_then(|count| u32::try_from(count).map_err(|_| "runtime font count overflow".into()))
+        .map_err(|error| JsValue::from_str(&error))
+}
+
+#[wasm_bindgen]
+pub fn start_scene_viewer(canvas: Option<web_sys::HtmlCanvasElement>) -> Result<u32, JsValue> {
+    console_error_panic_hook::set_once();
+    let bytes = SCENE_PACKAGE
+        .with(|slot| slot.borrow().clone())
+        .ok_or_else(|| JsValue::from_str("scene package bytes were not injected"))?;
+    let package =
+        runtime_package_startup::load_bytes(&bytes).map_err(|error| JsValue::from_str(&error))?;
+    app_startup::set_wasm_canvas(canvas);
+    let proxy =
+        app::spawn_wasm(package.into_content()).map_err(|error| JsValue::from_str(&error))?;
+    let handle = NEXT_VIEWER_SESSION.with(|next| {
+        let handle = next.get();
+        next.set(handle.checked_add(1).unwrap_or(1));
+        handle
+    });
+    VIEWER_SESSIONS.with(|sessions| {
+        sessions.borrow_mut().insert(handle, proxy);
+    });
+    Ok(handle)
+}
+
+#[wasm_bindgen]
+pub fn stop_scene_viewer(handle: u32) {
+    let proxy = VIEWER_SESSIONS.with(|sessions| sessions.borrow_mut().remove(&handle));
+    if let Some(proxy) = proxy {
+        let _ = proxy.send_event(events::GpuEvent::WasmStop);
     }
 }
 
+#[wasm_bindgen]
+pub fn update_scene_viewer(handle: u32, bytes: &[u8]) -> Result<(), JsValue> {
+    deep_engine_native::runtime_package::parse_and_validate_runtime_package(bytes)
+        .map_err(|error| JsValue::from_str(&error.to_string()))?;
+    let proxy = VIEWER_SESSIONS
+        .with(|sessions| sessions.borrow().get(&handle).cloned())
+        .ok_or_else(|| JsValue::from_str("scene viewer handle is not active"))?;
+    proxy
+        .send_event(events::GpuEvent::WasmScenePackage(bytes.to_vec()))
+        .map_err(|_| JsValue::from_str("scene viewer event loop is closed"))
+}
+
+#[wasm_bindgen]
+pub fn update_editor_overlay(handle: u32, revision: u32, vertices: &[f32]) -> Result<(), JsValue> {
+    if vertices.len() % 24 != 0 || vertices.len() > 196_608 * 8 {
+        return Err(JsValue::from_str("WASM editor overlay layout or vertex budget is invalid"));
+    }
+    let proxy = VIEWER_SESSIONS
+        .with(|sessions| sessions.borrow().get(&handle).cloned())
+        .ok_or_else(|| JsValue::from_str("scene viewer handle is not active"))?;
+    proxy.send_event(events::GpuEvent::WasmEditorOverlay {
+        revision: u64::from(revision),
+        vertices: vertices.to_vec(),
+    }).map_err(|_| JsValue::from_str("scene viewer event loop is closed"))
+}
+
+#[wasm_bindgen]
+pub fn set_viewer_camera(
+    handle: u32,
+    position_x: f32,
+    position_y: f32,
+    position_z: f32,
+    target_x: f32,
+    target_y: f32,
+    target_z: f32,
+    focal: f32,
+    near: f32,
+    far: f32,
+) -> Result<(), JsValue> {
+    let proxy = VIEWER_SESSIONS
+        .with(|sessions| sessions.borrow().get(&handle).cloned())
+        .ok_or_else(|| JsValue::from_str("scene viewer handle is not active"))?;
+    proxy
+        .send_event(events::GpuEvent::WasmCamera {
+            position: [position_x, position_y, position_z],
+            target: [target_x, target_y, target_z],
+            focal,
+            near,
+            far,
+        })
+        .map_err(|_| JsValue::from_str("scene viewer event loop is closed"))
+}
+
+#[wasm_bindgen]
+pub fn viewer_ready_generation() -> u32 {
+    app_startup::wasm_renderer_ready_generation()
+}
+
+#[wasm_bindgen]
+pub fn viewer_failure_message() -> Option<String> {
+    app_startup::wasm_renderer_failure()
+}
+
+#[wasm_bindgen]
+pub fn engine_canvas(_handle: u32) -> Option<web_sys::HtmlCanvasElement> {
+    app_startup::wasm_window_canvas()
+}
 
 #[path = "../../deep-engine-native/src/app/mod.rs"]
 pub mod app;
@@ -337,6 +457,7 @@ pub mod x_package_window;
 #[path = "../../deep-engine-native/src/x_worker_cli.rs"]
 pub mod x_worker_cli;
 
+#[cfg(feature = "bench-viewer")]
 pub mod bench {
     //! DeepMonkey 引擎核心 wasm 首片:WebGPU 后端 instanced PBR 渲染器。
     //! 目标是三方案对比(Three WebGL / 自研 TS WebGPU / Rust wasm)中第三条的

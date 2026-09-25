@@ -548,6 +548,8 @@ pub(super) async fn create_renderer(
     if activate_surface {
         surface.configure(&device, &config);
     }
+    #[cfg(target_arch = "wasm32")]
+    let editor_overlay = super::editor_overlay::EditorOverlay::new(&device, config.format);
     Ok(Renderer {
         id: renderer_id,
         instance,
@@ -565,6 +567,8 @@ pub(super) async fn create_renderer(
         culling,
         lod,
         deep2d,
+        #[cfg(target_arch = "wasm32")]
+        editor_overlay,
         #[cfg(windows)]
         dashboard_video,
         frame_buffer,

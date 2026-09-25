@@ -44,7 +44,7 @@ export function sceneSnapshotToRenderPacket(scene: SceneSnapshot): RenderPacket 
 
 function primitiveMaterial(item: PrimitiveState): RenderPacket["materials"][number] {
   const state = item.material;
-  const supported = new Set(["color", "roughness", "metalness", "ior", "emissive", "emissiveIntensity", "doubleSided"]);
+  const supported = new Set(["color", "roughness", "metalness", "ior", "emissive", "emissiveIntensity", "doubleSided", "customShader"]);
   for (const [key, value] of Object.entries(state ?? {})) {
     if (value !== undefined && !supported.has(key) && !isNeutralMaterialField(key, value)) throw new Error(`基础体 ${item.modelId} 的材质需要适配：${key}`);
   }

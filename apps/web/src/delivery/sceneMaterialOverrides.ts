@@ -4,7 +4,7 @@ import { Color } from "three";
 import { isNeutralMaterialField } from "./sceneNeutralAppearance";
 
 type Material = RenderPacket["materials"][number];
-const scalarFields = new Set(["color", "roughness", "metalness", "ior", "emissive", "emissiveIntensity", "doubleSided", "normalScale", "sourceColor", "sourceEmissive"]);
+const scalarFields = new Set(["color", "roughness", "metalness", "ior", "emissive", "emissiveIntensity", "doubleSided", "normalScale", "sourceColor", "sourceEmissive", "customShader"]);
 
 export function assertStaticMaterialOverrides(state: SceneMaterialState | undefined, id: string): void {
   if (state?.slotOverrides !== undefined && (!state.slotOverrides || typeof state.slotOverrides !== "object"

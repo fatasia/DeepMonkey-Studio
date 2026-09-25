@@ -9,10 +9,38 @@ pub enum GpuEvent {
         message: String,
     },
     SmokeTimeout,
+    /// Native product windows start hidden so pipeline compilation never
+    /// exposes an unpainted client area. The first checkpoint runs the redraw
+    /// transaction on the event-loop thread; the retry checkpoint bounds a
+    /// failed presentation. The renderer id rejects stale rebuild checkpoints.
+    #[cfg(not(target_arch = "wasm32"))]
+    StartupFrameTimeout {
+        renderer_id: u64,
+        retry: bool,
+    },
     /// wasm:wgpu web 后端异步初始化完成的回装事件。Renderer 不要求 Send
     /// (web 事件循环与初始化同线程)。
     #[cfg(target_arch = "wasm32")]
-    WasmRendererReady(Result<Box<crate::renderer::Renderer>, String>),
+    WasmRendererReady,
+    /// Studio keeps Three/WebGL as the authoring authority and forwards the
+    /// latest camera to the WASM presentation surface.
+    #[cfg(target_arch = "wasm32")]
+    WasmCamera {
+        position: [f32; 3],
+        target: [f32; 3],
+        focal: f32,
+        near: f32,
+        far: f32,
+    },
+    /// Replace the active browser runtime package without creating a second
+    /// event loop. The renderer is rebuilt on the same canvas and the author
+    /// surface stays visible until the ready generation advances.
+    #[cfg(target_arch = "wasm32")]
+    WasmScenePackage(Vec<u8>),
+    #[cfg(target_arch = "wasm32")]
+    WasmEditorOverlay { revision: u64, vertices: Vec<f32> },
+    #[cfg(target_arch = "wasm32")]
+    WasmStop,
     /// A watched RenderPacket file changed and validated; the payload carries the
     /// fully prepared content and a monotonic watcher generation. Delivery is
     /// best-effort: closing the window drops pending updates and keeps the last
