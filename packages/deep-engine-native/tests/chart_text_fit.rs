@@ -11,7 +11,7 @@ fn fit(
     fit_ellipsis(
         rasterizer,
         text,
-        "Microsoft YaHei",
+        "Inter",
         12.0,
         16.0,
         max_width,
@@ -22,14 +22,14 @@ fn fit(
 #[test]
 fn short_text_passes_through_and_long_text_fits_measured_width() {
     let mut rasterizer = TextRasterizer::new();
-    let short = "短标签";
+    let short = "Short label";
     assert_eq!(fit(&mut rasterizer, short, 400.0, 24).unwrap(), short);
-    let long = "超长的中文设备名称设备名称设备名称设备名称设备名称设备名称设备名称";
+    let long = "Long device name Long device name Long device name Long device name";
     let fitted = fit(&mut rasterizer, long, 120.0, 24).unwrap();
     assert!(fitted.ends_with('…'), "fitted={fitted}");
     assert!(fitted.chars().count() < long.chars().count());
     let width = rasterizer
-        .measure(&fitted, "Microsoft YaHei", 12.0, 16.0)
+        .measure(&fitted, "Inter", 12.0, 16.0)
         .unwrap();
     assert!(width <= 120.0, "measured {width} exceeds budget");
     // 同一文本在更大预算下应保留更多字符。
@@ -40,7 +40,7 @@ fn short_text_passes_through_and_long_text_fits_measured_width() {
 #[test]
 fn tiny_budget_degrades_to_ellipsis_and_controls_are_normalized() {
     let mut rasterizer = TextRasterizer::new();
-    let tiny = fit(&mut rasterizer, "任意长文本", 1.0, 24).unwrap();
+    let tiny = fit(&mut rasterizer, "Any long text", 1.0, 24).unwrap();
     assert_eq!(tiny, "…");
     let normalized = fit(&mut rasterizer, "a\u{7}b", 400.0, 24).unwrap();
     assert_eq!(normalized, "a b");
@@ -50,9 +50,9 @@ fn tiny_budget_degrades_to_ellipsis_and_controls_are_normalized() {
         "空文本原样通过,不报错"
     );
     for (text, width, chars) in [
-        ("文本", 100.0, 0),
-        ("文本", 0.0, 24),
-        ("文本", f64::NAN, 24),
+        ("Text", 100.0, 0),
+        ("Text", 0.0, 24),
+        ("Text", f64::NAN, 24),
     ] {
         assert!(
             fit(&mut rasterizer, text, width, chars).is_err(),
@@ -64,12 +64,12 @@ fn tiny_budget_degrades_to_ellipsis_and_controls_are_normalized() {
 #[test]
 fn max_chars_bounds_the_search_without_breaking_the_ellipsis() {
     let mut rasterizer = TextRasterizer::new();
-    let long = "一二三四五六七八九十".repeat(5);
+    let long = "ABCDEFGHIJ".repeat(5);
     let fitted = fit(&mut rasterizer, &long, 96.0, 6).unwrap();
     // 前缀最多 6 字符(含省略号最多 7);宽度仍须达标。
     assert!(fitted.chars().count() <= 7);
     let width = rasterizer
-        .measure(&fitted, "Microsoft YaHei", 12.0, 16.0)
+        .measure(&fitted, "Inter", 12.0, 16.0)
         .unwrap();
     assert!(width <= 96.0, "measured {width} exceeds budget");
 }
