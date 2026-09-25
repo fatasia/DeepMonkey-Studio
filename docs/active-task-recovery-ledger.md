@@ -3734,3 +3734,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 ### 2026-09-25 批 6 切片落地(批次 15,主线程)
 
 - DeleteSelection 命令+applier+三调用点接线(ModelTreeItem/AppStudioInspector/AppStudioShellView);编排留调用点、引擎变更走总线;套件 1818/1818。命令层八条原语全部就绪、全部 UI 编辑写点(批 0-6 共 20 处)收编完成——W1① 命令层收口(undo 命令逆放与 robot boolean 语义留后续声明)。
+
+### 2026-09-25 烘焙②落地(批次 16)
+
+- **服务端持久化+发布一致性(代理,提交 c4583ba7)**:PUT/GET /api/scenes/:sceneId/probe-bake(内容寻址 (sceneId,sourceHash)→gzip 原子落盘,不进 MetadataStore,64MB 上限,每场景 4 份)+ Web 回填(失败静默降级会话态)+ 服务端候选链一致(优先级三档:显式>持久化>无;native-scene-compiler-worker 复用 web 哈希函数注入,失配产物逐位一致)。测试:API 19+56、Web 5+59、真实 worker 编译注入 64 探针、双侧 tsc。
+- 烘焙三链闭合:①UI 接线(51c3b8f2)②服务端持久化+一致性(c4583ba7)③WASM 查看器消费留 W2⑥。
