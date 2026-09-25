@@ -86,6 +86,10 @@ export class StudioDeepWebGpuBridge {
   private cameraFramesSubmitted = 0;
   private cameraFramesCoalesced = 0;
   private cameraMaxInFlight = 0;
+  /** TAA settle frames share the same WebGPU queue as camera frames. Keep at
+   * most one settle submission pending so RAF cannot build an unbounded queue. */
+  private settleFrameInFlight = false;
+  private settleFrameBackend: DeepWebGpuBackend | undefined;
   private controller: DeepCameraController | undefined;
   private inputSession: DeepCameraInputSession | undefined;
   private gestureActive = false;
@@ -478,8 +482,9 @@ export class StudioDeepWebGpuBridge {
 
   private renderCommittedFrame(backend: DeepWebGpuBackend, canvas: HTMLCanvasElement,
     view = this.viewReader.renderViewDirect(canvas), settle = true): void {
-    const draw = () => {
-      if (this.deepBackend !== backend) return;
+    const draw = (): boolean => {
+      if (this.deepBackend !== backend) return false;
+      if (settle && this.settleFrameInFlight && this.settleFrameBackend === backend) return false;
       backend.setProbeClipmapEnabled(this.probeClipmapEnabled());
       const metrics = backend.render(view);
       if (metrics) this.performanceSource?.record(metrics, view.width, document.visibilityState !== "hidden");
@@ -488,6 +493,26 @@ export class StudioDeepWebGpuBridge {
       if (!metrics && session?.state === "lost") {
         throw new Error(session.diagnostics?.at(-1)?.message || "Deep WebGPU device was lost.");
       }
+      if (settle) {
+        const completion = session?.device?.queue?.onSubmittedWorkDone();
+        if (completion) {
+          this.settleFrameInFlight = true;
+          this.settleFrameBackend = backend;
+          void Promise.resolve(completion).then(() => {
+            if (this.settleFrameBackend === backend) {
+              this.settleFrameInFlight = false;
+              this.settleFrameBackend = undefined;
+            }
+          }).catch(reason => {
+            if (this.settleFrameBackend === backend) {
+              this.settleFrameInFlight = false;
+              this.settleFrameBackend = undefined;
+              if (this.deepBackend === backend) this.failRuntime(reason);
+            }
+          });
+        }
+      }
+      return true;
     };
     draw();
     // 呈现已覆盖到这份(更新的)view:待补位的旧相机帧不再有价值,清空以避免

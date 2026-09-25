@@ -516,6 +516,22 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     expect(first.render).toHaveBeenCalledTimes(renders + 16);
   });
 
+  it("waits for GPU completion before submitting another temporal settle frame", async () => {
+    const { bridge, first } = setup();
+    await activate(bridge);
+    const pending = deferred<void>();
+    first.queueDone.mockReturnValue(pending.promise);
+    first.render.mockClear();
+    await frame();
+    expect(first.render).toHaveBeenCalledTimes(1);
+    for (let index = 0; index < 20; index++) await frame(false);
+    expect(first.render).toHaveBeenCalledTimes(1);
+    pending.resolve(); await microtasks();
+    first.queueDone.mockResolvedValue(undefined);
+    for (let index = 0; index < 16; index++) await frame(false);
+    expect(first.render).toHaveBeenCalledTimes(17);
+  });
+
   it("unsubscribes exactly once and ignores author notifications after teardown", async () => {
     const { bridge, first, unsubscribe } = setup();
     await activate(bridge);

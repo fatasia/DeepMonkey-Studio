@@ -9,8 +9,12 @@ export interface TemporalFrameSettlerOptions {
   subscribeVisibility?: (callback: () => void) => () => void;
 }
 
+/** Return false when the caller is applying GPU back-pressure and wants to retry
+ * the same settle budget on a later browser frame. */
+export type TemporalSettleRender = () => void | boolean;
+
 interface SettleRun {
-  render: () => void;
+  render: TemporalSettleRender;
   remaining: number;
   delay: number;
   frame?: number | undefined;
@@ -48,7 +52,7 @@ export class TemporalFrameSettler {
     };
   }
 
-  restart(render: () => void): void {
+  restart(render: TemporalSettleRender): void {
     this.cancel();
     const run: SettleRun = { render, remaining: this.options.frames, delay: this.options.initialDelayFrames };
     this.run = run;
@@ -97,8 +101,9 @@ export class TemporalFrameSettler {
         this.schedule(run);
         return;
       }
-      run.render();
+      const rendered = run.render();
       if (this.run !== run) return;
+      if (rendered === false) { this.schedule(run); return; }
       run.remaining--;
       if (run.remaining === 0) { this.cancel(); this.options.onSettled(); }
       else this.schedule(run);

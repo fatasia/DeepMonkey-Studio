@@ -35,6 +35,7 @@ describe("scene runtime compilation evidence", () => {
     const runtime = parseDeepRuntimePackage(result.packageJson);
     expect(runtime).toMatchObject({ valid: true });
     if (!runtime.valid) return;
+    if (!("materialBindings" in runtime.value)) throw new Error("Shader package has no material bindings");
     expect(runtime.value.entrypoints.shaderPackages).toHaveLength(1);
     expect(runtime.value.materialBindings).toHaveLength(1);
     expect(runtime.value.materialBindings[0]).toMatchObject({ techniqueId: "webgpu" });

@@ -73,6 +73,21 @@ describe("temporal frame settler", () => {
     expect(context.visibility.size).toBe(0);
   });
 
+  it("does not consume settle budget while the renderer applies GPU back-pressure", () => {
+    const context = setup(2); let ready = false; const render = vi.fn(() => {
+      if (!ready) return false;
+      return true;
+    });
+    context.settler.restart(render);
+    context.frame(); context.frame();
+    expect(render).toHaveBeenCalledTimes(2);
+    expect(context.onSettled).not.toHaveBeenCalled();
+    ready = true;
+    context.frame(); context.frame();
+    expect(render).toHaveBeenCalledTimes(4);
+    expect(context.onSettled).toHaveBeenCalledOnce();
+  });
+
   it("restart resets the budget and stale RAF cannot consume the new generation", () => {
     const context = setup(2);
     const old = vi.fn(); const current = vi.fn();
