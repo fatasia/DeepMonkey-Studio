@@ -16,6 +16,7 @@ import type {
   SceneSnapshot,
   SystemUserRecord,
 } from "@bim-studio/contracts";
+import { getSceneModelAssetId } from "@bim-studio/contracts";
 import { api } from "../api";
 import type { SceneDataBindingRuntimeState } from "../components/SceneDataBindingEditor";
 import { dataBindingProduct, directSceneDataBindingMessage, sceneDataBindingMessage } from "../sceneDataBindings";
@@ -36,6 +37,9 @@ import { commitRendererPreference, type PendingRendererPreference } from "../vie
 import { StudioDeepWebGpuBridge } from "../viewer/StudioDeepWebGpuBridge";
 import { StudioDeepWasmBridge } from "../viewer/StudioDeepWasmBridge";
 import { compileStudioWasmRuntimePackage } from "../viewer/studioWasmRuntimePackage";
+import { compileSceneRenderPacket } from "../delivery/compileSceneRenderPacket";
+import { browserImageDecoder } from "../delivery/browserImageDecoder";
+import { loadViewerAssetBuffer } from "../viewer/viewerAssetTransport";
 import { collectDeepOverlayPrimitives } from "../viewer/deepOverlayPrimitiveSource";
 import { mergeDeepOverlayVertices } from "../viewer/deepOverlayPrimitives";
 import { projectStudioEditorOverlay } from "../viewer/studioDeepEditorOverlay";
@@ -420,6 +424,27 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
   useEffect(() => {
     if (!engine || !viewportRef.current) return;
     const bridge = new StudioDeepWebGpuBridge(engine, viewportRef.current, {
+      authorRenderPacket: async (signal) => {
+        const latest = rendererRecoveryContextRef.current;
+        const scene = latest.captureSceneSnapshot() ?? latest.activeScene;
+        const project = latest.project;
+        if (!scene || !project) return undefined;
+        const compiled = await compileSceneRenderPacket(scene, {
+          signal,
+          imageDecoder: browserImageDecoder,
+          loadModel: async (assetId, loadSignal) => {
+            loadSignal.throwIfAborted();
+            const instance = scene.models.find((model) => getSceneModelAssetId(model) === assetId || model.modelId === assetId);
+            const resolvedAssetId = instance ? getSceneModelAssetId(instance) : assetId;
+            const model = project.models.find((candidate) => candidate.id === resolvedAssetId);
+            const url = model?.manifest?.geometryUrl;
+            if (!model || !url || model.status !== "ready") throw new Error(`Deep 编译缺少模型资源：${assetId}`);
+            return new Uint8Array(await loadViewerAssetBuffer(url, model.name, { signal: loadSignal, timeoutMs: 120_000 }));
+          },
+        });
+        signal.throwIfAborted();
+        return compiled.packet;
+      },
       onRuntimeFailure: (reason) => {
         rendererPreferenceCommitRef.current = "webgl";
         try { commitRendererPreference(rendererPreferenceCommitRef, "webgl"); }
