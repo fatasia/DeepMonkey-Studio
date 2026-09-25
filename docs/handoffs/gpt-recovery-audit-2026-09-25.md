@@ -76,3 +76,4 @@
 - `69626c36`：新增 `.github/CODEOWNERS`，更新 PR 模板和 CHANGELOG；仓库治理通过。许可证按用户指令保持 DMCSL/source-available，不改法律目标。
 - 公平基准低样本复跑（20 静置/20 输入，当前 HEAD `5999e64b`）：WebGPU 静置 P50/P95 `6.9/7.1ms`，优于 WebGL `7.0/7.2ms`；但 WebGPU 输入 P95 `34.7ms`、pointer→submit P95 `34.5ms`，仍高于 WebGL `21.1ms`/`1.6ms`，`exceeds.webgpu=false`。本轮优化改善了独立 packet 稳定帧微任务开销，但尚不足以宣称全面超过 Three。
 - 接入真实 `compileSceneRenderPacket` provider 后复跑（20/20，当前 HEAD `d040a516`）：WebGPU 三视角 SSIM 提升至 `0.64–0.72`，黑帧 0；静置 P95 `7.1ms`，输入 P95 `13.9ms`，但 pointer→submit P95 `74.3ms`、submitGap P95 `77.8ms`，仍未达到全面超过 WebGL 的门槛。资源上传/首轮编译拖尾是下一性能专项。
+- 回归收口：API 全量 `1580 passed / 13 skipped`；Web 全量 `4492 passed / 3 skipped`。Web 架构扫描在全量并发下曾超过 30 秒，`18f9fe27` 将其测试上限调整为 120 秒后全量通过。
