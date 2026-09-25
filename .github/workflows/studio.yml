@@ -83,6 +83,9 @@ jobs:
       - run: pnpm --filter @bim-studio/scene-sdk build
       - run: pnpm --filter @bim-studio/docs-runtime build
       - run: pnpm --filter @bim-studio/data-runtime build
+      - run: pnpm --filter @bim-studio/plant-lite-simulation build
+      - run: pnpm --filter @bim-studio/ppr-lite-engine build
+      - run: pnpm --filter @bim-studio/industrial-agent-orchestrator build
       - run: pnpm --filter @bim-studio/web typecheck
       - run: pnpm --filter @bim-studio/web test
       - run: pnpm --filter @bim-studio/web build
