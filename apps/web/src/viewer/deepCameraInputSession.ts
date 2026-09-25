@@ -1,10 +1,13 @@
 import { DeepCameraController } from "./deepCameraController";
+import type { DeepGizmoPointerPhase } from "./deepGizmoInteraction";
 
 export interface DeepCameraInputSessionOptions {
   /** 视口手势接管期间,原始事件克隆转发到该目标(作者画布),拾取/hover/gizmo 链照常工作。 */
   forwardTo?: EventTarget;
   /** 返回 true 时本次移动不做视口手势(gizmo 拖拽进行中);转发仍发生。 */
   suppressGesture?: () => boolean;
+  /** Native gizmo gets first refusal; consumed events never reach Three/TransformControls. */
+  handleGizmoPointer?: (phase: DeepGizmoPointerPhase, event: PointerEvent) => boolean;
 }
 
 /**
@@ -25,6 +28,7 @@ export class DeepCameraInputSession {
   private button = 0;
   private shift = false;
   private pinchDistance: number | undefined;
+  private gizmoPointerId: number | undefined;
   private readonly pointers = new Map<number, { x: number; y: number }>();
   private readonly listeners: Array<[EventTarget, string, EventListener]> = [];
 
@@ -60,6 +64,7 @@ export class DeepCameraInputSession {
     this.active = false;
     this.pointers.clear();
     this.pointerId = undefined;
+    this.gizmoPointerId = undefined;
     this.pinchDistance = undefined;
     for (const [target, type, handler] of this.listeners.splice(0)) {
       target.removeEventListener(type, handler);
@@ -69,6 +74,11 @@ export class DeepCameraInputSession {
   get isActive(): boolean { return this.active; }
 
   private onPointerDown(event: PointerEvent): void {
+    if (this.options.handleGizmoPointer?.("down", event) === true) {
+      this.gizmoPointerId = event.pointerId;
+      this.canvas.setPointerCapture(event.pointerId);
+      return;
+    }
     this.forward(event);
     this.shift = event.shiftKey;
     this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -82,6 +92,10 @@ export class DeepCameraInputSession {
   }
 
   private onPointerMove(event: PointerEvent): void {
+    if (this.gizmoPointerId === event.pointerId) {
+      this.options.handleGizmoPointer?.("move", event);
+      return;
+    }
     this.forward(event);
     this.shift = event.shiftKey;
     if (this.pointers.has(event.pointerId)) {
@@ -105,6 +119,12 @@ export class DeepCameraInputSession {
   }
 
   private onPointerUp(event: PointerEvent): void {
+    if (this.gizmoPointerId === event.pointerId) {
+      this.options.handleGizmoPointer?.(event.type === "pointercancel" ? "cancel" : "up", event);
+      this.gizmoPointerId = undefined;
+      if (this.canvas.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId);
+      return;
+    }
     this.forward(event);
     this.pointers.delete(event.pointerId);
     if (event.pointerId === this.pointerId) {

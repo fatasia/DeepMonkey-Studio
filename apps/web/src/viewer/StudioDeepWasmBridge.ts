@@ -1,9 +1,11 @@
+import * as THREE from "three";
 import type { CameraState } from "@bim-studio/contracts";
 import type { RendererBackend } from "./viewerTypes";
 import { captureAuthorStyle, createDeepCanvas, prepareAuthorInputCanvas, restoreAuthorStyle,
   type AuthorCanvasStyle } from "./studioDeepPresentationCanvas";
 import { DeepCameraController, type CameraPose } from "./deepCameraController";
 import { DeepCameraInputSession } from "./deepCameraInputSession";
+import { DeepGizmoInteraction, type DeepGizmoInteractionHost } from "./deepGizmoInteraction";
 
 /** 视口手势接管期间的引擎中立相机姿态(世界单位)。 */
 export type ViewportCameraPose = CameraPose;
@@ -32,6 +34,7 @@ export interface StudioDeepWasmBridgeOptions {
 /** Engine-neutral author seam used while the editor authority migrates off Three. */
 export interface StudioDeepWasmAuthorHost {
   readonly renderer: { readonly domElement: HTMLCanvasElement };
+  readonly camera?: THREE.PerspectiveCamera;
   getCameraState(): CameraState;
   getCameraProjectionState(): { readonly verticalFovDegrees: number; readonly near: number; readonly far: number };
   setPresentationRendererBackend(backend: RendererBackend): void;
@@ -42,6 +45,11 @@ export interface StudioDeepWasmAuthorHost {
   /** gizmo 拖拽进行中时抑制视口手势(转发仍发生)。 */
   isViewportGestureSuppressed?(): boolean;
   applyViewportCameraPose?(pose: ViewportCameraPose): void;
+  getDeepTransformGizmoInput?(): import("./deepOverlayPrimitives").DeepTransformGizmoInput | undefined;
+  getSelectionTransform?(): import("@bim-studio/contracts").ModelTransform | undefined;
+  applySelectionTransform?(transform: import("@bim-studio/contracts").ModelTransform): void;
+  isSelectionLocked?(): boolean;
+  requestRender?(): void;
 }
 
 export interface StudioWasmSwitchResult {
@@ -71,6 +79,7 @@ export class StudioDeepWasmBridge {
   private inputSession: DeepCameraInputSession | undefined;
   private gestureActive = false;
   private lastGestureTickAt: number | undefined;
+  private readonly gizmoInteraction: DeepGizmoInteraction | undefined;
 
   constructor(
     private readonly viewer: StudioDeepWasmAuthorHost,
@@ -79,6 +88,9 @@ export class StudioDeepWasmBridge {
   ) {
     this.authorCanvas = viewer.renderer.domElement;
     this.authorStyle = captureAuthorStyle(this.authorCanvas);
+    this.gizmoInteraction = isDeepGizmoHost(viewer)
+      ? new DeepGizmoInteraction(viewer, () => this.authorCanvas.getBoundingClientRect())
+      : undefined;
     prepareAuthorInputCanvas(this.authorCanvas);
   }
 
@@ -235,6 +247,7 @@ export class StudioDeepWasmBridge {
     this.inputSession ??= new DeepCameraInputSession(this.canvas, this.controller, () => this.queueCameraSync(), {
       forwardTo: this.authorCanvas,
       suppressGesture: () => this.viewer.isViewportGestureSuppressed?.() === true,
+      handleGizmoPointer: (phase, event) => this.gizmoInteraction?.handle(phase, event) === true,
     });
     this.inputSession.attach();
   }
@@ -322,6 +335,15 @@ export class StudioDeepWasmBridge {
   private result(status: StudioWasmSwitchResult["status"], error?: string): StudioWasmSwitchResult {
     return { status, activeBackend: this.activeBackendValue, ...(error ? { error } : {}) };
   }
+}
+
+function isDeepGizmoHost(host: StudioDeepWasmAuthorHost): host is StudioDeepWasmAuthorHost & DeepGizmoInteractionHost {
+  const candidate = host as StudioDeepWasmAuthorHost & Partial<DeepGizmoInteractionHost>;
+  return candidate.camera !== undefined
+    && typeof candidate.getDeepTransformGizmoInput === "function"
+    && typeof candidate.getSelectionTransform === "function"
+    && typeof candidate.applySelectionTransform === "function"
+    && typeof candidate.isSelectionLocked === "function";
 }
 
 function sameCameraSnapshot(a: readonly number[], b: readonly number[] | undefined, epsilon = 1e-5): boolean {

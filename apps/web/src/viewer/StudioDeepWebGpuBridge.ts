@@ -19,6 +19,7 @@ import { StudioDeepRenderView } from "./StudioDeepRenderView";
 import { updateAuthorProjectionState } from "./authorLodSelection";
 import { DeepCameraController } from "./deepCameraController";
 import { DeepCameraInputSession } from "./deepCameraInputSession";
+import { DeepGizmoInteraction } from "./deepGizmoInteraction";
 import { createDeepCanvas, prepareAuthorInputCanvas, captureAuthorStyle, restoreAuthorStyle,
   type AuthorCanvasStyle } from "./studioDeepPresentationCanvas";
 import { collectDeepOverlayPrimitives } from "./deepOverlayPrimitiveSource";
@@ -89,6 +90,7 @@ export class StudioDeepWebGpuBridge {
   private inputSession: DeepCameraInputSession | undefined;
   private gestureActive = false;
   private lastGestureTickAt: number | undefined;
+  private readonly gizmoInteraction: DeepGizmoInteraction;
 
   constructor(
     private readonly viewer: ViewerEngine,
@@ -105,6 +107,7 @@ export class StudioDeepWebGpuBridge {
     this.cameraFrameInFlightLimit = options.cameraFrameInFlightLimit ?? 2;
     this.authorCanvas = viewer.renderer.domElement;
     this.authorStyle = captureAuthorStyle(this.authorCanvas);
+    this.gizmoInteraction = new DeepGizmoInteraction(viewer, () => this.authorCanvas.getBoundingClientRect());
     prepareAuthorInputCanvas(this.authorCanvas);
   }
 
@@ -527,6 +530,7 @@ export class StudioDeepWebGpuBridge {
     this.inputSession ??= new DeepCameraInputSession(this.deepCanvas, controller, () => this.applyGesturePose(), {
       forwardTo: this.authorCanvas,
       suppressGesture: () => this.viewer.isViewportGestureSuppressed?.() === true,
+      handleGizmoPointer: (phase, event) => this.gizmoInteraction.handle(phase, event),
     });
     this.inputSession.attach();
   }
