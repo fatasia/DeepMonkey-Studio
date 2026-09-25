@@ -3714,3 +3714,14 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - **辅助图形原生化(代理,提交 88b0573b)**:DeepOverlayPrimitives 纯几何生成——切片 A 选择盒(12 边,Box3Helper 颜色合同复刻)、B 测量线(两端十字刻度)、C gizmo 呈现层(轴向箭头+48 段环,屏幕等占比);roots 排除替代 visible=false(WebGL 语义零改动+回退自动恢复);桥纯追加(staged 0 删除)。22 新测试+viewer 856 绿+对抗自查修 3 自引入缺陷。
 - 遗留:浏览器截图闭环未做(单测级证据);WASM 模式无 editorOverlay 通道(需 Rust 侧,后续批);angle 测量/剖切盒/标注/灯光代理/gizmo 交互数学仍 Three。
+
+### 2026-09-25 复盘立项与执行队列(用户指令:全部接入,自排顺序,极速推进)
+
+**门禁补强(已落地,提交 bc9730ef)**:`pnpm gate:artifact-freshness`——runtimePackage 顶层字段为探针,同时校验 deep-engine dist 目录与 wasm 二进制(serde 错误串内嵌字段清单);封堵本轮两次"陈旧产物"实锤回归。schema 变更后必须过此门禁。
+
+**权威任务队列(按依赖与价值排序;并行会话 gpuTimer 落库后其复测项自动解锁):**
+- W0(在途):交互/功能全检代理;烘焙②服务端持久化代理(API 端点+回填+服务端候选一致性)。
+- W1 编辑器四件套收尾(Deep 纯编辑成立条件):①批 3-5 UI 写点接线+批 6 结构命令(命令层收编完成,undo 逆放留后);②Deep 拾取消费(编辑器点击走 pickScene+发布查看器拾取);③辅助图形补全(angle 测量/剖切盒/标注/灯光代理原生化)+WASM overlay 通道(Rust FFI 侧);④gizmo 交互数学迁移(命中/操纵,脱离 TransformControls)。
+- W2 产品闭环:⑤Shader 工具链(WGSL 编辑 UI→预览→绑定→快照保存(追加可选字段)→运行包 shaderPackages 编译发布);⑥烘焙 WASM 查看器探针消费(Rust 侧)。
+- W3 引擎能力上层化:⑦DDGI 动态化上层开关(光源移动 GI 实时响应);⑧诊断面板补全(residency/SpatialAA/temporalValidity/clustered 统计可见);⑨clustered lighting 控制面+Native 视觉证据;⑩音频 30min soak 插桩定位 500ms 逃逸。
+- 依赖关系:W1①先行(命令层是②③④消费的命令通道);⑤⑥可与 W1 并行(不同文件域);⑦⑧⑨在 gpuTimer/渲染器专项后收益最大。
