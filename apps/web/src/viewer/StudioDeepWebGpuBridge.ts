@@ -272,7 +272,7 @@ export class StudioDeepWebGpuBridge {
       onReady: this.renderDeepFrame, onFailure: error => this.failRuntime(error) });
     this.activeBackendValue = "webgpu";
     this.viewer.setPresentationRendererBackend("webgpu");
-    this.viewer.setDeepPointerPick((origin, direction) => this.pickDeep(backend, origin, direction));
+    this.viewer.setDeepPointerPick?.((origin, direction) => this.pickDeep(backend, origin, direction));
     this.failureReported = false;
     this.lastCameraSnapshot = cameraSnapshot(this.viewer);
     this.takeoverGesture();
@@ -295,7 +295,7 @@ export class StudioDeepWebGpuBridge {
   }
 
   private releaseDeep(): void {
-    this.viewer.setDeepPointerPick(undefined);
+    this.viewer.setDeepPointerPick?.(undefined);
     this.projectionBridge = undefined;
     this.viewer.setPresentationPerformanceSource(undefined);
     this.performanceSource?.dispose();
