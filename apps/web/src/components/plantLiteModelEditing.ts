@@ -16,6 +16,7 @@ export const PLANT_NODE_LABELS: Record<PlantLiteCanonicalNodeKind, string> = {
   station: "工位",
   "queue-buffer": "缓冲区",
   transport: "搬运",
+  split: "分流",
   sink: "产出",
 };
 
