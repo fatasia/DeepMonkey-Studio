@@ -10,7 +10,7 @@ This document tracks repository publication readiness. It is a release gate, not
 - The repository gate checks tracked paths for local configuration, credentials and generated output. A passing result covers the current tree, not every historical blob or external artifact.
 - Historical asset removal does not prove that all reachable revisions are safe to publish. Complete the history and redistribution review for the selected release.
 - Studio integrates Deep WebGPU as a selectable backend. Deep Native remains a separate delivery target with its own capability and verification requirements.
-- The project license is [MIT License with Ethical Restrictions](../LICENSE), identified as `DMS-MIT-ER-1.0` (`LicenseRef-Deep-Monkey-MIT-ER-1.0` in package metadata). The project is source-available, not OSI-approved open source. Contribution, governance, security, conduct and release policies are linked from the [documentation index](README.md).
+- The project license is the [Deep Monkey Community Source License 1.0](../LICENSE), identified as `LicenseRef-Deep-Monkey-Community-1.0`. The project is source-available, not OSI-approved open source. Contribution, governance, security, conduct and release policies are linked from the [documentation index](README.md).
 
 ## Required before making the repository public
 
