@@ -297,7 +297,11 @@ function selectBottleneck(model: PlantLiteModel, metrics: PlantLiteReplication["
 }
 
 function bottleneckScore(metric: PlantLiteReplication["nodes"][number], duration: number): number {
-  return metric.utilization + Math.min(1, metric.blockedMinutes / Math.max(1, duration));
+  // 复合判据(对位 Bottleneck Analyzer 语义):高利用率,且自身阻塞(堵上游)或
+  // 饥饿(被上游供给不足)取主导者;两者同源不叠加,避免同一等待被双计。
+  const blockedShare = Math.min(1, metric.blockedMinutes / Math.max(1, duration));
+  const starvedShare = Math.min(1, metric.starvedMinutes / Math.max(1, duration));
+  return metric.utilization + Math.max(blockedShare, starvedShare);
 }
 
 function findNodeMetric(run: PlantLiteReplication, nodeId: string) {
