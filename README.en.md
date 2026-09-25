@@ -11,9 +11,9 @@
 
 [简体中文](README.md) · [English](README.en.md)
 
-[![Deep Engine](https://github.com/fatasia/bim-studio/actions/workflows/deep-engine.yml/badge.svg?branch=main)](https://github.com/fatasia/bim-studio/actions/workflows/deep-engine.yml)
-[![Studio web + API](https://github.com/fatasia/bim-studio/actions/workflows/studio.yml/badge.svg?branch=main)](https://github.com/fatasia/bim-studio/actions/workflows/studio.yml)
-[![Repository governance](https://github.com/fatasia/bim-studio/actions/workflows/repository-governance.yml/badge.svg?branch=main)](https://github.com/fatasia/bim-studio/actions/workflows/repository-governance.yml)
+[![Deep Engine](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/deep-engine.yml/badge.svg?branch=main)](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/deep-engine.yml)
+[![Studio web + API](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/studio.yml/badge.svg?branch=main)](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/studio.yml)
+[![Repository governance](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/repository-governance.yml/badge.svg?branch=main)](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/repository-governance.yml)
 [![License: MIT with Ethical Restrictions](https://img.shields.io/badge/license-MIT%20with%20Ethical%20Restrictions-blue.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-Web%20%7C%20Windows%20%7C%20Android-4c8ddc)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)
@@ -36,6 +36,8 @@ During development and testing, AI downloaded many industrial models from the in
 The project uses the broadest possible MIT license so anyone can use it freely (technological progress depends on the support of industry experts), with an exception only for certain companies that disregard employees' human rights (see [LICENSE.zh-CN.md](LICENSE.zh-CN.md)).
 
 [Documentation](docs/README.md) · [Contributing](CONTRIBUTING.md) · [Support](SUPPORT.md)
+
+<video controls preload="metadata" poster="https://raw.githubusercontent.com/fatasia/DeepMonkey-Studio/main/docs/assets/system-intro/poster.png" width="960"><source src="https://raw.githubusercontent.com/fatasia/DeepMonkey-Studio/main/docs/assets/system-intro/deepmonkey-studio-intro.mp4" type="video/mp4" /></video>
 
 License designation: **MIT License + Ethical Restrictions** (source-available).
 
@@ -191,8 +193,8 @@ The `client` development target supports Windows only. Both Windows and Linux ca
 ### 2. Clone, install, and configure
 
 ```bash
-git clone https://github.com/fatasia/bim-studio.git
-cd bim-studio
+git clone https://github.com/fatasia/DeepMonkey-Studio.git
+cd DeepMonkey-Studio
 corepack enable
 corepack prepare pnpm@11.18.0 --activate
 pnpm install --frozen-lockfile

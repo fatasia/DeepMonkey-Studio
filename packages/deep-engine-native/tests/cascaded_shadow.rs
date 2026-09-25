@@ -250,7 +250,7 @@ fn runtime_contract_uses_array_sampling_dynamic_caster_offsets_and_blending() {
     let sampling_shader = include_str!("../assets/shaders/native_cascaded_shadow_v1.wgsl");
     let mesh_shader = include_str!("../assets/shaders/native_mesh_v1.wgsl");
     let frame_bindings = include_str!("../src/frame_bindings.rs");
-    let shadow_map = include_str!("../src/shadow_map.rs");
+    let shadow_map = include_str!("../src/shadow_map/mod.rs");
     let shadow_pass = include_str!("../src/shadow_pass.rs");
 
     for contract in [

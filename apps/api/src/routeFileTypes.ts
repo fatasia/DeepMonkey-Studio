@@ -2,7 +2,9 @@ import path from "node:path";
 import { supportedExtensions, type ModelFormat } from "@bim-studio/contracts";
 
 export function cleanFileName(fileName: string): string {
-  const normalized = path.basename(fileName).normalize("NFKC");
+  // Normalize both separators before basename: uploads can originate on a
+  // Windows client while the API runs on Linux in CI/production.
+  const normalized = path.posix.basename(fileName.replaceAll("\\", "/")).normalize("NFKC");
   return normalized.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").slice(0, 180) || "model";
 }
 

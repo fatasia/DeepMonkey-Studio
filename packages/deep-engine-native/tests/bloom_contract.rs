@@ -92,7 +92,7 @@ fn clustered_lighting_shader_consumes_the_resident_tile_plan() {
 #[test]
 fn resize_prepares_every_binding_before_publishing_the_candidate() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let renderer = fs::read_to_string(root.join("src/renderer.rs")).unwrap();
+    let renderer = fs::read_to_string(root.join("src/renderer/mod.rs")).unwrap();
     let prepare_forward = renderer.find("let mut next_forward").unwrap();
     let prepare_bloom = renderer.find("let next_bloom").unwrap();
     let prepare_output = renderer.find("let next_output").unwrap();

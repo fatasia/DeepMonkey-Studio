@@ -53,7 +53,7 @@ mod gpu_textures;
 mod half_float;
 #[path = "../src/mesh_pass.rs"]
 mod mesh_pass;
-#[path = "../src/pipeline.rs"]
+#[path = "../src/pipeline/mod.rs"]
 mod pipeline;
 // player_shader_plan.rs 引用 bin 侧 player_content/player_picking（#[path] 重组装的 bin 模块族）。
 #[path = "../src/player_content.rs"]
@@ -66,7 +66,7 @@ mod player_shader_plan;
 mod render_graph;
 #[path = "../src/runtime_lkg.rs"]
 mod runtime_lkg;
-#[path = "../src/shadow_map.rs"]
+#[path = "../src/shadow_map/mod.rs"]
 mod shadow_map;
 #[path = "../src/shadow_pass.rs"]
 mod shadow_pass;

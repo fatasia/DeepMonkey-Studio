@@ -24,7 +24,7 @@
 
 每个可再分发素材包必须随目录保留来源 URL、精确许可证、下载版本、SHA-256 和修改说明。Nature Kit 当前是 CC0，仓库仍保留 Kenney 来源说明；其它模型、字体、图标和图片必须逐项审计后才能进入发行包。第三方供应商 API 返回的模型默认属于用户或供应商约束，不能因为能下载就打进公共镜像。
 
-完整的归属和发布检查见[公开源码发布准备](https://github.com/fatasia/bim-studio/blob/main/docs/OPEN_SOURCE_READINESS.md)与[公共源码发布清单](https://github.com/fatasia/bim-studio/blob/main/docs/open-source-release-checklist.md)。应用内操作见[管理资源并插入 2D / 3D](/docs/resource-workflow)。
+完整的归属和发布检查见[公开源码发布准备](https://github.com/fatasia/DeepMonkey-Studio/blob/main/docs/OPEN_SOURCE_READINESS.md)与[公共源码发布清单](https://github.com/fatasia/DeepMonkey-Studio/blob/main/docs/open-source-release-checklist.md)。应用内操作见[管理资源并插入 2D / 3D](/docs/resource-workflow)。
 
 ## 模板与组件的版本策略
 

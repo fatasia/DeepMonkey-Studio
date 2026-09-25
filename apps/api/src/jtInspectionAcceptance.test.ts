@@ -1,4 +1,5 @@
 import multipart from "@fastify/multipart";
+import { existsSync } from "node:fs";
 import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -28,7 +29,7 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
-describe("JT upload inspection closure", () => {
+describe.skipIf(!existsSync(fixturePath) || !existsSync(assemblyFixturePath))("JT upload inspection closure [skipped: external fixture pack unavailable]", () => {
   it("converts a real JT LOD0 and preserves viewing, selection and property access", async () => {
     const { app, dataDir, objects, store } = await createHarness();
     const response = await uploadJt(app, await readFile(fixturePath));

@@ -11,7 +11,7 @@ Web 开发需要 Git、Node.js 24 和 pnpm 11.18.0。以仓库根目录的 `pack
 ## 获取并启动源码
 
 ```bash
-git clone https://github.com/fatasia/bim-studio.git
+git clone https://github.com/fatasia/DeepMonkey-Studio.git
 cd bim-studio
 corepack enable
 corepack prepare pnpm@11.18.0 --activate

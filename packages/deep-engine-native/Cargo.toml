@@ -5,8 +5,8 @@ edition = "2024"
 rust-version = "1.93"
 description = "Native winit + wgpu viewer bootstrap for Deep Engine"
 license-file = "../../LICENSE"
-repository = "https://github.com/fatasia/bim-studio"
-homepage = "https://github.com/fatasia/bim-studio"
+repository = "https://github.com/fatasia/DeepMonkey-Studio"
+homepage = "https://github.com/fatasia/DeepMonkey-Studio"
 publish = false
 
 [dependencies]

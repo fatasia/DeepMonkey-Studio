@@ -52,7 +52,7 @@ writeFileSync(path.join(stage, "pack.manifest.json"), JSON.stringify(manifest, n
 // catalog/audit:导入器要求 models/files/items 数组
 const catalog = {
   schema: "deepmonkey.asset-pack-catalog", schemaVersion: 1,
-  source: "https://github.com/fatasia/bim-studio/releases/tag/assets-v1",
+  source: "https://github.com/fatasia/DeepMonkey-Studio/releases/tag/assets-v1",
   license: "CC0 (nature-kit); samples/showcase 为工程数据与场景",
   models,
   files: files.filter((f) => !f.path.startsWith("pack.")).map((f) => ({ path: f.path, sha256: f.sha256 })),

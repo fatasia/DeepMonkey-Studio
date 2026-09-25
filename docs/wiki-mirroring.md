@@ -20,11 +20,11 @@ pnpm docs:wiki:export   # 导出到 artifacts/wiki/
 
 ## 发布到 GitHub Wiki
 
-截至 2026-09-24，`https://github.com/fatasia/bim-studio.wiki.git` 尚不存在（`git ls-remote` 返回 Repository not found）。GitHub Wiki 需要在仓库 Settings → Features → Wikis 开启并至少通过网页创建一次任意页面后，git 远端才可用。开启后执行：
+截至 2026-09-24，`https://github.com/fatasia/DeepMonkey-Studio.wiki.git` 尚不存在（`git ls-remote` 返回 Repository not found）。GitHub Wiki 需要在仓库 Settings → Features → Wikis 开启并至少通过网页创建一次任意页面后，git 远端才可用。开启后执行：
 
 ```bash
 pnpm docs:wiki:export
-git clone https://github.com/fatasia/bim-studio.wiki.git artifacts/wiki-repo
+git clone https://github.com/fatasia/DeepMonkey-Studio.wiki.git artifacts/wiki-repo
 # 清空 clone 中的旧 .md（保留 .git），再把 artifacts/wiki 的产物复制进去
 cp artifacts/wiki/*.md artifacts/wiki/.sync-manifest.json artifacts/wiki-repo/
 cp -r artifacts/wiki/docs-assets artifacts/wiki-repo/

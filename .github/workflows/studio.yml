@@ -71,6 +71,10 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Web/API consumers resolve the package export map in production mode.
+      # Build the workspace package before tests so dist/runtimePackage exists
+      # on a clean checkout (development exports intentionally point at src).
+      - run: pnpm --filter @bim-studio/deep-engine build
       - run: pnpm --filter @bim-studio/web typecheck
       - run: pnpm --filter @bim-studio/web test
       - run: pnpm --filter @bim-studio/web build

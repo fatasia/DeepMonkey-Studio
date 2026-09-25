@@ -5,7 +5,7 @@
   "license": "LicenseRef-Deep-Monkey-Community-1.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/fatasia/bim-studio.git"
+    "url": "git+https://github.com/fatasia/DeepMonkey-Studio.git"
   },
   "packageManager": "pnpm@11.18.0",
   "engines": {

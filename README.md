@@ -11,9 +11,9 @@
 
 [简体中文](README.md) · [English](README.en.md)
 
-[![Deep Engine](https://github.com/fatasia/bim-studio/actions/workflows/deep-engine.yml/badge.svg?branch=main)](https://github.com/fatasia/bim-studio/actions/workflows/deep-engine.yml)
-[![Studio web + API](https://github.com/fatasia/bim-studio/actions/workflows/studio.yml/badge.svg?branch=main)](https://github.com/fatasia/bim-studio/actions/workflows/studio.yml)
-[![Repository governance](https://github.com/fatasia/bim-studio/actions/workflows/repository-governance.yml/badge.svg?branch=main)](https://github.com/fatasia/bim-studio/actions/workflows/repository-governance.yml)
+[![Deep Engine](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/deep-engine.yml/badge.svg?branch=main)](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/deep-engine.yml)
+[![Studio web + API](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/studio.yml/badge.svg?branch=main)](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/studio.yml)
+[![Repository governance](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/repository-governance.yml/badge.svg?branch=main)](https://github.com/fatasia/DeepMonkey-Studio/actions/workflows/repository-governance.yml)
 [![License: MIT with Ethical Restrictions](https://img.shields.io/badge/license-MIT%20with%20Ethical%20Restrictions-blue.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-Web%20%7C%20Windows%20%7C%20Android-4c8ddc)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)
@@ -41,9 +41,9 @@
 
 ## 系统介绍 · 从 Vibe Coding 到 Vibe World
 
-[![观看 DeepMonkey Studio 系统介绍视频](docs/assets/system-intro/poster.png)](docs/assets/system-intro/deepmonkey-studio-intro.mp4?raw=true)
+<video controls preload="metadata" poster="https://raw.githubusercontent.com/fatasia/DeepMonkey-Studio/main/docs/assets/system-intro/poster.png" width="960"><source src="https://raw.githubusercontent.com/fatasia/DeepMonkey-Studio/main/docs/assets/system-intro/deepmonkey-studio-intro.mp4" type="video/mp4" /></video>
 
-[▶ 观看介绍视频](docs/assets/system-intro/deepmonkey-studio-intro.mp4?raw=true) · 3 分 22 秒 · [字幕](docs/assets/system-intro/zh-CN.srt)
+[▶ 直接打开视频](https://raw.githubusercontent.com/fatasia/DeepMonkey-Studio/main/docs/assets/system-intro/deepmonkey-studio-intro.mp4) · 3 分 22 秒 · [字幕](docs/assets/system-intro/zh-CN.srt)
 
 从模型接入、轻量化与数据连接，到 AI 工作流、自研引擎和多端交付。
 
@@ -195,8 +195,8 @@
 ### 2. 克隆、安装和配置
 
 ```bash
-git clone https://github.com/fatasia/bim-studio.git
-cd bim-studio
+git clone https://github.com/fatasia/DeepMonkey-Studio.git
+cd DeepMonkey-Studio
 corepack enable
 corepack prepare pnpm@11.18.0 --activate
 pnpm install --frozen-lockfile

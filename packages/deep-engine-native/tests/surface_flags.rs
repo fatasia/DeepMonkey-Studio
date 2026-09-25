@@ -8,7 +8,7 @@ use deep_engine_native::{
     scene_resource_identity::scene_resource_manifest,
 };
 
-#[path = "../src/shadow_update_classify.rs"]
+#[path = "../src/shadow_update_classify/mod.rs"]
 mod shadow_update_classify;
 
 fn value() -> serde_json::Value {

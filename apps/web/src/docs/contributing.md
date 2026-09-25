@@ -4,7 +4,7 @@
 
 ## 找到合适的入口
 
-先搜索已有 Issue 与 Pull Request。小型修复和文档更正可直接提交；公共 API、数据迁移、新依赖或架构调整先写明问题、方案与兼容影响。仓库[贡献指南](https://github.com/fatasia/bim-studio/blob/HEAD/CONTRIBUTING.md)是完整要求。
+先搜索已有 Issue 与 Pull Request。小型修复和文档更正可直接提交；公共 API、数据迁移、新依赖或架构调整先写明问题、方案与兼容影响。仓库[贡献指南](https://github.com/fatasia/DeepMonkey-Studio/blob/HEAD/CONTRIBUTING.md)是完整要求。
 
 UI 在 `apps/web`，API 与存储在 `apps/api`，桌面集成在 `apps/desktop`。共享合同位于 `packages/contracts`；文档正文在 `apps/web/src/docs`，解析与搜索位于 `packages/docs-runtime`。
 

@@ -6,7 +6,7 @@ use deep_engine_native::{
 };
 use serde_json::{Value, json};
 
-#[path = "../src/shadow_update_classify.rs"]
+#[path = "../src/shadow_update_classify/mod.rs"]
 mod shadow_update_classify;
 
 #[test]

@@ -42,7 +42,7 @@ mod half_float;
 mod lod_draw_readback;
 #[path = "../src/mesh_pass.rs"]
 mod mesh_pass;
-#[path = "../src/pipeline.rs"]
+#[path = "../src/pipeline/mod.rs"]
 mod pipeline;
 #[path = "../src/player_content.rs"]
 mod player_content;
@@ -68,7 +68,7 @@ mod shader_material_assertions;
 mod shader_material_renderer;
 #[path = "support/shader_material_transactions.rs"]
 mod shader_material_transactions;
-#[path = "../src/shadow_map.rs"]
+#[path = "../src/shadow_map/mod.rs"]
 mod shadow_map;
 #[path = "../src/shadow_pass.rs"]
 mod shadow_pass;

@@ -33,7 +33,7 @@ mod deep2d_scissor; // deep2d_scissor.rs 被 player_picking/publication_verifica
 mod dashboard_video_gpu; // dashboard_video_gpu.rs 被 player_picking/publication_verification 等引用
 #[path = "../src/gpu_resources.rs"]
 mod gpu_resources; // gpu_resources.rs 被 player_picking/publication_verification 等引用
-#[path = "../src/shadow_map.rs"]
+#[path = "../src/shadow_map/mod.rs"]
 mod shadow_map; // shadow_map.rs 被 player_picking/publication_verification 等引用
 
 

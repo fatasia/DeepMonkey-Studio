@@ -174,7 +174,7 @@ export function validateRepository(root) {
       } else if (manifest.license !== LICENSE_ID) {
         fail(`package.json license must be ${LICENSE_ID}`);
       }
-      if (manifest.repository?.url !== "git+https://github.com/fatasia/bim-studio.git") fail("package.json repository URL is missing or incorrect");
+      if (manifest.repository?.url !== "git+https://github.com/fatasia/DeepMonkey-Studio.git") fail("package.json repository URL is missing or incorrect");
       if (!manifest.scripts?.["gate:repository"]?.includes("check-repository-governance")) fail("package.json must expose gate:repository");
       for (const script of ["verify:release", "verify:gpu-release"]) {
         if (!manifest.scripts?.[script]?.includes("pnpm gate:repository")) fail(`${script} must include pnpm gate:repository`);

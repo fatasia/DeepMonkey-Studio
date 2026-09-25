@@ -1,6 +1,6 @@
 # Maintainers
 
-Deep Monkey Studio is stewarded by the owner of [fatasia/bim-studio](https://github.com/fatasia/bim-studio). This file identifies responsibilities; repository permissions remain the authority for who can merge or publish.
+Deep Monkey Studio is stewarded by the owner of [fatasia/bim-studio](https://github.com/fatasia/DeepMonkey-Studio). This file identifies responsibilities; repository permissions remain the authority for who can merge or publish.
 
 ## Responsibilities
 

@@ -4,7 +4,7 @@
 
 #[path = "shadow_update_classify/mask_cases.rs"]
 mod mask_cases;
-#[path = "../src/shadow_update_classify.rs"]
+#[path = "../src/shadow_update_classify/mod.rs"]
 mod shadow_update_classify;
 
 use std::path::Path;

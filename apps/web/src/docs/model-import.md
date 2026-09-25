@@ -8,7 +8,7 @@ GLB 适合携带几何与材质交付，单文件便于定位缺失资源。glTF
 
 STEP、DWG、RVT 等工程格式使用各自的转换路径。RVT 依赖匹配版本 Revit 的 Windows Worker；DWG 依赖 LibreDWG 或部署提供的转换器。专业格式先查看系统能力和真实样本结果，再安排批量导入。
 
-格式版本、依赖和支持边界以仓库[转换插件与格式支持](https://github.com/fatasia/bim-studio/blob/HEAD/docs/converter-plugin-and-format-support.md)为准。
+格式版本、依赖和支持边界以仓库[转换插件与格式支持](https://github.com/fatasia/DeepMonkey-Studio/blob/HEAD/docs/converter-plugin-and-format-support.md)为准。
 
 ## 上传并检查处理结果
 

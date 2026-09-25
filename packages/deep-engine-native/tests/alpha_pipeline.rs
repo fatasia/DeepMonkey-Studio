@@ -184,7 +184,7 @@ fn wgsl_and_pipeline_sources_freeze_mask_blend_and_two_sided_rules() {
     assert!(shader.contains("flag(input.material.w, 1u) && !gltf_front"));
 
     let pipeline = [
-        "src/pipeline.rs",
+        "src/pipeline/mod.rs",
         "src/pipeline/mesh.rs",
         "src/pipeline/raster.rs",
         "src/pipeline/shadow.rs",

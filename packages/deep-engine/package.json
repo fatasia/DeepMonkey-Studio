@@ -6,7 +6,7 @@
   "license": "SEE LICENSE IN ../../LICENSE",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/fatasia/bim-studio.git",
+    "url": "git+https://github.com/fatasia/DeepMonkey-Studio.git",
     "directory": "packages/deep-engine"
   },
   "keywords": [
@@ -225,10 +225,8 @@
     "test:probe-radiance-gpu": "node scripts/probeRadianceGpuTest.mjs",
     "test:probe-grid-bake-gpu": "node scripts/probeGridBakeGpuTest.mjs"
   },
-  "dependencies": {
-    "@webgpu/types": "0.1.72"
-  },
   "devDependencies": {
+    "@webgpu/types": "0.1.72",
     "@types/node": "^24.10.0",
     "@types/three": "0.185.4",
     "esbuild": "0.28.1",

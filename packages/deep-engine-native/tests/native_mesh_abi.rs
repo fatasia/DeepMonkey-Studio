@@ -75,8 +75,8 @@ fn native_forward_attachment_profile_matches_the_browser_golden() {
         mesh_pass
             .matches("resolve_target: Some(&targets.hdr_view)")
             .count(),
-        2,
-        "opaque and transparent forward passes must both resolve into HDR"
+        3,
+        "opaque, transparent, and overlay forward passes resolve into HDR"
     );
 }
 
