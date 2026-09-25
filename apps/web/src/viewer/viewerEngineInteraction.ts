@@ -90,12 +90,12 @@ export abstract class ViewerEngineInteraction extends ViewerEngineAnimationContr
     // Deep 原生 overlay 原语(选择盒/两点测量线段/gizmo)接管对应 helper 的呈现,
     // 排除其 CPU 投影以避免双重绘制;本方法只被 Deep WebGPU 渲染帧消费,
     // WebGL 从不调用,故排除不影响 WebGL 呈现。angle 测量(含预览)与剖切盒
-    // 尚无原生原语,必须继续走 Three 投影;排除条件与原语采集共用同一判定。
+    // 角度测量现由 Deep 原生圆弧原语呈现;剖切盒仍走 Three 投影。
     const nativeHelpers = this.presentationRendererBackend === "webgpu" || this.presentationRendererBackend === "wasm";
     const nativeMeasurement = (object: THREE.Object3D): boolean => {
       if (!nativeHelpers) return false;
       const state = object.userData.measurement as MeasurementState | undefined;
-      return state !== undefined && state.kind !== "angle";
+      return state !== undefined;
     };
     const roots = [...(nativeHelpers ? [] : [this.transform.getHelper()]),
       ...(nativeHelpers || !this.selectionHelper ? [] : [this.selectionHelper]),
@@ -111,14 +111,22 @@ export abstract class ViewerEngineInteraction extends ViewerEngineAnimationContr
         [proxy.position, ...(proxy.target ? [proxy.target] : []), ...(proxy.line ? [proxy.line] : [])])];
     return [...new Set(roots)];
   }
-  /** Deep 原生测量原语(切片 B)的只读输入:两点线段;angle 测量仍由 Three 投影呈现。 */
+  /** Deep 原生测量原语(切片 B)的只读输入:两点线段与角度三点。 */
   getDeepMeasurementSegmentInputs(): DeepMeasurementSegmentInput[] {
     const inputs: DeepMeasurementSegmentInput[] = [];
     const collect = (state: MeasurementState | undefined, preview: boolean): void => {
-      if (!state || state.kind === "angle") return;
+      if (!state) return;
       const points = state.points?.length ? state.points : [state.start, state.end];
       const [start, end] = points;
       if (!start || !end) return;
+      if (state.kind === "angle") {
+        const third = points[2];
+        if (!third) return;
+        inputs.push({ a: new THREE.Vector3(start.x, start.y, start.z), b: new THREE.Vector3(end.x, end.y, end.z), preview,
+          angle: [new THREE.Vector3(start.x, start.y, start.z), new THREE.Vector3(end.x, end.y, end.z),
+            new THREE.Vector3(third.x, third.y, third.z)] });
+        return;
+      }
       inputs.push({ a: new THREE.Vector3(start.x, start.y, start.z), b: new THREE.Vector3(end.x, end.y, end.z), preview });
     };
     for (const child of this.scene.children) {

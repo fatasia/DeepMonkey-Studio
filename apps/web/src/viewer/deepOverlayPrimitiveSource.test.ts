@@ -26,12 +26,16 @@ describe("deep overlay primitive collector", () => {
       getDeepTransformGizmoInput: () => ({ matrix: new THREE.Matrix4(), mode: "translate" }),
       getDeepMeasurementSegmentInputs: () => [
         { a: new THREE.Vector3(0, 0, 0), b: new THREE.Vector3(1, 0, 0), preview: false },
+        { a: new THREE.Vector3(), b: new THREE.Vector3(1, 0, 0), preview: false,
+          angle: [new THREE.Vector3(), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0)] },
       ],
     }), 128, 128, 1);
-    expect(primitives).toHaveLength(3);
+    expect(primitives).toHaveLength(4);
     expect(primitives[0]!.length).toBe(12 * 18 * 8); // 选择盒
     expect(primitives[1]!.length).toBe(3 * 4 * 18 * 8); // gizmo 箭头
     expect(primitives[2]!.length).toBe(5 * 18 * 8); // 测量线段
+    expect(primitives[3]!.length).toBeGreaterThan(5 * 18 * 8); // 角度圆弧
+    expect(primitives[3]!.length % (18 * 8)).toBe(0);
   });
 
   it("skips absent selection boxes, hidden gizmos and degenerate segments without producing holes", () => {

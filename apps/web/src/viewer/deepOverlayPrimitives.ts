@@ -35,6 +35,13 @@ export interface DeepMeasurementSegmentInput {
   readonly a: THREE.Vector3;
   readonly b: THREE.Vector3;
   readonly preview: boolean;
+  /** Angle measurement uses [vertex, first arm endpoint, second arm endpoint]. */
+  readonly angle?: readonly [THREE.Vector3, THREE.Vector3, THREE.Vector3];
+}
+
+export interface DeepMeasurementAngleInput {
+  readonly points: readonly [THREE.Vector3, THREE.Vector3, THREE.Vector3];
+  readonly preview: boolean;
 }
 
 /** 把 Deep 原语顶点并入既有 overlay 投影结果;预算与 projectStudioEditorOverlay 一致,fail-closed。 */
@@ -106,6 +113,51 @@ export function projectDeepMeasurementSegment(input: DeepMeasurementSegmentInput
       viewProjection, color, physicalWidth, physicalHeight, pixelRatio);
     appendWorldLine(output, endpoint.clone().addScaledVector(second, -tick), endpoint.clone().addScaledVector(second, tick),
       viewProjection, color, physicalWidth, physicalHeight, pixelRatio);
+  }
+  return new Float32Array(output);
+}
+
+/** Deep angle measurement: two arms, endpoint ticks, and a world-space arc around the vertex. */
+export function projectDeepMeasurementAngle(input: DeepMeasurementAngleInput, camera: THREE.Camera,
+  width: number, height: number, pixelRatio: number): Float32Array<ArrayBuffer> {
+  assertViewport(width, height, pixelRatio);
+  const [vertex, firstPoint, secondPoint] = input.points;
+  const first = firstPoint.clone().sub(vertex), second = secondPoint.clone().sub(vertex);
+  const firstLength = first.length(), secondLength = second.length();
+  if (![vertex.x, vertex.y, vertex.z, firstPoint.x, firstPoint.y, firstPoint.z,
+    secondPoint.x, secondPoint.y, secondPoint.z].every(Number.isFinite)) {
+    throw new Error("Deep overlay angle points must be finite.");
+  }
+  if (firstLength <= 0 || secondLength <= 0) return new Float32Array();
+  const firstDirection = first.multiplyScalar(1 / firstLength);
+  const secondDirection = second.multiplyScalar(1 / secondLength);
+  const dot = THREE.MathUtils.clamp(firstDirection.dot(secondDirection), -1, 1);
+  const angle = Math.acos(dot);
+  if (!(angle > 1e-8)) return new Float32Array();
+  const axis = new THREE.Vector3().crossVectors(firstDirection, secondDirection);
+  if (axis.lengthSq() < 1e-12) return new Float32Array();
+  axis.normalize();
+  const radius = Math.max(Math.min(firstLength, secondLength) * 0.28, 0.15);
+  const color = overlayDisplayColor(input.preview ? DEEP_MEASUREMENT_PREVIEW_COLOR : DEEP_MEASUREMENT_COLOR,
+    input.preview ? DEEP_MEASUREMENT_PREVIEW_OPACITY : 1);
+  const viewProjection = viewProjectionMatrix(camera);
+  const physicalWidth = width * pixelRatio, physicalHeight = height * pixelRatio;
+  const output: number[] = [];
+  appendWorldLine(output, vertex, firstPoint, viewProjection, color, physicalWidth, physicalHeight, pixelRatio);
+  appendWorldLine(output, vertex, secondPoint, viewProjection, color, physicalWidth, physicalHeight, pixelRatio);
+  const tick = Math.max(Math.min(firstLength, secondLength) * MEASUREMENT_TICK_SIZE_FACTOR, MEASUREMENT_TICK_MIN_SIZE);
+  const sight = camera.position.clone().sub(vertex).normalize();
+  const tickBasis = orthogonalUnit(firstDirection, sight);
+  for (const endpoint of [vertex, firstPoint, secondPoint]) {
+    appendWorldLine(output, endpoint.clone().addScaledVector(tickBasis, -tick), endpoint.clone().addScaledVector(tickBasis, tick),
+      viewProjection, color, physicalWidth, physicalHeight, pixelRatio);
+  }
+  let previous = vertex.clone().addScaledVector(firstDirection, radius);
+  for (let segment = 1; segment <= 32; segment++) {
+    const current = vertex.clone().addScaledVector(firstDirection.clone()
+      .applyAxisAngle(axis, angle * segment / 32), radius);
+    appendWorldLine(output, previous, current, viewProjection, color, physicalWidth, physicalHeight, pixelRatio);
+    previous = current;
   }
   return new Float32Array(output);
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { mergeDeepOverlayVertices, projectDeepMeasurementSegment, projectDeepSelectionBox,
+import { mergeDeepOverlayVertices, projectDeepMeasurementAngle, projectDeepMeasurementSegment, projectDeepSelectionBox,
   projectDeepTransformGizmo } from "./deepOverlayPrimitives";
 import { OVERLAY_VERTEX_LIMIT } from "./studioDeepOverlayGeometry";
 
@@ -89,6 +89,30 @@ describe("deep overlay measurement segment primitive", () => {
     expect([...sightParallel].every(Number.isFinite)).toBe(true);
     expect(() => projectDeepMeasurementSegment({ a: new THREE.Vector3(NaN, 0, 0), b: new THREE.Vector3(1, 0, 0), preview: false },
       headOnCamera(), 128, 128, 1)).toThrow("finite");
+  });
+});
+
+describe("deep overlay angle measurement primitive", () => {
+  it("emits two arms, endpoint ticks, and a finite circular arc", () => {
+    const vertices = projectDeepMeasurementAngle({ points: [
+      new THREE.Vector3(0, 0, 0), new THREE.Vector3(2, 0, 0), new THREE.Vector3(0, 2, 0),
+    ], preview: false }, headOnCamera(), 128, 128, 1);
+    // 2 arms + 3 ticks + a clipped circular arc (up to 32 segments).
+    expect(vertices.length).toBeGreaterThan(5 * 18 * 8);
+    expect(vertices.length % (18 * 8)).toBe(0);
+    expect([...vertices].every(Number.isFinite)).toBe(true);
+  });
+
+  it("fails closed on collinear or zero-length arms and validates points", () => {
+    expect(projectDeepMeasurementAngle({ points: [
+      new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 0, 0), new THREE.Vector3(2, 0, 0),
+    ], preview: false }, headOnCamera(), 128, 128, 1)).toHaveLength(0);
+    expect(projectDeepMeasurementAngle({ points: [
+      new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 1, 0),
+    ], preview: false }, headOnCamera(), 128, 128, 1)).toHaveLength(0);
+    expect(() => projectDeepMeasurementAngle({ points: [
+      new THREE.Vector3(NaN, 0, 0), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0),
+    ], preview: false }, headOnCamera(), 128, 128, 1)).toThrow("finite");
   });
 });
 

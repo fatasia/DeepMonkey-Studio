@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { projectDeepMeasurementSegment, projectDeepSelectionBox, projectDeepTransformGizmo,
+import { projectDeepMeasurementAngle, projectDeepMeasurementSegment, projectDeepSelectionBox, projectDeepTransformGizmo,
   type DeepMeasurementSegmentInput, type DeepTransformGizmoInput } from "./deepOverlayPrimitives";
 
 /** Deep 模式下由桥注册进 StudioDeepRenderView 的原语顶点来源(每渲染帧调用一次)。 */
@@ -23,7 +23,9 @@ export function collectDeepOverlayPrimitives(viewer: DeepOverlayPrimitiveViewer,
   const gizmo = viewer.getDeepTransformGizmoInput();
   if (gizmo) primitives.push(projectDeepTransformGizmo(gizmo, viewer.camera, width, height, pixelRatio));
   for (const segment of viewer.getDeepMeasurementSegmentInputs()) {
-    primitives.push(projectDeepMeasurementSegment(segment, viewer.camera, width, height, pixelRatio));
+    primitives.push(segment.angle
+      ? projectDeepMeasurementAngle({ points: segment.angle, preview: segment.preview }, viewer.camera, width, height, pixelRatio)
+      : projectDeepMeasurementSegment(segment, viewer.camera, width, height, pixelRatio));
   }
   return primitives;
 }
