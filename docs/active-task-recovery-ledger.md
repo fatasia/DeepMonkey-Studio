@@ -3633,3 +3633,11 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 
 - `pbrRenderer.render()` 主路径确认为单 encoder 单提交(pbrRenderer.ts:499 将 preparation commandBuffers 与主 commands 合并一次 `queue.submit`);公平 runner 观测的一帧多 submit 源自**调用编排**:TAA 收敛重绘(TemporalFrameSettler.restart 重放 draw 快照)、onSubmittedWorkDone 补位(completeCameraFrame 重放 pendingCameraView)与手势帧提交叠加。优化对象为调用编排节流(收敛重绘上限/补位合并),实施需每 pass GPU 计时防画质回退——渲染器专项,提交 37f7a0bd 记录结论。
 - 拾取 API(第 3 条)现状:deep-engine 无拾取查询能力(runtimePackage 结构未含节点级 raycast 映射),新建需编译器保留 nodeId→mesh 实例映射+CPU raycast+命中排序,4-8h 级专项,规格待写。
+
+### 2026-09-25 快速并行批次 2
+
+- **新包首帧复录(代理,通过)**:D2 native 重建包两轮 0 白闪(主窗 1369/1050ms 纯深色),无趋势劣化;新哈希:EXE 57fe71ed…/NSIS 79c96b86…/MSI f0cecae9…/native 48633d85…(含 verify-dashboard-package)。证据 test-output/desktop-first-frame-recheck-2026-09-25/。
+- **LOD 重选幂等缓存(本线程)**:相机投影参数+树版本未变时摘除每帧全树递归;合同测试改按幂等语义(锁结果);LOD 族 8/8。提交待记。
+- **引擎中立拾取合同(本线程,提交 8bb19266)**:contracts 增 ScenePickingHit/Query,342/342。
+- **手势缓存刷新修正(提交 0bebcebd)**:全量构建同步刷新缓存,拖拽中编辑下一手势帧生效;4/4。
+- **在途代理**:拾取 API(deep-engine picking 模块)、拖尾节流(桥编排)、全仓 typecheck 已 EXIT=0。
