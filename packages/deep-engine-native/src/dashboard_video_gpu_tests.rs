@@ -155,8 +155,14 @@ fn real_mp4_frames_compose_through_the_deep2d_gpu_pass() {
         .unwrap();
     assert!(!paused.playing);
     std::thread::sleep(Duration::from_millis(50));
+    // A frame already queued before the pause may be consumed once. Drain it,
+    // then verify that the paused stream stays frozen on the next tick.
+    let _ = compositor.advance(&queue).unwrap();
+    let paused_uploaded = compositor.uploaded_frames();
+    std::thread::sleep(Duration::from_millis(50));
     assert!(!compositor.advance(&queue).unwrap());
-    assert_eq!(compositor.uploaded_frames(), uploaded);
+    assert_eq!(compositor.uploaded_frames(), paused_uploaded);
+    uploaded = paused_uploaded;
     assert!(
         compositor
             .control("node.video", &queue, DashboardVideoCommand::Play)
