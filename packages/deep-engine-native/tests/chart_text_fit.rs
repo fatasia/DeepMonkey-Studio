@@ -8,15 +8,7 @@ fn fit(
     max_width: f64,
     max_chars: usize,
 ) -> Result<String, String> {
-    fit_ellipsis(
-        rasterizer,
-        text,
-        "Inter",
-        12.0,
-        16.0,
-        max_width,
-        max_chars,
-    )
+    fit_ellipsis(rasterizer, text, "Inter", 12.0, 16.0, max_width, max_chars)
 }
 
 #[test]
@@ -28,9 +20,7 @@ fn short_text_passes_through_and_long_text_fits_measured_width() {
     let fitted = fit(&mut rasterizer, long, 120.0, 24).unwrap();
     assert!(fitted.ends_with('…'), "fitted={fitted}");
     assert!(fitted.chars().count() < long.chars().count());
-    let width = rasterizer
-        .measure(&fitted, "Inter", 12.0, 16.0)
-        .unwrap();
+    let width = rasterizer.measure(&fitted, "Inter", 12.0, 16.0).unwrap();
     assert!(width <= 120.0, "measured {width} exceeds budget");
     // 同一文本在更大预算下应保留更多字符。
     let wider = fit(&mut rasterizer, long, 400.0, 24).unwrap();
@@ -68,8 +58,6 @@ fn max_chars_bounds_the_search_without_breaking_the_ellipsis() {
     let fitted = fit(&mut rasterizer, &long, 96.0, 6).unwrap();
     // 前缀最多 6 字符(含省略号最多 7);宽度仍须达标。
     assert!(fitted.chars().count() <= 7);
-    let width = rasterizer
-        .measure(&fitted, "Inter", 12.0, 16.0)
-        .unwrap();
+    let width = rasterizer.measure(&fitted, "Inter", 12.0, 16.0).unwrap();
     assert!(width <= 96.0, "measured {width} exceeds budget");
 }

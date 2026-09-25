@@ -115,8 +115,7 @@ pub async fn render(
     });
     let ibl = GpuIblEnvironment::new(device, queue, environment).unwrap();
     // F3:验证装配无真实探针,绑定 96B 全零占位,开关为 0。
-    let probe_frame_buffer =
-        deep_engine_native::probe_gi_storage::disabled_frame_buffer(device);
+    let probe_frame_buffer = deep_engine_native::probe_gi_storage::disabled_frame_buffer(device);
     let frame_group = ibl.create_frame_bind_group(
         device,
         &layouts.frame,

@@ -38,7 +38,10 @@ pub enum GpuEvent {
     #[cfg(target_arch = "wasm32")]
     WasmScenePackage(Vec<u8>),
     #[cfg(target_arch = "wasm32")]
-    WasmEditorOverlay { revision: u64, vertices: Vec<f32> },
+    WasmEditorOverlay {
+        revision: u64,
+        vertices: Vec<f32>,
+    },
     #[cfg(target_arch = "wasm32")]
     WasmStop,
     /// A watched RenderPacket file changed and validated; the payload carries the

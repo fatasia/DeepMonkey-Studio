@@ -631,7 +631,7 @@ fn wrapped_delta_100ns(delta: i64, period: i64) -> i64 {
 
 #[cfg(test)]
 mod audio_resync_tests {
-    use super::{wrapped_delta_100ns, AUDIO_RESYNC_THRESHOLD_100NS};
+    use super::{AUDIO_RESYNC_THRESHOLD_100NS, wrapped_delta_100ns};
 
     #[test]
     fn resync_before_one_output_buffer_can_become_a_p99_escape() {

@@ -82,19 +82,18 @@ mod telemetry_gpu;
 #[path = "../src/player_annotations.rs"]
 mod player_annotations;
 // player_state 字段引用的验证记录数据（依赖倒置后无服务层依赖）。
-#[path = "../src/publication_record.rs"]
-mod publication_record; // runtime_package_startup.rs 被 player_picking/publication_verification 等引用
-#[path = "../src/deep2d_gpu.rs"]
-mod deep2d_gpu; // deep2d_gpu.rs 被 player_picking/publication_verification 等引用
+#[path = "../src/dashboard_video_gpu.rs"]
+mod dashboard_video_gpu;
 #[path = "../src/deep2d_atlas_gpu.rs"]
 mod deep2d_atlas_gpu; // deep2d_atlas_gpu.rs 被 player_picking/publication_verification 等引用
+#[path = "../src/deep2d_gpu.rs"]
+mod deep2d_gpu; // deep2d_gpu.rs 被 player_picking/publication_verification 等引用
 #[path = "../src/deep2d_gpu_cache.rs"]
 mod deep2d_gpu_cache; // deep2d_gpu_cache.rs 被 player_picking/publication_verification 等引用
 #[path = "../src/deep2d_scissor.rs"]
 mod deep2d_scissor; // deep2d_scissor.rs 被 player_picking/publication_verification 等引用
-#[path = "../src/dashboard_video_gpu.rs"]
-mod dashboard_video_gpu; // dashboard_video_gpu.rs 被 player_picking/publication_verification 等引用
-
+#[path = "../src/publication_record.rs"]
+mod publication_record; // runtime_package_startup.rs 被 player_picking/publication_verification 等引用 // dashboard_video_gpu.rs 被 player_picking/publication_verification 等引用
 
 use deep_engine_native::runtime_package::parse_and_validate_runtime_package;
 use player_content::PlayerContent;

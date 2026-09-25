@@ -446,8 +446,10 @@ mod tests {
     #[test]
     fn dashboard_verification_rejects_scene_content_before_any_rendering() {
         let fixture = deep_engine_native::runtime_package::parse_and_validate_runtime_package(
-            std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("tests/fixtures/runtime-package-v1.json"))
+            std::fs::read(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests/fixtures/runtime-package-v1.json"),
+            )
             .unwrap()
             .as_slice(),
         )

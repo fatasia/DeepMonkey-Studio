@@ -41,6 +41,8 @@ pub(crate) use content_profile::entry_bloom;
 mod content_profile_gpu_tests;
 #[cfg(all(test, target_os = "windows"))]
 mod coordinate_frame_gpu_tests;
+#[cfg(target_arch = "wasm32")]
+mod editor_overlay;
 #[cfg(test)]
 mod environment_probe_tests;
 mod environment_update;
@@ -51,8 +53,6 @@ mod hi_z_pyramid;
 #[cfg(test)]
 mod hi_z_pyramid_tests;
 mod init;
-#[cfg(target_arch = "wasm32")]
-mod editor_overlay;
 mod init_report;
 mod material_resource_diff;
 #[cfg(all(test, target_os = "windows"))]
@@ -160,7 +160,11 @@ pub struct Renderer {
 
 impl Renderer {
     #[cfg(target_arch = "wasm32")]
-    pub(crate) fn set_editor_overlay(&mut self, vertices: &[f32], revision: u64) -> Result<(), String> {
+    pub(crate) fn set_editor_overlay(
+        &mut self,
+        vertices: &[f32],
+        revision: u64,
+    ) -> Result<(), String> {
         self.editor_overlay.update(&self.device, vertices, revision)
     }
     fn sync_outline_resources(&mut self) {

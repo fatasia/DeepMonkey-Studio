@@ -156,7 +156,7 @@ struct Vertex {{ @builtin(position) position: vec4f, @location(0) color: vec4f }
 
 #[cfg(test)]
 mod tests {
-    use super::{validate, MAX_VERTICES};
+    use super::{MAX_VERTICES, validate};
     #[test]
     fn overlay_layout_and_budget_fail_closed() {
         assert!(validate(&[]).is_ok());

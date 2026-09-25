@@ -77,30 +77,29 @@ mod telemetry;
 mod telemetry_gpu;
 // —— player_picking bin 模块族传递闭包（V5 预检同族修复：#[path] 重组装的 bin 侧
 // 模块在测试 crate 根必须齐备，缺失见各模块文件内注释的依赖来源）——
-#[path = "../src/player_state.rs"]
-mod player_state; // player_state.rs 被 player_picking/publication_verification 等引用
-#[path = "../src/player_measurement.rs"]
-mod player_measurement; // player_measurement.rs 被 player_picking/publication_verification 等引用
 #[path = "../src/player_annotations.rs"]
 mod player_annotations;
+#[path = "../src/player_measurement.rs"]
+mod player_measurement; // player_measurement.rs 被 player_picking/publication_verification 等引用
+#[path = "../src/player_state.rs"]
+mod player_state; // player_state.rs 被 player_picking/publication_verification 等引用
 // player_state 字段引用的验证记录数据（依赖倒置后无服务层依赖）。
-#[path = "../src/publication_record.rs"]
-mod publication_record; // runtime_package_startup.rs 被 player_picking/publication_verification 等引用
-#[path = "../src/deep2d_gpu.rs"]
-mod deep2d_gpu; // deep2d_gpu.rs 被 player_picking/publication_verification 等引用
+#[path = "../src/dashboard_video_gpu.rs"]
+mod dashboard_video_gpu;
 #[path = "../src/deep2d_atlas_gpu.rs"]
 mod deep2d_atlas_gpu; // deep2d_atlas_gpu.rs 被 player_picking/publication_verification 等引用
+#[path = "../src/deep2d_gpu.rs"]
+mod deep2d_gpu; // deep2d_gpu.rs 被 player_picking/publication_verification 等引用
 #[path = "../src/deep2d_gpu_cache.rs"]
 mod deep2d_gpu_cache; // deep2d_gpu_cache.rs 被 player_picking/publication_verification 等引用
 #[path = "../src/deep2d_scissor.rs"]
 mod deep2d_scissor; // deep2d_scissor.rs 被 player_picking/publication_verification 等引用
-#[path = "../src/dashboard_video_gpu.rs"]
-mod dashboard_video_gpu; // dashboard_video_gpu.rs 被 player_picking/publication_verification 等引用
-
+#[path = "../src/publication_record.rs"]
+mod publication_record; // runtime_package_startup.rs 被 player_picking/publication_verification 等引用 // dashboard_video_gpu.rs 被 player_picking/publication_verification 等引用
 
 use deep_engine_native::{
-    culling_contract::prepare_gpu_culling,
     contract::{AlphaMode, RenderPacket, validate_packet},
+    culling_contract::prepare_gpu_culling,
     fog::FogSettings,
     half_decode::half_to_f32,
     hardware_ray_query::{ResidentBlasGeometry, build_resident_blas_set, build_tlas_from_blas},
@@ -184,13 +183,69 @@ fn parity_packet() -> RenderPacket {
         }
         indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     };
-    push_face([0.0, 1.0, 0.0], [[-6.0, -1.0, -6.0], [6.0, -1.0, -6.0], [6.0, -1.0, 6.0], [-6.0, -1.0, 6.0]]);
-    push_face([0.0, -1.0, 0.0], [[-0.5, -0.6, -0.4], [0.5, -0.6, -0.4], [0.5, -0.6, 0.6], [-0.5, -0.6, 0.6]]);
-    push_face([0.0, 1.0, 0.0], [[-0.5, 0.4, -0.4], [-0.5, 0.4, 0.6], [0.5, 0.4, 0.6], [0.5, 0.4, -0.4]]);
-    push_face([1.0, 0.0, 0.0], [[0.5, -0.6, -0.4], [0.5, 0.4, -0.4], [0.5, 0.4, 0.6], [0.5, -0.6, 0.6]]);
-    push_face([-1.0, 0.0, 0.0], [[-0.5, -0.6, 0.6], [-0.5, 0.4, 0.6], [-0.5, 0.4, -0.4], [-0.5, -0.6, -0.4]]);
-    push_face([0.0, 0.0, 1.0], [[-0.5, -0.6, 0.6], [0.5, -0.6, 0.6], [0.5, 0.4, 0.6], [-0.5, 0.4, 0.6]]);
-    push_face([0.0, 0.0, -1.0], [[0.5, -0.6, -0.4], [-0.5, -0.6, -0.4], [-0.5, 0.4, -0.4], [0.5, 0.4, -0.4]]);
+    push_face(
+        [0.0, 1.0, 0.0],
+        [
+            [-6.0, -1.0, -6.0],
+            [6.0, -1.0, -6.0],
+            [6.0, -1.0, 6.0],
+            [-6.0, -1.0, 6.0],
+        ],
+    );
+    push_face(
+        [0.0, -1.0, 0.0],
+        [
+            [-0.5, -0.6, -0.4],
+            [0.5, -0.6, -0.4],
+            [0.5, -0.6, 0.6],
+            [-0.5, -0.6, 0.6],
+        ],
+    );
+    push_face(
+        [0.0, 1.0, 0.0],
+        [
+            [-0.5, 0.4, -0.4],
+            [-0.5, 0.4, 0.6],
+            [0.5, 0.4, 0.6],
+            [0.5, 0.4, -0.4],
+        ],
+    );
+    push_face(
+        [1.0, 0.0, 0.0],
+        [
+            [0.5, -0.6, -0.4],
+            [0.5, 0.4, -0.4],
+            [0.5, 0.4, 0.6],
+            [0.5, -0.6, 0.6],
+        ],
+    );
+    push_face(
+        [-1.0, 0.0, 0.0],
+        [
+            [-0.5, -0.6, 0.6],
+            [-0.5, 0.4, 0.6],
+            [-0.5, 0.4, -0.4],
+            [-0.5, -0.6, -0.4],
+        ],
+    );
+    push_face(
+        [0.0, 0.0, 1.0],
+        [
+            [-0.5, -0.6, 0.6],
+            [0.5, -0.6, 0.6],
+            [0.5, 0.4, 0.6],
+            [-0.5, 0.4, 0.6],
+        ],
+    );
+    push_face(
+        [0.0, 0.0, -1.0],
+        [
+            [0.5, -0.6, -0.4],
+            [-0.5, -0.6, -0.4],
+            [-0.5, 0.4, -0.4],
+            [0.5, 0.4, -0.4],
+        ],
+    );
     let (ground_vertices, box_vertices) = vertices.split_at(24);
     let (ground_indices, box_indices) = indices.split_at(6);
     let ground_uv0 = vec![0.0f32; 8];
@@ -230,7 +285,9 @@ fn parity_packet() -> RenderPacket {
 /// 提交完成后把 RGBA16F 读回缓冲 map 出原始字节(256*8 行距恰 256 对齐)。
 fn map_readback(device: &wgpu::Device, buffer: &wgpu::Buffer) -> Vec<u8> {
     let (sender, receiver) = std::sync::mpsc::channel();
-    buffer.map_async(wgpu::MapMode::Read, .., move |result| sender.send(result).unwrap());
+    buffer.map_async(wgpu::MapMode::Read, .., move |result| {
+        sender.send(result).unwrap()
+    });
     device
         .poll(wgpu::PollType::Wait {
             submission_index: None,
@@ -275,7 +332,10 @@ fn rt_and_raster_shadows_agree_directionally_same_scene() {
     let prepared = prepare_scene(&packet).unwrap();
     let pbr = prepare_pbr_resources(&packet).unwrap();
     let size = PhysicalSize::new(SIZE, SIZE);
-    let view = PlayerView { yaw: 0.55, ..Default::default() };
+    let view = PlayerView {
+        yaw: 0.55,
+        ..Default::default()
+    };
     let mut frame = frame_data_with_camera(size, view, FogSettings::default());
     frame[FRAME_BACKGROUND_ROW][3] = 0.0;
     let layouts = create_frame_layouts(&device);
@@ -378,7 +438,9 @@ fn rt_and_raster_shadows_agree_directionally_same_scene() {
         {
             tlas_instances.push((
                 slot,
-                row[..12].try_into().expect("packed row carries a 3x4 model"),
+                row[..12]
+                    .try_into()
+                    .expect("packed row carries a 3x4 model"),
                 (start + offset) as u32,
             ));
         }
@@ -388,7 +450,12 @@ fn rt_and_raster_shadows_agree_directionally_same_scene() {
     let tlas_input: Vec<_> = tlas_instances
         .iter()
         .map(|(slot, transform, custom_index)| {
-            (&blas_set[*slot as usize], *transform, *custom_index, RT_SCENE_RAY_MASK)
+            (
+                &blas_set[*slot as usize],
+                *transform,
+                *custom_index,
+                RT_SCENE_RAY_MASK,
+            )
         })
         .collect();
     let (tlas, tlas_encoder) =
@@ -457,7 +524,10 @@ fn rt_and_raster_shadows_agree_directionally_same_scene() {
         &rt_pipelines,
         false,
     );
-    for (target, readback) in [(&targets_raster, &raster_readback), (&targets_rt, &rt_readback)] {
+    for (target, readback) in [
+        (&targets_raster, &raster_readback),
+        (&targets_rt, &rt_readback),
+    ] {
         encoder.copy_texture_to_buffer(
             target.resolved_texture().as_image_copy(),
             wgpu::TexelCopyBufferInfo {
@@ -527,7 +597,10 @@ fn rt_and_raster_shadows_agree_directionally_same_scene() {
         }
     }
     // 场景有效性:直射光确实照亮画面,阴影在两侧都真实存在(否则对拍空转)。
-    assert!(lit_scale > 0.2, "scene must receive direct sun: lit={lit_scale}");
+    assert!(
+        lit_scale > 0.2,
+        "scene must receive direct sun: lit={lit_scale}"
+    );
     assert!(
         rt_dark > 200 && raster_dark > 200,
         "shadow must exist in both frames: rt_dark={rt_dark} raster_dark={raster_dark}"
