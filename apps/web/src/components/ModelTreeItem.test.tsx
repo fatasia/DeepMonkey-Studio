@@ -65,12 +65,13 @@ function renderTreeItem() {
 }
 
 /**
- * 接线点回归(批 0):图层可见性切换入口经命令层后,图层树渲染结构不回归。
- * 运行时等价(发命令 → 总线 → applier → engine.setLayerVisible,参数与直调一致)
+ * 接线点回归(批 0 图层可见性 + 批 2 模型显隐/模型/图层锁定):
+ * 图层树与模型行的渲染结构不因命令层接线回归。
+ * 运行时等价(发命令 → 总线 → applier → engine setter,参数与直调一致)
  * 由 commands/engineCommandApplier.test.ts 的 stub engine 对照覆盖;
  * 本测试锁定 UI 面的接线承载(按钮/文案/节点渲染)不被接线破坏。
  */
-describe("ModelTreeItem 图层可见性接线(批 0)", () => {
+describe("ModelTreeItem 图层可见性与锁定接线(批 0/批 2)", () => {
   it("图层树节点渲染出可见性切换按钮,节点名与选中态保留", () => {
     const html = renderTreeItem();
     expect(html).toContain("一层墙体");

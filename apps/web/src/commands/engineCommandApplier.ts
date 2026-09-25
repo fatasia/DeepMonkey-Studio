@@ -14,6 +14,9 @@ export class UnsupportedEngineEditCommandError extends Error {
   }
 }
 
+/** 批 2 SetVisibility 支持的 patch 字段;其余字段(opacity/color/material/transform/deleted)按批次接入。 */
+const SUPPORTED_LAYER_STATE_FIELDS = new Set(["visible", "locked", "name"]);
+
 /**
  * 桥接 applier:命令 → 既有 ViewerEngine setter 执行。
  *
@@ -22,6 +25,10 @@ export class UnsupportedEngineEditCommandError extends Error {
  * 原样调用既有 setter;写回值保持命令原欧拉 TRS,与直调逐位等价。
  * 既有 setter 的全部连带(updateCollisions/rebuildPhysicsBody/updateLayerState/
  * markShadowMapDirty/onModelChange)都在 engine 内部原样触发,不在此复制编排。
+ *
+ * 批 2(SetVisibility 收编):setLayerState 支持 visible/locked/name 三字段与
+ * selection 模式;每个字段原样转交对应既有 setter(可见性/锁定按 target.layerId
+ * 有无与调用点直调逐参数一致;重命名沿用引擎仅有的 selection 作用域 setter)。
  */
 export class ViewerEngineCommandApplier implements EngineEditCommandApplier {
   private readonly transforms = new EngineTransformAuthoring();
@@ -57,9 +64,16 @@ export class ViewerEngineCommandApplier implements EngineEditCommandApplier {
     const selected = this.engine.getSelected();
     if (!selected || !this.engine.getSelectionTransform() || this.engine.isSelectionLocked()) return;
     // graph 权威通道先行:非法值在此抛错(fail-fast),不会写坏 Three。
-    // 已知边界(如实声明):fragment 构件选中时 getSelectedLayerId 返回构件 id,本预检
-    // 无法与普通图层对象区分,graph 会记账而 applySelectionTransform 内部守卫静默拒绝;
-    // graph 节点是覆盖式通道,不产生跨命令污染,外部可见行为(Three/旁账/undo)与直调一致。
+    //
+    // 已知边界(批 2 复评,如实声明):fragment 构件选中时 applySelectionTransform 内部守卫
+    // (selectedFragmentNodeId 非 root → 静默 return)会拒绝本次变换,而本预检无法提前识别,
+    // graph 已记账——即"记账但声明 degraded"的降级形态。批 2 评估结论:引擎没有可只读使用的
+    // 判别查询——selectedFragmentNodeId 为 protected;getSelectedLayerId() 把 fragment 构件 id
+    // 与普通图层对象 id 混在同一返回口;getSelectionScope() 是拾取粒度偏好(model|component),
+    // 与"当前选中是否构件"无关;getSelectedComponentRecord()/getSelectionProperties() 只覆盖
+    // layerObjects 或展示字符串,其 undefined 同样覆盖"模型根选中(可变换)",不构成判别子。
+    // 该降级的外部等价性:graph 节点是覆盖式通道(无跨命令污染),构件选中下 setter 静默拒绝
+    // 与直调逐点一致(Three/旁账/undo/连带均不变);后续批次在引擎暴露选中种类查询后收口。
     const layerId = this.engine.getSelectedLayerId();
     const nodeId = transformGraphNodeId(selected.id, layerId && layerId !== "root" ? layerId : undefined);
     this.transforms.applySetTransform(nodeId, command.transform);
@@ -79,20 +93,67 @@ export class ViewerEngineCommandApplier implements EngineEditCommandApplier {
   }
 
   private applySetVisibility(command: SetVisibilityCommand): void {
-    const unsupported = Object.keys(command.patch).filter((key) => key !== "visible");
-    if (unsupported.length > 0 || typeof command.patch.visible !== "boolean") {
+    const unsupported = Object.keys(command.patch).filter((key) => !SUPPORTED_LAYER_STATE_FIELDS.has(key));
+    if (unsupported.length > 0) {
       throw new UnsupportedEngineEditCommandError(
-        `命令 ${command.id}(${command.kind})的 patch 含未支持字段 [${unsupported.join(", ") || "visible 类型非 boolean"}];` +
-          "图层属性族(locked/name/opacity/color/deleted)命令化将在后续批次接入,请勿经命令层发送该 patch",
+        `命令 ${command.id}(${command.kind})的 patch 含未支持字段 [${unsupported.join(", ")}];` +
+          "批 2 支持 visible/locked/name,opacity/color/material/transform/deleted 命令化将在后续批次接入,请勿经命令层发送该 patch",
       );
     }
-    const visible = command.patch.visible;
-    // 与现状直调逐参数一致:图层级走 setLayerVisible,模型级走 setVisible。
-    if (command.target.layerId !== undefined) {
-      this.engine.setLayerVisible(command.target.modelId, command.target.layerId, visible);
-    } else {
-      this.engine.setVisible(command.target.modelId, visible);
+    const { visible, locked, name } = command.patch;
+    if (visible === undefined && locked === undefined && name === undefined) {
+      throw new UnsupportedEngineEditCommandError(
+        `命令 ${command.id}(${command.kind})的 patch 无有效字段(字段值不可为 undefined);请至少携带 visible/locked/name 之一`,
+      );
     }
+    if (visible !== undefined && typeof visible !== "boolean") {
+      throw new UnsupportedEngineEditCommandError(`命令 ${command.id}(${command.kind})的 patch.visible 类型非 boolean`);
+    }
+    if (locked !== undefined && typeof locked !== "boolean") {
+      throw new UnsupportedEngineEditCommandError(`命令 ${command.id}(${command.kind})的 patch.locked 类型非 boolean`);
+    }
+    if (name !== undefined && typeof name !== "string") {
+      throw new UnsupportedEngineEditCommandError(`命令 ${command.id}(${command.kind})的 patch.name 类型非 string`);
+    }
+    if (name !== undefined && command.mode !== "selection") {
+      throw new UnsupportedEngineEditCommandError(
+        `命令 ${command.id}(${command.kind})的 patch.name 仅支持 selection 模式(引擎重命名 setter renameSelection 只作用于当前选中);` +
+          "target 模式重命名将在引擎提供按 id 定位的重命名 setter 后接入",
+      );
+    }
+    if (locked !== undefined && command.mode === "selection") {
+      throw new UnsupportedEngineEditCommandError(
+        `命令 ${command.id}(${command.kind})的 patch.locked 不支持 selection 模式(引擎无选中作用域的锁定 setter);` +
+          "请在调用点按图层/模型分发后以 target 模式(layerId 有无)发送",
+      );
+    }
+    // 逐字段原样转交既有 setter;多字段按 name → locked → visible 的固定顺序(与引擎恢复路径
+    // applyLayerStates 对这三字段的既有编排一致)。当前 UI 写点均为单字段 patch。
+    if (name !== undefined) this.engine.renameSelection(name);
+    if (locked !== undefined) {
+      // 与现状直调逐参数一致:带 layerId 走 setLayerLocked(含 layerId === "root" 时 setter 内部
+      // 转委 setModelLocked 的既有语义),模型级走 setModelLocked。
+      if (command.target.layerId !== undefined) {
+        this.engine.setLayerLocked(command.target.modelId, command.target.layerId, locked);
+      } else {
+        this.engine.setModelLocked(command.target.modelId, locked);
+      }
+    }
+    if (visible !== undefined) {
+      // 与现状直调逐参数一致:selection 模式走 setSelectionVisible(其内部分发 fragment 构件/
+      // 模型根/图层对象的既有语义);target 模式图层级走 setLayerVisible,模型级走 setVisible。
+      if (command.mode === "selection") {
+        this.engine.setSelectionVisible(visible);
+      } else if (command.target.layerId !== undefined) {
+        this.engine.setLayerVisible(command.target.modelId, command.target.layerId, visible);
+      } else {
+        this.engine.setVisible(command.target.modelId, visible);
+      }
+    }
+  }
+  /** 测试与审计用:graph 通道节点快照(验证 fragment 降级路径"记账"侧的既有事实)。 */
+  transformNode(nodeId: string) {
+    return this.transforms.node(nodeId);
   }
 }
 

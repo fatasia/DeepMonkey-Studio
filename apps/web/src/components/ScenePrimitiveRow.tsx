@@ -1,5 +1,7 @@
 import { Box, Check, Eye, EyeOff, Focus, Lock, ScanLine, Trash2, Unlock } from "lucide-react";
 import { translate as tr } from "../i18n";
+import { dispatchEngineEditCommand } from "../commands/engineCommandApplier";
+import { layerLockCommand, layerVisibilityCommand } from "../commands/engineEditCommand";
 import type { LoadedSceneModel } from "../viewer/ViewerEngine";
 import { SceneRowMenu } from "./SceneRowMenu";
 import { focusSceneObjectRow, selectSceneObjectRow } from "./sceneObjectRowEvents";
@@ -42,7 +44,10 @@ export function PrimitiveRow(
             ? tr(locale, "隐藏基础元素", "Hide primitive")
             : tr(locale, "显示基础元素", "Show primitive")
         }
-        onClick={() => engine?.setVisible(primitive.id, !primitive.visible)}
+        onClick={() => {
+          // 批 2 收编:基础元素显隐走命令总线(engine 为空时 dispatch 静默跳过,与 engine?. 直调一致)。
+          dispatchEngineEditCommand(engine, layerVisibilityCommand(locale, { modelId: primitive.id }, !primitive.visible));
+        }}
       >
         {primitive.visible ? <Eye size={15} /> : <EyeOff size={15} />}
       </button>
@@ -55,7 +60,8 @@ export function PrimitiveRow(
             : tr(locale, "锁定基础元素", "Lock primitive")
         }
         onClick={() => {
-          engine?.setModelLocked(primitive.id, !locked);
+          // 批 2 收编:基础元素锁定走命令总线(engine 为空时 dispatch 静默跳过)。
+          dispatchEngineEditCommand(engine, layerLockCommand(locale, { modelId: primitive.id }, !locked));
           props.onRevision();
         }}
       >

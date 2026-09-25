@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { getSceneModelAssetId, type ClippingState } from "@bim-studio/contracts";
 import { DEFAULT_CLIPPING } from "../appDefaults";
+import { dispatchEngineEditCommand } from "../commands/engineCommandApplier";
+import { layerVisibilityCommand } from "../commands/engineEditCommand";
 import { PublishedViewerObjectPanel } from "../components/PublishedViewerObjectPanel";
 import { PublishedViewerToolDock } from "../components/PublishedViewerToolDock";
 import type { LoadedSceneModel, NavigationMode, RendererBackend, ViewerEngine } from "../viewer/ViewerEngine";
@@ -189,10 +191,18 @@ export function SceneViewerRoot() {
           isolationActive={engine.isIsolationActive()}
           onSelect={(id) => engine.select(id)}
           onFocus={(id) => engine.focusModel(id)}
-          onVisibilityChange={(id, visible) => { engine.setVisible(id, visible); refreshModels(); }}
+          onVisibilityChange={(id, visible) => {
+            // 批 2 收编:发布查看器显隐走命令总线(行为与直调一致;命令日志仅作记录)。
+            dispatchEngineEditCommand(engine, layerVisibilityCommand(locale, { modelId: id }, visible));
+            refreshModels();
+          }}
           onIsolate={(id) => { engine.isolateModels([id]); refreshModels(); }}
           onRestoreIsolation={() => { engine.clearIsolation(); refreshModels(); }}
-          onShowAll={() => { for (const model of engine.listModels()) engine.setVisible(model.id, true); refreshModels(); }}
+          onShowAll={() => {
+            // 批 2 收编:全部显示逐模型发命令。
+            for (const model of engine.listModels()) dispatchEngineEditCommand(engine, layerVisibilityCommand(locale, { modelId: model.id }, true));
+            refreshModels();
+          }}
           onClose={() => setObjectPanelOpen(false)}
         />
       )}

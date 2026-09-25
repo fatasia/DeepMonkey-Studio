@@ -1,4 +1,6 @@
 import type { SceneRootLayerRef, SceneSelectionSetState } from "@bim-studio/contracts";
+import { dispatchEngineEditCommand } from "../commands/engineCommandApplier";
+import { layerLockCommand, layerVisibilityCommand } from "../commands/engineEditCommand";
 import { moveSceneRootLayers, normalizeSceneRootLayerOrder } from "../components/sceneRootLayerOrder";
 import { translate as tr } from "../i18n";
 import type { SceneEditorControllerContext } from "./sceneEditorControllerContext";
@@ -56,14 +58,16 @@ export function createSceneOrganizationCommands(context: SceneEditorControllerCo
 
   function setSceneObjectsVisible(ids: string[], visible: boolean) {
     if (!engine) return;
-    for (const id of ids) engine.setVisible(id, visible);
+    // 批 2 收编:批量显隐逐对象发命令(setter 序列与直调一致,同步冲刷无合帧差异)。
+    for (const id of ids) dispatchEngineEditCommand(engine, layerVisibilityCommand(locale, { modelId: id }, visible));
     setMessage(tr(locale, `${visible ? "显示" : "隐藏"}了 ${ids.length} 个场景对象`, `${visible ? "Showed" : "Hid"} ${ids.length} scene objects`));
     commitOrganizationChange(visible ? "显示场景对象" : "隐藏场景对象");
   }
 
   function setSceneObjectsLocked(ids: string[], locked: boolean) {
     if (!engine) return;
-    for (const id of ids) engine.setModelLocked(id, locked);
+    // 批 2 收编:批量锁定逐对象发命令。
+    for (const id of ids) dispatchEngineEditCommand(engine, layerLockCommand(locale, { modelId: id }, locked));
     setMessage(tr(locale, `${locked ? "锁定" : "解锁"}了 ${ids.length} 个场景对象`, `${locked ? "Locked" : "Unlocked"} ${ids.length} scene objects`));
     commitOrganizationChange(locked ? "锁定场景对象" : "解锁场景对象");
   }

@@ -5,6 +5,8 @@ import type { CameraState } from "@bim-studio/contracts";
 import type { ProbeGridBakeGrid } from "@bim-studio/deep-engine";
 import { LoaderCircle } from "lucide-react";
 import { DEFAULT_NAVIGATION_SETTINGS } from "../navigationSettings";
+import { dispatchEngineEditCommand } from "../commands/engineCommandApplier";
+import { layerVisibilityCommand } from "../commands/engineEditCommand";
 import { normalizeDashboardState } from "../components/dashboardState";
 import { translate as tr } from "../i18n";
 import { runProbeGridBake } from "../delivery/probeGridBakeRunner";
@@ -532,7 +534,8 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           onSelect={(id) => engine?.select(id)}
           onFocus={(id) => engine?.focusModel(id)}
           onVisibilityChange={(id, visible) => {
-            engine?.setVisible(id, visible);
+            // 批 2 收编:发布视口对象面板显隐走命令总线(engine 为空时 dispatch 静默跳过)。
+            dispatchEngineEditCommand(engine, layerVisibilityCommand(locale, { modelId: id }, visible));
             setRevision((value) => value + 1);
           }}
           onIsolate={(id) => {
@@ -544,7 +547,8 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
             setRevision((value) => value + 1);
           }}
           onShowAll={() => {
-            for (const model of loadedModels) engine?.setVisible(model.id, true);
+            // 批 2 收编:全部显示逐模型发命令。
+            for (const model of loadedModels) dispatchEngineEditCommand(engine, layerVisibilityCommand(locale, { modelId: model.id }, true));
             engine?.clearIsolation();
             setRevision((value) => value + 1);
           }}

@@ -75,3 +75,44 @@ describe("场景对象物理补丁", () => {
     });
   });
 });
+
+describe("选中显隐收编(批 2:SetVisibility selection 模式)", () => {
+  it("单选:经命令总线转交 engine.setSelectionVisible,参数与直调一致,revision 推进一次", () => {
+    const calls: string[] = [];
+    const setRevision = vi.fn();
+    const setSceneObjectsVisible = vi.fn();
+    const commands = createSceneAppearanceCommands({
+      engine: { setSelectionVisible: (visible: boolean) => calls.push(`setSelectionVisible:${visible}`) },
+      locale: "zh-CN",
+      selected: { id: "m1" },
+      selectedLayerId: undefined,
+      sceneOrganizationSelection: new Set<string>(),
+      setRevision,
+    } as unknown as SceneEditorControllerContext, setSceneObjectsVisible);
+
+    // 直调参照(收编前实现):engine.setSelectionVisible(false)
+    commands.updateSelectionVisibility(false);
+
+    expect(calls).toEqual(["setSelectionVisible:false"]);
+    expect(setRevision).toHaveBeenCalledOnce();
+    expect(setSceneObjectsVisible).not.toHaveBeenCalled();
+  });
+
+  it("编组多选:仍整批委托 setSceneObjectsVisible(组织命令链路,本批不改动其语义)", () => {
+    const setRevision = vi.fn();
+    const setSceneObjectsVisible = vi.fn();
+    const commands = createSceneAppearanceCommands({
+      engine: { setSelectionVisible: vi.fn() },
+      locale: "zh-CN",
+      selected: { id: "m1" },
+      selectedLayerId: undefined,
+      sceneOrganizationSelection: new Set(["m1", "m2"]),
+      setRevision,
+    } as unknown as SceneEditorControllerContext, setSceneObjectsVisible);
+
+    commands.updateSelectionVisibility(true);
+
+    expect(setSceneObjectsVisible).toHaveBeenCalledWith(["m1", "m2"], true);
+    expect(setRevision).not.toHaveBeenCalled();
+  });
+});

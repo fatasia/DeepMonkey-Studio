@@ -191,4 +191,48 @@ describe("场景组织命令", () => {
     expect(revision).toBe(8);
     expect(recordSceneEdit).toHaveBeenCalledWith("移动对象到编组");
   });
+
+  it("批 2 收编:批量显隐/锁定经命令总线后,engine setter 序列与直调逐项一致,提交链路不变", () => {
+    const calls: string[] = [];
+    const engine = {
+      select: vi.fn(),
+      setVisible: (id: string, visible: boolean) => calls.push(`setVisible:${id}:${visible}`),
+      setModelLocked: (id: string, locked: boolean) => calls.push(`setModelLocked:${id}:${locked}`),
+    };
+    let revision = 0;
+    const recordSceneEdit = vi.fn();
+    const commands = createSceneOrganizationCommands({
+      engine: engine as unknown as SceneEditorControllerContext["engine"],
+      locale: "zh-CN",
+      sceneOrganizationObjects: ["a", "b"].map((id) => ({ id, name: id, kind: "primitive" as const, visible: true, locked: false })),
+      sceneOrganizationSelection: new Set<string>(),
+      selectionSets: [],
+      setMessage: vi.fn(),
+      setRevision: (next: SetStateAction<number>) => { revision = typeof next === "function" ? next(revision) : next; },
+      recordSceneEdit,
+    } as unknown as SceneEditorControllerContext);
+
+    // 直调参照(收编前实现):for (const id of ids) engine.setVisible(id, false)
+    for (const id of ["a", "b"]) engine.setVisible(id, false);
+    const directVisibleCalls = [...calls];
+    calls.length = 0;
+
+    commands.setSceneObjectsVisible(["a", "b"], false);
+
+    expect(calls).toEqual(directVisibleCalls);
+    expect(revision).toBe(1);
+    expect(recordSceneEdit).toHaveBeenCalledWith("隐藏场景对象");
+
+    calls.length = 0;
+    // 直调参照(收编前实现):for (const id of ids) engine.setModelLocked(id, true)
+    for (const id of ["a", "b"]) engine.setModelLocked(id, true);
+    const directLockCalls = [...calls];
+    calls.length = 0;
+
+    commands.setSceneObjectsLocked(["a", "b"], true);
+
+    expect(calls).toEqual(directLockCalls);
+    expect(revision).toBe(2);
+    expect(recordSceneEdit).toHaveBeenCalledWith("锁定场景对象");
+  });
 });

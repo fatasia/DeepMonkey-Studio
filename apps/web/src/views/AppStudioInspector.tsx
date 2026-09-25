@@ -1,5 +1,7 @@
 import { Box, Braces, ChevronRight, Layers3, Lock, MousePointer2, Trash2 } from "lucide-react";
 import { explosionModeName } from "../appPresentation";
+import { dispatchEngineEditCommand } from "../commands/engineCommandApplier";
+import { layerLockCommand, selectionRenameCommand } from "../commands/engineEditCommand";
 import { publishLocalSceneData } from "../sceneDataBridge";
 import { translate as tr } from "../i18n";
 import { InteractionEditor } from "../components/InteractionEditor";
@@ -168,7 +170,15 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                   value={selectionName}
                   data-layer-rename-scope="scene" data-layer-rename-id={JSON.stringify([selected.id, selectedLayerId && selectedLayerId !== "root" ? selectedLayerId : null])}
                   onChange={(event) => {
-                    engine?.renameSelection(event.target.value);
+                    // 批 2 收编:重命名走 selection 模式命令(引擎重命名 setter 仅作用于当前选中)。
+                    dispatchEngineEditCommand(
+                      engine,
+                      selectionRenameCommand(
+                        locale,
+                        { modelId: selected.id, ...(selectedLayerId && selectedLayerId !== "root" ? { layerId: selectedLayerId } : {}) },
+                        event.target.value,
+                      ),
+                    );
                     setRevision((value) => value + 1);
                   }}
                 />
@@ -194,8 +204,15 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                     className={`toggle ${selectionLocked ? "on" : ""}`}
                     onClick={() => {
                       if (!engine || !selected) return;
-                      if (selectedLayerId && selectedLayerId !== "root") engine.setLayerLocked(selected.id, selectedLayerId, !selectionLocked);
-                      else engine.setModelLocked(selected.id, !selectionLocked);
+                      // 批 2 收编:锁定走命令总线;layerId 有无镜像既有分发条件,参数与直调逐项一致。
+                      dispatchEngineEditCommand(
+                        engine,
+                        layerLockCommand(
+                          locale,
+                          { modelId: selected.id, ...(selectedLayerId && selectedLayerId !== "root" ? { layerId: selectedLayerId } : {}) },
+                          !selectionLocked,
+                        ),
+                      );
                       setRevision((value) => value + 1);
                     }}
                   >

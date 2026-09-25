@@ -8,6 +8,8 @@ import { translate as tr, type AppLocale } from "../i18n";
  * docs/specs/engine-neutral-command-layer-design-2026-09-25.md §3 不进 packages/contracts;
  * 字段口径直接复用 contracts 的 ModelTransform / SceneLayerState,不另造形状。
  * 批 0 只含 SetTransform 与 SetVisibility 两个原语,其余原语按批次追加。
+ * 批 2(SetVisibility 收编):SetVisibility 扩展 locked/name 字段与 selection 模式,
+ * 其余原语(opacity/color/deleted 等)按批次追加。
  */
 
 /** 命令公共字段:身份由总线分配,撤销/重放/日志共用。 */
@@ -43,14 +45,23 @@ export interface SetTransformCommand extends EngineEditCommandBase {
 }
 
 /**
- * 可见性/图层属性命令(kind 名对齐设计文档 §3 的 "setLayerState")。
- * patch 字段口径 = SceneLayerState 去 nodeId;批 0 applier 仅消费 `visible`,
- * 其余字段出现在 patch 中时 applier 显式拒绝(见 engineCommandApplier)。
+ * 可见性/锁定/重命名命令(kind 名对齐设计文档 §3 的 "setLayerState")。
+ * patch 字段口径 = SceneLayerState 去 nodeId;批 2 applier 消费 `visible`/`locked`/`name`,
+ * 其余字段(opacity/color/material/transform/deleted)出现在 patch 中时 applier 显式拒绝
+ * (见 engineCommandApplier)。
+ *
+ * 批 2 追加 `mode`(缺省 "target",批 0 命令兼容):
+ * - "target"(缺省):按 target.layerId 有无分发——图层级 setLayerVisible/setLayerLocked,
+ *   模型级 setVisible/setModelLocked,与调用点直调的逐参数形态一致。
+ * - "selection":作用于引擎当前选中对象(等价既有 `setSelectionVisible`/`renameSelection`;
+ *   引擎无 target 级的重命名 setter,重命名只能走 selection 模式)。target 是调用点记录的
+ *   选择身份,applier 不据此定位(与批 1 setTransform selection 模式同口径)。
  */
 export interface SetVisibilityCommand extends EngineEditCommandBase {
   readonly kind: "setLayerState";
   readonly target: EngineEditCommandTarget;
   readonly patch: Partial<Omit<SceneLayerState, "nodeId">>;
+  readonly mode?: "selection";
 }
 
 export type EngineEditCommand = SetTransformCommand | SetVisibilityCommand;
@@ -78,6 +89,57 @@ export function layerVisibilityCommand(
     label: tr(locale, "切换图层可见性", "Toggle layer visibility"),
     target,
     patch: { visible },
+  };
+}
+
+/**
+ * 锁定切换命令工厂(target 模式):target.layerId 有无镜像调用点的分发条件——
+ * 带图层的写点(图层树/检查器图层分支)传 layerId,模型/基础元素级写点不传;
+ * applier 据此转交 setLayerLocked / setModelLocked,参数与直调逐项一致。
+ */
+export function layerLockCommand(
+  locale: AppLocale,
+  target: EngineEditCommandTarget,
+  locked: boolean,
+): EngineEditCommandInput {
+  return {
+    kind: "setLayerState",
+    label: tr(locale, "切换对象锁定", "Toggle object lock"),
+    target,
+    patch: { locked },
+  };
+}
+
+/** 选中对象可见性命令工厂(selection 模式):等价直调 `engine.setSelectionVisible(visible)`。 */
+export function selectionVisibilityCommand(
+  locale: AppLocale,
+  target: EngineEditCommandTarget,
+  visible: boolean,
+): EngineEditCommandInput {
+  return {
+    kind: "setLayerState",
+    mode: "selection",
+    label: tr(locale, "切换对象可见性", "Toggle object visibility"),
+    target,
+    patch: { visible },
+  };
+}
+
+/**
+ * 选中对象重命名命令工厂(selection 模式):等价直调 `engine.renameSelection(name)`;
+ * 引擎无 target 级重命名 setter,命令层如实沿用 selection 作用域。
+ */
+export function selectionRenameCommand(
+  locale: AppLocale,
+  target: EngineEditCommandTarget,
+  name: string,
+): EngineEditCommandInput {
+  return {
+    kind: "setLayerState",
+    mode: "selection",
+    label: tr(locale, "重命名对象", "Rename object"),
+    target,
+    patch: { name },
   };
 }
 

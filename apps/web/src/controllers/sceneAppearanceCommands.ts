@@ -13,6 +13,8 @@ import type {
 } from "@bim-studio/contracts";
 import { api } from "../api";
 import { lightTypeName } from "../appPresentation";
+import { dispatchEngineEditCommand } from "../commands/engineCommandApplier";
+import { selectionVisibilityCommand } from "../commands/engineEditCommand";
 import { translate as tr } from "../i18n";
 import { applyGroupedOrSelected } from "./sceneAppearanceDispatch";
 import type { SceneEditorControllerContext } from "./sceneEditorControllerContext";
@@ -206,7 +208,16 @@ export function createSceneAppearanceCommands(context: SceneEditorControllerCont
     const groupedIds = groupedObjectIds();
     if (groupedIds.length > 1) setSceneObjectsVisible(groupedIds, visible);
     else {
-      engine.setSelectionVisible(visible);
+      // 批 2 收编:selection 模式可见性命令,applier 原样转交 setSelectionVisible
+      // (其内部分发 fragment 构件/模型根/图层对象的既有语义;target 仅记录选择身份)。
+      dispatchEngineEditCommand(
+        engine,
+        selectionVisibilityCommand(
+          locale,
+          { modelId: selected.id, ...(selectedLayerId && selectedLayerId !== "root" ? { layerId: selectedLayerId } : {}) },
+          visible,
+        ),
+      );
       setRevision((value) => value + 1);
     }
   }

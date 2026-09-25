@@ -7,13 +7,15 @@ import {
   ViewerEngineCommandApplier,
   dispatchEngineEditCommand,
 } from "./engineCommandApplier";
-import { layerVisibilityCommand, modelTransformCommand, selectionTransformCommand } from "./engineEditCommand";
+import { layerLockCommand, layerVisibilityCommand, modelTransformCommand, selectionRenameCommand, selectionTransformCommand, selectionVisibilityCommand } from "./engineEditCommand";
 
 /**
- * 引擎桩:实现批 0/批 1 applier 触达的 setter 与选择查询,逐次记录调用(method + 参数快照)。
+ * 引擎桩:实现批 0/批 1/批 2 applier 触达的 setter 与选择查询,逐次记录调用(method + 参数快照)。
  * 默认"有有效选中且未锁定",与 UI 变换面板的触达前提一致;批 1 预检与守卫用例用 options 覆盖。
+ * selectionIsFragment 模拟引擎内部守卫:fragment 构件选中时 applySelectionTransform 静默拒绝
+ * (不记录调用、不触发连带),用于批 2 的降级路径外部等价测试。
  */
-function stubEngine(options: { selectedId?: string; selectionLocked?: boolean; selectedLayerId?: string } = {}) {
+function stubEngine(options: { selectedId?: string; selectionLocked?: boolean; selectedLayerId?: string; selectionIsFragment?: boolean } = {}) {
   const calls: string[] = [];
   const engine = {
     getSelected(): { id: string } | undefined {
@@ -29,6 +31,7 @@ function stubEngine(options: { selectedId?: string; selectionLocked?: boolean; s
       return options.selectedLayerId;
     },
     applySelectionTransform(applied: ModelTransform): void {
+      if (options.selectionIsFragment) return;
       calls.push(`applySelectionTransform:${JSON.stringify(applied)}`);
     },
     setModelTransform(id: string, applied: { position?: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] }): boolean {
@@ -40,6 +43,18 @@ function stubEngine(options: { selectedId?: string; selectionLocked?: boolean; s
     },
     setVisible(id: string, visible: boolean): void {
       calls.push(`setVisible:${id}:${visible}`);
+    },
+    setModelLocked(modelId: string, locked: boolean): void {
+      calls.push(`setModelLocked:${modelId}:${locked}`);
+    },
+    setLayerLocked(modelId: string, nodeId: string, locked: boolean): void {
+      calls.push(`setLayerLocked:${modelId}:${nodeId}:${locked}`);
+    },
+    setSelectionVisible(visible: boolean): void {
+      calls.push(`setSelectionVisible:${visible}`);
+    },
+    renameSelection(name: string): void {
+      calls.push(`renameSelection:${name}`);
     },
   };
   return { engine: engine as unknown as ViewerEngine, calls };
@@ -111,7 +126,7 @@ describe("ViewerEngineCommandApplier(等价性:命令层执行 == 现状直调)"
     expect(calls).toEqual(directCalls);
   });
 
-  it("patch 含批 0 未支持字段(locked)→ 抛 UnsupportedEngineEditCommandError 且零 setter 调用", () => {
+  it("patch 含未支持字段(opacity)→ 抛 UnsupportedEngineEditCommandError 且零 setter 调用", () => {
     const { engine, calls } = stubEngine();
     const applier = new ViewerEngineCommandApplier(engine);
 
@@ -122,13 +137,13 @@ describe("ViewerEngineCommandApplier(等价性:命令层执行 == 现状直调)"
         baseRevision: 0,
         label: "切换图层可见性",
         target: { modelId: "m1", layerId: "l1" },
-        patch: { locked: true },
+        patch: { opacity: 0.5 },
       }),
     ).toThrow(UnsupportedEngineEditCommandError);
     expect(calls).toEqual([]);
   });
 
-  it("patch 混入未支持字段(visible + locked)→ 拒绝整条命令,不做部分应用", () => {
+  it("patch 混入未支持字段(visible + opacity)→ 拒绝整条命令,不做部分应用", () => {
     const { engine, calls } = stubEngine();
     const applier = new ViewerEngineCommandApplier(engine);
 
@@ -139,13 +154,13 @@ describe("ViewerEngineCommandApplier(等价性:命令层执行 == 现状直调)"
         baseRevision: 0,
         label: "切换图层可见性",
         target: { modelId: "m1", layerId: "l1" },
-        patch: { visible: true, locked: false },
+        patch: { visible: true, opacity: 0.5 },
       }),
     ).toThrow(UnsupportedEngineEditCommandError);
     expect(calls).toEqual([]);
   });
 
-  it("patch.visible 非 boolean → 拒绝", () => {
+  it("patch 全字段 undefined(无有效字段)→ 拒绝", () => {
     const { engine, calls } = stubEngine();
     const applier = new ViewerEngineCommandApplier(engine);
 
@@ -336,6 +351,255 @@ describe("dispatchEngineEditCommand(接线全链路)", () => {
       patch: { visible: true },
     });
     expect(layerVisibilityCommand("en-US", { modelId: "m1" }, false).label).toBe("Toggle layer visibility");
+  });
+});
+
+describe("ViewerEngineCommandApplier 批 2(SetVisibility 图层属性族收编:visible/locked/name)", () => {
+  it("target 模式锁定:带 layerId → 一次 setLayerLocked(modelId, layerId, locked),参数与直调逐项一致", () => {
+    const { engine, calls } = stubEngine();
+    const applier = new ViewerEngineCommandApplier(engine);
+
+    // 现状直调参照表达式(AppStudioInspector 图层分支):engine.setLayerLocked(selected.id, selectedLayerId, locked)
+    engine.setLayerLocked("m1", "l1", true);
+    const directCalls = [...calls];
+    calls.length = 0;
+
+    applier.apply({
+      kind: "setLayerState",
+      id: "editcmd-v1",
+      baseRevision: 0,
+      label: "切换对象锁定",
+      target: { modelId: "m1", layerId: "l1" },
+      patch: { locked: true },
+    });
+
+    expect(calls).toEqual(directCalls);
+    expect(calls).toEqual(["setLayerLocked:m1:l1:true"]);
+  });
+
+  it("target 模式锁定:无 layerId → 一次 setModelLocked(modelId, locked),不触碰图层级 setter", () => {
+    const { engine, calls } = stubEngine();
+    const applier = new ViewerEngineCommandApplier(engine);
+
+    // 现状直调参照表达式(ModelTreeItem 模型行/ScenePrimitiveRow):engine.setModelLocked(model.id, locked)
+    engine.setModelLocked("m1", false);
+    const directCalls = [...calls];
+    calls.length = 0;
+
+    applier.apply({
+      kind: "setLayerState",
+      id: "editcmd-v2",
+      baseRevision: 0,
+      label: "切换对象锁定",
+      target: { modelId: "m1" },
+      patch: { locked: false },
+    });
+
+    expect(calls).toEqual(directCalls);
+    expect(calls).toEqual(["setModelLocked:m1:false"]);
+  });
+
+  it("target 模式锁定:layerId 为 root → 原样 setLayerLocked(modelId, root, locked),保留 setter 内部转委模型锁定的既有语义", () => {
+    const { engine, calls } = stubEngine();
+    const applier = new ViewerEngineCommandApplier(engine);
+
+    // 现状直调参照:node.id === "root" 时调用点仍直调 setLayerLocked,由 setter 内部转委
+    engine.setLayerLocked("m1", "root", true);
+    const directCalls = [...calls];
+    calls.length = 0;
+
+    applier.apply({
+      kind: "setLayerState",
+      id: "editcmd-v3",
+      baseRevision: 0,
+      label: "切换对象锁定",
+      target: { modelId: "m1", layerId: "root" },
+      patch: { locked: true },
+    });
+
+    expect(calls).toEqual(directCalls);
+    expect(calls).toEqual(["setLayerLocked:m1:root:true"]);
+  });
+
+  it("selection 模式可见性 → 一次 setSelectionVisible(visible),与直调一致(其内部分发 fragment/模型根/图层对象)", () => {
+    const { engine, calls } = stubEngine({ selectedId: "m1" });
+    const applier = new ViewerEngineCommandApplier(engine);
+
+    // 现状直调参照表达式(sceneAppearanceCommands):engine.setSelectionVisible(visible)
+    engine.setSelectionVisible(true);
+    const directCalls = [...calls];
+    calls.length = 0;
+
+    applier.apply({
+      kind: "setLayerState",
+      id: "editcmd-v4",
+      baseRevision: 0,
+      label: "切换对象可见性",
+      target: { modelId: "m1", layerId: "l1" },
+      patch: { visible: true },
+      mode: "selection",
+    });
+
+    expect(calls).toEqual(directCalls);
+    expect(calls).toEqual(["setSelectionVisible:true"]);
+  });
+
+  it("selection 模式重命名 → 一次 renameSelection(name),与直调一致", () => {
+    const { engine, calls } = stubEngine({ selectedId: "m1" });
+    const applier = new ViewerEngineCommandApplier(engine);
+
+    // 现状直调参照表达式(AppStudioInspector):engine.renameSelection(event.target.value)
+    engine.renameSelection("新名称");
+    const directCalls = [...calls];
+    calls.length = 0;
+
+    applier.apply({
+      kind: "setLayerState",
+      id: "editcmd-v5",
+      baseRevision: 0,
+      label: "重命名对象",
+      target: { modelId: "m1", layerId: "l1" },
+      patch: { name: "新名称" },
+      mode: "selection",
+    });
+
+    expect(calls).toEqual(directCalls);
+    expect(calls).toEqual(["renameSelection:新名称"]);
+  });
+
+  it("多字段 patch 按 name → locked → visible 固定顺序逐字段转交(与引擎恢复路径对三字段的既有编排一致)", () => {
+    const { engine, calls } = stubEngine();
+    const applier = new ViewerEngineCommandApplier(engine);
+
+    // 合法组合受 mode 规则约束:name 仅 selection、locked 仅 target,故两组分别验证。
+    applier.apply({
+      kind: "setLayerState",
+      id: "editcmd-v6",
+      baseRevision: 0,
+      label: "图层属性",
+      target: { modelId: "m1", layerId: "l1" },
+      patch: { visible: false, locked: true },
+    });
+    expect(calls).toEqual([
+      "setLayerLocked:m1:l1:true",
+      "setLayerVisible:m1:l1:false",
+    ]);
+
+    calls.length = 0;
+    applier.apply({
+      kind: "setLayerState",
+      id: "editcmd-v6b",
+      baseRevision: 0,
+      label: "图层属性",
+      target: { modelId: "m1", layerId: "l1" },
+      patch: { visible: true, name: "重命名层" },
+      mode: "selection",
+    });
+    expect(calls).toEqual([
+      "renameSelection:重命名层",
+      "setSelectionVisible:true",
+    ]);
+  });
+
+  it("selection 模式 locked / target 模式 name → 显式拒绝且零 setter 调用", () => {
+    const { engine, calls } = stubEngine({ selectedId: "m1" });
+    const applier = new ViewerEngineCommandApplier(engine);
+
+    expect(() =>
+      applier.apply({ kind: "setLayerState", id: "editcmd-v7", baseRevision: 0, label: "锁定", target: { modelId: "m1" }, patch: { locked: true }, mode: "selection" }),
+    ).toThrow(/不支持 selection 模式/);
+    expect(() =>
+      applier.apply({ kind: "setLayerState", id: "editcmd-v8", baseRevision: 0, label: "重命名", target: { modelId: "m1" }, patch: { name: "x" } }),
+    ).toThrow(/仅支持 selection 模式/);
+    expect(calls).toEqual([]);
+  });
+
+  it("patch.locked/patch.name 类型错误 → 拒绝", () => {
+    const { engine, calls } = stubEngine();
+    const applier = new ViewerEngineCommandApplier(engine);
+
+    expect(() =>
+      applier.apply({
+        kind: "setLayerState",
+        id: "editcmd-v9",
+        baseRevision: 0,
+        label: "锁定",
+        target: { modelId: "m1" },
+        patch: { locked: "yes" as unknown as boolean },
+      }),
+    ).toThrow(UnsupportedEngineEditCommandError);
+    expect(() =>
+      applier.apply({
+        kind: "setLayerState",
+        id: "editcmd-v10",
+        baseRevision: 0,
+        label: "重命名",
+        target: { modelId: "m1" },
+        patch: { name: 42 as unknown as string },
+        mode: "selection",
+      }),
+    ).toThrow(UnsupportedEngineEditCommandError);
+    expect(calls).toEqual([]);
+  });
+
+  it("命令工厂:layerLockCommand/selectionVisibilityCommand/selectionRenameCommand 的 mode、target 与中英文 label 齐备", () => {
+    expect(layerLockCommand("zh-CN", { modelId: "m1", layerId: "l1" }, true)).toEqual({
+      kind: "setLayerState",
+      label: "切换对象锁定",
+      target: { modelId: "m1", layerId: "l1" },
+      patch: { locked: true },
+    });
+    expect(layerLockCommand("en-US", { modelId: "m1" }, false).label).toBe("Toggle object lock");
+    expect(selectionVisibilityCommand("zh-CN", { modelId: "m1" }, false)).toMatchObject({
+      kind: "setLayerState",
+      mode: "selection",
+      label: "切换对象可见性",
+      target: { modelId: "m1" },
+      patch: { visible: false },
+    });
+    expect(selectionRenameCommand("en-US", { modelId: "m1" }, "Renamed").label).toBe("Rename object");
+  });
+
+  it("全链路:三个新工厂经共享总线 dispatch 到桩引擎,setter 序列一致、revision 单调", () => {
+    const { engine, calls } = stubEngine({ selectedId: "m1", selectedLayerId: "l1" });
+    const beforeRevision = sceneCommandBus.getRevision();
+
+    dispatchEngineEditCommand(engine, layerLockCommand("zh-CN", { modelId: "m1", layerId: "l1" }, true));
+    dispatchEngineEditCommand(engine, selectionVisibilityCommand("zh-CN", { modelId: "m1" }, false));
+    dispatchEngineEditCommand(engine, selectionRenameCommand("zh-CN", { modelId: "m1", layerId: "l1" }, "新名"));
+
+    expect(calls).toEqual([
+      "setLayerLocked:m1:l1:true",
+      "setSelectionVisible:false",
+      "renameSelection:新名",
+    ]);
+    expect(sceneCommandBus.getRevision()).toBe(beforeRevision + 3);
+  });
+
+  it("fragment 构件降级路径(批 1 遗留批 2 复评收口):构件选中时 setter 内部守卫拒绝,外部零调用与直调逐点一致;graph 按降级语义记账", () => {
+    const { engine, calls } = stubEngine({ selectedId: "m1", selectedLayerId: "frag-1", selectionIsFragment: true });
+    const applier = new ViewerEngineCommandApplier(engine);
+
+    // 现状直调参照:engine.applySelectionTransform(transform) 在构件选中下静默 return(零调用零连带)
+    engine.applySelectionTransform(transform);
+    const directCalls = [...calls];
+    calls.length = 0;
+
+    applier.apply({
+      kind: "setTransform",
+      id: "editcmd-f1",
+      baseRevision: 0,
+      label: "编辑三维对象",
+      target: { modelId: "m1", layerId: "frag-1" },
+      transform,
+      mode: "selection",
+    });
+
+    // 外部可见行为(Three/旁账/undo/连带)与直调逐点一致
+    expect(calls).toEqual(directCalls);
+    expect(calls).toEqual([]);
+    // 降级声明的"记账"侧:graph 节点存在(覆盖式通道,无跨命令污染,不产生行为漂移)
+    expect(applier.transformNode("layer:m1:frag-1")).toBeDefined();
   });
 });
 

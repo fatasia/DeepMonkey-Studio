@@ -1,7 +1,7 @@
 import { Box, Check, ChevronDown, ChevronRight, Eye, EyeOff, Focus, Gauge, Layers3, Lock, Pause, Play, ScanLine, Settings2, Trash2, Unlock } from "lucide-react";
 import type { ModelRecord, SceneFloorState } from "@bim-studio/contracts";
 import { dispatchEngineEditCommand } from "../commands/engineCommandApplier";
-import { layerVisibilityCommand } from "../commands/engineEditCommand";
+import { layerLockCommand, layerVisibilityCommand } from "../commands/engineEditCommand";
 import { translate as tr, type AppLocale } from "../i18n";
 import { statusText } from "../appPresentation";
 import { LayerTree } from "./LayerTree";
@@ -96,7 +96,10 @@ export function ModelTreeItem({
             className="mini-button"
             aria-label={loaded.visible ? tr(locale, "隐藏", "Hide") : tr(locale, "显示", "Show")}
             title={loaded.visible ? tr(locale, "隐藏", "Hide") : tr(locale, "显示", "Show")}
-            onClick={() => engine?.setVisible(model.id, !loaded.visible)}
+            onClick={() => {
+              // 批 2 收编:模型级显隐走命令总线(engine 为空时 dispatch 静默跳过,与 engine?. 直调一致)。
+              dispatchEngineEditCommand(engine, layerVisibilityCommand(locale, { modelId: model.id }, !loaded.visible));
+            }}
           >
             {loaded.visible ? <Eye size={15} /> : <EyeOff size={15} />}
           </button>
@@ -107,7 +110,8 @@ export function ModelTreeItem({
             aria-label={engine?.isModelLocked(model.id) ? tr(locale, "解锁模型", "Unlock model") : tr(locale, "锁定模型", "Lock model")}
             title={engine?.isModelLocked(model.id) ? tr(locale, "解锁模型", "Unlock model") : tr(locale, "锁定模型", "Lock model")}
             onClick={() => {
-              engine?.setModelLocked(model.id, !engine.isModelLocked(model.id));
+              // 批 2 收编:模型级锁定走命令总线;engine 为空时保持直调的短路语义(不发命令)且 onSetRevision 照常执行。
+              if (engine) dispatchEngineEditCommand(engine, layerLockCommand(locale, { modelId: model.id }, !engine.isModelLocked(model.id)));
               onSetRevision();
             }}
           >
@@ -206,7 +210,8 @@ export function ModelTreeItem({
             onSetRevision();
           }}
           onLockChange={(node, locked) => {
-            engine?.setLayerLocked(model.id, node.id, locked);
+            // 批 2 收编:图层锁定走命令总线(layerId 原样透传,含 "root" 时 setter 内部转委模型锁定的既有语义)。
+            dispatchEngineEditCommand(engine, layerLockCommand(locale, { modelId: model.id, layerId: node.id }, locked));
             onSetRevision();
             onSetMessage(locked ? `已锁定“${node.name}”` : `已解锁“${node.name}”`);
           }}
