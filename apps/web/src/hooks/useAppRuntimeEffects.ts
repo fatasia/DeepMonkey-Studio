@@ -36,7 +36,7 @@ import { synchronizeSelectionFromViewport } from "../controllers/sceneSelectionS
 import { commitRendererPreference, type PendingRendererPreference } from "../viewer/rendererBackendPreference";
 import { StudioDeepWebGpuBridge } from "../viewer/StudioDeepWebGpuBridge";
 import { StudioDeepWasmBridge } from "../viewer/StudioDeepWasmBridge";
-import { compileStudioWasmRuntimePackage } from "../viewer/studioWasmRuntimePackage";
+import { compileStudioWasmRuntimePackage, normalizeStudioWasmModel } from "../viewer/studioWasmRuntimePackage";
 import { compileSceneRenderPacket } from "../delivery/compileSceneRenderPacket";
 import { browserImageDecoder } from "../delivery/browserImageDecoder";
 import { loadViewerAssetBuffer } from "../viewer/viewerAssetTransport";
@@ -432,6 +432,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
         const compiled = await compileSceneRenderPacket(scene, {
           signal,
           imageDecoder: browserImageDecoder,
+          normalizeModel: normalizeStudioWasmModel,
           loadModel: async (assetId, loadSignal) => {
             loadSignal.throwIfAborted();
             const instance = scene.models.find((model) => getSceneModelAssetId(model) === assetId || model.modelId === assetId);
