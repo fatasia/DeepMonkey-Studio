@@ -52,6 +52,14 @@ describe("Three author projection", () => {
     expect(Array.from(result.packet.instances[0]!.transform).slice(12, 15)).toEqual([12, 13, 14]);
     expect(a.position.x).toBe(999);
   });
+  it("uses the independent author transform resolver for render packet instances", () => {
+    const a = mesh();
+    a.position.set(99, 98, 97);
+    const author = new THREE.Matrix4().makeTranslation(4, 5, 6);
+    const target = bridge(() => author.elements);
+    const result = project(target, a);
+    expect(Array.from(result.packet.instances[0]!.transform)).toEqual(author.elements);
+  });
   it("prunes invisible subtrees but still traverses children of parents on another layer", () => {
     const target = bridge(), root = new THREE.Group(), a = mesh(), b = mesh(), hidden = new THREE.Group();
     root.layers.set(5); root.add(a, hidden); hidden.add(b); hidden.visible = false; a.layers.set(2);

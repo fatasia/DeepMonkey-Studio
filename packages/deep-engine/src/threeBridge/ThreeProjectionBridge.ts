@@ -11,6 +11,9 @@ import type { ThreeProjectionDirtyPlan } from "./SceneChangesetProjection.js";
 
 type ReadyDirtyPlan = Extract<ThreeProjectionDirtyPlan, { readonly status: "ready" }>;
 interface ProjectionTopology { readonly order: readonly ThreeObjectSource[]; readonly parents: ReadonlyMap<ThreeObjectSource, ThreeObjectSource | undefined> }
+/** Authoritative world transform supplied by the editor/runtime state owner.
+ * Returning undefined keeps the legacy projection for that object. */
+export type AuthorTransformResolver = (object: ThreeObjectSource) => ArrayLike<number> | undefined;
 
 /** 仅持有可重建的渲染快照。作者图、资源 dispose、脚本与 world matrix 更新均归原宿主。 */
 export class ThreeProjectionBridge {
@@ -32,13 +35,15 @@ export class ThreeProjectionBridge {
   private readonly authorDeformation: boolean;
   private readonly authorLod: boolean;
   private readonly lodProjector = new ThreeAuthorLodProjector();
+  private readonly authorTransformResolver: AuthorTransformResolver | undefined;
 
-  constructor(options: { readonly hooks: ThreeProjectionHooks; readonly capabilities?: { readonly authorDeformation?: boolean; readonly authorLod?: boolean } }) {
+  constructor(options: { readonly hooks: ThreeProjectionHooks; readonly capabilities?: { readonly authorDeformation?: boolean; readonly authorLod?: boolean }; readonly authorTransformResolver?: AuthorTransformResolver }) {
     const keys: readonly (keyof ThreeProjectionHooks)[] = ["objectBeforeRender", "objectAfterRender", "objectBeforeShadow", "objectAfterShadow", "materialBeforeRender", "materialBeforeCompile", "materialProgramCacheKey"];
     for (const key of keys) if (typeof options.hooks[key] !== "function") throw new Error("Three projection requires default prototype hooks.");
     this.hooks = { ...options.hooks };
     this.authorDeformation = options.capabilities?.authorDeformation === true;
     this.authorLod = options.capabilities?.authorLod === true;
+    this.authorTransformResolver = options.authorTransformResolver;
   }
 
   /** 数组原位改动遵循 Three needsUpdate/version；替换 attribute / data / array 也自动失效。 */
@@ -265,7 +270,13 @@ export class ThreeProjectionBridge {
     textures: Map<string, DecodedTexture>, instances: RenderInstance[], budget: { bytes: number }): void {
     const source = object as unknown as { geometry: unknown; material: unknown; castShadow?: boolean; receiveShadow?: boolean };
     if (!Array.isArray(source.material) && !materialVisible(source.material)) return;
-    const view = geometryView(source.geometry, source.material, this.authorDeformation), transforms = objectTransforms(object);
+    const view = geometryView(source.geometry, source.material, this.authorDeformation);
+    // Per-instance matrices remain authoritative for InstancedMesh; a single
+    // author transform cannot represent that array without dropping instances.
+    const resolvedTransform = (object as unknown as { isInstancedMesh?: boolean }).isInstancedMesh
+      ? undefined : this.authorTransformResolver?.(object);
+    const transforms = resolvedTransform === undefined ? objectTransforms(object) : [Float64Array.from(resolvedTransform)];
+    if (resolvedTransform !== undefined && resolvedTransform.length !== 16) invalid("author transform");
     if (!transforms.length) return;
     for (const slice of view.slices) {
       if (!materialVisible(slice.material)) continue;

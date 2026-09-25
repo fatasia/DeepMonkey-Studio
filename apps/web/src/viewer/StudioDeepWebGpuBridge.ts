@@ -180,7 +180,12 @@ export class StudioDeepWebGpuBridge {
           shadowMapSize = view.lights?.directional?.[0]?.shadow?.mapSize
             ?? studioDeepShadowMapSize(this.viewer.scene, this.viewer.camera.layers.mask);
           frameCaptureSession = createRequestedStudioFrameCaptureSession();
-          this.projectionBridge = new module.ThreeProjectionBridge({ hooks: threePrototypeHooks(), capabilities: { authorDeformation: true, authorLod: true } });
+          this.projectionBridge = new module.ThreeProjectionBridge({ hooks: threePrototypeHooks(), capabilities: { authorDeformation: true, authorLod: true },
+            // Deep consumes the editor-owned transform state. Three remains a
+            // geometry/material source while model transforms are projected from
+            // the independent author store into RenderPacket instances.
+            authorTransformResolver: source => resolveAuthorWorldTransform(this.viewer, source),
+          });
           const backend = await module.DeepWebGpuBackend.create({
             canvas, gpu: navigator.gpu,
             projection: this.projectionBridge,
@@ -629,6 +634,25 @@ function authorModelId(source: { userData?: Record<string, unknown>; parent?: un
     current = current.parent as typeof current;
   }
   return undefined;
+}
+
+function resolveAuthorWorldTransform(viewer: ViewerEngine, source: ThreeObjectSource): ArrayLike<number> | undefined {
+  const modelId = authorModelId(source as unknown as { userData?: Record<string, unknown>; parent?: unknown });
+  if (!modelId) return undefined;
+  const model = viewer.listModels().find(candidate => candidate.id === modelId);
+  const authored = viewer.getModelTransform(modelId);
+  if (!model || !authored) return undefined;
+  const root = model.object;
+  root.updateWorldMatrix(true, true);
+  const object = source as unknown as THREE.Object3D;
+  object.updateWorldMatrix(true, false);
+  const relative = new THREE.Matrix4().copy(root.matrixWorld).invert().multiply(object.matrixWorld);
+  const authoredWorld = new THREE.Matrix4().compose(
+    new THREE.Vector3(authored.position.x, authored.position.y, authored.position.z),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(authored.rotation.x, authored.rotation.y, authored.rotation.z)),
+    new THREE.Vector3(authored.scale.x, authored.scale.y, authored.scale.z),
+  );
+  return authoredWorld.multiply(relative).elements;
 }
 
 function sameSnapshot(a: readonly number[], b: readonly number[] | undefined, epsilon = 1e-6): boolean {
