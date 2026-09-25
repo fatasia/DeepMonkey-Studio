@@ -47,18 +47,18 @@ describe("Deep editor overlay roots", () => {
     expect(roots).not.toContain(selectionHelper);
     expect(roots).not.toContain(measurementPreview);
     expect(roots).not.toContain(distance);
-    // angle 测量、angle 预览与剖切盒无原生原语,仍由 Three 投影呈现。
-    expect(roots).toContain(angle);
+    // angle 测量与预览的圆弧现由 Deep 原生原语呈现。
+    expect(roots).not.toContain(angle);
     expect(roots).toContain(clippingHelper);
     expect(roots).toContain(annotation);
   });
 
-  it("keeps the measurement preview projected when it is not natively drawable", () => {
+  it("keeps an untyped measurement preview projected when it is not natively drawable", () => {
     const scene = new THREE.Scene();
     const transform = new THREE.Group();
     const measurementPreview = new THREE.Group(); measurementPreview.name = "helper:measurement-preview";
-    // angle 预览无原生原语;无状态(未挂 userData)的预览同样不得凭空消失。
-    for (const kind of ["angle", undefined]) {
+    // 无状态(未挂 userData)的预览不得凭空消失。
+    for (const kind of [undefined]) {
       measurementPreview.userData.measurement = kind === undefined ? undefined : { kind };
       const roots = ViewerEngineInteraction.prototype.getDeepEditorOverlayRoots.call({
         scene, transform: { getHelper: () => transform }, selectionHelper: undefined,
