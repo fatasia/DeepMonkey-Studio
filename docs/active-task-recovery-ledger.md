@@ -3659,3 +3659,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 - deep-engine 全量复跑(拾取提交后):3855 passed/0 failed(45s);API 全量 EXIT=0(34s)——两大套件冻结绿。
 - 在途:节点映射透传代理(runtimePackage 可选 objectBindings→pick 透出 nodeId,旧包 fail-closed);命令层设计文档代理(路径 1 只读设计,docs/specs)。
 - 碰撞纪律:packages/deep-engine/src/webgpu/{pbrRenderer,gpuTimer}.ts 的 GPU 计时改动属另一并行会话在途工作,本会话及代理均已声明不触碰。
+
+### 2026-09-25 命令层设计交付
+
+- 设计文档落盘(docs/specs/engine-neutral-command-layer-design-2026-09-25.md):现状约 30 个写 THREE 对象入口归并为 7 个编辑原语(SetTransform/SetAppearance/SetLightProp/SetVisibility/SetSceneEnv/SetPhysics/SetRigPose+结构命令);批 0-6 迁移计划,批 0(命令总线+applier 原样调现有 setter)行为零变化可先行;关键发现:revision 是 React useState 计数器非文档属性、deep-engine 已有 SceneTransformGraph/SceneChangeset/SceneMutationGateway(v1)但 Web 作者链零消费——命令层为向上扩展。
+- **待用户批准的 5 项公共合同变更**(实施前置):①SceneSnapshot 单调 revision;②contracts SceneEditCommand 原语包;③WASM RuntimePackage 增量段(旧包 fail-closed);④保存协议命令日志+baseRevision+delta;⑤SceneModelState 口径显式化(破坏性部分)。批 0/1 不涉公共合同的部分(仓内类型+现有 setter 包装)是否先行,待用户示意。
