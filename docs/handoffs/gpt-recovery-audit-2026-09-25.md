@@ -41,3 +41,11 @@
 - W3 姿态命令补齐：`RobotJointPreview` 与 `RobotSceneInspector` 经 `robotPoseCommand` 进入 `CommandBus`；`setRobotPose` 的 `false` 拒绝结果由 UI 消费并显示错误；命令/姿态定向测试 64/64。
 - 当前命令层撤销仍由 `SceneAuthoringHistory` 的整快照路径承载；规格中的“每条命令携带 inverse”是后续目标态，不计入本轮已完成能力。
 - 总验收：artifact freshness 通过；Web 全量剩余架构扫描超时与电池样本 manifest 校验环境失败，W1/W2/W3 定向集均通过；Native 1800 秒音频 soak 正在运行。
+
+## 2026-09-25 15:26 性能与全量门禁更新
+
+- WebGPU 队列收敛优化：`2e79f328` 让 TAA settle 帧按 GPU completion 背压；`61635808` 再将相机帧与 settle 提交串行化，保留 16 帧收敛预算，不降低画质。定向调度/桥测试 59/59，命令/桥综合集 102/102。
+- 安静窗口公平对比证据：`test-output/deep-fair-comparison-backpressure-2026-09-25/`；120 静置 + 120 输入，WebGPU GPU 完成 P50/P95 15.1/31.1ms（旧证据约 53.7/103.8ms），黑帧 0、拖拽 distinct 1.0、50fps、位姿 SSIM 1。输入 P95 仍略高于 WebGL，暂不宣称全面领先。
+- 第二轮 `deep-fair-comparison-serialized-2026-09-25` 受 WebGL 并发 long task 污染，已明确丢弃，不用于性能结论。
+- 电池制品 EOL 修复后 API battery/capability 8/8、Web battery sample 3/3；根因与复现写入 `docs/reports/battery-manifest-eol-audit-2026-09-25.md`。
+- 当前全量 API 仍有 JT/X_T worker 时序、临时目录锁、嵌入纹理解码超时、Windows ZIP 进程路径和 local bare Git 清理失败；这些不是本轮 W1/W2/W3 变更回归，需在独立稳定环境收口。
