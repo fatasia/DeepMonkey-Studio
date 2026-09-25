@@ -174,7 +174,8 @@ function detourWaypoints(start: Vector3Value, end: Vector3Value, bounds: Workcel
   ];
 }
 
-function segmentIntersectsExpandedBounds(start: Vector3Value, end: Vector3Value, bounds: WorkcellBounds, margin: number): boolean {
+/** 导出供 kinematics 轨迹规划逐点复用;语义与实现保持不变,禁止在别处重写碰撞几何。 */
+export function segmentIntersectsExpandedBounds(start: Vector3Value, end: Vector3Value, bounds: WorkcellBounds, margin: number): boolean {
   let lower = 0, upper = 1;
   for (const axis of ["x", "y", "z"] as const) {
     const delta = end[axis] - start[axis];
