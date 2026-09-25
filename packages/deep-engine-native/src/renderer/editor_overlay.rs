@@ -54,8 +54,16 @@ struct Vertex {{ @builtin(position) position: vec4f, @location(0) color: vec4f }
                     array_stride: 32,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[
-                        wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x4, offset: 0, shader_location: 0 },
-                        wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x4, offset: 16, shader_location: 1 },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x4,
+                            offset: 0,
+                            shader_location: 0,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x4,
+                            offset: 16,
+                            shader_location: 1,
+                        },
                     ],
                 })],
             },
@@ -66,45 +74,74 @@ struct Vertex {{ @builtin(position) position: vec4f, @location(0) color: vec4f }
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
                     blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha, operation: wgpu::BlendOperation::Add },
-                        alpha: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha, operation: wgpu::BlendOperation::Add },
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
                     }),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
-            primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: None, ..Default::default() },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: None,
+                ..Default::default()
+            },
             depth_stencil: None,
             multisample: Default::default(),
             multiview_mask: None,
             cache: None,
         });
-        Self { pipeline, buffer: None, vertex_count: 0, revision: None }
+        Self {
+            pipeline,
+            buffer: None,
+            vertex_count: 0,
+            revision: None,
+        }
     }
 
-    pub(super) fn update(&mut self, device: &wgpu::Device, vertices: &[f32], revision: u64) -> Result<(), String> {
+    pub(super) fn update(
+        &mut self,
+        device: &wgpu::Device,
+        vertices: &[f32],
+        revision: u64,
+    ) -> Result<(), String> {
         validate(vertices)?;
         if self.revision.is_some_and(|previous| revision < previous) {
             return Err("WASM editor overlay revision went backwards".into());
         }
-        self.buffer = (!vertices.is_empty()).then(|| device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Deep WASM editor overlay vertices"),
-            contents: bytemuck::cast_slice(vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        }));
+        self.buffer = (!vertices.is_empty()).then(|| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Deep WASM editor overlay vertices"),
+                contents: bytemuck::cast_slice(vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            })
+        });
         self.vertex_count = (vertices.len() / 8) as u32;
         self.revision = Some(revision);
         Ok(())
     }
 
     pub(super) fn encode(&self, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView) {
-        let Some(buffer) = self.buffer.as_ref() else { return; };
+        let Some(buffer) = self.buffer.as_ref() else {
+            return;
+        };
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Deep WASM editor overlay"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: target,
                 resolve_target: None,
                 depth_slice: None,
-                ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
             })],
             depth_stencil_attachment: None,
             timestamp_writes: None,

@@ -340,7 +340,8 @@ export class StudioDeepWebGpuBridge {
     };
     if (typeof runtime.pick !== "function") return { available: false, reason: "Deep runtime does not expose picking.", fallbackToAuthor: true };
     let result;
-    try { result = runtime.pick(origin, direction, { maxHits: 1 }); }
+    const localOrigin = backend.worldToRenderLocal(origin);
+    try { result = runtime.pick(localOrigin, direction, { maxHits: 1 }); }
     catch (reason) { return { available: false, reason: reason instanceof Error ? reason.message : String(reason), fallbackToAuthor: true }; }
     if (!result.available) return { available: false, reason: result.reason, fallbackToAuthor: true };
     const hit = result.hits[0];
