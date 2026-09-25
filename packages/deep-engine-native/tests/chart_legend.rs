@@ -25,7 +25,7 @@ fn chart(position: LegendPosition, count: usize) -> ChartRuntime {
         .map(|index| {
             let mut s = series.clone();
             s.id = format!("series-{index}");
-            s.label = format!("泵站 {index}");
+            s.label = format!("Pump {index}");
             s
         })
         .collect();
