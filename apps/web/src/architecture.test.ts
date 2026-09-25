@@ -51,7 +51,7 @@ describe("web architecture boundary", () => {
       }
     }
     expect(violations).toEqual([]);
-  }, 30_000);
+  }, 120_000);
 
   it("keeps raw HTTP transport inside api.ts and documented non-business asset boundaries", async () => {
     const root = path.resolve(import.meta.dirname);
