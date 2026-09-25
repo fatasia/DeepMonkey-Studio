@@ -44,7 +44,7 @@
 
 ## 2026-09-25 15:26 性能与全量门禁更新
 
-- WebGPU 队列收敛优化：`2e79f328` 让 TAA settle 帧按 GPU completion 背压；`61635808` 再将相机帧与 settle 提交串行化，保留 16 帧收敛预算，不降低画质。定向调度/桥测试 59/59，命令/桥综合集 102/102。
+- WebGPU 队列收敛优化：`2e79f328` 让 TAA settle 帧按 GPU completion 背压；`61635808` 的相机/settle 强串行化因输入延迟回归已由 `589187af` 回退；保留 `2e79f328` 的 settle GPU completion 背压，定向调度/桥测试 59/59，命令/桥综合集 102/102。
 - 安静窗口公平对比证据：`test-output/deep-fair-comparison-backpressure-2026-09-25/`；120 静置 + 120 输入，WebGPU GPU 完成 P50/P95 15.1/31.1ms（旧证据约 53.7/103.8ms），黑帧 0、拖拽 distinct 1.0、50fps、位姿 SSIM 1。输入 P95 仍略高于 WebGL，暂不宣称全面领先。
 - 第二轮 `deep-fair-comparison-serialized-2026-09-25` 受 WebGL 并发 long task 污染，已明确丢弃，不用于性能结论。
 - 电池制品 EOL 修复后 API battery/capability 8/8、Web battery sample 3/3；根因与复现写入 `docs/reports/battery-manifest-eol-audit-2026-09-25.md`。
