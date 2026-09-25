@@ -1,5 +1,7 @@
 import type { AppStudioController } from "../views/AppStudioShell";
 import type { ModelTransform } from "@bim-studio/contracts";
+import { dispatchEngineEditCommand } from "../commands/engineCommandApplier";
+import { modelTransformCommand } from "../commands/engineEditCommand";
 import { translate as tr } from "../i18n";
 import { projectToWorld, worldToProject } from "../viewer/sceneCoordinates";
 import { DeferredNumberInput } from "./AppFormControls";
@@ -31,11 +33,9 @@ export function SceneMultiTransformEditor(props: Props) {
       const next = structuredClone(current);
       if (group === "position") next.position = projectToWorld({ ...worldToProject(current.position, sceneCoordinates), [axis]: value }, sceneCoordinates);
       else next[group][axis] = group === "rotation" ? value * Math.PI / 180 : value;
-      engine.setModelTransform(id, {
-        position: [next.position.x, next.position.y, next.position.z],
-        rotation: [next.rotation.x, next.rotation.y, next.rotation.z],
-        scale: [next.scale.x, next.scale.y, next.scale.z],
-      });
+      // 批 1 接线:多选统一设值发 model 级命令 → 总线 → applier 经 graph 权威通道后
+      // 原样调 setModelTransform,数值与直调逐位一致。
+      dispatchEngineEditCommand(engine, modelTransformCommand(locale, id, next));
       changed = true;
     }
     if (changed) {

@@ -27,6 +27,8 @@ import type {
   WeatherMode,
 } from "@bim-studio/contracts";
 import { api } from "../api";
+import { dispatchEngineEditCommand } from "../commands/engineCommandApplier";
+import { modelTransformCommand, selectionTransformCommand } from "../commands/engineEditCommand";
 import { normalizeNavigationSettings } from "../navigationSettings";
 import { explosionModeName, lightTypeName, primitiveKindLabel } from "../appPresentation";
 import { translate as tr, type AppLocale } from "../i18n";
@@ -500,15 +502,22 @@ export function createSceneEditorController(context: SceneEditorControllerContex
         if (positionDelta) next.position = { x: root.position.x + positionDelta.x, y: root.position.y + positionDelta.y, z: root.position.z + positionDelta.z };
         if (group === "rotation") next.rotation = { ...root.rotation, [axis]: root.rotation[axis] + rotationDelta };
         if (group === "scale") next.scale = { ...root.scale, [axis]: root.scale[axis] * scaleRatio };
-        engine.setModelTransform(id, {
-          position: [next.position.x, next.position.y, next.position.z],
-          rotation: [next.rotation.x, next.rotation.y, next.rotation.z],
-          scale: [next.scale.x, next.scale.y, next.scale.z],
-        });
+        // 批 1 接线:编组批量变换发 model 级命令 → 总线 → applier 经 graph 权威通道后
+        // 原样调 setModelTransform(数组参数由 applier 重建,与直调逐位一致)。
+        dispatchEngineEditCommand(engine, modelTransformCommand(locale, id, next));
       }
       setMessage(tr(locale, `已同步更新编组 ${groupedIds.length} 个对象`, `Updated ${groupedIds.length} grouped objects`));
     } else {
-      engine.applySelectionTransform(transform);
+      // 批 1 接线:单选变换发 selection 级命令 → 总线 → applier 经 graph 权威通道后
+      // 原样调 applySelectionTransform(含其锁定/图层守卫与全部连带,行为零变化)。
+      dispatchEngineEditCommand(
+        engine,
+        selectionTransformCommand(
+          locale,
+          { modelId: selected.id, ...(selectedLayerId && selectedLayerId !== "root" ? { layerId: selectedLayerId } : {}) },
+          transform,
+        ),
+      );
     }
     setRevision((item) => item + 1);
   }
@@ -535,11 +544,15 @@ export function createSceneEditorController(context: SceneEditorControllerContex
     const next = layoutSceneSelection(selectedItems, mode, axis, selected?.id);
     for (const item of next) {
       const world = projectToWorld(item.transform.position, sceneCoordinates);
-      engine.setModelTransform(item.id, {
-        position: [world.x, world.y, world.z],
-        rotation: [item.transform.rotation.x, item.transform.rotation.y, item.transform.rotation.z],
-        scale: [item.transform.scale.x, item.transform.scale.y, item.transform.scale.z],
-      });
+      // 批 1 接线:对齐/分布布局的变换提交同样走命令总线(model 级),等价原 setModelTransform 直调。
+      dispatchEngineEditCommand(
+        engine,
+        modelTransformCommand(locale, item.id, {
+          position: { x: world.x, y: world.y, z: world.z },
+          rotation: { ...item.transform.rotation },
+          scale: { ...item.transform.scale },
+        }),
+      );
     }
     const operation = mode === "align" ? "对齐" : "等距分布";
     setRevision((value) => value + 1);

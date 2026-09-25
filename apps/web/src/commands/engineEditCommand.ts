@@ -26,14 +26,20 @@ export interface EngineEditCommandTarget {
 }
 
 /**
- * 变换命令。批 0 的 applier 原样转交既有 `applySelectionTransform`(全量 TRS),
- * 因此字段是全量 ModelTransform 而非设计文档 §3 的 Partial 形态;
- * Partial 语义留待批 1 对接 SceneTransformGraph 时引入。
+ * 变换命令。全量 TRS(非设计文档 §3 的 Partial 形态):Partial 的"未指定字段保持不变"
+ * 需要可信基线,而 gizmo 拖拽流未收编、undo 是整快照直改 Three,基线不可信;
+ * 全量覆盖下旧值不参与结果,这是批 1 保持全量的决定性理由(见 engineTransformGraph.ts)。
+ *
+ * 批 1 追加 `mode`(缺省 "selection",批 0 命令兼容):
+ * - "selection":作用于引擎当前选中对象(等价既有 `applySelectionTransform`,含其内部
+ *   锁定/图层守卫);target 是调用点记录的选择身份。
+ * - "model":作用于 target.modelId 的模型根(等价既有 `setModelTransform`)。
  */
 export interface SetTransformCommand extends EngineEditCommandBase {
   readonly kind: "setTransform";
   readonly target: EngineEditCommandTarget;
   readonly transform: ModelTransform;
+  readonly mode?: "selection" | "model";
 }
 
 /**
@@ -72,5 +78,38 @@ export function layerVisibilityCommand(
     label: tr(locale, "切换图层可见性", "Toggle layer visibility"),
     target,
     patch: { visible },
+  };
+}
+
+/**
+ * 单选/图层对象变换命令工厂(mode "selection"):作用于引擎当前选中,
+ * applier 原样转交 applySelectionTransform 的选中语义与连带编排。
+ */
+export function selectionTransformCommand(
+  locale: AppLocale,
+  target: EngineEditCommandTarget,
+  transform: ModelTransform,
+): EngineEditCommandInput {
+  return {
+    kind: "setTransform",
+    mode: "selection",
+    label: tr(locale, "编辑三维对象", "Edit 3D object"),
+    target,
+    transform,
+  };
+}
+
+/** 模型根变换命令工厂(mode "model"):等价 setModelTransform,按 target.modelId 定位。 */
+export function modelTransformCommand(
+  locale: AppLocale,
+  modelId: string,
+  transform: ModelTransform,
+): EngineEditCommandInput {
+  return {
+    kind: "setTransform",
+    mode: "model",
+    label: tr(locale, "编辑三维对象", "Edit 3D object"),
+    target: { modelId },
+    transform,
   };
 }
