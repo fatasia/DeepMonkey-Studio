@@ -7,6 +7,7 @@ import { translate as tr, type AppLocale } from "../i18n";
 import { downloadRendererDiagnosticEvidence } from "../viewer/rendererDiagnosticExport";
 import type { StudioFrameCaptureSnapshot, StudioFrameReadbackEntry } from "../viewer/studioFrameCaptureDiagnostics";
 import { FrameCaptureSourceMapPanel } from "./FrameCaptureSourceMapPanel";
+import { rendererBackendLabel } from "../viewer/rendererBackendLabel";
 
 interface Props {
   locale: AppLocale;
@@ -61,6 +62,37 @@ export function RendererDiagnosticsPanel(props: Props) {
         </div>
       ) : (
         <>
+          <div className="renderer-option-list">
+            {props.readiness.map((item) => (
+              <article key={item.backend} className={`${item.level} ${props.current === item.backend ? "current" : ""}`}>
+                <div className="renderer-option-title">
+                  <span>
+                    {item.level === "ready" ? <Check size={14} /> : item.level === "limited" ? <TriangleAlert size={14} /> : <X size={14} />}
+                    <strong>{rendererBackendLabel(item.backend)}</strong>
+                  </span>
+                  {props.current === item.backend && <small>{tr(props.locale, "当前", "Current")}</small>}
+                  {props.current !== item.backend && props.desired === item.backend && <small>{tr(props.locale, "目标", "Target")}</small>}
+                </div>
+                <p>{trReadiness(props.locale, item)}</p>
+                <ul>
+                  {item.details.map((detail) => (
+                    <li key={detail}>{trDetail(props.locale, detail)}</li>
+                  ))}
+                </ul>
+                <button disabled={!item.ready || props.switching || props.current === item.backend} onClick={() => props.onSwitch(item.backend)}>
+                  {props.current === item.backend
+                    ? tr(props.locale, "正在使用", "In use")
+                    : !item.ready
+                      ? tr(props.locale, "不可用", "Unavailable")
+                      : item.backend === "webgpu"
+                        ? tr(props.locale, "启用 Deep WebGPU Beta", "Enable Deep WebGPU Beta")
+                        : item.backend === "wasm"
+                          ? tr(props.locale, "启用 Deep WASM", "Enable Deep WASM")
+                          : tr(props.locale, "切换到兼容模式", "Switch to compatibility")}
+                </button>
+              </article>
+            ))}
+          </div>
           <div className="renderer-device-card">
             <Cpu size={17} />
             <span>
@@ -90,49 +122,47 @@ export function RendererDiagnosticsPanel(props: Props) {
           </div>
           <SwitchStatus locale={props.locale} current={props.current} desired={props.desired} phase={props.switchPhase} message={props.switchMessage} />
           <PerformanceSummary locale={props.locale} snapshot={props.performance} />
+          {props.performance?.deep && <DeepRuntimeSummary locale={props.locale} frame={props.performance.deep.frame} />}
           {props.frameCapture && <FrameCaptureSourceMapPanel locale={props.locale} readbacks={props.frameReadbacks}
             {...props.frameCapture} />}
-          <div className="renderer-option-list">
-            {props.readiness.map((item) => (
-              <article key={item.backend} className={`${item.level} ${props.current === item.backend ? "current" : ""}`}>
-                <div className="renderer-option-title">
-                  <span>
-                    {item.level === "ready" ? <Check size={14} /> : item.level === "limited" ? <TriangleAlert size={14} /> : <X size={14} />}
-                    <strong>{item.backend === "webgl" ? "WebGL 2" : "Deep WebGPU Beta"}</strong>
-                  </span>
-                  {props.current === item.backend && <small>{tr(props.locale, "当前", "Current")}</small>}
-                  {props.current !== item.backend && props.desired === item.backend && <small>{tr(props.locale, "目标", "Target")}</small>}
-                </div>
-                <p>{trReadiness(props.locale, item)}</p>
-                <ul>
-                  {item.details.map((detail) => (
-                    <li key={detail}>{trDetail(props.locale, detail)}</li>
-                  ))}
-                </ul>
-                <button disabled={!item.ready || props.switching || props.current === item.backend} onClick={() => props.onSwitch(item.backend)}>
-                  {props.current === item.backend
-                    ? tr(props.locale, "正在使用", "In use")
-                    : !item.ready
-                      ? tr(props.locale, "不可用", "Unavailable")
-                      : item.backend === "webgpu"
-                        ? tr(props.locale, "启用 Deep WebGPU Beta", "Enable Deep WebGPU Beta")
-                        : tr(props.locale, "切换到兼容模式", "Switch to compatibility")}
-                </button>
-              </article>
-            ))}
-          </div>
           <footer>
             <ShieldCheck size={14} />
             <span>
               {tr(
                 props.locale,
-                "Deep WebGPU Beta 保留同一作者状态，成功激活后才保存偏好；画质与功能仍需逐场景验收。",
-                "Deep WebGPU Beta retains the same author state and saves preferences only after activation. Visual quality and features still require per-scene validation.",
+                "Deep WebGPU 与 Deep WASM 都保留同一作者状态，成功激活后才保存偏好；切换失败自动保留 WebGL，画质与功能仍需逐场景验收。",
+                "Deep WebGPU and Deep WASM retain the same author state; each saves preferences only after activation. Failed switches keep WebGL active and visual quality still requires per-scene validation.",
               )}
             </span>
           </footer>
         </>
       )}
+    </section>
+  );
+}
+
+function DeepRuntimeSummary({ locale, frame }: {
+  locale: AppLocale;
+  frame: NonNullable<NonNullable<FramePerformanceSnapshot["deep"]>["frame"]>;
+}) {
+  const memory = frame.deviceResourceMemory;
+  const transient = frame.transientTextures;
+  const adaptive = frame.adaptiveQuality;
+  return (
+    <section className="renderer-deep-summary" aria-label={tr(locale, "Deep 运行证据", "Deep runtime evidence")}>
+      <header>
+        <strong>{tr(locale, "Deep 运行证据", "Deep runtime evidence")}</strong>
+        <small>frame {frame.frame}</small>
+      </header>
+      <div className="renderer-deep-metrics">
+        <Metric label={tr(locale, "光源簇", "Light clusters")} value={`${frame.lightClusters} · ${frame.lightCount} ${tr(locale, "光源", "lights")}`} />
+        <Metric label={tr(locale, "DDGI 更新预算", "DDGI update budget")} value={adaptive ? `${adaptive.knobs.ddgiUpdateBudget} · L${adaptive.level}` : "—"} />
+        <Metric label={tr(locale, "驻留预算倍率", "Residency budget scale")} value={adaptive ? `${adaptive.knobs.residencyBudgetScale.toFixed(2)}×` : "—"} />
+        <Metric label={tr(locale, "时域历史", "Temporal history")} value={frame.cameraCut ? tr(locale, "已重置", "Reset") : tr(locale, "保持", "Retained")} />
+        {memory && <Metric label={tr(locale, "设备资源", "Device resources")} value={`${formatBytes(memory.estimatedBytes)} / ${memory.admission ? formatBytes(memory.admission.budgetBytes) : "—"}`} warning={Boolean(memory.admission && memory.admission.budgetBytes > 0 && memory.estimatedBytes / memory.admission.budgetBytes > .9)} />}
+        {transient && <Metric label={tr(locale, "瞬态纹理", "Transient textures")} value={`${transient.acquireCount} · ${formatBytes(transient.residentBytes)}`} />}
+      </div>
+      {adaptive && <small className="renderer-deep-note">{adaptive.explanation}</small>}
     </section>
   );
 }
@@ -144,8 +174,8 @@ function SwitchStatus({ locale, current, desired, phase, message }: {
   phase: Props["switchPhase"];
   message: string | undefined;
 }) {
-  const currentName = current === "webgpu" ? "Deep WebGPU Beta" : "WebGL 2";
-  const desiredName = desired === "webgpu" ? "Deep WebGPU Beta" : "WebGL 2";
+  const currentName = rendererBackendLabel(current);
+  const desiredName = rendererBackendLabel(desired);
   if (phase === "idle" && current === desired) {
     return <div className="renderer-switch-status idle"><Check size={14} /><span><strong>{tr(locale, "当前渲染后端", "Active renderer")}</strong><small>{currentName}</small></span></div>;
   }
@@ -322,17 +352,36 @@ function pressureName(locale: AppLocale, code: PerformancePressureCode): string 
 
 function trReadiness(locale: AppLocale, item: RendererReadiness): string {
   const translations: Record<string, string> = {
+    "完整编辑，兼容性强": "Complete authoring with broad compatibility",
+    "现代 GPU 管线，面向大场景": "Modern GPU pipeline for large scenes",
+    "Rust 内核，跨端本地运行": "Rust core, local cross-platform runtime",
+    "兼容性最强的完整作者引擎": "Full authoring engine with the broadest compatibility",
+    "现代 GPU 管线与大场景渲染": "Modern GPU pipeline for large-scene rendering",
+    "Rust/WASM 跨端全引擎运行时": "Cross-platform full engine powered by Rust/WASM",
     "生产兼容，功能完整": "Production-compatible and feature-complete",
     "当前环境无法创建 WebGL 2 上下文": "This environment cannot create a WebGL 2 context",
     当前设备不可用: "Unavailable on this device",
     "可试用，存在场景限制": "Available for trial with scene limitations",
     "可试用，需逐场景验收": "Available for trial; validate per scene",
+    "内置完整引擎，可正式切换": "Built-in full engine, ready for switching",
   };
   return locale === "zh-CN" ? item.summary : (translations[item.summary] ?? item.summary);
 }
 
 function trDetail(locale: AppLocale, detail: string): string {
   const translations: Record<string, string> = {
+    "Three.js WebGL 2，编辑与生态兼容": "Three.js WebGL 2 with broad editor and ecosystem compatibility",
+    "完整材质、后处理、拾取、动画与 WebXR": "Materials, post-processing, picking, animation and WebXR",
+    "自研 WebGPU：PBR、阴影、环境、后处理": "In-house WebGPU: PBR, shadows, environments and post-processing",
+    "GPU 驱动大场景，内置帧图与性能诊断": "GPU-driven large scenes with frame-graph and performance diagnostics",
+    "Rust/WASM 全引擎，与 Native 共用内核": "Full Rust/WASM engine sharing its core with Native",
+    "浏览器本地运行，支持离线与跨端交付": "Runs locally in the browser for offline and cross-platform delivery",
+    "Three.js WebGL 2 作者引擎，编辑能力与生态兼容性最完整": "Three.js WebGL 2 authoring engine with the most complete editing and ecosystem compatibility",
+    "支持完整材质、后处理、对象拾取、动画与 WebXR": "Complete materials, post-processing, object picking, animation and WebXR",
+    "自研 WebGPU 渲染器，支持 PBR、阴影、环境与后处理管线": "In-house WebGPU renderer with PBR, shadows, environments and post-processing",
+    "面向 GPU 驱动的大场景渲染，并提供帧图与性能诊断": "GPU-driven large-scene rendering with frame-graph and performance diagnostics",
+    "Rust/WASM 全引擎运行时，与 Native 共用核心和场景运行包": "Full Rust/WASM engine sharing its core and scene runtime package with Native",
+    "浏览器本地执行，适合跨端发布、离线运行与一致性交付": "Runs locally in the browser for cross-platform publishing, offline use and consistent delivery",
     当前后处理与真实对象轮廓完整可用: "Current post-processing and true object outlines are fully available",
     "模型、材质、拾取与动画完整可用": "Models, materials, picking and animation are fully available",
     作为生产兼容后端保留: "Retained as the production compatibility backend",
@@ -351,6 +400,9 @@ function trDetail(locale: AppLocale, detail: string): string {
     "XR 会话挂载在本后端：WebXR 进入、控制器选择与双目渲染均走 WebGL": "XR sessions mount on this backend: WebXR entry, controller selection and stereo rendering all run on WebGL",
     "Deep WebGPU 激活期间 XR 入口不可用；浏览器端 WebGPU-XR 会话特性尚未落地，属诚实降级而非缺陷": "The XR entry is unavailable while Deep WebGPU is active; browser-side WebGPU-XR session support has not landed yet — an honest fallback, not a defect",
     "未取得硬件光追能力快照；使用软件 BVH/TLAS 路径": "No hardware ray-tracing capability snapshot yet; using the software BVH/TLAS path",
+    "Studio 复用 Native 同一运行包编译器和完整 Deep Engine WASM，不创建第二套场景合同": "Studio reuses the Native runtime-package compiler and full Deep Engine WASM without a second scene contract",
+    "作者 WebGL 画布继续负责选择与编辑；场景修改和相机状态同步到 WASM 输出画布": "The author WebGL canvas remains responsible for selection and editing; scene changes and camera state are synchronized to the WASM output canvas",
+    "WASM 激活期间 XR 入口不可用；切回 WebGL 后可进入沉浸式会话": "XR is unavailable while WASM is active; switch back to WebGL before entering an immersive session",
   };
   if (locale === "zh-CN") return detail;
   const mapped = translations[detail];

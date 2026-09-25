@@ -101,6 +101,34 @@ describe("RendererDiagnosticsPanel", () => {
     expect(html).toContain("—"); expect(html).not.toContain("WEBGL");
     expect(html).not.toContain("GPU P95");
   });
+  it("shows real Deep cluster, DDGI, temporal and residency evidence", () => {
+    const html = renderToStaticMarkup(<RendererDiagnosticsPanel locale="en-US" current="webgpu" desired="webgpu"
+      switchPhase="idle" switchMessage={undefined} switching={false} checking={false} probe={undefined} readiness={[]}
+      onClose={vi.fn()} onRefresh={vi.fn()} onSwitch={vi.fn()} performance={{ sampleCount: 3, sampleWindowMs: 48,
+        fps: 62.5, frameTimeMs: { p50: 16, p95: 16, p99: 16, maximum: 16 }, over33msRate: 0, over50msRate: 0,
+        ignoredBackgroundFrames: 0, pressureSignals: [], renderer: { backend: "webgpu", drawCalls: 19, triangles: 321,
+          points: 0, lines: 0, viewportPixels: 800000, pixelRatio: 1.25, activeFeatures: ["deep-webgpu"] },
+        deep: { frame: { frame: 9, cpuSubmitMs: 2, drawCalls: 19, triangles: 321, width: 800, height: 600,
+          resources: 5, shadowUpdated: false, cameraCut: true, postProcessPasses: 2, weightedOit: false,
+          hiZMipLevels: 4, occlusionCulling: true, frustumCulledBatches: 3, hiZOccludedBatches: 2,
+          lodSelectionBatches: 1, lodIndirectDraws: 1, lightCount: 6, lightClusters: 64, shadowTier: "high",
+          shadowDepthBytes: 1024, deviceResourceMemory: { bufferBytes: 40 * 1024, textureBytes: 40 * 1024, estimatedBytes: 80 * 1024,
+            peakEstimatedBytes: 80 * 1024, unknownResources: 0, resourceCount: 5, admission: { budgetBytes: 100 * 1024, rejectedCount: 0 } },
+          transientTextures: { budgetBytes: 40 * 1024, residentBytes: 20 * 1024, budgetRejectedCount: 0, budgetEvictedBytes: 0,
+            epoch: 1, frameOpen: false, acquireCount: 4, hits: 2, frameAliasHits: 0,
+            misses: 2, allocatedBytes: 20 * 1024, reusedBytes: 0, freeCount: 0, freeBytes: 0, inFlightCount: 0,
+            inFlightBytes: 0, pendingReturnCount: 0, pendingReturnBytes: 0, peakResidentBytes: 20 * 1024,
+            discardedCount: 0, evictedCount: 0 },
+          adaptiveQuality: { enabled: true, level: 1, reason: "gpu-pressure", changedAtFrame: 9,
+            explanation: "GPU pressure", knobs: { ssrConeLevels: 4, ddgiUpdateBudget: 32, fogSteps: 40,
+              shadowTier: "high", lodDetailScale: .9, residencyBudgetScale: .8 } } } } }} />);
+    expect(html).toContain("Deep runtime evidence");
+    expect(html).toContain("Light clusters");
+    expect(html).toContain("DDGI update budget");
+    expect(html).toContain("Temporal history");
+    expect(html).toContain("Reset");
+    expect(html).toContain("80 KB / 100 KB");
+  });
   it("surfaces the live Frame Graph receipt and keeps unqueried pass timings explicit", () => {
     const plan = buildPbrFrameExecutionPlan({ width: 640, height: 360 }, { transparency: false });
     const receipt = createPbrFrameReceipt(7, plan, [], 10, 17);
@@ -144,11 +172,10 @@ describe("RendererDiagnosticsPanel", () => {
     );
 
     expect(html).toContain("Enable Deep WebGPU Beta");
-    expect(html).toContain("Deep WebGPU projection canvas");
-    expect(html).toContain("author overlays still require per-scene validation");
+    expect(html).toContain("In-house WebGPU");
+    expect(html).toContain("GPU-driven large scenes");
     expect(html).toContain("saves preferences only after activation");
-    expect(html).toContain("automatic publication remains on WebGL");
-    expect(html).toContain("XR sessions continue to use WebGL");
+    expect(html).toContain("Materials, post-processing, picking, animation and WebXR");
     expect(html).toContain('class="limited "');
     expect(html).not.toContain("Three.js WebGPU");
     expect(html).not.toMatch(/[\u4e00-\u9fff]/);
