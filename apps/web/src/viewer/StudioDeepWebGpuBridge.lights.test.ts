@@ -50,7 +50,9 @@ describe("Studio Deep bridge author lighting", () => {
     const viewer = { scene, camera, orbit: { target: new THREE.Vector3() },
       renderer: { domElement: authorCanvas, getPixelRatio: () => 1, toneMappingExposure: 1, shadowMap,
         toneMapping: THREE.ACESFilmicToneMapping }, usesAuthorPostProcessing: () => true,
-      getDeepProjectionRoot: () => scene, getDeepEditorOverlayRoots: () => [], setPresentationRendererBackend: presentation,
+      getDeepProjectionRoot: () => scene, getDeepEditorOverlayRoots: () => [], getDeepSelectionBox: () => undefined,
+      getDeepTransformGizmoInput: () => undefined, getDeepMeasurementSegmentInputs: () => [],
+      setPresentationRendererBackend: presentation,
       getPostProcessing: () => ({ ...DEFAULT_POST_PROCESSING, enabled: false }),
       setPresentationPerformanceSource: vi.fn(),
       subscribePresentationFrames: (callback: () => void) => {

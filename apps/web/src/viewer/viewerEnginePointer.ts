@@ -141,7 +141,7 @@ export abstract class ViewerEnginePointer extends ViewerEngineObjectState {
         ? [start, this.measurementPoints[1]!, constrained]
         : [start, constrained];
       const angle = this.measureMode === "angle" && points[2] ? measurementAngle(points[0]!, points[1]!, points[2]) : undefined;
-      this.measurementPreview = createMeasurementVisual({
+      const state: MeasurementState = {
         id: "preview",
         start: toValue(points[0]!),
         end: toValue(points[1]!),
@@ -149,7 +149,10 @@ export abstract class ViewerEnginePointer extends ViewerEngineObjectState {
         kind: this.measureMode,
         points: points.map(toValue),
         ...(angle === undefined ? {} : { angle })
-      }, true);
+      };
+      this.measurementPreview = createMeasurementVisual(state, true);
+      // Deep 原生测量原语(切片 B)从该状态读取两点线段,不经 Three 几何反推。
+      this.measurementPreview.userData.measurement = state;
       this.measurementPreview.name = "helper:measurement-preview";
       this.scene.add(this.measurementPreview);
     }

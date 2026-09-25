@@ -59,7 +59,9 @@ describe("Studio Deep bridge environment staging", () => {
     const presentation = vi.fn(), failure = vi.fn(), container = { clientWidth: 640, clientHeight: 480, append: vi.fn() };
     const viewer = { scene, camera, orbit: { target: new THREE.Vector3() },
       renderer: { domElement: authorCanvas, toneMappingExposure: 1.2, toneMapping: THREE.ACESFilmicToneMapping, getPixelRatio: () => 1 },
-      getDeepProjectionRoot: () => scene, getDeepEditorOverlayRoots: () => [], usesAuthorPostProcessing: () => true,
+      getDeepProjectionRoot: () => scene, getDeepEditorOverlayRoots: () => [], getDeepSelectionBox: () => undefined,
+      getDeepTransformGizmoInput: () => undefined, getDeepMeasurementSegmentInputs: () => [],
+      usesAuthorPostProcessing: () => true,
       getPostProcessing: () => ({ ...DEFAULT_POST_PROCESSING, enabled: false }),
       setPresentationPerformanceSource: vi.fn(),
       setPresentationRendererBackend: presentation, subscribePresentationFrames: (callback: () => void) => {

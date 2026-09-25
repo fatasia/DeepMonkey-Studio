@@ -29,7 +29,9 @@ function fixture() {
   const viewer = { scene, camera, orbit: { target: new THREE.Vector3() }, usesAuthorPostProcessing: composer,
     renderer: { domElement: authorCanvas, getPixelRatio: () => 1, toneMappingExposure: 1, toneMapping: THREE.ACESFilmicToneMapping },
     getPostProcessing: () => ({ ...DEFAULT_POST_PROCESSING, enabled: false }), getDeepProjectionRoot: () => model,
-    getDeepGrid: () => grid, getDeepEditorOverlayRoots: () => [], setPresentationRendererBackend: presentation,
+    getDeepGrid: () => grid, getDeepEditorOverlayRoots: () => [], getDeepSelectionBox: () => undefined,
+    getDeepTransformGizmoInput: () => undefined, getDeepMeasurementSegmentInputs: () => [],
+    setPresentationRendererBackend: presentation,
     setPresentationPerformanceSource: vi.fn(), subscribePresentationFrames: (callback: () => void) => { frames.add(callback); return () => frames.delete(callback); },
   } as unknown as ViewerEngine;
   const backend = () => ({ setProbeClipmapEnabled: vi.fn(), prepareScene: vi.fn().mockResolvedValue({ frame: 1 }), sync: vi.fn().mockResolvedValue({ status: "committed" }),

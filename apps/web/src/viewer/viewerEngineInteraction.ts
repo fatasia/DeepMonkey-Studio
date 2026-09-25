@@ -3,6 +3,7 @@ import type {
   DataMessage,
   IndustrialPrefabInstanceState,
   IndustrialPrefabRuntimeAction,
+  MeasurementState,
   SceneAnnotationState,
   SceneInteractionScriptState,
   SceneInteractionActionState,
@@ -29,6 +30,7 @@ import { bindPresentationPerformance, getPresentationPerformance, enablePresenta
   type PresentationPerformanceSource } from "./viewerPresentationPerformance";
 import { clearIndustrialPrefabProxy, ensureIndustrialPrefabProxy, industrialPrefabProxyGroundOffset } from "./industrialPrefabProxy";
 import { detachSharedGltfResources } from "./sharedGltfAssets";
+import type { DeepMeasurementSegmentInput } from "./deepOverlayPrimitives";
 
 /** Interaction 职责层。模型动画控制域已拆至 viewerEngineAnimationControl.ts（F6 结构治理），经继承混入保持公开 API 不变。 */
 export abstract class ViewerEngineInteraction extends ViewerEngineAnimationControl {
@@ -85,16 +87,45 @@ export abstract class ViewerEngineInteraction extends ViewerEngineAnimationContr
     // Deep owns a separate presentation canvas, so transient editor visuals
     // must be projected explicitly. Keep modelRoot out of this list: it is
     // uploaded through the RenderPacket path and would otherwise be drawn twice.
-    const roots = [this.transform.getHelper(), ...(this.selectionHelper ? [this.selectionHelper] : []),
+    // Deep 原生 overlay 原语(选择盒/两点测量线段/gizmo)接管对应 helper 的呈现,
+    // 排除其 CPU 投影以避免双重绘制;本方法只被 Deep WebGPU 渲染帧消费,
+    // WebGL 从不调用,故排除不影响 WebGL 呈现。angle 测量(含预览)与剖切盒
+    // 尚无原生原语,必须继续走 Three 投影;排除条件与原语采集共用同一判定。
+    const nativeHelpers = this.presentationRendererBackend === "webgpu";
+    const nativeMeasurement = (object: THREE.Object3D): boolean => {
+      if (!nativeHelpers) return false;
+      const state = object.userData.measurement as MeasurementState | undefined;
+      return state !== undefined && state.kind !== "angle";
+    };
+    const roots = [...(nativeHelpers ? [] : [this.transform.getHelper()]),
+      ...(nativeHelpers || !this.selectionHelper ? [] : [this.selectionHelper]),
       ...(this.clippingHelper ? [this.clippingHelper] : []),
-      ...(this.measurementPreview ? [this.measurementPreview] : []),
-      ...[...this.scene.children].filter((child) => child.name.startsWith("measurement:")
-        || child.name.startsWith("annotation:")
-        || child.name.startsWith("helper:space:")
-        || child.name === "helper:bim-placement-preview"),
+      ...(this.measurementPreview && !nativeMeasurement(this.measurementPreview) ? [this.measurementPreview] : []),
+      ...[...this.scene.children].filter((child) => {
+        if (child.name.startsWith("measurement:")) return !nativeMeasurement(child);
+        return child.name.startsWith("annotation:")
+          || child.name.startsWith("helper:space:")
+          || child.name === "helper:bim-placement-preview";
+      }),
       ...Array.from(this.sceneLightProxies.values()).flatMap(proxy =>
         [proxy.position, ...(proxy.target ? [proxy.target] : []), ...(proxy.line ? [proxy.line] : [])])];
     return [...new Set(roots)];
+  }
+  /** Deep 原生测量原语(切片 B)的只读输入:两点线段;angle 测量仍由 Three 投影呈现。 */
+  getDeepMeasurementSegmentInputs(): DeepMeasurementSegmentInput[] {
+    const inputs: DeepMeasurementSegmentInput[] = [];
+    const collect = (state: MeasurementState | undefined, preview: boolean): void => {
+      if (!state || state.kind === "angle") return;
+      const points = state.points?.length ? state.points : [state.start, state.end];
+      const [start, end] = points;
+      if (!start || !end) return;
+      inputs.push({ a: new THREE.Vector3(start.x, start.y, start.z), b: new THREE.Vector3(end.x, end.y, end.z), preview });
+    };
+    for (const child of this.scene.children) {
+      if (child.name.startsWith("measurement:") && child !== this.measurementPreview) collect(child.userData.measurement as MeasurementState | undefined, false);
+    }
+    collect(this.measurementPreview?.userData.measurement as MeasurementState | undefined, true);
+    return inputs;
   }
   getDeepGrid(): THREE.Object3D | undefined { return this.gridHelper; }
   setInteractionScripts(scripts: SceneInteractionScriptState[]): void {
@@ -664,3 +695,4 @@ export abstract class ViewerEngineInteraction extends ViewerEngineAnimationContr
     return false;
   }
 }
+

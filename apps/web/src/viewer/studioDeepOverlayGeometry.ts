@@ -1,6 +1,8 @@
 export type OverlayClipPoint = readonly [number, number, number, number];
 export type OverlayColor = readonly [number, number, number, number];
-const LIMIT = 196_608 * 8;
+/** 顶点预算上限(floats):8 floats/vertex × 196_608 vertices,Deep 原语合并共用。 */
+export const OVERLAY_VERTEX_LIMIT = 196_608 * 8;
+const LIMIT = OVERLAY_VERTEX_LIMIT;
 
 export function overlayVertex(output: number[], point: OverlayClipPoint, color: OverlayColor): void {
   if (output.length + 8 > LIMIT) throw new Error("Editor overlay geometry exceeds its vertex budget.");

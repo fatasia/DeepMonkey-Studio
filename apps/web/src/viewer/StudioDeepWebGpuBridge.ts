@@ -21,6 +21,7 @@ import { DeepCameraController } from "./deepCameraController";
 import { DeepCameraInputSession } from "./deepCameraInputSession";
 import { createDeepCanvas, prepareAuthorInputCanvas, captureAuthorStyle, restoreAuthorStyle,
   type AuthorCanvasStyle } from "./studioDeepPresentationCanvas";
+import { collectDeepOverlayPrimitives } from "./deepOverlayPrimitiveSource";
 import type { FrameCaptureSession } from "@bim-studio/deep-engine";
 import { createRequestedStudioFrameCaptureSession, createStudioFrameReadbackListener,
   publishStudioFrameCaptureSession, releaseStudioFrameCaptureSession } from "./studioFrameCaptureDiagnostics";
@@ -94,6 +95,11 @@ export class StudioDeepWebGpuBridge {
     private readonly options: StudioDeepWebGpuBridgeOptions = {},
   ) {
     this.viewReader = new StudioDeepRenderView(viewer, container, () => this.environmentSession, () => this.shadowSession);
+    // Deep 原生编辑辅助图形(切片 A/B/C):选择盒/测量线段/gizmo 顶点由 Deep 自有通道生成,
+    // 注册进渲染视图的 overlay 合并点;Three 侧对应 helper 的 CPU 投影由
+    // getDeepEditorOverlayRoots 在 webgpu 呈现后端下排除,WebGL 呈现不受影响。
+    this.viewReader.setDeepOverlayPrimitiveSource((width, height, pixelRatio) =>
+      collectDeepOverlayPrimitives(this.viewer, width, height, pixelRatio));
     this.loadModule = options.loadModule ?? (() => import("@bim-studio/deep-engine/three-bridge"));
     this.cameraFrameInFlightLimit = options.cameraFrameInFlightLimit ?? 2;
     this.authorCanvas = viewer.renderer.domElement;

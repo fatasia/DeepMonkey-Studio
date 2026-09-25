@@ -15,6 +15,7 @@ import { loadViewerAssetText } from "./viewerAssetTransport";
 import { syncSpaceVisualTransforms } from "./spaceVisualSync";
 import { fitPerspectiveBox } from "./cameraFraming";
 import { createModelFireEffect, disposeModelFireEffect, updateModelFireEffect } from "./modelFireEffect";
+import type { DeepTransformGizmoInput } from "./deepOverlayPrimitives";
 
 /** Rendering 职责层。 */
 export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
@@ -493,6 +494,18 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
       material.transparent = true;
       material.opacity = 0.95;
       this.scene.add(this.selectionHelper);
+    }
+  /** Deep 原生选择盒原语(切片 A)的只读输入;Box3 即 WebGL 路径呈现所用的同一份。 */
+  getDeepSelectionBox(): THREE.Box3 | undefined {
+      return this.selectionHelper?.box;
+    }
+  /** Deep 原生 gizmo 原语(切片 C)的只读输入;呈现层原生化,交互仍由 TransformControls 持有。 */
+  getDeepTransformGizmoInput(): DeepTransformGizmoInput | undefined {
+      const object = this.transform.object;
+      const mode = this.transform.mode;
+      if (!this.transform.getHelper().visible || !object) return undefined;
+      if (mode !== "translate" && mode !== "rotate" && mode !== "scale") return undefined;
+      return { matrix: object.matrixWorld, mode };
     }
   protected async loadDxf(url: string): Promise<THREE.Group> {
       const source = await loadViewerAssetText(url, "DXF");

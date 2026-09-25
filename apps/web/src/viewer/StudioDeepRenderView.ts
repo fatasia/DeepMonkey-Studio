@@ -4,6 +4,7 @@ import type { ViewerEngine } from "./ViewerEngine";
 import type { StudioDeepEnvironmentSession } from "./StudioDeepEnvironmentSession";
 import type { StudioDeepShadowSession } from "./StudioDeepShadowSession";
 import { StudioDeepEditorOverlaySession } from "./StudioDeepEditorOverlaySession";
+import type { DeepOverlayPrimitiveSource } from "./deepOverlayPrimitiveSource";
 import { StudioDeepGridSession } from "./StudioDeepGridSession";
 import { projectStudioDeepLights } from "./studioDeepEnvironmentLights";
 import { readStudioDeepEnvironmentView } from "./studioDeepEnvironmentView";
@@ -34,6 +35,7 @@ interface SourceView extends EnvironmentView {
 export class StudioDeepRenderView {
   private readonly editorOverlay = new StudioDeepEditorOverlaySession();
   private readonly grid = new StudioDeepGridSession();
+  private deepOverlayPrimitives: DeepOverlayPrimitiveSource | undefined;
   private projectionExtent: number | undefined;
   private cachedGestureSource: { source: SourceView; at: number } | undefined;
   constructor(private readonly viewer: ViewerEngine, private readonly container: HTMLElement,
@@ -41,6 +43,10 @@ export class StudioDeepRenderView {
     private readonly shadowSession: () => StudioDeepShadowSession | undefined) {}
   reset(): void { this.editorOverlay.dispose(); this.grid.dispose(); this.projectionExtent = undefined; this.cachedGestureSource = undefined; }
   invalidateProjectionBounds(): void { this.projectionExtent = undefined; this.cachedGestureSource = undefined; }
+  /** Deep 原生编辑辅助图形(切片 A/B/C)顶点来源;未注册时保持纯 Three 投影行为。 */
+  setDeepOverlayPrimitiveSource(source: DeepOverlayPrimitiveSource | undefined): void {
+    this.deepOverlayPrimitives = source;
+  }
   renderView(module: BridgeModule, canvas: HTMLCanvasElement): RenderView {
     const source = this.renderViewSource(canvas);
     return { ...module.threeRenderView(source), lights: source.lights, authorGrid: source.authorGrid,
@@ -57,7 +63,8 @@ export class StudioDeepRenderView {
     const verticalFovRadians = 2 * Math.atan(Math.tan(source.camera.fov * Math.PI / 360) / source.camera.zoom);
     return {
       editorOverlay: this.editorOverlay.read(this.viewer.getDeepEditorOverlayRoots(), this.viewer.camera,
-        source.width, source.height, source.pixelRatio),
+        source.width, source.height, source.pixelRatio,
+        this.deepOverlayPrimitives?.(source.width, source.height, source.pixelRatio) ?? []),
       authorGrid: source.authorGrid,
       width: source.width,
       height: source.height,

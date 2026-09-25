@@ -68,4 +68,15 @@ describe("author editor overlay projection", () => {
     expect(a.vertices[0]).not.toBe(b.vertices[0]); session.dispose();
     expect(session.read([object], view, 128, 128, 1).revision).toBeGreaterThan(b.revision);
   });
+  it("merges deep native primitives into the snapshot and reuses revisions for identical content", () => {
+    const session = new StudioDeepEditorOverlaySession(), view = camera();
+    const primitive = new Float32Array(8);
+    const merged = session.read([], view, 128, 128, 1, [primitive]);
+    expect(merged.vertices.length).toBe(8);
+    expect(session.read([], view, 128, 128, 1, [primitive])).toBe(merged);
+    expect(session.read([], view, 128, 128, 1).vertices.length).toBe(0);
+    session.dispose();
+    // dispose 清空缓存后重建修订(计数延续),不再复用旧快照对象。
+    expect(session.read([], view, 128, 128, 1, [primitive]).revision).toBeGreaterThan(merged.revision);
+  });
 });

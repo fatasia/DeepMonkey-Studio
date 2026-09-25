@@ -37,7 +37,9 @@ describe("Studio author animation integration", () => {
     const viewer = { scene, camera, orbit: { target: new THREE.Vector3() },
       renderer: { domElement: authorCanvas, getPixelRatio: () => 1, toneMappingExposure: 1, toneMapping: THREE.ACESFilmicToneMapping },
       usesAuthorPostProcessing: () => true, getPostProcessing: () => ({ ...DEFAULT_POST_PROCESSING, enabled: false }),
-      getDeepProjectionRoot: () => root, getDeepEditorOverlayRoots: () => [], setPresentationRendererBackend: vi.fn(), setPresentationPerformanceSource: vi.fn(),
+      getDeepProjectionRoot: () => root, getDeepEditorOverlayRoots: () => [], getDeepSelectionBox: () => undefined,
+      getDeepTransformGizmoInput: () => undefined, getDeepMeasurementSegmentInputs: () => [],
+      setPresentationRendererBackend: vi.fn(), setPresentationPerformanceSource: vi.fn(),
       subscribePresentationFrames: (callback: () => void) => { authorFrames.add(callback); return () => authorFrames.delete(callback); },
     } as unknown as ViewerEngine;
     const metrics = { frame: 1, shadowTier: "exact", shadowMapSize: 1024, shadowCascadeCount: 1,
