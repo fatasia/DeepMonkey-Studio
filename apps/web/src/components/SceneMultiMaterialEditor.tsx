@@ -1,4 +1,6 @@
 import type { SceneMaterialState } from "@bim-studio/contracts";
+import { dispatchEngineEditCommand } from "../commands/engineCommandApplier";
+import { modelMaterialCommand } from "../commands/engineEditCommand";
 import type { AppStudioController } from "../views/AppStudioShell";
 import { translate as tr } from "../i18n";
 import { DeferredNumberInput } from "./AppFormControls";
@@ -40,7 +42,7 @@ export function SceneMultiMaterialEditor(props: Props) {
     }
     if (!patches.length) return;
     props.bindings.sceneHistory.flush();
-    for (const { id, patch } of patches) engine.setModelMaterial(id, patch);
+    for (const { id, patch } of patches) dispatchEngineEditCommand(engine, modelMaterialCommand(locale, id, patch));
     const label = tr(locale, "批量修改材质", "Edit selected materials");
     props.bindings.sceneEditor.recordSceneEdit(label);
     props.setRevision(revision => revision + 1);

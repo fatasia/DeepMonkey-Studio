@@ -14,7 +14,8 @@ import type {
 import { api } from "../api";
 import { lightTypeName } from "../appPresentation";
 import { dispatchEngineEditCommand } from "../commands/engineCommandApplier";
-import { selectionVisibilityCommand } from "../commands/engineEditCommand";
+import { globalLightingCommand, modelEffectsCommand, modelMaterialCommand, physicsStateCommand,
+  sceneEnvironmentCommand, selectionMaterialCommand, selectionVisibilityCommand } from "../commands/engineEditCommand";
 import { translate as tr } from "../i18n";
 import { applyGroupedOrSelected } from "./sceneAppearanceDispatch";
 import type { SceneEditorControllerContext } from "./sceneEditorControllerContext";
@@ -79,13 +80,13 @@ export function createSceneAppearanceCommands(context: SceneEditorControllerCont
 
   function changeLighting(next: GlobalLightingState) {
     setLighting(next);
-    engine?.setGlobalLighting(next);
+    dispatchEngineEditCommand(engine, globalLightingCommand(locale, next));
     recordSceneEdit("更新场景灯光");
   }
 
   function changeSceneEnvironment(next: SceneEnvironmentState) {
     setSceneEnvironment(next);
-    engine?.setSceneEnvironment(next);
+    dispatchEngineEditCommand(engine, sceneEnvironmentCommand(locale, next));
     recordSceneEdit("更新场景环境");
   }
 
@@ -97,7 +98,7 @@ export function createSceneAppearanceCommands(context: SceneEditorControllerCont
 
   function changePhysics(next: ScenePhysicsState) {
     setPhysics(next);
-    engine?.setPhysicsState(next);
+    dispatchEngineEditCommand(engine, physicsStateCommand(locale, next));
     recordSceneEdit("更新场景物理参数");
   }
 
@@ -165,9 +166,9 @@ export function createSceneAppearanceCommands(context: SceneEditorControllerCont
     if (!engine) return;
     const groupedIds = groupedObjectIds();
     if (groupedIds.length > 1) {
-      for (const id of groupedIds) engine.setModelMaterial(id, patch);
+      for (const id of groupedIds) dispatchEngineEditCommand(engine, modelMaterialCommand(locale, id, patch));
     } else {
-      engine.setSelectionMaterial(patch);
+      dispatchEngineEditCommand(engine, selectionMaterialCommand(locale, { modelId: selected?.id ?? "" }, patch));
     }
     setRevision((value) => value + 1);
   }
@@ -176,7 +177,8 @@ export function createSceneAppearanceCommands(context: SceneEditorControllerCont
     if (!engine || !selected || !selectedEffects) return;
     const groupedIds = groupedObjectIds(true);
     for (const id of groupedIds) {
-      engine.setModelEffects(id, mergeModelEffectsPatch(engine.getModelEffects(id), patch as ModelEffectsPatch));
+      dispatchEngineEditCommand(engine, modelEffectsCommand(locale, id,
+        mergeModelEffectsPatch(engine.getModelEffects(id), patch as ModelEffectsPatch)));
     }
     setRevision((value) => value + 1);
   }
