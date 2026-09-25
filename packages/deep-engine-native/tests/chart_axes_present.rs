@@ -11,10 +11,10 @@ use serde_json::{Value, json};
 fn source_ir() -> Value {
     json!({"schemaVersion":1,"sourceSpecVersion":1,"id":"axes-present",
         "datasets":[{"id":"d","dimensions":["category","value"],
-            "rows":[["华东",37],["华北",91],["华南",58]]}],
+            "rows":[["East",37],["North",91],["South",58]]}],
         "axes":[{"id":"axis.x","channel":"x","scale":"category","min":null,"max":null},
             {"id":"axis.y","channel":"y","scale":"linear","min":null,"max":null}],
-        "series":[{"id":"series.0","label":"分区域出力","type":"bar","datasetId":"d",
+        "series":[{"id":"series.0","label":"Regional output","type":"bar","datasetId":"d",
             "x":"category","y":"value","xAxisId":"axis.x","yAxisId":"axis.y"}],
         "legend":{"visible":true,"position":"top"},
         "tooltip":{"enabled":true,"trigger":"axis"},"dataZoom":[],"actions":[]})
@@ -132,7 +132,7 @@ fn category_axis_labels_align_with_geometry_bands_and_match_golden() {
     let chart = runtime();
     let list = present(&chart);
     let quads = label_quads(&list);
-    // 华东/华北/华南 plus the numeric y ticks (domain 0..91 -> tens).
+    // East/North/South plus the numeric y ticks (domain 0..91 -> tens).
     let y_ticks = quads.len() - 3;
     assert!((4..=12).contains(&y_ticks), "y ticks {y_ticks}");
     let source = chart.source();
@@ -140,7 +140,7 @@ fn category_axis_labels_align_with_geometry_bands_and_match_golden() {
     let pw = plot.plot[2];
     // Exact text identity: the id embeds the axis id and label text, so an
     // id match proves the right string was rasterized at that quad.
-    for (row, expected) in ["华东", "华北", "华南"].iter().enumerate() {
+    for (row, expected) in ["East", "North", "South"].iter().enumerate() {
         let position = plot.plot[0] + (row as f64 + 0.5) / 3.0 * pw;
         let id = quads
             .iter()
@@ -244,13 +244,13 @@ fn zoom_windows_shift_category_labels_deterministically() {
     assert!(
         !quads
             .iter()
-            .any(|(id, _)| *id == label_id("axis.x", "华东", plot[0] - 0.25 * plot[2]))
+            .any(|(id, _)| *id == label_id("axis.x", "East", plot[0] - 0.25 * plot[2]))
     );
     let x_labels: Vec<_> = quads
         .iter()
         .filter(|(id, _)| {
-            *id == label_id("axis.x", "华北", plot[0] + 0.25 * plot[2])
-                || *id == label_id("axis.x", "华南", plot[0] + 0.75 * plot[2])
+            *id == label_id("axis.x", "North", plot[0] + 0.25 * plot[2])
+                || *id == label_id("axis.x", "South", plot[0] + 0.75 * plot[2])
         })
         .collect();
     assert_eq!(x_labels.len(), 2, "zoomed window keeps two category labels");
