@@ -12,5 +12,13 @@ allowBuilds:
   oracledb: true
   utf-8-validate: false
 
+minimumReleaseAgeExclude:
+  - monaco-editor@0.57.0
+
 patchedDependencies:
   three@0.185.1: patches/three@0.185.1.patch
+
+overrides:
+  adm-zip@0.5.18: 0.6.1
+  fast-uri@3.1.5: 3.1.6
+  fast-uri@4.1.2: 4.1.3
