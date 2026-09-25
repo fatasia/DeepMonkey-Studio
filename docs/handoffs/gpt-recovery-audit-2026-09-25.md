@@ -63,7 +63,7 @@
 
 ## 2026-09-25 追加：当前开源前置核查
 
-- Three 脱离：`78e28943` 已把 `ViewerEngine` 作者变换状态从 Three 矩阵中分离，加载、写回、删除和持久化消费统一走 `authorModelTransforms`；Deep 的 `ThreeProjectionBridge` 仍承担几何、材质、层级和骨骼投影，不能宣称完全独立。
+- Three 脱离：`78e28943` 已把 `ViewerEngine` 作者变换状态从 Three 矩阵中分离；`23edb71c` 将作者变换注入 Deep RenderPacket；`5cdde88e`/`e1015ef6` 让 Deep 后端和 Studio WebGPU bridge 可接收预编译 RenderPacket，绕过 Three 场景遍历，且无 provider 时保留 Three fallback。默认生产 provider 仍需由上层传入现有 `compileSceneRenderPacket` 结果；材质、层级和骨骼的完整作者态迁移仍未完成。
 - Native 发布：Cargo 单测 10/10；本地 API runtime bundle 已生成。MSI/NSIS 仍需按当前 Web 产物重打并通过 `verify:bundle` 与 local publication smoke，完成后才可收口。
 - 开源治理：`pnpm audit:licenses`、`pnpm docs:wiki:check`、`pnpm quality:public-brand` 通过；`pnpm gate:repository` 当前失败项为许可证元数据与治理口径不一致，以及 37.6 MB 介绍视频缺少大文件发布例外。许可证目标和大文件分发策略需在公开前统一。
 - 当前不宣称性能全面超过 Three：WebGPU GPU completion 已显著改善（P50/P95 15.1/31.1ms），但输入 P95/submit gap 仍略高于 WebGL；需继续完成 Deep RenderPacket 路径脱 Three 后再重跑公平矩阵。
