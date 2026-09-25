@@ -1,6 +1,6 @@
 import type { ViewerEngine } from "../viewer/ViewerEngine";
 import { sceneCommandBus, type EngineEditCommandApplier } from "./commandBus";
-import type { EngineEditCommand, EngineEditCommandInput, SetMaterialStateCommand, SetTransformCommand, SetVisibilityCommand } from "./engineEditCommand";
+import type { EngineEditCommand, EngineEditCommandInput, SetGlobalLightingCommand, SetMaterialStateCommand, SetSceneEnvironmentCommand, SetTransformCommand, SetVisibilityCommand } from "./engineEditCommand";
 import { EngineTransformAuthoring, transformGraphNodeId } from "./engineTransformGraph";
 
 /**
@@ -45,6 +45,12 @@ export class ViewerEngineCommandApplier implements EngineEditCommandApplier {
         return;
       case "setMaterialState":
         this.applySetMaterial(command);
+        return;
+      case "setSceneEnv":
+        this.engine.setSceneEnvironment(command.environment);
+        return;
+      case "setLighting":
+        this.engine.setGlobalLighting(command.lighting);
         return;
     }
   }

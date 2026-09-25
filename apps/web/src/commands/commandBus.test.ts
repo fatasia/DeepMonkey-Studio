@@ -151,7 +151,7 @@ describe("CommandBus", () => {
     bus.publish(visibilityInput("m1", "l2", false), applier);
     bus.publish(visibilityInput("m1", "l3", true), applier);
 
-    expect(bus.getLog().map((entry) => entry.command.target.layerId)).toEqual(["l2", "l3"]);
+    expect(bus.getLog().map((entry) => entry.command.kind === "setLayerState" ? entry.command.target.layerId : undefined)).toEqual(["l2", "l3"]);
     expect(bus.getRevision()).toBe(3);
   });
 
@@ -183,9 +183,12 @@ describe("CommandBus", () => {
 });
 
 function appliedOf(applier: ReturnType<typeof recordingApplier>): string[] {
-  return applier.applied.map((command) =>
-    command.kind === "setLayerState"
-      ? `setLayerState:${command.target.modelId}/${command.target.layerId}:${command.patch.visible}`
-      : `setTransform:${command.target.modelId}`,
-  );
+  return applier.applied.map((command) => {
+    if (command.kind === "setLayerState") {
+      return `setLayerState:${command.target.modelId}/${command.target.layerId}:${command.patch.visible}`;
+    }
+    if (command.kind === "setSceneEnv") return `setSceneEnv`;
+    if (command.kind === "setLighting") return `setLighting`;
+    return `setTransform:${command.target.modelId}`;
+  });
 }

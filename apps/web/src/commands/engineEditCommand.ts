@@ -1,4 +1,4 @@
-import type { ModelTransform, SceneLayerState, SceneMaterialState } from "@bim-studio/contracts";
+import type { GlobalLightingState, ModelTransform, SceneEnvironmentState, SceneLayerState, SceneMaterialState } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 
 /**
@@ -81,7 +81,22 @@ export interface SetMaterialStateCommand extends EngineEditCommandBase {
   readonly mode?: "selection" | "model";
 }
 
-export type EngineEditCommand = SetTransformCommand | SetVisibilityCommand | SetMaterialStateCommand;
+/**
+ * 场景环境/全局灯光命令(批 4)。两条命令对应引擎仅有的两个全量态 setter:
+ * 全量覆盖(非增量 patch)与 setter 合同一致;灯光 gizmo 拖拽的 position/target
+ * 回写属交互流,批 4 不收编(等价 gizmo 拖拽流边界)。
+ */
+export interface SetSceneEnvironmentCommand extends EngineEditCommandBase {
+  readonly kind: "setSceneEnv";
+  readonly environment: SceneEnvironmentState;
+}
+
+export interface SetGlobalLightingCommand extends EngineEditCommandBase {
+  readonly kind: "setLighting";
+  readonly lighting: GlobalLightingState;
+}
+
+export type EngineEditCommand = SetTransformCommand | SetVisibilityCommand | SetMaterialStateCommand | SetSceneEnvironmentCommand | SetGlobalLightingCommand;
 
 /** 已应用命令的日志条目:revision 为该命令应用完成后的文档序位(1 起)。 */
 export interface AppliedEngineEditCommand {
@@ -209,6 +224,16 @@ export function modelMaterialCommand(
     target: { modelId },
     patch,
   };
+}
+
+/** 场景环境命令工厂:等价直调 setSceneEnvironment(state)。 */
+export function sceneEnvironmentCommand(locale: AppLocale, environment: SceneEnvironmentState): EngineEditCommandInput {
+  return { kind: "setSceneEnv", label: tr(locale, "编辑场景环境", "Edit scene environment"), environment };
+}
+
+/** 全局灯光命令工厂:等价直调 setGlobalLighting(state)。 */
+export function globalLightingCommand(locale: AppLocale, lighting: GlobalLightingState): EngineEditCommandInput {
+  return { kind: "setLighting", label: tr(locale, "编辑全局灯光", "Edit global lighting"), lighting };
 }
 
 /** 模型根变换命令工厂(mode "model"):等价 setModelTransform,按 target.modelId 定位。 */
