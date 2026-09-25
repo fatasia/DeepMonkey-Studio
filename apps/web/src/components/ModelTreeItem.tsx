@@ -1,5 +1,7 @@
 import { Box, Check, ChevronDown, ChevronRight, Eye, EyeOff, Focus, Gauge, Layers3, Lock, Pause, Play, ScanLine, Settings2, Trash2, Unlock } from "lucide-react";
 import type { ModelRecord, SceneFloorState } from "@bim-studio/contracts";
+import { dispatchEngineEditCommand } from "../commands/engineCommandApplier";
+import { layerVisibilityCommand } from "../commands/engineEditCommand";
 import { translate as tr, type AppLocale } from "../i18n";
 import { statusText } from "../appPresentation";
 import { LayerTree } from "./LayerTree";
@@ -199,7 +201,8 @@ export function ModelTreeItem({
             onSetRevision();
           }}
           onVisibilityChange={(node, visible) => {
-            engine?.setLayerVisible(model.id, node.id, visible);
+            // 批 0 接线:发命令 → 总线同步冲刷 → applier 原样调 engine.setLayerVisible(行为零变化)。
+            dispatchEngineEditCommand(engine, layerVisibilityCommand(locale, { modelId: model.id, layerId: node.id }, visible));
             onSetRevision();
           }}
           onLockChange={(node, locked) => {
