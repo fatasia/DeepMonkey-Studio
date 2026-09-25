@@ -3697,3 +3697,8 @@ Zcode GLM5.3 的完整接手顺序、现有工作树边界、文件索引和验�
 ### 2026-09-25 批 3 切片一(主线程,批次 10)
 
 - SetMaterialState 命令+applier(selection/model 双模式,引擎内 mergeMaterialPatch 合并与全部连带原样;与直调逐参数等价);30/30+tsc。UI 材质写点(AppStudioInspector/材质选择器)接线待 UI 全检代理完成后补(同文件域避碰)。
+
+### 2026-09-25 README Docker 整合 + UI 全检收口(批次 11)
+
+- **README Docker 整合(用户指令)**:§8 与独立「快速部署」节合并为一节,口径更新为「一键部署(已支持)」(cp .env → compose up → pnpm init 三步+镜像来源),双 README 同步;gate 过。
+- **UI 全检(代理,提交 59da497c)**:用户指认的属性面板输入框不一致 P0 修复(SceneProbeGridBakePanel 5 个裸 number input→DeferredNumberInput+令牌样式);机制级同族清剿——base.css 新增 input[type=number] 统一基线,覆盖全仓 102 处扫描中 53 处漏样式字段;明暗双主题 19 张截图审计(test-output/ui-consistency-audit-2026-09-25/)。未修大项如实记录:浅色主题 dashboard 检查器硬编码、历史裸色值未令牌化、2D 宽高小数溢出。
