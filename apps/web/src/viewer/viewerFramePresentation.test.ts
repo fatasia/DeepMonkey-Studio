@@ -27,6 +27,19 @@ describe("single scene presentation renderer", () => {
     expect(f.frame.updateAuthorMatrices).not.toHaveBeenCalled();
     expect(f.listener).toHaveBeenCalledOnce();
   });
+  it("skips author matrix and LOD traversal when WebGPU consumes an independent render packet", () => {
+    const f = fixture();
+    const updateAuthorLods = vi.fn();
+    presentViewerFrame({ ...f.frame, authorPacketIndependent: true, updateAuthorLods });
+    expect(f.calls).toEqual(["present"]);
+    expect(f.frame.updateAuthorMatrices).not.toHaveBeenCalled();
+    expect(updateAuthorLods).not.toHaveBeenCalled();
+  });
+  it("keeps author traversal in legacy projection mode even when presenting through WebGPU", () => {
+    const f = fixture();
+    presentViewerFrame({ ...f.frame, authorPacketIndependent: false });
+    expect(f.calls).toEqual(["matrices", "present"]);
+  });
   it("publishes the latest animated world transform and camera after skipping the draw", () => {
     const f = fixture(), scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera();
     const parent = new THREE.Group(), model = new THREE.Object3D(); parent.add(model); scene.add(parent);

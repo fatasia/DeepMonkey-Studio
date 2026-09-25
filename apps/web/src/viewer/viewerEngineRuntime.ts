@@ -20,6 +20,14 @@ const READ_ONLY_TARGET_FPS = 60;
 /** Runtime 职责层。 */
 export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
   protected override overlaySpritesProvider = (): THREE.Sprite[] => this.collectOverlaySprites();
+  /** WebGPU 呈现消费独立 RenderPacket 时为 true;true 则每帧跳过作者场景矩阵/LOD 遍历。 */
+  private authorPacketIndependent = false;
+
+  /** 由 Deep WebGPU 桥在独立包路径建立/释放时调用;legacy 投影路径必须传 false。 */
+  setAuthorPacketIndependent(independent: boolean): void {
+    this.authorPacketIndependent = independent;
+  }
+
   protected animate = (): void => {
     if (!this.xrActive) this.animationFrame = requestAnimationFrame(this.animate);
     const now = performance.now();

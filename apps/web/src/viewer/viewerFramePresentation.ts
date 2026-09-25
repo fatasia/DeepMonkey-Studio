@@ -9,18 +9,24 @@ interface FramePresentation {
   readonly drawAuthor: () => void;
   readonly updateAuthorMatrices: () => void;
   readonly updateAuthorLods?: () => void;
+  /**
+   * WebGPU 呈现消费独立 RenderPacket(authorRenderPacket 编译成功)时为 true。
+   * 此时几何、材质、层级与 LOD 全部来自包,每帧对隐藏 Three 场景做全量
+   * updateMatrixWorld/LOD 遍历纯属重复工作,可跳过;legacy 投影路径必须保持 false。
+   */
+  readonly authorPacketIndependent?: boolean;
 }
 
 /** Author simulation runs before this step; exactly one scene renderer presents its result. */
 export function presentViewerFrame(frame: FramePresentation): void {
   const external = frame.presentationBackend !== frame.authorBackend && frame.listeners.size > 0
     && !frame.xrActive && !frame.offscreenFrame;
-  // WebGPU still projects the author scene and therefore needs current world
-  // matrices/LOD. WASM consumes its compiled runtime package plus camera only;
-  // traversing the hidden Three scene on every input frame is both redundant
-  // and a dependency/performance regression.
+  // WebGPU in legacy projection mode still reads author world matrices/LOD.
+  // WASM and the independent-packet WebGPU path consume their compiled packet
+  // plus camera only; traversing the hidden Three scene on every input frame is
+  // both redundant and a dependency/performance regression.
   if (external) {
-    if (frame.presentationBackend === "webgpu") {
+    if (frame.presentationBackend === "webgpu" && !frame.authorPacketIndependent) {
       frame.updateAuthorMatrices();
       frame.updateAuthorLods?.();
     }

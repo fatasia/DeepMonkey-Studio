@@ -183,6 +183,7 @@ export class StudioDeepWebGpuBridge {
           const authorRenderPacket = this.options.authorRenderPacket
             ? await this.options.authorRenderPacket(signal) : undefined;
           this.independentPacketPath = authorRenderPacket !== undefined;
+          this.viewer.setAuthorPacketIndependent(this.independentPacketPath);
           if (!authorRenderPacket) updateAuthorProjectionState(this.viewer.scene, this.viewer.camera, signal);
           else this.viewReader.setIndependentPacketBounds(authorRenderPacket);
           const view = this.viewReader.renderView(module, canvas);
@@ -285,6 +286,7 @@ export class StudioDeepWebGpuBridge {
     this.deepCanvas = canvas;
     this.deepBackend = backend;
     this.independentPacketPath = backend.usesIndependentPacket;
+    this.viewer.setAuthorPacketIndependent(this.independentPacketPath);
     this.frameCaptureSession = frameCaptureSession;
     publishStudioFrameCaptureSession(frameCaptureSession);
     this.performanceSource = new StudioDeepPerformance(backend.runtime as ConstructorParameters<typeof StudioDeepPerformance>[0]);
@@ -325,6 +327,7 @@ export class StudioDeepWebGpuBridge {
     this.viewer.setDeepPointerPick?.(undefined);
     this.projectionBridge = undefined;
     this.independentPacketPath = false;
+    this.viewer.setAuthorPacketIndependent(false);
     this.viewer.setPresentationPerformanceSource(undefined);
     this.performanceSource?.dispose();
     this.performanceSource = undefined;
