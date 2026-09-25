@@ -14,7 +14,10 @@ export function buildDeepRuntimePackage(input: BuildDeepRuntimePackageInput): De
   assertNativePacketDeformationSupported(input.renderPacket.value);
   // Three keeps world matrices in Float64 until packet validation. Runtime JSON has no typed-array
   // identity, so normalize only that authoring representation before taking the immutable snapshot.
-  const packetSource = { ...input.renderPacket.value, instances: input.renderPacket.value.instances.map(instance => ({
+  // 节点级拾取映射只住在作者面 RenderPacket:提升到包顶层后从 payload 剥离,
+  // render-packet payload 保持 Native 契约的精确字段集(拒绝未知字段)。
+  const { objectBindings, ...packetValue } = input.renderPacket.value;
+  const packetSource = { ...packetValue, instances: packetValue.instances.map(instance => ({
     ...instance, transform: instance.transform instanceof Float64Array ? Array.from(instance.transform) : instance.transform,
   })) };
   const packet = record(snapshotJson(packetSource, true), "$.renderPacket");
@@ -75,6 +78,7 @@ export function buildDeepRuntimePackage(input: BuildDeepRuntimePackageInput): De
       ...(hasChart ? { chart: input.chart!.id, chartSim: input.chartSim?.id ?? null } : {}),
       ...(hasDynamicRuntime ? { dynamicRuntime: input.dynamicRuntime!.id } : {}) },
     resources, payloads,
+    ...(objectBindings?.length ? { objectBindings } : {}),
     ...(hasBindings ? { materialBindings: bindings } : {}),
   };
   const result = validateDeepRuntimePackage({ ...core, packageHash: { algorithm: "sha256", value: runtimePackageSha256(core) } });

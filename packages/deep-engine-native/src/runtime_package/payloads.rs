@@ -4,8 +4,8 @@ use serde_json::Value;
 mod solid_environment;
 
 use super::{
-    IblEnvironmentReferenceV1, IblReferenceKind, LoadedRuntimePackage, RuntimePackageEnvelope,
-    RuntimePackageError, RuntimeResourceKind, fail, render_packet,
+    IblEnvironmentReferenceV1, IblReferenceKind, LoadedRuntimePackage, RuntimeObjectBinding,
+    RuntimePackageEnvelope, RuntimePackageError, RuntimeResourceKind, fail, render_packet,
 };
 use crate::{
     ibl::{builtin_default_environment, validate_ibl_environment},
@@ -14,11 +14,36 @@ use crate::{
 
 const IBL_REFERENCE_SCHEMA: &str = "deep-engine.ibl-reference";
 const IBL_REFERENCE_VERSION: u32 = 1;
+
+/// 节点级拾取映射的包层不变量,与 Web 侧 validation.ts 镜像:
+/// nodeId 非空且全局唯一,instanceIds 非空且条目内唯一。违约整包拒绝(fail-closed)。
+fn validate_object_bindings(bindings: &[RuntimeObjectBinding]) -> Result<(), RuntimePackageError> {
+    let mut nodes = std::collections::HashSet::new();
+    for binding in bindings {
+        if binding.node_id.is_empty() || !nodes.insert(binding.node_id.clone()) {
+            return fail("objectBindings node ids must be non-empty and unique");
+        }
+        let mut instances = std::collections::HashSet::new();
+        if binding.instance_ids.is_empty() {
+            return fail("objectBindings must list at least one instance");
+        }
+        for id in &binding.instance_ids {
+            if id.is_empty() || !instances.insert(id) {
+                return fail(
+                    "objectBindings instance ids must be non-empty and unique within a node",
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn decode(
     package: RuntimePackageEnvelope,
 ) -> Result<LoadedRuntimePackage, RuntimePackageError> {
     let render_id = package.entrypoints.render_packet.as_str();
     descriptor(&package, render_id, RuntimeResourceKind::RenderPacket)?;
+    validate_object_bindings(&package.object_bindings)?;
     let (render_packet, render_summary) =
         render_packet::decode(render_id, payload(&package, render_id)?)?;
     let deep2d = package
@@ -242,4 +267,68 @@ pub(super) fn payload<'a>(
         .payloads
         .get(id)
         .ok_or_else(|| RuntimePackageError(format!("resource {id} payload is missing")))
+}
+
+#[cfg(test)]
+mod object_binding_tests {
+    use super::RuntimePackageEnvelope;
+    use super::{RuntimeObjectBinding, validate_object_bindings};
+
+    fn binding(node_id: &str, instance_ids: &[&str]) -> RuntimeObjectBinding {
+        RuntimeObjectBinding {
+            node_id: node_id.to_string(),
+            instance_ids: instance_ids.iter().map(|id| id.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn accepts_unique_non_empty_mappings() {
+        assert!(
+            validate_object_bindings(&[
+                binding("node-a", &["i-1", "i-2"]),
+                binding("node-b", &["i-3"])
+            ])
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn fails_closed_on_contract_violations() {
+        assert!(validate_object_bindings(&[binding("", &["i-1"])]).is_err());
+        assert!(validate_object_bindings(&[binding("a", &[])]).is_err());
+        assert!(validate_object_bindings(&[binding("a", &["i-1", "i-1"])]).is_err());
+        assert!(
+            validate_object_bindings(&[binding("a", &["i-1"]), binding("a", &["i-2"])]).is_err()
+        );
+    }
+
+    #[test]
+    fn deserializes_camel_case_keys_and_defaults_legacy_packages() {
+        let parsed: RuntimeObjectBinding = serde_json::from_value(
+            serde_json::json!({ "nodeId": "node-a", "instanceIds": ["i-1", "i-2"] }),
+        )
+        .expect("camelCase binding");
+        assert_eq!(parsed.node_id, "node-a");
+        assert_eq!(
+            parsed.instance_ids,
+            vec!["i-1".to_string(), "i-2".to_string()]
+        );
+        // serde_json::from_value 拒绝未知字段;node_id 之外的拼写立即失败。
+        assert!(
+            serde_json::from_value::<RuntimeObjectBinding>(
+                serde_json::json!({ "NodeId": "a", "instanceIds": ["i"] })
+            )
+            .is_err()
+        );
+        let legacy = serde_json::json!({
+            "schema": "deep-engine.runtime-package", "schemaVersion": 1,
+            "packageId": "p", "packageVersion": "1.0.0",
+            "entrypoints": { "renderPacket": "r", "deep2d": null, "environment": "e", "shaderPackages": [] },
+            "resources": [], "payloads": {},
+            "packageHash": { "algorithm": "sha256", "value": "0" }
+        });
+        let envelope: RuntimePackageEnvelope =
+            serde_json::from_value(legacy).expect("legacy envelope");
+        assert!(envelope.object_bindings.is_empty());
+    }
 }

@@ -43,6 +43,8 @@ describe("saved scene GLB compilation", () => {
     expect(loadModel).not.toHaveBeenCalled();
     expect(result.objectBindings).toEqual([{ nodeId: "road", instanceIds: result.packet.instances.map(instance => instance.id) }]);
     expect(result.objectBindings[0]!.instanceIds.length).toBeGreaterThan(0);
+    // 节点级拾取映射随包透传;builder 负责把它提升到运行包顶层。
+    expect(result.packet.objectBindings).toEqual([{ nodeId: "road", instanceIds: result.packet.instances.map(instance => instance.id) }]);
   });
 
   it.each(["scale", "rotation"])("rejects internal GLB large vertices with %s precision loss", async kind => {
@@ -133,6 +135,9 @@ describe("saved scene GLB compilation", () => {
     ]), { loadModel });
     expect(loadModel).toHaveBeenCalledTimes(1);
     expect(compiled.objectBindings[0]).toEqual({ nodeId: "hidden", instanceIds: [] });
+    // compilation.objectBindings 保留"每对象一条"语义;进包映射只带非空绑定(不可见对象无实例可命中)。
+    expect(compiled.packet.objectBindings).toEqual([{ nodeId: "one", instanceIds: expect.any(Array) }, { nodeId: "two", instanceIds: expect.any(Array) }]);
+    expect(compiled.packet.objectBindings!.find(item => item.nodeId === "two")!.instanceIds.length).toBeGreaterThan(0);
     expect(compiled.packet.materials[0]!.baseColor[0]).toBeCloseTo(0.8);
     expect(compiled.packet.materials[1]).toMatchObject({ baseColorAlpha: 0.4, alphaMode: "BLEND" });
     expect(compiled.packet.materials[1]!.baseColor[0]).toBeCloseTo(0.2158605, 6);
@@ -144,6 +149,12 @@ describe("saved scene GLB compilation", () => {
     const compiled = await compileSceneRenderPacket(input, { loadModel });
     expect(compiled.packet.instances).toHaveLength(1);
     expect(compiled.packet.instances[0]!.transform[12]).toBe(3);
+  });
+
+  it("omits packet objectBindings when the scene has no author objects", async () => {
+    const result = await compileSceneRenderPacket(scene([]), { loadModel: vi.fn(async () => box) });
+    expect(result.objectBindings).toEqual([]);
+    expect(result.packet.objectBindings).toBeUndefined();
   });
 
   it("propagates cancellation even when a resource loader ignores it", async () => {

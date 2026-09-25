@@ -1,5 +1,5 @@
 import type { Deep2dColor, Deep2dDisplayList, Deep2dMatrix } from "../deep2dDisplayList.js";
-import type { RenderPacket } from "../renderPacketTypes.js";
+import type { RenderObjectBinding, RenderPacket } from "../renderPacketTypes.js";
 import type { DeepShaderPackageV2 } from "../shaderPackage/types.js";
 import type { RuntimePrefilteredIbl } from "./environmentTypes.js";
 import type { RuntimeSceneCamera } from "./camera.js";
@@ -42,6 +42,12 @@ export interface DeepRuntimePackageV1 {
   readonly entrypoints: RuntimeEntrypoints;
   readonly resources: readonly RuntimeResourceIndexEntry[];
   readonly payloads: Readonly<Record<string, RuntimeJson>>;
+  /**
+   * 节点级拾取映射(additive 可选字段,旧包缺省):作者对象 nodeId → render-packet
+   * 实例 instanceIds。builder 从作者 RenderPacket 提升到此,render-packet payload
+   * 本身绝不含该字段(Native 契约拒绝未知字段)。语义与校验见 validation.ts。
+   */
+  readonly objectBindings?: readonly RenderObjectBinding[];
   readonly packageHash: RuntimeContentHash;
 }
 export interface RuntimeMaterialShaderBinding {

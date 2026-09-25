@@ -74,7 +74,7 @@ pub use r3_state::{
 use types::RuntimePackageEnvelope;
 pub use types::{
     IblEnvironmentReferenceV1, IblReferenceKind, LoadedRuntimePackage, RuntimeContentHash,
-    RuntimeEntrypoints, RuntimeMaterialShaderBinding, RuntimePackageSummary,
+    RuntimeEntrypoints, RuntimeMaterialShaderBinding, RuntimeObjectBinding, RuntimePackageSummary,
     RuntimeResourceIndexEntry, RuntimeResourceKind,
 };
 pub use validate::{runtime_content_sha256, runtime_package_sha256};

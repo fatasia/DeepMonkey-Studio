@@ -150,16 +150,19 @@ describe("CPU picking ordering and range options", () => {
     expect(result.available).toBe(true);
     if (!result.available) return;
     expect(result.hits).toEqual([]);
-    expect(result.degraded).toEqual(["geometry-not-resident:missing"]);
+    expect(result.degraded).toEqual(["geometry-not-resident:missing",
+      "node-mapping-unavailable:hits-report-instance-ids-only"]);
   });
   it("passes host degraded notes through untouched", () => {
     const result = pickScene(sceneOf([instance("i", identity)], [unitTriangle()], false,
       ["deformation-active:instances-picked-at-base-pose"]), fromAbove.origin, fromAbove.direction);
-    expect(result.available && result.degraded).toEqual(["deformation-active:instances-picked-at-base-pose"]);
+    expect(result.available && result.degraded).toEqual(["deformation-active:instances-picked-at-base-pose",
+      "node-mapping-unavailable:hits-report-instance-ids-only"]);
   });
   it("returns an empty hit list (not unavailable) for a published empty scene", () => {
     const result = pickScene(sceneOf([], [unitTriangle()]), fromAbove.origin, fromAbove.direction);
-    expect(result).toEqual({ available: true, hits: [] });
+    expect(result).toEqual({ available: true, hits: [],
+      degraded: ["node-mapping-unavailable:hits-report-instance-ids-only"] });
   });
 });
 
@@ -176,6 +179,45 @@ describe("CPU picking input contract violations", () => {
     const ray = normalizePickRay([0, 0, 5], [0, 0, -10]);
     expect(ray.direction).toEqual([0, 0, -1]);
     expect(pickingUnavailable("x").reason).toBe("picking unavailable: x");
+  });
+});
+
+describe("CPU picking node-level identity mapping", () => {
+  // 一个节点两个实例(near/far)+ 一个未映射实例(grid,语义如辅助网格)。
+  const mapped = () => ({ ...sceneOf([
+    { ...instance("far", identity), transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -5, 1] },
+    { ...instance("near", identity), transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 3, 1] },
+    { ...instance("grid", identity), transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 9, 1] }],
+    [unitTriangle()]),
+    objectBindings: [{ nodeId: "node-a", instanceIds: ["near", "far"] }] });
+  it("resolves every hit of a node's instances to the shared nodeId in distance order", () => {
+    const result = pickScene(mapped(), fromAbove.origin, fromAbove.direction);
+    if (!result.available) throw new Error("expected available");
+    expect(result.hits.map(hit => [hit.instanceId, hit.nodeId, hit.distance]))
+      .toEqual([["near", "node-a", 2], ["far", "node-a", 10]]);
+  });
+  it("keeps unmapped instances anonymous instead of inventing a node identity", () => {
+    const result = pickScene(mapped(), [0.2, 0.2, 14], [0, 0, -1], { maxDistance: 6 });
+    if (!result.available) throw new Error("expected available");
+    expect(result.hits.map(hit => hit.instanceId)).toEqual(["grid"]);
+    expect(result.hits[0]).not.toHaveProperty("nodeId");
+    expect(result.degraded).toBeUndefined();
+  });
+  it("reports instance-level degradation exactly once when the scene view has no mapping", () => {
+    const result = pickScene(sceneOf([instance("i", identity)], [unitTriangle()]),
+      fromAbove.origin, fromAbove.direction);
+    if (!result.available) throw new Error("expected available");
+    expect(result.hits[0]).not.toHaveProperty("nodeId");
+    expect(result.degraded).toEqual(["node-mapping-unavailable:hits-report-instance-ids-only"]);
+  });
+  it("throws precise errors for contract-violating mappings", () => {
+    const view = sceneOf([instance("i", identity)], [unitTriangle()]);
+    const conflicting = { ...view, objectBindings: [{ nodeId: "x", instanceIds: ["i"] }, { nodeId: "y", instanceIds: ["i"] }] };
+    expect(() => pickScene(conflicting, fromAbove.origin, fromAbove.direction)).toThrow(/conflicting nodes/);
+    expect(() => pickScene({ ...view, objectBindings: [{ nodeId: "", instanceIds: ["i"] }] },
+      fromAbove.origin, fromAbove.direction)).toThrow(/node id must be non-empty/);
+    expect(() => pickScene({ ...view, objectBindings: [{ nodeId: "x", instanceIds: [""] }] },
+      fromAbove.origin, fromAbove.direction)).toThrow(/instance id must be non-empty/);
   });
 });
 
@@ -210,6 +252,9 @@ describe("PbrRenderer.pick fail-closed wiring", () => {
       instances: [instance("i", identity)] })).toBe(true);
     const hit = renderer.pick(fromAbove.origin, fromAbove.direction);
     expect(hit.available && hit.hits[0]).toMatchObject({ instanceId: "i", distance: 5 });
+    // PbrRenderer 尚未接线节点映射:结果如实降级到 instanceId 级,不冒充节点身份。
+    expect(hit.available && hit.degraded)
+      .toEqual(["node-mapping-unavailable:hits-report-instance-ids-only"]);
     expect(renderer.pick([0.2, 0.2, 5], [0, 0, -1], { maxDistance: 1 })
       .available && true).toBe(true);
     packets.dispose();

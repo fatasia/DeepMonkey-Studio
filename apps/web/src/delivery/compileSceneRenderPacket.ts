@@ -113,7 +113,13 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
     objectBindings.push({ nodeId: model.modelId, instanceIds });
   }
   signal.throwIfAborted();
-  const packet: RenderPacket = { geometries, materials, instances, ...(textures.length ? { textures } : {}) };
+  // 节点级拾取映射:compilation.objectBindings 保留"每个作者对象一条(不可见为空)"语义,
+  // 供发布兼容与物理编译消费;进包的映射只保留非空绑定(包校验拒绝空 instanceIds)。
+  const packetBindings = objectBindings.filter(binding => binding.instanceIds.length > 0)
+    .map(binding => ({ nodeId: binding.nodeId, instanceIds: binding.instanceIds }));
+  const packet: RenderPacket = { geometries, materials, instances,
+    ...(packetBindings.length ? { objectBindings: packetBindings } : {}),
+    ...(textures.length ? { textures } : {}) };
   prepareRenderPacket(packet);
   return { packet, objectBindings: objectBindings.sort((a, b) => compare(a.nodeId, b.nodeId)), sourceBytes };
 }

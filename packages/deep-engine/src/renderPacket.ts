@@ -42,6 +42,7 @@ export type {
   RenderLodProfile,
   RenderAuthorLodLevel,
   RenderAuthorSelectedLodProfile,
+  RenderObjectBinding,
   RenderScreenSpaceLodProfile,
   RenderPacket,
   TextureSlot,

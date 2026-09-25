@@ -30,7 +30,7 @@ function validate(input: unknown): DeepRuntimePackage {
   const hasDashboard = value.schemaVersion === DEEP_RUNTIME_PACKAGE_DASHBOARD_VERSION;
   const hasBindings = hasCamera || hasChart || hasDashboard || hasDynamicRuntime || value.schemaVersion === DEEP_RUNTIME_PACKAGE_SHADER_BINDINGS_VERSION;
   fields(value, ["schema", "schemaVersion", "packageId", "packageVersion", "entrypoints", "resources", "payloads", "packageHash",
-    ...(hasBindings ? ["materialBindings"] : [])], [], "$");
+    ...(hasBindings ? ["materialBindings"] : [])], ["objectBindings"], "$");
   requireValue(value.schema === DEEP_RUNTIME_PACKAGE_SCHEMA && (value.schemaVersion === DEEP_RUNTIME_PACKAGE_SCHEMA_VERSION || hasBindings),
     "$", "Unsupported runtime package schema or version.");
   const packageId = resourceId(value.packageId, "$.packageId");
@@ -90,6 +90,7 @@ function validate(input: unknown): DeepRuntimePackage {
   }
   requireValue(used.size === index.size, "$.entrypoints", "Every resource needs exactly one entrypoint role.");
   validateRuntimeRenderPacket(payloads[renderId], `$.payloads.${renderId}`);
+  if (value.objectBindings !== undefined) validateRuntimeObjectBindings(value.objectBindings);
   if (cameraId !== null) {
     const camera = validateRuntimeSceneCamera(payloads[cameraId]);
     requireValue(camera.id === cameraId && camera.revision === index.get(cameraId)!.revision,
@@ -124,5 +125,29 @@ export function validateDeepRuntimePackage(input: unknown): RuntimePackageValida
   catch (error) {
     return { valid: false, issues: [{ path: error instanceof RuntimePackageError ? error.path : "$",
       message: error instanceof Error ? error.message : "Invalid runtime package." }] };
+  }
+}
+
+/** 节点级拾取映射的包层不变量:nodeId 非空且全局唯一,instanceIds 非空且条目内唯一。 */
+const OBJECT_BINDING_INSTANCES_LIMIT = 16_384;
+function validateRuntimeObjectBindings(input: unknown): void {
+  const bindings = array(input, "$.objectBindings", OBJECT_BINDING_INSTANCES_LIMIT);
+  const nodes = new Set<string>();
+  for (const [position, candidate] of bindings.entries()) {
+    const path = `$.objectBindings[${position}]`, binding = record(candidate, path);
+    fields(binding, ["nodeId", "instanceIds"], [], path);
+    const nodeId = string(binding.nodeId, `${path}.nodeId`);
+    requireValue(nodeId.length > 0, `${path}.nodeId`, "Node id must be non-empty.");
+    requireValue(!nodes.has(nodeId), path, `Duplicate object binding for node: ${nodeId}.`);
+    nodes.add(nodeId);
+    const instanceIds = array(binding.instanceIds, `${path}.instanceIds`, OBJECT_BINDING_INSTANCES_LIMIT);
+    requireValue(instanceIds.length > 0, `${path}.instanceIds`, "Object binding must list at least one instance.");
+    const instances = new Set<string>();
+    for (const [index, instance] of instanceIds.entries()) {
+      const instancePath = `${path}.instanceIds[${index}]`, instanceId = string(instance, instancePath);
+      requireValue(instanceId.length > 0, instancePath, "Instance id must be non-empty.");
+      requireValue(!instances.has(instanceId), instancePath, "Instance ids must be unique within a binding.");
+      instances.add(instanceId);
+    }
   }
 }

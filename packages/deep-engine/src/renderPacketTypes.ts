@@ -112,6 +112,12 @@ export interface RenderInstance {
   readonly outline?: boolean;
 }
 
+/** 节点级拾取映射：作者场景对象(modelId) → 包内 RenderInstance.id 集合(不含不可见对象)。 */
+export interface RenderObjectBinding {
+  readonly nodeId: string;
+  readonly instanceIds: readonly string[];
+}
+
 /** 作者状态的渲染投影，不持有脚本、对象行为或另一套可编辑场景。 */
 export interface RenderPacket {
   readonly deformation?: DeformationSnapshot;
@@ -119,6 +125,11 @@ export interface RenderPacket {
   readonly materials: readonly PbrMaterial[];
   readonly instances: readonly RenderInstance[];
   readonly textures?: readonly DecodedTexture[];
+  /**
+   * 节点级拾取映射，编译器写入；仅存在于内存/作者面 RenderPacket——序列化进运行包时
+   * builder 会把它提升到包顶层并从 render-packet payload 剥离(Native 契约拒绝未知字段)。
+   */
+  readonly objectBindings?: readonly RenderObjectBinding[];
 }
 
 /** 仅引用当前驻留几何，用于动画/脚本更新；几何内容变化仍使用完整 RenderPacket。 */

@@ -112,6 +112,7 @@ export type {
   RenderInstance,
   RenderLodLevel,
   RenderLodProfile,
+  RenderObjectBinding,
   RenderPacket,
   TextureSlot,
 } from "./renderPacket.js";

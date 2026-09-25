@@ -10,14 +10,20 @@ import type { CachedPacketBatch, CachedPacketGeometry } from "./packetBufferType
  * - 变形(skinning/morph)实例按打包时的基础姿态拾取;宿主以 degradedNotes 声明。
  * - 流送驻留投影中未驻留的几何被跳过并上报 degraded,绝不编造命中。
  * - 标识现状:instanceId 为包内 RenderInstance.id,geometryId 为 GeometryResource.id;
- *   源场景节点级映射待编译器透传(编译器已算出 objectBindings,未进 RenderPacket)。
- * - 结果与 contracts ScenePickingHit 形状兼容(objectId↔instanceId, point, distance)。
+ *   节点级身份经 PickSceneView.objectBindings(运行包顶层映射)透出为 PickHit.nodeId,
+ *   缺映射时以 degraded 显式声明降级,绝不编造节点身份。
+ * - 结果与 contracts ScenePickingHit 形状兼容(objectId↔instanceId/nodeId, point, distance)。
  */
 
 /** 单次拾取命中。normal 为命中三角形几何法线(世界坐标、已归一化、不按视线侧翻转)。 */
 export interface PickHit {
   readonly geometryId: string;
   readonly instanceId: string;
+  /**
+   * 命中实例所属的作者场景节点(仅当场景视图带节点映射时存在)。
+   * 多对一:同一节点的多个实例命中各自携带同一 nodeId;辅助网格等未映射实例没有该字段。
+   */
+  readonly nodeId?: string;
   /** 视点到命中点的距离,世界单位(方向已归一化)。 */
   readonly distance: number;
   readonly point: readonly [number, number, number];
@@ -39,6 +45,11 @@ export interface PickOptions {
 export interface PickSceneView {
   readonly batches: ReadonlyMap<string, CachedPacketBatch>;
   readonly geometries: ReadonlyMap<string, CachedPacketGeometry>;
+  /**
+   * 节点级拾取映射(运行包顶层 objectBindings 的透传):instanceId → 作者节点。
+   * 缺省(旧包/未接线)时命中只到 instanceId 级,并以 degraded 显式声明,不冒充节点身份。
+   */
+  readonly objectBindings?: readonly { readonly nodeId: string; readonly instanceIds: readonly string[] }[];
   /** 宿主已知会降低命中精度的事实(如变形基础姿态);原样并入 degraded。 */
   readonly degradedNotes?: readonly string[];
 }
@@ -96,6 +107,24 @@ export function pickScene(scene: PickSceneView, origin: ArrayLike<number>, direc
   const faceNormal = new Float64Array(3);
   const hits: PickHit[] = [];
   const degraded = new Set<string>(scene.degradedNotes ?? []);
+  // 节点映射仅构建一次;instanceId→nodeId 多对一。矛盾映射属调用方契约违例,抛精确错误。
+  let nodes: Map<string, string> | undefined;
+  if (scene.objectBindings === undefined) {
+    degraded.add("node-mapping-unavailable:hits-report-instance-ids-only");
+  } else {
+    nodes = new Map();
+    for (const binding of scene.objectBindings) {
+      if (binding.nodeId.length === 0) throw new Error("Object binding node id must be non-empty.");
+      for (const instanceId of binding.instanceIds) {
+        if (instanceId.length === 0) throw new Error("Object binding instance id must be non-empty.");
+        const previous = nodes.get(instanceId);
+        if (previous !== undefined && previous !== binding.nodeId) {
+          throw new Error(`Object binding maps instance ${instanceId} to conflicting nodes.`);
+        }
+        nodes.set(instanceId, binding.nodeId);
+      }
+    }
+  }
   for (const batch of scene.batches.values()) {
     const geometry = scene.geometries.get(batch.source.geometry);
     if (geometry === undefined) {
@@ -108,7 +137,7 @@ export function pickScene(scene: PickSceneView, origin: ArrayLike<number>, direc
       const instanceId = ids[row];
       // instanceIds 与数据行一一对应是 packInstanceBatches 的合同;违约时如实上报并停在该批次。
       if (instanceId === undefined) { degraded.add("instance-identity-missing"); break; }
-      pickInstanceRow(hits, batch, geometry, row, instanceId, cullBackface, ray,
+      pickInstanceRow(hits, batch, geometry, row, instanceId, nodes?.get(instanceId), cullBackface, ray,
         minDistance, maxDistance, matrix, inverse, localOrigin, localDirection, faceNormal);
     }
   }
@@ -118,8 +147,8 @@ export function pickScene(scene: PickSceneView, origin: ArrayLike<number>, direc
 }
 
 function pickInstanceRow(hits: PickHit[], batch: CachedPacketBatch,
-  geometry: CachedPacketGeometry, row: number, instanceId: string, cullBackface: boolean,
-  ray: ReturnType<typeof normalizePickRay>, minDistance: number, maxDistance: number,
+  geometry: CachedPacketGeometry, row: number, instanceId: string, nodeId: string | undefined,
+  cullBackface: boolean, ray: ReturnType<typeof normalizePickRay>, minDistance: number, maxDistance: number,
   matrix: Float64Array, inverse: Float64Array, localOrigin: Float64Array, localDirection: Float64Array,
   faceNormal: Float64Array): void {
   const data = batch.source.data, base = row * INSTANCE_ROW_FLOATS;
@@ -136,7 +165,7 @@ function pickInstanceRow(hits: PickHit[], batch: CachedPacketBatch,
     const distance = rayTriangle(localOrigin, localDirection, vertices, indices, triangle,
       cullBackface, determinant, faceNormal);
     if (distance === undefined || distance < minDistance || distance > maxDistance) continue;
-    hits.push({ geometryId: id, instanceId, distance,
+    hits.push({ geometryId: id, instanceId, ...(nodeId === undefined ? {} : { nodeId }), distance,
       point: [ray.origin[0] + distance * ray.direction[0],
         ray.origin[1] + distance * ray.direction[1], ray.origin[2] + distance * ray.direction[2]],
       normal: normalizedFaceNormal(inverse, faceNormal), triangle: triangle / 3 });

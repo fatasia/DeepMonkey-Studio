@@ -86,6 +86,17 @@ pub(crate) struct RuntimePackageEnvelope {
     pub package_hash: RuntimeContentHash,
     #[serde(default)]
     pub material_bindings: Vec<RuntimeMaterialShaderBinding>,
+    /// 节点级拾取映射(additive 可选,旧包缺省):作者对象 nodeId → render-packet 实例 id。
+    /// 与 Web 侧 validation.ts 的不变量一致;render-packet payload 本身不含该字段。
+    #[serde(default)]
+    pub object_bindings: Vec<RuntimeObjectBinding>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct RuntimeObjectBinding {
+    pub node_id: String,
+    pub instance_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
