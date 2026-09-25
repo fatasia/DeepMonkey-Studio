@@ -154,14 +154,15 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     expect(readStudioFrameCaptureSnapshot().available).toBe(false);
   });
 
-  it("passes a precompiled author packet to Deep while retaining the Three fallback root", async () => {
+  it("passes a precompiled author packet to Deep without a Three fallback root", async () => {
     const packet = { geometries: [], materials: [], instances: [] } as unknown as RenderPacket;
     const provider = vi.fn(async () => packet);
     const f = setup(undefined, provider);
     await activate(f.bridge);
     expect(provider).toHaveBeenCalledOnce();
     expect(f.create.mock.calls[0]![0].renderPacket).toBe(packet);
-    expect(f.create.mock.calls[0]![0].root).toBe(f.scene);
+    expect(f.create.mock.calls[0]![0].root).toBeUndefined();
+    expect(f.create.mock.calls[0]![0].projection).toBeUndefined();
   });
 
   it("establishes performance samples from submitted Deep frames through temporal settling", async () => {

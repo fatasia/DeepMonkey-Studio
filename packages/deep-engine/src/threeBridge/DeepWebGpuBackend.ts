@@ -49,8 +49,10 @@ export interface DeepWebGpuRuntimeFactory {
 export interface DeepWebGpuBackendCreateRequest extends DeepWebGpuBackendOptions {
   readonly canvas: DeepWebGpuCanvas;
   readonly gpu: GPU | undefined;
-  readonly projection: ThreeProjectionBridge;
-  readonly root: ThreeObjectSource;
+  /** Legacy author projection. Omit when renderPacket is supplied. */
+  readonly projection?: ThreeProjectionBridge;
+  /** Legacy Three root. Omit when renderPacket is supplied. */
+  readonly root?: ThreeObjectSource;
   readonly view: RenderView;
   /** Optional immutable packet compiled from SceneSnapshot. When present the
    * backend bypasses ThreeProjectionBridge for initial publication. */
@@ -87,12 +89,14 @@ export class DeepWebGpuBackend {
   private chunks: AuthorChunkStream | undefined;
   private probeClipmap: DeepWebGpuProbeClipmapSession | undefined;
   private committedPacket: RenderPacket | undefined;
+  /** Set for the immutable author packet path; no Three hierarchy is retained. */
+  private independentPacket = false;
   private readonly coordinates = new CameraRelativeCoordinates();
   private pendingCoordinate: CameraRelativeCoordinateSnapshot | undefined;
 
   constructor(
     readonly runtime: DeepWebGpuRenderRuntime,
-    readonly projection: ThreeProjectionBridge,
+    readonly projection: ThreeProjectionBridge | undefined,
     private readonly options: DeepWebGpuBackendOptions = {},
   ) {
     if (runtime.id !== this.id) throw new Error(`Deep runtime id must be ${this.id}.`);
@@ -129,17 +133,25 @@ export class DeepWebGpuBackend {
       runtime.dispose();
       throw abortError("Deep backend creation cancelled.");
     }
-    const backend = new DeepWebGpuBackend(runtime, validated.projection, {
-      ...(validated.cameraLayerMask === undefined ? {} : { cameraLayerMask: validated.cameraLayerMask }),
-      ...(renderer.shadows === undefined ? {} : { expectedShadows: renderer.shadows }),
-      ...(authorChunks === undefined ? {} : { authorChunks }),
-      ...(renderer.meshlets === undefined ? {} : { meshlets: renderer.meshlets }),
-    });
+    let backend: DeepWebGpuBackend;
+    try {
+      backend = new DeepWebGpuBackend(runtime, validated.projection, {
+        ...(validated.cameraLayerMask === undefined ? {} : { cameraLayerMask: validated.cameraLayerMask }),
+        ...(renderer.shadows === undefined ? {} : { expectedShadows: renderer.shadows }),
+        ...(authorChunks === undefined ? {} : { authorChunks }),
+        ...(renderer.meshlets === undefined ? {} : { meshlets: renderer.meshlets }),
+      });
+    } catch (error) {
+      runtime.dispose();
+      throw error;
+    }
     try {
       if (validated.renderPacket) {
+        backend.independentPacket = true;
         await backend.prepareRenderPacket(validated.renderPacket, validated.view, signal);
         return backend;
       }
+      if (!validated.projection || !validated.root) throw new TypeError("Deep backend requires projection/root when renderPacket is absent.");
       await backend.prepareScene(validated.root, validated.view, validated.cameraLayerMask, signal);
       return backend;
     } catch (error) { backend.dispose(); throw error; }
@@ -213,6 +225,13 @@ export class DeepWebGpuBackend {
   }
 
   get shadowSelection(): DeepWebGpuShadowSelection | undefined { return this.shadowSelectionValue; }
+  /** Resolves a packet instance to its author node without a Three object. */
+  modelIdForInstanceId(instanceId: string): string | undefined {
+    for (const binding of this.committedPacket?.objectBindings ?? []) {
+      if (binding.instanceIds.includes(instanceId)) return binding.nodeId;
+    }
+    return undefined;
+  }
   get chunkStreaming() { return this.chunks?.diagnostics; }
   get probeClipmapFailure(): unknown { return this.probeClipmap?.failure; }
   worldToRenderLocal(point: readonly [number, number, number]): readonly [number, number, number] {
@@ -248,6 +267,7 @@ export class DeepWebGpuBackend {
 
   project(root: ThreeObjectSource, cameraLayerMask = this.options.cameraLayerMask ?? 1): ProjectionResult {
     this.assertOpen();
+    if (!this.projection) throw new Error("Deep backend is running from an independent RenderPacket.");
     return this.projection.project(root, { cameraLayerMask });
   }
 
@@ -258,6 +278,12 @@ export class DeepWebGpuBackend {
     view?: RenderView,
   ): Promise<DeepWebGpuSyncResult> {
     this.assertOpen();
+    if (this.independentPacket) {
+      const packet = this.committedPacket;
+      if (!packet) return { status: "rejected", issues: [{ code: "invalid", objectId: "", path: "packet", feature: "packet", message: "Independent RenderPacket is not prepared." }] };
+      return { status: "committed", update: "instances", packet };
+    }
+    if (!this.projection) throw new Error("Deep backend requires a projection for scene sync.");
     const generation = ++this.syncGeneration;
     const projected = this.projection.project(root, { cameraLayerMask });
     if (!projected.ok) return { status: "rejected", issues: projected.issues };
@@ -325,7 +351,7 @@ export class DeepWebGpuBackend {
     this.syncGeneration++;
     this.shadowSelectionValue = undefined;
     this.committedPacket = undefined;
-    this.projection.clear();
+    this.projection?.clear();
     try { this.probeClipmap?.dispose(); }
     finally {
       this.probeClipmap = undefined;

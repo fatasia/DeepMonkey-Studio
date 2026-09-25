@@ -61,6 +61,17 @@ describe("DeepWebGpuBackend creation", () => {
     expect(backend.shadowSelection?.selectedTier).toBe("high");
   });
 
+  it("accepts an immutable author packet without a Three projection or root", async () => {
+    const target = runtime(), createRuntime = vi.fn(async () => target);
+    const packet = { geometries: [], materials: [], instances: [] };
+    const backend = await DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
+      view, renderPacket: packet }, { create: createRuntime });
+    expect(target.setPacketValidated).toHaveBeenCalledOnce();
+    expect(backend.modelIdForInstanceId("missing")).toBeUndefined();
+    await expect(backend.sync(mesh(), 1)).resolves.toMatchObject({ status: "committed", update: "instances" });
+    backend.dispose();
+  });
+
   it("snapshots feature and environment policy for a bridge-created runtime", async () => {
     const target = runtime(), createRuntime = vi.fn(async () => target);
     const backend = await DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,

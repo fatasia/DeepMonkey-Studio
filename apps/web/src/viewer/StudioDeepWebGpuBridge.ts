@@ -183,18 +183,18 @@ export class StudioDeepWebGpuBridge {
           shadowMapSize = view.lights?.directional?.[0]?.shadow?.mapSize
             ?? studioDeepShadowMapSize(this.viewer.scene, this.viewer.camera.layers.mask);
           frameCaptureSession = createRequestedStudioFrameCaptureSession();
-          this.projectionBridge = new module.ThreeProjectionBridge({ hooks: threePrototypeHooks(), capabilities: { authorDeformation: true, authorLod: true },
-            // Deep consumes the editor-owned transform state. Three remains a
-            // geometry/material source while model transforms are projected from
-            // the independent author store into RenderPacket instances.
-            authorTransformResolver: source => resolveAuthorWorldTransform(this.viewer, source),
-          });
           const authorRenderPacket = this.options.authorRenderPacket
             ? await this.options.authorRenderPacket(signal) : undefined;
+          // A compiled SceneSnapshot packet is a complete Deep input. Keep the
+          // Three projection bridge out of this path so geometry, materials,
+          // hierarchy and transforms are never read from the author scene.
+          this.projectionBridge = authorRenderPacket ? undefined : new module.ThreeProjectionBridge({ hooks: threePrototypeHooks(), capabilities: { authorDeformation: true, authorLod: true },
+            authorTransformResolver: source => resolveAuthorWorldTransform(this.viewer, source),
+          });
           const backend = await module.DeepWebGpuBackend.create({
             canvas, gpu: navigator.gpu,
-            projection: this.projectionBridge,
-            root: this.projectionRoot(), view, authorChunks: true,
+            ...(this.projectionBridge ? { projection: this.projectionBridge, root: this.projectionRoot() } : {}),
+            view, authorChunks: true,
             ...(authorRenderPacket ? { renderPacket: authorRenderPacket } : {}),
             renderer: { environment: environment.source, deformation: true, meshlets: true,
               adaptiveQuality: {
@@ -370,9 +370,10 @@ export class StudioDeepWebGpuBridge {
     if (!hit) return result.degraded
       ? { available: true, degraded: result.degraded, fallbackToAuthor: false }
       : { available: true, fallbackToAuthor: false };
+    const packetModelId = backend.modelIdForInstanceId(hit.instanceId);
     const source = this.projectionBridge?.sourceForInstanceId(hit.instanceId) as unknown as
       { userData?: Record<string, unknown>; parent?: unknown } | undefined;
-    const modelId = source ? authorModelId(source) : undefined;
+    const modelId = packetModelId ?? (source ? authorModelId(source) : undefined);
     if (!modelId) return { available: true, degraded: [...(result.degraded ?? []), "node-mapping-unavailable:deep-hit-not-selectable"], fallbackToAuthor: true };
     const picked = { point: new THREE.Vector3(...hit.point), distance: hit.distance, objectName: modelId, modelId };
     return result.degraded
