@@ -10,10 +10,15 @@ import { overlayLine, OVERLAY_VERTEX_LIMIT, type OverlayClipPoint, type OverlayC
 /** 合同对齐 viewerEngineRendering 的 Box3Helper 选择高亮材质。 */
 export const DEEP_SELECTION_BOX_COLOR = 0x2684ff;
 export const DEEP_SELECTION_BOX_OPACITY = 0.95;
+/** 与 Three clipping helper 同色；原生 Deep 仅绘制线框，不改变裁剪平面。 */
+export const DEEP_CLIPPING_BOX_COLOR = 0xf6c453;
+export const DEEP_CLIPPING_BOX_OPACITY = 0.9;
 /** 合同对齐 sceneOverlayVisuals.createMeasurementVisual 的线材颜色与透明度。 */
 export const DEEP_MEASUREMENT_PREVIEW_COLOR = 0xf0d58d;
 export const DEEP_MEASUREMENT_PREVIEW_OPACITY = 0.75;
 export const DEEP_MEASUREMENT_COLOR = 0xf6c453;
+export const DEEP_ANNOTATION_COLOR = 0x2f8fff;
+export const DEEP_LIGHT_PROXY_COLOR = 0xf6c453;
 /** 刻度尺寸沿用 createMeasurementVisual 端点 marker 的量级公式。 */
 const MEASUREMENT_TICK_SIZE_FACTOR = 0.012;
 const MEASUREMENT_TICK_MIN_SIZE = 0.035;
@@ -37,6 +42,16 @@ export interface DeepMeasurementSegmentInput {
   readonly preview: boolean;
   /** Angle measurement uses [vertex, first arm endpoint, second arm endpoint]. */
   readonly angle?: readonly [THREE.Vector3, THREE.Vector3, THREE.Vector3];
+}
+export interface DeepAnnotationInput {
+  readonly position: THREE.Vector3;
+  readonly size: number;
+  readonly color?: string | number;
+  readonly selected?: boolean;
+}
+export interface DeepLightProxyInput {
+  readonly position: THREE.Vector3;
+  readonly target?: THREE.Vector3;
 }
 
 export interface DeepMeasurementAngleInput {
@@ -66,9 +81,64 @@ export function mergeDeepOverlayVertices(base: Float32Array, primitives: readonl
 /** 切片 A:世界包围盒 → 12 边线框盒;空盒输出空数组,角点非有限 fail-closed。 */
 export function projectDeepSelectionBox(box: THREE.Box3, camera: THREE.Camera,
   width: number, height: number, pixelRatio: number): Float32Array<ArrayBuffer> {
+  return projectDeepBox(box, camera, width, height, pixelRatio,
+    DEEP_SELECTION_BOX_COLOR, DEEP_SELECTION_BOX_OPACITY);
+}
+
+/** 切片 D:剖切盒线框;裁剪平面仍由作者引擎维护,此原语只接管 helper 呈现。 */
+export function projectDeepClippingBox(box: THREE.Box3, camera: THREE.Camera,
+  width: number, height: number, pixelRatio: number): Float32Array<ArrayBuffer> {
+  return projectDeepBox(box, camera, width, height, pixelRatio,
+    DEEP_CLIPPING_BOX_COLOR, DEEP_CLIPPING_BOX_OPACITY);
+}
+
+/** Native annotation pin and marker; the text sprite remains a projected author label. */
+export function projectDeepAnnotation(input: DeepAnnotationInput, camera: THREE.Camera,
+  width: number, height: number, pixelRatio: number): Float32Array<ArrayBuffer> {
+  assertViewport(width, height, pixelRatio);
+  const size = finitePositive(input.size, "deep overlay annotation size");
+  const position = finitePoint(input.position.x, input.position.y, input.position.z, "deep overlay annotation position");
+  const color = overlayDisplayColor(
+    input.selected ? 0x4d9fff : input.color ?? DEEP_ANNOTATION_COLOR,
+    1,
+  );
+  const viewProjection = viewProjectionMatrix(camera);
+  const physicalWidth = width * pixelRatio, physicalHeight = height * pixelRatio;
+  const heightWorld = 0.48 * size, marker = Math.max(0.075 * size, 0.01);
+  const markerPosition = position.clone().add(new THREE.Vector3(0, heightWorld, 0));
+  const output: number[] = [];
+  appendWorldLine(output, position, markerPosition, viewProjection, color, physicalWidth, physicalHeight, pixelRatio);
+  appendWorldLine(output, markerPosition.clone().add(new THREE.Vector3(-marker, 0, 0)), markerPosition.clone().add(new THREE.Vector3(marker, 0, 0)),
+    viewProjection, color, physicalWidth, physicalHeight, pixelRatio);
+  appendWorldLine(output, markerPosition.clone().add(new THREE.Vector3(0, 0, -marker)), markerPosition.clone().add(new THREE.Vector3(0, 0, marker)),
+    viewProjection, color, physicalWidth, physicalHeight, pixelRatio);
+  return new Float32Array(output);
+}
+
+/** Native light proxy direction/handle geometry; lighting state stays in the author engine. */
+export function projectDeepLightProxy(input: DeepLightProxyInput, camera: THREE.Camera,
+  width: number, height: number, pixelRatio: number): Float32Array<ArrayBuffer> {
+  assertViewport(width, height, pixelRatio);
+  const position = finitePoint(input.position.x, input.position.y, input.position.z, "deep overlay light position");
+  const target = input.target ? finitePoint(input.target.x, input.target.y, input.target.z, "deep overlay light target") : undefined;
+  const color = overlayDisplayColor(DEEP_LIGHT_PROXY_COLOR, 1);
+  const viewProjection = viewProjectionMatrix(camera);
+  const physicalWidth = width * pixelRatio, physicalHeight = height * pixelRatio;
+  const output: number[] = [];
+  if (target) appendWorldLine(output, position, target, viewProjection, color, physicalWidth, physicalHeight, pixelRatio);
+  const marker = Math.max((target?.distanceTo(position) ?? 1) * 0.035, 0.04);
+  appendWorldLine(output, position.clone().add(new THREE.Vector3(-marker, 0, 0)), position.clone().add(new THREE.Vector3(marker, 0, 0)),
+    viewProjection, color, physicalWidth, physicalHeight, pixelRatio);
+  appendWorldLine(output, position.clone().add(new THREE.Vector3(0, -marker, 0)), position.clone().add(new THREE.Vector3(0, marker, 0)),
+    viewProjection, color, physicalWidth, physicalHeight, pixelRatio);
+  return new Float32Array(output);
+}
+
+function projectDeepBox(box: THREE.Box3, camera: THREE.Camera,
+  width: number, height: number, pixelRatio: number, colorHex: number, opacity: number): Float32Array<ArrayBuffer> {
   assertViewport(width, height, pixelRatio);
   if (box.isEmpty()) return new Float32Array();
-  const color = overlayDisplayColor(DEEP_SELECTION_BOX_COLOR, DEEP_SELECTION_BOX_OPACITY);
+  const color = overlayDisplayColor(colorHex, opacity);
   const viewProjection = viewProjectionMatrix(camera);
   const corners: THREE.Vector3[] = [];
   for (const [x, y, z] of [
@@ -228,7 +298,7 @@ function viewProjectionMatrix(camera: THREE.Camera): THREE.Matrix4 {
 }
 
 /** 复刻既有 overlay 管线对材质颜色的处理:sRGB hex → linear → 显示 sRGB,保证呈现合同一致。 */
-function overlayDisplayColor(hex: number, alpha: number): OverlayColor {
+function overlayDisplayColor(hex: number | string, alpha: number): OverlayColor {
   const display = new THREE.Color(hex).convertLinearToSRGB();
   return [display.r, display.g, display.b, alpha];
 }
@@ -247,6 +317,11 @@ function appendWorldLine(output: number[], a: THREE.Vector3, b: THREE.Vector3, v
 function finitePoint(x: number, y: number, z: number, subject: string): THREE.Vector3 {
   if (![x, y, z].every(Number.isFinite)) throw new Error(`${subject} must be finite.`);
   return new THREE.Vector3(x, y, z);
+}
+
+function finitePositive(value: number, subject: string): number {
+  if (!Number.isFinite(value) || value <= 0) throw new Error(`${subject} must be finite and positive.`);
+  return value;
 }
 
 /** 与 axis 正交且尽量贴近参考方向的单位向量;参考方向退化时回退到固定正交基。 */

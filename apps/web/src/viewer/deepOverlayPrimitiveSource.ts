@@ -1,6 +1,7 @@
 import * as THREE from "three";
-import { projectDeepMeasurementAngle, projectDeepMeasurementSegment, projectDeepSelectionBox, projectDeepTransformGizmo,
-  type DeepMeasurementSegmentInput, type DeepTransformGizmoInput } from "./deepOverlayPrimitives";
+import { projectDeepAnnotation, projectDeepClippingBox, projectDeepLightProxy, projectDeepMeasurementAngle,
+  projectDeepMeasurementSegment, projectDeepSelectionBox, projectDeepTransformGizmo,
+  type DeepAnnotationInput, type DeepLightProxyInput, type DeepMeasurementSegmentInput, type DeepTransformGizmoInput } from "./deepOverlayPrimitives";
 
 /** Deep 模式下由桥注册进 StudioDeepRenderView 的原语顶点来源(每渲染帧调用一次)。 */
 export type DeepOverlayPrimitiveSource =
@@ -10,7 +11,10 @@ export type DeepOverlayPrimitiveSource =
 export interface DeepOverlayPrimitiveViewer {
   readonly camera: THREE.PerspectiveCamera;
   getDeepSelectionBox(): THREE.Box3 | undefined;
+  getDeepClippingBox?(): THREE.Box3 | undefined;
   getDeepTransformGizmoInput(): DeepTransformGizmoInput | undefined;
+  getDeepAnnotationInputs?(): DeepAnnotationInput[];
+  getDeepLightProxyInputs?(): DeepLightProxyInput[];
   getDeepMeasurementSegmentInputs(): DeepMeasurementSegmentInput[];
 }
 
@@ -20,8 +24,16 @@ export function collectDeepOverlayPrimitives(viewer: DeepOverlayPrimitiveViewer,
   const primitives: Float32Array[] = [];
   const box = viewer.getDeepSelectionBox();
   if (box) primitives.push(projectDeepSelectionBox(box, viewer.camera, width, height, pixelRatio));
+  const clippingBox = viewer.getDeepClippingBox?.();
+  if (clippingBox) primitives.push(projectDeepClippingBox(clippingBox, viewer.camera, width, height, pixelRatio));
   const gizmo = viewer.getDeepTransformGizmoInput();
   if (gizmo) primitives.push(projectDeepTransformGizmo(gizmo, viewer.camera, width, height, pixelRatio));
+  for (const annotation of viewer.getDeepAnnotationInputs?.() ?? []) {
+    primitives.push(projectDeepAnnotation(annotation, viewer.camera, width, height, pixelRatio));
+  }
+  for (const light of viewer.getDeepLightProxyInputs?.() ?? []) {
+    primitives.push(projectDeepLightProxy(light, viewer.camera, width, height, pixelRatio));
+  }
   for (const segment of viewer.getDeepMeasurementSegmentInputs()) {
     primitives.push(segment.angle
       ? projectDeepMeasurementAngle({ points: segment.angle, preview: segment.preview }, viewer.camera, width, height, pixelRatio)

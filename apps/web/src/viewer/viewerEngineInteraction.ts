@@ -30,7 +30,7 @@ import { bindPresentationPerformance, getPresentationPerformance, enablePresenta
   type PresentationPerformanceSource } from "./viewerPresentationPerformance";
 import { clearIndustrialPrefabProxy, ensureIndustrialPrefabProxy, industrialPrefabProxyGroundOffset } from "./industrialPrefabProxy";
 import { detachSharedGltfResources } from "./sharedGltfAssets";
-import type { DeepMeasurementSegmentInput } from "./deepOverlayPrimitives";
+import type { DeepAnnotationInput, DeepLightProxyInput, DeepMeasurementSegmentInput } from "./deepOverlayPrimitives";
 
 /** Interaction 职责层。模型动画控制域已拆至 viewerEngineAnimationControl.ts（F6 结构治理），经继承混入保持公开 API 不变。 */
 export abstract class ViewerEngineInteraction extends ViewerEngineAnimationControl {
@@ -97,18 +97,25 @@ export abstract class ViewerEngineInteraction extends ViewerEngineAnimationContr
       const state = object.userData.measurement as MeasurementState | undefined;
       return state !== undefined;
     };
+    const annotationAndSceneRoots = [...this.scene.children].flatMap((child): THREE.Object3D[] => {
+      if (child.name.startsWith("annotation:")) {
+        if (!nativeHelpers) return [child];
+        // Deep owns the pin and marker geometry; keep the author label sprite.
+        const label = child.children.find((candidate) => candidate.userData.overlayRole === "annotation-label");
+        // Untyped test/legacy groups have no label role; keep them projected
+        // rather than silently dropping an overlay we cannot split safely.
+        return label ? [label] : [child];
+      }
+      if (child.name.startsWith("measurement:")) return nativeMeasurement(child) ? [] : [child];
+      return child.name.startsWith("helper:space:") || child.name === "helper:bim-placement-preview" ? [child] : [];
+    });
     const roots = [...(nativeHelpers ? [] : [this.transform.getHelper()]),
       ...(nativeHelpers || !this.selectionHelper ? [] : [this.selectionHelper]),
-      ...(this.clippingHelper ? [this.clippingHelper] : []),
+      ...(this.clippingHelper && !nativeHelpers ? [this.clippingHelper] : []),
       ...(this.measurementPreview && !nativeMeasurement(this.measurementPreview) ? [this.measurementPreview] : []),
-      ...[...this.scene.children].filter((child) => {
-        if (child.name.startsWith("measurement:")) return !nativeMeasurement(child);
-        return child.name.startsWith("annotation:")
-          || child.name.startsWith("helper:space:")
-          || child.name === "helper:bim-placement-preview";
-      }),
-      ...Array.from(this.sceneLightProxies.values()).flatMap(proxy =>
-        [proxy.position, ...(proxy.target ? [proxy.target] : []), ...(proxy.line ? [proxy.line] : [])])];
+      ...annotationAndSceneRoots,
+      ...(nativeHelpers ? [] : Array.from(this.sceneLightProxies.values()).flatMap(proxy =>
+        [proxy.position, ...(proxy.target ? [proxy.target] : []), ...(proxy.line ? [proxy.line] : [])]))];
     return [...new Set(roots)];
   }
   /** Deep 原生测量原语(切片 B)的只读输入:两点线段与角度三点。 */
@@ -134,6 +141,33 @@ export abstract class ViewerEngineInteraction extends ViewerEngineAnimationContr
     }
     collect(this.measurementPreview?.userData.measurement as MeasurementState | undefined, true);
     return inputs;
+  }
+  /** Deep 原生剖切盒线框(切片 D)的只读输入;裁剪平面仍由作者渲染器维护。 */
+  getDeepClippingBox(): THREE.Box3 | undefined {
+    if (this.presentationRendererBackend !== "webgpu" && this.presentationRendererBackend !== "wasm") return undefined;
+    const state = this.clippingState;
+    return state.enabled && state.mode === "box" && state.showHelper !== false ? this.clippingHelper?.box : undefined;
+  }
+  /** Deep 原生标注 pin/marker;文本标签仍由作者投影保留。 */
+  getDeepAnnotationInputs(): DeepAnnotationInput[] {
+    if (this.presentationRendererBackend !== "webgpu" && this.presentationRendererBackend !== "wasm") return [];
+    return [...this.annotations.values()].filter(({ state }) => state.visible).map(({ state }) => ({
+      position: new THREE.Vector3(state.position.x, state.position.y, state.position.z),
+      size: state.size ?? 1,
+      color: state.color,
+      selected: this.selectedAnnotationId === state.id,
+    }));
+  }
+  /** Deep 原生灯光代理线/手柄;灯光状态仍由作者引擎维护。 */
+  getDeepLightProxyInputs(): DeepLightProxyInput[] {
+    if (this.presentationRendererBackend !== "webgpu" && this.presentationRendererBackend !== "wasm") return [];
+    return [...this.sceneLightProxies.values()].map((proxy) => {
+      proxy.position.updateWorldMatrix(true, false);
+      const position = proxy.position.getWorldPosition(new THREE.Vector3());
+      if (!proxy.target) return { position };
+      proxy.target.updateWorldMatrix(true, false);
+      return { position, target: proxy.target.getWorldPosition(new THREE.Vector3()) };
+    });
   }
   getDeepGrid(): THREE.Object3D | undefined { return this.gridHelper; }
   setInteractionScripts(scripts: SceneInteractionScriptState[]): void {
