@@ -1,6 +1,6 @@
 # GPT 接手现状核查（2026-09-25）
 
-依据 `glm-to-gpt-2026-09-25.md`、`active-task-recovery-ledger.md` 末尾批次、`codex-to-glm-2026-09-25.md`、`engine-neutral-command-layer-design-2026-09-25.md`，并核对 `git log`、`git status --short`、`git diff --stat`。当前 HEAD `fdb383ee`；工作树仍包含其他会话的大量修改，均按文件域保护，未做清理或回滚。
+依据 `glm-to-gpt-2026-09-25.md`、`active-task-recovery-ledger.md` 末尾批次、`codex-to-glm-2026-09-25.md`、`engine-neutral-command-layer-design-2026-09-25.md`，并核对 `git log`、`git status --short`、`git diff --stat`。当前 HEAD `8ed6d5cf`；本轮新增切片已提交，工作树干净。
 
 ## 现状核查
 
