@@ -25,6 +25,14 @@ export interface CommandProviderConfig {
   timeoutMs?: number;
 }
 
+/** ps-schema-probe 结构探针（可选能力；未配置时 X_T/X_B 维持既有行为）。 */
+export interface ParasolidProbeConfig {
+  /** 可执行文件路径；未配置时回落到 apps/api/dist/ps-schema-probe 构建产物探测。 */
+  command: string;
+  /** 部署方自备的 Parasolid 官方 schema catalog 文本路径（版权件，不随包交付）。 */
+  schemaCatalog?: string;
+}
+
 export interface AppConfig {
   port: number;
   host: string;
@@ -63,6 +71,8 @@ export interface AppConfig {
   rvt: CommandProviderConfig;
   dwg: CommandProviderConfig;
   industrialCad: CommandProviderConfig;
+  /** ps-schema-probe 结构探针；仅当命令可解析（显式配置或构建产物存在）时提供。 */
+  parasolidProbe?: ParasolidProbeConfig;
   cloudRender: {
     workerUrl?: string;
     workerToken?: string;
@@ -93,6 +103,11 @@ export function loadConfig(): AppConfig {
   const dwgCommand = process.env.DWG_CONVERTER_COMMAND?.trim()
     || (existsSync(bundledDwgCommand) ? bundledDwgCommand : undefined);
   const industrialCadCommand = process.env.INDUSTRIAL_CAD_CONVERTER_COMMAND?.trim();
+  const bundledProbeExecutable = path.join(projectRoot, "apps", "api", "dist", "ps-schema-probe",
+    process.platform === "win32" ? "ps-schema-probe.exe" : "ps-schema-probe");
+  const parasolidProbeCommand = process.env.PARASOLID_SCHEMA_PROBE_COMMAND?.trim()
+    || (existsSync(bundledProbeExecutable) ? bundledProbeExecutable : undefined);
+  const parasolidSchemaCatalog = process.env.PARASOLID_SCHEMA_CATALOG?.trim();
   const cloudRenderWorkerUrl = process.env.CLOUD_RENDER_WORKER_URL?.trim();
   const cloudRenderWorkerToken = process.env.CLOUD_RENDER_WORKER_TOKEN?.trim();
   const cloudRenderPublicOrigin = process.env.CLOUD_RENDER_PUBLIC_ORIGIN?.trim();
@@ -157,6 +172,12 @@ export function loadConfig(): AppConfig {
       cwd: projectRoot,
       timeoutMs: boundedNumber(process.env.INDUSTRIAL_CAD_CONVERTER_TIMEOUT_MS, 30 * 60 * 1_000, 1_000, 2 * 60 * 60 * 1_000)
     },
+    ...(parasolidProbeCommand ? {
+      parasolidProbe: {
+        command: path.resolve(parasolidProbeCommand),
+        ...(parasolidSchemaCatalog ? { schemaCatalog: path.resolve(parasolidSchemaCatalog) } : {}),
+      },
+    } : {}),
     cloudRender: {
       ...(cloudRenderWorkerUrl ? { workerUrl: cloudRenderWorkerUrl } : {}),
       ...(cloudRenderWorkerToken ? { workerToken: cloudRenderWorkerToken } : {}),

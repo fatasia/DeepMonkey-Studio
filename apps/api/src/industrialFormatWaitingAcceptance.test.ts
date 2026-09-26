@@ -32,6 +32,9 @@ describe("industrial format upload acceptance without providers", () => {
     const config = loadConfig();
     config.dataDir = dataDir;
     config.industrialCad = { args: [], cwd: process.cwd() };
+    // 本用例断言"无任何结构/几何能力已配置"的基线：显式关闭 ps-schema-probe 探针，
+    // 与探针 CLI 是否恰好被构建到本机 dist 无关。
+    config.parasolidProbe = undefined;
     const queue = new ConversionQueue(store, config, objects);
     const app = createApiServer();
     await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
@@ -69,6 +72,9 @@ describe("industrial format upload acceptance without providers", () => {
       const args = [fixture, "--input", "{input}", "--output", "{output}", "--format", "{format}", "--include-pmi", "{includePmi}"];
       config.dataDir = dataDir;
       config.industrialCad = { command: process.execPath, args, cwd: process.cwd() };
+      // 优先级守护：即使 ps-schema-probe 探针可用，已配置外部转换器命令时 X_B 仍保持阻断。
+      const probeMock = fileURLToPath(new URL("./fixtures/psSchemaProbeMock.mjs", import.meta.url));
+      config.parasolidProbe = { command: process.execPath, args: [probeMock] };
       const queue = new ConversionQueue(store, config, objects);
       const app = createApiServer();
       await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024, files: 1 } });

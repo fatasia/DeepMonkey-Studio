@@ -3,6 +3,7 @@ import { access, copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ConversionQualityDraft, ModelFormat, ModelManifest, ModelRecord, ViewerKind } from "@bim-studio/contracts";
 import type { AppConfig, CommandProviderConfig } from "./config.js";
+import { createParasolidProbeRunner, type ParasolidProbeConfig, type ParasolidProbeReport, type ParasolidProbeRunner } from "./parasolidSchemaProbe.js";
 import type { ObjectStore } from "./objects.js";
 import type { MetadataStore } from "./store.js";
 import { generateGlbLods, optimizeNativeGlb } from "./glbOptimizer.js";
@@ -71,6 +72,7 @@ export class ConversionQueue {
 }
 
 function createProviders(store: MetadataStore, config: AppConfig, objects: ObjectStore): Record<ModelFormat, ConversionProvider> {
+    const parasolidProbe = createParasolidProbeRuntime(config);
     return {
       ifc: new DirectProvider(store, objects, "ifc"),
       gltf: new DirectProvider(store, objects, "gltf"),
@@ -92,8 +94,12 @@ function createProviders(store: MetadataStore, config: AppConfig, objects: Objec
       rvt: config.rvt.command
         ? new CommandProvider(store, objects, config.rvt, [])
         : new MissingProvider(store, "未配置 Revit Agent。请在安装 Revit 的 Windows 转换机上配置批处理程序。"),
-      x_t: new XtTextSubsetProvider(store, objects),
-      x_b: new MissingProvider(store, industrialCadUnavailableMessage("Parasolid X_B")),
+      x_t: new XtTextSubsetProvider(store, objects, parasolidProbe),
+      x_b: config.industrialCad.command
+        ? new MissingProvider(store, industrialCadUnavailableMessage("Parasolid X_B"))
+        : parasolidProbe
+          ? new XbStructureProvider(store, objects, parasolidProbe)
+          : new MissingProvider(store, industrialCadUnavailableMessage("Parasolid X_B")),
       jt: new JtStructureProvider(store, objects),
       // Three.js 0.185 的官方 USDLoader 同时解析 USDA、USDC 与 USDZ。
       // 原文件直接作为唯一运行资产，避免先预览源格式、再切换 GLB 造成对象标识漂移。
@@ -280,22 +286,37 @@ class CommandProvider implements ConversionProvider {
   }
 }
 
+interface ParasolidProbeRuntime {
+  config: ParasolidProbeConfig;
+  run: ParasolidProbeRunner;
+}
+
+function createParasolidProbeRuntime(config: AppConfig): ParasolidProbeRuntime | undefined {
+  const probe = config.parasolidProbe;
+  if (!probe) return undefined;
+  return { config: probe, run: createParasolidProbeRunner(probe) };
+}
+
 class XtTextSubsetProvider implements ConversionProvider {
   readonly supportsGeneralImport = false;
   constructor(
     private readonly store: MetadataStore,
     private readonly objects: ObjectStore,
+    private readonly probe?: ParasolidProbeRuntime,
   ) {}
 
   /**
-   * 双档决策树（同一 Provider 内部 fallback，不新建 Provider）：
+   * 三档决策树（同一 Provider 内部 fallback，不新建 Provider）：
    * 1. 命中已签署 V24.1 旋转体子集 → 原样走受控旋转体路径（行为逐字节不变）。
    * 2. 子集解析拒绝且 inspection 几何未解析 → 先尝试自研通用文本解析降级档：
    *    - 发布出 ≥1 个可审计网格 → ready(visual-complete)，losses 如实来自 xt-reader；
    *    - 0 个可发布面片（含 legacy-baseline 编码）→ 保持 waiting_converter，
    *      inspection 附 generic-parse 实体 census，绝不 ready 空几何。
-   * 3. 通用降级也失败（结构损坏等）→ 维持原 failed/waiting 语义，
-   *    错误信息合并两个解析器的失败原因。
+   * 3. 通用降级也失败或未命中面片，且部署方配置了 schema catalog + 探针 CLI →
+   *    第三档 schema-aware census（parasolid-core 权威解码）：节点类型计数与
+   *    face/loop/edge/vertex 拓扑计数入 inspection.genericParse.schemaAware；
+   *    几何发布仍需 B-Rep 三角化（R1），本期保持 waiting_converter + 证据，
+   *    绝不发布 geometry.glb。探针未配置或失败时完全回落到既有语义。
    */
   async convert({ model, modelDir, sourcePath, reportQuality }: ConversionContext): Promise<void> {
     const outputDir = path.join(modelDir, "output");
@@ -313,7 +334,17 @@ class XtTextSubsetProvider implements ConversionProvider {
         return;
       }
       if (fallback.error) {
+        const schemaAware = inspection.status === "invalid" ? undefined : await this.runSchemaAwareCensus(sourcePath);
+        if (schemaAware) {
+          await this.publishSchemaAwareWaiting(model, modelDir, outputDir, inspectionUrl, inspection, schemaAware, fallback.error);
+          return;
+        }
         await this.publishUnconverted(model, modelDir, inspectionUrl, inspection, fallback.error);
+        return;
+      }
+      const schemaAware = inspection.status === "invalid" ? undefined : await this.runSchemaAwareCensus(sourcePath);
+      if (schemaAware) {
+        await this.publishSchemaAwareWaiting(model, modelDir, outputDir, inspectionUrl, inspection, schemaAware);
         return;
       }
       await this.publishGenericWaiting(model, modelDir, outputDir, inspectionUrl, inspection, fallback);
@@ -350,6 +381,61 @@ class XtTextSubsetProvider implements ConversionProvider {
       message: `X_T 旋转体转换完成：${result.faceCount} 个面，${result.triangleCount.toLocaleString("zh-CN")} 个三角面`,
       manifest,
       manifestUrl: assetUrl(model.projectId, model.id, "manifest.json"),
+    });
+  }
+
+  /**
+   * 第三档 schema-aware census：仅当部署方配置了 schema catalog（探针 CLI 存在）时启用。
+   * 任何失败都收敛为 undefined，完全回落到既有语义，不影响原决策树。
+   */
+  private async runSchemaAwareCensus(sourcePath: string): Promise<ParasolidProbeReport | undefined> {
+    const probe = this.probe;
+    if (!probe?.config.schemaCatalog) return undefined;
+    try {
+      return await probe.run({ filePath: sourcePath, brep: true });
+    } catch (error) {
+      console.warn("ps-schema-probe schema-aware census 失败，维持既有等待语义", error);
+      return undefined;
+    }
+  }
+
+  /**
+   * schema-aware 等待发布：权威结构证据入 inspection，状态保持 waiting_converter。
+   * 几何 GLB 发布需要 B-Rep 三角化（R1），本期刻意不产出 geometry.glb。
+   */
+  private async publishSchemaAwareWaiting(
+    model: ModelRecord,
+    modelDir: string,
+    outputDir: string,
+    inspectionUrl: string,
+    inspection: XtTextInspectionResult,
+    schemaAware: ParasolidProbeReport,
+    genericError?: string,
+  ): Promise<void> {
+    const inspectionWithEvidence = {
+      ...inspection,
+      genericParse: {
+        scope: "record-anchor-census-may-include-false-positives",
+        ...(genericError ? { genericError } : {}),
+        schemaAware: parasolidSchemaAwareEvidence(schemaAware),
+      },
+    };
+    await mkdir(outputDir, { recursive: true });
+    await writeFile(path.join(outputDir, "inspection.json"), JSON.stringify(inspectionWithEvidence, null, 2), "utf8");
+    const manifest: ModelManifest = {
+      schemaVersion: 1,
+      modelId: model.id,
+      sourceName: model.name,
+      sourceFormat: "x_t",
+      inspectionUrl,
+      createdAt: new Date().toISOString(),
+    };
+    await writeManifest(modelDir, manifest);
+    await this.objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
+    await this.store.updateModel(model.projectId, model.id, {
+      status: "waiting_converter",
+      progress: 40,
+      message: schemaAwareWaitingMessage(schemaAware, genericError),
     });
   }
 
@@ -494,6 +580,36 @@ function mergeFailureReasons(inspection: XtTextInspectionResult, genericReason: 
   return subsetReason === genericReason ? subsetReason : `${subsetReason}；通用解析：${genericReason}`;
 }
 
+/** inspection 附加证据：ps-schema-probe 权威解码结果（census + 可选 B-Rep 拓扑）。 */
+function parasolidSchemaAwareEvidence(report: ParasolidProbeReport): Record<string, unknown> {
+  return {
+    source: report.tool,
+    probeVersion: report.version,
+    mode: report.mode,
+    schemaKey: report.schemaKey,
+    modellerVersion: report.modellerVersion,
+    ...(report.catalog ? { catalog: report.catalog } : {}),
+    ...(report.census ? {
+      recordCount: report.census.recordCount,
+      nodeTypeCounts: report.census.nodeTypeCounts,
+    } : {}),
+    ...(report.brep ? { brep: report.brep } : {}),
+    // 本期刻意不发布几何：B-Rep → mesh 三角化（R1）未实现。
+    geometryPublication: "waiting-brep-triangulation-r1",
+  };
+}
+
+function schemaAwareTopologySummary(report: ParasolidProbeReport): string {
+  const brep = report.brep;
+  if (!brep) return report.census ? `${report.census.recordCount} 节点` : "无 census";
+  return `${report.census?.recordCount ?? 0} 节点、bodies=${brep.bodies}/faces=${brep.faces}/loops=${brep.loops}/edges=${brep.edges}/vertices=${brep.vertices}`;
+}
+
+function schemaAwareWaitingMessage(report: ParasolidProbeReport, genericError?: string): string {
+  const suffix = genericError ? `；通用解析失败：${genericError}` : "";
+  return `X_T ${report.schemaKey} 权威结构已读取（ps-schema-probe schema-aware）：${schemaAwareTopologySummary(report)}${suffix}；几何三角化待内置离散化（R1），暂不发布几何`;
+}
+
 class JtStructureProvider implements ConversionProvider {
   readonly supportsGeneralImport = false;
   constructor(
@@ -567,6 +683,112 @@ class JtStructureProvider implements ConversionProvider {
 
 function industrialCadUnavailableMessage(format: string): string {
   return `${format} 内置离线解析 profile 尚未就绪；当前仅保留源文件，未生成可发布几何。`;
+}
+
+/**
+ * X_B 结构证据 Provider（2026-09-26 定案）：仅在未配置外部工业转换器命令且探针 CLI
+ * 存在时启用。把"X_B 完全黑盒"升级为"结构可检、几何待离散化"：
+ * - census（未配置 catalog）：二进制头验证 + schema key；
+ * - schema-aware（配置 catalog）：全节点计数 + 权威 B-Rep 拓扑（face/loop/edge/vertex）。
+ * 状态保持 waiting_converter；几何 GLB 需要 B-Rep 三角化（R1），本期不发布。
+ * 探针执行失败时完全回落到既有 MissingProvider 语义（无 manifest、原消息）。
+ */
+class XbStructureProvider implements ConversionProvider {
+  readonly supportsGeneralImport = false;
+  constructor(
+    private readonly store: MetadataStore,
+    private readonly objects: ObjectStore,
+    private readonly probe: ParasolidProbeRuntime,
+  ) {}
+
+  async convert({ model, modelDir, sourcePath }: ConversionContext): Promise<void> {
+    const outputDir = path.join(modelDir, "output");
+    await this.store.updateModel(model.projectId, model.id, {
+      status: "processing",
+      progress: 10,
+      message: "正在读取 X_B 结构头与 schema-aware 解码能力",
+    });
+    const schemaCatalog = this.probe.config.schemaCatalog;
+    let report: ParasolidProbeReport;
+    try {
+      report = await this.probe.run({ filePath: sourcePath, brep: Boolean(schemaCatalog) });
+    } catch (error) {
+      console.warn("ps-schema-probe X_B census 失败，回落到既有阻断语义", error);
+      await this.store.updateModel(model.projectId, model.id, {
+        status: "waiting_converter",
+        progress: 0,
+        message: industrialCadUnavailableMessage("Parasolid X_B"),
+      });
+      return;
+    }
+    const brep = report.brep;
+    const inspection = {
+      status: "structure-read",
+      recognizedFormat: "parasolid-x_b",
+      inspectionScope: schemaCatalog ? "header-structure-and-schema-aware-census" : "header-structure-census",
+      geometryParsed: false,
+      sourceBytes: report.fileSize,
+      schema: report.schemaKey,
+      modellerVersion: report.modellerVersion,
+      header: {
+        schemaKey: report.schemaKey,
+        modellerVersion: report.modellerVersion,
+        fileSize: report.fileSize,
+      },
+      topology: {
+        bodies: brep
+          ? { status: "decoded", count: brep.bodies }
+          : { status: "not-decoded", reason: "未配置 schema catalog；仅完成二进制头验证，不推断 body 数量" },
+        faces: brep
+          ? { status: "decoded", count: brep.faces }
+          : { status: "not-decoded", reason: "未配置 schema catalog；未读取通用 face 拓扑" },
+        shells: brep
+          ? { status: "decoded", count: brep.shells }
+          : { status: "not-decoded", reason: "未配置 schema catalog；未读取 shell 关系" },
+        assembly: { status: "not-decoded", reason: "X_B 装配实例与变换绑定尚无独立证据，不推断" },
+      },
+      metadata: {
+        header: "decoded",
+        entityNames: "not-decoded",
+        colors: "not-decoded",
+        properties: "not-decoded",
+        reason: "实体名称、颜色与属性绑定需要版本对应 schema 与映射证据；当前仅返回结构头元数据",
+      },
+      geometry: {
+        status: "not-decoded",
+        reason: "B-Rep 三角化（离散化）未实现（R1）；结构证据来自 ps-schema-probe",
+      },
+      schemaAware: parasolidSchemaAwareEvidence(report),
+      issues: [] as Array<{ code: string; message: string }>,
+      limitations: [
+        "结构识别与权威拓扑计数不等于可浏览或可转换；几何发布需要 B-Rep 三角化（R1）",
+        "实体名称、颜色、PMI 与装配挂接未解码",
+        "schema catalog 为部署方自备版权件，未配置时仅提供 census 头验证",
+      ],
+    };
+    await mkdir(outputDir, { recursive: true });
+    await writeFile(path.join(outputDir, "inspection.json"), JSON.stringify(inspection, null, 2), "utf8");
+    const inspectionUrl = assetUrl(model.projectId, model.id, "output/inspection.json");
+    const manifest: ModelManifest = {
+      schemaVersion: 1,
+      modelId: model.id,
+      sourceName: model.name,
+      sourceFormat: "x_b",
+      inspectionUrl,
+      createdAt: new Date().toISOString(),
+    };
+    await writeManifest(modelDir, manifest);
+    await this.objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
+    await this.store.updateModel(model.projectId, model.id, {
+      status: "waiting_converter",
+      progress: 40,
+      message: schemaCatalog
+        ? `X_B ${report.schemaKey} 权威结构已读取（ps-schema-probe schema-aware）：${schemaAwareTopologySummary(report)}；几何三角化待内置离散化（R1）`
+        : `X_B ${report.schemaKey} 头部结构已读取（ps-schema-probe census）；trim/几何解码需要部署方 schema catalog 与三角化（R1）`,
+      manifest,
+      manifestUrl: assetUrl(model.projectId, model.id, "manifest.json"),
+    });
+  }
 }
 
 function commandProgressMessage(model: ModelRecord): string {

@@ -1,0 +1,21 @@
+[package]
+name = "ps-schema-probe"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Schema-aware Parasolid X_T/X_B census probe CLI (vendored parasolid-core, MIT)"
+license = "MIT AND Apache-2.0"
+publish = false
+
+# Vendored dependency boundary (2026-09-26 定案):parasolid-core 来自本地解包的
+# parasolid-kit v0.2.0(MIT AND Apache-2.0),位于 data/external-assets(不入仓)。
+# 本 crate 只通过其公开 API(parse_schema_catalog/parse_xt/parse_xb/inspect_xt/
+# inspect_xb/map_xt_brep/map_xb_brep)调用,不修改 vendored 源码。
+# 逐文件审计与版本固定记录见 docs/converter-plugin-and-format-support.md。
+[dependencies]
+parasolid-core = { path = "../../data/external-assets/industrial-format-plan/dependencies/extracted/parasolid-kit-v0.2.0/crates/parasolid-core" }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+
+[lints.rust]
+unsafe_code = "forbid"
