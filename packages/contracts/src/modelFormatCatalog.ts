@@ -43,7 +43,7 @@ interface CatalogDefinition {
 }
 
 /** 运行事实核查时点；更新内置转换链路或样本矩阵时必须同步推进。 */
-const RUNTIME_FACTS_CHECKED_AT = "2026-09-25T00:00:00.000Z";
+const RUNTIME_FACTS_CHECKED_AT = "2026-09-26T00:00:00.000Z";
 
 function declaredCapability(definition: CatalogDefinition): ModelFormatCapability {
   const excluded = definition.scope === "excluded";
@@ -116,11 +116,15 @@ export const MODEL_FORMAT_CAPABILITY_CATALOG: readonly ModelFormatCapability[] =
       facts: {
         profileId: "builtin-jt-lod0-visual-complete",
         qualityTier: "visual-complete",
+        // 运行时按转换器实测动态收窄:源网格携带 UV/Color attribute 并解码成功时,
+        // 对应损失移除、计入近似项(geometry.uv:quantized-reconstruction 等)。
+        // 仓内两个真实样本均无 UV/Color binding,静态事实保留这两项损失。
         losses: ["geometry.uv", "vertex.colors"],
         notes: [
           "engine:builtin-jt-worker(container+toc+lsg+lod0-tristrip+topomesh)",
-          "coverage:lod0-triangle-mesh+assembly-instances+material-resolution",
+          "coverage:lod0-triangle-mesh+assembly-instances+material-resolution+vertex-uv-color-decoding",
           "normals:computed-vertex-normals",
+          "uv-color:decoded-when-source-bindings-exist;sample-fixtures-have-none(0xa/0x4a)",
           "samples:jt-9.5+jt-10.3"
         ]
       },

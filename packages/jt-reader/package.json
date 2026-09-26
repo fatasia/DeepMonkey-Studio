@@ -8,6 +8,11 @@
       "development": { "types": "./src/index.ts", "default": "./src/index.ts" },
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./testing": {
+      "development": { "types": "./src/fixtureSynthesis.test-helper.ts", "default": "./src/fixtureSynthesis.test-helper.ts" },
+      "types": "./dist/fixtureSynthesis.test-helper.d.ts",
+      "default": "./dist/fixtureSynthesis.test-helper.js"
     }
   },
   "scripts": {

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -12,6 +12,10 @@ import { writeJtInspectionArtifacts } from "./jtInspection.js";
 const directories: string[] = [];
 const fixturePath = fileURLToPath(new URL(
   "../../../data/external-assets/format-fixtures/jt/voyager-coffee-maker-jt9.5.jt",
+  import.meta.url,
+));
+const exampleBlockFixturePath = fileURLToPath(new URL(
+  "../../../data/external-assets/format-fixtures/jt/voyager-example-block-jt10.3.jt",
   import.meta.url,
 ));
 
@@ -76,6 +80,46 @@ describe.skipIf(!existsSync(fixturePath))("JT multi-mesh GLB adapter [skipped: e
       root: { meshIds: string[] };
     };
     expect(hierarchy.root.meshIds).toHaveLength(64);
+    // 真实样本无 UV/Color binding(字节证据见 packages/jt-reader/src/index.test.ts):
+    // 转换器必须如实上报未解码,且 GLB 中不出现这两个 accessor。
+    expect(result?.decodedAttributes).toEqual({ uvs: false, colors: false });
+    const allPrimitives = meshNodes.flatMap((node) => node.getMesh()!.listPrimitives());
+    expect(allPrimitives.some((primitive) => primitive.getAttribute("TEXCOORD_0") !== null)).toBe(false);
+    expect(allPrimitives.some((primitive) => primitive.getAttribute("COLOR_0") !== null)).toBe(false);
+  });
+});
+
+describe.skipIf(!existsSync(exampleBlockFixturePath))("JT synthetic UV/color GLB adapter [skipped: external fixture pack unavailable]", () => {
+  it("writes TEXCOORD_0 and COLOR_0 accessors for synthetic decoded attributes and reports them", async () => {
+    const { synthesizeUvColorJt } = await import("@bim-studio/jt-reader/testing");
+    const source = await readFile(exampleBlockFixturePath);
+    const syntheticPath = path.join(await mkdtemp(path.join(tmpdir(), "bim-jt-synth-")), "synthetic.jt");
+    await writeFile(syntheticPath, synthesizeUvColorJt(new Uint8Array(source)));
+    const outputDir = await mkdtemp(path.join(tmpdir(), "bim-jt103-glb-"));
+    directories.push(outputDir);
+    const artifacts = await writeJtInspectionArtifacts(syntheticPath, outputDir);
+    const result = await convertJtLod0ToGlb(
+      artifacts.document,
+      outputDir,
+      "synthetic.jt",
+      artifacts.inspection.materials,
+    );
+    expect(result?.decodedAttributes).toEqual({ uvs: true, colors: true });
+
+    const glb = await new NodeIO().read(path.join(outputDir, "geometry.glb"));
+    const primitives = glb.getRoot().listMeshes().flatMap((mesh) => mesh.listPrimitives());
+    expect(primitives.length).toBeGreaterThan(0);
+    for (const primitive of primitives) {
+      const uvs = primitive.getAttribute("TEXCOORD_0");
+      const colors = primitive.getAttribute("COLOR_0");
+      expect(uvs).toBeDefined();
+      expect(colors).toBeDefined();
+      expect(uvs!.getType()).toBe("VEC2");
+      expect(colors!.getType()).toBe("VEC4");
+      // 量化反解后全部落在 [0,1]
+      for (const value of uvs!.getArray() as Float32Array) expect(value).toBeGreaterThanOrEqual(0), expect(value).toBeLessThanOrEqual(1);
+      for (const value of colors!.getArray() as Float32Array) expect(value).toBeGreaterThanOrEqual(0), expect(value).toBeLessThanOrEqual(1);
+    }
   });
 });
 

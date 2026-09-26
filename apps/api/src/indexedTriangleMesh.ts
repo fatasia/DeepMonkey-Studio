@@ -4,6 +4,8 @@ export interface IndexedTriangleGeometry {
   positions: ArrayLike<number>;
   indices: ArrayLike<number>;
   normals?: ArrayLike<number>;
+  uvs?: ArrayLike<number> | undefined;
+  colors?: ArrayLike<number> | undefined;
 }
 
 /**
@@ -30,6 +32,18 @@ export function createIndexedTrianglePrimitive(
     primitive.setAttribute("NORMAL", document.createAccessor()
       .setType(Accessor.Type.VEC3!)
       .setArray(new Float32Array(geometry.normals))
+      .setBuffer(buffer));
+  }
+  if (geometry.uvs && geometry.uvs.length === (geometry.positions.length / 3) * 2) {
+    primitive.setAttribute("TEXCOORD_0", document.createAccessor()
+      .setType(Accessor.Type.VEC2!)
+      .setArray(new Float32Array(geometry.uvs))
+      .setBuffer(buffer));
+  }
+  if (geometry.colors && geometry.colors.length === (geometry.positions.length / 3) * 4) {
+    primitive.setAttribute("COLOR_0", document.createAccessor()
+      .setType(Accessor.Type.VEC4!)
+      .setArray(new Float32Array(geometry.colors))
       .setBuffer(buffer));
   }
   return primitive;

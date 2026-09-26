@@ -71,6 +71,19 @@ export interface JtMesh {
   sceneNodeObjectIds: number[];
   vertexCount: number;
   triangleCount: number;
+  /**
+   * 解码出的顶点 UV(平铺 [u0,v0,u1,v1,...]),长度 = 顶点数 × 2。
+   * 可选字段:缺席 ⇔ 源网格没有 UV binding,与 positions 长度不做隐式绑定——
+   * 存在时也只承诺"长度与 vertexCount × 2 一致",不承诺与索引共享布局。
+   */
+  uvs?: Float32Array;
+  /**
+   * 解码出的顶点色(平铺 [r,g,b,a,...],线性 0..1),长度 = 顶点数 × 4。
+   * 可选字段语义同 uvs:缺席 ⇔ 源网格没有颜色 binding。
+   */
+  colors?: Float32Array;
+  /** 源网格中存在、但当前解码器尚未支持的顶点属性绑定(按位命名,如实上报,禁止虚构)。 */
+  unsupportedAttributeBindings: string[];
 }
 
 export interface JtMeshInstance {

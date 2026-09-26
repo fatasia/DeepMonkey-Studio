@@ -16,6 +16,8 @@ export interface JtGlbConversionResult {
   vertexCount: number;
   triangleCount: number;
   bounds: { min: [number, number, number]; max: [number, number, number] };
+  /** 哪些顶点属性至少在一个网格里成功解码并写入 GLB；质量草稿据此动态收窄损失清单。 */
+  decodedAttributes: { uvs: boolean; colors: boolean };
 }
 
 /** 将 reader 已验证的最高精度 LOD0 网格写入现有 glTF 浏览链。 */
@@ -45,6 +47,9 @@ export async function convertJtLod0ToGlb(
   const assignedMeshes = new Set<string>();
   const placeholder = createMaterial(gltf, undefined, 0);
   let primitiveCount = 0;
+  // 属性解码证据:UV/色来自源文件的顶点记录,长度经 isValidMesh 校验后才允许写入 GLB。
+  const decodedUvMeshes = meshes.filter((mesh) => mesh.uvs !== undefined);
+  const decodedColorMeshes = meshes.filter((mesh) => mesh.colors !== undefined);
   meshes.forEach((mesh, index) => {
     const gltfMesh = gltf.createMesh(`JT 网格 ${index + 1}`);
     for (const [groupId, indices] of triangleGroups(mesh)) {
@@ -52,6 +57,8 @@ export async function convertJtLod0ToGlb(
         positions: mesh.positions,
         indices,
         normals: calculateVertexNormals(mesh.positions, indices),
+        uvs: mesh.uvs,
+        colors: mesh.colors,
       }).setExtras({ PolygonGroup: groupId });
       gltfMesh.addPrimitive(primitive);
       primitiveCount += 1;
@@ -101,7 +108,11 @@ export async function convertJtLod0ToGlb(
   const binary = await new NodeIO().writeBinary(gltf);
   await mkdir(outputDir, { recursive: true });
   await writeFile(path.join(outputDir, "geometry.glb"), binary);
-  return summarize(meshes, instances, primitiveCount);
+  return {
+    ...summarize(meshes, instances, primitiveCount),
+    // 属性证据必须逐项给出:没有任何网格解码出该属性时如实记 false,不向上层传 undefined。
+    decodedAttributes: { uvs: decodedUvMeshes.length > 0, colors: decodedColorMeshes.length > 0 },
+  };
 }
 
 function isValidMesh(mesh: JtMesh): boolean {
@@ -110,7 +121,17 @@ function isValidMesh(mesh: JtMesh): boolean {
   if (mesh.positions.length !== mesh.vertexCount * 3 || mesh.indices.length !== mesh.triangleCount * 3) return false;
   if (!mesh.positions.every(Number.isFinite)) return false;
   if (!mesh.polygonGroups.every(Number.isSafeInteger)) return false;
-  return mesh.indices.every((index) => Number.isInteger(index) && index >= 0 && index < mesh.vertexCount);
+  if (mesh.indices.some((index) => index < 0 || index >= mesh.vertexCount)) return false;
+  // UV/色是可选属性:存在时必须与顶点数严格对齐,值域由 reader 的 clampUnit 保证,这里复核有限性。
+  if (mesh.uvs !== undefined) {
+    if (mesh.uvs.length !== mesh.vertexCount * 2) return false;
+    if (!Array.from(mesh.uvs).every(Number.isFinite)) return false;
+  }
+  if (mesh.colors !== undefined) {
+    if (mesh.colors.length !== mesh.vertexCount * 4) return false;
+    if (!Array.from(mesh.colors).every(Number.isFinite)) return false;
+  }
+  return true;
 }
 
 function isValidInstance(instance: JtMeshInstance): boolean {
@@ -151,7 +172,7 @@ function summarize(
   meshes: readonly JtMesh[],
   instances: readonly JtMeshInstance[],
   primitiveCount: number,
-): JtGlbConversionResult {
+): Omit<JtGlbConversionResult, "decodedAttributes"> {
   const minimum: [number, number, number] = [Infinity, Infinity, Infinity];
   const maximum: [number, number, number] = [-Infinity, -Infinity, -Infinity];
   const meshById = new Map(meshes.map((mesh) => [mesh.id, mesh]));

@@ -24,6 +24,31 @@ interface Quantizer {
   bits: number;
 }
 
+/** 顶点记录的属性绑定掩码(voyager 参考实现 TopologicallyCompressedVertexRecordsRecord 同一语义)。 */
+const NORMAL_BINDING_BIT = 1n << 3n;
+const COLOR_BINDING_BITS = (1n << 4n) | (1n << 5n);
+const FLAG_BINDING_BIT = 1n << 6n;
+const AUX_BINDING_BIT = 1n << 7n;
+const TEXCOORD_BINDING_MASK = 0xffffff00n; // bits 8..39,每 4 位一个纹理集
+
+interface VertexAttributeBindings {
+  normal: boolean;
+  color: boolean;
+  flag: boolean;
+  aux: boolean;
+  textureCoordinates: boolean;
+}
+
+function parseVertexAttributeBindings(bindings: bigint): VertexAttributeBindings {
+  return {
+    normal: (bindings & NORMAL_BINDING_BIT) !== 0n,
+    color: (bindings & COLOR_BINDING_BITS) !== 0n,
+    flag: (bindings & FLAG_BINDING_BIT) !== 0n,
+    aux: (bindings & AUX_BINDING_BIT) !== 0n,
+    textureCoordinates: (bindings & TEXCOORD_BINDING_MASK) !== 0n,
+  };
+}
+
 function calculateTopologyHash(
   lanes: readonly (readonly number[])[],
   largeMasks: readonly number[],
@@ -98,6 +123,119 @@ function decodeQuantizedComponent(codes: readonly number[], quantizer: Quantizer
   });
 }
 
+/**
+ * 无损(binary)标量分量:CDP 包中保存 IEEE-754 位型。
+ * JT 9.5 分离指数/尾数两包;JT 10 直接保存单包(均已被真实样本字节验证)。
+ */
+function decodeBinaryScalarPackets(
+  bytes: Uint8Array,
+  offset: number,
+  expectedCount: number,
+  packetCount: number,
+  majorVersion: number,
+): { words: number[][]; offset: number } {
+  const words: number[][] = [];
+  let cursor = offset;
+  for (let packet = 0; packet < packetCount; packet += 1) {
+    const result = readPacket(bytes, cursor, "lag1", majorVersion);
+    if (result.values.length !== expectedCount) {
+      throw new JtFormatError("JT 无损属性压缩包长度与声明数量不一致");
+    }
+    words.push(result.values);
+    cursor = result.offset;
+  }
+  return { words, offset: cursor };
+}
+
+interface ScalarArrayHeader {
+  count: number;
+  componentCount: number;
+  quantizationBits: number;
+}
+
+function parseScalarArrayHeader(reader: BinaryReader, offset: number, label: string): ScalarArrayHeader {
+  const count = assertIntegerCount(reader.i32(offset, `${label}数量`), MAX_MESH_VERTICES * 4, `${label}数量`);
+  const componentCount = reader.u8(offset + 4, `${label}分量数`);
+  const quantizationBits = reader.u8(offset + 5, `${label}量化位数`);
+  if (componentCount < 1 || componentCount > 4) throw new JtFormatError(`JT ${label}分量数量 ${componentCount} 无效`);
+  if (quantizationBits > 24) throw new JtFormatError(`JT ${label}量化位数 ${quantizationBits} 无效`);
+  return { count, componentCount, quantizationBits };
+}
+
+/**
+ * 通用标量属性数组读取器:数量/分量/量化头 + 各分量的 Int32CDP 包 + U32 哈希。
+ * 支持三种已验证的存储形态:
+ *  - 量化(bits>0):每分量 1 包 + 每分量 9 字节均匀量化器(颜色另有 HSV 变体,见下)
+ *  - 无损(bits=0, JT10):每分量 1 包,IEEE-754 位型
+ *  - 无损(bits=0, JT9):每分量 2 包(指数/尾数分离)
+ * 返回的 values 以分量优先(component-major)平铺。
+ */
+function decodeScalarAttributeArray(
+  bytes: Uint8Array,
+  reader: BinaryReader,
+  offset: number,
+  label: string,
+  majorVersion: number,
+  quantizerCountOverride?: number,
+): { components: number[][]; offset: number } {
+  const header = parseScalarArrayHeader(reader, offset, label);
+  let cursor = offset + 6;
+  const components: number[][] = [];
+  if (header.quantizationBits === 0) {
+    const packetsPerComponent = majorVersion >= 10 ? 1 : 2;
+    for (let component = 0; component < header.componentCount; component += 1) {
+      const binary = decodeBinaryScalarPackets(bytes, cursor, header.count, packetsPerComponent, majorVersion);
+      cursor = binary.offset;
+      const values = header.count === 0 ? [] : binary.words[0]!.map((firstWord, index) => {
+        // JT 9.5 分离指数与尾数;JT 10 直接是 IEEE-754 位型(与坐标无损路径同一语义)。
+        const bits = majorVersion >= 10
+          ? firstWord >>> 0
+          : ((firstWord << 23) | binary.words[1]![index]!) >>> 0;
+        const view = new DataView(new ArrayBuffer(4));
+        view.setUint32(0, bits, true);
+        const value = view.getFloat32(0, true);
+        if (!Number.isFinite(value)) throw new JtFormatError(`JT ${label}包含非有限数值`);
+        return value;
+      });
+      components.push(values);
+    }
+  } else {
+    const quantizerCount = quantizerCountOverride ?? header.componentCount;
+    const quantizers: Quantizer[] = [];
+    for (let index = 0; index < quantizerCount; index += 1) {
+      quantizers.push(parseQuantizer(reader, cursor + index * 9));
+    }
+    cursor += quantizerCount * 9;
+    for (let component = 0; component < header.componentCount; component += 1) {
+      const packet = readPacket(bytes, cursor, "lag1", majorVersion);
+      if (packet.values.length !== header.count) {
+        throw new JtFormatError(`JT ${label}量化包长度与声明数量不一致`);
+      }
+      components.push(decodeQuantizedComponent(packet.values, quantizers[component]!));
+      cursor = packet.offset;
+    }
+  }
+  const storedHash = reader.u32(cursor, `${label}哈希`);
+  const calculatedHash = components.reduce(
+    (hash, component) => jtHash32(component.map((value) => {
+      const view = new DataView(new ArrayBuffer(4));
+      view.setFloat32(0, value, true);
+      return view.getUint32(0, true);
+    }), hash),
+    0,
+  );
+  if (calculatedHash !== storedHash) throw new JtFormatError(`JT ${label}哈希校验失败`);
+  return { components, offset: cursor + 4 };
+}
+
+/** HSV 量化颜色:Hue/Sat/Value/Alpha 各自独立位宽,值域固定,这里仅推进游标并显式声明不支持。 */
+function assertNotHsvColorQuantizer(reader: BinaryReader, offset: number): void {
+  const hsvFlag = reader.u8(offset, "颜色量化 HSV 标记");
+  if (hsvFlag === 1) {
+    throw new JtFormatError("暂不支持 HSV 量化顶点色,仅支持 RGBA 均匀量化");
+  }
+}
+
 function decodeCoordinates(
   bytes: Uint8Array,
   reader: BinaryReader,
@@ -169,6 +307,113 @@ function decodeCoordinates(
   return { positions, offset: cursor };
 }
 
+/** 法线记录:仅推进游标并校验哈希,法线值本身由转换器按三角重新计算,不在此消费。 */
+function skipNormalArray(
+  bytes: Uint8Array,
+  reader: BinaryReader,
+  offset: number,
+  majorVersion: number,
+): number {
+  const header = parseScalarArrayHeader(reader, offset, "法线数量");
+  let cursor = offset + 6;
+  if (header.quantizationBits === 0) {
+    const packetsPerComponent = majorVersion >= 10 ? 1 : 2;
+    for (let component = 0; component < header.componentCount; component += 1) {
+      cursor = decodeBinaryScalarPackets(bytes, cursor, header.count, packetsPerComponent, majorVersion).offset;
+    }
+  } else {
+    // JT10 的 Deering 球面量化把三个法线分量打包在一个 CDP 里(真实样本 type=8/9 验证)。
+    const packetCount = majorVersion >= 10 ? 1 : header.componentCount * 2;
+    for (let packet = 0; packet < packetCount; packet += 1) {
+      const result = readPacket(bytes, cursor, "lag1", majorVersion);
+      if (result.values.length !== header.count) {
+        throw new JtFormatError("JT 法线压缩包长度与声明数量不一致");
+      }
+      cursor = result.offset;
+    }
+  }
+  reader.u32(cursor, "法线哈希");
+  return cursor + 4;
+}
+
+/** RGBA 顶点色:量化(4×9B 均匀量化器)或无损两种形态,线性化到 0..1 并展开为 RGBA 平铺。 */
+function decodeColorArray(
+  bytes: Uint8Array,
+  reader: BinaryReader,
+  offset: number,
+  majorVersion: number,
+  vertexCount: number,
+): { colors: Float32Array; offset: number } {
+  // HSV 量化形态的标记在数组头之后、量化器区之前;先于解码显式拒绝,避免把 HSV 字节当 RGBA 读。
+  const headerBits = reader.u8(offset + 5, "颜色量化位数");
+  if (headerBits > 0) assertNotHsvColorQuantizer(reader, offset + 6);
+  const decoded = decodeScalarAttributeArray(bytes, reader, offset, "顶点色", majorVersion);
+  const { components, offset: cursor } = decoded;
+  if (components.length !== 4) throw new JtFormatError(`JT 顶点色分量数量必须为 4,实际为 ${components.length}`);
+  for (const component of components) {
+    if (component.length !== vertexCount) {
+      throw new JtFormatError(`JT 顶点色条数 ${component.length} 与顶点数 ${vertexCount} 不一致`);
+    }
+  }
+  const colors = new Float32Array(vertexCount * 4);
+  for (let vertex = 0; vertex < vertexCount; vertex += 1) {
+    for (let component = 0; component < 4; component += 1) {
+      colors[vertex * 4 + component] = clampUnit(components[component]![vertex]!);
+    }
+  }
+  return { colors, offset: cursor };
+}
+
+/** 纹理坐标:量化(comps×9B 均匀量化器)或无损,反解后截入 0..1 并展开为 UV 平铺。 */
+function decodeTextureCoordinateArray(
+  bytes: Uint8Array,
+  reader: BinaryReader,
+  offset: number,
+  majorVersion: number,
+  vertexCount: number,
+): { uvs: Float32Array; offset: number } {
+  const decoded = decodeScalarAttributeArray(bytes, reader, offset, "纹理坐标", majorVersion);
+  const { components, offset: cursor } = decoded;
+  if (components.length !== 2) throw new JtFormatError(`JT 纹理坐标分量数量必须为 2,实际为 ${components.length}`);
+  for (const component of components) {
+    if (component.length !== vertexCount) {
+      throw new JtFormatError(`JT 纹理坐标条数 ${component.length} 与顶点数 ${vertexCount} 不一致`);
+    }
+  }
+  const uvs = new Float32Array(vertexCount * 2);
+  for (let vertex = 0; vertex < vertexCount; vertex += 1) {
+    for (let component = 0; component < 2; component += 1) {
+      uvs[vertex * 2 + component] = clampUnit(components[component]![vertex]!);
+    }
+  }
+  return { uvs, offset: cursor };
+}
+
+/** 顶点旗标(JT10:前导 I32 数量 + 单个 CDP;真实样本 type=7/8/9 验证)。仅推进游标。 */
+function skipFlagArray(
+  bytes: Uint8Array,
+  reader: BinaryReader,
+  offset: number,
+  majorVersion: number,
+): number {
+  if (majorVersion >= 10) {
+    const count = assertIntegerCount(reader.i32(offset, "顶点旗标数量"), MAX_MESH_VERTICES, "顶点旗标数量");
+    const packet = readPacket(bytes, offset + 4, "none", majorVersion);
+    if (packet.values.length !== count) {
+      throw new JtFormatError("JT 顶点旗标包长度与声明数量不一致");
+    }
+    return packet.offset;
+  }
+  const packet = readPacket(bytes, offset, "none", majorVersion);
+  assertIntegerCount(packet.values.length, MAX_MESH_VERTICES, "顶点旗标数量");
+  return packet.offset;
+}
+
+function clampUnit(value: number): number {
+  if (!Number.isFinite(value)) throw new JtFormatError("JT 属性数值非有限");
+  return Math.min(1, Math.max(0, value));
+}
+
 function parseTopology(
   bytes: Uint8Array,
   reader: BinaryReader,
@@ -176,7 +421,15 @@ function parseTopology(
   expectedBindings: number,
   majorVersion: number,
   vertexRecordObjectId: number,
-): { indices: number[]; groups: number[]; positions: number[]; vertexRecordObjectId: number } {
+): {
+  indices: number[];
+  groups: number[];
+  positions: number[];
+  vertexRecordObjectId: number;
+  uvs?: Float32Array | undefined;
+  colors?: Float32Array | undefined;
+  unsupportedAttributeBindings: string[];
+} {
   let cursor = offset;
   const lanes: number[][] = [];
   for (let index = 0; index < TOPOLOGY_PACKET_COUNT; index += 1) {
@@ -211,8 +464,8 @@ function parseTopology(
     majorVersion,
   );
   if (calculatedTopologyHash !== storedTopologyHash) throw new JtFormatError("JT 拓扑复合哈希校验失败");
-  const bindings = reader.u64Number(cursor + 4, "顶点绑定");
-  if (bindings !== expectedBindings) throw new JtFormatError("JT 外层与顶点记录的绑定标记不一致");
+  const bindingsMask = reader.u64Number(cursor + 4, "顶点绑定");
+  if (bindingsMask !== expectedBindings) throw new JtFormatError("JT 外层与顶点记录的绑定标记不一致");
   const quantization = Array.from({ length: 4 }, (_, index) => reader.u8(cursor + 12 + index, "量化参数"));
   if (quantization[0]! > 24 || quantization[1]! > 13 || quantization[2]! > 24 || quantization[3]! > 24) {
     throw new JtFormatError("JT 顶点量化参数越界");
@@ -245,6 +498,38 @@ function parseTopology(
   if (observedAttributeCount !== attributeCount) throw new JtFormatError("JT 拓扑属性数量与顶点记录头不一致");
 
   const coordinates = decodeCoordinates(bytes, reader, cursor, topologyVertexCount, majorVersion);
+  cursor = coordinates.offset;
+
+  // 顶点记录按绑定掩码推进属性数组(顺序:法线 → 颜色 → 纹理坐标 → 旗标 → 附属字段;
+  // 与真实样本字节布局及 voyager 参考实现一致)。不支持/未声明的形态如实进入 unsupported 列表。
+  const bindings = parseVertexAttributeBindings(BigInt(bindingsMask));
+  const uvs: Float32Array | undefined = undefined;
+  let colors: Float32Array | undefined;
+  let textureCoordinates: Float32Array | undefined;
+  const unsupportedAttributeBindings: string[] = [];
+  if (bindings.normal) {
+    cursor = skipNormalArray(bytes, reader, cursor, majorVersion);
+  }
+  if (bindings.color) {
+    const decoded = decodeColorArray(bytes, reader, cursor, majorVersion, topologyVertexCount);
+    colors = decoded.colors;
+    cursor = decoded.offset;
+  }
+  if (bindings.textureCoordinates) {
+    const decoded = decodeTextureCoordinateArray(bytes, reader, cursor, majorVersion, topologyVertexCount);
+    textureCoordinates = decoded.uvs;
+    cursor = decoded.offset;
+  }
+  if (bindings.flag) {
+    cursor = skipFlagArray(bytes, reader, cursor, majorVersion);
+  }
+  if (bindings.aux) {
+    // 附属字段(每字段 GUID/类型/量化/64 位 LSW-MSW 结构)尚未实现;此处无游标推进依据,
+    // 真实遇到时顶点记录长度将失配,故显式报错并转上层 loss,而不是静默猜测。
+    unsupportedAttributeBindings.push("vertex.auxiliary-fields");
+    throw new JtFormatError("暂不支持 JT 附属字段(auxiliary fields)顶点属性,已转为保真损失上报");
+  }
+
   const indices = polygons.flatMap((polygon) => {
     if (polygon.vertexIndices.length < 3) throw new JtFormatError("JT 多边形少于三个顶点");
     const triangles: number[] = [];
@@ -254,7 +539,15 @@ function parseTopology(
     return triangles;
   });
   if (indices.some((index) => index < 0 || index >= topologyVertexCount)) throw new JtFormatError("JT 网格索引越界");
-  return { indices, groups: polygons.map((polygon) => polygon.group), positions: coordinates.positions, vertexRecordObjectId };
+  return {
+    indices,
+    groups: polygons.map((polygon) => polygon.group),
+    positions: coordinates.positions,
+    vertexRecordObjectId,
+    uvs: textureCoordinates,
+    colors,
+    unsupportedAttributeBindings,
+  };
 }
 
 export function decodeTriStripShapeLod(
@@ -314,6 +607,9 @@ export function decodeTriStripShapeLod(
     sceneNodeObjectIds: [],
     vertexCount: topology.positions.length / 3,
     triangleCount: topology.indices.length / 3,
+    ...(topology.uvs ? { uvs: topology.uvs } : {}),
+    ...(topology.colors ? { colors: topology.colors } : {}),
+    unsupportedAttributeBindings: topology.unsupportedAttributeBindings,
   };
 }
 

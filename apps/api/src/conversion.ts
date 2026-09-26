@@ -545,7 +545,7 @@ class JtStructureProvider implements ConversionProvider {
     };
     await writeManifest(modelDir, manifest);
     await this.objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
-    // 质量声明基于已发布产物；JT 的法线在转换时计算，损失只列真实缺失的 UV 与顶点色。
+    // 质量声明基于已发布产物;UV/顶点色按转换器实测的解码情况动态出入损失与近似清单。
     reportQuality?.(await buildJtLod0ReadyQuality({
       outputDir,
       meshCount: result.meshCount,
@@ -553,6 +553,7 @@ class JtStructureProvider implements ConversionProvider {
       instanceCount: result.instanceCount,
       tocEntryCount: inspection.toc.entryCount,
       assemblyNodeCount: inspection.assembly.nodeCount,
+      decodedAttributes: result.decodedAttributes,
     }));
     await this.store.updateModel(model.projectId, model.id, {
       status: "ready",

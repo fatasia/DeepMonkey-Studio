@@ -10,7 +10,12 @@ async function execute(request: BuiltinJtRequest) {
     const value: BuiltinJtResult = {
       inspection: { header: { majorVersion: inspection.header.majorVersion, minorVersion: inspection.header.minorVersion },
         toc: { entryCount: inspection.toc.entryCount }, assembly: { nodeCount: inspection.assembly.nodeCount } },
-      ...(converted ? { result: { meshCount: converted.meshCount, instanceCount: converted.instanceCount, triangleCount: converted.triangleCount } } : {}),
+      ...(converted ? {
+        result: {
+          meshCount: converted.meshCount, instanceCount: converted.instanceCount, triangleCount: converted.triangleCount,
+          decodedAttributes: converted.decodedAttributes,
+        },
+      } : {}),
     };
     reply({ type: "result", value });
   } catch (error) {

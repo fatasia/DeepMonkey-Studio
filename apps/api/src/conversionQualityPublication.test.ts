@@ -112,6 +112,7 @@ describe("builtin conversion quality drafts and catalog runtime facts", () => {
   it("publishes an honest JT LOD0 draft without claiming losses that do not exist", async () => {
     const { dir, cleanup } = await withOutputFiles();
     try {
+      // 真实样本未携带 UV/Color binding:decodedAttributes 缺省时草稿必须保留两项损失。
       const draft = await buildJtLod0ReadyQuality({
         outputDir: dir, meshCount: 3, triangleCount: 456, instanceCount: 7, tocEntryCount: 12, assemblyNodeCount: 34,
       });
@@ -120,8 +121,45 @@ describe("builtin conversion quality drafts and catalog runtime facts", () => {
       expect(report.profileId).toBe("builtin-jt-lod0-visual-complete");
       // 法线在转换时计算；缺的只有 UV 与顶点色，不得虚构 normals 损失。
       expect(report.losses).toEqual(["geometry.uv", "vertex.colors"]);
+      expect(report.approximations).not.toContain("geometry.uv:quantized-reconstruction");
       expect(report.metrics?.instanceCount).toBe(7);
       expect(report.metrics?.entityCounts).toEqual({ tocSegments: 12, assemblyNodes: 34 });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("narrows JT LOD0 losses when the converter decoded UV and vertex colors", async () => {
+    const { dir, cleanup } = await withOutputFiles();
+    try {
+      const draft = await buildJtLod0ReadyQuality({
+        outputDir: dir, meshCount: 3, triangleCount: 456, instanceCount: 7, tocEntryCount: 12, assemblyNodeCount: 34,
+        decodedAttributes: { uvs: true, colors: true },
+      });
+      const report: ConversionQualityReport = { ...draft, sourceHash: sha };
+      expect(() => assertConversionQualityReport(report)).not.toThrow();
+      // 解码成功:对应损失移除,改为量化重建近似项;仍然不存在 normals 损失。
+      expect(report.losses).toEqual([]);
+      expect(report.approximations).toEqual(expect.arrayContaining([
+        "geometry.normals:computed-vertex-normals",
+        "geometry.uv:quantized-reconstruction",
+        "vertex.colors:quantized-reconstruction",
+      ]));
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("keeps the JT loss when only UV decoded but vertex colors remain missing", async () => {
+    const { dir, cleanup } = await withOutputFiles();
+    try {
+      const draft = await buildJtLod0ReadyQuality({
+        outputDir: dir, meshCount: 1, triangleCount: 12, instanceCount: 1, tocEntryCount: 9, assemblyNodeCount: 11,
+        decodedAttributes: { uvs: true, colors: false },
+      });
+      expect(draft.losses).toEqual(["vertex.colors"]);
+      expect(draft.approximations).toContain("geometry.uv:quantized-reconstruction");
+      expect(draft.approximations).not.toContain("vertex.colors:quantized-reconstruction");
     } finally {
       await cleanup();
     }

@@ -73,13 +73,27 @@ export interface JtLod0QualityInput {
   instanceCount: number;
   tocEntryCount: number;
   assemblyNodeCount: number;
+  /** 转换器实测的顶点属性解码情况;UV/色成功解码时移除对应损失并计入近似项。 */
+  decodedAttributes?: { uvs?: boolean | undefined; colors?: boolean | undefined } | undefined;
 }
 
 /**
- * JT LOD0 的 ready 质量草稿。法线由转换器计算写入 GLB，因此损失只列真实缺失的
- * UV 与顶点色；装配结构以 hierarchy.json 证据发布。
+ * JT LOD0 的 ready 质量草稿。法线由转换器计算写入 GLB;UV 与顶点色自源顶点记录解码,
+ * 成功时对应损失从清单移除、以近似项标注(量化重建),未解码时如实保留损失,不虚构。
  */
 export async function buildJtLod0ReadyQuality(input: JtLod0QualityInput): Promise<ConversionQualityDraft> {
+  const uvsDecoded = input.decodedAttributes?.uvs === true;
+  const colorsDecoded = input.decodedAttributes?.colors === true;
+  const losses = [
+    ...(uvsDecoded ? [] : ["geometry.uv"]),
+    ...(colorsDecoded ? [] : ["vertex.colors"]),
+  ];
+  const approximations = [
+    "geometry.normals:computed-vertex-normals",
+    "materials:resolved-from-jt-attributes-with-fallback",
+    ...(uvsDecoded ? ["geometry.uv:quantized-reconstruction"] : []),
+    ...(colorsDecoded ? ["vertex.colors:quantized-reconstruction"] : []),
+  ];
   return {
     schemaVersion: 1,
     profileId: "builtin-jt-lod0-visual-complete",
@@ -91,11 +105,8 @@ export async function buildJtLod0ReadyQuality(input: JtLod0QualityInput): Promis
       coordinates: path.join(input.outputDir, "inspection.json"),
       dependencies: path.join(input.outputDir, "geometry.glb"),
     }),
-    losses: ["geometry.uv", "vertex.colors"],
-    approximations: [
-      "geometry.normals:computed-vertex-normals",
-      "materials:resolved-from-jt-attributes-with-fallback",
-    ],
+    losses,
+    approximations,
     metrics: {
       engine: "builtin-jt-worker",
       workerVersion: "1.0.0",
