@@ -94,6 +94,26 @@ describe.skipIf(!existsSync(fixturePath) || !existsSync(assemblyFixturePath))("J
       materials: expect.arrayContaining([expect.objectContaining({ objectId: 8 })]),
       geometry: { status: "decoded", meshCount: 3, lod0MeshCount: 1, lod0InstanceCount: 1, vertexCount: 8, triangleCount: 12 },
     });
+    // 真实 10.3 样本含 PMI 数据段(type 3):format-probe 必须给出结构级清单节。
+    const probeJson = inspectionResponse.json() as { pmi?: { segmentCount: number; entityCount: number; structureOnly: boolean; types: Array<{ type: string; count: number }>; segments: Array<{ segmentId: string; managerCount: number; structureVersion: number; modelViewNames: string[] }> } };
+    expect(probeJson.pmi).toMatchObject({
+      segmentCount: 1,
+      entityCount: 9 + 8 + 72,
+      structureOnly: true,
+      types: [
+        { type: "association", count: 9 },
+        { type: "modelView", count: 8 },
+        { type: "view-property", count: 72 },
+      ],
+    });
+    expect(probeJson.pmi!.segments[0]).toMatchObject({
+      segmentId: "a5bbafb9-bd6b-11e9-8000-d86f480d14fb",
+      managerCount: 1,
+      structureVersion: 0,
+    });
+    expect(probeJson.pmi!.segments[0].modelViewNames).toEqual([
+      '"Top"', '"Front"', '"Right"', '"Back"', '"Bottom"', '"Left"', '"Isometric"', '"Trimetric"',
+    ]);
     await app.close();
   });
 

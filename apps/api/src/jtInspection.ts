@@ -6,6 +6,7 @@ import {
   type JtDocument,
   type JtMesh,
   type JtMeshInstance,
+  type JtPmiInfo,
   type JtPropertyValue,
   type JtSceneNode,
 } from "@bim-studio/jt-reader";
@@ -50,6 +51,8 @@ export interface JtInspectionResult {
     availableLods: number[];
     reason: string;
   };
+  /** PMI 数据段结构级清单(有 PMI 段且解析成功时存在;无则省略,不占位)。 */
+  pmi?: JtPmiInfo;
   unknownElementTypeIds: string[];
   warnings: string[];
 }
@@ -105,6 +108,7 @@ export function inspectJtDocument(document: JtDocument): JtInspectionResult {
       reason: geometryReason,
     },
     unknownElementTypeIds: document.sceneGraph.unknownElementTypeIds,
+    ...(document.pmi ? { pmi: document.pmi } : {}),
     warnings: document.warnings,
   };
 }

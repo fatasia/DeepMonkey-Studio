@@ -117,14 +117,17 @@ export const MODEL_FORMAT_CAPABILITY_CATALOG: readonly ModelFormatCapability[] =
         profileId: "builtin-jt-lod0-visual-complete",
         qualityTier: "visual-complete",
         // 运行时按转换器实测动态收窄:源网格携带 UV/Color attribute 并解码成功时,
-        // 对应损失移除、计入近似项(geometry.uv:quantized-reconstruction 等)。
-        // 仓内两个真实样本均无 UV/Color binding,静态事实保留这两项损失。
+        // 对应损失移除、计入近似项(geometry.uv:quantized-reconstruction 等);
+        // 源含 PMI 数据段(type 3)时计入近似项 pmi:structure-only(结构级清单,语义未解析)。
+        // 仓内真实样本:jt-10.3 含 PMI 段;两个样本均无 UV/Color binding,静态事实保留这两项损失。
         losses: ["geometry.uv", "vertex.colors"],
         notes: [
-          "engine:builtin-jt-worker(container+toc+lsg+lod0-tristrip+topomesh)",
-          "coverage:lod0-triangle-mesh+assembly-instances+material-resolution+vertex-uv-color-decoding",
+          "engine:builtin-jt-worker(container+toc+lsg+lod0-tristrip+topomesh+pmi-structure)",
+          "coverage:lod0-triangle-mesh+assembly-instances+material-resolution+vertex-uv-color-decoding+pmi-structure-inventory",
           "normals:computed-vertex-normals",
           "uv-color:decoded-when-source-bindings-exist;sample-fixtures-have-none(0xa/0x4a)",
+          "texture-sets:multi-set-decoding(bit8-39);glb-export-up-to-4-texcoord;material-to-set-linkage-unresolved",
+          "pmi:structure-only(segment-type-3-manager:associations+model-views+string-table;semantic-annotations-not-parsed)",
           "samples:jt-9.5+jt-10.3"
         ]
       },

@@ -9,7 +9,8 @@ async function execute(request: BuiltinJtRequest) {
     const converted = await convertJtLod0ToGlb(document, request.outputDir, request.sourceName, inspection.materials);
     const value: BuiltinJtResult = {
       inspection: { header: { majorVersion: inspection.header.majorVersion, minorVersion: inspection.header.minorVersion },
-        toc: { entryCount: inspection.toc.entryCount }, assembly: { nodeCount: inspection.assembly.nodeCount } },
+        toc: { entryCount: inspection.toc.entryCount }, assembly: { nodeCount: inspection.assembly.nodeCount },
+        pmiPresent: inspection.pmi !== undefined },
       ...(converted ? {
         result: {
           meshCount: converted.meshCount, instanceCount: converted.instanceCount, triangleCount: converted.triangleCount,

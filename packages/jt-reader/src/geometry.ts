@@ -30,6 +30,7 @@ const COLOR_BINDING_BITS = (1n << 4n) | (1n << 5n);
 const FLAG_BINDING_BIT = 1n << 6n;
 const AUX_BINDING_BIT = 1n << 7n;
 const TEXCOORD_BINDING_MASK = 0xffffff00n; // bits 8..39,每 4 位一个纹理集
+const MAX_TEXTURE_SETS = 32;
 
 interface VertexAttributeBindings {
   normal: boolean;
@@ -37,15 +38,22 @@ interface VertexAttributeBindings {
   flag: boolean;
   aux: boolean;
   textureCoordinates: boolean;
+  /** 命中的纹理集编号(bit8 → 集 0,bit12 → 集 1,依此类推),按位序升序。 */
+  textureSetIndices: number[];
 }
 
 function parseVertexAttributeBindings(bindings: bigint): VertexAttributeBindings {
+  const textureSetIndices: number[] = [];
+  for (let set = 0; set < MAX_TEXTURE_SETS; set += 1) {
+    if ((bindings >> BigInt(8 + set * 4)) & 0xfn) textureSetIndices.push(set);
+  }
   return {
     normal: (bindings & NORMAL_BINDING_BIT) !== 0n,
     color: (bindings & COLOR_BINDING_BITS) !== 0n,
     flag: (bindings & FLAG_BINDING_BIT) !== 0n,
     aux: (bindings & AUX_BINDING_BIT) !== 0n,
     textureCoordinates: (bindings & TEXCOORD_BINDING_MASK) !== 0n,
+    textureSetIndices,
   };
 }
 
@@ -427,6 +435,7 @@ function parseTopology(
   positions: number[];
   vertexRecordObjectId: number;
   uvs?: Float32Array | undefined;
+  textureSets?: { textureSetIndex: number; uvs: Float32Array }[] | undefined;
   colors?: Float32Array | undefined;
   unsupportedAttributeBindings: string[];
 } {
@@ -500,12 +509,11 @@ function parseTopology(
   const coordinates = decodeCoordinates(bytes, reader, cursor, topologyVertexCount, majorVersion);
   cursor = coordinates.offset;
 
-  // 顶点记录按绑定掩码推进属性数组(顺序:法线 → 颜色 → 纹理坐标 → 旗标 → 附属字段;
+  // 顶点记录按绑定掩码推进属性数组(顺序:法线 → 颜色 → 纹理坐标(逐纹理集,位序) → 旗标 → 附属字段;
   // 与真实样本字节布局及 voyager 参考实现一致)。不支持/未声明的形态如实进入 unsupported 列表。
   const bindings = parseVertexAttributeBindings(BigInt(bindingsMask));
-  const uvs: Float32Array | undefined = undefined;
+  const textureSets: { textureSetIndex: number; uvs: Float32Array }[] = [];
   let colors: Float32Array | undefined;
-  let textureCoordinates: Float32Array | undefined;
   const unsupportedAttributeBindings: string[] = [];
   if (bindings.normal) {
     cursor = skipNormalArray(bytes, reader, cursor, majorVersion);
@@ -515,9 +523,11 @@ function parseTopology(
     colors = decoded.colors;
     cursor = decoded.offset;
   }
-  if (bindings.textureCoordinates) {
+  // 每个命中位对应一条 Compressed Vertex Texture Coordinate Array,物理顺序 = 集合位序;
+  //voyager 参考实现按掩码位序逐条推进,单集路径是本循环的退化形态(真实样本已验证)。
+  for (const textureSetIndex of bindings.textureSetIndices) {
     const decoded = decodeTextureCoordinateArray(bytes, reader, cursor, majorVersion, topologyVertexCount);
-    textureCoordinates = decoded.uvs;
+    textureSets.push({ textureSetIndex, uvs: decoded.uvs });
     cursor = decoded.offset;
   }
   if (bindings.flag) {
@@ -539,12 +549,15 @@ function parseTopology(
     return triangles;
   });
   if (indices.some((index) => index < 0 || index >= topologyVertexCount)) throw new JtFormatError("JT 网格索引越界");
+  // 单纹理集时不重复存储 textureSets(uvs 已覆盖);多集时 uvs 别名集 0,缺席时别名首个可用集。
+  const primaryUvs = textureSets.find((set) => set.textureSetIndex === 0)?.uvs ?? textureSets[0]?.uvs;
   return {
     indices,
     groups: polygons.map((polygon) => polygon.group),
     positions: coordinates.positions,
     vertexRecordObjectId,
-    uvs: textureCoordinates,
+    uvs: primaryUvs,
+    textureSets: textureSets.length > 1 ? textureSets : undefined,
     colors,
     unsupportedAttributeBindings,
   };
@@ -608,6 +621,7 @@ export function decodeTriStripShapeLod(
     vertexCount: topology.positions.length / 3,
     triangleCount: topology.indices.length / 3,
     ...(topology.uvs ? { uvs: topology.uvs } : {}),
+    ...(topology.textureSets ? { textureSets: topology.textureSets } : {}),
     ...(topology.colors ? { colors: topology.colors } : {}),
     unsupportedAttributeBindings: topology.unsupportedAttributeBindings,
   };

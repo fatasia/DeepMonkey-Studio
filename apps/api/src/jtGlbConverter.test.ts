@@ -82,7 +82,7 @@ describe.skipIf(!existsSync(fixturePath))("JT multi-mesh GLB adapter [skipped: e
     expect(hierarchy.root.meshIds).toHaveLength(64);
     // 真实样本无 UV/Color binding(字节证据见 packages/jt-reader/src/index.test.ts):
     // 转换器必须如实上报未解码,且 GLB 中不出现这两个 accessor。
-    expect(result?.decodedAttributes).toEqual({ uvs: false, colors: false });
+    expect(result?.decodedAttributes).toEqual({ uvs: false, colors: false, textureSetCount: 0 });
     const allPrimitives = meshNodes.flatMap((node) => node.getMesh()!.listPrimitives());
     expect(allPrimitives.some((primitive) => primitive.getAttribute("TEXCOORD_0") !== null)).toBe(false);
     expect(allPrimitives.some((primitive) => primitive.getAttribute("COLOR_0") !== null)).toBe(false);
@@ -104,7 +104,7 @@ describe.skipIf(!existsSync(exampleBlockFixturePath))("JT synthetic UV/color GLB
       "synthetic.jt",
       artifacts.inspection.materials,
     );
-    expect(result?.decodedAttributes).toEqual({ uvs: true, colors: true });
+    expect(result?.decodedAttributes).toEqual({ uvs: true, colors: true, textureSetCount: 1 });
 
     const glb = await new NodeIO().read(path.join(outputDir, "geometry.glb"));
     const primitives = glb.getRoot().listMeshes().flatMap((mesh) => mesh.listPrimitives());
@@ -119,6 +119,47 @@ describe.skipIf(!existsSync(exampleBlockFixturePath))("JT synthetic UV/color GLB
       // 量化反解后全部落在 [0,1]
       for (const value of uvs!.getArray() as Float32Array) expect(value).toBeGreaterThanOrEqual(0), expect(value).toBeLessThanOrEqual(1);
       for (const value of colors!.getArray() as Float32Array) expect(value).toBeGreaterThanOrEqual(0), expect(value).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
+describe.skipIf(!existsSync(exampleBlockFixturePath))("JT dual texture-set GLB adapter [skipped: external fixture pack unavailable]", () => {
+  it("exports TEXCOORD_0..1 for dual texture sets with mesh extras and linkage loss evidence", async () => {
+    const { synthesizeDualTextureSetJt } = await import("@bim-studio/jt-reader/testing");
+    const source = await readFile(exampleBlockFixturePath);
+    const syntheticPath = path.join(await mkdtemp(path.join(tmpdir(), "bim-jt-dual-")), "dual.jt");
+    await writeFile(syntheticPath, synthesizeDualTextureSetJt(new Uint8Array(source)));
+    const outputDir = await mkdtemp(path.join(tmpdir(), "bim-jt-dual-glb-"));
+    directories.push(outputDir);
+    const artifacts = await writeJtInspectionArtifacts(syntheticPath, outputDir);
+    const result = await convertJtLod0ToGlb(
+      artifacts.document,
+      outputDir,
+      "dual.jt",
+      artifacts.inspection.materials,
+    );
+    expect(result?.decodedAttributes).toEqual({ uvs: true, colors: false, textureSetCount: 2 });
+
+    const glb = await new NodeIO().read(path.join(outputDir, "geometry.glb"));
+    const primitives = glb.getRoot().listMeshes().flatMap((mesh) => mesh.listPrimitives());
+    expect(primitives.length).toBeGreaterThan(0);
+    for (const primitive of primitives) {
+      expect(primitive.getAttribute("TEXCOORD_0")).toBeDefined();
+      expect(primitive.getAttribute("TEXCOORD_1")).toBeDefined();
+      // 上限外无第三套;COLOR 未解码不得出现。
+      expect(primitive.getAttribute("TEXCOORD_2")).toBeNull();
+      expect(primitive.getAttribute("COLOR_0")).toBeNull();
+      const extras = primitive.getExtras() as { TextureSetCount?: number; TextureSetIndices?: number[] };
+      expect(extras.TextureSetCount).toBe(2);
+      expect(extras.TextureSetIndices).toEqual([0, 1]);
+    }
+    // 两套集合的 UV 必须是不同 accessor(不混流)且逐顶点互补。
+    const first = primitives[0]!;
+    const u0 = first.getAttribute("TEXCOORD_0")!.getArray() as Float32Array;
+    const u1 = first.getAttribute("TEXCOORD_1")!.getArray() as Float32Array;
+    expect(u0.length).toBe(u1.length);
+    for (let index = 0; index < u0.length; index += 2) {
+      expect(u0[index]! + u1[index]!).toBeCloseTo(1, 4);
     }
   });
 });

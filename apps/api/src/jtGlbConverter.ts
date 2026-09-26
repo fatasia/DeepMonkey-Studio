@@ -17,8 +17,16 @@ export interface JtGlbConversionResult {
   triangleCount: number;
   bounds: { min: [number, number, number]; max: [number, number, number] };
   /** 哪些顶点属性至少在一个网格里成功解码并写入 GLB；质量草稿据此动态收窄损失清单。 */
-  decodedAttributes: { uvs: boolean; colors: boolean };
+  decodedAttributes: {
+    uvs: boolean;
+    colors: boolean;
+    /** 解码出的最大纹理集数量(GLB 上限写 4 套 TEXCOORD_N);无 UV 时为 0。 */
+    textureSetCount: number;
+  };
 }
+
+/** glTF 单图元可承载的纹理坐标集上限(TEXCOORD_0..3),超出部分不写入并如实上报。 */
+const MAX_GLTF_TEXTURE_SETS = 4;
 
 /** 将 reader 已验证的最高精度 LOD0 网格写入现有 glTF 浏览链。 */
 export async function convertJtLod0ToGlb(
@@ -50,16 +58,30 @@ export async function convertJtLod0ToGlb(
   // 属性解码证据:UV/色来自源文件的顶点记录,长度经 isValidMesh 校验后才允许写入 GLB。
   const decodedUvMeshes = meshes.filter((mesh) => mesh.uvs !== undefined);
   const decodedColorMeshes = meshes.filter((mesh) => mesh.colors !== undefined);
+  // 多纹理集网格:GLB 最多导出 4 套 TEXCOORD_N;JT 材质属性不携带"材质→纹理集"引用
+  // (LSG MaterialAttribute 仅有颜色/光泽/反射,Texture Image Attribute 与纹理集无确定映射),
+  // 因此导出全部可用集并如实标注 linkage 未解析,由上层在质量草稿中保留该损失。
+  const textureSetCount = Math.max(0, ...meshes.map((mesh) => mesh.textureSets?.length ?? (mesh.uvs ? 1 : 0)));
   meshes.forEach((mesh, index) => {
     const gltfMesh = gltf.createMesh(`JT 网格 ${index + 1}`);
+    const extraSets = (mesh.textureSets ?? [])
+      .filter((set) => set.textureSetIndex >= 1 && set.textureSetIndex < MAX_GLTF_TEXTURE_SETS)
+      .map((set) => ({ setIndex: set.textureSetIndex, uvs: set.uvs }));
+    const meshExtras: Record<string, unknown> = {};
+    if (textureSetCount > 0) {
+      meshExtras.TextureSetCount = textureSetCount;
+      meshExtras.TextureSetIndices = mesh.textureSets?.map((set) => set.textureSetIndex)
+        ?? (mesh.uvs ? [0] : []);
+    }
     for (const [groupId, indices] of triangleGroups(mesh)) {
       const primitive = createIndexedTrianglePrimitive(gltf, buffer, placeholder, {
         positions: mesh.positions,
         indices,
         normals: calculateVertexNormals(mesh.positions, indices),
         uvs: mesh.uvs,
+        additionalTextureSets: extraSets,
         colors: mesh.colors,
-      }).setExtras({ PolygonGroup: groupId });
+      }).setExtras({ PolygonGroup: groupId, ...meshExtras });
       gltfMesh.addPrimitive(primitive);
       primitiveCount += 1;
     }
@@ -111,7 +133,11 @@ export async function convertJtLod0ToGlb(
   return {
     ...summarize(meshes, instances, primitiveCount),
     // 属性证据必须逐项给出:没有任何网格解码出该属性时如实记 false,不向上层传 undefined。
-    decodedAttributes: { uvs: decodedUvMeshes.length > 0, colors: decodedColorMeshes.length > 0 },
+    decodedAttributes: {
+      uvs: decodedUvMeshes.length > 0,
+      colors: decodedColorMeshes.length > 0,
+      textureSetCount,
+    },
   };
 }
 
@@ -130,6 +156,14 @@ function isValidMesh(mesh: JtMesh): boolean {
   if (mesh.colors !== undefined) {
     if (mesh.colors.length !== mesh.vertexCount * 4) return false;
     if (!Array.from(mesh.colors).every(Number.isFinite)) return false;
+  }
+  if (mesh.textureSets !== undefined) {
+    if (mesh.textureSets.length < 2) return false;
+    for (const set of mesh.textureSets) {
+      if (!Number.isSafeInteger(set.textureSetIndex) || set.textureSetIndex < 0 || set.textureSetIndex > 31) return false;
+      if (set.uvs.length !== mesh.vertexCount * 2) return false;
+      if (!Array.from(set.uvs).every(Number.isFinite)) return false;
+    }
   }
   return true;
 }

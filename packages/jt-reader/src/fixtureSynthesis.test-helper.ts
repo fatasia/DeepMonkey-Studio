@@ -49,6 +49,12 @@ function quantizer(minimum: number, maximum: number, bits: number): Uint8Array {
   return out;
 }
 
+function i16le(value: number): Uint8Array {
+  const view = new DataView(new ArrayBuffer(2));
+  view.setInt16(0, value, true);
+  return new Uint8Array(view.buffer, 0, 2);
+}
+
 /** Null CODEC 的 Int32CDP:原始 I32 数组直排。 */
 function nullCdp(values: number[]): Uint8Array {
   // 读取端对包值应用 lag1 预测器(前 4 个原样、之后累加前值),写入端必须做逆差分,
@@ -85,11 +91,7 @@ export function synthesizeUvColorJt(source: Uint8Array): Uint8Array {
   // ---- 属性记录 ----
   const uvCodesU = Array.from({ length: 8 }, (_, index) => Math.round((index / 7) * 255));
   const uvCodesV = Array.from({ length: 8 }, (_, index) => 255 - Math.round((index / 7) * 255));
-  const uvRecord = concat([
-    u32le(8), Uint8Array.of(2, 8), quantizer(0, 1, 8), quantizer(0, 1, 8),
-    nullCdp(uvCodesU), nullCdp(uvCodesV),
-    u32le(attributeHash([uvCodesU.map((code) => code / 255), uvCodesV.map((code) => code / 255)])),
-  ]);
+  const uvRecord = textureCoordinateRecord(uvCodesU, uvCodesV);
   const colorR = [0, 32, 64, 96, 128, 160, 192, 255];
   const colorG = colorR.map((value) => 255 - value);
   const colorB = colorR.map((value) => (value / 2) | 0);
@@ -103,15 +105,62 @@ export function synthesizeUvColorJt(source: Uint8Array): Uint8Array {
   // 物理顺序必须与绑定掩码位序一致:颜色(bit4/5)在纹理坐标(bit8+)之前。
   const insert = concat([colorRecord, uvRecord]);
 
-  // ---- 字节手术 ----
+  const view = new DataView(source.buffer, source.byteOffset, source.byteLength);
+  const bindings = view.getBigUint64(segment.offset + 24 + LOD0_BINDINGS_PAYLOAD_OFFSET, true);
+  return spliceLod0Attributes(source, segment, insertOffset, insert, bindings | 0x30n | (0x1n << 8n));
+}
+
+/**
+ * 合成双纹理集(集 0 + 集 1)的 JT 10.3 fixture(测试辅助,不随包发布)。
+ *
+ * 与 synthesizeUvColorJt 同一字节手术路径,但 vertexBindings 同时翻转纹理集 0(bit8..11)
+ * 与纹理集 1(bit12..15),并按位序插入两条互为补偿的 Compressed Vertex Texture Coordinate Array:
+ *  - 集 0:u=i/7、v=1-i/7
+ *  - 集 1:u=1-i/7、v=i/7(与集 0 互补,用于断言解码器按集合分档而非混流)
+ */
+export function synthesizeDualTextureSetJt(source: Uint8Array): Uint8Array {
+  const container = parseJtContainer(source, DEFAULT_JT_READ_LIMITS);
+  const segment = container.segments.find((candidate) => candidate.type === 7);
+  if (!segment) throw new Error("合成 fixture 需要样本包含 LOD0 几何段");
+  const payloadStart = segment.offset + SEGMENT_HEADER_BYTES;
+  const insertOffset = payloadStart + LOD0_INSERTION_POINT;
+
+  const set0U = Array.from({ length: 8 }, (_, index) => Math.round((index / 7) * 255));
+  const set0V = set0U.map((value) => 255 - value);
+  const set1U = set0V;
+  const set1V = set0U;
+  const insert = concat([
+    textureCoordinateRecord(set0U, set0V),
+    textureCoordinateRecord(set1U, set1V),
+  ]);
+
+  const view = new DataView(source.buffer, source.byteOffset, source.byteLength);
+  const bindings = view.getBigUint64(segment.offset + 24 + LOD0_BINDINGS_PAYLOAD_OFFSET, true);
+  return spliceLod0Attributes(source, segment, insertOffset, insert, bindings | (0x1n << 8n) | (0x1n << 12n));
+}
+
+function textureCoordinateRecord(codesU: number[], codesV: number[]): Uint8Array {
+  return concat([
+    u32le(codesU.length), Uint8Array.of(2, 8),
+    quantizer(0, 1, 8), quantizer(0, 1, 8),
+    nullCdp(codesU), nullCdp(codesV),
+    u32le(attributeHash([codesU, codesV].map((component) => component.map((value) => value / 255)))),
+  ]);
+}
+
+/** LOD0 顶点属性插入 + 绑定掩码翻转 + 各层长度同步(TOC 偏移平移),供各合成函数复用。 */
+function spliceLod0Attributes(
+  source: Uint8Array,
+  segment: ReturnType<typeof parseJtContainer>["segments"][number],
+  insertOffset: number,
+  insert: Uint8Array,
+  newBindings: bigint,
+): Uint8Array {
   const result = new Uint8Array(source.byteLength + insert.byteLength);
   result.set(source.subarray(0, insertOffset), 0);
   // 翻转 vertexBindings:外层 Shape(u64@payload+27)与顶点记录(u64@payload+247)必须一致。
   const bindingsOffset = segment.offset + 24 + LOD0_BINDINGS_PAYLOAD_OFFSET;
   const outerBindingsOffset = segment.offset + 24 + 27;
-  const bindingsView = new DataView(source.buffer, source.byteOffset);
-  const bindings = bindingsView.getBigUint64(bindingsOffset, true);
-  const newBindings = bindings | 0x30n | (0x1n << 8n);
   new DataView(result.buffer).setBigUint64(bindingsOffset, newBindings, true);
   new DataView(result.buffer).setBigUint64(outerBindingsOffset, newBindings, true);
   result.set(insert, insertOffset);
@@ -145,4 +194,92 @@ export function synthesizeUvColorJt(source: Uint8Array): Uint8Array {
     }
   }
   return result;
+}
+
+/**
+ * 在 JT 10.3 文件末尾追加一个未压缩的合成 PMI 数据段(type=3)并扩写 TOC。
+ * PMI 段内含最小 PMI Manager Meta Data 元素:0 关联、0 用户属性、1 个字符串("PMI")、0 模型视图。
+ * 用于端到端验证 reader 的 PMI 段发现与解析,不改动任何既有段。
+ */
+export function synthesizeMinimalPmiJt(source: Uint8Array): Uint8Array {
+  const container = parseJtContainer(source, DEFAULT_JT_READ_LIMITS);
+  if (container.header.majorVersion < 10) throw new Error("合成 PMI 段依赖 JT 10 的 U64 TOC 布局");
+  // 新段 GUID:任意合法标识(既有段集合中不存在即可)。
+  const newSegmentId = bytesFromGuid("a5bbafb0-bd6b-11e9-8000-d86f480d14fb");
+
+  // ---- Manager 元素数据(元素头之后) ----
+  const managerData = concat([
+    Uint8Array.of(2),            // 元素版本
+    i16le(-1),                   // 附加版本 I16 = -1
+    i16le(0),                    // 结构版本 I16 = 0
+    i16le(0),                    // 保留 I16
+    u32le(0),                    // 关联数量 = 0
+    u32le(0),                    // 用户属性数量 = 0
+    u32le(1),                    // 字符串数量 = 1
+    u32le(3), stringUnits("PMI"), // 字符串表:长度 3 + UTF16 "PMI"(无终止符)
+    u32le(0),                    // 模型视图数量 = 0
+  ]);
+  const elementDataLength = 16 + 1 + 4 + managerData.byteLength; // GUID + 基础类型 + 对象 ID + 数据
+  const element = concat([
+    u32le(elementDataLength),
+    bytesFromGuid(PMI_MANAGER_GUID),
+    Uint8Array.of(9),            // 对象基础类型
+    u32le(0),                    // 对象 ID
+    managerData,
+  ]);
+  const endMarker = concat([u32le(16), bytesFromGuid("ffffffff-ffff-ffff-ffff-ffffffffffff")]);
+  const segmentPayload = concat([element, endMarker]);
+  const segmentLength = 24 + segmentPayload.byteLength;
+  // 段 = GUID 16 + 属性 4 + 声明长度 4 + 内容(未压缩:内容首 u32 = 元素长度,非 2/3 不会误判为压缩标记)。
+  const segment = concat([
+    newSegmentId,
+    u32le(0x03000000),           // 段类型 3(PMI)
+    u32le(segmentLength),        // 段声明长度
+    segmentPayload,
+  ]);
+
+  // ---- 重写 TOC:旧 9 项 + 新 1 项,置于新段之后,并回填 header 的 U64 TOC 偏移 ----
+  const oldTocOffset = Number(new DataView(source.buffer, source.byteOffset).getBigUint64(85, true));
+  const oldEntryCount = new DataView(source.buffer, source.byteOffset).getUint32(oldTocOffset, true);
+  const newSegmentOffset = source.byteLength;
+  const newTocOffset = newSegmentOffset + segmentLength;
+  const newTocBytes = 4 + (oldEntryCount + 1) * 32;
+  const result = new Uint8Array(newTocOffset + newTocBytes);
+  result.set(source, 0);
+  result.set(segment, newSegmentOffset);
+  const view = new DataView(result.buffer);
+  view.setBigUint64(85, BigInt(newTocOffset), true);
+  view.setUint32(newTocOffset, oldEntryCount + 1, true);
+  result.set(source.subarray(oldTocOffset + 4, oldTocOffset + 4 + oldEntryCount * 32), newTocOffset + 4);
+  const newEntry = newTocOffset + 4 + oldEntryCount * 32;
+  result.set(newSegmentId, newEntry);
+  view.setBigUint64(newEntry + 16, BigInt(newSegmentOffset), true);
+  view.setUint32(newEntry + 24, segmentLength, true);
+  view.setUint32(newEntry + 28, 0x03000000, true);
+  return result;
+}
+
+const PMI_MANAGER_GUID = "ce357249-38fb-11d1-a506-006097bdc6e1";
+
+function stringUnits(text: string): Uint8Array {
+  const out = new Uint8Array(text.length * 2);
+  const view = new DataView(out.buffer);
+  for (let index = 0; index < text.length; index += 1) view.setUint16(index * 2, text.charCodeAt(index), true);
+  return out;
+}
+
+/** 按 BinaryReader.guid 的混排规则把 GUID 字符串写回 16 字节(小端字段 + 原序尾段)。 */
+function bytesFromGuid(guid: string): Uint8Array {
+  const match = /^([0-9a-f]{8})-([0-9a-f]{4})-([0-9a-f]{4})-([0-9a-f]{4})-([0-9a-f]{12})$/.exec(guid);
+  if (!match) throw new Error(`非法 GUID: ${guid}`);
+  const out = new Uint8Array(16);
+  const view = new DataView(out.buffer);
+  view.setUint32(0, Number.parseInt(match[1]!, 16), true);
+  view.setUint16(4, Number.parseInt(match[2]!, 16), true);
+  view.setUint16(6, Number.parseInt(match[3]!, 16), true);
+  const tail = match[4]! + match[5]!;
+  for (let index = 0; index < 8; index += 1) {
+    out[8 + index] = Number.parseInt(tail.slice(index * 2, index * 2 + 2), 16);
+  }
+  return out;
 }

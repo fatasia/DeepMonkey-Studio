@@ -5,6 +5,8 @@ export interface IndexedTriangleGeometry {
   indices: ArrayLike<number>;
   normals?: ArrayLike<number>;
   uvs?: ArrayLike<number> | undefined;
+  /** 附加纹理集(setIndex ≥ 1),写入 TEXCOORD_setIndex;上限 4 套由调用方裁剪。 */
+  additionalTextureSets?: Array<{ setIndex: number; uvs: ArrayLike<number> }> | undefined;
   colors?: ArrayLike<number> | undefined;
 }
 
@@ -34,13 +36,23 @@ export function createIndexedTrianglePrimitive(
       .setArray(new Float32Array(geometry.normals))
       .setBuffer(buffer));
   }
-  if (geometry.uvs && geometry.uvs.length === (geometry.positions.length / 3) * 2) {
+  const vertexCount = geometry.positions.length / 3;
+  if (geometry.uvs && geometry.uvs.length === vertexCount * 2) {
     primitive.setAttribute("TEXCOORD_0", document.createAccessor()
       .setType(Accessor.Type.VEC2!)
       .setArray(new Float32Array(geometry.uvs))
       .setBuffer(buffer));
   }
-  if (geometry.colors && geometry.colors.length === (geometry.positions.length / 3) * 4) {
+  for (const set of geometry.additionalTextureSets ?? []) {
+    // glTF 2.0 约定 TEXCOORD_0..1;此处上限 4 套防爆炸,由调用方传入时裁剪。
+    if (set.setIndex < 1 || set.setIndex > 3) continue;
+    if (set.uvs.length !== vertexCount * 2) continue;
+    primitive.setAttribute(`TEXCOORD_${set.setIndex}`, document.createAccessor()
+      .setType(Accessor.Type.VEC2!)
+      .setArray(new Float32Array(set.uvs))
+      .setBuffer(buffer));
+  }
+  if (geometry.colors && geometry.colors.length === vertexCount * 4) {
     primitive.setAttribute("COLOR_0", document.createAccessor()
       .setType(Accessor.Type.VEC4!)
       .setArray(new Float32Array(geometry.colors))

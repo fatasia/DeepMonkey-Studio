@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 import { BinaryReader, JtFormatError, readJt } from "./index.js";
-import { synthesizeUvColorJt } from "./fixtureSynthesis.test-helper.js";
+import { synthesizeDualTextureSetJt, synthesizeMinimalPmiJt, synthesizeUvColorJt } from "./fixtureSynthesis.test-helper.js";
 
 const exampleBlockFixture = new URL(
   "../../../data/external-assets/format-fixtures/jt/voyager-example-block-jt10.3.jt",
@@ -164,5 +164,127 @@ describe("JT reader", () => {
     const document = await readJt(synthetic);
     expect(document.meshes.some((mesh) => mesh.lod === 0)).toBe(false);
     expect(document.warnings.some((warning) => warning.includes("附属字段"))).toBe(true);
+  });
+
+  it("解析真实 JT 10.3 样本的 PMI 数据段结构清单(段类型 dump 证据驱动)", async () => {
+    // TOC dump 证据:10.3 样本含 type=3 PMI 段(id a5bbafb9-...,865B XZ,解压 6910B),
+    // 唯一元素 GUID = ce357249(PMI Manager),9 关联 / 0 用户属性 / 10 字符串 / 8 视图×9 属性对;
+    // 9.5 样本(coffee-maker)97 个段中无 type=3,reader 必须如实省略 pmi 节。
+    const exampleBlock = await readJt(await readFile(exampleBlockFixture));
+    expect(exampleBlock.pmi).toBeDefined();
+    const pmi = exampleBlock.pmi!;
+    expect(pmi.segmentCount).toBe(1);
+    expect(pmi.structureOnly).toBe(true);
+    expect(pmi.entityCount).toBe(9 + 8 + 72);
+    expect(pmi.types).toEqual([
+      { type: "association", count: 9 },
+      { type: "modelView", count: 8 },
+      { type: "view-property", count: 72 },
+    ]);
+    const summary = pmi.segments[0]!;
+    expect(summary.segmentId).toBe("a5bbafb9-bd6b-11e9-8000-d86f480d14fb");
+    expect(summary.managerCount).toBe(1);
+    expect(summary.elementVersion).toBe(2);
+    expect(summary.structureVersion).toBe(0);
+    expect(summary.strings).toEqual([
+      '"Top"', "MVStyle", "PMI", '"Front"', '"Right"', '"Back"', '"Bottom"', '"Left"', '"Isometric"', '"Trimetric"',
+    ]);
+    expect(summary.modelViewNames).toEqual([
+      '"Top"', '"Front"', '"Right"', '"Back"', '"Bottom"', '"Left"', '"Isometric"', '"Trimetric"',
+    ]);
+    expect(pmi.notes.some((note) => note.includes("pmi:structure-only"))).toBe(true);
+    expect(exampleBlock.warnings).toEqual([]);
+
+    const coffeeMaker = await readJt(await readFile(coffeeMakerFixture));
+    expect(coffeeMaker.pmi).toBeUndefined();
+    expect(coffeeMaker.warnings.every((warning) => !warning.includes("PMI"))).toBe(true);
+  });
+
+  it("解析追加到真实文件的合成最小 PMI 段(端到端)并拒绝损坏的 PMI 计数", async () => {
+    const source = await readFile(exampleBlockFixture);
+    const synthetic = await readJt(synthesizeMinimalPmiJt(new Uint8Array(source)));
+    // 合成文件同时保留原样本 PMI 段与追加的合成段(0 关联、0 用户属性、1 字符串、0 视图)。
+    expect(synthetic.segments).toHaveLength(10);
+    expect(synthetic.pmi).toBeDefined();
+    expect(synthetic.pmi!.segmentCount).toBe(2);
+    const syntheticSummary = synthetic.pmi!.segments.find(
+      (candidate) => candidate.segmentId === "a5bbafb0-bd6b-11e9-8000-d86f480d14fb",
+    );
+    expect(syntheticSummary).toBeDefined();
+    expect(syntheticSummary!.strings).toEqual(["PMI"]);
+    expect(syntheticSummary!.modelViewNames).toEqual([]);
+    expect(syntheticSummary!.entityGroups).toEqual([
+      { type: "association", count: 0 },
+      { type: "modelView", count: 0 },
+      { type: "view-property", count: 0 },
+    ]);
+    expect(synthetic.warnings).toEqual([]);
+
+    // 拒绝路径:把字符串数量改成负数,解析必须显式失败进 warnings 且不产出 pmi 节。
+    const corrupted = synthesizeMinimalPmiJt(new Uint8Array(source));
+    const { parseJtContainer } = await import("./container.js");
+    const { DEFAULT_JT_READ_LIMITS } = await import("./types.js");
+    const parsed = parseJtContainer(corrupted, DEFAULT_JT_READ_LIMITS);
+    const pmiSegment = parsed.segments.find(
+      (candidate) => candidate.type === 3 && candidate.id === "a5bbafb0-bd6b-11e9-8000-d86f480d14fb",
+    )!;
+    // 元素数据区起于段 payload + 25(元素长度 4 + GUID 16 + 基础类型 1 + 对象 ID 4),
+    // 头部 7B(版本 1 + 附加版本 2 + 结构版本 2 + 保留 2)后依次为关联数 4、用户属性数 4。
+    const stringCountOffset = pmiSegment.offset + 24 + 25 + 7 + 8;
+    const dataView = new DataView(corrupted.buffer, corrupted.byteOffset, corrupted.byteLength);
+    expect(dataView.getInt32(stringCountOffset, true)).toBe(1);
+    dataView.setInt32(stringCountOffset, -3, true);
+    const broken = await readJt(corrupted);
+    // 损坏的合成段必须显式失败进 warnings 且不出现在清单中;原样本 PMI 段不受影响,仍正常解析。
+    expect(broken.pmi!.segmentCount).toBe(1);
+    expect(broken.pmi!.segments.some((candidate) => candidate.segmentId === "a5bbafb0-bd6b-11e9-8000-d86f480d14fb")).toBe(false);
+    expect(broken.warnings.some((warning) => warning.includes("a5bbafb0") && warning.includes("字符串数量"))).toBe(true);
+  });
+
+  it("解码合成双纹理集 fixture:两套 UV 按集合分档,互不混流", async () => {
+    // 真实样本无任何纹理集绑定(byte 证据 0xa/0x4a),双集路径按任务纪律用合成 fixture 验证:
+    // 翻转 bit8..11(集 0)与 bit12..15(集 1),插入两条互为补偿的量化 UV 记录。
+    const source = await readFile(exampleBlockFixture);
+    const document = await readJt(synthesizeDualTextureSetJt(new Uint8Array(source)));
+    expect(document.warnings).toEqual([]);
+    const lod0 = document.meshes.find((mesh) => mesh.lod === 0);
+    expect(lod0).toBeDefined();
+    expect(lod0!.textureSets).toHaveLength(2);
+    const [set0, set1] = lod0!.textureSets!;
+    expect(set0!.textureSetIndex).toBe(0);
+    expect(set1!.textureSetIndex).toBe(1);
+    for (const set of [set0, set1]) {
+      expect(set!.uvs.length).toBe(lod0!.vertexCount * 2);
+      expect(Array.from(set!.uvs).every((value) => value >= 0 && value <= 1)).toBe(true);
+    }
+    // 集 0:u=i/7;集 1:u=1-i/7 —— 同一顶点在两套集合中的 u 值互补。
+    expect(set0!.uvs[0]).toBe(0);
+    expect(set1!.uvs[0]).toBeCloseTo(1, 5);
+    for (let vertex = 0; vertex < lod0!.vertexCount; vertex += 1) {
+      const u0 = set0!.uvs[vertex * 2]!;
+      const u1 = set1!.uvs[vertex * 2]!;
+      expect(u0 + u1).toBeCloseTo(1, 4);
+    }
+    // 单集别名语义:多集网格的 uvs 字段等价于集 0。
+    expect(lod0!.uvs).toBe(set0!.uvs);
+  });
+
+  it("拒绝损坏的第二纹理集记录:量化码越界显式失败,不输出部分解码的网格", async () => {
+    const source = await readFile(exampleBlockFixture);
+    const synthetic = synthesizeDualTextureSetJt(new Uint8Array(source));
+    const { parseJtContainer } = await import("./container.js");
+    const { DEFAULT_JT_READ_LIMITS } = await import("./types.js");
+    const parsed = parseJtContainer(synthetic, DEFAULT_JT_READ_LIMITS);
+    const segment = parsed.segments.find((candidate) => candidate.type === 7)!;
+    // 每条 UV 记录 = 头 6B + 量化器 18B + 两个 Null CDP(各 41B)+ 尾哈希 4B = 110B;
+    // 两条记录起于插入点 560(颜色记录缺席),集 1 记录 @670,其 u 分量 Null CDP
+    // 数据起于记录起点 + 33(与既有"拒绝损坏的 UV"测试的 770+33 同一推导)。
+    const set1UCodeOffset = segment.offset + 24 + 560 + 110 + 33;
+    const dataView = new DataView(synthetic.buffer, synthetic.byteOffset, synthetic.byteLength);
+    expect(dataView.getInt32(set1UCodeOffset, true)).toBe(255); // 集 1 的 u 首码 = round((1-0/7)*255)
+    dataView.setInt32(set1UCodeOffset, 0x7fffffff, true);
+    const document = await readJt(synthetic);
+    expect(document.meshes.some((mesh) => mesh.lod === 0 && mesh.textureSets)).toBe(false);
+    expect(document.warnings.some((warning) => warning.includes("LOD 数据段") && warning.includes("量化码越界"))).toBe(true);
   });
 });

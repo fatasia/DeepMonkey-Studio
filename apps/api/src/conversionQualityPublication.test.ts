@@ -165,6 +165,27 @@ describe("builtin conversion quality drafts and catalog runtime facts", () => {
     }
   });
 
+  it("reports multi-texture-set export and PMI structure-only evidence honestly", async () => {
+    const { dir, cleanup } = await withOutputFiles();
+    try {
+      // 双纹理集解码成功:GLB 上限 4 套导出计入近似项;"材质→纹理集"引用在 JT 属性中不存在,联动损失保留。
+      const draft = await buildJtLod0ReadyQuality({
+        outputDir: dir, meshCount: 2, triangleCount: 24, instanceCount: 2, tocEntryCount: 9, assemblyNodeCount: 11,
+        decodedAttributes: { uvs: true, colors: false, textureSetCount: 2 },
+        pmiPresent: true,
+      });
+      expect(draft.losses).toEqual(["vertex.colors", "material.texture-set-linkage"]);
+      expect(draft.approximations).toEqual(expect.arrayContaining([
+        "geometry.uv:quantized-reconstruction",
+        "geometry.texture-sets:exported-up-to-4-of-2",
+        "pmi:structure-only",
+      ]));
+      expect(draft.approximations).not.toContain("vertex.colors:quantized-reconstruction");
+    } finally {
+      await cleanup();
+    }
+  });
+
   it("keeps catalog runtime facts machine-readable, evidenced and short of production readiness", () => {
     for (const extension of ["jt", "x_t"]) {
       const capability = findModelFormatCapability(extension)!;

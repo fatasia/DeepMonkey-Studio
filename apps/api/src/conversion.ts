@@ -793,7 +793,8 @@ class JtStructureProvider implements ConversionProvider {
     };
     await writeManifest(modelDir, manifest);
     await this.objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
-    // 质量声明基于已发布产物;UV/顶点色按转换器实测的解码情况动态出入损失与近似清单。
+    // 质量声明基于已发布产物;UV/顶点色按转换器实测的解码情况动态出入损失与近似清单;
+    // 源含 PMI 段时质量草稿按结构级清单标注(pmi:structure-only)。
     reportQuality?.(await buildJtLod0ReadyQuality({
       outputDir,
       meshCount: result.meshCount,
@@ -802,6 +803,7 @@ class JtStructureProvider implements ConversionProvider {
       tocEntryCount: inspection.toc.entryCount,
       assemblyNodeCount: inspection.assembly.nodeCount,
       decodedAttributes: result.decodedAttributes,
+      pmiPresent: inspection.pmiPresent === true,
     }));
     await this.store.updateModel(model.projectId, model.id, {
       status: "ready",

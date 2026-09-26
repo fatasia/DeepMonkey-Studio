@@ -74,25 +74,34 @@ export interface JtLod0QualityInput {
   tocEntryCount: number;
   assemblyNodeCount: number;
   /** 转换器实测的顶点属性解码情况;UV/色成功解码时移除对应损失并计入近似项。 */
-  decodedAttributes?: { uvs?: boolean | undefined; colors?: boolean | undefined } | undefined;
+  decodedAttributes?: { uvs?: boolean | undefined; colors?: boolean | undefined; textureSetCount?: number | undefined } | undefined;
+  /** 源文件 PMI 证据:存在时按 structure-only 计入近似项,不虚构语义解析能力。 */
+  pmiPresent?: boolean | undefined;
 }
 
 /**
  * JT LOD0 的 ready 质量草稿。法线由转换器计算写入 GLB;UV 与顶点色自源顶点记录解码,
  * 成功时对应损失从清单移除、以近似项标注(量化重建),未解码时如实保留损失,不虚构。
+ * 多纹理集导出至 GLB 上限 4 套,但 JT 材质属性不携带纹理集引用,该联动缺口以损失保留;
+ * 源含 PMI 段时按结构级清单计入近似项(pmi:structure-only)。
  */
 export async function buildJtLod0ReadyQuality(input: JtLod0QualityInput): Promise<ConversionQualityDraft> {
   const uvsDecoded = input.decodedAttributes?.uvs === true;
   const colorsDecoded = input.decodedAttributes?.colors === true;
+  const textureSetCount = input.decodedAttributes?.textureSetCount ?? 0;
   const losses = [
     ...(uvsDecoded ? [] : ["geometry.uv"]),
     ...(colorsDecoded ? [] : ["vertex.colors"]),
+    // 纹理集本身已解码导出,但"材质→纹理集"引用在 JT 属性中不存在,联动缺口如实保留。
+    ...(textureSetCount > 1 ? ["material.texture-set-linkage"] : []),
   ];
   const approximations = [
     "geometry.normals:computed-vertex-normals",
     "materials:resolved-from-jt-attributes-with-fallback",
     ...(uvsDecoded ? ["geometry.uv:quantized-reconstruction"] : []),
     ...(colorsDecoded ? ["vertex.colors:quantized-reconstruction"] : []),
+    ...(textureSetCount > 1 ? ["geometry.texture-sets:exported-up-to-4-of-" + textureSetCount] : []),
+    ...(input.pmiPresent ? ["pmi:structure-only"] : []),
   ];
   return {
     schemaVersion: 1,
