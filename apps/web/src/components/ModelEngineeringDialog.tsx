@@ -8,6 +8,8 @@ import { request } from "../api";
 import { ResourceLinkButton } from "./ResourceLinkButton";
 import { formatBytes } from "./ModelOptimizerFields";
 import { ModelStructureTreePanel } from "./ModelStructureTreePanel";
+import { RobotAssetPreview } from "./RobotAssetPreview";
+import type { ViewerEngine } from "../viewer/ViewerEngine";
 import "./ProjectResourceDialogs.css";
 import "./ModelEngineering.css";
 
@@ -15,6 +17,7 @@ export function ModelEngineeringDialog({ model, models, locale, onClose, onOptim
   model: ModelRecord; models: readonly ModelRecord[]; locale: AppLocale; onClose: () => void; onOptimize: (id: string) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const [viewport, setViewport] = useState<ViewerEngine>();
   const [preset, setPreset] = useState<OptimizationPresetId>(model.processing?.preset === "custom" ? "balanced" : model.processing?.preset ?? "balanced");
   const chain = modelVersionChain(model, models);
   const statistics = model.processing?.after ?? (model.generation ? { bytes: model.size, triangles: model.generation.build.triangleCount } : { bytes: model.size });
@@ -43,7 +46,16 @@ export function ModelEngineeringDialog({ model, models, locale, onClose, onOptim
       <section><h3>{tr(locale, "质量检查", "Quality check")}</h3><select aria-label={tr(locale, "目标设备预算", "Target device budget")} value={preset} onChange={event => setPreset(event.target.value as OptimizationPresetId)}>{Object.entries(OPTIMIZATION_PRESETS).map(([id, item]) => <option key={id} value={id}>{tr(locale, item.zh, item.en)}</option>)}</select>
         <p className={`model-quality-status is-${quality.status}`} role="status">{quality.status === "ready" ? tr(locale, "三角面、文件大小与材质数量在预算内", "Triangles, file size and material count are within budget") : quality.status === "unknown" && !quality.issues.length ? tr(locale, "几何统计尚不完整，可进入优化器分析", "Geometry statistics are incomplete. Analyze in the optimizer") : quality.issues.join("；")}</p>
       </section>
-      <ModelStructureTreePanel model={model} locale={locale} request={request} />
+      {model.manifest?.geometryUrl && model.manifest.viewerKind && (
+        <section>
+          <h3>{tr(locale, "三维预览与结构联动", "3D preview & structure linkage")}</h3>
+          <p className="model-engineering-linkage-hint" role="note">{tr(locale, "点选装配节点可在预览中选中对应零件；在预览中点选零件也会定位到结构树。", "Clicking an assembly node selects the matching part in the preview; picking a part in the preview locates it in the tree.")}</p>
+          <div className="model-engineering-viewport">
+            <RobotAssetPreview locale={locale} model={model} onReady={setViewport} selectionScope="layer" label={tr(locale, "工程三维预览", "Engineering 3D preview")} />
+          </div>
+        </section>
+      )}
+      <ModelStructureTreePanel model={model} locale={locale} request={request} viewer={viewport} />
       <section><h3>{tr(locale, "版本与来源", "Versions and source")}</h3>{missingParent && <p className="project-resource-error" role="alert">{tr(locale, "来源版本已不可用，无法从原文件重建", "The source version is unavailable; rebuilding is disabled")}</p>}
         <ol className="model-engineering-versions">{chain.map((item, index) => <li key={item.id} className={item.id === model.id ? "is-current" : ""}><div><strong>{`v${item.generation?.revision ?? index + 1}`} · {item.name}</strong><small>{new Date(item.createdAt).toLocaleString(locale)} · {item.id === model.id ? tr(locale, "当前产物", "Current artifact") : tr(locale, "原版本保留", "Previous version retained")}</small></div><button className="button" disabled={item.status !== "ready"} onClick={() => onOptimize(item.id)}><Gauge size={14} />{item.id === model.id ? tr(locale, "继续优化", "Optimize") : tr(locale, "打开此版本", "Open this version")}</button></li>)}</ol>
       </section>

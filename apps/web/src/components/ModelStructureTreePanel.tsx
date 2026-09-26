@@ -1,13 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Box as BoxIcon, ListTree, Search, TriangleAlert } from "lucide-react";
 import type { ModelRecord, ModelStructureNode, ModelStructurePropertiesResponse, ModelStructureResponse } from "@bim-studio/contracts";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import { createModelStructureApi } from "../apiClients/modelStructureApi";
+import type { LayerTreeNode, LoadedSceneModel } from "../viewer/ViewerEngine";
 import "./ModelStructureTreePanel.css";
 
 /** 装配结构树面板：消费转换 sidecar（hierarchy.json / properties.json）的只读视图。
- *  大装配不靠整棵渲染：固定行高 + 滚动窗口只绘制可见行，过滤时沿匹配路径自动展开。 */
+ *  大装配不靠整棵渲染：固定行高 + 滚动窗口只绘制可见行，过滤时沿匹配路径自动展开。
+ *  传入 viewer 时与三维视口双向联动：树点击 → 引擎选中；视口选中 → 树定位。 */
 
 const ROW_HEIGHT = 26;
 const VISIBLE_ROWS = 12;
@@ -104,6 +106,118 @@ export function propertyRequestIds(node: ModelStructureNode): string[] {
   return [node.id, ...(node.meshSampleIds ?? [])].slice(0, 2 * PROPERTY_MESH_LIMIT);
 }
 
+/** 面板与三维视口之间实际用到的最小查看器接口；ViewerEngine 结构化满足，测试用普通对象即可冒充。 */
+export interface StructureViewportLink {
+  selectLayer(modelId: string, nodeId: string): void;
+  getSelectedLayerId(): string | undefined;
+  getSelected(): LoadedSceneModel | undefined;
+  getLayerTree(modelId: string): LayerTreeNode | undefined;
+  onSelectionChange?: ((model: LoadedSceneModel | undefined) => void) | undefined;
+}
+
+export type ViewportNote = { kind: "ok" | "blocked"; text: string } | undefined;
+
+export type StructureViewportResolution =
+  | { status: "selectable"; nodeId: string; targetName: string; via: "self" | "sample" | "descendant" }
+  | { status: "unavailable"; reason: string };
+
+const VIEWPORT_ELEMENT_PREFIX = "element:";
+
+const viewportElementId = (id: string): string => `${VIEWPORT_ELEMENT_PREFIX}${id}`;
+
+/** 视口层 id 索引：getLayerTree 快照里全部稳定 id（"root"、`root/<i>` 路径、"element:<id>"）。 */
+export function viewerLayerIdIndex(tree: LayerTreeNode | undefined): ReadonlySet<string> {
+  const ids = new Set<string>();
+  const visit = (node: LayerTreeNode): void => {
+    ids.add(node.id);
+    node.children.forEach(visit);
+  };
+  if (tree) visit(tree);
+  return ids;
+}
+
+function firstStructureMeshDescendant(node: ModelStructureNode): ModelStructureNode | undefined {
+  for (const child of node.children) {
+    if (child.meshSampleIds?.length) return child;
+    const deeper = firstStructureMeshDescendant(child);
+    if (deeper) return deeper;
+  }
+  return undefined;
+}
+
+/**
+ * 树节点 → 视口可拾取层节点。ID 映射规则（与转换器现状逐一对齐）：
+ *  1. 模型根 → 视口 "root"（引擎内委派为整模型选中）；
+ *  2. 自身 id 命中（"element:<节点id>" 或节点 id；转换器把装配节点标成 Element 时零成本生效）；
+ *  3. 网格样本命中："element:<meshSampleId>" —— JT 实例与 STEP 网格叶都按此进入视口层 id；
+ *  4. 都没有 → 首个带网格样本的后代按规则 3 兜底（JT 装配节点不在 GLB 中）；
+ *  5. 全部落空 → 如实给出不可选原因（X_T 面节点未标 Element，视口只有路径型 id）。
+ */
+export function resolveStructureViewportTarget(
+  index: ReadonlySet<string>,
+  node: ModelStructureNode,
+  options: { isModelRoot?: boolean },
+  locale: AppLocale,
+): StructureViewportResolution {
+  const notLoaded = tr(locale, "三维视口尚未加载该模型，无法联动选中", "The 3D viewport has not loaded this model; viewport selection is unavailable");
+  const firstHit = (candidates: readonly string[]): string | undefined => candidates.find((id) => index.has(id));
+  if (options.isModelRoot) {
+    return index.size
+      ? { status: "selectable", nodeId: "root", targetName: node.name, via: "self" }
+      : { status: "unavailable", reason: notLoaded };
+  }
+  const self = firstHit([viewportElementId(node.id), node.id]);
+  if (self) return { status: "selectable", nodeId: self, targetName: node.name, via: "self" };
+  const samples = (node.meshSampleIds ?? []).map(viewportElementId);
+  const sampled = firstHit(samples);
+  if (sampled) return { status: "selectable", nodeId: sampled, targetName: node.name, via: "sample" };
+  const descendant = firstStructureMeshDescendant(node);
+  const descendantHit = descendant ? firstHit((descendant.meshSampleIds ?? []).map(viewportElementId)) : undefined;
+  if (descendant && descendantHit) {
+    return { status: "selectable", nodeId: descendantHit, targetName: descendant.name, via: "descendant" };
+  }
+  return {
+    status: "unavailable",
+    reason: index.size
+      ? tr(locale, "该节点在三维视口没有可拾取对象（结构仅来自 sidecar，或该格式未发布可拾取网格）", "This node has no pickable object in the 3D viewport (structure only comes from the sidecar, or the format publishes no pickable meshes)")
+      : notLoaded,
+  };
+}
+
+/** 节点到根的祖先 id 序列（不含自身，根优先）；找不到目标返回空数组。 */
+export function structureAncestors(root: ModelStructureNode, id: string): string[] {
+  const path: string[] = [];
+  const visit = (node: ModelStructureNode): boolean => {
+    if (node.id === id) return true;
+    for (const child of node.children) {
+      if (visit(child)) {
+        path.push(node.id);
+        return true;
+      }
+    }
+    return false;
+  };
+  visit(root);
+  return path.reverse();
+}
+
+/** 视口层 id → 装配节点。"root" 映射整棵根；"element:<id>" 反查持有该网格样本（或同 id）的节点。
+ *  同一网格 id 会同时出现在祖先与后代（JT 根节点汇总全模型网格），取最深持有者；
+ *  路径型层 id（`root/<i>`，如 X_T 面节点）与 sidecar 编号无可靠对应，返回 undefined 由界面如实提示。 */
+export function structureNodeForViewportSelection(root: ModelStructureNode, layerId: string): ModelStructureNode | undefined {
+  if (layerId === "root") return root;
+  if (!layerId.startsWith(VIEWPORT_ELEMENT_PREFIX)) return undefined;
+  const element = layerId.slice(VIEWPORT_ELEMENT_PREFIX.length);
+  const visit = (node: ModelStructureNode): ModelStructureNode | undefined => {
+    for (const child of node.children) {
+      const deeper = visit(child);
+      if (deeper) return deeper;
+    }
+    return node.id === element || node.meshSampleIds?.includes(element) ? node : undefined;
+  };
+  return visit(root);
+}
+
 function toPropertyGroups(
   node: ModelStructureNode,
   result: ModelStructurePropertiesResponse,
@@ -131,11 +245,13 @@ function toPropertyGroups(
   return partialNote ? { groups, partialNote } : { groups };
 }
 
-export function ModelStructureTreePanel({ model, locale, request }: {
+export function ModelStructureTreePanel({ model, locale, request, viewer }: {
   model: ModelRecord;
   locale: AppLocale;
   /** 注入的传输通道（raw fetch 只允许在 api.ts；面板只持有此函数）。 */
   request: StructureRequest;
+  /** 承载该模型的三维视口引擎；缺省时面板保持纯只读（与历史行为一致）。 */
+  viewer?: StructureViewportLink | undefined;
 }) {
   const [structure, setStructure] = useState<StructureLoad>({ status: "loading" });
   const [query, setQuery] = useState("");
@@ -143,6 +259,9 @@ export function ModelStructureTreePanel({ model, locale, request }: {
   const [selectedId, setSelectedId] = useState<string>();
   const [properties, setProperties] = useState<PropertiesLoad>({ status: "idle" });
   const [scrollTop, setScrollTop] = useState(0);
+  const [viewportNote, setViewportNote] = useState<ViewportNote>();
+  const [scrollRequest, setScrollRequest] = useState<string>();
+  const treeViewport = useRef<HTMLDivElement>(null);
   const availability = structureAvailability(model, locale);
   const api = createModelStructureApi(request);
 
@@ -182,6 +301,48 @@ export function ModelStructureTreePanel({ model, locale, request }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, structure, model.projectId, model.id]);
 
+  // 视口 → 树：链式订阅引擎选中回调（保留既有 handler，不覆盖同一槽位），
+  // 把视口选中映射回装配节点后展开祖先路径并请求滚动定位；映射失败时如实提示。
+  useEffect(() => {
+    if (!viewer || structure.status !== "ready") return;
+    const previous = viewer.onSelectionChange;
+    const root = structure.data.root;
+    viewer.onSelectionChange = (loaded) => {
+      previous?.(loaded);
+      const layerId = viewer.getSelectedLayerId();
+      const mapped = layerId ? structureNodeForViewportSelection(root, layerId) : undefined;
+      if (mapped) {
+        setSelectedId(mapped.id);
+        setExpanded((current) => {
+          const ancestors = structureAncestors(root, mapped.id);
+          return ancestors.every((id) => current.has(id)) ? current : new Set([...current, ...ancestors]);
+        });
+        setViewportNote(undefined);
+        setScrollRequest(mapped.id);
+      } else if (layerId) {
+        setViewportNote({
+          kind: "blocked",
+          text: tr(locale, "三维视口选中的对象没有对应的装配结构节点（该图层编号无法对应结构数据）", "The object selected in the 3D viewport has no matching assembly node (its layer id does not map to the structure data)"),
+        });
+      }
+    };
+    return () => { viewer.onSelectionChange = previous; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewer, structure, locale]);
+
+  // 树 ← 视口定位的收尾：把请求定位的行滚到窗口中部（复用过滤展开后的行序列计算）。
+  useEffect(() => {
+    if (!scrollRequest || structure.status !== "ready") return;
+    const container = treeViewport.current;
+    if (!container) return;
+    const rows = flattenStructure(structure.data.root, { expanded, query });
+    const rowIndex = rows.findIndex((row) => row.node.id === scrollRequest);
+    if (rowIndex < 0) return;
+    const top = Math.max(0, rowIndex * ROW_HEIGHT - ((VISIBLE_ROWS - 1) * ROW_HEIGHT) / 2);
+    container.scrollTop = top;
+    setScrollTop(top);
+  }, [scrollRequest, structure, expanded, query]);
+
   if (!availability.available) {
     return (
       <section className="model-structure-panel" aria-label={tr(locale, "装配结构", "Assembly structure")}>
@@ -203,6 +364,26 @@ export function ModelStructureTreePanel({ model, locale, request }: {
   const end = Math.min(rows.length, start + VISIBLE_ROWS + OVERSCAN * 2);
   const selected = structure.status === "ready" && selectedId ? findStructureNode(structure.data.root, selectedId) : undefined;
   const depthSize = 14;
+  /** 树 → 视口：按映射规则解析可拾取层节点并调用既有 selection API；落空时保留如实原因。 */
+  const selectInViewport = (node: ModelStructureNode): void => {
+    if (!viewer || structure.status !== "ready") return;
+    const index = viewerLayerIdIndex(viewer.getLayerTree(model.id));
+    const resolution = resolveStructureViewportTarget(
+      index,
+      node,
+      { isModelRoot: node.id === structure.data.root.id },
+      locale,
+    );
+    if (resolution.status === "selectable") {
+      viewer.selectLayer(model.id, resolution.nodeId);
+      setViewportNote({
+        kind: "ok",
+        text: tr(locale, `已在三维视口选中「${resolution.targetName}」`, `Selected "${resolution.targetName}" in the 3D viewport`),
+      });
+    } else {
+      setViewportNote({ kind: "blocked", text: resolution.reason });
+    }
+  };
 
   return (
     <section className="model-structure-panel" aria-label={tr(locale, "装配结构", "Assembly structure")}>
@@ -229,6 +410,9 @@ export function ModelStructureTreePanel({ model, locale, request }: {
               {structure.data.truncated && <em title={tr(locale, "超过服务端节点上限，深层子树未展开", "Server node limit exceeded; deeper subtrees are not expanded")}>{tr(locale, "已截断", "truncated")}</em>}
             </span>
           </div>
+          {viewportNote && (
+            <p className={`model-structure-viewport-note is-${viewportNote.kind}`} role="status">{viewportNote.text}</p>
+          )}
           <div className="model-structure-layout">
             {rows.length === 0
               ? <div className="model-structure-empty" role="status">{tr(locale, "没有匹配的节点", "No matching nodes")}</div>
@@ -237,6 +421,7 @@ export function ModelStructureTreePanel({ model, locale, request }: {
                   className="model-structure-tree"
                   role="tree"
                   aria-label={tr(locale, "装配层级", "Assembly hierarchy")}
+                  ref={treeViewport}
                   onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
                 >
                   <div style={{ height: rows.length * ROW_HEIGHT, position: "relative" }}>
@@ -275,7 +460,10 @@ export function ModelStructureTreePanel({ model, locale, request }: {
                             <button
                               type="button"
                               className="model-structure-select"
-                              onClick={() => setSelectedId(row.node.id)}
+                              onClick={() => {
+                                setSelectedId(row.node.id);
+                                selectInViewport(row.node);
+                              }}
                             >
                               <span className={`model-structure-name${row.selfMatch && query.trim() ? " is-match" : ""}`}>{row.node.name}</span>
                               {row.node.type && <span className="model-structure-type">{row.node.type}</span>}
