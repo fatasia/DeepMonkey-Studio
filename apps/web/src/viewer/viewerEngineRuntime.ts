@@ -32,7 +32,9 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
     if (!this.xrActive) this.animationFrame = requestAnimationFrame(this.animate);
     const now = performance.now();
     const visible = document.visibilityState === "visible";
-    if (!this.renderDemand.shouldRender(now, this.hasContinuousRenderActivity(), visible, this.xrActive)) {
+    const intrinsicActive = this.hasContinuousRenderActivity();
+    this.lastIntrinsicRenderActivity = intrinsicActive;
+    if (!this.renderDemand.shouldRender(now, intrinsicActive, visible, this.xrActive)) {
       this.lastFrameTime = now;
       this.framePerformanceMonitor.pauseSampling();
       this.readOnlyFrameCadenceAnchor = undefined;

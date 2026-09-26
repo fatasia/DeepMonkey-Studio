@@ -76,7 +76,7 @@ export class DeepCameraInputSession {
   private onPointerDown(event: PointerEvent): void {
     if (this.options.handleGizmoPointer?.("down", event) === true) {
       this.gizmoPointerId = event.pointerId;
-      this.canvas.setPointerCapture(event.pointerId);
+      this.capturePointer(event.pointerId);
       return;
     }
     this.forward(event);
@@ -84,11 +84,14 @@ export class DeepCameraInputSession {
     this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (this.pointerId !== undefined) return; // 已有主指针:双指捏合只更新集合。
     if (this.suppressed()) return; // gizmo 拖拽中:透传但不做视口手势。
+    // 先记录主指针再尝试捕获:setPointerCapture 在合成/无头指针上会抛
+    // "No active pointer"——异常若先于 pointerId 赋值发生,后续 pointermove
+    // 全部被指针过滤拦截,视口手势整体失效(实测 headless CDP 输入必现)。
     this.pointerId = event.pointerId;
     this.lastX = event.clientX;
     this.lastY = event.clientY;
     this.button = event.button;
-    this.canvas.setPointerCapture(event.pointerId);
+    this.capturePointer(event.pointerId);
   }
 
   private onPointerMove(event: PointerEvent): void {
@@ -122,7 +125,7 @@ export class DeepCameraInputSession {
     if (this.gizmoPointerId === event.pointerId) {
       this.options.handleGizmoPointer?.(event.type === "pointercancel" ? "cancel" : "up", event);
       this.gizmoPointerId = undefined;
-      if (this.canvas.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId);
+      this.releasePointer(event.pointerId);
       return;
     }
     this.forward(event);
@@ -131,7 +134,7 @@ export class DeepCameraInputSession {
       this.pointerId = undefined;
       this.pinchDistance = undefined;
     }
-    if (this.canvas.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId);
+    this.releasePointer(event.pointerId);
   }
 
   private onWheel(event: WheelEvent): void {
@@ -174,6 +177,19 @@ export class DeepCameraInputSession {
 
   private suppressed(): boolean {
     return this.options.suppressGesture?.() === true;
+  }
+
+  /** 指针捕获失败只损失"拖出画布继续跟踪",不损失手势本身:合成/无头指针
+   * (headless CDP、部分嵌入式 webview)没有 active pointer 状态,捕获必然
+   * 抛错;捕获异常必须与指针记录解耦(见 onPointerDown 的顺序说明)。 */
+  private capturePointer(pointerId: number): void {
+    try { this.canvas.setPointerCapture(pointerId); } catch { /* 合成指针:忽略 */ }
+  }
+
+  private releasePointer(pointerId: number): void {
+    try {
+      if (this.canvas.hasPointerCapture(pointerId)) this.canvas.releasePointerCapture(pointerId);
+    } catch { /* 合成指针:忽略 */ }
   }
 
   private applyPinch(): void {

@@ -506,6 +506,10 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
       const mode = this.transform.mode;
       if (!this.transform.getHelper().visible || !object) return undefined;
       if (mode !== "translate" && mode !== "rotate" && mode !== "scale") return undefined;
+      // 独立 RenderPacket 路径(presentViewerFrame)跳过整树矩阵遍历;编辑辅助
+      // 投影仍消费宿主对象的世界矩阵,这里沿父链精准刷新,保证 gizmo 拖拽中
+      // Deep 侧投影逐帧跟手(否则 matrixWorld 停留在上次全量遍历的值,呈现冻结)。
+      object.updateWorldMatrix(true, false);
       return { matrix: object.matrixWorld, mode };
     }
   protected async loadDxf(url: string): Promise<THREE.Group> {

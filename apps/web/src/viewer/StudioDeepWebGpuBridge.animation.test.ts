@@ -40,6 +40,7 @@ describe("Studio author animation integration", () => {
       getDeepProjectionRoot: () => root, getDeepEditorOverlayRoots: () => [], getDeepSelectionBox: () => undefined,
       getDeepTransformGizmoInput: () => undefined, getDeepMeasurementSegmentInputs: () => [],
       setPresentationRendererBackend: vi.fn(), setPresentationPerformanceSource: vi.fn(),
+      setAuthorPacketIndependent: vi.fn(),
       subscribePresentationFrames: (callback: () => void) => { authorFrames.add(callback); return () => authorFrames.delete(callback); },
     } as unknown as ViewerEngine;
     const metrics = { frame: 1, shadowTier: "exact", shadowMapSize: 1024, shadowCascadeCount: 1,

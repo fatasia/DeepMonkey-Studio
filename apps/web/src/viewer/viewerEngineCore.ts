@@ -536,7 +536,9 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
   beginSceneSnapshotRestore(sceneId: string): number { return this.snapshotReadiness.begin(sceneId); }
   completeSceneSnapshotRestore(generation: number): void { this.snapshotReadiness.complete(generation); }
   bindSavedSceneSnapshot(sceneId: string): void { this.snapshotReadiness.bindSaved(sceneId); }
-  getRenderDemandDiagnostics() { return this.renderDemand.snapshot(); }
+  /** 最近一次 animate 准入判定时的连续活动标记;Deep 桥用它判断静置短路是否安全。 */
+  protected lastIntrinsicRenderActivity = false;
+  getRenderDemandDiagnostics() { return { ...this.renderDemand.snapshot(), intrinsicActive: this.lastIntrinsicRenderActivity }; }
   getRepeatedAssetDiagnostics() { return this.repeatedAssetBatcher.statistics(); }
   getOcclusionDiagnostics() { return this.conservativeOcclusion.diagnostics(); }
   setOcclusionCullingEnabled(enabled: boolean): void {

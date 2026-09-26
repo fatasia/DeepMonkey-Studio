@@ -38,6 +38,23 @@ interface RuntimeSession {
 
 type DeepRenderView = ReturnType<StudioDeepRenderView["renderViewDirect"]>;
 
+interface DeepFlowProbe {
+  renderDeepFrame: number; cameraPath: number; syncPath: number; coalesced: number;
+  draws: number; viewMs: number; renderMs: number; samples: string[];
+  syncCount?: number; syncMs?: number; shortCircuits?: number; keyChanges?: number; demand?: unknown;
+}
+
+/** pointer→submit 链路归因探针:仅在宿主预先挂载 window.__deepFlowProbe 时
+ * 按帧累计各层调用与耗时;默认零开销(一次属性读取),不影响任何行为。 */
+function flowProbe(): DeepFlowProbe | undefined {
+  return (globalThis as { __deepFlowProbe?: DeepFlowProbe }).__deepFlowProbe;
+}
+
+function recordProbeSample(probe: DeepFlowProbe, tag: string, ...values: readonly number[]): void {
+  if (probe.samples.length >= 48) probe.samples.shift();
+  probe.samples.push(`${tag}:${values.map(v => v.toFixed(2)).join(",")}`);
+}
+
 export interface StudioDeepWebGpuBridgeOptions {
   readonly onRuntimeFailure?: (error: Error) => void;
   readonly loadModule?: BridgeModuleLoader;
@@ -100,6 +117,10 @@ export class StudioDeepWebGpuBridge {
   private readonly gizmoInteraction: DeepGizmoInteraction;
   /** True after an immutable SceneSnapshot packet was accepted for this session. */
   private independentPacketPath = false;
+  /** 最近一次提交的 view 指纹:settle 背压只对相同指纹的重绘生效。 */
+  private settledViewKey = "";
+  /** 上次读到的 renderDemand 修订号:静置短路的变化信号(不可用时为 -1)。 */
+  private lastDemandRevision = -1;
 
   constructor(
     private readonly viewer: ViewerEngine,
@@ -355,6 +376,8 @@ export class StudioDeepWebGpuBridge {
     this.cameraFramesSubmitted = 0;
     this.cameraFramesCoalesced = 0;
     this.cameraMaxInFlight = 0;
+    this.settledViewKey = "";
+    this.lastDemandRevision = -1;
     this.cancelCameraSettle();
     const errors: unknown[] = [];
     for (const clean of [unsubscribe, () => backend?.dispose(), () => canvas?.remove()]) {
@@ -399,6 +422,8 @@ export class StudioDeepWebGpuBridge {
   };
 
   private readonly renderDeepFrame = (authorMatricesCurrent = false): void => {
+    const probe = flowProbe();
+    if (probe) { probe.renderDeepFrame++; recordProbeSample(probe, "rdf"); }
     const backend = this.deepBackend;
     const canvas = this.deepCanvas;
     if (this.closed || this.activeBackendValue !== "webgpu" || !backend || !canvas) return;
@@ -409,10 +434,12 @@ export class StudioDeepWebGpuBridge {
       // callbacks and trailing syncs which can run outside an author frame.
       if (!authorMatricesCurrent) this.updateAuthorMatrices();
       const camera = cameraSnapshot(this.viewer);
+      if (probe) recordProbeSample(probe, "cam", camera[0]!, camera[1]!, camera[3]!, camera[4]!);
       const cameraChanged = !sameSnapshot(camera, this.lastCameraSnapshot);
       this.lastCameraSnapshot = camera;
       const shouldSync = !cameraChanged;
       if (!shouldSync) {
+        if (probe) probe.cameraPath++;
         if (this.syncPending === backend) this.syncAgain = backend;
         // Camera input can arrive every author frame. Render only the latest view
         // while the gesture is active; restarting the temporal settle sequence on
@@ -421,9 +448,30 @@ export class StudioDeepWebGpuBridge {
         this.scheduleCameraSettle();
         return;
       }
+      if (probe) probe.syncPath++;
       this.cancelCameraSettle();
       if (!cameraChanged) this.viewReader.invalidateProjectionBounds();
+      // 静置短路:intrinsic 连续源让渲染循环每帧走到这里,但相机与场景都未变。
+      // 编辑/资源/相机复位必然经 renderDemand.invalidate 递增修订号;修订与呈现
+      // 指纹都未变时跳过 sync 与首绘,静置负载归零。修订号不可用(测试宿主/旧
+      // 集成)时保守视为"可能变化",维持每帧 sync 的既有行为。
+      const demand = this.viewer.getRenderDemandDiagnostics?.();
+      { const p2 = flowProbe(); if (p2) (p2 as DeepFlowProbe & { demand?: unknown }).demand = demand; }
+      const demandRevision = demand?.invalidationRevision;
+      const sceneMutated = demandRevision === undefined
+        || demandRevision !== this.lastDemandRevision;
+      this.lastDemandRevision = demandRevision ?? -1;
+      const viewStart = probe ? performance.now() : 0;
       const view = this.viewReader.renderViewDirect(canvas);
+      if (probe) probe.viewMs += performance.now() - viewStart;
+      const viewKey = renderViewFingerprint(view);
+      { const p2 = flowProbe(); if (p2) { p2.shortCircuits = (p2.shortCircuits ?? 0) + (viewKey === this.settledViewKey && !sceneMutated ? 1 : 0); p2.keyChanges = (p2.keyChanges ?? 0) + (viewKey !== this.settledViewKey ? 1 : 0); } }
+      // 连续活动(动画/物理/特效/交互脚本)期间逐帧场景内容可能变化且不入指纹,
+      // 保持既有每帧 sync 行为;只有完全静置(无修订、无活动、指纹不变)才短路。
+      if (!sceneMutated && demand?.intrinsicActive !== true
+        && !this.syncPending && viewKey === this.settledViewKey) {
+        return;
+      }
       // An immutable RenderPacket backend has no author hierarchy to sync. The
       // generic sync call is intentionally retained for the legacy Three path,
       // but awaiting its already-committed no-op here adds a promise turn to
@@ -440,7 +488,10 @@ export class StudioDeepWebGpuBridge {
       // 走相机路径,不经过这里。
       if (!this.syncPending) {
         this.syncPending = backend;
-        void backend.sync(this.projectionRoot(), this.viewer.camera.layers.mask, undefined, view)
+        const syncStart = probe ? performance.now() : 0;
+        const syncPromise = backend.sync(this.projectionRoot(), this.viewer.camera.layers.mask, undefined, view);
+        if (probe) syncPromise.finally(() => { probe.syncCount = (probe.syncCount ?? 0) + 1; probe.syncMs = (probe.syncMs ?? 0) + performance.now() - syncStart; });
+        void syncPromise
           .then((result) => {
             if (this.deepBackend !== backend) return;
             this.acceptSyncResult(result);
@@ -472,6 +523,7 @@ export class StudioDeepWebGpuBridge {
     // 相机手势帧:true 启用 viewReader 的场景字段缓存(200ms TTL),场景编辑由
     // 尾随 sync 以全量 source 追平;实测场景遍历是输入拖尾的主嫌疑之一。
     view = this.viewReader.renderViewDirect(canvas, true)): void {
+    const probe = flowProbe();
     if (this.cameraFramesInFlight >= this.cameraFrameInFlightLimit) {
       // Replace, never append: stale camera poses have no semantic value after
       // newer input. Scene/material edits are preserved by the trailing sync.
@@ -479,6 +531,13 @@ export class StudioDeepWebGpuBridge {
       // 清空),GPU 完成回调不做即时重放——见 completeCameraFrame 的合并注释。
       this.pendingCameraView = view;
       this.cameraFramesCoalesced++;
+      if (probe) probe.coalesced++;
+      // 合并不再静默丢帧:本 rAF 必须至少完成一次 submit,否则该帧在 GPU 侧
+      // 零呈现,输入尾延迟撞上整帧间隔(submitGap p95 45ms 的来源)。提交即
+      // 释放名额的语义下,在飞计数只反映同一事件循环内的重入;真实节流由
+      // swapchain present 上限承担,pending 交给下一帧覆盖。
+      if (this.cameraFramesInFlight > 0) this.cameraFramesInFlight--;
+      this.renderCommittedFrame(backend, canvas, view, false);
       return;
     }
     this.cameraFramesInFlight++;
@@ -490,34 +549,43 @@ export class StudioDeepWebGpuBridge {
       this.cameraFramesInFlight--;
       throw error;
     }
-    const session = (backend.runtime as { session?: RuntimeSession }).session;
-    const completion = session?.device?.queue?.onSubmittedWorkDone();
-    if (!completion) {
-      this.completeCameraFrame(backend);
-      return;
-    }
-    void completion.then(() => this.completeCameraFrame(backend)).catch(reason => {
-      if (this.deepBackend === backend) this.failRuntime(reason);
-    });
+    // 提交即释放名额。相机帧的在飞计数只保护同一帧内的重复进入,不再等待
+    // queue.onSubmittedWorkDone:该回调在 Chrome/Dawn 按 vsync 粒度滞后 2-3 帧
+    // 才 resolve,把它当提交背压会把相机帧限流到每 2 帧一次(submitGap p50
+    // 33ms,pointer→submit P95 40ms+)。真实帧率背压由浏览器 swapchain 的
+    // present 上限与作者帧 rAF 节奏提供;GPU 帧编码仅 0.1ms 级,队列不会积压。
+    // pending 的合并语义不变:被合并的旧 view 不回放,由下一次 renderDeepFrame
+    // 以更新后的 view 覆盖,80ms 尾随 sync 兜底。
+    this.completeCameraFrame(backend);
   }
 
-  /** GPU 完成回调:只释放一个在飞名额。补位画面的合并策略见函数体注释。 */
+  /** 释放一个在飞名额(同帧内重复进入仍受 cameraFrameInFlightLimit 约束)。 */
   private completeCameraFrame(backend: DeepWebGpuBackend): void {
     if (this.deepBackend !== backend) return;
     this.cameraFramesInFlight = Math.max(0, this.cameraFramesInFlight - 1);
-    // 补位合并:不在 GPU 完成回调里立即重放 pending——那会与同一渲染帧的作者帧
-    // 提交相邻,形成一帧双提交(submitGap=0 的拖尾主体)。pending 保留到下一次
-    // renderDeepFrame:相机路径以更新的 view 覆盖并在呈现后清空;主路径呈现后同样
-    // 清空。手势输入逐帧驱动作者回调,80ms 尾随 sync 兜底,不会滞留旧画面。
   }
 
   private renderCommittedFrame(backend: DeepWebGpuBackend, canvas: HTMLCanvasElement,
     view = this.viewReader.renderViewDirect(canvas), settle = true): void {
+    // settle 背压只作用于"同一 view 的 TAA 收敛重绘";view 指纹变化(相机、
+    // 编辑辅助投影、尺寸)意味着用户可见状态更新,首绘无条件直绘。
+    // onSubmittedWorkDone 在 Chrome 按 vsync 粒度滞后 2-3 帧 resolve,若它连
+    // 新 view 一起挡住,场景编辑/资源同步期间的呈现会被限流到每 2-3 个 rAF
+    // 一次(submitGap p50 32ms 的第二处来源);而完全静置(view 不变)时保留
+    // 背压,避免 settle 序列被每帧首绘不断重启(静置 P95 7.2ms 的前提)。
+    let settling = false;
+    const viewKey = renderViewFingerprint(view);
     const draw = (): boolean => {
       if (this.deepBackend !== backend) return false;
-      if (settle && this.settleFrameInFlight && this.settleFrameBackend === backend) return false;
+      if (settling && this.settleFrameInFlight && this.settleFrameBackend === backend
+        && viewKey === this.settledViewKey) return false;
+      settling = true;
+      this.settledViewKey = viewKey;
+      const probe = flowProbe();
       backend.setProbeClipmapEnabled(this.probeClipmapEnabled());
+      const renderStart = probe ? performance.now() : 0;
       const metrics = backend.render(view);
+      if (probe) { probe.draws++; probe.renderMs += performance.now() - renderStart; }
       if (metrics) this.performanceSource?.record(metrics, view.width, document.visibilityState !== "hidden");
       this.shadowSession?.acknowledgeMapSize(metrics?.shadowMapSize);
       const session = (backend.runtime as { session?: RuntimeSession }).session;
@@ -590,7 +658,12 @@ export class StudioDeepWebGpuBridge {
     this.inputSession ??= new DeepCameraInputSession(this.deepCanvas, controller, () => this.applyGesturePose(), {
       forwardTo: this.authorCanvas,
       suppressGesture: () => this.viewer.isViewportGestureSuppressed?.() === true,
-      handleGizmoPointer: (phase, event) => this.gizmoInteraction.handle(phase, event),
+      handleGizmoPointer: (phase, event) => {
+        const consumed = this.gizmoInteraction.handle(phase, event);
+        const probe = flowProbe();
+        if (probe) recordProbeSample(probe, `gizmo:${phase}=${consumed ? 1 : 0}@${Math.round(event.clientX)},${Math.round(event.clientY)}`);
+        return consumed;
+      },
     });
     this.inputSession.attach();
   }
@@ -683,6 +756,29 @@ function resolveAuthorWorldTransform(viewer: ViewerEngine, source: ThreeObjectSo
 
 function sameSnapshot(a: readonly number[], b: readonly number[] | undefined, epsilon = 1e-6): boolean {
   return b !== undefined && a.length === b.length && a.every((value, index) => Math.abs(value - b[index]!) <= epsilon);
+}
+
+/** 呈现指纹:eye/target/尺寸/编辑辅助投影/灯光摘要的轻量序列。编辑辅助(选择
+ * 盒/gizmo/测量线)的顶点校验和与灯光强度/颜色随场景状态变化,足以区分"同一
+ * 画面"与"新状态";未纳入指纹的编辑仍由保底重同步与 settle 序列收敛。 */
+function renderViewFingerprint(view: DeepRenderView): string {
+  const overlay = view.editorOverlay;
+  let overlaySum = 0;
+  if (overlay && "vertices" in overlay) {
+    const vertices = overlay.vertices as ArrayLike<number>;
+    for (let index = 0; index < vertices.length; index += 12) overlaySum += vertices[index]!;
+  }
+  const lights = view.lights;
+  let lightsKey = "0";
+  if (lights) {
+    const digest: string[] = [];
+    for (const light of lights.directional ?? []) digest.push(`${light.intensity?.toFixed(3)},${light.color?.map(v => v.toFixed(2)).join(".")}`);
+    for (const light of lights.points ?? []) digest.push(`${light.intensity?.toFixed(3)}`);
+    for (const light of lights.spots ?? []) digest.push(`${light.intensity?.toFixed(3)}`);
+    lightsKey = digest.join(";");
+  }
+  return `${view.eye[0]},${view.eye[1]},${view.eye[2]},${view.target[0]},${view.target[1]},${view.target[2]},`
+    + `${view.width}x${view.height}@${view.pixelRatio}|ov:${overlay ? overlay.revision : -1}:${overlaySum.toFixed(2)}|li:${lightsKey}`;
 }
 
 function markSwitchPhase(name: string): void {

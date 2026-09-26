@@ -123,6 +123,7 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
       getDeepTransformGizmoInput: () => undefined,
       getDeepMeasurementSegmentInputs: () => [],
       setPresentationRendererBackend: presentation,
+      setAuthorPacketIndependent: vi.fn(),
       setPresentationPerformanceSource: vi.fn(),
       subscribePresentationFrames: subscribe,
     } as unknown as ViewerEngine;
@@ -269,37 +270,23 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     expect(frames.size).toBe(0);
   });
 
-  it("merges pending camera replay into the next author frame instead of an immediate resubmit", async () => {
+  it("submits the latest camera on every author frame, releasing the in-flight slot on submit", async () => {
     const f = setup(); await activate(f.bridge);
-    const fences = [deferred<void>(), deferred<void>(), deferred<void>()];
-    f.first.queueDone.mockReset()
-      .mockReturnValueOnce(fences[0]!.promise)
-      .mockReturnValueOnce(fences[1]!.promise)
-      .mockReturnValueOnce(fences[2]!.promise);
+    // GPU 完成回调挂起:相机帧的呈现节奏必须跟随作者帧,而不是 vsync 级的
+    // queue.onSubmittedWorkDone(Chrome 实测滞后 2-3 帧,会让提交限流到每 2 帧
+    // 一次)。提交即释放名额,每个作者帧都呈现当时最新的相机。
+    const fence = deferred<void>();
+    f.first.queueDone.mockReset().mockReturnValue(fence.promise);
     f.first.render.mockClear();
     for (let x = 1; x <= 5; x++) {
       f.camera.position.x = x;
       for (const notify of authorFrames) notify();
       await microtasks();
     }
-    expect(f.first.render).toHaveBeenCalledTimes(2);
-    expect(f.bridge.diagnostics?.cameraFlow).toMatchObject({ inFlight: 2, maxInFlight: 2,
-      submitted: 2, coalesced: 3, pendingLatest: true, limit: 2 });
-    // GPU 完成回调只释放在飞名额:不再即时重放 pending,避免与作者帧提交相邻
-    // 形成一帧双提交(拖尾主体)。
-    fences[0]!.resolve(); await microtasks();
-    expect(f.first.render).toHaveBeenCalledTimes(2);
-    expect(f.bridge.diagnostics?.cameraFlow).toMatchObject({ inFlight: 1, maxInFlight: 2,
-      submitted: 2, pendingLatest: true });
-    // 下一作者帧以最新 view 一次提交,并清空补位缓存。
-    f.camera.position.x = 6;
-    for (const notify of authorFrames) notify();
-    await microtasks();
-    expect(f.first.render).toHaveBeenCalledTimes(3);
-    expect(f.first.render.mock.calls.at(-1)![0]).toMatchObject({ eye: [6, 0, 0] });
-    expect(f.bridge.diagnostics?.cameraFlow).toMatchObject({ inFlight: 2, maxInFlight: 2,
-      submitted: 3, pendingLatest: false });
-    fences[1]!.resolve(); fences[2]!.resolve(); await microtasks();
+    expect(f.first.render).toHaveBeenCalledTimes(5);
+    expect(f.first.render.mock.calls.at(-1)![0]).toMatchObject({ eye: [5, 0, 0] });
+    expect(f.bridge.diagnostics?.cameraFlow).toMatchObject({ inFlight: 0, maxInFlight: 1,
+      submitted: 5, coalesced: 0, pendingLatest: false, limit: 2 });
   });
 
   it("tracks the authored GI switch through the published Deep backend lifecycle", async () => {

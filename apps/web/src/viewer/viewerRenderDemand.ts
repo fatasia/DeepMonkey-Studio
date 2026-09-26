@@ -38,6 +38,7 @@ export class ViewerRenderDemand {
   snapshot() {
     return { renderedFrames: this.rendered, skippedFrames: this.skipped,
       cpuFrameWorkMs: this.frameWorkMs, cpuSchedulerWorkMs: this.schedulerWorkMs,
+      invalidationRevision: this.invalidationRevision,
       continuousSources: [...this.continuous] };
   }
 }
