@@ -49,9 +49,7 @@ https://github.com/user-attachments/assets/63f8cce2-0360-4ba9-a2cb-92086a57aca3
 
 ### 系统核心功能录屏
 
-[![系统核心功能录屏封面](docs/assets/system-core-features/poster.png)](docs/assets/system-core-features/deepmonkey-studio-core-features.mp4)
-
-[播放系统核心功能录屏（6 分 45 秒 · 1080p）](docs/assets/system-core-features/deepmonkey-studio-core-features.mp4)
+https://github.com/user-attachments/assets/cb60822e-f2ee-41ec-ab45-943929da2f5a
 
 ## 功能亮点
 

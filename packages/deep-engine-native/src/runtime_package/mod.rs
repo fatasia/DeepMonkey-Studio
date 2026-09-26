@@ -6,6 +6,7 @@ mod dashboard_types;
 mod dashboard_video_types;
 mod dashboard_video_validation;
 pub use dashboard_video_types::*;
+#[cfg(windows)]
 pub(crate) use dashboard_video_validation::is_mp4_isobmff;
 mod dashboard_text_input_types;
 pub use dashboard_table_types::*;

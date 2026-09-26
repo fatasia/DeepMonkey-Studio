@@ -1,8 +1,10 @@
 //! 保存 Web 编译的冻结报表字节；取消不写文件，写入失败保留既有目标。
+#[cfg(windows)]
+use std::path::PathBuf;
 use std::{
     fs,
     io::Write,
-    path::{Path, PathBuf},
+    path::Path,
     sync::atomic::{AtomicU64, Ordering},
 };
 const MAX_BYTES: usize = 64 * 1024 * 1024;

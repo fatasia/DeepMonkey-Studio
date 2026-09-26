@@ -89,7 +89,8 @@ pub fn evaluate_in_process(
             enabled,
             lane,
             budget,
-            ..Default::default()
+            #[cfg(windows)]
+            process_limits: XProcessLimits::default(),
         },
         request,
         context,
