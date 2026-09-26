@@ -349,3 +349,5 @@ export * from "./robotSync.js";
 export * from "./plantAnalytics.js";
 export * from "./studyReport.js";
 export * from "./modelStructure.js";
+export * from "./mtm.js";
+export * from "./geneticOptimization.js";
