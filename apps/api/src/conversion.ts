@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, copyFile, mkdir, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ConversionQualityDraft, ModelFormat, ModelManifest, ModelRecord, ViewerKind } from "@bim-studio/contracts";
 import type { AppConfig, CommandProviderConfig } from "./config.js";
@@ -10,7 +10,9 @@ import { convertIgesToGlb, convertStepToGlb } from "./stepConverter.js";
 import { auditConverterOutput } from "./converterOutputAudit.js";
 import { convertXtTextSubsetToGlb } from "./xtTextSubsetConverter.js";
 import { runBuiltinJtWorker } from "./builtinJtWorkerExecutor.js";
-import { writeXtTextInspectionArtifact } from "./xtTextInspection.js";
+import { writeXtTextInspectionArtifact, type XtTextInspectionResult } from "./xtTextInspection.js";
+import { convertXtGenericTextToGlb, type XtGenericConversionResult } from "./xtGenericConverter.js";
+import { buildXtGenericReadyQuality } from "./xtGenericQualityDraft.js";
 import { buildJtLod0ReadyQuality, buildXtRevolvedReadyQuality, sha256File } from "./conversionQualityDraft.js";
 import { RobotSourceProvider } from "./RobotSourceProvider.js";
 import { ConversionTaskService } from "./conversionTasks.js";
@@ -285,6 +287,16 @@ class XtTextSubsetProvider implements ConversionProvider {
     private readonly objects: ObjectStore,
   ) {}
 
+  /**
+   * 双档决策树（同一 Provider 内部 fallback，不新建 Provider）：
+   * 1. 命中已签署 V24.1 旋转体子集 → 原样走受控旋转体路径（行为逐字节不变）。
+   * 2. 子集解析拒绝且 inspection 几何未解析 → 先尝试自研通用文本解析降级档：
+   *    - 发布出 ≥1 个可审计网格 → ready(visual-complete)，losses 如实来自 xt-reader；
+   *    - 0 个可发布面片（含 legacy-baseline 编码）→ 保持 waiting_converter，
+   *      inspection 附 generic-parse 实体 census，绝不 ready 空几何。
+   * 3. 通用降级也失败（结构损坏等）→ 维持原 failed/waiting 语义，
+   *    错误信息合并两个解析器的失败原因。
+   */
   async convert({ model, modelDir, sourcePath, reportQuality }: ConversionContext): Promise<void> {
     const outputDir = path.join(modelDir, "output");
     await this.store.updateModel(model.projectId, model.id, {
@@ -295,26 +307,16 @@ class XtTextSubsetProvider implements ConversionProvider {
     const inspection = await writeXtTextInspectionArtifact(sourcePath, outputDir);
     const inspectionUrl = assetUrl(model.projectId, model.id, "output/inspection.json");
     if (!inspection.geometryParsed) {
-      const manifest: ModelManifest = {
-        schemaVersion: 1,
-        modelId: model.id,
-        sourceName: model.name,
-        sourceFormat: "x_t",
-        inspectionUrl,
-        createdAt: new Date().toISOString(),
-      };
-      await writeManifest(modelDir, manifest);
-      await this.objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
-      const invalid = inspection.status === "invalid";
-      await this.store.updateModel(model.projectId, model.id, {
-        status: invalid ? "failed" : "waiting_converter",
-        progress: invalid ? 100 : 40,
-        message: invalid
-          ? `X_T 文件结构无效：${inspection.geometry.reason}`
-          : `X_T ${inspection.schema ?? "未知 schema"} 头部已读取；未生成几何：${inspection.geometry.reason}`,
-        manifest,
-        manifestUrl: assetUrl(model.projectId, model.id, "manifest.json"),
-      });
+      const fallback = await this.tryGenericFallback(sourcePath, outputDir, inspection);
+      if (fallback.result && fallback.result.meshCount > 0) {
+        await this.publishGenericReady(model, modelDir, outputDir, inspectionUrl, fallback.result, reportQuality);
+        return;
+      }
+      if (fallback.error) {
+        await this.publishUnconverted(model, modelDir, inspectionUrl, inspection, fallback.error);
+        return;
+      }
+      await this.publishGenericWaiting(model, modelDir, outputDir, inspectionUrl, inspection, fallback);
       return;
     }
     const result = await convertXtTextSubsetToGlb(sourcePath, outputDir);
@@ -350,6 +352,146 @@ class XtTextSubsetProvider implements ConversionProvider {
       manifestUrl: assetUrl(model.projectId, model.id, "manifest.json"),
     });
   }
+
+  /** 通用降级档：任何失败都收敛为结果对象，不把异常抛回原失败语义之外。 */
+  private async tryGenericFallback(
+    sourcePath: string,
+    outputDir: string,
+    inspection: XtTextInspectionResult,
+  ): Promise<{ result?: XtGenericConversionResult; error?: string; census?: Record<string, number> }> {
+    try {
+      const result = await convertXtGenericTextToGlb(sourcePath, outputDir);
+      if (result.meshCount === 0) {
+        // 绝不 ready 空几何：撤掉通用转换器生成的空 GLB，census 留在 inspection 证据里。
+        await rm(path.join(outputDir, "geometry.glb"), { force: true });
+        const census = await genericParseCensus(sourcePath);
+        return { ...(census ? { census } : {}) };
+      }
+      return { result };
+    } catch (error) {
+      const genericReason = error instanceof Error ? error.message : String(error);
+      return { error: mergeFailureReasons(inspection, genericReason) };
+    }
+  }
+
+  private async publishGenericReady(
+    model: ModelRecord,
+    modelDir: string,
+    outputDir: string,
+    inspectionUrl: string,
+    result: XtGenericConversionResult,
+    reportQuality: ConversionContext["reportQuality"],
+  ): Promise<void> {
+    await auditConverterOutput(outputDir, true);
+    const lods = await createLodResources(path.join(outputDir, "geometry.glb"), model);
+    const manifest: ModelManifest = {
+      ...createManifest(
+        model,
+        "gltf",
+        assetUrl(model.projectId, model.id, "output/geometry.glb"),
+        assetUrl(model.projectId, model.id, "output/hierarchy.json"),
+        assetUrl(model.projectId, model.id, "output/properties.json"),
+        lods,
+      ),
+      inspectionUrl,
+    };
+    await writeManifest(modelDir, manifest);
+    await this.objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
+    reportQuality?.(await buildXtGenericReadyQuality({ outputDir, ...result }));
+    await this.store.updateModel(model.projectId, model.id, {
+      status: "ready",
+      progress: 100,
+      message: `X_T 通用解析完成（降级档）：${result.meshCount} 个网格，${result.triangleCount.toLocaleString("zh-CN")} 个三角面，${result.losses.length} 项如实损失`,
+      manifest,
+      manifestUrl: assetUrl(model.projectId, model.id, "manifest.json"),
+    });
+  }
+
+  private async publishGenericWaiting(
+    model: ModelRecord,
+    modelDir: string,
+    outputDir: string,
+    inspectionUrl: string,
+    inspection: XtTextInspectionResult,
+    fallback: { census?: Record<string, number> },
+  ): Promise<void> {
+    // census 只存在于通用降级等待分支：V24.1 子集路径的 inspection 内容保持不变。
+    const inspectionWithCensus = {
+      ...inspection,
+      genericParse: {
+        scope: "record-anchor-census-may-include-false-positives",
+        ...(fallback.census ? { census: fallback.census } : {}),
+      },
+    };
+    await writeFile(path.join(outputDir, "inspection.json"), JSON.stringify(inspectionWithCensus, null, 2), "utf8");
+    const manifest: ModelManifest = {
+      schemaVersion: 1,
+      modelId: model.id,
+      sourceName: model.name,
+      sourceFormat: "x_t",
+      inspectionUrl,
+      createdAt: new Date().toISOString(),
+    };
+    await writeManifest(modelDir, manifest);
+    await this.objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
+    const censusSummary = fallback.census
+      ? Object.entries(fallback.census).sort((a, b) => b[1] - a[1]).slice(0, 8)
+        .map(([classId, count]) => `class ${classId} ×${count}`).join("、")
+      : "无记录锚点";
+    await this.store.updateModel(model.projectId, model.id, {
+      status: "waiting_converter",
+      progress: 40,
+      message: `X_T ${inspection.schema ?? "未知 schema"} 头部已读取；通用解析未命中可发布几何（${censusSummary}）`,
+      manifest,
+      manifestUrl: assetUrl(model.projectId, model.id, "manifest.json"),
+    });
+  }
+
+  /** 通用降级也失败：维持原 failed/waiting 语义，错误信息合并两个解析器的原因。 */
+  private async publishUnconverted(
+    model: ModelRecord,
+    modelDir: string,
+    inspectionUrl: string,
+    inspection: XtTextInspectionResult,
+    mergedReason: string,
+  ): Promise<void> {
+    const manifest: ModelManifest = {
+      schemaVersion: 1,
+      modelId: model.id,
+      sourceName: model.name,
+      sourceFormat: "x_t",
+      inspectionUrl,
+      createdAt: new Date().toISOString(),
+    };
+    await writeManifest(modelDir, manifest);
+    await this.objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
+    const invalid = inspection.status === "invalid";
+    await this.store.updateModel(model.projectId, model.id, {
+      status: invalid ? "failed" : "waiting_converter",
+      progress: invalid ? 100 : 40,
+      message: invalid
+        ? `X_T 文件结构无效：${mergedReason}`
+        : `X_T ${inspection.schema ?? "未知 schema"} 头部已读取；未生成几何：${mergedReason}`,
+      manifest,
+      manifestUrl: assetUrl(model.projectId, model.id, "manifest.json"),
+    });
+  }
+}
+
+/** inspection 附加证据：通用解析的记录锚点 census（可能含误报，仅用于观察）。 */
+async function genericParseCensus(sourcePath: string): Promise<Record<string, number> | undefined> {
+  try {
+    const { parseXtTextDocument } = await import("@bim-studio/xt-reader");
+    const { readFile } = await import("node:fs/promises");
+    return parseXtTextDocument(await readFile(sourcePath)).census;
+  } catch {
+    return undefined;
+  }
+}
+
+function mergeFailureReasons(inspection: XtTextInspectionResult, genericReason: string): string {
+  const subsetReason = inspection.geometry.reason;
+  return subsetReason === genericReason ? subsetReason : `${subsetReason}；通用解析：${genericReason}`;
 }
 
 class JtStructureProvider implements ConversionProvider {

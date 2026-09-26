@@ -18,8 +18,9 @@
 | STEP / STP | `occt-import-js` 解析与三角化 | GLB + hierarchy.json + properties.json | 可用 |
 | DWG | 外部 LibreDWG 命令 | DXF | 配置转换器后可用，否则 `waiting_converter` |
 | RVT | Windows Revit Agent / Revit Add-in | IFC 或原生 GLB，可带层级与属性 | 配置转换器且存在兼容 Revit 后可用 |
-| Parasolid X_T | TypeScript 内部严格子集；其他结构保留检查证据 | 命中 V24.1 单体共轴旋转件时为 GLB + 层级 + 属性；否则仅 inspection | 单份 MIT 真实样本 L2 通过；不等于通用 X_T |
-| Parasolid X_B | 可替换工业 CAD SDK 适配器 | GLB + 必需层级，可带属性与 PMI | 配置商业 Provider 后可用，否则 `waiting_converter` |
+| Parasolid X_T | TypeScript 内部严格子集 | 命中 V24.1 单体共轴旋转件时为 GLB + 层级 + 属性;否则仅 inspection | 单份 MIT 真实样本 L2 通过;不等于通用 X_T |
+| Parasolid X_T（通用降级档） | 同一 Provider 内 fallback 到 `packages/xt-reader` 通用文本解析（校验门控，108 个真实样本解析回归见 `test-output/xt-generic-parser-regression-20260925.json`） | 子集档拒绝且通用解析发布出 ≥1 网格时为 GLB + 层级 + 属性（`visual-complete`，losses 逐条来自 xt-reader）；0 个可发布面片（含 legacy-baseline 编码）保持 `waiting_converter` 并在 inspection 记录 generic-parse census，绝不 ready 空几何 | 平面/圆柱/圆锥/球面族按证据发布；trim、实体名称/颜色、装配挂接与 legacy-baseline 编码如实进损失，不冒充完整 B-Rep |
+| Parasolid X_B | 内置阻断(等待内置 B-Rep 离散化),不依赖商业 Provider | `waiting_converter` + 检查证据 | 解析层可行:`parasolid-kit` v0.2.0(MIT,`parasolid-core`)已提供 X_B 严格解析与 B-Rep 映射,须逐文件审计、固定版本、随包交付;几何发布缺少 B-Rep 三角化(自研,属 R1 工程量)。在离散化落地前,X_B 保持明确阻断,不接入任何商业转换器 |
 | JT | TypeScript 内部 JT 9.5/10 TriStrip/TopoMesh 子集 | 最高精度 LOD0 GLB + hierarchy/properties/inspection | JT 9.5 与 10.3 各一份真实样本 L2 通过；不支持的版本或无 LOD0 时 `waiting_converter` |
 | OpenUSD / USDA / USDC / USDZ | Three.js 0.185.1 官方 USDLoader 按需解析 | 保留并直接查看源文件 | USDA/USDC/USDZ 官方样本已通过；复杂 composition 仍需样本验证 |
 
