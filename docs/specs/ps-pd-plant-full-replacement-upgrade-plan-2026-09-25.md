@@ -277,3 +277,48 @@ Studio Core
 
 这条链全部通过真实样例、可复现结果、失败恢复和用户体验验收后，才能对外宣称 PS/PD/Plant 替代能力。
 
+
+## 11. v2 修订记录(2026-09-27,依据审阅报告 ps-pd-plant-plan-review)
+
+以下 5 条 P0 修订已定案并入正文语义;实施按本节执行,与正文冲突时以本节为准。
+
+### 11.1 时间协议:双域单位与权威换算
+
+Plant 域(plantLiteModel/plantTransportNetwork)内部单位为**分钟**;Control 域
+(virtualCommissioning)内部单位为**毫秒**。定案:两域各自保持既有单位不变,换算常量
+`1 分钟 = 60000 毫秒` 唯一定义于 `packages/contracts`(simulationEngine 协议常量);
+统一时间线渲染层必须经该常量换算,禁止各面板私定比例。浮点累计误差在播放端按帧对齐,
+不要求 DES 与控制域 tick 逐一对齐。
+
+### 11.2 共同随机数:RandomStream 派生树
+
+跨内核共同随机数(CRN)要求统一派生协议:`rootSeed → engineId → replication → subsystem`
+的确定性派生树,各内核从派生树取流,禁止自选种子或全局计数器。Plant Lite 现有
+seedNumber/mixSeed 即该树在 `engineId=plant-lite-des` 分支的实现;机器人/控制/物理内核
+接入时按同树扩展。跨引擎对比研究只允许在派生树覆盖的内核间做 CRN 配对。
+
+### 11.3 断点恢复:粒度定案
+
+恢复粒度 = **replication 边界**。已完成 replication 的指标与轨迹证据即时持久化;
+中断后恢复 = 重放已完成 replication 的证据 + 继续未完成的 replication(重算)。
+事件级(队列+RNG 状态)快照不做,R0-R3 均不承诺。跨进程恢复语义同上:证据先行,计算续跑。
+
+### 11.4 权限最小合同
+
+- 运行 Study/实验:editor 及以上角色;
+- 修改 frozen 对象:必须先显式解冻(变更记录留痕,digitalThread 已实现拒绝语义);
+- 发布 ReleaseBaseline:`approvedBy` 必须为 admin 或独立审批角色,审核动作入审计日志;
+- viewer 角色只读 Study 结果与发布包。
+
+### 11.5 性能验收锚点(可修订,不可空白)
+
+| 指标 | 锚点 | 当前实测(2026-09-26) |
+|---|---|---|
+| DES 吞吐(小模型) | ≥100k events/s | 795k ✅ |
+| DES 吞吐(60 工位) | ≥30k events/s | 32.3k ✅ |
+| 对象容量档位 | 500 / 4000 / 10000 节点可运行 | 标定进行中 |
+| 批量实验 | 100 replications P95 ≤ 5min | 未测 |
+| 报告生成 | P95 ≤ 10s | 未测 |
+| 渲染交互反馈 | ≤100ms | 输入 P50 7ms ✅ |
+
+锚点在 R1 退出时复核一次;修改锚点必须在修订记录留痕,禁止静默改低。
