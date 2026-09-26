@@ -36,6 +36,7 @@ function fixture() {
     getDeepEditorOverlayRoots: () => [], getDeepSelectionBox: () => undefined,
     getDeepTransformGizmoInput: () => undefined, getDeepMeasurementSegmentInputs: () => [],
     setPresentationRendererBackend: vi.fn(), setPresentationPerformanceSource: vi.fn(),
+      setAuthorPacketIndependent: vi.fn(),
     subscribePresentationFrames: (callback: () => void) => { listeners.add(callback); return () => listeners.delete(callback); },
   } as unknown as ViewerEngine;
   const bridge = new StudioDeepWebGpuBridge(viewer, { append: vi.fn(), clientWidth: 640, clientHeight: 480 } as unknown as HTMLElement,

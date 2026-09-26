@@ -64,6 +64,7 @@ describe("Studio Deep bridge environment staging", () => {
       usesAuthorPostProcessing: () => true,
       getPostProcessing: () => ({ ...DEFAULT_POST_PROCESSING, enabled: false }),
       setPresentationPerformanceSource: vi.fn(),
+      setAuthorPacketIndependent: vi.fn(),
       setPresentationRendererBackend: presentation, subscribePresentationFrames: (callback: () => void) => {
         authorFrames.add(callback); return () => authorFrames.delete(callback);
       } } as unknown as ViewerEngine;

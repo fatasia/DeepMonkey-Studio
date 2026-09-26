@@ -32,7 +32,8 @@ function fixture() {
     getDeepGrid: () => grid, getDeepEditorOverlayRoots: () => [], getDeepSelectionBox: () => undefined,
     getDeepTransformGizmoInput: () => undefined, getDeepMeasurementSegmentInputs: () => [],
     setPresentationRendererBackend: presentation,
-    setPresentationPerformanceSource: vi.fn(), subscribePresentationFrames: (callback: () => void) => { frames.add(callback); return () => frames.delete(callback); },
+    setPresentationPerformanceSource: vi.fn(),
+      setAuthorPacketIndependent: vi.fn(), subscribePresentationFrames: (callback: () => void) => { frames.add(callback); return () => frames.delete(callback); },
   } as unknown as ViewerEngine;
   const backend = () => ({ setProbeClipmapEnabled: vi.fn(), prepareScene: vi.fn().mockResolvedValue({ frame: 1 }), sync: vi.fn().mockResolvedValue({ status: "committed" }),
     render: vi.fn(() => ({ frame: 1 })), dispose: vi.fn(), runtime: { session: { state: "ready" } } });

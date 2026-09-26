@@ -55,6 +55,7 @@ describe("Studio Deep bridge author lighting", () => {
       setPresentationRendererBackend: presentation,
       getPostProcessing: () => ({ ...DEFAULT_POST_PROCESSING, enabled: false }),
       setPresentationPerformanceSource: vi.fn(),
+      setAuthorPacketIndependent: vi.fn(),
       subscribePresentationFrames: (callback: () => void) => {
         authorFrames.add(callback); return () => { authorFrames.delete(callback); unsubscribe(); };
       } } as unknown as ViewerEngine;
