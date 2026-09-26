@@ -47,6 +47,12 @@ https://github.com/user-attachments/assets/63f8cce2-0360-4ba9-a2cb-92086a57aca3
 
 从模型接入、轻量化与数据连接，到 AI 工作流、自研引擎和多端交付。
 
+### 系统核心功能录屏
+
+[![系统核心功能录屏封面](docs/assets/system-core-features/poster.png)](docs/assets/system-core-features/deepmonkey-studio-core-features.mp4)
+
+[播放系统核心功能录屏（6 分 45 秒 · 1080p）](docs/assets/system-core-features/deepmonkey-studio-core-features.mp4)
+
 ## 功能亮点
 
 - **为 AI 构建的工业工作空间**：场景、构件、数据、语义、脚本和运行状态都有稳定合同，AI 能理解当前项目，也能通过受控工具执行修改、运行分析、验证结果并交付，而不是只做聊天问答。
