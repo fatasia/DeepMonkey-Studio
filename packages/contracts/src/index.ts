@@ -7,6 +7,7 @@ export type { AiSessionMessageStatus, AiSessionReliability, AiSessionSummary, Ai
 export * from "./aiDataBinding.js";
 export * from "./parametricModeling.js";
 export * from "./operations.js";
+export * from "./plantClassLibrary.js";
 export * from "./plantLiteModel.js";
 export * from "./data.js";
 export * from "./dataWriteback.js";
@@ -342,3 +343,5 @@ export * from "./dashboardLayerOrder.js";
 export * from "./dashboardWebPackage.js";
 export * from "./formatImportContracts.js";
 export * from "./sceneScriptProtocol.js";
+export * from "./robotSync.js";
+export * from "./plantAnalytics.js";

@@ -6,3 +6,4 @@ export { assessWorkcellPlanningEvidence } from "./planningEvidence.js";
 export { createWorkcellAuditProvider } from "./provider.js";
 export { workcellAuditInputSchema, workcellAuditOutputSchema } from "./workcellSchemas.js";
 export { planTrajectory } from "./trajectoryPlanner.js";
+export { runRobotSyncScenario } from "./robotSync.js";
