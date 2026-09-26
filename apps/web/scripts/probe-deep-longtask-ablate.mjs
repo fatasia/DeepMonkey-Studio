@@ -1,6 +1,10 @@
+// 临时消融探针(不提交):登记全部 setInterval 回调源码;拖拽前由 Node 侧
+// 按周期选择性 clearInterval,对比拖拽窗口长帧数 —— 直接验证"哪个定时器
+// 的回调触发全壳重渲染"。
 import playwright from "../../cloud-render-worker/node_modules/playwright-core/index.js";
 const webOrigin = "http://127.0.0.1:5173";
 const apiOrigin = "http://127.0.0.1:4100";
+const CLEAR_DELAYS = (process.env.CLEAR_DELAYS ?? "").split(",").filter(Boolean).map(Number);
 const login = await fetch(`${apiOrigin}/api/auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username: "admin", password: "admin" }) });
 const { token } = await login.json();
 const browser = await playwright.chromium.launch({ executablePath: "C:/Program Files/Google/Chrome/Application/chrome.exe", headless: true, args: ["--enable-unsafe-webgpu", "--enable-features=Vulkan,UseSkiaRenderer", "--no-sandbox"] });
@@ -8,11 +12,30 @@ const context = await browser.newContext({ viewport: { width: 1280, height: 800 
 await context.addInitScript(({ token }) => {
   localStorage.setItem("bim-studio-auth-token", token);
   localStorage.setItem("bim-studio.renderer-backend", "webgl");
+  window.__timers = [];
+  const oSetInterval = window.setInterval.bind(window);
+  window.setInterval = (fn, d, ...rest) => {
+    const id = oSetInterval(fn, d, ...rest);
+    window.__timers.push({ id, d, src: String(fn).replace(/\s+/g, " ").slice(0, 200) });
+    return id;
+  };
+  // WS 消息时间轴:sceneDataBridge 走 WebSocket,帧不进 page response 事件。
+  window.__wsLog = [];
+  const OWS = window.WebSocket;
+  window.WebSocket = function (...args) {
+    const ws = new OWS(...args);
+    ws.addEventListener("message", (e) => {
+      window.__wsLog.push({ t: Math.round(performance.now()), n: String(e.data ?? "").slice(0, 100) });
+      if (window.__wsLog.length > 300) window.__wsLog.shift();
+    });
+    return ws;
+  };
+  Object.assign(window.WebSocket, { OPEN: OWS.OPEN, CLOSED: OWS.CLOSED, CLOSING: OWS.CLOSING, CONNECTING: OWS.CONNECTING, prototype: OWS.prototype });
 }, { token });
 const page = await context.newPage();
+page.on("pageerror", e => console.error("[pageerror]", e.message.slice(0, 200)));
 await page.goto(`${webOrigin}/studio/fedab835-389b-43a5-99be-6820d0f3afde?project=38ea81ba-3033-4d3e-86b5-648fd58d98f1`, { waitUntil: "domcontentloaded", timeout: 60000 });
 await page.locator(".viewport canvas:not([data-renderer-backend])").first().waitFor({ state: "visible", timeout: 60000 });
-// 切 webgpu
 const dialog = page.getByRole("dialog", { name: "渲染引擎设置", exact: true });
 await page.getByLabel("更多场景工具", { exact: true }).click();
 await page.getByRole("button", { name: "渲染引擎设置", exact: true }).click();
@@ -24,16 +47,22 @@ await page.waitForFunction(() => {
 await dialog.getByRole("button", { name: "关闭", exact: true }).click();
 await page.waitForTimeout(800);
 const bounds = await page.locator(".viewport canvas:not([data-renderer-backend])").first().boundingBox();
-// 注入长任务归因:全会话累积 + 拖拽窗口标记。buffered 会把切换阶段(React 挂载、
-// 首渲、上传)的长任务一并送进来,不做窗口过滤时它们会被误记成"拖拽期长帧"。
+// 拖拽前按周期清除定时器(消融组)
+const cleared = await page.evaluate((delays) => {
+  const out = [];
+  for (const t of window.__timers) {
+    if (delays.includes(t.d)) { window.clearInterval(t.id); out.push({ id: t.id, d: t.d, src: t.src.slice(0, 120) }); }
+  }
+  return out;
+}, CLEAR_DELAYS);
 await page.evaluate(() => {
-  const lt = [];
-  new PerformanceObserver(list => { for (const e of list.getEntries()) lt.push({ d: Math.round(e.duration), t: Math.round(e.startTime), a: e.attribution?.[0]?.name ?? "?" }); }).observe({ type: "longtask", buffered: true });
-  window.__lt = lt;
-  window.__marks = [];
+  window.__laf = [];
+  new PerformanceObserver(list => {
+    for (const e of list.getEntries()) window.__laf.push({ d: Math.round(e.duration), t: Math.round(e.startTime) });
+  }).observe({ type: "long-animation-frame" });
+  window.__dragStart = Math.round(performance.now());
 });
 const x = bounds.x + bounds.width / 2, y = bounds.y + bounds.height / 2;
-await page.evaluate(() => { window.__marks.push({ dragStart: Math.round(performance.now()) }); });
 await page.mouse.move(x, y); await page.mouse.down();
 for (let i = 0; i < 120; i++) {
   const phase = i / 119 * Math.PI * 4;
@@ -41,22 +70,23 @@ for (let i = 0; i < 120; i++) {
   await page.waitForTimeout(16);
 }
 await page.mouse.up();
-await page.evaluate(() => { window.__marks.push({ dragEnd: Math.round(performance.now()) }); });
-await page.waitForTimeout(150);
+await page.waitForTimeout(200);
 const report = await page.evaluate(() => {
-  const [start, end] = window.__marks;
-  const inWindow = window.__lt.filter(task => task.t >= start.dragStart - 50 && task.t <= end.dragEnd + 150);
-  return { window: { dragStart: start.dragStart, dragEnd: end.dragEnd },
-    dragLongTasks: inWindow, allLongTasks: window.__lt,
-    raf: (() => { return "n/a"; })() };
+  const start = window.__dragStart - 50;
+  return {
+    dragStart: window.__dragStart,
+    dragLongFrames: window.__laf.filter(f => f.t >= start),
+    dragWs: (window.__wsLog || []).filter(w => w.t >= start),
+    timers: window.__timers,
+  };
 });
-// 输出:拖拽窗口长任务(输入路径的真实目标)+ 全会话任务数摘要。
-const summary = {
-  dragWindow: report.window,
-  dragLongTaskCount: report.dragLongTasks.length,
-  dragLongTasks: report.dragLongTasks,
-  allSessionLongTaskCount: report.allLongTasks.length,
-  allSessionLongTasks: report.allLongTasks,
-};
-console.log(JSON.stringify(summary, null, 1));
+console.log(JSON.stringify({
+  clearedDelays: CLEAR_DELAYS,
+  cleared,
+  dragLongFrameCount: report.dragLongFrames.length,
+  dragLongFrames: report.dragLongFrames,
+  dragWsCount: report.dragWs.length,
+  dragWs: report.dragWs.slice(0, 25),
+  allTimers: report.timers,
+}, null, 1));
 await browser.close();

@@ -1,3 +1,6 @@
+// 临时归因探针(不提交):用 long-animation-frame 的 scripts.attribution 拿拖拽期
+// 长帧内每个脚本块的 invoker(定时器回调/消息监听/React MessageChannel 泵),
+// 直接定位"谁在拖拽期 setState 触发全壳渲染"。
 import playwright from "../../cloud-render-worker/node_modules/playwright-core/index.js";
 const webOrigin = "http://127.0.0.1:5173";
 const apiOrigin = "http://127.0.0.1:4100";
@@ -10,9 +13,16 @@ await context.addInitScript(({ token }) => {
   localStorage.setItem("bim-studio.renderer-backend", "webgl");
 }, { token });
 const page = await context.newPage();
+page.on("pageerror", e => console.error("[pageerror]", e.message));
+const netLog = [];
+page.on("response", (res) => {
+  const url = res.url();
+  if (url.includes("/editor") || url.includes("presence")) {
+    netLog.push({ t: Math.round(performance.now()), s: res.status(), u: url.split("?")[0].replace(/^.*\//, "") });
+  }
+});
 await page.goto(`${webOrigin}/studio/fedab835-389b-43a5-99be-6820d0f3afde?project=38ea81ba-3033-4d3e-86b5-648fd58d98f1`, { waitUntil: "domcontentloaded", timeout: 60000 });
 await page.locator(".viewport canvas:not([data-renderer-backend])").first().waitFor({ state: "visible", timeout: 60000 });
-// 切 webgpu
 const dialog = page.getByRole("dialog", { name: "渲染引擎设置", exact: true });
 await page.getByLabel("更多场景工具", { exact: true }).click();
 await page.getByRole("button", { name: "渲染引擎设置", exact: true }).click();
@@ -24,16 +34,25 @@ await page.waitForFunction(() => {
 await dialog.getByRole("button", { name: "关闭", exact: true }).click();
 await page.waitForTimeout(800);
 const bounds = await page.locator(".viewport canvas:not([data-renderer-backend])").first().boundingBox();
-// 注入长任务归因:全会话累积 + 拖拽窗口标记。buffered 会把切换阶段(React 挂载、
-// 首渲、上传)的长任务一并送进来,不做窗口过滤时它们会被误记成"拖拽期长帧"。
 await page.evaluate(() => {
-  const lt = [];
-  new PerformanceObserver(list => { for (const e of list.getEntries()) lt.push({ d: Math.round(e.duration), t: Math.round(e.startTime), a: e.attribution?.[0]?.name ?? "?" }); }).observe({ type: "longtask", buffered: true });
-  window.__lt = lt;
-  window.__marks = [];
+  window.__laf = [];
+  new PerformanceObserver(list => {
+    for (const e of list.getEntries()) {
+      window.__laf.push({
+        d: Math.round(e.duration), t: Math.round(e.startTime),
+        blocking: Math.round(e.blockingDuration),
+        scripts: e.scripts.map(s => ({
+          inv: String(s.invoker ?? "").slice(0, 80),
+          invt: s.invokerType,
+          src: (s.sourceURL || "").replace(/^.*[\\/]/, "") + ":" + s.sourceLine,
+          d: Math.round(s.duration),
+        })),
+      });
+    }
+  }).observe({ type: "long-animation-frame", buffered: true });
+  window.__dragStart = Math.round(performance.now());
 });
 const x = bounds.x + bounds.width / 2, y = bounds.y + bounds.height / 2;
-await page.evaluate(() => { window.__marks.push({ dragStart: Math.round(performance.now()) }); });
 await page.mouse.move(x, y); await page.mouse.down();
 for (let i = 0; i < 120; i++) {
   const phase = i / 119 * Math.PI * 4;
@@ -41,22 +60,14 @@ for (let i = 0; i < 120; i++) {
   await page.waitForTimeout(16);
 }
 await page.mouse.up();
-await page.evaluate(() => { window.__marks.push({ dragEnd: Math.round(performance.now()) }); });
 await page.waitForTimeout(150);
 const report = await page.evaluate(() => {
-  const [start, end] = window.__marks;
-  const inWindow = window.__lt.filter(task => task.t >= start.dragStart - 50 && task.t <= end.dragEnd + 150);
-  return { window: { dragStart: start.dragStart, dragEnd: end.dragEnd },
-    dragLongTasks: inWindow, allLongTasks: window.__lt,
-    raf: (() => { return "n/a"; })() };
+  const start = window.__dragStart - 50;
+  return { dragLongFrames: window.__laf.filter(f => f.t >= start) };
 });
-// 输出:拖拽窗口长任务(输入路径的真实目标)+ 全会话任务数摘要。
-const summary = {
-  dragWindow: report.window,
-  dragLongTaskCount: report.dragLongTasks.length,
-  dragLongTasks: report.dragLongTasks,
-  allSessionLongTaskCount: report.allLongTasks.length,
-  allSessionLongTasks: report.allLongTasks,
-};
-console.log(JSON.stringify(summary, null, 1));
+console.log(JSON.stringify({
+  count: report.dragLongFrames.length,
+  frames: report.dragLongFrames,
+  dragNet: netLog,
+}, null, 1));
 await browser.close();
