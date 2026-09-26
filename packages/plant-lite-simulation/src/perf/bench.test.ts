@@ -13,7 +13,7 @@ interface BenchScenario {
   name: string;
   model: PlantLiteModel;
   replications: number;
-  limits: { durationMinutes: number; warmupMinutes?: number; maxEvents?: number };
+  limits: { durationMinutes: number; warmupMinutes?: number; maxEvents?: number; maxResources?: number };
 }
 
 /** 大模型扩展性:N 工位串联 + N 设备资源,验证事件数与墙钟的缩放关系。 */
@@ -34,12 +34,46 @@ function buildLargeLine(stations: number): PlantLiteModel {
   return { id: `bench-large-${stations}`, name: `基准 · ${stations} 工位串联`, nodes, edges, resources };
 }
 
+/** 规模档位模型:lines 条并行产线 × stationsPerLine 工位/线;每个工位独立设备资源。
+ *  对标西门子档位口径(Essentials ≤500 / Standard ≤4000 / Advanced 全厂对象):
+ *  节点数 = 1 source + lines×stationsPerLine 工位 + lines sink;资源数 = lines×stationsPerLine。 */
+function buildTierModel(lines: number, stationsPerLine: number): PlantLiteModel {
+  const nodes: PlantLiteModel["nodes"] = [];
+  const edges: PlantLiteModel["edges"] = [];
+  const resources: PlantLiteModel["resources"] = [];
+  for (let line = 0; line < lines; line += 1) {
+    const sourceId = `src-l${line}`;
+    nodes.push({ id: sourceId, name: `来料 L${line}`, kind: "source", interarrivalTime: { kind: "deterministic", value: 0.05 }, maxItems: 400 });
+    let previous = sourceId;
+    for (let index = 0; index < stationsPerLine; index += 1) {
+      const stationId = `l${line}-st${index}`;
+      nodes.push({ id: stationId, name: `工位 L${line}#${index}`, kind: "station", processingTime: { kind: "deterministic", value: 0.01 }, resourceId: `${stationId}-mc` });
+      resources.push({ id: `${stationId}-mc`, name: `设备 ${stationId}`, kind: "equipment", capacity: 1 });
+      edges.push({ id: `${previous}->${stationId}`, from: previous, to: stationId });
+      previous = stationId;
+    }
+    const sinkId = `snk-l${line}`;
+    nodes.push({ id: sinkId, name: `出货 L${line}`, kind: "sink" });
+    edges.push({ id: `${previous}->${sinkId}`, from: previous, to: sinkId });
+  }
+  return {
+    id: `bench-tier-${lines}x${stationsPerLine}`,
+    name: `档位 · ${lines} 线 × ${stationsPerLine} 工位`,
+    nodes, edges, resources,
+  };
+}
+
 const SCENARIOS: BenchScenario[] = [
   { name: "golden01-single-line", model: golden01SingleLine(), replications: 10, limits: { durationMinutes: 480, warmupMinutes: 60 } },
   { name: "golden04-changeover", model: golden04Changeover(), replications: 10, limits: { durationMinutes: 480, warmupMinutes: 60 } },
   { name: "golden05-multi-agv", model: golden05MultiAgv(), replications: 10, limits: { durationMinutes: 120 } },
   { name: "large-20-stations", model: buildLargeLine(20), replications: 5, limits: { durationMinutes: 480, maxEvents: 100_000 } },
   { name: "large-60-stations", model: buildLargeLine(60), replications: 5, limits: { durationMinutes: 480, maxEvents: 100_000 } },
+  // 规模档位(对象数口径=节点数,对齐西门子 Essentials/Standard/超档):
+  // maxResources 覆盖默认上限 100:资源单元总数=lines×stationsPerLine。
+  { name: "tier-500-objects", model: buildTierModel(5, 99), replications: 3, limits: { durationMinutes: 480, maxEvents: 200_000, maxResources: 500 } },
+  { name: "tier-4000-objects", model: buildTierModel(40, 99), replications: 2, limits: { durationMinutes: 480, maxEvents: 400_000, maxResources: 4_000 } },
+  { name: "tier-10000-objects", model: buildTierModel(100, 99), replications: 2, limits: { durationMinutes: 480, maxEvents: 400_000, maxResources: 10_000 } },
 ];
 
 function median(values: number[]): number {
