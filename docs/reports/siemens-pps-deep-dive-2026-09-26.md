@@ -365,6 +365,41 @@ PD 的数据模型是 PPR(Product/Process/Resource):
 
 ---
 
+# 第 6 章 虚拟调试 Live/Replay 双模式定案(2026-09-26,OPC UA 实连落地)
+
+> 对应第 5 章第 7 条(CEE 事件仿真):信号/命令/故障/断言四件套即确定性 Replay;
+> 本章把"PLC 写的逻辑对不对"的另一半——**对真实 PLC 的实连验证(OPC UA)**——落为合同与实现。
+
+## 6.1 定案
+
+- **Replay(默认,确定性)**:`runVirtualDebugScenario/Suite`,同场景+同 tick+同命令序列必得同一 `evidenceFingerprint`;黄金用例矩阵(golden-08)只收 Replay。
+- **Live(OPC UA 实连,non-deterministic)**:`connectOpcUaLive` 连接真实端点、monitored items 订阅绑定信号、`writeSignal` 下发 set 命令;证据 `OpcUaLiveEvidence` 显式 `mode:"live"` + `nonDeterministic:true`,**与 Replay 轨迹严格分型,禁止混入黄金用例**。同参数重放 Live 会话不可复现,这是语义而非缺陷。
+
+## 6.2 合同(`packages/contracts/src/opcUaLive.ts`)
+
+`OpcUaLiveEndpoint { endpointUrl(opc.tcp://), securityMode: None|Sign|SignAndEncrypt, identity?: { user, passwordRef }, namespace }`、`OpcUaLiveBinding { signal, nodeId }`(nodeId 支持完整 `ns=N;i=/s=` 形式或相对 id,按端点 namespace 展开)、`OpcUaLiveSessionState`、`OpcUaLiveSample`、`OpcUaLiveEvidence`。配套校验 `assertOpcUaLiveEndpoint/Bindings`、`resolveOpcUaNodeId`、`normalizeOpcUaLiveValue`(布尔/有限数字/字符串/安全 BigInt;其余类型显式告警而非静默丢弃)。passwordRef 只承载凭据引用,明文解析由宿主 `resolvePassword` 负责。
+
+## 6.3 依赖决策:node-opcua-client(已存在依赖,收编为可选拓展)
+
+- 现状核查发现 `apps/api` 已依赖 `node-opcua-client`(dataIntegration 的 OPC UA 预览在用,真实消费方),故**不新开独立拓展包**,在 `virtual-commissioning-plugin` 内实现适配器:插件声明 `node-opcua-client@2.178.0` 为 **optional peerDependency**,运行期经"变量化模块说明符 + 动态 import"加载——编译期零依赖,浏览器侧不受影响;缺失时显式报"OPC UA 支持未安装",由会话状态机承接,不 crash。
+- **固定精确版本**:`apps/api` 由 `^2.178.0` 收紧为 `2.178.0`(与 lockfile 解析版本一致);插件 peer 同为 `2.178.0`。
+- **许可偏离声明**:工作区工业格式硬门槛要求 MIT/Apache;node-opcua 为 **MPL-2.0**(文件级弱 copyleft)。缓解:未修改、未复制其源码入库,仅作未改动 npm 依赖经 optional peer 引用,宿主不安装则完全不存在;分发义务(保留许可声明)由最终分发件承担。
+- **审计诚实声明**:"逐文件审计"**未在本任务完成**。已完成:版本固定、来源为 npm 官方 registry、包为纯 JS 无原生构建、许可确认 MPL-2.0。待办:对 `node-opcua-client@2.178.0` 及其运行时闭包做逐文件审计并归档 SHA-256 清单(上游单包体量约数千文件,需独立任务)。
+
+## 6.4 实现与测试证据
+
+- 实现:`packages/virtual-commissioning-plugin/src/opcUaLive.ts`(466 行,过 800 行门禁)。分层:`OpcUaLiveTransport` 接口(connect/subscribe/write/disconnect + sample/unsupported-value 双流事件)→ 会话状态机(disconnected/connecting/connected/error)+ 信号快照(等价 `VirtualDebugScenario.initialSignals` 形态,场景可直接消费)+ 写命令按绑定映射 NodeId → 证据链(连接失败也产出 `sampleCount` 可审计证据;采样留存上限 50,000 防内存无界)。
+- 测试:插件 `opcUaLive.test.ts` 12 例 + 合同 `opcUaLive.test.ts` 3 例;fake transport 覆盖采样/快照/写回读/拒绝写/未绑定信号;**Live 证据键集与 `VirtualDebugResult` 不相交**及 **Replay 指纹逐字节不变**各设隔离守卫;依赖缺失分支经可注入模块说明符环境无关验证。包内 20/20 全绿(基线 8 个未坏);contracts 373/373 全绿。
+- 额外收获:pnpm 11 将 optional peer 链接进包环境,真实 node-opcua 适配器的 connect 失败路径(不可达端口→error 状态→sampleCount=0 证据)已被真实库执行验证。
+
+## 6.5 诚实边界(未验证项)
+
+1. **无真实 PLC 硬件验证**:未对接任何真实/仿真 PLC(如 KEPServerEX、Siemens S7-1200 OPC UA server);订阅采样、写命令对真实控制器的端到端行为未验证。
+2. **Sign/SignAndEncrypt 未验证**:参数映射已实现,但应用证书供给与管理界面未实现,默认仅 None(限可信内网)路径。
+3. 断线重连、订阅健康监测(keep-alive 丢失告警)未实现;API 路由与能力清单注册待硬件联调后开放,当前 Live 仅以库形态提供,未暴露生产能力面。
+
+---
+
 # 附录 A:未获取清单(诚实声明)
 
 1. Plant Simulation 官方手册正文(support.industry.siemens.com / docs.sw.siemens.com 正文需登录;公开搜索索引可用,内容端点拒绝匿名会话)。Scribd 上的 Student Guide 未抓取正文(平台付费墙)。

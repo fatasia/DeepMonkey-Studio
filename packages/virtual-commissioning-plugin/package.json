@@ -19,6 +19,14 @@
     "@bim-studio/contracts": "workspace:*",
     "@bim-studio/plugin-runtime": "workspace:*"
   },
+  "peerDependencies": {
+    "node-opcua-client": "2.178.0"
+  },
+  "peerDependenciesMeta": {
+    "node-opcua-client": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@types/node": "^24.10.0",
     "typescript": "^5.9.3",
