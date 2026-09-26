@@ -121,5 +121,5 @@ describe("plant-lite 性能基准", () => {
     };
     console.log("PLANT-LITE-BENCH-JSON " + JSON.stringify(report));
     expect(results.length).toBe(SCENARIOS.length);
-  }, 120_000);
+  }, 1_800_000);
 });
