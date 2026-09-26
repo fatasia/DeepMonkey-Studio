@@ -1,7 +1,7 @@
 use super::Renderer;
 use crate::gpu_ibl::GpuIblEnvironment;
 use deep_engine_native::ibl::{PreparedIblEnvironment, validate_ibl_environment};
-#[cfg(test)]
+#[cfg(all(test, windows))]
 #[path = "source_domain_probe.rs"]
 mod source_domain_probe;
 

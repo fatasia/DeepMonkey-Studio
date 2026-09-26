@@ -14,7 +14,7 @@ pub(super) struct CachedView {
 mod tests;
 
 impl ShadowCasterSet {
-    #[cfg(test)]
+    #[cfg(all(test, windows))]
     pub(crate) fn clear_view_key_cache_for_test(&self) {
         self.view_keys.borrow_mut().clear();
     }

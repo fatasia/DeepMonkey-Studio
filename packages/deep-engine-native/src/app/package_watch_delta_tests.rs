@@ -32,6 +32,7 @@ pub(crate) fn source() -> PathBuf {
     std::env::temp_dir().join(format!("deep-delta-{}-{nonce}.json", std::process::id()))
 }
 
+#[cfg(windows)]
 pub(crate) fn deep2d_fixture(revision: u64) -> Vec<u8> {
     let mut value: Value = serde_json::from_slice(&fixture(0)).unwrap();
     let id = "native:deep2d:atlas-smoke";

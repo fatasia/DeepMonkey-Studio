@@ -6,6 +6,8 @@
 //! 的随机负载证明收集次序由固定节点序决定,而非完成次序。
 //! GPU 侧真机证据见 `renderer::shadow_parallel_gpu_tests`。
 
+#[cfg(windows)]
+use std::time::Duration;
 use std::{
     hint::black_box,
     sync::{
@@ -13,7 +15,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
     },
     thread,
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use super::render_graph::{GraphJob, execute_graph_batch, execute_graph_levels};

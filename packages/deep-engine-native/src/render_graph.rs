@@ -371,6 +371,9 @@ pub(crate) fn set_executor_thread_name() {
     }
 }
 
+#[cfg(not(windows))]
+pub(crate) fn set_executor_thread_name() {}
+
 #[cfg(test)]
 mod tests {
     use super::{BatchReport, GraphBatchError, GraphJob, JobOutcome};
@@ -431,6 +434,3 @@ mod tests {
         assert!(boxed.to_string().contains("device lost"));
     }
 }
-
-#[cfg(not(windows))]
-pub(crate) fn set_executor_thread_name() {}

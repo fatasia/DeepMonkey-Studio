@@ -43,7 +43,7 @@ mod content_profile_gpu_tests;
 mod coordinate_frame_gpu_tests;
 #[cfg(target_arch = "wasm32")]
 mod editor_overlay;
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod environment_probe_tests;
 mod environment_update;
 mod frame;

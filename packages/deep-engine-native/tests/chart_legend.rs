@@ -5,9 +5,10 @@ use deep_engine_native::chart::{
     legend_render::append_legend,
     parse_chart_ir,
 };
+#[cfg(windows)]
+use deep_engine_native::deep2d::prepare_runtime_content;
 use deep_engine_native::{
-    deep2d::{Deep2dRuntimeContent, prepare_runtime_content},
-    native_ui::design_tokens::DesignTokenSnapshot,
+    deep2d::Deep2dRuntimeContent, native_ui::design_tokens::DesignTokenSnapshot,
     platform_text::TextRasterizer,
 };
 

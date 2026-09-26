@@ -2,7 +2,7 @@ use super::*;
 use crate::events::RenderOutcome;
 
 impl Renderer {
-    #[cfg(test)]
+    #[cfg(all(test, windows))]
     pub(crate) fn camera_frame_for_test(&self) -> deep_engine_native::mesh_abi::FrameUniform {
         self.frame
     }
