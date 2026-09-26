@@ -38,7 +38,14 @@ export class StudioDeepRenderView {
   private readonly grid = new StudioDeepGridSession();
   private deepOverlayPrimitives: DeepOverlayPrimitiveSource | undefined;
   private projectionExtent: number | undefined;
-  private cachedGestureSource: { source: SourceView; at: number } | undefined;
+  private cachedGestureSource: { source: SourceView; at: number; sceneRevision: number } | undefined;
+  /** 场景修订号(由桥从 renderDemand 诊断同步);-1 表示不可用,退回 TTL 兜底。 */
+  private sceneRevision = -1;
+
+  /** 桥在每帧 syncPath 同步场景修订号;编辑递增 → 手势缓存下次立即失效。 */
+  setSceneRevision(revision: number | undefined): void {
+    this.sceneRevision = revision ?? -1;
+  }
   constructor(private readonly viewer: ViewerEngine, private readonly container: HTMLElement,
     private readonly environmentSession: () => StudioDeepEnvironmentSession | undefined,
     private readonly shadowSession: () => StudioDeepShadowSession | undefined) {}
@@ -100,12 +107,14 @@ export class StudioDeepRenderView {
   }
 
   private renderViewSource(canvas: HTMLCanvasElement, cameraGesture = false): SourceView {
-    // 相机手势帧(连续指针拖拽)复用 200ms 内的场景派生字段(灯光/雾/环境/后处理),
-    // 只重建相机派生部分——拖拽中这些字段不随相机变化;任何场景编辑由桥的尾随
-    // sync 以全量 source 追平(80ms),TTL 兜底最坏情况。实测该遍历是 WebGPU
-    // 输入拖尾(p95 27.8ms)的主嫌疑之一。
+    // 相机手势帧(连续指针拖拽)复用场景派生字段(灯光/雾/环境/后处理),只重建
+    // 相机派生部分——拖拽中这些字段不随相机变化。失效信号是场景修订号(任何编辑
+    // 都经 renderDemand.invalidate 递增,由桥在 syncPath 传入),而不是时间窗:
+    // 200ms TTL 在长拖拽中每 12 帧左右触发一次全场景重读(灯光 traverseVisible 等),
+    // 正是输入帧 P95 尾部的来源。修订号不可用时退回 TTL 兜底。
     const gestureCacheValid = cameraGesture && this.cachedGestureSource !== undefined
-      && performance.now() - this.cachedGestureSource.at < 200;
+      && this.cachedGestureSource.sceneRevision === this.sceneRevision
+      && (this.sceneRevision >= 0 || performance.now() - this.cachedGestureSource.at < 200);
     if (gestureCacheValid) return this.cachedGestureSource!.source;
     const post = this.viewer.getPostProcessing(), composerActive = this.viewer.usesAuthorPostProcessing();
     const fog = readStudioDeepFog(this.viewer.scene, composerActive);
@@ -135,7 +144,9 @@ export class StudioDeepRenderView {
       roughness: 1,
       lights: this.shadowSession()?.lights(lighting.lights) ?? lighting.lights,
     };
-    if (cameraGesture || this.cachedGestureSource !== undefined) this.cachedGestureSource = { source, at: performance.now() };
+    if (cameraGesture || this.cachedGestureSource !== undefined) {
+      this.cachedGestureSource = { source, at: performance.now(), sceneRevision: this.sceneRevision };
+    }
     return source;
   }
 

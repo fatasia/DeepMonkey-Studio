@@ -456,6 +456,7 @@ export class StudioDeepWebGpuBridge {
       // 指纹都未变时跳过 sync 与首绘,静置负载归零。修订号不可用(测试宿主/旧
       // 集成)时保守视为"可能变化",维持每帧 sync 的既有行为。
       const demand = this.viewer.getRenderDemandDiagnostics?.();
+      this.viewReader.setSceneRevision(demand?.invalidationRevision);
       { const p2 = flowProbe(); if (p2) (p2 as DeepFlowProbe & { demand?: unknown }).demand = demand; }
       const demandRevision = demand?.invalidationRevision;
       const sceneMutated = demandRevision === undefined
