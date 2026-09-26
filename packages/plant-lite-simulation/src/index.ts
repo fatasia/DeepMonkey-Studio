@@ -9,3 +9,5 @@ export * from "./experimentAnalysis.js";
 export * from "./analytics.js";
 export * from "./studyReport.js";
 export * from "./geneticOptimizer.js";
+export * from "./multiObjective.js";
+export * from "./vsm.js";
