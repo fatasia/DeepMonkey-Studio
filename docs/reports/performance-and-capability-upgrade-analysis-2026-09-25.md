@@ -104,3 +104,38 @@ Native 已有静音解码和合成，补正式窗口控制条、seek、音频输
 - legacy 投影路径的增量编辑传播(砍掉尾随全量 sync)。
 - Deep 纯编辑闭环(F0)。
 
+## 实施进度记录 · 第二批(2026-09-26,submit 尾部+输入帧+首帧全部落地)
+
+### pointer→submit 拖尾:47.4ms → 2.1ms(21.5×,`d9f3b093`+`923f1ca4`)
+- 根因链(探针 `probe-deep-submit-flow.mjs` 实证):`queue.onSubmittedWorkDone` 在 Chrome/Dawn
+  按 vsync 滞后 2-3 帧才 resolve,被当作相机帧背压 → 提交被限流到隔帧一次(submitGap p50 35ms);
+  合并分支又静默丢帧 → 整帧无 submit。修复:提交即释放在飞名额、每 rAF 至少一次 submit
+  (真实节流交给 swapchain present 上限)、修订号+视图指纹双条件的静置短路。
+- 配对基准(cut6):submit P95 **47.4→2.2ms**;Long Task 10→6;黑帧 0;位姿守卫零失败。
+
+### 输入帧 P95:20.8ms → 14.0ms(`923f1ca4`,两轮稳定 cut7b/cut7c)
+- 根因:手势视图缓存 200ms TTL 过期 → 长拖拽中每 ~12 帧触发一次全场景重读(灯光
+  traverseVisible 等)。修复:改由 renderDemand 修订号驱动失效(编辑必递增),TTL 仅作
+  不可用回退。输入 P50 7.0ms 追平 WebGL(6.9);静置 P95 7.1ms 追平;Long Task 1=WebGL。
+- 诚实剩余:p95 14.0 vs WebGL 7.1 的差值来自低频长帧(归因探针 `probe-deep-longtask.mjs`:
+  拖拽中 6 个长任务 85-501ms,拖后 9 个属 settle/尾随 sync);501ms 级单帧疑为 GC/驱动管线
+  编译类事件,列入后续(需管线缓存预热)。
+
+### 切后端首帧:3.9s → 1.57s(`d0c9afc5`)
+- 六阶段 mark 链测量落地(gate 脚本内置):WebGPU 切换 3.89s 中 scene-uploaded(packet 编译)
+  占 2.07s。修复:authorRenderPacket 按场景快照+资产清单指纹缓存(容量 1,packet 校验后不可变,
+  复用安全)。双切探针实测:scene-uploaded **2104→431ms(-80%)**,总墙钟 3.9→1.57s;
+  剩余 431ms 为必需的 GPU 上传,非重复编译。
+- 整页冷启动(含 JS/wasm 装载)口径仍未测——留待 P0-2 余下部分。
+
+### 更新后的对 Three.js 战位
+| 指标 | Deep WebGPU | WebGL | 判定 |
+|---|---|---|---|
+| pointer→submit P95 | 2.1ms | 0.9ms | 同量级(从 20× 落后收敛) |
+| 静置 P95 | 7.1ms | 7.2ms | 追平 |
+| 输入帧 P95 | 14.0ms | 7.1ms | 落后 2×(低频长帧,根因已定位) |
+| Long Task | 1 | 1 | 追平 |
+| CPU 拾取 | 113×~6685× | 基线 | 数量级超越 |
+| 切后端首帧 | 1.57s | ~0.84s | 落后(缓存后二次切换 <0.4s) |
+| 黑帧 | 0 | 0 | 持平 |
+
