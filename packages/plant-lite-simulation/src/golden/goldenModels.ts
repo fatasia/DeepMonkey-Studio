@@ -5,6 +5,7 @@
  */
 
 import type { PlantLiteModel } from "../modelTypes.js";
+import { instantiateClass } from "../classLibraryRuntime.js";
 import { createAgvNetworkPlantLiteModel } from "../transportNetworkTemplate.js";
 
 const LIMITS = { durationMinutes: 480, warmupMinutes: 60 } as const;
@@ -199,6 +200,45 @@ export function golden13ExperimentMatrix(): PlantLiteModel {
     resources: [
       { id: "mc-a", name: "机床 A", kind: "equipment", capacity: 1 },
       { id: "mc-b", name: "机床 B", kind: "equipment", capacity: 1 },
+    ],
+  };
+}
+
+/**
+ * golden-14 类库与继承:1 个标准产线类(src→buf→st→snk + 设备资源)实例化 2 条线。
+ * 断言在 goldenPlant.test.ts:类库模型经既有校验求解,同 seed 指纹逐字锁定;
+ * 改类传播(节拍 1.1→1.6)必须改变指纹——类库是可求解的建模根基,不是展示壳。
+ */
+export function golden14ClassLibrary(): PlantLiteModel {
+  const base: PlantLiteModel = {
+    id: "golden-14-class-library",
+    name: "黄金样例 14 · 类库与继承",
+    nodes: [],
+    edges: [],
+    classLibrary: [
+      {
+        classId: "line",
+        name: "标准产线类",
+        nodes: [
+          { id: "src", name: "来料", kind: "source", interarrivalTime: { kind: "deterministic", value: 0.9 } },
+          { id: "buf", name: "线边缓存", kind: "queue-buffer", capacity: 6 },
+          { id: "st", name: "加工", kind: "station", processingTime: { kind: "deterministic", value: 1.1 }, resourceId: "mc" },
+          { id: "snk", name: "出货", kind: "sink" },
+        ],
+        resources: [{ id: "mc", name: "机床", kind: "equipment", capacity: 1 }],
+      },
+    ],
+  };
+  const twice = instantiateClass(instantiateClass(base, "line"), "line");
+  return {
+    ...twice,
+    edges: [
+      { id: "e1", from: "line.1.src", to: "line.1.buf" },
+      { id: "e2", from: "line.1.buf", to: "line.1.st" },
+      { id: "e3", from: "line.1.st", to: "line.1.snk" },
+      { id: "e4", from: "line.2.src", to: "line.2.buf" },
+      { id: "e5", from: "line.2.buf", to: "line.2.st" },
+      { id: "e6", from: "line.2.st", to: "line.2.snk" },
     ],
   };
 }

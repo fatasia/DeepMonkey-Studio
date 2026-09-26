@@ -21,7 +21,9 @@ import {
   golden06BlockedRoute,
   golden11SplitShares,
   golden12KanbanPull,
+  golden14ClassLibrary,
 } from "./goldenModels.js";
+import { propagateClassChange } from "../classLibraryRuntime.js";
 
 const SEED = "golden-2026-09-25";
 
@@ -199,6 +201,42 @@ describe("golden-12 Kanban 拉动", () => {
     expect(fingerprint64Labeled([["result", first]])).toBe(fingerprint64Labeled([["result", second]]));
     const other = runPlantLiteExperiment({ model: golden12KanbanPull(), seed: "golden-other-seed", replications: 5, limits: { ...GOLDEN_LIMITS } });
     expect(fingerprint64Labeled([["result", first]])).not.toBe(fingerprint64Labeled([["result", other]]));
+  });
+});
+
+describe("golden-14 类库与继承", () => {
+  // 指纹锁定:1 个标准产线类实例化 2 条线的结果;任何统计语义或实例化语义改动必然在此暴露。
+  const GOLDEN_14_FINGERPRINT = "8fbd6faa42d57b17";
+  const result = runModel(golden14ClassLibrary());
+
+  it("两条产线实例均确定性完工,既有校验直接接受类库产物", () => {
+    expect(result.replications).toHaveLength(5);
+    for (const replication of result.replications) {
+      expect(replication.termination).toBe("completed");
+      const line1 = replication.nodes.find((node) => node.nodeId === "line.1.st");
+      const line2 = replication.nodes.find((node) => node.nodeId === "line.2.st");
+      expect(line1?.utilization).toBeGreaterThan(0.5);
+      expect(line2?.utilization).toBeGreaterThan(0.5);
+    }
+    expect(result.confidence95.throughputPerHour.lower95).toBeGreaterThan(0);
+  });
+
+  it("同 seed 双跑指纹逐字一致并锁定字面量", () => {
+    const again = runModel(golden14ClassLibrary());
+    const fingerprint = fingerprint64Labeled([["result", result]]);
+    expect(fingerprint).toBe(fingerprint64Labeled([["result", again]]));
+    expect(fingerprint).toBe(GOLDEN_14_FINGERPRINT);
+  });
+
+  it("改类传播节拍后指纹改变且新状态同样确定(类库驱动真实求解)", () => {
+    const slowed = golden14ClassLibrary();
+    const propagation = propagateClassChange(slowed, "line", { set: { "st.processingTime": { kind: "deterministic", value: 1.6 } } });
+    expect(propagation.affectedInstances).toBe(2);
+    const slowedRun = runModel(slowed);
+    const slowedAgain = runModel(slowed);
+    expect(fingerprint64Labeled([["result", slowedRun]]))
+      .toBe(fingerprint64Labeled([["result", slowedAgain]]))
+      .not.toBe(GOLDEN_14_FINGERPRINT);
   });
 });
 

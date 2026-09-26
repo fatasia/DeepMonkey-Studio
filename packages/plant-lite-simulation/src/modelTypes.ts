@@ -1,4 +1,8 @@
 import type {
+  PlantClassDefinition,
+  PlantClassMutation,
+  PlantClassPropagationResult,
+  PlantClassPropertyValue,
   PlantLiteAvailability,
   PlantLiteBufferNode,
   PlantLiteDistribution,
@@ -38,6 +42,10 @@ export type KanbanCard = PlantLiteKanbanCard;
 export type SinkNode = PlantLiteSinkNode;
 export type SimulationLimits = PlantLiteSimulationLimits;
 export type {
+  PlantClassDefinition,
+  PlantClassMutation,
+  PlantClassPropagationResult,
+  PlantClassPropertyValue,
   PlantLiteEdge,
   PlantLiteKanbanCard,
   PlantLiteModel,

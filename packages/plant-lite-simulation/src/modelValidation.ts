@@ -6,6 +6,7 @@ import type {
   PlantLiteNode,
   PlantLiteResource,
 } from "./modelTypes.js";
+import { validateClassLibrary } from "./classLibraryValidation.js";
 import { validateSceneBinding } from "./sceneBindingValidation.js";
 import {
   appendSplitAdjacency,
@@ -51,6 +52,7 @@ export function validatePlantLiteModel(input: unknown): PlantLiteModelValidation
   validateEnergyConsumerIds(nodes, resources, issues);
   validateEnergyCompleteness(input, nodes, resources, issues);
   validateTransportNetwork(input, issues);
+  validateClassLibrary(input, issues);
 
   const edgeIds = new Set<string>();
   const adjacency = new Map<string, string[]>();

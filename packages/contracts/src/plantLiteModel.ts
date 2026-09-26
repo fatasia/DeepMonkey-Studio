@@ -1,3 +1,4 @@
+import type { PlantClassDefinition, PlantClassPropertyValue } from "./plantClassLibrary.js";
 import type { PlantTransportJourney, PlantTransportNetwork, PlantTransportReservation } from "./plantTransportNetwork.js";
 /** Plant 工厂规划的稳定模型合同；求解器、API 与作者器共同复用。所有时间单位均为分钟。 */
 export type PlantLiteDistribution =
@@ -73,6 +74,10 @@ export interface PlantLiteEnergyEconomics {
 interface PlantLiteNodeBase {
   id: string;
   name: string;
+  /** 实例派生自的类;类库实例化/传播语义见 plantClassLibrary.ts,求解内核不读取。 */
+  inheritedFromClassId?: string;
+  /** 属性级断继承开关:出现于此的属性脱离类(改类不再传播);值为实例当前自有值。 */
+  propertyOverrides?: Record<string, PlantClassPropertyValue>;
 }
 
 export interface PlantLiteSourceNode extends PlantLiteNodeBase {
@@ -157,6 +162,10 @@ export interface PlantLiteEdge {
 export interface PlantLiteResource {
   id: string;
   name: string;
+  /** 实例派生自的类;语义同节点上的同名字段。 */
+  inheritedFromClassId?: string;
+  /** 属性级断继承开关;语义同节点上的同名字段。 */
+  propertyOverrides?: Record<string, PlantClassPropertyValue>;
   /** equipment 供工位共享或独占；worker 是人工资源池；agv / transport 供搬运节点使用。 */
   kind: "agv" | "transport" | "equipment" | "worker";
   capacity: number;
@@ -181,6 +190,8 @@ export interface PlantLiteModel {
   productionOrders?: PlantLiteProductionOrder[];
   /** 省略时仍可运行物流仿真，但不会产生能耗、成本或碳排决策证据。 */
   energyEconomics?: PlantLiteEnergyEconomics;
+  /** 类库（西门子 Class Library 对位）；实例经 instantiateClass 生成进 nodes/resources。 */
+  classLibrary?: PlantClassDefinition[];
 }
 
 export interface PlantLiteSimulationLimits {
