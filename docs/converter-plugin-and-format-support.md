@@ -24,6 +24,8 @@
 | JT | TypeScript 内部 JT 9.5/10 TriStrip/TopoMesh 子集 | 最高精度 LOD0 GLB + hierarchy/properties/inspection | JT 9.5 与 10.3 各一份真实样本 L2 通过；不支持的版本或无 LOD0 时 `waiting_converter` |
 | OpenUSD / USDA / USDC / USDZ | Three.js 0.185.1 官方 USDLoader 按需解析 | 保留并直接查看源文件 | USDA/USDC/USDZ 官方样本已通过；复杂 composition 仍需样本验证 |
 
+**X_T trim 拓扑解码的合规路线(2026-09-26 定案)**:通用解析器当前不发布 trim 环(brep.trim 在 losses)。字节级验证确认 SCH_2100263 语料**不带内嵌 schema**(parasolid-core parse_xt 在正文起点报 `missing_base_schema`),权威 face/loop/edge 解码需要 Parasolid 官方 schema catalog 文本(SCH_2100263_20000_1300 目录)。该 catalog 是 Parasolid 版权件,不能随包交付;合规路径是部署方**自备** catalog 文件(本地离线配置,非商业运行时依赖):提供后经 `parasolid-core`(MIT,内建 `parse_schema_catalog`+`parse_xt` 链)即可全节点解析 face/loop/edge 并发布真实 trim 网格,未提供则维持现有 partial 语义。双模式验证探针见 `parasolid-kit` examples/trim_coverage.rs(census 模式/schema-aware 模式)。
+
 因此不能表述为“所有格式都会转为 GLB”。直接查看格式继续保留源格式；需要三角化或原生宿主导出的格式才优先生成 GLB。
 
 转换器输出不会因为文件名为 `geometry.glb` 就被接受。API 会在发布前解析 GLB，确认至少存在一个带 POSITION 顶点的三角网格，并校验已生成的 `hierarchy.json`、`properties.json`、`pmi.json` 为 JSON 对象；JT 与 Parasolid 还必须提供 `hierarchy.json`。审计失败时任务失败且不发布半成品。该门禁只能证明运行缓存结构合法，不能替代源格式几何、装配、属性和 PMI 的正式样本矩阵。
