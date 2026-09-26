@@ -347,3 +347,5 @@ export * from "./formatImportContracts.js";
 export * from "./sceneScriptProtocol.js";
 export * from "./robotSync.js";
 export * from "./plantAnalytics.js";
+export * from "./studyReport.js";
+export * from "./modelStructure.js";

@@ -7,3 +7,4 @@ export * from "./enginePort.js";
 export * from "./experimentDesign.js";
 export * from "./experimentAnalysis.js";
 export * from "./analytics.js";
+export * from "./studyReport.js";
