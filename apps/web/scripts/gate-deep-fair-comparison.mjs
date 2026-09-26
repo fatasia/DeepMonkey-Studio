@@ -145,6 +145,7 @@ async function resetCamera(page) {
 }
 
 async function measureBackend(page, backend) {
+  const firstFrame = await measureFirstFrame(page, backend);
   await switchBackend(page, backend);
   await resetCamera(page);
   const bounds = await page.locator(".viewport canvas:not([data-renderer-backend])").first().boundingBox();
@@ -152,12 +153,39 @@ async function measureBackend(page, backend) {
   const presentCanvas = backend === "webgl" ? null
     : page.locator(`.viewport canvas[data-renderer-backend="${backend === "webgpu" ? "deep-webgpu" : "deep-wasm"}"]`);
   const clip = bounds;
-  const result = { static: await sampleStaticFrames(page), poses: {}, input: null };
+  const result = { static: await sampleStaticFrames(page), poses: {}, input: null, firstFrame };
   for (const pose of poses) {
     result.poses[pose] = await capturePose(page, backend, pose, clip);
   }
   result.input = await measureInputTrajectory(page, bounds, backend, presentCanvas);
   return result;
+}
+
+/**
+ * 首帧测量(性能文档 P0-2 的指标来源):每次切换前后读取 performance.mark
+ * 阶段戳,firstFrameMs = 切换完成(canvas 不透明度 1)相对切换开始的耗时。
+ * Deep 的 mark 链:switch-start → module-ready → environment-ready →
+ * scene-uploaded → frame-validated → published。测量的是"切后端首帧"口径,
+ * 不是冷启动整页加载;与 render-engine-comparison 的 initializedMs 口径不同,
+ * 不可直接互比。
+ */
+async function measureFirstFrame(page, backend) {
+  const before = await page.evaluate(() => performance.getEntriesByType("mark").length);
+  const switchStarted = Date.now();
+  await switchBackend(page, backend);
+  const wallMs = Date.now() - switchStarted;
+  const phases = await page.evaluate(prefix => performance.getEntriesByType("mark")
+    .filter(entry => entry.name.startsWith(prefix))
+    .map(entry => ({ name: entry.name, at: entry.startTime })), "deep-webgpu:");
+  const stages = [];
+  let previous = null;
+  for (const phase of phases) {
+    if (previous !== null) stages.push({ from: previous.name, to: phase.name, deltaMs: Number((phase.at - previous.at).toFixed(1)) });
+    previous = phase;
+  }
+  return { wallMs, phaseCount: phases.length, stages,
+    note: phases.length ? "deep-switch-phase-marks" : "no-marks (webgl or first switch)" ,
+    ...(before !== undefined ? { marksBefore: before } : {}) };
 }
 
 async function sampleStaticFrames(page) {

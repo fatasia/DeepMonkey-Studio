@@ -16,7 +16,7 @@ import type {
   SceneSnapshot,
   SystemUserRecord,
 } from "@bim-studio/contracts";
-import { getSceneModelAssetId } from "@bim-studio/contracts";
+import { fingerprint64Labeled, getSceneModelAssetId } from "@bim-studio/contracts";
 import { api } from "../api";
 import type { SceneDataBindingRuntimeState } from "../components/SceneDataBindingEditor";
 import { dataBindingProduct, directSceneDataBindingMessage, sceneDataBindingMessage } from "../sceneDataBindings";
@@ -38,6 +38,7 @@ import { StudioDeepWebGpuBridge } from "../viewer/StudioDeepWebGpuBridge";
 import { StudioDeepWasmBridge } from "../viewer/StudioDeepWasmBridge";
 import { compileStudioWasmRuntimePackage, normalizeStudioWasmModel } from "../viewer/studioWasmRuntimePackage";
 import { compileSceneRenderPacket } from "../delivery/compileSceneRenderPacket";
+import type { RenderPacket } from "@bim-studio/deep-engine";
 import { browserImageDecoder } from "../delivery/browserImageDecoder";
 import { loadViewerAssetBuffer } from "../viewer/viewerAssetTransport";
 import { collectDeepOverlayPrimitives } from "../viewer/deepOverlayPrimitiveSource";
@@ -423,12 +424,22 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
 
   useEffect(() => {
     if (!engine || !viewportRef.current) return;
+    // 首帧编译缓存(P0-2):authorRenderPacket 每次后端切换都会被调用;场景快照与
+    // 资产清单未变时直接复用上一次的 RenderPacket(packet 经 prepareRenderPacket
+    // 校验后按只读消费,复用安全)。缓存容量 1:只保留最近一次编译,内存代价可控。
+    let cachedPacket: { key: string; packet: RenderPacket } | undefined;
     const bridge = new StudioDeepWebGpuBridge(engine, viewportRef.current, {
       authorRenderPacket: async (signal) => {
         const latest = rendererRecoveryContextRef.current;
         const scene = latest.captureSceneSnapshot() ?? latest.activeScene;
         const project = latest.project;
         if (!scene || !project) return undefined;
+        const key = fingerprint64Labeled([
+          ["scene", scene],
+          ["assets", project.models.map((model) => ({ id: model.id, status: model.status,
+            geometry: model.manifest?.geometryUrl ?? null }))],
+        ]);
+        if (cachedPacket?.key === key) return cachedPacket.packet;
         const compiled = await compileSceneRenderPacket(scene, {
           signal,
           imageDecoder: browserImageDecoder,
@@ -444,6 +455,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
           },
         });
         signal.throwIfAborted();
+        cachedPacket = { key, packet: compiled.packet };
         return compiled.packet;
       },
       onRuntimeFailure: (reason) => {
