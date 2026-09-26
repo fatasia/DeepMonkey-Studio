@@ -4,8 +4,10 @@ import type { ModelRecord } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import { downloadBlob } from "../browserDownload";
 import { assessModelQuality, modelParentId, modelVersionChain, OPTIMIZATION_PRESETS, type OptimizationPresetId } from "../optimizer/modelEngineering";
+import { request } from "../api";
 import { ResourceLinkButton } from "./ResourceLinkButton";
 import { formatBytes } from "./ModelOptimizerFields";
+import { ModelStructureTreePanel } from "./ModelStructureTreePanel";
 import "./ProjectResourceDialogs.css";
 import "./ModelEngineering.css";
 
@@ -41,6 +43,7 @@ export function ModelEngineeringDialog({ model, models, locale, onClose, onOptim
       <section><h3>{tr(locale, "质量检查", "Quality check")}</h3><select aria-label={tr(locale, "目标设备预算", "Target device budget")} value={preset} onChange={event => setPreset(event.target.value as OptimizationPresetId)}>{Object.entries(OPTIMIZATION_PRESETS).map(([id, item]) => <option key={id} value={id}>{tr(locale, item.zh, item.en)}</option>)}</select>
         <p className={`model-quality-status is-${quality.status}`} role="status">{quality.status === "ready" ? tr(locale, "三角面、文件大小与材质数量在预算内", "Triangles, file size and material count are within budget") : quality.status === "unknown" && !quality.issues.length ? tr(locale, "几何统计尚不完整，可进入优化器分析", "Geometry statistics are incomplete. Analyze in the optimizer") : quality.issues.join("；")}</p>
       </section>
+      <ModelStructureTreePanel model={model} locale={locale} request={request} />
       <section><h3>{tr(locale, "版本与来源", "Versions and source")}</h3>{missingParent && <p className="project-resource-error" role="alert">{tr(locale, "来源版本已不可用，无法从原文件重建", "The source version is unavailable; rebuilding is disabled")}</p>}
         <ol className="model-engineering-versions">{chain.map((item, index) => <li key={item.id} className={item.id === model.id ? "is-current" : ""}><div><strong>{`v${item.generation?.revision ?? index + 1}`} · {item.name}</strong><small>{new Date(item.createdAt).toLocaleString(locale)} · {item.id === model.id ? tr(locale, "当前产物", "Current artifact") : tr(locale, "原版本保留", "Previous version retained")}</small></div><button className="button" disabled={item.status !== "ready"} onClick={() => onOptimize(item.id)}><Gauge size={14} />{item.id === model.id ? tr(locale, "继续优化", "Optimize") : tr(locale, "打开此版本", "Open this version")}</button></li>)}</ol>
       </section>

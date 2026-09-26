@@ -49,6 +49,7 @@ import { createIndustrialApi } from "./apiClients/industrialApi.js";
 import { createMcpApi } from "./apiClients/mcpApi.js";
 import { createPprBopApi } from "./apiClients/pprBopApi.js";
 import { createModelSceneApi } from "./apiClients/modelSceneApi.js";
+import { createModelStructureApi } from "./apiClients/modelStructureApi.js";
 import { createVisionApi } from "./apiClients/visionApi.js";
 import { createDataWritebackApi } from "./apiClients/dataWritebackApi.js";
 import { createAssetLibraryApi } from "./apiClients/assetLibraryApi.js";
@@ -678,6 +679,7 @@ export const api = {
   ...createIndustrialApi(request),
   ...createPprBopApi(request),
   ...createModelSceneApi(request),
+  ...createModelStructureApi(request),
   ...createAssetLibraryApi(request),
   getLibraryPreviewBlob: async (url: string, signal?: AbortSignal) => {
     if (!/^\/api\/asset-library\/items\/[^/?#]+\/(?:preview|maps\/[^/?#]+)$/.test(url)) throw new Error("无效的资源浏览地址");

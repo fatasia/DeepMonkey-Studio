@@ -23,6 +23,13 @@ import { RobotUploadLimitError, writeRobotUpload } from "./robotUpload.js";
 import { registerAppearanceAssetUpload, saveAppearanceAsset } from "./appearanceAssetUpload.js";
 import { hashModelFile, parseModelProcessingRecord } from "./modelProcessingMetadata.js";
 import { registerResourceThumbnailRoutes } from "./resourceThumbnailRoutes.js";
+import {
+  assetObjectKey,
+  MODEL_STRUCTURE_JSON_LIMIT_BYTES,
+  parseStructurePropertyIds,
+  pickStructureProperties,
+  slimModelHierarchy,
+} from "./modelStructure.js";
 
 interface ModelAssetRouteDependencies {
   store: MetadataStore;
@@ -180,6 +187,51 @@ export async function registerModelAssetRoutes(app: FastifyInstance, dependencie
     if (!store.getProject(request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
     return store.listAssets(request.params.projectId);
   });
+
+  /** 装配结构树：读取任务 sidecar hierarchy.json 并做轻量裁剪（只读，不落盘）。 */
+  app.get<{ Params: { projectId: string; modelId: string } }>("/api/projects/:projectId/models/:modelId/structure", async (request, reply) => {
+    const model = store.getProject(request.params.projectId)?.models.find((item) => item.id === request.params.modelId);
+    if (!model) return reply.code(404).send({ message: "模型不存在" });
+    if (!model.manifest?.hierarchyUrl) return reply.code(409).send({ message: sidecarMissingMessage(model, "hierarchy.json") });
+    try {
+      const text = await readStoredText(objects, assetObjectKey(model.projectId, model.id, model.manifest.hierarchyUrl));
+      let raw: unknown;
+      try {
+        raw = JSON.parse(text);
+      } catch {
+        return reply.code(422).send({ message: "hierarchy.json 不是有效 JSON" });
+      }
+      const slimmed = slimModelHierarchy(raw, { sourceFormat: model.format, sourceName: model.manifest.sourceName || model.name });
+      if (!slimmed.ok) return reply.code(422).send({ message: slimmed.message });
+      return slimmed.value;
+    } catch (reason) {
+      request.log.warn({ reason, modelId: model.id }, "model structure sidecar read failed");
+      return reply.code(422).send({ message: reason instanceof Error ? reason.message : "装配结构数据读取失败" });
+    }
+  });
+
+  /** 节点属性：按 id 白名单从 properties.json 抽取，避免把全量属性表发给浏览器。 */
+  app.get<{ Params: { projectId: string; modelId: string }; Querystring: { ids?: string } }>("/api/projects/:projectId/models/:modelId/structure/properties", async (request, reply) => {
+    const model = store.getProject(request.params.projectId)?.models.find((item) => item.id === request.params.modelId);
+    if (!model) return reply.code(404).send({ message: "模型不存在" });
+    const ids = parseStructurePropertyIds(request.query.ids);
+    if (!ids.ok) return reply.code(400).send({ message: ids.message });
+    if (!model.manifest?.propertiesUrl) return reply.code(409).send({ message: sidecarMissingMessage(model, "properties.json") });
+    try {
+      const text = await readStoredText(objects, assetObjectKey(model.projectId, model.id, model.manifest.propertiesUrl));
+      let raw: unknown;
+      try {
+        raw = JSON.parse(text);
+      } catch {
+        return reply.code(422).send({ message: "properties.json 不是有效 JSON" });
+      }
+      return pickStructureProperties(raw, ids.ids);
+    } catch (reason) {
+      request.log.warn({ reason, modelId: model.id }, "model structure properties read failed");
+      return reply.code(422).send({ message: reason instanceof Error ? reason.message : "节点属性读取失败" });
+    }
+  });
+
   app.post<{ Params: { projectId: string } }>("/api/projects/:projectId/assets/images", async (request, reply) => {
     const project = store.getProject(request.params.projectId);
     if (!project) return reply.code(404).send({ message: "项目不存在" });
@@ -252,6 +304,34 @@ function resolveModelSourcePath(dataDir: string, projectId: string, modelId: str
     throw new Error("模型源文件名无效");
   }
   return path.join(dataDir, "projects", projectId, "models", modelId, "source", fileName);
+}
+
+/** 读取对象存储中的 sidecar 全文；超上限立即中止流，防止把超大装配整体读进内存。 */
+async function readStoredText(objects: ObjectStore, key: string): Promise<string> {
+  const result = await objects.read(key);
+  const chunks: Buffer[] = [];
+  let total = 0;
+  try {
+    for await (const chunk of result.stream) {
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+      total += bytes.length;
+      if (total > MODEL_STRUCTURE_JSON_LIMIT_BYTES) {
+        throw new Error(`结构数据超过 ${Math.round(MODEL_STRUCTURE_JSON_LIMIT_BYTES / 1024 / 1024)} MB 读取上限`);
+      }
+      chunks.push(bytes);
+    }
+  } finally {
+    result.stream.destroy();
+  }
+  await result.completed;
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function sidecarMissingMessage(model: ModelRecord, file: "hierarchy.json" | "properties.json"): string {
+  if (model.status === "queued" || model.status === "processing") return `模型仍在转换中，${file} 在转换完成后可用`;
+  if (model.status === "failed") return `转换失败，未生成 ${file}：${model.message}`;
+  if (model.status === "waiting_converter") return `当前转换器尚未为该文件发布可视化产物，${file} 不可用：${model.message}`;
+  return `该模型没有 ${file} 记录`;
 }
 
 async function saveMediaAsset(
