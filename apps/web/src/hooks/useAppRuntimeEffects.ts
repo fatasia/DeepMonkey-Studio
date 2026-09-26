@@ -244,6 +244,24 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
         setRevision((value) => value + 1);
       });
     };
+    // 碰撞/模型变换回调在拖拽期逐帧触发(gizmo 拖拽每帧 applySelectionTransform 后
+    // 经 onModelChange 到达这里);revision 的消费方(交互目标列表、后处理判定)只
+    // 需要"拖拽静止后"的收敛值,逐帧推进实测只产生全壳空渲染(DOM 0 变更)。
+    let revisionSettleTimer: number | undefined;
+    let diagnosticsTimer: number | undefined;
+    let diagnosticsLastFlush = Number.NEGATIVE_INFINITY;
+    let pendingDiagnostics: NavigationCollisionDiagnostics | undefined;
+    const scheduleRevisionSettle = () => {
+      if (revisionSettleTimer !== undefined) window.clearTimeout(revisionSettleTimer);
+      revisionSettleTimer = window.setTimeout(() => {
+        revisionSettleTimer = undefined;
+        setRevision((value) => value + 1);
+      }, 250);
+    };
+    const requestRevisionOnCollisionSettle = () => {
+      viewer?.requestRender();
+      scheduleRevisionSettle();
+    };
     setRendererSwitching(true);
     void import("../viewer/ViewerEngine")
       // Studio 作者 Viewer 固定为 WebGL；Deep 是同一作者状态的独立输出表面。
@@ -267,7 +285,8 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
           });
         };
         viewer.onModelChange = () => {
-          requestRevision();
+          viewer?.requestRender();
+          scheduleRevisionSettle();
           recordSceneEdit("编辑三维对象");
         };
         viewer.onLightingChange = (nextLighting) => {
@@ -276,10 +295,32 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
           recordSceneEdit("调整场景灯光");
         };
         viewer.onXRSessionChange = (mode) => setXrActiveMode(mode);
-        viewer.onCollisionChange = requestRevision;
+        viewer.onCollisionChange = requestRevisionOnCollisionSettle;
         viewer.onNavigationRecovery = () =>
           queueMicrotask(() => setMessage(tr(locale, "出生点与模型重叠，已自动移动到最近安全位置", "The spawn overlapped geometry and was moved to the nearest safe position")));
-        viewer.onNavigationDiagnosticsChange = setNavigationDiagnostics;
+        // 引擎逐帧产出内容变化的诊断读数(ms 计时),信息面板不需要逐帧精度:
+        // 200ms 节流(首沿立即,单次变化零延迟)+ 内容浅比较,未变化时保持原引用,
+        // React 对相同引用 bail out,拖拽期最多 5Hz 更新。
+        const flushDiagnostics = () => {
+          const next = pendingDiagnostics;
+          pendingDiagnostics = undefined;
+          if (!next) return;
+          setNavigationDiagnostics((current) => sameNavigationDiagnostics(current, next) ? current : next);
+        };
+        viewer.onNavigationDiagnosticsChange = (next) => {
+          pendingDiagnostics = next;
+          const elapsed = performance.now() - diagnosticsLastFlush;
+          if (elapsed >= 200) {
+            diagnosticsLastFlush = performance.now();
+            flushDiagnostics();
+          } else if (diagnosticsTimer === undefined) {
+            diagnosticsTimer = window.setTimeout(() => {
+              diagnosticsTimer = undefined;
+              diagnosticsLastFlush = performance.now();
+              flushDiagnostics();
+            }, 200 - elapsed);
+          }
+        };
         setNavigationDiagnostics(viewer.getNavigationCollisionDiagnostics());
         viewer.onPrimitivePlaced = (model, _kind, color) => {
           primitiveColors.current.set(model.id, color);
@@ -309,6 +350,10 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
           setRendererBackend("webgl");
         };
         viewer.onAnimationChange = (time, playing) => {
+          // transient 通道:播放头每 tick 数据走 React 旁路(时间线面板细粒度订阅);
+          // setState 保留给低频消费方,待面板全面迁移后移除(见 transientChannel.ts 设计)。
+          const animationChannel = viewer?.transientChannels.channel<{ time: number; playing: boolean }>("animation", { shallow: true });
+          animationChannel?.publish({ time, playing });
           setAnimationTime(time);
           setAnimationPlaying(playing);
         };
@@ -391,6 +436,8 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     return () => {
       cancelled = true;
       if (revisionFrame !== undefined) window.cancelAnimationFrame(revisionFrame);
+      if (revisionSettleTimer !== undefined) window.clearTimeout(revisionSettleTimer);
+      if (diagnosticsTimer !== undefined) window.clearTimeout(diagnosticsTimer);
       viewer?.dispose();
       setEngine((current) => (current === viewer ? undefined : current));
     };
@@ -897,4 +944,10 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     document.addEventListener("contextmenu", preventContextMenu);
     return () => document.removeEventListener("contextmenu", preventContextMenu);
   }, []);
+}
+
+/** 碰撞诊断是信息性读数;逐字段全等时保持原引用,避免拖拽期逐帧全壳重渲染。 */
+function sameNavigationDiagnostics(a: NavigationCollisionDiagnostics, b: NavigationCollisionDiagnostics): boolean {
+  return a.debugVisible === b.debugVisible && a.blockingObjectCount === b.blockingObjectCount
+    && a.raySamples === b.raySamples && a.lastSweepMs === b.lastSweepMs;
 }

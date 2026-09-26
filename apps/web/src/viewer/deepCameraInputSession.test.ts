@@ -2,9 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { DeepCameraController } from "./deepCameraController";
 import { DeepCameraInputSession } from "./deepCameraInputSession";
 
-// 输入会话合同:手势→控制器调用的映射、双指捏合、detach 后完全解绑。
+// 输入会话合同:手势→控制器调用的映射、双指捏合、detach 后完全解绑、
+// 手势进行中不向作者画布转发 move(转发链实测产生拖拽期 React 长任务)。
 describe("DeepCameraInputSession", () => {
-  function harness() {
+  function harness(forwardTo?: EventTarget) {
     const canvas = { clientHeight: 800, addEventListener: vi.fn(), removeEventListener: vi.fn(),
       setPointerCapture: vi.fn(), releasePointerCapture: vi.fn(), hasPointerCapture: vi.fn(() => true) } as unknown as HTMLCanvasElement;
     const controller = new DeepCameraController();
@@ -12,7 +13,7 @@ describe("DeepCameraInputSession", () => {
     const pan = vi.spyOn(controller, "pan");
     const zoom = vi.spyOn(controller, "zoom");
     const onFrame = vi.fn();
-    const session = new DeepCameraInputSession(canvas, controller, onFrame);
+    const session = new DeepCameraInputSession(canvas, controller, onFrame, forwardTo ? { forwardTo } : {});
     const canvasEvents = new Map<string, EventListener>();
     vi.mocked(canvas.addEventListener).mockImplementation(((type: string, handler: EventListener) => {
       canvasEvents.set(type, handler);
@@ -70,5 +71,27 @@ describe("DeepCameraInputSession", () => {
     pointerEvent(harness0.canvasEvents, "pointermove", { pointerId: 1, clientX: 50, clientY: 50 });
     expect(harness0.orbit).not.toHaveBeenCalled();
     expect(harness0.session.isActive).toBe(false);
+  });
+
+  it("skips forwarding moves of an active gesture pointer but keeps idle-pointer moves and release events", () => {
+    // 转发分支依赖 DOM 事件构造器;测试环境没有,用最小 stub 让 instanceof 落到 Event 兜底。
+    vi.stubGlobal("PointerEvent", class FakePointerEvent {});
+    vi.stubGlobal("MouseEvent", class FakeMouseEvent {});
+    vi.stubGlobal("Event", class FakeEvent { constructor(public type: string, public init?: { bubbles?: boolean }) {} });
+    const forwarded: string[] = [];
+    const forwardTarget = { dispatchEvent: vi.fn((event: Event) => { forwarded.push(event.type); return true; }) } as unknown as EventTarget;
+    const harness0 = harness(forwardTarget);
+    harness0.session.attach();
+    // 手势指针的 move 不转发(拖拽期 React 长任务的来源),但手势本身照常推进。
+    pointerEvent(harness0.canvasEvents, "pointerdown", { type: "pointerdown", pointerId: 1, clientX: 100, clientY: 100 });
+    expect(forwarded).toEqual(["pointerdown"]);
+    pointerEvent(harness0.canvasEvents, "pointermove", { type: "pointermove", pointerId: 1, clientX: 140, clientY: 130 });
+    expect(forwarded).toEqual(["pointerdown"]);
+    expect(harness0.orbit).toHaveBeenCalledWith(40, 30, 800);
+    // 释放事件必须转发,作者侧悬停/选择状态才能收尾;其后悬停 move 恢复转发。
+    pointerEvent(harness0.canvasEvents, "pointerup", { type: "pointerup", pointerId: 1 });
+    expect(forwarded).toEqual(["pointerdown", "pointerup"]);
+    pointerEvent(harness0.canvasEvents, "pointermove", { type: "pointermove", pointerId: 1, clientX: 150, clientY: 140 });
+    expect(forwarded).toEqual(["pointerdown", "pointerup", "pointermove"]);
   });
 });

@@ -99,7 +99,11 @@ export class DeepCameraInputSession {
       this.options.handleGizmoPointer?.("move", event);
       return;
     }
-    this.forward(event);
+    // 摄像机手势进行中的 move 不转发:转发会经 React 合成事件派发触发
+    // pointer-info setState,实测在拖拽期产生 50-100ms 级主线程长任务
+    // (performWorkUntilDeadline),且悬停/拾取语义在轨道旋转中本就是噪声。
+    // 手势结束(pointerup 已转发)后的下一次 move 恢复转发,悬停状态自愈。
+    if (!this.isGesturePointer(event.pointerId)) this.forward(event);
     this.shift = event.shiftKey;
     if (this.pointers.has(event.pointerId)) {
       this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -177,6 +181,13 @@ export class DeepCameraInputSession {
 
   private suppressed(): boolean {
     return this.options.suppressGesture?.() === true;
+  }
+
+  /** 该指针是否正参与视口手势(主指针或双指捏合中的第二指)。 */
+  private isGesturePointer(pointerId: number): boolean {
+    if (!this.active) return false;
+    if (pointerId === this.pointerId) return true;
+    return this.pointers.size >= 2 && this.pointers.has(pointerId);
   }
 
   /** 指针捕获失败只损失"拖出画布继续跟踪",不损失手势本身:合成/无头指针

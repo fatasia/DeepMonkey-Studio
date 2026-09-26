@@ -9,6 +9,7 @@ import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
+import { createTransientRegistry } from "./transientChannel";
 import type {
   CameraConstraintsState,
   CameraState,
@@ -275,6 +276,8 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
   protected readonly gpuResourceRetirementQueue = new GpuResourceRetirementQueue(() => runtimeGpuDevice(this.renderer)?.queue);
   protected readonly shadowUpdateGovernor = new ShadowUpdateGovernor();
   protected readonly longTaskMonitor = createBrowserLongTaskMonitor();
+  /** transient 通道注册表:动画播放头/指针信息等每帧数据的 React 旁路(transientChannel.ts 设计)。 */
+  readonly transientChannels = createTransientRegistry();
   protected readonly gpuFrameTimeMonitor: GpuFrameTimeMonitor;
   protected lastAdaptiveRenderSampleAt = 0;
   protected selectedId: string | undefined;
