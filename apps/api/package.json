@@ -28,6 +28,7 @@
     "@bim-studio/studio-core": "workspace:*",
     "@bim-studio/virtual-commissioning-plugin": "workspace:*",
     "@bim-studio/workcell-validation-plugin": "workspace:*",
+    "@bim-studio/xt-reader": "workspace:*",
     "@fastify/cors": "^11.2.0",
     "@fastify/multipart": "^9.2.1",
     "@fastify/static": "^10.1.4",
@@ -80,4 +81,3 @@
     "vitest": "^4.1.0"
   }
 }
-
