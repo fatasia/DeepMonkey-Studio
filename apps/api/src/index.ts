@@ -35,6 +35,7 @@ import { StaticDirectCredentialResolver } from "./directCredentialResolver.js";
 import { registerIndustrialDemoRoutes } from "./industrialDemo.js";
 import { OperationsService } from "./operations.js";
 import { registerOperationsRoutes } from "./operationsRoutes.js";
+import { registerResultExportRoutes } from "./resultExportRoutes.js";
 import { registerUnityResourceRoutes } from "./unityResourceRoutes.js";
 import { createIndustrialCapabilityHost, registerIndustrialCapabilityRoutes } from "./industrialCapabilities.js";
 import { registerMcpCapabilityRoute } from "./mcpCapabilityAdapter.js";
@@ -231,6 +232,8 @@ export async function buildApp() {
   registerCloudRenderViewerRoutes(app, { workerUrl: config.cloudRender.workerUrl });
   await registerIndustrialDemoRoutes(app);
   await registerOperationsRoutes(app, { store, service: operations, dataQuerySource });
+  // Plant 平替 P2 尾巴:仿真结果导出(MQTT/SQL),transport 缺省走真实 mqtt/pg 动态导入。
+  await registerResultExportRoutes(app, { store, operations });
   await registerPprBopRoutes(app, { store, service: pprBop });
   await registerAiDataBindingRoutes(app, store);
   await registerIndustrialCapabilityRoutes(app, { store, host: industrialCapabilities, dataQuerySource });
