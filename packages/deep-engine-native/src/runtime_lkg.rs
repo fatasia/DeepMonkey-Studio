@@ -59,6 +59,7 @@ impl Store {
         self.restore_with(PackageKind::Standard)
     }
 
+    #[cfg(any(windows, test))]
     pub fn restore_x(&self) -> Result<Vec<u8>, String> {
         self.restore_with(PackageKind::ExperimentalX)
     }

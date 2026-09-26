@@ -22,6 +22,8 @@ pub(super) use input_gesture::{InputGesture, release as release_input};
 pub(super) use text_input::{ime, refresh as refresh_input, select_text_key, text_key};
 
 fn export_table(app: &NativeApp, action: &deep_engine_native::dashboard_runtime::TableAction) {
+    #[cfg(not(windows))]
+    let _ = action;
     #[cfg(windows)]
     let result = (|| -> Result<String, String> {
         let (filename, bytes) = app

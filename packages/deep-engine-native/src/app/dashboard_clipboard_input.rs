@@ -1,4 +1,6 @@
-use super::{NativeApp, apply};
+use super::NativeApp;
+#[cfg(windows)]
+use super::apply;
 use winit::keyboard::KeyCode;
 
 pub(super) fn key(app: &mut NativeApp, code: KeyCode) -> bool {

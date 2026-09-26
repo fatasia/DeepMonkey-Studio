@@ -1,5 +1,7 @@
 //! 单独的权限负向测试程序，不是XCall执行器，不随产品分发。
+#[cfg(windows)]
 use serde_json::json;
+#[cfg(windows)]
 use std::io::Read;
 #[cfg(windows)]
 fn main() {

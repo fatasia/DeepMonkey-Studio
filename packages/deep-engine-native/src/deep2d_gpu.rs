@@ -415,6 +415,7 @@ impl Deep2dGpuPainter {
     pub fn dashboard_video_slots(&self) -> &[DashboardVideoSlot] {
         &self.dashboard_video_slots
     }
+    #[cfg(windows)]
     pub fn logical_size(&self) -> [f32; 2] {
         self.logical_size
     }

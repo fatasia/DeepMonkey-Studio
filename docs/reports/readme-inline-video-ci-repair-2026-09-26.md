@@ -10,3 +10,9 @@
 
 - 新录屏改用与原视频相同的 GitHub user-attachments 裸链接；上传得到的 URL 通过 GitHub Markdown 渲染 API 验证为 `<video>` 播放器。去掉仓内大文件和多余封面，遵守现有文件体量门槛。
 - 只修复 Clippy 指出的跨平台条件编译和结构体初始化问题，保持工作流门槛不变。
+
+## 验证
+
+- GitHub Markdown 渲染 API 将新录屏链接生成为 `<video>`；远端 README 已显示该链接紧接原介绍视频。
+- 2026-09-26 的 Repository governance 作业通过。Deep Engine 首轮重跑的浏览器、Windows 原生测试与 Clippy 通过；Ubuntu 测试和格式检查通过，但全目标 Clippy 继续指出二进制目标和示例中的 6 处平台条件编译警告，已逐处修复。
+- 本地 Windows `cargo fmt --all -- --check` 与 `cargo clippy --locked --all-targets --all-features -- -D warnings` 通过；最终以 GitHub 双平台工作流结果验收。
