@@ -1,9 +1,15 @@
-use deep_engine_native::chart::tooltip_render::{compose_tooltip, tooltip_rect};
+#[cfg(windows)]
+use deep_engine_native::chart::tooltip_render::compose_tooltip;
+use deep_engine_native::chart::tooltip_render::tooltip_rect;
+#[cfg(windows)]
 use deep_engine_native::chart::{ChartAction, ChartRuntime, parse_chart_ir};
+#[cfg(windows)]
 use deep_engine_native::deep2d::{
     Deep2dCommand, Deep2dResource, Deep2dRuntimeContent, prepare_runtime_content,
 };
+#[cfg(windows)]
 use deep_engine_native::native_ui::design_tokens::DesignTokenSnapshot;
+#[cfg(windows)]
 use deep_engine_native::platform_text::TextRasterizer;
 
 #[test]
