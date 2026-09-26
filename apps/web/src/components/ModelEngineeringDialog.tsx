@@ -51,7 +51,7 @@ export function ModelEngineeringDialog({ model, models, locale, onClose, onOptim
           <h3>{tr(locale, "三维预览与结构联动", "3D preview & structure linkage")}</h3>
           <p className="model-engineering-linkage-hint" role="note">{tr(locale, "点选装配节点可在预览中选中对应零件；在预览中点选零件也会定位到结构树。", "Clicking an assembly node selects the matching part in the preview; picking a part in the preview locates it in the tree.")}</p>
           <div className="model-engineering-viewport">
-            <RobotAssetPreview locale={locale} model={model} onReady={setViewport} selectionScope="layer" label={tr(locale, "工程三维预览", "Engineering 3D preview")} />
+            <RobotAssetPreview locale={locale} model={model} onReady={setViewport} selectionScope="component" label={tr(locale, "工程三维预览", "Engineering 3D preview")} />
           </div>
         </section>
       )}

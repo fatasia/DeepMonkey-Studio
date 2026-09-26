@@ -20,5 +20,10 @@
 .model-engineering-body details{padding-top:10px;border-top:1px solid var(--line);}
 .model-engineering-body pre{max-height:260px;overflow:auto;font-size:12px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text-muted);}
 .model-engineering-body .model-engineering-actions{display:flex;flex-wrap:wrap;gap:8px;}
+.model-engineering-linkage-hint{margin:0;color:var(--text-muted);font-size:12px;line-height:1.6;}
+.model-engineering-viewport{position:relative;height:300px;overflow:hidden;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm);}
+.model-engineering-viewport .robot-asset-viewport{position:absolute;inset:0;min-height:0;}
+.model-engineering-viewport .robot-asset-canvas{position:absolute;inset:0;}
+.model-engineering-viewport .robot-asset-canvas>canvas{display:block;width:100%;height:100%;}
 .model-engineering-dialog footer{justify-content:flex-end;}
 @media(max-width:760px){.model-engineering-metrics{grid-template-columns:repeat(2,minmax(0,1fr));}.model-engineering-body{padding:16px;}.model-engineering-versions li{align-items:flex-start;flex-direction:column;}}

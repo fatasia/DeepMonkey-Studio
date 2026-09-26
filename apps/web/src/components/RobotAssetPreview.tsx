@@ -4,8 +4,10 @@ import type { ViewerEngine } from "../viewer/ViewerEngine";
 import { translate as tr, type AppLocale } from "../i18n";
 
 /** 复用主 Viewer，预览姿态不写回项目或场景。 */
-export function RobotAssetPreview({ locale, model, onReady, label }: {
+export function RobotAssetPreview({ locale, model, onReady, label, selectionScope }: {
   locale: AppLocale; model: ModelRecord; onReady: (engine: ViewerEngine | undefined) => void; label?: string;
+  /** 预览拾取范围；缺省保持引擎默认（整模型）。装配结构联动等需要逐构件点选的场景传 "layer"。 */
+  selectionScope?: "model" | "component" | undefined;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [retry, setRetry] = useState(0);
@@ -22,6 +24,7 @@ export function RobotAssetPreview({ locale, model, onReady, label }: {
       viewer = engine;
       engine.setReadOnly(true);
       engine.setInteractionScripts([]);
+      if (selectionScope) engine.setSelectionScope(selectionScope);
       await engine.loadManifest(manifest);
       if (closed) return;
       engine.focusModel(model.id); onReady(engine); setLoading(false);
@@ -29,7 +32,7 @@ export function RobotAssetPreview({ locale, model, onReady, label }: {
       if (!closed) { onReady(undefined); setLoading(false); setError(reason instanceof Error ? reason.message : String(reason)); }
     });
     return () => { closed = true; onReady(undefined); viewer?.dispose(); };
-  }, [model.id, model.updatedAt, retry, onReady]);
+  }, [model.id, model.updatedAt, retry, onReady, selectionScope]);
   return <div className="robot-asset-viewport" aria-label={label ?? tr(locale, "机器人预览", "Robot preview")}>
     <div className="robot-asset-canvas" ref={host} />
     {loading && <span className="robot-asset-feedback" role="status">{tr(locale, "正在加载…", "Loading…")}</span>}

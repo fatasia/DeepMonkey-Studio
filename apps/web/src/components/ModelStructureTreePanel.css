@@ -16,6 +16,9 @@
 .model-structure-search input{min-width:0;flex:1;padding:0;color:var(--text);background:transparent;border:0;font:inherit;font-size:12px;outline:none;}
 .model-structure-meta{display:flex;flex-shrink:0;align-items:center;gap:6px;color:var(--text-muted);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap;}
 .model-structure-meta em{font-style:normal;color:var(--warning);}
+.model-structure-viewport-note{margin:0;font-size:12px;line-height:1.6;}
+.model-structure-viewport-note.is-ok{color:var(--accent);}
+.model-structure-viewport-note.is-blocked{color:var(--text-muted);}
 
 .model-structure-layout{display:grid;grid-template-columns:minmax(0,1fr) 264px;gap:12px;align-items:start;}
 .model-structure-tree{height:312px;overflow:auto;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm);}

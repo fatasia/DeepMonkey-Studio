@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   cursor: 0,
   cells: [] as unknown[],
   effects: [] as Array<() => (() => void) | void>,
+  refs: [] as Array<{ current: unknown }>,
   requests: [] as Array<{ url: string; init?: RequestInit | undefined }>,
   structurePayload: null as Record<string, unknown> | null,
   structureError: null as Error | null,
@@ -14,21 +15,29 @@ const state = vi.hoisted(() => ({
 vi.mock("react", async importOriginal => ({
   ...await importOriginal<typeof import("react")>(),
   useEffect: (effect: () => (() => void) | void) => { state.effects.push(effect); },
+  useRef: (initial: unknown) => {
+    const ref = { current: initial };
+    state.refs.push(ref);
+    return ref;
+  },
   useState: (initial: unknown) => {
     const index = state.cursor++;
     if (!(index in state.cells)) state.cells[index] = typeof initial === "function" ? (initial as () => unknown)() : initial;
     return [state.cells[index], (next: unknown) => { state.cells[index] = typeof next === "function" ? (next as (value: unknown) => unknown)(state.cells[index]) : next; }];
   },
 }));
-import { ModelStructureTreePanel, flattenStructure, propertyRequestIds, structureAvailability } from "./ModelStructureTreePanel";
+import { ModelStructureTreePanel, flattenStructure, propertyRequestIds, resolveStructureViewportTarget, structureAncestors, structureAvailability, structureNodeForViewportSelection, viewerLayerIdIndex, type StructureViewportLink } from "./ModelStructureTreePanel";
+import type { ModelStructureNode } from "@bim-studio/contracts";
+import type { LayerTreeNode, LoadedSceneModel } from "../viewer/ViewerEngine";
 
 type Element = ReactElement<Record<string, any>>;
+let currentViewer: StructureViewportLink | undefined;
 function walk(node: ReactNode): Element[] {
   if (Array.isArray(node)) return node.flatMap(walk);
   if (!isValidElement<Record<string, any>>(node)) return [];
   return [node, ...walk(node.props.children)];
 }
-function render() { state.cursor = 0; return walk(ModelStructureTreePanel({ model: model(), locale: "zh-CN", request })); }
+function render() { state.cursor = 0; return walk(ModelStructureTreePanel({ model: model(), locale: "zh-CN", request, viewer: currentViewer })); }
 /** 真实 React 会在渲染后提交 effect；点击改变状态后必须重新渲染产生新 effect 再提交。 */
 async function flushEffects() {
   const effects = state.effects.splice(0);
@@ -93,6 +102,7 @@ const structure = (overrides: Record<string, unknown> = {}): Record<string, unkn
 beforeEach(() => {
   state.cells = [];
   state.effects = [];
+  state.refs = [];
   state.cursor = 0;
   state.requests = [];
   state.structurePayload = structure();
@@ -229,4 +239,196 @@ it("explains availability per conversion status", () => {
   expect(structureAvailability(model({ manifest: undefined, status: "queued" }), "zh-CN")).toMatchObject({ available: false });
   expect(structureAvailability(model({ manifest: undefined, status: "waiting_converter" }), "zh-CN")).toMatchObject({ available: false, reason: expect.stringContaining("尚未为该文件发布结构数据") });
   expect(structureAvailability(model({ manifest: undefined, status: "failed" }), "en-US")).toMatchObject({ available: false, reason: expect.stringContaining("Conversion failed") });
+});
+
+// ---------------------------------------------------------------------------
+// 装配树 ↔ 3D 视口联动
+// ---------------------------------------------------------------------------
+
+function layerNode(id: string): LayerTreeNode {
+  return { id, modelId: "m1", name: id, type: "Mesh", visible: true, locked: false, deleted: false, children: [] };
+}
+function loadedModel(id = "m1"): LoadedSceneModel {
+  return { id, name: id, object: {} as never, kind: "model", visible: true, opacity: 1 };
+}
+function sNode(id: string, overrides: Partial<ModelStructureNode> = {}): ModelStructureNode {
+  return { id, name: id, meshCount: 0, childCount: 0, children: [], ...overrides };
+}
+interface ViewerHarness { viewer: StructureViewportLink; selections: Array<{ modelId: string; nodeId: string }>; layerId: string | undefined }
+function viewerHarness(layerIds: readonly string[], options: { loaded?: boolean } = {}): ViewerHarness {
+  const root: LayerTreeNode = { id: "root", modelId: "m1", name: "root", type: "Group", visible: true, locked: false, deleted: false,
+    children: layerIds.filter(id => id !== "root").map(layerNode) };
+  const harness: ViewerHarness = { selections: [], layerId: undefined, viewer: {
+    selectLayer: (modelId, nodeId) => { harness.selections.push({ modelId, nodeId }); },
+    getSelectedLayerId: () => harness.layerId,
+    getSelected: () => loadedModel(),
+    getLayerTree: () => options.loaded === false ? undefined : root,
+    onSelectionChange: undefined,
+  } };
+  return harness;
+}
+/** 挂载 effect 且保留存活（不跑 cleanup）；等待微任务让异步装载收敛，返回 cleanups 供显式卸载断言。 */
+async function mountEffects(): Promise<Array<() => void>> {
+  const cleanups = state.effects.splice(0).map(effect => effect());
+  await Promise.resolve();
+  await Promise.resolve();
+  return cleanups.filter((cleanup): cleanup is () => void => typeof cleanup === "function");
+}
+/** 结构装载收敛后再次渲染并挂载，此时订阅型 effect 才会附着。 */
+async function mountReady(): Promise<Array<() => void>> {
+  render();
+  await mountEffects(); // 第一轮：拉取装配结构并收敛到 ready
+  render();
+  return mountEffects(); // 第二轮：ready 渲染上的订阅 effect 附着
+}
+const viewportNotes = () => render().filter(item => String(item.props.className ?? "").includes("model-structure-viewport-note"));
+const clickRowByName = (name: string) => click(item => {
+  if (item.props.className !== "model-structure-select") return false;
+  return walk(item).some(child => child.props.children === name);
+});
+
+it("联动：树点击命中网格样本时调用视口 selectLayer 并报告选中对象", async () => {
+  const harness = viewerHarness(["root", "element:mesh-1", "element:mesh-2"]);
+  currentViewer = harness.viewer;
+  try {
+    await renderAndFlush();
+    clickRowByName("机身");
+    expect(harness.selections).toEqual([{ modelId: "m1", nodeId: "element:mesh-1" }]);
+    expect(textOf(viewportNotes()[0]!)).toContain("已在三维视口选中「机身」");
+  } finally { currentViewer = undefined; }
+});
+
+it("联动：模型根点击映射为视口整模型选中（root）", async () => {
+  const harness = viewerHarness(["root"]);
+  currentViewer = harness.viewer;
+  try {
+    await renderAndFlush();
+    clickRowByName("coffee-maker.jt");
+    expect(harness.selections).toEqual([{ modelId: "m1", nodeId: "root" }]);
+  } finally { currentViewer = undefined; }
+});
+
+it("联动：装配节点无直接网格时落到首个可拾取后代", async () => {
+  state.structurePayload = { schemaVersion: 1, sourceFormat: "jt", sourceName: "coffee-maker.jt", nodeCount: 3, truncated: false,
+    root: { id: "root", name: "coffee-maker.jt", type: "JT 结构模型", meshCount: 0, childCount: 1, children: [
+      { id: "asm2", name: "底座", type: "装配", meshCount: 0, childCount: 1, children: [
+        { id: "part2", name: "电机", type: "零件", meshCount: 1, meshSampleIds: ["mesh-9"], childCount: 0, children: [] },
+      ] },
+    ] } };
+  const harness = viewerHarness(["root", "element:mesh-9"]);
+  currentViewer = harness.viewer;
+  try {
+    await renderAndFlush();
+    clickRowByName("底座");
+    expect(harness.selections).toEqual([{ modelId: "m1", nodeId: "element:mesh-9" }]);
+    expect(textOf(viewportNotes()[0]!)).toContain("「电机」");
+  } finally { currentViewer = undefined; }
+});
+
+it("联动：模型未加载或无可拾取对象时如实提示且不调用 selectLayer", async () => {
+  const unloaded = viewerHarness(["root"], { loaded: false });
+  currentViewer = unloaded.viewer;
+  try {
+    await renderAndFlush();
+    clickRowByName("壶体");
+    expect(unloaded.selections).toEqual([]);
+    const note = viewportNotes()[0]!;
+    expect(textOf(note)).toContain("尚未加载该模型");
+    expect(String(note.props.className)).toContain("is-blocked");
+  } finally { currentViewer = undefined; }
+  const pathOnly = viewerHarness(["root", "root/0", "root/1"]);
+  currentViewer = pathOnly.viewer;
+  try {
+    await renderAndFlush();
+    clickRowByName("壶体");
+    expect(pathOnly.selections).toEqual([]);
+    expect(textOf(viewportNotes()[0]!)).toContain("没有可拾取对象");
+  } finally { currentViewer = undefined; }
+});
+
+it("联动：无视口时点击行为与既有只读行为一致", async () => {
+  await renderAndFlush();
+  clickRowByName("机身");
+  expect(viewportNotes()).toHaveLength(0);
+  expect(rowNames()).toEqual(["coffee-maker.jt", "机身", "壶体"]);
+});
+
+it("联动：视口选中网格映射回装配节点并展开祖先路径、滚动定位", async () => {
+  const children = Array.from({ length: 30 }, (_, index) => ({
+    id: `leaf${index}`, name: `零件 ${index}`, type: "零件", meshCount: 1, meshSampleIds: [`mesh-${index}`], childCount: 0, children: [],
+  }));
+  state.structurePayload = { schemaVersion: 1, sourceFormat: "jt", sourceName: "coffee-maker.jt", nodeCount: 31, truncated: false,
+    root: { id: "root", name: "coffee-maker.jt", type: "JT 结构模型", meshCount: 0, childCount: 30, children } };
+  const harness = viewerHarness(Array.from({ length: 30 }, (_, index) => `element:mesh-${index}`));
+  currentViewer = harness.viewer;
+  try {
+    await mountReady();
+    expect(typeof harness.viewer.onSelectionChange).toBe("function");
+    harness.layerId = "element:mesh-25";
+    (harness.viewer.onSelectionChange as (model: LoadedSceneModel | undefined) => void)(loadedModel());
+    render();
+    state.refs.at(-1)!.current = { scrollTop: 0 };
+    await mountEffects();
+    const selected = render().find(item => item.props["aria-selected"] === true);
+    expect(walk(selected!).some(child => child.props.children === "零件 25")).toBe(true);
+    const container = state.refs.find(ref => ref.current && typeof (ref.current as { scrollTop?: number }).scrollTop === "number");
+    // 根行占第 0 行，零件 25 在第 26 行；定位到窗口中部：26*26 - 11*26/2。
+    expect((container!.current as { scrollTop: number }).scrollTop).toBe(26 * 26 - (11 * 26) / 2);
+  } finally { currentViewer = undefined; }
+});
+
+it("联动：视口选中路径型图层 id 时如实提示且不改变树选中", async () => {
+  const harness = viewerHarness(["root", "root/0"]);
+  currentViewer = harness.viewer;
+  try {
+    const cleanups = await mountReady();
+    harness.layerId = "root/0";
+    (harness.viewer.onSelectionChange as (model: LoadedSceneModel | undefined) => void)(loadedModel());
+    const note = viewportNotes()[0]!;
+    expect(String(note.props.className)).toContain("is-blocked");
+    expect(textOf(note)).toContain("没有对应的装配结构节点");
+    expect(render().some(item => item.props["aria-selected"] === true)).toBe(false);
+    cleanups.forEach(cleanup => cleanup());
+  } finally { currentViewer = undefined; }
+});
+
+it("联动：订阅链式保留既有 handler", async () => {
+  const harness = viewerHarness(["root", "element:mesh-2"]);
+  const previous = vi.fn();
+  harness.viewer.onSelectionChange = previous;
+  currentViewer = harness.viewer;
+  try {
+    const cleanups = await mountReady();
+    expect(harness.viewer.onSelectionChange).not.toBe(previous);
+    harness.layerId = "element:mesh-2";
+    (harness.viewer.onSelectionChange as (model: LoadedSceneModel | undefined) => void)(loadedModel());
+    expect(previous).toHaveBeenCalledTimes(1);
+    const selected = render().find(item => item.props["aria-selected"] === true);
+    expect(walk(selected!).some(child => child.props.children === "壶体")).toBe(true);
+    cleanups.forEach(cleanup => cleanup());
+    expect(harness.viewer.onSelectionChange).toBe(previous);
+  } finally { currentViewer = undefined; }
+});
+
+it("映射纯函数：命中顺序 self → sample → descendant，路径型反向不可映射", () => {
+  const index = viewerLayerIdIndex({ id: "root", modelId: "m1", name: "root", type: "Group", visible: true, locked: false, deleted: false,
+    children: [layerNode("element:mesh-9"), layerNode("root/0")] });
+  expect(resolveStructureViewportTarget(index, sNode("element:mesh-9"), {}, "zh-CN")).toMatchObject({ status: "selectable", nodeId: "element:mesh-9", via: "self" });
+  expect(resolveStructureViewportTarget(index, sNode("asm", { meshSampleIds: ["mesh-9"] }), {}, "zh-CN")).toMatchObject({ status: "selectable", nodeId: "element:mesh-9", via: "sample" });
+  const deep = sNode("deep", { meshSampleIds: ["mesh-9"] });
+  expect(resolveStructureViewportTarget(index, sNode("asm", { children: [deep] }), {}, "zh-CN")).toMatchObject({ status: "selectable", nodeId: "element:mesh-9", via: "descendant", targetName: "deep" });
+  expect(resolveStructureViewportTarget(index, sNode("lonely"), {}, "zh-CN")).toMatchObject({ status: "unavailable" });
+  expect(resolveStructureViewportTarget(new Set(), sNode("root"), { isModelRoot: true }, "zh-CN")).toMatchObject({ status: "unavailable" });
+  expect(resolveStructureViewportTarget(index, sNode("root"), { isModelRoot: true }, "en-US")).toMatchObject({ status: "selectable", nodeId: "root" });
+
+  const root = sNode("root", { children: [sNode("asm", { children: [deep] })] });
+  expect(structureAncestors(root, "deep")).toEqual(["root", "asm"]);
+  expect(structureAncestors(root, "missing")).toEqual([]);
+  expect(structureNodeForViewportSelection(root, "root")?.id).toBe("root");
+  expect(structureNodeForViewportSelection(root, "element:mesh-9")?.id).toBe("deep");
+  expect(structureNodeForViewportSelection(root, "element:missing")).toBeUndefined();
+  expect(structureNodeForViewportSelection(root, "root/0")).toBeUndefined();
+  // 同一网格 id 同时出现在祖先与后代（JT 根汇总全模型网格）时取最深持有者。
+  const summarized = sNode("jt-root", { meshSampleIds: ["mesh-9"], children: [sNode("jt-leaf", { meshSampleIds: ["mesh-9"] })] });
+  expect(structureNodeForViewportSelection(summarized, "element:mesh-9")?.id).toBe("jt-leaf");
 });
