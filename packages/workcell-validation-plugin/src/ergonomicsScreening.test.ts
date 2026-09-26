@@ -2,6 +2,7 @@ import type { WorkcellAuditObject, WorkcellErgonomicsProfile } from "@bim-studio
 import { validateCapabilityValue } from "@bim-studio/plugin-runtime";
 import { describe, expect, it } from "vitest";
 import { analyzeHumanErgonomics } from "./ergonomicsScreening.js";
+import { createHumanPercentileFigure } from "./standardScores.js";
 import { workcellAuditInputSchema } from "./workcellSchemas.js";
 
 describe("human work planning screening", () => {
@@ -63,6 +64,70 @@ describe("human work planning screening", () => {
     expect(validateCapabilityValue(workcellAuditInputSchema, input)).toEqual([]);
     input.ergonomicsProfiles[0]!.policy!.warningUtilizationRatio = 1.2;
     expect(validateCapabilityValue(workcellAuditInputSchema, input)).not.toEqual([]);
+  });
+});
+
+describe("standard score layer (incremental, optional inputs)", () => {
+  it("attaches NIOSH LI and OWAS category without changing existing rule semantics", () => {
+    const profile = completeProfile();
+    const check = analyzeHumanErgonomics(
+      [profile],
+      objects(),
+      {
+        humanFigure: createHumanPercentileFigure("ANSUR-II", 50, "male"),
+        nioshLifting: { travelCm: 50 },
+        owasPosture: { back: 2, arm: 1, leg: 1 },
+      },
+    )[0]!;
+
+    // 场景推导:H=作业点水平距 0.35m→35cm;V=作业点高 1.08m→108cm;F=30 次/时→0.5;
+    // 时长 45 分→short;耦合缺省 fair。RWL = 23×(25/35)×0.901×0.91×0.97×1.00 = 13.07 kg。
+    expect(check.nioshLifting?.multipliers).toMatchObject({ hm: 0.7143, vm: 0.901, dm: 0.91, am: 1, fm: 0.97, cm: 1 });
+    expect(check.nioshLifting?.recommendedWeightLimitKg).toBe(13.07);
+    expect(check.nioshLifting?.liftingIndex).toBe(0.31);
+    // OWAS 载荷缺省取任务载荷 4kg → 载荷组 1;弯背/双臂低/坐姿 → AC2。
+    expect(check.owasPosture?.code).toBe("2111");
+    expect(check.owasPosture?.actionCategory).toBe(2);
+    expect(check.humanFigureApplied?.segmentLengthsMm.statureMm).toBe(1756);
+    expect(check.declaration).toContain("标准分数层");
+
+    // 既有字段语义不变:规则数量、覆盖度与状态完全由原逻辑决定。
+    expect(check.rules).toHaveLength(7);
+    expect(check.status).toBe("pass");
+    expect(check.evidenceCoverage).toBe(1);
+    expect(check.missingFields).toEqual([]);
+  });
+
+  it("does not invent a NIOSH result when the travel distance is not provided", () => {
+    const check = analyzeHumanErgonomics([completeProfile()], objects(), { nioshLifting: {} })[0]!;
+    expect(check.nioshLifting).toBeUndefined();
+  });
+
+  it("falls back to the percentile figure knuckle height for V when no operator is bound", () => {
+    const profile: WorkcellErgonomicsProfile = {
+      id: "human-2",
+      name: "未绑定操作员",
+      task: { workPoint: { x: 1, y: 1, z: 0 }, loadMassKg: 10, repetitionsPerHour: 120, durationMinutes: 90, source: "author-confirmed" },
+    };
+    const check = analyzeHumanErgonomics(
+      [profile],
+      objects(),
+      { humanFigure: createHumanPercentileFigure("ANSUR-II", 50, "male"), nioshLifting: { horizontalCm: 30, travelCm: 40 } },
+    )[0]!;
+    // V 取 P50 男性指关节高 662mm→66.2cm;F=2、时长 90 分→moderate(V<75)。
+    // RWL = 23×(25/30)×0.9736×0.9325×0.84×0.95 = 13.89 kg。
+    expect(check.nioshLifting?.multipliers.vm).toBe(0.9736);
+    expect(check.nioshLifting?.multipliers.fm).toBe(0.84);
+    expect(check.nioshLifting?.recommendedWeightLimitKg).toBe(13.89);
+    expect(check.nioshLifting?.liftingIndex).toBe(0.72);
+  });
+
+  it("keeps the legacy declaration and omits score fields when no options are given", () => {
+    const check = analyzeHumanErgonomics([completeProfile()], objects())[0]!;
+    expect(check.nioshLifting).toBeUndefined();
+    expect(check.owasPosture).toBeUndefined();
+    expect(check.humanFigureApplied).toBeUndefined();
+    expect(check.declaration).toContain("不输出 NIOSH");
   });
 });
 

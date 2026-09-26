@@ -6,21 +6,25 @@ import type {
   WorkcellErgonomicsProfile,
   WorkcellErgonomicsRuleResult,
 } from "@bim-studio/contracts";
+import { buildStandardScoreAttachments, type ErgonomicsStandardScoreOptions } from "./standardScores.js";
 
 const BASE_REQUIRED_FIELDS = 18;
 const DECLARATION = "仅按显式人体尺寸、场景作业点和项目筛查阈值进行规划初筛；不求解完整人体姿态、生物力学载荷，也不输出 NIOSH、RULA、REBA、ISO 或法规认证结论。";
+const DECLARATION_WITH_SCORES = "仅按显式人体尺寸、场景作业点和项目筛查阈值进行规划初筛；标准分数层为按调用方显式输入计算的 NIOSH LI 与 OWAS 类别，仅作规划筛查参考，不构成 NIOSH、RULA、REBA、ISO 或法规认证结论。";
 
 export function analyzeHumanErgonomics(
   profiles: WorkcellErgonomicsProfile[],
   objects: WorkcellAuditObject[],
+  options: ErgonomicsStandardScoreOptions = {},
 ): WorkcellErgonomicsCheck[] {
   const objectById = new Map(objects.map((item) => [item.id, item]));
-  return profiles.slice(0, 20).map((profile) => analyzeProfile(profile, objectById));
+  return profiles.slice(0, 20).map((profile) => analyzeProfile(profile, objectById, options));
 }
 
 function analyzeProfile(
   profile: WorkcellErgonomicsProfile,
   objectById: Map<string, WorkcellAuditObject>,
+  options: ErgonomicsStandardScoreOptions,
 ): WorkcellErgonomicsCheck {
   const anthropometry = profile.anthropometry;
   const task = profile.task;
@@ -97,6 +101,20 @@ function analyzeProfile(
     ...rules.filter((item) => item.status === "warn" || item.status === "fail").map((item) => item.recommendation),
     ...(missingFields.length ? ["补齐人体、任务与筛查策略证据后重新运行，缺失项不作通过判断。"] : []),
   ]);
+  const standardScores = buildStandardScoreAttachments(
+    {
+      ...(workPoint ? { workPoint } : {}),
+      ...(operator ? { operatorPosition: operator.position } : {}),
+      ...(horizontalReach !== undefined ? { horizontalReachMeters: horizontalReach } : {}),
+      ...(nonNegative(task?.loadMassKg) ? { taskLoadMassKg: task!.loadMassKg } : {}),
+      ...(nonNegative(task?.repetitionsPerHour) ? { repetitionsPerHour: task!.repetitionsPerHour } : {}),
+      ...(positive(task?.durationMinutes) ? { durationMinutes: task!.durationMinutes } : {}),
+    },
+    options,
+  );
+  const declaration = standardScores.nioshLifting || standardScores.owasPosture || standardScores.humanFigureApplied
+    ? DECLARATION_WITH_SCORES
+    : DECLARATION;
   return {
     profileId: profile.id,
     profileName: profile.name,
@@ -113,7 +131,8 @@ function analyzeProfile(
     ...(task?.reference?.trim() ? { taskReference: task.reference.trim() } : {}),
     ...(policySource(policy?.source) ? { policySource: policy.source } : {}),
     ...(policy?.reference?.trim() ? { policyReference: policy.reference.trim() } : {}),
-    declaration: DECLARATION,
+    declaration,
+    ...standardScores,
   };
 }
 
