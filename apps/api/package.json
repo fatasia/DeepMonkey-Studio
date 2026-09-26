@@ -40,7 +40,7 @@
     "bacstack": "0.0.1-beta.14",
     "coap": "^1.6.0",
     "csv-parse": "^7.0.2",
-    "dotenv": "^17.2.3",
+    "dotenv": "^18.0.2",
     "draco3dgltf": "^1.5.7",
     "esbuild": "0.28.1",
     "fast-xml-parser": "5.11.1",
