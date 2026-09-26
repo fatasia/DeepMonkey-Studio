@@ -228,6 +228,39 @@
 3. 排序用途:差距 TOP-10 前 4 项(T11/T05/T22/T02)与计划"初期切片优先 T11/T05/T02/T17/T22"一致,可作为 W1–W2 资源倾斜依据。
 4. 未验证项如实登记:vs Unity/UE 全部、内存通道(#115)、整页冷启动、千万构件档、真实现场仿真校准(#49/#110 的外部真值)。
 
+
+
+## 9. 与 24 工作包计划的整合执行路线(2026-09-27 追加)
+
+本报告的差距 TOP-10(第 6 节)与《核心能力开发执行计划》的波次高度重合——差距不是新发现,
+而是对计划优先级的独立验证。整合结论:
+
+### 9.1 差距 → 工作包 → 波次对照
+
+| 差距排名 | 差距项 | 工作包 | 波次 | 整合说明 |
+|---|---|---|---|---|
+| 1 | 大场景首帧/输入长帧/内存 | T11 | W1 | 输入帧 14ms 与冷切 4.6s 已有本轮治理底座;剩可见闭包分阶段与内存通道 |
+| 2 | 实例级 GPU 剔除→拾取链 | T05 | W2 | meshlet/Hi-Z/indirect 已有;缺消费闭环与 10k 实例 -50% 验收 |
+| 3 | 工业格式矩阵与精度统计 | T22 | W2 | 本周已交付三档能力链+schema-aware B-Rep 解码;剩三角化 MVP(进行中)与 10 万+ 构件压测 |
+| 4 | 动态 GI 消费闭环 | T02 | W2 | 探针系统已有;缺失效/漏光/收敛证据 |
+| 5 | 时域重建与升尺度 | T07 | W2 | TAA 已有 jitter;缺失遮挡掩码与内部分辨率 |
+| 6 | 多灯与虚拟阴影 | T04 | W2 | governor 已有;缺分页阴影原型 |
+| 7 | 物理黄金案例/CCD | T17 | W2 | Rapier 双版本在用;缺四组黄金 fixture |
+| 8 | meshlet→Nanite 级闭环 | T05 | W2 | 与 #2 同包 |
+| 9 | 导航与多代理(含 DES 万档衰减) | T19 | W3 | 万档 442 ev/s 已实测;W3 需分批调度优化 |
+| 10 | 重定向与姿态搜索 | T15 | W3 | kinematics FK/IK 已有(2026-09-27),重定向/姿态库缺 |
+
+### 9.2 执行结论
+
+1. **差距 TOP-4 全部落在 W1/W2**——按计划既有波次执行即可覆盖最高优先差距,无需重排。
+2. **领先项不在工作包内**(确定性仿真/格式治理/人因标准等)——它们是域内领先的护城河,
+   执行 W1-W4 时不得回归(执行计划第 6.2 节通用门槛已覆盖回归约束)。
+3. **无配对基准的现实**:Unity 7/UE6 无可运行的 web 配对形态,性能对照只能做能力存在性与
+   架构对照;可量化的超越目标以 vs Three WebGL(编辑器)、vs Bevy(native 渲染)、
+   自身 A/B(DES)三组配对为准,持续维护。
+4. DES 万档 442 ev/s 的衰减已在 bench 基建中固化三档场景(500/4000/10000 对象),
+   W3 的 T19 分批调度优化以该数据为 before 基线。
+
 ## 8. 来源
 
 - 仓内:`docs/reports/deep-engine-vs-unity7-ue6-direct-2026-09-26.md`、`docs/reports/deep-core/T00-baseline.md`、`docs/specs/deep-engine-core-capability-development-plan-2026-09-27.md`、`docs/reports/performance-and-capability-upgrade-analysis-2026-09-25.md`、`docs/reports/react-3d-boundary-audit-2026-09-27.md`;`test-output/deep-core/T00/`、`test-output/bevy-019-benchmark/`、`test-output/ordinary-picking-benchmark-2026-09-09.json`、`test-output/plant-lite-*.json`、`data/external-assets/industrial-format-plan/`。
