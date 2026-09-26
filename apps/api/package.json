@@ -30,7 +30,7 @@
     "@bim-studio/workcell-validation-plugin": "workspace:*",
     "@bim-studio/xt-reader": "workspace:*",
     "@fastify/cors": "^11.2.0",
-    "@fastify/multipart": "^9.2.1",
+    "@fastify/multipart": "^10.1.2",
     "@fastify/static": "^10.1.4",
     "@fastify/websocket": "^11.3.0",
     "@gltf-transform/core": "^4.4.2",
