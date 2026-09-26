@@ -55,6 +55,11 @@ describe("parasolid schema probe runner", () => {
     const run = createParasolidProbeRunner({ command: process.execPath, args: [script] });
     await expect(run({ filePath: "sample.x_t" })).rejects.toThrow("不是合法 JSON");
   });
+
+  it("enforces the configurable stdout byte cap", async () => {
+    const run = createParasolidProbeRunner({ ...mockProbe, maxOutputBytes: 128 });
+    await expect(run({ filePath: "sample.x_t", brep: true })).rejects.toThrow("超过字节上限");
+  });
 });
 
 describe("ps-schema-probe bundled CLI (built by scripts/build-parasolid-probe.mjs)", () => {
@@ -101,5 +106,58 @@ describe("ps-schema-probe bundled CLI (built by scripts/build-parasolid-probe.mj
       expect(report.brep?.faces).toBeGreaterThan(0);
       expect(report.brep?.topologyValid).toBe(true);
     },
+  );
+
+  it.runIf(bundledCommand && existsSync(hingeSample) && existsSync(localCatalog))(
+    "triangulates real AS-2059 B-Rep faces with honest losses (R1 MVP)",
+    async () => {
+      const run = createParasolidProbeRunner({ command: bundledCommand!, schemaCatalog: localCatalog });
+      const report = await run({ filePath: hingeSample, brep: true, geometry: true });
+      const geometry = report.geometry;
+      expect(geometry).toBeDefined();
+      // 真实铰链样本:绝大多数面可发布(平面/柱/锥/环),blended_edge 如实跳过。
+      expect(geometry!.stats.facesTotal).toBe(report.brep?.faces);
+      expect(geometry!.stats.facesPublished).toBeGreaterThan(100);
+      expect(geometry!.stats.triangles).toBeGreaterThan(0);
+      expect(geometry!.stats.vertices).toBeGreaterThan(0);
+      expect(geometry!.budgetExceeded).toBe(false);
+      const publishedKinds = new Set(geometry!.faces.map((face) => face.surfaceKind));
+      for (const kind of publishedKinds) {
+        expect(["plane", "cylinder", "cone", "sphere", "torus"]).toContain(kind);
+      }
+      for (const face of geometry!.faces) {
+        expect(face.positions.length).toBeGreaterThan(0);
+        expect(face.positions.length % 3).toBe(0);
+        expect(face.indices.length % 3).toBe(0);
+        expect(face.indices.length / 3).toBeGreaterThan(0);
+        for (const index of face.indices) expect(index).toBeLessThan(face.positions.length / 3);
+      }
+      // 不支持族必须出现在诚实损失里。
+      expect(geometry!.losses).toContain("surface.blended_edge:not-triangulated");
+      expect(geometry!.skipped.length).toBe(
+        geometry!.stats.facesTotal - geometry!.stats.facesPublished,
+      );
+    },
+    120_000,
+  );
+
+  it.runIf(bundledCommand && existsSync(hingeSample) && existsSync(localCatalog))(
+    "stops publishing when the face budget is exhausted",
+    async () => {
+      const run = createParasolidProbeRunner({
+        command: bundledCommand!,
+        args: ["--max-faces", "20"],
+        schemaCatalog: localCatalog,
+      });
+      const report = await run({ filePath: hingeSample, brep: true, geometry: true });
+      const geometry = report.geometry!;
+      expect(geometry.stats.facesPublished).toBeLessThanOrEqual(20);
+      expect(geometry.budgetExceeded).toBe(true);
+      expect(geometry.losses).toContain("geometry.budget:faces-exhausted");
+      expect(geometry.skipped.length).toBe(
+        geometry.stats.facesTotal - geometry.stats.facesPublished,
+      );
+    },
+    120_000,
   );
 });

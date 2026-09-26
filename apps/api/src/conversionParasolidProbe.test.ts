@@ -10,16 +10,18 @@ import { loadConfig } from "./config.js";
 import { ConversionQueue } from "./conversion.js";
 import { JsonStore } from "./jsonStore.js";
 import { registerModelAssetRoutes } from "./modelAssetRoutes.js";
+import { defaultParasolidProbeCommand } from "./parasolidSchemaProbe.js";
 import { LocalObjectStore } from "./objects.js";
 import { createApiServer } from "./serverOptions.js";
 import { minimalXtRevolvedSubsetFixture } from "./fixtures/minimalXtRevolvedSubset.js";
 
 /**
- * Parasolid schema-aware 三档接线回归（2026-09-26 定案）：
+ * Parasolid schema-aware 三档接线回归（2026-09-26 定案,R1 扩展）：
  * - 配置 PARASOLID_SCHEMA_CATALOG（此处经 mock CLI 注入）后，子集+通用都拒绝的 X_T
- *   走第三档：waiting_converter + inspection.genericParse.schemaAware 权威证据；
+ *   走第三档：探针发布 ≥1 个面 → ready(MVP 三角化 GLB)；无 geometry 字段（旧 CLI）
+ *   或 0 个面 → waiting_converter + inspection.genericParse.schemaAware 权威证据；
  * - 未配置探针/catalog 时 X_T 行为逐字节不变（无 schemaAware 键、消息不变）；
- * - X_B 在探针存在且工业转换器未配置时升级为"结构可检、几何待离散化"；
+ * - X_B 在探针存在且工业转换器未配置时：有 geometry → ready；否则"结构可检、几何待离散化"；
  * - X_B 在工业转换器已配置时保持阻断（不因探针存在而改变优先级）。
  */
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
@@ -33,11 +35,110 @@ const samplesRoot = path.join(
 const legacySample = existsSync(samplesRoot)
   ? path.join(samplesRoot, "A  Hinges (鉸鏈)/Butt Hinges平面鉸鍊/A-2621/A-2621.x_t")
   : undefined;
+// AS-2059(SCH_2100263_20000_13006)真实几何三角化回归在 parasolidSchemaProbe.test.ts
+// (CLI 层);conversion 队列层走 legacy-baseline A-2621(通用档 0 网格才进第三档)。
+// gmsh contrib 内的 schema catalog:仅本地验证用(运行链不依赖、不入仓)。
+const catalogRoot = path.join(
+  repoRoot,
+  "data/external-assets/format-research/gmsh-2.11.0-source/contrib/Parasolid/interface_parasolid/schema",
+);
+const localCatalog = existsSync(path.join(catalogRoot, "sch_13006.sch_txt"))
+  ? path.join(catalogRoot, "sch_13006.sch_txt")
+  : undefined;
+// A-2621 是 SCH_901000_9008(legacy-baseline):通用档 0 网格 → 走第三档。
+const legacyCatalog = existsSync(path.join(catalogRoot, "sch_9008.sch_txt"))
+  ? path.join(catalogRoot, "sch_9008.sch_txt")
+  : undefined;
+const bundledCommand = defaultParasolidProbeCommand();
 
 const directories: string[] = [];
 
 afterEach(async () => {
+  delete process.env.PROBE_MOCK_GEOMETRY;
+  delete process.env.PROBE_MOCK_GEOMETRY_FACES;
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
+});
+
+describe("X_T schema-aware geometry publication (R1 MVP)", () => {
+  it.runIf(legacySample)(
+    "publishes a GLB when the probe returns triangulated faces",
+    async () => {
+      process.env.PROBE_MOCK_GEOMETRY = "1";
+      const { app, store, dataDir } = await createServer({ probe: mockProbe });
+      try {
+        const source = await readFile(legacySample!);
+        const result = await uploadAndSettle(app, store, "legacy-hinge.x_t", source, "ready");
+        expect(result.model.message).toContain("MVP 三角化");
+        expect(result.model.message).toContain("如实损失");
+        expect(result.model.manifest?.geometryUrl).toBeDefined();
+        expect(result.model.manifest?.hierarchyUrl).toBeDefined();
+        const outputDir = attemptOutput(dataDir, result.model);
+        await expect(readFile(path.join(outputDir, "geometry.glb"))).resolves.toBeInstanceOf(Buffer);
+        const inspection = JSON.parse(await readFile(path.join(outputDir, "inspection.json"), "utf8"));
+        expect(inspection.geometryParsed).toBe(true);
+        expect(inspection.genericParse.schemaAware.geometryPublication).toBe("published:brep-triangulation-mvp");
+        const hierarchy = JSON.parse(await readFile(path.join(outputDir, "hierarchy.json"), "utf8"));
+        expect(hierarchy.root.children).toHaveLength(2);
+      } finally {
+        await app.close();
+      }
+    },
+  );
+
+  it.runIf(legacySample)(
+    "keeps the waiting semantics when the probe publishes zero faces",
+    async () => {
+      process.env.PROBE_MOCK_GEOMETRY = "1";
+      process.env.PROBE_MOCK_GEOMETRY_FACES = "0";
+      const { app, store, dataDir } = await createServer({ probe: mockProbe });
+      try {
+        const source = await readFile(legacySample!);
+        const result = await uploadAndSettle(app, store, "legacy-hinge.x_t", source, "waiting_converter");
+        expect(result.model.message).toContain("权威结构已读取");
+        expect(result.model.manifest?.geometryUrl).toBeUndefined();
+        const outputDir = attemptOutput(dataDir, result.model);
+        await expect(readFile(path.join(outputDir, "geometry.glb"))).rejects.toMatchObject({ code: "ENOENT" });
+        const inspection = JSON.parse(await readFile(path.join(outputDir, "inspection.json"), "utf8"));
+        expect(inspection.genericParse.schemaAware.geometryPublication).toBe("waiting-brep-triangulation-r1");
+      } finally {
+        await app.close();
+      }
+    },
+  );
+
+  it.runIf(bundledCommand && legacySample && legacyCatalog)(
+    "publishes real legacy-baseline hinge geometry end-to-end through the conversion queue",
+    async () => {
+      const { app, store, dataDir } = await createServer({
+        probe: { command: bundledCommand! },
+        realCatalog: legacyCatalog,
+      });
+      try {
+        const source = await readFile(legacySample!);
+        const result = await uploadAndSettle(app, store, "A-2621.x_t", source, "ready");
+        expect(result.model.message).toContain("MVP 三角化");
+        expect(result.model.manifest?.geometryUrl).toBeDefined();
+        expect(result.model.manifest?.hierarchyUrl).toBeDefined();
+        expect(result.model.manifest?.propertiesUrl).toBeDefined();
+        // LOD 仅对 ≥8MB 的 GLB 生成(glbOptimizer 阈值),小模型按既有语义省略。
+        const outputDir = attemptOutput(dataDir, result.model);
+        const glb = await readFile(path.join(outputDir, "geometry.glb"));
+        expect(glb.byteLength).toBeGreaterThan(10_000);
+        const hierarchy = JSON.parse(await readFile(path.join(outputDir, "hierarchy.json"), "utf8"));
+        expect(hierarchy.root.children).toHaveLength(2);
+        expect(hierarchy.root.children[0].meshIds.length).toBeGreaterThan(0);
+        const inspection = JSON.parse(await readFile(path.join(outputDir, "inspection.json"), "utf8"));
+        expect(inspection.genericParse.schemaAware.schemaKey).toBe("SCH_901000_9008");
+        expect(inspection.genericParse.schemaAware.geometry.stats.facesPublished).toBeGreaterThan(0);
+        expect(inspection.genericParse.schemaAware.geometryPublication).toBe(
+          "published:brep-triangulation-mvp",
+        );
+      } finally {
+        await app.close();
+      }
+    },
+    180_000,
+  );
 });
 
 describe("X_T third schema-aware tier", () => {
@@ -112,6 +213,23 @@ describe("X_T third schema-aware tier", () => {
 });
 
 describe("X_B structure evidence tier", () => {
+  it("publishes X_B geometry when the probe returns triangulated faces", async () => {
+    process.env.PROBE_MOCK_GEOMETRY = "1";
+    const { app, store, dataDir } = await createServer({ probe: mockProbe });
+    try {
+      const result = await uploadAndSettle(app, store, "part.x_b", Buffer.from("PARASOLID neutral binary fixture"), "ready");
+      expect(result.model.message).toContain("X_B 权威 B-Rep 几何已发布");
+      expect(result.model.manifest?.geometryUrl).toBeDefined();
+      const outputDir = attemptOutput(dataDir, result.model);
+      await expect(readFile(path.join(outputDir, "geometry.glb"))).resolves.toBeInstanceOf(Buffer);
+      const inspection = JSON.parse(await readFile(path.join(outputDir, "inspection.json"), "utf8"));
+      expect(inspection.geometryParsed).toBe(true);
+      expect(inspection.schemaAware.geometryPublication).toBe("published:brep-triangulation-mvp");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("upgrades X_B from a black box to structure-inspectable while keeping waiting_converter (census)", async () => {
     const { app, store, dataDir } = await createServer({ probe: mockProbe, withoutCatalog: true });
     try {
@@ -198,6 +316,7 @@ async function createServer(options: {
   probe?: { command: string; args: string[] };
   withoutCatalog?: boolean;
   failure?: boolean;
+  realCatalog?: string;
   industrialCadCommand?: { command: string; args: string[]; cwd: string };
 }) {
   const dataDir = await mkdtemp(path.join(tmpdir(), "bim-parasolid-probe-"));
@@ -215,7 +334,8 @@ async function createServer(options: {
     ? {
         command: options.probe.command,
         args: options.probe.args,
-        ...(!options.withoutCatalog ? { schemaCatalog: "unused-by-mock-catalog.txt" } : {}),
+        // 真实 CLI 测试注入真实 catalog;mock 测试保持占位路径(mock 忽略该参数)。
+        schemaCatalog: options.realCatalog ?? (options.withoutCatalog ? undefined : "unused-by-mock-catalog.txt"),
       }
     : undefined;
   if (options.failure) process.env.PROBE_MOCK_FAILURE = "1";

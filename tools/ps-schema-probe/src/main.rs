@@ -1,12 +1,15 @@
 //! ps-schema-probe —— Parasolid X_T/X_B 结构探针 CLI(薄包装,不实现解析)。
 //!
-//! 职责边界(2026-09-26 定案):
+//! 职责边界(2026-09-26 定案,R1 扩展):
 //! - census 模式(无 catalog):只读头部(inspect_xt / inspect_xb),验证结构与 schema key;
 //!   trim 拓扑不解码,输出如实注明。
 //! - schema-aware 模式(提供部署方自备的官方 schema catalog 文本):经 parasolid-core
 //!   的 parse_schema_catalog + parse_xt/parse_xb 链做全节点解析,输出全节点类型计数;
 //!   `--brep` 追加权威 B-Rep 拓扑摘要(face/loop/edge/vertex 等)。
-//! - 本工具只做结构证据输出;几何三角化(B-Rep → mesh)不在本工具范围。
+//! - `--geometry`(R1 MVP):在 `--brep` 基础上对每个 face 做参数域离散三角化
+//!   (plane 耳切裁剪 / 柱锥环向+轴向裁剪 / 球经纬裁剪;blended_edge 等不支持族
+//!   如实跳过入 losses),输出 faces(positions/indices/approximations)+ losses。
+//!   算法见 src/geometry.rs;资源上限可用 --max-faces 等覆盖。
 //!
 //! schema catalog 是 Parasolid 版权件,不能随包交付;部署方自备路径由调用方传入。
 
@@ -24,6 +27,8 @@ use parasolid_core::{
     parse_xb, parse_xt,
 };
 use serde::Serialize;
+
+mod geometry;
 
 const TOOL_NAME: &str = "ps-schema-probe";
 const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -79,6 +84,8 @@ struct ProbeReport {
     census: Option<CensusSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
     brep: Option<BrepSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    geometry: Option<geometry::GeometryExport>,
 }
 
 #[derive(Debug, Serialize)]
@@ -136,8 +143,10 @@ struct Arguments {
     schema_catalog: Option<String>,
     builtin_profile: bool,
     brep: bool,
+    geometry: bool,
     json: bool,
     format: Option<SourceFormat>,
+    limits: geometry::GeometryLimits,
 }
 
 fn main() -> ExitCode {
@@ -149,24 +158,37 @@ fn main() -> ExitCode {
         }
     };
     let Some(file) = arguments.file.clone() else {
-        eprintln!("usage: ps-schema-probe --file <model.x_t|x_b> [--schema-catalog <catalog.txt>] [--brep] [--json] [--format x_t|x_b]");
+        eprintln!("usage: ps-schema-probe --file <model.x_t|x_b> [--schema-catalog <catalog.txt>] [--brep] [--geometry] [--max-faces <n>] [--max-total-vertices <n>] [--max-output-bytes <n>] [--json] [--format x_t|x_b]");
         return ExitCode::from(2);
     };
     match run(&file, &arguments) {
         Ok(report) => {
-            if arguments.json {
-                match serde_json::to_string_pretty(&report) {
-                    Ok(text) => {
-                        let mut stdout = std::io::stdout().lock();
-                        let _ = stdout.write_all(text.as_bytes());
-                        let _ = stdout.write_all(b"\n");
-                        ExitCode::SUCCESS
-                    }
-                    Err(error) => fail(&format!("JSON 序列化失败：{error}")),
-                }
-            } else {
+            if !arguments.json {
                 print_text_report(&report);
-                ExitCode::SUCCESS
+                return ExitCode::SUCCESS;
+            }
+            // --geometry 产物含大量坐标:紧凑序列化并执行字节上限。
+            let compact = arguments.geometry;
+            let serialized = if compact {
+                serde_json::to_string(&report)
+            } else {
+                serde_json::to_string_pretty(&report)
+            };
+            match serialized {
+                Ok(text) => {
+                    if text.len() > arguments.limits.max_output_bytes {
+                        return fail(&format!(
+                            "JSON 输出 {} 字节超过上限 {}(--max-output-bytes)",
+                            text.len(),
+                            arguments.limits.max_output_bytes
+                        ));
+                    }
+                    let mut stdout = std::io::stdout().lock();
+                    let _ = stdout.write_all(text.as_bytes());
+                    let _ = stdout.write_all(b"\n");
+                    ExitCode::SUCCESS
+                }
+                Err(error) => fail(&format!("JSON 序列化失败：{error}")),
             }
         }
         Err(error) => fail(&error),
@@ -184,8 +206,10 @@ fn parse_arguments(values: Vec<String>) -> Result<Arguments, String> {
         schema_catalog: None,
         builtin_profile: false,
         brep: false,
+        geometry: false,
         json: false,
         format: None,
+        limits: geometry::GeometryLimits::default(),
     };
     let mut index = 0;
     while index < values.len() {
@@ -195,7 +219,17 @@ fn parse_arguments(values: Vec<String>) -> Result<Arguments, String> {
             "--schema-catalog" => arguments.schema_catalog = Some(take_value(&values, &mut index, flag)?),
             "--builtin-profile" => arguments.builtin_profile = true,
             "--brep" => arguments.brep = true,
+            "--geometry" => arguments.geometry = true,
             "--json" => arguments.json = true,
+            "--max-faces" => {
+                arguments.limits.max_faces_published = take_usize(&values, &mut index, flag)?;
+            }
+            "--max-total-vertices" => {
+                arguments.limits.max_vertices_total = take_usize(&values, &mut index, flag)?;
+            }
+            "--max-output-bytes" => {
+                arguments.limits.max_output_bytes = take_usize(&values, &mut index, flag)?;
+            }
             "--format" => {
                 let value = take_value(&values, &mut index, flag)?;
                 arguments.format = Some(match value.as_str() {
@@ -208,13 +242,23 @@ fn parse_arguments(values: Vec<String>) -> Result<Arguments, String> {
         }
         index += 1;
     }
-    if arguments.brep && arguments.schema_catalog.is_none() && !arguments.builtin_profile {
-        return Err("--brep 需要 --schema-catalog 或 --builtin-profile（权威 B-Rep 映射依赖 schema 来源）".into());
+    if (arguments.brep || arguments.geometry)
+        && arguments.schema_catalog.is_none()
+        && !arguments.builtin_profile
+    {
+        return Err("--brep/--geometry 需要 --schema-catalog 或 --builtin-profile（权威 B-Rep 映射依赖 schema 来源）".into());
     }
     if arguments.builtin_profile && arguments.schema_catalog.is_some() {
         return Err("--builtin-profile 与 --schema-catalog 互斥".into());
     }
     Ok(arguments)
+}
+
+fn take_usize(values: &[String], index: &mut usize, flag: &str) -> Result<usize, String> {
+    let value = take_value(values, index, flag)?;
+    value
+        .parse::<usize>()
+        .map_err(|_| format!("{flag} 需要非负整数值，收到：{value}"))
 }
 
 fn take_value(values: &[String], index: &mut usize, flag: &str) -> Result<String, String> {
@@ -248,6 +292,7 @@ fn run(file: &str, arguments: &Arguments) -> Result<ProbeReport, String> {
             catalog: None,
             census: None,
             brep: None,
+            geometry: None,
         });
     }
     let selection = match &arguments.schema_catalog {
@@ -258,15 +303,18 @@ fn run(file: &str, arguments: &Arguments) -> Result<ProbeReport, String> {
         ProviderSelection::Catalog(provider, _) => count_nodes(&bytes, source_format, provider)?,
         ProviderSelection::Builtin(provider, _) => count_nodes(&bytes, source_format, provider)?,
     };
-    let brep = if arguments.brep {
+    let mut brep_topology = None;
+    let mut geometry_export = None;
+    if arguments.brep || arguments.geometry {
         let model = match &selection {
             ProviderSelection::Catalog(provider, _) => map_brep(&bytes, source_format, provider)?,
             ProviderSelection::Builtin(provider, _) => map_brep(&bytes, source_format, provider)?,
         };
-        Some(brep_summary(&model))
-    } else {
-        None
-    };
+        if arguments.geometry {
+            geometry_export = Some(geometry::export_geometry(&model, arguments.limits));
+        }
+        brep_topology = Some(brep_summary(&model));
+    }
     let catalog = match selection {
         ProviderSelection::Catalog(_, catalog) | ProviderSelection::Builtin(_, catalog) => catalog,
     };
@@ -281,7 +329,8 @@ fn run(file: &str, arguments: &Arguments) -> Result<ProbeReport, String> {
         note: None,
         catalog: Some(catalog),
         census: Some(census),
-        brep,
+        brep: brep_topology,
+        geometry: geometry_export,
     })
 }
 
@@ -453,6 +502,30 @@ fn print_text_report(report: &ProbeReport) {
         );
         for (kind, count) in &brep.surface_kinds {
             println!("surface\t{kind}\t{count}");
+        }
+    }
+    if let Some(geometry) = &report.geometry {
+        println!(
+            "geometry\tpublished={} skipped={} vertices={} triangles={} budgetExceeded={}",
+            geometry.stats.faces_published,
+            geometry.stats.faces_skipped,
+            geometry.stats.vertices,
+            geometry.stats.triangles,
+            geometry.budget_exceeded
+        );
+        for loss in &geometry.losses {
+            println!("loss\t{loss}");
+        }
+        for approximation in &geometry.approximations {
+            println!("approx\t{approximation}");
+        }
+        for face in geometry.faces.iter().take(3) {
+            println!(
+                "face-sample\tid={} kind={} triangles={}",
+                face.id,
+                face.surface_kind,
+                face.indices.len() / 3
+            );
         }
     }
     if let Some(note) = report.note {

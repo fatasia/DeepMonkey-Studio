@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, copyFile, mkdir, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ConversionQualityDraft, ModelFormat, ModelManifest, ModelRecord, ViewerKind } from "@bim-studio/contracts";
 import type { AppConfig, CommandProviderConfig } from "./config.js";
@@ -14,6 +14,8 @@ import { runBuiltinJtWorker } from "./builtinJtWorkerExecutor.js";
 import { writeXtTextInspectionArtifact, type XtTextInspectionResult } from "./xtTextInspection.js";
 import { convertXtGenericTextToGlb, type XtGenericConversionResult } from "./xtGenericConverter.js";
 import { buildXtGenericReadyQuality } from "./xtGenericQualityDraft.js";
+import { convertParasolidGeometryToGlb } from "./parasolidGeometryConverter.js";
+import { buildParasolidGeometryReadyQuality } from "./parasolidGeometryQualityDraft.js";
 import { buildJtLod0ReadyQuality, buildXtRevolvedReadyQuality, sha256File } from "./conversionQualityDraft.js";
 import { RobotSourceProvider } from "./RobotSourceProvider.js";
 import { ConversionTaskService } from "./conversionTasks.js";
@@ -313,10 +315,12 @@ class XtTextSubsetProvider implements ConversionProvider {
    *    - 0 个可发布面片（含 legacy-baseline 编码）→ 保持 waiting_converter，
    *      inspection 附 generic-parse 实体 census，绝不 ready 空几何。
    * 3. 通用降级也失败或未命中面片，且部署方配置了 schema catalog + 探针 CLI →
-   *    第三档 schema-aware census（parasolid-core 权威解码）：节点类型计数与
+   *    第三档 schema-aware（parasolid-core 权威解码）：节点类型计数与
    *    face/loop/edge/vertex 拓扑计数入 inspection.genericParse.schemaAware；
-   *    几何发布仍需 B-Rep 三角化（R1），本期保持 waiting_converter + 证据，
-   *    绝不发布 geometry.glb。探针未配置或失败时完全回落到既有语义。
+   *    R1 起 `--geometry` 额外请求逐面三角网格 —— 发布 ≥1 个面 → ready
+   *    (visual-complete, MVP 三角化, losses 含不支持族/trim 近似)；
+   *    0 个面或探针未提供 geometry → 维持 waiting_converter + 证据。
+   *    探针未配置或失败时完全回落到既有语义。
    */
   async convert({ model, modelDir, sourcePath, reportQuality }: ConversionContext): Promise<void> {
     const outputDir = path.join(modelDir, "output");
@@ -334,16 +338,24 @@ class XtTextSubsetProvider implements ConversionProvider {
         return;
       }
       if (fallback.error) {
-        const schemaAware = inspection.status === "invalid" ? undefined : await this.runSchemaAwareCensus(sourcePath);
+        const schemaAware = inspection.status === "invalid" ? undefined : await this.runSchemaAwareProbe(sourcePath);
         if (schemaAware) {
+          const geometryPublished = await this.tryPublishSchemaAwareGeometry(
+            model, modelDir, outputDir, sourcePath, inspectionUrl, schemaAware, reportQuality, fallback.error,
+          );
+          if (geometryPublished) return;
           await this.publishSchemaAwareWaiting(model, modelDir, outputDir, inspectionUrl, inspection, schemaAware, fallback.error);
           return;
         }
         await this.publishUnconverted(model, modelDir, inspectionUrl, inspection, fallback.error);
         return;
       }
-      const schemaAware = inspection.status === "invalid" ? undefined : await this.runSchemaAwareCensus(sourcePath);
+      const schemaAware = inspection.status === "invalid" ? undefined : await this.runSchemaAwareProbe(sourcePath);
       if (schemaAware) {
+        const geometryPublished = await this.tryPublishSchemaAwareGeometry(
+          model, modelDir, outputDir, sourcePath, inspectionUrl, schemaAware, reportQuality,
+        );
+        if (geometryPublished) return;
         await this.publishSchemaAwareWaiting(model, modelDir, outputDir, inspectionUrl, inspection, schemaAware);
         return;
       }
@@ -385,18 +397,57 @@ class XtTextSubsetProvider implements ConversionProvider {
   }
 
   /**
-   * 第三档 schema-aware census：仅当部署方配置了 schema catalog（探针 CLI 存在）时启用。
-   * 任何失败都收敛为 undefined，完全回落到既有语义，不影响原决策树。
+   * 第三档 schema-aware：仅当部署方配置了 schema catalog（探针 CLI 存在）时启用。
+   * R1 起同时请求 `--geometry` 三角网格；任何失败都收敛为 undefined，
+   * 完全回落到既有语义，不影响原决策树。
    */
-  private async runSchemaAwareCensus(sourcePath: string): Promise<ParasolidProbeReport | undefined> {
+  private async runSchemaAwareProbe(sourcePath: string): Promise<ParasolidProbeReport | undefined> {
     const probe = this.probe;
     if (!probe?.config.schemaCatalog) return undefined;
     try {
-      return await probe.run({ filePath: sourcePath, brep: true });
+      return await probe.run({ filePath: sourcePath, brep: true, geometry: true });
     } catch (error) {
-      console.warn("ps-schema-probe schema-aware census 失败，维持既有等待语义", error);
+      console.warn("ps-schema-probe schema-aware 请求失败，维持既有等待语义", error);
       return undefined;
     }
+  }
+
+  /**
+   * schema-aware 几何发布（R1 MVP）：探针发布 ≥1 个面 → GLB + audit/LOD/quality 链，
+   * 状态 ready(visual-complete)。返回 false 时调用方维持既有 waiting 语义。
+   */
+  private async tryPublishSchemaAwareGeometry(
+    model: ModelRecord,
+    modelDir: string,
+    outputDir: string,
+    sourcePath: string,
+    inspectionUrl: string,
+    schemaAware: ParasolidProbeReport,
+    reportQuality: ConversionContext["reportQuality"],
+    genericError?: string,
+  ): Promise<boolean> {
+    if (!schemaAware.geometry?.faces?.length) return false;
+    await publishParasolidGeometryReady({
+      store: this.store,
+      objects: this.objects,
+      model,
+      modelDir,
+      outputDir,
+      sourcePath,
+      report: schemaAware,
+      reportQuality,
+      format: "x_t",
+      inspectionUrl,
+      inspectionExtras: {
+        geometryParsed: true,
+        genericParse: {
+          scope: "record-anchor-census-may-include-false-positives",
+          ...(genericError ? { genericError } : {}),
+          schemaAware: parasolidSchemaAwareEvidence(schemaAware),
+        },
+      },
+    });
+    return true;
   }
 
   /**
@@ -580,8 +631,10 @@ function mergeFailureReasons(inspection: XtTextInspectionResult, genericReason: 
   return subsetReason === genericReason ? subsetReason : `${subsetReason}；通用解析：${genericReason}`;
 }
 
-/** inspection 附加证据：ps-schema-probe 权威解码结果（census + 可选 B-Rep 拓扑）。 */
+/** inspection 附加证据：ps-schema-probe 权威解码结果（census + B-Rep 拓扑 + 可选几何）。 */
 function parasolidSchemaAwareEvidence(report: ParasolidProbeReport): Record<string, unknown> {
+  const geometry = report.geometry;
+  const geometryPublished = (geometry?.faces?.length ?? 0) > 0;
   return {
     source: report.tool,
     probeVersion: report.version,
@@ -594,8 +647,17 @@ function parasolidSchemaAwareEvidence(report: ParasolidProbeReport): Record<stri
       nodeTypeCounts: report.census.nodeTypeCounts,
     } : {}),
     ...(report.brep ? { brep: report.brep } : {}),
-    // 本期刻意不发布几何：B-Rep → mesh 三角化（R1）未实现。
-    geometryPublication: "waiting-brep-triangulation-r1",
+    ...(geometry ? {
+      geometry: {
+        stats: geometry.stats,
+        losses: geometry.losses,
+        approximations: geometry.approximations,
+        budgetExceeded: geometry.budgetExceeded,
+        skippedCount: geometry.skipped.length,
+      },
+    } : {}),
+    // R1 MVP:探针发布 ≥1 面即发布 GLB(visual-complete);否则维持等待语义。
+    geometryPublication: geometryPublished ? "published:brep-triangulation-mvp" : "waiting-brep-triangulation-r1",
   };
 }
 
@@ -608,6 +670,76 @@ function schemaAwareTopologySummary(report: ParasolidProbeReport): string {
 function schemaAwareWaitingMessage(report: ParasolidProbeReport, genericError?: string): string {
   const suffix = genericError ? `；通用解析失败：${genericError}` : "";
   return `X_T ${report.schemaKey} 权威结构已读取（ps-schema-probe schema-aware）：${schemaAwareTopologySummary(report)}${suffix}；几何三角化待内置离散化（R1），暂不发布几何`;
+}
+
+interface ParasolidGeometryPublishDeps {
+  store: MetadataStore;
+  objects: ObjectStore;
+  model: ModelRecord;
+  modelDir: string;
+  outputDir: string;
+  sourcePath: string;
+  report: ParasolidProbeReport;
+  reportQuality?: ConversionContext["reportQuality"];
+  format: "x_t" | "x_b";
+  inspectionUrl: string;
+  /** 追加进 inspection.json 的档位证据(X_T: genericParse;X_B: schemaAware)。 */
+  inspectionExtras: Record<string, unknown>;
+}
+
+/**
+ * X_T/X_B 共用的 schema-aware 几何发布(R1 MVP 三角化):
+ * faces → GLB → audit/LOD/quality 链 → ready(visual-complete)。
+ * 调用方必须先确认 report.geometry.faces 非空;任何一步失败都抛错,
+ * 由外层任务执行器按转换失败语义收敛(不发布半成品)。
+ */
+async function publishParasolidGeometryReady(deps: ParasolidGeometryPublishDeps): Promise<void> {
+  const { store, objects, model, modelDir, outputDir, sourcePath, report, format } = deps;
+  const geometry = report.geometry!;
+  const result = await convertParasolidGeometryToGlb({
+    geometry,
+    sourcePath,
+    outputDir,
+    schemaKey: report.schemaKey,
+    modellerVersion: report.modellerVersion,
+  });
+  await auditConverterOutput(outputDir, true);
+  const lods = await createLodResources(path.join(outputDir, "geometry.glb"), model);
+  const geometryUrl = assetUrl(model.projectId, model.id, "output/geometry.glb");
+  const manifest: ModelManifest = {
+    ...createManifest(
+      model,
+      "gltf",
+      geometryUrl,
+      assetUrl(model.projectId, model.id, "output/hierarchy.json"),
+      assetUrl(model.projectId, model.id, "output/properties.json"),
+      lods,
+    ),
+    inspectionUrl: deps.inspectionUrl,
+  };
+  // inspection 覆盖写:base inspection + 档位证据(geometryPublication 已指向发布)。
+  const baseInspection = await readOptionalJson(path.join(outputDir, "inspection.json"));
+  const inspection = { ...baseInspection, ...deps.inspectionExtras };
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(path.join(outputDir, "inspection.json"), JSON.stringify(inspection, null, 2), "utf8");
+  await writeManifest(modelDir, manifest);
+  await objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
+  deps.reportQuality?.(await buildParasolidGeometryReadyQuality({ outputDir, ...result }));
+  await store.updateModel(model.projectId, model.id, {
+    status: "ready",
+    progress: 100,
+    message: `${format.toUpperCase()} 权威 B-Rep 几何已发布（schema-aware MVP 三角化）：${result.facesPublished}/${result.facesTotal} 面、${result.triangleCount.toLocaleString("zh-CN")} 个三角面${result.losses.length ? `，${result.losses.length} 项如实损失` : ""}`,
+    manifest,
+    manifestUrl: assetUrl(model.projectId, model.id, "manifest.json"),
+  });
+}
+
+async function readOptionalJson(filePath: string): Promise<Record<string, unknown> | undefined> {
+  try {
+    return JSON.parse(await readFile(filePath, "utf8")) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
 }
 
 class JtStructureProvider implements ConversionProvider {
@@ -686,12 +818,12 @@ function industrialCadUnavailableMessage(format: string): string {
 }
 
 /**
- * X_B 结构证据 Provider（2026-09-26 定案）：仅在未配置外部工业转换器命令且探针 CLI
- * 存在时启用。把"X_B 完全黑盒"升级为"结构可检、几何待离散化"：
- * - census（未配置 catalog）：二进制头验证 + schema key；
- * - schema-aware（配置 catalog）：全节点计数 + 权威 B-Rep 拓扑（face/loop/edge/vertex）。
- * 状态保持 waiting_converter；几何 GLB 需要 B-Rep 三角化（R1），本期不发布。
- * 探针执行失败时完全回落到既有 MissingProvider 语义（无 manifest、原消息）。
+ * X_B 结构证据 Provider（2026-09-26 定案,R1 扩展）：仅在未配置外部工业转换器命令且
+ * 探针 CLI 存在时启用。把"X_B 完全黑盒"升级为"结构可检、几何可发布(MVP)":
+ * - census（未配置 catalog）：二进制头验证 + schema key;
+ * - schema-aware（配置 catalog）：全节点计数 + 权威 B-Rep 拓扑;
+ * - R1:`--geometry` 发布 ≥1 个面 → GLB + audit/LOD/quality 链,ready(visual-complete);
+ *   0 个面/探针失败 → 维持 waiting_converter 既有语义,不发布半成品。
  */
 class XbStructureProvider implements ConversionProvider {
   readonly supportsGeneralImport = false;
@@ -701,7 +833,7 @@ class XbStructureProvider implements ConversionProvider {
     private readonly probe: ParasolidProbeRuntime,
   ) {}
 
-  async convert({ model, modelDir, sourcePath }: ConversionContext): Promise<void> {
+  async convert({ model, modelDir, sourcePath, reportQuality }: ConversionContext): Promise<void> {
     const outputDir = path.join(modelDir, "output");
     await this.store.updateModel(model.projectId, model.id, {
       status: "processing",
@@ -711,13 +843,39 @@ class XbStructureProvider implements ConversionProvider {
     const schemaCatalog = this.probe.config.schemaCatalog;
     let report: ParasolidProbeReport;
     try {
-      report = await this.probe.run({ filePath: sourcePath, brep: Boolean(schemaCatalog) });
+      report = await this.probe.run({ filePath: sourcePath, brep: Boolean(schemaCatalog), geometry: Boolean(schemaCatalog) });
     } catch (error) {
       console.warn("ps-schema-probe X_B census 失败，回落到既有阻断语义", error);
       await this.store.updateModel(model.projectId, model.id, {
         status: "waiting_converter",
         progress: 0,
         message: industrialCadUnavailableMessage("Parasolid X_B"),
+      });
+      return;
+    }
+    if (schemaCatalog && report.geometry?.faces?.length) {
+      await mkdir(outputDir, { recursive: true });
+      await publishParasolidGeometryReady({
+        store: this.store,
+        objects: this.objects,
+        model,
+        modelDir,
+        outputDir,
+        sourcePath,
+        report,
+        reportQuality,
+        format: "x_b",
+        inspectionUrl: assetUrl(model.projectId, model.id, "output/inspection.json"),
+        inspectionExtras: {
+          status: "structure-read",
+          recognizedFormat: "parasolid-x_b",
+          inspectionScope: "header-structure-and-schema-aware-geometry-mvp",
+          geometryParsed: true,
+          sourceBytes: report.fileSize,
+          schema: report.schemaKey,
+          modellerVersion: report.modellerVersion,
+          schemaAware: parasolidSchemaAwareEvidence(report),
+        },
       });
       return;
     }
