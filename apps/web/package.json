@@ -40,7 +40,7 @@
     "@bim-studio/server-sdk": "workspace:*",
     "@bim-studio/studio-core": "workspace:*",
     "@dimforge/rapier3d-compat": "0.19.3",
-    "@gltf-transform/core": "4.4.2",
+    "@gltf-transform/core": "4.5.0",
     "@gltf-transform/extensions": "4.4.2",
     "@gltf-transform/functions": "4.4.2",
     "@monaco-editor/react": "^4.7.0",
