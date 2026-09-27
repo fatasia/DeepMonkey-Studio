@@ -58,3 +58,6 @@ apps/web/public/dev/pkg/
 apps/web/public/engine-wasm/
 apps/desktop/.local-api-runtime/
 apps/desktop/local-api-bundle/
+
+# 交接文档不进 git(2026-09-27 用户指令)
+docs/handoffs/HANDOFF-*.md
