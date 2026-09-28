@@ -23,15 +23,17 @@
 
 ## 作者的话
 
-一开始俺只想完善一下 3D 编辑器，搞着搞着就弄成了完整的平台引擎。
+我对他的定位不是一个 数字孪生 平台，或重复造轮子的系统。
 
-面向元宇宙、AI for Science、世界模型的开源底座。
+而是面向元宇宙、AI for Science、世界模型的开源底座。
+
 上层包括：2D 编辑器、3D 编辑器、脚本编辑器和插件；
+
 底层包括：自研引擎、数据平台和可组合的模型适配能力。
 
 底层对 WebGPU、渲染、工业与 BIM 模型做了很多优化，模块独立简洁，可以单独作为一个 SDK 使用。
 
-开发测试使用的第三方工业模型均按来源和许可记录；如发现权利问题，请提交 Issue，我们会及时处理。
+开发测试中让AI网上找了很多模型素材；若不小心侵权，万分抱歉，我直接删掉。
 
 项目使用最宽泛的 MIT 协议，任何人都可以随意使用（技术的发展离不开行业专家大拿的支持），仅对忽视员工人权的特定企业例外（详见 [LICENSE.zh-CN.md](LICENSE.zh-CN.md)）。
 
@@ -409,6 +411,8 @@ Deep Engine 包含 TypeScript WebGPU 内核、Rust `wgpu` 原生执行器与 WAS
 
 感谢所有依赖项目的维护者和贡献者，特别是 [Three.js](https://github.com/mrdoob/three.js)、[Orillusion](https://github.com/Orillusion/orillusion) 和 [Unity](https://github.com/Unity-Technologies)。本项目在渲染、引擎架构和编辑器交互上受益于开源社区的长期积累。
 
+## 联系我
 
+邮箱 15184552744@163.com 或提交issues，有时会看一下。
 
 
