@@ -143,7 +143,7 @@ describe("texture array level 1 (wave 5 bindless)", () => {
     ])!;
     expect(table.groupCount).toBe(1);
     expect(table.rows.map(row => row.materialRow)).toEqual([0, 1]);
-    expect(table.rowStride).toBe(192);
+    expect(table.rowStride).toBe(224); // 1e07cdaf 加 32B 语义保留带：160+32+32。
     expect(table.rows[0]!.group).toBe(table.rows[1]!.group);
     table.dispose(); resources.dispose();
     expect(f.owned.size).toBe(0);
