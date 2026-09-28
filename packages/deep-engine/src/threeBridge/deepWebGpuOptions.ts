@@ -9,7 +9,8 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
   if (!options || typeof options !== "object" || Array.isArray(options)) {
     throw new TypeError("Deep WebGPU renderer options must be an object.");
   }
-  if (Object.keys(options).some(key => !["shadows", "features", "environment", "deformation", "meshlets", "frameCapture", "adaptiveQuality", "probeClipmap", "pipelines"].includes(key))) {
+  if (Object.keys(options).some(key => !["shadows", "features", "environment", "deformation", "meshlets", "frameCapture", "adaptiveQuality", "probeClipmap", "pipelines",
+    "resolutionScalePolicy", "gpuPassTiming", "probeDirections"].includes(key))) {
     throw new TypeError("Unknown Deep WebGPU renderer option.");
   }
   if (options.deformation !== undefined && typeof options.deformation !== "boolean") {
@@ -27,6 +28,10 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
       ...(options.adaptiveQuality.overrides ? { overrides: Object.freeze({ ...options.adaptiveQuality.overrides }) } : {}) }) }),
     ...(options.probeClipmap === undefined ? {} : { probeClipmap: Object.freeze({ ...options.probeClipmap }) }),
     ...(options.pipelines === undefined ? {} : { pipelines: snapshotPipelineBootstrap(options.pipelines) }),
+    // T07 动态分辨率策略 / F1 逐 pass 计时开关 / G3 GI 方向数门控：opt-in，缺省不进快照。
+    ...(options.resolutionScalePolicy === undefined ? {} : { resolutionScalePolicy: Object.freeze({ ...options.resolutionScalePolicy }) }),
+    ...(options.gpuPassTiming === undefined ? {} : { gpuPassTiming: options.gpuPassTiming }),
+    ...(options.probeDirections === undefined ? {} : { probeDirections: options.probeDirections }),
   });
 }
 

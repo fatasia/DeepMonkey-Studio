@@ -238,6 +238,9 @@ export class StudioDeepWebGpuBridge {
           this.projectionBridge = authorRenderPacket ? undefined : new module.ThreeProjectionBridge({ hooks: threePrototypeHooks(), capabilities: { authorDeformation: true, authorLod: true },
             authorTransformResolver: source => resolveAuthorWorldTransform(this.viewer, source),
           });
+          // T07 动态分辨率与 T25 逐 pass 计时均为 opt-in；缺省字段不进快照。
+          const resolutionScalePolicy = t07DynamicResolutionPolicy();
+          const gpuPassTiming = t25GpuPassTimingEnabled();
           const backend = await module.DeepWebGpuBackend.create({
             canvas, gpu: navigator.gpu,
             ...(this.projectionBridge ? { projection: this.projectionBridge, root: this.projectionRoot() } : {}),
@@ -245,6 +248,8 @@ export class StudioDeepWebGpuBridge {
             ...(authorRenderPacket ? { renderPacket: authorRenderPacket } : {}),
             ...(authorHlodClusters?.length ? { hlodClusters: authorHlodClusters } : {}),
             renderer: { environment: environment.source, deformation: true, meshlets: true,
+              ...(resolutionScalePolicy ? { resolutionScalePolicy } : {}),
+              ...(gpuPassTiming ? { gpuPassTiming: true } : {}),
               ...(pipelineBootstrap ? { pipelines: pipelineBootstrap } : {}),
               adaptiveQuality: {
                 enabled: true,
@@ -860,6 +865,17 @@ export function b4HlodClusterEnabled(): boolean {
   const params = typeof location !== "undefined" && location.search
     ? new URLSearchParams(location.search) : undefined;
   const value = params?.get("b4-hlod-cluster")?.toLowerCase();
+  return value === "1" || value === "true" || value === "on";
+}
+
+/**
+ * T25 逐 pass GPU 计时采集开关（F1）：默认关闭（timestamp 查询有逐帧开销）；
+ * `t25-gpu-pass-timing=1` 开启后 T25 面板出现「逐 Pass GPU 耗时」小节。
+ */
+export function t25GpuPassTimingEnabled(): boolean {
+  const params = typeof location !== "undefined" && location.search
+    ? new URLSearchParams(location.search) : undefined;
+  const value = params?.get("t25-gpu-pass-timing")?.toLowerCase();
   return value === "1" || value === "true" || value === "on";
 }
 
