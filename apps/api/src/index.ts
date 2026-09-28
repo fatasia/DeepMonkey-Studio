@@ -51,6 +51,8 @@ import { createIndustrialAgentRuntime } from "./ai/industrialAgentRuntime.js";
 import { registerIndustrialAgentRoutes } from "./ai/industrialAgentRoutes.js";
 import { registerAgentMemoryRoutes } from "./ai/agentMemoryRoutes.js";
 import { ProvenanceLedgerStore } from "./ai/provenanceLedger.js";
+import { SimulationStudyTaskStore } from "./ai/simulationStudyTasks.js";
+import { createGoldenVerifyProvider } from "./ai/simulationHypothesisPlugin.js";
 import { registerProvenanceRoutes } from "./ai/provenanceRoutes.js";
 import { registerAiSampleRoutes } from "./ai/aiSampleRoutes.js";
 import { registerModeling3dRoutes } from "./ai/modeling3dRoutes.js";
@@ -101,11 +103,20 @@ export async function buildApp() {
   // H-C3 档案室：共享账本实例——verdict 产生处落账与档案路由/trace 能力同源。
   const provenanceLedger = new ProvenanceLedgerStore(config.dataDir);
   await provenanceLedger.init();
+  // H-C3 后续切片：异步长跑任务存储（durable 句柄 + 轮询 + mid-flight 取消），断线恢复按同指纹续写。
+  // 内部 golden provider 不带账本：每步落账在 repeats 上限下既是浪费也会在取消后残留判定；
+  // 完成收口由任务存储经 recordStudySettled 一次性幂等落账（同指纹续写）。
+  const studyTasks = new SimulationStudyTaskStore(config.dataDir, {
+    ledger: provenanceLedger,
+    goldenProvider: createGoldenVerifyProvider(),
+  });
+  await studyTasks.init();
   const industrialCapabilities = await createIndustrialCapabilityHost(operations, {
     aiSettings: () => resolveAiSettings(store),
     dataQuerySource,
     conversionTasks,
     provenanceLedger,
+    studyTasks,
   });
   const editorPresence = new EditorPresenceRegistry();
   const industrialAgent = await createIndustrialAgentRuntime({
@@ -279,6 +290,7 @@ export async function buildApp() {
     batteryScheduler.stop();
     maintenanceScheduler.stop();
     vision.stop();
+    studyTasks.dispose();
   });
   return { app, config };
 }

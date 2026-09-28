@@ -49,6 +49,33 @@ interface ProvenanceDocument {
   runs: AiProvenanceKernelRunNode[];
   verdicts: AiProvenanceVerdictNode[];
   reports: AiProvenanceReportNode[];
+  /** 异步长跑的进行中/已收口记录（H-C3 后续切片增量）；旧落盘无此段时按空数组读入。 */
+  studyRuns: AiProvenanceStudyRunRecord[];
+}
+
+/**
+ * 异步长跑（simulation.study.run-async）在账本中的运行段记录：app 侧扩展，不入合同三跳链。
+ *
+ * 发起即写（status=running，nodeId=taskId）；完成时删除本记录并以真实
+ * kernel-run/verdict 节点收口（同指纹幂等）；取消/失败时保留本记录如实标注
+ * （cancelReason + 已完成重复数），不伪造成 completed，也不伪造判定。
+ */
+export interface AiProvenanceStudyRunRecord {
+  kind: "study-run";
+  nodeId: string;
+  proposalFingerprint: string;
+  inputFingerprint: string;
+  status: "running" | "cancelled" | "failed";
+  totalRepeats: number;
+  completedRepeats: number;
+  seed?: string;
+  replications?: number;
+  startedAt: string;
+  settledAt?: string;
+  /** 收口理由：user / budget-exceeded / provider-blocked / provider-failed 等；≤200 字符。 */
+  settleReason?: string;
+  /** 完成收口时随行（记录随即删除，此字段只在 cancelled/failed 保留时为空）。 */
+  resultFingerprint?: string;
 }
 
 /** 档案列表条目类型 AiProvenanceChainSummary 定义在 contracts（跨端合同），此处仅消费。 */
@@ -145,6 +172,101 @@ export class ProvenanceLedgerStore {
     return node;
   }
 
+  /**
+   * 长跑发起落账（simulation.study.run-async 发起处）：假设节点 + 运行中记录同事务成"进行中链"。
+   * 同 proposalFingerprint 重提复用 recordHypothesis 的去重语义；同 taskId 幂等（重复发起恢复不重复成链）。
+   */
+  async recordStudyLaunched(
+    projectId: string,
+    input: {
+      contract: AiHypothesisContract;
+      proposalFingerprint: string;
+      inputFingerprint: string;
+      taskId: string;
+      totalRepeats: number;
+      seed?: string;
+      replications?: number;
+      startedAt: string;
+    },
+  ): Promise<void> {
+    const node = buildAiProvenanceHypothesisNode(input.contract, input.proposalFingerprint, input.startedAt);
+    const studyRun: AiProvenanceStudyRunRecord = {
+      kind: "study-run",
+      nodeId: requireStudyTaskId(input.taskId),
+      proposalFingerprint: requireFingerprint(input.proposalFingerprint, "proposalFingerprint"),
+      inputFingerprint: requireFingerprint(input.inputFingerprint, "inputFingerprint"),
+      status: "running",
+      totalRepeats: input.totalRepeats,
+      completedRepeats: 0,
+      ...(input.seed !== undefined ? { seed: input.seed } : {}),
+      ...(input.replications !== undefined ? { replications: input.replications } : {}),
+      startedAt: input.startedAt,
+    };
+    await this.#commit(projectId, (draft) => {
+      if (!draft.hypotheses.some((item) => item.proposalFingerprint === node.proposalFingerprint)) {
+        draft.hypotheses.push(node);
+        this.#evictOldestChains(draft);
+      }
+      upsertById(draft.studyRuns, studyRun);
+      pruneOrphanedStudyRuns(draft);
+    });
+  }
+
+  /**
+   * 长跑完成收口：删除运行中记录 + 落真实运行/判定节点（复用幂等 upsert，同指纹续写不重复成链）。
+   * 运行/判定构建与 recordVerification 同源（contracts 装配函数），断线恢复后指纹不变。
+   */
+  async recordStudySettled(
+    projectId: string,
+    input: { taskId: string; envelope: AiVerificationEnvelope; contract?: AiHypothesisContract; seed?: string; replications?: number; settledAt: string },
+  ): Promise<{ run: AiProvenanceKernelRunNode; verdict: AiProvenanceVerdictNode }> {
+    const { envelope } = input;
+    const run = buildAiProvenanceKernelRunNode(envelope, {
+      ...(input.seed !== undefined ? { seed: input.seed } : {}),
+      ...(input.replications !== undefined ? { replications: input.replications } : {}),
+      executedAt: input.settledAt,
+    });
+    const verdict = buildAiProvenanceVerdictNode(envelope, input.settledAt);
+    await this.#commit(projectId, (draft) => {
+      const existing = draft.hypotheses.find((item) => item.proposalFingerprint === envelope.proposalFingerprint);
+      if (!existing && input.contract) draft.hypotheses.push(buildAiProvenanceHypothesisNode(input.contract, envelope.proposalFingerprint, input.settledAt));
+      else if (existing && !existing.verifiedAt) draft.hypotheses[draft.hypotheses.indexOf(existing)] = { ...existing, verifiedAt: input.settledAt };
+      draft.studyRuns = draft.studyRuns.filter((item) => item.nodeId !== requireStudyTaskId(input.taskId));
+      upsertById(draft.runs, run);
+      upsertById(draft.verdicts, verdict);
+      this.#evictOldestChains(draft);
+      pruneOrphanedStudyRuns(draft);
+      return { run, verdict };
+    });
+    return { run, verdict };
+  }
+
+  /** 长跑取消/失败收口：保留运行段记录如实标注（取消态/失败态），不伪造成 completed、不伪造判定。 */
+  async recordStudyHalted(
+    projectId: string,
+    input: { taskId: string; status: "cancelled" | "failed"; settleReason: string; completedRepeats: number; settledAt: string },
+  ): Promise<void> {
+    await this.#commit(projectId, (draft) => {
+      const record = draft.studyRuns.find((item) => item.nodeId === requireStudyTaskId(input.taskId));
+      if (record) {
+        const halted: AiProvenanceStudyRunRecord = {
+          ...record,
+          status: input.status,
+          completedRepeats: input.completedRepeats,
+          settleReason: input.settleReason.slice(0, 200),
+          settledAt: input.settledAt,
+        };
+        draft.studyRuns[draft.studyRuns.indexOf(record)] = halted;
+      }
+    });
+  }
+
+  /** 运行段查询（进行中链的读取口径；合同三跳链仍走 trace）。 */
+  async listStudyRuns(projectId: string, options: { status?: AiProvenanceStudyRunRecord["status"] } = {}): Promise<AiProvenanceStudyRunRecord[]> {
+    const document = await this.#loadDocument(projectId);
+    return structuredClone(document.studyRuns).filter((item) => !options.status || item.status === options.status);
+  }
+
   /** 三跳查询：指纹/时间任一维度；结果含全库完整性核查，未命中如实 matched=false。 */
   async trace(projectId: string, query: AiProvenanceQuery): Promise<AiProvenanceTrace> {
     const normalized = validateAiProvenanceQuery(query);
@@ -205,7 +327,7 @@ export class ProvenanceLedgerStore {
     const cached = this.#documents.get(projectId);
     if (cached) return cached;
     const filePath = this.#documentPath(projectId);
-    let document: ProvenanceDocument = { schemaVersion: 1, hypotheses: [], runs: [], verdicts: [], reports: [] };
+    let document: ProvenanceDocument = { schemaVersion: 1, hypotheses: [], runs: [], verdicts: [], reports: [], studyRuns: [] };
     try {
       const parsed = JSON.parse(await readFile(filePath, "utf8")) as Partial<ProvenanceDocument>;
       if (parsed.schemaVersion === 1) {
@@ -215,6 +337,7 @@ export class ProvenanceLedgerStore {
           runs: Array.isArray(parsed.runs) ? parsed.runs.filter(isRunNode) : [],
           verdicts: Array.isArray(parsed.verdicts) ? parsed.verdicts.filter(isVerdictNode) : [],
           reports: Array.isArray(parsed.reports) ? parsed.reports.filter(isReportNode) : [],
+          studyRuns: Array.isArray(parsed.studyRuns) ? parsed.studyRuns.filter(isStudyRunRecord) : [],
         };
       }
     } catch (error) {
@@ -276,6 +399,33 @@ function requireFingerprint(value: string, field: string): string {
   if (typeof value !== "string" || !/^[0-9a-f]{16}$/.test(value)) {
     throw new ProvenanceLedgerError(`${field} 必须是 16 位小写十六进制指纹`);
   }
+  return value;
+}
+
+/** 长跑运行段记录的 fail-closed 形状过滤：损坏行直接丢弃，不带病入账。 */
+function isStudyRunRecord(value: unknown): value is AiProvenanceStudyRunRecord {
+  if (!value || typeof value !== "object") return false;
+  const node = value as Partial<AiProvenanceStudyRunRecord>;
+  return node.kind === "study-run"
+    && typeof node.nodeId === "string"
+    && typeof node.proposalFingerprint === "string"
+    && typeof node.inputFingerprint === "string"
+    && (node.status === "running" || node.status === "cancelled" || node.status === "failed")
+    && typeof node.totalRepeats === "number"
+    && typeof node.completedRepeats === "number"
+    && typeof node.startedAt === "string";
+}
+
+/** 假设被逐出后，其运行段记录成为孤儿：随逐出一起清理，不静默残留。 */
+function pruneOrphanedStudyRuns(draft: ProvenanceDocument): void {
+  const known = new Set(draft.hypotheses.map((item) => item.proposalFingerprint));
+  draft.studyRuns = draft.studyRuns.filter((item) => known.has(item.proposalFingerprint));
+}
+
+const STUDY_TASK_ID_PATTERN = /^study-[0-9a-f]{16}$/;
+
+function requireStudyTaskId(value: string): string {
+  if (!STUDY_TASK_ID_PATTERN.test(value)) throw new ProvenanceLedgerError("任务句柄必须是 study-<16 位小写十六进制>");
   return value;
 }
 

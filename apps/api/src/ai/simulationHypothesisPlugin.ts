@@ -55,7 +55,8 @@ const HYPOTHESIS_INPUT_SCHEMA: CapabilityJsonSchema = {
   required: ["hypothesis"],
 };
 
-function hypothesisSchema(): CapabilityJsonSchema {
+/** 假设合同输入 schema（导出供异步长跑任务面复用，单一来源防漂移）。 */
+export function hypothesisSchema(): CapabilityJsonSchema {
   return {
     type: "object",
     additionalProperties: false,
@@ -234,17 +235,25 @@ function semanticAdmission(contract: AiHypothesisContract, resourceIds: readonly
   return undefined;
 }
 
-function buildVerificationEnvelope(contract: AiHypothesisContract, result: PlantLiteExperimentResult): AiVerificationEnvelope {
-  const proposalFingerprint = aiHypothesisProposalFingerprint(contract);
-  const inputFingerprint = fingerprint64Labeled([
+/**
+ * golden 验证输入指纹（导出）：异步长跑发起时即可固化同一口径的 inputFingerprint，
+ * 与 buildVerificationEnvelope 同源，防两端口径漂移。
+ */
+export function goldenVerifyInputFingerprint(targetModel: string): string {
+  return fingerprint64Labeled([
     ["verify-input", {
-      targetModel: contract.targetModel,
+      targetModel,
       seed: CALIBRATION_SEED,
       replications: CALIBRATION_RUN.replications,
       limits: CALIBRATION_LIMITS,
       trace: CALIBRATION_TRACE,
     }],
   ]);
+}
+
+function buildVerificationEnvelope(contract: AiHypothesisContract, result: PlantLiteExperimentResult): AiVerificationEnvelope {
+  const proposalFingerprint = aiHypothesisProposalFingerprint(contract);
+  const inputFingerprint = goldenVerifyInputFingerprint(contract.targetModel);
   const resultFingerprint = fingerprint64Labeled([["verify-result", {
     seed: CALIBRATION_SEED,
     replication0: result.replications[0],

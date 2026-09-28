@@ -39,6 +39,8 @@ import { INDUSTRIAL_CAPABILITY_SCHEMAS } from "./industrialCapabilitySchemas.js"
 import { registerWorkcellValidationPlugin } from "./registerWorkcellValidationPlugin.js";
 import { registerAiHypothesisPlugin } from "./ai/simulationHypothesisPlugin.js";
 import { registerProvenanceTracePlugin } from "./ai/provenanceTracePlugin.js";
+import { registerSimulationStudyAsyncPlugin } from "./ai/simulationStudyAsyncPlugin.js";
+import type { SimulationStudyTaskStore } from "./ai/simulationStudyTasks.js";
 import type { ProvenanceLedgerStore } from "./ai/provenanceLedger.js";
 import { registerDataQueryPlugin } from "./registerDataQueryPlugin.js";
 import type { DataQuerySource } from "@bim-studio/data-query-plugin";
@@ -101,6 +103,8 @@ export async function createIndustrialCapabilityHost(
     conversionTasks?: ConversionTaskService;
     /** H-C3 档案室账本：传入即启用 verdict 产生处落账与 provenance.trace 查询能力。 */
     provenanceLedger?: ProvenanceLedgerStore;
+    /** H-C3 后续切片：异步长跑任务存储；传入即注册 run-async/status/cancel 任务面。 */
+    studyTasks?: SimulationStudyTaskStore;
   } = {},
 ): Promise<IndustrialCapabilityHost> {
   let batteryOnnx =
@@ -142,7 +146,10 @@ export async function createIndustrialCapabilityHost(
     batteryRelease.blockers = ["内置候选模型尚未完成生产等价审批"];
     batteryRelease.warnings = ["本地 ONNX 验证推理可用；生产输出未启用"];
   }
-  const registry = new PluginRegistry(hostPolicy(options.provenanceLedger ? ["provenance.trace"] : []));
+  const registry = new PluginRegistry(hostPolicy([
+    ...(options.provenanceLedger ? ["provenance.trace"] : []),
+    ...(options.studyTasks ? ["simulation.study"] : []),
+  ]));
   const manifest = {
     schemaVersion: 1 as const,
     id: "bim.industrial-core",
@@ -213,6 +220,10 @@ export async function createIndustrialCapabilityHost(
   await registerAiHypothesisPlugin(registry, options.provenanceLedger ? { ledger: options.provenanceLedger } : {});
   if (options.provenanceLedger) {
     await registerProvenanceTracePlugin(registry, { ledger: options.provenanceLedger });
+  }
+  // H-C3 后续切片：MCP Tasks 异步长跑（durable 句柄 + 轮询 + mid-flight 取消）。
+  if (options.studyTasks) {
+    await registerSimulationStudyAsyncPlugin(registry, { tasks: options.studyTasks });
   }
   if (options.conversionTasks)
     await registerConversionCapabilityPlugin(registry, options.conversionTasks);
