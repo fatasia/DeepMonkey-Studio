@@ -182,6 +182,25 @@ describe("initial renderer selection", () => {
     expect(initialRendererBackend("wasm", "webgl")).toBe("wasm");
     expect(initialRendererBackend(null, "wasm")).toBe("wasm");
   });
+
+  it("defaults a zero-config start to Deep WebGPU when the API is present (Z1 P0)", () => {
+    vi.stubGlobal("navigator", { gpu: {} });
+    expect(initialRendererBackend(null, null)).toBe("webgpu");
+  });
+
+  it("falls back to WebGL when the WebGPU API is absent or navigator is unavailable", () => {
+    vi.stubGlobal("navigator", {});
+    expect(initialRendererBackend(null, null)).toBe("webgl");
+    vi.unstubAllGlobals();
+    expect(initialRendererBackend(null, null)).toBe("webgl");
+  });
+
+  it("keeps explicit stored preferences above the capability default", () => {
+    vi.stubGlobal("navigator", { gpu: {} });
+    expect(initialRendererBackend(null, "webgl")).toBe("webgl");
+    expect(initialRendererBackend(null, "webgpu")).toBe("webgpu");
+    expect(initialRendererBackend("webgl", "webgpu")).toBe("webgl");
+  });
 });
 
 describe("XR session availability", () => {

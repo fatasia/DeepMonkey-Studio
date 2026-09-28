@@ -31,12 +31,26 @@ export interface PublishedRendererDecision {
   reason: "publication-webgl" | "webgpu-unavailable" | "preserve-authored-effects" | "webgpu-preferred";
 }
 
-/** `auto` 从兼容后端启动，待发布快照加载后再执行能力与画质守卫。 */
+/**
+ * 零配置默认渲染器：WebGPU API 在场即直接进 Deep（Z1 P0，第一梯队管线成为默认
+ * 画面）；API 缺席回退 WebGL。启动期同步探测只看 `navigator.gpu` 是否存在——
+ * 适配器级失败（请求失败/不支持/非安全上下文）由既有 fail-closed 链兜底：
+ * switchTo 失败 → 宿主 setRendererBackend("webgl") 保留画布；运行期失败 →
+ * onRuntimeFailure → publishWebGl。此处不做能力猜测。
+ * 优先级：URL 参数 > 持久化偏好（含显式 webgl） > 能力默认。
+ */
 export function initialRendererBackend(queryValue: string | null, storedValue: string | null): RendererBackend {
   if (queryValue === "wasm") return "wasm";
   if (queryValue === "webgpu") return "webgpu";
   if (queryValue === "webgl" || queryValue === "auto") return "webgl";
-  return storedValue === "webgpu" || storedValue === "wasm" ? storedValue : "webgl";
+  if (storedValue === "webgpu" || storedValue === "wasm") return storedValue;
+  if (storedValue === "webgl") return "webgl";
+  return webGpuApiPresent() ? "webgpu" : "webgl";
+}
+
+function webGpuApiPresent(): boolean {
+  return typeof navigator !== "undefined" && "gpu" in navigator
+    && Boolean((navigator as Navigator & { gpu?: unknown }).gpu);
 }
 
 /** 从持久化场景中提取仍需 WebGL 发布守卫的作者效果。 */

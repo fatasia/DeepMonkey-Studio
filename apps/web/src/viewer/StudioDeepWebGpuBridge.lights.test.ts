@@ -35,7 +35,7 @@ describe("Studio Deep bridge author lighting", () => {
     scenes.forEach(scene => scene.updateMatrixWorld(true));
     authorFrames.forEach(callback => callback()); await settle();
   }
-  function fixture() {
+  function fixture(postProcessing: { qualityProfile?: "performance" | "balanced" | "quality" | "ultra" } = {}) {
     const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera();
     scenes.push(scene);
     scene.background = new THREE.Color("#123456");
@@ -53,7 +53,7 @@ describe("Studio Deep bridge author lighting", () => {
       getDeepProjectionRoot: () => scene, getDeepEditorOverlayRoots: () => [], getDeepSelectionBox: () => undefined,
       getDeepTransformGizmoInput: () => undefined, getDeepMeasurementSegmentInputs: () => [],
       setPresentationRendererBackend: presentation,
-      getPostProcessing: () => ({ ...DEFAULT_POST_PROCESSING, enabled: false }),
+      getPostProcessing: () => ({ ...DEFAULT_POST_PROCESSING, enabled: false, ...postProcessing }),
       setPresentationPerformanceSource: vi.fn(),
       setAuthorPacketIndependent: vi.fn(),
       subscribePresentationFrames: (callback: () => void) => {
@@ -97,6 +97,19 @@ describe("Studio Deep bridge author lighting", () => {
     light.position.x = 3; await frame();
     expect(backend.render.mock.calls.at(-1)![0].lights?.directional?.[0]?.shadow?.viewProjection)
       .not.toEqual(initial?.viewProjection);
+  });
+  it("resolves the shadow allocation tier from the authored quality profile (Z1 P1)", async () => {
+    const { bridge, scene, create } = fixture({ qualityProfile: "performance" });
+    sun(scene); // castShadow=false:作者无阴影意图,走档位兜底。
+    await activate(bridge);
+    expect(create.mock.calls[0]![0].renderer).toMatchObject({ shadows: {
+      exactProfile: { cascadeCount: 1, shadowMapSize: 1024 } } });
+  });
+  it("reserves the zero-config tier allocation when no author shadow intent exists", async () => {
+    const { bridge, scene, create } = fixture();
+    await activate(bridge); // 无方向光:兜底为零配置档位(high=2048),而非固定 1024。
+    expect(create.mock.calls[0]![0].renderer).toMatchObject({ shadows: {
+      exactProfile: { cascadeCount: 1, shadowMapSize: 2048 } } });
   });
   it("updates live authored intensity and explicitly clears disabled lights", async () => {
     const { bridge, scene, backend } = fixture(); const light = sun(scene);

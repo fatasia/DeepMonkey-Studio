@@ -20,11 +20,10 @@ function scene(): THREE.Scene {
 const prepare = (value: THREE.Scene) => prepareStudioDeepEnvironmentSource(value, new AbortController().signal);
 
 describe("Studio author environment source preparation", () => {
-  it("uses a black IBL image when the author has no environment", async () => {
+  it("falls back to the engine-native neutral studio IBL when the author has no environment", async () => {
     const author = scene(); const result = await prepare(author);
-    expect(result.source).toMatchObject({ kind: "radiance-hdr",
-      image: { width: 2, height: 1, data: new Float32Array(6) } });
-    expect(result.source).not.toHaveProperty("backgroundImage");
+    // Z1 P3:黑 IBL 兜底把材质打回死黑并让 DDGI 捕获零辐照,已替换为中性环境。
+    expect(result.source).toEqual({ kind: "studio" });
     expect(result.textures).toHaveLength(0);
     expect(result.environment).toBeNull();
     expect(result.background).toBe(author.background);
@@ -52,11 +51,14 @@ describe("Studio author environment source preparation", () => {
     expect(Reflect.get(result.source, "backgroundImage")).not.toBe(result.source.image);
   });
 
-  it("keeps a textured background with black IBL when environment is absent", async () => {
+  it("keeps a textured background over the deterministic neutral IBL when environment is absent", async () => {
     const author = scene(); author.background = texture([0, 3, 7]);
     const result = await prepare(author);
-    expect(result.source).toMatchObject({ image: { data: new Float32Array(6) },
-      backgroundImage: { data: new Float32Array([0, 3, 7, 0, 3, 7]) } });
+    // 引擎 studio 源不带背景字段:此时兜底为确定性中性 equirect + 作者天空背景像素。
+    expect(result.source).toMatchObject({ kind: "radiance-hdr", backgroundImage: { data: new Float32Array([0, 3, 7, 0, 3, 7]) } });
+    if (result.source.kind !== "radiance-hdr") throw new Error("Expected HDR fallback");
+    expect(result.source.image.data.some(value => value > 0)).toBe(true); // 非黑兜底。
+    expect(result.source.image.width).toBeGreaterThan(2);
     expect(result.textures).toHaveLength(1);
   });
 

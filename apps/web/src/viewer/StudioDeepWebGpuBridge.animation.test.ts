@@ -43,8 +43,9 @@ describe("Studio author animation integration", () => {
       setAuthorPacketIndependent: vi.fn(),
       subscribePresentationFrames: (callback: () => void) => { authorFrames.add(callback); return () => authorFrames.delete(callback); },
     } as unknown as ViewerEngine;
-    const metrics = { frame: 1, shadowTier: "exact", shadowMapSize: 1024, shadowCascadeCount: 1,
-      shadowDepthBytes: 4 * 1024 * 1024 } as unknown as FrameMetrics;
+    // 场景无作者阴影意图:兜底分配跟随零配置档位 high=2048(Z1 P1),bytes=1×2048²×4。
+    const metrics = { frame: 1, shadowTier: "exact", shadowMapSize: 2048, shadowCascadeCount: 1,
+      shadowDepthBytes: 2048 * 2048 * 4 } as unknown as FrameMetrics;
     const runtime = { id: "deep-webgpu", setPacketValidated: vi.fn(async (_packet: RenderPacket) => {}),
       updateInstances: vi.fn((_update: InstanceUpdate) => {}), render: vi.fn(() => metrics),
       validateFrame: vi.fn(async () => metrics), dispose: vi.fn(),

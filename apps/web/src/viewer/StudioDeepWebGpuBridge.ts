@@ -13,7 +13,7 @@ import type { ViewerEngine } from "./ViewerEngine";
 import type { RendererBackend } from "./viewerTypes";
 import { prepareStudioRendererCandidate } from "./prepareStudioRendererCandidate";
 import { TemporalFrameSettler } from "./temporalFrameSettler";
-import { studioDeepShadowMapSize } from "./studioDeepShadowAllocation";
+import { studioDeepShadowAllocation, studioDeepShadowMapSize, studioDeepShadowTier } from "./studioDeepShadowAllocation";
 import { prepareStudioDeepEnvironmentSource, isStudioDeepEnvironmentSourceCurrent,
   type PreparedStudioDeepEnvironment } from "./studioDeepEnvironmentSource";
 import { readStudioDeepEnvironmentView } from "./studioDeepEnvironmentView";
@@ -219,6 +219,9 @@ export class StudioDeepWebGpuBridge {
           markSwitchPhase("deep-webgpu:environment-ready");
           const postProcessing = this.viewer.getPostProcessing();
           this.qualityProfile = postProcessing.qualityProfile ?? null;
+          // Z1 P1：阴影分配档跟随作者质量档（引擎既有 PROFILES 表映射，零契约漂移）。
+          const shadowTier = studioDeepShadowTier(this.qualityProfile);
+          const shadowTierAllocation = studioDeepShadowAllocation(shadowTier);
           const authorRenderPacket = (await packetTask) ?? undefined;
           const pipelineBootstrap = t11PipelineBootstrap(authorRenderPacket !== undefined);
           this.independentPacketPath = authorRenderPacket !== undefined;
@@ -230,7 +233,7 @@ export class StudioDeepWebGpuBridge {
             ? (await this.options.authorHlodClusters?.(signal)) ?? undefined : undefined;
           const view = this.viewReader.renderView(module, canvas);
           shadowMapSize = view.lights?.directional?.[0]?.shadow?.mapSize
-            ?? studioDeepShadowMapSize(this.viewer.scene, this.viewer.camera.layers.mask);
+            ?? studioDeepShadowMapSize(this.viewer.scene, this.viewer.camera.layers.mask, shadowTierAllocation.shadowMapSize);
           frameCaptureSession = createRequestedStudioFrameCaptureSession();
           // A compiled SceneSnapshot packet is a complete Deep input. Keep the
           // Three projection bridge out of this path so geometry, materials,
@@ -256,6 +259,11 @@ export class StudioDeepWebGpuBridge {
                 collectHotspots: false,
                 ...(postProcessing.qualityProfile ? { profile: postProcessing.qualityProfile } : {}),
               },
+              // Z1 P1：级联数受引擎硬合同约束——view 携带 authored shadow 时分配必须
+              // 为 1 层且 mapSize 精确匹配（cascadedShadowResources.prepare 的 authored
+              // 约束），且 StudioDeepShadowSession 会把分配收敛回作者值；带作者阴影的
+              // 场景升多级联属引擎侧能力（主线事项，见 docs/reports）。当前档位词汇
+              //（studioDeepShadowTier）驱动无作者阴影时的兜底分配尺寸。
               shadows: { exactProfile: { cascadeCount: 1, shadowMapSize } },
               features: { environment: true, groundPlane: false,
                 groundGrid: false, screenSpaceReflection: true, volumetricFog: true, toneMapping: "three-aces-r185" },

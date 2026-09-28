@@ -3,6 +3,7 @@ import type { PbrEnvironmentSource } from "@bim-studio/deep-engine/webgpu";
 import { prepareStudioEnvironmentTextureAsync, isStudioEnvironmentTextureCurrent,
   captureStudioEnvironmentTexture, type StudioEnvironmentTextureIdentity,
   type PreparedStudioEnvironmentTexture } from "./studioDeepEnvironmentTexture";
+import { studioDeepNeutralEnvironment } from "./studioDeepNeutralEnvironment";
 
 export interface PreparedStudioDeepEnvironment {
   readonly source: PbrEnvironmentSource;
@@ -39,13 +40,19 @@ export async function prepareStudioDeepEnvironmentSource(scene: THREE.Scene,
     textures.push(prepared);
     return prepared.source;
   };
-  const ibl = environment ? await convert(environment) : blackEnvironment();
+  const ibl = environment ? await convert(environment) : undefined;
   const sky = background instanceof THREE.Texture ? await convert(background) : undefined;
-  if (ibl.kind !== "radiance-hdr" || (sky && sky.kind !== "radiance-hdr")) {
+  if ((ibl && ibl.kind !== "radiance-hdr") || (sky && sky.kind !== "radiance-hdr")) {
     throw new Error("Deep 作者环境必须使用已解码的真实像素。");
   }
   const result: PreparedStudioDeepEnvironment = { environment, background, textures,
-    source: { ...ibl, ...(sky ? { backgroundImage: sky.image } : {}) } };
+    source: ibl
+      // 作者环境在场：沿用作者像素，天空纹理仅作为背景像素叠加。
+      ? { ...ibl, ...(sky ? { backgroundImage: sky.image } : {}) }
+      // 作者未配置环境：中性摄影棚兜底（引擎原生 studio IBL；天空纹理存在时
+      // 引擎源不带背景字段，改用确定性中性 equirect + 作者天空背景像素）。
+      // 黑 IBL 兜底会把材质打回死黑并让 DDGI 捕获零辐照，禁止回归。
+      : studioDeepNeutralEnvironment(sky?.image) };
   if (signal.aborted) throw new DOMException("环境准备已取消。", "AbortError");
   if (!isStudioDeepEnvironmentSourceCurrent(scene, result)) throw new Error("作者环境在准备期间已改变。");
   return result;
@@ -58,8 +65,4 @@ export function isStudioDeepEnvironmentSourceCurrent(scene: THREE.Scene,
     && (scene.background === prepared.background
       || scene.background instanceof THREE.Color && prepared.background instanceof THREE.Color)
     && prepared.textures.every(item => isStudioEnvironmentTextureCurrent(item.identity));
-}
-
-function blackEnvironment(): Extract<PbrEnvironmentSource, { kind: "radiance-hdr" }> {
-  return { kind: "radiance-hdr", image: { width: 2, height: 1, data: new Float32Array(6) } };
 }
