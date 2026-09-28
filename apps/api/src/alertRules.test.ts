@@ -84,6 +84,37 @@ describe("alert rule routes", () => {
     expect((await harness.inject("DELETE", `/api/projects/${harness.projectId}/alert-rules/${ruleId}`)).statusCode).toBe(404);
   });
 
+  it("串行提交纪律回归：并发创建交错零丢失、重名查重不失效（每项目写链；链外读改写会被本用例证伪）", async () => {
+    const harness = await createHarness();
+    const { runtime, projectId } = harness;
+    const attempt = (index: number) => runtime.createRule(projectId, {
+      label: `并发规则 ${index}`, signalId: `signal-${index}`, kind: "threshold-above", threshold: 80, severity: "warning",
+    });
+    // 先串行热一次（规则表已入内存缓存），再并发：链外形态（读内存表→排队整文件落盘）
+    // 会让各写者基于同一陈旧规则表互相覆盖——最后落盘者独占文档，其余规则全部蒸发，
+    // 且重名查重对并发重名失效（双双放行）。
+    await runtime.createRule(projectId, { label: "预热规则", signalId: "warm", kind: "threshold-above", threshold: 80, severity: "warning" });
+    const attempts = await Promise.allSettled(Array.from({ length: 4 }, (_, index) => attempt(index)));
+    expect(attempts.every((item) => item.status === "fulfilled")).toBe(true);
+
+    // 同 label+signal+kind 并发重名：恰好一个被查重拒绝（旧形态双双放行且互相覆盖）。
+    const duplicates = await Promise.allSettled([
+      runtime.createRule(projectId, { label: "重名规则", signalId: "dup-signal", kind: "threshold-above", threshold: 80, severity: "warning" }),
+      runtime.createRule(projectId, { label: "重名规则", signalId: "dup-signal", kind: "threshold-above", threshold: 90, severity: "warning" }),
+    ]);
+    expect(duplicates.filter((item) => item.status === "fulfilled")).toHaveLength(1);
+    expect(duplicates.filter((item) => item.status === "rejected")).toHaveLength(1);
+
+    // 落盘文档为证：预热 + 4 并发 + 1 条重名幸存者 = 6 条全部在档。
+    const persisted = JSON.parse(await readFile(path.join(harness.dataDir, "projects", projectId, "alert-rules.json"), "utf8")) as { rules: Array<{ label: string }> };
+    expect(persisted.rules).toHaveLength(6);
+    expect(persisted.rules.map((item) => item.label).sort()).toEqual([
+      "并发规则 0", "并发规则 1", "并发规则 2", "并发规则 3", "重名规则", "预热规则",
+    ].sort());
+    // 内存视图与落盘一致（写链内交换，不是某个写者的私有快照）。
+    expect(await runtime.listRules(projectId)).toHaveLength(6);
+  });
+
   it("rejects invalid rules with actionable Chinese messages", async () => {
     const harness = await createHarness();
     const missingLabel = await harness.inject("POST", `/api/projects/${harness.projectId}/alert-rules`, {

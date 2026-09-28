@@ -97,6 +97,7 @@ export interface AlertRuleRuntimeOptions {
 export class AlertRuleRuntime {
   private readonly projects = new Map<string, ProjectRuntime>();
   private readonly loaded = new Set<string>();
+  private readonly ruleMutations = new Map<string, Promise<unknown>>();
   private readonly engineFactory: (rules: AlertRule[]) => AlertEngine;
   private readonly now: () => number;
 
@@ -111,21 +112,27 @@ export class AlertRuleRuntime {
   }
 
   async createRule(projectId: string, input: unknown): Promise<AlertRule> {
-    const runtime = await this.ensureLoaded(projectId);
-    const rule = parseRuleInput(input);
-    if (runtime.rules.some((item) => item.label === rule.label && item.signalId === rule.signalId && item.kind === rule.kind)) {
-      throw new RuleValidationError(`已存在同信号同类型的告警规则：${rule.label}`);
-    }
-    await this.replaceRules(projectId, [...runtime.rules, rule]);
-    return rule;
+    return this.enqueueRuleMutation(projectId, async () => {
+      const runtime = await this.ensureLoaded(projectId);
+      const rule = parseRuleInput(input);
+      // 同信号同类型查重与追加同处一条每项目写链：链外查重会放行并发重名，且
+      // 各自整文件覆盖丢掉先提交者的规则（lost update，同账本/记忆存储纪律）。
+      if (runtime.rules.some((item) => item.label === rule.label && item.signalId === rule.signalId && item.kind === rule.kind)) {
+        throw new RuleValidationError(`已存在同信号同类型的告警规则：${rule.label}`);
+      }
+      await this.replaceRules(projectId, [...runtime.rules, rule]);
+      return rule;
+    });
   }
 
   async removeRule(projectId: string, ruleId: string): Promise<boolean> {
-    const runtime = await this.ensureLoaded(projectId);
-    const rules = runtime.rules.filter((item) => item.id !== ruleId);
-    if (rules.length === runtime.rules.length) return false;
-    await this.replaceRules(projectId, rules);
-    return true;
+    return this.enqueueRuleMutation(projectId, async () => {
+      const runtime = await this.ensureLoaded(projectId);
+      const rules = runtime.rules.filter((item) => item.id !== ruleId);
+      if (rules.length === runtime.rules.length) return false;
+      await this.replaceRules(projectId, rules);
+      return true;
+    });
   }
 
   async states(projectId: string): Promise<AlertStateSnapshot[]> {
@@ -161,6 +168,22 @@ export class AlertRuleRuntime {
     const rebuilt = this.build(projectId, []);
     this.projects.set(projectId, rebuilt);
     return rebuilt;
+  }
+
+  /**
+   * 每项目规则写链：规则的读改写（查重→追加/过滤→整文件落盘→重建引擎）全程在链内
+   * 串行执行。规则变更会重建引擎并重挂订阅，链外交错会让"检查时看到的规则表"与
+   * 落盘文档脱节——并发创建互相覆盖丢规则、重名查重失效。与 ai/ 域账本/记忆存储
+   * 的链内读改写纪律同族对齐。
+   */
+  private enqueueRuleMutation<T>(projectId: string, operation: () => Promise<T>): Promise<T> {
+    const prior = this.ruleMutations.get(projectId) ?? Promise.resolve();
+    const next = prior.catch(() => undefined).then(operation);
+    this.ruleMutations.set(projectId, next);
+    void next.finally(() => {
+      if (this.ruleMutations.get(projectId) === next) this.ruleMutations.delete(projectId);
+    }).catch(() => undefined);
+    return next;
   }
 
   private async replaceRules(projectId: string, rules: AlertRule[]): Promise<void> {

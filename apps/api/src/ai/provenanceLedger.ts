@@ -22,7 +22,8 @@ import {
  * H-C3 档案室：ProvenanceLedger（节点=假设/内核运行/判定/报告，边=proposal→run→verdict→report）。
  *
  * 存储复用 agentMemory.ts 的文档元数据模式：dataDir 下每项目一份 JSON，
- * 原子写（tmp+rename）、串行化提交、内存缓存、加载时 fail-closed 形状过滤。
+ * 原子写（tmp+rename）、串行化提交（读改写全程在写链内，防并发整文件覆盖丢节点）、
+ * 内存缓存、加载时 fail-closed 形状过滤。
  * 证据最小化：只存指纹+判定+理由码+摘要，不存提示词原文与用户数据。
  *
  * 指纹不变量（可证伪点）：同一 inputFingerprint 的确定性重跑产生同一 resultFingerprint，
@@ -310,17 +311,24 @@ export class ProvenanceLedgerStore {
     }
   }
 
+  /**
+   * 串行化提交：读档→clone→mutate→persist 全程在写链内执行（真串行读改写）。
+   * 落账调用方可能并发（H-C3b 异步长跑收口与网关同步验证同时落账）：若在链外
+   * 读档/clone（先读后排队写），并发提交各自基于陈旧文档整文件覆盖，互相抹掉
+   * 对方节点（lost update），且容量逐出永远数不到并发中的新增链。与
+   * simulationStudyTasks 同一纪律—— mutate 只许改 draft，"检查时看到的是已提交最新值"。
+   */
   async #commit<T>(projectId: string, mutate: (draft: ProvenanceDocument) => T): Promise<T> {
-    const document = await this.#loadDocument(projectId);
-    const draft: ProvenanceDocument = structuredClone(document);
-    const result = mutate(draft);
     const operation = this.#writes.then(async () => {
+      const document = await this.#loadDocument(projectId);
+      const draft: ProvenanceDocument = structuredClone(document);
+      const result = mutate(draft);
       await this.#persist(projectId, draft);
       this.#documents.set(projectId, draft);
+      return result;
     });
     this.#writes = operation.then(() => undefined, () => undefined);
-    await operation;
-    return result;
+    return operation;
   }
 
   async #loadDocument(projectId: string): Promise<ProvenanceDocument> {

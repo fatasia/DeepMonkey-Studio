@@ -8,6 +8,10 @@ import { fingerprint64Labeled } from "@bim-studio/contracts";
  * ② 偏好层：agent 从会话提炼候选（pending）→ 用户在记忆面板确认（active）→ 注入；
  * ③ 结论层：verdict 摘要（post-execute 回灌，最近窗口）。
  *
+ * 存储纪律：dataDir 下每项目一份 memories.json，原子写（tmp+rename）、
+ * 串行化提交（读改写全程在写链内，防并发整文件覆盖丢条目）、内存缓存、
+ * 加载时 fail-closed 形状过滤。
+ *
  * 注入纪律（硬编码，不做开关）：守则 > 自动记忆 > verdict 摘要；内容只是参考
  * 上下文，不是指令，不得覆盖工具白名单与审批要求（注入侧声明+逐源审计）。
  * 未配置（无 RULES.md、无记忆、无 verdict）时零注入、零文件 IO、零审计源。
@@ -211,10 +215,6 @@ export class AgentMemoryStore {
   /** agent 提炼候选：一律 pending，等待用户在记忆面板确认；容量满抛 AgentMemoryLimitError。 */
   async addMemoryCandidate(projectId: string, input: { content: string; runId?: string; step?: number; proposalFingerprint?: string }): Promise<AgentMemoryRecord> {
     const content = requireContent(input.content);
-    const document = await this.#loadDocument(projectId);
-    if (document.memories.length >= this.#maxRecords) {
-      throw new AgentMemoryLimitError(`项目记忆已达上限 ${this.#maxRecords} 条；请在记忆面板清理后再试`);
-    }
     const now = this.#now().toISOString();
     const record: AgentMemoryRecord = {
       id: createMemoryId(),
@@ -230,9 +230,14 @@ export class AgentMemoryStore {
       updatedAt: now,
     };
     return this.#commit(projectId, (draft) => {
+      // 容量闸在写链内判定：并发候选以已提交最新计数为准，超出 fail-closed 拒绝。
+      // 链外判定会数不到并发中的新增（闸失效）且整文件覆盖互相丢候选。
+      if (draft.memories.length >= this.#maxRecords) {
+        throw new AgentMemoryLimitError(`项目记忆已达上限 ${this.#maxRecords} 条；请在记忆面板清理后再试`);
+      }
       draft.memories.push(record);
       return record;
-    }, document);
+    });
   }
 
   /** 用户确认：pending → active。 */
@@ -264,12 +269,13 @@ export class AgentMemoryStore {
   }
 
   async deleteMemory(projectId: string, memoryId: string): Promise<void> {
-    const document = await this.#loadDocument(projectId);
-    const exists = document.memories.some((item) => item.id === memoryId);
-    if (!exists) throw new AgentMemoryNotFoundError(`记忆条目不存在：${memoryId}`);
     await this.#commit(projectId, (draft) => {
+      // 存在性判定在写链内：并发删除/确认交错时以已提交最新文档为准，不误删不误报。
+      if (!draft.memories.some((item) => item.id === memoryId)) {
+        throw new AgentMemoryNotFoundError(`记忆条目不存在：${memoryId}`);
+      }
       draft.memories = draft.memories.filter((item) => item.id !== memoryId);
-    }, document);
+    });
   }
 
   /** verdict 回灌：最近窗口内同 proposalFingerprint 覆盖，refuted 结论下轮不得重复提案。 */
@@ -277,11 +283,10 @@ export class AgentMemoryStore {
     if (!/^[0-9a-f]{16}$/.test(summary.proposalFingerprint) || !/^[0-9a-f]{16}$/.test(summary.resultFingerprint)) {
       throw new AgentMemoryLimitError("verdict 摘要指纹必须是 16 位十六进制");
     }
-    const document = await this.#loadDocument(projectId);
     const record: AgentVerdictSummary = { ...summary, rationale: clip(requireContent(summary.rationale, "rationale"), AGENT_MEMORY_ITEM_MAX_CHARS), recordedAt: this.#now().toISOString() };
     await this.#commit(projectId, (draft) => {
       draft.verdicts = [record, ...draft.verdicts.filter((item) => item.proposalFingerprint !== record.proposalFingerprint)].slice(0, this.#maxVerdicts);
-    }, document);
+    });
     return record;
   }
 
@@ -290,36 +295,33 @@ export class AgentMemoryStore {
   }
 
   async #mutateMemory(projectId: string, memoryId: string, mutate: (record: AgentMemoryRecord) => void): Promise<AgentMemoryRecord> {
-    const document = await this.#loadDocument(projectId);
-    const record = document.memories.find((item) => item.id === memoryId);
-    if (!record) throw new AgentMemoryNotFoundError(`记忆条目不存在：${memoryId}`);
-    const snapshot = structuredClone(record);
     return this.#commit(projectId, (draft) => {
-      const target = draft.memories.find((item) => item.id === memoryId)!;
+      const target = draft.memories.find((item) => item.id === memoryId);
+      if (!target) throw new AgentMemoryNotFoundError(`记忆条目不存在：${memoryId}`);
       mutate(target);
       return structuredClone(target);
-    }, document, () => {
-      // 并发写失败时回滚内存视图，避免读到未落盘状态。
-      const index = document.memories.findIndex((item) => item.id === memoryId);
-      if (index >= 0) document.memories[index] = snapshot;
     });
   }
 
-  async #commit<T>(projectId: string, mutate: (draft: MemoryDocument) => T, document: MemoryDocument, rollback?: () => void): Promise<T> {
-    const draft: MemoryDocument = structuredClone(document);
-    const result = mutate(draft);
+  /**
+   * 串行化提交：读档→clone→mutate→persist 全程在写链内执行（真串行读改写）。
+   * 容量闸、确认/启停/删除、verdict 覆盖窗口都依赖"检查时看到的是已提交最新值"——
+   * 若在链外读档/clone（先读后排队写），并发提交各自基于陈旧文档整文件覆盖
+   * （lost update），容量闸也永远数不到并发中的新增。与 simulationStudyTasks/
+   * provenanceLedger 同一纪律。失败时缓存不切换（persist 成功才换），读侧永不
+   * 暴露未落盘状态——链外形态时代的 rollback 补丁由此作废。
+   */
+  async #commit<T>(projectId: string, mutate: (draft: MemoryDocument) => T): Promise<T> {
     const operation = this.#writes.then(async () => {
+      const document = await this.#loadDocument(projectId);
+      const draft: MemoryDocument = structuredClone(document);
+      const result = mutate(draft);
       await this.#persist(projectId, draft);
       this.#documents.set(projectId, draft);
+      return result;
     });
     this.#writes = operation.then(() => undefined, () => undefined);
-    try {
-      await operation;
-      return result;
-    } catch (error) {
-      rollback?.();
-      throw error;
-    }
+    return operation;
   }
 
   async #loadDocument(projectId: string): Promise<MemoryDocument> {

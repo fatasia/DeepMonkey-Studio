@@ -130,6 +130,46 @@ describe("ProvenanceLedger（实验档案室）", () => {
     expect(trace.chains[0].verdicts[0].judgedAt).toBe("2026-09-28T10:00:01.000Z");
   });
 
+  it("串行提交纪律回归：并发落账交错零丢失（链内读改写；链外 clone 形态会被本用例证伪）", async () => {
+    const { store, directory } = await createStore();
+    // 先串行热一次缓存：此后并发提交若各自还能拿到"已提交最新值"，才是链内读改写。
+    // 链外形态（先读档/clone 再排队写）在此必然让每个写者基于同一陈旧文档整文件
+    // 覆盖——最后落盘者独占文档，先提交者的节点全部蒸发。
+    await store.recordHypothesis("project-1", { contract: HYPOTHESIS, proposalFingerprint: aiHypothesisProposalFingerprint(HYPOTHESIS) });
+    await Promise.all([
+      store.recordVerification("project-1", verifyInput(envelopeOf({ resultFingerprint: "aaaaaaaaaaaaaaaa" }))),
+      store.recordVerification("project-1", verifyInput(envelopeOf({
+        resultFingerprint: "bbbbbbbbbbbbbbbb",
+        verdict: "refuted",
+        reasonCode: "prediction-outside-tolerance",
+        rationale: "实测高于阈值且越过容差带。",
+      }))),
+      store.recordReport("project-1", {
+        evidenceFingerprint: "cccccccccccccccc",
+        label: "并发报告证据",
+        proposalFingerprint: aiHypothesisProposalFingerprint(HYPOTHESIS),
+        resultFingerprint: "aaaaaaaaaaaaaaaa",
+      }),
+    ]);
+    // 落盘文档为证：两个运行 + 两个判定 + 一个报告全部在档（旧形态最后落盘者只剩自己的节点）。
+    const raw = JSON.parse(await readFile(path.join(directory, "provenance-ledger", "project-1", "ledger.json"), "utf8")) as {
+      hypotheses: unknown[];
+      runs: Array<{ resultFingerprint: string }>;
+      verdicts: Array<{ resultFingerprint: string; verdict: string }>;
+      reports: Array<{ evidenceFingerprint: string }>;
+    };
+    expect(raw.hypotheses).toHaveLength(1);
+    expect(raw.runs.map((node) => node.resultFingerprint).sort()).toEqual(["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"]);
+    expect(raw.verdicts.map((node) => node.verdict).sort()).toEqual(["confirmed", "refuted"]);
+    expect(raw.reports.map((node) => node.evidenceFingerprint)).toEqual(["cccccccccccccccc"]);
+    // 查询侧同口径：链完整、完整性指纹全部通过（没有被覆盖写撕裂的半链）。
+    const trace = await store.trace("project-1", { proposalFingerprint: aiHypothesisProposalFingerprint(HYPOTHESIS) });
+    expect(trace.matched).toBe(true);
+    expect(trace.chains[0].runs).toHaveLength(2);
+    expect(trace.chains[0].reports).toHaveLength(1);
+    expect(trace.integrity.intact).toBe(true);
+  });
+
   it("指纹不可篡改：改落盘判定后重启读档，链断如实暴露（不静默修复）", async () => {
     const { store, directory } = await createStore();
     await store.recordVerification("project-1", verifyInput(envelopeOf()));
