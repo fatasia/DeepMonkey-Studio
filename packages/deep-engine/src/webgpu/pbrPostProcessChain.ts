@@ -47,6 +47,7 @@ export interface PbrPostProcessInput {
   readonly exposure?: number;
   readonly disoccluded?: boolean;
   readonly reactiveMaskAvailable?: boolean;
+  readonly reactiveMask?: GPUTexture;
   readonly adaptiveQuality?: Readonly<AdaptiveQualityKnobs>;
 }
 
@@ -191,6 +192,7 @@ export class PbrPostProcessChain {
     }
     const temporal = this.features.temporalAa ? this.temporalAa!.encode(encoder, {
       color: marched, depth: targets.linearDepthTexture, motion: targets.motionTexture, revision,
+      ...(input.reactiveMask ? { reactiveMask: input.reactiveMask } : {}),
       cameraCut: cameraCut || !temporalPlan.decisions.taa.valid,
       colorEncoding: "linear-hdr", currentJitter, previousJitter,
       depthEncoding: "linear-view-depth-positive", motionEncoding: "current-to-previous-uv",

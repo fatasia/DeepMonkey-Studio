@@ -3,6 +3,8 @@ import type { PbrActualPassDescription } from "./pbrFramePlanResources.js";
 import { PBR_HDR_FORMAT, pbrFullHdrTransientUsage } from "./renderTargets.js";
 import { WeightedOitPass } from "./weightedOit.js";
 import { WEIGHTED_OIT_ACCUMULATION_FORMAT, WEIGHTED_OIT_REVEALAGE_FORMAT } from "./weightedOitTypes.js";
+import { TEMPORAL_REACTIVE_MASK_FORMAT } from "../postprocess/temporalAaTypes.js";
+import { OIT_REACTIVE_MASK_WGSL } from "./oitReactiveMaskWgsl.js";
 import { runResourceCleanup } from "./resourceCleanup.js";
 import type { PbrTransientTextureHandle, PbrTransientTexturePool } from "./pbrTransientTexturePool.js";
 
@@ -23,8 +25,12 @@ export class PbrTransparencyPass {
   private scratch: { texture: GPUTexture; view: GPUTextureView; pooled?: PbrTransientTextureHandle } | undefined;
   private disposed = false;
   private output: GPUTexture | undefined;
+  private reactive: { texture: GPUTexture; view: GPUTextureView } | undefined;
+  private reactivePipeline: GPURenderPipeline | undefined;
+  private reactiveLayout: GPUBindGroupLayout | undefined;
 
-  constructor(private readonly session: DeviceSession, private readonly pool?: PbrTransientTexturePool) {
+  constructor(private readonly session: DeviceSession, private readonly pool?: PbrTransientTexturePool,
+    private readonly produceReactiveMask = false) {
     this.oit = new WeightedOitPass(session, pool);
   }
 
@@ -32,12 +38,20 @@ export class PbrTransparencyPass {
     return !this.disposed && this.session.state === "ready" ? this.output : undefined;
   }
 
+  get currentReactiveMask(): GPUTexture | undefined {
+    return !this.disposed && this.session.state === "ready" ? this.reactive?.texture : undefined;
+  }
+
+  clearReactiveMask(): void { this.releaseReactive(); }
+  cancelFrame(): void { this.output = undefined; this.releaseReactive(); }
+
   encode(input: TransparencyInput): DrawStats & { readonly color: GPUTexture } {
     if (this.disposed) throw new Error("PBR transparency pass is disposed.");
     if (this.session.state !== "ready") {
       this.dispose(); throw new Error("GPU session is not ready for PBR transparency.");
     }
     this.output = undefined;
+    this.releaseReactive();
     const { encoder, hdrColor, opaqueColor } = input;
     this.oit.resize(hdrColor.width, hdrColor.height);
     try {
@@ -49,8 +63,10 @@ export class PbrTransparencyPass {
       let stats: DrawStats;
       try { stats = input.draw(pass); } finally { pass.end(); }
       this.oit.encodeComposite(encoder, input.viewOf(opaqueColor), destination.view, { outputFormat: PBR_HDR_FORMAT });
+      if (this.produceReactiveMask) this.encodeReactiveMask(encoder, hdrColor.width, hdrColor.height);
       this.output = destination.texture;
-      return { color: destination.texture, drawCalls: stats.drawCalls + 1, triangles: stats.triangles + 1 };
+      return { color: destination.texture, drawCalls: stats.drawCalls + 1 + Number(this.produceReactiveMask),
+        triangles: stats.triangles + 1 + Number(this.produceReactiveMask) };
     } finally { this.releaseTransientFrame(); }
   }
 
@@ -88,11 +104,47 @@ export class PbrTransparencyPass {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true; this.output = undefined;
+    this.releaseReactive();
     const scratch = this.scratch;
     this.scratch = undefined;
     runResourceCleanup("PBR transparency disposal failed.", [
       () => { if (scratch && !scratch.pooled) this.session.release(scratch.texture); }, () => this.oit.dispose(),
     ]);
+  }
+
+  private encodeReactiveMask(encoder: GPUCommandEncoder, width: number, height: number): void {
+    const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
+    const texture = this.session.own(this.session.device.createTexture({
+      label: "Deep OIT TAA reactive coverage", size: [width, height], format: TEMPORAL_REACTIVE_MASK_FORMAT, usage,
+    }));
+    try {
+      const view = texture.createView();
+      if (!this.reactivePipeline) {
+        const module = this.session.device.createShaderModule({ code: OIT_REACTIVE_MASK_WGSL });
+        const layout = this.session.device.createBindGroupLayout({ entries: [
+          { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "unfilterable-float" } },
+        ] });
+        this.reactiveLayout = layout;
+        this.reactivePipeline = this.session.device.createRenderPipeline({
+          layout: this.session.device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+          vertex: { module, entryPoint: "reactiveVertex" },
+          fragment: { module, entryPoint: "reactiveFragment", targets: [{ format: TEMPORAL_REACTIVE_MASK_FORMAT }] },
+          primitive: { topology: "triangle-list" },
+        });
+      }
+      const bindGroup = this.session.device.createBindGroup({ layout: this.reactiveLayout!,
+        entries: [{ binding: 0, resource: this.oit.current!.revealageView }] });
+      const pass = encoder.beginRenderPass({ colorAttachments: [{ view, loadOp: "clear", storeOp: "store",
+        clearValue: { r: 0, g: 0, b: 0, a: 0 } }] });
+      try { pass.setPipeline(this.reactivePipeline); pass.setBindGroup(0, bindGroup); pass.draw(3); }
+      finally { pass.end(); }
+      this.reactive = { texture, view };
+    } catch (error) { this.session.release(texture); throw error; }
+  }
+
+  private releaseReactive(): void {
+    if (this.reactive) this.session.release(this.reactive.texture);
+    this.reactive = undefined;
   }
 
   private scratchTarget(width: number, height: number): { texture: GPUTexture; view: GPUTextureView } {

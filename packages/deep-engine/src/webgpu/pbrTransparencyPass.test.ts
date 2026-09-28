@@ -8,7 +8,7 @@ function texture(width = 64, height = 32, label = "external"): FakeTexture {
   const value = { width, height, label, format: "rgba16float", destroy: vi.fn(), createView: vi.fn(() => ({ texture: value })) };
   return value as unknown as FakeTexture;
 }
-function fixture(pooled = false) {
+function fixture(pooled = false, reactiveMask = false) {
   const owned = new Set<GPUTexture>(), textures: FakeTexture[] = [];
   const device = { limits: { maxTextureDimension2D: 8192 },
     createShaderModule: vi.fn(() => ({})), createBindGroupLayout: vi.fn(() => ({})), createPipelineLayout: vi.fn(() => ({})),
@@ -26,7 +26,7 @@ function fixture(pooled = false) {
   const encoder = { beginRenderPass: begin } as unknown as GPUCommandEncoder;
   const session = raw as unknown as DeviceSession;
   const pool = pooled ? new PbrTransientTexturePool(session) : undefined;
-  const owner = new PbrTransparencyPass(session, pool);
+  const owner = new PbrTransparencyPass(session, pool, reactiveMask);
   const input = (same = true, width = 64, height = 32) => {
     const hdrColor = texture(width, height), opaqueColor = same ? hdrColor : texture(width, height, "AO output");
     const views = new Map<GPUTexture, GPUTextureView>();
@@ -44,6 +44,21 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("PBR transparency composition ownership", () => {
+  it("creates a real per-pixel OIT reactive texture only for temporal rendering", () => {
+    const f = fixture(false, true);
+    const result = f.owner.encode(f.input());
+    expect(result.drawCalls).toBe(4);
+    expect(result.triangles).toBe(9);
+    expect(f.owner.currentReactiveMask).toBeDefined();
+    expect(f.device.createTexture.mock.calls.some(([descriptor]) => descriptor.format === "r8unorm")).toBe(true);
+    expect(f.passes).toHaveLength(3);
+    const mask = f.owner.currentReactiveMask as FakeTexture;
+    f.owner.cancelFrame();
+    expect(mask.destroy).toHaveBeenCalledOnce();
+    expect(f.owner.currentReactiveMask).toBeUndefined();
+    f.owner.dispose();
+    expect(mask.destroy).toHaveBeenCalledOnce();
+  });
   it("returns all three production OIT scratch targets only at the shared frame boundary", () => {
     const f = fixture(true), pool = f.pool!;
     pool.beginFrame(); const first = f.owner.encode(f.input()).color;

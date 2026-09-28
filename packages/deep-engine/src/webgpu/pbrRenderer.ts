@@ -160,7 +160,7 @@ export class PbrRenderer {
     this.frameCapture = options.frameCapture === undefined ? undefined : new PbrFrameCapture({ ...options.frameCapture,
       now: options.frameCapture.now ?? (() => performance.now()) }, { builtinRenderer: true });
     this.postProcess = new PbrPostProcessChain(session, this.features, this.transientTextures);
-    this.transparency = new PbrTransparencyPass(session, this.transientTextures);
+    this.transparency = new PbrTransparencyPass(session, this.transientTextures, features.temporalAa);
     this.lighting = lighting; this.localShadows = localShadows;
   }
   get frameCaptureSession(): FrameCaptureSession | undefined { return this.frameCapture?.session; }
@@ -430,6 +430,7 @@ export class PbrRenderer {
     const opaqueCulling = this.packets.encodeCulling(encoder, mainFrustum, "opaque",
       { sceneRevision: this.packets.visibilityRevision, ...(previousHiZ ? { previousHiZ } : {}) });
     const hasTransparent = drawProfile.hasTransparent;
+    if (!hasTransparent) this.transparency.clearReactiveMask();
     let present: PbrPresentReceipt | undefined = directClear ? this.outputs.acquirePresent(this.performanceTelemetry.enabled) : undefined;
     const mainTimestamps = directClear && timing && !view.editorOverlay?.vertices.length ? { querySet: timing.queries,
       ...(!shadowUpdated ? { beginningOfPassWriteIndex: 0 } : {}), endOfPassWriteIndex: 1 }
@@ -482,7 +483,7 @@ export class PbrRenderer {
       // weighted-OIT transparency and GPU particles never write the motion target.
       // Per-pixel mask supply stays unwired until the reactive-mask pass joins the
       // frame plan (see docs/reports/deep-core/T07-implementation.md).
-      reactiveMaskAvailable: hasTransparent || (this.particlePass !== undefined && particleBinding !== undefined),
+      reactiveMaskAvailable: false,
       surfaceWidth: size.width, surfaceHeight: size.height,
       ...(this.adaptiveQuality ? { adaptiveQuality: this.adaptiveQuality.state().knobs } : {}) };
     const opaqueEffects: ReturnType<PbrPostProcessChain["encodeOpaque"]> = directClear
@@ -501,7 +502,9 @@ export class PbrRenderer {
       drawCalls += transparentStats.drawCalls; triangles += transparentStats.triangles;
     }
     const finalEffects = directClear ? { color: temporalInput, passCount: 0 }
-      : this.postProcess.encodeFinal(postProcessInput, temporalInput);
+      : this.postProcess.encodeFinal({ ...postProcessInput,
+        reactiveMaskAvailable: this.transparency.currentReactiveMask !== undefined,
+        ...(this.transparency.currentReactiveMask ? { reactiveMask: this.transparency.currentReactiveMask } : {}) }, temporalInput);
     if (!directClear) {
       present = this.outputs.present(encoder, finalEffects.color, view.authorColorEffects, this.performanceTelemetry.enabled,
         view.editorOverlay?.vertices.length ? undefined : timing?.queries, this.frameCapture !== undefined,
@@ -550,7 +553,7 @@ export class PbrRenderer {
     const metrics: FrameMetrics = { frame: ++this.frame, cpuSubmitMs: performance.now() - begin, drawCalls, triangles, ...lodWork.snapshot(),
       width: size.width, height: size.height, resources: this.session.resourceCount, shadowUpdated, transientTextures: this.targets.transientStats,
       deviceResourceMemory: this.session.resourceMemory,
-      cameraCut: history.cameraCut, postProcessPasses: opaqueEffects.passCount + finalEffects.passCount + (hasTransparent ? 2 : 0) + (!directClear && this.features.spatialAa ? 1 : 0),
+      cameraCut: history.cameraCut, postProcessPasses: opaqueEffects.passCount + finalEffects.passCount + (hasTransparent ? 2 + Number(this.transparency.currentReactiveMask !== undefined) : 0) + (!directClear && this.features.spatialAa ? 1 : 0),
       weightedOit: hasTransparent,
       hiZMipLevels: opaqueEffects.hiZ?.mipLevelCount ?? 0,
       occlusionCulling: opaqueCulling.occlusionBatches > 0,
@@ -573,6 +576,7 @@ export class PbrRenderer {
     } catch (error) {
       if (captureOpen) this.frameCapture?.cancel();
       this.postProcess.cancelFrame(history.revision);
+      this.transparency.cancelFrame();
       this.targets.failFrame();
       this.packets.cancelDeformationFrame();
       if (submitAttempted) this.packets.failLodFrame(); else this.packets.cancelLodFrame();
