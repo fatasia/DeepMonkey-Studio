@@ -622,6 +622,50 @@
 .data-resource-card.connector-required { border-color:#5a4828; }
 .interaction-advanced small { display: block; margin-top: 3px; color: #66777e; font-size: 7px; line-height: 1.4; }
 
+/* G2-S1 只读行为图页签:图只是行为 JSON 的第二个视图,画布零写回。 */
+.interaction-graph-section { display: grid; gap: 5px; margin-top: 5px; }
+.interaction-graph-tabs { display: flex; gap: 4px; }
+.interaction-graph-tabs button { display: inline-flex; align-items: center; min-height: 24px; padding: 0 9px; color: #829097; border: 1px solid #344148; border-radius: 4px; background: #12191d; font-size: 8px; cursor: pointer; }
+.interaction-graph-tabs button:hover { color: #c5d0d5; border-color: #46555d; }
+.interaction-graph-tabs button.active { color: var(--accent); border-color: rgba(214,170,77,.5); background: rgba(214,170,77,.07); }
+.behavior-graph-view { display: flex; flex-direction: column; position: relative; height: 280px; overflow: hidden; border: 1px solid #2b3741; border-radius: 6px; background: #0d1316; }
+.behavior-graph-status { display: flex; flex-wrap: wrap; gap: 3px 10px; align-items: center; padding: 5px 8px; border-bottom: 1px solid #223036; font-size: 8px; line-height: 1.4; }
+.behavior-graph-status-item.is-valid { color: #62d493; }
+.behavior-graph-status-item.is-error { color: var(--danger); }
+.behavior-graph-status-item.is-budget { color: #66777e; }
+.behavior-graph-issue-list { max-height: 88px; margin: 0; padding: 4px 8px; overflow: auto; border-bottom: 1px solid #223036; list-style: none; }
+.behavior-graph-issue-list li { display: flex; gap: 6px; align-items: baseline; margin: 2px 0; color: #c9a1a4; font-size: 8px; line-height: 1.4; }
+.behavior-graph-issue-list li code { flex: 0 0 auto; padding: 1px 4px; color: var(--danger); border: 1px solid rgba(226,116,120,.35); border-radius: 3px; background: rgba(226,116,120,.08); font-size: 7px; }
+.behavior-graph-issue-list li.is-more { color: #66777e; }
+.behavior-graph-canvas { flex: 1; min-height: 0; position: relative; }
+.behavior-graph-canvas .react-flow { background: transparent; }
+.behavior-graph-card { display: grid; gap: 2px; align-content: start; width: 100%; height: 100%; padding: 6px 8px; border: 1px solid #3a4a52; border-radius: 6px; background: #151e22; cursor: default; }
+.behavior-graph-card header { display: flex; align-items: center; gap: 5px; color: #d8dee1; font-size: 8px; }
+.behavior-graph-card header i { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; }
+.behavior-graph-card header span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.behavior-graph-card header strong { flex: 0 0 auto; min-width: 13px; height: 13px; display: grid; place-items: center; margin-left: auto; color: #fff; border-radius: 7px; background: var(--danger); font-size: 7px; }
+.behavior-graph-card p { margin: 0; overflow: hidden; color: #8fa0a8; font: 8px/1.35 Consolas,"SFMono-Regular",monospace; text-overflow: ellipsis; white-space: nowrap; }
+.behavior-graph-card .react-flow__handle { opacity: 0; pointer-events: none; }
+.behavior-graph-card.is-event { border-color: rgba(214,170,77,.55); background: rgba(214,170,77,.08); }
+.behavior-graph-card.is-event header i { background: var(--accent); }
+.behavior-graph-card.is-condition { border-color: rgba(111,167,199,.5); background: rgba(111,167,199,.07); }
+.behavior-graph-card.is-condition header i { background: #6fa7c7; }
+.behavior-graph-card.is-action { border-color: rgba(98,212,147,.45); background: rgba(98,212,147,.06); }
+.behavior-graph-card.is-action header i { background: #62d493; }
+.behavior-graph-card.is-invalid { border-color: rgba(226,116,120,.55); background: rgba(226,116,120,.08); }
+.behavior-graph-card.is-invalid header i { background: var(--danger); }
+.behavior-graph-card.has-issues { border-color: var(--danger); box-shadow: 0 0 0 1px rgba(226,116,120,.35); }
+.behavior-graph-card.is-flagged { border-color: var(--warning); box-shadow: 0 0 0 1px rgba(216,172,82,.4); }
+.behavior-graph-view .react-flow__edge-path { stroke: #5b6b74; }
+.behavior-graph-view .react-flow__edge.is-reentry .react-flow__edge-path { stroke: var(--warning); stroke-dasharray: 6 4; }
+.behavior-graph-view .react-flow__edge.is-issue .react-flow__edge-path { stroke: var(--danger); }
+.behavior-graph-view .react-flow__edge-text { fill: #8fa0a8; font-size: 8px; }
+.behavior-graph-view .react-flow__edge-textbg { fill: #10171a; }
+.behavior-graph-view .react-flow__attribution { background: transparent; color: #4a565d; font-size: 7px; }
+.behavior-graph-view .react-flow__controls button { color: #9aa6ac; border-bottom: 1px solid #2b3741; background: #17212a; }
+.behavior-graph-view .react-flow__controls button:hover { color: #e6edef; background: #21303a; }
+.behavior-graph-minimap { border: 1px solid #2b3741; border-radius: 5px; background: #10171a; }
+
 /* The optimizer is a full workbench, so its controls must remain readable and keyboard-safe. */
 .optimizer-header-actions button,
 .optimizer-file span,

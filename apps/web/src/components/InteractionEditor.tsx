@@ -1,6 +1,6 @@
 import { Plus, Play, RotateCcw, Trash2 } from "lucide-react";
 import type { SceneInteractionActionState, SceneInteractionActionType, SceneInteractionScriptState, SceneInteractionTarget, SceneInteractionTrigger, SceneVisualTransitionState } from "@bim-studio/contracts";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { translate as tr, type AppLocale } from "../i18n";
 import {
   createInteractionAction,
@@ -13,7 +13,9 @@ import {
   triggerLabel,
   WIDGET_INTERACTION_ACTIONS,
 } from "../interactionState";
+import { isRestrictedInteractionScript } from "../scripting/restrictedInteractionDocument";
 import { ProfessionalCodeEditor } from "./ProfessionalCodeEditor";
+import { BehaviorGraphView } from "./BehaviorGraphView";
 import type { SceneScriptIntelligenceContext } from "../studio/sceneScriptContext";
 
 export interface InteractionTargetOption {
@@ -175,8 +177,33 @@ export function InteractionEditor({
               ))}
             </section>
             <details className="interaction-advanced">
-              <summary>{tr(locale, "高级 JavaScript", "Advanced JavaScript")}</summary>
-              {disabled ? <pre tabIndex={0} aria-label={tr(locale, "只读事件脚本", "Read-only event script")} style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{selected.code}</pre> : <ProfessionalCodeEditor
+              <summary>
+                {isRestrictedInteractionScript(selected)
+                  ? tr(locale, "受限行为图 · 只读视图 / 源码 JSON", "Restricted behavior graph · read-only view / JSON source")
+                  : tr(locale, "高级 JavaScript", "Advanced JavaScript")}
+              </summary>
+              {isRestrictedInteractionScript(selected) ? (
+                <RestrictedGraphSection
+                  key={selected.id}
+                  locale={locale}
+                  code={selected.code}
+                  codeView={disabled ? (
+                    <pre tabIndex={0} aria-label={tr(locale, "只读事件脚本", "Read-only event script")} style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{selected.code}</pre>
+                  ) : (
+                    <ProfessionalCodeEditor
+                      compact
+                      locale={locale}
+                      path={`bim-studio://interaction/${selected.id}.json`}
+                      height={220}
+                      value={selected.code}
+                      {...(intelligence ? { intelligence } : {})}
+                      onChange={(code) => updateSelected({ code })}
+                      onRun={() => onTest(selected)}
+                      {...(onOpenDocs ? { onOpenDocs } : {})}
+                    />
+                  )}
+                />
+              ) : disabled ? <pre tabIndex={0} aria-label={tr(locale, "只读事件脚本", "Read-only event script")} style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{selected.code}</pre> : <ProfessionalCodeEditor
                 compact
                 locale={locale}
                 path={`bim-studio://interaction/${selected.id}.js`}
@@ -188,11 +215,17 @@ export function InteractionEditor({
                 {...(onOpenDocs ? { onOpenDocs } : {})}
               />}
               <small>
-                {tr(
-                  locale,
-                  "对象、组件、数据键和场景引用均来自当前项目；Ctrl+Space 查看提示，悬停查看类型与关联文档，Ctrl+Enter 测试事件。",
-                  "Object, component, data and scene references come from this project; use Ctrl+Space for suggestions, hover for types and linked docs, and Ctrl+Enter to test.",
-                )}
+                {isRestrictedInteractionScript(selected)
+                  ? tr(
+                      locale,
+                      "受限行为图以 JSON 为唯一真值;图视图仅用于审阅与错误定位,任何图上交互都不会改写数据,编辑仍走源码 JSON 通道。",
+                      "The restricted graph keeps JSON as the single source of truth; the graph view is for review and issue locating only — canvas interactions never write data, editing stays on the JSON source channel.",
+                    )
+                  : tr(
+                      locale,
+                      "对象、组件、数据键和场景引用均来自当前项目；Ctrl+Space 查看提示，悬停查看类型与关联文档，Ctrl+Enter 测试事件。",
+                      "Object, component, data and scene references come from this project; use Ctrl+Space for suggestions, hover for types and linked docs, and Ctrl+Enter to test.",
+                    )}
               </small>
             </details>
             <footer>
@@ -217,6 +250,32 @@ export function InteractionEditor({
         )}
       </div>
     </details>
+  );
+}
+
+/**
+ * G2-S1「只读行为图」页签(仅 restricted-graph 脚本进入)。
+ * 图页签渲染 BehaviorGraphView(结构上无写回通道);源码页签原样复用既有编辑器,
+ * 编辑通道不变——JSON 是唯一真值,图只是它的第二个视图。
+ */
+function RestrictedGraphSection({ locale, code, codeView }: {
+  locale: AppLocale;
+  code: string;
+  codeView: ReactElement;
+}) {
+  const [tab, setTab] = useState<"graph" | "code">("graph");
+  return (
+    <div className="interaction-graph-section">
+      <div className="interaction-graph-tabs" role="tablist" aria-label={tr(locale, "行为图视图", "Behavior graph views")}>
+        <button type="button" role="tab" aria-selected={tab === "graph"} className={tab === "graph" ? "active" : ""} onClick={() => setTab("graph")}>
+          {tr(locale, "只读行为图", "Read-only graph")}
+        </button>
+        <button type="button" role="tab" aria-selected={tab === "code"} className={tab === "code" ? "active" : ""} onClick={() => setTab("code")}>
+          {tr(locale, "源码 JSON", "JSON source")}
+        </button>
+      </div>
+      {tab === "graph" ? <BehaviorGraphView code={code} locale={locale} /> : codeView}
+    </div>
   );
 }
 
