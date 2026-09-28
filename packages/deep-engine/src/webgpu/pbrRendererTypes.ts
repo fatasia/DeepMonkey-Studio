@@ -38,6 +38,8 @@ export interface PbrRendererOptions {
   readonly deviceMemoryBudgetBytes?: number;
   /** 帧内目标的估算字节上限；不包含 history、阴影或流式几何。默认 512 MiB。 */
   readonly transientTextureBudgetBytes?: number;
+  /** T07 动态内部分辨率策略；提供即启用帧时反馈的内部缩放（1 = 关闭等效上限）。 */
+  readonly resolutionScalePolicy?: import("../postprocess/resolutionScaler.js").ResolutionScalePolicy;
   readonly meshlets?: boolean;
   /** Explicitly allocates GPU pose-stream pipelines; author support is negotiated separately. */
   readonly deformation?: boolean;
@@ -82,5 +84,6 @@ export interface FrameMetrics {
   readonly authorFrustumPasses?: number;
   readonly authorFrustumDispatches?: number;
   readonly adaptiveQuality?: AdaptiveQualityState;
+  readonly resolutionScale?: (import("../postprocess/resolutionScaler.js").InternalResolutionReport & { revision: number }) | undefined;
   readonly adaptiveHotspots?: readonly AdaptiveQualityHotspotSummary[];
 }

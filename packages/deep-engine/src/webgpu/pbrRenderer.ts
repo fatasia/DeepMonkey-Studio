@@ -38,6 +38,9 @@ import { pbrDirectDisplayClear } from "./pbrDirectDisplay.js";
 import { createPbrGround, drawPbrGround, type PbrGroundResources } from "./pbrGroundPass.js";
 import { PbrTransientTexturePool } from "./pbrTransientTexturePool.js";
 import type { PbrTransientTextureHandle } from "./pbrTransientTextureTypes.js";
+import type { SurfaceSize } from "./surfaceSize.js";
+import { DynamicResolutionScaler, internalResolutionReport,
+  DEFAULT_RESOLUTION_SCALE_POLICY, type ResolutionScalePolicy } from "../postprocess/resolutionScaler.js";
 import { buildPbrFrameExecutionPlan, collectActualPbrFramePasses, assertPlanMatchesActual,
   createPbrFrameReceipt } from "./pbrFramePlanExecutor.js";
 import { PbrFrameCapture } from "./pbrFrameCapture.js";
@@ -109,6 +112,9 @@ export class PbrRenderer {
   private capturePlan: ReturnType<typeof buildPbrFrameExecutionPlan> | undefined;
   private captureActualPasses: ReturnType<typeof collectActualPbrFramePasses> | undefined;
   private readonly writeGeometryBuffers: boolean;
+  private readonly resolutionScaler: DynamicResolutionScaler | undefined;
+  private resolutionScale = 1;
+  private resolutionScaleRevision = 0;
   private shadowDirty = true; private historyDirty = true;
   private previousAmbientOcclusion: boolean | undefined;
   private previousTemporalLights: RenderView["lights"];
@@ -150,6 +156,8 @@ export class PbrRenderer {
     this.mainBindings = new PbrMainBindings(session, pipelines, this.frameBuffer, this.shadows, environment);
     this.transientTextures = new PbrTransientTexturePool(session, options.transientTextureBudgetBytes); this.targets = new RenderTargets(session, pipelines.output.getBindGroupLayout(0), this.outputs.buffer, this.transientTextures);
     this.features = features;
+    this.resolutionScaler = options.resolutionScalePolicy === undefined ? undefined
+      : new DynamicResolutionScaler(options.resolutionScalePolicy);
     // P0-2 可见性切片（opt-in）：共享 frame uniform 与 transient 池；默认 features.visibilityBuffer=false 时不构建。
     this.visibility = features.visibilityBuffer ? new VisibilityBufferPath(session, this.transientTextures, this.frameBuffer,
       features.softRasterizeFallback ? new SoftRasterizeFallback(session) : undefined) : undefined;
@@ -322,7 +330,19 @@ export class PbrRenderer {
     } catch (error) {
       this.sceneChanged(); throw error;
     }
-    const size = this.session.resize(view.width, view.height, view.pixelRatio);
+    if (this.resolutionScaler && this.frame > 0) {
+      // 前一帧的 CPU 编码时间驱动缩放决策；无样本（首帧/诊断关闭）保持 1 不猜测。
+      const previousCpu = this.diagnostics.performance.snapshot().stages["frame-encode"];
+      const frameMs = previousCpu?.p50Ms;
+      if (frameMs !== undefined) {
+        const decision = this.resolutionScaler.observe(frameMs);
+        if (decision.scale !== this.resolutionScale) {
+          this.resolutionScale = decision.scale;
+          this.resolutionScaleRevision += 1;
+        }
+      }
+    }
+    const size = this.session.resize(view.width, view.height, view.pixelRatio * this.resolutionScale);
     if (!size) return undefined;
     const authorShadowSize = sceneLighting.primary.shadow?.mapSize;
     if (authorShadowSize !== this.lastAuthorShadowSize) {
@@ -578,6 +598,7 @@ export class PbrRenderer {
           Math.max(performance.now(), begin + 0.001),
           this.executedCapturePassIds(directClear !== undefined, postProcess, hasTransparent)),
       } : {}),
+      ...(this.resolutionScale === 1 ? {} : { resolutionScale: this.resolutionScaleMetrics(size) }),
       ...this.shadows.metrics };
     this.sampleAdaptiveQuality(metrics);
     if (!this.adaptiveQuality) return metrics;
@@ -597,6 +618,13 @@ export class PbrRenderer {
       throw error;
     }
   }
+  private resolutionScaleMetrics(surface: { readonly width: number; readonly height: number }): FrameMetrics["resolutionScale"] | undefined {
+    if (this.resolutionScaler === undefined || this.resolutionScale === 1) return undefined;
+    // 质量槽位保持 measured=false：真实画质数字须来自 GPU 序列联测，不许发明。
+    return { revision: this.resolutionScaleRevision,
+      ...internalResolutionReport(this.resolutionScale, surface.width, surface.height) };
+  }
+
   private sampleAdaptiveQuality(metrics: FrameMetrics): void {
     if (!this.adaptiveQuality) return;
     const snapshot = this.performanceTelemetry.snapshot();
