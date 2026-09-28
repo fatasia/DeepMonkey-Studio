@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import path from "node:path";
-import type { ConversionQualityCheck, ConversionQualityDraft, ConversionQualityDimension } from "@bim-studio/contracts";
+import type {
+  ConversionQualityCheck, ConversionQualityDraft, ConversionQualityDimension, PhysicsReadinessDeclaration,
+} from "@bim-studio/contracts";
 
 export type { ConversionQualityDraft };
 
@@ -10,6 +12,18 @@ export async function sha256File(filePath: string): Promise<string> {
   const digest = createHash("sha256");
   for await (const chunk of createReadStream(filePath)) digest.update(chunk);
   return digest.digest("hex");
+}
+
+/**
+ * D1：physics-ready 判定叠加进转换质量草稿的最小侵入点。
+ * declaration 为空（无 collider 证据）时原样返回，质量报告不虚构物理能力；
+ * 合法性由合同 assertConversionQualityReport 统一把关（inspect/preview 不得冒充 physics-ready）。
+ */
+export function withPhysicsReadiness(
+  draft: ConversionQualityDraft,
+  declaration: PhysicsReadinessDeclaration | null | undefined,
+): ConversionQualityDraft {
+  return declaration ? { ...draft, physicsReadiness: declaration } : draft;
 }
 
 export type QualityEvidenceFiles = Partial<Record<ConversionQualityDimension, string>>;

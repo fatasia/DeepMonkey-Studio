@@ -27,10 +27,36 @@ export interface ConversionQualityReport {
   losses: string[];
   approximations: string[];
   metrics?: ConversionQualityMetrics;
+  physicsReadiness?: PhysicsReadinessDeclaration;
+}
+
+/** 与 T17 collider 生成策略字典对齐；mixed 表示多种策略并存于同一证据文件。 */
+export type PhysicsColliderStrategy = "convex-hull" | "simplified-mesh" | "mixed";
+
+/** collider 派生物证据：指向包文件 id 或 sidecar（如 physics:colliders / colliders.json），不得虚构。 */
+export interface PhysicsColliderEvidence {
+  evidenceId: string;
+  strategy: PhysicsColliderStrategy;
+  evidenceSha256: string;
+  /** true 时 collider 只能按近似体消费（T17 approximate 语义），声明 physics-ready 必须附原因。 */
+  approximate?: boolean;
+}
+
+/** D1 physics-ready 资产档：两档声明；inspect/preview 质量档永远不得声明 physics-ready。 */
+export type PhysicsReadinessTier = "physics-ready" | "geometry-only";
+
+export interface PhysicsReadinessDeclaration {
+  tier: PhysicsReadinessTier;
+  /** tier=physics-ready 时必填：physics-ready 必须有可追溯 collider 证据。 */
+  colliderEvidence?: PhysicsColliderEvidence;
+  /** geometry-only 必填原因；physics-ready 且证据 approximate 时必填说明。 */
+  reason?: string;
 }
 
 /** visual-complete 允许显式声明的保真损失，但每条必须可机读，禁止叙述性文字。 */
 const LOSS_TAG = /^[a-z0-9][a-z0-9._:-]*$/;
+/** collider 证据 id（如 physics:colliders），与包文件 id / sidecar 名对齐的稳定标识。 */
+const PHYSICS_EVIDENCE_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/;
 const SAFE_COUNT = (value: number | undefined) => value === undefined || (Number.isSafeInteger(value) && value >= 0);
 
 /** 质量声明只能覆盖明确 profile；inspect/preview 永远不是发布凭证。 */
@@ -66,6 +92,28 @@ export function assertConversionQualityReport(value: unknown): asserts value is 
     if (metrics.entityCounts !== undefined) {
       const entries = Object.entries(metrics.entityCounts);
       if (entries.some(([key, count]) => !key.trim() || !Number.isSafeInteger(count) || count < 0)) throw new Error("转换质量实体计数无效");
+    }
+  }
+  const physics = report.physicsReadiness;
+  if (physics !== undefined) {
+    if (!physics || typeof physics !== "object") throw new Error("physicsReadiness 必须是对象");
+    if (!["physics-ready", "geometry-only"].includes(physics.tier)) throw new Error("physicsReadiness 档位无效");
+    const evidence = physics.colliderEvidence;
+    if (physics.tier === "physics-ready") {
+      // physics-ready 必须携带可追溯 collider 证据；inspect/preview 永远不能冒充。
+      if (["inspect", "preview"].includes(report.tier)) throw new Error("inspect/preview 质量档不得声明 physics-ready");
+      if (!evidence || typeof evidence !== "object") throw new Error("physics-ready 必须携带 collider 证据");
+      if (!PHYSICS_EVIDENCE_ID.test(evidence.evidenceId)) throw new Error("collider 证据 id 无效");
+      if (!["convex-hull", "simplified-mesh", "mixed"].includes(evidence.strategy)) throw new Error("collider 策略无效");
+      if (!/^[a-f0-9]{64}$/.test(evidence.evidenceSha256)) throw new Error("collider 证据哈希无效");
+      if (evidence.approximate === true && !(typeof physics.reason === "string" && physics.reason.trim())) throw new Error("近似 collider 的 physics-ready 必须说明原因");
+    } else {
+      if (!(typeof physics.reason === "string" && physics.reason.trim())) throw new Error("geometry-only 必须说明原因");
+      if (evidence !== undefined) {
+        if (!evidence || typeof evidence !== "object" || !PHYSICS_EVIDENCE_ID.test(evidence.evidenceId)
+          || !["convex-hull", "simplified-mesh", "mixed"].includes(evidence.strategy)
+          || !/^[a-f0-9]{64}$/.test(evidence.evidenceSha256)) throw new Error("geometry-only 携带的 collider 证据无效");
+      }
     }
   }
 }

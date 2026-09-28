@@ -20,7 +20,7 @@ import { buildJtLod0ReadyQuality, buildXtRevolvedReadyQuality, sha256File } from
 import { RobotSourceProvider } from "./RobotSourceProvider.js";
 import { ConversionTaskService } from "./conversionTasks.js";
 import { createModelConversionRegistration, submitModelConversion } from "./modelConversionAdapter.js";
-import { buildCadCompatibilityProfile, publishModelDeepAssetPackage } from "./deepAssetPackagePipeline.js";
+import { buildCadCompatibilityProfile, detectColliderDerivativeEvidence, publishModelDeepAssetPackage } from "./deepAssetPackagePipeline.js";
 import { createFileSystemDeepAssetPackageStore, type FileSystemDeepAssetPackageStore } from "./deepAssetPackageStore.js";
 
 export interface ConversionContext {
@@ -150,13 +150,15 @@ class PreciseCadProvider implements ConversionProvider {
     const lods = await createLodResources(geometryPath, model);
     // Deep Asset Package 生产与修订号 CAS 发布；发布被拒时结果为 undefined，几何照常交付。
     const sidecars = await availableOutputSidecars(outputDir);
+    // D1：colliders facet 按证据分级——存在可消费派生物才标 partial，缺失保持 unverified。
+    const colliderEvidence = await detectColliderDerivativeEvidence(outputDir);
     const published = await publishModelDeepAssetPackage({
       store: this.deepAssets,
       model,
       sourcePath,
       modelDir,
       importer: { id: `opencascade-${this.format}`, version: "1" },
-      compatibility: buildCadCompatibilityProfile(this.format, `opencascade-${this.format}`, "1", sidecars),
+      compatibility: buildCadCompatibilityProfile(this.format, `opencascade-${this.format}`, "1", { ...sidecars, colliderEvidence }),
     });
     const geometryUrl = assetUrl(model.projectId, model.id, "output/geometry.glb");
     const manifest = {

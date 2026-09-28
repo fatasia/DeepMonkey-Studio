@@ -48,6 +48,46 @@ describe("conversion quality publication contract", () => {
     expect(() => assertConversionQualityReport(value)).not.toThrow();
     delete value.checks[0]!.reason; expect(() => assertConversionQualityReport(value)).toThrow("原因");
   });
+  it("accepts physics-ready only with traceable collider evidence on a publishing tier", () => {
+    const value = report();
+    value.physicsReadiness = { tier: "physics-ready", colliderEvidence: { evidenceId: "physics:colliders", strategy: "convex-hull", evidenceSha256: hash } };
+    expect(() => assertConversionQualityReport(value)).not.toThrow();
+    // 缺证据：physics-ready 不凭空声明。
+    const noEvidence = report(); noEvidence.physicsReadiness = { tier: "physics-ready" };
+    expect(() => assertConversionQualityReport(noEvidence)).toThrow("collider 证据");
+    // inspect/preview 永远不得冒充 physics-ready（D1 硬门）。
+    const inspect = report(); inspect.tier = "inspect"; inspect.losses = ["geometry.missing"];
+    inspect.checks = [{ dimension: "geometry", passed: false, reason: "unsupported-profile" }];
+    inspect.physicsReadiness = { tier: "physics-ready", colliderEvidence: { evidenceId: "physics:colliders", strategy: "convex-hull", evidenceSha256: hash } };
+    expect(() => assertConversionQualityReport(inspect)).toThrow("inspect/preview");
+  });
+  it("rejects invalid collider evidence ids, strategies and hashes", () => {
+    const value = report();
+    const bad = (mutate: (evidence: { evidenceId: string; strategy: "convex-hull"; evidenceSha256: string }) => void) => {
+      const evidence = { evidenceId: "physics:colliders", strategy: "convex-hull" as const, evidenceSha256: hash };
+      mutate(evidence);
+      const candidate = report();
+      candidate.physicsReadiness = { tier: "physics-ready", colliderEvidence: evidence };
+      return candidate;
+    };
+    expect(() => assertConversionQualityReport(bad(e => { e.evidenceId = ""; }))).toThrow("证据 id");
+    expect(() => assertConversionQualityReport(bad(e => { (e.strategy as string) = "guess"; }))).toThrow("策略");
+    expect(() => assertConversionQualityReport(bad(e => { e.evidenceSha256 = "zz"; }))).toThrow("哈希");
+  });
+  it("requires reasons on geometry-only declarations and on approximate physics-ready", () => {
+    const value = report();
+    value.physicsReadiness = { tier: "geometry-only" };
+    expect(() => assertConversionQualityReport(value)).toThrow("原因");
+    const withReason = report();
+    withReason.physicsReadiness = { tier: "geometry-only", reason: "no collider derivatives produced" };
+    expect(() => assertConversionQualityReport(withReason)).not.toThrow();
+    const approximate = report();
+    approximate.physicsReadiness = { tier: "physics-ready", colliderEvidence: { evidenceId: "physics:colliders", strategy: "convex-hull", evidenceSha256: hash, approximate: true } };
+    expect(() => assertConversionQualityReport(approximate)).toThrow("说明原因");
+    const approximateExplained = report();
+    approximateExplained.physicsReadiness = { tier: "physics-ready", reason: "topology-error", colliderEvidence: { evidenceId: "physics:colliders", strategy: "convex-hull", evidenceSha256: hash, approximate: true } };
+    expect(() => assertConversionQualityReport(approximateExplained)).not.toThrow();
+  });
   it.each(["", "\\\\server\\file.jt", "a\\..\\file.jt", "a//file.jt", "a/./file.jt", "file.jt:stream", "a\u0000.jt"])("rejects unsafe SourceBundle path %s", bundledPath => {
     expect(() => assertSourceBundleRecord({ schemaVersion: 1, sourceName: "file.jt", sourceFormat: "jt", contentHash: hash,
       bundledPath, licenseReference: "local-only" })).toThrow("相对路径");
