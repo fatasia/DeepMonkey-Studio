@@ -45,3 +45,6 @@ export { boxesFromProxyMesh, distancePointToBox, measureHlodProxyError } from ".
 export type { HlodProxyBatch, HlodProxyBatchEntry, HlodProxyBatchOptions, HlodProxyBatchTotals } from "./hlodProxyBatch.js";
 export { generateHlodClusterProxies, generateHlodProxiesForFrame } from "./hlodProxyBatch.js";
 export { decodeHlodProxyGeometries, encodeHlodProxyGeometries } from "./hlodProxyBinary.js";
+
+export * from "./hlodPackageTypes.js";
+export { parseHlodPackageManifest, serializeHlodPackageManifest, validateHlodPackageManifest, hlodTreeFromManifest } from "./hlodPackageManifest.js";
