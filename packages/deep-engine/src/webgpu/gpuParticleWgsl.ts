@@ -74,6 +74,7 @@ struct VertexOutput {
   @builtin(position) position: vec4f,
   @location(0) uv: vec2f,
   @location(1) color: vec4f,
+  @location(2) @interpolate(flat) hasReactive: u32,
 }
 @group(0) @binding(0) var<storage, read> particles: array<Particle>;
 @group(1) @binding(0) var<uniform> camera: ParticleCamera;
@@ -96,12 +97,21 @@ const QUAD = array<vec2f, 6>(vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.
   var output: VertexOutput;
   output.position = camera.viewProjection * vec4f(particle.positionAge.xyz + offset, 1.0);
   output.uv = corner * 0.5 + 0.5;
-  output.color = vec4f(particle.color.rgb, particle.color.a * pulse); return output;
+  output.color = vec4f(particle.color.rgb, particle.color.a * pulse);
+  output.hasReactive = u32(particle.color.a > 0.0); return output;
 }
 
-@fragment fn particleFragment(input: VertexOutput) -> @location(0) vec4f {
+struct ParticleFragmentOutput {
+  @location(0) color: vec4f,
+  @location(1) reactive: f32,
+}
+
+@fragment fn particleFragment(input: VertexOutput) -> ParticleFragmentOutput {
   let radial = length(input.uv * 2.0 - 1.0);
   let alpha = input.color.a * (1.0 - smoothstep(0.7, 1.0, radial));
-  return vec4f(input.color.rgb * alpha, alpha);
+  var output: ParticleFragmentOutput;
+  output.color = vec4f(input.color.rgb * alpha, alpha);
+  output.reactive = alpha * f32(input.hasReactive);
+  return output;
 }
 `;

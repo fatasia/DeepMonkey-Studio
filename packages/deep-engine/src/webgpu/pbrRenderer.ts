@@ -37,6 +37,7 @@ import { LocalSpotShadowRuntime } from "./localSpotShadowRuntime.js";
 import { pbrDirectDisplayClear } from "./pbrDirectDisplay.js";
 import { createPbrGround, drawPbrGround, type PbrGroundResources } from "./pbrGroundPass.js";
 import { PbrTransientTexturePool } from "./pbrTransientTexturePool.js";
+import type { PbrTransientTextureHandle } from "./pbrTransientTextureTypes.js";
 import { buildPbrFrameExecutionPlan, collectActualPbrFramePasses, assertPlanMatchesActual,
   createPbrFrameReceipt } from "./pbrFramePlanExecutor.js";
 import { PbrFrameCapture } from "./pbrFrameCapture.js";
@@ -354,6 +355,7 @@ export class PbrRenderer {
     this.pendingHiZ = hiZPlan;
     const device = this.session.device;
     let submitAttempted = false;
+    let particleReactive: PbrTransientTextureHandle | undefined;
     let captureOpen = false;
     try {
       const frameNumber = this.frame + 1;
@@ -456,13 +458,19 @@ export class PbrRenderer {
     // fully GPU-driven (drawIndirect never reads instance count back to JS).
     const particleBinding = this.particleRuntime?.current?.binding;
     if (this.particlePass && particleBinding) {
+      // TAA 开启时才分配响应掩码目标；粒子 alpha 覆盖写入第二目标供时域降反馈。
+      particleReactive = this.features.temporalAa
+        ? this.transientTextures.acquire({ resourceId: "particle-reactive", format: "r8unorm",
+          width: size.width, height: size.height, sampleCount: 1,
+          usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING })
+        : undefined;
       this.particlePass.encode({ encoder, colorView: this.targets.hdr, depthView: this.targets.depth,
         width: size.width, height: size.height,
         camera: { viewProjection: [...frameState.depthViewProjection],
           cameraRight: [frameState.worldToView[0]!, frameState.worldToView[4]!, frameState.worldToView[8]!],
           cameraUp: [frameState.worldToView[1]!, frameState.worldToView[5]!, frameState.worldToView[9]!] },
-        binding: particleBinding });
-      drawCalls++; triangles += 2;
+        binding: particleBinding, ...(particleReactive ? { reactiveView: particleReactive.view } : {}) });
+      if (particleReactive) { drawCalls++; }
     }
     const gridTriangles = this.ground.author.encode(encoder, this.targets.hdr, this.targets.depth, frameState.depthViewProjection, frameState.worldToView, view.authorGrid);
     if (gridTriangles) { drawCalls++; triangles += gridTriangles; }
@@ -503,8 +511,9 @@ export class PbrRenderer {
     }
     const finalEffects = directClear ? { color: temporalInput, passCount: 0 }
       : this.postProcess.encodeFinal({ ...postProcessInput,
-        reactiveMaskAvailable: this.transparency.currentReactiveMask !== undefined,
-        ...(this.transparency.currentReactiveMask ? { reactiveMask: this.transparency.currentReactiveMask } : {}) }, temporalInput);
+        reactiveMaskAvailable: this.transparency.currentReactiveMask !== undefined || particleReactive !== undefined,
+        ...(this.transparency.currentReactiveMask ? { reactiveMask: this.transparency.currentReactiveMask }
+          : particleReactive ? { reactiveMask: particleReactive.texture } : {}) }, temporalInput);
     if (!directClear) {
       present = this.outputs.present(encoder, finalEffects.color, view.authorColorEffects, this.performanceTelemetry.enabled,
         view.editorOverlay?.vertices.length ? undefined : timing?.queries, this.frameCapture !== undefined,
@@ -532,6 +541,8 @@ export class PbrRenderer {
       this.frameCapture.mark("submit", "queue.submit");
     }
     submitAttempted = true; device.queue.submit([...(preparation?.commandBuffers ?? []), commands]); this.targets.commitFrame();
+    // TAA 已在 submit 前读取响应掩码；队列有序保证提交后释放可安全回池复用。
+    if (particleReactive) this.transientTextures.release(particleReactive);
     if (this.frameCapture && captureOpen) this.lastFrameReadback = this.frameCapture.collectReadbacksAfterSubmit();
     this.postProcess.commitFrame(history.revision);
     const submitted = this.performanceTelemetry.enabled ? performance.now() : 0;
@@ -580,6 +591,7 @@ export class PbrRenderer {
       this.targets.failFrame();
       this.packets.cancelDeformationFrame();
       if (submitAttempted) this.packets.failLodFrame(); else this.packets.cancelLodFrame();
+      if (particleReactive) this.transientTextures.release(particleReactive);
       this.lighting.invalidateAssignment(); this.localShadows.failFrame(); this.cameraHistory.cancelPendingFrame();
       if (hiZPlan) this.previousHiZ.failFrame(hiZPlan); this.pendingHiZ = undefined;
       throw error;

@@ -42,6 +42,8 @@ export interface ParticlePassDrawInput {
   readonly height: number;
   readonly camera: ParticlePassCamera;
   readonly binding: GpuParticleRenderBinding;
+  /** Optional r8unorm TAA reactive target; written with premultiplied-free alpha coverage. */
+  readonly reactiveView?: GPUTextureView;
 }
 
 /** 持有粒子渲染管线；模拟运行时独占粒子缓冲。 */
@@ -53,7 +55,7 @@ export class PbrParticlePass {
   private disposed = false;
 
   constructor(private readonly session: DeviceSession, colorFormat: GPUTextureFormat,
-    depthFormat: GPUTextureFormat) {
+    depthFormat: GPUTextureFormat, reactiveFormat?: GPUTextureFormat) {
     if (session.state !== "ready") throw new Error("GPU session is not ready for the particle pass.");
     const device = session.device;
     const module = device.createShaderModule({ label: "Deep particle render shader",
@@ -64,16 +66,23 @@ export class PbrParticlePass {
     const cameraLayout = device.createBindGroupLayout({ label: "Deep particle camera layout", entries: [
       { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } },
     ] });
+    const targets: Array<GPUColorTargetState> = [{
+      format: colorFormat,
+      // 预乘 alpha，与着色器输出的 rgb*alpha 保持一致。
+      blend: { color: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
+        alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" } },
+    }];
+    if (reactiveFormat !== undefined) {
+      // 响应掩码取粒子 alpha 覆盖率：max 混合让多重粒子不超 1，供 TAA 降反馈。
+      targets.push({ format: reactiveFormat,
+        blend: { color: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
+          alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" } } });
+    }
     this.pipeline = device.createRenderPipeline({ label: "Deep particle render pipeline",
       layout: device.createPipelineLayout({ label: "Deep particle pipeline layout",
         bindGroupLayouts: [this.frameLayout, cameraLayout] }),
       vertex: { module, entryPoint: "particleVertex" },
-      fragment: { module, entryPoint: "particleFragment", targets: [{
-        format: colorFormat,
-        // 预乘 alpha，与着色器输出的 rgb*alpha 保持一致。
-        blend: { color: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
-          alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" } },
-      }] },
+      fragment: { module, entryPoint: "particleFragment", targets },
       primitive: { topology: "triangle-list", cullMode: "none" },
       // 开启深度测试（粒子会被几何遮挡），关闭深度写入（粒子需要混合）。
       depthStencil: { format: depthFormat, depthWriteEnabled: false, depthCompare: "less-equal" },
@@ -98,8 +107,10 @@ export class PbrParticlePass {
       layout: this.frameLayout, entries: [{ binding: 0, resource: { buffer: input.binding.stateBuffer } }] });
     const cameraBindings = device.createBindGroup({ label: "Deep particle camera bindings",
       layout: this.pipeline.getBindGroupLayout(1), entries: [{ binding: 0, resource: { buffer: this.camera } }] });
-    const pass = input.encoder.beginRenderPass({ label: "Deep particles", colorAttachments: [{
-      view: input.colorView, loadOp: "load", storeOp: "store" }],
+    const attachments: GPURenderPassColorAttachment[] = [{
+      view: input.colorView, loadOp: "load", storeOp: "store" }];
+    if (input.reactiveView !== undefined) attachments.push({ view: input.reactiveView, loadOp: "load", storeOp: "store" });
+    const pass = input.encoder.beginRenderPass({ label: "Deep particles", colorAttachments: attachments,
       depthStencilAttachment: { view: input.depthView, depthLoadOp: "load", depthStoreOp: "store" } });
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, frameBindings);
