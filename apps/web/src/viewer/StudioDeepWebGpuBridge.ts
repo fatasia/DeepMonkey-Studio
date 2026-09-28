@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type {
   DeepWebGpuBackend,
   DeepWebGpuSyncResult,
+  HlodClusterStreamBinding,
   ThreeObjectSource,
 } from "@bim-studio/deep-engine/three-bridge";
 import type { AuthoredQualityProfile } from "@bim-studio/deep-engine/webgpu";
@@ -68,6 +69,11 @@ export interface StudioDeepWebGpuBridgeOptions {
   /** Optional packet compiled from SceneSnapshot; when provided Deep skips
    * Three scene projection for candidate publication. */
   readonly authorRenderPacket?: (signal: AbortSignal) => Promise<RenderPacket | undefined>;
+  /**
+   * B4 簇级 HLOD(opt-in,`b4-hlod-cluster=1`):逐放置簇绑定提供方;仅在独立
+   * 作者包路径下被消费,与 authorRenderPacket 共享同一编译缓存由宿主保证。
+   */
+  readonly authorHlodClusters?: (signal: AbortSignal) => Promise<readonly HlodClusterStreamBinding[] | undefined>;
   /** T25 质量遥测采样配置;缺省 4Hz 聚合、256 帧窗口。 */
   readonly qualityTelemetry?: StudioQualityTelemetryOptions;
 }
@@ -219,6 +225,9 @@ export class StudioDeepWebGpuBridge {
           this.viewer.setAuthorPacketIndependent(this.independentPacketPath);
           if (!authorRenderPacket) updateAuthorProjectionState(this.viewer.scene, this.viewer.camera, signal);
           else this.viewReader.setIndependentPacketBounds(authorRenderPacket);
+          // B4 簇级 HLOD(opt-in):仅独立作者包路径消费;默认关闭不改变现网行为。
+          const authorHlodClusters = b4HlodClusterEnabled() && authorRenderPacket
+            ? (await this.options.authorHlodClusters?.(signal)) ?? undefined : undefined;
           const view = this.viewReader.renderView(module, canvas);
           shadowMapSize = view.lights?.directional?.[0]?.shadow?.mapSize
             ?? studioDeepShadowMapSize(this.viewer.scene, this.viewer.camera.layers.mask);
@@ -234,6 +243,7 @@ export class StudioDeepWebGpuBridge {
             ...(this.projectionBridge ? { projection: this.projectionBridge, root: this.projectionRoot() } : {}),
             view, authorChunks: true,
             ...(authorRenderPacket ? { renderPacket: authorRenderPacket } : {}),
+            ...(authorHlodClusters?.length ? { hlodClusters: authorHlodClusters } : {}),
             renderer: { environment: environment.source, deformation: true, meshlets: true,
               ...(pipelineBootstrap ? { pipelines: pipelineBootstrap } : {}),
               adaptiveQuality: {
@@ -838,6 +848,19 @@ export function t07DynamicResolutionPolicy():
   const value = params?.get("t07-dynamic-resolution")?.toLowerCase();
   if (value !== "1" && value !== "true" && value !== "on") return undefined;
   return { ...DEFAULT_RESOLUTION_SCALE_POLICY };
+}
+
+/**
+ * B4 簇级 HLOD 驻留感知隐藏开关：默认关闭（簇代理画质与切换序列未过浏览器视觉
+ * 闭环，不冒充默认体验）；`b4-hlod-cluster=1` 显式开启后，Deep 后端按相机消费
+ * 簇决策做 demand 过滤 + 行置零补偿 + 代理 overlay 注入，选择/剖切/测量
+ * （编辑辅助 overlay 顶点非空）强制原件驻留。
+ */
+export function b4HlodClusterEnabled(): boolean {
+  const params = typeof location !== "undefined" && location.search
+    ? new URLSearchParams(location.search) : undefined;
+  const value = params?.get("b4-hlod-cluster")?.toLowerCase();
+  return value === "1" || value === "true" || value === "on";
 }
 
 function threePrototypeHooks() {

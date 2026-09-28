@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeepWebGpuSyncResult } from "@bim-studio/deep-engine/three-bridge";
 import type { RenderPacket } from "@bim-studio/deep-engine";
 import type { ViewerEngine } from "./ViewerEngine";
-import { StudioDeepWebGpuBridge } from "./StudioDeepWebGpuBridge";
+import { b4HlodClusterEnabled, StudioDeepWebGpuBridge } from "./StudioDeepWebGpuBridge";
 import type { PresentationPerformanceSource } from "./viewerPresentationPerformance";
 import { DEFAULT_POST_PROCESSING } from "../appDefaults";
 import { readStudioFrameCaptureSnapshot, setStudioFrameCaptureRequested } from "./studioFrameCaptureDiagnostics";
@@ -42,6 +42,27 @@ function makeBackend() {
 function syncResult(): DeepWebGpuSyncResult {
   return { status: "committed", update: "instances", packet: {} } as DeepWebGpuSyncResult;
 }
+
+describe("B4 cluster HLOD opt-in switch", () => {
+  const originalLocation = globalThis.location;
+  const setSearch = (search: string): void => {
+    Object.defineProperty(globalThis, "location", { configurable: true,
+      value: { href: `http://localhost/${search}`, search } });
+  };
+  afterEach(() => {
+    if (originalLocation === undefined) delete (globalThis as { location?: Location }).location;
+    else Object.defineProperty(globalThis, "location", { configurable: true, value: originalLocation });
+  });
+  it("defaults to off and only 1/true/on enable the cluster decision path", () => {
+    setSearch(""); expect(b4HlodClusterEnabled()).toBe(false);
+    setSearch("?b4-hlod-cluster=0"); expect(b4HlodClusterEnabled()).toBe(false);
+    setSearch("?other=1"); expect(b4HlodClusterEnabled()).toBe(false);
+    setSearch("?b4-hlod-cluster=1"); expect(b4HlodClusterEnabled()).toBe(true);
+    setSearch("?b4-hlod-cluster=true"); expect(b4HlodClusterEnabled()).toBe(true);
+    setSearch("?b4-hlod-cluster=on"); expect(b4HlodClusterEnabled()).toBe(true);
+    setSearch("?b4-hlod-cluster=yes"); expect(b4HlodClusterEnabled()).toBe(false);
+  });
+});
 
 describe("Studio Deep WebGPU bridge lifecycle", () => {
   let frames: Map<number, FrameRequestCallback>;

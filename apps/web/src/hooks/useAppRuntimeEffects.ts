@@ -38,6 +38,9 @@ import { StudioDeepWebGpuBridge } from "../viewer/StudioDeepWebGpuBridge";
 import { StudioDeepWasmBridge } from "../viewer/StudioDeepWasmBridge";
 import { compileStudioWasmRuntimePackage, normalizeStudioWasmModel } from "../viewer/studioWasmRuntimePackage";
 import { compileSceneRenderPacket } from "../delivery/compileSceneRenderPacket";
+import { loadWebHlodPackage, type WebHlodPackage } from "../delivery/webHlodPackage";
+import { b4HlodClusterEnabled } from "../viewer/StudioDeepWebGpuBridge";
+import type { HlodClusterStreamBinding } from "@bim-studio/deep-engine/three-bridge";
 import type { RenderPacket } from "@bim-studio/deep-engine";
 import { browserImageDecoder } from "../delivery/browserImageDecoder";
 import { loadViewerAssetBuffer } from "../viewer/viewerAssetTransport";
@@ -48,6 +51,34 @@ import { rendererBackendLabel } from "../viewer/rendererBackendLabel";
 import { useAppInteractionEffects } from "./useAppInteractionEffects";
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
+
+/**
+ * B4 簇级 HLOD 包加载(opt-in):按场景资产去重,geometryUrl 同目录推导
+ * `output/deep-package.json`;包缺失/非法即跳过该资产(退回原始几何),
+ * 不阻塞其余资产的簇代理。
+ */
+async function loadSceneHlodPackages(scene: SceneSnapshot,
+  models: ProjectRecord["models"], signal: AbortSignal): Promise<Map<string, WebHlodPackage>> {
+  const packages = new Map<string, WebHlodPackage>();
+  const assetIds = [...new Set(scene.models.map((model) => getSceneModelAssetId(model)))];
+  await Promise.all(assetIds.map(async (assetId) => {
+    const instance = scene.models.find((model) => getSceneModelAssetId(model) === assetId || model.modelId === assetId);
+    const resolvedAssetId = instance ? getSceneModelAssetId(instance) : assetId;
+    const model = models.find((candidate) => candidate.id === resolvedAssetId);
+    const geometryUrl = model?.manifest?.geometryUrl;
+    if (!model || !geometryUrl || model.status !== "ready") return;
+    try {
+      const base = new URL(geometryUrl, globalThis.location?.href ?? "http://localhost/");
+      const packageUrl = new URL("deep-package.json", base).href;
+      packages.set(assetId, await loadWebHlodPackage(packageUrl, async (url, loadSignal) =>
+        new Uint8Array(await loadViewerAssetBuffer(url, model.name, { signal: loadSignal, timeoutMs: 120_000 })), signal));
+    } catch {
+      // 包缺失/路径非法/哈希不一致:该资产保持原几何渲染,不拖垮整场景编译。
+    }
+  }));
+  return packages;
+}
+
 interface XrCapabilities {
   checking: boolean;
   secure: boolean;
@@ -473,37 +504,42 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     // 首帧编译缓存(P0-2):authorRenderPacket 每次后端切换都会被调用;场景快照与
     // 资产清单未变时直接复用上一次的 RenderPacket(packet 经 prepareRenderPacket
     // 校验后按只读消费,复用安全)。缓存容量 1:只保留最近一次编译,内存代价可控。
-    let cachedPacket: { key: string; packet: RenderPacket } | undefined;
+    // B4 簇级 HLOD:同一份编译的逐放置簇绑定随缓存共享,两个提供方顺序消费不打两次编译。
+    let cachedPacket: { key: string; packet: RenderPacket; clusters?: readonly HlodClusterStreamBinding[] } | undefined;
+    const compileAuthorScene = async (signal: AbortSignal) => {
+      const latest = rendererRecoveryContextRef.current;
+      const scene = latest.captureSceneSnapshot() ?? latest.activeScene;
+      const project = latest.project;
+      if (!scene || !project) return undefined;
+      const key = fingerprint64Labeled([
+        ["scene", scene],
+        ["assets", project.models.map((model) => ({ id: model.id, status: model.status,
+          geometry: model.manifest?.geometryUrl ?? null }))],
+      ]);
+      if (cachedPacket?.key === key) return cachedPacket;
+      const hlodPackages = b4HlodClusterEnabled() ? await loadSceneHlodPackages(scene, project.models, signal) : undefined;
+      const compiled = await compileSceneRenderPacket(scene, {
+        signal,
+        imageDecoder: browserImageDecoder,
+        normalizeModel: normalizeStudioWasmModel,
+        ...(hlodPackages?.size ? { hlodPackages } : {}),
+        loadModel: async (assetId, loadSignal) => {
+          loadSignal.throwIfAborted();
+          const instance = scene.models.find((model) => getSceneModelAssetId(model) === assetId || model.modelId === assetId);
+          const resolvedAssetId = instance ? getSceneModelAssetId(instance) : assetId;
+          const model = project.models.find((candidate) => candidate.id === resolvedAssetId);
+          const url = model?.manifest?.geometryUrl;
+          if (!model || !url || model.status !== "ready") throw new Error(`Deep 编译缺少模型资源：${assetId}`);
+          return new Uint8Array(await loadViewerAssetBuffer(url, model.name, { signal: loadSignal, timeoutMs: 120_000 }));
+        },
+      });
+      signal.throwIfAborted();
+      cachedPacket = { key, packet: compiled.packet, ...(compiled.hlodClusters ? { clusters: compiled.hlodClusters } : {}) };
+      return cachedPacket;
+    };
     const bridge = new StudioDeepWebGpuBridge(engine, viewportRef.current, {
-      authorRenderPacket: async (signal) => {
-        const latest = rendererRecoveryContextRef.current;
-        const scene = latest.captureSceneSnapshot() ?? latest.activeScene;
-        const project = latest.project;
-        if (!scene || !project) return undefined;
-        const key = fingerprint64Labeled([
-          ["scene", scene],
-          ["assets", project.models.map((model) => ({ id: model.id, status: model.status,
-            geometry: model.manifest?.geometryUrl ?? null }))],
-        ]);
-        if (cachedPacket?.key === key) return cachedPacket.packet;
-        const compiled = await compileSceneRenderPacket(scene, {
-          signal,
-          imageDecoder: browserImageDecoder,
-          normalizeModel: normalizeStudioWasmModel,
-          loadModel: async (assetId, loadSignal) => {
-            loadSignal.throwIfAborted();
-            const instance = scene.models.find((model) => getSceneModelAssetId(model) === assetId || model.modelId === assetId);
-            const resolvedAssetId = instance ? getSceneModelAssetId(instance) : assetId;
-            const model = project.models.find((candidate) => candidate.id === resolvedAssetId);
-            const url = model?.manifest?.geometryUrl;
-            if (!model || !url || model.status !== "ready") throw new Error(`Deep 编译缺少模型资源：${assetId}`);
-            return new Uint8Array(await loadViewerAssetBuffer(url, model.name, { signal: loadSignal, timeoutMs: 120_000 }));
-          },
-        });
-        signal.throwIfAborted();
-        cachedPacket = { key, packet: compiled.packet };
-        return compiled.packet;
-      },
+      authorRenderPacket: async (signal) => (await compileAuthorScene(signal))?.packet,
+      authorHlodClusters: async (signal) => (await compileAuthorScene(signal))?.clusters,
       onRuntimeFailure: (reason) => {
         rendererPreferenceCommitRef.current = "webgl";
         try { commitRendererPreference(rendererPreferenceCommitRef, "webgl"); }

@@ -8,6 +8,11 @@ export { firstFramePipelineMainKeys } from "./firstFramePipelineKeys.js";
 export type { DeepWebGpuBackendCreateRequest, DeepWebGpuBackendOptions, DeepWebGpuBackendRuntime,
   DeepWebGpuRenderRuntime, DeepWebGpuRuntimeFactory, DeepWebGpuShadowSelection,
   DeepWebGpuSyncResult } from "./DeepWebGpuBackend.js";
+export { applyAffineDirection, applyAffinePoint, applyHlodPlanToInstances, collapseSuppressedByOverlay,
+  HLOD_HIDDEN_INSTANCE_SCALE, HLOD_PROXY_MATERIAL_ID, hlodClusterStreamResources, hlodPlanSignature,
+  HlodClusterDecisionEngine, shrinkTransform } from "./hlodClusterStream.js";
+export type { HlodClusterFramePlan, HlodClusterProxyDraw, HlodClusterStreamBinding,
+  HlodClusterStreamResources } from "./hlodClusterStream.js";
 export { BackendCanvasDeck, bindBackendCanvas } from "./BackendCanvasDeck.js";
 export type { BackendCanvasHost, BackendCanvasLease, BackendCanvasSurface,
   CanvasBoundBackend } from "./BackendCanvasDeck.js";

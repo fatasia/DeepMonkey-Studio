@@ -1,5 +1,6 @@
 import { createHash, webcrypto } from "node:crypto";
 import { ASSET_FACETS, type AssetCompatibilityProfile } from "@bim-studio/deep-engine";
+import type { SceneSnapshot } from "@bim-studio/contracts";
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { DeepAssetPackage, RenderPacket } from "@bim-studio/deep-engine";
@@ -128,7 +129,7 @@ describe("Web HLOD optional package consumer", () => {
     expect(result.hlodClusters).toBeUndefined();
   });
 
-  it("hlodPackages 提供时：代理几何入包、hlodClusters 产出、运行包往返仍校验通过", async () => {
+  it("hlodPackages 提供时：代理几何入包、逐放置 hlodClusters 产出、运行包往返仍校验通过", async () => {
     const apiIds = gltfNodeApiIds(box);
     const firstApiId = [...apiIds][0];
     if (!firstApiId) throw new Error("Box.glb 未解析出 mesh 节点 apiId");
@@ -139,9 +140,14 @@ describe("Web HLOD optional package consumer", () => {
     expect(compiled.hlodClusters).toHaveLength(1);
     const cluster = compiled.hlodClusters![0]!;
     expect(cluster.assetId).toBe("asset");
+    expect(cluster.modelId).toBe("part");
     expect(cluster.manifest).toEqual(manifest);
     expect(cluster.instanceIdsByNode.get(firstApiId[1])?.length).toBeGreaterThan(0);
-    // 代理几何（空包时无代理）；objectBindings 保持仅作者对象
+    // 逐放置决策逆与代理绘制表:单位根变换 → 逆 = 单位;manifest 无内节点 → 无代理绘制。
+    expect(cluster.decisionFromWorld).toHaveLength(16);
+    expect(cluster.proxyDrawsByNode.size).toBe(manifest.proxies.length);
+    // 代理 overlay 合成材质随 opt-in 入包;objectBindings 保持仅作者对象。
+    expect(compiled.packet.materials.some(material => material.id === "hlod-proxy-cluster")).toBe(true);
     expect(compiled.packet.objectBindings?.map(item => item.nodeId)).toEqual(["part"]);
     // 全场景实例仍可被簇映射覆盖（Box 单实例）
     const covered = [...cluster.instanceIdsByNode.values()].flat();
@@ -150,5 +156,32 @@ describe("Web HLOD optional package consumer", () => {
     const runtime = buildDeepRuntimePackage({ packageId: "hlod.scene", packageVersion: "1.0.0",
       renderPacket: { id: "scene", revision: 1, value: compiled.packet } });
     expect(validateDeepRuntimePackage(JSON.parse(JSON.stringify(runtime))).valid).toBe(true);
+  });
+
+  it("hlodClusters 共享资产多放置逐份展开，决策逆携带各放置根变换", async () => {
+    const apiIds = gltfNodeApiIds(box);
+    const firstApiId = [...apiIds][0];
+    if (!firstApiId) throw new Error("Box.glb 未解析出 mesh 节点 apiId");
+    const manifest = minimalManifest(firstApiId[1]);
+    const proxies = decodeHlodProxyGeometries(encodeHlodProxyGeometries([]));
+    const placed = (modelId: string, x: number): SceneSnapshot => ({ ...scene,
+      models: [{ modelId, assetModelId: "asset", name: modelId, visible: true, opacity: 1,
+        transform: { position: { x, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } } }] });
+    const one = await compileSceneRenderPacket(placed("part-a", 0), { loadModel: async () => box,
+      hlodPackages: new Map([["asset", { manifest, proxies, geometryHash: hash(box) }]]) });
+    expect(one.hlodClusters).toHaveLength(1);
+    const two = await compileSceneRenderPacket({ ...placed("part-a", 0),
+      models: [...placed("part-a", 0).models, ...placed("part-b", 10).models] }, { loadModel: async () => box,
+      hlodPackages: new Map([["asset", { manifest, proxies, geometryHash: hash(box) }]]) });
+    expect(two.hlodClusters).toHaveLength(2);
+    expect(two.hlodClusters!.map(cluster => cluster.modelId).sort()).toEqual(["part-a", "part-b"]);
+    // 共享 manifest 同一引用(零拷贝);逐放置逆 = 各自根的仿射逆。
+    expect(two.hlodClusters![0]!.manifest).toBe(two.hlodClusters![1]!.manifest);
+    const byModel = new Map(two.hlodClusters!.map(cluster => [cluster.modelId, cluster]));
+    expect(byModel.get("part-a")!.decisionFromWorld[12]).toBe(0);
+    expect(byModel.get("part-b")!.decisionFromWorld[12]).toBe(-10);
+    // 代理绘制表逐放置存在(manifest 无内节点 → 空表,形状仍逐放置产出)。
+    expect(byModel.get("part-a")!.proxyDrawsByNode.size).toBe(0);
+    expect(byModel.get("part-b")!.instanceIdsByNode.get(firstApiId[1])!.every(id => id.startsWith("model-"))).toBe(true);
   });
 });

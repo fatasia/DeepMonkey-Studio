@@ -1,6 +1,9 @@
 import { snapshotEnvironment, snapshotRendererOptions } from "./deepWebGpuOptions.js";
 import { ThreeProjectionBridge } from "./ThreeProjectionBridge.js";
 import { AuthorChunkStream, type AuthorChunkStreamRuntime } from "./authorChunkStream.js";
+import { applyHlodPlanToInstances, hlodClusterStreamResources, hlodPlanSignature,
+  HlodClusterDecisionEngine, type HlodClusterFramePlan, type HlodClusterStreamBinding,
+  type HlodClusterStreamResources } from "./hlodClusterStream.js";
 import type { ProjectionIssue, ProjectionResult, ThreeObjectSource } from "./types.js";
 import type { InstanceUpdate, RenderPacket } from "../renderPacket.js";
 import { PbrRenderer, type FrameMetrics, type PbrRendererOptions, type RenderView } from "../webgpu/pbrRenderer.js";
@@ -41,6 +44,13 @@ export interface DeepWebGpuBackendOptions {
   readonly cameraLayerMask?: number;
   /** Allocation evidence expected when preparing an existing runtime. */
   readonly expectedShadows?: NonNullable<PbrRendererOptions["shadows"]>;
+  /**
+   * B4 簇级 HLOD(opt-in):逐放置簇绑定;仅在独立 RenderPacket 路径生效
+   * (代理几何/材质随包分发)。提供即每相机帧消费簇决策做驻留感知隐藏。
+   */
+  readonly hlodClusters?: readonly HlodClusterStreamBinding[];
+  /** 宿主追加的折叠抑制信号(与编辑辅助 overlay 信号取或);true = 强制原件驻留。 */
+  readonly hlodCollapseSuppressed?: () => boolean;
 }
 
 export interface DeepWebGpuRuntimeFactory {
@@ -97,6 +107,10 @@ export class DeepWebGpuBackend {
   private probeClipmap: DeepWebGpuProbeClipmapSession | undefined;
   private committedPacket: RenderPacket | undefined;
   private modelByInstanceId = new Map<string, string>();
+  /** B4 簇级决策引擎与代理 overlay 资源;仅在独立 RenderPacket 路径初始化。 */
+  private clusterEngine: HlodClusterDecisionEngine | undefined;
+  private clusterResources: HlodClusterStreamResources | undefined;
+  private appliedClusterSignature = "";
   /** 最近一次通过整帧验证的视图指纹与结果；prepareView 视图未变时复用。 */
   private validatedView: { readonly view: RenderView; readonly shadowSelection: DeepWebGpuShadowSelection | undefined } | undefined;
   private validatedFrame: FrameMetrics | undefined;
@@ -113,6 +127,10 @@ export class DeepWebGpuBackend {
     if (runtime.id !== this.id) throw new Error(`Deep runtime id must be ${this.id}.`);
     if (options.authorChunks !== undefined && typeof options.authorChunks !== "boolean") throw new TypeError("authorChunks must be boolean.");
     if (options.meshlets !== undefined && typeof options.meshlets !== "boolean") throw new TypeError("meshlets must be boolean.");
+    if (options.hlodClusters !== undefined && !Array.isArray(options.hlodClusters)) throw new TypeError("hlodClusters must be an array.");
+    if (options.hlodCollapseSuppressed !== undefined && typeof options.hlodCollapseSuppressed !== "function") {
+      throw new TypeError("hlodCollapseSuppressed must be a function.");
+    }
     this.expectedShadows = options.expectedShadows === undefined ? undefined : snapshotShadows(options.expectedShadows);
   }
 
@@ -161,6 +179,8 @@ export class DeepWebGpuBackend {
         ...(renderer.shadows === undefined ? {} : { expectedShadows: renderer.shadows }),
         ...(authorChunks === undefined ? {} : { authorChunks }),
         ...(renderer.meshlets === undefined ? {} : { meshlets: renderer.meshlets }),
+        ...(validated.hlodClusters === undefined ? {} : { hlodClusters: validated.hlodClusters }),
+        ...(validated.hlodCollapseSuppressed === undefined ? {} : { hlodCollapseSuppressed: validated.hlodCollapseSuppressed }),
       });
     } catch (error) {
       runtime.dispose();
@@ -228,9 +248,18 @@ export class DeepWebGpuBackend {
     this.assertOpen();
     signal?.throwIfAborted();
     markBackendPhase("packet-localize-start");
+    if (this.options.hlodClusters?.length && !this.clusterEngine) {
+      // 代理 overlay 资源(几何按 HLOD 前缀,材质按合成 id)必须来自原始包;
+      // 编译层把簇代理几何随包分发,编目过程会丢弃未引用几何,此处先行提取。
+      this.clusterResources = hlodClusterStreamResources(packet);
+      this.clusterEngine = new HlodClusterDecisionEngine(this.options.hlodClusters,
+        this.options.hlodCollapseSuppressed);
+    }
     const candidate = this.coordinates.candidate(view.eye);
     const localPacket = this.coordinates.localizePacket(packet, candidate);
     markBackendPhase("packet-localized");
+    const localView = this.coordinates.localizeView(view, candidate);
+    const clusterPlan = this.clusterEngine?.decide(localView, candidate.origin);
     markBackendPhase("packet-upload-start");
     const staticPacket = localPacket.deformation === undefined
       && localPacket.instances.every(instance => instance.pose === undefined);
@@ -238,10 +267,11 @@ export class DeepWebGpuBackend {
     const canStream = this.options.authorChunks === true && staticPacket
       && target.session && target.stageResidentPacketValidated && target.cancelResidentPacketStage;
     if (canStream) {
-      const chunks = this.chunks ?? new AuthorChunkStream(target as AuthorChunkStreamRuntime, this.options.meshlets);
+      const chunks = this.chunks ?? new AuthorChunkStream(target as AuthorChunkStreamRuntime, this.options.meshlets,
+        this.clusterResources);
       let streamed: boolean;
       try {
-        streamed = await chunks.sync(localPacket, true, this.coordinates.localizeView(view, candidate), signal);
+        streamed = await chunks.sync(localPacket, true, localView, signal, clusterPlan);
       } catch (error) {
         if (chunks !== this.chunks) chunks.dispose();
         throw error;
@@ -249,7 +279,13 @@ export class DeepWebGpuBackend {
       if (streamed === false) throw new Error("Independent packet streaming rejected its static scene.");
       this.chunks = chunks;
     } else {
-      await this.runtime.setPacketValidated(localPacket, signal);
+      // 非流送路径:隐藏实例以合法仿射缩放到不可见,代理几何随发布包全量入包,
+      // 否则后续相机激活的代理不在驻留闭包内(fail-closed 由打包层拦截)。
+      const published = clusterPlan && this.clusterEngine
+        ? { ...localPacket, instances: applyHlodPlanToInstances(localPacket.instances, clusterPlan,
+            this.clusterEngine.allProxyDraws(candidate.origin)) }
+        : localPacket;
+      await this.runtime.setPacketValidated(published, signal);
       this.chunks?.fullPacketPublished(staticPacket ? "resident-stage-unavailable" : "deformation");
     }
     markBackendPhase("packet-uploaded");
@@ -257,7 +293,7 @@ export class DeepWebGpuBackend {
     this.packetViewStaged = canStream ? view : undefined;
     this.packetViewFailure = undefined;
     this.packetViewRetryAt = 0;
-    const localView = this.coordinates.localizeView(view, candidate);
+    this.appliedClusterSignature = clusterPlan ? hlodPlanSignature(clusterPlan) : "";
     let frame: FrameMetrics;
     try {
       frame = await this.runtime.validateFrame(localView);
@@ -291,8 +327,19 @@ export class DeepWebGpuBackend {
       this.shadowSelectionValue = this.validatedView.shadowSelection ?? this.shadowSelectionValue;
       return this.validatedFrame;
     }
+    const clusterPlan = this.clusterEngine?.decide(localView, this.coordinates.current.origin);
+    if (clusterPlan && !(this.chunks?.hasCatalog)) {
+      // 非流送路径:相机/抑制态变化时经 updateInstances 重排实例(簇决策刷新挂点)。
+      const signature = hlodPlanSignature(clusterPlan);
+      if (signature !== this.appliedClusterSignature && this.committedPacket) {
+        this.runtime.updateInstances({ materials: this.committedPacket.materials,
+          instances: applyHlodPlanToInstances(this.committedPacket.instances, clusterPlan,
+            this.clusterEngine!.allProxyDraws(this.coordinates.current.origin)) });
+        this.appliedClusterSignature = signature;
+      }
+    }
     if (this.independentPacket && this.chunks?.hasCatalog) {
-      await this.chunks.syncView(localView, signal);
+      await this.chunks.syncView(localView, signal, clusterPlan);
       if (signal?.aborted) throw abortError("Deep backend camera preparation cancelled.");
     }
     const frame = await this.runtime.validateFrame(localView);
@@ -325,8 +372,9 @@ export class DeepWebGpuBackend {
         if (!latest || this.packetViewStaged && sameRenderView(latest, this.packetViewStaged) && !this.packetViewFailure) break;
         try {
           const localView = this.coordinates.localizeView(latest, this.coordinates.current);
-          if (this.packetViewFailure) await chunks.sync(packet, true, localView);
-          else await chunks.syncView(localView);
+          const clusterPlan = this.clusterEngine?.decide(localView, this.coordinates.current.origin);
+          if (this.packetViewFailure) await chunks.sync(packet, true, localView, undefined, clusterPlan);
+          else await chunks.syncView(localView, undefined, clusterPlan);
           if (!this.disposed && this.chunks === chunks && this.committedPacket === packet) {
             this.packetViewStaged = latest;
             this.packetViewFailure = undefined;
@@ -473,6 +521,9 @@ export class DeepWebGpuBackend {
     this.packetViewStaged = undefined;
     this.packetViewFailure = undefined;
     this.modelByInstanceId.clear();
+    this.clusterEngine = undefined;
+    this.clusterResources = undefined;
+    this.appliedClusterSignature = "";
     this.projection?.clear();
     try { this.probeClipmap?.dispose(); }
     finally {
@@ -537,5 +588,9 @@ function validateCreateRequest(request: DeepWebGpuBackendCreateRequest): DeepWeb
     throw new TypeError("Deep WebGPU backend create request must be an object.");
   }
   if (request.authorChunks !== undefined && typeof request.authorChunks !== "boolean") throw new TypeError("authorChunks must be boolean.");
+  if (request.hlodClusters !== undefined && !Array.isArray(request.hlodClusters)) throw new TypeError("hlodClusters must be an array.");
+  if (request.hlodCollapseSuppressed !== undefined && typeof request.hlodCollapseSuppressed !== "function") {
+    throw new TypeError("hlodCollapseSuppressed must be a function.");
+  }
   return request;
 }

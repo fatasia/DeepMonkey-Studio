@@ -1,7 +1,8 @@
 import { applySourceMaterialOverrides, assertStaticMaterialOverrides, assertMaterialSlotsResolve } from "./sceneMaterialOverrides";
 import { getSceneModelAssetId, type SceneModelState, type SceneSnapshot } from "@bim-studio/contracts";
 import { prepareRenderPacket, type RenderPacket } from "@bim-studio/deep-engine";
-import { multiplySceneMatrices } from "@bim-studio/deep-engine/scene";
+import { invertAffineSceneMatrix, multiplySceneMatrices } from "@bim-studio/deep-engine/scene";
+import { HLOD_PROXY_MATERIAL_ID, type HlodClusterStreamBinding } from "@bim-studio/deep-engine/three-bridge";
 import { decodeTexturedGlb, type GltfImageDecoder } from "@bim-studio/deep-engine/gltf";
 import { runtimeContentSha256 } from "@bim-studio/deep-engine/runtime-package";
 import { sceneModelMatrixValues } from "./sceneModelMatrixValues";
@@ -22,16 +23,20 @@ export interface CompileSceneRenderOptions {
   readonly maxSourceBytes?: number;
   /** 已局部化运行空间中，作者世界原点的位置；辅助网格仍与 Three 的世界原点对齐。 */
   readonly auxiliaryGridOrigin?: { readonly x: number; readonly y: number; readonly z: number };
-  /** Opt-in：assetId → 已校验 HLOD 包；提供即把簇代理几何与节点绑定随编译产出。 */
+  /** Opt-in：assetId → 已校验 HLOD 包；提供即把簇代理几何与逐放置簇绑定随编译产出。 */
   readonly hlodPackages?: ReadonlyMap<string, WebHlodPackage>;
 }
-export interface SceneHlodClusterBinding {
+/** 单个折叠簇在某放置下的代理绘制（结构兼容 deep-engine HlodClusterProxyDraw）。 */
+export interface SceneHlodProxyDraw {
+  readonly instanceId: string;
+  readonly geometryId: string;
+  /** 作者世界 4x4 列主序（= 模型根变换；代理几何顶点在资产源空间）。 */
+  readonly transform: readonly number[];
+}
+/** 逐放置（模型实例）簇绑定；manifest 树在资产源空间，决策相机经 decisionFromWorld 换算。 */
+export interface SceneHlodClusterBinding extends HlodClusterStreamBinding {
   readonly assetId: string;
-  /** 资产级节点（apiId）→ 场景实例 id；manifest 叶全集，缺一即编译失败。 */
-  readonly instanceIdsByNode: ReadonlyMap<string, readonly string[]>;
-  /** 节点 id → 簇代理几何 id（`hlod-proxy-*`，已随 packet.geometries 分发）。 */
-  readonly proxyGeometryIds: ReadonlyMap<string, string>;
-  readonly manifest: WebHlodPackage["manifest"];
+  readonly modelId: string;
 }
 
 export interface SceneRenderCompilation {
@@ -59,12 +64,19 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
   const grid = compileSceneAuxiliaryGrid(scene.environment?.gridVisible === true, options.auxiliaryGridOrigin);
   const geometries = [...base.geometries, ...grid.geometries], materials = [...base.materials, ...grid.materials],
     instances = [...base.instances, ...grid.instances];
+  // B4 opt-in:簇代理 overlay 批的合成材质;仅 hlodPackages 路径入包,与源材质去重。
+  if (options.hlodPackages?.size && !materials.some(material => material.id === HLOD_PROXY_MATERIAL_ID)) {
+    materials.push({ id: HLOD_PROXY_MATERIAL_ID, baseColor: [0.55, 0.55, 0.58], metallic: 0, roughness: 1 });
+  }
   const textures: NonNullable<RenderPacket["textures"]>[number][] = [];
   const objectBindings = scene.primitives.map(item => ({ nodeId: item.modelId,
     instanceIds: item.visible ? base.instances.filter(instance => instance.id === item.modelId
       || instance.id.startsWith(`${item.modelId}/prefab/`)).map(instance => instance.id) : [] }));
   const assets = new Map<string, RenderPacket>();
-  const assetHlodBindings = new Map<string, SceneHlodClusterBinding>();
+  /** 资产级(源空间)叶绑定:manifest + apiId → 源包实例 id;共享资产只建一次。 */
+  const assetHlodBindings = new Map<string, { readonly manifest: WebHlodPackage["manifest"];
+    readonly sourceInstanceIdsByNode: ReadonlyMap<string, readonly string[]> }>();
+  const hlodClusters: SceneHlodClusterBinding[] = [];
   const verifyGeometryPrecision = createSceneGeometryPrecisionValidator();
   const sourceGeometries = new Map<string, RenderPacket["geometries"][number]>();
   let sourceBytes = 0;
@@ -91,15 +103,14 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
       for (const geometry of source.geometries) sourceGeometries.set(geometry.id, geometry);
       const hlod = options.hlodPackages?.get(assetId);
       if (hlod) {
-        // B4 opt-in：簇代理几何随包分发；节点绑定在资产源包上建立（实例 id 为 asset 前缀）。
+        // B4 opt-in：簇代理几何随包分发；节点绑定在资产源包上建立（实例 id 为 asset 前缀），
+        // 逐放置展开在下方模型循环完成（共享资产多放置各有根变换与决策逆）。
         const instanceIdsByNode = bindWebHlodAsset(decodedBytes, source, hlod.manifest);
         for (const proxy of hlod.proxies) {
           if (sourceGeometries.has(proxy.id)) throw new Error(`HLOD 簇代理几何与源包冲突：${proxy.id}`);
           geometries.push(proxy); sourceGeometries.set(proxy.id, proxy);
         }
-        assetHlodBindings.set(assetId, { assetId, instanceIdsByNode,
-          proxyGeometryIds: new Map(hlod.manifest.proxies.map(item => [item.nodeId, item.geometryId])),
-          manifest: hlod.manifest });
+        assetHlodBindings.set(assetId, { manifest: hlod.manifest, sourceInstanceIdsByNode: instanceIdsByNode });
       }
     }
     // Runtime compilation consumes the persisted author contract. It must not
@@ -142,37 +153,29 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
       instanceIds.push(id);
     }
     objectBindings.push({ nodeId: model.modelId, instanceIds });
+    // B4:逐放置簇绑定。manifest 树/代理几何在资产源空间;决策相机经根逆变换换算,
+    // 代理绘制 = 根变换(顶点已在源空间,与源实例同一前缀规则展开)。
+    const hlodBinding = assetHlodBindings.get(assetId);
+    if (hlodBinding) {
+      const inverse = invertAffineSceneMatrix(root);
+      if (!inverse) throw new Error(`对象 ${model.modelId} 的簇级决策逆变换不可逆`);
+      const modelPrefix = `${prefix}/`;
+      const instanceIdsByNode = new Map<string, readonly string[]>();
+      for (const [apiId, ids] of hlodBinding.sourceInstanceIdsByNode) {
+        instanceIdsByNode.set(apiId, ids.map(id => `${modelPrefix}${id}`));
+      }
+      const proxyDrawsByNode = new Map<string, readonly SceneHlodProxyDraw[]>(
+        hlodBinding.manifest.proxies.map(proxy => [proxy.nodeId, [{ instanceId: `${modelPrefix}hlod-cluster-proxy/${proxy.nodeId}`,
+          geometryId: proxy.geometryId, transform: root }]]));
+      hlodClusters.push({ assetId, modelId: model.modelId, manifest: hlodBinding.manifest,
+        instanceIdsByNode, proxyDrawsByNode, decisionFromWorld: [...inverse] });
+    }
   }
   signal.throwIfAborted();
   // 节点级拾取映射:compilation.objectBindings 保留"每个作者对象一条(不可见为空)"语义,
   // 供发布兼容与物理编译消费;进包的映射只保留非空绑定(包校验拒绝空 instanceIds)。
   const packetBindings = objectBindings.filter(binding => binding.instanceIds.length > 0)
     .map(binding => ({ nodeId: binding.nodeId, instanceIds: binding.instanceIds }));
-  // B4:资产级簇绑定展开为场景级(apiId → 场景实例 id)；共享资产按 model 前缀逐份展开。
-  const hlodClusters: SceneHlodClusterBinding[] = [];
-  if (assetHlodBindings.size) {
-    const sceneIdsByAssetNode = new Map<string, ReadonlyMap<string, readonly string[]>>();
-    for (const model of scene.models) {
-      if (!model.visible) continue;
-      const assetId = getSceneModelAssetId(model), binding = assetHlodBindings.get(assetId);
-      if (!binding) continue;
-      const modelPrefix = `model-${runtimeContentSha256(model.modelId)}/`;
-      const expanded = new Map<string, readonly string[]>();
-      for (const [apiId, ids] of binding.instanceIdsByNode) {
-        expanded.set(apiId, ids.map(id => `${modelPrefix}${id}`));
-      }
-      sceneIdsByAssetNode.set(`${model.modelId}\u0000${assetId}`, expanded);
-    }
-    for (const binding of assetHlodBindings.values()) {
-      const merged = new Map<string, readonly string[]>();
-      for (const [key, ids] of sceneIdsByAssetNode) {
-        if (!key.endsWith(`\u0000${binding.assetId}`)) continue;
-        for (const [apiId, expanded] of ids) merged.set(apiId, [...merged.get(apiId) ?? [], ...expanded]);
-      }
-      hlodClusters.push({ assetId: binding.assetId, manifest: binding.manifest,
-        instanceIdsByNode: merged, proxyGeometryIds: binding.proxyGeometryIds });
-    }
-  }
   const packet: RenderPacket = { geometries, materials, instances,
     ...(packetBindings.length ? { objectBindings: packetBindings } : {}),
     ...(textures.length ? { textures } : {}) };
