@@ -100,7 +100,18 @@ export interface DynamicPhysicsJointRuntime {
   readonly localAnchor: readonly [number, number, number];
   readonly axis: readonly [number, number, number];
   readonly limits: { readonly enabled: boolean; readonly min: number; readonly max: number };
-  readonly motor: { readonly enabled: boolean; readonly targetVelocity: number; readonly strength: number };
+  readonly motor: { readonly enabled: boolean; readonly targetVelocity: number; readonly strength: number;
+    /** T17 位置伺服:enabled 时覆盖 targetVelocity;target 为关节坐标(rad / m)。 */
+    readonly position?: { readonly enabled: boolean; readonly target: number; readonly stiffness: number; readonly damping: number } };
+}
+/** T17 齿轮耦合:从动关节坐标 = ratio × 主动关节坐标(位置伺服跟随)。 */
+export interface DynamicGearConstraintRuntime {
+  readonly id: string;
+  readonly driverJointId: string;
+  readonly followerJointId: string;
+  readonly ratio: number;
+  readonly stiffness: number;
+  readonly damping: number;
 }
 export interface DynamicPhysicsRuntime {
   readonly schema: "deep-engine.physics-runtime";
@@ -110,9 +121,21 @@ export interface DynamicPhysicsRuntime {
   readonly gravity: readonly [number, number, number];
   readonly bodies: readonly DynamicPhysicsBodyRuntime[];
   readonly joints: readonly DynamicPhysicsJointRuntime[];
+  readonly gears?: readonly DynamicGearConstraintRuntime[];
 }
 export interface DynamicSceneRuntime { readonly schema: typeof DYNAMIC_SCENE_RUNTIME_SCHEMA; readonly schemaVersion: 1 | 2 | 3; readonly id: string; readonly revision: number; readonly animation?: DynamicAnimationRuntime; readonly dataReplay?: DynamicDataReplayRuntime; readonly interaction?: DynamicInteractionRuntime; readonly animationController?: DynamicAnimationControllerRuntime; readonly physics?: DynamicPhysicsRuntime }
 
+/** T17 位置伺服解析:target 有限、stiffness>0、damping≥0、enabled 为布尔;fail-closed。 */
+function parsePositionMotor(value: unknown, path: string): { enabled: boolean; target: number; stiffness: number; damping: number } {
+  const object = record(value, path);
+  fields(object, ["enabled", "target", "stiffness", "damping"], [], path);
+  const enabled = object.enabled;
+  requireValue(typeof enabled === "boolean", path, "Position servo flag must be boolean.");
+  const target = finite(object.target, `${path}.target`), stiffness = finite(object.stiffness, `${path}.stiffness`),
+    damping = finite(object.damping, `${path}.damping`);
+  requireValue(stiffness > 0 && damping >= 0, path, "Position servo gains are invalid.");
+  return { enabled, target, stiffness, damping };
+}
 function finite(value: unknown, path: string): number {
   requireValue(typeof value === "number" && Number.isFinite(value), path, "Expected a finite number.");
   return value;
@@ -416,7 +439,7 @@ function parseCollider(value: unknown, path: string): DynamicPhysicsColliderRunt
 
 function parsePhysics(value: unknown, path: string): DynamicPhysicsRuntime {
   const object = record(value, path);
-  fields(object, ["schema", "schemaVersion", "enabled", "playing", "gravity", "bodies", "joints"], [], path);
+  fields(object, ["schema", "schemaVersion", "enabled", "playing", "gravity", "bodies", "joints"], ["gears"], path);
   requireValue(object.schema === "deep-engine.physics-runtime" && object.schemaVersion === 1 && object.enabled === true, path, "Unsupported physics schema.");
   requireValue(typeof object.playing === "boolean", `${path}.playing`, "Expected a boolean.");
   const gravity = vec3(object.gravity, `${path}.gravity`);
@@ -460,18 +483,41 @@ function parsePhysics(value: unknown, path: string): DynamicPhysicsRuntime {
     requireValue(axis.some(component => Math.abs(component) > 1e-9), `${jointPath}.axis`, "Joint axis must be non-zero.");
     const limits = record(joint.limits, `${jointPath}.limits`), motor = record(joint.motor, `${jointPath}.motor`);
     fields(limits, ["enabled", "min", "max"], [], `${jointPath}.limits`);
-    fields(motor, ["enabled", "targetVelocity", "strength"], [], `${jointPath}.motor`);
+    fields(motor, ["enabled", "targetVelocity", "strength"], ["position"], `${jointPath}.motor`);
     requireValue(typeof limits.enabled === "boolean" && typeof motor.enabled === "boolean", jointPath, "Joint feature flags must be boolean.");
     const min = finite(limits.min, `${jointPath}.limits.min`), max = finite(limits.max, `${jointPath}.limits.max`);
     const targetVelocity = finite(motor.targetVelocity, `${jointPath}.motor.targetVelocity`), strength = finite(motor.strength, `${jointPath}.motor.strength`);
     requireValue(min <= max && strength >= 0, jointPath, "Joint limits or motor strength are invalid.");
     requireValue(joint.solver !== "multibody" || (!limits.enabled && !motor.enabled), jointPath, "Multibody limits and motors are not supported.");
+    // T17 位置伺服:仅 impulse;motor.enabled 是马达总开关(伺服开启必须为 true);
+    // gain fail-closed(零刚度伺服无意义,damping 非负)。
+    const position = Object.hasOwn(motor, "position") ? parsePositionMotor(motor.position, `${jointPath}.motor.position`) : undefined;
+    requireValue(position === undefined || (!position.enabled || (joint.solver === "impulse" && motor.enabled)), jointPath,
+      "Position servo requires the impulse solver and an enabled motor.");
     return { id: resourceId(joint.id, `${jointPath}.id`), kind: joint.kind as "revolute" | "prismatic", solver: joint.solver as "impulse" | "multibody", bodyId, connectedBodyId,
       worldAnchor: vec3(joint.worldAnchor, `${jointPath}.worldAnchor`), localAnchor: vec3(joint.localAnchor, `${jointPath}.localAnchor`), axis,
-      limits: { enabled: limits.enabled, min, max }, motor: { enabled: motor.enabled, targetVelocity, strength } };
+      limits: { enabled: limits.enabled, min, max }, motor: { enabled: motor.enabled, targetVelocity, strength,
+        ...(position === undefined ? {} : { position: { enabled: position.enabled, target: position.target, stiffness: position.stiffness, damping: position.damping } }) } };
   });
   requireValue(new Set(joints.map(joint => joint.id)).size === joints.length
     && joints.every((joint, index) => index === 0 || joint.id > joints[index - 1]!.id), `${path}.joints`, "Physics joints must be unique and sorted.");
+  // T17 齿轮耦合:driver/follower 必须是既有 impulse 同类关节;ratio 非零有限。
+  const gears = Object.hasOwn(object, "gears") ? array(object.gears, `${path}.gears`, MAX_PHYSICS_JOINTS).map((value, index) => {
+    const gearPath = `${path}.gears[${index}]`, gear = record(value, gearPath);
+    fields(gear, ["id", "driverJointId", "followerJointId", "ratio", "stiffness", "damping"], [], gearPath);
+    const jointById = new Map(joints.map(joint => [joint.id, joint]));
+    const driverJointId = resourceId(gear.driverJointId, `${gearPath}.driverJointId`);
+    const followerJointId = resourceId(gear.followerJointId, `${gearPath}.followerJointId`);
+    const driver = jointById.get(driverJointId), follower = jointById.get(followerJointId);
+    const ratio = finite(gear.ratio, `${gearPath}.ratio`), stiffness = finite(gear.stiffness, `${gearPath}.stiffness`),
+      damping = finite(gear.damping, `${gearPath}.damping`);
+    requireValue(driver !== undefined && follower !== undefined && driverJointId !== followerJointId
+      && driver.kind === follower.kind && driver.solver === "impulse" && follower.solver === "impulse"
+      && ratio !== 0 && stiffness > 0 && damping >= 0, gearPath, "Gear coupling references invalid or mismatched joints.");
+    return { id: resourceId(gear.id, `${gearPath}.id`), driverJointId, followerJointId, ratio, stiffness, damping };
+  }) : undefined;
+  requireValue(!gears || new Set(gears.map(gear => gear.id)).size === gears.length
+    && gears.every((gear, index) => index === 0 || gear.id > gears[index - 1]!.id), `${path}.gears`, "Gear couplings must be unique and sorted.");
   const multibodyParents = new Map<string, string | null>();
   for (const joint of joints.filter(joint => joint.solver === "multibody")) {
     requireValue(!multibodyParents.has(joint.bodyId), `${path}.joints`, "A multibody child can have only one parent.");
@@ -486,7 +532,8 @@ function parsePhysics(value: unknown, path: string): DynamicPhysicsRuntime {
       current = multibodyParents.get(current);
     }
   }
-  return { schema: "deep-engine.physics-runtime", schemaVersion: 1, enabled: true, playing: object.playing, gravity, bodies, joints };
+  return { schema: "deep-engine.physics-runtime", schemaVersion: 1, enabled: true, playing: object.playing, gravity, bodies, joints,
+    ...(gears === undefined ? {} : { gears }) };
 }
 
 export function validateDynamicSceneRuntime(input: unknown): { valid: true; value: DynamicSceneRuntime; issues: readonly [] } | { valid: false; issues: readonly { path: string; message: string }[] } {

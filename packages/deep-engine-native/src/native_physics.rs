@@ -16,8 +16,8 @@ use crate::{
         CharacterTickPlan,
     },
     runtime_package::{
-        DynamicPhysicsBodyRuntime, DynamicPhysicsCommand, DynamicPhysicsJointRuntime,
-        DynamicSceneRuntime,
+        DynamicGearConstraintRuntime, DynamicPhysicsBodyRuntime, DynamicPhysicsCommand,
+        DynamicPhysicsJointRuntime, DynamicSceneRuntime,
     },
 };
 
@@ -34,6 +34,10 @@ mod golden_tests;
 mod mechanism_golden_tests;
 
 #[cfg(test)]
+#[path = "native_physics_motor_gear_tests.rs"]
+mod motor_gear_tests;
+
+#[cfg(test)]
 #[path = "native_physics_collider_tests.rs"]
 mod collider_tests;
 
@@ -48,6 +52,30 @@ struct BodyBinding {
     instances: Vec<(String, Mat4)>,
     /// T16:角色驱动器;仅 `character` 配置齐全的 kinematic 刚体持有。
     character: Option<CharacterDriver>,
+}
+
+/// T17:impulse 关节的耦合端点档案(齿轮耦合器构造与 `insert_joint` 分离所需)。
+struct JointEndpoint {
+    handle: ImpulseJointHandle,
+    model_body: RigidBodyHandle,
+    revolute: bool,
+    axis: Vec3,
+}
+
+/// T17 齿轮耦合:从动关节坐标 = ratio × 主动关节坐标(位置伺服跟随)。
+/// 与 Web `mountRapierGearCoupling` 逐位同构:绕轴投影角 + 逐步最短角 unwrap;
+/// 两端 Rapier 均无原生齿轮约束,由宿主在每步求解前驱动从动侧位置马达。
+struct GearCoupling {
+    driver_body: RigidBodyHandle,
+    follower_joint: ImpulseJointHandle,
+    axis: Vec3,
+    revolute: bool,
+    driver_initial_translation: Vec3,
+    ratio: f32,
+    stiffness: f32,
+    damping: f32,
+    previous_raw: Option<f32>,
+    continuous: f32,
 }
 
 /// Transactionally constructed Rapier product host. `new` builds every body,
@@ -68,6 +96,8 @@ pub struct NativePhysicsHost {
     multibody_joints: MultibodyJointSet,
     ccd: CCDSolver,
     bindings: Vec<BodyBinding>,
+    /// T17:齿轮耦合器,每步求解前驱动(见 `GearCoupling`)。
+    gear_couplings: Vec<GearCoupling>,
     /// T16:角色世界查询专用 BVH(与 pipeline 的 broad_phase 完全独立)。
     /// `BroadPhaseBvh::update` 的 pair 事件只允许被 pipeline 消费一次:若在
     /// 构造期预填充 pipeline 的 BVH,dynamic-static 接触对事件会被吞掉,
@@ -113,12 +143,14 @@ impl NativePhysicsHost {
             multibody_joints: MultibodyJointSet::new(),
             ccd: CCDSolver::new(),
             bindings: Vec::new(),
+            gear_couplings: Vec::new(),
             query_broad_phase: BroadPhaseBvh::new(),
         };
         host.integration.dt = FIXED_TIMESTEP_SECONDS as f32;
         host.integration.num_solver_iterations = 8;
         let world = host.bodies.insert(RigidBodyBuilder::fixed().build());
         let mut handles = HashMap::new();
+        let mut joint_endpoints: HashMap<String, JointEndpoint> = HashMap::new();
         for command in runtime.physics_commands() {
             match command {
                 DynamicPhysicsCommand::Configure { playing, gravity } => {
@@ -131,7 +163,10 @@ impl NativePhysicsHost {
                     host.bindings.push(binding);
                 }
                 DynamicPhysicsCommand::UpsertJoint(joint) => {
-                    host.insert_joint(&handles, world, &joint)?
+                    host.insert_joint(&handles, world, &joint, &mut joint_endpoints)?
+                }
+                DynamicPhysicsCommand::ConfigureGears(gears) => {
+                    host.insert_gear_couplings(&joint_endpoints, &gears)?;
                 }
             }
         }
@@ -201,6 +236,58 @@ impl NativePhysicsHost {
     fn step_fixed_tick(&mut self) {
         let dt = FIXED_TIMESTEP_SECONDS as f32;
         let tick = self.fixed_step_count.saturating_add(1);
+
+        // 阶段 0:T17 齿轮耦合——求解前读主动坐标、写从动位置马达目标
+        // (与 Web `mountRapierGearCoupling` 逐位同构:轴投影 + 最短角 unwrap + 速度前馈)。
+        for coupling in &mut self.gear_couplings {
+            let Some(body) = self.bodies.get(coupling.driver_body) else {
+                continue;
+            };
+            let feedforward;
+            if coupling.revolute {
+                let rotation = body.rotation().normalize();
+                let raw = 2.0
+                    * (rotation.x * coupling.axis.x
+                        + rotation.y * coupling.axis.y
+                        + rotation.z * coupling.axis.z)
+                        .atan2(rotation.w);
+                coupling.continuous = match coupling.previous_raw {
+                    None => 0.0,
+                    Some(previous) => coupling.continuous + wrap_angle(raw - previous),
+                };
+                coupling.previous_raw = Some(raw);
+                feedforward = coupling.ratio * body.angvel().dot(coupling.axis);
+            } else {
+                let translation = body.translation();
+                coupling.continuous =
+                    (translation - coupling.driver_initial_translation).dot(coupling.axis);
+                feedforward = coupling.ratio * body.linvel().dot(coupling.axis);
+            }
+            // 与 Web `configureMotorPosition` 同语义:配置马达不主动唤醒连接体,
+            // 低速案例由黄金参数保证速度高于两端睡眠阈。
+            let Some(joint) = self.impulse_joints.get_mut(coupling.follower_joint, false) else {
+                continue;
+            };
+            let axis = if coupling.revolute {
+                JointAxis::AngX
+            } else {
+                JointAxis::LinX
+            };
+            // 位置 target wrap 到主值域:Rapier 关节角按主值口径参与误差计算,连续
+            // 多圈 target 会与内部口径失配产生巨误差脉冲(与 Web 端同因同修)。
+            let target = if coupling.revolute {
+                wrap_angle(coupling.ratio * coupling.continuous)
+            } else {
+                coupling.ratio * coupling.continuous
+            };
+            joint.data.set_motor(
+                axis,
+                target,
+                feedforward,
+                coupling.stiffness,
+                coupling.damping,
+            );
+        }
 
         // 阶段 1:消费角色输入并求期望位移(借 bindings + bodies 可变引用)。
         let mut plans: Vec<(usize, CharacterTickPlan)> = Vec::new();
@@ -658,6 +745,7 @@ impl NativePhysicsHost {
         handles: &HashMap<String, RigidBodyHandle>,
         world: RigidBodyHandle,
         joint: &DynamicPhysicsJointRuntime,
+        joint_endpoints: &mut HashMap<String, JointEndpoint>,
     ) -> Result<(), String> {
         let child = *handles
             .get(&joint.body_id)
@@ -691,14 +779,15 @@ impl NativePhysicsHost {
         } else {
             JointAxis::AngX
         };
+        let axis_vector = vec3(joint.axis)?;
         let mut descriptor: GenericJoint = if prismatic {
-            PrismaticJointBuilder::new(vec3(joint.axis)?)
+            PrismaticJointBuilder::new(axis_vector)
                 .local_anchor1(parent_anchor)
                 .local_anchor2(vec3(joint.local_anchor)?)
                 .build()
                 .into()
         } else {
-            RevoluteJointBuilder::new(vec3(joint.axis)?)
+            RevoluteJointBuilder::new(axis_vector)
                 .local_anchor1(parent_anchor)
                 .local_anchor2(vec3(joint.local_anchor)?)
                 .build()
@@ -707,20 +796,106 @@ impl NativePhysicsHost {
         if joint.limits.enabled {
             descriptor.set_limits(axis, [joint.limits.min as f32, joint.limits.max as f32]);
         }
-        if joint.motor.enabled {
-            descriptor.set_motor_model(axis, MotorModel::ForceBased);
-            descriptor.set_motor_velocity(
+        // T17 位置伺服:enabled 时覆盖速度目标(target 为关节坐标,revolute rad/prismatic m);
+        // motor.enabled 是马达总开关(解析层强制伺服开启时必须为 true),此处双保险。
+        let position = joint
+            .motor
+            .position
+            .as_ref()
+            .filter(|position| position.enabled);
+        if joint.motor.enabled || position.is_some() {
+            // 位置伺服走加速度基模型(增益与刚体惯量解耦,任意惯量体数值稳定);
+            // 速度马达保持 ForceBased(与 T17 既有速度马达黄金同口径)。
+            descriptor.set_motor_model(
                 axis,
-                joint.motor.target_velocity as f32,
-                joint.motor.strength as f32,
+                if position.is_some() {
+                    MotorModel::AccelerationBased
+                } else {
+                    MotorModel::ForceBased
+                },
             );
+            if let Some(position) = position {
+                descriptor.set_motor_position(
+                    axis,
+                    position.target as f32,
+                    position.stiffness as f32,
+                    position.damping as f32,
+                );
+            } else {
+                descriptor.set_motor_velocity(
+                    axis,
+                    joint.motor.target_velocity as f32,
+                    joint.motor.strength as f32,
+                );
+            }
         }
         if joint.solver == "multibody" {
             self.multibody_joints
                 .insert(parent, child, descriptor, true)
                 .ok_or_else(|| format!("physics multibody joint {} topology rejected", joint.id))?;
         } else {
-            self.impulse_joints.insert(parent, child, descriptor, true);
+            let handle = self.impulse_joints.insert(parent, child, descriptor, true);
+            // T17:齿轮耦合器按关节 ID 取端点档案(句柄/模型体/kind/轴)。
+            joint_endpoints.insert(
+                joint.id.clone(),
+                JointEndpoint {
+                    handle,
+                    model_body: child,
+                    revolute: !prismatic,
+                    axis: axis_vector,
+                },
+            );
+        }
+        Ok(())
+    }
+
+    /// T17:按运行包 gears 构建齿轮耦合器;引用缺失或关节已被移除即 fail-closed。
+    fn insert_gear_couplings(
+        &mut self,
+        joint_endpoints: &HashMap<String, JointEndpoint>,
+        gears: &[DynamicGearConstraintRuntime],
+    ) -> Result<(), String> {
+        for gear in gears {
+            let driver = joint_endpoints
+                .get(&gear.driver_joint_id)
+                .ok_or_else(|| format!("physics gear {} driver joint missing", gear.id))?;
+            let follower = joint_endpoints
+                .get(&gear.follower_joint_id)
+                .ok_or_else(|| format!("physics gear {} follower joint missing", gear.id))?;
+            if driver.revolute != follower.revolute {
+                return Err(format!("physics gear {} mixes joint kinds", gear.id));
+            }
+            // 位置伺服用加速度基模型:增益与从动体惯量解耦(ForceBased 下小惯量轮的
+            // 等效 ωn·dt 远超稳定界,与 Web 端同因同修)。
+            self.impulse_joints
+                .get_mut(follower.handle, false)
+                .ok_or("physics gear follower joint vanished")?
+                .data
+                .set_motor_model(
+                    if follower.revolute {
+                        JointAxis::AngX
+                    } else {
+                        JointAxis::LinX
+                    },
+                    MotorModel::AccelerationBased,
+                );
+            let initial_translation = self
+                .bodies
+                .get(driver.model_body)
+                .ok_or("physics gear driver body vanished")?
+                .translation();
+            self.gear_couplings.push(GearCoupling {
+                driver_body: driver.model_body,
+                follower_joint: follower.handle,
+                axis: driver.axis,
+                revolute: driver.revolute,
+                driver_initial_translation: initial_translation,
+                ratio: gear.ratio as f32,
+                stiffness: gear.stiffness as f32,
+                damping: gear.damping as f32,
+                previous_raw: None,
+                continuous: 0.0,
+            });
         }
         Ok(())
     }
@@ -765,6 +940,11 @@ fn vec3(value: [f64; 3]) -> Result<Vec3, String> {
         .is_finite()
         .then_some(result)
         .ok_or_else(|| "physics vector exceeds f32 range".into())
+}
+
+/// 最短角归一到 (-π, π];与 Web `wrapToPi` 同构,吸收四元数 ±q 双覆盖的 ±2π 假跳变。
+fn wrap_angle(delta: f32) -> f32 {
+    delta - std::f32::consts::TAU * (delta / std::f32::consts::TAU).round()
 }
 
 /// 凸包退化守卫(与 TS quickhull 同阈值口径):全共线/全共面的点集在

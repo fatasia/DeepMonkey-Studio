@@ -153,6 +153,23 @@ export interface ScenePhysicsState {
   gravity: Vector3Value;
   /** Product-authored joints. Omitted by legacy scenes. */
   joints?: ScenePhysicsJointState[];
+  /** T17 gear couplings: keep a follower joint's coordinate at `ratio ×` the driver
+   * joint coordinate via a position servo (both Rapier versions ship no native gear
+   * joint). Impulse-solver joints of the same kind only. */
+  gears?: SceneGearConstraintState[];
+}
+
+/** T17 齿轮耦合：从动关节坐标 = ratio × 主动关节坐标（伺服跟随，非求解器级啮合）。
+ * 外啮合反向用负 ratio 表达。 */
+export interface SceneGearConstraintState {
+  id: string;
+  driverJointId: string;
+  followerJointId: string;
+  /** Follower coordinate per driver coordinate unit; finite and non-zero. */
+  ratio: number;
+  /** Servo gains of the follower position motor (Rapier stiffness/damping). */
+  stiffness: number;
+  damping: number;
 }
 
 export interface ScenePhysicsJointState {
@@ -175,7 +192,10 @@ export interface ScenePhysicsJointState {
   /** Linear limits are metres for prismatic joints, radians for revolute joints. */
   limits: { enabled: boolean; min: number; max: number };
   /** Rapier velocity motor. Strength is the solver factor, not a torque claim. */
-  motor: { enabled: boolean; targetVelocity: number; strength: number };
+  motor: { enabled: boolean; targetVelocity: number; strength: number;
+    /** T17 position servo: overrides targetVelocity while enabled; `target` is the
+     * joint coordinate (radians for revolute, metres for prismatic, impulse only). */
+    position?: { enabled: boolean; target: number; stiffness: number; damping: number } };
 }
 
 export type ExplosionMode = "radial" | "vertical" | "x" | "y" | "z";

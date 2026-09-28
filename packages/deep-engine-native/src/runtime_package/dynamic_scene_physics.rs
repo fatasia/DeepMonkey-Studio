@@ -23,6 +23,9 @@ pub struct DynamicPhysicsRuntime {
     pub gravity: [f64; 3],
     pub bodies: Vec<DynamicPhysicsBodyRuntime>,
     pub joints: Vec<DynamicPhysicsJointRuntime>,
+    /// T17 齿轮耦合;旧运行包省略时为空。
+    #[serde(default)]
+    pub gears: Vec<DynamicGearConstraintRuntime>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -163,13 +166,43 @@ pub struct DynamicPhysicsMotorRuntime {
     pub enabled: bool,
     pub target_velocity: f64,
     pub strength: f64,
+    /// T17 位置伺服;enabled 时覆盖 target_velocity。省略时保持速度马达语义。
+    #[serde(default)]
+    pub position: Option<DynamicPhysicsPositionMotorRuntime>,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DynamicPhysicsPositionMotorRuntime {
+    pub enabled: bool,
+    /// 关节坐标:revolute 为弧度、prismatic 为米(相对关节锚定初始姿态)。
+    pub target: f64,
+    pub stiffness: f64,
+    pub damping: f64,
+}
+
+/// T17 齿轮耦合:从动关节坐标 = ratio × 主动关节坐标(位置伺服跟随)。
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DynamicGearConstraintRuntime {
+    pub id: String,
+    pub driver_joint_id: String,
+    pub follower_joint_id: String,
+    pub ratio: f64,
+    pub stiffness: f64,
+    pub damping: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DynamicPhysicsCommand {
-    Configure { playing: bool, gravity: [f64; 3] },
+    Configure {
+        playing: bool,
+        gravity: [f64; 3],
+    },
     UpsertBody(DynamicPhysicsBodyRuntime),
     UpsertJoint(DynamicPhysicsJointRuntime),
+    /// 关节全部建立后一次性下发;host 需要关节/刚体句柄映射才能构造耦合器。
+    ConfigureGears(Vec<DynamicGearConstraintRuntime>),
 }
 
 impl DynamicSceneRuntime {
@@ -183,13 +216,18 @@ impl DynamicSceneRuntime {
         bodies.sort_by(|left, right| left.id.cmp(&right.id));
         let mut joints = physics.joints.clone();
         joints.sort_by(|left, right| left.id.cmp(&right.id));
-        let mut commands = Vec::with_capacity(1 + bodies.len() + joints.len());
+        let mut gears = physics.gears.clone();
+        gears.sort_by(|left, right| left.id.cmp(&right.id));
+        let mut commands = Vec::with_capacity(2 + bodies.len() + joints.len());
         commands.push(DynamicPhysicsCommand::Configure {
             playing: physics.playing,
             gravity: physics.gravity,
         });
         commands.extend(bodies.into_iter().map(DynamicPhysicsCommand::UpsertBody));
         commands.extend(joints.into_iter().map(DynamicPhysicsCommand::UpsertJoint));
+        if !gears.is_empty() {
+            commands.push(DynamicPhysicsCommand::ConfigureGears(gears));
+        }
         commands
     }
 }
@@ -280,6 +318,14 @@ pub(super) fn validate_physics_runtime(
             || !joint.motor.target_velocity.is_finite()
             || !joint.motor.strength.is_finite()
             || joint.motor.strength < 0.0
+            || joint.motor.position.as_ref().is_some_and(|position| {
+                !position.target.is_finite()
+                    || !position.stiffness.is_finite()
+                    || position.stiffness <= 0.0
+                    || !position.damping.is_finite()
+                    || position.damping < 0.0
+                    || (position.enabled && (joint.solver != "impulse" || !joint.motor.enabled))
+            })
             || joint.solver == "multibody" && (joint.limits.enabled || joint.motor.enabled)
         {
             return fail("dynamic physics joint is invalid or unsupported");
@@ -302,6 +348,46 @@ pub(super) fn validate_physics_runtime(
             }
             current = multibody_parent.get(id).copied().flatten();
         }
+    }
+    // T17 齿轮耦合:引用既有 impulse 同类关节;ratio 非零有限、gain fail-closed。
+    let joint_kind: HashMap<&str, &str> = physics
+        .joints
+        .iter()
+        .map(|joint| (joint.id.as_str(), joint.kind.as_str()))
+        .collect();
+    let impulse_joints: HashSet<&str> = physics
+        .joints
+        .iter()
+        .filter(|joint| joint.solver == "impulse")
+        .map(|joint| joint.id.as_str())
+        .collect();
+    previous = "";
+    let mut gear_ids = HashSet::new();
+    for gear in &physics.gears {
+        let same_kind = matches!(
+            (
+                joint_kind.get(gear.driver_joint_id.as_str()),
+                joint_kind.get(gear.follower_joint_id.as_str()),
+            ),
+            (Some(driver), Some(follower)) if driver == follower
+        );
+        if !valid_resource_id(&gear.id)
+            || (!previous.is_empty() && gear.id.as_str() <= previous)
+            || !gear_ids.insert(gear.id.as_str())
+            || gear.driver_joint_id == gear.follower_joint_id
+            || !same_kind
+            || !impulse_joints.contains(gear.driver_joint_id.as_str())
+            || !impulse_joints.contains(gear.follower_joint_id.as_str())
+            || !gear.ratio.is_finite()
+            || gear.ratio == 0.0
+            || !gear.stiffness.is_finite()
+            || gear.stiffness <= 0.0
+            || !gear.damping.is_finite()
+            || gear.damping < 0.0
+        {
+            return fail("dynamic physics gear coupling is invalid or unsupported");
+        }
+        previous = &gear.id;
     }
     Ok(())
 }

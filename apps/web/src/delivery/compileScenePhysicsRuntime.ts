@@ -62,6 +62,13 @@ export function compileScenePhysicsRuntime(
       throw new Error(`关节 ${joint.id} 引用了未编译的刚体`);
     }
     if (joint.connectedBodyId === joint.bodyId) throw new Error(`关节 ${joint.id} 不能连接同一刚体`);
+    // T17 位置伺服:multibody 拒绝、motor.enabled 是总开关;gain fail-closed(零刚度伺服无意义,damping 非负)。
+    const position = joint.motor.position;
+    if (position && (position.enabled && (solver === "multibody" || !joint.motor.enabled)
+      || !Number.isFinite(position.target) || !Number.isFinite(position.stiffness) || position.stiffness <= 0
+      || !Number.isFinite(position.damping) || position.damping < 0)) {
+      throw new Error(`关节 ${joint.id} 的位置伺服参数无效`);
+    }
     if (solver === "multibody" && (joint.limits.enabled || joint.motor.enabled)) {
       throw new Error(`关节 ${joint.id} 的 multibody 限位或马达尚不受支持`);
     }
@@ -70,8 +77,23 @@ export function compileScenePhysicsRuntime(
         joint.worldAnchor.z - options.coordinateOrigin.z] as const,
       localAnchor: vector(joint.localAnchor), axis: vector(joint.axis) };
   }).sort((left, right) => compare(left.id, right.id));
+  // T17 齿轮耦合:driver/follower 必须是既有 impulse 同类关节;ratio 非零、gain 有效。
+  const jointById = new Map(joints.map(joint => [joint.id, joint] as const));
+  const gears = [...(scene.physics.gears ?? [])].map(gear => {
+    const driver = jointById.get(gear.driverJointId), follower = jointById.get(gear.followerJointId);
+    if (!driver || !follower || gear.driverJointId === gear.followerJointId
+      || driver.kind !== follower.kind || driver.solver !== "impulse" || follower.solver !== "impulse"
+      || !Number.isFinite(gear.ratio) || gear.ratio === 0
+      || !Number.isFinite(gear.stiffness) || gear.stiffness <= 0
+      || !Number.isFinite(gear.damping) || gear.damping < 0) {
+      throw new Error(`齿轮耦合 ${gear.id} 引用了无效或不匹配的关节`);
+    }
+    return { id: gear.id, driverJointId: gear.driverJointId, followerJointId: gear.followerJointId,
+      ratio: gear.ratio, stiffness: gear.stiffness, damping: gear.damping };
+  }).sort((left, right) => compare(left.id, right.id));
   return { schema: "deep-engine.physics-runtime", schemaVersion: 1, enabled: true,
-    playing: scene.physics.playing, gravity: vector(scene.physics.gravity), bodies, joints };
+    playing: scene.physics.playing, gravity: vector(scene.physics.gravity), bodies, joints,
+    ...(gears.length ? { gears } : {}) };
 }
 
 /** 作者 collider → 运行包判别联合;fail-closed:几何缺失/越界/generated 缺精度标记一律拒绝。 */

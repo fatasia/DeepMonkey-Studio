@@ -1,10 +1,11 @@
 import * as THREE from "three";
 import type { SceneAnimationState, SceneCharacterControllerState, ScenePhysicsBodyState, ScenePhysicsState } from "@bim-studio/contracts";
-import type { RigidBody } from "@dimforge/rapier3d-compat";
+import type { PrismaticImpulseJoint, RevoluteImpulseJoint, RigidBody } from "@dimforge/rapier3d-compat";
 import { normalizeAnimationFrameRate, normalizeSceneAnimationPlaybackRange } from "./timeline";
 import { applyTransform, objectTransform } from "./sceneObjectUtils";
 import { ViewerEngineRig } from "./viewerEngineRig";
-import { mountRapierJoint, normalizePhysicsJoints, removeMountedRapierJoint } from "./rapierPhysicsJoint";
+import { mountRapierGearCoupling, mountRapierJoint, normalizePhysicsGears, normalizePhysicsJoints, removeMountedRapierJoint,
+  type MountedRapierGearCoupling } from "./rapierPhysicsJoint";
 import { configureCharacterController, moveRapierCharacter, mountRapierCharacterController, removeMountedRapierCharacter } from "./rapierCharacterController";
 import { resolvePhysicsCollisionDispatches, type PhysicsColliderOwners } from "./rapierPhysicsCollisionEvents";
 import { collectPhysicsCuboidDebugEntries } from "./rapierPhysicsDebugView";
@@ -42,17 +43,21 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
   protected physicsReplayFrame: PhysicsPoseFrame | undefined;
   /** 手动步进的上限：一次调用最多追 600 步（与默认录制容量同级），防卡帧。 */
   private static readonly MAX_MANUAL_STEPS = 600;
+  /** T17 齿轮耦合器：随关节重建同步重建，world.step 之前逐个驱动。 */
+  private physicsGearCouplings: MountedRapierGearCoupling[] = [];
 
   getPhysicsState(): ScenePhysicsState {
       return structuredClone(this.physicsState);
     }
   setPhysicsState(state: ScenePhysicsState): void {
       const joints = normalizePhysicsJoints(state.joints);
+      const gears = normalizePhysicsGears(state.gears, joints);
       this.physicsState = {
         enabled: state.enabled,
         playing: state.enabled && state.playing,
         gravity: { ...state.gravity },
         ...(joints.length ? { joints } : {}),
+        ...(gears.length ? { gears } : {}),
       };
       this.physicsHost.configure(this.physicsState);
       if (state.enabled) void this.ensurePhysicsWorld().then(() => {
@@ -151,7 +156,13 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
         const attached = this.physicsHost.attach({
           setGravity: (gravity) => { world.gravity = { ...gravity }; },
           // T28：每个固定步求解后触发调试录制钩子（录制/步计数与求解步一一对应）。
-          step: (timestep) => { world.timestep = timestep; world.step(eventQueue); this.afterPhysicsFixedStep(); },
+          step: (timestep) => {
+            world.timestep = timestep;
+            // T17 齿轮耦合：求解前读主动角、写从动位置马达目标（与 Native 逐位同构）。
+            for (const coupling of this.physicsGearCouplings) coupling.update();
+            world.step(eventQueue);
+            this.afterPhysicsFixedStep();
+          },
           dispose: () => { eventQueue.free(); world.free(); },
         });
         if (!attached) { eventQueue.free(); world.free(); return; }
@@ -288,17 +299,43 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
         const runtime = mountRapierJoint(rapier, world, connectedBody, body, state);
         this.physicsJoints.set(state.id, runtime);
       }
+      this.rebuildPhysicsGearCouplings();
+    }
+  /** T17：按当前关节装载重建齿轮耦合器；joint 被移除后残留耦合器会访问已释放句柄。 */
+  private rebuildPhysicsGearCouplings(): void {
+      this.physicsGearCouplings = [];
+      const jointStates = new Map((this.physicsState.joints ?? []).map(state => [state.id, state]));
+      for (const gear of this.physicsState.gears ?? []) {
+        const driverState = jointStates.get(gear.driverJointId), followerState = jointStates.get(gear.followerJointId);
+        const driver = this.physicsJoints.get(gear.driverJointId), follower = this.physicsJoints.get(gear.followerJointId);
+        const driverBody = driverState ? this.physicsBodies.get(driverState.bodyId)?.body : undefined;
+        const followerBody = followerState ? this.physicsBodies.get(followerState.bodyId)?.body : undefined;
+        if (!driverState || !followerState || driver?.solver !== "impulse" || follower?.solver !== "impulse"
+          || !driverBody || !followerBody) continue;
+        // solver 已确保 impulse 装载;joint 联合类型在此收窄为单位冲量关节。
+        const driverJoint = driver.joint as RevoluteImpulseJoint | PrismaticImpulseJoint;
+        const followerJoint = follower.joint as RevoluteImpulseJoint | PrismaticImpulseJoint;
+        this.physicsGearCouplings.push(mountRapierGearCoupling(this.rapier!,
+          { kind: driverState.kind, axis: driverState.axis, body: driverBody, joint: driverJoint },
+          { kind: followerState.kind, axis: followerState.axis, body: followerBody, joint: followerJoint },
+          { ratio: gear.ratio, stiffness: gear.stiffness, damping: gear.damping },
+        ));
+      }
     }
   protected removePhysicsJointsForBody(bodyId: string): void {
       const world = this.physicsWorld;
       if (!world) return;
       const states = new Map((this.physicsState.joints ?? []).map((joint) => [joint.id, joint]));
+      let removed = false;
       for (const [id, joint] of this.physicsJoints) {
         const state = states.get(id);
         if (state?.bodyId !== bodyId && state?.connectedBodyId !== bodyId) continue;
         removeMountedRapierJoint(world, joint);
         this.physicsJoints.delete(id);
+        removed = true;
       }
+      // T17：被移除关节上的齿轮耦合器若残留，update 会访问已释放的 joint 句柄。
+      if (removed) this.rebuildPhysicsGearCouplings();
     }
   protected updatePhysics(delta: number): void {
       const world = this.physicsWorld;

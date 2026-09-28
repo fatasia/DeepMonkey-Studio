@@ -116,4 +116,44 @@ describe("scene physics runtime compilation", () => {
     scene.models[0]!.physics!.collider = { kind: "primitive", primitive: { shape: "sphere", radius: 0 } };
     expect(() => compileScenePhysicsRuntime(scene, { coordinateOrigin: { x: 0, y: 0, z: 0 }, objectBindings: bindings })).toThrow(/正半径/);
   });
+
+  it("lowers position servo motors and gear couplings, and the payload re-validates as a runtime package", () => {
+    const bindings = [{ nodeId: "body-a", instanceIds: ["instance-a"] }, { nodeId: "body-b", instanceIds: ["instance-b"] }];
+    const scene = fixture();
+    scene.physics!.joints = [{
+      id: "joint-a", kind: "revolute", bodyId: "body-a", connectedBodyId: "body-b",
+      worldAnchor: { x: 0, y: 0, z: 0 }, localAnchor: { x: 0, y: 0, z: 0 }, axis: { x: 0, y: 0, z: 1 },
+      limits: { enabled: false, min: -1, max: 1 },
+      motor: { enabled: true, targetVelocity: 0, strength: 0,
+        position: { enabled: true, target: 1.5, stiffness: 40, damping: 12 } },
+    }];
+    scene.physics!.gears = [{
+      id: "gear-b", driverJointId: "joint-a", followerJointId: "joint-c", ratio: -2, stiffness: 40, damping: 20,
+    }, {
+      id: "gear-a", driverJointId: "joint-a", followerJointId: "joint-c", ratio: 2, stiffness: 40, damping: 20,
+    }];
+    scene.physics!.joints.push({
+      id: "joint-c", kind: "revolute", bodyId: "body-b", connectedBodyId: undefined as never,
+      worldAnchor: { x: 0, y: 0, z: 0 }, localAnchor: { x: 0, y: 0, z: 0 }, axis: { x: 0, y: 0, z: 1 },
+      limits: { enabled: false, min: -1, max: 1 }, motor: { enabled: false, targetVelocity: 0, strength: 0 },
+    });
+    const runtime = compileScenePhysicsRuntime(scene, { coordinateOrigin: { x: 0, y: 0, z: 0 }, objectBindings: bindings })!;
+    expect(runtime.joints[0]!.motor.position).toMatchObject({ enabled: true, target: 1.5, stiffness: 40, damping: 12 });
+    // 齿轮按 id 排序下译;同关节/跨 kind 的非法耦合 fail-closed。
+    expect(runtime.gears).toEqual([
+      { id: "gear-a", driverJointId: "joint-a", followerJointId: "joint-c", ratio: 2, stiffness: 40, damping: 20 },
+      { id: "gear-b", driverJointId: "joint-a", followerJointId: "joint-c", ratio: -2, stiffness: 40, damping: 20 },
+    ]);
+    expect(validateDynamicSceneRuntime({ schema: "deep-engine.dynamic-runtime", schemaVersion: 3, id: "scene", revision: 1, physics: runtime }).valid).toBe(true);
+    // 负例:ratio 为零 / 同关节互连,一律 fail-closed。
+    scene.physics!.gears = [{ id: "gear-x", driverJointId: "joint-a", followerJointId: "joint-c", ratio: 0, stiffness: 40, damping: 20 }];
+    expect(() => compileScenePhysicsRuntime(scene, { coordinateOrigin: { x: 0, y: 0, z: 0 }, objectBindings: bindings })).toThrow(/无效或不匹配/);
+    scene.physics!.gears = [{ id: "gear-x", driverJointId: "joint-a", followerJointId: "joint-a", ratio: 2, stiffness: 40, damping: 20 }];
+    expect(() => compileScenePhysicsRuntime(scene, { coordinateOrigin: { x: 0, y: 0, z: 0 }, objectBindings: bindings })).toThrow(/无效或不匹配/);
+    delete (scene.physics as { gears?: unknown }).gears;
+    scene.physics!.joints = [scene.physics!.joints[0]!];
+    scene.physics!.joints[0]!.motor = { enabled: false, targetVelocity: 0, strength: 0,
+      position: { enabled: true, target: 1.5, stiffness: 40, damping: 12 } };
+    expect(() => compileScenePhysicsRuntime(scene, { coordinateOrigin: { x: 0, y: 0, z: 0 }, objectBindings: bindings })).toThrow(/位置伺服参数无效/);
+  });
 });

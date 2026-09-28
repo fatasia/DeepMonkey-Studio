@@ -84,6 +84,46 @@ describe("dynamic scene runtime ABI", () => {
       physics: { ...physics, bodies: [{ ...physics.bodies[0], collider: { kind: "mesh", instanceIds: ["instance-a"] } }] } }).valid).toBe(false);
   });
 
+  it("parses position servo motors and gear couplings, rejecting gains or references that fail closed", () => {
+    const physics = {
+      schema: "deep-engine.physics-runtime", schemaVersion: 1, enabled: true, playing: true, gravity: [0, 0, 0],
+      bodies: [
+        { id: "body-a", type: "dynamic", initialPose: { translation: [0, 0, 0], rotation: [0, 0, 0, 1] }, mass: 1, friction: 0.6, restitution: 0,
+          collider: { kind: "render-bounds", instanceIds: ["instance-a"] } },
+        { id: "body-b", type: "dynamic", initialPose: { translation: [0, 0, -0.04], rotation: [0, 0, 0, 1] }, mass: 0.6, friction: 0.6, restitution: 0,
+          collider: { kind: "render-bounds", instanceIds: ["instance-b"] } },
+      ],
+      joints: [
+        { id: "joint-a", kind: "revolute", solver: "impulse", bodyId: "body-a", connectedBodyId: null,
+          worldAnchor: [0, 0, 0], localAnchor: [0, 0, 0], axis: [0, 0, 1],
+          limits: { enabled: false, min: -1, max: 1 },
+          motor: { enabled: true, targetVelocity: 4, strength: 10,
+            position: { enabled: true, target: 1.5, stiffness: 40, damping: 12 } } },
+        { id: "joint-b", kind: "revolute", solver: "impulse", bodyId: "body-b", connectedBodyId: null,
+          worldAnchor: [0, 0, -0.04], localAnchor: [0, 0, 0], axis: [0, 0, 1],
+          limits: { enabled: false, min: -1, max: 1 }, motor: { enabled: false, targetVelocity: 0, strength: 0 } },
+      ],
+      gears: [{ id: "gear-1", driverJointId: "joint-a", followerJointId: "joint-b", ratio: -2, stiffness: 40, damping: 20 }],
+    };
+    const envelope = { schema: "deep-engine.dynamic-runtime", schemaVersion: 3, id: "scene", revision: 1, physics };
+    expect(validateDynamicSceneRuntime(envelope).valid).toBe(true);
+    const parsed = validateDynamicSceneRuntime(envelope).value?.physics;
+    expect(parsed?.joints[0]?.motor.position).toEqual({ enabled: true, target: 1.5, stiffness: 40, damping: 12 });
+    expect(parsed?.gears).toEqual([{ id: "gear-1", driverJointId: "joint-a", followerJointId: "joint-b", ratio: -2, stiffness: 40, damping: 20 }]);
+    // fail-closed 矩阵:伺服缺总开关 / multibody 伺服 / 零刚度 / 跨 kind 耦合 / 未排序 gear id / 未知字段。
+    const rejects = [
+      { ...physics, joints: [physics.joints[0], { ...physics.joints[1], motor: { enabled: false, targetVelocity: 0, strength: 0, position: { enabled: true, target: 1, stiffness: 40, damping: 12 } } }] },
+      { ...physics, joints: [{ ...physics.joints[0], solver: "multibody" }, physics.joints[1]] },
+      { ...physics, gears: [{ id: "gear-1", driverJointId: "joint-a", followerJointId: "joint-b", ratio: -2, stiffness: 0, damping: 20 }] },
+      { ...physics, gears: [{ id: "gear-1", driverJointId: "joint-a", followerJointId: "joint-a", ratio: -2, stiffness: 40, damping: 20 }] },
+      { ...physics, gears: [{ id: "gear-1", driverJointId: "joint-a", followerJointId: "joint-b", ratio: -2, stiffness: 40, damping: 20 }, { id: "gear-0", driverJointId: "joint-a", followerJointId: "joint-b", ratio: 2, stiffness: 40, damping: 20 }] },
+    ];
+    for (const broken of rejects) {
+      expect(validateDynamicSceneRuntime({ ...envelope, physics: broken }).valid).toBe(false);
+    }
+    expect(validateDynamicSceneRuntime({ ...envelope, physics: { ...physics, extra: 1 } }).valid).toBe(false);
+  });
+
   it("accepts hull, simplified-mesh and primitive colliders with precision marks and rejects incomplete payloads", () => {
     const physics = (collider: Record<string, unknown>) => ({
       schema: "deep-engine.physics-runtime", schemaVersion: 1, enabled: true, playing: true, gravity: [0, -9.81, 0],

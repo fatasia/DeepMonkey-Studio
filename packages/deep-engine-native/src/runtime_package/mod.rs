@@ -61,10 +61,11 @@ pub use dynamic_scene::{
     canonical_dynamic_frame, parse_and_validate_dynamic_scene_runtime,
 };
 pub use dynamic_scene_physics::{
-    DynamicPhysicsAutostepRuntime, DynamicPhysicsBodyRuntime,
+    DynamicGearConstraintRuntime, DynamicPhysicsAutostepRuntime, DynamicPhysicsBodyRuntime,
     DynamicPhysicsCharacterControllerRuntime, DynamicPhysicsColliderRuntime, DynamicPhysicsCommand,
     DynamicPhysicsJointRuntime, DynamicPhysicsLimitsRuntime, DynamicPhysicsMotorRuntime,
-    DynamicPhysicsPoseRuntime, DynamicPhysicsRuntime, DynamicPhysicsSnapToGroundRuntime,
+    DynamicPhysicsPoseRuntime, DynamicPhysicsPositionMotorRuntime, DynamicPhysicsRuntime,
+    DynamicPhysicsSnapToGroundRuntime,
 };
 pub use light_profiles::{IesSamplingTable, LightIes, LightProfile, ies_max_candela};
 pub use r3_state::{
