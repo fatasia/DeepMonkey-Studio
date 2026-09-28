@@ -5,8 +5,9 @@ import type {
   HlodClusterStreamBinding,
   ThreeObjectSource,
 } from "@bim-studio/deep-engine/three-bridge";
-import type { AuthoredQualityProfile } from "@bim-studio/deep-engine/webgpu";
+import type { AuthoredQualityProfile, ClusterLodSceneStaging } from "@bim-studio/deep-engine/webgpu";
 import { DEFAULT_RESOLUTION_SCALE_POLICY } from "@bim-studio/deep-engine/postprocess";
+import { buildClusterLodAuthorStaging, clusterLodAuthorBakeFromModule } from "../delivery/buildClusterLodAuthorStaging";
 import { StudioDeepQualityTelemetrySampler, publishStudioQualityTelemetry,
   type StudioQualityTelemetryOptions } from "./StudioDeepQualityTelemetry";
 import type { ViewerEngine } from "./ViewerEngine";
@@ -231,6 +232,19 @@ export class StudioDeepWebGpuBridge {
           // B4 簇级 HLOD(opt-in):仅独立作者包路径消费;默认关闭不改变现网行为。
           const authorHlodClusters = b4HlodClusterEnabled() && authorRenderPacket
             ? (await this.options.authorHlodClusters?.(signal)) ?? undefined : undefined;
+          // G1 簇级微多边形槽位(opt-in,`g1-cluster-lod=1`):作者包合并静态几何 → bake →
+          // staging 随 create 请求下发,backend 在静态包发布成功后恰注入一次渲染器槽位。
+          // bake 能力经 module.DeepWebGpuBackend 公共入口透传(rayTracing 合同层一字未动);
+          // 每种结果都落 performance.mark,开关关闭时零构建、零行为变化。
+          let clusterLodStaging: ClusterLodSceneStaging | undefined;
+          const clusterLodEnabled = g1ClusterLodEnabled();
+          if (clusterLodEnabled && authorRenderPacket) {
+            const outcome = buildClusterLodAuthorStaging(authorRenderPacket,
+              { bake: clusterLodAuthorBakeFromModule(module) });
+            if (outcome === undefined) markSwitchPhase("deep-webgpu:g1-cluster-lod-empty-scene");
+            else if (!outcome.ok) markSwitchPhase(`deep-webgpu:g1-cluster-lod-blocked-${outcome.failure.reason}`);
+            else { clusterLodStaging = outcome.value.staging; markSwitchPhase("deep-webgpu:g1-cluster-lod-staged"); }
+          }
           const view = this.viewReader.renderView(module, canvas);
           shadowMapSize = view.lights?.directional?.[0]?.shadow?.mapSize
             ?? studioDeepShadowMapSize(this.viewer.scene, this.viewer.camera.layers.mask, shadowTierAllocation.shadowMapSize);
@@ -250,7 +264,9 @@ export class StudioDeepWebGpuBridge {
             view, authorChunks: true,
             ...(authorRenderPacket ? { renderPacket: authorRenderPacket } : {}),
             ...(authorHlodClusters?.length ? { hlodClusters: authorHlodClusters } : {}),
+            ...(clusterLodStaging ? { clusterLodStaging } : {}),
             renderer: { environment: environment.source, deformation: true, meshlets: true,
+              ...(clusterLodEnabled ? { clusterLod: true } : {}),
               ...(resolutionScalePolicy ? { resolutionScalePolicy } : {}),
               ...(gpuPassTiming ? { gpuPassTiming: true } : {}),
               ...(pipelineBootstrap ? { pipelines: pipelineBootstrap } : {}),
@@ -873,6 +889,19 @@ export function b4HlodClusterEnabled(): boolean {
   const params = typeof location !== "undefined" && location.search
     ? new URLSearchParams(location.search) : undefined;
   const value = params?.get("b4-hlod-cluster")?.toLowerCase();
+  return value === "1" || value === "true" || value === "on";
+}
+
+/**
+ * G1 簇级微多边形槽位开关：默认关闭（作者链路帧时收益未过真机对照，不冒充默认
+ * 体验）；`g1-cluster-lod=1` 显式开启后，宿主把作者包合并静态几何 bake 成簇级
+ * DAG 随 create 下发，backend 在静态包发布成功后注入渲染器槽位（像素阈值选层 +
+ * indirect RenderBundle 进默认 opaque pass）。注入失败仅记诊断，不打断渲染链。
+ */
+export function g1ClusterLodEnabled(): boolean {
+  const params = typeof location !== "undefined" && location.search
+    ? new URLSearchParams(location.search) : undefined;
+  const value = params?.get("g1-cluster-lod")?.toLowerCase();
   return value === "1" || value === "true" || value === "on";
 }
 

@@ -39,6 +39,25 @@ describe("DeepWebGpuBackend creation", () => {
       .rejects.toThrow("deformation option must be boolean");
     expect(createRuntime).not.toHaveBeenCalled();
   });
+  it.each([true, false])("snapshots the clusterLod runtime option %s (G1)", async clusterLod => {
+    const target = runtime(), createRuntime = vi.fn(async () => target);
+    const renderer = { clusterLod };
+    const pending = DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
+      projection: bridge(), root: mesh(), view, renderer }, { create: createRuntime });
+    renderer.clusterLod = !clusterLod;
+    const backend = await pending;
+    const supplied = createRuntime.mock.calls[0]![3]!;
+    expect(supplied.clusterLod).toBe(clusterLod);
+    expect(Object.isFrozen(supplied)).toBe(true);
+    backend.dispose();
+  });
+  it.each([null, 1, "true", {}, []])("rejects malformed clusterLod %j before creating a runtime (G1)", async clusterLod => {
+    const createRuntime = vi.fn(async () => runtime());
+    await expect(DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
+      projection: bridge(), root: mesh(), view, renderer: { clusterLod } as never }, { create: createRuntime }))
+      .rejects.toThrow("clusterLod option must be boolean");
+    expect(createRuntime).not.toHaveBeenCalled();
+  });
   it("creates the PBR runtime from a frozen renderer-settings snapshot", async () => {
     const target = runtime("performance", 8 * 1024 * 1024), createRuntime = vi.fn(async () => target);
     const factory: DeepWebGpuRuntimeFactory = { create: createRuntime };

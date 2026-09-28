@@ -10,13 +10,16 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
     throw new TypeError("Deep WebGPU renderer options must be an object.");
   }
   if (Object.keys(options).some(key => !["shadows", "features", "environment", "deformation", "meshlets", "frameCapture", "adaptiveQuality", "probeClipmap", "pipelines",
-    "resolutionScalePolicy", "gpuPassTiming", "probeDirections"].includes(key))) {
+    "resolutionScalePolicy", "gpuPassTiming", "probeDirections", "clusterLod"].includes(key))) {
     throw new TypeError("Unknown Deep WebGPU renderer option.");
   }
   if (options.deformation !== undefined && typeof options.deformation !== "boolean") {
     throw new TypeError("Deep WebGPU deformation option must be boolean.");
   }
   if (options.meshlets !== undefined && typeof options.meshlets !== "boolean") throw new TypeError("Deep WebGPU meshlets option must be boolean.");
+  if (options.clusterLod !== undefined && typeof options.clusterLod !== "boolean") {
+    throw new TypeError("Deep WebGPU clusterLod option must be boolean.");
+  }
   return Object.freeze({
     ...(options.meshlets === undefined ? {} : { meshlets: options.meshlets }),
     ...(options.deformation === undefined ? {} : { deformation: options.deformation }),
@@ -32,6 +35,8 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
     ...(options.resolutionScalePolicy === undefined ? {} : { resolutionScalePolicy: Object.freeze({ ...options.resolutionScalePolicy }) }),
     ...(options.gpuPassTiming === undefined ? {} : { gpuPassTiming: options.gpuPassTiming }),
     ...(options.probeDirections === undefined ? {} : { probeDirections: options.probeDirections }),
+    // G1 簇级微多边形槽位开关（opt-in）：缺省不进快照，默认路径零行为变化。
+    ...(options.clusterLod === undefined ? {} : { clusterLod: options.clusterLod }),
   });
 }
 

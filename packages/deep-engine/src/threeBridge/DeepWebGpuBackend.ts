@@ -7,6 +7,8 @@ import { applyHlodPlanToInstances, hlodClusterStreamResources, hlodPlanSignature
 import type { ProjectionIssue, ProjectionResult, ThreeObjectSource } from "./types.js";
 import type { InstanceUpdate, RenderPacket } from "../renderPacket.js";
 import { PbrRenderer, type FrameMetrics, type PbrRendererOptions, type RenderView } from "../webgpu/pbrRenderer.js";
+import type { ClusterLodSceneStaging } from "../webgpu/clusterLodRenderSlot.js";
+import { bakeClusterLodDag, type ClusterLodBakeInput, type ClusterLodBakeResult } from "../rayTracing/clusterLodBake.js";
 import type { PbrEnvironmentSource } from "../webgpu/pbrEnvironmentSource.js";
 import { snapshotShadows, shadowSelection, type DeepWebGpuShadowSelection } from "./deepWebGpuShadowPolicy.js";
 import { ProbeClipmapPbrController, type ProbeClipmapPbrTarget } from "../webgpu/probeClipmapPbrController.js";
@@ -33,6 +35,11 @@ export interface DeepWebGpuRenderRuntime {
    * fails closed instead of publishing the probe runtime's test fallback.
    */
   createProbeClipmapController?(target: ProbeClipmapPbrTarget, deviceEpoch: string): ProbeClipmapPbrController;
+  /**
+   * G1 可选簇级微多边形槽位注入（PbrRenderer 同名方法的结构位）；缺省 = 运行时
+   * 不支持，backend 记入 clusterLodStagingFailure 诊断而不断开渲染链。
+   */
+  stageClusterLodScene?(staging: ClusterLodSceneStaging): void;
   dispose(): void;
 }
 
@@ -51,6 +58,12 @@ export interface DeepWebGpuBackendOptions {
   readonly hlodClusters?: readonly HlodClusterStreamBinding[];
   /** 宿主追加的折叠抑制信号(与编辑辅助 overlay 信号取或);true = 强制原件驻留。 */
   readonly hlodCollapseSuppressed?: () => boolean;
+  /**
+   * G1 簇级微多边形槽位(opt-in):宿主预构建的 bake 产物(作者包合并静态几何 →
+   * bakeClusterLodDag)。静态包发布成功后由 backend 恰注入一次;注入失败只记
+   * clusterLodStagingFailure 诊断,不打断渲染链。
+   */
+  readonly clusterLodStaging?: ClusterLodSceneStaging;
 }
 
 export interface DeepWebGpuRuntimeFactory {
@@ -118,6 +131,9 @@ export class DeepWebGpuBackend {
   private independentPacket = false;
   private readonly coordinates = new CameraRelativeCoordinates();
   private pendingCoordinate: CameraRelativeCoordinateSnapshot | undefined;
+  /** G1 簇级槽位注入状态：恰一次守卫 + 最近一次失败诊断。 */
+  private clusterLodStaged = false;
+  private clusterLodStagingError: unknown = undefined;
 
   constructor(
     readonly runtime: DeepWebGpuRenderRuntime,
@@ -131,6 +147,7 @@ export class DeepWebGpuBackend {
     if (options.hlodCollapseSuppressed !== undefined && typeof options.hlodCollapseSuppressed !== "function") {
       throw new TypeError("hlodCollapseSuppressed must be a function.");
     }
+    if (options.clusterLodStaging !== undefined) validateClusterLodStagingShape(options.clusterLodStaging);
     this.expectedShadows = options.expectedShadows === undefined ? undefined : snapshotShadows(options.expectedShadows);
   }
 
@@ -181,6 +198,7 @@ export class DeepWebGpuBackend {
         ...(renderer.meshlets === undefined ? {} : { meshlets: renderer.meshlets }),
         ...(validated.hlodClusters === undefined ? {} : { hlodClusters: validated.hlodClusters }),
         ...(validated.hlodCollapseSuppressed === undefined ? {} : { hlodCollapseSuppressed: validated.hlodCollapseSuppressed }),
+        ...(validated.clusterLodStaging === undefined ? {} : { clusterLodStaging: validated.clusterLodStaging }),
       });
     } catch (error) {
       runtime.dispose();
@@ -290,6 +308,7 @@ export class DeepWebGpuBackend {
     }
     markBackendPhase("packet-uploaded");
     if (signal?.aborted) throw abortError("Deep backend packet preparation cancelled.");
+    this.stageClusterLodOnce(candidate.origin, localPacket);
     this.packetViewStaged = canStream ? view : undefined;
     this.packetViewFailure = undefined;
     this.packetViewRetryAt = 0;
@@ -524,6 +543,8 @@ export class DeepWebGpuBackend {
     this.clusterEngine = undefined;
     this.clusterResources = undefined;
     this.appliedClusterSignature = "";
+    this.clusterLodStaged = false;
+    this.clusterLodStagingError = undefined;
     this.projection?.clear();
     try { this.probeClipmap?.dispose(); }
     finally {
@@ -534,6 +555,41 @@ export class DeepWebGpuBackend {
 
   private assertOpen(): void {
     if (this.disposed) throw new Error("Deep WebGPU backend is disposed.");
+  }
+
+  /**
+   * G1：簇级槽位恰注入一次（首个静态包发布成功后）。注入失败（运行时缺方法、
+   * 渲染器槽位未开启、staging 合同校验、相机相对坐标精度超预算）只记
+   * clusterLodStagingFailure 诊断，绝不打断渲染链——与 packetViewFailure 同风格。
+   * 注入的几何顶点被平移到与已发布包一致的渲染局部坐标（candidate.origin）。
+   */
+  private stageClusterLodOnce(origin: readonly [number, number, number], packet: RenderPacket): void {
+    const staging = this.options.clusterLodStaging;
+    if (!staging || this.clusterLodStaged) return;
+    this.clusterLodStaged = true;
+    try {
+      if (packet.deformation !== undefined) {
+        throw new Error("Cluster LOD staging rejects deformation packets (G1 static-scene boundary).");
+      }
+      if (typeof this.runtime.stageClusterLodScene !== "function") {
+        throw new Error("Deep runtime does not expose stageClusterLodScene.");
+      }
+      this.runtime.stageClusterLodScene(localizeClusterLodStaging(staging, origin));
+    } catch (error) {
+      this.clusterLodStagingError = error;
+    }
+  }
+
+  /** G1 最近一次簇级槽位注入失败；undefined = 未注入或注入成功。 */
+  get clusterLodStagingFailure(): unknown { return this.clusterLodStagingError; }
+
+  /**
+   * G1 宿主侧 bake 入口：透传包内 CPU 参考 bake（`src/rayTracing` 合同层一字未改）。
+   * 挂在本类（three-bridge 既有公共导出）上，宿主经模块引用消费——bake 函数与
+   * DAG 描述符当前无 deep-engine 公共出口，所有权纪律下以该代理弥合而非新增出口。
+   */
+  static bakeClusterLodAuthorGeometry(input: ClusterLodBakeInput): ClusterLodBakeResult {
+    return bakeClusterLodDag(input);
   }
 }
 
@@ -583,6 +639,50 @@ function abortError(message: string): Error {
   return error;
 }
 
+/** G1 staging 形状浅校验；深度合同校验由 ClusterLodRenderSlot.create fail-closed 兜底。 */
+function validateClusterLodStagingShape(staging: ClusterLodSceneStaging): void {
+  if (!staging || typeof staging !== "object" || Array.isArray(staging)) {
+    throw new TypeError("clusterLodStaging must be an object.");
+  }
+  if (!staging.dag || typeof staging.dag !== "object" || !Array.isArray(staging.levelGeometry)
+    || staging.levelGeometry.length === 0) {
+    throw new TypeError("clusterLodStaging must carry a bake dag and non-empty levelGeometry.");
+  }
+  for (const level of staging.levelGeometry) {
+    if (!(level.vertices instanceof Float32Array) || !(level.indices instanceof Uint32Array)) {
+      throw new TypeError("clusterLodStaging levelGeometry must pair Float32Array vertices with Uint32Array indices.");
+    }
+  }
+  if (staging.pixelThreshold !== undefined && (!Number.isFinite(staging.pixelThreshold) || staging.pixelThreshold <= 0)) {
+    throw new RangeError("clusterLodStaging pixelThreshold must be a positive number.");
+  }
+}
+
+/** 把 bake 顶点平移到与已发布包一致的相机相对渲染坐标；口径与
+ * CameraRelativeCoordinates.localFloat 一致（fround + float32 精度预算，该符号未导出）。 */
+function localizeClusterLodStaging(staging: ClusterLodSceneStaging,
+  origin: readonly [number, number, number]): ClusterLodSceneStaging {
+  if (origin.every(axis => axis === 0)) return staging;
+  const [originX, originY, originZ] = origin;
+  return { ...staging, levelGeometry: staging.levelGeometry.map(level => {
+    const vertices = new Float32Array(level.vertices.length);
+    for (let index = 0; index < vertices.length; index += 3) {
+      vertices[index] = renderLocalFloat(level.vertices[index]! - originX);
+      vertices[index + 1] = renderLocalFloat(level.vertices[index + 1]! - originY);
+      vertices[index + 2] = renderLocalFloat(level.vertices[index + 2]! - originZ);
+    }
+    return { vertices, indices: level.indices };
+  }) };
+}
+
+function renderLocalFloat(value: number): number {
+  const rounded = Math.fround(value);
+  if (!Number.isFinite(rounded) || Math.abs(rounded - value) > 0.001) {
+    throw new Error("Cluster LOD staging vertex exceeds the scene-local-coordinates-v1 precision budget.");
+  }
+  return Object.is(rounded, -0) ? 0 : rounded;
+}
+
 function validateCreateRequest(request: DeepWebGpuBackendCreateRequest): DeepWebGpuBackendCreateRequest {
   if (!request || typeof request !== "object" || Array.isArray(request)) {
     throw new TypeError("Deep WebGPU backend create request must be an object.");
@@ -592,5 +692,6 @@ function validateCreateRequest(request: DeepWebGpuBackendCreateRequest): DeepWeb
   if (request.hlodCollapseSuppressed !== undefined && typeof request.hlodCollapseSuppressed !== "function") {
     throw new TypeError("hlodCollapseSuppressed must be a function.");
   }
+  if (request.clusterLodStaging !== undefined) validateClusterLodStagingShape(request.clusterLodStaging);
   return request;
 }
