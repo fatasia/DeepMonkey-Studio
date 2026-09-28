@@ -5,6 +5,7 @@ import { translate as tr, type AppLocale } from "../i18n";
 import { AiResponseEvidence } from "./AiResponseEvidence";
 import { AiMessageCopyAction } from "./AiMessageCopyAction";
 import { AiExecutionDetails } from "./AiExecutionDetails";
+import { AiHypothesisVerdictCard } from "./AiHypothesisVerdictCard";
 
 export interface AssistantConversationItem {
   id: string;
@@ -16,6 +17,8 @@ export interface AssistantConversationItem {
   scope?: string;
   reliability?: AssistantReliabilitySummary;
   status?: import("@bim-studio/contracts").AiSessionMessageStatus;
+  /** H-C1：M4 结构化结论卡片（VerificationEnvelope）；当前数据源为 agent 侧回灌，chat 流按缺省不渲染。 */
+  verdict?: import("@bim-studio/contracts").AiVerificationEnvelope;
 }
 
 export function AiAssistantMessages({ locale, conversation, busy, error, stopped, lastPrompt, lastScope, answer, execution, onRetry }: {
@@ -40,6 +43,7 @@ export function AiAssistantMessages({ locale, conversation, busy, error, stopped
         {item.scope && <small className="ai-message-scope" title={item.scope}>{item.scope}</small>}
         <p>{item.answer}</p>
         {item.status && item.status !== "completed" && <small role="status">{({ streaming: t("保存的生成中片段", "Saved in-progress text"), stopped: t("已停止", "Stopped"), failed: t("未完成", "Failed"), interrupted: t("服务中断", "Interrupted") })[item.status]}</small>}
+        {item.verdict && <AiHypothesisVerdictCard locale={locale} envelope={item.verdict} />}
         {item.reliability ? <AiResponseEvidence locale={locale} reliability={item.reliability} /> : <small>{t("恢复的历史回答，未保存验证证据", "Restored answer; verification evidence was not saved")}</small>}
         <AiMessageCopyAction locale={locale} text={item.answer} />
       </article>

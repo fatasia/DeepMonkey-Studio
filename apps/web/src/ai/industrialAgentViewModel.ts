@@ -4,12 +4,32 @@ import type {
   AgentRunStatus,
   AgentToolDefinition,
 } from "@bim-studio/industrial-agent-orchestrator";
+import type { AiVerificationEnvelope } from "@bim-studio/contracts";
+import { validateAiVerificationEnvelope } from "@bim-studio/contracts";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 
 export interface AgentEvidenceView extends AgentEvidence {
   verified: boolean;
   toolLabel: string;
+}
+
+/**
+ * H-C1：从工具记录提取经合同校验的 VerificationEnvelope（结论卡片数据源）。
+ * 形状不符（旧数据/损坏输出）一律跳过，不让未校验数据进 UI。
+ */
+export function agentVerdictEnvelopes(checkpoint: AgentCheckpoint): Array<{ envelope: AiVerificationEnvelope; toolLabel: string }> {
+  const verdicts: Array<{ envelope: AiVerificationEnvelope; toolLabel: string }> = [];
+  for (const record of checkpoint.toolRecords) {
+    if (record.call.toolId !== "simulation.golden.verify" || record.outcome.status !== "completed") continue;
+    try {
+      verdicts.push({
+        envelope: validateAiVerificationEnvelope(record.outcome.output),
+        toolLabel: record.call.toolId,
+      });
+    } catch { /* 非信封输出不渲染卡片。 */ }
+  }
+  return verdicts;
 }
 
 export function agentStatusLabel(status: AgentRunStatus, locale: AppLocale): string {

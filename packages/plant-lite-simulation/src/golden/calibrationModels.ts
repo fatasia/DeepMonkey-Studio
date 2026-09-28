@@ -7,7 +7,8 @@
  * 本文件只定义场景与基准常量,不含统计语义;断言在 calibration.test.ts。
  */
 
-import type { PlantLiteModel } from "../modelTypes.js";
+import { fingerprint64Labeled } from "@bim-studio/contracts";
+import type { PlantLiteExperimentResult, PlantLiteModel } from "../modelTypes.js";
 
 /** 校准基准统一种子;同输入同种子必须逐位复现。 */
 export const CALIBRATION_SEED = "t23-calibration-2026-09-27";
@@ -17,6 +18,30 @@ export const CALIBRATION_LIMITS = { durationMinutes: 240, warmupMinutes: 30, max
 
 /** 轨迹捕获上限:80 件投料上限下全量捕获、不截断,轨迹即完整事件序列。 */
 export const CALIBRATION_TRACE = { replication: 0, maxEvents: 10_000, maxItems: 100 } as const;
+
+/**
+ * 字面量基准哈希(H-C1 起上移到源码,作为校准场景的 golden 锚唯一来源):
+ * 任何改变统计语义、调度顺序或事件时点的内核改动都会在 calibration.test.ts 与
+ * simulation.golden.verify 的 golden 对照中暴露。
+ */
+export const CALIBRATION_GOLDEN_HASH = "cf20cfbd6e97a617";
+
+/** 校准运行配置:golden 对照与假设验证共用同一输入(同种子同窗口才可比)。 */
+export const CALIBRATION_RUN = { replications: 4, trace: CALIBRATION_TRACE } as const;
+
+/**
+ * 基准哈希材料:场景版本 + 种子 + 运行窗口 + 完整代表轨迹 + 首重复全量指标。
+ * 与 calibration.test.ts 的历史口径逐字一致;verification 侧复用本函数。
+ */
+export function calibrationGoldenHash(result: PlantLiteExperimentResult): string {
+  return fingerprint64Labeled([
+    ["scene", "t23-conveyor-sensor-agv@1"],
+    ["seed", CALIBRATION_SEED],
+    ["limits", CALIBRATION_LIMITS],
+    ["trace", result.representativeTrace],
+    ["replication0", result.replications[0]],
+  ]);
+}
 
 /** 投放上限:有限运行,保证终止态为 completed 而非依赖时长截断。 */
 const FEED_ITEMS = 80;

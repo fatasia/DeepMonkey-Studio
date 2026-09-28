@@ -13,6 +13,8 @@ export interface StartIndustrialAgentRunInput {
   allowedToolIds: string[];
   budget?: Partial<AgentBudget>;
   modelOptions?: import("./aiApi").AssistantSessionOptions;
+  /** H-C1 计划模式：只读探索并输出实施计划，不执行 simulate/write/control。 */
+  planMode?: boolean;
 }
 
 /** 工业 Agent 的浏览器端调用集中在一个边界，避免组件自行拼接审批或项目作用域。 */

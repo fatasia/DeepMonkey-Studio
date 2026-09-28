@@ -17,17 +17,16 @@ import { fingerprint64Labeled } from "@bim-studio/contracts";
 import { runPlantLiteExperiment } from "../engine.js";
 import { plantLiteSimulationEngine } from "../enginePort.js";
 import {
+  CALIBRATION_GOLDEN_HASH,
   CALIBRATION_LIMITS,
   CALIBRATION_SEED,
   CALIBRATION_TRACE,
+  calibrationGoldenHash,
   createConveyorSensorAgvCalibrationModel,
 } from "./calibrationModels.js";
 import type { PlantLiteExperimentResult } from "../model.js";
 
 const CALIBRATION_MODEL = createConveyorSensorAgvCalibrationModel();
-
-/** 字面量基准哈希;任何改变统计语义、调度顺序或事件时点的内核改动都会在此暴露。 */
-const CALIBRATION_GOLDEN_HASH = "cf20cfbd6e97a617";
 
 const EVIDENCE_DIR = resolve(import.meta.dirname, "../../../../test-output/t23-plant-calibration");
 const EVIDENCE_PATH = resolve(EVIDENCE_DIR, "golden-trajectory.json");
@@ -40,17 +39,6 @@ function kernelRun(input: Partial<Parameters<typeof runPlantLiteExperiment>[0]> 
     limits: { ...CALIBRATION_LIMITS },
     ...input,
   });
-}
-
-/** 基准哈希材料:场景版本 + 种子 + 运行窗口 + 完整代表轨迹 + 首重复全量指标。 */
-export function calibrationGoldenHash(result: PlantLiteExperimentResult): string {
-  return fingerprint64Labeled([
-    ["scene", "t23-conveyor-sensor-agv@1"],
-    ["seed", CALIBRATION_SEED],
-    ["limits", CALIBRATION_LIMITS],
-    ["trace", result.representativeTrace],
-    ["replication0", result.replications[0]],
-  ]);
 }
 
 describe("T23 校准 · 场景健全性", () => {

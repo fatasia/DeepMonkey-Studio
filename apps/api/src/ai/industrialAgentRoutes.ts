@@ -11,6 +11,8 @@ interface StartBody {
   budget?: Partial<AgentBudget>;
   execution?: "background";
   modelOptions?: AssistantSessionOptions;
+  /** H-C1 plan 档：true 时工具面收敛为 read/analyze，finish 不允许 production 结论。 */
+  planMode?: boolean;
 }
 
 /** 路由只接收目标与预算；身份、审批人和项目范围始终从服务端会话注入。 */
@@ -54,6 +56,7 @@ export async function registerIndustrialAgentRoutes(
           ...(modelOptions ? { modelOptions } : {}),
           context: request.body.context ?? {},
           allowedToolIds,
+          ...(request.body.planMode === true ? { planMode: true } : {}),
           ...(request.body.budget ? { budget: request.body.budget } : {}),
         };
         const checkpoint = request.body.execution === "background"

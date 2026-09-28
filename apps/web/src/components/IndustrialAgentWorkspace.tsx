@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AiExecutionDetails } from "./AiExecutionDetails";
+import { AiHypothesisVerdictCard } from "./AiHypothesisVerdictCard";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -8,8 +9,10 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleGauge,
+  ClipboardList,
   FileCheck2,
   LoaderCircle,
+  Map,
   PauseCircle,
   Play,
   RefreshCw,
@@ -25,6 +28,7 @@ import {
   agentProgress,
   agentStatusLabel,
   agentStatusTone,
+  agentVerdictEnvelopes,
   describeAgentEffect,
   isAgentTerminal,
   selectedToolPreview,
@@ -44,6 +48,7 @@ export function IndustrialAgentWorkspace(props: {
 }) {
   const { locale, projectId, context, surface = "assistant" } = props;
   const [objective, setObjective] = useState("");
+  const [planMode, setPlanMode] = useState(false);
   const [modelOptions, setModelOptions] = useState<AssistantSessionOptions>({});
   const [tools, setTools] = useState<AgentToolDefinition[]>([]);
   const [selectedToolIds, setSelectedToolIds] = useState<Set<string>>(new Set());
@@ -150,6 +155,7 @@ export function IndustrialAgentWorkspace(props: {
         modelOptions,
         context,
         allowedToolIds: toolIds,
+        ...(planMode ? { planMode: true } : {}),
         budget: DEFAULT_BUDGET,
       });
       // 后台任务不因切页重放；只在所属项目记住 ID，界面更新仍要求当前请求所有权。
@@ -212,6 +218,26 @@ export function IndustrialAgentWorkspace(props: {
               placeholder={t("例如：检查当前产线的设备风险，给出有证据的处理建议；涉及控制时先让我确认。", "Example: inspect line risks and return evidence-backed actions; ask before any control change.")}
             />
           </label>
+          <div className="industrial-agent-plan-row">
+            <button
+              type="button"
+              className="ai-plan-chip"
+              aria-pressed={planMode}
+              aria-label={t("计划模式：只读探索并输出实施计划，不执行仿真或写入", "Plan mode: read-only exploration that outputs a plan; no simulation or writes")}
+              title={t("计划模式只保留读取与分析工具；仿真、写入与控制调用会被拒绝并记录审计。", "Plan mode keeps read and analyze tools only; simulate, write and control calls are rejected and audited.")}
+              onClick={() => setPlanMode((current) => !current)}
+            >
+              <Map size={13} aria-hidden="true" />
+              {t("计划", "Plan")}
+            </button>
+            <small>{planMode ? t("输出计划文档，不执行", "Outputs a plan; nothing executes") : t("按所选能力执行", "Runs with selected capabilities")}</small>
+          </div>
+          {planMode && (
+            <div className="ai-notice-plan" role="status">
+              <ClipboardList size={13} aria-hidden="true" />
+              {t("计划模式已开启：simulate/写入将被拒绝，仅产出计划。", "Plan mode is on: simulate/writes will be rejected; only a plan is produced.")}
+            </div>
+          )}
           <div className="industrial-agent-examples" aria-label={t("目标示例", "Objective examples")}>
             <button type="button" disabled={busy || loadingTools || !projectId || !tools.some(tool => tool.effect === "read" && !tool.requiresApproval)} title={t("使用当前配置的模型执行只读任务；需要大模型配置和可读能力。", "Run a read-only task with the configured model; requires model configuration and read capabilities.")} onClick={() => void start(true)}><Play size={13} />{t("一键运行样例", "Run sample")}</button>
             {[t("检查设备异常并定位可能原因", "Inspect anomalies and locate likely causes"), t("先仿真验证，再给出调试建议", "Validate in simulation before proposing debugging actions")].map((item) => (
@@ -315,12 +341,13 @@ export function IndustrialAgentRunView(props: {
   const statusTone = agentStatusTone(checkpoint.status);
   const pendingTool = props.tools.find((tool) => tool.id === checkpoint.pendingTool?.call.toolId);
   const evidence = agentEvidenceViews(checkpoint, props.tools);
+  const verdicts = agentVerdictEnvelopes(checkpoint);
   const terminal = isAgentTerminal(checkpoint.status);
   return (
     <div className="industrial-agent-run">
       <header className={`industrial-agent-status ${statusTone}`} aria-live="polite">
         <span>{statusTone === "success" ? <CheckCircle2 size={17} /> : statusTone === "danger" ? <Ban size={17} /> : <LoaderCircle className={checkpoint.status === "running" ? "spin" : ""} size={17} />}</span>
-        <div><strong>{agentStatusLabel(checkpoint.status, props.locale)}</strong><small>{checkpoint.objective}</small></div>
+        <div><strong>{agentStatusLabel(checkpoint.status, props.locale)}</strong><small>{checkpoint.objective}{checkpoint.planMode ? ` · ${t("计划模式", "Plan mode")}` : ""}</small></div>
         <em>{agentProgress(checkpoint)}%</em>
       </header>
       <div className="industrial-agent-progress"><i style={{ width: `${agentProgress(checkpoint)}%` }} /></div>
@@ -348,6 +375,9 @@ export function IndustrialAgentRunView(props: {
           <p>{checkpoint.completion.summary}</p>
         </section>
       )}
+      {verdicts.length > 0 && <div className="industrial-agent-verdicts">
+        {verdicts.map((item) => <AiHypothesisVerdictCard key={item.envelope.proposalFingerprint + item.envelope.resultFingerprint} locale={props.locale} envelope={item.envelope} />)}
+      </div>}
       {checkpoint.failure && <div className="industrial-agent-error" role="alert"><AlertTriangle size={14} /><span><strong>{checkpoint.failure.message}</strong><small>{checkpoint.failure.code}</small></span></div>}
       <IndustrialAgentContinuation locale={props.locale} checkpoint={checkpoint} busy={props.busy} onResume={() => props.onAction("resume")} {...(props.onSelect ? { onSelect: props.onSelect } : {})} />
       {props.error && <div className="industrial-agent-error" role="alert"><AlertTriangle size={14} />{props.error}</div>}

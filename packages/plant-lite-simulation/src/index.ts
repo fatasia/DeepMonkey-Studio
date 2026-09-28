@@ -11,3 +11,4 @@ export * from "./studyReport.js";
 export * from "./geneticOptimizer.js";
 export * from "./multiObjective.js";
 export * from "./vsm.js";
+export * from "./golden/calibrationModels.js";

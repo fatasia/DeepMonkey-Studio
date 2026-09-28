@@ -37,6 +37,7 @@ import { resolveAiSettings } from "./ai/aiRuntimeSettings.js";
 import type { AiRuntimeSettings } from "./ai/assistantService.js";
 import { INDUSTRIAL_CAPABILITY_SCHEMAS } from "./industrialCapabilitySchemas.js";
 import { registerWorkcellValidationPlugin } from "./registerWorkcellValidationPlugin.js";
+import { registerAiHypothesisPlugin } from "./ai/simulationHypothesisPlugin.js";
 import { registerDataQueryPlugin } from "./registerDataQueryPlugin.js";
 import type { DataQuerySource } from "@bim-studio/data-query-plugin";
 import { registerDataQueryAiPlugin } from "./ai/registerDataQueryAiPlugin.js";
@@ -203,6 +204,8 @@ export async function createIndustrialCapabilityHost(
   const enabled = await registry.enable("bim.industrial-core");
   if (!enabled.ok) throw new Error(`核心能力启用失败：${enabled.message}`);
   await registerWorkcellValidationPlugin(registry);
+  // H-C1 统一 Harness 最小核心切片：假设登记与 golden 验证两个 analyze/low 能力。
+  await registerAiHypothesisPlugin(registry);
   if (options.conversionTasks)
     await registerConversionCapabilityPlugin(registry, options.conversionTasks);
   if (options.dataQuerySource)
@@ -686,6 +689,7 @@ function hostPolicy(): PluginHostPolicy {
       "operations.maintenance",
       "operations.energy",
       "simulation.virtual-debug",
+      "simulation.hypothesis",
       "battery.model",
       "battery.twin",
       "modeling.parametric",
@@ -702,6 +706,7 @@ function hostPolicy(): PluginHostPolicy {
       "operations.read",
       "operations.write",
       "simulation.execute",
+      "simulation.read",
       "battery.read",
       "battery.execute",
       "modeling.read",

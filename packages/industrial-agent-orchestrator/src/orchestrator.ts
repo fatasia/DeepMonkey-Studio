@@ -10,6 +10,7 @@ import type {
   AgentDecisionProvider,
   AgentPendingTool,
   AgentToolDefinition,
+  AgentToolEffect,
   AgentToolGateway,
   StartAgentRunInput,
   ResumeAgentRunOptions,
@@ -58,9 +59,15 @@ export class IndustrialAgentOrchestrator {
       } } : {}),
       context: safeClone(input.context ?? {}),
       status: "running",
+      ...(input.planMode === true ? { planMode: true } : {}),
       budget: normalizeBudget(input.budget),
       usage: { steps: 0, toolCalls: 0, activeDurationMs: 0 },
-      allowedToolIds: normalizeAllowedTools(input.allowedToolIds, this.dependencies.tools.list()),
+      allowedToolIds: normalizeAllowedTools(
+        input.planMode === true
+          ? restrictToPlanEffects(input.allowedToolIds, this.dependencies.tools.list())
+          : input.allowedToolIds,
+        this.dependencies.tools.list(),
+      ),
       decisions: [],
       toolRecords: [],
       seenToolFingerprints: [],
@@ -245,6 +252,12 @@ export class IndustrialAgentOrchestrator {
       return stopped;
     }
     if (decision.kind === "finish") {
+      // plan 档允许 finish-with-plan：summary 即计划文档，但计划探索不产生生产结论。
+      if (checkpoint.planMode && decision.decisionStatus === "production") {
+        const blocked = fail(checkpoint, "blocked", "plan-mode-production-verdict", "计划模式只输出计划文档，不能给出 production 结论；请以 shadow 或 insufficient-data 收尾", false);
+        await persist();
+        return blocked;
+      }
       const evidenceIds = evidenceIdSet(checkpoint);
       const missing = decision.evidenceIds.filter((id) => !evidenceIds.has(id));
       if (missing.length || (decision.decisionStatus === "production" && decision.evidenceIds.length === 0)) {
@@ -353,7 +366,11 @@ export class IndustrialAgentOrchestrator {
 
   private allowedDefinitions(checkpoint: AgentCheckpoint): AgentToolDefinition[] {
     const allowed = new Set(checkpoint.allowedToolIds);
-    return this.dependencies.tools.list().filter((tool) => allowed.has(tool.id)).map((tool) => structuredClone(tool));
+    return this.dependencies.tools.list()
+      .filter((tool) => allowed.has(tool.id))
+      // 双重防线：plan 档下决策者只看得见 read/analyze 工具（执行层硬拒在网关）。
+      .filter((tool) => !checkpoint.planMode || PLAN_ALLOWED_EFFECTS.includes(tool.effect))
+      .map((tool) => structuredClone(tool));
   }
 
   private async require(runId: string): Promise<AgentCheckpoint> {
@@ -380,6 +397,17 @@ function fail(checkpoint: AgentCheckpoint, status: Extract<AgentCheckpoint["stat
 function evidenceIdSet(checkpoint: AgentCheckpoint): Set<string> {
   return new Set(checkpoint.toolRecords.flatMap((record) => [...record.outcome.evidence, ...record.outcome.verificationEvidence].map((item) => item.id)));
 }
+
+/** plan 档工具面收敛：只保留 read/analyze 效果的工具 ID（白名单的更严子集，不是新模式系统）。 */
+function restrictToPlanEffects(toolIds: string[], available: AgentToolDefinition[]): string[] {
+  const effects = new Map(available.map((tool) => [tool.id, tool.effect] as const));
+  return toolIds.filter((id) => {
+    const effect = effects.get(id);
+    return effect !== undefined && PLAN_ALLOWED_EFFECTS.includes(effect);
+  });
+}
+
+const PLAN_ALLOWED_EFFECTS: readonly AgentToolEffect[] = ["read", "analyze"];
 
 function terminal(status: AgentCheckpoint["status"]): boolean {
   return ["completed", "blocked", "failed", "cancelled", "budget-exhausted"].includes(status);

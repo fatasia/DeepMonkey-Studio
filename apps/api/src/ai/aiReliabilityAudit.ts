@@ -34,6 +34,8 @@ export interface CreateAiAuditEventInput {
   providerId?: string;
   model?: string;
   assessment?: AiReliabilityAssessment;
+  /** H-C1：允许无 assessment 的调用方（网关 verdict/plan 拒绝）直接携带指纹化 findings。 */
+  findings?: AiReliabilityAuditEvent["findings"];
   tool?: AiReliabilityAuditEvent["tool"];
   inputFingerprint?: string;
   failure?: AiReliabilityAuditEvent["failure"];
@@ -54,7 +56,7 @@ export function createAiAuditEvent(input: CreateAiAuditEventInput): AiReliabilit
     ...(input.providerId ? { providerId: input.providerId } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.tool ? { tool: input.tool } : {}),
-    findings: (input.assessment?.findings ?? []).map(({ code, severity, sourceId, contentFingerprint }) => ({ code, severity, sourceId, contentFingerprint })),
+    findings: (input.findings ?? input.assessment?.findings ?? []).map(({ code, severity, sourceId, contentFingerprint }) => ({ code, severity, sourceId, contentFingerprint })),
     inputFingerprint: input.inputFingerprint ?? input.assessment?.inputFingerprint ?? fingerprint("empty-input"),
     ...(input.failure ? { failure: input.failure } : {}),
   };

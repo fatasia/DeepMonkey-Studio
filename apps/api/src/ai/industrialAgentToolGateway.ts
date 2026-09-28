@@ -9,7 +9,9 @@ import type {
 } from "@bim-studio/industrial-agent-orchestrator";
 import type { CapabilityDescriptor, CapabilityInvocationResult, PluginRegistry } from "@bim-studio/plugin-runtime";
 import { aiToolScopeFingerprint, executeReliableAiTool, type AiToolCall, type AiToolPolicy } from "./aiToolReliability.js";
-import type { AiReliabilityAuditSink } from "./aiReliabilityAudit.js";
+import { createAiAuditEvent, emitAiAudit, type AiReliabilityAuditSink } from "./aiReliabilityAudit.js";
+import type { AiVerificationEnvelope } from "@bim-studio/contracts";
+import { validateAiVerificationEnvelope } from "@bim-studio/contracts";
 
 const CURATED_TOOL_IDS = new Set([
   "data.query.plan",
@@ -24,6 +26,8 @@ const CURATED_TOOL_IDS = new Set([
   "industrial.ai.alarm-rca.compose",
   "simulation.virtual-debug.run",
   "simulation.virtual-debug.run-suite",
+  "simulation.hypothesis.register",
+  "simulation.golden.verify",
   "manufacturing.workcell.audit",
   "modeling.parametric.validate",
 ]);
@@ -46,6 +50,12 @@ export class IndustrialAgentToolGateway implements AgentToolGateway {
     const descriptor = this.registry.getCapability(call.toolId);
     const definition = this.list().find((tool) => tool.id === call.toolId);
     if (!descriptor || !definition) return blocked("tool-not-allowed", `工具 ${call.toolId} 不在工业 Agent 白名单`);
+    // H-C1 plan 档：计划模式是"更严的工具白名单"——只放行 read/analyze，
+    // simulate/write/control 越界即拒并落 denied 审计（硬防线在网关，不在提示词）。
+    if (context.checkpoint.planMode && !PLAN_ALLOWED_EFFECTS.includes(definition.effect)) {
+      await this.emitPlanModeDenial(call, definition, context);
+      return blocked("plan-mode-tool-not-allowed", `计划模式只允许读取与分析工具，${call.toolId}（${definition.effect}）被拒绝；请先输出计划等待批准后执行`);
+    }
     const chosen = context.checkpoint.selections?.at(-1)?.option.id;
     if (chosen && ["data.query.plan", "data.query.read"].includes(call.toolId)) {
       const plan = call.arguments.plan as { datasetId?: unknown } | undefined;
@@ -77,10 +87,50 @@ export class IndustrialAgentToolGateway implements AgentToolGateway {
           signal,
         }),
       });
-      return invocationOutcome(execution.value, definition.effect);
+      const outcome = invocationOutcome(execution.value, definition.effect);
+      if (call.toolId === "simulation.golden.verify" && outcome.status === "completed") {
+        const envelope = readVerificationEnvelope(outcome.output);
+        if (envelope) await this.emitVerdictAudit(call, definition, envelope, context);
+      }
+      return outcome;
     } catch (error) {
       return blocked("tool-policy", error instanceof Error ? error.message : String(error));
     }
+  }
+
+  /** plan 档越界拒绝：denied 审计事件只记工具与效果，不复制参数原文。 */
+  private async emitPlanModeDenial(call: AgentToolCall, definition: AgentToolDefinition, context: Parameters<AgentToolGateway["execute"]>[1]): Promise<void> {
+    if (!this.audit) return;
+    const event = createAiAuditEvent({
+      traceId: `${context.checkpoint.id}:${context.checkpoint.usage.steps}`,
+      stage: "tool-decision",
+      outcome: "denied",
+      principal: context.checkpoint.principal,
+      projectId: context.checkpoint.projectId,
+      tool: { id: call.toolId, risk: definition.risk, resourceFingerprints: call.resources.map((resource) => `${resource.kind}:${resource.id}`) },
+      inputFingerprint: this.fingerprint(call),
+      failure: { code: "plan-mode-tool-not-allowed", message: `计划模式拒绝 ${definition.effect} 类工具 ${call.toolId}`, retryable: false },
+    });
+    await emitAiAudit(this.audit, event);
+  }
+
+  /** verdict 审计：只存三指纹、判定与理由码，不存假设陈述原文（证据最小化）。 */
+  private async emitVerdictAudit(call: AgentToolCall, definition: AgentToolDefinition, envelope: AiVerificationEnvelope, context: Parameters<AgentToolGateway["execute"]>[1]): Promise<void> {
+    if (!this.audit) return;
+    const event = createAiAuditEvent({
+      traceId: `${context.checkpoint.id}:${context.checkpoint.usage.steps}`,
+      stage: "tool-result",
+      outcome: "completed",
+      principal: context.checkpoint.principal,
+      projectId: context.checkpoint.projectId,
+      tool: { id: call.toolId, risk: definition.risk, resourceFingerprints: [envelope.proposalFingerprint, envelope.inputFingerprint, envelope.resultFingerprint] },
+      inputFingerprint: this.fingerprint(call),
+      findings: [
+        { code: `verdict:${envelope.verdict}`, severity: "info", sourceId: call.toolId, contentFingerprint: envelope.resultFingerprint },
+        { code: `reason:${envelope.reasonCode}`, severity: "info", sourceId: call.toolId, contentFingerprint: envelope.proposalFingerprint },
+      ],
+    });
+    await emitAiAudit(this.audit, event);
   }
 }
 
@@ -96,6 +146,18 @@ function toDefinition(descriptor: CapabilityDescriptor): AgentToolDefinition {
     requiresApproval: risk === "high",
     inputSchema: structuredClone(descriptor.inputSchema),
   };
+}
+
+const PLAN_ALLOWED_EFFECTS: readonly AgentToolEffect[] = ["read", "analyze"];
+
+/** 从成功的 golden.verify 输出中读回经合同校验的信封；形状不符一律视作无 verdict。 */
+function readVerificationEnvelope(output: unknown): AiVerificationEnvelope | undefined {
+  try {
+    if (!output || typeof output !== "object" || Array.isArray(output)) return undefined;
+    return validateAiVerificationEnvelope(output);
+  } catch {
+    return undefined;
+  }
 }
 
 function capabilityEffect(descriptor: CapabilityDescriptor): AgentToolEffect {

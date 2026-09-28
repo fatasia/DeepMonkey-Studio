@@ -135,6 +135,8 @@ export interface AgentCheckpoint {
   modelOptions?: { model?: string; reasoningEffort?: "minimal" | "standard" | "deep" };
   context: unknown;
   status: AgentRunStatus;
+  /** H-C1 plan 档：true 时工具面收敛为 read/analyze，finish 不允许 production 结论。 */
+  planMode?: boolean;
   budget: AgentBudget;
   usage: { steps: number; toolCalls: number; activeDurationMs: number };
   allowedToolIds: string[];
@@ -169,6 +171,8 @@ export interface StartAgentRunInput {
   modelOptions?: AgentCheckpoint["modelOptions"];
   context?: unknown;
   allowedToolIds: string[];
+  /** 计划模式：只读/分析探索并输出计划文档（finish-with-plan），不执行 simulate/write/control。 */
+  planMode?: boolean;
   budget?: Partial<AgentBudget>;
   signal?: AbortSignal;
 }
