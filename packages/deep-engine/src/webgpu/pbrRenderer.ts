@@ -64,6 +64,7 @@ import { VisibilityBufferPath } from "./visibilityBufferPass.js";
 import { SoftRasterizeFallback } from "./softRasterizeFallback.js";
 import { ClusterLodRenderSlot, type ClusterLodSceneStaging } from "./clusterLodRenderSlot.js";
 import { resolveClusterLodSlotOption } from "./clusterLodSlotSupport.js";
+import { PbrAutoExposureRuntime } from "./pbrAutoExposure.js";
 export type { FrameMetrics, PbrRendererOptions, RenderView } from "./pbrRendererTypes.js";
 export class PbrRenderer {
   readonly id = "deep-webgpu";
@@ -128,11 +129,17 @@ export class PbrRenderer {
   private previousTemporalLights: RenderView["lights"];
   private temporalLightRevision = 0;
   private readonly frameData = new Float32Array(PBR_FRAME_UNIFORM_FLOATS);
+  /** F8 自动曝光(opt-in):缺省 undefined = 固定启发式 view.exposure 原样生效。 */
+  private readonly autoExposure: PbrAutoExposureRuntime | undefined;
+  /** 上一已提交渲染帧的相机切换;自动曝光在其后一帧直取目标(剪除瞬态)。 */
+  private previousFrameCameraCut = false;
   private constructor(readonly session: DeviceSession, private readonly pipelines: Pipelines, environment: StudioEnvironment,
     lighting: ForwardPlusPbrRuntime, localShadows: LocalSpotShadowRuntime, options: PbrRendererOptions, features: PbrRendererFeatures,
     deformationPipelines?: Pipelines | Promise<Pipelines>, private readonly releasePipelines?: () => void) {
     this.diagnostics = new PbrRendererDiagnostics(session);
     this.clusterLodEnabled = resolveClusterLodSlotOption(options.clusterLod);
+    this.autoExposure = options.autoExposure === undefined ? undefined
+      : new PbrAutoExposureRuntime(options.autoExposure, options.environment);
     this.adaptiveQuality = options.adaptiveQuality ? new AdaptiveQualityController(options.adaptiveQuality) : undefined;
     if (options.adaptiveQuality?.enabled) this.diagnostics.setEnabled(true);
     // F1 逐 pass GPU 计时(opt-in):开启即连带启用诊断采样;设备不支持/槽忙时
@@ -270,6 +277,7 @@ export class PbrRenderer {
     });
   }
   stageEnvironment(source: PbrEnvironmentSource, signal?: AbortSignal): Promise<EnvironmentStageResult> {
+    this.autoExposure?.observeSource(source);
     return this.environment.stage(candidateSignal => createPbrEnvironment(this.session, source, candidateSignal), signal); }
   stageShadowMapSize(mapSize: number, signal?: AbortSignal): Promise<EnvironmentStageResult> { return this.shadowState.stage(mapSize, signal); }
   /** Chunk streaming reads this when a new residency catalog is created; 1 keeps the fixed budget. */
@@ -326,6 +334,13 @@ export class PbrRenderer {
     if (this.session.state !== "ready") return undefined;
     if (this.session.hasErrors) throw new Error("GPU validation failed; inspect device diagnostics.");
     validatePbrRenderView(view);
+    // F8 自动曝光(opt-in):环境 mip 亮度静态代理(零 readback)→ ±EV 包络 →
+    // 时域平滑(帧间收敛上限防闪烁)。无可靠亮度时 advance 返回 undefined,保持
+    // 调用方固定启发式 view.exposure(fail-closed);原因见 FrameMetrics.autoExposure。
+    if (this.autoExposure !== undefined) {
+      const exposureFrame = this.autoExposure.advance(begin, this.previousFrameCameraCut);
+      if (exposureFrame !== undefined) view = { ...view, exposure: exposureFrame.exposure };
+    }
     const postProcess = resolvePbrPostProcessOverrides(view.postProcess, this.features);
     if (this.previousAmbientOcclusion !== undefined && this.previousAmbientOcclusion !== postProcess.ambientOcclusion) {
       this.historyDirty = true;
@@ -399,6 +414,7 @@ export class PbrRenderer {
         groundInstance: this.ground.instance, frameData: this.frameData, outputData: this.outputs.data, groundData: this.ground.data },
       sceneLighting.primary, this.features);
     const history = frameState.history;
+    this.previousFrameCameraCut = history.cameraCut;
     const hiZPlan = this.features.occlusionCulling ? this.previousHiZ.beginFrame({
       frameRevision: history.revision, sceneRevision: this.packets.visibilityRevision,
       depthViewProjection: frameState.depthViewProjection, stableViewProjection: frameState.stableViewProjection, cameraPosition: view.eye,
@@ -647,6 +663,7 @@ export class PbrRenderer {
     const metrics: FrameMetrics = { frame: ++this.frame, cpuSubmitMs: performance.now() - begin, drawCalls, triangles, ...lodWork.snapshot(),
       width: size.width, height: size.height, resources: this.session.resourceCount, shadowUpdated, transientTextures: this.targets.transientStats,
       deviceResourceMemory: this.session.resourceMemory,
+      ...(this.autoExposure ? { autoExposure: this.autoExposure.metrics() } : {}),
       ...(clusterLod ? { clusterLod: clusterLod.metrics() } : {}),
       cameraCut: history.cameraCut, postProcessPasses: opaqueEffects.passCount + finalEffects.passCount + (hasTransparent ? 2 + Number(this.transparency.currentReactiveMask !== undefined) : 0) + (!directClear && this.features.spatialAa ? 1 : 0),
       weightedOit: hasTransparent,

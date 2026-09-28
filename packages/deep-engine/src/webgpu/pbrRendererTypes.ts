@@ -10,6 +10,7 @@ import type { PbrTransientTexturePoolStats } from "./pbrTransientTexturePool.js"
 import type { DeviceResourceMemorySnapshot } from "./deviceResourceMemory.js";
 import type { PbrFrameCaptureOptions } from "./pbrFrameCapture.js";
 import type { AdaptiveQualityHotspotSummary, AdaptiveQualityOptions, AdaptiveQualityState } from "./adaptiveQuality.js";
+import type { PbrAutoExposureFrameMetrics, PbrAutoExposureOptions } from "./pbrAutoExposure.js";
 import type { ProbeClipmapRuntimeOptions } from "./probeClipmapRuntime.js";
 import type { GpuParticleEmitter, GpuParticleEmitterRuntimeOptions } from "./gpuParticleEmitters.js";
 
@@ -68,6 +69,15 @@ export interface PbrRendererOptions {
   /** Optional GPU particle emitters; simulation runs one frame ahead and renders indirectly. */
   readonly particleEmitters?: readonly GpuParticleEmitter[];
   readonly particleRuntime?: GpuParticleEmitterRuntimeOptions;
+  /**
+   * F8 自动曝光(opt-in,缺省关闭 = 零行为变化):环境 mip 亮度静态代理(零 GPU
+   * readback)→ ±EV 包络(默认 ±2)→ 时域平滑(时间常数参数化,帧间收敛上限
+   * 防闪烁)。无可靠环境亮度(studio 程序环境 / 无源 / mip 解码失败)时 fail-closed
+   * 回调用方 view.exposure 固定启发式,原因经 FrameMetrics.autoExposure 显式披露。
+   * 默认切换(Z1 提案 P0)与桥接线(threeBridge renderer 字面量、rendererCapabilities
+   * 快照白名单)留主线,模式同 t25-gpu-pass-timing。
+   */
+  readonly autoExposure?: PbrAutoExposureOptions;
   /** 首帧管线引导时序开关；缺省全部关闭 = 全量等待的旧时序。 */
   readonly pipelines?: PbrPipelineBootstrapOptions;
   /**
@@ -88,6 +98,11 @@ export interface FrameMetrics {
    * `gpuPassTiming` 未开启时整字段缺省(面板显示「未开启」)。
    */
   readonly gpuPassTimings?: import("./pbrFrameReceipt.js").PbrFramePassTimings;
+  /**
+   * F8 自动曝光遥测(`autoExposure` 开启时出现):active=本帧实际生效;降级帧给
+   * fallbackReason(studio 程序环境/无源/解码失败),不伪零。未开启时整字段缺省。
+   */
+  readonly autoExposure?: PbrAutoExposureFrameMetrics;
   readonly meshletPasses?: number;
   readonly meshletDispatches?: number;
   readonly meshletFallbackReasons?: readonly string[];
