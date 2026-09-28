@@ -18,7 +18,7 @@ function frameMetrics(overrides: Partial<FrameMetrics> = {}): FrameMetrics {
 }
 
 function receipt(passes: readonly string[]): PbrFrameExecutionReceipt {
-  return { frame: frameSeq, passOrder: passes, executedMappedPassIds: passes, unmappedPassIds: [], samples: [] };
+  return { frame: frameSeq, passOrder: passes, executedMappedPassIds: passes, unmappedPassIds: [], samples: [], perPass: [] };
 }
 
 describe("StudioDeepQualityTelemetrySampler", () => {
@@ -100,6 +100,24 @@ describe("StudioDeepQualityTelemetrySampler", () => {
     const status = sampler.status();
     expect(status.collector.retainedFrameCount).toBe(0);
     expect(status.coverage.passCount).toBe("unavailable");
+  });
+
+  it("F1 逐 pass 计时直通:metrics 携带即进 status,未携带即缺省,不可用透传原因", () => {
+    const sampler = new StudioDeepQualityTelemetrySampler({ sampleHz: 4 }, null, () => undefined);
+    sampler.record(frameMetrics(), 0);
+    expect(sampler.status().latestPassTimings).toBeUndefined();
+    const measured = { frame: 12, availability: "measured" as const, milliseconds: 5.5,
+      passes: [{ passId: "opaque", durationMs: 3.2 }, { passId: "present", durationMs: 1.1 }],
+      requestedPassCount: 2, measuredPassCount: 2 };
+    sampler.record(frameMetrics({ gpuPassTimings: measured }), 10);
+    expect(sampler.status().latestPassTimings).toEqual(measured);
+    const unavailable = { frame: 13, availability: "unavailable" as const,
+      unavailableReason: "设备不支持 timestamp-query,逐 pass GPU 计时不可用" };
+    sampler.record(frameMetrics({ gpuPassTimings: unavailable }), 20);
+    expect(sampler.status().latestPassTimings).toEqual(unavailable);
+    // metrics 未携带(采集关闭)= 回到缺省,面板显示「未开启」。
+    sampler.record(frameMetrics(), 30);
+    expect(sampler.status().latestPassTimings).toBeUndefined();
   });
 });
 

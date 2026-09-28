@@ -1,3 +1,5 @@
+import { PBR_TIMED_PASS_IDS, pbrPassTimingStage } from "./pbrTimedPassIds.js";
+
 export const ENGINE_TIMING_STAGES = Object.freeze([
   "cold-start",
   "asset-parse",
@@ -9,6 +11,8 @@ export const ENGINE_TIMING_STAGES = Object.freeze([
   "gpu-intermediate",
   "gpu-output",
   "present-acquire",
+  // F1 逐 pass GPU 计时阶段:与 pbrTimedPassIds 单源派生,pass 身份漂移在计划构建期报错。
+  ...PBR_TIMED_PASS_IDS.map(pbrPassTimingStage),
 ] as const);
 
 export type EngineTimingStage = typeof ENGINE_TIMING_STAGES[number];

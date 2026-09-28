@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EnginePerformanceTelemetry } from "./performanceTelemetry.js";
+import { PBR_TIMED_PASS_IDS, pbrPassTimingStage } from "./pbrTimedPassIds.js";
 
 describe("EnginePerformanceTelemetry", () => {
   it("retains optional coarse GPU spans beside whole-frame time", () => {
@@ -72,5 +73,17 @@ describe("EnginePerformanceTelemetry", () => {
     telemetry.enabled = true;
     telemetry.recordStage(1, "gpu-frame", 0.5);
     expect(telemetry.snapshot().retainedFrameCount).toBe(1);
+  });
+
+  it("accepts F1 per-pass timing stages derived from the timed pass registry and rejects unknown ones", () => {
+    const telemetry = new EnginePerformanceTelemetry(16, true);
+    for (const passId of PBR_TIMED_PASS_IDS) {
+      telemetry.recordStage(1, pbrPassTimingStage(passId), 0.5);
+    }
+    const stages = telemetry.snapshot().stages;
+    expect(stages["gpu-pass:opaque"]).toMatchObject({ samples: 1, p50Ms: 0.5 });
+    expect(stages["gpu-pass:present"]).toMatchObject({ samples: 1 });
+    expect(Object.keys(stages).filter(stage => stage.startsWith("gpu-pass:"))).toHaveLength(PBR_TIMED_PASS_IDS.length);
+    expect(() => telemetry.recordStage(2, "gpu-pass:not-a-plan-pass" as never, 1)).toThrow("Unknown");
   });
 });

@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PBR_RENDERER_FEATURES, resolvePbrRendererFeatures } from "./pbrRendererFeatures.js";
+import { PBR_TIMED_PASS_IDS } from "./pbrTimedPassIds.js";
 import { ambientOcclusionHalfSize } from "../postprocess/ambientOcclusion.js";
 import { surfaceSize } from "./surfaceSize.js";
 import { validateSampleWindow } from "../benchmarkSampleSchema.js";
 import { buildPbrFrameExecutionPlan, collectActualPbrFramePasses, assertPlanMatchesActual,
   createPbrFrameReceipt, createPbrPassTimingSample, createPbrPassUnavailableSample,
-  pbrReceiptSampleWindow, type PbrFrameExecutionPlan } from "./pbrFramePlanExecutor.js";
+  pbrReceiptSampleWindow, pbrPassChannelName, type PbrFrameExecutionPlan } from "./pbrFramePlanExecutor.js";
 import { resolvePbrFramePlanSurface, resolvePbrFrameResourceSizes } from "./pbrFramePlanResources.js";
 import type { PbrActualPassDescription } from "./pbrFramePlanResources.js";
 
@@ -260,5 +261,42 @@ describe("pass execution receipt", () => {
     expect(() => createPbrPassTimingSample("bloom", -1, 0, 16)).toThrow("non-negative");
     expect(() => createPbrPassUnavailableSample("bloom", "  ", 0, 16)).toThrow("reason");
     expect(() => createPbrPassTimingSample("bloom", 1, 16, 16)).toThrow("window bounds");
+  });
+
+  it("exposes per-pass measured milliseconds consistent with the measured sample subset (F1)", () => {
+    const subject = plan(true);
+    const timings = subject.mappedPassIds.map((passId, index) => ({ passId, durationMs: 0.25 * (index + 1) }));
+    const receipt = createPbrFrameReceipt(7, subject, timings, 100, 116);
+    // perPass 按计划 passOrder 排列;全部 mapped pass 都有 timing 时与 mappedPassIds 同序。
+    expect(receipt.perPass.map(entry => entry.passId)).toEqual(subject.mappedPassIds);
+    expect(new Set(receipt.perPass.map(entry => entry.passId))).toEqual(new Set(subject.mappedPassIds));
+    const measuredIds = receipt.samples.filter(sample => sample.availability === "measured")
+      .map(sample => sample.passChannel.slice("gpu-timestamp.pass.".length));
+    expect(new Set(measuredIds)).toEqual(new Set(receipt.perPass.map(entry => entry.passId)));
+    for (const entry of receipt.perPass) {
+      const sample = receipt.samples.find(candidate => candidate.passChannel === pbrPassChannelName(entry.passId))!;
+      expect(sample.samplesMs).toEqual([entry.durationMs]);
+    }
+    // 编码集合交集:只给 executed pass 喂 timing 时,perPass 与 executedMappedPassIds 对齐。
+    const executed = new Set(["opaque", "present"]);
+    const partial = createPbrFrameReceipt(8, subject,
+      timings.filter(timing => executed.has(timing.passId)), 100, 116, executed);
+    expect(partial.perPass.map(entry => entry.passId)).toEqual(["opaque", "present"]);
+    expect(partial.perPass.map(entry => entry.passId).sort()).toEqual([...partial.executedMappedPassIds]);
+  });
+
+  it("keeps perPass empty and samples unavailable when nothing was measured", () => {
+    const subject = plan(false);
+    const receipt = createPbrFrameReceipt(9, subject, [], 0, 16, new Set(["opaque"]));
+    expect(receipt.perPass).toEqual([]);
+    expect(receipt.samples.every(sample => sample.availability === "unavailable")).toBe(true);
+  });
+
+  it("keeps the timed pass registry aligned with the mapped executor set via plan construction", () => {
+    // 全特性计划:默认特性不含 SSR/雾,对齐断言必须覆盖清单里全部 pass。
+    const subject = buildPbrFrameExecutionPlan(SURFACE, { transparency: true,
+      features: resolvePbrRendererFeatures({ ambientOcclusion: true, screenSpaceReflection: true,
+        volumetricFog: true, temporalAa: true, bloom: true, occlusionCulling: true, spatialAa: true }) });
+    expect([...subject.mappedPassIds].sort()).toEqual([...PBR_TIMED_PASS_IDS].sort());
   });
 });

@@ -41,10 +41,14 @@ export { compilePbrFrameGraph, buildPbrFrameGraph } from "./pbrFrameGraph.js";
 export type { PbrFrameGraphOptions } from "./pbrFrameGraph.js";
 export { buildPbrFrameExecutionPlan, diffPlanAgainstActual, assertPlanMatchesActual,
   collectActualPbrFramePasses, createPbrFrameReceipt, createPbrPassTimingSample,
-  createPbrPassUnavailableSample, pbrReceiptSampleWindow, pbrPassChannelName } from "./pbrFramePlanExecutor.js";
+  createPbrPassUnavailableSample, pbrReceiptSampleWindow, pbrPassChannelName,
+  pbrFramePassTimingsUnavailable } from "./pbrFramePlanExecutor.js";
 export type { PbrFrameExecutionPlan, PbrPlannedPass, PbrPlannedPassResource, PbrPlannedResourceLifetime,
   PbrPassMapping, PbrPlanMismatch, PbrPlanDiffResult, PbrFrameExecutionReceipt, PbrPassChannelSample,
-  PbrPassTimingEntry } from "./pbrFramePlanExecutor.js";
+  PbrPassTimingEntry, PbrFramePassTimings } from "./pbrFramePlanExecutor.js";
+export { PBR_TIMED_PASS_IDS, pbrPassTimingStage, isPbrPassTimingStage } from "./pbrTimedPassIds.js";
+export type { PbrTimedPassId } from "./pbrTimedPassIds.js";
+export type { GpuTiming, GpuPassTimingScope } from "./gpuTimer.js";
 export { PBR_FRAME_RESOURCE_CONTRACTS, resolvePbrFrameResourceSizes, resolvePbrFramePlanSurface,
   pbrFrameResourceContract, FRAME_PLAN_USAGES } from "./pbrFramePlanResources.js";
 export type { PbrFrameResourceContract, PbrFrameResourceSizeRole, FramePlanUsage,

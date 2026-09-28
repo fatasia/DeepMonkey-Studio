@@ -3,6 +3,7 @@ import {
   QualityTelemetryCollector,
   type AuthoredQualityProfile,
   type FrameMetrics,
+  type PbrFramePassTimings,
   type QualityTelemetrySnapshot,
 } from "@bim-studio/deep-engine/webgpu";
 
@@ -34,6 +35,12 @@ export interface StudioQualityTelemetryStatus {
   readonly collector: QualityTelemetrySnapshot;
   readonly latestMemory: FrameMetrics["deviceResourceMemory"];
   readonly coverage: StudioQualityTelemetryCoverage;
+  /**
+   * F1 逐 pass GPU 计时最新读回(undefined = 后端未开启 `gpuPassTiming` 采集,面板
+   * 显示「未开启」;availability=unavailable 时带原因)。帧号滞后 1-2 帧,实测帧
+   * 在 frame 字段内。
+   */
+  readonly latestPassTimings?: PbrFramePassTimings;
   /** 采集器拒收等自检失败;非空表示采样已停止,面板必须展示而非静默。 */
   readonly failure?: string;
 }
@@ -73,6 +80,7 @@ export class StudioDeepQualityTelemetrySampler {
   private adaptiveDecisions = 0;
   private lastFlushAt = 0;
   private failure: string | undefined;
+  private latestPassTimings: PbrFramePassTimings | undefined;
 
   constructor(options: StudioQualityTelemetryOptions | undefined, activeProfile: AuthoredQualityProfile | null,
     readResidentBytes: () => number | undefined) {
@@ -91,6 +99,8 @@ export class StudioDeepQualityTelemetrySampler {
   record(metrics: FrameMetrics, now = performance.now()): boolean {
     if (!this.collector.enabled || this.failure !== undefined) return false;
     this.latestMemory = metrics.deviceResourceMemory;
+    // F1 逐 pass 计时直通:只透传最新读回,不做二次加工;metrics 未携带 = 未开启。
+    this.latestPassTimings = metrics.gpuPassTimings;
     this.windowFrames++;
     this.windowLatestFrame = metrics.frame;
     const receipt = metrics.frameGraphReceipt;
@@ -122,9 +132,9 @@ export class StudioDeepQualityTelemetrySampler {
         uploadedBytes: this.residencyMeasured ? "chunk-stream-residency-delta" : "unavailable",
         visibleInstances: "unavailable",
       },
+      ...(this.latestPassTimings !== undefined ? { latestPassTimings: this.latestPassTimings } : {}),
       ...(this.failure !== undefined ? { failure: this.failure } : {}),
-    };
-  }
+    };  }
 
   private flush(now: number): void {
     // 窗口内没有任何带回执帧时不落账:没有可测的 pass 数就不产生半真记录。

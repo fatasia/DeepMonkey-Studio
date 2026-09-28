@@ -1,8 +1,10 @@
 export { createPbrPassTimingSample, createPbrPassUnavailableSample, createPbrFrameReceipt,
-  pbrReceiptSampleWindow, pbrPassChannelName } from "./pbrFrameReceipt.js";
-export type { PbrFrameExecutionReceipt, PbrPassChannelSample, PbrPassTimingEntry } from "./pbrFrameReceipt.js";
+  pbrReceiptSampleWindow, pbrPassChannelName, pbrFramePassTimingsUnavailable } from "./pbrFrameReceipt.js";
+export type { PbrFrameExecutionReceipt, PbrPassChannelSample, PbrPassTimingEntry,
+  PbrFramePassTimings } from "./pbrFrameReceipt.js";
 import type { RenderGraphBuilder, RenderPassDescriptor, RenderResourceLifetime } from "../renderGraph.js";
 import { buildPbrFrameGraph, type PbrFrameGraphOptions } from "./pbrFrameGraph.js";
+import { PBR_TIMED_PASS_IDS } from "./pbrTimedPassIds.js";
 import { describePbrOpaquePass } from "./pbrOpaquePass.js";
 import { describePbrPresentPasses } from "./pbrOutputBindings.js";
 import { pbrFrameResourceContract, resolvePbrFrameResourceSizes, type PbrActualPassDescription,
@@ -94,6 +96,15 @@ function validateGraphAgainstContracts(compiledResources: readonly RenderResourc
   }
 }
 
+/** F1 计时身份单源校验:mapped pass 必须都在 pbrTimedPassIds 清单里,漂移在计划构建期显式报错。 */
+function validateTimedPassIdentity(plan: PbrFrameExecutionPlan): void {
+  const timed = new Set<string>(PBR_TIMED_PASS_IDS);
+  const drifted = plan.mappedPassIds.filter(passId => !timed.has(passId));
+  if (drifted.length) {
+    throw new Error(`Mapped passes missing from PBR_TIMED_PASS_IDS (per-pass GPU timing cannot bracket them): ${drifted.join(", ")}.`);
+  }
+}
+
 function plannedResources(pass: RenderPassDescriptor, sizes: ReadonlyMap<string, SurfaceSize>): readonly PbrPlannedPassResource[] {
   const claims: PbrPlannedPassResource[] = [];
   for (const access of ["read", "write"] as const) {
@@ -143,8 +154,10 @@ export function buildPbrFrameExecutionPlan(surface: SurfaceSize, options: PbrFra
   });
   const mappedPassIds = passes.filter(pass => pass.mapping.status === "mapped").map(pass => pass.passId);
   const unmappedPassIds = passes.filter(pass => pass.mapping.status === "unmapped").map(pass => pass.passId);
-  return Object.freeze({ transparency: options.transparency, surface, planHash: compiled.planHash, passOrder: [...compiled.order],
-    passes, resourceLifetimes: lifetimes, mappedPassIds, unmappedPassIds });
+  const planValue = Object.freeze({ transparency: options.transparency, surface, planHash: compiled.planHash,
+    passOrder: [...compiled.order], passes, resourceLifetimes: lifetimes, mappedPassIds, unmappedPassIds });
+  validateTimedPassIdentity(planValue);
+  return planValue;
 }
 
 export interface PbrPlanMismatch {

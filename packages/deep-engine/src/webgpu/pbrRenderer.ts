@@ -42,7 +42,8 @@ import type { SurfaceSize } from "./surfaceSize.js";
 import { DynamicResolutionScaler, internalResolutionReport,
   DEFAULT_RESOLUTION_SCALE_POLICY, type ResolutionScalePolicy } from "../postprocess/resolutionScaler.js";
 import { buildPbrFrameExecutionPlan, collectActualPbrFramePasses, assertPlanMatchesActual,
-  createPbrFrameReceipt } from "./pbrFramePlanExecutor.js";
+  createPbrFrameReceipt, pbrFramePassTimingsUnavailable } from "./pbrFramePlanExecutor.js";
+import type { PbrFramePassTimings } from "./pbrFrameReceipt.js";
 import { PbrFrameCapture } from "./pbrFrameCapture.js";
 import type { PbrFrameReadbackResult } from "./pbrFrameCaptureReadback.js";
 import type { FrameCaptureSession } from "../r12/frameCapture.js";
@@ -126,6 +127,12 @@ export class PbrRenderer {
     this.diagnostics = new PbrRendererDiagnostics(session);
     this.adaptiveQuality = options.adaptiveQuality ? new AdaptiveQualityController(options.adaptiveQuality) : undefined;
     if (options.adaptiveQuality?.enabled) this.diagnostics.setEnabled(true);
+    // F1 逐 pass GPU 计时(opt-in):开启即连带启用诊断采样;设备不支持/槽忙时
+    // beginPasses 返回 undefined,帧内自动回退帧级三段计时,见 renderPreparedFrame。
+    if (options.gpuPassTiming) {
+      this.diagnostics.setEnabled(true);
+      this.diagnostics.gpuTimer.passTimingEnabled = true;
+    }
     if (options.particleEmitters?.length) {
       const setup = createGpuParticleRuntimeFromEmitters(session,
         `pbr-particles-${probeClipmapDeviceEpoch(session.device)}`, options.particleEmitters,
@@ -420,8 +427,14 @@ export class PbrRenderer {
     const mainFrustum = visibility.frustum, lodStats = this.packets.encodeLod(encoder,
       previousHiZ ? { ...visibility.lod, previousHiZ } : visibility.lod);
     const lodWork = new PbrLodWork(lodStats);
+    const hasTransparent = drawProfile.hasTransparent;
     const detailedTiming = directClear === undefined && !view.editorOverlay?.vertices.length;
-    const timing = this.gpuTimer.begin(this.frame + 1, detailedTiming);
+    // F1 逐 pass 计时:pass 清单取自同一帧的执行计划 ∩ executed 集合(单一 pass 身份
+    // 来源,禁止第二套)。scope 不可用(不支持/槽忙/超容)时回退帧级三段计时。
+    const executedPasses = this.executedCapturePassIds(directClear !== undefined, postProcess, hasTransparent);
+    const passTiming = capturePlan && this.gpuTimer.passTimingEnabled ? this.gpuTimer.beginPasses(this.frame + 1,
+      capturePlan.plan.mappedPassIds.filter(passId => executedPasses.has(passId))) : undefined;
+    const timing = passTiming ? undefined : this.gpuTimer.begin(this.frame + 1, detailedTiming);
     const timingStart = timing ? { timestampWrites: { querySet: timing.queries, beginningOfPassWriteIndex: 0 } } : {};
     const shadowFrame = this.shadows.prepare({ eye: view.eye, target: view.target, ...(view.up ? { up: view.up } : {}),
       verticalFovRadians: frameState.projection.verticalFovRadians, aspect: size.width / size.height,
@@ -451,7 +464,6 @@ export class PbrRenderer {
     lodWork.add(localShadow);
     const opaqueCulling = this.packets.encodeCulling(encoder, mainFrustum, "opaque",
       { sceneRevision: this.packets.visibilityRevision, ...(previousHiZ ? { previousHiZ } : {}) });
-    const hasTransparent = drawProfile.hasTransparent;
     if (!hasTransparent) this.transparency.clearReactiveMask();
     let present: PbrPresentReceipt | undefined = directClear ? this.outputs.acquirePresent(this.performanceTelemetry.enabled) : undefined;
     const mainTimestamps = directClear && timing && !view.editorOverlay?.vertices.length ? { querySet: timing.queries,
@@ -459,6 +471,7 @@ export class PbrRenderer {
       : timing && !directClear ? { querySet: timing.queries,
         ...(!shadowUpdated ? { beginningOfPassWriteIndex: 0 } : {}), endOfPassWriteIndex: 2 }
         : !shadowUpdated && timing ? timingStart.timestampWrites : undefined;
+    passTiming?.beginMarker(encoder, "opaque");
     const main = beginPbrOpaquePass(encoder, { targets: this.targets, background: directClear ?? view.background,
       writeGeometryBuffers: this.writeGeometryBuffers, drawBackground: this.mainBindings.prepareBackground(view, this.environment.current, size.width / size.height, this.writeGeometryBuffers),
       ...(present ? { directDisplayView: present.view } : {}), ...(mainTimestamps ? { timestampWrites: mainTimestamps } : {}) });
@@ -473,6 +486,7 @@ export class PbrRenderer {
       this.ground.mesh, this.ground.instance, directClear !== undefined);
     drawCalls += groundStats.drawCalls; triangles += groundStats.triangles;
     main.end();
+    passTiming?.endMarker(encoder, "opaque");
     // Particle simulation commits asynchronously; consume the latest committed binding here.
     // A one-frame simulation-to-render latency avoids queue stalls and keeps particle count
     // fully GPU-driven (drawIndirect never reads instance count back to JS).
@@ -513,7 +527,8 @@ export class PbrRenderer {
       // frame plan (see docs/reports/deep-core/T07-implementation.md).
       reactiveMaskAvailable: false,
       surfaceWidth: size.width, surfaceHeight: size.height,
-      ...(this.adaptiveQuality ? { adaptiveQuality: this.adaptiveQuality.state().knobs } : {}) };
+      ...(this.adaptiveQuality ? { adaptiveQuality: this.adaptiveQuality.state().knobs } : {}),
+      ...(passTiming ? { passTiming } : {}) };
     const opaqueEffects: ReturnType<PbrPostProcessChain["encodeOpaque"]> = directClear
       ? { color: this.targets.hdrTexture, passCount: 0 } : this.postProcess.encodeOpaque(postProcessInput);
     if (hiZPlan && !opaqueEffects.hiZ) throw new Error("Hi-Z visibility enabled without a produced depth pyramid.");
@@ -521,6 +536,7 @@ export class PbrRenderer {
     if (hasTransparent) {
       const transparentStats = this.transparency.encode({ encoder, opaqueColor: opaqueEffects.color,
         hdrColor: this.targets.hdrTexture, hdrView: this.targets.hdr, depthView: this.targets.depth,
+        ...(passTiming ? { passTiming } : {}),
         viewOf: texture => this.outputs.view(texture), draw: pass => {
           pass.setBindGroup(0, this.mainBindings.binding); pass.setBindGroup(2, this.shadows.binding);
           pass.setBindGroup(lighting!.bindGroupIndex, lighting!.bindGroup);
@@ -535,9 +551,11 @@ export class PbrRenderer {
         ...(this.transparency.currentReactiveMask ? { reactiveMask: this.transparency.currentReactiveMask }
           : particleReactive ? { reactiveMask: particleReactive.texture } : {}) }, temporalInput);
     if (!directClear) {
+      passTiming?.beginMarker(encoder, "present");
       present = this.outputs.present(encoder, finalEffects.color, view.authorColorEffects, this.performanceTelemetry.enabled,
         view.editorOverlay?.vertices.length ? undefined : timing?.queries, this.frameCapture !== undefined,
         detailedTiming && timing !== undefined);
+      passTiming?.endMarker(encoder, "present");
       drawCalls += this.features.spatialAa ? 2 : 1; triangles += this.features.spatialAa ? 2 : 1;
     }
     if (this.mainBindings.encodeDisplayBackground(encoder, present!.view, this.targets.depth, view,
@@ -553,10 +571,11 @@ export class PbrRenderer {
       });
     }
     timing?.resolve(encoder);
+    passTiming?.resolve(encoder);
     const commands = encoder.finish();
     const encoded = this.performanceTelemetry.enabled ? performance.now() : 0;
     if (this.frameCapture && captureOpen) {
-      const executedPassIds = this.executedCapturePassIds(directClear !== undefined, postProcess, hasTransparent);
+      const executedPassIds = executedPasses;
       this.frameCapture.recordPasses(this.captureActualPasses ?? [], executedPassIds, present?.sourceMapRefs);
       this.frameCapture.mark("submit", "queue.submit");
     }
@@ -579,6 +598,7 @@ export class PbrRenderer {
     this.pendingHiZ = undefined;
     this.packets.commitFrame();
     timing?.read();
+    passTiming?.read();
     this.shadowDirty = false; this.historyDirty = false;
     this.diagnostics.recordFrame(frameNumber, begin, encoded, submitted, present!.acquireMs);
     const metrics: FrameMetrics = { frame: ++this.frame, cpuSubmitMs: performance.now() - begin, drawCalls, triangles, ...lodWork.snapshot(),
@@ -591,13 +611,13 @@ export class PbrRenderer {
       frustumCulledBatches: opaqueCulling.frustumBatches, hiZOccludedBatches: opaqueCulling.occlusionBatches, lodSelectionBatches: lodStats.selectionBatches, lodIndirectDraws: lodStats.indirectDraws,
       lightCount: lighting?.lightCount ?? 0, lightClusters: lighting?.grid.clusterCount ?? 0,
       ...(capturePlan && this.performanceTelemetry.enabled ? {
-        // Timestamp queries currently cover the frame as a whole. Keep each
-        // pass explicitly unavailable instead of manufacturing zero timings;
-        // the upper layer can still inspect plan order, mappings and coverage.
+        // 帧图回执记录本帧编码覆盖;逐 pass 毫秒随读回异步完成,发布在
+        // gpuPassTimings(带实测帧号),本回执的 samples 对缺测 pass 保持显式
+        // unavailable,不伪零。
         frameGraphReceipt: createPbrFrameReceipt(frameNumber, capturePlan.plan, [], begin,
-          Math.max(performance.now(), begin + 0.001),
-          this.executedCapturePassIds(directClear !== undefined, postProcess, hasTransparent)),
+          Math.max(performance.now(), begin + 0.001), executedPasses),
       } : {}),
+      ...(this.gpuTimer.passTimingEnabled ? { gpuPassTimings: this.passTimingsMetrics(frameNumber) } : {}),
       ...(this.resolutionScale === 1 ? {} : { resolutionScale: this.resolutionScaleMetrics(size) }),
       ...this.shadows.metrics };
     this.sampleAdaptiveQuality(metrics);
@@ -623,6 +643,16 @@ export class PbrRenderer {
     // 质量槽位保持 measured=false：真实画质数字须来自 GPU 序列联测，不许发明。
     return { revision: this.resolutionScaleRevision,
       ...internalResolutionReport(this.resolutionScale, surface.width, surface.height) };
+  }
+
+  /** F1:最新完成读回的逐 pass 计时;尚无读回时显式 unavailable,不伪零。 */
+  private passTimingsMetrics(frameNumber: number): PbrFramePassTimings {
+    const latest = this.diagnostics.latestPassTimings;
+    if (latest) return latest;
+    const reason = !this.gpuTimer.enabled ? "诊断采样未启用,逐 pass GPU 计时未采集"
+      : !this.gpuTimer.supported ? "设备不支持 timestamp-query,逐 pass GPU 计时不可用"
+        : "等待首个逐 pass GPU 时间戳读回";
+    return pbrFramePassTimingsUnavailable(frameNumber, reason);
   }
 
   private sampleAdaptiveQuality(metrics: FrameMetrics): void {

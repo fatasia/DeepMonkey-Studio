@@ -40,11 +40,40 @@ export interface PbrFrameExecutionReceipt {
   readonly unmappedPassIds: readonly string[];
   /** 每个计划 pass 恰好一条样本;unmapped pass 显式 unavailable,禁止伪零值。 */
   readonly samples: readonly PbrPassChannelSample[];
+  /**
+   * F1 逐 pass 实测毫秒数组(passId→ms),仅含 measured 且 executed 的样本,按计划
+   * passOrder 排列;与 samples 的 measured 子集严格一致。空数组 = 本回执无逐 pass
+   * 实测(时间戳未启用/槽忙/读回未完成),不伪零。
+   */
+  readonly perPass: readonly PbrPassTimingEntry[];
 }
 
 export interface PbrPassTimingEntry {
   readonly passId: string;
   readonly durationMs: number;
+}
+
+/**
+ * 单帧逐 pass GPU 计时(F1)。GPU 读回滞后于渲染 1-2 帧:挂在 FrameMetrics 上时
+ * `frame` 字段标识实测帧(非收到该数据的帧),消费方不得把它当作当前帧。
+ * availability=unavailable 时只给原因,不产伪零样本。
+ */
+export interface PbrFramePassTimings {
+  readonly frame: number;
+  readonly availability: "measured" | "unavailable";
+  readonly unavailableReason?: string;
+  /** GPU 全帧跨度(首个 begin marker → 最后一个 end marker,含未计时缝隙)。 */
+  readonly milliseconds?: number;
+  /** 实测 pass(passId→ms),按帧图计划顺序排列。 */
+  readonly passes?: readonly PbrPassTimingEntry[];
+  /** 本帧请求计时的 pass 数;measuredPassCount < requestedPassCount 即有样本被丢弃。 */
+  readonly requestedPassCount?: number;
+  readonly measuredPassCount?: number;
+}
+
+export function pbrFramePassTimingsUnavailable(frame: number, reason: string): PbrFramePassTimings {
+  if (!reason.trim()) throw new Error("Pass timings unavailable state requires a reason.");
+  return Object.freeze({ frame, availability: "unavailable", unavailableReason: reason });
 }
 
 /** 回执必须完整覆盖计划 pass:有实测给实测;未接/缺样本一律显式 unavailable。 */
@@ -74,8 +103,15 @@ export function createPbrFrameReceipt(frame: number, plan: PbrFrameExecutionPlan
         : "missing timing entry for mapped pass";
     return createPbrPassUnavailableSample(passId, reason, windowStartMs, windowEndMs);
   });
+  // perPass 只收实测样本;给了 executedPassIds 时再与之取交(未编码 pass 的 timing 已在上面抛错)。
+  // executedPassIds 缺省(空集)= 调用方未提供编码集合,此时按计划顺序收全部实测。
+  const executedFilter = executedPassIds.size > 0 ? executedPassIds : undefined;
+  const perPass = plan.passOrder
+    .filter(passId => timingByPass.has(passId) && (executedFilter?.has(passId) ?? true))
+    .map(passId => Object.freeze({ passId, durationMs: timingByPass.get(passId)! }));
   return Object.freeze({ frame, passOrder: [...plan.passOrder],
-    executedMappedPassIds: [...executedPassIds].sort(), unmappedPassIds: [...plan.unmappedPassIds], samples });
+    executedMappedPassIds: [...executedPassIds].sort(), unmappedPassIds: [...plan.unmappedPassIds],
+    samples, perPass });
 }
 
 /** 聚合为 A03 SampleWindow:窗口 schema 禁止重复通道,全部 pass 样本合并进唯一 gpu-timestamp 通道。 */

@@ -230,3 +230,63 @@
     transition: none !important;
   }
 }
+
+/* F1 逐 pass GPU 耗时:名称 + 比例条 + 毫秒三列;比例条取 accent 派生,禁止硬编码色值 */
+.qt-pass-list {
+  display: grid;
+  gap: 3px;
+  grid-column: 1 / -1;
+  padding: 4px 2px 2px;
+}
+
+.qt-pass-row {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) 1fr auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.qt-pass-name {
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qt-pass-bar {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.qt-pass-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--accent) 72%, transparent);
+}
+
+.qt-pass-ms {
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.qt-pass-foot {
+  margin-top: 2px;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 逐 pass 计时不可用:与覆盖口径缺测同一弱化语义 */
+.qt-empty.off {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  word-break: break-all;
+}

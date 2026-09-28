@@ -139,4 +139,45 @@ describe("QualityTelemetryPanel", () => {
     expect(slow).toContain("48.2 ms");
     expect(slow).toContain("warn"); // P95 > 33.34ms 警告类
   });
+
+  it("F1 逐 pass GPU 耗时:实测按耗时降序 Top-8,超量汇总省略数并标注计时帧", () => {
+    const passes = [
+      { passId: "opaque", durationMs: 4.2 }, { passId: "ambient-occlusion", durationMs: 2.1 },
+      { passId: "apply-ambient-occlusion", durationMs: 1.8 }, { passId: "present", durationMs: 1.4 },
+      { passId: "composite-oit", durationMs: 1.2 }, { passId: "transparent-oit", durationMs: 1.1 },
+      { passId: "screen-space-reflection-trace", durationMs: 0.95 }, { passId: "temporal-aa", durationMs: 0.9 },
+      { passId: "bloom", durationMs: 0.7 }, { passId: "screen-space-reflection-composite", durationMs: 0.3 },
+    ];
+    state.status = telemetryStatus({
+      coverage: { passCount: "frame-graph-receipt", uploadedBytes: "unavailable", visibleInstances: "unavailable" },
+      latestPassTimings: { frame: 88, availability: "measured", milliseconds: 9.5,
+        passes, requestedPassCount: 10, measuredPassCount: 10 },
+    });
+    const html = renderPanel();
+    expect(html).toContain("逐 Pass GPU 耗时");
+    expect(html).toContain("计时帧 #88");
+    expect(html).toContain("4.20 ms");
+    expect(html).toContain("0.90 ms");
+    expect(html).not.toContain("0.70 ms"); // 第 9/10 名不进 Top-8,但计入省略汇总
+    expect(html.indexOf(">opaque<")).toBeLessThan(html.indexOf(">ambient-occlusion<"));
+    expect(html.indexOf(">screen-space-reflection-trace<")).toBeLessThan(html.indexOf(">temporal-aa<"));
+    expect(html).toContain("全帧 9.50 ms · 实测 10/10 pass");
+    expect(html).toContain("另有 2 个 pass 未列入");
+  });
+
+  it("F1 逐 pass 不可用与未开启:分别显示原因与未开启文案,不伪零", () => {
+    state.status = telemetryStatus({
+      coverage: { passCount: "frame-graph-receipt", uploadedBytes: "unavailable", visibleInstances: "unavailable" },
+      latestPassTimings: { frame: 90, availability: "unavailable",
+        unavailableReason: "设备不支持 timestamp-query,逐 pass GPU 计时不可用" },
+    });
+    expect(renderPanel()).toContain("设备不支持 timestamp-query");
+
+    state.status = telemetryStatus({
+      coverage: { passCount: "frame-graph-receipt", uploadedBytes: "unavailable", visibleInstances: "unavailable" },
+    });
+    const off = renderPanel();
+    expect(off).toContain("逐 pass 计时未开启");
+    expect(off).not.toContain("qt-pass-row");
+  });
 });

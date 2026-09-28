@@ -1,4 +1,5 @@
 import type { DeviceSession } from "./deviceSession.js";
+import type { GpuPassTimingScope } from "./gpuTimer.js";
 import type { PbrActualPassDescription } from "./pbrFramePlanResources.js";
 import { PBR_HDR_FORMAT, pbrFullHdrTransientUsage } from "./renderTargets.js";
 import { WeightedOitPass } from "./weightedOit.js";
@@ -17,6 +18,8 @@ interface TransparencyInput {
   readonly depthView: GPUTextureView;
   readonly viewOf: (texture: GPUTexture) => GPUTextureView;
   readonly draw: (pass: GPURenderPassEncoder) => DrawStats;
+  /** F1 逐 pass 计时(opt-in):括夹 OIT 累积与合成两个计划 pass;缺省零开销。 */
+  readonly passTiming?: GpuPassTimingScope;
 }
 
 /** 管理透明合成目标；AO 关闭时不能读写同一张 HDR 纹理。 */
@@ -57,12 +60,16 @@ export class PbrTransparencyPass {
     try {
       const destination = opaqueColor === hdrColor ? this.scratchTarget(hdrColor.width, hdrColor.height)
         : { texture: hdrColor, view: input.hdrView };
+      input.passTiming?.beginMarker(encoder, "transparent-oit");
       const pass = encoder.beginRenderPass({ label: "Deep weighted OIT accumulation",
         colorAttachments: this.oit.accumulationAttachments(),
         depthStencilAttachment: { view: input.depthView, depthLoadOp: "load", depthStoreOp: "discard" } });
       let stats: DrawStats;
       try { stats = input.draw(pass); } finally { pass.end(); }
+      input.passTiming?.endMarker(encoder, "transparent-oit");
+      input.passTiming?.beginMarker(encoder, "composite-oit");
       this.oit.encodeComposite(encoder, input.viewOf(opaqueColor), destination.view, { outputFormat: PBR_HDR_FORMAT });
+      input.passTiming?.endMarker(encoder, "composite-oit");
       if (this.produceReactiveMask) this.encodeReactiveMask(encoder, hdrColor.width, hdrColor.height);
       this.output = destination.texture;
       return { color: destination.texture, drawCalls: stats.drawCalls + 1 + Number(this.produceReactiveMask),

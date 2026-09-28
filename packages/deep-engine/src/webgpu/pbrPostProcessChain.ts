@@ -14,6 +14,7 @@ import { VolumetricFogCompositePass } from "../fog/volumetricFogComposite.js";
 import { VOLUMETRIC_FOG_SCATTER_FORMAT } from "../fog/volumetricFogPassTypes.js";
 import { VOLUMETRIC_FOG_COMPOSITE_FORMAT } from "../fog/volumetricFogCompositeTypes.js";
 import type { DeviceSession } from "./deviceSession.js";
+import type { GpuPassTimingScope } from "./gpuTimer.js";
 import { HiZPyramid, type HiZResult } from "./hiZPyramid.js";
 import type { RenderTargets } from "./renderTargets.js";
 import { PBR_HDR_FORMAT, PBR_LINEAR_DEPTH_FORMAT, PBR_MAIN_SAMPLE_COUNT, PBR_MOTION_FORMAT,
@@ -49,6 +50,11 @@ export interface PbrPostProcessInput {
   readonly reactiveMaskAvailable?: boolean;
   readonly reactiveMask?: GPUTexture;
   readonly adaptiveQuality?: Readonly<AdaptiveQualityKnobs>;
+  /**
+   * F1 逐 pass GPU 计时作用域(opt-in 诊断)。存在时在计划 pass 组边界发射只写
+   * 时间戳的 marker pass;缺失时整条链路零额外开销、逐字节不变。
+   */
+  readonly passTiming?: GpuPassTimingScope;
 }
 
 /** E04 first-slice SSR tuning; derived from the scene extent like AO radius/thickness. */
@@ -136,14 +142,18 @@ export class PbrPostProcessChain {
     }
     const radius = Math.min(100, Math.max(0.1, extent * 0.04));
     const thickness = Math.min(radius, Math.max(0.01, extent * 0.004));
+    input.passTiming?.beginMarker(encoder, "ambient-occlusion");
     const ao = this.ambientOcclusion!.encode(encoder, {
       depth: targets.linearDepthTexture, normal: targets.normalTexture, revision,
       depthEncoding: "linear-view-depth-positive", normalSpace: "view",
     }, { verticalFovRadians, radius, thickness, power: 1.5 });
+    input.passTiming?.endMarker(encoder, "ambient-occlusion");
+    input.passTiming?.beginMarker(encoder, "apply-ambient-occlusion");
     const composited = this.ambientOcclusionComposite!.encode(encoder, {
       color: targets.hdrTexture, depth: targets.linearDepthTexture, normal: targets.normalTexture, ambientOcclusion: ao,
       revision, colorEncoding: "linear-hdr", depthEncoding: "linear-view-depth-positive",
     }, { depthSigma: Math.min(1_000_000, Math.max(0.01, extent * 0.005)), strength: 1 });
+    input.passTiming?.endMarker(encoder, "apply-ambient-occlusion");
     return Object.freeze({ color: composited.texture, ...(hiZ ? { hiZ } : {}), passCount: hiZPasses + 4 });
   }
 
@@ -166,14 +176,18 @@ export class PbrPostProcessChain {
     let effectPasses = 0;
     if (active.volumetricFog && this.volumetricFog && this.volumetricFogComposite) {
       const profile = active.volumetricFogProfile;
+      input.passTiming?.beginMarker(encoder, "volumetric-fog-march");
       const scatter = this.volumetricFog.encode(encoder, {
         depth: targets.linearDepthTexture, revision, depthEncoding: "linear-view-depth-positive",
       }, { verticalFovRadians, steps: Math.min(profile.steps ?? 48, input.adaptiveQuality?.fogSteps ?? 64),
         maxDistance: profile.maxDistance ?? Math.max(1, Math.min(100_000, extent * 4)),
         medium: profile.medium, light: profile.light });
+      input.passTiming?.endMarker(encoder, "volumetric-fog-march");
+      input.passTiming?.beginMarker(encoder, "volumetric-fog-composite");
       marched = this.volumetricFogComposite.encode(encoder, {
         color: marched, scatter, revision, colorEncoding: "linear-hdr",
       }).texture;
+      input.passTiming?.endMarker(encoder, "volumetric-fog-composite");
       effectPasses += 2;
     }
     if (active.screenSpaceReflection && this.screenSpaceReflection) {
@@ -187,22 +201,28 @@ export class PbrPostProcessChain {
           thickness: Math.max(0.001, extent * active.screenSpaceReflectionProfile.thicknessScale),
           maxDistance: Math.max(0.25, extent * active.screenSpaceReflectionProfile.maxDistanceScale),
         } : {}), ...(input.adaptiveQuality ? { coneMipLevels: input.adaptiveQuality.ssrConeLevels } : {}),
-        verticalFovRadians });
+        verticalFovRadians, ...(input.passTiming ? { passTiming: input.passTiming } : {}) });
       marched = reflected.texture; effectPasses += reflected.passCount;
     }
-    const temporal = this.features.temporalAa ? this.temporalAa!.encode(encoder, {
-      color: marched, depth: targets.linearDepthTexture, motion: targets.motionTexture, revision,
-      ...(input.reactiveMask ? { reactiveMask: input.reactiveMask } : {}),
-      cameraCut: cameraCut || !temporalPlan.decisions.taa.valid,
-      colorEncoding: "linear-hdr", currentJitter, previousJitter,
-      depthEncoding: "linear-view-depth-positive", motionEncoding: "current-to-previous-uv",
-    }, { feedback: 0.9, depthThreshold: Math.min(100, Math.max(0.01, extent * 0.001)), relativeDepthThreshold: 0.02 })
-      : { texture: marched };
+    let temporal: { readonly texture: GPUTexture } = { texture: marched };
+    if (this.features.temporalAa) {
+      input.passTiming?.beginMarker(encoder, "temporal-aa");
+      temporal = this.temporalAa!.encode(encoder, {
+        color: marched, depth: targets.linearDepthTexture, motion: targets.motionTexture, revision,
+        ...(input.reactiveMask ? { reactiveMask: input.reactiveMask } : {}),
+        cameraCut: cameraCut || !temporalPlan.decisions.taa.valid,
+        colorEncoding: "linear-hdr", currentJitter, previousJitter,
+        depthEncoding: "linear-view-depth-positive", motionEncoding: "current-to-previous-uv",
+      }, { feedback: 0.9, depthThreshold: Math.min(100, Math.max(0.01, extent * 0.001)), relativeDepthThreshold: 0.02 });
+      input.passTiming?.endMarker(encoder, "temporal-aa");
+    }
     if (!active.bloom) return Object.freeze({ color: temporal.texture, passCount: effectPasses + (this.features.temporalAa ? 1 : 0) });
     const source = { color: temporal.texture, revision, colorEncoding: "linear-hdr" as const };
+    input.passTiming?.beginMarker(encoder, "bloom");
     const bloom = active.authorBloom
       ? (this.authorBloom ??= new AuthorBloomPass(this.session, this.pool)).encode(encoder, source, active.authorBloom)
       : this.bloom!.encode(encoder, source, DEFAULT_PBR_BLOOM_OPTIONS);
+    input.passTiming?.endMarker(encoder, "bloom");
     return Object.freeze({ color: bloom.texture, passCount: effectPasses + (this.features.temporalAa ? 1 : 0) + bloom.passCount });
   }
 

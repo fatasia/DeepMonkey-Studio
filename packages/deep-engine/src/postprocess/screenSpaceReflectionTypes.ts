@@ -31,6 +31,11 @@ export interface ScreenSpaceReflectionOptions {
   readonly fresnelF0: number;
   /** Active prefiltered cone levels; physical storage remains bounded to six. */
   readonly coneMipLevels?: number;
+  /**
+   * F1 逐 pass GPU 计时作用域(opt-in 诊断);只用于 marker 括夹,不参与缓存键
+   * (sameOptions 不比较)与参数打包。
+   */
+  readonly passTiming?: import("../webgpu/gpuTimer.js").GpuPassTimingScope;
 }
 
 export interface ScreenSpaceReflectionResult {

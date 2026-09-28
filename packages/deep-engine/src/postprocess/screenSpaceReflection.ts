@@ -105,7 +105,7 @@ export class ScreenSpaceReflectionPass {
           radianceBindings: previous.radianceBindings }
         : this.bind(candidate, source);
       this.session.device.queue.writeBuffer(candidate.parameters, 0, packParameters(request, options));
-      this.encodePass(encoder, candidate, bindings, request.activeRadianceMipLevels);
+      this.encodePass(encoder, candidate, bindings, request.activeRadianceMipLevels, options.passTiming);
       const next: Cache = { ...candidate, source, options: Object.freeze({ ...options }),
         traceBinding: bindings.traceBinding, compositeBinding: bindings.compositeBinding,
         radianceBindings: bindings.radianceBindings };
@@ -160,7 +160,7 @@ export class ScreenSpaceReflectionPass {
         this.pooledBindings.push(bindings); if (this.pooledBindings.length > 4) this.pooledBindings.shift();
       }
       this.session.device.queue.writeBuffer(allocation.parameters, 0, packParameters(request, options));
-      this.encodePass(encoder, allocation, bindings, request.activeRadianceMipLevels); this.pooledSource = source;
+      this.encodePass(encoder, allocation, bindings, request.activeRadianceMipLevels, options.passTiming); this.pooledSource = source;
       return this.result(allocation, true, source.revision, request.activeRadianceMipLevels);
     } finally { for (const handle of handles) this.pool!.release(handle); }
   }
@@ -221,8 +221,12 @@ export class ScreenSpaceReflectionPass {
 
   private encodePass(encoder: GPUCommandEncoder, allocation: Allocation,
     bindings: { traceBinding: GPUBindGroup; compositeBinding: GPUBindGroup;
-      radianceBindings: readonly GPUBindGroup[] }, activeRadianceMipLevels: number): void {
+      radianceBindings: readonly GPUBindGroup[] }, activeRadianceMipLevels: number,
+    passTiming?: ScreenSpaceReflectionOptions["passTiming"]): void {
     const radianceBindings = bindings.radianceBindings.slice(0, activeRadianceMipLevels);
+    // F1 逐 pass 计时:计划把"辐射度 mips + trace"合并为 screen-space-reflection-trace,
+    // composite 单列;marker 只在真实编码 GPU pass 时发射(缓存命中路径不进本函数)。
+    passTiming?.beginMarker(encoder, "screen-space-reflection-trace");
     for (let level = 0; level < radianceBindings.length; level += 1) {
       const width = Math.max(1, allocation.width >> level), height = Math.max(1, allocation.height >> level);
       const radiance = encoder.beginComputePass({ label: `Deep SSR radiance mip ${level}` });
@@ -233,10 +237,13 @@ export class ScreenSpaceReflectionPass {
     const trace = encoder.beginComputePass({ label: "Deep screen-space reflection trace" });
     trace.setPipeline(this.tracePipeline); trace.setBindGroup(0, bindings.traceBinding);
     trace.dispatchWorkgroups(traceX, traceY); trace.end();
+    passTiming?.endMarker(encoder, "screen-space-reflection-trace");
     const compositeX = Math.ceil(allocation.width / SSR_WORKGROUP_SIZE), compositeY = Math.ceil(allocation.height / SSR_WORKGROUP_SIZE);
+    passTiming?.beginMarker(encoder, "screen-space-reflection-composite");
     const composite = encoder.beginComputePass({ label: "Deep screen-space reflection composite" });
     composite.setPipeline(this.compositePipeline); composite.setBindGroup(0, bindings.compositeBinding);
     composite.dispatchWorkgroups(compositeX, compositeY); composite.end();
+    passTiming?.endMarker(encoder, "screen-space-reflection-composite");
   }
 
   private release(allocation: Allocation): void {

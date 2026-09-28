@@ -47,6 +47,7 @@ export function QualityTelemetryPanel(props: QualityTelemetryPanelProps) {
   const { perf, quality } = snapshot;
   const latest = quality?.collector.frames.at(-1);
   const coverage = quality?.coverage;
+  const timings = quality?.latestPassTimings;
   const waiting = quality !== undefined && quality.collector.retainedFrameCount === 0 && quality.failure === undefined;
   const p95 = perf?.frameTimeMs.p95;
   const fpsText = perf && perf.sampleCount >= 2 ? perf.fps.toFixed(0) : "—";
@@ -139,6 +140,14 @@ export function QualityTelemetryPanel(props: QualityTelemetryPanelProps) {
               </>
             )}
           </QualitySection>
+          <QualitySection
+            title={tr(locale, "逐 Pass GPU 耗时", "Per-pass GPU timings")}
+            hint={timings?.availability === "measured"
+              ? tr(locale, `计时帧 #${timings.frame}`, `measured frame #${timings.frame}`)
+              : undefined}
+          >
+            <PassTimings locale={locale} timings={quality?.latestPassTimings} attached={quality !== undefined} />
+          </QualitySection>
           <QualitySection title={tr(locale, "托管显存", "Managed VRAM")}>
             {quality?.latestMemory ? (
               <>
@@ -189,6 +198,67 @@ function Metric({ label, value, warn = false, tone, title }: {
       <span>{label}</span>
     </div>
   );
+}
+
+/** F1 逐 pass 耗时列表:实测按耗时降序 Top-8,缺测显式声明原因,绝不伪零。 */
+const PASS_TIMINGS_TOP_N = 8;
+
+function PassTimings({ locale, timings, attached }: {
+  locale: AppLocale;
+  timings: StudioQualityTelemetryStatus["latestPassTimings"];
+  attached: boolean;
+}) {
+  if (!attached) {
+    return (
+      <p className="qt-empty">
+        {tr(locale, "当前后端未接入质量遥测。", "Quality telemetry is not attached to the current backend.")}
+      </p>
+    );
+  }
+  if (timings === undefined) {
+    return (
+      <p className="qt-empty">
+        {tr(locale, "逐 pass 计时未开启:Deep 后端未启用 gpuPassTiming 采集开关。",
+          "Per-pass timing is off: the Deep backend was not created with the gpuPassTiming switch.")}
+      </p>
+    );
+  }
+  if (timings.availability === "unavailable") {
+    return (
+      <p className="qt-empty off">
+        <TriangleAlert size={13} /> {timings.unavailableReason ?? tr(locale, "逐 pass 计时不可用。", "Per-pass timings unavailable.")}
+      </p>
+    );
+  }
+  const passes = [...(timings.passes ?? [])].sort((left, right) => right.durationMs - left.durationMs);
+  const top = passes.slice(0, PASS_TIMINGS_TOP_N);
+  const maximum = top[0]?.durationMs ?? 0;
+  return (
+    <div className="qt-pass-list">
+      {top.map(pass => (
+        <div key={pass.passId} className="qt-pass-row" title={tr(locale,
+          `${pass.passId}: ${pass.durationMs.toFixed(3)} ms`, `${pass.passId}: ${pass.durationMs.toFixed(3)} ms`)}>
+          <span className="qt-pass-name">{pass.passId}</span>
+          <span className="qt-pass-bar" aria-hidden="true">
+            <i style={{ width: `${maximum > 0 ? Math.max(3, (pass.durationMs / maximum) * 100) : 3}%` }} />
+          </span>
+          <span className="qt-pass-ms">{pass.durationMs.toFixed(2)} ms</span>
+        </div>
+      ))}
+      <footer className="qt-pass-foot">
+        {tr(locale,
+          `全帧 ${formatMs(timings.milliseconds)} · 实测 ${timings.measuredPassCount ?? passes.length}/${timings.requestedPassCount ?? passes.length} pass`,
+          `frame span ${formatMs(timings.milliseconds)} · ${timings.measuredPassCount ?? passes.length}/${timings.requestedPassCount ?? passes.length} passes measured`)}
+        {passes.length > top.length
+          ? tr(locale, ` · 另有 ${passes.length - top.length} 个 pass 未列入`, ` · ${passes.length - top.length} more not listed`)
+          : ""}
+      </footer>
+    </div>
+  );
+}
+
+function formatMs(value: number | undefined): string {
+  return value === undefined || !Number.isFinite(value) ? "—" : `${value.toFixed(2)} ms`;
 }
 
 const PROFILE_LABELS: Record<AuthoredQualityProfile, [string, string]> = {

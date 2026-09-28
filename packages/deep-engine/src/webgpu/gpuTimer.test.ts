@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GpuTimer } from "./gpuTimer.js";
 import type { DeviceSession } from "./deviceSession.js";
 
+const BASE = 1_000_000_000_000_000n; // 1e15 ticks; 1 ms = 1e6 ticks
+
 function fixture(supported = true, onTiming?: (timing: { frame: number; milliseconds: number }) => void,
   timestamps: readonly bigint[] = [1_000_000_000_000_000n, 1_000_000_002_500_000n]) {
   const resources: unknown[] = [];
@@ -15,6 +17,14 @@ function fixture(supported = true, onTiming?: (timing: { frame: number; millisec
     }) };
   const session = { device, state: "ready", own: <T>(value: T): T => { resources.push(value); return value; } };
   return { timer: new GpuTimer(session as unknown as DeviceSession, onTiming), session, device, resources, readbacks };
+}
+
+function encoderSpy() {
+  return {
+    beginComputePass: vi.fn(() => ({ end: vi.fn() })),
+    resolveQuerySet: vi.fn(),
+    copyBufferToBuffer: vi.fn(),
+  };
 }
 
 beforeEach(() => {
@@ -76,5 +86,98 @@ describe("asynchronous GPU timing", () => {
     f.readbacks[1]!.mapAsync.mockRejectedValueOnce(new Error("map failed")); frame.read();
     expect(await f.timer.collect(1, 1)).toEqual([]); expect(f.timer.diagnostics[0]).toContain("map failed");
     expect(f.timer.begin(2)).toBeDefined(); expect(f.resources).toHaveLength(3);
+  });
+});
+
+describe("per-pass GPU timing (F1)", () => {
+  it("is opt-in and fails closed on unsupported devices, oversized or duplicate pass lists", () => {
+    const f = fixture(); f.timer.enabled = true;
+    const ids = ["opaque", "present"];
+    expect(f.timer.beginPasses(1, ids)).toBeUndefined(); // passTimingEnabled 缺省关闭
+    expect(f.resources).toHaveLength(0);
+    const unsupported = fixture(false); unsupported.timer.enabled = true; unsupported.timer.passTimingEnabled = true;
+    expect(unsupported.timer.beginPasses(1, ids)).toBeUndefined();
+    expect(unsupported.resources).toHaveLength(0);
+    const overflow = fixture(); overflow.timer.enabled = true; overflow.timer.passTimingEnabled = true;
+    expect(overflow.timer.beginPasses(1, Array.from({ length: 17 }, (_, index) => `p${index}`))).toBeUndefined();
+    expect(overflow.timer.beginPasses(1, ["opaque", "opaque"])).toBeUndefined();
+    expect(overflow.timer.beginPasses(1, [])).toBeUndefined();
+    expect(overflow.resources).toHaveLength(0);
+  });
+
+  it("brackets plan passes with empty compute markers and resolves exactly one query pair per pass", () => {
+    const f = fixture(); f.timer.enabled = true; f.timer.passTimingEnabled = true;
+    const scope = f.timer.beginPasses(9, ["opaque", "present"])!;
+    expect(f.device.createQuerySet).toHaveBeenCalledWith(expect.objectContaining({ count: 32 }));
+    const encoder = encoderSpy();
+    scope.beginMarker(encoder as unknown as GPUCommandEncoder, "opaque");
+    scope.endMarker(encoder as unknown as GPUCommandEncoder, "opaque");
+    scope.beginMarker(encoder as unknown as GPUCommandEncoder, "present");
+    scope.endMarker(encoder as unknown as GPUCommandEncoder, "present");
+    expect(encoder.beginComputePass).toHaveBeenCalledTimes(4);
+    expect(encoder.beginComputePass.mock.calls[0]).toEqual([expect.objectContaining({
+      timestampWrites: { querySet: scope.queries, beginningOfPassWriteIndex: 0 } })]);
+    expect(encoder.beginComputePass.mock.calls[1]).toEqual([expect.objectContaining({
+      timestampWrites: { querySet: scope.queries, endOfPassWriteIndex: 1 } })]);
+    expect(encoder.beginComputePass.mock.calls[3]).toEqual([expect.objectContaining({
+      timestampWrites: { querySet: scope.queries, endOfPassWriteIndex: 3 } })]);
+    scope.resolve(encoder as unknown as GPUCommandEncoder);
+    expect(encoder.resolveQuerySet).toHaveBeenCalledWith(scope.queries, 0, 4, expect.anything(), 0);
+    expect(encoder.copyBufferToBuffer).toHaveBeenCalledWith(expect.anything(), 0, expect.anything(), 0, 32);
+  });
+
+  it("publishes measured passes in request order with the whole-frame span and skips unordered pairs", async () => {
+    const observed = vi.fn();
+    const f = fixture(true, observed, [BASE, BASE + 3_000_000n, BASE + 3_000_000n, BASE + 1_000_000n]);
+    f.timer.enabled = true; f.timer.passTimingEnabled = true;
+    const scope = f.timer.beginPasses(11, ["opaque", "present"])!;
+    const encoder = encoderSpy();
+    scope.beginMarker(encoder as unknown as GPUCommandEncoder, "opaque");
+    scope.endMarker(encoder as unknown as GPUCommandEncoder, "opaque");
+    scope.beginMarker(encoder as unknown as GPUCommandEncoder, "present");
+    scope.endMarker(encoder as unknown as GPUCommandEncoder, "present");
+    scope.read();
+    const timings = await f.timer.collect(11, 11);
+    expect(timings).toEqual([{ frame: 11, milliseconds: 3,
+      passes: [{ passId: "opaque", durationMs: 3 }], requestedPassCount: 2 }]);
+    expect(observed).toHaveBeenCalledOnce();
+    expect(f.timer.diagnostics.join(" ")).toContain("present");
+  });
+
+  it("skips markers for unknown or duplicate pass ids and records diagnostics", () => {
+    const f = fixture(); f.timer.enabled = true; f.timer.passTimingEnabled = true;
+    const scope = f.timer.beginPasses(3, ["opaque"])!;
+    const encoder = encoderSpy();
+    scope.beginMarker(encoder as unknown as GPUCommandEncoder, "nope");
+    scope.endMarker(encoder as unknown as GPUCommandEncoder, "opaque"); // 合法:发射 end marker
+    scope.endMarker(encoder as unknown as GPUCommandEncoder, "opaque"); // 重复:跳过
+    expect(encoder.beginComputePass).toHaveBeenCalledTimes(1);
+    expect(f.timer.diagnostics).toHaveLength(2);
+    scope.read();
+  });
+
+  it("caps the per-pass pool at two concurrent scopes and reuses slots after read", async () => {
+    const f = fixture(); f.timer.enabled = true; f.timer.passTimingEnabled = true;
+    const first = f.timer.beginPasses(1, ["opaque"])!;
+    const second = f.timer.beginPasses(2, ["opaque"])!;
+    expect(f.timer.beginPasses(3, ["opaque"])).toBeUndefined();
+    expect(f.resources).toHaveLength(6);
+    for (const scope of [first, second]) {
+      scope.read();
+    }
+    await f.timer.collect(1, 2);
+    expect(f.timer.beginPasses(4, ["opaque"])).toBeDefined();
+    expect(f.resources).toHaveLength(6);
+  });
+
+  it("publishes nothing when no pass was fully bracketed", async () => {
+    const observed = vi.fn();
+    const f = fixture(true, observed); f.timer.enabled = true; f.timer.passTimingEnabled = true;
+    const scope = f.timer.beginPasses(5, ["opaque", "present"])!;
+    const encoder = encoderSpy();
+    scope.beginMarker(encoder as unknown as GPUCommandEncoder, "opaque");
+    scope.read();
+    expect(await f.timer.collect(5, 5)).toEqual([]);
+    expect(observed).not.toHaveBeenCalled();
   });
 });

@@ -57,11 +57,24 @@ export interface PbrRendererOptions {
   readonly particleRuntime?: GpuParticleEmitterRuntimeOptions;
   /** 首帧管线引导时序开关；缺省全部关闭 = 全量等待的旧时序。 */
   readonly pipelines?: PbrPipelineBootstrapOptions;
+  /**
+   * F1 逐 pass GPU 计时(opt-in 诊断):开启即启用诊断采样,并在每个 executed
+   * mapped pass 上用 timestamp marker 括夹测量。设备不支持 timestamp-query、槽池
+   * 耗尽或读回未完成时优雅降级(FrameMetrics.gpuPassTimings 显式 unavailable,
+   * 帧级三段计时照旧),不报错、不伪零。
+   */
+  readonly gpuPassTiming?: boolean;
 }
 
 export interface FrameMetrics {
-  /** Optional bounded Frame Graph execution coverage for diagnostics; pass timing remains unavailable until queried per pass. */
+  /** Optional bounded Frame Graph execution coverage for diagnostics; per-pass GPU timings ride on gpuPassTimings. */
   readonly frameGraphReceipt?: import("./pbrFramePlanExecutor.js").PbrFrameExecutionReceipt;
+  /**
+   * F1 逐 pass GPU 计时(opt-in,`gpuPassTiming`):最新完成读回的一帧逐 pass
+   * 毫秒数据。GPU 读回滞后 1-2 帧,实测帧号在 `frame` 字段内,不得当成本帧;
+   * `gpuPassTiming` 未开启时整字段缺省(面板显示「未开启」)。
+   */
+  readonly gpuPassTimings?: import("./pbrFrameReceipt.js").PbrFramePassTimings;
   readonly meshletPasses?: number;
   readonly meshletDispatches?: number;
   readonly meshletFallbackReasons?: readonly string[];
