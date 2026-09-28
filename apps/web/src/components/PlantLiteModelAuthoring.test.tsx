@@ -27,6 +27,7 @@ describe("PlantLiteModelAuthoring", () => {
     expect(html).toContain("正式统计 480 分钟");
     expect(html).toContain("队列、停机和能耗只积分正式窗口");
     expect(html).toContain("模型文件");
+    expect(html).toContain("工位类库 · 可复用模板");
     expect(html).toContain("选择 JSON");
     expect(html).not.toContain("<textarea");
     expect(html).not.toContain("还不能运行");

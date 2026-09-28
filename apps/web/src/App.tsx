@@ -17,6 +17,8 @@ import { useSceneHistoryActions } from "./hooks/useSceneHistoryActions";
 import { useApplicationRecovery } from "./hooks/useApplicationRecovery";
 import { useSceneHistoryState } from "./hooks/useSceneHistoryState";
 import { useScenePlayMode } from "./hooks/useScenePlayMode";
+import { createRestrictedPlayConsumer, type RestrictedPlayConsumer } from "./scripting/restrictedPlayConsumer";
+import { useRef } from "react";
 import { downloadWorkspaceRecoveryDraft } from "./studio/workspaceRecoveryStore";
 import type { AppViewBindings } from "./views/appViewBindings";
 import { AppRootView } from "./views/AppRootView";
@@ -277,6 +279,7 @@ export function App() {
     showError,
     rendererDiagnostics,
   } = appState;
+  const restrictedPlayRef = useRef<RestrictedPlayConsumer | undefined>(undefined);
   const playMode = useScenePlayMode(() => ({
     engine,
     capture: () => sceneHistoryState.sceneSnapshotFactoryRef.current?.(),
@@ -772,14 +775,52 @@ export function App() {
           showError(new Error("场景编辑事务尚未完成，请等待当前操作完成后再播放"));
           return;
         }
+        let restricted: RestrictedPlayConsumer;
+        try {
+          restricted = createRestrictedPlayConsumer({
+            scripts: engine?.getInteractionScripts() ?? [],
+            host: { engine: engine!, sceneId: activeScene.id },
+            onError: showError,
+          });
+          restricted.start();
+        } catch (error) {
+          showError(error instanceof Error ? error : new Error(String(error)));
+          return;
+        }
+        if (engine) {
+          engine.onRestrictedInteraction = (trigger, target, detail) => restricted.dispatchInteraction(trigger, target, detail);
+          engine.onRestrictedPlayFrame = (deltaMs) => restricted.advance(deltaMs);
+        }
         const result = playMode.enterPlay();
-        if (result.ok) setMessage("已进入播放模式；修改仅在本次播放期间生效");
-        else if (result.reason === "scene-not-ready") showError(new Error("场景尚未完整载入，请稍后重试进入播放"));
-        else if (result.reason === "engine-missing") showError(new Error("三维引擎尚未就绪，请稍后重试进入播放"));
+        if (result.ok) {
+          restrictedPlayRef.current = restricted;
+          engine?.setContinuousRender("restricted-play", true);
+          setMessage("已进入播放模式；修改仅在本次播放期间生效");
+        } else {
+          if (engine) {
+            engine.onRestrictedInteraction = undefined;
+            engine.onRestrictedPlayFrame = undefined;
+          }
+          void restricted.stop();
+          if (result.reason === "scene-not-ready") showError(new Error("场景尚未完整载入，请稍后重试进入播放"));
+          else if (result.reason === "engine-missing") showError(new Error("三维引擎尚未就绪，请稍后重试进入播放"));
+        }
       },
       exit: async () => {
+        const restricted = restrictedPlayRef.current;
+        if (engine) {
+          engine.onRestrictedInteraction = undefined;
+          engine.onRestrictedPlayFrame = undefined;
+          engine.setContinuousRender("restricted-play", false);
+        }
+        await restricted?.stop();
         const result = await playMode.exitPlay();
-        if (result.ok) setMessage("已退出播放模式，场景恢复为进入前状态");
+        if (result.ok) {
+          restrictedPlayRef.current = undefined;
+          setMessage("已退出播放模式，场景恢复为进入前状态");
+        } else {
+          showError(new Error("播放已停止受限脚本，但场景恢复未完成；请再次点击退出播放重试。"));
+        }
       },
     },
   };

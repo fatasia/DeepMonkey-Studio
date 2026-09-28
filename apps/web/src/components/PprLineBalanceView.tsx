@@ -1,10 +1,16 @@
+import type { PprBopVersionDraft } from "@bim-studio/contracts";
 import type { PprLineBalance } from "@bim-studio/ppr-lite-engine";
 import { AlertTriangle, Gauge, Scale } from "lucide-react";
+import { proposePprRpw } from "./pprRpwProposal";
 
-export function PprLineBalanceView({ balance, entityName }: {
+export function PprLineBalanceView({ balance, entityName, draft, onChange, busy = false }: {
   balance: PprLineBalance;
   entityName: (id: string) => string;
+  draft?: PprBopVersionDraft;
+  onChange?: (draft: PprBopVersionDraft) => void;
+  busy?: boolean;
 }) {
+  const proposal = draft ? proposePprRpw(draft) : undefined;
   const target = balance.targetTaktMinutes;
   const efficiency = balance.balanceEfficiency === null ? null : balance.balanceEfficiency * 100;
   return (
@@ -29,6 +35,19 @@ export function PprLineBalanceView({ balance, entityName }: {
         })}
       </div>}
       <BalanceAdvice balance={balance} entityName={entityName} />
+      {draft && <div className="ppr-rpw-proposal">
+        <strong>RPW 工位分配建议</strong>
+        <small>位置权重启发式，不保证最优；不会修改设备、人员等其他资源分配，也不是产能仿真预测。</small>
+        {proposal?.status === "blocked"
+          ? <p role="status">{proposal.reason}</p>
+          : proposal?.status === "ready" && <>
+            <p>{proposal.solution.stationsUsed} 个工位 · {proposal.solution.assignments.length} 道工序 · 建议最大负载 {format(proposal.solution.cycleMinutes)} 分钟</p>
+            <ol>{proposal.solution.assignments.map((item) => <li key={item.operationId}>{entityName(item.operationId)} → {entityName(item.stationId)}</li>)}</ol>
+            <button type="button" disabled={busy || !onChange} title={!onChange ? "只读分析，不允许覆盖历史版本" : "确认后只更新当前草稿，保存后产生新版本"} onClick={() => {
+              if (proposal.status === "ready" && onChange) onChange({ ...draft, resourceAssignments: proposal.assignments });
+            }}>应用建议到草稿</button>
+          </>}
+      </div>}
     </section>
   );
 }

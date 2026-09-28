@@ -1,4 +1,6 @@
 import type { DecodedTexture, PreparedTexture } from "./textures/decodedTexture.js";
+import type { ExtendedMaterialParameters } from "./shader/materialParameters.js";
+import type { CapabilityFailure } from "./gltf/capabilityInventory.js";
 import type { DeformationPose, DeformationSnapshot } from "./deformation/types.js";
 
 export interface TextureSlot {
@@ -40,6 +42,8 @@ export interface PbrMaterial {
   readonly roughness: number;
   /** Dielectric IOR, finite float32 >= 1; omitted = 1.5. Requires material instance ABI v5 when non-default. */
   readonly ior?: number;
+  /** Browser WebGPU extended lobes; absent preserves the stock PBR path byte-for-byte. */
+  readonly extendedParameters?: ExtendedMaterialParameters;
   readonly baseColorTexture?: TextureSlot;
   readonly metallicRoughnessTexture?: TextureSlot;
   /** 没有切线/TBN 时会明确拒绝，不能退化成错误的物体空间法线。 */
@@ -125,6 +129,8 @@ export interface RenderPacket {
   readonly materials: readonly PbrMaterial[];
   readonly instances: readonly RenderInstance[];
   readonly textures?: readonly DecodedTexture[];
+  /** Decoding diagnostics; author-only, never written into a Native runtime packet. */
+  readonly materialLosses?: readonly CapabilityFailure[];
   /**
    * 节点级拾取映射，编译器写入；仅存在于内存/作者面 RenderPacket——序列化进运行包时
    * builder 会把它提升到包顶层并从 render-packet payload 剥离(Native 契约拒绝未知字段)。
@@ -148,6 +154,8 @@ export interface PreparedTextureSlot {
 export interface PreparedMaterialTextures {
   /** 固定 material uniform 的 emissiveRow1.w；存在任意材质纹理时统一携带。 */
   readonly emissiveStrength: number;
+  /** Present only for supported, textured browser WebGPU extended-material profile. */
+  readonly extendedParameters?: ExtendedMaterialParameters;
   readonly baseColor?: PreparedTextureSlot;
   readonly metallicRoughness?: PreparedTextureSlot;
   readonly normal?: PreparedTextureSlot & { readonly normalScale: number };

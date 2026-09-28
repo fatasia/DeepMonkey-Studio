@@ -185,6 +185,16 @@ describe("PlantLiteStudyPanel", () => {
     expect(html.indexOf('class="logistics-metric-table"')).toBeLessThan(html.indexOf('class="plant-improvement-lab"'));
   });
 
+  it("offers GA screening only for completed deterministic-time stations", () => {
+    const eligible = record();
+    const station = eligible.model!.nodes.find((node) => node.id === "station-a");
+    if (!station || station.kind !== "station") throw new Error("fixture station missing");
+    station.processingTime = { kind: "deterministic", value: 1 };
+    const html = renderToStaticMarkup(<PlantLiteStudyPanel results={[eligible]} busy={false} onReproduce={() => undefined} onRunSweep={() => undefined} />);
+    expect(html).toContain("遗传算法候选筛查");
+    expect(html).toContain("最多 8 次评估");
+  });
+
   it("renders a truthful logistics playback when the study contains a trace", () => {
     const baseline = record();
     const html = renderToStaticMarkup(<PlantLiteStudyPanel

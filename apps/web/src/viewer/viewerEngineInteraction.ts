@@ -30,6 +30,7 @@ import { bindPresentationPerformance, getPresentationPerformance, enablePresenta
   type PresentationPerformanceSource } from "./viewerPresentationPerformance";
 import { clearIndustrialPrefabProxy, ensureIndustrialPrefabProxy, industrialPrefabProxyGroundOffset } from "./industrialPrefabProxy";
 import { detachSharedGltfResources } from "./sharedGltfAssets";
+import { isRestrictedInteractionScript } from "../scripting/restrictedInteractionDocument";
 import type { DeepAnnotationInput, DeepLightProxyInput, DeepMeasurementSegmentInput } from "./deepOverlayPrimitives";
 
 /** Interaction 职责层。模型动画控制域已拆至 viewerEngineAnimationControl.ts（F6 结构治理），经继承混入保持公开 API 不变。 */
@@ -190,8 +191,10 @@ export abstract class ViewerEngineInteraction extends ViewerEngineAnimationContr
   }
   protected dispatchExactInteraction(trigger: SceneInteractionTrigger, target: SceneInteractionTarget, detail: InteractionEventDetail = {}): void {
     this.onInteractionTrigger?.(trigger, structuredClone(target));
+    this.onRestrictedInteraction?.(trigger, structuredClone(target), detail);
     for (const script of this.interactionScripts) {
       if (!script.enabled || script.trigger !== trigger || !sameRuntimeInteractionTarget(script.target, target)) continue;
+      if (isRestrictedInteractionScript(script)) continue;
       void this.runInteractionScript(script, detail);
     }
   }
@@ -205,6 +208,11 @@ export abstract class ViewerEngineInteraction extends ViewerEngineAnimationContr
     for (const target of targets.values()) this.dispatchExactInteraction(trigger, target);
   }
   async runInteractionScript(script: SceneInteractionScriptState, detail: InteractionEventDetail = { test: true }): Promise<void> {
+    if (isRestrictedInteractionScript(script)) {
+      this.onInteractionScriptResult?.({ script, status: "error", durationMs: 0,
+        error: new Error("受限行为图仅能在播放模式运行；不会回退为可信脚本"), ...(detail.test ? { test: true } : {}) });
+      return;
+    }
     const startedAt = performance.now();
     try {
       // 旧版 ctx.scene / objects 合同允许直接改 Three 几何，进入可信脚本前隔离共享资源。

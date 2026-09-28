@@ -13,6 +13,8 @@ export abstract class ViewerEngineLifecycle extends ViewerEngineNavigationTools 
     this.rendererDisposalStarted = true;
     this.teardownXRSessionOnDispose();
     this.presentationFrameListeners.clear();
+    this.onRestrictedInteraction = undefined;
+    this.onRestrictedPlayFrame = undefined;
     this.transientChannels.dispose();
     disposeViewerPerformanceBinding(this);
     disposeOrdinaryPicking(this);

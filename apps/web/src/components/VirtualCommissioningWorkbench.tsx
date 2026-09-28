@@ -36,6 +36,8 @@ import { VirtualCommissioningResultStage } from "./VirtualCommissioningResultSta
 import { VirtualCommissioningWorkflowHeader, type CommissioningWorkflowStage } from "./VirtualCommissioningWorkflowHeader";
 import { buildVirtualCommissioningStudyInput, matchingVirtualCommissioningStudy } from "./virtualCommissioningStudy";
 import { matchingWorkcellStudy } from "./workcellAuditStudy";
+import { RobotSyncPanel } from "./RobotSyncPanel";
+import { matchingRobotSyncStudy, ROBOT_SYNC_ENGINE } from "./robotSyncStudy";
 import "./VirtualCommissioningWorkbench.css";
 
 interface Props {
@@ -106,6 +108,10 @@ export function VirtualCommissioningWorkbench({
     ? genericWorkcellStudy(activeStudy, scene.id)
       ?? studies.find((study) => genericWorkcellStudy(study, scene.id))
     : undefined;
+  const currentRobotSyncStudy = scene
+    ? matchingRobotSyncStudy(activeStudy, scene.id)
+      ?? studies.find((study) => matchingRobotSyncStudy(study, scene.id))
+    : undefined;
   const result = invocation?.output;
   useEffect(() => {
     const fallback = preferredUsableScene(scenes);
@@ -166,6 +172,7 @@ export function VirtualCommissioningWorkbench({
           : undefined;
         setRobotModelId(studiedRobot?.modelId ?? "");
         setSelectionConfirmed(true);
+        if (initialStudy?.execution?.engineId === ROBOT_SYNC_ENGINE) setWorkflowStage("screening");
       }
       if (initialStudy) setAppliedDraft(undefined);
       return;
@@ -467,8 +474,8 @@ export function VirtualCommissioningWorkbench({
           <button type="button" onClick={() => setError("")}>×</button>
         </div>
       )}
-      {selectionConfirmed && scene && workflowStage === "screening" && (robotModelId ? (
-        <RobotWorkcellAssistantPanel
+      {selectionConfirmed && scene && workflowStage === "screening" && <>
+        {robotModelId ? <RobotWorkcellAssistantPanel
           projectId={projectId}
           scene={scene}
           robotModelId={robotModelId}
@@ -476,16 +483,21 @@ export function VirtualCommissioningWorkbench({
           onSaveStudy={saveRobotScreening}
           onContinueValidation={continueRobotValidation}
           onOpenTarget={onOpenTarget}
-        />
-      ) : <WorkcellAuditPanel
-        projectId={projectId}
-        scene={scene}
-        {...(currentWorkcellStudy ? { study: currentWorkcellStudy } : {})}
-        onStudyChange={acceptStudy}
-        onAuditComplete={(auditResult) => { if (auditResult.status === "passed") setWorkflowStage("control"); }}
-        onContinueValidation={() => setWorkflowStage("control")}
-        onOpenTarget={onOpenTarget}
-      />)}
+        /> : <WorkcellAuditPanel
+          projectId={projectId}
+          scene={scene}
+          {...(currentWorkcellStudy ? { study: currentWorkcellStudy } : {})}
+          onStudyChange={acceptStudy}
+          onAuditComplete={(auditResult) => { if (auditResult.status === "passed") setWorkflowStage("control"); }}
+          onContinueValidation={() => setWorkflowStage("control")}
+          onOpenTarget={onOpenTarget}
+        />}
+        {scene.models.filter((model) => model.rig?.robot?.enabled).length >= 2 && <RobotSyncPanel
+          projectId={projectId} scene={scene}
+          {...(currentRobotSyncStudy ? { study: currentRobotSyncStudy } : {})}
+          onStudyChange={acceptStudy}
+        />}
+      </>}
       {!scenes.length ? (
         <div className="commissioning-empty">
           <strong>没有可调试场景</strong>
@@ -517,7 +529,7 @@ export function VirtualCommissioningWorkbench({
 
 function genericWorkcellStudy(study: IndustrialValidationStudyRecord | undefined, sceneId: string) {
   const matching = matchingWorkcellStudy(study, sceneId);
-  return matching && !matchingRobotWorkcellStudy(matching, sceneId) ? matching : undefined;
+  return matching && !matchingRobotWorkcellStudy(matching, sceneId) && !matchingRobotSyncStudy(matching, sceneId) ? matching : undefined;
 }
 
 function initialRobotId(

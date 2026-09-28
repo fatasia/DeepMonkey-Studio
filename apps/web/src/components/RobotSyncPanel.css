@@ -1,0 +1,36 @@
+.robot-sync-panel { display: grid; gap: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-1); color: var(--text); }
+.robot-sync-panel > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.robot-sync-panel > header > div { display: grid; gap: 5px; }
+.robot-sync-panel > header span { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-size: 11px; font-weight: 700; }
+.robot-sync-panel h3 { margin: 0; color: var(--text-strong); font-size: 15px; }
+.robot-sync-panel p { margin: 0; font-size: 11px; line-height: 1.55; }
+.robot-sync-panel > header button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface-2); color: var(--text-strong); white-space: nowrap; cursor: pointer; }
+.robot-sync-panel > header button:hover:not(:disabled), .robot-sync-panel > header button:focus-visible { border-color: var(--accent); }
+.robot-sync-panel button:disabled { opacity: .45; cursor: not-allowed; }
+.robot-sync-configuration { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.robot-sync-configuration > p, .robot-sync-configuration > small { grid-column: 1 / -1; }
+.robot-sync-input-hint { color: var(--warning); }
+.robot-sync-configuration fieldset { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; min-width: 0; margin: 0; padding: 10px; border: 1px solid var(--line); border-radius: 6px; }
+.robot-sync-configuration legend { padding: 0 5px; color: var(--text-strong); font-size: 12px; font-weight: 700; }
+.robot-sync-configuration label { display: grid; gap: 4px; min-width: 0; font-size: 11px; }
+.robot-sync-configuration input, .robot-sync-configuration select { box-sizing: border-box; width: 100%; min-height: 32px; padding: 4px 7px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface-2); color: var(--text-strong); font: inherit; font-variant-numeric: tabular-nums; }
+.robot-sync-configuration input:focus-visible, .robot-sync-configuration select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.robot-sync-feedback, .robot-sync-error, .robot-sync-empty { display: flex; align-items: center; gap: 6px; padding: 9px; border-radius: 6px; background: var(--surface-2); }
+.robot-sync-error { color: var(--danger); }
+.robot-sync-report { display: grid; gap: 9px; padding: 10px; border: 1px solid var(--line); border-radius: 7px; }
+.robot-sync-report.passed { border-color: var(--success); }
+.robot-sync-report.attention { border-color: var(--warning); }
+.robot-sync-report-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.robot-sync-report.passed .robot-sync-report-summary { color: var(--success); }
+.robot-sync-report.attention .robot-sync-report-summary { color: var(--warning); }
+.robot-sync-report-summary strong { margin-right: auto; }
+.robot-sync-report > small { color: var(--text-muted); line-height: 1.5; }
+.robot-sync-violations { margin: 0; padding-left: 18px; color: var(--warning); font-size: 11px; }
+.robot-sync-report details { min-width: 0; }
+.robot-sync-report summary { cursor: pointer; font-size: 12px; }
+.robot-sync-report ol { display: grid; gap: 4px; max-height: 220px; overflow: auto; margin: 8px 0 0; padding-left: 20px; font-size: 11px; }
+.robot-sync-report li { font-variant-numeric: tabular-nums; }
+.robot-sync-report ol li { display: grid; grid-template-columns: 80px minmax(100px, 1fr) minmax(96px, 1fr) minmax(70px, 1fr); gap: 8px; overflow-wrap: anywhere; }
+.robot-sync-report ol small { color: var(--text-muted); overflow-wrap: anywhere; }
+@media (max-width: 800px) { .robot-sync-panel > header { flex-direction: column; } .robot-sync-configuration { grid-template-columns: 1fr; } .robot-sync-report ol li { grid-template-columns: 65px 1fr 1fr; } .robot-sync-report ol small { display: none; } }
+@media (prefers-reduced-motion: reduce) { .robot-sync-panel .spin { animation: none; } }

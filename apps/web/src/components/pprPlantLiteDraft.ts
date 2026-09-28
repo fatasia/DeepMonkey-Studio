@@ -163,8 +163,9 @@ export function preparePlantLiteDraftFromPpr(draft: PprBopVersionDraft): PprPlan
     ...stationNodes,
     { id: "sink", name: "完成品", kind: "sink" },
   ];
+  const requiresManualRemodel = reviewItems.some((item) => item.code !== "name-shortened");
   const model: PlantLiteModel = {
-    id: boundedWithSuffix(draft.planId.trim(), "-flow-draft", 120),
+    id: boundedWithSuffix(draft.planId.trim(), requiresManualRemodel ? "-review-only" : "-flow-draft", 120),
     name: modelName,
     nodes,
     edges: nodes.slice(0, -1).map((node, index) => ({ id: `edge-${index + 1}`, from: node.id, to: nodes[index + 1]!.id })),

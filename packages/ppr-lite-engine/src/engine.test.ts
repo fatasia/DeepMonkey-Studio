@@ -110,6 +110,27 @@ describe("PD Lite PPR/BOP engine", () => {
       "critical-path-increased", "standard-time-increased", "resource-conflict-introduced", "takt-overload-introduced",
     ]));
   });
+
+  it("propagates a single changed resource or BOM component to only referencing operations", () => {
+    const before = plan();
+    const after = structuredClone(before);
+    after.id = "bop-v2";
+    after.resources.find((item) => item.id === "robot")!.capacity = 2;
+    expect(comparePprBopVersions(before, after).impact.operationIds).toEqual(["weld"]);
+
+    const componentAfter = structuredClone(before);
+    componentAfter.id = "bop-v3";
+    componentAfter.components.find((item) => item.id === "frame")!.name = "新门框";
+    expect(comparePprBopVersions(before, componentAfter).impact.operationIds).toEqual(["cut", "inspect", "weld"]);
+  });
+
+  it("does not spread an operation-only change through its shared resource", () => {
+    const before = plan();
+    const after = structuredClone(before);
+    after.id = "bop-v2";
+    after.operations.find((item) => item.id === "weld")!.standardTimeMinutes = 6;
+    expect(comparePprBopVersions(before, after).impact.operationIds).toEqual(["weld"]);
+  });
 });
 
 function plan(): PprBopVersion {

@@ -368,6 +368,9 @@ function readIdentifier(path: readonly string[], environment: BehaviorExpression
     if (current === null || typeof current !== "object") {
       throw new RestrictedExpressionEvalError(`标识符路径 “${path.join(".")}” 在 “${segment}” 处不可继续取值`);
     }
+    if (!Object.hasOwn(current, segment)) {
+      throw new RestrictedExpressionEvalError(`未知标识符 “${path.join(".")}”`);
+    }
     current = (current as Record<string, unknown>)[segment];
   }
   if (current === undefined) {

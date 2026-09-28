@@ -240,6 +240,7 @@ export function plantLiteModelIssues(request: PlantLiteStudyRequest): string[] {
   if (!Number.isSafeInteger(maxResources) || maxResources < 1 || maxResources > 1_000) issues.push("最大资源数必须是 1 到 1000 的整数");
   if (!request.model) issues.push("模型尚未准备好");
   else {
+    if (request.model.id.endsWith("-review-only")) issues.push("PPR 非等价映射仅供线性草稿审阅；请人工重建非线性/条件/资源语义，并更换模型 ID 后再运行正式预测");
     const validation = validatePlantLiteModel(request.model);
     if (!validation.valid) issues.push(...validation.issues.map((issue) => `${friendlyPath(issue.path)}：${friendlyMessage(issue.message)}`));
     else {

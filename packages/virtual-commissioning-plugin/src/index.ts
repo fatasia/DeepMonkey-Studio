@@ -16,3 +16,4 @@ export type {
   VirtualDebugTrace
 } from "@bim-studio/contracts";
 export * from "./opcUaLive.js";
+export * from "./offlineSignalRecord.js";

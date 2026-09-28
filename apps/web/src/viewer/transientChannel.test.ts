@@ -86,6 +86,31 @@ describe("transientChannel", () => {
     expect(channel.snapshot()).toBe(999);
   });
 
+  it("peek 返回现有通道的同一公共接口", () => {
+    const registry = createTransientRegistry(manualScheduler());
+    const channel = registry.channel<number>("existing");
+    expect(registry.channel<number>("existing")).toBe(channel);
+    expect(registry.peek<number>("existing")).toBe(channel);
+    channel.publish(3);
+    expect(registry.peek<number>("existing")?.snapshot()).toBe(3);
+  });
+
+  it("dispose 取消待处理通知且旧回调不污染重新创建的通道", () => {
+    const scheduler = manualScheduler();
+    const cancel = vi.spyOn(scheduler, "cancel");
+    const registry = createTransientRegistry(scheduler);
+    const channel = registry.channel<number>("old");
+    const listener = vi.fn();
+    channel.subscribe(listener);
+    channel.publish(1);
+    expect(scheduler.tasks).toHaveLength(1);
+    registry.dispose();
+    expect(cancel).toHaveBeenCalledWith(1);
+    scheduler.flushAll();
+    expect(listener).not.toHaveBeenCalled();
+    expect(registry.peek<number>("old")).toBeUndefined();
+  });
+
   it("dispose 清空全部通道与监听", () => {
     const scheduler = manualScheduler();
     const registry = createTransientRegistry(scheduler);

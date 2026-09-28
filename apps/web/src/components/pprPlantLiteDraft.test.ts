@@ -9,6 +9,7 @@ describe("PPR to Plant Lite draft adapter", () => {
 
     expect(result.status).toBe("ready");
     if (result.status !== "ready") return;
+    expect(result.request.model?.id).toMatch(/-flow-draft$/);
     expect(result.request.acceptanceTargets).toMatchObject({ minimumThroughputPerHour: 10 });
     expect(result.request.model?.nodes).toEqual([
       { id: "source", name: "按目标节拍来料", kind: "source", interarrivalTime: { kind: "deterministic", value: 6 } },
@@ -61,6 +62,7 @@ describe("PPR to Plant Lite draft adapter", () => {
 
     expect(result.status).toBe("ready");
     if (result.status !== "ready") return;
+    expect(result.request.model?.id).toMatch(/-review-only$/);
     expect(result.report.reviewItems.map((item) => item.code)).toEqual(expect.arrayContaining([
       "conditional-scope",
       "disconnected-flow",

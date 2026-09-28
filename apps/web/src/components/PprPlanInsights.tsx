@@ -61,6 +61,7 @@ export function PprPlanInsights({
   onAfterChange,
   onCompare,
   onCreatePlantLiteDraft,
+  onDraftChange,
 }: {
   instructionPlan: PprBopVersionDraft;
   plantDraft: PprBopVersionDraft;
@@ -79,6 +80,7 @@ export function PprPlanInsights({
   onAfterChange: (versionId: string) => void;
   onCompare: () => void;
   onCreatePlantLiteDraft: (result: PprPlantLiteReadyDraft) => void;
+  onDraftChange?: (draft: PprBopVersionDraft) => void;
 }) {
   const [compareOpen, setCompareOpen] = useState(versions.length >= 2 || Boolean(comparison));
   useEffect(() => {
@@ -129,7 +131,7 @@ export function PprPlanInsights({
           </div>
         )}
         <PprWorkInstructionPreview draft={instructionPlan} operationOrder={analysis.topologicalOrder} documentLabel={analysisLabel} />
-        <PprLineBalanceView balance={analysis.lineBalance} entityName={entityName} />
+        <PprLineBalanceView balance={analysis.lineBalance} entityName={entityName} draft={plantDraft} {...(onDraftChange ? { onChange: onDraftChange } : {})} busy={busy} />
         {!!analysis.resourceConflicts.length && (
           <div className="ppr-conflicts">
             <h4>资源冲突</h4>

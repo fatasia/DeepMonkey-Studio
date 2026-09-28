@@ -12,6 +12,7 @@ describe("PlantLiteEvidenceExportActions", () => {
     expect(html).toContain("含基线谱系 · 量产基线");
     expect(html).toContain("模型、统计与有界轨迹已就绪");
     expect(html).toContain("UTF-8 BOM");
+    expect(html).toContain("Study 报告");
   });
 
   it("keeps legacy export available while naming missing evidence", () => {
@@ -23,7 +24,7 @@ describe("PlantLiteEvidenceExportActions", () => {
     expect(html).toContain("旧记录可导出");
     expect(html).toContain("模型快照、节点区间、代表性轨迹");
     expect(html).toContain("未选择基线，仅导出当前 Study 谱系");
-    expect(html).not.toContain("disabled");
+    expect(html).toContain("disabled");
   });
 });
 

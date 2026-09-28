@@ -8,6 +8,7 @@ import {
   serializePlantLiteEvidencePackage,
 } from "./plantLiteEvidenceExport";
 import { plantLiteEvidenceMetricsCsv } from "./plantLiteEvidenceExportCsv";
+import { markdownFromPlantLiteStudy } from "./plantLiteStudyReport";
 import "./PlantLiteEvidenceExportActions.css";
 
 export function PlantLiteEvidenceExportActions({ study, baseline }: {
@@ -53,6 +54,19 @@ export function PlantLiteEvidenceExportActions({ study, baseline }: {
     }
   }
 
+  function downloadReport() {
+    try {
+      downloadTextFile(
+        markdownFromPlantLiteStudy(study),
+        `${study.id.replace(/[^a-zA-Z0-9_-]/g, "_")}-study-report.md`,
+        "text/markdown;charset=utf-8",
+      );
+      setStatus("Study 报告已下载；请阅读口径与校准限制。");
+    } catch (error) {
+      setStatus(exportError(error));
+    }
+  }
+
   return <section className="plant-evidence-export-actions" aria-label="工程证据包导出">
     <span className="plant-evidence-export-summary">
       <PackageCheck size={14} />
@@ -67,6 +81,9 @@ export function PlantLiteEvidenceExportActions({ study, baseline }: {
       </button>
       <button type="button" onClick={downloadCsv} title="导出带 UTF-8 BOM 且防公式注入的可比较指标表">
         <FileSpreadsheet size={13} />指标 CSV
+      </button>
+      <button type="button" disabled={study.outcome.status !== "completed" || !study.model || study.outcome.completedReplications < 2} title={study.outcome.status !== "completed" || !study.model || study.outcome.completedReplications < 2 ? "仅有完整模型和至少两次有效重复的已完成 Study 可生成报告" : "从已保存 Study 生成 Markdown，注明数据口径、输入指纹与独立校准集缺口"} onClick={downloadReport}>
+        <Download size={13} />Study 报告
       </button>
     </div>
     <small className="plant-evidence-export-status" role="status" aria-live="polite">

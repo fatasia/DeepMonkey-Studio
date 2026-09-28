@@ -91,6 +91,7 @@ function mapExtension(
       ?? draft.clearcoatFactor;
     draft.clearcoatRoughness = readNumber(extension, "clearcoatRoughnessFactor", path, losses, options, { min: 0, max: 1 })
       ?? draft.clearcoatRoughness;
+    readTextureLoss(extension, "clearcoatTexture", path, losses);
     readTextureLoss(extension, "clearcoatNormalTexture", path, losses);
     readTextureLoss(extension, "clearcoatRoughnessTexture", path, losses);
     return;

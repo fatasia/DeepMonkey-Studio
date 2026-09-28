@@ -118,6 +118,7 @@ function normalizeRequest(request: PlantLiteStudyRequest): NormalizedPlantLiteIn
   const comparison = normalizeComparison(request.comparison);
   const acceptanceTargets = normalizeAcceptanceTargets(request.acceptanceTargets);
   if (request.model !== undefined) {
+    if (request.model && typeof request.model === "object" && request.model.id?.endsWith("-review-only")) throw new Error("PPR 非等价映射仅供线性草稿审阅；请人工重建条件、并行和资源语义，并另存独立模型后再运行正式预测");
     const model = assertPlantLiteModel(request.model);
     return {
       name, templateId, model, modelFingerprint: evidenceFingerprint(model), seed, replications, limits, trace,

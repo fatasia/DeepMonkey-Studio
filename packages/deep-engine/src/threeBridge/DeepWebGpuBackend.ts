@@ -89,6 +89,11 @@ export class DeepWebGpuBackend {
   private shadowSelectionValue: DeepWebGpuShadowSelection | undefined;
   private readonly expectedShadows: PbrRendererOptions["shadows"];
   private chunks: AuthorChunkStream | undefined;
+  private packetViewInFlight = false;
+  private packetViewRequested: RenderView | undefined;
+  private packetViewStaged: RenderView | undefined;
+  private packetViewFailure: unknown;
+  private packetViewRetryAt = 0;
   private probeClipmap: DeepWebGpuProbeClipmapSession | undefined;
   private committedPacket: RenderPacket | undefined;
   private modelByInstanceId = new Map<string, string>();
@@ -227,16 +232,48 @@ export class DeepWebGpuBackend {
     const localPacket = this.coordinates.localizePacket(packet, candidate);
     markBackendPhase("packet-localized");
     markBackendPhase("packet-upload-start");
-    await this.runtime.setPacketValidated(localPacket, signal);
+    const staticPacket = localPacket.deformation === undefined
+      && localPacket.instances.every(instance => instance.pose === undefined);
+    const target = this.runtime as unknown as Partial<AuthorChunkStreamRuntime>;
+    const canStream = this.options.authorChunks === true && staticPacket
+      && target.session && target.stageResidentPacketValidated && target.cancelResidentPacketStage;
+    if (canStream) {
+      const chunks = this.chunks ?? new AuthorChunkStream(target as AuthorChunkStreamRuntime, this.options.meshlets);
+      let streamed: boolean;
+      try {
+        streamed = await chunks.sync(localPacket, true, this.coordinates.localizeView(view, candidate), signal);
+      } catch (error) {
+        if (chunks !== this.chunks) chunks.dispose();
+        throw error;
+      }
+      if (streamed === false) throw new Error("Independent packet streaming rejected its static scene.");
+      this.chunks = chunks;
+    } else {
+      await this.runtime.setPacketValidated(localPacket, signal);
+      this.chunks?.fullPacketPublished(staticPacket ? "resident-stage-unavailable" : "deformation");
+    }
     markBackendPhase("packet-uploaded");
     if (signal?.aborted) throw abortError("Deep backend packet preparation cancelled.");
+    this.packetViewStaged = canStream ? view : undefined;
+    this.packetViewFailure = undefined;
+    this.packetViewRetryAt = 0;
+    const localView = this.coordinates.localizeView(view, candidate);
+    let frame: FrameMetrics;
+    try {
+      frame = await this.runtime.validateFrame(localView);
+      this.shadowSelectionValue = shadowSelection(frame, this.expectedShadows);
+    } catch (error) {
+      // A replacement cannot be acknowledged when its first visible GPU frame failed.
+      this.chunks?.dispose(); this.chunks = undefined;
+      this.packetViewStaged = undefined;
+      throw error;
+    }
+    if (signal?.aborted) throw abortError("Deep backend packet frame cancelled.");
     this.coordinates.commit(candidate);
     this.committedPacket = localPacket;
     this.modelByInstanceId = indexObjectBindings(localPacket);
-    const frame = await this.runtime.validateFrame(this.coordinates.localizeView(view, candidate));
     markBackendPhase("packet-frame-validated");
-    this.shadowSelectionValue = shadowSelection(frame, this.expectedShadows);
-    this.validatedView = { view, shadowSelection: this.shadowSelectionValue };
+    this.validatedView = { view: localView, shadowSelection: this.shadowSelectionValue };
     this.validatedFrame = frame;
     return frame;
   }
@@ -254,9 +291,14 @@ export class DeepWebGpuBackend {
       this.shadowSelectionValue = this.validatedView.shadowSelection ?? this.shadowSelectionValue;
       return this.validatedFrame;
     }
+    if (this.independentPacket && this.chunks?.hasCatalog) {
+      await this.chunks.syncView(localView, signal);
+      if (signal?.aborted) throw abortError("Deep backend camera preparation cancelled.");
+    }
     const frame = await this.runtime.validateFrame(localView);
     if (signal?.aborted) throw abortError("Deep backend preparation cancelled.");
     this.shadowSelectionValue = shadowSelection(frame, this.expectedShadows);
+    if (this.independentPacket && this.chunks?.hasCatalog) this.packetViewStaged = view;
     return frame;
   }
 
@@ -267,6 +309,44 @@ export class DeepWebGpuBackend {
     return this.modelByInstanceId.get(instanceId);
   }
   get chunkStreaming() { return this.chunks?.diagnostics; }
+  get packetViewStreamFailure(): unknown { return this.packetViewFailure; }
+  private schedulePacketView(view: RenderView): void {
+    if (!this.independentPacket || !this.chunks?.hasCatalog || !this.committedPacket
+      || this.packetViewStaged && sameRenderView(view, this.packetViewStaged) && !this.packetViewFailure) return;
+    this.packetViewRequested = view;
+    if (this.packetViewInFlight) return;
+    this.packetViewInFlight = true;
+    const chunks = this.chunks;
+    const packet = this.committedPacket;
+    const advance = async (): Promise<void> => {
+      while (!this.disposed && this.chunks === chunks && this.committedPacket === packet) {
+        const latest = this.packetViewRequested;
+        this.packetViewRequested = undefined;
+        if (!latest || this.packetViewStaged && sameRenderView(latest, this.packetViewStaged) && !this.packetViewFailure) break;
+        try {
+          const localView = this.coordinates.localizeView(latest, this.coordinates.current);
+          if (this.packetViewFailure) await chunks.sync(packet, true, localView);
+          else await chunks.syncView(localView);
+          if (!this.disposed && this.chunks === chunks && this.committedPacket === packet) {
+            this.packetViewStaged = latest;
+            this.packetViewFailure = undefined;
+            this.packetViewRetryAt = 0;
+          }
+        } catch (error) {
+          // A replaced packet owns another stream generation; its stale failure cannot poison it.
+          if (!this.disposed && this.chunks === chunks && this.committedPacket === packet) {
+            // Keep the last published GPU frame; an invalid candidate never replaces it.
+            this.packetViewFailure = error;
+            this.packetViewRetryAt = performance.now() + 1000;
+          }
+          break;
+        }
+      }
+      this.packetViewInFlight = false;
+      if (this.packetViewRequested && !this.disposed && !this.packetViewFailure) this.schedulePacketView(this.packetViewRequested);
+    };
+    void advance();
+  }
   get probeClipmapFailure(): unknown { return this.probeClipmap?.failure; }
   worldToRenderLocal(point: readonly [number, number, number]): readonly [number, number, number] {
     return this.coordinates.worldToLocal(point);
@@ -372,6 +452,7 @@ export class DeepWebGpuBackend {
     this.assertOpen();
     const localView = this.coordinates.localizeView(view, this.pendingCoordinate ?? this.coordinates.current);
     const result = this.runtime.render(localView);
+    if (result && performance.now() >= this.packetViewRetryAt) this.schedulePacketView(view);
     if (result) {
       if (result.adaptiveQuality) {
         const knobs = result.adaptiveQuality.knobs;
@@ -388,6 +469,9 @@ export class DeepWebGpuBackend {
     this.syncGeneration++;
     this.shadowSelectionValue = undefined;
     this.committedPacket = undefined;
+    this.packetViewRequested = undefined;
+    this.packetViewStaged = undefined;
+    this.packetViewFailure = undefined;
     this.modelByInstanceId.clear();
     this.projection?.clear();
     try { this.probeClipmap?.dispose(); }

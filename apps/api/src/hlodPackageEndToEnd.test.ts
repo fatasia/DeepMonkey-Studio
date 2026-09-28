@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { decideHlodFrame } from "@bim-studio/deep-engine/hlod";
+import { gzipSync } from "node:zlib";
+import { decodeHlodProxyGeometries, encodeHlodProxyGeometries, decideHlodFrame } from "@bim-studio/deep-engine/hlod";
 import { hlodTreeFromManifest, parseHlodPackageManifest, serializeHlodPackageManifest } from "./hlodPackageManifest.js";
 import { buildHlodPackage, hlodProxyDrawList, hlodReferenceCamera } from "./hlodPackageSource.js";
 import { HLOD_PROXY_GEOMETRY_PREFIX, type HlodPackageInstanceInput } from "./hlodPackageTypes.js";
@@ -41,6 +42,21 @@ describe("T26 renderPacket wiring end-to-end on the T00 workshop", () => {
       const startedAt = performance.now();
       const result = buildHlodPackage(inputs);
       const buildMs = performance.now() - startedAt;
+      const binary = encodeHlodProxyGeometries(result.geometries);
+      const decodeStart = performance.now();
+      const decoded = decodeHlodProxyGeometries(binary);
+      const decodeMs = performance.now() - decodeStart;
+      expect(decoded).toHaveLength(result.geometries.length);
+      expect(decoded.map(geometry => geometry.id).sort()).toEqual(result.geometries.map(geometry => geometry.id).sort());
+      expect(decoded.reduce((sum, geometry) => sum + geometry.indices.length / 3, 0))
+        .toBe(result.manifest.proxyTriangleCount);
+      console.info(JSON.stringify({ fixture: "T00-10k", instances: inputs.length,
+        sourceTriangles: result.manifest.sourceTriangleCount,
+        proxyCount: decoded.length,
+        binaryBytes: binary.byteLength,
+        gzipBinaryBytes: gzipSync(binary).byteLength,
+        decodeMs: Number(decodeMs.toFixed(2)),
+        buildMs: Number(buildMs.toFixed(2)) }));
 
       // 包面:manifest 经序列化往返(包存储路径)仍可解析、决策完备。
       const manifest = parseHlodPackageManifest(JSON.parse(serializeHlodPackageManifest(result.manifest)));

@@ -60,6 +60,12 @@ describe("Plant Lite model authoring", () => {
     expect(setDistributionTypicalValue(normal, 12)).toMatchObject({ kind: "normal", mean: 12 });
   });
 
+  it("blocks non-equivalent PPR review drafts at the production run boundary", () => {
+    const request = createDefaultPlantLiteRequest();
+    request.model!.id = "pd-lite-line-review-only";
+    expect(plantLiteModelIssues(request)).toEqual(expect.arrayContaining([expect.stringContaining("非等价映射")]));
+  });
+
   it("surfaces disconnected graph evidence before run", () => {
     const request = createDefaultPlantLiteRequest();
     request.model!.edges = request.model!.edges.filter((edge) => edge.to !== "sink");

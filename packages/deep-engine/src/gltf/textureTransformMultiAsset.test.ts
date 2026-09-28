@@ -39,8 +39,10 @@ describe("official TextureTransformMultiTest vertical slice", () => {
 
   it("decodes the original asset through explicit optional core fallbacks", async () => {
     const bytes = readFileSync(sourceUrl), imageDecoder = decoder();
+    // T08 后 clearcoat 已是受支持映射扩展，不再触发 decode 拒绝；
+    // 无回退解码的首个 unsupported 顺移为 extensionsUsed[1] 的 unlit。
     await expect(decodeTexturedGlb(bytes, imageDecoder)).rejects.toMatchObject({
-      code: "unsupported", path: "extensionsUsed[0]", feature: "extension KHR_materials_clearcoat",
+      code: "unsupported", path: "extensionsUsed[1]", feature: "extension KHR_materials_unlit",
     });
     const packet = await decodeTexturedGlb(bytes, imageDecoder, {
       resourcePrefix: "official-transform", optionalMaterialFallbacks: fallbacks,

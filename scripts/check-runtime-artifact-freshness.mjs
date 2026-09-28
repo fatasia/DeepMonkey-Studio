@@ -1,8 +1,8 @@
-import { spawnSync } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { artifactSha256, wasmSourceFingerprint } from "./lib/wasmArtifactFingerprint.mjs";
+import { checkTsDistFreshness } from "./lib/tsArtifactFreshness.mjs";
 
 /**
  * 运行时产物新鲜度门禁。
@@ -12,15 +12,13 @@ import { artifactSha256, wasmSourceFingerprint } from "./lib/wasmArtifactFingerp
  *    "unknown field";② public/engine-wasm 的 wasm 二进制未重建 → Deep WASM
  *    切换整链失败。二者都只在集成运行时爆,单测全绿。
  *
- * 门禁规则:以 src/runtimePackage/types.ts 中声明的包顶层可选字段为准,
- * 要求 (a) dist/runtimePackage 产物与 (b) wasm 二进制(Rust serde 错误消息
- * 内嵌字段清单,可作字符串探针)都包含这些字段名。任一缺失=产物陈旧,
- * 提示重建命令。空字段集(如 schema 冻结期)时门禁空过。
+ * 门禁规则:在内存中按真实 tsconfig 编译 contracts 与 deep-engine,逐文件核对完整 dist
+ * (JS 运行语义与 d.ts ABI,覆盖 V1/V2/V3/V4/V5/V7),无需改写并发构建产物。
+ * WASM 继续核对 Rust 来源、四产物哈希、schema 字段探针与 Web 桥声明。
  */
 
 const repoRoot = path.resolve(fileURLToPath(import.meta.url), "../..");
 const TYPES = path.join(repoRoot, "packages/deep-engine/src/runtimePackage/types.ts");
-const DIST_DIR = path.join(repoRoot, "packages/deep-engine/dist/runtimePackage");
 const WASM = path.join(repoRoot, "apps/web/public/engine-wasm/deep_engine_wasm_bg.wasm");
 const WASM_DIR = path.dirname(WASM);
 const MANIFEST = path.join(WASM_DIR, "deep_engine_wasm.manifest.json");
@@ -61,16 +59,9 @@ async function containsBytes(filePath, needle) {
 export async function checkRuntimeArtifactFreshness() {
   const fields = await topLevelRuntimePackageFields();
   const stale = [];
-  // 桶文件不承载字段名,扫描目录下全部编译产物。
-  let distSource = "";
-  try {
-    const { readdir } = await import("node:fs/promises");
-    const files = (await readdir(DIST_DIR)).filter(name => name.endsWith(".js"));
-    distSource = (await Promise.all(files.map(name => readFile(path.join(DIST_DIR, name), "utf8")))).join(String.fromCharCode(10));
-  } catch { distSource = ""; }
-  for (const field of fields) {
-    if (!distSource.includes(field)) stale.push({ artifact: "deep-engine dist", field,
-      hint: "pnpm --filter @bim-studio/deep-engine build" });
+  for (const name of ["contracts", "deep-engine"]) {
+    const result = await checkTsDistFreshness(repoRoot, name);
+    stale.push(...result.stale);
   }
   for (const field of fields) {
     if (!await containsBytes(WASM, field)) stale.push({ artifact: "wasm bundle", field,
@@ -114,8 +105,8 @@ if (invokedDirectly) {
   const result = await checkRuntimeArtifactFreshness();
   if (!result.ok) {
     console.error("运行时产物陈旧(先于集成运行时就该拦下):");
-    for (const item of result.stale) console.error(`- [${item.artifact}] 缺字段 ${item.field};修复: ${item.hint}`);
+    for (const item of result.stale) console.error(`- [${item.artifact}] ${item.field};修复: ${item.hint}`);
     process.exit(1);
   }
-  console.log(`运行时产物新鲜度通过(检查 ${result.checked.length} 个包顶层字段)。`);
+  console.log(`运行时产物新鲜度通过(contracts/deep-engine 全量 TS 产物、${result.checked.length} 个 WASM 包字段与 hash/桥 ABI)。`);
 }

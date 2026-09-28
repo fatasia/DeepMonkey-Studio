@@ -1,12 +1,20 @@
 import { MAX_EMISSIVE_STRENGTH } from "../renderPacket.js";
 import { invalid, list, noExtensions, object, unsupported, type JsonObject } from "./validation.js";
+import { MAPPED_MATERIAL_EXTENSIONS } from "../shader/materialGltfMap.js";
 
 export const KHR_MATERIALS_EMISSIVE_STRENGTH = "KHR_materials_emissive_strength";
 export const KHR_MATERIALS_IOR = "KHR_materials_ior";
+/** Scalar-only browser WebGPU profile; unsupported extension textures are recorded as losses. */
+export const SCALAR_MATERIAL_EXTENSIONS: ReadonlySet<string> = new Set(MAPPED_MATERIAL_EXTENSIONS);
 
 export function readMaterialIor(material: JsonObject, path: string, used: ReadonlySet<string>): number | undefined {
   if (material.extensions === undefined) return undefined;
   const extensions = object(material.extensions, `${path}.extensions`);
+  for (const name of Object.keys(extensions)) {
+    if (name !== KHR_MATERIALS_EMISSIVE_STRENGTH && !SCALAR_MATERIAL_EXTENSIONS.has(name)) {
+      unsupported(`${path}.extensions.${name}`, `extension ${name}`);
+    }
+  }
   if (extensions[KHR_MATERIALS_IOR] === undefined) return undefined;
   const extensionPath = `${path}.extensions.${KHR_MATERIALS_IOR}`;
   if (!used.has(KHR_MATERIALS_IOR)) invalid(extensionPath, "KHR_materials_ior must be declared in extensionsUsed.");
@@ -50,7 +58,10 @@ export function readEmissiveStrength(material: JsonObject, path: string, used: R
   if (material.extensions === undefined) return undefined;
   const extensions = object(material.extensions, `${path}.extensions`);
   for (const name of Object.keys(extensions)) {
-    if (name !== KHR_MATERIALS_EMISSIVE_STRENGTH && name !== KHR_MATERIALS_IOR) unsupported(`${path}.extensions.${name}`, `extension ${name}`);
+    if (name !== KHR_MATERIALS_EMISSIVE_STRENGTH && !SCALAR_MATERIAL_EXTENSIONS.has(name)) unsupported(`${path}.extensions.${name}`, `extension ${name}`);
+    if (name !== KHR_MATERIALS_EMISSIVE_STRENGTH && name !== KHR_MATERIALS_IOR && !used.has(name)) {
+      unsupported(`${path}.extensions.${name}`, `undeclared extension ${name}`);
+    }
   }
   if (extensions[KHR_MATERIALS_EMISSIVE_STRENGTH] === undefined) return undefined;
   if (!used.has(KHR_MATERIALS_EMISSIVE_STRENGTH)) {

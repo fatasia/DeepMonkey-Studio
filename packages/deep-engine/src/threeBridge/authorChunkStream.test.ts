@@ -119,6 +119,51 @@ describe("author chunk formal staging", () => {
     await f.stream.sync(packet(), false, view); f.buffers.publishResidentProjection();
     expect(f.stream.diagnostics.visibleChunks).toBe(1); f.clean();
   });
+  it("streams an independent RenderPacket and updates camera closure without changing author identity", async () => {
+    const f = fixture();
+    const source = { ...packet(), objectBindings: [{ nodeId: "author-one", instanceIds: ["one"] }] };
+    const runtime = { ...f.target, id: "deep-webgpu", setPacketValidated: vi.fn(async () => {}),
+      updateInstances: vi.fn(), render: vi.fn(() => ({ frame: 1 } as never)),
+      validateFrame: vi.fn(async () => ({ frame: 1, shadowTier: "high", shadowDepthBytes: 64 * 1024 * 1024 } as never)), dispose: vi.fn(() => f.buffers.dispose()) };
+    const backend = await DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
+      renderPacket: source, view, authorChunks: true }, { create: vi.fn(async () => runtime) });
+    expect(runtime.setPacketValidated).not.toHaveBeenCalled();
+    expect(backend.chunkStreaming).toMatchObject({ path: "scene-chunks", visibleChunks: 1 });
+    expect(backend.modelIdForInstanceId("one")).toBe("author-one");
+    f.buffers.publishResidentProjection();
+    const first = f.target.stageResidentPacketValidated.mock.calls[0]![0];
+    const distant = { ...view, eye: [100, 0, 5], target: [100, 0, 0] };
+    backend.render(distant);
+    await vi.waitFor(() => expect(backend.chunkStreaming?.visibleChunks).toBe(0));
+    expect(backend.modelIdForInstanceId("one")).toBe("author-one");
+    expect(source.instances[0]!.id).toBe("one");
+    f.buffers.publishResidentProjection();
+    backend.render(view);
+    await vi.waitFor(() => expect(backend.chunkStreaming?.visibleChunks).toBe(1));
+    expect(f.target.stageResidentPacketValidated).toHaveBeenCalledTimes(3);
+    expect(first.released).toBe(true);
+    backend.dispose(); expect(f.owned.size).toBe(0);
+  });
+  it("retains the old independent frame after camera-stage failure and recovers on a new view", async () => {
+    const f = fixture();
+    const runtime = { ...f.target, id: "deep-webgpu", setPacketValidated: vi.fn(async () => {}),
+      updateInstances: vi.fn(), render: vi.fn(() => ({ frame: 1 } as never)),
+      validateFrame: vi.fn(async () => ({ frame: 1, shadowTier: "high", shadowDepthBytes: 64 * 1024 * 1024 } as never)), dispose: vi.fn(() => f.buffers.dispose()) };
+    const backend = await DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
+      renderPacket: packet(), view, authorChunks: true }, { create: vi.fn(async () => runtime) });
+    f.buffers.publishResidentProjection();
+    const active = f.target.stageResidentPacketValidated.mock.calls[0]![0];
+    f.device.popErrorScope.mockResolvedValueOnce({ message: "validation failed" } as GPUError);
+    backend.render({ ...view, eye: [100, 0, 5], target: [100, 0, 0] });
+    await vi.waitFor(() => expect(backend.packetViewStreamFailure).toBeDefined());
+    expect(active.released).toBe(false);
+    expect(f.buffers.publishResidentProjection()).toBe(false);
+    await new Promise(resolve => setTimeout(resolve, 1_005));
+    backend.render({ ...view, eye: [101, 0, 5], target: [101, 0, 0] });
+    await vi.waitFor(() => expect(backend.packetViewStreamFailure).toBeUndefined());
+    expect(backend.chunkStreaming?.visibleChunks).toBe(0);
+    f.buffers.publishResidentProjection(); backend.dispose(); expect(f.owned.size).toBe(0);
+  });
   it("connects the real Three backend sync to a single resident stage and preserves ordinary legacy default", async () => {
     const f = fixture(), author = mesh(); author.updateMatrixWorld(true);
     const runtime = { ...f.target, id: "deep-webgpu", setPacketValidated: vi.fn(async () => {}),

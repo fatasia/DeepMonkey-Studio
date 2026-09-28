@@ -20,6 +20,7 @@ import { PlantLiteEvidenceExportActions } from "./PlantLiteEvidenceExportActions
 import { PlantLiteFlowDynamics } from "./PlantLiteFlowDynamics";
 import { PlantLiteReliabilityExperiment } from "./PlantLiteReliabilityExperiment";
 import { PlantLiteRealDataCalibration } from "./PlantLiteRealDataCalibration";
+import { PlantLiteGeneticExperiment } from "./PlantLiteGeneticExperiment";
 import { assessPlantLiteComparability } from "./plantLiteScenarioDecisionModel";
 import { isExactPlantLiteReproduction } from "./plantLiteStudyEvidence";
 import { diagnosePlantLiteBottleneck, plantLiteBottleneckClassLabel } from "./plantLiteBottleneckDiagnosis";
@@ -100,6 +101,7 @@ export function PlantLiteStudyPanel({
             busy={busy}
             onRunSweep={(requests, baselineStudyId) => { setBaselineId(baselineStudyId); onRunSweep(requests); }}
           />
+          <PlantLiteGeneticExperiment key={latest.id} study={latest} busy={busy} onRunSweep={(requests) => { setBaselineId(latest.id); onRunSweep(requests); }} />
         </div>
       </details> : null}
       {datasets && loadDatasetPreview ? <PlantLiteRealDataCalibration study={latest} datasets={datasets} loadPreview={loadDatasetPreview} /> : null}

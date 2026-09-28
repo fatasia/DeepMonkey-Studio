@@ -6,7 +6,7 @@ import { uploadBuffer } from "./meshBuffers.js";
 
 export const MATERIAL_ARRAY_INDEX_FLOATS = 8;
 export const MATERIAL_ARRAY_INDICES_BYTES = MATERIAL_ARRAY_INDEX_FLOATS * Int32Array.BYTES_PER_ELEMENT;
-export const MATERIAL_ARRAY_TABLE_ROW_BYTES = DEEP_PBR_MESH_V1_BYTE_SIZES.material + MATERIAL_ARRAY_INDICES_BYTES;
+export const MATERIAL_ARRAY_TABLE_ROW_BYTES = DEEP_PBR_MESH_V1_BYTE_SIZES.material + 32 + MATERIAL_ARRAY_INDICES_BYTES;
 /** Legacy per-material array binding; the production shared table embeds indices at binding 10. */
 export const MATERIAL_ARRAY_INDICES_BINDING = 13;
 
@@ -70,7 +70,7 @@ export function createTextureArrayMaterialTable(session: DeviceSession, layout: 
     const parameters = packMaterialParameters(source.textures);
     tableBytes.set(new Uint8Array(parameters.buffer, parameters.byteOffset, parameters.byteLength), row * rowStride);
     const indices = new Uint32Array(source.layerIndices);
-    tableBytes.set(new Uint8Array(indices.buffer), row * rowStride + DEEP_PBR_MESH_V1_BYTE_SIZES.material);
+    tableBytes.set(new Uint8Array(indices.buffer), row * rowStride + DEEP_PBR_MESH_V1_BYTE_SIZES.material + 32);
   });
   const table = uploadBuffer(session, "Deep shared material table",
     new Uint32Array(tableBytes.buffer), GPUBufferUsage.STORAGE);

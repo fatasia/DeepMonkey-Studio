@@ -1,13 +1,22 @@
 import type { GeometryResource, PbrMaterial } from "../renderPacket.js";
 import { AccessorReader } from "./accessors.js";
 import { readEmissiveStrength, readMaterialIor } from "./materialExtensions.js";
+import { mapGltfMaterialExtensions } from "../shader/materialGltfMap.js";
+import type { CapabilityFailure } from "./capabilityInventory.js";
 import { generateNormals } from "./generatedNormals.js";
 import { validateTangentBasis } from "./tangentSpace.js";
 import { MAX_BYTES, budget, factor, invalid, list, noExtensions, object, reference, unsupported, vector } from "./validation.js";
 
 export interface MeshPrimitive { readonly geometry: string; readonly material: string }
-export function materialResource(value: unknown, index: number, prefix: string, extensions: ReadonlySet<string> = new Set()): PbrMaterial {
+export function materialResource(value: unknown, index: number, prefix: string, extensions: ReadonlySet<string> = new Set(),
+  losses?: CapabilityFailure[]): PbrMaterial {
   const path = `materials[${index}]`, material = object(value, path);
+  const mapped = mapGltfMaterialExtensions(material, path, { failClosed: true });
+  if ((mapped.params.clearcoat.factor > 0 || mapped.params.anisotropy.strength > 0 || mapped.params.transmission.factor > 0)
+    && losses === undefined) {
+    unsupported(path, "PBR extension lobes require the textured browser WebGPU import profile");
+  }
+  losses?.push(...mapped.losses);
   const ior = readMaterialIor(material, path, extensions);
   const emissiveStrength = readEmissiveStrength(material, path, extensions);
   const alphaMode = material.alphaMode === undefined ? "OPAQUE" : material.alphaMode;

@@ -2,6 +2,8 @@ import type { IndustrialValidationStudyRecord, SceneSnapshot } from "@bim-studio
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { VirtualCommissioningWorkbench } from "./VirtualCommissioningWorkbench";
+import { buildRobotSyncScenario, buildRobotSyncStudyInput, defaultRobotSyncSettings } from "./robotSyncStudy";
+import { runRobotSyncScenario } from "@bim-studio/workcell-validation-plugin";
 
 describe("VirtualCommissioningWorkbench product flow", () => {
   it("starts with object selection and only one primary action", () => {
@@ -41,6 +43,30 @@ describe("VirtualCommissioningWorkbench product flow", () => {
 
     expect(html).toContain("检查当前工位");
     expect(html).toContain('class="active attention"');
+    expect(html).not.toContain("机器人工位快速验证");
+  });
+
+  it("reopens a robot-sync Study at screening with its saved timeline", () => {
+    const scene = sceneFixture();
+    scene.models.push({ ...scene.models[0]!, modelId: "robot-2", name: "二号机器人" });
+    const settings = defaultRobotSyncSettings(scene)!;
+    settings.durations = [2, 2];
+    const scenario = buildRobotSyncScenario(scene, settings);
+    const result = runRobotSyncScenario(scenario);
+    const draft = buildRobotSyncStudyInput(scene, settings, scenario, result);
+    const study = {
+      ...draft, id: "robot-sync-study", projectId: "project-1", revision: 2,
+      title: draft.title!, sourceKind: "workcell-audit" as const, studyType: "workcell-audit" as const,
+      sceneId: scene.id, objectIds: draft.objectIds!, sourceRefs: draft.sourceRefs!,
+      objective: draft.objective!, acceptanceCriteria: draft.acceptanceCriteria!,
+      execution: { ...draft.execution!, inputFingerprint: "input-1" },
+      status: "passed" as const, createdAt: scene.createdAt, updatedAt: scene.updatedAt,
+    } satisfies IndustrialValidationStudyRecord;
+    const html = renderToStaticMarkup(<VirtualCommissioningWorkbench projectId="project-1" scenes={[scene]} initialStudy={study} onOpenTarget={vi.fn()} />);
+    expect(html).toContain("多机器人信号互锁评审");
+    expect(html).toContain("调度事件时间线");
+    expect(html).toContain("信号放行");
+    expect(html).toContain("v2");
     expect(html).not.toContain("机器人工位快速验证");
   });
 });

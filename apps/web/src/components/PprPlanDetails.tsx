@@ -119,6 +119,7 @@ export function PprPlanDetails({
             onAfterChange={controller.setAfterVersionId}
             onCompare={() => void controller.compareVersions()}
             onCreatePlantLiteDraft={onCreatePlantLiteDraft}
+            onDraftChange={controller.setDraft}
           />
         </div>
 

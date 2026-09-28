@@ -82,6 +82,9 @@ describe("data replay bridge", () => {
     expect(response.statusCode).toBe(200);
     const payload = response.json() as DataReplayPayload;
     expect(payload.revision).toBe(`dataset:ds-1@${harness.datasetUpdatedAt}`);
+    expect((response.json() as { offlineRecord: { coverage: string; sequenceSemantics: string; origin: string; checkpoint: unknown; signalQuality: string } }).offlineRecord)
+      .toMatchObject({ coverage: "unknown", sequenceSemantics: "unknown", signalQuality: "unknown", origin: "dataset", checkpoint: null });
+    expect((response.json() as { offlineRecord: Record<string, unknown> }).offlineRecord).not.toHaveProperty("samples");
     // 无法解析的时间行与无数值行被如实跳过；其余按时间升序，非数值列不进 values。
     expect(payload.entries).toHaveLength(3);
     expect(payload.entries[0]).toEqual({ at: Date.parse("2026-09-19T00:00:00.000Z"), values: { temperature: 21.5, pressure: 101 } });
@@ -138,6 +141,8 @@ describe("data replay bridge", () => {
     expect(response.statusCode).toBe(200);
     const payload = response.json() as DataReplayPayload;
     expect(payload.revision).toBe("events:4:e4");
+    expect((response.json() as { offlineRecord: { origin: string; coverage: string; checkpoint: unknown } }).offlineRecord)
+      .toMatchObject({ origin: "retained-events", coverage: "unknown", checkpoint: null });
     // 同刻事件合并进同一条目；告警引擎自产事件不进时间轴。
     expect(payload.entries).toHaveLength(2);
     expect(payload.entries[1]).toEqual({

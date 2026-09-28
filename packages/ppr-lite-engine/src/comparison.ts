@@ -48,10 +48,20 @@ function compareEntities<T extends { id: string }>(entityType: PprChangeEntityTy
 function deriveImpact(changes: PprVersionChange[], before: PprBopVersion, after: PprBopVersion): PprVersionImpact {
   const versions = [before, after];
   const componentIds = new Set(changes.filter((change) => change.entityType === "component").map((change) => change.entityId));
+  const changedComponentIds = new Set(componentIds);
   const operationIds = new Set(changes.filter((change) => change.entityType === "operation").map((change) => change.entityId));
   const resourceIds = new Set(changes.filter((change) => change.entityType === "resource").map((change) => change.entityId));
+  const changedResourceIds = new Set(resourceIds);
 
   changes.forEach((change) => addRelationImpact(change, versions, operationIds, resourceIds));
+  versions.forEach((version) => {
+    version.resourceAssignments.forEach((assignment) => {
+      if (changedResourceIds.has(assignment.resourceId)) operationIds.add(assignment.operationId);
+    });
+    version.operations.forEach((operation) => {
+      if (operation.componentRefs.some((reference) => changedComponentIds.has(reference.componentId))) operationIds.add(operation.id);
+    });
+  });
   versions.forEach((version) => version.operations.forEach((operation) => {
     if (operationIds.has(operation.id)) operation.componentRefs.forEach((reference) => componentIds.add(reference.componentId));
   }));

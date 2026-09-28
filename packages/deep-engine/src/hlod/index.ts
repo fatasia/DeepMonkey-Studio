@@ -44,3 +44,4 @@ export {
 export { boxesFromProxyMesh, distancePointToBox, measureHlodProxyError } from "./hlodProxyMetrics.js";
 export type { HlodProxyBatch, HlodProxyBatchEntry, HlodProxyBatchOptions, HlodProxyBatchTotals } from "./hlodProxyBatch.js";
 export { generateHlodClusterProxies, generateHlodProxiesForFrame } from "./hlodProxyBatch.js";
+export { decodeHlodProxyGeometries, encodeHlodProxyGeometries } from "./hlodProxyBinary.js";

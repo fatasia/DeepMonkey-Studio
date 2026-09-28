@@ -9,6 +9,7 @@ import type {
 } from "./renderPacketTypes.js";
 import { finiteFloat32, unitFloat } from "./renderPacketValidation.js";
 import { packMaterialIor, STOCK_MATERIAL_INSTANCE_OPTIONS } from "./materialInstanceAbi.js";
+import { normalizeExtendedMaterialParameters } from "./shader/materialParameters.js";
 
 /** HDR 上限对应 8 EV 发光增益；避免任意作者数值污染 rgba16float 中间目标。 */
 export const MAX_EMISSIVE_STRENGTH = 256;
@@ -29,8 +30,14 @@ export function prepareMaterialTextures(
     const normal = prepareNormalTextureSlot(material.normalTexture, textureSemantics);
     const occlusion = prepareOcclusionTextureSlot(material.occlusionTexture, textureSemantics);
     const emissive = prepareTextureSlot(material.emissiveTexture, "emissive", textureSemantics);
+    const extendedParameters = material.extendedParameters === undefined ? undefined
+      : normalizeExtendedMaterialParameters(material.extendedParameters);
+    if (extendedParameters && !baseColor && !metallicRoughness && !normal && !occlusion && !emissive) {
+      throw new Error("Extended material lobes require a textured browser WebGPU material profile.");
+    }
     result.set(material.id, baseColor || metallicRoughness || normal || occlusion || emissive ? {
       emissiveStrength: Math.fround(emissiveStrength),
+      ...(extendedParameters ? { extendedParameters } : {}),
       ...(baseColor ? { baseColor } : {}),
       ...(metallicRoughness ? { metallicRoughness } : {}),
       ...(normal ? { normal } : {}),
@@ -43,6 +50,13 @@ export function prepareMaterialTextures(
 
 function validateMaterial(material: PbrMaterial): number {
   packMaterialIor(material.ior, STOCK_MATERIAL_INSTANCE_OPTIONS);
+  if (material.extendedParameters !== undefined) {
+    const extended = normalizeExtendedMaterialParameters(material.extendedParameters);
+    if (Math.fround(material.ior ?? 1.5) !== extended.ior) {
+      throw new Error("Extended material IOR must match the v5 instance IOR field.");
+    }
+    if (material.shadingModel === "unlit") throw new Error("Unlit materials cannot consume PBR extension lobes.");
+  }
   if (material.shadingModel !== undefined && material.shadingModel !== "unlit") {
     throw new Error("Invalid material shadingModel.");
   }

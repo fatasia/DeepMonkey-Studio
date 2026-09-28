@@ -122,6 +122,8 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
   onRendererDeviceLost?: (info: RendererDeviceLossInfo) => void;
   onInteractionScriptResult?: (result: InteractionScriptResult) => void;
   onInteractionTrigger?: (trigger: SceneInteractionTrigger, target: SceneInteractionTarget) => void;
+  onRestrictedInteraction: ((trigger: SceneInteractionTrigger, target: SceneInteractionTarget, detail: import("./viewerTypes").InteractionEventDetail) => void) | undefined;
+  onRestrictedPlayFrame: ((deltaMs: number) => void) | undefined;
   protected readonly raycaster = new THREE.Raycaster();
   protected readonly modelRoot: THREE.Group | ClippingGroup;
   protected readonly repeatedAssetBatcher: RepeatedAssetBatcher;

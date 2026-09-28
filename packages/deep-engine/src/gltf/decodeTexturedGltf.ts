@@ -2,7 +2,10 @@ import type { GeometryResource, PbrMaterial, RenderPacket, TextureSlot } from ".
 import { decodeGltf, type GltfImportOptions } from "./decodeGltf.js";
 import { decodeGltfTextureManifest } from "./textureDecode.js";
 import { extractGltfTextureManifest } from "./textureManifest.js";
-import { KHR_MATERIALS_EMISSIVE_STRENGTH, KHR_MATERIALS_IOR } from "./materialExtensions.js";
+import { KHR_MATERIALS_EMISSIVE_STRENGTH, SCALAR_MATERIAL_EXTENSIONS } from "./materialExtensions.js";
+import { mapGltfMaterialExtensions } from "../shader/materialGltfMap.js";
+import { isDefaultExtendedMaterialParameters } from "../shader/materialParameters.js";
+import type { CapabilityFailure } from "./capabilityInventory.js";
 import { projectOptionalMaterialFallbacks, type GltfOptionalMaterialFallback } from "./optionalMaterialFallback.js";
 import type { GltfImageDecoder, GltfTextureDecodeOptions, GltfTextureManifest, GltfTextureSlot } from "./textureTypes.js";
 import { generateTangents, validateTangentBasis } from "./tangentSpace.js";
@@ -22,7 +25,7 @@ function textureSlot(slot: GltfTextureSlot): TextureSlot {
 function geometryDocument(json: unknown, manifest: GltfTextureManifest, handledDeformations: boolean): JsonObject {
   const document = object(json, "$"), result: JsonObject = { ...document };
   for (const field of ["extensionsUsed", "extensionsRequired"] as const) if (list(document[field], field).length) {
-    const retained = list(document[field], field).filter(name => name === KHR_MATERIALS_IOR);
+    const retained = list(document[field], field).filter(name => SCALAR_MATERIAL_EXTENSIONS.has(name as string));
     if (retained.length) result[field] = retained; else delete result[field];
   }
   if (list(document.images, "images").length) delete result.images;
@@ -155,9 +158,27 @@ export async function decodeTexturedGltfDocument(json: unknown, buffers: readonl
     ...(options.signal === undefined ? {} : { signal: options.signal }),
     ...(options.maxBytes === undefined ? {} : { maxImageBytes: options.maxBytes }),
   });
-  const packet = decodeGltf(geometryDocument(fallbackDocument, manifest, handledDeformations), buffers, options);
+  const packet = decodeGltf(geometryDocument(fallbackDocument, manifest, handledDeformations), buffers,
+    { ...options, materialLosses: [] });
   const attached = attachManifest(packet, manifest);
+  const document = object(fallbackDocument, "$"), sourceMaterials = list(document.materials, "materials", 16_383);
+  const losses: CapabilityFailure[] = [];
+  const materialPrefix = `${options.resourcePrefix ?? "gltf"}/material/`;
+  const materials = attached.materials.map((material) => {
+    const index = material.id.startsWith(materialPrefix) ? Number(material.id.slice(materialPrefix.length)) : -1;
+    if (!Number.isSafeInteger(index) || index < 0 || index >= sourceMaterials.length) return material;
+    const mapped = mapGltfMaterialExtensions(sourceMaterials[index], `materials[${index}]`, { failClosed: true });
+    losses.push(...mapped.losses);
+    if (isDefaultExtendedMaterialParameters(mapped.params)) return material;
+    if (!material.baseColorTexture && !material.metallicRoughnessTexture && !material.normalTexture
+      && !material.occlusionTexture && !material.emissiveTexture) {
+      losses.push({ code: "material-profile-unsupported", stage: "material", assetPath: `materials[${index}]`, count: 1,
+        detail: "该材质无核心纹理，默认 plain PBR 不支持扩展 lobe；保留原材质与已支持 IOR，导入带纹理资产或保持 glTF core 回退。" });
+      return material;
+    }
+    return { ...material, extendedParameters: mapped.params };
+  });
   const textures = await decodeGltfTextureManifest(manifest, imageDecoder, options);
   options.signal?.throwIfAborted();
-  return { ...packet, ...attached, textures };
+  return { ...packet, ...attached, materials, ...(losses.length ? { materialLosses: losses } : {}), textures };
 }

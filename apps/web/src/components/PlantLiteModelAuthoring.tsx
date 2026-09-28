@@ -9,6 +9,8 @@ import { PlantLiteProductMixEditor } from "./PlantLiteProductMixEditor";
 import { PlantLiteAcceptanceTargetsEditor } from "./PlantLiteAcceptanceTargetsEditor";
 import { PlantLiteProductionOrdersEditor } from "./PlantLiteProductionOrdersEditor";
 import { PlantLiteModelExchange } from "./PlantLiteModelExchange";
+import { createStationClass, insertStationClassInstance } from "./plantClassLibraryConsumer";
+import "./PlantStudyConsumers.css";
 import {
   PLANT_NODE_LABELS,
   addPlantLiteNode,
@@ -37,6 +39,11 @@ export function PlantLiteModelAuthoring({ value, onChange }: { value: PlantLiteS
     [value.model, value.agvCount, value.bufferCapacity],
   );
   const [draggingId, setDraggingId] = useState("");
+  const [classId, setClassId] = useState("");
+  const [sourceStationId, setSourceStationId] = useState("");
+  const [selectedClassId, setSelectedClassId] = useState("");
+  const [classFeedback, setClassFeedback] = useState("");
+  const stations = model.nodes.filter((node) => node.kind === "station");
   const issues = plantLiteModelIssues({ ...value, model });
   const durationMinutes = value.limits?.durationMinutes ?? 480;
   const warmupMinutes = value.limits?.warmupMinutes ?? 0;
@@ -62,6 +69,24 @@ export function PlantLiteModelAuthoring({ value, onChange }: { value: PlantLiteS
       <PlantLiteProductMixEditor model={model} onChange={setModel} />
       <PlantLiteProductionOrdersEditor model={model} onChange={setModel} />
       <PlantLiteAcceptanceTargetsEditor value={value} onChange={onChange} />
+      <details className="plant-run-advanced plant-class-library-controls">
+        <summary><ChevronDown size={13} /><span>工位类库 · 可复用模板</span><small>{model.classLibrary?.length ?? 0} 类</small></summary>
+        <p>从现有无共享资源的工位建类；复制实例会添加到单条串行流程末端。类定义与已物化实例同时保存至当前模型草稿及正式 Study，重开后仍可编辑。</p>
+        <div className="plant-class-library-fields">
+          <label>来源工位<select aria-label="类库来源工位" value={sourceStationId} onChange={(event) => setSourceStationId(event.target.value)}><option value="">选择工位</option>{stations.map((station) => <option value={station.id} key={station.id}>{station.name}</option>)}</select></label>
+          <label>类 ID<input aria-label="类库 ID" value={classId} maxLength={40} onChange={(event) => setClassId(event.target.value)} placeholder="assembly-station" /></label>
+          <button type="button" disabled={!sourceStationId || !classId.trim()} onClick={() => {
+            try { onChange(createStationClass({ ...value, model }, sourceStationId, classId)); setClassFeedback("类模板已加入草稿，正式运行后随 Study 保存。"); }
+            catch (error) { setClassFeedback(error instanceof Error ? error.message : "建类失败，请核对模型。"); }
+          }}>从工位建类</button>
+          <label>已建类<select aria-label="类库选择类" value={selectedClassId} onChange={(event) => setSelectedClassId(event.target.value)}><option value="">选择类</option>{model.classLibrary?.map((entry) => <option value={entry.classId} key={entry.classId}>{entry.name}</option>)}</select></label>
+          <button type="button" disabled={!selectedClassId} onClick={() => {
+            try { onChange(insertStationClassInstance({ ...value, model }, selectedClassId)); setClassFeedback("实例已插入串行草稿；请检查连接并运行 Study。"); }
+            catch (error) { setClassFeedback(error instanceof Error ? error.message : "实例化失败，草稿未更改。"); }
+          }}>插入类实例</button>
+        </div>
+        {classFeedback && <small role="status" aria-live="polite">{classFeedback}</small>}
+      </details>
 
       <section className="plant-flow-builder" aria-label="产线流程作者器">
         <header>

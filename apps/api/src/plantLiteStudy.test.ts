@@ -12,6 +12,11 @@ const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { await Promise.all(cleanups.splice(0).map((action) => action())); });
 
 describe("Plant Lite study adapter", () => {
+  it("rejects non-equivalent PPR review drafts before executing DES", () => {
+    const model = createAgvLinePlantLiteModel();
+    model.id = "pd-lite-example-review-only";
+    expect(() => runPlantLiteStudy("project-1", { name: "仅审阅", model, seed: "review", replications: 2 })).toThrow(/非等价映射/);
+  });
   it("marks one replication as insufficient data instead of overstating a confidence interval", () => {
     const result = runPlantLiteStudy("project-1", { name: "单次试跑", seed: "fixed", replications: 1 }, "2026-08-31T08:00:00.000Z");
     expect(result).toMatchObject({ templateId: "agv-line-v1", outcome: { status: "insufficient-data", completedReplications: 1, throughputPerHour: { samples: 1 } } });

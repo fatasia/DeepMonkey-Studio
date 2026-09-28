@@ -44,19 +44,27 @@ export class AuthorChunkStream {
   get diagnostics(): AuthorChunkStreamDiagnostics { return this.state; }
   get hasCatalog(): boolean { return this.active !== undefined; }
   sync(packet: RenderPacket, full: boolean, view: RenderView, signal?: AbortSignal): Promise<boolean> {
+    return this.enqueue((current) => this.execute(packet, full, view, current), signal);
+  }
+  /** Re-evaluate only the camera closure; do not recompile HLOD pages or repack every instance. */
+  syncView(view: RenderView, signal?: AbortSignal): Promise<boolean> {
+    if (!this.active || !this.compiledPacket) return Promise.reject(new Error("Author chunk view requires a published catalog."));
+    return this.enqueue((current) => this.executeView(view, current), signal);
+  }
+  private enqueue(work: (signal: AbortSignal) => Promise<boolean>, signal?: AbortSignal): Promise<boolean> {
     if (this.closed) return Promise.reject(new Error("Author chunk stream is disposed."));
     const generation = ++this.generation, previous = this.pendingWork;
     this.pending?.abort();
     const controller = new AbortController(); this.pending = controller;
     const abort = () => controller.abort(signal?.reason);
     if (signal?.aborted) abort(); else signal?.addEventListener("abort", abort, { once: true });
-    const work = (async () => {
+    const pending = (async () => {
       if (previous) await previous.catch(() => undefined);
       controller.signal.throwIfAborted();
       if (generation !== this.generation || this.closed) throw new Error("Author chunk sync superseded.");
-      return this.execute(packet, full, view, controller.signal);
+      return work(controller.signal);
     })().finally(() => { signal?.removeEventListener("abort", abort); if (this.pending === controller) this.pending = undefined; });
-    this.pendingWork = work; return work;
+    this.pendingWork = pending; return pending;
   }
   fullPacketPublished(reason: string): void {
     const old = this.active; this.active = undefined; old?.residency.dispose();
@@ -105,6 +113,28 @@ export class AuthorChunkStream {
         old.replaceRequired = true;
         } },
       ]);
+    }
+  }
+  private async executeView(view: RenderView, signal: AbortSignal): Promise<boolean> {
+    const owner = this.active;
+    if (!owner || owner.replaceRequired) throw new Error("Author chunk catalog must be rebuilt before a camera update.");
+    const demands = owner.catalog.demand(view);
+    let staged = false;
+    try {
+      const frame = await owner.residency.update({ frame: ++this.frame, chunks: demands, signal });
+      await stageSceneChunkFrame(this.runtime, frame, signal, owner.catalog.batchUpdates);
+      staged = true;
+      signal.throwIfAborted();
+      this.state = Object.freeze({ ...this.state,
+        visibleChunks: demands.filter(value => value.mode === "visible").length,
+        prefetchChunks: demands.filter(value => value.mode === "prefetch").length,
+        residentGpuBytes: owner.residency.telemetrySnapshot().residentBytes });
+      return true;
+    } catch (error) {
+      if (staged) this.runtime.cancelResidentPacketStage();
+      // The planner can have retired old leases while the last displayed frame remains live.
+      owner.replaceRequired = true;
+      throw error;
     }
   }
   private streamPacket(packet: RenderPacket, full: boolean): RenderPacket {

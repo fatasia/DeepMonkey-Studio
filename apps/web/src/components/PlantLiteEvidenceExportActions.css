@@ -24,7 +24,7 @@
 .plant-evidence-export-summary strong { font-size: 11px; }
 .plant-evidence-export-summary small,
 .plant-evidence-export-status { overflow: hidden; color: var(--text-muted, #75868d); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
-.plant-evidence-export-actions > div { display: flex; gap: 5px; }
+.plant-evidence-export-actions > div { display: flex; flex-wrap: wrap; gap: 5px; }
 
 .plant-evidence-export-actions button {
   display: inline-flex;
@@ -42,7 +42,8 @@
   white-space: nowrap;
 }
 
-.plant-evidence-export-actions button:hover { color: var(--accent-hover, #f1c75b); border-color: var(--accent, #d6a83c); }
+.plant-evidence-export-actions button:disabled { cursor: not-allowed; opacity: .42; }
+.plant-evidence-export-actions button:hover:not(:disabled) { color: var(--accent-hover); border-color: var(--accent); }
 .plant-evidence-export-actions button:focus-visible { outline: 2px solid var(--accent, #d6a83c); outline-offset: 2px; }
 .plant-evidence-export-status { grid-column: 1 / -1; }
 

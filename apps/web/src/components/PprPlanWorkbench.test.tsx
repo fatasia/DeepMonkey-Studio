@@ -33,6 +33,7 @@ describe("PD Lite authoring workbench", () => {
 
     expect(views[0]).toContain("上级");
     expect(views[1]).toContain("标准工时（分钟）");
+    expect(views[1]).toContain("MTM 工时分解");
     expect(views[1]).toContain("物料角色");
     expect(views[1]).toContain("电子作业指导书（EWI）");
     expect(views[1]).toContain("质量控制点");
@@ -85,6 +86,7 @@ describe("PD Lite authoring workbench", () => {
     expect(html).toContain("分析变体");
     expect(html).toContain("道工序生效");
     expect(html).toContain("产线平衡");
+    expect(html).toContain("RPW 工位分配建议");
     expect(html).toContain("目标节拍 6 分/件");
     expect(html).toContain("电子作业指导书");
     expect(html).toContain("离线 HTML");

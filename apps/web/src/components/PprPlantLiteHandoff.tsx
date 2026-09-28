@@ -43,6 +43,7 @@ export function PprPlantLiteHandoff({
             </details>
           )}
           <p className="ppr-plant-handoff-scope">只转换确定性工时和可表达的设备/机器人；{preparation.report.retainedInProcessPlan.join("、")}仍保留在工艺计划中。</p>
+          {preparation.report.reviewItems.some((item) => item.code !== "name-shortened") && <p className="ppr-plant-handoff-scope" role="alert">映射不等价：仅可审阅线性草稿，正式预测已阻断；请人工重建并另存完整模型。</p>}
           <footer>
             <small>切换到流程仿真后可继续调整；不会自动运行。</small>
             <button className="primary" type="button" disabled={busy} onClick={() => onCreateDraft(preparation)}>生成仿真草稿<ArrowRight size={13} /></button>

@@ -3,6 +3,7 @@ import type { PprBopVersionDraft, PprCondition, PprElectronicWorkInstruction, Pp
 import { isPprQualityControlComplete } from "@bim-studio/ppr-lite-engine";
 import { PprConditionFields, PprEditorEmpty, PprEntityIdentity } from "./PprPlanEditorShared";
 import { PprWorkInstructionEditor } from "./PprWorkInstructionEditor";
+import { PprMtmTimeEditor } from "./PprMtmTimeEditor";
 import {
   addPprOperation,
   addPprOperationComponentRef,
@@ -55,6 +56,7 @@ export function PprOperationEditor({
                 </div>
               ))}
             </div>
+            <PprMtmTimeEditor draft={draft} operationId={operation.id} onChange={onChange} />
             <PprWorkInstructionEditor
               operation={operation}
               planReferences={draft.references}

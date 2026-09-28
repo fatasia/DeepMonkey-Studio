@@ -12,6 +12,7 @@ import { createMetadataStore } from "./store.js";
 import { ensureDemoMetrics } from "./dataIntegration.js";
 import { registerDataEventRoutes } from "./dataEvents.js";
 import { MqttIngestSupervisor } from "./mqttIngest.js";
+import { FileSubscriptionCheckpointStore } from "./fileSubscriptionCheckpointStore.js";
 import { registerMqttIngestRoutes } from "./mqttIngestRoutes.js";
 import { AlertRuleFileStore, AlertRuleRuntime, registerAlertRuleRoutes } from "./alertRules.js";
 import { registerDataReplayRoutes } from "./dataReplay.js";
@@ -186,7 +187,7 @@ export async function buildApp() {
   const mqttIngest = new MqttIngestSupervisor(dataEventBus, async (url, options) => {
     const { connectAsync } = await import("mqtt");
     return connectAsync(url, options as never) as never;
-  });
+  }, { checkpointStore: new FileSubscriptionCheckpointStore(config.dataDir) });
   await registerMqttIngestRoutes(app, store, mqttIngest);
   // P3 告警评估桥：数据事件 → AlertEngine → alarm 事件回灌 bus；规则持久化于 projects/<id>/alert-rules.json。
   const alertRules = new AlertRuleRuntime({ bus: dataEventBus, ruleStore: new AlertRuleFileStore(config.dataDir) });

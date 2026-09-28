@@ -294,6 +294,9 @@ importers:
       '@bim-studio/studio-core':
         specifier: workspace:*
         version: link:../../packages/studio-core
+      '@bim-studio/workcell-validation-plugin':
+        specifier: workspace:*
+        version: link:../../packages/workcell-validation-plugin
       '@dimforge/rapier3d-compat':
         specifier: 0.19.3
         version: 0.19.3

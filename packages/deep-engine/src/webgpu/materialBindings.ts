@@ -1,5 +1,6 @@
 import type { PreparedMaterialTextures } from "../renderPacket.js";
 import { DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS } from "../shaderAbi/contract.js";
+import { packExtendedParameterBlock } from "../shader/materialParameterAbi.js";
 import type { DeviceSession } from "./deviceSession.js";
 import { uploadBuffer } from "./meshBuffers.js";
 import type { TextureBinding } from "./textureResources.js";
@@ -194,7 +195,11 @@ export function packMaterialParameters(textures: PreparedMaterialTextures): Floa
   data[31] = textures.normal?.normalScale ?? 1;
   writeTransform(data, 32, textures.emissive, textures.emissive !== undefined);
   data[DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS.emissiveStrength.floatOffset] = textures.emissiveStrength;
-  return data;
+  if (!textures.extendedParameters) return data;
+  const extended = new Float32Array(48);
+  extended.set(data);
+  extended.set(packExtendedParameterBlock(textures.extendedParameters), 40);
+  return extended;
 }
 
 function materialParameterKey(textures: PreparedMaterialTextures): string {

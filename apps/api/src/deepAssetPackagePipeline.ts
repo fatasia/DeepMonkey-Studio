@@ -7,8 +7,9 @@ import type {
 import type { DeepAssetPackageReference, ModelFormat, ModelRecord } from "@bim-studio/contracts";
 import { sha256File } from "./conversionQualityDraft.js";
 import {
-  buildModelDeepAssetPackage, type DeepAssetBlobOrigin,
+  buildModelDeepAssetPackage, type DeepAssetBlobOrigin, type DeepAssetPackageFileInput,
 } from "./deepAssetPackageBuilder.js";
+import { prepareHlodSidecars } from "./hlodPackagePublish.js";
 import type { FileSystemDeepAssetPackageStore } from "./deepAssetPackageStore.js";
 
 export interface PublishModelDeepAssetPackageInput {
@@ -20,6 +21,9 @@ export interface PublishModelDeepAssetPackageInput {
   readonly importer: { readonly id: string; readonly version: string };
   readonly compatibility: AssetCompatibilityProfile;
   readonly geometryFileName?: string;
+  readonly signal?: AbortSignal;
+  /** HLOD bake is opt-in until Web instance IDs and package consumption are aligned. */
+  readonly includeHlod?: boolean;
 }
 
 export interface PublishedDeepAssetPackage {
@@ -41,10 +45,7 @@ export async function publishModelDeepAssetPackage(
 ): Promise<PublishedDeepAssetPackage | undefined> {
   const geometryFileName = input.geometryFileName ?? "geometry.glb";
   const outputDir = path.join(input.modelDir, "output");
-  const files: Array<{
-    id: string; kind: "mesh" | "metadata"; logicalPath: string;
-    fileName: string; mediaType: string;
-  }> = [{
+  const files: DeepAssetPackageFileInput[] = [{
     id: "geometry:main", kind: "mesh", logicalPath: `output/${geometryFileName}`,
     fileName: geometryFileName, mediaType: "model/gltf-binary",
   }];
@@ -56,7 +57,19 @@ export async function publishModelDeepAssetPackage(
       });
     }
   }
+  if (input.includeHlod) {
+    try {
+      const sidecars = await prepareHlodSidecars(outputDir, geometryFileName, input.signal);
+      files.push(...sidecars.files);
+    } catch (error) {
+      // HLOD was explicitly requested: never replace the active package with an incomplete revision.
+      if (!input.signal?.aborted) console.warn("HLOD bake failed; prior Deep Asset Package remains active", error);
+      return undefined;
+    }
+  }
+  if (input.signal?.aborted) return undefined;
   const [sourceHash, sourceByteLength] = await Promise.all([sha256File(input.sourcePath), sourceSize(input.sourcePath)]);
+  if (input.signal?.aborted) return undefined;
   const recipeHash = createHash("sha256").update(JSON.stringify({
     importer: input.importer, files: files.map((file) => file.logicalPath),
   })).digest("hex");
@@ -89,9 +102,12 @@ export async function publishModelDeepAssetPackage(
     console.warn("Deep Asset Package 构建失败，转换结果保留但无资产包引用", error);
     return undefined;
   }
+  if (input.signal?.aborted) return undefined;
   const executor = input.store.createExecutor(origins);
-  const result = await executor.publish(packageValue, { concurrency: 4 });
-  executor.dispose();
+  let result: Awaited<ReturnType<typeof executor.publish>>;
+  try { result = await executor.publish(packageValue, { concurrency: 4,
+    ...(input.signal ? { signal: input.signal } : {}) }); }
+  finally { executor.dispose(); }
   if (result.status !== "committed" && result.status !== "unchanged" || !result.commit) {
     console.warn(`Deep Asset Package 发布未完成（status=${result.status}）`,
       summarizeIssues(result.issues), result.failure ? `failure=${result.failure}` : "");

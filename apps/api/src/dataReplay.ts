@@ -11,6 +11,7 @@ import type { AppConfig } from "./config.js";
 import { ALERT_EVENT_SOURCE } from "./alertRules.js";
 import { previewDataset } from "./dataIntegration.js";
 import type { DataEventBus } from "./dataEvents.js";
+import { describeOfflineReplay } from "@bim-studio/virtual-commissioning-plugin";
 import type { MetadataStore } from "./store.js";
 
 export interface ReplayTimelineEntry {
@@ -21,6 +22,8 @@ export interface ReplayTimelineEntry {
 export interface DataReplayPayload {
   revision: string;
   entries: ReplayTimelineEntry[];
+  /** 只读质量摘要；完整信号仍在 entries 中，避免重复传输。 */
+  offlineRecord?: Omit<ReturnType<typeof describeOfflineReplay>, "samples">;
 }
 
 export type ReplayRowsReader = (
@@ -40,6 +43,12 @@ export interface DataReplayRouteDependencies {
 
 const DEFAULT_MAX_ENTRIES = 500;
 const TIME_KEY_PATTERN = /^(timestamp|time|ts|recorded_at|created_at|date|时间)$/i;
+
+function replayResponse(payload: DataReplayPayload, origin: "dataset" | "retained-events") {
+  const { samples: _samples, ...offlineRecord } = describeOfflineReplay({ timeline: payload, origin });
+  // entries 已在旧接口，元数据不重复下发整段样本；调用方组合 entries+offlineRecord 即为记录。
+  return { ...payload, offlineRecord };
+}
 
 async function defaultRowsReader(
   config: AppConfig,
@@ -88,7 +97,7 @@ export async function registerDataReplayRoutes(app: FastifyInstance, dependencie
         if (entries.length === 0) {
           return reply.code(400).send({ message: "数据集没有可回放的时间序列数值行：请检查时间列取值与数值字段" });
         }
-        return { revision: `dataset:${dataset.id}@${dataset.updatedAt}`, entries } satisfies DataReplayPayload;
+        return replayResponse({ revision: `dataset:${dataset.id}@${dataset.updatedAt}`, entries }, "dataset");
       }
 
       const events = dependencies.bus.latest(projectId);
@@ -96,10 +105,10 @@ export async function registerDataReplayRoutes(app: FastifyInstance, dependencie
       if (entries.length === 0) {
         return reply.code(400).send({ message: "项目暂无可回放的数据事件：请先通过数据事件 API 或 MQTT 持续摄取产生数据" });
       }
-      return {
+      return replayResponse({
         revision: `events:${events.length}:${events[events.length - 1]?.id ?? ""}`,
         entries,
-      } satisfies DataReplayPayload;
+      }, "retained-events");
     },
   );
 }

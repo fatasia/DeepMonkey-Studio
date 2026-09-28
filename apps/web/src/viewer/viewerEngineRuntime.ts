@@ -94,6 +94,7 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
     this.framePerformanceMonitor.recordFrame(now, document.visibilityState === "visible");
     const delta = Math.min((now - this.lastFrameTime) / 1000, 0.05);
     this.lastFrameTime = now;
+    this.onRestrictedPlayFrame?.(delta * 1_000);
     if (this.adaptiveQualityEnabled && now - this.lastAdaptiveRenderSampleAt >= 500) {
       this.lastAdaptiveRenderSampleAt = now;
       const performanceSnapshot = getPresentationPerformance(this)?.snapshot()
