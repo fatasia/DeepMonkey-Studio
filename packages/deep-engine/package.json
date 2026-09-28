@@ -87,6 +87,12 @@
       "types": "./dist/hlod/index.d.ts",
       "default": "./dist/hlod/index.js"
     },
+    "./hlod-testing": {
+      "development": {
+        "types": "./src/hlod/hlodWorkshopFixture.testUtils.ts",
+        "default": "./src/hlod/hlodWorkshopFixture.testUtils.ts"
+      }
+    },
     "./textures": {
       "development": {
         "types": "./src/textures/index.ts",

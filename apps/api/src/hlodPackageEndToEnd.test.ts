@@ -4,8 +4,7 @@ import { decodeHlodProxyGeometries, encodeHlodProxyGeometries, decideHlodFrame }
 import { hlodTreeFromManifest, parseHlodPackageManifest, serializeHlodPackageManifest } from "./hlodPackageManifest.js";
 import { buildHlodPackage, hlodProxyDrawList, hlodReferenceCamera } from "./hlodPackageSource.js";
 import { HLOD_PROXY_GEOMETRY_PREFIX, type HlodPackageInstanceInput } from "./hlodPackageTypes.js";
-import { workshopCameraAt, workshopHlodFixture, workshopSceneSphere, type WorkshopHlodFixture } from
-  "../../../packages/deep-engine/src/hlod/hlodWorkshopFixture.testUtils.js";
+import { workshopCameraAt, workshopHlodFixture, workshopSceneSphere, type WorkshopHlodFixture } from "@bim-studio/deep-engine/hlod-testing";
 
 /**
  * T26 renderPacket 接线端到端(CPU 级):车间 GLB 包围(真实 accessor)→ 包

@@ -75,6 +75,7 @@ describe("Play exits through the production scene persistence path", () => {
       setWeather: vi.fn(), setGlobalLighting: vi.fn(), setSceneEnvironment: vi.fn(), applyFloorStates: vi.fn(),
       setPostProcessing: vi.fn(), setSceneAnimation: vi.fn(), clearSceneModelsAndPrimitives: vi.fn(),
       setClipping: vi.fn(), select: vi.fn(), selectAnnotation: vi.fn(), selectLayer: vi.fn(),
+      requestRender: vi.fn(),
     };
     const context = {
       ...f.context, engine, project: { id: scene.projectId, models: [{ id: "gripper", status: "ready", manifest: {} }] },

@@ -3,8 +3,7 @@ import { buildHlodTree, updateHlodTree, type HlodInstanceInput, type HlodTreeCha
 import { assertUnchangedGeometryBytes, diffHlodPackages, hlodGeometryById } from "./hlodPackageDiff.js";
 import { buildHlodPackage } from "./hlodPackageSource.js";
 import type { HlodPackageInstanceInput } from "./hlodPackageTypes.js";
-import { workshopHlodFixture, type WorkshopHlodFixture } from
-  "../../../packages/deep-engine/src/hlod/hlodWorkshopFixture.testUtils.js";
+import { workshopHlodFixture, type WorkshopHlodFixture } from "@bim-studio/deep-engine/hlod-testing";
 
 /**
  * T26 接线增量一致性:实例变更 → 代理重生成 → 包 diff 最小。
