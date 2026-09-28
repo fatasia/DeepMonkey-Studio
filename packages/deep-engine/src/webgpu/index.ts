@@ -12,6 +12,10 @@ export { DISABLED_QUALITY_TELEMETRY_SNAPSHOT, QUALITY_TELEMETRY_SCHEMA, QUALITY_
   QualityTelemetryCollector } from "./qualityTelemetry.js";
 export type { QualityFrameRecord, QualityTelemetrySnapshot, QualityTelemetryTotals } from "./qualityTelemetry.js";
 export { PbrRenderer } from "./pbrRenderer.js";
+export { ClusterLodRenderSlot } from "./clusterLodRenderSlot.js";
+export type { ClusterLodSceneStaging, ClusterLodSlotMetrics, ClusterLodDrawStats } from "./clusterLodRenderSlot.js";
+export { buildClusterLodCadGeometry, buildClusterLodCadCameraCases, expandFrontierGeometry } from "./clusterLodCadFixture.js";
+export type { ClusterLodCadGeometry, ClusterLodCadCameraCase } from "./clusterLodCadFixture.js";
 export { createHdrEnvironment } from "./hdrEnvironment.js";
 export type { HdrEnvironment, HdrEnvironmentOptions } from "./hdrEnvironment.js";
 export { createPbrEnvironment } from "./pbrEnvironmentSource.js";

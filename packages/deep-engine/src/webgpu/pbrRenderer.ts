@@ -62,6 +62,8 @@ import type { GpuParticleRuntime } from "./gpuParticleRuntime.js";
 import { PBR_DEPTH_FORMAT, PBR_HDR_FORMAT } from "./renderTargets.js";
 import { VisibilityBufferPath } from "./visibilityBufferPass.js";
 import { SoftRasterizeFallback } from "./softRasterizeFallback.js";
+import { ClusterLodRenderSlot, type ClusterLodSceneStaging } from "./clusterLodRenderSlot.js";
+import { resolveClusterLodSlotOption } from "./clusterLodSlotSupport.js";
 export type { FrameMetrics, PbrRendererOptions, RenderView } from "./pbrRendererTypes.js";
 export class PbrRenderer {
   readonly id = "deep-webgpu";
@@ -107,6 +109,9 @@ export class PbrRenderer {
   private particleLastTime = performance.now();
   private readonly visibility: VisibilityBufferPath | undefined;
   private readonly adaptiveQuality: AdaptiveQualityController | undefined;
+  /** G1-S1 簇级微多边形绘制槽位；仅 options.clusterLod === true 时可经 stageClusterLodScene 注入。 */
+  private readonly clusterLodEnabled: boolean;
+  private clusterLodSlot: ClusterLodRenderSlot | undefined;
   private readonly preparationPlan: RenderGraphCompileResult;
   private readonly preparationGroupIndex: number;
   private allocationPlanKey: string | undefined;
@@ -127,6 +132,7 @@ export class PbrRenderer {
     lighting: ForwardPlusPbrRuntime, localShadows: LocalSpotShadowRuntime, options: PbrRendererOptions, features: PbrRendererFeatures,
     deformationPipelines?: Pipelines | Promise<Pipelines>, private readonly releasePipelines?: () => void) {
     this.diagnostics = new PbrRendererDiagnostics(session);
+    this.clusterLodEnabled = resolveClusterLodSlotOption(options.clusterLod);
     this.adaptiveQuality = options.adaptiveQuality ? new AdaptiveQualityController(options.adaptiveQuality) : undefined;
     if (options.adaptiveQuality?.enabled) this.diagnostics.setEnabled(true);
     // F1 逐 pass GPU 计时(opt-in):开启即连带启用诊断采样;设备不支持/槽忙时
@@ -225,6 +231,19 @@ export class PbrRenderer {
       ...(notes ? { degradedNotes: notes } : {}) }, origin, direction, options);
   }
   setProbeClipmap(binding?: Parameters<ForwardPlusPbrRuntime["setProbeClipmap"]>[0]): void { this.lighting.setProbeClipmap(binding); this.historyDirty = true; }
+  /**
+   * G1-S1：注入簇级微多边形绘制槽位（bake DAG + 各层几何，clusterLodBake 产物）。
+   * 需 PbrRendererOptions.clusterLod = true（fail-closed：未开启显式拒绝）；重复调用替换旧槽位。
+   * threeBridge 作者链路接线点（本轮留主线，不动 threeBridge/）：作者包编译页 →
+   * bakeClusterLodDag → 本方法。
+   */
+  stageClusterLodScene(staging: ClusterLodSceneStaging): void {
+    if (!this.clusterLodEnabled) {
+      throw new Error("Cluster LOD slot is not enabled (PbrRendererOptions.clusterLod).");
+    }
+    this.clusterLodSlot?.dispose();
+    this.clusterLodSlot = ClusterLodRenderSlot.create(this.session, staging);
+  }
   /**
    * Product GI source (DeepWebGpuRenderRuntime contract): installs the real one-bounce
    * scene-radiance capture chain. Returning a controller without a radiance encoder would
@@ -420,6 +439,16 @@ export class PbrRenderer {
         }],
       ]), { encoderLabelPrefix: "Deep PBR prepare" });
     const encoder = device.createCommandEncoder({ label: "Deep frame" });
+    // G1-S1 簇级槽位：选层 compute pass + 读回拷贝追加到主 encoder（相机静止时零工作）。
+    // 仅 plain HDR 帧签名可执行；MRT/directDisplay 记录 sticky fallback（不静默降级）。
+    const clusterLod = this.clusterLodSlot;
+    const clusterLodSupported = clusterLod !== undefined && !directClear && !this.writeGeometryBuffers;
+    if (clusterLod && !clusterLodSupported) clusterLod.noteFrameSignatureUnsupported();
+    if (clusterLod && clusterLodSupported && !clusterLod.hasFallback()) {
+      clusterLod.updateCameraFromView(view, size.height, frameState.projection.verticalFovRadians);
+      clusterLod.setViewProjection(frameState.depthViewProjection);
+      clusterLod.encodeFrame(encoder);
+    }
     if (!preparation && drawProfile.hasDeformation) this.packets.encodeDeformation(encoder);
     if (!preparation && !directionalDisplay) lighting = this.lighting.prepareAndEncode(encoder, {
       viewportWidth: size.width, viewportHeight: size.height,
@@ -491,6 +520,12 @@ export class PbrRenderer {
       directClear && directionalDisplay ? this.pipelines.displayDirectionalMain! : directClear ? this.pipelines.displayMain! : this.pipelines.main,
       this.ground.mesh, this.ground.instance, directClear !== undefined);
     drawCalls += groundStats.drawCalls; triangles += groundStats.triangles;
+    // G1-S1：簇级前沿 bundle（executeBundles 计 1 次绘制调用；GPU indirect 命令数在
+    // metrics.clusterLod.draws 如实报告）。选层为一帧延迟：首帧 warming 不绘制。
+    if (clusterLod && clusterLodSupported && !clusterLod.hasFallback()) {
+      const clusterLodStats = clusterLod.draw(main);
+      if (clusterLodStats) { drawCalls += 1; triangles += clusterLodStats.triangles; }
+    }
     main.end();
     passTiming?.endMarker(encoder, "opaque");
     // Particle simulation commits asynchronously; consume the latest committed binding here.
@@ -586,6 +621,8 @@ export class PbrRenderer {
       this.frameCapture.mark("submit", "queue.submit");
     }
     submitAttempted = true; device.queue.submit([...(preparation?.commandBuffers ?? []), commands]); this.targets.commitFrame();
+    // G1-S1：读回本帧选层槽位并派生下一帧命令；异常走槽位 sticky fallback，不打断渲染循环。
+    if (clusterLod && clusterLodSupported) void clusterLod.ingest().catch(error => clusterLod.noteIngestFailure(error));
     // TAA 已在 submit 前读取响应掩码；队列有序保证提交后释放可安全回池复用。
     if (particleReactive) this.transientTextures.release(particleReactive);
     if (this.frameCapture && captureOpen) this.lastFrameReadback = this.frameCapture.collectReadbacksAfterSubmit();
@@ -610,6 +647,7 @@ export class PbrRenderer {
     const metrics: FrameMetrics = { frame: ++this.frame, cpuSubmitMs: performance.now() - begin, drawCalls, triangles, ...lodWork.snapshot(),
       width: size.width, height: size.height, resources: this.session.resourceCount, shadowUpdated, transientTextures: this.targets.transientStats,
       deviceResourceMemory: this.session.resourceMemory,
+      ...(clusterLod ? { clusterLod: clusterLod.metrics() } : {}),
       cameraCut: history.cameraCut, postProcessPasses: opaqueEffects.passCount + finalEffects.passCount + (hasTransparent ? 2 + Number(this.transparency.currentReactiveMask !== undefined) : 0) + (!directClear && this.features.spatialAa ? 1 : 0),
       weightedOit: hasTransparent,
       hiZMipLevels: opaqueEffects.hiZ?.mipLevelCount ?? 0,
@@ -640,6 +678,7 @@ export class PbrRenderer {
       if (submitAttempted) this.packets.failLodFrame(); else this.packets.cancelLodFrame();
       if (particleReactive) this.transientTextures.release(particleReactive);
       this.lighting.invalidateAssignment(); this.localShadows.failFrame(); this.cameraHistory.cancelPendingFrame();
+      if (!submitAttempted) this.clusterLodSlot?.cancelPendingFrame();
       if (hiZPlan) this.previousHiZ.failFrame(hiZPlan); this.pendingHiZ = undefined;
       throw error;
     }
@@ -747,7 +786,7 @@ export class PbrRenderer {
     this.particleRuntime?.dispose();
     const owners = [this.ground.author, this.outputs, this.environment, this.lighting, this.localShadows,
       this.shadowState, this.previousHiZ, this.transparency, this.postProcess, this.packets, this.targets,
-      ...(this.visibility ? [this.visibility] : [])];
+      ...(this.visibility ? [this.visibility] : []), ...(this.clusterLodSlot ? [this.clusterLodSlot] : [])];
     // 释放背景排队门：未 release 就销毁的宿主也能让挂起的门禁 promise 结算。
     this.releasePipelines?.();
     runResourceCleanup("PBR renderer cleanup failed.", [...owners.map(owner => () => owner.dispose()),

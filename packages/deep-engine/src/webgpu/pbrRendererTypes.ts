@@ -41,6 +41,13 @@ export interface PbrRendererOptions {
   /** T07 动态内部分辨率策略；提供即启用帧时反馈的内部缩放（1 = 关闭等效上限）。 */
   readonly resolutionScalePolicy?: import("../postprocess/resolutionScaler.js").ResolutionScalePolicy;
   readonly meshlets?: boolean;
+  /**
+   * G1-S1 簇级微多边形绘制槽位（opt-in，缺省 false = 零行为变化）：开启后可经
+   * stageClusterLodScene 注入 bake DAG，默认帧 opaque pass 以 RenderBundle +
+   * drawIndexedIndirect 执行 GPU 屏幕误差选层前沿（1px 感知阈值）。仅 plain HDR
+   * 帧签名可执行；MRT/directDisplay 帧记录 sticky fallback 原因（不静默降级）。
+   */
+  readonly clusterLod?: boolean;
   /** Explicitly allocates GPU pose-stream pipelines; author support is negotiated separately. */
   readonly deformation?: boolean;
   readonly shadows?: CascadedShadowResourceOptions;
@@ -84,6 +91,13 @@ export interface FrameMetrics {
   readonly meshletPasses?: number;
   readonly meshletDispatches?: number;
   readonly meshletFallbackReasons?: readonly string[];
+  /**
+   * G1-S1 簇级槽位遥测（`clusterLod` 开启且已 stage 时出现）：draws = 前沿 indirect
+   * 命令数（GPU 真实绘制命令；bundle 本身在 drawCalls 计 1 次 executeBundles）。
+   * stale = 选层在途（bundle 相对相机滞后 ≤1 帧）；warming = 尚无可用 bundle；
+   * fallbackReason = fail-closed 原因（sticky，重 stage 恢复）。
+   */
+  readonly clusterLod?: import("./clusterLodRenderSlot.js").ClusterLodSlotMetrics;
   readonly frame: number; readonly cpuSubmitMs: number;
   readonly drawCalls: number; readonly triangles: number;
   readonly width: number; readonly height: number; readonly resources: number;
