@@ -8,7 +8,7 @@ describe("configureDirectionalShadow", () => {
 
     configureDirectionalShadow(light);
 
-    expect(light.shadow.mapSize.toArray()).toEqual([1_024, 1_024]);
+    expect(light.shadow.mapSize.toArray()).toEqual([2_048, 2_048]);
     expect(light.shadow.intensity).toBeLessThan(0.5);
     expect(light.shadow.radius).toBeGreaterThan(1);
     expect(light.shadow.normalBias).toBeGreaterThan(0);

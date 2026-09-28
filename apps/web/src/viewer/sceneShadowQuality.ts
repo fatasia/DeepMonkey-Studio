@@ -5,7 +5,9 @@ import * as THREE from "three";
  * 阴影强度独立于模型材质，避免浅色地面出现大片纯黑投影。
  */
 export function configureDirectionalShadow(light: THREE.DirectionalLight): void {
-  light.shadow.mapSize.set(1_024, 1_024);
+  // Z1.5 尾巴：作者视图（WebGL 回退）默认场景阴影与 Deep 档位兜底对齐到 2048，
+  // 零配置口径下作者视图不再比 Deep 路径糊一档。
+  light.shadow.mapSize.set(2_048, 2_048);
   light.shadow.camera.near = 0.1;
   light.shadow.camera.far = 300;
   light.shadow.camera.updateProjectionMatrix();
