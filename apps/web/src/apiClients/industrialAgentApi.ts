@@ -58,7 +58,46 @@ export function createIndustrialAgentApi(request: ApiRequest) {
       }),
     cancelIndustrialAgentRun: (projectId: string, runId: string) =>
       request<AgentCheckpoint>(agentRunPath(projectId, runId), { method: "DELETE" }),
+    // H-C2 记忆面板：列表/确认/启停编辑/删除；RULES.md 只读（编辑走文件系统）。
+    listAgentMemory: (projectId: string, signal?: AbortSignal) =>
+      request<AgentMemoryView>(
+        `/api/projects/${encodeURIComponent(projectId)}/ai/memory`,
+        signal ? { signal } : undefined,
+      ),
+    confirmAgentMemory: (projectId: string, memoryId: string) =>
+      request<AgentMemoryRecord>(
+        `${memoryPath(projectId, memoryId)}/confirm`,
+        { method: "POST", headers: { "content-type": "application/json" }, body: "{}" },
+      ),
+    updateAgentMemory: (projectId: string, memoryId: string, patch: { content?: string; enabled?: boolean }) =>
+      request<AgentMemoryRecord>(memoryPath(projectId, memoryId), {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(patch),
+      }),
+    deleteAgentMemory: (projectId: string, memoryId: string) =>
+      request<{ deleted: string }>(memoryPath(projectId, memoryId), { method: "DELETE" }),
   };
+}
+
+export interface AgentMemoryRecord {
+  id: string;
+  content: string;
+  status: "pending" | "active" | "disabled";
+  origin: { kind: "agent-proposal"; runId?: string; step?: number; proposalFingerprint?: string };
+  createdAt: string;
+  updatedAt: string;
+  confirmedBy?: string;
+  confirmedAt?: string;
+}
+
+export interface AgentMemoryView {
+  rules: { configured: boolean; chars: number; truncated: boolean; fingerprint?: string; excerpt?: string };
+  memories: AgentMemoryRecord[];
+}
+
+function memoryPath(projectId: string, memoryId: string): string {
+  return `/api/projects/${encodeURIComponent(projectId)}/ai/memory/${encodeURIComponent(memoryId)}`;
 }
 
 function agentRunPath(projectId: string, runId: string): string {

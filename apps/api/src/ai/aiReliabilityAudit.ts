@@ -2,7 +2,8 @@ import { compareText } from "@bim-studio/contracts";
 import { createHash, randomUUID } from "node:crypto";
 import type { AiReliabilityAssessment } from "./aiReliabilityPolicy.js";
 
-export type AiReliabilityAuditStage = "input-assessment" | "model-completion" | "tool-decision" | "tool-result";
+/** memory-action 是 H-C2 记忆面板操作的专用阶段（确认/启停/编辑/删除走持久化审计链）。 */
+export type AiReliabilityAuditStage = "input-assessment" | "model-completion" | "tool-decision" | "tool-result" | "memory-action";
 export type AiReliabilityAuditOutcome = "allowed" | "constrained" | "denied" | "completed" | "degraded" | "failed" | "cancelled";
 
 export interface AiReliabilityAuditEvent {

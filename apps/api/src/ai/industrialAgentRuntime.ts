@@ -11,12 +11,16 @@ import type { AiTelemetrySink } from "./aiRequestTelemetry.js";
 import { IndustrialAgentCheckpointStore } from "./industrialAgentCheckpointStore.js";
 import { createIndustrialAgentDecisionProvider } from "./industrialAgentDecisionProvider.js";
 import { IndustrialAgentToolGateway } from "./industrialAgentToolGateway.js";
+import { createAgentHarnessGuards } from "./agentHarnessGuards.js";
+import { AgentMemoryStore } from "./agentMemory.js";
 import { resolveAssistantSessionOptions, type AssistantSessionOptions } from "./assistantSessionOptions.js";
 
 export interface IndustrialAgentRuntime {
   checkpoints: AgentCheckpointStore;
   tools: AgentToolGateway;
   orchestrator: IndustrialAgentOrchestrator;
+  /** H-C2 记忆存储：面板路由与回灌共用同一实例。 */
+  memory: AgentMemoryStore;
   resolveModelOptions?: (options: AssistantSessionOptions) => Promise<AssistantSessionOptions>;
 }
 
@@ -28,10 +32,15 @@ export async function createIndustrialAgentRuntime(input: {
   projectContext?: (projectId: string) => unknown | Promise<unknown>;
   audit?: AiReliabilityAuditSink;
   telemetry?: AiTelemetrySink;
+  /** 同变体连续拒绝熔断阈值；缺省 3（Codex 3/50 思想，N 独立可配）。 */
+  variantDenialLimit?: number;
 }): Promise<IndustrialAgentRuntime> {
   const checkpoints = new IndustrialAgentCheckpointStore(input.dataDir);
   await checkpoints.init();
+  const memory = new AgentMemoryStore(input.dataDir);
+  await memory.init();
   const tools = new IndustrialAgentToolGateway(input.registry, input.audit);
+  const guards = createAgentHarnessGuards({ ...(input.audit ? { audit: input.audit } : {}), memory });
   const decisions = createIndustrialAgentDecisionProvider({
     registry: input.registry,
     settings: input.settings,
@@ -39,6 +48,7 @@ export async function createIndustrialAgentRuntime(input: {
     ...(input.projectContext ? { projectContext: input.projectContext } : {}),
     ...(input.audit ? { audit: input.audit } : {}),
     ...(input.telemetry ? { telemetry: input.telemetry } : {}),
+    memory: (projectId) => memory.loadDelivery(projectId),
   });
   return {
     resolveModelOptions: async options => {
@@ -47,6 +57,13 @@ export async function createIndustrialAgentRuntime(input: {
     },
     checkpoints,
     tools,
-    orchestrator: new IndustrialAgentOrchestrator({ decisions, tools, checkpoints }),
+    memory,
+    orchestrator: new IndustrialAgentOrchestrator({
+      decisions,
+      tools,
+      checkpoints,
+      guards,
+      ...(input.variantDenialLimit !== undefined ? { variantDenialLimit: input.variantDenialLimit } : {}),
+    }),
   };
 }

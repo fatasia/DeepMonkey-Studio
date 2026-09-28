@@ -160,3 +160,164 @@
   color: var(--text-strong);
   font-size: 11px;
 }
+
+/* ---------- H-C2 M6 拒绝理由气泡（理由码徽标 + 保证句 + 恢复动作） ---------- */
+
+.ai-card-denial {
+  border-color: color-mix(in srgb, var(--danger) 28%, var(--line));
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface-1));
+}
+
+.ai-card-denial.denial-circuit {
+  border-color: color-mix(in srgb, var(--warning, var(--danger)) 40%, var(--line));
+  background: color-mix(in srgb, var(--warning, var(--danger)) 12%, var(--surface-1));
+}
+
+.ai-card-denial .ai-card-title svg { color: var(--danger); }
+.ai-card-denial.denial-circuit .ai-card-title svg { color: var(--warning, var(--danger)); }
+.ai-card-denial .ai-card-evidence-line svg { color: var(--text-muted); }
+
+.ai-card-reason-code {
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid color-mix(in srgb, var(--danger) 32%, var(--line));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface-2));
+  color: var(--danger);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-card-denial-line { display: flex; flex-wrap: wrap; gap: 4px; font-size: 10px; color: var(--text-muted); }
+
+.ai-card-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-strong);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.ai-card-action:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); color: var(--accent); }
+.ai-card-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ---------- H-C2 记忆面板（M0 族扩展：AiContextDisclosure 同构折叠行） ---------- */
+
+.ai-context-disclosure.ai-memory .ai-memory-body { display: grid; gap: 8px; font-size: 11px; }
+
+.ai-memory-rules,
+.ai-memory-source-badge-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ai-memory-rules small,
+.ai-memory-source-badge-line small,
+.ai-memory-empty,
+.ai-memory-audit-note { color: var(--text-muted); }
+.ai-memory-audit-note { margin: 0; font-size: 10px; }
+.ai-memory-error { color: var(--danger); }
+
+.ai-memory-source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-strong);
+  font-size: 10px;
+}
+
+.ai-memory-source-badge.source-rules svg { color: var(--accent); }
+.ai-memory-source-badge.source-memory svg { color: var(--text-muted); }
+
+.ai-memory-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+
+.ai-memory-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 4px 8px;
+  align-items: start;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.ai-memory-item.status-pending { border-style: dashed; }
+.ai-memory-item.status-disabled { opacity: 0.62; }
+
+.ai-memory-status {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+}
+
+.ai-memory-status.status-pending { border: 1px solid color-mix(in srgb, var(--warning, var(--accent)) 35%, var(--line)); color: var(--warning, var(--accent)); }
+.ai-memory-status.status-active { border: 1px solid color-mix(in srgb, var(--success) 35%, var(--line)); color: var(--success); }
+.ai-memory-status.status-disabled { border: 1px solid var(--line); color: var(--text-muted); }
+
+.ai-memory-content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ai-memory-origin { grid-column: 2; font-size: 10px; color: var(--text-muted); }
+
+.ai-memory-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ai-memory-actions button,
+.ai-memory-confirm-delete button,
+.ai-memory-edit button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--text-strong);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.ai-memory-actions button:hover,
+.ai-memory-confirm-delete button:hover,
+.ai-memory-edit button:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); color: var(--accent); }
+.ai-memory-confirm-delete button:first-child { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 32%, var(--line)); }
+.ai-memory-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.ai-memory-confirm-delete { display: inline-flex; gap: 4px; }
+
+.ai-memory-edit { display: grid; gap: 5px; }
+.ai-memory-edit textarea {
+  width: 100%;
+  padding: 5px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--text);
+  font-size: 12px;
+  resize: vertical;
+}

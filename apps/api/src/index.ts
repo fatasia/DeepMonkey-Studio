@@ -49,6 +49,7 @@ import { resolveAiSettings } from "./ai/aiRuntimeSettings.js";
 import { createAiTelemetryRing } from "./ai/aiRequestTelemetry.js";
 import { createIndustrialAgentRuntime } from "./ai/industrialAgentRuntime.js";
 import { registerIndustrialAgentRoutes } from "./ai/industrialAgentRoutes.js";
+import { registerAgentMemoryRoutes } from "./ai/agentMemoryRoutes.js";
 import { registerAiSampleRoutes } from "./ai/aiSampleRoutes.js";
 import { registerModeling3dRoutes } from "./ai/modeling3dRoutes.js";
 import { createDataQuerySource } from "./dataQuerySource.js";
@@ -239,6 +240,7 @@ export async function buildApp() {
   await registerAiDataBindingRoutes(app, store);
   await registerIndustrialCapabilityRoutes(app, { store, host: industrialCapabilities, dataQuerySource });
   await registerIndustrialAgentRoutes(app, { store, runtime: industrialAgent });
+  await registerAgentMemoryRoutes(app, { store, memory: industrialAgent.memory, audit: aiAudit });
   await registerAiSampleRoutes(app, { store });
   await registerModeling3dRoutes(app, { store });
   await registerMcpCapabilityRoute(app, { store, host: industrialCapabilities, editorPresence, editorSceneTransactions, editorSnapshotFetch });

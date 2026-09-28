@@ -8,6 +8,9 @@ import type {
   AgentCheckpointStore,
   AgentDecision,
   AgentDecisionProvider,
+  AgentGuardHooks,
+  AgentGuardRejection,
+  AgentGuardState,
   AgentPendingTool,
   AgentToolDefinition,
   AgentToolEffect,
@@ -15,6 +18,9 @@ import type {
   StartAgentRunInput,
   ResumeAgentRunOptions,
 } from "./types.js";
+
+/** 同变体连续拒绝的默认熔断阈值（Codex 3/50 思想的最小本地版；N 独立可配）。 */
+export const DEFAULT_VARIANT_DENIAL_LIMIT = 3;
 
 export class IndustrialAgentOrchestrator {
   readonly #running = new Map<string, Promise<AgentCheckpoint>>();
@@ -25,6 +31,10 @@ export class IndustrialAgentOrchestrator {
     decisions: AgentDecisionProvider;
     tools: AgentToolGateway;
     checkpoints: AgentCheckpointStore;
+    /** H-C2 受控挂载点：仓内保安/记忆模块，非 hook 框架。 */
+    guards?: AgentGuardHooks;
+    /** 同变体连续拒绝熔断阈值；缺省 3。 */
+    variantDenialLimit?: number;
     now?: () => Date;
     createId?: () => string;
   }) {}
@@ -318,6 +328,17 @@ export class IndustrialAgentOrchestrator {
       await persist();
       return exhausted;
     }
+    // 挂载点① tool.pre-execute：增值语义预检。拒绝的工具不执行、不消耗调用预算，
+    // 拒绝作为 blocked 工具记录回给决策者（下一轮可见理由码），同变体计数由本层熔断。
+    const rejection = this.dependencies.guards?.preExecute
+      ? await this.dependencies.guards.preExecute({
+          checkpoint: structuredClone(checkpoint),
+          call: structuredClone(pending.call),
+          effect: pending.effect,
+          signal,
+        })
+      : undefined;
+    if (rejection) return this.recordGuardRejection(checkpoint, pending, rejection, persist);
     checkpoint.usage.toolCalls += 1;
     pending.state = "executing";
     const startedAt = this.now();
@@ -341,6 +362,17 @@ export class IndustrialAgentOrchestrator {
         outcome: structuredClone(outcome),
       });
       checkpoint.seenToolFingerprints.push(pending.fingerprint);
+      // 挂载点② tool.post-execute：verdict 回灌等增值记录。失败不阻断执行链（实现侧自行落审计）。
+      if (this.dependencies.guards?.postExecute) {
+        try {
+          await this.dependencies.guards.postExecute({
+            checkpoint: structuredClone(checkpoint),
+            call: structuredClone(pending.call),
+            effect: pending.effect,
+            outcome: structuredClone(outcome),
+          });
+        } catch { /* 增值记录失败不得变成新的执行故障面。 */ }
+      }
       delete checkpoint.pendingTool;
       if (outcome.status !== "completed") {
         checkpoint = fail(checkpoint, outcome.status === "blocked" ? "blocked" : "failed", outcome.error?.code ?? "tool-failed", outcome.error?.message ?? "工具执行失败", outcome.error?.retryable ?? true);
@@ -353,6 +385,71 @@ export class IndustrialAgentOrchestrator {
       await persist();
       return checkpoint;
     }
+  }
+
+  /**
+   * pre-execute 拒绝：记录 blocked 工具记录（决策者与 UI 共用同一数据源），
+   * 按 variantKey 计数；同一变体连续达到阈值即熔断终止本轮，状态落 checkpoint。
+   * 等价性说明：若某变体曾成功执行，重复同参调用先被 duplicate-tool-call 挡下，
+   * 到不了预检——因此"累计 N 次"与"连续 N 次"在该机制下一致。
+   */
+  private async recordGuardRejection(
+    checkpoint: AgentCheckpoint,
+    pending: AgentPendingTool,
+    rejection: AgentGuardRejection,
+    persist: () => Promise<void>,
+  ): Promise<AgentCheckpoint> {
+    checkpoint.toolRecords.push({
+      step: pending.step,
+      fingerprint: pending.fingerprint,
+      call: structuredClone(pending.call),
+      effect: pending.effect,
+      startedAt: this.now(),
+      completedAt: this.now(),
+      outcome: {
+        status: "blocked",
+        evidence: [],
+        verificationEvidence: [],
+        error: { code: rejection.code, message: rejection.message.slice(0, 2_000), retryable: rejection.retryable ?? false },
+      },
+    });
+    delete checkpoint.pendingTool;
+    const circuit = this.recordVariantDenial(checkpoint, rejection);
+    if (circuit) {
+      checkpoint = fail(
+        checkpoint,
+        "blocked",
+        "variant-circuit-open",
+        `同一提案变体连续 ${circuit.denials} 次被拒绝（${rejection.code}），已终止本轮等待人工介入；最后一次理由：${rejection.message}`,
+        false,
+      );
+    }
+    await persist();
+    return checkpoint;
+  }
+
+  private recordVariantDenial(checkpoint: AgentCheckpoint, rejection: AgentGuardRejection): { variantKey: string; denials: number } | undefined {
+    if (!rejection.variantKey) return undefined;
+    const state: AgentGuardState = checkpoint.guards ??= {};
+    const denials = state.variantDenials ??= {};
+    const entry = denials[rejection.variantKey] ?? { count: 0, lastCode: rejection.code, lastMessage: rejection.message, lastDeniedAt: this.now() };
+    entry.count += 1;
+    entry.lastCode = rejection.code;
+    entry.lastMessage = rejection.message.slice(0, 2_000);
+    entry.lastDeniedAt = this.now();
+    denials[rejection.variantKey] = entry;
+    const limit = Math.max(1, this.dependencies.variantDenialLimit ?? DEFAULT_VARIANT_DENIAL_LIMIT);
+    if (entry.count >= limit) {
+      state.circuit = {
+        variantKey: rejection.variantKey,
+        reasonCode: rejection.code,
+        message: rejection.message.slice(0, 500),
+        openedAt: this.now(),
+        denials: entry.count,
+      };
+      return { variantKey: rejection.variantKey, denials: entry.count };
+    }
+    return undefined;
   }
 
   private async abortCheckpoint(checkpoint: AgentCheckpoint, budgetTimedOut: boolean): Promise<AgentCheckpoint> {

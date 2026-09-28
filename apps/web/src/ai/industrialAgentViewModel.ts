@@ -96,6 +96,40 @@ export function selectedToolPreview(tools: readonly AgentToolDefinition[], selec
   };
 }
 
+/**
+ * H-C2 保安拒绝（M6 气泡数据源）：pre-execute 语义预检与变体熔断的拒绝
+ * 都以 blocked 工具记录落 checkpoint，决策者与 UI 共用同一数据源。
+ */
+export interface AgentGuardDenial {
+  step: number;
+  toolId: string;
+  code: string;
+  message: string;
+}
+
+const GUARD_DENIAL_CODES = new Set(["semantic-admission", "variant-circuit-open"]);
+
+export function agentGuardDenials(checkpoint: AgentCheckpoint): AgentGuardDenial[] {
+  const denials: AgentGuardDenial[] = [];
+  for (const record of checkpoint.toolRecords) {
+    if (record.outcome.status !== "blocked") continue;
+    const code = record.outcome.error?.code ?? "";
+    if (!GUARD_DENIAL_CODES.has(code)) continue;
+    denials.push({
+      step: record.step,
+      toolId: record.call.toolId,
+      code,
+      message: record.outcome.error?.message ?? "",
+    });
+  }
+  return denials;
+}
+
+/** 熔断状态（落 checkpoint，恢复语义：本轮终态，人工介入后新开 run 计数独立）。 */
+export function agentGuardCircuit(checkpoint: AgentCheckpoint): NonNullable<AgentCheckpoint["guards"]>["circuit"] {
+  return checkpoint.guards?.circuit;
+}
+
 export function isAgentTerminal(status: AgentRunStatus): boolean {
   return ["completed", "blocked", "failed", "cancelled", "budget-exhausted"].includes(status);
 }

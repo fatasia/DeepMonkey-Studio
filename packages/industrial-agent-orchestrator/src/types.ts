@@ -137,6 +137,8 @@ export interface AgentCheckpoint {
   status: AgentRunStatus;
   /** H-C1 plan 档：true 时工具面收敛为 read/analyze，finish 不允许 production 结论。 */
   planMode?: boolean;
+  /** H-C2 保安状态：变体拒绝计数与熔断记录（持久化在 checkpoint，随恢复语义走）。 */
+  guards?: AgentGuardState;
   budget: AgentBudget;
   usage: { steps: number; toolCalls: number; activeDurationMs: number };
   allowedToolIds: string[];
@@ -161,6 +163,46 @@ export interface ResumeAgentRunOptions {
   selectionId?: string;
   selectedBy?: string;
   signal?: AbortSignal;
+}
+
+/**
+ * H-C2 受控挂载点（增强 1）：循环内恰好两处确定性回调，不是 hook 框架。
+ * 实现方只能是仓内确定性模块（保安/记忆），不暴露用户自定义脚本；
+ * 硬性 allow/deny 仍归工具网关，挂载点只做增值检查与记录。
+ */
+export interface AgentGuardPreExecuteContext {
+  checkpoint: AgentCheckpoint;
+  call: AgentToolCall;
+  effect: AgentToolEffect;
+  signal: AbortSignal;
+}
+
+/** pre-execute 拒绝：拒绝的工具不执行；variantKey 用于同变体连续拒绝的熔断计数。 */
+export interface AgentGuardRejection {
+  code: string;
+  message: string;
+  retryable?: boolean;
+  variantKey?: string;
+}
+
+export interface AgentGuardPostExecuteContext {
+  checkpoint: AgentCheckpoint;
+  call: AgentToolCall;
+  effect: AgentToolEffect;
+  outcome: AgentToolOutcome;
+}
+
+export interface AgentGuardHooks {
+  /** tool.pre-execute：语义预检等增值检查。返回 undefined 放行；返回拒绝即不执行。 */
+  preExecute?: (context: AgentGuardPreExecuteContext) => Promise<AgentGuardRejection | undefined>;
+  /** tool.post-execute：verdict 回灌等增值记录。抛错不阻断执行链（由实现侧落审计）。 */
+  postExecute?: (context: AgentGuardPostExecuteContext) => Promise<void>;
+}
+
+/** 同变体拒绝计数；熔断一旦打开即终态，随 checkpoint 持久化。 */
+export interface AgentGuardState {
+  variantDenials?: Record<string, { count: number; lastCode: string; lastMessage: string; lastDeniedAt: string }>;
+  circuit?: { variantKey: string; reasonCode: string; message: string; openedAt: string; denials: number };
 }
 
 export interface StartAgentRunInput {

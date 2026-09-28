@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AiExecutionDetails } from "./AiExecutionDetails";
+import { AiHarnessDenialCard } from "./AiHarnessDenialCard";
 import { AiHypothesisVerdictCard } from "./AiHypothesisVerdictCard";
+import { AiMemoryPanel } from "./AiMemoryPanel";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -25,6 +27,8 @@ import { translate as tr, type AppLocale } from "../i18n";
 import {
   agentEvidenceViews,
   agentDecisionStatusLabel,
+  agentGuardCircuit,
+  agentGuardDenials,
   agentProgress,
   agentStatusLabel,
   agentStatusTone,
@@ -209,6 +213,8 @@ export function IndustrialAgentWorkspace(props: {
 
       {!checkpoint ? (
         <div className="industrial-agent-start">
+          {/* H-C2 记忆面板入口：M0 族折叠行，body 顶部与上下文披露同构。 */}
+          {projectId && <AiMemoryPanel locale={locale} projectId={projectId} />}
           <AssistantModelControls locale={locale} mode="platform" value={modelOptions} onChange={setModelOptions} disabled={busy} />
           <label>
             <span>{t("用一句话说明要完成的目标", "Describe the outcome in one sentence")}</span>
@@ -342,6 +348,9 @@ export function IndustrialAgentRunView(props: {
   const pendingTool = props.tools.find((tool) => tool.id === checkpoint.pendingTool?.call.toolId);
   const evidence = agentEvidenceViews(checkpoint, props.tools);
   const verdicts = agentVerdictEnvelopes(checkpoint);
+  // H-C2：保安拒绝（语义预检/熔断）以 M6 气泡呈现；熔断计数取自 checkpoint 状态。
+  const denials = agentGuardDenials(checkpoint);
+  const circuit = agentGuardCircuit(checkpoint);
   const terminal = isAgentTerminal(checkpoint.status);
   return (
     <div className="industrial-agent-run">
@@ -378,7 +387,17 @@ export function IndustrialAgentRunView(props: {
       {verdicts.length > 0 && <div className="industrial-agent-verdicts">
         {verdicts.map((item) => <AiHypothesisVerdictCard key={item.envelope.proposalFingerprint + item.envelope.resultFingerprint} locale={props.locale} envelope={item.envelope} />)}
       </div>}
-      {checkpoint.failure && <div className="industrial-agent-error" role="alert"><AlertTriangle size={14} /><span><strong>{checkpoint.failure.message}</strong><small>{checkpoint.failure.code}</small></span></div>}
+      {denials.length > 0 && <div className="industrial-agent-denials">
+        {denials.map((item) => <AiHarnessDenialCard
+          key={`${item.step}-${item.code}`}
+          locale={props.locale}
+          denial={item}
+          {...(item.code === "variant-circuit-open" && circuit ? { circuitDenials: circuit.denials } : {})}
+          {...(!terminal && item.code !== "variant-circuit-open" ? { onRecover: () => props.onAction("refresh") } : {})}
+        />)}
+      </div>}
+      {/* 熔断终止由上方 M6 拒绝卡呈现（计数+恢复动作），不重复渲染通用错误条。 */}
+      {checkpoint.failure && checkpoint.failure.code !== "variant-circuit-open" && <div className="industrial-agent-error" role="alert"><AlertTriangle size={14} /><span><strong>{checkpoint.failure.message}</strong><small>{checkpoint.failure.code}</small></span></div>}
       <IndustrialAgentContinuation locale={props.locale} checkpoint={checkpoint} busy={props.busy} onResume={() => props.onAction("resume")} {...(props.onSelect ? { onSelect: props.onSelect } : {})} />
       {props.error && <div className="industrial-agent-error" role="alert"><AlertTriangle size={14} />{props.error}</div>}
       {evidence.length > 0 && (
