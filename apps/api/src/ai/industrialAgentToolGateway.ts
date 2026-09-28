@@ -28,6 +28,7 @@ const CURATED_TOOL_IDS = new Set([
   "simulation.virtual-debug.run-suite",
   "simulation.hypothesis.register",
   "simulation.golden.verify",
+  "provenance.trace",
   "manufacturing.workcell.audit",
   "modeling.parametric.validate",
 ]);

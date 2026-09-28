@@ -1,0 +1,161 @@
+/*
+ * H-C3 档案视图卡（AiHarnessCards.css 家族扩展，令牌纪律同族）：
+ * - 取色只允许 var(--success|--warning|--danger|--info|--accent) × var(--surface-*)|--line*|--text* × color-mix；禁止 #hex 字面量。
+ * - 字号只允许 10 / 11 / 12 / 13px 四档；指纹数字 tabular-nums。
+ * - 状态三重编码：色 + 图标（在 TSX）+ 文字。
+ */
+
+.ai-provenance {
+  display: grid;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+/* ---------- 三跳时间轴 ---------- */
+
+.ai-provenance-steps {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-provenance-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 4px 8px;
+  padding: 4px 0 8px;
+}
+
+/* 连接线：令牌派生，非 hex。 */
+.ai-provenance-step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 22px;
+  bottom: 0;
+  width: 1px;
+  background: var(--line);
+}
+
+.ai-provenance-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 21px;
+  height: 21px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-1);
+  color: var(--text-muted);
+}
+
+.ai-provenance-dot.dot-hypothesis { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); color: var(--accent); }
+.ai-provenance-dot.dot-run { border-color: color-mix(in srgb, var(--info, var(--accent)) 40%, var(--line)); color: var(--info, var(--accent)); }
+.ai-provenance-dot.dot-report { border-color: var(--line-strong); color: var(--text-strong); }
+
+.ai-provenance-dot.dot-verdict.verdict-confirmed { border-color: color-mix(in srgb, var(--success) 42%, var(--line)); color: var(--success); }
+.ai-provenance-dot.dot-verdict.verdict-refuted { border-color: color-mix(in srgb, var(--danger) 42%, var(--line)); color: var(--danger); }
+.ai-provenance-dot.dot-verdict.verdict-inconclusive { border-color: var(--line-strong); color: var(--text-muted); }
+
+.ai-provenance-dot.dot-missing,
+.ai-provenance-dot.dot-broken { border-color: color-mix(in srgb, var(--warning, var(--danger)) 45%, var(--line)); color: var(--warning, var(--danger)); }
+
+.ai-provenance-node { display: grid; gap: 2px; min-width: 0; font-size: 11px; line-height: 1.45; color: var(--text); }
+.ai-provenance-node b { color: var(--text-strong); font-weight: 600; font-size: 11px; }
+.ai-provenance-node small { color: var(--text-muted); overflow-wrap: anywhere; }
+
+.ai-provenance-node code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.ai-provenance-fp-line { display: flex; flex-wrap: wrap; gap: 2px 10px; }
+
+.ai-provenance-verdict {
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.ai-provenance-verdict.verdict-confirmed { border: 1px solid color-mix(in srgb, var(--success) 35%, var(--line)); color: var(--success); }
+.ai-provenance-verdict.verdict-refuted { border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line)); color: var(--danger); }
+.ai-provenance-verdict.verdict-inconclusive { border: 1px solid var(--line); color: var(--text-muted); }
+
+.ai-provenance-empty { color: var(--text-muted); font-size: 11px; display: inline-flex; align-items: center; gap: 5px; }
+
+.ai-provenance-error { color: var(--danger); font-size: 11px; }
+
+/* ---------- 档案徽标（列表行/动作位共用语义） ---------- */
+
+.ai-provenance-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+/* ---------- 工作区档案列表（M0 族折叠行同构） ---------- */
+
+.ai-context-disclosure.ai-provenance-panel .ai-provenance-body { display: grid; gap: 8px; font-size: 11px; }
+
+.ai-provenance-note { margin: 0; font-size: 10px; color: var(--text-muted); }
+
+.ai-provenance-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+
+.ai-provenance-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 8px;
+  align-items: start;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.ai-provenance-item.integrity-broken { border-color: color-mix(in srgb, var(--warning, var(--danger)) 40%, var(--line)); }
+
+.ai-provenance-item-main { display: grid; gap: 2px; min-width: 0; }
+.ai-provenance-item-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-width: 0; }
+.ai-provenance-item-title b { color: var(--text-strong); font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+.ai-provenance-item-title small { color: var(--text-muted); font-size: 10px; }
+.ai-provenance-item-statement { color: var(--text); font-size: 11px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+.ai-provenance-item-actions { display: inline-flex; align-items: center; gap: 4px; }
+
+.ai-provenance-item-actions button,
+.ai-provenance-expand button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--text-strong);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.ai-provenance-item-actions button:hover,
+.ai-provenance-expand button:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); color: var(--accent); }
+.ai-provenance-item-actions button:focus-visible,
+.ai-provenance-expand button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.ai-provenance-expand { grid-column: 1 / -1; }

@@ -29,6 +29,7 @@ import {
   runPlantLiteExperiment,
   type PlantLiteExperimentResult,
 } from "@bim-studio/plant-lite-simulation";
+import type { ProvenanceLedgerStore } from "./provenanceLedger.js";
 
 /**
  * H-C1 统一 Harness 最小核心切片：假设登记 + golden 验证两个 Capability。
@@ -38,7 +39,14 @@ import {
  * （contracts.evaluateAiHypothesis 确定性判定）在此分离；本文件不引入任何
  * 动态命令/文件/shell 面。诚实条款：verdict 只有三态，simulate 侧验证结果
  * 是 research-candidate 口径，不表述为实产预测。
+ * H-C3 增量：传入 ProvenanceLedgerStore 时，登记与验证在产生处落账
+ * （假设→运行→判定成链）；账本故障以 warning 上浮，不阻断验证主链路。
  */
+
+/** 账本写失败的上浮口径：不吞异常事实，也不让档案故障推翻已产出的 verdict。 */
+function ledgerWarning(stage: string, error: unknown): string {
+  return `provenance-ledger-write-failed(${stage}): ${error instanceof Error ? error.message : String(error)}`;
+}
 
 const HYPOTHESIS_INPUT_SCHEMA: CapabilityJsonSchema = {
   type: "object",
@@ -86,7 +94,7 @@ const OPEN_OBJECT_OUTPUT: CapabilityJsonSchema = {
 };
 
 /** 假设登记：只做合同校验与 proposalFingerprint 固化，不执行任何内核。 */
-export function createHypothesisRegisterProvider(): CapabilityProvider<{ hypothesis: unknown }> {
+export function createHypothesisRegisterProvider(ledger?: ProvenanceLedgerStore): CapabilityProvider<{ hypothesis: unknown }> {
   return {
     descriptor: {
       id: "simulation.hypothesis.register",
@@ -106,9 +114,19 @@ export function createHypothesisRegisterProvider(): CapabilityProvider<{ hypothe
         const input = request.input as { hypothesis?: unknown };
         const contract = validateAiHypothesisContract(input.hypothesis);
         const proposalFingerprint = aiHypothesisProposalFingerprint(contract);
+        // H-C3 档案室：登记即落账（只登记未验证的链保持"未运行"诚实状态）。
+        const warnings: string[] = [];
+        if (ledger) {
+          try {
+            await ledger.recordHypothesis(request.projectId, { contract, proposalFingerprint });
+          } catch (error) {
+            warnings.push(ledgerWarning("register", error));
+          }
+        }
         return {
           status: "completed",
           decisionStatus: "research-candidate",
+          ...(warnings.length ? { warnings } : {}),
           output: {
             proposalFingerprint,
             hypothesis: contract,
@@ -136,7 +154,7 @@ export function createHypothesisRegisterProvider(): CapabilityProvider<{ hypothe
 }
 
 /** golden 验证：按目标场景 golden 锚跑确定性 DES，产出 VerificationEnvelope。 */
-export function createGoldenVerifyProvider(): CapabilityProvider<{ hypothesis: unknown }> {
+export function createGoldenVerifyProvider(ledger?: ProvenanceLedgerStore): CapabilityProvider<{ hypothesis: unknown }> {
   return {
     descriptor: {
       id: "simulation.golden.verify",
@@ -168,11 +186,28 @@ export function createGoldenVerifyProvider(): CapabilityProvider<{ hypothesis: u
           trace: { ...CALIBRATION_TRACE },
         });
         const envelope = buildVerificationEnvelope(contract, result);
+        // H-C3 档案室：verdict 产生处落账（假设→运行→判定同事务成链；golden 锚种子随行）。
+        const warnings: string[] = [];
+        if (ledger) {
+          try {
+            await ledger.recordVerification(request.projectId, {
+              envelope,
+              contract,
+              seed: CALIBRATION_SEED,
+              replications: CALIBRATION_RUN.replications,
+            });
+          } catch (error) {
+            warnings.push(ledgerWarning("golden-verify", error));
+          }
+        }
+        // golden 基准漂移提示与账本告警合并，避免后者被覆盖丢失。
+        const allWarnings = [...warnings];
+        if (goldenBaselineDrifted(envelope)) allWarnings.push("校准 golden 基准哈希漂移，结论已降级为 inconclusive");
         return {
           status: "completed",
           decisionStatus: "research-candidate",
           output: envelope,
-          ...(goldenBaselineDrifted(envelope) ? { warnings: ["校准 golden 基准哈希漂移，结论已降级为 inconclusive"] } : {}),
+          ...(allWarnings.length ? { warnings: allWarnings } : {}),
           evidence: envelope.evidence.map((item) => ({
             id: item.id,
             kind: item.kind as "simulation" | "trace" | "rule",
@@ -310,7 +345,10 @@ function formatNumber(value: number | undefined): string {
  * 独立插件注册：页面、API、MCP 与工业 Agent 共用同一能力
  * （对齐 registerWorkcellValidationPlugin 的注册模式）。
  */
-export async function registerAiHypothesisPlugin(registry: PluginRegistry): Promise<void> {
+export async function registerAiHypothesisPlugin(
+  registry: PluginRegistry,
+  options: { ledger?: ProvenanceLedgerStore } = {},
+): Promise<void> {
   const manifest = {
     schemaVersion: 1 as const,
     id: "bim.ai.simulation-hypothesis",
@@ -329,7 +367,7 @@ export async function registerAiHypothesisPlugin(registry: PluginRegistry): Prom
     }],
   };
   const registered = registry.register(manifest, ({ registerCapability }) => {
-    for (const provider of [createHypothesisRegisterProvider(), createGoldenVerifyProvider()]) {
+    for (const provider of [createHypothesisRegisterProvider(options.ledger), createGoldenVerifyProvider(options.ledger)]) {
       const result = registerCapability(provider);
       if (!result.ok) throw new Error(`假设 harness 能力注册失败：${result.message}`);
     }

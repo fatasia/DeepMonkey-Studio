@@ -24,7 +24,7 @@ export interface AssistantConversationItem {
   denial?: import("./AiHarnessDenialCard").AgentGuardDenialPayload;
 }
 
-export function AiAssistantMessages({ locale, conversation, busy, error, stopped, lastPrompt, lastScope, answer, execution, onRetry }: {
+export function AiAssistantMessages({ locale, conversation, busy, error, stopped, lastPrompt, lastScope, answer, execution, onRetry, projectId }: {
   locale: AppLocale;
   conversation: AssistantConversationItem[];
   busy: boolean;
@@ -35,6 +35,8 @@ export function AiAssistantMessages({ locale, conversation, busy, error, stopped
   answer: string;
   execution?: AssistantConversationItem["execution"];
   onRetry: () => void;
+  /** H-C3：档案动作位需要项目作用域；缺省时结论卡片不渲染"查看档案"。 */
+  projectId?: string;
 }) {
   const t = (zh: string, en: string) => tr(locale, zh, en);
   return <>
@@ -46,7 +48,7 @@ export function AiAssistantMessages({ locale, conversation, busy, error, stopped
         {item.scope && <small className="ai-message-scope" title={item.scope}>{item.scope}</small>}
         <p>{item.answer}</p>
         {item.status && item.status !== "completed" && <small role="status">{({ streaming: t("保存的生成中片段", "Saved in-progress text"), stopped: t("已停止", "Stopped"), failed: t("未完成", "Failed"), interrupted: t("服务中断", "Interrupted") })[item.status]}</small>}
-        {item.verdict && <AiHypothesisVerdictCard locale={locale} envelope={item.verdict} />}
+        {item.verdict && <AiHypothesisVerdictCard locale={locale} envelope={item.verdict} {...(projectId ? { projectId } : {})} />}
         {item.denial && <AiHarnessDenialCard locale={locale} denial={item.denial} />}
         {item.reliability ? <AiResponseEvidence locale={locale} reliability={item.reliability} /> : <small>{t("恢复的历史回答，未保存验证证据", "Restored answer; verification evidence was not saved")}</small>}
         <AiMessageCopyAction locale={locale} text={item.answer} />

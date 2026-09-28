@@ -56,6 +56,7 @@ import { createAssetLibraryApi } from "./apiClients/assetLibraryApi.js";
 import { createExternalResourceApi } from "./apiClients/externalResourceApi.js";
 import { createModeling3dApi } from "./apiClients/modeling3dApi.js";
 import { createIndustrialAgentApi } from "./apiClients/industrialAgentApi.js";
+import { createProvenanceApi } from "./apiClients/provenanceApi.js";
 import { createSemanticModelApi } from "./apiClients/semanticModelApi.js";
 import { isRecoverableStudioRead } from "./apiClients/studioReadRecovery.js";
 import { createAuthenticationRecheck } from "./apiClients/authenticationRecheck.js";
@@ -686,6 +687,7 @@ export const api = {
     return (await serverClient.open(url, signal ? { signal } : {})).blob();
   },
   ...createIndustrialAgentApi(request),
+  ...createProvenanceApi(request),
   ...createSemanticModelApi(request),
   ...createModeling3dApi(request),
   ...createAssistantSessionApi(request),

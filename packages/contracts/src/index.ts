@@ -6,6 +6,7 @@ export * from "./directBinding.js";
 export type { AiSessionMessageStatus, AiSessionReliability, AiSessionSummary, AiSessionMessageInput, AiSessionMessage, AiSessionList, AiSessionMessages } from "./aiSession.js";
 export * from "./aiDataBinding.js";
 export * from "./aiHypothesis.js";
+export * from "./provenance.js";
 export * from "./parametricModeling.js";
 export * from "./operations.js";
 export * from "./plantClassLibrary.js";

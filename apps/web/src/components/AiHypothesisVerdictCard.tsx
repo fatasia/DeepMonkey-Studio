@@ -1,7 +1,9 @@
-import { Ban, CircleCheck, FileClock, FlaskConical, ShieldCheck } from "lucide-react";
+import { useState } from "react";
+import { Archive, Ban, CircleCheck, FileClock, FlaskConical, ShieldCheck } from "lucide-react";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import type { AiVerificationEnvelope } from "@bim-studio/contracts";
+import { AiProvenanceTracePanel } from "./AiProvenanceTraceView";
 import "./AiHarnessCards.css";
 
 /**
@@ -12,15 +14,19 @@ import "./AiHarnessCards.css";
  * inconclusive → var(--text-muted) + FileClock + 无法判定。
  * 取色只允许 base.css 令牌 × color-mix 公式；字号只落在 10/11/12/13 四档；
  * 三指纹默认露前 4 位 + 省略号，title 放全文；证据与参数走二级折叠。
+ * H-C3 增量（动作位）：传入 projectId 时 footer 出现"查看档案"动作，
+ * 就地展开三跳链时间轴（AiProvenanceTracePanel）；未传时不渲染动作位，行为与 H-C1 完全一致。
  */
-export function AiHypothesisVerdictCard({ locale, envelope, toolLabel }: {
+export function AiHypothesisVerdictCard({ locale, envelope, toolLabel, projectId }: {
   locale: AppLocale;
   envelope: AiVerificationEnvelope;
   toolLabel?: string;
+  projectId?: string;
 }) {
   const t = (zh: string, en: string) => tr(locale, zh, en);
   const badge = VERDICT_BADGES[envelope.verdict];
   const reason = VERDICT_REASONS[envelope.reasonCode];
+  const [archiveOpen, setArchiveOpen] = useState(false);
   return (
     <section className={`ai-card ai-card-verdict verdict-${envelope.verdict}`} aria-label={t("假设验证结论", "Hypothesis verdict")}>
       <header className="ai-card-header">
@@ -73,7 +79,21 @@ export function AiHypothesisVerdictCard({ locale, envelope, toolLabel }: {
           {toolLabel ? ` · ${toolLabel}` : ""}
           {envelope.engineId ? ` · ${envelope.engineId}` : ""}
         </span>
+        {projectId && (
+          <button
+            type="button"
+            className="ai-card-action"
+            aria-expanded={archiveOpen}
+            onClick={() => setArchiveOpen((current) => !current)}
+          >
+            <Archive size={12} aria-hidden="true" />
+            {t("查看档案", "View archive")}
+          </button>
+        )}
       </footer>
+      {archiveOpen && projectId && (
+        <AiProvenanceTracePanel locale={locale} projectId={projectId} resultFingerprint={envelope.resultFingerprint} />
+      )}
     </section>
   );
 }

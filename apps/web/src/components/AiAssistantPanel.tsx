@@ -283,7 +283,7 @@ export function AiAssistantPanel({
         )}
         <AiAssistantMessages locale={locale} conversation={conversation} busy={busy} error={error}
           stopped={stopped} lastPrompt={lastPrompt} lastScope={lastScope} answer={answer} execution={execution}
-          onRetry={() => void ask(lastPrompt)} />
+          onRetry={() => void ask(lastPrompt)} {...(projectId ? { projectId } : {})} />
         {dashboard && onApplyDashboard && !confirmDashboard && (
           <button className="primary ai-apply-dashboard" onClick={() => setConfirmDashboard(true)}>
             <LayoutDashboard size={13} />

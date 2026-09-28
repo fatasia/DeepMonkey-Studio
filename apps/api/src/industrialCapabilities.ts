@@ -38,6 +38,8 @@ import type { AiRuntimeSettings } from "./ai/assistantService.js";
 import { INDUSTRIAL_CAPABILITY_SCHEMAS } from "./industrialCapabilitySchemas.js";
 import { registerWorkcellValidationPlugin } from "./registerWorkcellValidationPlugin.js";
 import { registerAiHypothesisPlugin } from "./ai/simulationHypothesisPlugin.js";
+import { registerProvenanceTracePlugin } from "./ai/provenanceTracePlugin.js";
+import type { ProvenanceLedgerStore } from "./ai/provenanceLedger.js";
 import { registerDataQueryPlugin } from "./registerDataQueryPlugin.js";
 import type { DataQuerySource } from "@bim-studio/data-query-plugin";
 import { registerDataQueryAiPlugin } from "./ai/registerDataQueryAiPlugin.js";
@@ -97,6 +99,8 @@ export async function createIndustrialCapabilityHost(
     aiSettings?: () => AiRuntimeSettings;
     dataQuerySource?: DataQuerySource;
     conversionTasks?: ConversionTaskService;
+    /** H-C3 档案室账本：传入即启用 verdict 产生处落账与 provenance.trace 查询能力。 */
+    provenanceLedger?: ProvenanceLedgerStore;
   } = {},
 ): Promise<IndustrialCapabilityHost> {
   let batteryOnnx =
@@ -138,7 +142,7 @@ export async function createIndustrialCapabilityHost(
     batteryRelease.blockers = ["内置候选模型尚未完成生产等价审批"];
     batteryRelease.warnings = ["本地 ONNX 验证推理可用；生产输出未启用"];
   }
-  const registry = new PluginRegistry(hostPolicy());
+  const registry = new PluginRegistry(hostPolicy(options.provenanceLedger ? ["provenance.trace"] : []));
   const manifest = {
     schemaVersion: 1 as const,
     id: "bim.industrial-core",
@@ -205,7 +209,11 @@ export async function createIndustrialCapabilityHost(
   if (!enabled.ok) throw new Error(`核心能力启用失败：${enabled.message}`);
   await registerWorkcellValidationPlugin(registry);
   // H-C1 统一 Harness 最小核心切片：假设登记与 golden 验证两个 analyze/low 能力。
-  await registerAiHypothesisPlugin(registry);
+  // H-C3 档案室：传入账本时 verdict 产生处落账，并注册 provenance.trace 查询能力。
+  await registerAiHypothesisPlugin(registry, options.provenanceLedger ? { ledger: options.provenanceLedger } : {});
+  if (options.provenanceLedger) {
+    await registerProvenanceTracePlugin(registry, { ledger: options.provenanceLedger });
+  }
   if (options.conversionTasks)
     await registerConversionCapabilityPlugin(registry, options.conversionTasks);
   if (options.dataQuerySource)
@@ -679,7 +687,7 @@ function shadowResult(result: MaintenanceShadowEvaluation) {
   };
 }
 
-function hostPolicy(): PluginHostPolicy {
+function hostPolicy(extraCapabilities: readonly string[] = []): PluginHostPolicy {
   return {
     apiVersion: "1.0",
     sceneApiVersion: "1.0",
@@ -701,6 +709,7 @@ function hostPolicy(): PluginHostPolicy {
       "data.query.ai",
       "model.conversion",
       "ai.provider",
+      ...extraCapabilities,
     ],
     permissions: [
       "operations.read",

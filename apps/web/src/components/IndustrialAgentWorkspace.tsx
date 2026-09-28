@@ -3,6 +3,7 @@ import { AiExecutionDetails } from "./AiExecutionDetails";
 import { AiHarnessDenialCard } from "./AiHarnessDenialCard";
 import { AiHypothesisVerdictCard } from "./AiHypothesisVerdictCard";
 import { AiMemoryPanel } from "./AiMemoryPanel";
+import { AiProvenancePanel } from "./AiProvenancePanel";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -215,6 +216,8 @@ export function IndustrialAgentWorkspace(props: {
         <div className="industrial-agent-start">
           {/* H-C2 记忆面板入口：M0 族折叠行，body 顶部与上下文披露同构。 */}
           {projectId && <AiMemoryPanel locale={locale} projectId={projectId} />}
+          {/* H-C3 实验档案入口：三跳链列表，点开任意链看 假设→运行→判定 时间轴。 */}
+          {projectId && <AiProvenancePanel locale={locale} projectId={projectId} />}
           <AssistantModelControls locale={locale} mode="platform" value={modelOptions} onChange={setModelOptions} disabled={busy} />
           <label>
             <span>{t("用一句话说明要完成的目标", "Describe the outcome in one sentence")}</span>
@@ -281,6 +284,7 @@ export function IndustrialAgentWorkspace(props: {
           tools={tools}
           busy={busy}
           restored={restored}
+          {...(projectId ? { projectId } : {})}
           {...(error ? { error } : {})}
           onAction={(action) => void act(action)}
           onSelect={(id) => void act("resume", id)}
@@ -337,6 +341,8 @@ export function IndustrialAgentRunView(props: {
   tools: readonly AgentToolDefinition[];
   busy: boolean;
   restored?: boolean;
+  /** H-C3：档案动作位作用域；缺省时结论卡片不渲染"查看档案"。 */
+  projectId?: string;
   error?: string;
   onAction: (action: "approve" | "resume" | "cancel" | "refresh") => void;
   onNew: () => void;
@@ -385,7 +391,7 @@ export function IndustrialAgentRunView(props: {
         </section>
       )}
       {verdicts.length > 0 && <div className="industrial-agent-verdicts">
-        {verdicts.map((item) => <AiHypothesisVerdictCard key={item.envelope.proposalFingerprint + item.envelope.resultFingerprint} locale={props.locale} envelope={item.envelope} />)}
+        {verdicts.map((item) => <AiHypothesisVerdictCard key={item.envelope.proposalFingerprint + item.envelope.resultFingerprint} locale={props.locale} envelope={item.envelope} {...(props.projectId ? { projectId: props.projectId } : {})} />)}
       </div>}
       {denials.length > 0 && <div className="industrial-agent-denials">
         {denials.map((item) => <AiHarnessDenialCard
