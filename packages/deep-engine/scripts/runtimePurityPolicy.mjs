@@ -25,11 +25,15 @@ function isTypeOnlyImport(node) {
 
 const browserSurfaceAllowlist = new Map([
   ["src/app/pbrRendererPlugin.ts", new Set(["HTMLCanvasElement"])],
+  ["src/terrain/terrainScatter.ts", new Set(["performance"])],
+  ["src/threeBridge/DeepWebGpuBackend.ts", new Set(["performance"])],
   ["src/webgpu/dashboardCompositionHost.ts", new Set(["HTMLCanvasElement"])],
   ["src/webgpu/deep2d/gpu.ts", new Set(["DOMException"])],
   ["src/webgpu/deviceSession.ts", new Set(["DOMException", "Event", "HTMLCanvasElement"])],
   ["src/webgpu/pbrRenderer.ts", new Set(["DOMException", "HTMLCanvasElement", "performance"])],
+  ["src/webgpu/pbrRendererBootstrap.ts", new Set(["performance"])],
   ["src/webgpu/packetBuffers.ts", new Set(["DOMException"])],
+  ["src/webgpu/pipelines.ts", new Set(["performance"])],
   ["src/webgpu/textureResources.ts", new Set(["DOMException"])],
 ]);
 const surfaceGlobals = new Set([...browserSurfaceAllowlist.values()].flatMap((values) => [...values]));
