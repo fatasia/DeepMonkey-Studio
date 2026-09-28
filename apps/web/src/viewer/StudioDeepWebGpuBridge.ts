@@ -5,6 +5,7 @@ import type {
   ThreeObjectSource,
 } from "@bim-studio/deep-engine/three-bridge";
 import type { AuthoredQualityProfile } from "@bim-studio/deep-engine/webgpu";
+import { DEFAULT_RESOLUTION_SCALE_POLICY } from "@bim-studio/deep-engine/postprocess";
 import { StudioDeepQualityTelemetrySampler, publishStudioQualityTelemetry,
   type StudioQualityTelemetryOptions } from "./StudioDeepQualityTelemetry";
 import type { ViewerEngine } from "./ViewerEngine";
@@ -823,6 +824,20 @@ export function t11PipelineBootstrap(hasAuthorPacket: boolean):
     return value !== "0" && value !== "false" && value !== "off";
   };
   return { firstFrameSubset: enabled("t11-critical-pipelines"), deferDeformation: enabled("t11-defer-deformation") };
+}
+
+/**
+ * T07 动态内部分辨率接入开关：默认关闭（67% 模式画质未经 GPU 序列联测，不冒充
+ * 默认优秀画质）；`t07-dynamic-resolution=1` 显式开启后按帧时反馈在 0.5–1 之间
+ * 调整内部渲染比例。开启即消费 deep-engine `resolutionScalePolicy` 能力。
+ */
+export function t07DynamicResolutionPolicy():
+  import("@bim-studio/deep-engine/postprocess").ResolutionScalePolicy | undefined {
+  const params = typeof location !== "undefined" && location.search
+    ? new URLSearchParams(location.search) : undefined;
+  const value = params?.get("t07-dynamic-resolution")?.toLowerCase();
+  if (value !== "1" && value !== "true" && value !== "on") return undefined;
+  return { ...DEFAULT_RESOLUTION_SCALE_POLICY };
 }
 
 function threePrototypeHooks() {
