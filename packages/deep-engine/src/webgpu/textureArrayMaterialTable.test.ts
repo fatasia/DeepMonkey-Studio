@@ -32,15 +32,16 @@ describe("shared texture-array material table", () => {
     const layout = createTextureArrayMaterialTableLayout(f.device as unknown as GPUDevice);
     const table = createTextureArrayMaterialTable(f.session, layout,
       [source("same", 2, 1), source("same", 7, 3), source("other", 4, 5)]);
-    expect(table.rowStride).toBe(192);
+    // 1e07cdaf 在 material 块后加 32B 语义保留带：行距 160+32+32=224，索引移到字节 192。
+    expect(table.rowStride).toBe(224);
     expect(table.rows.map(row => row.materialRow)).toEqual([0, 1, 2]);
     expect(table.rows[0]!.group).toBe(table.rows[1]!.group);
     expect(table.rows[2]!.group).not.toBe(table.rows[0]!.group);
     expect(table.groupCount).toBe(2);
     expect(new Float32Array(f.writes[0]!.buffer)[39]).toBe(1);
-    expect(new Float32Array(f.writes[0]!.buffer)[48 + 39]).toBe(3);
-    expect(new Uint32Array(f.writes[0]!.buffer)[40]).toBe(2);
-    expect(new Uint32Array(f.writes[0]!.buffer)[48 + 40]).toBe(7);
+    expect(new Float32Array(f.writes[0]!.buffer)[56 + 39]).toBe(3);
+    expect(new Uint32Array(f.writes[0]!.buffer)[48]).toBe(2);
+    expect(new Uint32Array(f.writes[0]!.buffer)[56 + 48]).toBe(7);
     table.dispose(); table.dispose();
     expect(f.owned.size).toBe(0);
   });

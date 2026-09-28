@@ -39,7 +39,8 @@ describe("PBR author fog GPU integration", () => {
   it("honors material fog opt-out before both authored and legacy fog for every main material path", () => {
     const gate = sceneShader.indexOf("if (flag(materialFlags, 32u)) { return color; }");
     expect(gate).toBeGreaterThan(sceneShader.indexOf("fn deepApplySceneFog"));
-    expect(sceneShader).toContain("return deepApplySceneFog(select(color, baseInput, flag(materialFlags, 64u)), world, materialFlags)");
+    // f6b2289e 起雾应用包在 select(color, …, applyFog) 开关内（材质雾豁免嵌套保持不变）。
+    expect(sceneShader).toContain("return select(color, deepApplySceneFog(select(color, baseInput, flag(materialFlags, 64u)), world, materialFlags), applyFog);");
     // The authored fog helper now has its own Exp2/volumetric mode branches;
     // assert ordering against the scene-level dispatch instead of an inner
     // helper branch whose position may legitimately precede the opt-out gate.
@@ -49,8 +50,14 @@ describe("PBR author fog GPU integration", () => {
       const start = sceneShader.indexOf(`@fragment fn ${entry}(`);
       expect(start, entry).toBeGreaterThan(0);
       const body = sceneShader.slice(start, sceneShader.indexOf("\n}", start));
-      expect(body, entry).toContain("shade(v.clip.xy");
-      expect(body, entry).toContain("v.material.w, v.dielectric)");
+      if (entry.startsWith("fragmentMaterial")) {
+        // f6b2289e 起材质路径走 extendedShade；材质雾豁免嵌套在其函数体内已单独钉死。
+        expect(body, entry).toContain("extendedShade(v, normal, surface)");
+      } else {
+        expect(body, entry).toContain("shade(v.clip.xy");
+        // f6b2289e 起 shade 为 13 参签名（尾参 applyFog），此处只钉材质/电介质实参仍在位。
+        expect(body, entry).toContain("v.material.w, v.dielectric");
+      }
     }
   });
 
