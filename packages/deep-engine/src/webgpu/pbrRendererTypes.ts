@@ -52,6 +52,12 @@ export interface PbrRendererOptions {
   readonly adaptiveQuality?: AdaptiveQualityOptions;
   /** Omitted keeps probe GI off; present installs the DDGI/surface-cache runtime into the PBR loop. */
   readonly probeClipmap?: ProbeClipmapRuntimeOptions;
+  /**
+   * GI 探针方向数配置（G3-S1 门控）：`undefined` = 保持已发布默认 32（零配置画质口径）；
+   * "standard"/16 与 "high"/32 显式选档；非法值经门 fail-closed 回 16。
+   */
+  readonly probeDirections?: import("../lighting/probeRadianceDirectionGate.js").DeepGiProbeDirectionPreset
+    | import("../lighting/probeRadianceDirectionGate.js").DeepGiProbeDirectionCount;
   /** Optional GPU particle emitters; simulation runs one frame ahead and renders indirectly. */
   readonly particleEmitters?: readonly GpuParticleEmitter[];
   readonly particleRuntime?: GpuParticleEmitterRuntimeOptions;

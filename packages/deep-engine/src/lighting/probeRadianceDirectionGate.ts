@@ -94,6 +94,17 @@ export function probeRadianceDirectionCountForQuality(quality: DeepGiQuality): D
   return resolveDeepGiProbeDirectionCount(probeRadianceDirectionPresetForQuality(quality)).directionCount;
 }
 
+/**
+ * 产品工厂（pbrRenderer）专用解析：`undefined` = 未配置，保持已发布默认 32（fib32 才过
+ * RMSE 10% 门槛，见 G3-S1 报告——零配置画质口径下默认档不允许降到 16）；显式配置经同一
+ * fail-closed 门解析。与 `resolveDeepGiProbeDirectionCount` 的差异仅在未配置分支。
+ */
+export function resolveDeepGiProducerDirectionCount(
+  value?: DeepGiProbeDirectionPreset | DeepGiProbeDirectionCount): DeepGiProbeDirectionCount {
+  if (value === undefined) return DEEP_GI_PROBE_DIRECTIONS_HIGH;
+  return resolveDeepGiProbeDirectionCount(value).directionCount;
+}
+
 function describe(value: unknown): string {
   if (typeof value === "string") return JSON.stringify(value);
   if (typeof value === "number" || typeof value === "bigint") return String(value);

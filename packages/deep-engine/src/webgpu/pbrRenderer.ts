@@ -21,6 +21,7 @@ import { updatePbrFrameUniforms } from "./pbrFrameUniforms.js";
 import { PreviousHiZVisibility, type PreviousHiZFramePlan } from "./previousHiZVisibility.js";
 import { PbrShadowState } from "./pbrShadowState.js";
 import { hasClusteredLights, resolvePbrSceneLighting } from "../lighting/pbrSceneLighting.js";
+import { resolveDeepGiProducerDirectionCount } from "../lighting/probeRadianceDirectionGate.js";
 import type { FrameMetrics, PbrRendererOptions, RenderView } from "./pbrRendererTypes.js";
 import type { ResidentPacketProjection } from "./residentPacketProjection.js";
 import type { PbrRendererFeatures } from "./pbrRendererFeatures.js";
@@ -85,6 +86,7 @@ export class PbrRenderer {
   get frameReadbackResults(): Promise<readonly PbrFrameReadbackResult[]> | undefined { return this.lastFrameReadback; }
   private lastAuthorShadowSize: number | undefined;
   private readonly optionsExactShadowCascade: number | undefined;
+  private readonly probeDirectionsOverride: PbrRendererOptions["probeDirections"];
   private adaptiveShadowTier: CascadedShadowQualityTier | undefined;
   private adaptiveShadowSize: number | undefined;
   private adaptiveShadowStage: AbortController | undefined;
@@ -158,6 +160,7 @@ export class PbrRenderer {
     this.outputs = new PbrOutputBindings(session, pipelines, () => performance.now(), features.spatialAa);
     this.shadowState = new PbrShadowState(session, pipelines, options.shadows);
     this.optionsExactShadowCascade = options.shadows?.exactProfile?.cascadeCount;
+    this.probeDirectionsOverride = options.probeDirections;
     this.lastAuthorShadowSize = options.shadows?.exactProfile?.shadowMapSize;
     this.environment = new PbrEnvironmentState(environment);
     this.mainBindings = new PbrMainBindings(session, pipelines, this.frameBuffer, this.shadows, environment);
@@ -228,10 +231,13 @@ export class PbrRenderer {
    * fail closed at the session, so the producer is constructed here with the live device.
    */
   createProbeClipmapController(target: ProbeClipmapPbrTarget, deviceEpoch: string): ProbeClipmapPbrController {
-    // 32 directions clear the thin-wall reference threshold; fixed 8 probes/frame keeps
-    // the worst-case ray workload at 256 even when the grid has thousands of probes.
+    // 32 directions clear the thin-wall reference threshold (RMSE gate, G3-S1); fixed 8
+    // probes/frame keeps the worst-case ray workload at 256 even when the grid has thousands
+    // of probes. Explicit probeDirections config resolves through the fail-closed gate;
+    // unconfigured keeps the shipped 32 (zero-config quality mandate).
     const frameBudget = 8;
-    this.probeRadianceProducer ??= new ProbeSceneRadianceProducer(this.session.device, { directionCount: 32 });
+    this.probeRadianceProducer ??= new ProbeSceneRadianceProducer(this.session.device,
+      { directionCount: resolveDeepGiProducerDirectionCount(this.probeDirectionsOverride) });
     const producer = this.probeRadianceProducer;
     return new ProbeClipmapPbrController(target, deviceEpoch, {
       frameBudget, cameraCutBudget: frameBudget,

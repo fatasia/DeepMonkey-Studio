@@ -4,7 +4,7 @@ import { probeOcclusionDirection } from "../rayTracing/probeOcclusionRayExtensio
 import {
   DEEP_GI_PROBE_DIRECTIONS_HIGH, DEEP_GI_PROBE_DIRECTIONS_STANDARD,
   probeRadianceDirectionCountForQuality, probeRadianceDirectionPresetForQuality,
-  resolveDeepGiProbeDirectionCount,
+  resolveDeepGiProbeDirectionCount, resolveDeepGiProducerDirectionCount,
 } from "./probeRadianceDirectionGate.js";
 import { planIrradianceProbeClipmap, probeClipmapOptionsForQuality } from "./probeClipmapPlan.js";
 
@@ -82,5 +82,18 @@ describe("probe radiance direction gate", () => {
     expect(() => packProbeRadianceUniform({ updateCount: 1, directionCount: 33, rayMask: 1, tMax: 32,
       surfaceToLight: [0, 1, 0], lightColor: [1, 1, 1], lightIntensity: 1, ambient: [0, 0, 0],
       directions: [] })).toThrow(RangeError);
+  });
+
+  it("keeps the shipped 32-direction default for the unconfigured product factory and gates explicit config", () => {
+    // 未配置 = 已发布默认 32（零配置画质口径；fib32 才过 RMSE 门槛，G3-S1 报告）。
+    expect(resolveDeepGiProducerDirectionCount(undefined)).toBe(DEEP_GI_PROBE_DIRECTIONS_HIGH);
+    // 显式配置经同一 fail-closed 门。
+    expect(resolveDeepGiProducerDirectionCount("standard")).toBe(DEEP_GI_PROBE_DIRECTIONS_STANDARD);
+    expect(resolveDeepGiProducerDirectionCount(16)).toBe(DEEP_GI_PROBE_DIRECTIONS_STANDARD);
+    expect(resolveDeepGiProducerDirectionCount("high")).toBe(DEEP_GI_PROBE_DIRECTIONS_HIGH);
+    expect(resolveDeepGiProducerDirectionCount(32)).toBe(DEEP_GI_PROBE_DIRECTIONS_HIGH);
+    // 非法显式配置 fail-closed 回 16（门契约），绝不产 33 等越容量值。
+    expect(resolveDeepGiProducerDirectionCount(33 as never)).toBe(DEEP_GI_PROBE_DIRECTIONS_STANDARD);
+    expect(resolveDeepGiProducerDirectionCount("ultra" as never)).toBe(DEEP_GI_PROBE_DIRECTIONS_STANDARD);
   });
 });
