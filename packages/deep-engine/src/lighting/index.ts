@@ -17,6 +17,7 @@ export * from "./iesSampling.js";
 export * from "./iesShading.js";
 export * from "./forwardPlusPbrRuntime.js";
 export * from "./probeClipmapPlan.js";
+export * from "./probeRadianceDirectionGate.js";
 export * from "./probeClipmapResources.js";
 export * from "./probeClipmapSampling.js";
 export * from "./probeClipmapSamplingWgsl.js";

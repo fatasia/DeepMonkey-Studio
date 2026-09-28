@@ -7,7 +7,8 @@ import { computeNormalizedFieldRmse } from "./probeInvalidationConvergence.js";
  *   光向量计算、无 /π；联测 uniform 使用 intensity×π×|光向量|，环境项保持原值，
  *   GPU 读回直接为参考尺度（不能对 miss 环境项也乘 π 或对读回除 π）。
  * - `packProbeRadianceUniformWithCapacity`：生产 packProbeRadianceUniform 的容量参数化镜像，
- *   仅用于联测把方向表扩到 >16（fib32 证据路径）；capacity=16 时与生产打包逐位一致（测试钉死）。
+ *   fib32 联测证据路径的布局对拍件（生产容量自 G3-S1 前的生产接线切片起已为 32；
+ *   capacity=16 时与生产打包逐位一致、capacity=32 时 576B 逐字节相等，均测试钉死）。
  * - `analyzeProbeFieldDeviation`：逐探针偏差分布（系统性偏差源定位）。
  * - `budgetRecoverySchedule`：与 simulateBudgetedRecovery 同序（脏类距相机升序、同距下标序）
  *   的逐帧刷新排程，供 GPU 逐帧联测驱动。

@@ -34,7 +34,7 @@ export type { ProbeGridBake, ProbeGridBakeGrid, ProbeGridCaptureSample };
 export interface ProbeGridBakeServiceOptions {
   /** 烘焙辐射源（主直射光 + 环境项）；无真实辐射源时既有 fail-closed 合同拒绝烘焙。 */
   readonly lighting: ProbeRadianceLighting;
-  /** 透传 producer：每探针方向数（1..16），默认 8。 */
+  /** 透传 producer：每探针方向数（1..32；配置门控见 lighting/probeRadianceDirectionGate），默认 8。 */
   readonly directionCount?: number;
   /** 透传 producer：射线最大行程（世界单位），默认 32。 */
   readonly maxDistance?: number;
