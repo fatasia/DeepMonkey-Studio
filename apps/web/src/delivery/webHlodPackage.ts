@@ -61,38 +61,74 @@ export async function verifyWebHlodGeometry(bytes: Uint8Array, packageValue: Web
 /** API groups mesh primitives by tree path, while Web addresses each primitive by glTF node index. */
 export function bindWebHlodPackage(bytes: Uint8Array, packet: RenderPacket, manifest: HlodPackageManifest,
   modelId: string, assetId: string): WebHlodBinding {
-  const doc = parseGlb(bytes).json as { scene?: number; scenes?: { nodes?: number[] }[];
-    nodes?: { name?: string; mesh?: number; children?: number[] }[] };
-  if (!doc.scenes?.length || (doc.scene !== undefined && doc.scene !== 0) || !doc.nodes) {
-    throw new Error("HLOD 包与 Web glTF 场景索引不一致");
-  }
-  const prefix = `model-${runtimeContentSha256(modelId)}/asset-${runtimeContentSha256(assetId)}/node/`;
+  const instancePrefix = `model-${runtimeContentSha256(modelId)}/asset-${runtimeContentSha256(assetId)}/`;
   const authored = new Set(packet.objectBindings?.find(binding => binding.nodeId === modelId)?.instanceIds ?? []);
   if (!authored.size) throw new Error("HLOD 作者对象未出现在渲染包中");
-  const byNode = new Map<string, readonly string[]>(), mapped = new Set<string>(), visited = new Set<number>();
-  const walk = (index: number, path: string): void => {
-    const node = doc.nodes![index];
-    if (!node || visited.has(index)) throw new Error("HLOD glTF 节点循环或引用非法");
-    visited.add(index);
-    if (node.mesh !== undefined) {
-      const apiId = `node:${path}${node.name ? `:${node.name}` : ""}`;
-      const marker = `${prefix}${index}/primitive/`;
-      const ids = packet.instances.filter(instance => instance.id.startsWith(marker) && authored.has(instance.id))
-        .map(instance => instance.id);
-      if (ids.length) {
-        byNode.set(apiId, ids);
-        for (const id of ids) mapped.add(id);
-      }
-    }
-    node.children?.forEach((child, childIndex) => walk(child, `${path}.${childIndex}`));
-  };
-  doc.scenes[0]!.nodes?.forEach((index, rootIndex) => walk(index, String(rootIndex)));
+  const nodeApiIds = gltfNodeApiIds(bytes);
+  const byNode = new Map<string, readonly string[]>(), mapped = new Set<string>();
+  for (const instance of packet.instances) {
+    if (!authored.has(instance.id)) continue;
+    const marker = `${instancePrefix}node/`;
+    if (!instance.id.startsWith(marker)) continue;
+    const rest = instance.id.slice(marker.length);
+    const nodeIndex = Number(rest.slice(0, rest.indexOf("/")));
+    if (!Number.isSafeInteger(nodeIndex)) continue;
+    const apiId = nodeApiIds.get(nodeIndex);
+    if (apiId === undefined) continue;
+    byNode.set(apiId, [...byNode.get(apiId) ?? [], instance.id]);
+    mapped.add(instance.id);
+  }
   const expected = manifest.nodes.filter(node => node.children.length === 0).flatMap(node => node.instanceIds);
   if (expected.length !== byNode.size || expected.some(id => !byNode.has(id)) || mapped.size !== authored.size) {
     throw new Error("HLOD GLB 节点与 Web 渲染实例不匹配；保持原几何渲染");
   }
   return { instanceIdsByNode: byNode,
     proxyGeometryIds: new Map(manifest.proxies.map(item => [item.nodeId, item.geometryId])) };
+}
+
+/** glTF 全局节点索引 → API 侧 `node:<树路径>[:名称]` 实例 id。 */
+export function gltfNodeApiIds(bytes: Uint8Array): ReadonlyMap<number, string> {
+  const doc = parseGlb(bytes).json as { scene?: number; scenes?: { nodes?: number[] }[];
+    nodes?: { name?: string; mesh?: number; children?: number[] }[] };
+  if (!doc.scenes?.length || !doc.nodes) throw new Error("HLOD GLB 场景结构非法");
+  const selected = doc.scene === undefined ? 0 : doc.scene;
+  const map = new Map<number, string>();
+  const visited = new Set<number>();
+  const walk = (index: number, path: string): void => {
+    const node = doc.nodes![index];
+    if (!node || visited.has(index)) throw new Error("HLOD glTF 节点循环或引用非法");
+    visited.add(index);
+    if (node.mesh !== undefined) map.set(index, `node:${path}${node.name ? `:${node.name}` : ""}`);
+    node.children?.forEach((child, childIndex) => walk(child, `${path}.${childIndex}`));
+  };
+  doc.scenes[selected]!.nodes?.forEach((index, rootIndex) => walk(index, String(rootIndex)));
+  return map;
+}
+
+/** 资产级绑定：apiId → 同一资产 source 包（resourcePrefix=`asset-<hash>`）内的实例 id。 */
+export function bindWebHlodAsset(bytes: Uint8Array, source: RenderPacket,
+  manifest: HlodPackageManifest): ReadonlyMap<string, readonly string[]> {
+  const nodeApiIds = gltfNodeApiIds(bytes);
+  const byNode = new Map<string, readonly string[]>(), visited = new Set<number>();
+  const doc = parseGlb(bytes).json as { scenes?: { nodes?: number[] }[]; nodes?: { name?: string; mesh?: number; children?: number[] }[] };
+  const walk = (index: number, path: string): void => {
+    if (visited.has(index)) throw new Error("HLOD glTF 节点循环或引用非法");
+    visited.add(index);
+    const node = doc.nodes![index];
+    if (node?.mesh !== undefined) {
+      const apiId = nodeApiIds.get(index)!;
+      const marker = `/node/${index}/primitive/`;
+      const ids = source.instances.filter(instance => instance.id.includes(marker)).map(instance => instance.id);
+      if (ids.length) byNode.set(apiId, ids);
+    }
+    node?.children?.forEach((child, childIndex) => walk(child, `${path}.${childIndex}`));
+  };
+  doc.scenes![0]!.nodes?.forEach((index, rootIndex) => walk(index, String(rootIndex)));
+  const expected = manifest.nodes.filter(node => node.children.length === 0).flatMap(node => node.instanceIds);
+  if (expected.length !== byNode.size || expected.some(id => !byNode.has(id))) {
+    throw new Error("HLOD 包叶实例与资产源实例不匹配；保持原几何渲染");
+  }
+  return byNode;
 }
 
 /** Opt-in draw decisions only; proxies must never enter objectBindings or engineering measurement. */

@@ -11,6 +11,7 @@ import { createSceneGeometryPrecisionValidator } from "./sceneGeometryPrecision"
 import { sceneHexToLinearRgb, staticSceneEffectEmissive, unsupportedStaticSceneEffectFields } from "./sceneNeutralAppearance";
 import { compileSceneAuxiliaryGrid } from "./compileSceneAuxiliaryGrid";
 import { readSceneModelMaterialState } from "./sceneAuthorMaterialState";
+import { bindWebHlodAsset, type WebHlodPackage } from "./webHlodPackage";
 
 export interface CompileSceneRenderOptions {
   readonly loadModel: (assetId: string, signal: AbortSignal) => Promise<Uint8Array>;
@@ -21,11 +22,23 @@ export interface CompileSceneRenderOptions {
   readonly maxSourceBytes?: number;
   /** 已局部化运行空间中，作者世界原点的位置；辅助网格仍与 Three 的世界原点对齐。 */
   readonly auxiliaryGridOrigin?: { readonly x: number; readonly y: number; readonly z: number };
+  /** Opt-in：assetId → 已校验 HLOD 包；提供即把簇代理几何与节点绑定随编译产出。 */
+  readonly hlodPackages?: ReadonlyMap<string, WebHlodPackage>;
 }
+export interface SceneHlodClusterBinding {
+  readonly assetId: string;
+  /** 资产级节点（apiId）→ 场景实例 id；manifest 叶全集，缺一即编译失败。 */
+  readonly instanceIdsByNode: ReadonlyMap<string, readonly string[]>;
+  /** 节点 id → 簇代理几何 id（`hlod-proxy-*`，已随 packet.geometries 分发）。 */
+  readonly proxyGeometryIds: ReadonlyMap<string, string>;
+  readonly manifest: WebHlodPackage["manifest"];
+}
+
 export interface SceneRenderCompilation {
   readonly packet: RenderPacket;
   readonly objectBindings: readonly { nodeId: string; instanceIds: readonly string[] }[];
   readonly sourceBytes: number;
+  readonly hlodClusters?: readonly SceneHlodClusterBinding[];
 }
 
 /** 将已保存快照和宿主提供的 GLB 转成静态绘制数据，不访问编辑器当前 GPU 状态。 */
@@ -51,6 +64,7 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
     instanceIds: item.visible ? base.instances.filter(instance => instance.id === item.modelId
       || instance.id.startsWith(`${item.modelId}/prefab/`)).map(instance => instance.id) : [] }));
   const assets = new Map<string, RenderPacket>();
+  const assetHlodBindings = new Map<string, SceneHlodClusterBinding>();
   const verifyGeometryPrecision = createSceneGeometryPrecisionValidator();
   const sourceGeometries = new Map<string, RenderPacket["geometries"][number]>();
   let sourceBytes = 0;
@@ -75,6 +89,18 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
       assets.set(assetId, source);
       geometries.push(...source.geometries); textures.push(...source.textures ?? []);
       for (const geometry of source.geometries) sourceGeometries.set(geometry.id, geometry);
+      const hlod = options.hlodPackages?.get(assetId);
+      if (hlod) {
+        // B4 opt-in：簇代理几何随包分发；节点绑定在资产源包上建立（实例 id 为 asset 前缀）。
+        const instanceIdsByNode = bindWebHlodAsset(decodedBytes, source, hlod.manifest);
+        for (const proxy of hlod.proxies) {
+          if (sourceGeometries.has(proxy.id)) throw new Error(`HLOD 簇代理几何与源包冲突：${proxy.id}`);
+          geometries.push(proxy); sourceGeometries.set(proxy.id, proxy);
+        }
+        assetHlodBindings.set(assetId, { assetId, instanceIdsByNode,
+          proxyGeometryIds: new Map(hlod.manifest.proxies.map(item => [item.nodeId, item.geometryId])),
+          manifest: hlod.manifest });
+      }
     }
     // Runtime compilation consumes the persisted author contract. It must not
     // read the live Three material through ViewerEngine, because WASM/Native
@@ -122,11 +148,37 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
   // 供发布兼容与物理编译消费;进包的映射只保留非空绑定(包校验拒绝空 instanceIds)。
   const packetBindings = objectBindings.filter(binding => binding.instanceIds.length > 0)
     .map(binding => ({ nodeId: binding.nodeId, instanceIds: binding.instanceIds }));
+  // B4:资产级簇绑定展开为场景级(apiId → 场景实例 id)；共享资产按 model 前缀逐份展开。
+  const hlodClusters: SceneHlodClusterBinding[] = [];
+  if (assetHlodBindings.size) {
+    const sceneIdsByAssetNode = new Map<string, ReadonlyMap<string, readonly string[]>>();
+    for (const model of scene.models) {
+      if (!model.visible) continue;
+      const assetId = getSceneModelAssetId(model), binding = assetHlodBindings.get(assetId);
+      if (!binding) continue;
+      const modelPrefix = `model-${runtimeContentSha256(model.modelId)}/`;
+      const expanded = new Map<string, readonly string[]>();
+      for (const [apiId, ids] of binding.instanceIdsByNode) {
+        expanded.set(apiId, ids.map(id => `${modelPrefix}${id}`));
+      }
+      sceneIdsByAssetNode.set(`${model.modelId}\u0000${assetId}`, expanded);
+    }
+    for (const binding of assetHlodBindings.values()) {
+      const merged = new Map<string, readonly string[]>();
+      for (const [key, ids] of sceneIdsByAssetNode) {
+        if (!key.endsWith(`\u0000${binding.assetId}`)) continue;
+        for (const [apiId, expanded] of ids) merged.set(apiId, [...merged.get(apiId) ?? [], ...expanded]);
+      }
+      hlodClusters.push({ assetId: binding.assetId, manifest: binding.manifest,
+        instanceIdsByNode: merged, proxyGeometryIds: binding.proxyGeometryIds });
+    }
+  }
   const packet: RenderPacket = { geometries, materials, instances,
     ...(packetBindings.length ? { objectBindings: packetBindings } : {}),
     ...(textures.length ? { textures } : {}) };
   prepareRenderPacket(packet);
-  return { packet, objectBindings: objectBindings.sort((a, b) => compare(a.nodeId, b.nodeId)), sourceBytes };
+  return { packet, objectBindings: objectBindings.sort((a, b) => compare(a.nodeId, b.nodeId)), sourceBytes,
+    ...(hlodClusters.length ? { hlodClusters } : {}) };
 }
 
 function assertStaticModel(model: SceneModelState): void {

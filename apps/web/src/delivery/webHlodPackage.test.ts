@@ -4,10 +4,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { DeepAssetPackage, RenderPacket } from "@bim-studio/deep-engine";
 import { runtimeContentSha256 } from "@bim-studio/deep-engine/runtime-package";
-import { buildHlodTree, encodeHlodProxyGeometries, HLOD_PROXY_ALGORITHM_VERSION,
+import { buildDeepRuntimePackage, validateDeepRuntimePackage } from "@bim-studio/deep-engine/runtime-package";
+import { buildHlodTree, decodeHlodProxyGeometries, encodeHlodProxyGeometries, HLOD_PROXY_ALGORITHM_VERSION,
   type HlodPackageManifest } from "@bim-studio/deep-engine/hlod";
-import { compileSceneRenderPacket } from "./compileSceneRenderPacket";
-import { bindWebHlodPackage, decideWebHlodDraws, loadWebHlodPackage, verifyWebHlodGeometry } from "./webHlodPackage";
+import { compileSceneRenderPacket, type SceneRenderCompilation } from "./compileSceneRenderPacket";
+import { bindWebHlodAsset, bindWebHlodPackage, decideWebHlodDraws, gltfNodeApiIds, loadWebHlodPackage,
+  verifyWebHlodGeometry } from "./webHlodPackage";
 
 const box = readFileSync(new URL("../../../../packages/deep-engine/lab/assets/Box.glb", import.meta.url));
 const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
@@ -110,5 +112,41 @@ describe("Web HLOD optional package consumer", () => {
     bytes.set(new URL(proxyPath.slice(7), packageUrl).href, Uint8Array.of(0));
     await expect(loadWebHlodPackage(packageUrl, load, new AbortController().signal)).rejects.toThrow(/哈希不一致/);
     vi.unstubAllGlobals();
+  });
+
+  it("编译层 opt-in：glTF 节点可映射 API id，资产级绑定校验叶全集", async () => {
+    const result = await compileSceneRenderPacket(scene, { loadModel: async () => box });
+    const apiIds = gltfNodeApiIds(box);
+    expect(apiIds.size).toBeGreaterThan(0);
+    const [[, manifestApiId]] = [...apiIds];
+    const manifest = minimalManifest(manifestApiId);
+    // Box.glb 源包：实例 id 带 asset-<hash> 前缀；bindWebHlodAsset 按 /node/<i>/primitive/ 匹配
+    const bound = bindWebHlodAsset(box, result.packet, manifest);
+    expect(bound.get(manifestApiId)?.length).toBeGreaterThan(0);
+    // 默认路径（无 hlodPackages）不产出簇绑定
+    expect(result.hlodClusters).toBeUndefined();
+  });
+
+  it("hlodPackages 提供时：代理几何入包、hlodClusters 产出、运行包往返仍校验通过", async () => {
+    const apiIds = gltfNodeApiIds(box);
+    const [[, manifestApiId]] = [...apiIds];
+    const manifest = minimalManifest(manifestApiId);
+    const proxies = decodeHlodProxyGeometries(encodeHlodProxyGeometries([]));
+    const compiled = await compileSceneRenderPacket(scene, { loadModel: async () => box,
+      hlodPackages: new Map([["asset", { manifest, proxies, geometryHash: hash(box) }]]) });
+    expect(compiled.hlodClusters).toHaveLength(1);
+    const cluster = compiled.hlodClusters![0]!;
+    expect(cluster.assetId).toBe("asset");
+    expect(cluster.manifest).toEqual(manifest);
+    expect(cluster.instanceIdsByNode.get(manifestApiId)?.length).toBeGreaterThan(0);
+    // 代理几何（空包时无代理）；objectBindings 保持仅作者对象
+    expect(compiled.packet.objectBindings?.map(item => item.nodeId)).toEqual(["part"]);
+    // 全场景实例仍可被簇映射覆盖（Box 单实例）
+    const covered = [...cluster.instanceIdsByNode.values()].flat();
+    expect(covered).toEqual(compiled.packet.instances.map(instance => instance.id));
+    // 运行包往返（代理几何无 uv 等可选流，校验需接受 hlod 代理几何）
+    const runtime = buildDeepRuntimePackage({ packageId: "hlod.scene", packageVersion: "1.0.0",
+      renderPacket: { id: "scene", revision: 1, value: compiled.packet } });
+    expect(validateDeepRuntimePackage(JSON.parse(JSON.stringify(runtime))).valid).toBe(true);
   });
 });
