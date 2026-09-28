@@ -34,7 +34,7 @@ export function PprPlantLiteHandoff({
           <div className="ppr-plant-handoff-summary">
             <span><small>来料间隔</small><strong>{formatNumber(preparation.report.arrivalIntervalMinutes)} 分钟</strong></span>
             <span><small>最低吞吐</small><strong>{formatNumber(preparation.report.minimumThroughputPerHour)} 件/时</strong></span>
-            <span><small>已转换</small><strong>{preparation.report.mappedOperations.length} 工序 · {preparation.report.mappedResources.length} 设备</strong></span>
+            <span><small>已转换</small><strong>{preparation.report.mappedOperations.length} 工序 · {preparation.report.mappedResources.length} 资源</strong></span>
           </div>
           {preparation.report.reviewItems.length > 0 && (
             <details className="ppr-plant-handoff-review">
@@ -42,8 +42,8 @@ export function PprPlantLiteHandoff({
               <div>{preparation.report.reviewItems.map((item, index) => <p key={`${item.code}-${index}`}>{item.message}</p>)}</div>
             </details>
           )}
-          <p className="ppr-plant-handoff-scope">只转换确定性工时和可表达的设备/机器人；{preparation.report.retainedInProcessPlan.join("、")}仍保留在工艺计划中。</p>
-          {preparation.report.reviewItems.some((item) => item.code !== "name-shortened") && <p className="ppr-plant-handoff-scope" role="alert">映射不等价：仅可审阅线性草稿，正式预测已阻断；请人工重建并另存完整模型。</p>}
+          <p className="ppr-plant-handoff-scope">只转换确定性工时和白名单内的资源组合；{preparation.report.retainedInProcessPlan.join("、")}仍保留在工艺计划中。</p>
+          {preparation.report.reviewItems.some((item) => item.code !== "name-shortened") && <p className="ppr-plant-handoff-scope" role="alert">映射不等价：仅可审阅草稿，正式预测已阻断；请人工校正或重建并另存完整模型。</p>}
           <footer>
             <small>切换到流程仿真后可继续调整；不会自动运行。</small>
             <button className="primary" type="button" disabled={busy} onClick={() => onCreateDraft(preparation)}>生成仿真草稿<ArrowRight size={13} /></button>

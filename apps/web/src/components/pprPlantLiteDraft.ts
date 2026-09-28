@@ -7,26 +7,22 @@ import type {
   PprResource,
 } from "@bim-studio/contracts";
 import { analyzePprPlanDraft, hasPersistablePprContent } from "./pprPlanDraftModel";
+import {
+  boundedLabel,
+  formatNumber,
+  planPprFlowTopology,
+  type PprPlantLiteAdmissionEntry,
+  type PprPlantLiteMappingItem,
+  type PprPlantLiteReviewCode,
+} from "./pprPlantLiteAdmission";
 
-export type PprPlantLiteReviewCode =
-  | "conditional-resource"
-  | "conditional-scope"
-  | "disconnected-flow"
-  | "minimum-lag"
-  | "multiple-predecessors"
-  | "multiple-resources"
-  | "multiple-successors"
-  | "name-shortened"
-  | "resource-capacity"
-  | "resource-limit"
-  | "resource-unassigned"
-  | "unsupported-resource";
-
-export interface PprPlantLiteMappingItem {
-  code: PprPlantLiteReviewCode;
-  message: string;
-  sourceIds: string[];
-}
+export type {
+  PprPlantLiteAdmissionEntry,
+  PprPlantLiteAdmissionSemantics,
+  PprPlantLiteAdmissionVerdict,
+  PprPlantLiteMappingItem,
+  PprPlantLiteReviewCode,
+} from "./pprPlantLiteAdmission";
 
 export interface PprPlantLiteMappedOperation {
   operationId: string;
@@ -34,13 +30,14 @@ export interface PprPlantLiteMappedOperation {
   name: string;
   processingTimeMinutes: number;
   resourceId?: string;
+  workerResourceId?: string;
 }
 
 export interface PprPlantLiteMappedResource {
   pprResourceId: string;
   plantResourceId: string;
   name: string;
-  sourceKind: "equipment" | "robot";
+  sourceKind: "equipment" | "robot" | "person";
   capacity: number;
 }
 
@@ -52,6 +49,8 @@ export interface PprPlantLiteMappingReport {
   mappedOperations: PprPlantLiteMappedOperation[];
   mappedResources: PprPlantLiteMappedResource[];
   reviewItems: PprPlantLiteMappingItem[];
+  /** N8 语义准入表逐行结论；与 reviewItems 同源，供机器判定草稿能否进入正式预测。 */
+  admission: PprPlantLiteAdmissionEntry[];
   retainedInProcessPlan: string[];
 }
 
@@ -76,9 +75,11 @@ const MAX_RESOURCE_UNITS = 1_000;
 const DEFAULT_RESOURCE_LIMIT = 100;
 
 /**
- * Convert only the PPR facts that Plant Lite can express without invention.
- * The result is an editable linear DES draft, never an automatically executed or
- * semantically equivalent copy of the source process plan.
+ * 按 N8 语义准入表把 PPR 中可等价表达的事实转换为 Plant Lite 可编辑草稿：
+ * 顺序工序直连、白名单内"设备/机器人 + 人员"联合占用可直接进入正式预测；
+ * 分流映射为均分占位路由（mapped-review）；AND 前置汇合、任意多资源原子锁与
+ * 最小滞后无等价表达——边仍连接以保持草稿可运行审阅，但模型 ID 以 -review-only
+ * 结尾阻断正式预测并给出人工重建指引，绝不静默线性化。
  */
 export function preparePlantLiteDraftFromPpr(draft: PprBopVersionDraft): PprPlantLiteDraftPreparation {
   const analysis = analyzePprPlanDraft(draft);
@@ -101,11 +102,15 @@ export function preparePlantLiteDraftFromPpr(draft: PprBopVersionDraft): PprPlan
   if (blockers.length || targetTaktMinutes === undefined) return { status: "blocked", blockers: uniqueBlockers(blockers) };
 
   const reviewItems: PprPlantLiteMappingItem[] = [];
+  const admission: PprPlantLiteAdmissionEntry[] = [];
   const orderedOperations = analysis.topologicalOrder.flatMap((operationId) => {
     const operation = draft.operations.find((candidate) => candidate.id === operationId);
     return operation ? [operation] : [];
   });
-  inspectFlowSemantics(draft, orderedOperations, reviewItems);
+  const stationIdByOperation = new Map(orderedOperations.map((operation, index) => [operation.id, `station-${index + 1}`]));
+  const topology = planPprFlowTopology(draft, stationIdByOperation);
+  reviewItems.push(...topology.flowReviewItems);
+  admission.push(...topology.admission);
   inspectConditionalScope(draft, reviewItems);
 
   const resourceById = new Map(draft.resources.map((resource) => [resource.id, resource]));
@@ -116,23 +121,22 @@ export function preparePlantLiteDraftFromPpr(draft: PprBopVersionDraft): PprPlan
   const mappedResources = new Map<string, PprPlantLiteMappedResource>();
   const plantResources: PlantLiteResource[] = [];
   const mappedOperations: PprPlantLiteMappedOperation[] = [];
-  let resourceUnits = 0;
+  const budget: PprResourceBudget = { units: 0, equipmentCount: 0, workerCount: 0 };
 
-  const stationNodes = orderedOperations.map((operation, index) => {
-    const nodeId = `station-${index + 1}`;
-    const resourceCountBefore = plantResources.length;
-    const resourceId = mappedResourceForOperation(
+  const stationNodes = orderedOperations.map((operation) => {
+    const nodeId = stationIdByOperation.get(operation.id)!;
+    const binding = mappedResourceForOperation(
       operation,
       assignmentsByOperation.get(operation.id) ?? [],
       resourceById,
       mappedResources,
       plantResources,
       reviewItems,
-      resourceUnits,
+      admission,
+      budget,
     );
-    if (plantResources.length > resourceCountBefore) resourceUnits += plantResources.at(-1)!.capacity;
-    const stationCapacity = resourceId
-      ? plantResources.find((resource) => resource.id === resourceId)?.capacity ?? 1
+    const stationCapacity = binding.resourceId
+      ? plantResources.find((resource) => resource.id === binding.resourceId)?.capacity ?? 1
       : 1;
     const name = boundedLabel(operation.name, 120);
     if (name !== operation.name.trim()) addReview(reviewItems, "name-shortened", [operation.id], `${operation.name.trim()} 的名称已缩短以满足仿真节点长度限制。`);
@@ -141,7 +145,8 @@ export function preparePlantLiteDraftFromPpr(draft: PprBopVersionDraft): PprPlan
       nodeId,
       name,
       processingTimeMinutes: operation.standardTimeMinutes,
-      ...(resourceId ? { resourceId } : {}),
+      ...(binding.resourceId ? { resourceId: binding.resourceId } : {}),
+      ...(binding.workerResourceId ? { workerResourceId: binding.workerResourceId } : {}),
     });
     return {
       id: nodeId,
@@ -149,7 +154,8 @@ export function preparePlantLiteDraftFromPpr(draft: PprBopVersionDraft): PprPlan
       kind: "station" as const,
       processingTime: { kind: "deterministic" as const, value: operation.standardTimeMinutes },
       capacity: stationCapacity,
-      ...(resourceId ? { resourceId } : {}),
+      ...(binding.resourceId ? { resourceId: binding.resourceId } : {}),
+      ...(binding.workerResourceId ? { workerResourceId: binding.workerResourceId } : {}),
     };
   });
 
@@ -161,6 +167,7 @@ export function preparePlantLiteDraftFromPpr(draft: PprBopVersionDraft): PprPlan
   const nodes: PlantLiteModel["nodes"] = [
     { id: "source", name: "按目标节拍来料", kind: "source", interarrivalTime: { kind: "deterministic", value: targetTaktMinutes } },
     ...stationNodes,
+    ...topology.splits.map((split) => ({ id: split.id, name: split.name, kind: "split" as const, routes: split.routes })),
     { id: "sink", name: "完成品", kind: "sink" },
   ];
   const requiresManualRemodel = reviewItems.some((item) => item.code !== "name-shortened");
@@ -168,7 +175,7 @@ export function preparePlantLiteDraftFromPpr(draft: PprBopVersionDraft): PprPlan
     id: boundedWithSuffix(draft.planId.trim(), requiresManualRemodel ? "-review-only" : "-flow-draft", 120),
     name: modelName,
     nodes,
-    edges: nodes.slice(0, -1).map((node, index) => ({ id: `edge-${index + 1}`, from: node.id, to: nodes[index + 1]!.id })),
+    edges: topology.edges,
     ...(plantResources.length ? { resources: plantResources } : {}),
   };
   const minimumThroughputPerHour = 60 / targetTaktMinutes;
@@ -178,7 +185,7 @@ export function preparePlantLiteDraftFromPpr(draft: PprBopVersionDraft): PprPlan
     model,
     seed: boundedWithSuffix(draft.planId.trim(), ":ppr-flow", 120),
     replications: 12,
-    ...(resourceUnits > DEFAULT_RESOURCE_LIMIT ? { limits: { maxResources: resourceUnits } } : {}),
+    ...(budget.units > DEFAULT_RESOURCE_LIMIT ? { limits: { maxResources: budget.units } } : {}),
     acceptanceTargets: {
       basis: boundedWithSuffix(`工艺计划“${draft.name.trim()}”`, ` · 目标节拍 ${formatNumber(targetTaktMinutes)} 分钟/件`, 160),
       minimumThroughputPerHour,
@@ -197,9 +204,22 @@ export function preparePlantLiteDraftFromPpr(draft: PprBopVersionDraft): PprPlan
       mappedOperations,
       mappedResources: [...mappedResources.values()],
       reviewItems,
+      admission,
       retainedInProcessPlan: ["产品与 BOM", "电子作业指导书", "质量与安全内容"],
     },
   };
+}
+
+interface PprStationResourceBinding {
+  resourceId?: string;
+  workerResourceId?: string;
+}
+
+/** 资源映射的共享预算：units 供 maxResources 上限，双计数器保证 equipment-N 与 worker-N 各自连续。 */
+interface PprResourceBudget {
+  units: number;
+  equipmentCount: number;
+  workerCount: number;
 }
 
 function mappedResourceForOperation(
@@ -209,90 +229,121 @@ function mappedResourceForOperation(
   mappedResources: Map<string, PprPlantLiteMappedResource>,
   plantResources: PlantLiteResource[],
   reviewItems: PprPlantLiteMappingItem[],
-  resourceUnits: number,
-): string | undefined {
+  admission: PprPlantLiteAdmissionEntry[],
+  budget: PprResourceBudget,
+): PprStationResourceBinding {
   if (!assignments.length) {
     addReview(reviewItems, "resource-unassigned", [operation.id], `${operation.name} 未分配设备或机器人；草稿工位暂不绑定共享资源。`);
-    return undefined;
+    return {};
   }
+  const joint = jointOccupancyPair(assignments, resourceById);
+  if (joint) return mapJointOccupancy(operation, joint, mappedResources, plantResources, reviewItems, admission, budget);
   if (assignments.length > 1) {
     const resourceLabels = assignments.map((item) => {
       const resource = resourceById.get(item.resourceId);
       return resource ? `${resource.name}（${pprResourceKindLabel(resource.kind)}）` : item.resourceId;
     });
-    addReview(reviewItems, "multiple-resources", [operation.id, ...assignments.map((item) => item.resourceId)], `${operation.name} 同时占用 ${resourceLabels.join("、")}，当前 DES 工位不能保证等价获取，需人工配置。`);
-    return undefined;
+    const sourceIds = [operation.id, ...assignments.map((item) => item.resourceId)];
+    addReview(reviewItems, "multiple-resources", sourceIds, `${operation.name} 同时占用 ${resourceLabels.join("、")}；流程仿真仅支持"单台设备/机器人 + 单一人工池"的联合占用，任意多资源原子获取无等价表达。正式预测已被阻断；请人工分解工序并另存独立模型。`);
+    admission.push({
+      semantics: "multi-resource-atomic-lock",
+      verdict: "blocked",
+      sourceIds,
+      reason: `${assignments.length} 个资源要求原子获取；联合占用白名单仅覆盖一台设备/机器人加一名人员。`,
+    });
+    return {};
   }
 
   const assignment = assignments[0]!;
   const resource = resourceById.get(assignment.resourceId);
-  if (!resource) return undefined;
-  if (resource.kind !== "equipment" && resource.kind !== "robot") {
-    addReview(reviewItems, "unsupported-resource", [operation.id, resource.id], `${resource.name} 是${pprResourceKindLabel(resource.kind)}，未冒充设备资源；请在草稿中复核。`);
+  if (!resource) return {};
+  const resourceId = mappedSharedResource(operation, assignment, resource, "equipment", mappedResources, plantResources, reviewItems, budget);
+  return resourceId ? { resourceId } : {};
+}
+
+/** 白名单判定：恰好一台设备/机器人加一名人员且各占一个单位，才是流程仿真可等价表达的联合占用。 */
+function jointOccupancyPair(
+  assignments: PprBopVersionDraft["resourceAssignments"],
+  resourceById: Map<string, PprResource>,
+): { equipment: { assignment: PprBopVersionDraft["resourceAssignments"][number]; resource: PprResource }; worker: { assignment: PprBopVersionDraft["resourceAssignments"][number]; resource: PprResource } } | undefined {
+  if (assignments.length !== 2) return undefined;
+  const resolved = assignments.map((assignment) => ({ assignment, resource: resourceById.get(assignment.resourceId) }));
+  const equipment = resolved.find((item) => item.resource && (item.resource.kind === "equipment" || item.resource.kind === "robot"));
+  const worker = resolved.find((item) => item.resource?.kind === "person");
+  if (!equipment?.resource || !worker?.resource || equipment === worker) return undefined;
+  if ((equipment.assignment.requiredCapacity ?? 1) !== 1 || (worker.assignment.requiredCapacity ?? 1) !== 1) return undefined;
+  return {
+    equipment: { assignment: equipment.assignment, resource: equipment.resource },
+    worker: { assignment: worker.assignment, resource: worker.resource },
+  };
+}
+
+function mapJointOccupancy(
+  operation: PprOperation,
+  joint: NonNullable<ReturnType<typeof jointOccupancyPair>>,
+  mappedResources: Map<string, PprPlantLiteMappedResource>,
+  plantResources: PlantLiteResource[],
+  reviewItems: PprPlantLiteMappingItem[],
+  admission: PprPlantLiteAdmissionEntry[],
+  budget: PprResourceBudget,
+): PprStationResourceBinding {
+  const resourceId = mappedSharedResource(operation, joint.equipment.assignment, joint.equipment.resource, "equipment", mappedResources, plantResources, reviewItems, budget);
+  const workerResourceId = mappedSharedResource(operation, joint.worker.assignment, joint.worker.resource, "worker", mappedResources, plantResources, reviewItems, budget);
+  if (!resourceId || !workerResourceId) {
+    // 联合占用任一侧未映射就整位不绑定，避免只绑一侧冒充联合语义等价。
+    return {};
+  }
+  admission.push({
+    semantics: "joint-equipment-worker",
+    verdict: "direct",
+    sourceIds: [operation.id, joint.equipment.resource.id, joint.worker.resource.id],
+    reason: "设备/机器人与人员组合在联合占用白名单内；工位需设备与人工同时可用才派工，语义等价。",
+  });
+  return { resourceId, workerResourceId };
+}
+
+function mappedSharedResource(
+  operation: PprOperation | undefined,
+  assignment: PprBopVersionDraft["resourceAssignments"][number],
+  resource: PprResource,
+  role: "equipment" | "worker",
+  mappedResources: Map<string, PprPlantLiteMappedResource>,
+  plantResources: PlantLiteResource[],
+  reviewItems: PprPlantLiteMappingItem[],
+  budget: PprResourceBudget,
+): string | undefined {
+  if (role === "equipment" && resource.kind !== "equipment" && resource.kind !== "robot") {
+    addReview(reviewItems, "unsupported-resource", [operation?.id, resource.id].filter((id): id is string => Boolean(id)), `${resource.name} 是${pprResourceKindLabel(resource.kind)}，未冒充设备资源；请在草稿中复核。`);
     return undefined;
   }
   if (resource.condition || resource.variantIds?.length) {
-    addReview(reviewItems, "conditional-resource", [operation.id, resource.id], `${resource.name} 带有变体或适用条件，未作为无条件设备绑定；请先确认目标工况。`);
+    addReview(reviewItems, "conditional-resource", [operation?.id, resource.id].filter((id): id is string => Boolean(id)), `${resource.name} 带有变体或适用条件，未作为无条件绑定；请先确认目标工况。`);
     return undefined;
   }
   if ((assignment.requiredCapacity ?? 1) !== 1) {
-    addReview(reviewItems, "resource-capacity", [operation.id, resource.id], `${operation.name} 需要 ${assignment.requiredCapacity} 个资源单位，当前工位占用语义不能精确表达。`);
+    addReview(reviewItems, "resource-capacity", [operation?.id, resource.id].filter((id): id is string => Boolean(id)), `${operation?.name ?? resource.name} 需要 ${assignment.requiredCapacity} 个资源单位，当前工位占用语义不能精确表达。`);
     return undefined;
   }
   const capacity = resource.capacity ?? 1;
   if (!Number.isSafeInteger(capacity) || capacity <= 0) {
-    addReview(reviewItems, "resource-capacity", [resource.id], `${resource.name} 的并行能力不是正整数，未映射为设备资源。`);
+    addReview(reviewItems, "resource-capacity", [resource.id], `${resource.name} 的并行能力不是正整数，未映射为仿真资源。`);
     return undefined;
   }
   const existing = mappedResources.get(resource.id);
   if (existing) return existing.plantResourceId;
-  if (resourceUnits + capacity > MAX_RESOURCE_UNITS) {
-    addReview(reviewItems, "resource-limit", [resource.id], `${resource.name} 会使设备总数超过 ${MAX_RESOURCE_UNITS}，未绑定到草稿工位。`);
+  if (budget.units + capacity > MAX_RESOURCE_UNITS) {
+    addReview(reviewItems, "resource-limit", [resource.id], `${resource.name} 会使资源单位总数超过 ${MAX_RESOURCE_UNITS}，未绑定到草稿工位。`);
     return undefined;
   }
 
-  const plantResourceId = `equipment-${mappedResources.size + 1}`;
+  const sourceKind = role === "worker" ? "person" as const : resource.kind === "robot" ? "robot" as const : "equipment" as const;
+  const plantResourceId = role === "worker" ? `worker-${++budget.workerCount}` : `equipment-${++budget.equipmentCount}`;
   const name = boundedLabel(resource.name, 120);
   if (name !== resource.name.trim()) addReview(reviewItems, "name-shortened", [resource.id], `${resource.name.trim()} 的名称已缩短以满足仿真资源长度限制。`);
-  const mapped: PprPlantLiteMappedResource = {
-    pprResourceId: resource.id,
-    plantResourceId,
-    name,
-    sourceKind: resource.kind,
-    capacity,
-  };
-  mappedResources.set(resource.id, mapped);
-  plantResources.push({ id: plantResourceId, name, kind: "equipment", capacity });
+  mappedResources.set(resource.id, { pprResourceId: resource.id, plantResourceId, name, sourceKind, capacity });
+  plantResources.push({ id: plantResourceId, name, kind: role === "worker" ? "worker" : "equipment", capacity });
+  budget.units += capacity;
   return plantResourceId;
-}
-
-function inspectFlowSemantics(
-  draft: PprBopVersionDraft,
-  operations: PprOperation[],
-  reviewItems: PprPlantLiteMappingItem[],
-): void {
-  const operationIds = new Set(operations.map((operation) => operation.id));
-  const relations = draft.precedenceRelations.filter((relation) => operationIds.has(relation.predecessorOperationId) && operationIds.has(relation.successorOperationId));
-  const predecessors = new Map<string, string[]>();
-  const successors = new Map<string, string[]>();
-  relations.forEach((relation) => {
-    predecessors.set(relation.successorOperationId, [...(predecessors.get(relation.successorOperationId) ?? []), relation.predecessorOperationId]);
-    successors.set(relation.predecessorOperationId, [...(successors.get(relation.predecessorOperationId) ?? []), relation.successorOperationId]);
-    if ((relation.minimumLagMinutes ?? 0) > 0) addReview(reviewItems, "minimum-lag", [relation.id], `前置关系的 ${formatNumber(relation.minimumLagMinutes!)} 分钟最小等待未写入加工时间，需在仿真草稿中补充。`);
-  });
-  operations.forEach((operation) => {
-    const prior = predecessors.get(operation.id) ?? [];
-    const next = successors.get(operation.id) ?? [];
-    if (prior.length > 1) addReview(reviewItems, "multiple-predecessors", [operation.id, ...prior], `${operation.name} 有 ${prior.length} 个并行前置，已按拓扑顺序线性展开，需复核合流逻辑。`);
-    if (next.length > 1) addReview(reviewItems, "multiple-successors", [operation.id, ...next], `${operation.name} 有 ${next.length} 个并行后续，已按拓扑顺序线性展开，需复核分流逻辑。`);
-  });
-  if (operations.length > 1) {
-    const roots = operations.filter((operation) => !(predecessors.get(operation.id)?.length));
-    const sinks = operations.filter((operation) => !(successors.get(operation.id)?.length));
-    if (relations.length !== operations.length - 1 || roots.length !== 1 || sinks.length !== 1) {
-      addReview(reviewItems, "disconnected-flow", operations.map((operation) => operation.id), "PPR 不是一条无分支串行链；草稿仅按确定性拓扑顺序连接，不代表原前置网络等价。");
-    }
-  }
 }
 
 function inspectConditionalScope(draft: PprBopVersionDraft, reviewItems: PprPlantLiteMappingItem[]): void {
@@ -326,18 +377,9 @@ function pprResourceKindLabel(kind: PprResource["kind"]): string {
   return ({ station: "工位", equipment: "设备", robot: "机器人", tool: "工具", person: "人员" })[kind];
 }
 
-function boundedLabel(value: string, maximum: number): string {
-  const trimmed = value.trim();
-  return trimmed.length <= maximum ? trimmed : trimmed.slice(0, maximum);
-}
-
 function boundedWithSuffix(value: string, suffix: string, maximum: number): string {
   const trimmed = value.trim();
   const full = `${trimmed}${suffix}`;
   if (full.length <= maximum) return full;
   return `${trimmed.slice(0, Math.max(1, maximum - suffix.length))}${suffix}`;
-}
-
-function formatNumber(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
 }
