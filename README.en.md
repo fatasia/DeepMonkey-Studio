@@ -23,15 +23,17 @@
 
 ## A note from the author
 
-At first, I just wanted to improve the 3D editor. One thing led to another, and it became a full platform engine.
+I don't see it as a digital-twin platform, or yet another system that reinvents the wheel.
 
-It is an open-source foundation for metaverses, AI for Science, and world models.
+Rather, it is an open-source foundation for metaverses, AI for Science, and world models.
+
 The upper layer includes a 2D editor, 3D editor, script editor, and plugins;
+
 the lower layer includes our own engine, data platform, and composable model adapters.
 
 Under the hood, we have made many optimizations for WebGPU, rendering, and industrial and BIM models. The modules are independent and simple enough to use separately as an SDK.
 
-Third-party industrial models used for development and testing are recorded with their source and license. Please open an Issue if you find a rights concern.
+During development and testing, I had AI gather many model assets from the web; if any of them accidentally infringes on anyone's rights, my sincere apologies — I will remove it right away.
 
 The project uses the broadest possible MIT license so anyone can use it freely (technological progress depends on the support of industry experts), with an exception only for certain companies that disregard employees' human rights (see [LICENSE.zh-CN.md](LICENSE.zh-CN.md)).
 
@@ -404,6 +406,10 @@ Source-available under the custom [Deep Monkey Community Source License 1.0](LIC
 ## Acknowledgements
 
 Thanks to the maintainers and contributors of every project we depend on, especially [Three.js](https://github.com/mrdoob/three.js), [Orillusion](https://github.com/Orillusion/orillusion), and [Unity](https://github.com/Unity-Technologies). This project benefits from the open-source community's work on rendering, engine architecture, and editor interaction.
+
+## Contact me
+
+Email 15184552744@163.com or open an Issue — I check in now and then.
 
 
 
