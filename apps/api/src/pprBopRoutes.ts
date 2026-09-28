@@ -1,8 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import type { MetadataStore } from "./store.js";
 import type { PprBopService } from "./pprBopService.js";
+import type { OperationsService } from "./operations.js";
+import { assessStudyChangeImpact } from "./studyChangeImpact.js";
 
-export async function registerPprBopRoutes(app: FastifyInstance, dependencies: { store: MetadataStore; service: PprBopService }): Promise<void> {
+export async function registerPprBopRoutes(app: FastifyInstance, dependencies: { store: MetadataStore; service: PprBopService; operations?: OperationsService }): Promise<void> {
   const requireProject = (projectId: string) => {
     if (!dependencies.store.getProject(projectId)) throw new Error("项目不存在");
   };
@@ -45,7 +47,15 @@ export async function registerPprBopRoutes(app: FastifyInstance, dependencies: {
       const beforeVersionId = requiredText(request.body?.beforeVersionId, "基线版本 ID");
       const afterVersionId = requiredText(request.body?.afterVersionId, "目标版本 ID");
       const activeVariantId = optionalText(request.body?.activeVariantId, "分析变体 ID");
-      return dependencies.service.compare(request.params.projectId, beforeVersionId, afterVersionId, activeVariantId);
+      const comparison = dependencies.service.compare(request.params.projectId, beforeVersionId, afterVersionId, activeVariantId);
+      const { before, after } = dependencies.service.comparisonVersions(request.params.projectId, beforeVersionId, afterVersionId);
+      const studies = dependencies.operations?.snapshot(request.params.projectId).studies ?? [];
+      const bindings = studies.flatMap((study) => study.pprBinding && study.pprBinding.planId === before.planId ? [{ studyId: study.id, ...study.pprBinding }] : []);
+      const project = dependencies.operations ? dependencies.store.getProject(request.params.projectId) : undefined;
+      const assetHeads = project?.models?.flatMap((model) => model.manifest?.deepAssetPackage
+        ? [{ modelId: model.id, snapshot: { packageId: model.manifest.deepAssetPackage.packageId, revision: model.manifest.deepAssetPackage.revision, sourceHash: model.manifest.deepAssetPackage.sourceHash } }] : []) ?? [];
+      const studyImpact = assessStudyChangeImpact({ studies, bindings, before, after, comparison, assetHeads });
+      return { ...comparison, studyImpact };
     } catch (error) {
       return reply.code(400).send({ message: compactError(error) });
     }

@@ -1,17 +1,17 @@
-import type { PprBopVersion } from "@bim-studio/contracts";
+import type { IndustrialStudyChangeImpactResult, PprBopVersion } from "@bim-studio/contracts";
 import type { PprVersionComparison } from "@bim-studio/ppr-lite-engine";
 
 export interface PprBoundVersionComparison {
   beforeVersionId: string;
   afterVersionId: string;
   activeVariantId: string;
-  result: PprVersionComparison;
+  result: PprVersionComparison & { studyImpact?: IndustrialStudyChangeImpactResult };
 }
 
 export function bindPprVersionComparison(
   beforeVersionId: string,
   afterVersionId: string,
-  result: PprVersionComparison,
+  result: PprVersionComparison & { studyImpact?: IndustrialStudyChangeImpactResult },
   activeVariantId = "",
 ): PprBoundVersionComparison {
   return { beforeVersionId, afterVersionId, activeVariantId, result };

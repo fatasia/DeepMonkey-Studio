@@ -1,7 +1,8 @@
 import { Activity, AlertTriangle, BadgeCheck, CheckCircle2, CopyPlus, GitCompareArrows, Play, Route } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { PprBopVersion, PprBopVersionDraft } from "@bim-studio/contracts";
-import type { PprAnalysis, PprVersionComparison } from "@bim-studio/ppr-lite-engine";
+import type { IndustrialStudyPprBinding, PprBopVersion, PprBopVersionDraft } from "@bim-studio/contracts";
+import { fingerprint64 } from "@bim-studio/contracts";
+import type { PprAnalysis } from "@bim-studio/ppr-lite-engine";
 import { PprLineBalanceView } from "./PprLineBalanceView";
 import { PprPlantLiteHandoff } from "./PprPlantLiteHandoff";
 import { PprWorkInstructionPreview } from "./PprWorkInstructionPreview";
@@ -53,6 +54,7 @@ export function PprPlanInsights({
   variantIds,
   activeVariantId,
   comparison,
+  sourceVersion,
   beforeVersionId,
   afterVersionId,
   busy,
@@ -72,6 +74,7 @@ export function PprPlanInsights({
   variantIds: string[];
   activeVariantId: string;
   comparison: PprBoundVersionComparison | undefined;
+  sourceVersion?: PprBopVersion;
   beforeVersionId: string;
   afterVersionId: string;
   busy: boolean;
@@ -95,7 +98,7 @@ export function PprPlanInsights({
     : id;
   return (
     <aside className="ppr-insights" aria-label="计划诊断与版本影响">
-      <PprPlantLiteHandoff draft={plantDraft} busy={busy} onCreateDraft={onCreatePlantLiteDraft} />
+      <PprPlantLiteHandoff draft={plantDraft} busy={busy} onCreateDraft={(result) => onCreatePlantLiteDraft({ ...result, request: { ...result.request, ...(sourceVersion && result.report.reviewItems.every((item) => item.code === "name-shortened") ? { pprBinding: bindingForMappedStudy(sourceVersion, result) } : {}) } })} />
 
       <section className="ppr-analysis-card">
         <header><span><Activity size={15} /><strong>{analysisLabel}</strong></span>{validationErrorCount ? <em className="error">{validationErrorCount} 项阻断</em> : errors.length ? <em className="error">{errors.length} 错误</em> : !analysis.qualityControl.qualityPlanReady ? <em className="warning"><AlertTriangle size={12} />质量待完善</em> : warnings.length ? <em className="warning"><AlertTriangle size={12} />待复核</em> : <em className="healthy"><CheckCircle2 size={12} />计划就绪</em>}</header>
@@ -156,7 +159,7 @@ export function PprPlanInsights({
   );
 }
 
-function PprComparisonResult({ comparison, entityName }: { comparison: PprVersionComparison; entityName: (id: string) => string }) {
+function PprComparisonResult({ comparison, entityName }: { comparison: PprBoundVersionComparison["result"]; entityName: (id: string) => string }) {
   const impacts = [
     ...comparison.impact.componentIds.map((id) => ({ key: `component:${id}`, id })),
     ...comparison.impact.operationIds.map((id) => ({ key: `operation:${id}`, id })),
@@ -165,6 +168,15 @@ function PprComparisonResult({ comparison, entityName }: { comparison: PprVersio
   return (
     <div className="ppr-comparison-result">
       <div className="ppr-analysis-metrics"><div><span>变更</span><strong>{comparison.changes.length}</strong></div><div><span>影响对象</span><strong>{impacts.length}</strong></div><div><span>退化</span><strong>{comparison.regressions.length}</strong></div></div>
+      {!!comparison.studyImpact && <section className="ppr-study-impact" aria-label="运行记录变更影响">
+        <h4>运行记录影响 · {comparison.studyImpact.studies.length}</h4>
+        {!comparison.studyImpact.studies.length && <p>当前项目没有可追溯的运行记录。</p>}
+        {comparison.studyImpact.studies.map((study) => <div key={study.studyId}>
+          <strong>{study.studyId}</strong><em className={study.status}>{study.status === "stale" ? "需复核" : study.status === "fresh" ? "未受影响" : "依赖未知"}</em>
+          {[...study.reasons.map((reason) => reason.message), ...comparison.studyImpact!.diagnostics.filter((diagnostic) => diagnostic.studyId === study.studyId).map((diagnostic) => diagnostic.message)].map((message, index) => <small key={index}>{message}</small>)}
+          {study.status !== "fresh" && <small>请在运营中心运行记录中选择此记录，使用「复现此工况」或「打开并复核」。</small>}
+        </div>)}
+      </section>}
       {!!comparison.regressions.length && <div className="ppr-regressions"><h4>需复核</h4>{comparison.regressions.map((item, index) => <p key={`${item.code}-${index}`}><AlertTriangle size={13} /><span>{item.message}</span></p>)}</div>}
       <details open>
         <summary>受影响范围</summary>
@@ -176,6 +188,15 @@ function PprComparisonResult({ comparison, entityName }: { comparison: PprVersio
       </details>
     </div>
   );
+}
+
+function bindingForMappedStudy(version: PprBopVersion, result: PprPlantLiteReadyDraft): IndustrialStudyPprBinding {
+  const entities: IndustrialStudyPprBinding["entities"] = [
+    { kind: "plan", id: version.planId, fields: ["targetTaktMinutes"] },
+    ...result.report.mappedOperations.map(({ operationId }) => ({ kind: "operation" as const, id: operationId, fields: ["standardTimeMinutes"] })),
+    ...result.report.mappedResources.map(({ pprResourceId }) => ({ kind: "resource" as const, id: pprResourceId, fields: ["capacity"] })),
+  ];
+  return { planId: version.planId, versionId: version.id, entities, assets: [], sourceModelFingerprint: fingerprint64(result.request.model) };
 }
 
 function findEntityName(id: string, snapshots: readonly PprBopVersionDraft[]): string {

@@ -1,4 +1,4 @@
-import type { PprBopVersion, PprBopVersionDraft } from "@bim-studio/contracts";
+import type { IndustrialStudyChangeImpactResult, PprBopVersion, PprBopVersionDraft } from "@bim-studio/contracts";
 import type { PprAnalysis, PprVersionComparison } from "@bim-studio/ppr-lite-engine";
 
 type ApiRequest = <T>(url: string, init?: RequestInit) => Promise<T>;
@@ -19,7 +19,7 @@ export function createPprBopApi(request: ApiRequest) {
       return request<PprAnalysis>(`/api/projects/${projectId}/ppr/bop-versions/${encodeURIComponent(versionId)}/analysis${query}`);
     },
     comparePprBopVersions: (projectId: string, beforeVersionId: string, afterVersionId: string, activeVariantId?: string) =>
-      request<PprVersionComparison>(`/api/projects/${projectId}/ppr/bop-versions/compare`, {
+      request<PprVersionComparison & { studyImpact: IndustrialStudyChangeImpactResult }>(`/api/projects/${projectId}/ppr/bop-versions/compare`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ beforeVersionId, afterVersionId, ...(activeVariantId?.trim() ? { activeVariantId: activeVariantId.trim() } : {}) }),

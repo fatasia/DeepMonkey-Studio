@@ -1,4 +1,5 @@
 import type { DataSourceEvidence } from "./data.js";
+import type { IndustrialStudyPprBinding } from "./industrialStudy.js";
 import type {
   PlantLiteModel,
   PlantLiteReplicationTrace,
@@ -283,6 +284,8 @@ export interface PlantLiteStudyRequest {
    * 同一基线派生的方案实验元数据。求解输入仍由 model/seed/limits 决定；
    * 该字段只负责把多次真实运行组织为可追溯的决策组。
    */
+  /** 只随实际 PPR→DES 映射输入提交；服务器验证模型指纹后冻结。 */
+  pprBinding?: IndustrialStudyPprBinding;
   comparison?: PlantLiteStudyComparison;
   /** 项目侧的验收阈值；不改变求解过程，但属于本次 Study 的决策证据。 */
   acceptanceTargets?: PlantLiteAcceptanceTargets;
@@ -420,6 +423,7 @@ export interface PlantLiteStudyRecord extends Required<Pick<PlantLiteStudyReques
   trace?: PlantLiteReplicationTrace;
   comparison?: PlantLiteStudyComparison;
   acceptanceTargets?: PlantLiteAcceptanceTargets;
+  pprBinding?: IndustrialStudyPprBinding;
   reproductionOf?: string;
   inputFingerprint: string;
   outcome: PlantLiteStudyOutcome;

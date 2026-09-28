@@ -18,7 +18,7 @@ function frameMetrics(overrides: Partial<FrameMetrics> = {}): FrameMetrics {
 }
 
 function receipt(passes: readonly string[]): PbrFrameExecutionReceipt {
-  return { frame: frameSeq, passOrder: passes, samples: [] };
+  return { frame: frameSeq, passOrder: passes, executedMappedPassIds: passes, unmappedPassIds: [], samples: [] };
 }
 
 describe("StudioDeepQualityTelemetrySampler", () => {

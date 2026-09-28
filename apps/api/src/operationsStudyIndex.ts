@@ -62,6 +62,7 @@ function fromPlantLite(source: PlantLiteStudyRecord): IndustrialStudyRecord {
     },
     lineage: lineage(type, source.reproductionOf, source.comparison?.baselineStudyId),
     reproduction: { kind: "rerun", operationsTab: "logistics" },
+    ...(source.pprBinding ? { pprBinding: structuredClone(source.pprBinding) } : {}),
     createdAt: source.createdAt,
     updatedAt: source.createdAt,
   };

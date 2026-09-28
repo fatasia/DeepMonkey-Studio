@@ -66,6 +66,7 @@ export function runPlantLiteStudy(
     replications: input.replications,
     ...(result.representativeTrace ? { trace: result.representativeTrace } : {}),
     ...(input.comparison ? { comparison: input.comparison } : {}),
+    ...(request.pprBinding ? { pprBinding: structuredClone(request.pprBinding) } : {}),
     ...(input.acceptanceTargets ? { acceptanceTargets: input.acceptanceTargets } : {}),
     ...(input.legacyTemplate ?? {}),
     inputFingerprint,
@@ -97,6 +98,7 @@ export function plantLiteRequestFromRecord(record: PlantLiteStudyRecord): PlantL
         ? { trace: { replication: record.trace.replication, ...record.trace.limits } }
         : {}),
     ...(record.comparison ? { comparison: { ...record.comparison } } : {}),
+    ...(record.pprBinding ? { pprBinding: structuredClone(record.pprBinding) } : {}),
     ...(record.acceptanceTargets ? { acceptanceTargets: { ...record.acceptanceTargets } } : {}),
   };
 }

@@ -378,6 +378,16 @@
 .ppr-compare-selectors label > span { color: var(--text-faint); font-size: 11px; }
 .ppr-compare-content > button { width: calc(100% - 18px); margin: 0 9px 9px; }
 .ppr-compare-empty { margin: 0; padding: 0 9px 10px; color: var(--text-faint); font-size: 11px; line-height: 1.45; }
+.ppr-study-impact { display: grid; gap: 7px; padding: 10px; border-top: 1px solid var(--line-subtle); }
+.ppr-study-impact h4 { margin: 0; color: var(--text-strong); font-size: 12px; }
+.ppr-study-impact > p { margin: 0; color: var(--text-muted); font-size: 11px; }
+.ppr-study-impact > div { display: grid; gap: 4px; padding: 8px; border: 1px solid var(--line-subtle); border-radius: var(--radius-sm); overflow-wrap: anywhere; }
+.ppr-study-impact strong { color: var(--text); font-size: 11px; }
+.ppr-study-impact em { width: fit-content; font-style: normal; font-size: 11px; }
+.ppr-study-impact em.stale { color: var(--warning); }
+.ppr-study-impact em.unknown { color: var(--danger); }
+.ppr-study-impact em.fresh { color: var(--success); }
+.ppr-study-impact small { color: var(--text-muted); font-size: 11px; line-height: 1.5; }
 .ppr-comparison-result { border-top: 1px solid var(--line-subtle); }
 .ppr-regressions { display: grid; gap: 4px; padding: 0 9px 9px; }
 .ppr-regressions p { display: grid; margin: 0; padding: 6px; grid-template-columns: 15px minmax(0, 1fr); color: color-mix(in srgb, var(--danger) 82%, white); border-radius: var(--radius-sm); background: var(--surface-1); font-size: 11px; }

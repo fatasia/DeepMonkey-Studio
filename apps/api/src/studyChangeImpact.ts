@@ -3,23 +3,17 @@ import {
   diagnoseDigitalThread,
   type DigitalThreadObject,
   type IndustrialStudyRecord,
+  type IndustrialStudyPprBinding,
+  type IndustrialStudyChangeImpactResult,
   type PprBopVersion,
   type SceneAssetRevisionSnapshot,
 } from "@bim-studio/contracts";
 import type { PprVersionComparison } from "@bim-studio/ppr-lite-engine";
 
-export type StudyPprDependency =
-  | { kind: "plan"; id: string }
-  | { kind: "component" | "operation" | "resource" | "precedence" | "assignment"; id: string };
+export type StudyPprDependency = IndustrialStudyPprBinding["entities"][number];
 
 /** 由 Study 创建方在运行时冻结；不得从现有 Study 指纹反推实体依赖。 */
-export interface StudyChangeBinding {
-  studyId: string;
-  planId: string;
-  versionId: string;
-  entities: StudyPprDependency[];
-  assets: Array<{ modelId: string; snapshot: SceneAssetRevisionSnapshot }>;
-}
+export type StudyChangeBinding = Omit<IndustrialStudyPprBinding, "sourceModelFingerprint"> & { studyId: string; sourceModelFingerprint?: string };
 
 export interface StudyAssetHead {
   modelId: string;
@@ -45,10 +39,7 @@ export interface StudyChangeDiagnostic {
   message: string;
 }
 
-export interface StudyChangeImpactResult {
-  studies: StudyChangeImpact[];
-  diagnostics: StudyChangeDiagnostic[];
-}
+export type StudyChangeImpactResult = IndustrialStudyChangeImpactResult;
 
 /** 只读投影：不修改 Study 结果/历史基线，不把未知依赖推断为 fresh。 */
 export function assessStudyChangeImpact(input: {
@@ -110,6 +101,9 @@ export function assessStudyChangeImpact(input: {
     } else if (binding.planId !== input.before.planId || binding.versionId !== input.before.id) {
       diagnostics.push({ code: "invalid-binding", studyId: study.id, message: `Study ${study.id} 的工艺计划或基线版本与比较输入不匹配` });
       uncertain = true;
+    } else if (binding.sourceModelFingerprint && (!study.pprBinding || binding.sourceModelFingerprint !== study.pprBinding.sourceModelFingerprint)) {
+      diagnostics.push({ code: "invalid-binding", studyId: study.id, message: `Study ${study.id} 的原始模型证据不一致，请重新复核来源` });
+      uncertain = true;
     } else if (!binding.entities.length && !binding.assets.length) {
       diagnostics.push({ code: "invalid-binding", studyId: study.id, message: `Study ${study.id} 未冻结任何 PPR 实体或素材依赖，无法判定变更影响` });
       uncertain = true;
@@ -118,17 +112,35 @@ export function assessStudyChangeImpact(input: {
       for (const dependency of binding.entities) {
         const key = `${dependency.kind}:${dependency.id}`;
         if (seen.has(key)) continue;
+        if (dependency.kind !== "plan" && dependency.fields?.length && !beforeEntities.has(key)) {
+          diagnostics.push({ code: "missing-entity", studyId: study.id, message: `Study ${study.id} 引用的 ${key} 不存在于基线，请重新核对冻结依赖` });
+          uncertain = true;
+          seen.add(key);
+          continue;
+        }
+        if (dependency.kind === "plan" && dependency.fields?.length) {
+          if (!beforeEntities.has(key) || !afterEntities.has(key)) {
+            diagnostics.push({ code: "missing-entity", studyId: study.id, message: `Study ${study.id} 的计划 ${dependency.id} 不存在，请重新核对冻结依赖` });
+            uncertain = true;
+          }
+          const planChange = removedOrChanged.get(key);
+          if (planChange?.changedFields.some((field) => dependency.fields!.includes(field))) {
+            reasons.push({ code: "ppr-changed", subject: key, message: `计划 ${dependency.id} 的 ${planChange.changedFields.filter((field) => dependency.fields!.includes(field)).join("、")} 已变更（${input.before.version} → ${input.after.version}）` });
+          }
+          seen.add(key);
+          continue;
+        }
         seen.add(key);
         const direct = removedOrChanged.get(key);
-        const related = dependency.kind === "plan" && input.comparison.changes.length
+        const related = dependency.kind === "plan" && !dependency.fields?.length && input.comparison.changes.length
           ? "BOM/BOP 版本"
           : dependency.kind === "operation"
             ? operationImpact.get(dependency.id) ?? null
             : null;
-        if (direct && direct.changeType !== "added") {
+        if (direct && direct.changeType !== "added" && (direct.changeType === "removed" || !dependency.fields?.length || direct.changedFields.some((field) => dependency.fields!.includes(field)))) {
           reasons.push({ code: "ppr-changed", subject: key, message: `${key} ${direct.changeType === "removed" ? "已删除" : `字段 ${direct.changedFields.join("、")} 已变更`}（${input.before.version} → ${input.after.version}）` });
           if (direct.changeType === "removed") diagnostics.push({ code: "missing-entity", studyId: study.id, message: `Study ${study.id} 的输入 ${key} 已在新版本删除，请重审 Study 并保留原基线` });
-        } else if (related) {
+        } else if (related && (dependency.kind !== "operation" || !dependency.fields?.length || directlyRelevantOperationChange(input.before, input.after, input.comparison, dependency.id))) {
           reasons.push({ code: "ppr-changed", subject: key, message: `${key} 依赖的${related}已变更（${input.before.version} → ${input.after.version}）` });
         } else if (!beforeEntities.has(key) || !afterEntities.has(key)) {
           diagnostics.push({ code: "missing-entity", studyId: study.id, message: `Study ${study.id} 引用的 ${key} 不存在于基线或新版本，请检查删除/错误边` });
@@ -161,6 +173,13 @@ export function assessStudyChangeImpact(input: {
     diagnostics.push({ code: "thread-link", ...(linkedStudyId ? { studyId: linkedStudyId } : {}), message: issue.message });
   }
   return { studies: output, diagnostics };
+}
+
+function directlyRelevantOperationChange(before: PprBopVersion, after: PprBopVersion, comparison: PprVersionComparison, operationId: string): boolean {
+  const changedResources = new Set(comparison.changes.filter((change) => change.entityType === "resource" && change.changeType !== "added" && change.changedFields.includes("capacity")).map((change) => change.entityId));
+  const changedAssignments = new Set(comparison.changes.filter((change) => change.entityType === "assignment").map((change) => change.entityId));
+  return [before, after].some((version) => version.resourceAssignments.some((assignment) =>
+    assignment.operationId === operationId && (changedResources.has(assignment.resourceId) || changedAssignments.has(assignment.id))));
 }
 
 function entityIds(version: PprBopVersion): Set<string> {

@@ -19,6 +19,7 @@ import type {
   PlantLiteStudyRequest,
   SaveIndustrialValidationStudyInput
 } from "@bim-studio/contracts";
+import { fingerprint64 } from "@bim-studio/contracts";
 import type { WhatIfStudyRecord, WhatIfStudyRequest } from "@bim-studio/studio-core";
 import { DEFAULT_MAINTENANCE_GATES } from "./maintenanceModelDefaults.js";
 import { archiveLegacyOperationsImports } from "./operationsLegacyImportMigration.js";
@@ -352,6 +353,10 @@ export class OperationsService {
   private async persistPlantLiteStudy(projectId: string, record: PlantLiteStudyRecord): Promise<PlantLiteStudyRecord> {
     const recordIssue = plantLiteStudyRecordIssue(record);
     if (recordIssue) throw new PlantLiteWorkerExecutionError(`离散仿真没有返回有效结果（${recordIssue}），未保存本次运行`);
+    const binding = record.pprBinding;
+    if (binding && (!binding.entities.length && !binding.assets.length || !record.model || binding.sourceModelFingerprint !== fingerprint64(record.model))) {
+      throw new PlantLiteWorkerExecutionError("工艺依赖与实际仿真模型不一致，未保存本次运行；请从已保存的工艺版本重新生成草稿");
+    }
     await this.mutate(projectId, (state) => {
       state.plantLiteStudies.unshift(record);
       state.plantLiteStudies = state.plantLiteStudies.slice(0, 100);

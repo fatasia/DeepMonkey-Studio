@@ -1,4 +1,25 @@
 import type { JsonValue } from "./application.js";
+import type { SceneAssetRevisionSnapshot } from "./scene.js";
+
+/** 已保存 PPR 版本中真正进入 Study 输入的实体；模型改动后不得继续声称已验证。 */
+export interface IndustrialStudyPprBinding {
+  planId: string;
+  versionId: string;
+  entities: Array<{ kind: "plan" | "component" | "operation" | "resource" | "precedence" | "assignment"; id: string; fields?: string[] }>;
+  assets: Array<{ modelId: string; snapshot: SceneAssetRevisionSnapshot }>;
+  sourceModelFingerprint: string;
+}
+
+export interface IndustrialStudyChangeImpactResult {
+  studies: Array<{
+    studyId: string;
+    status: "fresh" | "stale" | "unknown";
+    reasons: Array<{ code: "ppr-changed" | "asset-revised"; subject: string; message: string }>;
+    baselineStudyId: string | null;
+  }>;
+  diagnostics: Array<{ code: "missing-binding" | "missing-study" | "duplicate-binding" | "invalid-binding" | "missing-entity" | "missing-asset" | "asset-revision-conflict" | "thread-link"; studyId?: string; message: string }>;
+}
+
 
 export type IndustrialStudyType =
   | "plant-lite"
@@ -71,6 +92,8 @@ export interface IndustrialStudyRecord {
     kind: "rerun" | "open-workbench";
     operationsTab: "logistics" | "whatif" | "commissioning";
   };
+  /** 从权威运行记录投影；旧记录缺失时应显示未知。 */
+  pprBinding?: IndustrialStudyPprBinding;
   createdAt: string;
   updatedAt: string;
 }

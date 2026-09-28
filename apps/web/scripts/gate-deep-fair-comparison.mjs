@@ -192,7 +192,16 @@ async function measureFirstFrame(page, backend) {
   const switchPublishedMs = phases[0]?.name === `${prefix}switch-start`
     && phases.at(-1)?.name === `${prefix}published`
     ? Number((phases.at(-1).at - phases[0].at).toFixed(1)) : null;
+  const internalStages = backend === "webgpu" ? await page.evaluate(({ markStartedAt }) =>
+    performance.getEntriesByType("mark")
+      .filter(entry => entry.name.startsWith("deep-webgpu:") && entry.startTime >= markStartedAt)
+      .map(entry => ({ name: entry.name, at: entry.startTime })), { markStartedAt }) : [];
+  const internalBreakdown = internalStages.slice(1).map((phase, index) => ({
+    from: internalStages[index].name, to: phase.name,
+    deltaMs: Number((phase.at - internalStages[index].at).toFixed(1)),
+  }));
   return { wallMs, switchPublishedMs, phaseCount: phases.length, stages,
+    ...(internalBreakdown.length ? { internalBreakdown } : {}),
     note: phases.length ? "deep-switch-phase-marks" : "no-marks (webgl or first switch)" ,
     ...(before !== undefined ? { marksBefore: before } : {}) };
 }

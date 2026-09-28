@@ -111,6 +111,7 @@ export function PprPlanDetails({
             variantIds={controller.availableVariantIds}
             activeVariantId={controller.activeVariantId}
             comparison={controller.comparison}
+            {...(controller.sourceVersion ? { sourceVersion: controller.sourceVersion } : {})}
             beforeVersionId={controller.beforeVersionId}
             afterVersionId={controller.afterVersionId}
             busy={Boolean(controller.busyAction)}

@@ -5,6 +5,8 @@ import type {
   EnergyObservation,
   LogisticsExperimentRequest,
   PlantLiteStudyRequest,
+  PprBopVersion,
+  IndustrialStudyPprBinding,
   MaintenanceDeploymentRecord,
   MaintenanceModelPackage,
   OperationalCaseRecord,
@@ -14,6 +16,7 @@ import type { DataQuerySource } from "@bim-studio/data-query-plugin";
 import type { WhatIfStudyRequest } from "@bim-studio/studio-core";
 import type { MetadataStore } from "./store.js";
 import type { OperationsService } from "./operations.js";
+import type { PprBopService } from "./pprBopService.js";
 import { OperationsRevisionConflictError } from "./validationStudy.js";
 import { PlantLiteWorkerCancelledError, PlantLiteWorkerTimeoutError } from "./plantLiteWorkerExecutor.js";
 import { readAiDataset } from "./aiDatasetSource.js";
@@ -21,7 +24,7 @@ import { failAiDataBindingRun, startAiDataBindingRun, succeedAiDataBindingRun } 
 
 export async function registerOperationsRoutes(
   app: FastifyInstance,
-  dependencies: { store: MetadataStore; service: OperationsService; dataQuerySource?: DataQuerySource },
+  dependencies: { store: MetadataStore; service: OperationsService; dataQuerySource?: DataQuerySource; pprBop?: PprBopService },
 ): Promise<void> {
   const requireProject = (projectId: string) => {
     if (!dependencies.store.getProject(projectId)) throw new Error("项目不存在");
@@ -148,7 +151,17 @@ export async function registerOperationsRoutes(
     const controller = new AbortController();
     const abort = () => controller.abort("客户端取消 Plant Lite Study");
     request.raw.once("aborted", abort);
-    try { return await dependencies.service.runPlantLite(request.params.projectId, request.body ?? {}, controller.signal); }
+    try {
+      const binding = request.body?.pprBinding;
+      const version = binding && dependencies.pprBop?.list(request.params.projectId).find((candidate) => candidate.id === binding.versionId && candidate.planId === binding.planId);
+      if (binding && !version) {
+        return reply.code(400).send({ message: "工艺来源版本不存在，未运行仿真；请从已保存的工艺版本重新生成草稿" });
+      }
+      if (binding && version && (!Array.isArray(binding.entities) || !Array.isArray(binding.assets) || !binding.sourceModelFingerprint || binding.entities.some((entity) => !pprEntityExists(version, entity)) || binding.assets.some((asset) => !pprAssetExists(dependencies.store, request.params.projectId, asset)))) {
+        return reply.code(400).send({ message: "工艺实体或素材依赖与来源版本不一致，未运行仿真；请重新生成草稿" });
+      }
+      return await dependencies.service.runPlantLite(request.params.projectId, request.body ?? {}, controller.signal);
+    }
     catch (error) { return sendPlantLiteError(reply, error); }
     finally { request.raw.removeListener("aborted", abort); }
   });
@@ -176,6 +189,22 @@ export async function registerOperationsRoutes(
     try { return await dependencies.service.analyzeEnergy(request.params.projectId, request.body?.observations ?? []); }
     catch (error) { return reply.code(400).send({ message: compactError(error) }); }
   });
+}
+
+function pprAssetExists(store: MetadataStore, projectId: string, asset: IndustrialStudyPprBinding["assets"][number]): boolean {
+  if (!asset || typeof asset.modelId !== "string" || !asset.snapshot) return false;
+  const manifest = store.getProject(projectId)?.models.find((model) => model.id === asset.modelId)?.manifest?.deepAssetPackage;
+  return Boolean(manifest && manifest.packageId === asset.snapshot.packageId && manifest.revision === asset.snapshot.revision && manifest.sourceHash === asset.snapshot.sourceHash);
+}
+
+function pprEntityExists(version: PprBopVersion, entity: IndustrialStudyPprBinding["entities"][number]): boolean {
+  if (!entity || typeof entity.id !== "string" || !["plan", "component", "operation", "resource", "precedence", "assignment"].includes(entity.kind)) return false;
+  if (entity.kind === "plan") return entity.id === version.planId;
+  const source = entity.kind === "component" ? version.components
+    : entity.kind === "operation" ? version.operations
+      : entity.kind === "resource" ? version.resources
+        : entity.kind === "precedence" ? version.precedenceRelations : version.resourceAssignments;
+  return source.some((item) => item.id === entity.id);
 }
 
 function requiredText(value: string | undefined, label: string): string {

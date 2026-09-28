@@ -12,6 +12,7 @@ import type {
   ProjectRecord,
   SceneSnapshot,
 } from "@bim-studio/contracts";
+import { fingerprint64 } from "@bim-studio/contracts";
 import { api, request, type OperationsSnapshot } from "../api";
 import { plantLiteRequestFromStudy, readPlantLiteDraft, writePlantLiteDraft } from "./plantLiteDraftPersistence";
 import { VirtualCommissioningWorkbench } from "./VirtualCommissioningWorkbench";
@@ -191,6 +192,10 @@ export function OperationsCenter({
 
   function changePlantLite(next: PlantLiteStudyRequest) {
     hydratedPlantLiteProjectId.current = project.id;
+    const source = plantLite.pprBinding;
+    // 编辑模型后原映射不再是本次输入证据；只保留完全同模型的基线绑定。
+    if (source && (!next.model || fingerprint64(next.model) !== source.sourceModelFingerprint)) delete next.pprBinding;
+    else if (source && !next.pprBinding) next.pprBinding = structuredClone(source);
     setPlantLite(next);
     writePlantLiteDraft(project.id, next);
   }

@@ -232,10 +232,10 @@ export async function buildApp() {
   await registerCloudRenderRoutes(app, { store, control: cloudRender });
   registerCloudRenderViewerRoutes(app, { workerUrl: config.cloudRender.workerUrl });
   await registerIndustrialDemoRoutes(app);
-  await registerOperationsRoutes(app, { store, service: operations, dataQuerySource });
+  await registerOperationsRoutes(app, { store, service: operations, dataQuerySource, pprBop });
   // Plant 平替 P2 尾巴:仿真结果导出(MQTT/SQL),transport 缺省走真实 mqtt/pg 动态导入。
   await registerResultExportRoutes(app, { store, operations });
-  await registerPprBopRoutes(app, { store, service: pprBop });
+  await registerPprBopRoutes(app, { store, service: pprBop, operations });
   await registerAiDataBindingRoutes(app, store);
   await registerIndustrialCapabilityRoutes(app, { store, host: industrialCapabilities, dataQuerySource });
   await registerIndustrialAgentRoutes(app, { store, runtime: industrialAgent });

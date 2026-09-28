@@ -74,6 +74,8 @@ export function OperationsStudyHistory({ records, busy, defaultExpanded = false,
         {selected.result?.metrics.length ? <div className="operations-study-metrics">
           {selected.result.metrics.map((item) => <span key={item.key}><small>{item.label}</small><strong>{item.value}{item.unit ?? ""}</strong></span>)}
         </div> : null}
+        {selected.pprBinding ? <p className="operations-study-missing">工艺来源：{selected.pprBinding.planId} · 版本 {selected.pprBinding.versionId} · 已冻结 {selected.pprBinding.entities.length} 项输入依赖。请在工艺规划中选择该基线与目标版本比较，查看是否需要复核。</p>
+          : <p className="operations-study-missing">未冻结工艺依赖，版本变更影响未知；请用已保存工艺版本生成新仿真后复核。</p>}
         <div className="operations-study-evidence">
           <Evidence label="输入" value={selected.fingerprints.input} />
           <Evidence label="场景" value={selected.fingerprints.scene} />

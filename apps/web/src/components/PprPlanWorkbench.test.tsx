@@ -1,6 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { PprBopVersionDraft } from "@bim-studio/contracts";
+import { comparePprBopVersions } from "@bim-studio/ppr-lite-engine";
+import { bindPprVersionComparison } from "./pprPlanComparison";
 import { analyzePprPlanDraft } from "./pprPlanDraftModel";
 import { PprPlanDetails } from "./PprPlanDetails";
 import { PprPlanEditor } from "./PprPlanEditor";
@@ -95,6 +97,23 @@ describe("PD Lite authoring workbench", () => {
     expect(html).toContain("比较影响");
     expect(html).toContain("生成仿真草稿");
     expect(html).toContain("不会自动运行");
+  });
+  it("shows stale/unknown causes and reproduction destination in PPR comparison", () => {
+    const draft = fixtureDraft();
+    const before = { ...draft, id: "v1", version: "v1", createdAt: "2026-09-28T08:00:00.000Z" };
+    const after = { ...structuredClone(before), id: "v2", version: "v2", operations: before.operations.map((operation) => operation.id === "operation-1" ? { ...operation, standardTimeMinutes: 4 } : operation) };
+    const comparison = { ...comparePprBopVersions(before, after), studyImpact: { studies: [
+      { studyId: "plant-lite:affected", status: "stale" as const, reasons: [{ code: "ppr-changed" as const, subject: "operation:operation-1", message: "标准工时已变更" }], baselineStudyId: null },
+      { studyId: "plant-lite:legacy", status: "unknown" as const, reasons: [], baselineStudyId: null },
+    ], diagnostics: [{ code: "missing-binding" as const, studyId: "plant-lite:legacy", message: "没有冻结的输入依赖" }] } };
+    const html = renderToStaticMarkup(<PprPlanInsights instructionPlan={draft} plantDraft={draft} versions={[before, after]}
+      analysis={analyzePprPlanDraft(draft)} analysisLabel="已保存" validationErrorCount={0} variantIds={[]} activeVariantId=""
+      comparison={bindPprVersionComparison(before.id, after.id, comparison)} beforeVersionId={before.id} afterVersionId={after.id} busy={false}
+      onActiveVariantChange={vi.fn()} onBeforeChange={vi.fn()} onAfterChange={vi.fn()} onCompare={vi.fn()} onCreatePlantLiteDraft={vi.fn()} />);
+    expect(html).toContain("标准工时已变更");
+    expect(html).toContain("依赖未知");
+    expect(html).toContain("没有冻结的输入依赖");
+    expect(html).toContain("复现此工况");
   });
 });
 

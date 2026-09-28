@@ -2,7 +2,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { PprBopVersionDraft } from "@bim-studio/contracts";
+import type { PprBopVersionDraft, PlantLiteStudyRequest } from "@bim-studio/contracts";
+import { fingerprint64 } from "@bim-studio/contracts";
+import { createAgvLinePlantLiteModel } from "@bim-studio/plant-lite-simulation";
+import { OperationsService } from "./operations.js";
+import { registerOperationsRoutes } from "./operationsRoutes.js";
+import { runPlantLiteStudy } from "./plantLiteStudy.js";
+import { PlantLiteWorkerCancelledError } from "./plantLiteWorkerExecutor.js";
 import { createApiServer } from "./serverOptions.js";
 import { PprBopService } from "./pprBopService.js";
 import { registerPprBopRoutes } from "./pprBopRoutes.js";
@@ -127,6 +133,51 @@ describe("PPR/BOP routes", () => {
       }],
       visualReferences: [{ kind: "object", id: "fixture-01" }],
     });
+  });
+
+  it("freezes dependent Study input, distinguishes unrelated runs, rejects cancellation and survives reopen", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "bim-c1-impact-"));
+    cleanups.push(() => rm(directory, { recursive: true, force: true }));
+    const ppr = new PprBopService(directory);
+    const operations = new OperationsService(directory, { plantLiteExecutor: {
+      run: async (projectId: string, request: PlantLiteStudyRequest, signal?: AbortSignal) => {
+        if (signal?.aborted) throw new PlantLiteWorkerCancelledError("已取消");
+        return runPlantLiteStudy(projectId, request, "2026-09-28T10:00:00.000Z");
+      },
+    } });
+    await Promise.all([ppr.init(), operations.init()]);
+    const store = { getProject: (id: string) => id === "project-1" ? { id, models: [] } : undefined } as never;
+    const app = createApiServer();
+    cleanups.push(() => app.close());
+    await registerPprBopRoutes(app, { store, service: ppr, operations });
+    await registerOperationsRoutes(app, { store, service: operations, pprBop: ppr });
+    const initial = await ppr.create("project-1", draft());
+    const next = await ppr.create("project-1", draft(initial.id, 10));
+    const model = createAgvLinePlantLiteModel();
+    const sourceModelFingerprint = fingerprint64(model);
+    const mapped = (id: string) => ({ name: id, model, seed: id, replications: 2,
+      pprBinding: { planId: initial.planId, versionId: initial.id,
+        entities: [{ kind: "operation", id, fields: ["standardTimeMinutes"] }], assets: [], sourceModelFingerprint } });
+    const affected = await app.inject({ method: "POST", url: "/api/projects/project-1/operations/logistics/des-studies", payload: mapped("assemble") });
+    const unrelated = await app.inject({ method: "POST", url: "/api/projects/project-1/operations/logistics/des-studies", payload: mapped("locate") });
+    expect([affected.statusCode, unrelated.statusCode]).toEqual([200, 200]);
+    const invalid = await app.inject({ method: "POST", url: "/api/projects/project-1/operations/logistics/des-studies", payload: mapped("missing") });
+    expect(invalid.statusCode).toBe(400);
+    const invalidModel = await app.inject({ method: "POST", url: "/api/projects/project-1/operations/logistics/des-studies", payload: { ...mapped("assemble"), model: { ...model, name: "已编辑的模型" } } });
+    expect(invalidModel.statusCode).toBe(400);
+    const cancelled = new AbortController(); cancelled.abort();
+    await expect(operations.runPlantLite("project-1", mapped("assemble"), cancelled.signal)).rejects.toThrow("已取消");
+    expect(operations.snapshot("project-1").studies).toHaveLength(2);
+    const reloaded = new OperationsService(directory); await reloaded.init();
+    const reopenedPpr = new PprBopService(directory); await reopenedPpr.init();
+    const reopenedApp = createApiServer(); cleanups.push(() => reopenedApp.close());
+    await registerPprBopRoutes(reopenedApp, { store, service: reopenedPpr, operations: reloaded });
+    const response = await reopenedApp.inject({ method: "POST", url: "/api/projects/project-1/ppr/bop-versions/compare", payload: { beforeVersionId: initial.id, afterVersionId: next.id } });
+    expect(response.statusCode).toBe(200);
+    const impact = response.json().studyImpact;
+    expect(impact.studies.find((item: { studyId: string }) => item.studyId === `plant-lite:${affected.json().id}`)).toMatchObject({ status: "stale", reasons: [expect.objectContaining({ subject: "operation:assemble" })] });
+    expect(impact.studies.find((item: { studyId: string }) => item.studyId === `plant-lite:${unrelated.json().id}`)).toMatchObject({ status: "fresh", reasons: [] });
+    expect(reloaded.snapshot("project-1").studies).toHaveLength(2);
   });
 
   it("rejects malformed structure, broken references and invalid EWI without appending a version", async () => {

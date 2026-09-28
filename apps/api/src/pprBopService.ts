@@ -76,10 +76,15 @@ export class PprBopService {
   }
 
   compare(projectId: string, beforeVersionId: string, afterVersionId: string, activeVariantId?: string): PprVersionComparison {
+    const { before, after } = this.comparisonVersions(projectId, beforeVersionId, afterVersionId);
+    return comparePprBopVersions(before, after, activeVariantId);
+  }
+
+  comparisonVersions(projectId: string, beforeVersionId: string, afterVersionId: string): { before: PprBopVersion; after: PprBopVersion } {
     const before = this.requireVersion(projectId, beforeVersionId);
     const after = this.requireVersion(projectId, afterVersionId);
     if (before.planId !== after.planId) throw new Error("只能比较同一工艺计划的两个版本");
-    return comparePprBopVersions(before, after, activeVariantId);
+    return { before, after };
   }
 
   private project(projectId: string): PprBopVersion[] {

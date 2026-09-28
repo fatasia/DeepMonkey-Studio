@@ -224,6 +224,7 @@ export function usePprPlanController(projectId: string, references: PprPlanRefer
     analysisPlan: analysisVersionId ? versions.find((version) => version.id === analysisVersionId) ?? draft : draft,
     analysisLabel: analysis ? analysisLabel : "草稿实时分析",
     comparison: visibleComparison,
+    sourceVersion: !dirty ? versions.find((version) => version.id === draft.basedOnVersionId) : undefined,
     availableVariantIds,
     activeVariantId,
     beforeVersionId,

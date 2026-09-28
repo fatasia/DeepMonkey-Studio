@@ -22,6 +22,7 @@ export function plantLiteRequestFromStudy(study: PlantLiteStudyRecord): PlantLit
     limits: structuredClone(study.execution.limits),
     ...(study.execution.trace ? { trace: structuredClone(study.execution.trace) } : {}),
     ...(study.acceptanceTargets ? { acceptanceTargets: structuredClone(study.acceptanceTargets) } : {}),
+    ...(study.pprBinding ? { pprBinding: structuredClone(study.pprBinding) } : {}),
   };
   return plantLiteModelIssues(request).length === 0 ? request : undefined;
 }
