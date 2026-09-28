@@ -54,7 +54,7 @@ struct DirectDisplayVertex {
   @builtin(front_facing) frontFacing: bool) -> @location(0) vec4f {
   let ground = flag(v.material.w, 8u); let normal = orientedNormal(v.normal, v.material, frontFacing);
   let color = shade(v.clip.xy, v.world, normal, ground,
-    v.colorMetal.rgb, v.colorMetal.w, v.material.x, 1.0, v.emissiveAlpha.rgb, v.authorShadow, v.material.w, v.dielectric);
+    v.colorMetal.rgb, v.colorMetal.w, v.material.x, 1.0, v.emissiveAlpha.rgb, v.authorShadow, v.material.w, v.dielectric, true);
   return vec4f(deepDisplayColor(color, frame.output), coverage(v.emissiveAlpha.w, v.material));
 }
 fn shadeDirectNoEffects(fragmentCoordinate: vec2f, world: vec3f, normalInput: vec3f, ground: bool,

@@ -561,7 +561,8 @@ export class PbrRenderer {
         // pass explicitly unavailable instead of manufacturing zero timings;
         // the upper layer can still inspect plan order, mappings and coverage.
         frameGraphReceipt: createPbrFrameReceipt(frameNumber, capturePlan.plan, [], begin,
-          Math.max(performance.now(), begin + 0.001)),
+          Math.max(performance.now(), begin + 0.001),
+          this.executedCapturePassIds(directClear !== undefined, postProcess, hasTransparent)),
       } : {}),
       ...this.shadows.metrics };
     this.sampleAdaptiveQuality(metrics);

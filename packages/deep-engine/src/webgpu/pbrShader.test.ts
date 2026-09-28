@@ -55,7 +55,8 @@ describe("normal-map WGSL contract", () => {
     expect(sceneShader).toContain("deepForwardPlusPbrWorldReceivingF0(fragmentCoordinate, world, n, frame.worldToView");
     expect(sceneShader).toContain("deepClusterParams.limits.z > 0u || deepClusterParams.grid1.w > 0u");
     expect(sceneShader).not.toContain("safeNormalize(vec3f(-0.8, 0.4, -0.6)");
-    expect(sceneShader.match(/shade\(v\.clip\.xy/g)).toHaveLength(8);
+    expect(sceneShader.match(/shade\(v\.clip\.xy/g)).toHaveLength(6);
+    expect(sceneShader).toContain("fn extendedShade(v: Vertex, normal: vec3f, surface: SurfaceSample)");
     expect(sceneShader).toContain("@fragment fn fragmentMainColor");
     expect(sceneShader).toContain("@fragment fn fragmentMaterialColor");
     expect(sceneShader).toContain("@fragment fn fragmentMainDisplay");

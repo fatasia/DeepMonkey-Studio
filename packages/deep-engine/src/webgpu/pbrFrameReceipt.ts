@@ -34,6 +34,10 @@ export function createPbrPassUnavailableSample(passId: string, reason: string, w
 export interface PbrFrameExecutionReceipt {
   readonly frame: number;
   readonly passOrder: readonly string[];
+  /** Mapped passes observed on this frame's encode path, never inferred from graph membership. */
+  readonly executedMappedPassIds: readonly string[];
+  /** Plan slots still without a validated production executor. */
+  readonly unmappedPassIds: readonly string[];
   /** 每个计划 pass 恰好一条样本;unmapped pass 显式 unavailable,禁止伪零值。 */
   readonly samples: readonly PbrPassChannelSample[];
 }
@@ -45,7 +49,8 @@ export interface PbrPassTimingEntry {
 
 /** 回执必须完整覆盖计划 pass:有实测给实测;未接/缺样本一律显式 unavailable。 */
 export function createPbrFrameReceipt(frame: number, plan: PbrFrameExecutionPlan,
-  timings: readonly PbrPassTimingEntry[], windowStartMs: number, windowEndMs: number): PbrFrameExecutionReceipt {
+  timings: readonly PbrPassTimingEntry[], windowStartMs: number, windowEndMs: number,
+  executedPassIds: ReadonlySet<string> = new Set()): PbrFrameExecutionReceipt {
   assertWindowBounds(windowStartMs, windowEndMs);
   const timingByPass = new Map<string, number>();
   for (const entry of timings) {
@@ -53,14 +58,24 @@ export function createPbrFrameReceipt(frame: number, plan: PbrFrameExecutionPlan
     if (!plan.passOrder.includes(entry.passId)) throw new Error(`Timing entry for pass ${entry.passId} is not in the plan.`);
     timingByPass.set(entry.passId, entry.durationMs);
   }
+  const mapped = new Set(plan.mappedPassIds);
+  for (const passId of executedPassIds) {
+    if (!mapped.has(passId)) throw new Error(`Executed pass ${passId} is not mapped in this frame plan.`);
+  }
   const samples = plan.passOrder.map(passId => {
     const durationMs = timingByPass.get(passId);
+    if (durationMs !== undefined && !executedPassIds.has(passId) && executedPassIds.size > 0) {
+      throw new Error(`Pass ${passId} has a timing but was not encoded.`);
+    }
     if (durationMs !== undefined) return createPbrPassTimingSample(passId, durationMs, windowStartMs, windowEndMs);
     const mapping = plan.passes.find(pass => pass.passId === passId)!.mapping;
-    const reason = mapping.status === "unmapped" ? `pass 未纳入第一切片(${mapping.reason})` : "missing timing entry for mapped pass";
+    const reason = mapping.status === "unmapped" ? `pass 未纳入第一切片(${mapping.reason})`
+      : executedPassIds.size > 0 && !executedPassIds.has(passId) ? "pass not encoded on this frame"
+        : "missing timing entry for mapped pass";
     return createPbrPassUnavailableSample(passId, reason, windowStartMs, windowEndMs);
   });
-  return Object.freeze({ frame, passOrder: [...plan.passOrder], samples });
+  return Object.freeze({ frame, passOrder: [...plan.passOrder],
+    executedMappedPassIds: [...executedPassIds].sort(), unmappedPassIds: [...plan.unmappedPassIds], samples });
 }
 
 /** 聚合为 A03 SampleWindow:窗口 schema 禁止重复通道,全部 pass 样本合并进唯一 gpu-timestamp 通道。 */

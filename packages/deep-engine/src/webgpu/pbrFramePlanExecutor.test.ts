@@ -240,6 +240,18 @@ describe("pass execution receipt", () => {
     expect(channel.unavailableReason).toContain("gpu-timestamp.pass.deform");
   });
 
+  it("reports actual encoded mapping coverage without faking per-pass GPU timing", () => {
+    const subject = plan(false);
+    const receipt = createPbrFrameReceipt(9, subject, [], 100, 116,
+      new Set(["opaque", "present"]));
+    expect(receipt.executedMappedPassIds).toEqual(["opaque", "present"]);
+    expect(receipt.unmappedPassIds).toEqual(subject.unmappedPassIds);
+    expect(receipt.samples.every(sample => sample.availability === "unavailable")).toBe(true);
+    const bloom = receipt.samples.find(sample => sample.passChannel.endsWith(".bloom"))!;
+    expect(bloom.unavailableReason).toBe("pass not encoded on this frame");
+    expect(() => createPbrFrameReceipt(9, subject, [], 100, 116, new Set(["deform"]))).toThrow(/not mapped/);
+  });
+
   it("rejects duplicate or out-of-plan timings and invalid durations", () => {
     const subject = plan(false);
     const timings = subject.mappedPassIds.map(passId => ({ passId, durationMs: 1 }));

@@ -273,7 +273,7 @@ fn extendedShade(v: Vertex, normal: vec3f, surface: SurfaceSample) -> vec3f {
   let coatAndTransmission = materialTextures.extended1;
   if (params.y == 0.0 && params.w == 0.0 && coatAndTransmission.y == 0.0) {
     return shade(v.clip.xy, v.world, normal, false, surface.base, surface.metal, surface.rough,
-      surface.occlusion, surface.emissive, v.authorShadow, v.material.w, v.dielectric);
+      surface.occlusion, surface.emissive, v.authorShadow, v.material.w, v.dielectric, true);
   }
   let view = safeNormalize(frame.eye.xyz - v.world, vec3f(0.0, 0.0, 1.0));
   let light = safeNormalize(frame.lightDirection.xyz, vec3f(0.0, 1.0, 0.0));
@@ -284,7 +284,7 @@ fn extendedShade(v: Vertex, normal: vec3f, surface: SurfaceSample) -> vec3f {
   let visibility = deepPrimaryShadow(v.world, normal, dot(normal, light), v.authorShadow, v.clip.xy, v.material.w);
   // The reference lobe is direct radiance; preserve stock IBL/GI and emissive, replacing only its direct term.
   let original = shade(v.clip.xy, v.world, normal, false, surface.base, surface.metal, surface.rough,
-    surface.occlusion, surface.emissive, v.authorShadow, v.material.w, v.dielectric);
+    surface.occlusion, surface.emissive, v.authorShadow, v.material.w, v.dielectric, false);
   let stockDirect = brdfWithDielectricF0(normal, view, light, surface.base, surface.metal,
     min(1.0, clamp(surface.rough, 0.06, 1.0) + deepGeometryRoughness(normal)), v.dielectric)
     * frame.sunColor.rgb * frame.sunColor.w * visibility;
