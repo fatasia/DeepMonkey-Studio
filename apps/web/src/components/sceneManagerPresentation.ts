@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type { SceneSnapshot } from "@bim-studio/contracts";
 
 export type SceneStatusFilter = "all" | "published" | "draft";
@@ -71,7 +72,7 @@ export function filterAndSortScenes(
       return !keyword || scene.name.toLocaleLowerCase().includes(keyword);
     })
     .sort((left, right) => {
-      if (sort === "name") return left.name.localeCompare(right.name, "zh-CN", { numeric: true });
+      if (sort === "name") return compareText(left.name, right.name);
       if (sort === "objects") return sceneObjectCount(right) - sceneObjectCount(left) || Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
       return Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
     });

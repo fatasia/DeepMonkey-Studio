@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type { PprBopVersion } from "@bim-studio/contracts";
 import type { PprIssue, PprVariantEntitySet, PprVariantScope } from "./types.js";
 
@@ -13,7 +14,7 @@ export function collectPprVariantIds(version: Pick<PprBopVersion, "variantIds" |
     ...version.components.flatMap((item) => item.variantIds ?? []),
     ...version.operations.flatMap((item) => item.variantIds ?? []),
     ...version.resources.flatMap((item) => item.variantIds ?? []),
-  ].map((item) => item.trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right, "zh-CN"));
+  ].map((item) => item.trim()).filter(Boolean))].sort((left, right) => compareText(left, right));
 }
 
 export function projectPprVariant(version: PprBopVersion, requestedVariantId?: string): PprVariantProjection {

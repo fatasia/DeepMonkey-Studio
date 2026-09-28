@@ -38,6 +38,15 @@ pub enum GpuEvent {
     #[cfg(target_arch = "wasm32")]
     WasmScenePackage(Vec<u8>),
     #[cfg(target_arch = "wasm32")]
+    WasmPhysicsPoseQuery {
+        request_id: u32,
+        instance_id: String,
+    },
+    #[cfg(target_arch = "wasm32")]
+    WasmPhysicsFrameReady {
+        epoch: u64,
+    },
+    #[cfg(target_arch = "wasm32")]
     WasmEditorOverlay {
         revision: u64,
         vertices: Vec<f32>,

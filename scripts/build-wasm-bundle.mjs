@@ -20,6 +20,7 @@ import { brotliCompressSync, gzipSync } from "node:zlib";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
+import { artifactSha256, wasmSourceFingerprint } from "./lib/wasmArtifactFingerprint.mjs";
 
 const argv = process.argv.slice(2);
 const argOf = (f) => {
@@ -39,6 +40,7 @@ const noInstall = has("--no-install");
 const keepGoing = has("--keep-going");
 const jsonOut = argOf("--json");
 const finalDir = noInstall ? join(repo, "test-output", "wasm-bundle-stage") : outDir;
+const sourceAtStart = wasmSourceFingerprint(repo);
 
 const kb = (n) => (n / 1024).toFixed(1) + " KB";
 const sizes = (buf) => ({ raw: buf.length, gzip9: gzipSync(buf, { level: 9 }).length, brotli11: brotliCompressSync(buf, { params: { [0x06]: 11 } }).length });
@@ -139,4 +141,19 @@ if (jsonOut) {
   writeFileSync(jsonPath, JSON.stringify({ profile, target, features: features ?? null, opt, outDir: finalDir, entries, at: new Date().toISOString() }, null, 2));
   console.log(`\n[json] ${jsonPath}`);
 }
+const artifactFiles = ["deep_engine_wasm_bg.wasm", "deep_engine_wasm.js", "deep_engine_wasm.d.ts", "deep_engine_wasm_bg.wasm.d.ts"];
+const sourceAtEnd = wasmSourceFingerprint(repo);
+if (sourceAtEnd.sha256 !== sourceAtStart.sha256) {
+  console.error("[build-wasm-bundle] 构建期间 Rust 来源发生变化；产物不安装新鲜度清单，请重跑构建。");
+  process.exit(1);
+}
+const manifest = {
+  schemaVersion: 1,
+  source: sourceAtStart,
+  profile,
+  target,
+  features: features ?? null,
+  artifacts: Object.fromEntries(artifactFiles.map(file => [file, artifactSha256(join(finalDir, file))])),
+};
+writeFileSync(join(finalDir, "deep_engine_wasm.manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
 if (!noInstall) console.log(`[build-wasm-bundle] 已安装到 ${outDir}(Vite public 静态目录,import 路径不变)`);

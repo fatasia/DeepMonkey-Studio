@@ -1,3 +1,4 @@
+import { compareText } from "./textOrder.js";
 import type { DeepAssetPackage } from "./assetPackage.js";
 import { validateDeepAssetPackage } from "./assetPackageValidation.js";
 import { DEEP_RUNTIME_PACKAGE_SCHEMA, type DeepRuntimePackage } from "./runtimePackage/types.js";
@@ -182,8 +183,8 @@ function add(state: AuditState, code: DeepPackagePurityIssueCode, path: string, 
   state.dedupe.add(key); state.issues.push(Object.freeze({ code, path, message }));
 }
 function finish(kind: DeepPackagePurityResult["packageKind"], state: AuditState): DeepPackagePurityResult {
-  const issues = Object.freeze([...state.issues].sort((a, b) => a.path.localeCompare(b.path)
-    || a.code.localeCompare(b.code) || a.message.localeCompare(b.message)));
+  const issues = Object.freeze([...state.issues].sort((a, b) => compareText(a.path, b.path)
+    || compareText(a.code, b.code) || compareText(a.message, b.message)));
   return Object.freeze({ clean: issues.length === 0, packageKind: kind, issues,
     evidence: Object.freeze({ visitedNodes: state.nodes, inspectedStrings: state.strings,
       inspectedChunks: state.chunks, truncated: state.truncated }) });

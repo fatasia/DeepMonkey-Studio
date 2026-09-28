@@ -13,6 +13,11 @@ struct TemporalParams {
 @group(0) @binding(5) var<storage, read> temporalParams: TemporalParams;
 @group(0) @binding(6) var outputColor: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(7) var outputDepth: texture_storage_2d<r32float, write>;
+// Reactive coverage (r8unorm, 0-255 → 0-1): transparent/particle regions whose motion
+// target carries opaque background motion. Scales the trusted feedback exactly like
+// temporalResponseMask.applyResponseFeedback; a zero mask keeps the baseline formula
+// bit-identical (1.0 - 0.0 is exact in IEEE-754).
+@group(0) @binding(8) var reactiveMask: texture_2d<f32>;
 
 fn rgbToYCoCg(rgb: vec3f) -> vec3f {
   return vec3f(rgb.r * 0.25 + rgb.g * 0.5 + rgb.b * 0.25, rgb.r * 0.5 - rgb.b * 0.5,
@@ -63,7 +68,8 @@ fn resolveTemporal(@builtin(global_invocation_id) id: vec3<u32>) {
         } }
         let history = rgbToYCoCg(historicalColor.rgb);
         let clampedHistory = yCoCgToRgb(clamp(history, minimum, maximum));
-        resolved = mix(color.rgb, clampedHistory, temporalParams.tuning.x);
+        let reactive = clamp(textureLoad(reactiveMask, coordinate, 0).x, 0.0, 1.0);
+        resolved = mix(color.rgb, clampedHistory, temporalParams.tuning.x * (1.0 - reactive));
       }
     }
   }

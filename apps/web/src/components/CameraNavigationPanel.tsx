@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Camera, Footprints, Orbit, Plus, Save, ScanLine, ShieldCheck, Trash2, UserRound, X } from "lucide-react";
 import type { CameraConstraintsState, CameraState, CameraViewState, NavigationSettingsState } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
+import { imeComposingKey } from "./layerKeyboard";
 import type { NavigationCollisionDiagnostics } from "../viewer/ViewerEngine";
 import { useFloatingPanelDrag } from "../hooks/useFloatingPanelDrag";
 
@@ -414,6 +415,7 @@ function NumberField({
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commit}
           onKeyDown={(event) => {
+            if (imeComposingKey(event)) return;
             if (event.key === "Enter") event.currentTarget.blur();
             if (event.key === "Escape") {
               setDraft(String(value));

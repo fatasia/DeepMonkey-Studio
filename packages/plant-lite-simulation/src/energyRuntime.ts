@@ -1,3 +1,4 @@
+import { compareText } from "./textOrder.js";
 import type { PlantLiteAvailability, PlantLiteModel, PlantLiteResource } from "@bim-studio/contracts";
 import { plantLiteEffectiveCapacity } from "./capacity.js";
 import type { EnergyRunMetrics } from "./model.js";
@@ -78,7 +79,7 @@ export function plantLiteEnergyMetrics(runtime: Runtime): EnergyRunMetrics | und
         ...consumer,
         totalEnergyKwh: consumer.activeEnergyKwh + consumer.idleEnergyKwh,
       }))
-      .sort((left, right) => right.totalEnergyKwh - left.totalEnergyKwh || left.consumerId.localeCompare(right.consumerId)),
+      .sort((left, right) => right.totalEnergyKwh - left.totalEnergyKwh || compareText(left.consumerId, right.consumerId)),
   };
 }
 

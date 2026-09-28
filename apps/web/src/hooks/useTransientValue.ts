@@ -26,16 +26,14 @@ export function useTransientValue<Snapshot, Selected>(
     } catch {
       return options?.fallback;
     }
-    // selector 由调用方保证稳定(模块级或 useCallback);此处刻意不依赖它。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channel, options?.fallback, options?.throttleMs]);
+  }, [channel, selector, options?.fallback]);
 
   const subscribe = useCallback((onStoreChange: () => void) => {
     if (!channel) return () => undefined;
     const throttleMs = options?.throttleMs ?? 0;
     let lastRender = 0;
     let pendingHandle: ReturnType<typeof setTimeout> | undefined;
-    return channel.subscribe(() => {
+    const unsubscribe = channel.subscribe(() => {
       if (throttleMs <= 0) {
         onStoreChange();
         return;
@@ -54,8 +52,10 @@ export function useTransientValue<Snapshot, Selected>(
         onStoreChange();
       }, throttleMs - elapsed);
     });
-    // 同上:options.throttleMs 稳定性由调用方保证。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      unsubscribe();
+      if (pendingHandle !== undefined) clearTimeout(pendingHandle);
+    };
   }, [channel, options?.throttleMs]);
 
   return useSyncExternalStore(subscribe, getSnapshot, () => options?.fallback);

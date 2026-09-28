@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import { AlertTriangle, BadgeCheck, CircleX, Database, LoaderCircle, RefreshCw, ShieldQuestion } from "lucide-react";
 import { useRef, useState } from "react";
 import type { DataDatasetField, DataDatasetPreview, DataDatasetRecord, PlantLiteStudyRecord } from "@bim-studio/contracts";
@@ -222,7 +223,7 @@ function bestSemanticField(fields: readonly DataDatasetField[], aliases: readonl
   return fields
     .map((field) => ({ field, score: semanticFieldScore(field, aliases) }))
     .filter((candidate) => candidate.score > 0)
-    .sort((left, right) => right.score - left.score || left.field.key.localeCompare(right.field.key))[0]?.field;
+    .sort((left, right) => right.score - left.score || compareText(left.field.key, right.field.key))[0]?.field;
 }
 
 function semanticFieldScore(field: DataDatasetField, aliases: readonly string[]): number {

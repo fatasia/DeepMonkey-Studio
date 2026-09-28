@@ -1,3 +1,4 @@
+import { compareText } from "../textOrder.js";
 import { sha256Hex } from "./canonical.js";
 import { collectPassBindings, validatePassBindings } from "./compilerAnalysis.js";
 import { emitShaderPass } from "./compilerWgsl.js";
@@ -38,7 +39,7 @@ export function compileShaderPass(
     schema: 1, assetId: asset.id, techniqueId, passId, kind: pass.kind, code, state: pass.state,
     propertyLayout,
     ...(bindings.lightingContext ? { lightingContext: bindings.lightingContext } : {}),
-    bindings: [...bindings.resources].sort((a, b) => SHADER_SCOPE_GROUP[a.scope] - SHADER_SCOPE_GROUP[b.scope] || a.binding - b.binding || a.name.localeCompare(b.name))
+    bindings: [...bindings.resources].sort((a, b) => SHADER_SCOPE_GROUP[a.scope] - SHADER_SCOPE_GROUP[b.scope] || a.binding - b.binding || compareText(a.name, b.name))
       .map(({ name, scope, binding, kind, visibility }) => ({ name, scope, binding, kind, visibility })),
     attributes: [...asset.attributes].sort((a, b) => a.location - b.location)
       .map(({ name, location, format, type }) => ({ name, location, format, type })),

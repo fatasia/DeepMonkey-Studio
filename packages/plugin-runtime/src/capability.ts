@@ -6,6 +6,7 @@
  * 而 UI、MCP 和 API 始终消费同一份可审计结果。
  */
 
+import { compareText } from "./textOrder.js";
 import type { CapabilityExecution } from "./manifest.js";
 import { isCapabilitySchema, validateCapabilityValue, type CapabilityJsonSchema } from "./capabilitySchema.js";
 
@@ -168,7 +169,7 @@ export class CapabilityRegistry {
   }
 
   public list(): CapabilityDescriptor[] {
-    return [...this.#providers.values()].map((registered) => cloneDescriptor(registered.provider.descriptor)).sort((left, right) => left.id.localeCompare(right.id));
+    return [...this.#providers.values()].map((registered) => cloneDescriptor(registered.provider.descriptor)).sort((left, right) => compareText(left.id, right.id));
   }
 
   public async invoke<TOutput = unknown>(

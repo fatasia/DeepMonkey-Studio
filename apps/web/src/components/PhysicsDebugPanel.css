@@ -1,0 +1,268 @@
+/* T28 物理调试面板：令牌唯一来源 base.css，禁止硬编码色（T17 面板 17 处硬编码清剿教训）。 */
+
+.pdbg-launcher {
+  position: absolute;
+  top: 70px;
+  left: 332px;
+  z-index: var(--layer-panel);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
+}
+.pdbg-launcher:hover { color: var(--text-strong); border-color: var(--accent); }
+
+.pdbg-panel {
+  position: absolute;
+  top: 70px;
+  left: 332px;
+  z-index: var(--layer-panel);
+  width: 300px;
+  max-height: calc(100% - 86px);
+  overflow: auto;
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  background: var(--panel);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(14px);
+  scrollbar-gutter: stable;
+  font-size: 12px;
+}
+.pdbg-panel header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 44px;
+  padding: 0 11px 0 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-1);
+}
+.pdbg-panel header[data-drag-handle="true"] { cursor: grab; touch-action: none; }
+.pdbg-panel header[data-drag-handle="true"]:active { cursor: grabbing; }
+.pdbg-panel header > div { display: flex; flex-direction: column; gap: 2px; }
+.pdbg-panel header strong { font-size: 13px; color: var(--text-strong); }
+.pdbg-panel header small { font-size: 11px; color: var(--text-muted); }
+.pdbg-panel header button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+.pdbg-panel header button:hover { color: var(--text-strong); background: var(--surface-3); }
+
+.pdbg-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-subtle);
+}
+.pdbg-section:last-child { border-bottom: none; }
+.pdbg-section > strong {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-strong);
+  letter-spacing: 0.02em;
+}
+.pdbg-section > strong em { font-style: normal; color: var(--text-muted); font-weight: 400; }
+
+.pdbg-row { display: flex; align-items: center; gap: 6px; }
+.pdbg-row label {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.pdbg-row label span { flex: none; font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.pdbg-row label input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]) {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+}
+.pdbg-row label input:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.pdbg-panel button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 9px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+.pdbg-panel button:hover:not(:disabled) { color: var(--text-strong); border-color: var(--accent); }
+.pdbg-panel button:disabled { opacity: 0.45; cursor: not-allowed; }
+.pdbg-panel button.active {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.pdbg-panel button.active:hover:not(:disabled) { color: var(--on-accent); }
+.pdbg-panel button.recording { box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 55%, transparent); }
+.pdbg-panel .pdbg-wide { width: 100%; }
+
+.pdbg-meta { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.pdbg-meta output { color: var(--text-strong); }
+
+.pdbg-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 168px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+.pdbg-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-xs);
+  flex-wrap: wrap;
+}
+.pdbg-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--text-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pdbg-num { font-size: 11px; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pdbg-pos { flex-basis: 100%; color: var(--text-muted); }
+.pdbg-dim { color: var(--text-muted); }
+
+.pdbg-badge {
+  flex: none;
+  padding: 1px 5px;
+  font-size: 10px;
+  line-height: 14px;
+  border-radius: 999px;
+  color: var(--text);
+  background: var(--surface-3);
+  border: 1px solid var(--line-subtle);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.pdbg-badge.pdbg-dynamic { color: color-mix(in srgb, var(--accent) 82%, var(--text-strong)); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.pdbg-badge.pdbg-kinematic { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, transparent); }
+.pdbg-badge.pdbg-fixed { color: var(--text-muted); }
+.pdbg-badge.pdbg-sleep { color: var(--text-faint); }
+.pdbg-badge.pdbg-revolute { color: var(--success); border-color: color-mix(in srgb, var(--success) 45%, transparent); }
+.pdbg-badge.pdbg-prismatic { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, transparent); }
+.pdbg-badge.pdbg-limit { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 45%, transparent); }
+.pdbg-badge.pdbg-motor { color: color-mix(in srgb, var(--accent) 82%, var(--text-strong)); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.pdbg-badge.pdbg-dimbadge { color: var(--text-faint); }
+
+.pdbg-empty {
+  padding: 8px 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-xs);
+}
+
+.pdbg-slider { flex: 1; min-width: 0; accent-color: var(--accent); }
+.pdbg-slider:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.pdbg-file {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  transition: border-color 150ms ease, color 150ms ease;
+}
+.pdbg-file:hover { color: var(--text-strong); border-color: var(--accent); }
+.pdbg-file input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.pdbg-slot { flex: none; font-size: 11px; color: var(--text-muted); }
+.pdbg-slotmeta {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--text-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.pdbg-error {
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  border-radius: var(--radius-xs);
+}
+
+.pdbg-summary output { color: var(--text-strong); }
+.pdbg-verdict {
+  align-self: flex-start;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 999px;
+}
+.pdbg-verdict.pass { color: var(--success); background: color-mix(in srgb, var(--success) 12%, transparent); }
+.pdbg-verdict.fail { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+
+.pdbg-curvehead { justify-content: flex-start; }
+.pdbg-curvehead button { height: 22px; padding: 0 7px; font-size: 11px; }
+.pdbg-curvehead .pdbg-num { margin-left: auto; }
+.pdbg-curve { width: 100%; height: 64px; background: var(--surface-2); border: 1px solid var(--line-subtle); border-radius: var(--radius-xs); }
+.pdbg-axis { stroke: var(--line-strong); stroke-width: 1; }
+.pdbg-line { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+.pdbg-exceed { fill: var(--danger); }
+
+.pdbg-exceedlist li { gap: 8px; }
+
+@media (max-width: 760px) {
+  .pdbg-panel, .pdbg-launcher { left: 16px; top: 130px; }
+}

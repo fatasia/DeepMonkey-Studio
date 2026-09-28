@@ -139,6 +139,19 @@ export function synthesizeDualTextureSetJt(source: Uint8Array): Uint8Array {
   return spliceLod0Attributes(source, segment, insertOffset, insert, bindings | (0x1n << 8n) | (0x1n << 12n));
 }
 
+/** 真实 JT 10.3 几何段的字节级变体：仅绑定源纹理集 1。 */
+export function synthesizeSingleNonzeroTextureSetJt(source: Uint8Array): Uint8Array {
+  const container = parseJtContainer(source, DEFAULT_JT_READ_LIMITS);
+  const segment = container.segments.find((candidate) => candidate.type === 7);
+  if (!segment) throw new Error("合成 fixture 需要样本包含 LOD0 几何段");
+  const codesU = Array.from({ length: 8 }, (_, index) => Math.round((index / 7) * 255));
+  const codesV = codesU.map((value) => 255 - value);
+  const view = new DataView(source.buffer, source.byteOffset, source.byteLength);
+  const bindings = view.getBigUint64(segment.offset + SEGMENT_HEADER_BYTES + LOD0_BINDINGS_PAYLOAD_OFFSET, true);
+  return spliceLod0Attributes(source, segment, segment.offset + SEGMENT_HEADER_BYTES + LOD0_INSERTION_POINT,
+    textureCoordinateRecord(codesU, codesV), bindings | (0x1n << 12n));
+}
+
 function textureCoordinateRecord(codesU: number[], codesV: number[]): Uint8Array {
   return concat([
     u32le(codesU.length), Uint8Array.of(2, 8),

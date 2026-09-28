@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type { SceneMaterialState, SceneSnapshot } from "@bim-studio/contracts";
 import type { RenderPacket } from "@bim-studio/deep-engine";
 import { adaptDeepSlToShaderPackage } from "@bim-studio/deep-engine/shader-authoring";
@@ -61,7 +62,7 @@ export function compileSceneCustomShaders(scene: SceneSnapshot, packet: RenderPa
     }
   }
   return {
-    shaderPackages: [...packageMap.values()].sort((a, b) => a.packageId.localeCompare(b.packageId))
+    shaderPackages: [...packageMap.values()].sort((a, b) => compareText(a.packageId, b.packageId))
       .map(value => ({ revision: 1, value })),
     materialBindings: [...bindingMap.values()].sort((a, b) => a.materialId < b.materialId ? -1 : a.materialId > b.materialId ? 1 : 0),
   };

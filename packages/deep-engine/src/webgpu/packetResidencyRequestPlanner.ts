@@ -1,3 +1,4 @@
+import { compareText } from "../textOrder.js";
 import type { PreparedPacket } from "../renderPacketTypes.js";
 import { DEEP_RESIDENCY_LIMITS } from "../streaming/index.js";
 import type { GpuRenderResidencyRequest } from "./gpuRenderResidencyRuntime.js";
@@ -62,8 +63,8 @@ function planCompiled(index: CompiledPacketResidencyIndex,
       textureLevels, maxPriorities, detailPriorities, planned);
   }
   return Object.freeze([...planned.values()]
-    .sort((left, right) => left.order - right.order || left.kind.localeCompare(right.kind)
-      || left.id.localeCompare(right.id))
+    .sort((left, right) => left.order - right.order || compareText(left.kind, right.kind)
+      || compareText(left.id, right.id))
     .map(({ order: _order, ...request }) => Object.freeze(request)));
 }
 

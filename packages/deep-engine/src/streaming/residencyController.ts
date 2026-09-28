@@ -1,3 +1,4 @@
+import { compareText } from "../textOrder.js";
 import type {
   ResidentResourceState, ResidencyBudgets, ResidencyCommitResult, ResidencyEviction, ResidencyFramePlan,
   ResidencyRequest, ResidencySelection, ResidencySelectionReason, ResidencyUpload, StreamedResourceProfile,
@@ -61,7 +62,7 @@ export class ResourceResidencyController {
   }
 
   snapshot(): readonly ResidentResourceState[] {
-    return Object.freeze([...this.residents.values()].sort((a, b) => a.id.localeCompare(b.id)).map((state) => Object.freeze({ ...state })));
+    return Object.freeze([...this.residents.values()].sort((a, b) => compareText(a.id, b.id)).map((state) => Object.freeze({ ...state })));
   }
 
   planFrame(frame: number, requests: readonly ResidencyRequest[]): ResidencyFramePlan {
@@ -73,7 +74,7 @@ export class ResourceResidencyController {
     const requestedIds = new Set(validated.map((request) => request.id));
     const retained = [...this.residents.values()]
       .filter((state) => !requestedIds.has(state.id) && frame - state.lastUsedFrame <= this.budgets.retainFrames)
-      .sort((a, b) => b.lastUsedFrame - a.lastUsedFrame || a.id.localeCompare(b.id));
+      .sort((a, b) => b.lastUsedFrame - a.lastUsedFrame || compareText(a.id, b.id));
     let targetBytes = targets.reduce((sum, item) => sum + targetBytesFor(item, this.profiles), 0);
     const retainedIds = new Set<string>();
     for (const state of retained) {
@@ -116,7 +117,7 @@ export class ResourceResidencyController {
 
     const selections = targets.map((target): ResidencySelection => Object.freeze({
       id: target.request.id, requestedLevel: target.request.desiredLevel, targetLevel: target.level, reason: target.reason,
-    })).sort((a, b) => a.id.localeCompare(b.id));
+    })).sort((a, b) => compareText(a.id, b.id));
     const id = ++this.planSequence;
     const plan = Object.freeze({ id, baseRevision: this.revisionValue, frame, selections: Object.freeze(selections),
       uploads: Object.freeze(uploads), evictions: Object.freeze(evictions), residentBytesBefore: this.residentBytes,
@@ -180,7 +181,7 @@ export class ResourceResidencyController {
 
 function chooseStableTargets(requests: readonly ValidatedRequest[], profiles: ReadonlyMap<string, Readonly<StreamedResourceProfile>>,
   budget: number): PlannedTarget[] {
-  const ranked = [...requests].sort((a, b) => Number(b.required) - Number(a.required) || b.priority - a.priority || a.id.localeCompare(b.id));
+  const ranked = [...requests].sort((a, b) => Number(b.required) - Number(a.required) || b.priority - a.priority || compareText(a.id, b.id));
   let used = 0;
   return ranked.map((request) => {
     const profile = profiles.get(request.id)!;
@@ -196,7 +197,7 @@ function transitionOrder(a: PlannedTarget, b: PlannedTarget, profiles: ReadonlyM
   residents: ReadonlyMap<string, ResidentResourceState>): number {
   const delta = (item: PlannedTarget) => profiles.get(item.request.id)!.levels[item.level!]!.byteLength - (residents.get(item.request.id)?.byteLength ?? 0);
   return delta(a) - delta(b) || Number(b.request.required) - Number(a.request.required)
-    || b.request.priority - a.request.priority || a.request.id.localeCompare(b.request.id);
+    || b.request.priority - a.request.priority || compareText(a.request.id, b.request.id);
 }
 function targetBytesFor(target: PlannedTarget, profiles: ReadonlyMap<string, Readonly<StreamedResourceProfile>>): number {
   return target.level === null ? 0 : profiles.get(target.request.id)!.levels[target.level]!.byteLength;

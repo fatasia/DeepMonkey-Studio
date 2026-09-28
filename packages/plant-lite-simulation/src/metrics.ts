@@ -4,6 +4,7 @@ import type {
   PlantLiteReplication,
   PlantLiteModel,
 } from "./model.js";
+import { compareText } from "./textOrder.js";
 import { confidenceInterval95 } from "./statistics.js";
 import { plantLiteEnergyMetrics } from "./energyRuntime.js";
 import { isKanbanBuffer } from "./kanbanRuntime.js";
@@ -284,7 +285,7 @@ function bottleneckFrequencies(runs: PlantLiteReplication[]): PlantLiteExperimen
   }
   return [...counts]
     .map(([nodeId, occurrences]) => ({ nodeId, occurrences, probability: occurrences / Math.max(1, runs.length) }))
-    .sort((left, right) => right.occurrences - left.occurrences || left.nodeId.localeCompare(right.nodeId));
+    .sort((left, right) => right.occurrences - left.occurrences || compareText(left.nodeId, right.nodeId));
 }
 
 function selectBottleneck(model: PlantLiteModel, metrics: PlantLiteReplication["nodes"], duration: number) {
@@ -293,7 +294,7 @@ function selectBottleneck(model: PlantLiteModel, metrics: PlantLiteReplication["
       const node = model.nodes.find((candidate) => candidate.id === metric.nodeId);
       return !!node && (isResourceNode(node) || (isBufferNode(node) && metric.blockedMinutes > 0));
     })
-    .sort((left, right) => bottleneckScore(right, duration) - bottleneckScore(left, duration) || left.nodeId.localeCompare(right.nodeId))[0];
+    .sort((left, right) => bottleneckScore(right, duration) - bottleneckScore(left, duration) || compareText(left.nodeId, right.nodeId))[0];
 }
 
 function bottleneckScore(metric: PlantLiteReplication["nodes"][number], duration: number): number {

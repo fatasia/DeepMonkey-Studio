@@ -208,7 +208,7 @@ describe("end to end through RayTraceGpuTlasExecutor (stub device)", () => {
     readonly data: Uint8Array;
     constructor(readonly label: string, readonly size: number) { this.data = new Uint8Array(size); }
     mapAsync(): Promise<void> { return Promise.resolve(); }
-    getMappedRange(): ArrayBuffer { return this.data.buffer; }
+    getMappedRange(): ArrayBuffer { return this.data.buffer as ArrayBuffer; }
     unmap(): void {} destroy(): void {}
   }
   function stubDevice(state: { tlas: TlasBuildResult; rayCount: number; mask: number }): GPUDevice {
@@ -217,10 +217,11 @@ describe("end to end through RayTraceGpuTlasExecutor (stub device)", () => {
     const stub = (buffer: GPUBuffer): StubBuffer => buffers.get((buffer as unknown as StubBuffer).label)!;
     return {
       pushErrorScope(): void {}, popErrorScope: () => Promise.resolve(null),
-      createShaderModule: ({ code }) => ({ code }) as GPUShaderModule,
+      createShaderModule: ({ code }: { code: string }) => ({ code }) as unknown as GPUShaderModule,
       createComputePipeline: () => ({ getBindGroupLayout: () => ({}) }) as unknown as GPUComputePipeline,
-      createBindGroup: ({ entries }) => ({ entries }) as unknown as GPUBindGroup,
-      createBuffer: ({ label, size }) => {
+      createBindGroup: ({ entries }: { entries: readonly GPUBindGroupEntry[] }) =>
+        ({ entries }) as unknown as GPUBindGroup,
+      createBuffer: ({ label, size }: { label: string; size: number }) => {
         const buffer = new StubBuffer(label, size); buffers.set(label, buffer); return buffer as unknown as GPUBuffer; },
       createCommandEncoder: () => ({
         beginComputePass: () => ({ setPipeline(): void {}, setBindGroup(): void {},
@@ -234,11 +235,11 @@ describe("end to end through RayTraceGpuTlasExecutor (stub device)", () => {
       queue: {
         writeBuffer: (buffer: GPUBuffer, offset: number, data: ArrayBufferView | ArrayBuffer, dataOffset = 0, size?: number): void => {
           const target = stub(buffer);
-          const elementBytes = "BYTES_PER_ELEMENT" in data ? data.BYTES_PER_ELEMENT : 1;
-          const bytes = "BYTES_PER_ELEMENT" in data
-            ? new Uint8Array(data.buffer, data.byteOffset + dataOffset * elementBytes,
-              (size ?? data.byteLength / elementBytes - dataOffset) * elementBytes)
-            : new Uint8Array(data, dataOffset, size ?? data.byteLength - dataOffset);
+          const view = data instanceof ArrayBuffer
+            ? { buffer: data, byteOffset: 0, byteLength: data.byteLength, elementBytes: 1 }
+            : { buffer: data.buffer as ArrayBuffer, byteOffset: data.byteOffset, byteLength: data.byteLength,
+              elementBytes: (data as { BYTES_PER_ELEMENT?: number }).BYTES_PER_ELEMENT ?? 1 };
+          const bytes = new Uint8Array(view.buffer, view.byteOffset + dataOffset * view.elementBytes, (size ?? view.byteLength / view.elementBytes - dataOffset) * view.elementBytes);
           target.data.set(bytes, offset);
           if (target.label === "rt-tlas-uniform") {
             const words = new Uint32Array(target.data.buffer);

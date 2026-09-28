@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import { createHash } from "node:crypto";
 import { open, readdir, stat } from "node:fs/promises";
 import { Socket } from "node:net";
@@ -66,7 +67,7 @@ export async function queryServiceLogs(directories: string[], filters: ServiceLo
     (!filters.from || Date.parse(entry.timestamp) >= Date.parse(filters.from)) &&
     (!filters.to || Date.parse(entry.timestamp) <= Date.parse(filters.to)) &&
     (!keyword || `${entry.service} ${entry.message}`.toLocaleLowerCase("zh-CN").includes(keyword)),
-  ).sort((left, right) => right.timestamp.localeCompare(left.timestamp));
+  ).sort((left, right) => compareText(right.timestamp, left.timestamp));
   return {
     items: matched.slice(0, filters.limit),
     total: matched.length,

@@ -114,7 +114,8 @@ export class PbrRenderer {
   private temporalLightRevision = 0;
   private readonly frameData = new Float32Array(PBR_FRAME_UNIFORM_FLOATS);
   private constructor(readonly session: DeviceSession, private readonly pipelines: Pipelines, environment: StudioEnvironment,
-    lighting: ForwardPlusPbrRuntime, localShadows: LocalSpotShadowRuntime, options: PbrRendererOptions, features: PbrRendererFeatures, deformationPipelines?: Pipelines) {
+    lighting: ForwardPlusPbrRuntime, localShadows: LocalSpotShadowRuntime, options: PbrRendererOptions, features: PbrRendererFeatures,
+    deformationPipelines?: Pipelines | Promise<Pipelines>, private readonly releasePipelines?: () => void) {
     this.diagnostics = new PbrRendererDiagnostics(session);
     this.adaptiveQuality = options.adaptiveQuality ? new AdaptiveQualityController(options.adaptiveQuality) : undefined;
     if (options.adaptiveQuality?.enabled) this.diagnostics.setEnabled(true);
@@ -131,11 +132,13 @@ export class PbrRenderer {
     this.probeClipmap = options.probeClipmap === undefined ? undefined
       : new ProbeClipmapPbrController(this, probeClipmapDeviceEpoch(session.device), options.probeClipmap);
     const fallback = pipelines.textureArrayFallback;
+    // 变形变体可以是就绪实例，也可以是延迟就绪的 promise：PacketBuffers 在含变形的
+    // packet 边界等待并附着。
     this.packets = new PacketBuffers(session, (fallback ?? pipelines).materialLayout,
       deformationPipelines, options.meshlets === true, features.visibilityBuffer,
       fallback ? pipelines.materialLayout.material : undefined);
     this.writeGeometryBuffers = features.ambientOcclusion || features.screenSpaceReflection || features.volumetricFog || features.temporalAa
-      || !!deformationPipelines;
+      || deformationPipelines !== undefined;
     this.ground = createPbrGround(session);
     this.frameBuffer = uploadBuffer(session, "Deep frame", this.frameData, GPUBufferUsage.UNIFORM);
     this.outputs = new PbrOutputBindings(session, pipelines, () => performance.now(), features.spatialAa);
@@ -161,8 +164,12 @@ export class PbrRenderer {
     this.lighting = lighting; this.localShadows = localShadows;
   }
   get frameCaptureSession(): FrameCaptureSession | undefined { return this.frameCapture?.session; }
+  /** 首帧验证通过后由宿主调用：放行背景 main 变体排队，避免与首帧争抢设备。 */
+  releaseBackgroundPipelines(): void { this.releasePipelines?.(); }
   static async create(canvas: HTMLCanvasElement, gpu: GPU | undefined, signal: AbortSignal, options: PbrRendererOptions = {}): Promise<PbrRenderer> {
+    if (typeof performance !== "undefined") performance.mark("deep-webgpu:device-open-start");
     const session = await DeviceSession.open(canvas, gpu, signal, options.deviceMemoryBudgetBytes);
+    if (typeof performance !== "undefined") performance.mark("deep-webgpu:device-opened");
     return openPbrRenderer(session, signal, options, () => new DOMException("GPU preparation cancelled", "AbortError"),
       (...args) => new PbrRenderer(...args));
   }
@@ -184,8 +191,8 @@ export class PbrRenderer {
   async setInstancesValidated(data: Float32Array<ArrayBuffer>, signal?: AbortSignal): Promise<void> { await this.setPacketValidated(spherePacket(data), signal); }
   setDiagnosticsSampling(enabled: boolean): void { this.diagnostics.setEnabled(enabled); } updateInstances(update: InstanceUpdate): void { if (this.packets.updateInstances(update)) this.shadowDirty = true; }
   /**
-   * 第 3 条权威路径:CPU 拾取查询(同步)。线性遍历当前发布场景,复杂度
-   * O(实例 × 三角形),边界与精度限制见 webgpu/picking.ts 头注;不可用时返回
+   * 第 3 条权威路径:CPU 拾取查询(同步)。遍历当前发布实例并用几何球体宽相位筛选,
+   * 最坏仍为 O(实例 × 三角形);边界与精度限制见 webgpu/picking.ts 头注;不可用时返回
    * unavailable + 原因(不抛糊错),输入契约违例(非法射线)才抛精确错误。
    */
   pick(origin: ArrayLike<number>, direction: ArrayLike<number>, options: PickOptions = {}): PickResult {
@@ -205,9 +212,13 @@ export class PbrRenderer {
    * fail closed at the session, so the producer is constructed here with the live device.
    */
   createProbeClipmapController(target: ProbeClipmapPbrTarget, deviceEpoch: string): ProbeClipmapPbrController {
-    this.probeRadianceProducer ??= new ProbeSceneRadianceProducer(this.session.device);
+    // 32 directions clear the thin-wall reference threshold; fixed 8 probes/frame keeps
+    // the worst-case ray workload at 256 even when the grid has thousands of probes.
+    const frameBudget = 8;
+    this.probeRadianceProducer ??= new ProbeSceneRadianceProducer(this.session.device, { directionCount: 32 });
     const producer = this.probeRadianceProducer;
     return new ProbeClipmapPbrController(target, deviceEpoch, {
+      frameBudget, cameraCutBudget: frameBudget,
       encodeSourceRadiance: context => producer.encodeSourceRadiance(context),
       // Soft scene sync: an invalid packet (e.g. a deformation snapshot the ray scene
       // rejects) records a capture-blocked reason and later captures refuse, instead of
@@ -466,7 +477,12 @@ export class PbrRenderer {
       extent: view.extent, verticalFovRadians: frameState.projection.verticalFovRadians,
       cameraCut: history.cameraCut, currentJitter: history.currentJitter,
       previousJitter: history.previousJitter, materialRevision: this.packets.visibilityRevision,
-      lightRevision: this.temporalLightRevision, exposure: view.exposure, reactiveMaskAvailable: false,
+      lightRevision: this.temporalLightRevision, exposure: view.exposure,
+      // T07: the flag now reports real reactive (no-motion-target) region presence:
+      // weighted-OIT transparency and GPU particles never write the motion target.
+      // Per-pixel mask supply stays unwired until the reactive-mask pass joins the
+      // frame plan (see docs/reports/deep-core/T07-implementation.md).
+      reactiveMaskAvailable: hasTransparent || (this.particlePass !== undefined && particleBinding !== undefined),
       surfaceWidth: size.width, surfaceHeight: size.height,
       ...(this.adaptiveQuality ? { adaptiveQuality: this.adaptiveQuality.state().knobs } : {}) };
     const opaqueEffects: ReturnType<PbrPostProcessChain["encodeOpaque"]> = directClear
@@ -651,6 +667,8 @@ export class PbrRenderer {
     const owners = [this.ground.author, this.outputs, this.environment, this.lighting, this.localShadows,
       this.shadowState, this.previousHiZ, this.transparency, this.postProcess, this.packets, this.targets,
       ...(this.visibility ? [this.visibility] : [])];
+    // 释放背景排队门：未 release 就销毁的宿主也能让挂起的门禁 promise 结算。
+    this.releasePipelines?.();
     runResourceCleanup("PBR renderer cleanup failed.", [...owners.map(owner => () => owner.dispose()),
       () => this.cameraHistory.reset(), () => this.session.dispose()]);
   }

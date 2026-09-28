@@ -3,7 +3,7 @@
  * Deep GI 探针一跳场景辐射 GPU 生产者（F1 第一切片）：`encodeSourceRadiance` 钩子的
  * 第一个真实实现。把 RenderPacket 经 buildRenderPacketRayScene → packTlasScene 上传为
  * 两级软件 TLAS/BLAS 存储缓冲，按渲染帧锁存的直射光/环境项，对捕获计划里的每个探针
- * 发射确定性 Fibonacci 方向集（≤16/探针），命中点 Lambert 一跳着色、miss 记环境项，
+ * 发射确定性 Fibonacci 方向集（≤32/探针），命中点 Lambert 一跳着色、miss 记环境项，
  * 均值写入捕获纹理对应 texel（probeRadianceKernel）。
  *
  * == 诚实边界 ==
@@ -42,7 +42,7 @@ export interface ProbeRadianceLighting {
 }
 
 export interface ProbeSceneRadianceProducerOptions {
-  /** 每探针确定性方向数，1..16 整数；默认 8。 */
+  /** 每探针确定性方向数，1..32 整数；默认 8，生产 GI 工厂显式选 32。 */
   readonly directionCount?: number;
   /** 射线最大行程（世界单位，(0, 1e6]）；默认 32。 */
   readonly maxDistance?: number;

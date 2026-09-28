@@ -27,8 +27,8 @@ if (!existsSync(coreManifest)) {
   console.log("Deploy ps-schema-probe by extracting parasolid-kit v0.2.0 and re-running this script.");
 } else {
   const targetDir = process.env.PARASOLID_PROBE_TARGET_DIR?.trim()
-    || path.join(crate, "target/release");
-  const command = spawn("cargo", ["build", "--locked", "--release", "--target-dir", targetDir, "-j", "2"], {
+    || path.join(crate, "target");
+  const command = spawn("cargo", ["build", "--locked", "--offline", "--release", "--target-dir", targetDir, "-j", "2"], {
     cwd: crate, windowsHide: true, stdio: "inherit",
   });
   const code = await new Promise((resolve, reject) => { command.once("error", reject); command.once("close", resolve); });
@@ -36,13 +36,14 @@ if (!existsSync(coreManifest)) {
   const executableName = process.platform === "win32" ? "ps-schema-probe.exe" : "ps-schema-probe";
   const output = path.join(root, "apps/api/dist/ps-schema-probe");
   await mkdir(output, { recursive: true });
-  await copyFile(path.join(targetDir, executableName), path.join(output, executableName));
+  const builtExecutable = path.join(targetDir, "release", executableName);
+  await copyFile(builtExecutable, path.join(output, executableName));
   const hash = bytes => createHash("sha256").update(bytes).digest("hex");
-  const sources = ["Cargo.toml", "Cargo.lock", "src/main.rs"];
+  const sources = ["Cargo.toml", "Cargo.lock", "src/main.rs", "src/geometry.rs"];
   const inputs = await Promise.all(sources.map(async source => ({ path: source, sha256: hash(await readFile(path.join(crate, source))) })));
   const executable = await readFile(path.join(output, executableName));
   await writeFile(path.join(output, "manifest.json"), JSON.stringify({ schemaVersion: 1,
-    tool: "ps-schema-probe", dependency: "parasolid-core 0.2.0 (MIT AND Apache-2.0, vendored, not redistributed)",
+    tool: "ps-schema-probe", dependency: "parasolid-core 0.2.0 (MIT AND Apache-2.0, vendored)",
     platform: process.platform, bytes: executable.length, sha256: hash(executable), inputs }, null, 2));
   console.log(`ps-schema-probe built: ${executable.length} bytes ${hash(executable)}`);
 }

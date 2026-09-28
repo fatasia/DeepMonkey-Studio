@@ -320,7 +320,8 @@ function validateTexture(texture: GPUTexture, format: GPUTextureFormat, name: st
     throw new Error(`SSR ${name} dimensions must be positive integers.`);
   }
 }
-function packParameters(request: Request, options: ScreenSpaceReflectionOptions): ArrayBuffer {
+/** Parameter block shared by the pass and the real-GPU capture scripts (single packing source). */
+export function packParameters(request: Request, options: ScreenSpaceReflectionOptions): ArrayBuffer {
   const buffer = new ArrayBuffer(PARAMETER_BYTES), uints = new Uint32Array(buffer), floats = new Float32Array(buffer);
   uints.set([request.sourceWidth, request.sourceHeight], 0);
   uints.set([request.traceWidth, request.traceHeight], 2);

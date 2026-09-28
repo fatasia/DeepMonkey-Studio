@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import { createHash } from "node:crypto";
 import {
   parseDeepRuntimePackage,
@@ -223,5 +224,5 @@ function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
 }
 function fontOrder(left: { readonly resourceId: string; readonly sha256: string; readonly faceIndex: number | undefined },
   right: { readonly resourceId: string; readonly sha256: string; readonly faceIndex: number | undefined }): number {
-  return left.resourceId.localeCompare(right.resourceId) || (left.faceIndex ?? -1) - (right.faceIndex ?? -1) || left.sha256.localeCompare(right.sha256);
+  return compareText(left.resourceId, right.resourceId) || (left.faceIndex ?? -1) - (right.faceIndex ?? -1) || compareText(left.sha256, right.sha256);
 }

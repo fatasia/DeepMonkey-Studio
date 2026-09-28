@@ -73,7 +73,18 @@ export interface ModelManifest {
   pmiUrl?: string;
   lods?: ModelLodResource[];
   robot?: RobotAssetDefinition;
+  /** Deep Asset Package 存储身份：转换管线成功发布后才写入；再导入与 CAS 替换以此为准。 */
+  deepAssetPackage?: DeepAssetPackageReference;
   createdAt: string;
+}
+
+/** 指向 API 端 Deep Asset Package 存储的稳定引用；packageUrl 返回带 revision 的包 manifest。 */
+export interface DeepAssetPackageReference {
+  packageId: string;
+  revision: number;
+  sourceHash: string;
+  entryScene: string;
+  packageUrl: string;
 }
 
 export interface ModelLodResource {

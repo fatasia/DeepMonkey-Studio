@@ -43,6 +43,18 @@ pub struct DynamicAnimationControllerRuntime {
     pub states: Vec<DynamicAnimationControllerState>,
     pub parameters: HashMap<String, bool>,
     pub transitions: Vec<DynamicAnimationControllerTransition>,
+    /// T14 clip 事件标记。缺省（旧包）为空集，语义不变；`time` 单位秒，
+    /// clip 时长不在包 ABI 内，`0 <= time < duration` 由消费端时钟 fail-closed。
+    #[serde(default)]
+    pub events: Vec<DynamicAnimationEventMarker>,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DynamicAnimationEventMarker {
+    pub clip_id: String,
+    pub event_id: String,
+    pub time: f64,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -492,6 +504,27 @@ pub fn parse_and_validate_dynamic_scene_runtime(
                 return fail("dynamic animation controller transition is invalid");
             }
         }
+        // T14 clip 事件标记：数量、有界文本、非负有限时间与 (clip,event) 唯一性
+        // fail-closed；与 TS `parseAnimationController` 同规则。
+        if controller.events.len() > MAX_EVENTS
+            || controller.events.iter().any(|marker| {
+                marker.clip_id.is_empty()
+                    || marker.clip_id.chars().count() > 256
+                    || marker.event_id.is_empty()
+                    || marker.event_id.chars().count() > 256
+                    || !marker.time.is_finite()
+                    || marker.time < 0.0
+            })
+            || {
+                let mut seen = HashSet::with_capacity(controller.events.len());
+                controller
+                    .events
+                    .iter()
+                    .any(|marker| !seen.insert((marker.clip_id.as_str(), marker.event_id.as_str())))
+            }
+        {
+            return fail("dynamic animation controller event markers are invalid");
+        }
     }
     if let Some(physics) = &runtime.physics {
         validate_physics_runtime(value, physics)?;
@@ -604,6 +637,68 @@ mod tests {
     }
 
     #[test]
+    fn parses_clip_event_markers_and_rejects_duplicates_or_bad_times() {
+        let build = |events: serde_json::Value| {
+            serde_json::json!({
+                "schema":"deep-engine.dynamic-runtime","schemaVersion":2,"id":"scene","revision":1,
+                "animationController":{
+                    "schema":"deep-engine.animation-controller","schemaVersion":1,
+                    "initialStateId":"robot:idle","activeStateId":"robot:idle","transitionDurationMs":250,
+                    "states":[{"id":"robot:idle","modelId":"robot","clipId":"Idle","loop":true}],
+                    "parameters":{},"transitions":[],
+                    "events":events
+                }
+            })
+        };
+        let runtime = parse_and_validate_dynamic_scene_runtime(&build(serde_json::json!([
+            {"clipId":"Idle","eventId":"footstep","time":0.25},
+            {"clipId":"Idle","eventId":"turn","time":0.5}
+        ])))
+        .unwrap();
+        let controller = runtime.animation_controller.as_ref().unwrap();
+        assert_eq!(controller.events.len(), 2);
+        assert_eq!(controller.events[0].clip_id, "Idle");
+        assert_eq!(controller.events[0].event_id, "footstep");
+        assert_eq!(controller.events[0].time, 0.25);
+
+        // 旧包缺字段：解析成功且为空集，语义不变。
+        let legacy = parse_and_validate_dynamic_scene_runtime(&serde_json::json!({
+            "schema":"deep-engine.dynamic-runtime","schemaVersion":2,"id":"scene","revision":1,
+            "animationController":{
+                "schema":"deep-engine.animation-controller","schemaVersion":1,
+                "initialStateId":"robot:idle","activeStateId":"robot:idle","transitionDurationMs":250,
+                "states":[{"id":"robot:idle","modelId":"robot","clipId":"Idle","loop":true}],
+                "parameters":{},"transitions":[]
+            }
+        }))
+        .unwrap();
+        assert!(
+            legacy
+                .animation_controller
+                .as_ref()
+                .unwrap()
+                .events
+                .is_empty()
+        );
+
+        // (clip,event) 重复 fail-closed。
+        assert!(
+            parse_and_validate_dynamic_scene_runtime(&build(serde_json::json!([
+                {"clipId":"Idle","eventId":"footstep","time":0.25},
+                {"clipId":"Idle","eventId":"footstep","time":0.5}
+            ])))
+            .is_err()
+        );
+        // 负时间 fail-closed。
+        assert!(
+            parse_and_validate_dynamic_scene_runtime(&build(serde_json::json!([
+                {"clipId":"Idle","eventId":"footstep","time":-0.1}
+            ])))
+            .is_err()
+        );
+    }
+
+    #[test]
     fn consumes_v2_animation_controller_and_rejects_legacy_or_broken_references() {
         let controller = serde_json::json!({
             "schema":"deep-engine.animation-controller","schemaVersion":1,
@@ -651,7 +746,7 @@ mod tests {
             "physics":{"schema":"deep-engine.physics-runtime","schemaVersion":1,"enabled":true,"playing":true,
                 "gravity":[0,-9.81,0],
                 "bodies":[
-                    {"id":"body-a","type":"dynamic","initialPose":{"translation":[0,2,0],"rotation":[0,0,0,1]},"mass":2,"friction":0.5,"restitution":0.1,"collider":{"kind":"render-bounds","instanceIds":["instance-a"]}},
+                    {"id":"body-a","type":"dynamic","initialPose":{"translation":[0,2,0],"rotation":[0,0,0,1]},"initialLinearVelocity":[80,0,0],"mass":2,"friction":0.5,"restitution":0.1,"collider":{"kind":"render-bounds","instanceIds":["instance-a"]}},
                     {"id":"body-b","type":"fixed","initialPose":{"translation":[0,0,0],"rotation":[0,0,0,1]},"mass":1,"friction":0.4,"restitution":0,"collider":{"kind":"render-bounds","instanceIds":["instance-b"]}}
                 ],
                 "joints":[{"id":"joint-a","kind":"revolute","solver":"impulse","bodyId":"body-a","connectedBodyId":"body-b",
@@ -670,12 +765,22 @@ mod tests {
             matches!(&commands[1], DynamicPhysicsCommand::UpsertBody(body) if body.id == "body-a")
         );
         assert!(
+            matches!(&commands[1], DynamicPhysicsCommand::UpsertBody(body) if body.initial_linear_velocity == Some([80.0, 0.0, 0.0]))
+        );
+        assert!(
             matches!(&commands[3], DynamicPhysicsCommand::UpsertJoint(joint) if joint.id == "joint-a")
         );
 
         let mut legacy = value.clone();
         legacy["schemaVersion"] = serde_json::json!(2);
         assert!(parse_and_validate_dynamic_scene_runtime(&legacy).is_err());
+        let mut wrong_type = value.clone();
+        wrong_type["physics"]["bodies"][1]["initialLinearVelocity"] = serde_json::json!([1, 0, 0]);
+        assert!(parse_and_validate_dynamic_scene_runtime(&wrong_type).is_err());
+        let mut excessive = value.clone();
+        excessive["physics"]["bodies"][0]["initialLinearVelocity"] =
+            serde_json::json!([1001, 0, 0]);
+        assert!(parse_and_validate_dynamic_scene_runtime(&excessive).is_err());
         let mut unsupported = value;
         unsupported["physics"]["joints"][0]["solver"] = serde_json::json!("multibody");
         assert!(parse_and_validate_dynamic_scene_runtime(&unsupported).is_err());

@@ -53,12 +53,20 @@ export function henyeyGreensteinPhase(cosTheta: number, anisotropy: number): num
   return (1 - g2) / denominator;
 }
 
-export function densityAtHeight(height: number, medium: VolumetricMedium): number {
+/** 接受结构化子集(T09 fogReference 闭式解复用同公式);完整 VolumetricMedium 天然满足。 */
+export function densityAtHeight(height: number,
+  medium: Pick<VolumetricMedium, "baseExtinction" | "scaleHeight">): number {
   return medium.baseExtinction * Math.exp(-Math.max(height, 0) / medium.scaleHeight);
 }
 
 function normalize3(vector: VolumetricVector3): VolumetricVector3 {
   const length = Math.hypot(vector[0], vector[1], vector[2]);
+  // 2026-09-28 同族清剿(T09 切片一):零/非有限向量此前静默产出 NaN 并污染
+  // 参考积分结果;GPU 镜像侧 validateVolumetricFogLight 早已按 ≤1e-6 抛错,
+  // 这里对齐同一 fail-closed 口径(阈值与 validateVolumetricFogLight 一致)。
+  if (!Number.isFinite(length) || length <= 1e-6) {
+    throw new RangeError("Volumetric ray/light direction must be a finite nonzero vector (length > 1e-6).");
+  }
   return [vector[0] / length, vector[1] / length, vector[2] / length];
 }
 

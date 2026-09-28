@@ -21,6 +21,15 @@ export function layerKeyboardOccupied(event: Pick<KeyboardEvent, "target" | "nat
     || Boolean(target.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"]'));
 }
 
+/**
+ * IME 组合中的 Enter（确认候选）与 Escape（取消组合）属于输入法，不是用户提交。
+ * Safari 在 compositionend 之后还会补发一次 isComposing=false、keyCode=229 的 keydown，两个条件都要拦。
+ */
+export function imeComposingKey(event: { nativeEvent?: { isComposing?: boolean; keyCode?: number } }): boolean {
+  const native = event.nativeEvent;
+  return Boolean(native && (native.isComposing || native.keyCode === 229));
+}
+
 export function layerNavigationIndex(key: string, index: number, count: number): number | undefined {
   if (count === 0 || index < 0) return undefined;
   if (key === "ArrowDown") return Math.min(count - 1, index + 1);

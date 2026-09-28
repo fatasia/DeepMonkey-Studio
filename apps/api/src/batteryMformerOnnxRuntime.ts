@@ -7,6 +7,7 @@ import type { BatteryPredictionInput } from "./batteryModelGateway.js";
 import type { BatteryOnnxDeployment, BatteryOnnxModelDeployment } from "./batteryOnnxDeployment.js";
 import { prepareBatteryMformerInput, type BatteryMformerModelMetadata } from "./batteryMformerPreprocessing.js";
 import { completeBatteryMformerPrediction, type BatteryMformerConditionMode } from "./batteryMformerPostprocessing.js";
+import { createCpuOnnxSession } from "./onnxSessionProviders.js";
 
 export interface EmbeddingDescriptor {
   fileName: string;
@@ -216,5 +217,6 @@ function object(value: unknown): Record<string, unknown> {
 }
 
 async function defaultSession(artifactPath: string): Promise<SessionLike> {
-  return ort.InferenceSession.create(artifactPath, { executionProviders: ["cpu"], graphOptimizationLevel: "all" }) as unknown as SessionLike;
+  // T32 薄壳化:会话创建委托网关 EP 策略;参数与原实现逐项一致(CPU + 全图优化),零行为变化。
+  return createCpuOnnxSession(artifactPath) as unknown as SessionLike;
 }

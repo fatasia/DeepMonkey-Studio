@@ -1,4 +1,4 @@
-import type { SceneSnapshot, Vector3Value } from "@bim-studio/contracts";
+import type { SceneSnapshot, ScenePhysicsColliderState, Vector3Value } from "@bim-studio/contracts";
 import type { DynamicPhysicsRuntime } from "@bim-studio/deep-engine/runtime-package";
 import type { SceneRenderCompilation } from "./compileSceneRenderPacket";
 
@@ -9,7 +9,9 @@ export interface CompileScenePhysicsRuntimeOptions {
 
 /** Compiles authored rigid bodies into deterministic commands whose colliders
  * are resolved from the already-frozen render packet rather than editor state.
- * kinematic 刚体保留作者位姿作为 Native 的初始位姿（Native 不消费角色控制器，见 B3-b 边界）。 */
+ * kinematic 刚体保留作者位姿作为 Native 的初始位姿（Native 不消费角色控制器，见 B3-b 边界）。
+ * 作者 collider（T17 来源规范）按判别联合下译：凸包/简化网格几何位于刚体局部空间，
+ * 必须携带精度标记；省略 collider 时保持 render-bounds 现状。 */
 export function compileScenePhysicsRuntime(
   scene: SceneSnapshot,
   options: CompileScenePhysicsRuntimeOptions,
@@ -34,17 +36,28 @@ export function compileScenePhysicsRuntime(
       if (state.character && state.type !== "kinematic") {
         throw new Error(`物理对象 ${item.modelId} 的角色控制器要求 kinematic 刚体`);
       }
+      if (state.initialLinearVelocity && (state.type !== "dynamic"
+        || !Object.values(state.initialLinearVelocity).every(value => Number.isFinite(value) && Math.abs(value) <= 1_000))) {
+        throw new Error(`物理对象 ${item.modelId} 的初速度要求 dynamic 且各轴在 ±1000 m/s 内`);
+      }
+      const collider = compileCollider(state.collider, item.modelId, instanceIds);
       return { id: item.modelId, type: state.type as "fixed" | "dynamic" | "kinematic",
         initialPose: { translation: vector(item.transform.position), rotation: quaternion(item.transform.rotation) }, mass: state.mass,
         friction: state.friction, restitution: state.restitution,
         ...(state.character ? { character: cloneCharacter(state.character) } : {}),
-        collider: { kind: "render-bounds" as const, instanceIds } };
+        ...(state.initialLinearVelocity ? { initialLinearVelocity: vector(state.initialLinearVelocity) } : {}),
+        collider };
     }).sort((left, right) => compare(left.id, right.id));
   if (!bodies.length) throw new Error("已启用物理场景但没有可编译的刚体");
   const bodyIds = new Set(bodies.map(body => body.id));
   const joints = [...(scene.physics.joints ?? [])].map(joint => {
-    if (joint.kind !== "revolute") throw new Error(`关节 ${joint.id} 的类型不受 Native 运行包支持`);
+    if (joint.kind !== "revolute" && joint.kind !== "prismatic") {
+      throw new Error(`关节 ${joint.id} 的类型不受 Native 运行包支持`);
+    }
     const solver = joint.solver ?? "impulse";
+    if (joint.kind === "prismatic" && solver !== "impulse") {
+      throw new Error(`关节 ${joint.id} 的 prismatic 仅支持 impulse 求解器`);
+    }
     if (!bodyIds.has(joint.bodyId) || joint.connectedBodyId && !bodyIds.has(joint.connectedBodyId)) {
       throw new Error(`关节 ${joint.id} 引用了未编译的刚体`);
     }
@@ -59,6 +72,66 @@ export function compileScenePhysicsRuntime(
   }).sort((left, right) => compare(left.id, right.id));
   return { schema: "deep-engine.physics-runtime", schemaVersion: 1, enabled: true,
     playing: scene.physics.playing, gravity: vector(scene.physics.gravity), bodies, joints };
+}
+
+/** 作者 collider → 运行包判别联合;fail-closed:几何缺失/越界/generated 缺精度标记一律拒绝。 */
+function compileCollider(
+  state: ScenePhysicsColliderState | undefined,
+  modelId: string,
+  instanceIds: readonly string[],
+): DynamicPhysicsRuntime["bodies"][number]["collider"] {
+  const precision = state?.precision === undefined ? undefined : {
+    ...(state.precision.approximate === undefined ? {} : { approximate: state.precision.approximate }),
+    ...(state.precision.reasons === undefined ? {} : { reasons: [...state.precision.reasons] }),
+    ...(state.precision.tolerance === undefined ? {} : { tolerance: state.precision.tolerance }),
+    ...(state.precision.hullVertexCount === undefined ? {} : { hullVertexCount: state.precision.hullVertexCount }),
+    ...(state.precision.triangleCount === undefined ? {} : { triangleCount: state.precision.triangleCount }),
+    ...(state.precision.topologyOk === undefined ? {} : { topologyOk: state.precision.topologyOk }),
+    ...(state.precision.topologyIssueCodes === undefined ? {} : { topologyIssueCodes: [...state.precision.topologyIssueCodes] }),
+    ...(state.precision.concaveSource === undefined ? {} : { concaveSource: state.precision.concaveSource }),
+  };
+  if (state === undefined || state.kind === "render-bounds") {
+    return { kind: "render-bounds", instanceIds, ...(precision ? { precision } : {}) };
+  }
+  if (state.kind === "convex-hull") {
+    const points = (state.points ?? []).map(point => vector(point));
+    if (points.length < 4 || !points.every(point => point.every(Number.isFinite))) {
+      throw new Error(`物理对象 ${modelId} 的凸包 collider 至少需要 4 个有限顶点`);
+    }
+    if (!precision) throw new Error(`物理对象 ${modelId} 的凸包 collider 缺少精度标记`);
+    return { kind: "convex-hull", instanceIds, points, precision };
+  }
+  if (state.kind === "simplified-mesh") {
+    const positions = (state.positions ?? []).map(point => vector(point));
+    const indices = state.indices ?? [];
+    if (positions.length < 3 || !positions.every(point => point.every(Number.isFinite))
+      || indices.length < 3 || indices.length % 3 !== 0
+      || !indices.every(index => Number.isInteger(index) && index >= 0 && index < positions.length)) {
+      throw new Error(`物理对象 ${modelId} 的简化网格 collider 几何无效`);
+    }
+    if (!precision) throw new Error(`物理对象 ${modelId} 的简化网格 collider 缺少精度标记`);
+    return { kind: "simplified-mesh", instanceIds, positions, indices: [...indices], precision };
+  }
+  const primitive = state.primitive;
+  if (!primitive) throw new Error(`物理对象 ${modelId} 的 primitive collider 缺少显式几何`);
+  if (primitive.shape === "cuboid") {
+    const halfExtents = primitive.halfExtents;
+    if (!halfExtents || ![halfExtents.x, halfExtents.y, halfExtents.z].every(value => Number.isFinite(value) && value > 0)) {
+      throw new Error(`物理对象 ${modelId} 的 cuboid collider 需要正的半尺寸`);
+    }
+    return { kind: "primitive", instanceIds, primitive: { shape: "cuboid", halfExtents: vector(halfExtents) }, ...(precision ? { precision } : {}) };
+  }
+  if (primitive.shape === "sphere") {
+    if (!Number.isFinite(primitive.radius) || (primitive.radius ?? 0) <= 0) {
+      throw new Error(`物理对象 ${modelId} 的 sphere collider 需要正半径`);
+    }
+    return { kind: "primitive", instanceIds, primitive: { shape: "sphere", radius: primitive.radius! }, ...(precision ? { precision } : {}) };
+  }
+  if (!Number.isFinite(primitive.radius) || (primitive.radius ?? 0) <= 0
+    || !Number.isFinite(primitive.halfHeight) || (primitive.halfHeight ?? 0) <= 0) {
+    throw new Error(`物理对象 ${modelId} 的 cylinder collider 需要正半径与半高`);
+  }
+  return { kind: "primitive", instanceIds, primitive: { shape: "cylinder", radius: primitive.radius!, halfHeight: primitive.halfHeight! }, ...(precision ? { precision } : {}) };
 }
 
 function vector(value: Vector3Value): readonly [number, number, number] {

@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import { createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -561,5 +562,5 @@ async function readServiceLogs(logDirectory: string): Promise<ServiceLogRecord[]
     const lines = content.split(/\r?\n/).filter(Boolean).slice(-100);
     result.push({ service: name.replace(/\.err\.log$/, ""), file: name, lines, ...(info ? { updatedAt: info.mtime.toISOString() } : {}) });
   }
-  return result.sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));
+  return result.sort((left, right) => compareText(String(right.updatedAt), String(left.updatedAt)));
 }

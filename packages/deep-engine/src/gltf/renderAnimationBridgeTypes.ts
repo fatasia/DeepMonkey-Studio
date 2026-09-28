@@ -6,6 +6,8 @@ import type { GpuMorphWeights } from "../webgpu/gpuMorphTypes.js";
 import type { MorphSkinningDynamics } from "../webgpu/gpuMorphSkinningTypes.js";
 import type { SkinningPalette } from "../webgpu/gpuSkinningTypes.js";
 import type { DecodedAnimatedGlb, GltfAnimatedNode } from "./animationTypes.js";
+import type { GltfAnimationEventOptions } from "./renderAnimationEvents.js";
+import type { GltfRootMotionTrackingOptions } from "./renderAnimationRootMotion.js";
 import type { DecodedMorphGlb } from "./morphTypes.js";
 import type { DecodedSkinnedGlb } from "./skinTypes.js";
 
@@ -39,6 +41,18 @@ export interface GltfRenderInstanceProjection<TNodeId extends SpatialItemId> {
 export interface GltfRenderAnimationBridgeOptions<TNodeId extends SpatialItemId> {
   readonly instances?: GltfRenderInstanceProjection<TNodeId>;
   readonly selection?: GltfRenderAnimationSelection;
+}
+
+/**
+ * Runtime-level extension of the bridge options. Event and root motion contracts are
+ * deep-engine TS contracts; Native/WASM/editor alignment is a later slice.
+ */
+export interface GltfRenderAnimationRuntimeOptions<TNodeId extends SpatialItemId>
+  extends GltfRenderAnimationBridgeOptions<TNodeId> {
+  /** Clip markers detected on the unwrapped timeline while the runtime advances. */
+  readonly events?: GltfAnimationEventOptions;
+  /** Per-frame root motion recording for one tracked node; no automatic application. */
+  readonly rootMotion?: GltfRootMotionTrackingOptions<TNodeId>;
 }
 
 export interface GltfRenderAnimationSelection {

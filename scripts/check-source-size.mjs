@@ -16,6 +16,10 @@ const IGNORED_DIRECTORIES = new Set([
   "PackageCache",
   "site-packages"
 ]);
+const IGNORED_GENERATED_PATHS = new Set([
+  "apps/web/public/engine-wasm",
+  "apps/web/public/dev/pkg"
+]);
 
 const sourceFiles = (await Promise.all(["apps", "packages", "scripts", "tools"].map(walk))).flat();
 const failures = [];
@@ -40,7 +44,9 @@ async function walk(root) {
   const entries = await readdir(root, { withFileTypes: true });
   const nested = await Promise.all(entries.flatMap((entry) => {
     if (entry.isDirectory()) {
-      return IGNORED_DIRECTORIES.has(entry.name) ? [] : [walk(path.join(root, entry.name))];
+      const directory = path.join(root, entry.name);
+      const relative = path.relative(process.cwd(), directory).replaceAll(path.sep, "/");
+      return IGNORED_DIRECTORIES.has(entry.name) || IGNORED_GENERATED_PATHS.has(relative) ? [] : [walk(directory)];
     }
     return entry.isFile() && SOURCE_EXTENSIONS.has(path.extname(entry.name)) ? [[path.join(root, entry.name)]] : [];
   }));

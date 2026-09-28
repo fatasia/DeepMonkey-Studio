@@ -1,3 +1,4 @@
+import { compareText } from "../textOrder.js";
 /**
  * 纹理数组打包合同（波次5 bindless 级 1）：把场景纹理按（格式×宽×高）分箱进
  * texture_2d_array，输出数组计划与每纹理的 (arrayIndex, layerIndex) 分配。
@@ -57,8 +58,8 @@ export function planTextureArrays(input: TextureArrayPackingInput): TextureArray
   const assignments = new Map<string, { arrayIndex: number; layerIndex: number }>();
   const overflowed: string[] = [];
   const sortedBoxes = [...boxes.values()].sort((a, b) =>
-    a.format.localeCompare(b.format) || a.width - b.width || a.height - b.height
-    || a.compatibilityKey.localeCompare(b.compatibilityKey));
+    compareText(a.format, b.format) || a.width - b.width || a.height - b.height
+    || compareText(a.compatibilityKey, b.compatibilityKey));
   for (const box of sortedBoxes) {
     const arrayIndex = arrays.length;
     const layers = [...box.ids].sort((a, b) => a < b ? -1 : 1);

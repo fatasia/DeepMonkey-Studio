@@ -63,16 +63,22 @@ fn filterIrradiance(@builtin(global_invocation_id) id: vec3u) {
   let size = vec2i(textureDimensions(captureInput));
   let center = vec2i(i32(update.x), i32(update.y));
   let layer = probeLayer(update);
-  var sum = vec4f(0.0);
+  var sum = vec3f(0.0); var validWeight = 0.0;
   for (var y = -1; y <= 1; y++) {
     for (var x = -1; x <= 1; x++) {
-      sum += textureLoad(captureInput, clamp(center + vec2i(x, y), vec2i(0), size - vec2i(1)), layer, 0);
+      let sample = max(textureLoad(captureInput, clamp(center + vec2i(x, y), vec2i(0), size - vec2i(1)), layer, 0), vec4f(0.0));
+      sum += sample.rgb * sample.a;
+      validWeight += sample.a;
     }
   }
-  let filtered = max(sum / 9.0, vec4f(0.0));
+  let centerValid = textureLoad(captureInput, center, layer, 0).a > 0.0;
+  let filtered = vec4f(sum / max(validWeight, 1.0), select(0.0, 1.0, centerValid));
   let history = max(textureLoad(historyInput, center, layer, 0), vec4f(0.0));
   let dynamic = (update.level & DYNAMIC_PROBE_UPDATE_FLAG) != 0u;
-  let weight = select(params.staticHysteresis, params.dynamicHysteresis, dynamic);
+  var weight = select(params.staticHysteresis, params.dynamicHysteresis, dynamic);
+  // An invalid center cannot borrow neighbors or temporal history. Newly valid centers
+  // also must not inherit a previous invalid sample's history.
+  weight = select(0.0, weight, centerValid && history.a > 0.0);
   var blended = mix(filtered, history, vec4f(weight));
   // Bounded energy clamp: each channel may move at most energyClamp * max(history, floor)
   // per committed frame, so a bad capture can flash but never explode the volume.
@@ -89,12 +95,17 @@ fn buildMip(@builtin(global_invocation_id) id: vec3u) {
   if (id.x >= targetSize.x || id.y >= targetSize.y || id.z >= textureNumLayers(mipOutput)) { return; }
   let sourceSize = vec2i(textureDimensions(mipInput));
   let base = vec2i(id.xy * 2u);
-  var sum = vec4f(0.0);
+  // Alpha is validity, not color coverage. Never interpolate invalid texels into a
+  // valid mip: a buried probe must remain invalid at every level.
+  var radiance = vec3f(0.0); var validWeight = 0.0;
   for (var y = 0; y < 2; y++) {
     for (var x = 0; x < 2; x++) {
-      sum += textureLoad(mipInput, min(base + vec2i(x, y), sourceSize - vec2i(1)), i32(id.z), 0);
+      let sample = max(textureLoad(mipInput, min(base + vec2i(x, y), sourceSize - vec2i(1)), i32(id.z), 0), vec4f(0.0));
+      radiance += sample.rgb * sample.a;
+      validWeight += sample.a;
     }
   }
-  textureStore(mipOutput, vec2i(id.xy), i32(id.z), max(sum * 0.25, vec4f(0.0)));
+  textureStore(mipOutput, vec2i(id.xy), i32(id.z),
+    vec4f(radiance / max(validWeight, 1.0), select(0.0, 1.0, validWeight > 0.0)));
 }
 `;

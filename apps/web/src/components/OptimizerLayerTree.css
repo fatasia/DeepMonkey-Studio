@@ -8,7 +8,7 @@
 .optimizer-layer-tree [role=tree]{max-height:260px;overflow:auto;padding-bottom:8px;}
 .optimizer-layer-row{display:flex;align-items:center;min-height:34px;padding-right:8px;gap:2px;}
 .optimizer-layer-row:hover{background:var(--surface-2);}
-.optimizer-layer-row__name{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;}
+.optimizer-layer-row__name{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;unicode-bidi:plaintext;font-size:12px;}
 .optimizer-layer-row.is-hidden .optimizer-layer-row__name{color:var(--text-muted);text-decoration:line-through;}
 .optimizer-layer-row input{width:0;min-width:0;flex:1;height:28px;border:1px solid var(--accent);background:var(--bg-0);color:var(--text);padding:0 5px;font:inherit;}
 .optimizer-layer-tree p{padding:8px 14px;color:var(--text-muted);}

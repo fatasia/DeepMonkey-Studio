@@ -19,6 +19,7 @@ import { loadGltfWithMetadata } from "./gltfMetadataLoad";
 
 /** Loading 职责层。 */
 export abstract class ViewerEngineLoading extends ViewerEngineRobot {
+  private replacementSequence = 0;
   async loadManifest(manifest: ModelManifest, instanceId = manifest.modelId): Promise<LoadedSceneModel> {
       const existing = this.models.get(instanceId);
       if (existing) {
@@ -28,7 +29,7 @@ export abstract class ViewerEngineLoading extends ViewerEngineRobot {
       const epoch = this.modelLoads.currentEpoch;
       return this.modelLoads.run(instanceId, epoch, () => this.loadManifestOnce({ ...manifest, modelId: instanceId }, epoch, manifest.modelId));
     }
-  async replaceModelManifest(instanceId: string, manifest: ModelManifest): Promise<LoadedSceneModel> {
+  async replaceModelManifest(instanceId: string, manifest: ModelManifest, canCommit?: () => boolean): Promise<LoadedSceneModel> {
       const current = this.models.get(instanceId);
       if (!current || current.kind !== "model") throw new Error("场景实例已不存在");
       if (this.readOnlyMode || this.isModelLocked(instanceId)) throw new Error("请在编辑态解锁实例后替换素材");
@@ -39,8 +40,9 @@ export abstract class ViewerEngineLoading extends ViewerEngineRobot {
       if ((current.assetModelId ?? current.id) === manifest.modelId) return current;
       const epoch = this.modelLoads.currentEpoch;
       // 替换只读取完整几何，但保留 LOD 清单决定容器拓扑，保证刷新后的构件路径一致。
-      return this.modelLoads.run(`replace:${instanceId}:${manifest.modelId}`, epoch,
-        () => this.loadManifestOnce({ ...manifest, modelId: instanceId }, epoch, manifest.modelId, current));
+      this.replacementSequence = (this.replacementSequence ?? 0) + 1;
+      return this.modelLoads.run(`replace:${instanceId}:${manifest.modelId}:${this.replacementSequence}`, epoch,
+        () => this.loadManifestOnce({ ...manifest, modelId: instanceId }, epoch, manifest.modelId, current, canCommit));
     }
   /**
      * IFC/Fragments 仅在实际加载对应模型时初始化。常规 glTF、FBX 与 DXF 浏览不再承担
@@ -71,7 +73,7 @@ export abstract class ViewerEngineLoading extends ViewerEngineRobot {
       if (!this.fragments || !this.importer || !this.fragmentApi) throw new Error("IFC/Fragments 运行时尚未初始化");
       return { fragments: this.fragments, importer: this.importer, api: this.fragmentApi };
     }
-  protected async loadManifestOnce(manifest: ModelManifest, epoch: number, assetModelId = manifest.modelId, replacing?: LoadedSceneModel): Promise<LoadedSceneModel> {
+  protected async loadManifestOnce(manifest: ModelManifest, epoch: number, assetModelId = manifest.modelId, replacing?: LoadedSceneModel, canCommit?: () => boolean): Promise<LoadedSceneModel> {
       if (!manifest.geometryUrl || !manifest.viewerKind) throw new Error("模型清单缺少几何数据");
       const finishLoad = loadingTimeline.begin("load-and-parse", { format: manifest.viewerKind,
         shared: manifest.viewerKind === "gltf" && !replacing ? sharedGltfLoadState(this, manifest.lods?.find(item => item.level === "low")?.url ?? manifest.geometryUrl, `${assetModelId}:${manifest.createdAt}`) : "none" });
@@ -141,7 +143,7 @@ export abstract class ViewerEngineLoading extends ViewerEngineRobot {
       }
       finishLoad("ok");
       finishAttach = loadingTimeline.begin("scene-attach", { format: manifest.viewerKind });
-      if (!this.modelLoads.isCurrent(epoch) || (replacing && this.models.get(manifest.modelId) !== replacing)) {
+      if (!this.modelLoads.isCurrent(epoch) || (replacing && (this.models.get(manifest.modelId) !== replacing || canCommit?.() === false))) {
         if (fragmentsModel) await fragmentsModel.dispose();
         else this.disposeObject(object);
         throw new ModelLoadSupersededError();

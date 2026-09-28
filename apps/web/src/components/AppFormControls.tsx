@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
+import { imeComposingKey } from "./layerKeyboard";
 import type { BimPropertyEntry, StandardView } from "../viewer/ViewerEngine";
 
 export function ToolButton({ title, active, onClick, icon, className = "", disabled = false }: {
@@ -98,6 +99,7 @@ export function DeferredNumberInput({ value, onCommit, min, max, step, disabled,
     onChange={(event) => updateDraft(event.currentTarget.value)}
     onBlur={commit}
     onKeyDown={(event) => {
+      if (imeComposingKey(event)) return;
       if (event.key === "Enter") event.currentTarget.blur();
       if (event.key === "Escape") {
         event.stopPropagation();

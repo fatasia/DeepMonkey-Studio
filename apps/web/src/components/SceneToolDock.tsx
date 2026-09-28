@@ -12,6 +12,7 @@ import {
   Film,
   Focus,
   Footprints,
+  Gauge,
   Info,
   Layers3,
   MapPin,
@@ -59,6 +60,8 @@ interface SceneToolDockProps {
   cameraOpen?: boolean;
   behaviorOpen: boolean;
   physicsOpen: boolean;
+  qualityPanelOpen: boolean;
+  onQualityPanelToggle: () => void;
   xrOpen: boolean;
   simulationPanel: SceneSimulationPanelId | undefined;
   infoEnabled: boolean;
@@ -327,6 +330,7 @@ export function SceneToolDock(props: SceneToolDockProps) {
         active={
           props.behaviorOpen ||
           props.physicsOpen ||
+          props.qualityPanelOpen ||
           props.xrOpen ||
           Boolean(props.simulationPanel)
         }
@@ -347,6 +351,12 @@ export function SceneToolDock(props: SceneToolDockProps) {
           icon={<Atom size={15} />}
           active={props.physicsOpen}
           onClick={() => run(props.onPhysicsToggle)}
+        />
+        <MenuAction
+          label={tr(props.locale, "质量遥测", "Quality telemetry")}
+          icon={<Gauge size={15} />}
+          active={props.qualityPanelOpen}
+          onClick={() => run(props.onQualityPanelToggle)}
         />
         <MenuAction
           label={tr(props.locale, "AR / VR 体验", "AR / VR")}

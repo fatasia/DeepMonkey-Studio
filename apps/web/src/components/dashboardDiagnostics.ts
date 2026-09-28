@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type { ApplicationDocument, DashboardDataWidgetNode, DashboardPageDocument } from "@bim-studio/contracts";
 
 export type DashboardDiagnosticSeverity = "error" | "warning" | "info";
@@ -109,7 +110,7 @@ export function diagnoseDashboardPage(application: ApplicationDocument, page: Da
   }
 
   const rank = { error: 0, warning: 1, info: 2 } satisfies Record<DashboardDiagnosticSeverity, number>;
-  return diagnostics.sort((left, right) => rank[left.severity] - rank[right.severity] || left.nodeId.localeCompare(right.nodeId) || left.code.localeCompare(right.code));
+  return diagnostics.sort((left, right) => rank[left.severity] - rank[right.severity] || compareText(left.nodeId, right.nodeId) || compareText(left.code, right.code));
 }
 
 function issue(code: DashboardDiagnostic["code"], severity: DashboardDiagnosticSeverity, pageId: string, nodeId: string, zh: string, en: string): DashboardDiagnostic {

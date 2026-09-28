@@ -21,6 +21,13 @@ export interface DeepWasmRuntimeModule {
     targetX: number, targetY: number, targetZ: number, focal: number, near: number, far: number): void;
   viewer_ready_generation(): number;
   viewer_failure_message(): string | undefined;
+  viewer_physics_pose(handle: number, instanceId: string): Promise<string>;
+}
+
+export interface DeepWasmPhysicsPose {
+  readonly instanceId: string;
+  readonly fixedStep: number;
+  readonly translation: readonly [number, number, number];
 }
 
 export interface StudioDeepWasmBridgeOptions {
@@ -95,6 +102,19 @@ export class StudioDeepWasmBridge {
   }
 
   get activeBackend(): RendererBackend { return this.activeBackendValue; }
+
+  async physicsPose(instanceId: string): Promise<DeepWasmPhysicsPose> {
+    if (this.activeBackendValue !== "wasm" || !this.module || this.handle === undefined) {
+      throw new Error("Deep WASM physics viewer is not active.");
+    }
+    const value: unknown = JSON.parse(await this.module.viewer_physics_pose(this.handle, instanceId));
+    if (!value || typeof value !== "object") throw new Error("Deep WASM physics pose is invalid.");
+    const pose = value as Partial<DeepWasmPhysicsPose>;
+    if (pose.instanceId !== instanceId || !Number.isSafeInteger(pose.fixedStep) || pose.fixedStep! < 0
+      || !Array.isArray(pose.translation) || pose.translation.length !== 3
+      || !pose.translation.every(Number.isFinite)) throw new Error("Deep WASM physics pose is invalid.");
+    return pose as DeepWasmPhysicsPose;
+  }
 
   cancelPendingSwitch(): void {
     this.generation++;

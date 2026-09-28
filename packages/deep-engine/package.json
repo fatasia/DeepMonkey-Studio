@@ -79,6 +79,14 @@
       "types": "./dist/geometry/index.d.ts",
       "default": "./dist/geometry/index.js"
     },
+    "./hlod": {
+      "development": {
+        "types": "./src/hlod/index.ts",
+        "default": "./src/hlod/index.ts"
+      },
+      "types": "./dist/hlod/index.d.ts",
+      "default": "./dist/hlod/index.js"
+    },
     "./textures": {
       "development": {
         "types": "./src/textures/index.ts",

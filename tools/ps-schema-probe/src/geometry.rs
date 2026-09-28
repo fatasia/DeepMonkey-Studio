@@ -1,7 +1,7 @@
 //! B-Rep → 三角网格 MVP 离散化(2026-09-26 R1)。
 //!
 //! 算法口径(与 packages/xt-reader/src/mesh.ts 的 64 段圆周离散一致):
-//! - plane:边界环采样到 uv 平面 → 耳切三角化;内环用三角形重心剔除近似并标注;
+//! - plane:边界环采样到 uv 平面 → 耳切三角化;内环未精确处理时拒绝发布;
 //! - cylinder/cone:u=环向角(圆缺口分析定环向范围)+ v=轴向截断 → 参数域矩形网格;
 //! - sphere:经纬裁剪(lon/lat 矩形);torus:主/子环向矩形;
 //! - blended_edge / blend_boundary / offset / nurbs / unsupported:如实跳过入 losses,
@@ -61,6 +61,10 @@ impl Default for GeometryLimits {
 #[derive(Debug, Serialize)]
 pub struct FaceMesh {
     pub id: u32,
+    #[serde(rename = "sourceNodeIndex")]
+    pub source_node_index: u32,
+    #[serde(rename = "sourceNodeId", skip_serializing_if = "Option::is_none")]
+    pub source_node_id: Option<i32>,
     /// 所属 body 在 `bodies` 中的下标;无法归属时为 null。
     pub body: Option<u32>,
     #[serde(rename = "surfaceKind")]
@@ -570,6 +574,7 @@ fn sample_face_loops(
     params: &SurfaceParams,
 ) -> Result<Vec<LoopSamples>, String> {
     let tolerance = PROJECTION_TOLERANCE * view.scale;
+    let vertex_tolerance = (view.scale * 1e-9).max(1e-12);
     let mut samples = Vec::new();
     for loop_id in &face.loops {
         let Some(loop_index) = view.loops.get(loop_id) else {
@@ -593,7 +598,7 @@ fn sample_face_loops(
             else {
                 return Err("topology:edge-missing".to_string());
             };
-            let points = match sample_edge_points(view, edge, fin.sense) {
+            let mut points = match sample_edge_points(view, edge, fin.sense) {
                 Ok(points) => points,
                 Err(SampleError::Unsampleable(kind)) => {
                     // 不可解析曲线:仍取边顶点作为参数域界定点(MVP 诚实降级)。
@@ -606,6 +611,21 @@ fn sample_face_loops(
                 }
                 Err(SampleError::Degenerate) => Vec::new(),
             };
+            // A fin stores its end vertex; the opposite fin stores its start.
+            // Curve sense alone does not encode the fin's traversal on an EDGE.
+            // Align the sampled endpoints with the actual topological end before
+            // concatenating loops (otherwise alternating shared edges fold back).
+            if let Some(end) = fin.vertex.and_then(|id| view.vertex_point(id)) {
+                if points.len() >= 2 {
+                    let first_distance = norm(&sub(points[0], end));
+                    let last_distance = norm(&sub(*points.last().expect("length checked"), end));
+                    if first_distance + vertex_tolerance < last_distance {
+                        points.reverse();
+                    } else if first_distance.min(last_distance) > vertex_tolerance {
+                        return Err("geometry:fin-endpoint-mismatch".to_string());
+                    }
+                }
+            }
             for point in points {
                 if !point.iter().all(|value| value.is_finite()) {
                     return Err("geometry:non-finite-boundary-point".to_string());
@@ -619,7 +639,9 @@ fn sample_face_loops(
                     return Err("geometry:projection-inconsistent".to_string());
                 }
                 if let Some(&(last_u, last_v)) = uv_points.last() {
-                    if (last_u - u).abs() < 1e-12 && (last_v - v).abs() < 1e-12 {
+                    if norm(&sub(*world_points.last().expect("paired world point"), point)) <= vertex_tolerance
+                        || ((last_u - u).abs() < 1e-12 && (last_v - v).abs() < 1e-12)
+                    {
                         continue;
                     }
                 }
@@ -628,6 +650,17 @@ fn sample_face_loops(
                 if uv_points.len() > MAX_LOOP_POINTS {
                     return Err("geometry:boundary-too-complex".to_string());
                 }
+            }
+        }
+        // Adjacent fins both contribute their shared corner. Remove the closing
+        // vertex before ear clipping; otherwise repeated points yield zero-area
+        // triangles and a wrong closed-solid volume while B-Rep topology is valid.
+        if uv_points.len() > 1 {
+            let first = world_points[0];
+            let last = *world_points.last().expect("non-empty after length guard");
+            if norm(&sub(first, last)) <= vertex_tolerance {
+                world_points.pop();
+                uv_points.pop();
             }
         }
         samples.push(LoopSamples { uv_points, world_points, unresolved });
@@ -851,7 +884,7 @@ fn sense_multiplier(sense: Sense) -> f64 {
     }
 }
 
-/// 平面面片:uv 多边形耳切三角化 + 内环重心剔除(MVP 近似)。
+/// 平面面片:单外环 uv 耳切;多个环需孔洞三角化,此处拒绝而非填孔。
 fn build_plane_face(view: &ModelView, face: &Face, params: &SurfaceParams) -> Result<FaceMesh, String> {
     let loops = sample_face_loops(view, face, params)?;
     // 平面参数域无界:任何边界曲线不可解析时无法界定,如实整面跳过。
@@ -866,40 +899,16 @@ fn build_plane_face(view: &ModelView, face: &Face, params: &SurfaceParams) -> Re
         return Err("degenerate:all-loops-degenerate".to_string());
     }
 
-    // 最大绝对面积环为外环,其余为孔(内环)。
-    let mut outer_index = 0usize;
-    let mut outer_area = 0f64;
-    for (index, loop_samples) in usable.iter().enumerate() {
-        let area = signed_area(&loop_samples.uv_points).abs();
-        if area > outer_area {
-            outer_area = area;
-            outer_index = index;
-        }
-    }
-    let mut approximations = Vec::new();
+    // Centroid culling is not a hole triangulator: a triangle can cross an
+    // inner loop while its centroid stays outside. Refuse the entire face
+    // instead of emitting a visually filled hole under a ready quality tier.
     if usable.len() > 1 {
-        approximations.push("trim.inner-loop:centroid-culled".to_string());
+        return Err("trim-unresolved:inner-loop-needs-exact-triangulation".to_string());
     }
-    let outer = &usable[outer_index].uv_points;
+    let outer = &usable[0].uv_points;
     let Some((triangles, _ccw)) = triangulate_polygon(outer) else {
         return Err("degenerate:outer-loop-triangulation-failed".to_string());
     };
-    let holes: Vec<&Vec<(f64, f64)>> = usable
-        .iter()
-        .enumerate()
-        .filter(|(index, _)| *index != outer_index)
-        .map(|(_, loop_samples)| &loop_samples.uv_points)
-        .collect();
-    let triangles: Vec<[u32; 3]> = triangles
-        .into_iter()
-        .filter(|triangle| {
-            let centroid = triangle_centroid(outer, triangle);
-            !holes.iter().any(|hole| point_in_polygon(centroid, hole))
-        })
-        .collect();
-    if triangles.is_empty() {
-        return Err("degenerate:all-triangles-culled".to_string());
-    }
 
     // 朝向:uv 平面法向 = 曲面自然法向;face.sense × surface.sense 反向时翻转。
     let flip = face_sense_flip(view, face);
@@ -919,11 +928,13 @@ fn build_plane_face(view: &ModelView, face: &Face, params: &SurfaceParams) -> Re
     }
     Ok(FaceMesh {
         id: face.id,
+        source_node_index: face.source.node_index,
+        source_node_id: face.source.node_id,
         body: None, // export_geometry 统一回填。
         surface_kind: "plane".to_string(),
         positions,
         indices,
-        approximations,
+        approximations: Vec::new(),
     })
 }
 
@@ -1124,6 +1135,8 @@ fn tessellate_revolved_grid(
     }
     Ok(FaceMesh {
         id: face.id,
+        source_node_index: face.source.node_index,
+        source_node_id: face.source.node_id,
         body: None, // export_geometry 统一回填。
         surface_kind: params.kind_name().to_string(),
         positions,
@@ -1147,6 +1160,15 @@ fn face_sense_flip(view: &ModelView, face: &Face) -> bool {
 fn triangulate_polygon(points: &[(f64, f64)]) -> Option<(Vec<[u32; 3]>, bool)> {
     let count = points.len();
     if count < 3 {
+        return None;
+    }
+    // The wire can carry a repeated closing vertex and adjacent fins repeat
+    // corners. Never feed duplicate or zero-length edges into ear clipping.
+    if (0..count).any(|index| {
+        let a = points[index];
+        let b = points[(index + 1) % count];
+        (a.0 - b.0).abs() < 1e-12 && (a.1 - b.1).abs() < 1e-12
+    }) {
         return None;
     }
     let area = signed_area(points);
@@ -1198,12 +1220,10 @@ fn triangulate_polygon(points: &[(f64, f64)]) -> Option<(Vec<[u32; 3]>, bool)> {
     }
     if ring.len() == 3 {
         triangles.push([ring[0] as u32, ring[1] as u32, ring[2] as u32]);
-    } else if triangles.is_empty() {
-        // 耳切失败的兜底:扇形三角化(近似,由 face 级标注体系如实报告)。
-        for index in 1..ring.len() - 1 {
-            triangles.push([ring[0] as u32, ring[index] as u32, ring[index + 1] as u32]);
-        }
-        triangles.truncate(count);
+    } else {
+        // A partial ear list is not a polygon. Fan fallback may bridge concavity
+        // or holes and was not tagged by callers; fail closed instead.
+        return None;
     }
     Some((triangles, ccw))
 }
@@ -1220,34 +1240,6 @@ fn point_in_triangle(p: (f64, f64), a: (f64, f64), b: (f64, f64), c: (f64, f64))
     let has_neg = d1 < 0.0 || d2 < 0.0 || d3 < 0.0;
     let has_pos = d1 > 0.0 || d2 > 0.0 || d3 > 0.0;
     !(has_neg && has_pos)
-}
-
-/// 射线法点在多边形内判定(含边界的数值稳健版)。
-fn point_in_polygon(p: (f64, f64), polygon: &[(f64, f64)]) -> bool {
-    let mut inside = false;
-    let mut previous = polygon[polygon.len() - 1];
-    for &current in polygon {
-        let (x1, y1) = current;
-        let (x2, y2) = previous;
-        if (y1 > p.1) != (y2 > p.1) {
-            let denominator = y2 - y1;
-            if denominator.abs() > 1e-300 {
-                let x_at = (x2 - x1) * (p.1 - y1) / denominator + x1;
-                if p.0 < x_at {
-                    inside = !inside;
-                }
-            }
-        }
-        previous = current;
-    }
-    inside
-}
-
-fn triangle_centroid(points: &[(f64, f64)], triangle: &[u32; 3]) -> (f64, f64) {
-    let a = points[triangle[0] as usize];
-    let b = points[triangle[1] as usize];
-    let c = points[triangle[2] as usize];
-    ((a.0 + b.0 + c.0) / 3.0, (a.1 + b.1 + c.1) / 3.0)
 }
 
 fn signed_area(points: &[(f64, f64)]) -> f64 {
@@ -1346,6 +1338,12 @@ mod tests {
             e2: [0.0, 1.0, 0.0],
             kind: RevolvedKind::Cylinder { radius: 2.0 },
         })
+    }
+
+    #[test]
+    fn closed_ring_duplicate_endpoint_cannot_emit_zero_area_triangles() {
+        let closed = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.0, 0.0)];
+        assert!(triangulate_polygon(&closed).is_none());
     }
 
     #[test]

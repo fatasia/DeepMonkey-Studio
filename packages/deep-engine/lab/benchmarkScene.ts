@@ -20,7 +20,9 @@ export const BENCHMARK_LIGHT = Object.freeze({ directionWorld: [-1.6, -2.8, -1.2
 
 export interface BenchmarkSceneFixture {
   readonly id: string;
-  readonly instanceCount: BenchmarkInstanceCount;
+  /** 描述性元数据;权威口径始终是 packet.instances.length。车间分档(1,000/5,000/10,000)
+   *  与程序化/GLB 分档(1/1,024/10,000)共用同一 fixture 合同,故放宽为 number。 */
+  readonly instanceCount: number;
   readonly extent: number;
   readonly transforms: readonly (readonly number[])[];
   readonly packet: RenderPacket;

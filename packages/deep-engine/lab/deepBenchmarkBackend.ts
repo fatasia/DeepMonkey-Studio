@@ -1,5 +1,6 @@
 import { PbrRenderer } from "@bim-studio/deep-engine/webgpu";
 import type { RenderView } from "@bim-studio/deep-engine/webgpu";
+import type { PickResult } from "@bim-studio/deep-engine/webgpu";
 import type { TrajectoryCameraPose } from "@bim-studio/deep-engine";
 import { captureWebGpuBenchmarkImage } from "./benchmarkImage.js";
 import type { BenchmarkBackend, BenchmarkFrameStats } from "./benchmarkBackend.js";
@@ -46,6 +47,10 @@ export class DeepBenchmarkBackend implements BenchmarkBackend {
   get adapter(): Readonly<Record<string, unknown>> | null {
     return this.renderer.session.adapterInfo ?? null;
   }
+  /** 渲染器侧 GPU 资源驻留快照(bufferBytes/textureBytes/estimatedBytes/peak/resourceCount)。 */
+  get deviceMemory(): Readonly<Record<string, unknown>> | null {
+    try { return this.renderer.session.resourceMemory as unknown as Readonly<Record<string, unknown>>; } catch { return null; }
+  }
 
   render(): BenchmarkFrameStats {
     const started = performance.now();
@@ -56,6 +61,10 @@ export class DeepBenchmarkBackend implements BenchmarkBackend {
       resources: frame.resources, cpuStages: Object.freeze({ renderCallMs: rendered - started,
         statisticsReadMs: performance.now() - rendered }) });
     return result;
+  }
+
+  pick(origin: readonly [number, number, number], direction: readonly [number, number, number]): PickResult {
+    return this.renderer.pick(origin, direction, { maxHits: 1 });
   }
 
   setGpuInstrumentation(enabled: boolean): void { this.renderer.gpuTimer.enabled = enabled; }

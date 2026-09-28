@@ -38,6 +38,7 @@ export function mergeScenePhysicsBodyPatch(current: ScenePhysicsBodyState, patch
     else next.character = character;
   }
   if (next.type !== "kinematic") delete next.character;
+  if (next.type !== "dynamic") delete next.initialLinearVelocity;
   return next;
 }
 

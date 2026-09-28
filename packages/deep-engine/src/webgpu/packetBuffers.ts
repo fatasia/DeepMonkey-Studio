@@ -60,10 +60,21 @@ export class PacketBuffers {
   private readonly resident = new ResidentPacketBufferState();
   private materialEffects: MaterialEffectLedgerSnapshot | undefined;
   private readonly textureArrays: PacketTextureArrayConsumer | undefined;
-  constructor(private readonly session: DeviceSession, materialLayout?: MaterialLayouts, deformationPipelines?: Pipelines,
+  constructor(private readonly session: DeviceSession, materialLayout?: MaterialLayouts,
+    deformationPipelines?: Pipelines | Promise<Pipelines>,
     private readonly meshletsEnabled = false, private readonly meshletVisibility = false,
     textureArrayLayout?: GPUBindGroupLayout) {
-    this.deformation = new PacketDeformationState(session, deformationPipelines);
+    // 延迟变形变体以 promise 注入：状态机先以“未启用”运行，就绪后原地附着。
+    if (deformationPipelines instanceof Promise) {
+      this.deformationReadiness = deformationPipelines.then(value => {
+        this.deformation.attachPipelines(value);
+      });
+      void this.deformationReadiness.catch(() => { /* 门禁等待同一 promise 并抛出 */ });
+      this.deformation = new PacketDeformationState(session);
+    } else {
+      this.deformationReadiness = undefined;
+      this.deformation = new PacketDeformationState(session, deformationPipelines);
+    }
     this.deformationStaticSources = new DeformationStaticSources(session);
     this.lodInputs = new PacketLodSceneCache(session);
     this.textures = new TextureResources(session);
@@ -72,6 +83,8 @@ export class PacketBuffers {
     this.materials = new MaterialBindingPool(session, materialLayout);
     this.textureArrays = textureArrayLayout ? new PacketTextureArrayConsumer(session, textureArrayLayout) : undefined;
   }
+
+  private readonly deformationReadiness: Promise<void> | undefined;
 
   /** Monotonic revision of successfully published visibility-affecting author state. */
   get visibilityRevision(): number { return this.sceneRevision; }
@@ -94,6 +107,10 @@ export class PacketBuffers {
 
   async stageResidentProjectionValidated(projection: ResidentPacketProjection,
     signal?: AbortSignal): Promise<boolean> {
+    if (projection.batches.some(batch => batch.source.pose !== undefined) && this.deformationReadiness) {
+      await this.deformationReadiness;
+      if (!this.deformation.enabled) throw new Error("Packet deformation pipelines are not available.");
+    }
     return this.resident.stageValidated(this.residentContext(), projection,
       this.beginMutation(), signal);
   }
@@ -187,6 +204,12 @@ export class PacketBuffers {
   /** 返回前等待创建/上传的 GPU 错误；等待期间旧投影可绘制，后发修改使旧候选失效。 */
   async setValidated(packet: RenderPacket, signal?: AbortSignal): Promise<boolean> {
     if (signal?.aborted) throw cancelled();
+    // 仅当候选确含变形且变形变体为延迟注入时才等待；静态候选零开销、零时序变化。
+    if ((packet.deformation !== undefined || packet.instances.some(instance => instance.pose !== undefined))
+      && this.deformationReadiness) {
+      await this.deformationReadiness;
+      if (!this.deformation.enabled) throw new Error("Packet deformation pipelines are not available.");
+    }
     const generation = this.beginMutation();
     const prepared = prepareRenderPacket(packet, STOCK_MATERIAL_INSTANCE_OPTIONS);
     const ledger = compileMaterialEffectLedger(packet, prepared.batches);

@@ -79,6 +79,20 @@ describe("CPU picking ray math (Möller–Trumbore)", () => {
 });
 
 describe("CPU picking instance transforms", () => {
+  it("keeps broad-phase hits identical to triangle-only picking across affine and grazing rays", () => {
+    const translated = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 10, 0, 0, 1];
+    const mirrored = [-2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -10, 0, 0, 1];
+    const scene = sceneOf([instance("normal", identity), instance("moved", translated),
+      instance("mirrored", mirrored)], [unitTriangle()], true);
+    const triangleOnly = { ...scene, geometries: new Map([...scene.geometries].map(([id, geometry]) =>
+      [id, { ...geometry, radius: 1e9 }])) };
+    for (const x of [-10.4, -10, -9, -0.1, 0, 0.2, 0.9, 1, 1.1, 10.2, 11]) {
+      for (const y of [-0.1, 0, 0.2, 0.8, 1, 1.1]) {
+        const origin = [x, y, 5], direction = [0, 0, -1];
+        expect(pickScene(scene, origin, direction)).toEqual(pickScene(triangleOnly, origin, direction));
+      }
+    }
+  });
   it("picks translated instances with world-frame hits", () => {
     const translated = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 10, 0, 0, 1];
     const result = pickScene(sceneOf([instance("i", translated)], [unitTriangle()]),

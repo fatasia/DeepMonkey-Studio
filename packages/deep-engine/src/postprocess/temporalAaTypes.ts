@@ -2,6 +2,8 @@
 export const TEMPORAL_AA_COLOR_FORMAT = "rgba16float" as const satisfies GPUTextureFormat;
 export const TEMPORAL_AA_DEPTH_FORMAT = "r32float" as const satisfies GPUTextureFormat;
 export const TEMPORAL_AA_MOTION_FORMAT = "rg16float" as const satisfies GPUTextureFormat;
+/** Reactive coverage storage; 0-255 scales trusted history feedback (temporalResponseMask). */
+export const TEMPORAL_REACTIVE_MASK_FORMAT = "r8unorm" as const satisfies GPUTextureFormat;
 
 export interface TemporalAaSource {
   readonly color: GPUTexture; readonly depth: GPUTexture; readonly motion: GPUTexture;
@@ -12,6 +14,12 @@ export interface TemporalAaSource {
   readonly colorEncoding: "linear-hdr"; readonly depthEncoding: "linear-view-depth-positive";
   /** UV delta added to current UV to locate the previous sample, excluding jitter. */
   readonly motionEncoding: "current-to-previous-uv";
+  /**
+   * Reactive coverage (r8unorm, 0 = full trusted feedback, 255 = current-only) for
+   * transparent/particle regions that never wrote the motion target. Omission binds a
+   * zero fallback and keeps the baseline resolve bit-identical.
+   */
+  readonly reactiveMask?: GPUTexture;
 }
 export interface TemporalAaOptions {
   readonly feedback: number;
@@ -30,4 +38,6 @@ export interface TemporalAaCpuInput {
   readonly previousColor?: readonly number[]; readonly previousDepth?: readonly number[];
   readonly currentJitter: readonly [number, number]; readonly previousJitter: readonly [number, number];
   readonly historyValid: boolean;
+  /** Reactive coverage 0-255 per pixel (temporalResponseMask semantics); omit for fully opaque frames. */
+  readonly reactiveMask?: readonly number[];
 }

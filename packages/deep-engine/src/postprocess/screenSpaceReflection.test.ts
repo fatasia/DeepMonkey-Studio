@@ -83,6 +83,17 @@ describe("traceScreenSpaceReflectionCpu", () => {
     scene.depth.fill(0);
     expect([...traceScreenSpaceReflectionCpu(scene, OPTIONS, 4, 4)]).toEqual([0, 0, 0, 0]);
   });
+  it("rejects a depth hole encountered during hit refinement and keeps environment fallback", () => {
+    const scene = tiltedFloor(32, 32);
+    for (let pixel = 0; pixel < scene.width * scene.height; pixel++) {
+      scene.normals[pixel * 3] = 0.5;
+      scene.normals[pixel * 3 + 1] = (1 - 0.8944272) / 2;
+      scene.normals[pixel * 3 + 2] = (1 + 0.4472136) / 2;
+    }
+    expect(traceScreenSpaceReflectionCpu(scene, OPTIONS, 0, 0)[3]).toBeGreaterThan(0);
+    scene.depth[2 * scene.width + 1] = 0;
+    expect(traceScreenSpaceReflectionCpu(scene, OPTIONS, 0, 0)).toEqual([0, 0, 0, 0]);
+  });
   it("produces a masked reflection on an upward-facing tilted floor", () => {
     const width = 32, height = 32;
     const scene = tiltedFloor(width, height);
@@ -173,6 +184,8 @@ describe("format and shader contracts", () => {
     expect(SSR_TRACE_WGSL).toContain("fn ssrLoadRoughness");
     expect(SSR_TRACE_WGSL).toContain("fn ssrSampleRoughRadiance");
     expect(SSR_TRACE_WGSL).toContain("roughness * roughness * ssrParams.misc.z");
+    expect(SSR_TRACE_WGSL).toContain("refinedDepth > 0.0 && refinedDepth < -middle.z");
+    expect(SSR_TRACE_WGSL).toContain("if (!(textureLoad(sourceDepth, vec2<i32>(finalPixel), 0).x > 0.0)) { continue; }");
     expect(SSR_COMPOSITE_WGSL).toContain("color * (1.0 - reflection.a) + reflection.rgb");
   });
 });

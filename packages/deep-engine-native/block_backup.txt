@@ -1,0 +1,18 @@
+        // T16:角色 `move_shape` 依赖 broad-phase BVH,而 BVH 只在 `pipeline.step`
+        // 内更新;角色推进发生在每个固定 tick 的 step 之前,发布前必须先构建一次,
+        // 否则首个固定 tick 的世界查询为空(角色幽灵下坠)。修改清单按 ColliderSet
+        // 稳定迭代序构造,确定性不受影响。
+        {
+            let modified: Vec<ColliderHandle> =
+                host.colliders.iter().map(|(handle, _)| handle).collect();
+            let mut pair_events = Vec::new();
+            host.broad_phase.update(
+                &host.integration,
+                &host.colliders,
+                &host.bodies,
+                &modified,
+                &[],
+                &mut pair_events,
+            );
+        }
+        

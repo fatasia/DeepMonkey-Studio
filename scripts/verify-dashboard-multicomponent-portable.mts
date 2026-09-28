@@ -20,6 +20,7 @@ import { dashboardMulticomponentFixture } from "./lib/dashboardMulticomponentFix
 import { verifyDashboardDownloadedOpen } from "./lib/dashboardDownloadedOpen.mts";
 import { createDashboardChromiumLayoutHost } from "./lib/dashboardChromiumLayoutHost.mjs";
 import { captureNativePlayerWindow } from "./lib/dashboardNativeWindowCapture.mjs";
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 const require = createRequire(new URL("../apps/api/package.json", import.meta.url));
 const JSZip = require("jszip");
@@ -99,7 +100,7 @@ async function hashInventory(directory: string) {
     }
   }
   await walk(directory);
-  return entries.sort((left, right) => left.file.localeCompare(right.file));
+  return entries.sort((left, right) => compareText(left.file, right.file));
 }
 
 async function main() {

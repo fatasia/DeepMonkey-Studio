@@ -66,6 +66,18 @@ describe("StudioDeepWasmBridge", () => {
     expect(createdCanvases[0]?.remove).toHaveBeenCalledOnce();
   });
 
+  it("reads only a matching committed physics pose from the active WASM session", async () => {
+    const runtime = fakeRuntime();
+    const { bridge } = fixture(runtime.module);
+    await expect(bridge.physicsPose("projectile-instance")).rejects.toThrow(/not active/);
+    await bridge.switchTo("wasm");
+    await expect(bridge.physicsPose("projectile-instance")).resolves.toEqual({
+      instanceId: "projectile-instance", fixedStep: 1, translation: [-0.06, 0, 0],
+    });
+    expect(runtime.pose).toHaveBeenCalledWith(7, "projectile-instance");
+    await expect(bridge.physicsPose("other-instance")).rejects.toThrow(/invalid/);
+  });
+
   function fixture(module: DeepWasmRuntimeModule) {
     const author = canvas();
     const appended: ReturnType<typeof canvas>[] = [];
@@ -107,6 +119,7 @@ function fakeRuntime() {
   const update = vi.fn(() => { if (!state.failure) generation++; });
   const camera = vi.fn();
   const stop = vi.fn();
+  const pose = vi.fn(async () => JSON.stringify({ instanceId: "projectile-instance", fixedStep: 1, translation: [-0.06, 0, 0] }));
   const module: DeepWasmRuntimeModule = {
     default: vi.fn(async () => undefined),
     set_scene_package: setPackage,
@@ -116,9 +129,10 @@ function fakeRuntime() {
     set_viewer_camera: camera,
     viewer_ready_generation: () => generation,
     viewer_failure_message: () => state.failure,
+    viewer_physics_pose: pose,
   };
   return {
-    module, setPackage, start, stop, update, camera,
+    module, setPackage, start, stop, update, camera, pose,
     set failure(value: string | undefined) { state.failure = value; },
   };
 }

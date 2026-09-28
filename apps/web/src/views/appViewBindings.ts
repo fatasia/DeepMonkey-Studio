@@ -10,6 +10,7 @@ import type { WorkspaceRecoveryDraft } from "../studio/workspaceRecoveryStore";
 import type { ManagerDirectoryController } from "../hooks/useManagerDirectoryController";
 import type { useApplicationRecovery } from "../hooks/useApplicationRecovery";
 import type { useScenePublicationArtifacts } from "../hooks/useScenePublicationArtifacts";
+import type { SceneEditHistoryFlush } from "../hooks/useSceneHistoryState";
 
 export interface AppViewActions {
   navigate: (route: AppRoute, replace?: boolean) => void;
@@ -48,8 +49,14 @@ export interface AppViewBindings {
     canRedo: boolean;
     undoLabel?: string;
     redoLabel?: string;
-    flush: (label?: string) => void;
+    /** T27：flush 兼事务入口，beginTransaction 把多步异步序列合并为一个撤销单元。 */
+    flush: SceneEditHistoryFlush;
     undo: () => Promise<void>;
     redo: () => Promise<void>;
+  };
+  playMode?: {
+    active: boolean;
+    enter: () => void;
+    exit: () => Promise<void>;
   };
 }

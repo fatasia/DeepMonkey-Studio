@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type * as FRAGS from "@thatopen/fragments";
 import * as THREE from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
@@ -79,7 +80,7 @@ export abstract class ViewerEngineBim extends ViewerEngineSimulation {
           modelCount: this.models.size,
           componentCount: records.length,
           spaceCount: spaces.length,
-          levels: [...new Set(records.map((record) => record.level).filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b, "zh-CN")),
+          levels: [...new Set(records.map((record) => record.level).filter((value): value is string => Boolean(value)))].sort((a, b) => compareText(a, b)),
           levelCounts: [...levelCounts].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
           categories: [...categories].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 80),
           systems: [...systems].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 80)
@@ -182,7 +183,7 @@ export abstract class ViewerEngineBim extends ViewerEngineSimulation {
           });
         }
       }
-      return output.sort((a, b) => a.modelName.localeCompare(b.modelName, "zh-CN") || a.level.localeCompare(b.level, "zh-CN") || (a.number ?? a.name).localeCompare(b.number ?? b.name, "zh-CN"));
+      return output.sort((a, b) => compareText(a.modelName, b.modelName) || compareText(a.level, b.level) || compareText(a.number ?? a.name, b.number ?? b.name));
     }
   focusSpace(space: BimSpaceRecord): boolean {
       if (space.componentId) {

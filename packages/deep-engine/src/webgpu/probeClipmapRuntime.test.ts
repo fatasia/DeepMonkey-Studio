@@ -77,6 +77,18 @@ describe("probe clipmap WebGPU runtime", () => {
     runtime.dispose(); expect(f.resources.size).toBe(0);
   });
 
+  it("caps an author-requested frame budget at the producer admission without rejecting the frame", async () => {
+    const f = fixture(), runtime = new ProbeClipmapRuntime(f.session, "gpu-bounded", {
+      ...options, frameBudget: 8, cameraCutBudget: 8 });
+    const first = await runtime.beginFrame({ ...frame(), updateBudget: 64 });
+    expect(first).toMatchObject({ status: "committed",
+      snapshot: { frameStats: { frameBudget: 8, updateCount: 8 } } });
+    const smaller = await runtime.beginFrame({ ...frame(), updateBudget: 2 });
+    expect(smaller).toMatchObject({ status: "committed",
+      snapshot: { frameStats: { frameBudget: 2, updateCount: 2 } } });
+    runtime.dispose();
+  });
+
   it("derives capacity from the device and reports automatic level degradation", async () => {
     const f = fixture(7_000), runtime = new ProbeClipmapRuntime(f.session, "gpu-1", {
       ...options, clipmap: { levelCount: 3, gridSize: [4, 2, 4] } });

@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ModelRecord, SceneSnapshot } from "@bim-studio/contracts";
 import type { AppViewBindings } from "../views/appViewBindings";
 import { SceneAuthoringHistory } from "../studio/sceneAuthoringHistory";
+import type { SceneEditHistoryFlush, SceneEditTransaction } from "./useSceneHistoryState";
+import { createSceneEditTransaction } from "./useSceneHistoryState";
 
-vi.mock("react", () => ({ useRef: (current: unknown) => ({ current }), useState: (value: unknown) => [value, vi.fn()] }));
+vi.mock("react", () => ({ useRef: (current: unknown) => ({ current }), useState: (value: unknown) => [value, vi.fn()], useEffect: vi.fn() }));
 vi.mock("../viewer/captureSceneModelState", () => ({ captureSceneModelState: () => ({ locked: true }) }));
 import { useSceneModelInstances } from "./useSceneModelInstances";
 
@@ -17,7 +19,14 @@ function fixture() {
   const snapshot = () => ({ id: "scene", projectId: "project", models: models.map(item => ({ modelId: item.id, assetModelId: item.assetModelId, x: item.x })) }) as unknown as SceneSnapshot;
   history.reset(snapshot());
   let pending: ReturnType<typeof setTimeout> | undefined;
-  const flush = vi.fn((label = "连续编辑") => { clearTimeout(pending); history.record(snapshot(), label); });
+  const flush = vi.fn((label = "连续编辑") => { clearTimeout(pending); history.record(snapshot(), label); }) as unknown as SceneEditHistoryFlush;
+  // T27：夹具复用生产事务工厂，保证 begin/commit/rollback 语义与 hook 一致。
+  const transactionOpen: { current: SceneEditTransaction | undefined } = { current: undefined };
+  flush.beginTransaction = (label: string) => createSceneEditTransaction(transactionOpen, {
+    flush: () => flush(),
+    capture: () => snapshot(),
+    record: (next, txLabel) => { history.record(next, txLabel); },
+  }, label);
   const engine = {
     listModels: () => models,
     isModelLocked: () => false,
@@ -29,12 +38,15 @@ function fixture() {
     rename: vi.fn((id: string, name: string) => { models.find(item => item.id === id)!.name = name; }),
   };
   const recordSceneEdit = vi.fn((label: string) => { clearTimeout(pending); pending = setTimeout(() => flush(label), 220); });
+  const applyScene = vi.fn(async () => undefined);
+  const showError = vi.fn();
   const bindings = {
     state: { route: { view: "studio" }, project: { id: "project", models: assets }, activeScene: { id: "scene" }, engine,
-      setBusy: vi.fn(), setSceneOrganizationSelection: vi.fn(), setRevision: vi.fn(), setMessage: vi.fn() },
+      setBusy: vi.fn(), setSceneOrganizationSelection: vi.fn(), setRevision: vi.fn(), setMessage: vi.fn(), showError },
     sceneHistory: { flush }, sceneEditor: { recordSceneEdit },
+    scenePersistence: { applyScene },
   } as unknown as AppViewBindings;
-  return { models, assets, history, engine, flush, recordSceneEdit, bindings, actions: useSceneModelInstances(bindings) };
+  return { models, assets, history, engine, flush, recordSceneEdit, bindings, actions: useSceneModelInstances(bindings), applyScene, showError };
 }
 
 describe("model instance command history", () => {
@@ -82,6 +94,18 @@ describe("model instance command history", () => {
     expect(h.history.undo()).toBeUndefined();
   });
 
+  it("passes live scene ownership to the replacement commit gate", async () => {
+    const h = fixture();
+    h.engine.replaceModelManifest.mockImplementationOnce(async (_id, _manifest, canCommit?: () => boolean) => {
+      expect(canCommit?.()).toBe(true);
+      h.bindings.state.activeScene = { id: "other" } as typeof h.bindings.state.activeScene;
+      expect(canCommit?.()).toBe(false);
+    });
+    await h.actions.replace("instance", h.assets[1]!);
+    expect(h.models[0]!.assetModelId).toBe("original");
+    expect(h.history.getState().canUndo).toBe(false);
+  });
+
   it("ignores locked or missing instances and duplicate pending commands", async () => {
     const h = fixture();
     vi.spyOn(h.engine, "isModelLocked").mockReturnValueOnce(true);
@@ -96,5 +120,39 @@ describe("model instance command history", () => {
     expect(h.engine.removeModel).not.toHaveBeenCalled();
     finish(); await first;
     expect(h.bindings.state.setBusy).toHaveBeenLastCalledWith(false);
+  });
+
+  it("commits a replacement as one transaction entry with stable instance identity", async () => {
+    const h = fixture();
+    await h.actions.replace("instance", h.assets[1]!);
+    expect(h.history.getState().undoLabel).toBe("已替换素材，原有绑定与配置保留，可撤销");
+    const restored = h.history.undo();
+    expect(restored?.models).toHaveLength(1);
+    expect(restored?.models[0]).toMatchObject({ modelId: "instance", assetModelId: "original" });
+    expect(h.applyScene).not.toHaveBeenCalled();
+    expect(h.showError).not.toHaveBeenCalled();
+  });
+
+  it("rolls a failed replacement back to the pre-transaction snapshot and closes the window", async () => {
+    const h = fixture();
+    h.engine.replaceModelManifest.mockRejectedValueOnce(new Error("几何桥解析失败"));
+    await h.actions.replace("instance", h.assets[1]!);
+    expect(h.applyScene).toHaveBeenCalledWith(
+      expect.objectContaining({ models: [expect.objectContaining({ modelId: "instance", assetModelId: "original" })] }),
+      false, expect.objectContaining({ id: "project" }), false,
+    );
+    expect(h.history.getState().canUndo).toBe(false);
+    expect(h.showError).not.toHaveBeenCalled();
+    await h.actions.replace("instance", h.assets[1]!);
+    expect(h.history.undo()?.models[0]).toMatchObject({ modelId: "instance", assetModelId: "original" });
+    expect(h.history.redo()?.models[0]).toMatchObject({ modelId: "instance", assetModelId: "replacement" });
+  });
+
+  it("commits an instance removal as a single undo unit", () => {
+    const h = fixture();
+    h.actions.remove("instance");
+    expect(h.models).toHaveLength(0);
+    expect(h.history.getState().undoLabel).toBe("移除场景实例（保留素材）");
+    expect(h.history.undo()?.models[0]).toMatchObject({ modelId: "instance" });
   });
 });

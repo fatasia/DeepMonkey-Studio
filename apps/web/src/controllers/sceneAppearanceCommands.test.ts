@@ -49,6 +49,13 @@ describe("场景对象物理补丁", () => {
     expect(mergeScenePhysicsBodyPatch(kinematic, { character: { ...character, offset: 0.04 } }).character?.offset).toBe(0.04);
   });
 
+  it("keeps initial velocity on dynamic bodies and clears it when their type changes", () => {
+    const velocity = { x: 80, y: 0, z: 0 };
+    const dynamic = mergeScenePhysicsBodyPatch({ type: "dynamic", mass: 1, friction: 0.5, restitution: 0 }, { initialLinearVelocity: velocity });
+    expect(dynamic.initialLinearVelocity).toEqual(velocity);
+    expect(mergeScenePhysicsBodyPatch(dynamic, { type: "fixed" })).not.toHaveProperty("initialLinearVelocity");
+  });
+
   it("sends controller changes through the engine and existing scene-edit save chain", async () => {
     const setPhysicsBodyState = vi.fn().mockResolvedValue(undefined);
     const recordSceneEdit = vi.fn();

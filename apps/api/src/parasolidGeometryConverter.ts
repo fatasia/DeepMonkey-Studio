@@ -121,6 +121,8 @@ export async function convertParasolidGeometryToGlb(
             NodeType: "Face",
             SourceFormat: "Parasolid",
             SurfaceType: face.surfaceKind,
+            ...(face.sourceNodeIndex !== undefined ? { SourceNodeIndex: face.sourceNodeIndex } : {}),
+            ...(face.sourceNodeId !== undefined ? { SourceNodeId: face.sourceNodeId } : {}),
             FaceApproximations: face.approximations,
           }),
       );
@@ -131,6 +133,8 @@ export async function convertParasolidGeometryToGlb(
           名称: name,
           类型: surfaceLabel(face.surfaceKind),
           面: face.id,
+          ...(face.sourceNodeIndex !== undefined ? { "源节点索引": face.sourceNodeIndex } : {}),
+          ...(face.sourceNodeId !== undefined ? { "源节点 ID": face.sourceNodeId } : {}),
           三角面数: (indices.length / 3).toLocaleString("zh-CN"),
         },
       };

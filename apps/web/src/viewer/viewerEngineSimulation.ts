@@ -8,6 +8,15 @@ import { mountRapierJoint, normalizePhysicsJoints, removeMountedRapierJoint } fr
 import { configureCharacterController, moveRapierCharacter, mountRapierCharacterController, removeMountedRapierCharacter } from "./rapierCharacterController";
 import { resolvePhysicsCollisionDispatches, type PhysicsColliderOwners } from "./rapierPhysicsCollisionEvents";
 import { collectPhysicsCuboidDebugEntries } from "./rapierPhysicsDebugView";
+import { PhysicsPoseRecorder, type PhysicsPoseFrame, type RecordedBodyPose } from "./physicsPoseRecorder";
+import {
+  relativeOffsetAlongAxis,
+  relativeRateAlongAxis,
+  relativeRotationAroundAxis,
+  type PhysicsDebugBodySnapshot,
+  type PhysicsDebugJointSnapshot,
+  type PhysicsDebugSnapshot,
+} from "./physicsDebugSnapshot";
 import { industrialPrefabProxyGroundOffset } from "./industrialPrefabProxy";
 import { roadPrefabSegmentColliders, type RoadPrefabSegmentCollider } from "../prefabs/roadPrefabColliders";
 
@@ -26,6 +35,14 @@ function cloneCharacter(state: SceneCharacterControllerState): SceneCharacterCon
 
 /** Simulation 职责层。 */
 export abstract class ViewerEngineSimulation extends ViewerEngineRig {
+  // T28 物理调试：固定步计数（自世界挂载起单调递增）、环形录制器与回放帧。
+  protected physicsFixedStepCount = 0;
+  protected physicsRecorder: PhysicsPoseRecorder | undefined;
+  protected physicsRecordingActive = false;
+  protected physicsReplayFrame: PhysicsPoseFrame | undefined;
+  /** 手动步进的上限：一次调用最多追 600 步（与默认录制容量同级），防卡帧。 */
+  private static readonly MAX_MANUAL_STEPS = 600;
+
   getPhysicsState(): ScenePhysicsState {
       return structuredClone(this.physicsState);
     }
@@ -49,11 +66,17 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
   async setPhysicsBodyState(id: string, state: ScenePhysicsBodyState): Promise<void> {
       if (!["none", "fixed", "dynamic", "kinematic"].includes(state.type)) throw new Error("不支持的物理刚体类型");
       if (state.character !== undefined && state.type !== "kinematic") throw new Error("角色控制器要求 kinematic 刚体");
+      if (state.initialLinearVelocity && (state.type !== "dynamic"
+        || ![state.initialLinearVelocity.x, state.initialLinearVelocity.y, state.initialLinearVelocity.z]
+          .every(value => Number.isFinite(value) && Math.abs(value) <= 1_000))) {
+        throw new Error("初速度要求 dynamic 且各轴在 ±1000 m/s 内");
+      }
       const normalized: ScenePhysicsBodyState = {
         type: state.type,
         mass: THREE.MathUtils.clamp(state.mass, 0.01, 100_000),
         friction: THREE.MathUtils.clamp(state.friction, 0, 2),
         restitution: THREE.MathUtils.clamp(state.restitution, 0, 1),
+        ...(state.initialLinearVelocity ? { initialLinearVelocity: { ...state.initialLinearVelocity } } : {}),
         // 角色控制器只跟随 kinematic；切成别的类型时丢弃，避免留下无消费者的载荷。
         ...(state.type === "kinematic" && state.character ? { character: cloneCharacter(state.character) } : {}),
       };
@@ -98,7 +121,7 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
         const rotation = object.getWorldQuaternion(new THREE.Quaternion());
         runtime.body.setTranslation(position, true);
         runtime.body.setRotation(rotation, true);
-        runtime.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        runtime.body.setLinvel(this.physicsBodyStates.get(id)?.initialLinearVelocity ?? { x: 0, y: 0, z: 0 }, true);
         runtime.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
       }
       this.physicsHost.resetClock();
@@ -127,7 +150,8 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
         const eventQueue = new rapier.EventQueue(false);
         const attached = this.physicsHost.attach({
           setGravity: (gravity) => { world.gravity = { ...gravity }; },
-          step: (timestep) => { world.timestep = timestep; world.step(eventQueue); },
+          // T28：每个固定步求解后触发调试录制钩子（录制/步计数与求解步一一对应）。
+          step: (timestep) => { world.timestep = timestep; world.step(eventQueue); this.afterPhysicsFixedStep(); },
           dispose: () => { eventQueue.free(); world.free(); },
         });
         if (!attached) { eventQueue.free(); world.free(); return; }
@@ -164,7 +188,10 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
         : state.type === "kinematic" ? rapier.RigidBodyDesc.kinematicPositionBased()
         : rapier.RigidBodyDesc.fixed();
       descriptor.setTranslation(worldPosition.x, worldPosition.y, worldPosition.z).setRotation(worldRotation);
-      if (state.type === "dynamic") descriptor.setCcdEnabled(true).setLinearDamping(0.08).setAngularDamping(0.12);
+      if (state.type === "dynamic") {
+        descriptor.setCcdEnabled(true).setLinearDamping(0.08).setAngularDamping(0.12);
+        if (state.initialLinearVelocity) descriptor.setLinvel(state.initialLinearVelocity.x, state.initialLinearVelocity.y, state.initialLinearVelocity.z);
+      }
       const body = world.createRigidBody(descriptor);
       // I3 道路碰撞体：路径式道路按 linearPrefabSegments 每段一个固定 cuboid，
       // 弯道不再被整路包围盒虚包大片空气。仅 fixed 道路走分段（道路碰撞面是静态语义）；
@@ -276,9 +303,21 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
   protected updatePhysics(delta: number): void {
       const world = this.physicsWorld;
       if (!world || !this.physicsState.enabled || !this.physicsState.playing) return;
+      // 播放即退出回放覆盖：真实刚体位姿重新成为对象位姿的事实来源。
+      if (this.physicsReplayFrame) this.clearPhysicsReplayFrame();
       this.physicsHost.advance(delta);
       // 追赶循环内的多步事件已在队列里累积，统一在这里 drain 并派发给交互脚本。
       this.dispatchPhysicsCollisionEvents();
+      this.syncDynamicBodiesToObjects();
+      const now = performance.now();
+      if (this.selectedId && now - this.lastPhysicsUiUpdate >= 160) {
+        const selected = this.models.get(this.selectedId);
+        if (selected && this.physicsBodyStates.get(selected.id)?.type === "dynamic") this.onModelChange?.(selected);
+        this.lastPhysicsUiUpdate = now;
+      }
+    }
+  /** 动态刚体求解位姿 → 场景对象。播放循环与手动步进共用同一同步路径。 */
+  protected syncDynamicBodiesToObjects(): void {
       for (const [id, runtime] of this.physicsBodies) {
         if (this.physicsBodyStates.get(id)?.type !== "dynamic") continue;
         const object = this.models.get(id)?.object;
@@ -289,12 +328,187 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
         object.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
         object.updateWorldMatrix(true, true);
       }
-      const now = performance.now();
-      if (this.selectedId && now - this.lastPhysicsUiUpdate >= 160) {
-        const selected = this.models.get(this.selectedId);
-        if (selected && this.physicsBodyStates.get(selected.id)?.type === "dynamic") this.onModelChange?.(selected);
-        this.lastPhysicsUiUpdate = now;
+    }
+  /**
+   * T28：固定步求解后的调试钩子。步计数 +1；录制中则把全部已登记刚体的
+   * 世界位姿写入环形缓冲（与 T17 跨端配对的逐步导出同口径）。
+   */
+  protected afterPhysicsFixedStep(): void {
+      this.physicsFixedStepCount += 1;
+      const recorder = this.physicsRecorder;
+      if (!recorder || !this.physicsRecordingActive) return;
+      const bodies: RecordedBodyPose[] = [];
+      for (const [id, runtime] of this.physicsBodies) {
+        const translation = runtime.body.translation();
+        const rotation = runtime.body.rotation();
+        bodies.push({ id, p: [translation.x, translation.y, translation.z], q: [rotation.x, rotation.y, rotation.z, rotation.w] });
       }
+      recorder.recordFrame({ step: this.physicsFixedStepCount, bodies });
+    }
+  /**
+   * T28：手动固定步进（单步/N 步）。物理已启用但暂停时也可用——这是调试
+   * 面板的核心能力：不经过 host 时钟的追赶循环，直接按 1/60 s 步进求解，
+   * 录制钩子、事件派发与对象同步与播放路径完全一致。
+   */
+  stepPhysicsFrames(count = 1): void {
+      const world = this.physicsWorld, queue = this.physicsEventQueue;
+      if (!world || !queue || !this.physicsState.enabled) return;
+      const steps = THREE.MathUtils.clamp(Math.floor(count) || 1, 1, ViewerEngineSimulation.MAX_MANUAL_STEPS);
+      if (this.physicsReplayFrame) this.clearPhysicsReplayFrame();
+      for (let index = 0; index < steps; index += 1) {
+        world.timestep = 1 / 60;
+        world.step(queue);
+        this.afterPhysicsFixedStep();
+      }
+      this.syncDynamicBodiesToObjects();
+      this.dispatchPhysicsCollisionEvents();
+      this.requestRender();
+    }
+  /** T28：录制开关。开启时按 capacity（固定步数）新建环形缓冲；关闭保留已录数据直到清空。 */
+  setPhysicsRecording(active: boolean, capacity = 600): void {
+      if (active) {
+        this.physicsRecorder = new PhysicsPoseRecorder(Math.max(1, Math.round(capacity)));
+        this.physicsRecordingActive = true;
+      } else if (this.physicsRecorder) {
+        this.physicsRecordingActive = false;
+      }
+    }
+  isPhysicsRecording(): boolean {
+      return this.physicsRecordingActive;
+    }
+  clearPhysicsRecording(): void {
+      this.physicsRecorder = undefined;
+      this.physicsRecordingActive = false;
+    }
+  /** 已录制帧数与容量；未开始过录制时返回 undefined。 */
+  getPhysicsRecording(): { frameCount: number; capacity: number; frames: readonly PhysicsPoseFrame[] } | undefined {
+      const recorder = this.physicsRecorder;
+      if (!recorder) return undefined;
+      return { frameCount: recorder.size, capacity: recorder.capacity, frames: recorder.framesAscending() };
+    }
+  /** 导出 T17 跨端配对格式的位姿 JSON 文本；无录制数据时返回 undefined。 */
+  exportPhysicsPoseJson(): string | undefined {
+      const recorder = this.physicsRecorder;
+      if (!recorder || recorder.size === 0) return undefined;
+      return JSON.stringify(recorder.toPoseJson({
+        end: "web",
+        scenario: "editor-capture",
+        fixedStepSeconds: 1 / 60,
+        gravity: [this.physicsState.gravity.x, this.physicsState.gravity.y, this.physicsState.gravity.z],
+        enabled: this.physicsState.enabled,
+      }));
+    }
+  /**
+   * T28：回放覆盖。把录制帧的位姿直接写到场景对象上（仅暂停态可进入；
+   * 播放开始时 updatePhysics 会清除覆盖并恢复刚体事实来源）。传 undefined
+   * 清除覆盖，并把覆盖过的对象恢复为刚体真实位姿。写入由 updatePhysicsDebugView
+   * 在每个渲染帧重申，见该处注释。
+   */
+  setPhysicsReplayFrame(frame: PhysicsPoseFrame | undefined): void {
+      if (frame) {
+        this.physicsReplayFrame = frame;
+        this.applyPhysicsReplayFrame();
+      } else {
+        this.clearPhysicsReplayFrame();
+      }
+      this.requestRender();
+    }
+  isPhysicsReplaying(): boolean {
+      return this.physicsReplayFrame !== undefined;
+    }
+  /** 回放帧位姿 → 场景对象；仅覆盖录制中登记的对象，未覆盖节点零接触。 */
+  private applyPhysicsReplayFrame(): void {
+      const frame = this.physicsReplayFrame;
+      if (!frame) return;
+      for (const pose of frame.bodies) {
+        const object = this.models.get(pose.id)?.object;
+        if (!object) continue;
+        object.position.set(pose.p[0], pose.p[1], pose.p[2]);
+        object.quaternion.set(pose.q[0], pose.q[1], pose.q[2], pose.q[3]);
+        object.updateWorldMatrix(true, true);
+      }
+    }
+  private clearPhysicsReplayFrame(): void {
+      const frame = this.physicsReplayFrame;
+      this.physicsReplayFrame = undefined;
+      if (!frame) return;
+      for (const pose of frame.bodies) {
+        const runtime = this.physicsBodies.get(pose.id);
+        const object = this.models.get(pose.id)?.object;
+        if (!runtime || !object) continue;
+        const translation = runtime.body.translation();
+        const rotation = runtime.body.rotation();
+        object.position.set(translation.x, translation.y, translation.z);
+        object.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+        object.updateWorldMatrix(true, true);
+      }
+    }
+  /**
+   * T28：调试面板快照（刚体位置/速度/睡眠 + 关节角度/限位/马达）。
+   * 纯读取；世界未挂载时 available=false，面板据此显示引导态。
+   */
+  getPhysicsDebugSnapshot(): PhysicsDebugSnapshot {
+      const world = this.physicsWorld;
+      const bodies: PhysicsDebugBodySnapshot[] = [];
+      const joints: PhysicsDebugJointSnapshot[] = [];
+      if (world) {
+        for (const [id, runtime] of this.physicsBodies) {
+          const bodyState = this.physicsBodyStates.get(id);
+          if (bodyState?.type === "none") continue;
+          const translation = runtime.body.translation();
+          const rotation = runtime.body.rotation();
+          const linvel = runtime.body.linvel();
+          const angvel = runtime.body.angvel();
+          bodies.push({
+            id,
+            name: this.models.get(id)?.name ?? id,
+            type: bodyState?.type ?? "fixed",
+            position: { x: translation.x, y: translation.y, z: translation.z },
+            quaternion: { x: rotation.x, y: rotation.y, z: rotation.z, w: rotation.w },
+            linvel: { x: linvel.x, y: linvel.y, z: linvel.z },
+            angvel: { x: angvel.x, y: angvel.y, z: angvel.z },
+            speed: Math.hypot(linvel.x, linvel.y, linvel.z),
+            angularSpeed: Math.hypot(angvel.x, angvel.y, angvel.z),
+            sleeping: runtime.body.isSleeping(),
+          });
+        }
+        const bodyById = new Map(bodies.map((body) => [body.id, body]));
+        const worldQuaternion = { x: 0, y: 0, z: 0, w: 1 };
+        const worldPosition = { x: 0, y: 0, z: 0 };
+        const zeroVel = { x: 0, y: 0, z: 0 };
+        for (const joint of this.physicsState.joints ?? []) {
+          const child = bodyById.get(joint.bodyId);
+          if (!child) continue;
+          const connected = joint.connectedBodyId ? bodyById.get(joint.connectedBodyId) : undefined;
+          const travel = joint.kind === "prismatic"
+            ? relativeOffsetAlongAxis(connected?.position ?? worldPosition, connected?.quaternion ?? worldQuaternion, child.position, joint.axis)
+            : relativeRotationAroundAxis(connected?.quaternion ?? worldQuaternion, child.quaternion, joint.axis);
+          const rate = relativeRateAlongAxis(connected?.angvel ?? zeroVel, connected?.quaternion ?? worldQuaternion, child.angvel, joint.axis);
+          const limitActive = joint.limits.enabled && joint.solver !== "multibody";
+          const atLimit = limitActive && (travel <= joint.limits.min + 1e-4 || travel >= joint.limits.max - 1e-4);
+          joints.push({
+            id: joint.id,
+            kind: joint.kind,
+            solver: joint.solver ?? "impulse",
+            bodyName: child.name,
+            connectedBodyName: connected?.name ?? "",
+            axis: { ...joint.axis },
+            limits: { ...joint.limits },
+            motor: { ...joint.motor },
+            travel,
+            rate,
+            limitState: !limitActive ? "disabled" : atLimit ? "at-limit" : "within",
+          });
+        }
+      }
+      return {
+        available: world !== undefined,
+        enabled: this.physicsState.enabled,
+        playing: this.physicsState.playing,
+        fixedStepIndex: this.physicsFixedStepCount,
+        bodies,
+        joints,
+      };
     }
   /**
    * B3-c 物理可观测性：把 Rapier 原始碰撞事件解析成 collisionStart/collisionEnd
@@ -342,8 +556,14 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
   isPhysicsDebugVisible(): boolean {
     return this.physicsDebugVisible;
   }
-  /** 每帧同步调试线框位姿与数量；未开启时直接返回，物理数据面零轮询。 */
+  /**
+   * 每帧同步调试线框位姿与数量；未开启时直接返回，物理数据面零轮询。
+   * T28：回放覆盖在此逐帧重申——本方法由 runtime 在每个渲染帧、绘制前调用
+   * （即使物理暂停），任何作者态回写都会在下一渲染帧被纠正，回放位姿因此
+   * 在按需渲染的空闲场景下也稳定成立。
+   */
   protected updatePhysicsDebugView(): void {
+    if (this.physicsReplayFrame) this.applyPhysicsReplayFrame();
     if (!this.physicsDebugVisible) return;
     this.physicsDebugOverlay.sync(this.collectPhysicsDebugColliders(), (entry) => {
       // 无主碰撞体=默认地面；有主按刚体类型着色，登记缺失兜底按静态处理。

@@ -20,7 +20,7 @@ async function collectBounded(
       total += result.value.byteLength;
       if (total > maxOutputBytes) {
         await output.cancel(`${format} 解压结果超过安全上限`);
-        throw new JtFormatError(`JT 解压结果超过 ${maxOutputBytes} 字节上限`);
+        throw new JtFormatError(`JT 解压结果超过 ${maxOutputBytes} 字节上限`, "limit-exceeded");
       }
       chunks.push(result.value);
     }
@@ -51,7 +51,7 @@ export async function decompressXz(compressed: Uint8Array, maxOutputBytes: numbe
   } catch (error) {
     if (error instanceof JtFormatError) throw error;
     const reason = error instanceof Error ? error.message : String(error);
-    throw new JtFormatError(`JT XZ 数据解压失败：${reason}`);
+    throw new JtFormatError(`JT XZ 数据解压失败：${reason}`, "decompress-failed");
   }
 }
 
@@ -67,6 +67,6 @@ export async function decompressDeflate(compressed: Uint8Array, maxOutputBytes: 
   } catch (error) {
     if (error instanceof JtFormatError) throw error;
     const reason = error instanceof Error ? error.message : String(error);
-    throw new JtFormatError(`JT Deflate 数据解压失败：${reason}`);
+    throw new JtFormatError(`JT Deflate 数据解压失败：${reason}`, "decompress-failed");
   }
 }

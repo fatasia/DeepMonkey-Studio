@@ -131,6 +131,15 @@ html, body, #root { width: 100%; height: 100%; margin: 0; overflow: hidden; }
 .app-workspace-frame.behavior-split.behavior-from-studio .app-workspace-surface .topbar{position:fixed;top:0;right:0;left:0;z-index:var(--layer-workspace);height:52px}
 .app-workspace-frame.behavior-split.behavior-from-dashboard .behavior-workspace-slot.layout-split{height:calc(100% - 52px);margin-top:52px}
 .app-workspace-frame.behavior-split.behavior-from-dashboard .dashboard-workspace-topbar{position:fixed;top:0;right:0;left:0;z-index:var(--layer-workspace);height:52px}
+.scene-play-action { color:var(--accent); border-color:color-mix(in srgb,var(--accent) 45%,var(--line)); background:var(--accent-soft); font-weight:650; }
+.scene-play-action.is-playing { color:var(--warning); border-color:color-mix(in srgb,var(--warning) 55%,var(--line)); background:color-mix(in srgb,var(--warning) 13%,var(--surface-1)); }
+.scene-play-action:disabled { opacity:.42; cursor:not-allowed; }
+.topbar-auto-save:has(input:disabled) { opacity:.52; cursor:not-allowed; }
+.scene-title-wrap input:disabled { opacity:.6; cursor:not-allowed; }
+@media (max-width:1280px) { .topbar-actions > .scene-play-action .action-label { display:none; } }
+@media (prefers-reduced-motion: no-preference) { .scene-play-action { transition:color 150ms,background 150ms,border-color 150ms; } }
+
+
 .app-workspace-frame.behavior-split.behavior-from-dashboard .app-workspace-surface{padding-top:52px}
 .app-workspace-frame.behavior-split.behavior-from-dashboard .dashboard-workspace{grid-template:0 minmax(0,1fr) 34px/minmax(0,1fr);grid-template-areas:"top" "canvas" "status"}
 .app-workspace-frame.behavior-split.behavior-from-dashboard .dashboard-compact-page-settings{display:none}

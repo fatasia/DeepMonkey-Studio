@@ -64,6 +64,254 @@
         "cold",
         "warm"
       ]
+    },
+    {
+      "schema": "deep-engine.benchmark-asset-manifest",
+      "schemaVersion": 1,
+      "id": "asset.factory.kenney-machine-v3",
+      "name": "Kenney Factory Kit 3.0 / machine",
+      "domain": "factory",
+      "primaryLoadClass": "factory-instances",
+      "source": {
+        "path": "packages/deep-engine/lab/assets/FactoryMachine.glb",
+        "bytes": 37460,
+        "sha256": "7fd1f33c2b4cd6f9fbfe3cc1769cbc8aeb04c21c46d610d5d0105a21ef2995b4",
+        "format": "glb",
+        "formatVersion": "2.0"
+      },
+      "units": "meters",
+      "license": {
+        "redistributable": true,
+        "evidence": "Kenney Factory Kit 3.0 License.txt: CC0-1.0; source catalog data/external-assets/open-packs/catalog.json, factory.zip SHA-256 7e31fb2308e90304672bd15cd18fa9d9f02c03731a8cbc57a8e3e1c181dfb0a7; local embedded-texture derivative documented by FactoryMachine.LICENSE.md"
+      },
+      "stats": {
+        "triangles": 268,
+        "materials": 1,
+        "instances": 1,
+        "textures": 1,
+        "meshes": 1,
+        "bounds": { "min": [-0.600000023841858, -4.10674855233495e-10, -0.75], "max": [0.600000023841858, 1.29975187778473, 0.75] },
+        "measuredBy": "GLB v2 JSON chunk: POSITION/indices accessors and mesh/material/texture arrays"
+      },
+      "tasks": [{ "kind": "appearance", "fixtureId": "fixture.appearance.orbit-360" }],
+      "cacheConditions": ["cold", "warm"]
+    },
+    {
+      "schema": "deep-engine.benchmark-asset-manifest",
+      "schemaVersion": 1,
+      "id": "asset.factory.kenney-conveyor-v3",
+      "name": "Kenney Factory Kit 3.0 / conveyor",
+      "domain": "factory",
+      "primaryLoadClass": "factory-instances",
+      "source": {
+        "path": "packages/deep-engine/lab/assets/WorkshopConveyor.glb",
+        "bytes": 30520,
+        "sha256": "c0e7614b3e548f795414851c8ed4cf892e7b2b4a353ca3c6b36c07232009d9d7",
+        "format": "glb",
+        "formatVersion": "2.0"
+      },
+      "units": "meters",
+      "license": {
+        "redistributable": true,
+        "evidence": "Kenney Factory Kit 3.0 License.txt: CC0-1.0; source catalog data/external-assets/open-packs/catalog.json, factory.zip SHA-256 7e31fb2308e90304672bd15cd18fa9d9f02c03731a8cbc57a8e3e1c181dfb0a7; embedded-colormap derivative documented by WorkshopKit.LICENSE.md"
+      },
+      "stats": {
+        "triangles": 196,
+        "materials": 1,
+        "instances": 1,
+        "textures": 1,
+        "meshes": 1,
+        "bounds": { "min": [-0.5, 0, -0.5], "max": [0.5, 0.400000006, 0.5] },
+        "measuredBy": "GLB v2 JSON chunk: POSITION/indices accessors and mesh/material/texture arrays"
+      },
+      "tasks": [{ "kind": "appearance", "fixtureId": "fixture.appearance.orbit-360" }],
+      "cacheConditions": ["cold", "warm"]
+    },
+    {
+      "schema": "deep-engine.benchmark-asset-manifest",
+      "schemaVersion": 1,
+      "id": "asset.factory.kenney-crate-v3",
+      "name": "Kenney Factory Kit 3.0 / box-large (pallet crate)",
+      "domain": "factory",
+      "primaryLoadClass": "factory-instances",
+      "source": {
+        "path": "packages/deep-engine/lab/assets/WorkshopCrate.glb",
+        "bytes": 19332,
+        "sha256": "b19c4832b395b3bc5a2bd4ee0ef5c0662c3ae4d4608859fa0161e63f2ce5c544",
+        "format": "glb",
+        "formatVersion": "2.0"
+      },
+      "units": "meters",
+      "license": {
+        "redistributable": true,
+        "evidence": "Kenney Factory Kit 3.0 License.txt: CC0-1.0; source catalog data/external-assets/open-packs/catalog.json, factory.zip SHA-256 7e31fb2308e90304672bd15cd18fa9d9f02c03731a8cbc57a8e3e1c181dfb0a7; embedded-colormap derivative documented by WorkshopKit.LICENSE.md"
+      },
+      "stats": {
+        "triangles": 70,
+        "materials": 1,
+        "instances": 1,
+        "textures": 1,
+        "meshes": 1,
+        "bounds": { "min": [-0.550000012, 0, -0.5], "max": [0.550000012, 0.550000012, 0.5] },
+        "measuredBy": "GLB v2 JSON chunk: POSITION/indices accessors and mesh/material/texture arrays"
+      },
+      "tasks": [{ "kind": "appearance", "fixtureId": "fixture.appearance.orbit-360" }],
+      "cacheConditions": ["cold", "warm"]
+    },
+    {
+      "schema": "deep-engine.benchmark-asset-manifest",
+      "schemaVersion": 1,
+      "id": "asset.factory.kenney-hopper-v3",
+      "name": "Kenney Factory Kit 3.0 / hopper-square",
+      "domain": "factory",
+      "primaryLoadClass": "factory-instances",
+      "source": {
+        "path": "packages/deep-engine/lab/assets/WorkshopHopper.glb",
+        "bytes": 21924,
+        "sha256": "aaa5116ebcc0fdeabbbcb34967a39dfd8bfec82769ca7fe9e5307c9396806dd3",
+        "format": "glb",
+        "formatVersion": "2.0"
+      },
+      "units": "meters",
+      "license": {
+        "redistributable": true,
+        "evidence": "Kenney Factory Kit 3.0 License.txt: CC0-1.0; source catalog data/external-assets/open-packs/catalog.json, factory.zip SHA-256 7e31fb2308e90304672bd15cd18fa9d9f02c03731a8cbc57a8e3e1c181dfb0a7; embedded-colormap derivative documented by WorkshopKit.LICENSE.md"
+      },
+      "stats": {
+        "triangles": 104,
+        "materials": 1,
+        "instances": 1,
+        "textures": 1,
+        "meshes": 1,
+        "bounds": { "min": [-0.558600008, 0, -0.558600008], "max": [0.558600008, 1, 0.558600008] },
+        "measuredBy": "GLB v2 JSON chunk: POSITION/indices accessors and mesh/material/texture arrays"
+      },
+      "tasks": [{ "kind": "appearance", "fixtureId": "fixture.appearance.orbit-360" }],
+      "cacheConditions": ["cold", "warm"]
+    },
+    {
+      "schema": "deep-engine.benchmark-asset-manifest",
+      "schemaVersion": 1,
+      "id": "asset.factory.kenney-column-v3",
+      "name": "Kenney Factory Kit 3.0 / structure-high (building column)",
+      "domain": "factory",
+      "primaryLoadClass": "factory-instances",
+      "source": {
+        "path": "packages/deep-engine/lab/assets/WorkshopColumn.glb",
+        "bytes": 37700,
+        "sha256": "d3239c145bd427938beb38eef369e56cb22c62328d660e208da909c34afd00d1",
+        "format": "glb",
+        "formatVersion": "2.0"
+      },
+      "units": "meters",
+      "license": {
+        "redistributable": true,
+        "evidence": "Kenney Factory Kit 3.0 License.txt: CC0-1.0; source catalog data/external-assets/open-packs/catalog.json, factory.zip SHA-256 7e31fb2308e90304672bd15cd18fa9d9f02c03731a8cbc57a8e3e1c181dfb0a7; embedded-colormap derivative documented by WorkshopKit.LICENSE.md"
+      },
+      "stats": {
+        "triangles": 268,
+        "materials": 1,
+        "instances": 1,
+        "textures": 1,
+        "meshes": 1,
+        "bounds": { "min": [-0.150000006, 0, -0.550000012], "max": [0.150000006, 1.499999881, 0.550000012] },
+        "measuredBy": "GLB v2 JSON chunk: POSITION/indices accessors and mesh/material/texture arrays"
+      },
+      "tasks": [{ "kind": "appearance", "fixtureId": "fixture.appearance.orbit-360" }],
+      "cacheConditions": ["cold", "warm"]
+    },
+    {
+      "schema": "deep-engine.benchmark-asset-manifest",
+      "schemaVersion": 1,
+      "id": "asset.factory.kenney-catwalk-v3",
+      "name": "Kenney Factory Kit 3.0 / catwalk-straight",
+      "domain": "factory",
+      "primaryLoadClass": "factory-instances",
+      "source": {
+        "path": "packages/deep-engine/lab/assets/WorkshopCatwalk.glb",
+        "bytes": 45332,
+        "sha256": "1985dee1f58295bb98e605e6af71656a268803eba3e1d7e3f9add13850b3c9e3",
+        "format": "glb",
+        "formatVersion": "2.0"
+      },
+      "units": "meters",
+      "license": {
+        "redistributable": true,
+        "evidence": "Kenney Factory Kit 3.0 License.txt: CC0-1.0; source catalog data/external-assets/open-packs/catalog.json, factory.zip SHA-256 7e31fb2308e90304672bd15cd18fa9d9f02c03731a8cbc57a8e3e1c181dfb0a7; embedded-colormap derivative documented by WorkshopKit.LICENSE.md"
+      },
+      "stats": {
+        "triangles": 328,
+        "materials": 1,
+        "instances": 1,
+        "textures": 1,
+        "meshes": 1,
+        "bounds": { "min": [-0.5, -0.147247374, -0.627743304], "max": [0.5, 0.454119623, 0.627743304] },
+        "measuredBy": "GLB v2 JSON chunk: POSITION/indices accessors and mesh/material/texture arrays"
+      },
+      "tasks": [{ "kind": "appearance", "fixtureId": "fixture.appearance.orbit-360" }],
+      "cacheConditions": ["cold", "warm"]
+    },
+    {
+      "schema": "deep-engine.benchmark-asset-manifest",
+      "schemaVersion": 1,
+      "id": "asset.factory.kenney-robot-arm-v3",
+      "name": "Kenney Factory Kit 3.0 / robot-arm-a (9 mesh nodes)",
+      "domain": "factory",
+      "primaryLoadClass": "factory-instances",
+      "source": {
+        "path": "packages/deep-engine/lab/assets/WorkshopRobotArm.glb",
+        "bytes": 62140,
+        "sha256": "67b6f2be98bb3933c1ea9afce9bdb10db77dd6931f77cc1d6c20d948f9f34189",
+        "format": "glb",
+        "formatVersion": "2.0"
+      },
+      "units": "meters",
+      "license": {
+        "redistributable": true,
+        "evidence": "Kenney Factory Kit 3.0 License.txt: CC0-1.0; source catalog data/external-assets/open-packs/catalog.json, factory.zip SHA-256 7e31fb2308e90304672bd15cd18fa9d9f02c03731a8cbc57a8e3e1c181dfb0a7; embedded-colormap derivative documented by WorkshopKit.LICENSE.md"
+      },
+      "stats": {
+        "triangles": 472,
+        "materials": 1,
+        "instances": 9,
+        "textures": 1,
+        "meshes": 9,
+        "bounds": { "min": [-0.5, -0.200000048, -0.5], "max": [0.5, 0.600000143, 0.5] },
+        "measuredBy": "GLB v2 JSON chunk: POSITION/indices accessors and mesh/material/texture arrays"
+      },
+      "tasks": [{ "kind": "appearance", "fixtureId": "fixture.appearance.orbit-360" }],
+      "cacheConditions": ["cold", "warm"]
+    },
+    {
+      "schema": "deep-engine.benchmark-asset-manifest",
+      "schemaVersion": 1,
+      "id": "asset.factory.kenney-screen-v3",
+      "name": "Kenney Factory Kit 3.0 / screen-flat (monitoring screen)",
+      "domain": "factory",
+      "primaryLoadClass": "factory-instances",
+      "source": {
+        "path": "packages/deep-engine/lab/assets/WorkshopScreen.glb",
+        "bytes": 23360,
+        "sha256": "40483ac0e377a4c78e30c5e0d56226e39414b2fc33b58c4a60568ed26c8985cb",
+        "format": "glb",
+        "formatVersion": "2.0"
+      },
+      "units": "meters",
+      "license": {
+        "redistributable": true,
+        "evidence": "Kenney Factory Kit 3.0 License.txt: CC0-1.0; source catalog data/external-assets/open-packs/catalog.json, factory.zip SHA-256 7e31fb2308e90304672bd15cd18fa9d9f02c03731a8cbc57a8e3e1c181dfb0a7; embedded-colormap derivative documented by WorkshopKit.LICENSE.md"
+      },
+      "stats": {
+        "triangles": 120,
+        "materials": 1,
+        "instances": 1,
+        "textures": 1,
+        "meshes": 1,
+        "bounds": { "min": [-0.600000083, 0, -0.255355358], "max": [0.600000262, 0.745269835, 0.389483571] },
+        "measuredBy": "GLB v2 JSON chunk: POSITION/indices accessors and mesh/material/texture arrays"
+      },
+      "tasks": [{ "kind": "appearance", "fixtureId": "fixture.appearance.orbit-360" }],
+      "cacheConditions": ["cold", "warm"]
     }
   ]
 }

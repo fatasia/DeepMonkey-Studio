@@ -12,16 +12,18 @@ type SceneHistoryState = ReturnType<typeof useSceneHistoryState>;
 interface SceneHistoryActionsOptions {
   state: AppState;
   history: SceneHistoryState;
+  playModeActive?: boolean;
   applyScene: PersistenceController["applyScene"];
 }
 
 /** 提供撤销、重做和恢复草稿动作，并保证失败时历史指针与画布一致。 */
-export function useSceneHistoryActions({ state, history, applyScene }: SceneHistoryActionsOptions) {
+export function useSceneHistoryActions({ state, history, playModeActive = false, applyScene }: SceneHistoryActionsOptions) {
   const { activeApplication, activeScene, busy, engine, lastAutoSavedSceneRevisionRef, project, revision, route, setAutoSaveEnabled, setMessage, showError } = state;
   const {
     recoveryDecisionRef,
     recoveryDraft,
     sceneHistoryApplyingRef,
+    sceneEditTransactionRef,
     sceneHistoryRef,
     sceneHistoryRevision,
     sceneSnapshotFactoryRef,
@@ -47,12 +49,15 @@ export function useSceneHistoryActions({ state, history, applyScene }: SceneHist
   }
 
   async function undoSceneEdit(): Promise<void> {
+    // T27：事务窗口未提交时拒绝撤销，避免撤销栈指针越过尚未成条的变更。
+    if (playModeActive || sceneEditTransactionRef?.current) return;
     flushSceneHistoryEdit();
     const snapshot = sceneHistoryRef.current.undo();
     if (snapshot) await applySceneHistorySnapshot(snapshot, "undo");
   }
 
   async function redoSceneEdit(): Promise<void> {
+    if (playModeActive || sceneEditTransactionRef?.current) return;
     const snapshot = sceneHistoryRef.current.redo();
     if (snapshot) await applySceneHistorySnapshot(snapshot, "redo");
   }
@@ -72,10 +77,10 @@ export function useSceneHistoryActions({ state, history, applyScene }: SceneHist
     };
     window.addEventListener("keydown", handleHistoryShortcut);
     return () => window.removeEventListener("keydown", handleHistoryShortcut);
-  }, [route.view, project?.id, activeScene?.id, sceneHistoryRevision, busy]);
+  }, [route.view, project?.id, activeScene?.id, sceneHistoryRevision, busy, playModeActive]);
 
   useEffect(() => {
-    if (route.view !== "studio" || !project || !activeScene || !engine || recoveryDraft || revision <= lastAutoSavedSceneRevisionRef.current) return;
+    if (playModeActive || route.view !== "studio" || !project || !activeScene || !engine || recoveryDraft || revision <= lastAutoSavedSceneRevisionRef.current) return;
     const timer = window.setTimeout(() => {
       const snapshot = sceneSnapshotFactoryRef.current?.();
       if (!snapshot) return;
@@ -87,7 +92,7 @@ export function useSceneHistoryActions({ state, history, applyScene }: SceneHist
       void writeWorkspaceRecoveryDraft(draft);
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [route.view, route.applicationId, project?.id, activeScene?.id, activeApplication?.metadata.revision, engine, revision, recoveryDraft]);
+  }, [route.view, route.applicationId, project?.id, activeScene?.id, activeApplication?.metadata.revision, engine, revision, recoveryDraft, playModeActive]);
 
   async function restoreRecoveryDraft(): Promise<void> {
     if (!recoveryDraft || !project) return;

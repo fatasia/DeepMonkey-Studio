@@ -1,6 +1,10 @@
 use super::*;
 
 pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
+    #[cfg(target_arch = "wasm32")]
+    if app.physics_stage_pending {
+        return;
+    }
     app.step_navigation();
     if app.state.verification.is_some()
         && let Some(renderer) = &app.renderer
@@ -32,6 +36,7 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
         event_loop.exit();
         return;
     }
+    #[cfg(not(target_arch = "wasm32"))]
     if let Some(playback) = app.product_physics_playback.as_mut()
         && let Some(renderer) = app.renderer.as_mut()
         && let Err(error) = playback.before_render(renderer, app.content.active_mut())
@@ -39,6 +44,24 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
         app.state.failed(error);
         event_loop.exit();
         return;
+    }
+    #[cfg(target_arch = "wasm32")]
+    if !std::mem::take(&mut app.physics_present_pending)
+        && let Some(playback) = app.product_physics_playback.as_mut()
+        && app.renderer.is_some()
+    {
+        match playback.advance_content(app.content.active_mut()) {
+            Ok(Some(previous)) => {
+                app.begin_wasm_physics_stage(previous);
+                return;
+            }
+            Ok(None) => {}
+            Err(error) => {
+                app.state.failed(error);
+                event_loop.exit();
+                return;
+            }
+        }
     }
     // State-op playback applies contracted clipping/selection steps to the real
     // player state on the same fixed clock discipline before the frame renders.

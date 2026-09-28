@@ -88,4 +88,39 @@ describe("DeepWebGpuProbeClipmapSession", () => {
     f.session.dispose();
     expect(controller.dispose).toHaveBeenCalledOnce();
   });
+
+  it("cancels the previous packet capture before a new packet can start", async () => {
+    let finishOld!: (value: { status: "failed"; error: Error }) => void;
+    const oldCapture = new Promise<{ status: "failed"; error: Error }>(resolve => { finishOld = resolve; });
+    const f = fixture(); f.session.syncPacket(PACKET); f.session.setEnabled(true);
+    const controller = f.controllers[0]!;
+    controller.beginFrame.mockReturnValueOnce(oldCapture);
+    f.session.beginFrame(VIEW);
+    const oldSignal = controller.beginFrame.mock.calls[0]![1] as AbortSignal;
+    expect(oldSignal.aborted).toBe(false);
+
+    f.session.syncPacket(PACKET);
+    expect(oldSignal.aborted).toBe(true);
+    expect(f.session.diagnostics.pending).toBe(false);
+    f.session.beginFrame(VIEW);
+    expect(controller.beginFrame).toHaveBeenCalledTimes(2);
+
+    finishOld({ status: "failed", error: new Error("stale capture") });
+    await Promise.resolve(); await Promise.resolve();
+    expect(f.session.failure).toBeUndefined();
+    expect(f.session.diagnostics.packetRevision).toBe(2);
+  });
+
+  it("retires an active controller when syncing the replacement scene fails", () => {
+    const f = fixture(); f.session.syncPacket(PACKET); f.session.setEnabled(true);
+    const controller = f.controllers[0]!;
+    controller.syncRenderPacket.mockImplementationOnce(() => { throw new Error("unsupported replacement"); });
+
+    expect(() => f.session.syncPacket(PACKET)).toThrow("unsupported replacement");
+    expect(controller.dispose).toHaveBeenCalledOnce();
+    expect(f.session.active).toBe(false);
+    expect(f.session.diagnostics.failure).toBe("unsupported replacement");
+    f.session.beginFrame(VIEW);
+    expect(controller.beginFrame).not.toHaveBeenCalled();
+  });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTlas, invertAffine3x4, traceTlasClosest } from "./tlas.js";
+import { buildTlas, invertAffine3x4, traceTlasClosest, type TlasInstanceDescriptor } from "./tlas.js";
 import { buildTracedScene, traceClosest, type TraceQuery } from "./rayTrace.js";
 import type { RayBlasDescriptor } from "./rayBackendTypes.js";
 
@@ -11,7 +11,7 @@ function unitBlas(id: string, offsetX = 0, offsetY = 0): RayBlasDescriptor {
   return { id, vertices, indices: Uint32Array.from([0, 1, 2, 0, 2, 3]) };
 }
 
-const IDENTITY: readonly number[] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
+const IDENTITY: TlasInstanceDescriptor["worldToLocal"] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
 
 describe("tlas instance layer", () => {
   it("hits the nearest instance across two translated quads", () => {

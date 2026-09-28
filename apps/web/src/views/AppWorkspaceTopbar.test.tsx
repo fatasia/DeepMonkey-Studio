@@ -24,6 +24,22 @@ function setup() {
   return { bindings, saveScene, saveActiveApplication, returnFromSceneEditor, commitSceneName, showError, setError, render, leave: () => actions.leave!() };
 }
 
+describe("Play mode toolbar state", () => {
+  it("shows the Play action and marks authoring controls as unavailable while playing", () => {
+    const fixture = setup();
+    fixture.bindings.playMode = { active: false, enter: vi.fn(), exit: vi.fn() };
+    const idle = fixture.render();
+    expect(idle).toContain('aria-label="进入播放模式"');
+    fixture.bindings.playMode.active = true;
+    const running = fixture.render();
+    expect(running).toContain('aria-label="退出播放模式并恢复场景"');
+    expect(running).toContain('aria-label="自动保存已暂停"');
+    expect(running).toContain('aria-label="播放中不可撤销"');
+    expect(running).toContain('aria-label="播放中不可重做"');
+    expect(running).toContain('先退出播放模式，再保存');
+  });
+});
+
 describe("3D workspace exit save contract", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());

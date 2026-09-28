@@ -10,7 +10,9 @@ function manualScheduler() {
       tasks.push(task);
       return tasks.length;
     },
-    cancel: () => undefined,
+    cancel: (handle: unknown) => {
+      tasks[Number(handle) - 1] = () => undefined;
+    },
     flushAll: () => {
       while (tasks.length) tasks.shift()!();
     },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { deserializeBvhNodes } from "./rayTraceLayout.js";
-import { buildTlas } from "./tlas.js";
+import { buildTlas, type TlasInstanceDescriptor } from "./tlas.js";
 import { deserializeTlasInstanceRecords, packTlasScene, TLAS_INSTANCE_SENTINEL, TLAS_INSTANCE_STRIDE_BYTES,
   TLAS_INSTANCE_STRIDE_WORDS, TLAS_INSTANCE_WORD, unpackTlasHitRecords } from "./tlasLayout.js";
 import type { RayBlasDescriptor } from "./rayBackendTypes.js";
@@ -23,7 +23,7 @@ function gridBlas(id: string, cells: number): RayBlasDescriptor {
   return { id, vertices, indices: Uint32Array.from(indices) };
 }
 
-const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
+const IDENTITY: TlasInstanceDescriptor["worldToLocal"] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
 
 describe("tlas instance record layout", () => {
   const tlas = buildTlas([
@@ -79,7 +79,7 @@ describe("tlas instance record layout", () => {
         sum + tlas.instances[prev.instanceIndex]!.blas.vertices.length / 3, 0);
       expect(record.nodeBase).toBeGreaterThanOrEqual(packed.tlasNodeCount);
       for (let local = 0; local < blas.indices.length; local++) {
-        expect(packed.indices[record.triangleBase * 3 + local]).toBe(vertexBase + blas.indices[local]);
+        expect(packed.indices[record.triangleBase * 3 + local]).toBe(vertexBase + blas.indices[local]!);
       }
       for (let local = 0; local < blas.indices.length / 3; local++) {
         const globalPrim = packed.order[record.triangleBase + local]!;

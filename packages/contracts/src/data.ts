@@ -63,6 +63,8 @@ export interface DataMessage {
   key: string;
   value: unknown;
   timestamp: string;
+  /** 源序列号(OPC UA source timestamp 序 / MQTT 用户属性或负载字段);缺失表示源不保证序。 */
+  sequence?: number;
   sceneId?: string;
   target?: DataEventTarget;
   action?: DataEventAction;
@@ -251,4 +253,59 @@ export interface DataStreamEnvelope<T = unknown> {
   timestamp: string;
   schemaVersion: "1";
   payload: T;
+}
+
+/**
+ * T24 持久订阅会话状态合同(路由响应与后续编辑器消费共用)。
+ * 语义:断线恢复后的缺口如实报告,不伪造连续性。
+ */
+export type DataSubscriptionLifecycle =
+  | "idle"
+  | "starting"
+  | "healthy"
+  | "reconnecting"
+  | "stopped"
+  | "failed";
+
+/** 一次断线区间对账结果;from/to 为闭区间,sequenceKnown=false 表示源无序列号、丢失量未知。 */
+export interface DataSubscriptionGapReport {
+  id: string;
+  connectionId: string;
+  /** 缺口期望序列号起点(含);源无序列号时为 null。 */
+  fromSequence: number | null;
+  /** 缺口期望序列号终点(含);源无序列号时为 null。 */
+  toSequence: number | null;
+  /** 估计丢失点数;源无序列号时为 null。 */
+  estimatedCount: number | null;
+  /** 断线前最后收到样本时间(ISO 8601)。 */
+  fromTime: string;
+  /** 恢复后首条样本到达时间(ISO 8601)。 */
+  toTime: string;
+  sequenceKnown: boolean;
+  detectedAt: string;
+}
+
+export interface DataSubscriptionStatus {
+  connectionId: string;
+  projectId: string;
+  protocol: string;
+  lifecycle: DataSubscriptionLifecycle;
+  /** 同一连接的会话替换序号;每次 start 递增,用于生成号治理。 */
+  generation: number;
+  received: number;
+  published: number;
+  deduplicated: number;
+  droppedOutOfOrder: number;
+  parseFailures: number;
+  reconnects: number;
+  /** 已记录的缺口报告(有界,超出上限合并计数)。 */
+  gapReports: DataSubscriptionGapReport[];
+  gapReportsTruncated: number;
+  lastSequence: number | null;
+  lastTimestamp: string | null;
+  /** 下次重连尝试的绝对时间(ISO 8601);不在重连中时为 null。 */
+  nextReconnectAt: string | null;
+  lastError?: string;
+  lastMessageAt?: string;
+  updatedAt: string;
 }

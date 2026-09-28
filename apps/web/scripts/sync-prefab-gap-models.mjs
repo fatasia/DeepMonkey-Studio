@@ -20,6 +20,7 @@ import playwright from "../../cloud-render-worker/node_modules/playwright-core/i
 import { downloadAssetAtomically } from "../../../scripts/lib/atomicAssetDownload.mjs";
 import { inspectGlbFile } from "../../../scripts/lib/glbAudit.mjs";
 import { readSourceBCatalog, sourceBModelId, sourceBModelLicense, validateSourceBGlb, validateSourceBThumbnail } from "../../../scripts/lib/sourceBModelPolicy.mjs";
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 const repoRoot = path.resolve(import.meta.dirname, "../../..");
 const cache = path.resolve(repoRoot, "data/external-assets/source-b");
@@ -108,7 +109,7 @@ async function downloadAll() {
           synchronizedAt: new Date().toISOString(), publicationStatus: "review-required",
         };
         known.set(uid, record);
-        await writeJsonAtomic(catalogPath, { ...catalog, generatedAt: new Date().toISOString(), licensePolicy: "CC0-1.0 / CC-BY-4.0(完整署名与来源)", models: [...known.values()].sort((a, b) => a.uid.localeCompare(b.uid)) });
+        await writeJsonAtomic(catalogPath, { ...catalog, generatedAt: new Date().toISOString(), licensePolicy: "CC0-1.0 / CC-BY-4.0(完整署名与来源)", models: [...known.values()].sort((a, b) => compareText(a.uid, b.uid)) });
         item.result = "downloaded"; item.license = provenance.license; item.author = provenance.author;
         item.triangleCount = inspection.triangleCount; item.bytes = inspection.bytes;
       } catch (error) { item.result = "error"; item.message = error.message; }

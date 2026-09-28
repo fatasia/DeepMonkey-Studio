@@ -50,6 +50,9 @@ const legacyCatalog = existsSync(path.join(catalogRoot, "sch_9008.sch_txt"))
   ? path.join(catalogRoot, "sch_9008.sch_txt")
   : undefined;
 const bundledCommand = defaultParasolidProbeCommand();
+const researchSolid = path.join(repoRoot, "test-output/x-t-builtin-solid-20260928/two-boxes.x_t");
+const brokenResearchSolid = path.join(repoRoot, "test-output/x-t-builtin-solid-20260928/broken-loop.x_t");
+const unmatchedKey = path.join(repoRoot, "data/external-assets/format-fixtures/x_t/parasolid-kit/values.x_t");
 
 const directories: string[] = [];
 
@@ -57,6 +60,71 @@ afterEach(async () => {
   delete process.env.PROBE_MOCK_GEOMETRY;
   delete process.env.PROBE_MOCK_GEOMETRY_FACES;
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
+});
+
+describe("X_T builtin exact-key research inspection through upload queue", () => {
+  it.runIf(bundledCommand && existsSync(researchSolid))(
+    "uploads a two-BODY compact X_T, retains inspect-only manifest and no GLB despite triangulation",
+    async () => {
+      const { app, store, dataDir, objects, queue } = await createServer({ probe: { command: bundledCommand!, args: [] }, withoutCatalog: true });
+      try {
+        const source = await readFile(researchSolid);
+        const { model } = await uploadAndSettle(app, store, "research-two-boxes.x_t", source, "waiting_converter");
+        expect(model.conversionTaskId).toBeDefined();
+        expect(model.message).toContain("研发解析");
+        expect(model.manifest?.geometryUrl).toBeUndefined();
+        const output = attemptOutput(dataDir, model);
+        const inspection = JSON.parse(await readFile(path.join(output, "inspection.json"), "utf8"));
+        expect(inspection.genericParse.schemaAware).toMatchObject({
+          schemaKey: "SCH_3000000_30000", catalog: { schemaId: "builtin:onshape-sch30000-r3" },
+          brep: { bodies: 2, faces: 12, topologyValid: true },
+          geometryPublication: "waiting-independent-real-evidence",
+        });
+        expect(inspection.genericParse.schemaAware.geometry.stats).toMatchObject({ facesPublished: 12, triangles: 24 });
+        const manifest = JSON.parse(await readFile(path.join(path.dirname(output), "manifest.json"), "utf8"));
+        expect(manifest.geometryUrl).toBeUndefined();
+        expect(manifest.inspectionUrl).toContain("/output/inspection.json");
+        expect(await objects.stat(`projects/default/models/${model.id}/attempts/${model.conversionTaskId}/output/inspection.json`)).toBe(true);
+        await expect(readFile(path.join(output, "geometry.glb"))).rejects.toMatchObject({ code: "ENOENT" });
+        const structure = await app.inject({ method: "GET", url: `/api/projects/default/models/${model.id}/structure` });
+        expect(structure.statusCode).toBe(409);
+        expect(structure.json().message).toContain("尚未为该文件发布可视化产物");
+        expect(queue.tasks.get("default", model.conversionTaskId!)?.quality?.tier).toBe("inspect");
+      } finally {
+        await app.close();
+      }
+    },
+  );
+
+  it.runIf(bundledCommand && existsSync(brokenResearchSolid))(
+    "rejects broken topology without publishing builtin B-Rep evidence or GLB",
+    async () => {
+      const { app, store, dataDir } = await createServer({ probe: { command: bundledCommand!, args: [] }, withoutCatalog: true });
+      try {
+        const { model } = await uploadAndSettle(app, store, "broken-loop.x_t", await readFile(brokenResearchSolid), "failed");
+        const output = attemptOutput(dataDir, model);
+        await expect(readFile(path.join(output, "geometry.glb"))).rejects.toMatchObject({ code: "ENOENT" });
+        expect(model.manifest?.geometryUrl).toBeUndefined();
+      } finally {
+        await app.close();
+      }
+    },
+  );
+
+  it.runIf(bundledCommand && existsSync(unmatchedKey))(
+    "unknown/empty-body compact key cannot publish geometry or claim builtin evidence",
+    async () => {
+      const { app, store, dataDir } = await createServer({ probe: { command: bundledCommand!, args: [] }, withoutCatalog: true });
+      try {
+        const { model } = await uploadAndSettle(app, store, "values.x_t", await readFile(unmatchedKey), "failed");
+        const output = attemptOutput(dataDir, model);
+        await expect(readFile(path.join(output, "geometry.glb"))).rejects.toMatchObject({ code: "ENOENT" });
+        expect(model.manifest?.geometryUrl).toBeUndefined();
+      } finally {
+        await app.close();
+      }
+    },
+  );
 });
 
 describe("X_T schema-aware geometry publication (R1 MVP)", () => {

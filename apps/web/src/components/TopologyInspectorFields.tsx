@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { imeComposingKey } from "./layerKeyboard";
 
 export function InspectorTextField({ label, value, placeholder, onCommit }: { label: string; value: string; placeholder?: string; onCommit: (value: string) => void }) {
   const [draft, setDraft] = useState(value);
@@ -14,6 +15,7 @@ export function InspectorTextField({ label, value, placeholder, onCommit }: { la
           if (draft !== value) onCommit(draft);
         }}
         onKeyDown={(event) => {
+          if (imeComposingKey(event)) return;
           if (event.key === "Enter") event.currentTarget.blur();
           if (event.key === "Escape") {
             setDraft(value);
@@ -43,6 +45,7 @@ export function InspectorNumberField({ label, value, onCommit }: { label: string
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
         onKeyDown={(event) => {
+          if (imeComposingKey(event)) return;
           if (event.key === "Enter") event.currentTarget.blur();
           if (event.key === "Escape") {
             setDraft(normalized);
@@ -77,6 +80,7 @@ export function InspectorOptionalNumberField({ label, value, onCommit }: { label
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
         onKeyDown={(event) => {
+          if (imeComposingKey(event)) return;
           if (event.key === "Enter") event.currentTarget.blur();
           if (event.key === "Escape") {
             setDraft(normalized);

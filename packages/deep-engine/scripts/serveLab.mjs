@@ -15,7 +15,7 @@ const files = new Map([["/", ["index.html", "text/html"]], ["/switch", ["switch.
   ["/lab.css", ["lab.css", "text/css"]], ["/switch.css", ["switch.css", "text/css"]],
   ["/benchmark.css", ["benchmark.css", "text/css"]], ["/tokens.css", ["tokens.css", "text/css"]],
   ["/manifest.json", ["manifest.json", "application/json"]]]);
-for (const name of ["Box", "BoxInterleaved", "BoxTextured", "NormalTangentTest", "TextureEncodingTest", "TextureTransformMultiTest", "AlphaBlendModeTest"]) {
+for (const name of ["Box", "BoxInterleaved", "BoxTextured", "NormalTangentTest", "TextureEncodingTest", "TextureTransformMultiTest", "AlphaBlendModeTest", "FactoryMachine", "WorkshopConveyor", "WorkshopCrate", "WorkshopHopper", "WorkshopColumn", "WorkshopCatwalk", "WorkshopRobotArm", "WorkshopScreen"]) {
   files.set(`/assets/${name}.glb`, [`assets/${name}.glb`, "model/gltf-binary"]);
   files.set(`/assets/${name}.LICENSE.md`, [`assets/${name}.LICENSE.md`, "text/plain"]);
 }

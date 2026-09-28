@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type {
   AgentEvidence,
   AgentToolCall,
@@ -121,7 +122,7 @@ function toolPolicy(descriptor: CapabilityDescriptor, definition: AgentToolDefin
 
 function toReliableCall(call: AgentToolCall): Omit<AiToolCall, "approval"> {
   const resources = structuredClone(call.resources).sort((left, right) =>
-    `${left.kind}:${left.id}:${left.projectId ?? ""}`.localeCompare(`${right.kind}:${right.id}:${right.projectId ?? ""}`),
+    compareText(`${left.kind}:${left.id}:${left.projectId ?? ""}`, `${right.kind}:${right.id}:${right.projectId ?? ""}`),
   );
   return {
     toolId: call.toolId,

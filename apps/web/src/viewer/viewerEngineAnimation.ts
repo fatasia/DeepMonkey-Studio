@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { SceneModelAnimationPlaybackState } from "@bim-studio/contracts";
+import { rearmModelAnimationConsumption } from "./viewerEngineRootMotion";
 
 export type AnimationControl = {
   action: "play" | "pause" | "stop" | "seek";
@@ -85,6 +86,7 @@ export function restartModelAnimationActions(context: AnimationContext, id: stri
   const active = activeId ? clips.filter((clip) => (clip.name || clip.uuid) === activeId) : clips;
   context.applyModelAnimationLoopPolicy(id, active);
   active.forEach((clip) => mixer.clipAction(clip).reset().play());
+  rearmModelAnimationConsumption(context, id);
 }
 
 export function updateCompletedModelAnimations(context: AnimationContext): void {
@@ -117,6 +119,8 @@ export function controlAnimation(context: AnimationContext, id: string, control:
     (active ? [active] : clips).forEach((clip) => mixer.clipAction(clip).reset().play());
     mixer.timeScale = 1;
     context.animationEnabledIds.add(id);
+    // 动作从头播放:根运动/事件消费镜像同步归零(未启用消费时为无害空操作)。
+    rearmModelAnimationConsumption(context, id);
   } else if (control.action === "pause") {
     mixer.timeScale = 0;
     context.animationEnabledIds.delete(id);
@@ -125,9 +129,12 @@ export function controlAnimation(context: AnimationContext, id: string, control:
     mixer.setTime(0);
     mixer.timeScale = 0;
     context.animationEnabledIds.delete(id);
+    rearmModelAnimationConsumption(context, id);
   } else {
     if (control.time === undefined || !Number.isFinite(control.time) || control.time < 0) return false;
     mixer.setTime(control.time);
+    // seek 是瞬移语义:不发射跳过区间的事件、不入账跨越性根运动(T14 合同边界)。
+    rearmModelAnimationConsumption(context, id, control.time);
   }
   const model = context.models.get(id);
   if (model) context.onModelChange?.(model);
@@ -154,6 +161,8 @@ export function transitionAnimationClip(context: AnimationContext, id: string, f
   mixer.timeScale = 1;
   context.animationClipSelection.set(id, to.name || to.uuid);
   context.animationEnabledIds.add(id);
+  // 过渡目标 clip 从零播放:消费镜像归零,事件线切换到目标 clip。
+  rearmModelAnimationConsumption(context, id);
   const model = context.models.get(id);
   if (model) context.onModelChange?.(model);
   return true;

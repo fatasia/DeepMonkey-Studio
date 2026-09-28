@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import * as THREE from "three";
 import { MeshBVH } from "three-mesh-bvh";
 
@@ -242,5 +243,5 @@ function semanticValue(properties: Record<string, string>, candidates: string[])
 }
 
 function uniqueSorted(values: Array<string | undefined>): string[] {
-  return [...new Set(values.filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b, "zh-CN"));
+  return [...new Set(values.filter((value): value is string => Boolean(value)))].sort((a, b) => compareText(a, b));
 }

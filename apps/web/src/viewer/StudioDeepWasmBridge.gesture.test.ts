@@ -144,6 +144,7 @@ function fakeRuntime() {
     set_viewer_camera: runtime.camera as unknown as DeepWasmRuntimeModule["set_viewer_camera"],
     viewer_ready_generation: () => (state.failure ? -1 : generation),
     viewer_failure_message: () => state.failure,
+    viewer_physics_pose: async () => JSON.stringify({ instanceId: "unused", fixedStep: 0, translation: [0, 0, 0] }),
   };
   return runtime;
 }

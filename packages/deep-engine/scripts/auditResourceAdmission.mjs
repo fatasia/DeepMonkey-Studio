@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import ts from "typescript";
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 /** Static call-site inventory, not an ownership proof: aliases and runtime device wrappers require review. */
 export function scanResourceAllocations(file, code) {
@@ -24,7 +25,7 @@ export function scanResourceAllocations(file, code) {
 export async function auditResourceAdmission(root) {
   const calls = [];
   async function visit(directory) {
-    for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) => compareText(a.name, b.name))) {
       const absolute = path.join(directory, entry.name);
       if (entry.isDirectory()) await visit(absolute);
       else if (/\.tsx?$/.test(entry.name) && !/\.(test|testUtils)\.tsx?$/.test(entry.name)) {

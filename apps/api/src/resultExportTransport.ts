@@ -5,6 +5,7 @@
  * 语义与 SQL ON CONFLICT 一致(按主键 study_id+metric_key+provenance 覆盖)。
  * SQL 值一律参数占位($1..$n),表名经 contracts 校验为严格标识符后拼接,禁止值拼接。
  */
+import { compareText } from "@bim-studio/contracts";
 import { assertSqlTableName } from "@bim-studio/contracts";
 import { STUDY_RESULT_COLUMNS } from "./resultExportPayload.js";
 import type { ResultExportRowValues } from "./resultExportPayload.js";
@@ -211,7 +212,7 @@ export class MemoryStudyResultSqlTransport implements ResultSqlTransport {
   /** 按 (study_id, metric_key) 升序回读,便于幂等断言。 */
   readRows(table: string): ResultExportRowValues[] {
     return [...(this.tables.get(table)?.values() ?? [])].sort((left, right) =>
-      `${left[0]}\u0000${left[1]}`.localeCompare(`${right[0]}\u0000${right[1]}`),
+      compareText(`${left[0]}\u0000${left[1]}`, `${right[0]}\u0000${right[1]}`),
     );
   }
 }

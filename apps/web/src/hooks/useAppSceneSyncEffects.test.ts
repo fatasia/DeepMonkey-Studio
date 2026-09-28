@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppState } from "./useAppState";
 
-const harness = vi.hoisted(() => ({ effects: [] as Array<() => unknown>, dependencies: [] as unknown[][], getProject: vi.fn(), getApplication: vi.fn(), getSceneForBrowse: vi.fn(), listDatasets: vi.fn(), listDataPipelines: vi.fn() }));
-vi.mock("react", () => ({ useEffect: (effect: () => unknown, dependencies: unknown[]) => { harness.effects.push(effect); harness.dependencies.push(dependencies); } }));
+const harness = vi.hoisted(() => ({ effects: [] as Array<() => unknown>, dependencies: [] as unknown[][], refs: [] as Array<{ current: unknown }>, refCursor: 0, getProject: vi.fn(), getApplication: vi.fn(), getSceneForBrowse: vi.fn(), listDatasets: vi.fn(), listDataPipelines: vi.fn() }));
+vi.mock("react", () => ({ useRef: (initial: unknown) => harness.refs[harness.refCursor++] ?? (harness.refs[harness.refCursor - 1] = { current: initial }), useEffect: (effect: () => unknown, dependencies: unknown[]) => { harness.effects.push(effect); harness.dependencies.push(dependencies); } }));
 vi.mock("../api", () => ({ api: { getProject: harness.getProject, getApplication: harness.getApplication, getSceneForBrowse: harness.getSceneForBrowse, listDatasets: harness.listDatasets, listDataPipelines: harness.listDataPipelines } }));
 import { useAppSceneSyncEffects } from "./useAppSceneSyncEffects";
 
-afterEach(() => { harness.effects.length = 0; harness.dependencies.length = 0; vi.clearAllMocks(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+afterEach(() => { harness.effects.length = 0; harness.dependencies.length = 0; harness.refs.length = 0; harness.refCursor = 0; vi.clearAllMocks(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 describe("dashboard history route synchronization", () => {
   it("waits for authentication then restores the route after the user becomes available", async () => {
     vi.stubGlobal("window", new EventTarget());
@@ -28,6 +28,7 @@ describe("dashboard history route synchronization", () => {
     state.currentUser = { id: "user" } as AppState["currentUser"];
     harness.effects.length = 0;
     harness.dependencies.length = 0;
+    harness.refCursor = 0;
     render();
     expect(harness.dependencies[5]).toContain("user");
     const cleanup = harness.effects[5]!() as () => void;
@@ -35,6 +36,45 @@ describe("dashboard history route synchronization", () => {
     cleanup();
     expect(state.sceneWorkspaceLoadRef.current).toBeUndefined();
     vi.unstubAllGlobals();
+  });
+  it("does not reload the route while Play is active, even before restoration becomes ready", () => {
+    const state = {
+      route: { view: "studio", projectId: "project", sceneId: "scene" },
+      activeScene: { id: "scene" },
+      engine: { scene: { uuid: "viewer" }, hasRestoredSceneSnapshot: vi.fn(() => false) },
+      currentUser: { id: "user" }, branding: {}, sceneWorkspaceLoadRef: { current: undefined },
+    } as unknown as AppState;
+    const applyScene = vi.fn();
+    useAppSceneSyncEffects({ state, playModeActive: true, navigate: vi.fn(), recoveryDecisionRef: { current: undefined },
+      setRecoveryDraft: vi.fn(), refreshProject: vi.fn(), applyScene, openSceneDashboard: vi.fn() });
+    harness.effects[5]!();
+    expect(harness.getSceneForBrowse).not.toHaveBeenCalled();
+    expect(state.sceneWorkspaceLoadRef.current).toBeUndefined();
+    expect(applyScene).not.toHaveBeenCalled();
+  });
+  it("drops a route response that arrived after Play began, keeping the temporary model state", async () => {
+    vi.stubGlobal("window", new EventTarget());
+    let release!: (value: unknown) => void;
+    harness.getSceneForBrowse.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+    const state = {
+      route: { view: "studio", projectId: "project", sceneId: "scene" },
+      activeScene: { id: "scene" },
+      engine: { scene: { uuid: "viewer" }, hasRestoredSceneSnapshot: () => false },
+      currentUser: { id: "user" }, branding: {}, sceneWorkspaceLoadRef: { current: undefined },
+      setProject: vi.fn(), setProjects: vi.fn(), showError: vi.fn(),
+    } as unknown as AppState;
+    const applyScene = vi.fn();
+    const options = { state, navigate: vi.fn(), recoveryDecisionRef: { current: undefined }, setRecoveryDraft: vi.fn(), refreshProject: vi.fn(), applyScene, openSceneDashboard: vi.fn() };
+    useAppSceneSyncEffects({ ...options, playModeActive: false });
+    const cancel = harness.effects[5]!() as () => void;
+    harness.effects.length = 0; harness.dependencies.length = 0; harness.refCursor = 0;
+    useAppSceneSyncEffects({ ...options, playModeActive: true });
+    release({ project: { id: "project" }, scene: { id: "scene", models: [{ transform: { position: { x: 0 } } }] } });
+    await vi.waitFor(() => expect(harness.getSceneForBrowse).toHaveBeenCalledOnce());
+    await Promise.resolve();
+    expect(state.setProject).not.toHaveBeenCalled();
+    expect(applyScene).not.toHaveBeenCalled();
+    cancel();
   });
   it("does not restore over an incremental model insertion in the restored scene", () => {
     const engine = { scene: { uuid: "viewer" }, hasRestoredSceneSnapshot: vi.fn(() => true), isSceneSnapshotReady: vi.fn(() => false) };
@@ -94,6 +134,7 @@ describe("document entry recovery", () => {
     state.currentUser = { id: "user" } as AppState["currentUser"];
     harness.effects.length = 0;
     harness.dependencies.length = 0;
+    harness.refCursor = 0;
     render();
     expect(harness.dependencies[index]).toContain("user");
     const cleanup = harness.effects[index]!() as () => void;

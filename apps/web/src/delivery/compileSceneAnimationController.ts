@@ -35,6 +35,8 @@ export function compileSceneAnimationController(
       transitions: (controller.transitions ?? []).map(({ id, fromStateId, toStateId, parameter, equals }) => ({
         id, fromStateId, toStateId, parameter, equals,
       })),
+      // T14 clip 事件标记随包透传；空/缺省不写字段，旧包字节逐位不变。
+      ...(controller.events?.length ? { events: controller.events.map(({ clipId, eventId, time }) => ({ clipId, eventId, time })) } : {}),
     },
   };
   const parsed = validateDynamicSceneRuntime(candidate);

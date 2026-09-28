@@ -22,7 +22,9 @@ import { build } from "esbuild";
 
 const packageRoot = fileURLToPath(new URL("../", import.meta.url));
 const repoRoot = path.resolve(packageRoot, "../..");
-const outputDirectory = path.join(repoRoot, "test-output", "cluster-lod-gpu-20260920-r1");
+const outputDirectory = process.env.CLUSTER_LOD_GPU_OUTPUT_DIR
+  ? path.resolve(process.env.CLUSTER_LOD_GPU_OUTPUT_DIR)
+  : path.join(repoRoot, "test-output", "cluster-lod-gpu-20260920-r1");
 const chromePath = process.env.BIM_STUDIO_CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const maxAttempts = Number(process.env.CLUSTER_LOD_GPU_TEST_ATTEMPTS ?? 3);
 const MIN_MARGIN = 0.05;

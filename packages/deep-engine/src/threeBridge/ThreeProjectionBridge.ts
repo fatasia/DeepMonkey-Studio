@@ -2,6 +2,8 @@ import { prepareInstanceUpdate, type PbrMaterial, type RenderInstance, type Rend
 import type { DecodedTexture } from "../textures/decodedTexture.js";
 import { geometryView, projectGeometry, type CachedGeometry } from "./geometries.js";
 import { ThreeDeformationProjector } from "./deformationProjector.js";
+import { authorPoseLod, type AuthorPoseLod } from "./authorPoseLod.js";
+import type { RenderView } from "../webgpu/pbrRenderer.js";
 import { ThreeAuthorLodProjector } from "./authorLod.js";
 import { materialVisible, projectMaterial, type ProjectedMaterial } from "./materials.js";
 import { inspectObject, objectTransforms } from "./objects.js";
@@ -47,7 +49,10 @@ export class ThreeProjectionBridge {
   }
 
   /** 数组原位改动遵循 Three needsUpdate/version；替换 attribute / data / array 也自动失效。 */
-  project(root: ThreeObjectSource, options: { readonly cameraLayerMask: number }): ProjectionResult {
+  project(root: ThreeObjectSource, options: { readonly cameraLayerMask: number; readonly view?: RenderView }): ProjectionResult {
+    // A skinned author tree includes each bone as an Object3D. Keep the legacy
+    // static-scene budget, but allow a 1000-character / 64-joint author scene.
+    const objectLimit = this.authorDeformation ? 131_072 : 32_768;
     const epoch = ++this.epoch;
     this.textureProjector.beginProjection();
     this.deformationProjector.begin();
@@ -70,7 +75,7 @@ export class ThreeProjectionBridge {
       try {
         if (seen.has(object)) invalid("object tree cycle or duplicate child");
         seen.add(object);
-        if (seen.size > 32_768) limit("objects");
+        if (seen.size > objectLimit) limit("objects");
         if (!object.visible) continue;
         if (object.type === "Scene") inspectObject(object, this.hooks);
         // 父级 layer 不匹配不会隐藏子级；visible=false 则剪去整个子树，与 Three 一致。
@@ -78,14 +83,15 @@ export class ThreeProjectionBridge {
           const kind = inspectObject(object, this.hooks, this.authorDeformation, this.authorLod);
           if (kind === "mesh") {
             const start = instances.length;
-            this.extract(object, objectId, candidates, materials, textures, instances, budget);
+            this.extract(object, objectId, candidates, materials, textures, instances, budget,
+              this.authorDeformation ? authorPoseLod(object, options.view) : "precise");
             fragments.set(object, Object.freeze(instances.slice(start)));
           }
           if (kind === "lod") {
             const instance = this.lodProjector.project(object, options.cameraLayerMask, level => {
               if (seen.has(level)) invalid("object tree cycle or duplicate child");
               seen.add(level);
-              if (seen.size > 32_768) limit("objects");
+              if (seen.size > objectLimit) limit("objects");
               inspectObject(level, this.hooks, false);
               const projected: RenderInstance[] = [];
               this.extract(level, objectId, candidates, materials, textures, projected, budget);
@@ -98,7 +104,7 @@ export class ThreeProjectionBridge {
         if (!Array.isArray(object.children)) invalid("object children");
         for (let i = object.children.length - 1; i >= 0; i--) stack.push({ object: object.children[i]!, path: `${path}.children[${i}]` });
       } catch (error) { addIssue(error, objectId, path); }
-      if (seen.size > 32_768) break;
+      if (seen.size > objectLimit) break;
     }
     const deformation = this.deformationProjector.snapshot();
     const packet: RenderPacket = { geometries: [...candidates.values()].map(c => c.resource),
@@ -114,7 +120,9 @@ export class ThreeProjectionBridge {
         new Map([...textures].map(([id, value]) => [id, value.semantic])), deformation);
     } catch (error) { addIssue(error, "", "packet"); }
     if (issues.length) return { ok: false, issues };
-    const topology = this.topology(root);
+    // Deformation always uses full projection for dirty plans. Its author tree
+    // can contain thousands of bones; only projected meshes need source IDs.
+    const topology = this.authorDeformation ? undefined : this.topology(root);
     const full = !this.initialized || this.deformationProjector.requiresFullUpdate() || candidates.size !== this.accepted.size
       || [...candidates].some(([key, value]) => this.accepted.get(key) !== value)
       || textures.size !== this.acceptedTextures.size
@@ -125,7 +133,8 @@ export class ThreeProjectionBridge {
       settled = true; this.accepted = candidates; this.acceptedMaterials = materials; this.acceptedTextures = textures;
       this.acceptedFragments = fragments; this.acceptedTopology = topology; this.acceptedRoot = root;
       this.acceptedCameraLayerMask = options.cameraLayerMask; this.textureProjector.acceptProjection();
-      this.acceptedInstanceSources = buildInstanceSourceMap(topology?.order ?? [], this.acceptedFragments, this.id.bind(this));
+      this.acceptedInstanceSources = buildInstanceSourceMap(
+        this.authorDeformation ? [...fragments.keys()] : topology?.order ?? [], this.acceptedFragments, this.id.bind(this));
       this.deformationProjector.accept(deformation); this.initialized = true; return true;
     } };
   }
@@ -229,7 +238,8 @@ export class ThreeProjectionBridge {
   private projectFullFallback(root: ThreeObjectSource, plan: ReadyDirtyPlan,
     options: { readonly cameraLayerMask: number }): IncrementalProjectionResult {
     const result = this.project(root, options), epoch = this.epoch;
-    const sourceObjectCount = this.topology(root)?.order.length ?? plan.metrics.boundNodeCount;
+    const sourceObjectCount = this.authorDeformation ? plan.metrics.boundNodeCount
+      : this.topology(root)?.order.length ?? plan.metrics.boundNodeCount;
     const metrics = { mode: "full-fallback" as const, sourceObjectCount, rebuiltObjectCount: sourceObjectCount,
       reusedObjectCount: 0, allocatedInstanceCount: result.ok ? result.packet.instances.length : 0 };
     if (!result.ok) return { ...result, metrics };
@@ -267,7 +277,7 @@ export class ThreeProjectionBridge {
 
   private extract(object: ThreeObjectSource, objectId: string, geometries: Map<string, CachedGeometry>,
     materials: Map<string, ProjectedMaterial>,
-    textures: Map<string, DecodedTexture>, instances: RenderInstance[], budget: { bytes: number }): void {
+    textures: Map<string, DecodedTexture>, instances: RenderInstance[], budget: { bytes: number }, tier: AuthorPoseLod = "precise"): void {
     const source = object as unknown as { geometry: unknown; material: unknown; castShadow?: boolean; receiveShadow?: boolean };
     if (!Array.isArray(source.material) && !materialVisible(source.material)) return;
     const view = geometryView(source.geometry, source.material, this.authorDeformation);
@@ -303,7 +313,7 @@ export class ThreeProjectionBridge {
         geometries.set(geometryId, projectGeometry(view, slice, geometryId, this.accepted.get(geometryId), normalTexCoord,
           projected.flatShading, projected.vertexColors));
       }
-      const pose = this.authorDeformation ? this.deformationProjector.project(object, objectId, geometries.get(geometryId)!) : undefined;
+      const pose = this.authorDeformation ? this.deformationProjector.project(object, objectId, geometries.get(geometryId)!, tier) : undefined;
       transforms.forEach((transform, instance) => instances.push({ id: `${objectId}/${slice.slot}/${instance}`, geometry: geometryId, material: materialId, transform,
         ...(pose ? { pose } : {}),
         ...(source.castShadow === true ? {} : { castShadow: false }),

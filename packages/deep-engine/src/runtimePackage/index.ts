@@ -40,6 +40,7 @@ export {
   type DynamicAnimationControllerState,
   type DynamicAnimationControllerTransition,
   type DynamicAnimationControllerRuntime,
+  type DynamicAnimationEventMarker,
   type DynamicPhysicsBodyRuntime,
   type DynamicPhysicsCharacterControllerRuntime,
   type DynamicPhysicsJointRuntime,

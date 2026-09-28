@@ -156,6 +156,7 @@ function adaptEngine(mod) {
       if (typeof probe === "function") return probe(handle) ?? null;
       return null;
     };
+    const physicsPose = mod.viewer_physics_pose ?? mod.viewerPhysicsPose;
     const clearRuntimeFontsExport = mod.clear_runtime_fonts ?? mod.clearRuntimeFonts;
     const addRuntimeFontExport = mod.add_runtime_font ?? mod.addRuntimeFont;
     const runtimeFonts =
@@ -176,6 +177,7 @@ function adaptEngine(mod) {
       startViewer,
       stopViewer,
       engineCanvas,
+      physicsPose: typeof physicsPose === "function" ? (handle, instanceId) => physicsPose(handle, instanceId) : undefined,
       clearRuntimeFonts,
       addRuntimeFont,
     };
@@ -531,6 +533,12 @@ export async function bootEngine(ui) {
 
   state.start = start;
   state.stop = stopActive;
+  state.physicsPose = async (instanceId) => {
+    if (!active || active.surface.kind !== "full-engine" || !active.surface.physicsPose) {
+      throw new Error("WASM physics pose observer is not active.");
+    }
+    return JSON.parse(await active.surface.physicsPose(active.handle, instanceId));
+  };
   state.setRuntimeFonts = (fonts) => {
     if (state.running) throw new Error("请先停止引擎,再替换运行时字体包。");
     ui.runtimeFonts = fonts;

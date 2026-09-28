@@ -1,6 +1,7 @@
 import { BinaryReader, JtFormatError } from "./binaryReader.js";
 import { readSegmentPayload, type JtContainer } from "./container.js";
 import {
+  type JtLoss,
   type JtPmiEntityGroup,
   type JtPmiInfo,
   type JtPmiSegmentSummary,
@@ -76,14 +77,14 @@ function unpackPackedId(value: number): { objectId: number; type: number; indire
 
 function readCount(reader: BinaryReader, cursor: number, label: string): { count: number; next: number } {
   const count = reader.i32(cursor, `PMI ${label}数量`);
-  if (count < 0 || count > MAX_PMI_ENTITIES) throw new JtFormatError(`JT PMI ${label}数量 ${count} 越界`);
+  if (count < 0 || count > MAX_PMI_ENTITIES) throw new JtFormatError(`JT PMI ${label}数量 ${count} 越界`, "pmi-layout-invalid");
   return { count, next: cursor + 4 };
 }
 
 /** 字符串表条目:I32 长度 + 长度×U16,无终止符(真实样本字节验证)。 */
 function readTableString(reader: BinaryReader, cursor: number, label: string): { text: string; next: number } {
   const length = reader.i32(cursor, `${label}长度`);
-  if (length < 0 || length > MAX_STRING_UNITS) throw new JtFormatError(`JT PMI ${label}长度 ${length} 无效`);
+  if (length < 0 || length > MAX_STRING_UNITS) throw new JtFormatError(`JT PMI ${label}长度 ${length} 无效`, "pmi-layout-invalid");
   reader.ensure(cursor + 4, length * 2, label);
   const text = new TextDecoder("utf-16le").decode(reader.bytes(cursor + 4, length * 2, `${label}内容`));
   return { text: text.replace(/\0+$/g, ""), next: cursor + 4 + length * 2 };
@@ -94,7 +95,7 @@ function readTableString(reader: BinaryReader, cursor: number, label: string): {
  * 语义疑为隐藏/有效标志而非严格 NUL,解析时消费但不校验取值,避免误拒合法文件。 */
 function readNullTerminatedString(reader: BinaryReader, cursor: number, label: string): { text: string; next: number } {
   const length = reader.i32(cursor, `${label}长度`);
-  if (length < 0 || length > MAX_STRING_UNITS) throw new JtFormatError(`JT PMI ${label}长度 ${length} 无效`);
+  if (length < 0 || length > MAX_STRING_UNITS) throw new JtFormatError(`JT PMI ${label}长度 ${length} 无效`, "pmi-layout-invalid");
   reader.ensure(cursor + 4, length * 2 + 1, label);
   const text = new TextDecoder("utf-16le").decode(reader.bytes(cursor + 4, length * 2, `${label}内容`));
   return { text: text.replace(/\0+$/g, ""), next: cursor + 4 + length * 2 + 1 };
@@ -154,7 +155,7 @@ function parsePmiManagerElement(
 
   const stringTable = readCount(reader, cursor, "字符串");
   cursor = stringTable.next;
-  if (stringTable.count > MAX_PMI_STRINGS) throw new JtFormatError(`JT PMI 字符串数量 ${stringTable.count} 越界`);
+  if (stringTable.count > MAX_PMI_STRINGS) throw new JtFormatError(`JT PMI 字符串数量 ${stringTable.count} 越界`, "pmi-layout-invalid");
   const strings: string[] = [];
   for (let index = 0; index < stringTable.count; index += 1) {
     const entry = readTableString(reader, cursor, `字符串表[${index}]`);
@@ -186,11 +187,11 @@ function parsePmiManagerElement(
     const userLabel = reader.i32(viewStart + 68, "PMI 视图用户标签");
     const nameStringId = reader.i32(viewStart + 72, "PMI 视图名称字符串 ID");
     if (nameStringId < 0 || nameStringId >= strings.length) {
-      throw new JtFormatError(`JT PMI 视图名称字符串 ID ${nameStringId} 越界`);
+      throw new JtFormatError(`JT PMI 视图名称字符串 ID ${nameStringId} 越界`, "pmi-layout-invalid");
     }
     const pairs = readCount(reader, viewStart + 76, "视图属性对");
     if (viewStart + MODEL_VIEW_BLOCK_HEADER_BYTES !== pairs.next) {
-      throw new JtFormatError("JT PMI 视图块头与属性对数量声明不一致");
+      throw new JtFormatError("JT PMI 视图块头与属性对数量声明不一致", "pmi-layout-invalid");
     }
     cursor = pairs.next;
     const properties: Array<{ key: string; value: string }> = [];
@@ -206,7 +207,7 @@ function parsePmiManagerElement(
   }
 
   if (cursor > elementEnd) {
-    throw new JtFormatError(`JT PMI Manager 元素越界 ${cursor} > ${elementEnd}`);
+    throw new JtFormatError(`JT PMI Manager 元素越界 ${cursor} > ${elementEnd}`, "pmi-layout-invalid");
   }
   return { elementVersion, structureVersion, associations, userAttributeCount: userAttributes.count, strings, modelViews };
 }
@@ -234,9 +235,9 @@ export async function readJtPmiSegment(
   while (offset + ELEMENT_HEADER_BYTES <= payload.byteLength) {
     const elementLength = reader.u32(offset, "PMI 元素长度");
     // End-Of-Elements 元素的 elementLength = 16(仅 GUID 自身),与 LSG 元素循环同一约定。
-    if (elementLength < 16) throw new JtFormatError(`JT PMI 元素长度 ${elementLength} 无效`);
+    if (elementLength < 16) throw new JtFormatError(`JT PMI 元素长度 ${elementLength} 无效`, "pmi-layout-invalid");
     const elementEnd = offset + 4 + elementLength;
-    if (elementEnd > payload.byteLength) throw new JtFormatError("JT PMI 元素长度越过段尾");
+    if (elementEnd > payload.byteLength) throw new JtFormatError("JT PMI 元素长度越过段尾", "pmi-layout-invalid");
     const typeId = reader.guid(offset + 4, "PMI 元素类型");
     if (typeId === END_OF_ELEMENTS) break;
     if (typeId === PMI_MANAGER_TYPE_ID) {
@@ -271,22 +272,35 @@ export async function readJtPmiSegment(
 export async function readJtPmi(
   container: JtContainer,
   limits: JtReadLimits,
-): Promise<{ pmi?: JtPmiInfo; warnings: string[] }> {
+): Promise<{ pmi?: JtPmiInfo; warnings: string[]; losses: JtLoss[]; segmentCount: number }> {
   const warnings: string[] = [];
+  const losses: JtLoss[] = [];
   const segments = container.segments.filter((segment) => segment.type === PMI_SEGMENT_TYPE);
-  if (segments.length === 0) return { warnings };
+  if (segments.length === 0) return { warnings, losses, segmentCount: 0 };
   const summaries: JtPmiSegmentSummary[] = [];
   for (const segment of segments) {
     try {
       const summary = await readJtPmiSegment(container, segment, limits);
       if (summary) summaries.push(summary);
-      else warnings.push(`PMI 数据段 ${segment.id} 不含可识别的 PMI Manager 元素,已按结构未知上报`);
+      else {
+        const detail = `PMI 数据段 ${segment.id} 不含可识别的 PMI Manager 元素,已按结构未知上报`;
+        warnings.push(detail);
+        losses.push({ code: "pmi-segment-structure-unknown", kind: "loss", scope: `pmi:${segment.id}`, detail });
+      }
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      warnings.push(`PMI 数据段 ${segment.id} 结构解析失败:${reason}`);
+      const detail = `PMI 数据段 ${segment.id} 结构解析失败:${reason}`;
+      warnings.push(detail);
+      losses.push({
+        code: "pmi-segment-parse-failed",
+        kind: "loss",
+        scope: `pmi:${segment.id}`,
+        detail,
+        ...(error instanceof JtFormatError ? { errorCode: error.code } : {}),
+      });
     }
   }
-  if (summaries.length === 0) return { warnings };
+  if (summaries.length === 0) return { warnings, losses, segmentCount: segments.length };
   const types = new Map<string, number>();
   for (const summary of summaries) {
     for (const group of summary.entityGroups) {
@@ -312,5 +326,7 @@ export async function readJtPmi(
       ],
     },
     warnings,
+    losses,
+    segmentCount: segments.length,
   };
 }

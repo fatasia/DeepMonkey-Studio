@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import { DASHBOARD_VIDEO_AUDIO_BLOCKED_CAPABILITIES, DASHBOARD_VIDEO_READY_CAPABILITIES,
   DASHBOARD_VIDEO_REQUIRED_CAPABILITIES, bytesToBase64, hasDashboardVideoAudioTrack, probeDashboardVideoMedia,
   type DashboardVideoDiagnosticV1, type DashboardVideoMediaV1 } from "@bim-studio/deep-engine/runtime-package";
@@ -53,5 +54,5 @@ export function compileDashboardVideoDiagnostics(input: DashboardRasterCompileIn
         packaged: Boolean(resourceId), resourceId },
       playback: { fit: node.widget.videoFit ?? "cover", autoplay, muted, loop: node.widget.videoLoop !== false }, state }];
   }));
-  return { videos, media: [...media.values()].sort((left, right) => left.id.localeCompare(right.id)) };
+  return { videos, media: [...media.values()].sort((left, right) => compareText(left.id, right.id)) };
 }

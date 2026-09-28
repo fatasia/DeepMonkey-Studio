@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -271,7 +272,7 @@ function normalizeSearch(value: string | undefined): string {
 function countBy(entries: AssetLibraryCatalogEntry[], keyOf: (entry: AssetLibraryCatalogEntry) => string): AssetLibraryCategoryCount[] {
   const counts = new Map<string, number>();
   for (const entry of entries) counts.set(keyOf(entry), (counts.get(keyOf(entry)) ?? 0) + 1);
-  return [...counts].map(([name, count]) => ({ id: name, name, count })).sort((left, right) => right.count - left.count || left.name.localeCompare(right.name));
+  return [...counts].map(([name, count]) => ({ id: name, name, count })).sort((left, right) => right.count - left.count || compareText(left.name, right.name));
 }
 
 function boundedInteger(value: number | undefined, fallback: number, minimum: number, maximum: number): number {

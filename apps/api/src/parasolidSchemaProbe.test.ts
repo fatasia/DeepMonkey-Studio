@@ -56,6 +56,11 @@ describe("parasolid schema probe runner", () => {
     await expect(run({ filePath: "sample.x_t" })).rejects.toThrow("不是合法 JSON");
   });
 
+  it("rejects mixing the builtin profile and deployment catalog", () => {
+    expect(() => createParasolidProbeRunner({ ...mockProbe, builtinProfile: true, schemaCatalog: "catalog.txt" }))
+      .toThrow("互斥");
+  });
+
   it("enforces the configurable stdout byte cap", async () => {
     const run = createParasolidProbeRunner({ ...mockProbe, maxOutputBytes: 128 });
     await expect(run({ filePath: "sample.x_t", brep: true })).rejects.toThrow("超过字节上限");
@@ -91,6 +96,15 @@ describe("ps-schema-probe bundled CLI (built by scripts/build-parasolid-probe.mj
       expect(report.schemaKey).toBe("SCH_2401231_20000_13006");
       expect(report.census).toBeUndefined();
       expect(report.note).toContain("trim 拓扑未解码");
+    },
+  );
+
+  it.runIf(bundledCommand && existsSync(cadConvertSample))(
+    "rejects a real unmatched key in builtin-only mode",
+    async () => {
+      const run = createParasolidProbeRunner({ command: bundledCommand!, builtinProfile: true });
+      await expect(run({ filePath: cadConvertSample, brep: true, geometry: true }))
+        .rejects.toThrow("无内置 profile 覆盖 schema key");
     },
   );
 

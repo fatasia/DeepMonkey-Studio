@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import { createHash } from "node:crypto";
 import type {
   AskDataAggregation,
@@ -193,7 +194,7 @@ function resultColumns(plan: AskDataQueryPlan, source: DataDatasetField[]): Data
 
 function selectFields(row: Record<string, unknown>, fields: string[]): Record<string, unknown> { return Object.fromEntries(fields.map((field) => [field, row[field]])); }
 function sortRows(rows: Array<Record<string, unknown>>, plan: AskDataQueryPlan): void { if (plan.sort) rows.sort((left, right) => compareValues(left[plan.sort!.field], right[plan.sort!.field]) * (plan.sort!.direction === "asc" ? 1 : -1)); }
-function compareValues(left: unknown, right: unknown): number { return typeof left === "number" && typeof right === "number" ? left - right : String(left ?? "").localeCompare(String(right ?? "")); }
+function compareValues(left: unknown, right: unknown): number { return typeof left === "number" && typeof right === "number" ? left - right : compareText(String(left ?? ""), String(right ?? "")); }
 function valueMatchesField(value: unknown, field: DataDatasetField): boolean {
   if (value === null) return true;
   if (field.type === "number") return typeof value === "number" && Number.isFinite(value);

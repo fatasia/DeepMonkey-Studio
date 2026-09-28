@@ -340,7 +340,7 @@ export abstract class ViewerEngineContract {
   abstract applySelectionTransform(transform: ModelTransform): void;
   abstract deleteSelectedLayer(): boolean;
   abstract loadManifest(manifest: ModelManifest, instanceId?: string): Promise<LoadedSceneModel>;
-  abstract replaceModelManifest(instanceId: string, manifest: ModelManifest): Promise<LoadedSceneModel>;
+  abstract replaceModelManifest(instanceId: string, manifest: ModelManifest, canCommit?: () => boolean): Promise<LoadedSceneModel>;
   /**
    * IFC/Fragments 仅在实际加载对应模型时初始化。常规 glTF、FBX 与 DXF 浏览不再承担
    * web-ifc、Fragments worker 和空间树运行时的下载与内存成本。

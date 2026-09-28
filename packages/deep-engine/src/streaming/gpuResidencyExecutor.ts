@@ -1,3 +1,4 @@
+import { compareText } from "../textOrder.js";
 import type { ResourceResidencyController } from "./residencyController.js";
 import type { ResidencyFramePlan } from "./types.js";
 import type {
@@ -43,7 +44,7 @@ export class GpuResidencyExecutor<THandle extends object> {
 
   get(id: string): GpuResidentResource<THandle> | undefined { return this.state.resources.get(id); }
   snapshot(): readonly GpuResidentResource<THandle>[] {
-    return Object.freeze([...this.state.resources.values()].sort((left, right) => left.id.localeCompare(right.id)));
+    return Object.freeze([...this.state.resources.values()].sort((left, right) => compareText(left.id, right.id)));
   }
 
   execute(plan: ResidencyFramePlan, signal?: AbortSignal): Promise<GpuResidencyExecutionResult> {

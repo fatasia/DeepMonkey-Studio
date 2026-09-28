@@ -55,4 +55,15 @@ describe("authored quality profiles", () => {
     expect(adaptiveQualityOverridesForProfile("quality")).toMatchObject({ fogSteps: 48, shadowTier: "high" });
     expect(adaptiveQualityOverridesForProfile("ultra")).toMatchObject({ fogSteps: 64, shadowTier: "ultra" });
   });
+
+  it("treats the authored profile as a ceiling so sustained pressure still lowers actual work", () => {
+    const controller = new AdaptiveQualityController({ enabled: true, profile: "quality", pressureWindows: 1, cooldownFrames: 0 });
+    expect(controller.state().knobs).toMatchObject({ fogSteps: 48, ddgiUpdateBudget: 48 });
+    controller.sample(sample(1, { gpuP95Ms: 30 }));
+    expect(controller.state()).toMatchObject({ level: 1, knobs: { fogSteps: 40, ddgiUpdateBudget: 32 } });
+    controller.sample(sample(2, { gpuP95Ms: 30 }));
+    expect(controller.state()).toMatchObject({ level: 2, knobs: { fogSteps: 32, ddgiUpdateBudget: 16 } });
+    expect(controller.sample(sample(3, { gpuP95Ms: 30 }))).toBeUndefined();
+    expect(() => new AdaptiveQualityController({ profile: "cinematic" as never })).toThrow(/profile/);
+  });
 });

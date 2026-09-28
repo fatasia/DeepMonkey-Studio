@@ -60,6 +60,8 @@ mod shadow_update_probe;
 mod state_ops_playback;
 mod text_scale;
 mod touch_pointer;
+#[cfg(target_arch = "wasm32")]
+mod wasm_physics_stage;
 mod watch_thread;
 mod window_events;
 #[cfg(all(test, windows))]
@@ -105,6 +107,12 @@ struct NativeApp {
     startup_frame_pending: bool,
     #[cfg(target_arch = "wasm32")]
     renderer_initializing: bool,
+    #[cfg(target_arch = "wasm32")]
+    physics_stage_pending: bool,
+    #[cfg(target_arch = "wasm32")]
+    physics_present_pending: bool,
+    #[cfg(target_arch = "wasm32")]
+    physics_stage_epoch: u64,
     #[cfg(target_arch = "wasm32")]
     deferred_layout_bump: bool,
     next_renderer_id: u64,
@@ -378,6 +386,12 @@ impl NativeApp {
             startup_frame_pending: false,
             #[cfg(target_arch = "wasm32")]
             renderer_initializing: false,
+            #[cfg(target_arch = "wasm32")]
+            physics_stage_pending: false,
+            #[cfg(target_arch = "wasm32")]
+            physics_present_pending: false,
+            #[cfg(target_arch = "wasm32")]
+            physics_stage_epoch: 0,
             #[cfg(target_arch = "wasm32")]
             deferred_layout_bump: false,
             next_renderer_id: 1,

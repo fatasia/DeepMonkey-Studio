@@ -24,7 +24,7 @@ export function readLogicalElementSections(
   while (offset < reader.length && section < 2) {
     reader.ensure(offset, 20, "逻辑元素头");
     const elementLength = reader.u32(offset, "逻辑元素长度");
-    if (elementLength < 16) throw new JtFormatError(`逻辑元素长度 ${elementLength} 无效`);
+    if (elementLength < 16) throw new JtFormatError(`逻辑元素长度 ${elementLength} 无效`, "field-invalid");
     const totalLength = elementLength + 4;
     reader.ensure(offset, totalLength, "逻辑元素");
     const objectTypeId = reader.guid(offset + 4, "逻辑元素类型");
@@ -33,9 +33,9 @@ export function readLogicalElementSections(
       offset += totalLength;
       continue;
     }
-    if (elementLength < 25) throw new JtFormatError(`逻辑元素 ${objectTypeId} 缺少基础头`);
+    if (elementLength < 25) throw new JtFormatError(`逻辑元素 ${objectTypeId} 缺少基础头`, "field-invalid");
     elementCount += 1;
-    if (elementCount > limits.maxLogicalElements) throw new JtFormatError("JT 逻辑元素数量超过安全上限");
+    if (elementCount > limits.maxLogicalElements) throw new JtFormatError("JT 逻辑元素数量超过安全上限", "limit-exceeded");
     const element: JtLogicalElement = {
       objectId: reader.i32(offset + 21, "逻辑元素对象 ID"),
       objectTypeId,
@@ -46,6 +46,6 @@ export function readLogicalElementSections(
     (section === 0 ? sceneElements : propertyAtoms).push(element);
     offset += totalLength;
   }
-  if (section < 2) throw new JtFormatError("JT LSG 未包含完整的逻辑元素结束标记");
+  if (section < 2) throw new JtFormatError("JT LSG 未包含完整的逻辑元素结束标记", "read-bounds-exceeded");
   return { sceneElements, propertyAtoms, propertyTableOffset: offset };
 }

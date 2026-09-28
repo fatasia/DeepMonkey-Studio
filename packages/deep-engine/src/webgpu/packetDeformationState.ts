@@ -20,12 +20,21 @@ export class PacketDeformationState {
   private encoded = false;
   private disposed = false;
   private failedUpload = false;
-  private readonly bindings: DeformationDrawBindings | undefined;
+  private pipelines: Pipelines | undefined;
+  private bindings: DeformationDrawBindings | undefined;
   private bounds = new Map<string, DeformationBoundsEnvelope>();
   private profiles: ReadonlyMap<string, DeformationBoundsProfile> = new Map();
 
-  constructor(session: DeviceSession, private readonly pipelines?: Pipelines) {
-    this.bindings = pipelines ? new DeformationDrawBindings(session.device, pipelines) : undefined;
+  constructor(private readonly session: DeviceSession, pipelines?: Pipelines) {
+    if (pipelines) this.attachPipelines(pipelines);
+  }
+
+  /** 延迟变形变体就绪后原地附着；附着前 enabled=false，含变形候选被 packet 门禁拦截。 */
+  attachPipelines(pipelines: Pipelines): void {
+    if (this.pipelines) return;
+    if (this.disposed) throw new Error("Cannot attach deformation pipelines after disposal.");
+    this.pipelines = pipelines;
+    this.bindings = new DeformationDrawBindings(this.session.device, pipelines);
   }
 
   get enabled(): boolean { return this.pipelines !== undefined; }

@@ -1,3 +1,4 @@
+import { compareText } from "./textOrder.js";
 import type { CapabilityExecution } from "./manifest.js";
 
 export interface AiProviderDescriptor {
@@ -99,7 +100,7 @@ export class AiProviderRegistry {
   }
 
   list(): AiProviderDescriptor[] {
-    return [...this.#providers.values()].map(({ provider }) => cloneDescriptor(provider.descriptor)).sort((left, right) => left.id.localeCompare(right.id));
+    return [...this.#providers.values()].map(({ provider }) => cloneDescriptor(provider.descriptor)).sort((left, right) => compareText(left.id, right.id));
   }
 
   async complete(providerId: string, request: AiProviderRequest): Promise<AiProviderCompletion> {

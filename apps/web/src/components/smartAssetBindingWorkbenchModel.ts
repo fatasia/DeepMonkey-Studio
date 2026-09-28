@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type {
   SmartAssetBindingResult,
   SmartBindingCandidate,
@@ -64,5 +65,5 @@ export function confirmedMappings(
   return candidates
     .filter((candidate) => selectedKeys.has(candidateKey(candidate)))
     .map(({ sceneObjectId, deviceId, confidence }) => ({ sceneObjectId, deviceId, confidence }))
-    .sort((left, right) => left.sceneObjectId.localeCompare(right.sceneObjectId, "en") || left.deviceId.localeCompare(right.deviceId, "en"));
+    .sort((left, right) => compareText(left.sceneObjectId, right.sceneObjectId) || compareText(left.deviceId, right.deviceId));
 }

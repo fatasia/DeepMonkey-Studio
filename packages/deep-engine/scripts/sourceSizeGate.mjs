@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { dirname, extname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 const WARNING_LINES = 300;
 const BLOCKING_LINES = WARNING_LINES + 1;
@@ -68,7 +69,7 @@ const measurements = await Promise.all(files.map(async (path) => ({
   path: relative(repositoryRoot, path).replaceAll("\\", "/"),
 })));
 const warnings = measurements.filter(({ lines }) => lines > WARNING_LINES)
-  .sort((left, right) => right.lines - left.lines || left.path.localeCompare(right.path));
+  .sort((left, right) => right.lines - left.lines || compareText(left.path, right.path));
 const failures = warnings.filter(({ lines, path }) => lines >= BLOCKING_LINES && !isLegacyOversized(path, lines));
 const failurePaths = new Set(failures.map(({ path }) => path));
 

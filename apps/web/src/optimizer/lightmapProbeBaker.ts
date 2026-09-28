@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type { Document } from "@gltf-transform/core";
 import * as THREE from "three";
 import type { ProbeAabb } from "@bim-studio/deep-engine";
@@ -97,7 +98,7 @@ function regionAffectedLights(prepared: PreparedProbeBake, region: ProbeRegionPl
       const influence = lightInfluenceAabb(light, prepared.sceneBounds);
       return influence !== null && boundsOverlap(region, influence);
     })
-    .sort((left, right) => left.id.localeCompare(right.id))
+    .sort((left, right) => compareText(left.id, right.id))
     .map(light => ({ light, color: new THREE.Color(light.color) }));
 }
 

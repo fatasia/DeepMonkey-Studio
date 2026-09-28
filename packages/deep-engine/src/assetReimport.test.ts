@@ -52,6 +52,30 @@ const override = (id: string, resourceId: string, baseBlobHash: string): DeepAss
 });
 
 describe("Deep Asset incremental reimport planner", () => {
+  it("publishes a path-only rename without invalidating unchanged dependents", () => {
+    const next = packageValue();
+    (next.manifest as { resources: DeepAssetResource[] }).resources = next.manifest.resources.map(value =>
+      value.id === "texture/color" ? { ...value, logicalPath: "textures/new-name.bin" } : value);
+    const plan = planDeepAssetReimport(packageValue(), next, snapshot(), { generation: 1 });
+    expect(plan.status).toBe("ready");
+    expect(plan.diff?.update).toEqual([{ id: "texture/color", changes: ["logicalPath"], renamed: true }]);
+    expect(plan.execution).toEqual({ stageOrder: ["texture/color"], publishOrder: ["texture/color"],
+      removeOrder: [], rollbackOrder: ["texture/color"] });
+  });
+
+  it("propagates changed bytes only through dependent resources", () => {
+    const next = packageValue();
+    (next.manifest as { resources: DeepAssetResource[] }).resources = next.manifest.resources.map(value =>
+      value.id === "texture/color" ? { ...value, blobHash: H.changed } : value);
+    (next as { blobs: DeepAssetPackage["blobs"] }).blobs = [...next.blobs,
+      { hash: H.changed, byteLength: 16, mediaType: "application/octet-stream" }]
+      .sort((a, b) => a.hash.localeCompare(b.hash));
+    const plan = planDeepAssetReimport(packageValue(), next, snapshot(), { generation: 1 });
+    expect(plan.status).toBe("ready");
+    expect(plan.execution?.publishOrder).toEqual(["texture/color", "material/main", "scene/main"]);
+    expect(plan.execution?.publishOrder).not.toContain("mesh/cube");
+  });
+
   it("classifies stable GUID changes, preserves rename overrides, and emits safe rollback order", () => {
     const inputOverrides = [override("override/color", "texture/color", H.texture)];
     const plan = planDeepAssetReimport(packageValue(), packageValue(true), snapshot(),
@@ -65,7 +89,7 @@ describe("Deep Asset incremental reimport planner", () => {
     expect(plan.preservedOverrides).toEqual(inputOverrides);
     expect(plan.execution).toEqual({
       stageOrder: ["texture/color", "material/main", "metadata/info", "scene/main"],
-      publishOrder: ["texture/color", "material/main", "metadata/info", "scene/main"],
+      publishOrder: ["texture/color", "metadata/info", "scene/main"],
       removeOrder: ["mesh/cube"],
       rollbackOrder: ["scene/main", "metadata/info", "material/main", "texture/color"],
     });

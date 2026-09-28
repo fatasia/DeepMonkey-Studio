@@ -3,6 +3,7 @@ import { readdir, readFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { scanThreeUsage } from "./threeUsageScanner.mjs";
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 const workspace = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const output = process.argv[2];
@@ -47,7 +48,7 @@ const report = {
   scope: ["apps static source", "packages static source", "includes tests and declaration files"],
   missingEvidence: ["persisted project scripts", "published application scripts", "Markdown examples", "AI script evaluations", "dynamic imports and namespace escapes", "instance member semantics", "runtime trace parity", "visual parity"],
   counts: { files: manifest.length, symbols: symbols.size, usages: inventory.usages.length, unresolved: inventory.unresolved.length },
-  symbols: [...symbols.values()].sort((a, b) => `${a.module}:${a.symbol}`.localeCompare(`${b.module}:${b.symbol}`, "en"))
+  symbols: [...symbols.values()].sort((a, b) => compareText(`${a.module}:${a.symbol}`, `${b.module}:${b.symbol}`))
     .map((item) => ({ ...item, files: [...item.files].sort(), compatibility: "unverified" })),
   ...inventory,
   manifest,

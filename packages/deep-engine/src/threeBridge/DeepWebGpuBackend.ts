@@ -9,6 +9,8 @@ import { snapshotShadows, shadowSelection, type DeepWebGpuShadowSelection } from
 import { ProbeClipmapPbrController, type ProbeClipmapPbrTarget } from "../webgpu/probeClipmapPbrController.js";
 import { DeepWebGpuProbeClipmapSession, type DeepWebGpuProbeClipmapDiagnostics } from "./DeepWebGpuProbeClipmapSession.js";
 import { CameraRelativeCoordinates, type CameraRelativeCoordinateSnapshot } from "./cameraRelativeCoordinates.js";
+import { indexObjectBindings } from "./objectBindingIndex.js";
+import { firstFramePipelineMainKeys } from "./firstFramePipelineKeys.js";
 export type { DeepWebGpuShadowSelection } from "./deepWebGpuShadowPolicy.js";
 
 type DeepWebGpuCanvas = Parameters<typeof PbrRenderer.create>[0];
@@ -89,6 +91,10 @@ export class DeepWebGpuBackend {
   private chunks: AuthorChunkStream | undefined;
   private probeClipmap: DeepWebGpuProbeClipmapSession | undefined;
   private committedPacket: RenderPacket | undefined;
+  private modelByInstanceId = new Map<string, string>();
+  /** 最近一次通过整帧验证的视图指纹与结果；prepareView 视图未变时复用。 */
+  private validatedView: { readonly view: RenderView; readonly shadowSelection: DeepWebGpuShadowSelection | undefined } | undefined;
+  private validatedFrame: FrameMetrics | undefined;
   /** Set for the immutable author packet path; no Three hierarchy is retained. */
   private independentPacket = false;
   private readonly coordinates = new CameraRelativeCoordinates();
@@ -123,12 +129,22 @@ export class DeepWebGpuBackend {
   /** Creates and validates an owned PBR runtime from an immutable settings snapshot. */
   static async create(request: DeepWebGpuBackendCreateRequest,
     factory: DeepWebGpuRuntimeFactory = PbrRenderer): Promise<DeepWebGpuBackend> {
+    markBackendPhase("backend-create-start");
     const validated = validateCreateRequest(request);
     const signal = validated.signal ?? new AbortController().signal;
     if (signal.aborted) throw abortError("Deep backend creation cancelled.");
-    const renderer = snapshotRendererOptions(validated.renderer ?? {});
+    const rendererSettings = snapshotRendererOptions(validated.renderer ?? {});
+    // 独立包路径已知首帧内容：推导关键 main 管线键，发布只等待首帧必需变体。
+    const renderer = validated.renderPacket && rendererSettings.pipelines?.firstFrameSubset === true
+      ? Object.freeze({ ...rendererSettings, pipelines: Object.freeze({
+          ...rendererSettings.pipelines,
+          firstFrameMainKeys: Object.freeze(firstFramePipelineMainKeys(validated.renderPacket)),
+        }) })
+      : rendererSettings;
     const authorChunks = validated.authorChunks;
+    markBackendPhase("runtime-create-start");
     const runtime = await factory.create(validated.canvas, validated.gpu, signal, renderer);
+    markBackendPhase("runtime-ready");
     if (signal.aborted) {
       runtime.dispose();
       throw abortError("Deep backend creation cancelled.");
@@ -149,10 +165,15 @@ export class DeepWebGpuBackend {
       if (validated.renderPacket) {
         backend.independentPacket = true;
         await backend.prepareRenderPacket(validated.renderPacket, validated.view, signal);
+        // 首帧验证已通过：此刻放行背景管线排队，发布不再被背景编译争抢。
+        releaseBackgroundPipelineQueues(runtime);
+        markBackendPhase("backend-create-ready");
         return backend;
       }
       if (!validated.projection || !validated.root) throw new TypeError("Deep backend requires projection/root when renderPacket is absent.");
       await backend.prepareScene(validated.root, validated.view, validated.cameraLayerMask, signal);
+      releaseBackgroundPipelineQueues(runtime);
+      markBackendPhase("backend-create-ready");
       return backend;
     } catch (error) { backend.dispose(); throw error; }
   }
@@ -170,6 +191,7 @@ export class DeepWebGpuBackend {
     catch (error) { runtime.dispose(); throw error; }
     try {
       await backend.prepareScene(root, view, options.cameraLayerMask, options.signal);
+      releaseBackgroundPipelineQueues(runtime);
       return backend;
     } catch (error) {
       backend.dispose();
@@ -200,14 +222,22 @@ export class DeepWebGpuBackend {
   async prepareRenderPacket(packet: RenderPacket, view: RenderView, signal?: AbortSignal): Promise<FrameMetrics> {
     this.assertOpen();
     signal?.throwIfAborted();
+    markBackendPhase("packet-localize-start");
     const candidate = this.coordinates.candidate(view.eye);
     const localPacket = this.coordinates.localizePacket(packet, candidate);
+    markBackendPhase("packet-localized");
+    markBackendPhase("packet-upload-start");
     await this.runtime.setPacketValidated(localPacket, signal);
+    markBackendPhase("packet-uploaded");
     if (signal?.aborted) throw abortError("Deep backend packet preparation cancelled.");
     this.coordinates.commit(candidate);
     this.committedPacket = localPacket;
+    this.modelByInstanceId = indexObjectBindings(localPacket);
     const frame = await this.runtime.validateFrame(this.coordinates.localizeView(view, candidate));
+    markBackendPhase("packet-frame-validated");
     this.shadowSelectionValue = shadowSelection(frame, this.expectedShadows);
+    this.validatedView = { view, shadowSelection: this.shadowSelectionValue };
+    this.validatedFrame = frame;
     return frame;
   }
 
@@ -218,6 +248,12 @@ export class DeepWebGpuBackend {
     this.assertOpen();
     signal?.throwIfAborted();
     const localView = this.coordinates.localizeView(view, this.coordinates.current);
+    // 候选创建期间视口未变化时，创建路径已验证过完全相同的视图；
+    // 重复整帧验证只会重复同一份 GPU 工作，直接复用其结果。
+    if (this.validatedView && sameRenderView(localView, this.validatedView.view) && this.validatedFrame) {
+      this.shadowSelectionValue = this.validatedView.shadowSelection ?? this.shadowSelectionValue;
+      return this.validatedFrame;
+    }
     const frame = await this.runtime.validateFrame(localView);
     if (signal?.aborted) throw abortError("Deep backend preparation cancelled.");
     this.shadowSelectionValue = shadowSelection(frame, this.expectedShadows);
@@ -228,10 +264,7 @@ export class DeepWebGpuBackend {
   get usesIndependentPacket(): boolean { return this.independentPacket; }
   /** Resolves a packet instance to its author node without a Three object. */
   modelIdForInstanceId(instanceId: string): string | undefined {
-    for (const binding of this.committedPacket?.objectBindings ?? []) {
-      if (binding.instanceIds.includes(instanceId)) return binding.nodeId;
-    }
-    return undefined;
+    return this.modelByInstanceId.get(instanceId);
   }
   get chunkStreaming() { return this.chunks?.diagnostics; }
   get probeClipmapFailure(): unknown { return this.probeClipmap?.failure; }
@@ -286,7 +319,7 @@ export class DeepWebGpuBackend {
     }
     if (!this.projection) throw new Error("Deep backend requires a projection for scene sync.");
     const generation = ++this.syncGeneration;
-    const projected = this.projection.project(root, { cameraLayerMask });
+    const projected = this.projection.project(root, { cameraLayerMask, ...(view ? { view } : {}) });
     if (!projected.ok) return { status: "rejected", issues: projected.issues };
     const candidateFrame = view ? this.coordinates.candidate(view.eye) : this.coordinates.current;
     const rebased = candidateFrame !== this.coordinates.current;
@@ -326,6 +359,9 @@ export class DeepWebGpuBackend {
     if (this.pendingCoordinate === candidateFrame) this.pendingCoordinate = undefined;
     const status = projected.acknowledge() ? "committed" : "superseded";
     if (status === "committed") {
+      if (this.committedPacket?.objectBindings !== localPacket.objectBindings) {
+        this.modelByInstanceId = indexObjectBindings(localPacket);
+      }
       this.committedPacket = localPacket;
       this.probeClipmap?.syncPacket(this.committedPacket);
     }
@@ -352,6 +388,7 @@ export class DeepWebGpuBackend {
     this.syncGeneration++;
     this.shadowSelectionValue = undefined;
     this.committedPacket = undefined;
+    this.modelByInstanceId.clear();
     this.projection?.clear();
     try { this.probeClipmap?.dispose(); }
     finally {
@@ -373,7 +410,38 @@ function probeClipmapTarget(runtime: DeepWebGpuRenderRuntime): ProbeClipmapPbrTa
   return candidate as ProbeClipmapPbrTarget;
 }
 
+function releaseBackgroundPipelineQueues(runtime: DeepWebGpuRenderRuntime): void {
+  (runtime as { releaseBackgroundPipelines?: () => void }).releaseBackgroundPipelines?.();
+}
+
+/** 逐字段比较决定首帧内容的视图字段；未列出的字段变化会走完整验证，宁多勿漏。
+ * lights/fog/postProcess 由同一构建器生成，键序确定，用 JSON 摘要比对身份无关的值。 */
+function sameRenderView(a: RenderView, b: RenderView): boolean {
+  const sameTuple = (x: ArrayLike<number> | undefined, y: ArrayLike<number> | undefined): boolean => {
+    if (x === y) return true;
+    if (!x || !y || x.length !== y.length) return false;
+    for (let index = 0; index < x.length; index++) if (x[index] !== y[index]) return false;
+    return true;
+  };
+  const sameJson = (x: unknown, y: unknown): boolean => JSON.stringify(x) === JSON.stringify(y);
+  return a.width === b.width && a.height === b.height && a.pixelRatio === b.pixelRatio
+    && sameTuple(a.eye, b.eye) && sameTuple(a.target, b.target) && sameTuple(a.up, b.up)
+    && a.extent === b.extent && sameTuple(a.background, b.background) && sameTuple(a.floor, b.floor)
+    && a.exposure === b.exposure && a.roughness === b.roughness
+    && a.verticalFovRadians === b.verticalFovRadians && a.near === b.near && a.far === b.far
+    && sameJson(a.lights, b.lights) && sameJson(a.fog, b.fog) && sameJson(a.postProcess, b.postProcess)
+    && a.panoramaBackground === b.panoramaBackground && a.authorGrid === b.authorGrid
+    && (a.editorOverlay?.vertices.length ?? 0) === (b.editorOverlay?.vertices.length ?? 0)
+    && a.editorOverlay?.revision === b.editorOverlay?.revision;
+}
+
 export type DeepWebGpuBackendRuntime = PbrRenderer;
+function markBackendPhase(name: string): void {
+  if (typeof performance !== "undefined" && typeof performance.mark === "function") {
+    performance.mark(`deep-webgpu:${name}`);
+  }
+}
+
 function abortError(message: string): Error {
   const error = new Error(message);
   error.name = "AbortError";

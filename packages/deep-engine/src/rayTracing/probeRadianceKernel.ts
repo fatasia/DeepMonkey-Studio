@@ -13,7 +13,7 @@
  * == 布局合同 ==
  * binding 0..4 与 rayTraceTlasKernel 完全一致（packTlasScene 拼接：nodes/instances/vertices/
  * indices/triangleOrder）；5 = array<vec4f> 逐原始实例反照率（下标 = HitRecord pad0
- * instanceIndex）；6 = array<ProbeParams>（32B/探针）；7 = params uniform（112B）；
+ * instanceIndex）；6 = array<ProbeParams>（32B/探针）；7 = params uniform（576B）；
  * 8 = 捕获存储纹理（rgba16float write-only 2d-array）；9 = atomic<u32> 栈溢出哨兵
  * （两级遍历合同同源：溢出 fail-closed，本探针写 0 并入哨兵计数，正常输入不可达）。
  * storage buffer 共 8 条，恰在默认 maxStorageBuffersPerShaderStage 上限内。
@@ -21,7 +21,7 @@
  * == 数值语义 ==
  * Fibonacci 方向、Möller–Trumbore、栈遍历逐式镜像既有内核/CPU 参考；命中面法线双面
  * （dot(N,d)>0 翻转），NdotL = max(dot(N, surfaceToLight), 0)，Lambert 除以 π；探针辐射
- * = Σ方向贡献 / directionCount，均值写入 texel，w=1 标记有效捕获（溢出写 0）。
+ * = Σ方向贡献 / directionCount，均值写入 texel；w=1 标记有效捕获（溢出/埋入写 0）。
  */
 
 import { RAY_TRACE_WORKGROUP_SIZE } from "./rayTraceLayout.js";
@@ -29,7 +29,7 @@ import { WGSL_CORE, WGSL_HELPERS } from "./rayTraceKernel.js";
 
 export const PROBE_RADIANCE_ENTRY_POINT = "probe_scene_radiance_batch";
 /** 每探针方向数上限（与 probeOcclusionRayExtension 同预算口径）。 */
-export const PROBE_RADIANCE_MAX_DIRECTIONS = 16;
+export const PROBE_RADIANCE_MAX_DIRECTIONS = 32;
 export const PROBE_RADIANCE_WORKGROUP_SIZE = RAY_TRACE_WORKGROUP_SIZE;
 
 export const PROBE_RADIANCE_BINDINGS = Object.freeze([
@@ -47,8 +47,8 @@ export const PROBE_RADIANCE_BINDINGS = Object.freeze([
 
 /**
  * params uniform 的 CPU 打包（probeRadianceKernel 布局的唯一写侧）。
- * 布局：16B 头部 + 3×16B 灯光/环境 vec4 + 16×16B 方向表 = 320B
- * （array<vec4f,16> 在 uniform 中按 16B 对齐，尾随 vec4 不额外填充）。
+ * 布局：16B 头部 + 3×16B 灯光/环境 vec4 + 32×16B 方向表 = 576B
+ * （array<vec4f,32> 在 uniform 中按 16B 对齐，尾随 vec4 不额外填充）。
  */
 export const PROBE_RADIANCE_UNIFORM_BYTES = 4 * 4 + 4 * 4 * 3 + PROBE_RADIANCE_MAX_DIRECTIONS * 4 * 4;
 export const PROBE_RADIANCE_PROBE_PARAM_BYTES = 32;
@@ -72,6 +72,10 @@ export interface ProbeRadianceUniformInput {
 }
 
 export function packProbeRadianceUniform(input: ProbeRadianceUniformInput): ArrayBuffer {
+  if (!Number.isSafeInteger(input.directionCount) || input.directionCount < 1
+    || input.directionCount > PROBE_RADIANCE_MAX_DIRECTIONS) {
+    throw new RangeError(`Probe radiance direction count must be in [1, ${PROBE_RADIANCE_MAX_DIRECTIONS}].`);
+  }
   if (input.directions.length < input.directionCount) {
     throw new RangeError("Probe radiance uniform requires one direction per sample.");
   }
@@ -82,7 +86,7 @@ export function packProbeRadianceUniform(input: ProbeRadianceUniformInput): Arra
   floats.set([...input.surfaceToLight, input.lightIntensity], 4);
   floats.set([...input.lightColor, 0], 8);
   floats.set([...input.ambient, 0], 12);
-  // 16 lanes at float offset 16, packed by ordinal; lanes past directionCount stay zero.
+  // 32 lanes at float offset 16, packed by ordinal; unused lanes stay zero.
   input.directions.slice(0, PROBE_RADIANCE_MAX_DIRECTIONS).forEach((direction, ordinal) => {
     floats.set([direction[0], direction[1], direction[2], 0], 16 + ordinal * 4);
   });
@@ -275,6 +279,12 @@ fn ${PROBE_RADIANCE_ENTRY_POINT}(@builtin(global_invocation_id) gid: vec3u) {
   let cell = vec2i(probe.cellPad.xy);
   var sum = vec3f(0.0, 0.0, 0.0);
   var overflowed = false;
+  var nearHits = 0u;
+  var nearDirectionSum = vec3f(0.0);
+  var misses = 0u;
+  // Very short hits in opposing directions indicate a probe enclosed by thin geometry.
+  // This only rejects confirmed enclosures; partial/one-sided occlusion stays valid.
+  let nearLimit = min(params.tMax, 0.25);
   for (var ordinal: u32 = 0u; ordinal < params.directionCount; ordinal = ordinal + 1u) {
     let dir = params.directions[ordinal].xyz;
     let inv = vec3f(1.0 / dir.x, 1.0 / dir.y, 1.0 / dir.z);
@@ -284,9 +294,14 @@ fn ${PROBE_RADIANCE_ENTRY_POINT}(@builtin(global_invocation_id) gid: vec3u) {
     let t = probeTraceClosest(origin, dir, inv, params.tMax, &prim, &instance);
     if (t < 0.0) { overflowed = true; break; }
     if (prim == SENTINEL || instance == SENTINEL) {
+      misses = misses + 1u;
       // Open direction: the probe sees the environment ambient directly.
       sum = sum + params.ambient.rgb;
       continue;
+    }
+    if (t <= nearLimit) {
+      nearHits = nearHits + 1u;
+      nearDirectionSum = nearDirectionSum + dir;
     }
     let v0 = fetchVertex(indices[prim * 3u]);
     let v1 = fetchVertex(indices[prim * 3u + 1u]);
@@ -298,7 +313,11 @@ fn ${PROBE_RADIANCE_ENTRY_POINT}(@builtin(global_invocation_id) gid: vec3u) {
     let lambert = albedo * params.lightColor.rgb * params.lightDirIntensity.w * nDotL / PI;
     sum = sum + lambert;
   }
-  if (overflowed) {
+  // Require no open rays, a majority of sub-quarter-unit hits, and balanced short-hit
+  // directions. Unlike a mean-distance cut this keeps probes near a single wall valid.
+  let buried = misses == 0u && nearHits >= (params.directionCount * 3u) / 4u
+    && length(nearDirectionSum) <= f32(nearHits) * 0.35;
+  if (overflowed || buried) {
     textureStore(capture, cell, layer, vec4f(0.0));
     return;
   }

@@ -16,6 +16,7 @@ import { useAppState } from "./hooks/useAppState";
 import { useSceneHistoryActions } from "./hooks/useSceneHistoryActions";
 import { useApplicationRecovery } from "./hooks/useApplicationRecovery";
 import { useSceneHistoryState } from "./hooks/useSceneHistoryState";
+import { useScenePlayMode } from "./hooks/useScenePlayMode";
 import { downloadWorkspaceRecoveryDraft } from "./studio/workspaceRecoveryStore";
 import type { AppViewBindings } from "./views/appViewBindings";
 import { AppRootView } from "./views/AppRootView";
@@ -276,7 +277,24 @@ export function App() {
     showError,
     rendererDiagnostics,
   } = appState;
-  const sceneHistoryState = useSceneHistoryState({ activeScene, routeView: route.view, sceneBehaviorActive, animationPlaying });
+  const playMode = useScenePlayMode(() => ({
+    engine,
+    capture: () => sceneHistoryState.sceneSnapshotFactoryRef.current?.(),
+    flush: () => sceneHistoryState.flushSceneHistoryEdit(),
+    applyScene: async (snapshot) => {
+      if (!project || engine?.getAuthorRendererBackend() === "webgpu") {
+        throw new Error("当前渲染器无法安全地同步恢复播放快照，请切换 WebGL 后重试");
+      }
+      await applyScene(snapshot, false, project, false, false, false, true);
+      if (!engine?.hasRestoredSceneSnapshot(snapshot.id)) throw new Error("场景恢复尚未完成，请待模型加载结束后重试退出播放");
+    },
+    readAnimationPlayhead: () => {
+      try { return engine?.transientChannels.channel<{ time: number; playing: boolean }>("animation").snapshot().time ?? animationTime; }
+      catch { return animationTime; }
+    },
+    reportError: showError,
+  }));
+  const sceneHistoryState = useSceneHistoryState({ activeScene, routeView: route.view, sceneBehaviorActive, animationPlaying, playModeActive: playMode.active });
   const {
     recoveryDraft,
     setRecoveryDraft,
@@ -666,6 +684,7 @@ export function App() {
   } = scenePersistenceController;
   useAppSceneSyncEffects({
     state: appState,
+    playModeActive: playMode.active,
     recoveryDecisionRef,
     setRecoveryDraft,
     refreshProject,
@@ -678,6 +697,7 @@ export function App() {
 
   useAppLifecycleEffects({
     state: appState,
+    playModeActive: playMode.active,
     saveActiveApplication,
     saveScene,
     changeRendererBackend,
@@ -687,6 +707,7 @@ export function App() {
   const { undoSceneEdit, redoSceneEdit, restoreRecoveryDraft, deferRecoveryDraft, discardRecoveryDraft } = useSceneHistoryActions({
     state: appState,
     history: sceneHistoryState,
+    playModeActive: playMode.active,
     applyScene,
   });
 
@@ -730,6 +751,36 @@ export function App() {
     sceneHistory: {
       ...sceneHistoryRef.current.getState(),
       flush: flushSceneHistoryEdit, undo: undoSceneEdit, redo: redoSceneEdit,
+    },
+    playMode: {
+      active: playMode.active,
+      enter: () => {
+        if (route.view !== "studio" || busy || rendererSwitching || sceneBehaviorOpen || sceneBehaviorActive || !activeScene || !project) return;
+        if (sceneNameCommitRef.current || sceneName !== activeScene.name) {
+          showError(new Error("场景名称尚未保存，请待名称提交后再播放"));
+          return;
+        }
+        if (animationPlaying || engine?.getPhysicsState().playing) {
+          showError(new Error("动画或物理正在运行，请先暂停再进入播放模式"));
+          return;
+        }
+        if (engine?.getAuthorRendererBackend() === "webgpu") {
+          showError(new Error("当前 WebGPU 渲染器暂不支持安全的 Play 快照恢复；请先切换 WebGL"));
+          return;
+        }
+        if (sceneHistoryState.sceneEditTransactionRef.current) {
+          showError(new Error("场景编辑事务尚未完成，请等待当前操作完成后再播放"));
+          return;
+        }
+        const result = playMode.enterPlay();
+        if (result.ok) setMessage("已进入播放模式；修改仅在本次播放期间生效");
+        else if (result.reason === "scene-not-ready") showError(new Error("场景尚未完整载入，请稍后重试进入播放"));
+        else if (result.reason === "engine-missing") showError(new Error("三维引擎尚未就绪，请稍后重试进入播放"));
+      },
+      exit: async () => {
+        const result = await playMode.exitPlay();
+        if (result.ok) setMessage("已退出播放模式，场景恢复为进入前状态");
+      },
     },
   };
 

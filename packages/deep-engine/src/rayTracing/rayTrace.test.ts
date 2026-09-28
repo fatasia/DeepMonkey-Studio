@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTracedScene, traceClosest, traceOccluded } from "./rayTrace.js";
+import { buildTracedScene, traceClosest, traceOccluded, type TracedScene } from "./rayTrace.js";
 import type { RayBlasDescriptor } from "./rayBackendTypes.js";
 
 function gridBlas(cells: number): RayBlasDescriptor {

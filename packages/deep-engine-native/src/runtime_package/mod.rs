@@ -55,10 +55,10 @@ pub use diff::{
 pub use dynamic_scene::{
     DynamicAnimationControllerCommand, DynamicAnimationControllerRuntime,
     DynamicAnimationControllerState, DynamicAnimationControllerTransition,
-    DynamicAnimationKeyframe, DynamicAnimationRuntime, DynamicAnimationSample,
-    DynamicAnimationTrack, DynamicDataReplayEvent, DynamicDataReplayRuntime,
-    DynamicInteractionRuntime, DynamicSceneRuntime, canonical_dynamic_frame,
-    parse_and_validate_dynamic_scene_runtime,
+    DynamicAnimationEventMarker, DynamicAnimationKeyframe, DynamicAnimationRuntime,
+    DynamicAnimationSample, DynamicAnimationTrack, DynamicDataReplayEvent,
+    DynamicDataReplayRuntime, DynamicInteractionRuntime, DynamicSceneRuntime,
+    canonical_dynamic_frame, parse_and_validate_dynamic_scene_runtime,
 };
 pub use dynamic_scene_physics::{
     DynamicPhysicsAutostepRuntime, DynamicPhysicsBodyRuntime,

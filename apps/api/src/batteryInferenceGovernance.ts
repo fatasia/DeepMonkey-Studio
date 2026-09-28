@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import { createHash, randomUUID } from "node:crypto";
 import {
   BATTERY_MODEL_CATALOG,
@@ -258,7 +259,7 @@ function governConfidence(
 }
 
 function fingerprintInput(input: BatteryPredictionInput): string {
-  const records = input.records.map((record) => Object.fromEntries(Object.entries(record).sort(([left], [right]) => left.localeCompare(right))));
+  const records = input.records.map((record) => Object.fromEntries(Object.entries(record).sort(([left], [right]) => compareText(left, right))));
   const canonical = JSON.stringify({
     model: input.model,
     variant: input.variant ?? "standard",

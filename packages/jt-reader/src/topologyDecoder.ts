@@ -58,7 +58,7 @@ class Symbols {
     const group = this.input.groups[this.#vertexPosition];
     const flags = this.input.flags[this.#vertexPosition];
     if (valence === undefined || group === undefined || flags === undefined || valence <= 0 || flags < 0 || flags > 0xffff) {
-      throw new JtFormatError("JT 拓扑顶点符号无效");
+      throw new JtFormatError("JT 拓扑顶点符号无效", "topology-invalid");
     }
     this.#vertexPosition += 1;
     return { valence, group, flags };
@@ -68,7 +68,7 @@ class Symbols {
     const lane = this.input.degrees[context];
     const position = this.#degreePositions[context];
     const value = lane?.[position ?? -1];
-    if (value === undefined || position === undefined) throw new JtFormatError("JT 面度数符号不足");
+    if (value === undefined || position === undefined) throw new JtFormatError("JT 面度数符号不足", "topology-invalid");
     this.#degreePositions[context] = position + 1;
     return value;
   }
@@ -77,7 +77,7 @@ class Symbols {
     const offset = this.input.splitFaces[this.#splitPosition];
     const faceSlot = this.input.splitPositions[this.#splitPosition];
     if (offset === undefined || faceSlot === undefined || offset <= 0 || faceSlot < 0) {
-      throw new JtFormatError("JT 分裂面符号无效");
+      throw new JtFormatError("JT 分裂面符号无效", "topology-invalid");
     }
     this.#splitPosition += 1;
     return { offset, faceSlot };
@@ -90,11 +90,11 @@ class Symbols {
       this.#largeMaskPosition,
       this.#largeMaskPosition + wordCount,
     );
-    if (words.length !== wordCount) throw new JtFormatError("JT 高度数面属性掩码不足");
+    if (words.length !== wordCount) throw new JtFormatError("JT 高度数面属性掩码不足", "topology-invalid");
     this.#largeMaskPosition += wordCount;
     const result = Array.from({ length: degree }, (_, bit) => ((words[Math.floor(bit / 32)]! >>> 0) & (1 << (bit % 32))) !== 0);
     const used = degree % 32;
-    if (used !== 0 && (words.at(-1)! >>> used) !== 0) throw new JtFormatError("JT 高度数面属性掩码存在越界位");
+    if (used !== 0 && (words.at(-1)! >>> used) !== 0) throw new JtFormatError("JT 高度数面属性掩码存在越界位", "topology-invalid");
     return result;
   }
 
@@ -102,19 +102,19 @@ class Symbols {
     const context = Math.min(Math.max(degree - 2, 0), 7);
     const position = this.#maskPositions[context];
     const lowValue = this.input.attributeMasks.small[context]?.[position ?? -1];
-    if (lowValue === undefined || position === undefined) throw new JtFormatError("JT 面属性掩码不足");
+    if (lowValue === undefined || position === undefined) throw new JtFormatError("JT 面属性掩码不足", "topology-invalid");
     let mask = BigInt(lowValue >>> 0);
     if (context === 7) {
       const next = this.input.attributeMasks.context7Next30[position];
       const upper = this.input.attributeMasks.context7Upper4[position];
       if (next === undefined || upper === undefined || (next >>> 0) >= 2 ** 30 || (upper >>> 0) >= 16) {
-        throw new JtFormatError("JT 第八组面属性掩码无效");
+        throw new JtFormatError("JT 第八组面属性掩码无效", "topology-invalid");
       }
-      if ((lowValue >>> 0) >= 2 ** 30) throw new JtFormatError("JT 第八组低位掩码超出 30 位");
+      if ((lowValue >>> 0) >= 2 ** 30) throw new JtFormatError("JT 第八组低位掩码超出 30 位", "topology-invalid");
       mask |= BigInt(next >>> 0) << 30n;
       mask |= BigInt(upper >>> 0) << 60n;
     }
-    if (degree < 64 && (mask >> BigInt(degree)) !== 0n) throw new JtFormatError("JT 面属性掩码存在越界位");
+    if (degree < 64 && (mask >> BigInt(degree)) !== 0n) throw new JtFormatError("JT 面属性掩码存在越界位", "topology-invalid");
     this.#maskPositions[context] = position + 1;
     return Array.from({ length: degree }, (_, bit) => (mask & (1n << BigInt(bit))) !== 0n);
   }
@@ -134,7 +134,7 @@ class Symbols {
       || this.#maskPositions[7] !== this.input.attributeMasks.context7Upper4.length
       || this.#largeMaskPosition !== this.input.attributeMasks.largeWords.length
     ) {
-      throw new JtFormatError("JT 拓扑符号未被完整且唯一地消费");
+      throw new JtFormatError("JT 拓扑符号未被完整且唯一地消费", "topology-invalid");
     }
   }
 }
@@ -170,14 +170,14 @@ class TopologyDecoder {
     }
     this.#symbols.assertExhausted();
     if (this.#faces.some((face) => face.empty !== 0) || this.#vertices.some((vertex) => vertex.faces.includes(undefined))) {
-      throw new JtFormatError("JT 拓扑重建后仍有未闭合槽位");
+      throw new JtFormatError("JT 拓扑重建后仍有未闭合槽位", "topology-invalid");
     }
     return this.#buildPolygons();
   }
 
   #newVertex(): number {
     const symbol = this.#symbols.vertex();
-    if (this.#vertices.length >= MAX_ITEMS || symbol.valence > MAX_ITEMS) throw new JtFormatError("JT 拓扑顶点数量超限");
+    if (this.#vertices.length >= MAX_ITEMS || symbol.valence > MAX_ITEMS) throw new JtFormatError("JT 拓扑顶点数量超限", "limit-exceeded");
     this.#addSlots(symbol.valence);
     this.#vertices.push({ faces: Array.from({ length: symbol.valence }), group: symbol.group, flags: symbol.flags });
     return this.#vertices.length - 1;
@@ -185,7 +185,7 @@ class TopologyDecoder {
 
   #addSlots(count: number): void {
     this.#slotCount += count;
-    if (this.#slotCount > MAX_SLOTS) throw new JtFormatError("JT 拓扑槽位数量超限");
+    if (this.#slotCount > MAX_SLOTS) throw new JtFormatError("JT 拓扑槽位数量超限", "limit-exceeded");
   }
 
   #faceContext(vertexIndex: number): number {
@@ -200,15 +200,15 @@ class TopologyDecoder {
 
   #setVertexFace(vertex: number, slot: number, face: number): void {
     const target = this.#vertices[vertex]?.faces;
-    if (!target || slot < 0 || slot >= target.length) throw new JtFormatError("JT 顶点-面槽位越界");
-    if (target[slot] !== undefined && target[slot] !== face) throw new JtFormatError("JT 顶点-面槽位冲突");
+    if (!target || slot < 0 || slot >= target.length) throw new JtFormatError("JT 顶点-面槽位越界", "topology-invalid");
+    if (target[slot] !== undefined && target[slot] !== face) throw new JtFormatError("JT 顶点-面槽位冲突", "topology-invalid");
     target[slot] = face;
   }
 
   #setFaceVertex(face: number, slot: number, vertex: number): void {
     const target = this.#faces[face];
-    if (!target || slot < 0 || slot >= target.vertices.length) throw new JtFormatError("JT 面-顶点槽位越界");
-    if (target.vertices[slot] !== undefined && target.vertices[slot] !== vertex) throw new JtFormatError("JT 面-顶点槽位冲突");
+    if (!target || slot < 0 || slot >= target.vertices.length) throw new JtFormatError("JT 面-顶点槽位越界", "topology-invalid");
+    if (target.vertices[slot] !== undefined && target.vertices[slot] !== vertex) throw new JtFormatError("JT 面-顶点槽位冲突", "topology-invalid");
     if (target.vertices[slot] === undefined) target.empty -= 1;
     target.vertices[slot] = vertex;
   }
@@ -216,7 +216,7 @@ class TopologyDecoder {
   #addVertexToFace(vertex: number, vertexFaceSlot: number, faceIndex: number, faceSlot: number): void {
     const face = this.#faces[faceIndex];
     const current = this.#vertices[vertex];
-    if (!face || !current || face.vertices.length === 0 || faceSlot >= face.vertices.length) throw new JtFormatError("JT 邻接关系越界");
+    if (!face || !current || face.vertices.length === 0 || faceSlot >= face.vertices.length) throw new JtFormatError("JT 邻接关系越界", "topology-invalid");
     this.#setFaceVertex(faceIndex, faceSlot, vertex);
     const clockwise = (faceSlot + face.vertices.length - 1) % face.vertices.length;
     const counterclockwise = (faceSlot + 1) % face.vertices.length;
@@ -224,7 +224,7 @@ class TopologyDecoder {
     if (clockwiseNeighbor !== undefined) {
       const neighbor = this.#vertices[clockwiseNeighbor]!;
       const shared = neighbor.faces.findIndex((item) => item === faceIndex);
-      if (shared < 0) throw new JtFormatError("JT 顺时针邻接面缺失");
+      if (shared < 0) throw new JtFormatError("JT 顺时针邻接面缺失", "topology-invalid");
       const slot = (vertexFaceSlot + 1) % current.faces.length;
       if (current.faces[slot] === undefined) {
         const adjacent = (shared + neighbor.faces.length - 1) % neighbor.faces.length;
@@ -236,7 +236,7 @@ class TopologyDecoder {
     if (counterNeighbor !== undefined) {
       const neighbor = this.#vertices[counterNeighbor]!;
       const shared = neighbor.faces.findIndex((item) => item === faceIndex);
-      if (shared < 0) throw new JtFormatError("JT 逆时针邻接面缺失");
+      if (shared < 0) throw new JtFormatError("JT 逆时针邻接面缺失", "topology-invalid");
       const slot = (vertexFaceSlot + current.faces.length - 1) % current.faces.length;
       if (current.faces[slot] === undefined) {
         const adjacentFace = neighbor.faces[(shared + 1) % neighbor.faces.length];
@@ -248,7 +248,7 @@ class TopologyDecoder {
   #activateFace(vertex: number, slot: number): number {
     const degree = this.#symbols.degree(this.#faceContext(vertex));
     if (degree !== 0) {
-      if (degree < 0 || degree > MAX_ITEMS) throw new JtFormatError("JT 面度数无效");
+      if (degree < 0 || degree > MAX_ITEMS) throw new JtFormatError("JT 面度数无效", "topology-invalid");
       this.#addSlots(degree);
       const attributeMask = this.#symbols.attributeMask(degree);
       const faceAttributeCount = attributeMask.filter(Boolean).length;
@@ -265,7 +265,7 @@ class TopologyDecoder {
     const split = this.#symbols.split();
     const activeIndex = this.#active.length - split.offset;
     const faceIndex = this.#active[activeIndex];
-    if (faceIndex === undefined) throw new JtFormatError("JT 分裂面活动队列越界");
+    if (faceIndex === undefined) throw new JtFormatError("JT 分裂面活动队列越界", "topology-invalid");
     this.#setVertexFace(vertex, slot, faceIndex);
     this.#addVertexToFace(vertex, slot, faceIndex, split.faceSlot);
     return faceIndex;
@@ -281,7 +281,7 @@ class TopologyDecoder {
   #completeVertex(vertexIndex: number, vertexSlotOnFace: number): void {
     const vertex = this.#vertices[vertexIndex]!;
     let previousFace = vertex.faces[0];
-    if (previousFace === undefined) throw new JtFormatError("JT 新顶点没有种子面");
+    if (previousFace === undefined) throw new JtFormatError("JT 新顶点没有种子面", "topology-invalid");
     let previousSlot = vertexSlotOnFace;
     let slot = 1;
     while (slot < vertex.faces.length) {
@@ -292,7 +292,7 @@ class TopologyDecoder {
       const neighbor = previous.vertices[previousSlot];
       if (neighbor === undefined) break;
       const found = this.#faces[nextFace]!.vertices.findIndex((item) => item === neighbor);
-      if (found < 0) throw new JtFormatError("JT 已知面之间缺少公共顶点");
+      if (found < 0) throw new JtFormatError("JT 已知面之间缺少公共顶点", "topology-invalid");
       const nextSlot = (found + this.#faces[nextFace]!.vertices.length - 1) % this.#faces[nextFace]!.vertices.length;
       this.#addVertexToFace(vertexIndex, slot, nextFace, nextSlot);
       previousFace = nextFace;
@@ -312,7 +312,7 @@ class TopologyDecoder {
       const neighbor = previous.vertices[previousSlot];
       if (neighbor === undefined) break;
       const found = this.#faces[nextFace]!.vertices.findIndex((item) => item === neighbor);
-      if (found < 0) throw new JtFormatError("JT 反向已知面之间缺少公共顶点");
+      if (found < 0) throw new JtFormatError("JT 反向已知面之间缺少公共顶点", "topology-invalid");
       const nextSlot = (found + 1) % this.#faces[nextFace]!.vertices.length;
       this.#addVertexToFace(vertexIndex, slot, nextFace, nextSlot);
       previousFace = nextFace;
@@ -343,7 +343,7 @@ class TopologyDecoder {
         const face = this.#faces[faceIndex]!;
         if (face.attributes.length === 0) return undefined;
         const vertexSlot = face.vertices.findIndex((candidate) => candidate === vertexIndex);
-        if (vertexSlot < 0) throw new JtFormatError("JT 面中找不到已关联顶点");
+        if (vertexSlot < 0) throw new JtFormatError("JT 面中找不到已关联顶点", "topology-invalid");
         let attributeSlot = face.attributes.length - 1;
         for (let slot = 0; slot <= vertexSlot; slot += 1) {
           if (face.attributeMask[slot]) attributeSlot = (attributeSlot + 1) % face.attributes.length;
@@ -363,7 +363,7 @@ export function decodeJtTopology(input: JtTopologyInput): JtTopologyPolygon[] {
     || input.groups.length !== input.valences.length
     || input.flags.length !== input.valences.length
   ) {
-    throw new JtFormatError("JT 拓扑输入向量长度不一致");
+    throw new JtFormatError("JT 拓扑输入向量长度不一致", "count-mismatch");
   }
   return new TopologyDecoder(input).run();
 }

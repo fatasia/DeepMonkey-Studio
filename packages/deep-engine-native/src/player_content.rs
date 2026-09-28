@@ -497,6 +497,12 @@ impl PlayerContent {
             .is_some_and(|physics| physics.is_playing())
     }
 
+    pub fn physics_instance_pose(&self, instance_id: &str) -> Option<(u64, [f32; 3])> {
+        self.physics
+            .as_ref()?
+            .instance_pose(&self.packet, instance_id)
+    }
+
     /// R11 状态机宿主的只读视图（活动态 + 已应用的确定性命令轨迹）。
     /// 当前产品消费点：装载路径 startup notice 与测试对拍；实时宿主（交互层）
     /// 通过 `set_animation_controller_parameter` 驱动。

@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type {
   VirtualDebugAssertion,
   VirtualDebugCommand,
@@ -446,7 +447,7 @@ function normalizeInput(input: VirtualCommissioningTestDesignInput) {
 
 function deduplicateMissing(items: VirtualTestDesignMissingInformation[]): VirtualTestDesignMissingInformation[] {
   return [...new Map(items.map((item) => [`${item.code}/${item.subjectId ?? ""}/${item.message}`, item])).values()]
-    .sort((left, right) => left.code.localeCompare(right.code) || (left.subjectId ?? "").localeCompare(right.subjectId ?? "") || left.message.localeCompare(right.message));
+    .sort((left, right) => compareText(left.code, right.code) || compareText(left.subjectId ?? "", right.subjectId ?? "") || compareText(left.message, right.message));
 }
 
 function isBoundedNumericInput(point: VirtualTestIoPoint): boolean {
@@ -468,10 +469,10 @@ function assertUnique(values: readonly string[], label: string): void {
 
 function compareDrafts(left: VirtualCommissioningTestDraft, right: VirtualCommissioningTestDraft): number {
   const order: Record<VirtualTestCategory, number> = { normal: 0, boundary: 1, fault: 2, recovery: 3 };
-  return order[left.category] - order[right.category] || left.id.localeCompare(right.id);
+  return order[left.category] - order[right.category] || compareText(left.id, right.id);
 }
 
-function byId<T extends { id: string }>(left: T, right: T): number { return left.id.localeCompare(right.id); }
+function byId<T extends { id: string }>(left: T, right: T): number { return compareText(left.id, right.id); }
 
 function fingerprint(value: unknown): string {
   const text = canonicalJson(value);
@@ -482,6 +483,6 @@ function fingerprint(value: unknown): string {
 
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value && typeof value === "object") return `{${Object.entries(value as Record<string, unknown>).filter(([, item]) => item !== undefined).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(",")}}`;
+  if (value && typeof value === "object") return `{${Object.entries(value as Record<string, unknown>).filter(([, item]) => item !== undefined).sort(([left], [right]) => compareText(left, right)).map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(",")}}`;
   return JSON.stringify(value);
 }

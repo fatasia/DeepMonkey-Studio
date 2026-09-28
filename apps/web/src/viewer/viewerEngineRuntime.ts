@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { BehaviorTraceEntry } from "../scripting/behaviorTraceLog";
 import { isWalkableSurface, slideAgainstSurface } from "./characterMotion";
 import { visibleObjectBox } from "./sceneObjectUtils";
 import { type NavigationMode } from "./viewerTypes";
@@ -9,11 +10,19 @@ import { visibleAnnotationLabelIds } from "./annotationLabelLayout";
 import { nextFrameCadence } from "./viewerFrameCadence";
 import { advanceSceneAnimationTime, normalizeSceneAnimationPlaybackRange } from "./timeline";
 import { resolveOrbitCameraRange } from "./cameraFraming";
+import { RuntimeFollowCamera } from "./runtimeFollowCamera";
 import { sceneGridCloseupOpacity } from "./sceneGrid";
 import { updateViewerDeviceSignals } from "./viewerDeviceSignals";
 import { presentViewerFrame } from "./viewerFramePresentation";
 import { updateAuthorLodSelection } from "./authorLodSelection";
 import { getPresentationPerformance } from "./viewerPresentationPerformance";
+import type { AnimationContext } from "./viewerEngineAnimation";
+import {
+  getModelRootMotionState, setModelAnimationEventActions, setModelAnimationEventSink,
+  setModelRootMotion, snapshotModelAnimationEventTrace, updateModelAnimationConsumption,
+  type ModelAnimationEventActionDef, type ModelAnimationEventActionSink, type ModelRootMotionOptions,
+  type ModelRootMotionSnapshot,
+} from "./viewerEngineRootMotion";
 
 const READ_ONLY_TARGET_FPS = 60;
 
@@ -22,10 +31,44 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
   protected override overlaySpritesProvider = (): THREE.Sprite[] => this.collectOverlaySprites();
   /** WebGPU 呈现消费独立 RenderPacket 时为 true;true 则每帧跳过作者场景矩阵/LOD 遍历。 */
   private authorPacketIndependent = false;
+  private readonly runtimeFollowCamera = new RuntimeFollowCamera();
 
   /** 由 Deep WebGPU 桥在独立包路径建立/释放时调用;legacy 投影路径必须传 false。 */
   setAuthorPacketIndependent(independent: boolean): void {
     this.authorPacketIndependent = independent;
+  }
+
+  // ===== T14 编辑器消费切片:模型动画根运动 + clip 事件动作(公开开关,默认全关) =====
+  // 注:本组方法的实现体在 viewerEngineRootMotion.ts(纯函数,状态挂 WeakMap);
+  // 落在 Runtime 层是文件所有权约束下的接线位,后续可平移至 viewerEngineAnimationControl。
+
+  /** 启用/配置模型根运动(默认关;rootNode 缺省取活动 clip 第一条平移轨道节点)。 */
+  setModelRootMotion(id: string, options: ModelRootMotionOptions): boolean {
+    return setModelRootMotion(this as unknown as AnimationContext, id, options);
+  }
+
+  /** 根运动消费状态快照(累计应用位移/镜像播放头/轨道解析结果)。 */
+  getModelRootMotionState(id: string): ModelRootMotionSnapshot {
+    return getModelRootMotionState(this as unknown as AnimationContext, id);
+  }
+
+  /** 整组替换模型的事件动作定义;fail-closed 校验,非法输入整体拒绝并保留原注册。 */
+  setModelAnimationEventActions(id: string, actions: readonly ModelAnimationEventActionDef[]): boolean {
+    return setModelAnimationEventActions(this as unknown as AnimationContext, id, actions);
+  }
+
+  /** 注册/清除 notify 动作的宿主出口(如告警声播放)。 */
+  setModelAnimationEventSink(sink: ModelAnimationEventActionSink | null): void {
+    setModelAnimationEventSink(this as unknown as AnimationContext, sink);
+  }
+
+  /** 动画事件轨迹快照(T31 BehaviorTraceLog 口径,审计/调试消费)。 */
+  snapshotModelAnimationEventTrace(): BehaviorTraceEntry[] {
+    return snapshotModelAnimationEventTrace(this as unknown as AnimationContext);
+  }
+
+  protected updateModelAnimationConsumption(delta: number): void {
+    updateModelAnimationConsumption(this as unknown as AnimationContext, delta);
   }
 
   protected animate = (): void => {
@@ -67,6 +110,10 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
       }
     }
     this.mixers.forEach((mixer) => mixer.update(delta));
+    // T14 编辑器消费切片:根运动应用与 clip 事件动作。必须在完成判定之前结算——
+    // once 模式的最后一段位移与收尾事件要落在模型仍在播放集合内的那一帧。
+    // 开关默认关:未启用根运动且未注册事件动作时该调用每帧零行为。
+    this.updateModelAnimationConsumption(delta);
     this.updateCompletedModelAnimations();
     if (this.sceneAnimationPlaying) {
       const speed = this.sceneAnimation.playbackSpeed ?? 1;
@@ -109,8 +156,15 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
     this.applyShadowUpdatePolicy();
     if (this.navigationMode !== "firstPerson") {
       this.orbit.update();
-      this.enforceCameraCollision(now);
-    }
+      if (this.navigationMode === "thirdPerson" && this.cameraConstraints.collisionEnabled && !this.sceneAnimationPlaying) {
+        this.updateRuntimeFollowCamera(delta);
+        this.resetCameraCollisionAnchor();
+      } else {
+        this.runtimeFollowCamera.reset();
+        if (this.navigationMode === "thirdPerson") this.orbit.minDistance = Math.max(2.2, this.cameraConstraints.minDistance);
+        this.enforceCameraCollision(now);
+      }
+    } else this.runtimeFollowCamera.reset();
     if (this.gridHelper && this.gridHelper.material instanceof THREE.MeshBasicMaterial) {
       this.gridHelper.material.opacity = this.navigationMode === "orbit"
         ? sceneGridCloseupOpacity(this.camera.position.distanceTo(this.orbit.target)) : 1;
@@ -432,6 +486,30 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
     this.camera.near = range.nearClip;
     this.camera.far = range.farClip;
     this.camera.updateProjectionMatrix();
+  }
+  private updateRuntimeFollowCamera(delta: number): void {
+    const objects = this.visibleModelObjects();
+    if (objects.length === 0) {
+      this.runtimeFollowCamera.reset();
+      this.orbit.minDistance = Math.max(2.2, this.cameraConstraints.minDistance);
+      return;
+    }
+    const changed = this.runtimeFollowCamera.update(
+      this.camera.position, this.orbit.target, this.cameraConstraints.collisionRadius, delta,
+      (direction, distance) => {
+        this.raycaster.set(this.orbit.target, direction);
+        this.raycaster.near = 0.01;
+        this.raycaster.far = distance;
+        const hit = this.raycaster.intersectObjects(objects, true)[0];
+        this.raycaster.near = 0;
+        this.raycaster.far = Infinity;
+        return hit?.distance;
+      },
+    );
+    if (changed) this.camera.lookAt(this.orbit.target);
+    // OrbitControls clamps to minDistance on the following frame; let a real wall bring the eye closer.
+    const allowedOrbitMin = Math.min(this.orbit.minDistance, Math.max(0.001, this.camera.position.distanceTo(this.orbit.target) - 0.001));
+    if (allowedOrbitMin < this.orbit.minDistance) this.orbit.minDistance = allowedOrbitMin;
   }
   protected resetCameraCollisionAnchor(): void {
     this.cameraCollisionAnchor.copy(this.camera.position);

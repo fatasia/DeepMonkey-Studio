@@ -88,6 +88,21 @@ const override = (): DeepAssetUserOverride => ({ id: "override/color", resourceI
   baseBlobHash: H.texture, overrideHash: H.override, revision: 2 });
 
 describe("Deep Asset reimport transaction coordinator", () => {
+  it("keeps untouched resources stable across a path-only rename", async () => {
+    const before = packageValue(), next = packageValue();
+    (next.manifest as { resources: DeepAssetResource[] }).resources = next.manifest.resources.map(value =>
+      value.id === "texture/color" ? { ...value, logicalPath: "textures/new-name.bin" } : value);
+    const adapter = new Adapter();
+    const result = await new DeepAssetReimportCoordinator(adapter).publish(before, next, { overrides: [override()] });
+    expect(result).toMatchObject({ status: "committed", preparedResources: 1, appliedOperations: 1 });
+    expect(adapter.prepares).toEqual(["texture/color"]);
+    expect(adapter.transactions[0]?.operations).toEqual(["publish:texture/color"]);
+    expect(adapter.visible.get("material/main")).toBe("material/main.bin");
+    expect(adapter.visible.get("scene/main")).toBe("scene/main.bin");
+    expect(adapter.visible.get("texture/color")).toBe("textures/new-name.bin");
+    expect(adapter.appliedOverrides).toEqual([override()]);
+  });
+
   it("keeps apply invisible, preserves rename overrides, reuses resources, and commits atomically", async () => {
     const adapter = new Adapter(), block = { entered: deferred(), gate: deferred() }; adapter.applyBlock = block;
     const coordinator = new DeepAssetReimportCoordinator(adapter);
@@ -96,19 +111,19 @@ describe("Deep Asset reimport transaction coordinator", () => {
     expect(adapter.visible.get("texture/color")).toBe("textures/color.bin"); expect(adapter.commits).toBe(0);
     block.gate.resolve(); const result = await pending;
     expect(result).toMatchObject({ status: "committed", preparedResources: 4, reusedResources: 1,
-      appliedOperations: 5, releasedResources: 5, rollbackAttempted: false });
+      appliedOperations: 4, releasedResources: 5, rollbackAttempted: false });
     expect(adapter.visible.get("texture/color")).toBe("textures/renamed.bin"); expect(adapter.commits).toBe(1);
     expect(adapter.appliedOverrides).toContainEqual(override()); expect(adapter.peak).toBe(2);
-    expect(adapter.transactions[0]!.operations).toEqual(["publish:texture/color", "publish:material/main",
+    expect(adapter.transactions[0]!.operations).toEqual(["publish:texture/color",
       "publish:metadata/a", "publish:metadata/b", "publish:scene/main"]);
     await expect(coordinator.publish(packageValue(), packageValue(true), { concurrency: 17 })).rejects.toThrow("1 through 16");
   });
 
   it("rolls back in the planned reverse dependency order after a mid-apply failure", async () => {
-    const adapter = new Adapter(); adapter.failResource = "material/main"; const before = [...adapter.visible];
+    const adapter = new Adapter(); adapter.failResource = "metadata/a"; const before = [...adapter.visible];
     const result = await new DeepAssetReimportCoordinator(adapter).publish(packageValue(), packageValue(true));
     expect(result).toMatchObject({ status: "failed", rollbackAttempted: true,
-      failure: "apply failed: material/main", appliedOperations: 1 });
+      failure: "apply failed: metadata/a", appliedOperations: 1 });
     expect(adapter.visible).toEqual(new Map(before)); expect(adapter.commits).toBe(0);
     expect(adapter.rollbackOrders[0]).toEqual(["scene/main", "metadata/b", "metadata/a", "material/main", "texture/color"]);
     expect(adapter.releases.every(value => value.startsWith("rolled-back:"))).toBe(true);

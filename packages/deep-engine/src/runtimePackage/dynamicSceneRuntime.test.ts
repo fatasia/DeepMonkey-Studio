@@ -70,10 +70,80 @@ describe("dynamic scene runtime ABI", () => {
         limits: { enabled: true, min: -1, max: 1 }, motor: { enabled: true, targetVelocity: 2, strength: 4 } }],
     };
     expect(validateDynamicSceneRuntime({ schema: "deep-engine.dynamic-runtime", schemaVersion: 3, id: "scene", revision: 1, physics }).valid).toBe(true);
+    const velocityBody = { ...physics.bodies[0], initialLinearVelocity: [80, 0, 0] };
+    expect(validateDynamicSceneRuntime({ schema: "deep-engine.dynamic-runtime", schemaVersion: 3, id: "scene", revision: 1,
+      physics: { ...physics, bodies: [velocityBody] } }).value?.physics?.bodies[0]?.initialLinearVelocity).toEqual([80, 0, 0]);
+    for (const body of [{ ...velocityBody, initialLinearVelocity: [1_001, 0, 0] }, { ...velocityBody, type: "fixed" }]) {
+      expect(validateDynamicSceneRuntime({ schema: "deep-engine.dynamic-runtime", schemaVersion: 3, id: "scene", revision: 1,
+        physics: { ...physics, bodies: [body] } }).valid).toBe(false);
+    }
     expect(validateDynamicSceneRuntime({ schema: "deep-engine.dynamic-runtime", schemaVersion: 2, id: "scene", revision: 1, physics }).valid).toBe(false);
     expect(validateDynamicSceneRuntime({ schema: "deep-engine.dynamic-runtime", schemaVersion: 3, id: "scene", revision: 1,
       physics: { ...physics, joints: [{ ...physics.joints[0], solver: "multibody" }] } }).valid).toBe(false);
     expect(validateDynamicSceneRuntime({ schema: "deep-engine.dynamic-runtime", schemaVersion: 3, id: "scene", revision: 1,
       physics: { ...physics, bodies: [{ ...physics.bodies[0], collider: { kind: "mesh", instanceIds: ["instance-a"] } }] } }).valid).toBe(false);
+  });
+
+  it("accepts hull, simplified-mesh and primitive colliders with precision marks and rejects incomplete payloads", () => {
+    const physics = (collider: Record<string, unknown>) => ({
+      schema: "deep-engine.physics-runtime", schemaVersion: 1, enabled: true, playing: true, gravity: [0, -9.81, 0],
+      bodies: [{ id: "body-a", type: "fixed", initialPose: { translation: [0, 0, 0], rotation: [0, 0, 0, 1] }, mass: 1, friction: 0.5, restitution: 0, collider }], joints: [],
+    });
+    const run = (collider: Record<string, unknown>) => validateDynamicSceneRuntime(
+      { schema: "deep-engine.dynamic-runtime", schemaVersion: 3, id: "scene", revision: 1, physics: physics(collider) });
+    const precision = { approximate: true, reasons: ["topology-error:NON_MANIFOLD_EDGE"], hullVertexCount: 4, topologyOk: false };
+    const hull = { kind: "convex-hull", instanceIds: ["instance-a"], points: [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]], precision };
+    expect(run(hull).valid).toBe(true);
+    expect(run({ ...hull, precision: { ...precision, concaveSource: true, triangleCount: 96 } }).valid).toBe(true);
+    // generated kinds 缺 precision → 拒整包。
+    const { precision: _omitted, ...withoutPrecision } = hull;
+    expect(run(withoutPrecision).valid).toBe(false);
+    // 凸包点数不足 / 非有限点 → 拒绝。
+    expect(run({ ...hull, points: [[0, 0, 0], [1, 0, 0], [0, 1, 0]] }).valid).toBe(false);
+    expect(run({ ...hull, points: [[0, 0, 0], [1, 0, 0], [0, Number.NaN, 0], [0, 0, 1]] }).valid).toBe(false);
+    const mesh = { kind: "simplified-mesh", instanceIds: ["instance-a"],
+      positions: [[0, 0, 0], [1, 0, 0], [0, 1, 0]], indices: [0, 1, 2],
+      precision: { approximate: false, triangleCount: 1, tolerance: 0.005, topologyOk: true } };
+    expect(run(mesh).valid).toBe(true);
+    expect(run({ ...mesh, indices: [0, 1] }).valid).toBe(false);
+    expect(run({ ...mesh, indices: [0, 1, 7] }).valid).toBe(false);
+    expect(run({ ...mesh, precision: undefined }).valid).toBe(false);
+    const primitive = { kind: "primitive", instanceIds: ["instance-a"], primitive: { shape: "sphere", radius: 0.5 } };
+    expect(run(primitive).valid).toBe(true);
+    expect(run({ kind: "primitive", instanceIds: ["instance-a"], primitive: { shape: "cuboid", halfExtents: [0.5, 0.25, 1] } }).valid).toBe(true);
+    expect(run({ kind: "primitive", instanceIds: ["instance-a"], primitive: { shape: "cylinder", radius: 1, halfHeight: 0.5 } }).valid).toBe(true);
+    expect(run({ ...primitive, primitive: { shape: "sphere" } }).valid).toBe(false);
+    expect(run({ ...primitive, primitive: { shape: "sphere", radius: 0 } }).valid).toBe(false);
+    expect(run({ ...primitive, primitive: { shape: "wedge" } }).valid).toBe(false);
+    // 精度标记字段越界(非法拓扑码/超差公差)→ 拒绝。
+    expect(run({ ...hull, precision: { ...precision, topologyIssueCodes: ["not-a-code"] } }).valid).toBe(false);
+    expect(run({ ...hull, precision: { ...precision, tolerance: -1 } }).valid).toBe(false);
+    // render-bounds 允许省略 precision(向后兼容),但拒绝携带几何字段。
+    expect(run({ kind: "render-bounds", instanceIds: ["instance-a"] }).valid).toBe(true);
+    expect(run({ kind: "render-bounds", instanceIds: ["instance-a"], points: [[0, 0, 0]] }).valid).toBe(false);
+  });
+
+  it("parses clip event markers and fails closed on duplicates, bad times or unknown fields", () => {
+    // T14：事件标记可选；旧包（缺字段）语义不变；clip 时长不在包 ABI 内，
+    // `0 <= time < duration` 由消费端时钟校验，解析层只做有界性与唯一性。
+    const controller = {
+      schema: "deep-engine.animation-controller", schemaVersion: 1,
+      initialStateId: "robot:idle", activeStateId: "robot:idle", transitionDurationMs: 250,
+      states: [{ id: "robot:idle", modelId: "robot", clipId: "Idle", loop: true }],
+      parameters: {}, transitions: [],
+      events: [{ clipId: "Idle", eventId: "footstep", time: 0.25 }],
+    };
+    const accepted = validateDynamicSceneRuntime({ ...base(), schemaVersion: 2, animationController: controller });
+    expect(accepted.valid).toBe(true);
+    expect(accepted.value?.animationController?.events).toEqual([{ clipId: "Idle", eventId: "footstep", time: 0.25 }]);
+    const withoutEvents = { ...controller }; delete (withoutEvents as { events?: unknown }).events;
+    expect(validateDynamicSceneRuntime({ ...base(), schemaVersion: 2, animationController: withoutEvents }).valid).toBe(true);
+    const duplicate = validateDynamicSceneRuntime({ ...base(), schemaVersion: 2,
+      animationController: { ...controller, events: [{ clipId: "Idle", eventId: "x", time: 0.1 }, { clipId: "Idle", eventId: "x", time: 0.2 }] } });
+    expect(duplicate.valid).toBe(false);
+    expect(validateDynamicSceneRuntime({ ...base(), schemaVersion: 2,
+      animationController: { ...controller, events: [{ clipId: "Idle", eventId: "x", time: -0.1 }] } }).valid).toBe(false);
+    expect(validateDynamicSceneRuntime({ ...base(), schemaVersion: 2,
+      animationController: { ...controller, events: [{ clipId: "Idle", eventId: "x", time: 0.1, extra: 1 }] } }).valid).toBe(false);
   });
 });

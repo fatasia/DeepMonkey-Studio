@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
+const compareText = (left: string, right: string): number => (left < right ? -1 : left > right ? 1 : 0);
 
 const excludedDirectories = new Set(["dist", "generated", "node_modules"]);
 
@@ -290,13 +291,13 @@ export function findDependencyCycles(graph: ReadonlyMap<string, readonly string[
   };
 
   for (const node of [...graph.keys()].sort()) visitNode(node);
-  return [...cycles.values()].sort((left, right) => left.join("\0").localeCompare(right.join("\0")));
+  return [...cycles.values()].sort((left, right) => compareText(left.join("\0"), right.join("\0")));
 }
 
 function canonicalCycle(cycle: string[]): string[] {
   const body = cycle.slice(0, -1);
   const rotations = body.map((_value, index) => [...body.slice(index), ...body.slice(0, index)]);
-  rotations.sort((left, right) => left.join("\0").localeCompare(right.join("\0")));
+  rotations.sort((left, right) => compareText(left.join("\0"), right.join("\0")));
   const selected = rotations[0] ?? [];
   return [...selected, selected[0]!];
 }

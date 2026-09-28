@@ -49,4 +49,21 @@ describe("FlatSceneObjectList", () => {
     expect(html).toContain("Shift 连续选择");
     expect(html).not.toContain("单击选择，再次单击取消");
   });
+
+  it("keeps object order for the ungrouped directory fast path", () => {
+    const primitives = ["pump-a", "pump-b"].map(id => ({ id, name: id, kind: "primitive", visible: true, opacity: 1 } as LoadedSceneModel));
+    const html = renderToStaticMarkup(<FlatSceneObjectList
+      locale="zh-CN" studio engine={undefined} modelRows={[]} empty={false}
+      lighting={{ lights: [] } as unknown as GlobalLightingState} selectedLightId=""
+      primitives={primitives} measurements={[]} annotations={[]} spaces={[]} groups={[]}
+      organizationObjects={primitives.map(({ id, name }) => ({ id, name, kind: "primitive", visible: true, locked: false }))}
+      onRevision={vi.fn()} onLightSelect={vi.fn()} onLightUpdate={vi.fn()} onLightTransform={vi.fn()}
+      onLightRemove={vi.fn()} onEnvironmentOpen={vi.fn()} onPrimitiveRemove={vi.fn()}
+      onMeasurementRemove={vi.fn()} onAnnotationUpdate={vi.fn()} onAnnotationRemove={vi.fn()}
+      onSpaceFocus={vi.fn()} onSpaceVisibilityChange={vi.fn()} onSelectGroup={vi.fn()}
+      onRenameGroup={vi.fn()} onGroupVisibilityChange={vi.fn()} onGroupLockChange={vi.fn()}
+    />);
+    expect(html).toContain('data-layer-order="[&quot;pump-a&quot;,&quot;pump-b&quot;]"');
+    expect(html.indexOf("pump-a")).toBeLessThan(html.indexOf("pump-b"));
+  });
 });

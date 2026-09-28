@@ -11,7 +11,7 @@ interface V2ProbabilityEntry {
 }
 
 function ensure(bytes: Uint8Array, offset: number, length: number, label: string): void {
-  if (offset < 0 || length < 0 || offset + length > bytes.byteLength) throw new JtFormatError(`${label} 超出 CDP2 边界`);
+  if (offset < 0 || length < 0 || offset + length > bytes.byteLength) throw new JtFormatError(`${label} 超出 CDP2 边界`, "read-bounds-exceeded");
 }
 
 function u32(bytes: Uint8Array, offset: number): number {
@@ -30,7 +30,7 @@ class WordBits {
 
   read(count: number): number {
     if (!Number.isInteger(count) || count < 0 || count > 32 || this.#position + count > this.bitLength) {
-      throw new JtFormatError(`CDP2 请求了无效的 ${count} 位`);
+      throw new JtFormatError(`CDP2 请求了无效的 ${count} 位`, "field-invalid");
     }
     let result = 0;
     for (let index = 0; index < count; index += 1) {
@@ -56,11 +56,11 @@ class ByteBits {
   constructor(private readonly bytes: Uint8Array) {}
 
   read(count: number): number {
-    if (!Number.isInteger(count) || count < 0 || count > 32) throw new JtFormatError("CDP2 概率表位宽无效");
+    if (!Number.isInteger(count) || count < 0 || count > 32) throw new JtFormatError("CDP2 概率表位宽无效", "field-invalid");
     let result = 0;
     for (let index = 0; index < count; index += 1) {
       const value = this.bytes[Math.floor(this.#position / 8)];
-      if (value === undefined) throw new JtFormatError("CDP2 概率表被截断");
+      if (value === undefined) throw new JtFormatError("CDP2 概率表被截断", "count-mismatch");
       result = result * 2 + ((value >>> (7 - (this.#position % 8))) & 1);
       this.#position += 1;
     }
@@ -71,7 +71,7 @@ class ByteBits {
     const length = Math.ceil(this.#position / 8);
     if (this.#position % 8 !== 0) {
       const tail = this.bytes[length - 1]! & ((1 << (8 - (this.#position % 8))) - 1);
-      if (tail !== 0) throw new JtFormatError("CDP2 概率表对齐位非零");
+      if (tail !== 0) throw new JtFormatError("CDP2 概率表对齐位非零", "field-invalid");
     }
     return length;
   }
@@ -85,7 +85,7 @@ function decodeBitLengthV2(codeWords: Uint8Array, bitLength: number, valueCount:
     const maximumBits = bits.read(6);
     const minimum = bits.signed(minimumBits);
     const maximum = bits.signed(maximumBits);
-    if (maximum < minimum) throw new JtFormatError("CDP2 BitLength 固定范围无效");
+    if (maximum < minimum) throw new JtFormatError("CDP2 BitLength 固定范围无效", "field-invalid");
     const span = maximum - minimum;
     const width = span === 0 ? 0 : 32 - Math.clz32(span);
     for (let index = 0; index < valueCount; index += 1) values.push((minimum + bits.read(width)) | 0);
@@ -93,7 +93,7 @@ function decodeBitLengthV2(codeWords: Uint8Array, bitLength: number, valueCount:
     const mean = bits.signed(32);
     const deltaBits = bits.read(3);
     const runBits = bits.read(3);
-    if (deltaBits === 0 || runBits === 0) throw new JtFormatError("CDP2 BitLength 动态块位宽无效");
+    if (deltaBits === 0 || runBits === 0) throw new JtFormatError("CDP2 BitLength 动态块位宽无效", "field-invalid");
     const minimumDelta = -(2 ** (deltaBits - 1));
     const maximumDelta = 2 ** (deltaBits - 1) - 1;
     let width = 0;
@@ -102,14 +102,14 @@ function decodeBitLengthV2(codeWords: Uint8Array, bitLength: number, valueCount:
       do {
         delta = bits.signed(deltaBits);
         width += delta;
-        if (width < 0 || width > 32) throw new JtFormatError("CDP2 BitLength 动态字段越界");
+        if (width < 0 || width > 32) throw new JtFormatError("CDP2 BitLength 动态字段越界", "field-invalid");
       } while (delta === minimumDelta || delta === maximumDelta);
       const run = bits.read(runBits);
-      if (run <= 0 || values.length + run > valueCount) throw new JtFormatError("CDP2 BitLength 游程无效");
+      if (run <= 0 || values.length + run > valueCount) throw new JtFormatError("CDP2 BitLength 游程无效", "field-invalid");
       for (let index = 0; index < run; index += 1) values.push((mean + bits.signed(width)) | 0);
     }
   }
-  if (bits.position !== bitLength || values.length !== valueCount) throw new JtFormatError("CDP2 BitLength 未完整消费代码位");
+  if (bits.position !== bitLength || values.length !== valueCount) throw new JtFormatError("CDP2 BitLength 未完整消费代码位", "count-mismatch");
   return values;
 }
 
@@ -120,7 +120,7 @@ function parseV2Context(bytes: Uint8Array): { entries: V2ProbabilityEntry[]; byt
   const occurrenceBits = bits.read(6);
   const valueBits = bits.read(6);
   const minimum = bits.read(32) | 0;
-  if (entryCount > MAX_VALUES || symbolBits === 0 || occurrenceBits === 0) throw new JtFormatError("CDP2 概率表头无效");
+  if (entryCount > MAX_VALUES || symbolBits === 0 || occurrenceBits === 0) throw new JtFormatError("CDP2 概率表头无效", "field-invalid");
   const entries = Array.from({ length: entryCount }, () => {
     const symbol = bits.read(symbolBits) - 2;
     return {
@@ -139,7 +139,7 @@ function decodeArithmeticV2(
   entries: readonly V2ProbabilityEntry[],
 ): Array<number | undefined> {
   const total = entries.reduce((sum, entry) => sum + entry.occurrenceCount, 0);
-  if (total <= 0 || total > 0xffff) throw new JtFormatError("CDP2 Arithmetic 概率总数无效");
+  if (total <= 0 || total > 0xffff) throw new JtFormatError("CDP2 Arithmetic 概率总数无效", "field-invalid");
   // CDP2 的最后一个 U32 会以 0 填充；算术重归一化允许读取这些物理填充位。
   const bits = new WordBits(codeWords, codeWords.byteLength * 8);
   let code = 0;
@@ -157,7 +157,7 @@ function decodeArithmeticV2(
       cumulative = end;
       return false;
     });
-    if (!entry) throw new JtFormatError("CDP2 Arithmetic 找不到概率区间");
+    if (!entry) throw new JtFormatError("CDP2 Arithmetic 找不到概率区间", "count-mismatch");
     high = low + Math.floor((range * (cumulative + entry.occurrenceCount)) / total) - 1;
     low += Math.floor((range * cumulative) / total);
     while (true) {
@@ -174,26 +174,26 @@ function decodeArithmeticV2(
     }
     values.push(entry.escape ? undefined : entry.value);
   }
-  if (bitLength === 0 && valueCount > 0) throw new JtFormatError("CDP2 Arithmetic 代码为空");
+  if (bitLength === 0 && valueCount > 0) throw new JtFormatError("CDP2 Arithmetic 代码为空", "count-mismatch");
   return values;
 }
 
 export function decodeInt32PacketV2(bytes: Uint8Array, depth = 0): DecodedInt32Packet {
-  if (depth > MAX_RECURSION) throw new JtFormatError("CDP2 递归层数超限");
+  if (depth > MAX_RECURSION) throw new JtFormatError("CDP2 递归层数超限", "limit-exceeded");
   const valueCount = u32(bytes, 0);
-  if (valueCount > MAX_VALUES) throw new JtFormatError("CDP2 值数量超限");
+  if (valueCount > MAX_VALUES) throw new JtFormatError("CDP2 值数量超限", "limit-exceeded");
   if (valueCount === 0) return { values: [], byteLength: 4, codec: 0 };
   ensure(bytes, 4, 1, "CDP2 类型");
   const codec = bytes[4]!;
   if (codec === 4) return decodeChopperV2(bytes, valueCount, depth);
   if (codec === 0) {
     const byteLength = u32(bytes, 5);
-    if (byteLength !== valueCount * 4) throw new JtFormatError("CDP2 Null 数据长度不一致");
+    if (byteLength !== valueCount * 4) throw new JtFormatError("CDP2 Null 数据长度不一致", "count-mismatch");
     ensure(bytes, 9, byteLength, "CDP2 Null 数据");
     const view = new DataView(bytes.buffer, bytes.byteOffset + 9, byteLength);
     return { values: Array.from({ length: valueCount }, (_, index) => view.getInt32(index * 4, true)), byteLength: 9 + byteLength, codec };
   }
-  if (codec !== 1 && codec !== 3) throw new JtFormatError(`不支持的 CDP2 CODEC：${codec}`);
+  if (codec !== 1 && codec !== 3) throw new JtFormatError(`不支持的 CDP2 CODEC：${codec}`, "codec-unsupported");
   const bitLength = u32(bytes, 5);
   const codeByteLength = Math.ceil(bitLength / 32) * 4;
   ensure(bytes, 9, codeByteLength, "CDP2 代码字");
@@ -207,7 +207,7 @@ export function decodeInt32PacketV2(bytes: Uint8Array, depth = 0): DecodedInt32P
   if (bitLength === 0 && outOfBand.values.length === valueCount) return { values: outOfBand.values, byteLength: cursor, codec };
   const symbols = decodeArithmeticV2(codeWords, bitLength, valueCount, context.entries);
   const escapedCount = symbols.filter((value) => value === undefined).length;
-  if (outOfBand.values.length !== escapedCount) throw new JtFormatError("CDP2 Arithmetic 逸出值数量不一致");
+  if (outOfBand.values.length !== escapedCount) throw new JtFormatError("CDP2 Arithmetic 逸出值数量不一致", "count-mismatch");
   let escaped = 0;
   return { values: symbols.map((value) => value ?? outOfBand.values[escaped++]!), byteLength: cursor, codec };
 }
@@ -217,20 +217,20 @@ function decodeChopperV2(bytes: Uint8Array, valueCount: number, depth: number): 
   const chopBits = bytes[5]!;
   if (chopBits === 0) {
     const nested = decodeInt32PacketV2(bytes.subarray(6), depth + 1);
-    if (nested.values.length !== valueCount) throw new JtFormatError("CDP2 Chopper 嵌套数量不一致");
+    if (nested.values.length !== valueCount) throw new JtFormatError("CDP2 Chopper 嵌套数量不一致", "count-mismatch");
     return { values: nested.values, byteLength: 6 + nested.byteLength, codec: 4 };
   }
   const bias = u32(bytes, 6) | 0;
   const spanBits = bytes[10];
-  if (spanBits === undefined || chopBits > spanBits || spanBits > 32) throw new JtFormatError("CDP2 Chopper 位跨度无效");
+  if (spanBits === undefined || chopBits > spanBits || spanBits > 32) throw new JtFormatError("CDP2 Chopper 位跨度无效", "field-invalid");
   const high = decodeInt32PacketV2(bytes.subarray(11), depth + 1);
   const low = decodeInt32PacketV2(bytes.subarray(11 + high.byteLength), depth + 1);
-  if (high.values.length !== valueCount || low.values.length !== valueCount) throw new JtFormatError("CDP2 Chopper 数量不一致");
+  if (high.values.length !== valueCount || low.values.length !== valueCount) throw new JtFormatError("CDP2 Chopper 数量不一致", "count-mismatch");
   const shift = spanBits - chopBits;
   const mask = shift === 32 ? 0xffff_ffff : 2 ** shift - 1;
   const values = high.values.map((value, index) => {
     const lowValue = low.values[index]!;
-    if (lowValue < 0 || lowValue > mask) throw new JtFormatError("CDP2 Chopper 低位越界");
+    if (lowValue < 0 || lowValue > mask) throw new JtFormatError("CDP2 Chopper 低位越界", "field-invalid");
     return ((lowValue | (value << shift)) + bias) | 0;
   });
   return { values, byteLength: 11 + high.byteLength + low.byteLength, codec: 4 };

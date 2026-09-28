@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronRight, Eye, EyeOff, Folder, FolderOpen, Lock, Unlock, Pencil } from "lucide-react";
 import type { SceneSelectionSetState, SceneRootLayerRef } from "@bim-studio/contracts";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { sortSceneRootLayers } from "./sceneRootLayerOrder";
 import { translate as tr } from "../i18n";
 import { FlatSpaceList } from "./FlatSpaceList";
@@ -17,19 +17,38 @@ import type { FlatSceneObjectListProps } from "./sceneObjectListTypes";
 /** 主目录只呈现场景对象；不同对象类型保持同层，避免树结构吞噬操作空间。 */
 export function FlatSceneObjectList(props: FlatSceneObjectListProps) {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
-  const primitiveRows: SceneRow[] = props.primitives.map(primitive => ({ key: `primitive:${primitive.id}`, render: () => <PrimitiveRow {...props} primitive={primitive} /> }));
-  const objectRows: SceneRow[] = [...props.modelRows, ...primitiveRows].map(row => {
-    const objectId = row.key.slice(row.key.indexOf(":") + 1);
-    const groupId = props.groups.find(group => group.kind === "group" && group.objectIds.includes(objectId))?.id;
-    return { ...row, render: () => <SceneLayerInteractions {...props} objectId={objectId} {...(groupId ? { groupId } : {})} selectedIds={props.selectedObjectIds} locked={props.organizationObjects.find(item => item.id === objectId)?.locked ?? false}>{row.render()}</SceneLayerInteractions> };
-  });
-  const rowsByObjectId = new Map(objectRows.map((row) => [row.key.slice(row.key.indexOf(":") + 1), row]));
-  const groups = props.groups.filter((group) => group.kind === "group");
-  const groupedIds = new Set(groups.flatMap((group) => group.objectIds));
+  const latestProps = useRef(props);
+  latestProps.current = props;
+  const organizationById = useMemo(() => new Map(props.organizationObjects.map(item => [item.id, item])), [props.organizationObjects]);
+  const organizationRef = useRef(organizationById);
+  organizationRef.current = organizationById;
+  const primitiveRows = useMemo<SceneRow[]>(() => props.primitives.map(primitive => ({ key: `primitive:${primitive.id}`, render: () => <PrimitiveRow {...latestProps.current} primitive={primitive} /> })), [props.primitives]);
+  const groupByObjectId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const group of props.groups) if (group.kind === "group") for (const id of group.objectIds) map.set(id, group.id);
+    return map;
+  }, [props.groups]);
+  const modelRows = props.modelRows.length ? props.modelRows : undefined;
+  const { objectRows, rowsByObjectId, orderedObjectIds } = useMemo(() => {
+    const objectRows: SceneRow[] = [], rowsByObjectId = new Map<string, SceneRow>(), orderedObjectIds: string[] = [];
+    const append = (row: SceneRow) => {
+      const objectId = row.key.slice(row.key.indexOf(":") + 1);
+      const groupId = groupByObjectId.get(objectId);
+      const wrapped = { ...row, render: () => <SceneLayerInteractions {...latestProps.current} objectId={objectId} {...(groupId ? { groupId } : {})} selectedIds={latestProps.current.selectedObjectIds} locked={organizationRef.current.get(objectId)?.locked ?? false}>{row.render()}</SceneLayerInteractions> };
+      objectRows.push(wrapped);
+      if (!rowsByObjectId.has(objectId)) orderedObjectIds.push(objectId);
+      rowsByObjectId.set(objectId, wrapped);
+    };
+    for (const row of modelRows ?? []) append(row);
+    for (const row of primitiveRows) append(row);
+    return { objectRows, rowsByObjectId, orderedObjectIds };
+  }, [modelRows, primitiveRows, groupByObjectId]);
+  const groups = useMemo(() => props.groups.filter((group) => group.kind === "group"), [props.groups]);
+  const groupedIds = useMemo(() => new Set(groups.flatMap((group) => group.objectIds)), [groups]);
   useEffect(() => {
     setCollapsedGroups((current) => new Set([...current].filter((id) => groups.some((group) => group.id === id))));
   }, [groups.map((group) => group.id).join("\u0000")]);
-  const defaultRows: SceneRow[] = [
+  const groupRows: SceneRow[] = [
     ...groups.map((group) => {
       const members = group.objectIds.map((id) => rowsByObjectId.get(id)).filter((row): row is SceneRow => Boolean(row));
       return {
@@ -48,26 +67,34 @@ export function FlatSceneObjectList(props: FlatSceneObjectListProps) {
         />,
       };
     }),
+  ];
+  const defaultRows: SceneRow[] = groupRows.length === 0 && !props.lighting.lights?.length && !props.measurements.length && !props.annotations.length && !props.spaces.length
+    ? objectRows : [
+    ...groupRows,
     ...objectRows.filter((row) => !groupedIds.has(row.key.slice(row.key.indexOf(":") + 1))),
     ...(props.studio ? props.lighting.lights ?? [] : []).map(light => ({ key: `light:${light.id}`, render: () => <LightRow {...props} light={light} /> })),
     ...props.measurements.map((measurement, index) => ({ key: `measurement:${measurement.id}`, render: () => <MeasurementRow locale={props.locale} measurement={measurement} index={index} onFocus={() => props.engine?.focusMeasurement(measurement)} onRemove={() => props.onMeasurementRemove(measurement.id)} /> })),
     ...props.annotations.map(annotation => ({ key: `annotation:${annotation.id}`, render: () => <AnnotationRow {...props} annotation={annotation} /> })),
     ...props.spaces.map(space => ({ key: `space:${space.id}`, render: () => <FlatSpaceList locale={props.locale} spaces={[space]} isVisible={item => props.engine?.isSpaceVisible(item) ?? false} onFocus={props.onSpaceFocus} onVisibilityChange={props.onSpaceVisibilityChange} /> })),
   ];
-  const rows = sortSceneRootLayers(defaultRows, props.rootLayerOrder, row => {
+  const rows = props.rootLayerOrder?.length ? sortSceneRootLayers(defaultRows, props.rootLayerOrder, row => {
     const separator = row.key.indexOf(":"), kind = row.key.slice(0, separator), id = row.key.slice(separator + 1);
     return { kind: kind === "instance" || kind === "primitive" ? "object" : kind as SceneRootLayerRef["kind"], id };
-  });
-  const objectKey = props.selectedObjectId && rows.find(row => row.key === `instance:${props.selectedObjectId}` || row.key === `primitive:${props.selectedObjectId}`)?.key;
+  }) : defaultRows;
+  const objectKey = props.selectedObjectId && rowsByObjectId.get(props.selectedObjectId)?.key;
   const selectedKey = props.selectedAnnotationId ? `annotation:${props.selectedAnnotationId}` : objectKey
     ? props.selectedLayerId ? undefined : objectKey : props.selectedLightId ? `light:${props.selectedLightId}` : undefined;
+  const layerOrder = useMemo(() => {
+    const ids = orderedObjectIds;
+    return JSON.stringify(groups.length || props.rootLayerOrder?.length ? visibleLayerIds(ids, groups, collapsedGroups, props.rootLayerOrder) : ids);
+  }, [orderedObjectIds, groups, collapsedGroups, props.rootLayerOrder]);
   return (
     <div className="scene-object-directory" data-multiselect={(props.selectedObjectIds?.size ?? 0) > 1} onKeyDown={event => handleLayerTreeKeyDown(event, false, { rename: row => {
       const { objectId, layerId } = row.dataset;
       if (!objectId || !props.onObjectRename) return "unsupported";
       if (props.engine?.isLayerLocked(objectId, layerId ?? "root")) return "blocked";
       props.onObjectRename(objectId, layerId); return "handled";
-    } })} data-layer-order={JSON.stringify(visibleLayerIds([...rowsByObjectId.keys()], groups, collapsedGroups, props.rootLayerOrder))}>
+    } })} data-layer-order={layerOrder}>
       <WindowedSceneRows rows={rows} selectedKey={selectedKey} />
       {groups.length > 0 && <SceneLayerRootDrop locale={props.locale} onMoveObjects={props.onMoveObjects} />}
     </div>

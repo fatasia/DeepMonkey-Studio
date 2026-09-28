@@ -150,6 +150,16 @@ describe("author chunk spatial demand", () => {
     const catalog = new AuthorChunkCatalog({ ...source, instances: source.instances.map(value => ({ ...value, castShadow: true })) });
     expect(catalog.demand(view)).toMatchObject([{ mode: "visible" }]);
   });
+  it("updates the sparse demand closure when a remote batch changes shadow casting", () => {
+    const source = packet(100);
+    const catalog = new AuthorChunkCatalog(source);
+    expect(catalog.demand(view)).toEqual([]);
+    const caster = { ...source, instances: source.instances.map(value => ({ ...value, castShadow: true })) };
+    expect(catalog.update(caster)).toBe(true);
+    expect(catalog.demand(view)).toMatchObject([{ mode: "visible" }]);
+    expect(catalog.update(source)).toBe(true);
+    expect(catalog.demand(view)).toEqual([]);
+  });
   it("keeps author data unchanged and stable chunk identity across transforms", () => {
     const source = packet(), snapshot = source.geometries[0]!.vertices.slice(), catalog = new AuthorChunkCatalog(source);
     expect(catalog.update(packet(2))).toBe(true); expect(catalog.chunks[0]!.key).toBe("author-chunk-0");

@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type { ApplicationDocument, ApplicationObjectRef } from "@bim-studio/contracts";
 
 export interface SceneScriptTarget {
@@ -131,7 +132,7 @@ function dedupeTargets(targets: SceneScriptTarget[]): SceneScriptTarget[] {
 }
 
 function naturalCompare(left: string, right: string): number {
-  return left.localeCompare(right, "zh-CN", { numeric: true, sensitivity: "base" });
+  return compareText(left, right);
 }
 
 function literalUnion(values: readonly string[]): string {

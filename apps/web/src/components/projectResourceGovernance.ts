@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type {
   ApplicationDocument,
   DashboardDataWidgetConfig,
@@ -144,7 +145,7 @@ export function analyzeProjectResourceGovernance(
       overrideCount: resource.references.reduce((total, reference) => total + reference.overrideCount, 0),
       unused: resource.references.length === 0,
     }))
-    .sort((left, right) => Number(right.unused) - Number(left.unused) || left.name.localeCompare(right.name, "zh-CN", { numeric: true }));
+    .sort((left, right) => Number(right.unused) - Number(left.unused) || compareText(left.name, right.name));
   return {
     resources: list,
     missingDependencies: dedupeMissing(missing),

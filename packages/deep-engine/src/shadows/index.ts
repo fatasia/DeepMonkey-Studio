@@ -18,3 +18,11 @@ export type { SharedShadowAtlasAllocation, SharedShadowAtlasLimits, SharedShadow
 export { LOCAL_SHADOW_PCSS_MAX_RADIUS_TEXELS, LOCAL_SHADOW_PCSS_TAPS,
   localShadowPcssDepthBias, localShadowPcssRadius, localShadowPcssRotation,
   resolveLocalShadowSoftness } from "./localShadowSoftness.js";
+export { DEFAULT_SHADOW_PAGE_TILE, ShadowPageTable, buildShadowPageRequests,
+  facesForKind, pageId, shadowPageCostBytes } from "./shadowPages.js";
+export type { ShadowPageBudget, ShadowPageFace, ShadowPageFrameStats, ShadowPageHandle,
+  ShadowPageKind, ShadowPageRequest, ShadowPageTileSpec, ShadowLightPageRequest,
+  ShadowResidencyPlan } from "./shadowPages.js";
+export { LocalShadowCache, lightInfluencesOccluder } from "./localShadowCacheInvalidation.js";
+export type { LocalShadowFrameInput, LocalShadowInvalidationPlan, LocalShadowInvalidationStats,
+  LocalShadowLightState, LocalShadowOccluderState } from "./localShadowCacheInvalidation.js";

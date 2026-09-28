@@ -28,3 +28,6 @@ export * from "./probeSurfaceCache.js";
 export * from "./probeSurfaceCachePacket.js";
 export * from "./probeRelocation.js";
 export * from "./probeRelocationResolver.js";
+export * from "./probeReferenceScene.js";
+export * from "./probeReferenceIntegrator.js";
+export * from "./probeInvalidationConvergence.js";

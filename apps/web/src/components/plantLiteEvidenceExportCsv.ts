@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type { PlantLiteConfidenceInterval } from "@bim-studio/contracts";
 import type { PlantLiteEvidencePackage } from "./plantLiteEvidenceExport";
 
@@ -154,7 +155,7 @@ function productionOrderRows(value: PlantLiteEvidencePackage): MetricRow[] {
 
 function changeoverRows(value: PlantLiteEvidencePackage): MetricRow[] {
   return [...value.statistics.changeovers.configuredRules]
-    .sort((left, right) => `${left.stationId}:${left.fromProductTypeId}:${left.toProductTypeId}`.localeCompare(`${right.stationId}:${right.fromProductTypeId}:${right.toProductTypeId}`, "en"))
+    .sort((left, right) => compareText(`${left.stationId}:${left.fromProductTypeId}:${left.toProductTypeId}`, `${right.stationId}:${right.fromProductTypeId}:${right.toProductTypeId}`))
     .map((rule) => scalarRow(
       "changeover",
       `${rule.stationId}:${rule.fromProductTypeId}->${rule.toProductTypeId}`,
@@ -216,7 +217,7 @@ function energyRows(value: PlantLiteEvidencePackage): MetricRow[] {
 
 function bottleneckRows(value: PlantLiteEvidencePackage): MetricRow[] {
   return [...value.statistics.bottlenecks]
-    .sort((left, right) => left.nodeId.localeCompare(right.nodeId, "en"))
+    .sort((left, right) => compareText(left.nodeId, right.nodeId))
     .flatMap((item) => {
       const name = value.modelSnapshot?.nodes.find((node) => node.id === item.nodeId)?.name ?? item.nodeId;
       return [
@@ -245,7 +246,7 @@ function scalarRow(category: string, entityId: string, entityName: string, metri
 }
 
 function sortedEntries<T>(value: Record<string, T>): Array<[string, T]> {
-  return Object.entries(value).sort(([left], [right]) => left.localeCompare(right, "en"));
+  return Object.entries(value).sort(([left], [right]) => compareText(left, right));
 }
 
 function csvCell(value: unknown): string {

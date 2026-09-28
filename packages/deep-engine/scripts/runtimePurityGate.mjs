@@ -3,6 +3,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { RUNTIME_PURITY_ALLOWLIST, scanCargoManifest, scanNativeDependencyTree, scanNativeRuntime, scanPackageManifest, scanTypeScriptRuntime } from "./runtimePurityPolicy.mjs";
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 const packageRoot = fileURLToPath(new URL("../", import.meta.url));
 const nativeRoot = path.resolve(packageRoot, "../deep-engine-native");
@@ -10,7 +11,7 @@ const nativeRoot = path.resolve(packageRoot, "../deep-engine-native");
 async function collect(root, relative, extensions) {
   const entries = await readdir(path.join(root, relative), { withFileTypes: true });
   const result = [];
-  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const entry of entries.sort((a, b) => compareText(a.name, b.name))) {
     const child = path.posix.join(relative.replaceAll("\\", "/"), entry.name);
     if (entry.isDirectory()) result.push(...await collect(root, child, extensions));
     else if (extensions.some((extension) => entry.name.endsWith(extension))) {
@@ -41,7 +42,7 @@ const issues = [
   ...scanPackageManifest(manifest, "package.json"),
   ...scanCargoManifest(cargoManifest),
   ...scanNativeDependencyTree(cargoTree.split(/\r?\n/)),
-].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column || a.code.localeCompare(b.code));
+].sort((a, b) => compareText(a.file, b.file) || a.line - b.line || a.column - b.column || compareText(a.code, b.code));
 
 if (issues.length) {
   for (const issue of issues) console.error(`${issue.file}:${issue.line}:${issue.column} ${issue.code} ${issue.detail}`);

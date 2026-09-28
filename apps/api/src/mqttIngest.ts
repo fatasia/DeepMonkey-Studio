@@ -1,6 +1,20 @@
 import { createHash } from "node:crypto";
-import type { DataEvent, DataEventAction, DataEventTarget } from "@bim-studio/contracts";
+import type { DataEvent, DataEventAction, DataEventTarget, DataSubscriptionStatus } from "@bim-studio/contracts";
 import { DataEventBus } from "./dataEvents.js";
+import { createMqttSubscriptionSource } from "./mqttSubscriptionSource.js";
+import {
+  createOpcUaSubscriptionSource,
+  projectOpcUaSample,
+  type OpcUaIngestConfig,
+} from "./opcUaSubscriptionSource.js";
+import {
+  InMemoryCheckpointStore,
+  SubscriptionRegistry,
+  type CheckpointStore,
+  type PersistentSubscriptionOptions,
+  type PersistentSubscriptionSession,
+  type SourceSample,
+} from "./subscriptionRuntime.js";
 
 export interface MqttMessageClient {
   subscribeAsync(topic: string, options?: { qos?: 0 | 1 | 2 }): Promise<unknown>;
@@ -187,7 +201,12 @@ export class MqttIngestSession {
 
 export class MqttIngestSupervisor {
   private readonly sessions = new Map<string, MqttIngestSession>();
-  constructor(private readonly bus: DataEventBus, private readonly connect: MqttConnect) {}
+  private readonly persistent = new SubscriptionRegistry();
+  private readonly checkpoints: CheckpointStore;
+
+  constructor(private readonly bus: DataEventBus, private readonly connect: MqttConnect, options?: { checkpointStore?: CheckpointStore }) {
+    this.checkpoints = options?.checkpointStore ?? new InMemoryCheckpointStore();
+  }
 
   async start(id: string, config: MqttIngestConfig): Promise<MqttIngestSession> {
     const existing = this.sessions.get(id);
@@ -204,25 +223,153 @@ export class MqttIngestSupervisor {
   }
 
   async stop(id: string): Promise<boolean> {
-    const session = this.sessions.get(id);
-    if (!session) return false;
-    this.sessions.delete(id);
-    await session.stop();
-    return true;
+    // 同时治理简单会话与持久会话:同一连接 id 只允许一种活动会话。
+    let stopped = false;
+    const legacy = this.sessions.get(id);
+    if (legacy) {
+      this.sessions.delete(id);
+      await legacy.stop();
+      stopped = true;
+    }
+    if (await this.persistent.stop(id)) stopped = true;
+    return stopped;
   }
 
   async stopAll(): Promise<void> {
     const sessions = [...this.sessions.values()];
     this.sessions.clear();
-    await Promise.all(sessions.map((session) => session.stop()));
+    await Promise.all([this.persistent.stopAll(), ...sessions.map((session) => session.stop())]);
   }
 
   snapshot(id: string): MqttIngestStats | null {
     return this.sessions.get(id)?.snapshot() ?? null;
   }
+
+  /**
+   * T24 持久订阅:显式生命周期治理(断线检测 → 指数退避 → 订阅恢复 → 缺口对账)。
+   * 与简单会话互斥:同 id 先停已有会话再启动持久订阅。
+   */
+  async startPersistent(id: string, config: MqttIngestConfig, options?: PersistentStartOptions): Promise<PersistentSubscriptionSession> {
+    const session = await this.persistent.start(id, {
+      connectionId: config.connectionId,
+      projectId: config.projectId,
+      protocol: "mqtt",
+      sourceFactory: async () =>
+        createMqttSubscriptionSource({
+          url: config.url,
+          topic: config.mapping.topic,
+          ...(config.mapping.qos !== undefined ? { qos: config.mapping.qos } : {}),
+          clientId: config.clientId ?? `bim-studio-subscription-${config.connectionId}`,
+          ...(config.user ? { user: config.user } : {}),
+          ...(config.password ? { password: config.password } : {}),
+          ...(config.mapping.valuePath ? { valuePath: config.mapping.valuePath } : {}),
+          ...(config.mapping.timestampPath ? { timestampPath: config.mapping.timestampPath } : {}),
+          ...(config.mapping.sequencePath ? { sequencePath: config.mapping.sequencePath } : {}),
+          ...(options?.userPropertySequenceKeys ? { userPropertySequenceKeys: options.userPropertySequenceKeys } : {}),
+          connect: this.connect,
+        }),
+      project: (sample) => projectSample(config, sample),
+      onEvent: (event) => this.bus.publish(event),
+      ...(options?.onGapReport ? { onGapReport: options.onGapReport } : {}),
+      checkpointStore: options?.checkpointStore ?? this.checkpoints,
+      ...(options?.backoff ? { backoff: options.backoff } : {}),
+      ...(config.now ? { now: config.now } : {}),
+      ...(options?.dedupeWindowMs !== undefined ? { dedupeWindowMs: options.dedupeWindowMs } : {}),
+      ...(options?.maxGapReports !== undefined ? { maxGapReports: options.maxGapReports } : {}),
+    });
+    // 简单会话与持久会话互斥:持久订阅接管后移除同 id 的简单会话。
+    if (this.sessions.has(id)) {
+      const legacy = this.sessions.get(id);
+      this.sessions.delete(id);
+      await legacy?.stop();
+    }
+    return session;
+  }
+
+  persistentSnapshot(id: string): DataSubscriptionStatus | null {
+    return this.persistent.get(id)?.snapshot() ?? null;
+  }
+
+  async stopPersistent(id: string): Promise<boolean> {
+    return this.persistent.stop(id);
+  }
+
+  persistentSize(): number {
+    return this.persistent.size();
+  }
+
+  /**
+   * T24 OPC UA 切片:OPC UA 持久订阅(MonitoredItem 数据变更订阅)。
+   * 与 MQTT 持久订阅共享注册表/checkpoint/事件总线与同 id 互斥语义;
+   * sourceFactory 接收运行时注入的 resume 上下文,用于断线区间的缺口估计。
+   */
+  async startPersistentOpcUa(id: string, config: OpcUaIngestConfig, options?: PersistentStartOptions): Promise<PersistentSubscriptionSession> {
+    const session = await this.persistent.start(id, {
+      connectionId: config.connectionId,
+      projectId: config.projectId,
+      protocol: "opcua",
+      sourceFactory: async (resume) =>
+        createOpcUaSubscriptionSource({
+          endpointUrl: config.endpointUrl,
+          nodeIds: config.nodeIds,
+          ...(config.namespace !== undefined ? { namespace: config.namespace } : {}),
+          ...(config.user ? { user: config.user } : {}),
+          ...(config.password ? { password: config.password } : {}),
+          ...(config.samplingIntervalMs !== undefined ? { samplingIntervalMs: config.samplingIntervalMs } : {}),
+          ...(config.publishingIntervalMs !== undefined ? { publishingIntervalMs: config.publishingIntervalMs } : {}),
+          ...(config.queueSize !== undefined ? { queueSize: config.queueSize } : {}),
+          ...(resume.lastSequence !== null || resume.lastTimestamp !== null ? { resume } : {}),
+        }),
+      project: (sample) => projectOpcUaSample(config, sample),
+      onEvent: (event) => this.bus.publish(event),
+      ...(options?.onGapReport ? { onGapReport: options.onGapReport } : {}),
+      checkpointStore: options?.checkpointStore ?? this.checkpoints,
+      ...(options?.backoff ? { backoff: options.backoff } : {}),
+      ...(config.now ? { now: config.now } : {}),
+      ...(options?.dedupeWindowMs !== undefined ? { dedupeWindowMs: options.dedupeWindowMs } : {}),
+      ...(options?.maxGapReports !== undefined ? { maxGapReports: options.maxGapReports } : {}),
+    });
+    // 简单会话与持久会话互斥:持久订阅接管后移除同 id 的简单会话。
+    if (this.sessions.has(id)) {
+      const legacy = this.sessions.get(id);
+      this.sessions.delete(id);
+      await legacy?.stop();
+    }
+    return session;
+  }
 }
 
-function readPath(input: unknown, path?: string): unknown {
+export interface PersistentStartOptions {
+  checkpointStore?: CheckpointStore;
+  onGapReport?: (report: import("@bim-studio/contracts").DataSubscriptionGapReport) => void;
+  backoff?: Partial<import("./subscriptionRuntime.js").BackoffPolicy>;
+  dedupeWindowMs?: number;
+  maxGapReports?: number;
+  /** MQTT 5 用户属性序列号候选键;默认 ["seq","sequence"]。 */
+  userPropertySequenceKeys?: string[];
+}
+
+/** SourceSample → DataEvent 投影:与简单会话 normalize 同一合同(id/字段派生一致)。 */
+function projectSample(config: MqttIngestConfig, sample: SourceSample): DataEvent {
+  const id = createHash("sha256")
+    .update(`${config.projectId}:${sample.topic}:${sample.timestamp}:${JSON.stringify(sample.value)}`)
+    .digest("hex")
+    .slice(0, 32);
+  return {
+    id,
+    projectId: config.projectId,
+    source: config.mapping.source ?? `mqtt/${config.connectionId}`,
+    key: config.mapping.key ?? sample.topic,
+    value: sample.value,
+    timestamp: sample.timestamp,
+    ...(sample.sequence !== undefined ? { sequence: sample.sequence } : {}),
+    ...(config.mapping.sceneId ? { sceneId: config.mapping.sceneId } : {}),
+    ...(config.mapping.target ? { target: config.mapping.target } : {}),
+    ...(config.mapping.action ? { action: config.mapping.action } : {}),
+  };
+}
+
+export function readPath(input: unknown, path?: string): unknown {
   if (!path) return undefined;
   return path.split(".").reduce<unknown>((current, key) => {
     if (!current || typeof current !== "object") return undefined;
@@ -230,11 +377,11 @@ function readPath(input: unknown, path?: string): unknown {
   }, input);
 }
 
-function readNumber(input: unknown, path?: string): number | undefined {
+export function readNumber(input: unknown, path?: string): number | undefined {
   const value = readPath(input, path);
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function errorMessage(error: unknown): string {
+export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

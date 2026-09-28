@@ -7,6 +7,7 @@ import type {
 import { useEffect, useState } from "react";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
+import { imeComposingKey } from "./layerKeyboard";
 
 export function RobotLoadProfileControl({
   locale,
@@ -133,7 +134,7 @@ function OptionalNumberField({ disabled, label, unit, value, min, onChange }: {
       aria-invalid={!valid}
       onChange={(event) => setDraft(event.currentTarget.value)}
       onBlur={commit}
-      onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+      onKeyDown={(event) => { if (imeComposingKey(event)) return; if (event.key === "Enter") event.currentTarget.blur(); }}
     />
     <small>{unit}</small>
   </span></label>;

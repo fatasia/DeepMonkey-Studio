@@ -1,3 +1,4 @@
+import { compareText } from "../textOrder.js";
 import {
   DEEP_PBR_MESH_V1, DEEP_PBR_MESH_V1_SHA256, DEEP_PBR_MESH_V2, DEEP_PBR_MESH_V2_SHA256,
   DEEP_PBR_MESH_V3, DEEP_PBR_MESH_V3_SHA256,
@@ -139,7 +140,7 @@ function validatePassBuildShape(
 }
 
 function cloneDependencies(input: readonly ShaderPackageDependency[] | undefined): ShaderPackageDependency[] {
-  return (input ?? []).map((entry) => cloneCanonical(entry)).sort((a, b) => a.id.localeCompare(b.id));
+  return (input ?? []).map((entry) => cloneCanonical(entry)).sort((a, b) => compareText(a.id, b.id));
 }
 
 function moduleKey(input: ShaderPackagePassBuildInput): string {
@@ -160,7 +161,7 @@ function buildModules(inputs: readonly ShaderPackagePassBuildInput[]): ShaderPac
       dependencyIds: [...(input.dependencyIds ?? [])].sort(),
     });
   }
-  return [...modules.values()].sort((a, b) => a.id.localeCompare(b.id));
+  return [...modules.values()].sort((a, b) => compareText(a.id, b.id));
 }
 
 function shaderAbiReference(target: DeepShaderPackageBuildInput["targetAbi"]): ShaderPackageAbiReference {
@@ -210,7 +211,7 @@ export function buildDeepShaderPackage(input: unknown): ShaderPackageBuildResult
     return Object.freeze({ success: false, diagnostics: Object.freeze(diagnostics) });
   }
   const passInputs = [...input.passes].sort((a, b) =>
-    `${a.techniqueId}/${a.passId}`.localeCompare(`${b.techniqueId}/${b.passId}`));
+    compareText(`${a.techniqueId}/${a.passId}`, `${b.techniqueId}/${b.passId}`));
   const dependencies = cloneDependencies(input.dependencies);
   const modules = buildModules(passInputs);
   const shaderAbi = shaderAbiReference(input.targetAbi);

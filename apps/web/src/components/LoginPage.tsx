@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { imeComposingKey } from "./layerKeyboard";
 import { KeyRound, LoaderCircle } from "lucide-react";
 import type {
   SystemBrandingSettings,
@@ -59,7 +60,7 @@ export function LoginPage({
             autoComplete="username"
             value={username}
             onChange={(event) => setUsername(event.target.value)}
-            onKeyDown={(event) => event.key === "Enter" && void submit()}
+            onKeyDown={(event) => { if (imeComposingKey(event)) return; if (event.key === "Enter") void submit(); }}
           />
         </label>
         <label>
@@ -70,7 +71,7 @@ export function LoginPage({
             autoComplete="current-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            onKeyDown={(event) => event.key === "Enter" && void submit()}
+            onKeyDown={(event) => { if (imeComposingKey(event)) return; if (event.key === "Enter") void submit(); }}
           />
         </label>
         <label className="login-remember">

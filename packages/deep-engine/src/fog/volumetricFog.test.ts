@@ -84,4 +84,17 @@ describe("G7 volumetric fog ray march (slice 1)", () => {
       { rayOrigin: [0, 0, 0], rayDirection: [0, 0, -1], near: 0, far: 1000, stepCount: 512, shadowAttenuation: () => 1 });
     expect(result.transmittance).toBeLessThan(1e-4);
   });
+  // T09 切片一同族清剿回归:零/非有限方向此前经 normalize3 静默产出 NaN,
+  // 现与 GPU 镜像的 validateVolumetricFogLight(≤1e-6 抛错)fail-closed 口径一致。
+  it("fails closed on zero-length or non-finite ray/light directions", () => {
+    const medium = defaultTestMedium();
+    const light = { direction: [0, -1, 0], radiance: [1, 1, 1] };
+    const input = { near: 0, far: 10, stepCount: 8, shadowAttenuation: () => 1 };
+    expect(() => rayMarchVolumetricFog(medium, light, { ...input, rayOrigin: [0, 0, 0], rayDirection: [0, 0, 0] }))
+      .toThrow(/nonzero/);
+    expect(() => rayMarchVolumetricFog(medium, light, { ...input, rayOrigin: [0, 0, 0], rayDirection: [Number.NaN, 0, -1] }))
+      .toThrow(/nonzero/);
+    expect(() => rayMarchVolumetricFog(medium, { direction: [1e-12, 0, 0], radiance: [1, 1, 1] },
+      { ...input, rayOrigin: [0, 0, 0], rayDirection: [0, 0, -1] })).toThrow(/nonzero/);
+  });
 });

@@ -4,6 +4,9 @@ import type {
   DeepWebGpuSyncResult,
   ThreeObjectSource,
 } from "@bim-studio/deep-engine/three-bridge";
+import type { AuthoredQualityProfile } from "@bim-studio/deep-engine/webgpu";
+import { StudioDeepQualityTelemetrySampler, publishStudioQualityTelemetry,
+  type StudioQualityTelemetryOptions } from "./StudioDeepQualityTelemetry";
 import type { ViewerEngine } from "./ViewerEngine";
 import type { RendererBackend } from "./viewerTypes";
 import { prepareStudioRendererCandidate } from "./prepareStudioRendererCandidate";
@@ -64,6 +67,8 @@ export interface StudioDeepWebGpuBridgeOptions {
   /** Optional packet compiled from SceneSnapshot; when provided Deep skips
    * Three scene projection for candidate publication. */
   readonly authorRenderPacket?: (signal: AbortSignal) => Promise<RenderPacket | undefined>;
+  /** T25 质量遥测采样配置;缺省 4Hz 聚合、256 帧窗口。 */
+  readonly qualityTelemetry?: StudioQualityTelemetryOptions;
 }
 
 export interface StudioRendererSwitchResult {
@@ -95,6 +100,8 @@ export class StudioDeepWebGpuBridge {
   private environmentSession: StudioDeepEnvironmentSession | undefined;
   private shadowSession: StudioDeepShadowSession | undefined;
   private performanceSource: StudioDeepPerformance | undefined;
+  private quality: StudioDeepQualityTelemetrySampler | undefined;
+  private qualityProfile: AuthoredQualityProfile | null = null;
   private frameCaptureSession: FrameCaptureSession | undefined;
   private readonly viewReader: StudioDeepRenderView;
   private projectionBridge: import("@bim-studio/deep-engine/three-bridge").ThreeProjectionBridge | undefined;
@@ -198,11 +205,15 @@ export class StudioDeepWebGpuBridge {
         },
         create: async (module, signal) => {
           signal.throwIfAborted();
+          // 作者包编译与 GPU 环境准备互不依赖，重叠执行以压缩切换前段；
+          // 两者都只读作者场景，顺序 await 之外的并发不引入新的写入竞争。
+          const packetTask = this.options.authorRenderPacket?.(signal);
           environment = await prepareStudioDeepEnvironmentSource(this.viewer.scene, signal);
           markSwitchPhase("deep-webgpu:environment-ready");
           const postProcessing = this.viewer.getPostProcessing();
-          const authorRenderPacket = this.options.authorRenderPacket
-            ? await this.options.authorRenderPacket(signal) : undefined;
+          this.qualityProfile = postProcessing.qualityProfile ?? null;
+          const authorRenderPacket = (await packetTask) ?? undefined;
+          const pipelineBootstrap = t11PipelineBootstrap(authorRenderPacket !== undefined);
           this.independentPacketPath = authorRenderPacket !== undefined;
           this.viewer.setAuthorPacketIndependent(this.independentPacketPath);
           if (!authorRenderPacket) updateAuthorProjectionState(this.viewer.scene, this.viewer.camera, signal);
@@ -223,12 +234,11 @@ export class StudioDeepWebGpuBridge {
             view, authorChunks: true,
             ...(authorRenderPacket ? { renderPacket: authorRenderPacket } : {}),
             renderer: { environment: environment.source, deformation: true, meshlets: true,
+              ...(pipelineBootstrap ? { pipelines: pipelineBootstrap } : {}),
               adaptiveQuality: {
                 enabled: true,
                 collectHotspots: false,
-                ...(postProcessing.qualityProfile
-                  ? { overrides: module.adaptiveQualityOverridesForProfile(postProcessing.qualityProfile) }
-                  : {}),
+                ...(postProcessing.qualityProfile ? { profile: postProcessing.qualityProfile } : {}),
               },
               shadows: { exactProfile: { cascadeCount: 1, shadowMapSize } },
               features: { environment: true, groundPlane: false,
@@ -316,6 +326,10 @@ export class StudioDeepWebGpuBridge {
       return diagnostics?.probeClipmap ? { probeClipmap: diagnostics.probeClipmap } : undefined;
     });
     this.viewer.setPresentationPerformanceSource(this.performanceSource);
+    // T25:每个 Deep 会话一个采样器;先发布"等待采样"状态,面板立即可见会话存在。
+    this.quality = new StudioDeepQualityTelemetrySampler(this.options.qualityTelemetry,
+      this.qualityProfile, () => backend.chunkStreaming?.residentGpuBytes);
+    publishStudioQualityTelemetry(this.quality.status());
     this.environmentSession = environmentSession;
     this.shadowSession = new StudioDeepShadowSession({ initialMapSize: shadowMapSize,
       stage: (mapSize, signal) => backend.stageShadowMapSize(mapSize, signal),
@@ -350,6 +364,8 @@ export class StudioDeepWebGpuBridge {
     this.independentPacketPath = false;
     this.viewer.setAuthorPacketIndependent(false);
     this.viewer.setPresentationPerformanceSource(undefined);
+    this.quality = undefined;
+    publishStudioQualityTelemetry(undefined);
     this.performanceSource?.dispose();
     this.performanceSource = undefined;
     this.temporalSettler.cancel();
@@ -378,6 +394,7 @@ export class StudioDeepWebGpuBridge {
     this.cameraMaxInFlight = 0;
     this.settledViewKey = "";
     this.lastDemandRevision = -1;
+    this.qualityProfile = null;
     this.cancelCameraSettle();
     const errors: unknown[] = [];
     for (const clean of [unsubscribe, () => backend?.dispose(), () => canvas?.remove()]) {
@@ -587,7 +604,11 @@ export class StudioDeepWebGpuBridge {
       const renderStart = probe ? performance.now() : 0;
       const metrics = backend.render(view);
       if (probe) { probe.draws++; probe.renderMs += performance.now() - renderStart; }
-      if (metrics) this.performanceSource?.record(metrics, view.width, document.visibilityState !== "hidden");
+      if (metrics) {
+        this.performanceSource?.record(metrics, view.width, document.visibilityState !== "hidden");
+        // T25:帧循环唯一采集点;true = 完成一次聚合落账,发布最新遥测状态。
+        if (this.quality?.record(metrics) === true) publishStudioQualityTelemetry(this.quality.status());
+      }
       this.shadowSession?.acknowledgeMapSize(metrics?.shadowMapSize);
       const session = (backend.runtime as { session?: RuntimeSession }).session;
       if (!metrics && session?.state === "lost") {
@@ -784,6 +805,24 @@ function renderViewFingerprint(view: DeepRenderView): string {
 
 function markSwitchPhase(name: string): void {
   if (typeof performance?.mark === "function") performance.mark(name);
+}
+
+/**
+ * T11 首帧管线时序开关：独立作者包路径生产默认启用两个可独立回退的时序优化——
+ * 首帧关键管线子集（`t11-critical-pipelines=0` 关闭）与变形变体延迟创建
+ * （`t11-defer-deformation=0` 关闭）。两开关只改变"发布前等待哪些变体"，
+ * 不改变任何帧的画质与管线集合内容。
+ */
+export function t11PipelineBootstrap(hasAuthorPacket: boolean):
+  { firstFrameSubset: boolean; deferDeformation: boolean } | undefined {
+  if (!hasAuthorPacket) return undefined;
+  const params = typeof location !== "undefined" && location.search
+    ? new URLSearchParams(location.search) : undefined;
+  const enabled = (name: string): boolean => {
+    const value = params?.get(name)?.toLowerCase();
+    return value !== "0" && value !== "false" && value !== "off";
+  };
+  return { firstFrameSubset: enabled("t11-critical-pipelines"), deferDeformation: enabled("t11-defer-deformation") };
 }
 
 function threePrototypeHooks() {

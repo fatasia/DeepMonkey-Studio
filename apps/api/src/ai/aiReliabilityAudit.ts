@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import { createHash, randomUUID } from "node:crypto";
 import type { AiReliabilityAssessment } from "./aiReliabilityPolicy.js";
 
@@ -97,5 +98,5 @@ function fingerprint(value: unknown): string {
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
   if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => [key, canonical(item)]));
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([left], [right]) => compareText(left, right)).map(([key, item]) => [key, canonical(item)]));
 }

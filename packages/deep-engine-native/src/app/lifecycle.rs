@@ -6,6 +6,11 @@ impl ApplicationHandler<GpuEvent> for NativeApp {
         // immutable content snapshot. Do not run mutable content schedulers
         // until that snapshot is released by the completion event.
         #[cfg(target_arch = "wasm32")]
+        if self.physics_stage_pending {
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+            return;
+        }
+        #[cfg(target_arch = "wasm32")]
         if self.renderer_initializing {
             return;
         }
@@ -162,10 +167,15 @@ impl ApplicationHandler<GpuEvent> for NativeApp {
             GpuEvent::WasmScenePackage(bytes) => {
                 match crate::runtime_package_startup::load_bytes(&bytes) {
                     Ok(package) => {
+                        self.physics_stage_epoch = self.physics_stage_epoch.wrapping_add(1);
+                        self.physics_stage_pending = false;
+                        self.physics_present_pending = false;
                         let content = package.into_content();
                         let view =
                             content.view_after_reload(self.content.active(), self.state.view);
                         let controls = content.camera_controls();
+                        self.product_physics_playback =
+                            super::dynamic_playback::ProductPhysicsPlayback::for_content(&content);
                         self.renderer = None;
                         self.content = PublishedState::new(content);
                         self.state.set_camera(view, controls);
@@ -173,6 +183,31 @@ impl ApplicationHandler<GpuEvent> for NativeApp {
                     }
                     Err(error) => crate::app_startup::mark_wasm_renderer_failed(error),
                 }
+            }
+            #[cfg(target_arch = "wasm32")]
+            GpuEvent::WasmPhysicsPoseQuery {
+                request_id,
+                instance_id,
+            } => {
+                let result = (!self.physics_stage_pending)
+                    .then(|| self.content.active().physics_instance_pose(&instance_id))
+                    .flatten()
+                    .map(|(fixed_step, translation)| {
+                        serde_json::json!({
+                            "instanceId": instance_id,
+                            "fixedStep": fixed_step,
+                            "translation": translation,
+                        })
+                        .to_string()
+                    })
+                    .ok_or_else(|| {
+                        format!("physics instance is pending or not active: {instance_id}")
+                    });
+                crate::app_startup::resolve_wasm_physics_pose_request(request_id, result);
+            }
+            #[cfg(target_arch = "wasm32")]
+            GpuEvent::WasmPhysicsFrameReady { epoch } => {
+                self.finish_wasm_physics_stage(epoch, event_loop)
             }
             #[cfg(target_arch = "wasm32")]
             GpuEvent::WasmEditorOverlay { revision, vertices } => {

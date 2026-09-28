@@ -1,6 +1,7 @@
 import { Box, Workflow } from "lucide-react";
 import type { DashboardDataWidgetConfig, SceneDashboardWidgetType } from "@bim-studio/contracts";
 import { translate as tr } from "../i18n";
+import { imeComposingKey } from "./layerKeyboard";
 import { DashboardMediaInspector } from "./DashboardMediaInspector";
 import { UnityResourceInspector } from "./UnityResourceInspector";
 import { DATA_WIDGET_TYPES, DECORATION_ASSETS, dashboardNodeIdentity as nodeIdentity, dataWidgetTypeLabel, canSelectDataWidgetType } from "./dashboardWorkspaceModel";
@@ -39,6 +40,7 @@ export function DashboardInspectorContent() {
               onFocus={() => setNodeNameError("")}
               onBlur={(event) => commitNodeName(event.currentTarget.value)}
               onKeyDown={(event) => {
+                if (imeComposingKey(event)) return;
                 if (event.key === "Enter") event.currentTarget.blur();
               }}
             />
@@ -160,6 +162,7 @@ export function DashboardInspectorContent() {
                     });
                 }}
                 onKeyDown={(event) => {
+                  if (imeComposingKey(event)) return;
                   if (event.key === "Enter") event.currentTarget.blur();
                 }}
               />

@@ -59,6 +59,9 @@ mod material_resource_diff;
 mod material_uniform_fastpath_gpu_tests;
 mod native_gi_producer;
 pub(crate) mod quality_profile;
+pub mod quality_telemetry;
+#[cfg(all(test, target_os = "windows"))]
+mod quality_telemetry_gpu_tests;
 mod replacement_present;
 #[cfg(test)]
 mod rt_pixel_gpu_tests;
@@ -72,6 +75,7 @@ mod scene_incremental_fastpath_gpu_tests;
 mod scene_instance_diff;
 pub(crate) mod scene_update;
 mod scene_update_stage;
+pub(crate) use scene_update_stage::StagedRenderPacketUpdate;
 mod section_readback;
 #[cfg(all(test, target_os = "windows"))]
 mod shadow_parallel_gpu_tests;
@@ -154,6 +158,9 @@ pub struct Renderer {
     view: PlayerView,
     coordinate_frame_revision: u64,
     telemetry: Option<crate::telemetry::FrameTelemetry>,
+    /// T01 跨端质量诊断;与 telemetry 同一开关(features.telemetry)。关闭时
+    /// 为 None,frame.rs 全部采集点 `if let Some` 短路——零分配零格式化。
+    quality: Option<quality_telemetry::QualityTelemetry>,
     diagnostics: crate::player_diagnostics::PlayerDiagnostics,
     /// 构造期固定分配档位；resize沿用同一档位，内容跨档由完整重建处理。
     content_profile: crate::renderer::ContentProfileReport,
@@ -387,8 +394,11 @@ impl Renderer {
         // resize 保留阴影纹理；方向级联保持旧刷新策略，世界固定聚光视图可继续复用。
         self.shadow_cache
             .invalidate_directional(self.shadow_map.cascade_count() as usize);
-        self.queue
-            .write_buffer(&self.frame_buffer, 0, cast_slice(&self.frame));
+        let frame_bytes = cast_slice::<_, u8>(&self.frame);
+        self.queue.write_buffer(&self.frame_buffer, 0, frame_bytes);
+        if let Some(quality) = self.quality.as_mut() {
+            quality.note_upload_bytes(u64::try_from(frame_bytes.len()).unwrap_or(u64::MAX));
+        }
         if let Some(telemetry) = self.telemetry.as_mut() {
             telemetry.reset_barrier();
         }
@@ -458,11 +468,12 @@ impl Renderer {
             return;
         }
         if view.clipping != self.view.clipping {
-            self.queue.write_buffer(
-                &self.shadow_map.section_uniform,
-                0,
-                cast_slice(&view.clipping),
-            );
+            let clipping_bytes = cast_slice::<_, u8>(&view.clipping);
+            self.queue
+                .write_buffer(&self.shadow_map.section_uniform, 0, clipping_bytes);
+            if let Some(quality) = self.quality.as_mut() {
+                quality.note_upload_bytes(u64::try_from(clipping_bytes.len()).unwrap_or(u64::MAX));
+            }
             self.shadow_cache.invalidate();
         }
         self.yaw = view.yaw;
@@ -498,8 +509,11 @@ impl Renderer {
             .shadow_casters
             .keys(&self.shadow_map, self.shadow_shader_key)
             .expect("validated caster set must remain finite after camera update");
-        self.queue
-            .write_buffer(&self.frame_buffer, 0, cast_slice(&self.frame));
+        let frame_bytes = cast_slice::<_, u8>(&self.frame);
+        self.queue.write_buffer(&self.frame_buffer, 0, frame_bytes);
+        if let Some(quality) = self.quality.as_mut() {
+            quality.note_upload_bytes(u64::try_from(frame_bytes.len()).unwrap_or(u64::MAX));
+        }
     }
 
     fn refresh_cluster_grid(&self) {

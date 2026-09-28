@@ -9,7 +9,7 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
   if (!options || typeof options !== "object" || Array.isArray(options)) {
     throw new TypeError("Deep WebGPU renderer options must be an object.");
   }
-  if (Object.keys(options).some(key => !["shadows", "features", "environment", "deformation", "meshlets", "frameCapture", "adaptiveQuality", "probeClipmap"].includes(key))) {
+  if (Object.keys(options).some(key => !["shadows", "features", "environment", "deformation", "meshlets", "frameCapture", "adaptiveQuality", "probeClipmap", "pipelines"].includes(key))) {
     throw new TypeError("Unknown Deep WebGPU renderer option.");
   }
   if (options.deformation !== undefined && typeof options.deformation !== "boolean") {
@@ -26,6 +26,15 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
     ...(options.adaptiveQuality === undefined ? {} : { adaptiveQuality: Object.freeze({ ...options.adaptiveQuality,
       ...(options.adaptiveQuality.overrides ? { overrides: Object.freeze({ ...options.adaptiveQuality.overrides }) } : {}) }) }),
     ...(options.probeClipmap === undefined ? {} : { probeClipmap: Object.freeze({ ...options.probeClipmap }) }),
+    ...(options.pipelines === undefined ? {} : { pipelines: snapshotPipelineBootstrap(options.pipelines) }),
+  });
+}
+
+function snapshotPipelineBootstrap(options: NonNullable<PbrRendererOptions["pipelines"]>): NonNullable<PbrRendererOptions["pipelines"]> {
+  return Object.freeze({
+    ...(options.firstFrameSubset === undefined ? {} : { firstFrameSubset: options.firstFrameSubset }),
+    ...(options.firstFrameMainKeys === undefined ? {} : { firstFrameMainKeys: Object.freeze([...options.firstFrameMainKeys]) }),
+    ...(options.deferDeformation === undefined ? {} : { deferDeformation: options.deferDeformation }),
   });
 }
 

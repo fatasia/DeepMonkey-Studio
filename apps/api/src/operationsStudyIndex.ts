@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type {
   IndustrialStudyRecord,
   IndustrialStudyType,
@@ -20,7 +21,7 @@ export function buildOperationsStudyIndex(source: StudySources): IndustrialStudy
     ...source.plantLiteStudies.filter(isPresent).map(fromPlantLite),
     ...source.whatIfStudies.filter(isPresent).map(fromWhatIf),
     ...source.validationStudies.filter(isPresent).map(fromValidationStudy),
-  ].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  ].sort((left, right) => compareText(right.updatedAt, left.updatedAt));
 }
 
 function isPresent<T>(value: T | null | undefined): value is T {

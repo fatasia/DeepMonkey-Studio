@@ -39,7 +39,15 @@ export interface SceneModelState {
   physics?: ScenePhysicsBodyState;
   /** 可配置工业预制体实例；普通导入模型无需此字段。 */
   prefab?: IndustrialPrefabInstanceState;
+  /** 实例保存时所用素材的 Deep Asset Package 修订快照；用于加载后检测素材有更新修订。 */
+  assetRevision?: SceneAssetRevisionSnapshot;
   layers?: SceneLayerState[];
+}
+
+export interface SceneAssetRevisionSnapshot {
+  packageId: string;
+  revision: number;
+  sourceHash: string;
 }
 
 /** kinematic 为位姿驱动刚体：不受重力/外力，可推动 dynamic，自身只能由宿主显式设位姿。 */
@@ -50,8 +58,75 @@ export interface ScenePhysicsBodyState {
   mass: number;
   friction: number;
   restitution: number;
+  /** Initial world-space linear velocity in metres per second; dynamic bodies only. */
+  initialLinearVelocity?: Vector3Value;
   /** 可选角色控制器；仅 kinematic 刚体消费，其余类型忽略。 */
   character?: SceneCharacterControllerState;
+  /**
+   * 碰撞体来源与精度标记（T17 CAD→collider 来源规范）；省略时保持 render-bounds 现状行为。
+   * 几何字段（points/positions）位于刚体局部空间，单位米。
+   */
+  collider?: ScenePhysicsColliderState;
+}
+
+/** 碰撞体来源：collider 几何从哪里来、名义精度是什么。 */
+export type ScenePhysicsColliderKind =
+  /** 轴对齐包围盒近似（既有默认）；包围盒本身就是近似体。 */
+  | "render-bounds"
+  /** 源网格顶点的凸包；凹体被过度包裹（concave over-approximation）。 */
+  | "convex-hull"
+  /** 公差受约束的简化网格（T12 meshoptimizer 链路派生）。 */
+  | "simplified-mesh"
+  /** 作者显式几何，构造精确。 */
+  | "primitive";
+
+/**
+ * 碰撞体精度标记：collider 相对源几何的已知偏差声明。
+ * 简化公差超限或源拓扑存在不可修复缺陷（本管线只检测不修补）时必须 approximate=true，
+ * 不静默冒充精确；generated kinds（convex-hull/simplified-mesh）必须携带 precision。
+ */
+export interface ScenePhysicsColliderPrecision {
+  /** true 时 collider 只能按近似体消费。 */
+  approximate?: boolean;
+  /** approximate 的机器可读原因码，如 tolerance-violated、topology-error:NON_MANIFOLD_EDGE。 */
+  reasons?: string[];
+  /** simplified-mesh 的目标绝对公差（米）；省略表示未声明公差。 */
+  tolerance?: number;
+  /** convex-hull 顶点数。 */
+  hullVertexCount?: number;
+  /** simplified-mesh 三角形数。 */
+  triangleCount?: number;
+  /** 拓扑检查结论引用（apps/api meshTopologyInspection 字典）；true = 无 error 级 issue。 */
+  topologyOk?: boolean;
+  /** 源网格出现过的 issue 码。 */
+  topologyIssueCodes?: string[];
+  /** 源网格为凹体：凸包名义上就会过度包裹，属来源性质而非精度失败。 */
+  concaveSource?: boolean;
+}
+
+/** kind=primitive 的显式几何；字段取决于 shape。 */
+export interface ScenePhysicsPrimitiveCollider {
+  shape: "cuboid" | "sphere" | "cylinder";
+  /** cuboid：半尺寸（米）。 */
+  halfExtents?: Vector3Value;
+  /** sphere/cylinder：半径（米）。 */
+  radius?: number;
+  /** cylinder：沿 y 轴的半高（米）。 */
+  halfHeight?: number;
+}
+
+/** 作者侧碰撞体描述；几何位于刚体局部空间（米）。 */
+export interface ScenePhysicsColliderState {
+  kind: ScenePhysicsColliderKind;
+  precision?: ScenePhysicsColliderPrecision;
+  /** convex-hull：凸包顶点（≥4 点且不共面）。 */
+  points?: Vector3Value[];
+  /** simplified-mesh：网格顶点。 */
+  positions?: Vector3Value[];
+  /** simplified-mesh：三角形索引（长度为 3 的倍数，引用 positions）。 */
+  indices?: number[];
+  /** primitive 显式几何。 */
+  primitive?: ScenePhysicsPrimitiveCollider;
 }
 
 /**
@@ -82,7 +157,9 @@ export interface ScenePhysicsState {
 
 export interface ScenePhysicsJointState {
   id: string;
-  kind: "revolute";
+  /** revolute: rotation about `axis` (limits/motor in rad, rad/s). prismatic: translation along `axis`
+   * (limits/motor in m, m/s); impulse solver only — the reduced-coordinate multibody path stays revolute. */
+  kind: "revolute" | "prismatic";
   /** Reduced-coordinate multibody joints currently exclude limits and motors in the Web product API. */
   solver?: "impulse" | "multibody";
   /** Model rigid body mounted to the fixed world body. */
@@ -93,8 +170,9 @@ export interface ScenePhysicsJointState {
   worldAnchor: Vector3Value;
   /** Anchor on the model rigid body, in model-local metres. */
   localAnchor: Vector3Value;
-  /** Revolute axis in the joint local frame. */
+  /** Revolute axis or prismatic slide direction in the joint local frame. */
   axis: Vector3Value;
+  /** Linear limits are metres for prismatic joints, radians for revolute joints. */
   limits: { enabled: boolean; min: number; max: number };
   /** Rapier velocity motor. Strength is the solver factor, not a torque claim. */
   motor: { enabled: boolean; targetVelocity: number; strength: number };
@@ -585,6 +663,13 @@ export interface SceneAnimationClipTransitionState {
   equals: boolean;
 }
 
+/** 产品侧预注册的 clip 事件标记；time 单位秒，消费端按 `0 <= time < clip 时长` fail-closed 校验。 */
+export interface SceneAnimationClipEventMarkerState {
+  clipId: string;
+  eventId: string;
+  time: number;
+}
+
 /** Product-authored controller for switching imported animation clips. */
 export interface SceneAnimationStateMachineState {
   enabled: boolean;
@@ -594,6 +679,8 @@ export interface SceneAnimationStateMachineState {
   states: SceneAnimationClipState[];
   parameters?: Record<string, boolean>;
   transitions?: SceneAnimationClipTransitionState[];
+  /** 可选 clip 事件标记；缺省不写该字段，旧场景语义逐位不变。 */
+  events?: SceneAnimationClipEventMarkerState[];
 }
 
 /** 区间播放范围（秒）。出点必须大于入点，越界或退化值按整条时间线处理。 */

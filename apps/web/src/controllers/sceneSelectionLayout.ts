@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type { ModelTransform } from "@bim-studio/contracts";
 
 export type SceneSelectionLayoutAxis = "x" | "y" | "z";
@@ -28,7 +29,7 @@ export function layoutSceneSelection(
   if (items.length < 3) return items.map(cloneItem);
   const ordered = items.map(cloneItem).sort((left, right) =>
     left.transform.position[axis] - right.transform.position[axis]
-      || left.id.localeCompare(right.id));
+      || compareText(left.id, right.id));
   const start = ordered[0]!.transform.position[axis];
   const end = ordered.at(-1)!.transform.position[axis];
   const interval = (end - start) / (ordered.length - 1);

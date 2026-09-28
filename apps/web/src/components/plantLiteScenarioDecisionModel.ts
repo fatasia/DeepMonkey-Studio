@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type {
   PlantLiteAcceptanceTargets,
   PlantLiteConfidenceInterval,
@@ -288,7 +289,7 @@ function hasNumericTarget(targets: PlantLiteAcceptanceTargets | undefined): bool
 function acceptanceTargetKey(targets: PlantLiteAcceptanceTargets | undefined): string {
   if (!targets) return "";
   const { basis: _basis, ...values } = targets;
-  return JSON.stringify(Object.entries(values).filter(([, value]) => typeof value === "number" && Number.isFinite(value)).sort(([left], [right]) => left.localeCompare(right)));
+  return JSON.stringify(Object.entries(values).filter(([, value]) => typeof value === "number" && Number.isFinite(value)).sort(([left], [right]) => compareText(left, right)));
 }
 
 function deduplicateCandidates(studies: PlantLiteStudyRecord[]): PlantLiteStudyRecord[] {
@@ -300,7 +301,7 @@ function deduplicateCandidates(studies: PlantLiteStudyRecord[]): PlantLiteStudyR
       labels.add(label);
       return true;
     })
-    .sort((left, right) => (left.comparison?.candidateLabel ?? left.name).localeCompare(right.comparison?.candidateLabel ?? right.name, "zh-CN"));
+    .sort((left, right) => compareText(left.comparison?.candidateLabel ?? left.name, right.comparison?.candidateLabel ?? right.name));
 }
 
 export function assessPlantLiteComparability(candidate: PlantLiteStudyRecord, baseline: PlantLiteStudyRecord): PlantLiteComparability {

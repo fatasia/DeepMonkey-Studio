@@ -6,7 +6,7 @@
 .scene-layer-group-select { display:flex;height:30px;align-items:center;justify-content:center;gap:1px;padding:0; }
 .scene-layer-group-select svg:last-child { color:var(--accent); }
 .scene-layer-group-name { display:grid;min-width:0;height:30px;align-items:center;gap:6px;padding:0 4px;grid-template-columns:minmax(0,1fr) auto;text-align:left; }
-.scene-layer-group-name strong { overflow:hidden;color:var(--text-strong);font-size:12px;text-overflow:ellipsis;white-space:nowrap; }
+.scene-layer-group-name strong { overflow:hidden;color:var(--text-strong);font-size:12px;text-overflow:ellipsis;white-space:nowrap;unicode-bidi:plaintext; }
 .scene-layer-group-name small { color:var(--text-faint);font-size:9px;font-variant-numeric:tabular-nums; }
 .scene-layer-group-action { display:grid;width:22px;height:22px;padding:0;place-items:center;border-radius:4px; }
 .scene-layer-group-action:hover,.scene-layer-group-action.active { color:var(--accent);background:var(--accent-soft); }
@@ -113,8 +113,8 @@
 .format-fbx { color: #ccadf1; background: rgba(137, 82, 190, .17); }
 .format-dxf { color: #e79892; background: rgba(185, 75, 68, .17); }
 .asset-copy { display:flex;width:0;min-width:0;overflow:hidden;flex:1 1 0;flex-direction:column; }
-.asset-copy strong { display:block;max-width:100%;overflow:hidden;color:var(--text-strong);font-size:11px;text-overflow:ellipsis;white-space:nowrap; }
-.asset-copy small { overflow: hidden; margin-top: 4px; color: var(--text); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.asset-copy strong { display:block;max-width:100%;overflow:hidden;color:var(--text-strong);font-size:11px;text-overflow:ellipsis;white-space:nowrap;unicode-bidi:plaintext; }
+.asset-copy small { overflow: hidden; margin-top: 4px; color: var(--text); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: plaintext; }
 .mini-button { min-width:27px;flex:0 0 27px;width:27px;height:27px;margin-left:3px;color:var(--text);border-color:transparent;border-radius:5px;background:transparent; }
 .mini-button.danger:hover { color: var(--danger); }
 .mini-button.active { color: var(--accent); background: var(--accent-soft); }
@@ -138,7 +138,7 @@
 .tree-delete:hover { color: var(--danger); }
 .tree-delete:disabled, .mini-button:disabled { opacity: .3; cursor: default; }
 .layer-node-main { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 120px; max-width: 205px; padding: 0 5px 0 1px; color: inherit; text-align: left; border: 0; background: transparent; cursor: pointer; }
-.layer-node-main span { overflow: hidden; flex: 1; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.layer-node-main span { overflow: hidden; flex: 1; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: plaintext; }
 .layer-node-main small { color: #5f6a71; font-size: 8px; }
 .empty-state, .empty-inspector { display: flex; flex-direction: column; align-items: center; justify-content: center; color: #69737a; text-align: center; }
 .empty-state { height: 180px; }

@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type {
   DataDatasetField,
   DataFieldType,
@@ -230,7 +231,7 @@ function compareValues(left: unknown, right: unknown): number {
   if (left === null || left === undefined) return 1;
   if (right === null || right === undefined) return -1;
   if (typeof left === "number" && typeof right === "number") return left - right;
-  return String(left).localeCompare(String(right), "zh-CN", { numeric: true });
+  return compareText(String(left), String(right));
 }
 
 function inferFields(rows: Array<Record<string, unknown>>): DataDatasetField[] {

@@ -381,6 +381,14 @@ function validatePhysicsBody(value: unknown, path: string): void {
   const object = expectObject(value, path);
   requiredLiteral(object, "type", ["none", "fixed", "dynamic", "kinematic"], path);
   for (const key of ["mass", "friction", "restitution"] as const) required(object, key, expectNumber, path);
+  optional(object, "initialLinearVelocity", (velocity, velocityPath) => {
+    if (object.type !== "dynamic") invalid(velocityPath, "初速度仅支持动态刚体");
+    const components = expectObject(velocity, velocityPath);
+    for (const axis of ["x", "y", "z"] as const) required(components, axis, (component, componentPath) => {
+      expectNumber(component, componentPath);
+      if (!Number.isFinite(component) || Math.abs(component as number) > 1_000) invalid(componentPath, "初速度每轴必须在 ±1000 m/s 内");
+    }, velocityPath);
+  }, path);
   optional(object, "character", validateCharacterController, path);
 }
 

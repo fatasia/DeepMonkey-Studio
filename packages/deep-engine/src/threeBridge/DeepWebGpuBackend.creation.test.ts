@@ -72,6 +72,26 @@ describe("DeepWebGpuBackend creation", () => {
     backend.dispose();
   });
 
+  it("keeps editor picking identity across packet publication and replacement", async () => {
+    const target = runtime();
+    const first = { geometries: [], materials: [], instances: [], objectBindings: [
+      { nodeId: "model-a", instanceIds: ["a-1", "a-2"] },
+      { nodeId: "model-b", instanceIds: ["b-1"] },
+      { nodeId: "duplicate-binding", instanceIds: ["a-2"] },
+    ] };
+    const backend = await DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
+      view, renderPacket: first }, { create: vi.fn(async () => target) });
+    expect(backend.modelIdForInstanceId("a-2")).toBe("model-a");
+    expect(backend.modelIdForInstanceId("b-1")).toBe("model-b");
+    await backend.prepareRenderPacket({ ...first, objectBindings: [
+      { nodeId: "model-c", instanceIds: ["c-1"] },
+    ] }, view);
+    expect(backend.modelIdForInstanceId("a-2")).toBeUndefined();
+    expect(backend.modelIdForInstanceId("c-1")).toBe("model-c");
+    backend.dispose();
+    expect(backend.modelIdForInstanceId("c-1")).toBeUndefined();
+  });
+
   it("snapshots feature and environment policy for a bridge-created runtime", async () => {
     const target = runtime(), createRuntime = vi.fn(async () => target);
     const backend = await DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
@@ -135,6 +155,39 @@ describe("DeepWebGpuBackend creation", () => {
     await expect(DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
       projection: bridge(), root: mesh(), view }, { create: vi.fn(async () => target) })).rejects.toThrow("expected");
     expect(target.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("derives first-frame main pipeline keys from an independent render packet", async () => {
+    const target = runtime(), createRuntime = vi.fn(async () => target);
+    const packet = {
+      geometries: [], materials: [
+        { id: "m-texture", baseColor: [1, 1, 1] as const, metallic: 0, roughness: 1,
+          baseColorTexture: { texture: "t", texCoord: 0 as const, uvTransform: [0, 0, 0, 0, 0, 0] as const } },
+        { id: "m-plain", baseColor: [1, 1, 1] as const, metallic: 0, roughness: 1, alphaMode: "BLEND" as const, doubleSided: true },
+      ],
+      instances: [
+        { id: "i-1", geometry: "g", material: "m-texture", transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] },
+        { id: "i-2", geometry: "g", material: "m-plain", transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] },
+      ],
+    };
+    const backend = await DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
+      view, renderPacket: packet,
+      renderer: { pipelines: { firstFrameSubset: true, deferDeformation: true } } }, { create: createRuntime });
+    const supplied = createRuntime.mock.calls[0]![3]!;
+    expect(supplied.pipelines!.deferDeformation).toBe(true);
+    expect(supplied.pipelines!.firstFrameMainKeys).toEqual(["material/depth/ccw", "plain/blend/double"]);
+    expect(Object.isFrozen(supplied.pipelines!.firstFrameMainKeys)).toBe(true);
+    backend.dispose();
+  });
+
+  it("keeps the full critical path when firstFrameSubset is set without a render packet", async () => {
+    const target = runtime(), createRuntime = vi.fn(async () => target);
+    await DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
+      projection: bridge(), root: mesh(), view,
+      renderer: { pipelines: { firstFrameSubset: true, deferDeformation: true } } }, { create: createRuntime });
+    const supplied = createRuntime.mock.calls[0]![3]!;
+    expect(supplied.pipelines!.firstFrameMainKeys).toBeUndefined();
+    expect(supplied.pipelines!.deferDeformation).toBe(true);
   });
 
 });

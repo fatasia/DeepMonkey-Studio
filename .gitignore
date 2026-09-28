@@ -61,3 +61,12 @@ apps/desktop/local-api-bundle/
 
 # 交接文档不进 git(2026-09-27 用户指令)
 docs/handoffs/HANDOFF-*.md
+
+# 过程文档、交接文档、AI 对话相关文档、下载测试文件不进 git(2026-09-28 用户指令)
+docs/handoffs/
+docs/reports/
+docs/active-task-recovery-ledger.md
+AGENTS.md
+CLAUDE.md
+bim-studio-docs/
+data/external-assets/

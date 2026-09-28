@@ -2,7 +2,8 @@ import type { DeformationPose, DeformationSnapshot, DeformationSource } from "..
 import type { GpuMorphSource } from "../webgpu/gpuMorphTypes.js";
 import { attribute, component, sameStamp } from "./attributes.js";
 import { captureAuthorMorphSource, type AuthorMorphSource } from "./authorMorphSource.js";
-import { captureAuthorSkinPose } from "./authorSkinPose.js";
+import { captureAuthorSkinPalette } from "./authorSkinPose.js";
+import { shouldSampleAuthorPose, type AuthorPoseLod } from "./authorPoseLod.js";
 import type { CachedGeometry } from "./geometries.js";
 import { invalid, record } from "./types.js";
 
@@ -15,11 +16,19 @@ export class ThreeDeformationProjector {
   private sources = new Map<string, SourceCache>();
   private poses = new Map<string, DeformationPose>();
   private acceptedSnapshot: DeformationSnapshot | undefined;
+  private acceptedFrame = 0;
+  private acceptedSamples = new Map<string, number>();
+  private acceptedTransforms = new Map<string, Float64Array>();
+  private transforms = new Map<string, Float64Array>();
+  private samples = new Map<string, number>();
+  private visited = new Set<string>();
 
-  begin(): void { this.sources = new Map(); this.poses = new Map(); }
-  clear(): void { this.begin(); this.acceptedSources.clear(); this.acceptedPoses.clear(); this.acceptedSnapshot = undefined; }
+  begin(): void { this.sources = new Map(); this.poses = new Map(); this.samples = new Map(this.acceptedSamples);
+    this.transforms = new Map(this.acceptedTransforms); this.visited.clear(); }
+  clear(): void { this.begin(); this.acceptedSources.clear(); this.acceptedPoses.clear(); this.acceptedSnapshot = undefined;
+    this.acceptedSamples.clear(); this.samples.clear(); this.acceptedTransforms.clear(); this.transforms.clear(); this.acceptedFrame = 0; }
 
-  project(object: unknown, objectId: string, geometry: CachedGeometry): string | undefined {
+  project(object: unknown, objectId: string, geometry: CachedGeometry, tier: AuthorPoseLod = "precise"): string | undefined {
     const owner = record(object, "deformation owner"), g = record(owner.geometry, "geometry");
     const morphAttributes = record(g.morphAttributes, "morph attributes");
     const morph = Object.keys(morphAttributes).length > 0, skin = owner.isSkinnedMesh === true;
@@ -43,11 +52,26 @@ export class ThreeDeformationProjector {
     }
     const poseId = `${objectId}/${sourceId}`;
     if (this.poses.has(poseId)) return poseId;
+    this.visited.add(poseId);
     const previous = this.acceptedPoses.get(poseId), revision = (previous?.revision ?? -1) + 1;
+    const world = skin ? record(owner.matrixWorld, "mesh matrixWorld").elements as ArrayLike<number> : undefined;
+    const oldTransform = this.acceptedTransforms.get(poseId);
+    const transformChanged = world && (!oldTransform || world.length !== 16
+      || oldTransform.some((component, index) => component !== world[index]));
+    if (skin && previous && cached === this.acceptedSources.get(sourceId) && !morph
+      && !transformChanged && !shouldSampleAuthorPose(tier, this.acceptedSamples.get(poseId), this.acceptedFrame)) {
+      this.poses.set(poseId, previous);
+      return poseId;
+    }
     const morphWeights = cached.morph?.captureWeights(object, revision);
-    const palette = skin ? captureAuthorSkinPose(object, revision).copyPalette() : undefined;
+    const palette = skin ? captureAuthorSkinPalette(object, revision, previous?.palette) : undefined;
+    if (skin) {
+      this.samples.set(poseId, this.acceptedFrame + 1);
+      if (world && world.length === 16) this.transforms.set(poseId, Float64Array.from(world));
+    }
     const unchanged = previous && equal(previous.morphWeights?.values, morphWeights?.values)
-      && equal(previous.palette?.matrices, palette?.matrices) && equal(previous.palette?.normalMatrices, palette?.normalMatrices);
+      && (skin ? palette === previous.palette || equal(previous.palette?.matrices, palette?.matrices)
+        && equal(previous.palette?.normalMatrices, palette?.normalMatrices) : true);
     this.poses.set(poseId, unchanged ? previous : { id: poseId, source: sourceId, revision,
       ...(morphWeights ? { morphWeights } : {}), ...(palette ? { palette } : {}) });
     return poseId;
@@ -71,6 +95,11 @@ export class ThreeDeformationProjector {
 
   accept(snapshot: DeformationSnapshot | undefined): void {
     this.acceptedSources = this.sources; this.acceptedPoses = this.poses; this.acceptedSnapshot = snapshot;
+    for (const poseId of this.acceptedSamples.keys()) if (!this.visited.has(poseId)) {
+      this.samples.delete(poseId); this.transforms.delete(poseId);
+    }
+    this.acceptedSamples = this.samples; this.acceptedTransforms = this.transforms;
+    this.acceptedFrame++;
   }
 
   private captureSource(g: Record<string, unknown>, geometry: CachedGeometry, id: string, revision: number,

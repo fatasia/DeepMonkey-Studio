@@ -12,13 +12,13 @@ import {
   ProbeSceneRadianceProducer, type ProbeRadianceLighting,
 } from "./probeSceneRadianceProducer.js";
 
-interface FakeBuffer extends GPUBuffer { readonly destroy: ReturnType<typeof vi.fn> }
+interface FakeBuffer extends Omit<GPUBuffer, "destroy"> { readonly destroy: ReturnType<typeof vi.fn> }
 interface PassRecord { readonly label: string; readonly dispatch: number[][] }
 
 function fixture() {
   const buffers: FakeBuffer[] = [];
   const encoders: PassRecord[][] = [];
-  const writeBufferCalls: { buffer: unknown; offset: number; size?: number }[] = [];
+  const writeBufferCalls: { buffer: unknown; offset: number; size: number | undefined }[] = [];
   const lost = new Promise<GPUDeviceLostInfo>(() => {});
   const queue = { writeBuffer: vi.fn((buffer: GPUBuffer, offset: number, _data: BufferSource,
     size?: number) => { writeBufferCalls.push({ buffer, offset, size }); }),
@@ -96,7 +96,7 @@ describe("probe radiance kernel packing", () => {
   const directions = Array.from({ length: 8 }, (_, ordinal) =>
     probeOcclusionDirection(ordinal, 8));
 
-  it("packs the 320-byte uniform with u32 head, tMax bitcast, three vec4 lanes and the CPU direction table", () => {
+  it("packs the 576-byte uniform with u32 head, tMax bitcast, three vec4 lanes and the CPU direction table", () => {
     const data = packProbeRadianceUniform({ updateCount: 3, directionCount: 8, rayMask: 1,
       tMax: 12.5, surfaceToLight: [0, 1, 0], lightColor: [1, 0.9, 0.8], lightIntensity: 2.5,
       ambient: [0.05, 0.06, 0.07], directions });
@@ -116,6 +116,17 @@ describe("probe radiance kernel packing", () => {
       expect(floats[16 + ordinal * 4 + 2]).toBeCloseTo(direction[2]);
       expect(floats[16 + ordinal * 4 + 3]).toBe(0);
     });
+  });
+
+  it("packs all 32 production direction lanes without truncation and rejects overflow", () => {
+    const dirs = Array.from({ length: 32 }, (_, index) => probeOcclusionDirection(index, 32));
+    const input = { updateCount: 1, directionCount: 32, rayMask: 1, tMax: 32,
+      surfaceToLight: [0, 1, 0] as const, lightColor: [1, 1, 1] as const,
+      lightIntensity: 1, ambient: [0, 0, 0] as const, directions: dirs };
+    const packed = new Float32Array(packProbeRadianceUniform(input));
+    expect(packed.length).toBe(144);
+    expect([...packed.slice(140, 143)]).toEqual(dirs[31]!.map(value => Math.fround(value)));
+    expect(() => packProbeRadianceUniform({ ...input, directionCount: 33 })).toThrow(RangeError);
   });
 
   it("rejects a direction table shorter than the declared direction count", () => {
@@ -146,7 +157,7 @@ describe("probe scene radiance producer", () => {
   it("validates options fail-fast", () => {
     const { device } = fixture();
     expect(() => new ProbeSceneRadianceProducer(device, { directionCount: 0 })).toThrow(RangeError);
-    expect(() => new ProbeSceneRadianceProducer(device, { directionCount: 17 })).toThrow(RangeError);
+    expect(() => new ProbeSceneRadianceProducer(device, { directionCount: 33 })).toThrow(RangeError);
     expect(() => new ProbeSceneRadianceProducer(device, { maxDistance: 0 })).toThrow(RangeError);
     expect(() => new ProbeSceneRadianceProducer(device, { maxDistance: 1_000_001 })).toThrow(RangeError);
   });

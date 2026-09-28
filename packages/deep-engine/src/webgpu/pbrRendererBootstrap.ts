@@ -14,7 +14,8 @@ export async function openPbrRenderer<T>(session: DeviceSession,
   signal: AbortSignal, options: PbrRendererOptions, abortError: () => Error,
   create: (session: DeviceSession, pipelines: Pipelines, environment: StudioEnvironment,
     lighting: ForwardPlusPbrRuntime, shadows: LocalSpotShadowRuntime, options: PbrRendererOptions,
-    features: PbrRendererFeatures, deformation?: Pipelines) => T): Promise<T> {
+    features: PbrRendererFeatures, deformation?: Pipelines | Promise<Pipelines>,
+    releasePipelines?: () => void) => T): Promise<T> {
   const cancel = (): void => session.dispose();
   let scopeOpen = false;
   signal.addEventListener("abort", cancel, { once: true });
@@ -23,21 +24,54 @@ export async function openPbrRenderer<T>(session: DeviceSession,
     const features = resolvePbrRendererFeatures(options.features);
     assertTextureArrayProductionReady(features);
     session.device.pushErrorScope("validation"); scopeOpen = true;
+    markBootstrap("local-shadows-start");
     const localShadows = await LocalSpotShadowRuntime.create(session, signal), lighting = new ForwardPlusPbrRuntime(session, localShadows.bindings);
-    const [{ pipelines, deformationPipelines }, environment] = await Promise.all([
-      createPbrPipelineSet(session, lighting.layout, options, features),
-      createPbrEnvironment(session, options.environment, signal),
+    markBootstrap("local-shadows-ready");
+    markBootstrap("pipeline-env-start");
+    const deferDeformation = options.pipelines?.deferDeformation === true
+      && options.deformation === true;
+    // 未启用任何时序开关时保持旧语义：全量变体（含 deformation）就绪后才继续。
+    const legacyAwaitAll = options.pipelines?.firstFrameMainKeys === undefined && !deferDeformation;
+    const [set, environment] = await Promise.all([
+      createPbrPipelineSet(session, lighting.layout, options, features).then(async value => {
+        // 未启用时序开关：全量变体（含 deformation）就绪后才继续（旧语义）。
+        // 启用时只等首帧关键子集，剩余变体在作用域关闭后于背景排队。
+        if (legacyAwaitAll) {
+          await value.ready;
+          await value.deformation;
+        } else {
+          await value.criticalReady;
+        }
+        markBootstrap(options.pipelines?.firstFrameMainKeys ? "pipelines-critical-ready" : "pipelines-ready");
+        return value;
+      }),
+      createPbrEnvironment(session, options.environment, signal).then(value => {
+        markBootstrap("gpu-environment-ready"); return value;
+      }),
     ]);
     if (signal.aborted || session.state !== "ready") throw new Error("GPU preparation interrupted.");
-    const renderer = create(session, pipelines, environment, lighting, localShadows, options, features, deformationPipelines);
+    // 校验作用域在此关闭：其内的阴影/关键管线错误照旧拦截首帧。剩余 main 变体与
+    // 延迟 deformation 变体保持待命，宿主在首帧验证通过后调用 release 才开始排队，
+    // 背景编译不再与上传/首帧验证争抢设备。startDeformation 立即返回就绪 promise
+    //（门禁可在发布后等待），其内部创建被同一 release 门挡住。
     const pendingError = session.device.popErrorScope(); scopeOpen = false;
     const error = await pendingError;
     if (error) throw new Error(error.message);
-    if (signal.aborted || session.state !== "ready") throw new Error("GPU preparation interrupted.");
+    const deferredDeformation = deferDeformation ? set.startDeformation?.() : undefined;
+    const renderer = create(session, set.pipelines, environment, lighting, localShadows, options, features,
+      deferDeformation ? deferredDeformation : set.deformation, set.release);
+    markBootstrap("bootstrap-created");
+    markBootstrap("bootstrap-errors-cleared");
     return renderer;
   } catch (error) {
     if (scopeOpen) try { await session.device.popErrorScope(); } catch { /* device loss owns diagnostics */ }
     session.dispose(); throw error;
   }
   finally { signal.removeEventListener("abort", cancel); }
+}
+
+function markBootstrap(name: string): void {
+  if (typeof performance !== "undefined" && typeof performance.mark === "function") {
+    performance.mark(`deep-webgpu:${name}`);
+  }
 }

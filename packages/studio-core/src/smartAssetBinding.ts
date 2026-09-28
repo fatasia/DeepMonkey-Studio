@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import { createEvidenceFingerprint, EVIDENCE_FINGERPRINT_ALGORITHM } from "./evidenceFingerprint.js";
 
 export interface SmartBindingPosition {
@@ -276,9 +277,9 @@ function detectConflicts(
       explanation: `前两名置信度差小于 ${format(ambiguityDelta)}，必须人工复核。`,
     });
   }
-  return conflicts.sort((left, right) => left.type.localeCompare(right.type)
-    || left.sceneObjectIds.join("/").localeCompare(right.sceneObjectIds.join("/"))
-    || left.deviceIds.join("/").localeCompare(right.deviceIds.join("/")));
+  return conflicts.sort((left, right) => compareText(left.type, right.type)
+    || compareText(left.sceneObjectIds.join("/"), right.sceneObjectIds.join("/"))
+    || compareText(left.deviceIds.join("/"), right.deviceIds.join("/")));
 }
 
 function factor(
@@ -395,10 +396,6 @@ function compareMappings(left: SmartBindingCandidate, right: SmartBindingCandida
 
 function compareById(left: SmartBindingSceneObject, right: SmartBindingSceneObject): number {
   return compareText(left.id, right.id);
-}
-
-function compareText(left: string, right: string): number {
-  return left.localeCompare(right, "en");
 }
 
 function round01(value: number): number {

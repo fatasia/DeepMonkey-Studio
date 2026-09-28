@@ -46,7 +46,8 @@ pub(super) async fn create_renderer(
 ) -> Result<Renderer, String> {
     // Resolve the optional Native quality profile before any GPU allocation so
     // the diagnostics, pass graph and resource budgets observe the same values.
-    if let Some(profile) = super::quality_profile::requested()? {
+    let quality_profile = super::quality_profile::requested()?;
+    if let Some(profile) = quality_profile {
         features = super::quality_profile::apply(features, profile);
     }
     if features.shadow_probe && features.ibl_probe {
@@ -547,6 +548,13 @@ pub(super) async fn create_renderer(
     let telemetry = features
         .telemetry
         .then(|| crate::telemetry::FrameTelemetry::for_device(&device, &queue, renderer_id));
+    // T01:质量诊断与 FrameTelemetry 同开关;档名取启动期解析的作者档
+    // (TS AuthoredQualityProfile 词汇),未设档为 None,不伪造默认档。
+    let quality = features.telemetry.then(|| {
+        super::quality_telemetry::QualityTelemetry::new(
+            quality_profile.map(super::quality_profile::NativeQualityProfile::telemetry_name),
+        )
+    });
     if activate_surface {
         surface.configure(&device, &config);
     }
@@ -606,6 +614,7 @@ pub(super) async fn create_renderer(
         view,
         coordinate_frame_revision: content.coordinate_frame_revision(),
         telemetry,
+        quality,
         diagnostics,
         content_profile: super::content_profile::ContentProfileReport::evaluate(content, features),
     })

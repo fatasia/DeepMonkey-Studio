@@ -1,9 +1,19 @@
+import { type JtErrorCode } from "./errors.js";
 import type { JtByteOrder } from "./types.js";
 
+/**
+ * JT 格式/解析错误。`code` 是稳定机器可读错误码(JT_ERROR_CODES 词表,见 errors.ts);
+ * `message` 仅为人读细节,消费方禁止解析其措辞。
+ * 缺省 `format-invalid` 仅供包外(apps/api)以同一错误类型表达 JT 语义失败时兼容使用,
+ * 本包内部所有抛出点均显式携带 code。
+ */
 export class JtFormatError extends Error {
-  constructor(message: string) {
+  readonly code: JtErrorCode;
+
+  constructor(message: string, code: JtErrorCode = "format-invalid") {
     super(message);
     this.name = "JtFormatError";
+    this.code = code;
   }
 }
 
@@ -24,10 +34,10 @@ export class BinaryReader {
 
   ensure(offset: number, length: number, context: string): void {
     if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length) || offset < 0 || length < 0) {
-      throw new JtFormatError(`${context} 的偏移或长度无效`);
+      throw new JtFormatError(`${context} 的偏移或长度无效`, "read-bounds-exceeded");
     }
     if (offset + length > this.length) {
-      throw new JtFormatError(`${context} 超出数据边界：${offset} + ${length} > ${this.length}`);
+      throw new JtFormatError(`${context} 超出数据边界：${offset} + ${length} > ${this.length}`, "read-bounds-exceeded");
     }
   }
 
@@ -70,7 +80,7 @@ export class BinaryReader {
     this.ensure(offset, 8, context);
     const value = this.#view.getBigUint64(offset, this.#littleEndian);
     if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
-      throw new JtFormatError(`${context} 超出 JavaScript 安全整数范围`);
+      throw new JtFormatError(`${context} 超出 JavaScript 安全整数范围`, "safe-integer-exceeded");
     }
     return Number(value);
   }

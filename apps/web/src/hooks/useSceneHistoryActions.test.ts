@@ -35,7 +35,8 @@ function workspace() {
     },
     history: {
       recoveryDraft: draft, recoveryDecisionRef: decision, setRecoveryDraft, setRecoveryBusy,
-      sceneHistoryApplyingRef: { current: false }, sceneHistoryRef: { current: { record: vi.fn() } },
+      sceneHistoryApplyingRef: { current: false }, sceneEditTransactionRef: { current: undefined },
+      sceneHistoryRef: { current: { record: vi.fn() } },
       sceneSnapshotFactoryRef: { current: () => draft.scene }, flushSceneHistoryEdit: vi.fn(),
     },
     applyScene,
@@ -79,5 +80,55 @@ describe("unsaved recovery lifecycle", () => {
     expect(current.applyScene).not.toHaveBeenCalled();
     expect(assessWorkspaceRecovery(await readWorkspaceRecoveryDraft("p", undefined, "s"), server)).toBe("ignore");
     expect(server.name).toBe("正式草稿");
+  });
+});
+
+describe("transaction window guard (T27)", () => {
+  function guardWorkspace(transaction: { current: unknown }, playModeActive = false) {
+    const applyScene = vi.fn(async () => undefined);
+    const undo = vi.fn(() => structuredClone(server));
+    const redo = vi.fn(() => structuredClone(server));
+    const options = {
+      state: {
+        project: { id: "p" }, activeScene: server, route: { view: "studio", projectId: "p", sceneId: "s" },
+        revision: 7, lastAutoSavedSceneRevisionRef: { current: 6 }, setAutoSaveEnabled: vi.fn(), showError: vi.fn(), setMessage: vi.fn(),
+      },
+      history: {
+        recoveryDraft: undefined, recoveryDecisionRef: { current: undefined }, setRecoveryDraft: vi.fn(), setRecoveryBusy: vi.fn(),
+        sceneHistoryApplyingRef: { current: false }, sceneEditTransactionRef: transaction,
+        sceneHistoryRef: { current: { record: vi.fn(), undo, redo } },
+        sceneSnapshotFactoryRef: { current: () => undefined }, flushSceneHistoryEdit: vi.fn(),
+      },
+      playModeActive,
+      applyScene,
+    } as unknown as Parameters<typeof useSceneHistoryActions>[0];
+    return { actions: useSceneHistoryActions(options), applyScene, undo, redo };
+  }
+
+  it("refuses undo and redo while an edit transaction is open", async () => {
+    const open = guardWorkspace({ current: { label: "替换素材" } });
+    await open.actions.undoSceneEdit();
+    await open.actions.redoSceneEdit();
+    expect(open.undo).not.toHaveBeenCalled();
+    expect(open.redo).not.toHaveBeenCalled();
+    expect(open.applyScene).not.toHaveBeenCalled();
+  });
+
+  it("refuses both toolbar and keyboard history actions during Play", async () => {
+    const playing = guardWorkspace({ current: undefined }, true);
+    await playing.actions.undoSceneEdit();
+    await playing.actions.redoSceneEdit();
+    expect(playing.undo).not.toHaveBeenCalled();
+    expect(playing.redo).not.toHaveBeenCalled();
+    expect(playing.applyScene).not.toHaveBeenCalled();
+  });
+
+  it("keeps undo and redo available after the transaction window closes", async () => {
+    const closed = guardWorkspace({ current: undefined });
+    await closed.actions.undoSceneEdit();
+    await closed.actions.redoSceneEdit();
+    expect(closed.undo).toHaveBeenCalledTimes(1);
+    expect(closed.redo).toHaveBeenCalledTimes(1);
+    expect(closed.applyScene).toHaveBeenCalledTimes(2);
   });
 });

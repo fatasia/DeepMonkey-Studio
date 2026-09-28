@@ -4,6 +4,7 @@ import path from "node:path";
 import sharp from "sharp";
 import { downloadAssetAtomically } from "./atomicAssetDownload.mjs";
 import { readSourceBCatalog, sourceBModelId, sourceBModelLicense, validateSourceBGlb, validateSourceBThumbnail } from "./sourceBModelPolicy.mjs";
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 const MODEL_LIMIT = 80 * 1024 * 1024;
 const THUMBNAIL_LIMIT = 8 * 1024 * 1024;
@@ -21,7 +22,7 @@ export async function syncSourceBModels({ output, keywords, perKeyword = 2, maxN
     const known = new Map(previous.models.map(record => [record.uid, record]));
     const visited = new Set();
     const licenses = new Map();
-    const checkpoint = () => writeCatalog(catalogPath, { ...previous, generatedAt: new Date().toISOString(), licensePolicy: "CC0-1.0 / CC-BY-4.0（完整署名与来源）", models: [...known.values()].sort((a, b) => a.uid.localeCompare(b.uid)) });
+    const checkpoint = () => writeCatalog(catalogPath, { ...previous, generatedAt: new Date().toISOString(), licensePolicy: "CC0-1.0 / CC-BY-4.0（完整署名与来源）", models: [...known.values()].sort((a, b) => compareText(a.uid, b.uid)) });
     for (const keyword of keywords) {
       if (statistics.added >= maxNew) break;
       let results;

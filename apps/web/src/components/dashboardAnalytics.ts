@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type { DashboardConditionalRule, DashboardDataWidgetConfig } from "@bim-studio/contracts";
 import { compileFormula, evaluateFormula } from "@bim-studio/data-runtime";
 import { aggregate } from "@bim-studio/data-runtime";
@@ -41,8 +42,8 @@ export function analyzeDashboardMetric(widget: DashboardDataWidgetConfig, metric
   const seriesNames = [...new Set([...grouped.values()].flatMap((item) => [...item.keys()]))];
   let categories = [...grouped.keys()];
   const totals = (category: string) => seriesNames.reduce((sum, name) => sum + aggregate(grouped.get(category)?.get(name) ?? [], analysis.aggregation), 0);
-  if (analysis.sort === "dimension-asc") categories.sort((a, b) => a.localeCompare(b));
-  if (analysis.sort === "dimension-desc") categories.sort((a, b) => b.localeCompare(a));
+  if (analysis.sort === "dimension-asc") categories.sort((a, b) => compareText(a, b));
+  if (analysis.sort === "dimension-desc") categories.sort((a, b) => compareText(b, a));
   if (analysis.sort === "value-asc") categories.sort((a, b) => totals(a) - totals(b));
   if (analysis.sort === "value-desc") categories.sort((a, b) => totals(b) - totals(a));
   categories = categories.slice(0, Math.max(1, analysis.limit ?? 100));
@@ -247,5 +248,5 @@ function compareReportValues(left: unknown, right: unknown): number {
   const leftNumber = typeof left === "number" ? left : Number(left);
   const rightNumber = typeof right === "number" ? right : Number(right);
   if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) return leftNumber - rightNumber;
-  return String(left).localeCompare(String(right), "zh-CN", { numeric: true, sensitivity: "base" });
+  return compareText(String(left), String(right));
 }

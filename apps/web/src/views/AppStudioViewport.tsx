@@ -19,6 +19,8 @@ import { SceneClippingPanel } from "../components/SceneClippingPanel";
 import { SceneEnvironmentPanel } from "../components/SceneEnvironmentPanel";
 import { SceneEngineeringAnalysisPanel } from "../components/SceneEngineeringAnalysisPanel";
 import { ScenePhysicsPanel } from "../components/ScenePhysicsPanel";
+import { PhysicsDebugPanel } from "../components/PhysicsDebugPanel";
+import { QualityTelemetryPanel } from "../components/QualityTelemetryPanel";
 import { PublishedViewerToolDock } from "../components/PublishedViewerToolDock";
 import { PublishedViewerObjectPanel } from "../components/PublishedViewerObjectPanel";
 import { SceneTimelinePanel, type SceneDirectorWorkspace } from "../components/SceneTimelinePanel";
@@ -162,6 +164,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
   } = controller;
   const [viewerObjectPanelOpen, setViewerObjectPanelOpen] = useState(false);
   const [engineeringOpen, setEngineeringOpen] = useState(false);
+  const [qualityPanelOpen, setQualityPanelOpen] = useState(false);
   const [simulationPanelId, setSimulationPanelId] = useState<SceneSimulationPanelId>();
   const [simulationDock, setSimulationDock] = useState<SimulationDockReservation>({ placement: "float", collapsed: false, width: 0 });
   const [simulationStudy, setSimulationStudy] = useState<PlantLiteStudyRecord>();
@@ -173,6 +176,8 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
   useEffect(() => {
     engine?.setPhysicsDebugVisible(physicsDebugVisible);
   }, [engine, physicsDebugVisible]);
+  // T28 物理调试面板：开启状态由工作区持有，物理面板关闭重开不丢状态。
+  const [physicsDebugPanelOpen, setPhysicsDebugPanelOpen] = useState(false);
   // F3 探针网格烘焙：UI 状态与执行回调。结果由 runner 存入发布会话态，
   // Deep Native 打包（exportSceneClientPackage → prepareNativeSceneClientPayload）
   // 按场景语义哈希自动携带；场景/项目切换即回到 idle，烘焙中的旧任务回执被丢弃。
@@ -377,6 +382,8 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           animationOpen={animationOpen}
           behaviorOpen={sceneBehaviorOpen}
           physicsOpen={physicsOpen}
+          qualityPanelOpen={qualityPanelOpen}
+          onQualityPanelToggle={() => setQualityPanelOpen(value => !value)}
           xrOpen={xrPanelOpen}
           simulationPanel={simulationPanelId}
           infoEnabled={infoEnabled}
@@ -487,6 +494,25 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
             setRevision((value) => value + 1);
           }}
           onClose={() => setPhysicsOpen(false)}
+        />
+      )}
+      {route.view === "studio" && physicsOpen && (
+        <PhysicsDebugPanel
+          locale={locale}
+          open={physicsDebugPanelOpen}
+          onOpenChange={setPhysicsDebugPanelOpen}
+          engine={engine}
+          physics={physics}
+          onPhysicsChange={changePhysics}
+          debugVisible={physicsDebugVisible}
+          onDebugVisibleChange={setPhysicsDebugVisible}
+        />
+      )}
+      {route.view === "studio" && qualityPanelOpen && (
+        <QualityTelemetryPanel
+          locale={locale}
+          engine={engine ?? undefined}
+          onClose={() => setQualityPanelOpen(false)}
         />
       )}
       {route.view === "studio" && xrPanelOpen && (

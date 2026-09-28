@@ -24,6 +24,8 @@ export interface ParasolidProbeConfig {
   args?: string[];
   /** 部署方自备 schema catalog 路径;配置后 runner 对探针启用 --brep 权威拓扑。 */
   schemaCatalog?: string;
+  /** 使用随 CLI 编译的精确 key 子集；与 schemaCatalog 互斥。未知 key 拒绝。 */
+  builtinProfile?: boolean;
   /** stdout 字节上限(几何 JSON 可能很大);默认 512 MiB。 */
   maxOutputBytes?: number;
 }
@@ -51,6 +53,9 @@ export interface ParasolidProbeBrepSummary {
 /** 单个面的三角网格(face 级近似逐条标注,来自 geometry.rs 的诚实导出)。 */
 export interface ParasolidGeometryFace {
   id: number;
+  /** 原始传输流 node index（区别于按 FACE 类型重新编号的 id）。 */
+  sourceNodeIndex?: number;
+  sourceNodeId?: number;
   body?: number | null;
   surfaceKind: string;
   positions: number[];
@@ -117,12 +122,16 @@ export function defaultParasolidProbeCommand(): string | undefined {
 }
 
 export function createParasolidProbeRunner(config: ParasolidProbeConfig): ParasolidProbeRunner {
+  if (config.schemaCatalog && config.builtinProfile) {
+    throw new Error("内置 profile 与外置 schema catalog 互斥，请只选择一种来源");
+  }
   const maxOutputBytes = config.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
   return async ({ filePath, brep, geometry }: ParasolidProbeInput): Promise<ParasolidProbeReport> => {
     const args = [
       ...config.args ?? [],
       "--file", filePath,
       ...(config.schemaCatalog ? ["--schema-catalog", config.schemaCatalog] : []),
+      ...(config.builtinProfile ? ["--builtin-profile"] : []),
       ...(brep ? ["--brep"] : []),
       ...(geometry ? ["--geometry"] : []),
       "--json",

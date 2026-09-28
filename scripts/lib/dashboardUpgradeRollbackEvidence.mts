@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 const sha = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -132,7 +133,7 @@ export async function hashInventory(directory: string) {
     }
   }
   await walk(directory);
-  return entries.sort((left, right) => left.file.localeCompare(right.file));
+  return entries.sort((left, right) => compareText(left.file, right.file));
 }
 
 /** Atomically replace a downloaded artifact after any previous player handle is released. */

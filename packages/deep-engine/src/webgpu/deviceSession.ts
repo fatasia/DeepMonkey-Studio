@@ -11,6 +11,9 @@ const OPTIONAL_DEVICE_FEATURES = Object.freeze([
 
 function aborted(): DOMException { return new DOMException("GPU preparation cancelled", "AbortError"); }
 
+/** @webgpu/types 会窄化 HTMLCanvasElement；布局尺寸在运行时来自真实 DOM canvas。 */
+type CanvasLayout = { readonly clientWidth: number; readonly clientHeight: number; width: number; height: number };
+
 /** 请求不可中断的驱动 API 时立即响应取消，并回收迟到的 device。 */
 async function abortable<T>(promise: Promise<T>, signal: AbortSignal, release?: (value: T) => void): Promise<T> {
   if (signal.aborted) {
@@ -84,7 +87,8 @@ export class DeviceSession {
       session = new DeviceSession(device, context, gpu.getPreferredCanvasFormat(), canvas, info ? Object.freeze({
         vendor: info.vendor, architecture: info.architecture, device: info.device, description: info.description, isFallbackAdapter: info.isFallbackAdapter,
       }) : undefined, memoryBudgetBytes);
-      session.resize(canvas.clientWidth, canvas.clientHeight, 1);
+      const layout = canvas as unknown as CanvasLayout;
+      session.resize(layout.clientWidth, layout.clientHeight, 1);
       return session;
     } catch (error) {
       if (session) session.dispose(); else device.destroy();
@@ -119,8 +123,9 @@ export class DeviceSession {
     const size = surfaceSize(width, height, ratio, this.device.limits.maxTextureDimension2D);
     if (!size) return undefined;
     if (this.size?.width !== size.width || this.size.height !== size.height) {
-      this.canvas.width = size.width;
-      this.canvas.height = size.height;
+      const canvas = this.canvas as unknown as CanvasLayout;
+      canvas.width = size.width;
+      canvas.height = size.height;
       this.context.configure({ device: this.device, format: this.format, alphaMode: "opaque",
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
       this.size = size;

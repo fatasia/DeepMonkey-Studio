@@ -95,6 +95,39 @@ describe("model resource replacement transaction", () => {
     expect(h.disposeObject).toHaveBeenCalledExactlyOnceWith(candidate);
   });
 
+  it("discards a loaded candidate when the initiating editor has left the scene", async () => {
+    const h = modelInstanceHarness();
+    const candidate = modelObject();
+    const pending = deferred<{ scene: THREE.Group; animations: THREE.AnimationClip[] }>();
+    h.gltfLoader.loadAsync.mockReturnValue(pending.promise);
+    let editorCurrent = true;
+    const operation = h.engine.replaceModelManifest("instance", manifest(), () => editorCurrent);
+    editorCurrent = false;
+    pending.resolve({ scene: candidate, animations: [] });
+    await expect(operation).rejects.toMatchObject({ name: "ModelLoadSupersededError" });
+    expect(h.models.get("instance")).toBe(h.original);
+    expect(h.removeModel).not.toHaveBeenCalled();
+    expect(h.disposeObject).toHaveBeenCalledExactlyOnceWith(candidate);
+  });
+
+  it("does not coalesce a stale editor request with a live replacement of the same asset", async () => {
+    const h = modelInstanceHarness();
+    const stale = deferred<{ scene: THREE.Group; animations: THREE.AnimationClip[] }>();
+    const live = deferred<{ scene: THREE.Group; animations: THREE.AnimationClip[] }>();
+    h.gltfLoader.loadAsync.mockReturnValueOnce(stale.promise).mockReturnValueOnce(live.promise);
+    let firstCurrent = true;
+    const first = h.engine.replaceModelManifest("instance", manifest(), () => firstCurrent);
+    const second = h.engine.replaceModelManifest("instance", manifest(), () => true);
+    firstCurrent = false;
+    stale.resolve({ scene: modelObject(), animations: [] });
+    await expect(first).rejects.toMatchObject({ name: "ModelLoadSupersededError" });
+    live.resolve({ scene: modelObject(), animations: [] });
+    const replaced = await second;
+    expect(replaced.id).toBe("instance");
+    expect(replaced.assetModelId).toBe("asset-new");
+    expect(h.gltfLoader.loadAsync).toHaveBeenCalledTimes(2);
+  });
+
   it("retains author state, current selection, camera, and every other instance floor", async () => {
     const h = modelInstanceHarness();
     const unrelated = { modelId: "other", level: "second", visible: true, expansion: 5 };

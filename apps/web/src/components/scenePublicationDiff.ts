@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type { SceneSnapshot } from "@bim-studio/contracts";
 
 export type ScenePublicationDiffSection =
@@ -101,6 +102,6 @@ function canonicalize(value: unknown): unknown {
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(Object.entries(value as Record<string, unknown>)
     .filter(([, item]) => item !== undefined)
-    .sort(([left], [right]) => left.localeCompare(right))
+    .sort(([left], [right]) => compareText(left, right))
     .map(([key, item]) => [key, canonicalize(item)]));
 }

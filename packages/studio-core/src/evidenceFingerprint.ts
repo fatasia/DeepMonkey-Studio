@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 export const EVIDENCE_FINGERPRINT_ALGORITHM = "fnv1a64-canonical-v1" as const;
 
 /**
@@ -22,7 +23,7 @@ function canonicalValue(value: unknown): unknown {
   if (value && typeof value === "object") {
     return Object.fromEntries(Object.entries(value)
       .filter(([, item]) => item !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right, "en"))
+      .sort(([left], [right]) => compareText(left, right))
       .map(([key, item]) => [key, canonicalValue(item)]));
   }
   return String(value);

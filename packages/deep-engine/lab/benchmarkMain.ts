@@ -9,6 +9,7 @@ import {
   type CompetitiveBenchmarkProgress,
 } from "./competitiveBenchmarkRunner.js";
 import { BENCHMARK_PROFILES, type BenchmarkProfile } from "./benchmarkProfile.js";
+import { createFactoryWorkshopScene, WORKSHOP_COUNTS, type WorkshopInstanceCount } from "./factoryWorkshop.js";
 import type { BenchmarkTrajectory } from "@bim-studio/deep-engine";
 import trajectoryCatalog from "../fixtures/benchmark-assets/trajectories-v1.json";
 
@@ -27,21 +28,28 @@ const buildIdentity = fetch("/manifest.json").then(response => response.json());
 window.addEventListener("error", event => pageErrors.push(event.message));
 window.addEventListener("unhandledrejection", event => pageErrors.push(String(event.reason)));
 
-async function run(instanceCount: BenchmarkInstanceCount,
+async function run(requestedCount: number,
   profile: BenchmarkProfile = element<HTMLSelectElement>("profile").value as BenchmarkProfile): Promise<CompetitiveBenchmarkReport> {
   if (!BENCHMARK_PROFILES.includes(profile)) throw new RangeError("Unknown benchmark profile.");
   controller?.abort(); disposeActiveBackends(); controller = new AbortController(); const signal = controller.signal;
   latest = undefined; failure = undefined; pageErrors.length = 0; setBusy(true);
   const asset = element<HTMLSelectElement>("asset").value;
   const trajectoryId = element<HTMLSelectElement>("trajectory").value;
+  const isWorkshop = asset === "FactoryWorkshop";
+  if (isWorkshop ? !WORKSHOP_COUNTS.includes(requestedCount as WorkshopInstanceCount)
+    : !BENCHMARK_COUNTS.includes(requestedCount as BenchmarkInstanceCount)) {
+    setBusy(false); throw new RangeError("Unknown benchmark instance tier for the selected asset.");
+  }
+  const instanceCount = requestedCount as BenchmarkInstanceCount;
   let fixture: BenchmarkSceneFixture | undefined;
   let candidate: DeepBenchmarkBackend | undefined;
   let reference: ThreeWebGpuBenchmarkBackend | undefined;
   try {
     show(`正在加载 ${asset}…`);
     fixture = asset === "procedural" ? createBenchmarkScene(instanceCount)
-      : await createAssetBenchmarkScene(asset as ModelName, instanceCount, signal);
-    show(`正在准备 ${asset} · ${instanceCount.toLocaleString()} 实例的 Deep WebGPU…`);
+      : isWorkshop ? await createFactoryWorkshopScene(requestedCount as WorkshopInstanceCount, signal)
+        : await createAssetBenchmarkScene(asset as ModelName, instanceCount, signal);
+    show(`正在准备 ${asset} · ${requestedCount.toLocaleString()} 实例的 Deep WebGPU…`);
     candidate = await DeepBenchmarkBackend.create(candidateCanvas, fixture, signal, profile);
     show("正在准备 Three.js 0.185.1 WebGPU 优化路径…");
     reference = await ThreeWebGpuBenchmarkBackend.create(referenceCanvas, fixture, signal, candidate.timestampSupported, profile);
@@ -113,17 +121,24 @@ function disposeActiveBackends(): void {
 
 runButton.onclick = () => {
   const count = Number(element<HTMLSelectElement>("count").value);
-  if (!BENCHMARK_COUNTS.includes(count as BenchmarkInstanceCount)) return;
-  void run(count as BenchmarkInstanceCount).catch(() => {});
+  void run(count).catch(() => {});
 };
 element<HTMLSelectElement>("asset").onchange = () => {
-  if (element<HTMLSelectElement>("asset").value.startsWith("Local")) element<HTMLSelectElement>("count").value = "1";
+  const asset = element<HTMLSelectElement>("asset").value;
+  if (asset === "FactoryWorkshop") element<HTMLSelectElement>("count").value = "5000";
+  else if (asset.startsWith("Local")) element<HTMLSelectElement>("count").value = "1";
 };
 saveButton.onclick = () => { setBusy(true); void save().catch(error => show(String(error), true)).finally(() => setBusy(false)); };
 window.addEventListener("pagehide", () => { controller?.abort(); disposeActiveBackends(); }, { once: true });
 
 declare global {
-  interface Window { __deepCompetitiveBenchmark?: { run(count: BenchmarkInstanceCount, profile?: BenchmarkProfile): Promise<CompetitiveBenchmarkReport>;
-    latest(): CompetitiveBenchmarkReport | Readonly<Record<string, unknown>> | undefined; save(): Promise<string> } }
+  interface Window { __deepCompetitiveBenchmark?: { run(count: number, profile?: BenchmarkProfile): Promise<CompetitiveBenchmarkReport>;
+    latest(): CompetitiveBenchmarkReport | Readonly<Record<string, unknown>> | undefined; save(): Promise<string>;
+    pickDeep(origin: readonly [number, number, number], direction: readonly [number, number, number]):
+      ReturnType<DeepBenchmarkBackend["pick"]> } }
 }
-window.__deepCompetitiveBenchmark = { run, latest: () => latest ?? failure, save };
+window.__deepCompetitiveBenchmark = { run, latest: () => latest ?? failure, save,
+  pickDeep: (origin, direction) => {
+    if (!activeBackends) throw new Error("No verified benchmark scene is active.");
+    return activeBackends.candidate.pick(origin, direction);
+  } };

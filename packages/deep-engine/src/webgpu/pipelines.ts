@@ -9,6 +9,7 @@ import { CASCADED_SHADOW_UNIFORM_BYTES } from "../shadows/cascadedShadowShader.j
 import { createPbrOutputShaderProvenance, type PbrOutputShaderProvenance } from "./pbrOutputShaderProvenance.js";
 import { composeTextureArraySceneShader } from "./textureArrayWgsl.js";
 import { textureArrayMaterialTableLayoutEntries } from "./textureArrayMaterialTable.js";
+import { sharedOutputPipeline } from "./pbrOutputPipelineCache.js";
 
 export const PBR_FRAME_UNIFORM_FLOATS = 96;
 export const PBR_FRAME_UNIFORM_BYTES = PBR_FRAME_UNIFORM_FLOATS * 4;
@@ -34,7 +35,7 @@ export interface Pipelines {
   readonly displayDirectionalMain?: GPURenderPipeline;
   readonly shadowPipelines: ReadonlyMap<string, GPURenderPipeline>;
   readonly output: GPURenderPipeline;
-  readonly outputShaderProvenance?: PbrOutputShaderProvenance;
+  readonly outputShaderProvenance?: PbrOutputShaderProvenance | undefined;
   readonly materialLayout: MaterialLayouts;
   readonly cascadedShadowLayout: GPUBindGroupLayout;
   readonly deformationPlainLayout?: GPUBindGroupLayout;
@@ -78,26 +79,70 @@ const shadowMaskBuffers: GPUVertexBufferLayout[] = [
     { shaderLocation: 9, offset: 112, format: "float32x4" }, { shaderLocation: 12, offset: 128, format: "float32x4" }] },
 ];
 
+export interface PipelinesBuildOptions {
+  readonly deformation?: boolean;
+  readonly textureArrays?: boolean;
+  /** Main pipeline keys required by the first published frame. They are queued
+   * (and awaited) before every other main variant; the remaining mains are only
+   * queued once the critical subset resolves, so the bootstrap validation scope
+   * can settle without waiting for the full variant matrix. Shadow, display,
+   * directional and output pipelines always stay in the critical scope. */
+  readonly firstFrameMainKeys?: readonly string[];
+}
+
+export interface PipelinesBuild {
+  readonly pipelines: Pipelines;
+  /** Resolves once every planned pipeline is resident; rejects when any fails. */
+  readonly ready: Promise<void>;
+  /** Resolves once the first-frame critical subset is resident. */
+  readonly criticalReady: Promise<void>;
+  /** Lets background main variants enter the caller's released error scope. */
+  readonly releaseDeferredQueues: () => void;
+}
+
 export async function createPipelines(device: GPUDevice, format: GPUTextureFormat,
   forwardPlusLayout: GPUBindGroupLayout, writeGeometryBuffers = true,
   directDisplayNoEffects = false, directDisplayOneCascade = false,
-  options: { readonly deformation?: boolean; readonly textureArrays?: boolean } = {}): Promise<Pipelines> {
+  options: PipelinesBuildOptions = {}): Promise<Pipelines> {
+  const build = await createPipelinesBuild(device, format, forwardPlusLayout, writeGeometryBuffers,
+    directDisplayNoEffects, directDisplayOneCascade, options);
+  build.releaseDeferredQueues();
+  await build.ready;
+  return build.pipelines;
+}
+
+export async function createPipelinesBuild(device: GPUDevice, format: GPUTextureFormat,
+  forwardPlusLayout: GPUBindGroupLayout, writeGeometryBuffers = true,
+  directDisplayNoEffects = false, directDisplayOneCascade = false,
+  options: PipelinesBuildOptions = {}): Promise<PipelinesBuild> {
   const deformation = options.deformation === true;
   const textureArrays = options.textureArrays === true;
+  const profileVariant = `${deformation ? "deformation" : "static"}-${textureArrays ? "array" : "fallback"}`;
+  const markPipeline = (phase: string): void => {
+    if (typeof performance !== "undefined" && typeof performance.mark === "function") {
+      performance.mark(`deep-webgpu:pipeline-${profileVariant}-${phase}`);
+    }
+  };
+  markPipeline("start");
   if (deformation && !writeGeometryBuffers) throw new Error("Deformation pipelines require geometry buffers for motion history.");
+  /** Pipeline maps fill incrementally, so a first-frame subset becomes drawable
+   * while background variants are still compiling. */
+  const track = (map: Map<string, GPURenderPipeline>, key: string,
+    promise: Promise<GPURenderPipeline>): Promise<GPURenderPipeline> => {
+    void promise.then(pipeline => { map.set(key, pipeline); });
+    return promise;
+  };
   const poseEntries: GPUBindGroupLayoutEntry[] = deformation ? [11, 12].map(binding => ({
     binding, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage", minBindingSize: 48 },
   })) : [];
   const source = deformation ? deformedSceneShader : sceneShader;
   const module = device.createShaderModule({ label: textureArrays ? "Deep PBR texture arrays" : "Deep PBR",
     code: textureArrays ? composeTextureArraySceneShader(source) : source });
-  const outputModule = device.createShaderModule({ label: "Deep HDR output", code: outputShader });
-  for (const shader of [module, outputModule]) {
-    const info = await shader.getCompilationInfo();
-    const errors = info.messages.filter(message => message.type === "error");
-    if (errors.length) throw new Error(errors.map(message => `WGSL ${message.lineNum}: ${message.message}`).join("\n"));
-  }
-  const frameLayout = device.createBindGroupLayout({ entries: [
+  const sharedOutput = sharedOutputPipeline(device, format);
+  const [sceneInfo] = await Promise.all([module.getCompilationInfo(), sharedOutput.validated]);
+  const errors = sceneInfo.messages.filter(message => message.type === "error");
+  if (errors.length) throw new Error(errors.map(message => `WGSL ${message.lineNum}: ${message.message}`).join("\n"));
+  markPipeline("shaders-validated");  const frameLayout = device.createBindGroupLayout({ entries: [
     { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
       buffer: { type: "uniform", minBindingSize: PBR_FRAME_UNIFORM_BYTES } },
     { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "depth" } },
@@ -142,16 +187,14 @@ export async function createPipelines(device: GPUDevice, format: GPUTextureForma
     bindGroupLayouts: [frameLayout, emptyMaterialLayout, cascadedShadowLayout],
   });
   const mainPipelines = new Map<string, GPURenderPipeline>();
-  const pendingMain: Array<Promise<GPURenderPipeline>> = [];
-  const pendingMainKeys: string[] = [];
+  const mainFactories: Array<{ readonly key: string; readonly create: () => Promise<GPURenderPipeline> }> = [];
   for (const mode of ["plain", "material", "normal"] as const) for (const transparent of [false, true]) {
     for (const raster of ["ccw", "cw", "double"] as const) {
       const key = mainPipelineKey(mode, transparent, raster), doubleSided = raster === "double";
       const targets: readonly GPUColorTargetState[] = transparent ? weightedOitColorTargets()
         : (writeGeometryBuffers ? PBR_OPAQUE_ATTACHMENT_FORMATS : [PBR_HDR_FORMAT]).map(format => ({ format }));
       const opaqueEntry = mode === "plain" ? "fragmentMain" : "fragmentMaterial";
-      pendingMainKeys.push(key);
-      pendingMain.push(device.createRenderPipelineAsync({
+      mainFactories.push({ key, create: () => device.createRenderPipelineAsync({
         label: `Deep forward PBR ${key}`,
         layout: mode === "plain" ? plainLayout : materialPipelineLayout,
         vertex: { module, entryPoint: deformation ? mode === "normal" ? "vertexDeformedNormalMapped" : "vertexDeformed"
@@ -164,15 +207,26 @@ export async function createPipelines(device: GPUDevice, format: GPUTextureForma
         primitive: { topology: "triangle-list", cullMode: doubleSided ? "none" : "back", frontFace: raster === "cw" ? "cw" : "ccw" },
         depthStencil: { format: PBR_DEPTH_FORMAT, depthWriteEnabled: !transparent, depthCompare: "less" },
         multisample: { count: PBR_MAIN_SAMPLE_COUNT },
-      }));
+      }) });
     }
   }
+  // 首帧关键子集立即排队（plain/ccw 恒含）；其余 main 变体等 release 后再排队。
+  const passMainKey = mainPipelineKey("plain", false, "ccw");
+  const firstFrameKeys = options.firstFrameMainKeys;
+  const criticalMains = firstFrameKeys
+    ? mainFactories.filter(({ key }) => key === passMainKey || firstFrameKeys.includes(key))
+    : mainFactories;
+  const deferredMains = firstFrameKeys
+    ? mainFactories.filter(({ key }) => key !== passMainKey && !firstFrameKeys.includes(key))
+    : [];
+  const criticalMainReady = Promise.all(criticalMains.map(({ key, create }) => track(mainPipelines, key, create())))
+    .then(value => { markPipeline(`critical-main${value.length}-ready`); return value; });
   const displayPipelines = new Map<string, GPURenderPipeline>(), pendingDisplay: Array<Promise<GPURenderPipeline>> = [];
   const pendingDisplayKeys: string[] = [];
   if (!writeGeometryBuffers) for (const mode of ["plain", "material", "normal"] as const) {
     for (const raster of ["ccw", "cw", "double"] as const) {
       const key = mainPipelineKey(mode, false, raster), doubleSided = raster === "double";
-      pendingDisplayKeys.push(key); pendingDisplay.push(device.createRenderPipelineAsync({
+      pendingDisplayKeys.push(key); pendingDisplay.push(track(displayPipelines, key, device.createRenderPipelineAsync({
         label: `Deep direct display PBR ${key}`,
         layout: mode === "plain" ? plainLayout : materialPipelineLayout,
         vertex: { module, entryPoint: mode === "plain" ? "vertexDirectDisplay"
@@ -186,7 +240,7 @@ export async function createPipelines(device: GPUDevice, format: GPUTextureForma
         primitive: { topology: "triangle-list", cullMode: doubleSided ? "none" : "back", frontFace: raster === "cw" ? "cw" : "ccw" },
         depthStencil: { format: PBR_DEPTH_FORMAT, depthWriteEnabled: true, depthCompare: "less" },
         multisample: { count: PBR_MAIN_SAMPLE_COUNT },
-      }));
+      })));
     }
   }
   const displayDirectionalPipelines = new Map<string, GPURenderPipeline>();
@@ -194,7 +248,7 @@ export async function createPipelines(device: GPUDevice, format: GPUTextureForma
   if (!writeGeometryBuffers && directDisplayNoEffects && directDisplayOneCascade) {
     for (const raster of ["ccw", "cw", "double"] as const) {
       const key = mainPipelineKey("plain", false, raster), doubleSided = raster === "double";
-      pendingDirectionalKeys.push(key); pendingDirectional.push(device.createRenderPipelineAsync({
+      pendingDirectionalKeys.push(key); pendingDirectional.push(track(displayDirectionalPipelines, key, device.createRenderPipelineAsync({
         label: `Deep direct directional PBR ${key}`, layout: directionalPlainLayout,
         vertex: { module, entryPoint: "vertexDirectDisplay", buffers },
         fragment: { module, entryPoint: "fragmentMainDisplayDirectional", targets: [{ format }] },
@@ -202,7 +256,7 @@ export async function createPipelines(device: GPUDevice, format: GPUTextureForma
           frontFace: raster === "cw" ? "cw" : "ccw" },
         depthStencil: { format: PBR_DEPTH_FORMAT, depthWriteEnabled: true, depthCompare: "less" },
         multisample: { count: PBR_MAIN_SAMPLE_COUNT },
-      }));
+      })));
     }
   }
   const shadowFrameLayout = device.createBindGroupLayout({ entries: [
@@ -215,7 +269,7 @@ export async function createPipelines(device: GPUDevice, format: GPUTextureForma
   for (const authored of directDisplayOneCascade ? [false, true] : [false]) for (const mode of ["solid", "maskPlain", "maskMaterial"] as const) for (const raster of ["ccw", "cw", "double"] as const) {
     const key = (authored ? "author/" : "") + shadowPipelineKey(mode, raster), doubleSided = raster === "double";
     pendingShadowKeys.push(key);
-    pendingShadow.push(device.createRenderPipelineAsync({
+    pendingShadow.push(track(shadowPipelines, key, device.createRenderPipelineAsync({
       label: `Deep shadow ${key}`, layout: mode === "maskMaterial" ? shadowMaterialLayout : shadowPlainLayout,
       vertex: { module, entryPoint: deformation ? mode === "solid" ? "shadowDeformed" : "shadowMaskDeformed"
         : mode === "solid" ? "shadowMain" : "shadowMaskMain",
@@ -223,28 +277,51 @@ export async function createPipelines(device: GPUDevice, format: GPUTextureForma
       ...(mode === "solid" ? {} : { fragment: { module, entryPoint: mode === "maskPlain" ? "shadowMaskPlain" : "shadowMaskTextured", targets: [] } }),
       primitive: { topology: "triangle-list", cullMode: doubleSided ? "none" : authored ? "front" : "back", frontFace: raster === "cw" ? "cw" : "ccw" },
       depthStencil: { format: "depth32float", depthWriteEnabled: true, depthCompare: "less", depthBias: authored ? 0 : 1, depthBiasSlopeScale: authored ? 0 : 1 },
-    }));
+    })));
   }
-  const output = device.createRenderPipelineAsync({
-    label: "Deep output", layout: "auto", vertex: { module: outputModule, entryPoint: "vertexMain" },
-    fragment: { module: outputModule, entryPoint: "fragmentMain", targets: [{ format }] }, primitive: { topology: "triangle-list" },
+  const output = sharedOutput.renderPipeline();
+  markPipeline(`queued-main${mainFactories.length}-display${pendingDisplay.length}-directional${pendingDirectional.length}-shadow${pendingShadow.length}-output1`);
+  const displayReady = Promise.all(pendingDisplay).then(value => { markPipeline("display-ready"); return value; });
+  const directionalReady = Promise.all(pendingDirectional).then(value => { markPipeline("directional-ready"); return value; });
+  const shadowReady = Promise.all(pendingShadow).then(value => { markPipeline("shadow-ready"); return value; });
+  const outputPipelineReady = output.then(value => { markPipeline("output-ready"); return value; });
+  const criticalReady = Promise.all([criticalMainReady, displayReady, directionalReady, shadowReady, outputPipelineReady])
+    .then(() => { markPipeline("critical-ready"); });
+  // 剩余主材质变体必须在调用方关闭 bootstrap 校验作用域之后才允许排队，
+  // 否则 popErrorScope 会再次等待它们，首帧关键路径的收益归零。
+  let releaseDeferredQueues: (() => void) | undefined;
+  const releaseGate = new Promise<void>(resolve => { releaseDeferredQueues = resolve; });
+  const deferredMainReady = criticalMainReady.then(async () => {
+    await releaseGate;
+    const value = await Promise.all(deferredMains.map(({ key, create }) => track(mainPipelines, key, create())));
+    markPipeline("main-ready");
+    return value;
   });
-  const [createdMain, createdDisplay, createdDirectional, createdShadow, outputPipeline] = await Promise.all([
-    Promise.all(pendingMain), Promise.all(pendingDisplay), Promise.all(pendingDirectional),
-    Promise.all(pendingShadow), output]);
-  createdMain.forEach((pipeline, index) => mainPipelines.set(pendingMainKeys[index]!, pipeline));
-  createdDisplay.forEach((pipeline, index) => displayPipelines.set(pendingDisplayKeys[index]!, pipeline));
-  createdDirectional.forEach((pipeline, index) => displayDirectionalPipelines.set(pendingDirectionalKeys[index]!, pipeline));
-  createdShadow.forEach((pipeline, index) => shadowPipelines.set(pendingShadowKeys[index]!, pipeline));
-  return { main: mainPipelines.get(mainPipelineKey("plain", false, "ccw"))!,
-    ...(displayPipelines.size ? { displayMain: displayPipelines.get(mainPipelineKey("plain", false, "ccw"))! } : {}),
-    ...(displayDirectionalPipelines.size ? { displayDirectionalMain:
-      displayDirectionalPipelines.get(mainPipelineKey("plain", false, "ccw"))! } : {}),
-    shadow: shadowPipelines.get(shadowPipelineKey("solid", "ccw"))!, mainPipelines, displayPipelines,
-    displayDirectionalPipelines, shadowPipelines,
-    output: outputPipeline, outputShaderProvenance: createPbrOutputShaderProvenance(outputPipeline, outputShader),
+  if (deferredMains.length === 0) releaseDeferredQueues?.();
+  const ready = Promise.all([deferredMainReady, displayReady, directionalReady, shadowReady, outputPipelineReady])
+    .then(() => { markPipeline("ready"); });
+  let outputPipeline: GPURenderPipeline | undefined;
+  let outputProvenance: PbrOutputShaderProvenance | undefined;
+  void outputPipelineReady.then(value => {
+    outputPipeline = value;
+    outputProvenance = createPbrOutputShaderProvenance(value, outputShader);
+  }).catch(() => { /* criticalReady/ready 传播失败；此处只避免未处理拒绝 */ });
+  const pipelines: Pipelines = {
+    get main() { return mainPipelines.get(passMainKey)!; },
+    get shadow() { return shadowPipelines.get(shadowPipelineKey("solid", "ccw"))!; },
+    mainPipelines, displayPipelines, displayDirectionalPipelines, shadowPipelines,
+    get output() { return outputPipeline!; },
+    get outputShaderProvenance() { return outputProvenance; },
     materialLayout: { material }, cascadedShadowLayout,
-    ...(deformation ? { deformationPlainLayout: emptyMaterialLayout } : {}) };
+    ...(deformation ? { deformationPlainLayout: emptyMaterialLayout } : {}),
+  };
+  // 对象展开会立即求值访问器，条件可选字段必须用 defineProperty 挂 getter，
+  // 让读取时机推迟到管线真正就绪之后。
+  if (pendingDisplay.length) Object.defineProperty(pipelines, "displayMain",
+    { get: () => displayPipelines.get(passMainKey)!, enumerable: true, configurable: true });
+  if (pendingDirectional.length) Object.defineProperty(pipelines, "displayDirectionalMain",
+    { get: () => displayDirectionalPipelines.get(passMainKey)!, enumerable: true, configurable: true });
+  return { pipelines, criticalReady, ready, releaseDeferredQueues: releaseDeferredQueues! };
 }
 
 /**

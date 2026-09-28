@@ -31,6 +31,7 @@
     "quality:source-size": "node scripts/check-source-size.mjs",
     "gate:repository": "node --test scripts/check-repository-governance.test.mjs && node scripts/check-repository-governance.mjs",
     "gate:artifact-freshness": "node scripts/check-runtime-artifact-freshness.mjs",
+    "sync:engine-chain": "pnpm --filter @bim-studio/contracts build && pnpm --filter @bim-studio/deep-engine build && node scripts/build-wasm-bundle.mjs && pnpm --filter @bim-studio/web typecheck && node scripts/check-runtime-artifact-freshness.mjs",
     "verify:scene-client": "node scripts/verify-scene-client-package.mjs",
     "run:scene-native": "node scripts/run-scene-client-native.mjs",
     "test:scene-client": "node --test scripts/lib/sceneClientArchive*.test.mjs scripts/verify-scene-client-package.test.mjs",

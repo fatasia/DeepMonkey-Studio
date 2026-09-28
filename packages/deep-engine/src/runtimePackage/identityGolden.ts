@@ -1,5 +1,6 @@
 // P0-07 跨语言身份 golden:把 v5 组合包解析后的结构视图导出为稳定 JSON,
 // TS 与 Native 各自实现导出,入库 golden 是唯一仲裁;视图不含像素与坐标数值。
+import { compareText } from "../textOrder.js";
 import type { DeepRuntimePackageV5 } from "./types.js";
 
 export const DASHBOARD_IDENTITY_GOLDEN_SCHEMA = "deep-engine.dashboard-identity-golden";
@@ -51,7 +52,7 @@ export function dashboardIdentityGoldenView(pkg: DeepRuntimePackageV5): {
     fixture: "dashboard-composition-v1.json",
     package: { packageId: pkg.packageId, packageVersion: pkg.packageVersion, schemaVersion: pkg.schemaVersion, packageHash: pkg.packageHash },
     entrypoints: pkg.entrypoints,
-    payloads: Object.fromEntries(Object.entries(payloads).sort(([a], [b]) => a.localeCompare(b))),
-    resources: [...pkg.resources].map(({ id, kind, revision }) => ({ id, kind, revision })).sort((a, b) => a.id.localeCompare(b.id)),
+    payloads: Object.fromEntries(Object.entries(payloads).sort(([a], [b]) => compareText(a, b))),
+    resources: [...pkg.resources].map(({ id, kind, revision }) => ({ id, kind, revision })).sort((a, b) => compareText(a.id, b.id)),
   };
 }

@@ -27,15 +27,30 @@ describe("temporal AA",()=>{
     f.session.release = resource => { memory.remove(resource); release(resource); };
     const pass = new TemporalAaPass(f.session), encoder = { beginComputePass: vi.fn(() => ({ setPipeline() {}, setBindGroup() {}, dispatchWorkgroups() {}, end() {} })) };
     const first = pass.encode(encoder as unknown as GPUCommandEncoder, source(0), options);
-    expect(memory.snapshot.estimatedBytes).toBe(144);
+    expect(memory.snapshot.estimatedBytes).toBe(145);
     expect(() => pass.encode(encoder as unknown as GPUCommandEncoder, source(1, false, 4), options)).toThrow(DeviceResourceBudgetError);
-    expect(f.device.createTexture).toHaveBeenCalledTimes(5);
-    expect(f.outputs[4]!.destroy).toHaveBeenCalledOnce();
+    expect(f.device.createTexture).toHaveBeenCalledTimes(6);
+    expect(f.outputs[5]!.destroy).toHaveBeenCalledOnce();
     expect(first.texture.destroy).not.toHaveBeenCalled();
     expect(encoder.beginComputePass).toHaveBeenCalledOnce();
-    expect(memory.snapshot).toMatchObject({ estimatedBytes: 144, peakEstimatedBytes: 176, resourceCount: 6 });
+    expect(memory.snapshot).toMatchObject({ estimatedBytes: 145, peakEstimatedBytes: 177, resourceCount: 7 });
     expect(pass.encode(encoder as unknown as GPUCommandEncoder, source(1), options).historyUsed).toBe(true);
     pass.dispose(); expect(memory.snapshot.estimatedBytes).toBe(0);
+  });
+  it("binds the reactive mask (or the zero fallback) on binding 8 and validates its shape", () => {
+    const f = fixture(), pass = new TemporalAaPass(f.session), p = { beginComputePass: () => ({ setPipeline() {}, setBindGroup() {}, dispatchWorkgroups() {}, end() {} }) } as GPUCommandEncoder;
+    const fallbackCall = pass.encode(p, source(0), options);
+    const fallbackEntries = (f.device.createBindGroup.mock.calls.at(-1)![0] as GPUBindGroupDescriptor).entries;
+    expect(fallbackEntries.find(entry => entry.binding === 8)!.resource).toBeDefined();
+    expect(f.device.createTexture).toHaveBeenCalledWith(expect.objectContaining({ format: "r8unorm", label: "Deep TAA reactive mask fallback" }));
+    expect(fallbackCall.historyInvalidation).toBe("first-frame");
+    const mask = { ...texture(2, 1, "r8unorm" as GPUTextureFormat), createView: vi.fn(() => ({ mask: true })) } as unknown as GPUTexture;
+    pass.encode(p, { ...source(1), reactiveMask: mask }, options);
+    const maskedEntries = (f.device.createBindGroup.mock.calls.at(-1)![0] as GPUBindGroupDescriptor).entries;
+    expect(maskedEntries.find(entry => entry.binding === 8)!.resource).toEqual({ mask: true });
+    expect(() => pass.encode(p, { ...source(2), reactiveMask: texture(2, 1, "rgba8unorm") }, options)).toThrow("r8unorm");
+    expect(() => pass.encode(p, { ...source(2), reactiveMask: texture(4, 1, "r8unorm") }, options)).toThrow("dimensions must match");
+    pass.dispose(); expect(f.owned.size).toBe(0);
   });
   it.runIf(Boolean(process.env.DEEP_SHADER_NAGA_BIN))("is Naga-valid",()=>{const r=spawnSync(process.env.DEEP_SHADER_NAGA_BIN!,["--stdin-file-path","deep-taa.wgsl","--input-kind","wgsl"],{input:TEMPORAL_AA_WGSL,encoding:"utf8"});expect(r.status,r.stderr).toBe(0);});
   it("provides Halton 2/3 jitter and CPU first-frame/motion/depth rejection",()=>{
@@ -65,7 +80,7 @@ describe("temporal AA",()=>{
     expect(()=>pass.encode(p,source(1,false,4),options)).toThrow("TAA allocation failed");expect(first.texture.destroy).not.toHaveBeenCalled();
     expect(pass.encode(p,source(1),options)).toMatchObject({historyUsed:true,historyInvalidation:null});pass.dispose();expect(f.owned.size).toBe(0);
   });
-  it("fails closed after loss",()=>{const f=fixture(),pass=new TemporalAaPass(f.session),p={beginComputePass:()=>({setPipeline(){},setBindGroup(){},dispatchWorkgroups(){},end(){}})} as GPUCommandEncoder;pass.encode(p,source(0),options);f.raw.state="lost";expect(()=>pass.encode(p,source(1),options)).toThrow("not ready");expect(f.owned.size).toBe(0);});
+  it("fails closed after loss",()=>{const f = fixture(), pass = new TemporalAaPass(f.session), p = { beginComputePass: () => ({ setPipeline() {}, setBindGroup() {}, dispatchWorkgroups() {}, end() {} }) } as GPUCommandEncoder; pass.encode(p, source(0), options); f.raw.state = "lost"; expect(() => pass.encode(p, source(1), options)).toThrow("not ready"); expect(f.owned.size).toBe(1); pass.dispose(); expect(f.owned.size).toBe(0);});
   it("fails closed on ambiguous encodings, formats, usage, dimensions, revisions, and tuning",()=>{const f=fixture(),pass=new TemporalAaPass(f.session),p={beginComputePass:()=>({setPipeline(){},setBindGroup(){},dispatchWorkgroups(){},end(){}})} as GPUCommandEncoder,valid=source(0);
     expect(()=>pass.encode(p,{...valid,colorEncoding:"srgb" as never},options)).toThrow("explicit linear HDR");
     expect(()=>pass.encode(p,{...valid,color:texture(2,1,"rgba8unorm")},options)).toThrow("rgba16float");

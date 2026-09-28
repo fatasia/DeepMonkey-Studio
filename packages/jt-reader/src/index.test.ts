@@ -3,7 +3,11 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 import { BinaryReader, JtFormatError, readJt } from "./index.js";
-import { synthesizeDualTextureSetJt, synthesizeMinimalPmiJt, synthesizeUvColorJt } from "./fixtureSynthesis.test-helper.js";
+import { buildSceneGraph } from "./sceneGraph.js";
+import { parseJtContainer } from "./container.js";
+import { readSegmentPayload } from "./container.js";
+import { DEFAULT_JT_READ_LIMITS } from "./types.js";
+import { synthesizeDualTextureSetJt, synthesizeMinimalPmiJt, synthesizeSingleNonzeroTextureSetJt, synthesizeUvColorJt } from "./fixtureSynthesis.test-helper.js";
 
 const exampleBlockFixture = new URL(
   "../../../data/external-assets/format-fixtures/jt/voyager-example-block-jt10.3.jt",
@@ -14,7 +18,40 @@ const coffeeMakerFixture = new URL(
   import.meta.url,
 );
 
+const independentTextureFixture = new URL(
+  "../../../data/external-assets/format-fixtures/jt/independent-texture/painted-instanced-10.3.jt", import.meta.url,
+);
+
 describe("JT reader", () => {
+  it("reads author-produced inline image bytes, UV set 1 and two source-path material instances", async () => {
+    const document = await readJt(await readFile(independentTextureFixture));
+    expect(document.sceneGraph.nodes[0]?.textureImages?.[0]).toMatchObject({
+      objectId: 101, textureChannel: 0, textureSetIndex: 1, width: 2, height: 2, channels: 4,
+    });
+    expect([...document.sceneGraph.nodes[0]!.textureImages![0]!.pixels]).toEqual([
+      255, 35, 45, 255, 25, 240, 135, 255, 25, 95, 255, 255, 255, 210, 20, 255,
+    ]);
+    expect(document.meshes[0]?.textureSets?.map((set) => set.textureSetIndex)).toEqual([1]);
+    expect(document.meshInstances.map((item) => item.pathObjectIds)).toEqual([[1, 2], [1, 3]]);
+    expect(document.losses?.some((item) => item.code === "uv-binding-absent")).toBe(false);
+  });
+
+  it("fail-closes unsupported image profile and missing image bytes", async () => {
+    const source = new Uint8Array(await readFile(independentTextureFixture));
+    const marker = Uint8Array.from([255, 35, 45, 255, 25, 240, 135, 255]);
+    const imageOffset = Buffer.from(source).indexOf(marker);
+    expect(imageOffset).toBeGreaterThan(0);
+    const invalidVersion = source.slice();
+    invalidVersion.set(new TextEncoder().encode("Version 11.3"), 0);
+    await expect(readJt(invalidVersion)).rejects.toMatchObject({ code: "shape-version-unsupported" });
+    const invalidMinor = source.slice();
+    invalidMinor.set(new TextEncoder().encode("Version 10.5"), 0);
+    await expect(readJt(invalidMinor)).rejects.toMatchObject({ code: "shape-version-unsupported" });
+    const invalidSize = source.slice();
+    new DataView(invalidSize.buffer).setUint32(imageOffset - 8, 64, true);
+    await expect(readJt(invalidSize)).rejects.toMatchObject({ code: "attribute-encoding-unsupported" });
+    await expect(readJt(source.subarray(0, imageOffset + 4))).rejects.toMatchObject({ code: "read-bounds-exceeded" });
+  });
   it("拒绝越界读取", () => {
     const reader = new BinaryReader(new Uint8Array(4));
     expect(() => reader.u32(1)).toThrow(JtFormatError);
@@ -269,6 +306,16 @@ describe("JT reader", () => {
     expect(lod0!.uvs).toBe(set0!.uvs);
   });
 
+  it("保留唯一非零纹理集的源编号,不把集合 1 当作集合 0", async () => {
+    const source = await readFile(exampleBlockFixture);
+    const document = await readJt(synthesizeSingleNonzeroTextureSetJt(new Uint8Array(source)));
+    expect(document.warnings).toEqual([]);
+    const lod0 = document.meshes.find((mesh) => mesh.lod === 0)!;
+    expect(lod0.textureSets).toHaveLength(1);
+    expect(lod0.textureSets![0]!.textureSetIndex).toBe(1);
+    expect(lod0.uvs).toBe(lod0.textureSets![0]!.uvs);
+  });
+
   it("拒绝损坏的第二纹理集记录:量化码越界显式失败,不输出部分解码的网格", async () => {
     const source = await readFile(exampleBlockFixture);
     const synthetic = synthesizeDualTextureSetJt(new Uint8Array(source));
@@ -286,5 +333,180 @@ describe("JT reader", () => {
     const document = await readJt(synthetic);
     expect(document.meshes.some((mesh) => mesh.lod === 0 && mesh.textureSets)).toBe(false);
     expect(document.warnings.some((warning) => warning.includes("LOD 数据段") && warning.includes("量化码越界"))).toBe(true);
+  });
+
+  it("错误码稳定:损坏量化码进结构化 loss 并携带机读 errorCode", async () => {
+    // 与上一测试同一损坏字节:机器消费只依赖 loss.code/errorCode,不解析 detail 措辞。
+    const source = await readFile(exampleBlockFixture);
+    const synthetic = synthesizeUvColorJt(new Uint8Array(source));
+    const { parseJtContainer } = await import("./container.js");
+    const { DEFAULT_JT_READ_LIMITS } = await import("./types.js");
+    const parsed = parseJtContainer(synthetic, DEFAULT_JT_READ_LIMITS);
+    const segment = parsed.segments.find((candidate) => candidate.type === 7)!;
+    const uCodeOffset = segment.offset + 24 + 770 + 24 + 9;
+    const dataView = new DataView(synthetic.buffer, synthetic.byteOffset, synthetic.byteLength);
+    dataView.setInt32(uCodeOffset, 0x7fffffff, true);
+    const document = await readJt(synthetic);
+    const loss = document.losses!.find((entry) => entry.code === "mesh-segment-decode-failed");
+    expect(loss).toBeDefined();
+    expect(loss!.kind).toBe("loss");
+    expect(loss!.errorCode).toBe("quantization-code-out-of-range");
+    expect(loss!.scope.startsWith("segment:")).toBe(true);
+    expect(loss!.detail).toBe(document.warnings.find((warning) => warning.includes("量化码越界")));
+  });
+
+  it("错误码稳定:附属字段拒绝携带 attribute-encoding-unsupported", async () => {
+    const source = await readFile(exampleBlockFixture);
+    const synthetic = new Uint8Array(source);
+    const { parseJtContainer } = await import("./container.js");
+    const { DEFAULT_JT_READ_LIMITS } = await import("./types.js");
+    const parsed = parseJtContainer(synthetic, DEFAULT_JT_READ_LIMITS);
+    const segment = parsed.segments.find((candidate) => candidate.type === 7)!;
+    // 与既有 aux 拒绝测试同构:外层与内层 TopoMesh 绑定掩码必须同时置位,
+    // 否则先命中"内外绑定一致"守卫(binding-mismatch),到不了 aux 拒绝分支。
+    for (const bindingsOffset of [segment.offset + 24 + 27, segment.offset + 24 + 247]) {
+      const view = new DataView(synthetic.buffer, synthetic.byteOffset, synthetic.byteLength);
+      view.setBigUint64(bindingsOffset, view.getBigUint64(bindingsOffset, true) | 0x80n, true);
+    }
+    const document = await readJt(synthetic);
+    const loss = document.losses!.find((entry) => entry.code === "mesh-segment-decode-failed");
+    expect(loss!.errorCode).toBe("attribute-encoding-unsupported");
+  });
+
+  it("错误码稳定:截断文件以 JtFormatError 拒绝并携带 read-bounds-exceeded", async () => {
+    const error: JtFormatError = await readJt(new Uint8Array(24)).then(
+      () => { throw new Error("应当拒绝"); },
+      (caught) => caught,
+    );
+    expect(error).toBeInstanceOf(JtFormatError);
+    expect(error.code).toBe("read-bounds-exceeded");
+  });
+
+  it("损失声明覆盖:10.3 真实样本边界与源事实按确定性顺序记录", async () => {
+    const document = await readJt(await readFile(exampleBlockFixture));
+    expect(document.losses!.map((entry) => [entry.code, entry.kind])).toEqual([
+      ["tessellation-only", "known-limitation"],
+      ["uv-binding-absent", "source-fact"],
+      ["pmi-structure-only", "known-limitation"],
+    ]);
+    // 无解码失败:真实样本不得出现 loss 级记录。
+    expect(document.losses!.every((entry) => entry.kind !== "loss")).toBe(true);
+  });
+
+  it("损失声明覆盖:9.5 样本无 PMI 段,声明 pmi-segment-absent 源事实", async () => {
+    const document = await readJt(await readFile(coffeeMakerFixture));
+    const codes = document.losses!.map((entry) => entry.code);
+    expect(codes).toContain("tessellation-only");
+    expect(codes).toContain("uv-binding-absent");
+    expect(codes).toContain("pmi-segment-absent");
+    expect(codes).not.toContain("pmi-structure-only");
+    expect(document.losses!.every((entry) => entry.kind !== "loss")).toBe(true);
+  });
+
+  it("按 JT 8.x 布局解释 LSG 对象头与属性原子(无版本字段前缀)", () => {
+    // 真实缺陷回归(PyOpenJt 8.0/8.1 样本,见 T22 报告 9.x 编码缺口切片):
+    // 8.x 属性原子 = 状态标志 U32 后直接是值/引用,无 9.x 的版本字段;
+    // 延迟加载引用 = GUID16 + 类型 I32(无对象 ID 与保留字段),共 24 字节。
+    // 节点 = 状态标志 U32 + 属性计数向量 + 子引用。
+    const i32le = (value: number): number[] => [value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff];
+    const mbString8x = (text: string): number[] => [
+      0, 0, 0, 0, ...i32le(text.length),
+      ...[...text].flatMap((char) => [char.charCodeAt(0) & 0xff, (char.charCodeAt(0) >>> 8) & 0xff]),
+    ];
+    const element = (objectId: number, objectTypeId: string, payload: number[]) => ({
+      objectId,
+      objectTypeId,
+      baseType: 1,
+      payload: Uint8Array.from(payload),
+      streamOffset: 0,
+    });
+    const latePayload = [0, 0, 0, 0, 0x11, 0, 0, 0, 0x22, 0, 0x33, 0, 1, 2, 3, 4, 5, 6, 7, 8, ...i32le(4)];
+    const sections = {
+      sceneElements: [element(2, "10dd102a-2ac8-11d1-9b6b-0080c7bb5997", [0, 0, 0, 0, 0, 0, 0, 0, ...i32le(7)])],
+      propertyAtoms: [
+        element(10, "10dd106e-2ac8-11d1-9b6b-0080c7bb5997", mbString8x("JT_PROP_NAME")),
+        element(11, "10dd106e-2ac8-11d1-9b6b-0080c7bb5997", mbString8x("CD")),
+        element(12, "e0b05be5-fbbd-11d1-a3a7-00aa00d10954", latePayload),
+      ],
+      propertyTableOffset: 0,
+    };
+    // 属性表:i16 版本 + i32 条目数 + {对象 ID, (键,值) 对(键 0 终止)};延迟加载经值 ID 关联。
+    const table = new Uint8Array([
+      1, 0, ...i32le(1),
+      ...i32le(2),
+      ...i32le(10), ...i32le(11),
+      ...i32le(12), ...i32le(12),
+      ...i32le(0),
+    ]);
+    const graph = buildSceneGraph(table, sections, "little-endian", DEFAULT_JT_READ_LIMITS, 8);
+    expect(graph.nodes).toHaveLength(1);
+    expect(graph.nodes[0]!.properties["JT_PROP_NAME"]).toBe("CD");
+    expect(graph.nodes[0]!.lateLoadedSegments).toHaveLength(1);
+    expect(graph.nodes[0]!.lateLoadedSegments![0]!.type).toBe(4);
+    expect(graph.nodes[0]!.lateLoadedSegments![0]!.payloadObjectId).toBeUndefined();
+    expect(graph.rootObjectIds).toEqual([2]);
+
+    // 反例(fail-closed):同一批 8.x 原子若按 9.x 布局解释必然显式越界,不得静默接受。
+    expect(() => buildSceneGraph(table, sections, "little-endian", DEFAULT_JT_READ_LIMITS, 9)).toThrow(JtFormatError);
+  });
+
+  it("压缩段声明长度少记时按物理字节容差解压;真缺失仍显式拒绝", async () => {
+    // 真实缺陷回归(Warehouse.jt,TechSoft3D JT writer 8.1):压缩声明长度比段内可用多 1 字节,
+    // 缺的字节物理存在于文件末尾且无任何段认领;zlib 流自带校验和,允许顺延补足并解压。
+    const { deflateSync } = await import("node:zlib");
+    const payload = Uint8Array.from(Array.from({ length: 64 }, (_, index) => (index * 37 + 11) & 0xff));
+    const stream = deflateSync(payload);
+    const segGuid = Uint8Array.from([0x11, 0, 0, 0, 0x22, 0, 0x33, 0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    const declaredSegLen = 24 + 9 + stream.length; // 故意比物理字节少记 1
+    const buildFile = (encodedLength: number): Uint8Array => {
+      const tocOffset = 105 + declaredSegLen + 1;
+      const file = new Uint8Array(tocOffset + 4 + 28);
+      const view = new DataView(file.buffer);
+      const versionText = "Version 8.0 JT";
+      file.set([...versionText].map((char) => char.charCodeAt(0)), 0);
+      view.setUint32(85, tocOffset, true);
+      file.set(segGuid, 89);
+      // 数据段(物理多 1 字节,声明长度少记 1)
+      let cursor = 105;
+      file.set(segGuid, cursor);
+      view.setInt32(cursor + 16, 1, true);
+      view.setInt32(cursor + 20, declaredSegLen, true);
+      cursor += 24;
+      view.setUint32(cursor, 2, true); // 压缩标记 zlib
+      view.setUint32(cursor + 4, encodedLength, true); // 含算法字节
+      file[cursor + 8] = 2; // 算法标识
+      file.set(stream, cursor + 9);
+      // TOC
+      view.setUint32(tocOffset, 1, true);
+      file.set(segGuid, tocOffset + 4);
+      view.setUint32(tocOffset + 20, 105, true);
+      view.setUint32(tocOffset + 24, declaredSegLen, true);
+      view.setUint32(tocOffset + 28, 0x01000000, true);
+      return file;
+    };
+    const container = parseJtContainer(buildFile(stream.length + 1), DEFAULT_JT_READ_LIMITS);
+    const lsgBytes = await readSegmentPayload(container, container.segments[0]!, DEFAULT_JT_READ_LIMITS);
+    expect([...lsgBytes]).toEqual([...payload]);
+
+    // 反例:声明长度连物理文件都覆盖不了 → 段载荷无效,显式拒绝(fail-closed)。
+    const badContainer = parseJtContainer(buildFile(stream.length + 100), DEFAULT_JT_READ_LIMITS);
+    try {
+      await readSegmentPayload(badContainer, badContainer.segments[0]!, DEFAULT_JT_READ_LIMITS);
+      expect.unreachable("声明数据缺失时必须抛出 JtFormatError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(JtFormatError);
+      expect((error as JtFormatError).code).toBe("segment-payload-invalid");
+    }
+  });
+
+  it("错误码词表机器可读:JT_ERROR_CODES/JT_LOSS_CODES 导出且互不重叠", async () => {
+    const { JT_ERROR_CODES } = await import("./errors.js");
+    const { JT_LOSS_CODES } = await import("./types.js");
+    expect(JT_ERROR_CODES.length).toBeGreaterThanOrEqual(20);
+    expect(JT_LOSS_CODES.length).toBe(10);
+    for (const code of JT_ERROR_CODES) expect(typeof code).toBe("string");
+    for (const code of JT_LOSS_CODES) expect(typeof code).toBe("string");
+    // 两词表职责分离:错误码描述解析失败,损失码描述产物缺失,不得共用同一标识。
+    for (const lossCode of JT_LOSS_CODES) expect(JT_ERROR_CODES).not.toContain(lossCode);
   });
 });

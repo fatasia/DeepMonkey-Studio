@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { verifyBackgroundAtlases } from "./dashboardBackgroundEvidence.mjs";
 import { tableContentIds } from "./dashboardTableContent.mjs";
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 const sha = value => createHash("sha256").update(value).digest("hex");
 const check = (value, reason) => { if (!value) throw new Error(`Dashboard window evidence: ${reason}`); };
@@ -86,6 +87,6 @@ export function bindDashboardWindowEvidence(input, runtime, receipt, runtimeCont
     freezeManifestSha256: candidate.manifest.manifestSha256, sourceSemanticHash: input.sourceSemanticHash,
     compileGraphHash: input.compileGraphHash, targetArtifactHash: input.targetArtifactHash,
     fixtureSha256: receipt.sourceSha256, deviceFingerprintSha256: report.deviceFingerprintSha256,
-    fontSha256: [...fonts.values()].sort((a, b) => a.resourceId.localeCompare(b.resourceId)),
+    fontSha256: [...fonts.values()].sort((a, b) => compareText(a.resourceId, b.resourceId)),
     renderedNodeIds: [...rendered].sort() };
 }

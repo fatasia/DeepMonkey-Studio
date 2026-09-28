@@ -4,6 +4,7 @@ export type { ThreeProjectionDirtyMetrics, ThreeProjectionDirtyPlan, ThreeSceneN
 export type { ThreeObjectSource, ThreeProjectionHooks, ProjectionIssue, ProjectionResult,
   IncrementalProjectionMetrics, IncrementalProjectionResult } from "./types.js";
 export { DeepWebGpuBackend, DeepWebGpuProjectionError } from "./DeepWebGpuBackend.js";
+export { firstFramePipelineMainKeys } from "./firstFramePipelineKeys.js";
 export type { DeepWebGpuBackendCreateRequest, DeepWebGpuBackendOptions, DeepWebGpuBackendRuntime,
   DeepWebGpuRenderRuntime, DeepWebGpuRuntimeFactory, DeepWebGpuShadowSelection,
   DeepWebGpuSyncResult } from "./DeepWebGpuBackend.js";

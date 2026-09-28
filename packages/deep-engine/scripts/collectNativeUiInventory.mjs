@@ -3,6 +3,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import ts from "typescript";
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 const SOURCE_EXTENSION = /\.(?:[cm]?[jt]sx?|css|scss)$/;
 const STYLE_EXTENSION = /\.(?:css|scss)$/;
@@ -52,7 +53,7 @@ function createEvidenceStore() {
 export function scanNativeUiSources(sources) {
   const store = createEvidenceStore();
   const parseDiagnostics = [];
-  const orderedSources = [...sources].sort((a, b) => a.file.localeCompare(b.file, "en"));
+  const orderedSources = [...sources].sort((a, b) => compareText(a.file, b.file));
   const sourceFiles = new Map(orderedSources.filter(({ file }) => !STYLE_EXTENSION.test(file)).map(({ file, code }) => {
     const scriptKind = file.endsWith("x") ? ts.ScriptKind.TSX : file.endsWith(".js") || file.endsWith(".mjs") || file.endsWith(".cjs")
       ? ts.ScriptKind.JS : ts.ScriptKind.TS;
@@ -141,10 +142,10 @@ export function scanNativeUiSources(sources) {
 
   const fileEvidence = [];
   const categories = Object.fromEntries(CATEGORY_ORDER.map((category) => [category, { fileCount: 0, matchCount: 0, kindCounts: {}, representativeFiles: [] }]));
-  for (const [file, fileEntry] of [...store.files].sort(([a], [b]) => a.localeCompare(b, "en"))) {
+  for (const [file, fileEntry] of [...store.files].sort(([a], [b]) => compareText(a, b))) {
     const entry = { file, categories: {} };
     for (const [category, evidence] of fileEntry) {
-      const kinds = Object.fromEntries([...evidence.kinds].sort(([a], [b]) => a.localeCompare(b, "en")));
+      const kinds = Object.fromEntries([...evidence.kinds].sort(([a], [b]) => compareText(a, b)));
       entry.categories[category] = { matches: evidence.matches, firstLine: evidence.firstLine, kinds };
       const aggregate = categories[category];
       aggregate.fileCount += 1;
@@ -154,18 +155,18 @@ export function scanNativeUiSources(sources) {
     fileEvidence.push(entry);
   }
   for (const [category, aggregate] of Object.entries(categories)) {
-    aggregate.kindCounts = Object.fromEntries(Object.entries(aggregate.kindCounts).sort(([a], [b]) => a.localeCompare(b, "en")));
+    aggregate.kindCounts = Object.fromEntries(Object.entries(aggregate.kindCounts).sort(([a], [b]) => compareText(a, b)));
     aggregate.representativeFiles = fileEvidence
       .filter((entry) => entry.categories[category])
       .map((entry) => ({ file: entry.file, ...entry.categories[category] }))
-      .sort((a, b) => b.matches - a.matches || a.file.localeCompare(b.file, "en"))
+      .sort((a, b) => b.matches - a.matches || compareText(a.file, b.file))
       .slice(0, 8);
   }
-  return { categories, fileEvidence, parseDiagnostics: parseDiagnostics.sort((a, b) => a.file.localeCompare(b.file, "en") || a.line - b.line) };
+  return { categories, fileEvidence, parseDiagnostics: parseDiagnostics.sort((a, b) => compareText(a.file, b.file) || a.line - b.line) };
 }
 
 async function collectTree(root, workspace, files) {
-  for (const entry of (await readdir(root, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name, "en"))) {
+  for (const entry of (await readdir(root, { withFileTypes: true })).sort((a, b) => compareText(a.name, b.name))) {
     if (IGNORED_DIRECTORIES.has(entry.name)) continue;
     const path = join(root, entry.name);
     if (entry.isDirectory()) await collectTree(path, workspace, files);
@@ -179,7 +180,7 @@ async function discoverScope(workspace) {
     .filter(([name, version]) => name.startsWith("@bim-studio/") && String(version).startsWith("workspace:"))
     .map(([name]) => name));
   const sharedPackages = [];
-  for (const entry of (await readdir(join(workspace, "packages"), { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name, "en"))) {
+  for (const entry of (await readdir(join(workspace, "packages"), { withFileTypes: true })).sort((a, b) => compareText(a.name, b.name))) {
     if (!entry.isDirectory()) continue;
     const root = join(workspace, "packages", entry.name);
     try {
@@ -199,7 +200,7 @@ export async function collectNativeUiInventory(workspace) {
   for (const root of roots) await collectTree(join(workspace, root), workspace, files);
   const sources = [];
   const manifest = [];
-  for (const item of files.sort((a, b) => a.file.localeCompare(b.file, "en"))) {
+  for (const item of files.sort((a, b) => compareText(a.file, b.file))) {
     const buffer = await readFile(item.path);
     const code = buffer.toString("utf8");
     sources.push({ file: item.file, code });

@@ -1,6 +1,7 @@
 use web_time::Instant;
 
 use super::Renderer;
+use super::quality_telemetry::QualityTelemetry;
 use crate::{
     events::RenderOutcome,
     gpu_submission::SubmissionCheck,
@@ -25,6 +26,11 @@ impl Renderer {
         if self.size.width == 0 || self.size.height == 0 {
             finish(&mut self.telemetry, token, FrameResult::Skipped);
             return RenderOutcome::Skipped;
+        }
+        // T01 质量诊断帧起点(跳帧不计数);失败早退帧不 finish,下一帧
+        // begin 丢弃残余计数。
+        if let Some(quality) = self.quality.as_mut() {
+            quality.begin_frame();
         }
         #[cfg(windows)]
         if let (Some(video), Some(painter)) = (&mut self.dashboard_video, &self.deep2d)
@@ -112,6 +118,7 @@ impl Renderer {
         let resources = timer(token);
         let culling_updated = self.culling.needs_encode();
         if culling_updated {
+            quality_pass(&mut self.quality, 1);
             match pre_encoder.as_mut() {
                 Some(pre) => self.culling.encode(&self.queue, pre),
                 None => self.culling.encode(&self.queue, &mut encoder),
@@ -119,6 +126,7 @@ impl Renderer {
         }
         let lod_updated = self.lod.as_ref().is_some_and(|lod| lod.needs_encode());
         if lod_updated && let Some(lod) = self.lod.as_ref() {
+            quality_pass(&mut self.quality, 1);
             match pre_encoder.as_mut() {
                 Some(pre) => lod.encode(&self.queue, pre),
                 None => lod.encode(&self.queue, &mut encoder),
@@ -175,6 +183,7 @@ impl Renderer {
                 }
             }
             // 并行段时间戳已由 stamper 写进级联 CB;这里只翻活跃掩码。
+            quality_pass(&mut self.quality, shadow_buffers.len() as u32);
             if let Some(telemetry) = self.telemetry.as_mut() {
                 telemetry.gpu_mark_segment(GpuSegment::Shadow, true);
             }
@@ -232,6 +241,7 @@ impl Renderer {
             ),
         }
         record(&mut self.telemetry, token, CpuSegment::Opaque, opaque);
+        quality_pass(&mut self.quality, 1);
         gpu_end(
             &mut self.telemetry,
             GpuSegment::Opaque,
@@ -248,6 +258,7 @@ impl Renderer {
         gpu_begin(&self.telemetry, GpuSegment::HiZ, &mut encoder);
         let hi_z = timer(token).filter(|_| has_hiz);
         if let Some(pyramid) = &self.hi_z {
+            quality_pass(&mut self.quality, 1);
             pyramid.encode(&mut encoder);
         }
         record(&mut self.telemetry, token, CpuSegment::HiZ, hi_z);
@@ -262,6 +273,7 @@ impl Renderer {
         let has_transparent = self.scene.has_transparent();
         gpu_begin(&self.telemetry, GpuSegment::Transparent, &mut encoder);
         let transparent = timer(token).filter(|_| has_transparent);
+        quality_pass(&mut self.quality, u32::from(has_transparent));
         encode_transparent_pass(
             &mut encoder,
             &self.forward_targets,
@@ -287,6 +299,7 @@ impl Renderer {
         );
 
         if self.scene.has_outline() {
+            quality_pass(&mut self.quality, 1);
             encode_outline_mask(
                 &mut encoder,
                 &self.forward_targets,
@@ -308,11 +321,14 @@ impl Renderer {
         gpu_begin(&self.telemetry, GpuSegment::Postprocess, &mut encoder);
         let postprocess = timer(token);
         if let Some(bloom) = &self.bloom {
+            quality_pass(&mut self.quality, 1);
             bloom.encode(&mut encoder);
         }
         self.output_pass.draw(&mut encoder, &view);
+        quality_pass(&mut self.quality, 1);
         if self.scene.has_outline() {
             self.outline_pass.draw(&mut encoder, &view);
+            quality_pass(&mut self.quality, 1);
         }
         record(
             &mut self.telemetry,
@@ -331,6 +347,7 @@ impl Renderer {
         let has_deep2d = self.deep2d.is_some();
         gpu_begin(&self.telemetry, GpuSegment::Deep2d, &mut encoder);
         let deep2d = timer(token).filter(|_| has_deep2d);
+        quality_pass(&mut self.quality, u32::from(has_deep2d));
         if let Some(painter) = &self.deep2d {
             #[cfg(windows)]
             painter.draw_with_dashboard_videos(
@@ -352,8 +369,16 @@ impl Renderer {
         );
 
         #[cfg(target_arch = "wasm32")]
-        self.editor_overlay.encode(&mut encoder, &view);
+        {
+            self.editor_overlay.encode(&mut encoder, &view);
+            quality_pass(&mut self.quality, 1);
+        }
 
+        // 差分探针是 opt-in 诊断路径,每个挂载探针各多一次网格 pass。
+        quality_pass(
+            &mut self.quality,
+            u32::from(self.shadow_probe.is_some()) + u32::from(self.ibl_probe.is_some()),
+        );
         super::frame_probes::encode_differential_probes(self, &mut encoder);
         if let (Some(telemetry), Some(token)) = (self.telemetry.as_mut(), token) {
             telemetry.gpu_finish_frame(token, &mut encoder);
@@ -410,7 +435,14 @@ impl Renderer {
         // 不做自动校准。
         #[cfg(not(target_arch = "wasm32"))]
         match self.culling.take_occlusion_metrics(&self.device) {
-            Ok(Some(metrics)) => metrics.report(),
+            Ok(Some(metrics)) => {
+                // T01:主视锥 drawn 即质量诊断的 visibleInstances(遮挡读回
+                // 覆盖口径);未挂读回的帧保持未测量(None),不写候选数。
+                if let Some(quality) = self.quality.as_mut() {
+                    quality.note_visible_instances(metrics.drawn);
+                }
+                metrics.report();
+            }
             Ok(None) => {}
             Err(error) => {
                 finish(&mut self.telemetry, token, FrameResult::Failed);
@@ -454,7 +486,22 @@ impl Renderer {
             self.surface.configure(&self.device, &self.config);
         }
         finish(&mut self.telemetry, token, FrameResult::Presented);
+        if let Some(quality) = self.quality.as_mut() {
+            // 仅 presented 帧落账;expect 保证 begin/finish 配对合同不被静默破坏。
+            quality
+                .finish_frame()
+                .expect("quality telemetry frame must be started before finish");
+        }
         RenderOutcome::Presented
+    }
+}
+
+/// T01 质量诊断 pass 边界计数;关闭态(None)只余一次短路检查。
+fn quality_pass(quality: &mut Option<QualityTelemetry>, passes: u32) {
+    if let Some(quality) = quality.as_mut() {
+        for _ in 0..passes {
+            quality.record_pass();
+        }
     }
 }
 

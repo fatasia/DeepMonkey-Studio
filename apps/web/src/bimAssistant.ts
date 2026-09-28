@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type { BimSpaceRecord, ComponentRecord } from "./viewer/ViewerEngine";
 
 export type BimQuestionIntent = "count" | "location" | "property" | "dimension" | "placement" | "overview";
@@ -160,7 +161,7 @@ export function planBimQuestion(question: string, records: ComponentRecord[]): B
     .filter((record) => requestedLevels.length === 0 || Boolean(record.level && requestedLevels.includes(record.level)))
     .map((record) => ({ record, score: componentScore(record, normalized, aliases) }))
     .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score || a.record.name.localeCompare(b.record.name, "zh-CN"));
+    .sort((a, b) => b.score - a.score || compareText(a.record.name, b.record.name));
   const matches = scored.map((item) => item.record);
   return { intents, aliases, ...(requestedSizeMetres ? { requestedSizeMetres } : {}), matches, matchCount: matches.length };
 }

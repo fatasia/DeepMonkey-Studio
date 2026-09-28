@@ -3,6 +3,7 @@ import path from "node:path";
 import { assessExternalAssetQuality } from "./lib/assetQualityAudit.mjs";
 import { normalizeAssetThumbnail } from "./lib/assetThumbnailAudit.mjs";
 import { inspectGlbFile } from "./lib/glbAudit.mjs";
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 const CACHE_DIRECTORY = path.resolve(process.env.BIM_STUDIO_ASSET_CACHE ?? path.join(process.cwd(), "data", "external-assets", "source-a"));
 const POLICY_PATH = path.resolve(process.cwd(), "config", "asset-source-policies.json");
@@ -26,7 +27,7 @@ const thumbnailDirectory = path.join(CACHE_DIRECTORY, "thumbnails");
 const normalizedThumbnailDirectory = path.join(CACHE_DIRECTORY, "thumbnails-normalized");
 const modelEntries = (await readdir(modelDirectory, { withFileTypes: true }))
   .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".glb"))
-  .sort((left, right) => left.name.localeCompare(right.name));
+  .sort((left, right) => compareText(left.name, right.name));
 const partialFiles = (await Promise.all([listParts(modelDirectory), listParts(thumbnailDirectory)])).flat();
 const items = [];
 let completed = 0;
@@ -51,7 +52,7 @@ await runPool(modelEntries, CONCURRENCY, async (entry) => {
   if (completed % 50 === 0 || completed === modelEntries.length) console.log(`审计进度 ${completed}/${modelEntries.length}`);
 });
 
-items.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+items.sort((left, right) => compareText(left.relativePath, right.relativePath));
 markDuplicates(items);
 const thumbnails = await auditThumbnails(sourceManifest?.files ?? []);
 const thumbnailByModelId = new Map(thumbnails.items.map((item) => [item.sourceModelId, item]));

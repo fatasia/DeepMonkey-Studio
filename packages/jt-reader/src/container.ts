@@ -12,7 +12,7 @@ export interface JtContainer {
 
 function parseVersion(versionText: string): { majorVersion: number; minorVersion: number } {
   const match = /Version\s+(\d+)(?:\.(\d+))?/i.exec(versionText);
-  if (!match?.[1]) throw new JtFormatError("文件头不包含可识别的 JT 版本");
+  if (!match?.[1]) throw new JtFormatError("文件头不包含可识别的 JT 版本", "header-unrecognized");
   return {
     majorVersion: Number.parseInt(match[1], 10),
     minorVersion: Number.parseInt(match[2] ?? "0", 10),
@@ -21,14 +21,14 @@ function parseVersion(versionText: string): { majorVersion: number; minorVersion
 
 export function parseJtContainer(bytes: Uint8Array, limits: JtReadLimits): JtContainer {
   if (bytes.byteLength > limits.maxFileBytes) {
-    throw new JtFormatError(`JT 文件超过 ${limits.maxFileBytes} 字节上限`);
+    throw new JtFormatError(`JT 文件超过 ${limits.maxFileBytes} 字节上限`, "file-too-large");
   }
   const headerReader = new BinaryReader(bytes);
   headerReader.ensure(0, 105, "JT 文件头");
   const versionText = headerReader.ascii(0, 80).replace(/[\0\r\n]+/g, " ").trim();
   const { majorVersion, minorVersion } = parseVersion(versionText);
   const orderFlag = headerReader.u8(80, "文件字节序");
-  if (orderFlag !== 0 && orderFlag !== 1) throw new JtFormatError(`不支持的 JT 字节序标记：${orderFlag}`);
+  if (orderFlag !== 0 && orderFlag !== 1) throw new JtFormatError(`不支持的 JT 字节序标记：${orderFlag}`, "byte-order-unsupported");
   const byteOrder = orderFlag === 0 ? "little-endian" : "big-endian";
   const reader = new BinaryReader(bytes, byteOrder);
   // JT 10 起 TOC 偏移由 I32 扩展为 U64，后续 LSG GUID 因而顺延 4 字节。
@@ -39,7 +39,7 @@ export function parseJtContainer(bytes: Uint8Array, limits: JtReadLimits): JtCon
   reader.ensure(tocOffset, 4, "TOC 头");
   const entryCount = reader.u32(tocOffset, "TOC 项数量");
   if (entryCount > limits.maxSegmentCount) {
-    throw new JtFormatError(`TOC 项数量 ${entryCount} 超过安全上限`);
+    throw new JtFormatError(`TOC 项数量 ${entryCount} 超过安全上限`, "limit-exceeded");
   }
   const tocEntryBytes = majorVersion >= 10 ? 32 : 28;
   reader.ensure(tocOffset + 4, entryCount * tocEntryBytes, "TOC 项");
@@ -55,14 +55,14 @@ export function parseJtContainer(bytes: Uint8Array, limits: JtReadLimits): JtCon
     const segmentLength = reader.u32(segmentLengthOffset, `TOC[${index}] 数据段长度`);
     const attributes = reader.u32(segmentLengthOffset + 4, `TOC[${index}] 属性`);
     if (segmentLength < SEGMENT_HEADER_BYTES || segmentLength > limits.maxSegmentBytes) {
-      throw new JtFormatError(`TOC[${index}] 数据段长度 ${segmentLength} 无效`);
+      throw new JtFormatError(`TOC[${index}] 数据段长度 ${segmentLength} 无效`, "toc-inconsistent");
     }
     reader.ensure(segmentOffset, segmentLength, `TOC[${index}] 数据段`);
     const id = reader.guid(offset, `TOC[${index}] 标识`);
     const segmentId = reader.guid(segmentOffset, `数据段[${index}] 标识`);
-    if (id !== segmentId) throw new JtFormatError(`TOC[${index}] 与数据段标识不一致`);
+    if (id !== segmentId) throw new JtFormatError(`TOC[${index}] 与数据段标识不一致`, "toc-inconsistent");
     const declaredLength = reader.u32(segmentOffset + 20, `数据段[${index}] 声明长度`);
-    if (declaredLength !== segmentLength) throw new JtFormatError(`数据段[${index}] 长度与 TOC 不一致`);
+    if (declaredLength !== segmentLength) throw new JtFormatError(`数据段[${index}] 长度与 TOC 不一致`, "toc-inconsistent");
     segments.push({ id, offset: segmentOffset, length: segmentLength, attributes, type: attributes >>> 24 });
   }
 
@@ -89,11 +89,20 @@ export async function readSegmentPayload(
   }
   const encodedLength = reader.u32(payloadOffset + 4, "压缩数据长度");
   const algorithm = reader.u8(payloadOffset + 8, "压缩算法");
-  if (algorithm !== compressionFlag) throw new JtFormatError(`不支持的 JT 压缩算法：${algorithm}`);
-  if (encodedLength < 1 || encodedLength + 8 > payloadLength) {
-    throw new JtFormatError(`JT 压缩数据长度 ${encodedLength} 无效`);
+  if (algorithm !== compressionFlag) throw new JtFormatError(`不支持的 JT 压缩算法：${algorithm}`, "compression-unsupported");
+  // 压缩流声明长度(含 1 字节算法标识)以文件物理边界为硬上限逐字夹紧:
+  // 部分写出器(实测 TechSoft3D JT writer 8.1)会把段长度与压缩声明长度少记 1 字节,
+  // 流本体完整且以校验和自终止,故允许从段尾顺延至文件末尾补足;声明超出物理字节的
+  // 仍显式拒绝(fail-closed),内容完整性由解压器校验和仲裁。
+  if (encodedLength < 1) {
+    throw new JtFormatError(`JT 压缩数据长度 ${encodedLength} 无效`, "segment-payload-invalid");
   }
-  const encoded = reader.bytes(payloadOffset + 9, encodedLength - 1, "XZ 压缩内容");
+  const streamOffset = payloadOffset + 9;
+  const streamLength = encodedLength - 1;
+  if (streamLength > reader.length - streamOffset) {
+    throw new JtFormatError(`JT 压缩数据长度 ${encodedLength} 超出文件物理边界`, "segment-payload-invalid");
+  }
+  const encoded = reader.bytes(streamOffset, streamLength, "压缩内容");
   return compressionFlag === 3
     ? decompressXz(encoded, limits.maxDecompressedBytes)
     : decompressDeflate(encoded, limits.maxDecompressedBytes);

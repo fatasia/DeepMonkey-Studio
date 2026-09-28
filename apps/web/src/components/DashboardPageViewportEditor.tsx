@@ -6,6 +6,7 @@ import {
 } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import { DASHBOARD_RESOLUTION_PRESETS } from "./dashboardWorkspaceModel";
+import { imeComposingKey } from "./layerKeyboard";
 
 export function DashboardPageViewportEditor({
   locale,
@@ -60,7 +61,7 @@ export function DashboardPageViewportEditor({
               onChange({ width: Number(event.currentTarget.value) })
             }
             onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
+              if (imeComposingKey(event)) return; if (event.key === "Enter") event.currentTarget.blur();
             }}
           />
         </label>
@@ -77,7 +78,7 @@ export function DashboardPageViewportEditor({
               onChange({ height: Number(event.currentTarget.value) })
             }
             onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
+              if (imeComposingKey(event)) return; if (event.key === "Enter") event.currentTarget.blur();
             }}
           />
         </label>

@@ -4,6 +4,7 @@ import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 const ORIGIN = process.env.BIM_STUDIO_EXTERNAL_MODEL_ORIGIN?.replace(/\/$/, "");
 if (!ORIGIN) throw new Error("请设置 BIM_STUDIO_EXTERNAL_MODEL_ORIGIN 后再同步外部模型目录");
@@ -61,7 +62,7 @@ const manifest = {
   statistics: summarize(models),
   failures,
   models,
-  files: METADATA_ONLY ? previousManifest?.files ?? [] : fileRecords.sort((a, b) => a.relativePath.localeCompare(b.relativePath))
+  files: METADATA_ONLY ? previousManifest?.files ?? [] : fileRecords.sort((a, b) => compareText(a.relativePath, b.relativePath))
 };
 await writeJsonAtomically(MANIFEST_PATH, manifest);
 console.log(`索引已写入 ${MANIFEST_PATH}`);

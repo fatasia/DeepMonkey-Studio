@@ -11,6 +11,7 @@ import { migrateSceneSnapshotV1, type ApplicationDocument, type ProjectRecord, t
 import { createProjectTransfer, sanitizeTransferUrl } from "../src/delivery/projectTransferModel.ts";
 import { ProjectTransferImport } from "../src/delivery/projectTransferImport.ts";
 import { readProjectTransfer, transferSha256, type ProjectTransferArchive } from "../src/delivery/projectTransferArchive.ts";
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const apiRoot = path.join(repositoryRoot, "apps/api");
@@ -238,7 +239,7 @@ function closure(archive: ProjectTransferArchive) {
     pipelines: archive.document.runtime.pipelines.length,
     scenes: archive.document.scenes.length,
     applications: archive.document.applications.length,
-    files: archive.document.files.map((file) => ({ name: file.name, bytes: file.bytes, sha256: file.sha256 })).sort((a, b) => a.name.localeCompare(b.name)),
+    files: archive.document.files.map((file) => ({ name: file.name, bytes: file.bytes, sha256: file.sha256 })).sort((a, b) => compareText(a.name, b.name)),
   };
 }
 

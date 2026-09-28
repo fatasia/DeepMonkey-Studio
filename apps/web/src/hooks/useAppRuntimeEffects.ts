@@ -350,11 +350,10 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
           setRendererBackend("webgl");
         };
         viewer.onAnimationChange = (time, playing) => {
-          // transient 通道:播放头每 tick 数据走 React 旁路(时间线面板细粒度订阅);
-          // setState 保留给低频消费方,待面板全面迁移后移除(见 transientChannel.ts 设计)。
+          // 播放头只在时间线面板局部订阅；暂停/seek 时保留一次稳定回退值。
           const animationChannel = viewer?.transientChannels.channel<{ time: number; playing: boolean }>("animation", { shallow: true });
           animationChannel?.publish({ time, playing });
-          setAnimationTime(time);
+          if (!playing) setAnimationTime(time);
           setAnimationPlaying(playing);
         };
         viewer.onInteractionScriptResult = (result) => {

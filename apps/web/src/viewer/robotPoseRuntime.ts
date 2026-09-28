@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import { assertRobotPose, type RobotAssetDefinition } from "@bim-studio/contracts";
 import type { Object3D } from "three";
 import type { URDFRobot } from "urdf-loader";
@@ -80,7 +81,7 @@ export function assertRobotReplacementCompatible(previous: Object3D, candidate: 
   if (!before || !after) throw new Error("机器人与普通素材不能保引用互换，请新增实例");
   const semantic = (value: RobotAssetDefinition) => JSON.stringify({
     rootLink: value.rootLink,
-    joints: [...value.joints].sort((a, b) => a.name.localeCompare(b.name)).map(({ name, type, parent, child, origin, axis, limit, mimic }) => ({
+    joints: [...value.joints].sort((a, b) => compareText(a.name, b.name)).map(({ name, type, parent, child, origin, axis, limit, mimic }) => ({
       name, type, parent, child, origin, axis, lower: limit?.lower, upper: limit?.upper, mimic,
     })),
   });

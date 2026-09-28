@@ -1,3 +1,4 @@
+import { compareText } from "./textOrder.js";
 import type {
   ApplicationDocument,
   DashboardDataWidgetConfig,
@@ -49,9 +50,9 @@ export function assessUnityApplicationReadiness(
   return issues.sort(
     (left, right) =>
       rank[left.severity] - rank[right.severity] ||
-      left.pageId.localeCompare(right.pageId) ||
-      left.nodeId.localeCompare(right.nodeId) ||
-      left.code.localeCompare(right.code),
+      compareText(left.pageId, right.pageId) ||
+      compareText(left.nodeId, right.nodeId) ||
+      compareText(left.code, right.code),
   );
 }
 

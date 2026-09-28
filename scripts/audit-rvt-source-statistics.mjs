@@ -14,6 +14,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const rawArgs = process.argv.slice(2);
@@ -129,7 +130,7 @@ const hashPaths = [
   exePath,
 ];
 const walk = (current) => {
-  for (const entry of readdirSync(current, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const entry of readdirSync(current, { withFileTypes: true }).sort((a, b) => compareText(a.name, b.name))) {
     const full = path.join(current, entry.name);
     if (entry.isDirectory()) walk(full);
     else hashPaths.push(full);

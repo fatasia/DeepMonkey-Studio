@@ -165,7 +165,7 @@ describe("aggregateProbeGridBake", () => {
       [{ cell: [2, 0, 0], irradiance: [1, 1, 1], covered: true }])).toThrow(/out of bounds/);
     expect(() => aggregateProbeGridBake(GRID,
       [{ cell: [-1, 0, 0], irradiance: [1, 1, 1], covered: true }])).toThrow(/out of bounds/);
-    const duplicated = [...fullSamples(GRID), { cell: [0, 0, 0], irradiance: [9, 9, 9], covered: true }];
+    const duplicated = [...fullSamples(GRID), { cell: [0, 0, 0] as const, irradiance: [9, 9, 9] as const, covered: true }];
     expect(() => aggregateProbeGridBake(GRID, duplicated)).toThrow(/duplicate/);
   });
 

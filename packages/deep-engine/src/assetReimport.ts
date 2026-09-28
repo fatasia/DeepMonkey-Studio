@@ -147,7 +147,11 @@ function buildExecution(previous: readonly DeepAssetResource[], next: readonly D
   for (const resource of next) for (const dependency of resource.dependencies) {
     const values = reverse.get(dependency) ?? []; values.push(resource.id); reverse.set(dependency, values);
   }
-  const affected = closure([...diff.add, ...diff.update.map(value => value.id)], id => reverse.get(id) ?? []);
+  // Paths are presentation metadata: references use stable resource ids, so a rename
+  // publishes that resource without invalidating its unchanged dependents.
+  const contentChanges = diff.update.filter(value => value.changes.some(change => change !== "logicalPath"));
+  const affected = closure([...diff.add, ...contentChanges.map(value => value.id)], id => reverse.get(id) ?? []);
+  for (const value of diff.update) affected.add(value.id);
   const staged = closure([...affected], id => byId.get(id)?.dependencies ?? []);
   const stageOrder = nextOrder.filter(id => staged.has(id)), publishOrder = nextOrder.filter(id => affected.has(id));
   const removed = new Set(diff.remove), removeOrder = [...oldOrder].reverse().filter(id => removed.has(id));

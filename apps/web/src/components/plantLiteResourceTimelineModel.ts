@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type {
   PlantLiteModel,
   PlantLiteReplicationTrace,
@@ -261,5 +262,5 @@ function byTimeAndSequence(left: PlantLiteTraceEvent, right: PlantLiteTraceEvent
 }
 
 function byIntervalStart(left: PlantLiteTimelineInterval, right: PlantLiteTimelineInterval): number {
-  return left.startMinute - right.startMinute || left.endMinute - right.endMinute || left.id.localeCompare(right.id);
+  return left.startMinute - right.startMinute || left.endMinute - right.endMinute || compareText(left.id, right.id);
 }

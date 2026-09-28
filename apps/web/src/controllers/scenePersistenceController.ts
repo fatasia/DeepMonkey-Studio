@@ -197,8 +197,11 @@ export function createScenePersistenceController(context: ScenePersistenceContro
   const fileTransfer = createSceneFileTransferActions(context, makeSnapshot, applyScene);
   const publication = createScenePublicationActions(context, () => saveScene());
 
-  async function applyScene(scene: SceneSnapshot, updateRoute = true, sceneProject = project, readOnly = false, fastRuntime = false, safeAuthoringEntry = false) {
-    if (!engine || !sceneProject) return;
+  async function applyScene(scene: SceneSnapshot, updateRoute = true, sceneProject = project, readOnly = false, fastRuntime = false, safeAuthoringEntry = false, requireComplete = false) {
+    if (!engine || !sceneProject) {
+      if (requireComplete) throw new Error("场景引擎或项目资源已卸载，请重新打开场景后重试退出播放");
+      return;
+    }
     const applyVersion = ++sceneApplyVersionRef.current;
     setBusy(true);
     if (updateRoute) navigate(route.applicationId ? { ...route, view: "studio", sceneId: scene.id } : { view: "studio", sceneId: scene.id });
@@ -248,7 +251,10 @@ export function createScenePersistenceController(context: ScenePersistenceContro
         const record = sceneProject.models.find((model) => model.id === getSceneModelAssetId(item));
         if (!record) throw new Error(`模型“${item.name}”的资源不存在，场景尚未完整恢复`);
         await loadModel(record, true, item.modelId);
-        if (applyVersion !== sceneApplyVersionRef.current) return false;
+        if (applyVersion !== sceneApplyVersionRef.current) {
+          if (requireComplete) throw new Error("退出播放期间场景被另一项加载替换，请重新打开场景后重试");
+          return false;
+        }
         if (!engine.listModels().some(model => model.id === item.modelId)) throw new Error(`模型“${item.name}”未能载入，请重新打开场景后保存`);
         engine.applyModelState(item.modelId, item);
         engine.rename(item.modelId, item.name);
@@ -268,7 +274,10 @@ export function createScenePersistenceController(context: ScenePersistenceContro
         engine.createPrimitive(primitive.modelId, primitive.name, primitive.kind ?? "box", primitive.color);
         engine.applyModelState(primitive.modelId, primitive);
         // 场景切换可在分片让出主线程时发生，旧任务必须停止继续写入新场景。
-        if ((await primitiveScheduler.checkpoint()) && applyVersion !== sceneApplyVersionRef.current) return;
+        if ((await primitiveScheduler.checkpoint()) && applyVersion !== sceneApplyVersionRef.current) {
+          if (requireComplete) throw new Error("退出播放期间场景被另一项加载替换，请重新打开场景后重试");
+          return;
+        }
       }
       engine.clearMeasurements();
       for (const measurement of scene.measurements) engine.addMeasurementVisual(measurement);
@@ -328,6 +337,12 @@ export function createScenePersistenceController(context: ScenePersistenceContro
       setNavigationMode(entryCamera.mode);
       setAvatarVisible(entryCamera.avatarVisible ?? false);
       if (!deferredModels.length) engine.completeSceneSnapshotRestore(restoreGeneration);
+      // 按需渲染的 dirty 可能在 clearSceneModels 后的黑帧被消费，模型异步加载完成时
+      // settle 窗口已过：收尾显式请求一帧，否则退出播放后视口定格在全黑帧。
+      engine.requestRender();
+      if (requireComplete && (applyVersion !== sceneApplyVersionRef.current || !engine.hasRestoredSceneSnapshot(scene.id))) {
+        throw new Error("播放快照尚未完整恢复，请等待模型加载完成后重试退出播放");
+      }
       setActiveScene(scene);
       setSceneName(scene.name);
       setMessage(`场景“${scene.name}”已恢复`);
@@ -364,6 +379,12 @@ export function createScenePersistenceController(context: ScenePersistenceContro
         setViewerLoadState(undefined);
       }
     } catch (reason) {
+      if (requireComplete) {
+        if (isModelLoadSuperseded(reason) || applyVersion !== sceneApplyVersionRef.current) {
+          throw new Error("退出播放期间场景加载被中断，请重新打开场景后重试", { cause: reason });
+        }
+        throw reason;
+      }
       if (isModelLoadSuperseded(reason) || applyVersion !== sceneApplyVersionRef.current) return;
       if (readOnly) setViewerLoadState({ phase: "error", loaded: 0, total: scene.models.length, current: reason instanceof Error ? reason.message : "场景加载失败" });
       showError(reason);

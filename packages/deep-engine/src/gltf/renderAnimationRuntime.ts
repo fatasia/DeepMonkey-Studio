@@ -5,11 +5,19 @@ import type { MorphSkinningDynamics } from "../webgpu/gpuMorphSkinningTypes.js";
 import type { SkinningPalette } from "../webgpu/gpuSkinningTypes.js";
 import { GltfRenderAnimationBridge } from "./renderAnimationBridge.js";
 import type {
-  GltfRenderAnimationBridgeOptions,
   GltfRenderAnimationFrame,
+  GltfRenderAnimationRuntimeOptions,
   GltfRenderAnimationSelection,
   GltfRenderAnimationSources,
 } from "./renderAnimationBridgeTypes.js";
+import { resolveBridgeSources, validateCrossFadeDuration } from "./renderAnimationBridgeValidation.js";
+import type { GltfAnimationEventBatch } from "./renderAnimationEvents.js";
+import { createAnimationPlaybackClock, type AnimationPlaybackClock, type ClockAdvancePlan } from "./renderAnimationPlaybackClock.js";
+import {
+  GltfRootMotionTracker,
+  type GltfRootMotionAccumulation,
+  type GltfRootMotionSample,
+} from "./renderAnimationRootMotion.js";
 
 type UpdateResult = boolean | void;
 
@@ -50,6 +58,10 @@ export interface GltfRenderAnimationUpdate<TNodeId extends SpatialItemId> {
   /** False when this call recovered a previously sampled frame without consuming deltaSeconds. */
   readonly advanced: boolean;
   readonly application: GltfRenderAnimationApplication;
+  /** Events whose unwrapped boundary this submission crossed, in time order. */
+  readonly events: GltfAnimationEventBatch;
+  /** Per-frame root motion delta; null when tracking is off or no forward advance settled. */
+  readonly rootMotion: GltfRootMotionSample | null;
 }
 
 export type GltfRenderAnimationRuntimeErrorCode = "invalid-targets" | "pending-frame" | "stale-frame";
@@ -64,20 +76,36 @@ export class GltfRenderAnimationRuntimeError extends Error {
 /**
  * Owns the playhead-to-render submission boundary. A failed submission is retried
  * before another delta is consumed, so renderer recovery cannot skip animation time.
+ * A mirror clock detects unwrapped-time event boundaries and root motion advances;
+ * events from a failed frame stay deferred until that frame is recovered, and are
+ * never replayed afterwards.
  */
 export class GltfRenderAnimationRuntime<TNodeId extends SpatialItemId = number> {
   private readonly bridge: GltfRenderAnimationBridge<TNodeId>;
   private readonly applier: RenderAnimationFrameApplier<TNodeId>;
+  private readonly clock: AnimationPlaybackClock<TNodeId>;
+  private readonly motion: GltfRootMotionTracker<TNodeId> | null;
   private pending: GltfRenderAnimationFrame<TNodeId> | null = null;
+  private pendingPlan: ClockAdvancePlan | null = null;
+  private baselineReset = false;
 
   constructor(sources: GltfRenderAnimationSources<TNodeId>, targets: GltfRenderAnimationTargets,
-    options: GltfRenderAnimationBridgeOptions<TNodeId> = {}) {
+    options: GltfRenderAnimationRuntimeOptions<TNodeId> = {}) {
+    const resolved = resolveBridgeSources(sources);
     this.bridge = new GltfRenderAnimationBridge(sources, options);
     this.applier = new RenderAnimationFrameApplier(targets);
+    this.clock = createAnimationPlaybackClock(resolved, options.selection, options.events);
+    if (options.rootMotion && !resolved.nodes.some((node) => Object.is(node.id, options.rootMotion!.rootNodeId))) {
+      throw new GltfRenderAnimationRuntimeError("invalid-targets", "Root motion tracking references an unknown animation node.");
+    }
+    this.motion = options.rootMotion ? new GltfRootMotionTracker(options.rootMotion) : null;
+    this.motion?.resetBaseline(this.bridge.frame);
   }
 
   get frame(): GltfRenderAnimationFrame<TNodeId> { return this.bridge.frame; }
   get time(): number { return this.bridge.time; }
+  get unwrappedTime(): number { return this.clock.unwrappedTime; }
+  get loopCount(): number { return this.clock.loop; }
   get isPaused(): boolean { return this.bridge.isPaused; }
   get isFinished(): boolean { return this.bridge.isFinished; }
   get hasPendingFrame(): boolean { return this.pending !== null; }
@@ -85,7 +113,8 @@ export class GltfRenderAnimationRuntime<TNodeId extends SpatialItemId = number> 
   update(deltaSeconds: number, signal?: AbortSignal): GltfRenderAnimationUpdate<TNodeId> {
     throwIfAborted(signal);
     if (this.pending) return this.submit(this.pending, false, signal);
-    return this.submit(this.bridge.update(deltaSeconds), true, signal);
+    const plan = this.clock.planAdvance(deltaSeconds);
+    return this.submit(this.bridge.update(deltaSeconds), true, signal, plan);
   }
 
   retry(signal?: AbortSignal): GltfRenderAnimationUpdate<TNodeId> {
@@ -95,34 +124,64 @@ export class GltfRenderAnimationRuntime<TNodeId extends SpatialItemId = number> 
 
   play(selection: GltfRenderAnimationSelection = {}, signal?: AbortSignal): GltfRenderAnimationUpdate<TNodeId> {
     this.assertNoPending(); throwIfAborted(signal);
-    return this.submit(this.bridge.play(selection), true, signal);
+    const resolved = this.clock.resolve(selection);
+    const frame = this.bridge.play(selection);
+    this.clock.play(resolved);
+    this.baselineReset = true;
+    return this.submit(frame, true, signal);
   }
 
   crossFade(selection: GltfRenderAnimationSelection, duration: number,
     signal?: AbortSignal): GltfRenderAnimationUpdate<TNodeId> {
-    this.assertNoPending(); throwIfAborted(signal);
-    return this.submit(this.bridge.crossFade(selection, duration), true, signal);
+    this.assertNoPending(); throwIfAborted(signal); validateCrossFadeDuration(duration);
+    const resolved = this.clock.resolve(selection);
+    const frame = this.bridge.crossFade(selection, duration);
+    this.clock.play(resolved);
+    this.baselineReset = true;
+    return this.submit(frame, true, signal);
   }
 
   seek(time: number, signal?: AbortSignal): GltfRenderAnimationUpdate<TNodeId> {
     this.assertNoPending(); throwIfAborted(signal);
-    return this.submit(this.bridge.seek(time), true, signal);
+    const frame = this.bridge.seek(time);
+    this.clock.seek(time);
+    this.baselineReset = true;
+    return this.submit(frame, true, signal);
   }
 
-  pause(): void { this.bridge.pause(); }
-  resume(): void { this.bridge.resume(); }
-  setTimeScale(value: number): void { this.bridge.setTimeScale(value); }
+  pause(): void { this.assertNoPending(); this.bridge.pause(); this.clock.pause(); }
+  resume(): void { this.assertNoPending(); this.bridge.resume(); this.clock.resume(); }
+  setTimeScale(value: number): void { this.assertNoPending(); this.bridge.setTimeScale(value); this.clock.setTimeScale(value); }
+
+  /** Aggregates recorded root motion with `unwrappedTime > sinceUnwrappedTime`. */
+  accumulatedRootMotion(sinceUnwrappedTime = -Infinity): GltfRootMotionAccumulation | null {
+    return this.motion?.accumulate(sinceUnwrappedTime) ?? null;
+  }
 
   private submit(frame: GltfRenderAnimationFrame<TNodeId>, advanced: boolean,
-    signal: AbortSignal | undefined): GltfRenderAnimationUpdate<TNodeId> {
+    signal: AbortSignal | undefined, plan: ClockAdvancePlan | null = null): GltfRenderAnimationUpdate<TNodeId> {
     try {
       const application = this.applier.apply(frame, signal);
       this.pending = null;
-      return Object.freeze({ frame, advanced, application });
+      const effective = plan ?? this.pendingPlan;
+      this.pendingPlan = null;
+      const events = this.clock.settle(effective);
+      const rootMotion = this.recordMotion(effective, frame);
+      return Object.freeze({ frame, advanced, application, events, rootMotion });
     } catch (error) {
       this.pending = frame;
+      this.pendingPlan = plan ?? this.pendingPlan;
       throw error;
     }
+  }
+
+  private recordMotion(plan: ClockAdvancePlan | null,
+    frame: GltfRenderAnimationFrame<TNodeId>): GltfRootMotionSample | null {
+    const tracker = this.motion;
+    if (!tracker) return null;
+    if (this.baselineReset) { this.baselineReset = false; tracker.resetBaseline(frame); return null; }
+    if (!plan || plan.step <= 0) return null;
+    return tracker.recordAdvance(frame, plan.activeClipId, plan.to, plan.loop);
   }
 
   private assertNoPending(): void {

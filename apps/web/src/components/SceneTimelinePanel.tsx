@@ -8,6 +8,7 @@ import type { PlantLiteStudyRecord } from "@bim-studio/contracts";
 import { ScenePlantPlayback } from "./ScenePlantPlayback";
 import type { PlantLitePlaybackFrame } from "./plantLitePlaybackModel";
 import { useFloatingPanelDrag } from "../hooks/useFloatingPanelDrag";
+import { useTransientValue } from "../hooks/useTransientValue";
 import { SceneTimelineFrameInspector, type TimelineFrame } from "./SceneTimelineFrameInspector";
 import type { ViewerEngine } from "../viewer/ViewerEngine";
 import { useTimelineCameraRecording } from "./useTimelineCameraRecording";
@@ -16,6 +17,7 @@ import { removeTimelineTrack, type TimelineTrackId } from "./timelineTrackEditin
 import { SceneAnimationStateMachineEditor } from "./SceneAnimationStateMachineEditor";
 
 export type SceneDirectorWorkspace = "timeline" | "shots" | "navigation";
+const selectAnimationTime = (snapshot: { time: number; playing: boolean }) => snapshot.time;
 
 interface Props {
   engine?: ViewerEngine | undefined;
@@ -65,6 +67,8 @@ export function SceneTimelinePanel(props: Props) {
 
 function SceneAnimationTimeline(props: Props) {
   const drag = useFloatingPanelDrag<HTMLElement>();
+  const animationChannel = useMemo(() => props.engine?.transientChannels?.channel<{ time: number; playing: boolean }>("animation", { shallow: true }), [props.engine]);
+  const currentTime = useTransientValue(animationChannel, selectAnimationTime, { fallback: props.currentTime }) ?? props.currentTime;
   const [selectedFrameId, setSelectedFrameId] = useState<string>();
   const [selectedTrackId, setSelectedTrackId] = useState<TimelineTrackId>();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -88,18 +92,18 @@ function SceneAnimationTimeline(props: Props) {
   }, [props.animation.models, props.modelNames]);
   const trackCount = objectTracks.length + Number(props.animation.camera.length > 0);
   const selectedFrame = frames.find((frame) => frame.id === selectedFrameId);
-  const recordingFrame = !props.playing && selectedFrame?.kind === "camera" && Math.abs(selectedFrame.time - props.currentTime) < 0.001 ? selectedFrame : undefined;
+  const recordingFrame = !props.playing && selectedFrame?.kind === "camera" && Math.abs(selectedFrame.time - currentTime) < 0.001 ? selectedFrame : undefined;
   useTimelineCameraRecording(props.engine, props.playing ? undefined : "auto-key", camera => {
-    const current = props.animation.camera.find(frame => Math.abs(frame.time - props.currentTime) < 0.001);
+    const current = props.animation.camera.find(frame => Math.abs(frame.time - currentTime) < 0.001);
     if (current) {
       update({ camera: props.animation.camera.map(frame => frame.id === current.id ? { ...frame, camera } : frame) });
       setSelectedFrameId(current.id);
       setSelectedTrackId("camera");
     } else recordFrame("camera");
   });
-  useTimelineModelRecording(props.engine, props.playing ? undefined : "auto-key", modelId => recordFrame("model", props.currentTime, modelId));
+  useTimelineModelRecording(props.engine, props.playing ? undefined : "auto-key", modelId => recordFrame("model", currentTime, modelId));
 
-  function recordFrame(kind: "camera" | "model", time = props.currentTime, modelId?: string) {
+  function recordFrame(kind: "camera" | "model", time = currentTime, modelId?: string) {
     const frameTime = Math.min(duration, Math.max(0, snapAnimationTime(time, frameRate, props.animation.snapToFrames)));
     const id = kind === "camera" ? props.onRecordCamera(frameTime) : props.onRecordObject(modelId, frameTime);
     if (id) {
@@ -220,7 +224,7 @@ function SceneAnimationTimeline(props: Props) {
     const { kind, ...value } = next;
     if (kind === "camera") update({ camera: props.animation.camera.map((frame) => frame.id === next.id ? value as typeof frame : frame) });
     else update({ models: props.animation.models.map((frame) => frame.id === next.id ? value as typeof frame : frame) });
-    if (Math.abs(next.time - props.currentTime) < 0.001) props.onSeek(next.time);
+    if (Math.abs(next.time - currentTime) < 0.001) props.onSeek(next.time);
   }
 
   function duplicateSelectedFrame() {
@@ -294,7 +298,7 @@ function SceneAnimationTimeline(props: Props) {
         <button className="timeline-reverse" title={tr(props.locale, "倒放", "Reverse play")} disabled={!props.onReversePlay} onClick={() => props.onReversePlay?.()}>
           <Play size={13} style={{ transform: "scaleX(-1)" }} />
         </button>
-        <span className="timeline-time">{props.animation.snapToFrames ? `F${Math.round(props.currentTime * frameRate)}` : `${props.currentTime.toFixed(2)}s`}</span>
+        <span className="timeline-time">{props.animation.snapToFrames ? `F${Math.round(currentTime * frameRate)}` : `${currentTime.toFixed(2)}s`}</span>
         <span className="timeline-transport-space" />
         <span className="timeline-auto-key" title={tr(props.locale, "移动镜头或拖动对象后，在播放头自动建立或更新关键帧", "Moving the camera or an object creates or updates a keyframe at the playhead")}><CircleDot size={12} />{tr(props.locale, "自动关键帧", "Auto Key")}</span>
         <span className="timeline-end">{duration.toFixed(1)}s</span>
@@ -323,12 +327,12 @@ function SceneAnimationTimeline(props: Props) {
 
       <div className={`timeline-editor-body ${selectedFrame ? "has-inspector" : ""}`}>
         <div className="timeline-track-list">
-          <TimelineRuler locale={props.locale} duration={duration} currentTime={props.currentTime} onSeek={seekTimeline} />
+          <TimelineRuler locale={props.locale} duration={duration} currentTime={currentTime} onSeek={seekTimeline} />
           {frames.length === 0 && <div className="timeline-empty"><Plus size={14} /><span><strong>{tr(props.locale, "建立第一条轨道", "Create the first track")}</strong><small>{tr(props.locale, "新增轨道会把当前镜头或所选对象记录到播放头位置。", "Adding a track records the current shot or selected object at the playhead.")}</small></span></div>}
-          {props.animation.camera.length > 0 && <TimelineTrack icon={<Camera size={13} />} name={tr(props.locale, "相机", "Camera")} count={props.animation.camera.length} duration={duration} currentTime={props.currentTime} selected={selectedTrackId === "camera"} selectLabel={tr(props.locale, "选择相机轨道", "Select camera track")} addLabel={tr(props.locale, "在播放头记录相机帧", "Record camera frame at playhead")} deleteLabel={tr(props.locale, "删除相机轨道", "Delete camera track")} hint={tr(props.locale, "单击定位播放头；双击添加关键帧", "Click to seek; double-click to add a keyframe")} onSelect={() => { setSelectedFrameId(undefined); setSelectedTrackId("camera"); }} onSeek={seekTimeline} onDelete={() => deleteTrack("camera")} onAdd={time => recordFrame("camera", time)}>
+          {props.animation.camera.length > 0 && <TimelineTrack icon={<Camera size={13} />} name={tr(props.locale, "相机", "Camera")} count={props.animation.camera.length} duration={duration} currentTime={currentTime} selected={selectedTrackId === "camera"} selectLabel={tr(props.locale, "选择相机轨道", "Select camera track")} addLabel={tr(props.locale, "在播放头记录相机帧", "Record camera frame at playhead")} deleteLabel={tr(props.locale, "删除相机轨道", "Delete camera track")} hint={tr(props.locale, "单击定位播放头；双击添加关键帧", "Click to seek; double-click to add a keyframe")} onSelect={() => { setSelectedFrameId(undefined); setSelectedTrackId("camera"); }} onSeek={seekTimeline} onDelete={() => deleteTrack("camera")} onAdd={time => recordFrame("camera", time)}>
             {props.animation.camera.map((frame) => frameMarker({ ...frame, kind: "camera" }))}
           </TimelineTrack>}
-          {objectTracks.map((track) => <TimelineTrack key={track.modelId} icon={<Box size={13} />} name={track.name} count={track.frames.length} duration={duration} currentTime={props.currentTime} selected={selectedTrackId === `model:${track.modelId}`} selectLabel={tr(props.locale, `选择 ${track.name} 轨道`, `Select ${track.name} track`)} addLabel={tr(props.locale, `为 ${track.name} 记录关键帧`, `Record a keyframe for ${track.name}`)} deleteLabel={tr(props.locale, `删除 ${track.name} 轨道`, `Delete ${track.name} track`)} hint={tr(props.locale, "单击定位播放头；双击添加关键帧", "Click to seek; double-click to add a keyframe")} onSelect={() => { setSelectedFrameId(undefined); setSelectedTrackId(`model:${track.modelId}`); }} onSeek={seekTimeline} onDelete={() => deleteTrack(`model:${track.modelId}`)} onAdd={time => recordFrame("model", time, track.modelId)}>
+          {objectTracks.map((track) => <TimelineTrack key={track.modelId} icon={<Box size={13} />} name={track.name} count={track.frames.length} duration={duration} currentTime={currentTime} selected={selectedTrackId === `model:${track.modelId}`} selectLabel={tr(props.locale, `选择 ${track.name} 轨道`, `Select ${track.name} track`)} addLabel={tr(props.locale, `为 ${track.name} 记录关键帧`, `Record a keyframe for ${track.name}`)} deleteLabel={tr(props.locale, `删除 ${track.name} 轨道`, `Delete ${track.name} track`)} hint={tr(props.locale, "单击定位播放头；双击添加关键帧", "Click to seek; double-click to add a keyframe")} onSelect={() => { setSelectedFrameId(undefined); setSelectedTrackId(`model:${track.modelId}`); }} onSeek={seekTimeline} onDelete={() => deleteTrack(`model:${track.modelId}`)} onAdd={time => recordFrame("model", time, track.modelId)}>
             {track.frames.map((frame) => frameMarker({ ...frame, kind: "model" }))}
           </TimelineTrack>)}
         </div>

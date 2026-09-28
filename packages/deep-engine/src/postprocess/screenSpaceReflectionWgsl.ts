@@ -117,10 +117,13 @@ fn traceReflection(@builtin(global_invocation_id) id: vec3<u32>) {
         let middle = origin + reflected * middleDistance;
         let middleUv = ssrProject(middle);
         let refinedPixel = ssrClampPixel(middleUv);
-        if (textureLoad(sourceDepth, vec2<i32>(refinedPixel), 0).x < -middle.z) { highDistance = middleDistance; }
+        let refinedDepth = textureLoad(sourceDepth, vec2<i32>(refinedPixel), 0).x;
+        if (refinedDepth > 0.0 && refinedDepth < -middle.z) { highDistance = middleDistance; }
         else { lowDistance = middleDistance; }
       }
       hitUv = ssrProject(origin + reflected * ((lowDistance + highDistance) / 2.0));
+      let finalPixel = ssrClampPixel(hitUv);
+      if (!(textureLoad(sourceDepth, vec2<i32>(finalPixel), 0).x > 0.0)) { continue; }
       hit = true;
     }
   }

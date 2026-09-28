@@ -20,6 +20,19 @@ export interface RenderView extends PbrFrameUniformView {
   readonly lights?: WorldClusteredLights; readonly lodBudget?: LodFrameBudget;
 }
 
+/** 首帧管线引导时序：不改变管线集合内容，只改变“发布前等待哪些变体”。
+ * 每个开关独立可关，关闭即回到全量等待的旧时序。 */
+export interface PbrPipelineBootstrapOptions {
+  /** 首帧只等待关键 main 变体；其余 main 变体在 bootstrap 校验作用域关闭后排队。
+   * 关键集合由后端从首帧包推导（firstFrameMainKeys），未推导时保持全量等待。 */
+  readonly firstFrameSubset?: boolean;
+  /** 后端推导出的首帧 main 管线键（由 threeBridge 填充；plain/ccw 恒含）。 */
+  readonly firstFrameMainKeys?: readonly string[];
+  /** 变形变体在 bootstrap 校验作用域关闭后才开始创建；含变形的包在 packet 边界
+   * 等待其就绪，首个静态首帧不再为变形编译买单。 */
+  readonly deferDeformation?: boolean;
+}
+
 export interface PbrRendererOptions {
   /** 显式的同设备托管资源估算上限；未知布局拒绝，非驱动物理 VRAM 上限。 */
   readonly deviceMemoryBudgetBytes?: number;
@@ -40,6 +53,8 @@ export interface PbrRendererOptions {
   /** Optional GPU particle emitters; simulation runs one frame ahead and renders indirectly. */
   readonly particleEmitters?: readonly GpuParticleEmitter[];
   readonly particleRuntime?: GpuParticleEmitterRuntimeOptions;
+  /** 首帧管线引导时序开关；缺省全部关闭 = 全量等待的旧时序。 */
+  readonly pipelines?: PbrPipelineBootstrapOptions;
 }
 
 export interface FrameMetrics {

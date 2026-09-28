@@ -13,10 +13,25 @@ export interface AdaptiveQualityKnobs {
 
 export interface AdaptiveQualityOverrides extends Partial<AdaptiveQualityKnobs> {}
 
-export type AuthoredQualityProfile = "performance" | "balanced" | "quality" | "ultra";
+/**
+ * Scene-authored quality vocabulary (contracts scene.ts `postProcessing.qualityProfile`).
+ * Cross-endpoint consumers (qualityTelemetry, Native `renderer/quality_telemetry.rs`)
+ * must reuse these names instead of restating the literal set.
+ */
+export const AUTHORED_QUALITY_PROFILES = Object.freeze([
+  "performance", "balanced", "quality", "ultra",
+] as const);
+
+export type AuthoredQualityProfile = typeof AUTHORED_QUALITY_PROFILES[number];
+
+export function isAuthoredQualityProfile(value: unknown): value is AuthoredQualityProfile {
+  return typeof value === "string" && (AUTHORED_QUALITY_PROFILES as readonly string[]).includes(value);
+}
 
 export interface AdaptiveQualityOptions {
   readonly enabled?: boolean;
+  /** Scene-authored starting quality; pressure may still lower this profile. */
+  readonly profile?: AuthoredQualityProfile;
   readonly targetFrameMs?: number;
   readonly minimumSamples?: number;
   readonly pressureWindows?: number;
@@ -73,13 +88,13 @@ const PROFILES: readonly Readonly<AdaptiveQualityKnobs>[] = Object.freeze([
 
 /** Convert the scene-authored quality name into deterministic adaptive budgets. */
 export function adaptiveQualityOverridesForProfile(profile: AuthoredQualityProfile): AdaptiveQualityOverrides {
-  const index = profile === "performance" ? 3 : profile === "balanced" ? 2 : profile === "quality" ? 1 : 0;
-  return Object.freeze({ ...PROFILES[index] });
+  return Object.freeze({ ...PROFILES[profileIndex(profile)] });
 }
 
 /** Hysteretic, cooldown-bound controller. It never disables an effect or drops objects. */
 export class AdaptiveQualityController {
   private readonly options: Required<Omit<AdaptiveQualityOptions, "overrides">> & { readonly overrides: AdaptiveQualityOverrides };
+  private readonly profileIndex: number;
   private level: 0 | 1 | 2 | 3 = 0;
   private pressure = 0; private recovery = 0; private lastChange = Number.NEGATIVE_INFINITY;
   private currentState: AdaptiveQualityState;
@@ -87,6 +102,7 @@ export class AdaptiveQualityController {
 
   constructor(options: AdaptiveQualityOptions = {}) {
     this.options = validateOptions(options);
+    this.profileIndex = profileIndex(this.options.profile);
     this.currentState = this.makeState(0, this.options.enabled ? "initial" : "user-override",
       this.options.enabled ? "设备自适应已启用，等待足够的本地样本。" : "设备自适应已关闭。", 0);
   }
@@ -99,7 +115,7 @@ export class AdaptiveQualityController {
     const cooldown = sample.frame - this.lastChange < this.options.cooldownFrames;
     if (signal) {
       this.pressure++; this.recovery = 0;
-      if (cooldown || this.pressure < this.options.pressureWindows || this.level === 3) return undefined;
+      if (cooldown || this.pressure < this.options.pressureWindows || this.profileIndex + this.level >= 3) return undefined;
       this.pressure = 0; this.level = (this.level + 1) as 1 | 2 | 3; this.lastChange = sample.frame;
       this.currentState = this.makeState(this.level, signal.reason, signal.explanation, sample.frame);
       return this.currentState;
@@ -121,7 +137,7 @@ export class AdaptiveQualityController {
   }
 
   private makeState(level: 0 | 1 | 2 | 3, reason: AdaptiveQualityReason, explanation: string, frame: number): AdaptiveQualityState {
-    const profile = PROFILES[level]!;
+    const profile = PROFILES[Math.min(3, this.profileIndex + level)]!;
     const knobs = Object.freeze({ ...profile, ...this.options.overrides });
     return Object.freeze({ enabled: this.options.enabled, level, knobs, reason,
       explanation: Object.keys(this.options.overrides).length ? `${explanation} 作者覆盖项保持不变。` : explanation,
@@ -186,8 +202,19 @@ function validateOptions(value: AdaptiveQualityOptions): Required<Omit<AdaptiveQ
     if (!Number.isSafeInteger(candidate) || candidate < min || candidate > max) throw new RangeError(`Adaptive ${name} must be an integer in [${min},${max}].`);
   }
   const overrides = Object.freeze({ ...(value.overrides ?? {}) }); validateKnobs(overrides);
+  if (value.profile !== undefined) profileIndex(value.profile);
   return Object.freeze({ enabled: value.enabled ?? false, targetFrameMs, minimumSamples, pressureWindows, recoveryWindows,
-    cooldownFrames, overrides, collectHotspots: value.collectHotspots ?? false });
+    cooldownFrames, profile: value.profile ?? "ultra", overrides, collectHotspots: value.collectHotspots ?? false });
+}
+
+function profileIndex(profile: AuthoredQualityProfile): number {
+  switch (profile) {
+    case "performance": return 3;
+    case "balanced": return 2;
+    case "quality": return 1;
+    case "ultra": return 0;
+    default: throw new RangeError("Unknown adaptive quality profile.");
+  }
 }
 
 function validateKnobs(value: AdaptiveQualityOverrides): void {

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import ts from "typescript";
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 const SHADER_FILE = /\.(?:wgsl|glsl|vert|frag)$/i;
 const SHADER_IMPORT = /(?:\?|!|^|\/)[^'"?]*(?:wgsl|glsl|vert|frag)(?:\?|$)/i;
@@ -35,7 +36,7 @@ function classifyShaderSource(value) {
 export function scanShaderUsage(sources) {
   const evidence = [];
   const unresolved = [];
-  for (const source of [...sources].sort((a, b) => a.file.localeCompare(b.file, "en"))) {
+  for (const source of [...sources].sort((a, b) => compareText(a.file, b.file))) {
     const location = (file, node) => ({ file, line: file === source.file
       ? sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1 : 1 });
     if (SHADER_FILE.test(source.file)) {
@@ -126,7 +127,7 @@ export function scanShaderUsage(sources) {
         line: sourceFile.getLineAndCharacterOfPosition(diagnostic.start ?? 0).line + 1, kind: "parse-error" });
     }
   }
-  const compare = (a, b) => a.file.localeCompare(b.file, "en") || a.line - b.line
-    || a.kind.localeCompare(b.kind, "en") || (a.symbol ?? "").localeCompare(b.symbol ?? "", "en");
+  const compare = (a, b) => compareText(a.file, b.file) || a.line - b.line
+    || compareText(a.kind, b.kind) || compareText(a.symbol ?? "", b.symbol ?? "");
   return { evidence: evidence.sort(compare), unresolved: unresolved.sort(compare) };
 }

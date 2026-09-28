@@ -1,4 +1,4 @@
-import { ArrowLeft, Bot, LayoutDashboard, Plus, Redo2, Rocket, Save, Undo2 } from "lucide-react";
+import { ArrowLeft, Bot, LayoutDashboard, Play, Plus, Redo2, Rocket, Save, Square, Undo2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { SceneWorkspaceMoreMenu } from "../components/SceneWorkspaceMoreMenu";
 import { SceneDrillWizard } from "../components/SceneDrillWizard";
@@ -22,7 +22,7 @@ export function AppWorkspaceTopbar({ bindings, tools }: { bindings: AppViewBindi
   latestBindings.current = bindings;
   const exitPending = useRef(false);
   const scriptOpening = useRef(false);
-  const { state, scenePersistence, applicationRuntime, actions, sceneHistory } = bindings;
+  const { state, scenePersistence, applicationRuntime, actions, sceneHistory, playMode } = bindings;
   const {
     branding,
     route,
@@ -83,7 +83,7 @@ export function AppWorkspaceTopbar({ bindings, tools }: { bindings: AppViewBindi
     } finally { scriptOpening.current = false; }
   };
   const leaveThreeDimensionalWorkspace = (destination?: "dashboard") => {
-    if (exitPending.current || !flushBehaviorDraft()) return;
+    if (playMode?.active || exitPending.current || !flushBehaviorDraft()) return;
     exitPending.current = true;
     setSceneBehaviorOpen(false);
     globalThis.setTimeout(() => {
@@ -140,17 +140,19 @@ export function AppWorkspaceTopbar({ bindings, tools }: { bindings: AppViewBindi
             <>
               <select
                 className="project-select"
+                disabled={playMode?.active}
+                title={playMode?.active ? tr(locale, "先退出播放模式，再切换项目", "Exit Play mode before switching projects") : undefined}
                 value={project?.id ?? ""}
                 onChange={(event) => switchProjectById(event.target.value)}
                 aria-label={tr(locale, "当前项目", "Current project")}
               >
                 {projects.map((item) => (
-                  <option key={item.id} value={item.id}>
+                  <option key={item.id} value={item.id} disabled={playMode?.active && item.id !== project?.id}>
                     {item.name}
                   </option>
                 ))}
               </select>
-              <button className="project-add-button" title={tr(locale, "新建项目", "New project")} onClick={() => openProjectDialog("create")}>
+              <button className="project-add-button" disabled={playMode?.active} title={playMode?.active ? tr(locale, "先退出播放模式", "Exit Play mode first") : tr(locale, "新建项目", "New project")} onClick={() => openProjectDialog("create")}>
                 <Plus size={15} />
               </button>
             </>
@@ -160,17 +162,19 @@ export function AppWorkspaceTopbar({ bindings, tools }: { bindings: AppViewBindi
             locale={locale}
             active={sceneBehaviorOpen ? "script" : "3d"}
             contextLabel={sceneName}
-            scriptsAvailable={Boolean(activeScene)}
+            scriptsAvailable={Boolean(activeScene) && !playMode?.active}
             onSelect2D={() => leaveThreeDimensionalWorkspace("dashboard")}
             onSelect3D={showThreeDimensionalWorkspace}
-            onSelectScripts={() => void showScripts()}
+            onSelectScripts={() => { if (!playMode?.active) void showScripts(); }}
           />
           <div className="scene-title-wrap">
             <span>{tr(locale, "场景", "Scene")}</span>
             <input
               value={sceneName}
+              disabled={playMode?.active}
+              title={playMode?.active ? tr(locale, "先退出播放模式，再修改场景名称", "Exit Play mode before renaming the scene") : undefined}
               onChange={(event) => setSceneName(event.target.value)}
-              onBlur={() => void commitSceneName()}
+              onBlur={() => { if (!playMode?.active) void commitSceneName(); }}
               onKeyDown={(event) => {
                 if (event.key === "Enter") event.currentTarget.blur();
                 if (event.key === "Escape") {
@@ -183,23 +187,35 @@ export function AppWorkspaceTopbar({ bindings, tools }: { bindings: AppViewBindi
           </div>
           <div className="scene-history-controls" aria-label={tr(locale, "三维编辑历史", "3D edit history")}>
             <button
-              disabled={!sceneHistory.canUndo || busy}
-              aria-label={sceneHistory.undoLabel ? `${tr(locale, "撤销", "Undo")}：${sceneHistory.undoLabel}` : tr(locale, "暂无可撤销操作", "Nothing to undo")}
-              title={sceneHistory.undoLabel ? `${tr(locale, "撤销", "Undo")}：${sceneHistory.undoLabel} · Ctrl+Z` : tr(locale, "暂无可撤销操作", "Nothing to undo")}
+              disabled={!sceneHistory.canUndo || busy || playMode?.active}
+              aria-label={playMode?.active ? tr(locale, "播放中不可撤销", "Undo unavailable during Play") : sceneHistory.undoLabel ? `${tr(locale, "撤销", "Undo")}：${sceneHistory.undoLabel}` : tr(locale, "暂无可撤销操作", "Nothing to undo")}
+              title={playMode?.active ? tr(locale, "先退出播放模式，再撤销", "Exit Play mode before undo") : sceneHistory.undoLabel ? `${tr(locale, "撤销", "Undo")}：${sceneHistory.undoLabel} · Ctrl+Z` : tr(locale, "暂无可撤销操作", "Nothing to undo")}
               onClick={() => void sceneHistory.undo()}
             >
               <Undo2 size={15} />
             </button>
             <button
-              disabled={!sceneHistory.canRedo || busy}
-              aria-label={sceneHistory.redoLabel ? `${tr(locale, "重做", "Redo")}：${sceneHistory.redoLabel}` : tr(locale, "暂无可重做操作", "Nothing to redo")}
-              title={sceneHistory.redoLabel ? `${tr(locale, "重做", "Redo")}：${sceneHistory.redoLabel} · Ctrl+Y` : tr(locale, "暂无可重做操作", "Nothing to redo")}
+              disabled={!sceneHistory.canRedo || busy || playMode?.active}
+              aria-label={playMode?.active ? tr(locale, "播放中不可重做", "Redo unavailable during Play") : sceneHistory.redoLabel ? `${tr(locale, "重做", "Redo")}：${sceneHistory.redoLabel}` : tr(locale, "暂无可重做操作", "Nothing to redo")}
+              title={playMode?.active ? tr(locale, "先退出播放模式，再重做", "Exit Play mode before redo") : sceneHistory.redoLabel ? `${tr(locale, "重做", "Redo")}：${sceneHistory.redoLabel} · Ctrl+Y` : tr(locale, "暂无可重做操作", "Nothing to redo")}
               onClick={() => void sceneHistory.redo()}
             >
               <Redo2 size={15} />
             </button>
           </div>
           <div className="topbar-actions">
+            {playMode && <button
+              className={`button scene-play-action ${playMode.active ? "is-playing" : ""}`}
+              type="button"
+              aria-label={playMode.active ? tr(locale, "退出播放模式并恢复场景", "Exit Play and restore scene") : tr(locale, "进入播放模式", "Enter Play mode")}
+              title={playMode.active ? tr(locale, "退出播放并恢复进入前的场景", "Stop and restore the scene before Play") : state.engine?.getAuthorRendererBackend() === "webgpu" ? tr(locale, "Play 暂不支持 WebGPU，请先切换 WebGL", "Play requires WebGL; switch renderer first") : tr(locale, "播放期间的修改不会保存；退出时恢复场景", "Play changes are temporary; exiting restores the scene")}
+              aria-pressed={playMode.active}
+              disabled={!playMode.active && (!activeScene || busy || rendererSwitching || sceneBehaviorOpen || state.sceneBehaviorActive || state.animationPlaying || state.physics?.playing || state.sceneName !== activeScene.name || state.engine?.getAuthorRendererBackend() === "webgpu")}
+              onClick={() => { if (playMode.active) void playMode.exit(); else playMode.enter(); }}
+            >
+              {playMode.active ? <Square size={13} fill="currentColor" /> : <Play size={15} fill="currentColor" />}
+              <span className="action-label">{playMode.active ? tr(locale, "退出播放", "Stop Play") : tr(locale, "播放", "Play")}</span>
+            </button>}
             <button
               className={`button ghost compact-action ${aiAssistantOpen ? "active" : ""}`}
               aria-label={tr(locale, "AI 场景助手", "AI scene assistant")}
@@ -209,7 +225,7 @@ export function AppWorkspaceTopbar({ bindings, tools }: { bindings: AppViewBindi
               <Bot size={15} />
               <span className="action-label">{tr(locale, "AI 助手", "AI Assistant")}</span>
             </button>
-            <SceneWorkspaceMoreMenu
+            {!playMode?.active && <SceneWorkspaceMoreMenu
               onDrillGuide={() => setDrillGuideOpen(true)}
               locale={locale}
               rendererBackend={rendererActiveBackend}
@@ -235,14 +251,14 @@ export function AppWorkspaceTopbar({ bindings, tools }: { bindings: AppViewBindi
               onExportFbx={() => void exportFbxScene()}
               onBrowse={() => void browseActiveScene()}
               browseDisabled={Boolean(activeApplication) || busy}
-            />
+            />}
             {activeApplication ? (
               <button
                 className="button ghost topbar-publish-action"
                 aria-label={tr(locale, "发布应用", "Publish app")}
                 title={tr(locale, "保存并发布整个应用", "Save and publish the whole app")}
                 onClick={() => void saveScene().then((saved) => saved && publishActiveApplication())}
-                disabled={busy}
+                disabled={busy || playMode?.active}
               >
                 <Rocket size={15} />
                 <span className="action-label">{tr(locale, "发布应用", "Publish app")}</span>
@@ -257,17 +273,17 @@ export function AppWorkspaceTopbar({ bindings, tools }: { bindings: AppViewBindi
                   setStudioPublishPerformance(activeScene?.publicationPerformance ?? "standard");
                   setStudioPublishOpen(true);
                 }}
-                disabled={busy}
+                disabled={busy || playMode?.active}
               >
                 <Rocket size={15} />
                 <span className="action-label">{activeScene?.publishedAt ? tr(locale, "重新发布", "Republish") : tr(locale, "发布", "Publish")}</span>
               </button>
             )}
-            <label className="topbar-auto-save" title={tr(locale, "修改后自动保存整个项目", "Automatically save project changes")}>
-              <input type="checkbox" aria-label={tr(locale, "自动保存", "Auto save")} checked={autoSaveEnabled} onChange={(event) => changeAutoSave(event.target.checked)} />
-              <span>{tr(locale, "自动保存", "Auto save")}</span>
+            <label className="topbar-auto-save" title={playMode?.active ? tr(locale, "播放中自动保存已暂停", "Auto save is paused during Play") : tr(locale, "修改后自动保存整个项目", "Automatically save project changes")}>
+              <input type="checkbox" aria-label={playMode?.active ? tr(locale, "自动保存已暂停", "Auto save paused") : tr(locale, "自动保存", "Auto save")} checked={autoSaveEnabled} disabled={playMode?.active} onChange={(event) => changeAutoSave(event.target.checked)} />
+              <span>{playMode?.active ? tr(locale, "自动保存已暂停", "Auto save paused") : tr(locale, "自动保存", "Auto save")}</span>
             </label>
-            <button className="button primary topbar-save-action" aria-label={tr(locale, "保存项目", "Save project")} title={tr(locale, "保存项目", "Save project")} onClick={() => void saveScene()} disabled={busy}>
+            <button className="button primary topbar-save-action" aria-label={tr(locale, "保存项目", "Save project")} title={playMode?.active ? tr(locale, "先退出播放模式，再保存", "Exit Play mode before saving") : tr(locale, "保存项目", "Save project")} onClick={() => void saveScene()} disabled={busy || playMode?.active}>
               <Save size={15} />
               <span className="action-label">{tr(locale, "保存项目", "Save project")}</span>
             </button>

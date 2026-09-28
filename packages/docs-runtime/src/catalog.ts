@@ -1,3 +1,4 @@
+import { compareText } from "./textOrder.js";
 import { markdownInlineText, parseMarkdown } from "./markdown.js";
 import type { DocsCategory, DocsDocument, DocsSection, DocsSource } from "./types.js";
 
@@ -31,7 +32,7 @@ export function createDocsCatalog(sources: readonly DocsSource[]): DocsDocument[
       plainText,
       blocks
     };
-  }).sort((left, right) => left.order - right.order || left.title.localeCompare(right.title, "zh-CN"));
+  }).sort((left, right) => left.order - right.order || compareText(left.title, right.title));
 }
 
 export function groupDocsByCategory(documents: readonly DocsDocument[]): DocsCategory[] {
@@ -44,7 +45,7 @@ export function groupDocsByCategory(documents: readonly DocsDocument[]): DocsCat
   return [...categories.entries()].map(([title, items]) => ({
     id: categoryId(title),
     title,
-    documents: [...items].sort((left, right) => left.order - right.order || left.title.localeCompare(right.title, "zh-CN"))
+    documents: [...items].sort((left, right) => left.order - right.order || compareText(left.title, right.title))
   }));
 }
 

@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import {
   assertApplicationDocument,
   type ApplicationDocument,
@@ -655,7 +656,7 @@ function findScene(state: DesktopLocalWorkspaceState, projectId: string, sceneId
 }
 
 function latestScenePublication(state: DesktopLocalWorkspaceState, sceneId: string): PublishedSceneRecord | undefined {
-  return state.scenePublications.filter((item) => item.sceneId === sceneId).sort((left, right) => right.publishedAt.localeCompare(left.publishedAt))[0];
+  return state.scenePublications.filter((item) => item.sceneId === sceneId).sort((left, right) => compareText(right.publishedAt, left.publishedAt))[0];
 }
 
 function extension(fileName: string): string {

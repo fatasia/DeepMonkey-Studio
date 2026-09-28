@@ -3,6 +3,8 @@ import { migrateSceneSnapshotV1, type ApplicationDocument, type SceneSnapshot } 
 import { createRenameApplicationCommand, createRenameDashboardPageCommand } from "@bim-studio/studio-core";
 import pureFixture from "../../../../test-fixtures/scene-v1-pure-3d.json";
 import { ApplicationSession } from "../studio/applicationSession";
+import { createScenePlayModeController } from "../hooks/useScenePlayMode";
+import { ViewerSnapshotReadiness } from "../viewer/viewerSnapshotReadiness";
 import { createScenePersistenceController } from "./scenePersistenceController";
 import type { ScenePersistenceControllerContext } from "./scenePersistenceControllerContext";
 
@@ -48,6 +50,112 @@ function newSceneFixture() {
   mocks.saveScene.mockImplementation(async scene => structuredClone(scene));
   return { ...f, controller: createScenePersistenceController(f.context), active: () => active, setActive: (scene: SceneSnapshot) => { active = scene; } };
 }
+
+describe("Play exits through the production scene persistence path", () => {
+  function playFixture() {
+    const f = fixture();
+    const readiness = new ViewerSnapshotReadiness();
+    readiness.begin(f.snapshot.id); readiness.complete(1);
+    const scene = structuredClone(f.snapshot);
+    const live = { x: 0 };
+    const engine = {
+      scene: { uuid: "viewer-1" },
+      getAuthorRendererBackend: () => "webgl",
+      isSceneSnapshotReady: (id: string) => readiness.ready(id, false, false),
+      hasRestoredSceneSnapshot: (id: string) => readiness.ready(id, false, false),
+      beginSceneSnapshotRestore: (id: string) => readiness.begin(id),
+      completeSceneSnapshotRestore: (generation: number) => readiness.complete(generation),
+      getPhysicsState: () => ({ enabled: false, playing: false, gravity: { x: 0, y: -9.81, z: 0 } }),
+      setPhysicsState: vi.fn(), playSceneAnimation: vi.fn(), pauseSceneAnimation: vi.fn(), seekSceneAnimation: vi.fn(),
+      getReadOnly: () => false, setReadOnly: vi.fn(), setFastRuntime: vi.fn(), clearSceneModels: vi.fn(),
+      setInteractionScripts: vi.fn(), listModels: () => [{ id: "gripper", kind: "model" }],
+      applyModelState: (_id: string, model: SceneSnapshot["models"][number]) => { live.x = model.transform.position.x; },
+      rename: vi.fn(), clearMeasurements: vi.fn(), addMeasurementVisual: vi.fn(), addAnnotation: vi.fn(),
+      listAnnotations: () => [], setCameraConstraints: vi.fn(), setNavigationSettings: vi.fn(), applyCamera: vi.fn(),
+      setWeather: vi.fn(), setGlobalLighting: vi.fn(), setSceneEnvironment: vi.fn(), applyFloorStates: vi.fn(),
+      setPostProcessing: vi.fn(), setSceneAnimation: vi.fn(), clearSceneModelsAndPrimitives: vi.fn(),
+      setClipping: vi.fn(), select: vi.fn(), selectAnnotation: vi.fn(), selectLayer: vi.fn(),
+    };
+    const context = {
+      ...f.context, engine, project: { id: scene.projectId, models: [{ id: "gripper", status: "ready", manifest: {} }] },
+      activeScene: scene, setRevision: vi.fn(), isModelLoadSuperseded: (reason: unknown) => reason instanceof Error && reason.name === "ModelLoadSupersededError", primitiveColors: { current: new Map() },
+      configuredDefaultEnvironment: {}, webGpuSceneReplacementCountRef: { current: 0 }, lastAutoSavedSceneRevisionRef: { current: 0 }, sceneInteractions: [], sceneDataBindings: [], sceneAssetBindings: [],
+      selected: undefined, selectedLayerId: undefined, sceneName: scene.name, sceneDashboard: {},
+      setActiveScene: vi.fn(), loadModel: vi.fn(async () => ({ id: "gripper" })),
+    } as unknown as ScenePersistenceControllerContext;
+    for (const name of [
+      "setSceneInteractions", "setSceneDataBindings", "setSceneAssetBindings", "setSceneDataBindingRuntime", "setSelected", "setMeasurements",
+      "setAnnotations", "setSelectedAnnotationId", "setSelectedLightId", "setSelectedSpace", "setSceneOrganizationSelection", "setSelectionSets",
+      "setLastDeletedSelectionSet", "setCameraConstraints", "setNavigationSettings", "setCameraViews", "setDefaultCameraViewId", "setWeather",
+      "setLighting", "setSceneEnvironment", "setSceneCoordinates", "setSceneAnimation", "setPostProcessing", "setPhysics", "setSceneDashboard",
+      "setEngineeringAnalysis", "setAnimationTime", "setAnimationPlaying", "setClippingState", "setNavigationMode", "setAvatarVisible",
+      "setViewerLoadState",
+    ]) (context as unknown as Record<string, unknown>)[name] = vi.fn();
+    const persistence = createScenePersistenceController(context);
+    const errors: unknown[] = [];
+    const play = createScenePlayModeController(() => ({
+      engine,
+      capture: () => structuredClone(scene), flush: () => undefined,
+      applyScene: async (snapshot) => {
+        await persistence.applyScene(snapshot, false, context.project, false, false, false, true);
+        if (!engine.hasRestoredSceneSnapshot(snapshot.id)) throw new Error("场景恢复尚未完成");
+      },
+      readAnimationPlayhead: () => 0,
+      reportError: (reason) => { errors.push(reason); },
+    }), () => undefined);
+    return { f, readiness, scene, live, engine, context, persistence, play, errors };
+  }
+
+  it("settles active only after the real apply completes the matching restore generation", async () => {
+    const f = playFixture();
+    expect(f.play.enterPlay()).toEqual({ ok: true });
+    f.live.x = 1;
+    const result = await f.play.exitPlay();
+    expect(f.errors).toEqual([]);
+    expect(result).toEqual({ ok: true });
+    expect(f.live.x).toBe(0);
+    expect(f.engine.hasRestoredSceneSnapshot(f.scene.id)).toBe(true);
+    expect(f.play.active).toBe(false);
+    expect(f.errors).toEqual([]);
+  });
+
+  it("rejects a competing restore generation before applying models, retains the Play snapshot, and succeeds on retry", async () => {
+    const f = playFixture();
+    expect(f.play.enterPlay()).toEqual({ ok: true });
+    f.live.x = 1;
+    let compete = true;
+    vi.mocked(f.context.loadModel).mockImplementation(async () => {
+      if (compete) {
+        compete = false;
+        // Route reentry invalidates both applyVersion and the engine restore generation.
+        f.context.sceneApplyVersionRef.current += 1;
+        f.engine.beginSceneSnapshotRestore(f.scene.id);
+        f.engine.completeSceneSnapshotRestore(3);
+      }
+      return { id: "gripper" } as never;
+    });
+    expect(await f.play.exitPlay()).toEqual({ ok: false, reason: "restore-failed" });
+    expect(f.play.active).toBe(true);
+    expect(f.live.x).toBe(1);
+    expect(f.errors).toHaveLength(1);
+    expect(f.context.setActiveScene).not.toHaveBeenCalled();
+    expect(await f.play.exitPlay()).toEqual({ ok: true });
+    expect(f.play.active).toBe(false);
+    expect(f.live.x).toBe(0);
+  });
+
+  it("propagates a swallowed model-load error from production apply instead of treating the Promise as success", async () => {
+    const f = playFixture();
+    expect(f.play.enterPlay()).toEqual({ ok: true });
+    f.live.x = 1;
+    vi.mocked(f.context.loadModel).mockResolvedValueOnce(undefined);
+    // Silent loadModel reports its own error; the actual apply must reject because the model is absent.
+    vi.spyOn(f.engine, "listModels").mockReturnValueOnce([]);
+    expect(await f.play.exitPlay()).toEqual({ ok: false, reason: "restore-failed" });
+    expect(f.play.active).toBe(true);
+    expect(f.errors).toHaveLength(1);
+  });
+});
 
 describe("canonical scene workspace save", () => {
   it("does not capture or persist a rebuilding or partially loaded engine", async () => {

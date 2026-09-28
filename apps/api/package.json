@@ -76,6 +76,7 @@
     "@types/pg": "8.23.1",
     "@types/ws": "^8.5.10",
     "@webgpu/types": "0.1.72",
+    "node-opcua": "2.178.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.0"

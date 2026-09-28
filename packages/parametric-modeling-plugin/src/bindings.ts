@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type {
   DataConnectionRecord,
   DataConnectionType,
@@ -45,7 +46,7 @@ export function listParametricBindingSources(context: ParametricBindingContext):
         target
       };
     });
-  }).sort((left, right) => left.label.localeCompare(right.label, "zh-CN"));
+  }).sort((left, right) => compareText(left.label, right.label));
 }
 
 export function bindingTargetKey(target: ParametricCadBindingTarget): string {

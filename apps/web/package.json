@@ -25,7 +25,10 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "verify:model-diff-review": "node scripts/verify-model-diff-review.mjs",
-    "gate:performance-evidence": "node scripts/gate-performance-evidence.mjs"
+    "gate:performance-evidence": "node scripts/gate-performance-evidence.mjs",
+    "gate:object-tree-100k": "node scripts/gate-object-tree-100k.mjs",
+    "gate:timeline-transient": "node scripts/gate-timeline-transient.mjs",
+    "gate:spatial-audio": "node scripts/gate-spatial-audio-offline.mjs"
   },
   "dependencies": {
     "@bim-studio/contracts": "workspace:*",

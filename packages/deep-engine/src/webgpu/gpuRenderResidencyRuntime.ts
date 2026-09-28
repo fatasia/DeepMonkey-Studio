@@ -1,3 +1,4 @@
+import { compareText } from "../textOrder.js";
 import {
   GpuResidencyExecutor,
   GpuResidentOwner,
@@ -114,7 +115,7 @@ export class GpuRenderResidencyRuntime {
 
   snapshot(): readonly ResidentResourceState[] {
     return Object.freeze(this.executor.snapshot().map(resource => publicResident(resource, this.identity(resource.id)))
-      .sort((left, right) => left.id.localeCompare(right.id) || left.kind.localeCompare(right.kind)));
+      .sort((left, right) => compareText(left.id, right.id) || compareText(left.kind, right.kind)));
   }
 
   telemetrySnapshot(): GpuRenderResidencyTelemetrySnapshot {

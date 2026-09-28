@@ -8,6 +8,9 @@ export type { SharedShadowAtlasBudgetEvidence, SharedShadowAtlasGpuResource,
 export { ENGINE_TIMING_STAGES, EnginePerformanceTelemetry } from "./performanceTelemetry.js";
 export type { EngineFrameTimingSample, EnginePerformanceTelemetrySnapshot,
   EngineTimingQuantiles, EngineTimingStage } from "./performanceTelemetry.js";
+export { DISABLED_QUALITY_TELEMETRY_SNAPSHOT, QUALITY_TELEMETRY_SCHEMA, QUALITY_TELEMETRY_VERSION,
+  QualityTelemetryCollector } from "./qualityTelemetry.js";
+export type { QualityFrameRecord, QualityTelemetrySnapshot, QualityTelemetryTotals } from "./qualityTelemetry.js";
 export { PbrRenderer } from "./pbrRenderer.js";
 export { createHdrEnvironment } from "./hdrEnvironment.js";
 export type { HdrEnvironment, HdrEnvironmentOptions } from "./hdrEnvironment.js";

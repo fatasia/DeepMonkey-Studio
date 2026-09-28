@@ -5,6 +5,7 @@
  * 不做 PDF/Word 导出、服务端批量渲染与图表位图嵌入;Markdown + JSON 已支撑下载与展示。
  */
 
+import { compareText } from "./textOrder.js";
 import {
   type StudyReport,
   type StudyReportBottleneck,
@@ -91,7 +92,7 @@ function hasEntries(orders: StudyReportExperimentSummary["productionOrderMetrics
 /** top-3 瓶颈:频次降序,节点 ID 升序破平;与内核排序语义一致但不再信任输入顺序。 */
 function topBottlenecks(summary: StudyReportExperimentSummary): StudyReportBottleneck[] {
   return [...summary.bottlenecks]
-    .sort((left, right) => right.occurrences - left.occurrences || left.nodeId.localeCompare(right.nodeId))
+    .sort((left, right) => right.occurrences - left.occurrences || compareText(left.nodeId, right.nodeId))
     .slice(0, 3)
     .map((entry): StudyReportBottleneck => ({
       nodeId: entry.nodeId,

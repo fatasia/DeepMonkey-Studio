@@ -28,13 +28,14 @@ type NavigationController = ReturnType<typeof useAppNavigationController>;
 
 interface AppLifecycleEffectsOptions {
   state: AppState;
+  playModeActive?: boolean;
   saveActiveApplication: ApplicationController["saveActiveApplication"];
   saveScene: PersistenceController["saveScene"];
   changeRendererBackend: NavigationController["changeRendererBackend"];
 }
 
 /** 集中处理会话、自动保存、品牌和发布渲染策略等应用生命周期副作用。 */
-export function useAppLifecycleEffects({ state, saveActiveApplication, saveScene, changeRendererBackend }: AppLifecycleEffectsOptions) {
+export function useAppLifecycleEffects({ state, playModeActive = false, saveActiveApplication, saveScene, changeRendererBackend }: AppLifecycleEffectsOptions) {
   useEditorPresence(state);
   const {
     activeApplication,
@@ -74,20 +75,20 @@ export function useAppLifecycleEffects({ state, saveActiveApplication, saveScene
   );
 
   useEffect(() => {
-    if (!autoSaveEnabled || !applicationState.dirty || busy || !activeApplication) return;
+    if (playModeActive || !autoSaveEnabled || !applicationState.dirty || busy || !activeApplication) return;
     const timer = window.setTimeout(() => void saveActiveApplication(true), 1_200);
     return () => window.clearTimeout(timer);
-  }, [autoSaveEnabled, applicationRevision, applicationState.dirty, activeApplication?.metadata.id, busy]);
+  }, [playModeActive, autoSaveEnabled, applicationRevision, applicationState.dirty, activeApplication?.metadata.id, busy]);
 
   useEffect(() => {
     lastAutoSavedSceneRevisionRef.current = revision;
   }, [activeScene?.id]);
 
   useEffect(() => {
-    if (!autoSaveEnabled || route.view !== "studio" || !activeScene || !engine || busy || revision <= lastAutoSavedSceneRevisionRef.current) return;
+    if (playModeActive || !autoSaveEnabled || route.view !== "studio" || !activeScene || !engine || busy || revision <= lastAutoSavedSceneRevisionRef.current) return;
     const timer = window.setTimeout(() => void saveScene(true), 1_500);
     return () => window.clearTimeout(timer);
-  }, [autoSaveEnabled, route.view, activeScene?.id, engine, revision, busy]);
+  }, [playModeActive, autoSaveEnabled, route.view, activeScene?.id, engine, revision, busy]);
 
   useEffect(() => {
     if (route.view !== "studio" || !route.applicationId || !activeScene) return;

@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type { PprOperation, PprPrecedenceRelation } from "@bim-studio/contracts";
 
 /**
@@ -52,7 +53,7 @@ export function rankPositionalWeights(
   const order: string[] = [];
   const ready = operations.map((operation) => operation.id)
     .filter((id) => indegree.get(id) === 0)
-    .sort((left, right) => left.localeCompare(right));
+    .sort((left, right) => compareText(left, right));
   while (ready.length) {
     const id = ready.shift()!;
     order.push(id);
@@ -111,7 +112,7 @@ export function solveLineBalance(input: LineBalanceSolverInput): LineBalanceSolu
         .filter((id) => (successors.get(id) ?? []).every((next) => true)) // 前驱检查见下
         .filter((id) => predecessorsScheduled(id, order, successors, scheduled, input.precedenceRelations))
         .filter((id) => (times.get(id) ?? 0) <= remaining)
-        .sort((left, right) => (weights.get(right) ?? 0) - (weights.get(left) ?? 0) || left.localeCompare(right));
+        .sort((left, right) => (weights.get(right) ?? 0) - (weights.get(left) ?? 0) || compareText(left, right));
       const chosen = candidates[0];
       if (chosen !== undefined) {
         const time = times.get(chosen)!;

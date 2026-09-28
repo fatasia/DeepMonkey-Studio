@@ -3,6 +3,9 @@
 
 use wasm_bindgen::prelude::*;
 
+mod physics_pose;
+pub use physics_pose::viewer_physics_pose;
+
 thread_local! {
     static SCENE_PACKAGE: std::cell::RefCell<Option<Vec<u8>>> = const { std::cell::RefCell::new(None) };
     static VIEWER_SESSIONS: std::cell::RefCell<std::collections::BTreeMap<u32, winit::event_loop::EventLoopProxy<events::GpuEvent>>> = const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
@@ -68,6 +71,7 @@ pub fn start_scene_viewer(canvas: Option<web_sys::HtmlCanvasElement>) -> Result<
 pub fn stop_scene_viewer(handle: u32) {
     let proxy = VIEWER_SESSIONS.with(|sessions| sessions.borrow_mut().remove(&handle));
     if let Some(proxy) = proxy {
+        app_startup::reject_wasm_physics_pose_requests("scene viewer stopped");
         let _ = proxy.send_event(events::GpuEvent::WasmStop);
     }
 }
@@ -87,15 +91,19 @@ pub fn update_scene_viewer(handle: u32, bytes: &[u8]) -> Result<(), JsValue> {
 #[wasm_bindgen]
 pub fn update_editor_overlay(handle: u32, revision: u32, vertices: &[f32]) -> Result<(), JsValue> {
     if vertices.len() % 24 != 0 || vertices.len() > 196_608 * 8 {
-        return Err(JsValue::from_str("WASM editor overlay layout or vertex budget is invalid"));
+        return Err(JsValue::from_str(
+            "WASM editor overlay layout or vertex budget is invalid",
+        ));
     }
     let proxy = VIEWER_SESSIONS
         .with(|sessions| sessions.borrow().get(&handle).cloned())
         .ok_or_else(|| JsValue::from_str("scene viewer handle is not active"))?;
-    proxy.send_event(events::GpuEvent::WasmEditorOverlay {
-        revision: u64::from(revision),
-        vertices: vertices.to_vec(),
-    }).map_err(|_| JsValue::from_str("scene viewer event loop is closed"))
+    proxy
+        .send_event(events::GpuEvent::WasmEditorOverlay {
+            revision: u64::from(revision),
+            vertices: vertices.to_vec(),
+        })
+        .map_err(|_| JsValue::from_str("scene viewer event loop is closed"))
 }
 
 #[wasm_bindgen]

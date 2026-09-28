@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ModelRecord } from "@bim-studio/contracts";
 import type { AppViewBindings } from "../views/appViewBindings";
+import { assertDeepAssetPackageReference } from "../viewer/modelReplacementCompatibility";
 
 /** Scene-side continuation. URL carries intent; the loaded project remains authoritative. */
 export function useSceneAssetNavigation(bindings: AppViewBindings) {
@@ -45,6 +46,7 @@ export function useSceneAssetNavigation(bindings: AppViewBindings) {
       return;
     }
     inserting.current = key;
+    let active = true;
     const alreadyLoaded = engine.listModels().some(item => item.id === modelId);
     void (async () => {
       try {
@@ -52,15 +54,35 @@ export function useSceneAssetNavigation(bindings: AppViewBindings) {
         if (replaceInstanceId) {
           const instance = engine.listModels().find(item => item.id === replaceInstanceId && item.kind === "model");
           if (!instance) throw new Error("原场景实例已被删除，优化结果仍保留在项目素材中");
-          sceneHistory.flush();
-          await engine.replaceModelManifest(replaceInstanceId, model.manifest!);
-          const current = latest.current.state;
-          if (current.engine !== engine || current.project?.id !== project.id || current.route.sceneId !== route.sceneId || current.route.view !== "studio") return;
-          engine.select(replaceInstanceId);
-          state.setSceneOrganizationSelection(new Set([replaceInstanceId]));
-          state.setRevision(value => value + 1);
-          sceneHistory.flush("应用优化并替换素材");
-          completed = true;
+          assertDeepAssetPackageReference(model.manifest!);
+          // T27：优化应用+替换素材是一个撤销单元；失败回滚到事务前快照，不留半程条目。
+          const transaction = sceneHistory.flush.beginTransaction("应用优化并替换素材");
+          try {
+            await engine.replaceModelManifest(replaceInstanceId, model.manifest!, () => {
+              const current = latest.current.state;
+              return active && current.engine === engine && current.project?.id === project.id
+                && current.activeScene?.id === activeScene.id && current.route.sceneId === route.sceneId
+                && current.route.view === "studio";
+            });
+            const current = latest.current.state;
+            if (current.engine !== engine || current.project?.id !== project.id || current.route.sceneId !== route.sceneId || current.route.view !== "studio") {
+              transaction.rollback();
+              return;
+            }
+            engine.select(replaceInstanceId);
+            state.setSceneOrganizationSelection(new Set([replaceInstanceId]));
+            state.setRevision(value => value + 1);
+            transaction.commit("应用优化并替换素材");
+            completed = true;
+          } catch (reason) {
+            const before = transaction.rollback();
+            const current = latest.current.state;
+            if (before && current.engine === engine && current.route.view === "studio" && project) {
+              try { await scenePersistence.applyScene(before, false, project, false); }
+              catch (rollbackFailure) { state.showError(rollbackFailure); }
+            }
+            throw reason;
+          }
         } else {
           completed = Boolean(await sceneEditor.loadModel(model));
         }
@@ -80,6 +102,7 @@ export function useSceneAssetNavigation(bindings: AppViewBindings) {
         if (inserting.current === key) inserting.current = undefined;
       }
     })();
+    return () => { active = false; };
   }, [route.view, route.sceneId, route.projectId, route.insertModelId, route.replaceModelInstanceId, project, activeScene?.id, engine, busy]);
 
   return { leaving, optimize: (model?: ModelRecord, instanceId?: string) => void open("optimizer", model, instanceId), browse: () => void open("manager") };

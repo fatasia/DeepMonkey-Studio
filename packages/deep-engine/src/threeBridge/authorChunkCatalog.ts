@@ -20,6 +20,9 @@ export class AuthorChunkCatalog {
   private readonly features;
   private readonly textureSemantics;
   private readonly identities = new Map<string, Chunk>();
+  private readonly byKey = new Map<string, Chunk>();
+  private readonly ordinal = new Map<string, number>();
+  private readonly shadowCasters = new Set<string>();
   private readonly index = new LooseOctreeIndex<string>({ bounds: { min: [-1e6, -1e6, -1e6], max: [1e6, 1e6, 1e6] }, maxEntries: 16_384 });
   private updates = new Map<string, PreparedBatch>();
   private readonly world = new Map<string, SpatialAabb>();
@@ -48,6 +51,8 @@ export class AuthorChunkCatalog {
       if (this.identities.has(identity)) throw new Error("Author chunk batch identity is ambiguous.");
       const box = worldBounds(chunk.local, batch);
       this.identities.set(identity, chunk); this.index.insert(chunk.key, box); this.world.set(chunk.key, box);
+      this.byKey.set(chunk.key, chunk); this.ordinal.set(chunk.key, ordinal);
+      if (batch.castShadow !== false) this.shadowCasters.add(chunk.key);
       this.updates.set(batch.key, batch); return chunk;
     });
     this.cpuBytes = bytes;
@@ -61,7 +66,11 @@ export class AuthorChunkCatalog {
       if (!chunk || updates.has(chunk.initial.key)) return false;
       updates.set(chunk.initial.key, batch); boxes.push([chunk, worldBounds(chunk.local, batch)]);
     }
-    for (const [chunk, box] of boxes) { this.index.update(chunk.key, box); this.world.set(chunk.key, box); }
+    for (const [chunk, box] of boxes) {
+      this.index.update(chunk.key, box); this.world.set(chunk.key, box);
+      if (updates.get(chunk.initial.key)!.castShadow === false) this.shadowCasters.delete(chunk.key);
+      else this.shadowCasters.add(chunk.key);
+    }
     this.updates = updates; return true;
   }
   get batchUpdates(): ReadonlyMap<string, PreparedBatch> { return this.updates; }
@@ -69,6 +78,8 @@ export class AuthorChunkCatalog {
     for (const chunk of this.chunks) {
       const box = worldBounds(chunk.local, updates.get(chunk.initial.key)!);
       this.index.update(chunk.key, box); this.world.set(chunk.key, box);
+      if (updates.get(chunk.initial.key)!.castShadow === false) this.shadowCasters.delete(chunk.key);
+      else this.shadowCasters.add(chunk.key);
     }
     this.updates = new Map(updates);
   }
@@ -79,7 +90,11 @@ export class AuthorChunkCatalog {
       { ...projection, verticalFovRadians: Math.min(Math.PI - 0.001, projection.verticalFovRadians * 1.25), far: projection.far * 1.25 }));
     if (visible.truncated || ahead.truncated) throw new Error("Author chunk spatial query was truncated.");
     const visibleIds = new Set(visible.ids), aheadIds = new Set(ahead.ids);
-    return this.chunks.flatMap(chunk => {
+    // The spatial index already found the active closure. Do not scan every remote batch
+    // on each camera frame; only global shadow casters must be retained outside it.
+    const candidates = new Set([...visibleIds, ...aheadIds, ...this.shadowCasters]);
+    return [...candidates].sort((a, b) => this.ordinal.get(a)! - this.ordinal.get(b)!).flatMap(key => {
+      const chunk = this.byKey.get(key)!;
       // Until light-volume residency is proven, every potential caster remains required.
       const batch = this.updates.get(chunk.initial.key)!;
       const required = batch.castShadow !== false || visibleIds.has(chunk.key);

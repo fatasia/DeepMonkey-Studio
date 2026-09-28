@@ -113,6 +113,24 @@ describe("application lifecycle autosave", () => {
   });
 });
 
+describe("Play mode auto save isolation", () => {
+  it("cancels both pending auto saves during Play and resumes from the restored author state", async () => {
+    const app = fixture({ applicationState: { dirty: true } }); app.render(); app.render({ revision: 11 });
+    await vi.advanceTimersByTimeAsync(400);
+    app.render(); // Keep the initial revision/scene baseline settled before entering Play.
+    harness.cursor = 0;
+    useAppLifecycleEffects({ state: app.state, playModeActive: true, saveScene: app.saveScene,
+      saveActiveApplication: app.saveActiveApplication, changeRendererBackend: app.changeRendererBackend });
+    harness.effects.splice(0).forEach(effect => effect());
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(app.saveScene).not.toHaveBeenCalled();
+    expect(app.saveActiveApplication).not.toHaveBeenCalled();
+    app.render({ revision: 11, applicationState: { dirty: false } });
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(app.saveScene).toHaveBeenCalledExactlyOnceWith(true);
+  });
+});
+
 describe("published renderer lifecycle", () => {
   it.each(["preparing", "recovering", "failed"])("does not restart automatic switching in %s phase", async rendererSwitchPhase => {
     const app = fixture({ route: { view: "published" }, rendererSwitchPhase }); app.render();

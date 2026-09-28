@@ -1,3 +1,4 @@
+import { compareText } from "../textOrder.js";
 import { sha256Hex } from "./canonical.js";
 import { DEEP_SHADER_BUDGETS } from "./constants.js";
 import { frozenDiagnostics, issue } from "./diagnostics.js";
@@ -81,7 +82,7 @@ export function planShaderVariants(
     predicateKeywords(technique.predicate, used);
     technique.passes.forEach((pass) => predicateKeywords(pass.predicate, used));
   });
-  const dimensions = asset.keywords.filter((keyword) => used.has(keyword.name)).sort((a, b) => a.name.localeCompare(b.name));
+  const dimensions = asset.keywords.filter((keyword) => used.has(keyword.name)).sort((a, b) => compareText(a.name, b.name));
   let combinations = 1;
   for (const keyword of dimensions) {
     combinations *= keyword.values.length;
@@ -114,7 +115,7 @@ export function planShaderVariants(
     const signature = JSON.stringify([techniqueIds, passIds]);
     if (signatures.has(signature)) continue;
     signatures.add(signature);
-    const stableKeywords = Object.freeze(Object.fromEntries(Object.entries(keywords).sort(([a], [b]) => a.localeCompare(b))));
+    const stableKeywords = Object.freeze(Object.fromEntries(Object.entries(keywords).sort(([a], [b]) => compareText(a, b))));
     variants.push(Object.freeze({ key: sha256Hex({ asset: asset.id, keywords: stableKeywords, techniqueIds, passIds }), keywords: stableKeywords, techniqueIds: Object.freeze(techniqueIds), passIds: Object.freeze(passIds) }));
     if (variants.length > maxVariants) {
       issue(diagnostics, "variant-budget", "$.keywords", `Static variant output exceeds the budget of ${maxVariants}.`);

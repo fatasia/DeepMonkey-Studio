@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CASCADED_SHADOW_UNIFORM_BYTES } from "../shadows/cascadedShadowShader.js";
 import { sha256Utf8 } from "../shaderPackage/hash.js";
-import { createPipelines, PBR_FRAME_FLOAT_OFFSETS, PBR_FRAME_UNIFORM_BYTES, PBR_PREVIOUS_INSTANCE_BUFFER_LAYOUT } from "./pipelines.js";
+import { createPipelines, createPipelinesBuild, PBR_FRAME_FLOAT_OFFSETS, PBR_FRAME_UNIFORM_BYTES, PBR_PREVIOUS_INSTANCE_BUFFER_LAYOUT } from "./pipelines.js";
 
 beforeEach(() => {
   vi.stubGlobal("GPUShaderStage", { VERTEX: 1, FRAGMENT: 2 });
@@ -33,6 +33,19 @@ it("binds output provenance to the exact module code and output pipeline", async
   const refs = result.outputShaderProvenance!.refsFor(result.output);
   expect(refs.map(ref => ref.moduleId)).toEqual(Array(2).fill(`builtin.pbr-output.sha256-${sha256Utf8(submitted.code)}`));
   expect(() => result.outputShaderProvenance!.refsFor(result.main)).toThrow("executed pipeline");
+});
+
+it("shares the device-local HDR output pipeline across static and deformation variants", async () => {
+  const f = fixture(), lighting = {} as GPUBindGroupLayout;
+  const [staticSet, deformationSet] = await Promise.all([
+    createPipelines(f.device, "bgra8unorm", lighting),
+    createPipelines(f.device, "bgra8unorm", lighting, true, false, false, { deformation: true }),
+  ]);
+  expect(staticSet.output).toBe(deformationSet.output);
+  expect(f.descriptors.filter(descriptor => descriptor.label === "Deep output")).toHaveLength(1);
+  expect(vi.mocked(f.device.createShaderModule).mock.calls.filter(([descriptor]) =>
+    descriptor.label === "Deep HDR output")).toHaveLength(1);
+  expect(deformationSet.outputShaderProvenance!.refsFor(deformationSet.output)).toHaveLength(2);
 });
 
 it("builds deformation variants for all main and shadow modes without a fourth vertex stream", async () => {
@@ -172,5 +185,31 @@ describe("PBR pipeline texture variants", () => {
     expect(f.descriptors[21]!.fragment?.entryPoint).toBe("fragmentMaterialDisplay");
     expect(result.displayDirectionalPipelines.size).toBe(3);
     expect(result.displayDirectionalMain).toBeDefined();
+  });
+});
+
+describe("first-frame critical pipeline subset", () => {
+  it("queues only critical mains before the bootstrap scope is released", async () => {
+    const f = fixture();
+    const build = await createPipelinesBuild(f.device, "bgra8unorm", {} as GPUBindGroupLayout, true, false, false,
+      { firstFrameMainKeys: ["material/depth/ccw"] });
+    expect(build.pipelines.mainPipelines.size).toBe(2);
+    expect(build.pipelines.main).toBeDefined();
+    expect(f.descriptors.filter(descriptor => descriptor.label?.startsWith("Deep forward"))).toHaveLength(2);
+    expect(build.pipelines.shadowPipelines.size).toBe(9);
+    await build.criticalReady;
+    build.releaseDeferredQueues();
+    await build.ready;
+    expect(build.pipelines.mainPipelines.size).toBe(18);
+    expect(build.pipelines.mainPipelines.get("material/blend/ccw")).toBeDefined();
+  });
+
+  it("keeps the full critical path when no subset is requested", async () => {
+    const f = fixture();
+    const build = await createPipelinesBuild(f.device, "bgra8unorm", {} as GPUBindGroupLayout, true, false, false);
+    await build.criticalReady;
+    await build.ready;
+    expect(build.pipelines.mainPipelines.size).toBe(18);
+    expect(build.pipelines.shadowPipelines.size).toBe(9);
   });
 });

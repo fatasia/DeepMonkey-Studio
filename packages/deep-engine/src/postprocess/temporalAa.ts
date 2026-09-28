@@ -3,7 +3,7 @@ import { createAdmittedTexture, createAdmittedBuffer } from "../webgpu/resourceA
 import type { DeviceSession } from "../webgpu/deviceSession.js";
 import { temporalAaJitter, validateTemporalAaJitter, validateTemporalAaOptions } from "./temporalAaCpu.js";
 import { TEMPORAL_AA_COLOR_FORMAT, TEMPORAL_AA_DEPTH_FORMAT, TEMPORAL_AA_MOTION_FORMAT,
-  type TemporalAaOptions, type TemporalAaResult, type TemporalAaSource } from "./temporalAaTypes.js";
+  TEMPORAL_REACTIVE_MASK_FORMAT, type TemporalAaOptions, type TemporalAaResult, type TemporalAaSource } from "./temporalAaTypes.js";
 import { TEMPORAL_AA_WGSL, TEMPORAL_AA_WORKGROUP_SIZE } from "./temporalAaWgsl.js";
 
 const PARAMETER_BYTES = 48;
@@ -12,6 +12,7 @@ interface Allocation { width: number; height: number; colors: readonly [GPUTextu
 /** Full-resolution HDR TAA history with two-frame color/depth ping-pong. */
 export class TemporalAaPass {
   private readonly layout: GPUBindGroupLayout; private readonly pipeline: GPUComputePipeline;
+  private readonly zeroMask: GPUTexture; private readonly zeroMaskView: GPUTextureView;
   private allocation: Allocation | undefined; private historyIndex = 0; private lastRevision: number | undefined; private lastJitter: readonly [number, number] = [0, 0]; private disposed = false;
   constructor(private readonly session: DeviceSession) {
     this.assertReady(); const device = session.device, module = device.createShaderModule({ label: "Deep temporal AA WGSL", code: TEMPORAL_AA_WGSL });
@@ -24,8 +25,13 @@ export class TemporalAaPass {
       { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage", minBindingSize: PARAMETER_BYTES } },
       { binding: 6, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "write-only", format: TEMPORAL_AA_COLOR_FORMAT } },
       { binding: 7, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "write-only", format: TEMPORAL_AA_DEPTH_FORMAT } },
+      { binding: 8, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "float" } },
     ] });
     this.pipeline = device.createComputePipeline({ label: "Deep temporal AA resolve pipeline", layout: device.createPipelineLayout({ bindGroupLayouts: [this.layout] }), compute: { module, entryPoint: "resolveTemporal" } });
+    this.zeroMask = createAdmittedTexture(session, { label: "Deep TAA reactive mask fallback",
+      size: [1, 1], format: TEMPORAL_REACTIVE_MASK_FORMAT,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+    this.zeroMaskView = this.zeroMask.createView();
   }
   encode(encoder: GPUCommandEncoder, source: TemporalAaSource, options: TemporalAaOptions): TemporalAaResult {
     this.assertUsable(); validateSource(this.session.device, source); validateTemporalAaOptions(options);
@@ -41,7 +47,8 @@ export class TemporalAaPass {
       const previousJitter = source.previousJitter ? jitterSnapshot(source.previousJitter) : historyUsed ? this.lastJitter : jitter;
       const views = [source.color.createView(), source.depth.createView(), source.motion.createView(), candidate!.colors[readIndex].createView(), candidate!.depths[readIndex].createView()] as const;
       const entries: GPUBindGroupEntry[] = views.map((resource, binding) => ({ binding, resource }));
-      entries.push({ binding: 5, resource: { buffer: candidate!.parameters[writeIndex] } }, { binding: 6, resource: candidate!.colors[writeIndex].createView() }, { binding: 7, resource: candidate!.depths[writeIndex].createView() });
+      entries.push({ binding: 5, resource: { buffer: candidate!.parameters[writeIndex] } }, { binding: 6, resource: candidate!.colors[writeIndex].createView() }, { binding: 7, resource: candidate!.depths[writeIndex].createView() },
+        { binding: 8, resource: source.reactiveMask ? source.reactiveMask.createView() : this.zeroMaskView });
       const bindGroup = this.session.device.createBindGroup({ layout: this.layout, entries });
       this.session.device.queue.writeBuffer(candidate!.parameters[writeIndex], 0, packParameters(candidate!, historyUsed, jitter, previousJitter, options));
       const pass = encoder.beginComputePass({ label: "Deep temporal AA resolve" }); pass.setPipeline(this.pipeline); pass.setBindGroup(0, bindGroup);
@@ -53,7 +60,7 @@ export class TemporalAaPass {
     } catch (error) { if (candidate && candidate !== previousAllocation) this.release(candidate); throw error; }
   }
   reset(): void { this.lastRevision = undefined; }
-  dispose(): void { if (this.disposed) return; this.disposed = true; if (this.allocation) this.release(this.allocation); this.allocation = undefined; this.lastRevision = undefined; }
+  dispose(): void { if (this.disposed) return; this.disposed = true; if (this.allocation) this.release(this.allocation); this.allocation = undefined; this.lastRevision = undefined; this.session.release(this.zeroMask); }
   private allocate(width: number, height: number): Allocation {
     const owned: Array<GPUTexture | GPUBuffer> = [];
     const texture = (format: GPUTextureFormat, label: string) => { const value = createAdmittedTexture(this.session, { label, size: [width, height], format,
@@ -79,6 +86,11 @@ function validateSource(device: GPUDevice, source: TemporalAaSource): void {
   for (const [texture, format, name] of specs) {
     if (texture.format !== format || texture.dimension !== "2d" || texture.depthOrArrayLayers !== 1 || texture.sampleCount !== 1 || (texture.usage & GPUTextureUsage.TEXTURE_BINDING) === 0) throw new Error(`Invalid TAA ${name} texture; expected ${format} single-sample 2D TEXTURE_BINDING.`);
     if (texture.width !== source.color.width || texture.height !== source.color.height) throw new Error("TAA input dimensions must match.");
+  }
+  if (source.reactiveMask) {
+    const mask = source.reactiveMask;
+    if (mask.format !== TEMPORAL_REACTIVE_MASK_FORMAT || mask.dimension !== "2d" || mask.depthOrArrayLayers !== 1 || mask.sampleCount !== 1 || (mask.usage & GPUTextureUsage.TEXTURE_BINDING) === 0) throw new Error(`Invalid TAA reactive mask; expected ${TEMPORAL_REACTIVE_MASK_FORMAT} single-sample 2D TEXTURE_BINDING.`);
+    if (mask.width !== source.color.width || mask.height !== source.color.height) throw new Error("TAA reactive mask dimensions must match the color target.");
   }
   if (source.color.width < 1 || source.color.height < 1 || source.color.width > device.limits.maxTextureDimension2D || source.color.height > device.limits.maxTextureDimension2D
     || Math.ceil(source.color.width / TEMPORAL_AA_WORKGROUP_SIZE) > device.limits.maxComputeWorkgroupsPerDimension || Math.ceil(source.color.height / TEMPORAL_AA_WORKGROUP_SIZE) > device.limits.maxComputeWorkgroupsPerDimension) throw new Error("TAA dimensions exceed device limits.");

@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type { ScenePostProcessingState } from "@bim-studio/contracts";
 import * as THREE from "three";
 import type { RendererBackend } from "./viewerTypes";
@@ -45,7 +46,7 @@ export function rendererPipelineSignature(
     `fog=${scene.fog instanceof THREE.FogExp2 ? "FogExp2" : scene.fog ? "Fog" : "none"}`,
     `background=${scene.background instanceof THREE.Texture ? "texture" : "color"}`,
     `environment=${scene.environment ? "texture" : "none"}`,
-    `lights=${[...lightCounts].sort(([left], [right]) => left.localeCompare(right)).map(([key, count]) => `${key}x${count}`).join(",")}`,
+    `lights=${[...lightCounts].sort(([left], [right]) => compareText(left, right)).map(([key, count]) => `${key}x${count}`).join(",")}`,
     `post=${postProcessingVariant(postProcessing)}`,
   ];
   return [...sceneFeatures, ...[...renderVariants].sort()].join("\n");
@@ -65,7 +66,7 @@ function materialVariant(material: THREE.Material): string {
   const record = material as THREE.Material & Record<string, unknown>;
   const textures = TEXTURE_SLOTS.filter((slot) => record[slot] instanceof THREE.Texture).join(",");
   const defines = record.defines && typeof record.defines === "object"
-    ? Object.entries(record.defines as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right))
+    ? Object.entries(record.defines as Record<string, unknown>).sort(([left], [right]) => compareText(left, right))
     : [];
   return [
     material.type,

@@ -29,8 +29,8 @@ for (const file of ["LICENSE", "LICENSE.zh-CN.md", "THIRD_PARTY_NOTICES.md"]) {
 const artifact = await readFile(path.join(output, "lab.js"));
 const assets = {};
 const samples = [
-  "Box.glb", "BoxInterleaved.glb", "BoxTextured.glb", "NormalTangentTest.glb", "TextureEncodingTest.glb", "TextureTransformMultiTest.glb", "AlphaBlendModeTest.glb",
-  "Box.LICENSE.md", "BoxInterleaved.LICENSE.md", "BoxTextured.LICENSE.md", "NormalTangentTest.LICENSE.md", "TextureEncodingTest.LICENSE.md", "TextureTransformMultiTest.LICENSE.md", "AlphaBlendModeTest.LICENSE.md",
+  "Box.glb", "BoxInterleaved.glb", "BoxTextured.glb", "NormalTangentTest.glb", "TextureEncodingTest.glb", "TextureTransformMultiTest.glb", "AlphaBlendModeTest.glb", "FactoryMachine.glb", "WorkshopConveyor.glb", "WorkshopCrate.glb", "WorkshopHopper.glb", "WorkshopColumn.glb", "WorkshopCatwalk.glb", "WorkshopRobotArm.glb", "WorkshopScreen.glb",
+  "Box.LICENSE.md", "BoxInterleaved.LICENSE.md", "BoxTextured.LICENSE.md", "NormalTangentTest.LICENSE.md", "TextureEncodingTest.LICENSE.md", "TextureTransformMultiTest.LICENSE.md", "AlphaBlendModeTest.LICENSE.md", "FactoryMachine.LICENSE.md", "WorkshopKit.LICENSE.md",
   "BoxTextured.upstream-metadata.json", "NormalTangentTest.upstream-metadata.json", "TextureEncodingTest.upstream-metadata.json", "TextureTransformMultiTest.upstream-metadata.json", "AlphaBlendModeTest.upstream-metadata.json", "sources.json",
 ];
 for (const file of samples) await copyFile(path.join(root, "lab/assets", file), path.join(output, "assets", file));

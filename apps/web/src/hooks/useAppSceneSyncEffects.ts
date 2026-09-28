@@ -1,4 +1,4 @@
-import { useEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { useEffect, useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { assessWorkspaceRecovery } from "../studio/workspaceRecoveryDecision";
 import type { ProjectRecord, SceneSnapshot } from "@bim-studio/contracts";
 import { api } from "../api";
@@ -15,6 +15,7 @@ type PersistenceController = ReturnType<typeof createScenePersistenceController>
 
 interface AppSceneSyncEffectsOptions {
   state: AppState;
+  playModeActive?: boolean;
   recoveryDecisionRef: RefObject<string | undefined>;
   setRecoveryDraft: Dispatch<SetStateAction<WorkspaceRecoveryDraft | undefined>>;
   refreshProject: () => Promise<void>;
@@ -24,7 +25,7 @@ interface AppSceneSyncEffectsOptions {
 }
 
 /** 统一同步 URL、项目、二维应用、拓扑与三维场景，入口组件只负责组装控制器。 */
-export function useAppSceneSyncEffects({ state, recoveryDecisionRef, setRecoveryDraft, refreshProject, navigate, applyScene, openSceneDashboard }: AppSceneSyncEffectsOptions) {
+export function useAppSceneSyncEffects({ state, playModeActive = false, recoveryDecisionRef, setRecoveryDraft, refreshProject, navigate, applyScene, openSceneDashboard }: AppSceneSyncEffectsOptions) {
   const {
     activeApplication,
     activeScene,
@@ -51,6 +52,8 @@ export function useAppSceneSyncEffects({ state, recoveryDecisionRef, setRecovery
     showError,
     topologyDataProducts,
   } = state;
+  const playModeActiveRef = useRef(playModeActive);
+  playModeActiveRef.current = playModeActive;
 
   useEffect(() => {
     if (!project) return;
@@ -184,7 +187,7 @@ export function useAppSceneSyncEffects({ state, recoveryDecisionRef, setRecovery
   }, [activeTopology, project, route.view, topologyDataProducts]);
 
   useEffect(() => {
-    if (route.view !== "studio" || !route.sceneId || route.sceneId === "new" || !engine) return;
+    if (playModeActive || route.view !== "studio" || !route.sceneId || route.sceneId === "new" || !engine) return;
     const sceneId = route.sceneId;
     const workspaceKey = `${engine.scene.uuid}:${route.projectId ?? "browse"}:${route.applicationId ?? "scene"}:${sceneId}`;
     const applicationMatches = !route.applicationId || activeApplication?.metadata.id === route.applicationId;
@@ -198,6 +201,8 @@ export function useAppSceneSyncEffects({ state, recoveryDecisionRef, setRecovery
           route.projectId && route.applicationId ? api.getApplication(route.projectId, route.applicationId) : Promise.resolve(undefined),
         ]),
       apply: async ([result, application]) => {
+        // An earlier route read can settle after Play began; never apply its saved scene over the temporary session.
+        if (playModeActiveRef.current) return;
         setProject(result.project);
         setProjects((items) =>
           items.some((item) => item.id === result.project.id) ? items.map((item) => (item.id === result.project.id ? result.project : item)) : [...items, result.project],
@@ -211,7 +216,7 @@ export function useAppSceneSyncEffects({ state, recoveryDecisionRef, setRecovery
       cancelRead();
       if (sceneWorkspaceLoadRef.current === workspaceKey) sceneWorkspaceLoadRef.current = undefined;
     };
-  }, [route.view, route.projectId, route.applicationId, route.sceneId, engine, activeScene?.id, currentUser?.id, showError]);
+  }, [route.view, route.projectId, route.applicationId, route.sceneId, engine, activeScene?.id, currentUser?.id, showError, playModeActive]);
 
   useEffect(() => {
     const pending = pendingSceneFocusRef.current;

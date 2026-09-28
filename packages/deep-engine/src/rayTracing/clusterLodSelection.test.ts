@@ -184,7 +184,7 @@ describe("cluster lod cpu reference selection", () => {
     const index = baked.dag.nodes.indexOf(node);
     const center = [(node.boundsMin[0] + node.boundsMax[0]) / 2, (node.boundsMin[1] + node.boundsMax[1]) / 2,
       (node.boundsMin[2] + node.boundsMax[2]) / 2];
-    const depth = Math.max(center[2] - camera.position[2], 1e-6);
+    const depth = Math.max(center[2]! - camera.position[2]!, 1e-6);
     const expected = node.error * 1080 / (2 * depth * 1);
     // screenErrors 是 Float32Array（f32 诊断量化）；f64 参考值 fround 后逐位一致。
     expect(selection.screenErrors[index]).toBe(Math.fround(expected));

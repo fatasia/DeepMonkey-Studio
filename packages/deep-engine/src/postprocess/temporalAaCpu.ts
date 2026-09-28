@@ -27,6 +27,7 @@ export function resolveTemporalAaCpu(input: TemporalAaCpuInput, options: Tempora
     || !input.color.every(Number.isFinite) || !input.depth.every(value => Number.isFinite(value) && value >= 0) || !input.motion.every(Number.isFinite)) throw new Error("Invalid TAA CPU current-frame buffers.");
   if (input.historyValid && (!input.previousColor || !input.previousDepth || input.previousColor.length !== pixels * 4
     || input.previousDepth.length !== pixels || !input.previousColor.every(Number.isFinite) || !input.previousDepth.every(Number.isFinite))) throw new Error("Valid TAA history requires finite matching previous buffers.");
+  if (input.reactiveMask && (input.reactiveMask.length !== pixels || !input.reactiveMask.every(value => Number.isFinite(value) && value >= 0 && value <= 255))) throw new Error("Invalid TAA reactive mask; expected 0-255 coverage per pixel.");
   const output = new Float32Array(input.color);
   if (!input.historyValid) return output;
   for (let y = 0; y < input.height; y++) for (let x = 0; x < input.width; x++) {
@@ -45,7 +46,10 @@ export function resolveTemporalAaCpu(input: TemporalAaCpuInput, options: Tempora
     }
     const history = rgbToYCoCg(...historicalColor);
     const clamped = yCoCgToRgb(...history.map((value, channel) => clamp(value, minimum[channel]!, maximum[channel]!)) as [number, number, number]);
-    const offset = pixel * 4; for (let channel = 0; channel < 3; channel++) output[offset + channel] = Math.max(0, input.color[offset + channel]! * (1 - options.feedback) + clamped[channel]! * options.feedback);
+    // Reactive coverage scales trusted feedback with the same formula as
+    // temporalResponseMask.applyResponseFeedback and the WGSL binding (tuning.x * (1 - mask)).
+    const feedback = input.reactiveMask ? options.feedback * (1 - input.reactiveMask[pixel]! / 255) : options.feedback;
+    const offset = pixel * 4; for (let channel = 0; channel < 3; channel++) output[offset + channel] = Math.max(0, input.color[offset + channel]! * (1 - feedback) + clamped[channel]! * feedback);
   }
   return output;
 }

@@ -354,3 +354,4 @@ export * from "./mtm.js";
 export * from "./geneticOptimization.js";
 export * from "./multiObjective.js";
 export * from "./vsm.js";
+export * from "./textOrder.js";

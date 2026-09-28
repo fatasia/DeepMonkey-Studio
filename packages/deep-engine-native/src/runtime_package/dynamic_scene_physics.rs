@@ -9,6 +9,9 @@ use super::{RuntimePackageError, fail};
 const MAX_PHYSICS_BODIES: usize = 16_384;
 const MAX_PHYSICS_JOINTS: usize = 16_384;
 const MAX_COLLIDER_INSTANCES: usize = 65_536;
+const MAX_COLLIDER_HULL_POINTS: usize = 65_536;
+const MAX_COLLIDER_VERTICES: usize = 65_536;
+const MAX_COLLIDER_INDICES: usize = 196_608;
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -31,6 +34,8 @@ pub struct DynamicPhysicsBodyRuntime {
     pub mass: f64,
     pub friction: f64,
     pub restitution: f64,
+    #[serde(default)]
+    pub initial_linear_velocity: Option<[f64; 3]>,
     #[serde(default)]
     pub character: Option<DynamicPhysicsCharacterControllerRuntime>,
     pub collider: DynamicPhysicsColliderRuntime,
@@ -83,6 +88,50 @@ pub struct DynamicPhysicsPoseRuntime {
 pub struct DynamicPhysicsColliderRuntime {
     pub kind: String,
     pub instance_ids: Vec<String>,
+    #[serde(default)]
+    pub points: Vec<[f64; 3]>,
+    #[serde(default)]
+    pub positions: Vec<[f64; 3]>,
+    #[serde(default)]
+    pub indices: Vec<u32>,
+    #[serde(default)]
+    pub primitive: Option<DynamicPhysicsPrimitiveColliderRuntime>,
+    #[serde(default)]
+    pub precision: Option<DynamicPhysicsColliderPrecisionRuntime>,
+}
+
+/// T17 collider 精度标记镜像:approximate=true 时消费方不得把 collider 当精确几何。
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DynamicPhysicsColliderPrecisionRuntime {
+    #[serde(default)]
+    pub approximate: Option<bool>,
+    #[serde(default)]
+    pub reasons: Option<Vec<String>>,
+    #[serde(default)]
+    pub tolerance: Option<f64>,
+    #[serde(default)]
+    pub hull_vertex_count: Option<u64>,
+    #[serde(default)]
+    pub triangle_count: Option<u64>,
+    #[serde(default)]
+    pub topology_ok: Option<bool>,
+    #[serde(default)]
+    pub topology_issue_codes: Option<Vec<String>>,
+    #[serde(default)]
+    pub concave_source: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DynamicPhysicsPrimitiveColliderRuntime {
+    pub shape: String,
+    #[serde(default)]
+    pub half_extents: Option<[f64; 3]>,
+    #[serde(default)]
+    pub radius: Option<f64>,
+    #[serde(default)]
+    pub half_height: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -190,15 +239,13 @@ pub(super) fn validate_physics_runtime(
             || !(0.0..=2.0).contains(&body.friction)
             || !body.restitution.is_finite()
             || !(0.0..=1.0).contains(&body.restitution)
-            || body.collider.kind != "render-bounds"
-            || body.collider.instance_ids.is_empty()
-            || body.collider.instance_ids.len() > MAX_COLLIDER_INSTANCES
-            || body
-                .collider
-                .instance_ids
-                .iter()
-                .any(|id| !valid_resource_id(id))
-            || !strictly_sorted_unique(&body.collider.instance_ids)
+            || body.initial_linear_velocity.is_some_and(|velocity| {
+                body.r#type != "dynamic"
+                    || velocity
+                        .iter()
+                        .any(|component| !component.is_finite() || component.abs() > 1_000.0)
+            })
+            || !valid_collider(&body.collider)
         {
             return fail("dynamic physics body is invalid");
         }
@@ -212,7 +259,8 @@ pub(super) fn validate_physics_runtime(
             || !valid_resource_id(&joint.id)
             || (!previous.is_empty() && joint.id.as_str() <= previous)
             || !joint_ids.insert(joint.id.as_str())
-            || joint.kind != "revolute"
+            || (joint.kind != "revolute" && joint.kind != "prismatic")
+            || (joint.kind == "prismatic" && joint.solver != "impulse")
             || !matches!(joint.solver.as_str(), "impulse" | "multibody")
             || !body_ids.contains(joint.body_id.as_str())
             || joint
@@ -256,6 +304,100 @@ pub(super) fn validate_physics_runtime(
         }
     }
     Ok(())
+}
+
+/// T17 collider 来源校验:与 TS `dynamicSceneRuntime.parseCollider` 逐条镜像——
+/// 每 kind 只接受自己的几何字段;generated kinds(convex-hull/simplified-mesh)
+/// 必须携带精度标记,缺失即拒整包,杜绝来源不可追溯的 collider 进入 Native。
+fn valid_collider(collider: &DynamicPhysicsColliderRuntime) -> bool {
+    let instance_ids_ok = !collider.instance_ids.is_empty()
+        && collider.instance_ids.len() <= MAX_COLLIDER_INSTANCES
+        && collider.instance_ids.iter().all(|id| valid_resource_id(id))
+        && strictly_sorted_unique(&collider.instance_ids);
+    let precision_ok = |required: bool| match &collider.precision {
+        Some(precision) => valid_collider_precision(precision),
+        None => !required,
+    };
+    let no_residual = |points: bool, mesh: bool, primitive: bool| {
+        (!points || collider.points.is_empty())
+            && (!mesh || (collider.positions.is_empty() && collider.indices.is_empty()))
+            && (!primitive || collider.primitive.is_none())
+    };
+    match collider.kind.as_str() {
+        "render-bounds" => instance_ids_ok && no_residual(true, true, true) && precision_ok(false),
+        "convex-hull" => {
+            instance_ids_ok
+                && no_residual(false, true, true)
+                && collider.points.len() >= 4
+                && collider.points.len() <= MAX_COLLIDER_HULL_POINTS
+                && collider
+                    .points
+                    .iter()
+                    .all(|point| point.iter().all(|v| v.is_finite()))
+                && precision_ok(true)
+        }
+        "simplified-mesh" => {
+            instance_ids_ok
+                && no_residual(true, false, true)
+                && collider.positions.len() >= 3
+                && collider.positions.len() <= MAX_COLLIDER_VERTICES
+                && collider
+                    .positions
+                    .iter()
+                    .all(|point| point.iter().all(|v| v.is_finite()))
+                && collider.indices.len() >= 3
+                && collider.indices.len() % 3 == 0
+                && collider.indices.len() <= MAX_COLLIDER_INDICES
+                && collider
+                    .indices
+                    .iter()
+                    .all(|index| (*index as usize) < collider.positions.len())
+                && precision_ok(true)
+        }
+        "primitive" => {
+            instance_ids_ok
+                && no_residual(true, true, false)
+                && precision_ok(false)
+                && collider
+                    .primitive
+                    .as_ref()
+                    .is_some_and(valid_primitive_collider)
+        }
+        _ => false,
+    }
+}
+
+fn valid_collider_precision(precision: &DynamicPhysicsColliderPrecisionRuntime) -> bool {
+    precision
+        .tolerance
+        .is_none_or(|tolerance| tolerance.is_finite() && tolerance > 0.0 && tolerance <= 1e6)
+        && precision.reasons.as_ref().is_none_or(|reasons| {
+            reasons.len() <= 8
+                && reasons
+                    .iter()
+                    .all(|reason| !reason.is_empty() && reason.len() <= 128)
+        })
+        && precision.topology_issue_codes.as_ref().is_none_or(|codes| {
+            codes.len() <= 16
+                && codes.iter().all(|code| {
+                    (1..=32).contains(&code.len())
+                        && code.chars().all(|c| c.is_ascii_uppercase() || c == '_')
+                })
+        })
+}
+
+fn valid_primitive_collider(primitive: &DynamicPhysicsPrimitiveColliderRuntime) -> bool {
+    let meter = |value: f64| value.is_finite() && value > 0.0 && value <= 1e6;
+    match primitive.shape.as_str() {
+        "cuboid" => primitive
+            .half_extents
+            .is_some_and(|extents| extents.iter().all(|value| meter(*value))),
+        "sphere" => primitive.radius.is_some_and(meter),
+        "cylinder" => {
+            primitive.radius.is_some_and(meter) && primitive.half_height.is_some_and(meter)
+        }
+        _ => false,
+    }
 }
 
 fn valid_character_controller(character: &DynamicPhysicsCharacterControllerRuntime) -> bool {

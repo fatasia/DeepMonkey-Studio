@@ -1,3 +1,4 @@
+import { compareText } from "./textOrder.js";
 import type { Availability, PlantLiteNode, PlantLiteReplication, PlantLiteModel, PlantLiteResource, SimulationLimits } from "./model.js";
 import { plantLiteEffectiveCapacity, plantLiteRequiredResourceIds } from "./capacity.js";
 import { advancePlantLiteEnergy, createPlantLiteEnergyState } from "./energyRuntime.js";
@@ -150,7 +151,7 @@ function computeResourceOperatingAvailability(model: PlantLiteModel, resource: P
 }
 
 function initializeOutgoing(runtime: Runtime): void {
-  const edges = [...runtime.model.edges].sort((left, right) => (left.priority ?? 0) - (right.priority ?? 0) || left.id.localeCompare(right.id));
+  const edges = [...runtime.model.edges].sort((left, right) => (left.priority ?? 0) - (right.priority ?? 0) || compareText(left.id, right.id));
   for (const edge of edges) {
     const targets = runtime.outgoing.get(edge.from) ?? [];
     targets.push(edge.to);
@@ -396,7 +397,7 @@ function selectReadyProductionOrder(runtime: Runtime, sourceNodeId: string) {
     ?.filter((order) => releaseOffset + order.releaseMinute <= runtime.now)
     .sort((left, right) => (right.priority ?? 0) - (left.priority ?? 0)
       || left.releaseMinute - right.releaseMinute
-      || left.id.localeCompare(right.id))[0];
+      || compareText(left.id, right.id))[0];
 }
 
 function nextProductionOrderReleaseMinute(runtime: Runtime, sourceNodeId: string): number | undefined {

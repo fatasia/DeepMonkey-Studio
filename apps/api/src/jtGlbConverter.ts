@@ -1,8 +1,9 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Document, NodeIO, type Material, type Mesh } from "@gltf-transform/core";
-import type { JtDocument, JtMesh, JtMeshInstance } from "@bim-studio/jt-reader";
+import type { JtDocument, JtMesh, JtMeshInstance, JtTextureImage } from "@bim-studio/jt-reader";
 import { calculateVertexNormals, createIndexedTrianglePrimitive } from "./indexedTriangleMesh.js";
+import { encodeJtTexturePng } from "./jtTexturePng.js";
 import { jtInstanceElementId, type JtMaterialEvidence } from "./jtInspection.js";
 import { createJtMaterialResolver } from "./jtMaterialResolution.js";
 
@@ -44,32 +45,43 @@ export async function convertJtLod0ToGlb(
     return undefined;
   }
 
+  const sceneNodes = new Map(document.sceneGraph.nodes.map((node) => [node.objectId, node]));
+  if (document.sceneGraph.nodes.some((node) => (node.textureImages?.length ?? 0) > 0)
+      && (document.header.majorVersion !== 10 || document.header.minorVersion !== 3
+        || document.header.byteOrder !== "little-endian")) return undefined;
+  // 源集合绑定不完整时拒绝发布，避免生成已有材质却缺少可用贴图的 GLB。
+  for (const instance of instances) {
+    const mesh = meshById.get(instance.meshId)!;
+    const image = resolveTextureImage(instance, sceneNodes);
+    if (image && !(mesh.textureSets?.some((set) => set.textureSetIndex === image.textureSetIndex)
+      || (image.textureSetIndex === 0 && mesh.uvs && !mesh.textureSets))) return undefined;
+  }
   const gltf = new Document();
   const buffer = gltf.createBuffer("JT LOD0 geometry");
   const scene = gltf.createScene(sourceName);
-  const sceneNodes = new Map(document.sceneGraph.nodes.map((node) => [node.objectId, node]));
   const gltfMeshes = new Map<string, Mesh>();
   const resolveMaterial = createJtMaterialResolver(materials);
   const variants = new Map<string, Mesh>();
   const gltfMaterials = new Map<string, Material>();
   const assignedMeshes = new Set<string>();
+  const sourceTextures = new Map<number, ReturnType<Document["createTexture"]>>();
   const placeholder = createMaterial(gltf, undefined, 0);
   let primitiveCount = 0;
   // 属性解码证据:UV/色来自源文件的顶点记录,长度经 isValidMesh 校验后才允许写入 GLB。
   const decodedUvMeshes = meshes.filter((mesh) => mesh.uvs !== undefined);
   const decodedColorMeshes = meshes.filter((mesh) => mesh.colors !== undefined);
-  // 多纹理集网格:GLB 最多导出 4 套 TEXCOORD_N;JT 材质属性不携带"材质→纹理集"引用
-  // (LSG MaterialAttribute 仅有颜色/光泽/反射,Texture Image Attribute 与纹理集无确定映射),
-  // 因此导出全部可用集并如实标注 linkage 未解析,由上层在质量草稿中保留该损失。
+  // 多纹理集网格导出最多 4 套 TEXCOORD_N；只有 Texture Image Attribute 的显式
+  // Tex Coord Channel 才能建立具体图像引用；裸 UV 不得推断为已解析的贴图。
   const textureSetCount = Math.max(0, ...meshes.map((mesh) => mesh.textureSets?.length ?? (mesh.uvs ? 1 : 0)));
   meshes.forEach((mesh, index) => {
     const gltfMesh = gltf.createMesh(`JT 网格 ${index + 1}`);
+    const meshTextureSetCount = mesh.textureSets?.length ?? (mesh.uvs ? 1 : 0);
     const extraSets = (mesh.textureSets ?? [])
       .filter((set) => set.textureSetIndex >= 1 && set.textureSetIndex < MAX_GLTF_TEXTURE_SETS)
       .map((set) => ({ setIndex: set.textureSetIndex, uvs: set.uvs }));
     const meshExtras: Record<string, unknown> = {};
-    if (textureSetCount > 0) {
-      meshExtras.TextureSetCount = textureSetCount;
+    if (meshTextureSetCount > 0) {
+      meshExtras.TextureSetCount = meshTextureSetCount;
       meshExtras.TextureSetIndices = mesh.textureSets?.map((set) => set.textureSetIndex)
         ?? (mesh.uvs ? [0] : []);
     }
@@ -78,7 +90,8 @@ export async function convertJtLod0ToGlb(
         positions: mesh.positions,
         indices,
         normals: calculateVertexNormals(mesh.positions, indices),
-        uvs: mesh.uvs,
+        // 非零源集合不得被别名 uvs 重写为 TEXCOORD_0。
+        uvs: mesh.textureSets ? mesh.textureSets.find((set) => set.textureSetIndex === 0)?.uvs : mesh.uvs,
         additionalTextureSets: extraSets,
         colors: mesh.colors,
       }).setExtras({ PolygonGroup: groupId, ...meshExtras });
@@ -87,17 +100,35 @@ export async function convertJtLod0ToGlb(
     }
     gltfMeshes.set(mesh.id, gltfMesh);
   });
-  instances.forEach((instance, index) => {
+  for (const [index, instance] of instances.entries()) {
     const mesh = meshById.get(instance.meshId)!;
     const sourceNode = sceneNodes.get(instance.sceneNodeObjectId);
     const resolved = resolveMaterial(instance);
-    const variantKey = JSON.stringify([mesh.id, resolved.key]);
+    const image = resolveTextureImage(instance, sceneNodes);
+    const variantKey = JSON.stringify([mesh.id, resolved.key, image?.objectId]);
     let variant = variants.get(variantKey);
     if (!variant) {
-      let material = gltfMaterials.get(resolved.key);
+      const key = JSON.stringify([resolved.key, image?.objectId]);
+      let material = gltfMaterials.get(key);
       if (!material) {
-        material = resolved.evidence ? createMaterial(gltf, resolved.evidence, gltfMaterials.size) : placeholder;
-        gltfMaterials.set(resolved.key, material);
+        material = resolved.evidence ? createMaterial(gltf, resolved.evidence, gltfMaterials.size) : createMaterial(gltf, undefined, gltfMaterials.size);
+        if (image) {
+          let texture = sourceTextures.get(image.objectId);
+          if (!texture) {
+            texture = gltf.createTexture(`JT 图像 ${image.objectId}`)
+              .setMimeType("image/png")
+              .setImage(encodeJtTexturePng(image));
+            sourceTextures.set(image.objectId, texture);
+          }
+          material.setBaseColorTexture(texture);
+          const info = material.getBaseColorTextureInfo()!;
+          info.setTexCoord(image.textureSetIndex)
+            .setWrapS(image.wrapS === 1 || image.wrapS === 4 ? 33071 : image.wrapS === 3 ? 33648 : 10497)
+            .setWrapT(image.wrapT === 1 || image.wrapT === 4 ? 33071 : image.wrapT === 3 ? 33648 : 10497)
+            .setMagFilter(image.filter === 1 ? 9728 : 9729)
+            .setMinFilter(image.filter === 1 ? 9728 : 9729);
+        }
+        gltfMaterials.set(key, material);
       }
       const base = gltfMeshes.get(mesh.id)!;
       variant = base;
@@ -124,8 +155,8 @@ export async function convertJtLod0ToGlb(
         MaterialStatus: resolved.status,
         MaterialSourceObjectIds: resolved.sourceObjectIds,
       }));
-  });
-  if (!gltfMaterials.has("unassigned")) placeholder.dispose();
+  }
+  placeholder.dispose();
 
   const binary = await new NodeIO().writeBinary(gltf);
   await mkdir(outputDir, { recursive: true });
@@ -139,6 +170,17 @@ export async function convertJtLod0ToGlb(
       textureSetCount,
     },
   };
+}
+
+function resolveTextureImage(instance: JtMeshInstance, nodes: ReadonlyMap<number, JtDocument["sceneGraph"]["nodes"][number]>): JtTextureImage | undefined {
+  let effective: JtTextureImage | undefined;
+  for (const objectId of instance.pathObjectIds) {
+    for (const image of nodes.get(objectId)?.textureImages ?? []) {
+      // This slice maps only explicit base-colour channel 0. Other channels must not silently override it.
+      if (image.textureChannel === 0) effective = image;
+    }
+  }
+  return effective;
 }
 
 function isValidMesh(mesh: JtMesh): boolean {
@@ -158,9 +200,11 @@ function isValidMesh(mesh: JtMesh): boolean {
     if (!Array.from(mesh.colors).every(Number.isFinite)) return false;
   }
   if (mesh.textureSets !== undefined) {
-    if (mesh.textureSets.length < 2) return false;
+    if (mesh.textureSets.length < 1) return false;
+    let previousIndex = -1;
     for (const set of mesh.textureSets) {
-      if (!Number.isSafeInteger(set.textureSetIndex) || set.textureSetIndex < 0 || set.textureSetIndex > 31) return false;
+      if (!Number.isSafeInteger(set.textureSetIndex) || set.textureSetIndex <= previousIndex || set.textureSetIndex > 31) return false;
+      previousIndex = set.textureSetIndex;
       if (set.uvs.length !== mesh.vertexCount * 2) return false;
       if (!Array.from(set.uvs).every(Number.isFinite)) return false;
     }

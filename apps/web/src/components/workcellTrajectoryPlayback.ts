@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type {
   Vector3Value,
   WorkcellRobotTrajectory,
@@ -216,7 +217,7 @@ function dedupeEvents(values: WorkcellTrajectoryPlaybackEvent[]): WorkcellTrajec
   return [...new Map(values.map((item) => [item.id, item])).values()];
 }
 function compareEvents(left: WorkcellTrajectoryPlaybackEvent, right: WorkcellTrajectoryPlaybackEvent): number {
-  return left.timeSec - right.timeSec || eventRank(left.kind) - eventRank(right.kind) || left.id.localeCompare(right.id);
+  return left.timeSec - right.timeSec || eventRank(left.kind) - eventRank(right.kind) || compareText(left.id, right.id);
 }
 function eventRank(kind: WorkcellTrajectoryEventKind): number {
   return ({ "joint-constraint": 0, "potential-collision": 1, "schedule-conflict": 2, waypoint: 3 })[kind];

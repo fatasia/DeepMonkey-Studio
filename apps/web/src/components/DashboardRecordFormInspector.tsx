@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { translate as tr } from "../i18n";
 import { useDashboardWorkspace } from "./dashboardWorkspaceContext";
+import { imeComposingKey } from "./layerKeyboard";
 
 export function DashboardRecordFormInspector() {
   const { locale, selectedNode, datasets, project, catalogError, updateDataWidget } = useDashboardWorkspace();
@@ -22,7 +23,7 @@ export function DashboardRecordFormInspector() {
           const recordId = event.currentTarget.value.trim();
           if (recordId && !/^[\p{L}\p{N}_-]{1,128}$/u.test(recordId)) { setError(tr(locale, "仅支持文字、数字、下划线和短横线", "Use letters, numbers, underscores or hyphens")); return; }
           setError(""); updateDataWidget({ recordForm: { recordId } });
-        }} onKeyDown={event => { if (event.key === "Enter") event.currentTarget.blur(); }} />
+        }} onKeyDown={event => { if (imeComposingKey(event)) return; if (event.key === "Enter") event.currentTarget.blur(); }} />
     </label>
     {error && <small className="dashboard-field-error" role="alert">{error}</small>}
     {catalogError && <small className="dashboard-field-error" role="alert">{tr(locale, "数据目录读取失败，请刷新页面重试", "Could not load the data catalog. Reload to retry.")}</small>}

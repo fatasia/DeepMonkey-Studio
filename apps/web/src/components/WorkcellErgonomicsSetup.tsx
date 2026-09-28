@@ -8,6 +8,7 @@ import type {
 } from "@bim-studio/contracts";
 import { Plus, Ruler, Trash2, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
+import { imeComposingKey } from "./layerKeyboard";
 import "./WorkcellErgonomicsSetup.css";
 
 export function WorkcellErgonomicsSetup({
@@ -195,7 +196,7 @@ function OptionalNumber({ label, unit, min, max, value, disabled, onChange }: {
   useEffect(() => setDraft(value === undefined ? "" : String(value)), [value]);
   const valid = !draft.trim() || (Number.isFinite(Number(draft)) && Number(draft) >= min && Number(draft) <= max);
   const commit = () => { if (!draft.trim()) onChange(undefined); else if (valid) onChange(Number(draft)); };
-  return <label><span>{label}</span><span className="workcell-ergonomics-number"><input disabled={disabled} type="number" min={min} max={max} step="any" value={draft} placeholder="—" aria-invalid={!valid} onChange={(event) => setDraft(event.currentTarget.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /><small>{unit}</small></span></label>;
+  return <label><span>{label}</span><span className="workcell-ergonomics-number"><input disabled={disabled} type="number" min={min} max={max} step="any" value={draft} placeholder="—" aria-invalid={!valid} onChange={(event) => setDraft(event.currentTarget.value)} onBlur={commit} onKeyDown={(event) => { if (imeComposingKey(event)) return; if (event.key === "Enter") event.currentTarget.blur(); }} /><small>{unit}</small></span></label>;
 }
 
 function OptionalVector({ label, unit, value, disabled, onChange }: {

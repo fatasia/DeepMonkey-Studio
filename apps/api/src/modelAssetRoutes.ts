@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import type { FastifyInstance } from "fastify";
@@ -164,6 +164,57 @@ export async function registerModelAssetRoutes(app: FastifyInstance, dependencie
     const project = store.getProject(request.params.projectId);
     if (!project?.models.some((item) => item.id === request.params.modelId)) return reply.code(404).send({ message: "模型不存在" });
     return store.updateModel(request.params.projectId, request.params.modelId, { name: name.slice(0, 180) });
+  });
+
+  /**
+   * 再导入：同一模型以新源文件重新转换，模型 ID 与场景实例稳定绑定保持不变。
+   * 存储身份由 Deep Asset Package 的 sourceHash/修订号承接；同源重传按内容判等直接返回，不重复转换。
+   */
+  app.post<{ Params: { projectId: string; modelId: string } }>("/api/projects/:projectId/models/:modelId/reconvert", async (request, reply) => {
+    const project = store.getProject(request.params.projectId);
+    const model = project?.models.find((item) => item.id === request.params.modelId);
+    if (!project || !model) return reply.code(404).send({ message: "模型不存在" });
+    if (model.status === "queued" || model.status === "processing") {
+      return reply.code(409).send({ message: "该模型正在转换中，请等待完成后再导入" });
+    }
+    const part = await request.file();
+    if (!part) return reply.code(400).send({ message: "请选择新的模型源文件" });
+    const format = modelFormat(part.filename);
+    if (!format || format !== model.format) {
+      part.file.resume();
+      return reply.code(415).send({ message: `再导入必须保持原格式 ${model.format}` });
+    }
+    const sourcePath = resolveModelSourcePath(dataDir, project.id, model.id, model.sourceUrl);
+    const incomingPath = `${sourcePath}.incoming-${Date.now()}`;
+    try {
+      await pipeline(part.file, createWriteStream(incomingPath, { flags: "wx" }));
+    } catch (reason) {
+      await rm(incomingPath, { force: true }).catch(() => undefined);
+      return reply.code(500).send({ message: reason instanceof Error ? reason.message : "再导入源文件写入失败" });
+    }
+    const previousHash = await hashModelFile(sourcePath);
+    const nextHash = await hashModelFile(incomingPath);
+    if (previousHash === nextHash) {
+      await rm(incomingPath, { force: true });
+      return reply.code(200).send({ ...model, message: "源文件内容未变化，资产包保持当前修订" });
+    }
+    await rm(sourcePath, { force: true });
+    await rename(incomingPath, sourcePath);
+    await objects.putFile(assetObjectKey(project.id, model.id, model.sourceUrl), sourcePath);
+    const now = new Date().toISOString();
+    const updated = await store.updateModel(project.id, model.id, {
+      size: part.file.bytesRead,
+      status: "queued",
+      progress: 0,
+      message: "源文件已更新，等待重新转换",
+      updatedAt: now,
+    });
+    updated.conversionTaskId = await queue.enqueue({
+      model: updated,
+      sourcePath,
+      modelDir: path.join(dataDir, "projects", project.id, "models", model.id),
+    });
+    return reply.code(202).send(updated);
   });
 
   app.get<{ Params: { projectId: string; modelId: string } }>("/api/projects/:projectId/models/:modelId/format-probe", async (request, reply) => {

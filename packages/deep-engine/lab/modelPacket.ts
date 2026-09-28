@@ -1,8 +1,9 @@
 import { decodeGlb, decodeTexturedGlb } from "@bim-studio/deep-engine/gltf";
 import type { RenderPacket } from "@bim-studio/deep-engine/webgpu";
 import { browserImageDecoder } from "./browserImageDecoder.js";
+import { loadFactoryWorkshopPacket, type WorkshopInstanceCount } from "./factoryWorkshop.js";
 
-export type ModelName = "Box" | "BoxInterleaved" | "BoxTextured" | "NormalTangentTest" | "TextureEncodingTest" | "TextureTransformMultiTest" | "AlphaBlendModeTest" | "MaterialModes" | "UvSets" | "LocalBim" | "LocalPreheater";
+export type ModelName = "Box" | "BoxInterleaved" | "BoxTextured" | "NormalTangentTest" | "TextureEncodingTest" | "TextureTransformMultiTest" | "AlphaBlendModeTest" | "MaterialModes" | "UvSets" | "FactoryMachine" | "FactoryWorkshop" | "LocalBim" | "LocalPreheater";
 const decoded = new Map<ModelName, RenderPacket>();
 const identities = new Map<ModelName, { sha256: string; sourceSha256: string }>();
 export interface BenchmarkCameraFrame { center: readonly [number, number, number]; radius: number; focus: string; contentPolicy: string }
@@ -11,6 +12,7 @@ export function modelSourceIdentity(name: ModelName) { return identities.get(nam
 export function modelCameraFrame(name: ModelName) { return cameraFrames.get(name); }
 
 export async function loadModelPacket(name: ModelName, count: number, signal?: AbortSignal): Promise<RenderPacket> {
+  if (name === "FactoryWorkshop") return loadFactoryWorkshopPacket(count as WorkshopInstanceCount, signal);
   let source = decoded.get(name);
   if (!source) {
     const asset = name === "MaterialModes" || name === "UvSets" ? "BoxTextured" : name;
@@ -34,7 +36,7 @@ export async function loadModelPacket(name: ModelName, count: number, signal?: A
     const optionalMaterialFallbacks = asset === "TextureTransformMultiTest"
       ? ["KHR_materials_clearcoat", "KHR_materials_unlit"] as const
       : undefined;
-    source = asset === "BoxTextured" || asset === "NormalTangentTest" || asset === "TextureEncodingTest" || asset === "TextureTransformMultiTest" || asset === "AlphaBlendModeTest" || asset.startsWith("Local")
+    source = asset === "BoxTextured" || asset === "NormalTangentTest" || asset === "TextureEncodingTest" || asset === "TextureTransformMultiTest" || asset === "AlphaBlendModeTest" || asset === "FactoryMachine" || asset.startsWith("Local")
       ? await decodeTexturedGlb(bytes, browserImageDecoder, {
         resourcePrefix: name,
         ...(optionalMaterialFallbacks ? { optionalMaterialFallbacks } : {}),

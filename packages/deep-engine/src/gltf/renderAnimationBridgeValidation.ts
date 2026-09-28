@@ -1,5 +1,5 @@
 import { SceneAnimationMixer } from "../animation/SceneAnimationMixer.js";
-import type { AnimationClipInput } from "../animation/types.js";
+import type { AnimationClipInput, AnimationWrapMode } from "../animation/types.js";
 import { sampleMorphWeightTrack } from "../morph/runtime.js";
 import type { SpatialItemId } from "../spatial/types.js";
 import type { GltfAnimatedNode } from "./animationTypes.js";
@@ -25,9 +25,14 @@ export function resolveBridgeSources<TId extends SpatialItemId>(sources: GltfRen
 }
 
 export function prepareMixer<TId extends SpatialItemId>(clips: readonly AnimationClipInput<TId>[], nodeCount: number): SceneAnimationMixer<TId> {
+  let maxTracksPerClip = 1;
+  let maxKeysPerTrack = 1;
+  for (const clip of clips) {
+    maxTracksPerClip = Math.max(maxTracksPerClip, clip.tracks.length);
+    for (const track of clip.tracks) maxKeysPerTrack = Math.max(maxKeysPerTrack, track.times.length);
+  }
   const mixer = new SceneAnimationMixer<TId>({ maxClips: Math.max(1, clips.length), maxAnimatedNodes: Math.max(1, nodeCount), maxLayers: 2,
-    maxTracksPerClip: Math.max(1, ...clips.map((clip) => clip.tracks.length)),
-    maxKeysPerTrack: Math.max(1, ...clips.flatMap((clip) => clip.tracks.map((track) => track.times.length))) });
+    maxTracksPerClip, maxKeysPerTrack });
   for (const clip of clips) mixer.registerClip(clip);
   return mixer;
 }
@@ -105,6 +110,39 @@ export function validateFrameDelta(value: number): void {
 export function validateTimeScale(value: number): void {
   if (!Number.isFinite(value) || Math.abs(value) > 1_000_000) fail("invalid-time", "Animation time scale is invalid.");
 }
+
+/** Shared with the playback clock so mirror time and bridge time cannot diverge. */
+export function normalizeWrapTime(time: number, duration: number, mode: AnimationWrapMode): number {
+  if (duration <= 0) return 0;
+  if (mode === "clamp") return Math.min(duration, Math.max(0, time));
+  return ((time % duration) + duration) % duration;
+}
+/**
+ * Terminal clamp used by `once` playback; `sign < 0` models reverse time scale.
+ * Exact revolution boundaries are direction-sensitive: unwrapped time 0 is the clip
+ * start (forward may run a full clip, backward is already held at the low clamp),
+ * while any other exact boundary is the terminal hold forward and unwinds backward.
+ */
+export function wrapTerminalBound(time: number, duration: number, sign: 1 | -1): number {
+  if (duration <= 0) return 0;
+  const revolutions = time / duration;
+  const exact = Math.round(revolutions);
+  if (Math.abs(revolutions - exact) * duration <= TIME_EPSILON) {
+    if (exact === 0) return sign > 0 ? duration : 0;
+    return sign > 0 ? time : Math.floor(revolutions - TIME_EPSILON) * duration;
+  }
+  return sign > 0 ? Math.ceil(revolutions - TIME_EPSILON) * duration : Math.floor(revolutions + TIME_EPSILON) * duration;
+}
+export function isTerminalPlayhead(time: number, duration: number, timeScale: number, mode: "loop" | "once"): boolean {
+  if (mode === "loop") return false;
+  if (duration === 0) return true;
+  return timeScale < 0 ? time <= 0 : time >= duration;
+}
+export function selectedClipDuration(transform: { readonly duration: number } | null,
+  morph: { readonly duration: number } | null): number {
+  return transform?.duration ?? morph?.duration ?? 0;
+}
+export const TIME_EPSILON = 1e-9;
 
 function sourceTransformClips<TId extends SpatialItemId>(source: GltfRenderAnimationSources<TId>["animation"]): readonly AnimationClipInput<TId>[] {
   if (!source) return [];

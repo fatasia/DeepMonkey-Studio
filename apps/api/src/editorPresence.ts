@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type { FastifyInstance } from "fastify";
 import type { SystemUserRecord } from "@bim-studio/contracts";
 import { parseEditorSceneDraftMirror, type EditorSceneDraftMirror } from "./editorSceneDraftMirror.js";
@@ -58,7 +59,7 @@ export class EditorPresenceRegistry {
   listFor(user: SystemUserRecord): EditorPresence[] {
     this.prune();
     return [...this.entries.values()].filter(entry => entry.userId === user.id && canAccess(user, entry.projectId))
-      .sort((left, right) => left.sessionId.localeCompare(right.sessionId));
+      .sort((left, right) => compareText(left.sessionId, right.sessionId));
   }
 
   readFor(user: SystemUserRecord, sessionId: string, draftRevision: number): EditorPresence | undefined {

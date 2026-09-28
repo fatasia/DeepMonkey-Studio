@@ -1,5 +1,6 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { inflateSync } from "node:zlib";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -124,6 +125,57 @@ describe.skipIf(!existsSync(exampleBlockFixturePath))("JT synthetic UV/color GLB
 });
 
 describe.skipIf(!existsSync(exampleBlockFixturePath))("JT dual texture-set GLB adapter [skipped: external fixture pack unavailable]", () => {
+  it("preserves a lone nonzero source set through reader and GLB without inventing TEXCOORD_0", async () => {
+    const { synthesizeSingleNonzeroTextureSetJt } = await import("@bim-studio/jt-reader/testing");
+    const source = await readFile(exampleBlockFixturePath);
+    const inputDir = await mkdtemp(path.join(tmpdir(), "bim-jt-sparse-source-"));
+    const outputDir = await mkdtemp(path.join(tmpdir(), "bim-jt-sparse-glb-"));
+    directories.push(inputDir, outputDir);
+    const inputPath = path.join(inputDir, "single-set-1.jt");
+    await writeFile(inputPath, synthesizeSingleNonzeroTextureSetJt(new Uint8Array(source)));
+    const artifacts = await writeJtInspectionArtifacts(inputPath, outputDir);
+    const result = await convertJtLod0ToGlb(artifacts.document, outputDir, "single-set-1.jt", artifacts.inspection.materials);
+    expect(result?.decodedAttributes).toMatchObject({ uvs: true, textureSetCount: 1 });
+    const glb = await new NodeIO().read(path.join(outputDir, "geometry.glb"));
+    const primitive = glb.getRoot().listMeshes().flatMap((mesh) => mesh.listPrimitives())[0]!;
+    expect(primitive.getAttribute("TEXCOORD_0")).toBeNull();
+    expect(primitive.getAttribute("TEXCOORD_1")).not.toBeNull();
+    expect(primitive.getExtras()).toMatchObject({ TextureSetCount: 1, TextureSetIndices: [1] });
+    const malformed = structuredClone(artifacts.document);
+    const sourceMesh = malformed.meshes.find((mesh) => mesh.lod === 0)!;
+    sourceMesh.textureSets!.push({ textureSetIndex: 1, uvs: sourceMesh.textureSets![0]!.uvs });
+    expect(await convertJtLod0ToGlb(malformed, outputDir, "duplicate-set.jt", artifacts.inspection.materials)).toBeUndefined();
+  });
+
+  it("keeps per-mesh texture evidence truthful in a mixed assembly", async () => {
+    const { synthesizeDualTextureSetJt } = await import("@bim-studio/jt-reader/testing");
+    const source = await readFile(exampleBlockFixturePath);
+    const inputDir = await mkdtemp(path.join(tmpdir(), "bim-jt-mixed-source-"));
+    const outputDir = await mkdtemp(path.join(tmpdir(), "bim-jt-mixed-glb-"));
+    directories.push(inputDir, outputDir);
+    const inputPath = path.join(inputDir, "mixed.jt");
+    await writeFile(inputPath, synthesizeDualTextureSetJt(new Uint8Array(source)));
+    const artifacts = await writeJtInspectionArtifacts(inputPath, outputDir);
+    const document = structuredClone(artifacts.document);
+    const original = document.meshes.find((mesh) => mesh.lod === 0)!;
+    const plain = structuredClone(original);
+    plain.id = `${original.id}:plain`;
+    delete plain.uvs;
+    delete plain.textureSets;
+    document.meshes.push(plain);
+    const instance = document.meshInstances.find((item) => item.meshId === original.id)!;
+    document.meshInstances.push({ ...instance, id: `${instance.id}:plain`, meshId: plain.id });
+
+    const result = await convertJtLod0ToGlb(document, outputDir, "mixed.jt", artifacts.inspection.materials);
+    expect(result?.decodedAttributes.textureSetCount).toBe(2);
+    const glb = await new NodeIO().read(path.join(outputDir, "geometry.glb"));
+    const primitives = glb.getRoot().listMeshes().flatMap((mesh) => mesh.listPrimitives());
+    expect(primitives.some((primitive) => primitive.getExtras().TextureSetCount === 2
+      && primitive.getAttribute("TEXCOORD_1") !== null)).toBe(true);
+    expect(primitives.some((primitive) => primitive.getExtras().TextureSetCount === undefined
+      && primitive.getAttribute("TEXCOORD_0") === null)).toBe(true);
+  });
+
   it("exports TEXCOORD_0..1 for dual texture sets with mesh extras and linkage loss evidence", async () => {
     const { synthesizeDualTextureSetJt } = await import("@bim-studio/jt-reader/testing");
     const source = await readFile(exampleBlockFixturePath);
@@ -161,6 +213,62 @@ describe.skipIf(!existsSync(exampleBlockFixturePath))("JT dual texture-set GLB a
     for (let index = 0; index < u0.length; index += 2) {
       expect(u0[index]! + u1[index]!).toBeCloseTo(1, 4);
     }
+  });
+});
+
+const independentTextureFixturePath = fileURLToPath(new URL(
+  "../../../data/external-assets/format-fixtures/jt/independent-texture/painted-instanced-10.3.jt", import.meta.url,
+));
+
+describe.skipIf(!existsSync(independentTextureFixturePath))("JT independently authored inline image GLB path", () => {
+  it("rejects an image whose requested source UV set is absent instead of publishing a partial GLB", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "jt-texture-missing-uv-"));
+    directories.push(dir);
+    const artifacts = await writeJtInspectionArtifacts(independentTextureFixturePath, dir);
+    artifacts.document.meshes[0]!.textureSets![0]!.textureSetIndex = 2;
+    expect(await convertJtLod0ToGlb(artifacts.document, dir, "invalid.jt", artifacts.inspection.materials)).toBeUndefined();
+    expect(existsSync(path.join(dir, "geometry.glb"))).toBe(false);
+  });
+
+  it("exports image bytes, inherited material, explicit texCoord 1 and two shared instances", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "jt-texture-glb-"));
+    directories.push(dir);
+    const artifacts = await writeJtInspectionArtifacts(independentTextureFixturePath, dir);
+    expect(artifacts.document.header).toMatchObject({ majorVersion: 10, minorVersion: 3 });
+    expect(artifacts.document.meshes).toHaveLength(1);
+    expect(artifacts.document.meshes[0]!.textureSets?.map((set) => set.textureSetIndex)).toEqual([1]);
+    expect(artifacts.document.meshInstances).toHaveLength(2);
+    expect(artifacts.inspection.materials.map((item) => item.objectId)).toEqual([1]);
+    const result = await convertJtLod0ToGlb(artifacts.document, dir, "painted-instanced-10.3.jt", artifacts.inspection.materials);
+    expect(result).toMatchObject({ meshCount: 1, instanceCount: 2, triangleCount: 12 });
+    const glb = await new NodeIO().read(path.join(dir, "geometry.glb"));
+    const nodes = glb.getRoot().listNodes().filter((node) => node.getMesh());
+    expect(nodes).toHaveLength(2);
+    expect(nodes[0]!.getMesh()).toBe(nodes[1]!.getMesh());
+    expect(nodes.map((node) => node.getMatrix()[12])).toEqual([0, 3]);
+    for (const node of nodes) {
+      expect(node.getExtras()).toMatchObject({ MaterialStatus: "source-path", MaterialSourceObjectIds: [1] });
+      for (const primitive of node.getMesh()!.listPrimitives()) {
+        expect(primitive.getAttribute("TEXCOORD_0")).toBeNull();
+        expect(primitive.getAttribute("TEXCOORD_1")).not.toBeNull();
+        const material = primitive.getMaterial()!;
+        expect(material.getBaseColorTextureInfo()?.getTexCoord()).toBe(1);
+        const image = material.getBaseColorTexture()?.getImage();
+        expect(image?.subarray(0, 8)).toEqual(Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]));
+        expect(image?.length).toBeGreaterThan(50);
+        const bytes = Buffer.from(image!);
+        expect(bytes.readUInt32BE(16)).toBe(2);
+        expect(bytes.readUInt32BE(20)).toBe(2);
+        const compressedLength = bytes.readUInt32BE(33);
+        const scanlines = inflateSync(bytes.subarray(41, 41 + compressedLength));
+        expect([...scanlines]).toEqual([
+          0, 255, 35, 45, 255, 25, 240, 135, 255,
+          0, 25, 95, 255, 255, 255, 210, 20, 255,
+        ]);
+      }
+    }
+    const sourcePixels = artifacts.document.sceneGraph.nodes[0]!.textureImages![0]!.pixels;
+    expect([...sourcePixels]).toEqual([255, 35, 45, 255, 25, 240, 135, 255, 25, 95, 255, 255, 255, 210, 20, 255]);
   });
 });
 

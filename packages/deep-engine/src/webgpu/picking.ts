@@ -4,8 +4,8 @@ import type { CachedPacketBatch, CachedPacketGeometry } from "./packetBufferType
  * 第 3 条权威路径:CPU 拾取查询核心。纯 TS、零依赖、同步执行。
  *
  * 边界声明(诚实契约,宿主必须向上透传):
- * - 复杂度 O(实例数 × 每实例三角形数) 线性遍历,无 BVH/空间加速;十万级三角形的
- *   单次拾取在毫秒到数十毫秒级。拾取是点击时操作,不进渲染热路径。
+ * - 每实例先用本地包围球做宽相位过滤,候选实例仍逐三角形精确求交;稠密重叠场景
+ *   最坏复杂度仍为 O(实例数 × 每实例三角形数)。拾取是点击时操作,不进渲染热路径。
  * - LOD 批次在 GPU 侧按屏幕空间选层绘制,本查询恒测批次自身几何(最细层)。
  * - 变形(skinning/morph)实例按打包时的基础姿态拾取;宿主以 degradedNotes 声明。
  * - 流送驻留投影中未驻留的几何被跳过并上报 degraded,绝不编造命中。
@@ -159,6 +159,7 @@ function pickInstanceRow(hits: PickHit[], batch: CachedPacketBatch,
   transformByInverse(localOrigin, inverse, ray.origin[0] - data[base + 3]!,
     ray.origin[1] - data[base + 7]!, ray.origin[2] - data[base + 11]!);
   transformByInverse(localDirection, inverse, ray.direction[0], ray.direction[1], ray.direction[2]);
+  if (!rayIntersectsSphere(localOrigin, localDirection, geometry.center, geometry.radius)) return;
   const { id, vertices, indices } = geometry.source;
   // 射线经 M⁻¹(仿射逆,方向不归一化)变换后,交点参数 t 与世界距离等价。
   for (let triangle = 0; triangle + 2 < indices.length; triangle += 3) {
@@ -170,6 +171,19 @@ function pickInstanceRow(hits: PickHit[], batch: CachedPacketBatch,
         ray.origin[1] + distance * ray.direction[1], ray.origin[2] + distance * ray.direction[2]],
       normal: normalizedFaceNormal(inverse, faceNormal), triangle: triangle / 3 });
   }
+}
+
+/** Conservative local-space broad phase; the inverse ray keeps world-distance t unchanged. */
+function rayIntersectsSphere(origin: Float64Array, direction: Float64Array,
+  center: readonly [number, number, number], radius: number): boolean {
+  const x = origin[0]! - center[0], y = origin[1]! - center[1], z = origin[2]! - center[2];
+  const a = direction[0]! ** 2 + direction[1]! ** 2 + direction[2]! ** 2;
+  const b = x * direction[0]! + y * direction[1]! + z * direction[2]!;
+  // Upload bounds are derived from float32 vertices. Expand slightly at tangent rays.
+  const safeRadius = radius + Math.max(1e-6, radius * 1e-5);
+  const c = x * x + y * y + z * z - safeRadius * safeRadius;
+  const discriminant = b * b - a * c;
+  return discriminant >= 0 && (-b + Math.sqrt(discriminant)) / a >= 0;
 }
 
 /**

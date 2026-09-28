@@ -1,5 +1,7 @@
 import * as THREE from "three";
 import type { SceneSpatialAudioState } from "@bim-studio/contracts";
+import { synthesizeAlarmTonePcm } from "../audio/alarmTone";
+import { effectiveLinearVolume } from "../audio/spatialAudioAttenuation";
 import { modelScreenSourceUrl } from "./modelScreenTexture";
 import { ViewerEngineObjects } from "./viewerEngineObjects";
 
@@ -17,6 +19,11 @@ const DEFAULT_SPATIAL_AUDIO: SceneSpatialAudioState = {
 
 /** 模型空间音频运行时；浏览器手势解锁和资源生命周期集中在这里。 */
 export abstract class ViewerEngineSpatialAudio extends ViewerEngineObjects {
+  /** T29 告警覆盖登记：modelId → 被告警音顶掉前的 buffer 与播放状态。 */
+  private readonly alertOverrides = new Map<string, { previous: AudioBuffer | null; wasPlaying: boolean }>();
+  /** 合成告警音 buffer 按采样率缓存一份；引擎销毁时置空随 AudioContext 一起释放。 */
+  private alarmBuffer: AudioBuffer | undefined;
+
   getSpatialAudioState(id: string): SceneSpatialAudioState | undefined {
     const state = this.spatialAudioStates.get(id);
     return state ? structuredClone(state) : undefined;
@@ -81,6 +88,8 @@ export abstract class ViewerEngineSpatialAudio extends ViewerEngineObjects {
     for (const id of [...this.spatialAudioRuntimes.keys()]) this.disposeSpatialAudioRuntime(id);
     this.spatialAudioStates.clear();
     this.spatialAudioBuffers.clear();
+    this.alertOverrides.clear();
+    this.alarmBuffer = undefined;
     this.audioListener?.removeFromParent();
     this.audioListener = undefined;
     this.audioUnlocked = false;
@@ -89,10 +98,60 @@ export abstract class ViewerEngineSpatialAudio extends ViewerEngineObjects {
   protected disposeSpatialAudioRuntime(id: string): void {
     const runtime = this.spatialAudioRuntimes.get(id);
     if (!runtime) return;
+    this.alertOverrides.delete(id);
     if (runtime.audio.isPlaying) runtime.audio.stop();
     runtime.audio.disconnect();
     runtime.audio.removeFromParent();
     this.spatialAudioRuntimes.delete(id);
+  }
+
+  /**
+   * T29 告警覆盖:把该模型声源切入合成告警双音循环(告警音独占单声源,
+   * 清除后经 stopAlertOverride 恢复原 buffer 与播放状态)。与
+   * audio/alertAudioDirector.ts 的分工:director 管"谁在响"的登记与幂等,
+   * 这里管节点切换与恢复。未解锁(无用户手势)时不播放,解锁路径
+   * unlockSpatialAudio 会以当前 buffer(即告警音)恢复——告警优先于设备声。
+   */
+  startAlertOverride(id: string): void {
+    const runtime = this.spatialAudioRuntimes.get(id);
+    const listener = this.audioListener;
+    const state = this.spatialAudioStates.get(id);
+    if (!runtime || !listener || !state || this.alertOverrides.has(id)) return;
+    const buffer = this.ensureAlarmBuffer(listener.context);
+    if (!buffer) return;
+    this.alertOverrides.set(id, { previous: runtime.audio.buffer ?? null, wasPlaying: runtime.audio.isPlaying });
+    if (runtime.audio.isPlaying) runtime.audio.stop();
+    runtime.audio.setBuffer(buffer);
+    runtime.audio.setLoop(true);
+    runtime.audio.setVolume(effectiveLinearVolume(state.volume, state.muted));
+    if (this.audioUnlocked) this.playSpatialAudio(runtime.audio, false);
+  }
+
+  /** 恢复告警覆盖前的声源;幂等。覆盖期间若源 URL 变更,loadSpatialAudioBuffer 会把新 buffer 登记为恢复目标。 */
+  stopAlertOverride(id: string): void {
+    const override = this.alertOverrides.get(id);
+    if (!override) return;
+    this.alertOverrides.delete(id);
+    const runtime = this.spatialAudioRuntimes.get(id);
+    const state = this.spatialAudioStates.get(id);
+    if (!runtime || !state) return;
+    if (runtime.audio.isPlaying) runtime.audio.stop();
+    if (override.previous) runtime.audio.setBuffer(override.previous);
+    applySpatialAudioSettings(runtime.audio, state);
+    if (state.autoplay && this.audioUnlocked) this.playSpatialAudio(runtime.audio, false);
+  }
+
+  private ensureAlarmBuffer(context: AudioContext): AudioBuffer | undefined {
+    if (this.alarmBuffer) return this.alarmBuffer;
+    try {
+      const pcm = synthesizeAlarmTonePcm({ sampleRate: context.sampleRate });
+      const buffer = context.createBuffer(1, pcm.data.length, pcm.sampleRate);
+      buffer.copyToChannel(new Float32Array(pcm.data), 0);
+      this.alarmBuffer = buffer;
+      return buffer;
+    } catch {
+      return undefined;
+    }
   }
 
   private ensureSpatialAudioRuntime(id: string) {
@@ -132,6 +191,12 @@ export abstract class ViewerEngineSpatialAudio extends ViewerEngineObjects {
       const current = this.spatialAudioRuntimes.get(id);
       const state = this.spatialAudioStates.get(id);
       if (!current || current.requestKey !== requestKey || !state?.enabled) return;
+      if (this.alertOverrides.has(id)) {
+        // 告警覆盖期间新 buffer 加载完成：先登记为恢复目标，不顶掉正在响的告警音。
+        const override = this.alertOverrides.get(id);
+        if (override) override.previous = buffer;
+        return;
+      }
       if (current.audio.isPlaying) current.audio.stop();
       current.audio.setBuffer(buffer);
       applySpatialAudioSettings(current.audio, state);
@@ -167,7 +232,7 @@ export function normalizeSpatialAudioState(state: SceneSpatialAudioState): Scene
 
 function applySpatialAudioSettings(audio: THREE.PositionalAudio, state: SceneSpatialAudioState): void {
   audio.setLoop(state.loopMode === "loop");
-  audio.setVolume(state.muted ? 0 : state.volume);
+  audio.setVolume(effectiveLinearVolume(state.volume, state.muted));
   audio.setRefDistance(state.refDistance);
   audio.setMaxDistance(state.maxDistance);
   audio.setRolloffFactor(state.rolloffFactor);

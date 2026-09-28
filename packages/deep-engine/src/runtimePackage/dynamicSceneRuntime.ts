@@ -13,6 +13,9 @@ const MAX_CONTROLLER_TRANSITIONS = 1024;
 const MAX_PHYSICS_BODIES = 16_384;
 const MAX_PHYSICS_JOINTS = 16_384;
 const MAX_COLLIDER_INSTANCES = 65_536;
+const MAX_COLLIDER_HULL_POINTS = 65_536;
+const MAX_COLLIDER_VERTICES = 65_536;
+const MAX_COLLIDER_INDICES = 196_608;
 
 export type DynamicAnimationValue = readonly [number, number, number, number, number, number, number];
 export type DynamicAnimationTransition = "linear" | "smooth" | "ease-in" | "ease-out" | "step";
@@ -28,6 +31,8 @@ export type DynamicInteractionAction = "select" | "clear-selection" | "clip" | "
 export interface DynamicInteractionRuntime { readonly schema: "deep-engine.dynamic-interaction"; readonly schemaVersion: 1; readonly trigger: "pointer-select" | "pointer-clear" | "command"; readonly action: DynamicInteractionAction; readonly targetId: string | null }
 export interface DynamicAnimationControllerState { readonly id: string; readonly modelId: string; readonly clipId: string; readonly loop: boolean }
 export interface DynamicAnimationControllerTransition { readonly id: string; readonly fromStateId: string; readonly toStateId: string; readonly parameter: string; readonly equals: boolean }
+/** 产品侧预注册的 clip 事件标记（秒）；clip 时长只在导入模型里，`time < duration` 在消费端校验。 */
+export interface DynamicAnimationEventMarker { readonly clipId: string; readonly eventId: string; readonly time: number }
 export interface DynamicAnimationControllerRuntime {
   readonly schema: "deep-engine.animation-controller";
   readonly schemaVersion: 1;
@@ -37,6 +42,7 @@ export interface DynamicAnimationControllerRuntime {
   readonly states: readonly DynamicAnimationControllerState[];
   readonly parameters: Readonly<Record<string, boolean>>;
   readonly transitions: readonly DynamicAnimationControllerTransition[];
+  readonly events?: readonly DynamicAnimationEventMarker[];
 }
 export interface DynamicPhysicsCharacterControllerRuntime {
   readonly offset?: number;
@@ -45,6 +51,30 @@ export interface DynamicPhysicsCharacterControllerRuntime {
   readonly autostep?: { readonly enabled: boolean; readonly maxHeight?: number; readonly minWidth?: number; readonly includeDynamicBodies?: boolean };
   readonly snapToGround?: { readonly enabled: boolean; readonly distance?: number };
 }
+/** 碰撞体精度标记:T17 来源规范;generated kinds 必带,approximate=true 时不得冒充精确。 */
+export interface DynamicPhysicsColliderPrecision {
+  readonly approximate?: boolean;
+  readonly reasons?: readonly string[];
+  readonly tolerance?: number;
+  readonly hullVertexCount?: number;
+  readonly triangleCount?: number;
+  readonly topologyOk?: boolean;
+  readonly topologyIssueCodes?: readonly string[];
+  readonly concaveSource?: boolean;
+}
+export interface DynamicPhysicsPrimitiveCollider {
+  readonly shape: "cuboid" | "sphere" | "cylinder";
+  readonly halfExtents?: readonly [number, number, number];
+  readonly radius?: number;
+  readonly halfHeight?: number;
+}
+/** 碰撞体来源:render-bounds=包围盒近似(默认);convex-hull/simplified-mesh 携带刚体局部空间几何
+ * 与精度标记;primitive 为作者显式几何。几何单位米。 */
+export type DynamicPhysicsColliderRuntime =
+  | { readonly kind: "render-bounds"; readonly instanceIds: readonly string[]; readonly precision?: DynamicPhysicsColliderPrecision }
+  | { readonly kind: "convex-hull"; readonly instanceIds: readonly string[]; readonly points: readonly (readonly [number, number, number])[]; readonly precision: DynamicPhysicsColliderPrecision }
+  | { readonly kind: "simplified-mesh"; readonly instanceIds: readonly string[]; readonly positions: readonly (readonly [number, number, number])[]; readonly indices: readonly number[]; readonly precision: DynamicPhysicsColliderPrecision }
+  | { readonly kind: "primitive"; readonly instanceIds: readonly string[]; readonly primitive: DynamicPhysicsPrimitiveCollider; readonly precision?: DynamicPhysicsColliderPrecision };
 export interface DynamicPhysicsBodyRuntime {
   readonly id: string;
   /** kinematic 为位姿驱动刚体；旧包只有 fixed/dynamic，解析保持向后兼容。 */
@@ -53,13 +83,16 @@ export interface DynamicPhysicsBodyRuntime {
   readonly mass: number;
   readonly friction: number;
   readonly restitution: number;
+  /** World-space metres per second; dynamic bodies only. */
+  readonly initialLinearVelocity?: readonly [number, number, number];
   /** 仅 kinematic 刚体消费；其余类型携带该字段会被拒绝，避免无意义载荷进入 Native。 */
   readonly character?: DynamicPhysicsCharacterControllerRuntime;
-  readonly collider: { readonly kind: "render-bounds"; readonly instanceIds: readonly string[] };
+  readonly collider: DynamicPhysicsColliderRuntime;
 }
 export interface DynamicPhysicsJointRuntime {
   readonly id: string;
-  readonly kind: "revolute";
+  /** prismatic limits are metres and motor velocity m/s; impulse solver only. */
+  readonly kind: "revolute" | "prismatic";
   readonly solver: "impulse" | "multibody";
   readonly bodyId: string;
   readonly connectedBodyId: string | null;
@@ -160,7 +193,7 @@ function boundedText(value: unknown, path: string): string {
 
 function parseAnimationController(value: unknown, path: string): DynamicAnimationControllerRuntime {
   const object = record(value, path);
-  fields(object, ["schema", "schemaVersion", "initialStateId", "activeStateId", "transitionDurationMs", "states", "parameters", "transitions"], [], path);
+  fields(object, ["schema", "schemaVersion", "initialStateId", "activeStateId", "transitionDurationMs", "states", "parameters", "transitions"], ["events"], path);
   requireValue(object.schema === "deep-engine.animation-controller" && object.schemaVersion === 1, path, "Unsupported animation controller schema.");
   const states = array(object.states, `${path}.states`, MAX_CONTROLLER_STATES).map((value, index) => {
     const statePath = `${path}.states[${index}]`, state = record(value, statePath);
@@ -195,6 +228,15 @@ function parseAnimationController(value: unknown, path: string): DynamicAnimatio
     };
   });
   requireValue(new Set(transitions.map(transition => transition.id)).size === transitions.length, `${path}.transitions`, "Animation controller transition ids must be unique.");
+  // T14 clip 事件标记：可选；clip 时长不在包 ABI 内，`0 <= time < duration` 由消费端时钟 fail-closed。
+  const events = object.events === undefined ? undefined : array(object.events, `${path}.events`, MAX_EVENTS).map((value, index) => {
+    const markerPath = `${path}.events[${index}]`, marker = record(value, markerPath);
+    fields(marker, ["clipId", "eventId", "time"], [], markerPath);
+    return { clipId: boundedText(marker.clipId, `${markerPath}.clipId`), eventId: boundedText(marker.eventId, `${markerPath}.eventId`), time: finite(marker.time, `${markerPath}.time`) };
+  });
+  requireValue(events === undefined || new Set(events.map(marker => `${marker.clipId}\u0000${marker.eventId}`)).size === events.length,
+    `${path}.events`, "Animation controller event markers must be unique per clip and event id.");
+  requireValue(events === undefined || events.every(marker => marker.time >= 0), `${path}.events`, "Animation event marker times must be non-negative.");
   const initialStateId = resourceId(object.initialStateId, `${path}.initialStateId`);
   const activeStateId = resourceId(object.activeStateId, `${path}.activeStateId`);
   requireValue(stateIds.has(initialStateId) && stateIds.has(activeStateId), path, "Animation controller state reference is invalid.");
@@ -205,6 +247,7 @@ function parseAnimationController(value: unknown, path: string): DynamicAnimatio
     schema: "deep-engine.animation-controller", schemaVersion: 1, initialStateId, activeStateId,
     transitionDurationMs: integer(object.transitionDurationMs, 0, 60_000, `${path}.transitionDurationMs`),
     states, parameters, transitions,
+    ...(events === undefined ? {} : { events }),
   };
 }
 
@@ -215,8 +258,7 @@ function vec3(value: unknown, path: string): readonly [number, number, number] {
 }
 
 /** 角色控制器参数：与 Rapier KinematicCharacterController 一一对应，未给字段交由引擎默认。 */
-function parseCharacterController(value: unknown, path: string): DynamicPhysicsCharacterControllerRuntime {
-  const object = record(value, path);
+function parseCharacterController(value: unknown, path: string): DynamicPhysicsCharacterControllerRuntime {  const object = record(value, path);
   fields(object, [], ["offset", "maxSlopeClimbAngle", "minSlopeSlideAngle", "autostep", "snapToGround"], path);
   const bounded = (input: unknown, inputPath: string, min: number, max: number, message: string) => {
     const result = finite(input, inputPath);
@@ -262,6 +304,116 @@ function parseCharacterController(value: unknown, path: string): DynamicPhysicsC
   return character;
 }
 
+/** 碰撞体精度标记(T17):generated kinds 必带;字段范围在此收敛,Native 只消费已校验载荷。 */
+function parseColliderPrecision(value: unknown, path: string): DynamicPhysicsColliderPrecision {
+  const object = record(value, path);
+  fields(object, [], ["approximate", "reasons", "tolerance", "hullVertexCount", "triangleCount", "topologyOk", "topologyIssueCodes", "concaveSource"], path);
+  const flag = (key: string): boolean | undefined => {
+    if (!Object.hasOwn(object, key)) return undefined;
+    requireValue(typeof object[key] === "boolean", `${path}.${key}`, "Expected a boolean.");
+    return object[key] as boolean;
+  };
+  const approximate = flag("approximate");
+  const topologyOk = flag("topologyOk");
+  const concaveSource = flag("concaveSource");
+  const hullVertexCount = Object.hasOwn(object, "hullVertexCount")
+    ? integer(object.hullVertexCount, 0, Number.MAX_SAFE_INTEGER, `${path}.hullVertexCount`) : undefined;
+  const triangleCount = Object.hasOwn(object, "triangleCount")
+    ? integer(object.triangleCount, 0, Number.MAX_SAFE_INTEGER, `${path}.triangleCount`) : undefined;
+  let reasons: readonly string[] | undefined;
+  if (Object.hasOwn(object, "reasons")) {
+    reasons = array(object.reasons, `${path}.reasons`, 8).map((item, index) => {
+      const text = string(item, `${path}.reasons[${index}]`);
+      requireValue(text.length > 0 && text.length <= 128, `${path}.reasons[${index}]`, "Reason codes must be 1..128 characters.");
+      return text;
+    });
+  }
+  let topologyIssueCodes: readonly string[] | undefined;
+  if (Object.hasOwn(object, "topologyIssueCodes")) {
+    topologyIssueCodes = array(object.topologyIssueCodes, `${path}.topologyIssueCodes`, 16).map((item, index) => {
+      const text = string(item, `${path}.topologyIssueCodes[${index}]`);
+      requireValue(/^[A-Z][A-Z_]{0,31}$/.test(text), `${path}.topologyIssueCodes[${index}]`, "Topology issue codes must match the inspection dictionary format.");
+      return text;
+    });
+  }
+  return {
+    ...(approximate === undefined ? {} : { approximate }),
+    ...(reasons === undefined ? {} : { reasons }),
+    ...(!Object.hasOwn(object, "tolerance") ? {} : { tolerance: boundedMeter(object.tolerance, `${path}.tolerance`) }),
+    ...(hullVertexCount === undefined ? {} : { hullVertexCount }),
+    ...(triangleCount === undefined ? {} : { triangleCount }),
+    ...(topologyOk === undefined ? {} : { topologyOk }),
+    ...(topologyIssueCodes === undefined ? {} : { topologyIssueCodes }),
+    ...(concaveSource === undefined ? {} : { concaveSource }),
+  };
+}
+
+function boundedMeter(value: unknown, path: string): number {
+  const result = finite(value, path);
+  requireValue(result > 0 && result <= 1e6, path, "Metre-scaled collider values must be within (0, 1e6].");
+  return result;
+}
+
+/** 碰撞体来源判别解析:render-bounds 保持旧行为;convex-hull/simplified-mesh 校验刚体局部几何;
+ * primitive 校验显式几何;generated kinds 必须携带精度标记,来源可追溯。 */
+function parseCollider(value: unknown, path: string): DynamicPhysicsColliderRuntime {
+  const object = record(value, path);
+  requireValue(typeof object.kind === "string", `${path}.kind`, "Expected a collider source kind.");
+  const instanceIds = Object.hasOwn(object, "instanceIds")
+    ? array(object.instanceIds, `${path}.instanceIds`, MAX_COLLIDER_INSTANCES)
+      .map((id, itemIndex) => resourceId(id, `${path}.instanceIds[${itemIndex}]`))
+    : [];
+  requireValue(instanceIds.length > 0 && new Set(instanceIds).size === instanceIds.length
+    && instanceIds.every((id, itemIndex) => itemIndex === 0 || id > instanceIds[itemIndex - 1]!), `${path}.instanceIds`, "Collider instance ids must be non-empty, unique and sorted.");
+  const precision = Object.hasOwn(object, "precision") ? parseColliderPrecision(object.precision, `${path}.precision`) : undefined;
+  if (object.kind === "render-bounds") {
+    fields(object, ["kind", "instanceIds"], ["precision"], path);
+    return { kind: "render-bounds", instanceIds, ...(precision ? { precision } : {}) };
+  }
+  if (object.kind === "convex-hull") {
+    fields(object, ["kind", "instanceIds", "points", "precision"], [], path);
+    const points = array(object.points, `${path}.points`, MAX_COLLIDER_HULL_POINTS)
+      .map((item, index) => vec3(item, `${path}.points[${index}]`));
+    requireValue(points.length >= 4, `${path}.points`, "Convex-hull colliders require at least 4 points.");
+    requireValue(precision, `${path}.precision`, "Convex-hull colliders must carry precision marks.");
+    return { kind: "convex-hull", instanceIds, points, precision: precision! };
+  }
+  if (object.kind === "simplified-mesh") {
+    fields(object, ["kind", "instanceIds", "positions", "indices", "precision"], [], path);
+    const positions = array(object.positions, `${path}.positions`, MAX_COLLIDER_VERTICES)
+      .map((item, index) => vec3(item, `${path}.positions[${index}]`));
+    requireValue(positions.length >= 3, `${path}.positions`, "Simplified-mesh colliders require at least 3 vertices.");
+    const indices = array(object.indices, `${path}.indices`, MAX_COLLIDER_INDICES).map((item, index) => {
+      requireValue(Number.isInteger(item) && (item as number) >= 0 && (item as number) < positions.length,
+        `${path}.indices[${index}]`, "Collider indices must reference the position buffer.");
+      return item as number;
+    });
+    requireValue(indices.length >= 3 && indices.length % 3 === 0, `${path}.indices`, "Collider indices must be triangle lists (multiple of 3).");
+    requireValue(precision, `${path}.precision`, "Simplified-mesh colliders must carry precision marks.");
+    return { kind: "simplified-mesh", instanceIds, positions, indices, precision: precision! };
+  }
+  if (object.kind === "primitive") {
+    fields(object, ["kind", "instanceIds", "primitive"], ["precision"], path);
+    const primitiveObject = record(object.primitive, `${path}.primitive`);
+    fields(primitiveObject, ["shape"], ["halfExtents", "radius", "halfHeight"], `${path}.primitive`);
+    const shape = primitiveObject.shape;
+    requireValue(shape === "cuboid" || shape === "sphere" || shape === "cylinder", `${path}.primitive.shape`, "Unsupported primitive collider shape.");
+    const halfExtents = Object.hasOwn(primitiveObject, "halfExtents") ? vec3(primitiveObject.halfExtents, `${path}.primitive.halfExtents`) : undefined;
+    const radius = Object.hasOwn(primitiveObject, "radius") ? boundedMeter(primitiveObject.radius, `${path}.primitive.radius`) : undefined;
+    const halfHeight = Object.hasOwn(primitiveObject, "halfHeight") ? boundedMeter(primitiveObject.halfHeight, `${path}.primitive.halfHeight`) : undefined;
+    if (shape === "cuboid") {
+      requireValue(halfExtents !== undefined && halfExtents.every(component => component > 0), `${path}.primitive.halfExtents`, "Cuboid colliders require positive half extents.");
+    } else {
+      requireValue(radius !== undefined, `${path}.primitive.radius`, "Sphere and cylinder colliders require a positive radius.");
+      requireValue(shape !== "cylinder" || halfHeight !== undefined, `${path}.primitive.halfHeight`, "Cylinder colliders require a positive half height.");
+    }
+    return { kind: "primitive", instanceIds,
+      primitive: { shape, ...(halfExtents ? { halfExtents } : {}), ...(radius === undefined ? {} : { radius }), ...(halfHeight === undefined ? {} : { halfHeight }) },
+      ...(precision ? { precision } : {}) };
+  }
+  throw Object.assign(new Error("Unsupported collider source."), { path });
+}
+
 function parsePhysics(value: unknown, path: string): DynamicPhysicsRuntime {
   const object = record(value, path);
   fields(object, ["schema", "schemaVersion", "enabled", "playing", "gravity", "bodies", "joints"], [], path);
@@ -270,7 +422,7 @@ function parsePhysics(value: unknown, path: string): DynamicPhysicsRuntime {
   const gravity = vec3(object.gravity, `${path}.gravity`);
   const bodies = array(object.bodies, `${path}.bodies`, MAX_PHYSICS_BODIES).map((value, index) => {
     const bodyPath = `${path}.bodies[${index}]`, body = record(value, bodyPath);
-    fields(body, ["id", "type", "initialPose", "mass", "friction", "restitution", "collider"], ["character"], bodyPath);
+    fields(body, ["id", "type", "initialPose", "mass", "friction", "restitution", "collider"], ["character", "initialLinearVelocity"], bodyPath);
     requireValue(body.type === "fixed" || body.type === "dynamic" || body.type === "kinematic", `${bodyPath}.type`, "Unsupported rigid body type.");
     const initialPose = record(body.initialPose, `${bodyPath}.initialPose`);
     fields(initialPose, ["translation", "rotation"], [], `${bodyPath}.initialPose`);
@@ -279,21 +431,19 @@ function parsePhysics(value: unknown, path: string): DynamicPhysicsRuntime {
     requireValue(rotationValues.length === 4, `${bodyPath}.initialPose.rotation`, "Expected a quaternion.");
     const rotation = rotationValues.map((item, itemIndex) => finite(item, `${bodyPath}.initialPose.rotation[${itemIndex}]`)) as unknown as readonly [number, number, number, number];
     requireValue(Math.hypot(...rotation) > 1e-9, `${bodyPath}.initialPose.rotation`, "Quaternion must be non-zero.");
-    const collider = record(body.collider, `${bodyPath}.collider`);
-    fields(collider, ["kind", "instanceIds"], [], `${bodyPath}.collider`);
-    requireValue(collider.kind === "render-bounds", `${bodyPath}.collider.kind`, "Unsupported collider source.");
-    const instanceIds = array(collider.instanceIds, `${bodyPath}.collider.instanceIds`, MAX_COLLIDER_INSTANCES)
-      .map((id, itemIndex) => resourceId(id, `${bodyPath}.collider.instanceIds[${itemIndex}]`));
-    requireValue(instanceIds.length > 0 && new Set(instanceIds).size === instanceIds.length
-      && instanceIds.every((id, itemIndex) => itemIndex === 0 || id > instanceIds[itemIndex - 1]!), `${bodyPath}.collider.instanceIds`, "Collider instance ids must be non-empty, unique and sorted.");
+    const collider = parseCollider(body.collider, `${bodyPath}.collider`);
+    const instanceIds = collider.instanceIds;
     const mass = finite(body.mass, `${bodyPath}.mass`), friction = finite(body.friction, `${bodyPath}.friction`), restitution = finite(body.restitution, `${bodyPath}.restitution`);
     requireValue(mass > 0 && friction >= 0 && friction <= 2 && restitution >= 0 && restitution <= 1, bodyPath, "Rigid body coefficients are outside the supported range.");
+    requireValue(!Object.hasOwn(body, "initialLinearVelocity") || body.type === "dynamic", `${bodyPath}.initialLinearVelocity`, "Initial velocity requires a dynamic rigid body.");
+    const initialLinearVelocity = Object.hasOwn(body, "initialLinearVelocity") ? vec3(body.initialLinearVelocity, `${bodyPath}.initialLinearVelocity`) : undefined;
+    requireValue(!initialLinearVelocity || initialLinearVelocity.every(value => Math.abs(value) <= 1_000), `${bodyPath}.initialLinearVelocity`, "Initial velocity must be within ±1000 m/s per axis.");
     // 角色控制器只对 kinematic 刚体有意义；其余类型带该字段属于下译缺陷，直接拒绝。
     requireValue(Object.hasOwn(body, "character") ? body.type === "kinematic" : true, `${bodyPath}.character`, "Character controllers require a kinematic rigid body.");
     const character = Object.hasOwn(body, "character") ? parseCharacterController(body.character, `${bodyPath}.character`) : undefined;
     return { id: resourceId(body.id, `${bodyPath}.id`), type: body.type as "fixed" | "dynamic" | "kinematic", initialPose: { translation, rotation }, mass, friction, restitution,
-      ...(character ? { character } : {}),
-      collider: { kind: "render-bounds" as const, instanceIds } };
+      ...(character ? { character } : {}), ...(initialLinearVelocity ? { initialLinearVelocity } : {}),
+      collider };
   });
   requireValue(bodies.length > 0 && new Set(bodies.map(body => body.id)).size === bodies.length
     && bodies.every((body, index) => index === 0 || body.id > bodies[index - 1]!.id), `${path}.bodies`, "Physics bodies must be non-empty, unique and sorted.");
@@ -301,7 +451,8 @@ function parsePhysics(value: unknown, path: string): DynamicPhysicsRuntime {
   const joints = array(object.joints, `${path}.joints`, MAX_PHYSICS_JOINTS).map((value, index) => {
     const jointPath = `${path}.joints[${index}]`, joint = record(value, jointPath);
     fields(joint, ["id", "kind", "solver", "bodyId", "connectedBodyId", "worldAnchor", "localAnchor", "axis", "limits", "motor"], [], jointPath);
-    requireValue(joint.kind === "revolute" && (joint.solver === "impulse" || joint.solver === "multibody"), jointPath, "Unsupported physics joint.");
+    requireValue((joint.kind === "revolute" || (joint.kind === "prismatic" && joint.solver === "impulse"))
+      && (joint.solver === "impulse" || joint.solver === "multibody"), jointPath, "Unsupported physics joint.");
     const bodyId = resourceId(joint.bodyId, `${jointPath}.bodyId`);
     const connectedBodyId = joint.connectedBodyId === null ? null : resourceId(joint.connectedBodyId, `${jointPath}.connectedBodyId`);
     requireValue(bodyIds.has(bodyId) && (connectedBodyId === null || bodyIds.has(connectedBodyId)) && connectedBodyId !== bodyId, jointPath, "Physics joint body reference is invalid.");
@@ -315,7 +466,7 @@ function parsePhysics(value: unknown, path: string): DynamicPhysicsRuntime {
     const targetVelocity = finite(motor.targetVelocity, `${jointPath}.motor.targetVelocity`), strength = finite(motor.strength, `${jointPath}.motor.strength`);
     requireValue(min <= max && strength >= 0, jointPath, "Joint limits or motor strength are invalid.");
     requireValue(joint.solver !== "multibody" || (!limits.enabled && !motor.enabled), jointPath, "Multibody limits and motors are not supported.");
-    return { id: resourceId(joint.id, `${jointPath}.id`), kind: "revolute" as const, solver: joint.solver as "impulse" | "multibody", bodyId, connectedBodyId,
+    return { id: resourceId(joint.id, `${jointPath}.id`), kind: joint.kind as "revolute" | "prismatic", solver: joint.solver as "impulse" | "multibody", bodyId, connectedBodyId,
       worldAnchor: vec3(joint.worldAnchor, `${jointPath}.worldAnchor`), localAnchor: vec3(joint.localAnchor, `${jointPath}.localAnchor`), axis,
       limits: { enabled: limits.enabled, min, max }, motor: { enabled: motor.enabled, targetVelocity, strength } };
   });

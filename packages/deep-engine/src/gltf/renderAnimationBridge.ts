@@ -12,8 +12,9 @@ import type {
 } from "./renderAnimationBridgeTypes.js";
 import { GltfRenderAnimationBridgeError } from "./renderAnimationBridgeTypes.js";
 import {
-  prepareMixer, resolvedSelection, resolveBridgeSources, validateBridgeOptions, validateCrossFadeDuration,
-  validateFrameDelta, validateMorphTracks, validateTime, validateTimeScale,
+  isTerminalPlayhead, normalizeWrapTime, prepareMixer, resolvedSelection, resolveBridgeSources, selectedClipDuration,
+  validateBridgeOptions, validateCrossFadeDuration, validateFrameDelta, validateMorphTracks, validateTime,
+  validateTimeScale,
 } from "./renderAnimationBridgeValidation.js";
 
 const TRANSFORM_LAYER_PREFIX = "__deep_gltf_render_bridge__";
@@ -121,9 +122,9 @@ export class GltfRenderAnimationBridge<TNodeId extends SpatialItemId = number> {
   }
 
   seek(time: number): GltfRenderAnimationFrame<TNodeId> {
-    validateTime(time); this.playhead = normalizeTime(time, this.duration(), this.wrapMode);
+    validateTime(time); this.playhead = normalizeWrapTime(time, this.duration(), this.wrapMode);
     if (this.transition?.targetLayerId) this.mixer.seek(this.transition.targetLayerId, this.playhead);
-    this.finished = !this.transition && terminal(this.playhead, this.duration(), this.timeScale, this.playbackMode);
+    this.finished = !this.transition && isTerminalPlayhead(this.playhead, this.duration(), this.timeScale, this.playbackMode);
     return this.renderCurrentPose();
   }
 
@@ -131,14 +132,14 @@ export class GltfRenderAnimationBridge<TNodeId extends SpatialItemId = number> {
     validateFrameDelta(deltaSeconds);
     const delta = this.paused ? 0 : deltaSeconds;
     if (this.transition) {
-      this.transition.fromTime = normalizeTime(this.transition.fromTime + delta * this.transition.fromTimeScale,
+      this.transition.fromTime = normalizeWrapTime(this.transition.fromTime + delta * this.transition.fromTimeScale,
         this.transition.fromMorphClip?.duration ?? 0, this.transition.fromWrapMode);
-      this.playhead = normalizeTime(this.playhead + delta * this.timeScale, this.duration(), this.wrapMode);
+      this.playhead = normalizeWrapTime(this.playhead + delta * this.timeScale, this.duration(), this.wrapMode);
       this.transition.elapsed = Math.min(this.transition.duration, this.transition.elapsed + delta);
       return this.renderCurrentPose(delta);
     }
-    this.playhead = normalizeTime(this.playhead + delta * this.timeScale, this.duration(), this.wrapMode);
-    this.finished = terminal(this.playhead, this.duration(), this.timeScale, this.playbackMode);
+    this.playhead = normalizeWrapTime(this.playhead + delta * this.timeScale, this.duration(), this.wrapMode);
+    this.finished = isTerminalPlayhead(this.playhead, this.duration(), this.timeScale, this.playbackMode);
     return this.renderCurrentPose();
   }
 
@@ -155,8 +156,8 @@ export class GltfRenderAnimationBridge<TNodeId extends SpatialItemId = number> {
     this.morphClip = findClip(this.source.morphClips, selection.morphClipId);
     this.wrapMode = selection.wrapMode; this.playbackMode = selection.playbackMode;
     this.timeScale = selection.timeScale; this.paused = selection.paused;
-    this.playhead = normalizeTime(selection.time, this.duration(), this.wrapMode);
-    this.finished = terminal(this.playhead, this.duration(), this.timeScale, this.playbackMode);
+    this.playhead = normalizeWrapTime(selection.time, this.duration(), this.wrapMode);
+    this.finished = isTerminalPlayhead(this.playhead, this.duration(), this.timeScale, this.playbackMode);
   }
 
   private renderCurrentPose(delta = 0): GltfRenderAnimationFrame<TNodeId> {
@@ -218,7 +219,7 @@ export class GltfRenderAnimationBridge<TNodeId extends SpatialItemId = number> {
     this.activeLayerId = this.transition!.targetLayerId;
     if (this.activeLayerId) this.mixer.setTimeScale(this.activeLayerId, 0);
     this.transition = null;
-    this.finished = terminal(this.playhead, this.duration(), this.timeScale, this.playbackMode);
+    this.finished = isTerminalPlayhead(this.playhead, this.duration(), this.timeScale, this.playbackMode);
   }
 
   private clearTransformLayers(): void {
@@ -229,7 +230,7 @@ export class GltfRenderAnimationBridge<TNodeId extends SpatialItemId = number> {
 
   private layerId(): string { const id = `${TRANSFORM_LAYER_PREFIX}${this.nextLayerOrdinal}`; this.nextLayerOrdinal += 1; return id; }
 
-  private duration(): number { return this.transformClip?.duration ?? this.morphClip?.duration ?? 0; }
+  private duration(): number { return selectedClipDuration(this.transformClip, this.morphClip); }
 }
 
 function createGraph<TId extends SpatialItemId>(nodes: readonly GltfAnimatedNode<TId>[]): SceneTransformGraph<TId> {
@@ -240,16 +241,6 @@ function createGraph<TId extends SpatialItemId>(nodes: readonly GltfAnimatedNode
 
 function findClip<TClip extends { readonly id: string }>(clips: readonly TClip[], id: string | null): TClip | null {
   return id === null ? null : clips.find((clip) => clip.id === id) ?? null;
-}
-function normalizeTime(time: number, duration: number, mode: AnimationWrapMode): number {
-  if (duration <= 0) return 0;
-  if (mode === "clamp") return Math.min(duration, Math.max(0, time));
-  return ((time % duration) + duration) % duration;
-}
-function terminal(time: number, duration: number, timeScale: number, mode: "loop" | "once"): boolean {
-  if (mode === "loop") return false;
-  if (duration === 0) return true;
-  return timeScale < 0 ? time <= 0 : time >= duration;
 }
 function assertMatchingDuration<TId extends SpatialItemId>(transforms: readonly AnimationClipInput<TId>[], transformId: string | null,
   morphs: readonly MorphWeightClip<TId>[], morphId: string | null): void {

@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import { createHash } from "node:crypto";
 import {
   assertDashboardPublicationFreezeCommit,
@@ -230,7 +231,7 @@ function missingVerifiedFonts(verification: DashboardWindowVerification, candida
 
 function normalizedFonts(fonts: readonly { readonly resourceId: string; readonly sha256: string; readonly faceIndex: number }[]) {
   return [...fonts].map(font => { if (!font.resourceId || !Number.isSafeInteger(font.faceIndex) || font.faceIndex < 0) throw new Error("Invalid verifier font identity"); assertSha(font.sha256, "Verifier font hash"); return { ...font }; })
-    .sort((left, right) => left.resourceId.localeCompare(right.resourceId) || left.faceIndex - right.faceIndex || left.sha256.localeCompare(right.sha256));
+    .sort((left, right) => compareText(left.resourceId, right.resourceId) || left.faceIndex - right.faceIndex || compareText(left.sha256, right.sha256));
 }
 
 function normalizeReasons(reasons: readonly string[] | undefined): string[] {

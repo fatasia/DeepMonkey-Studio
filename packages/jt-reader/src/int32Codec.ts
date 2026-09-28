@@ -29,7 +29,7 @@ interface ProbabilityEntry {
 
 function ensureRange(bytes: Uint8Array, offset: number, length: number, context: string): void {
   if (offset < 0 || length < 0 || offset + length > bytes.byteLength) {
-    throw new JtFormatError(`${context} 超出整数压缩包边界`);
+    throw new JtFormatError(`${context} 超出整数压缩包边界`, "read-bounds-exceeded");
   }
 }
 
@@ -52,7 +52,7 @@ class WordBitReader {
 
   read(count: number): number {
     if (!Number.isInteger(count) || count < 0 || count > 32 || this.#bit + count > this.bitLength) {
-      throw new JtFormatError(`整数 CODEC 请求了无效的 ${count} 位`);
+      throw new JtFormatError(`整数 CODEC 请求了无效的 ${count} 位`, "field-invalid");
     }
     let value = 0;
     for (let index = 0; index < count; index += 1) {
@@ -80,11 +80,11 @@ class ByteBitReader {
   constructor(private readonly bytes: Uint8Array) {}
 
   read(count: number): number {
-    if (!Number.isInteger(count) || count < 0 || count > 32) throw new JtFormatError("概率表位宽无效");
+    if (!Number.isInteger(count) || count < 0 || count > 32) throw new JtFormatError("概率表位宽无效", "field-invalid");
     let value = 0;
     for (let index = 0; index < count; index += 1) {
       const byte = this.bytes[Math.floor(this.#bit / 8)];
-      if (byte === undefined) throw new JtFormatError("概率表被截断");
+      if (byte === undefined) throw new JtFormatError("概率表被截断", "count-mismatch");
       value = value * 2 + ((byte >>> (7 - (this.#bit % 8))) & 1);
       this.#bit += 1;
     }
@@ -96,7 +96,7 @@ class ByteBitReader {
     if (this.#bit % 8 !== 0) {
       const last = this.bytes[byteLength - 1];
       if (last === undefined || (last & ((1 << (8 - (this.#bit % 8))) - 1)) !== 0) {
-        throw new JtFormatError("概率表尾部填充位非零");
+        throw new JtFormatError("概率表尾部填充位非零", "field-invalid");
       }
     }
     return byteLength;
@@ -111,7 +111,7 @@ function parseProbabilityContext(bytes: Uint8Array): { entries: ProbabilityEntry
   const valueBits = bits.read(7);
   const minimum = bits.read(32) | 0;
   if (entryCount > MAX_VALUES || occurrenceBits + valueBits === 0) {
-    throw new JtFormatError("概率表项目数量或位宽无效");
+    throw new JtFormatError("概率表项目数量或位宽无效", "field-invalid");
   }
   const entries: ProbabilityEntry[] = [];
   for (let index = 0; index < entryCount; index += 1) {
@@ -131,13 +131,13 @@ function decodeBitLength(codeWords: Uint8Array, bitLength: number, valueCount: n
     const minimum = readNibbleSigned(bits);
     const maximum = readNibbleSigned(bits);
     if (maximum < minimum) {
-      throw new JtFormatError("BitLength 固定位宽范围无效");
+      throw new JtFormatError("BitLength 固定位宽范围无效", "field-invalid");
     }
     const span = maximum - minimum;
     const width = span === 0 ? 0 : 32 - Math.clz32(span);
     for (let index = 0; index < valueCount; index += 1) {
       const value = minimum + bits.read(width);
-      if (value > maximum) throw new JtFormatError("BitLength 数值超出声明范围");
+      if (value > maximum) throw new JtFormatError("BitLength 数值超出声明范围", "field-invalid");
       values.push(value | 0);
     }
   } else {
@@ -149,15 +149,15 @@ function decodeBitLength(codeWords: Uint8Array, bitLength: number, valueCount: n
       while (true) {
         const delta = bits.readSigned(4);
         width += delta;
-        if (width < 0 || width > 32) throw new JtFormatError("BitLength 动态位宽越界");
+        if (width < 0 || width > 32) throw new JtFormatError("BitLength 动态位宽越界", "field-invalid");
         if (delta !== minimumDelta && delta !== maximumDelta) break;
       }
       const run = bits.read(4);
-      if (run === 0 || values.length + run > valueCount) throw new JtFormatError("BitLength 游程长度无效");
+      if (run === 0 || values.length + run > valueCount) throw new JtFormatError("BitLength 游程长度无效", "field-invalid");
       for (let index = 0; index < run; index += 1) values.push((mean + bits.readSigned(width)) | 0);
     }
   }
-  if (bits.position !== bitLength) throw new JtFormatError("BitLength 未完整消费声明的代码位");
+  if (bits.position !== bitLength) throw new JtFormatError("BitLength 未完整消费声明的代码位", "count-mismatch");
   return values;
 }
 
@@ -167,7 +167,7 @@ function readNibbleSigned(bits: WordBitReader): number {
   let nibbleCount = 0;
   let more: number;
   do {
-    if (nibbleCount >= 8) throw new JtFormatError("BitLength nibbler 超过 32 位");
+    if (nibbleCount >= 8) throw new JtFormatError("BitLength nibbler 超过 32 位", "field-invalid");
     raw = (raw | (bits.read(4) << (nibbleCount * 4))) | 0;
     more = bits.read(1);
     nibbleCount += 1;
@@ -185,9 +185,9 @@ function decodeArithmetic(
   valueCount: number,
   entries: ProbabilityEntry[],
 ): Array<number | undefined> {
-  if (entries.length * valueCount > MAX_ARITHMETIC_WORK) throw new JtFormatError("Arithmetic 解码工作量超限");
+  if (entries.length * valueCount > MAX_ARITHMETIC_WORK) throw new JtFormatError("Arithmetic 解码工作量超限", "limit-exceeded");
   const total = entries.reduce((sum, entry) => sum + entry.occurrenceCount, 0);
-  if (total <= 0 || total > 0xffff) throw new JtFormatError("Arithmetic 概率总数无效");
+  if (total <= 0 || total > 0xffff) throw new JtFormatError("Arithmetic 概率总数无效", "field-invalid");
   const bits = new WordBitReader(codeWords, bitLength);
   let code = 0;
   for (let index = 0; index < 16; index += 1) code = ((code << 1) | bits.read(1)) & 0xffff;
@@ -204,7 +204,7 @@ function decodeArithmetic(
       cumulative = end;
       return false;
     });
-    if (!entry) throw new JtFormatError("Arithmetic 找不到概率区间");
+    if (!entry) throw new JtFormatError("Arithmetic 找不到概率区间", "count-mismatch");
     const entryHigh = cumulative + entry.occurrenceCount;
     high = (low + Math.floor((range * entryHigh) / total) - 1) & 0xffff;
     low = (low + Math.floor((range * cumulative) / total)) & 0xffff;
@@ -228,22 +228,22 @@ function decodeArithmetic(
 }
 
 export function decodeInt32Packet(bytes: Uint8Array, depth = 0): DecodedInt32Packet {
-  if (depth > MAX_RECURSION) throw new JtFormatError("整数压缩包递归层数超限");
+  if (depth > MAX_RECURSION) throw new JtFormatError("整数压缩包递归层数超限", "limit-exceeded");
   const valueCount = u32(bytes, 0);
-  if (valueCount > MAX_VALUES) throw new JtFormatError(`整数压缩包值数量 ${valueCount} 超限`);
+  if (valueCount > MAX_VALUES) throw new JtFormatError(`整数压缩包值数量 ${valueCount} 超限`, "limit-exceeded");
   if (valueCount === 0) return { values: [], byteLength: 4, codec: 0 };
   ensureRange(bytes, 4, 1, "CODEC 类型");
   const codec = bytes[4]!;
   if (codec === 4) return decodeChopper(bytes, valueCount, depth);
   if (codec === 0) {
     const dataByteLength = u32(bytes, 5);
-    if (dataByteLength !== valueCount * 4) throw new JtFormatError("Null CODEC 数据长度与值数量不一致");
+    if (dataByteLength !== valueCount * 4) throw new JtFormatError("Null CODEC 数据长度与值数量不一致", "count-mismatch");
     ensureRange(bytes, 9, dataByteLength, "Null CODEC 数据");
     const view = new DataView(bytes.buffer, bytes.byteOffset + 9, dataByteLength);
     const values = Array.from({ length: valueCount }, (_, index) => view.getInt32(index * 4, true));
     return { values, byteLength: 9 + dataByteLength, codec };
   }
-  if (codec !== 1 && codec !== 3) throw new JtFormatError(`不支持的整数 CODEC：${codec}`);
+  if (codec !== 1 && codec !== 3) throw new JtFormatError(`不支持的整数 CODEC：${codec}`, "codec-unsupported");
   const bitLength = u32(bytes, 5);
   const codeByteLength = Math.ceil(bitLength / 32) * 4;
   ensureRange(bytes, 9, codeByteLength, "CODEC 代码字");
@@ -261,7 +261,7 @@ export function decodeInt32Packet(bytes: Uint8Array, depth = 0): DecodedInt32Pac
   const outOfBand = escapedCount > 0
     ? decodeInt32Packet(bytes.subarray(cursor), depth + 1)
     : { values: [], byteLength: 0 };
-  if (outOfBand.values.length !== escapedCount) throw new JtFormatError("Arithmetic 逸出值数量不一致");
+  if (outOfBand.values.length !== escapedCount) throw new JtFormatError("Arithmetic 逸出值数量不一致", "count-mismatch");
   cursor += outOfBand.byteLength;
   let escapedIndex = 0;
   const values = symbols.map((value) => value ?? outOfBand.values[escapedIndex++]!);
@@ -273,23 +273,23 @@ function decodeChopper(bytes: Uint8Array, valueCount: number, depth: number): De
   const chopBits = bytes[5]!;
   if (chopBits === 0) {
     const nested = decodeInt32Packet(bytes.subarray(6), depth + 1);
-    if (nested.values.length !== valueCount) throw new JtFormatError("Chopper 嵌套数量不一致");
+    if (nested.values.length !== valueCount) throw new JtFormatError("Chopper 嵌套数量不一致", "count-mismatch");
     return { values: nested.values, byteLength: 6 + nested.byteLength, codec: 4 };
   }
   const bias = u32(bytes, 6) | 0;
   ensureRange(bytes, 10, 1, "Chopper 跨度");
   const spanBits = bytes[10]!;
-  if (chopBits > spanBits || spanBits > 32) throw new JtFormatError("Chopper 位跨度无效");
+  if (chopBits > spanBits || spanBits > 32) throw new JtFormatError("Chopper 位跨度无效", "field-invalid");
   const high = decodeInt32Packet(bytes.subarray(11), depth + 1);
   const low = decodeInt32Packet(bytes.subarray(11 + high.byteLength), depth + 1);
   if (high.values.length !== valueCount || low.values.length !== valueCount) {
-    throw new JtFormatError("Chopper 高低位数量不一致");
+    throw new JtFormatError("Chopper 高低位数量不一致", "count-mismatch");
   }
   const shift = spanBits - chopBits;
   const lowMask = shift === 32 ? 0xffff_ffff : 2 ** shift - 1;
   const values = high.values.map((value, index) => {
     const lowValue = low.values[index]!;
-    if (lowValue < 0 || lowValue > lowMask) throw new JtFormatError("Chopper 低位值越界");
+    if (lowValue < 0 || lowValue > lowMask) throw new JtFormatError("Chopper 低位值越界", "field-invalid");
     return ((lowValue | (value << shift)) + bias) | 0;
   });
   return { values, byteLength: 11 + high.byteLength + low.byteLength, codec: 4 };

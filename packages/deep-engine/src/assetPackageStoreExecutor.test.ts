@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ASSET_FACETS, type AssetCompatibilityProfile, type AssetFacetEvidence } from "./assetCompatibility.js";
 import type { DeepAssetPackage, DeepAssetStoreSnapshot } from "./assetPackage.js";
 import { DeepAssetPackageStoreExecutor } from "./assetPackageStoreExecutor.js";
+import { compareText } from "./textOrder.js";
 import type {
   DeepAssetPackageStoreAdapter, DeepAssetStageDisposition, DeepAssetStagedBlob,
   DeepAssetStoreCommitRequest,
@@ -25,7 +26,7 @@ function candidate(packageId = "factory.robot-cell", sourceHash = "e".repeat(64)
     blobs: [
       { hash: HASH.mesh, byteLength: 36, mediaType: "application/vnd.deep.mesh" },
       { hash: sceneHash, byteLength: 72, mediaType: "application/vnd.deep.scene" },
-    ].sort((a, b) => a.hash.localeCompare(b.hash)),
+    ].sort((a, b) => compareText(a.hash, b.hash)),
     manifest: {
       schemaVersion: 1, packageId,
       source: { kind: "model-file", logicalName: "imports/robot-cell.glb", contentHash: sourceHash, byteLength: 108 },

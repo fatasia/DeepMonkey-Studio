@@ -9,11 +9,12 @@
     <p id="benchmark-status" role="status" aria-live="polite">选择实例规模后开始。</p></section>
   <section class="controls"><label for="asset">基准资产</label><select id="asset">
     <option value="procedural">Procedural stress fixture</option><option value="Box">GLB Box</option><option value="NormalTangentTest">GLB NormalTangentTest</option><option value="TextureTransformMultiTest">GLB TextureTransformMultiTest</option><option value="AlphaBlendModeTest">GLB AlphaBlendModeTest</option>
-    <option value="LocalBim">本机 BIM 烘焙场景</option><option value="LocalPreheater">本机预热机</option></select>
+    <option value="FactoryMachine">Kenney Factory Kit / 工业机器</option><option value="FactoryWorkshop">Kenney Factory Kit / 多资产车间 (8 类)</option><option value="LocalBim">本机 BIM 烘焙场景</option><option value="LocalPreheater">本机预热机</option></select>
     <label for="count">实例数量</label><select id="count">
-    <option value="1">1</option><option value="1024" selected>1,024</option><option value="10000">10,000</option></select>
+    <option value="1">1</option><option value="1024" selected>1,024</option><option value="5000">5,000</option><option value="10000">10,000</option></select>
     <label for="trajectory">相机轨迹</label><select id="trajectory"><option value="static">固定视角</option>
-      <option value="fixture.appearance.orbit-360">360° 环绕</option></select>
+      <option value="fixture.appearance.orbit-360">360° 环绕</option>
+      <option value="fixture.factory.workshop-tour-20s">车间 20s 巡视(环绕+推拉+俯仰)</option></select>
     <label for="profile">质量配置</label><select id="profile"><option value="baseline-equivalent">Baseline 等价</option>
       <option value="high-native">High 原生</option></select>
     <button id="run" type="button">执行 5 轮 A/B</button><button id="save" type="button" disabled>保存机器证据</button></section>

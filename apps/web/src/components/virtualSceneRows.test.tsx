@@ -15,6 +15,15 @@ describe("large scene row window", () => {
     renderToStaticMarkup(<WindowedSceneRows rows={rows} enabled={false} />);
     expect(called).toHaveLength(10_000);
   });
+  it("keeps the mounted DOM tied to the viewport at 100,000 rows", () => {
+    const count = 100_000, rendered: number[] = [];
+    const rows = Array.from({ length: count }, (_, index) => ({ key: String(index),
+      keepMounted: index === count - 1, render: () => { rendered.push(index); return <button>设备 {index}</button>; } }));
+    const html = renderToStaticMarkup(<WindowedSceneRows rows={rows} />);
+    expect(rendered).toContain(count - 1);
+    expect(rendered.length).toBeLessThan(30);
+    expect(html).toContain('data-total-rows="100000"');
+  });
   it("keeps small lists intact and handles empty lists", () => {
     const rows = Array.from({ length: 200 }, (_, i) => ({ key: String(i), render: () => <button>{i}</button> }));
     expect(renderToStaticMarkup(<WindowedSceneRows rows={rows} />)).toContain('data-windowed="false"');

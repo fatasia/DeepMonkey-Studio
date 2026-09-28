@@ -84,6 +84,11 @@ export class DeepWebGpuProbeClipmapSession {
 
   syncPacket(packet: RenderPacket): void {
     if (this.disposed) return;
+    // A capture already in flight belongs to the previous packet. Do not let it publish
+    // after the scene-radiance producer and surface cache have switched to this one.
+    this.pending?.abort();
+    this.pending = undefined;
+    this.queuedView = undefined;
     this.packet = packet;
     this.packetRevision++;
     if (!packet.instances.length) {
@@ -91,7 +96,12 @@ export class DeepWebGpuProbeClipmapSession {
       return;
     }
     if (!this.activateForPacket()) {
-      this.controller?.syncRenderPacket({ packet, revision: this.packetRevision });
+      try { this.controller?.syncRenderPacket({ packet, revision: this.packetRevision }); }
+      catch (error) {
+        this.deactivate();
+        this.failureValue = error;
+        throw error;
+      }
     }
   }
 

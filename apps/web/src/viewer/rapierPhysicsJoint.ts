@@ -1,7 +1,9 @@
 import type { ScenePhysicsJointState, Vector3Value } from "@bim-studio/contracts";
 import type Rapier from "@dimforge/rapier3d-compat";
 import type {
+  JointData,
   MultibodyJoint,
+  PrismaticImpulseJoint,
   RevoluteImpulseJoint,
   RigidBody,
   World,
@@ -9,7 +11,7 @@ import type {
 
 export interface MountedRapierJoint {
   readonly solver: "impulse" | "multibody";
-  readonly joint: RevoluteImpulseJoint | MultibodyJoint;
+  readonly joint: RevoluteImpulseJoint | PrismaticImpulseJoint | MultibodyJoint;
 }
 
 const finite = (value: number, fallback = 0) => Number.isFinite(value) ? value : fallback;
@@ -24,7 +26,9 @@ export function normalizePhysicsJoints(joints: readonly ScenePhysicsJointState[]
     const id = source.id.trim(), bodyId = source.bodyId.trim();
     const connectedBodyId = source.connectedBodyId?.trim();
     const solver = source.solver === "multibody" ? "multibody" : "impulse";
-    if (!id || !bodyId || connectedBodyId === bodyId || source.kind !== "revolute" || ids.has(id)
+    // prismatic 走冲量求解器;multibody(缩并坐标)保持纯 revolute。
+    const kindSupported = source.kind === "revolute" || (source.kind === "prismatic" && solver === "impulse");
+    if (!id || !bodyId || connectedBodyId === bodyId || !kindSupported || ids.has(id)
       || (solver === "multibody" && (source.limits.enabled || source.motor.enabled))) return [];
     ids.add(id);
     const axis = vector(source.axis);
@@ -32,11 +36,13 @@ export function normalizePhysicsJoints(joints: readonly ScenePhysicsJointState[]
     const normalizedAxis = length > 1e-6
       ? { x: axis.x / length, y: axis.y / length, z: axis.z / length }
       : { x: 0, y: 1, z: 0 };
-    const firstLimit = clamp(source.limits.min, -Math.PI * 2, Math.PI * 2);
-    const secondLimit = clamp(source.limits.max, -Math.PI * 2, Math.PI * 2);
+    // revolute 限位为弧度(±2π);prismatic 为米,用与初速度一致的 ±100 m 幅度。
+    const limitRange = source.kind === "prismatic" ? 100 : Math.PI * 2;
+    const firstLimit = clamp(source.limits.min, -limitRange, limitRange);
+    const secondLimit = clamp(source.limits.max, -limitRange, limitRange);
     return [{
       id,
-      kind: "revolute",
+      kind: source.kind,
       ...(solver === "multibody" ? { solver } : {}),
       bodyId,
       ...(connectedBodyId ? { connectedBodyId } : {}),
@@ -85,7 +91,12 @@ export function mountRapierJoint(
   state: ScenePhysicsJointState,
 ): MountedRapierJoint {
   if (state.solver !== "multibody") {
-    return { solver: "impulse", joint: mountRapierRevoluteJoint(rapier, world, connectedBody, modelBody, state) };
+    return {
+      solver: "impulse",
+      joint: state.kind === "prismatic"
+        ? mountRapierPrismaticJoint(rapier, world, connectedBody, modelBody, state)
+        : mountRapierRevoluteJoint(rapier, world, connectedBody, modelBody, state),
+    };
   }
   const connectedAnchor = state.connectedBodyId
     ? worldPointToBodyLocal(connectedBody, state.worldAnchor)
@@ -107,11 +118,41 @@ export function mountRapierRevoluteJoint(
   modelBody: RigidBody,
   state: ScenePhysicsJointState,
 ): RevoluteImpulseJoint {
+  const joint = createRapierUnitJoint(
+    (connectedAnchor, localAnchor, axis) => rapier.JointData.revolute(connectedAnchor, localAnchor, axis),
+    rapier, world, connectedBody, modelBody, state,
+  ) as RevoluteImpulseJoint;
+  return joint;
+}
+
+export function mountRapierPrismaticJoint(
+  rapier: typeof Rapier,
+  world: World,
+  connectedBody: RigidBody,
+  modelBody: RigidBody,
+  state: ScenePhysicsJointState,
+): PrismaticImpulseJoint {
+  return createRapierUnitJoint(
+    (connectedAnchor, localAnchor, axis) => rapier.JointData.prismatic(connectedAnchor, localAnchor, axis),
+    rapier, world, connectedBody, modelBody, state,
+  ) as PrismaticImpulseJoint;
+}
+
+/** revolute/prismatic 共享的冲量关节装载：锚点换算、限位与速度马达语义一致。 */
+function createRapierUnitJoint(
+  descriptor: (connectedAnchor: Vector3Value, localAnchor: Vector3Value, axis: Vector3Value) => JointData,
+  rapier: typeof Rapier,
+  world: World,
+  connectedBody: RigidBody,
+  modelBody: RigidBody,
+  state: ScenePhysicsJointState,
+): RevoluteImpulseJoint | PrismaticImpulseJoint {
   const connectedAnchor = state.connectedBodyId
     ? worldPointToBodyLocal(connectedBody, state.worldAnchor)
     : state.worldAnchor;
-  const descriptor = rapier.JointData.revolute(connectedAnchor, state.localAnchor, state.axis);
-  const joint = world.createImpulseJoint(descriptor, connectedBody, modelBody, true) as RevoluteImpulseJoint;
+  const joint = world.createImpulseJoint(
+    descriptor(connectedAnchor, state.localAnchor, state.axis), connectedBody, modelBody, true,
+  ) as RevoluteImpulseJoint | PrismaticImpulseJoint;
   if (state.limits.enabled) joint.setLimits(state.limits.min, state.limits.max);
   if (state.motor.enabled) {
     joint.configureMotorModel(rapier.MotorModel.ForceBased);

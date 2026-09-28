@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { sceneRowOffsets, sceneRowScrollDelta, visibleSceneRows, type SceneRowSize } from "./virtualSceneRows";
 import { useSceneTreeWindowing } from "./sceneTreePreference";
 import { focusLayerRow, layerKeyboardOccupied } from "./layerKeyboard";
@@ -7,6 +7,37 @@ import "./WindowedSceneRows.css";
 export interface SceneRow extends SceneRowSize { render: () => ReactNode }
 interface Props { rows: readonly SceneRow[]; selectedKey?: string | undefined; rowHeight?: number; enabled?: boolean | undefined }
 const focusable = 'button:not(:disabled),[tabindex="0"],input:not(:disabled),select:not(:disabled)';
+interface RowIndex {
+  rows: readonly SceneRow[];
+  keys: string[];
+  heights: (number | undefined)[];
+  kept: boolean[];
+  keptIndices: number[];
+  indexByKey: Map<string, number>;
+  offsets: number[];
+  rowHeight: number;
+  measuredRevision: number;
+}
+
+function currentRowIndex(rows: readonly SceneRow[], previous: RowIndex | undefined, measured: ReadonlyMap<string, number>, rowHeight: number, measuredRevision: number): RowIndex {
+  if (previous && previous.keys.length === rows.length && previous.rowHeight === rowHeight && previous.measuredRevision === measuredRevision) {
+    if (previous.rows === rows) return previous;
+    let unchanged = true;
+    for (let index = 0; index < rows.length; index++) {
+      const row = rows[index]!;
+      if (previous.keys[index] !== row.key || previous.heights[index] !== row.estimateHeight || previous.kept[index] !== Boolean(row.keepMounted)) { unchanged = false; break; }
+    }
+    if (unchanged) { previous.rows = rows; return previous; }
+  }
+  const keys: string[] = [], heights: (number | undefined)[] = [], kept: boolean[] = [], keptIndices: number[] = [], indexByKey = new Map<string, number>();
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index]!;
+    keys.push(row.key); heights.push(row.estimateHeight); kept.push(Boolean(row.keepMounted));
+    if (row.keepMounted) keptIndices.push(index);
+    indexByKey.set(row.key, index);
+  }
+  return { rows, keys, heights, kept, keptIndices, indexByKey, offsets: sceneRowOffsets(rows, measured, rowHeight), rowHeight, measuredRevision };
+}
 
 function focusRevealedRow(element: HTMLElement, last: boolean, lastLayer: boolean) {
   const layers = element.querySelectorAll<HTMLElement>('[data-layer-keyboard-row]');
@@ -22,13 +53,16 @@ export function WindowedSceneRows({ rows, selectedKey, rowHeight = 32, enabled }
   const root = useRef<HTMLDivElement>(null), scroll = useRef<HTMLElement | null>(null);
   const measured = useRef(new Map<string, number>()), elements = useRef(new Map<string, HTMLDivElement>());
   const observer = useRef<ResizeObserver | undefined>(undefined), pendingFrame = useRef(0);
-  const [viewport, setViewport] = useState({ top: 0, height: 600 }), [, revise] = useState(0);
+  const [viewport, setViewport] = useState({ top: 0, height: 600 }), [measuredRevision, revise] = useState(0);
   const [focusedKey, setFocusedKey] = useState<string>();
   const [pendingKey, setPendingKey] = useState<string>();
   const revealFrame = useRef(0);
   const previousFocusIndex = useRef(0), previousSelected = useRef<string | undefined>(undefined);
-  const offsets = sceneRowOffsets(rows, measured.current, rowHeight);
-  const live = useRef({ rows, offsets, viewport }); live.current = { rows, offsets, viewport };
+  const rowIndexRef = useRef<RowIndex | undefined>(undefined);
+  const rowIndex = currentRowIndex(rows, rowIndexRef.current, measured.current, rowHeight, measuredRevision);
+  rowIndexRef.current = rowIndex;
+  const offsets = rowIndex.offsets;
+  const live = useRef({ rows, offsets, viewport, indexByKey: rowIndex.indexByKey }); live.current = { rows, offsets, viewport, indexByKey: rowIndex.indexByKey };
 
   const updateViewport = useCallback(() => {
     const host = root.current, parent = scroll.current;
@@ -77,7 +111,7 @@ export function WindowedSceneRows({ rows, selectedKey, rowHeight = 32, enabled }
     else elements.current.delete(key);
   }, []);
   const reveal = useCallback((key: string, focus = false, last = false, lastLayer = false) => {
-    const index = live.current.rows.findIndex(row => row.key === key), parent = scroll.current;
+    const index = live.current.indexByKey.get(key) ?? -1, parent = scroll.current;
     if (index < 0 || !parent) return;
     const { offsets: positions } = live.current;
     const top = parent.getBoundingClientRect().top + parent.clientTop - (root.current?.getBoundingClientRect().top ?? 0);
@@ -103,23 +137,22 @@ export function WindowedSceneRows({ rows, selectedKey, rowHeight = 32, enabled }
     });
   }, [updateViewport]);
   useLayoutEffect(() => {
-    const keys = new Set(rows.map(row => row.key));
-    for (const key of measured.current.keys()) if (!keys.has(key)) measured.current.delete(key);
-    if (selectedKey && selectedKey !== previousSelected.current && keys.has(selectedKey)) { reveal(selectedKey); previousSelected.current = selectedKey; }
+    for (const key of measured.current.keys()) if (!rowIndex.indexByKey.has(key)) measured.current.delete(key);
+    if (selectedKey && selectedKey !== previousSelected.current && rowIndex.indexByKey.has(selectedKey)) { reveal(selectedKey); previousSelected.current = selectedKey; }
     if (!selectedKey) previousSelected.current = undefined;
     if (focusedKey) {
-      const index = rows.findIndex(row => row.key === focusedKey);
-      if (index >= 0) previousFocusIndex.current = index;
+      const index = rowIndex.indexByKey.get(focusedKey);
+      if (index !== undefined) previousFocusIndex.current = index;
       else { const next = rows[Math.min(previousFocusIndex.current, rows.length - 1)]; if (next) reveal(next.key, true); else setFocusedKey(undefined); }
     }
-  }, [rows, selectedKey, focusedKey, reveal]);
+  }, [rowIndex, rows.length, selectedKey, focusedKey, reveal]);
 
   function keyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.defaultPrevented || (event.target as HTMLElement).closest('.windowed-scene-rows') !== root.current) return;
     if (layerKeyboardOccupied(event) || (event.target as HTMLElement).closest('details[open]')) return;
     if (event.altKey || event.ctrlKey || event.metaKey || (event.shiftKey && event.key !== "Tab")) return;
     const row = (event.target as HTMLElement).closest<HTMLElement>('[data-scene-row-key]');
-    const index = rows.findIndex(item => item.key === row?.dataset.sceneRowKey);
+    const index = rowIndex.indexByKey.get(row?.dataset.sceneRowKey ?? "") ?? -1;
     if (index < 0) return;
     // 一个虚拟行可包含整个编组；先走组内可见行，边界才交还虚拟列表揭示下一行。
     const layerRows = [...row!.querySelectorAll<HTMLElement>('[data-layer-keyboard-row]')];
@@ -146,7 +179,11 @@ export function WindowedSceneRows({ rows, selectedKey, rowHeight = 32, enabled }
   const range = virtual ? visibleSceneRows(offsets, viewport.top, viewport.height) : { start: 0, end: rows.length };
   const indices = new Set<number>();
   for (let i = range.start; i < range.end; i++) indices.add(i);
-  if (virtual) rows.forEach((row, index) => { if (row.keepMounted || row.key === focusedKey || row.key === pendingKey) indices.add(index); });
+  if (virtual) {
+    for (const index of rowIndex.keptIndices) indices.add(index);
+    if (focusedKey) { const index = rowIndex.indexByKey.get(focusedKey); if (index !== undefined) indices.add(index); }
+    if (pendingKey) { const index = rowIndex.indexByKey.get(pendingKey); if (index !== undefined) indices.add(index); }
+  }
   let cursor = 0;
   const content = [...indices].sort((a, b) => a - b).map(index => {
     const row = rows[index]!, gap = offsets[index]! - offsets[cursor]!; cursor = index + 1;
@@ -160,7 +197,7 @@ export function WindowedSceneRows({ rows, selectedKey, rowHeight = 32, enabled }
   </div>;
 }
 
-const MeasuredRow = memo(function MeasuredRow({ row, bind }: { row: SceneRow; bind: (key: string, element: HTMLDivElement | null) => void }) {
+function MeasuredRow({ row, bind }: { row: SceneRow; bind: (key: string, element: HTMLDivElement | null) => void }) {
   const ref = useCallback((element: HTMLDivElement | null) => bind(row.key, element), [bind, row.key]);
   return <div ref={ref} data-scene-row-key={row.key} className="windowed-scene-row">{row.render()}</div>;
-});
+}

@@ -1,3 +1,4 @@
+import { compareText } from "./textOrder.js";
 import type { PlantTransportJourney, PlantTransportNetwork, PlantTransportReservation } from "@bim-studio/contracts";
 import type { PlantLiteModel } from "./modelTypes.js";
 
@@ -84,7 +85,7 @@ export function transportShortestPath(network: PlantTransportNetwork, from: stri
   const previous = new Map<string, Segment>();
   const pending = new Set(network.waypoints.map(point => point.id));
   while (pending.size) {
-    const current = [...pending].sort((a, b) => (distance.get(a) ?? Infinity) - (distance.get(b) ?? Infinity) || a.localeCompare(b))[0]!;
+    const current = [...pending].sort((a, b) => (distance.get(a) ?? Infinity) - (distance.get(b) ?? Infinity) || compareText(a, b))[0]!;
     const cost = distance.get(current);
     if (cost === undefined) break;
     pending.delete(current);
@@ -94,7 +95,7 @@ export function transportShortestPath(network: PlantTransportNetwork, from: stri
       while (waypoint !== from) { const edge = previous.get(waypoint)!; path.unshift(edge); waypoint = edge.from; }
       return path;
     }
-    for (const segment of [...network.segments].sort((a, b) => a.id.localeCompare(b.id))) {
+    for (const segment of [...network.segments].sort((a, b) => compareText(a.id, b.id))) {
       if (segment.from !== current || !pending.has(segment.to)) continue;
       const next = cost + segment.lengthMeters;
       if (next < (distance.get(segment.to) ?? Infinity)) { distance.set(segment.to, next); previous.set(segment.to, segment); }

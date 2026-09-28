@@ -4,14 +4,22 @@ import type { SceneEditorControllerContext } from "./sceneEditorControllerContex
 
 /** 相机与模型关键帧命令；沿用查看器当前姿态，不在 UI 层复制时间线算法。 */
 export function createSceneAnimationCommands(context: SceneEditorControllerContext) {
-  const { engine, selected, sceneAnimation, animationTime, animationPlaying, setSceneAnimation, setMessage } = context;
+  const { engine, selected, sceneAnimation, animationTime, animationPlaying, setSceneAnimation, setMessage, recordSceneEdit } = context;
+
+  function liveAnimationTime(): number {
+    try {
+      return engine?.transientChannels.channel<{ time: number; playing: boolean }>("animation").snapshot().time ?? animationTime;
+    } catch {
+      return animationTime;
+    }
+  }
 
   function updateSceneAnimation(next: SceneAnimationState) {
     setSceneAnimation(next);
     engine?.setSceneAnimation(next);
   }
 
-  function addCameraKeyframe(time = animationTime) {
+  function addCameraKeyframe(time = liveAnimationTime()) {
     if (!engine) return;
     const frameTime = snapAnimationTime(time, sceneAnimation.frameRate, sceneAnimation.snapToFrames);
     const previous = sceneAnimation.camera.find(item => Math.abs(item.time - frameTime) <= 0.001);
@@ -21,10 +29,12 @@ export function createSceneAnimationCommands(context: SceneEditorControllerConte
       camera: [...sceneAnimation.camera.filter((item) => Math.abs(item.time - frameTime) > 0.001), frame].sort((left, right) => left.time - right.time),
     });
     setMessage(`已在 ${frameTime.toFixed(2)} 秒记录相机关键帧`);
+    // T27：动画域入全局撤销序（快照已含 animation），与其他域共享单一撤销栈。
+    recordSceneEdit("记录相机关键帧");
     return frame.id;
   }
 
-  function addModelKeyframe(modelId = selected?.id, time = animationTime) {
+  function addModelKeyframe(modelId = selected?.id, time = liveAnimationTime()) {
     if (!engine || !modelId) return;
     const model = engine.listModels().find((item) => item.id === modelId);
     if (!model || engine.isModelLocked(modelId)) return;
@@ -48,6 +58,8 @@ export function createSceneAnimationCommands(context: SceneEditorControllerConte
       ),
     });
     setMessage(playback ? `已为“${model.name}”记录 ${frameTime.toFixed(2)} 秒对象与片段关键帧` : `已为“${model.name}”记录 ${frameTime.toFixed(2)} 秒关键帧`);
+    // T27：动画域入全局撤销序。
+    recordSceneEdit("记录对象关键帧");
     return frame.id;
   }
 
@@ -74,6 +86,8 @@ export function createSceneAnimationCommands(context: SceneEditorControllerConte
       camera: sceneAnimation.camera.filter((item) => item.id !== id),
       models: sceneAnimation.models.filter((item) => item.id !== id),
     });
+    // T27：动画域入全局撤销序；未命中时由快照 fingerprint 去重，不产生空条目。
+    recordSceneEdit("删除动画关键帧");
   }
 
   return { updateSceneAnimation, addCameraKeyframe, addModelKeyframe, toggleSceneAnimation, reverseSceneAnimation, deleteKeyframe };

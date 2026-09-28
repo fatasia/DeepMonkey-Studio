@@ -91,13 +91,14 @@ export function ScenePhysicsPanel(props: ScenePhysicsPanelProps) {
         <button
           disabled={!value.enabled}
           className={value.playing ? "active" : ""}
+          title={value.enabled ? undefined : tr(locale, "先启用物理系统", "Enable physics first")}
           onClick={() => props.onChange({ ...value, playing: !value.playing })}
         >
           {value.playing
             ? tr(locale, "暂停", "Pause")
             : tr(locale, "播放", "Play")}
         </button>
-        <button disabled={!value.enabled} onClick={props.onReset}>
+        <button disabled={!value.enabled} title={value.enabled ? undefined : tr(locale, "先启用物理系统", "Enable physics first")} onClick={props.onReset}>
           {tr(locale, "重置", "Reset")}
         </button>
         <button
@@ -158,8 +159,10 @@ export function ScenePhysicsPanel(props: ScenePhysicsPanelProps) {
                 <option value="kinematic">{tr(locale, "运动学", "Kinematic")}</option>
               </select>
             </label>
-            <label>
-              <span>{tr(locale, "质量", "Mass")}</span>
+            <label
+              title={selectedBody.type !== "dynamic" ? tr(locale, "仅动态刚体可设置质量", "Only dynamic bodies have an editable mass") : undefined}
+            >
+              <span>{tr(locale, "质量 (kg)", "Mass (kg)")}</span>
               <DeferredNumberInput
                 disabled={selectedBody.type !== "dynamic"}
                 min={0.01}
@@ -168,6 +171,20 @@ export function ScenePhysicsPanel(props: ScenePhysicsPanelProps) {
                 onCommit={(mass) => props.onSelectedBodyChange({ mass })}
               />
             </label>
+            {selectedBody.type === "dynamic" && (["x", "y", "z"] as const).map((axis) => (
+              <label key={`initial-velocity-${axis}`}>
+                <span>{tr(locale, `初速度 ${axis.toUpperCase()} (m/s)`, `Initial velocity ${axis.toUpperCase()} (m/s)`)}</span>
+                <DeferredNumberInput
+                  min={-1_000}
+                  max={1_000}
+                  step={1}
+                  value={selectedBody.initialLinearVelocity?.[axis] ?? 0}
+                  onCommit={(speed) => props.onSelectedBodyChange({
+                    initialLinearVelocity: { x: 0, y: 0, z: 0, ...selectedBody.initialLinearVelocity, [axis]: speed },
+                  })}
+                />
+              </label>
+            ))}
             <label>
               <span>{tr(locale, "摩擦", "Friction")}</span>
               <input
@@ -273,11 +290,19 @@ export function ScenePhysicsPanel(props: ScenePhysicsPanelProps) {
                 <span>{tr(locale, "启用限位", "Enable limits")}</span>
                 <input type="checkbox" disabled={selectedJoint.solver === "multibody"} checked={selectedJoint.limits.enabled} onChange={(event) => updateJoint({ limits: { ...selectedJoint.limits, enabled: event.target.checked } })} />
               </label>
-              <label>
+              <label
+                title={selectedJoint.solver === "multibody"
+                  ? tr(locale, "MultibodyJoint 求解器不支持限位", "MultibodyJoint solver does not support limits")
+                  : !selectedJoint.limits.enabled ? tr(locale, "先启用限位", "Enable limits first") : undefined}
+              >
                 <span>{tr(locale, "最小角", "Minimum angle")}</span>
                 <DeferredNumberInput disabled={selectedJoint.solver === "multibody" || !selectedJoint.limits.enabled} min={-360} max={360} step={5} value={THREE.MathUtils.radToDeg(selectedJoint.limits.min)} onCommit={(degrees) => updateJoint({ limits: { ...selectedJoint.limits, min: THREE.MathUtils.degToRad(degrees) } })} />
               </label>
-              <label>
+              <label
+                title={selectedJoint.solver === "multibody"
+                  ? tr(locale, "MultibodyJoint 求解器不支持限位", "MultibodyJoint solver does not support limits")
+                  : !selectedJoint.limits.enabled ? tr(locale, "先启用限位", "Enable limits first") : undefined}
+              >
                 <span>{tr(locale, "最大角", "Maximum angle")}</span>
                 <DeferredNumberInput disabled={selectedJoint.solver === "multibody" || !selectedJoint.limits.enabled} min={-360} max={360} step={5} value={THREE.MathUtils.radToDeg(selectedJoint.limits.max)} onCommit={(degrees) => updateJoint({ limits: { ...selectedJoint.limits, max: THREE.MathUtils.degToRad(degrees) } })} />
               </label>
@@ -285,7 +310,11 @@ export function ScenePhysicsPanel(props: ScenePhysicsPanelProps) {
                 <span>{tr(locale, "速度马达", "Velocity motor")}</span>
                 <input type="checkbox" disabled={selectedJoint.solver === "multibody"} checked={selectedJoint.motor.enabled} onChange={(event) => updateJoint({ motor: { ...selectedJoint.motor, enabled: event.target.checked } })} />
               </label>
-              <label>
+              <label
+                title={selectedJoint.solver === "multibody"
+                  ? tr(locale, "MultibodyJoint 求解器不支持马达", "MultibodyJoint solver does not support motors")
+                  : !selectedJoint.motor.enabled ? tr(locale, "先启用速度马达", "Enable the velocity motor first") : undefined}
+              >
                 <span>{tr(locale, "目标速度 rad/s", "Target speed rad/s")}</span>
                 <DeferredNumberInput disabled={selectedJoint.solver === "multibody" || !selectedJoint.motor.enabled} min={-100} max={100} step={0.1} value={selectedJoint.motor.targetVelocity} onCommit={(targetVelocity) => updateJoint({ motor: { ...selectedJoint.motor, targetVelocity } })} />
               </label>
@@ -342,19 +371,16 @@ function CharacterControllerEditor({ locale, value, onChange }: {
       </label>
       {value && <>
         <label>
-          <span>{tr(locale, "间隙", "Offset")}</span>
+          <span>{tr(locale, "间隙 (m)", "Offset (m)")}</span>
           <DeferredNumberInput ariaLabel={tr(locale, "控制器间隙（米）", "Controller offset (m)")} min={0.0001} max={10} step={0.01} value={value.offset ?? DEFAULT_CHARACTER_CONTROLLER.offset} onCommit={(offset) => update({ offset })} />
-          <i>m</i>
         </label>
         <label>
-          <span>{tr(locale, "可爬坡度", "Climb slope")}</span>
+          <span>{tr(locale, "可爬坡度 (°)", "Climb slope (°)")}</span>
           <DeferredNumberInput ariaLabel={tr(locale, "最大可爬坡度（度）", "Maximum climb slope (degrees)")} min={0} max={90} step={1} value={THREE.MathUtils.radToDeg(value.maxSlopeClimbAngle ?? DEFAULT_CHARACTER_CONTROLLER.maxSlopeClimbAngle!)} onCommit={(degrees) => update({ maxSlopeClimbAngle: THREE.MathUtils.degToRad(degrees) })} />
-          <i>°</i>
         </label>
         <label>
-          <span>{tr(locale, "下滑坡度", "Slide slope")}</span>
+          <span>{tr(locale, "下滑坡度 (°)", "Slide slope (°)")}</span>
           <DeferredNumberInput ariaLabel={tr(locale, "最小下滑坡度（度）", "Minimum slide slope (degrees)")} min={0} max={90} step={1} value={THREE.MathUtils.radToDeg(value.minSlopeSlideAngle ?? DEFAULT_CHARACTER_CONTROLLER.minSlopeSlideAngle!)} onCommit={(degrees) => update({ minSlopeSlideAngle: THREE.MathUtils.degToRad(degrees) })} />
-          <i>°</i>
         </label>
         <label>
           <span>{tr(locale, "自动跨台阶", "Autostep")}</span>
@@ -362,14 +388,12 @@ function CharacterControllerEditor({ locale, value, onChange }: {
         </label>
         {autostep?.enabled && <>
           <label>
-            <span>{tr(locale, "台阶高度", "Step height")}</span>
+            <span>{tr(locale, "台阶高度 (m)", "Step height (m)")}</span>
             <DeferredNumberInput ariaLabel={tr(locale, "最大台阶高度（米）", "Maximum step height (m)")} min={0.01} max={10} step={0.05} value={autostep.maxHeight ?? DEFAULT_CHARACTER_CONTROLLER.autostep!.maxHeight} onCommit={(maxHeight) => updateAutostep({ maxHeight })} />
-            <i>m</i>
           </label>
           <label>
-            <span>{tr(locale, "踏面宽度", "Step width")}</span>
+            <span>{tr(locale, "踏面宽度 (m)", "Step width (m)")}</span>
             <DeferredNumberInput ariaLabel={tr(locale, "最小踏面宽度（米）", "Minimum step width (m)")} min={0.01} max={10} step={0.05} value={autostep.minWidth ?? DEFAULT_CHARACTER_CONTROLLER.autostep!.minWidth} onCommit={(minWidth) => updateAutostep({ minWidth })} />
-            <i>m</i>
           </label>
           <label>
             <span>{tr(locale, "包含动态体", "Include dynamic bodies")}</span>
@@ -381,9 +405,8 @@ function CharacterControllerEditor({ locale, value, onChange }: {
           <input type="checkbox" aria-label={tr(locale, "启用贴地吸附", "Enable snap to ground")} checked={snapToGround?.enabled ?? false} onChange={(event) => updateSnapToGround({ enabled: event.target.checked })} />
         </label>
         {snapToGround?.enabled && <label>
-          <span>{tr(locale, "吸附距离", "Snap distance")}</span>
+          <span>{tr(locale, "吸附距离 (m)", "Snap distance (m)")}</span>
           <DeferredNumberInput ariaLabel={tr(locale, "贴地吸附距离（米）", "Snap distance (m)")} min={0.01} max={10} step={0.05} value={snapToGround.distance ?? DEFAULT_CHARACTER_CONTROLLER.snapToGround!.distance} onCommit={(distance) => updateSnapToGround({ distance })} />
-          <i>m</i>
         </label>}
       </>}
     </section>

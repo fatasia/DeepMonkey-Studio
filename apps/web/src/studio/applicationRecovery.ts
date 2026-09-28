@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import { assertApplicationDocument, type ApplicationDocument, type ScriptModule } from "@bim-studio/contracts";
 import { readRecoveryRecord, removeRecoveryRecord, writeRecoveryRecord } from "./recoveryDatabase";
 
@@ -16,7 +17,7 @@ export function applicationRecoveryFingerprint(document: ApplicationDocument): s
   const { revision: _revision, updatedAt: _updatedAt, ...metadata } = document.metadata;
   return JSON.stringify({ ...document, metadata }, (_key, value: unknown) => {
     if (!value || typeof value !== "object" || Array.isArray(value)) return value;
-    return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)));
+    return Object.fromEntries(Object.entries(value).sort(([left], [right]) => compareText(left, right)));
   });
 }
 export function applicationRecoveryDocument(document: ApplicationDocument, pendingScript?: ScriptModule): ApplicationDocument {

@@ -8,7 +8,7 @@
 
 import type { RenderPacket } from "../src/renderPacket.js";
 import { ProbeSceneRadianceProducer } from "../src/rayTracing/probeSceneRadianceProducer.js";
-import { emitProbeRadianceKernelWgsl } from "../src/rayTracing/probeRadianceKernel.js";
+import { emitProbeRadianceKernelWgsl, packProbeRadianceUniform, PROBE_RADIANCE_UNIFORM_BYTES } from "../src/rayTracing/probeRadianceKernel.js";
 import { buildRenderPacketRayScene, RENDER_PACKET_GI_RAY_MASK } from "../src/rayTracing/renderPacketRayScene.js";
 import { probeOcclusionDirection } from "../src/rayTracing/probeOcclusionRayExtension.js";
 import { traceTlasClosest } from "../src/rayTracing/tlas.js";
@@ -131,7 +131,7 @@ fn dump_probe_directions(@builtin(global_invocation_id) gid: vec3u) {
     // the debug pass reuses the producer's own pipeline-visible resources via a fresh producer.
     // Simplest honest path: run the dump with the producer's own uniforms by asking it to
     // encode a zero-probe batch is not possible, so the debug pass gets its own copies.
-    const kernelUniform = device.createBuffer({ label: "debug uniform", size: 320,
+    const kernelUniform = device.createBuffer({ label: "debug uniform", size: PROBE_RADIANCE_UNIFORM_BYTES,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     const probeParams = device.createBuffer({ label: "debug probe params", size: 64,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
@@ -140,17 +140,13 @@ fn dump_probe_directions(@builtin(global_invocation_id) gid: vec3u) {
     // Mirror the producer's scene buffers by capturing them through a scene sync on this device.
     const sceneBuffers = await rebuildSceneBuffers(device, packet);
 
-    const uniformData = new ArrayBuffer(320);
-    new Uint32Array(uniformData, 0, 3).set([1, DIRECTION_COUNT, RENDER_PACKET_GI_RAY_MASK]);
-    new Float32Array(uniformData, 12, 1)[0] = T_MAX;
-    const floats = new Float32Array(uniformData);
-    floats.set([0, 1, 0, SUN.intensity], 4);
-    floats.set([...SUN.color, 0], 8);
-    floats.set([...AMBIENT, 0], 12);
-    for (let ordinal = 0; ordinal < DIRECTION_COUNT; ordinal++) {
-      const [dx, dy, dz] = probeOcclusionDirection(ordinal, DIRECTION_COUNT);
-      floats.set([dx, dy, dz, 0], 16 + ordinal * 4);
-    }
+    const uniformData = packProbeRadianceUniform({
+      updateCount: 1, directionCount: DIRECTION_COUNT, rayMask: RENDER_PACKET_GI_RAY_MASK, tMax: T_MAX,
+      surfaceToLight: [0, 1, 0], lightColor: SUN.color, lightIntensity: SUN.intensity,
+      ambient: AMBIENT,
+      directions: Array.from({ length: DIRECTION_COUNT }, (_, ordinal) =>
+        probeOcclusionDirection(ordinal, DIRECTION_COUNT)),
+    });
     device.queue.writeBuffer(kernelUniform, 0, uniformData);
     const paramData = new Float32Array(16);
     paramData.set([PROBE[0], PROBE[1], PROBE[2], 0, 0, 0, 0, 0]);

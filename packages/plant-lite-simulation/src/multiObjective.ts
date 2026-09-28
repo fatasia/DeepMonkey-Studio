@@ -6,6 +6,7 @@
  * 同 seed 双跑逐位一致。诚实边界:拥挤距离只在双目标下有经典几何解释;收敛是启发式的。
  */
 
+import { compareText } from "./textOrder.js";
 import {
   type MultiObjectiveConfig,
   type MultiObjectiveGenerationRecord,
@@ -159,7 +160,7 @@ export class MultiObjectiveOptimizer {
       }
       this.#assignCrowdingDistance(front);
       const byCrowding = [...front].sort((left, right) =>
-        right.crowdingDistance - left.crowdingDistance || left.fingerprint.localeCompare(right.fingerprint));
+        right.crowdingDistance - left.crowdingDistance || compareText(left.fingerprint, right.fingerprint));
       next.push(...byCrowding.slice(0, this.#config.populationSize - next.length));
       break;
     }
@@ -202,7 +203,7 @@ export class MultiObjectiveOptimizer {
     for (const individual of front) individual.crowdingDistance = 0;
     for (let axis = 0; axis < this.#targetNames.length; axis += 1) {
       const ordered = [...front].sort((left, right) =>
-        left.objectives[axis]! - right.objectives[axis]! || left.fingerprint.localeCompare(right.fingerprint));
+        left.objectives[axis]! - right.objectives[axis]! || compareText(left.fingerprint, right.fingerprint));
       ordered[0]!.crowdingDistance = ordered[ordered.length - 1]!.crowdingDistance = Infinity;
       const span = ordered[ordered.length - 1]!.objectives[axis]! - ordered[0]!.objectives[axis]!;
       if (span <= 0) continue;
@@ -257,7 +258,7 @@ export class MultiObjectiveOptimizer {
         - left.objectives[this.#targetNames[axis]!]! * this.#signs[axis]!;
       if (diff !== 0) return diff;
     }
-    return left.fingerprint.localeCompare(right.fingerprint);
+    return compareText(left.fingerprint, right.fingerprint);
   }
 }
 

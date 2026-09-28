@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 export type WhatIfValueMode = "absolute" | "relative";
 export type WhatIfRiskLevel = "low" | "medium" | "high" | "critical";
 
@@ -362,7 +363,7 @@ function validateDomain(domain: WhatIfApplicabilityDomain, metricIds: Set<string
 
 function normalizedDomain(domain: WhatIfApplicabilityDomain): WhatIfApplicabilityDomain {
   return {
-    variableRanges: [...domain.variableRanges].sort((left, right) => byVariableId(left, right) || left.mode.localeCompare(right.mode)),
+    variableRanges: [...domain.variableRanges].sort((left, right) => byVariableId(left, right) || compareText(left.mode, right.mode)),
     metricRanges: [...domain.metricRanges].sort(byMetricId),
     ...(domain.evidenceRef ? { evidenceRef: domain.evidenceRef } : {}),
   };
@@ -379,7 +380,7 @@ function assertUnique(values: readonly string[], label: string): void {
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value && typeof value === "object") return `{${Object.entries(value as Record<string, unknown>)
-    .filter(([, item]) => item !== undefined).sort(([left], [right]) => left.localeCompare(right))
+    .filter(([, item]) => item !== undefined).sort(([left], [right]) => compareText(left, right))
     .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(",")}}`;
   return JSON.stringify(value);
 }
@@ -395,8 +396,8 @@ function finiteRound(value: number): number {
   return Math.round(value * 1e9) / 1e9;
 }
 
-function byMetricId<T extends { metricId: string }>(left: T, right: T): number { return left.metricId.localeCompare(right.metricId); }
-function byVariableId<T extends { variableId: string }>(left: T, right: T): number { return left.variableId.localeCompare(right.variableId); }
-function byConstraintId(left: WhatIfConstraint, right: WhatIfConstraint): number { return left.constraintId.localeCompare(right.constraintId); }
+function byMetricId<T extends { metricId: string }>(left: T, right: T): number { return compareText(left.metricId, right.metricId); }
+function byVariableId<T extends { variableId: string }>(left: T, right: T): number { return compareText(left.variableId, right.variableId); }
+function byConstraintId(left: WhatIfConstraint, right: WhatIfConstraint): number { return compareText(left.constraintId, right.constraintId); }
 function compareElasticity(left: WhatIfElasticity, right: WhatIfElasticity): number { return byMetricId(left, right) || byVariableId(left, right); }
 function format(value: number): string { return Number(value.toFixed(6)).toString(); }

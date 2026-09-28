@@ -165,25 +165,37 @@ impl ProductPhysicsPlayback {
         self.next_frame
     }
 
-    pub(super) fn before_render(
+    /// Advances CPU physics and returns the packet currently resident on GPU.
+    /// Browser staging must await asynchronously before publishing this packet.
+    pub(super) fn advance_content(
         &mut self,
-        renderer: &mut Renderer,
         content: &mut PlayerContent,
-    ) -> Result<(), String> {
+    ) -> Result<Option<deep_engine_native::contract::RenderPacket>, String> {
         let now = Instant::now();
         let delta = now.duration_since(self.last_frame).as_secs_f64();
         self.last_frame = now;
         self.next_frame = now + std::time::Duration::from_millis(16);
         let previous = content.packet().clone();
         let changed = content.advance_physics(delta)?;
-        if changed > 0 {
+        if changed == 0 {
+            return Ok(None);
+        }
+        if !self.reported {
+            println!(
+                "native physics runtime active: fixed step synchronized {changed} render instances"
+            );
+            self.reported = true;
+        }
+        Ok(Some(previous))
+    }
+
+    pub(super) fn before_render(
+        &mut self,
+        renderer: &mut Renderer,
+        content: &mut PlayerContent,
+    ) -> Result<(), String> {
+        if let Some(previous) = self.advance_content(content)? {
             pollster::block_on(renderer.replace_render_packet(&previous, content))?;
-            if !self.reported {
-                println!(
-                    "native physics runtime active: fixed step synchronized {changed} render instances"
-                );
-                self.reported = true;
-            }
         }
         Ok(())
     }

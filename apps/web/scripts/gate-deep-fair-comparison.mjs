@@ -170,29 +170,37 @@ async function measureBackend(page, backend) {
  * 不可直接互比。
  */
 async function measureFirstFrame(page, backend) {
+  const prefix = `deep-${backend}:`;
+  const stageNames = backend === "wasm"
+    ? ["switch-start", "module-ready", "package-compiled", "renderer-ready", "published"]
+    : ["switch-start", "module-ready", "environment-ready", "scene-uploaded", "frame-validated", "published"];
   const before = await page.evaluate(() => performance.getEntriesByType("mark").length);
+  const markStartedAt = await page.evaluate(() => performance.now());
   const switchStarted = Date.now();
   await switchBackend(page, backend);
   const wallMs = Date.now() - switchStarted;
-  const phases = await page.evaluate(prefix => performance.getEntriesByType("mark")
-    .filter(entry => entry.name.startsWith(prefix))
-    .map(entry => ({ name: entry.name, at: entry.startTime })), "deep-webgpu:");
+  const phases = await page.evaluate(({ prefix, markStartedAt, stageNames }) => performance.getEntriesByType("mark")
+    .filter(entry => entry.name.startsWith(prefix) && entry.startTime >= markStartedAt
+      && stageNames.includes(entry.name.slice(prefix.length)))
+    .map(entry => ({ name: entry.name, at: entry.startTime })), { prefix, markStartedAt, stageNames });
   const stages = [];
   let previous = null;
   for (const phase of phases) {
     if (previous !== null) stages.push({ from: previous.name, to: phase.name, deltaMs: Number((phase.at - previous.at).toFixed(1)) });
     previous = phase;
   }
-  return { wallMs, phaseCount: phases.length, stages,
+  const switchPublishedMs = phases[0]?.name === `${prefix}switch-start`
+    && phases.at(-1)?.name === `${prefix}published`
+    ? Number((phases.at(-1).at - phases[0].at).toFixed(1)) : null;
+  return { wallMs, switchPublishedMs, phaseCount: phases.length, stages,
     note: phases.length ? "deep-switch-phase-marks" : "no-marks (webgl or first switch)" ,
     ...(before !== undefined ? { marksBefore: before } : {}) };
 }
 
 async function sampleStaticFrames(page) {
-  return page.evaluate(samples => new Promise(resolve => {
+  const heapStartMb = await readJsHeapUsedMb(page);
+  const result = await page.evaluate(samples => new Promise(resolve => {
     const intervals = [];
-    const memory = performance.memory;
-    const heapStart = memory ? memory.usedJSHeapSize : null;
     let last = performance.now();
     const tick = now => {
       intervals.push(now - last);
@@ -201,14 +209,28 @@ async function sampleStaticFrames(page) {
         const sorted = intervals.slice(1).sort((a, b) => a - b);
         const at = ratio => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * ratio))] ?? 0;
         resolve({ sampledFrames: sorted.length, p50Ms: at(0.5), p95Ms: at(0.95), p99Ms: at(0.99),
-          maxMs: sorted[sorted.length - 1] ?? 0,
-          heapUsedMb: memory && heapStart !== null ? (memory.usedJSHeapSize - heapStart) / 1024 / 1024 : null });
+          maxMs: sorted[sorted.length - 1] ?? 0 });
         return;
       }
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
   }), staticSamples);
+  const heapUsedMb = await readJsHeapUsedMb(page);
+  return { ...result, heapUsedMb,
+    heapDeltaMb: heapStartMb === null || heapUsedMb === null ? null : heapUsedMb - heapStartMb };
+}
+
+async function readJsHeapUsedMb(page) {
+  let session;
+  try {
+    session = await page.context().newCDPSession(page);
+    await session.send("Performance.enable");
+    const { metrics } = await session.send("Performance.getMetrics");
+    const bytes = metrics.find(metric => metric.name === "JSHeapUsedSize")?.value;
+    return Number.isFinite(bytes) && bytes > 0 ? bytes / 1024 / 1024 : null;
+  } catch { return null; }
+  finally { await session?.detach().catch(() => undefined); }
 }
 
 async function capturePose(page, backend, pose, clip) {
@@ -314,6 +336,7 @@ async function measureInputTrajectory(page, bounds, backend, presentCanvas) {
   await page.mouse.up();
   await page.waitForTimeout(100);
   const frames = [];
+  const frameTimes = [];
   await page.mouse.move(x, y);
   await page.mouse.down();
   for (let index = 0; index < 16; index++) {
@@ -321,6 +344,7 @@ async function measureInputTrajectory(page, bounds, backend, presentCanvas) {
       y + Math.sin(index) * bounds.height * 0.04);
     await page.waitForTimeout(20);
     frames.push(await page.screenshot({ clip: bounds }));
+    frameTimes.push(performance.now());
   }
   await page.mouse.up();
   const timing = await page.evaluate(() => {
@@ -376,6 +400,8 @@ async function measureInputTrajectory(page, bounds, backend, presentCanvas) {
     if (meanDiff < duplicateThreshold) duplicates++;
   }
   const distinctRatio = diffs.length ? 1 - duplicates / diffs.length : 0;
+  const captureMs = frameTimes.length > 1 ? frameTimes.at(-1) - frameTimes[0] : 0;
+  const effectiveFps = distinctRatio > 0 && captureMs > 0 ? (frames.length - 1 - duplicates) * 1000 / captureMs : null;
   const medianMean = [...luminance].map(item => item.mean).sort((a, b) => a - b)[Math.floor(luminance.length / 2)] ?? 0;
   const blackFrames = luminance.filter(item => item.mean < Math.max(2, medianMean * 0.25)).length;
   const lastPath = `${output}input-${backend}-last.png`;
@@ -385,7 +411,9 @@ async function measureInputTrajectory(page, bounds, backend, presentCanvas) {
   return { ...timing, blackFrames, medianMeanLuminance: Number(medianMean.toFixed(2)),
     dragSmoothness: { sampledFrames: frames.length, duplicateFrames: duplicates,
       distinctFrameRatio: Number(distinctRatio.toFixed(3)),
-      effectiveFps: Number((frames.length * distinctRatio * 1000 / (frames.length * 20)).toFixed(1)) } };
+      captureMs: Number(captureMs.toFixed(1)),
+      effectiveFps: effectiveFps === null ? null : Number(effectiveFps.toFixed(1)),
+      availability: effectiveFps === null ? "unmeasured-static-capture" : "measured" } };
 }
 
 function evaluateVerdict() {

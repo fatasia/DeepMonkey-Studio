@@ -1,3 +1,4 @@
+import { compareText } from "./textOrder.js";
 import { assertFactoryFlowModel, type FactoryEdge, type FactoryFlowModel, type FactoryNode } from "./model.js";
 
 export type SimulationStatus = "paused" | "running";
@@ -134,7 +135,7 @@ export class FactoryFlowSimulation {
       this.#outgoing.set(edge.from, outgoing);
     }
     for (const edges of this.#outgoing.values()) {
-      edges.sort((left, right) => (left.priority ?? 0) - (right.priority ?? 0) || left.id.localeCompare(right.id));
+      edges.sort((left, right) => (left.priority ?? 0) - (right.priority ?? 0) || compareText(left.id, right.id));
     }
     for (const node of this.#model.nodes) {
       if (node.kind === "source") this.#schedule(node.initialDelayMs ?? 0, "source-create", node.id);
@@ -160,7 +161,7 @@ export class FactoryFlowSimulation {
     });
     const bottleneck = nodes
       .filter((node) => node.kind === "process" || node.kind === "agv")
-      .sort((left, right) => right.utilization - left.utilization || left.nodeId.localeCompare(right.nodeId))[0];
+      .sort((left, right) => right.utilization - left.utilization || compareText(left.nodeId, right.nodeId))[0];
     const metrics: FactoryFlowMetrics = {
       throughput: this.#completed,
       throughputPerHour: this.#clockMs > 0 ? this.#completed * 3_600_000 / this.#clockMs : 0,

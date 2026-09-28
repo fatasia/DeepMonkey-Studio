@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import { createHash } from "node:crypto";
 
 export type AiModelCatalogCategory = "auth" | "network" | "unsupported" | "server" | "invalid";
@@ -79,7 +80,7 @@ function normalizeModels(body: unknown): string[] {
       return typeof model.id === "string" ? model.id.trim() : typeof model.name === "string" ? model.name.trim() : "";
     })
     .filter((id) => id.length > 0 && id.length <= 256)
-    .sort((left, right) => left.localeCompare(right));
+    .sort((left, right) => compareText(left, right));
   return [...new Set(models)].slice(0, MAX_MODELS);
 }
 

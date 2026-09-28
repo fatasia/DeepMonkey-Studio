@@ -10,6 +10,21 @@ import type { DecodedMorphGlb } from "./morphTypes.js";
 import type { DecodedSkinnedGlb } from "./skinTypes.js";
 
 describe("GltfRenderAnimationBridge", () => {
+  it("prepares a dense imported clip without spreading every key into call arguments", () => {
+    const keyCount = 150_000;
+    const times = new Float32Array(keyCount), values = new Float32Array(keyCount * 3);
+    for (let key = 0; key < keyCount; key += 1) {
+      times[key] = key / (keyCount - 1);
+      values[key * 3] = times[key]!;
+    }
+    const bridge = new GltfRenderAnimationBridge({ animation: { sceneIndex: 0,
+      nodes: [{ sourceNodeIndex: 0, id: "root", parent: null, localTransform: trs() }],
+      clips: [{ id: "dense", duration: 1, tracks: [{ nodeId: "root", path: "translation",
+        interpolation: "LINEAR", times, values }] }],
+    } });
+    expect(node(bridge.update(0.5), "root").worldTransform[12]).toBeCloseTo(0.5);
+  });
+
   it("samples transform, skin, and morph outputs into reusable render-ready banks", () => {
     const sources = fixture();
     const bridge = new GltfRenderAnimationBridge({ animation: sources.animation, skinning: sources.skinning, morph: sources.morph }, {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { HIT_STATUS, RAY_RECORD_WORDS } from "./rayTraceLayout.js";
 import { RAY_BACKEND_LIMITS, type RayBatchQuery, type RayBlasDescriptor } from "./rayBackendTypes.js";
 import { buildTracedScene, traceClosest, type TraceQuery } from "./rayTrace.js";
-import { buildTlas, traceTlasClosest, type TlasBuildResult } from "./tlas.js";
+import { buildTlas, traceTlasClosest, type TlasBuildResult, type TlasInstanceDescriptor } from "./tlas.js";
 import { packTlasScene, TLAS_INSTANCE_SENTINEL } from "./tlasLayout.js";
 import { compareTlasGpuAgainstCpu, planTlasDispatch, RayTraceGpuTlasExecutor } from "./rayTraceTlasExecutor.js";
 
@@ -24,7 +24,7 @@ function gridBlas(id: string): RayBlasDescriptor {
   return { id, vertices, indices: Uint32Array.from(indices) };
 }
 
-const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
+const IDENTITY: TlasInstanceDescriptor["worldToLocal"] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
 
 // —— stub GPU：以 CPU traceTlasClosest 模拟两级 kernel 数值输出（全局 prim 经 placement 折算），
 //    验证执行器接线（打包/字节布局/mask uniform/读回解析）；WGSL 数值语义由真机 runner 仲裁。 ——
@@ -32,7 +32,7 @@ class StubBuffer {
   readonly data: Uint8Array;
   constructor(readonly label: string, readonly size: number) { this.data = new Uint8Array(size); }
   mapAsync(): Promise<void> { return Promise.resolve(); }
-  getMappedRange(): ArrayBuffer { return this.data.buffer; }
+  getMappedRange(): ArrayBuffer { return this.data.buffer as ArrayBuffer; }
   unmap(): void {}
   destroy(): void {}
 }
@@ -67,10 +67,11 @@ function stubDevice(state: StubState): GPUDevice {
   const stub = (buffer: GPUBuffer): StubBuffer => buffers.get((buffer as unknown as StubBuffer).label)!;
   return {
     pushErrorScope(): void {}, popErrorScope: () => Promise.resolve(null),
-    createShaderModule: ({ code }) => ({ code }) as GPUShaderModule,
+    createShaderModule: ({ code }: { code: string }) => ({ code }) as unknown as GPUShaderModule,
     createComputePipeline: () => ({ getBindGroupLayout: () => ({}) }) as unknown as GPUComputePipeline,
-    createBindGroup: ({ entries }) => ({ entries }) as unknown as GPUBindGroup,
-    createBuffer: ({ label, size }) => {
+    createBindGroup: ({ entries }: { entries: readonly GPUBindGroupEntry[] }) =>
+      ({ entries }) as unknown as GPUBindGroup,
+    createBuffer: ({ label, size }: { label: string; size: number }) => {
       state.bufferCount += 1;
       const buffer = new StubBuffer(label, size);
       buffers.set(label, buffer);
@@ -91,11 +92,12 @@ function stubDevice(state: StubState): GPUDevice {
     queue: {
       writeBuffer: (buffer: GPUBuffer, offset: number, data: ArrayBufferView | ArrayBuffer, dataOffset = 0, size?: number): void => {
         const target = stub(buffer);
-        const elementBytes = "BYTES_PER_ELEMENT" in data ? data.BYTES_PER_ELEMENT : 1;
-        const bytes = "BYTES_PER_ELEMENT" in data
-          ? new Uint8Array(data.buffer, data.byteOffset + dataOffset * elementBytes,
-            (size ?? data.byteLength / elementBytes - dataOffset) * elementBytes)
-          : new Uint8Array(data, dataOffset, size ?? data.byteLength - dataOffset);
+        const view = data instanceof ArrayBuffer
+          ? { buffer: data, byteOffset: 0, byteLength: data.byteLength, elementBytes: 1 }
+          : { buffer: data.buffer as ArrayBuffer, byteOffset: data.byteOffset, byteLength: data.byteLength,
+            elementBytes: (data as { BYTES_PER_ELEMENT?: number }).BYTES_PER_ELEMENT ?? 1 };
+        const bytes = new Uint8Array(view.buffer, view.byteOffset + dataOffset * view.elementBytes,
+          (size ?? view.byteLength / view.elementBytes - dataOffset) * view.elementBytes);
         target.data.set(bytes, offset);
         if (target.label === "rt-tlas-uniform") {
           const words = new Uint32Array(target.data.buffer);

@@ -1,3 +1,4 @@
+import { compareText } from "../textOrder.js";
 import { orderedShaderNodes } from "./compilerAnalysis.js";
 import type { ShaderPassBindings } from "./compilerAnalysis.js";
 import { SHADER_SCOPE_GROUP } from "./constants.js";
@@ -40,7 +41,7 @@ function emitPropertyDeclarations(
 ): ShaderPropertyLayoutEntry[] {
   const layout: ShaderPropertyLayoutEntry[] = [];
   for (const scope of ["frame", "material", "object", "pass"] as const) {
-    const properties = propertiesInput.filter((entry) => entry.scope === scope).sort((a, b) => a.name.localeCompare(b.name));
+    const properties = propertiesInput.filter((entry) => entry.scope === scope).sort((a, b) => compareText(a.name, b.name));
     if (properties.length === 0) continue;
     const structName = `Deep${scope[0]!.toUpperCase()}${scope.slice(1)}Properties`;
     lines.push(`struct ${structName} {`);

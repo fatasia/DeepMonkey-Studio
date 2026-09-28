@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { artifactSha256, wasmSourceFingerprint } from "./lib/wasmArtifactFingerprint.mjs";
 
 /**
  * 运行时产物新鲜度门禁。
@@ -21,6 +22,10 @@ const repoRoot = path.resolve(fileURLToPath(import.meta.url), "../..");
 const TYPES = path.join(repoRoot, "packages/deep-engine/src/runtimePackage/types.ts");
 const DIST_DIR = path.join(repoRoot, "packages/deep-engine/dist/runtimePackage");
 const WASM = path.join(repoRoot, "apps/web/public/engine-wasm/deep_engine_wasm_bg.wasm");
+const WASM_DIR = path.dirname(WASM);
+const MANIFEST = path.join(WASM_DIR, "deep_engine_wasm.manifest.json");
+const BRIDGE = path.join(repoRoot, "apps/web/src/viewer/StudioDeepWasmBridge.ts");
+const WASM_ARTIFACT_FILES = ["deep_engine_wasm_bg.wasm", "deep_engine_wasm.js", "deep_engine_wasm.d.ts", "deep_engine_wasm_bg.wasm.d.ts"];
 
 /** 包顶层字段声明的稳定探针:types.ts 中 `readonly <name>?:` 或 `readonly <name>:` 的字段名集合。 */
 async function topLevelRuntimePackageFields() {
@@ -55,7 +60,6 @@ async function containsBytes(filePath, needle) {
 
 export async function checkRuntimeArtifactFreshness() {
   const fields = await topLevelRuntimePackageFields();
-  if (fields.length === 0) return { ok: true, skipped: "types.ts 未声明包顶层字段", stale: [] };
   const stale = [];
   // 桶文件不承载字段名,扫描目录下全部编译产物。
   let distSource = "";
@@ -71,6 +75,36 @@ export async function checkRuntimeArtifactFreshness() {
   for (const field of fields) {
     if (!await containsBytes(WASM, field)) stale.push({ artifact: "wasm bundle", field,
       hint: "node scripts/build-wasm-bundle.mjs" });
+  }
+  let manifest;
+  try { manifest = JSON.parse(await readFile(MANIFEST, "utf8")); } catch { /* older bundle */ }
+  const source = wasmSourceFingerprint(repoRoot);
+  if (manifest?.schemaVersion !== 1 || manifest.source?.sha256 !== source.sha256) {
+    stale.push({ artifact: "wasm bundle", field: "Rust source fingerprint",
+      hint: "node scripts/build-wasm-bundle.mjs" });
+  }
+  if (manifest?.profile !== "wasm-release" || manifest.target !== "wasm32-unknown-unknown" || manifest.features !== null) {
+    stale.push({ artifact: "wasm bundle", field: "product profile/target/features",
+      hint: "node scripts/build-wasm-bundle.mjs" });
+  }
+  for (const file of WASM_ARTIFACT_FILES) {
+    const expected = manifest?.artifacts?.[file];
+    try {
+      if (artifactSha256(path.join(WASM_DIR, file)) === expected) continue;
+    } catch { /* missing artifact */ }
+    stale.push({ artifact: "wasm bundle", field: `${file} SHA-256`, hint: "node scripts/build-wasm-bundle.mjs" });
+  }
+  if (!manifest?.artifacts || Object.keys(manifest.artifacts).length !== WASM_ARTIFACT_FILES.length || WASM_ARTIFACT_FILES.some(file => typeof manifest.artifacts[file] !== "string")) {
+    stale.push({ artifact: "wasm bundle", field: "JS/wasm/type artifact manifest",
+      hint: "node scripts/build-wasm-bundle.mjs" });
+  }
+  const generatedTypes = await readFile(path.join(WASM_DIR, "deep_engine_wasm.d.ts"), "utf8").catch(() => "");
+  const bridgeSource = await readFile(BRIDGE, "utf8");
+  const bridgeInterface = bridgeSource.match(/export interface DeepWasmRuntimeModule \{([\s\S]*?)\n\}/)?.[1] ?? "";
+  for (const [, name] of bridgeInterface.matchAll(/^\s+(\w+)\??\(/gm)) {
+    if (name !== "default" && !generatedTypes.includes(`export function ${name}(`)) {
+      stale.push({ artifact: "wasm ABI", field: name, hint: "rebuild wasm and synchronize StudioDeepWasmBridge.ts" });
+    }
   }
   return { ok: stale.length === 0, stale, checked: fields };
 }

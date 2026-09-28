@@ -1,5 +1,6 @@
 import type { DashboardPageAppearance } from "@bim-studio/contracts";
 import { translate as tr } from "../i18n";
+import { imeComposingKey } from "./layerKeyboard";
 import { DashboardPageViewportEditor } from "./DashboardPageViewportEditor";
 import { useDashboardWorkspace } from "./dashboardWorkspaceContext";
 
@@ -16,6 +17,7 @@ export function DashboardInspectorPageSettings() {
           key={`${page.id}:${page.name}`}
           onBlur={(event) => commitPageName(event.currentTarget.value)}
           onKeyDown={(event) => {
+            if (imeComposingKey(event)) return;
             if (event.key === "Enter") event.currentTarget.blur();
           }}
         />

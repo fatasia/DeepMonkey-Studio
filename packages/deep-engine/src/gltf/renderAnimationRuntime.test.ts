@@ -43,6 +43,10 @@ describe("GltfRenderAnimationRuntime", () => {
     expect(() => runtime.update(0.5)).toThrow("instance upload failed");
     expect(runtime.time).toBe(0.5); expect(runtime.hasPendingFrame).toBe(true);
     expect(() => runtime.seek(0.75)).toThrowError(expect.objectContaining({ code: "pending-frame" }));
+    expect(() => runtime.pause()).toThrowError(expect.objectContaining({ code: "pending-frame" }));
+    expect(() => runtime.resume()).toThrowError(expect.objectContaining({ code: "pending-frame" }));
+    expect(() => runtime.setTimeScale(2)).toThrowError(expect.objectContaining({ code: "pending-frame" }));
+    expect(runtime.frame).toMatchObject({ time: 0.5, paused: false });
     expect(calls).toEqual(["fused:1/1", "skin:1", "morph:1", "instances:2"]);
 
     calls.length = 0;
@@ -51,6 +55,9 @@ describe("GltfRenderAnimationRuntime", () => {
     expect(recovered.application).toMatchObject({ invokedTargets: 1, skippedTargets: 3 });
     expect(calls).toEqual(["instances:2"]); expect(runtime.hasPendingFrame).toBe(false);
     expect(runtime.update(0.25).frame.time).toBe(0.75);
+    runtime.pause(); expect(runtime.update(0.25).frame.time).toBe(0.75);
+    runtime.setTimeScale(2); runtime.resume();
+    expect(runtime.update(0.125).frame.time).toBe(0);
   });
 
   it("cross-fades synchronized clips and completes once playback without a boundary wrap", () => {

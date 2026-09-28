@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFile, readdir, realpath, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 const requestedRoot = process.argv[3]?.startsWith('--') ? undefined : process.argv[3];
 const root = path.resolve(requestedRoot ?? 'data/external-assets/industrial-format-plan/build-trial/3dtiles-renderer');
@@ -69,7 +70,7 @@ async function inspect(directory) {
       notices.push({ path: file, bytes: bytes.length, sha256: hash(bytes), source: pmtilesLicense });
     } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
-  files.sort((a, b) => a.path.localeCompare(b.path, 'en'));
+  files.sort((a, b) => compareText(a.path, b.path));
   packages.push({ name: pkg.name, version: pkg.version, declaredLicense: pkg.license ?? null,
     localQualificationManifest: directory === root && pkg.private === true,
     relativePath: path.relative(root, directory).replaceAll('\\', '/') || '.', packageSha256: hash(packageBytes),

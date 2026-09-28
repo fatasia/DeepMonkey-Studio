@@ -1,6 +1,7 @@
 import type { PlantLiteAvailability, PlantLiteShiftWindow } from "@bim-studio/contracts";
 import { Clock3, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { imeComposingKey } from "./layerKeyboard";
 import "./PlantLiteShiftWindowsEditor.css";
 
 const MAX_SHIFT_WINDOWS = 8;
@@ -105,7 +106,7 @@ function MinuteField({ label, value, minimum, maximum, onChange }: {
       onFocus={() => { editing.current = true; }}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={() => { editing.current = false; commit(draft); }}
-      onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+      onKeyDown={(event) => { if (imeComposingKey(event)) return; if (event.key === "Enter") event.currentTarget.blur(); }}
     />
   </label>;
 }

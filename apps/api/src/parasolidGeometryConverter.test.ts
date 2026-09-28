@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { auditGlbGeometry } from "./converterOutputAudit.js";
+import { NodeIO } from "@gltf-transform/core";
 import { convertParasolidGeometryToGlb } from "./parasolidGeometryConverter.js";
 import type { ParasolidGeometryExport } from "./parasolidSchemaProbe.js";
 
@@ -17,6 +18,8 @@ function geometryFixture(overrides?: Partial<ParasolidGeometryExport>): Parasoli
     faces: [
       {
         id: 1,
+        sourceNodeIndex: 101,
+        sourceNodeId: 301,
         body: 0,
         surfaceKind: "plane",
         positions: [0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0],
@@ -65,6 +68,9 @@ describe("parasolid geometry GLB publisher", () => {
     expect(audit.meshCount).toBe(2);
     expect(audit.triangleCount).toBe(3);
     expect(audit.vertexCount).toBe(7);
+    const faceNode = (await new NodeIO().read(path.join(outputDir, "geometry.glb")))
+      .getRoot().listNodes().find((node) => node.getExtras().ElementId === "parasolid-schema-face:1");
+    expect(faceNode?.getExtras()).toMatchObject({ SourceNodeIndex: 101, SourceNodeId: 301 });
 
     const hierarchy = JSON.parse(await readFile(path.join(outputDir, "hierarchy.json"), "utf8"));
     expect(hierarchy.partial).toBe(true);
@@ -77,6 +83,8 @@ describe("parasolid geometry GLB publisher", () => {
     expect(properties.model.schema).toBe("SCH_2100263_20000_13006");
     expect(properties.model.losses).toContain("brep.trim.approximated");
     expect(properties.model.skippedFaces).toHaveLength(1);
+    expect(properties.elements["parasolid-schema-face:1"].displayProperties["源节点索引"]).toBe(101);
+    expect(properties.elements["parasolid-schema-face:1"].displayProperties["源节点 ID"]).toBe(301);
     expect(Object.keys(properties.elements)).toEqual([
       "parasolid-schema-face:1",
       "parasolid-schema-face:2",

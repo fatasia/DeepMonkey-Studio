@@ -92,6 +92,7 @@ export class ProbeClipmapRuntime {
   private readonly executor: ProbeClipmapCaptureExecutor<WebGpuProbeCaptureSubmission, WebGpuProbeSamplingBinding>;
   private readonly scheduler: ProbeClipmapUpdateScheduler;
   private readonly capacity: Readonly<{ maxBufferSize: number; maxStorageBufferBindingSize: number }>;
+  private readonly admittedFrameBudget: number;
   private readonly clipmap: Omit<ProbeClipmapOptions, "updateBudget">;
   private readonly diagnosticRecords: ProbeClipmapRuntimeDiagnostic[] = [];
   private readonly relocationResolver?: ProbeRelocationResolver;
@@ -114,6 +115,7 @@ export class ProbeClipmapRuntime {
       maxStorageBufferBindingSize: session.device.limits.maxStorageBufferBindingSize });
     const frameBudget = options.frameBudget ?? DEFAULT_PROBE_CLIPMAP_RUNTIME_OPTIONS.frameBudget;
     const cameraCutBudget = options.cameraCutBudget ?? DEFAULT_PROBE_CLIPMAP_RUNTIME_OPTIONS.cameraCutBudget;
+    this.admittedFrameBudget = frameBudget;
     this.resources = new ProbeClipmapResources(session, deviceEpoch);
     this.adapter = new WebGpuProbeCaptureAdapter(session, deviceEpoch, {
       ...(options.fallbackRadiance ? { fallbackRadiance: options.fallbackRadiance } : {}),
@@ -171,7 +173,7 @@ export class ProbeClipmapRuntime {
         ...(mergedDirty ? { dirtyBounds: mergedDirty } : {}),
         ...(input.dynamicBounds ? { dynamicBounds: input.dynamicBounds } : {}),
         capacity: this.capacity, options, cameraCut,
-        ...(input.updateBudget === undefined ? {} : { frameBudget: input.updateBudget }) }, signal);
+        ...(input.updateBudget === undefined ? {} : { frameBudget: Math.min(input.updateBudget, this.admittedFrameBudget) }) }, signal);
       if (this.terminal || this.session.state !== "ready") {
         return this.failed(frame, this.terminal ?? new Error("Probe clipmap device session is not ready."));
       }

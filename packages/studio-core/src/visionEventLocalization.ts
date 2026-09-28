@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 export interface VisionLocalizationVector3 {
   x: number;
   y: number;
@@ -66,7 +67,7 @@ export interface VisionEventLocalizationResult {
  */
 export function localizeVisionEvent(input: VisionEventLocalizationInput): VisionEventLocalizationResult {
   validateInput(input);
-  const anchors = [...(input.anchors ?? [])].sort((left, right) => left.objectId.localeCompare(right.objectId, "en"));
+  const anchors = [...(input.anchors ?? [])].sort((left, right) => compareText(left.objectId, right.objectId));
   const issues: string[] = [];
   const calibratedPosition = input.calibration && input.detection.bbox
     ? projectDetection(input)
@@ -156,7 +157,7 @@ function rankObjectCandidates(
       evidence,
     };
   }).filter((candidate) => candidate.confidence >= 0.2)
-    .sort((left, right) => right.confidence - left.confidence || left.objectId.localeCompare(right.objectId, "en"))
+    .sort((left, right) => right.confidence - left.confidence || compareText(left.objectId, right.objectId))
     .slice(0, 5);
 }
 
@@ -228,7 +229,7 @@ function evidenceFingerprint(value: unknown): string {
 function stableStringify(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
   if (value && typeof value === "object") return `{${Object.entries(value as Record<string, unknown>)
-    .sort(([left], [right]) => left.localeCompare(right, "en"))
+    .sort(([left], [right]) => compareText(left, right))
     .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`).join(",")}}`;
   return JSON.stringify(value) ?? "undefined";
 }

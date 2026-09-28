@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import { describe, expect, it } from "vitest";
 import { visibleAnnotationLabelIds, type AnnotationLabelLayoutCandidate } from "./annotationLabelLayout";
 
@@ -75,7 +76,7 @@ describe("visibleAnnotationLabelIds", () => {
 function exhaustiveVisibleIds(candidates: AnnotationLabelLayoutCandidate[], width: number, height: number): string[] {
   const occupied: Array<{ left: number; top: number; right: number; bottom: number }> = [];
   const ids: string[] = [];
-  for (const item of [...candidates].sort((a, b) => Number(b.selected) - Number(a.selected) || a.distance - b.distance || a.id.localeCompare(b.id))) {
+  for (const item of [...candidates].sort((a, b) => Number(b.selected) - Number(a.selected) || a.distance - b.distance || compareText(a.id, b.id))) {
     const halfWidth = Math.max(item.width, 1) / 2 + 12;
     const halfHeight = Math.max(item.height, 1) / 2 + 12;
     const rect = { left: item.centerX - halfWidth, right: item.centerX + halfWidth,

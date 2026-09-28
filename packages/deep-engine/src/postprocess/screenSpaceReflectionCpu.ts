@@ -73,11 +73,20 @@ export function sampleNormal(input: ScreenSpaceReflectionCpuInput, x: number, y:
   return [nx * inverse, ny * inverse, nz * inverse];
 }
 
-/** CPU mirror of the bounded radiance mip cone used by the trace shader. */
+/**
+ * CPU mirror of the bounded radiance mip cone used by the trace shader.
+ * coneMipLevels (optional, default 6) must reduce the LOD exactly like the GPU pass:
+ * packParameters writes activeMipLevels-1 into misc.z, and the WGSL lod is
+ * roughness² * misc.z. Omitting it preserves the historical sharp-to-5 default.
+ */
 export function sampleScreenSpaceReflectionRoughRadianceCpu(input: ScreenSpaceReflectionCpuInput,
-  uvX: number, uvY: number, roughness: number): readonly [number, number, number] {
+  uvX: number, uvY: number, roughness: number, coneMipLevels?: number): readonly [number, number, number] {
   if (!Number.isFinite(roughness) || roughness < 0 || roughness > 1) throw new RangeError("SSR roughness must be in [0, 1].");
-  const maxMip = Math.min(5, Math.floor(Math.log2(Math.max(input.width, input.height))));
+  if (coneMipLevels !== undefined && (!Number.isSafeInteger(coneMipLevels) || coneMipLevels < 2 || coneMipLevels > 6)) {
+    throw new RangeError("SSR coneMipLevels must be an integer in [2, 6].");
+  }
+  const configuredMax = (coneMipLevels ?? 6) - 1;
+  const maxMip = Math.min(configuredMax, Math.floor(Math.log2(Math.max(input.width, input.height))));
   const lod = roughness * roughness * maxMip, low = Math.floor(lod), high = Math.min(maxMip, low + 1), blend = lod - low;
   const sampleLevel = (level: number): readonly [number, number, number] => {
     const footprint = 2 ** level;
@@ -131,11 +140,16 @@ export function reflectViewRay(origin: readonly [number, number, number], center
     incidentY - 2 * dotProduct * ny, incidentZ - 2 * dotProduct * nz, dotProduct];
 }
 
-/** Edge-window fade shared by trace and CPU parity tests. */
+/**
+ * Edge-window fade shared by trace and CPU parity tests. t is clamped to [0, 1] on both
+ * ends: a refine-projected hit uv can land slightly outside the screen, and an unclamped
+ * negative t would make t*t*(3-2*t) positive again (up to ~1), inflating the screen-edge
+ * mask instead of fading it. This mirrors the WGSL ssrEdgeFade clamp exactly.
+ */
 export function screenSpaceReflectionEdgeFade(uvX: number, uvY: number, fade: number): number {
   const fadeX = Math.min((1 - uvX) / fade, uvX / fade);
   const fadeY = Math.min((1 - uvY) / fade, uvY / fade);
-  const t = Math.min(1, Math.min(fadeX, fadeY));
+  const t = Math.min(1, Math.max(0, Math.min(fadeX, fadeY)));
   return t * t * (3 - 2 * t);
 }
 
@@ -182,20 +196,25 @@ export function traceScreenSpaceReflectionCpu(input: ScreenSpaceReflectionCpuInp
         const [muX, muY] = projectToUv([mx, my, mz], tanHalfFov, aspect);
         const refinedX = Math.min(Math.max(Math.floor(muX * input.width), 0), input.width - 1);
         const refinedY = Math.min(Math.max(Math.floor(muY * input.height), 0), input.height - 1);
-        if (sampleDepth(input, refinedX, refinedY) < middleDepth) highDistance = middleDistance;
+        const refinedDepth = sampleDepth(input, refinedX, refinedY);
+        if (refinedDepth > 0 && refinedDepth < middleDepth) highDistance = middleDistance;
         else lowDistance = middleDistance;
       }
       const finalDistance = (lowDistance + highDistance) / 2;
       const fx = origin[0] + reflectedX * finalDistance;
       const fy = origin[1] + reflectedY * finalDistance;
       const fz = origin[2] + reflectedZ * finalDistance;
-      [hitUvX, hitUvY] = projectToUv([fx, fy, fz], tanHalfFov, aspect);
+      const [finalUvX, finalUvY] = projectToUv([fx, fy, fz], tanHalfFov, aspect);
+      const finalX = Math.min(Math.max(Math.floor(finalUvX * input.width), 0), input.width - 1);
+      const finalY = Math.min(Math.max(Math.floor(finalUvY * input.height), 0), input.height - 1);
+      if (!(sampleDepth(input, finalX, finalY) > 0)) continue;
+      hitUvX = finalUvX; hitUvY = finalUvY;
       hit = true;
     }
   }
   if (!hit) return [0, 0, 0, 0];
   const [radianceR, radianceG, radianceB] = sampleScreenSpaceReflectionRoughRadianceCpu(
-    input, hitUvX, hitUvY, roughness);
+    input, hitUvX, hitUvY, roughness, options.coneMipLevels);
   // Fresnel-Schlick:cosθ = dot(N, -incident);入射方向已被归一化。
   const cosTheta = Math.min(1, Math.max(-dotProduct, 0));
   const fresnel = options.fresnelF0 + (1 - options.fresnelF0) * Math.pow(1 - cosTheta, 5);

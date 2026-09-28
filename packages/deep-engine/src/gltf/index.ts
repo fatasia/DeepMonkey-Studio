@@ -78,6 +78,35 @@ export type {
   GltfRenderAnimationTargets,
   GltfRenderAnimationUpdate,
 } from "./renderAnimationRuntime.js";
+export {
+  collectClipEvents,
+  DEFAULT_MAX_EVENTS_PER_UPDATE,
+  emptyEventBatch,
+  type GltfAnimationClipEventMarker,
+  type GltfAnimationEvent,
+  type GltfAnimationEventBatch,
+  type GltfAnimationEventOptions,
+} from "./renderAnimationEvents.js";
+export {
+  columnMajorQuaternion,
+  columnMajorTranslation,
+  DEFAULT_ROOT_MOTION_HISTORY,
+  GltfRootMotionTracker,
+  quaternionDelta,
+  quaternionMultiply,
+  type GltfRootMotionAccumulation,
+  type GltfRootMotionDelta,
+  type GltfRootMotionSample,
+  type GltfRootMotionTrackingOptions,
+  type QuatTuple,
+  type Vec3Tuple,
+} from "./renderAnimationRootMotion.js";
+export {
+  AnimationPlaybackClock,
+  createAnimationPlaybackClock,
+  type ClockAdvancePlan,
+} from "./renderAnimationPlaybackClock.js";
+export type { GltfRenderAnimationRuntimeOptions } from "./renderAnimationBridgeTypes.js";
 export { parseGlb, type ParsedGlb } from "./parseGlb.js";
 export { decodeGltfTextureManifest } from "./textureDecode.js";
 export { extractGltfTextureManifest, gltfTextureTransformMatrix, type GltfTextureManifestOptions } from "./textureManifest.js";

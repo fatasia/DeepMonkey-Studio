@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { screenSpaceReflectionCpu, type ScreenSpaceReflectionCpuInput } from "../postprocess/screenSpaceReflectionCpu.js";
-import type { ScreenSpaceReflectionCpuOptions } from "../postprocess/screenSpaceReflectionTypes.js";
+import { screenSpaceReflectionCpu } from "../postprocess/screenSpaceReflectionCpu.js";
+import type { ScreenSpaceReflectionCpuInput, ScreenSpaceReflectionCpuOptions } from "../postprocess/screenSpaceReflectionTypes.js";
 import { buildTracedScene, traceClosest } from "./rayTrace.js";
 import { RayTraceGpuExecutor, type RayTraceBatchResult } from "./rayTraceExecutor.js";
 import type { RayBatchQuery, RayBlasDescriptor } from "./rayBackendTypes.js";
@@ -53,7 +53,7 @@ describe("resolveSsrRayExtensionOptions", () => {
     expect(() => resolveSsrRayExtensionOptions({ ...EXTENSION, albedo: [0.8, 1.2, 0.4] })).toThrow(/albedo/);
     expect(() => resolveSsrRayExtensionOptions({ ...EXTENSION, ambient: [1, -1, 1] })).toThrow(/ambient/);
     expect(() => resolveSsrRayExtensionOptions({ ...EXTENSION, tMax: 0 })).toThrow(/tMax/);
-    expect(() => resolveSsrRayExtensionOptions({ ...EXTENSION, viewToBlas: [1, 0, 0] })).toThrow(/viewToBlas/);
+    expect(() => resolveSsrRayExtensionOptions({ ...EXTENSION, viewToBlas: [1, 0, 0] as unknown as typeof EXTENSION.viewToBlas })).toThrow(/viewToBlas/);
     expect(() => resolveSsrRayExtensionOptions({ ...EXTENSION, maxRaysPerFrame: -1 })).toThrow(/maxRaysPerFrame/);
     expect(() => resolveSsrRayExtensionOptions({ ...EXTENSION, stride: 0 })).toThrow(/stride/);
   });
@@ -82,7 +82,9 @@ describe("collectSsrRayExtensionCandidates", () => {
     }
   });
   it("skips depth-less pixels (no origin to extend) and honours the stride gate", () => {
-    const hole = backfacingFrame();
+    const source = backfacingFrame();
+    // 合同的 depth 为 readonly；本用例要就地清零两行，浅拷贝出可变副本再写。
+    const hole = { ...source, depth: [...source.depth] };
     // 半分辨率像素 (halfY=0) 采样全分辨率奇数行 y=1：置 y∈{0,1} 两行为深度缺失。
     for (let x = 0; x < 16; x++) { hole.depth[x] = 0; hole.depth[16 + x] = 0; }
     const collected = collectSsrRayExtensionCandidates(hole, OPTIONS, resolved);
@@ -203,7 +205,7 @@ describe("end to end through RayTraceGpuExecutor (stub device)", () => {
       this.data = new Uint8Array(size);
     }
     mapAsync(): Promise<void> { return Promise.resolve(); }
-    getMappedRange(): ArrayBuffer { return this.data.buffer; }
+    getMappedRange(): ArrayBuffer { return this.data.buffer as ArrayBuffer; }
     unmap(): void {} destroy(): void {}
   }
   function stubDevice(state: { rayCount: number; scene: ReturnType<typeof buildTracedScene> }): GPUDevice {
@@ -212,22 +214,20 @@ describe("end to end through RayTraceGpuExecutor (stub device)", () => {
     const writeBuffer = (buffer: GPUBuffer, offset: number, data: ArrayBufferView | ArrayBuffer,
       dataOffset = 0, size?: number): void => {
       const target = buffers.get(buffer.label)!;
-      const bytes = data instanceof ArrayBuffer
-        ? new Uint8Array(data, dataOffset, size ?? data.byteLength - dataOffset)
-        : (() => {
-          const elementBytes = data.BYTES_PER_ELEMENT;
-          const total = data.byteLength / elementBytes;
-          return new Uint8Array(data.buffer, data.byteOffset + dataOffset * elementBytes,
-            (size ?? total - dataOffset) * elementBytes);
-        })();
+      const view = data instanceof ArrayBuffer
+        ? { buffer: data, byteOffset: 0, byteLength: data.byteLength, elementBytes: 1 }
+        : { buffer: data.buffer as ArrayBuffer, byteOffset: data.byteOffset, byteLength: data.byteLength,
+          elementBytes: (data as { BYTES_PER_ELEMENT?: number }).BYTES_PER_ELEMENT ?? 1 };
+      const bytes = new Uint8Array(view.buffer, view.byteOffset + dataOffset * view.elementBytes, (size ?? view.byteLength / view.elementBytes - dataOffset) * view.elementBytes);
       target.data.set(bytes, offset);
     };
     return {
       pushErrorScope(): void {}, popErrorScope: () => Promise.resolve(null),
-      createShaderModule: ({ code }) => ({ code }) as GPUShaderModule,
+      createShaderModule: ({ code }: { code: string }) => ({ code }) as unknown as GPUShaderModule,
       createComputePipeline: () => ({ getBindGroupLayout: () => ({}) }) as unknown as GPUComputePipeline,
-      createBindGroup: ({ entries }) => ({ entries }) as unknown as GPUBindGroup,
-      createBuffer: ({ label, size, usage }) => {
+      createBindGroup: ({ entries }: { entries: readonly GPUBindGroupEntry[] }) =>
+        ({ entries }) as unknown as GPUBindGroup,
+      createBuffer: ({ label, size, usage }: { label: string; size: number; usage: number }) => {
         const buffer = new StubBuffer(label, size, usage); buffers.set(label, buffer);
         return buffer as unknown as GPUBuffer;
       },

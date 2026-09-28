@@ -26,7 +26,7 @@ export interface TransientChannelOptions<T> {
   /** 发布时逐字段比较(浅比较对象字段),字段全等则跳过通知;默认 Object.is 整体比较。 */
   shallow?: boolean;
   /** 可选的外部调度(测试注入);默认用 requestAnimationFrame 合帧。 */
-  schedule?: (task: () => void) => void;
+  schedule?: (task: () => void) => unknown;
   cancel?: (handle: unknown) => void;
 }
 
@@ -34,7 +34,7 @@ interface ChannelRecord<T> {
   value: T | undefined;
   hasValue: boolean;
   listeners: Set<(value: T) => void>;
-  schedule?: (task: () => void) => void;
+  schedule?: (task: () => void) => unknown;
   cancel?: (handle: unknown) => void;
   flushHandle?: unknown;
   flushScheduled: boolean;
@@ -54,6 +54,7 @@ export function createTransientRegistry(scheduler?: {
   cancel: (handle: unknown) => void;
 }): TransientChannelRegistry {
   const channels = new Map<string, ChannelRecord<unknown>>();
+  const handles = new Map<string, TransientChannel<unknown>>();
   const defaultSchedule = scheduler?.schedule ?? ((task: () => void) => requestAnimationFrame(task));
   const defaultCancel = scheduler?.cancel ?? ((handle: unknown) => cancelAnimationFrame(handle as number));
 
@@ -64,8 +65,8 @@ export function createTransientRegistry(scheduler?: {
       value: undefined,
       hasValue: false,
       listeners: new Set(),
-      schedule: options?.schedule ?? (defaultSchedule as (task: () => void) => void),
-      ...(options?.cancel ? { cancel: options.cancel } : {}),
+      schedule: options?.schedule ?? defaultSchedule,
+      cancel: options?.cancel ?? defaultCancel,
       flushScheduled: false,
       shallow: options?.shallow ?? false,
     };
@@ -74,6 +75,7 @@ export function createTransientRegistry(scheduler?: {
   }
 
   function flush<T>(record: ChannelRecord<T>): void {
+    record.flushHandle = undefined;
     record.flushScheduled = false;
     if (!record.hasValue) return;
     const value = record.value as T;
@@ -92,8 +94,10 @@ export function createTransientRegistry(scheduler?: {
 
   return {
     channel<T>(name: string, options?: TransientChannelOptions<T>): TransientChannel<T> {
+      const existing = handles.get(name);
+      if (existing) return existing as TransientChannel<T>;
       const record = ensureChannel<T>(name, options);
-      return {
+      const handle: TransientChannel<T> = {
         publish(value: T): void {
           if (record.hasValue) {
             const unchanged = record.shallow
@@ -105,7 +109,7 @@ export function createTransientRegistry(scheduler?: {
           record.hasValue = true;
           if (record.flushScheduled || record.listeners.size === 0) return;
           record.flushScheduled = true;
-          record.schedule?.(() => flush(record));
+          record.flushHandle = record.schedule?.(() => flush(record));
         },
         subscribe(listener: (value: T) => void): () => void {
           record.listeners.add(listener);
@@ -116,18 +120,23 @@ export function createTransientRegistry(scheduler?: {
           return record.value as T;
         },
       };
+      handles.set(name, handle as TransientChannel<unknown>);
+      return handle;
     },
     peek<T>(name: string): TransientChannel<T> | undefined {
-      return channels.get(name) as TransientChannel<T> | undefined;
+      return handles.get(name) as TransientChannel<T> | undefined;
     },
     dispose(): void {
       for (const record of channels.values()) {
-        if (record.flushHandle !== undefined) record.cancel?.(record.flushHandle);
+        if (record.flushScheduled && record.flushHandle !== undefined) record.cancel?.(record.flushHandle);
+        record.flushHandle = undefined;
+        record.flushScheduled = false;
         record.listeners.clear();
         record.hasValue = false;
         record.value = undefined;
       }
       channels.clear();
+      handles.clear();
     },
   };
 }

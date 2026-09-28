@@ -25,7 +25,7 @@ describe("Studio author animation integration", () => {
   async function frame() {
     const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback(16)); await microtasks();
   }
-  function fixture() {
+  function fixture(qualityProfile?: "performance" | "balanced" | "quality" | "ultra") {
     const geometry = new THREE.PlaneGeometry(2, 2);
     geometry.morphTargetsRelative = true;
     geometry.morphAttributes.position = [new THREE.Float32BufferAttribute(new Array(12).fill(0.2), 3)];
@@ -36,7 +36,7 @@ describe("Studio author animation integration", () => {
     const authorCanvas = canvas(), authorFrames = new Set<() => void>(), failure = vi.fn();
     const viewer = { scene, camera, orbit: { target: new THREE.Vector3() },
       renderer: { domElement: authorCanvas, getPixelRatio: () => 1, toneMappingExposure: 1, toneMapping: THREE.ACESFilmicToneMapping },
-      usesAuthorPostProcessing: () => true, getPostProcessing: () => ({ ...DEFAULT_POST_PROCESSING, enabled: false }),
+      usesAuthorPostProcessing: () => true, getPostProcessing: () => ({ ...DEFAULT_POST_PROCESSING, enabled: false, ...(qualityProfile ? { qualityProfile } : {}) }),
       getDeepProjectionRoot: () => root, getDeepEditorOverlayRoots: () => [], getDeepSelectionBox: () => undefined,
       getDeepTransformGizmoInput: () => undefined, getDeepMeasurementSegmentInputs: () => [],
       setPresentationRendererBackend: vi.fn(), setPresentationPerformanceSource: vi.fn(),
@@ -93,6 +93,13 @@ describe("Studio author animation integration", () => {
     expect(f.runtime.setPacketValidated).toHaveBeenCalledTimes(fullUploads);
     expect(f.author.geometry.morphAttributes.position![0]!.array).toEqual(authorBuffer);
     expect(f.failure).not.toHaveBeenCalled();
+  });
+
+  it("passes the authored quality ceiling to the renderer without freezing adaptive knobs", async () => {
+    const f = fixture("quality"); await activate(f);
+    const renderer = f.createRuntime.mock.calls[0]![3]!;
+    expect(renderer.adaptiveQuality).toMatchObject({ enabled: true, profile: "quality" });
+    expect(renderer.adaptiveQuality).not.toHaveProperty("overrides");
   });
 
   it("keeps WebGL when animation packet preparation fails and releases the candidate", async () => {

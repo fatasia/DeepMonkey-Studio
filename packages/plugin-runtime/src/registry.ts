@@ -1,3 +1,4 @@
+import { compareText } from "./textOrder.js";
 import { resolvePluginCompatibility, type PluginCompatibilityReason, type PluginHostPolicy } from "./compatibility.js";
 import {
   CapabilityRegistry,
@@ -102,7 +103,7 @@ export class PluginRegistry {
   }
 
   public list(): PluginRecordSnapshot[] {
-    return [...this.#records.values()].map(snapshot).sort((left, right) => left.manifest.id.localeCompare(right.manifest.id));
+    return [...this.#records.values()].map(snapshot).sort((left, right) => compareText(left.manifest.id, right.manifest.id));
   }
 
   public listCapabilities(): CapabilityDescriptor[] {

@@ -30,6 +30,13 @@ export function captureSceneModelState(engine: StateReader, item: LoadedSceneMod
     effects: engine.getModelEffects(item.id), physics: engine.getPhysicsBodyState(item.id), transform,
     collisionEnabled: engine.isCollisionEnabled(item.id),
     explosionFactor: engine.getExplosionFactor(item.id), explosionMode: engine.getExplosionMode(item.id),
+    ...(source?.manifest?.deepAssetPackage ? {
+      assetRevision: {
+        packageId: source.manifest.deepAssetPackage.packageId,
+        revision: source.manifest.deepAssetPackage.revision,
+        sourceHash: source.manifest.deepAssetPackage.sourceHash,
+      },
+    } : {}),
     ...(engine.hasAnimation(item.id) ? {
       animationEnabled: engine.isAnimationEnabled(item.id), animationPlayback: engine.getModelAnimationPlaybackState(item.id),
     } : {}),

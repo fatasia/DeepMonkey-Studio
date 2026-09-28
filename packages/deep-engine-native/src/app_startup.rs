@@ -8,6 +8,41 @@ thread_local! {
     static WASM_WINDOW_CANVAS: std::cell::RefCell<Option<web_sys::HtmlCanvasElement>> = const { std::cell::RefCell::new(None) };
     static WASM_RENDERER_READY_GENERATION: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
     static WASM_RENDERER_FAILURE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+    static WASM_PHYSICS_POSE_REQUESTS: std::cell::RefCell<std::collections::BTreeMap<u32, Box<dyn FnOnce(Result<String, String>)>>> = std::cell::RefCell::new(std::collections::BTreeMap::new());
+    static NEXT_WASM_PHYSICS_POSE_REQUEST: std::cell::Cell<u32> = const { std::cell::Cell::new(1) };
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn register_wasm_physics_pose_request(
+    callback: impl FnOnce(Result<String, String>) + 'static,
+) -> u32 {
+    let request_id = NEXT_WASM_PHYSICS_POSE_REQUEST.with(|next| {
+        let id = next.get();
+        next.set(id.wrapping_add(1).max(1));
+        id
+    });
+    WASM_PHYSICS_POSE_REQUESTS.with(|requests| {
+        requests.borrow_mut().insert(request_id, Box::new(callback));
+    });
+    request_id
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn resolve_wasm_physics_pose_request(request_id: u32, result: Result<String, String>) {
+    let callback =
+        WASM_PHYSICS_POSE_REQUESTS.with(|requests| requests.borrow_mut().remove(&request_id));
+    if let Some(callback) = callback {
+        callback(result);
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn reject_wasm_physics_pose_requests(reason: &str) {
+    let callbacks =
+        WASM_PHYSICS_POSE_REQUESTS.with(|requests| std::mem::take(&mut *requests.borrow_mut()));
+    for (_, callback) in callbacks {
+        callback(Err(reason.to_owned()));
+    }
 }
 
 #[cfg(target_arch = "wasm32")]

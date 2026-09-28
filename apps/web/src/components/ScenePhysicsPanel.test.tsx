@@ -24,6 +24,18 @@ const callbacks = {
 };
 
 describe("ScenePhysicsPanel joints", () => {
+  it("shows world-space initial velocity with metres-per-second units for dynamic bodies", () => {
+    const html = renderToStaticMarkup(<ScenePhysicsPanel locale="zh-CN"
+      value={{ enabled: true, playing: false, gravity: { x: 0, y: 0, z: 0 } }}
+      selectedId="projectile" selectedBody={{ ...body, initialLinearVelocity: { x: 80, y: 0, z: 0 } }} {...callbacks} />);
+    expect(html).toContain("初速度 X (m/s)");
+    expect(html).toContain('value="80"');
+    const { tree, onSelectedBodyChange } = renderPhysicsPanel({ ...body, initialLinearVelocity: { x: 80, y: 0, z: 0 } });
+    const x = collectElements(tree).find((element) => element.type === DeferredNumberInput && element.props.value === 80);
+    expect(x).toBeDefined();
+    invoke(x!, "onCommit", 90);
+    expect(onSelectedBodyChange).toHaveBeenCalledWith({ initialLinearVelocity: { x: 90, y: 0, z: 0 } });
+  });
   it("offers a world revolute mount for a selected dynamic body", () => {
     const html = renderToStaticMarkup(<ScenePhysicsPanel
       locale="zh-CN"

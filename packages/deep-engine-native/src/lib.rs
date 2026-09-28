@@ -31,6 +31,25 @@ pub mod local_shadow;
 pub mod lod_contract;
 pub mod mesh_abi;
 pub mod native_animation_controller;
+/// T14 动画 clip 事件收集的 Native 同语义镜像
+/// （TS 合同：`deep-engine/src/gltf/renderAnimationEvents.ts`）。
+pub mod native_animation_events;
+#[cfg(test)]
+mod native_animation_events_tests;
+/// T14 动画播放时钟的 Native 同语义镜像
+/// （TS 合同：`deep-engine/src/gltf/renderAnimationPlaybackClock.ts`）。
+pub mod native_animation_playback_clock;
+/// T14 根运动增量记录的 Native 同语义镜像
+/// （TS 合同：`deep-engine/src/gltf/renderAnimationRootMotion.ts`）。
+pub mod native_animation_root_motion;
+#[cfg(test)]
+mod native_animation_root_motion_tests;
+/// T16 角色运动状态机与固定步长推进。消费合同
+/// `SceneCharacterControllerState`(Web 同语义:`apps/web/src/viewer/rapierCharacterController.ts`)
+/// 与 T14 根运动增量(`native_animation_root_motion`),驱动 kinematic 角色刚体。
+pub mod native_character_motion;
+#[cfg(test)]
+mod native_character_motion_tests;
 pub mod native_physics;
 pub mod native_ui;
 pub mod pbr_brdf;
@@ -50,8 +69,11 @@ pub mod replay;
 pub mod runtime_camera;
 pub mod runtime_coordinates;
 pub mod runtime_navigation;
+/// T19 多代理人群导航：SoA 紧凑状态、分批调度、固定步长与显式排队避障。
+pub mod runtime_navigation_crowd;
 #[cfg(test)]
 mod runtime_navigation_tests;
+
 pub mod runtime_package;
 pub mod scene;
 mod scene_alpha;

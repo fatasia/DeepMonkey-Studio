@@ -38,7 +38,19 @@ impl Renderer {
         let telemetry = self.telemetry.as_ref()?;
         let mut metrics = telemetry.report(&self.device, &self.queue);
         metrics["shadow_cascades"] = serde_json::json!(self.last_shadow_evidence);
+        // T01:跨端质量诊断随同一诊断开关并入报告;与
+        // packages/deep-engine/src/webgpu/qualityTelemetry.ts 同 schema。
+        if let Some(quality) = self.quality.as_ref() {
+            metrics["quality"] = quality.report();
+        }
         Some(self.diagnostics.with_metrics(metrics))
+    }
+
+    /// T01 质量诊断独立读取口(未来消费方/WASM 镜像入口);诊断关闭或
+    /// 尚无落账帧时返回 None。
+    pub fn quality_report(&self) -> Option<serde_json::Value> {
+        let quality = self.quality.as_ref()?;
+        (quality.last_frame()).map(|_| quality.report())
     }
 
     pub fn reset_telemetry(&mut self) {

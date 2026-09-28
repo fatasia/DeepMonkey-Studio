@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import type { TopologyDocument, TopologyEdge, TopologyNode } from "@bim-studio/contracts";
 import type { TopologyNodePosition } from "./topologyEditor.js";
 
@@ -121,7 +122,7 @@ function positionOf(node: TopologyNode): TopologyNodePosition {
 function compareNodes(left: TopologyNode, right: TopologyNode): number {
   const leftLabel = typeof left.properties.label === "string" ? left.properties.label : left.id;
   const rightLabel = typeof right.properties.label === "string" ? right.properties.label : right.id;
-  return leftLabel.localeCompare(rightLabel) || left.id.localeCompare(right.id);
+  return compareText(leftLabel, rightLabel) || compareText(left.id, right.id);
 }
 
 function distribute(nodes: TopologyNode[], axis: "x" | "y", min: number, max: number): TopologyNodePosition[] {

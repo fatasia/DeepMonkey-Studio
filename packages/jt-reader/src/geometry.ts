@@ -5,7 +5,7 @@ import { applyPredictor, decodeInt32Packet } from "./int32Codec.js";
 import { decodeInt32PacketV2 } from "./int32CodecV2.js";
 import { jtHash16, jtHash32 } from "./hash.js";
 import { decodeJtTopology } from "./topologyDecoder.js";
-import type { JtMesh, JtReadLimits, JtSegmentEntry } from "./types.js";
+import type { JtLoss, JtMesh, JtReadLimits, JtSegmentEntry } from "./types.js";
 
 const TRI_STRIP_SHAPE_LOD = "10dd10ab-2ac8-11d1-9b6b-0080c7bb5997";
 const TOPO_MESH_COMPRESSED = "f830a5ad-be4c-4fbc-9b5f-b9269278d2e1";
@@ -73,7 +73,7 @@ function calculateTopologyHash(
   const low30 = lanes[18]!;
   const next30 = lanes[19]!;
   const upper4 = lanes[20]!;
-  if (next30.length !== low30.length || upper4.length !== low30.length) throw new JtFormatError("JT 第八组属性掩码长度不一致");
+  if (next30.length !== low30.length || upper4.length !== low30.length) throw new JtFormatError("JT 第八组属性掩码长度不一致", "topology-invalid");
   if (majorVersion >= 10) {
     const lowWords = low30.map((value, index) => ((value >>> 0) | ((next30[index]! & 0x3) << 30)) >>> 0);
     const highWords = next30.map((value, index) => ((value >>> 2) | ((upper4[index]! & 0xf) << 28)) >>> 0);
@@ -107,7 +107,7 @@ function readPacket(
 
 function assertIntegerCount(value: number, maximum: number, label: string): number {
   if (!Number.isInteger(value) || value < 0 || value > maximum) {
-    throw new JtFormatError(`${label} ${value} 无效或超过安全上限`);
+    throw new JtFormatError(`${label} ${value} 无效或超过安全上限`, "limit-exceeded");
   }
   return value;
 }
@@ -117,7 +117,7 @@ function parseQuantizer(reader: BinaryReader, offset: number): Quantizer {
   const maximum = reader.f32(offset + 4, "坐标量化上限");
   const bits = reader.u8(offset + 8, "坐标量化位数");
   if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || maximum < minimum || bits > 24) {
-    throw new JtFormatError("JT 坐标量化参数无效");
+    throw new JtFormatError("JT 坐标量化参数无效", "quantization-invalid");
   }
   return { minimum, maximum, bits };
 }
@@ -125,8 +125,13 @@ function parseQuantizer(reader: BinaryReader, offset: number): Quantizer {
 function decodeQuantizedComponent(codes: readonly number[], quantizer: Quantizer): number[] {
   const maximumCode = 2 ** quantizer.bits - 1;
   const range = quantizer.maximum - quantizer.minimum;
+  // bits=0 时 maximumCode=0:仅 range===0(常量场)可解释为"码恒 0 → minimum"。
+  // range>0 而 bits=0 是自相矛盾的量化器声明,显式拒绝,避免除零产生 NaN 混入哈希校验。
+  if (maximumCode === 0 && range > 0) {
+    throw new JtFormatError("JT 量化位数 0 与非零值域声明矛盾", "quantization-invalid");
+  }
   return codes.map((code) => {
-    if (code < 0 || code > maximumCode) throw new JtFormatError("JT 坐标量化码越界");
+    if (code < 0 || code > maximumCode) throw new JtFormatError("JT 坐标量化码越界", "quantization-code-out-of-range");
     return range === 0 ? quantizer.minimum : quantizer.minimum + (code / maximumCode) * range;
   });
 }
@@ -147,7 +152,7 @@ function decodeBinaryScalarPackets(
   for (let packet = 0; packet < packetCount; packet += 1) {
     const result = readPacket(bytes, cursor, "lag1", majorVersion);
     if (result.values.length !== expectedCount) {
-      throw new JtFormatError("JT 无损属性压缩包长度与声明数量不一致");
+      throw new JtFormatError("JT 无损属性压缩包长度与声明数量不一致", "count-mismatch");
     }
     words.push(result.values);
     cursor = result.offset;
@@ -165,8 +170,8 @@ function parseScalarArrayHeader(reader: BinaryReader, offset: number, label: str
   const count = assertIntegerCount(reader.i32(offset, `${label}数量`), MAX_MESH_VERTICES * 4, `${label}数量`);
   const componentCount = reader.u8(offset + 4, `${label}分量数`);
   const quantizationBits = reader.u8(offset + 5, `${label}量化位数`);
-  if (componentCount < 1 || componentCount > 4) throw new JtFormatError(`JT ${label}分量数量 ${componentCount} 无效`);
-  if (quantizationBits > 24) throw new JtFormatError(`JT ${label}量化位数 ${quantizationBits} 无效`);
+  if (componentCount < 1 || componentCount > 4) throw new JtFormatError(`JT ${label}分量数量 ${componentCount} 无效`, "field-invalid");
+  if (quantizationBits > 24) throw new JtFormatError(`JT ${label}量化位数 ${quantizationBits} 无效`, "quantization-invalid");
   return { count, componentCount, quantizationBits };
 }
 
@@ -202,7 +207,7 @@ function decodeScalarAttributeArray(
         const view = new DataView(new ArrayBuffer(4));
         view.setUint32(0, bits, true);
         const value = view.getFloat32(0, true);
-        if (!Number.isFinite(value)) throw new JtFormatError(`JT ${label}包含非有限数值`);
+        if (!Number.isFinite(value)) throw new JtFormatError(`JT ${label}包含非有限数值`, "field-invalid");
         return value;
       });
       components.push(values);
@@ -217,7 +222,7 @@ function decodeScalarAttributeArray(
     for (let component = 0; component < header.componentCount; component += 1) {
       const packet = readPacket(bytes, cursor, "lag1", majorVersion);
       if (packet.values.length !== header.count) {
-        throw new JtFormatError(`JT ${label}量化包长度与声明数量不一致`);
+        throw new JtFormatError(`JT ${label}量化包长度与声明数量不一致`, "count-mismatch");
       }
       components.push(decodeQuantizedComponent(packet.values, quantizers[component]!));
       cursor = packet.offset;
@@ -232,7 +237,7 @@ function decodeScalarAttributeArray(
     }), hash),
     0,
   );
-  if (calculatedHash !== storedHash) throw new JtFormatError(`JT ${label}哈希校验失败`);
+  if (calculatedHash !== storedHash) throw new JtFormatError(`JT ${label}哈希校验失败`, "hash-mismatch");
   return { components, offset: cursor + 4 };
 }
 
@@ -240,7 +245,7 @@ function decodeScalarAttributeArray(
 function assertNotHsvColorQuantizer(reader: BinaryReader, offset: number): void {
   const hsvFlag = reader.u8(offset, "颜色量化 HSV 标记");
   if (hsvFlag === 1) {
-    throw new JtFormatError("暂不支持 HSV 量化顶点色,仅支持 RGBA 均匀量化");
+    throw new JtFormatError("暂不支持 HSV 量化顶点色,仅支持 RGBA 均匀量化", "attribute-encoding-unsupported");
   }
 }
 
@@ -253,13 +258,13 @@ function decodeCoordinates(
 ): { positions: number[]; offset: number } {
   const coordinateCount = assertIntegerCount(reader.i32(offset, "唯一坐标数量"), MAX_MESH_VERTICES, "唯一坐标数量");
   if (coordinateCount !== expectedCount) {
-    throw new JtFormatError(`JT 拓扑顶点数 ${expectedCount} 与唯一坐标数 ${coordinateCount} 不一致`);
+    throw new JtFormatError(`JT 拓扑顶点数 ${expectedCount} 与唯一坐标数 ${coordinateCount} 不一致`, "count-mismatch");
   }
   const componentCount = reader.u8(offset + 4, "坐标分量数量");
-  if (componentCount !== 3) throw new JtFormatError(`JT 坐标分量数量必须为 3，实际为 ${componentCount}`);
+  if (componentCount !== 3) throw new JtFormatError(`JT 坐标分量数量必须为 3，实际为 ${componentCount}`, "field-invalid");
   const quantizers = Array.from({ length: 3 }, (_, index) => parseQuantizer(reader, offset + 5 + index * 9));
   if (!quantizers.every((quantizer) => quantizer.bits === quantizers[0]!.bits)) {
-    throw new JtFormatError("JT 三个坐标分量的量化位数不一致");
+    throw new JtFormatError("JT 三个坐标分量的量化位数不一致", "quantization-invalid");
   }
 
   let cursor = offset + 32;
@@ -270,7 +275,7 @@ function decodeCoordinates(
       const first = readPacket(bytes, cursor, "lag1", majorVersion);
       const second = majorVersion >= 10 ? undefined : readPacket(bytes, first.offset, "lag1", majorVersion);
       if (first.values.length !== coordinateCount || (second && second.values.length !== coordinateCount)) {
-        throw new JtFormatError("JT 无损坐标压缩包长度与顶点数不一致");
+        throw new JtFormatError("JT 无损坐标压缩包长度与顶点数不一致", "count-mismatch");
       }
       const values = first.values.map((firstValue, index) => {
         // JT 9.5 分离指数与尾数；JT 10 起直接保存 IEEE-754 二进制值。
@@ -279,7 +284,7 @@ function decodeCoordinates(
         const view = new DataView(buffer);
         view.setUint32(0, bits, true);
         const value = view.getFloat32(0, true);
-        if (!Number.isFinite(value)) throw new JtFormatError("JT 无损坐标包含非有限数值");
+        if (!Number.isFinite(value)) throw new JtFormatError("JT 无损坐标包含非有限数值", "field-invalid");
         return value;
       });
       components.push(values);
@@ -289,7 +294,7 @@ function decodeCoordinates(
       cursor = second?.offset ?? first.offset;
     } else {
       const packet = readPacket(bytes, cursor, "lag1", majorVersion);
-      if (packet.values.length !== coordinateCount) throw new JtFormatError("JT 坐标压缩包长度与顶点数不一致");
+      if (packet.values.length !== coordinateCount) throw new JtFormatError("JT 坐标压缩包长度与顶点数不一致", "count-mismatch");
       components.push(decodeQuantizedComponent(packet.values, quantizer));
       hashWords.push(packet.values.map((value) => value >>> 0));
       cursor = packet.offset;
@@ -304,7 +309,7 @@ function decodeCoordinates(
   } else {
     for (const component of hashWords) calculatedHash = jtHash32(component, calculatedHash);
   }
-  if (calculatedHash !== storedHash) throw new JtFormatError("JT 顶点坐标哈希校验失败");
+  if (calculatedHash !== storedHash) throw new JtFormatError("JT 顶点坐标哈希校验失败", "hash-mismatch");
   cursor += 4;
 
   const positions = Array.from({ length: coordinateCount }, (_, vertex) => [
@@ -335,7 +340,7 @@ function skipNormalArray(
     for (let packet = 0; packet < packetCount; packet += 1) {
       const result = readPacket(bytes, cursor, "lag1", majorVersion);
       if (result.values.length !== header.count) {
-        throw new JtFormatError("JT 法线压缩包长度与声明数量不一致");
+        throw new JtFormatError("JT 法线压缩包长度与声明数量不一致", "count-mismatch");
       }
       cursor = result.offset;
     }
@@ -357,10 +362,10 @@ function decodeColorArray(
   if (headerBits > 0) assertNotHsvColorQuantizer(reader, offset + 6);
   const decoded = decodeScalarAttributeArray(bytes, reader, offset, "顶点色", majorVersion);
   const { components, offset: cursor } = decoded;
-  if (components.length !== 4) throw new JtFormatError(`JT 顶点色分量数量必须为 4,实际为 ${components.length}`);
+  if (components.length !== 4) throw new JtFormatError(`JT 顶点色分量数量必须为 4,实际为 ${components.length}`, "field-invalid");
   for (const component of components) {
     if (component.length !== vertexCount) {
-      throw new JtFormatError(`JT 顶点色条数 ${component.length} 与顶点数 ${vertexCount} 不一致`);
+      throw new JtFormatError(`JT 顶点色条数 ${component.length} 与顶点数 ${vertexCount} 不一致`, "count-mismatch");
     }
   }
   const colors = new Float32Array(vertexCount * 4);
@@ -382,10 +387,10 @@ function decodeTextureCoordinateArray(
 ): { uvs: Float32Array; offset: number } {
   const decoded = decodeScalarAttributeArray(bytes, reader, offset, "纹理坐标", majorVersion);
   const { components, offset: cursor } = decoded;
-  if (components.length !== 2) throw new JtFormatError(`JT 纹理坐标分量数量必须为 2,实际为 ${components.length}`);
+  if (components.length !== 2) throw new JtFormatError(`JT 纹理坐标分量数量必须为 2,实际为 ${components.length}`, "field-invalid");
   for (const component of components) {
     if (component.length !== vertexCount) {
-      throw new JtFormatError(`JT 纹理坐标条数 ${component.length} 与顶点数 ${vertexCount} 不一致`);
+      throw new JtFormatError(`JT 纹理坐标条数 ${component.length} 与顶点数 ${vertexCount} 不一致`, "count-mismatch");
     }
   }
   const uvs = new Float32Array(vertexCount * 2);
@@ -408,7 +413,7 @@ function skipFlagArray(
     const count = assertIntegerCount(reader.i32(offset, "顶点旗标数量"), MAX_MESH_VERTICES, "顶点旗标数量");
     const packet = readPacket(bytes, offset + 4, "none", majorVersion);
     if (packet.values.length !== count) {
-      throw new JtFormatError("JT 顶点旗标包长度与声明数量不一致");
+      throw new JtFormatError("JT 顶点旗标包长度与声明数量不一致", "count-mismatch");
     }
     return packet.offset;
   }
@@ -418,7 +423,7 @@ function skipFlagArray(
 }
 
 function clampUnit(value: number): number {
-  if (!Number.isFinite(value)) throw new JtFormatError("JT 属性数值非有限");
+  if (!Number.isFinite(value)) throw new JtFormatError("JT 属性数值非有限", "field-invalid");
   return Math.min(1, Math.max(0, value));
 }
 
@@ -472,12 +477,12 @@ function parseTopology(
     splitPositions.values,
     majorVersion,
   );
-  if (calculatedTopologyHash !== storedTopologyHash) throw new JtFormatError("JT 拓扑复合哈希校验失败");
+  if (calculatedTopologyHash !== storedTopologyHash) throw new JtFormatError("JT 拓扑复合哈希校验失败", "hash-mismatch");
   const bindingsMask = reader.u64Number(cursor + 4, "顶点绑定");
-  if (bindingsMask !== expectedBindings) throw new JtFormatError("JT 外层与顶点记录的绑定标记不一致");
+  if (bindingsMask !== expectedBindings) throw new JtFormatError("JT 外层与顶点记录的绑定标记不一致", "binding-mismatch");
   const quantization = Array.from({ length: 4 }, (_, index) => reader.u8(cursor + 12 + index, "量化参数"));
   if (quantization[0]! > 24 || quantization[1]! > 13 || quantization[2]! > 24 || quantization[3]! > 24) {
-    throw new JtFormatError("JT 顶点量化参数越界");
+    throw new JtFormatError("JT 顶点量化参数越界", "quantization-invalid");
   }
   const topologyVertexCount = assertIntegerCount(reader.i32(cursor + 16, "拓扑顶点数"), MAX_MESH_VERTICES, "拓扑顶点数");
   const attributeCount = topologyVertexCount > 0
@@ -499,12 +504,12 @@ function parseTopology(
     splitFaces: splitFaces.values,
     splitPositions: splitPositions.values,
   });
-  if (polygons.length > MAX_MESH_TRIANGLES) throw new JtFormatError("JT 面数量超过安全上限");
+  if (polygons.length > MAX_MESH_TRIANGLES) throw new JtFormatError("JT 面数量超过安全上限", "limit-exceeded");
   const observedAttributeCount = polygons.reduce(
     (maximum, polygon) => Math.max(maximum, ...polygon.attributeIndices.map((value) => value ?? -1)),
     -1,
   ) + 1;
-  if (observedAttributeCount !== attributeCount) throw new JtFormatError("JT 拓扑属性数量与顶点记录头不一致");
+  if (observedAttributeCount !== attributeCount) throw new JtFormatError("JT 拓扑属性数量与顶点记录头不一致", "count-mismatch");
 
   const coordinates = decodeCoordinates(bytes, reader, cursor, topologyVertexCount, majorVersion);
   cursor = coordinates.offset;
@@ -537,19 +542,19 @@ function parseTopology(
     // 附属字段(每字段 GUID/类型/量化/64 位 LSW-MSW 结构)尚未实现;此处无游标推进依据,
     // 真实遇到时顶点记录长度将失配,故显式报错并转上层 loss,而不是静默猜测。
     unsupportedAttributeBindings.push("vertex.auxiliary-fields");
-    throw new JtFormatError("暂不支持 JT 附属字段(auxiliary fields)顶点属性,已转为保真损失上报");
+    throw new JtFormatError("暂不支持 JT 附属字段(auxiliary fields)顶点属性,已转为保真损失上报", "attribute-encoding-unsupported");
   }
 
   const indices = polygons.flatMap((polygon) => {
-    if (polygon.vertexIndices.length < 3) throw new JtFormatError("JT 多边形少于三个顶点");
+    if (polygon.vertexIndices.length < 3) throw new JtFormatError("JT 多边形少于三个顶点", "polygon-degenerate");
     const triangles: number[] = [];
     for (let index = 1; index + 1 < polygon.vertexIndices.length; index += 1) {
       triangles.push(polygon.vertexIndices[0]!, polygon.vertexIndices[index]!, polygon.vertexIndices[index + 1]!);
     }
     return triangles;
   });
-  if (indices.some((index) => index < 0 || index >= topologyVertexCount)) throw new JtFormatError("JT 网格索引越界");
-  // 单纹理集时不重复存储 textureSets(uvs 已覆盖);多集时 uvs 别名集 0,缺席时别名首个可用集。
+  if (indices.some((index) => index < 0 || index >= topologyVertexCount)) throw new JtFormatError("JT 网格索引越界", "index-out-of-range");
+  // 只有编号 0 的单集可省略清单；非零单集仍需保留源编号。
   const primaryUvs = textureSets.find((set) => set.textureSetIndex === 0)?.uvs ?? textureSets[0]?.uvs;
   return {
     indices,
@@ -557,7 +562,7 @@ function parseTopology(
     positions: coordinates.positions,
     vertexRecordObjectId,
     uvs: primaryUvs,
-    textureSets: textureSets.length > 1 ? textureSets : undefined,
+    textureSets: textureSets.length > 1 || (textureSets.length === 1 && textureSets[0]!.textureSetIndex !== 0) ? textureSets : undefined,
     colors,
     unsupportedAttributeBindings,
   };
@@ -569,7 +574,7 @@ export function decodeTriStripShapeLod(
   byteOrder: "little-endian" | "big-endian",
   majorVersion = 10,
 ): JtMesh | undefined {
-  if (byteOrder !== "little-endian") throw new JtFormatError("当前 JT TopoMesh 译码仅支持小端文件");
+  if (byteOrder !== "little-endian") throw new JtFormatError("当前 JT TopoMesh 译码仅支持小端文件", "byte-order-unsupported");
   const reader = new BinaryReader(payload, byteOrder);
   reader.ensure(0, 35, "TriStrip LOD 逻辑元素");
   const outerLength = reader.u32(0, "TriStrip 逻辑元素长度");
@@ -581,20 +586,20 @@ export function decodeTriStripShapeLod(
     const shapeVersion = reader.u8(25, "TriStrip 版本");
     const baseShapeVersion = reader.u8(26, "基础 Shape 版本");
     if (shapeVersion !== 1 || baseShapeVersion !== 1) {
-      throw new JtFormatError(`尚不支持 TriStrip ${shapeVersion}/${baseShapeVersion} 版本`);
+      throw new JtFormatError(`尚不支持 TriStrip ${shapeVersion}/${baseShapeVersion} 版本`, "shape-version-unsupported");
     }
     bindings = reader.u64Number(27, "Shape 顶点绑定");
     const innerOffset = 35;
     const innerLength = reader.u32(innerOffset, "TopoMesh 逻辑元素长度");
     reader.ensure(innerOffset, innerLength + 4, "TopoMesh 逻辑元素");
     if (reader.guid(innerOffset + 4, "TopoMesh 元素类型") !== TOPO_MESH_COMPRESSED) {
-      throw new JtFormatError("TriStrip LOD 未包含标准 TopoMesh 压缩元素");
+      throw new JtFormatError("TriStrip LOD 未包含标准 TopoMesh 压缩元素", "shape-version-unsupported");
     }
     const topologyVersion = reader.u8(innerOffset + 25, "TopoMesh 版本");
     const vertexRecordObjectId = reader.u32(innerOffset + 26, "顶点记录对象 ID");
     const compressedVersion = reader.u8(innerOffset + 30, "拓扑压缩版本");
     if (topologyVersion !== 1 || compressedVersion !== 1) {
-      throw new JtFormatError(`尚不支持 TopoMesh ${topologyVersion}/${compressedVersion} 版本`);
+      throw new JtFormatError(`尚不支持 TopoMesh ${topologyVersion}/${compressedVersion} 版本`, "shape-version-unsupported");
     }
     topology = parseTopology(payload, reader, innerOffset + 31, bindings, majorVersion, vertexRecordObjectId);
   } else {
@@ -605,7 +610,7 @@ export function decodeTriStripShapeLod(
     const vertexRecordObjectId = reader.u32(39, "顶点记录对象 ID");
     const compressedVersion = reader.u16(43, "拓扑压缩版本");
     if (baseShapeVersion !== 1 || vertexShapeVersion !== 1 || ![1, 2].includes(topologyVersion) || ![1, 2].includes(compressedVersion)) {
-      throw new JtFormatError(`尚不支持 JT 9 TriStrip ${baseShapeVersion}/${vertexShapeVersion}/${topologyVersion}/${compressedVersion} 版本`);
+      throw new JtFormatError(`尚不支持 JT 9 TriStrip ${baseShapeVersion}/${vertexShapeVersion}/${topologyVersion}/${compressedVersion} 版本`, "shape-version-unsupported");
     }
     topology = parseTopology(payload, reader, 45, bindings, majorVersion, vertexRecordObjectId);
   }
@@ -630,9 +635,10 @@ export function decodeTriStripShapeLod(
 export async function readJtMeshes(
   container: JtContainer,
   limits: JtReadLimits,
-): Promise<{ meshes: JtMesh[]; warnings: string[] }> {
+): Promise<{ meshes: JtMesh[]; warnings: string[]; losses: JtLoss[]; candidateSegmentCount: number }> {
   const meshes: JtMesh[] = [];
   const warnings: string[] = [];
+  const losses: JtLoss[] = [];
   const candidates = container.segments.filter((segment) => container.header.majorVersion >= 10
     ? segment.type >= 7 && segment.type <= 16
     : segment.type === 6);
@@ -643,8 +649,21 @@ export async function readJtMeshes(
       if (mesh) meshes.push(mesh);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      warnings.push(`LOD 数据段 ${segment.id} 未生成网格：${reason}`);
+      const detail = `LOD 数据段 ${segment.id} 未生成网格：${reason}`;
+      warnings.push(detail);
+      losses.push({
+        code: "mesh-segment-decode-failed",
+        kind: "loss",
+        scope: `segment:${segment.id}`,
+        detail,
+        ...(error instanceof JtFormatError ? { errorCode: error.code } : {}),
+      });
     }
   }
-  return { meshes: meshes.sort((left, right) => left.lod - right.lod), warnings };
+  return {
+    meshes: meshes.sort((left, right) => left.lod - right.lod),
+    warnings,
+    losses,
+    candidateSegmentCount: candidates.length,
+  };
 }

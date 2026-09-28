@@ -20,6 +20,8 @@ import { buildJtLod0ReadyQuality, buildXtRevolvedReadyQuality, sha256File } from
 import { RobotSourceProvider } from "./RobotSourceProvider.js";
 import { ConversionTaskService } from "./conversionTasks.js";
 import { createModelConversionRegistration, submitModelConversion } from "./modelConversionAdapter.js";
+import { buildCadCompatibilityProfile, publishModelDeepAssetPackage } from "./deepAssetPackagePipeline.js";
+import { createFileSystemDeepAssetPackageStore, type FileSystemDeepAssetPackageStore } from "./deepAssetPackageStore.js";
 
 export interface ConversionContext {
   model: ModelRecord;
@@ -56,13 +58,21 @@ export class ConversionQueue {
     objects: ObjectStore,
     tasks?: ConversionTaskService,
   ) {
-    this.providers = createProviders(store, config, objects);
+    const deepAssets = createFileSystemDeepAssetPackageStore(
+      // 测试可能传部分 config；缺 dataDir 时退回 loadConfig 的默认语义，store 构造本身不触盘。
+      path.join(config.dataDir ?? path.join(process.cwd(), "data"), "deep-asset-packages"),
+      () => Promise.resolve(undefined),
+    );
+    this.deepAssets = deepAssets;
+    this.providers = createProviders(store, config, objects, deepAssets);
     this.tasks = tasks ?? new ConversionTaskService([], undefined, undefined, store);
     for (const format of Object.keys(this.providers) as ModelFormat[]) {
       this.tasks.register(createModelConversionRegistration(format, store, objects, config,
-        (stagedStore, stagedObjects) => createProviders(stagedStore, config, stagedObjects)[format]));
+        (stagedStore, stagedObjects) => createProviders(stagedStore, config, stagedObjects, deepAssets)[format]));
     }
   }
+
+  private readonly deepAssets: FileSystemDeepAssetPackageStore;
 
   listImportFormats(): ModelFormat[] {
     return (Object.entries(this.providers) as [ModelFormat, ConversionProvider][]).filter(([,provider]) => provider.supportsGeneralImport !== false).map(([format]) => format);
@@ -73,7 +83,8 @@ export class ConversionQueue {
   }
 }
 
-function createProviders(store: MetadataStore, config: AppConfig, objects: ObjectStore): Record<ModelFormat, ConversionProvider> {
+function createProviders(store: MetadataStore, config: AppConfig, objects: ObjectStore,
+  deepAssets: FileSystemDeepAssetPackageStore): Record<ModelFormat, ConversionProvider> {
     const parasolidProbe = createParasolidProbeRuntime(config);
     return {
       ifc: new DirectProvider(store, objects, "ifc"),
@@ -86,10 +97,10 @@ function createProviders(store: MetadataStore, config: AppConfig, objects: Objec
       "3mf": new DirectProvider(store, objects, "3mf"),
       dae: new DirectProvider(store, objects, "dae"),
       "3ds": new DirectProvider(store, objects, "3ds"),
-      step: new PreciseCadProvider(store, objects, "step"),
-      stp: new PreciseCadProvider(store, objects, "step"),
-      iges: new PreciseCadProvider(store, objects, "iges"),
-      igs: new PreciseCadProvider(store, objects, "iges"),
+      step: new PreciseCadProvider(store, objects, "step", deepAssets),
+      stp: new PreciseCadProvider(store, objects, "step", deepAssets),
+      iges: new PreciseCadProvider(store, objects, "iges", deepAssets),
+      igs: new PreciseCadProvider(store, objects, "iges", deepAssets),
       dwg: config.dwg.command
         ? new CommandProvider(store, objects, config.dwg, [{ fileName: "model.dxf", viewerKind: "dxf" }])
         : new MissingProvider(store, "未找到 LibreDWG。请运行 tools/install-libredwg.ps1，或配置 DWG_CONVERTER_COMMAND。"),
@@ -119,6 +130,7 @@ class PreciseCadProvider implements ConversionProvider {
     private readonly store: MetadataStore,
     private readonly objects: ObjectStore,
     private readonly format: "step" | "iges",
+    private readonly deepAssets: FileSystemDeepAssetPackageStore,
   ) {}
 
   async convert({ model, modelDir, sourcePath }: ConversionContext): Promise<void> {
@@ -136,15 +148,28 @@ class PreciseCadProvider implements ConversionProvider {
     const geometryPath = path.join(outputDir, "geometry.glb");
     await optimizeNativeGlb(geometryPath);
     const lods = await createLodResources(geometryPath, model);
-    const geometryUrl = assetUrl(model.projectId, model.id, "output/geometry.glb");
-    const manifest = createManifest(
+    // Deep Asset Package 生产与修订号 CAS 发布；发布被拒时结果为 undefined，几何照常交付。
+    const sidecars = await availableOutputSidecars(outputDir);
+    const published = await publishModelDeepAssetPackage({
+      store: this.deepAssets,
       model,
-      "gltf",
-      geometryUrl,
-      assetUrl(model.projectId, model.id, "output/hierarchy.json"),
-      assetUrl(model.projectId, model.id, "output/properties.json"),
-      lods
-    );
+      sourcePath,
+      modelDir,
+      importer: { id: `opencascade-${this.format}`, version: "1" },
+      compatibility: buildCadCompatibilityProfile(this.format, `opencascade-${this.format}`, "1", sidecars),
+    });
+    const geometryUrl = assetUrl(model.projectId, model.id, "output/geometry.glb");
+    const manifest = {
+      ...createManifest(
+        model,
+        "gltf",
+        geometryUrl,
+        assetUrl(model.projectId, model.id, "output/hierarchy.json"),
+        assetUrl(model.projectId, model.id, "output/properties.json"),
+        lods
+      ),
+      ...(published ? { deepAssetPackage: published.reference } : {}),
+    };
     await writeManifest(modelDir, manifest);
     await this.objects.syncDirectory(assetKey(model.projectId, model.id, ""), modelDir);
     await this.store.updateModel(model.projectId, model.id, {
@@ -299,6 +324,9 @@ function createParasolidProbeRuntime(config: AppConfig): ParasolidProbeRuntime |
   return { config: probe, run: createParasolidProbeRunner(probe) };
 }
 
+const BUILTIN_XT_RESEARCH_SCHEMA_KEY = "SCH_3000000_30000";
+const BUILTIN_XT_RESEARCH_PROFILE_ID = "builtin:onshape-sch30000-r3";
+
 class XtTextSubsetProvider implements ConversionProvider {
   readonly supportsGeneralImport = false;
   constructor(
@@ -331,6 +359,19 @@ class XtTextSubsetProvider implements ConversionProvider {
     });
     const inspection = await writeXtTextInspectionArtifact(sourcePath, outputDir);
     const inspectionUrl = assetUrl(model.projectId, model.id, "output/inspection.json");
+    // The builtin probe is inspection-only until independent real geometry
+    // establishes this exact key's visual-complete profile. Legacy catalog
+    // remains the only schema-aware geometry publication path.
+    if (this.probe && inspection.status === "invalid") {
+      const builtin = await this.runBuiltinResearchProbe(sourcePath, inspection.schema);
+      if (builtin) {
+        const recognizedInspection = inspection.status === "invalid"
+          ? { ...inspection, status: "structure-read" as const, schema: builtin.schemaKey, issues: [] }
+          : inspection;
+        await this.publishSchemaAwareWaiting(model, modelDir, outputDir, inspectionUrl, recognizedInspection, builtin);
+        return;
+      }
+    }
     if (!inspection.geometryParsed) {
       const fallback = await this.tryGenericFallback(sourcePath, outputDir, inspection);
       if (fallback.result && fallback.result.meshCount > 0) {
@@ -396,6 +437,24 @@ class XtTextSubsetProvider implements ConversionProvider {
     });
   }
 
+  /** 精确 key 的内置研发读取：只落 inspection，合成输入不进入 ready。 */
+  private async runBuiltinResearchProbe(sourcePath: string, inspectedKey?: string): Promise<ParasolidProbeReport | undefined> {
+    const probe = this.probe;
+    if (!probe || (inspectedKey && inspectedKey !== BUILTIN_XT_RESEARCH_SCHEMA_KEY)) return undefined;
+    try {
+      const run = createParasolidProbeRunner({ command: probe.config.command,
+        ...(probe.config.args ? { args: probe.config.args } : {}), builtinProfile: true });
+      const report = await run({ filePath: sourcePath, brep: true, geometry: true });
+      if (report.sourceFormat !== "x_t" || report.schemaKey !== BUILTIN_XT_RESEARCH_SCHEMA_KEY
+        || report.catalog?.schemaId !== BUILTIN_XT_RESEARCH_PROFILE_ID) return undefined;
+      return report;
+    } catch {
+      // Unmatched key, invalid header/topology and older CLI all retain their
+      // existing inspect/fallback decision. No synthetic geometry publication.
+      return undefined;
+    }
+  }
+
   /**
    * 第三档 schema-aware：仅当部署方配置了 schema catalog（探针 CLI 存在）时启用。
    * R1 起同时请求 `--geometry` 三角网格；任何失败都收敛为 undefined，
@@ -426,6 +485,7 @@ class XtTextSubsetProvider implements ConversionProvider {
     reportQuality: ConversionContext["reportQuality"],
     genericError?: string,
   ): Promise<boolean> {
+    if (schemaAware.catalog?.schemaId === BUILTIN_XT_RESEARCH_PROFILE_ID) return false;
     if (!schemaAware.geometry?.faces?.length) return false;
     await publishParasolidGeometryReady({
       store: this.store,
@@ -635,6 +695,7 @@ function mergeFailureReasons(inspection: XtTextInspectionResult, genericReason: 
 function parasolidSchemaAwareEvidence(report: ParasolidProbeReport): Record<string, unknown> {
   const geometry = report.geometry;
   const geometryPublished = (geometry?.faces?.length ?? 0) > 0;
+  const researchBuiltin = report.catalog?.schemaId === BUILTIN_XT_RESEARCH_PROFILE_ID;
   return {
     source: report.tool,
     probeVersion: report.version,
@@ -656,8 +717,8 @@ function parasolidSchemaAwareEvidence(report: ParasolidProbeReport): Record<stri
         skippedCount: geometry.skipped.length,
       },
     } : {}),
-    // R1 MVP:探针发布 ≥1 面即发布 GLB(visual-complete);否则维持等待语义。
-    geometryPublication: geometryPublished ? "published:brep-triangulation-mvp" : "waiting-brep-triangulation-r1",
+    geometryPublication: researchBuiltin ? "waiting-independent-real-evidence"
+      : geometryPublished ? "published:brep-triangulation-mvp" : "waiting-brep-triangulation-r1",
   };
 }
 
@@ -668,6 +729,9 @@ function schemaAwareTopologySummary(report: ParasolidProbeReport): string {
 }
 
 function schemaAwareWaitingMessage(report: ParasolidProbeReport, genericError?: string): string {
+  if (report.catalog?.schemaId === BUILTIN_XT_RESEARCH_PROFILE_ID) {
+    return `X_T ${report.schemaKey} 内置研发解析已读取：${schemaAwareTopologySummary(report)}；仅有自产几何验证，缺独立真实样本，保持检查档且不发布 GLB`;
+  }
   const suffix = genericError ? `；通用解析失败：${genericError}` : "";
   return `X_T ${report.schemaKey} 权威结构已读取（ps-schema-probe schema-aware）：${schemaAwareTopologySummary(report)}${suffix}；几何三角化待内置离散化（R1），暂不发布几何`;
 }
@@ -1023,6 +1087,19 @@ async function optionalAsset(filePath: string, url: string): Promise<string | un
   } catch {
     return undefined;
   }
+}
+
+/** Deep Asset Package 的 facet 证据按实际落盘的 sidecar 标注，不虚构未产出的层级/属性。 */
+async function availableOutputSidecars(outputDir: string): Promise<{ hierarchy: boolean; properties: boolean }> {
+  const check = async (fileName: string): Promise<boolean> => {
+    try {
+      await access(path.join(outputDir, fileName));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  return { hierarchy: await check("hierarchy.json"), properties: await check("properties.json") };
 }
 
 async function writeManifest(modelDir: string, manifest: ModelManifest): Promise<void> {

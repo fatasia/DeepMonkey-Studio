@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 const currentFile = fileURLToPath(import.meta.url);
 const repositoryRoot = path.resolve(path.dirname(currentFile), "../..");
@@ -55,7 +56,7 @@ async function main() {
       licenseSource: firstParty ? "repository LICENSE + Cargo.toml license" : "crates.io metadata",
       repository: pkg.repository ?? null,
     };
-  }).sort((a, b) => a.name.localeCompare(b.name));
+  }).sort((a, b) => compareText(a.name, b.name));
   const noassertion = entries.filter((entry) => entry.license === "NOASSERTION" || entry.license === null);
 
   const notices = await readFile(path.join(repositoryRoot, "THIRD_PARTY_NOTICES.md"), "utf8");

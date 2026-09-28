@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import { createHash } from "node:crypto";
 import { ALARM_RCA_RULES, type AlarmRcaRule } from "./alarmRcaRules.js";
 import type {
@@ -25,7 +26,7 @@ export function analyzeAlarmRca(input: AlarmRcaInput): AlarmRcaResult {
   const candidates = ALARM_RCA_RULES
     .map((rule) => buildCandidate(rule, input, anomalies, events, maintenance, time))
     .filter((item): item is Omit<RcaCauseCandidate, "rank"> => item !== undefined && item.score >= .12)
-    .sort((left, right) => right.score - left.score || left.id.localeCompare(right.id))
+    .sort((left, right) => right.score - left.score || compareText(left.id, right.id))
     .slice(0, 5)
     .map((item, index) => ({ ...item, rank: index + 1 }));
   const missingEvidence = globalMissingEvidence(input, candidates, anomalies, events);

@@ -40,6 +40,19 @@ impl NativeQualityProfile {
         }
     }
 
+    /// 质量诊断(`quality_telemetry`)报告用的档名。词汇必须与 TS
+    /// `AuthoredQualityProfile`(performance|balanced|quality|ultra)一致:
+    /// 本 crate 把作者档 `quality` 解析为 Native `High`(见 [`Self::parse`]),
+    /// 所以诊断档名把 High 写回 `quality`;ultra 与 Web 端同名同义。
+    pub(crate) fn telemetry_name(self) -> &'static str {
+        match self {
+            Self::Performance => "performance",
+            Self::Balanced => "balanced",
+            Self::High => "quality",
+            Self::Ultra => "ultra",
+        }
+    }
+
     fn bloom_budget(self) -> (f32, f32) {
         match self {
             Self::Performance => (0.08, 0.75),
@@ -142,6 +155,31 @@ mod tests {
             NativeQualityProfile::Ultra,
         ] {
             assert_eq!(apply(input, profile).bloom, BloomSettings::DISABLED);
+        }
+    }
+
+    #[test]
+    fn telemetry_names_match_ts_authored_quality_vocabulary() {
+        // TS AuthoredQualityProfile:performance|balanced|quality|ultra。
+        // Native High 与作者档 quality 同义(parse 接受两拼写),诊断必须
+        // 写回 TS 词汇,不能把内部拼写 high 泄漏到跨端报告。
+        assert_eq!(
+            NativeQualityProfile::Performance.telemetry_name(),
+            "performance"
+        );
+        assert_eq!(NativeQualityProfile::Balanced.telemetry_name(), "balanced");
+        assert_eq!(NativeQualityProfile::High.telemetry_name(), "quality");
+        assert_eq!(NativeQualityProfile::Ultra.telemetry_name(), "ultra");
+        for profile in [
+            NativeQualityProfile::Performance,
+            NativeQualityProfile::Balanced,
+            NativeQualityProfile::High,
+            NativeQualityProfile::Ultra,
+        ] {
+            assert!(matches!(
+                profile.telemetry_name(),
+                "performance" | "balanced" | "quality" | "ultra"
+            ));
         }
     }
 }

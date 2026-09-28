@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 export interface AnnotationLabelLayoutCandidate {
   id: string;
   centerX: number;
@@ -25,7 +26,7 @@ export function visibleAnnotationLabelIds(
   const ordered = [...candidates].sort((left, right) => {
     if (left.selected !== right.selected) return left.selected ? -1 : 1;
     if (left.distance !== right.distance) return left.distance - right.distance;
-    return left.id.localeCompare(right.id);
+    return compareText(left.id, right.id);
   });
 
   for (const candidate of ordered) {

@@ -1,3 +1,4 @@
+import { compareText } from "@bim-studio/contracts";
 import { useState } from "react";
 import { Boxes, Pencil, Search, Trash2 } from "lucide-react";
 import type {
@@ -33,7 +34,7 @@ export function SemanticModelList({
         .toLocaleLowerCase()
         .includes(query.trim().toLocaleLowerCase()),
     )
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    .sort((a, b) => compareText(b.updatedAt, a.updatedAt));
   return (
     <>
       <label className="semantic-search">

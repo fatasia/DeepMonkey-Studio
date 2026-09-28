@@ -4,6 +4,7 @@ import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 
 const OUTPUT_DIRECTORY = path.resolve(process.env.BIM_STUDIO_OPEN_ASSET_CACHE ?? path.join(process.cwd(), "data", "external-assets", "open-packs"));
 const CONCURRENCY = Math.min(12, Math.max(1, numberArgument("--concurrency", 8)));
@@ -65,7 +66,7 @@ const catalog = {
   schemaVersion: 1,
   libraryMode: "unified",
   generatedAt: new Date().toISOString(),
-  packs: records.sort((left, right) => left.id.localeCompare(right.id)),
+  packs: records.sort((left, right) => compareText(left.id, right.id)),
 };
 await writeJsonAtomically(path.join(OUTPUT_DIRECTORY, "catalog.json"), catalog);
 console.log(`开放素材包索引已写入，共 ${formatBytes(records.reduce((sum, item) => sum + (item.bytes ?? 0), 0))}`);

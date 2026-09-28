@@ -4,12 +4,13 @@ import { readFile, readdir, lstat, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const vendor = path.join(root, 'data/external-assets/industrial-format-plan/dependencies/vendor/cadmpeg-v0.6.0');
 const source = path.join(root, 'data/external-assets/industrial-format-plan/dependencies/extracted/cadmpeg-v0.6.0');
 const output = path.join(root, 'test-output/industrial-solidworks/qualification-20260918/vendor-inventory.json');
 const packages = [];
-for (const entry of (await readdir(vendor, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+for (const entry of (await readdir(vendor, { withFileTypes: true })).sort((a, b) => compareText(a.name, b.name))) {
   assert(entry.isDirectory() && !entry.isSymbolicLink(), 'Unexpected vendored entry');
   const directory = path.join(vendor, entry.name);
   const manifest = JSON.parse(await readFile(path.join(directory, '.cargo-checksum.json'), 'utf8'));
