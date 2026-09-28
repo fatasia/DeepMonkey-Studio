@@ -16,6 +16,14 @@ const MAX_COLLIDER_INSTANCES = 65_536;
 const MAX_COLLIDER_HULL_POINTS = 65_536;
 const MAX_COLLIDER_VERTICES = 65_536;
 const MAX_COLLIDER_INDICES = 196_608;
+/** F6 SDF 凹体碰撞:与 deep-engine/physics/sdfGrid 的 MAX_CELLS 同源预算。 */
+const MAX_SDF_GRID_CELLS = 262_144;
+/** F6 布料/软体预算护栏:超限 fail-closed 拒整包(见 parseSoftBodies)。 */
+const MAX_SOFT_BODIES = 16;
+const MAX_SOFT_BODY_PARTICLES = 16_384;
+const MAX_SOFT_BODY_TETS = 32_768;
+const MAX_SOFT_TOTAL_PARTICLES = 65_536;
+const MAX_SOFT_SUBSTEPS = 16;
 
 export type DynamicAnimationValue = readonly [number, number, number, number, number, number, number];
 export type DynamicAnimationTransition = "linear" | "smooth" | "ease-in" | "ease-out" | "step";
@@ -69,12 +77,24 @@ export interface DynamicPhysicsPrimitiveCollider {
   readonly halfHeight?: number;
 }
 /** 碰撞体来源:render-bounds=包围盒近似(默认);convex-hull/simplified-mesh 携带刚体局部空间几何
- * 与精度标记;primitive 为作者显式几何。几何单位米。 */
+ * 与精度标记;primitive 为作者显式几何;sdf-grid 为有界 SDF 体素场(凹体碰撞,仅 fixed 刚体)。
+ * 几何单位米。 */
 export type DynamicPhysicsColliderRuntime =
   | { readonly kind: "render-bounds"; readonly instanceIds: readonly string[]; readonly precision?: DynamicPhysicsColliderPrecision }
   | { readonly kind: "convex-hull"; readonly instanceIds: readonly string[]; readonly points: readonly (readonly [number, number, number])[]; readonly precision: DynamicPhysicsColliderPrecision }
   | { readonly kind: "simplified-mesh"; readonly instanceIds: readonly string[]; readonly positions: readonly (readonly [number, number, number])[]; readonly indices: readonly number[]; readonly precision: DynamicPhysicsColliderPrecision }
-  | { readonly kind: "primitive"; readonly instanceIds: readonly string[]; readonly primitive: DynamicPhysicsPrimitiveCollider; readonly precision?: DynamicPhysicsColliderPrecision };
+  | { readonly kind: "primitive"; readonly instanceIds: readonly string[]; readonly primitive: DynamicPhysicsPrimitiveCollider; readonly precision?: DynamicPhysicsColliderPrecision }
+  | { readonly kind: "sdf-grid"; readonly instanceIds: readonly string[]; readonly sdf: DynamicPhysicsSdfGridRuntime; readonly precision: DynamicPhysicsColliderPrecision };
+
+/** F6 SDF 有界体素场载荷:与 deep-engine/physics/sdfGrid.SdfGrid 同构(distances 为
+ * JSON number 形式的 f32 值,长度 = dimensions 体积;消费端经 sdfCollisionBridge
+ * 确定性提取等值面 → Rapier trimesh)。 */
+export interface DynamicPhysicsSdfGridRuntime {
+  readonly origin: readonly [number, number, number];
+  readonly cellSize: number;
+  readonly dimensions: readonly [number, number, number];
+  readonly distances: readonly number[];
+}
 export interface DynamicPhysicsBodyRuntime {
   readonly id: string;
   /** kinematic 为位姿驱动刚体；旧包只有 fixed/dynamic，解析保持向后兼容。 */
@@ -122,6 +142,57 @@ export interface DynamicPhysicsRuntime {
   readonly bodies: readonly DynamicPhysicsBodyRuntime[];
   readonly joints: readonly DynamicPhysicsJointRuntime[];
   readonly gears?: readonly DynamicGearConstraintRuntime[];
+  /** F6 布料/软体 opt-in 通道:与 Rapier 刚体仿真并存,由 deep-engine 求解器会话消费
+   * (physics/softBodyRuntimeHost);native 宿主暂不支持,见其 fail-closed 拒收。 */
+  readonly softBodies?: readonly DynamicSoftBodyRuntime[];
+}
+
+/** F6 布料/软体判别联合。时间基固定 1/60(物理固定步长),dt 不入合同;
+ * 求解参数与 deep-engine/physics 的 ClothSolver/SoftBodySolverConfig 一一对应。 */
+export type DynamicSoftBodyRuntime = DynamicClothRuntime | DynamicTetraSoftBodyRuntime;
+
+interface DynamicSoftBodyCommon {
+  readonly id: string;
+  readonly mass: number;
+  readonly damping: number;
+  readonly substeps: number;
+  /** invMass=0 的粒子索引,严格升序唯一。 */
+  readonly pinned: readonly number[];
+  /** 地面接触平面 y = groundY;省略 = 无地面接触。 */
+  readonly groundY?: number;
+}
+
+export interface DynamicClothRuntime extends DynamicSoftBodyCommon {
+  readonly kind: "cloth";
+  readonly columns: number;
+  readonly rows: number;
+  readonly spacing: number;
+  /** XPBD compliance(m/N);0 = 刚性约束。 */
+  readonly compliance: number;
+  /** seed 驱动的初始 z 向扰动幅度(米),≥0;0 = 平整初始态。 */
+  readonly perturbation: number;
+  readonly seed: number;
+  /** 初始布局平移(米):布料铺在 XY 平面(y 上),原点 = (0,0,0) 时与求解器初始态一致。 */
+  readonly origin: readonly [number, number, number];
+  readonly wind?: DynamicClothWindRuntime;
+}
+
+export interface DynamicClothWindRuntime {
+  readonly direction: readonly [number, number, number];
+  readonly baseSpeed: number;
+  readonly gustFrequency: number;
+  readonly spatialScale: number;
+  readonly seed: number;
+}
+
+export interface DynamicTetraSoftBodyRuntime extends DynamicSoftBodyCommon {
+  readonly kind: "soft-body";
+  /** 初始顶点位置(米,世界系)。 */
+  readonly positions: readonly (readonly [number, number, number])[];
+  /** 四面体顶点索引(环绕方向可不统一,求解器构建期规整)。 */
+  readonly tets: readonly (readonly [number, number, number, number])[];
+  readonly complianceDistance: number;
+  readonly complianceVolume: number;
 }
 export interface DynamicSceneRuntime { readonly schema: typeof DYNAMIC_SCENE_RUNTIME_SCHEMA; readonly schemaVersion: 1 | 2 | 3; readonly id: string; readonly revision: number; readonly animation?: DynamicAnimationRuntime; readonly dataReplay?: DynamicDataReplayRuntime; readonly interaction?: DynamicInteractionRuntime; readonly animationController?: DynamicAnimationControllerRuntime; readonly physics?: DynamicPhysicsRuntime }
 
@@ -378,7 +449,7 @@ function boundedMeter(value: unknown, path: string): number {
 }
 
 /** 碰撞体来源判别解析:render-bounds 保持旧行为;convex-hull/simplified-mesh 校验刚体局部几何;
- * primitive 校验显式几何;generated kinds 必须携带精度标记,来源可追溯。 */
+ * primitive 校验显式几何;sdf-grid 校验有界体素场;generated kinds 必须携带精度标记,来源可追溯。 */
 function parseCollider(value: unknown, path: string): DynamicPhysicsColliderRuntime {
   const object = record(value, path);
   requireValue(typeof object.kind === "string", `${path}.kind`, "Expected a collider source kind.");
@@ -434,12 +505,28 @@ function parseCollider(value: unknown, path: string): DynamicPhysicsColliderRunt
       primitive: { shape, ...(halfExtents ? { halfExtents } : {}), ...(radius === undefined ? {} : { radius }), ...(halfHeight === undefined ? {} : { halfHeight }) },
       ...(precision ? { precision } : {}) };
   }
+  if (object.kind === "sdf-grid") {
+    fields(object, ["kind", "instanceIds", "sdf", "precision"], [], path);
+    const sdfObject = record(object.sdf, `${path}.sdf`);
+    fields(sdfObject, ["origin", "cellSize", "dimensions", "distances"], [], `${path}.sdf`);
+    const dimensions = array(sdfObject.dimensions, `${path}.sdf.dimensions`, 3)
+      .map((item, axis) => integer(item, 2, 128, `${path}.sdf.dimensions[${axis}]`)) as unknown as readonly [number, number, number];
+    const cells = dimensions[0] * dimensions[1] * dimensions[2];
+    requireValue(cells <= MAX_SDF_GRID_CELLS, `${path}.sdf.dimensions`, `SDF grid must fit within ${MAX_SDF_GRID_CELLS} cells.`);
+    const origin = vec3(sdfObject.origin, `${path}.sdf.origin`);
+    const cellSize = boundedMeter(sdfObject.cellSize, `${path}.sdf.cellSize`);
+    const distances = array(sdfObject.distances, `${path}.sdf.distances`, MAX_SDF_GRID_CELLS)
+      .map((item, index) => finite(item, `${path}.sdf.distances[${index}]`));
+    requireValue(distances.length === cells, `${path}.sdf.distances`, "SDF distances must fill the declared grid.");
+    requireValue(precision, `${path}.precision`, "SDF-grid colliders must carry precision marks.");
+    return { kind: "sdf-grid", instanceIds, sdf: { origin, cellSize, dimensions, distances }, precision: precision! };
+  }
   throw Object.assign(new Error("Unsupported collider source."), { path });
 }
 
 function parsePhysics(value: unknown, path: string): DynamicPhysicsRuntime {
   const object = record(value, path);
-  fields(object, ["schema", "schemaVersion", "enabled", "playing", "gravity", "bodies", "joints"], ["gears"], path);
+  fields(object, ["schema", "schemaVersion", "enabled", "playing", "gravity", "bodies", "joints"], ["gears", "softBodies"], path);
   requireValue(object.schema === "deep-engine.physics-runtime" && object.schemaVersion === 1 && object.enabled === true, path, "Unsupported physics schema.");
   requireValue(typeof object.playing === "boolean", `${path}.playing`, "Expected a boolean.");
   const gravity = vec3(object.gravity, `${path}.gravity`);
@@ -463,6 +550,8 @@ function parsePhysics(value: unknown, path: string): DynamicPhysicsRuntime {
     requireValue(!initialLinearVelocity || initialLinearVelocity.every(value => Math.abs(value) <= 1_000), `${bodyPath}.initialLinearVelocity`, "Initial velocity must be within ±1000 m/s per axis.");
     // 角色控制器只对 kinematic 刚体有意义；其余类型带该字段属于下译缺陷，直接拒绝。
     requireValue(Object.hasOwn(body, "character") ? body.type === "kinematic" : true, `${bodyPath}.character`, "Character controllers require a kinematic rigid body.");
+    // F6: sdf-grid 凹体碰撞只允许 fixed 刚体(trimesh 承载凹体;dynamic/kinematic 非凸不可稳定求解)。
+    requireValue(collider.kind !== "sdf-grid" || body.type === "fixed", `${bodyPath}.collider`, "SDF-grid colliders require a fixed rigid body.");
     const character = Object.hasOwn(body, "character") ? parseCharacterController(body.character, `${bodyPath}.character`) : undefined;
     return { id: resourceId(body.id, `${bodyPath}.id`), type: body.type as "fixed" | "dynamic" | "kinematic", initialPose: { translation, rotation }, mass, friction, restitution,
       ...(character ? { character } : {}), ...(initialLinearVelocity ? { initialLinearVelocity } : {}),
@@ -518,6 +607,7 @@ function parsePhysics(value: unknown, path: string): DynamicPhysicsRuntime {
   }) : undefined;
   requireValue(!gears || new Set(gears.map(gear => gear.id)).size === gears.length
     && gears.every((gear, index) => index === 0 || gear.id > gears[index - 1]!.id), `${path}.gears`, "Gear couplings must be unique and sorted.");
+  const softBodies = Object.hasOwn(object, "softBodies") ? parseSoftBodies(object.softBodies, `${path}.softBodies`) : undefined;
   const multibodyParents = new Map<string, string | null>();
   for (const joint of joints.filter(joint => joint.solver === "multibody")) {
     requireValue(!multibodyParents.has(joint.bodyId), `${path}.joints`, "A multibody child can have only one parent.");
@@ -533,7 +623,102 @@ function parsePhysics(value: unknown, path: string): DynamicPhysicsRuntime {
     }
   }
   return { schema: "deep-engine.physics-runtime", schemaVersion: 1, enabled: true, playing: object.playing, gravity, bodies, joints,
-    ...(gears === undefined ? {} : { gears }) };
+    ...(gears === undefined ? {} : { gears }),
+    ...(softBodies === undefined ? {} : { softBodies }) };
+}
+
+/** F6 布料/软体解析:预算护栏 fail-closed(超限拒整包并给原因),参数域与求解器
+ * 构造器校验同源,让非法载荷在解析层就死、不带进运行时。 */
+function parseSoftBodies(value: unknown, path: string): readonly DynamicSoftBodyRuntime[] {
+  const bodies = array(value, path, MAX_SOFT_BODIES).map((item, index) => {
+    const bodyPath = `${path}[${index}]`, body = record(item, bodyPath);
+    const kind = body.kind;
+    requireValue(kind === "cloth" || kind === "soft-body", `${bodyPath}.kind`, "Soft body kind must be cloth or soft-body.");
+    const common = commonSoftBodyFields(body, bodyPath);
+    if (kind === "cloth") {
+      fields(body, ["kind", "id", "mass", "damping", "substeps", "pinned", "columns", "rows", "spacing", "compliance", "perturbation", "seed", "origin"],
+        ["groundY", "wind"], bodyPath);
+      const columns = integer(body.columns, 2, 4096, `${bodyPath}.columns`);
+      const rows = integer(body.rows, 2, 4096, `${bodyPath}.rows`);
+      requireValue(columns * rows <= MAX_SOFT_BODY_PARTICLES, `${bodyPath}.columns`,
+        `Cloth particle count ${columns * rows} exceeds the budget of ${MAX_SOFT_BODY_PARTICLES}.`);
+      const spacing = boundedMeter(body.spacing, `${bodyPath}.spacing`);
+      const compliance = nonNegative(body.compliance, `${bodyPath}.compliance`);
+      const perturbation = nonNegative(body.perturbation, `${bodyPath}.perturbation`);
+      const seed = integer(body.seed, -2_147_483_648, 2_147_483_647, `${bodyPath}.seed`);
+      const origin = vec3(body.origin, `${bodyPath}.origin`);
+      const pinned = parsePinned(body.pinned, columns * rows, bodyPath);
+      const wind = Object.hasOwn(body, "wind") ? parseClothWind(body.wind, `${bodyPath}.wind`) : undefined;
+      return {
+        kind: "cloth" as const, id: common.id, mass: common.mass, damping: common.damping, substeps: common.substeps,
+        pinned, ...(common.groundY === undefined ? {} : { groundY: common.groundY }),
+        columns, rows, spacing, compliance, perturbation, seed, origin, ...(wind === undefined ? {} : { wind }),
+      } satisfies DynamicClothRuntime;
+    }
+    fields(body, ["kind", "id", "mass", "damping", "substeps", "pinned", "positions", "tets", "complianceDistance", "complianceVolume"],
+      ["groundY"], bodyPath);
+    const positions = array(body.positions, `${bodyPath}.positions`, MAX_SOFT_BODY_PARTICLES)
+      .map((item, vertexIndex) => vec3(item, `${bodyPath}.positions[${vertexIndex}]`));
+    requireValue(positions.length >= 4, `${bodyPath}.positions`, "Soft bodies require at least 4 vertices.");
+    const tets = array(body.tets, `${bodyPath}.tets`, MAX_SOFT_BODY_TETS).map((item, tetIndex) => {
+      const tetPath = `${bodyPath}.tets[${tetIndex}]`;
+      const values = array(item, tetPath, 4).map((vertex, corner) => integer(vertex, 0, positions.length - 1, `${tetPath}[${corner}]`));
+      requireValue(new Set(values).size === 4, tetPath, "Tetrahedra must reference four distinct vertices.");
+      return values as unknown as readonly [number, number, number, number];
+    });
+    requireValue(tets.length >= 1, `${bodyPath}.tets`, "Soft bodies require at least one tetrahedron.");
+    const complianceDistance = nonNegative(body.complianceDistance, `${bodyPath}.complianceDistance`);
+    const complianceVolume = nonNegative(body.complianceVolume, `${bodyPath}.complianceVolume`);
+    return {
+      kind: "soft-body" as const, id: common.id, mass: common.mass, damping: common.damping, substeps: common.substeps,
+      pinned: parsePinned(body.pinned, positions.length, bodyPath), ...(common.groundY === undefined ? {} : { groundY: common.groundY }),
+      positions, tets, complianceDistance, complianceVolume,
+    } satisfies DynamicTetraSoftBodyRuntime;
+  });
+  requireValue(new Set(bodies.map(body => body.id)).size === bodies.length
+    && bodies.every((body, index) => index === 0 || body.id > bodies[index - 1]!.id), path, "Soft bodies must be unique and sorted by id.");
+  const totalParticles = bodies.reduce((sum, body) => sum + (body.kind === "cloth" ? body.columns * body.rows : body.positions.length), 0);
+  requireValue(totalParticles <= MAX_SOFT_TOTAL_PARTICLES, path, `Soft body particle total ${totalParticles} exceeds the budget of ${MAX_SOFT_TOTAL_PARTICLES}.`);
+  return bodies;
+}
+
+function commonSoftBodyFields(body: Record<string, unknown>, bodyPath: string): {
+  id: string; mass: number; damping: number; substeps: number; groundY?: number;
+} {
+  const id = resourceId(body.id, `${bodyPath}.id`);
+  const mass = finite(body.mass, `${bodyPath}.mass`);
+  requireValue(mass > 0, `${bodyPath}.mass`, "Soft body mass must be positive.");
+  const damping = finite(body.damping, `${bodyPath}.damping`);
+  requireValue(damping >= 0 && damping < 1, `${bodyPath}.damping`, "Soft body damping must be within [0,1).");
+  const substeps = integer(body.substeps, 1, MAX_SOFT_SUBSTEPS, `${bodyPath}.substeps`);
+  const groundY = Object.hasOwn(body, "groundY") ? finite(body.groundY, `${bodyPath}.groundY`) : undefined;
+  return { id, mass, damping, substeps, ...(groundY === undefined ? {} : { groundY }) };
+}
+
+/** 锚点索引:0..count 内严格升序唯一,否则拒(fail-closed,重复锚点无意义)。 */
+function parsePinned(value: unknown, count: number, path: string): readonly number[] {
+  const pinned = array(value, path, count).map((item, index) => integer(item, 0, count - 1, `${path}[${index}]`));
+  requireValue(pinned.every((item, index) => index === 0 || item > pinned[index - 1]!), path, "Pinned indices must be strictly increasing.");
+  return pinned;
+}
+
+function nonNegative(value: unknown, path: string): number {
+  const result = finite(value, path);
+  requireValue(result >= 0 && Number.isFinite(result), path, "Expected a finite non-negative number.");
+  return result;
+}
+
+function parseClothWind(value: unknown, path: string): DynamicClothWindRuntime {
+  const object = record(value, path);
+  fields(object, ["direction", "baseSpeed", "gustFrequency", "spatialScale", "seed"], [], path);
+  const direction = vec3(object.direction, `${path}.direction`);
+  requireValue(direction.some(component => Math.abs(component) > 1e-9), `${path}.direction`, "Wind direction must be non-zero.");
+  const baseSpeed = nonNegative(object.baseSpeed, `${path}.baseSpeed`);
+  const gustFrequency = finite(object.gustFrequency, `${path}.gustFrequency`);
+  requireValue(gustFrequency > 0 && Number.isFinite(gustFrequency), `${path}.gustFrequency`, "Wind gust frequency must be positive.");
+  const spatialScale = nonNegative(object.spatialScale, `${path}.spatialScale`);
+  const seed = integer(object.seed, -2_147_483_648, 2_147_483_647, `${path}.seed`);
+  return { direction, baseSpeed, gustFrequency, spatialScale, seed };
 }
 
 export function validateDynamicSceneRuntime(input: unknown): { valid: true; value: DynamicSceneRuntime; issues: readonly [] } | { valid: false; issues: readonly { path: string; message: string }[] } {

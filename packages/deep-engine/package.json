@@ -165,6 +165,14 @@
       "types": "./dist/runtimePackage/index.d.ts",
       "default": "./dist/runtimePackage/index.js"
     },
+    "./physics": {
+      "development": {
+        "types": "./src/physics/index.ts",
+        "default": "./src/physics/index.ts"
+      },
+      "types": "./dist/physics/index.d.ts",
+      "default": "./dist/physics/index.js"
+    },
     "./host": {
       "development": {
         "types": "./src/host.ts",
@@ -234,6 +242,9 @@
     "test:g7-volumetric-fog-gpu": "node scripts/volumetricFogGpuTest.mjs",
     "test:ray-trace-gpu": "node scripts/rayTraceGpuTest.mjs",
     "test:cluster-lod-gpu": "node scripts/clusterLodGpuTest.mjs",
+    "test:auto-exposure-gpu": "node scripts/autoExposureGpuTest.mjs",
+    "test:white-furnace-gpu": "node scripts/whiteFurnaceGpuTest.mjs",
+    "test:contact-shadow-gpu": "node scripts/contactShadowGpuTest.mjs",
     "test:soft-raster-gpu": "node scripts/softRasterizeGpuTest.mjs",
     "test:probe-occlusion-gpu": "node scripts/probeOcclusionGpuTest.mjs",
     "test:probe-radiance-gpu": "node scripts/probeRadianceGpuTest.mjs",

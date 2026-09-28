@@ -12,6 +12,14 @@ const MAX_COLLIDER_INSTANCES: usize = 65_536;
 const MAX_COLLIDER_HULL_POINTS: usize = 65_536;
 const MAX_COLLIDER_VERTICES: usize = 65_536;
 const MAX_COLLIDER_INDICES: usize = 196_608;
+/// F6 SDF 体素场预算(与 TS MAX_SDF_GRID_CELLS 同源)。
+const MAX_SDF_GRID_CELLS: u64 = 262_144;
+/// F6 布料/软体预算护栏(与 TS parseSoftBodies 同源,超限 fail-closed)。
+const MAX_SOFT_BODIES: usize = 16;
+const MAX_SOFT_BODY_PARTICLES: u64 = 16_384;
+const MAX_SOFT_BODY_TETS: usize = 32_768;
+const MAX_SOFT_TOTAL_PARTICLES: u64 = 65_536;
+const MAX_SOFT_SUBSTEPS: u32 = 16;
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -26,6 +34,61 @@ pub struct DynamicPhysicsRuntime {
     /// T17 齿轮耦合;旧运行包省略时为空。
     #[serde(default)]
     pub gears: Vec<DynamicGearConstraintRuntime>,
+    /// F6 布料/软体 opt-in 通道;旧运行包省略时为空。Native 宿主暂不支持
+    /// (Rapier 无布料/软体),非空在 host 构造期 fail-closed 拒收。
+    #[serde(default)]
+    pub soft_bodies: Vec<DynamicSoftBodyRuntime>,
+}
+
+/// F6 布料/软体判别联合(kind 区分;字段域与 TS parseSoftBodies 镜像)。
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DynamicSoftBodyRuntime {
+    pub kind: String,
+    pub id: String,
+    pub mass: f64,
+    pub damping: f64,
+    pub substeps: u32,
+    #[serde(default)]
+    pub pinned: Vec<u32>,
+    #[serde(default)]
+    pub ground_y: Option<f64>,
+    // cloth 专属
+    #[serde(default)]
+    pub columns: Option<u32>,
+    #[serde(default)]
+    pub rows: Option<u32>,
+    #[serde(default)]
+    pub spacing: Option<f64>,
+    #[serde(default)]
+    pub compliance: Option<f64>,
+    #[serde(default)]
+    pub perturbation: Option<f64>,
+    #[serde(default)]
+    pub seed: Option<i32>,
+    #[serde(default)]
+    pub origin: Option<[f64; 3]>,
+    #[serde(default)]
+    pub wind: Option<DynamicClothWindRuntime>,
+    // soft-body 专属
+    #[serde(default)]
+    pub positions: Vec<[f64; 3]>,
+    #[serde(default)]
+    pub tets: Vec<[u32; 4]>,
+    #[serde(default)]
+    pub compliance_distance: Option<f64>,
+    #[serde(default)]
+    pub compliance_volume: Option<f64>,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DynamicClothWindRuntime {
+    pub direction: [f64; 3],
+    pub base_speed: f64,
+    pub gust_frequency: f64,
+    pub spatial_scale: f64,
+    pub seed: i32,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -99,8 +162,22 @@ pub struct DynamicPhysicsColliderRuntime {
     pub indices: Vec<u32>,
     #[serde(default)]
     pub primitive: Option<DynamicPhysicsPrimitiveColliderRuntime>,
+    /// F6 sdf-grid:有界 SDF 体素场载荷(kind=sdf-grid 时必带)。
+    #[serde(default)]
+    pub sdf: Option<DynamicPhysicsSdfGridRuntime>,
     #[serde(default)]
     pub precision: Option<DynamicPhysicsColliderPrecisionRuntime>,
+}
+
+/// F6 SDF 有界体素场(与 TS dynamicSceneRuntime.DynamicPhysicsSdfGridRuntime 同构;
+/// distances 为 JSON number 形式的 f32 值,长度 = dimensions 体积)。
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DynamicPhysicsSdfGridRuntime {
+    pub origin: [f64; 3],
+    pub cell_size: f64,
+    pub dimensions: [u64; 3],
+    pub distances: Vec<f64>,
 }
 
 /// T17 collider 精度标记镜像:approximate=true 时消费方不得把 collider 当精确几何。
@@ -254,6 +331,8 @@ pub(super) fn validate_physics_runtime(
             || !body_ids.insert(body.id.as_str())
             || !matches!(body.r#type.as_str(), "fixed" | "dynamic" | "kinematic")
             || (body.character.is_some() && body.r#type != "kinematic")
+            // F6:sdf-grid 凹体碰撞只允许 fixed 刚体(与 TS parsePhysics 镜像)。
+            || (body.collider.kind == "sdf-grid" && body.r#type != "fixed")
             || body
                 .character
                 .as_ref()
@@ -389,7 +468,118 @@ pub(super) fn validate_physics_runtime(
         }
         previous = &gear.id;
     }
+    // F6 布料/软体:预算护栏 fail-closed(与 TS parseSoftBodies 镜像);
+    // 结构合法的载荷仍会被 NativePhysicsHost 拒收(Rapier 无布料/软体)。
+    valid_soft_bodies(&physics.soft_bodies)?;
     Ok(())
+}
+
+/// F6 布料/软体载荷域:id 唯一升序、公共参数域、kind 专属字段域、粒子/四面体
+/// 预算与总量;超限/越界一律拒整包。
+fn valid_soft_bodies(soft_bodies: &[DynamicSoftBodyRuntime]) -> Result<(), RuntimePackageError> {
+    if soft_bodies.len() > MAX_SOFT_BODIES {
+        return fail("dynamic physics soft bodies exceed the budget");
+    }
+    let mut previous = "";
+    let mut total_particles: u64 = 0;
+    for body in soft_bodies {
+        let common_ok = valid_resource_id(&body.id)
+            && (previous.is_empty() || body.id.as_str() > previous)
+            && body.mass.is_finite()
+            && body.mass > 0.0
+            && body.damping.is_finite()
+            && (0.0..1.0).contains(&body.damping)
+            && (1..=MAX_SOFT_SUBSTEPS).contains(&body.substeps)
+            && body.ground_y.is_none_or(|ground| ground.is_finite())
+            && strictly_sorted_unique_u32(&body.pinned);
+        if !common_ok {
+            return fail("dynamic physics soft body is invalid");
+        }
+        let particles: u64 = match body.kind.as_str() {
+            "cloth" => {
+                let (Some(columns), Some(rows), Some(spacing), Some(compliance), Some(perturbation), Some(_seed), Some(origin)) =
+                    (body.columns, body.rows, body.spacing, body.compliance, body.perturbation, body.seed, body.origin)
+                else {
+                    return fail("dynamic physics cloth soft body is missing cloth fields");
+                };
+                if !body.positions.is_empty()
+                    || !body.tets.is_empty()
+                    || body.compliance_distance.is_some()
+                    || body.compliance_volume.is_some()
+                    || columns < 2
+                    || rows < 2
+                    || u64::from(columns) * u64::from(rows) > MAX_SOFT_BODY_PARTICLES
+                    || !spacing.is_finite()
+                    || !(0.0..=1e6).contains(&spacing)
+                    || !compliance.is_finite()
+                    || compliance < 0.0
+                    || !perturbation.is_finite()
+                    || perturbation < 0.0
+                    || origin.iter().any(|value| !value.is_finite())
+                {
+                    return fail("dynamic physics cloth soft body is invalid");
+                }
+                if let Some(wind) = &body.wind {
+                    if !wind.direction.iter().any(|component| component.abs() > 1e-9)
+                        || wind.direction.iter().any(|component| !component.is_finite())
+                        || !wind.base_speed.is_finite()
+                        || wind.base_speed < 0.0
+                        || !wind.gust_frequency.is_finite()
+                        || wind.gust_frequency <= 0.0
+                        || !wind.spatial_scale.is_finite()
+                        || wind.spatial_scale < 0.0
+                    {
+                        return fail("dynamic physics cloth wind is invalid");
+                    }
+                }
+                u64::from(columns) * u64::from(rows)
+            }
+            "soft-body" => {
+                if body.columns.is_some()
+                    || body.rows.is_some()
+                    || body.spacing.is_some()
+                    || body.compliance.is_some()
+                    || body.perturbation.is_some()
+                    || body.seed.is_some()
+                    || body.origin.is_some()
+                    || body.wind.is_some()
+                    || body.positions.len() < 4
+                    || body.positions.len() as u64 > MAX_SOFT_BODY_PARTICLES
+                    || body.positions.iter().any(|point| point.iter().any(|value| !value.is_finite()))
+                    || body.tets.is_empty()
+                    || body.tets.len() > MAX_SOFT_BODY_TETS
+                    || body
+                        .tets
+                        .iter()
+                        .any(|tet| tet.iter().any(|index| (*index as usize) >= body.positions.len()))
+                    || body.tets.iter().any(|tet| {
+                        (tet[0] == tet[1]) || (tet[0] == tet[2]) || (tet[0] == tet[3])
+                            || (tet[1] == tet[2]) || (tet[1] == tet[3]) || (tet[2] == tet[3])
+                    })
+                    || body.compliance_distance.is_none_or(|value| !value.is_finite() || value < 0.0)
+                    || body.compliance_volume.is_none_or(|value| !value.is_finite() || value < 0.0)
+                {
+                    return fail("dynamic physics tetra soft body is invalid");
+                }
+                body.positions.len() as u64
+            }
+            _ => return fail("dynamic physics soft body kind is unsupported"),
+        };
+        let last_pinned = body.pinned.last().copied().unwrap_or(0);
+        if last_pinned as u64 >= particles.max(1) && !body.pinned.is_empty() {
+            return fail("dynamic physics soft body pinned index is out of range");
+        }
+        total_particles += particles;
+        previous = &body.id;
+    }
+    if total_particles > MAX_SOFT_TOTAL_PARTICLES {
+        return fail("dynamic physics soft body particle total exceeds the budget");
+    }
+    Ok(())
+}
+
+fn strictly_sorted_unique_u32(values: &[u32]) -> bool {
+    values.windows(2).all(|pair| pair[0] < pair[1])
 }
 
 /// T17 collider 来源校验:与 TS `dynamicSceneRuntime.parseCollider` 逐条镜像——
@@ -408,6 +598,7 @@ fn valid_collider(collider: &DynamicPhysicsColliderRuntime) -> bool {
         (!points || collider.points.is_empty())
             && (!mesh || (collider.positions.is_empty() && collider.indices.is_empty()))
             && (!primitive || collider.primitive.is_none())
+            && collider.sdf.is_none()
     };
     match collider.kind.as_str() {
         "render-bounds" => instance_ids_ok && no_residual(true, true, true) && precision_ok(false),
@@ -440,6 +631,19 @@ fn valid_collider(collider: &DynamicPhysicsColliderRuntime) -> bool {
                     .all(|index| (*index as usize) < collider.positions.len())
                 && precision_ok(true)
         }
+        // F6:SDF 有界体素场载荷;kind=sdf-grid 只接受 sdf 字段,其余残留拒绝。
+        "sdf-grid" => {
+            collider.points.is_empty()
+                && collider.positions.is_empty()
+                && collider.indices.is_empty()
+                && collider.primitive.is_none()
+                && instance_ids_ok
+                && collider
+                    .sdf
+                    .as_ref()
+                    .is_some_and(|sdf| valid_sdf_grid(sdf))
+                && precision_ok(true)
+        }
         "primitive" => {
             instance_ids_ok
                 && no_residual(true, true, false)
@@ -451,6 +655,23 @@ fn valid_collider(collider: &DynamicPhysicsColliderRuntime) -> bool {
         }
         _ => false,
     }
+}
+
+/// F6:SDF 体素场载荷域(每维 2..=128、cells ≤ 预算、distances 填满且有限、
+/// cellSize/origin 米制有界)——与 TS parseCollider 逐条镜像。
+fn valid_sdf_grid(sdf: &DynamicPhysicsSdfGridRuntime) -> bool {
+    let [nx, ny, nz] = sdf.dimensions;
+    let dims_ok = (2..=128).contains(&nx)
+        && (2..=128).contains(&ny)
+        && (2..=128).contains(&nz)
+        && nx.saturating_mul(ny).saturating_mul(nz) <= MAX_SDF_GRID_CELLS;
+    dims_ok
+        && sdf.distances.len() as u64 == nx * ny * nz
+        && sdf.distances.iter().all(|value| value.is_finite())
+        && sdf.cell_size.is_finite()
+        && sdf.cell_size > 0.0
+        && sdf.cell_size <= 1e6
+        && sdf.origin.iter().all(|value| value.is_finite())
 }
 
 fn valid_collider_precision(precision: &DynamicPhysicsColliderPrecisionRuntime) -> bool {

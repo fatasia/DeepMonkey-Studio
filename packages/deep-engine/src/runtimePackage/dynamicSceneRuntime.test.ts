@@ -186,4 +186,68 @@ describe("dynamic scene runtime ABI", () => {
     expect(validateDynamicSceneRuntime({ ...base(), schemaVersion: 2,
       animationController: { ...controller, events: [{ clipId: "Idle", eventId: "x", time: 0.1, extra: 1 }] } }).valid).toBe(false);
   });
+
+  it("accepts sdf-grid colliders on fixed bodies and fails closed on payload violations (F6)", () => {
+    const sdf = { origin: [-0.125, -0.125, -0.125], cellSize: 0.25, dimensions: [2, 2, 2],
+      distances: [-1, 1, 1, -1, 1, -1, -1, 1] };
+    const physics = () => ({
+      schema: "deep-engine.physics-runtime", schemaVersion: 1, enabled: true, playing: true, gravity: [0, -9.81, 0],
+      bodies: [{ id: "body-sdf", type: "fixed", initialPose: { translation: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        mass: 1, friction: 0.5, restitution: 0,
+        collider: { kind: "sdf-grid", instanceIds: ["instance-a"], sdf,
+          precision: { approximate: true, reasons: ["sdf-voxel-discretization"], tolerance: 0.217 } } }],
+      joints: [],
+    });
+    const run = (physicsValue: unknown) => validateDynamicSceneRuntime({ ...base(), schemaVersion: 3, id: "scene", revision: 1, physics: physicsValue });
+    expect(run(physics()).valid).toBe(true);
+    // 非 fixed 刚体携带 sdf-grid → 拒。
+    const dynamic = physics(); (dynamic.bodies[0] as { type: string }).type = "dynamic";
+    expect(run(dynamic).valid).toBe(false);
+    // generated kind 缺 precision → 拒。
+    const noPrecision = physics(); delete (noPrecision.bodies[0]!.collider as { precision?: unknown }).precision;
+    expect(run(noPrecision).valid).toBe(false);
+    // distances 长度与网格不符 → 拒。
+    expect(run({ ...physics(), bodies: [{ ...physics().bodies[0]!, collider: { ...physics().bodies[0]!.collider, sdf: { ...sdf, distances: sdf.distances.slice(1) } } }] }).valid).toBe(false);
+    // 尺寸越界 → 拒。
+    expect(run({ ...physics(), bodies: [{ ...physics().bodies[0]!, collider: { ...physics().bodies[0]!.collider, sdf: { ...sdf, dimensions: [1, 2, 2], distances: [-1, 1, 1, -1] } } }] }).valid).toBe(false);
+    // 非有限距离 → 拒。
+    expect(run({ ...physics(), bodies: [{ ...physics().bodies[0]!, collider: { ...physics().bodies[0]!.collider, sdf: { ...sdf, distances: [-1, 1, 1, -1, 1, -1, -1, Number.NaN] } } }] }).valid).toBe(false);
+    // 未知字段 → 拒(strict fields)。
+    expect(run({ ...physics(), bodies: [{ ...physics().bodies[0]!, collider: { ...physics().bodies[0]!.collider, extra: 1 } } ] }).valid).toBe(false);
+  });
+
+  it("accepts cloth and soft-body channels within budgets and fails closed on violations (F6)", () => {
+    const physics = (softBodies: unknown) => ({
+      schema: "deep-engine.physics-runtime", schemaVersion: 1, enabled: true, playing: true, gravity: [0, -9.81, 0],
+      bodies: [{ id: "body-a", type: "fixed", initialPose: { translation: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        mass: 1, friction: 0.5, restitution: 0, collider: { kind: "render-bounds", instanceIds: ["instance-a"] } }],
+      joints: [], softBodies,
+    });
+    const run = (softBodies: unknown) => validateDynamicSceneRuntime({ ...base(), schemaVersion: 3, id: "scene", revision: 1, physics: physics(softBodies) });
+    const cloth = { kind: "cloth", id: "flag-a", columns: 8, rows: 8, spacing: 0.05, mass: 0.02, compliance: 0, damping: 0.01,
+      substeps: 4, perturbation: 0.001, seed: 7, origin: [0, 1, 0], pinned: [0, 7],
+      wind: { direction: [0, 0, -1], baseSpeed: 2, gustFrequency: 0.7, spatialScale: 1.5, seed: 11 } };
+    const softBody = { kind: "soft-body", id: "ball-a", mass: 0.2, damping: 0.02, substeps: 4, pinned: [],
+      positions: [[0, 2, 0], [0.1, 2, 0], [0, 2.1, 0], [0, 2, 0.1], [0.05, 2.12, 0.05]],
+      tets: [[0, 1, 2, 4], [0, 1, 3, 4], [0, 2, 3, 4], [1, 2, 3, 4]],
+      complianceDistance: 0, complianceVolume: 0, groundY: 0 };
+    expect(run([cloth]).valid).toBe(true);
+    expect(run([softBody]).valid).toBe(true);
+    // id 未排序 → 拒("flag-a" > "ball-a")。
+    expect(run([cloth, softBody]).valid).toBe(false);
+    // 粒子预算超限 → 拒。
+    expect(run([{ ...cloth, id: "flag-big", columns: 64, rows: 300 }]).valid).toBe(false);
+    // tet 索引越界 → 拒。
+    expect(run([{ ...softBody, tets: [[0, 1, 2, 99]] }]).valid).toBe(false);
+    // 非升序 pinned → 拒。
+    expect(run([{ ...cloth, pinned: [7, 0] }]).valid).toBe(false);
+    // 零风向 → 拒。
+    expect(run([{ ...cloth, wind: { ...cloth.wind, direction: [0, 0, 0] } }]).valid).toBe(false);
+    // substeps 越界 → 拒。
+    expect(run([{ ...cloth, substeps: 32 }]).valid).toBe(false);
+    // damping ≥ 1 → 拒。
+    expect(run([{ ...softBody, damping: 1 }]).valid).toBe(false);
+    // 未知字段 → 拒。
+    expect(run([{ ...cloth, extra: 1 }]).valid).toBe(false);
+  });
 });

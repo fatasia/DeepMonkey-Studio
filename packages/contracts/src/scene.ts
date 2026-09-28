@@ -77,6 +77,8 @@ export type ScenePhysicsColliderKind =
   | "convex-hull"
   /** 公差受约束的简化网格（T12 meshoptimizer 链路派生）。 */
   | "simplified-mesh"
+  /** F6 有界 SDF 体素场（凹体碰撞；仅 fixed 刚体，消费端提取零等值面 → trimesh）。 */
+  | "sdf-grid"
   /** 作者显式几何，构造精确。 */
   | "primitive";
 
@@ -127,6 +129,17 @@ export interface ScenePhysicsColliderState {
   indices?: number[];
   /** primitive 显式几何。 */
   primitive?: ScenePhysicsPrimitiveCollider;
+  /** F6 sdf-grid：有界 SDF 体素场载荷（distances 为 f32 值，长度 = dimensions 体积）。
+   * kind="sdf-grid" 时必带；每维 2..128、cells ≤ 262144。 */
+  sdfGrid?: SceneSdfGridCollider;
+}
+
+/** F6 SDF 有界体素场（与引擎 sdfGrid.SdfGrid 同构；负 = 内部）。 */
+export interface SceneSdfGridCollider {
+  origin: Vector3Value;
+  cellSize: number;
+  dimensions: Vector3Value;
+  distances: number[];
 }
 
 /**
@@ -157,6 +170,64 @@ export interface ScenePhysicsState {
    * joint coordinate via a position servo (both Rapier versions ship no native gear
    * joint). Impulse-solver joints of the same kind only. */
   gears?: SceneGearConstraintState[];
+  /** F6 布料/软体 opt-in 通道：与刚体仿真并存，由引擎软体求解器会话消费（固定 1/60 时间基）。
+   * id 唯一且按字典序；粒子/四面体预算在消费端 fail-closed（超限拒绝并给原因）。 */
+  softBodies?: SceneSoftBodyState[];
+}
+
+/** F6 布料/软体作者侧判别联合。 */
+export type SceneSoftBodyState = SceneClothState | SceneTetraSoftBodyState;
+
+export interface SceneClothState {
+  kind: "cloth";
+  id: string;
+  columns: number;
+  rows: number;
+  /** 网格静止间距（米）。 */
+  spacing: number;
+  /** 单质点质量（kg）。 */
+  mass: number;
+  /** XPBD compliance（m/N）；0 = 刚性约束。 */
+  compliance: number;
+  /** 每子步线性速度阻尼系数 [0,1)。 */
+  damping: number;
+  substeps: number;
+  /** seed 驱动的初始 z 向扰动幅度（米），≥0。 */
+  perturbation: number;
+  seed: number;
+  /** 初始布局平移（米）；布料铺在 XY 平面（y 上）。 */
+  origin: Vector3Value;
+  /** 锚点粒子索引（row*columns+col），严格升序。 */
+  pinned: number[];
+  /** 地面接触平面 y = groundY（米）；省略 = 无。 */
+  groundY?: number;
+  wind?: SceneClothWindState;
+}
+
+export interface SceneClothWindState {
+  direction: Vector3Value;
+  /** 米/秒，≥0。 */
+  baseSpeed: number;
+  gustFrequency: number;
+  spatialScale: number;
+  seed: number;
+}
+
+export interface SceneTetraSoftBodyState {
+  kind: "soft-body";
+  id: string;
+  /** 初始顶点位置（米，世界系）。 */
+  positions: Vector3Value[];
+  /** 四面体顶点索引（环绕方向可不统一，构建期规整）。 */
+  tets: [number, number, number, number][];
+  mass: number;
+  complianceDistance: number;
+  complianceVolume: number;
+  damping: number;
+  substeps: number;
+  /** 锚点顶点索引，严格升序。 */
+  pinned: number[];
+  groundY?: number;
 }
 
 /** T17 齿轮耦合：从动关节坐标 = ratio × 主动关节坐标（伺服跟随，非求解器级啮合）。

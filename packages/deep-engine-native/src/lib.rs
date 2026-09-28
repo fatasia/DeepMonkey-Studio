@@ -51,6 +51,7 @@ pub mod native_character_motion;
 #[cfg(test)]
 mod native_character_motion_tests;
 pub mod native_physics;
+pub mod physics_sdf_mesh;
 pub mod native_ui;
 pub mod pbr_brdf;
 pub mod pbr_reference;

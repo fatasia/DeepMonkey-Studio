@@ -41,6 +41,10 @@ mod motor_gear_tests;
 #[path = "native_physics_collider_tests.rs"]
 mod collider_tests;
 
+#[cfg(test)]
+#[path = "native_physics_sdf_golden_tests.rs"]
+mod sdf_golden_tests;
+
 const FIXED_TIMESTEP_SECONDS: f64 = 1.0 / 60.0;
 const MAX_CATCH_UP_SECONDS: f64 = 0.2;
 
@@ -114,6 +118,14 @@ impl NativePhysicsHost {
         let Some(physics) = &runtime.physics else {
             return Ok(None);
         };
+        // F6 布料/软体:Rapier 无布料/软体,Native 宿主暂不消费;非空载荷
+        // fail-closed 拒收(不静默丢弃作者内容,由 Web 求解器会话承担该通道)。
+        if !physics.soft_bodies.is_empty() {
+            return Err(format!(
+                "native physics host does not support soft bodies ({} present); the web solver session owns this channel",
+                physics.soft_bodies.len()
+            ));
+        }
         let physics_body_ids: std::collections::HashSet<_> =
             physics.bodies.iter().map(|body| body.id.as_str()).collect();
         if runtime.animation.as_ref().is_some_and(|animation| {
@@ -695,6 +707,47 @@ impl NativePhysicsHost {
                         ));
                     }
                 }
+            }
+            "sdf-grid" => {
+                // F6:SDF 凹体碰撞桥——与 Web sdfCollisionBridge 算法逐位同构的
+                // Freudenthal 六四面体零等值面提取 → trimesh collider。
+                // 载荷已在运行包校验层收敛(kind=sdf-grid 仅 fixed、precision 必带)。
+                let sdf = body.collider.sdf.as_ref().ok_or_else(|| {
+                    format!("physics body {} sdf-grid collider has no payload", body.id)
+                })?;
+                let grid = crate::physics_sdf_mesh::SdfMeshInput {
+                    origin: [
+                        sdf.origin[0] as f32,
+                        sdf.origin[1] as f32,
+                        sdf.origin[2] as f32,
+                    ],
+                    cell_size: sdf.cell_size as f32,
+                    dimensions: [
+                        sdf.dimensions[0] as usize,
+                        sdf.dimensions[1] as usize,
+                        sdf.dimensions[2] as usize,
+                    ],
+                    distances: &sdf
+                        .distances
+                        .iter()
+                        .map(|value| *value as f32)
+                        .collect::<Vec<f32>>(),
+                };
+                let mesh = crate::physics_sdf_mesh::extract_sdf_collision_mesh(&grid)
+                    .map_err(|error| format!("physics body {}: {error}", body.id))?;
+                let vertices: Vec<Vec3> = mesh
+                    .positions
+                    .chunks_exact(3)
+                    .map(|vertex| Vec3::new(vertex[0], vertex[1], vertex[2]))
+                    .collect();
+                let indices: Vec<[u32; 3]> = mesh
+                    .indices
+                    .chunks_exact(3)
+                    .map(|triangle| [triangle[0], triangle[1], triangle[2]])
+                    .collect();
+                ColliderBuilder::trimesh(vertices, indices).map_err(|error| {
+                    format!("physics body {} SDF collision mesh rejected: {error}", body.id)
+                })?
             }
             other => {
                 return Err(format!(
