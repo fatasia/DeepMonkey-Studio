@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Wasm 桥黄金样例对等验收探针</title>
+<style>
+  body { margin: 0; background: #101418; color: #cfd8e3; font: 13px/1.5 system-ui, sans-serif; }
+  main { display: flex; flex-direction: column; gap: 12px; padding: 12px; }
+  canvas { display: block; border: 1px solid #2a3542; }
+  h1 { font-size: 15px; margin: 0; }
+  #parity-status { white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Wasm 桥黄金样例对等验收(FactoryMachine 冻结样例 · TS Deep WebGPU vs Rust wasm)</h1>
+  <canvas id="parity-webgpu-canvas" width="960" height="540"></canvas>
+  <canvas id="parity-wasm-canvas" width="960" height="540"></canvas>
+  <div id="parity-status">probe bundle not loaded</div>
+</main>
+<script type="module" src="./wasmParity.bundle.js"></script>
+</body>
+</html>
