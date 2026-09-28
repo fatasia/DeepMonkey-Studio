@@ -118,19 +118,21 @@ describe("Web HLOD optional package consumer", () => {
     const result = await compileSceneRenderPacket(scene, { loadModel: async () => box });
     const apiIds = gltfNodeApiIds(box);
     expect(apiIds.size).toBeGreaterThan(0);
-    const [[, manifestApiId]] = [...apiIds];
-    const manifest = minimalManifest(manifestApiId);
+    const firstApiId = [...apiIds][0];
+    if (!firstApiId) throw new Error("Box.glb 未解析出 mesh 节点 apiId");
+    const manifest = minimalManifest(firstApiId[1]);
     // Box.glb 源包：实例 id 带 asset-<hash> 前缀；bindWebHlodAsset 按 /node/<i>/primitive/ 匹配
     const bound = bindWebHlodAsset(box, result.packet, manifest);
-    expect(bound.get(manifestApiId)?.length).toBeGreaterThan(0);
+    expect(bound.get(firstApiId[1])?.length).toBeGreaterThan(0);
     // 默认路径（无 hlodPackages）不产出簇绑定
     expect(result.hlodClusters).toBeUndefined();
   });
 
   it("hlodPackages 提供时：代理几何入包、hlodClusters 产出、运行包往返仍校验通过", async () => {
     const apiIds = gltfNodeApiIds(box);
-    const [[, manifestApiId]] = [...apiIds];
-    const manifest = minimalManifest(manifestApiId);
+    const firstApiId = [...apiIds][0];
+    if (!firstApiId) throw new Error("Box.glb 未解析出 mesh 节点 apiId");
+    const manifest = minimalManifest(firstApiId[1]);
     const proxies = decodeHlodProxyGeometries(encodeHlodProxyGeometries([]));
     const compiled = await compileSceneRenderPacket(scene, { loadModel: async () => box,
       hlodPackages: new Map([["asset", { manifest, proxies, geometryHash: hash(box) }]]) });
@@ -138,7 +140,7 @@ describe("Web HLOD optional package consumer", () => {
     const cluster = compiled.hlodClusters![0]!;
     expect(cluster.assetId).toBe("asset");
     expect(cluster.manifest).toEqual(manifest);
-    expect(cluster.instanceIdsByNode.get(manifestApiId)?.length).toBeGreaterThan(0);
+    expect(cluster.instanceIdsByNode.get(firstApiId[1])?.length).toBeGreaterThan(0);
     // 代理几何（空包时无代理）；objectBindings 保持仅作者对象
     expect(compiled.packet.objectBindings?.map(item => item.nodeId)).toEqual(["part"]);
     // 全场景实例仍可被簇映射覆盖（Box 单实例）
