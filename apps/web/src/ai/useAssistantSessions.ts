@@ -32,6 +32,9 @@ export function useAssistantSessions(projectId: string | undefined, scopeKey: st
   const owner = useRef("");
   const pendingCreate = useRef<{ id: string; title: string } | undefined>(undefined);
   const writers = useRef(new Set<AssistantSessionWriter>());
+  // T13：区分"换项目/换登录身份"与"仅换作用域"——前者整队清空（跨项目隔离语义不变），
+  // 后者只清理已落盘 writer，保留未落盘片段的重试入口。
+  const retainedWorld = useRef("");
   const tabId = useRef(crypto.randomUUID());
   const channel = useRef<BroadcastChannel | undefined>(undefined);
   const key = JSON.stringify([projectId, scopeKey, authRevision]);
@@ -82,7 +85,14 @@ export function useAssistantSessions(projectId: string | undefined, scopeKey: st
   }, []);
   useEffect(() => {
     const expected = key, version = ++generation.current;
-    activeId.current = ""; pendingCreate.current = undefined; writers.current.clear(); setCursor(undefined); setSessionId(""); setConversation([]); setSessions([]); setError(""); owner.current = "";
+    activeId.current = ""; pendingCreate.current = undefined;
+    // T13（审计 §二 T13）：仅作用域切换时保留未落盘 writer（旧片段仍写回其所属会话，
+    // 保存闭包捕获原 project/session/message）；换项目或登录身份仍整队清空。
+    const world = JSON.stringify([projectId, authRevision]);
+    const sameWorld = retainedWorld.current === world;
+    retainedWorld.current = world;
+    if (!sameWorld) writers.current.clear(); else pruneUnsavedWriters();
+    setCursor(undefined); setSessionId(""); setConversation([]); setSessions([]); setError(""); owner.current = "";
     setConflict(false); setExternalSessionId(undefined);
     if (!projectId) { setLoading(false); return; }
     setLoading(true);
@@ -147,7 +157,12 @@ export function useAssistantSessions(projectId: string | undefined, scopeKey: st
       notifySessionWritten({ tab: tabId.current, project, scope: scopeKey, session });
       return saved;
     }, reason => {
-      if (identity.current !== expected) return;
+      // T13：作用域已切换但片段仍在保留队列——失败不再静默丢弃（K8 教训），落到当前错误行，
+      // "重试保存"可触达全部保留 writer（保存闭包仍指向原会话，写入位置正确）。
+      if (identity.current !== expected) {
+        setError(`此前作用域的会话保存失败：${reason instanceof Error ? reason.message : String(reason)}；可重试保存`);
+        return;
+      }
       if (isVersionConflict(reason)) setConflict(true);
       else setError(`会话保存失败：${reason instanceof Error ? reason.message : String(reason)}`);
     });
@@ -159,6 +174,12 @@ export function useAssistantSessions(projectId: string | undefined, scopeKey: st
     try { channel.current?.postMessage(raw); } catch { /* 通道关闭时靠 storage 兜底。 */ }
     try { window.localStorage.setItem(SYNC_STORAGE_KEY, raw); } catch { /* storage 不可用时放弃兜底通道。 */ }
   }
+  /** T13：只清已落盘 writer；未落盘片段（待发/失败/保存中）跨作用域保留重试入口。 */
+  function pruneUnsavedWriters() {
+    for (const writer of [...writers.current]) {
+      if (!writer.unsaved) writers.current.delete(writer);
+    }
+  }
   async function retrySave() {
     setError("");
     try { await Promise.all([...writers.current].map(writer => writer.flush())); }
@@ -166,6 +187,7 @@ export function useAssistantSessions(projectId: string | undefined, scopeKey: st
       if (isVersionConflict(reason)) setConflict(true);
       else setError(`会话保存失败：${reason instanceof Error ? reason.message : String(reason)}`);
     }
+    finally { pruneUnsavedWriters(); }
   }
   return { identity: key, sessions, sessionId, conversation, setConversation, loading, error, cursor, conflict, externalSessionId, select, refresh, newSession, begin, retrySave };
 }

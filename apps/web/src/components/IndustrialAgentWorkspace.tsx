@@ -30,6 +30,7 @@ import {
   agentDecisionStatusLabel,
   agentGuardCircuit,
   agentGuardDenials,
+  agentObjectiveExamples,
   agentProgress,
   agentStatusLabel,
   agentStatusTone,
@@ -247,12 +248,9 @@ export function IndustrialAgentWorkspace(props: {
               {t("计划模式已开启：simulate/写入将被拒绝，仅产出计划。", "Plan mode is on: simulate/writes will be rejected; only a plan is produced.")}
             </div>
           )}
-          <div className="industrial-agent-examples" aria-label={t("目标示例", "Objective examples")}>
-            <button type="button" disabled={busy || loadingTools || !projectId || !tools.some(tool => tool.effect === "read" && !tool.requiresApproval)} title={t("使用当前配置的模型执行只读任务；需要大模型配置和可读能力。", "Run a read-only task with the configured model; requires model configuration and read capabilities.")} onClick={() => void start(true)}><Play size={13} />{t("一键运行样例", "Run sample")}</button>
-            {[t("检查设备异常并定位可能原因", "Inspect anomalies and locate likely causes"), t("先仿真验证，再给出调试建议", "Validate in simulation before proposing debugging actions")].map((item) => (
-              <button key={item} type="button" onClick={() => setObjective(item)}>{item}</button>
-            ))}
-          </div>
+          <AgentObjectiveExamplesRow locale={locale} tools={tools} busy={busy} loading={loadingTools}
+            hasProject={Boolean(projectId)} canSample={tools.some(tool => tool.effect === "read" && !tool.requiresApproval)}
+            onSample={() => void start(true)} onPick={(item) => setObjective(item)} />
           <AgentCapabilityPreview
             locale={locale}
             tools={tools}
@@ -430,6 +428,38 @@ export function IndustrialAgentRunView(props: {
 }
 
 type IndustrialAgentApi = typeof import("../api")["api"];
+
+/**
+ * T11（审计 §二 T11）：目标示例随工具目录生成（agentObjectiveExamples），目录加载失败
+ * 时回落通用目标而不是禁用态死角；样例按钮无可运行只读能力时给出可见原因，不再只有 title 提示。
+ */
+export function AgentObjectiveExamplesRow(props: {
+  locale: AppLocale;
+  tools: readonly AgentToolDefinition[];
+  busy: boolean;
+  loading: boolean;
+  hasProject: boolean;
+  canSample: boolean;
+  onSample: () => void;
+  onPick: (objective: string) => void;
+}) {
+  const t = (zh: string, en: string) => tr(props.locale, zh, en);
+  const { examples, source } = agentObjectiveExamples(props.tools, props.locale);
+  return (
+    <div className="industrial-agent-examples" aria-label={t("目标示例", "Objective examples")}>
+      <button type="button" disabled={props.busy || props.loading || !props.hasProject || !props.canSample}
+        title={t("使用当前配置的模型执行只读任务；需要大模型配置和可读能力。", "Run a read-only task with the configured model; requires model configuration and read capabilities.")}
+        onClick={props.onSample}><Play size={13} />{t("一键运行样例", "Run sample")}</button>
+      {examples.map((item) => (
+        <button key={item} type="button" title={source === "fallback" ? t("来自通用只读模板；能力目录可用后会给出匹配当前能力的示例。", "From the generic read-only template; examples match your capabilities once the catalog loads.") : item}
+          onClick={() => props.onPick(item)}>{item}</button>
+      ))}
+      {!props.loading && props.hasProject && !props.canSample && (
+        <small role="status">{t("当前没有可直接运行的只读能力：样例已禁用；能力目录加载失败时请检查服务连接后重试。", "No directly runnable read-only capability: the sample is disabled; if the catalog failed to load, check the service connection and retry.")}</small>
+      )}
+    </div>
+  );
+}
 
 async function getAgentApi(): Promise<IndustrialAgentApi> {
   return (await import("../api")).api;

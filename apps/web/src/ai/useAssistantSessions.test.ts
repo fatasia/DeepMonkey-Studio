@@ -78,6 +78,53 @@ describe("assistant session restoration", () => {
   });
 });
 
+// ── T13（审计 §二 T13：作用域切换 writers.clear() 使旧作用域未落盘片段失去重试入口）──
+describe("assistant session save retry across scopes (T13)", () => {
+  it("keeps a failed snapshot retryable after a scope switch and retries it into its own session", async () => {
+    h.save.mockRejectedValueOnce(new Error("offline"));
+    render(); await flush();
+    const saved = await render().begin({ question: "问", answer: "片段", mode: "scene", status: "streaming" });
+    await expect(saved?.writer.flush()).rejects.toThrow("offline");
+    // 以前会坏：切作用域即 clear()，retrySave 只刷新作用域 writer，旧片段永久滞留。
+    render("p", "dashboard"); await flush();
+    const count = h.save.mock.calls.length;
+    await render("p", "dashboard").retrySave();
+    expect(h.save.mock.calls.length).toBe(count + 1);
+    const [project, session, message] = h.save.mock.calls.at(-1)!;
+    // 保存闭包仍指向原会话：片段写回它所属的 project/session/message，不串到新作用域。
+    expect([project, session, message]).toEqual(["p", "s", saved!.message]);
+    expect(render("p", "dashboard").error).toBe("");
+  });
+  it("surfaces a stale-scope save failure on the visible error line instead of silence", async () => {
+    h.save.mockRejectedValue(new Error("offline"));
+    render(); await flush();
+    const saved = await render().begin({ question: "问", answer: "", mode: "scene", status: "streaming" });
+    render("p", "dashboard"); await flush();
+    // 以前会坏：identity 不匹配时 onError 直接 return，滞留片段失败零提示（K8 教训）。
+    await expect(saved?.writer.flush()).rejects.toThrow("offline");
+    expect(render("p", "dashboard").error).toContain("此前作用域的会话保存失败");
+  });
+  it("drops settled writers on scope switch so a later retry does not double-save", async () => {
+    render(); await flush();
+    const saved = await render().begin({ question: "问", answer: "", mode: "scene", status: "streaming" });
+    await saved?.writer.flush();
+    render("p", "dashboard"); await flush();
+    const count = h.save.mock.calls.length;
+    await render("p", "dashboard").retrySave();
+    expect(h.save.mock.calls.length).toBe(count);
+  });
+  it("flushes a scope-switched in-flight streaming snapshot on retry instead of stranding it", async () => {
+    h.save.mockResolvedValue({ updatedAt: "2026-09-29T00:00:00.000Z" });
+    render(); await flush();
+    const saved = await render().begin({ question: "问", answer: "", mode: "scene", status: "streaming" });
+    render("p", "dashboard"); await flush();
+    const count = h.save.mock.calls.length;
+    await render("p", "dashboard").retrySave();
+    expect(h.save.mock.calls.length).toBe(count + 1);
+    expect(h.save.mock.calls.at(-1)?.[2]).toBe(saved!.message);
+  });
+});
+
 describe("assistant session cross-tab sync (K12)", () => {
   it("surfaces a labeled conflict instead of a generic error when a save hits a cross-tab 409", async () => {
     h.save.mockRejectedValue(Object.assign(new Error("该消息已被其他窗口更新，请刷新获取最新状态"), { status: 409, body: { code: "message-version-conflict" } }));

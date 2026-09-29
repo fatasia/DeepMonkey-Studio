@@ -173,6 +173,64 @@ describe("industrial Agent decision provider", () => {
       ["model-completion", "completed"],
     ]);
   });
+
+  // ── T2 回归（审计 §二 T2：澄清选项数据源只有数据集目录，本体对象提名会杀死整轮运行）──
+
+  it("T2: surfaces published ontology object candidates and validates an ontology request-input decision", async () => {
+    const invokeAiProvider = vi.fn(async (_providerId: string, request: { input: string }) => {
+      // 模型看得到本体候选目录与 ontology: 前缀合同。
+      expect(request.input).toContain("ontologyObjectCatalog");
+      expect(request.input).toContain("ontology:pkg-1:pump");
+      return {
+        text: JSON.stringify({ kind: "request-input", rationale: "对象范围有歧义", question: "请选择分析对象",
+          options: [{ id: "ontology:pkg-1:pump", label: "模型编的" }, { id: "ontology:pkg-1:valve", label: "模型编的" }] }),
+        model: "test-model",
+      };
+    });
+    const provider = createIndustrialAgentDecisionProvider({
+      registry: { invokeAiProvider } as unknown as PluginRegistry, settings, dataSource: { listDatasets: () => [] },
+      ontology: async () => [
+        { id: "ontology:pkg-1:pump", label: "泵", description: "产线本体 · manufacturing" },
+        { id: "ontology:pkg-1:valve", label: "阀", description: "产线本体 · manufacturing" },
+      ],
+    });
+    // 以前会坏：非数据集 ID 在验证器抛"目录以外"，决策轮终局失败；现在本体候选被服务端名称纠正放行。
+    await expect(provider.decide({ checkpoint: checkpoint(), availableTools: [], signal: new AbortController().signal })).resolves.toMatchObject({
+      kind: "request-input",
+      options: [
+        { id: "ontology:pkg-1:pump", label: "泵", description: "产线本体 · manufacturing" },
+        { id: "ontology:pkg-1:valve", label: "阀", description: "产线本体 · manufacturing" },
+      ],
+    });
+  });
+
+  it("T2: ontology loader failure degrades to dataset-only candidates with an audit finding, not a failed round", async () => {
+    const invokeAiProvider = vi.fn(async (_providerId: string, request: { input: string }) => {
+      const context = JSON.parse(request.input).context as Record<string, unknown>;
+      expect(context.ontologyObjectCatalog).toBeUndefined();
+      return { text: '{"kind":"stop","rationale":"done","code":"done","message":"done"}', model: "test-model" };
+    });
+    const audit = new AiReliabilityAuditBuffer();
+    const provider = createIndustrialAgentDecisionProvider({
+      registry: { invokeAiProvider } as unknown as PluginRegistry, settings, dataSource: { listDatasets: () => [] }, audit: audit.sink,
+      ontology: async () => { throw new Error("ontology store offline"); },
+    });
+    await expect(provider.decide({ checkpoint: checkpoint(), availableTools: [], signal: new AbortController().signal })).resolves.toMatchObject({ kind: "stop" });
+    const assessment = audit.list().find((event) => event.stage === "input-assessment");
+    expect(assessment?.findings.map((item) => item.code)).toContain("ontology-candidates-unavailable");
+  });
+
+  it("T2: omits the ontology catalog entirely when no loader is configured (zero-cost falsifiable point)", async () => {
+    const invokeAiProvider = vi.fn(async (_providerId: string, request: { input: string }) => {
+      const context = JSON.parse(request.input).context as Record<string, unknown>;
+      expect(context).not.toHaveProperty("ontologyObjectCatalog");
+      return { text: '{"kind":"stop","rationale":"done","code":"done","message":"done"}', model: "test-model" };
+    });
+    const provider = createIndustrialAgentDecisionProvider({
+      registry: { invokeAiProvider } as unknown as PluginRegistry, settings, dataSource: { listDatasets: () => [] },
+    });
+    await expect(provider.decide({ checkpoint: checkpoint(), availableTools: [], signal: new AbortController().signal })).resolves.toMatchObject({ kind: "stop" });
+  });
 });
 
 function checkpoint(): AgentCheckpoint {

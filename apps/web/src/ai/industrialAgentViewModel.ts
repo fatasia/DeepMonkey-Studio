@@ -144,3 +144,36 @@ export function describeAgentEffect(effect: AgentToolDefinition["effect"], local
   };
   return tr(locale, ...labels[effect]);
 }
+
+export interface AgentObjectiveExamples {
+  examples: string[];
+  /** catalog=由当前工具目录生成；fallback=目录为空（加载失败/无能力）时的通用只读目标。 */
+  source: "catalog" | "fallback";
+}
+
+/**
+ * T11（审计 §二 T11）：目标示例随工具目录生成，不再用与能力面脱节的固定文案。
+ * 与 T9 capabilityExampleQuestion 同族口径：按 effect 派生问句、不维护领域白名单，
+ * 示例只是把话头递给模型，执行仍受白名单/审批/证据链约束。
+ * 目录为空（加载失败或无只读能力）时回落通用目标并标记 fallback，不虚构能力语义。
+ */
+export function agentObjectiveExamples(tools: readonly AgentToolDefinition[], locale: AppLocale): AgentObjectiveExamples {
+  const t = (zh: string, en: string) => tr(locale, zh, en);
+  const runnable = tools.filter((tool) => !tool.requiresApproval);
+  const pick = (effect: AgentToolDefinition["effect"]) => runnable.find((tool) => tool.effect === effect);
+  const examples: Array<[AgentToolDefinition, string]> = [];
+  const readTool = pick("read");
+  if (readTool) examples.push([readTool, t(`用「${readTool.label}」检查当前项目，给出有证据的结论`, `Use "${readTool.label}" to inspect this project and return an evidence-backed conclusion`)]);
+  const simulateTool = pick("simulate");
+  if (simulateTool) examples.push([simulateTool, t(`先用「${simulateTool.label}」仿真验证，再给出调试建议`, `Validate with "${simulateTool.label}" first, then propose debugging actions`)]);
+  const analyzeTool = pick("analyze");
+  if (analyzeTool) examples.push([analyzeTool, t(`用「${analyzeTool.label}」分析当前工作区，结论必须附证据`, `Analyze this workspace with "${analyzeTool.label}"; conclusions must cite evidence`)]);
+  if (examples.length) return { examples: examples.map(([, text]) => text).slice(0, 3), source: "catalog" };
+  return {
+    examples: [t(
+      "只读检查当前项目可用能力与数据，引用实际证据给出一条可验证结论；没有数据时明确说明缺失。",
+      "Inspect this project's capabilities and data read-only; return one verifiable conclusion with evidence, or state what is missing.",
+    )],
+    source: "fallback",
+  };
+}

@@ -14,6 +14,8 @@ import { IndustrialAgentToolGateway } from "./industrialAgentToolGateway.js";
 import { createAgentHarnessGuards } from "./agentHarnessGuards.js";
 import { AgentMemoryStore } from "./agentMemory.js";
 import { resolveAssistantSessionOptions, type AssistantSessionOptions } from "./assistantSessionOptions.js";
+import { ontologyClarificationCandidates } from "./industrialAgentSelection.js";
+import { OntologyPackageStore } from "../ontology/ontologyStore.js";
 
 export interface IndustrialAgentRuntime {
   checkpoints: AgentCheckpointStore;
@@ -61,6 +63,9 @@ export async function createIndustrialAgentRuntime(input: {
     ...(input.audit ? { audit: input.audit } : {}),
     ...(input.telemetry ? { telemetry: input.telemetry } : {}),
     memory: (projectId) => memory.loadDelivery(projectId),
+    // T2 澄清候选：每次 decide 取新读取器（与 ontologyActionRoutes 同模式，避免长缓存漂移）；
+    // 只读 listPackages，目录缺失时返回空名单（本体未发布则澄清退回纯数据集候选）。
+    ontology: async (projectId) => ontologyClarificationCandidates(await new OntologyPackageStore(input.dataDir).listPackages(projectId)),
   });
   const runtime: IndustrialAgentRuntime = {
     resolveModelOptions: async options => {

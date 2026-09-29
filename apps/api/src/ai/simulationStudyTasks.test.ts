@@ -95,6 +95,36 @@ function failingSettleLedger(ledger: ProvenanceLedgerStore): ProvenanceLedgerSto
   return wrapper as unknown as ProvenanceLedgerStore;
 }
 
+/**
+ * F1 锁测专用：只在 recordStudyHalted 上注入固定延迟的账本委托（其余方法转发真实账本，
+ * this 绑定真实实例，私有字段访问不受影响）。延迟把"视图翻转 vs 账本写穿透"的窗口拉大
+ * 到可确定性断言：修复前观察点必然读到 running 残留，修复后账本先于视图翻转、必然已收口。
+ */
+function slowHaltLedger(ledger: ProvenanceLedgerStore, delayMs: number): ProvenanceLedgerStore {
+  const delegated = [
+    "init",
+    "recordHypothesis",
+    "recordVerification",
+    "recordReport",
+    "recordStudyLaunched",
+    "recordStudySettled",
+    "listStudyRuns",
+    "trace",
+    "listChains",
+    "chainByResult",
+  ] as const;
+  const wrapper: Record<string, unknown> = {};
+  for (const key of delegated) {
+    wrapper[key] = (...args: unknown[]) =>
+      (ledger as unknown as Record<string, (...methodArgs: unknown[]) => unknown>)[key](...args);
+  }
+  wrapper.recordStudyHalted = async (...args: unknown[]) => {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    return (ledger as unknown as Record<string, (...methodArgs: unknown[]) => unknown>).recordStudyHalted(...args);
+  };
+  return wrapper as unknown as ProvenanceLedgerStore;
+}
+
 /** 构建通过出边界合同自检的 inconclusive 信封（数据缺口口径：metric-unavailable）。 */
 function buildInconclusiveEnvelope(contract: AiHypothesisContract, resultFingerprint: string): AiVerificationEnvelope {
   return validateAiVerificationEnvelope({
@@ -226,6 +256,43 @@ describe("SimulationStudyTaskStore（异步长跑）", () => {
     const halted = await ledger.listStudyRuns("project-1");
     expect(halted[0].status).toBe("cancelled");
     expect(halted[0].settleReason).toBe("budget-exceeded");
+  }, 20_000);
+
+  // F1（HEAD 卫生批捕获的负载型竞态）：预算取消收口与账本落账之间存在可见性窗口——
+  // 旧实现任务视图先翻转，观察者立刻读账本拿到 running（全量负载下 :227 实测打红）。
+  // 锁死语义：观察者看到任务离开 running 的瞬间，该任务在账本中的运行段必须已收口，
+  // 且并发多任务下每个任务独立满足。慢账本委托把窗口放大到 120ms，使断言确定性敏感。
+  it("F1 锁：并发预算取消的视图可见时账本运行段必须已收口（慢账本下无 running 残留）", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "bim-study-halt-race-"));
+    const ledger = new ProvenanceLedgerStore(directory);
+    await ledger.init();
+    const tasks = new SimulationStudyTaskStore(directory, {
+      ledger: slowHaltLedger(ledger, 120),
+      goldenProvider: createGoldenVerifyProvider(),
+      stepDelayMs: 1,
+      maxRunningPerProject: 3,
+    });
+    await tasks.init();
+    cleanups.push(async () => {
+      tasks.dispose();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      await rm(directory, { recursive: true, force: true });
+    });
+    const launched = await Promise.all(Array.from({ length: 3 }, () =>
+      tasks.launch("project-1", "tester:1", { hypothesis: POSITIVE_HYPOTHESIS, budget: { repeats: 5_000, wallClockMs: 1_000 } })));
+    await Promise.all(launched.map(async (task) => {
+      const view = await waitFor(tasks, task.taskId, (item) => item.status !== "running");
+      expect(view.status).toBe("cancelled");
+      expect(view.settleReason).toBe("budget-exceeded");
+      // 观察点即断言点：视图可见瞬间账本不允许残留 running（修复前此处确定性打红）。
+      const running = await ledger.listStudyRuns("project-1", { status: "running" });
+      expect(running.some((item) => item.nodeId === task.taskId)).toBe(false);
+    }));
+    const halted = await ledger.listStudyRuns("project-1");
+    expect(halted).toHaveLength(3);
+    for (const item of halted) {
+      expect(item).toMatchObject({ status: "cancelled", settleReason: "budget-exceeded" });
+    }
   }, 20_000);
 
   it("断线恢复（dispose 模拟进程死亡 → 新存储重启）：同指纹续写，账本链不重复", async () => {

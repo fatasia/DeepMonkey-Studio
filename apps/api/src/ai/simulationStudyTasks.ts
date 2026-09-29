@@ -265,24 +265,39 @@ export class SimulationStudyTaskStore {
 
   async #halt(projectId: string, taskId: string, status: "cancelled" | "failed", settleReason: string, extraWarnings: string[] = []): Promise<void> {
     this.#active.get(taskId)?.abort();
-    let completedRepeats = 0;
-    await this.#commit(projectId, (draft) => {
-      const record = draft.tasks.find((item) => item.taskId === taskId);
+    // F1（HEAD 卫生批捕获的负载型竞态，test-output/api-flaky-analysis.md）：旧实现先提交任务
+    // 视图再写账本——观察者在两步之间轮询会看到"任务已 cancelled、账本行仍 running"的
+    // 不一致链（测试 :227 即断在该窗口）。收口改为单段串行写链：账本先落、任务视图后翻转
+    // （与完成路径 recordStudySettled→commit 同序），视图可见时账本必然已写穿透；
+    // completedRepeats 与状态翻转同读同写，保持原子精确（用户取消回执 equality 依赖它）。
+    // 账本写失败不阻断收口：警告随翻转原子入档（fail-open + 诚实警示，K8 纪律）。
+    let ledgerWarning: string | undefined;
+    const operation = this.#writes.then(async () => {
+      const document = await this.#loadDocument(projectId);
+      const record = document.tasks.find((item) => item.taskId === taskId);
+      // 非运行态直接跳过：竞态双收口（取消 vs 预算看门狗）不会用陈旧计数覆盖首次精确回执。
       if (!record || record.status !== "running") return;
-      completedRepeats = record.progress.completedRepeats;
-      record.status = status;
-      record.settleReason = settleReason.slice(0, 200);
-      record.settledAt = new Date(this.#now()).toISOString();
-      record.partial = completedRepeats > 0;
-      record.warnings = [...record.warnings, ...extraWarnings].slice(-20);
-    });
-    if (this.#ledger) {
-      try {
-        await this.#ledger.recordStudyHalted(projectId, { taskId, status, settleReason, completedRepeats, settledAt: new Date(this.#now()).toISOString() });
-      } catch (error) {
-        await this.#appendWarning(projectId, taskId, `provenance-ledger-write-failed(study-halt): ${compactMessage(error)}`);
+      const completedRepeats = record.progress.completedRepeats;
+      const settledAt = new Date(this.#now()).toISOString();
+      if (this.#ledger) {
+        try {
+          await this.#ledger.recordStudyHalted(projectId, { taskId, status, settleReason, completedRepeats, settledAt });
+        } catch (error) {
+          ledgerWarning = `provenance-ledger-write-failed(study-halt): ${compactMessage(error)}`;
+        }
       }
-    }
+      const draft: StudyTaskDocument = structuredClone(document);
+      const draftRecord = draft.tasks.find((item) => item.taskId === taskId)!;
+      draftRecord.status = status;
+      draftRecord.settleReason = settleReason.slice(0, 200);
+      draftRecord.settledAt = settledAt;
+      draftRecord.partial = completedRepeats > 0;
+      draftRecord.warnings = [...draftRecord.warnings, ...extraWarnings, ...(ledgerWarning ? [ledgerWarning] : [])].slice(-20);
+      await this.#persist(projectId, draft);
+      this.#documents.set(projectId, draft);
+    });
+    this.#writes = operation.then(() => undefined, () => undefined);
+    await operation;
   }
 
   async #appendWarning(projectId: string, taskId: string, warning: string): Promise<void> {

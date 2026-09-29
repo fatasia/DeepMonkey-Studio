@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentCheckpoint, AgentToolDefinition } from "@bim-studio/industrial-agent-orchestrator";
-import { IndustrialAgentRunView } from "./IndustrialAgentWorkspace";
+import { AgentObjectiveExamplesRow, IndustrialAgentRunView } from "./IndustrialAgentWorkspace";
 
 const tools: AgentToolDefinition[] = [{
   id: "operations.control.apply",
@@ -110,6 +110,40 @@ describe("IndustrialAgentRunView", () => {
   it("omits the memory and provenance panels when no project scope is available", () => {
     expect(render(fixture())).not.toContain('aria-label="项目记忆"');
     expect(render(fixture())).not.toContain('aria-label="实验档案"');
+  });
+});
+
+// ── T11（审计 §二 T11：示例与能力面脱节；目录加载失败只剩禁用态）──
+describe("AgentObjectiveExamplesRow（T11 示例随工具目录生成）", () => {
+  const catalog: AgentToolDefinition[] = [
+    { id: "data.query.read", label: "数据读取", description: "", effect: "read", risk: "low", requiresApproval: false },
+    { id: "simulation.debug.run", label: "虚拟调试", description: "", effect: "simulate", risk: "medium", requiresApproval: false },
+  ];
+  function row(tools: AgentToolDefinition[], overrides: Partial<Parameters<typeof AgentObjectiveExamplesRow>[0]> = {}): string {
+    return renderToStaticMarkup(
+      <AgentObjectiveExamplesRow locale="zh-CN" tools={tools} busy={false} loading={false} hasProject
+        canSample={tools.some((tool) => tool.effect === "read" && !tool.requiresApproval)}
+        onSample={vi.fn()} onPick={vi.fn()} {...overrides} />,
+    );
+  }
+  it("renders catalog-derived examples and hides the disabled-sample note when read tools exist", () => {
+    const html = row(catalog);
+    expect(html).toContain("数据读取");
+    expect(html).toContain("虚拟调试");
+    // 以前会坏：固定示例"检查设备异常"与目录无关地展示。
+    expect(html).not.toContain("检查设备异常");
+    expect(html).not.toContain("没有可直接运行的只读能力");
+  });
+  it("explains the disabled sample button visibly when the catalog has no runnable read tool", () => {
+    const html = row([]);
+    expect(html).toContain("一键运行样例");
+    expect(html).toContain("disabled");
+    // 以前会坏：目录加载失败时新手只看到禁用按钮，无可见原因。
+    expect(html).toContain("没有可直接运行的只读能力");
+    expect(html).toContain("只读检查当前项目可用能力与数据");
+  });
+  it("keeps the note silent while the catalog is still loading", () => {
+    expect(row([], { loading: true })).not.toContain("没有可直接运行的只读能力");
   });
 });
 

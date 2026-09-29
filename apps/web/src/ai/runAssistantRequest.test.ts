@@ -10,7 +10,7 @@ function deferred<T>() {
 
 function setup() {
   const controller = new AbortController();
-  const client = { invokeCapability: vi.fn(), streamAssistant: vi.fn() };
+  const client = { invokeCapability: vi.fn(), streamAssistant: vi.fn(), listDatasets: vi.fn() };
   const input: Parameters<typeof runAssistantRequest>[0] = {
     client, mode: "bim", prompt: "检查设备", projectId: "project-1", locale: "zh-CN",
     context: {}, platformContext: {}, sources: [], recentConversation: [], signal: controller.signal, onDelta: vi.fn(),
@@ -133,5 +133,40 @@ describe("assistant request lifecycle", () => {
     client.invokeCapability.mockResolvedValue({ output: { planning: { issues: [{ message: "需要选择数据集" }] } }, warnings: [] });
     await expect(runAssistantRequest(input)).rejects.toThrow("需要选择数据集");
     expect(client.invokeCapability).toHaveBeenCalledTimes(1);
+  });
+
+  // ── T2 回归（审计 P1-9 chat 最小版：needs-input 歧义只能散文报错，无结构化澄清）──
+  it("T2: turns a needs-input draft into a structured clarification fed by the server dataset catalog", async () => {
+    const { client, input } = setup();
+    input.mode = "sql";
+    client.invokeCapability.mockResolvedValue({
+      output: { planning: { status: "needs-input", issues: [{ path: "datasetId", code: "dataset-not-found", message: "数据集「产量」不唯一" }] }, model: "planner" },
+      warnings: [], traceId: "draft-1",
+    });
+    client.listDatasets.mockResolvedValue([
+      { id: "d1", projectId: "project-1", name: "产线小时产量" },
+      { id: "d2", projectId: "project-1", name: "质量检测记录" },
+      { id: "d3", projectId: "other-project", name: "别人项目的数据" },
+    ]);
+    const result = await runAssistantRequest(input);
+    // 以前会坏：直接 throw，用户只能看到一句错误；现在返回可就地作答的澄清卡数据源。
+    expect(result.clarification).toEqual({
+      question: "数据集「产量」不唯一",
+      options: [{ id: "d1", label: "产线小时产量" }, { id: "d2", label: "质量检测记录" }],
+    });
+    expect(result.text).toContain("不唯一");
+    // 澄清轮无证据读取，可靠性如实保持 limited，不冒充 capability-verified。
+    expect(result.reliability).toMatchObject({ grade: "limited", contextTrust: "capability-result" });
+  });
+
+  it("T2: keeps the hard error when needs-input has no candidate datasets (never fabricates options)", async () => {
+    const { client, input } = setup();
+    input.mode = "sql";
+    client.invokeCapability.mockResolvedValue({
+      output: { planning: { status: "needs-input", issues: [{ message: "无法确定数据集" }] } }, warnings: [],
+    });
+    client.listDatasets.mockResolvedValue([]);
+    await expect(runAssistantRequest(input)).rejects.toThrow("无法确定数据集");
+    expect(client.listDatasets).toHaveBeenCalled();
   });
 });

@@ -12,7 +12,17 @@ export interface AssistantRequestResult {
   dashboard?: SceneDashboardState;
   dashboardPageDraft?: unknown;
   prepared?: BimAssistantPreparedContext;
+  /**
+   * T2（审计 §二 2.1 / P1-9 chat 最小版）：sql 受控问数歧义时的结构化澄清——
+   * question + 服务端数据集目录候选；缺省（无歧义/无候选）不渲染澄清卡。
+   */
+  clarification?: AssistantClarification;
   reliability: AssistantReliabilitySummary;
+}
+
+export interface AssistantClarification {
+  question: string;
+  options: Array<{ id: string; label: string }>;
 }
 
 /** Dashboard providers stream a JSON envelope; expose only its human-readable text through the shared message flow. */
@@ -24,7 +34,7 @@ export function dashboardAssistantStreamText(content: string): string {
 
 /** 一次请求从本地 BIM 准备、问数规划到流式读取共用取消信号；每个 await 后检查所有权。 */
 export async function runAssistantRequest(input: {
-  client: Pick<typeof api, "invokeCapability" | "streamAssistant">;
+  client: Pick<typeof api, "invokeCapability" | "streamAssistant" | "listDatasets">;
   mode: AssistantMode;
   prompt: string;
   projectId?: string;
@@ -48,7 +58,30 @@ export async function runAssistantRequest(input: {
     const drafted = await client.invokeCapability<AskDataQueryDraftResult>(projectId, "data.query.draft", { prompt }, "web-user", signal);
     signal.throwIfAborted();
     const plan = drafted.output?.planning.plan;
-    if (!plan) throw new Error(drafted.output?.planning.issues[0]?.message ?? drafted.warnings[0] ?? drafted.error?.message ?? t("无法生成受控查询计划", "Unable to create a controlled query plan"));
+    if (!plan) {
+      const issue = drafted.output?.planning.issues[0]?.message;
+      // T2：needs-input（如数据集不匹配）且项目目录确有数据集时，返回结构化澄清
+      // （候选来自服务端目录，不虚构），而不是把歧义当错误抛出；目录不可用则保持原错误路径。
+      if (drafted.output?.planning.status === "needs-input") {
+        let datasets: import("@bim-studio/contracts").DataDatasetRecord[] = [];
+        try { datasets = await client.listDatasets(projectId); } catch { /* 目录读取失败时走下方原错误抛出。 */ }
+        signal.throwIfAborted();
+        const options = datasets.filter(dataset => dataset.projectId === projectId).slice(0, 8)
+          .map(dataset => ({ id: dataset.id, label: dataset.name }));
+        if (options.length) {
+          return {
+            text: issue ?? t("需要先确认要查询的数据集", "The dataset to query needs to be confirmed first"),
+            ...(drafted.output?.model ? { model: drafted.output.model } : {}),
+            clarification: { question: issue ?? t("请选择要查询的数据集", "Choose the dataset to query"), options },
+            reliability: queryCapabilityReliability({
+              traceId: drafted.traceId, evidenceCount: 0, warnings: [...drafted.warnings],
+              sourceLabel: t("受控问数澄清", "Controlled query clarification"),
+            }),
+          };
+        }
+      }
+      throw new Error(issue ?? drafted.warnings[0] ?? drafted.error?.message ?? t("无法生成受控查询计划", "Unable to create a controlled query plan"));
+    }
     const read = await client.invokeCapability<AskDataQueryReadResult>(projectId, "data.query.read", { plan }, "web-user", signal);
     signal.throwIfAborted();
     if (!read.output) throw new Error(read.error?.message ?? t("查询没有返回数据", "The query returned no data"));

@@ -87,7 +87,9 @@ export function useAssistantChatRun(input: {
       input.sessions.setConversation(previous => [...previous, { id: saved?.message ?? crypto.randomUUID(), mode: input.mode,
         question: prompt, answer: result.text, reliability: result.reliability, scope: input.scopeLabel, status: "completed",
         ...(result.execution ? { execution: result.execution } : {}),
-        ...(result.model ? { model: result.model } : {}) }]);
+        ...(result.model ? { model: result.model } : {}),
+        // T2：sql 歧义澄清卡——结构化候选来自服务端数据集目录，缺省不渲染。
+        ...(result.clarification ? { clarification: result.clarification } : {}) }]);
     } catch (reason) {
       await finish(controller.signal.aborted ? "stopped" : "failed");
       if (isCurrent()) setError(reason instanceof Error ? reason.message : String(reason));
