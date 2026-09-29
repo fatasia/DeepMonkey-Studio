@@ -25,9 +25,12 @@ function makeRunner({ statusByNeedle = {}, defaultStatus = 0 } = {}) {
 
 const passRunner = () => makeRunner();
 
-test("四对判据计划形状与命令锚定(漂移即红)", () => {
-  assert.equal(GATE_PAIRS.length, 4);
-  const [furnace, identity, cloth, hash] = GATE_PAIRS;
+test("五对判据计划形状与命令锚定(漂移即红)", () => {
+  assert.equal(GATE_PAIRS.length, 5);
+  const [furnace, identity, cloth, hash, frameAbi] = GATE_PAIRS;
+  assert.equal(frameAbi.id, "frame-abi-schema");
+  assert.equal(frameAbi.legs[0].command.includes("frameLayout.test.ts"), true);
+  assert.equal(frameAbi.legs[1].command.includes("--lib frame_layout"), true);
   for (const pair of GATE_PAIRS) {
     assert.equal(pair.legs.length, 2, `${pair.id} 必须双腿`);
     assert.deepEqual(pair.legs.map((leg) => leg.side).sort(), ["native", "ts"]);
@@ -73,12 +76,12 @@ test("全绿路径(policy off):CPU/静态口径降级通过,GPU 腿跳过有原�
   assert.equal(result.ok, true);
   assert.equal(result.degraded, true);
   const cells = result.pairs.flatMap((pair) => pair.cells);
-  assert.equal(cells.length, 8, "4 对 × 双腿 = 8 格");
-  assert.equal(cells.filter((cell) => cell.status === "PASS").length, 7, "7 条非 GPU 格全绿(含 1 条复用格)");
+  assert.equal(cells.length, 10, "5 对 × 双腿 = 10 格");
+  assert.equal(cells.filter((cell) => cell.status === "PASS").length, 9, "9 条非 GPU 格全绿(含 1 条复用格)");
   const tsFurnace = cells.find((cell) => cell.id === "white-furnace:ts-gpu");
   assert.equal(tsFurnace.status, "SKIP");
   assert.match(tsFurnace.detail, /GPU 腿未启用/);
-  assert.equal(calls.length, 6, "去重后实际执行 6 条命令(全部为非 GPU 腿)");
+  assert.equal(calls.length, 8, "去重后实际执行 8 条命令(全部为非 GPU 腿)");
 });
 
 test("命令级复用:dashboard_identity_golden 只执行一次,两对判据都引用其结果", () => {
@@ -102,7 +105,7 @@ test("任一端红即门失败,且其余腿照常判定(不中断)", () => {
   const clothPair = result.pairs.find((pair) => pair.id === "cloth-softbody-fingerprint");
   assert.deepEqual(clothPair.failed.map((cell) => cell.side), ["native"]);
   const cells = result.pairs.flatMap((pair) => pair.cells);
-  assert.equal(cells.filter((cell) => cell.status === "PASS").length, 6, "其余腿仍 PASS 入表");
+  assert.equal(cells.filter((cell) => cell.status === "PASS").length, 8, "其余腿仍 PASS 入表");
   assert.match(formatReport(result), /门判定: FAIL/);
 });
 
@@ -126,7 +129,7 @@ test("auto + adapter 不可用:GPU 腿自动跳过并输出原因,CPU 判据保�
   const tsFurnace = result.pairs[0].cells.find((cell) => cell.id === "white-furnace:ts-gpu");
   assert.equal(tsFurnace.status, "SKIP");
   assert.equal(tsFurnace.detail, reason, "跳过原因必须如实透出探测结论");
-  assert.equal(calls.length, 6, "CPU 判据腿照常执行");
+  assert.equal(calls.length, 8, "CPU 判据腿照常执行");
   assert.match(formatReport(result), /PASS\(降级\)/);
 });
 
@@ -154,7 +157,7 @@ test("executeGate 缺 runLeg 直接抛错(防止静默空跑)", () => {
   assert.throws(() => executeGate({ gpuPolicy: "off", gpuAvailability: null }), /runLeg/);
 });
 
-test("报告与证据序列化:四对判据、状态、降级与策略齐全", () => {
+test("报告与证据序列化:五对判据、状态、降级与策略齐全", () => {
   const { runner } = makeRunner({ statusByNeedle: { "test:white-furnace-gpu": 1 } });
   const result = executeGate({
     gpuPolicy: "auto",
@@ -168,7 +171,7 @@ test("报告与证据序列化:四对判据、状态、降级与策略齐全", (
   assert.equal(evidence.ok, result.ok);
   assert.equal(evidence.gpuPolicy, "auto");
   assert.equal(evidence.timeoutMs, 1234);
-  assert.equal(evidence.pairs.length, 4);
+  assert.equal(evidence.pairs.length, 5);
   for (const pair of evidence.pairs) {
     assert.equal(pair.legs.length, 2);
     for (const leg of pair.legs) {

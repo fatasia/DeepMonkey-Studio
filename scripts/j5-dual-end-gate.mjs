@@ -93,6 +93,22 @@ export const GATE_PAIRS = [
       },
     ],
   },
+  {
+    id: "frame-abi-schema",
+    name: "frame ABI schema 单源指纹(J2-B7-adopt)",
+    legs: [
+      {
+        id: "frame-abi:ts", side: "ts", requiresGpu: false,
+        command: vitestCommand(["src/frameAbi/generated/frameLayout.test.ts"]),
+        note: "产物指纹戳==当前 schema sha256+双端手写真值 parity；任何 frame 字段变更必须改 schema 再生成(漂移即红,adopt 纪律强制)",
+      },
+      {
+        id: "frame-abi:native", side: "native", requiresGpu: false,
+        command: cargoCommand("--lib frame_layout"),
+        note: "include_str! schema 原文重算 sha256 对生成戳+与 mesh_abi 手写常量 parity(2384B 字节门同链)",
+      },
+    ],
+  },
 ];
 
 /** GPU 腿策略:off=默认 CPU/静态口径;auto=探测可用才跑;strict=不可用即门失败。
