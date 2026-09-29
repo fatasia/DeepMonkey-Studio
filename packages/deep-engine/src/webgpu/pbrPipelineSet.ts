@@ -2,6 +2,7 @@ import type { DeviceSession } from "./deviceSession.js";
 import type { PbrRendererOptions } from "./pbrRendererTypes.js";
 import type { PbrRendererFeatures } from "./pbrRendererFeatures.js";
 import { createPipelinesBuild, type Pipelines, type PipelinesBuild } from "./pipelines.js";
+import type { PipelineCompileRecord } from "./pipelineCache.js";
 
 const PIPELINE_SET_SCHEMA = "deep-pbr-pso-v1";
 
@@ -14,6 +15,10 @@ export interface PbrPipelineSet {
   readonly ready: Promise<void>;
   /** 关闭 bootstrap 校验作用域后调用，允许背景 main 变体排队。 */
   readonly release: () => void;
+  /** C26 量化口径:本 device 的逐管线编译耗时清单(静态变体构建)。 */
+  readonly pipelineCompileRecords: () => readonly PipelineCompileRecord[];
+  /** 首帧关键子集管线指纹(跨会话预热计划分类依据)。 */
+  readonly criticalFingerprints: readonly string[];
   /** deformation 变体未延迟时在此就绪；延迟模式下为 undefined。 */
   readonly deformation?: Promise<Pipelines>;
   /** deferDeformation 模式下首次调用才开始创建变形变体（幂等）。 */
@@ -88,6 +93,8 @@ async function buildPbrPipelineSet(session: DeviceSession, lightingLayout: GPUBi
   const buildSet = (build: PipelinesBuild): PbrPipelineSet => ({
     pipelines, criticalReady, ready,
     release: () => build.releaseDeferredQueues(),
+    pipelineCompileRecords: () => build.pipelineCompileRecords(),
+    criticalFingerprints: build.criticalFingerprints,
   });
   // 非延迟模式：变形变体与其他变体同时开始创建（旧语义），set.ready 覆盖它们。
   if (!deferDeformation && wantsDeformation) {

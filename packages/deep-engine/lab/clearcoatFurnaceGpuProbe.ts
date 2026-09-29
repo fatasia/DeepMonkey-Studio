@@ -85,7 +85,7 @@ const luma = (rgb: readonly number[]): number => 0.2126 * rgb[0]! + 0.7152 * rgb
 /** 有纹理材质才能进 material 管线(extendedShade 载体);1×1 白底色保持 base 逐位中性。 */
 /** 带等距柱状 UV0 的球体(primitives.sphereMesh 不含 UV0,而有纹理材质要求几何携带 UV0);
  * 顶点/索引数学与 primitives.sphereMesh 逐字一致,仅追加 uv0 数组。 */
-function sphereMeshWithUv0(segments = 40, rings = 24): { vertices: Float32Array; indices: Uint32Array; uv0: Float32Array } {
+function sphereMeshWithUv0(segments = 40, rings = 24): { vertices: Float32Array<ArrayBuffer>; indices: Uint32Array<ArrayBuffer>; uv0: Float32Array<ArrayBuffer> } {
   if (!Number.isInteger(segments) || !Number.isInteger(rings) || segments < 3 || rings < 2 || segments > 256 || rings > 256) {
     throw new Error("Sphere subdivisions are outside the supported range.");
   }

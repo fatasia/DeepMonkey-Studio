@@ -5,6 +5,7 @@ import { createPbrPipelineSet } from "./pbrPipelineSet.js";
 import { createPbrEnvironment } from "./pbrEnvironmentSource.js";
 import { resolvePbrRendererFeatures, type PbrRendererFeatures } from "./pbrRendererFeatures.js";
 import type { Pipelines } from "./pipelines.js";
+import { pipelineWarmupEntriesFromLedger, persistPipelineWarmupPlanToBrowser } from "./pipelineCachePersistence.js";
 import type { StudioEnvironment } from "./studioEnvironment.js";
 import type { PbrRendererOptions } from "./pbrRendererTypes.js";
 import { assertTextureArrayProductionReady } from "./textureArrayProductionGate.js";
@@ -45,6 +46,12 @@ export async function openPbrRenderer<T>(session: DeviceSession,
           await value.criticalReady;
         }
         markBootstrap(options.pipelines?.firstFrameMainKeys ? "pipelines-critical-ready" : "pipelines-ready");
+        // C26:把逐管线编译清单(指纹+耗时+关键子集分类)落盘为跨会话预热计划。
+        // fail-open:存储不可用只损失下一次会话的优先级建议,绝不影响启动。
+        try {
+          void persistPipelineWarmupPlanToBrowser(
+            pipelineWarmupEntriesFromLedger(value.pipelineCompileRecords(), value.criticalFingerprints));
+        } catch { /* 量化辅助路径 */ }
         return value;
       }),
       createPbrEnvironment(session, options.environment, signal).then(value => {

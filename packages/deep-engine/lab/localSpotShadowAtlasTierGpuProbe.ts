@@ -287,7 +287,7 @@ export async function endLeg(): Promise<AtlasTierLegAnalysis> {
   }
   const analysis: AtlasTierLegAnalysis = Object.freeze({
     tier: leg.tier, frames: leg.frames, atlasDegraded: atlasRuntime.degraded,
-    atlasSignature: atlasRuntime.lastSignature, metadataEntries,
+    ...(atlasRuntime.lastSignature !== undefined ? { atlasSignature: atlasRuntime.lastSignature } : {}), metadataEntries,
     ...(atlasRuntime.budget ? { atlasBudget: { maxShadowedLights: atlasRuntime.budget.maxShadowedLights,
       downgraded: atlasRuntime.budget.downgraded } } : {}),
     coveredLights: perLight.filter(entry => entry.shadowed).length,

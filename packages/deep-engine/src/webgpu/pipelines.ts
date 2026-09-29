@@ -10,6 +10,9 @@ import { createPbrOutputShaderProvenance, type PbrOutputShaderProvenance } from 
 import { composeTextureArraySceneShader } from "./textureArrayWgsl.js";
 import { textureArrayMaterialTableLayoutEntries } from "./textureArrayMaterialTable.js";
 import { sharedOutputPipeline } from "./pbrOutputPipelineCache.js";
+import { pipelineCompileCacheForDevice, renderPipelineFingerprint } from "./pipelineCache.js";
+import type { PipelineCompileRecord } from "./pipelineCache.js";
+import { PipelineWarmupQueue } from "./pipelineWarmup.js";
 
 export const PBR_FRAME_UNIFORM_FLOATS = 96;
 export const PBR_FRAME_UNIFORM_BYTES = PBR_FRAME_UNIFORM_FLOATS * 4;
@@ -98,6 +101,11 @@ export interface PipelinesBuild {
   readonly criticalReady: Promise<void>;
   /** Lets background main variants enter the caller's released error scope. */
   readonly releaseDeferredQueues: () => void;
+  /** C26 量化口径:本 device 的逐管线编译耗时清单(WGSL 指纹 + 耗时 + 命中)。 */
+  readonly pipelineCompileRecords: () => readonly PipelineCompileRecord[];
+  /** 首帧关键子集的管线指纹(关键 main + 全部阴影/display/directional);
+   * 跨会话预热计划据此把 last-session 关键管线标为 first-frame 优先级。 */
+  readonly criticalFingerprints: readonly string[];
 }
 
 export async function createPipelines(device: GPUDevice, format: GPUTextureFormat,
@@ -136,8 +144,19 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     binding, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage", minBindingSize: 48 },
   })) : [];
   const source = deformation ? deformedSceneShader : sceneShader;
+  const moduleCode = textureArrays ? composeTextureArraySceneShader(source) : source;
+  // C26:逐管线编译走指纹缓存(WGSL 源哈希 + 描述符指纹),命中复用并记录
+  // 逐管线编译耗时清单;WGSL 源或描述符变更即指纹漂移,陈旧条目自动失效。
+  const compileCache = pipelineCompileCacheForDevice(device);
+  const createPipeline = (descriptor: GPURenderPipelineDescriptor): Promise<GPURenderPipeline> =>
+    compileCache.create([moduleCode], descriptor, () => device.createRenderPipelineAsync(descriptor));
+  // 首帧关键子集的指纹登记:跨会话预热计划据此识别"上次哪些管线是首帧必需"。
+  const createCriticalPipeline = (descriptor: GPURenderPipelineDescriptor): Promise<GPURenderPipeline> => {
+    criticalFingerprints.push(renderPipelineFingerprint([moduleCode], descriptor));
+    return createPipeline(descriptor);
+  };
   const module = device.createShaderModule({ label: textureArrays ? "Deep PBR texture arrays" : "Deep PBR",
-    code: textureArrays ? composeTextureArraySceneShader(source) : source });
+    code: moduleCode });
   const sharedOutput = sharedOutputPipeline(device, format);
   const [sceneInfo] = await Promise.all([module.getCompilationInfo(), sharedOutput.validated]);
   const errors = sceneInfo.messages.filter(message => message.type === "error");
@@ -187,14 +206,16 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     bindGroupLayouts: [frameLayout, emptyMaterialLayout, cascadedShadowLayout],
   });
   const mainPipelines = new Map<string, GPURenderPipeline>();
-  const mainFactories: Array<{ readonly key: string; readonly create: () => Promise<GPURenderPipeline> }> = [];
+  const criticalFingerprints: string[] = [];
+  const mainFactories: Array<{ readonly key: string; readonly descriptor: GPURenderPipelineDescriptor;
+    readonly create: () => Promise<GPURenderPipeline> }> = [];
   for (const mode of ["plain", "material", "normal"] as const) for (const transparent of [false, true]) {
     for (const raster of ["ccw", "cw", "double"] as const) {
       const key = mainPipelineKey(mode, transparent, raster), doubleSided = raster === "double";
       const targets: readonly GPUColorTargetState[] = transparent ? weightedOitColorTargets()
         : (writeGeometryBuffers ? PBR_OPAQUE_ATTACHMENT_FORMATS : [PBR_HDR_FORMAT]).map(format => ({ format }));
       const opaqueEntry = mode === "plain" ? "fragmentMain" : "fragmentMaterial";
-      mainFactories.push({ key, create: () => device.createRenderPipelineAsync({
+      const descriptor: GPURenderPipelineDescriptor = {
         label: `Deep forward PBR ${key}`,
         layout: mode === "plain" ? plainLayout : materialPipelineLayout,
         vertex: { module, entryPoint: deformation ? mode === "normal" ? "vertexDeformedNormalMapped" : "vertexDeformed"
@@ -207,7 +228,8 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
         primitive: { topology: "triangle-list", cullMode: doubleSided ? "none" : "back", frontFace: raster === "cw" ? "cw" : "ccw" },
         depthStencil: { format: PBR_DEPTH_FORMAT, depthWriteEnabled: !transparent, depthCompare: "less" },
         multisample: { count: PBR_MAIN_SAMPLE_COUNT },
-      }) });
+      };
+      mainFactories.push({ key, descriptor, create: () => createPipeline(descriptor) });
     }
   }
   // 首帧关键子集立即排队（plain/ccw 恒含）；其余 main 变体等 release 后再排队。
@@ -219,14 +241,15 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
   const deferredMains = firstFrameKeys
     ? mainFactories.filter(({ key }) => key !== passMainKey && !firstFrameKeys.includes(key))
     : [];
-  const criticalMainReady = Promise.all(criticalMains.map(({ key, create }) => track(mainPipelines, key, create())))
+  const criticalMainReady = Promise.all(criticalMains.map(({ key, descriptor }) =>
+    track(mainPipelines, key, createCriticalPipeline(descriptor))))
     .then(value => { markPipeline(`critical-main${value.length}-ready`); return value; });
   const displayPipelines = new Map<string, GPURenderPipeline>(), pendingDisplay: Array<Promise<GPURenderPipeline>> = [];
   const pendingDisplayKeys: string[] = [];
   if (!writeGeometryBuffers) for (const mode of ["plain", "material", "normal"] as const) {
     for (const raster of ["ccw", "cw", "double"] as const) {
       const key = mainPipelineKey(mode, false, raster), doubleSided = raster === "double";
-      pendingDisplayKeys.push(key); pendingDisplay.push(track(displayPipelines, key, device.createRenderPipelineAsync({
+      pendingDisplayKeys.push(key); pendingDisplay.push(track(displayPipelines, key, createCriticalPipeline({
         label: `Deep direct display PBR ${key}`,
         layout: mode === "plain" ? plainLayout : materialPipelineLayout,
         vertex: { module, entryPoint: mode === "plain" ? "vertexDirectDisplay"
@@ -248,7 +271,7 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
   if (!writeGeometryBuffers && directDisplayNoEffects && directDisplayOneCascade) {
     for (const raster of ["ccw", "cw", "double"] as const) {
       const key = mainPipelineKey("plain", false, raster), doubleSided = raster === "double";
-      pendingDirectionalKeys.push(key); pendingDirectional.push(track(displayDirectionalPipelines, key, device.createRenderPipelineAsync({
+      pendingDirectionalKeys.push(key); pendingDirectional.push(track(displayDirectionalPipelines, key, createCriticalPipeline({
         label: `Deep direct directional PBR ${key}`, layout: directionalPlainLayout,
         vertex: { module, entryPoint: "vertexDirectDisplay", buffers },
         fragment: { module, entryPoint: "fragmentMainDisplayDirectional", targets: [{ format }] },
@@ -269,7 +292,7 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
   for (const authored of directDisplayOneCascade ? [false, true] : [false]) for (const mode of ["solid", "maskPlain", "maskMaterial"] as const) for (const raster of ["ccw", "cw", "double"] as const) {
     const key = (authored ? "author/" : "") + shadowPipelineKey(mode, raster), doubleSided = raster === "double";
     pendingShadowKeys.push(key);
-    pendingShadow.push(track(shadowPipelines, key, device.createRenderPipelineAsync({
+    pendingShadow.push(track(shadowPipelines, key, createCriticalPipeline({
       label: `Deep shadow ${key}`, layout: mode === "maskMaterial" ? shadowMaterialLayout : shadowPlainLayout,
       vertex: { module, entryPoint: deformation ? mode === "solid" ? "shadowDeformed" : "shadowMaskDeformed"
         : mode === "solid" ? "shadowMain" : "shadowMaskMain",
@@ -289,11 +312,21 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     .then(() => { markPipeline("critical-ready"); });
   // 剩余主材质变体必须在调用方关闭 bootstrap 校验作用域之后才允许排队，
   // 否则 popErrorScope 会再次等待它们，首帧关键路径的收益归零。
+  // C26:放行后背景变体经预热队列(并发上限 2)让路,不再无界并发压设备——
+  // 单个变体失败不阻断其余变体,拒绝经由各自 promise 传入 ready。
+  const backgroundQueue = new PipelineWarmupQueue({ concurrency: 2 });
   let releaseDeferredQueues: (() => void) | undefined;
   const releaseGate = new Promise<void>(resolve => { releaseDeferredQueues = resolve; });
   const deferredMainReady = criticalMainReady.then(async () => {
     await releaseGate;
-    const value = await Promise.all(deferredMains.map(({ key, create }) => track(mainPipelines, key, create())));
+    // 入队全部后才放水:首帧关键子集结算前队列保持暂停,背景变体零启动。
+    const pending = deferredMains.map(({ key, descriptor, create }) =>
+      track(mainPipelines, key, backgroundQueue.enqueue({
+        fingerprint: renderPipelineFingerprint([moduleCode], descriptor),
+        label: descriptor.label ?? key, priority: "background", create,
+      })));
+    backgroundQueue.resume();
+    const value = await Promise.all(pending);
     markPipeline("main-ready");
     return value;
   });
@@ -321,7 +354,8 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     { get: () => displayPipelines.get(passMainKey)!, enumerable: true, configurable: true });
   if (pendingDirectional.length) Object.defineProperty(pipelines, "displayDirectionalMain",
     { get: () => displayDirectionalPipelines.get(passMainKey)!, enumerable: true, configurable: true });
-  return { pipelines, criticalReady, ready, releaseDeferredQueues: releaseDeferredQueues! };
+  return { pipelines, criticalReady, ready, releaseDeferredQueues: releaseDeferredQueues!,
+    pipelineCompileRecords: () => compileCache.records, criticalFingerprints };
 }
 
 /**
