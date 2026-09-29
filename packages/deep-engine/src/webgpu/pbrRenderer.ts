@@ -799,6 +799,7 @@ export class PbrRenderer {
     const sampled = lookup.encode(encoder, { atlasView: lookup.viewOf(atlas),
       atlasEdge: bridge.atlasEdgeTexels, catalog: bridge.textureCatalog(),
       layerOfPage: (textureId, tileX, tileY, mip) => bridge.layerOfPage(textureId, tileX, tileY, mip),
+      packing: bridge.packPageTable(),
       samples: bridge.samples });
     return { ...metrics, sampling: { dispatches: sampled.dispatches, samples: sampled.samples,
       skipped: sampled.skipped } };
