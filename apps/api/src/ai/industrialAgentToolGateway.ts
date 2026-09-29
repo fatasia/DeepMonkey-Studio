@@ -94,7 +94,13 @@ export class IndustrialAgentToolGateway implements AgentToolGateway {
       const outcome = invocationOutcome(execution.value, definition.effect);
       if (call.toolId === "simulation.golden.verify" && outcome.status === "completed") {
         const envelope = readVerificationEnvelope(outcome.output);
-        if (envelope) await this.emitVerdictAudit(call, definition, envelope, context);
+        if (envelope) {
+          // K7：completed 态 gateway warnings 透传进信封（账本写失败等非致命警告必须到 UI）。
+          const withWarnings = outcome.warnings?.length
+            ? { ...envelope, warnings: outcome.warnings }
+            : envelope;
+          await this.emitVerdictAudit(call, definition, withWarnings, context);
+        }
       }
       return outcome;
     } catch (error) {

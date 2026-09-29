@@ -116,6 +116,8 @@ export interface AiVerificationEnvelope {
   goldenMatch?: boolean;
   generatedAt: string;
   evidence: AiHypothesisEvidence[];
+  /** 非致命警告（如账本写失败但结果有效）：completed 态也必须透传到 UI，禁止静默丢弃（K7）。 */
+  warnings?: readonly string[];
 }
 
 export class AiHypothesisContractError extends Error {
