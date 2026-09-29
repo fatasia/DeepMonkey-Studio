@@ -1,20 +1,21 @@
 import type { WorldClusteredLights, WorldSpotLight } from "../lighting/worldLights.js";
 import {
   planSharedShadowAtlas,
+  type SharedShadowAtlasOptions,
   type SharedShadowAtlasPlan,
   type SharedShadowAtlasRequest,
   type SharedShadowAtlasTile,
 } from "../shadows/sharedShadowAtlas.js";
-import { LOCAL_SPOT_SHADOW_MAX_LIGHTS } from "../shadows/localSpotShadowShader.js";
 import { resolveLocalShadowSoftness } from "../shadows/localShadowSoftness.js";
+import { localSpotShadowAtlasOptionsForTier } from "../shadows/localSpotShadowAtlasQuality.js";
 import { lookAt, multiply, perspective } from "./cameraMath.js";
 
-export const LOCAL_SPOT_SHADOW_ATLAS_OPTIONS = Object.freeze({
-  requestedAtlasSize: 1024,
-  tilesPerAxis: 2,
-  maxShadowedLights: LOCAL_SPOT_SHADOW_MAX_LIGHTS,
-  maxShadowViews: LOCAL_SPOT_SHADOW_MAX_LIGHTS,
-});
+/**
+ * 已发布默认图集口径（1024 图集 / 2×2 tile / 4 灯 / 4 view，每灯 508 有效 texel）。
+ * 数值现在由 standard 档 profile 单一权威导出；切到多灯档（4×4/16 灯）走
+ * localSpotShadowAtlasQuality 的 opt-in 解析，默认切换需 Z3.5 联测授权。
+ */
+export const LOCAL_SPOT_SHADOW_ATLAS_OPTIONS = localSpotShadowAtlasOptionsForTier("standard");
 
 export interface SelectedLocalSpotShadow {
   readonly index: number;
@@ -39,7 +40,8 @@ interface SpotCandidate {
 
 /** Plans stable importance-ranked spot tiles while reserving no cube-map point views. */
 export function selectLocalSpotShadows(lights: WorldClusteredLights,
-  resourcePlan: SharedShadowAtlasPlan): LocalSpotShadowSelection {
+  resourcePlan: SharedShadowAtlasPlan,
+  options: SharedShadowAtlasOptions = LOCAL_SPOT_SHADOW_ATLAS_OPTIONS): LocalSpotShadowSelection {
   const candidates = validCandidates(lights.spots ?? []).sort(compareCandidates);
   const pointRequests = (lights.points ?? []).flatMap((light) => light.shadow ? [{
     key: light.shadow.key, kind: "point" as const,
@@ -54,7 +56,7 @@ export function selectLocalSpotShadows(lights: WorldClusteredLights,
     plan = planSharedShadowAtlas(requests, {
       maxTextureDimension2D: resourcePlan.atlasSize,
       maxDepthTextureBytes: resourcePlan.estimatedDepthTextureBytes,
-    }, LOCAL_SPOT_SHADOW_ATLAS_OPTIONS);
+    }, options);
   } catch {
     return Object.freeze({ spots: Object.freeze([]), plan: undefined });
   }

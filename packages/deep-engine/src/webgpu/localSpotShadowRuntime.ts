@@ -1,12 +1,12 @@
 import { createAdmittedTexture } from "./resourceAdmission.js";
 import { DeviceResourceBudgetError } from "./deviceResourceMemory.js";
 import type { WorldClusteredLights } from "../lighting/worldLights.js";
-import { planSharedShadowAtlas, type SharedShadowAtlasPlan } from "../shadows/sharedShadowAtlas.js";
+import { planSharedShadowAtlas, type SharedShadowAtlasOptions, type SharedShadowAtlasPlan } from "../shadows/sharedShadowAtlas.js";
 import { LOCAL_SPOT_SHADOW_ENTRY_BYTES, LOCAL_SPOT_SHADOW_MAX_LIGHTS,
   LOCAL_SPOT_SHADOW_UNIFORM_BYTES } from "../shadows/localSpotShadowShader.js";
 import type { DeviceSession } from "./deviceSession.js";
-import { LOCAL_SPOT_SHADOW_ATLAS_OPTIONS, selectLocalSpotShadows,
-  type SelectedLocalSpotShadow } from "./localSpotShadowSelection.js";
+import { localSpotShadowAtlasOptionsForTier, type LocalSpotShadowAtlasTier } from "../shadows/localSpotShadowAtlasQuality.js";
+import { selectLocalSpotShadows, type SelectedLocalSpotShadow } from "./localSpotShadowSelection.js";
 import { uploadBuffer } from "./meshBuffers.js";
 import type { PacketBuffers } from "./packetBuffers.js";
 import { PBR_FRAME_FLOAT_OFFSETS, PBR_FRAME_UNIFORM_FLOATS, type Pipelines } from "./pipelines.js";
@@ -43,7 +43,9 @@ export interface LocalSpotShadowFrame {
   readonly degraded: boolean;
 }
 
-/** Owns a 4 MiB Browser atlas and at most four importance-ranked spot views. */
+/** Owns a 4 MiB Browser atlas and at most four importance-ranked spot views.
+ *  图集口径经 localSpotShadowAtlasQuality 档位解析（默认 standard；多灯档当前被
+ *  spot uniform ABI 门 fail-closed，见 localSpotShadowAtlasQuality.ts）。 */
 export class LocalSpotShadowRuntime {
   readonly bindings: LocalSpotShadowBindings;
   get deviceEpoch(): string { return this.atlasOwner.deviceEpoch; }
@@ -59,17 +61,26 @@ export class LocalSpotShadowRuntime {
   private constructor(private readonly session: DeviceSession,
     private readonly atlasOwner: SharedShadowAtlasResources, private readonly atlas: SharedShadowAtlasGpuResource | undefined,
     private readonly fallback: GPUTexture | undefined, private readonly uniform: GPUBuffer,
-    private readonly shadowFrames: readonly GPUBuffer[], sampler: GPUSampler, readonly degraded: boolean) {
+    private readonly shadowFrames: readonly GPUBuffer[], sampler: GPUSampler, readonly degraded: boolean,
+    private readonly atlasOptions: SharedShadowAtlasOptions, readonly atlasTier: LocalSpotShadowAtlasTier) {
     const atlasView = atlas?.view ?? fallback!.createView({ dimension: "2d", aspect: "depth-only" });
     this.bindings = Object.freeze({ uniform, atlasView, sampler });
   }
 
-  static async create(session: DeviceSession, signal?: AbortSignal): Promise<LocalSpotShadowRuntime> {
+  static async create(session: DeviceSession, signal?: AbortSignal,
+    tier: LocalSpotShadowAtlasTier = "standard"): Promise<LocalSpotShadowRuntime> {
+    // 档位解析在任何资源分配之前 fail-closed：多灯档超出当前 spot uniform ABI
+    // （4 条目）时抛出，不产生半分配状态；ABI 扩容是它的前置切片。
+    const atlasOptions = localSpotShadowAtlasOptionsForTier(tier, {
+      maxTextureDimension2D: session.device.limits.maxTextureDimension2D,
+      maxDepthTextureBytes: DEPTH_BUDGET,
+      maxSpotShadowEntries: LOCAL_SPOT_SHADOW_MAX_LIGHTS,
+    });
     const epoch = deviceEpoch(session.device), atlasOwner = new SharedShadowAtlasResources(session, epoch);
     let atlas: SharedShadowAtlasGpuResource | undefined, fallback: GPUTexture | undefined, degraded = false;
     try {
       const plan = planSharedShadowAtlas([], { maxTextureDimension2D: session.device.limits.maxTextureDimension2D,
-        maxDepthTextureBytes: DEPTH_BUDGET }, LOCAL_SPOT_SHADOW_ATLAS_OPTIONS);
+        maxDepthTextureBytes: DEPTH_BUDGET }, atlasOptions);
       atlas = (await atlasOwner.setValidated(plan, epoch, signal)).resource;
       degraded = atlas.plan.downgraded;
     } catch (error) {
@@ -92,7 +103,7 @@ export class LocalSpotShadowRuntime {
       const sampler = session.device.createSampler({ label: "Deep local spot shadow PCF", compare: "less-equal",
         minFilter: "linear", magFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" });
       return new LocalSpotShadowRuntime(session, atlasOwner, atlas, fallback, uniform,
-        Object.freeze(shadowFrames), sampler, degraded);
+        Object.freeze(shadowFrames), sampler, degraded, atlasOptions, tier);
     } catch (error) {
       runResourceCleanup("Local spot shadow construction rollback failed.", [
         () => { if (uniform) session.release(uniform); },
@@ -107,7 +118,7 @@ export class LocalSpotShadowRuntime {
     lights: WorldClusteredLights, force: boolean,
     timestampWrites?: GPURenderPassTimestampWrites): LocalSpotShadowFrame {
     this.assertReady();
-    const selection = this.atlas ? selectLocalSpotShadows(lights, this.atlas.plan)
+    const selection = this.atlas ? selectLocalSpotShadows(lights, this.atlas.plan, this.atlasOptions)
       : Object.freeze({ spots: Object.freeze([]), plan: undefined });
     const selected = selection.spots;
     const signature = selected.length ? JSON.stringify(selected.map(value => value.signature)) : "disabled";

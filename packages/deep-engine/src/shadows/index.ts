@@ -26,3 +26,12 @@ export type { ShadowPageBudget, ShadowPageFace, ShadowPageFrameStats, ShadowPage
 export { LocalShadowCache, lightInfluencesOccluder } from "./localShadowCacheInvalidation.js";
 export type { LocalShadowFrameInput, LocalShadowInvalidationPlan, LocalShadowInvalidationStats,
   LocalShadowLightState, LocalShadowOccluderState } from "./localShadowCacheInvalidation.js";
+export { EVALUATION_BUDGET_BYTES, EVALUATION_LIGHT_HEIGHT, EVALUATION_PATCH_HALF_EXTENT,
+  EVALUATION_PATCH_PITCH, analyticSpotVisibility, buildEvaluationLights, percentile,
+  planAtlasLeg, planPagedLeg, spotIrradiance, summarizeShadowQuality } from "./shadowPagingEvaluation.js";
+export type { AtlasLegOptions, EvaluationOccluder, EvaluationScenario, EvaluationSpotLight,
+  LegPlan, LegShadow, PagedLegOptions, ShadowQualityStats } from "./shadowPagingEvaluation.js";
+export { LOCAL_SPOT_SHADOW_ATLAS_QUALITY_PROFILES, estimateLocalSpotShadowAtlasDepthBytes,
+  localSpotShadowAtlasOptionsForTier, resolveLocalSpotShadowAtlasTier } from "./localSpotShadowAtlasQuality.js";
+export type { LocalSpotShadowAtlasQualityProfile, LocalSpotShadowAtlasTier,
+  LocalSpotShadowAtlasTierLimits, LocalSpotShadowAtlasTierSelection } from "./localSpotShadowAtlasQuality.js";

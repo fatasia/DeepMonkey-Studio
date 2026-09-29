@@ -60,6 +60,24 @@ describe("Browser local spot shadow runtime", () => {
     expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
   });
 
+  it("rejects the multi-light tier before any allocation while the spot uniform ABI holds four entries", async () => {
+    const f = fixture();
+    await expect(LocalSpotShadowRuntime.create(f.session, undefined, "multi-light"))
+      .rejects.toThrow(/multi-light tier admits 16 shadowed lights but the spot uniform ABI holds 4 entries/);
+    expect(f.device.createTexture).not.toHaveBeenCalled();
+    expect(f.device.createBuffer).not.toHaveBeenCalled();
+    expect(f.owned.size).toBe(0);
+  });
+
+  it("resolves the standard tier identically to the published default", async () => {
+    const f = fixture(), runtime = await LocalSpotShadowRuntime.create(f.session, undefined, "standard");
+    expect(runtime.atlasTier).toBe("standard");
+    expect(runtime.prepareAndEncode(f.encoder, f.packets as never, f.pipelines, lights(), false))
+      .toMatchObject({ rendered: true, shadowedSpotIndices: [0] });
+    expect(runtime.budget).toMatchObject({ maxShadowedLights: 4, maxShadowViews: 4 });
+    runtime.dispose();
+  });
+
   it("uses isolated spot LOD outputs before the raster pass, never camera or CSM visibility", async () => {
     vi.stubGlobal("GPUShaderStage", { COMPUTE: 4 });
     vi.stubGlobal("GPUBufferUsage", { COPY_SRC: 4, COPY_DST: 8, INDEX: 16, VERTEX: 32, UNIFORM: 64, STORAGE: 128, INDIRECT: 256 });
