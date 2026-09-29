@@ -6,6 +6,7 @@ import type {
   LogisticsExperimentRequest,
   PlantLiteStudyRequest,
   PprBopVersion,
+  ProcessAdmissionPlan,
   IndustrialStudyPprBinding,
   MaintenanceDeploymentRecord,
   MaintenanceModelPackage,
@@ -17,6 +18,7 @@ import type { WhatIfStudyRequest } from "@bim-studio/studio-core";
 import type { MetadataStore } from "./store.js";
 import type { OperationsService } from "./operations.js";
 import type { PprBopService } from "./pprBopService.js";
+import { assertFormalPredictionAdmissible, ProcessAdmissionBlockedError } from "./processAdmissionTable.js";
 import { OperationsRevisionConflictError } from "./validationStudy.js";
 import { PlantLiteWorkerCancelledError, PlantLiteWorkerTimeoutError } from "./plantLiteWorkerExecutor.js";
 import { readAiDataset } from "./aiDatasetSource.js";
@@ -160,6 +162,12 @@ export async function registerOperationsRoutes(
       if (binding && version && (!Array.isArray(binding.entities) || !Array.isArray(binding.assets) || !binding.sourceModelFingerprint || binding.entities.some((entity) => !pprEntityExists(version, entity)) || binding.assets.some((asset) => !pprAssetExists(dependencies.store, request.params.projectId, asset)))) {
         return reply.code(400).send({ message: "工艺实体或素材依赖与来源版本不一致，未运行仿真；请重新生成草稿" });
       }
+      // 结构级正式预测门（C2，与命名无关）：绑定 BOP 版本的 DES 即正式预测，
+      // 阻断级结构（AND 汇合/白名单外联合占用/最小滞后）在此 fail-closed 拒绝；
+      // 阻断不落库、不执行仿真，草稿版本本身仍可继续保存。
+      if (binding && version) {
+        assertFormalPredictionAdmissible(processAdmissionPlanFromBopVersion(version));
+      }
       return await dependencies.service.runPlantLite(request.params.projectId, request.body ?? {}, controller.signal);
     }
     catch (error) { return sendPlantLiteError(reply, error); }
@@ -226,7 +234,31 @@ function sendStudyError(reply: FastifyReply, error: unknown) {
 }
 
 function sendPlantLiteError(reply: FastifyReply, error: unknown) {
+  if (error instanceof ProcessAdmissionBlockedError) {
+    return reply.code(422).send({
+      message: error.message,
+      code: "process-admission-blocked",
+      reasonCodes: error.reasonCodes,
+      admission: error.report,
+    });
+  }
   if (error instanceof PlantLiteWorkerCancelledError) return reply.code(499).send({ message: error.message, code: "plant_lite_cancelled" });
   if (error instanceof PlantLiteWorkerTimeoutError) return reply.code(503).send({ message: error.message, code: "plant_lite_timeout" });
   return reply.code(400).send({ message: compactError(error) });
+}
+
+/**
+ * BOP 版本 → 准入表输入投影。PprBopVersion 与 ProcessAdmissionPlan 的四个结构字段
+ * 同名同形（contracts/ppr.ts ↔ contracts/processAdmission.ts），直取不做改写；
+ * 此处集中成函数是为映射口径留唯一声明点，未来任一侧字段演进时只改这里。
+ */
+function processAdmissionPlanFromBopVersion(version: PprBopVersion): ProcessAdmissionPlan {
+  return {
+    planId: version.planId,
+    versionId: version.id,
+    operations: version.operations,
+    precedenceRelations: version.precedenceRelations,
+    resources: version.resources,
+    resourceAssignments: version.resourceAssignments,
+  };
 }
