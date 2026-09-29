@@ -139,8 +139,10 @@ describe("normal-map WGSL contract", () => {
   it("samples AO from linear R and applies strength only to indirect lighting", () => {
     expect(sceneShader).toContain("textureSample(occlusionMap, occlusionSampler, aoUv).r");
     expect(sceneShader).toContain("1.0 + materialTextures.occlusionRow1.w * (sampled - 1.0)");
-    expect(sceneShader).toContain("base * irradiance * occlusion");
-    expect(sceneShader).toContain("energyCompensation * occlusion");
+    // C12 白炉能量分配合同:漫反射储备与高光用同一 split-sum 分数(构造性守恒)。
+    expect(sceneShader).toContain("(1.0 - specularFraction) * (1.0 - metal) * base * irradiance * occlusion");
+    expect(sceneShader).toContain("specularFraction * occlusion");
+    expect(sceneShader).toContain("clamp(f0 * dfg.x + dfg.y, vec3f(0.0), vec3f(1.0)) * energyCompensation");
     expect(sceneShader).toContain("textureNumLevels(specularEnvironment) - 1u");
   });
 

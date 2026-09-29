@@ -52,6 +52,8 @@ export interface PbrRendererOptions {
   /** Explicitly allocates GPU pose-stream pipelines; author support is negotiated separately. */
   readonly deformation?: boolean;
   readonly shadows?: CascadedShadowResourceOptions;
+  /** C10 接触阴影资源配置;features.contactShadows 打开时生效,默认(不带)关闭。 */
+  readonly contactShadows?: import("../shadows/contactShadowResources.js").ContactShadowResourceOptions;
   readonly features?: PbrRendererFeatureOptions;
   readonly environment?: PbrEnvironmentSource;
   /** Optional R12 capture transaction; omitted on normal production frames. */
@@ -121,6 +123,9 @@ export interface FrameMetrics {
   /** 同一 device 的已托管分配；已包含 transient，二者不能相加。 */
   readonly deviceResourceMemory?: DeviceResourceMemorySnapshot;
   readonly shadowUpdated: boolean; readonly cameraCut: boolean;
+  /** C10 接触阴影遥测(opt-in 才存在)。 */
+  readonly contactShadowTier?: "performance" | "balanced" | "quality";
+  readonly contactShadowMaskBytes?: number;
   readonly postProcessPasses: number; readonly weightedOit: boolean;
   readonly hiZMipLevels: number; readonly occlusionCulling: boolean;
   readonly frustumCulledBatches: number; readonly hiZOccludedBatches: number; readonly lodSelectionBatches: number; readonly lodIndirectDraws: number;

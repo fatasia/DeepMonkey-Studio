@@ -1,5 +1,7 @@
 import type { ScreenSpaceReflectionCpuInput, ScreenSpaceReflectionCpuOptions,
   ScreenSpaceReflectionCpuResult } from "./screenSpaceReflectionTypes.js";
+import { ssrBrdfSpecularFractionCpu } from "./ssrBrdfFraction.js";
+export { ssrBrdfSpecularFractionCpu } from "./ssrBrdfFraction.js";
 
 /**
  * CPU mirror of the trace/composite WGSL (same formulas, same order of rounding-sensitive
@@ -166,7 +168,7 @@ export function traceScreenSpaceReflectionCpu(input: ScreenSpaceReflectionCpuInp
   const [nx, ny, nz] = sampleNormal(input, x, y);
   const roughness = sampleRoughness(input, x, y);
   const [incidentX, incidentY, incidentZ, reflectedX, reflectedY, reflectedZ, dotProduct] =
-    reflectViewRay(origin, centerDepth, nx, ny, nz);
+    reflectViewRay(origin, centerDepth, nx!, ny!, nz!);
   if (reflectedZ >= 0) return [0, 0, 0, 0]; // 反射朝相机平面之后:屏幕空间无法解析。
   const stepLength = options.maxDistance / options.steps;
   let hit = false;
@@ -215,11 +217,11 @@ export function traceScreenSpaceReflectionCpu(input: ScreenSpaceReflectionCpuInp
   if (!hit) return [0, 0, 0, 0];
   const [radianceR, radianceG, radianceB] = sampleScreenSpaceReflectionRoughRadianceCpu(
     input, hitUvX, hitUvY, roughness, options.coneMipLevels);
-  // Fresnel-Schlick:cosθ = dot(N, -incident);入射方向已被归一化。
+  // C11:替换分数 = 与主着色器同一 split-sum 高光分数(CPU DFG 复刻),非镜面 Schlick。
   const cosTheta = Math.min(1, Math.max(-dotProduct, 0));
-  const fresnel = options.fresnelF0 + (1 - options.fresnelF0) * Math.pow(1 - cosTheta, 5);
+  const fraction = ssrBrdfSpecularFractionCpu(cosTheta, roughness, options.fresnelF0);
   const fade = screenSpaceReflectionEdgeFade(hitUvX, hitUvY, Math.max(options.edgeFade, 1e-4));
-  const mask = fresnel * fade;
+  const mask = fraction * fade;
   return [radianceR * mask, radianceG * mask, radianceB * mask, mask];
 }
 

@@ -115,12 +115,15 @@ export function describePbrPresentPasses(inputResourceId: string, spatialAa = tr
     passId: "present", executor: "PbrOutputBindings.present → \"Deep display output\"", kind: "render",
     reads: [inputResourceId], writes: ["surface"],
     claims: [{ id: inputResourceId, access: "read", format: PBR_HDR_FORMAT, sampleCount: 1,
-      usages: inputResourceId === "opaque-hdr" || inputResourceId === "composited-hdr"
+      usages: inputResourceId === "opaque-hdr" || inputResourceId === "composited-hdr" || inputResourceId === "contact-hdr"
         ? ["render-attachment", "texture-binding", "storage-binding", "copy-src"]
-        : inputResourceId === "ssr-hdr" || inputResourceId === "volumetric-fog-hdr"
-          ? ["storage-binding", "texture-binding"] : inputResourceId === "temporal-hdr"
-            ? ["storage-binding", "texture-binding", "copy-src"]
-            : ["texture-binding", "storage-binding", "render-attachment", "copy-src"], sizeRole: "surface" },
+        // ssr-hdr 自 C12 起带 COPY_SRC(present-color 读回链落点,与 ao/temporal 对齐)。
+        : inputResourceId === "ssr-hdr"
+          ? ["storage-binding", "texture-binding", "copy-src"]
+          : inputResourceId === "volumetric-fog-hdr"
+            ? ["storage-binding", "texture-binding"] : inputResourceId === "temporal-hdr"
+              ? ["storage-binding", "texture-binding", "copy-src"]
+              : ["texture-binding", "storage-binding", "render-attachment", "copy-src"], sizeRole: "surface" },
       { id: "surface", access: "write", format: "swapchain", sampleCount: 1,
         usages: ["render-attachment"], sizeRole: "independent" }],
     ...(spatialAa ? { unplannedAttachments: [{ id: "spatial-aa-intermediate",

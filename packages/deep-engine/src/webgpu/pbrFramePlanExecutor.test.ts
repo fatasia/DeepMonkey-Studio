@@ -296,7 +296,8 @@ describe("pass execution receipt", () => {
     // 全特性计划:默认特性不含 SSR/雾,对齐断言必须覆盖清单里全部 pass。
     const subject = buildPbrFrameExecutionPlan(SURFACE, { transparency: true,
       features: resolvePbrRendererFeatures({ ambientOcclusion: true, screenSpaceReflection: true,
-        volumetricFog: true, temporalAa: true, bloom: true, occlusionCulling: true, spatialAa: true }) });
+        volumetricFog: true, temporalAa: true, bloom: true, occlusionCulling: true, spatialAa: true,
+        contactShadows: true }) });
     expect([...subject.mappedPassIds].sort()).toEqual([...PBR_TIMED_PASS_IDS].sort());
   });
 });

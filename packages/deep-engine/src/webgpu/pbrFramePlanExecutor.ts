@@ -13,6 +13,7 @@ import type { PbrRendererFeatures } from "./pbrRendererFeatures.js";
 import type { SurfaceSize } from "./surfaceSize.js";
 import { PbrTransparencyPass } from "./pbrTransparencyPass.js";
 import { PbrPostProcessChain } from "./pbrPostProcessChain.js";
+import { describeContactShadowPass, describeContactApplyPass } from "../shadows/contactShadowResources.js";
 
 /** DE26/B03 第一切片:把 compilePbrFrameGraph 的编译计划落成可执行、可对拍、可回执的执行计划。 */
 
@@ -61,6 +62,8 @@ export interface PbrFrameExecutionPlan {
 
 /** passId ↔ 实际执行体:AO→TAA→Bloom 子链、OIT、opaque/present 的第一切片映射。 */
 const MAPPED_EXECUTORS: Readonly<Record<string, string>> = Object.freeze({
+  "contact-shadow": "ContactShadowResources.encode (short-range depth trace)",
+  "contact-apply": "ContactShadowResources.encode/apply",
   "opaque": "PbrRenderer main pass via beginPbrOpaquePass",
   "ambient-occlusion": "AmbientOcclusionPass.encode",
   "apply-ambient-occlusion": "AmbientOcclusionCompositePass.encode",
@@ -261,13 +264,18 @@ export function assertPlanMatchesActual(plan: PbrFrameExecutionPlan, actual: rea
 /** 组装实际执行描述:各执行者文件的 describe* 输出,与 encode 代码路径贴近书写。 */
 export function collectActualPbrFramePasses(features: PbrRendererFeatures, transparency: boolean,
   options: { readonly opaqueColorResource?: string; readonly presentInputResource?: string;
-    readonly directDisplay?: boolean; readonly writeGeometryBuffers?: boolean } = {}): readonly PbrActualPassDescription[] {
+    readonly directDisplay?: boolean; readonly writeGeometryBuffers?: boolean; readonly bloom?: boolean } = {}): readonly PbrActualPassDescription[] {
   if (options.directDisplay) return Object.freeze([describePbrOpaquePass(options)]);
   const opaqueColorResource = options.opaqueColorResource ?? (features.ambientOcclusion ? "ao-hdr" : "opaque-hdr");
   const effects = PbrPostProcessChain.describePasses(features, transparency, { opaqueColorResource });
   const opaqueEffect = (pass: PbrActualPassDescription): boolean =>
     pass.passId === "ambient-occlusion" || pass.passId === "apply-ambient-occlusion";
+  const contactInput = options.bloom ? "bloom-hdr" : features.temporalAa ? "temporal-hdr"
+    : features.screenSpaceReflection ? "ssr-hdr" : features.volumetricFog ? "volumetric-fog-hdr"
+    : transparency ? "composited-hdr" : opaqueColorResource;
   return Object.freeze([
+    ...(features.contactShadows && !options.directDisplay
+      ? [describeContactShadowPass(), describeContactApplyPass(contactInput)] : []),
     describePbrOpaquePass(options),
     ...effects.filter(opaqueEffect),
     ...(transparency ? PbrTransparencyPass.describePasses(opaqueColorResource) : []),

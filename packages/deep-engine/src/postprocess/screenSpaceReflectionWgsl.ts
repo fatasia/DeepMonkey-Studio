@@ -70,6 +70,9 @@ export const SSR_TRACE_WGSL = /* wgsl */ `${COMMON}
 @group(0) @binding(3) var<storage, read> ssrParams: SsrParams;
 @group(0) @binding(4) var ssrSampler: sampler;
 @group(0) @binding(5) var traceTarget: texture_storage_2d<rgba16float, write>;
+// C11 物理 BRDF 化:与主着色器同一 split-sum DFG(brdfLut),替换分数 = 高光分数,
+// 使 SSR 把 IBL 高光回退 1:1 换成场景反射,而不是按镜面 Schlick 权重能量错配。
+@group(0) @binding(6) var ssrBrdfLut: texture_2d<f32>;
 
 fn ssrLoadNormal(coordinate: vec2<u32>) -> vec3f {
   // Only the trace pipeline binds the view-normal texture.
@@ -82,6 +85,12 @@ fn ssrSampleRoughRadiance(uv: vec2f, roughness: f32) -> vec3f {
   // Roughness selects a bounded cone footprint from the prefiltered radiance hierarchy.
   let lod = roughness * roughness * ssrParams.misc.z;
   return textureSampleLevel(sourceColor, ssrSampler, uv, lod).rgb;
+}
+fn ssrSpecularFraction(cosTheta: f32, roughness: f32) -> f32 {
+  let dfg = textureSampleLevel(ssrBrdfLut, ssrSampler, vec2f(clamp(cosTheta, 0.001, 1.0), roughness), 0.0).rg;
+  let f0 = ssrParams.misc.y;
+  let fraction = clamp(f0 * dfg.x + dfg.y, 0.0, 1.0) * (1.0 + f0 * (1.0 / max(dfg.x + dfg.y, 0.05) - 1.0));
+  return clamp(fraction, 0.0, 1.0);
 }
 
 @compute @workgroup_size(8, 8)
@@ -130,8 +139,7 @@ fn traceReflection(@builtin(global_invocation_id) id: vec3<u32>) {
   if (!hit) { textureStore(traceTarget, vec2<i32>(id.xy), vec4f(0.0)); return; }
   let radiance = ssrSampleRoughRadiance(hitUv, roughness);
   let cosTheta = clamp(-dot(normal, incident), 0.0, 1.0);
-  let fresnel = ssrParams.misc.y + (1.0 - ssrParams.misc.y) * pow(1.0 - cosTheta, 5.0);
-  let mask = fresnel * ssrEdgeFade(hitUv);
+  let mask = ssrSpecularFraction(cosTheta, roughness) * ssrEdgeFade(hitUv);
   textureStore(traceTarget, vec2<i32>(id.xy), vec4f(radiance * mask, mask));
 }
 `;

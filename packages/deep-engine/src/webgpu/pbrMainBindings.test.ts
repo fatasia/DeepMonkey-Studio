@@ -10,9 +10,10 @@ import { readFileSync } from "node:fs";
 afterEach(() => vi.unstubAllGlobals());
 function fixture() {
   vi.stubGlobal("GPUBufferUsage", { UNIFORM: 1, COPY_DST: 2 });
+  vi.stubGlobal("GPUTextureUsage", { TEXTURE_BINDING: 16 });
   const buffer = {} as GPUBuffer, writeBuffer = vi.fn(), createBindGroup = vi.fn(() => ({} as GPUBindGroup));
   const release = vi.fn(), createBuffer = vi.fn(() => buffer);
-  const session = { device: { createBuffer, queue: { writeBuffer }, createBindGroup },
+  const session = { device: { createBuffer, createTexture: vi.fn(() => ({ createView: () => ({}) } as unknown as GPUTexture)), createSampler: vi.fn(() => ({} as GPUSampler)), queue: { writeBuffer }, createBindGroup },
     own: (value: GPUBuffer) => value, release } as unknown as DeviceSession;
   const pipelines = { main: { getBindGroupLayout: () => ({}) } } as unknown as Pipelines;
   const environment = { specular: {}, diffuse: {}, brdf: {}, sampler: {} } as StudioEnvironment;

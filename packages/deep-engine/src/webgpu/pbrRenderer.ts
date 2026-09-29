@@ -20,6 +20,7 @@ import { transformWorldLightsToView } from "../lighting/worldLights.js";
 import { updatePbrFrameUniforms } from "./pbrFrameUniforms.js";
 import { PreviousHiZVisibility, type PreviousHiZFramePlan } from "./previousHiZVisibility.js";
 import { PbrShadowState } from "./pbrShadowState.js";
+import { ContactShadowResources, describeContactShadowPass, describeContactApplyPass } from "../shadows/contactShadowResources.js";
 import { hasClusteredLights, resolvePbrSceneLighting } from "../lighting/pbrSceneLighting.js";
 import { resolveDeepGiProducerDirectionCount } from "../lighting/probeRadianceDirectionGate.js";
 import type { FrameMetrics, PbrRendererOptions, RenderView } from "./pbrRendererTypes.js";
@@ -76,6 +77,8 @@ export class PbrRenderer {
   private readonly mainBindings: PbrMainBindings;
   private readonly environment: PbrEnvironmentState;
   private readonly shadowState: PbrShadowState; private get shadows() { return this.shadowState.current; }
+  /** C10 屏幕空间接触阴影;opt-in(features.contactShadows),默认不存在。 */
+  private readonly contactShadows: ContactShadowResources | undefined;
   private readonly targets: RenderTargets; private readonly transientTextures: PbrTransientTexturePool;
   private readonly postProcess: PbrPostProcessChain;
   private readonly transparency: PbrTransparencyPass; private readonly lighting: ForwardPlusPbrRuntime;
@@ -166,7 +169,7 @@ export class PbrRenderer {
     this.packets = new PacketBuffers(session, (fallback ?? pipelines).materialLayout,
       deformationPipelines, options.meshlets === true, features.visibilityBuffer,
       fallback ? pipelines.materialLayout.material : undefined);
-    this.writeGeometryBuffers = features.ambientOcclusion || features.screenSpaceReflection || features.volumetricFog || features.temporalAa
+    this.writeGeometryBuffers = features.ambientOcclusion || features.screenSpaceReflection || features.volumetricFog || features.temporalAa || features.contactShadows
       || deformationPipelines !== undefined;
     this.ground = createPbrGround(session);
     this.frameBuffer = uploadBuffer(session, "Deep frame", this.frameData, GPUBufferUsage.UNIFORM);
@@ -175,6 +178,7 @@ export class PbrRenderer {
     this.optionsExactShadowCascade = options.shadows?.exactProfile?.cascadeCount;
     this.probeDirectionsOverride = options.probeDirections;
     this.lastAuthorShadowSize = options.shadows?.exactProfile?.shadowMapSize;
+    this.contactShadows = features.contactShadows ? new ContactShadowResources(session, options.contactShadows ?? {}) : undefined;
     this.environment = new PbrEnvironmentState(environment);
     this.mainBindings = new PbrMainBindings(session, pipelines, this.frameBuffer, this.shadows, environment);
     this.transientTextures = new PbrTransientTexturePool(session, options.transientTextureBudgetBytes); this.targets = new RenderTargets(session, pipelines.output.getBindGroupLayout(0), this.outputs.buffer, this.transientTextures);
@@ -583,6 +587,8 @@ export class PbrRenderer {
       // Per-pixel mask supply stays unwired until the reactive-mask pass joins the
       // frame plan (see docs/reports/deep-core/T07-implementation.md).
       reactiveMaskAvailable: false,
+      // C11:SSR 替换分数与主着色器共用同一 DFG(environment.brdf)。
+      ...(this.environment.current ? { brdfLut: this.environment.current.brdf } : {}),
       surfaceWidth: size.width, surfaceHeight: size.height,
       ...(this.adaptiveQuality ? { adaptiveQuality: this.adaptiveQuality.state().knobs } : {}),
       ...(passTiming ? { passTiming } : {}) };
@@ -607,9 +613,29 @@ export class PbrRenderer {
         reactiveMaskAvailable: this.transparency.currentReactiveMask !== undefined || particleReactive !== undefined,
         ...(this.transparency.currentReactiveMask ? { reactiveMask: this.transparency.currentReactiveMask }
           : particleReactive ? { reactiveMask: particleReactive.texture } : {}) }, temporalInput);
+    // C10 接触阴影(AO 同款管线形态):主 pass 写完 linear-depth 后短距步进生成
+    // 半分辨率遮蔽贴,apply 将其乘回最终 HDR(整帧衰减,语义同 SSAO 合成)。
+    // 相机切换帧强度归零(fail-closed)。opt-in:features.contactShadows,默认关闭。
+    let presentColor = finalEffects.color;
+    let contactApplied = false;
+    if (this.contactShadows && !directClear) {
+      const contactFrame = this.contactShadows.prepare({
+        verticalFovRadians: frameState.projection.verticalFovRadians,
+        aspect: size.width / size.height, near: frameState.projection.near, far: frameState.projection.far,
+        worldToView: [...frameState.worldToView],
+        lightDirectionWorld: sceneLighting.primary.rayDirectionWorld,
+        extent: view.extent, width: size.width, height: size.height, cameraCut: history.cameraCut,
+      }, this.shadowDirty, true);
+      const applied = this.contactShadows.encode(encoder, contactFrame, this.targets.linearDepth,
+        finalEffects.color, passTiming ?? undefined);
+      presentColor = applied.texture;
+      contactApplied = true;
+    }
+    let presentInput = finalEffects.color;
     if (!directClear) {
+      if (contactApplied) presentInput = presentColor;
       passTiming?.beginMarker(encoder, "present");
-      present = this.outputs.present(encoder, finalEffects.color, view.authorColorEffects, this.performanceTelemetry.enabled,
+      present = this.outputs.present(encoder, presentInput, view.authorColorEffects, this.performanceTelemetry.enabled,
         view.editorOverlay?.vertices.length ? undefined : timing?.queries, this.frameCapture !== undefined,
         detailedTiming && timing !== undefined);
       passTiming?.endMarker(encoder, "present");
@@ -622,7 +648,7 @@ export class PbrRenderer {
     if (overlayTriangles) { drawCalls++; triangles += overlayTriangles; }
     if (this.frameCapture && captureOpen) {
       this.frameCapture.encodeReadbacks(encoder, device, {
-        "present-color": finalEffects.color,
+        "present-color": presentColor,
         "opaque-hdr": this.targets.hdrTexture,
         "linear-depth": this.targets.linearDepthTexture,
       });
@@ -680,7 +706,8 @@ export class PbrRenderer {
       } : {}),
       ...(this.gpuTimer.passTimingEnabled ? { gpuPassTimings: this.passTimingsMetrics(frameNumber) } : {}),
       ...(this.resolutionScale === 1 ? {} : { resolutionScale: this.resolutionScaleMetrics(size) }),
-      ...this.shadows.metrics };
+      ...this.shadows.metrics,
+      ...(this.contactShadows ? this.contactShadows.metrics : {}) };
     this.sampleAdaptiveQuality(metrics);
     if (!this.adaptiveQuality) return metrics;
     const hotspots = this.adaptiveQuality.hotspotSummary();
@@ -736,7 +763,8 @@ export class PbrRenderer {
   } {
     const key = `${size.width}x${size.height}:${transparency ? "transparent" : "opaque"}`
       + `:ao=${postProcess.ambientOcclusion ? 1 : 0}:ssr=${postProcess.screenSpaceReflection ? 1 : 0}`
-      + `:fog=${postProcess.volumetricFog ? 1 : 0}:bloom=${postProcess.bloom ? 1 : 0}:direct=${directDisplay ? 1 : 0}`;
+      + `:fog=${postProcess.volumetricFog ? 1 : 0}:bloom=${postProcess.bloom ? 1 : 0}:direct=${directDisplay ? 1 : 0}`
+      + `:cs=${this.features.contactShadows ? 1 : 0}`;
     if (this.capturePlanKey !== key || !this.capturePlan || !this.captureActualPasses) {
       const captureFeatures: PbrRendererFeatures = Object.freeze({ ...this.features,
         ambientOcclusion: postProcess.ambientOcclusion,
@@ -747,12 +775,14 @@ export class PbrRenderer {
       const opaqueColorResource = postProcess.ambientOcclusion ? "ao-hdr" : "opaque-hdr";
       const plan = buildPbrFrameExecutionPlan(size, { transparency, features: captureFeatures,
         directDisplay, writeGeometryBuffers: this.writeGeometryBuffers });
-      const presentInputResource = postProcess.bloom ? "bloom-hdr"
+      const presentInputResource = this.features.contactShadows ? "contact-hdr"
+        : postProcess.bloom ? "bloom-hdr"
         : this.features.temporalAa ? "temporal-hdr" : postProcess.screenSpaceReflection ? "ssr-hdr"
           : postProcess.volumetricFog ? "volumetric-fog-hdr"
           : transparency ? "composited-hdr" : opaqueColorResource;
       const actual = collectActualPbrFramePasses(captureFeatures, transparency,
-        { opaqueColorResource, presentInputResource, directDisplay, writeGeometryBuffers: this.writeGeometryBuffers });
+        { opaqueColorResource, presentInputResource, directDisplay, writeGeometryBuffers: this.writeGeometryBuffers,
+          bloom: postProcess.bloom });
       assertPlanMatchesActual(plan, actual);
       this.capturePlan = plan;
       this.captureActualPasses = actual;

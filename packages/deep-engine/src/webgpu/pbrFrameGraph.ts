@@ -43,6 +43,7 @@ export function buildPbrFrameGraph(options: PbrFrameGraphOptions): RenderGraphBu
     .addPass({ id: "cluster-lights", kind: "compute", inputs: ["lights"], outputs: ["light-grid"] })
     .addPass({ id: "opaque", kind: "render", inputs: ["visible-draws", "shadow-atlas", "light-grid"],
       outputs: geometry ? ["opaque-hdr", "linear-depth", "view-normal", "motion"] : ["opaque-hdr"] });
+
   if (features.occlusionCulling && geometry) graph
     .addPass({ id: "build-hiz", kind: "compute", inputs: ["linear-depth"], outputs: ["current-hiz"] })
     .addPass({ id: "publish-hiz", kind: "history", inputs: ["current-hiz"], outputs: ["next-hiz"] });
@@ -87,6 +88,12 @@ export function buildPbrFrameGraph(options: PbrFrameGraphOptions): RenderGraphBu
       .addPass({ id: "bloom", kind: "compute", inputs: [temporalInput], outputs: ["bloom-hdr"] });
     temporalInput = "bloom-hdr";
   }
+  if (features.contactShadows) graph
+    .addResource({ id: "contact-shadow-mask", descriptor: "rgba16float-half" })
+    .addResource({ id: "contact-hdr", descriptor: "rgba16float", aliasKey: "full-rgba16float" })
+    .addPass({ id: "contact-shadow", kind: "compute", inputs: ["linear-depth"], outputs: ["contact-shadow-mask"] })
+    .addPass({ id: "contact-apply", kind: "compute", inputs: [temporalInput, "contact-shadow-mask"], outputs: ["contact-hdr"] });
+  if (features.contactShadows) temporalInput = "contact-hdr";
   return graph.addPass({ id: "present", kind: "render", inputs: [temporalInput], outputs: ["surface"] });
 }
 

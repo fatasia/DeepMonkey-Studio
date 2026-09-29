@@ -173,20 +173,29 @@ fn shade(fragmentCoordinate: vec2f, world: vec3f, normalInput: vec3f, ground: bo
   }
   if (frame.eye.w > 0.0) {
     let nv = clamp(dot(n, view), 0.001, 1.0); let f0 = mix(vec3f(dielectric), base, metal);
-    let f = f0 + (max(vec3f(1.0 - rough), f0) - f0) * pow(1.0 - nv, 5.0);
+    // C12 白炉修复:IBL 漫反射/高光的能量分配必须用同一 split-sum 分数。原实现把漫反射
+    // 储备定在镜面 Schlick(rough→1 时坍缩为 1−f0),而高光实际交付 LUT 分数(rough→1 时
+    // f0·dfg.x+dfg.y ≈ 0.0135),白粗糙面总出射 0.9735 → 白炉欠冲 −2.65%(实测)。
+    // 修复后 total = (1−fraction) + fraction ≡ 1,对任意 f0/rough/nv 构造性守恒;
+    // 金属路径(漫反射为 0)与镜面极限(fraction→f0)逐位不变。
+    let dfg = textureSampleLevel(brdfLut, environmentSampler, vec2f(nv, rough), 0.0).rg;
+    let energyCompensation = vec3f(1.0) + f0 * (1.0 / max(dfg.x + dfg.y, 0.05) - 1.0);
+    let specularFraction = clamp(f0 * dfg.x + dfg.y, vec3f(0.0), vec3f(1.0)) * energyCompensation;
     let environmentIrradiance = textureSampleLevel(diffuseEnvironment, environmentSampler, n, 0.0).rgb * frame.lightDirection.w;
     let gi = deepGiSampleTexture(world, n); let irradiance = mix(environmentIrradiance, gi.rgb, gi.a);
     let occlusion = clamp(occlusionInput, 0.0, 1.0);
-    color += (1.0 - f) * (1.0 - metal) * base * irradiance * occlusion * frame.eye.w;
+    color += (1.0 - specularFraction) * (1.0 - metal) * base * irradiance * occlusion * frame.eye.w;
     let reflection = reflect(-view, n);
     let maxSpecularLod = f32(textureNumLevels(specularEnvironment) - 1u);
     let radiance = textureSampleLevel(specularEnvironment, environmentSampler, reflection, rough * maxSpecularLod).rgb * frame.lightDirection.w;
-    let dfg = textureSampleLevel(brdfLut, environmentSampler, vec2f(nv, rough), 0.0).rg;
-    let energyCompensation = vec3f(1.0) + f0 * (1.0 / max(dfg.x + dfg.y, 0.05) - 1.0);
-    color += radiance * (f0 * dfg.x + dfg.y) * energyCompensation * occlusion * frame.eye.w;
+    color += radiance * specularFraction * occlusion * frame.eye.w;
   }
   color += deepAuthoredDiffuse(n, base, metal, occlusionInput) + select(emissive, vec3f(0.0), ground);
   return select(color, deepApplySceneFog(select(color, baseInput, flag(materialFlags, 64u)), world, materialFlags), applyFog);
+}
+fn clipUv(clip: vec4f) -> vec2f {
+  let safeW = select(-max(abs(clip.w), 0.00000001), max(abs(clip.w), 0.00000001), clip.w >= 0.0);
+  return clip.xy / safeW * vec2f(0.5, -0.5) + 0.5;
 }
 fn coverage(alpha: f32, material: vec4f) -> f32 {
   if (flag(material.w, 2u) && alpha < material.y) { discard; }
@@ -200,10 +209,6 @@ struct GeometryOutput {
   @location(0) color: vec4f, @location(1) viewDepth: f32,
   @location(2) viewNormal: vec4f, @location(3) motion: vec2f,
 };
-fn clipUv(clip: vec4f) -> vec2f {
-  let safeW = select(-max(abs(clip.w), 0.00000001), max(abs(clip.w), 0.00000001), clip.w >= 0.0);
-  return clip.xy / safeW * vec2f(0.5, -0.5) + 0.5;
-}
 fn geometryOutput(v: Vertex, color: vec4f, worldNormal: vec3f, roughness: f32) -> GeometryOutput {
   var out: GeometryOutput; out.color = color; out.viewDepth = v.viewDepth;
   let viewNormal = safeNormalize((frame.worldToView * vec4f(worldNormal, 0.0)).xyz, vec3f(0.0, 0.0, 1.0));

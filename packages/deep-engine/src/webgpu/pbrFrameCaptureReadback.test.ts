@@ -86,7 +86,8 @@ describe("pbr frame readback plan", () => {
     plan.beginFrame("frame-4", f.device, f.encoder, {
       "present-color": texture({ usage: 0 }), "opaque-hdr": texture({ width: 4096, height: 4096, format: "rgba16float" }) });
     const results = await plan.collectAfterSubmit();
-    expect(results[0]).toMatchObject({ resourceId: "present-color", reason: "resource lacks COPY_SRC usage this frame" });
+    expect(results[0]).toMatchObject({ resourceId: "present-color",
+      reason: expect.stringMatching(/^resource lacks COPY_SRC usage this frame \(usage=0x0,/) });
     expect(results[1]).toMatchObject({ resourceId: "opaque-hdr", reason: "resource exceeds the remaining per-frame readback byte budget" });
     expect(f.buffers).toHaveLength(0);
   });

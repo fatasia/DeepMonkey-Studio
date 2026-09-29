@@ -51,7 +51,7 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("texture array level 1 (wave 5 bindless)", () => {
-  it("keeps the default path byte-identical: no array tokens on group(1), feature off, 160B ABI untouched", () => {
+  it("keeps the default path byte-identical: no array tokens on group(1), feature off, 192B block ABI untouched", () => {
     expect(sceneShader).toContain("@group(1) @binding(0) var baseColorMap: texture_2d<f32>;");
     expect(sceneShader).not.toContain("deepArrayMap");
     expect(sceneShader).not.toContain("materialArrayIndices");
@@ -60,11 +60,14 @@ describe("texture array level 1 (wave 5 bindless)", () => {
     expect(resolvePbrRendererFeatures({}).textureArrays).toBe(false);
     expect(resolvePbrRendererFeatures({ textureArrays: true }).textureArrays).toBe(true);
     expect(() => resolvePbrRendererFeatures({ textureArrays: "yes" as unknown as boolean })).toThrow(TypeError);
-    // 默认关闭路径不写入索引通道：材质 ABI 块保持 40 float = 160B 指纹（emissiveStrength 在 offset 39）。
+    // 默认关闭路径不写入索引通道：材质块恒定 48 float = 192B（WGSL MaterialTextures 12 vec4，
+    // G-1 修复后为管线最小绑定尺寸）；基础 40 float 与 Rust mesh_abi 同布局
+    // （emissiveStrength 在 offset 39），扩展带零填充。
     const packed = packMaterialParameters({ emissiveStrength: 1 });
-    expect(packed.length).toBe(40);
-    expect(packed.byteLength).toBe(DEEP_PBR_MESH_V1_BYTE_SIZES.material);
+    expect(packed.length).toBe(48);
+    expect(packed.byteLength).toBe(DEEP_PBR_MESH_V1_BYTE_SIZES.material + 32);
     expect(packed[39]).toBe(1);
+    expect(Array.from(packed.slice(40))).toEqual(new Array<number>(8).fill(0));
   });
 
   it("composes the texture_2d_array variant only for group(1) and fails closed on anchor drift", () => {

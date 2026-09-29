@@ -16,7 +16,7 @@ describe("SSR WGSL 静态约定核验", () => {
     expect(results.length).toBeGreaterThanOrEqual(18);
     const ids = results.map(check => check.id);
     for (const required of ["origin-guard", "thickness-band", "normal-view-decode", "roughness-cone-mip",
-      "refine-hole-guard", "edge-fade-clamp", "fresnel-schlick", "composite-replace",
+      "refine-hole-guard", "edge-fade-clamp", "fresnel-split-sum", "brdf-lut-bound", "composite-replace",
       "no-temporal-history", "no-fullscreen-blur"]) {
       expect(ids).toContain(required);
     }

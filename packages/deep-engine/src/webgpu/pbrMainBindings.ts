@@ -75,4 +75,5 @@ export class PbrMainBindings {
       { binding: 8, resource: { buffer: this.fogBuffer } },
     ] });
   }
+
 }

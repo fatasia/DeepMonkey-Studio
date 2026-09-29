@@ -21,6 +21,8 @@ export interface PbrRendererFeatureOptions {
   /** 波次5 bindless 级 1：材质纹理 texture_2d_array 数组化；off 保持常规 per-material bind group。 */
   readonly textureArrays?: boolean;
   readonly occlusionCulling?: boolean;
+  /** C10 屏幕空间接触阴影;opt-in,Z 默认档不带(质量档位见 shadows/contactShadowQuality)。 */
+  readonly contactShadows?: boolean;
   readonly bloom?: boolean;
   readonly vignette?: boolean;
   readonly toneMapping?: PbrToneMapping;
@@ -40,6 +42,7 @@ export interface PbrRendererFeatures {
   readonly softRasterizeFallback: boolean;
   readonly textureArrays: boolean;
   readonly occlusionCulling: boolean;
+  readonly contactShadows: boolean;
   readonly bloom: boolean;
   readonly vignette: boolean;
   readonly toneMapping: PbrToneMapping;
@@ -50,7 +53,7 @@ export const DEFAULT_PBR_RENDERER_FEATURES: PbrRendererFeatures = Object.freeze(
   screenSpaceReflection: false, volumetricFog: false, temporalAa: true, spatialAa: true, visibilityBuffer: false,
   softRasterizeFallback: false,
   textureArrays: false,
-  occlusionCulling: true, bloom: true, vignette: true, toneMapping: "deep-aces",
+  occlusionCulling: true, bloom: true, vignette: true, contactShadows: false, toneMapping: "deep-aces",
 });
 
 export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = {}): PbrRendererFeatures {
@@ -76,5 +79,6 @@ export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = 
     softRasterizeFallback: boolean("softRasterizeFallback"),
     textureArrays: boolean("textureArrays"),
     occlusionCulling: boolean("occlusionCulling"),
+    contactShadows: boolean("contactShadows"),
     bloom: boolean("bloom"), vignette: boolean("vignette"), toneMapping });
 }

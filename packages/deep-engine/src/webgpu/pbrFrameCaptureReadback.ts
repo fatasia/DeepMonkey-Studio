@@ -175,7 +175,9 @@ function stagingBytes(texture: GPUTexture): number {
 
 function readbackBlocker(source: GPUTexture | undefined, remainingBytes: number): string | undefined {
   if (source === undefined) return "resource is absent this frame";
-  if ((source.usage & GPUTextureUsage.COPY_SRC) === 0) return "resource lacks COPY_SRC usage this frame";
+  if ((source.usage & GPUTextureUsage.COPY_SRC) === 0) {
+    return `resource lacks COPY_SRC usage this frame (usage=0x${source.usage.toString(16)}, format=${source.format}, ${source.width}x${source.height})`;
+  }
   if (source.dimension !== "2d" || source.depthOrArrayLayers !== 1 || source.sampleCount !== 1) {
     return "resource is not a single-layer single-sample 2D texture this frame";
   }

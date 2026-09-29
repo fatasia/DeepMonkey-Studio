@@ -11,6 +11,11 @@ export interface ScreenSpaceReflectionSource {
   readonly color: GPUTexture;
   readonly depth: GPUTexture;
   readonly normal: GPUTexture;
+  /**
+   * C11 物理化:与主着色器同一 split-sum DFG LUT(environment.brdf,rgba16float 128²)。
+   * 替换分数取 specularFraction(nv, rough) 而非镜面 Schlick,与被替换的 IBL 高光回退同权。
+   */
+  readonly brdfLut: GPUTextureView;
   readonly revision: number;
   /** Removes standard/reversed-Z ambiguity before ray marching. */
   readonly depthEncoding: "linear-view-depth-positive";

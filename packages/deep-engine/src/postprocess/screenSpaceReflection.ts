@@ -28,6 +28,7 @@ interface Request { readonly sourceWidth: number; readonly sourceHeight: number;
 interface PooledBindings {
   readonly trace: GPUTexture; readonly output: GPUTexture;
   readonly color: GPUTexture; readonly depth: GPUTexture; readonly normal: GPUTexture;
+  readonly brdfLut: GPUTextureView;
   readonly traceBinding: GPUBindGroup; readonly compositeBinding: GPUBindGroup;
   readonly radianceBindings: readonly GPUBindGroup[];
 }
@@ -63,6 +64,7 @@ export class ScreenSpaceReflectionPass {
       { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage", minBindingSize: PARAMETER_BYTES } },
       { binding: 4, visibility: GPUShaderStage.COMPUTE, sampler: { type: "filtering" } },
       { binding: 5, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "write-only", format: SSR_TRACE_FORMAT } },
+      { binding: 6, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "float" } },
     ] });
     this.compositeLayout = device.createBindGroupLayout({ label: "Deep SSR composite layout", entries: [
       { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "float" } },
@@ -89,7 +91,8 @@ export class ScreenSpaceReflectionPass {
     const previous = this.cache;
     if (previous && source.revision < previous.source.revision) throw new Error("Stale screen-space reflection source revision.");
     if (previous && source.revision === previous.source.revision
-      && (source.depth !== previous.source.depth || source.normal !== previous.source.normal || source.color !== previous.source.color)) {
+      && (source.depth !== previous.source.depth || source.normal !== previous.source.normal || source.color !== previous.source.color
+      || source.brdfLut !== previous.source.brdfLut)) {
       throw new Error("Screen-space reflection source textures changed without a revision.");
     }
     if (previous && sameSource(previous.source, source) && sameOptions(previous.options, options)) {
@@ -100,7 +103,7 @@ export class ScreenSpaceReflectionPass {
     try {
       candidate = reusable ? previous : this.allocate(request.sourceWidth, request.sourceHeight, request.traceWidth, request.traceHeight);
       const bindings = reusable && source.depth === previous.source.depth && source.normal === previous.source.normal
-        && source.color === previous.source.color
+        && source.color === previous.source.color && source.brdfLut === previous.source.brdfLut
         ? { traceBinding: previous.traceBinding, compositeBinding: previous.compositeBinding,
           radianceBindings: previous.radianceBindings }
         : this.bind(candidate, source);
@@ -142,9 +145,11 @@ export class ScreenSpaceReflectionPass {
       handles.push(handle); return handle;
     };
     try {
+      // 输出带 COPY_SRC:present-color 读回链在 SSR 开启时落在本输出上(与 ao/temporal 合同对齐)。
       const baseUsage = GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;
+      const outputUsage = baseUsage | GPUTextureUsage.COPY_SRC;
       const trace = acquire("ssr-trace", request.traceWidth, request.traceHeight, SSR_TRACE_FORMAT, baseUsage);
-      const output = acquire("ssr-hdr", request.sourceWidth, request.sourceHeight, SSR_COMPOSITE_FORMAT, baseUsage);
+      const output = acquire("ssr-hdr", request.sourceWidth, request.sourceHeight, SSR_COMPOSITE_FORMAT, outputUsage);
       const radiance = this.ensurePooledRadiance(source);
       const allocation: Allocation = { width: request.sourceWidth, height: request.sourceHeight,
         traceWidth: request.traceWidth, traceHeight: request.traceHeight,
@@ -152,11 +157,12 @@ export class ScreenSpaceReflectionPass {
         radiance: radiance.texture, radianceMipLevelCount: radiance.mipLevelCount, radianceBindings: Object.freeze([]),
         parameters: this.parameters() };
       let bindings = this.pooledBindings.find(item => item.trace === trace.texture && item.output === output.texture
-        && item.color === source.color && item.depth === source.depth && item.normal === source.normal);
+        && item.color === source.color && item.depth === source.depth && item.normal === source.normal
+        && item.brdfLut === source.brdfLut);
       if (!bindings) {
         const created = this.bind(allocation, source);
         bindings = { trace: trace.texture, output: output.texture, color: source.color, depth: source.depth,
-          normal: source.normal, ...created };
+          normal: source.normal, brdfLut: source.brdfLut, ...created };
         this.pooledBindings.push(bindings); if (this.pooledBindings.length > 4) this.pooledBindings.shift();
       }
       this.session.device.queue.writeBuffer(allocation.parameters, 0, packParameters(request, options));
@@ -180,8 +186,9 @@ export class ScreenSpaceReflectionPass {
     try {
       const trace = texture("Deep SSR half-resolution trace", traceWidth, traceHeight, SSR_TRACE_FORMAT,
         GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING);
+      // COPY_SRC:present-color 读回链在 SSR 开启时落在本输出上(与 ao/temporal 资源合同对齐)。
       const output = texture("Deep SSR composite output", width, height, SSR_COMPOSITE_FORMAT,
-        GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING);
+        GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC);
       const radianceMipLevelCount = radianceMipLevels(width, height);
       const radiance = createAdmittedTexture(this.session, { label: "Deep SSR bounded radiance hierarchy",
         size: { width, height, depthOrArrayLayers: 1 }, dimension: "2d", format: SSR_COLOR_FORMAT,
@@ -208,7 +215,7 @@ export class ScreenSpaceReflectionPass {
     const traceBinding = device.createBindGroup({ label: "Deep SSR trace bindings", layout: this.traceLayout, entries: [
       { binding: 0, resource: depth }, { binding: 1, resource: normal }, { binding: 2, resource: radiance },
       { binding: 3, resource: { buffer: allocation.parameters } }, { binding: 4, resource: sampler },
-      { binding: 5, resource: allocation.traceView },
+      { binding: 5, resource: allocation.traceView }, { binding: 6, resource: source.brdfLut },
     ] });
     const compositeBinding = device.createBindGroup({ label: "Deep SSR composite bindings", layout: this.compositeLayout, entries: [
       { binding: 0, resource: color }, { binding: 1, resource: allocation.traceView },
@@ -345,7 +352,8 @@ export function radianceMipLevels(width: number, height: number): number {
   return Math.min(MAX_RADIANCE_MIP_LEVELS, Math.floor(Math.log2(Math.max(width, height))) + 1);
 }
 function sameSource(left: ScreenSpaceReflectionSource, right: ScreenSpaceReflectionSource): boolean {
-  return left.revision === right.revision && left.depth === right.depth && left.normal === right.normal && left.color === right.color;
+  return left.revision === right.revision && left.depth === right.depth && left.normal === right.normal
+    && left.color === right.color && left.brdfLut === right.brdfLut;
 }
 function sameOptions(left: ScreenSpaceReflectionOptions, right: ScreenSpaceReflectionOptions): boolean {
   return left.verticalFovRadians === right.verticalFovRadians && left.maxDistance === right.maxDistance

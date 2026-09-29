@@ -49,6 +49,8 @@ export interface PbrPostProcessInput {
   readonly disoccluded?: boolean;
   readonly reactiveMaskAvailable?: boolean;
   readonly reactiveMask?: GPUTexture;
+  /** C11 SSR 物理化:主着色器同一 split-sum DFG(environment.brdf);缺省时 SSR 拒绝编码。 */
+  readonly brdfLut?: GPUTextureView;
   readonly adaptiveQuality?: Readonly<AdaptiveQualityKnobs>;
   /**
    * F1 逐 pass GPU 计时作用域(opt-in 诊断)。存在时在计划 pass 组边界发射只写
@@ -192,8 +194,10 @@ export class PbrPostProcessChain {
     }
     if (active.screenSpaceReflection && this.screenSpaceReflection) {
       // E04 首切片:SSR 在 TAA 前,TAA 顺带平滑半分辨率步进痕迹;顺序与 Babylon SSR→TAA 一致。
+      if (input.brdfLut === undefined) throw new Error("Screen-space reflection requires the environment BRDF LUT (C11 physical mask).");
       const reflected = this.screenSpaceReflection.encode(encoder, {
         color: marched, depth: targets.linearDepthTexture, normal: targets.normalTexture, revision,
+        brdfLut: input.brdfLut,
         depthEncoding: "linear-view-depth-positive", normalSpace: "view", colorEncoding: "linear-hdr",
       }, { ...defaultScreenSpaceReflectionOptions(extent),
         ...(active.screenSpaceReflectionProfile ? {
@@ -257,8 +261,9 @@ export class PbrPostProcessChain {
       : ["storage-binding", "texture-binding", "render-attachment", "copy-src"];
     const reflectionInputUsages: readonly FramePlanUsage[] = features.volumetricFog
       ? ["storage-binding", "texture-binding"] : opaqueInputUsages;
+    // ssr-hdr 自 C12 起带 COPY_SRC(present-color 读回链落点);其余输入域不变。
     const temporalInputUsages: readonly FramePlanUsage[] = features.screenSpaceReflection
-      ? ["storage-binding", "texture-binding"] : reflectionInputUsages;
+      ? ["storage-binding", "texture-binding", "copy-src"] : reflectionInputUsages;
     const bloomInput = features.temporalAa ? "temporal-hdr" : temporalInput;
     const bloomInputUsages: readonly FramePlanUsage[] = features.temporalAa
       ? ["storage-binding", "texture-binding", "copy-src"] : temporalInputUsages;
@@ -329,8 +334,9 @@ export class PbrPostProcessChain {
         usages: reflectionInputUsages, sizeRole: "surface" },
         { id: "ssr-trace", access: "read", format: SSR_COMPOSITE_FORMAT, sampleCount: 1,
           usages: ["storage-binding", "texture-binding"], sizeRole: "half" },
+        // copy-src: R12 白名单读回链(present-color 在 SSR 开启时就是本输出,对齐 ao/temporal 合同)。
         { id: "ssr-hdr", access: "write", format: SSR_COMPOSITE_FORMAT, sampleCount: 1,
-          usages: ["storage-binding", "texture-binding"], sizeRole: "surface" }],
+          usages: ["storage-binding", "texture-binding", "copy-src"], sizeRole: "surface" }],
       unplannedAttachments: [{ id: "ssr-composite-sampler", reason: "composite 双线性采样的私有 filtering sampler" }],
       gpuPassCount: 1,
     });
