@@ -4,8 +4,12 @@ use crate::{
     local_lighting::{LocalLight, LocalLightKind},
     mesh_abi::FrameUniform,
 };
-pub const MAX_SPOT_SHADOWS: usize = 4;
-pub const MAX_LOCAL_SHADOW_VIEWS: usize = 10;
+/// Native local-shadow capacity matches the shared 16-light product ABI. A point light
+/// still consumes six cube faces, so the fixed 16-view frame region admits either sixteen
+/// spot views or one point light plus ten spot views; authored combinations are rejected
+/// before GPU allocation when they exceed the view budget.
+pub const MAX_SPOT_SHADOWS: usize = 16;
+pub const MAX_LOCAL_SHADOW_VIEWS: usize = 16;
 pub const MATRIX_ROW: usize = 79;
 pub type Matrix = [[f32; 4]; 4];
 pub const POINT_DIRECTIONS: [[f32; 3]; 6] = [
@@ -17,16 +21,22 @@ pub const POINT_DIRECTIONS: [[f32; 3]; 6] = [
     [0.0, 0.0, -1.0],
 ];
 pub fn validate_budget(lights: &[LocalLight]) -> bool {
-    lights
+    let spot_views = lights
         .iter()
         .filter(|light| light.cast_shadow && light.kind == LocalLightKind::Spot)
+        .count();
+    let point_views = lights
+        .iter()
+        .filter(|light| light.cast_shadow && light.kind == LocalLightKind::Point)
         .count()
-        <= MAX_SPOT_SHADOWS
+        * POINT_DIRECTIONS.len();
+    spot_views <= MAX_SPOT_SHADOWS
         && lights
             .iter()
             .filter(|light| light.cast_shadow && light.kind == LocalLightKind::Point)
             .count()
             <= 1
+        && spot_views + point_views <= MAX_LOCAL_SHADOW_VIEWS
 }
 pub fn matrices(light: LocalLight) -> Result<Vec<Matrix>, String> {
     if light.kind == LocalLightKind::Point {

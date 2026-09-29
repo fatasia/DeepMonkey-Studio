@@ -57,17 +57,28 @@ fn spot_projection_has_expected_depth_and_translates_with_the_world() {
     );
 }
 #[test]
-fn rejects_more_than_four_shadow_views_before_gpu_allocation() {
+fn accepts_sixteen_spot_views_before_gpu_allocation() {
     let local = serde_json::json!({"kind":"spot","position":[0,4,3],"direction":[0,-0.8,-0.6],"radiance":[4,4,4],"range":12,"decay":2,"innerCos":0.8,"outerCos":0.5,"castShadow":true});
     let lighting = |count| serde_json::json!({"direction":[0,1,0],"radiance":[0,0,0],"exposure":1.05,"shadows":false,"localLights":vec![local.clone();count]});
     let valid: crate::scene_lighting::DirectionalLighting =
-        serde_json::from_value(lighting(4)).unwrap();
+        serde_json::from_value(lighting(16)).unwrap();
     let mut frame = crate::mesh_abi::frame_uniform(1.0, 0.0);
     valid.apply(&mut frame);
-    assert_eq!(frame_matrices(&frame).len(), 4);
-    assert!(
-        serde_json::from_value::<crate::scene_lighting::DirectionalLighting>(lighting(5)).is_err()
-    );
+    assert_eq!(frame_matrices(&frame).len(), 16);
+    assert!(serde_json::from_value::<crate::scene_lighting::DirectionalLighting>(lighting(17)).is_err());
+}
+
+/// Cross-host ABI pin: Web and Native both expose sixteen spot-shadow entries. Native
+/// keeps a fixed sixteen-view frame region, so a point light reserves six faces and leaves
+/// ten spot views; the budget is enforced before any GPU resource allocation.
+#[test]
+fn spot_shadow_capacity_matches_the_sixteen_view_frame_layout() {
+    assert_eq!(MAX_SPOT_SHADOWS, 16);
+    assert_eq!(MAX_LOCAL_SHADOW_VIEWS, 16);
+    let region_floats = MATRIX_ROW * 4 + MAX_LOCAL_SHADOW_VIEWS * 16;
+    assert_eq!(region_floats, 79 * 4 + 16 * 16);
+    assert!(region_floats < crate::mesh_abi::FRAME_UNIFORM_FLOATS);
+    assert_eq!(crate::mesh_abi::FRAME_LOCAL_SOFTNESS_LIGHTS, 16);
 }
 
 #[test]
@@ -94,10 +105,10 @@ fn point_faces_cover_six_axes_and_keep_world_translation() {
         );
         assert!((0..3).all(|i| (center[i] - moved[i]).abs() < 1e-4));
     }
-    let mut combined = vec![light(); 4];
+    // 点光 + 十盏聚光灯恰好填满 16 view；第十一盏应在解析前被拒绝。
+    let mut combined = vec![light(); 10];
     combined.push(source.clone());
     assert!(validate_budget(&combined));
-    // 第 5 盏灯超预算:validate_budget 必须拒绝(下方 lighting 仍可 apply,validate 独立拒绝)。
     combined.push(light());
     assert!(!validate_budget(&combined));
     let lighting = crate::scene_lighting::DirectionalLighting {
@@ -118,6 +129,6 @@ fn point_faces_cover_six_axes_and_keep_world_translation() {
     };
     let mut frame = crate::mesh_abi::frame_uniform(1.0, 0.0);
     lighting.apply(&mut frame);
-    assert_eq!(frame_matrices(&frame).len(), 10);
+    assert_eq!(frame_matrices(&frame).len(), 16);
     assert!(!validate_budget(&combined));
 }

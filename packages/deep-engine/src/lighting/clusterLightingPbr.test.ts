@@ -7,6 +7,8 @@ import { assignLightsToClusters } from "./clusterGrid.js";
 import { ForwardPlusClusterAssigner } from "./clusterCompute.js";
 import { composeForwardPlusPbrShader, FORWARD_PLUS_PBR_WGSL } from "./clusterLightingPbrWgsl.js";
 import { ForwardPlusPbrLightingBindings } from "./pbrLightingBindings.js";
+import { LOCAL_SPOT_SHADOW_ENTRY_BYTES, LOCAL_SPOT_SHADOW_MAX_LIGHTS,
+  LOCAL_SPOT_SHADOW_UNIFORM_BYTES } from "../shadows/localSpotShadowShader.js";
 import { evaluateForwardPlusPbrCpu, type ForwardPlusPbrSurface } from "./pbrLightingCpu.js";
 import { evaluateIesShadingFactor, packIesShading } from "./iesShading.js";
 import { packClusteredLights } from "./clusterPacking.js";
@@ -50,6 +52,16 @@ describe("Forward+ clustered PBR lighting", () => {
     expect(FORWARD_PLUS_PBR_WGSL).toContain("worldToView, baseColor, metallic, roughness, true");
     expect(FORWARD_PLUS_PBR_WGSL).toContain("fn deepForwardPlusPbrWorldReceiving(");
     expect(FORWARD_PLUS_PBR_WGSL).toContain("worldPosition, baseInput, metallicInput, roughnessInput, true");
+  });
+  it("carries the F7b 16-entry spot shadow ABI within the uniform binding budget", () => {
+    // F7b ABI 扩容锚：16 条目 × 96B = 1536B，WGSL 数组与循环上界随常量派生。
+    expect(LOCAL_SPOT_SHADOW_MAX_LIGHTS).toBe(16);
+    expect(LOCAL_SPOT_SHADOW_ENTRY_BYTES).toBe(96);
+    expect(LOCAL_SPOT_SHADOW_UNIFORM_BYTES).toBe(1536);
+    // 预算核查：WebGPU 默认 maxUniformBufferBindingSize = 64KiB，1536B 远在其内。
+    expect(LOCAL_SPOT_SHADOW_UNIFORM_BYTES).toBeLessThanOrEqual(65_536);
+    expect(FORWARD_PLUS_PBR_WGSL).toContain("array<DeepLocalSpotShadowEntry, 16>");
+    expect(FORWARD_PLUS_PBR_WGSL).toContain("entryIndex < 16u");
   });
   it("composes the fixed lighting ABI ahead of a renderer shader", () => {
     const source = composeForwardPlusPbrShader("@compute @workgroup_size(1) fn rendererEntry() {}");
@@ -169,7 +181,7 @@ describe("Forward+ clustered PBR lighting", () => {
     const bindings = new ForwardPlusPbrLightingBindings(f.session, local);
     const layout = f.device.createBindGroupLayout.mock.calls.at(-1)?.[0] as GPUBindGroupLayoutDescriptor;
     expect(layout.entries.slice(6)).toEqual([
-      { binding: 6, visibility: 2, buffer: { type: "uniform", minBindingSize: 384 } },
+      { binding: 6, visibility: 2, buffer: { type: "uniform", minBindingSize: 1536 } },
       { binding: 7, visibility: 2, texture: { sampleType: "depth", viewDimension: "2d" } },
       { binding: 8, visibility: 2, sampler: { type: "comparison" } },
       { binding: 9, visibility: 2, texture: { sampleType: "float", viewDimension: "2d-array" } },

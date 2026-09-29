@@ -12,6 +12,8 @@ import { LOCAL_SPOT_SHADOW_MAX_LIGHTS } from "./localSpotShadowShader.js";
  * 故不借用 performance/balanced/high/ultra 词汇以免暗示"越高越好"。
  *
  * 默认档不变：默认切换走 Z3.5 联测授权（本模块只提供 opt-in 解析，不改任何默认值）。
+ * F7b 起 spot uniform ABI 已扩至 16 条目（1536B），multi-light 档在产品渲染器可达
+ * （经 PbrRendererOptions.localSpotShadowAtlasTier opt-in）。
  */
 
 export type LocalSpotShadowAtlasTier = "standard" | "multi-light";
@@ -29,9 +31,9 @@ export interface LocalSpotShadowAtlasTierLimits {
   readonly maxTextureDimension2D?: number;
   readonly maxDepthTextureBytes?: number;
   /**
-   * 产品 uniform ABI 的 spot 条目上限（当前 `LOCAL_SPOT_SHADOW_MAX_LIGHTS` = 4；
-   * clusterLightingPbr 的 group-3 绑定以 384 字节为 ABI 锚）。缺省按当前 ABI 收口：
-   * 16 灯档在 ABI 扩容（1536 字节）落地前 fail-closed，静默接线会在
+   * 产品 uniform ABI 的 spot 条目上限（缺省 = `LOCAL_SPOT_SHADOW_MAX_LIGHTS` = 16，
+   * F7b 扩容后 clusterLightingPbr 的 group-3 绑定以 1536 字节为 ABI 锚）。
+   * 显式传入更小值（如宿主自限）时 multi-light 档仍 fail-closed，静默接线会在
    * stageMetadata 越界——那是错误路径，不是档位语义。
    */
   readonly maxSpotShadowEntries?: number;
@@ -59,7 +61,9 @@ function profile(tier: LocalSpotShadowAtlasTier, requestedAtlasSize: number, til
 export const LOCAL_SPOT_SHADOW_ATLAS_QUALITY_PROFILES:
   Readonly<Record<LocalSpotShadowAtlasTier, LocalSpotShadowAtlasQualityProfile>> = Object.freeze({
     // 逐值等于已发布的 LOCAL_SPOT_SHADOW_ATLAS_OPTIONS（默认零回归的锚）。
-    standard: profile("standard", 1024, 2, LOCAL_SPOT_SHADOW_MAX_LIGHTS, LOCAL_SPOT_SHADOW_MAX_LIGHTS),
+    // 灯容量字面钉死 4/4：standard 是"2×2 tile=4 槽"的分布选择，ABI 扩容（16）
+    // 不得抬高它——容量受 tile 几何约束而非 uniform ABI 约束。
+    standard: profile("standard", 1024, 2, 4, 4),
     // F7 atlas-256 腿参数：16 灯全覆盖，每灯 252 有效 texel。
     "multi-light": profile("multi-light", 1024, 4, 16, 16),
   });

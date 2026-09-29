@@ -164,6 +164,9 @@ describe("J4 渲染能力清单 —— TS 自检对拍与漂移检测", () => {
     expect(selfCheck.PBR_RENDERER_TS_SURFACE.giDirectionHigh).toBe(32);
     const material = selfCheck.PBR_RENDERER_CAPABILITY_SELF_CHECK.find((row) => row.capabilityId === "material-abi-192b");
     expect(material?.observed).toMatchObject({ packedFloats: 48, packedBytes: 192, coreBlockBytes: 160 });
+    // F7b：spot uniform ABI 扩容 16 条目/1536B 后钉住（自检值从常量派生，漂移即红）。
+    const shadowLocal = selfCheck.PBR_RENDERER_CAPABILITY_SELF_CHECK.find((row) => row.capabilityId === "shadow-local");
+    expect(shadowLocal?.observed).toMatchObject({ spotShadowMaxLights: 16, spotShadowUniformBytes: 1536 });
     expect(selfCheck.PBR_RENDERER_TS_SURFACE.contactShadowQualityTiers).toEqual(["performance", "balanced", "quality"]);
     const recovery = selfCheck.PBR_RENDERER_CAPABILITY_SELF_CHECK.find((row) => row.capabilityId === "device-recovery");
     expect(recovery?.observed).toMatchObject({

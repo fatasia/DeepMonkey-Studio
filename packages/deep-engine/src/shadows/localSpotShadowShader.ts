@@ -1,11 +1,20 @@
 import { SHARED_SHADOW_ATLAS_PCF_SAMPLES } from "./sharedShadowAtlas.js";
 import { LOCAL_SHADOW_PCSS_MAX_RADIUS_TEXELS, LOCAL_SHADOW_PCSS_TAPS } from "./localShadowSoftness.js";
 
-export const LOCAL_SPOT_SHADOW_MAX_LIGHTS = 4;
+/**
+ * F7b ABI 扩容（4→16）：产品 spot 阴影 uniform 的条目上限，与图集 multi-light 档
+ * （localSpotShadowAtlasQuality，16 灯）同容量。WGSL 条目数组、采样循环上界、
+ * runtime 缓冲与 pbrLightingBindings 的 minBindingSize 全部由本常量派生。
+ * uniform 预算：16 × 96B = 1536B，远低于 WebGPU 默认 maxUniformBufferBindingSize
+ * （64KiB），同帧 cluster lighting bind group 无其他 uniform 竞争该上限。
+ * native 侧对应容量仍是 4（local_shadow.rs MAX_SPOT_SHADOWS，被 frame uniform
+ * 10-view/softness-4 布局钉死）——跨端容量分叉由能力清单 shadow-local 条目登记。
+ */
+export const LOCAL_SPOT_SHADOW_MAX_LIGHTS = 16;
 export const LOCAL_SPOT_SHADOW_ENTRY_BYTES = 96;
 export const LOCAL_SPOT_SHADOW_UNIFORM_BYTES = LOCAL_SPOT_SHADOW_ENTRY_BYTES * LOCAL_SPOT_SHADOW_MAX_LIGHTS;
 
-/** Fixed group-3 ABI for at most four shared-atlas spot-shadow slices. */
+/** Fixed group-3 ABI for at most sixteen shared-atlas spot-shadow slices (1536B). */
 export const LOCAL_SPOT_SHADOW_WGSL = /* wgsl */ `
 struct DeepLocalSpotShadowEntry {
   viewProjection: mat4x4f,

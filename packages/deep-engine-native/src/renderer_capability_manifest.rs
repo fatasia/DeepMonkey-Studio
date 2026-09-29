@@ -278,7 +278,7 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         capability_id: "shadow-local",
         support: RendererCapabilitySupport::Supported,
         reason: RendererCapabilityReasonCode::Full,
-        evidence: "local_shadow(renderer spot/point shadow faces;local_lighting 共用)",
+        evidence: "local_shadow(16 spot entries/16-view frame ABI; point light consumes six faces;local_lighting + clustered_lighting 共用)",
     },
     NativeCapabilitySelfCheck {
         capability_id: "weighted-oit",

@@ -410,11 +410,11 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     webFeatureKeys: [],
     web: {
       support: "supported", reason: "full",
-      evidence: "packages/deep-engine/src/shadows/localSpotShadowShader.ts:localSpotShadowShader(localShadowSoftness 软阴影核)",
+      evidence: "packages/deep-engine/src/shadows/localSpotShadowShader.ts:localSpotShadowShader(F7b spot uniform ABI 16 条目×96B=1536B;localSpotShadowAtlasQuality multi-light 档 16 灯可达;localShadowSoftness 软阴影核)",
     },
     native: {
       support: "supported", reason: "full",
-      evidence: "packages/deep-engine-native/src/local_shadow.rs:local_shadow(renderer spot/point shadow faces 通路;ies/local_lighting 共用)",
+      evidence: "packages/deep-engine-native/src/local_shadow.rs:local_shadow(16 spot entries/16-view frame ABI; point light consumes six faces;local_lighting + clustered_lighting 共用)",
     },
   },
   {

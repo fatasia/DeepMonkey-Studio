@@ -15,7 +15,7 @@ struct Frame {
   floor: vec4f, lightDirection: vec4f, tuning: vec4f,
   sunColor: vec4f, lightingOptions: vec4f,
   localLights: array<LocalLight, 16>,
-  localShadowMatrices: array<mat4x4f, 10>,
+  localShadowMatrices: array<mat4x4f, 16>,
   fogProjection: vec4f,
   localShadowSoftness: array<vec4f, 4>,
   fogProfile: vec4f,

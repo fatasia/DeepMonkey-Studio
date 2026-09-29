@@ -4,13 +4,24 @@ pub const STOCK_MATERIAL_ABI_ID: &str = "deep.pbr.mesh.v5";
 pub const MATERIAL_IOR_FLOAT_OFFSET: usize = 15;
 
 /// 只追加灯光参数；旧 v1/v2/v3 成员偏移保持不变。
-pub const FRAME_ABI_ID: &str = "deep.native.frame.v7";
+/// Native frame v8 keeps the published camera/material prefix and expands local-shadow
+/// storage to the product 16-light budget. The shader mirrors use the same row order:
+/// 15 fixed rows + 16 local lights + 16 shadow matrices + fog projection + 4 softness
+/// rows + fog profile.
+pub const FRAME_ABI_ID: &str = "deep.native.frame.v8";
 pub const FRAME_V1_BYTES: u64 = 208;
-pub const FRAME_UNIFORM_FLOATS: usize = 60 + 16 * 16 + 10 * 16 + 4 + 16;
-pub const FRAME_FOG_PROJECTION_ROW: usize = 119;
-pub const FRAME_LOCAL_SOFTNESS_ROW: usize = 120;
-/// Optional bounded volumetric profile; appended in the existing v7 padding.
-pub const FRAME_FOG_PROFILE_ROW: usize = 121;
+pub const FRAME_LOCAL_LIGHTS: usize = 16;
+pub const FRAME_LOCAL_SHADOW_VIEWS: usize = 16;
+pub const FRAME_LOCAL_SOFTNESS_LIGHTS: usize = 16;
+pub const FRAME_UNIFORM_FLOATS: usize = 60
+    + FRAME_LOCAL_LIGHTS * 16
+    + FRAME_LOCAL_SHADOW_VIEWS * 16
+    + 4
+    + FRAME_LOCAL_SOFTNESS_LIGHTS
+    + 4;
+pub const FRAME_FOG_PROJECTION_ROW: usize = 143;
+pub const FRAME_LOCAL_SOFTNESS_ROW: usize = 144;
+pub const FRAME_FOG_PROFILE_ROW: usize = 148;
 pub const FRAME_UNIFORM_BYTES: u64 = (FRAME_UNIFORM_FLOATS * size_of::<f32>()) as u64;
 pub const FRAME_MEMBER_BYTE_OFFSETS: [u64; 7] = [0, 64, 128, 144, 160, 176, 192];
 pub type FrameUniform = [[f32; 4]; FRAME_UNIFORM_FLOATS / 4];
@@ -193,10 +204,11 @@ mod tests {
     #[test]
     fn softness_extension_defaults_to_zero_without_moving_legacy_fields() {
         use super::*;
-        assert_eq!(FRAME_UNIFORM_BYTES, 1984);
-        assert_eq!(FRAME_LOCAL_SOFTNESS_ROW * 16, 1920);
+        assert_eq!(FRAME_UNIFORM_BYTES, 2384);
+        assert_eq!(FRAME_FOG_PROJECTION_ROW * 16, 2288);
+        assert_eq!(FRAME_LOCAL_SOFTNESS_ROW * 16, 2304);
         let mut frame = frame_uniform(1.0, 0.0);
-        assert_eq!(&frame[FRAME_LOCAL_SOFTNESS_ROW..], &[[0.0; 4]; 4]);
+        assert_eq!(&frame[FRAME_LOCAL_SOFTNESS_ROW..FRAME_LOCAL_SOFTNESS_ROW + 4], &[[0.0; 4]; 4]);
         let lights: Vec<_> = (0..16)
             .map(|index| {
                 serde_json::json!({

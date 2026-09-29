@@ -43,15 +43,15 @@ export interface LocalSpotShadowFrame {
   readonly degraded: boolean;
 }
 
-/** Owns a 4 MiB Browser atlas and at most four importance-ranked spot views.
- *  图集口径经 localSpotShadowAtlasQuality 档位解析（默认 standard；多灯档当前被
- *  spot uniform ABI 门 fail-closed，见 localSpotShadowAtlasQuality.ts）。 */
+/** Owns a 4 MiB Browser atlas and the tier's importance-ranked spot views.
+ *  图集口径经 localSpotShadowAtlasQuality 档位解析（默认 standard；multi-light 档
+ *  自 F7b ABI 扩容（16 条目/1536B）起可达，经 create 第三参 opt-in）。 */
 export class LocalSpotShadowRuntime {
   readonly bindings: LocalSpotShadowBindings;
   get deviceEpoch(): string { return this.atlasOwner.deviceEpoch; }
   get budget(): SharedShadowAtlasBudgetEvidence | undefined { return this.atlasOwner.budget; }
   private readonly committedMetadata = new Float32Array(LOCAL_SPOT_SHADOW_UNIFORM_BYTES / 4);
-  private readonly frameGroups = new WeakMap<GPURenderPipeline, readonly GPUBindGroup[]>();
+  private readonly frameGroups = new WeakMap<GPURenderPipeline, GPUBindGroup[]>();
   private lastSignature: string | undefined;
   private pendingSignature: string | undefined;
   private pendingMetadata: Float32Array<ArrayBuffer> | undefined;
@@ -69,8 +69,8 @@ export class LocalSpotShadowRuntime {
 
   static async create(session: DeviceSession, signal?: AbortSignal,
     tier: LocalSpotShadowAtlasTier = "standard"): Promise<LocalSpotShadowRuntime> {
-    // 档位解析在任何资源分配之前 fail-closed：多灯档超出当前 spot uniform ABI
-    // （4 条目）时抛出，不产生半分配状态；ABI 扩容是它的前置切片。
+    // 档位解析在任何资源分配之前 fail-closed：宿主显式 limits 小于档位容量时抛出，
+    // 不产生半分配状态。F7b ABI 扩容后缺省 ABI（16 条目）放行 multi-light 档。
     const atlasOptions = localSpotShadowAtlasOptionsForTier(tier, {
       maxTextureDimension2D: session.device.limits.maxTextureDimension2D,
       maxDepthTextureBytes: DEPTH_BUDGET,
@@ -147,7 +147,7 @@ export class LocalSpotShadowRuntime {
         selected.forEach((spot, ordinal) => {
           pass.setViewport(spot.tile.x, spot.tile.y, spot.tile.size, spot.tile.size, 0, 1);
           pass.setScissorRect(spot.tile.x, spot.tile.y, spot.tile.size, spot.tile.size);
-          pass.setBindGroup(0, this.shadowFrameBindings(pipelines)[ordinal]!);
+          pass.setBindGroup(0, this.shadowFrameBinding(pipelines, ordinal));
           const stats = packets.draw(pass, pipelines, "shadow", { eye: spot.light.positionWorld,
             target: add(spot.light.positionWorld, spot.light.directionWorld) }, false, 0, false, false, this.lod.view(spot));
           drawCalls += stats.drawCalls; triangles += stats.triangles;
@@ -199,14 +199,20 @@ export class LocalSpotShadowRuntime {
     this.pendingMetadata = metadata;
   }
 
-  private shadowFrameBindings(pipelines: Pipelines): readonly GPUBindGroup[] {
-    const cached = this.frameGroups.get(pipelines.shadow); if (cached) return cached;
-    const layout = pipelines.shadow.getBindGroupLayout(0);
-    const created = Object.freeze(this.shadowFrames.map((buffer, index) => this.session.device.createBindGroup({
-      label: `Deep local spot shadow frame binding ${index}`, layout,
-      entries: [{ binding: 0, resource: { buffer } }],
-    })));
-    this.frameGroups.set(pipelines.shadow, created); return created;
+  /** F7b ABI 扩容后 shadowFrames 有 16 槽；绑定组按 ordinal 惰性创建，
+   *  只为实际选中的灯付资源（standard 档 4 灯仍是 4 个绑定组）。 */
+  private shadowFrameBinding(pipelines: Pipelines, ordinal: number): GPUBindGroup {
+    let groups = this.frameGroups.get(pipelines.shadow);
+    if (!groups) { groups = []; this.frameGroups.set(pipelines.shadow, groups); }
+    let group = groups[ordinal];
+    if (!group) {
+      group = this.session.device.createBindGroup({
+        label: `Deep local spot shadow frame binding ${ordinal}`, layout: pipelines.shadow.getBindGroupLayout(0),
+        entries: [{ binding: 0, resource: { buffer: this.shadowFrames[ordinal]! } }],
+      });
+      groups[ordinal] = group;
+    }
+    return group;
   }
 
   private assertReady(): void {

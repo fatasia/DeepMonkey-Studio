@@ -80,7 +80,7 @@ fn local_spot_pcss(layer: i32, uv: vec2f, receiverDepth: f32, softness: f32) -> 
 }
 
 fn local_spot_visibility(index: u32, depthFactor: f32, world: vec3f, n_dot_l: f32, softness: f32) -> f32 {
-  if (index >= min(u32(frame.lightingOptions.w),10u)) { return 1.0; }
+  if (index >= min(u32(frame.lightingOptions.w),16u)) { return 1.0; }
   let clip = frame.localShadowMatrices[index] * vec4f(world,1.0);
   if (clip.w <= 0.0) { return 1.0; }
   let projected = clip.xyz / clip.w;

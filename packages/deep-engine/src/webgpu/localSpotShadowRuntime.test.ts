@@ -60,13 +60,29 @@ describe("Browser local spot shadow runtime", () => {
     expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
   });
 
-  it("rejects the multi-light tier before any allocation while the spot uniform ABI holds four entries", async () => {
-    const f = fixture();
-    await expect(LocalSpotShadowRuntime.create(f.session, undefined, "multi-light"))
-      .rejects.toThrow(/multi-light tier admits 16 shadowed lights but the spot uniform ABI holds 4 entries/);
-    expect(f.device.createTexture).not.toHaveBeenCalled();
-    expect(f.device.createBuffer).not.toHaveBeenCalled();
-    expect(f.owned.size).toBe(0);
+  it("admits the multi-light tier under the F7b 16-entry ABI and mirrors its tier budget", async () => {
+    const f = fixture(), runtime = await LocalSpotShadowRuntime.create(f.session, undefined, "multi-light");
+    expect(runtime.atlasTier).toBe("multi-light");
+    // 同一 1024² 图集：4×4 tile（16 灯全覆盖），深度保留字节与 standard 相同。
+    expect(runtime.budget).toMatchObject({ maxShadowedLights: 16, maxShadowViews: 16,
+      allocatedDepthTextureBytes: 4 * 1024 * 1024 });
+    const hero = lights().spots[0]!;
+    const sixteen = { spots: Array.from({ length: 16 }, (_, index) => ({ ...hero,
+      positionWorld: [index, 3, 4] as const, shadow: { key: `multi-${index}`, importance: 16 - index } })) };
+    f.device.queue.writeBuffer.mockClear();
+    const result = runtime.prepareAndEncode(f.encoder, f.packets as never, f.pipelines, sixteen, false);
+    expect(result).toMatchObject({ rendered: true, shadowedSpotIndices: Array.from({ length: 16 }, (_, index) => index) });
+    expect(result.plan?.rejected).toEqual([]);
+    expect(result.plan?.allocations).toHaveLength(16);
+    // 每灯 tile 252 有效 texel（1024/4 − 2×guard），slot 沿 4×4 图集行铺开。
+    expect(f.pass.setViewport.mock.calls[0]).toEqual([2, 2, 252, 252, 0, 1]);
+    expect(f.pass.setViewport.mock.calls[15]).toEqual([770, 770, 252, 252, 0, 1]);
+    const metadata = f.device.queue.writeBuffer.mock.calls
+      .find(call => (call[0] as GPUBuffer).label === "Deep local spot shadow data")?.[2] as Float32Array;
+    expect(metadata.byteLength).toBe(1536);
+    expect(metadata[20]).toBe(0);
+    expect(metadata[20 + 24 * 15]).toBe(15);
+    runtime.dispose();
   });
 
   it("resolves the standard tier identically to the published default", async () => {
@@ -175,7 +191,8 @@ describe("Browser local spot shadow runtime", () => {
     expect(runtime.prepareAndEncode(f.encoder, f.packets as never, f.pipelines, stable, false).rendered).toBe(true);
     const initialWrites = f.device.queue.writeBuffer.mock.calls;
     expect(initialWrites).toHaveLength(count + 1);
-    expect(initialWrites.reduce((bytes, call) => bytes + (call[2] as Float32Array).byteLength, 0)).toBe(384 + count * PBR_FRAME_UNIFORM_BYTES);
+    expect(initialWrites.reduce((bytes, call) => bytes + (call[2] as Float32Array).byteLength, 0))
+      .toBe(1536 + count * PBR_FRAME_UNIFORM_BYTES);
     runtime.commit();
     f.device.queue.writeBuffer.mockClear(); f.draw.mockClear();
     for (let frame = 0; frame < 3; frame++) {

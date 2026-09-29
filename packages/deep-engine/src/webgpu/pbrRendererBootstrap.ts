@@ -25,7 +25,9 @@ export async function openPbrRenderer<T>(session: DeviceSession,
     assertTextureArrayProductionReady(features);
     session.device.pushErrorScope("validation"); scopeOpen = true;
     markBootstrap("local-shadows-start");
-    const localShadows = await LocalSpotShadowRuntime.create(session, signal), lighting = new ForwardPlusPbrRuntime(session, localShadows.bindings);
+    // F7b：档位第三参贯通(opt-in,缺省 standard = 既有调用语义逐位不变)。
+    const localShadows = await LocalSpotShadowRuntime.create(session, signal,
+      options.localSpotShadowAtlasTier ?? "standard"), lighting = new ForwardPlusPbrRuntime(session, localShadows.bindings);
     markBootstrap("local-shadows-ready");
     markBootstrap("pipeline-env-start");
     const deferDeformation = options.pipelines?.deferDeformation === true

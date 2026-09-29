@@ -39,15 +39,17 @@ describe("local spot shadow atlas quality tiers", () => {
     expect(() => localSpotShadowAtlasOptionsForTier("multi-light", { maxSpotShadowEntries: 15 }))
       .toThrow(/admits 16 shadowed lights/);
   });
-
-  it("gates the multi-light tier on the spot uniform ABI instead of failing mid-frame", () => {
-    // 缺省按当前 ABI（LOCAL_SPOT_SHADOW_MAX_LIGHTS = 4）收口：静默接线会在
-    // stageMetadata 越界，这里是唯一允许暴露该前置条件的位置。
-    expect(() => resolveLocalSpotShadowAtlasTier("multi-light"))
+  it("gates the multi-light tier on explicit spot uniform ABI limits instead of failing mid-frame", () => {
+    // F7b：缺省 ABI（LOCAL_SPOT_SHADOW_MAX_LIGHTS = 16 条目/1536B）放行 multi-light。
+    const admitted = resolveLocalSpotShadowAtlasTier("multi-light");
+    expect(admitted.profile.options).toEqual({
+      requestedAtlasSize: 1024, tilesPerAxis: 4, maxShadowedLights: 16, maxShadowViews: 16 });
+    // fail-closed 回归：宿主显式收窄 ABI 时仍拒绝（静默接线会在 stageMetadata 越界）。
+    expect(() => resolveLocalSpotShadowAtlasTier("multi-light", { maxSpotShadowEntries: 4 }))
       .toThrow(/multi-light tier admits 16 shadowed lights but the spot uniform ABI holds 4 entries/);
     const selection = resolveLocalSpotShadowAtlasTier("multi-light", { maxSpotShadowEntries: 16 });
     expect(selection.profile.options.maxShadowedLights).toBe(16);
-    // standard 在当前 ABI 下不受影响。
+    // standard 档灯容量字面钉死 4（2×2 tile 分布），不随 ABI 扩容抬高。
     expect(resolveLocalSpotShadowAtlasTier("standard").profile.options.maxShadowedLights).toBe(4);
   });
 

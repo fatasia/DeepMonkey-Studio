@@ -15,6 +15,7 @@
  */
 
 import { CONTACT_SHADOW_QUALITY_PROFILES } from "../shadows/contactShadowQuality.js";
+import { LOCAL_SPOT_SHADOW_MAX_LIGHTS, LOCAL_SPOT_SHADOW_UNIFORM_BYTES } from "../shadows/localSpotShadowShader.js";
 import {
   DEEP_GI_PROBE_DIRECTIONS_HIGH,
   DEEP_GI_PROBE_DIRECTIONS_STANDARD,
@@ -195,7 +196,10 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
   },
   {
     capabilityId: "shadow-local", support: "supported", reason: "full",
-    observed: {},
+    // F7b：spot uniform ABI 从实际常量派生（16 条目 × 96B = 1536B），contracts 侧
+    // 对拍测试钉住该值——ABI 变动而清单未跟时此观测值先红。
+    observed: { spotShadowUniformBytes: LOCAL_SPOT_SHADOW_UNIFORM_BYTES,
+      spotShadowMaxLights: LOCAL_SPOT_SHADOW_MAX_LIGHTS },
   },
   {
     capabilityId: "weighted-oit", support: "supported", reason: "full",
