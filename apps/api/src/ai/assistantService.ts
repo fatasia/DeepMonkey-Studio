@@ -3,10 +3,14 @@ import type { AiAssistantResponse, AiFailureCategory, AiProviderSettings } from 
 import type { AiProviderCompletion, AiProviderRequest, AiProviderStreamEvent, PluginRegistry } from "@bim-studio/plugin-runtime";
 import { auditFingerprint, createAiAuditEvent, emitAiAudit, safeErrorMessage, type AiReliabilityAuditSink } from "./aiReliabilityAudit.js";
 import { prepareAiInput, reliabilitySystemBoundary, type AiReliabilityAssessment } from "./aiReliabilityPolicy.js";
-import { assistantOutputLimit, assistantPrompts, parseAssistantContent, type AssistantMode } from "./assistantPrompts.js";
+import { assistantOutputLimit, assistantPrompts, parseAssistantContent, type AssistantMode, type ParsedAssistantContent } from "./assistantPrompts.js";
 import { attemptWithFailover, classifyAiProviderError, resolveFailoverTarget, type AiFailoverTarget } from "./aiFailoverPolicy.js";
 import { newTelemetryRecord, type AiTelemetrySink } from "./aiRequestTelemetry.js";
 import { assistantContextDelivery } from "./assistantContextDelivery.js";
+import { auditChatAnswerEvidence } from "./chatEvidenceGate.js";
+import type { AgentMemoryDelivery } from "./agentMemory.js";
+import { agentMemoryContextDelivery, memoryDeliveryFindings } from "./industrialAgentDecisionProvider.js";
+import { industrialAgentRuntimeIfReady } from "./industrialAgentRuntime.js";
 
 export type AssistantStreamEvent =
   | { type: "delta"; delta: string }
@@ -46,6 +50,8 @@ export interface AssistantServiceOptions {
   audit?: AiReliabilityAuditSink;
   telemetry?: AiTelemetrySink;
   now?: () => Date;
+  /** K4：chat 请求按项目注入守则/记忆/既往结论；测试直注，生产走 industrialAgentRuntime 共享实例。 */
+  memory?: (projectId: string) => Promise<AgentMemoryDelivery>;
 }
 
 export class AiReliabilityBlockedError extends Error {
@@ -234,22 +240,36 @@ interface PreparedAssistantRequest {
   contextFingerprint: string;
   contextWarning?: string;
   contextDelivery: ReturnType<typeof assistantContextDelivery>;
+  /** K2：真正发送给模型的上下文前缀——出域复核只比对模型能看到的内容。 */
+  sentContext: string;
+  /** K4：逐源审计与警示（读取失败时不阻断请求，但必须留痕）。 */
+  memoryFindings: Array<{ code: string; severity: string; sourceId: string; contentFingerprint: string }>;
+  memoryWarning?: string;
 }
 
 async function prepareRequest(registry: PluginRegistry, request: AssistantRequest, options: AssistantServiceOptions): Promise<PreparedAssistantRequest> {
   if (!request.settings.apiKey) throw new Error("尚未配置大模型 API Key");
   const traceId = randomUUID();
-  const prepared = prepareAiInput(request.question, request.context);
+  // K4：记忆投递在可靠性扫描**之前**并入上下文——RULES.md 是人写文件，必须与
+  // 客户端快照同受注入扫描与隔离约束（与 agent 决策器同族纪律，禁止扫描外注入）。
+  const memory = await loadMemoryDelivery(options, request.projectId);
+  const scopedContext = memory.delivery?.configured
+    ? { ...(asRecord(request.context) ?? { value: request.context }), agentMemoryContext: agentMemoryContextDelivery(memory.delivery) }
+    : request.context;
+  const prepared = prepareAiInput(request.question, scopedContext);
   const contextFingerprint = auditFingerprint(request.context);
+  const context = withCapabilityCatalog(registry, prepared.context, request.settings.providerId);
   const assessmentEvent = createAiAuditEvent({
     traceId, stage: "input-assessment", outcome: prepared.assessment.decision === "block" ? "denied" : prepared.assessment.decision === "constrain" ? "constrained" : "allowed",
     principal: request.principal, ...(request.projectId ? { projectId: request.projectId } : {}), providerId: request.settings.providerId, model: request.settings.model,
-    assessment: prepared.assessment, ...(options.now ? { now: options.now } : {}),
+    assessment: prepared.assessment,
+    // K4 逐源投递审计：每个注入源一条 finding（内容指纹），与 context 字段一一对应。
+    findings: [...prepared.assessment.findings, ...memory.findings],
+    ...(options.now ? { now: options.now } : {}),
   });
   await emitAiAudit(options.audit, assessmentEvent);
   if (prepared.assessment.decision === "block") throw new AiReliabilityBlockedError(traceId, prepared.assessment.findings.map((item) => item.code));
-  const context = withCapabilityCatalog(registry, prepared.context, request.settings.providerId);
-  const { systemPrompt, userPrompt, contextWarning, contextSentChars } = assistantPrompts(request.mode, prepared.question, context);
+  const { systemPrompt, userPrompt, contextWarning, contextSentChars, sentContext } = assistantPrompts(request.mode, prepared.question, context);
   const contextDelivery = assistantContextDelivery(request.context, context, contextSentChars);
   const providerRequest: AiProviderRequest = {
     requestId: traceId,
@@ -268,32 +288,79 @@ async function prepareRequest(registry: PluginRegistry, request: AssistantReques
     },
     ...(request.signal ? { signal: request.signal } : {})
   };
-  return { traceId, providerRequest, assessment: prepared.assessment, contextFingerprint, contextDelivery, ...(contextWarning ? { contextWarning } : {}) };
+  return {
+    traceId, providerRequest, assessment: prepared.assessment, contextFingerprint, contextDelivery, sentContext,
+    memoryFindings: memory.findings, ...(memory.warning ? { memoryWarning: memory.warning } : {}),
+    ...(contextWarning ? { contextWarning } : {}),
+  };
+}
+
+/**
+ * K4 记忆投递解析：未配置（无实例或无项目）零开销跳过；读取失败不变成新的
+ * 请求故障面，但必须留审计 finding 与用户可见警示（K8 教训：静默吞掉零提示是缺陷）。
+ */
+async function loadMemoryDelivery(options: AssistantServiceOptions, projectId: string | undefined): Promise<{
+  delivery?: AgentMemoryDelivery;
+  findings: Array<{ code: string; severity: string; sourceId: string; contentFingerprint: string }>;
+  warning?: string;
+}> {
+  if (!projectId) return { findings: [] };
+  const provider = options.memory ?? runtimeMemoryProvider();
+  if (!provider) return { findings: [] };
+  try {
+    const delivery = await provider(projectId);
+    return delivery.configured
+      ? { delivery, findings: memoryDeliveryFindings(delivery, []) }
+      : { findings: [] };
+  } catch (error) {
+    // 指纹字段只存固定标记，不复制错误原文（可能含路径等敏感信息）。
+    return {
+      findings: [{ code: "memory-delivery-failed", severity: "warn", sourceId: "agent-memory", contentFingerprint: "delivery-unavailable" }],
+      warning: `项目记忆读取失败（${safeErrorMessage(error)}），本轮未注入守则与既往验证结论；回答不参考历史反驳记录。`,
+    };
+  }
+}
+
+function runtimeMemoryProvider(): ((projectId: string) => Promise<AgentMemoryDelivery>) | undefined {
+  const runtime = industrialAgentRuntimeIfReady();
+  return runtime ? (projectId) => runtime.memory.loadDelivery(projectId) : undefined;
 }
 
 function withReliability(
-  result: AiAssistantResponse,
+  result: ParsedAssistantContent,
   prepared: PreparedAssistantRequest,
   attempt: FailoverAttemptInfo = { servedBy: "primary" },
 ): AiAssistantResponse {
   const suspicious = prepared.assessment.findings.length > 0;
+  // K2 出域复核：答案中的数值/编号与发送上下文逐项比对，未命中即披露并降级。
+  const evidence = auditChatAnswerEvidence(result.text, prepared.sentContext);
+  const evidenceWarnings = evidence.unmatched.length
+    ? [`出域复核：${evidence.unmatched.join("、")} 未在本次发送的上下文中找到依据，相关数值或编号不可作为事实引用`]
+    : [];
+  const degraded = Boolean(prepared.contextWarning || result.formatWarning || evidence.unmatched.length);
   const warnings = [
-    "上下文来自客户端快照，未经服务端 Capability 证据验证",
+    ...(evidence.matched.length ? [] : ["上下文来自客户端快照，未经服务端 Capability 证据验证"]),
     "助手不会自动执行写入或控制类操作",
     ...(prepared.contextWarning ? [prepared.contextWarning] : []),
+    ...(result.formatWarning ? [result.formatWarning] : []),
+    ...evidenceWarnings,
+    ...(prepared.memoryWarning ? [prepared.memoryWarning] : []),
     ...(suspicious ? [`可靠性策略检测到 ${prepared.assessment.findings.length} 个可疑输入特征，已约束或隔离`] : []),
     ...(prepared.assessment.quarantinedSourceIds.length ? [`已隔离 ${prepared.assessment.quarantinedSourceIds.length} 个高风险上下文片段`] : []),
     ...(attempt.servedBy === "fallback" && attempt.failover
       ? [`主模型不可用（${failoverCategoryLabel(attempt.failover.category)}），本次回答由备用模型提供`, `切换原因：${attempt.failover.reason}`]
       : []),
   ];
+  // formatWarning 是服务端内部信号（已并入 warnings），不随对外合同外泄。
+  const { formatWarning: _formatWarning, ...response } = result;
   return {
-    ...result,
+    ...response,
     reliability: {
       traceId: prepared.traceId,
-      verification: suspicious || prepared.contextWarning || prepared.contextDelivery.sources.some((source) => source.status !== "sent") ? "limited" : "unverified",
+      verification: suspicious || degraded || prepared.contextDelivery.sources.some((source) => source.status !== "sent") ? "limited" : "unverified",
       inputRisk: inputRisk(prepared.assessment),
-      contextTrust: "client-snapshot",
+      // K2：服务端完成出域复核且命中依据才可声明 server-evidence；零命中保持诚实基线。
+      contextTrust: evidence.matched.length > 0 ? "server-evidence" : "client-snapshot",
       contextFingerprint: prepared.contextFingerprint,
       contextDelivery: prepared.contextDelivery,
       evidenceCount: 0,
@@ -307,6 +374,10 @@ function withReliability(
 
 function failoverCategoryLabel(category: string): string {
   return ({ auth: "鉴权失败", quota: "额度不足", "rate-limit": "请求限流", server: "服务端错误", timeout: "请求超时", network: "网络错误", policy: "内容策略", invalid: "请求无效", cancelled: "已取消", unknown: "未知错误" } as Record<string, string>)[category] ?? category;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 }
 
 function inputRisk(assessment: AiReliabilityAssessment): "low" | "medium" | "high" {

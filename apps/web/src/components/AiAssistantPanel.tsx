@@ -23,7 +23,7 @@ import { useAiProjectContext } from "../ai/useAiProjectContext";
 import { useAssistantSessions } from "../ai/useAssistantSessions";
 import { useAssistantChatRun } from "../ai/useAssistantChatRun";
 import { AiAssistantSessionControls } from "./AiAssistantSessionControls";
-import { AiContextDisclosure } from "./AiContextDisclosure";
+import { AiContextDisclosure, CHAT_HISTORY_WINDOW } from "./AiContextDisclosure";
 import { AiMemoryPanel } from "./AiMemoryPanel";
 import { AiProvenancePanel } from "./AiProvenancePanel";
 import { BimAssistantEvidence, type BimAssistantAction } from "./BimAssistantEvidence";
@@ -249,6 +249,9 @@ export function AiAssistantPanel({
           context={context}
           sources={effectiveSources}
           loading={!platformLoaded && !projectMissing}
+          {...(conversation.length > CHAT_HISTORY_WINDOW
+            ? { historyWindow: { sent: CHAT_HISTORY_WINDOW, total: conversation.length } }
+            : {})}
         />
         {/* K14 面板常驻：chat 侧补齐记忆与实验档案折叠行（与 agent start 视图同构，M0 族）。 */}
         {projectId && <AiMemoryPanel locale={locale} projectId={projectId} />}
@@ -288,7 +291,8 @@ export function AiAssistantPanel({
         )}
         <AiAssistantMessages locale={locale} conversation={conversation} busy={busy} error={error}
           stopped={stopped} lastPrompt={lastPrompt} lastScope={lastScope} answer={answer} execution={execution}
-          onRetry={() => void ask(lastPrompt)} {...(projectId ? { projectId } : {})} />
+          onRetry={() => void ask(lastPrompt)} {...(projectId ? { projectId } : {})}
+          {...(mode === "dashboard" ? { busyHint: t("正在生成结构化方案…", "Generating a structured plan…") } : {})} />
         {dashboard && onApplyDashboard && !confirmDashboard && (
           <button className="primary ai-apply-dashboard" onClick={() => setConfirmDashboard(true)}>
             <LayoutDashboard size={13} />

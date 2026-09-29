@@ -4,6 +4,27 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../api", () => ({ api: {} }));
 
+// K6：会话由 stub 控制，便于在组件级锁死"历史窗口裁剪披露"接线。
+// 形状覆盖渲染路径读取的字段（AiAssistantSessionControls 读 sessions/sid）。
+const sessionsStub = vi.hoisted(() => ({
+  identity: "identity-test",
+  sessions: [] as Array<Record<string, unknown>>,
+  sessionId: "",
+  conversation: [] as Array<Record<string, unknown>>,
+  setConversation: (value: unknown) => value,
+  loading: false,
+  error: undefined as string | undefined,
+  cursor: undefined as string | undefined,
+  conflict: false,
+  externalSessionId: undefined as string | undefined,
+  select: () => undefined,
+  refresh: () => undefined,
+  newSession: () => undefined,
+  begin: async () => undefined,
+  retrySave: async () => undefined,
+}));
+vi.mock("../ai/useAssistantSessions", () => ({ useAssistantSessions: () => sessionsStub }));
+
 import { AiAssistantPanel } from "./AiAssistantPanel";
 
 describe("AiAssistantPanel", () => {
@@ -88,5 +109,45 @@ describe("AiAssistantPanel", () => {
     );
     expect(html).not.toContain('aria-label="项目记忆"');
     expect(html).not.toContain('aria-label="实验档案"');
+  });
+
+  // ── K6 回归（审计 §一 K6：6 轮窗口裁剪零披露）──
+
+  it("K6: discloses the trimmed history window once the conversation exceeds six turns", () => {
+    sessionsStub.conversation = Array.from({ length: 7 }, (_, index) => ({ id: `m${index}`, question: "q", answer: "a", mode: "scene" }));
+    try {
+      const html = renderToStaticMarkup(
+        <AiAssistantPanel locale="zh-CN" projectId="project-1" surface="studio"
+          context={{ project: { id: "project-1", name: "电池工厂" }, scene: { id: "scene-1", name: "模组线", modelCount: 4 } }}
+          onClose={vi.fn()} />,
+      );
+      expect(html).toContain("仅发送最近 6 轮对话");
+      expect(html).toContain("更早的 1 轮");
+    } finally {
+      sessionsStub.conversation = [];
+    }
+  });
+
+  it("K6: keeps the disclosure silent while the conversation fits the window", () => {
+    sessionsStub.conversation = Array.from({ length: 6 }, (_, index) => ({ id: `m${index}`, question: "q", answer: "a", mode: "scene" }));
+    try {
+      const html = renderToStaticMarkup(
+        <AiAssistantPanel locale="zh-CN" projectId="project-1" surface="studio"
+          context={{ project: { id: "project-1", name: "电池工厂" }, scene: { id: "scene-1", name: "模组线", modelCount: 4 } }}
+          onClose={vi.fn()} />,
+      );
+      expect(html).not.toContain("仅发送最近");
+    } finally {
+      sessionsStub.conversation = [];
+    }
+  });
+
+  // ── K3 回归接线：dashboard 模式 busy 占位（SSR 无法触发流式，接线由源断言锁死）──
+
+  it("K3: wires the dashboard busy placeholder into the message flow", async () => {
+    const source = await readFile(new URL("./AiAssistantPanel.tsx", import.meta.url), "utf8");
+    expect(source).toContain('busyHint: t("正在生成结构化方案…", "Generating a structured plan…")');
+    const messages = await readFile(new URL("./AiAssistantMessages.tsx", import.meta.url), "utf8");
+    expect(messages).toContain("busyHint ?? ");
   });
 });

@@ -26,6 +26,16 @@ export interface IndustrialAgentRuntime {
   resolveModelOptions?: (options: AssistantSessionOptions) => Promise<AssistantSessionOptions>;
 }
 
+// K4：chat 助手侧读取项目记忆走同一 runtime 实例（同一 dataDir 唯一 memory store）。
+// 生产装配时序由 index.ts 保证：先 createIndustrialAgentRuntime，后 createAssistantService。
+// 测试直注 options.memory，不依赖此共享槽位。
+let sharedRuntime: IndustrialAgentRuntime | undefined;
+
+/** 最近一次成功装配的工业 Agent runtime；未装配时返回 undefined（chat 记忆注入随之零开销跳过）。 */
+export function industrialAgentRuntimeIfReady(): IndustrialAgentRuntime | undefined {
+  return sharedRuntime;
+}
+
 export async function createIndustrialAgentRuntime(input: {
   dataDir: string;
   registry: PluginRegistry;
@@ -52,7 +62,7 @@ export async function createIndustrialAgentRuntime(input: {
     ...(input.telemetry ? { telemetry: input.telemetry } : {}),
     memory: (projectId) => memory.loadDelivery(projectId),
   });
-  return {
+  const runtime: IndustrialAgentRuntime = {
     resolveModelOptions: async options => {
       const settings = await resolveAssistantSessionOptions(input.settings(), options);
       return { model: settings.model, ...(settings.reasoningEffort ? { reasoningEffort: settings.reasoningEffort } : {}) };
@@ -69,4 +79,6 @@ export async function createIndustrialAgentRuntime(input: {
       ...(input.variantDenialLimit !== undefined ? { variantDenialLimit: input.variantDenialLimit } : {}),
     }),
   };
+  sharedRuntime = runtime;
+  return runtime;
 }

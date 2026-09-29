@@ -54,7 +54,7 @@ export function createIndustrialAgentDecisionProvider(input: {
         serverDatasetCatalog: JSON.stringify(catalog),
         selectedDatasets: selectedAgentDatasets(request.checkpoint, catalog),
         ...decisionContext(request, projectContext),
-        ...(memoryDelivery?.configured ? { agentMemoryContext: memoryContext(memoryDelivery) } : {}),
+        ...(memoryDelivery?.configured ? { agentMemoryContext: agentMemoryContextDelivery(memoryDelivery) } : {}),
       };
       // Reject before the reliability scanner can clip a required tool pair or the objective.
       assertAgentContextBudget(DECISION_INSTRUCTIONS.length + JSON.stringify({ objective: request.checkpoint.objective, context }).length);
@@ -110,14 +110,46 @@ export function createIndustrialAgentDecisionProvider(input: {
           },
         });
         const completion = attempt.result;
-        const decision = validateAgentDatasetSelection(parseJsonDecision(completion.text), catalog);
+        // K5：决策格式错误不再一烧到底——LLM 输出包围文本/截断是高频事件，
+        // 一次格式错就终局失败会烧掉整轮已完成的工具调用与预算。给一次带
+        // 错误信息的修复轮；两次仍失败才终局 invalid-decision。
+        let decision: ReturnType<typeof validateAgentDatasetSelection>;
+        let repaired = false;
+        try {
+          decision = validateAgentDatasetSelection(parseJsonDecision(completion.text), catalog);
+        } catch (formatError) {
+          const repair = await input.registry.invokeAiProvider(settings.providerId, {
+            ...providerRequest,
+            input: JSON.stringify({
+              objective: prepared.question,
+              context: prepared.context,
+              previousOutput: completion.text.slice(0, 2_000),
+              parseError: safeErrorMessage(formatError),
+              instruction: "上次输出无法解析为合法 Agent 决策。只返回一个 JSON 对象（kind 为 call-tool/finish/stop/request-input 之一），不得包含 Markdown 代码块、解释或前后缀文本。",
+            }),
+          });
+          try {
+            decision = validateAgentDatasetSelection(parseJsonDecision(repair.text), catalog);
+            repaired = true;
+          } catch (repairError) {
+            await emitAiAudit(input.audit, createAiAuditEvent({
+              traceId, stage: "model-completion", outcome: "degraded",
+              principal: request.checkpoint.principal,
+              projectId: request.checkpoint.projectId,
+              providerId: settings.providerId, model: repair.model || settings.model, assessment: prepared.assessment,
+              findings: [{ code: "decision-repair", severity: "warn", sourceId: "decision", contentFingerprint: safeErrorMessage(repairError) }],
+            }));
+            throw new Error(`决策修复轮后仍不是合法 JSON：${safeErrorMessage(repairError)}`);
+          }
+        }
         if (completion.execution && !request.signal.aborted) request.reportExecution?.({ ...completion.execution, servedBy: attempt.servedBy, ...(attempt.failover ? { failoverCategory: attempt.failover.category } : {}) });
         await emitAiAudit(input.audit, createAiAuditEvent({
-          traceId, stage: "model-completion", outcome: attempt.servedBy === "fallback" ? "degraded" : "completed",
+          traceId, stage: "model-completion", outcome: attempt.servedBy === "fallback" || repaired ? "degraded" : "completed",
           principal: request.checkpoint.principal,
           projectId: request.checkpoint.projectId,
           providerId: attempt.servedBy === "fallback" ? `${settings.providerId}#fallback` : settings.providerId,
           model: completion.model, assessment: prepared.assessment,
+          ...(repaired ? { findings: [{ code: "decision-repair", severity: "warn", sourceId: "decision", contentFingerprint: "repair-round-applied" }] } : {}),
         }));
         input.telemetry?.(newTelemetryRecord({
           occurredAt: new Date().toISOString(),
@@ -162,8 +194,8 @@ function failoverTarget(settings: AiRuntimeSettings): AiFailoverTarget | undefin
   return { enabled: failover.enabled, baseUrl: failover.baseUrl, apiKey: failover.apiKey, model: failover.model, protocol: failover.protocol };
 }
 
-/** 注入上下文形态：优先级声明硬编码（守则 > 记忆），内容只是参考不是指令。 */
-function memoryContext(delivery: AgentMemoryDelivery) {
+/** 注入上下文形态：优先级声明硬编码（守则 > 记忆），内容只是参考不是指令。K4 起与 chat 共用同一装配。 */
+export function agentMemoryContextDelivery(delivery: AgentMemoryDelivery) {
   return {
     priority: "rules-over-memories" as const,
     ...(delivery.rules ? { rules: delivery.rules.content, rulesTruncated: delivery.rules.truncated || undefined } : {}),
@@ -174,7 +206,7 @@ function memoryContext(delivery: AgentMemoryDelivery) {
 }
 
 /** 逐源投递审计 finding：code=context-source:<id>，指纹=该源内容指纹。 */
-function memoryDeliveryFindings(delivery: AgentMemoryDelivery, base: Array<{ code: string; severity: string; sourceId: string; contentFingerprint: string }>) {
+export function memoryDeliveryFindings(delivery: AgentMemoryDelivery, base: Array<{ code: string; severity: string; sourceId: string; contentFingerprint: string }>) {
   const sources = delivery.sources.map((source) => ({
     code: `context-source:${source.id}`,
     severity: source.truncated ? "warn" : "info",

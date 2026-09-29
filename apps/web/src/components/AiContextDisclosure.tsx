@@ -13,10 +13,18 @@ interface AiContextDisclosureProps {
   context: unknown;
   sources: AssistantContextSource[];
   loading: boolean;
+  /** K6：chat 历史窗口裁剪披露——sent < total 时明确"更早轮次不参与本次回答"。 */
+  historyWindow?: { sent: number; total: number };
 }
 
+/**
+ * chat 请求随发的历史轮次窗口。与 useAssistantChatRun 的 recentConversation
+ * 裁剪保持同值（该 hook 位于组件层之外，改动窗口时必须两处同步）。
+ */
+export const CHAT_HISTORY_WINDOW = 6;
+
 /** 让用户在发送前看见本次请求的对象身份与数据边界。 */
-export function AiContextDisclosure({ locale, mode, context, sources, loading }: AiContextDisclosureProps) {
+export function AiContextDisclosure({ locale, mode, context, sources, loading, historyWindow }: AiContextDisclosureProps) {
   const target = assistantWorkspaceTarget(context);
   const readiness = assistantContextReadiness(sources);
   const t = (zh: string, en: string) => tr(locale, zh, en);
@@ -90,6 +98,14 @@ export function AiContextDisclosure({ locale, mode, context, sources, loading }:
             `This is a ${mode === "sql" ? "controlled query" : "project context snapshot"}. A snapshot is only model input; only a traced Capability result is executed evidence. Missing data is not inferred.`,
           )}
         </p>
+        {historyWindow && historyWindow.sent < historyWindow.total && (
+          <p className="ai-context-history-note" role="note">
+            {t(
+              `为控制上下文预算，本次仅发送最近 ${historyWindow.sent} 轮对话；更早的 ${historyWindow.total - historyWindow.sent} 轮不会参与本次回答，助手不记得其细节。`,
+              `To bound the context budget, only the last ${historyWindow.sent} turns are sent; the earlier ${historyWindow.total - historyWindow.sent} turns are not part of this answer.`,
+            )}
+          </p>
+        )}
       </div>
     </details>
   );

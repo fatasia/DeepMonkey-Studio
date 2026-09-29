@@ -106,6 +106,73 @@ describe("industrial Agent decision provider", () => {
     await expect(provider.decide({ checkpoint: source, availableTools: [], signal: new AbortController().signal })).rejects.toThrow("高风险");
     expect(invokeAiProvider).not.toHaveBeenCalled();
   });
+
+  // ── K5 回归（审计 §一 K5：决策 JSON 格式错误直接终局失败，无修复轮）──
+
+  it("K5: repairs a syntactically malformed decision with one corrective round instead of failing the run", async () => {
+    const invokeAiProvider = vi.fn()
+      .mockResolvedValueOnce({ text: "好的，这是我的决策：\n```json\n{\"kind\":\"stop\",\"rationale\":", model: "test-model" })
+      .mockResolvedValueOnce({ text: '{"kind":"stop","rationale":"done","code":"done","message":"done"}', model: "test-model" });
+    const audit = new AiReliabilityAuditBuffer();
+    const provider = createIndustrialAgentDecisionProvider({
+      registry: { invokeAiProvider } as unknown as PluginRegistry, settings, dataSource: { listDatasets: () => [] }, audit: audit.sink,
+    });
+    await expect(provider.decide({ checkpoint: checkpoint(), availableTools: [], signal: new AbortController().signal })).resolves.toMatchObject({ kind: "stop" });
+    expect(invokeAiProvider).toHaveBeenCalledTimes(2);
+    const repairInput = JSON.parse(invokeAiProvider.mock.calls[1]![1].input as string) as { parseError: string; previousOutput: string; instruction: string };
+    expect(repairInput.parseError).toContain("决策");
+    expect(repairInput.previousOutput).toContain("好的");
+    expect(repairInput.instruction).toContain("只返回一个 JSON 对象");
+    const completion = audit.list().find((event) => event.stage === "model-completion");
+    expect(completion).toMatchObject({ outcome: "degraded" });
+    expect(completion?.findings.map((item) => item.code)).toContain("decision-repair");
+  });
+
+  it("K5: repairs a structurally invalid decision kind through the corrective round", async () => {
+    const invokeAiProvider = vi.fn()
+      .mockResolvedValueOnce({ text: '{"kind":"CallTool","rationale":"r","call":{"toolId":"t","arguments":{},"resources":[]}}', model: "test-model" })
+      .mockResolvedValueOnce({ text: '{"kind":"finish","rationale":"r","summary":"s","decisionStatus":"shadow","evidenceIds":[]}', model: "test-model" });
+    const provider = createIndustrialAgentDecisionProvider({
+      registry: { invokeAiProvider } as unknown as PluginRegistry, settings, dataSource: { listDatasets: () => [] },
+    });
+    await expect(provider.decide({ checkpoint: checkpoint(), availableTools: [], signal: new AbortController().signal })).resolves.toMatchObject({ kind: "finish" });
+    expect(invokeAiProvider).toHaveBeenCalledTimes(2);
+  });
+
+  it("K5: still terminates as invalid-decision after the repair round also fails, with audit evidence", async () => {
+    const invokeAiProvider = vi.fn().mockResolvedValue({ text: "not json at all", model: "test-model" });
+    const audit = new AiReliabilityAuditBuffer();
+    const provider = createIndustrialAgentDecisionProvider({
+      registry: { invokeAiProvider } as unknown as PluginRegistry, settings, dataSource: { listDatasets: () => [] }, audit: audit.sink,
+    });
+    await expect(provider.decide({ checkpoint: checkpoint(), availableTools: [], signal: new AbortController().signal }))
+      .rejects.toThrow("决策修复轮后仍不是合法 JSON");
+    expect(invokeAiProvider).toHaveBeenCalledTimes(2);
+    expect(audit.list().map((event) => [event.stage, event.outcome])).toEqual([
+      ["input-assessment", "allowed"],
+      ["model-completion", "degraded"],
+      ["model-completion", "failed"],
+    ]);
+    expect(audit.list()[1].findings.map((item) => item.code)).toContain("decision-repair");
+    expect(audit.list()[2].failure).toMatchObject({ code: "invalid-decision", retryable: false });
+  });
+
+  it("K5: never spends a repair round on an already-valid first answer", async () => {
+    const invokeAiProvider = vi.fn(async () => ({
+      text: '{"kind":"finish","rationale":"证据不足","summary":"需要补充采样","decisionStatus":"insufficient-data","evidenceIds":[]}',
+      model: "test-model",
+    }));
+    const audit = new AiReliabilityAuditBuffer();
+    const provider = createIndustrialAgentDecisionProvider({
+      registry: { invokeAiProvider } as unknown as PluginRegistry, settings, dataSource: { listDatasets: () => [] }, audit: audit.sink,
+    });
+    await expect(provider.decide({ checkpoint: checkpoint(), availableTools: [], signal: new AbortController().signal })).resolves.toMatchObject({ kind: "finish" });
+    expect(invokeAiProvider).toHaveBeenCalledTimes(1);
+    expect(audit.list().map((event) => [event.stage, event.outcome])).toEqual([
+      ["input-assessment", "allowed"],
+      ["model-completion", "completed"],
+    ]);
+  });
 });
 
 function checkpoint(): AgentCheckpoint {

@@ -24,7 +24,7 @@ export interface AssistantConversationItem {
   denial?: import("./AiHarnessDenialCard").AgentGuardDenialPayload;
 }
 
-export function AiAssistantMessages({ locale, conversation, busy, error, stopped, lastPrompt, lastScope, answer, execution, onRetry, projectId }: {
+export function AiAssistantMessages({ locale, conversation, busy, error, stopped, lastPrompt, lastScope, answer, execution, onRetry, projectId, busyHint }: {
   locale: AppLocale;
   conversation: AssistantConversationItem[];
   busy: boolean;
@@ -37,6 +37,8 @@ export function AiAssistantMessages({ locale, conversation, busy, error, stopped
   onRetry: () => void;
   /** H-C3：档案动作位需要项目作用域；缺省时结论卡片不渲染"查看档案"。 */
   projectId?: string;
+  /** K3：dashboard 等结构化输出在流式可见文本出现前的占位说明，避免 busy 期零输出观感。 */
+  busyHint?: string;
 }) {
   const t = (zh: string, en: string) => tr(locale, zh, en);
   return <>
@@ -58,7 +60,7 @@ export function AiAssistantMessages({ locale, conversation, busy, error, stopped
       <div className="ai-user-message">{lastPrompt}</div>
       {lastScope && <small className="ai-message-scope" title={lastScope}>{lastScope}</small>}
       {stopped && <article role="status">{t("已停止", "Stopped")} <button type="button" onClick={onRetry}>{t("重试原问题", "Retry original prompt")}</button></article>}
-      {busy && !answer && <article role="status"><LoaderCircle className="spin" size={14} /> {t("正在处理，请稍候…", "Working on your request…")}</article>}
+      {busy && !answer && <article role="status"><LoaderCircle className="spin" size={14} /> {busyHint ?? t("正在处理，请稍候…", "Working on your request…")}</article>}
     </section>}
     {answer && (conversation.at(-1)?.answer !== answer || busy) && <article className="ai-streaming-answer">
       <small>{busy ? t("正在基于项目证据分析", "Analyzing project evidence") : t("模型回答", "Model response")}</small>

@@ -29,4 +29,17 @@ describe("assistant request presentation", () => {
       context={{ scene: { name: "产线" }, selected: { id: "valve-1" } }} sources={[]} />);
     expect(html.slice(0, html.indexOf("</summary>"))).toContain("产线 · valve-1");
   });
+  // ── K3 回归（审计 §一 K3：dashboard 流式期解析失败返回空串，用户 busy 期间看到零输出）──
+  it("K3: shows the structured-plan placeholder while a dashboard answer has no visible text yet", () => {
+    const html = renderToStaticMarkup(<AiAssistantMessages locale="zh-CN" conversation={[]} busy error={undefined}
+      stopped={false} lastPrompt="生成看板" lastScope="" answer="" onRetry={vi.fn()} busyHint="正在生成结构化方案…" />);
+    expect(html).toContain("正在生成结构化方案…");
+    expect(html).not.toContain("正在处理，请稍候");
+  });
+  it("keeps the default busy wording for plain chat modes without a busy hint", () => {
+    const html = renderToStaticMarkup(<AiAssistantMessages locale="zh-CN" conversation={[]} busy error={undefined}
+      stopped={false} lastPrompt="检查" lastScope="" answer="" onRetry={vi.fn()} />);
+    expect(html).toContain("正在处理，请稍候");
+    expect(html).not.toContain("正在生成结构化方案");
+  });
 });

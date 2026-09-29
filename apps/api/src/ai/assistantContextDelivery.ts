@@ -10,6 +10,8 @@ const SOURCE_PATHS: Record<string, string[]> = {
   connections: ["platform", "data", "connections"], datasets: ["platform", "data", "datasets"],
   "ppr-bop": ["platform", "processPlanning"], battery: ["platform", "battery"],
   "bim-evidence": ["bimEvidence"], "capability-catalog": ["availableCapabilities"],
+  // K4：chat 侧注入的项目记忆投递（守则/记忆/既往结论），被截断时如实标 omitted/partial。
+  "agent-memory-context": ["agentMemoryContext"],
 };
 
 /** JSON offsets are computed from property serialization, never substring searches in user content. */
