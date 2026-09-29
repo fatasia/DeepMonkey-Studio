@@ -1,6 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "noEmit": true, "types": ["@webgpu/types"] },
+  "compilerOptions": { "noEmit": true, "types": ["@webgpu/types", "node"] },
   "include": ["src/**/*.ts", "lab/**/*.ts"],
   "exclude": ["src/**/*.test.ts", "src/**/*.testUtils.ts"]
 }
