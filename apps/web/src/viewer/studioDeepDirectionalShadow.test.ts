@@ -12,11 +12,11 @@ function fixture() {
 }
 
 describe("Studio author directional shadow projection", () => {
-  it("keeps the exact authored defaults and does not mutate the light camera", () => {
+  it("keeps the authored 2048 defaults and does not mutate the light camera", () => {
     const light = fixture(), before = light.shadow.camera.toJSON();
     const result = projectStudioDirectionalShadow(light, THREE.PCFShadowMap);
     expect(light.shadow.map).toBeNull();
-    expect(result).toMatchObject({ mapSize: 1024, bias: -0.0001, normalBias: 0.015, intensity: 0.38, radius: 3 });
+    expect(result).toMatchObject({ mapSize: 2048, bias: -0.0001, normalBias: 0.015, intensity: 0.38, radius: 3 });
     expect(light.shadow.camera.toJSON()).toEqual(before);
     const matrix = new THREE.Matrix4().fromArray(result.viewProjection);
     expect(new THREE.Vector3(0, 0, 10 - 0.1).applyMatrix4(matrix).z).toBeCloseTo(0, 12);
@@ -47,9 +47,9 @@ describe("Studio author directional shadow projection", () => {
     expect(() => projectStudioDirectionalShadow(light, THREE.PCFShadowMap)).toThrow("无效");
   });
   it("rejects non-square maps and degenerate light direction", () => {
-    const light = fixture(); light.shadow.mapSize.set(1024, 512);
+    const light = fixture(); light.shadow.mapSize.set(2048, 512);
     expect(() => projectStudioDirectionalShadow(light, THREE.PCFShadowMap)).toThrow("正方形");
-    light.shadow.mapSize.set(1024, 1024); light.position.set(0, 0, 0); light.updateMatrixWorld(true);
+    light.shadow.mapSize.set(2048, 2048); light.position.set(0, 0, 0); light.updateMatrixWorld(true);
     expect(() => projectStudioDirectionalShadow(light, THREE.PCFShadowMap)).toThrow("位置和目标");
   });
   it("rejects reversed depth and parented shadow cameras explicitly", () => {
