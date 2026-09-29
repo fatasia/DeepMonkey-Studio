@@ -1,5 +1,10 @@
 import type { DeviceSession } from "./deviceSession.js";
+import { packedPageTableParamsWithSamples, packVirtualTexturePageTable } from "./virtualTexturePagePacking.js";
 import type { VirtualTextureCatalogEntry, VirtualTextureSampleRequest } from "./virtualTextureFrameBridge.js";
+import type { VirtualTexturePackedPageTable, VirtualTexturePageTablePacking } from "./virtualTexturePagePacking.js";
+
+// 页表打包实现与缓存同居 pagePacking(单一依赖方向);此处按既有导入面转出兼容。
+export { packVirtualTexturePageTable, type VirtualTexturePageTablePacking } from "./virtualTexturePagePacking.js";
 
 /**
  * F4 虚拟纹理采样消费:独立绑定组 tile-lookup compute pass。
@@ -48,46 +53,6 @@ fn main(@builtin(global_invocation_id) gid : vec3u) {
 }
 `;
 
-export interface VirtualTexturePageTablePacking {
-  readonly params: Uint32Array<ArrayBuffer>;
-  readonly mipMeta: Uint32Array<ArrayBuffer>;
-  readonly pageLayers: Int32Array<ArrayBuffer>;
-}
-
-/** 页表 CPU 打包:每 (texture, mip) 元数据行 + 连续页 layer 段;-1 表缺页。
- *  atlasEdge = 页 atlas 的 layer 边长(= spec.tileEdgeTexels),mipEdge = atlasEdge >> mip。 */
-export function packVirtualTexturePageTable(catalog: readonly VirtualTextureCatalogEntry[],
-  layerOfPage: (textureId: string, tileX: number, tileY: number, mip: number) => number | undefined,
-  samples: readonly VirtualTextureSampleRequest[], atlasEdge: number): VirtualTexturePageTablePacking {
-  const maxChainMips = Math.max(1, ...catalog.map(entry => entry.chainMips));
-  const metaRows = catalog.length * maxChainMips;
-  let layerCount = 0;
-  for (const entry of catalog) for (const grid of entry.mipGrids) layerCount += grid.gridWidth * grid.gridHeight;
-  const mipMeta = new Uint32Array(metaRows * 4);
-  const pageLayers = new Int32Array(Math.max(1, layerCount)).fill(-1);
-  let cursor = 0;
-  for (let index = 0; index < catalog.length; index++) {
-    const entry = catalog[index]!;
-    for (let mip = 0; mip < maxChainMips; mip++) {
-      const grid = entry.mipGrids[Math.min(mip, entry.mipGrids.length - 1)];
-      const row = (index * maxChainMips + mip) * 4;
-      if (!grid) continue;
-      mipMeta[row] = grid.gridWidth; mipMeta[row + 1] = grid.gridHeight;
-      mipMeta[row + 2] = cursor;
-      mipMeta[row + 3] = Math.max(1, atlasEdge >> mip);
-      for (let tileY = 0; tileY < grid.gridHeight; tileY++) {
-        for (let tileX = 0; tileX < grid.gridWidth; tileX++) {
-          const layer = layerOfPage(entry.textureId, tileX, tileY, mip);
-          pageLayers[cursor + tileY * grid.gridWidth + tileX] = layer ?? -1;
-        }
-      }
-      cursor += grid.gridWidth * grid.gridHeight;
-    }
-  }
-  const params = new Uint32Array([samples.length, catalog.length, maxChainMips, Math.max(1, atlasEdge)]);
-  return { params, mipMeta, pageLayers };
-}
-
 export interface VirtualTileLookupFrameInput {
   readonly atlasView: GPUTextureView;
   /** atlas layer 边长(= spec.tileEdgeTexels);页内 uv 归一化基准。 */
@@ -95,12 +60,17 @@ export interface VirtualTileLookupFrameInput {
   readonly catalog: readonly VirtualTextureCatalogEntry[];
   readonly layerOfPage: (textureId: string, tileX: number, tileY: number, mip: number) => number | undefined;
   readonly samples: readonly VirtualTextureSampleRequest[];
+  /** 预打包页表(桥侧 epoch 缓存产物):提供时跳过全量重打包,epoch 命中再跳过
+   *  meta/layers 大缓冲重写;缺省保持每帧全量打包(现行为,向后兼容)。 */
+  readonly packing?: VirtualTexturePackedPageTable;
 }
 
 export interface VirtualTileLookupFrameResult {
   readonly dispatches: number;
   readonly samples: number;
   readonly skipped: "no-samples" | "no-atlas-view" | "over-capacity" | undefined;
+  /** 本帧是否重写了页表大缓冲(meta/layers);packing epoch 命中时为 false(稳定帧零重写)。 */
+  readonly pageTableRepacked: boolean;
 }
 
 const MAX_CATALOG_TEXTURES = 64;
@@ -120,32 +90,53 @@ export class VirtualTextureTileLookupPass {
   private samplesBuffer: GPUBuffer | undefined;
   private outBuffer: GPUBuffer | undefined;
   private atlasViews = new WeakMap<GPUTexture, GPUTextureView>();
+  /** 上次写入缓冲的 packing epoch(undefined = 缺省全量路径/尚未写过)。 */
+  private packedEpoch: number | undefined;
   private disposed = false;
 
   constructor(session: DeviceSession) {
     this.device = session.device;
   }
 
-  /** 编码本帧采样消费;目录超容量/无样本/无 atlas 视图显式跳过(不静默,原因随遥测披露)。 */
+  /** 编码本帧采样消费;目录超容量/无样本/无 atlas 视图显式跳过(不静默,原因随遥测披露)。
+   *  提供 packing 时:跳过 CPU 全量重打包;epoch 与上帧一致(页表无变化)再跳过
+   *  meta/layers 大缓冲重写——稳定帧只写 params(16B)与 samples。 */
   encode(encoder: GPUCommandEncoder, input: VirtualTileLookupFrameInput): VirtualTileLookupFrameResult {
     if (this.disposed) throw new Error("Virtual texture tile lookup pass is disposed.");
-    if (input.samples.length === 0) return { dispatches: 0, samples: 0, skipped: "no-samples" };
+    if (input.samples.length === 0) return { dispatches: 0, samples: 0, skipped: "no-samples",
+      pageTableRepacked: false };
     if (input.catalog.length === 0 || input.catalog.length > MAX_CATALOG_TEXTURES
       || input.samples.length > MAX_SAMPLES_PER_FRAME) {
-      return { dispatches: 0, samples: 0, skipped: "over-capacity" };
+      return { dispatches: 0, samples: 0, skipped: "over-capacity", pageTableRepacked: false };
     }
-    const packing = packVirtualTexturePageTable(input.catalog, input.layerOfPage, input.samples, input.atlasEdge);
+    const packing = input.packing?.data
+      ?? packVirtualTexturePageTable(input.catalog, input.layerOfPage, input.samples, input.atlasEdge);
+    // 缓存 packing 的 params[0] 恒为占位 0,样本数在此每帧覆写(不污染共享数组)。
+    const params = input.packing === undefined ? packing.params
+      : packedPageTableParamsWithSamples(packing, input.samples);
     if (packing.pageLayers.length > MAX_PAGE_LAYER_ENTRIES) {
-      return { dispatches: 0, samples: 0, skipped: "over-capacity" };
+      return { dispatches: 0, samples: 0, skipped: "over-capacity", pageTableRepacked: false };
     }
-    if (!this.paramsBuffer || this.paramsBuffer.size < packing.params.byteLength
-      || this.layersBuffer!.size < packing.pageLayers.byteLength
-      || this.metaBuffer!.size < packing.mipMeta.byteLength) {
+    // epoch 命中 ⇒ packing 与缓冲内内容逐字节一致,只需容量仍够(防御外部 packing)。
+    const packedEpoch = input.packing?.epoch;
+    const reusePageTable = packedEpoch !== undefined && packedEpoch === this.packedEpoch
+      && this.paramsBuffer !== undefined && this.metaBuffer !== undefined
+      && this.layersBuffer !== undefined
+      && this.metaBuffer.size >= packing.mipMeta.byteLength
+      && this.layersBuffer.size >= packing.pageLayers.byteLength;
+    if (!reusePageTable && (!this.paramsBuffer || this.paramsBuffer.size < params.byteLength
+      || this.layersBuffer === undefined || this.layersBuffer.size < packing.pageLayers.byteLength
+      || this.metaBuffer === undefined || this.metaBuffer.size < packing.mipMeta.byteLength)) {
       this.ensureBuffers(packing);
     }
-    this.device.queue.writeBuffer(this.paramsBuffer!, 0, packing.params);
-    this.device.queue.writeBuffer(this.metaBuffer!, 0, packing.mipMeta);
-    this.device.queue.writeBuffer(this.layersBuffer!, 0, packing.pageLayers);
+    this.device.queue.writeBuffer(this.paramsBuffer!, 0, params);
+    const pageTableRepacked = !reusePageTable;
+    if (!reusePageTable) {
+      this.device.queue.writeBuffer(this.metaBuffer!, 0, packing.mipMeta);
+      this.device.queue.writeBuffer(this.layersBuffer!, 0, packing.pageLayers);
+      // 未提供 packing(缺省路径)恒 undefined ⇒ 每帧全量重写,与既有行为逐字节一致。
+      this.packedEpoch = packedEpoch;
+    }
     this.device.queue.writeBuffer(this.samplesBuffer!, 0, packSamples(input.samples));
     const pass = encoder.beginComputePass({ label: "Deep virtual texture tile lookup" });
     pass.setPipeline(this.ensurePipeline());
@@ -160,7 +151,7 @@ export class VirtualTextureTileLookupPass {
     ] }));
     pass.dispatchWorkgroups(Math.ceil(input.samples.length / WORKGROUP_SIZE));
     pass.end();
-    return { dispatches: 1, samples: input.samples.length, skipped: undefined };
+    return { dispatches: 1, samples: input.samples.length, skipped: undefined, pageTableRepacked };
   }
 
   dispose(): void {
@@ -171,6 +162,7 @@ export class VirtualTextureTileLookupPass {
     }
     this.paramsBuffer = this.metaBuffer = this.layersBuffer = this.samplesBuffer = this.outBuffer = undefined;
     this.pipeline = undefined; this.layout = undefined; this.sampler = undefined;
+    this.packedEpoch = undefined;
     this.atlasViews = new WeakMap();
   }
 

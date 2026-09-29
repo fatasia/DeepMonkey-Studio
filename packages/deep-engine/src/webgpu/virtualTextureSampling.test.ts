@@ -3,7 +3,6 @@ import type { DeviceSession } from "./deviceSession.js";
 import { packVirtualTexturePageTable, VirtualTextureTileLookupPass,
   VIRTUAL_TEXTURE_TILE_LOOKUP_WGSL } from "./virtualTextureSampling.js";
 import type { VirtualTextureCatalogEntry, VirtualTextureSampleRequest } from "./virtualTextureFrameBridge.js";
-
 /**
  * F4 tile-lookup 采样消费:页表打包布局(param/meta/layer 段)、mipEdge 随 atlasEdge
  * 折算、缺页 -1;encode 的 skip 分支与 dispatch/writeBuffer 合同;dispose 幂等。
@@ -80,7 +79,7 @@ describe("VirtualTextureTileLookupPass", () => {
     const atlasView = ({} as GPUTextureView) ;
     const result = pass.encode(f.encoder, { atlasView, atlasEdge: 128, catalog: CATALOG,
       layerOfPage: (_id, tileX, tileY, mip) => (mip === 0 ? tileY * 2 + tileX : 0), samples: [...SAMPLES] });
-    expect(result).toEqual({ dispatches: 1, samples: 2, skipped: undefined });
+    expect(result).toEqual({ dispatches: 1, samples: 2, skipped: undefined, pageTableRepacked: true });
     expect(f.passes).toHaveLength(1);
     expect(f.passes[0]!.dispatchWorkgroups).toHaveBeenCalledWith(1);
     expect(f.writeBuffer).toHaveBeenCalledTimes(4);
@@ -95,13 +94,16 @@ describe("VirtualTextureTileLookupPass", () => {
     const f = fixture();
     const pass = new VirtualTextureTileLookupPass(f.session);
     expect(pass.encode(f.encoder, { atlasView: {} as GPUTextureView, atlasEdge: 128, catalog: CATALOG,
-      layerOfPage: () => 0, samples: [] })).toEqual({ dispatches: 0, samples: 0, skipped: "no-samples" });
+      layerOfPage: () => 0, samples: [] })).toEqual({ dispatches: 0, samples: 0, skipped: "no-samples",
+      pageTableRepacked: false });
     const overflow: readonly VirtualTextureSampleRequest[] = Array.from({ length: 65 }, (_, index) =>
       ({ textureIndex: 0, u: 0.1 + index * 0.001, v: 0.1, mip: 0 }));
     expect(pass.encode(f.encoder, { atlasView: {} as GPUTextureView, atlasEdge: 128, catalog: CATALOG,
-      layerOfPage: () => 0, samples: overflow })).toEqual({ dispatches: 0, samples: 0, skipped: "over-capacity" });
+      layerOfPage: () => 0, samples: overflow })).toEqual({ dispatches: 0, samples: 0, skipped: "over-capacity",
+      pageTableRepacked: false });
     expect(pass.encode(f.encoder, { atlasView: {} as GPUTextureView, atlasEdge: 128, catalog: [],
-      layerOfPage: () => 0, samples: [...SAMPLES] })).toEqual({ dispatches: 0, samples: 0, skipped: "over-capacity" });
+      layerOfPage: () => 0, samples: [...SAMPLES] })).toEqual({ dispatches: 0, samples: 0, skipped: "over-capacity",
+      pageTableRepacked: false });
     expect(f.passes).toHaveLength(0);
     expect(f.writeBuffer).not.toHaveBeenCalled();
     pass.dispose();
@@ -135,5 +137,74 @@ describe("VirtualTextureTileLookupPass", () => {
     expect(VIRTUAL_TEXTURE_TILE_LOOKUP_WGSL).toContain("pageLayers");
     expect(VIRTUAL_TEXTURE_TILE_LOOKUP_WGSL).toContain("texture_2d_array");
     expect(VIRTUAL_TEXTURE_TILE_LOOKUP_WGSL).toContain("1.0, 0.0, 1.0, 1.0");
+  });
+});
+
+describe("VirtualTextureTileLookupPass packing 复用路径", () => {
+  it("同 epoch 第二帧:零重打包(layerOfPage 不再调用)、零 meta/layers 重写,params 样本数逐帧覆盖", () => {
+    const f = fixture();
+    const pass = new VirtualTextureTileLookupPass(f.session);
+    const layerOfPage = vi.fn((_id: string, tileX: number, tileY: number, mip: number) =>
+      mip === 0 ? tileY * 2 + tileX : 0);
+    const packing = packVirtualTexturePageTable(CATALOG, layerOfPage, [], 128);
+    expect(packing.params[0]).toBe(0);
+    const first = pass.encode(f.encoder, { atlasView: {} as GPUTextureView, atlasEdge: 128, catalog: CATALOG,
+      layerOfPage, samples: [...SAMPLES], packing: { epoch: 7, data: packing } });
+    expect(first).toEqual({ dispatches: 1, samples: 2, skipped: undefined, pageTableRepacked: true });
+    const callsAfterFirst = f.writeBuffer.mock.calls.length;
+    const second = pass.encode(f.encoder, { atlasView: {} as GPUTextureView, atlasEdge: 128, catalog: CATALOG,
+      layerOfPage, samples: [SAMPLES[0]!], packing: { epoch: 7, data: packing } });
+    expect(second).toEqual({ dispatches: 1, samples: 1, skipped: undefined, pageTableRepacked: false });
+    expect(f.writeBuffer.mock.calls.length - callsAfterFirst).toBe(2);
+    // 缓存 packing 的 params 为占位副本,样本数被覆写且不污染共享数组。
+    const paramsWrite = f.writeBuffer.mock.calls[callsAfterFirst]![2] as Uint32Array;
+    expect(paramsWrite[0]).toBe(1);
+    expect(packing.params[0]).toBe(0);
+    // 打包回调只在构造 packing 时发生(5 页:mip0 2×2 + mip1 1×1),两帧 encode 均未重打包。
+    expect(layerOfPage).toHaveBeenCalledTimes(5);
+    pass.dispose();
+  });
+
+  it("epoch 变化恢复全量重写;缺省不传 packing 每帧全量打包(向后兼容)", () => {
+    const f = fixture();
+    const pass = new VirtualTextureTileLookupPass(f.session);
+    const layerOfPage = vi.fn(() => 0);
+    const packing = packVirtualTexturePageTable(CATALOG, layerOfPage, [], 128);
+    pass.encode(f.encoder, { atlasView: {} as GPUTextureView, atlasEdge: 128, catalog: CATALOG,
+      layerOfPage, samples: [...SAMPLES], packing: { epoch: 7, data: packing } });
+    const callsAfterFirst = f.writeBuffer.mock.calls.length;
+    const repacked = pass.encode(f.encoder, { atlasView: {} as GPUTextureView, atlasEdge: 128, catalog: CATALOG,
+      layerOfPage, samples: [...SAMPLES], packing: { epoch: 8, data: packing } });
+    expect(repacked.pageTableRepacked).toBe(true);
+    expect(f.writeBuffer.mock.calls.length - callsAfterFirst).toBe(4);
+    // 缺省路径:无 packing 时每帧 4 次写且打包回调逐帧发生。
+    const callsBeforeDefault = f.writeBuffer.mock.calls.length;
+    const layerOfPageDefault = vi.fn((_id: string, tileX: number, tileY: number, mip: number) =>
+      mip === 0 ? tileY * 2 + tileX : 0);
+    pass.encode(f.encoder, { atlasView: {} as GPUTextureView, atlasEdge: 128, catalog: CATALOG,
+      layerOfPage: layerOfPageDefault, samples: [...SAMPLES] });
+    expect(f.writeBuffer.mock.calls.length - callsBeforeDefault).toBe(4);
+    expect(layerOfPageDefault).toHaveBeenCalledTimes(5);
+    pass.dispose();
+  });
+
+  it("skip 分支不消费 packing 不写缓冲;恢复样本后同 epoch 仍命中缓存", () => {
+    const f = fixture();
+    const pass = new VirtualTextureTileLookupPass(f.session);
+    const packing = packVirtualTexturePageTable(CATALOG, () => 0, [], 128);
+    expect(pass.encode(f.encoder, { atlasView: {} as GPUTextureView, atlasEdge: 128, catalog: CATALOG,
+      layerOfPage: () => 0, samples: [], packing: { epoch: 7, data: packing } }))
+      .toEqual({ dispatches: 0, samples: 0, skipped: "no-samples", pageTableRepacked: false });
+    expect(f.writeBuffer).not.toHaveBeenCalled();
+    const result = pass.encode(f.encoder, { atlasView: {} as GPUTextureView, atlasEdge: 128, catalog: CATALOG,
+      layerOfPage: () => 0, samples: [...SAMPLES], packing: { epoch: 7, data: packing } });
+    expect(result.pageTableRepacked).toBe(true);
+    expect(f.writeBuffer).toHaveBeenCalledTimes(4);
+    const callsAfterWarm = f.writeBuffer.mock.calls.length;
+    const hit = pass.encode(f.encoder, { atlasView: {} as GPUTextureView, atlasEdge: 128, catalog: CATALOG,
+      layerOfPage: () => 0, samples: [...SAMPLES], packing: { epoch: 7, data: packing } });
+    expect(hit.pageTableRepacked).toBe(false);
+    expect(f.writeBuffer.mock.calls.length - callsAfterWarm).toBe(2);
+    pass.dispose();
   });
 });

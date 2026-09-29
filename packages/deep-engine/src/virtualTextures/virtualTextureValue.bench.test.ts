@@ -8,6 +8,7 @@ import { DEFAULT_VIRTUAL_TEXTURE_TILE, boxDownsampleRgba8, createSyntheticRgba8,
 import type { VirtualTexturePage } from "./virtualTexturePages.js";
 import { prepareTextures } from "../textures/decodedTexture.js";
 import type { DeviceSession } from "../webgpu/deviceSession.js";
+import { packVirtualTexturePageTable, VirtualTexturePageTablePacker } from "../webgpu/virtualTexturePagePacking.js";
 import { VirtualTextureAtlasResidency } from "../webgpu/virtualTextureResidency.js";
 
 /**
@@ -161,6 +162,47 @@ describe("F3 virtual texture value evidence", () => {
       swapsLast16: swaps.slice(-16), converged: swaps.slice(-16).every(value => value === 0) };
     expect(evidence.competition.converged).toBe(true);
   }, 120_000);
+
+  it("D. CPU 页表更新前后对照:全量重打包 vs epoch 缓存命中(CPU 口径,GPU 未测)", () => {
+    // 8 纹理 × 4 mip(页表 320 项)的目录规模:打包循环量与重写字节按此账本。
+    const catalog = Array.from({ length: 8 }, (_, texture) => ({ textureId: `t${texture}`, chainMips: 4,
+      mipGrids: [
+        { gridWidth: 16, gridHeight: 16, levelWidth: 1024, levelHeight: 1024 },
+        { gridWidth: 16, gridHeight: 16, levelWidth: 512, levelHeight: 512 },
+        { gridWidth: 4, gridHeight: 4, levelWidth: 256, levelHeight: 256 },
+        { gridWidth: 4, gridHeight: 4, levelWidth: 128, levelHeight: 128 }] }));
+    const layerOfPage = () => 3;
+    // 前路径:每帧全量重打包(现状缺省行为)。
+    const fullMs: number[] = [];
+    for (let frame = 0; frame < 64; frame++) {
+      const started = performance.now();
+      packVirtualTexturePageTable(catalog, layerOfPage, [], 128);
+      fullMs.push(performance.now() - started);
+    }
+    // 后路径:packer 以 (catalogEpoch, layerEpoch) 缓存,稳定帧 O(1) 复用。
+    const packer = new VirtualTexturePageTablePacker(() => catalog, layerOfPage, 128);
+    packer.pack(0, 0);
+    const cachedMs: number[] = [];
+    let packed = packer.pack(0, 0);
+    for (let frame = 0; frame < 64; frame++) {
+      const started = performance.now();
+      packed = packer.pack(0, 0);
+      cachedMs.push(performance.now() - started);
+    }
+    // 稳定帧省去的 GPU 上行重写字节(meta+layers;params 16B 与 samples 仍逐帧写)。
+    const stableFrameRewriteBytesSaved = packed.data.mipMeta.byteLength + packed.data.pageLayers.byteLength;
+    evidence.pageTableUpdate = { catalogTextures: catalog.length, pageTableEntries: packed.data.pageLayers.length,
+      fullRepackP50Ms: round3(percentile(fullMs, 0.5)), fullRepackP95Ms: round3(percentile(fullMs, 0.95)),
+      cachedEpochHitP50Ms: round3(percentile(cachedMs, 0.5)), cachedEpochHitP95Ms: round3(percentile(cachedMs, 0.95)),
+      stableFrameRewriteBytesSaved, repackCountOver65Frames: packer.repackCount,
+      note: "CPU packing cost per frame (mock-free, pure JS); GPU device frame time unmeasured,"
+        + " device tie-in listed in the F3 integration checklist" };
+    // 确定性断言(时延数字只入证据不做阈值,避免计时抖动假红):
+    // 65 帧稳定视角仅 1 次重打包;命中返回同一产物(O(1));params 样本数占位 0。
+    expect(packer.repackCount).toBe(1);
+    expect(packer.pack(0, 0)).toBe(packed);
+    expect(packed.data.params[0]).toBe(0);
+  }, 60_000);
 
   it("写入证据 JSON", () => {
     const dir = join(process.cwd(), "test-output", "deep-core", "F3-virtual-texture");

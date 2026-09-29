@@ -1,11 +1,14 @@
 import type { DecodedTexture, PixelLevel } from "../textures/decodedTexture.js";
 import { boxDownsampleRgba8 } from "../virtualTextures/virtualTexturePages.js";
-import { resolveVirtualTextureSample } from "../virtualTextures/virtualTextureDiagnostics.js";
+import { resolveVirtualTextureFootprints, resolveVirtualTextureSample,
+  type VirtualTextureFootprintResolution } from "../virtualTextures/virtualTextureDiagnostics.js";
 import { VirtualTextureFeedbackReader, virtualTextureFeedbackInfo,
-  type VirtualTextureFeedbackEntry, type VirtualTextureFeedbackTextureInfo } from "../virtualTextures/virtualTextureFeedback.js";
+  type VirtualTextureFeedbackEntry, type VirtualTextureFeedbackFrame,
+  type VirtualTextureFeedbackTextureInfo } from "../virtualTextures/virtualTextureFeedback.js";
 import { virtualTexturePageCostBytes, type VirtualTexturePage } from "../virtualTextures/virtualTexturePages.js";
 import { resolveVirtualTextureOptions, type ResolvedVirtualTextureOptions,
   type VirtualTextureOptions } from "../virtualTextures/virtualTextureOptions.js";
+import { VirtualTexturePageTablePacker, type VirtualTexturePackedPageTable } from "./virtualTexturePagePacking.js";
 import type { DeviceSession } from "./deviceSession.js";
 import { VirtualTextureAtlasResidency } from "./virtualTextureResidency.js";
 
@@ -31,7 +34,14 @@ export interface VirtualTextureFeedbackTotals {
   readonly droppedInvisible: number;
   readonly droppedUnknownTexture: number;
   readonly mergedEntries: number;
+  /** 反馈链路不可用的显式原因(fail-closed,不静默):no-catalog=目录为空;
+   *  all-entries-dropped=本帧条目全部被丢弃(非法/未知纹理)且零页需求产出。
+   *  全部不可见(droppedInvisible)是合法剔除,不算不可用。可用时字段不出现。 */
+  readonly unavailable?: string;
 }
+
+/** 本帧 footprint 的页命中/缺失分布(采样解析口径;in-flight 页按不可采样计)。 */
+export type VirtualTexturePageResolveStats = VirtualTextureFootprintResolution;
 
 export interface VirtualTextureFrameMetrics {
   readonly enabled: true;
@@ -51,6 +61,8 @@ export interface VirtualTextureFrameMetrics {
   readonly missingPages: number;
   readonly batchFailures: number;
   readonly feedback: VirtualTextureFeedbackTotals;
+  /** 本帧页命中/缺失计数(fallback 态省略——采样方已回退整纹理,计数不适用)。 */
+  readonly pages?: VirtualTexturePageResolveStats;
   /** tile-lookup 采样消费统计:本帧 CPU 发出的样本请求数(GPU 消费由 sampling pass 计)。 */
   readonly sampleRequests: number;
   /** GPU tile-lookup 消费结果(pass 编码侧回填;未编码帧缺省)。 */
@@ -108,6 +120,10 @@ export class VirtualTextureFrameBridge {
   private readonly sources = new Map<string, CatalogSource>();
   private readonly levelCache = new Map<string, { readonly mip: number; readonly level: PixelLevel }>();
   private readonly catalogOrder: string[] = [];
+  private readonly pagePacker: VirtualTexturePageTablePacker;
+  private readonly pageResolveTotals = { hits: 0, pageFaults: 0, fallbackTextures: 0 };
+  /** 纹理目录版本号:增删/换版各递增;打包缓存键的一半(另一半是层分配 epoch)。 */
+  private catalogEpochValue = 0;
   private tick = 0;
   private lastMetrics: VirtualTextureFrameMetrics | undefined;
   private lastSamples: readonly VirtualTextureSampleRequest[] = [];
@@ -122,6 +138,9 @@ export class VirtualTextureFrameBridge {
       ...(resolved.minResidentFrames > 0 ? { minResidentFrames: resolved.minResidentFrames } : {}),
     }, pageId => this.page(pageId));
     this.reader = new VirtualTextureFeedbackReader(textureId => this.sources.get(textureId)?.info);
+    this.pagePacker = new VirtualTexturePageTablePacker(() => this.textureCatalog(),
+      (textureId, tileX, tileY, mip) => this.layerOfPage(textureId, tileX, tileY, mip),
+      resolved.spec.tileEdgeTexels);
   }
 
   /** 全量同步包纹理目录:新增入目录( RGBA8 之外 fail-closed 拒绝),消失/换版释放驻留。 */
@@ -140,7 +159,9 @@ export class VirtualTextureFrameBridge {
     for (const textureId of [...this.sources.keys()]) if (!seen.has(textureId)) this.dropTexture(textureId);
   }
 
-  /** 反馈 → 驻留逐帧推进;返回本帧遥测并留存 tile-lookup 采样请求。 */
+  /** 反馈 → 驻留逐帧推进;返回本帧遥测并留存 tile-lookup 采样请求。
+   *  页命中/缺失计数在 advance 后解析(此刻本帧准入仍 in-flight,按不可采样计——
+   *  fail-closed 口径);累计口径经 pageResolveCounts,收敛断言须在批次收口后差分。 */
   observeFrame(entries: readonly VirtualTextureFeedbackEntry[]): VirtualTextureFrameMetrics {
     this.assertUsable();
     const begin = performance.now();
@@ -148,6 +169,14 @@ export class VirtualTextureFrameBridge {
     const observed = this.reader.observe(frame, entries);
     const telemetry = this.residency.advance(this.tick, observed.footprints);
     this.lastSamples = this.sampleRequestsFrom(observed.footprints);
+    const unavailable = feedbackUnavailableReason(this.sources.size, observed);
+    const pages = telemetry.fallbackActive ? undefined
+      : resolveVirtualTextureFootprints(this.residency.pageTable, observed.footprints);
+    if (pages) {
+      this.pageResolveTotals.hits += pages.hits;
+      this.pageResolveTotals.pageFaults += pages.pageFaults;
+      this.pageResolveTotals.fallbackTextures += pages.fallbackTextures;
+    }
     const metrics: VirtualTextureFrameMetrics = Object.freeze({
       enabled: true, frame: this.tick, catalogTextures: this.sources.size,
       fallbackActive: telemetry.fallbackActive,
@@ -159,13 +188,36 @@ export class VirtualTextureFrameBridge {
       evictions: telemetry.evictions, missingPages: telemetry.missingPages, batchFailures: telemetry.batchFailures,
       feedback: Object.freeze({ entryCount: observed.stats.entryCount, footprintCount: observed.stats.footprintCount,
         droppedInvalid: observed.stats.droppedInvalid, droppedInvisible: observed.stats.droppedInvisible,
-        droppedUnknownTexture: observed.stats.droppedUnknownTexture, mergedEntries: observed.stats.mergedEntries }),
+        droppedUnknownTexture: observed.stats.droppedUnknownTexture, mergedEntries: observed.stats.mergedEntries,
+        ...(unavailable !== undefined ? { unavailable } : {}) }),
+      ...(pages ? { pages: Object.freeze(pages) } : {}),
       sampleRequests: this.lastSamples.length, advanceMs: performance.now() - begin,
     });
     this.tick += 1;
     this.lastMetrics = metrics;
     return metrics;
   }
+
+  /** 累计页命中/缺失计数(构造以来;批次收口时点由调用方保证时语义才收敛)。 */
+  get pageResolveCounts(): VirtualTexturePageResolveStats { return Object.freeze({ ...this.pageResolveTotals }); }
+
+  /**
+   * 页表打包(epoch 缓存):目录与层分配均不变时 O(1) 复用同一产物,变化帧才重打包
+   * (repackCount 可观测)。产出的 params[0] 为占位 0,采样 pass 逐帧覆盖样本数;
+   * epoch 传给 encode 后稳定帧可跳过 meta/layers 大缓冲重写。fallback 态显式拒绝
+   * (采样方走整纹理路径,页表不适用),与 pageTable getter 同语义。
+   */
+  packPageTable(): VirtualTexturePackedPageTable {
+    this.assertUsable();
+    if (this.residency.fallbackActive) {
+      throw new Error(`Virtual texture page table packing is unavailable in fallback`
+        + ` (${this.residency.fallbackReason ?? "unknown"}); use the whole-texture LOD path.`);
+    }
+    return this.pagePacker.pack(this.catalogEpochValue, this.residency.layerEpoch);
+  }
+
+  /** 自构造以来页表实际重打包次数(缓存命中不计数;CPU 页表更新对照口径)。 */
+  get pageRepackCount(): number { return this.pagePacker.repackCount; }
 
   get fallbackActive(): boolean { return this.residency.fallbackActive; }
   get fallbackReason(): string | undefined { return this.residency.fallbackReason; }
@@ -222,11 +274,13 @@ export class VirtualTextureFrameBridge {
         info: virtualTextureFeedbackInfo(texture.id, texture.width, texture.height, gridWidth, gridHeight, chainMips),
         mipGrids });
       this.catalogOrder.push(texture.id);
+      this.catalogEpochValue += 1;
     } catch { /* 非法档案(id/尺寸)不入目录;反馈侧 droppedUnknownTexture 逐类可见。 */ }
   }
 
   private dropTexture(textureId: string): void {
     if (!this.sources.delete(textureId)) return;
+    this.catalogEpochValue += 1;
     this.levelCache.delete(textureId);
     const order = this.catalogOrder.indexOf(textureId);
     if (order >= 0) this.catalogOrder.splice(order, 1);
@@ -300,4 +354,13 @@ export class VirtualTextureFrameBridge {
   private assertUsable(): void {
     if (this.disposed) throw new Error("Virtual texture frame bridge is disposed.");
   }
+}
+
+/** 反馈链路不可用的显式原因;可用(或合法的零可见)返回 undefined。 */
+function feedbackUnavailableReason(catalogTextures: number,
+  observed: VirtualTextureFeedbackFrame): string | undefined {
+  if (catalogTextures === 0) return "no-catalog";
+  if (observed.footprints.length === 0
+    && observed.stats.droppedInvalid + observed.stats.droppedUnknownTexture > 0) return "all-entries-dropped";
+  return undefined;
 }

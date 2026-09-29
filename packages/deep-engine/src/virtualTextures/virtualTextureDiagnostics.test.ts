@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { resolveVirtualTextureSample, TextureThrashDetector } from "./virtualTextureDiagnostics.js";
+import { resolveVirtualTextureFootprints, resolveVirtualTextureSample,
+  TextureThrashDetector } from "./virtualTextureDiagnostics.js";
 import { buildVirtualTexturePageRequests, VirtualTexturePageTable,
   type VirtualTextureFootprint } from "./virtualTexturePageTable.js";
 import { virtualTexturePageCostBytes } from "./virtualTexturePages.js";
@@ -44,6 +45,16 @@ describe("virtual texture page-fault resolution", () => {
     expect(resolveVirtualTextureSample(table, "tex", 0, 0, 3))
       .toEqual({ status: "page-fault", resolvedMip: 0, fallbackLevels: 3 });
     expect(() => resolveVirtualTextureSample(table, "tex", 0, 0, -1)).toThrow(/Requested mip/);
+  });
+
+  it("footprint 批量解析:命中/缺页/回退整纹理三类分布逐帧可用", () => {
+    const table = committedTable();
+    const resolution = resolveVirtualTextureFootprints(table, [
+      footprint({ maxMip: 1 }), footprint({ maxMip: 2 }),
+      footprint({ maxMip: 3 }),
+      footprint({ tileX: 7, tileY: 7, maxMip: 0 }),
+    ]);
+    expect(resolution).toEqual({ hits: 2, pageFaults: 1, fallbackTextures: 1 });
   });
 });
 

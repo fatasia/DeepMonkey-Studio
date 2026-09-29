@@ -1,4 +1,5 @@
 import type { VirtualTexturePageTable } from "./virtualTexturePageTable.js";
+import type { VirtualTextureFootprint } from "./virtualTextureRequests.js";
 
 /**
  * T06 page-fault and thrash diagnostics for the virtual-texture page table.
@@ -39,6 +40,33 @@ export function resolveVirtualTextureSample(table: VirtualTexturePageTable, text
     return Object.freeze({ status: "resident", resolvedMip: requestedMip, fallbackLevels: 0 });
   }
   return Object.freeze({ status: "page-fault", resolvedMip: depth, fallbackLevels: requestedMip - depth });
+}
+
+export interface VirtualTextureFootprintResolution {
+  /** 恰命中所请求 mip 的 footprint 数(零换页可采样)。 */
+  readonly hits: number;
+  /** 缺页但落到同链合法更粗 mip 的 footprint 数。 */
+  readonly pageFaults: number;
+  /** 整链缺失、须回退整纹理 LOD 的 footprint 数。 */
+  readonly fallbackTextures: number;
+}
+
+/**
+ * 批量解析一帧 footprint 的命中/缺失分布("页命中/缺失计数"遥测口径)。
+ * 时点语义:在驻留推进后、上传批次异步收口前调用时,in-flight 页按不可采样计
+ * (fail-closed 正确口径,不是缺陷)——累计口径的收敛断言须在批次收口后做差分。
+ */
+export function resolveVirtualTextureFootprints(table: VirtualTexturePageTable,
+  footprints: readonly VirtualTextureFootprint[]): VirtualTextureFootprintResolution {
+  let hits = 0, pageFaults = 0, fallbackTextures = 0;
+  for (const footprint of footprints) {
+    const resolution = resolveVirtualTextureSample(table, footprint.textureId,
+      footprint.tileX, footprint.tileY, footprint.maxMip);
+    if (resolution.status === "resident") hits += 1;
+    else if (resolution.status === "page-fault") pageFaults += 1;
+    else fallbackTextures += 1;
+  }
+  return Object.freeze({ hits, pageFaults, fallbackTextures });
 }
 
 export interface TextureThrashDetectorConfig {

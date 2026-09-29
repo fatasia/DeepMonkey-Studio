@@ -223,4 +223,36 @@ describe("VirtualTextureAtlasResidency", () => {
     expect(() => r.advance(5, [])).toThrow(RangeError);
     expect(() => r.advance(4, [])).toThrow(RangeError);
   });
+
+  it("layerEpoch:槽位分配/回收递增,稳定帧(重复 footprint)冻结,打包缓存据此判稳", async () => {
+    const r = f.residency(640);
+    expect(r.layerEpoch).toBe(0);
+    r.advance(0, [TILE(0, 0)]);
+    const afterAdmission = r.layerEpoch;
+    expect(afterAdmission).toBeGreaterThan(0);
+    await f.settle();
+    // 稳定帧:同 footprint 重复,无槽位变化 → epoch 冻结(缓存命中依据)。
+    r.advance(1, [TILE(0, 0)]);
+    expect(r.layerEpoch).toBe(afterAdmission);
+    // 换 tile:新页占槽(分配驱动,未达逐出阈值)→ epoch 递增。
+    r.advance(2, [TILE(1, 0)]);
+    expect(r.layerEpoch).toBeGreaterThan(afterAdmission);
+    // releaseTexture 逐出整纹理(槽位回收)→ 再递增。
+    const beforeRelease = r.layerEpoch;
+    await f.settle();
+    r.releaseTexture("t");
+    expect(r.layerEpoch).toBeGreaterThan(beforeRelease);
+  });
+
+  it("layerEpoch fallback 态冻结可读(层不再变化);disposed 显式拒绝", () => {
+    f.setReady(false);
+    const r = f.residency(640);
+    r.advance(0, [TILE(0, 0)]);
+    expect(r.fallbackActive).toBe(true);
+    const frozen = r.layerEpoch;
+    r.advance(1, [TILE(1, 0)]);
+    expect(r.layerEpoch).toBe(frozen);
+    r.dispose();
+    expect(() => r.layerEpoch).toThrow(/disposed/);
+  });
 });

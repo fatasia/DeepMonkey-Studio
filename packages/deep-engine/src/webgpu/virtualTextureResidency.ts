@@ -2,6 +2,7 @@ import { buildVirtualTexturePageRequests,
   type VirtualTextureFootprint } from "../virtualTextures/virtualTextureRequests.js";
 import { VirtualTexturePageTable, type VirtualTexturePageHandle } from "../virtualTextures/virtualTexturePageTable.js";
 import type { VirtualTexturePage, VirtualTextureTileSpec } from "../virtualTextures/virtualTexturePages.js";
+import { uploadLayout } from "./virtualTexturePagePacking.js";
 import { GUARANTEED_MAX_TEXTURE_ARRAY_LAYERS, resolveVirtualTextureResidencyBudget,
   type VirtualTextureResidencyBudget, type VirtualTextureResidencyTelemetry } from "./virtualTextureResidencyBudget.js";
 import type { DeviceSession } from "./deviceSession.js";
@@ -43,6 +44,8 @@ export class VirtualTextureAtlasResidency {
   private totals = { uploadsQueued: 0, uploadsCommitted: 0, uploadsRolledBack: 0,
     evictions: 0, missingPages: 0, batchFailures: 0 };
   private lastFrame = -1;
+  /** atlas 层分配版本号:槽位分配/回收各递增一次;打包缓存据此判定页→层映射是否变化。 */
+  private layerEpochValue = 0;
 
   constructor(session: DeviceSession, spec: VirtualTextureTileSpec, budget: VirtualTextureResidencyBudget,
     pageSource: VirtualTexturePageSource) {
@@ -62,6 +65,11 @@ export class VirtualTextureAtlasResidency {
   get fallbackReason(): string | undefined { return this.fallbackReasonText; }
   /** 页 atlas(2D array,单 mip,每 layer 一页);懒创建,fallback/销毁后为 undefined。 */
   get atlasTexture(): GPUTexture | undefined { return this.atlas; }
+  /** 层分配版本号(fallback 态冻结可读;disposed 拒绝);仅槽位分配/回收时递增。 */
+  get layerEpoch(): number {
+    if (this.state === "disposed") throw new Error("Virtual texture atlas residency is disposed.");
+    return this.layerEpochValue;
+  }
 
   /** 在表页 → atlas layer 槽位(tile lookup shader 页表 uniform 数据源);in-flight 页占槽不可采样。 */
   layerOf(pageId: string): number | undefined {
@@ -156,6 +164,7 @@ export class VirtualTextureAtlasResidency {
       const layer = this.freeLayers.pop();
       if (layer === undefined) break;
       this.slotOfPage.set(handle.id, layer);
+      this.layerEpochValue += 1;
       layers.set(handle.id, layer);
       handles.push(handle);
       this.queue.shift(); this.queuedIds.delete(handle.id);
@@ -272,6 +281,7 @@ export class VirtualTextureAtlasResidency {
     if (layer === undefined) return;
     this.slotOfPage.delete(pageId);
     this.freeLayers.push(layer);
+    this.layerEpochValue += 1;
   }
 
   private assertUsable(): void {
@@ -281,20 +291,4 @@ export class VirtualTextureAtlasResidency {
         + " use the whole-texture LOD path.");
     }
   }
-}
-
-/** 页字节按生边 edge²(零填充)紧排;writeTexture 行距须 256 对齐,生边 < 64 时
- *  行距上取整并逐行重排进临时缓冲(仅深 mip 小页,单页 ≤ 16 KiB)。 */
-function uploadLayout(page: VirtualTexturePage, tileEdgeTexels: number): {
-  readonly data: Uint8Array<ArrayBuffer>; readonly bytesPerRow: number; readonly edge: number;
-} {
-  const edge = Math.max(1, tileEdgeTexels >> page.mip);
-  const rawRow = edge * 4;
-  const bytesPerRow = Math.ceil(rawRow / 256) * 256;
-  if (bytesPerRow === rawRow) return { data: page.data, bytesPerRow, edge };
-  const padded = new Uint8Array(bytesPerRow * (edge - 1) + rawRow);
-  for (let row = 0; row < edge; row++) {
-    padded.set(page.data.subarray(row * rawRow, (row + 1) * rawRow), row * bytesPerRow);
-  }
-  return { data: padded, bytesPerRow, edge };
 }
