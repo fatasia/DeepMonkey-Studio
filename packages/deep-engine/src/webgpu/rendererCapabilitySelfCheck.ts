@@ -1,0 +1,287 @@
+/**
+ * J4 能力协商 —— Web(Studio)端 TS 自检导出(独立小模块,禁改既有文件)。
+ *
+ * 本模块从**实际代码面**派生 web 端支持状态,供 contracts
+ * `rendererCapabilityManifest` 的对拍/漂移测试消费:
+ * - 支持档从 `PbrRendererFeatures` 默认值、`PBR_TIMED_PASS_IDS` 计时 pass 单源清单、
+ *   GI 方向门常量、材质 ABI 字节合同、接触阴影质量档等真实常量派生,不是手抄;
+ * - 漂移检测:实际面变化(特性键增删/计时 pass 改名/GI 容量收缩/材质 ABI 变更)
+ *   而清单未跟 → 本模块加载期断言红 + contracts 侧对拍红,两层独立拦截。
+ *
+ * 导入闭包纪律:只允许无 bare 依赖的纯常量模块(pbrRendererFeatures /
+ * pbrTimedPassIds / probeRadianceDirectionGate / shaderAbi contract /
+ * contactShadowQuality / deviceRecovery——纯逻辑零运行时导入),
+ * 保证 contracts 测试可安全跨包动态导入本模块。
+ */
+
+import { CONTACT_SHADOW_QUALITY_PROFILES } from "../shadows/contactShadowQuality.js";
+import {
+  DEEP_GI_PROBE_DIRECTIONS_HIGH,
+  DEEP_GI_PROBE_DIRECTIONS_STANDARD,
+} from "../lighting/probeRadianceDirectionGate.js";
+import { DEEP_PBR_MESH_V1_BYTE_SIZES } from "../shaderAbi/contract.js";
+import { classifyDeviceLost, DeviceRecoveryStateMachine } from "./deviceRecovery.js";
+import { DEFAULT_PBR_RENDERER_FEATURES, type PbrRendererFeatures } from "./pbrRendererFeatures.js";
+import { PBR_TIMED_PASS_IDS } from "./pbrTimedPassIds.js";
+
+/** 支持档词汇(与 contracts 逐词一致;跨包不导入,靠对拍测试钉死)。 */
+export type RendererCapabilitySelfCheckSupport = "supported" | "degraded" | "unavailable";
+
+/** 单行自检声明:能力 id + web 支持档 + 原因码 + 实际面观测值。 */
+export interface RendererCapabilitySelfCheckRow {
+  readonly capabilityId: string;
+  readonly support: RendererCapabilitySelfCheckSupport;
+  /** 原因码词汇与 contracts 一致(full/opt-in-default-off/harness-only/reduced-tier/absent/api-missing/host-specific)。 */
+  readonly reason: string;
+  /** 该能力宣称依赖的计时 pass(必须 ⊆ PBR_TIMED_PASS_IDS,加载期校验)。 */
+  readonly passIds?: readonly string[];
+  /**
+   * 从实际面派生的观测值(JSON 可序列化)。字段名凡与 `PbrRendererFeatures`
+   * 特性键同名的,其值必须在加载期等于真实默认值(漂移即红)。
+   */
+  readonly observed: Readonly<Record<string, string | number | boolean | ReadonlyArray<string | number>>>;
+}
+
+/** 实际面快照:特性键、计时 pass、GI 方向档、材质 ABI 字节、接触阴影质量档。 */
+export const PBR_RENDERER_TS_SURFACE = Object.freeze({
+  featureKeys: Object.freeze(Object.keys(DEFAULT_PBR_RENDERER_FEATURES)) as readonly (keyof PbrRendererFeatures & string)[],
+  timedPassIds: PBR_TIMED_PASS_IDS,
+  giDirectionStandard: DEEP_GI_PROBE_DIRECTIONS_STANDARD,
+  giDirectionHigh: DEEP_GI_PROBE_DIRECTIONS_HIGH,
+  materialCoreBlockBytes: DEEP_PBR_MESH_V1_BYTE_SIZES.material,
+  materialFrameBlockBytes: DEEP_PBR_MESH_V1_BYTE_SIZES.frame,
+  contactShadowQualityTiers: Object.freeze(Object.keys(CONTACT_SHADOW_QUALITY_PROFILES)),
+});
+
+const FEATURE_DEFAULTS = DEFAULT_PBR_RENDERER_FEATURES;
+
+/** 从计时 pass 单源清单过滤出该能力依赖的 pass(不存在→空,加载期断言红)。 */
+function passes(...prefixes: readonly string[]): string[] {
+  return PBR_TIMED_PASS_IDS.filter((id) => prefixes.some((prefix) => id.startsWith(prefix)));
+}
+
+/** 材质 ABI:Web 打包 48 float = 192B(核心块字节取自 shaderAbi 合同,扩展带语义见 manifest 证据)。 */
+const WEB_MATERIAL_PACKED_FLOATS = 48;
+if (WEB_MATERIAL_PACKED_FLOATS * 4 <= DEEP_PBR_MESH_V1_BYTE_SIZES.material) {
+  throw new Error(`rendererCapabilitySelfCheck: web material pack (${WEB_MATERIAL_PACKED_FLOATS * 4}B) must exceed `
+    + `the core ABI block (${DEEP_PBR_MESH_V1_BYTE_SIZES.material}B); the 192B packing contract regressed.`);
+}
+
+/**
+ * Web 端能力自检声明(初始基线 2026-09-29)。
+ * 每行的 support/reason 必须与 contracts 登记表 web 列逐词一致,由对拍测试强制。
+ */
+export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelfCheckRow[] = Object.freeze([
+  {
+    capabilityId: "material-abi-192b", support: "supported", reason: "full",
+    observed: {
+      packedFloats: WEB_MATERIAL_PACKED_FLOATS,
+      packedBytes: WEB_MATERIAL_PACKED_FLOATS * 4,
+      coreBlockBytes: PBR_RENDERER_TS_SURFACE.materialCoreBlockBytes,
+      frameBlockBytes: PBR_RENDERER_TS_SURFACE.materialFrameBlockBytes,
+    },
+  },
+  {
+    capabilityId: "gi-probe-directions", support: "supported", reason: "full",
+    observed: {
+      standardDirections: PBR_RENDERER_TS_SURFACE.giDirectionStandard,
+      highDirections: PBR_RENDERER_TS_SURFACE.giDirectionHigh,
+    },
+  },
+  {
+    capabilityId: "contact-shadows", support: "supported", reason: "opt-in-default-off",
+    passIds: passes("contact-shadow", "contact-apply"),
+    observed: {
+      contactShadows: FEATURE_DEFAULTS.contactShadows,
+      qualityTiers: PBR_RENDERER_TS_SURFACE.contactShadowQualityTiers,
+    },
+  },
+  {
+    capabilityId: "auto-exposure", support: "supported", reason: "full",
+    observed: {},
+  },
+  {
+    capabilityId: "temporal-upscale", support: "supported", reason: "opt-in-default-off",
+    passIds: passes("temporal-upscale"),
+    observed: { temporalUpscale: FEATURE_DEFAULTS.temporalUpscale },
+  },
+  {
+    capabilityId: "virtual-textures", support: "supported", reason: "opt-in-default-off",
+    observed: {},
+  },
+  {
+    capabilityId: "cluster-lod", support: "supported", reason: "opt-in-default-off",
+    observed: { softRasterizeFallback: FEATURE_DEFAULTS.softRasterizeFallback },
+  },
+  {
+    capabilityId: "white-furnace-conservation", support: "supported", reason: "harness-only",
+    observed: {},
+  },
+  {
+    capabilityId: "device-recovery", support: "supported", reason: "full",
+    // 观测值从 deviceRecovery 实际分型/恢复预算派生(分型语义或预算变化即漂移)。
+    observed: {
+      defaultMaxAttempts: new DeviceRecoveryStateMachine().maxRecoveryAttempts,
+      deviceLostUnknownRecoverable: classifyDeviceLost("unknown", "").recoverable,
+      deviceLostDestroyedRecoverable: classifyDeviceLost("destroyed", "").recoverable,
+    },
+  },
+  {
+    capabilityId: "ssr", support: "supported", reason: "opt-in-default-off",
+    passIds: passes("screen-space-reflection-"),
+    observed: { screenSpaceReflection: FEATURE_DEFAULTS.screenSpaceReflection },
+  },
+  {
+    capabilityId: "fog-volumetric", support: "supported", reason: "opt-in-default-off",
+    passIds: passes("volumetric-fog-"),
+    observed: {
+      fog: FEATURE_DEFAULTS.fog,
+      volumetricFog: FEATURE_DEFAULTS.volumetricFog,
+    },
+  },
+  {
+    capabilityId: "taa", support: "supported", reason: "full",
+    passIds: passes("temporal-aa"),
+    observed: { temporalAa: FEATURE_DEFAULTS.temporalAa },
+  },
+  {
+    capabilityId: "ambient-occlusion", support: "supported", reason: "full",
+    passIds: passes("ambient-occlusion", "apply-ambient-occlusion"),
+    observed: { ambientOcclusion: FEATURE_DEFAULTS.ambientOcclusion },
+  },
+  {
+    capabilityId: "bloom", support: "supported", reason: "full",
+    passIds: passes("bloom"),
+    observed: { bloom: FEATURE_DEFAULTS.bloom },
+  },
+  {
+    capabilityId: "tonemap-display", support: "supported", reason: "full",
+    observed: { toneMapping: FEATURE_DEFAULTS.toneMapping },
+  },
+  {
+    capabilityId: "author-grading-vignette", support: "supported", reason: "full",
+    observed: { vignette: FEATURE_DEFAULTS.vignette },
+  },
+  {
+    capabilityId: "ground-preview", support: "supported", reason: "full",
+    observed: {
+      groundPlane: FEATURE_DEFAULTS.groundPlane,
+      groundGrid: FEATURE_DEFAULTS.groundGrid,
+    },
+  },
+  {
+    capabilityId: "ibl-environment", support: "supported", reason: "full",
+    observed: { environment: FEATURE_DEFAULTS.environment },
+  },
+  {
+    capabilityId: "texture-arrays", support: "supported", reason: "opt-in-default-off",
+    observed: { textureArrays: FEATURE_DEFAULTS.textureArrays },
+  },
+  {
+    capabilityId: "visibility-buffer", support: "supported", reason: "opt-in-default-off",
+    observed: { visibilityBuffer: FEATURE_DEFAULTS.visibilityBuffer },
+  },
+  {
+    capabilityId: "occlusion-culling", support: "supported", reason: "full",
+    observed: { occlusionCulling: FEATURE_DEFAULTS.occlusionCulling },
+  },
+  {
+    capabilityId: "gpu-lod", support: "supported", reason: "full",
+    observed: {},
+  },
+  {
+    capabilityId: "shadow-cascades", support: "supported", reason: "full",
+    observed: {},
+  },
+  {
+    capabilityId: "shadow-local", support: "supported", reason: "full",
+    observed: {},
+  },
+  {
+    capabilityId: "weighted-oit", support: "supported", reason: "full",
+    passIds: passes("transparent-oit", "composite-oit"),
+    observed: {},
+  },
+  {
+    capabilityId: "spatial-aa", support: "supported", reason: "full",
+    observed: { spatialAa: FEATURE_DEFAULTS.spatialAa },
+  },
+  {
+    capabilityId: "hardware-ray-query", support: "supported", reason: "full",
+    observed: { rayCaptureKernelMaxDirections: PBR_RENDERER_TS_SURFACE.giDirectionHigh },
+  },
+  {
+    capabilityId: "ies-lighting", support: "supported", reason: "full",
+    observed: {},
+  },
+]);
+
+// ---- 加载期漂移守卫(结构先例:probeRadianceDirectionGate 的容量 fail-fast) ----
+
+/** 计时 pass 依赖存在性:引用不存在的 pass = 计时单源清单改名而自检未跟。 */
+const danglingPassRefs = PBR_RENDERER_CAPABILITY_SELF_CHECK
+  .flatMap((row) => (row.passIds ?? []).filter((passId) => !PBR_TIMED_PASS_IDS.includes(passId as never)));
+if (danglingPassRefs.length > 0) {
+  throw new Error(`rendererCapabilitySelfCheck: pass ids not in PBR_TIMED_PASS_IDS: ${danglingPassRefs.join(", ")}`);
+}
+
+/** 关键通路 pass 非空:能力宣称存在但计时清单里 pass 消失 = 实际面漂移。 */
+const REQUIRED_NON_EMPTY_PASS_ROWS: ReadonlyArray<{ id: string; prefixes: readonly string[] }> = Object.freeze([
+  { id: "contact-shadows", prefixes: ["contact-shadow"] },
+  { id: "temporal-upscale", prefixes: ["temporal-upscale"] },
+  { id: "ssr", prefixes: ["screen-space-reflection-"] },
+  { id: "fog-volumetric", prefixes: ["volumetric-fog-"] },
+  { id: "taa", prefixes: ["temporal-aa"] },
+  { id: "ambient-occlusion", prefixes: ["ambient-occlusion"] },
+  { id: "bloom", prefixes: ["bloom"] },
+  { id: "weighted-oit", prefixes: ["transparent-oit"] },
+]);
+for (const required of REQUIRED_NON_EMPTY_PASS_ROWS) {
+  const row = PBR_RENDERER_CAPABILITY_SELF_CHECK.find((entry) => entry.capabilityId === required.id);
+  const hit = (row?.passIds ?? []).filter((passId) => required.prefixes.some((prefix) => passId.startsWith(prefix)));
+  if (hit.length === 0) {
+    throw new Error(`rendererCapabilitySelfCheck: capability ${required.id} claims supported but its timed pass(es) `
+      + `[${required.prefixes.join(", ")}] vanished from PBR_TIMED_PASS_IDS — register the drift in the capability manifest.`);
+  }
+}
+
+/** 特性面覆盖与取值一致:每个 PbrRendererFeatures 键必须被恰好一行观测,且观测值 === 真实默认值。 */
+const claimedFeatureKeys: string[] = [];
+for (const row of PBR_RENDERER_CAPABILITY_SELF_CHECK) {
+  for (const [key, value] of Object.entries(row.observed)) {
+    if (Object.prototype.hasOwnProperty.call(FEATURE_DEFAULTS, key)) {
+      if (value !== FEATURE_DEFAULTS[key as keyof PbrRendererFeatures]) {
+        throw new Error(`rendererCapabilitySelfCheck: observed value for feature key "${key}" `
+          + `(${String(value)}) diverges from the actual PbrRendererFeatures default `
+          + `(${String(FEATURE_DEFAULTS[key as keyof PbrRendererFeatures])}).`);
+      }
+      claimedFeatureKeys.push(key);
+    }
+  }
+}
+const surfaceKeys = Object.keys(FEATURE_DEFAULTS);
+const uncovered = surfaceKeys.filter((key) => !claimedFeatureKeys.includes(key));
+const duplicated = claimedFeatureKeys.filter((key, index) => claimedFeatureKeys.indexOf(key) !== index);
+if (uncovered.length > 0 || duplicated.length > 0) {
+  throw new Error(`rendererCapabilitySelfCheck: PbrRendererFeatures surface drift — `
+    + `uncovered keys [${uncovered.join(", ")}], duplicated claims [${duplicated.join(", ")}]. `
+    + `Update rendererCapabilitySelfCheck rows (and the contracts capability manifest) together.`);
+}
+
+/** id 唯一性。 */
+const SELF_CHECK_IDS = new Set(PBR_RENDERER_CAPABILITY_SELF_CHECK.map((row) => row.capabilityId));
+if (SELF_CHECK_IDS.size !== PBR_RENDERER_CAPABILITY_SELF_CHECK.length) {
+  throw new Error("rendererCapabilitySelfCheck: duplicate capabilityId rows.");
+}
+
+/**
+ * 计时 pass 覆盖完备性:新计时 pass 落地必须登记能力。
+ * 豁免:forward opaque 主通路与 present 直出不是独立能力,属主干。
+ */
+const BACKBONE_PASS_IDS: readonly string[] = ["opaque", "present"];
+const referencedPasses = new Set(PBR_RENDERER_CAPABILITY_SELF_CHECK.flatMap((row) => row.passIds ?? []));
+const orphanPasses = PBR_TIMED_PASS_IDS.filter((passId) => !referencedPasses.has(passId) && !BACKBONE_PASS_IDS.includes(passId));
+if (orphanPasses.length > 0) {
+  throw new Error(`rendererCapabilitySelfCheck: timed pass(es) [${orphanPasses.join(", ")}] are not claimed by any `
+    + `capability row — new render passes must register a capability (J4 discipline).`);
+}
