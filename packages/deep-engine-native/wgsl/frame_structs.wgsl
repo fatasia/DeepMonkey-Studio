@@ -1,4 +1,4 @@
-// GENERATED frame struct（Rust 宿主，596f/2384B/149 行）— schema-sha256: a86ad99ec6748a2457c3a77585a2ad994ee7f6dcce7c18ffb798b322cb727bdb
+// GENERATED frame struct（Rust 宿主，596f/2384B/149 行）— schema-sha256: 3291dacc0f11c4520e41d95c006be16fb5192d31d2fe5cbd4e09bbe61f40e54c
 // 块字段（灯阵列/阴影矩阵带）以行注释记录区间；标量/矩阵行逐行镜像。
 struct NativeFrame {
   // row 0: viewProjection: mat4x4f

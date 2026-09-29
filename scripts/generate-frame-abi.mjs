@@ -50,7 +50,7 @@ function validateSide(fields, total, unit, spanOf) {
 
 const tsFields = [
   ...schema.coreFields.map((field) => ({
-    name: field.name, type: field.type, offset: field.ts.offset, core: true, note: field.note,
+    name: field.name, wgslName: field.wgslName, type: field.type, offset: field.ts.offset, core: true, note: field.note,
   })),
   ...schema.tsBand.fields.map((field) => ({ ...field, core: false })),
 ];
@@ -110,8 +110,8 @@ export const FRAME_ABI_CORE: readonly FrameAbiCoreField[] = ${JSON.stringify(
     name, type, tsOffset: ts.offset, rustRow: rust.row, note,
   })), null, 2)};
 
-export const FRAME_ABI_TS_FIELDS: readonly { name: string; type: string; offset: number; core: boolean; note: string }[] = ${JSON.stringify(
-  tsSorted.map(({ name, type, offset, core, note }) => ({ name, type, offset, core, note })), null, 2)};
+export const FRAME_ABI_TS_FIELDS: readonly { name: string; wgslName?: string; type: string; offset: number; core: boolean; note: string }[] = ${JSON.stringify(
+  tsSorted.map(({ name, wgslName, type, offset, core, note }) => ({ name, wgslName, type, offset, core, note })), null, 2)};
 
 export const FRAME_ABI_RUST_FIELDS: readonly { name: string; rustName: string; type: string; row: number; rows: number; core: boolean; note: string }[] = ${JSON.stringify(
   rustSorted.map(({ name, rustName, type, row, core, note }) => ({
@@ -122,8 +122,8 @@ writeFileSync(join(repoRoot, "packages/deep-engine/src/frameAbi/generated/frameL
 
 // ---- 产物 2：TS 侧 WGSL struct 文本（迁移时由 pbrShader 引用替换手写块）
 const tsStructLines = tsSorted.map((field) => {
-  const wgslName = field.name;
-  const type = field.type === "mat4" ? "mat4x4f" : "vec4f";
+  const wgslName = field.wgslName ?? field.name;
+  const type = field.wgslType ?? (field.type === "mat4" ? "mat4x4f" : "vec4f");
   return `  ${wgslName}: ${type},`;
 });
 const tsWgsl = `// GENERATED frame struct（TS 宿主，96f/384B）— schema-sha256: ${schemaSha256}

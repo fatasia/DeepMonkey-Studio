@@ -71,16 +71,16 @@ describe("frame ABI 单源产物指纹门（J2-B7-codegen）", () => {
     expect(FRAME_ABI_TS_FIELDS).toEqual(
       [
         ...schema.coreFields.map((field) => ({
-          name: field.name, type: field.type, offset: field.ts.offset, core: true, note: field.note,
+          name: field.name, wgslName: field.wgslName, type: field.type, offset: field.ts.offset, core: true, note: field.note,
         })),
-        ...schema.tsBand.fields.map((field) => ({ ...field, core: false })),
+        ...schema.tsBand.fields.map((field) => ({ name: field.name, wgslName: (field as { wgslName?: string }).wgslName, type: field.type, offset: field.offset, core: false, note: field.note })),
       ].sort((a, b) => a.offset - b.offset),
     );
     expect(FRAME_ABI_RUST_FIELDS.filter((field) => field.core)).toHaveLength(schema.coreFields.length);
   });
 
   it("WGSL struct 文本含 TS 全部字段名且顺序按偏移", () => {
-    const names = FRAME_ABI_TS_FIELDS.map((field) => field.name);
+    const names = FRAME_ABI_TS_FIELDS.map((field) => field.wgslName ?? field.name);
     let cursor = -1;
     for (const name of names) {
       const at = FRAME_STRUCTS_WGSL.indexOf(name);

@@ -12,41 +12,203 @@
     ]
   },
   "hosts": {
-    "ts": { "abiId": "deep.web.frame", "floats": 96, "bytes": 384 },
-    "rust": { "abiId": "deep.native.frame.v8", "floats": 596, "bytes": 2384, "rows": 149 }
+    "ts": {
+      "abiId": "deep.web.frame",
+      "floats": 96,
+      "bytes": 384
+    },
+    "rust": {
+      "abiId": "deep.native.frame.v8",
+      "floats": 596,
+      "bytes": 2384,
+      "rows": 149
+    }
   },
   "coreFields": [
-    { "name": "viewProjection", "rustName": "VIEW_PROJECTION", "type": "mat4", "ts": { "offset": 0 }, "rust": { "row": 0 }, "note": "TS=pipelines.ts:16 currentViewProjection；Rust=mesh_abi.rs frame_uniform legacy[0..3]" },
-    { "name": "lightViewProjection", "rustName": "LIGHT_VIEW_PROJECTION", "type": "mat4", "ts": { "offset": 48 }, "rust": { "row": 4 }, "note": "TS=lightViewProjection；Rust=legacy[4..7] light[0..3]" },
-    { "name": "eye", "rustName": "EYE", "type": "vec4", "ts": { "offset": 64 }, "rust": { "row": 8 }, "note": "TS=eye（C4 camera-relative 后为相机原点相关量）；Rust=legacy[8]" },
-    { "name": "lightDirection", "rustName": "LIGHT_DIRECTION", "type": "vec4", "ts": { "offset": 76 }, "rust": { "row": 11 }, "note": "TS=lightDirection；Rust=legacy[11] 太阳方向" },
-    { "name": "sunColor", "rustName": "SUN_COLOR", "type": "vec4", "ts": { "offset": 84 }, "rust": { "row": 13 }, "note": "TS=sunColor；Rust=legacy[13]（w=0 旧包固定灯光标记，v2 作者灯光=2）" }
+    {
+      "name": "viewProjection",
+      "rustName": "VIEW_PROJECTION",
+      "type": "mat4",
+      "ts": {
+        "offset": 0
+      },
+      "rust": {
+        "row": 0
+      },
+      "note": "TS=pipelines.ts:16 currentViewProjection；Rust=mesh_abi.rs frame_uniform legacy[0..3]",
+      "wgslName": "currentViewProjection"
+    },
+    {
+      "name": "lightViewProjection",
+      "rustName": "LIGHT_VIEW_PROJECTION",
+      "type": "mat4",
+      "ts": {
+        "offset": 48
+      },
+      "rust": {
+        "row": 4
+      },
+      "note": "TS=lightViewProjection；Rust=legacy[4..7] light[0..3]",
+      "wgslName": "light"
+    },
+    {
+      "name": "eye",
+      "rustName": "EYE",
+      "type": "vec4",
+      "ts": {
+        "offset": 64
+      },
+      "rust": {
+        "row": 8
+      },
+      "note": "TS=eye（C4 camera-relative 后为相机原点相关量）；Rust=legacy[8]"
+    },
+    {
+      "name": "lightDirection",
+      "rustName": "LIGHT_DIRECTION",
+      "type": "vec4",
+      "ts": {
+        "offset": 76
+      },
+      "rust": {
+        "row": 11
+      },
+      "note": "TS=lightDirection；Rust=legacy[11] 太阳方向"
+    },
+    {
+      "name": "sunColor",
+      "rustName": "SUN_COLOR",
+      "type": "vec4",
+      "ts": {
+        "offset": 84
+      },
+      "rust": {
+        "row": 13
+      },
+      "note": "TS=sunColor；Rust=legacy[13]（w=0 旧包固定灯光标记，v2 作者灯光=2）"
+    }
   ],
   "tsBand": {
     "floats": 96,
     "fields": [
-      { "name": "previousViewProjection", "type": "mat4", "offset": 16, "note": "运动矢量用上一帧 VP；Rust native 无对应（无时间重投影）" },
-      { "name": "worldToView", "type": "mat4", "offset": 32, "note": "世界→视空间；Rust native 无对应" },
-      { "name": "background", "type": "vec4", "offset": 68, "note": "背景色/模式" },
-      { "name": "floor", "type": "vec4", "offset": 72, "note": "地面参数" },
-      { "name": "tuning", "type": "vec4", "offset": 80, "note": "调参向量" },
-      { "name": "output", "type": "vec4x2", "offset": 88, "note": "DeepOutputSettings（pbrDisplayColorWgsl.ts:2）：曝光/vignette/tonemap + 调色 temp/tint/contrast/saturation（pbrFrameUniforms.ts:85-89）" }
+      {
+        "name": "previousViewProjection",
+        "type": "mat4",
+        "offset": 16,
+        "note": "运动矢量用上一帧 VP；Rust native 无对应（无时间重投影）"
+      },
+      {
+        "name": "worldToView",
+        "type": "mat4",
+        "offset": 32,
+        "note": "世界→视空间；Rust native 无对应"
+      },
+      {
+        "name": "background",
+        "type": "vec4",
+        "offset": 68,
+        "note": "背景色/模式"
+      },
+      {
+        "name": "floor",
+        "type": "vec4",
+        "offset": 72,
+        "note": "地面参数"
+      },
+      {
+        "name": "tuning",
+        "type": "vec4",
+        "offset": 80,
+        "note": "调参向量"
+      },
+      {
+        "name": "output",
+        "type": "vec4x2",
+        "wgslType": "DeepOutputSettings",
+        "offset": 88,
+        "note": "DeepOutputSettings（pbrDisplayColorWgsl.ts:2，宿主模板先于 Frame 定义）：曝光/vignette/tonemap + 调色 temp/tint/contrast/saturation（pbrFrameUniforms.ts:85-89）"
+      }
     ]
   },
   "rustBand": {
     "rows": 149,
     "fields": [
-      { "name": "legacySceneRows", "rustName": "LEGACY_SCENE_ROWS", "type": "rows2", "row": 9, "note": "legacy[9]=[0.012,0.020,0.035,1.0]、legacy[10]=[0,0,0,1]——演示口径遗留行，语义未与 TS 对齐，只记录不声明同义" },
-      { "name": "legacyZeroRow", "rustName": "LEGACY_ZERO_ROW", "type": "vec4", "row": 12, "note": "legacy[12]=[0;4] 全零保留行（mesh_abi.rs:119）" },
-      { "name": "exposureShadowEnabled", "rustName": "EXPOSURE_SHADOW_ENABLED", "type": "vec4", "row": 14, "note": "legacy[14]=[exposure, shadowEnabled, 0, 0]（mesh_abi.rs:121-122）" },
-      { "name": "localLights", "rustName": "LOCAL_LIGHTS", "type": "block", "row": 15, "rows": 64, "count": 16, "perItemRows": 4, "note": "灯 i 起 15+i*4；第 4 行 18+i*4 为阴影记账：[2]=castShadow 槽位、[3]=near*far/(far-near)（scene_lighting.rs:67,80,87）" },
-      { "name": "localShadowViews", "rustName": "LOCAL_SHADOW_VIEWS", "type": "block", "row": 79, "rows": 64, "count": 16, "perItemRows": 4, "note": "16 阴影视图矩阵" },
-      { "name": "fogProjection", "rustName": "FOG_PROJECTION_ROW", "type": "vec4", "row": 143, "note": "雾投影（2288B 断言 mesh_abi.rs:209）；构造默认 [near,far,0,0]" },
-      { "name": "localShadowSoftness", "rustName": "LOCAL_SOFTNESS_ROW", "type": "scalars16", "row": 144, "note": "16 灯软度标量（2304B 断言 mesh_abi.rs:210）" },
-      { "name": "fogProfile", "rustName": "FOG_PROFILE_ROW", "type": "vec4", "row": 148, "note": "雾剖面" }
+      {
+        "name": "legacySceneRows",
+        "rustName": "LEGACY_SCENE_ROWS",
+        "type": "rows2",
+        "row": 9,
+        "note": "legacy[9]=[0.012,0.020,0.035,1.0]、legacy[10]=[0,0,0,1]——演示口径遗留行，语义未与 TS 对齐，只记录不声明同义"
+      },
+      {
+        "name": "legacyZeroRow",
+        "rustName": "LEGACY_ZERO_ROW",
+        "type": "vec4",
+        "row": 12,
+        "note": "legacy[12]=[0;4] 全零保留行（mesh_abi.rs:119）"
+      },
+      {
+        "name": "exposureShadowEnabled",
+        "rustName": "EXPOSURE_SHADOW_ENABLED",
+        "type": "vec4",
+        "row": 14,
+        "note": "legacy[14]=[exposure, shadowEnabled, 0, 0]（mesh_abi.rs:121-122）"
+      },
+      {
+        "name": "localLights",
+        "rustName": "LOCAL_LIGHTS",
+        "type": "block",
+        "row": 15,
+        "rows": 64,
+        "count": 16,
+        "perItemRows": 4,
+        "note": "灯 i 起 15+i*4；第 4 行 18+i*4 为阴影记账：[2]=castShadow 槽位、[3]=near*far/(far-near)（scene_lighting.rs:67,80,87）"
+      },
+      {
+        "name": "localShadowViews",
+        "rustName": "LOCAL_SHADOW_VIEWS",
+        "type": "block",
+        "row": 79,
+        "rows": 64,
+        "count": 16,
+        "perItemRows": 4,
+        "note": "16 阴影视图矩阵"
+      },
+      {
+        "name": "fogProjection",
+        "rustName": "FOG_PROJECTION_ROW",
+        "type": "vec4",
+        "row": 143,
+        "note": "雾投影（2288B 断言 mesh_abi.rs:209）；构造默认 [near,far,0,0]"
+      },
+      {
+        "name": "localShadowSoftness",
+        "rustName": "LOCAL_SOFTNESS_ROW",
+        "type": "scalars16",
+        "row": 144,
+        "note": "16 灯软度标量（2304B 断言 mesh_abi.rs:210）"
+      },
+      {
+        "name": "fogProfile",
+        "rustName": "FOG_PROFILE_ROW",
+        "type": "vec4",
+        "row": 148,
+        "note": "雾剖面"
+      }
     ]
   },
   "byteOffsets": {
-    "rust": { "members": [0, 64, 128, 144, 160, 176, 192], "note": "FRAME_MEMBER_BYTE_OFFSETS（mesh_abi.rs:31）：rows{0-3,4-7,8,9,10,11,12-14}" }
+    "rust": {
+      "members": [
+        0,
+        64,
+        128,
+        144,
+        160,
+        176,
+        192
+      ],
+      "note": "FRAME_MEMBER_BYTE_OFFSETS（mesh_abi.rs:31）：rows{0-3,4-7,8,9,10,11,12-14}"
+    }
   }
 }

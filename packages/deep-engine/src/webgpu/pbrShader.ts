@@ -9,6 +9,9 @@ import { WEIGHTED_OIT_FRAGMENT_WGSL } from "./weightedOitWgsl.js";
 import { composeForwardPlusPbrShader } from "../lighting/clusterLightingPbrWgsl.js";
 import { PROBE_CLIPMAP_TEXTURE_SAMPLING_WGSL } from "../lighting/probeClipmapTextureSamplingWgsl.js";
 import { CASCADED_SHADOW_WGSL } from "../shadows/cascadedShadowShader.js";
+// J2-B7-migrate：Frame struct 单源生成文本（schema wgslName 钉宿主表面名，DeepOutputSettings
+// 由 PBR_DISPLAY_COLOR_WGSL 先于本段定义）。
+import { FRAME_STRUCTS_WGSL } from "../frameAbi/generated/frameStructsWgsl.js";
 export { outputShader } from "./pbrOutputShader.js";
 
 /** 自研验证管线：GGX / Smith / Schlick，线性 HDR，中间过程不做显示编码。 */
@@ -17,12 +20,7 @@ ${WEIGHTED_OIT_FRAGMENT_WGSL}
 ${PBR_DISPLAY_COLOR_WGSL}
 ${PBR_FOG_WGSL}
 ${PROBE_CLIPMAP_TEXTURE_SAMPLING_WGSL}
-struct Frame {
-  currentViewProjection: mat4x4f, previousViewProjection: mat4x4f,
-  worldToView: mat4x4f, light: mat4x4f,
-  eye: vec4f, background: vec4f, floor: vec4f, lightDirection: vec4f, tuning: vec4f, sunColor: vec4f,
-  output: DeepOutputSettings,
-};
+${FRAME_STRUCTS_WGSL}
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(1) var shadowMap: texture_depth_2d;
 @group(0) @binding(2) var shadowSampler: sampler_comparison;
