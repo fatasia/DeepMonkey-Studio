@@ -10,5 +10,10 @@ export { createSoftBodyRuntimeSession, SoftBodyBudgetError, SOFT_BODY_BUDGETS,
   type SoftBodyRuntimeSession } from "./softBodyRuntimeHost.js";
 export { dispatchClothGpuStep, dispatchSoftBodyGpuStep,
   type ClothGpuDispatchResult, type SoftBodyGpuDispatchResult } from "./softBodyGpuDispatch.js";
+export { dispatchClothParallelGpuStep, dispatchClothStepAuto, clothParallelDispatchCount,
+  ClothParallelDispatchError, snapshotClothKernelSwitchTelemetry, resetClothKernelSwitchTelemetry,
+  type ClothParallelDispatchResult, type ClothKernelChoice, type ClothKernelUsed,
+  type ClothKernelFallbackReason, type ClothKernelSwitchResult,
+  type ClothKernelSwitchTelemetry } from "./softBodyGpuDispatch.clothParallel.js";
 export { assertFinite, fingerprintFloat64, replayFromStep, runTicks,
   type FixedStepSim, type Vec3 } from "./physicsTypes.js";
