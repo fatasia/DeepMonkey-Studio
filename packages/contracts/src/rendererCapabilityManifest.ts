@@ -502,6 +502,19 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
       evidence: "packages/deep-engine-native/src/app/recovery.rs(native 宿主自身的恢复消费已在 device-recovery 行登记;Studio WebGPU 桥消费策略按设计属 web 宿主专属)",
     },
   },
+  {
+    id: "atmosphere-sky",
+    title: "物理大气散射天空(Bruneton 类预计算表,opt-in)",
+    webFeatureKeys: [],
+    web: {
+      support: "supported", reason: "opt-in-default-off",
+      evidence: "packages/deep-engine/src/environment/atmosphereSkyGate.ts:resolveAtmosphereSkyMode(fail-closed 门,默认 neutral;atmosphereSky.ts 预计算表采样+equirect 环境图走 radiance-hdr 权威 IBL 链能量链零改动;quality 档映射 atmosphereSkyPresetForQuality)",
+    },
+    native: {
+      support: "unavailable", reason: "absent",
+      evidence: "packages/deep-engine-native/src/lib.rs(native 直出光栅化无环境源通路,无大气散射模块;天空源按设计属 web PbrRenderer 的 radiance-hdr/studio 环境)",
+    },
+  },
 ] as const);
 
 /** 能力 id 单源冻结数组(结构先例:pbrTimedPassIds.PBR_TIMED_PASS_IDS)。 */

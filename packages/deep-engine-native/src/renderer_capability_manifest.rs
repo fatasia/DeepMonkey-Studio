@@ -322,6 +322,12 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         reason: RendererCapabilityReasonCode::HostSpecific,
         evidence: "app::recovery 宿主恢复消费已在 device-recovery 行登记;Studio WebGPU 桥消费策略属 web 宿主专属",
     },
+    NativeCapabilitySelfCheck {
+        capability_id: "atmosphere-sky",
+        support: RendererCapabilitySupport::Unavailable,
+        reason: RendererCapabilityReasonCode::Absent,
+        evidence: "无大气散射/环境源模块(native 直出光栅化;天空源按设计属 web PbrRenderer 的 radiance-hdr/studio 环境)",
+    },
 ];
 
 #[cfg(test)]

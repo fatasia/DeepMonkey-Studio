@@ -236,6 +236,12 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
     capabilityId: "device-recovery-bridge", support: "supported", reason: "opt-in-default-off",
     observed: {},
   },
+  {
+    // I-C6 物理大气散射天空：opt-in 默认关（neutral），fail-closed 门为配置边界；
+    // 观测面 = 预计算表指纹（漂移由 atmosphereSky.test.ts 自钉断言守，此处不重复）。
+    capabilityId: "atmosphere-sky", support: "supported", reason: "opt-in-default-off",
+    observed: { defaultMode: "neutral", qualityTierMode: "atmosphere" },
+  },
 ]);
 
 // ---- 加载期漂移守卫(结构先例:probeRadianceDirectionGate 的容量 fail-fast) ----
