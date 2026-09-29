@@ -17,6 +17,14 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
     throw new TypeError("Deep WebGPU deformation option must be boolean.");
   }
   if (options.meshlets !== undefined && typeof options.meshlets !== "boolean") throw new TypeError("Deep WebGPU meshlets option must be boolean.");
+  // C13 recovery：对象形态校验（非对象 spread 会静默吞成空对象穿透快照）；now 为时钟注入，不经快照。
+  if (options.recovery !== undefined
+    && (typeof options.recovery !== "object" || Array.isArray(options.recovery) || options.recovery === null
+      || (options.recovery.maxAttempts !== undefined && (typeof options.recovery.maxAttempts !== "number" || !Number.isInteger(options.recovery.maxAttempts) || options.recovery.maxAttempts < 1))
+      || (options.recovery.backoffMs !== undefined && (typeof options.recovery.backoffMs !== "number" || !Number.isFinite(options.recovery.backoffMs) || options.recovery.backoffMs < 0))
+      || (options.recovery.maxBackoffMs !== undefined && (typeof options.recovery.maxBackoffMs !== "number" || !Number.isFinite(options.recovery.maxBackoffMs) || options.recovery.maxBackoffMs < 0)))) {
+    throw new TypeError("Deep WebGPU recovery option must be an object with non-negative numeric maxAttempts/backoffMs/maxBackoffMs.");
+  }
   if (options.clusterLod !== undefined && typeof options.clusterLod !== "boolean") {
     throw new TypeError("Deep WebGPU clusterLod option must be boolean.");
   }
@@ -47,7 +55,8 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
     // F4 虚拟纹理采样接线（opt-in）：缺省不进快照；显式配置冻结快照供首屏一致性校验。
     ...(options.virtualTextures === undefined ? {} : { virtualTextures: Object.freeze({ ...options.virtualTextures }) }),
     // C13 typed device recovery（opt-in）：缺省不进快照，保持旧行为。
-    ...(options.recovery === undefined ? {} : { recovery: Object.freeze({ ...options.recovery }) }),
+    ...(options.recovery === undefined ? {} : { recovery: Object.freeze({ ...options.recovery,
+      now: undefined }) }),
   });
 }
 

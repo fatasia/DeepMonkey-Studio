@@ -209,4 +209,47 @@ describe("DeepWebGpuBackend creation", () => {
     expect(supplied.pipelines!.deferDeformation).toBe(true);
   });
 
+  it.each([true, false])("snapshots the C13 recovery option %s", async recovery => {
+    const target = runtime(), createRuntime = vi.fn(async () => target);
+    const renderer = { recovery: recovery ? { maxAttempts: 3 } : undefined };
+    const pending = DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
+      projection: bridge(), root: mesh(), view, renderer }, { create: createRuntime });
+    renderer.recovery = recovery ? undefined : { maxAttempts: 3 };
+    const backend = await pending;
+    const supplied = createRuntime.mock.calls[0]![3]!;
+    if (recovery) {
+      expect(supplied.recovery).toEqual({ maxAttempts: 3 });
+      expect(Object.isFrozen(supplied.recovery)).toBe(true);
+    } else {
+      expect(supplied.recovery).toBeUndefined();
+    }
+    backend.dispose();
+  });
+  it.each([null, 0, "3", [], { maxAttempts: 0 }, { backoffMs: -1 }])("rejects malformed C13 recovery %j before creating a runtime", async recovery => {
+    const createRuntime = vi.fn(async () => runtime());
+    await expect(DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
+      projection: bridge(), root: mesh(), view, renderer: { recovery } as never }, { create: createRuntime }))
+      .rejects.toThrow();
+    expect(createRuntime).not.toHaveBeenCalled();
+  });
+
+  it("exposes session recovery hooks and tolerates their absence (C13)", async () => {
+    const listeners: ((epoch: number) => void)[] = [];
+    const target = runtime();
+    (target as unknown as { session: unknown }).session = {
+      onDeviceRecreated: (listener: (epoch: number) => void) => { listeners.push(listener); return () => {}; },
+    };
+    const backend = await DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
+      projection: bridge(), root: mesh(), view }, { create: vi.fn(async () => target) });
+    const unsubscribe = backend.onDeviceRecreated(() => {});
+    expect(listeners).toHaveLength(1);
+    unsubscribe();
+    backend.onFatalLoss(() => {});
+    const bare = await DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
+      projection: bridge(), root: mesh(), view }, { create: vi.fn(async () => ({ ...target, session: undefined })) });
+    expect(bare.onDeviceRecreated(() => {})).toBeTypeOf("function");
+    expect(bare.onFatalLoss(() => {})).toBeTypeOf("function");
+    bare.dispose(); backend.dispose();
+  });
+
 });
