@@ -24,6 +24,8 @@ import { useAssistantSessions } from "../ai/useAssistantSessions";
 import { useAssistantChatRun } from "../ai/useAssistantChatRun";
 import { AiAssistantSessionControls } from "./AiAssistantSessionControls";
 import { AiContextDisclosure } from "./AiContextDisclosure";
+import { AiMemoryPanel } from "./AiMemoryPanel";
+import { AiProvenancePanel } from "./AiProvenancePanel";
 import { BimAssistantEvidence, type BimAssistantAction } from "./BimAssistantEvidence";
 import { IndustrialAgentWorkspace } from "./IndustrialAgentWorkspace";
 import "./AiAssistantReliability.css";
@@ -248,6 +250,9 @@ export function AiAssistantPanel({
           sources={effectiveSources}
           loading={!platformLoaded && !projectMissing}
         />
+        {/* K14 面板常驻：chat 侧补齐记忆与实验档案折叠行（与 agent start 视图同构，M0 族）。 */}
+        {projectId && <AiMemoryPanel locale={locale} projectId={projectId} />}
+        {projectId && <AiProvenancePanel locale={locale} projectId={projectId} />}
         {mode === "sql" && projectId && <AskDataQuickQuery projectId={projectId} datasets={datasets} locale={locale} />}
         {conversation.length === 0 && !answer && !busy && !error && mode !== "sql" && (
           <div className="ai-assistant-empty">

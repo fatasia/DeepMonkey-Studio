@@ -6,3 +6,8 @@
 .ai-session-controls button:focus-visible, .ai-session-controls select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ai-session-controls [role="alert"] { width: 100%; color: var(--danger); overflow-wrap: anywhere; }
 .ai-session-controls [role="alert"] span { display: block; margin-bottom: 8px; }
+/* K12 多标签页同步提示行：external 为中性状态提示，conflict 为语义化冲突告警。 */
+.ai-session-controls [role="status"].ai-session-external { width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text-muted); font-size: 11px; overflow-wrap: anywhere; }
+.ai-session-controls [role="status"].ai-session-external span { flex: 1 1 200px; }
+.ai-session-controls [role="alert"].ai-session-conflict { width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--danger); font-size: 11px; overflow-wrap: anywhere; border: 1px solid var(--danger); border-radius: 6px; padding: 8px; }
+.ai-session-controls [role="alert"].ai-session-conflict span { flex: 1 1 200px; margin-bottom: 0; }

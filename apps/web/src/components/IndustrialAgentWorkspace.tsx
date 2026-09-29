@@ -366,6 +366,11 @@ export function IndustrialAgentRunView(props: {
         <em>{agentProgress(checkpoint)}%</em>
       </header>
       <div className="industrial-agent-progress"><i style={{ width: `${agentProgress(checkpoint)}%` }} /></div>
+      {/* K14 面板常驻：运行中同样可见记忆与档案（start 视图同款折叠行，默认收起不抢进度视觉）。 */}
+      {props.projectId && <div className="industrial-agent-context">
+        <AiMemoryPanel locale={props.locale} projectId={props.projectId} />
+        <AiProvenancePanel locale={props.locale} projectId={props.projectId} />
+      </div>}
       <dl className="industrial-agent-metrics">
         <div><dt>{t("决策步骤", "Steps")}</dt><dd>{checkpoint.usage.steps} / {checkpoint.budget.maxSteps}</dd></div>
         <div><dt>{t("工具调用", "Tool calls")}</dt><dd>{checkpoint.usage.toolCalls} / {checkpoint.budget.maxToolCalls}</dd></div>

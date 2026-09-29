@@ -64,4 +64,29 @@ describe("AiAssistantPanel", () => {
     expect(html).toContain("会话思考档位");
     expect(html).toContain("向 AI 助手提问");
   });
+
+  it("mounts the memory and provenance panels in the chat view as collapsible rows (K14)", () => {
+    const html = renderToStaticMarkup(
+      <AiAssistantPanel
+        locale="zh-CN"
+        projectId="project-1"
+        surface="studio"
+        context={{ project: { id: "project-1", name: "电池工厂" }, scene: { id: "scene-1", name: "模组线", modelCount: 4 } }}
+        onClose={vi.fn()}
+      />,
+    );
+    // chat 侧与 agent start 视图同构的两个折叠行（默认收起）。
+    expect(html).toContain('aria-label="项目记忆"');
+    expect(html).toContain('aria-label="实验档案"');
+    expect(html).not.toContain('aria-label="项目记忆" open');
+  });
+
+  it("keeps the memory and provenance panels out of the chat view when no project is selected (permission gate)", () => {
+    const html = renderToStaticMarkup(
+      <AiAssistantPanel locale="zh-CN" projectId={undefined} surface="studio"
+        context={{ project: { name: "未选项目" } }} onClose={vi.fn()} />,
+    );
+    expect(html).not.toContain('aria-label="项目记忆"');
+    expect(html).not.toContain('aria-label="实验档案"');
+  });
 });

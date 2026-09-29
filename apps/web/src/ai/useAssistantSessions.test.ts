@@ -15,10 +15,11 @@ vi.mock("react", () => ({
 }));
 import { useAssistantSessions } from "./useAssistantSessions";
 const session = { id: "s", title: "会话", messageCount: 2 };
+const channels: Array<{ onmessage: ((event: { data: string }) => void) | null }> = [];
 function render(project = "p", scope = "scene") { h.cursor = 0; const result = useAssistantSessions(project, scope); h.effects.splice(0).forEach(effect => effect()); return result; }
 async function flush() { for (let index = 0; index < 30; index++) await Promise.resolve(); }
 beforeEach(() => {
-  h.cells = []; h.effects = []; h.cleanups = []; vi.resetAllMocks(); vi.stubGlobal("window", new EventTarget());
+  h.cells = []; h.effects = []; h.cleanups = []; channels.length = 0; vi.resetAllMocks(); vi.stubGlobal("window", new EventTarget());
   h.me.mockResolvedValue({ id: "u1" }); h.list.mockResolvedValue({ items: [session] }); h.messages.mockResolvedValue({ messages: [], session });
 });
 afterEach(() => { h.cleanups.forEach(cleanup => cleanup?.()); vi.unstubAllGlobals(); });
@@ -74,5 +75,62 @@ describe("assistant session restoration", () => {
     complete({ session, messages: [{ id: "late", question: "旧问题", answer: "旧答案", mode: "scene", status: "completed" }] });
     await flush();
     expect(render().conversation).toEqual([]); expect(render().sessionId).toBe("");
+  });
+});
+
+describe("assistant session cross-tab sync (K12)", () => {
+  it("surfaces a labeled conflict instead of a generic error when a save hits a cross-tab 409", async () => {
+    h.save.mockRejectedValue(Object.assign(new Error("该消息已被其他窗口更新，请刷新获取最新状态"), { status: 409, body: { code: "message-version-conflict" } }));
+    render(); await flush();
+    const saved = await render().begin({ question: "问", answer: "", mode: "scene", status: "streaming" });
+    await expect(saved?.writer.flush()).rejects.toMatchObject({ status: 409 });
+    const state = render();
+    expect(state.conflict).toBe(true);
+    expect(state.error).toBe("");
+  });
+  it("keeps plain save failures on the retryable error line instead of the conflict banner", async () => {
+    h.save.mockRejectedValue(new Error("offline"));
+    render(); await flush();
+    const saved = await render().begin({ question: "问", answer: "", mode: "scene", status: "streaming" });
+    await expect(saved?.writer.flush()).rejects.toThrow("offline");
+    const state = render();
+    expect(state.conflict).toBe(false);
+    expect(state.error).toContain("会话保存失败");
+  });
+  it("clears the conflict flag when the conversation is reloaded", async () => {
+    h.save.mockRejectedValue(Object.assign(new Error("conflict"), { status: 409, body: {} }));
+    render(); await flush();
+    const saved = await render().begin({ question: "问", answer: "", mode: "scene", status: "streaming" });
+    await expect(saved?.writer.flush()).rejects.toThrow();
+    expect(render().conflict).toBe(true);
+    await render().refresh();
+    await flush();
+    expect(render().conflict).toBe(false);
+  });
+  it("marks the conversation as externally updated for other tabs' writes and ignores its own broadcasts", async () => {
+    const received: string[] = [];
+    class FakeChannel {
+      onmessage: ((event: { data: string }) => void) | null = null;
+      constructor(public name: string) { channels.push(this); }
+      postMessage(raw: string) { received.push(raw); }
+      close() { /* 测试无资源 */ }
+    }
+    vi.stubGlobal("BroadcastChannel", FakeChannel);
+    render(); await flush();
+    const hook = render();
+    const saved = await hook.begin({ question: "问", answer: "", mode: "scene", status: "streaming" });
+    await saved?.writer.flush();
+    const channel = channels.at(-1)!;
+    // 自己的广播回环被忽略（真实 BroadcastChannel 不回环，这里显式验证 tab 去重）。
+    expect(received.length).toBeGreaterThan(0);
+    channel.onmessage?.({ data: received[0]! });
+    expect(render().externalSessionId).toBeUndefined();
+    // 其他标签页同项目同作用域的写入 → 标记可载入。
+    const own = JSON.parse(received[0]!) as { tab: string; session: string };
+    channel.onmessage?.({ data: JSON.stringify({ ...own, tab: "other-tab" }) });
+    expect(render().externalSessionId).toBe(own.session);
+    // 项目或作用域不匹配的广播被丢弃。
+    channel.onmessage?.({ data: JSON.stringify({ tab: "other-tab", project: "elsewhere", scope: "scene", session: "s2" }) });
+    expect(render().externalSessionId).toBe(own.session);
   });
 });

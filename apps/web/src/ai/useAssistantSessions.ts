@@ -4,6 +4,17 @@ import { api } from "../api";
 import type { AssistantConversationItem } from "../components/AiAssistantMessages";
 import { AssistantSessionWriter } from "./assistantSessionWriter";
 
+/** K12 跨标签页同步频道：写方广播自己保存的会话，读方标记"在其他窗口有更新"。 */
+const SYNC_CHANNEL = "bim-studio:assistant-sessions";
+const SYNC_STORAGE_KEY = "bim-studio:assistant-sessions:sync";
+interface SessionSyncPayload { tab: string; project: string; scope: string; session: string }
+function isVersionConflict(reason: unknown): boolean {
+  const candidate = reason as { status?: unknown; body?: { code?: unknown } } | null | undefined;
+  if (!candidate || typeof candidate !== "object") return false;
+  if (candidate.body && typeof candidate.body === "object" && candidate.body.code === "message-version-conflict") return true;
+  return candidate.status === 409;
+}
+
 export function useAssistantSessions(projectId: string | undefined, scopeKey: string) {
   const [sessions, setSessions] = useState<AiSessionSummary[]>([]);
   const [sessionId, setSessionId] = useState("");
@@ -12,23 +23,28 @@ export function useAssistantSessions(projectId: string | undefined, scopeKey: st
   const [error, setError] = useState("");
   const [cursor, setCursor] = useState<string>();
   const [authRevision, setAuthRevision] = useState(0);
+  // K12：conflict=保存遇到另一标签页写入（409），external=收到其他窗口的保存广播。
+  const [conflict, setConflict] = useState(false);
+  const [externalSessionId, setExternalSessionId] = useState<string>();
   const generation = useRef(0);
   const identity = useRef("");
   const activeId = useRef("");
   const owner = useRef("");
   const pendingCreate = useRef<{ id: string; title: string } | undefined>(undefined);
   const writers = useRef(new Set<AssistantSessionWriter>());
+  const tabId = useRef(crypto.randomUUID());
+  const channel = useRef<BroadcastChannel | undefined>(undefined);
   const key = JSON.stringify([projectId, scopeKey, authRevision]);
   identity.current = key;
   const current = (expected: string, version: number) => identity.current === expected && generation.current === version;
   function newSession() {
     pendingCreate.current = undefined;
-    generation.current++; activeId.current = ""; setSessionId(""); setConversation([]); setLoading(false); setError("");
+    generation.current++; activeId.current = ""; setSessionId(""); setConversation([]); setLoading(false); setError(""); setConflict(false); setExternalSessionId(undefined);
   }
   async function select(id: string) {
     if (!projectId) return;
     const expected = key, version = ++generation.current;
-    setLoading(true); setError("");
+    setLoading(true); setError(""); setConflict(false); setExternalSessionId(undefined);
     try {
       let after: string | undefined; const messages: AssistantConversationItem[] = [];
       do {
@@ -46,7 +62,7 @@ export function useAssistantSessions(projectId: string | undefined, scopeKey: st
   async function refresh(more = false) {
     if (!projectId) return;
     const expected = key, version = generation.current;
-    setError("");
+    setError(""); setConflict(false); setExternalSessionId(undefined);
     try {
       const user = await api.me();
       if (!current(expected, version)) return;
@@ -67,6 +83,7 @@ export function useAssistantSessions(projectId: string | undefined, scopeKey: st
   useEffect(() => {
     const expected = key, version = ++generation.current;
     activeId.current = ""; pendingCreate.current = undefined; writers.current.clear(); setCursor(undefined); setSessionId(""); setConversation([]); setSessions([]); setError(""); owner.current = "";
+    setConflict(false); setExternalSessionId(undefined);
     if (!projectId) { setLoading(false); return; }
     setLoading(true);
     void (async () => {
@@ -83,6 +100,29 @@ export function useAssistantSessions(projectId: string | undefined, scopeKey: st
     })();
     return () => { generation.current++; };
   }, [key]);
+  // K12 多标签页同步：BroadcastChannel 主通道 + storage 事件兜底，收到其他窗口的保存广播后标记会话为可载入更新。
+  useEffect(() => {
+    if (!projectId) return;
+    const accept = (raw: string) => {
+      try {
+        const data = JSON.parse(raw) as Partial<SessionSyncPayload>;
+        if (!data || data.tab === tabId.current || data.project !== projectId || data.scope !== scopeKey || typeof data.session !== "string") return;
+        setExternalSessionId(data.session);
+      } catch { /* 无法解析的广播按噪声忽略。 */ }
+    };
+    const notify = (payload: SessionSyncPayload) => {
+      const raw = JSON.stringify(payload);
+      try { channel.current?.postMessage(raw); } catch { /* 通道关闭时靠 storage 兜底。 */ }
+      try { window.localStorage.setItem(SYNC_STORAGE_KEY, raw); } catch { /* storage 不可用时放弃兜底通道。 */ }
+    };
+    if (typeof BroadcastChannel === "function") {
+      channel.current = new BroadcastChannel(SYNC_CHANNEL);
+      channel.current.onmessage = event => accept(String(event.data));
+    }
+    const onStorage = (event: StorageEvent) => { if (event.key === SYNC_STORAGE_KEY && event.newValue) accept(event.newValue); };
+    window.addEventListener("storage", onStorage);
+    return () => { channel.current?.close(); channel.current = undefined; window.removeEventListener("storage", onStorage); };
+  }, [key]);
   async function begin(snapshot: Omit<AiSessionMessageInput, "sequence">) {
     if (!projectId) return undefined;
     const expected = key, version = generation.current;
@@ -97,18 +137,35 @@ export function useAssistantSessions(projectId: string | undefined, scopeKey: st
       activeId.current = id; setSessionId(id); setSessions(previous => [created, ...previous]);
       pendingCreate.current = undefined;
     }
-    const capturedOwner = user.id, message = crypto.randomUUID(), session = id;
+    const capturedOwner = user.id, message = crypto.randomUUID(), session = id, project = projectId;
+    // K12 条件写版本：writer 每次保存成功后记录服务端返回的 updatedAt，下一拍作为 If-Match 回传防静默覆盖。
+    const serverVersion = { current: undefined as string | undefined };
     const writer = new AssistantSessionWriter(async input => {
       if ((await api.me()).id !== capturedOwner) throw new Error("用户已切换，旧会话保存已停止");
-      return api.saveAssistantSessionMessage(projectId, session, message, input);
-    }, reason => { if (identity.current === expected) setError(`会话保存失败：${String(reason)}`); });
+      const saved = await api.saveAssistantSessionMessage(project, session, message, input, serverVersion.current);
+      if (saved && typeof saved.updatedAt === "string") serverVersion.current = saved.updatedAt;
+      notifySessionWritten({ tab: tabId.current, project, scope: scopeKey, session });
+      return saved;
+    }, reason => {
+      if (identity.current !== expected) return;
+      if (isVersionConflict(reason)) setConflict(true);
+      else setError(`会话保存失败：${reason instanceof Error ? reason.message : String(reason)}`);
+    });
     writers.current.add(writer); writer.update(snapshot);
     return { writer, message, isCurrent: () => current(expected, version) };
+  }
+  function notifySessionWritten(payload: SessionSyncPayload) {
+    const raw = JSON.stringify(payload);
+    try { channel.current?.postMessage(raw); } catch { /* 通道关闭时靠 storage 兜底。 */ }
+    try { window.localStorage.setItem(SYNC_STORAGE_KEY, raw); } catch { /* storage 不可用时放弃兜底通道。 */ }
   }
   async function retrySave() {
     setError("");
     try { await Promise.all([...writers.current].map(writer => writer.flush())); }
-    catch (reason) { setError(`会话保存失败：${String(reason)}`); }
+    catch (reason) {
+      if (isVersionConflict(reason)) setConflict(true);
+      else setError(`会话保存失败：${reason instanceof Error ? reason.message : String(reason)}`);
+    }
   }
-  return { identity: key, sessions, sessionId, conversation, setConversation, loading, error, cursor, select, refresh, newSession, begin, retrySave };
+  return { identity: key, sessions, sessionId, conversation, setConversation, loading, error, cursor, conflict, externalSessionId, select, refresh, newSession, begin, retrySave };
 }

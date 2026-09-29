@@ -265,3 +265,7 @@
   --agent-danger: #a33742;
   --agent-info: #315e8c;
 }
+
+/* K14 面板常驻：运行视图内记忆/档案折叠行容器（折叠行本体样式复用 AiHarnessCards 的 ai-context-disclosure）。 */
+.industrial-agent-context { display: grid; gap: 8px; }
+.industrial-agent-context > .ai-context-disclosure { margin-bottom: 0; }

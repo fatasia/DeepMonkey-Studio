@@ -1,37 +1,51 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { AiContextDelivery, AiSessionMessageInput, AiSessionReliability } from "@bim-studio/contracts";
-import { AssistantSessionError, AssistantSessionStore } from "./assistantSessionStore.js";
+import { AssistantSessionError, AssistantSessionStore, messageEtag, sessionEtag } from "./assistantSessionStore.js";
 
 const ROOT = "/api/projects/:projectId/ai/assistant-sessions";
 const modes = ["platform", "operations", "vision", "bim", "scene", "component", "dashboard", "sql"];
 export async function registerAssistantSessionRoutes(app: FastifyInstance, store: AssistantSessionStore, projectExists: (id: string) => boolean) {
-  const handler = (action: (request: FastifyRequest, owner: string, project: string, params: Record<string, string>) => unknown) => async (request: FastifyRequest, reply: import("fastify").FastifyReply) => {
+  const handler = (action: (request: FastifyRequest, owner: string, project: string, params: Record<string, string>, reply: import("fastify").FastifyReply) => unknown) => async (request: FastifyRequest, reply: import("fastify").FastifyReply) => {
     reply.header("cache-control", "private, no-store");
     try {
       const user = request.systemUser;
-      if (!user) throw new AssistantSessionError(401, "请先登录");
+      if (!user) throw new AssistantSessionError(401, "请先登录", "unauthorized");
       const params = request.params as Record<string, string>;
       const project = params.projectId!;
-      if (user.role !== "admin" && !user.projectIds.includes(project)) throw new AssistantSessionError(403, "没有该项目的访问权限");
-      if (!projectExists(project)) throw new AssistantSessionError(404, "项目不存在");
+      if (user.role !== "admin" && !user.projectIds.includes(project)) throw new AssistantSessionError(403, "没有该项目的访问权限", "forbidden");
+      if (!projectExists(project)) throw new AssistantSessionError(404, "项目不存在", "project-not-found");
       if (params.sessionId) id(params.sessionId);
       if (params.messageId) id(params.messageId);
-      return await action(request, user.id, project, params);
+      return await action(request, user.id, project, params, reply);
     } catch (error) {
-      if (error instanceof AssistantSessionError) return reply.code(error.status).send({ message: error.message });
+      // K12 语义化冲突：409 响应体携带 code（message-version-conflict 等），客户端据此提示"另一标签页已更新"。
+      if (error instanceof AssistantSessionError) return reply.code(error.status).send({ message: error.message, ...(error.code ? { code: error.code } : {}) });
       throw error;
     }
   };
   app.get(ROOT, handler((request, owner, project) => { const page = pagination(request.query); return store.list(owner, project, page.after, page.limit); }));
-  app.put(`${ROOT}/:sessionId`, handler((request, owner, project, params) => {
+  app.put(`${ROOT}/:sessionId`, handler((request, owner, project, params, reply) => {
     const body = record(request.body); const title = text(body.title, "标题", 120);
-    return store.create(owner, project, params.sessionId!, title);
+    return withEtag(reply, store.create(owner, project, params.sessionId!, title, ifMatch(request.headers["if-match"])), sessionEtag);
   }));
-  app.get(`${ROOT}/:sessionId/messages`, handler((request, owner, project, params) => {
-    const page = pagination(request.query); return store.messages(owner, project, params.sessionId!, page.after, page.limit);
+  app.get(`${ROOT}/:sessionId/messages`, handler(async (request, owner, project, params, reply) => {
+    const page = pagination(request.query);
+    const result = await store.messages(owner, project, params.sessionId!, page.after, page.limit);
+    reply.header("etag", sessionEtag(result.session));
+    return result;
   }));
-  app.put(`${ROOT}/:sessionId/messages/:messageId`, { bodyLimit: 512 * 1024 }, handler((request, owner, project, params) =>
-    store.putMessage(owner, project, params.sessionId!, params.messageId!, messageInput(request.body))));
+  app.put(`${ROOT}/:sessionId/messages/:messageId`, { bodyLimit: 512 * 1024 }, handler((request, owner, project, params, reply) =>
+    withEtag(reply, store.putMessage(owner, project, params.sessionId!, params.messageId!, messageInput(request.body), ifMatch(request.headers["if-match"])), messageEtag)));
+}
+/** 会话/消息当前版本以强 ETag 形式暴露，条件写用 If-Match 回传。 */
+async function withEtag<T>(reply: import("fastify").FastifyReply, pending: Promise<T>, etag: (value: T) => string) {
+  const saved = await pending;
+  reply.header("etag", etag(saved));
+  return saved;
+}
+function ifMatch(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  return value;
 }
 function record(input: unknown): Record<string, unknown> {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new AssistantSessionError(400, "请求必须为对象");

@@ -3,8 +3,9 @@ import path from "node:path";
 import type { AiSessionSummary, AiSessionMessage, AiSessionMessageInput } from "@bim-studio/contracts";
 
 interface Session extends AiSessionSummary { owner: string; messages: AiSessionMessage[] }
+/** K12 语义化冲突：错误响应体携带机器可读 code，客户端据此区分"另一标签页已更新"与普通失败。 */
 export class AssistantSessionError extends Error {
-  constructor(readonly status: number, message: string) { super(message); }
+  constructor(readonly status: number, message: string, readonly code?: string) { super(message); }
 }
 export class AssistantSessionStore {
   private sessions: Session[] = [];
@@ -36,30 +37,34 @@ export class AssistantSessionStore {
     const page = paginate(session.messages, after, limit);
     return structuredClone({ session: summary(session), messages: page.items, ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}) });
   }
-  create(owner: string, project: string, id: string, title: string): Promise<AiSessionSummary> {
+  create(owner: string, project: string, id: string, title: string, expectedVersion?: string): Promise<AiSessionSummary> {
     return this.mutate((sessions) => {
       const existing = sessions.find((session) => session.id === id);
       if (existing) {
         const found = this.require(sessions, owner, project, id);
-        if (found.title !== title) throw new AssistantSessionError(409, "会话 ID 已用于不同标题");
+        if (found.title !== title) throw new AssistantSessionError(409, "会话 ID 已用于不同标题", "session-title-conflict");
+        assertVersion(found.messageCount, expectedVersion, "session-version-conflict", "会话已在其他窗口更新，请刷新后重试");
         return summary(found);
       }
-      if (sessions.length >= 500 || sessions.filter((session) => session.owner === owner && session.projectId === project).length >= 50) throw new AssistantSessionError(429, "会话数量已达上限（每用户项目 50 个）");
+      if (sessions.length >= 500 || sessions.filter((session) => session.owner === owner && session.projectId === project).length >= 50) throw new AssistantSessionError(429, "会话数量已达上限（每用户项目 50 个）", "session-limit");
       const now = new Date().toISOString();
       const session: Session = { id, owner, projectId: project, title, createdAt: now, updatedAt: now, messageCount: 0, messages: [] };
       sessions.push(session); return summary(session);
     });
   }
-  putMessage(owner: string, project: string, sessionId: string, id: string, input: AiSessionMessageInput): Promise<AiSessionMessage> {
+  putMessage(owner: string, project: string, sessionId: string, id: string, input: AiSessionMessageInput, expectedVersion?: string): Promise<AiSessionMessage> {
     return this.mutate((sessions) => {
       const session = this.require(sessions, owner, project, sessionId);
       const previous = session.messages.find((message) => message.id === id);
       if (previous) {
+        // K12 条件写：If-Match 与服务端当前版本不符时拒绝，防止静默覆盖另一写入方的轮次。
+        // 版本用单调 sequence（毫秒时间戳在快速连写下会碰撞，不可作版本）。
+        assertVersion(previous.sequence, expectedVersion, "message-version-conflict", "该消息已被其他窗口更新，请刷新获取最新状态");
         const { id: _id, createdAt: _created, updatedAt: _updated, ...saved } = previous;
         if (JSON.stringify(saved) === JSON.stringify(input)) return previous;
-        if (input.sequence <= previous.sequence || previous.status !== "streaming") throw new AssistantSessionError(409, "消息版本冲突或已结束，请读取最新状态");
-        if (input.question !== previous.question || input.mode !== previous.mode || input.scope !== previous.scope) throw new AssistantSessionError(409, "消息所属问题和范围不能改变");
-      } else if (session.messages.length >= 100) throw new AssistantSessionError(429, "每个会话最多 100 轮问答");
+        if (input.sequence <= previous.sequence || previous.status !== "streaming") throw new AssistantSessionError(409, "消息版本冲突或已结束，请读取最新状态", "message-version-conflict");
+        if (input.question !== previous.question || input.mode !== previous.mode || input.scope !== previous.scope) throw new AssistantSessionError(409, "消息所属问题和范围不能改变", "message-content-conflict");
+      } else if (session.messages.length >= 100) throw new AssistantSessionError(429, "每个会话最多 100 轮问答", "message-limit");
       const now = new Date().toISOString();
       const message: AiSessionMessage = { ...input, id, createdAt: previous?.createdAt ?? now, updatedAt: now };
       if (previous) session.messages[session.messages.indexOf(previous)] = message;
@@ -70,7 +75,7 @@ export class AssistantSessionStore {
   }
   private require(sessions: Session[], owner: string, project: string, id: string): Session {
     const session = sessions.find((item) => item.id === id && item.owner === owner && item.projectId === project);
-    if (!session) throw new AssistantSessionError(404, "会话不存在");
+    if (!session) throw new AssistantSessionError(404, "会话不存在", "session-not-found");
     return session;
   }
   private mutate<T>(change: (sessions: Session[]) => T): Promise<T> {
@@ -85,11 +90,22 @@ export class AssistantSessionStore {
   }
   private async persist(sessions: Session[]) {
     const content = JSON.stringify({ schemaVersion: 1, sessions });
-    if (Buffer.byteLength(content) > 20 * 1024 * 1024) throw new AssistantSessionError(429, "助手会话存储已达 20 MiB 上限");
+    if (Buffer.byteLength(content) > 20 * 1024 * 1024) throw new AssistantSessionError(429, "助手会话存储已达 20 MiB 上限", "storage-limit");
     const temporary = `${this.file}.${process.pid}.${++this.sequence}.tmp`;
     try { await writeFile(temporary, content, "utf8"); await rename(temporary, this.file); }
     catch (error) { await rm(temporary, { force: true }); throw error; }
   }
+}
+/** K12 条件写校验：If-Match（ETag 形式 `"v<N>"`，允许 W/ 前缀与 * 通配）与服务端单调版本比对，无法解析按不匹配拒绝。 */
+export function sessionEtag(session: { messageCount: number }): string { return `"v${session.messageCount}"`; }
+export function messageEtag(message: { sequence: number }): string { return `"v${message.sequence}"`; }
+function assertVersion(current: number, expectedVersion: string | undefined, code: string, message: string) {
+  if (!expectedVersion) return;
+  const normalized = expectedVersion.trim().replace(/^W\//, "").replaceAll('"', "");
+  if (normalized === "*") return;
+  const parsed = /^v?(\d+)$/.exec(normalized);
+  if (parsed && Number(parsed[1]) === current) return;
+  throw new AssistantSessionError(409, message, code);
 }
 function summary(session: Session): AiSessionSummary {
   const { owner: _owner, messages: _messages, ...publicSession } = session; return publicSession;

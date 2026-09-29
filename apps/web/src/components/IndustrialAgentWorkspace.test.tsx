@@ -97,15 +97,30 @@ describe("IndustrialAgentRunView", () => {
     expect(html).toContain("开始新任务");
     expect(html).not.toContain("shell");
   });
+
+  it("keeps memory and provenance panels available while a run is in progress (K14, above metrics)", () => {
+    const html = render(fixture(), "project-1");
+    expect(html).toContain('aria-label="项目记忆"');
+    expect(html).toContain('aria-label="实验档案"');
+    // 折叠行默认收起，不抢运行进度视觉；面板位于 metrics 之前（运行摘要上方）。
+    expect(html).not.toContain('aria-label="项目记忆" open');
+    expect(html.indexOf('aria-label="项目记忆"')).toBeLessThan(html.indexOf('industrial-agent-metrics'));
+  });
+
+  it("omits the memory and provenance panels when no project scope is available", () => {
+    expect(render(fixture())).not.toContain('aria-label="项目记忆"');
+    expect(render(fixture())).not.toContain('aria-label="实验档案"');
+  });
 });
 
-function render(checkpoint: AgentCheckpoint): string {
+function render(checkpoint: AgentCheckpoint, projectId?: string): string {
   return renderToStaticMarkup(
     <IndustrialAgentRunView
       locale="zh-CN"
       checkpoint={checkpoint}
       tools={tools}
       busy={false}
+      {...(projectId ? { projectId } : {})}
       onAction={vi.fn()}
       onNew={vi.fn()}
     />,

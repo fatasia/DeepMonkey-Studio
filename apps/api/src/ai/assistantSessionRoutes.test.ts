@@ -35,6 +35,29 @@ describe("assistant session persistence", () => {
     expect(body.messages[0].execution).toEqual(execution);
     expect((await f.app.inject({ method: "PUT", url: `${base}/receipt/messages/bad`, payload: { ...turn, execution: { ...execution, protocol: "other" } } })).statusCode).toBe(400);
   });
+  it("exposes session version as ETag and turns a stale If-Match into a labeled 409 (K12 cross-tab guard)", async () => {
+    const { app } = await fixture();
+    const created = await app.inject({ method: "PUT", url: `${base}/s1`, payload: { title: "泵检查" } });
+    const sessionEtag = created.headers.etag as string;
+    expect(sessionEtag).toMatch(/^"[^"]+"$/);
+    const listed = await app.inject({ url: `${base}/s1/messages` });
+    expect(listed.headers.etag).toBe(sessionEtag);
+    const first = await app.inject({ method: "PUT", url: `${base}/s1/messages/m1`, payload: turn });
+    const messageEtag = first.headers.etag as string;
+    expect(messageEtag).toMatch(/^"[^"]+"$/);
+    // 条件写携带当前版本 → 放行并返回新版本。
+    const advanced = await app.inject({ method: "PUT", url: `${base}/s1/messages/m1`, headers: { "if-match": messageEtag }, payload: { ...turn, sequence: 2, answer: "推进" } });
+    expect(advanced.statusCode).toBe(200);
+    // 条件写携带过期版本（另一标签页已推进）→ 语义化 409，而非静默覆盖。
+    const stale = await app.inject({ method: "PUT", url: `${base}/s1/messages/m1`, headers: { "if-match": messageEtag }, payload: { ...turn, sequence: 3, answer: "覆盖" } });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({ code: "message-version-conflict" });
+    expect(String(stale.json().message)).toContain("其他窗口");
+    // 无条件写的行为保持向后兼容：旧序号重放仍 409（既有语义 + code）。
+    const legacy = await app.inject({ method: "PUT", url: `${base}/s1/messages/m1`, payload: turn });
+    expect(legacy.statusCode).toBe(409);
+    expect(legacy.json()).toMatchObject({ code: "message-version-conflict" });
+  });
   it("persists the bounded reliability snapshot used by the answer evidence panel", async () => {
     const f = await fixture();
     await f.app.inject({ method: "PUT", url: `${base}/reliability`, payload: { title: "证据恢复" } });
