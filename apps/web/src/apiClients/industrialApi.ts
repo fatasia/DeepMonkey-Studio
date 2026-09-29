@@ -49,6 +49,10 @@ export interface CapabilityDescriptor {
   outputSchemaVersion: string;
   inputSchema: Record<string, unknown>;
   outputSchema: Record<string, unknown>;
+  /** H-C4-P0 本体绑定（可选）：行动与本体对象的桥；未声明的能力按 kind 派生默认策略。 */
+  boundObject?: string;
+  riskLevel?: "low" | "medium" | "high" | "critical";
+  approvalRequired?: boolean;
 }
 
 export interface AiProviderDescriptor {

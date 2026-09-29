@@ -58,6 +58,7 @@ import { createModeling3dApi } from "./apiClients/modeling3dApi.js";
 import { createIndustrialAgentApi } from "./apiClients/industrialAgentApi.js";
 import { createProvenanceApi } from "./apiClients/provenanceApi.js";
 import { createSemanticModelApi } from "./apiClients/semanticModelApi.js";
+import { createOntologyApi } from "./apiClients/ontologyApi.js";
 import { isRecoverableStudioRead } from "./apiClients/studioReadRecovery.js";
 import { createAuthenticationRecheck } from "./apiClients/authenticationRecheck.js";
 import { createAssistantSessionApi } from "./apiClients/assistantSessionApi.js";
@@ -689,6 +690,7 @@ export const api = {
   ...createIndustrialAgentApi(request),
   ...createProvenanceApi(request),
   ...createSemanticModelApi(request),
+  ...createOntologyApi(request),
   ...createModeling3dApi(request),
   ...createAssistantSessionApi(request),
   ...createAiApi(request, (url, init) => serverClient.open(url, init)),

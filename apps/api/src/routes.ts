@@ -39,6 +39,8 @@ import { registerSceneRoutes } from "./sceneRoutes.js";
 import { isPublicAssetKey } from "./publicAssetKey.js";
 import { registerAssetLibraryRoutes } from "./assetLibraryRoutes.js";
 import { registerSemanticModelRoutes } from "./semanticModelRoutes.js";
+import { registerOntologyRoutes } from "./ontology/ontologyRoutes.js";
+import type { OntologyPackageStore } from "./ontology/ontologyStore.js";
 import { registerDataWritebackRoutes } from "./dataWritebackRoutes.js";
 import { createNativeSceneCandidateService } from "./nativeSceneCandidateService.js";
 import { createNativeSceneWindowVerifier } from "./nativeSceneWindowVerifier.js";
@@ -50,6 +52,10 @@ interface RouteDependencies {
   objects: ObjectStore;
   dataDir: string;
   config: AppConfig;
+  /** H-C4-P0 本体包存储；缺省时本体路由不注册。 */
+  ontology?: OntologyPackageStore;
+  /** 能力目录投影，供本体发布门禁 3 校验行动绑定；缺省 = 门禁 fail-closed。 */
+  listOntologyCapabilities?: () => Array<{ id: string; version: string; kind: string }>;
   beforeDiscardPublication?: (publication: PublishedSceneRecord) => Promise<void>;
   afterPublish?: (publication: PublishedSceneRecord) => Promise<void>;
 }
@@ -438,6 +444,13 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
 
   await registerModelAssetRoutes(app, { store, queue, objects, dataDir, config });
   await registerSemanticModelRoutes(app, { store });
+  if (dependencies.ontology) {
+    await registerOntologyRoutes(app, {
+      store,
+      ontology: dependencies.ontology,
+      ...(dependencies.listOntologyCapabilities ? { listCapabilities: dependencies.listOntologyCapabilities } : {}),
+    });
+  }
   await registerDataWritebackRoutes(app, store, config);
   await registerAssetLibraryRoutes(app, { store, queue, objects, dataDir, libraryDir: config.assetLibraryDir });
   registerCacheManagementRoutes(app);
