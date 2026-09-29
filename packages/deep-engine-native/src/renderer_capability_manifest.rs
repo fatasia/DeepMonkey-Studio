@@ -180,9 +180,9 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
     },
     NativeCapabilitySelfCheck {
         capability_id: "white-furnace-conservation",
-        support: RendererCapabilitySupport::Unavailable,
-        reason: RendererCapabilityReasonCode::Absent,
-        evidence: "pbr_reference 仅 CPU BRDF 参考,无白炉守恒 harness",
+        support: RendererCapabilitySupport::Supported,
+        reason: RendererCapabilityReasonCode::HarnessOnly,
+        evidence: "white_furnace CPU 判据/容差逐式移植 TS(字面量测试锁定)+renderer::white_furnace_gpu_tests 球腿/墙腿真机 GPU 门;背景腿 clear 色链与 SSR 判据缺位为宿主差异,如实声明",
     },
     NativeCapabilitySelfCheck {
         capability_id: "device-recovery",
@@ -303,6 +303,24 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         support: RendererCapabilitySupport::Supported,
         reason: RendererCapabilityReasonCode::Full,
         evidence: "ies_shading 字节布局镜像 WebGPU E02 表",
+    },
+    NativeCapabilitySelfCheck {
+        capability_id: "material-clearcoat",
+        support: RendererCapabilitySupport::Unavailable,
+        reason: RendererCapabilityReasonCode::Absent,
+        evidence: "mesh_abi::MATERIAL_UNIFORM_FLOATS=40(核心块;不消费 Web 扩展带 40..46,无清漆层叠着色路径)",
+    },
+    NativeCapabilitySelfCheck {
+        capability_id: "local-shadow-abi-16",
+        support: RendererCapabilitySupport::Degraded,
+        reason: RendererCapabilityReasonCode::ReducedTier,
+        evidence: "mesh_abi FRAME_ABI_ID=deep.native.frame.v8(16 lights/16 shadow views/16 softness)+local_shadow MAX_SPOT_SHADOWS=16(点光≤1×6 face);frame v8 与 TS 布局未跨端逐字节对齐验证,如实降档",
+    },
+    NativeCapabilitySelfCheck {
+        capability_id: "device-recovery-bridge",
+        support: RendererCapabilitySupport::Unavailable,
+        reason: RendererCapabilityReasonCode::HostSpecific,
+        evidence: "app::recovery 宿主恢复消费已在 device-recovery 行登记;Studio WebGPU 桥消费策略属 web 宿主专属",
     },
 ];
 

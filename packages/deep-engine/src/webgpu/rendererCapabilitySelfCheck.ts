@@ -21,6 +21,7 @@ import {
   DEEP_GI_PROBE_DIRECTIONS_STANDARD,
 } from "../lighting/probeRadianceDirectionGate.js";
 import { DEEP_PBR_MESH_V1_BYTE_SIZES } from "../shaderAbi/contract.js";
+import { MATERIAL_PARAMETER_KEYS } from "../shader/materialParameters.js";
 import { classifyDeviceLost, DeviceRecoveryStateMachine } from "./deviceRecovery.js";
 import { DEFAULT_PBR_RENDERER_FEATURES, type PbrRendererFeatures } from "./pbrRendererFeatures.js";
 import { PBR_TIMED_PASS_IDS } from "./pbrTimedPassIds.js";
@@ -216,6 +217,23 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
   },
   {
     capabilityId: "ies-lighting", support: "supported", reason: "full",
+    observed: {},
+  },
+  {
+    // C9：扩展带参数键数从实际 schema 常量派生（6 参数增删即漂移红）。
+    capabilityId: "material-clearcoat", support: "supported", reason: "opt-in-default-off",
+    observed: { extendedParameterKeys: MATERIAL_PARAMETER_KEYS.length },
+  },
+  {
+    // F7b：16 灯局部阴影 ABI 从实际常量派生（与 shadow-local 行的 spot 口径同源）。
+    capabilityId: "local-shadow-abi-16", support: "supported", reason: "full",
+    observed: { localShadowMaxLights: LOCAL_SPOT_SHADOW_MAX_LIGHTS,
+      localShadowUniformBytes: LOCAL_SPOT_SHADOW_UNIFORM_BYTES },
+  },
+  {
+    // C13 桥层消费：Studio 桥消费策略属宿主行为，引擎侧由 cb44f6ad 行为测试覆盖，
+    // 观测面无引擎纯常量可派生，留空（同 auto-exposure 惯例）。
+    capabilityId: "device-recovery-bridge", support: "supported", reason: "opt-in-default-off",
     observed: {},
   },
 ]);

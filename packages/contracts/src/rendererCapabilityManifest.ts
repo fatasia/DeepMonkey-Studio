@@ -180,7 +180,7 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     webFeatureKeys: ["temporalUpscale"],
     web: {
       support: "supported", reason: "opt-in-default-off",
-      evidence: "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:temporalUpscale(opt-in;temporal-upscale 计时 pass;Catmull-Rom+时域重投影核)",
+      evidence: "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:temporalUpscale(opt-in;temporal-upscale 计时 pass;Catmull-Rom+时域重投影核;reactiveMask 供给消费 postprocess/temporalReactiveMask.ts binding8+flags.y 历史权重衰减,encodeUpscale 透明 OIT/粒子两路与 encodeFinal 同式透传;Studio 桥 f4-temporal-upscale URL 开关,超分需动态分辨率同开)",
     },
     native: { support: "unavailable", reason: "absent", evidence: "packages/deep-engine-native/src/lib.rs(native 按原生分辨率直出,无上采样通路)" },
   },
@@ -190,7 +190,7 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     webFeatureKeys: [],
     web: {
       support: "supported", reason: "opt-in-default-off",
-      evidence: "packages/deep-engine/src/webgpu/virtualTextureResidency.ts:resolveVirtualTextureResidencyBudget(页表驻留+采样+帧桥,经管线开关接入)",
+      evidence: "packages/deep-engine/src/webgpu/virtualTextureResidency.ts:resolveVirtualTextureResidencyBudget(页表驻留+采样+帧桥,经管线开关接入;PbrRendererOptions.virtualTextures 快照白名单+逐帧反馈→驻留 drive+FrameMetrics 遥测;Studio 桥 f3-virtual-textures URL 开关)",
     },
     native: { support: "unavailable", reason: "absent", evidence: "packages/deep-engine-native/src/lib.rs(无 virtual texture 模块)" },
   },
@@ -200,7 +200,7 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     webFeatureKeys: ["softRasterizeFallback"],
     web: {
       support: "supported", reason: "opt-in-default-off",
-      evidence: "packages/deep-engine/src/webgpu/clusterLodIndirectExecutor.ts:ClusterLodIndirectPlan(indirect 簇绘制;softRasterizeFallback 超误差微三角软光栅,均 opt-in)",
+      evidence: "packages/deep-engine/src/webgpu/clusterLodIndirectExecutor.ts:ClusterLodIndirectPlan(indirect 簇绘制;softRasterizeFallback 超误差微三角软光栅,均 opt-in;G1 Studio 桥接线:buildClusterLodAuthorStaging author staging+bake 随包下发,g1ClusterLodEnabled URL 开关传递 clusterLodStaging)",
     },
     native: {
       support: "unavailable", reason: "absent",
@@ -216,8 +216,8 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
       evidence: "packages/deep-engine/src/webgpu/whiteFurnace.ts:FURNACE_TOLERANCES(纯 CPU 参考白炉+相对误差/通道增益/SSR 净零断言)",
     },
     native: {
-      support: "unavailable", reason: "absent",
-      evidence: "packages/deep-engine-native/src/pbr_reference.rs(CPU BRDF 参考;无白炉守恒 harness)",
+      support: "supported", reason: "harness-only",
+      evidence: "packages/deep-engine-native/src/white_furnace.rs:evaluate_furnace_checks(CPU 判据/容差逐式移植 TS FURNACE_TOLERANCES 且字面量测试锁定;renderer/white_furnace_gpu_tests.rs 球腿+墙腿真机 GPU 门;背景腿为 clear 色链宿主差异、SSR toggle 判据属 web SSR 合成链不在移植面,均如实声明)",
     },
   },
   {
@@ -461,6 +461,45 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     native: {
       support: "supported", reason: "full",
       evidence: "packages/deep-engine-native/src/ies_shading.rs:IES 资源打包(字节布局镜像 WebGPU E02 表)",
+    },
+  },
+  {
+    id: "material-clearcoat",
+    title: "清漆层与扩展材质带(C9)",
+    webFeatureKeys: [],
+    web: {
+      support: "supported", reason: "opt-in-default-off",
+      evidence: "packages/deep-engine/src/shader/materialParameters.ts:MATERIAL_PARAMETER_KEYS(扩展带 ior/clearcoat/各向异性/透射 6 参数;factor=0 即 KHR_materials_clearcoat 默认无层,缺省零行为=stock PBR;materialBindings.ts MATERIAL_PARAMETER_EXTENDED_BAND_FLOAT_OFFSET=40 六 float 槽 40..46,materialEvaluateWgsl.ts 清漆层叠着色路径+白炉真机守恒 gate)",
+    },
+    native: {
+      support: "unavailable", reason: "absent",
+      evidence: "packages/deep-engine-native/src/mesh_abi.rs:MATERIAL_UNIFORM_FLOATS(=40 核心块;native 不消费 Web 扩展带 40..46,无清漆层叠着色路径)",
+    },
+  },
+  {
+    id: "local-shadow-abi-16",
+    title: "局部阴影 16 灯 ABI 扩容(F7b,点光 6-face 计入 view 预算)",
+    webFeatureKeys: [],
+    web: {
+      support: "supported", reason: "full",
+      evidence: "packages/deep-engine/src/shadows/localSpotShadowShader.ts:LOCAL_SPOT_SHADOW_MAX_LIGHTS(16 条目×96B=1536B;localSpotShadowRuntime.ts 16 灯帧装配;localSpotShadowAtlasQuality.ts standard|multi-light 两档,multi-light 产品档 16 灯放行)",
+    },
+    native: {
+      support: "degraded", reason: "reduced-tier",
+      evidence: "packages/deep-engine-native/src/mesh_abi.rs:FRAME_ABI_ID(deep.native.frame.v8:16 local lights+16 shadow views+16 softness=2384B)+local_shadow.rs MAX_SPOT_SHADOWS=16(点光≤1×6 face 计入 16 view 预算;frame v8 与 TS 侧布局未做跨端逐字节对齐验证,如实降档)",
+    },
+  },
+  {
+    id: "device-recovery-bridge",
+    title: "设备恢复宿主桥消费(C13 消费接线)",
+    webFeatureKeys: [],
+    web: {
+      support: "supported", reason: "opt-in-default-off",
+      evidence: "apps/web/src/viewer/StudioDeepWebGpuBridge.ts:onFatalLoss/onDeviceRecreated(可恢复型 epoch 重建后清同步态重放渲染不整页回退,终态单次交接 WebGL;recovery opt-in 缺省零行为;DeepWebGpuBackend.ts hooks 暴露+deepWebGpuOptions.ts recovery 对象校验+cb44f6ad 桥接行为测试)",
+    },
+    native: {
+      support: "unavailable", reason: "host-specific",
+      evidence: "packages/deep-engine-native/src/app/recovery.rs(native 宿主自身的恢复消费已在 device-recovery 行登记;Studio WebGPU 桥消费策略按设计属 web 宿主专属)",
     },
   },
 ] as const);
