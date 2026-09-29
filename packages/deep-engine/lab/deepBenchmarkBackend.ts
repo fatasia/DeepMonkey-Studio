@@ -1,5 +1,5 @@
 import { PbrRenderer } from "@bim-studio/deep-engine/webgpu";
-import type { RenderView } from "@bim-studio/deep-engine/webgpu";
+import type { PbrEnvironmentSource, RenderView } from "@bim-studio/deep-engine/webgpu";
 import type { PickResult } from "@bim-studio/deep-engine/webgpu";
 import type { TrajectoryCameraPose } from "@bim-studio/deep-engine";
 import { captureWebGpuBenchmarkImage } from "./benchmarkImage.js";
@@ -21,16 +21,25 @@ export class DeepBenchmarkBackend implements BenchmarkBackend {
     this.currentView = { ...this.fixture.view, eye: pose.position, target: pose.target, verticalFovRadians: pose.fovDeg * Math.PI / 180 };
   }
 
+  /**
+   * `environmentSource`(W-2 切片新增,可选):传入 create options.environment 与产品链路
+   * 同源(bootstrap 期构建 StudioEnvironment,StudioDeepWebGpuBridge 同一传法),受控档的
+   * features.environment 随之打开(wasm 对等探针的 studio 口径注入引擎原生 `{kind:"studio"}`);
+   * 缺省 undefined 保持 T00 基线口径(无 IBL)逐字节不变。
+   */
   static async create(canvas: HTMLCanvasElement, fixture: BenchmarkSceneFixture,
-    signal: AbortSignal, profile: BenchmarkProfile): Promise<DeepBenchmarkBackend> {
+    signal: AbortSignal, profile: BenchmarkProfile,
+    environmentSource?: PbrEnvironmentSource): Promise<DeepBenchmarkBackend> {
     const baseline = profile === "baseline-equivalent";
+    const stageEnvironment = environmentSource !== undefined;
     const renderer = await PbrRenderer.create(canvas, navigator.gpu, signal, {
       // Keep benchmark comparisons on the production Studio feature profile.
       meshlets: true,
       deformation: true,
+      ...(environmentSource ? { environment: environmentSource } : {}),
       shadows: baseline ? { exactProfile: { cascadeCount: 1, shadowMapSize: 2048,
         depthBias: 0.00075, receiverNormalBias: "constant-one-texel" as const } } : { requestedTier: "high" },
-      ...(baseline ? { features: { environment: false, fog: false, groundGrid: false,
+      ...(baseline ? { features: { environment: stageEnvironment, fog: false, groundGrid: false,
         ambientOcclusion: false, temporalAa: false, spatialAa: false, bloom: false, vignette: false,
         occlusionCulling: false,
         toneMapping: "three-aces-r185" as const } } : {}),
