@@ -39,6 +39,11 @@ export interface ClothSolverConfig {
   /** seed 驱动的初始 z 向扰动幅度(米),≥0;0 = 完全平整初始态。 */
   readonly perturbation: number;
   readonly seed: number;
+  /** 初始布局平移(米);省略 = [0,0,0]。运行包 F6 通道消费。 */
+  readonly origin?: Vec3;
+  /** 地面接触平面 y = groundY(米);省略 = 无接触。积分投影式约束,
+   * 确定性(same-op f64);不动锚点粒子。 */
+  readonly groundY?: number;
   readonly wind?: ClothWind | null;
 }
 
@@ -116,9 +121,12 @@ export class ClothSolver implements FixedStepSim<ClothSnapshot> {
     for (let r = 0; r < c.rows; r += 1) {
       for (let col = 0; col < c.columns; col += 1) {
         const i = r * c.columns + col;
-        this.#px[i] = col * c.spacing;
-        this.#py[i] = r * c.spacing;
-        this.#pz[i] = c.perturbation > 0 ? (nextUnit() - 0.5) * 2 * c.perturbation : 0;
+        const originX = c.origin?.[0] ?? 0;
+        const originY = c.origin?.[1] ?? 0;
+        const originZ = c.origin?.[2] ?? 0;
+        this.#px[i] = originX + col * c.spacing;
+        this.#py[i] = originY + r * c.spacing;
+        this.#pz[i] = originZ + (c.perturbation > 0 ? (nextUnit() - 0.5) * 2 * c.perturbation : 0);
       }
     }
     // 拓扑:结构(右/下)+ 剪切(两对角);rest 由间距解析给出,不测量扰动后的位置。
@@ -150,12 +158,26 @@ export class ClothSolver implements FixedStepSim<ClothSnapshot> {
   particleIndex(col: number, row: number): number { return row * this.#cfg.columns + col; }
   /** 位置 SoA 只读引用(内部缓冲;跨帧/跨会话消费请用 capture)。 */
   positions(): Float64Array { return this.#px; }
+  /** xyz 交错位置拷贝(渲染消费;F6 运行会话 readout 走此形态)。 */
+  positionsInterleaved(): Float64Array {
+    const out = new Float64Array(this.#count * 3);
+    for (let i = 0; i < this.#count; i += 1) {
+      out[i * 3] = this.#px[i]!; out[i * 3 + 1] = this.#py[i]!; out[i * 3 + 2] = this.#pz[i]!;
+    }
+    return out;
+  }
 
   /** 锚点:invMass=0 且速度清零;解绑恢复单位质量。 */
   setPinned(col: number, row: number, pinned: boolean): void {
     const i = this.particleIndex(col, row);
     this.#invMass[i] = pinned ? 0 : 1 / this.#cfg.mass;
     if (pinned) { this.#vx[i] = 0; this.#vy[i] = 0; this.#vz[i] = 0; }
+  }
+
+  /** 锚点(运行包 pinned 粒子索引 = row·columns+col 直通形态)。 */
+  setPinnedIndex(index: number, pinned = true): void {
+    const i = Math.floor(index / this.#cfg.columns);
+    this.setPinned(index - i * this.#cfg.columns, i, pinned);
   }
 
   isPinned(col: number, row: number): boolean {
@@ -188,6 +210,7 @@ export class ClothSolver implements FixedStepSim<ClothSnapshot> {
     for (let sub = 0; sub < c.substeps; sub += 1) {
       this.#qx.set(this.#px); this.#qy.set(this.#py); this.#qz.set(this.#pz);
       const t = t0 + sub * h;
+      const groundY = c.groundY;
       for (let i = 0; i < this.#count; i += 1) {
         if (invMass[i] === 0) continue;
         const w = this.windAcceleration(t, py[i]!);
@@ -195,9 +218,19 @@ export class ClothSolver implements FixedStepSim<ClothSnapshot> {
         vy[i] = (vy[i]! + (c.gravity[1] + w[1]) * h) * dampingScale;
         vz[i] = (vz[i]! + (c.gravity[2] + w[2]) * h) * dampingScale;
         px[i] = px[i]! + vx[i]! * h; py[i] = py[i]! + vy[i]! * h; pz[i] = pz[i]! + vz[i]! * h;
+        // 地面接触:积分后位置投影(y = groundY 钳制);速度由 (p−q)/h 回算自然
+        // 消去法向分量,切向摩擦不在本切片(与运行包合同注释一致)。
+        if (groundY !== undefined && py[i]! < groundY) py[i] = groundY;
       }
       this.#lambda.fill(0);
       for (let k = 0; k < this.#rest.length; k += 1) this.#project(k, alphaTilde);
+      // 约束投影可能把粒子再次推到地面下;速度回算前再钳制一次,
+      // 保证回算出的法向速度非负(接触不吸附)。
+      if (c.groundY !== undefined) {
+        for (let i = 0; i < this.#count; i += 1) {
+          if (this.#invMass[i] !== 0 && py[i]! < c.groundY) py[i] = c.groundY;
+        }
+      }
       const invH = 1 / h;
       for (let i = 0; i < this.#count; i += 1) {
         if (invMass[i] === 0) { vx[i] = 0; vy[i] = 0; vz[i] = 0; continue; }

@@ -26,6 +26,9 @@ export interface SoftBodySolverConfig {
   readonly damping: number;
   /** 锚点顶点索引(invMass=0)。 */
   readonly pinned: readonly number[];
+  /** 地面接触平面 y = groundY(米);省略 = 无接触。积分投影式约束,
+   * 确定性(same-op f64);不动锚点粒子。 */
+  readonly groundY?: number;
 }
 
 export interface SoftBodySnapshot {
@@ -142,6 +145,14 @@ export class SoftBodySolver implements FixedStepSim<SoftBodySnapshot> {
   get tick(): number { return this.#tick; }
   get tetCount(): number { return this.#restVolume.length; }
   positions(): Float64Array { return this.#px; }
+  /** xyz 交错位置拷贝(渲染消费;F6 运行会话 readout 走此形态)。 */
+  positionsInterleaved(): Float64Array {
+    const out = new Float64Array(this.#count * 3);
+    for (let i = 0; i < this.#count; i += 1) {
+      out[i * 3] = this.#px[i]!; out[i * 3 + 1] = this.#py[i]!; out[i * 3 + 2] = this.#pz[i]!;
+    }
+    return out;
+  }
 
   #signedVolume(i0: number, i1: number, i2: number, i3: number): number {
     const ax = this.#px[i0]! - this.#px[i3]!; const ay = this.#py[i0]! - this.#py[i3]!; const az = this.#pz[i0]! - this.#pz[i3]!;
@@ -186,16 +197,25 @@ export class SoftBodySolver implements FixedStepSim<SoftBodySnapshot> {
     const invMass = this.#invMass;
     for (let sub = 0; sub < c.substeps; sub += 1) {
       this.#qx.set(this.#px); this.#qy.set(this.#py); this.#qz.set(this.#pz);
+      const groundY = c.groundY;
       for (let i = 0; i < this.#count; i += 1) {
         if (invMass[i] === 0) continue;
         vx[i] = (vx[i]! + c.gravity[0] * h) * dampingScale;
         vy[i] = (vy[i]! + c.gravity[1] * h) * dampingScale;
         vz[i] = (vz[i]! + c.gravity[2] * h) * dampingScale;
         px[i] = px[i]! + vx[i]! * h; py[i] = py[i]! + vy[i]! * h; pz[i] = pz[i]! + vz[i]! * h;
+        // 地面接触:积分后位置投影;速度由 (p−q)/h 回算自然消去法向分量。
+        if (groundY !== undefined && py[i]! < groundY) py[i] = groundY;
       }
       this.#lambdaEdge.fill(0); this.#lambdaVol.fill(0);
       for (let e = 0; e < this.#edgeRest.length; e += 1) this.#projectEdge(e, alphaEdge);
       for (let t = 0; t < this.#restVolume.length; t += 1) this.#projectVolume(t, alphaVol);
+      // 约束投影可能把粒子再次推到地面下;速度回算前再钳制一次。
+      if (c.groundY !== undefined) {
+        for (let i = 0; i < this.#count; i += 1) {
+          if (this.#invMass[i] !== 0 && py[i]! < c.groundY) py[i] = c.groundY;
+        }
+      }
       const invH = 1 / h;
       for (let i = 0; i < this.#count; i += 1) {
         if (invMass[i] === 0) { vx[i] = 0; vy[i] = 0; vz[i] = 0; continue; }

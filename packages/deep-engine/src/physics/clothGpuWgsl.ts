@@ -37,7 +37,7 @@ export interface ClothGpuStepInput {
 }
 
 /** Packed storage ABI: position/inverse mass, velocity, previous position. */
-export function packClothGpuParticles(particles: readonly ClothGpuParticleInput[]): Float32Array {
+export function packClothGpuParticles(particles: readonly ClothGpuParticleInput[]): Float32Array<ArrayBuffer> {
   const out = new Float32Array(particles.length * 12);
   particles.forEach((particle, index) => {
     validateParticle(particle, index);
@@ -85,7 +85,7 @@ export function packClothGpuParams(input: ClothGpuStepInput): ArrayBuffer {
  * CPU mirror of `stepCloth`. The state layout is the same 12-float particle
  * layout used by the storage buffer, making this suitable for contract tests.
  */
-export function mirrorClothGpuStep(input: ClothGpuStepInput): Float32Array {
+export function mirrorClothGpuStep(input: ClothGpuStepInput): Float32Array<ArrayBuffer> {
   validateStepInput(input);
   const state = packClothGpuParticles(input.particles);
   const h = input.dtSeconds / input.substeps;

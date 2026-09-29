@@ -45,7 +45,7 @@ export interface SoftBodyGpuStepInput {
   readonly gravity: SoftBodyVec3;
 }
 
-export function packSoftBodyGpuParticles(particles: readonly SoftBodyGpuParticleInput[]): Float32Array {
+export function packSoftBodyGpuParticles(particles: readonly SoftBodyGpuParticleInput[]): Float32Array<ArrayBuffer> {
   const out = new Float32Array(particles.length * 12);
   particles.forEach((particle, index) => {
     validateParticle(particle, index);
@@ -97,7 +97,7 @@ export function packSoftBodyGpuParams(input: SoftBodyGpuStepInput): ArrayBuffer 
 }
 
 /** CPU mirror of `stepSoftBody`; state uses the WGSL storage-buffer ABI. */
-export function mirrorSoftBodyGpuStep(input: SoftBodyGpuStepInput): Float32Array {
+export function mirrorSoftBodyGpuStep(input: SoftBodyGpuStepInput): Float32Array<ArrayBuffer> {
   validateStepInput(input);
   const state = packSoftBodyGpuParticles(input.particles);
   const h = input.dtSeconds / input.substeps;
