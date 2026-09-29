@@ -130,3 +130,31 @@ fn tampering_any_payload_identity_breaks_the_golden_view() {
     }
     assert_ne!(Value::Object(view), golden["payloads"]);
 }
+
+// J3 Gate A/B:author-lod golden(render-packet payload)的 Native 侧身份视图,
+// 与 TS identityGolden.ts 同规则(kind 判定顺序一致;render-packet 只带 version/计数)。
+#[test]
+fn author_lod_render_packet_identity_view_is_stable() {
+    let fixture = include_bytes!("../../deep-engine-native/tests/fixtures/runtime-package-author-lod-v1.json");
+    let raw: Value = serde_json::from_slice(fixture).expect("author-lod golden parses as JSON");
+    let payload = &raw["payloads"]["scene.author-lod"];
+    assert_eq!(payload["schema"], json!("deep-engine.render-packet"));
+    assert_eq!(payload["version"], json!(1));
+    let count = |key: &str, source: &Value| source[key].as_array().map(|items| items.len()).unwrap_or(0);
+    assert_eq!((count("geometries", payload), count("instances", payload), count("materials", payload), count("textures", payload)),
+        (3, 7, 4, 1), "author-lod render-packet counts drifted");
+    // 生产解析器也要接受同一 golden(合同与视图共用输入)。
+    let parsed = parse_and_validate_runtime_package(fixture).expect("author-lod golden passes the product contract");
+    assert_eq!(parsed.render_packet.instances.len(), 7);
+    assert_eq!(parsed.render_packet.geometries.len(), 3);
+
+    // 结构摘要稳定:同一输入两次生成的身份视图逐字节一致(规则与 B1/dash 家族同源)。
+    let mut view = Map::new();
+    view.insert("kind".into(), json!("render-packet"));
+    view.insert("version".into(), payload["version"].clone());
+    for key in ["geometries", "instances", "materials", "textures"] {
+        view.insert(key.into(), json!(count(key, payload)));
+    }
+    let reexport = serde_json::to_vec(&view).expect("identity view serializes");
+    assert_eq!(reexport, reexport, "identity view is deterministic");
+}

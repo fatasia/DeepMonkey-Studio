@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import fixtureBytes from "../../fixtures/dashboard-composition-v1.json";
 import golden from "../../fixtures/dashboard-composition-identity-golden.json";
 import { parseDeepRuntimePackage } from "./index.js";
@@ -33,5 +34,23 @@ describe("dashboard identity golden (P0-07)", () => {
     if (!parsed.valid) throw new Error(parsed.issues[0]?.message ?? "fixture invalid");
     expect(JSON.stringify(dashboardIdentityGoldenView(parsed.value)))
       .toBe(JSON.stringify(dashboardIdentityGoldenView(parsed.value)));
+  });
+});
+
+describe("author-lod render-packet identity golden (J3 Gate A/B)", () => {
+  const readAuthorLod = () => JSON.parse(readFileSync(
+    new URL("../../../deep-engine-native/tests/fixtures/runtime-package-author-lod-v1.json", import.meta.url), "utf8"));
+  const buildAuthorLodRuntime = async () => {
+    const { createRuntimePackageAuthorLodInput } = await import("../../scripts/runtimePackageAuthorLodFixture.mjs");
+    const { buildDeepRuntimePackage } = await import("./index.js");
+    return buildDeepRuntimePackage(createRuntimePackageAuthorLodInput() as never);
+  };
+  it("produces a render-packet identity view with stable counts for the author-lod golden", async () => {
+    const runtime = await buildAuthorLodRuntime();
+    const view = dashboardIdentityGoldenView(runtime as never);
+    expect(view.payloads["scene.author-lod"]).toMatchObject({
+      kind: "render-packet", version: 1, geometries: 3, instances: 7, materials: 4, textures: 1 });
+    expect(JSON.stringify(dashboardIdentityGoldenView(runtime as never)))
+      .toBe(JSON.stringify(dashboardIdentityGoldenView(runtime as never)));
   });
 });
