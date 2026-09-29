@@ -18,6 +18,7 @@ export const PBR_TIMED_PASS_IDS = Object.freeze([
   "screen-space-reflection-trace",
   "screen-space-reflection-composite",
   "temporal-aa",
+  "temporal-upscale",
   "bloom",
   "present",
 ] as const);

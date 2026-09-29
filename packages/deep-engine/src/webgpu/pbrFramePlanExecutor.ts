@@ -74,6 +74,7 @@ const MAPPED_EXECUTORS: Readonly<Record<string, string>> = Object.freeze({
   "transparent-oit": "PbrTransparencyPass.encode → WeightedOitPass accumulation",
   "composite-oit": "PbrTransparencyPass.encode → WeightedOitPass.encodeComposite",
   "temporal-aa": "TemporalAaPass.encode",
+  "temporal-upscale": "TemporalUpscalePass.encode",
   "bloom": "BloomPass.encode (AuthorBloomPass shares the plan slot)",
   "present": "PbrOutputBindings.present",
 });
@@ -273,6 +274,9 @@ export function collectActualPbrFramePasses(features: PbrRendererFeatures, trans
   const contactInput = options.bloom ? "bloom-hdr" : features.temporalAa ? "temporal-hdr"
     : features.screenSpaceReflection ? "ssr-hdr" : features.volumetricFog ? "volumetric-fog-hdr"
     : transparency ? "composited-hdr" : opaqueColorResource;
+  // F4 超分开启时 upscale-hdr 是唯一 display 输入(优先级最高,链尾)。
+  // 超分 pass 的实际描述由 PbrPostProcessChain.describePasses 追加进 effects(同 taa/bloom)。
+  const upscaleInput = features.temporalUpscale ? "upscale-hdr" : undefined;
   return Object.freeze([
     ...(features.contactShadows && !options.directDisplay
       ? [describeContactShadowPass(), describeContactApplyPass(contactInput)] : []),
@@ -280,7 +284,7 @@ export function collectActualPbrFramePasses(features: PbrRendererFeatures, trans
     ...effects.filter(opaqueEffect),
     ...(transparency ? PbrTransparencyPass.describePasses(opaqueColorResource) : []),
     ...effects.filter(pass => !opaqueEffect(pass)),
-    describePbrPresentPasses(options.presentInputResource ?? (features.bloom ? "bloom-hdr"
+    describePbrPresentPasses(upscaleInput ?? (features.bloom ? "bloom-hdr"
       : features.temporalAa ? "temporal-hdr" : features.screenSpaceReflection ? "ssr-hdr" : features.volumetricFog ? "volumetric-fog-hdr"
         : transparency ? "composited-hdr" : opaqueColorResource), features.spatialAa),
   ]);

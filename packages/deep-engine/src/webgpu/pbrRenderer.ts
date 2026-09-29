@@ -43,6 +43,7 @@ import type { PbrTransientTextureHandle } from "./pbrTransientTextureTypes.js";
 import type { SurfaceSize } from "./surfaceSize.js";
 import { DynamicResolutionScaler, internalResolutionReport,
   DEFAULT_RESOLUTION_SCALE_POLICY, type ResolutionScalePolicy } from "../postprocess/resolutionScaler.js";
+import { internalRenderSize, temporalUpscaleActive } from "../postprocess/temporalUpscaleCpu.js";
 import { buildPbrFrameExecutionPlan, collectActualPbrFramePasses, assertPlanMatchesActual,
   createPbrFrameReceipt, pbrFramePassTimingsUnavailable } from "./pbrFramePlanExecutor.js";
 import type { PbrFramePassTimings } from "./pbrFrameReceipt.js";
@@ -393,8 +394,13 @@ export class PbrRenderer {
         }
       }
     }
-    const size = this.session.resize(view.width, view.height, view.pixelRatio * this.resolutionScale);
-    if (!size) return undefined;
+    // F4 时域超分联动:激活(特性开 + scale<1)时画布保持全分辨率、渲染目标按 scale
+    // 降档,链尾上采样核重建到画布;未激活沿用原口径(画布即渲染分辨率,浏览器拉伸)。
+    const upscaling = temporalUpscaleActive(this.features.temporalUpscale, this.resolutionScale);
+    const surface = this.session.resize(view.width, view.height,
+      view.pixelRatio * (upscaling ? 1 : this.resolutionScale));
+    if (!surface) return undefined;
+    const size = upscaling ? internalRenderSize(surface, this.resolutionScale) : surface;
     const authorShadowSize = sceneLighting.primary.shadow?.mapSize;
     if (authorShadowSize !== this.lastAuthorShadowSize) {
       this.lastAuthorShadowSize = authorShadowSize;
@@ -632,8 +638,26 @@ export class PbrRenderer {
       contactApplied = true;
     }
     let presentInput = finalEffects.color;
+    let upscaleMetrics: FrameMetrics["temporalUpscale"] | undefined;
     if (!directClear) {
       if (contactApplied) presentInput = presentColor;
+      // F4 时域超分:激活时链尾重建到画布全分辨率,输出即 present 输入与读回落点。
+      if (upscaling) {
+        passTiming?.beginMarker(encoder, "temporal-upscale");
+        const upscaled = this.postProcess.encodeUpscale({
+          encoder, targets: this.targets, revision: history.revision, extent: view.extent,
+          cameraCut: history.cameraCut, currentJitter: history.currentJitter,
+          previousJitter: history.previousJitter,
+          displayWidth: surface.width, displayHeight: surface.height,
+        }, presentInput);
+        if (!upscaled) throw new Error("Temporal upscale is active but the pass is unavailable.");
+        presentInput = upscaled.texture;
+        presentColor = upscaled.texture;
+        upscaleMetrics = Object.freeze({ displayWidth: upscaled.width, displayHeight: upscaled.height,
+          historyUsed: upscaled.historyUsed, invalidation: upscaled.invalidation });
+        passTiming?.endMarker(encoder, "temporal-upscale");
+        drawCalls += 1; triangles += 1;
+      }
       passTiming?.beginMarker(encoder, "present");
       present = this.outputs.present(encoder, presentInput, view.authorColorEffects, this.performanceTelemetry.enabled,
         view.editorOverlay?.vertices.length ? undefined : timing?.queries, this.frameCapture !== undefined,
@@ -691,7 +715,7 @@ export class PbrRenderer {
       deviceResourceMemory: this.session.resourceMemory,
       ...(this.autoExposure ? { autoExposure: this.autoExposure.metrics() } : {}),
       ...(clusterLod ? { clusterLod: clusterLod.metrics() } : {}),
-      cameraCut: history.cameraCut, postProcessPasses: opaqueEffects.passCount + finalEffects.passCount + (hasTransparent ? 2 + Number(this.transparency.currentReactiveMask !== undefined) : 0) + (!directClear && this.features.spatialAa ? 1 : 0),
+      cameraCut: history.cameraCut, postProcessPasses: opaqueEffects.passCount + finalEffects.passCount + (hasTransparent ? 2 + Number(this.transparency.currentReactiveMask !== undefined) : 0) + (upscaling ? 1 : 0) + (!directClear && this.features.spatialAa ? 1 : 0),
       weightedOit: hasTransparent,
       hiZMipLevels: opaqueEffects.hiZ?.mipLevelCount ?? 0,
       occlusionCulling: opaqueCulling.occlusionBatches > 0,
@@ -705,7 +729,8 @@ export class PbrRenderer {
           Math.max(performance.now(), begin + 0.001), executedPasses),
       } : {}),
       ...(this.gpuTimer.passTimingEnabled ? { gpuPassTimings: this.passTimingsMetrics(frameNumber) } : {}),
-      ...(this.resolutionScale === 1 ? {} : { resolutionScale: this.resolutionScaleMetrics(size) }),
+      ...(this.resolutionScale === 1 ? {} : { resolutionScale: this.resolutionScaleMetrics(surface) }),
+      ...(upscaleMetrics ? { temporalUpscale: upscaleMetrics } : {}),
       ...this.shadows.metrics,
       ...(this.contactShadows ? this.contactShadows.metrics : {}) };
     this.sampleAdaptiveQuality(metrics);
@@ -730,6 +755,7 @@ export class PbrRenderer {
   private resolutionScaleMetrics(surface: { readonly width: number; readonly height: number }): FrameMetrics["resolutionScale"] | undefined {
     if (this.resolutionScaler === undefined || this.resolutionScale === 1) return undefined;
     // 质量槽位保持 measured=false：真实画质数字须来自 GPU 序列联测，不许发明。
+    // surface 传画布尺寸:超分激活时 internalWidth/Height 就是真实渲染分辨率。
     return { revision: this.resolutionScaleRevision,
       ...internalResolutionReport(this.resolutionScale, surface.width, surface.height) };
   }
@@ -764,7 +790,7 @@ export class PbrRenderer {
     const key = `${size.width}x${size.height}:${transparency ? "transparent" : "opaque"}`
       + `:ao=${postProcess.ambientOcclusion ? 1 : 0}:ssr=${postProcess.screenSpaceReflection ? 1 : 0}`
       + `:fog=${postProcess.volumetricFog ? 1 : 0}:bloom=${postProcess.bloom ? 1 : 0}:direct=${directDisplay ? 1 : 0}`
-      + `:cs=${this.features.contactShadows ? 1 : 0}`;
+      + `:cs=${this.features.contactShadows ? 1 : 0}:up=${this.features.temporalUpscale ? 1 : 0}`;
     if (this.capturePlanKey !== key || !this.capturePlan || !this.captureActualPasses) {
       const captureFeatures: PbrRendererFeatures = Object.freeze({ ...this.features,
         ambientOcclusion: postProcess.ambientOcclusion,
@@ -775,7 +801,8 @@ export class PbrRenderer {
       const opaqueColorResource = postProcess.ambientOcclusion ? "ao-hdr" : "opaque-hdr";
       const plan = buildPbrFrameExecutionPlan(size, { transparency, features: captureFeatures,
         directDisplay, writeGeometryBuffers: this.writeGeometryBuffers });
-      const presentInputResource = this.features.contactShadows ? "contact-hdr"
+      const presentInputResource = this.features.temporalUpscale && !directDisplay ? "upscale-hdr"
+        : this.features.contactShadows ? "contact-hdr"
         : postProcess.bloom ? "bloom-hdr"
         : this.features.temporalAa ? "temporal-hdr" : postProcess.screenSpaceReflection ? "ssr-hdr"
           : postProcess.volumetricFog ? "volumetric-fog-hdr"
@@ -813,6 +840,7 @@ export class PbrRenderer {
     if (transparency) { ids.add("transparent-oit"); ids.add("composite-oit"); }
     if (postProcess.volumetricFog) { ids.add("volumetric-fog-march"); ids.add("volumetric-fog-composite"); }
     if (this.features.temporalAa) ids.add("temporal-aa");
+    if (this.features.temporalUpscale) ids.add("temporal-upscale");
     if (postProcess.bloom) ids.add("bloom");
     ids.add("present");
     return ids;

@@ -123,7 +123,11 @@ export function describePbrPresentPasses(inputResourceId: string, spatialAa = tr
           : inputResourceId === "volumetric-fog-hdr"
             ? ["storage-binding", "texture-binding"] : inputResourceId === "temporal-hdr"
               ? ["storage-binding", "texture-binding", "copy-src"]
-              : ["texture-binding", "storage-binding", "render-attachment", "copy-src"], sizeRole: "surface" },
+              : inputResourceId === "upscale-hdr"
+                // F4 超分输出是唯一 display 尺寸输入(读回链落点,usages 同 temporal 合同)。
+                ? ["storage-binding", "texture-binding", "copy-src"]
+                : ["texture-binding", "storage-binding", "render-attachment", "copy-src"],
+      sizeRole: inputResourceId === "upscale-hdr" ? "display" : "surface" },
       { id: "surface", access: "write", format: "swapchain", sampleCount: 1,
         usages: ["render-attachment"], sizeRole: "independent" }],
     ...(spatialAa ? { unplannedAttachments: [{ id: "spatial-aa-intermediate",

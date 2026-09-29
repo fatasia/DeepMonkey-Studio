@@ -94,6 +94,13 @@ export function buildPbrFrameGraph(options: PbrFrameGraphOptions): RenderGraphBu
     .addPass({ id: "contact-shadow", kind: "compute", inputs: ["linear-depth"], outputs: ["contact-shadow-mask"] })
     .addPass({ id: "contact-apply", kind: "compute", inputs: [temporalInput, "contact-shadow-mask"], outputs: ["contact-hdr"] });
   if (features.contactShadows) temporalInput = "contact-hdr";
+  // F4 时域上采样:链尾(display 输入)。低分辨率主帧 → 画布全分辨率,替代 surface 直缩拉伸。
+  if (features.temporalUpscale) {
+    graph.addResource({ id: "upscale-hdr", descriptor: "rgba16float" })
+      .addPass({ id: "temporal-upscale", kind: "compute",
+        inputs: [temporalInput, "motion", "linear-depth"], outputs: ["upscale-hdr"] });
+    temporalInput = "upscale-hdr";
+  }
   return graph.addPass({ id: "present", kind: "render", inputs: [temporalInput], outputs: ["surface"] });
 }
 

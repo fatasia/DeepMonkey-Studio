@@ -1,6 +1,7 @@
 import { ambientOcclusionHalfSize } from "../postprocess/ambientOcclusion.js";
 import { AMBIENT_OCCLUSION_OUTPUT_FORMAT } from "../postprocess/ambientOcclusionTypes.js";
 import { BLOOM_COLOR_FORMAT } from "../postprocess/bloomTypes.js";
+import { TEMPORAL_UPSCALE_COLOR_FORMAT } from "../postprocess/temporalUpscaleTypes.js";
 import { TEMPORAL_AA_COLOR_FORMAT } from "../postprocess/temporalAaTypes.js";
 import { SSR_COMPOSITE_FORMAT, SSR_TRACE_FORMAT } from "../postprocess/screenSpaceReflectionTypes.js";
 import { VOLUMETRIC_FOG_SCATTER_FORMAT } from "../fog/volumetricFogPassTypes.js";
@@ -16,8 +17,8 @@ import { WEIGHTED_OIT_ACCUMULATION_FORMAT, WEIGHTED_OIT_REVEALAGE_FORMAT } from 
 export const FRAME_PLAN_USAGES = ["render-attachment", "texture-binding", "storage-binding", "copy-src"] as const;
 export type FramePlanUsage = typeof FRAME_PLAN_USAGES[number];
 
-/** sizeRole:"surface"=主帧全分辨率;"half"=AO 半分辨率;"independent"=尺寸独立于主帧(图集/金字塔/buffer)。 */
-export type PbrFrameResourceSizeRole = "surface" | "half" | "independent";
+/** sizeRole:"surface"=主帧渲染分辨率;"half"=AO 半分辨率;"display"=显示画布全分辨率(仅超分输出,超分关闭时=surface);"independent"=尺寸独立于主帧(图集/金字塔/buffer)。 */
+export type PbrFrameResourceSizeRole = "surface" | "half" | "display" | "independent";
 
 export interface PbrFrameResourceContract {
   readonly id: string;
@@ -63,6 +64,9 @@ export const PBR_FRAME_RESOURCE_CONTRACTS: readonly PbrFrameResourceContract[] =
     usages: ["storage-binding", "texture-binding", "render-attachment", "copy-src"], sizeRole: "surface", external: false },
   { id: "temporal-hdr", descriptor: "rgba16float", format: TEMPORAL_AA_COLOR_FORMAT, sampleCount: 1,
     usages: ["storage-binding", "texture-binding", "copy-src"], sizeRole: "surface", external: false },
+  // F4 时域上采样输出:唯一 display 尺寸资源(画布全分辨率);copy-src 承接 present-color 读回链落点。
+  { id: "upscale-hdr", descriptor: "rgba16float", format: TEMPORAL_UPSCALE_COLOR_FORMAT, sampleCount: 1,
+    usages: ["storage-binding", "texture-binding", "copy-src"], sizeRole: "display", external: false },
   { id: "contact-shadow-mask", descriptor: "rgba16float-half", format: "rgba16float", sampleCount: 1,
     usages: ["storage-binding", "texture-binding"], sizeRole: "half", external: false },
   { id: "contact-hdr", descriptor: "rgba16float", format: "rgba16float", sampleCount: 1,
@@ -132,16 +136,20 @@ export interface PbrActualPassDescription {
 }
 
 /**
- * 计划侧尺寸推导:full 角色直接继承 surface(RenderTargets.resize 语义);
- * half 角色复用 ambientOcclusionHalfSize(真实 AO 推导);independent 资源不入表。
+ * 计划侧尺寸推导:full 角色直接继承 surface(渲染分辨率,RenderTargets.resize 语义);
+ * half 角色复用 ambientOcclusionHalfSize(真实 AO 推导);display 角色继承画布尺寸
+ * (超分关闭时与 surface 相等,传入 undefined 即退化为 surface);independent 资源不入表。
  * 同输入同输出;与 renderTargets 推导不一致只能来自调用方传入错误的 surface。
  */
-export function resolvePbrFrameResourceSizes(surface: SurfaceSize): ReadonlyMap<string, SurfaceSize> {
+export function resolvePbrFrameResourceSizes(surface: SurfaceSize,
+  displaySize?: SurfaceSize): ReadonlyMap<string, SurfaceSize> {
   const sizes = new Map<string, SurfaceSize>();
   const [halfWidth, halfHeight] = ambientOcclusionHalfSize(surface.width, surface.height);
+  const display = displaySize ?? surface;
   for (const contract of PBR_FRAME_RESOURCE_CONTRACTS) {
     if (contract.sizeRole === "surface") sizes.set(contract.id, surface);
     if (contract.sizeRole === "half") sizes.set(contract.id, { width: halfWidth, height: halfHeight });
+    if (contract.sizeRole === "display") sizes.set(contract.id, display);
   }
   return sizes;
 }

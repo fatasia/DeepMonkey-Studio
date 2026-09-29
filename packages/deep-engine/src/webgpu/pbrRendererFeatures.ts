@@ -23,6 +23,12 @@ export interface PbrRendererFeatureOptions {
   readonly occlusionCulling?: boolean;
   /** C10 屏幕空间接触阴影;opt-in,Z 默认档不带(质量档位见 shadows/contactShadowQuality)。 */
   readonly contactShadows?: boolean;
+  /**
+   * F4 时域上采样(opt-in,默认关闭):动态分辨率降档时低分辨率主帧经 Catmull-Rom+
+   * 时域重投影核重建为全分辨率输出,替代 surface 直缩+浏览器拉伸。需要
+   * resolutionScalePolicy 同时开启;scale=1 时零介入逐字节直通。
+   */
+  readonly temporalUpscale?: boolean;
   readonly bloom?: boolean;
   readonly vignette?: boolean;
   readonly toneMapping?: PbrToneMapping;
@@ -43,6 +49,7 @@ export interface PbrRendererFeatures {
   readonly textureArrays: boolean;
   readonly occlusionCulling: boolean;
   readonly contactShadows: boolean;
+  readonly temporalUpscale: boolean;
   readonly bloom: boolean;
   readonly vignette: boolean;
   readonly toneMapping: PbrToneMapping;
@@ -53,7 +60,7 @@ export const DEFAULT_PBR_RENDERER_FEATURES: PbrRendererFeatures = Object.freeze(
   screenSpaceReflection: false, volumetricFog: false, temporalAa: true, spatialAa: true, visibilityBuffer: false,
   softRasterizeFallback: false,
   textureArrays: false,
-  occlusionCulling: true, bloom: true, vignette: true, contactShadows: false, toneMapping: "deep-aces",
+  occlusionCulling: true, bloom: true, vignette: true, contactShadows: false, temporalUpscale: false, toneMapping: "deep-aces",
 });
 
 export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = {}): PbrRendererFeatures {
@@ -80,5 +87,6 @@ export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = 
     textureArrays: boolean("textureArrays"),
     occlusionCulling: boolean("occlusionCulling"),
     contactShadows: boolean("contactShadows"),
+    temporalUpscale: boolean("temporalUpscale"),
     bloom: boolean("bloom"), vignette: boolean("vignette"), toneMapping });
 }

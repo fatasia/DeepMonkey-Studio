@@ -297,7 +297,7 @@ describe("pass execution receipt", () => {
     const subject = buildPbrFrameExecutionPlan(SURFACE, { transparency: true,
       features: resolvePbrRendererFeatures({ ambientOcclusion: true, screenSpaceReflection: true,
         volumetricFog: true, temporalAa: true, bloom: true, occlusionCulling: true, spatialAa: true,
-        contactShadows: true }) });
+        contactShadows: true, temporalUpscale: true }) });
     expect([...subject.mappedPassIds].sort()).toEqual([...PBR_TIMED_PASS_IDS].sort());
   });
 });

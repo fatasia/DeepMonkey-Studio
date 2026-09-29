@@ -138,5 +138,11 @@ export interface FrameMetrics {
   readonly authorFrustumDispatches?: number;
   readonly adaptiveQuality?: AdaptiveQualityState;
   readonly resolutionScale?: (import("../postprocess/resolutionScaler.js").InternalResolutionReport & { revision: number }) | undefined;
+  /**
+   * F4 时域超分遥测(temporalUpscale 特性 + scale<1 激活时出现):display 尺寸=画布,
+   * historyUsed=false 表示该帧历史失效退化为纯 Catmull-Rom(fail-closed,不残留)。
+   */
+  readonly temporalUpscale?: { readonly displayWidth: number; readonly displayHeight: number;
+    readonly historyUsed: boolean; readonly invalidation: string };
   readonly adaptiveHotspots?: readonly AdaptiveQualityHotspotSummary[];
 }

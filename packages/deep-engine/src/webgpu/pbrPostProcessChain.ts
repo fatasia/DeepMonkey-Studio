@@ -7,6 +7,9 @@ import { AuthorBloomPass } from "../postprocess/authorBloom.js";
 import { BLOOM_COLOR_FORMAT } from "../postprocess/bloomTypes.js";
 import { TemporalAaPass } from "../postprocess/temporalAa.js";
 import { TEMPORAL_AA_COLOR_FORMAT } from "../postprocess/temporalAaTypes.js";
+import { TemporalUpscalePass, type TemporalUpscalePassSource } from "../postprocess/temporalUpscale.js";
+import { TEMPORAL_UPSCALE_COLOR_FORMAT } from "../postprocess/temporalUpscaleTypes.js";
+import { internalRenderSize } from "../postprocess/temporalUpscaleCpu.js";
 import { ScreenSpaceReflectionPass } from "../postprocess/screenSpaceReflection.js";
 import { SSR_COMPOSITE_FORMAT } from "../postprocess/screenSpaceReflectionTypes.js";
 import { VolumetricFogPass } from "../fog/volumetricFogPass.js";
@@ -87,6 +90,7 @@ export class PbrPostProcessChain {
   private readonly volumetricFog: VolumetricFogPass | undefined;
   private readonly volumetricFogComposite: VolumetricFogCompositePass | undefined;
   private readonly temporalAa: TemporalAaPass | undefined;
+  private readonly temporalUpscale: TemporalUpscalePass | undefined;
   private readonly bloom: BloomPass | undefined;
   private authorBloom: AuthorBloomPass | undefined;
   private readonly temporalValidity = new TemporalValidityProvider();
@@ -102,6 +106,7 @@ export class PbrPostProcessChain {
     let screenSpaceReflection: ScreenSpaceReflectionPass | undefined;
     let volumetricFog: VolumetricFogPass | undefined, volumetricFogComposite: VolumetricFogCompositePass | undefined;
     let temporalAa: TemporalAaPass | undefined, bloom: BloomPass | undefined;
+    let temporalUpscale: TemporalUpscalePass | undefined;
     try {
       if (this.features.occlusionCulling) hiZ = new HiZPyramid(session);
       if (this.features.ambientOcclusion) {
@@ -114,10 +119,11 @@ export class PbrPostProcessChain {
         volumetricFogComposite = new VolumetricFogCompositePass(session, pool);
       }
       if (this.features.temporalAa) temporalAa = new TemporalAaPass(session);
+      if (this.features.temporalUpscale) temporalUpscale = new TemporalUpscalePass(session);
       if (this.features.bloom) bloom = new BloomPass(session, pool);
     } catch (error) {
       failWithResourceCleanup(error, "Post-process construction failed", [
-        () => bloom?.dispose(), () => temporalAa?.dispose(), () => screenSpaceReflection?.dispose(),
+        () => bloom?.dispose(), () => temporalUpscale?.dispose(), () => temporalAa?.dispose(), () => screenSpaceReflection?.dispose(),
         () => volumetricFogComposite?.dispose(), () => volumetricFog?.dispose(),
         () => ambientOcclusionComposite?.dispose(),
         () => ambientOcclusion?.dispose(), () => hiZ?.dispose(),
@@ -127,7 +133,7 @@ export class PbrPostProcessChain {
     this.ambientOcclusionComposite = ambientOcclusionComposite;
     this.screenSpaceReflection = screenSpaceReflection;
     this.volumetricFog = volumetricFog; this.volumetricFogComposite = volumetricFogComposite;
-    this.temporalAa = temporalAa; this.bloom = bloom;
+    this.temporalAa = temporalAa; this.temporalUpscale = temporalUpscale; this.bloom = bloom;
   }
 
   /** Must run after opaque depth is stored and before transparent color composition. */
@@ -228,6 +234,43 @@ export class PbrPostProcessChain {
       : this.bloom!.encode(encoder, source, DEFAULT_PBR_BLOOM_OPTIONS);
     input.passTiming?.endMarker(encoder, "bloom");
     return Object.freeze({ color: bloom.texture, passCount: effectPasses + (this.features.temporalAa ? 1 : 0) + bloom.passCount });
+  }
+
+  /**
+   * F4 时域上采样:超分激活时把链尾 HDR(接触阴影或 bloom/TAA 输出)从内部渲染
+   * 分辨率重建到画布全分辨率;未激活(特性关或 scale=1)返回 undefined 保持直通。
+   * 输入合同与 TAA 同族;displayScale 由画布/内部尺寸比导出,历史失效 fail-closed
+   * 退化为纯 Catmull-Rom。
+   */
+  encodeUpscale(input: {
+    readonly encoder: GPUCommandEncoder;
+    readonly targets: RenderTargets;
+    readonly revision: number;
+    readonly extent: number;
+    readonly cameraCut: boolean;
+    readonly currentJitter: readonly [number, number];
+    readonly previousJitter: readonly [number, number];
+    /** 显示画布尺寸(session resize 后的全分辨率)。 */
+    readonly displayWidth: number;
+    readonly displayHeight: number;
+  }, color: GPUTexture): { readonly texture: GPUTexture; readonly width: number;
+    readonly height: number; readonly historyUsed: boolean; readonly invalidation: string } | undefined {
+    if (this.disposed) throw new Error("Post-process chain is disposed.");
+    if (!this.temporalUpscale) return undefined;
+    if (color.width >= input.displayWidth && color.height >= input.displayHeight) return undefined;
+    const source: TemporalUpscalePassSource = {
+      color, depth: input.targets.linearDepthTexture, motion: input.targets.motionTexture,
+      revision: input.revision, cameraCut: input.cameraCut,
+      currentJitter: input.currentJitter, previousJitter: input.previousJitter,
+      colorEncoding: "linear-hdr", depthEncoding: "linear-view-depth-positive",
+      motionEncoding: "current-to-previous-uv",
+      displayScale: input.displayWidth / color.width,
+    };
+    const result = this.temporalUpscale.encode(input.encoder, source, {
+      feedback: 0.9, depthThreshold: Math.min(100, Math.max(0.01, input.extent * 0.001)),
+      relativeDepthThreshold: 0.02 });
+    return Object.freeze({ texture: result.texture, width: result.width, height: result.height,
+      historyUsed: result.historyUsed, invalidation: result.historyInvalidation ?? "none" });
   }
 
   /** Publish validity inputs only after the renderer's queue submission succeeds. */
@@ -363,6 +406,32 @@ export class PbrPostProcessChain {
       unplannedAttachments: [{ id: "bloom-pyramid-levels", reason: "bloom 高斯金字塔私有层级纹理" }],
       gpuPassCount: DEFAULT_PBR_BLOOM_OPTIONS.maxLevels * 4,
     });
+    // F4 时域上采样:链尾 display 输出。输入取 contact-hdr(开启时)否则 bloom/taa 链尾,
+    // 与渲染器实际 encodeUpscale 调用的输入同源;usages 按资源合同逐 id 精确声明。
+    if (features.temporalUpscale) {
+      const upscaleInput = features.contactShadows ? "contact-hdr" : bloomInput;
+      const upscaleInputUsages: readonly FramePlanUsage[] =
+        upscaleInput === "contact-hdr" || upscaleInput === "ao-hdr"
+          ? ["storage-binding", "texture-binding", "render-attachment", "copy-src"]
+          : upscaleInput === "bloom-hdr" ? ["texture-binding", "storage-binding", "render-attachment", "copy-src"]
+          : upscaleInput === "composited-hdr" || upscaleInput === "opaque-hdr"
+            ? ["render-attachment", "texture-binding", "storage-binding", "copy-src"]
+            : upscaleInput === "volumetric-fog-hdr" ? ["storage-binding", "texture-binding"]
+            : ["storage-binding", "texture-binding", "copy-src"];
+      passes.push({
+        passId: "temporal-upscale", executor: "TemporalUpscalePass.encode", kind: "compute",
+        reads: [upscaleInput, "motion", "linear-depth"], writes: ["upscale-hdr"],
+        claims: [{ id: upscaleInput, access: "read", format: TEMPORAL_AA_COLOR_FORMAT, sampleCount: 1,
+          usages: upscaleInputUsages, sizeRole: "surface" },
+          { id: "motion", access: "read", format: PBR_MOTION_FORMAT, sampleCount: PBR_MAIN_SAMPLE_COUNT,
+            usages: ["render-attachment", "texture-binding"], sizeRole: "surface" },
+          geometryRead("linear-depth"),
+          { id: "upscale-hdr", access: "write", format: TEMPORAL_UPSCALE_COLOR_FORMAT, sampleCount: 1,
+            usages: ["storage-binding", "texture-binding", "copy-src"], sizeRole: "display" }],
+        unplannedAttachments: [{ id: "upscale-history-color/depth-a/b", reason: "全分辨率时域重建双缓冲历史" }],
+        gpuPassCount: 1,
+      });
+    }
     return passes;
   }
 
@@ -370,7 +439,7 @@ export class PbrPostProcessChain {
     if (this.disposed) return;
     this.disposed = true;
     runResourceCleanup("Post-process disposal failed", [() => this.authorBloom?.dispose(), () => this.bloom?.dispose(),
-      () => this.temporalAa?.dispose(), () => this.screenSpaceReflection?.dispose(),
+      () => this.temporalAa?.dispose(), () => this.temporalUpscale?.dispose(), () => this.screenSpaceReflection?.dispose(),
       () => this.volumetricFogComposite?.dispose(), () => this.volumetricFog?.dispose(),
       () => this.ambientOcclusionComposite?.dispose(),
       () => this.ambientOcclusion?.dispose(), () => this.hiZ?.dispose()]);
