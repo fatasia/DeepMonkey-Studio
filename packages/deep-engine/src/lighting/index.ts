@@ -20,6 +20,7 @@ export * from "./probeClipmapPlan.js";
 export * from "./probeRadianceDirectionGate.js";
 export * from "./probeBounceFeedback.js";
 export * from "./probeMultibounceReference.js";
+export * from "./probeLeakDirectionMatrix.js";
 export * from "./probeClipmapResources.js";
 export * from "./probeClipmapSampling.js";
 export * from "./probeClipmapSamplingWgsl.js";
