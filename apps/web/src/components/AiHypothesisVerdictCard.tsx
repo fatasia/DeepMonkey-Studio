@@ -49,6 +49,13 @@ export function AiHypothesisVerdictCard({ locale, envelope, toolLabel, projectId
         </p>
         {envelope.verdict === "refuted" && <p className="ai-card-note">{t("实测值越过容差带且与预测方向相反：该假设被确定性内核反驳，请基于实测值修正假设或方案。", "The observation crossed the tolerance band against the predicted direction: the hypothesis is refuted by the deterministic kernel. Revise the hypothesis with the observed value.")}</p>}
         {envelope.verdict === "inconclusive" && <p className="ai-card-note">{t("证据不足以双向裁决（容差带内、基准漂移或指标缺失）；不要把该结论当作支持或反驳的证据。", "Evidence cannot decide either direction (tolerance band, baseline drift, or missing metric); do not treat this as supporting or refuting evidence.")}</p>}
+        {envelope.warnings && envelope.warnings.length > 0 && (
+          <ul className="ai-card-warnings" role="alert">
+            {envelope.warnings.map((warning, index) => (
+              <li key={index}>{warning}</li>
+            ))}
+          </ul>
+        )}
         <p className="ai-card-fingerprints">
           <span title={envelope.proposalFingerprint}>{t("提案", "Proposal")} {shortFingerprint(envelope.proposalFingerprint)}</span>
           <span title={envelope.inputFingerprint}>{t("输入", "Input")} {shortFingerprint(envelope.inputFingerprint)}</span>

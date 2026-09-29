@@ -90,6 +90,7 @@
 .ai-card-verdict-line code { font-size: 11px; }
 
 .ai-card-note { font-size: 11px; color: var(--text-muted); }
+.ai-card-warnings { font-size: 11px; color: var(--text-warning, #b45309); list-style: none; margin: 4px 0 0; padding: 6px 8px; background: color-mix(in srgb, var(--text-warning, #b45309) 8%, transparent); border-radius: 4px; }
 
 .ai-card-fingerprints {
   display: flex;
