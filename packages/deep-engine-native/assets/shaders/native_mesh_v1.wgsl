@@ -534,13 +534,26 @@ fn safeNormalize(value: vec3f, fallback: vec3f) -> vec3f {
     // Zero is the legacy/default value; authored GI uses the reserved
     // fog-projection W lane without changing the frame ABI size.
     let global_illumination = select(1.0, frame.fogProjection.w, frame.fogProjection.w > 0.0);
+    // J2-B3 白炉修复(与 web pbrShader.ts C12 修复式逐式对齐):IBL 漫反射/高光
+    // 的能量分配必须用同一 split-sum 分数。原实现把漫反射储备定在镜面 Schlick
+    // (rough→1 时坍缩为 1−f0),而高光实际交付 LUT 分数(rough→1 时
+    // f0·dfg.x+dfg.y ≈ 0.0135),白粗糙面总出射 ≈0.9735E → 白炉欠冲
+    // (native 真机实测:墙腿 mean −2.566% / max −2.588%,与 web C12 的 −2.637%
+    // 同量级)。修复后 total = (1−fraction) + fraction ≡ 1,对任意 f0/rough/nv
+    // 构造性守恒;金属路径(漫反射为 0)与镜面极限(fraction→f0)逐位不变。
+    // 逐字锁定断言:deep_engine_native::white_furnace
+    // ::native_mesh_ibl_split_keeps_ts_authoritative_formula。
     let nv = clamp(dot(normal, view), 0.001, 1.0);
     let f0 = mix(vec3f(dielectric), base, metal);
-    let f = f0 + (max(vec3f(1.0 - rough), f0) - f0) * pow(1.0 - nv, 5.0);
+    let dfg = textureSampleLevel(
+      brdf_lut, environment_sampler, vec2f(nv, rough), 0.0).rg;
+    let energy_compensation = vec3f(1.0)
+      + f0 * (1.0 / max(dfg.x + dfg.y, 0.05) - 1.0);
+    let specular_fraction = clamp(f0 * dfg.x + dfg.y, vec3f(0.0), vec3f(1.0)) * energy_compensation;
     let irradiance = textureSampleLevel(
       diffuse_environment, environment_sampler, normal, 0.0).rgb;
     let ambient_occlusion = clamp(ao, 0.0, 1.0);
-    color += (1.0 - f) * (1.0 - metal) * base * irradiance * ambient_occlusion * global_illumination;
+    color += (1.0 - specular_fraction) * (1.0 - metal) * base * irradiance * ambient_occlusion * global_illumination;
     // F3:探针 GI 作为环境漫射的近场补偿叠加进 ambient;开关为 0 时
     // probe_gi_irradiance 返回零,加零不改既有结果。
     let probe_irradiance = probe_gi_irradiance(input.world, normal);
@@ -549,11 +562,7 @@ fn safeNormalize(value: vec3f, fallback: vec3f) -> vec3f {
     let max_specular_lod = f32(textureNumLevels(specular_environment) - 1u);
     let radiance = textureSampleLevel(
       specular_environment, environment_sampler, reflection, rough * max_specular_lod).rgb;
-    let dfg = textureSampleLevel(
-      brdf_lut, environment_sampler, vec2f(nv, rough), 0.0).rg;
-    let energy_compensation = vec3f(1.0)
-      + f0 * (1.0 / max(dfg.x + dfg.y, 0.05) - 1.0);
-    color += radiance * (f0 * dfg.x + dfg.y) * energy_compensation * ambient_occlusion * global_illumination;
+    color += radiance * specular_fraction * ambient_occlusion * global_illumination;
   }
   color += input.emissive_alpha.rgb * emission;
   let exposure = select(1.0, frame.lightingOptions.x, authored_light);

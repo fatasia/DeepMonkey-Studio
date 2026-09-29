@@ -14,6 +14,12 @@ mod rt_raster_parity_gpu_tests;
 #[path = "probe_gi_gpu_tests.rs"]
 mod probe_gi_gpu_tests;
 
+// J2-B3 Rust 白炉门 GPU 腿(真机,非 RT 设备即可),同样以子模块挂载避免
+// 改动 renderer.rs 的模块清单;判据/容差在 lib 侧 deep_engine_native::white_furnace。
+#[cfg(test)]
+#[path = "white_furnace_gpu_tests.rs"]
+mod white_furnace_gpu_tests;
+
 // F2 设备恢复证据切片:旧驻留整体丢弃后重建自足(Ray Query 探针验证),
 // 同样以子模块挂载,复用本文件的 request_ray_query_device 与 parity 场景。
 #[cfg(test)]

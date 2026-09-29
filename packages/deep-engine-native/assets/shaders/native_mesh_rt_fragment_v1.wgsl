@@ -71,22 +71,25 @@ fn rt_directional_visibility(world: vec3f, light: vec3f) -> f32 {
     // Zero is the legacy/default value; authored GI uses the reserved
     // fog-projection W lane without changing the frame ABI size.
     let global_illumination = select(1.0, frame.fogProjection.w, frame.fogProjection.w > 0.0);
+    // J2-B3 白炉修复:与本体 fragment_main 同步(TS pbrShader.ts C12 修复式,
+    // 同一 split-sum 分数进 diffuse/specular 两路,构造性守恒)。同步契约见
+    // 文件头;逐字锁定断言在 white_furnace::native_mesh_ibl_split_keeps_ts_authoritative_formula。
     let nv = clamp(dot(normal, view), 0.001, 1.0);
     let f0 = mix(vec3f(dielectric), base, metal);
-    let f = f0 + (max(vec3f(1.0 - rough), f0) - f0) * pow(1.0 - nv, 5.0);
-    let irradiance = textureSampleLevel(
-      diffuse_environment, environment_sampler, normal, 0.0).rgb;
-    let ambient_occlusion = clamp(ao, 0.0, 1.0);
-    color += (1.0 - f) * (1.0 - metal) * base * irradiance * ambient_occlusion * global_illumination;
-    let reflection = safe_normalize(reflect(-view, normal), normal);
-    let max_specular_lod = f32(textureNumLevels(specular_environment) - 1u);
-    let radiance = textureSampleLevel(
-      specular_environment, environment_sampler, reflection, rough * max_specular_lod).rgb;
     let dfg = textureSampleLevel(
       brdf_lut, environment_sampler, vec2f(nv, rough), 0.0).rg;
     let energy_compensation = vec3f(1.0)
       + f0 * (1.0 / max(dfg.x + dfg.y, 0.05) - 1.0);
-    color += radiance * (f0 * dfg.x + dfg.y) * energy_compensation * ambient_occlusion * global_illumination;
+    let specular_fraction = clamp(f0 * dfg.x + dfg.y, vec3f(0.0), vec3f(1.0)) * energy_compensation;
+    let irradiance = textureSampleLevel(
+      diffuse_environment, environment_sampler, normal, 0.0).rgb;
+    let ambient_occlusion = clamp(ao, 0.0, 1.0);
+    color += (1.0 - specular_fraction) * (1.0 - metal) * base * irradiance * ambient_occlusion * global_illumination;
+    let reflection = safe_normalize(reflect(-view, normal), normal);
+    let max_specular_lod = f32(textureNumLevels(specular_environment) - 1u);
+    let radiance = textureSampleLevel(
+      specular_environment, environment_sampler, reflection, rough * max_specular_lod).rgb;
+    color += radiance * specular_fraction * ambient_occlusion * global_illumination;
   }
   color += input.emissive_alpha.rgb * emission;
   let exposure = select(1.0, frame.lightingOptions.x, authored_light);

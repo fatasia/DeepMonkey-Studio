@@ -167,14 +167,22 @@ pub fn split_sum_ibl(input: SplitSumIblInput) -> [f32; 3] {
     let rough = roughness.clamp(0.06, 1.0);
     let ao = occlusion.clamp(0.0, 1.0);
     let nv = n_dot_v.clamp(0.001, 1.0);
+    // rough/nv 在 Web 端只是 brdfLut 的查表坐标(该端 dfg 由采样得到);本 CPU
+    // 参考的 dfg 是显式入参,修复后能量分配不再消费它们,显式弃用防假性告警。
+    let _ = (rough, nv);
     let mut result = [0.0; 3];
     for channel in 0..3 {
         let f0 = 0.04 + (base[channel] - 0.04) * metal;
-        let f90 = (1.0 - rough).max(f0);
-        let fresnel = f0 + (f90 - f0) * (1.0 - nv).powi(5);
-        let diffuse = (1.0 - fresnel) * (1.0 - metal) * base[channel] * irradiance[channel];
+        // J2-B3 白炉修复(与 web pbrShader.ts C12 修复式逐式对齐):漫反射/高光
+        // 的能量分配共用同一 split-sum 分数。原实现把漫反射储备定在镜面 Schlick
+        // (rough→1 坍缩为 1−f0),高光却交付 LUT 分数,白粗糙面总出射 ≈0.9735E
+        // → 白炉欠冲(quantified by white_furnace::legacy_defect_total)。
+        // fraction 含 clamp 与多重散射补偿后,total = (1−fraction) + fraction ≡ 1
+        // 构造性守恒;金属路径(漫反射为 0)与镜面极限(fraction→f0)逐位不变。
         let energy = 1.0 + f0 * (1.0 / (dfg[0] + dfg[1]).max(0.05) - 1.0);
-        let specular = radiance[channel] * (f0 * dfg[0] + dfg[1]) * energy;
+        let fraction = (f0 * dfg[0] + dfg[1]).clamp(0.0, 1.0) * energy;
+        let diffuse = (1.0 - fraction) * (1.0 - metal) * base[channel] * irradiance[channel];
+        let specular = radiance[channel] * fraction;
         result[channel] = (diffuse + specular) * ao;
     }
     result

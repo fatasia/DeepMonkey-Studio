@@ -93,6 +93,8 @@ pub mod shader_disk_cache;
 pub mod shader_package;
 pub mod shadow_cache;
 pub mod texture_array_packing;
+/// J2-B3 白炉验收核心:CPU 参考判据移植(whiteFurnace.ts)+ IBL split-sum 修复对拍。
+pub mod white_furnace;
 pub mod world_chunk_bridge;
 pub mod world_partition;
 
