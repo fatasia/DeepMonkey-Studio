@@ -30,6 +30,7 @@ const browserSurfaceAllowlist = new Map([
   ["src/webgpu/dashboardCompositionHost.ts", new Set(["HTMLCanvasElement"])],
   ["src/webgpu/deep2d/gpu.ts", new Set(["DOMException"])],
   ["src/webgpu/deviceSession.ts", new Set(["DOMException", "Event", "HTMLCanvasElement"])],
+  ["src/webgpu/deviceRecovery.ts", new Set(["performance"])],
   ["src/webgpu/pbrRenderer.ts", new Set(["DOMException", "HTMLCanvasElement", "performance"])],
   ["src/webgpu/pbrRendererBootstrap.ts", new Set(["performance"])],
   ["src/webgpu/packetBuffers.ts", new Set(["DOMException"])],
