@@ -1,10 +1,11 @@
-import { useEffect } from "react";
-import { Boxes, Plus, RefreshCw } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Boxes, Plus, RefreshCw, Table2 } from "lucide-react";
 import { translate as tr, type AppLocale } from "../i18n";
 import { SemanticModelEditor } from "./SemanticModelEditor";
 import { SemanticModelList } from "./SemanticModelList";
 import { useSemanticModelStudio } from "./useSemanticModelStudio";
 import { newSemanticModel } from "./semanticModelEditorLogic";
+import OntologyWorkspace from "./OntologyWorkspace";
 import "./SemanticModelStudio.css";
 
 export default function SemanticModelStudio({
@@ -17,6 +18,8 @@ export default function SemanticModelStudio({
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const state = useSemanticModelStudio(projectId, locale);
+  // H-C4-P0:语义模型步骤内的"语义与本体"子工作区(不新增顶级入口)。
+  const [subTab, setSubTab] = useState<"metrics" | "ontology">("metrics");
   useEffect(() => {
     onDirtyChange?.(state.dirty);
   }, [state.dirty, onDirtyChange]);
@@ -26,6 +29,32 @@ export default function SemanticModelStudio({
       className="semantic-studio"
       aria-label={tr(locale, "语义模型", "Semantic models")}
     >
+      <div className="semantic-subtabs" role="tablist" aria-label={tr(locale, "语义模型子工作区", "Semantic sub workspaces")}>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={subTab === "metrics"}
+          className={subTab === "metrics" ? "active" : ""}
+          onClick={() => setSubTab("metrics")}
+        >
+          <Table2 size={13} />
+          {tr(locale, "指标与维度", "Metrics & dimensions")}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={subTab === "ontology"}
+          className={subTab === "ontology" ? "active" : ""}
+          onClick={() => setSubTab("ontology")}
+        >
+          <Boxes size={13} />
+          {tr(locale, "语义与本体", "Semantics & ontology")}
+        </button>
+      </div>
+      {subTab === "ontology" ? (
+        <OntologyWorkspace projectId={projectId} locale={locale} owner="studio-user" onDirtyChange={onDirtyChange} />
+      ) : (
+      <>
       {state.notice && (
         <p className="semantic-notice" role="status">
           {state.notice}
@@ -150,6 +179,8 @@ export default function SemanticModelStudio({
             )
           )}
         </>
+      )}
+      </>
       )}
     </section>
   );

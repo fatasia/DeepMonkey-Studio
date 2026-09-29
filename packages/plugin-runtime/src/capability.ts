@@ -50,6 +50,10 @@ export interface CapabilityDescriptor {
   outputSchemaVersion: string;
   inputSchema: CapabilityJsonSchema;
   outputSchema: CapabilityJsonSchema;
+  /** H-C4-P0 本体绑定（可选）：能力与本体行动的桥；未声明时按 kind 派生默认策略。 */
+  boundObject?: string;
+  riskLevel?: "low" | "medium" | "high" | "critical";
+  approvalRequired?: boolean;
 }
 
 export interface CapabilityRequest<TInput = unknown> {

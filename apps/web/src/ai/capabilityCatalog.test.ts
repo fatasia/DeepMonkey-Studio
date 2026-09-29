@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CapabilityDescriptor } from "../api";
-import { capabilityWorkspaceTask, capabilityWritePolicy, summarizeCapabilityCatalog } from "./capabilityCatalog";
+import { capabilityOntologyBinding, capabilityWorkspaceTask, capabilityWritePolicy, summarizeCapabilityCatalog } from "./capabilityCatalog";
 
 function capability(id: string, label: string): CapabilityDescriptor {
   return {
@@ -56,5 +56,21 @@ describe("summarizeCapabilityCatalog", () => {
     expect(capabilityWritePolicy("query")).toBe("read-only");
     expect(capabilityWritePolicy("simulation")).toBe("read-only");
     expect(capabilityWritePolicy("action")).toBe("confirm-required");
+  });
+});
+
+describe("capabilityOntologyBinding (H-C4-P0)", () => {
+  it("passes through explicit ontology declarations", () => {
+    expect(capabilityOntologyBinding({ kind: "action", boundObject: "Device", riskLevel: "high", approvalRequired: true })).toEqual({
+      boundObject: "Device",
+      riskLevel: "high",
+      approvalRequired: true,
+    });
+  });
+
+  it("derives defaults from kind when no declaration exists", () => {
+    expect(capabilityOntologyBinding({ kind: "action" })).toEqual({ riskLevel: "medium", approvalRequired: true });
+    expect(capabilityOntologyBinding({ kind: "query" })).toEqual({ riskLevel: "low", approvalRequired: false });
+    expect(capabilityOntologyBinding({ kind: "analysis" }).boundObject).toBeUndefined();
   });
 });

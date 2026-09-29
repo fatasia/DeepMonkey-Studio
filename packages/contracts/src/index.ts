@@ -335,6 +335,7 @@ export * from "./converter.js";
 export * from "./conversionQuality.js";
 export * from "./unityReadiness.js";
 export * from "./semantic.js";
+export * from "./ontology.js";
 export * from "./simulationEntities.js";
 export * from "./robotAsset.js";
 export * from "./aiSamples.js";

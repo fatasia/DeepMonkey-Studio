@@ -59,3 +59,8 @@
 .semantic-notice { padding: 10px 14px; border: 1px solid var(--success); border-radius: 5px; }
 @media (max-width: 1100px) { .semantic-studio { padding: 16px; } .semantic-editor { padding: 16px; } .semantic-model-row { gap: 8px; } .semantic-save-bar { margin: 16px -16px -16px; bottom: -16px; } }
 @media (max-width: 720px) { .semantic-form-grid { grid-template-columns: 1fr; } .semantic-model-row { grid-template-columns: minmax(0, 1fr) auto; } .semantic-model-version { display: none; } .semantic-hierarchy-row { grid-template-columns: 18px minmax(0,1fr) auto; } .semantic-hierarchy-row > label:nth-of-type(2) { grid-column: 2; } .semantic-filter-row, .semantic-pipeline-field { grid-template-columns: minmax(0,1fr) minmax(0,1fr); } .semantic-studio-header { flex-wrap: wrap; } }
+
+/* H-C4-P0:语义模型步骤内的子工作区切换(指标与维度 / 语义与本体)。 */
+.semantic-subtabs { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 12px; background: var(--surface-2); border-radius: 6px; }
+.semantic-subtabs button { border-color: transparent; background: none; }
+.semantic-subtabs button.active { color: var(--text-strong); background: var(--panel); border-color: var(--line-strong); }

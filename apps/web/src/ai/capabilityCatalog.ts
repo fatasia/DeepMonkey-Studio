@@ -44,6 +44,28 @@ export function capabilityWritePolicy(kind: string): "read-only" | "confirm-requ
   return kind === "action" ? "confirm-required" : "read-only";
 }
 
+export interface CapabilityOntologyBinding {
+  /** 绑定的本体对象 key；未声明 = 能力尚未接入本体目录。 */
+  boundObject?: string;
+  riskLevel: "low" | "medium" | "high" | "critical";
+  approvalRequired: boolean;
+}
+
+/**
+ * H-C4-P0 能力 ↔ 本体行动的桥：读声明字段，缺省按 kind 派生
+ * （action 型能力缺省 medium 风险 + 需审批，与 capabilityWritePolicy 同一口径）。
+ * 本体只负责业务语义与风险契约；技术调用入口仍是能力目录。
+ */
+export function capabilityOntologyBinding(
+  capability: Pick<CapabilityDescriptor, "kind"> & Partial<Pick<CapabilityDescriptor, "boundObject" | "riskLevel" | "approvalRequired">>,
+): CapabilityOntologyBinding {
+  return {
+    ...(capability.boundObject ? { boundObject: capability.boundObject } : {}),
+    riskLevel: capability.riskLevel ?? (capability.kind === "action" ? "medium" : "low"),
+    approvalRequired: capability.approvalRequired ?? capability.kind === "action",
+  };
+}
+
 function takeAcrossNamespaces(capabilities: CapabilityDescriptor[], limit: number): CapabilityDescriptor[] {
   const groups = new Map<string, CapabilityDescriptor[]>();
   for (const capability of capabilities) {

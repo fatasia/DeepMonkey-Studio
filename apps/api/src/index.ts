@@ -4,6 +4,7 @@ import websocket from "@fastify/websocket";
 import { loadConfig } from "./config.js";
 import { ConversionQueue } from "./conversion.js";
 import { registerRoutes } from "./routes.js";
+import { OntologyPackageStore } from "./ontology/ontologyStore.js";
 import { registerApplicationRoutes } from "./applicationRoutes.js";
 import { registerConfiguredDashboardNative } from "./dashboardNativeStartup.js";
 import { registerPublishedApplicationRoutes } from "./publishedApplicationRoutes.js";
@@ -111,6 +112,9 @@ export async function buildApp() {
     goldenProvider: createGoldenVerifyProvider(),
   });
   await studyTasks.init();
+  // H-C4-P0 本体包存储：数据中心"语义与本体"工作区持久层（原子写 + 发布快照/回滚）。
+  const ontologyPackages = new OntologyPackageStore(config.dataDir);
+  await ontologyPackages.init();
   const industrialCapabilities = await createIndustrialCapabilityHost(operations, {
     aiSettings: () => resolveAiSettings(store),
     dataQuerySource,
@@ -219,6 +223,9 @@ export async function buildApp() {
     objects,
     dataDir: config.dataDir,
     config,
+    ontology: ontologyPackages,
+    listOntologyCapabilities: () => industrialCapabilities.registry.listCapabilities()
+      .map((capability) => ({ id: capability.id, version: capability.version, kind: capability.kind })),
     beforeDiscardPublication: (publication) => cloudRender.setEnabled(publication, false).then(() => undefined),
     afterPublish: async (publication) => {
       await notifications.service.dispatch({
