@@ -15,6 +15,23 @@ export { DISABLED_QUALITY_TELEMETRY_SNAPSHOT, QUALITY_TELEMETRY_SCHEMA, QUALITY_
   QualityTelemetryCollector } from "./qualityTelemetry.js";
 export type { QualityFrameRecord, QualityTelemetrySnapshot, QualityTelemetryTotals } from "./qualityTelemetry.js";
 export { PbrRenderer } from "./pbrRenderer.js";
+export { createVirtualTextureFrameBridge, VirtualTextureFrameBridge, virtualTextureUvBounds } from "./virtualTextureFrameBridge.js";
+export type { VirtualTextureCatalogEntry, VirtualTextureFeedbackTotals, VirtualTextureFrameMetrics,
+  VirtualTextureSampleRequest } from "./virtualTextureFrameBridge.js";
+export { VIRTUAL_TEXTURE_TILE_LOOKUP_WGSL, packVirtualTexturePageTable, VirtualTextureTileLookupPass } from "./virtualTextureSampling.js";
+export type { VirtualTileLookupFrameInput, VirtualTileLookupFrameResult,
+  VirtualTexturePageTablePacking } from "./virtualTextureSampling.js";
+export { VirtualTextureAtlasResidency } from "./virtualTextureResidency.js";
+export type { VirtualTexturePageSource } from "./virtualTextureResidency.js";
+export { GUARANTEED_MAX_TEXTURE_ARRAY_LAYERS, resolveVirtualTextureResidencyBudget } from "./virtualTextureResidencyBudget.js";
+export type { VirtualTextureResidencyBudget, VirtualTextureResidencyResolvedBudget,
+  VirtualTextureResidencyTelemetry } from "./virtualTextureResidencyBudget.js";
+export { resolveVirtualTextureOptions, DEFAULT_VIRTUAL_TEXTURE_RESIDENT_BYTES,
+  DEFAULT_VIRTUAL_TEXTURE_UPLOAD_PAGES_PER_FRAME } from "../virtualTextures/virtualTextureOptions.js";
+export type { ResolvedVirtualTextureOptions, VirtualTextureOptions } from "../virtualTextures/virtualTextureOptions.js";
+export { VirtualTextureFeedbackReader, virtualTextureFeedbackInfo } from "../virtualTextures/virtualTextureFeedback.js";
+export type { VirtualTextureFeedbackEntry, VirtualTextureFeedbackFrame, VirtualTextureFeedbackFrameStats,
+  VirtualTextureFeedbackTextureInfo, VirtualTextureFeedbackTextureLookup } from "../virtualTextures/virtualTextureFeedback.js";
 export { ClusterLodRenderSlot } from "./clusterLodRenderSlot.js";
 export type { ClusterLodSceneStaging, ClusterLodSlotMetrics, ClusterLodDrawStats } from "./clusterLodRenderSlot.js";
 export { buildClusterLodCadGeometry, buildClusterLodCadCameraCases, expandFrontierGeometry } from "./clusterLodCadFixture.js";

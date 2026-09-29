@@ -13,6 +13,7 @@ import type { AdaptiveQualityHotspotSummary, AdaptiveQualityOptions, AdaptiveQua
 import type { PbrAutoExposureFrameMetrics, PbrAutoExposureOptions } from "./pbrAutoExposure.js";
 import type { ProbeClipmapRuntimeOptions } from "./probeClipmapRuntime.js";
 import type { GpuParticleEmitter, GpuParticleEmitterRuntimeOptions } from "./gpuParticleEmitters.js";
+import type { VirtualTextureOptions } from "../virtualTextures/virtualTextureOptions.js";
 
 export interface RenderView extends PbrFrameUniformView {
   readonly authorGrid?: AuthorGridView | undefined;
@@ -54,6 +55,14 @@ export interface PbrRendererOptions {
   readonly shadows?: CascadedShadowResourceOptions;
   /** C10 接触阴影资源配置;features.contactShadows 打开时生效,默认(不带)关闭。 */
   readonly contactShadows?: import("../shadows/contactShadowResources.js").ContactShadowResourceOptions;
+  /**
+   * F3 虚拟纹理采样接线(opt-in,缺省关闭 = 零行为变化):`enabled:true` 时安装
+   * 页 atlas 预算驻留控制器,渲染循环逐帧 反馈采集 → 预算驻留 → atlas 独立绑定组,
+   * 并以独立 WGSL tile-lookup compute pass 消费采样(pbrShader 主 pass 接入留后续)。
+   * 驻留失败(atlas 创建/session 未就绪)fail-closed 回整纹理路径,原因经
+   * FrameMetrics.virtualTextures.fallbackReason 显式披露。
+   */
+  readonly virtualTextures?: VirtualTextureOptions;
   readonly features?: PbrRendererFeatureOptions;
   readonly environment?: PbrEnvironmentSource;
   /** Optional R12 capture transaction; omitted on normal production frames. */
@@ -126,6 +135,11 @@ export interface FrameMetrics {
   /** C10 接触阴影遥测(opt-in 才存在)。 */
   readonly contactShadowTier?: "performance" | "balanced" | "quality";
   readonly contactShadowMaskBytes?: number;
+  /**
+   * F3 虚拟纹理遥测(`virtualTextures.enabled` 时出现):驻留/上传/反馈/采样消费
+   * 逐帧快照;fallbackActive 时采样方走整纹理路径,原因在 fallbackReason。
+   */
+  readonly virtualTextures?: import("./virtualTextureFrameBridge.js").VirtualTextureFrameMetrics;
   readonly postProcessPasses: number; readonly weightedOit: boolean;
   readonly hiZMipLevels: number; readonly occlusionCulling: boolean;
   readonly frustumCulledBatches: number; readonly hiZOccludedBatches: number; readonly lodSelectionBatches: number; readonly lodIndirectDraws: number;

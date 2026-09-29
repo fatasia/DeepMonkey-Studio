@@ -165,7 +165,9 @@ export class VirtualTexturePageTable {
     this.rolledBack += before - this.resident.size;
   }
 
-  /** Evicts every committed page of one texture (T11 generation invalidation / release). */
+  /** Evicts every committed page of one texture (T11 generation invalidation / release).
+   * 事务性:先扫描整纹理确认无 in-flight,再原子删除——边删边抛会留下"粗 mip 已删、
+   * 细 mip 仍在"的断链状态,后续批提交触发 mip-prefix 不变量(桥释放路径实测)。 */
   evictTexture(textureId: string): readonly VirtualTexturePageHandle[] {
     if (typeof textureId !== "string" || textureId.length === 0) throw new TypeError("Texture id must be a non-empty string.");
     const evicted: VirtualTexturePageHandle[] = [];
@@ -173,8 +175,10 @@ export class VirtualTexturePageTable {
       if (entry.request.textureId !== textureId) continue;
       if (entry.inflight) throw new Error(`Virtual texture page ${id} is in-flight and cannot be evicted.`);
       evicted.push(this.handle(entry));
-      this.resident.delete(id);
-      this.residentBytes -= entry.request.costBytes;
+    }
+    for (const handle of evicted) {
+      this.resident.delete(handle.id);
+      this.residentBytes -= handle.costBytes;
     }
     return Object.freeze(evicted);
   }

@@ -67,6 +67,10 @@ import { SoftRasterizeFallback } from "./softRasterizeFallback.js";
 import { ClusterLodRenderSlot, type ClusterLodSceneStaging } from "./clusterLodRenderSlot.js";
 import { resolveClusterLodSlotOption } from "./clusterLodSlotSupport.js";
 import { PbrAutoExposureRuntime } from "./pbrAutoExposure.js";
+import { createVirtualTextureFrameBridge, virtualTextureUvBounds, type VirtualTextureFrameBridge,
+  type VirtualTextureFeedbackEntry, type VirtualTextureFrameMetrics } from "./virtualTextureFrameBridge.js";
+import { VirtualTextureTileLookupPass } from "./virtualTextureSampling.js";
+import type { CachedPacketGeometry } from "./packetBufferTypes.js";
 export type { FrameMetrics, PbrRendererOptions, RenderView } from "./pbrRendererTypes.js";
 export class PbrRenderer {
   readonly id = "deep-webgpu";
@@ -135,6 +139,9 @@ export class PbrRenderer {
   private readonly frameData = new Float32Array(PBR_FRAME_UNIFORM_FLOATS);
   /** F8 自动曝光(opt-in):缺省 undefined = 固定启发式 view.exposure 原样生效。 */
   private readonly autoExposure: PbrAutoExposureRuntime | undefined;
+  /** F4 虚拟纹理采样接线(opt-in):缺省 undefined = 整纹理驻留权威路径零行为变化。 */
+  private readonly virtualTextures: VirtualTextureFrameBridge | undefined;
+  private readonly virtualTileLookup: VirtualTextureTileLookupPass | undefined;
   /** 上一已提交渲染帧的相机切换;自动曝光在其后一帧直取目标(剪除瞬态)。 */
   private previousFrameCameraCut = false;
   private constructor(readonly session: DeviceSession, private readonly pipelines: Pipelines, environment: StudioEnvironment,
@@ -142,6 +149,10 @@ export class PbrRenderer {
     deformationPipelines?: Pipelines | Promise<Pipelines>, private readonly releasePipelines?: () => void) {
     this.diagnostics = new PbrRendererDiagnostics(session);
     this.clusterLodEnabled = resolveClusterLodSlotOption(options.clusterLod);
+    // F4 虚拟纹理(opt-in):resolve disabled(未启用/非法配置)时不构造任何资源,
+    // 与整纹理路径零差异;enabled 时驻留失败 fail-closed 回整纹理(原因随遥测披露)。
+    this.virtualTextures = createVirtualTextureFrameBridge(session, options.virtualTextures);
+    this.virtualTileLookup = this.virtualTextures ? new VirtualTextureTileLookupPass(session) : undefined;
     this.autoExposure = options.autoExposure === undefined ? undefined
       : new PbrAutoExposureRuntime(options.autoExposure, options.environment);
     this.adaptiveQuality = options.adaptiveQuality ? new AdaptiveQualityController(options.adaptiveQuality) : undefined;
@@ -213,9 +224,13 @@ export class PbrRenderer {
   setInstances(data: Float32Array<ArrayBuffer>): void { this.setPacket(spherePacket(data)); }
   setPacket(packet: RenderPacket): void {
     if (this.packets.set(packet)) { this.sceneChanged(); this.syncProbeClipmapSurfaces(packet); }
+    // F4 虚拟纹理目录全量同步:opt-in 才有 bridge;包内 RGBA8 纹理按需分页,压缩纹理
+    // 显式不入目录(反馈侧 droppedUnknownTexture 计数,采样方整纹理路径不受影响)。
+    this.virtualTextures?.syncTextures(packet.textures ?? []);
   }
   async setPacketValidated(packet: RenderPacket, signal?: AbortSignal): Promise<void> {
     if (await this.packets.setValidated(packet, signal)) { this.sceneChanged(); this.syncProbeClipmapSurfaces(packet); }
+    this.virtualTextures?.syncTextures(packet.textures ?? []);
   }
   stageResidentPacket(projection: ResidentPacketProjection): void {
     this.packets.stageResidentProjection(projection);
@@ -465,6 +480,10 @@ export class PbrRenderer {
         }],
       ]), { encoderLabelPrefix: "Deep PBR prepare" });
     const encoder = device.createCommandEncoder({ label: "Deep frame" });
+    // F4 虚拟纹理逐帧推进(opt-in):batch 级反馈代理 → 预算驻留 → tile-lookup 消费
+    // 编码,全部挂主 encoder;驻留时钟独立自增(渲染失败重试帧不破坏单调合同)。
+    const virtualTexturesMetrics = this.virtualTextures
+      ? this.driveVirtualTextures(frameState, size, encoder) : undefined;
     // G1-S1 簇级槽位：选层 compute pass + 读回拷贝追加到主 encoder（相机静止时零工作）。
     // 仅 plain HDR 帧签名可执行；MRT/directDisplay 记录 sticky fallback（不静默降级）。
     const clusterLod = this.clusterLodSlot;
@@ -732,6 +751,7 @@ export class PbrRenderer {
       ...(this.resolutionScale === 1 ? {} : { resolutionScale: this.resolutionScaleMetrics(surface) }),
       ...(upscaleMetrics ? { temporalUpscale: upscaleMetrics } : {}),
       ...this.shadows.metrics,
+      ...(virtualTexturesMetrics ? { virtualTextures: virtualTexturesMetrics } : {}),
       ...(this.contactShadows ? this.contactShadows.metrics : {}) };
     this.sampleAdaptiveQuality(metrics);
     if (!this.adaptiveQuality) return metrics;
@@ -752,6 +772,48 @@ export class PbrRenderer {
       throw error;
     }
   }
+  /** F4 虚拟纹理逐帧推进:batch 级反馈代理 → 预算驻留 → tile-lookup 消费编码。
+   *  fallback/atlas 未就绪时跳过消费编码,遥测仍逐帧回报(fail-closed,不静默)。 */
+  private driveVirtualTextures(frameState: ReturnType<typeof updatePbrFrameUniforms>,
+    size: { readonly width: number; readonly height: number }, encoder: GPUCommandEncoder):
+    VirtualTextureFrameMetrics | undefined {
+    const bridge = this.virtualTextures!;
+    const metrics = bridge.observeFrame(this.collectVirtualTextureFeedback(frameState, size));
+    const atlas = bridge.atlasTexture;
+    if (atlas === undefined || bridge.fallbackActive) return metrics;
+    const lookup = this.virtualTileLookup!;
+    const sampled = lookup.encode(encoder, { atlasView: lookup.viewOf(atlas),
+      atlasEdge: bridge.atlasEdgeTexels, catalog: bridge.textureCatalog(),
+      layerOfPage: (textureId, tileX, tileY, mip) => bridge.layerOfPage(textureId, tileX, tileY, mip),
+      samples: bridge.samples });
+    return { ...metrics, sampling: { dispatches: sampled.dispatches, samples: sampled.samples,
+      skipped: sampled.skipped } };
+  }
+
+  /** batch 级反馈条目:材质纹理槽 × UV 仿射包围域 × 球盘投影屏幕像素×实例数。
+   *  静态代理口径(同 autoExposure 先例):不新增 GPU 往返;不做逐实例精确视锥剔除
+   *  (背向/越远裁剪由 w≤0 与 NDC z 出界剔除),覆盖高估由反馈读取器 tile 聚合兜底。 */
+  private collectVirtualTextureFeedback(frameState: ReturnType<typeof updatePbrFrameUniforms>,
+    size: { readonly width: number; readonly height: number }): VirtualTextureFeedbackEntry[] {
+    const inputs = this.packets.visibilityInputs();
+    const entries: VirtualTextureFeedbackEntry[] = [];
+    for (const batch of inputs.batches.values()) {
+      const textures = batch.source.textures;
+      if (!textures) continue;
+      const geometry = inputs.geometries.get(batch.source.geometry);
+      const screenPixels = geometry === undefined ? 0 : virtualTextureScreenPixels(geometry,
+        frameState.depthViewProjection, frameState.projection.verticalFovRadians, size) * batch.source.count;
+      if (!(screenPixels > 0)) continue;
+      for (const slot of [textures.baseColor, textures.metallicRoughness, textures.normal,
+        textures.occlusion, textures.emissive]) {
+        if (!slot) continue;
+        const bounds = virtualTextureUvBounds(slot.uvTransform);
+        entries.push({ textureId: slot.texture, ...bounds, screenPixels });
+      }
+    }
+    return entries;
+  }
+
   private resolutionScaleMetrics(surface: { readonly width: number; readonly height: number }): FrameMetrics["resolutionScale"] | undefined {
     if (this.resolutionScaler === undefined || this.resolutionScale === 1) return undefined;
     // 质量槽位保持 measured=false：真实画质数字须来自 GPU 序列联测，不许发明。
@@ -861,7 +923,9 @@ export class PbrRenderer {
     this.particleRuntime?.dispose();
     const owners = [this.ground.author, this.outputs, this.environment, this.lighting, this.localShadows,
       this.shadowState, this.previousHiZ, this.transparency, this.postProcess, this.packets, this.targets,
-      ...(this.visibility ? [this.visibility] : []), ...(this.clusterLodSlot ? [this.clusterLodSlot] : [])];
+      ...(this.visibility ? [this.visibility] : []), ...(this.clusterLodSlot ? [this.clusterLodSlot] : []),
+      ...(this.virtualTextures ? [this.virtualTextures] : []),
+      ...(this.virtualTileLookup ? [this.virtualTileLookup] : [])];
     // 释放背景排队门：未 release 就销毁的宿主也能让挂起的门禁 promise 结算。
     this.releasePipelines?.();
     runResourceCleanup("PBR renderer cleanup failed.", [...owners.map(owner => () => owner.dispose()),
@@ -878,4 +942,18 @@ function probeClipmapDeviceEpoch(device: GPUDevice): string {
   const created = `deep-probe-clipmap-${++probeClipmapEpochCounter}`;
   probeClipmapDeviceEpochs.set(device, created);
   return created;
+}
+
+/** batch 球体 → 屏幕圆盘像素面积(静态代理):focal = height/2 / tan(fov/2),
+ *  透视深取 clip w;w≤0 或 NDC z 出 [0,1](WebGPU 口径)显式 0 = 不产反馈。 */
+function virtualTextureScreenPixels(geometry: CachedPacketGeometry, viewProjection: Float32Array,
+  verticalFovRadians: number, size: { readonly width: number; readonly height: number }): number {
+  const [cx, cy, cz] = geometry.center;
+  const w = viewProjection[3]! * cx + viewProjection[7]! * cy + viewProjection[11]! * cz + viewProjection[15]!;
+  if (!(w > 0)) return 0;
+  const z = viewProjection[2]! * cx + viewProjection[6]! * cy + viewProjection[10]! * cz + viewProjection[14]!;
+  if (z < 0 || z > w) return 0;
+  const focal = size.height / (2 * Math.tan(verticalFovRadians / 2));
+  const radiusPx = geometry.radius * focal / w;
+  return Math.PI * radiusPx * radiusPx;
 }
