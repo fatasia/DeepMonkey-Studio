@@ -1,12 +1,8 @@
-import {
-  fingerprint64Labeled,
-  type OntologyActionEffect,
-  type OntologyActionRisk,
-  type OntologyCondition,
-} from "@bim-studio/contracts";
+import { fingerprint64Labeled } from "./fingerprint.js";
+import type { OntologyActionEffect, OntologyActionRisk, OntologyCondition } from "./ontology.js";
 
 /**
- * H-C4-P3「Harness 行动路径」契约（暂放 apps/api/src/ai/，落地后由主线程统一晋升 packages/contracts）。
+ * H-C4-P3「Harness 行动路径」契约（2026-09-29 主线程晋升 packages/contracts；api 消费方经 @bim-studio/contracts 引用）。
  *
  * 链路（ai-ontology-integration-plan-2026-09-29 §4.5 / 剩余任务清单 H-C4-P3）：
  *   计划(假设跳) → 预览 → 审批(按需) → 执行(只走既有工具网关) → 回执(ProvenanceLedger 第三跳)。

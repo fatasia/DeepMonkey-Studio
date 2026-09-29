@@ -9,7 +9,7 @@ import {
   OntologyActionRuntimeError,
   validateOntologyActionQuery,
   type OntologyActionPlanInput,
-} from "./ontologyActionContracts.js";
+} from "@bim-studio/contracts";
 import {
   createOntologyActionService,
   isOntologyActionRejection,

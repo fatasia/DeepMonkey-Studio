@@ -26,7 +26,7 @@ import {
   type AiProvenanceActionQuery,
   type AiProvenanceActionReceiptNode,
   type AiProvenanceActionTrace,
-} from "./ontologyActionContracts.js";
+} from "@bim-studio/contracts";
 
 /**
  * H-C3 档案室：ProvenanceLedger（节点=假设/内核运行/判定/报告，边=proposal→run→verdict→report）。

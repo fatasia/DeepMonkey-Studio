@@ -32,7 +32,7 @@ import {
   type OntologyExecuteOutcome,
   type OntologyPreconditionEvaluator,
   type OntologyActionRejectionCode,
-} from "./ontologyActionContracts.js";
+} from "@bim-studio/contracts";
 
 /**
  * H-C4-P3「Harness 行动路径」服务：把已发布本体行动接入既有 Harness 执行链。

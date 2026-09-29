@@ -9,7 +9,7 @@ import { ProvenanceLedgerStore } from "./provenanceLedger.js";
 import { aiToolScopeFingerprint } from "./aiToolReliability.js";
 import {
   ONTOLOGY_ACTION_REJECTION_CODES,
-} from "./ontologyActionContracts.js";
+} from "@bim-studio/contracts";
 import {
   createOntologyActionService,
   unbindOntologyActionLedgerForTest,
