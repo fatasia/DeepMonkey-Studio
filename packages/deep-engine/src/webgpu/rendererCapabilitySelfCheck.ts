@@ -22,6 +22,7 @@ import {
 } from "../lighting/probeRadianceDirectionGate.js";
 import { DEEP_PBR_MESH_V1_BYTE_SIZES } from "../shaderAbi/contract.js";
 import { MATERIAL_PARAMETER_KEYS } from "../shader/materialParameters.js";
+import { HDR_DISPLAY_REASON_CODES, HDR_DISPLAY_STRATEGIES, resolveHdrDisplayPolicy } from "./hdrDisplayOutput.js";
 import { classifyDeviceLost, DeviceRecoveryStateMachine } from "./deviceRecovery.js";
 import { DEFAULT_PBR_RENDERER_FEATURES, type PbrRendererFeatures } from "./pbrRendererFeatures.js";
 import { PBR_TIMED_PASS_IDS } from "./pbrTimedPassIds.js";
@@ -241,6 +242,20 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
     // 观测面 = 预计算表指纹（漂移由 atmosphereSky.test.ts 自钉断言守，此处不重复）。
     capabilityId: "atmosphere-sky", support: "supported", reason: "opt-in-default-off",
     observed: { defaultMode: "neutral", qualityTierMode: "atmosphere" },
+  },
+  {
+    // I-C21 HDR 显示输出：opt-in 默认关；观测面从 hdrDisplayOutput 纯函数常量派生
+    // （策略/原因码封闭集收缩、或默认解析结果漂移即红）。webFeatureKeys 为空与
+    // atmosphere-sky 同先例：门在配置边界而非 PbrRendererFeatures 特性面。
+    capabilityId: "hdr-display-output", support: "supported", reason: "opt-in-default-off",
+    observed: {
+      strategyCount: HDR_DISPLAY_STRATEGIES.length,
+      reasonCodeCount: HDR_DISPLAY_REASON_CODES.length,
+      defaultPolicyMode: resolveHdrDisplayPolicy(undefined, {}).mode,
+      hdrProbeFailClosed: resolveHdrDisplayPolicy(
+        { webgpuAvailable: false, displayDynamicRange: "high", canvasToneMappingExtended: true,
+          canvasFormatRgba16float: true }, { enabled: true }).failClosed,
+    },
   },
 ]);
 

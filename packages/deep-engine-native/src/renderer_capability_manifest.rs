@@ -328,6 +328,12 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         reason: RendererCapabilityReasonCode::Absent,
         evidence: "无大气散射/环境源模块(native 直出光栅化;天空源按设计属 web PbrRenderer 的 radiance-hdr/studio 环境)",
     },
+    NativeCapabilitySelfCheck {
+        capability_id: "hdr-display-output",
+        support: RendererCapabilitySupport::Unavailable,
+        reason: RendererCapabilityReasonCode::Absent,
+        evidence: "无 HDR 显示输出模块(native 离屏直出经 output-transform ACES SDR;显示 surface 链按设计属 web 宿主)",
+    },
 ];
 
 #[cfg(test)]

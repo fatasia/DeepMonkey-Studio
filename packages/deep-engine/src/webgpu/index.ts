@@ -38,6 +38,17 @@ export { buildClusterLodCadGeometry, buildClusterLodCadCameraCases, expandFronti
 export type { ClusterLodCadGeometry, ClusterLodCadCameraCase } from "./clusterLodCadFixture.js";
 export { createHdrEnvironment } from "./hdrEnvironment.js";
 export type { HdrEnvironment, HdrEnvironmentOptions } from "./hdrEnvironment.js";
+export { HDR_DISPLAY_STRATEGIES, HDR_DISPLAY_REASON_CODES, HDR_DISPLAY_REASON_PAIRS,
+  HDR_REFERENCE_WHITE_NITS, DEFAULT_PQ_PEAK_NITS, MAX_PQ_PEAK_NITS, DEFAULT_EXTENDED_HEADROOM,
+  GPU_TEXTURE_USAGE_SURFACE, resolveHdrDisplayPolicy, describeHdrCanvasConfiguration } from "./hdrDisplayOutput.js";
+export type { HdrDisplayStrategy, HdrDisplayReasonCode, HdrDisplayProbe, HdrDisplayRequest,
+  HdrDisplayPolicy, HdrCanvasConfiguration } from "./hdrDisplayOutput.js";
+export { PQ_M1, PQ_M2, PQ_C1, PQ_C2, PQ_C3, HLG_A, HDR_STRATEGY_UNIFORM_INDEX, GAMUT_PRIMARIES,
+  linearNitsToPq, pqToLinearNits, linearToHlg, extendedLinearHeadroom, hdrEncodeChannel,
+  hdrSettingsUniform, quantifyHdrVsSdr, cieXyFromLinearSrgb, pointInTriangle } from "./pbrHdrDisplay.js";
+export type { HdrVsSdrQuantification, QuantifyOptions } from "./pbrHdrDisplay.js";
+export { createHdrDisplayPipeline, createHdrDisplayAuthorLayout } from "./pbrHdrDisplayPipeline.js";
+export type { HdrDisplayPipeline } from "./pbrHdrDisplayPipeline.js";
 export { createPbrEnvironment } from "./pbrEnvironmentSource.js";
 export type { PbrEnvironmentSource } from "./pbrEnvironmentSource.js";
 export { PbrEnvironmentState } from "./pbrEnvironmentState.js";

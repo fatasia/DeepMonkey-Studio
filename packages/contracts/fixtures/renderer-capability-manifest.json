@@ -517,6 +517,21 @@
         "reason": "absent",
         "evidence": "packages/deep-engine-native/src/lib.rs(native 直出光栅化无环境源通路,无大气散射模块;天空源按设计属 web PbrRenderer 的 radiance-hdr/studio 环境)"
       }
+    },
+    {
+      "id": "hdr-display-output",
+      "title": "HDR 显示输出(HDR10/PQ 直出显示链,I-C21,opt-in)",
+      "webFeatureKeys": [],
+      "web": {
+        "support": "supported",
+        "reason": "opt-in-default-off",
+        "evidence": "packages/deep-engine/src/webgpu/hdrDisplayOutput.ts:resolveHdrDisplayPolicy(检测→策略匹配→canvas rgba16float+extended 配置描述符;fail-closed 原因码封闭集默认关;pbrOutputBindings.applyHdrDisplay HDR present 变体直出+hdr-pipeline-failed 显式回退;pbrHdrDisplayWgsl PQ/HLG/headroom 编码核与 pbrHdrDisplay CPU 镜像同源)"
+      },
+      "native": {
+        "support": "unavailable",
+        "reason": "absent",
+        "evidence": "packages/deep-engine-native/src/lib.rs(无 HDR 显示输出模块;native 离屏直出经 output-transform ACES SDR,显示 surface 链按设计属 web 宿主)"
+      }
     }
   ]
 }
