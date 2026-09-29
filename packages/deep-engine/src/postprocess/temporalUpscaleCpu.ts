@@ -5,7 +5,8 @@ import type { TemporalUpscaleCpuInput, TemporalUpscaleOptions } from "./temporal
  * F4 时域上采样 CPU 参考:与 temporalUpscaleWgsl/temporalUpscale 逐公式同构。
  * 空间核 = Catmull-Rom 16-tap(每轴 4 权重);时域项 = UV 运动重投影 + 深度感知
  * 双线性历史 + YCoCg AABB 邻域钳制(与 temporalAaCpu 同式)。历史失效帧退化
- * 为纯 Catmull-Rom(fail-closed,无 ghosting 累积)。
+ * 为纯 Catmull-Rom(fail-closed,无 ghosting 累积)。reactiveAlpha 缺省视为全零,
+ * 供给时透明/粒子区域历史混合权重按 (1-reactive) 降权(与 WGSL flags.y 同式)。
  */
 
 /** Catmull-Rom(B=0, C=0.5)核:单点距 t 的权重。分段三次,支撑 [-2, 2]。 */
@@ -90,6 +91,11 @@ export function validateTemporalUpscaleCpuInput(input: TemporalUpscaleCpuInput):
     || input.previousDepth.length !== displayWidth * displayHeight
     || !input.previousColor.every(Number.isFinite) || !input.previousDepth.every(Number.isFinite))) {
     throw new Error("Valid history requires display-sized previous color and depth.");
+  }
+  if (input.reactiveAlpha !== undefined
+    && (input.reactiveAlpha.length !== internalWidth * internalHeight
+      || !input.reactiveAlpha.every(value => Number.isFinite(value) && value >= 0 && value <= 1))) {
+    throw new Error("Reactive alpha requires internal-sized finite values inside [0, 1].");
   }
 }
 
@@ -178,9 +184,13 @@ export function resolveTemporalUpscaleCpu(input: TemporalUpscaleCpuInput, option
               clamp(history[0]!, minimum[0]!, maximum[0]!),
               clamp(history[1]!, minimum[1]!, maximum[1]!),
               clamp(history[2]!, minimum[2]!, maximum[2]!));
-            resolvedR = r * (1 - options.feedback) + clamped[0] * options.feedback;
-            resolvedG = g * (1 - options.feedback) + clamped[1] * options.feedback;
-            resolvedB = b * (1 - options.feedback) + clamped[2] * options.feedback;
+            // reactive 覆盖(center 内部 texel 最近邻,与 WGSL textureLoad(center) 同点):
+            // 透明/粒子区域历史按 (1-reactive) 降权;缺省视为全零,混合权重不变。
+            const reactive = input.reactiveAlpha?.[motionY0 * internalWidth + motionX0] ?? 0;
+            const blend = options.feedback * (1 - clamp(reactive, 0, 1));
+            resolvedR = r * (1 - blend) + clamped[0] * blend;
+            resolvedG = g * (1 - blend) + clamped[1] * blend;
+            resolvedB = b * (1 - blend) + clamped[2] * blend;
           }
         }
       }

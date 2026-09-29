@@ -20,6 +20,13 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
   if (options.clusterLod !== undefined && typeof options.clusterLod !== "boolean") {
     throw new TypeError("Deep WebGPU clusterLod option must be boolean.");
   }
+  // F3 虚拟纹理快照边界:非对象(含 null/标量)在 spread 下会静默吞成空对象穿透
+  // 快照,fail-closed 在边界拒绝;字段级语义校验由 resolveVirtualTextureOptions
+  // 的 fail-closed 解析(启用但非法 → enabled:false+reason)在渲染侧负责,不在此重复。
+  if (options.virtualTextures !== undefined
+    && (!options.virtualTextures || typeof options.virtualTextures !== "object" || Array.isArray(options.virtualTextures))) {
+    throw new TypeError("Deep WebGPU virtualTextures option must be an object.");
+  }
   return Object.freeze({
     ...(options.meshlets === undefined ? {} : { meshlets: options.meshlets }),
     ...(options.deformation === undefined ? {} : { deformation: options.deformation }),

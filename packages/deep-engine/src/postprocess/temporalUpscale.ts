@@ -2,6 +2,7 @@
 import { createAdmittedTexture, createAdmittedBuffer } from "../webgpu/resourceAdmission.js";
 import type { DeviceSession } from "../webgpu/deviceSession.js";
 import { temporalAaJitter, validateTemporalAaJitter, validateTemporalAaOptions } from "./temporalAaCpu.js";
+import { TEMPORAL_REACTIVE_MASK_FORMAT } from "./temporalAaTypes.js";
 import { type TemporalUpscaleOptions, type TemporalUpscaleResult, type TemporalUpscaleSource,
   TEMPORAL_UPSCALE_COLOR_FORMAT, TEMPORAL_UPSCALE_DEPTH_FORMAT, TEMPORAL_UPSCALE_MOTION_FORMAT } from "./temporalUpscaleTypes.js";
 import { TEMPORAL_UPSCALE_WGSL, TEMPORAL_UPSCALE_WORKGROUP_SIZE } from "./temporalUpscaleWgsl.js";
@@ -24,12 +25,16 @@ interface UpscaleAllocation {
  * F4 时域上采样 pass:内部渲染分辨率主帧 → 全分辨率(显示画布)输出,全分辨率
  * color/depth 双缓冲 ping-pong 历史。历史失效(first-frame/resize/camera-cut/
  * revision-gap)输出退化为纯 Catmull-Rom 空间核(fail-closed,不残留陈旧历史)。
+ * reactive 供给(可选,内部分辨率 r8unorm):透明/粒子覆盖区历史按 (1-reactive)
+ * 降权(与 TAA binding 8 同式);缺省绑 1×1 零 fallback 且 flags.y=0,零行为变化。
  * 参数打包与 temporalUpscaleWgsl.UpscaleParams 逐字段对齐;抖动差按 displayScale
  * 从内部像素映射为显示像素(与 temporalUpscaleCpu 同式)。
  */
 export class TemporalUpscalePass {
   private readonly layout: GPUBindGroupLayout;
   private readonly pipeline: GPUComputePipeline;
+  private readonly zeroMask: GPUTexture;
+  private readonly zeroMaskView: GPUTextureView;
   private allocation: UpscaleAllocation | undefined;
   private historyIndex = 0;
   private lastRevision: number | undefined;
@@ -48,10 +53,17 @@ export class TemporalUpscalePass {
       { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage", minBindingSize: PARAMETER_BYTES } },
       { binding: 6, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "write-only", format: TEMPORAL_UPSCALE_COLOR_FORMAT } },
       { binding: 7, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "write-only", format: TEMPORAL_UPSCALE_DEPTH_FORMAT } },
+      { binding: 8, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "float" } },
     ] });
     this.pipeline = device.createComputePipeline({ label: "Deep temporal upscale pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [this.layout] }),
       compute: { module, entryPoint: "upscaleTemporal" } });
+    // 无 reactive 供给时的 binding 满足:WebGPU 纹理零初始化保证内容恒 0,配合
+    // flags.y=0 门,WGSL 读到的 reactive 恒 0 —— fail-closed 双保险(与 TAA 同模式)。
+    this.zeroMask = createAdmittedTexture(session, { label: "Deep temporal upscale reactive mask fallback",
+      size: [1, 1], format: TEMPORAL_REACTIVE_MASK_FORMAT,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+    this.zeroMaskView = this.zeroMask.createView();
   }
 
   encode(encoder: GPUCommandEncoder, source: TemporalUpscalePassSource, options: TemporalUpscaleOptions): TemporalUpscaleResult {
@@ -73,6 +85,7 @@ export class TemporalUpscalePass {
       const historyUsed = invalidation === null;
       const writeIndex: 0 | 1 = historyUsed ? (1 - this.historyIndex) as 0 | 1 : 0;
       const readIndex: 0 | 1 = historyUsed ? this.historyIndex as 0 | 1 : 1;
+      const reactiveEnabled = source.reactiveMask !== undefined;
       const currentJitter = source.currentJitter ? jitterSnapshot(source.currentJitter) : temporalAaJitter(source.revision);
       const previousJitter = source.previousJitter ? jitterSnapshot(source.previousJitter)
         : historyUsed ? this.lastJitter : currentJitter;
@@ -85,9 +98,10 @@ export class TemporalUpscalePass {
         { binding: 5, resource: { buffer: candidate!.parameters[writeIndex] } },
         { binding: 6, resource: candidate!.colors[writeIndex].createView() },
         { binding: 7, resource: candidate!.depths[writeIndex].createView() },
+        { binding: 8, resource: source.reactiveMask ? source.reactiveMask.createView() : this.zeroMaskView },
       ] });
       this.session.device.queue.writeBuffer(candidate!.parameters[writeIndex], 0,
-        packTemporalUpscaleParameters(candidate!, historyUsed, currentJitter, previousJitter, options));
+        packTemporalUpscaleParameters(candidate!, historyUsed, currentJitter, previousJitter, options, reactiveEnabled));
       const pass = encoder.beginComputePass({ label: "Deep temporal upscale" });
       pass.setPipeline(this.pipeline); pass.setBindGroup(0, bindGroup);
       pass.dispatchWorkgroups(Math.ceil(candidate!.displayWidth / TEMPORAL_UPSCALE_WORKGROUP_SIZE),
@@ -111,6 +125,7 @@ export class TemporalUpscalePass {
     this.disposed = true;
     if (this.allocation) this.release(this.allocation);
     this.allocation = undefined; this.lastRevision = undefined;
+    this.session.release(this.zeroMask);
   }
 
   private allocate(displayWidth: number, displayHeight: number, internalWidth: number,
@@ -182,6 +197,17 @@ function validateSource(device: GPUDevice, source: TemporalUpscalePassSource): v
       throw new Error("Upscale input dimensions must match.");
     }
   }
+  const reactiveMask = source.reactiveMask;
+  if (reactiveMask !== undefined) {
+    if (reactiveMask.format !== TEMPORAL_REACTIVE_MASK_FORMAT || reactiveMask.dimension !== "2d"
+      || reactiveMask.depthOrArrayLayers !== 1 || reactiveMask.sampleCount !== 1
+      || (reactiveMask.usage & GPUTextureUsage.TEXTURE_BINDING) === 0) {
+      throw new Error(`Invalid upscale reactive mask; expected ${TEMPORAL_REACTIVE_MASK_FORMAT} single-sample 2D TEXTURE_BINDING.`);
+    }
+    if (reactiveMask.width !== source.color.width || reactiveMask.height !== source.color.height) {
+      throw new Error("Upscale reactive mask dimensions must match the internal render.");
+    }
+  }
   const displayWidth = Math.max(1, Math.round(source.color.width * source.displayScale));
   const displayHeight = Math.max(1, Math.round(source.color.height * source.displayScale));
   if (displayWidth > device.limits.maxTextureDimension2D || displayHeight > device.limits.maxTextureDimension2D
@@ -191,16 +217,16 @@ function validateSource(device: GPUDevice, source: TemporalUpscalePassSource): v
   }
 }
 
-/** 布局 = temporalUpscaleWgsl.UpscaleParams(64B):尺寸 u32×4 | flags u32×4 | tuning f32×4 | jitterΔ f32×4。导出仅供单测布局对拍。 */
+/** 布局 = temporalUpscaleWgsl.UpscaleParams(64B):尺寸 u32×4 | flags u32×4(valid,reactive 门,0,0) | tuning f32×4 | jitterΔ f32×4。导出仅供单测布局对拍。 */
 export function packTemporalUpscaleParameters(allocation: { displayWidth: number; displayHeight: number;
     internalWidth: number; internalHeight: number }, valid: boolean,
   current: readonly [number, number], previous: readonly [number, number],
-  options: TemporalUpscaleOptions): ArrayBuffer {
+  options: TemporalUpscaleOptions, reactiveMask: boolean): ArrayBuffer {
   const buffer = new ArrayBuffer(PARAMETER_BYTES);
   const uints = new Uint32Array(buffer), floats = new Float32Array(buffer);
   const displayScale = allocation.displayWidth / allocation.internalWidth;
   uints.set([allocation.displayWidth, allocation.displayHeight, allocation.internalWidth, allocation.internalHeight], 0);
-  uints.set([valid ? 1 : 0, 0, 0, 0], 4);
+  uints.set([valid ? 1 : 0, reactiveMask ? 1 : 0, 0, 0], 4);
   floats.set([options.feedback, options.depthThreshold, options.relativeDepthThreshold, displayScale], 8);
   floats.set([(previous[0] - current[0]) * displayScale, (previous[1] - current[1]) * displayScale, 0, 0], 12);
   return buffer;

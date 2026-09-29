@@ -4,6 +4,9 @@ export const TEMPORAL_UPSCALE_WORKGROUP_SIZE = 8;
  * 边界 clamp);时域项 = UV 运动重投影 + 深度感知双线性历史 + YCoCg AABB 邻域
  * 钳制(与 temporalAaWgsl 同式;窗口取内部 texel 网格)。历史失效帧(sizeHistory.z
  * = 0)时域项权重为 0,输出退化为纯 Catmull-Rom —— fail-closed,无 ghosting 累积。
+ * flags.y = reactive 门:透明/粒子 reactive 覆盖(r8unorm,内部 texel 最近邻读)
+ * 处历史混合权重按 (1 - reactive) 降权(与 TAA binding 8 同式);flags.y = 0 时
+ * 不读 mask 绑定的 fallback(恒 0),历史权重不变 —— 无供给零行为变化。
  *
  * 尺寸/坐标语义:sizeDisplay = 输出(画布)分辨率,sizeInternal = 渲染分辨率。
  * motion 是 UV delta(分辨率无关),显示像素 delta = motion × sizeDisplay;
@@ -24,6 +27,7 @@ struct UpscaleParams {
 @group(0) @binding(5) var<storage, read> upscaleParams: UpscaleParams;
 @group(0) @binding(6) var outputColor: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(7) var outputDepth: texture_storage_2d<r32float, write>;
+@group(0) @binding(8) var reactiveMask: texture_2d<f32>;
 
 fn catmullRom(t: f32) -> f32 {
   let a = abs(t);
@@ -109,7 +113,14 @@ fn upscaleTemporal(@builtin(global_invocation_id) id: vec3<u32>) {
         } }
         let history = rgbToYCoCg(historicalColor.rgb);
         let clampedHistory = yCoCgToRgb(clamp(history, minimum, maximum));
-        resolved = mix(color.rgb, clampedHistory, upscaleParams.tuning.x);
+        // reactive 覆盖(内部 texel 最近邻,与 motion 同点):透明/粒子区域历史
+        // 按 (1 - reactive) 降权,该帧更多采信当前帧 —— 与 TAA binding 8 同式。
+        var blend = upscaleParams.tuning.x;
+        if (upscaleParams.flags.y == 1u) {
+          let reactive = clamp(textureLoad(reactiveMask, center, 0).x, 0.0, 1.0);
+          blend = blend * (1.0 - reactive);
+        }
+        resolved = mix(color.rgb, clampedHistory, blend);
       }
     }
   }

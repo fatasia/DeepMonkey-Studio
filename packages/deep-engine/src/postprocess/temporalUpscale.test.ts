@@ -106,10 +106,11 @@ describe("packTemporalUpscaleParameters", () => {
   it("matches the WGSL UpscaleParams layout field by field", () => {
     const buffer = packTemporalUpscaleParameters(
       { displayWidth: 1920, displayHeight: 1080, internalWidth: 1286, internalHeight: 723 },
-      true, [0.25, -0.25], [0, 0], OPTIONS);
+      true, [0.25, -0.25], [0, 0], OPTIONS, false);
     const uints = new Uint32Array(buffer), floats = new Float32Array(buffer);
     expect([...uints.slice(0, 4)]).toEqual([1920, 1080, 1286, 723]);
     expect(uints[4]).toBe(1);
+    expect(uints[5]).toBe(0);
     expect(floats[8]).toBeCloseTo(OPTIONS.feedback);
     expect(floats[9]).toBeCloseTo(OPTIONS.depthThreshold);
     expect(floats[10]).toBeCloseTo(OPTIONS.relativeDepthThreshold);
@@ -117,8 +118,13 @@ describe("packTemporalUpscaleParameters", () => {
     expect(floats[12]).toBeCloseTo((0 - 0.25) * (1920 / 1286));
     expect(floats[13]).toBeCloseTo((0 - -0.25) * (1920 / 1286));
     const invalid = packTemporalUpscaleParameters(
-      { displayWidth: 64, displayHeight: 64, internalWidth: 32, internalHeight: 32 }, false, [0, 0], [0, 0], OPTIONS);
+      { displayWidth: 64, displayHeight: 64, internalWidth: 32, internalHeight: 32 }, false, [0, 0], [0, 0], OPTIONS, false);
     expect(new Uint32Array(invalid)[4]).toBe(0);
+    // reactive 门位:供给 mask 时 flags.y = 1(其余 flags 位保持零)。
+    const reactive = packTemporalUpscaleParameters(
+      { displayWidth: 64, displayHeight: 64, internalWidth: 32, internalHeight: 32 }, true, [0, 0], [0, 0], OPTIONS, true);
+    const reactiveFlags = new Uint32Array(reactive).slice(4, 8);
+    expect([...reactiveFlags]).toEqual([1, 1, 0, 0]);
   });
 });
 
@@ -132,6 +138,13 @@ describe("validateTemporalUpscaleCpuInput", () => {
     expect(() => validateTemporalUpscaleCpuInput({ ...input, depth: badDepth })).toThrow();
     expect(() => validateTemporalUpscaleCpuInput({ ...input, currentJitter: [1, 0] })).toThrow();
     expect(() => validateTemporalUpscaleCpuInput({ ...input, historyValid: true })).toThrow();
+    // reactive alpha:内部分辨率长度 + [0,1] 值域 fail-closed。
+    expect(() => validateTemporalUpscaleCpuInput({ ...input, reactiveAlpha: [0, 1] })).toThrow();
+    const outOfRange = new Array<number>(input.depth.length).fill(0);
+    outOfRange[3] = 1.5;
+    expect(() => validateTemporalUpscaleCpuInput({ ...input, reactiveAlpha: outOfRange })).toThrow();
+    expect(() => validateTemporalUpscaleCpuInput({ ...input, reactiveAlpha: new Array<number>(input.depth.length).fill(0.25) }))
+      .not.toThrow();
     const valid = syntheticInput(FIELD, 0);
     const history = new Float32Array(FIELD.displayWidth * FIELD.displayHeight * 4).fill(0.5);
     const historyDepth = new Float32Array(FIELD.displayWidth * FIELD.displayHeight).fill(4);
@@ -248,5 +261,45 @@ describe("resolveTemporalUpscaleCpu", () => {
     expect(mse(half, history)).toBeGreaterThan(0);
     expect(() => resolveTemporalUpscaleCpu(withHistory, { ...OPTIONS, feedback: 1 })).toThrow();
     expect(() => resolveTemporalUpscaleCpu(input, { ...OPTIONS, depthThreshold: -1 })).toThrow();
+  });
+
+  describe("reactive coverage (T07 per-pixel mask supply)", () => {
+    /** 常量历史(0.5)+ 正弦当前场:时域项普遍生效,reactive 的影响可观测。 */
+    function withConstantHistory() {
+      const { input } = syntheticInput(FIELD, 0);
+      const history = new Float32Array(FIELD.displayWidth * FIELD.displayHeight * 4).fill(0.5);
+      return { input: { ...input, historyValid: true, previousColor: history,
+        previousDepth: new Float32Array(FIELD.displayWidth * FIELD.displayHeight).fill(4) }, history };
+    }
+    const distToHistory = (output: Float32Array, history: Float32Array): number => mse(output, [...history]);
+
+    it("keeps the no-supply output bit-identical to the all-zero mask (zero behavior change)", () => {
+      const { input, history } = withConstantHistory();
+      const baseline = resolveTemporalUpscaleCpu(input, OPTIONS);
+      const zeroMask = resolveTemporalUpscaleCpu({ ...input,
+        reactiveAlpha: new Array<number>(input.depth.length).fill(0) }, OPTIONS);
+      expect([...zeroMask]).toEqual([...baseline]);
+      expect(distToHistory(baseline, history)).toBeGreaterThan(0);
+    });
+
+    it("downweights history to the pure spatial kernel wherever the mask is non-zero", () => {
+      const { input } = withConstantHistory();
+      const spatialOnly = resolveTemporalUpscaleCpu({ ...input, historyValid: false,
+        previousColor: undefined, previousDepth: undefined }, OPTIONS);
+      const fullMask = resolveTemporalUpscaleCpu({ ...input,
+        reactiveAlpha: new Array<number>(input.depth.length).fill(1) }, OPTIONS);
+      // reactive = 1 → 历史权重归零,该帧输出与历史失效帧逐位一致(fail-closed 语义)。
+      expect([...fullMask]).toEqual([...spatialOnly]);
+    });
+
+    it("scales the remaining history contribution monotonically with the reactive value", () => {
+      const { input, history } = withConstantHistory();
+      const outputs = [0, 0.5, 1].map(value => resolveTemporalUpscaleCpu({ ...input,
+        reactiveAlpha: new Array<number>(input.depth.length).fill(value) }, OPTIONS));
+      const distances = outputs.map(output => distToHistory(output, history));
+      // 历史贡献随 reactive 单调衰减:reactive 越高越不信任历史。
+      expect(distances[2]).toBeGreaterThan(distances[1]);
+      expect(distances[1]).toBeGreaterThan(distances[0]);
+    });
   });
 });

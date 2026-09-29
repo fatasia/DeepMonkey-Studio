@@ -15,6 +15,12 @@ export interface TemporalUpscaleSource {
   readonly depth: GPUTexture;
   /** 内部分辨率 current-to-previous-UV 运动矢量(渲染主帧逐像素写入,UV 语义与分辨率无关)。 */
   readonly motion: GPUTexture;
+  /**
+   * 内部分辨率 reactive 覆盖(r8unorm,0-255 → 0-1):透明/粒子等无运动目标区域,
+   * 该处历史可信度按 (1 - reactive) 降权(与 TemporalAaSource.reactiveMask 同合同)。
+   * 缺省 = 无供给,fail-closed 读 1×1 零 fallback,历史权重不变。
+   */
+  readonly reactiveMask?: GPUTexture;
   readonly revision: number;
   /** 渲染分辨率像素抖动(与 TemporalAaSource 同源);成对供给,缺省用 revision Halton 序列。 */
   readonly currentJitter?: readonly [number, number];
@@ -57,6 +63,8 @@ export interface TemporalUpscaleCpuInput {
   /** 内部分辨率像素抖动(与 TemporalAaSource 同语义,[-0.5, 0.5] 内部像素)。 */
   readonly currentJitter: readonly [number, number];
   readonly previousJitter: readonly [number, number];
+  /** 内部分辨率 reactive 覆盖 [0,1](与 GPU reactiveMask 同语义);缺省视为全零(零行为变化)。 */
+  readonly reactiveAlpha?: readonly number[];
   /** 全分辨率历史(缺省或 invalid 首帧退化纯 Catmull-Rom)。 */
   readonly historyValid: boolean;
   readonly previousColor?: readonly number[];

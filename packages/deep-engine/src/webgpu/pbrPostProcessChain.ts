@@ -240,7 +240,9 @@ export class PbrPostProcessChain {
    * F4 时域上采样:超分激活时把链尾 HDR(接触阴影或 bloom/TAA 输出)从内部渲染
    * 分辨率重建到画布全分辨率;未激活(特性关或 scale=1)返回 undefined 保持直通。
    * 输入合同与 TAA 同族;displayScale 由画布/内部尺寸比导出,历史失效 fail-closed
-   * 退化为纯 Catmull-Rom。
+   * 退化为纯 Catmull-Rom。reactiveMask(可选,内部分辨率 r8unorm):透明/粒子
+   * reactive 覆盖随 source 透传给 upscale 历史降权,缺省不供给 = 零行为变化
+   * (渲染器侧供给接线:pbrRenderer encodeUpscale 调用点,模式同 encodeFinal)。
    */
   encodeUpscale(input: {
     readonly encoder: GPUCommandEncoder;
@@ -253,6 +255,8 @@ export class PbrPostProcessChain {
     /** 显示画布尺寸(session resize 后的全分辨率)。 */
     readonly displayWidth: number;
     readonly displayHeight: number;
+    /** 内部分辨率 reactive 覆盖(透明/粒子);缺省 = upscale 历史权重不变。 */
+    readonly reactiveMask?: GPUTexture;
   }, color: GPUTexture): { readonly texture: GPUTexture; readonly width: number;
     readonly height: number; readonly historyUsed: boolean; readonly invalidation: string } | undefined {
     if (this.disposed) throw new Error("Post-process chain is disposed.");
@@ -261,6 +265,7 @@ export class PbrPostProcessChain {
     const source: TemporalUpscalePassSource = {
       color, depth: input.targets.linearDepthTexture, motion: input.targets.motionTexture,
       revision: input.revision, cameraCut: input.cameraCut,
+      ...(input.reactiveMask === undefined ? {} : { reactiveMask: input.reactiveMask }),
       currentJitter: input.currentJitter, previousJitter: input.previousJitter,
       colorEncoding: "linear-hdr", depthEncoding: "linear-view-depth-positive",
       motionEncoding: "current-to-previous-uv",
