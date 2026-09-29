@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
 import type { DataEvent, DataEventAction, DataEventTarget } from "@bim-studio/contracts";
 import type { MetadataStore } from "./store.js";
+import { registerEventRecordingRoutes, type EventRecordingRouteDependencies } from "./eventRecordingRoutes.js";
 
 type DataEventListener = (event: DataEvent) => void;
 const ACTIONS = new Set<DataEventAction>(["color", "visibility", "position", "label", "opacity", "focus", "animation", "effects", "material", "alarm"]);
@@ -35,7 +36,15 @@ export class DataEventBus {
   }
 }
 
-export async function registerDataEventRoutes(app: FastifyInstance, store: MetadataStore, bus = new DataEventBus()): Promise<DataEventBus> {
+export async function registerDataEventRoutes(
+  app: FastifyInstance,
+  store: MetadataStore,
+  bus = new DataEventBus(),
+  options?: {
+    /** C4 事件级持久录制挂载(可选):注入 dir 即在既有事件路由前缀下启用 /recordings 子路由。 */
+    recording?: Pick<EventRecordingRouteDependencies, "dir" | "now">;
+  },
+): Promise<DataEventBus> {
   app.post<{ Params: { projectId: string }; Body: Partial<DataEvent> }>("/api/projects/:projectId/data/events", async (request, reply) => {
     if (!store.getProject(request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
     const normalized = normalizeEvent(request.params.projectId, request.body);
@@ -59,6 +68,10 @@ export async function registerDataEventRoutes(app: FastifyInstance, store: Metad
     socket.once("error", unsubscribe);
     for (const event of bus.latest(request.params.projectId, request.query.sceneId)) send(event);
   });
+
+  if (options?.recording) {
+    await registerEventRecordingRoutes(app, { store, dir: options.recording.dir, ...(options.recording.now ? { now: options.recording.now } : {}) });
+  }
 
   return bus;
 }

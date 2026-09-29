@@ -361,3 +361,4 @@ export * from "./multiObjective.js";
 export * from "./vsm.js";
 export * from "./textOrder.js";
 export * from "./rendererCapabilityManifest.js";
+export * from "./eventRecording.js";
