@@ -60,6 +60,8 @@ export interface AgentToolOutcome {
   /** 写入和控制类工具必须返回独立的执行后验证证据。 */
   verificationEvidence: AgentEvidence[];
   error?: { code: string; message: string; retryable: boolean };
+  /** 非致命警告（如账本写失败但结果有效）：completed 态也必须透传，禁止静默丢弃。 */
+  warnings?: readonly string[];
 }
 
 export type AgentDecision =

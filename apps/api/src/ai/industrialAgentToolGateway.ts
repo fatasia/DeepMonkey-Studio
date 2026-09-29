@@ -208,6 +208,8 @@ function invocationOutcome(result: CapabilityInvocationResult, effect: AgentTool
     verificationEvidence: successful && (effect === "write" || effect === "control") && outputVerified(result.output, evidence)
       ? evidence.filter((item) => Boolean(item.fingerprint))
       : [],
+    // K7 修复：completed 态的 warnings 必须透传，禁止静默丢弃（verdict 卡与审计事件消费）。
+    ...(result.warnings.length > 0 ? { warnings: [...result.warnings] } : {}),
     ...(result.error ? { error: structuredClone(result.error) } : !successful ? { error: { code: result.status, message: result.warnings.join("；") || "能力未完成", retryable: result.status === "failed" } } : {}),
   };
 }
