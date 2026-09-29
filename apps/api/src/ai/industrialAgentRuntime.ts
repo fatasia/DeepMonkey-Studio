@@ -21,6 +21,8 @@ export interface IndustrialAgentRuntime {
   orchestrator: IndustrialAgentOrchestrator;
   /** H-C2 记忆存储：面板路由与回灌共用同一实例。 */
   memory: AgentMemoryStore;
+  /** H-C4-P3：数据目录——本体行动路径用它构造逐请求新鲜的本体包读取器（只读）。 */
+  dataDir: string;
   resolveModelOptions?: (options: AssistantSessionOptions) => Promise<AssistantSessionOptions>;
 }
 
@@ -58,6 +60,7 @@ export async function createIndustrialAgentRuntime(input: {
     checkpoints,
     tools,
     memory,
+    dataDir: input.dataDir,
     orchestrator: new IndustrialAgentOrchestrator({
       decisions,
       tools,

@@ -38,7 +38,15 @@ const CURATED_TOOL_IDS = new Set([
 
 /** 只把已注册且明确列入工业闭环的 Capability 暴露给 Agent；不存在动态命令、shell 或文件工具。 */
 export class IndustrialAgentToolGateway implements AgentToolGateway {
-  constructor(private readonly registry: PluginRegistry, private readonly audit?: AiReliabilityAuditSink) {}
+  /**
+   * H-C4-P3：本体行动路径需要经同一注册表核验行动绑定并调用能力；
+   * 只读暴露共享注册表（白名单与可靠执行内核仍由本网关把关）。
+   */
+  readonly registry: PluginRegistry;
+
+  constructor(registry: PluginRegistry, private readonly audit?: AiReliabilityAuditSink) {
+    this.registry = registry;
+  }
 
   list(): AgentToolDefinition[] {
     return this.registry.listCapabilities()

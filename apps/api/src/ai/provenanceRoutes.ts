@@ -1,10 +1,15 @@
 import type { FastifyInstance } from "fastify";
 import type { ProvenanceLedgerStore } from "./provenanceLedger.js";
+import { bindOntologyActionLedger } from "./ontologyActionService.js";
 
 /**
  * H-C3 档案室路由（用户可感知载体）：实验档案列表 + 三跳链查询。
  * 只读面（浏览者可查）；无写操作故无审计事件——档案写入只在 verdict 产生处，
  * 查询不改状态。未命中由返回体 matched=false 如实呈现（不伪造链）。
+ *
+ * H-C4-P3：本注册函数是共享账本实例进入行动执行链的既有装配点——
+ * 在此幂等绑入本体行动服务（不在 index.ts 增加新装配点），行动回执与
+ * 实验档案由此共用同一 ProvenanceLedgerStore（防双实例整文件覆盖丢节点）。
  */
 export async function registerProvenanceRoutes(
   app: FastifyInstance,
@@ -13,6 +18,7 @@ export async function registerProvenanceRoutes(
     ledger: ProvenanceLedgerStore;
   },
 ): Promise<void> {
+  bindOntologyActionLedger(dependencies.ledger);
   app.get<{ Params: { projectId: string }; Querystring: { limit?: string } }>(
     "/api/projects/:projectId/ai/provenance",
     async (request, reply) => {

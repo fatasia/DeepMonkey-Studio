@@ -17,6 +17,16 @@ import {
   type AiVerificationEnvelope,
   type AiHypothesisContract,
 } from "@bim-studio/contracts";
+import {
+  assembleOntologyActionChains,
+  validateOntologyActionQuery,
+  type AiProvenanceActionExecutionNode,
+  type AiProvenanceActionNode,
+  type AiProvenanceActionPlanNode,
+  type AiProvenanceActionQuery,
+  type AiProvenanceActionReceiptNode,
+  type AiProvenanceActionTrace,
+} from "./ontologyActionContracts.js";
 
 /**
  * H-C3 档案室：ProvenanceLedger（节点=假设/内核运行/判定/报告，边=proposal→run→verdict→report）。
@@ -52,6 +62,12 @@ interface ProvenanceDocument {
   reports: AiProvenanceReportNode[];
   /** 异步长跑的进行中/已收口记录（H-C3 后续切片增量）；旧落盘无此段时按空数组读入。 */
   studyRuns: AiProvenanceStudyRunRecord[];
+  /**
+   * H-C4-P3 行动链（计划→执行→回执）：与仿真假设链同文档共存、同一串行化提交，
+   * 但节点族独立——行动回执不是仿真判定，不得混写 tolerance/verdict 语义。
+   * 旧落盘无此段时按空数组读入。
+   */
+  actions: AiProvenanceActionNode[];
 }
 
 /**
@@ -268,6 +284,74 @@ export class ProvenanceLedgerStore {
     return structuredClone(document.studyRuns).filter((item) => !options.status || item.status === options.status);
   }
 
+  // ---------------------------------------------------------------------------
+  // H-C4-P3 行动链（计划→执行→回执）：同一账本、同一串行化提交、同一 fail-closed 纪律。
+  // 与仿真假设链的唯一交点是文档容器；节点族、查询与装配互相独立。
+  // ---------------------------------------------------------------------------
+
+  /** 计划节点落账（行动执行入口处）：同 planFingerprint 重提幂等 upsert。 */
+  async recordActionPlan(projectId: string, node: AiProvenanceActionPlanNode): Promise<void> {
+    await this.#commit(projectId, (draft) => {
+      upsertById(draft.actions, node);
+      this.#evictOldestActionChains(draft);
+      return node;
+    });
+  }
+
+  /** 执行节点落账（工具网关调用发起处）：同 inputFingerprint 重试幂等 upsert。 */
+  async recordActionExecution(projectId: string, node: AiProvenanceActionExecutionNode): Promise<void> {
+    await this.#commit(projectId, (draft) => {
+      upsertById(draft.actions, node);
+      this.#evictOldestActionChains(draft);
+      return node;
+    });
+  }
+
+  /** 回执节点落账（工具网关返回处）：成功/失败/阻断都如实成链，不伪造执行结果。 */
+  async recordActionReceipt(projectId: string, node: AiProvenanceActionReceiptNode): Promise<void> {
+    await this.#commit(projectId, (draft) => {
+      upsertById(draft.actions, node);
+      this.#evictOldestActionChains(draft);
+      return node;
+    });
+  }
+
+  /** 幂等重放查询：同幂等键的既有回执（重复提交不重复执行，返回既有回执）。 */
+  async findActionReceiptByIdempotencyKey(projectId: string, idempotencyKey: string): Promise<AiProvenanceActionReceiptNode | undefined> {
+    const document = await this.#loadDocument(projectId);
+    return structuredClone(
+      document.actions.find((item): item is AiProvenanceActionReceiptNode =>
+        item.kind === "action-receipt" && item.idempotencyKey === idempotencyKey),
+    );
+  }
+
+  /** 行动三跳查询：计划指纹/回执指纹/幂等键/时间窗任一维度皆可单独或组合使用。 */
+  async traceActionChains(projectId: string, query: AiProvenanceActionQuery): Promise<AiProvenanceActionTrace> {
+    const normalized = validateOntologyActionQuery(query);
+    const document = await this.#loadDocument(projectId);
+    const plans: AiProvenanceActionPlanNode[] = [];
+    const executions: AiProvenanceActionExecutionNode[] = [];
+    const receipts: AiProvenanceActionReceiptNode[] = [];
+    for (const node of document.actions) {
+      if (node.kind === "action-plan") plans.push(node);
+      else if (node.kind === "action-execution") executions.push(node);
+      else receipts.push(node);
+    }
+    return assembleOntologyActionChains(
+      { plans: structuredClone(plans), executions: structuredClone(executions), receipts: structuredClone(receipts) },
+      normalized,
+    );
+  }
+
+  /** 行动链容量：计划数超限按 plannedAt 逐出最旧链及其执行/回执（与仿真链同一纪律）。 */
+  #evictOldestActionChains(draft: ProvenanceDocument): void {
+    const plans = draft.actions.filter((item): item is AiProvenanceActionPlanNode => item.kind === "action-plan");
+    if (plans.length <= this.#maxChains) return;
+    plans.sort((left, right) => left.plannedAt.localeCompare(right.plannedAt));
+    const evicted = new Set(plans.slice(0, plans.length - this.#maxChains).map((node) => node.planFingerprint));
+    draft.actions = draft.actions.filter((node) => !evicted.has(node.planFingerprint));
+  }
+
   /** 三跳查询：指纹/时间任一维度；结果含全库完整性核查，未命中如实 matched=false。 */
   async trace(projectId: string, query: AiProvenanceQuery): Promise<AiProvenanceTrace> {
     const normalized = validateAiProvenanceQuery(query);
@@ -335,7 +419,7 @@ export class ProvenanceLedgerStore {
     const cached = this.#documents.get(projectId);
     if (cached) return cached;
     const filePath = this.#documentPath(projectId);
-    let document: ProvenanceDocument = { schemaVersion: 1, hypotheses: [], runs: [], verdicts: [], reports: [], studyRuns: [] };
+    let document: ProvenanceDocument = { schemaVersion: 1, hypotheses: [], runs: [], verdicts: [], reports: [], studyRuns: [], actions: [] };
     try {
       const parsed = JSON.parse(await readFile(filePath, "utf8")) as Partial<ProvenanceDocument>;
       if (parsed.schemaVersion === 1) {
@@ -346,6 +430,7 @@ export class ProvenanceLedgerStore {
           verdicts: Array.isArray(parsed.verdicts) ? parsed.verdicts.filter(isVerdictNode) : [],
           reports: Array.isArray(parsed.reports) ? parsed.reports.filter(isReportNode) : [],
           studyRuns: Array.isArray(parsed.studyRuns) ? parsed.studyRuns.filter(isStudyRunRecord) : [],
+          actions: Array.isArray(parsed.actions) ? parsed.actions.filter(isActionNode) : [],
         };
       }
     } catch (error) {
@@ -422,6 +507,32 @@ function isStudyRunRecord(value: unknown): value is AiProvenanceStudyRunRecord {
     && typeof node.totalRepeats === "number"
     && typeof node.completedRepeats === "number"
     && typeof node.startedAt === "string";
+}
+
+/** 行动链节点的 fail-closed 形状过滤：计划/执行/回执各自最小字段齐备才入账。 */
+function isActionNode(value: unknown): value is AiProvenanceActionNode {
+  if (!value || typeof value !== "object") return false;
+  const node = value as Partial<AiProvenanceActionNode> & Record<string, unknown>;
+  if (typeof node.nodeId !== "string" || typeof node.planFingerprint !== "string") return false;
+  if (node.kind === "action-plan") {
+    return typeof (node as Partial<AiProvenanceActionPlanNode>).actionKey === "string"
+      && typeof (node as Partial<AiProvenanceActionPlanNode>).canonicalId === "string"
+      && typeof (node as Partial<AiProvenanceActionPlanNode>).idempotencyKey === "string"
+      && typeof (node as Partial<AiProvenanceActionPlanNode>).plannedAt === "string";
+  }
+  if (node.kind === "action-execution") {
+    return typeof (node as Partial<AiProvenanceActionExecutionNode>).inputFingerprint === "string"
+      && typeof (node as Partial<AiProvenanceActionExecutionNode>).toolId === "string"
+      && typeof (node as Partial<AiProvenanceActionExecutionNode>).executedAt === "string";
+  }
+  if (node.kind === "action-receipt") {
+    return typeof (node as Partial<AiProvenanceActionReceiptNode>).inputFingerprint === "string"
+      && typeof (node as Partial<AiProvenanceActionReceiptNode>).receiptFingerprint === "string"
+      && typeof (node as Partial<AiProvenanceActionReceiptNode>).idempotencyKey === "string"
+      && typeof (node as Partial<AiProvenanceActionReceiptNode>).receiptedAt === "string"
+      && typeof (node as Partial<AiProvenanceActionReceiptNode>).integrityFingerprint === "string";
+  }
+  return false;
 }
 
 /** 假设被逐出后，其运行段记录成为孤儿：随逐出一起清理，不静默残留。 */
