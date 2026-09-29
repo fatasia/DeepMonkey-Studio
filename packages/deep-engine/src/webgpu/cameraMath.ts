@@ -8,14 +8,30 @@ function normalize(v: Vec3): Vec3 {
   return [v[0] / length, v[1] / length, v[2] / length];
 }
 
-export function lookAt(eye: Vec3, target: Vec3, up: Vec3 = [0, 1, 0]): Float32Array<ArrayBuffer> {
-  const z = normalize(subtract(eye, target));
+/**
+ * Camera-relative view 矩阵：eye/target 先在 Float64 域减去 cameraWorldPosition（减法在
+ * double 域完成，相对结果量级小、无精度损失），再构建 view。基向量与 world-space lookAt
+ * 完全一致；平移列从大坐标量级（1e7 处 float32 ulp=1.0，亚单位相机运动被整体吞掉）
+ * 降到原点附近量级，float32 存储不再引发顶点抖动。origin 全零时与 lookAt 逐位一致。
+ */
+export function lookAtRelative(eye: Vec3, target: Vec3, up: Vec3,
+  cameraWorldPosition: Vec3): Float32Array<ArrayBuffer> {
+  if (cameraWorldPosition.length !== 3 || !cameraWorldPosition.every(Number.isFinite)) {
+    throw new Error("Camera world position must contain 3 finite numbers.");
+  }
+  const eyeRelative = subtract(eye, cameraWorldPosition);
+  const targetRelative = subtract(target, cameraWorldPosition);
+  const z = normalize(subtract(eyeRelative, targetRelative));
   const x = normalize(cross(up, z));
   const y = cross(z, x);
   return new Float32Array([
     x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0,
-    -dot(x, eye), -dot(y, eye), -dot(z, eye), 1,
+    -dot(x, eyeRelative), -dot(y, eyeRelative), -dot(z, eyeRelative), 1,
   ]);
+}
+
+export function lookAt(eye: Vec3, target: Vec3, up: Vec3 = [0, 1, 0]): Float32Array<ArrayBuffer> {
+  return lookAtRelative(eye, target, up, [0, 0, 0]);
 }
 
 /** 右手系、列主序、WebGPU 深度区间 0..1。 */

@@ -1,7 +1,7 @@
 import { temporalAaJitter } from "../postprocess/temporalAaCpu.js";
-import { packTransform } from "../instanceTransform.js";
+import { packTransform, packTransformRelativeTo } from "../instanceTransform.js";
 import { CameraFrameHistory, jitterViewProjection, type CameraFrameHistoryResult } from "./cameraFrameHistory.js";
-import { lookAt, multiply, orthographic, perspective, type Vec3 } from "./cameraMath.js";
+import { lookAt, lookAtRelative, multiply, orthographic, perspective, type Vec3 } from "./cameraMath.js";
 import { DEFAULT_PBR_PRIMARY_DIRECTIONAL_LIGHT, type PbrPrimaryDirectionalLight } from "../lighting/pbrSceneLighting.js";
 import { DEFAULT_PBR_RENDERER_FEATURES, type PbrRendererFeatures } from "./pbrRendererFeatures.js";
 import { resolvePbrColorGrading, type PbrColorGradingOptions } from "./pbrColorGrading.js";
@@ -23,6 +23,11 @@ export interface PbrFrameUniformView {
   /** Undefined keeps legacy preview fog; null disables it. Authored fog requires HDR composition. */
   readonly fog?: PbrFog | null;
   readonly verticalFovRadians?: number; readonly near?: number; readonly far?: number;
+  /** Camera-relative 渲染原点（相机世界位置，Float64）。定义时 view 矩阵、frameData 的
+   * eye 槽位与地面平面全部以该点为原点构建——WGSL 的 frame.eye - world 语义保持自洽，
+   * 配套要求实例变换已用 packTransformRelativeTo 降为相机相对坐标（调用点接线见
+   * docs/reports I级-C4 报告）。未定义=关闭，全部输出与既有行为逐位一致。 */
+  readonly cameraWorldPosition?: Vec3;
 }
 
 export interface PbrCameraProjection {
@@ -52,7 +57,9 @@ export function updatePbrFrameUniforms(queue: GPUQueue, cameraHistory: CameraFra
   primaryLight: PbrPrimaryDirectionalLight = DEFAULT_PBR_PRIMARY_DIRECTIONAL_LIGHT,
   features: PbrRendererFeatures = DEFAULT_PBR_RENDERER_FEATURES): PbrFrameUniformResult {
   const environmentIntensity = resolvePbrEnvironmentIntensity(view.environmentIntensity);
-  const extent = view.extent, projection = resolvePbrCameraProjection(view), worldToView = lookAt(view.eye, view.target, view.up);
+  const extent = view.extent, projection = resolvePbrCameraProjection(view), origin = view.cameraWorldPosition;
+  const worldToView = origin === undefined ? lookAt(view.eye, view.target, view.up)
+    : lookAtRelative(view.eye, view.target, view.up ?? [0, 1, 0], origin);
   const stableViewProjection = multiply(perspective(projection.verticalFovRadians, width / height,
     projection.near, projection.far), worldToView);
   const currentJitter = features.temporalAa ? temporalAaJitter(cameraHistory.revision) : [0, 0] as const;
@@ -62,12 +69,15 @@ export function updatePbrFrameUniforms(queue: GPUQueue, cameraHistory: CameraFra
   resources.frameData.set(depthViewProjection, 0);
   resources.frameData.set(history.previousViewProjection, 16);
   resources.frameData.set(worldToView, 32);
-  resources.frameData.set(multiply(orthographic(extent * 1.5, 0.1, extent * 8),
-    lookAt([extent * 1.6, extent * 2.8, extent * 1.2], [0, 0, 0])), 48);
+  const groundLight = origin === undefined ? lookAt([extent * 1.6, extent * 2.8, extent * 1.2], [0, 0, 0])
+    : lookAtRelative([extent * 1.6, extent * 2.8, extent * 1.2], [0, 0, 0], [0, 1, 0], origin);
+  resources.frameData.set(multiply(orthographic(extent * 1.5, 0.1, extent * 8), groundLight), 48);
   const jitterDeltaUv = [(history.previousJitter[0] - history.currentJitter[0]) / width,
     (history.previousJitter[1] - history.currentJitter[1]) / height] as const;
   // background.w was reserved; keep the frame ABI size and all following offsets intact.
-  resources.frameData.set([...view.eye, features.environment ? 1 : 0, ...view.background, primaryLight.castShadow === false ? 0 : 1,
+  const frameEye = origin === undefined ? view.eye
+    : [view.eye[0] - origin[0], view.eye[1] - origin[1], view.eye[2] - origin[2]] as const;
+  resources.frameData.set([...frameEye, features.environment ? 1 : 0, ...view.background, primaryLight.castShadow === false ? 0 : 1,
     ...view.floor, features.groundGrid ? 1 : 0,
     ...primaryLight.surfaceToLightWorld, environmentIntensity, ...jitterDeltaUv, view.roughness, 0.11 / extent,
     ...primaryLight.color, primaryLight.intensity], 64);
@@ -80,7 +90,9 @@ export function updatePbrFrameUniforms(queue: GPUQueue, cameraHistory: CameraFra
   resources.frameData.set(resources.outputData, 88);
   if (features.groundPlane) {
     const size = extent * 8;
-    packTransform([size, 0, 0, 0, 0, size, 0, 0, 0, 0, size, 0, 0, -0.02, 0, 1], resources.groundData);
+    const groundMatrix = [size, 0, 0, 0, 0, size, 0, 0, 0, 0, size, 0, 0, -0.02, 0, 1];
+    if (origin === undefined) packTransform(groundMatrix, resources.groundData);
+    else packTransformRelativeTo(groundMatrix, origin, resources.groundData);
     resources.groundData.set([0, 0, 0, 0, 0.9, 0.5, 1, 8, 0, 0, 0, 1], 24);
     queue.writeBuffer(resources.groundInstance, 0, resources.groundData);
   }

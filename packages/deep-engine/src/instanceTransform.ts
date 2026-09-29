@@ -32,3 +32,23 @@ export function packTransform(matrix: ArrayLike<number>, output: Float32Array, o
   output[start + 20] = z0; output[start + 21] = z1; output[start + 22] = z2; output[start + 23] = 0;
   return determinant < 0;
 }
+
+/**
+ * Camera-relative 打包：先在 Float64 域把仿射平移列减去 cameraWorldPosition（相机世界
+ * 位置，double），再走 packTransform 的 float32 校验与逆转置法线列。大坐标实例的平移
+ * 不再被 float32 ulp 量化（1e7 处 ulp=1.0，局部顶点偏移与亚单位相机运动被整体吞掉），
+ * 与 lookAtRelative 的 view 矩阵配对后 GPU 顶点随相机连续移动。旋转/缩放/剪切列不变；
+ * cameraWorldPosition 为零向量时与 packTransform 结果逐位一致。
+ */
+export function packTransformRelativeTo(matrix: ArrayLike<number>, cameraWorldPosition: ArrayLike<number>,
+  output: Float32Array, offset = 0): boolean {
+  if (matrix.length !== 16) throw new Error("Transform must contain 16 components.");
+  if (cameraWorldPosition.length !== 3 || !Array.from(cameraWorldPosition, Number).every(Number.isFinite)) {
+    throw new Error("Camera world position must contain 3 finite numbers.");
+  }
+  const relative = [matrix[0]!, matrix[1]!, matrix[2]!, matrix[3]!, matrix[4]!, matrix[5]!, matrix[6]!, matrix[7]!,
+    matrix[8]!, matrix[9]!, matrix[10]!, matrix[11]!,
+    matrix[12]! - cameraWorldPosition[0]!, matrix[13]! - cameraWorldPosition[1]!,
+    matrix[14]! - cameraWorldPosition[2]!, matrix[15]!];
+  return packTransform(relative, output, offset);
+}
