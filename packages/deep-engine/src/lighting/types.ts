@@ -1,5 +1,8 @@
 export type LightVector3 = readonly [number, number, number];
 import type { RuntimeLightProfile } from "../runtimePackage/environmentTypes.js";
+import type { AreaLight } from "./areaLights.js";
+
+export type { AreaLight, AreaLightTextureWindow } from "./areaLights.js";
 
 export interface DirectionalLight {
   /** Unit length is not required; packing normalizes this view-space direction. */
@@ -48,9 +51,11 @@ export interface ClusteredLights {
   readonly directional?: readonly DirectionalLight[];
   readonly points?: readonly PointLight[];
   readonly spots?: readonly SpotLight[];
-  /** E02：IES 光度表载荷（runtimePackage lightProfiles 原样透传），
+  /** E02：IES 光域网载荷（runtimePackage lightProfiles 原样透传），
    * 与 spots 的 ies.profileId 引用闭合由打包层强制。 */
   readonly lightProfiles?: readonly RuntimeLightProfile[];
+  /** C3 矩形面积光（LTC 着色；不参与聚簇，固定 ≤8 盏常驻绑定）。 */
+  readonly areas?: readonly AreaLight[];
 }
 
 export interface ClusterGridConfig {

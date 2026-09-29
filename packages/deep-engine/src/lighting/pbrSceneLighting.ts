@@ -33,7 +33,8 @@ export const DEFAULT_PBR_PRIMARY_DIRECTIONAL_LIGHT = primaryFrom(DEFAULT_PRIMARY
 const DISABLED_PRIMARY_DIRECTIONAL_LIGHT = Object.freeze({ ...DEFAULT_PBR_PRIMARY_DIRECTIONAL_LIGHT, intensity: 0, castShadow: false });
 
 export function hasClusteredLights(lights: WorldClusteredLights): boolean {
-  return (lights.directional?.length ?? 0) + (lights.points?.length ?? 0) + (lights.spots?.length ?? 0) > 0;
+  return (lights.directional?.length ?? 0) + (lights.points?.length ?? 0) + (lights.spots?.length ?? 0)
+    + (lights.areas?.length ?? 0) > 0;
 }
 
 /** Reserves the first authored directional light as the shadow-casting sun. */
@@ -47,6 +48,7 @@ export function resolvePbrSceneLighting(lights?: WorldClusteredLights, options: 
     ...(lights.points ? { points: lights.points } : {}),
     ...(lights.spots ? { spots: lights.spots } : {}),
     ...(lights.lightProfiles ? { lightProfiles: lights.lightProfiles } : {}),
+    ...(lights.areas ? { areas: lights.areas } : {}),
   }) : DEFAULT_CLUSTERED_LIGHTS;
   if (options.maxLocalLights !== undefined && clustered !== DEFAULT_CLUSTERED_LIGHTS) {
     // Neutral-space proxies are ranking inputs only; never expose them as world-space lights.

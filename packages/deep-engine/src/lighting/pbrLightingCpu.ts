@@ -1,6 +1,8 @@
 import { clusterSliceForDepth } from "./clusterGrid.js";
 import { packClusteredLights, SPOT_LIGHT_STRIDE } from "./clusterPacking.js";
 import { evaluateIesShadingFactor, packIesShading } from "./iesShading.js";
+import { evaluateAreaLightCpu } from "./ltc.js";
+import { decodeLtcLut } from "./ltcTables.js";
 import type { ClusteredLights, CpuClusterAssignment, LightVector3, PackedClusteredLights, PointLight, SpotLight } from "./types.js";
 
 const PI = Math.PI;
@@ -136,6 +138,23 @@ export function evaluateForwardPlusPbrCpu(assignment: CpuClusterAssignment, ligh
         isPoint ? -1 : localIndex - points.length));
     }
   }
+  // C3 面积光:与 GPU 循环同位同式(ltc.ts 权威参考,无面积光时零迭代)。
+  if ((lights.areas?.length ?? 0) > 0) {
+    const lut = areaLut ??= decodeLtcLut();
+    for (const area of lights.areas!) {
+      const contribution = evaluateAreaLightCpu(lut, {
+        position: [...area.positionView], normal: [...area.directionView], up: [...area.upView],
+        halfWidth: area.halfExtent[0], halfHeight: area.halfExtent[1], range: area.range,
+        color: [...area.color], intensity: area.intensity, twoSided: area.twoSided ?? false,
+        ...(area.texture ? { texture: area.texture } : {}),
+      }, { position: [...surface.positionView], normal, view: scale(surface.positionView, -1), baseColor: base, metallic, roughness });
+      add(color, [contribution.diffuse[0] + contribution.specular[0], contribution.diffuse[1] + contribution.specular[1],
+        contribution.diffuse[2] + contribution.specular[2]]);
+    }
+  }
   if (!color.every(Number.isFinite)) throw new Error("PBR CPU reference produced a non-finite color.");
   return { color, ...(clusterIndex === undefined ? {} : { clusterIndex }), referencedLocalLightCount };
 }
+
+/** C3 LUT 解码惰性缓存(与 ltcTables.decodeLtcLut 同表;CPU 参考按进程复用一份)。 */
+let areaLut: Float32Array | undefined;

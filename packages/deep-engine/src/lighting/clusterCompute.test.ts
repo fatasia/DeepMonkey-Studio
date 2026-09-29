@@ -113,7 +113,8 @@ describe("Forward+ WebGPU cluster assignment", () => {
     f.queue.writeBuffer.mockImplementationOnce(() => { throw new Error("upload failed"); });
     expect(() => assigner.prepare(config, { points: [point(), point(1), point(2)] })).toThrow("upload failed");
     expect((first.pointLightBuffer as FakeBuffer).destroy).not.toHaveBeenCalled();
-    expect(f.allocated.slice(allocationStart)).toHaveLength(9);
+    // C3:常驻 areaLightDataBuffer 使单次分配为 10 个 buffer。
+    expect(f.allocated.slice(allocationStart)).toHaveLength(10);
     expect(f.allocated.slice(allocationStart).every(buffer => buffer.destroy.mock.calls.length === 1)).toBe(true);
     f.queue.writeBuffer.mockReset(); expect(assigner.prepare(config, { points: [point()] }).pointLightBuffer).toBe(first.pointLightBuffer);
     assigner.dispose();
@@ -127,10 +128,12 @@ describe("Forward+ WebGPU cluster assignment", () => {
 
     f.queue.writeBuffer.mockReset();
     const restored = assigner.prepare(config, { points: [point()] });
-    expect(restored.uploadedInputBufferCount).toBe(4);
+    // C3:恢复帧上传 = 点灯 + 局部灯包围 + IES + 面积光灯区 + 参数;
+    // LUT 区不可变且已随首帧按 buffer 上传一次,失败重传不重复。
+    expect(restored.uploadedInputBufferCount).toBe(5);
     expect(f.queue.writeBuffer.mock.calls.map(call => (call[0] as FakeBuffer).label)).toEqual([
-      "Deep Forward+ point lights", "Deep Forward+ local light bounds",
-      "Deep Forward+ IES shading tables", "Deep Forward+ cluster parameters",
+      "Deep Forward+ point lights", "Deep Forward+ local light bounds", "Deep Forward+ IES shading tables",
+      "Deep Forward+ area lights (LTC)", "Deep Forward+ cluster parameters",
     ]);
     assigner.dispose();
   });

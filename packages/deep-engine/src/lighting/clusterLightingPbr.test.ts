@@ -188,18 +188,27 @@ describe("Forward+ clustered PBR lighting", () => {
       { binding: 10, visibility: 2, sampler: { type: "filtering" } },
       { binding: 11, visibility: 2, buffer: { type: "uniform", minBindingSize: 256 } },
       { binding: 12, visibility: 2, buffer: { type: "read-only-storage" } },
+      // C3:面积光数据 + cookie 纹理/采样器(缺省 1×1 白)。
+      { binding: 13, visibility: 2, buffer: { type: "read-only-storage" } },
+      { binding: 14, visibility: 2, texture: { sampleType: "float", viewDimension: "2d" } },
+      { binding: 15, visibility: 2, sampler: { type: "filtering" } },
     ]);
     const resources = assigner.prepare(grid, { points: [point()] }), result = bindings.bind(resources);
     const entries = (result.bindGroup as unknown as { entries: GPUBindGroupEntry[] }).entries;
-    // binding 12 前移到簇缓冲映射尾部（0-5 之后）；6-8 仍是局部阴影三件套。
+    // binding 12 前移到簇缓冲映射尾部（0-5 之后）；6-8 仍是局部阴影三件套；13=面积光数据。
     expect(entries[6]).toEqual({ binding: 12, resource: { buffer: resources.iesShadingBuffer } });
-    expect(entries.slice(7, 10)).toEqual([{ binding: 6, resource: { buffer: local.uniform } },
+    expect(entries[7]).toEqual({ binding: 6, resource: { buffer: local.uniform } });
+    expect(entries.slice(8, 10)).toEqual([
       { binding: 7, resource: local.atlasView }, { binding: 8, resource: local.sampler }]);
+    expect(entries[13]).toEqual({ binding: 13, resource: { buffer: resources.areaLightDataBuffer } });
     const probe = { view: {} as GPUTextureView, sampler: {} as GPUSampler, levelMetadataBuffer: {} as GPUBuffer };
     bindings.setProbeClipmap(probe); expect(bindings.hasProbeClipmap).toBe(true);
     const withProbe = bindings.bind(resources).bindGroup as unknown as { entries: GPUBindGroupEntry[] };
-    expect(withProbe.entries.slice(10)).toEqual([{ binding: 9, resource: probe.view },
+    expect(withProbe.entries.slice(10, 13)).toEqual([{ binding: 9, resource: probe.view },
       { binding: 10, resource: probe.sampler }, { binding: 11, resource: { buffer: probe.levelMetadataBuffer } }]);
+    // C3:cookie 缺省 1×1 白纹理与过滤采样器收尾(binding 14/15)。
+    expect(withProbe.entries[14]?.binding).toBe(14);
+    expect(withProbe.entries[15]?.binding).toBe(15);
     bindings.dispose(); assigner.dispose(); expect(f.owned.size).toBe(0);
   });
 

@@ -1,9 +1,11 @@
 /// <reference types="@webgpu/types" />
 import type { DeviceSession } from "../webgpu/deviceSession.js";
 import { FORWARD_PLUS_CLUSTER_PARAMETER_BYTES } from "./clusterAbiWgsl.js";
+import { AREA_LIGHT_DATA_VEC4_TOTAL, AREA_LIGHT_DATA_VEC4S, packAreaLights } from "./areaLights.js";
 import { assignLightsToClusters, normalizeClusterGrid } from "./clusterGrid.js";
 import { packIesShading } from "./iesShading.js";
 import { prioritizeLocalLights } from "./importanceBudget.js";
+import { decodeLtcLut } from "./ltcTables.js";
 import { DIRECTIONAL_LIGHT_STRIDE, LOCAL_LIGHT_BOUNDS_STRIDE, packClusteredLights, POINT_LIGHT_STRIDE, SPOT_LIGHT_STRIDE } from "./clusterPacking.js";
 import { FORWARD_PLUS_CLUSTER_ASSIGN_WGSL } from "./clusterComputeWgsl.js";
 import type { ClusterGridConfig, ClusteredLights, CpuClusterAssignment, NormalizedClusterGrid, PackedClusteredLights } from "./types.js";
@@ -12,11 +14,11 @@ export const FORWARD_PLUS_CLUSTER_PIPELINE_KEY = "deep.forward-plus.cluster-assi
 const HEADER_BYTES = 8, INDEX_BYTES = 4, IES_VEC4_BYTES = 16;
 
 type LightingSession = Pick<DeviceSession, "device" | "state" | "own" | "release">;
-interface Capacities { directional: number; point: number; spot: number; local: number; clusters: number; maxPerCluster: number; iesVec4s: number }
+interface Capacities { directional: number; point: number; spot: number; local: number; clusters: number; maxPerCluster: number; iesVec4s: number; areas: number }
 interface Allocation extends Capacities {
   directionalBuffer: GPUBuffer; pointBuffer: GPUBuffer; spotBuffer: GPUBuffer; localBoundsBuffer: GPUBuffer;
   parameterBuffer: GPUBuffer; clusterHeaderBuffer: GPUBuffer; clusterLightIndexBuffer: GPUBuffer; overflowBuffer: GPUBuffer;
-  iesShadingBuffer: GPUBuffer; bindGroup: GPUBindGroup;
+  iesShadingBuffer: GPUBuffer; areaLightDataBuffer: GPUBuffer; bindGroup: GPUBindGroup;
 }
 interface UploadedInputs {
   readonly resources: Allocation;
@@ -25,6 +27,7 @@ interface UploadedInputs {
   readonly spots: Float32Array;
   readonly localBounds: Float32Array;
   readonly iesShading: Float32Array;
+  readonly areaLights: Float32Array;
   readonly parameters: ArrayBuffer;
 }
 interface ClusterAssignmentInputs {
@@ -48,6 +51,9 @@ export interface ForwardPlusClusterResources {
   /** E02 IES 光域网数据（iesShading.ts 打包）；非 IES 场景仍存在（最小 -1 参数行）。 */
   readonly iesShadingBuffer: GPUBuffer;
   readonly iesShadingVec4Count: number;
+  /** C3 面积光组合数据([灯区][LUT 区],areaLights.ts 打包);无面积光场景也存在(循环零迭代)。 */
+  readonly areaLightDataBuffer: GPUBuffer;
+  readonly areaLightCount: number;
   readonly grid: NormalizedClusterGrid;
   /** Present only when explicitly requested for validation/readback; production preparation stays GPU-only. */
   readonly cpuReference?: CpuClusterAssignment;
@@ -81,27 +87,29 @@ function capacity(required: number, current?: number): number {
   return current;
 }
 
-function desiredCapacities(packed: PackedClusteredLights, grid: NormalizedClusterGrid, iesVec4Count: number, current?: Allocation): Capacities {
+function desiredCapacities(packed: PackedClusteredLights, grid: NormalizedClusterGrid, iesVec4Count: number, areaCount: number, current?: Allocation): Capacities {
   return {
     directional: capacity(packed.directionalCount, current?.directional), point: capacity(packed.pointCount, current?.point),
     spot: capacity(packed.spotCount, current?.spot), local: capacity(packed.pointCount + packed.spotCount, current?.local),
     clusters: capacity(grid.clusterCount, current?.clusters), maxPerCluster: grid.maxLightsPerCluster,
-    iesVec4s: capacity(iesVec4Count, current?.iesVec4s),
+    iesVec4s: capacity(iesVec4Count, current?.iesVec4s), areas: areaCount,
   };
 }
 
 function sameCapacities(allocation: Allocation, desired: Capacities): boolean {
   return allocation.directional === desired.directional && allocation.point === desired.point && allocation.spot === desired.spot
     && allocation.local === desired.local && allocation.clusters === desired.clusters && allocation.maxPerCluster === desired.maxPerCluster
-    && allocation.iesVec4s === desired.iesVec4s;
+    && allocation.iesVec4s === desired.iesVec4s && allocation.areas === desired.areas;
 }
 
-function packParameters(grid: NormalizedClusterGrid, packed: PackedClusteredLights): ArrayBuffer {
+function packParameters(grid: NormalizedClusterGrid, packed: PackedClusteredLights, areaCount: number): ArrayBuffer {
   const buffer = new ArrayBuffer(FORWARD_PLUS_CLUSTER_PARAMETER_BYTES), uints = new Uint32Array(buffer), floats = new Float32Array(buffer);
   uints.set([grid.viewportWidth, grid.viewportHeight, grid.tileSizeX, grid.tileSizeY], 0);
   uints.set([grid.tilesX, grid.tilesY, grid.zSlices, packed.pointCount + packed.spotCount], 4);
   uints.set([grid.maxLightsPerCluster, grid.clusterCount, packed.directionalCount, packed.pointCount], 8);
   floats.set([grid.near, grid.far, grid.tanHalfFovY, grid.aspect], 12);
+  // C3 v2:area.x = 面积光数,yzw 保留。count=0 时着色循环零迭代(零回归)。
+  uints.set([areaCount, 0, 0, 0], 16);
   return buffer;
 }
 
@@ -114,6 +122,8 @@ export class ForwardPlusClusterAssigner {
   private preparedAssignment: ClusterAssignmentInputs | undefined;
   private assigned: ClusterAssignmentInputs | undefined;
   private uploaded: UploadedInputs | undefined;
+  /** C3 LUT 区不可变,按 buffer 记录一次上传。 */
+  private readonly lutUploaded = new Set<GPUBuffer>();
   private disposed = false;
 
   constructor(private readonly session: LightingSession) {
@@ -137,13 +147,15 @@ export class ForwardPlusClusterAssigner {
     const grid = normalizeClusterGrid(config), packed = packClusteredLights(boundedLights);
     // E02：与 spot storage buffer 同源灯序打包（索引对齐是着色器正确性的前提）。
     const iesShading = packIesShading(boundedLights.spots ?? [], boundedLights.lightProfiles);
+    // C3:面积光不参与聚簇/预算,固定容量打包(超出合同上限 fail-closed)。
+    const packedAreas = packAreaLights(boundedLights.areas ?? []);
     const cpuReference = options.cpuReference ? assignLightsToClusters(config, boundedLights) : undefined;
-    const desired = desiredCapacities(packed, grid, iesShading.vec4Count, this.resources);
+    const desired = desiredCapacities(packed, grid, iesShading.vec4Count, packedAreas.count, this.resources);
     const candidate = this.resources && sameCapacities(this.resources, desired) ? this.resources : this.allocate(desired);
     const replace = candidate !== this.resources;
     let uploadedInputBufferCount = 0;
     try {
-      uploadedInputBufferCount = this.write(candidate, packed, iesShading.data, grid);
+      uploadedInputBufferCount = this.write(candidate, packed, iesShading.data, packedAreas, grid);
       this.assertReady();
     } catch (error) {
       if (replace) this.release(candidate);
@@ -158,6 +170,7 @@ export class ForwardPlusClusterAssigner {
       clusterParameterBuffer: candidate.parameterBuffer,
       clusterLightIndexBuffer: candidate.clusterLightIndexBuffer, overflowBuffer: candidate.overflowBuffer,
       iesShadingBuffer: candidate.iesShadingBuffer, iesShadingVec4Count: iesShading.vec4Count,
+      areaLightDataBuffer: candidate.areaLightDataBuffer, areaLightCount: packedAreas.count,
       grid, ...(cpuReference ? { cpuReference } : {}), directionalCount: packed.directionalCount, pointCount: packed.pointCount, spotCount: packed.spotCount,
       uploadedInputBufferCount,
       clusterHeaderByteLength: grid.clusterCount * HEADER_BYTES, clusterLightIndexByteLength: grid.clusterCount * grid.maxLightsPerCluster * INDEX_BYTES,
@@ -166,7 +179,7 @@ export class ForwardPlusClusterAssigner {
     });
     this.prepared = result;
     this.preparedAssignment = { resources: candidate, points: packed.points, spots: packed.spots,
-      localBounds: packed.localBounds, parameters: packParameters(grid, packed) };
+      localBounds: packed.localBounds, parameters: packParameters(grid, packed, packedAreas.count) };
     return result;
   }
 
@@ -193,7 +206,7 @@ export class ForwardPlusClusterAssigner {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true; this.prepared = undefined; this.preparedAssignment = undefined; this.assigned = undefined;
-    this.uploaded = undefined;
+    this.uploaded = undefined; this.lutUploaded.clear();
     if (this.resources) { this.release(this.resources); this.resources = undefined; }
   }
 
@@ -213,17 +226,21 @@ export class ForwardPlusClusterAssigner {
       const clusterLightIndexBuffer = allocate(capacities.clusters * capacities.maxPerCluster * INDEX_BYTES, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC, "Deep Forward+ cluster light indices");
       const overflowBuffer = allocate(4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC, "Deep Forward+ overflow counter");
       const iesShadingBuffer = allocate(capacities.iesVec4s * IES_VEC4_BYTES, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, "Deep Forward+ IES shading tables");
+      // C3:组合 buffer 常驻固定容量([灯区][LUT 区],上限 8 盏),无面积光场景也存在
+      // (count=0 时着色循环零迭代,与 ies 最小占位同纪律)。
+      const areaLightDataBuffer = allocate(AREA_LIGHT_DATA_VEC4_TOTAL * IES_VEC4_BYTES, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, "Deep Forward+ area lights (LTC)");
       const bindGroup = device.createBindGroup({ label: "Deep Forward+ cluster bindings", layout: this.layout,
         entries: [localBoundsBuffer, parameterBuffer, clusterHeaderBuffer, clusterLightIndexBuffer, overflowBuffer]
           .map((buffer, binding) => ({ binding, resource: { buffer } })) });
       return { ...capacities, directionalBuffer, pointBuffer, spotBuffer, localBoundsBuffer, parameterBuffer,
-        clusterHeaderBuffer, clusterLightIndexBuffer, overflowBuffer, iesShadingBuffer, bindGroup };
+        clusterHeaderBuffer, clusterLightIndexBuffer, overflowBuffer, iesShadingBuffer, areaLightDataBuffer, bindGroup };
     } catch (error) { for (const buffer of owned) this.session.release(buffer); throw error; }
   }
 
-  private write(resources: Allocation, packed: PackedClusteredLights, iesShading: Float32Array, grid: NormalizedClusterGrid): number {
+  private write(resources: Allocation, packed: PackedClusteredLights, iesShading: Float32Array,
+    packedAreas: { readonly lights: Float32Array; readonly count: number }, grid: NormalizedClusterGrid): number {
     const queue = this.session.device.queue, previous = this.uploaded?.resources === resources ? this.uploaded : undefined;
-    const parameters = packParameters(grid, packed);
+    const parameters = packParameters(grid, packed, packedAreas.count);
     let count = 0;
     const upload = (buffer: GPUBuffer, values: Float32Array, prior: Float32Array | undefined): void => {
       if (!values.byteLength || sameFloats(values, prior)) return;
@@ -234,11 +251,20 @@ export class ForwardPlusClusterAssigner {
     upload(resources.spotBuffer, packed.spots, previous?.spots);
     upload(resources.localBoundsBuffer, packed.localBounds, previous?.localBounds);
     upload(resources.iesShadingBuffer, iesShading, previous?.iesShading);
+    upload(resources.areaLightDataBuffer, packedAreas.lights, previous?.areaLights);
+    // C3 LUT 区:内容不可变,每 buffer 分配只上传一次。
+    if (!this.lutUploaded.has(resources.areaLightDataBuffer)) {
+      const table = decodeLtcLut();
+      queue.writeBuffer(resources.areaLightDataBuffer, AREA_LIGHT_DATA_VEC4S * IES_VEC4_BYTES,
+        table.buffer as ArrayBuffer, table.byteOffset, table.byteLength);
+      this.lutUploaded.add(resources.areaLightDataBuffer);
+      count++;
+    }
     if (!sameWords(parameters, previous?.parameters)) {
       queue.writeBuffer(resources.parameterBuffer, 0, parameters); count++;
     }
     this.uploaded = { resources, directional: packed.directional, points: packed.points,
-      spots: packed.spots, localBounds: packed.localBounds, iesShading, parameters };
+      spots: packed.spots, localBounds: packed.localBounds, iesShading, areaLights: packedAreas.lights, parameters };
     return count;
   }
 
@@ -251,7 +277,7 @@ export class ForwardPlusClusterAssigner {
   private release(resources: Allocation): void {
     for (const buffer of [resources.directionalBuffer, resources.pointBuffer, resources.spotBuffer, resources.localBoundsBuffer,
       resources.parameterBuffer, resources.clusterHeaderBuffer, resources.clusterLightIndexBuffer, resources.overflowBuffer,
-      resources.iesShadingBuffer]) this.session.release(buffer);
+      resources.iesShadingBuffer, resources.areaLightDataBuffer]) this.session.release(buffer);
   }
 
   private assertReady(): void {

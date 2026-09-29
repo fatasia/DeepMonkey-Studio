@@ -80,7 +80,8 @@ describe("default PBR Forward+ frame runtime", () => {
     const f = fixture(), runtime = new ForwardPlusPbrRuntime(f.session);
     const first = runtime.prepareAndEncode(f.encoder, input());
     // E02：首帧上传含 IES 着色表占位缓冲（无 ies 场景为最小 -1 参数行）。
-    expect(first.resources.uploadedInputBufferCount).toBe(6);
+    // C3：另含面积光灯区（常驻 8 盏槽）与 LUT 区（内容不可变，首帧按 buffer 一次）。
+    expect(first.resources.uploadedInputBufferCount).toBe(8);
     f.device.queue.writeBuffer.mockClear();
 
     const stable = runtime.prepareAndEncode(f.encoder, input());
@@ -122,7 +123,7 @@ describe("default PBR Forward+ frame runtime", () => {
     expect(runtime.hasProbeClipmap).toBe(true);
     const published = runtime.prepareAndEncode(f.encoder, input()).bindGroup as unknown as { entries: GPUBindGroupEntry[] };
     expect(published).not.toBe(fallback);
-    expect(published.entries.slice(-3)).toEqual([{ binding: 9, resource: view }, { binding: 10, resource: sampler },
+    expect(published.entries.slice(-6, -3)).toEqual([{ binding: 9, resource: view }, { binding: 10, resource: sampler },
       { binding: 11, resource: { buffer: metadata } }]);
     runtime.setProbeClipmap({ view, sampler, levelMetadataBuffer: metadata });
     expect(runtime.prepareAndEncode(f.encoder, input()).bindGroup).toBe(published);
@@ -133,7 +134,7 @@ describe("default PBR Forward+ frame runtime", () => {
 
   it("fails early on insufficient limits, device loss, and use after disposal", () => {
     const lowLimits = fixture(); lowLimits.device.limits.maxStorageBuffersPerShaderStage = 6;
-    expect(() => new ForwardPlusPbrRuntime(lowLimits.session)).toThrow("seven fragment storage buffers");
+    expect(() => new ForwardPlusPbrRuntime(lowLimits.session)).toThrow("eight fragment storage buffers");
     const f = fixture(), runtime = new ForwardPlusPbrRuntime(f.session); f.rawSession.state = "lost";
     expect(() => runtime.prepareAndEncode(f.encoder, input())).toThrow("lost GPU session");
     runtime.dispose(); expect(() => runtime.prepareAndEncode(f.encoder, input())).toThrow("disposed");

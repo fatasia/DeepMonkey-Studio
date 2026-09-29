@@ -1,4 +1,5 @@
 import type { ClusteredLights, DirectionalLight, LightVector3, PointLight, SpotLight } from "./types.js";
+import type { AreaLight } from "./areaLights.js";
 import type { RuntimeLightProfile } from "../runtimePackage/environmentTypes.js";
 import type { AuthoredDirectionalShadow } from "../shadows/authoredDirectionalShadow.js";
 
@@ -15,6 +16,13 @@ export interface WorldPointLight extends Omit<PointLight, "positionView"> {
 
 export interface WorldSpotLight extends WorldPointLight, Omit<SpotLight, "positionView" | "directionView"> {
   readonly directionWorld: LightVector3;
+}
+
+/** C3 矩形面积光(作者态,world 空间;LTC 着色,详见 areaLights.ts)。 */
+export interface WorldAreaLight extends Omit<AreaLight, "positionView" | "directionView" | "upView"> {
+  readonly positionWorld: LightVector3;
+  readonly directionWorld: LightVector3;
+  readonly upWorld: LightVector3;
 }
 
 export interface WorldAmbientLight {
@@ -37,6 +45,8 @@ export interface WorldClusteredLights {
   readonly spots?: readonly WorldSpotLight[];
   /** E02：IES 光度表载荷，随灯阵一起透传到聚类打包（灯序不变，索引对齐）。 */
   readonly lightProfiles?: readonly RuntimeLightProfile[];
+  /** C3 矩形面积光(作者态;不参与聚簇,固定 ≤8 盏常驻绑定)。 */
+  readonly areas?: readonly WorldAreaLight[];
 }
 
 function assertRigidViewMatrix(matrix: Float32Array): void {
@@ -87,8 +97,18 @@ export function transformWorldLightsToView(lights: WorldClusteredLights, worldTo
     ...(light.ies ? { ies: light.ies } : {}),
     ...(light.shadow ? { shadow: light.shadow } : {}),
   }));
+  // C3 面积光:位置/朝向走平移+旋转,纹理窗口与物理参数原样透传。
+  const areas = (lights.areas ?? []).map(light => Object.freeze({
+    positionView: transform(worldToView, light.positionWorld, true),
+    directionView: transform(worldToView, light.directionWorld, false),
+    upView: transform(worldToView, light.upWorld, false),
+    halfExtent: light.halfExtent, range: light.range, color: light.color, intensity: light.intensity,
+    ...(light.twoSided !== undefined ? { twoSided: light.twoSided } : {}),
+    ...(light.texture ? { texture: light.texture } : {}),
+  }));
   return Object.freeze({
     directional: Object.freeze(directional), points: Object.freeze(points), spots: Object.freeze(spots),
     ...(lights.lightProfiles ? { lightProfiles: lights.lightProfiles } : {}),
+    ...(lights.areas ? { areas: Object.freeze(areas) } : {}),
   });
 }

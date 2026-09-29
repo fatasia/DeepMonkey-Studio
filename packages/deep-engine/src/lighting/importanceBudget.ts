@@ -23,6 +23,8 @@ export function prioritizeLocalLights(lights: ClusteredLights, maxLocalLights: n
   return Object.freeze({
     ...(lights.directional ? { directional: lights.directional } : {}),
     ...(lights.lightProfiles ? { lightProfiles: lights.lightProfiles } : {}),
+    // C3 面积光不参与预算排序,原样透传(固定 ≤8 盏常驻)。
+    ...(lights.areas ? { areas: lights.areas } : {}),
     points: Object.freeze([...keep(points, "point")]) as readonly PointLight[],
     spots: Object.freeze([...keep(spots, "spot")]) as readonly SpotLight[],
   });

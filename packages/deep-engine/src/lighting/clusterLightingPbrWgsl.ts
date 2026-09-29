@@ -2,6 +2,7 @@ import { FORWARD_PLUS_CLUSTER_ABI_WGSL, FORWARD_PLUS_LIGHTING_BIND_GROUP } from 
 import { FORWARD_PLUS_LIGHT_ABI_WGSL } from "./lightAbiWgsl.js";
 import { LOCAL_SPOT_SHADOW_WGSL } from "../shadows/localSpotShadowShader.js";
 import { DEEP_IES_SAMPLING_WGSL } from "./iesSamplingWgsl.js";
+import { DEEP_AREA_LIGHTING_WGSL } from "./ltcAreaLightingWgsl.js";
 
 /** Group 3 is reserved for clustered lighting; group 2 remains available for cascaded shadows. */
 export const FORWARD_PLUS_PBR_WGSL = /* wgsl */ `${FORWARD_PLUS_LIGHT_ABI_WGSL}
@@ -15,9 +16,13 @@ ${LOCAL_SPOT_SHADOW_WGSL}
 @group(${FORWARD_PLUS_LIGHTING_BIND_GROUP}) @binding(5) var<storage, read> deepClusterLightIndices: array<u32>;
 // E02 IES 光域网：每灯参数 + 每 profile 元数据 + 展开归一化表（iesShading.ts 打包）。
 @group(${FORWARD_PLUS_LIGHTING_BIND_GROUP}) @binding(12) var<storage, read> deepIesShading: array<vec4<f32>>;
+// C3 面积光组合数据([灯区][LUT 区]) + cookie 纹理/采样器(pbrLightingBindings 缺省 1×1 白)。
+@group(${FORWARD_PLUS_LIGHTING_BIND_GROUP}) @binding(13) var<storage, read> deepAreaLightData: array<vec4<f32>>;
+@group(${FORWARD_PLUS_LIGHTING_BIND_GROUP}) @binding(14) var deepAreaCookie: texture_2d<f32>;
+@group(${FORWARD_PLUS_LIGHTING_BIND_GROUP}) @binding(15) var deepAreaCookieSampler: sampler;
 
 const DEEP_CLUSTER_PI: f32 = 3.141592653589793;
-${DEEP_IES_SAMPLING_WGSL}fn deepClusterSafeNormalize(value: vec3f, fallback: vec3f) -> vec3f {
+${DEEP_IES_SAMPLING_WGSL}${DEEP_AREA_LIGHTING_WGSL}fn deepClusterSafeNormalize(value: vec3f, fallback: vec3f) -> vec3f {
   let lengthSquared = dot(value, value);
   return select(fallback, value * inverseSqrt(max(lengthSquared, 0.00000001)), lengthSquared > 0.00000001);
 }
@@ -123,6 +128,16 @@ fn deepForwardPlusPbrReceivingF0(fragmentCoordinate: vec2f, positionViewInput: v
         }
       }
     }
+  }
+  // C3 面积光:不参与聚簇,固定 ≤8 盏常驻循环(count=0 时零迭代,既有路径逐位不变)。
+  // cookie 仅在 FLAG_TEXTURE 灯上采样(textureSampleLevel 显式 LOD,非均匀控制流合法)。
+  for (var areaIndex = 0u; areaIndex < deepClusterParams.area.x; areaIndex++) {
+    let base = areaIndex * DEEP_AREA_LIGHT_STRIDE;
+    var cookie = vec3f(1.0);
+    if ((u32(deepAreaLightData[base + 2u].w) & DEEP_AREA_LIGHT_FLAG_TEXTURE) != 0u) {
+      cookie = textureSampleLevel(deepAreaCookie, deepAreaCookieSampler, deepAreaLightCookieUv(base, positionViewInput), 0.0).rgb;
+    }
+    result += deepAreaLightContribution(base, positionViewInput, normal, view, baseColor, metallic, roughness, dielectric, cookie);
   }
   return max(result, vec3f(0.0));
 }

@@ -91,6 +91,21 @@ export const DEEP_GI_MIN_SAMPLE_WEIGHT = 0.001;
  */`,
     preamble: `export const DEEP_IES_SAMPLING_WGSL = /* wgsl */ `,
   },
+  {
+    // C3 矩形/带纹理面积光(LTC)家族。真源 wgsl/ltcAreaLighting.wgsl,
+    // Rust 半在 deep-engine-native/src/lighting_math_wgsl.rs(include_str! + 夹具对拍;
+    // native 无运行时通路,消费面 = WGSL 单源指纹 + ltc_area_light.rs f64 参考)。
+    source: "ltcAreaLighting.wgsl",
+    module: resolve(packageRoot, "src/lighting/ltcAreaLightingWgsl.ts"),
+    gate: "src/lighting/ltcAreaLightingWgslChecksum.test.ts",
+    rustHalf: "deep-engine-native/src/lighting_math_wgsl.rs",
+    constants: `/**
+ * C3 面积光 LTC 家族的生成镜像。唯一真源 wgsl/ltcAreaLighting.wgsl,
+ * Rust 半在 deep-engine-native/src/lighting_math_wgsl.rs;绑定声明留宿主模板
+ * (FORWARD_PLUS_PBR 模板 group3/binding13 storage;常量与 areaLights.ts 互钉)。
+ */`,
+    preamble: `export const DEEP_AREA_LIGHTING_WGSL = /* wgsl */ `,
+  },
 ];
 
 for (const entry of SHARED_WGSL) {
