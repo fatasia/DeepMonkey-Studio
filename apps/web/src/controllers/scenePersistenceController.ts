@@ -197,7 +197,7 @@ export function createScenePersistenceController(context: ScenePersistenceContro
   const fileTransfer = createSceneFileTransferActions(context, makeSnapshot, applyScene);
   const publication = createScenePublicationActions(context, () => saveScene());
 
-  async function applyScene(scene: SceneSnapshot, updateRoute = true, sceneProject = project, readOnly = false, fastRuntime = false, safeAuthoringEntry = false, requireComplete = false) {
+  async function applyScene(scene: SceneSnapshot, updateRoute = true, sceneProject = project, readOnly = false, fastRuntime = false, safeAuthoringEntry = false, requireComplete = false, incrementalPlay = false) {
     if (!engine || !sceneProject) {
       if (requireComplete) throw new Error("场景引擎或项目资源已卸载，请重新打开场景后重试退出播放");
       return;
@@ -227,7 +227,11 @@ export function createScenePersistenceController(context: ScenePersistenceContro
       }
       engine.setReadOnly(readOnly);
       engine.setFastRuntime(fastRuntime);
-      engine.clearSceneModels();
+      // C25 增量域重载：Play 退出恢复时计划已判定四个重建域缓存直通（实例集合与素材
+      // 身份逐位一致），跳过 clearSceneModels 让引擎 loadManifest 实例缓存保持命中
+      // （命中即直通，无 fetch/parse/upload），仅重放逐实例状态。默认 false，
+      // 撤销/重做/路由恢复/导入等既有调用方行为逐位不变。
+      if (!incrementalPlay) engine.clearSceneModels();
       const restoreGeneration = engine.beginSceneSnapshotRestore(scene.id);
       const nextInteractions = normalizeInteractionScripts(scene.interactions);
       const nextDataBindings = normalizeSceneDataBindings(scene.dataBindings);
@@ -258,6 +262,12 @@ export function createScenePersistenceController(context: ScenePersistenceContro
         if (!engine.listModels().some(model => model.id === item.modelId)) throw new Error(`模型“${item.name}”未能载入，请重新打开场景后保存`);
         engine.applyModelState(item.modelId, item);
         engine.rename(item.modelId, item.name);
+        if (incrementalPlay) {
+          // 全量路径经重载后模型动画 mixer 从 0 重放；增量路径实例未重载，mixer 保留
+          // 播放时位姿——seek(0) 对齐全量退出后的逐模型动画语义（快照只含回放策略，
+          // 不含时刻，两条路径都以"归零重放"为恢复事实）。
+          engine.controlAnimation(item.modelId, { action: "seek", time: 0 });
+        }
         return true;
       };
       const essentialModels = readOnly ? scene.models.slice(0, 1) : scene.models;
@@ -267,11 +277,16 @@ export function createScenePersistenceController(context: ScenePersistenceContro
         if (!(await loadSceneModel(item))) return;
         if (readOnly) setViewerLoadState({ loaded: index + 1, total: scene.models.length, current: item.name, phase: deferredModels.length ? "streaming" : "ready" });
       }
-      for (const item of engine.listModels().filter((model) => model.kind === "primitive")) engine.removeModel(item.id);
+      // C25：增量路径图元实例仍存活，跳过 remove+create（含 createPrimitive 内的逐实例
+      // select），只重放逐实例状态；kind/color 已由退出差分判定为逐位一致，共享几何与
+      // 材质缓存无需重建。
+      for (const item of engine.listModels().filter((model) => model.kind === "primitive")) {
+        if (!incrementalPlay) engine.removeModel(item.id);
+      }
       const primitiveScheduler = createBrowserCooperativeWorkScheduler();
       for (const primitive of scene.primitives) {
         primitiveColors.current.set(primitive.modelId, primitive.color);
-        engine.createPrimitive(primitive.modelId, primitive.name, primitive.kind ?? "box", primitive.color);
+        if (!incrementalPlay) engine.createPrimitive(primitive.modelId, primitive.name, primitive.kind ?? "box", primitive.color);
         engine.applyModelState(primitive.modelId, primitive);
         // 场景切换可在分片让出主线程时发生，旧任务必须停止继续写入新场景。
         if ((await primitiveScheduler.checkpoint()) && applyVersion !== sceneApplyVersionRef.current) {
@@ -279,10 +294,14 @@ export function createScenePersistenceController(context: ScenePersistenceContro
           return;
         }
       }
-      engine.clearMeasurements();
-      for (const measurement of scene.measurements) engine.addMeasurementVisual(measurement);
+      if (!incrementalPlay) {
+        engine.clearMeasurements();
+        for (const measurement of scene.measurements) engine.addMeasurementVisual(measurement);
+      }
       setMeasurements(scene.measurements);
-      for (const annotation of scene.annotations ?? []) engine.addAnnotation(annotation);
+      for (const annotation of scene.annotations ?? []) {
+        if (!incrementalPlay) engine.addAnnotation(annotation);
+      }
       setAnnotations(engine.listAnnotations());
       const nextCameraViews = scene.cameraViews ?? [];
       const authoredEntryCamera = nextCameraViews.find((item) => item.id === scene.defaultCameraViewId)?.camera ?? scene.camera;

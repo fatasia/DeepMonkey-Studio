@@ -5,6 +5,7 @@ import pureFixture from "../../../../test-fixtures/scene-v1-pure-3d.json";
 import { ApplicationSession } from "../studio/applicationSession";
 import { createScenePlayModeController } from "../hooks/useScenePlayMode";
 import { ViewerSnapshotReadiness } from "../viewer/viewerSnapshotReadiness";
+import { createPlaySessionRestore } from "./playSessionRestore";
 import { createScenePersistenceController } from "./scenePersistenceController";
 import type { ScenePersistenceControllerContext } from "./scenePersistenceControllerContext";
 
@@ -75,6 +76,7 @@ describe("Play exits through the production scene persistence path", () => {
       setWeather: vi.fn(), setGlobalLighting: vi.fn(), setSceneEnvironment: vi.fn(), applyFloorStates: vi.fn(),
       setPostProcessing: vi.fn(), setSceneAnimation: vi.fn(), clearSceneModelsAndPrimitives: vi.fn(),
       setClipping: vi.fn(), select: vi.fn(), selectAnnotation: vi.fn(), selectLayer: vi.fn(),
+      controlAnimation: vi.fn(),
       requestRender: vi.fn(),
     };
     const context = {
@@ -155,6 +157,63 @@ describe("Play exits through the production scene persistence path", () => {
     expect(await f.play.exitPlay()).toEqual({ ok: false, reason: "restore-failed" });
     expect(f.play.active).toBe(true);
     expect(f.errors).toHaveLength(1);
+  });
+
+  describe("C25 增量域重载：退出 Play 走缓存直通恢复（真实 persistence 路径）", () => {
+    function incrementalFixture() {
+      const f = playFixture();
+      // 进入前快照补测量域：增量分支必须保留引擎内测量（跳过 clear+重建），仅重放 React 事实。
+      f.scene.measurements = [{ id: "m1", start: { x: 0, y: 0, z: 0 }, end: { x: 1, y: 0, z: 0 } } as never];
+      return f;
+    }
+
+    it("增量分支：不 clearSceneModels、不重建测量，逐实例状态与恢复代际照常落位", async () => {
+      const f = incrementalFixture();
+      expect(f.play.enterPlay()).toEqual({ ok: true });
+      f.live.x = 1;
+      await f.persistence.applyScene(structuredClone(f.scene), false, f.context.project, false, false, false, true, true);
+      expect(f.engine.clearSceneModels).not.toHaveBeenCalled();
+      expect(f.context.loadModel).toHaveBeenCalledOnce(); // 实例缓存直通（未销毁故 loadManifest 命中路径）
+      expect(f.live.x).toBe(0); // applyModelState 重放进入前位姿
+      expect(f.engine.controlAnimation).toHaveBeenCalledWith("gripper", { action: "seek", time: 0 }); // mixer 对齐全量重载语义
+      expect(f.engine.clearMeasurements).not.toHaveBeenCalled();
+      expect(f.engine.addMeasurementVisual).not.toHaveBeenCalled();
+      expect(f.context.setMeasurements).toHaveBeenCalledWith(f.scene.measurements);
+      expect(f.engine.hasRestoredSceneSnapshot(f.scene.id)).toBe(true);
+      expect(f.context.setActiveScene).toHaveBeenCalled();
+      expect(f.engine.requestRender).toHaveBeenCalled();
+    });
+
+    it("全量分支（同一签名缺省尾参）行为逐位不变：clearSceneModels 照常执行", async () => {
+      const f = incrementalFixture();
+      await f.persistence.applyScene(structuredClone(f.scene), false, f.context.project, false, false, false, true);
+      expect(f.engine.clearSceneModels).toHaveBeenCalledOnce();
+      expect(f.engine.clearMeasurements).toHaveBeenCalledOnce();
+      expect(f.engine.controlAnimation).not.toHaveBeenCalled();
+    });
+
+    it("端到端：enterPlay → 改位姿 → exitPlay 走增量（经生产调度器），快照零重建", async () => {
+      const f = incrementalFixture();
+      const restore = createPlaySessionRestore(() => ({
+        engine: () => f.engine as unknown as { getAuthorRendererBackend(): string; hasRestoredSceneSnapshot(id: string): boolean },
+        project: () => f.context.project,
+        captureLive: () => structuredClone(f.scene),
+        applyFull: async (snapshot: SceneSnapshot) => {
+          await f.persistence.applyScene(snapshot, false, f.context.project, false, false, false, true);
+          if (!f.engine.hasRestoredSceneSnapshot(snapshot.id)) throw new Error("场景恢复尚未完成");
+        },
+        applyIncremental: async (snapshot: SceneSnapshot) => {
+          await f.persistence.applyScene(snapshot, false, f.context.project, false, false, false, true, true);
+        },
+      }));
+      expect(f.play.enterPlay()).toEqual({ ok: true });
+      f.live.x = 1;
+      const outcome = await restore.restore(structuredClone(f.scene));
+      expect(outcome.path).toBe("incremental");
+      expect(f.engine.clearSceneModels).not.toHaveBeenCalled();
+      expect(f.live.x).toBe(0);
+      expect(f.engine.hasRestoredSceneSnapshot(f.scene.id)).toBe(true);
+    });
   });
 });
 

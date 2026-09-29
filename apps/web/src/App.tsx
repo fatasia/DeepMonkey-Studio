@@ -5,6 +5,7 @@ import { createApplicationRuntimeController } from "./controllers/applicationRun
 import { sortScenesByTime } from "./appSceneOrder";
 import { createSceneEditorController } from "./controllers/sceneEditorController";
 import { createScenePersistenceController } from "./controllers/scenePersistenceController";
+import { createPlaySessionRestore, type PlaySessionRestore, type PlaySessionRestoreDeps } from "./controllers/playSessionRestore";
 import { useScenePublicationArtifacts } from "./hooks/useScenePublicationArtifacts";
 import { useAppDerivedState } from "./hooks/useAppDerivedState";
 import { useGlobalDialogEscape } from "./hooks/useGlobalDialogEscape";
@@ -280,16 +281,34 @@ export function App() {
     rendererDiagnostics,
   } = appState;
   const restrictedPlayRef = useRef<RestrictedPlayConsumer | undefined>(undefined);
-  const playMode = useScenePlayMode(() => ({
-    engine,
-    capture: () => sceneHistoryState.sceneSnapshotFactoryRef.current?.(),
-    flush: () => sceneHistoryState.flushSceneHistoryEdit(),
-    applyScene: async (snapshot) => {
+  // C25 增量域重载：退出 Play 的恢复调度器（实例只建一次以保留降级记忆；依赖经 ref
+  // 每渲染刷新，与 useScenePlayMode 的 getHost 同语义，不冻结首渲染闭包）。
+  const playSessionAppliersRef = useRef<PlaySessionRestoreDeps | undefined>(undefined);
+  const playSessionRestoreRef = useRef<PlaySessionRestore | undefined>(undefined);
+  if (!playSessionRestoreRef.current) {
+    playSessionRestoreRef.current = createPlaySessionRestore(() => playSessionAppliersRef.current!);
+  }
+  playSessionAppliersRef.current = {
+    engine: () => engine,
+    project: () => project,
+    captureLive: () => sceneHistoryState.sceneSnapshotFactoryRef.current?.(),
+    applyFull: async (snapshot) => {
       if (!project || engine?.getAuthorRendererBackend() === "webgpu") {
         throw new Error("当前渲染器无法安全地同步恢复播放快照，请切换 WebGL 后重试");
       }
       await applyScene(snapshot, false, project, false, false, false, true);
       if (!engine?.hasRestoredSceneSnapshot(snapshot.id)) throw new Error("场景恢复尚未完成，请待模型加载结束后重试退出播放");
+    },
+    applyIncremental: async (snapshot) => {
+      await applyScene(snapshot, false, project, false, false, false, true, true);
+    },
+  };
+  const playMode = useScenePlayMode(() => ({
+    engine,
+    capture: () => sceneHistoryState.sceneSnapshotFactoryRef.current?.(),
+    flush: () => sceneHistoryState.flushSceneHistoryEdit(),
+    applyScene: async (snapshot) => {
+      await playSessionRestoreRef.current!.restore(snapshot);
     },
     readAnimationPlayhead: () => {
       try { return engine?.transientChannels.channel<{ time: number; playing: boolean }>("animation").snapshot().time ?? animationTime; }
