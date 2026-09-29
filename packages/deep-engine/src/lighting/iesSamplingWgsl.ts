@@ -1,0 +1,12 @@
+// GENERATED FILE — DO NOT EDIT BY HAND(全文件生成物,手改会在字节门禁处被打回)。
+// 唯一真源: wgsl/iesSampling.wgsl(WGSL 单源,TS 与 Rust 双端共享同一份文件)。
+// 重新生成: pnpm --filter @bim-studio/deep-engine wgsl:sync
+// 字节门禁: src/lighting/iesSamplingWgslChecksum.test.ts(?raw 读真源 + SHA-256 夹具对拍);
+//          Rust 半: deep-engine-native/src/lighting_math_wgsl.rs(include_str! 引用同一文件,共用同一夹具)。
+
+/**
+ * J2-B1 IES 光域网采样家族的生成镜像。唯一真源 wgsl/iesSampling.wgsl,
+ * Rust 半在 deep-engine-native/src/lighting_math_wgsl.rs(bin 侧 frame_bindings 经 concat! 拼进
+ * native mesh shader 真实消费;binding 9 的 storage 变量随源内符号统一为 deepIesShading)。
+ */
+export const DEEP_IES_SAMPLING_WGSL = /* wgsl */ "const DEEP_IES_RAD_TO_DEG: f32 = 57.29577951308232;\nconst DEEP_IES_ROW_STRIDE: u32 = 91u;\n// E02 采样次序合同（iesShading.evaluateIesShadingFactor 同式，round 输入非负）：\n// θ/φ 由方向向量推导后量化到 0.5° 网格，φ 减旋转、floor 模 360、对称折叠后取行；\n// 列 = θ 的半度数直取（展开表已内化最近邻与角域外为 0）。params.x = -1 → 恒等 1.0。\nfn deepSpotIesFactor(spotIndex: u32, surfaceToLightDirection: vec3<f32>, lightDirection: vec3<f32>) -> f32 {\n  let params = deepIesShading[spotIndex];\n  if (params.x < 0.0) { return 1.0; }\n  // meta 是 WGSL 保留字,profile 元数据词用 profileMeta。\n  let profileMeta = deepIesShading[u32(params.w)];\n  let toSurface = -surfaceToLightDirection;\n  let cosTheta = clamp(dot(toSurface, lightDirection), -1.0, 1.0);\n  let thetaHalf = clamp(round(acos(cosTheta) * DEEP_IES_RAD_TO_DEG * 2.0), 0.0, 360.0);\n  let up = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(lightDirection.y) > 0.999);\n  let right = normalize(cross(up, lightDirection));\n  let pole = cross(lightDirection, right);\n  var phi = atan2(dot(toSurface, pole), dot(toSurface, right)) * DEEP_IES_RAD_TO_DEG - params.y * 0.5;\n  phi = phi - floor(phi / 360.0) * 360.0;\n  var phiHalf = round(phi * 2.0);\n  if (phiHalf >= 720.0) { phiHalf = 0.0; }\n  var gHalf = phiHalf;\n  if (profileMeta.w == 2.0 && gHalf > 360.0) { gHalf = 720.0 - gHalf; }\n  if (profileMeta.w == 4.0) {\n    gHalf = gHalf % 360.0;\n    if (gHalf > 180.0) { gHalf = 360.0 - gHalf; }\n  }\n  var rowHalf = 0.0;\n  if (profileMeta.w != 1.0) { rowHalf = clamp(round(gHalf / profileMeta.z), 0.0, profileMeta.y - 1.0); }\n  let cell = deepIesShading[u32(profileMeta.x) + u32(rowHalf) * DEEP_IES_ROW_STRIDE + u32(thetaHalf) / 4u];\n  let value = select(cell.x, select(cell.y, select(cell.z, cell.w, u32(thetaHalf) % 4u == 3u), u32(thetaHalf) % 4u == 2u), u32(thetaHalf) % 4u == 1u);\n  return value * params.z;\n}\n";

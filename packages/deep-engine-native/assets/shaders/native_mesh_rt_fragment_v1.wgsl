@@ -62,7 +62,7 @@ fn rt_directional_visibility(world: vec3f, light: vec3f) -> f32 {
     1.0, flag(input.material.w, 16u) || (authored_light && frame.lightingOptions.y == 0.0));
   let sun = select(vec3f(3.2, 3.0, 2.8), frame.sunColor.rgb, authored_light);
   let dielectric = input.dielectric;
-  var color = direct_brdf_f0(normal, view, light, base, metal, rough, dielectric)
+  var color = brdfWithDielectricF0(normal, view, light, base, metal, rough, dielectric)
     * sun * visibility;
   if (frame.sunColor.w == 3.0) {
     color += local_direct_lighting(input.world, normal, view, base, metal, rough, !flag(input.material.w,16u), ao, dielectric, input.clip);

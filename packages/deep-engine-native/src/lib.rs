@@ -26,6 +26,8 @@ pub mod ibl;
 pub mod ies_shading;
 #[cfg(windows)]
 pub mod industrial_worker_host;
+/// J2-B1 灯光数学三件套 WGSL 单源的 Rust 消费端与双端校验和对拍(详见模块文档)。
+pub mod lighting_math_wgsl;
 pub mod local_lighting;
 pub mod local_shadow;
 pub mod lod_contract;
@@ -69,6 +71,8 @@ pub mod probe_gi_wgsl;
 pub mod ray_backend;
 pub mod ray_tracing_capability;
 pub mod replay;
+/// J4 能力协商:native 端渲染能力自检声明(金样来自 contracts/fixtures,见模块文档)。
+pub mod renderer_capability_manifest;
 pub mod runtime_camera;
 pub mod runtime_coordinates;
 pub mod runtime_navigation;

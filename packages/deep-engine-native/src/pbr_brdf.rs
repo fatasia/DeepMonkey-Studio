@@ -32,7 +32,9 @@ pub fn direct_brdf(
         let base = base_color[index].max(0.0);
         let f0 = 0.04 * (1.0 - metal) + base * metal;
         let fresnel = f0 * (1.0 - factor) + factor;
-        let specular = distribution * visibility * fresnel;
+        // J2-B1 漂移对齐:高光乘法序随 TS 权威序(fresnel 起乘,白炉验收基准),
+        // 与 wgsl/brdfDirectLighting.wgsl 的 `f * visibility * distribution` 同式。
+        let specular = fresnel * visibility * distribution;
         let diffuse = (1.0 - metal) * base / PI;
         (diffuse + specular) * n_dot_l
     })

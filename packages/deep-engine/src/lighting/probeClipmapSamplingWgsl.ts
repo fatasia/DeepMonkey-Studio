@@ -1,5 +1,5 @@
 // GENERATED FILE — DO NOT EDIT BY HAND(全文件生成物,手改会在字节门禁处被打回)。
-// 唯一真源: wgsl/probeClipmapSampling.wgsl(WGSL 单源试点,TS 与 Rust 双端共享同一份文件)。
+// 唯一真源: wgsl/probeClipmapSampling.wgsl(WGSL 单源,TS 与 Rust 双端共享同一份文件)。
 // 重新生成: pnpm --filter @bim-studio/deep-engine wgsl:sync
 // 字节门禁: src/lighting/probeClipmapSamplingWgslChecksum.test.ts(?raw 读真源 + SHA-256 夹具对拍);
 //          Rust 半: deep-engine-native/src/probe_gi_wgsl.rs(include_str! 引用同一文件,共用同一夹具)。

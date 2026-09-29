@@ -1,30 +1,13 @@
 import { MATERIAL_DIELECTRIC_WGSL } from "../materialDielectric.js";
+import { PBR_BRDF_DIRECT_LIGHTING_WGSL } from "../lighting/brdfDirectLightingWgsl.js";
 
-/** Direct-light GGX with correlated Smith visibility and no extra texture fetches. */
+/**
+ * Direct-light GGX with correlated Smith visibility and no extra texture fetches.
+ * J2-B1 单源组合:介电 F0 与 BRDF 两段分别来自 wgsl/materialDielectric.wgsl 与
+ * wgsl/brdfDirectLighting.wgsl 的生成镜像,按组合恒等式拼接——
+ * `PBR_DIRECT_LIGHTING_WGSL === "\n" + MATERIAL_DIELECTRIC_WGSL + "\n" + PBR_BRDF_DIRECT_LIGHTING_WGSL`,
+ * 该恒等式由 brdfDirectLightingWgslChecksum.test.ts 逐字节锁定,迁移前后组合产物零变化。
+ */
 export const PBR_DIRECT_LIGHTING_WGSL = /* wgsl */ `
 ${MATERIAL_DIELECTRIC_WGSL}
-fn fresnel(cosine: f32, f0: vec3f) -> vec3f {
-  let factor = exp2((-5.55473 * cosine - 6.98316) * cosine);
-  return f0 * (1.0 - factor) + factor;
-}
-fn deepGeometryRoughness(normal: vec3f) -> f32 {
-  let derivative = max(abs(dpdx(normal)), abs(dpdy(normal)));
-  return max(max(derivative.x, derivative.y), derivative.z);
-}
-fn brdfWithDielectricF0(n: vec3f, v: vec3f, l: vec3f, base: vec3f, metal: f32, rough: f32, dielectric: f32) -> vec3f {
-  let h = safeNormalize(v + l, n); let nv = clamp(dot(n, v), 0.0001, 1.0); let nl = clamp(dot(n, l), 0.0, 1.0);
-  let nh = clamp(dot(n, h), 0.0, 1.0); let vh = clamp(dot(v, h), 0.0, 1.0);
-  let alpha = rough * rough; let a2 = alpha * alpha; let denom = nh * nh * (a2 - 1.0) + 1.0;
-  let distribution = a2 / max(3.14159265 * denom * denom, 0.000001);
-  let gv = nl * sqrt(a2 + (1.0 - a2) * nv * nv);
-  let gl = nv * sqrt(a2 + (1.0 - a2) * nl * nl);
-  let visibility = 0.5 / max(gv + gl, 0.000001);
-  let f0 = mix(vec3f(dielectric), base, metal); let f = fresnel(vh, f0);
-  let specular = f * visibility * distribution;
-  let diffuse = (1.0 - metal) * base / 3.14159265;
-  return (diffuse + specular) * nl;
-}
-fn brdf(n: vec3f, v: vec3f, l: vec3f, base: vec3f, metal: f32, rough: f32) -> vec3f {
-  return brdfWithDielectricF0(n, v, l, base, metal, rough, 0.04);
-}
-`;
+${PBR_BRDF_DIRECT_LIGHTING_WGSL}`;

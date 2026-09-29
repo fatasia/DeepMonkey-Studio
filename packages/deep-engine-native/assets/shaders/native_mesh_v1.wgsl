@@ -27,40 +27,17 @@ struct MaterialTextures {
 };
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(8) var<uniform> section_plane: vec4f;
-@group(0) @binding(9) var<storage, read> iesShading: array<vec4f>;
+@group(0) @binding(9) var<storage, read> deepIesShading: array<vec4f>;
 // F3:探针 GI storage。每条记录 6 个 vec4f(96B):[0]irradiance.xyz+validity、
 // [1]距离统计、[2]positionOffset.xyz、[3..5]保留零区。0..10 既有绑定不动。
 @group(0) @binding(11) var<storage, read> probe_gi: array<vec4f>;
 // Cluster storage ABI v1 is resident for every Native frame. Invalid or empty
 // plans fall back to the legacy authored-light order without changing output.
 @group(0) @binding(12) var<storage, read> cluster_grid: array<u32>;
+// J2-B1 单源:IES 光域网采样库(deepSpotIesFactor)与直射 BRDF/介电 F0 库由
+// frame_bindings 经 include_str! 拼接自 packages/deep-engine/wgsl/ 三份真源;
+// 本体只保留宿主 binding 声明(9 号行距 91 的 vec4 展开表,与 web E02 布局同构)。
 const PROBE_GI_RECORD_FLOATS: u32 = 6u;
-const IES_ROW_STRIDE: u32 = 91u;
-const IES_RAD_TO_DEG: f32 = 57.29577951308232;
-
-fn ies_factor(lightIndex: u32, surfaceToLight: vec3f, lightDirection: vec3f) -> f32 {
-  let params = iesShading[lightIndex];
-  if (params.x < 0.0) { return 1.0; }
-  let profile = iesShading[u32(params.w)];
-  let toSurface = -surfaceToLight;
-  let thetaHalf = clamp(round(acos(clamp(dot(toSurface, lightDirection), -1.0, 1.0))
-    * IES_RAD_TO_DEG * 2.0), 0.0, 360.0);
-  let up = select(vec3f(0.0, 1.0, 0.0), vec3f(1.0, 0.0, 0.0), abs(lightDirection.y) > 0.999);
-  let right = normalize(cross(up, lightDirection));
-  let pole = cross(lightDirection, right);
-  var phi = atan2(dot(toSurface, pole), dot(toSurface, right)) * IES_RAD_TO_DEG - params.y * 0.5;
-  phi = phi - floor(phi / 360.0) * 360.0;
-  var gHalf = round(phi * 2.0);
-  if (gHalf >= 720.0) { gHalf = 0.0; }
-  if (profile.w == 2.0 && gHalf > 360.0) { gHalf = 720.0 - gHalf; }
-  if (profile.w == 4.0) { gHalf = gHalf % 360.0; if (gHalf > 180.0) { gHalf = 360.0 - gHalf; } }
-  var row = 0.0;
-  if (profile.w != 1.0) { row = clamp(round(gHalf / profile.z), 0.0, profile.y - 1.0); }
-  let cell = iesShading[u32(profile.x) + u32(row) * IES_ROW_STRIDE + u32(thetaHalf) / 4u];
-  let lane = u32(thetaHalf) % 4u;
-  let value = select(cell.x, select(cell.y, select(cell.z, cell.w, lane == 3u), lane == 2u), lane == 1u);
-  return value * params.z;
-}
 // F3 最小切片:按世界位置取最近探针的 irradiance 近似(不做三线性/等级混合)。
 // 合同:producer 把探针世界位置预烘焙进 record.positionOffset(Web clipmap 的
 // origin + cell*spacing 在打包时并入该字段);validity <= 0 的探针跳过。
@@ -353,7 +330,7 @@ fn build_vertex(position: vec3f, normal: vec3f, model_0: vec4f, model_1: vec4f,
   out.world = world; out.normal = world_normal;
   out.tangent = vec4f(world_tangent, tangent.w * material.z);
   out.uv0 = uv0; out.uv1 = uv1; out.base_color = base_color; out.material = material;
-  out.emissive_alpha = emissive_alpha; out.dielectric = dielectric_f0(normal_0.w);
+  out.emissive_alpha = emissive_alpha; out.dielectric = deepDielectricF0(normal_0.w);
   return out;
 }
 
@@ -460,7 +437,7 @@ fn local_direct_lighting(world: vec3f, normal: vec3f, view: vec3f, base: vec3f, 
         var coneWeight = select(0.0, 1.0, cosine >= outer);
         if (inner > outer) { coneWeight = clamp((cosine - outer) / (inner - outer), 0.0, 1.0); }
         attenuation *= coneWeight * coneWeight * (3.0 - 2.0 * coneWeight)
-          * ies_factor(index, direction, source.directionKind.xyz);
+          * deepSpotIesFactor(index, direction, source.directionKind.xyz);
       }
     }
     var visibility = 1.0;
@@ -469,7 +446,7 @@ fn local_direct_lighting(world: vec3f, normal: vec3f, view: vec3f, base: vec3f, 
       if (source.directionKind.w == 2.0) { shadowIndex += point_shadow_face(world-source.positionRange.xyz); }
       visibility = local_spot_visibility(shadowIndex, source.coneDecay.w, world, max(dot(normal,direction),0.0), frame.localShadowSoftness[index / 4u][index % 4u]);
     }
-    color += direct_brdf_f0(normal, view, direction, base, metal, rough, dielectric) * source.radianceOuter.rgb * attenuation * visibility;
+    color += brdfWithDielectricF0(normal, view, direction, base, metal, rough, dielectric) * source.radianceOuter.rgb * attenuation * visibility;
   }
   return color;
 }
@@ -504,31 +481,10 @@ fn mapped_normal(input: VertexOutput, front_facing: bool) -> vec3f {
   return safe_normalize(
     tangent * tangent_normal.x + bitangent * tangent_normal.y + n * tangent_normal.z, n);
 }
-
-fn dielectric_f0(encoded_ior: f32) -> f32 {
-  if (encoded_ior == 0.0 || encoded_ior == 1.5) { return 0.04; }
-  let reflectance = 1.0 - 2.0 / (encoded_ior + 1.0);
-  return reflectance * reflectance;
-}
-fn fresnel(cosine: f32, f0: vec3f) -> vec3f {
-  let factor = exp2((-5.55473 * cosine - 6.98316) * cosine);
-  return f0 * (1.0 - factor) + factor;
-}
-
-fn direct_brdf_f0(n: vec3f, v: vec3f, l: vec3f, base: vec3f, metal: f32, rough: f32, dielectric: f32) -> vec3f {
-  let h = safe_normalize(v + l, n);
-  let nv = clamp(dot(n, v), 0.0001, 1.0); let nl = clamp(dot(n, l), 0.0, 1.0);
-  let nh = clamp(dot(n, h), 0.0, 1.0); let vh = clamp(dot(v, h), 0.0, 1.0);
-  let alpha = rough * rough; let alpha_2 = alpha * alpha;
-  let denominator = nh * nh * (alpha_2 - 1.0) + 1.0;
-  let distribution = alpha_2 / max(3.14159265 * denominator * denominator, 0.000001);
-  let gv = nl * sqrt(alpha_2 + (1.0 - alpha_2) * nv * nv);
-  let gl = nv * sqrt(alpha_2 + (1.0 - alpha_2) * nl * nl);
-  let visibility = 0.5 / max(gv + gl, 0.000001);
-  let f = fresnel(vh, mix(vec3f(dielectric), base, metal));
-  let specular = distribution * visibility * f;
-  let diffuse = (1.0 - metal) * base / 3.14159265;
-  return (diffuse + specular) * nl;
+// J2-B1 单源适配:拼入的直射 BRDF 库以 safeNormalize 取安全归一,此处复用同名语义的
+// snake_case safe_normalize 本体(逐式等价,无数值差)。
+fn safeNormalize(value: vec3f, fallback: vec3f) -> vec3f {
+  return safe_normalize(value, fallback);
 }
 
 @fragment fn fragment_main(
@@ -569,7 +525,7 @@ fn direct_brdf_f0(n: vec3f, v: vec3f, l: vec3f, base: vec3f, metal: f32, rough: 
     1.0, flag(input.material.w, 16u) || (authored_light && frame.lightingOptions.y == 0.0));
   let sun = select(vec3f(3.2, 3.0, 2.8), frame.sunColor.rgb, authored_light);
   let dielectric = input.dielectric;
-  var color = direct_brdf_f0(normal, view, light, base, metal, rough, dielectric)
+  var color = brdfWithDielectricF0(normal, view, light, base, metal, rough, dielectric)
     * sun * visibility;
   if (frame.sunColor.w == 3.0) {
     color += local_direct_lighting(input.world, normal, view, base, metal, rough, !flag(input.material.w,16u), ao, dielectric, input.clip);

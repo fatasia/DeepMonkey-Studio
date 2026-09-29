@@ -6,11 +6,9 @@ export function dielectricF0(ior = 1.5): number {
   return reflectance * reflectance;
 }
 
-/** Stock renderer function; an omitted/zero encoded value preserves the legacy response. */
-export const MATERIAL_DIELECTRIC_WGSL = /* wgsl */ `
-fn deepDielectricF0(encodedIor: f32) -> f32 {
-  if (encodedIor == 0.0 || encodedIor == 1.5) { return 0.04; }
-  let reflectance = 1.0 - 2.0 / (encodedIor + 1.0);
-  return reflectance * reflectance;
-}
-`;
+/**
+ * J2-B1 单源:WGSL 文本唯一真源在 `wgsl/materialDielectric.wgsl`,此处只再导出生成镜像
+ * (`src/lighting/materialDielectricWgsl.ts`,由 `pnpm --filter @bim-studio/deep-engine wgsl:sync` 生成)。
+ * 字节必须保持不变:pbrShader.ts 以本串对 EXTENDED_MATERIAL_EVALUATION_WGSL 做 `.replace()` 手术。
+ */
+export { MATERIAL_DIELECTRIC_WGSL } from "./lighting/materialDielectricWgsl.js";
