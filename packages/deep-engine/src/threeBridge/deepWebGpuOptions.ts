@@ -55,8 +55,8 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
     // F4 虚拟纹理采样接线（opt-in）：缺省不进快照；显式配置冻结快照供首屏一致性校验。
     ...(options.virtualTextures === undefined ? {} : { virtualTextures: Object.freeze({ ...options.virtualTextures }) }),
     // C13 typed device recovery（opt-in）：缺省不进快照，保持旧行为。
-    ...(options.recovery === undefined ? {} : { recovery: Object.freeze({ ...options.recovery,
-      now: undefined }) }),
+    // 时钟注入 now 不序列化（宿主端 DeviceSession 自建默认时钟）；冻结其余字段供首屏一致性校验。
+    ...(options.recovery === undefined ? {} : { recovery: Object.freeze((({ now: _injectedClock, ...rest }) => rest)(options.recovery)) }),
   });
 }
 
