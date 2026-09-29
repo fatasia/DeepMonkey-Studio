@@ -19,6 +19,10 @@ pub mod dashboard_video;
 pub mod deep2d;
 pub mod executable_overlay;
 pub mod fog;
+/// J2-B7 frame ABI 单源生成常量（方案 C；schema-sha256 指纹门见 frame_layout_gate）。
+pub mod frame_layout_generated;
+#[cfg(test)]
+mod frame_layout_gate;
 pub mod half_decode;
 pub mod hardware_ray_query;
 pub mod host_capabilities;
