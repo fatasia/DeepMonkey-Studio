@@ -106,6 +106,39 @@ export const DEEP_GI_MIN_SAMPLE_WEIGHT = 0.001;
  */`,
     preamble: `export const DEEP_AREA_LIGHTING_WGSL = /* wgsl */ `,
   },
+  {
+    // T18 A3 并行布料 XPBD compute 家族。真源 wgsl/clothSolver.wgsl,
+    // Rust 半在 deep-engine-native/tests/cloth_parallel_compute_parity.rs(测试侧
+    // include_str! + sidecar/镜像三方对拍)。执行序合同:着色色序 Gauss-Seidel
+    // (色间 dispatch 定序、色内端点不相交)+ 三级固定归约树统计;
+    // CPU f32 模拟镜像在 src/physics/clothParallelSolver.ts,与真源逐运算同构。
+    source: "clothSolver.wgsl",
+    module: resolve(packageRoot, "src/physics/clothSolverWgsl.ts"),
+    gate: "src/physics/clothSolverWgslChecksum.test.ts",
+    rustHalf: "deep-engine-native/tests/cloth_parallel_compute_parity.rs",
+    constants: `/**
+ * T18 A3 并行布料 compute 家族的生成镜像。唯一真源 wgsl/clothSolver.wgsl,
+ * Rust 半在 deep-engine-native/tests/cloth_parallel_compute_parity.rs。
+ * 常量与 clothParallelSolver.ts / clothParallelGpuDispatch(后续接线)互钉。
+ */
+
+/** workgroup 尺寸:核内三 pass 一致;镜像按同宽切块做共享内存树。 */
+export const CLOTH_PARALLEL_SOLVER_WORKGROUP_SIZE = 64;
+/** 粒子存储步长:vec4f ×3(position+invMass / velocity / previous)。 */
+export const CLOTH_PARALLEL_PARTICLE_STRIDE_BYTES = 48;
+/** 约束存储步长:a, b, restLength, pad(按色桶排序)。 */
+export const CLOTH_PARALLEL_CONSTRAINT_STRIDE_BYTES = 16;
+/** 全局参数 uniform 步长(counts×4 + dt/compliance/damping/pad + gravity)。 */
+export const CLOTH_PARALLEL_PARAMS_BYTES = 48;
+/** 每色 dispatch uniform 步长(rangeStart/rangeEnd/pad×2)。 */
+export const CLOTH_PARALLEL_STEP_RANGE_BYTES = 16;
+/** compute 入口名(测试与探针按名取 entry point)。 */
+export const CLOTH_PARALLEL_ENTRY_INTEGRATE = "integrateParticles";
+export const CLOTH_PARALLEL_ENTRY_PROJECT = "projectConstraintsColor";
+export const CLOTH_PARALLEL_ENTRY_FINALIZE = "finalizeVelocityKinetics";
+`,
+    preamble: `export const DEEP_CLOTH_PARALLEL_SOLVER_WGSL = /* wgsl */ `,
+  },
 ];
 
 for (const entry of SHARED_WGSL) {
