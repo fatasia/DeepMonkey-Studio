@@ -29,7 +29,14 @@ pub fn create_native_mesh_shader(device: &wgpu::Device) -> wgpu::ShaderModule {
             concat!(
                 include_str!("../assets/shaders/native_mesh_v1.wgsl"),
                 "\n",
-                include_str!("../assets/shaders/native_cascaded_shadow_v1.wgsl")
+                include_str!("../assets/shaders/native_cascaded_shadow_v1.wgsl"),
+                "\n",
+                // J2-B1 灯光数学三件套(介电 F0 / 直射 BRDF / IES 采样)单一真源拼接,
+                // 与 TS 侧生成镜像共享 packages/deep-engine/wgsl/ 同一批字节;
+                // 对拍与组合解析验证在 deep_engine_native::lighting_math_wgsl。
+                include_str!("../../deep-engine/wgsl/materialDielectric.wgsl"),
+                include_str!("../../deep-engine/wgsl/brdfDirectLighting.wgsl"),
+                include_str!("../../deep-engine/wgsl/iesSampling.wgsl")
             )
             .into(),
         ),
@@ -50,6 +57,11 @@ pub fn create_native_mesh_rt_shader(device: &wgpu::Device) -> wgpu::ShaderModule
                 include_str!("../assets/shaders/native_mesh_v1.wgsl"),
                 "\n",
                 include_str!("../assets/shaders/native_cascaded_shadow_v1.wgsl"),
+                "\n",
+                // 与普通 mesh shader 完全同源的三件套拼接(见上方注释)。
+                include_str!("../../deep-engine/wgsl/materialDielectric.wgsl"),
+                include_str!("../../deep-engine/wgsl/brdfDirectLighting.wgsl"),
+                include_str!("../../deep-engine/wgsl/iesSampling.wgsl"),
                 "\n",
                 include_str!("../assets/shaders/native_mesh_rt_fragment_v1.wgsl")
             )
