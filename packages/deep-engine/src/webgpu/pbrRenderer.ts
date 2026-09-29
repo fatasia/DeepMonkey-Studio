@@ -667,6 +667,10 @@ export class PbrRenderer {
           encoder, targets: this.targets, revision: history.revision, extent: view.extent,
           cameraCut: history.cameraCut, currentJitter: history.currentJitter,
           previousJitter: history.previousJitter,
+          // Reactive mask 与 encodeFinal 同源(透明 OIT/粒子两路,照 638-640 现成模式):
+          // 带反应遮罩的像素历史降权,防止超分把透明/粒子变化拖出鬼影。
+          ...(this.transparency.currentReactiveMask ? { reactiveMask: this.transparency.currentReactiveMask }
+            : particleReactive ? { reactiveMask: particleReactive.texture } : {}),
           displayWidth: surface.width, displayHeight: surface.height,
         }, presentInput);
         if (!upscaled) throw new Error("Temporal upscale is active but the pass is unavailable.");

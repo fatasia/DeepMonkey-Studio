@@ -258,6 +258,9 @@ export class StudioDeepWebGpuBridge {
           // T07 动态分辨率与 T25 逐 pass 计时均为 opt-in；缺省字段不进快照。
           const resolutionScalePolicy = t07DynamicResolutionPolicy();
           const gpuPassTiming = t25GpuPassTimingEnabled();
+          // F4 超分需动态分辨率同开(scale<1 才激活);F3 虚拟纹理独立开关。
+          const temporalUpscale = resolutionScalePolicy !== undefined && f4TemporalUpscaleEnabled();
+          const virtualTextures = f3VirtualTexturesEnabled();
           const backend = await module.DeepWebGpuBackend.create({
             canvas, gpu: navigator.gpu,
             ...(this.projectionBridge ? { projection: this.projectionBridge, root: this.projectionRoot() } : {}),
@@ -269,6 +272,8 @@ export class StudioDeepWebGpuBridge {
               ...(clusterLodEnabled ? { clusterLod: true } : {}),
               ...(resolutionScalePolicy ? { resolutionScalePolicy } : {}),
               ...(gpuPassTiming ? { gpuPassTiming: true } : {}),
+              ...(temporalUpscale ? { features: { temporalUpscale: true } } : {}),
+              ...(virtualTextures ? { virtualTextures: { enabled: true } } : {}),
               ...(pipelineBootstrap ? { pipelines: pipelineBootstrap } : {}),
               adaptiveQuality: {
                 enabled: true,
@@ -913,6 +918,25 @@ export function t25GpuPassTimingEnabled(): boolean {
   const params = typeof location !== "undefined" && location.search
     ? new URLSearchParams(location.search) : undefined;
   const value = params?.get("t25-gpu-pass-timing")?.toLowerCase();
+  return value === "1" || value === "true" || value === "on";
+}
+
+/**
+ * F4 时域超分采集开关：`f4-temporal-upscale=1`。需与 `t07-dynamic-resolution=1`
+ * 同开——超分在 scale<1 时才激活（temporalUpscaleActive 门），单开无效。
+ */
+export function f4TemporalUpscaleEnabled(): boolean {
+  const params = typeof location !== "undefined" && location.search
+    ? new URLSearchParams(location.search) : undefined;
+  const value = params?.get("f4-temporal-upscale")?.toLowerCase();
+  return value === "1" || value === "true" || value === "on";
+}
+
+/** F3 虚拟纹理开关：`f3-virtual-textures=1`（opt-in，默认整纹理驻留路径零变化）。 */
+export function f3VirtualTexturesEnabled(): boolean {
+  const params = typeof location !== "undefined" && location.search
+    ? new URLSearchParams(location.search) : undefined;
+  const value = params?.get("f3-virtual-textures")?.toLowerCase();
   return value === "1" || value === "true" || value === "on";
 }
 
