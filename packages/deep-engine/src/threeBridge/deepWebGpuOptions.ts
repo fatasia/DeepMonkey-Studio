@@ -10,7 +10,7 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
     throw new TypeError("Deep WebGPU renderer options must be an object.");
   }
   if (Object.keys(options).some(key => !["shadows", "features", "environment", "deformation", "meshlets", "frameCapture", "adaptiveQuality", "probeClipmap", "pipelines",
-    "resolutionScalePolicy", "gpuPassTiming", "probeDirections", "clusterLod", "virtualTextures"].includes(key))) {
+    "resolutionScalePolicy", "gpuPassTiming", "probeDirections", "clusterLod", "virtualTextures", "recovery"].includes(key))) {
     throw new TypeError("Unknown Deep WebGPU renderer option.");
   }
   if (options.deformation !== undefined && typeof options.deformation !== "boolean") {
@@ -46,6 +46,8 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
     ...(options.clusterLod === undefined ? {} : { clusterLod: options.clusterLod }),
     // F4 虚拟纹理采样接线（opt-in）：缺省不进快照；显式配置冻结快照供首屏一致性校验。
     ...(options.virtualTextures === undefined ? {} : { virtualTextures: Object.freeze({ ...options.virtualTextures }) }),
+    // C13 typed device recovery（opt-in）：缺省不进快照，保持旧行为。
+    ...(options.recovery === undefined ? {} : { recovery: Object.freeze({ ...options.recovery }) }),
   });
 }
 

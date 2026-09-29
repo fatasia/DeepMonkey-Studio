@@ -142,6 +142,12 @@ export class PbrRenderer {
   /** F4 虚拟纹理采样接线(opt-in):缺省 undefined = 整纹理驻留权威路径零行为变化。 */
   private readonly virtualTextures: VirtualTextureFrameBridge | undefined;
   private readonly virtualTileLookup: VirtualTextureTileLookupPass | undefined;
+  /** C13 recovery rehydrates the resource graph on the same DeviceSession. */
+  private readonly rendererOptions: PbrRendererOptions;
+  private lastPacket: RenderPacket | undefined;
+  private recoveryUnsubscribe: (() => void) | undefined;
+  private recoveryRebuild: Promise<void> | undefined;
+  private recoveryError: unknown;
   /** 上一已提交渲染帧的相机切换;自动曝光在其后一帧直取目标(剪除瞬态)。 */
   private previousFrameCameraCut = false;
   private constructor(readonly session: DeviceSession, private readonly pipelines: Pipelines, environment: StudioEnvironment,
@@ -210,25 +216,29 @@ export class PbrRenderer {
     this.postProcess = new PbrPostProcessChain(session, this.features, this.transientTextures);
     this.transparency = new PbrTransparencyPass(session, this.transientTextures, features.temporalAa);
     this.lighting = lighting; this.localShadows = localShadows;
+    this.rendererOptions = options;
+    if (options.recovery !== undefined) this.recoveryUnsubscribe = session.onDeviceRecreated(() => { void this.rebuildAfterRecovery(); });
   }
   get frameCaptureSession(): FrameCaptureSession | undefined { return this.frameCapture?.session; }
   /** 首帧验证通过后由宿主调用：放行背景 main 变体排队，避免与首帧争抢设备。 */
   releaseBackgroundPipelines(): void { this.releasePipelines?.(); }
   static async create(canvas: HTMLCanvasElement, gpu: GPU | undefined, signal: AbortSignal, options: PbrRendererOptions = {}): Promise<PbrRenderer> {
     if (typeof performance !== "undefined") performance.mark("deep-webgpu:device-open-start");
-    const session = await DeviceSession.open(canvas, gpu, signal, options.deviceMemoryBudgetBytes);
+    const session = await DeviceSession.open(canvas, gpu, signal, options.deviceMemoryBudgetBytes, options.recovery);
     if (typeof performance !== "undefined") performance.mark("deep-webgpu:device-opened");
     return openPbrRenderer(session, signal, options, () => new DOMException("GPU preparation cancelled", "AbortError"),
       (...args) => new PbrRenderer(...args));
   }
   setInstances(data: Float32Array<ArrayBuffer>): void { this.setPacket(spherePacket(data)); }
   setPacket(packet: RenderPacket): void {
+    this.lastPacket = packet;
     if (this.packets.set(packet)) { this.sceneChanged(); this.syncProbeClipmapSurfaces(packet); }
     // F4 虚拟纹理目录全量同步:opt-in 才有 bridge;包内 RGBA8 纹理按需分页,压缩纹理
     // 显式不入目录(反馈侧 droppedUnknownTexture 计数,采样方整纹理路径不受影响)。
     this.virtualTextures?.syncTextures(packet.textures ?? []);
   }
   async setPacketValidated(packet: RenderPacket, signal?: AbortSignal): Promise<void> {
+    this.lastPacket = packet;
     if (await this.packets.setValidated(packet, signal)) { this.sceneChanged(); this.syncProbeClipmapSurfaces(packet); }
     this.virtualTextures?.syncTextures(packet.textures ?? []);
   }
@@ -919,7 +929,9 @@ export class PbrRenderer {
   }
   dispose(): void {
     // 可选链：测试以手造对象直调原型 dispose，字段可能不存在。
-    this.probeClipmapAbort?.abort();
+    this.recoveryUnsubscribe?.();
+    this.recoveryUnsubscribe = undefined;
+    this.lastPacket = undefined;
     this.probeClipmap?.dispose();
     this.probeRadianceProducer?.dispose();
     this.probeRadianceProducer = undefined;
@@ -936,6 +948,17 @@ export class PbrRenderer {
       () => this.cameraHistory.reset(), () => this.session.dispose()]);
   }
   private sceneChanged(): void { this.shadowDirty = true; this.historyDirty = true; }
+  private async rebuildAfterRecovery(): Promise<void> {
+    if (this.recoveryRebuild || this.session.state === "disposed" || this.session.state === "lost") return;
+    this.recoveryRebuild = (async () => {
+      this.recoveryError = undefined;
+      this.shadowDirty = true; this.historyDirty = true;
+      this.previousHiZ.invalidate(); this.cameraHistory.reset();
+      this.lastFrameReadback = undefined;
+      if (this.lastPacket !== undefined) await this.setPacketValidated(this.lastPacket);
+    })().catch(error => { this.recoveryError = error; throw error; }).finally(() => { this.recoveryRebuild = undefined; });
+    await this.recoveryRebuild;
+  }
 }
 
 const probeClipmapDeviceEpochs = new WeakMap<object, string>();

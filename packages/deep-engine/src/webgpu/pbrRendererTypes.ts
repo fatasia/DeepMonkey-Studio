@@ -14,6 +14,7 @@ import type { PbrAutoExposureFrameMetrics, PbrAutoExposureOptions } from "./pbrA
 import type { ProbeClipmapRuntimeOptions } from "./probeClipmapRuntime.js";
 import type { GpuParticleEmitter, GpuParticleEmitterRuntimeOptions } from "./gpuParticleEmitters.js";
 import type { VirtualTextureOptions } from "../virtualTextures/virtualTextureOptions.js";
+import type { DeviceRecoveryOptions } from "./deviceRecovery.js";
 
 export interface RenderView extends PbrFrameUniformView {
   readonly authorGrid?: AuthorGridView | undefined;
@@ -98,6 +99,15 @@ export interface PbrRendererOptions {
    * 帧级三段计时照旧),不报错、不伪零。
    */
   readonly gpuPassTiming?: boolean;
+  /**
+   * F7b 局部光阴影图集档位(opt-in,缺省 "standard" = 已发布默认逐值不变):
+   * "multi-light" 以每灯分辨率换阴影灯容量(1024 图集 4×4 tile,16 灯全覆盖,
+   * F7a 真机 RMSE 0.042 vs 默认档 0.165)。分辨率/容量随 spot uniform ABI
+   * (16 条目/1536B)放行;宿主显式 limits 更小时解析器 fail-closed。
+   */
+  readonly localSpotShadowAtlasTier?: import("../shadows/localSpotShadowAtlasQuality.js").LocalSpotShadowAtlasTier;
+  /** C13 typed device recovery; omitted keeps the legacy immediate-loss behavior. */
+  readonly recovery?: DeviceRecoveryOptions;
 }
 
 export interface FrameMetrics {

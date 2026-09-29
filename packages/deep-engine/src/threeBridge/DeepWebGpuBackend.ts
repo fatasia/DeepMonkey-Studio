@@ -16,6 +16,7 @@ import { DeepWebGpuProbeClipmapSession, type DeepWebGpuProbeClipmapDiagnostics }
 import { CameraRelativeCoordinates, type CameraRelativeCoordinateSnapshot } from "./cameraRelativeCoordinates.js";
 import { indexObjectBindings } from "./objectBindingIndex.js";
 import { firstFramePipelineMainKeys } from "./firstFramePipelineKeys.js";
+import type { DeviceEvent } from "../webgpu/deviceSession.js";
 export type { DeepWebGpuShadowSelection } from "./deepWebGpuShadowPolicy.js";
 
 type DeepWebGpuCanvas = Parameters<typeof PbrRenderer.create>[0];
@@ -23,6 +24,12 @@ type DeepWebGpuCanvas = Parameters<typeof PbrRenderer.create>[0];
 /** 可被宿主切换的自研浏览器后端；不持有作者场景，也不依赖 Three 运行时。 */
 export interface DeepWebGpuRenderRuntime {
   readonly id: string;
+  readonly session?: {
+    readonly state?: string;
+    readonly device?: { readonly lost: Promise<unknown> };
+    onDeviceRecreated?(listener: (epoch: number) => void): () => void;
+    onFatalLoss?(listener: (reason: DeviceEvent) => void): () => void;
+  };
   setPacketValidated(packet: RenderPacket, signal?: AbortSignal): Promise<void>;
   updateInstances(update: InstanceUpdate): void;
   render(view: RenderView): FrameMetrics | undefined;
@@ -64,6 +71,8 @@ export interface DeepWebGpuBackendOptions {
    * clusterLodStagingFailure 诊断,不打断渲染链。
    */
   readonly clusterLodStaging?: ClusterLodSceneStaging;
+  /** C13 opt-in recovery configuration; omitted preserves the legacy behavior. */
+  readonly recovery?: PbrRendererOptions["recovery"];
 }
 
 export interface DeepWebGpuRuntimeFactory {
@@ -151,6 +160,12 @@ export class DeepWebGpuBackend {
     this.expectedShadows = options.expectedShadows === undefined ? undefined : snapshotShadows(options.expectedShadows);
   }
 
+  onDeviceRecreated(listener: (epoch: number) => void): () => void {
+    return this.runtime.session?.onDeviceRecreated?.(listener) ?? (() => {});
+  }
+  onFatalLoss(listener: (reason: DeviceEvent) => void): () => void {
+    return this.runtime.session?.onFatalLoss?.(listener) ?? (() => {});
+  }
   async stageEnvironment(source: PbrEnvironmentSource, signal?: AbortSignal): Promise<"staged" | "superseded"> {
     if (this.disposed) throw new Error("Deep backend is disposed.");
     if (!this.runtime.stageEnvironment) throw new Error("Deep runtime cannot stage environment changes.");
@@ -199,6 +214,7 @@ export class DeepWebGpuBackend {
         ...(validated.hlodClusters === undefined ? {} : { hlodClusters: validated.hlodClusters }),
         ...(validated.hlodCollapseSuppressed === undefined ? {} : { hlodCollapseSuppressed: validated.hlodCollapseSuppressed }),
         ...(validated.clusterLodStaging === undefined ? {} : { clusterLodStaging: validated.clusterLodStaging }),
+        ...(renderer.recovery === undefined ? {} : { recovery: renderer.recovery }),
       });
     } catch (error) {
       runtime.dispose();
@@ -594,7 +610,7 @@ export class DeepWebGpuBackend {
 }
 
 function probeClipmapTarget(runtime: DeepWebGpuRenderRuntime): ProbeClipmapPbrTarget {
-  const candidate = runtime as Partial<ProbeClipmapPbrTarget>;
+  const candidate = runtime as unknown as Partial<ProbeClipmapPbrTarget>;
   if (!candidate.session || typeof candidate.setProbeClipmap !== "function") {
     throw new Error("Deep runtime cannot host probe clipmap GI.");
   }

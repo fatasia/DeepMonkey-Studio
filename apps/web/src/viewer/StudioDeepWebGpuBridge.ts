@@ -5,7 +5,7 @@ import type {
   HlodClusterStreamBinding,
   ThreeObjectSource,
 } from "@bim-studio/deep-engine/three-bridge";
-import type { AuthoredQualityProfile, ClusterLodSceneStaging } from "@bim-studio/deep-engine/webgpu";
+import type { AuthoredQualityProfile, ClusterLodSceneStaging, DeviceRecoveryOptions } from "@bim-studio/deep-engine/webgpu";
 import { DEFAULT_RESOLUTION_SCALE_POLICY } from "@bim-studio/deep-engine/postprocess";
 import { buildClusterLodAuthorStaging, clusterLodAuthorBakeFromModule } from "../delivery/buildClusterLodAuthorStaging";
 import { StudioDeepQualityTelemetrySampler, publishStudioQualityTelemetry,
@@ -38,6 +38,8 @@ type BridgeModuleLoader = () => Promise<BridgeModule>;
 interface RuntimeSession {
   readonly state?: string;
   readonly diagnostics?: readonly { message: string }[];
+  readonly onFatalLoss?: (listener: (reason: { readonly message: string }) => void) => () => void;
+  readonly onDeviceRecreated?: (listener: (epoch: number) => void) => () => void;
   readonly device?: { readonly lost: Promise<{ readonly message: string; readonly reason: string }>;
     readonly queue?: { onSubmittedWorkDone(): Promise<void> } };
 }
@@ -77,6 +79,8 @@ export interface StudioDeepWebGpuBridgeOptions {
   readonly authorHlodClusters?: (signal: AbortSignal) => Promise<readonly HlodClusterStreamBinding[] | undefined>;
   /** T25 质量遥测采样配置;缺省 4Hz 聚合、256 帧窗口。 */
   readonly qualityTelemetry?: StudioQualityTelemetryOptions;
+  /** C13 recovery is explicit opt-in; omitted keeps the legacy bridge behavior. */
+  readonly recovery?: DeviceRecoveryOptions;
 }
 
 export interface StudioRendererSwitchResult {
@@ -274,6 +278,7 @@ export class StudioDeepWebGpuBridge {
               ...(gpuPassTiming ? { gpuPassTiming: true } : {}),
               ...(temporalUpscale ? { features: { temporalUpscale: true } } : {}),
               ...(virtualTextures ? { virtualTextures: { enabled: true } } : {}),
+              ...(this.options.recovery ? { recovery: this.options.recovery } : {}),
               ...(pipelineBootstrap ? { pipelines: pipelineBootstrap } : {}),
               adaptiveQuality: {
                 enabled: true,
@@ -387,12 +392,34 @@ export class StudioDeepWebGpuBridge {
     this.takeoverGesture();
     // 静止视口没有帧回调，设备丢失必须主动通知，不能等待下一次用户输入。
     const session = (backend.runtime as { session?: RuntimeSession }).session;
-    void session?.device?.lost.then((info) => {
+    const unsubscribeFatalLoss = backend.onFatalLoss?.(reason => {
+      if (this.deepBackend === backend) this.failRuntime(new Error(reason.message));
+    });
+    const unsubscribeRecreated = backend.onDeviceRecreated?.(() => {
+      if (this.deepBackend !== backend) return;
+      this.syncPending = undefined;
+      this.syncAgain = undefined;
+      this.settleFrameInFlight = false;
+      this.settleFrameBackend = undefined;
+      this.lastCameraSnapshot = undefined;
+      this.settledViewKey = "";
+      this.lastDemandRevision = -1;
+      this.renderDeepFrame();
+    });
+    const legacyLoss = session?.onFatalLoss === undefined && session?.device?.lost;
+    if (legacyLoss) void legacyLoss.then((info) => {
       if (this.deepBackend === backend) this.failRuntime(new Error(info.message || info.reason));
     }).catch((reason) => {
       if (this.deepBackend === backend) this.failRuntime(reason);
     });
-    this.unsubscribeFrame = this.viewer.subscribePresentationFrames(this.renderPresentationFrame);
+    const unsubscribeFrames = this.viewer.subscribePresentationFrames(this.renderPresentationFrame);
+    const previousUnsubscribe = this.unsubscribeFrame;
+    this.unsubscribeFrame = () => {
+      unsubscribeFrames();
+      previousUnsubscribe?.();
+      unsubscribeFatalLoss?.();
+      unsubscribeRecreated?.();
+    };
   }
 
   private publishWebGl(): void {
