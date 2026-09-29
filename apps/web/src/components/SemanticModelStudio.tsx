@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Boxes, Plus, RefreshCw, Table2 } from "lucide-react";
+import { Boxes, Plus, RefreshCw, Table2, Waypoints } from "lucide-react";
 import { translate as tr, type AppLocale } from "../i18n";
 import { SemanticModelEditor } from "./SemanticModelEditor";
 import { SemanticModelList } from "./SemanticModelList";
 import { useSemanticModelStudio } from "./useSemanticModelStudio";
 import { newSemanticModel } from "./semanticModelEditorLogic";
 import OntologyWorkspace from "./OntologyWorkspace";
+import OntologyGraphView from "./OntologyGraphView";
 import "./SemanticModelStudio.css";
 
 export default function SemanticModelStudio({
@@ -18,8 +19,8 @@ export default function SemanticModelStudio({
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const state = useSemanticModelStudio(projectId, locale);
-  // H-C4-P0:语义模型步骤内的"语义与本体"子工作区(不新增顶级入口)。
-  const [subTab, setSubTab] = useState<"metrics" | "ontology">("metrics");
+  // H-C4-P0/P1:语义模型步骤内的子工作区(不新增顶级入口):指标与维度 / 语义与本体 / 本体图谱。
+  const [subTab, setSubTab] = useState<"metrics" | "ontology" | "graph">("metrics");
   useEffect(() => {
     onDirtyChange?.(state.dirty);
   }, [state.dirty, onDirtyChange]);
@@ -50,9 +51,21 @@ export default function SemanticModelStudio({
           <Boxes size={13} />
           {tr(locale, "语义与本体", "Semantics & ontology")}
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={subTab === "graph"}
+          className={subTab === "graph" ? "active" : ""}
+          onClick={() => setSubTab("graph")}
+        >
+          <Waypoints size={13} />
+          {tr(locale, "本体图谱", "Ontology graph")}
+        </button>
       </div>
       {subTab === "ontology" ? (
         <OntologyWorkspace projectId={projectId} locale={locale} owner="studio-user" onDirtyChange={onDirtyChange} />
+      ) : subTab === "graph" ? (
+        <OntologyGraphView projectId={projectId} locale={locale} onOpenWorkspace={() => setSubTab("ontology")} />
       ) : (
       <>
       {state.notice && (

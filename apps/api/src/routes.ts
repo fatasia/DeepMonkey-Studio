@@ -40,6 +40,7 @@ import { isPublicAssetKey } from "./publicAssetKey.js";
 import { registerAssetLibraryRoutes } from "./assetLibraryRoutes.js";
 import { registerSemanticModelRoutes } from "./semanticModelRoutes.js";
 import { registerOntologyRoutes } from "./ontology/ontologyRoutes.js";
+import { registerOntologyGraphRoutes } from "./ontologyGraph/ontologyGraphRoutes.js";
 import type { OntologyPackageStore } from "./ontology/ontologyStore.js";
 import { registerDataWritebackRoutes } from "./dataWritebackRoutes.js";
 import { createNativeSceneCandidateService } from "./nativeSceneCandidateService.js";
@@ -450,6 +451,8 @@ export async function registerRoutes(app: FastifyInstance, dependencies: RouteDe
       ontology: dependencies.ontology,
       ...(dependencies.listOntologyCapabilities ? { listCapabilities: dependencies.listOntologyCapabilities } : {}),
     });
+    // H-C4-P1 本体数据图谱：只读 BFS 投影端点（复用同一存储实例）。
+    await registerOntologyGraphRoutes(app, { store, ontology: dependencies.ontology });
   }
   await registerDataWritebackRoutes(app, store, config);
   await registerAssetLibraryRoutes(app, { store, queue, objects, dataDir, libraryDir: config.assetLibraryDir });

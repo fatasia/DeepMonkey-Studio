@@ -1,4 +1,4 @@
-import type { OntologyHistoryEntry, OntologyPackage, OntologyPackageSnapshot } from "@bim-studio/contracts";
+import type { OntologyGraphQuery, OntologyGraphResult, OntologyHistoryEntry, OntologyPackage, OntologyPackageSnapshot } from "@bim-studio/contracts";
 
 type ApiRequest = <T>(url: string, init?: RequestInit) => Promise<T>;
 
@@ -34,5 +34,7 @@ export function createOntologyApi(request: ApiRequest) {
     listOntologyVersions: (projectId: string, packageId: string) => request<OntologyVersionList>(`${base(projectId)}/${encodeURIComponent(packageId)}/versions`),
     rollbackOntologyPackage: (projectId: string, packageId: string, snapshotId: string) => request<OntologyPackage>(`${base(projectId)}/${encodeURIComponent(packageId)}/rollback`, json("POST", { snapshotId })),
     cloneOntologyDraft: (projectId: string, packageId: string) => request<OntologyPackage>(`${base(projectId)}/${encodeURIComponent(packageId)}/clone-draft`, json("POST", {})),
+    /** H-C4-P1 图谱查询：1—3 跳有限 BFS 投影（POST body = OntologyGraphQuery）。 */
+    queryOntologyGraph: (projectId: string, packageId: string, query: OntologyGraphQuery) => request<OntologyGraphResult>(`${base(projectId)}/${encodeURIComponent(packageId)}/graph`, json("POST", query)),
   };
 }
