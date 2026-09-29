@@ -1,7 +1,8 @@
 import { probeOcclusionDirection } from "../rayTracing/probeOcclusionRayExtension.js";
 import type { ProbeVector3 } from "./probeClipmapPlan.js";
 import { createReferenceRng, intersectReferenceScene, referenceSceneDiagonal,
-  sampleReferenceDirect, uniformSphereDirection, type ReferenceScene } from "./probeReferenceScene.js";
+  sampleReferenceDirect, uniformSphereDirection, type ReferenceScene,
+  type ReferenceSceneHit } from "./probeReferenceScene.js";
 
 /**
  * T02 高采样 CPU 参考积分器（纯 CPU，确定性）：小场景探针辐照的验收分母。
@@ -30,6 +31,18 @@ export const ENGINE_PARITY_DEFAULT_DIRECTIONS = 8;
 /** 功能量口径：默认引擎口径（无阴影射线）；shadowed=true 为物理真值对照口径。 */
 export interface ProbeRadianceOptions {
   readonly shadowed?: boolean;
+  /**
+   * miss 方向环境项覆盖（G3 多散射一阶自反馈挂点）：默认 undefined = 常量 `scene.ambient`
+   * （T02 口径不变）。miss 方向射向场景之外，语义上就是环境/天空项。
+   */
+  readonly missRadiance?: (direction: ProbeVector3) => ProbeVector3;
+  /**
+   * 命中点间接项叠加（G3 多散射一阶自反馈主挂点，DDGI multibounce 同机制）：命中面的
+   * 着色 = 直射（原语义不变，含背光面零短路）+ 本回调返回的间接项（上一轮探针场在该
+   * 命中点的采样 × 反照率）。返回值是**叠加**不是替换；默认 undefined = 纯一跳。
+   */
+  readonly indirectBounce?: (hit: ReferenceSceneHit, hitPoint: ProbeVector3,
+    direction: ProbeVector3) => ProbeVector3;
 }
 
 export interface ProbeRadianceSample {
@@ -69,13 +82,20 @@ export function evaluateProbeRadianceWithDirections(scene: ReferenceScene, posit
   for (const direction of directions) {
     const hit = intersectReferenceScene(scene, position, direction, tMax);
     if (hit === undefined) {
-      sum[0] += scene.ambient[0]; sum[1] += scene.ambient[1]; sum[2] += scene.ambient[2];
+      const ambient = options.missRadiance?.(direction) ?? scene.ambient;
+      sum[0] += ambient[0]; sum[1] += ambient[1]; sum[2] += ambient[2];
       continue;
     }
     const hitPoint: ProbeVector3 = [position[0]! + direction[0]! * hit.t,
       position[1]! + direction[1]! * hit.t, position[2]! + direction[2]! * hit.t];
     const radiance = sampleReferenceDirect(scene, hitPoint, hit.normal, hit.albedo, shadowed);
-    sum[0] += radiance[0]; sum[1] += radiance[1]; sum[2] += radiance[2];
+    const bounce = options.indirectBounce?.(hit, hitPoint, direction);
+    if (bounce !== undefined) {
+      sum[0] += radiance[0] + bounce[0]; sum[1] += radiance[1] + bounce[1];
+      sum[2] += radiance[2] + bounce[2];
+    } else {
+      sum[0] += radiance[0]; sum[1] += radiance[1]; sum[2] += radiance[2];
+    }
     distances.push(hit.t);
   }
   const count = directions.length;

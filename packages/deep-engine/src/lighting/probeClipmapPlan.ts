@@ -20,6 +20,12 @@ export interface ProbeClipmapOptions {
    * 16）；质量档位预设经 `probeRadianceDirectionCountForQuality` 产出本字段。
    */
   readonly directionCount?: import("./probeRadianceDirectionGate.js").DeepGiProbeDirectionCount;
+  /**
+   * 多散射一阶自反馈（G3 配置门控）：缺省/false = 关（默认不切），true = 开。
+   * 权威解析入口是 `resolveDeepGiBounceFeedback`（非法值 fail-closed 回关）；
+   * 质量档位预设经 `bounceFeedbackForQuality` 产出本字段（quality 档 opt-in）。
+   */
+  readonly bounceFeedback?: boolean;
 }
 export interface ProbeAddress { readonly level: number; readonly cell: ProbeGridSize }
 export interface ProbeClipmapHistory {
@@ -91,10 +97,12 @@ export function probeClipmapOptionsForQuality(quality: DeepGiQuality = "balanced
   // directionCount 档位与 probeRadianceDirectionCountForQuality 同映射（performance/
   // balanced → 16 默认档，quality → 32 opt-in；测试钉死两处一致）。默认档保持 16：
   // T02/G3-S1 真机 RMSE 序列 fib16 11.56% > 10%、fib32 7.95% ≤ 10%，默认切换留联测决策。
+  // bounceFeedback 与 bounceFeedbackForQuality 同映射（默认档关 = 多散射默认不切；
+  // quality 档 opt-in 开），迭代上限/哨兵语义见 probeBounceFeedback.ts。
   const presets: Record<DeepGiQuality, ProbeClipmapOptions> = {
-    performance: { levelCount: 2, gridSize: [12, 6, 12], baseSpacing: 3, spacingScale: 2, updateBudget: 32, memoryBudgetBytes: 4 * 1024 * 1024, directionCount: 16 },
-    balanced: { levelCount: 3, gridSize: [16, 8, 16], baseSpacing: 2, spacingScale: 2, updateBudget: 64, memoryBudgetBytes: 8 * 1024 * 1024, directionCount: 16 },
-    quality: { levelCount: 4, gridSize: [20, 10, 20], baseSpacing: 1.5, spacingScale: 2, updateBudget: 128, memoryBudgetBytes: 16 * 1024 * 1024, directionCount: 32 },
+    performance: { levelCount: 2, gridSize: [12, 6, 12], baseSpacing: 3, spacingScale: 2, updateBudget: 32, memoryBudgetBytes: 4 * 1024 * 1024, directionCount: 16, bounceFeedback: false },
+    balanced: { levelCount: 3, gridSize: [16, 8, 16], baseSpacing: 2, spacingScale: 2, updateBudget: 64, memoryBudgetBytes: 8 * 1024 * 1024, directionCount: 16, bounceFeedback: false },
+    quality: { levelCount: 4, gridSize: [20, 10, 20], baseSpacing: 1.5, spacingScale: 2, updateBudget: 128, memoryBudgetBytes: 16 * 1024 * 1024, directionCount: 32, bounceFeedback: true },
   };
   if (!(quality in presets)) throw new RangeError("Invalid Deep GI quality.");
   return Object.freeze({ ...presets[quality] });
