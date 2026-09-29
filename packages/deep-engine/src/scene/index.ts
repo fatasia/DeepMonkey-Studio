@@ -1,3 +1,7 @@
+export { planIncrementalPlayRestore, deepEquals,
+  type FastIncrementalPlayRestorePlan, type FullIncrementalPlayRestorePlan, type IncrementalPlayRestorePlan,
+  type PlayReloadDomain, type PlayRestoreModelIdentity, type PlayRestorePrimitiveIdentity,
+  type PlayRestoreSnapshotView } from "./incrementalPlayRestore.js";
 export { SceneTransformGraph } from "./SceneTransformGraph.js";
 export { SceneTransformSpatialBridge } from "./SceneTransformSpatialBridge.js";
 export { SCENE_CHANGESET_SCHEMA_VERSION, createSceneChangeset, applySceneChangeset, captureSceneChangesetInverse,
