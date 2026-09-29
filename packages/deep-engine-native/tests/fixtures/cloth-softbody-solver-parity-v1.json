@@ -1,0 +1,305 @@
+{
+  "schema": "deep-engine.cloth-softbody-solver-parity",
+  "schemaVersion": 1,
+  "note": "TS 侧指纹由 F6 基线求解器生成;Rust 镜像(cloth_softbody_solver_parity.rs)必须逐位复现。",
+  "cloth": {
+    "config": {
+      "columns": 12,
+      "rows": 12,
+      "spacing": 0.1,
+      "mass": 0.2,
+      "gravity": [
+        0,
+        -9.81,
+        0
+      ],
+      "dtSeconds": 0.016666666666666666,
+      "substeps": 8,
+      "compliance": 0,
+      "damping": 0.01,
+      "perturbation": 0.005,
+      "seed": 20260927,
+      "origin": [
+        0,
+        0,
+        0
+      ],
+      "wind": null
+    },
+    "windConfig": {
+      "columns": 12,
+      "rows": 12,
+      "spacing": 0.1,
+      "mass": 0.2,
+      "gravity": [
+        0,
+        -9.81,
+        0
+      ],
+      "dtSeconds": 0.016666666666666666,
+      "substeps": 8,
+      "compliance": 0,
+      "damping": 0.01,
+      "perturbation": 0.005,
+      "seed": 20260927,
+      "origin": [
+        0,
+        0,
+        0
+      ],
+      "wind": {
+        "direction": [
+          0,
+          0,
+          1
+        ],
+        "baseSpeed": 2.5,
+        "gustFrequency": 1.5,
+        "spatialScale": 0.5,
+        "seed": 7
+      }
+    },
+    "pinned": [
+      [
+        0,
+        11
+      ],
+      [
+        11,
+        11
+      ]
+    ],
+    "noWind": {
+      "initialFingerprint": "e22ffac188105769",
+      "fingerprint": "8319fa72fff900a4",
+      "ticks": 240,
+      "constraints": 506,
+      "maxStretch": 0.01655072053627693
+    },
+    "wind": {
+      "initialFingerprint": "e22ffac188105769",
+      "fingerprint": "345ada3cedad678a",
+      "ticks": 240,
+      "constraints": 506,
+      "maxStretch": 0.018746697825031827
+    }
+  },
+  "softBody": {
+    "config": {
+      "mass": 0.25,
+      "gravity": [
+        0,
+        -9.81,
+        0
+      ],
+      "dtSeconds": 0.016666666666666666,
+      "substeps": 10,
+      "complianceDistance": 0,
+      "complianceVolume": 0,
+      "damping": 0.02,
+      "pinned": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "positions": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0.5,
+          0,
+          0
+        ],
+        [
+          0.5,
+          0.5,
+          0
+        ],
+        [
+          0,
+          0.5,
+          0
+        ],
+        [
+          0,
+          0,
+          0.5
+        ],
+        [
+          0.5,
+          0,
+          0.5
+        ],
+        [
+          0.5,
+          0.5,
+          0.5
+        ],
+        [
+          0,
+          0.5,
+          0.5
+        ]
+      ],
+      "tets": [
+        [
+          0,
+          1,
+          2,
+          6
+        ],
+        [
+          0,
+          2,
+          3,
+          6
+        ],
+        [
+          0,
+          3,
+          7,
+          6
+        ],
+        [
+          0,
+          7,
+          4,
+          6
+        ],
+        [
+          0,
+          4,
+          5,
+          6
+        ],
+        [
+          0,
+          5,
+          1,
+          6
+        ]
+      ]
+    },
+    "zeroGravityConfig": {
+      "mass": 0.25,
+      "gravity": [
+        0,
+        0,
+        0
+      ],
+      "dtSeconds": 0.016666666666666666,
+      "substeps": 10,
+      "complianceDistance": 0,
+      "complianceVolume": 0,
+      "damping": 0.02,
+      "pinned": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "positions": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0.5,
+          0,
+          0
+        ],
+        [
+          0.5,
+          0.5,
+          0
+        ],
+        [
+          0,
+          0.5,
+          0
+        ],
+        [
+          0,
+          0,
+          0.5
+        ],
+        [
+          0.5,
+          0,
+          0.5
+        ],
+        [
+          0.5,
+          0.5,
+          0.5
+        ],
+        [
+          0,
+          0.5,
+          0.5
+        ]
+      ],
+      "tets": [
+        [
+          0,
+          1,
+          2,
+          6
+        ],
+        [
+          0,
+          2,
+          3,
+          6
+        ],
+        [
+          0,
+          3,
+          7,
+          6
+        ],
+        [
+          0,
+          7,
+          4,
+          6
+        ],
+        [
+          0,
+          4,
+          5,
+          6
+        ],
+        [
+          0,
+          5,
+          1,
+          6
+        ]
+      ]
+    },
+    "cubeGravity": {
+      "initialFingerprint": "6afdc985cd903f05",
+      "fingerprint": "0d3b4f79f6fccf15",
+      "ticks": 240,
+      "tets": 6,
+      "edges": 19,
+      "maxTetVolumeError": 0.0000067910649110825005,
+      "totalVolumeError": 0.0000011701666334795748
+    },
+    "cubeZeroGravity": {
+      "initialFingerprint": "6afdc985cd903f05",
+      "fingerprint": "6afdc985cd903f05",
+      "ticks": 120,
+      "tets": 6,
+      "edges": 19,
+      "maxTetVolumeError": 0,
+      "totalVolumeError": 0
+    }
+  }
+}

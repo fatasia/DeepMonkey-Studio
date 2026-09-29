@@ -1,0 +1,423 @@
+{
+  "schema": "deep-engine.runtime-package-families-identity-golden",
+  "schemaVersion": 1,
+  "fixtures": {
+    "runtime-package-v1.json": {
+      "package": {
+        "packageId": "deep.runtime.golden",
+        "packageVersion": "0.1.0-beta.1",
+        "schemaVersion": 1,
+        "packageHash": {
+          "algorithm": "sha256",
+          "value": "621d7355747b15ded4f0c128d10090ea4d0730a6b50f4df644a10991fb3cdb6a"
+        }
+      },
+      "entrypoints": {
+        "deep2d": "native:deep2d:atlas-smoke",
+        "environment": "deep.builtin.studio-ibl.v1",
+        "renderPacket": "scene.main",
+        "shaderPackages": []
+      },
+      "payloads": {
+        "deep.builtin.studio-ibl.v1": {
+          "kind": "environment",
+          "revision": 1,
+          "schema": "deep-engine.ibl-reference",
+          "schemaVersion": 1
+        },
+        "native:deep2d:atlas-smoke": {
+          "kind": "deep2d-runtime",
+          "revision": 1,
+          "schema": "deep-engine.deep2d-runtime",
+          "schemaVersion": 2,
+          "atlases": 2,
+          "quads": 3,
+          "atlasIds": [
+            "atlas:glyph:ui",
+            "atlas:image:ui"
+          ],
+          "quadIds": [
+            "glyph:status:0",
+            "glyph:status:1",
+            "image:status"
+          ]
+        },
+        "scene.main": {
+          "kind": "render-packet",
+          "schema": "deep-engine.render-packet",
+          "version": 1,
+          "geometries": 2,
+          "instances": 4,
+          "materials": 2,
+          "textures": 0
+        }
+      },
+      "resources": [
+        {
+          "id": "deep.builtin.studio-ibl.v1",
+          "kind": "ibl-environment",
+          "revision": 1
+        },
+        {
+          "id": "native:deep2d:atlas-smoke",
+          "kind": "deep2d-runtime",
+          "revision": 1
+        },
+        {
+          "id": "scene.main",
+          "kind": "render-packet",
+          "revision": 3
+        }
+      ]
+    },
+    "runtime-package-lod-v1.json": {
+      "package": {
+        "packageId": "deep.runtime.lod.golden",
+        "packageVersion": "0.1.0",
+        "schemaVersion": 1,
+        "packageHash": {
+          "algorithm": "sha256",
+          "value": "9bf79d1eb7976d54e59023c5e1e480e2f8da5bb2a16aa282776261e172f17df7"
+        }
+      },
+      "entrypoints": {
+        "deep2d": null,
+        "environment": "deep.builtin.studio-ibl.v1",
+        "renderPacket": "scene.lod",
+        "shaderPackages": []
+      },
+      "payloads": {
+        "deep.builtin.studio-ibl.v1": {
+          "kind": "environment",
+          "revision": 1,
+          "schema": "deep-engine.ibl-reference",
+          "schemaVersion": 1
+        },
+        "scene.lod": {
+          "kind": "render-packet",
+          "schema": "deep-engine.render-packet",
+          "version": 1,
+          "geometries": 3,
+          "instances": 7,
+          "materials": 4,
+          "textures": 1,
+          "lodInstances": 7,
+          "lodLevelsTotal": 21
+        }
+      },
+      "resources": [
+        {
+          "id": "deep.builtin.studio-ibl.v1",
+          "kind": "ibl-environment",
+          "revision": 1
+        },
+        {
+          "id": "scene.lod",
+          "kind": "render-packet",
+          "revision": 1
+        }
+      ]
+    },
+    "runtime-package-author-lod-v1.json": {
+      "package": {
+        "packageId": "deep.runtime.author-lod.golden",
+        "packageVersion": "0.1.0",
+        "schemaVersion": 1,
+        "packageHash": {
+          "algorithm": "sha256",
+          "value": "7089eba4ab7d3f5dfc8eaf49904b7367fdcd75db4d978075fa60aee14326744c"
+        }
+      },
+      "entrypoints": {
+        "deep2d": null,
+        "environment": "deep.builtin.studio-ibl.v1",
+        "renderPacket": "scene.author-lod",
+        "shaderPackages": []
+      },
+      "payloads": {
+        "deep.builtin.studio-ibl.v1": {
+          "kind": "environment",
+          "revision": 1,
+          "schema": "deep-engine.ibl-reference",
+          "schemaVersion": 1
+        },
+        "scene.author-lod": {
+          "kind": "render-packet",
+          "schema": "deep-engine.render-packet",
+          "version": 1,
+          "geometries": 3,
+          "instances": 7,
+          "materials": 4,
+          "textures": 1,
+          "lodInstances": 7,
+          "lodLevelsTotal": 21
+        }
+      },
+      "resources": [
+        {
+          "id": "deep.builtin.studio-ibl.v1",
+          "kind": "ibl-environment",
+          "revision": 1
+        },
+        {
+          "id": "scene.author-lod",
+          "kind": "render-packet",
+          "revision": 1
+        }
+      ]
+    },
+    "runtime-package-prefiltered-ibl-v1.json": {
+      "package": {
+        "packageId": "deep.runtime.ibl.golden",
+        "packageVersion": "0.1.0",
+        "schemaVersion": 1,
+        "packageHash": {
+          "algorithm": "sha256",
+          "value": "7ed183efa7775ccec89b1c4265cfd5f893644472e4e9bac2d287e32ed172739b"
+        }
+      },
+      "entrypoints": {
+        "deep2d": null,
+        "environment": "environment.prefiltered.golden",
+        "renderPacket": "scene.lod",
+        "shaderPackages": []
+      },
+      "payloads": {
+        "environment.prefiltered.golden": {
+          "kind": "environment",
+          "revision": 1,
+          "schema": "deep-engine.ibl-prefiltered",
+          "schemaVersion": 1,
+          "payloadKind": "prefiltered-hdri",
+          "format": "rgba16float",
+          "encoding": "base64-le",
+          "faceOrder": "px-nx-py-ny-pz-nz",
+          "diffuseMips": 1,
+          "specularMips": 2,
+          "hasBrdfLut": true,
+          "hasSource": true
+        },
+        "scene.lod": {
+          "kind": "render-packet",
+          "schema": "deep-engine.render-packet",
+          "version": 1,
+          "geometries": 3,
+          "instances": 7,
+          "materials": 4,
+          "textures": 1,
+          "lodInstances": 7,
+          "lodLevelsTotal": 21
+        }
+      },
+      "resources": [
+        {
+          "id": "environment.prefiltered.golden",
+          "kind": "ibl-environment",
+          "revision": 1
+        },
+        {
+          "id": "scene.lod",
+          "kind": "render-packet",
+          "revision": 1
+        }
+      ]
+    },
+    "runtime-package-camera-v3.json": {
+      "package": {
+        "packageId": "deep.runtime.lod.golden",
+        "packageVersion": "0.1.0",
+        "schemaVersion": 3,
+        "packageHash": {
+          "algorithm": "sha256",
+          "value": "cabc0268a521c34d836cc20ffd7284a08a258418c6f2adb201823de4531f4847"
+        }
+      },
+      "entrypoints": {
+        "camera": "scene.camera",
+        "deep2d": null,
+        "environment": "deep.builtin.studio-ibl.v1",
+        "renderPacket": "scene.lod",
+        "shaderPackages": []
+      },
+      "payloads": {
+        "deep.builtin.studio-ibl.v1": {
+          "kind": "environment",
+          "revision": 1,
+          "schema": "deep-engine.ibl-reference",
+          "schemaVersion": 1
+        },
+        "scene.camera": {
+          "kind": "scene-camera",
+          "revision": 1,
+          "schema": "deep-engine.scene-camera",
+          "schemaVersion": 1,
+          "near": 0.05,
+          "far": 100000,
+          "verticalFovDegrees": 50,
+          "hasTarget": true
+        },
+        "scene.lod": {
+          "kind": "render-packet",
+          "schema": "deep-engine.render-packet",
+          "version": 1,
+          "geometries": 3,
+          "instances": 7,
+          "materials": 4,
+          "textures": 1,
+          "lodInstances": 7,
+          "lodLevelsTotal": 21
+        }
+      },
+      "resources": [
+        {
+          "id": "deep.builtin.studio-ibl.v1",
+          "kind": "ibl-environment",
+          "revision": 1
+        },
+        {
+          "id": "scene.camera",
+          "kind": "scene-camera",
+          "revision": 1
+        },
+        {
+          "id": "scene.lod",
+          "kind": "render-packet",
+          "revision": 1
+        }
+      ]
+    },
+    "runtime-package-shader-v2.json": {
+      "package": {
+        "packageId": "deep.runtime.shader.golden",
+        "packageVersion": "0.1.0",
+        "schemaVersion": 2,
+        "packageHash": {
+          "algorithm": "sha256",
+          "value": "71c978b477056ee991cd495e2dca809245a4bc81bd81e26432ce7089996ae67c"
+        }
+      },
+      "entrypoints": {
+        "deep2d": null,
+        "environment": "deep.builtin.studio-ibl.v1",
+        "renderPacket": "scene.lod",
+        "shaderPackages": [
+          "deep.runtime.blend",
+          "deep.runtime.mask",
+          "deep.runtime.opaque"
+        ]
+      },
+      "payloads": {
+        "deep.builtin.studio-ibl.v1": {
+          "kind": "environment",
+          "revision": 1,
+          "schema": "deep-engine.ibl-reference",
+          "schemaVersion": 1
+        },
+        "deep.runtime.blend": {
+          "kind": "shader-package",
+          "schema": "deep-shader-package",
+          "schemaVersion": 2,
+          "packageId": "deep.runtime.blend",
+          "packageVersion": "1.0.0",
+          "compilerVersion": "1.0.0",
+          "targetProfile": "webgpu-wgsl-pipeline-2",
+          "shaderAbiId": "deep.pbr.mesh.v2",
+          "shaderAbiContentHash": "adcdc15ed7ff02966d4033b746da1af90c97a0fb657615fec3bcef375c015cf1",
+          "moduleCount": 1,
+          "moduleIds": [
+            "module.11ac22fb8a80213c66a547ae4f0e93011e9ba16992cd50e2f3bdcace4c241ca3"
+          ],
+          "passCount": 1,
+          "passIds": [
+            "webgpu/forwardDouble"
+          ],
+          "dependencyCount": 0
+        },
+        "deep.runtime.mask": {
+          "kind": "shader-package",
+          "schema": "deep-shader-package",
+          "schemaVersion": 2,
+          "packageId": "deep.runtime.mask",
+          "packageVersion": "1.0.0",
+          "compilerVersion": "1.0.0",
+          "targetProfile": "webgpu-wgsl-pipeline-2",
+          "shaderAbiId": "deep.pbr.mesh.v2",
+          "shaderAbiContentHash": "adcdc15ed7ff02966d4033b746da1af90c97a0fb657615fec3bcef375c015cf1",
+          "moduleCount": 1,
+          "moduleIds": [
+            "module.67a60b628ee68464caa757cbfd18dacb0d57edd771603903ca94bebd8855182c"
+          ],
+          "passCount": 4,
+          "passIds": [
+            "webgpu/forwardCcw",
+            "webgpu/forwardCw",
+            "webgpu/shadowCcw",
+            "webgpu/shadowCw"
+          ],
+          "dependencyCount": 0
+        },
+        "deep.runtime.opaque": {
+          "kind": "shader-package",
+          "schema": "deep-shader-package",
+          "schemaVersion": 2,
+          "packageId": "deep.runtime.opaque",
+          "packageVersion": "1.0.0",
+          "compilerVersion": "1.0.0",
+          "targetProfile": "webgpu-wgsl-pipeline-2",
+          "shaderAbiId": "deep.pbr.mesh.v2",
+          "shaderAbiContentHash": "adcdc15ed7ff02966d4033b746da1af90c97a0fb657615fec3bcef375c015cf1",
+          "moduleCount": 1,
+          "moduleIds": [
+            "module.f8b33b153fb84c3f44dc218cdd4ec817d8b11c3466e89d4635188e52364d0d29"
+          ],
+          "passCount": 4,
+          "passIds": [
+            "webgpu/forwardCcw",
+            "webgpu/forwardCw",
+            "webgpu/shadowCcw",
+            "webgpu/shadowCw"
+          ],
+          "dependencyCount": 0
+        },
+        "scene.lod": {
+          "kind": "render-packet",
+          "schema": "deep-engine.render-packet",
+          "version": 1,
+          "geometries": 3,
+          "instances": 7,
+          "materials": 5,
+          "textures": 5,
+          "lodInstances": 7,
+          "lodLevelsTotal": 21
+        }
+      },
+      "resources": [
+        {
+          "id": "deep.builtin.studio-ibl.v1",
+          "kind": "ibl-environment",
+          "revision": 1
+        },
+        {
+          "id": "deep.runtime.blend",
+          "kind": "shader-package",
+          "revision": 1
+        },
+        {
+          "id": "deep.runtime.mask",
+          "kind": "shader-package",
+          "revision": 1
+        },
+        {
+          "id": "deep.runtime.opaque",
+          "kind": "shader-package",
+          "revision": 1
+        },
+        {
+          "id": "scene.lod",
+          "kind": "render-packet",
+          "revision": 1
+        }
+      ]
+    }
+  }
+}
