@@ -1,0 +1,70 @@
+import { describe, expect, it } from "vitest";
+import { DEFAULT_EXTENDED_MATERIAL_PARAMETERS,
+  type ExtendedMaterialParameters } from "../shader/materialParameters.js";
+import { packExtendedParameterBlock } from "../shader/materialParameterAbi.js";
+import { DEEP_PBR_MESH_V1_BYTE_SIZES,
+  DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS } from "../shaderAbi/contract.js";
+import { MATERIAL_PARAMETER_CORE_FLOATS, MATERIAL_PARAMETER_EXTENDED_BAND_FLOAT_OFFSET,
+  MATERIAL_PARAMETER_FLOATS, packMaterialParameters } from "./materialBindings.js";
+import { MATERIAL_ARRAY_TABLE_ROW_BYTES, MATERIAL_ARRAY_INDICES_BYTES } from "./textureArrayMaterialTable.js";
+
+function textures(overrides: Partial<Parameters<typeof packMaterialParameters>[0]> = {}):
+  Parameters<typeof packMaterialParameters>[0] {
+  return { emissiveStrength: 1, ...overrides };
+}
+
+/** G-1 回归网:材质块打包器与 WGSL MaterialTextures(12 vec4)/Rust mesh_abi(40 float 基础块)
+ * 的跨引擎对齐合同。崩溃史:1e07cdaf 给 WGSL 结构体加 extended0/extended1(160→192B)后,
+ * 无扩展参数材质仍按 40 float 上传,DrawIndexed 校验以 `160<192` 失败。 */
+describe("material parameter block ABI (G-1, 192B constant layout)", () => {
+  it("always emits the full 48-float block the WGSL MaterialTextures struct requires", () => {
+    const packed = packMaterialParameters(textures());
+    expect(MATERIAL_PARAMETER_FLOATS).toBe(48);
+    expect(packed.length).toBe(MATERIAL_PARAMETER_FLOATS);
+    expect(packed.byteLength).toBe(192);
+    // Rust 侧基础块 40 float(mesh_abi::MATERIAL_UNIFORM_FLOATS)是本布局的前缀;
+    // 160B 是 DEEP_PBR_MESH_V1_BYTE_SIZES.material,192B = 160B + 32B 扩展带。
+    expect(MATERIAL_PARAMETER_CORE_FLOATS).toBe(40);
+    expect(packed.byteLength).toBe(DEEP_PBR_MESH_V1_BYTE_SIZES.material + 32);
+  });
+
+  it("zero-fills the extended band for plain materials (WGSL falls back to the standard shade branch)", () => {
+    const packed = packMaterialParameters(textures());
+    expect(Array.from(packed.slice(MATERIAL_PARAMETER_EXTENDED_BAND_FLOAT_OFFSET)))
+      .toEqual(new Array<number>(MATERIAL_PARAMETER_FLOATS - MATERIAL_PARAMETER_EXTENDED_BAND_FLOAT_OFFSET).fill(0));
+  });
+
+  it("lands the 6-float extended parameter block at float offset 40 and keeps the tail zero", () => {
+    const extended: ExtendedMaterialParameters = { ...DEFAULT_EXTENDED_MATERIAL_PARAMETERS,
+      clearcoat: { factor: 0.5, roughness: 0.25 }, anisotropy: { strength: 0.75, rotation: 1.25 },
+      transmission: { factor: 0.125 } };
+    const packed = packMaterialParameters(textures({ extendedParameters: extended }));
+    const expected = packExtendedParameterBlock(extended);
+    expect(expected.length).toBe(6);
+    expect(Array.from(packed.slice(40, 46))).toEqual(Array.from(expected));
+    expect(packed[46]).toBe(0);
+    expect(packed[47]).toBe(0);
+  });
+
+  it("keeps the 40-float core block byte-identical regardless of extended parameters", () => {
+    const extended: ExtendedMaterialParameters = { ...DEFAULT_EXTENDED_MATERIAL_PARAMETERS,
+      clearcoat: { factor: 1, roughness: 0.5 } };
+    const plain = packMaterialParameters(textures());
+    const withExtended = packMaterialParameters(textures({ extendedParameters: extended }));
+    expect(Array.from(plain.slice(0, MATERIAL_PARAMETER_CORE_FLOATS)))
+      .toEqual(Array.from(withExtended.slice(0, MATERIAL_PARAMETER_CORE_FLOATS)));
+    // 语义表锚点:emissiveStrength 固定在 emissiveRow1.w(float 39),不被布局扩展移动。
+    expect(DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS.emissiveStrength.floatOffset).toBe(39);
+    plain[39] = 2;
+    expect(plain[39]).toBe(2);
+  });
+
+  it("keeps the texture-array shared-table row stride self-consistent over the padded block", () => {
+    // 行距合同(1e07cdaf 起):material + 32B 语义带 + 32B 索引 = 224B;
+    // 打包器恒定 192B 后,`material + 32` 数值上恰为扩展带补齐后的整块(192B),行内两种
+    // 材质(有/无扩展参数)的索引偏移一致,共享表无需分叉。
+    expect(MATERIAL_ARRAY_TABLE_ROW_BYTES).toBe(MATERIAL_PARAMETER_FLOATS * Float32Array.BYTES_PER_ELEMENT
+      + MATERIAL_ARRAY_INDICES_BYTES);
+    expect(MATERIAL_ARRAY_TABLE_ROW_BYTES).toBe(224);
+  });
+});

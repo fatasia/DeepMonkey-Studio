@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RenderPacket } from "../renderPacket.js";
 import type { DeviceSession } from "./deviceSession.js";
 import { PacketBuffers } from "./packetBuffers.js";
+import { MATERIAL_PARAMETER_FLOATS } from "./materialBindings.js";
 import { mainPipelineKey, shadowPipelineKey, type Pipelines } from "./pipelines.js";
 
 const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
@@ -102,7 +103,9 @@ describe("packet and material texture publication", () => {
     expect([...packedVertices.slice(10, 20)]).toEqual([1, 0, 0, 0, 0, 1, 1, 0, 0, 0]);
     const textureParameters = f.device.queue.writeBuffer.mock.calls[2]![2] as Float32Array;
     expect([...textureParameters]).toEqual([1, 0, 0.25, 1, 0, 1, 0.5, 0, 1, 0, 0, 0, 0, 1, 0, 0,
-      1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 1]);
+      1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 1,
+      // G-1 修复:扩展带恒定存在,无扩展参数时零填充(48 float = 192B)。
+      0, 0, 0, 0, 0, 0, 0, 0]);
     await expect(f.cache.setValidated(packet(1))).resolves.toBe(true);
     expect(oldTexture.destroy).toHaveBeenCalledOnce();
     f.draw(); expect(f.pass.setBindGroup.mock.calls[0]![1]).not.toBe(oldGroup);
@@ -157,7 +160,7 @@ describe("packet and material texture publication", () => {
     });
     expect(f.device.createBindGroup).toHaveBeenCalledTimes(1);
     const materialBuffers = f.buffers.filter(buffer => f.device.queue.writeBuffer.mock.calls
-      .some(call => call[0] === buffer && (call[2] as Float32Array).length === 40));
+      .some(call => call[0] === buffer && (call[2] as Float32Array).length === MATERIAL_PARAMETER_FLOATS));
     expect(materialBuffers).toHaveLength(1);
     expect(f.draw()).toEqual({ drawCalls: 2, triangles: 2 });
     expect(f.pass.setBindGroup.mock.calls.map(call => call[1])).toEqual([f.groups[0]]);
@@ -178,7 +181,7 @@ describe("packet and material texture publication", () => {
     });
     expect(f.device.createBindGroup).toHaveBeenCalledTimes(2);
     const materialBuffers = f.buffers.filter(buffer => f.device.queue.writeBuffer.mock.calls
-      .some(call => call[0] === buffer && (call[2] as Float32Array).length === 40));
+      .some(call => call[0] === buffer && (call[2] as Float32Array).length === MATERIAL_PARAMETER_FLOATS));
     expect(materialBuffers).toHaveLength(1);
     expect(f.draw()).toEqual({ drawCalls: 2, triangles: 2 });
     f.cache.dispose(); expect(materialBuffers[0]!.destroy).toHaveBeenCalledOnce();
@@ -249,7 +252,7 @@ describe("packet and material texture publication", () => {
       instances: p.instances });
     f.draw(); expect(f.pass.setBindGroup.mock.calls[0]![1]).not.toBe(oldGroup);
     const updatedParameters = f.device.queue.writeBuffer.mock.calls
-      .map(call => call[2]).filter((value): value is Float32Array => value instanceof Float32Array && value.length === 40).at(-1)!;
+      .map(call => call[2]).filter((value): value is Float32Array => value instanceof Float32Array && value.length === MATERIAL_PARAMETER_FLOATS).at(-1)!;
     expect(updatedParameters[31]).toBeCloseTo(0.2);
 
     const activeGroup = f.pass.setBindGroup.mock.calls[0]![1];
@@ -267,7 +270,7 @@ describe("packet and material texture publication", () => {
     f.draw();
     expect(f.pass.setBindGroup.mock.calls.at(-1)![1]).not.toBe(previousGroup);
     const parameters = f.device.queue.writeBuffer.mock.calls
-      .map((call) => call[2]).filter((value): value is Float32Array => value instanceof Float32Array && value.length === 40).at(-1)!;
+      .map((call) => call[2]).filter((value): value is Float32Array => value instanceof Float32Array && value.length === MATERIAL_PARAMETER_FLOATS).at(-1)!;
     expect(parameters[39]).toBe(8);
     expect(f.pass.setPipeline.mock.calls.at(-1)![0]).toBe("normalDouble");
   });

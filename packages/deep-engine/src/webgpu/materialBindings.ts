@@ -55,7 +55,7 @@ export class MaterialBindingPool {
 
   get stats(): MaterialBindingPoolStats {
     return Object.freeze({ bindGroups: this.entries.size, parameterBuffers: this.parameters.size,
-      parameterBytes: this.parameters.size * 40 * Float32Array.BYTES_PER_ELEMENT,
+      parameterBytes: this.parameters.size * MATERIAL_PARAMETER_FLOATS * Float32Array.BYTES_PER_ELEMENT,
       ...this.counters });
   }
 
@@ -177,16 +177,33 @@ export function releaseMaterialBinding(session: DeviceSession, binding: Material
 function writeTransform(target: Float32Array, offset: number,
   slot: { readonly uvTransform: readonly number[]; readonly texCoord: 0 | 1 } | undefined, enabled: boolean): void {
   const value = slot?.uvTransform ?? [1, 0, 0, 0, 1, 0];
-  // 0=disabled, 1=UV0, 2=UV1；复用 enable 标量，保持 40-float 材质 ABI 与变体数不变。
+  // 0=disabled, 1=UV0, 2=UV1；复用 enable 标量，保持 40-float 基础块 ABI 与变体数不变。
   target.set([value[0]!, value[1]!, value[2]!, enabled ? (slot?.texCoord ?? 0) + 1 : 0,
     value[3]!, value[4]!, value[5]!, 0], offset);
 }
 
 function materialKey(textures: PreparedMaterialTextures): string { return JSON.stringify(textures); }
 
-/** 导出给纹理数组索引通道复用：160B 材质 ABI 块的唯一打包实现，禁止旁路复制。 */
+/** 材质参数块总 float 数（G-1 修复）：与 pbrShader.ts 的 WGSL `MaterialTextures`
+ * （12 vec4，1e07cdaf 起含 extended0/extended1）逐位对齐，即 forward PBR 管线对
+ * group(1) 材质 uniform 的最小绑定尺寸要求（192B）。Rust 侧基础块为
+ * deep-engine-native mesh_abi::MATERIAL_UNIFORM_FLOATS=40，其 160B 块语义等价于
+ * 本布局的零填充扩展带（WGSL extendedShade 对全零带回退标准 shade）。 */
+export const MATERIAL_PARAMETER_FLOATS = 48;
+/** 基础块 float 数：与 Rust mesh_abi::MATERIAL_UNIFORM_FLOATS 及
+ * DEEP_PBR_MESH_V1_BYTE_SIZES.material（160B）同源。 */
+export const MATERIAL_PARAMETER_CORE_FLOATS = 40;
+/** 扩展参数带起始 float 偏移：packExtendedParameterBlock 的 6 float 写入 40..46，
+ * 46..48 保持零（WGSL 侧 extended1.zw 未消费）。 */
+export const MATERIAL_PARAMETER_EXTENDED_BAND_FLOAT_OFFSET = 40;
+
+/** 导出给纹理数组索引通道复用：192B 材质 ABI 块的唯一打包实现，禁止旁路复制。
+ * 恒定输出 48 float——无扩展参数时扩展带零填充（语义=无扩展材质，WGSL 走标准
+ * shade 分支），有扩展参数时在偏移 40 写入 6-float 参数块。恒定尺寸同时满足
+ * uniform 池（binding 4 最小绑定 192B）与纹理数组共享表行
+ * （rowStride 224B = 192B 材质块 + 32B 索引）两条消费路径。 */
 export function packMaterialParameters(textures: PreparedMaterialTextures): Float32Array<ArrayBuffer> {
-  const data = new Float32Array(40);
+  const data = new Float32Array(MATERIAL_PARAMETER_FLOATS);
   writeTransform(data, 0, textures.baseColor, textures.baseColor !== undefined);
   writeTransform(data, 8, textures.metallicRoughness, textures.metallicRoughness !== undefined);
   writeTransform(data, 16, textures.occlusion, textures.occlusion !== undefined);
@@ -195,11 +212,10 @@ export function packMaterialParameters(textures: PreparedMaterialTextures): Floa
   data[31] = textures.normal?.normalScale ?? 1;
   writeTransform(data, 32, textures.emissive, textures.emissive !== undefined);
   data[DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS.emissiveStrength.floatOffset] = textures.emissiveStrength;
-  if (!textures.extendedParameters) return data;
-  const extended = new Float32Array(48);
-  extended.set(data);
-  extended.set(packExtendedParameterBlock(textures.extendedParameters), 40);
-  return extended;
+  if (textures.extendedParameters) {
+    data.set(packExtendedParameterBlock(textures.extendedParameters), MATERIAL_PARAMETER_EXTENDED_BAND_FLOAT_OFFSET);
+  }
+  return data;
 }
 
 function materialParameterKey(textures: PreparedMaterialTextures): string {
