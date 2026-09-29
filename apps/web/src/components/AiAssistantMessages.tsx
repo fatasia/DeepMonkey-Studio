@@ -7,6 +7,8 @@ import { AiMessageCopyAction } from "./AiMessageCopyAction";
 import { AiExecutionDetails } from "./AiExecutionDetails";
 import { AiHarnessDenialCard } from "./AiHarnessDenialCard";
 import { AiHypothesisVerdictCard } from "./AiHypothesisVerdictCard";
+import { AiRequestProgress } from "./AiRequestProgress";
+import { AiClarificationCard, type AiClarificationRequest } from "./AiClarificationCard";
 
 export interface AssistantConversationItem {
   id: string;
@@ -22,9 +24,14 @@ export interface AssistantConversationItem {
   verdict?: import("@bim-studio/contracts").AiVerificationEnvelope;
   /** H-C2：M6 拒绝气泡（理由码透传）；chat 流数据源待 H-C3 档案接入，字段缺省不渲染。 */
   denial?: import("./AiHarnessDenialCard").AgentGuardDenialPayload;
+  /**
+   * T1（审计 §二 2.1）：M4 澄清卡载体——服务端返回结构化 clarification 字段时渲染选项卡。
+   * 当前 chat 流尚无该数据源（需 assistantService 透传，域外依赖），字段缺省不渲染。
+   */
+  clarification?: AiClarificationRequest;
 }
 
-export function AiAssistantMessages({ locale, conversation, busy, error, stopped, lastPrompt, lastScope, answer, execution, onRetry, projectId, busyHint }: {
+export function AiAssistantMessages({ locale, conversation, busy, error, stopped, lastPrompt, lastScope, answer, execution, onRetry, projectId, busyHint, requestStartedAt, onAnswerClarification }: {
   locale: AppLocale;
   conversation: AssistantConversationItem[];
   busy: boolean;
@@ -39,6 +46,10 @@ export function AiAssistantMessages({ locale, conversation, busy, error, stopped
   projectId?: string;
   /** K3：dashboard 等结构化输出在流式可见文本出现前的占位说明，避免 busy 期零输出观感。 */
   busyHint?: string;
+  /** T6：本次请求开始时刻（ms）；缺省不显示进度行。 */
+  requestStartedAt?: number;
+  /** T1：就地作答回调；缺省时澄清卡选项不可点（仍可复制问题自行补答）。 */
+  onAnswerClarification?: (answer: string) => void;
 }) {
   const t = (zh: string, en: string) => tr(locale, zh, en);
   return <>
@@ -50,8 +61,10 @@ export function AiAssistantMessages({ locale, conversation, busy, error, stopped
         {item.scope && <small className="ai-message-scope" title={item.scope}>{item.scope}</small>}
         <p>{item.answer}</p>
         {item.status && item.status !== "completed" && <small role="status">{({ streaming: t("保存的生成中片段", "Saved in-progress text"), stopped: t("已停止", "Stopped"), failed: t("未完成", "Failed"), interrupted: t("服务中断", "Interrupted") })[item.status]}</small>}
-        {item.verdict && <AiHypothesisVerdictCard locale={locale} envelope={item.verdict} {...(projectId ? { projectId } : {})} />}
+        {item.verdict && <AiHypothesisVerdictCard locale={locale} envelope={item.verdict} {...(projectId ? { projectId } : {}) } />}
         {item.denial && <AiHarnessDenialCard locale={locale} denial={item.denial} />}
+        {item.clarification && <AiClarificationCard locale={locale} clarification={item.clarification}
+          {...(onAnswerClarification ? { onAnswer: onAnswerClarification } : {})} {...(busy ? { busy: true } : {})} />}
         {item.reliability ? <AiResponseEvidence locale={locale} reliability={item.reliability} /> : <small>{t("恢复的历史回答，未保存验证证据", "Restored answer; verification evidence was not saved")}</small>}
         <AiMessageCopyAction locale={locale} text={item.answer} />
       </article>
@@ -60,12 +73,23 @@ export function AiAssistantMessages({ locale, conversation, busy, error, stopped
       <div className="ai-user-message">{lastPrompt}</div>
       {lastScope && <small className="ai-message-scope" title={lastScope}>{lastScope}</small>}
       {stopped && <article role="status">{t("已停止", "Stopped")} <button type="button" onClick={onRetry}>{t("重试原问题", "Retry original prompt")}</button></article>}
-      {busy && !answer && <article role="status"><LoaderCircle className="spin" size={14} /> {busyHint ?? t("正在处理，请稍候…", "Working on your request…")}</article>}
+      {busy && !answer && <article role="status"><LoaderCircle className="spin" size={14} /> {busyHint ?? t("正在处理，请稍候…", "Working on your request…")}
+        <AiRequestProgress locale={locale} phase="connecting" {...(requestStartedAt !== undefined ? { startedAt: requestStartedAt } : {})} />
+      </article>}
+      {/* T7（审计 §二 2.3）：dashboard 结构化布局在完成前不可见——骨架占位如实表达"布局生成中"，
+          不伪造内容；可见文本（JSON envelope 的 text 字段）仍正常流式透出。 */}
+      {busy && !answer && busyHint && <div className="ai-dashboard-skeleton" aria-hidden="true">
+        <span className="ai-dashboard-skeleton-line" />
+        <span className="ai-dashboard-skeleton-grid">
+          <i /><i /><i /><i />
+        </span>
+      </div>}
     </section>}
     {answer && (conversation.at(-1)?.answer !== answer || busy) && <article className="ai-streaming-answer">
       <small>{busy ? t("正在基于项目证据分析", "Analyzing project evidence") : t("模型回答", "Model response")}</small>
       {execution && <AiExecutionDetails locale={locale} execution={execution} />}
       <p>{answer}</p>
+      {busy && <AiRequestProgress locale={locale} phase="streaming" {...(requestStartedAt !== undefined ? { startedAt: requestStartedAt } : {})} />}
       {!busy && <AiMessageCopyAction locale={locale} text={answer} />}
     </article>}
   </>;

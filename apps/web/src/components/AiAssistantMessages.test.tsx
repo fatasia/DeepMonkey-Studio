@@ -36,10 +36,69 @@ describe("assistant request presentation", () => {
     expect(html).toContain("正在生成结构化方案…");
     expect(html).not.toContain("正在处理，请稍候");
   });
-  it("keeps the default busy wording for plain chat modes without a busy hint", () => {
+  it("shows the default busy wording for plain chat modes without a busy hint", () => {
     const html = renderToStaticMarkup(<AiAssistantMessages locale="zh-CN" conversation={[]} busy error={undefined}
       stopped={false} lastPrompt="检查" lastScope="" answer="" onRetry={vi.fn()} />);
     expect(html).toContain("正在处理，请稍候");
     expect(html).not.toContain("正在生成结构化方案");
+  });
+
+  // ── T7 回归（审计 §二 2.3：dashboard 流式中布局不可见 → 骨架占位如实表达"生成中"）──
+  it("T7: renders a structure skeleton next to the structured-plan placeholder while the dashboard layout is pending", () => {
+    const html = renderToStaticMarkup(<AiAssistantMessages locale="zh-CN" conversation={[]} busy error={undefined}
+      stopped={false} lastPrompt="生成看板" lastScope="" answer="" onRetry={vi.fn()} busyHint="正在生成结构化方案…" />);
+    expect(html).toContain("ai-dashboard-skeleton");
+    expect(html).toContain('aria-hidden="true"');
+  });
+  it("T7: keeps plain chat busy free of the dashboard skeleton", () => {
+    const html = renderToStaticMarkup(<AiAssistantMessages locale="zh-CN" conversation={[]} busy error={undefined}
+      stopped={false} lastPrompt="检查" lastScope="" answer="" onRetry={vi.fn()} />);
+    expect(html).not.toContain("ai-dashboard-skeleton");
+  });
+
+  // ── T6 回归（审计 §二 2.3：chat busy 只有转圈，无耗时/阶段）──
+  it("T6: shows the elapsed-and-phase progress row while busy with a start timestamp", () => {
+    const html = renderToStaticMarkup(<AiAssistantMessages locale="zh-CN" conversation={[]} busy error={undefined}
+      stopped={false} lastPrompt="检查" lastScope="" answer="" onRetry={vi.fn()} requestStartedAt={Date.now() - 4_000} />);
+    expect(html).toContain("已等待 4s");
+    expect(html).toContain("等待服务响应");
+  });
+  it("T6: switches the phase to streaming once the answer starts and keeps one timer", () => {
+    const html = renderToStaticMarkup(<AiAssistantMessages locale="zh-CN" conversation={[]} busy error={undefined}
+      stopped={false} lastPrompt="检查" lastScope="" answer="部分" onRetry={vi.fn()} requestStartedAt={Date.now() - 9_000} />);
+    expect(html).toContain("流式生成中");
+    expect((html.match(/role="timer"/g) ?? []).length).toBe(1);
+  });
+  it("T6: keeps busy free of the progress row without a start timestamp", () => {
+    const html = renderToStaticMarkup(<AiAssistantMessages locale="zh-CN" conversation={[]} busy error={undefined}
+      stopped={false} lastPrompt="检查" lastScope="" answer="" onRetry={vi.fn()} />);
+    expect(html).not.toContain("role=\"timer\"");
+  });
+
+  // ── T1 回归（审计 §二 2.1：chat 无结构化澄清通道——载体就位、数据源缺省不渲染）──
+  it("T1: renders the clarification card with options only when the turn carries a clarification", () => {
+    const withClarification = renderToStaticMarkup(
+      <AiAssistantMessages locale="zh-CN"
+        conversation={[{ id: "c1", mode: "sql", question: "问", answer: "需要澄清",
+          clarification: { question: "统计哪个数据集？", options: [{ id: "ds1", label: "产量表" }] } }]}
+        busy={false} error={undefined} stopped={false} lastPrompt="" lastScope="" answer="" onRetry={vi.fn()}
+        onAnswerClarification={vi.fn()} />);
+    expect(withClarification).toContain("ai-card-clarification");
+    expect(withClarification).toContain("统计哪个数据集？");
+    expect(withClarification).toContain("产量表");
+    const withoutClarification = renderToStaticMarkup(
+      <AiAssistantMessages locale="zh-CN"
+        conversation={[{ id: "c2", mode: "scene", question: "问", answer: "答" }]}
+        busy={false} error={undefined} stopped={false} lastPrompt="" lastScope="" answer="" onRetry={vi.fn()} />);
+    expect(withoutClarification).not.toContain("ai-card-clarification");
+  });
+  it("T1: disables clarification options while busy", () => {
+    const html = renderToStaticMarkup(
+      <AiAssistantMessages locale="zh-CN"
+        conversation={[{ id: "c1", mode: "sql", question: "问", answer: "需要澄清",
+          clarification: { question: "统计哪个数据集？", options: [{ id: "ds1", label: "产量表" }] } }]}
+        busy={false} error={undefined} stopped={false} lastPrompt="" lastScope="" answer="" onRetry={vi.fn()} />);
+    // 缺省 onAnswerClarification 时选项同样禁用（不出现点了没反应的承诺）。
+    expect(html).toContain("disabled");
   });
 });

@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { BookLock, BrainCircuit, Check, ChevronDown, Pencil, Trash2 } from "lucide-react";
+import { BookLock, BrainCircuit, Check, ChevronDown, ClipboardCopy, Pencil, Trash2, Workflow } from "lucide-react";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import type { AgentMemoryRecord, AgentMemoryView } from "../apiClients/industrialAgentApi";
+import { copyDocumentationCode } from "./DocsCenterClipboard";
+import { AiFirstUseGuide } from "./AiFirstUseGuide";
 import "./AiHarnessCards.css";
 
 type AgentMemoryApi = {
@@ -22,7 +24,7 @@ async function getMemoryApi(): Promise<AgentMemoryApi> {
  * "规则 > 记忆"优先级以徽标文字表达，不做第二套开关语义；
  * 确认/删除等低风险不可逆操作用就地确认（footer 双键模式）。
  */
-export function AiMemoryPanel({ locale, projectId }: { locale: AppLocale; projectId: string }) {
+export function AiMemoryPanel({ locale, projectId, onOpenAgent }: { locale: AppLocale; projectId: string; onOpenAgent?: () => void }) {
   const [view, setView] = useState<AgentMemoryView>();
   const [error, setError] = useState<string>();
   const [busyId, setBusyId] = useState<string>();
@@ -48,6 +50,7 @@ export function AiMemoryPanel({ locale, projectId }: { locale: AppLocale; projec
       {...(editingId !== undefined ? { editingId } : {})}
       draft={draft}
       {...(confirmingId !== undefined ? { confirmingId } : {})}
+      {...(onOpenAgent ? { onOpenAgent } : {})}
       onDraft={setDraft}
       onEdit={(memoryId, content) => { setEditingId(memoryId); setDraft(content); }}
       onCancelEdit={() => { setEditingId(undefined); setDraft(""); }}
@@ -80,7 +83,7 @@ export function AiMemoryPanel({ locale, projectId }: { locale: AppLocale; projec
 export type AiMemoryAction = "confirm" | "enable" | "disable" | "delete" | "save";
 
 /** 纯视图：数据与回调全部由外部注入（可静态渲染测试）。 */
-export function AiMemoryPanelView({ locale, view, error, busyId, editingId, draft, confirmingId, onDraft, onEdit, onCancelEdit, onConfirmDelete, onCancelDelete, onAction }: {
+export function AiMemoryPanelView({ locale, view, error, busyId, editingId, draft, confirmingId, onDraft, onEdit, onCancelEdit, onConfirmDelete, onCancelDelete, onAction, onOpenAgent }: {
   locale: AppLocale;
   view?: AgentMemoryView;
   error?: string;
@@ -94,6 +97,8 @@ export function AiMemoryPanelView({ locale, view, error, busyId, editingId, draf
   onConfirmDelete: (memoryId: string) => void;
   onCancelDelete: () => void;
   onAction: (memoryId: string, action: AiMemoryAction) => Promise<void>;
+  /** T10：三证首次引导的一键切换；缺省时引导块仍渲染（无跳转按钮）。 */
+  onOpenAgent?: () => void;
 }) {
   const t = (zh: string, en: string) => tr(locale, zh, en);
   const rules = view?.rules;
@@ -128,7 +133,15 @@ export function AiMemoryPanelView({ locale, view, error, busyId, editingId, draf
           <span className="ai-memory-source-badge source-memory"><BrainCircuit size={12} />{t("自动记忆", "Agent memories")}</span>
           <small>{t("候选由 agent 提炼，确认后才进入注入；守则始终优先于记忆。", "Candidates are proposed by the agent and only injected after confirmation; rules always outrank memories.")}</small>
         </div>
-        {memories.length === 0 && <small className="ai-memory-empty">{t("还没有自动记忆；运行一次假设验证后，被反驳的方案会作为候选出现在这里。", "No memories yet; refuted proposals from hypothesis verification will appear here as candidates.")}</small>}
+        {memories.length === 0 && <>
+          <small className="ai-memory-empty">{t("还没有自动记忆；运行一次假设验证后，被反驳的方案会作为候选出现在这里。", "No memories yet; refuted proposals from hypothesis verification will appear here as candidates.")}</small>
+          <AiFirstUseGuide
+            locale={locale}
+            guide={t("记忆的来源：在「执行任务」页签运行一次假设验证，被反驳的方案会自动成为候选记忆，下一轮不再重复同方案。", "Memories come from hypothesis verification in the \"Run task\" tab; refuted proposals become candidate memories so the same plan is not repeated next round.")}
+            sampleGoal={t("示例目标：把水泵转速提高 10%，验证流量是否按相似定律上升", "Sample goal: raise pump speed by 10% and verify whether flow follows the affinity law")}
+            {...(onOpenAgent ? { onOpenAgent } : {})}
+          />
+        </>}
         <ul className="ai-memory-list">
           {memories.map((item) => (
             <li key={item.id} className={`ai-memory-item status-${item.status}`}>

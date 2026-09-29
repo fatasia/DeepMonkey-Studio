@@ -7,7 +7,7 @@ import {
 } from "@bim-studio/contracts";
 import type { AppLocale } from "../i18n";
 import { AiHypothesisVerdictCard } from "./AiHypothesisVerdictCard";
-import { AiProvenanceChainView, AiProvenanceTracePanel } from "./AiProvenanceTraceView";
+import { AiProvenanceChainView, AiProvenanceTracePanel, formatAiTimestamp } from "./AiProvenanceTraceView";
 import { AiProvenancePanelView } from "./AiProvenancePanel";
 import type { ProvenanceChainList } from "../apiClients/provenanceApi";
 import {
@@ -152,5 +152,68 @@ describe("H-C3 档案视图（AiProvenanceTraceView / AiProvenancePanel）", () 
     const html = renderToStaticMarkup(<AiProvenanceTracePanel locale={LOCALE} projectId="project-1" resultFingerprint={ENVELOPE.resultFingerprint} />);
     expect(html).toContain("正在读取实验档案");
     expect(html).toContain('role="status"');
+  });
+
+  // ── T12 回归（审计 §二 2.5：档案列表用 UTC slice、时间轴用本地时区，同一链两处时间不同）──
+  it("T12: formatAiTimestamp renders local MM-DD HH:mm without the year, and is invalid-input honest", () => {
+    const expected = (() => {
+      const date = new Date("2026-09-28T10:00:01.000Z");
+      const pad = (value: number) => String(value).padStart(2, "0");
+      return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    })();
+    expect(formatAiTimestamp("2026-09-28T10:00:01.000Z")).toBe(expected);
+    // 解析失败原样返回（不伪造时间）。
+    expect(formatAiTimestamp("not-a-date")).toBe("not-a-date");
+    // 口径形状锁死：本地两位月-日 时:分，无年份、无 T 分隔、无秒。
+    expect(expected).toMatch(/^\d{2}-\d{2} \d{2}:\d{2}$/);
+  });
+
+  it("T12: the chain list shows the same shared local timestamp instead of the raw UTC slice", () => {
+    const view: ProvenanceChainList = {
+      chains: [{
+        hypothesis: intactChain().hypothesis,
+        runCount: 1,
+        reportCount: 0,
+        latest: { verdict: "confirmed", reasonCode: "prediction-within-tolerance", judgedAt: "2026-09-28T10:00:01.000Z" },
+        integrity: "intact",
+        lastActivityAt: "2026-09-28T10:00:01.000Z",
+      }],
+      integrity: { intact: true, brokenNodes: [] },
+    };
+    const html = renderToStaticMarkup(<AiProvenancePanelView locale={LOCALE} projectId="project-1" view={view} onToggle={() => {}} onRefresh={() => {}} />);
+    // 旧口径是 UTC 串前 16 位（含年份，如 2026-09-28 10:00）——统一后不再出现年份形态。
+    expect(html).not.toContain("2026-09-28");
+    expect(html).toContain(formatAiTimestamp("2026-09-28T10:00:01.000Z"));
+  });
+
+  // ── T10 回归（审计 §二 2.4：三证体系空态只有循环指引，不说在哪运行、无样例目标）──
+  it("T10: the empty archive renders the first-use guide with a copyable sample goal and an agent entry", () => {
+    const empty: ProvenanceChainList = { chains: [], integrity: { intact: true, brokenNodes: [] } };
+    const html = renderToStaticMarkup(
+      <AiProvenancePanelView locale={LOCALE} projectId="project-1" view={empty} onToggle={() => {}} onRefresh={() => { }}
+        onOpenAgent={() => {}} />,
+    );
+    expect(html).toContain("ai-firstuse-guide");
+    expect(html).toContain("执行任务");
+    expect(html).toContain("示例目标：把水泵转速提高 10%");
+    expect(html).toContain('aria-label="复制示例目标"');
+    expect(html).toContain("去「执行任务」运行一次假设验证");
+    // 有档案时引导块退场（不常驻刷屏）。
+    const nonEmpty: ProvenanceChainList = {
+      chains: [{
+        hypothesis: intactChain().hypothesis,
+        runCount: 1,
+        reportCount: 0,
+        latest: { verdict: "confirmed", reasonCode: "prediction-within-tolerance", judgedAt: "2026-09-28T10:00:01.000Z" },
+        integrity: "intact",
+        lastActivityAt: "2026-09-28T10:00:01.000Z",
+      }],
+      integrity: { intact: true, brokenNodes: [] },
+    };
+    const nonEmptyHtml = renderToStaticMarkup(
+      <AiProvenancePanelView locale={LOCALE} projectId="project-1" view={nonEmpty} onToggle={() => {}} onRefresh={() => { }}
+        onOpenAgent={() => {}} />,
+    );
+    expect(nonEmptyHtml).not.toContain("ai-firstuse-guide");
   });
 });

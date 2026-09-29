@@ -182,4 +182,59 @@ describe("AiMemoryPanelView（H-C2 记忆面板，M0 族扩展；用户可感知
     expect(html).toContain('role="alert"');
     expect(html).toContain("服务不可用");
   });
+  // ── T10 回归（审计 §二 2.4：记忆空态是循环指引，不说在哪运行、无可复制样例目标）──
+  it("T10: the empty memory state renders the first-use guide with a sample goal and an agent entry when wired", () => {
+    const html = renderToStaticMarkup(
+      <AiMemoryPanelView
+        locale={LOCALE}
+        draft=""
+        onDraft={noop}
+        onEdit={noop}
+        onCancelEdit={noop}
+        onConfirmDelete={noop}
+        onCancelDelete={noop}
+        onAction={noopAsync}
+        view={view()}
+        onOpenAgent={noop}
+      />,
+    );
+    expect(html).toContain("ai-firstuse-guide");
+    expect(html).toContain("记忆的来源");
+    expect(html).toContain("示例目标：把水泵转速提高 10%");
+    expect(html).toContain('aria-label="复制示例目标"');
+    expect(html).toContain("去「执行任务」运行一次假设验证");
+  });
+
+  it("T10: the guide stays available without the agent entry and hides once memories exist", () => {
+    const withoutEntry = renderToStaticMarkup(
+      <AiMemoryPanelView
+        locale={LOCALE}
+        draft=""
+        onDraft={noop}
+        onEdit={noop}
+        onCancelEdit={noop}
+        onConfirmDelete={noop}
+        onCancelDelete={noop}
+        onAction={noopAsync}
+        view={view()}
+      />,
+    );
+    expect(withoutEntry).toContain("ai-firstuse-guide");
+    expect(withoutEntry).not.toContain("去「执行任务」运行一次假设验证");
+    const withMemory = renderToStaticMarkup(
+      <AiMemoryPanelView
+        locale={LOCALE}
+        draft=""
+        onDraft={noop}
+        onEdit={noop}
+        onCancelEdit={noop}
+        onConfirmDelete={noop}
+        onCancelDelete={noop}
+        onAction={noopAsync}
+        view={view({ memories: [memoryRecord()] })}
+        onOpenAgent={noop}
+      />,
+    );
+    expect(withMemory).not.toContain("ai-firstuse-guide");
+  });
 });

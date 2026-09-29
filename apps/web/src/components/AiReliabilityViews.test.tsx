@@ -52,4 +52,50 @@ describe("AI reliability views", () => {
     expect(html).toContain("输入风险");
     expect(html).toContain("3 条");
   });
+
+  // ── T4 回归（审计 §二 2.2：traceId/证据指纹仅 title 纯文本，不可操作）──
+  it("T4: renders trace id and evidence fingerprint as structured copy actions with full text in title", () => {
+    const html = renderToStaticMarkup(
+      <AiResponseEvidence
+        locale="zh-CN"
+        reliability={{
+          grade: "capability-verified",
+          contextTrust: "capability-result",
+          traceId: "trace-abc123",
+          contextFingerprint: "sha256:fingerprint-xyz",
+          evidenceCount: 2,
+          inputRisk: "low",
+          writePolicy: "read-only",
+          warnings: [],
+          sourceLabels: [],
+        }}
+      />,
+    );
+    expect(html).toContain('aria-label="复制Trace ID"');
+    expect(html).toContain('aria-label="复制证据指纹"');
+    expect(html).toContain('title="trace-abc123"');
+    expect(html).toContain('title="sha256:fingerprint-xyz"');
+    expect(html).toContain("ai-evidence-copy");
+    // 未点击前不显示"已复制"反馈（sr-only 状态位初始为空）。
+    expect(html).not.toContain(">已复制<");
+  });
+
+  it("T4: omits the copy rows entirely when the reliability has no trace or fingerprint", () => {
+    const html = renderToStaticMarkup(
+      <AiResponseEvidence
+        locale="zh-CN"
+        reliability={{
+          grade: "unverified",
+          contextTrust: "client-snapshot",
+          evidenceCount: 0,
+          inputRisk: "low",
+          writePolicy: "read-only",
+          warnings: [],
+          sourceLabels: [],
+        }}
+      />,
+    );
+    expect(html).not.toContain("复制Trace ID");
+    expect(html).not.toContain("复制证据指纹");
+  });
 });

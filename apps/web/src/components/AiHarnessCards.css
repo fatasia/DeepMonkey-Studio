@@ -90,7 +90,7 @@
 .ai-card-verdict-line code { font-size: 11px; }
 
 .ai-card-note { font-size: 11px; color: var(--text-muted); }
-.ai-card-warnings { font-size: 11px; color: var(--text-warning, #b45309); list-style: none; margin: 4px 0 0; padding: 6px 8px; background: color-mix(in srgb, var(--text-warning, #b45309) 8%, transparent); border-radius: 4px; }
+.ai-card-warnings { font-size: 11px; color: var(--warning); list-style: none; margin: 4px 0 0; padding: 6px 8px; background: color-mix(in srgb, var(--warning) 8%, transparent); border-radius: 4px; }
 
 .ai-card-fingerprints {
   display: flex;
@@ -322,3 +322,105 @@
   font-size: 12px;
   resize: vertical;
 }
+
+/* ---------- T1/T3（审计 §二 2.1）澄清卡：选项就地位 ---------- */
+
+.ai-clarification-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.ai-clarification-options > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  min-height: 28px;
+  padding: 3px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-strong);
+  cursor: pointer;
+  font-size: 11px;
+  text-align: left;
+}
+
+.ai-clarification-options > button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-2));
+}
+
+.ai-clarification-options > button:disabled { cursor: default; opacity: .65; }
+.ai-clarification-options > button svg { flex: none; color: var(--text-muted); }
+.ai-clarification-options > button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ---------- T10（审计 §二 2.4）三证体系首次引导块（记忆/档案空态共用） ---------- */
+
+.ai-firstuse-guide {
+  display: grid;
+  gap: 6px;
+  padding: 8px 9px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 35%, var(--line));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface-1));
+}
+
+.ai-firstuse-guide > small {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.ai-firstuse-sample {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ai-firstuse-sample code {
+  flex: 1;
+  min-width: 0;
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.ai-firstuse-sample button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xs);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.ai-firstuse-sample button:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.ai-firstuse-sample button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.ai-firstuse-open-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  justify-self: start;
+  min-height: 26px;
+  padding: 2px 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--text-strong);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.ai-firstuse-open-agent:hover { color: var(--accent); }
+.ai-firstuse-open-agent svg { flex: none; }

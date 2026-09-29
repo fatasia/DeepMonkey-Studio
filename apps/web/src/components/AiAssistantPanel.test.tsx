@@ -25,6 +25,26 @@ const sessionsStub = vi.hoisted(() => ({
 }));
 vi.mock("../ai/useAssistantSessions", () => ({ useAssistantSessions: () => sessionsStub }));
 
+// T8：错误区状态由 chat run stub 控制（错误分支此前零覆盖）。
+const chatRunStub = vi.hoisted(() => {
+  const stub = {
+    answer: "", setAnswer: (_v: unknown) => undefined,
+    execution: undefined,
+    busy: false,
+    stopped: false, setStopped: (_v: unknown) => undefined,
+    error: undefined as string | undefined, setError: (_v: unknown) => undefined,
+    lastPrompt: "统计摄像头", setLastPrompt: (_v: unknown) => undefined,
+    lastScope: "模组线", setLastScope: (_v: unknown) => undefined,
+    dashboard: undefined, setDashboard: (_v: unknown) => undefined,
+    bimEvidence: undefined, setBimEvidence: (_v: unknown) => undefined,
+    requestAbort: { current: undefined },
+    cancelRequest: () => undefined,
+    ask: async () => undefined,
+  };
+  return { stub, __set: (patch: Partial<typeof stub>) => { Object.assign(stub, patch); } };
+});
+vi.mock("../ai/useAssistantChatRun", () => ({ useAssistantChatRun: () => chatRunStub.stub }));
+
 import { AiAssistantPanel } from "./AiAssistantPanel";
 
 describe("AiAssistantPanel", () => {
@@ -149,5 +169,76 @@ describe("AiAssistantPanel", () => {
     expect(source).toContain('busyHint: t("正在生成结构化方案…", "Generating a structured plan…")');
     const messages = await readFile(new URL("./AiAssistantMessages.tsx", import.meta.url), "utf8");
     expect(messages).toContain("busyHint ?? ");
+  });
+  // ── T8 回归（审计 §二 2.3：失败仅"重试原问题"一条路，无备用模型/受控问数）──
+  it("T8: offers three recovery paths on failure: plain retry, alternate model, controlled data query", () => {
+    chatRunStub.__set({ error: "服务暂时不可用", lastPrompt: "统计摄像头" });
+    try {
+      const html = renderToStaticMarkup(
+        <AiAssistantPanel locale="zh-CN" projectId="project-1" surface="studio"
+          context={{ project: { id: "project-1", name: "电池工厂" }, scene: { id: "scene-1", name: "模组线", modelCount: 4 } }}
+          onClose={vi.fn()} />,
+      );
+      expect(html).toContain("本次请求未完成");
+      expect(html).toContain("重试原问题");
+      expect(html).toContain("换备用模型重试");
+      expect(html).toContain("改用受控问数");
+      expect(html).toContain("ai-assistant-error-actions");
+    } finally {
+      chatRunStub.__set({ error: undefined });
+    }
+  });
+
+  it("T8: hides the controlled-query fallback when no project is selected (mode cannot carry data)", () => {
+    chatRunStub.__set({ error: "服务暂时不可用", lastPrompt: "统计摄像头" });
+    try {
+      const html = renderToStaticMarkup(
+        <AiAssistantPanel locale="zh-CN" projectId={undefined} surface="studio"
+          context={{ project: { name: "未选项目" } }} onClose={vi.fn()} />,
+      );
+      expect(html).toContain("换备用模型重试");
+      expect(html).not.toContain("改用受控问数");
+    } finally {
+      chatRunStub.__set({ error: undefined });
+    }
+  });
+
+  // ── T9 回归（审计 §二 2.4：能力目录仅空态可见，对话进行中能力发现通道关闭）──
+  it("T9: keeps a persistent capability drawer during an active conversation, collapsed by default", () => {
+    sessionsStub.conversation = [{ id: "m1", question: "q", answer: "a", mode: "scene" }];
+    try {
+      const html = renderToStaticMarkup(
+        <AiAssistantPanel locale="zh-CN" projectId="project-1" surface="studio"
+          context={{ project: { id: "project-1", name: "电池工厂" }, scene: { id: "scene-1", name: "模组线", modelCount: 4 } }}
+          onClose={vi.fn()} />,
+      );
+      expect(html).toContain('aria-label="可用能力"');
+      // 折叠态不挂载目录（避免双请求）：空态专属的完整目录文案不出现。
+      expect(html).not.toContain("当前可用智能任务");
+      expect(html).toContain("展开查看与提问");
+    } finally {
+      sessionsStub.conversation = [];
+    }
+  });
+
+  it("T9: the empty state keeps the full inline catalog", () => {
+    const html = renderToStaticMarkup(
+      <AiAssistantPanel locale="zh-CN" projectId="project-1" surface="studio"
+        context={{ project: { id: "project-1", name: "电池工厂" }, scene: { id: "scene-1", name: "模组线", modelCount: 4 } }}
+        onClose={vi.fn()} />,
+    );
+    expect(html).not.toContain('aria-label="可用能力"');
+    expect(html).toContain("正在发现插件能力");
+  });
+
+  // ── T10 回归（审计 §二 2.4：chat 侧记忆/档案空态带首次引导与一键切换，经面板接线）──
+  it("T10: wires the chat memory/provenance first-use guide with an open-agent action", () => {
+    const html = renderToStaticMarkup(
+      <AiAssistantPanel locale="zh-CN" projectId="project-1" surface="studio"
+        context={{ project: { id: "project-1", name: "电池工厂" }, scene: { id: "scene-1", name: "模组线", modelCount: 4 } }}
+        onClose={vi.fn()} />,
+    );
+    expect(html).toContain("ai-firstuse-guide");
+    expect(html).toContain("去「执行任务」运行一次假设验证");
   });
 });

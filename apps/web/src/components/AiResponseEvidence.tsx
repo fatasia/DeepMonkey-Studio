@@ -1,6 +1,8 @@
-import { AlertTriangle, CheckCircle2, ChevronDown, FileClock, ShieldCheck } from "lucide-react";
+import { useState } from "react";
+import { AlertTriangle, Check, CheckCircle2, ChevronDown, Copy, FileClock, ShieldCheck } from "lucide-react";
 import type { AssistantReliabilitySummary } from "../ai/assistantReliability";
 import { translate as tr, type AppLocale } from "../i18n";
+import { copyDocumentationCode } from "./DocsCenterClipboard";
 import { AiContextDeliveryEvidence } from "./AiContextDeliveryEvidence";
 
 interface AiResponseEvidenceProps {
@@ -58,13 +60,13 @@ export function AiResponseEvidence({ locale, reliability }: AiResponseEvidencePr
           {reliability.traceId && (
             <div>
               <dt>Trace</dt>
-              <dd title={reliability.traceId}>{reliability.traceId}</dd>
+              <EvidenceCopyValue locale={locale} value={reliability.traceId} labelZh="Trace ID" labelEn="Trace ID" />
             </div>
           )}
           {reliability.contextFingerprint && (
             <div>
               <dt>{t("证据指纹", "Evidence fingerprint")}</dt>
-              <dd title={reliability.contextFingerprint}>{reliability.contextFingerprint}</dd>
+              <EvidenceCopyValue locale={locale} value={reliability.contextFingerprint} labelZh="证据指纹" labelEn="evidence fingerprint" />
             </div>
           )}
         </dl>
@@ -100,4 +102,31 @@ function riskLabel(risk: AssistantReliabilitySummary["inputRisk"], locale: AppLo
   if (risk === "high") return tr(locale, "高", "High");
   if (risk === "medium") return tr(locale, "中", "Medium");
   return tr(locale, "低", "Low");
+}
+
+/**
+ * T4（审计 §二）：traceId / 证据指纹从"title 全文纯文本"升级为可点复制的结构化行——
+ * 三跳可溯链的第一跳入口（复制后可在实验档案/审计侧核对），title 仍保留全文。
+ * 复制失败静默保留纯文本可选手动复制（不弹错打断阅读）。
+ */
+function EvidenceCopyValue({ locale, value, labelZh, labelEn }: { locale: AppLocale; value: string; labelZh: string; labelEn: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    void copyDocumentationCode(value)
+      .then(() => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1_600);
+      })
+      .catch(() => { /* 复制失败不打断阅读；文本仍可手动选择复制。 */ });
+  };
+  return (
+    <dd>
+      <button type="button" className="ai-evidence-copy" title={value} onClick={copy}
+        aria-label={tr(locale, `复制${labelZh}`, `Copy ${labelEn}`)}>
+        <code>{value}</code>
+        {copied ? <Check size={11} aria-hidden="true" /> : <Copy size={11} aria-hidden="true" />}
+        <span className={copied ? undefined : "sr-only"} role="status">{copied ? tr(locale, "已复制", "Copied") : ""}</span>
+      </button>
+    </dd>
+  );
 }

@@ -159,10 +159,22 @@ function short(fingerprint: string): string {
   return `${fingerprint.slice(0, 4)}…`;
 }
 
+/**
+ * T12 统一时间口径（AI助手交互统一设计 §4-4"时间/单位唯一口径"）：
+ * 全系统 AI 时间一律本地时区 `MM-DD HH:mm`，不随语言切换 UTC/本地两套口径；
+ * 解析失败原样返回（不伪造时间）。此函数是共享工具，档案列表/时间轴/运行历史同源消费。
+ */
+export function formatAiTimestamp(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `${month}-${day} ${hour}:${minute}`;
+}
+
 function shortTime(iso: string, locale: AppLocale): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return locale === "en-US"
-    ? date.toISOString().slice(0, 16).replace("T", " ")
-    : `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  void locale;
+  return formatAiTimestamp(iso);
 }

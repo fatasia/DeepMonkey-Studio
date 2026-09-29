@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Clock3, LoaderCircle } from "lucide-react";
 import type { AiDataBindingRunRecord } from "@bim-studio/contracts";
 import { api } from "../api";
+import { formatAiTimestamp } from "./AiProvenanceTraceView";
 
 export function AiDataRunHistory({ projectId, bindingId }: { projectId: string; bindingId?: string }) {
   const [runs, setRuns] = useState<AiDataBindingRunRecord[]>([]);
@@ -34,7 +35,7 @@ export function AiDataRunHistory({ projectId, bindingId }: { projectId: string; 
             <strong>{statusLabel(run.status)}</strong>
             <small>{run.output?.summary ?? run.failure?.message ?? `绑定 v${run.bindingRevision}`}</small>
           </span>
-          <time>{formatTime(run.completedAt ?? run.startedAt ?? run.createdAt)}{run.durationMs !== undefined ? ` · ${run.durationMs}ms` : ""}</time>
+          <time>{formatAiTimestamp(run.completedAt ?? run.startedAt ?? run.createdAt)}{run.durationMs !== undefined ? ` · ${run.durationMs}ms` : ""}</time>
         </article>
       ))}
     </section>
@@ -43,9 +44,4 @@ export function AiDataRunHistory({ projectId, bindingId }: { projectId: string; 
 
 function statusLabel(status: AiDataBindingRunRecord["status"]): string {
   return ({ queued: "等待运行", running: "正在运行", succeeded: "运行成功", failed: "运行失败", skipped: "已跳过", cancelled: "已取消" })[status];
-}
-
-function formatTime(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }

@@ -57,13 +57,13 @@
 
 .ai-context-disclosure > summary > span.ready,
 .ai-response-evidence.grade-capability-verified > summary span {
-  color: #73c797;
+  color: var(--success);
 }
 
 .ai-context-disclosure > summary > span.partial,
 .ai-response-evidence.grade-limited > summary span,
 .ai-response-evidence.grade-unverified > summary span {
-  color: #dfad5a;
+  color: var(--warning);
 }
 
 .ai-context-disclosure[open] > summary > span:last-child svg,
@@ -126,11 +126,11 @@
 }
 
 .ai-context-source-list > span.ready svg {
-  color: #73c797;
+  color: var(--success);
 }
 
 .ai-context-source-list > span.unavailable svg {
-  color: #df8a75;
+  color: var(--danger);
 }
 
 .ai-context-disclosure-body > p,
@@ -180,7 +180,100 @@
 }
 
 .ai-response-evidence p.warning {
-  color: #c7a46c;
+  color: var(--warning);
+}
+
+/* T4（审计 §二）：Trace / 证据指纹可点复制行——monospace 截断 + title 全文，复制钮内联。 */
+.ai-response-evidence dd .ai-evidence-copy {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  color: var(--text);
+  border: 0;
+  background: transparent;
+  cursor: copy;
+  font: inherit;
+  text-align: left;
+}
+
+.ai-response-evidence dd .ai-evidence-copy code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-response-evidence dd .ai-evidence-copy svg {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.ai-response-evidence dd .ai-evidence-copy:hover svg {
+  color: var(--accent);
+}
+
+/* T6（审计 §二）：chat 长任务进度行——已耗时 + 阶段，tabular-nums 防跳动。 */
+.ai-request-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 7px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* T7（审计 §二）：dashboard 结构化布局生成中的骨架占位（aria-hidden，语义由 busyHint 承担）。 */
+.ai-dashboard-skeleton {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface-1);
+}
+
+.ai-dashboard-skeleton-line {
+  width: 42%;
+  height: 9px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text-muted) 26%, var(--surface-2));
+  animation: ai-skeleton-pulse 1.6s ease-in-out infinite;
+}
+
+.ai-dashboard-skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.ai-dashboard-skeleton-grid i {
+  height: 26px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--text-muted) 16%, var(--surface-2));
+  animation: ai-skeleton-pulse 1.6s ease-in-out infinite;
+}
+
+.ai-dashboard-skeleton-grid i:nth-child(2) { animation-delay: .2s; }
+.ai-dashboard-skeleton-grid i:nth-child(3) { animation-delay: .4s; }
+.ai-dashboard-skeleton-grid i:nth-child(4) { animation-delay: .6s; }
+
+@keyframes ai-skeleton-pulse {
+  0%, 100% { opacity: .5; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-dashboard-skeleton-line,
+  .ai-dashboard-skeleton-grid i {
+    animation: none;
+    opacity: .6;
+  }
 }
 
 .ai-assistant-error-state,
@@ -190,32 +283,31 @@
   margin: 10px 0;
   padding: 10px;
   color: var(--text);
-  border: 1px solid #653e3f;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line));
   border-radius: 7px;
-  background: #211719;
+  background: color-mix(in srgb, var(--danger) 9%, var(--surface-1));
   font-size: 11px;
 }
 
 .ai-assistant-apply-notice {
-  color: #afd4bf;
-  border-color: #315b48;
-  background: #11231b;
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 35%, var(--line));
+  background: color-mix(in srgb, var(--success) 9%, var(--surface-1));
 }
 
 .ai-assistant-error-state > span {
-  color: #df9a9f;
+  color: var(--danger);
   line-height: 1.45;
 }
 
 .ai-assistant-error-state > small {
-  color: #9b8588;
+  color: var(--text-muted);
 }
 
 .ai-assistant-error-state button {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  justify-self: start;
   min-height: 30px;
   padding: 0 9px;
   color: var(--text-strong);
@@ -223,6 +315,13 @@
   border-radius: 5px;
   background: var(--surface-2);
   cursor: pointer;
+}
+
+/* T8（审计 §二 2.3）：失败恢复多路动作行——重试/换模型/受控问数并列，窄面板可换行。 */
+.ai-assistant-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .ai-assistant-error-state > strong {
@@ -240,9 +339,9 @@
 .ai-change-items > span {
   padding: 3px 6px;
   color: var(--text);
-  border: 1px solid #4b4431;
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, var(--line));
   border-radius: 4px;
-  background: #242117;
+  background: color-mix(in srgb, var(--warning) 9%, var(--surface-1));
   font-size: 10px;
 }
 
@@ -252,13 +351,13 @@
   align-items: flex-start;
   gap: 5px;
   margin: 0;
-  color: #9c9278;
+  color: var(--text-muted);
   font-size: 10px;
   line-height: 1.45;
 }
 
 .ai-change-error {
-  color: #e0a0a4;
+  color: var(--danger);
 }
 
 .ai-change-confirmation footer button:disabled {
@@ -293,7 +392,55 @@
 .ai-capability-catalog > div small {
   flex-shrink: 0;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 10px;
+}
+
+/* T9（审计 §二 2.4）：能力目录的"能为我做什么"示例问题行——点选即向助手提问。 */
+.ai-capability-examples {
+  display: grid;
+  gap: 5px;
+  padding-top: 7px;
+  border-top: 1px solid var(--line-subtle);
+}
+
+.ai-capability-examples > small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.ai-capability-examples > button {
+  overflow: hidden;
+  min-height: 26px;
+  padding: 3px 7px;
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--surface-2);
+  cursor: pointer;
+  font-size: 10px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-capability-examples > button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-2));
+}
+
+.ai-capability-examples > button:disabled {
+  cursor: default;
+  opacity: .65;
+}
+
+/* T9：对话进行中的常驻能力发现折叠行（M0 族，与上下文披露同构）。 */
+.ai-capability-drawer > summary > span:last-child {
+  gap: 5px;
+}
+
+.ai-capability-drawer .ai-capability-catalog {
+  border: 0;
 }
 
 .ai-capability-catalog.is-unavailable {

@@ -5,9 +5,9 @@ import { useAssistantScroll } from "../ai/useAssistantScroll";
 import { assistantContextSources } from "../ai/assistantContextSources";
 import { useFloatingPanelDrag } from "../hooks/useFloatingPanelDrag";
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Bot, LayoutDashboard, MessageSquare, RotateCcw, Sparkles, Workflow, X } from "lucide-react";
+import { AlertTriangle, Bot, Boxes, ChevronDown, Database, LayoutDashboard, MessageSquare, Replace, RotateCcw, Sparkles, Workflow, X } from "lucide-react";
 import type { DataDatasetRecord, SceneDashboardState } from "@bim-studio/contracts";
-import { type AssistantMode } from "../api";
+import { api, type AssistantMode } from "../api";
 import type { BimAssistantPreparedContext } from "../bimAssistant";
 import { translate as tr, type AppLocale } from "../i18n";
 import { AiChangeConfirmation } from "./AiChangeConfirmation";
@@ -26,6 +26,7 @@ import { AiAssistantSessionControls } from "./AiAssistantSessionControls";
 import { AiContextDisclosure, CHAT_HISTORY_WINDOW } from "./AiContextDisclosure";
 import { AiMemoryPanel } from "./AiMemoryPanel";
 import { AiProvenancePanel } from "./AiProvenancePanel";
+import { AiBimClarificationCard } from "./AiBimClarificationCard";
 import { BimAssistantEvidence, type BimAssistantAction } from "./BimAssistantEvidence";
 import { IndustrialAgentWorkspace } from "./IndustrialAgentWorkspace";
 import "./AiAssistantReliability.css";
@@ -66,6 +67,8 @@ export function AiAssistantPanel({
   const [applyError, setApplyError] = useState<string>();
   const [applyNotice, setApplyNotice] = useState<string>();
   const [dashboardPageDraft, setDashboardPageDraft] = useState<{ raw: unknown; changeCount: number; labels: string[] }>();
+  const [requestStartedAt, setRequestStartedAt] = useState<number>();
+  const [capabilityDrawerOpen, setCapabilityDrawerOpen] = useState(false);
   const panelDrag = useFloatingPanelDrag<HTMLElement>();
   const { platformContext, contextSources, datasets, platformLoaded, projectMissing } = useAiProjectContext(projectId, locale);
   const t = (zh: string, en: string) => tr(locale, zh, en);
@@ -88,7 +91,7 @@ export function AiAssistantPanel({
       const preview = onValidateDashboardPageDraft(raw, datasets);
       setDashboardPageDraft({ raw, ...preview });
     } } : {}),
-    onBegin: () => { messageScroll.follow(); setApplyNotice(undefined); setApplyError(undefined); setConfirmDashboard(false); setDashboardPageDraft(undefined); },
+    onBegin: () => { messageScroll.follow(); setApplyNotice(undefined); setApplyError(undefined); setConfirmDashboard(false); setDashboardPageDraft(undefined); setRequestStartedAt(Date.now()); },
   });
   const messageScroll = useAssistantScroll(`${conversation.length}:${answer}:${busy}:${error ?? ""}:${stopped}:${experience}`,
     conversation.length > 0 || busy || Boolean(answer || error) || stopped);
@@ -170,6 +173,47 @@ export function AiAssistantPanel({
     } finally {
       setApplyBusy(false);
     }
+  }
+
+  // T8（审计 §二 2.3）：失败恢复从单一"重试原问题"扩为多路——
+  // ①换备用模型重试：从模型目录取一个不同于当前模型的候选后重发；
+  // ②改用受控问数：携带原问题切入问数据模式（目录不可用/无备用模型时按钮仍可用，等同原样重试）。
+  async function retryWithAlternateModel() {
+    if (!lastPrompt || busy) return;
+    try {
+      const catalog = await api.getAssistantModels();
+      const current = sessionOptions.model ?? catalog.defaultModel;
+      const alternate = catalog.models.map((item) => item.id).find((id) => id !== current);
+      if (alternate) setSessionOptions({ model: alternate });
+    } catch {
+      // 模型目录不可用时保持当前会话选项原样重试（与"重试原问题"等价，不阻塞恢复）。
+    }
+    void ask(lastPrompt);
+  }
+
+  function switchToControlledQuery() {
+    if (busy || !lastPrompt) return;
+    setMode("sql");
+    setStopped(false);
+    setAnswer("");
+    setDashboard(undefined);
+    setDashboardPageDraft(undefined);
+    setConfirmDashboard(false);
+    setError(undefined);
+    setApplyError(undefined);
+    setQuestion(lastPrompt);
+  }
+
+  // T1：澄清卡就地作答——点选项即以该答案重新发起提问。
+  function answerClarification(answerText: string) {
+    setQuestion("");
+    void ask(answerText);
+  }
+
+  // T10（审计 §二 2.4）：三证体系首次引导的"在哪运行"动作——记忆/档案空态一键切到执行任务页签。
+  function openAgentWorkspace() {
+    if (busy) return;
+    setExperience("agent");
   }
 
   const dashboardModeAvailable = Boolean(onApplyDashboard || onValidateDashboardPageDraft);
@@ -254,8 +298,30 @@ export function AiAssistantPanel({
             : {})}
         />
         {/* K14 面板常驻：chat 侧补齐记忆与实验档案折叠行（与 agent start 视图同构，M0 族）。 */}
-        {projectId && <AiMemoryPanel locale={locale} projectId={projectId} />}
-        {projectId && <AiProvenancePanel locale={locale} projectId={projectId} />}
+        {projectId && <AiMemoryPanel locale={locale} projectId={projectId} {...(experience === "chat" ? { onOpenAgent: openAgentWorkspace } : {})} />}
+        {projectId && <AiProvenancePanel locale={locale} projectId={projectId} {...(experience === "chat" ? { onOpenAgent: openAgentWorkspace } : {})} />}
+        {/* T9（审计 §二 2.4）：能力发现在对话进行中不再关闭——空态之外以 M0 折叠行常驻，展开才挂载目录（避免双请求）。 */}
+        {(mode === "platform" || mode === "scene") && (conversation.length > 0 || answer || busy || error) && (
+          <details className="ai-context-disclosure ai-capability-drawer" aria-label={t("可用能力", "Available capabilities")}
+            open={capabilityDrawerOpen} onToggle={(event) => setCapabilityDrawerOpen((event.target as HTMLDetailsElement).open)}>
+            <summary>
+              <span><Boxes size={13} aria-hidden="true" /><strong>{t("可用能力", "Available capabilities")}</strong></span>
+              <span className="ready">{t("展开查看与提问", "Expand to browse and ask")}<ChevronDown size={12} /></span>
+            </summary>
+            {capabilityDrawerOpen && (
+              <AiCapabilityCatalog locale={locale} askDisabled={busy}
+                canOpenTask={(task) => Boolean(projectId) && (task.workspace === "ask-data" || Boolean(onOpenWorkspaceTask))}
+                onOpenTask={(task) => {
+                  if (task.workspace === "ask-data") {
+                    setMode("sql");
+                    return;
+                  }
+                  onOpenWorkspaceTask?.(task);
+                }}
+                onAskExample={(sample) => void ask(sample)} />
+            )}
+          </details>
+        )}
         {mode === "sql" && projectId && <AskDataQuickQuery projectId={projectId} datasets={datasets} locale={locale} />}
         {conversation.length === 0 && !answer && !busy && !error && mode !== "sql" && (
           <div className="ai-assistant-empty">
@@ -267,6 +333,7 @@ export function AiAssistantPanel({
             {(mode === "platform" || mode === "scene") && (
               <AiCapabilityCatalog
                 locale={locale}
+                askDisabled={busy}
                 canOpenTask={(task) => Boolean(projectId) && (task.workspace === "ask-data" || Boolean(onOpenWorkspaceTask))}
                 onOpenTask={(task) => {
                   if (task.workspace === "ask-data") {
@@ -275,6 +342,7 @@ export function AiAssistantPanel({
                   }
                   onOpenWorkspaceTask?.(task);
                 }}
+                onAskExample={(sample) => void ask(sample)}
               />
             )}
             <div className="ai-platform-suggestions">
@@ -292,6 +360,8 @@ export function AiAssistantPanel({
         <AiAssistantMessages locale={locale} conversation={conversation} busy={busy} error={error}
           stopped={stopped} lastPrompt={lastPrompt} lastScope={lastScope} answer={answer} execution={execution}
           onRetry={() => void ask(lastPrompt)} {...(projectId ? { projectId } : {})}
+          {...(requestStartedAt !== undefined && busy ? { requestStartedAt } : {})}
+          onAnswerClarification={answerClarification}
           {...(mode === "dashboard" ? { busyHint: t("正在生成结构化方案…", "Generating a structured plan…") } : {})} />
         {dashboard && onApplyDashboard && !confirmDashboard && (
           <button className="primary ai-apply-dashboard" onClick={() => setConfirmDashboard(true)}>
@@ -336,20 +406,38 @@ export function AiAssistantPanel({
         )}
         {applyNotice && <div className="ai-assistant-apply-notice" role="status">{applyNotice}</div>}
         {bimEvidence && (
-          <BimAssistantEvidence
-            locale={locale}
-            evidence={bimEvidence}
-            {...(onBimAction ? { onAction: onBimAction } : {})}
-          />
+          <>
+            {/* T3（审计 §二 2.1）：bim 低置信不再"不问就答"——就地给出候选确认卡。 */}
+            <AiBimClarificationCard locale={locale} evidence={bimEvidence}
+              {...(onBimAction ? { onAction: onBimAction } : {})} />
+            <BimAssistantEvidence
+              locale={locale}
+              evidence={bimEvidence}
+              {...(onBimAction ? { onAction: onBimAction } : {})}
+            />
+          </>
         )}
           {error && (
           <section className="ai-assistant-error-state" role="alert">
             <strong><AlertTriangle size={13} /> {t("本次请求未完成", "Request did not complete")}</strong>
             <span>{error}</span>
             <small>{t("没有自动写入任何变更；原问题已保留。", "No changes were applied automatically; the original prompt is preserved.")}</small>
-            <button type="button" disabled={busy || !lastPrompt} onClick={() => void ask(lastPrompt)}>
-              <RotateCcw size={12} /> {t("重试原问题", "Retry original prompt")}
-            </button>
+            <div className="ai-assistant-error-actions">
+              <button type="button" disabled={busy || !lastPrompt} onClick={() => void ask(lastPrompt)}>
+                <RotateCcw size={12} /> {t("重试原问题", "Retry original prompt")}
+              </button>
+              <button type="button" disabled={busy || !lastPrompt} title={t("从模型目录取另一个模型重发", "Retry with a different model from the catalog")}
+                onClick={() => void retryWithAlternateModel()}>
+                <Replace size={12} /> {t("换备用模型重试", "Retry with another model")}
+              </button>
+              {projectId && (
+                <button type="button" disabled={busy || !lastPrompt}
+                  title={t("原问题转入受控问数：查询走能力计划，数字全部来自数据集", "Move the prompt to controlled data query; numbers come only from datasets")}
+                  onClick={switchToControlledQuery}>
+                  <Database size={12} /> {t("改用受控问数", "Switch to controlled data query")}
+                </button>
+              )}
+            </div>
           </section>
           )}
         </>}
