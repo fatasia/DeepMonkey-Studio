@@ -64,6 +64,8 @@ pub mod probe_gi_grid;
 /// F3 探针 storage/bind 合同。bin target 另在 main.rs 声明同名私有模块
 /// (与 probe_gi_abi 同一源文件双编译模式),renderer 的 crate:: 引用走 bin 侧。
 pub mod probe_gi_storage;
+/// F5 WGSL 单源试点:探针 GI 采样库的 include_str! 消费端与双端校验和对拍(详见模块文档)。
+pub mod probe_gi_wgsl;
 pub mod ray_backend;
 pub mod ray_tracing_capability;
 pub mod replay;
