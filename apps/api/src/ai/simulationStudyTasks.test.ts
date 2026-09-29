@@ -1,10 +1,17 @@
+import { randomBytes } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { AiHypothesisContract } from "@bim-studio/contracts";
+import type { AiHypothesisContract, AiVerificationEnvelope } from "@bim-studio/contracts";
+import {
+  aiHypothesisProposalFingerprint,
+  validateAiHypothesisContract,
+  validateAiVerificationEnvelope,
+} from "@bim-studio/contracts";
+import type { CapabilityProvider } from "@bim-studio/plugin-runtime";
 import { ProvenanceLedgerStore } from "./provenanceLedger.js";
-import { createGoldenVerifyProvider } from "./simulationHypothesisPlugin.js";
+import { createGoldenVerifyProvider, goldenVerifyInputFingerprint } from "./simulationHypothesisPlugin.js";
 import {
   SimulationStudyTaskError,
   SimulationStudyTaskStore,
@@ -33,14 +40,21 @@ interface TestEnv {
   tasks: SimulationStudyTaskStore;
 }
 
-async function buildEnv(options: { stepDelayMs?: number; maxRunningPerProject?: number } = {}): Promise<TestEnv> {
+async function buildEnv(options: {
+  stepDelayMs?: number;
+  maxRunningPerProject?: number;
+  /** 注入替代 golden provider（inconclusive 数据缺口等口径的 stub）。 */
+  goldenProvider?: CapabilityProvider<{ hypothesis: unknown }>;
+  /** 注入账本 settle 写失败（收口诚实性口径）。 */
+  breakLedgerSettle?: boolean;
+} = {}): Promise<TestEnv> {
   const directory = await mkdtemp(path.join(tmpdir(), "bim-study-tasks-"));
   const ledger = new ProvenanceLedgerStore(directory);
   await ledger.init();
   const tasks = new SimulationStudyTaskStore(directory, {
-    ledger,
+    ledger: options.breakLedgerSettle ? failingSettleLedger(ledger) : ledger,
     // 任务内部 provider 不带账本：完成收口由 recordStudySettled 一次性幂等落账（与生产装配同口径）。
-    goldenProvider: createGoldenVerifyProvider(),
+    goldenProvider: options.goldenProvider ?? createGoldenVerifyProvider(),
     ...(options.stepDelayMs !== undefined ? { stepDelayMs: options.stepDelayMs } : {}),
     ...(options.maxRunningPerProject !== undefined ? { maxRunningPerProject: options.maxRunningPerProject } : {}),
   });
@@ -51,6 +65,76 @@ async function buildEnv(options: { stepDelayMs?: number; maxRunningPerProject?: 
     await rm(directory, { recursive: true, force: true });
   });
   return { directory, ledger, tasks };
+}
+
+/**
+ * 只在 recordStudySettled 上注入失败的账本委托：其余方法转发真实账本（this 绑定真实实例，
+ * 私有字段访问不受影响），用于验证"账本故障不推翻收口、warning 如实上浮"。
+ */
+function failingSettleLedger(ledger: ProvenanceLedgerStore): ProvenanceLedgerStore {
+  const delegated = [
+    "init",
+    "recordHypothesis",
+    "recordVerification",
+    "recordReport",
+    "recordStudyLaunched",
+    "recordStudyHalted",
+    "listStudyRuns",
+    "trace",
+    "listChains",
+    "chainByResult",
+  ] as const;
+  const wrapper: Record<string, unknown> = {};
+  for (const key of delegated) {
+    wrapper[key] = (...args: unknown[]) =>
+      (ledger as unknown as Record<string, (...methodArgs: unknown[]) => unknown>)[key](...args);
+  }
+  wrapper.recordStudySettled = async (): Promise<never> => {
+    throw new Error("模拟账本写失败（测试注入）");
+  };
+  return wrapper as unknown as ProvenanceLedgerStore;
+}
+
+/** 构建通过出边界合同自检的 inconclusive 信封（数据缺口口径：metric-unavailable）。 */
+function buildInconclusiveEnvelope(contract: AiHypothesisContract, resultFingerprint: string): AiVerificationEnvelope {
+  return validateAiVerificationEnvelope({
+    proposalFingerprint: aiHypothesisProposalFingerprint(contract),
+    inputFingerprint: goldenVerifyInputFingerprint(contract.targetModel),
+    resultFingerprint,
+    verdict: "inconclusive",
+    tolerance: contract.tolerance,
+    reasonCode: "metric-unavailable",
+    rationale: "目标场景未提供可观测指标，无法裁决（数据缺口如实入理由）。",
+    generatedAt: new Date().toISOString(),
+    evidence: [],
+  });
+}
+
+/** 数据缺口 stub：每次执行都返回同一 inconclusive 信封（确定性研究口径，同输入同指纹）。 */
+function createInconclusiveGoldenProvider(resultFingerprint: string): CapabilityProvider<{ hypothesis: unknown }> {
+  return {
+    descriptor: {
+      id: "golden.inconclusive-stub",
+      version: "1.0.0",
+      label: "数据缺口 stub（inconclusive）",
+      kind: "analysis",
+      execution: "in-process",
+      permissions: [],
+      timeoutMs: 1_000,
+      inputSchemaVersion: "1.0",
+      outputSchemaVersion: "1.0",
+      inputSchema: { type: "object" },
+      outputSchema: { type: "object" },
+    },
+    async invoke(request) {
+      const contract = validateAiHypothesisContract((request.input as { hypothesis: unknown }).hypothesis);
+      return {
+        status: "completed",
+        decisionStatus: "research-candidate",
+        output: buildInconclusiveEnvelope(contract, resultFingerprint),
+      };
+    },
+  };
 }
 
 async function waitFor(
@@ -279,5 +363,174 @@ describe("SimulationStudyTaskStore（异步长跑）", () => {
       studyRuns: Array<{ status: string; settleReason?: string }>;
     };
     expect(halted.studyRuns[0]).toMatchObject({ status: "cancelled", settleReason: "user" });
+  }, 20_000);
+
+  // ---------------------------------------------------------------------------
+  // H-A3 验收切片（MCP Tasks 异步长跑）：数据缺口如实进 inconclusive 理由、
+  // 恢复不变量、轮询可见性与收口诚实性。不新立任务系统，只补既有面的验收缺口。
+  // ---------------------------------------------------------------------------
+
+  it("数据缺口如实 inconclusive：verdict/reasonCode 进轮询、账本判定节点与 trace 三跳，不伪造 confirmed", async () => {
+    const resultFingerprint = randomBytes(8).toString("hex");
+    const { ledger, tasks } = await buildEnv({ goldenProvider: createInconclusiveGoldenProvider(resultFingerprint) });
+    const launched = await tasks.launch("project-1", "tester:1", { hypothesis: POSITIVE_HYPOTHESIS, budget: { repeats: 2 } });
+
+    // 轮询视图：inconclusive 与理由码如实透出，不升格为 confirmed。
+    const view = await waitFor(tasks, launched.taskId, (item) => item.status === "completed");
+    expect(view.envelope?.verdict).toBe("inconclusive");
+    expect(view.envelope?.reasonCode).toBe("metric-unavailable");
+    expect(view.resultFingerprint).toBe(resultFingerprint);
+    expect(view.warnings.join("\n")).not.toContain("confirmed");
+
+    // 账本：三跳链完整、判定节点携带同一理由码、完整性 intact、运行段已收口。
+    const trace = await ledger.trace("project-1", { resultFingerprint });
+    expect(trace.matched).toBe(true);
+    expect(trace.chains).toHaveLength(1);
+    expect(trace.chains[0].hypothesis.hypothesisId).toBe("hyp-study-async-1");
+    expect(trace.chains[0].runs).toHaveLength(1);
+    expect(trace.chains[0].verdicts).toHaveLength(1);
+    expect(trace.chains[0].verdicts[0]).toMatchObject({ verdict: "inconclusive", reasonCode: "metric-unavailable" });
+    expect(trace.chains[0].integrity).toBe("intact");
+    expect(await ledger.listStudyRuns("project-1")).toEqual([]);
+  }, 20_000);
+
+  it("provider 数据缺口阻断：语义预检拒绝 → 任务 failed（provider-blocked），理由如实入任务与账本，不伪造判定", async () => {
+    const { ledger, tasks } = await buildEnv();
+    const blocked = await tasks.launch("project-1", "tester:1", {
+      hypothesis: {
+        ...POSITIVE_HYPOTHESIS,
+        id: "hyp-study-admission",
+        prediction: { ...POSITIVE_HYPOTHESIS.prediction, resourceId: "not-in-scene" },
+      },
+      budget: { repeats: 3 },
+    });
+    const view = await waitFor(tasks, blocked.taskId, (item) => item.status !== "running");
+    expect(view.status).toBe("failed");
+    expect(view.settleReason).toBe("provider-blocked");
+    expect(view.partial).toBe(false);
+    expect(view.envelope).toBeUndefined();
+    expect(view.warnings.join("\n")).toContain("not-in-scene");
+
+    const halted = await ledger.listStudyRuns("project-1");
+    expect(halted).toHaveLength(1);
+    expect(halted[0]).toMatchObject({ status: "failed", settleReason: "provider-blocked" });
+    const trace = await ledger.trace("project-1", { proposalFingerprint: blocked.proposalFingerprint });
+    expect(trace.chains[0].runs).toHaveLength(0);
+    expect(trace.chains[0].verdicts).toHaveLength(0);
+  }, 20_000);
+
+  it("账本写失败不推翻收口：settle 落账失败 → warning 上浮，任务仍如实 completed（不伪造失败）", async () => {
+    const { ledger, tasks } = await buildEnv({ breakLedgerSettle: true });
+    const launched = await tasks.launch("project-1", "tester:1", { hypothesis: POSITIVE_HYPOTHESIS, budget: { repeats: 1 } });
+    const view = await waitFor(tasks, launched.taskId, (item) => item.status !== "running");
+    expect(view.status).toBe("completed");
+    expect(view.envelope?.verdict).toBe("confirmed");
+    expect(view.resultFingerprint).toBe(view.envelope?.resultFingerprint);
+    expect(view.warnings.join("\n")).toContain("provenance-ledger-write-failed(study-settle)");
+    expect(ledger.listStudyRuns).toBeDefined();
+  }, 20_000);
+
+  it("断线恢复后取消：resumed-after-restart 与 cancelled 如实并存，partial 保留，账本保留取消态", async () => {
+    const first = await buildEnv({ stepDelayMs: 8 });
+    const launched = await first.tasks.launch("project-1", "tester:1", { hypothesis: POSITIVE_HYPOTHESIS, budget: { repeats: 400 } });
+    first.tasks.dispose();
+
+    const resumedLedger = new ProvenanceLedgerStore(first.directory);
+    await resumedLedger.init();
+    const resumedTasks = new SimulationStudyTaskStore(first.directory, {
+      ledger: resumedLedger,
+      goldenProvider: createGoldenVerifyProvider(),
+      stepDelayMs: 8,
+    });
+    await resumedTasks.init();
+    const resumed = await waitFor(
+      resumedTasks,
+      launched.taskId,
+      (item) => item.warnings.includes("resumed-after-restart") && item.progress.completedRepeats >= 1,
+    );
+    expect(resumed.status).toBe("running");
+
+    const cancelled = await resumedTasks.cancel("project-1", launched.taskId, { principal: "tester:1" });
+    expect(cancelled.status).toBe("cancelled");
+    expect(cancelled.settleReason).toBe("user");
+    expect(cancelled.partial).toBe(true);
+    expect(cancelled.warnings).toContain("resumed-after-restart");
+    expect(cancelled.envelope).toBeUndefined();
+
+    const halted = await resumedLedger.listStudyRuns("project-1");
+    expect(halted).toHaveLength(1);
+    expect(halted[0]).toMatchObject({ status: "cancelled", settleReason: "user" });
+    resumedTasks.dispose();
+  }, 20_000);
+
+  it("已收口任务重启幂等：completed 不重调度、信封保留、账本无新运行段、链恰一条", async () => {
+    const first = await buildEnv();
+    const launched = await first.tasks.launch("project-1", "tester:1", { hypothesis: POSITIVE_HYPOTHESIS, budget: { repeats: 1 } });
+    const done = await waitFor(first.tasks, launched.taskId, (item) => item.status === "completed");
+    expect(first.tasks.dispose()).toBe(0);
+
+    const resumedTasks = new SimulationStudyTaskStore(first.directory, {
+      ledger: first.ledger,
+      goldenProvider: createGoldenVerifyProvider(),
+    });
+    await resumedTasks.init();
+    const after = await resumedTasks.status("project-1", launched.taskId);
+    expect(after?.status).toBe("completed");
+    expect(after?.resultFingerprint).toBe(done.resultFingerprint);
+    expect(after?.envelope?.verdict).toBe("confirmed");
+    expect(after?.warnings).not.toContain("resumed-after-restart");
+
+    const trace = await first.ledger.trace("project-1", { resultFingerprint: done.resultFingerprint! });
+    expect(trace.chains).toHaveLength(1);
+    expect(trace.chains[0].verdicts).toHaveLength(1);
+    expect(await first.ledger.listStudyRuns("project-1")).toEqual([]);
+  }, 20_000);
+
+  it("失败任务重启不重调度：provider-blocked 保持收口态，恢复标记不出现，账本失败记录不翻新", async () => {
+    const first = await buildEnv();
+    const bad = await first.tasks.launch("project-1", "tester:1", {
+      hypothesis: {
+        ...POSITIVE_HYPOTHESIS,
+        id: "hyp-study-admission-2",
+        prediction: { ...POSITIVE_HYPOTHESIS.prediction, resourceId: "not-in-scene" },
+      },
+    });
+    const failed = await waitFor(first.tasks, bad.taskId, (item) => item.status !== "running");
+    expect(failed.status).toBe("failed");
+
+    const resumedTasks = new SimulationStudyTaskStore(first.directory, {
+      ledger: first.ledger,
+      goldenProvider: createGoldenVerifyProvider(),
+    });
+    await resumedTasks.init();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const after = await resumedTasks.status("project-1", bad.taskId);
+    expect(after?.status).toBe("failed");
+    expect(after?.settleReason).toBe("provider-blocked");
+    expect(after?.warnings).not.toContain("resumed-after-restart");
+    const halted = await first.ledger.listStudyRuns("project-1");
+    expect(halted).toHaveLength(1);
+    expect(halted[0].status).toBe("failed");
+  }, 20_000);
+
+  it("运行中轮询可见：completedRepeats 单调不减、totalRepeats 保持、收口归位为 completed", async () => {
+    const { tasks } = await buildEnv({ stepDelayMs: 10 });
+    const launched = await tasks.launch("project-1", "tester:1", { hypothesis: POSITIVE_HYPOTHESIS, budget: { repeats: 3 } });
+    const samples: number[] = [];
+    let finalStatus = "";
+    for (;;) {
+      const view = await tasks.status("project-1", launched.taskId);
+      if (!view) throw new Error("运行中任务句柄应可轮询");
+      expect(view.progress.totalRepeats).toBe(3);
+      samples.push(view.progress.completedRepeats);
+      finalStatus = view.status;
+      if (view.status !== "running") break;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    for (let index = 1; index < samples.length; index++) {
+      expect(samples[index]).toBeGreaterThanOrEqual(samples[index - 1]);
+    }
+    expect(samples.at(-1)).toBe(3);
+    expect(finalStatus).toBe("completed");
   }, 20_000);
 });

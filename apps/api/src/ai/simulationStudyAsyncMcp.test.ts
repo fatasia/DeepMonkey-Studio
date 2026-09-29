@@ -6,12 +6,18 @@ import { OperationsService } from "../operations.js";
 import { createIndustrialCapabilityHost, registerIndustrialCapabilityRoutes } from "../industrialCapabilities.js";
 import { registerMcpCapabilityRoute } from "../mcpCapabilityAdapter.js";
 import { createApiServer } from "../serverOptions.js";
+import type { AiHypothesisContract, AiVerificationEnvelope } from "@bim-studio/contracts";
+import {
+  aiHypothesisProposalFingerprint,
+  validateAiHypothesisContract,
+  validateAiVerificationEnvelope,
+} from "@bim-studio/contracts";
+import type { CapabilityProvider, PluginRegistry } from "@bim-studio/plugin-runtime";
 import { ProvenanceLedgerStore } from "./provenanceLedger.js";
 import { registerProvenanceRoutes } from "./provenanceRoutes.js";
 import { IndustrialAgentToolGateway } from "./industrialAgentToolGateway.js";
-import { createGoldenVerifyProvider } from "./simulationHypothesisPlugin.js";
+import { createGoldenVerifyProvider, goldenVerifyInputFingerprint } from "./simulationHypothesisPlugin.js";
 import { SimulationStudyTaskStore } from "./simulationStudyTasks.js";
-import type { PluginRegistry } from "@bim-studio/plugin-runtime";
 import type { FastifyInstance } from "fastify";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -34,9 +40,13 @@ interface HostBundle {
   ledger: ProvenanceLedgerStore;
   tasks: SimulationStudyTaskStore;
   registry: PluginRegistry;
+  directory: string;
 }
 
-async function buildHost(stepDelayMs: number): Promise<HostBundle> {
+async function buildHost(
+  stepDelayMs: number,
+  options: { goldenProvider?: CapabilityProvider<{ hypothesis: unknown }> } = {},
+): Promise<HostBundle> {
   const directory = await mkdtemp(path.join(tmpdir(), "bim-study-mcp-"));
   const operations = new OperationsService(directory);
   await operations.init();
@@ -45,7 +55,7 @@ async function buildHost(stepDelayMs: number): Promise<HostBundle> {
   const tasks = new SimulationStudyTaskStore(directory, {
     ledger,
     // 任务内部 provider 不带账本：完成收口由 recordStudySettled 一次性幂等落账（与生产装配同口径）。
-    goldenProvider: createGoldenVerifyProvider(),
+    goldenProvider: options.goldenProvider ?? createGoldenVerifyProvider(),
     stepDelayMs,
   });
   await tasks.init();
@@ -61,7 +71,76 @@ async function buildHost(stepDelayMs: number): Promise<HostBundle> {
   await registerIndustrialCapabilityRoutes(app, { store: store as never, host });
   await registerMcpCapabilityRoute(app, { host, store: store as never });
   await registerProvenanceRoutes(app, { store: store as never, ledger });
-  return { app, ledger, tasks, registry: host.registry };
+  return { app, ledger, tasks, registry: host.registry, directory };
+}
+
+/**
+ * 断线恢复（MCP 面）：dispose 模拟进程死亡，同 dataDir 重建账本/任务存储/宿主并重新注册
+ * 路由——与生产 index.ts 装配同构，验证 HTTP 轮询路径上的恢复不变量。
+ */
+async function restartHost(previous: HostBundle): Promise<HostBundle> {
+  previous.tasks.dispose();
+  await previous.app.close();
+  const operations = new OperationsService(previous.directory);
+  await operations.init();
+  const ledger = new ProvenanceLedgerStore(previous.directory);
+  await ledger.init();
+  const tasks = new SimulationStudyTaskStore(previous.directory, {
+    ledger,
+    goldenProvider: createGoldenVerifyProvider(),
+    stepDelayMs: 5,
+  });
+  await tasks.init();
+  const host = await createIndustrialCapabilityHost(operations, { provenanceLedger: ledger, studyTasks: tasks });
+  const app = createApiServer();
+  cleanups.push(async () => {
+    tasks.dispose();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    await app.close();
+  });
+  const store = { getProject: (projectId: string) => projectId === "project-1" ? ({ id: "project-1" } as never) : undefined };
+  await registerIndustrialCapabilityRoutes(app, { store: store as never, host });
+  await registerMcpCapabilityRoute(app, { host, store: store as never });
+  await registerProvenanceRoutes(app, { store: store as never, ledger });
+  return { app, ledger, tasks, registry: host.registry, directory: previous.directory };
+}
+
+/** 数据缺口 stub：每次执行返回同一 inconclusive 信封（同输入同指纹，确定性口径）。 */
+function createInconclusiveGoldenProvider(resultFingerprint: string): CapabilityProvider<{ hypothesis: unknown }> {
+  return {
+    descriptor: {
+      id: "golden.inconclusive-stub",
+      version: "1.0.0",
+      label: "数据缺口 stub（inconclusive）",
+      kind: "analysis",
+      execution: "in-process",
+      permissions: [],
+      timeoutMs: 1_000,
+      inputSchemaVersion: "1.0",
+      outputSchemaVersion: "1.0",
+      inputSchema: { type: "object" },
+      outputSchema: { type: "object" },
+    },
+    async invoke(request) {
+      const contract = validateAiHypothesisContract((request.input as { hypothesis: unknown }).hypothesis);
+      const envelope = buildInconclusiveEnvelope(contract, resultFingerprint);
+      return { status: "completed", decisionStatus: "research-candidate", output: envelope };
+    },
+  };
+}
+
+function buildInconclusiveEnvelope(contract: AiHypothesisContract, resultFingerprint: string): AiVerificationEnvelope {
+  return validateAiVerificationEnvelope({
+    proposalFingerprint: aiHypothesisProposalFingerprint(contract),
+    inputFingerprint: goldenVerifyInputFingerprint(contract.targetModel),
+    resultFingerprint,
+    verdict: "inconclusive",
+    tolerance: contract.tolerance,
+    reasonCode: "metric-unavailable",
+    rationale: "目标场景未提供可观测指标，无法裁决（数据缺口如实入理由）。",
+    generatedAt: new Date().toISOString(),
+    evidence: [],
+  });
 }
 
 interface McpToolResult {
@@ -74,7 +153,9 @@ interface McpToolResult {
       status?: string;
       resultFingerprint?: string;
       proposalFingerprint?: string;
-      envelope?: { verdict: string; resultFingerprint: string; proposalFingerprint: string };
+      inputFingerprint?: string;
+      warnings?: string[];
+      envelope?: { verdict: string; reasonCode?: string; resultFingerprint: string; proposalFingerprint: string };
       progress?: { completedRepeats: number; totalRepeats: number };
       partial?: boolean;
       settleReason?: string;
@@ -215,4 +296,111 @@ describe("simulation.study 异步长跑任务面（MCP）", () => {
     expect(outcome.status).toBe("blocked");
     expect(outcome.error?.code).toBe("plan-mode-tool-not-allowed");
   }, 20_000);
+
+  // ---------------------------------------------------------------------------
+  // H-A3 验收切片（MCP 面）：断线恢复后指纹不变（独立成测）、数据缺口如实进
+  // inconclusive 理由、provider 数据缺口失败收口、完成态重启幂等。
+  // ---------------------------------------------------------------------------
+
+  it("断线恢复后指纹不变：dispose 宿主 → 同目录重建 → HTTP 轮询，proposal/input/result 三指纹与恢复前逐位相等", async () => {
+    const first = await buildHost(5);
+    const launched = await callTool(first.app, 1, "industrial.simulation.study.run-async", { hypothesis: POSITIVE_HYPOTHESIS, budget: { repeats: 4 } });
+    const handle = launched.structuredContent?.output!;
+    expect(handle.status).toBe("running");
+    const beforeProposal = handle.proposalFingerprint!;
+    const beforeInput = handle.inputFingerprint!;
+
+    const resumed = await restartHost(first);
+    const view = await waitForStatus(resumed.app, handle.taskId!, (output) => output.status === "completed");
+    expect(view.warnings).toContain("resumed-after-restart");
+    // 指纹不变（门禁独立断言）：恢复前后 proposal/input 逐位相等。
+    expect(view.proposalFingerprint).toBe(beforeProposal);
+    expect(view.inputFingerprint).toBe(beforeInput);
+    const resultFingerprint = view.resultFingerprint!;
+    expect(resultFingerprint).toMatch(/^[0-9a-f]{16}$/);
+
+    // 与同步 golden.verify 参照同指纹：恢复后的异步结果仍是同一确定性研究。
+    const sync = await callTool(resumed.app, 2, "industrial.simulation.golden.verify", { hypothesis: POSITIVE_HYPOTHESIS });
+    expect((sync.structuredContent?.output as { resultFingerprint: string }).resultFingerprint).toBe(resultFingerprint);
+
+    // trace 三跳：恢复收口后恰一条链、一次运行、一个判定，完整性 intact。
+    const traced = await callTool(resumed.app, 3, "industrial.provenance.trace", { query: { resultFingerprint } });
+    const trace = traced.structuredContent?.output as {
+      matched: boolean;
+      chains: Array<{ runs: unknown[]; verdicts: unknown[]; integrity: string; hypothesis: { hypothesisId: string } }>;
+    };
+    expect(trace.matched).toBe(true);
+    expect(trace.chains).toHaveLength(1);
+    expect(trace.chains[0].runs).toHaveLength(1);
+    expect(trace.chains[0].verdicts).toHaveLength(1);
+    expect(trace.chains[0].integrity).toBe("intact");
+    expect(trace.chains[0].hypothesis.hypothesisId).toBe("hyp-study-mcp");
+    expect(await resumed.ledger.listStudyRuns("project-1")).toEqual([]);
+  }, 30_000);
+
+  it("数据缺口 inconclusive（MCP 全链）：status 如实透出 verdict/reasonCode，trace 判定节点携带同一理由码", async () => {
+    const resultFingerprint = "0badcafe1f2e3d4c";
+    const { app } = await buildHost(0, { goldenProvider: createInconclusiveGoldenProvider(resultFingerprint) });
+    const launched = await callTool(app, 1, "industrial.simulation.study.run-async", { hypothesis: POSITIVE_HYPOTHESIS, budget: { repeats: 1 } });
+    const taskId = launched.structuredContent?.output?.taskId!;
+    const done = await waitForStatus(app, taskId, (output) => output.status === "completed");
+    expect(done.envelope?.verdict).toBe("inconclusive");
+    expect(done.envelope?.reasonCode).toBe("metric-unavailable");
+    expect(done.resultFingerprint).toBe(resultFingerprint);
+
+    const traced = await callTool(app, 2, "industrial.provenance.trace", { query: { resultFingerprint } });
+    const trace = traced.structuredContent?.output as {
+      matched: boolean;
+      chains: Array<{ verdicts: Array<{ verdict: string; reasonCode: string }>; integrity: string }>;
+    };
+    expect(trace.matched).toBe(true);
+    expect(trace.chains[0].verdicts[0]).toMatchObject({ verdict: "inconclusive", reasonCode: "metric-unavailable" });
+    expect(trace.chains[0].integrity).toBe("intact");
+  }, 30_000);
+
+  it("provider 数据缺口（MCP）：语义预检拒绝 → failed/provider-blocked，账本失败记录、trace 不伪造判定", async () => {
+    const { app, ledger } = await buildHost(0);
+    const launched = await callTool(app, 1, "industrial.simulation.study.run-async", {
+      hypothesis: { ...POSITIVE_HYPOTHESIS, id: "hyp-study-mcp-admission", prediction: { ...POSITIVE_HYPOTHESIS.prediction, resourceId: "not-in-scene" } },
+      budget: { repeats: 2 },
+    });
+    const taskId = launched.structuredContent?.output?.taskId!;
+    const done = await waitForStatus(app, taskId, (output) => output.status !== "running");
+    expect(done.status).toBe("failed");
+    expect(done.settleReason).toBe("provider-blocked");
+    expect(done.partial).toBe(false);
+    expect(done.envelope).toBeUndefined();
+
+    const proposalFingerprint = launched.structuredContent?.output?.proposalFingerprint!;
+    const traced = await callTool(app, 2, "industrial.provenance.trace", { query: { proposalFingerprint } });
+    const trace = traced.structuredContent?.output as { matched: boolean; chains: Array<{ runs: unknown[]; verdicts: unknown[] }> };
+    expect(trace.matched).toBe(true);
+    expect(trace.chains[0].runs).toHaveLength(0);
+    expect(trace.chains[0].verdicts).toHaveLength(0);
+
+    const halted = await ledger.listStudyRuns("project-1");
+    expect(halted).toHaveLength(1);
+    expect(halted[0]).toMatchObject({ status: "failed", settleReason: "provider-blocked" });
+  }, 30_000);
+
+  it("完成态重启幂等（MCP）：重启后 status 不变、信封保留、无恢复标记、trace 恰一链、账本运行段为空", async () => {
+    const first = await buildHost(0);
+    const launched = await callTool(first.app, 1, "industrial.simulation.study.run-async", { hypothesis: POSITIVE_HYPOTHESIS, budget: { repeats: 1 } });
+    const taskId = launched.structuredContent?.output?.taskId!;
+    const done = await waitForStatus(first.app, taskId, (output) => output.status === "completed");
+
+    const resumed = await restartHost(first);
+    const after = await callTool(resumed.app, 2, "industrial.simulation.study.status", { taskId });
+    const output = after.structuredContent?.output!;
+    expect(output.status).toBe("completed");
+    expect(output.resultFingerprint).toBe(done.resultFingerprint);
+    expect(output.envelope?.verdict).toBe("confirmed");
+    expect(output.warnings ?? []).not.toContain("resumed-after-restart");
+
+    const traced = await callTool(resumed.app, 3, "industrial.provenance.trace", { query: { resultFingerprint: done.resultFingerprint! } });
+    const trace = traced.structuredContent?.output as { chains: Array<{ runs: unknown[]; verdicts: unknown[] }> };
+    expect(trace.chains).toHaveLength(1);
+    expect(trace.chains[0].verdicts).toHaveLength(1);
+    expect(await resumed.ledger.listStudyRuns("project-1")).toEqual([]);
+  }, 30_000);
 });
