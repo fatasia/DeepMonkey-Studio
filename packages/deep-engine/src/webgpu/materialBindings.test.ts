@@ -67,4 +67,33 @@ describe("material parameter block ABI (G-1, 192B constant layout)", () => {
       + MATERIAL_ARRAY_INDICES_BYTES);
     expect(MATERIAL_ARRAY_TABLE_ROW_BYTES).toBe(224);
   });
+
+  it("C9: clearcoat-only parameters land at the semantic slots 41/42 with the rest of the band zero", () => {
+    const extended: ExtendedMaterialParameters = { ...DEFAULT_EXTENDED_MATERIAL_PARAMETERS,
+      clearcoat: { factor: 0.85, roughness: 0.2 } };
+    const packed = packMaterialParameters(textures({ extendedParameters: extended }));
+    const semantics = DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS;
+    // 打包走 float32 语义,哨兵值按 fround 比较。
+    expect(packed[semantics.clearcoatFactor.floatOffset]).toBe(Math.fround(0.85));
+    expect(packed[semantics.clearcoatRoughness.floatOffset]).toBe(Math.fround(0.2));
+    expect(packed[semantics.ior.floatOffset]).toBe(semantics.ior.defaultValue);
+    // 非清漆槽位保持缺省零:anisotropy/transmission 不被清漆启用。
+    expect([packed[43], packed[44], packed[45], packed[46], packed[47]]).toEqual([0, 0, 0, 0, 0]);
+  });
+
+  it("C9: default extended parameters zero every gate slot; only the non-gating IOR slot differs", () => {
+    // WGSL opt-in 门只看 clearcoatFactor/anisotropyStrength/transmissionFactor;
+    // 缺省参数在全部门槽位为零 → GPU 走标准 shade 分支,与无扩展参数逐像素同帧。
+    const defaults = packMaterialParameters(textures({ extendedParameters: DEFAULT_EXTENDED_MATERIAL_PARAMETERS }));
+    const plain = packMaterialParameters(textures());
+    const gateSlots = [DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS.clearcoatFactor.floatOffset,
+      DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS.anisotropyStrength.floatOffset,
+      DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS.transmissionFactor.floatOffset];
+    for (const slot of gateSlots) {
+      expect(defaults[slot]).toBe(0);
+      expect(defaults[slot]).toBe(plain[slot]);
+    }
+    expect(defaults[DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS.ior.floatOffset])
+      .toBe(DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS.ior.defaultValue);
+  });
 });

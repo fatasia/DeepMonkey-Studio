@@ -46,11 +46,29 @@ describe("deep.pbr.mesh.v1 shader ABI", () => {
   });
 
   it("versions emissive strength as a reserved v1 material scalar without structural ABI drift", () => {
-    expect(DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS).toEqual({
-      schemaVersion: 1,
-      emissiveStrength: { member: "emissiveRow1", component: "w", floatOffset: 39, defaultValue: 1 },
-    });
+    expect(DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS.emissiveStrength)
+      .toEqual({ member: "emissiveRow1", component: "w", floatOffset: 39, defaultValue: 1 });
     expect(DEEP_PBR_MESH_V1.dataLayouts.find((layout) => layout.id === "material")?.byteSize).toBe(160);
+  });
+
+  it("declares extended-band semantics additively without touching the ABI fingerprint (C9 clearcoat)", () => {
+    // 语义表只增条目;canonical JSON 不含语义表,指纹必须保持原值。
+    expect(DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS.schemaVersion).toBe(1);
+    expect(Object.keys(DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS).filter((key) => key !== "schemaVersion"))
+      .toEqual(["emissiveStrength", "ior", "clearcoatFactor", "clearcoatRoughness",
+        "anisotropyStrength", "anisotropyRotation", "transmissionFactor"]);
+    // 扩展参数带槽位:40..45 六 float,清漆驻留 41/42;46..47 保留零。
+    expect([DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS.ior,
+      DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS.clearcoatFactor,
+      DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS.clearcoatRoughness,
+      DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS.anisotropyStrength,
+      DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS.anisotropyRotation,
+      DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS.transmissionFactor]
+      .map((entry) => [entry.member, entry.component, entry.floatOffset, entry.defaultValue])).toEqual([
+      ["extended0", "x", 40, 1.5], ["extended0", "y", 41, 0], ["extended0", "z", 42, 0],
+      ["extended0", "w", 43, 0], ["extended1", "x", 44, 0], ["extended1", "y", 45, 0],
+    ]);
+    expect(createHash("sha256").update(DEEP_PBR_MESH_V1_CANONICAL_JSON).digest("hex")).toBe(DEEP_PBR_MESH_V1_SHA256);
   });
 
   it("pins forward/shadow bindings, attachments, alpha and raster semantics", () => {

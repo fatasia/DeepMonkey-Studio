@@ -17,10 +17,29 @@ export const DEEP_PBR_MESH_V1_BYTE_SIZES = Object.freeze({
   frame: 208, material: 160, instance: 144, geometryVertex: 40, tangentVertex: 16,
 } as const);
 
-/** v1 的 160B material block 保留量语义表；只增加语义，不改变 ABI 指纹或 pipeline layout。 */
+/**
+ * v1 material block 保留量语义表；只增加语义，不改变 ABI 指纹或 pipeline layout。
+ *
+ * 两条语义带（floatOffset 以 48-float 运行块即 WGSL MaterialTextures 的 12×vec4 为基准）：
+ *  - 基础块 0..39（160B，Rust mesh_abi 同源）：emissiveStrength 驻留 emissiveRow1.w；
+ *  - 扩展参数带 40..45（packExtendedParameterBlock 的 6 float，顺序 = MATERIAL_PARAMETER_KEYS，
+ *    消费方 = pbrShader.ts extendedShade → deepEvaluateExtendedMaterial，T08 切片引入、
+ *    C9 清漆层验收纳入语义表）：ior/clearcoatFactor/clearcoatRoughness/anisotropyStrength
+ *    驻留 extended0，anisotropyRotation/transmissionFactor 驻留 extended1；
+ *    46..47（extended1.zw）保留零，后续扩展需 v6 ABI 修订。
+ *
+ * 本表只声明既有打包布局的语义，canonical JSON 不含本表——新增条目不触碰
+ * DEEP_PBR_MESH_V1_SHA256 指纹、160/192B 块尺寸与管线绑定。
+ */
 export const DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS = Object.freeze({
   schemaVersion: 1,
   emissiveStrength: Object.freeze({ member: "emissiveRow1", component: "w", floatOffset: 39, defaultValue: 1 }),
+  ior: Object.freeze({ member: "extended0", component: "x", floatOffset: 40, defaultValue: 1.5 }),
+  clearcoatFactor: Object.freeze({ member: "extended0", component: "y", floatOffset: 41, defaultValue: 0 }),
+  clearcoatRoughness: Object.freeze({ member: "extended0", component: "z", floatOffset: 42, defaultValue: 0 }),
+  anisotropyStrength: Object.freeze({ member: "extended0", component: "w", floatOffset: 43, defaultValue: 0 }),
+  anisotropyRotation: Object.freeze({ member: "extended1", component: "x", floatOffset: 44, defaultValue: 0 }),
+  transmissionFactor: Object.freeze({ member: "extended1", component: "y", floatOffset: 45, defaultValue: 0 }),
 } as const);
 
 /** Browser renderer's canonical mesh ABI. Any structural change requires a new id and golden fingerprint. */
