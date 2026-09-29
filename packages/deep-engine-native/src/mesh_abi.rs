@@ -13,12 +13,8 @@ pub const FRAME_V1_BYTES: u64 = 208;
 pub const FRAME_LOCAL_LIGHTS: usize = 16;
 pub const FRAME_LOCAL_SHADOW_VIEWS: usize = 16;
 pub const FRAME_LOCAL_SOFTNESS_LIGHTS: usize = 16;
-pub const FRAME_UNIFORM_FLOATS: usize = 60
-    + FRAME_LOCAL_LIGHTS * 16
-    + FRAME_LOCAL_SHADOW_VIEWS * 16
-    + 4
-    + FRAME_LOCAL_SOFTNESS_LIGHTS
-    + 4;
+/// J2-B7-migrate：总量切换到 schema 单源生成常量（parity 门见 frame_layout_gate.rs）。
+pub const FRAME_UNIFORM_FLOATS: usize = crate::frame_layout_generated::FRAME_ABI_RUST_FLOATS;
 pub const FRAME_FOG_PROJECTION_ROW: usize = 143;
 pub const FRAME_LOCAL_SOFTNESS_ROW: usize = 144;
 pub const FRAME_FOG_PROFILE_ROW: usize = 148;

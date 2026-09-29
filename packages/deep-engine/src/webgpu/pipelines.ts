@@ -13,12 +13,17 @@ import { sharedOutputPipeline } from "./pbrOutputPipelineCache.js";
 import { pipelineCompileCacheForDevice, renderPipelineFingerprint } from "./pipelineCache.js";
 import type { PipelineCompileRecord } from "./pipelineCache.js";
 import { PipelineWarmupQueue } from "./pipelineWarmup.js";
+// J2-B7-migrate：frame 布局常量切换到 schema 单源生成产物（字节门由 pbrFrameUniforms 测试锁）。
+import { FRAME_ABI_TS_BYTES, FRAME_ABI_TS_FIELDS, FRAME_ABI_TS_FLOATS } from "../frameAbi/generated/frameLayout.js";
 
-export const PBR_FRAME_UNIFORM_FLOATS = 96;
-export const PBR_FRAME_UNIFORM_BYTES = PBR_FRAME_UNIFORM_FLOATS * 4;
-export const PBR_FRAME_FLOAT_OFFSETS = Object.freeze({ currentViewProjection: 0, previousViewProjection: 16,
-  worldToView: 32, lightViewProjection: 48, eye: 64, background: 68, floor: 72, lightDirection: 76,
-  tuning: 80, sunColor: 84, output: 88 } as const);
+export const PBR_FRAME_UNIFORM_FLOATS = FRAME_ABI_TS_FLOATS;
+export const PBR_FRAME_UNIFORM_BYTES = FRAME_ABI_TS_BYTES;
+// 手写键名口径保留（currentViewProjection 是 schema core 字段 viewProjection 的 TS 宿主名），
+// 数值全部派生自生成清单——schema 改一处，这里自动跟随。
+const TS_FIELD_NAME_BY_SCHEMA: Record<string, string> = { viewProjection: "currentViewProjection" };
+export const PBR_FRAME_FLOAT_OFFSETS = Object.freeze(Object.fromEntries(
+  FRAME_ABI_TS_FIELDS.map((field) => [TS_FIELD_NAME_BY_SCHEMA[field.name] ?? field.name, field.offset]),
+) as Record<string, number>);
 /** Previous per-object model rows consumed by motion-vector PBR variants. */
 export const PBR_PREVIOUS_INSTANCE_BUFFER_LAYOUT = Object.freeze({ arrayStride: 48, stepMode: "instance", attributes: [
   { shaderLocation: 13, offset: 0, format: "float32x4" }, { shaderLocation: 14, offset: 16, format: "float32x4" },
