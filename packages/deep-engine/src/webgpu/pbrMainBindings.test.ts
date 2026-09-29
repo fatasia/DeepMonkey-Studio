@@ -83,7 +83,8 @@ describe("PBR authored diffuse binding", () => {
 
   it("does not publish replacement shadow resources before the zero-size frame guard", () => {
     const source = readFileSync(new URL("./pbrRenderer.ts", import.meta.url), "utf8");
-    const guard = source.indexOf("if (!size) return undefined;");
+    // F4 超分尺寸决策后 guard 变量为画布 surface(渲染 size 由其派生),guard 语义不变。
+    const guard = source.indexOf("if (!surface) return undefined;");
     const publication = source.indexOf("this.shadowState.publish(");
     expect(guard).toBeGreaterThan(0);
     expect(publication).toBeGreaterThan(guard);
