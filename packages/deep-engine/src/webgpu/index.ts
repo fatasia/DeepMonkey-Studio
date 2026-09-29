@@ -2,6 +2,9 @@
 export { DeviceSession } from "./deviceSession.js";
 export { DeviceResourceBudgetError } from "./deviceResourceMemory.js";
 export type { DeviceState, DeviceEvent } from "./deviceSession.js";
+export { classifyDeviceLost, classifyUncapturedError, DeviceRecoveryStateMachine } from "./deviceRecovery.js";
+export type { GpuErrorCode, GpuErrorClassification, DeviceRecoveryPhase, DeviceRecoveryEvent,
+  DeviceRecoverySnapshot, DeviceRecoveryOptions } from "./deviceRecovery.js";
 export { SharedShadowAtlasResources } from "./sharedShadowAtlasResources.js";
 export type { SharedShadowAtlasBudgetEvidence, SharedShadowAtlasGpuResource,
   SharedShadowAtlasResourceUpdate } from "./sharedShadowAtlasResources.js";
