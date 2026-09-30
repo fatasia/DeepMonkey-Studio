@@ -483,6 +483,16 @@ fn oriented_normal(input: VertexOutput, front_facing: bool) -> vec3f {
     select(input.normal, -input.normal, reverse), vec3f(0.0, 1.0, 0.0));
 }
 
+// Restore the rigid camera basis from perspective VP without projection or jitter scaling.
+fn native_view_geometry_roughness(geometry_normal: vec3f) -> f32 {
+  let forward = safe_normalize(vec3f(frame.view[0].w, frame.view[1].w, frame.view[2].w), vec3f(0.0, 0.0, -1.0));
+  let horizontal = vec3f(frame.view[0].x, frame.view[1].x, frame.view[2].x);
+  let right = safe_normalize(horizontal - forward * dot(horizontal, forward), vec3f(1.0, 0.0, 0.0));
+  let up = safe_normalize(cross(right, forward), vec3f(0.0, 1.0, 0.0));
+  let view_normal = vec3f(dot(right, geometry_normal), dot(up, geometry_normal), -dot(forward, geometry_normal));
+  return deepGeometryRoughness(view_normal);
+}
+
 fn mapped_normal(input: VertexOutput, front_facing: bool) -> vec3f {
   let n = oriented_normal(input, front_facing);
   let source_tangent = safe_normalize(
@@ -542,8 +552,9 @@ fn shade_native_mesh(
   if (flag(input.material.w, 2u) && alpha < input.material.y) { discard; }
   let base = input.base_color.rgb * base_sample.rgb;
   let metal = clamp(input.base_color.w * mr_sample.b, 0.0, 1.0);
-  let rough = clamp(input.material.x * mr_sample.g, 0.045, 1.0);
-  var normal = oriented_normal(input, front_facing);
+  let geometry_normal = oriented_normal(input, front_facing);
+  let rough = min(1.0, clamp(input.material.x * mr_sample.g, 0.045, 1.0) + native_view_geometry_roughness(geometry_normal));
+  var normal = geometry_normal;
   if (material_textures.normal_row_0.w > 0.5) { normal = mapped_normal(input, front_facing); }
   let view = safe_normalize(frame.eye.xyz - input.world, vec3f(0.0, 0.0, 1.0));
   let light = safe_normalize(frame.lightDirection.xyz, vec3f(0.0, 1.0, 0.0));

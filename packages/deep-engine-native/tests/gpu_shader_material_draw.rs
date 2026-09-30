@@ -358,3 +358,7 @@ mod c8_direct_multiscattering;
 mod j3_author_fog;
 #[path = "support/c8_local_direct_multiscattering.rs"]
 mod c8_local_direct_multiscattering;
+#[path = "support/c8_geometry_basis.rs"]
+mod c8_geometry_basis;
+#[path = "support/c8_geometry_roughness.rs"]
+mod c8_geometry_roughness;

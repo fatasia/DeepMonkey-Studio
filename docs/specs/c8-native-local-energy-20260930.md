@@ -23,7 +23,7 @@
 
 FrameObservation实际encode hook核对primary RGB0/w3、local count1、kind行、IBL0并保存真实frame灯行；正式生产shader源码/包/packet身份记证据。旧evidence在开始前删除，只有两完整fresh矩阵稳定且所有样本过门才生成成功收据。真实RT硬件、聚簇分配正确性、默认LUT跨端画质、Studio视觉与性能不在本门认证范围；现正式helper默认cluster buffer无有效header，本测试走已存在的Native uniform local列表消费。
 
-当前仅CPU源码审核，实际Cargo/GPU由root运行；未经实测不标PASS。
+本叶由C8线路完成CPU源码审核，实际Cargo/GPU由root运行，结果如下。
 
 ## root实际结果
 

@@ -51,8 +51,9 @@ fn rt_directional_visibility(world: vec3f, light: vec3f) -> f32 {
   if (flag(input.material.w, 2u) && alpha < input.material.y) { discard; }
   let base = input.base_color.rgb * base_sample.rgb;
   let metal = clamp(input.base_color.w * mr_sample.b, 0.0, 1.0);
-  let rough = clamp(input.material.x * mr_sample.g, 0.045, 1.0);
-  var normal = oriented_normal(input, front_facing);
+  let geometry_normal = oriented_normal(input, front_facing);
+  let rough = min(1.0, clamp(input.material.x * mr_sample.g, 0.045, 1.0) + native_view_geometry_roughness(geometry_normal));
+  var normal = geometry_normal;
   if (material_textures.normal_row_0.w > 0.5) { normal = mapped_normal(input, front_facing); }
   let view = safe_normalize(frame.eye.xyz - input.world, vec3f(0.0, 0.0, 1.0));
   let light = safe_normalize(frame.lightDirection.xyz, vec3f(0.0, 1.0, 0.0));
