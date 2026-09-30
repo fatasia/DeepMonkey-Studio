@@ -1,5 +1,6 @@
 import type { CascadedShadowPlan } from "./types.js";
 import { AUTHORED_DIRECTIONAL_SHADOW_WGSL } from "./authoredDirectionalShadowWgsl.js";
+import { CASCADED_SHADOW_MATH_WGSL } from "./cascadedShadowMathWgsl.js";
 
 export const CASCADED_SHADOW_MAX_CASCADES = 8;
 export const CASCADED_SHADOW_UNIFORM_FLOATS = 156;
@@ -31,6 +32,7 @@ export function packCascadedShadowUniform(plan: CascadedShadowPlan, depthBias = 
 
 /** Reusable group-2 shadow library for a depth2d-array. It blends adjacent cascades with 3x3 comparison PCF. */
 export const CASCADED_SHADOW_WGSL = /* wgsl */`
+${CASCADED_SHADOW_MATH_WGSL}
 const DEEP_MAX_CASCADES: u32 = 8u;
 
 struct DeepCascadeShadowData {
@@ -91,8 +93,8 @@ fn deepCascadedShadow(viewDepth: f32, worldPosition: vec3f, worldNormal: vec3f, 
   if (index + 1u >= count) { return current; }
   let blendStart = deepCascadeValue(deepCascade.blendStarts0, deepCascade.blendStarts1, index);
   let split = deepCascadeValue(deepCascade.splitDepths0, deepCascade.splitDepths1, index);
-  if (blendStart >= split || viewDepth <= blendStart) { return current; }
-  let blend = smoothstep(blendStart, split, viewDepth);
+  if (deepCascadeBlendInactive(viewDepth, blendStart, split)) { return current; }
+  let blend = deepCascadeBlendWeight(viewDepth, blendStart, split);
   return mix(current, deepSampleCascade(index + 1u, worldPosition, worldNormal, nDotL), blend);
 }
 `;

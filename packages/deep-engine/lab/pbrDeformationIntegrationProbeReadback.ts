@@ -2,28 +2,31 @@ import type { PbrRenderer } from "../src/webgpu/pbrRenderer.js";
 import { INTEGRATION_SIZE } from "./pbrDeformationIntegrationProbeFixture.js";
 
 /** Lab-only observation of production attachments; creates no substitute raster pass. */
-export async function readIntegrationAttachments(renderer: PbrRenderer, colorOverride?: GPUTexture): Promise<Float32Array> {
-  const observed = renderer as unknown as { targets: { hdrTexture: GPUTexture; motionTexture: GPUTexture };
+export async function readIntegrationAttachments(renderer: PbrRenderer, colorOverride?: GPUTexture,
+  requireMotion = true): Promise<Float32Array> {
+  const observed = renderer as unknown as { targets: { hdrTexture: GPUTexture; motionTexture?: GPUTexture };
     shadows: { texture: GPUTexture } };
+  const motion = requireMotion ? observed.targets.motionTexture : undefined;
+  if (requireMotion && !motion) throw Error("Production motion attachment is required for deformation observation");
   const device = renderer.session.device, size = INTEGRATION_SIZE;
   const output = device.createBuffer({ size: size * size * 32, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
   const read = device.createBuffer({ size: output.size, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
   try {
     const module = device.createShaderModule({ code: `
 @group(0) @binding(0) var hdr: texture_2d<f32>;
-@group(0) @binding(1) var motion: texture_2d<f32>;
+${motion ? "@group(0) @binding(1) var motion: texture_2d<f32>;" : ""}
 @group(0) @binding(2) var shadow: texture_depth_2d;
 @group(0) @binding(3) var<storage, read_write> result: array<vec4f>;
 @compute @workgroup_size(8, 8) fn main(@builtin(global_invocation_id) id: vec3u) {
   if (id.x >= ${size}u || id.y >= ${size}u) { return; }
   let xy = vec2i(id.xy); let offset = (id.y * ${size}u + id.x) * 2u;
   result[offset] = textureLoad(hdr, xy, 0);
-  result[offset + 1u] = vec4f(textureLoad(motion, xy, 0).xy, textureLoad(shadow, xy, 0), 0.0);
+  result[offset + 1u] = vec4f(${motion ? "textureLoad(motion, xy, 0).xy" : "vec2f(0.0)"}, textureLoad(shadow, xy, 0), 0.0);
 }` });
     const pipeline = await device.createComputePipelineAsync({ layout: "auto", compute: { module, entryPoint: "main" } });
     const group = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
       { binding: 0, resource: (colorOverride ?? observed.targets.hdrTexture).createView() },
-      { binding: 1, resource: observed.targets.motionTexture.createView() },
+      ...(motion ? [{ binding: 1, resource: motion.createView() }] : []),
       { binding: 2, resource: observed.shadows.texture.createView({ dimension: "2d", baseArrayLayer: 0, arrayLayerCount: 1 }) },
       { binding: 3, resource: { buffer: output } },
     ] });

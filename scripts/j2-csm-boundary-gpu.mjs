@@ -12,7 +12,8 @@ const require = createRequire(import.meta.url);
 const { build } = require("../packages/deep-engine/node_modules/esbuild");
 await build({ entryPoints: [path.join(root, "packages/deep-engine/lab/j2CsmBoundaryGpuProbe.ts")],
   outfile: path.join(out, "probe.mjs"), bundle: true, format: "esm", platform: "browser" });
-const native = await readFile(path.join(root, "packages/deep-engine-native/assets/shaders/native_cascaded_shadow_v1.wgsl"), "utf8");
+const native = await readFile(path.join(root, "packages/deep-engine/wgsl/cascadedShadowMath.wgsl"), "utf8") + "\n"
+  + await readFile(path.join(root, "packages/deep-engine-native/assets/shaders/native_cascaded_shadow_v1.wgsl"), "utf8");
 const css = await readFile(path.join(root, "apps/web/src/styles/base.css"), "utf8");
 const server = createServer(async (request, response) => {
   if (request.url === "/probe.mjs") { response.setHeader("Content-Type", "text/javascript"); response.end(await readFile(path.join(out, "probe.mjs"))); }

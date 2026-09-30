@@ -130,6 +130,26 @@ export const GATE_PAIRS = [
         command: "node scripts/j3-lifecycle-parity.mjs", note: "生产 coalescer/mailbox/PublishedState/WatchThread；同 runner 双端比较并去重，不认证 GPU 生命周期" },
     ],
   },
+  {
+    id: "probe-storage-vectors",
+    name: "探针 GI storage 生产函数向量对拍(J2-B5)",
+    legs: [
+      { id: "probe-storage:ts-gpu", side: "ts", requiresGpu: true,
+        command: "node scripts/j2-probe-gi-parity.mjs", note: "两轮实际 Chrome/Native，共同夹具和生产 source 身份门" },
+      { id: "probe-storage:native-gpu", side: "native", requiresGpu: true,
+        command: "node scripts/j2-probe-gi-parity.mjs", note: "默认清旧证据并执行本次 Native GPU；命令去重，不认证 texture/整帧" },
+    ],
+  },
+  {
+    id: "device-recovery-host-components",
+    name: "实际设备销毁与生产组件重开(J3 Gate E GPU 首刀)",
+    legs: [
+      { id: "device-recovery:ts-gpu", side: "ts", requiresGpu: true,
+        command: "node scripts/j3-device-recovery-parity.mjs", note: "实际 PbrRenderer：lost、退役、重传、有效首帧；两轮" },
+      { id: "device-recovery:native-gpu", side: "native", requiresGpu: true,
+        command: "node scripts/j3-device-recovery-parity.mjs", note: "实际 Native 生产组件跨 lost 存活后退役；同包分阶段，不认证自动恢复/显存" },
+    ],
+  },
 ];
 
 /** GPU 腿策略:off=默认 CPU/静态口径;auto=探测可用才跑;strict=不可用即门失败。

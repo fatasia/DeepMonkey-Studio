@@ -134,8 +134,9 @@ mod tests {
         // dpdx 派生函数与 binding 声明无冲突;此测试不需要 GPU adapter。
         let mesh = include_str!("../assets/shaders/native_mesh_v1.wgsl");
         let shadow = include_str!("../assets/shaders/native_cascaded_shadow_v1.wgsl");
+        let cascade_math = include_str!("../../deep-engine/wgsl/cascadedShadowMath.wgsl");
         let composed = format!(
-            "{mesh}\n{shadow}\n{MATERIAL_DIELECTRIC_WGSL}{PBR_BRDF_DIRECT_LIGHTING_WGSL}{DEEP_IES_SAMPLING_WGSL}"
+            "{mesh}\n{shadow}\n{cascade_math}\n{MATERIAL_DIELECTRIC_WGSL}{PBR_BRDF_DIRECT_LIGHTING_WGSL}{DEEP_IES_SAMPLING_WGSL}"
         );
         let module = wgpu::naga::front::wgsl::parse_str(&composed)
             .expect("composed native mesh shader with shared lighting-math libraries must parse");

@@ -6,6 +6,12 @@ use winit::dpi::PhysicalSize;
 use crate::bloom_pipeline::{create_layout, create_pipeline};
 
 const SHADER: &str = include_str!("../assets/shaders/native_bloom_v1.wgsl");
+const PREFILTER_SHADER: &str = include_str!("../../deep-engine/wgsl/bloomPrefilter.wgsl");
+
+/// Assemble the shared scalar prefilter with the Native sampling/blur profile once.
+pub fn bloom_shader() -> String {
+    [PREFILTER_SHADER, SHADER].join("\n")
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -75,7 +81,7 @@ impl BloomPass {
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Deep Engine native HDR bloom shader v1"),
-            source: wgpu::ShaderSource::Wgsl(SHADER.into()),
+            source: wgpu::ShaderSource::Wgsl(bloom_shader().into()),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Deep Engine native bloom pipeline layout"),

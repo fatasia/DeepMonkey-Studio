@@ -11,9 +11,10 @@ use crate::renderer::rt_residency::RtResidencyReject;
 #[test]
 fn rt_fragment_shader_source_contract() {
     let source = format!(
-        "enable wgpu_ray_query;\n{}\n{}\n{}\n",
+        "enable wgpu_ray_query;\n{}\n{}\n{}\n{}\n",
         include_str!("../../assets/shaders/native_mesh_v1.wgsl"),
         include_str!("../../assets/shaders/native_cascaded_shadow_v1.wgsl"),
+        include_str!("../../../deep-engine/wgsl/cascadedShadowMath.wgsl"),
         include_str!("../../assets/shaders/native_mesh_rt_fragment_v1.wgsl"),
     );
     // 使能行必须是第一条语句(拼接契约与 create_native_mesh_rt_shader 一致)。

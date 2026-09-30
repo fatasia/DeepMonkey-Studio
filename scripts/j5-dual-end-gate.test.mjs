@@ -25,8 +25,8 @@ function makeRunner({ statusByNeedle = {}, defaultStatus = 0 } = {}) {
 
 const passRunner = () => makeRunner();
 
-test("五对判据计划形状与命令锚定(漂移即红)", () => {
-  assert.equal(GATE_PAIRS.length, 7);
+test("九对判据计划形状与命令锚定(漂移即红)", () => {
+  assert.equal(GATE_PAIRS.length, 9);
   const [furnace, identity, cloth, hash, frameAbi] = GATE_PAIRS;
   assert.equal(frameAbi.id, "frame-abi-schema");
   assert.equal(frameAbi.legs[0].command.includes("frameLayout.test.ts"), true);
@@ -47,6 +47,11 @@ test("五对判据计划形状与命令锚定(漂移即红)", () => {
   assert.equal(cloth.legs[1].command.endsWith("--test cloth_softbody_solver_parity"), true);
   assert.ok(hash.legs[0].command.includes("runtimePackageAuthorLod.test.ts"));
   assert.equal(hash.legs[1].command, identity.legs[1].command, "包哈希与身份黄金共用 native 二进制(命令级复用)");
+  for (const [id, command] of [["probe-storage-vectors", "node scripts/j2-probe-gi-parity.mjs"],
+    ["device-recovery-host-components", "node scripts/j3-device-recovery-parity.mjs"]]) {
+    const pair = GATE_PAIRS.find(pair => pair.id === id);
+    assert.ok(pair.legs.every(leg => leg.requiresGpu && leg.command === command));
+  }
 });
 
 test("GPU 策略解析:CLI 最后一个生效,其次 env,默认 off", () => {
@@ -76,7 +81,7 @@ test("全绿路径(policy off):CPU/静态口径降级通过,GPU 腿跳过有原�
   assert.equal(result.ok, true);
   assert.equal(result.degraded, true);
   const cells = result.pairs.flatMap((pair) => pair.cells);
-  assert.equal(cells.length, 14, "7 对 × 双腿 = 14 格");
+  assert.equal(cells.length, 18, "9 对 × 双腿 = 18 格");
   assert.equal(cells.filter((cell) => cell.status === "PASS").length, 11, "11 条非 GPU 格全绿(含复用格)");
   const tsFurnace = cells.find((cell) => cell.id === "white-furnace:ts-gpu");
   assert.equal(tsFurnace.status, "SKIP");
@@ -157,7 +162,7 @@ test("executeGate 缺 runLeg 直接抛错(防止静默空跑)", () => {
   assert.throws(() => executeGate({ gpuPolicy: "off", gpuAvailability: null }), /runLeg/);
 });
 
-test("报告与证据序列化:七对判据、状态、降级与策略齐全", () => {
+test("报告与证据序列化:九对判据、状态、降级与策略齐全", () => {
   const { runner } = makeRunner({ statusByNeedle: { "test:white-furnace-gpu": 1 } });
   const result = executeGate({
     gpuPolicy: "auto",
@@ -171,12 +176,21 @@ test("报告与证据序列化:七对判据、状态、降级与策略齐全", (
   assert.equal(evidence.ok, result.ok);
   assert.equal(evidence.gpuPolicy, "auto");
   assert.equal(evidence.timeoutMs, 1234);
-  assert.equal(evidence.pairs.length, 7);
+  assert.equal(evidence.pairs.length, 9);
   for (const pair of evidence.pairs) {
     assert.equal(pair.legs.length, 2);
     for (const leg of pair.legs) {
       assert.ok(["PASS", "FAIL", "SKIP"].includes(leg.status));
       assert.ok(typeof leg.command === "string" && leg.command.length > 0);
     }
+  }
+});
+
+test("strict 模式中新双端 runner 各执行一次，共用本次完整证据", () => {
+  const { runner, calls } = passRunner();
+  const result = executeGate({ gpuPolicy: "strict", gpuAvailability: { available: true }, runLeg: runner });
+  assert.equal(result.ok, true);
+  for (const script of ["j2-probe-gi-parity.mjs", "j3-device-recovery-parity.mjs"]) {
+    assert.equal(calls.filter(command => command.includes(script)).length, 1);
   }
 });

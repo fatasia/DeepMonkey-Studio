@@ -22,21 +22,9 @@ use crate::{
     shadow_pass::{CascadeScene, encode_shadow_cascades},
 };
 
-pub struct Snapshot {
-    pub hdr: Vec<u8>,
-    pub depths: Vec<f32>,
-    pub commands: Vec<Vec<[u32; 5]>>,
-    pub shadow_size: u32,
-    pub nonzero_vertex_offsets: usize,
-}
-
-/// Evidence about the ShaderPackage material transaction for one render.
-#[derive(Debug, Default, Clone)]
-pub struct ShaderMaterialReport {
-    pub isolated: Vec<String>,
-    pub fallback_materials: usize,
-    pub custom_materials: usize,
-}
+#[path = "shader_material_observers.rs"]
+mod observers;
+pub use observers::{ShaderMaterialReport, Snapshot, render_reported, render_with_live_components};
 
 pub async fn render(
     device: &wgpu::Device,
@@ -59,12 +47,13 @@ pub async fn render_checked(
         .0
 }
 
-pub async fn render_reported(
+async fn render_observed(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     content: &PlayerContent,
     reuse_first_cascade: bool,
     foreign_device: Option<&wgpu::Device>,
+    observer: Option<&mut dyn FnMut(&Snapshot)>,
 ) -> (Snapshot, ShaderMaterialReport) {
     let packet = content.packet();
     let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
@@ -292,5 +281,19 @@ pub async fn render_reported(
             .filter(|draw| draw.resident && draw.instance_start > 0)
             .count(),
     };
+    if let Some(observer) = observer {
+        observer(&snapshot);
+        // Keep the production owners borrowed after the loss observer has returned.
+        let _ = (
+            &scene,
+            &shadows,
+            &targets,
+            &pipelines,
+            &culling,
+            &lod,
+            &frame_group,
+            &ibl,
+        );
+    }
     (snapshot, report)
 }

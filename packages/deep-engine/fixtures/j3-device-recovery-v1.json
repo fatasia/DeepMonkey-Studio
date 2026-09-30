@@ -1,0 +1,19 @@
+{
+  "schema": "j3-device-recovery-v1",
+  "sourceFixture": "packages/deep-engine-native/tests/fixtures/runtime-package-shader-v2.json",
+  "packageHash": "71c978b477056ee991cd495e2dca809245a4bc81bd81e26432ce7089996ae67c",
+  "packetHash": "0c29a0ed6301d1360c9fb40a4dce117b7f97896837a735d1e54bb81f116104d4",
+  "phases": [
+    "initial-device",
+    "uploaded",
+    "first-valid-frame",
+    "lost-observed",
+    "old-host-retired",
+    "recreated",
+    "uploaded",
+    "first-valid-frame",
+    "disposed"
+  ],
+  "lostTimeoutMs": 5000,
+  "frameTimeoutMs": 30000
+}

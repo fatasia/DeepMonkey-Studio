@@ -38,9 +38,8 @@ fn sampled(uv: vec2f) -> vec3f {
     + sampled(input.uv + texel * vec2f(0.25, 0.25))) * 0.25;
   let brightness = max(color.r, max(color.g, color.b));
   let knee = max(bloom.threshold * bloom.soft_knee, 0.00001);
-  var soft = clamp(brightness - bloom.threshold + knee, 0.0, 2.0 * knee);
-  soft = soft * soft / (4.0 * knee + 0.00001);
-  let contribution = max(brightness - bloom.threshold, soft) / max(brightness, 0.00001);
+  let soft = deepBloomSoftKnee(brightness, bloom.threshold, knee, 0.00001);
+  let contribution = deepBloomContribution(brightness, bloom.threshold, soft);
   return vec4f(color * contribution, 1.0);
 }
 

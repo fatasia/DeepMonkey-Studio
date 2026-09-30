@@ -2,22 +2,26 @@
 
 这份表给继续开发和排程用：只估真实后继缺口，已完成首刀不再排一遍。执行顺序 **J → C → I → G → F → 其他 → 最后验收**；本轮提级的 C8 接在 J 后。
 
-**已锁定范围：57 个切片，净投入 320–654 小时（约 40–82 个 8 小时人日）**，包含每刀相关测试、类型检查、实机或视觉验证。历史 T00–T32 全包另有 21 组需要校准的残留范围，核查预算 **27–54 小时**；若核查确认仍有新增实现，应在对应行补估，不把它们假定为零工时。**当前可排范围含核查共 347–708 小时；整个旧计划全包完成的上限尚不能可靠封顶。**
+**已锁定范围：57 个后继切片，净投入 325–664 小时（约 41–83 个 8 小时人日）**，包含每刀相关测试、类型检查、实机或视觉验证。历史 T00–T32 全包另有 21 组需要校准的残留范围，核查预算 **27–54 小时**；若核查确认仍有新增实现，应在对应行补估，不把它们假定为零工时。**当前可排范围含核查共 352–718 小时；整个旧计划全包完成的上限尚不能可靠封顶。** 四路按工程依赖折算约 16–42 个 8 小时工作日，不是 AI 墙钟承诺。
 
 ## 现状核查
 
 1. 源码与未跟踪：检查 packages/apps、`git status --short`、本轮输出/生命周期/流场草稿；没有从旧“无产出”状态重新立项。
 2. 契约：读 contracts、lighting/shader/runtimePackage 类型；查已存在的自由 JS、受限图、Study、录制、权限和生命周期消费语义。
 3. 依赖：package.json/Cargo.toml 的 Three、esbuild、Vitest、Playwright、wgpu/serde/Rapier/ONNX 与数据协议设施已覆盖主要工作；离线路线保留。
-4. 消费方：定位 C4 录制条件注册、C8 GLSL 仅探针消费、工艺变更 UI、粒子掩码、AI 轮询/记忆/历史等实际入口。
+4. 消费方：定位 C4 录制条件注册、C8 GLSL 的真实 Three OutputPass 接线、Native 四输出变体公共源、GI storage/texture 实际采样差异、工艺变更 UI、粒子掩码、AI 轮询/记忆/历史等实际入口。
 5. 测试与证据：核对提交记录、本轮 1,712 测与两轮 GPU 对拍、T00–T32 实施报告、研究收尾报告。历史报告未更新的“未接/partial”逐项与后续提交对账。
-6. 规格：权威清单为 `D:/Documents/bim/deliverables/research-20260928/剩余任务清单.md`；读本日 handoff、核心能力计划、J3/C8/G2/Z1 规格和恢复台账。恢复台账停在 09-28，其状态不能盖过 09-30 实现证据。
+6. 规格：权威清单为 `D:/Documents/bim/deliverables/research-20260928/剩余任务清单.md`；读本日 handoff、核心能力计划、J3/C8/G2/Z1 规格和恢复台账。09-28 历史条目不能盖过 09-30 实现证据，恢复台账已同步最新切片。
 
 **已有（不重建）**：C18 核 `a4c12e10`；J2-B1/B3/B7、J4/J5；C1 工艺变更 UI `9384c490`、C2 准入/校准/生产门、C3 马达齿轮 `743f1014`；A2 SDF/A3 布料 GPU、F1/F2/F3/F5/F6 已完成切片；I-C6/C9/C10/C11/C12/C13/C21/C25/C26 已完成范围；H-C1/C2/C3 与 H-A1/A2/A3 实现；G2-S2a；自动曝光/体积雾修复。J2-B2、Gate D 输出子集、Gate E 真实宿主 CPU 生命周期、C8 库对拍首刀本轮已过，排除首刀本体。Gate E 为 5 场景×2轮、每轮28阶段样本、native 12测通过、dispose 后CPU资源0；没有将它当作显存零泄漏证明。
 
 **真实缺口**：CPU/库首刀之后的生产接线和全面对拍；自由脚本/自动记忆/编辑器全入口；现码仍存在的 K8/K9/K10/K11/K13/K15/K16/K17 等。交接“全部 K/T 批”并不等于 K1–K18 全清：`b65eb391` 仅 K2–K6，K7 与 K12/K14 各有其他提交；例如 chat 请求没有整体 deadline、agent runId 仍存单槽、web/api 无 renderer manifest 消费，不能删掉这些真实任务。
 
+**第三波已验范围（不重计）**：J2-B4 边界防护已提交 `e7892afc`；共享小核、linear 过滤边界与帧时仍后继。C8-S2 已接生产 Three OutputPass，10 配置×2轮共20帧最大 byte 差0，只共享 ACES，直渲材质与完整双后端链仍归 C8-S3。J2-B2-N 四变体共用显示数学与作者分级，Native RTX4060/Vulkan 两轮96组，CPU最大误差0.00048822165（既有RGBA16F阈值0.002），跨变体/alpha误差0、GPU错误0，合同11测通过。J2-B5 十情景两轮 storage 向量双宿主最大差5.960464477539063e-8；本刀未替换生产storage/texture采样，完整帧未覆盖。第三波36文件已提交 `cbce805a`，未推送，旧证据清理与失败路径修复属于该切片收口；不写成整项通过。
+
 ## 估时口径
+
+**第四波已验范围（不重计）**：B4三族生产共享混合核与Chrome边界已验，Native生产CSM回归通过；只留linear过滤、Native同七点与帧时2–4h。Gate E本次双端实际destroy/lost/reopen及有效首帧已验，每端两轮18阶段、Native每轮6611非背景像素、Web239像素，重建前后HDR/CSM各自全等；自动unknown-loss/窗口/编辑器/驱动显存/上传/帧时仍6–12h。B6共同软膝生产接线已验，64组Chrome GPU前后全等、CPU相对误差3.725290298461914e-9、NativeBloom实机通过；不同采样/blur非均匀HDR与Fog仍6–12h。本波严格J5九对十八腿含GPU、degraded=false（`evidence-20260930052206.json`），core/lab/examples类型及runtime freshness通过；第四波提交状态由主线收尾更新。
 
 - **小时指净工程投入**，包括读现状、实现和必要验证，不是 AI 连续运行的墙钟承诺；1 人日=8 小时。不把几分钟单测时间当成整个产品切片耗时。
 - **高信心**：定位到少数接线/错误路径及现有测试；**中信心**：既有核可复用但跨端/实机/用户面需补；**低信心**：多家族语义、profile 或算法边界尚需压缩。
@@ -28,26 +32,25 @@
 
 | ID | 具体剩余缺口 | 依赖 / 已有底座 | 净工时 | 信心 |
 |---|---|---|---:|---|
-| J2-B2-N | native 输出四家族的非中性色彩/分级语义补齐，复用本刀真源；TS 首刀不重做 | B2 已过；共享输出合同 | 6–12h | 中 |
+| J2-B2-N-next | 核查Native/TS可选输出profile与参数消费路线，补曝光/tone mapping合法差异矩阵；只补确认缺口，用户选择保留，作者语义不强制统一 | 四变体数学/96组已验；线性曝光上游与两套分级合同保留 | 4–8h | 中低 |
 | J3-D-full | RenderPacket 几何、HDR、深度、阴影及后处理逐层双端实渲对拍；扩展合法差异矩阵 | Gate D 输出首刀；J2-B5/B6 | 12–24h | 中 |
-| J3-E-GPU | CPU 发布首刀之外的真实 device lost/recovery、显存/上传与首个有效帧轨迹 | Gate E CPU 首刀；设备恢复桥 | 8–16h | 中 |
-| J2-B4 | CSM/PCF 与级联混合数学单源化；保留宿主级联数差异并加双端门 | 已有 CSM；WGSL 同步器 | 4–8h | 中 |
-| J2-B5 | 复用 probeClipmapSampling 真源补生产采样/GPU 双端向量与帧对拍；既有单源试点不重建 | J3-D；已有 probe_gi 单测 | 4–8h | 中 |
-| J2-B6 | bloom/雾模式×参数语义对齐、共享核消费及双端对拍 | J3-D；本刀输出单源 | 8–16h | 中 |
+| J3-E-GPU | 自动unknown-loss、Native窗口事件/present、完整编辑器状态、驱动显存/上传与帧时；扩展实际epoch首刀之外的恢复 | 双端真实destroy/lost/reopen/首帧稳定已验；CPU首刀 | 6–12h | 中 |
+| J2-B4 | linear PCF过滤边界、Native共同七点输入、跨设备与帧时；保留宿主级联数差异 | 三族共享混合核、Chrome边界及Native生产GPU已验 | 2–4h | 中 |
+| J2-B5 | 共享storage核生产适配与Web texture语义矩阵；共同非均匀场景HDR帧、动态GI/漏光与帧时对拍 | 十情景storage双宿主向量已验；J3-D与既有帧入口 | 3–6h | 中 |
+| J2-B6 | 不同非均匀HDR采样/blur/pyramid profile对拍；Fog模式/参数/高度/HG合法差异与实帧 | 共同软膝生产接线、64组前后全等、NativeBloom已验；J3-D | 6–12h | 中 |
 
-本组：42–84h。同一缺口跨编号合并一行，不重复计时。
+本组：33–66h。同一缺口跨编号合并一行，不重复计时。
 
 ## C 系列与本轮提级的 C8
 
 | ID | 具体剩余缺口 | 依赖 / 已有底座 | 净工时 | 信心 |
 |---|---|---|---:|---|
-| C8-S2 / I-C8 | 显示色彩库接生产 WebGL 输出/材质链，保留已有 Three 作者路径语义 | C8 paired-library 首刀 | 6–12h | 中 |
-| C8-S3 / I-C8 | 分批扩展 surface 材质/灯光数学双后端共用选择与数值门，不新增 IR | C8-S2；现有 DCIR/WGSL-first | 16–32h | 低 |
+| C8-S3 / I-C8 | 生产直渲/材质/灯光与完整输出链分批复用双后端数学并加数值门；S2输出消费首刀不再单列 | C8-S2生产ACES20帧差0；现有DCIR/WGSL-first | 16–32h | 低 |
 | C4-recording | API 组合根启用既有事件录制 routes，接录制/重开/缺口/回放/Study 用户入口 | 0367f0cd；既有 checkpoint/store | 4–8h | 高 |
 | C5-oracle | 固定开源 Bullet 的测试期 oracle、机构/布料黄金转换与误差记录；零运行依赖 | T17/T18 现有黄金；先查本机缓存 | 6–12h | 中 |
 | N10-geometry | 互锁粗筛之后的机器人连杆/工具/工件窄相位与时间扫掠，出碰撞时刻和最小间距 | 已有 RobotSyncPanel/FK/IK/BVH | 12–24h | 中 |
 
-本组：44–88h。同一缺口跨编号合并一行，不重复计时。
+本组：38–76h。同一缺口跨编号合并一行，不重复计时。
 
 ## I 系列后继切片
 
@@ -111,10 +114,13 @@
 | H-C5-T5 | 逐条引用与真正证据锚对齐，复用 K1 校验器和现有指纹载体 | chatEvidenceGate；H-C4-P2 | 6–12h | 中 |
 | H-C5-T7 | dashboard 流式真实布局预览，现有 shimmer 之后的可感知产品状态 | 现有 dashboard parser/renderer | 4–8h | 中 |
 | ENG-runtime-purity | pipelineCache.ts 与 virtualTextureFrameBridge.ts 共5处 performance 访问修为既有宿主时钟/诊断边界注入；不扩大allowlist掩盖纯运行时约束 | HEAD同内容基线已证明；runtimePurityGate/现有时钟抽象 | 1–2h | 高 |
+| ENG-source-size | 18个既存超800行文件按职责拆分，生成表分片；保留公开入口/类型/消费方并做聚焦回归，不加allowlist | 本轮全仓source-size门18项失败，当前切片修改文件均低于300行且未改这18文件 | 20–40h | 中低 |
 | D2/T23-gradient | 解析机构链梯度 vs 有限差分，辅助本地标定；不加通用可微引擎 | T17 黄金/现有校准 | 6–12h | 中 |
 | N5-material-import | 第三方 GLB unlit/无 TANGENT profile 的导入/生成/损失处理，避免零配置样板被拒；范围先核查 | 现有 glTF/质量合同/几何工具 | 4–8h | 中 |
 
-本组：77–160h。同一缺口跨编号合并一行，不重复计时。
+本组：97–200h。同一缺口跨编号合并一行，不重复计时。
+
+`ENG-source-size` 的18文件当前行数：conversion 1141、industrialCapabilities 801、App 851、runtimeEffects 988、platform-components 875、StudioDeepWebGpuBridge 992、contractsScene 979、ltcTables 1495、pbrRenderer 987、native_character 893、native_physics 1217、mechanism 839、navigation 1181、dynamicScene 866、clothCompute 939、clothSolver 889、wasmLib 1024、psgeometry 1496。这是历史工程债的新排程项，本轮未改这些文件。20–40h为中低信心范围：体量已知，实际模块边界、生成表分片及Rust私有访问拆分仍需核查；包括消费兼容与聚焦验证，未混入功能行重复计时。当前不拆无关文件，全仓体量门仍未绿。
 
 ## 最后验收（E/Z，日常切片验证已经计入各行）
 
@@ -209,16 +215,16 @@ T 全包索引对账如下。标“已覆盖”只指本次估时归属，不宣
 
 明确不做：Nanite/Blueprint/Lumen 本体或全功能克隆、Havok/PhysX/Warp/Chaos 运行依赖、J6 热路径整体下沉、通用流体、赛车级轮胎、动态断裂、JT纹理/X_T key/真实PLC追索、OGC 3D Tiles、3MF导出、OpenPBR、XR、数字人、商业化AI/杂项工具面/fragment RW+atomics；第二循环/时钟/账本、外部Harness运行依赖。专业用户自由脚本属于已授权 H-C6-S1，不能被旧“代码即动作不做”挡住。
 
-## 三路并行排程与总工期
+## 四路并行排程与总工期
 
-| 范围 | 净工程投入 | 三路有效并行的排程范围 |
+| 范围 | 净工程投入 | 四路有效并行的排程范围 |
 |---|---:|---|
-| 当前57行已锁定切片（含最后验收） | 320–654h / 40–82人日 | 约 140–365 工作小时跨度 / 18–46 个8小时工作日 |
+| 当前57行已锁定后继切片（含最后验收） | 325–664h / 41–83人日 | 约115–305工作小时跨度 / 15–39个8小时工作日 |
 | 21组旧 T 尾项核查 | 27–54h | 分散进对应文件域；复用核查证据，约2–4个并行工作日，部分可与其他任务重叠 |
-| 当前可排范围合计 | 347–708h / 44–89人日 | 约 155–400 工作小时跨度 / 20–50 个8小时工作日 |
+| 当前可排范围合计 | 352–718h / 44–90人日 | 约125–330工作小时跨度 / 16–42个8小时工作日 |
 | 核查后新增的 T 全包实现、全量编辑器接入批数、条件项 | 尚未锁定；不假定为0 | 对应范围冻结后增量重估；不承诺全计划固定日期 |
 
-三条执行线按文件所有权分开：渲染/单源/对拍、工业/物理/数据、Harness/编辑器用户面。**有效并行系数估 1.8–2.3**：Cargo 独占串行，WGSL登记与共享 frame/pbrRenderer 接缝顺序合并；浏览器视觉任务与最后冻结验收复用一套服务，不能把所有净工时机械除以3。J先完成中断路径，其余文件域可穿插已核查的独立切片，验收总批最后。
+四条执行线按文件所有权分开：渲染/单源、跨端对拍、工业/物理/数据、Harness/编辑器用户面；主线统一串行Cargo和共享产物，空闲线处理核查、接线或证据。**四路有效并行系数估2.2–2.8**：Cargo独占，WGSL登记与共享frame/pbrRenderer接缝顺序合并；浏览器视觉与最后冻结验收复用服务，不能把净工时机械除以4。若只能维持三路，采用1.8–2.3系数：当前后继约140–370工作小时跨度（18–47工作日），含核查约155–400小时（20–50工作日）。J先完成中断路径，其余文件域穿插已核查的独立切片，验收总批最后。
 
 每完成一个闭环用实际投入与剩余文件更新对应行，优先缩小低信心范围。性能/视觉目标须实测：这些估时不表示已经对标达成，也不通过反复无变化跑全量测试消耗时间。
 
@@ -228,4 +234,5 @@ T 全包索引对账如下。标“已覆盖”只指本次估时归属，不宣
 - 当前首刀：[中断任务续接](interrupted-engine-tasks-20260930.md)、[C8](c8-dual-backend-shader-first-cut-20260930.md)、[Gate D](j3-gate-d-output-first-cut-20260930.md)、[Gate E](j3-gate-e-lifecycle-20260930.md)。Gate E CPU 已核对 `test-output/interrupted-0930/lifecycle-parity/evidence.json`，scope=`production-host-components-cpu`、passed=true；本表只排CPU首刀之外的GPU余项。
 - T 包：`docs/specs/deep-engine-core-capability-development-plan-2026-09-27.md`、`docs/reports/deep-core/T00–T32-implementation.md`（实际 T00 为 baseline/fixture 文件）。这些报告为本地证据，后续提交覆盖旧状态。
 - 本轮：`test-output/interrupted-0930/j2b2-tests.log`、`test-output/interrupted-0930/display-parity/evidence.json`；`git log/show` 与源码消费方是完成范围的交叉验证，不只采信完成报告。
-- 严格 J5：`test-output/j5-dual-end-gate/evidence-20260930034245.json`，7组/14腿含GPU通过、`degraded=false`；本轮首刀已进入该门。完整 runtimePurityGate 仍有HEAD既存5处performance访问，`test-output/interrupted-0930/c8-runtime-purity-baseline.json`证明2文件LF归一化SHA与HEAD相同、`c8Issues=[]`；工程余项已单列，不混成C8新增失败。
+- 第三波：[Native输出](j2-b2-native-output-first-cut-20260930.md)、[CSM边界](j2-b4-current-state-20260930.md)、[GI向量门](j2-b5-probe-production-parity-20260930.md)、[Three生产输出](c8-s2-three-output-production-20260930.md)；`output-native-contract.log`、`output-native-gpu.log`、`probe-gi-parity/evidence.json`、`c8-three-output/evidence.json` 均位于 `test-output/interrupted-0930/`。
+- 最新严格J5：`test-output/j5-dual-end-gate/evidence-20260930052206.json`，9组/18腿含GPU通过、`degraded=false`；本波core/lab/examples类型及runtime freshness通过。第四波证据为 `device-recovery/evidence.json` 与 `bloom-prefilter/evidence.json`，规格为 [实际设备恢复](j3-gate-e-device-recovery-20260930.md)、[Bloom共同数学](j2-b6-current-state-20260930.md) 和 [CSM共享核](j2-b4-current-state-20260930.md)。完整runtimePurityGate仍有历史5处performance访问，`c8-runtime-purity-baseline.json`证明来源与该轮HEAD一致、C8新增错误已清；全仓source-size18既存失败已单列工程债，局部门通过不当作全仓通过。

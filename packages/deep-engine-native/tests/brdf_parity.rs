@@ -48,9 +48,10 @@ fn production_brdf_matches_cpu_golden_on_real_gpu() {
             .expect("GPU device");
         let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let source = format!(
-            "{}\n{}\n{}",
+            "{}\n{}\n{}\n{}",
             include_str!("../assets/shaders/native_mesh_v1.wgsl"),
             include_str!("../assets/shaders/native_cascaded_shadow_v1.wgsl"),
+            include_str!("../../deep-engine/wgsl/cascadedShadowMath.wgsl"),
             "@group(0) @binding(7) var<storage, read_write> brdf_out: array<vec4f>;\n\
              @compute @workgroup_size(1) fn brdf_readback() {\n\
                brdf_out[0] = vec4f(direct_brdf(vec3f(0.0,0.0,1.0),\n\

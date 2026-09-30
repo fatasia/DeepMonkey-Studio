@@ -1,8 +1,10 @@
 import type { DeepWgslModuleDescriptor } from "../shader/types.js";
 import { exactlyOnce } from "./packageAdapterWgslContract.js";
+import { CASCADED_SHADOW_MATH_WGSL } from "../shadows/cascadedShadowMathWgsl.js";
 
 /** Byte-for-byte layout and sampling equations match native_cascaded_shadow_v1.wgsl. */
 export const DEEP_PACKAGE_CSM_WGSL = /* wgsl */ `
+${CASCADED_SHADOW_MATH_WGSL}
 struct DeepCascadedShadowData {
   matrices: array<mat4x4f, 4>,
   split_depths: vec4f,
@@ -45,8 +47,8 @@ fn deepShadowVisibility(world: vec3f, normal: vec3f, nDotL: f32) -> f32 {
   if (index + 1u >= count) { return current; }
   let blendStart = deepCascadedShadow.blend_starts[index];
   let split = deepCascadedShadow.split_depths[index];
-  if (blendStart >= split || viewDepth <= blendStart) { return current; }
-  return mix(current, deepSampleCascade(index + 1u, world, normal, nDotL), smoothstep(blendStart, split, viewDepth));
+  if (deepCascadeBlendInactive(viewDepth, blendStart, split)) { return current; }
+  return mix(current, deepSampleCascade(index + 1u, world, normal, nDotL), deepCascadeBlendWeight(viewDepth, blendStart, split));
 }
 `;
 

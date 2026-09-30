@@ -1,3 +1,10 @@
+#[path = "../src/bloom_pass.rs"]
+#[allow(dead_code)]
+mod bloom_pass;
+#[path = "../src/bloom_pipeline.rs"]
+#[allow(dead_code)]
+mod bloom_pipeline;
+
 use std::{fs, path::Path};
 
 use deep_engine_native::bloom::BloomSettings;
@@ -29,6 +36,21 @@ fn bloom_contract_is_hdr_first_and_has_an_exact_disabled_mode() {
     assert!(pass.contains("if !settings.is_active()"));
     assert!(pass.contains("return Ok(None)"));
     assert!(!BloomSettings::DISABLED.validate().unwrap().is_active());
+}
+
+#[test]
+fn native_bloom_consumes_one_shared_prefilter_with_its_original_policy() {
+    let shared = include_str!("../../deep-engine/wgsl/bloomPrefilter.wgsl");
+    let shader = bloom_pass::bloom_shader();
+    assert!(shader.starts_with(shared));
+    for name in ["deepBloomSoftKnee", "deepBloomContribution"] {
+        assert_eq!(shader.matches(&format!("fn {name}(")).count(), 1);
+    }
+    assert!(shader.contains("max(bloom.threshold * bloom.soft_knee, 0.00001)"));
+    assert!(shader.contains("deepBloomSoftKnee(brightness, bloom.threshold, knee, 0.00001)"));
+    assert!(shader.contains("deepBloomContribution(brightness, bloom.threshold, soft)"));
+    assert!(shader.contains("return max(textureSampleLevel"));
+    assert!(shader.contains("direction * bloom.radius"));
 }
 
 #[test]

@@ -357,6 +357,22 @@ export const DEEP_GOD_RAYS_ENTRY = "marchVolumetricGodRays";
     constants: "",
     preamble: `export const PBR_DIRECT_DISPLAY_BODY_WGSL = /* wgsl */ `,
   },
+  {
+    source: "cascadedShadowMath.wgsl",
+    module: resolve(packageRoot, "src/shadows/cascadedShadowMathWgsl.ts"),
+    gate: "src/shadows/cascadedShadowMathWgslChecksum.test.ts",
+    rustHalf: "deep-engine-native/src/frame_bindings.rs",
+    constants: "",
+    preamble: `export const CASCADED_SHADOW_MATH_WGSL = /* wgsl */ `,
+  },
+  {
+    source: "bloomPrefilter.wgsl",
+    module: resolve(packageRoot, "src/postprocess/bloomPrefilterWgsl.ts"),
+    gate: "src/postprocess/bloomPrefilterWgslChecksum.test.ts",
+    rustHalf: "deep-engine-native/src/bloom_pass.rs",
+    constants: "",
+    preamble: `export const BLOOM_PREFILTER_WGSL = /* wgsl */ `,
+  },
 ];
 
 for (const entry of SHARED_WGSL) {

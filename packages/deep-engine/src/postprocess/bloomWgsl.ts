@@ -1,6 +1,9 @@
+import { BLOOM_PREFILTER_WGSL } from "./bloomPrefilterWgsl.js";
+
 export const BLOOM_WORKGROUP_SIZE = 8;
 
 export const BLOOM_WGSL = /* wgsl */ `
+${BLOOM_PREFILTER_WGSL}
 struct BloomParams {
   threshold: f32,
   softKnee: f32,
@@ -29,10 +32,9 @@ fn extract(color: vec3<f32>) -> vec3<f32> {
   let knee = bloomParams.threshold * bloomParams.softKnee;
   var soft = 0.0;
   if (knee > 0.0) {
-    let transition = clamp(brightness - bloomParams.threshold + knee, 0.0, 2.0 * knee);
-    soft = transition * transition / (4.0 * knee);
+    soft = deepBloomSoftKnee(brightness, bloomParams.threshold, knee, 0.0);
   }
-  let contribution = max(brightness - bloomParams.threshold, soft) / max(brightness, 0.00001);
+  let contribution = deepBloomContribution(brightness, bloomParams.threshold, soft);
   return positive * contribution;
 }
 

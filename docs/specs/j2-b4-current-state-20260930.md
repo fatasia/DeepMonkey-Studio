@@ -2,6 +2,16 @@
 
 日期：2026-09-30。结论：三族零宽混合保护和非混合区提前返回的最小切片已实施并通过 GPU 回归；完整 CSM 数学单源化仍待后续裁决。两端规划器、资源布局和作者阴影保持现有设计。
 
+## 后继共享混合小核：现状核查
+
+2026-09-30 后继刀实施前重新完成六步核查：全仓 packages/apps 与未跟踪文件已有三生产族相同的零宽/非混合区保护，不能再次实现保护；契约仍为主 TS 624B、DeepSL/Native 336B，types/contracts 已有 CSM 定义；Three/wgpu/Naga、同步器与 checksum 设施均已在用；主 PBR、正式 DeepSL adapter、Native 普通/RT factory 都是实际消费；已有三族两轮七点真实边界 GPU 门和正式包 fixture，复用这些证据路径；当前规格与交接记录仍将共享小核列为缺口。
+
+已有（不重建）：选择/视深/矩阵/法线偏置/3×3 PCF、上轮 early return、规划器与资源管理。真实缺口只有三份 guard 与 smoothstep 调用的维护身份尚未统一。
+
+本刀采用无绑定、无槽数假设的 `cascadedShadowMath.wgsl`，提供精确旧式 `deepCascadeBlendInactive` 与 `deepCascadeBlendWeight`。分开保留 active 判定和权重，避免用 weight==0 代替边界判断而改变下一个 PCF 的执行路径。末级早退仍由宿主先判断；9/18 个显式 comparison、宿主 ABI、默认、视深和法线策略都保持。
+
+TS 主/DeepSL 用生成镜像；Native 生产 factory 在现有源组合处 include canonical 一次。原始源的解析/RT/BRDF测试及既有 Chrome boundary runner 也补同一个 include，不新增渲染器、IR 或 GPU 测试平台。真源登记、镜像/sidecar 同步、正式 compiler 黄金 fixture 与 Native GPU 均由主线串行执行。
+
 ## 现状核查
 
 以下六步与差异表记录实施前状态；后续授权切片及证据见文末。
@@ -91,7 +101,9 @@ DeepSL/native 原源码缺失零宽保护已确认；NVIDIA Lovelace 的改前�
 
 改前 `--baseline` 与改后各两轮：结果有限、重复稳定、逐样本改前改后一致。正宽区间最大误差 `5.960464477539063e-8`，零宽误差 0。证据 `test-output/interrupted-0930/csm-boundary/evidence.json`：`passed=true`、`stable=true`、`beforeAfterValuesEqual=true`。JSON 中同时保存每族实际拼接 shader 的 SHA-256 `sourceHash` 与采样库的 `libraryHash`，由既有 `sha256Utf8` 计算。
 
-| 实际采样族 | 当前执行 shader sourceHash |
+以下 sourceHash 属于上轮 guard 切片，保存历史改前/改后证据；不作为后继共享小核的最终源身份。
+
+| 实际采样族 | 上轮 guard 切片执行 shader sourceHash |
 |---|---|
 | ts-built-in | `12182955135cd4001e2fe1b255681c7b6a8a8bf46f0ee56b1a958921deecd41b` |
 | ts-deepsl-package | `fb51dd84adb778a9a9c0ced48ab47e4e0df499ff0f67e81f6fbb30ac3d14f355` |
@@ -126,3 +138,17 @@ cargo test --manifest-path packages/deep-engine-native/Cargo.toml --locked --tes
 ### 视觉核查与剩余范围
 
 按 design-taste-digitaltwin 读取渲染验收要求；边界夹具使用现有 base.css 令牌，改后两轮截图 `after-round-1.png`、`after-round-2.png` 已逐张检查，中文标题、六组采样带和数值标签完整，无裁切。此夹具用于数值检查，未进行完整产品场景的 Kimi-95 十维视觉评分。性能实测、linear 过滤边界、跨设备零宽求值、Native 同七点输入，以及是否抽共享小核仍是后续项。
+
+## 后继共享混合小核实施
+
+无绑定真源 `wgsl/cascadedShadowMath.wgsl` 已登记并由既有同步器生成 TS 镜像与 sidecar：437 bytes，SHA-256 `f493d54a6a64a32372206d207549e093404bba70fb2fe7253290d6626a6ce69e`。三份生产 CSM 的重复边界判断/权重调用已接同一真源；原 PCF 循环、末级判断、坐标、偏置和 ABI 保持。
+
+Native 普通/RT `frame_bindings` 每个 shader module 只 include 一份 canonical。所有原始 CSM 的直接组合消费已全仓查到并补同一 include：照明库组合解析测试、RT 源合同、BRDF 读回源、级联合同，以及原有 Chrome 边界 runner。shader_material/lod_draw 已消费生产 factory，未另建拼接设施。
+
+正式 `regenerate-csm-package-fixture.mjs` 由主线运行，黄金模块和 package/cache key 随 source 更新，不手工修 hash。TS 聚焦七文件 46 passed、2 个既有 Naga 条件 skipped；`git diff --check` 通过。新增 kernel 9 行、checksum gate 29 行，生产源无帧内字符串装配。
+
+主线后继验证：Chrome三族各两种混合宽度、七个边界点、两轮通过，最大参考误差`5.96e-8`、两轮稳定、与上轮数值一致、GPU错误0。当前实际shader哈希为TS built-in `ad0902136ddb124a8e8a1803ef387c3e9fba9313894fca82a218e5b68d3653f0`、DeepSL `97978a1c27e593a6f027b77e70f000861a12b14c5370d48a6d8decbf546ba785`、Native生产WGSL在Chrome运行 `50df3cfb9a79647863ecb0c039fa636deac466a4810ffaaa659f7f8f133f144b`。上轮表保留为guard首刀历史证据。
+
+Native级联合同8项、照明库组合Naga解析1项、实际binary RT源合同1项通过。原有生产Player/CSM、坏包隔离及透明混合三项GPU测试通过，包含HDR与四CSM精确对拍、first-cascade复用负例和last-good/new-device。该target此轮总5 passed中另有1项辅助CPU测试与在途设备恢复smoke；后者以独立Gate E最终证据为准。日志`csm-math-native-contract.log`、`csm-math-native-parse.log`、`csm-math-native-rt-contract.log`与`csm-math-native-gpu.log`位于`test-output/interrupted-0930/`。
+
+主线复核三文件33 passed、1个既有Naga条件skip，Deep Engine构建通过，因生产Rust变更重新生成WASM。本刀完成重复混合数学提取；linear PCF边界、Native同七点夹具、跨设备与帧时仍待后继，不记完整CSM或画质最终验收通过。

@@ -40,6 +40,8 @@
 
 主线串行验证已通过：输出公共源合同2项、mesh ABI 4项、bloom合同5项，共11 passed。真实 NVIDIA RTX4060 Laptop / Vulkan 探针1项通过，96组比较的CPU最大误差0.00048822165，跨变体差0、alpha差0，重复两轮精确一致，GPU错误0。日志为 `test-output/interrupted-0930/output-native-contract.log` 与 `output-native-gpu.log`。首刀已验证；整场景与可选参数范围保持后继状态。
 
+生产回归补证：Bloom GPU 1项、Fog 1项与compact 2项通过；40情景41,032像素等价，6情景2,382像素保持来源坐标。严格J5 `evidence-20260930044442.json` 七对十四腿含GPU通过，其中Gate D使用标准双端runner。第三波36文件已提交 `cbce805a`，未推送。
+
 首次合同回归发现 `native_mesh_abi` 的旧断言仍期待 `energy_compensation * ambient_occlusion`。现有 J2-B3 白炉修复已先将补偿纳入 `specular_fraction`，再将同一分数用于漫反射储备和镜面交付；断言改为同时锁这三条生产公式。J2-B1 公共直射 BRDF 由 `frame_bindings` include；此项 IBL 分配仍在 mesh 主体，未因公共 BRDF 迁移而移走。既有 CPU 白炉和真实 GPU 球/墙腿保持。
 
 GPU 矩阵按职责拆入 `tests/support/native_output_color_matrix.rs`，仍调用原测试目标的真实 `draw_variant` 与纹理输入工具；半浮点转换工具单独位于 `tests/support/native_output_half.rs`。主测试文件低于 300 行，测试名与运行入口保持，不新增体量豁免。

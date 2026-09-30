@@ -13,9 +13,9 @@ const entries = [
 it.each(entries)("$id rejects degenerate blending and returns before next-cascade PCF outside the blend interval", entry => {
   const body = entry.source.slice(entry.source.indexOf(`fn ${entry.functionName}(`)).split("\nfn ")[0]!;
   const lastCascade = body.indexOf("if (index + 1u >= count) { return current; }");
-  const guard = body.indexOf(`if (${entry.start} >= split || ${entry.depth} <= ${entry.start}) { return current; }`);
+  const guard = body.indexOf(`if (deepCascadeBlendInactive(${entry.depth}, ${entry.start}, split)) { return current; }`);
   const nextSample = body.indexOf(`${entry.sample}(index + 1u`);
-  const smoothing = body.indexOf("smoothstep(");
+  const smoothing = body.indexOf("deepCascadeBlendWeight(");
   expect(lastCascade).toBeGreaterThan(0);
   expect(guard).toBeGreaterThan(lastCascade);
   expect(nextSample).toBeGreaterThan(guard);

@@ -49,9 +49,9 @@ fn shadow_visibility(world: vec3f, normal: vec3f, n_dot_l: f32) -> f32 {
   if (index + 1u >= count) { return current; }
   let blend_start = cascaded_shadow.blend_starts[index];
   let split = cascaded_shadow.split_depths[index];
-  if (blend_start >= split || view_depth <= blend_start) { return current; }
+  if (deepCascadeBlendInactive(view_depth, blend_start, split)) { return current; }
   return mix(current, sample_cascade(index + 1u, world, normal, n_dot_l),
-    smoothstep(blend_start, split, view_depth));
+    deepCascadeBlendWeight(view_depth, blend_start, split));
 }
 
 fn local_spot_pcss(layer: i32, uv: vec2f, receiverDepth: f32, softness: f32) -> f32 {

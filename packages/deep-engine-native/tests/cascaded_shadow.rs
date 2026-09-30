@@ -257,7 +257,8 @@ fn runtime_contract_uses_array_sampling_dynamic_caster_offsets_and_blending() {
         "@group(0) @binding(1) var shadow_map: texture_depth_2d_array",
         "@group(0) @binding(7) var<uniform> cascaded_shadow",
         "textureSampleCompareLevel",
-        "smoothstep(blend_start, split, view_depth)",
+        "deepCascadeBlendInactive(view_depth, blend_start, split)",
+        "deepCascadeBlendWeight(view_depth, blend_start, split)",
     ] {
         assert!(
             sampling_shader.contains(contract),
@@ -265,6 +266,7 @@ fn runtime_contract_uses_array_sampling_dynamic_caster_offsets_and_blending() {
         );
     }
     assert!(mesh_shader.contains("shadow_visibility(input.world, normal"));
+    assert!(frame_bindings.contains("../../deep-engine/wgsl/cascadedShadowMath.wgsl"));
     assert!(frame_bindings.contains("view_dimension: wgpu::TextureViewDimension::D2Array"));
     assert!(frame_bindings.contains("has_dynamic_offset: true"));
     assert!(
