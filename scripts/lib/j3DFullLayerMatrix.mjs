@@ -94,6 +94,11 @@ export const LEGAL_DIFFERENCE_MATRIX_V1 = Object.freeze([
     host: { web: "transparency.currentColor 为最终透明输出", native: "opaque pass 排序 alpha" },
     rule: "共同透明语义仅限单个非重叠层; 重叠层 OIT 一致性不在 J3-D-full 范围",
     evidence: ["docs/specs/j3-gate-d-texture-coverage-20260930.md"], status: "diagnostic" }),
+  Object.freeze({ id: "LD-15", layer: ["hdr-color"],
+    difference: "直射高光峰双实现(GLSL/WGSL) f32 路径差 × RGBA16F 量化: 亮度≥4 区 1 half-ulp(.0039@4) 已超 .002 绝对门",
+    host: { web: "Three 原生 BRDF_GGX_Multiscatter 直射路径", native: "FrameObservation 分支" },
+    rule: "仅当 max 差像素呈 half-ulp 阶梯形态(差=±k·ulp(亮度), 邻域符号混合)且数值路径已同源(DFG 表/公式/visibility)时适用; 系统性同号差不得援引本条",
+    evidence: ["docs/specs/c8-s9-local-direct-multiscattering-20260930.md", "docs/specs/j3-d-full-cpu-prep-20261001.md"], status: "diagnostic" }),
 ]);
 
 /** 新发现差异登记格式(追加条目必须过此校验;拒绝无证据引用或撞号的条目)。 */

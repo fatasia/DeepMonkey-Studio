@@ -36,9 +36,9 @@ const goodEvidence = layer => ({
 });
 const identity = () => hash("current-fixture-bytes");
 
-test("合法差异矩阵 v1:14 条、id 唯一、层引用全部合法", () => {
-  assert.equal(LEGAL_DIFFERENCE_MATRIX_V1.length, 14);
-  assert.equal(new Set(LEGAL_DIFFERENCE_MATRIX_V1.map(entry => entry.id)).size, 14);
+test("合法差异矩阵:15 条(v1十四+LD-15 高光峰量化边界)、id 唯一、层引用全部合法", () => {
+  assert.equal(LEGAL_DIFFERENCE_MATRIX_V1.length, 15);
+  assert.equal(new Set(LEGAL_DIFFERENCE_MATRIX_V1.map(entry => entry.id)).size, 15);
   for (const entry of LEGAL_DIFFERENCE_MATRIX_V1)
     for (const layer of entry.layer) assert.ok(REQUIRED_LAYER_GATES[layer], `${entry.id} 引用未知层 ${layer}`);
 });
@@ -86,7 +86,7 @@ test("无身份键的层照常校验,聚合时登记 freshness 说明", () => {
 });
 
 test("registerLegalDifference:缺字段/撞号/未知层/缺证据文件均拒绝,合法新条目可追加", () => {
-  assert.throws(() => registerLegalDifference(LEGAL_DIFFERENCE_MATRIX_V1, { id: "LD-15", layer: ["display"] }),
+  assert.throws(() => registerLegalDifference(LEGAL_DIFFERENCE_MATRIX_V1, { id: "LD-16", layer: ["display"] }),
     /missing "(difference|host|rule|evidence|status)"/);
   assert.throws(() => registerLegalDifference(LEGAL_DIFFERENCE_MATRIX_V1,
     { ...LEGALLD15(), id: "LD-01" }), /Duplicate legal difference id LD-01/);
@@ -96,9 +96,9 @@ test("registerLegalDifference:缺字段/撞号/未知层/缺证据文件均拒�
     { ...LEGALLD15(), evidence: ["docs/specs/no-such-doc.md"] }), /cites missing evidence file/);
   const appended = registerLegalDifference(LEGAL_DIFFERENCE_MATRIX_V1, LEGALLD15());
   assert.equal(appended.length, LEGAL_DIFFERENCE_MATRIX_V1.length + 1);
-  assert.equal(appended.at(-1).id, "LD-15");
+  assert.equal(appended.at(-1).id, "LD-16");
   function LEGALLD15() {
-    return { id: "LD-15", layer: ["display"], difference: "示例:两端 tone mapper 数值边界", host: { web: "x", native: "y" },
+    return { id: "LD-16", layer: ["display"], difference: "示例:两端 tone mapper 数值边界", host: { web: "x", native: "y" },
       rule: "z", evidence: ["docs/specs/j3-gate-d-output-first-cut-20260930.md"], status: "diagnostic" };
   }
 });
