@@ -1,0 +1,10 @@
+{
+  "schema": "j3-bloom-legal-texture-profiles-v1",
+  "width": 64,
+  "height": 64,
+  "web": {"threshold":1.25,"softKnee":0.2,"intensity":0.55,"maxLevels":5},
+  "native": {"threshold":1,"softKnee":0.5,"intensity":0.14,"radius":1},
+  "absoluteTolerance":0.003,
+  "relativeTolerance":0.004,
+  "cases":["uniform","center-spot","edge-spot","gradient","signed-checker","threshold-stripes"]
+}
