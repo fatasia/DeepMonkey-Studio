@@ -69,7 +69,8 @@ describe("CPU/WGSL/CPU-reference formula parity (string-locked)", () => {
     expect(VOLUMETRIC_FOG_MARCH_WGSL).toContain("baseExtinction * exp(-max(height, 0.0) / scaleHeight)");
     // Beer-Lambert 消光:exp(-Δτ),σ₀ 单次计入(2026-09-19 量纲修复后的基线)。
     expect(cpuSource).toContain("const extinction = Math.exp(-opticalDepth);");
-    expect(VOLUMETRIC_FOG_MARCH_WGSL).toContain("let extinction = exp(-opticalDepth);");
+    expect(VOLUMETRIC_FOG_MARCH_WGSL).toContain("let extinction = deepFogTransmittance(opticalDepth);");
+    expect(VOLUMETRIC_FOG_MARCH_WGSL).toContain("return exp(-opticalDepth);");
     // 散射:albedo·Δτ·phase·shadow(切片一 shadow ≡ 1)。
     expect(cpuSource).toContain("medium.albedo * opticalDepth * phase * shadow");
     expect(VOLUMETRIC_FOG_MARCH_WGSL).toContain("let scattering = albedo * opticalDepth * phase * 1.0;");

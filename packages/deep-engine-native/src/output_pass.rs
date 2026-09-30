@@ -9,6 +9,7 @@ const FOG_SHADER: &str = include_str!("../assets/shaders/native_output_fog_v1.wg
 const BLOOM_FOG_SHADER: &str = include_str!("../assets/shaders/native_output_bloom_fog_v1.wgsl");
 const DISPLAY_COLOR_SHADER: &str = include_str!("../../deep-engine/wgsl/displayColor.wgsl");
 const AUTHOR_COLOR_SHADER: &str = include_str!("../assets/shaders/native_output_color.wgsl");
+const FOG_OPTICAL_DEPTH_SHADER: &str = include_str!("../../deep-engine/wgsl/fogOpticalDepth.wgsl");
 
 /// 作者色彩分级 uniform 字节数：3 × vec4（switches/grading/whiteBalance），
 /// 与 Web `packPbrAuthorColorEffects` 的 12-float 布局逐位一致。
@@ -193,8 +194,13 @@ pub fn output_shader_with_profile(bloom: bool, fog: bool, profile: OutputColorPr
         (false, true) => FOG_SHADER,
         (true, true) => BLOOM_FOG_SHADER,
     };
+    let variant = if fog {
+        [FOG_OPTICAL_DEPTH_SHADER, variant].join("\n")
+    } else {
+        variant.to_owned()
+    };
     if profile == OutputColorProfile::DeepAces {
-        return [DISPLAY_COLOR_SHADER, AUTHOR_COLOR_SHADER, variant].join("\n");
+        return [DISPLAY_COLOR_SHADER, AUTHOR_COLOR_SHADER, &variant].join("\n");
     }
     // Specialize the existing shim once; no new binding or per-pixel profile branch.
     const ACES_CALL: &str = "return deepAcesFit(color, 1.0);";
@@ -204,7 +210,7 @@ pub fn output_shader_with_profile(bloom: bool, fog: bool, profile: OutputColorPr
         "Native output profile shim changed"
     );
     let author = AUTHOR_COLOR_SHADER.replacen(ACES_CALL, "return deepThreeAcesFit(color, 1.0);", 1);
-    [DISPLAY_COLOR_SHADER, &author, variant].join("\n")
+    [DISPLAY_COLOR_SHADER, &author, &variant].join("\n")
 }
 
 fn create_layout(

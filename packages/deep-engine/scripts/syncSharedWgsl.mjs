@@ -373,6 +373,14 @@ export const DEEP_GOD_RAYS_ENTRY = "marchVolumetricGodRays";
     constants: "",
     preamble: `export const BLOOM_PREFILTER_WGSL = /* wgsl */ `,
   },
+  {
+    source: "fogOpticalDepth.wgsl",
+    module: resolve(packageRoot, "src/fog/fogOpticalDepthWgsl.ts"),
+    gate: "src/fog/fogOpticalDepthWgslChecksum.test.ts",
+    rustHalf: "deep-engine-native/src/output_pass.rs",
+    constants: "",
+    preamble: `export const FOG_OPTICAL_DEPTH_WGSL = /* wgsl */ `,
+  },
 ];
 
 for (const entry of SHARED_WGSL) {

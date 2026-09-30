@@ -5,9 +5,11 @@
 // 精度口径:GPU 为 f32,CPU 基线为 f64;表达式与求值顺序一致,低位差异是既接受的漂移
 // (与 SSR/AO 族同纪律),公式级对等由测试保证。
 
+import { FOG_OPTICAL_DEPTH_WGSL } from "./fogOpticalDepthWgsl.js";
+
 export const VOLUMETRIC_FOG_WORKGROUP_SIZE = 8;
 
-export const VOLUMETRIC_FOG_MARCH_WGSL = /* wgsl */ `
+export const VOLUMETRIC_FOG_MARCH_WGSL = FOG_OPTICAL_DEPTH_WGSL + /* wgsl */ `
 struct FogParams {
   sourceSize: vec2<u32>,
   scatterSize: vec2<u32>,
@@ -31,7 +33,7 @@ fn henyeyGreensteinPhase(cosTheta: f32, anisotropy: f32) -> f32 {
   return (1.0 - g2) / denominator;
 }
 fn densityAtHeight(height: f32, baseExtinction: f32, scaleHeight: f32) -> f32 {
-  return baseExtinction * exp(-max(height, 0.0) / scaleHeight);
+  return deepFogDensityAtHeight(height, baseExtinction, scaleHeight);
 }
 fn ndcAt(coordinate: vec2<u32>) -> vec2f {
   let uv = (vec2f(coordinate) + 0.5) / vec2f(fogParams.sourceSize);
@@ -82,7 +84,7 @@ fn marchVolumetricFog(@builtin(global_invocation_id) id: vec3<u32>) {
     let height = rayDirection.y * distance;
     let opticalDepth = densityAtHeight(height, baseExtinction, scaleHeight) * stepLength;
     if (opticalDepth < FOG_EPSILON) { continue; }
-    let extinction = exp(-opticalDepth);
+    let extinction = deepFogTransmittance(opticalDepth);
     let scattering = albedo * opticalDepth * phase * 1.0;
     inscatter += fogParams.lightRadiance.xyz * (scattering * transmittance);
     transmittance *= extinction;

@@ -93,7 +93,7 @@ fn real_package_parser_preserves_default_and_consumes_optional_profile() {
 }
 
 #[test]
-fn default_shader_bytes_are_unchanged_and_three_specializes_only_the_shim_call() {
+fn profile_selection_preserves_assembled_body_and_specializes_only_the_shim_call() {
     let display = include_str!("../../deep-engine/wgsl/displayColor.wgsl");
     let author = include_str!("../assets/shaders/native_output_color.wgsl");
     for (bloom, fog, variant) in [
@@ -118,8 +118,19 @@ fn default_shader_bytes_are_unchanged_and_three_specializes_only_the_shim_call()
             include_str!("../assets/shaders/native_output_bloom_fog_v1.wgsl"),
         ),
     ] {
-        let old = [display, author, variant].join("\n");
-        assert_eq!(output_pass::output_shader(bloom, fog), old);
+        // Later Fog common-math extraction intentionally changes Fog bytes;
+        // profile selection must still change only the ACES shim call.
+        let variant = if fog {
+            [
+                include_str!("../../deep-engine/wgsl/fogOpticalDepth.wgsl"),
+                variant,
+            ]
+            .join("\n")
+        } else {
+            variant.to_owned()
+        };
+        let expected = [display, author, &variant].join("\n");
+        assert_eq!(output_pass::output_shader(bloom, fog), expected);
         let three =
             output_pass::output_shader_with_profile(bloom, fog, OutputColorProfile::ThreeAcesR185);
         assert_eq!(
@@ -127,7 +138,7 @@ fn default_shader_bytes_are_unchanged_and_three_specializes_only_the_shim_call()
                 "return deepThreeAcesFit(color, 1.0);",
                 "return deepAcesFit(color, 1.0);"
             ),
-            old
+            expected
         );
     }
 }

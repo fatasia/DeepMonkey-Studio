@@ -39,7 +39,7 @@ fn fogged_hdr(position: vec4f) -> vec4f {
   let distance = near * far / max(far - depth * (far - near), 0.0001);
   let optical_depth = frame.tuning.w * distance;
   let metric = select(optical_depth, optical_depth * optical_depth, frame.fogProjection.z == 2.0);
-  var amount = clamp(1.0 - exp(-metric), 0.0, 1.0);
+  var amount = clamp(1.0 - deepFogTransmittance(metric), 0.0, 1.0);
   if (frame.fogProjection.z == 1.0) {
     // Recover a world ray from the frame's projection columns. No inverse
     // matrix, froxel texture or extra GPU binding is needed for height falloff.
@@ -64,8 +64,8 @@ fn fogged_hdr(position: vec4f) -> vec4f {
       if (step >= step_count) { break; }
       let sample_distance = (f32(step) + 0.5) * step_distance;
       let sample_height = frame.eye.y + ray.y * sample_distance;
-      let density = frame.tuning.w * exp(-max(sample_height, 0.0) / frame.fogProfile.y);
-      let step_transmittance = exp(-density * step_distance);
+      let density = deepFogDensityAtHeight(sample_height, frame.tuning.w, frame.fogProfile.y);
+      let step_transmittance = deepFogTransmittance(density * step_distance);
       integrated += transmittance * (1.0 - step_transmittance) * phase;
       transmittance *= step_transmittance;
     }
