@@ -187,6 +187,59 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     for (let settle = 0; settle < 17; settle++) await frame(false);
   }
 
+  function recoverySetup() {
+    const fixture = setup();
+    let notification!: () => void;
+    Object.assign(fixture.first, { onDeviceRecreated: (listener: (epoch: number) => void) => {
+      notification = () => listener(1); return vi.fn();
+    } });
+    return { ...fixture, recover: () => notification() };
+  }
+
+  it("replaces the complete recovered host and ignores a repeated old epoch notification", async () => {
+    const { bridge, first, second, create, recover, authorCanvas } = recoverySetup();
+    await activate(bridge); first.render.mockClear();
+    recover();
+    expect(bridge.activeBackend).toBe("webgl"); expect(authorCanvas.style.opacity).toBe("1");
+    expect(first.dispose).toHaveBeenCalledOnce(); expect(first.render).not.toHaveBeenCalled();
+    recover(); await microtasks(); await frame(false); await frame(false);
+    expect(create).toHaveBeenCalledTimes(2); expect(bridge.activeBackend).toBe("webgpu");
+    expect(second.prepareScene).toHaveBeenCalledOnce(); expect(second.dispose).not.toHaveBeenCalled();
+    expect(authorCanvas.style.opacity).toBe("0");
+  });
+
+  it("keeps the author frame and reports once when the complete recovery candidate fails", async () => {
+    const { bridge, first, second, recover, authorCanvas, failure } = recoverySetup();
+    await activate(bridge); second.prepareScene.mockRejectedValueOnce(new Error("replacement upload failed"));
+    recover(); await microtasks(); await frame(false); await frame(false); await microtasks();
+    expect(bridge.activeBackend).toBe("webgl"); expect(authorCanvas.style.opacity).toBe("1");
+    expect(first.dispose).toHaveBeenCalledOnce(); expect(second.dispose).toHaveBeenCalledOnce();
+    expect(failure).toHaveBeenCalledOnce(); recover(); await microtasks(); expect(failure).toHaveBeenCalledOnce();
+  });
+
+  it.each(["cancel", "dispose"] as const)("retires a late recovery candidate after %s", async mode => {
+    const { bridge, first, second, recover, authorCanvas, failure } = recoverySetup();
+    await activate(bridge);
+    const validation = deferred<{ frame: number }>(); second.prepareScene.mockReturnValueOnce(validation.promise);
+    recover(); await microtasks(); await frame(false);
+    expect(second.prepareScene).toHaveBeenCalledOnce();
+    if (mode === "cancel") bridge.cancelPendingSwitch(); else bridge.dispose();
+    validation.resolve({ frame: 2 }); await microtasks(); await frame(false); await microtasks();
+    expect(bridge.activeBackend).toBe("webgl"); expect(first.dispose).toHaveBeenCalledOnce();
+    expect(second.dispose).toHaveBeenCalledOnce(); expect(failure).not.toHaveBeenCalled();
+    expect(authorCanvas.style.opacity).toBe(mode === "dispose" ? "0.9" : "1");
+  });
+
+  it("honors a pending user WebGL handover when an epoch notification arrives", async () => {
+    const { bridge, first, create, recover, authorCanvas, failure } = recoverySetup();
+    await activate(bridge);
+    const switching = bridge.switchTo("webgl"); recover();
+    await microtasks(); await frame(false);
+    expect(await switching).toMatchObject({ status: "cancelled", activeBackend: "webgl" });
+    expect(create).toHaveBeenCalledOnce(); expect(first.dispose).toHaveBeenCalledOnce();
+    expect(authorCanvas.style.opacity).toBe("1"); expect(failure).not.toHaveBeenCalled();
+  });
+
   it("allocates author frame capture only for an explicitly opened diagnostics session", async () => {
     const regular = setup();
     await activate(regular.bridge);

@@ -400,14 +400,7 @@ export class StudioDeepWebGpuBridge {
     });
     const unsubscribeRecreated = backend.onDeviceRecreated?.(() => {
       if (this.deepBackend !== backend) return;
-      this.syncPending = undefined;
-      this.syncAgain = undefined;
-      this.settleFrameInFlight = false;
-      this.settleFrameBackend = undefined;
-      this.lastCameraSnapshot = undefined;
-      this.settledViewKey = "";
-      this.lastDemandRevision = -1;
-      this.renderDeepFrame();
+      this.replaceRecoveredBackend(backend);
     });
     const legacyLoss = session?.onFatalLoss === undefined && session?.device?.lost;
     if (legacyLoss) void legacyLoss.then((info) => {
@@ -431,6 +424,26 @@ export class StudioDeepWebGpuBridge {
     this.activeBackendValue = "webgl";
     this.viewer.setPresentationRendererBackend("webgl");
     this.releaseDeep();
+  }
+
+  private replaceRecoveredBackend(backend: DeepWebGpuBackend): void {
+    if (this.closed || this.deepBackend !== backend) return;
+    const userSwitchPending = this.pending !== undefined;
+    this.cancelPendingSwitch();
+    try { this.publishWebGl(); }
+    catch (error) { this.options.onRuntimeFailure?.(error instanceof Error ? error : new Error(String(error))); return; }
+    if (userSwitchPending) return;
+    // The candidate transaction creates every GPU owner and validates its first
+    // frame. A recovered DeviceSession cannot reuse the old resource graph.
+    const replacement = this.switchTo("webgpu"), generation = this.generation;
+    const reportFailure = (error: Error): void => {
+      if (!this.closed && generation === this.generation && this.activeBackendValue === "webgl") {
+        this.options.onRuntimeFailure?.(error);
+      }
+    };
+    void replacement.then(result => {
+      if (result.status === "failed") reportFailure(new Error(result.error ?? "GPU renderer replacement failed."));
+    }, error => reportFailure(error instanceof Error ? error : new Error(String(error))));
   }
 
   private releaseDeep(): void {

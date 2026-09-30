@@ -1,4 +1,5 @@
 import { DeviceSession } from "./deviceSession.js";
+import { RendererDeviceEpoch } from "./rendererDeviceEpoch.js";
 import { uploadBuffer } from "./meshBuffers.js";
 import { authoredShadowPipelines, PBR_FRAME_UNIFORM_FLOATS, type Pipelines } from "./pipelines.js";
 import { openPbrRenderer } from "./pbrRendererBootstrap.js";
@@ -145,17 +146,14 @@ export class PbrRenderer {
   /** F4 虚拟纹理采样接线(opt-in):缺省 undefined = 整纹理驻留权威路径零行为变化。 */
   private readonly virtualTextures: VirtualTextureFrameBridge | undefined;
   private readonly virtualTileLookup: VirtualTextureTileLookupPass | undefined;
-  /** C13 recovery rehydrates the resource graph on the same DeviceSession. */
-  private readonly rendererOptions: PbrRendererOptions;
-  private lastPacket: RenderPacket | undefined;
-  private recoveryUnsubscribe: (() => void) | undefined;
-  private recoveryRebuild: Promise<void> | undefined;
-  private recoveryError: unknown;
+  /** DeviceSession recovery requires replacement of this complete GPU graph. */
+  private readonly deviceEpoch: RendererDeviceEpoch;
   /** 上一已提交渲染帧的相机切换;自动曝光在其后一帧直取目标(剪除瞬态)。 */
   private previousFrameCameraCut = false;
   private constructor(readonly session: DeviceSession, private readonly pipelines: Pipelines, environment: StudioEnvironment,
     lighting: ForwardPlusPbrRuntime, localShadows: LocalSpotShadowRuntime, options: PbrRendererOptions, features: PbrRendererFeatures,
     deformationPipelines?: Pipelines | Promise<Pipelines>, private readonly releasePipelines?: () => void) {
+    this.deviceEpoch = new RendererDeviceEpoch(session.device);
     this.diagnostics = new PbrRendererDiagnostics(session);
     this.clusterLodEnabled = resolveClusterLodSlotOption(options.clusterLod);
     // F4 虚拟纹理(opt-in):resolve disabled(未启用/非法配置)时不构造任何资源,
@@ -219,8 +217,6 @@ export class PbrRenderer {
     this.postProcess = new PbrPostProcessChain(session, this.features, this.transientTextures);
     this.transparency = new PbrTransparencyPass(session, this.transientTextures, features.temporalAa);
     this.lighting = lighting; this.localShadows = localShadows;
-    this.rendererOptions = options;
-    if (options.recovery !== undefined) this.recoveryUnsubscribe = session.onDeviceRecreated(() => { void this.rebuildAfterRecovery(); });
   }
   get frameCaptureSession(): FrameCaptureSession | undefined { return this.frameCapture?.session; }
   /** 首帧验证通过后由宿主调用：放行背景 main 变体排队，避免与首帧争抢设备。 */
@@ -228,33 +224,36 @@ export class PbrRenderer {
   static async create(canvas: HTMLCanvasElement, gpu: GPU | undefined, signal: AbortSignal, options: PbrRendererOptions = {}): Promise<PbrRenderer> {
     if (typeof performance !== "undefined") performance.mark("deep-webgpu:device-open-start");
     const session = await DeviceSession.open(canvas, gpu, signal, options.deviceMemoryBudgetBytes, options.recovery);
+    const deviceEpoch = new RendererDeviceEpoch(session.device);
     if (typeof performance !== "undefined") performance.mark("deep-webgpu:device-opened");
     return openPbrRenderer(session, signal, options, () => new DOMException("GPU preparation cancelled", "AbortError"),
-      (...args) => new PbrRenderer(...args));
+      (...args) => { deviceEpoch.assertCurrent(session.device); return new PbrRenderer(...args); });
   }
   setInstances(data: Float32Array<ArrayBuffer>): void { this.setPacket(spherePacket(data)); }
   setPacket(packet: RenderPacket): void {
-    this.lastPacket = packet;
+    this.deviceEpoch?.assertCurrent(this.session.device);
     if (this.packets.set(packet)) { this.sceneChanged(); this.syncProbeClipmapSurfaces(packet); }
     // F4 虚拟纹理目录全量同步:opt-in 才有 bridge;包内 RGBA8 纹理按需分页,压缩纹理
     // 显式不入目录(反馈侧 droppedUnknownTexture 计数,采样方整纹理路径不受影响)。
     this.virtualTextures?.syncTextures(packet.textures ?? []);
   }
   async setPacketValidated(packet: RenderPacket, signal?: AbortSignal): Promise<void> {
-    this.lastPacket = packet;
+    this.deviceEpoch?.assertCurrent(this.session.device);
     if (await this.packets.setValidated(packet, signal)) { this.sceneChanged(); this.syncProbeClipmapSurfaces(packet); }
     this.virtualTextures?.syncTextures(packet.textures ?? []);
   }
   stageResidentPacket(projection: ResidentPacketProjection): void {
+    this.deviceEpoch?.assertCurrent(this.session.device);
     this.packets.stageResidentProjection(projection);
   }
   async stageResidentPacketValidated(projection: ResidentPacketProjection,
     signal?: AbortSignal): Promise<void> {
+    this.deviceEpoch?.assertCurrent(this.session.device);
     await this.packets.stageResidentProjectionValidated(projection, signal);
   }
   cancelResidentPacketStage(): void { this.packets.cancelPendingPacketStage(); }
   async setInstancesValidated(data: Float32Array<ArrayBuffer>, signal?: AbortSignal): Promise<void> { await this.setPacketValidated(spherePacket(data), signal); }
-  setDiagnosticsSampling(enabled: boolean): void { this.diagnostics.setEnabled(enabled); } updateInstances(update: InstanceUpdate): void { if (this.packets.updateInstances(update)) this.shadowDirty = true; }
+  setDiagnosticsSampling(enabled: boolean): void { this.diagnostics.setEnabled(enabled); } updateInstances(update: InstanceUpdate): void { this.deviceEpoch?.assertCurrent(this.session.device); if (this.packets.updateInstances(update)) this.shadowDirty = true; }
   /**
    * 第 3 条权威路径:CPU 拾取查询(同步)。遍历当前发布实例并用几何球体宽相位筛选,
    * 最坏仍为 O(实例 × 三角形);边界与精度限制见 webgpu/picking.ts 头注;不可用时返回
@@ -270,7 +269,7 @@ export class PbrRenderer {
     return pickScene({ batches: inputs.batches, geometries: inputs.geometries,
       ...(notes ? { degradedNotes: notes } : {}) }, origin, direction, options);
   }
-  setProbeClipmap(binding?: Parameters<ForwardPlusPbrRuntime["setProbeClipmap"]>[0]): void { this.lighting.setProbeClipmap(binding); this.historyDirty = true; }
+  setProbeClipmap(binding?: Parameters<ForwardPlusPbrRuntime["setProbeClipmap"]>[0]): void { this.deviceEpoch?.assertCurrent(this.session.device); this.lighting.setProbeClipmap(binding); this.historyDirty = true; }
   /**
    * G1-S1：注入簇级微多边形绘制槽位（bake DAG + 各层几何，clusterLodBake 产物）。
    * 需 PbrRendererOptions.clusterLod = true（fail-closed：未开启显式拒绝）；重复调用替换旧槽位。
@@ -278,6 +277,7 @@ export class PbrRenderer {
    * bakeClusterLodDag → 本方法。
    */
   stageClusterLodScene(staging: ClusterLodSceneStaging): void {
+    this.deviceEpoch?.assertCurrent(this.session.device);
     if (!this.clusterLodEnabled) {
       throw new Error("Cluster LOD slot is not enabled (PbrRendererOptions.clusterLod).");
     }
@@ -290,6 +290,7 @@ export class PbrRenderer {
    * fail closed at the session, so the producer is constructed here with the live device.
    */
   createProbeClipmapController(target: ProbeClipmapPbrTarget, deviceEpoch: string): ProbeClipmapPbrController {
+    this.deviceEpoch?.assertCurrent(this.session.device);
     // 32 directions clear the thin-wall reference threshold (RMSE gate, G3-S1); fixed 8
     // probes/frame keeps the worst-case ray workload at 256 even when the grid has thousands
     // of probes. Explicit probeDirections config resolves through the fail-closed gate;
@@ -310,9 +311,10 @@ export class PbrRenderer {
     });
   }
   stageEnvironment(source: PbrEnvironmentSource, signal?: AbortSignal): Promise<EnvironmentStageResult> {
+    this.deviceEpoch?.assertCurrent(this.session.device);
     this.autoExposure?.observeSource(source);
     return this.environment.stage(candidateSignal => createPbrEnvironment(this.session, source, candidateSignal), signal); }
-  stageShadowMapSize(mapSize: number, signal?: AbortSignal): Promise<EnvironmentStageResult> { return this.shadowState.stage(mapSize, signal); }
+  stageShadowMapSize(mapSize: number, signal?: AbortSignal): Promise<EnvironmentStageResult> { this.deviceEpoch?.assertCurrent(this.session.device); return this.shadowState.stage(mapSize, signal); }
   /** Chunk streaming reads this when a new residency catalog is created; 1 keeps the fixed budget. */
   residencyBudgetScale(): number { return this.adaptiveQuality?.state().knobs.residencyBudgetScale ?? 1; }
   /** The author map size is a ceiling: adaptive pressure only ever asks for equal or less. */
@@ -361,7 +363,7 @@ export class PbrRenderer {
       .catch(() => { /* runtime records its own failed diagnostics; the render loop must survive. */ })
       .finally(() => { this.probeClipmapBusy = false; });
   }
-  render(view: RenderView): FrameMetrics | undefined { return this.environment.runFrame(() => this.renderPreparedFrame(view), previous => this.mainBindings.setEnvironment(previous)); }
+  render(view: RenderView): FrameMetrics | undefined { this.deviceEpoch?.assertCurrent(this.session.device); return this.environment.runFrame(() => this.renderPreparedFrame(view), previous => this.mainBindings.setEnvironment(previous)); }
   private renderPreparedFrame(view: RenderView): FrameMetrics | undefined {
     const begin = performance.now();
     if (this.session.state !== "ready") return undefined;
@@ -926,16 +928,13 @@ export class PbrRenderer {
     return ids;
   }
   async validateFrame(view: RenderView): Promise<FrameMetrics> {
+    this.deviceEpoch?.assertCurrent(this.session.device);
     return validatePbrFrame(this.session, () => this.render(view), () => {
       this.previousHiZ.invalidate(); this.shadows.invalidate(); this.localShadows.invalidate();
       this.shadowDirty = true; this.historyDirty = true;
     });
   }
   dispose(): void {
-    // 可选链：测试以手造对象直调原型 dispose，字段可能不存在。
-    this.recoveryUnsubscribe?.();
-    this.recoveryUnsubscribe = undefined;
-    this.lastPacket = undefined;
     this.probeClipmap?.dispose();
     this.probeRadianceProducer?.dispose();
     this.probeRadianceProducer = undefined;
@@ -952,17 +951,6 @@ export class PbrRenderer {
       () => this.cameraHistory.reset(), () => this.session.dispose()]);
   }
   private sceneChanged(): void { this.shadowDirty = true; this.historyDirty = true; }
-  private async rebuildAfterRecovery(): Promise<void> {
-    if (this.recoveryRebuild || this.session.state === "disposed" || this.session.state === "lost") return;
-    this.recoveryRebuild = (async () => {
-      this.recoveryError = undefined;
-      this.shadowDirty = true; this.historyDirty = true;
-      this.previousHiZ.invalidate(); this.cameraHistory.reset();
-      this.lastFrameReadback = undefined;
-      if (this.lastPacket !== undefined) await this.setPacketValidated(this.lastPacket);
-    })().catch(error => { this.recoveryError = error; throw error; }).finally(() => { this.recoveryRebuild = undefined; });
-    await this.recoveryRebuild;
-  }
 }
 
 const probeClipmapDeviceEpochs = new WeakMap<object, string>();
