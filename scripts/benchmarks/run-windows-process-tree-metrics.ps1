@@ -20,6 +20,7 @@ param(
 # 对齐（整树 WorkingSet 峰值）。
 
 $ErrorActionPreference = 'Continue'
+. (Join-Path $PSScriptRoot 'gpu-process-instances.ps1')
 $watch = [Diagnostics.Stopwatch]::StartNew()
 $script:PeakHost = 0L
 $script:SumHost = 0L
@@ -38,7 +39,9 @@ try {
     $gpuCategory = [Diagnostics.PerformanceCounterCategory]::new('GPU Process Memory')
     [void]$gpuCategory.GetInstanceNames()
 } catch { $script:GpuCounterError = $_.Exception.Message }
-$gpuCounters = @()
+$gpuCounters = @{}
+$observedGpuInstances = [System.Collections.Generic.HashSet[string]]::new()
+$lastLiveIds = ''
 
 function Write-Metrics {
     # 每个采样 tick 全量重写快照：调用方可随时轮询解析增量结果（读到半截文件由调用方重试）。
@@ -61,6 +64,7 @@ function Write-Metrics {
         gpuSampleCount = $script:GpuSampleCount
         gpuMetric = 'Windows GPU Process Memory/Dedicated Usage; summed across tree PID instances'
         gpuCounterError = $script:GpuCounterError
+        observedGpuInstances = @($observedGpuInstances | Sort-Object)
     }
     $json = $summary | ConvertTo-Json -Depth 5 -Compress
     [IO.File]::WriteAllText($MetricsPath, $json)
@@ -110,24 +114,36 @@ while ($watch.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
 
         # GPU 专用内存：树内进程逐个匹配 pid_<id>_ 计数器实例；只做尽力采样，
         # 计数器类别不存在 / 实例未就绪 / 读取失败都不致命，错误原样透出由上游标注。
-        if ($null -ne $gpuCategory) {
-            foreach ($id in $known) {
-                if ($gpuCounters.Count -gt 0) { break }
-                $instanceName = "pid_${id}_"
-                try {
-                    $match = $gpuCategory.GetInstanceNames() | Where-Object { $_ -eq $instanceName }
-                    if ($match) {
-                        $gpuCounters = @([Diagnostics.PerformanceCounter]::new('GPU Process Memory', 'Dedicated Usage', $match, $true))
+        $liveIds = [System.Collections.Generic.HashSet[int]]::new()
+        foreach ($id in $known) { if ($byId.ContainsKey($id)) { [void]$liveIds.Add($id) } }
+        $liveSignature = ($liveIds | Sort-Object) -join ','
+        if ($null -ne $gpuCategory -and (($script:SampleCount % 10) -eq 0 -or $liveSignature -ne $lastLiveIds)) {
+            try {
+                $taskGpuInstances = @(Get-GpuTreeCounterInstances -InstanceNames $gpuCategory.GetInstanceNames() -LiveProcessIds $liveIds)
+                foreach ($name in @($gpuCounters.Keys)) {
+                    if ($name -notin $taskGpuInstances) { $gpuCounters[$name].Dispose(); $gpuCounters.Remove($name) }
+                }
+                foreach ($name in $taskGpuInstances) {
+                    if (-not $gpuCounters.ContainsKey($name)) {
+                        $gpuCounters[$name] = [Diagnostics.PerformanceCounter]::new('GPU Process Memory', 'Dedicated Usage', $name, $true)
                     }
-                } catch { $script:GpuCounterError = $_.Exception.Message }
+                }
+                $lastLiveIds = $liveSignature
+            } catch { $script:GpuCounterError = $_.Exception.Message }
+        }
+        # Do not sample a cached counter after its owning process has exited.
+        foreach ($name in @($gpuCounters.Keys)) {
+            if (@(Get-GpuTreeCounterInstances -InstanceNames @($name) -LiveProcessIds $liveIds).Count -eq 0) {
+                $gpuCounters[$name].Dispose(); $gpuCounters.Remove($name)
             }
         }
         if ($gpuCounters.Count -gt 0) {
             try {
                 $dedicated = 0L
-                foreach ($counter in $gpuCounters) { $dedicated += [int64]$counter.RawValue }
+                foreach ($counter in $gpuCounters.Values) { $dedicated += [int64]$counter.RawValue }
                 if ($dedicated -gt $script:PeakGpu) { $script:PeakGpu = $dedicated }
                 $script:GpuSampleCount += 1
+                foreach ($name in $gpuCounters.Keys) { [void]$observedGpuInstances.Add($name) }
             } catch { $script:GpuCounterError = $_.Exception.Message }
         }
         $script:SampleCount += 1
@@ -147,6 +163,6 @@ if ($watch.Elapsed.TotalSeconds -ge $TimeoutSeconds) {
     $script:StopReason = 'timeout'
 }
 
-foreach ($counter in $gpuCounters) { $counter.Dispose() }
+foreach ($counter in $gpuCounters.Values) { $counter.Dispose() }
 Write-Metrics
 exit 0
