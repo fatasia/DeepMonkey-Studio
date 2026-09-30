@@ -25,8 +25,8 @@ function makeRunner({ statusByNeedle = {}, defaultStatus = 0 } = {}) {
 
 const passRunner = () => makeRunner();
 
-test("十四对判据计划形状与命令锚定(漂移即红)", () => {
-  assert.equal(GATE_PAIRS.length, 14);
+test("十六对判据计划形状与命令锚定(漂移即红)", () => {
+  assert.equal(GATE_PAIRS.length, 16);
   const [furnace, identity, cloth, hash, frameAbi] = GATE_PAIRS;
   assert.equal(frameAbi.id, "frame-abi-schema");
   assert.equal(frameAbi.legs[0].command.includes("frameLayout.test.ts"), true);
@@ -53,7 +53,9 @@ test("十四对判据计划形状与命令锚定(漂移即红)", () => {
     ["csm-linear-boundary", "node scripts/j2-csm-linear-parity.mjs"],
     ["hdr-flat-normal", "node scripts/j3-geometry-depth-parity.mjs --hdr"],
     ["normal-shadow-production", "node scripts/j3-shadow-visibility-parity.mjs"],
-    ["device-recovery-product-window", "node scripts/j3-window-recovery-suite.mjs"]]) {
+    ["device-recovery-product-window", "node scripts/j3-window-recovery-suite.mjs"],
+    ["bloom-texture-profiles", "node scripts/j3-bloom-texture-parity.mjs"],
+    ["fog-legal-profiles", "node scripts/j3-fog-profile-parity.mjs"]]) {
     const pair = GATE_PAIRS.find(pair => pair.id === id);
     assert.ok(pair.legs.every(leg => leg.requiresGpu && leg.command === command));
   }
@@ -86,7 +88,7 @@ test("全绿路径(policy off):CPU/静态口径降级通过,GPU 腿跳过有原�
   assert.equal(result.ok, true);
   assert.equal(result.degraded, true);
   const cells = result.pairs.flatMap((pair) => pair.cells);
-  assert.equal(cells.length, 28, "14 对 × 双腿 = 28 格");
+  assert.equal(cells.length, 32, "16 对 × 双腿 = 32 格");
   assert.equal(cells.filter((cell) => cell.status === "PASS").length, 11, "11 条非 GPU 格全绿(含复用格)");
   const tsFurnace = cells.find((cell) => cell.id === "white-furnace:ts-gpu");
   assert.equal(tsFurnace.status, "SKIP");
@@ -167,7 +169,7 @@ test("executeGate 缺 runLeg 直接抛错(防止静默空跑)", () => {
   assert.throws(() => executeGate({ gpuPolicy: "off", gpuAvailability: null }), /runLeg/);
 });
 
-test("报告与证据序列化:十四对判据、状态、降级与策略齐全", () => {
+test("报告与证据序列化:十六对判据、状态、降级与策略齐全", () => {
   const { runner } = makeRunner({ statusByNeedle: { "test:white-furnace-gpu": 1 } });
   const result = executeGate({
     gpuPolicy: "auto",
@@ -181,7 +183,7 @@ test("报告与证据序列化:十四对判据、状态、降级与策略齐全"
   assert.equal(evidence.ok, result.ok);
   assert.equal(evidence.gpuPolicy, "auto");
   assert.equal(evidence.timeoutMs, 1234);
-  assert.equal(evidence.pairs.length, 14);
+  assert.equal(evidence.pairs.length, 16);
   for (const pair of evidence.pairs) {
     assert.equal(pair.legs.length, 2);
     for (const leg of pair.legs) {
@@ -197,7 +199,8 @@ test("strict 模式中新双端 runner 各执行一次，共用本次完整证�
   assert.equal(result.ok, true);
   for (const command of ["node scripts/j2-probe-gi-parity.mjs", "node scripts/j3-device-recovery-parity.mjs",
     "node scripts/j3-geometry-depth-parity.mjs", "node scripts/j2-csm-linear-parity.mjs",
-    "node scripts/j3-geometry-depth-parity.mjs --hdr", "node scripts/j3-shadow-visibility-parity.mjs", "node scripts/j3-window-recovery-suite.mjs"]) {
+    "node scripts/j3-geometry-depth-parity.mjs --hdr", "node scripts/j3-shadow-visibility-parity.mjs", "node scripts/j3-window-recovery-suite.mjs",
+    "node scripts/j3-bloom-texture-parity.mjs", "node scripts/j3-fog-profile-parity.mjs"]) {
     assert.equal(calls.filter(actual => actual === command).length, 1);
   }
 });

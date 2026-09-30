@@ -34,3 +34,9 @@ Web参考明确复用 `volumetricFogPassCpu` 现有执行镜像，再按半精�
 作者模式两张实际1920×1080深色截图已核看非空，图形/位置与颜色稳定。首次截图在dispose之后取图而为空白，原PNG及首次数值通过receipt以 `before-screenshot-fix` 文件名保留；观察回调移至dispose前，仅重跑该Web专项，原数值与门保持相同。没有重复其它Fog/Bloom门。
 
 CPU检查：lab TypeScript、Fog参考2项/Node比较器2项/作者模式3项通过，三个新runner语法、Native rustfmt及diffcheck通过。Fog主题9叶子文件及Web作者模式4叶子已冻结；本刀未改production、既有fixture、GPUpass、HDR/shader。B6的数学复用、合法模式/height/HG与Bloom纹理范围已具实际证据，完整工业场景画质、RT与性能保留原J3-D/后续验收范围。
+
+## J5 profile门接入：现状核查与边界
+
+核查六步：已查scripts判据关键词与未跟踪runner；读GATE_PAIRS/leg/currentRun合同；确认Node test/esbuild/Chrome/Cargo现依赖；定位J5 executeGate按command去重消费；读既有编排自测与B6实际receipts；对齐本规格/Bloom规格/J5窗口规格及剩余表。已有双腿调度与失败传播不重建；真实缺口是已验Bloom/Fog profile runners还未纳入强制判据。
+
+新增Bloom实际全纹理与Fog合法profile两对，各端共用同一次默认fresh runner，沿既有command去重；禁止--compare/--web-only替代strict腿。当前判据16对32腿，CPU编排自测只验证调度与失败传播，不把它写为实际32腿全通过。原14对历史结果保留，完整strict总批按用户要求留最终验收。

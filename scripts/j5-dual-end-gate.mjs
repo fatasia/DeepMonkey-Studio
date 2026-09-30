@@ -200,6 +200,26 @@ export const GATE_PAIRS = [
         command: "node scripts/j3-window-recovery-suite.mjs", note: "实际NativeApp窗口destroyed重建/Presented/HDR；同suite去重，候选专项只属于Web，不认证Native同候选路径" },
     ],
   },
+  {
+    id: "bloom-texture-profiles",
+    name: "Bloom非均匀全纹理profile(J2-B6)",
+    legs: [
+      { id: "bloom-texture:ts-gpu", side: "ts", requiresGpu: true,
+        command: "node scripts/j3-bloom-texture-parity.mjs", note: "两fresh Web全纹理，独立CPU/half store；保留默认pyramid参数" },
+      { id: "bloom-texture:native-gpu", side: "native", requiresGpu: true,
+        command: "node scripts/j3-bloom-texture-parity.mjs", note: "具名Native blur/display全纹理；各宿主独立profile门，统一fresh默认入口去重" },
+    ],
+  },
+  {
+    id: "fog-legal-profiles",
+    name: "Fog高度/HG/合法模式profile(J2-B6)",
+    legs: [
+      { id: "fog-profiles:ts-gpu", side: "ts", requiresGpu: true,
+        command: "node scripts/j3-fog-profile-parity.mjs", note: "两fresh Web正式march/scatter/composite，八种合法profile全像素" },
+      { id: "fog-profiles:native-gpu", side: "native", requiresGpu: true,
+        command: "node scripts/j3-fog-profile-parity.mjs", note: "Native十种profile/eye高度；统一fresh默认入口去重，保留host模式/HG差异" },
+    ],
+  },
 ];
 
 /** GPU 腿策略:off=默认 CPU/静态口径;auto=探测可用才跑;strict=不可用即门失败。
