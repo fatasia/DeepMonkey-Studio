@@ -49,6 +49,8 @@ def cloth(source, round_id):
         for x in range(cols - 1):
             a = y * cols + x + 1
             lines.extend([f"f {a} {a+1} {a+cols}", f"f {a+1} {a+cols+1} {a+cols}"])
+            if source.get("allDiagonals", False):
+                lines.extend([f"f {a} {a+1} {a+cols+1}", f"f {a} {a+cols+1} {a+cols}"])
     path.write_text("\n".join(lines), encoding="utf8")
     client = p.connect(p.DIRECT)
     try:
@@ -56,8 +58,8 @@ def cloth(source, round_id):
         p.setGravity(*config["gravity"])
         p.setTimeStep(config["dtSeconds"] / config["substeps"])
         body = p.loadSoftBody(str(path), mass=config["mass"] * len(initial), useNeoHookean=0,
-                             useMassSpring=1, useBendingSprings=0, springElasticStiffness=40,
-                             springDampingStiffness=.1, useSelfCollision=0)
+                             useMassSpring=1, useBendingSprings=0, springElasticStiffness=source.get("springStiffness", 40),
+                             springDampingStiffness=0 if source.get("allDiagonals", False) else .1, useSelfCollision=0)
         mesh = p.getMeshData(body, -1, flags=p.MESH_DATA_SIMULATION_MESH)[1]
         if len(mesh) != len(initial):
             raise RuntimeError("Bullet changed cloth mesh node count")
@@ -112,6 +114,8 @@ result = {"version": version, "apiVersion": p.getAPIVersion(), "host": "Bullet D
           "stack": [stack(stack_input["meta"]) for _ in range(2)],
           "cloth": [cloth(cloth_input, i) for i in range(2)],
           "freeFall": [cloth(cloth_input["freeFall"], i) for i in range(2)],
+          "finiteStiffnessConvergence": [[cloth(profile, i) for i in range(2)]
+                                         for profile in cloth_input["finiteStiffnessConvergence"]],
           "hinge": [{"limited": hinge(hinge_input["meta"], True), "control": hinge(hinge_input["meta"], False)} for _ in range(2)]}
 (out / "bullet.json").write_text(json.dumps(result, allow_nan=False), encoding="utf8")
 print("Bullet stack/cloth two-round output written")

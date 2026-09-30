@@ -12,9 +12,16 @@ function load() {
   const poses = positions.map((frame, t) => frame.map((p, i) => ({ p, q: rotations[t][i] })));
   const clothPoses = Array.from({ length: 240 }, () => Array.from({ length: 144 }, () => [0, 0, 0]));
   const runs = Array.from({ length: 2 }, () => ({ initial: clothPoses[0], poses: clothPoses }));
+  const finiteInitial = [[0, 0, 0], [.1, 0, 0], [0, .1, 0], [.1, .1, 0]];
+  const finitePoses = Array.from({ length: 60 }, () => finiteInitial);
+  const finiteStiffnessConvergence = [8, 32, 64].map(substeps => ({ config: {
+    columns: 2, rows: 2, mass: .2, spacing: .1, compliance: 1 / 40, damping: 0, perturbation: 0,
+    substeps, dtSeconds: 1 / 60, gravity: [0, -9.81, 0] }, pinned: [2, 3], steps: 60,
+    springStiffness: 40, allDiagonals: true, runs: [{ initial: finiteInitial, poses: finitePoses },
+      { initial: finiteInitial, poses: finitePoses }] }));
   const webText = JSON.stringify({ meta, poses }), nativeText = JSON.stringify({ meta, translations: positions, rotations });
   const freeFall = clothPoses.slice(0, 30);
-  const clothText = JSON.stringify({ steps: 240, pinned: [132, 143], runs, freeFall: { steps: 30, runs: [
+  const clothText = JSON.stringify({ steps: 240, pinned: [132, 143], runs, finiteStiffnessConvergence, freeFall: { steps: 30, runs: [
     { poses: freeFall }, { poses: freeFall }] } });
   const hash = text => createHash("sha256").update(text).digest("hex");
   const hinge = { limited: Array.from({ length: 120 }, () => .5), control: Array.from({ length: 120 }, () => 2) };
@@ -24,7 +31,8 @@ function load() {
     limitMin: -.5, limitMax: .5, targetVelocity: 2, strength: 10 });
   const bulletText = JSON.stringify({ version: "3.2.7", inputs: { "web-stack-poses.json": hash(webText),
     "cloth-input.json": hash(clothText), "web-hinge.json": hash(webHingeText) }, stack: [poses, poses], cloth: [clothPoses, clothPoses],
-    freeFall: [freeFall, freeFall], hinge: [hinge, hinge] });
+    freeFall: [freeFall, freeFall], hinge: [hinge, hinge],
+    finiteStiffnessConvergence: [0, 1, 2].map(() => [finitePoses, finitePoses]) });
   return { webText, nativeText, clothText, bulletText, webHingeText, nativeHingeText };
 }
 test("receipt repeat/input provenance and finite measurements", () => {
@@ -49,4 +57,10 @@ test("empty/unstable outputs and moving anchors fail", () => {
   assert.throws(() => compareBullet(mutate(b => {
     for (const run of b.hinge) run.limited[0] = .7;
   })), /invariant/);
+  assert.throws(() => compareBullet(mutate(b => {
+    for (const run of b.finiteStiffnessConvergence[2]) run[0][0][0] += .01;
+  })), /converge/);
+  assert.throws(() => compareBullet(mutate(b => {
+    for (const run of b.finiteStiffnessConvergence[2]) run[0][2][0] += .01;
+  })), /anchor/);
 });
