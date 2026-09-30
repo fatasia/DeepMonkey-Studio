@@ -131,6 +131,25 @@ pub fn create_mesh_pipelines(
     material_layout: &wgpu::BindGroupLayout,
     shader: &wgpu::ShaderModule,
 ) -> MeshPipelines {
+    create_mesh_pipelines_with_normal_capture(
+        device,
+        frame_layout,
+        shadow_frame_layout,
+        material_layout,
+        shader,
+        false,
+    )
+}
+
+/// Same pipeline budget; only opaque entrypoints gain a second attachment when explicitly requested.
+pub fn create_mesh_pipelines_with_normal_capture(
+    device: &wgpu::Device,
+    frame_layout: &wgpu::BindGroupLayout,
+    shadow_frame_layout: &wgpu::BindGroupLayout,
+    material_layout: &wgpu::BindGroupLayout,
+    shader: &wgpu::ShaderModule,
+    capture: bool,
+) -> MeshPipelines {
     MeshPipelines {
         active: Some(ActiveMeshPipelines {
             solid: mesh::create_material_pipelines(
@@ -139,6 +158,7 @@ pub fn create_mesh_pipelines(
                 material_layout,
                 shader,
                 BlendSemantic::Solid,
+                capture,
             ),
             blend: mesh::create_material_pipelines(
                 device,
@@ -146,6 +166,7 @@ pub fn create_mesh_pipelines(
                 material_layout,
                 shader,
                 BlendSemantic::Straight,
+                false,
             ),
             blend_premultiplied: mesh::create_material_pipelines(
                 device,
@@ -153,6 +174,7 @@ pub fn create_mesh_pipelines(
                 material_layout,
                 shader,
                 BlendSemantic::Premultiplied,
+                false,
             ),
             shadow: shadow::create_shadow_pipelines(
                 device,

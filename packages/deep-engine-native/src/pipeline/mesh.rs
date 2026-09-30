@@ -19,6 +19,7 @@ pub(super) fn create_material_pipelines(
     material_layout: &wgpu::BindGroupLayout,
     shader: &wgpu::ShaderModule,
     semantic: BlendSemantic,
+    capture: bool,
 ) -> MaterialPipelines {
     MaterialPipelines {
         standard: create_raster_pipelines(
@@ -28,6 +29,7 @@ pub(super) fn create_material_pipelines(
             shader,
             semantic,
             false,
+            capture,
         ),
         normal_mapped: create_raster_pipelines(
             device,
@@ -36,6 +38,7 @@ pub(super) fn create_material_pipelines(
             shader,
             semantic,
             true,
+            capture,
         ),
     }
 }
@@ -47,6 +50,7 @@ fn create_raster_pipelines(
     shader: &wgpu::ShaderModule,
     semantic: BlendSemantic,
     normal_mapped: bool,
+    capture: bool,
 ) -> RasterPipelines {
     RasterPipelines {
         regular: create_mesh_pipeline(
@@ -57,6 +61,7 @@ fn create_raster_pipelines(
             RasterState::REGULAR,
             semantic,
             normal_mapped,
+            capture,
         ),
         mirrored: create_mesh_pipeline(
             device,
@@ -66,6 +71,7 @@ fn create_raster_pipelines(
             RasterState::MIRRORED,
             semantic,
             normal_mapped,
+            capture,
         ),
         double_sided: create_mesh_pipeline(
             device,
@@ -75,6 +81,7 @@ fn create_raster_pipelines(
             RasterState::DOUBLE_SIDED,
             semantic,
             normal_mapped,
+            capture,
         ),
     }
 }
@@ -87,6 +94,7 @@ fn create_mesh_pipeline(
     raster: RasterState,
     semantic: BlendSemantic,
     normal_mapped: bool,
+    capture: bool,
 ) -> wgpu::RenderPipeline {
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Deep Engine native pipeline layout"),
@@ -94,11 +102,18 @@ fn create_mesh_pipeline(
         immediate_size: 0,
     });
     let vertex_buffers = vertex_buffers(normal_mapped);
-    let targets = [Some(wgpu::ColorTargetState {
-        format: FORWARD_COLOR_FORMAT,
-        blend: blend_state(semantic),
-        write_mask: wgpu::ColorWrites::ALL,
-    })];
+    let targets = [
+        Some(wgpu::ColorTargetState {
+            format: FORWARD_COLOR_FORMAT,
+            blend: blend_state(semantic),
+            write_mask: wgpu::ColorWrites::ALL,
+        }),
+        capture.then_some(wgpu::ColorTargetState {
+            format: crate::forward_targets::NORMAL_CAPTURE_FORMAT,
+            blend: None,
+            write_mask: wgpu::ColorWrites::ALL,
+        }),
+    ];
     let label = format!(
         "Deep Engine native {} {} mesh pipeline",
         match semantic {
@@ -141,9 +156,13 @@ fn create_mesh_pipeline(
         },
         fragment: Some(wgpu::FragmentState {
             module: shader,
-            entry_point: Some("fragment_main"),
+            entry_point: Some(if capture {
+                "fragment_normal_capture"
+            } else {
+                "fragment_main"
+            }),
             compilation_options: Default::default(),
-            targets: &targets,
+            targets: &targets[..if capture { 2 } else { 1 }],
         }),
         multiview_mask: None,
         cache: None,

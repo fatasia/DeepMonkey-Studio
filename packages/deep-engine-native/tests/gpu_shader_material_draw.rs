@@ -347,3 +347,5 @@ async fn verify_material_draws(device: &wgpu::Device, queue: &wgpu::Queue) {
     verify_low_matches_direct(&low, &direct);
     println!("Custom LOD low/direct low HDR and four CSM layers exact; BLEND reorder exact");
 }
+#[path = "support/j3_normal_attachments.rs"]
+mod j3_normal_attachments;

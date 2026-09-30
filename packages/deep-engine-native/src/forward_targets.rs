@@ -5,6 +5,49 @@ use winit::dpi::PhysicalSize;
 
 pub const OUTLINE_MASK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
 pub const OUTLINE_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+pub const NORMAL_CAPTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+
+pub struct NormalCaptureTargets {
+    resolved: wgpu::Texture,
+    _msaa: wgpu::Texture,
+    pub resolved_view: wgpu::TextureView,
+    pub msaa_view: wgpu::TextureView,
+}
+
+impl NormalCaptureTargets {
+    fn new(device: &wgpu::Device, size: wgpu::Extent3d) -> Self {
+        let make = |samples, usage, label| {
+            device.create_texture(&wgpu::TextureDescriptor {
+                label: Some(label),
+                size,
+                mip_level_count: 1,
+                sample_count: samples,
+                dimension: wgpu::TextureDimension::D2,
+                format: NORMAL_CAPTURE_FORMAT,
+                usage,
+                view_formats: &[],
+            })
+        };
+        let resolved = make(
+            1,
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            "Deep Engine native resolved normal capture",
+        );
+        let msaa = make(
+            FORWARD_SAMPLE_COUNT,
+            wgpu::TextureUsages::RENDER_ATTACHMENT,
+            "Deep Engine native MSAA normal capture",
+        );
+        let resolved_view = resolved.create_view(&Default::default());
+        let msaa_view = msaa.create_view(&Default::default());
+        Self {
+            resolved,
+            _msaa: msaa,
+            resolved_view,
+            msaa_view,
+        }
+    }
+}
 
 // outline/forward 测试装配合同:部分窄特性目标只消费其中一组视图字段,
 // 其余字段与方法作为 target 结构完整性驻留,故条目级放行 dead_code。
@@ -26,12 +69,23 @@ pub struct ForwardTargets {
     pub msaa_view: wgpu::TextureView,
     pub depth_view: wgpu::TextureView,
     pub outline: Option<OutlineTargets>,
+    pub normal_capture: Option<NormalCaptureTargets>,
 }
 
 // 窄特性目标只驱动 new()/targets(),其余访问器为完整装配合同驻留。
 #[allow(dead_code)]
 impl ForwardTargets {
     pub fn new(device: &wgpu::Device, size: PhysicalSize<u32>, outline: bool) -> Self {
+        Self::with_normal_capture(device, size, outline, false)
+    }
+
+    /// Opt-in observation of the actual opaque shader normal; default frames allocate no target.
+    pub fn with_normal_capture(
+        device: &wgpu::Device,
+        size: PhysicalSize<u32>,
+        outline: bool,
+        capture: bool,
+    ) -> Self {
         let extent = wgpu::Extent3d {
             width: size.width.max(1),
             height: size.height.max(1),
@@ -81,6 +135,7 @@ impl ForwardTargets {
             msaa_view,
             depth_view,
             outline: outline.then(|| OutlineTargets::new(device, extent)),
+            normal_capture: capture.then(|| NormalCaptureTargets::new(device, extent)),
         }
     }
 
@@ -93,6 +148,12 @@ impl ForwardTargets {
 
     pub fn resolved_texture(&self) -> &wgpu::Texture {
         &self.hdr
+    }
+
+    pub fn resolved_normal_texture(&self) -> Option<&wgpu::Texture> {
+        self.normal_capture
+            .as_ref()
+            .map(|targets| &targets.resolved)
     }
 
     /// 前向目标实际宽度(HiZ 金字塔取数基准;compact 档可为 1)。

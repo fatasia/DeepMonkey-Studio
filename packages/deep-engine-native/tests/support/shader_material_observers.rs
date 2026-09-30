@@ -57,6 +57,7 @@ pub(super) fn encode_frame(
 }
 
 pub struct FrameObservation<'a> {
+    pub capture_normals: bool,
     pub size: PhysicalSize<u32>,
     pub view: PlayerView,
     pub configure: Option<&'a dyn Fn(&mut FrameUniform)>,

@@ -488,10 +488,16 @@ fn safeNormalize(value: vec3f, fallback: vec3f) -> vec3f {
   return safe_normalize(value, fallback);
 }
 
-@fragment fn fragment_main(
+struct NativeMeshSurface { color: vec4f, normalRoughness: vec4f };
+struct NativeMeshCapture {
+  @location(0) color: vec4f,
+  @location(1) normalRoughness: vec4f,
+};
+
+fn shade_native_mesh(
   input: VertexOutput,
-  @builtin(front_facing) front_facing: bool,
-) -> @location(0) vec4f {
+  front_facing: bool,
+) -> NativeMeshSurface {
   if (section_rejected(input.world)) { discard; }
   var base_sample = vec4f(1.0); var mr_sample = vec4f(1.0);
   var ao = 1.0; var emission = vec3f(1.0);
@@ -576,7 +582,16 @@ fn safeNormalize(value: vec3f, fallback: vec3f) -> vec3f {
     surface_color = mix(surface_color, frame.tuning.rgb, amount);
   }
   let output_alpha = select(1.0, alpha, flag(input.material.w, 4u));
-  return vec4f(surface_color * exposure, output_alpha);
+  return NativeMeshSurface(vec4f(surface_color * exposure, output_alpha), vec4f(normal * 0.5 + 0.5, rough));
+}
+
+@fragment fn fragment_main(input: VertexOutput, @builtin(front_facing) front_facing: bool) -> @location(0) vec4f {
+  return shade_native_mesh(input, front_facing).color;
+}
+
+@fragment fn fragment_normal_capture(input: VertexOutput, @builtin(front_facing) front_facing: bool) -> NativeMeshCapture {
+  let surface = shade_native_mesh(input, front_facing);
+  return NativeMeshCapture(surface.color, surface.normalRoughness);
 }
 
 @fragment fn outline_mask_fragment(input: VertexOutput) -> @location(0) vec4f {

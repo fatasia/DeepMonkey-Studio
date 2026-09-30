@@ -50,22 +50,40 @@ pub fn encode_opaque_pass(
 ) {
     let has_transparent = scene.has_transparent();
     {
-        let color_attachments = [Some(wgpu::RenderPassColorAttachment {
-            view: &targets.msaa_view,
-            depth_slice: None,
-            resolve_target: Some(&targets.hdr_view),
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(targets.clear_color()),
-                store: if has_transparent {
-                    wgpu::StoreOp::Store
-                } else {
-                    wgpu::StoreOp::Discard
+        let color_attachments = [
+            Some(wgpu::RenderPassColorAttachment {
+                view: &targets.msaa_view,
+                depth_slice: None,
+                resolve_target: Some(&targets.hdr_view),
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(targets.clear_color()),
+                    store: if has_transparent {
+                        wgpu::StoreOp::Store
+                    } else {
+                        wgpu::StoreOp::Discard
+                    },
                 },
-            },
-        })];
+            }),
+            targets
+                .normal_capture
+                .as_ref()
+                .map(|normal| wgpu::RenderPassColorAttachment {
+                    view: &normal.msaa_view,
+                    depth_slice: None,
+                    resolve_target: Some(&normal.resolved_view),
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Discard,
+                    },
+                }),
+        ];
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Deep Engine native opaque and mask pass"),
-            color_attachments: &color_attachments,
+            color_attachments: &color_attachments[..if targets.normal_capture.is_some() {
+                2
+            } else {
+                1
+            }],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &targets.depth_view,
                 depth_ops: Some(wgpu::Operations {

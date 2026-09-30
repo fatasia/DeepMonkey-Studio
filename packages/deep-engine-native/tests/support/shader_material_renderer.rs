@@ -15,7 +15,7 @@ use crate::{
     gpu_scene::GpuScene,
     gpu_textures::create_material_layout,
     lod_draw_readback,
-    pipeline::create_mesh_pipelines,
+    pipeline::create_mesh_pipelines_with_normal_capture,
     player_content::PlayerContent,
     shadow_pass::{CascadeScene, encode_shadow_cascades},
 };
@@ -64,17 +64,21 @@ async fn render_observed(
     let prepared = prepare_scene(packet).unwrap();
     let prepared_lod = prepare_gpu_lod(packet, &prepared).unwrap();
     let (size, frame, shadow_view) = observers::frame_parameters(frame_observation.as_deref());
+    let capture_normals = frame_observation
+        .as_ref()
+        .is_some_and(|observation| observation.capture_normals);
     let layouts = create_frame_layouts(device);
     let shadows =
         create_shadow_map(device, &layouts.shadow, size, &frame, None, shadow_view).unwrap();
     let material_layout = create_material_layout(device);
     let shader = create_native_mesh_shader(device);
-    let pipelines = create_mesh_pipelines(
+    let pipelines = create_mesh_pipelines_with_normal_capture(
         device,
         &layouts.frame,
         &layouts.shadow,
         &material_layout,
         &shader,
+        capture_normals,
     );
     let pbr = prepare_pbr_resources(packet).unwrap();
     let mut scene = GpuScene::new(
@@ -196,7 +200,7 @@ async fn render_observed(
         "LOD verification frame",
         true,
     );
-    let targets = ForwardTargets::new(device, size, false);
+    let targets = ForwardTargets::with_normal_capture(device, size, false, capture_normals);
     let mut encoder = device.create_command_encoder(&Default::default());
     culling.encode(queue, &mut encoder);
     if let Some(lod) = &lod {

@@ -85,6 +85,7 @@ fn j3_gate_d_actual_geometry_depth() {
                         &queue,
                         &content,
                         &mut FrameObservation {
+                            capture_normals: false,
                             size: PhysicalSize::new(width, height),
                             view,
                             configure: if profile == "common" {
