@@ -74,7 +74,8 @@ function arrayEntries(row: TextureArrayMaterialTableRow): GPUBindGroupEntry[] {
 }
 
 function textureEntries(material: MaterialBinding): GPUBindGroupEntry[] {
-  const fallback = material.base ?? material.metallicRoughness ?? material.normal ?? material.occlusion ?? material.emissive;
+  const fallback = material.base ?? material.metallicRoughness ?? material.normal ?? material.occlusion ?? material.emissive
+    ?? material.layered?.textures.find(Boolean) ?? material.neutral;
   if (!fallback) throw new Error("Deformation material has no texture binding.");
   const base = material.base ?? fallback, mr = material.metallicRoughness ?? fallback;
   const ao = material.occlusion ?? fallback, normal = material.normal ?? fallback, emissive = material.emissive ?? fallback;
@@ -85,5 +86,6 @@ function textureEntries(material: MaterialBinding): GPUBindGroupEntry[] {
     { binding: 5, resource: ao.view }, { binding: 6, resource: ao.sampler },
     { binding: 7, resource: normal.view }, { binding: 8, resource: normal.sampler },
     { binding: 9, resource: emissive.view }, { binding: 10, resource: emissive.sampler },
+    ...(material.layered?.entries ?? []),
   ];
 }

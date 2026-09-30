@@ -31,6 +31,7 @@ export function validateGeometryFeatures(
     textures.normal,
     textures.occlusion,
     textures.emissive,
+    ...(textures.layered?.textures.flatMap(layer => [layer.baseColor, layer.metallicRoughness]) ?? []),
   ].filter((value): value is PreparedTextureSlot => value !== undefined) : [];
   for (const slot of slots) {
     const selected = slot.texCoord === 1 ? features.uv1 : features.uv0;

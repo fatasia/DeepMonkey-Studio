@@ -25,6 +25,24 @@ function fixture() {
 }
 
 describe("DeviceSession ownership and initialization failures", () => {
+  it("requests layered texture limits only for the explicit capability and retains them in optional-feature fallback", async () => {
+    const f = fixture(); Object.assign(f.adapter, { limits: { maxSampledTexturesPerShaderStage: 32 } });
+    f.adapter.features.add("timestamp-query"); f.adapter.requestDevice.mockRejectedValueOnce(new Error("optional feature rejected"));
+    const session = await DeviceSession.open(f.canvas as unknown as HTMLCanvasElement, f.gpu as unknown as GPU,
+      f.controller.signal, undefined, undefined, { layeredMaterials: true });
+    for (const [request] of f.adapter.requestDevice.mock.calls as unknown as [{ requiredLimits?: object }][]) {
+      expect(request.requiredLimits).toEqual({ maxSampledTexturesPerShaderStage: 19 });
+    }
+    session.dispose();
+    const plain = fixture(), ordinary = await plain.open();
+    expect(plain.adapter.requestDevice).toHaveBeenCalledWith({ label: "Deep Engine isolated device" }); ordinary.dispose();
+  });
+  it("reports an insufficient layer texture budget before allocating a device", async () => {
+    const f = fixture(); Object.assign(f.adapter, { limits: { maxSampledTexturesPerShaderStage: 16 } });
+    await expect(DeviceSession.open(f.canvas as unknown as HTMLCanvasElement, f.gpu as unknown as GPU,
+      f.controller.signal, undefined, undefined, { layeredMaterials: true })).rejects.toThrow("layered-materials/texture-limit");
+    expect(f.adapter.requestDevice).not.toHaveBeenCalled();
+  });
   it("rejects inadmissible ownership without destroying the active resource", async () => {
     const f = fixture(), session = await f.open(64);
     const active = { size: 48, destroy: vi.fn() }, candidate = { size: 32, destroy: vi.fn() };

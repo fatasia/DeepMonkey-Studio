@@ -146,6 +146,7 @@ export class TextureArrayResources {
 
   supportsMaterial(textures: PreparedMaterialTextures): boolean {
     this.assertReady();
+    if (textures.layered) return false;
     const used = TEXTURE_ARRAY_SLOT_BINDINGS.map(config => textures[config.slot]).filter(Boolean);
     return used.length > 0 && used.every(slot => this.plan.assignments.has(slot!.texture));
   }

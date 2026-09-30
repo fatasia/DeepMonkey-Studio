@@ -33,13 +33,22 @@ function recoveryFixture(recovery?: DeviceRecoveryOptions) {
   }) };
   const gpu = { requestAdapter: vi.fn(async () => adapter as unknown as GPUAdapter), getPreferredCanvasFormat: () => "bgra8unorm" };
   const controller = new AbortController();
-  const open = () => DeviceSession.open(canvas as unknown as HTMLCanvasElement, gpu as unknown as GPU,
-    controller.signal, undefined, recovery);
+  const open = (capabilities?: { readonly layeredMaterials?: boolean }) => DeviceSession.open(canvas as unknown as HTMLCanvasElement, gpu as unknown as GPU,
+    controller.signal, undefined, recovery, capabilities);
   const supplyNext = () => { const next = makeDevice(); supplied.push(next); return next; };
   return { first, supplied, context, canvas, adapter, gpu, controller, open, supplyNext, makeDevice };
 }
 
 describe("C13 typed device-lost recovery (opt-in)", () => {
+  it("retains explicitly negotiated layer texture limits on replacement devices", async () => {
+    const f = recoveryFixture({ maxAttempts: 2, backoffMs: 1 });
+    Object.assign(f.adapter, { limits: { maxSampledTexturesPerShaderStage: 32 } });
+    const session = await f.open({ layeredMaterials: true }); f.supplyNext();
+    f.first.fail({ reason: "unknown", message: "layered device reset" });
+    await vi.waitFor(() => expect(session.recovery?.epoch).toBe(1));
+    expect(f.adapter.requestDevice).toHaveBeenNthCalledWith(2, { label: "Deep Engine recovered device",
+      requiredLimits: { maxSampledTexturesPerShaderStage: 19 } }); session.dispose();
+  });
   it.each(["unknown", "destroyed"])("notifies the idle product fallback once for %s loss with recovery omitted", async reason => {
     const f = recoveryFixture(), session = await f.open();
     const fatal = vi.fn(), recreated = vi.fn();

@@ -1,5 +1,6 @@
 import type { DecodedTexture, PreparedTexture } from "./textures/decodedTexture.js";
 import type { ExtendedMaterialParameters } from "./shader/materialParameters.js";
+import type { LayeredSurfaceOverrides, LayeredSurfaceParameters } from "./shader/materialLayeredSurface.js";
 import type { CapabilityFailure } from "./gltf/capabilityInventory.js";
 import type { DeformationPose, DeformationSnapshot } from "./deformation/types.js";
 
@@ -44,6 +45,8 @@ export interface PbrMaterial {
   readonly ior?: number;
   /** Browser WebGPU extended lobes; absent preserves the stock PBR path byte-for-byte. */
   readonly extendedParameters?: ExtendedMaterialParameters;
+  /** Ordered response layers; requires the explicit layeredMaterials WebGPU capability. */
+  readonly layered?: LayeredSurfaceOverrides;
   readonly baseColorTexture?: TextureSlot;
   readonly metallicRoughnessTexture?: TextureSlot;
   /** 没有切线/TBN 时会明确拒绝，不能退化成错误的物体空间法线。 */
@@ -152,6 +155,10 @@ export interface PreparedTextureSlot {
 }
 
 export interface PreparedMaterialTextures {
+  readonly layered?: {
+    readonly parameters: LayeredSurfaceParameters;
+    readonly textures: readonly { readonly baseColor?: PreparedTextureSlot; readonly metallicRoughness?: PreparedTextureSlot }[];
+  };
   /** 固定 material uniform 的 emissiveRow1.w；存在任意材质纹理时统一携带。 */
   readonly emissiveStrength: number;
   /** Present only for supported, textured browser WebGPU extended-material profile. */

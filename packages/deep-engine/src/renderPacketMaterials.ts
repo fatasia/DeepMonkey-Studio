@@ -10,6 +10,7 @@ import type {
 import { finiteFloat32, unitFloat } from "./renderPacketValidation.js";
 import { packMaterialIor, STOCK_MATERIAL_INSTANCE_OPTIONS } from "./materialInstanceAbi.js";
 import { normalizeExtendedMaterialParameters } from "./shader/materialParameters.js";
+import { normalizeLayeredSurfaceParameters } from "./shader/materialLayeredSurface.js";
 
 /** HDR 上限对应 8 EV 发光增益；避免任意作者数值污染 rgba16float 中间目标。 */
 export const MAX_EMISSIVE_STRENGTH = 256;
@@ -30,12 +31,25 @@ export function prepareMaterialTextures(
     const normal = prepareNormalTextureSlot(material.normalTexture, textureSemantics);
     const occlusion = prepareOcclusionTextureSlot(material.occlusionTexture, textureSemantics);
     const emissive = prepareTextureSlot(material.emissiveTexture, "emissive", textureSemantics);
-    const extendedParameters = material.extendedParameters === undefined ? undefined
-      : normalizeExtendedMaterialParameters(material.extendedParameters);
-    if (extendedParameters && !baseColor && !metallicRoughness && !normal && !occlusion && !emissive) {
+    const layerParameters = material.layered === undefined ? undefined
+      : normalizeLayeredSurfaceParameters({ ...material.layered, base: material.layered.base ?? material.extendedParameters });
+    if (layerParameters && material.shadingModel === "unlit") throw new Error("Unlit materials cannot consume response layers.");
+    if (layerParameters && layerParameters.base.ior !== Math.fround(material.ior ?? 1.5))
+      throw new Error("Layer base IOR must match the material instance IOR field.");
+    const layered = layerParameters?.layers.some(layer => layer.coverage > 0) ? {
+      parameters: layerParameters,
+      textures: layerParameters.surfaces.map((surface, index) => layerParameters.layers[index]!.coverage === 0 ? {} : {
+        ...(surface?.baseColorTexture ? { baseColor: prepareTextureSlot(surface.baseColorTexture, "baseColor", textureSemantics)! } : {}),
+        ...(surface?.metallicRoughnessTexture ? { metallicRoughness: prepareTextureSlot(surface.metallicRoughnessTexture, "metallicRoughness", textureSemantics)! } : {}),
+      }),
+    } : undefined;
+    const extendedParameters = layered ? layerParameters!.base : (material.extendedParameters === undefined ? undefined
+      : normalizeExtendedMaterialParameters(material.extendedParameters));
+    if (extendedParameters && !layered && !baseColor && !metallicRoughness && !normal && !occlusion && !emissive) {
       throw new Error("Extended material lobes require a textured browser WebGPU material profile.");
     }
-    result.set(material.id, baseColor || metallicRoughness || normal || occlusion || emissive ? {
+    result.set(material.id, baseColor || metallicRoughness || normal || occlusion || emissive || layered ? {
+      ...(layered ? { layered } : {}),
       emissiveStrength: Math.fround(emissiveStrength),
       ...(extendedParameters ? { extendedParameters } : {}),
       ...(baseColor ? { baseColor } : {}),

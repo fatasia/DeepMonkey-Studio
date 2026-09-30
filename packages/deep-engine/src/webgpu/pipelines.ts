@@ -13,6 +13,8 @@ import { sharedOutputPipeline } from "./pbrOutputPipelineCache.js";
 import { pipelineCompileCacheForDevice, renderPipelineFingerprint } from "./pipelineCache.js";
 import type { PipelineCompileRecord } from "./pipelineCache.js";
 import { PipelineWarmupQueue } from "./pipelineWarmup.js";
+import { composeLayeredMaterialSceneShader } from "./pbrLayeredMaterialShader.js";
+import { layeredMaterialLayoutEntries, LAYERED_MATERIAL_REQUIRED_TEXTURES } from "./pbrLayeredMaterialBindings.js";
 // J2-B7-migrate：frame 布局常量切换到 schema 单源生成产物（字节门由 pbrFrameUniforms 测试锁）。
 import { FRAME_ABI_TS_BYTES, FRAME_ABI_TS_FIELDS, FRAME_ABI_TS_FLOATS } from "../frameAbi/generated/frameLayout.js";
 
@@ -90,6 +92,7 @@ const shadowMaskBuffers: GPUVertexBufferLayout[] = [
 export interface PipelinesBuildOptions {
   readonly deformation?: boolean;
   readonly textureArrays?: boolean;
+  readonly layeredMaterials?: boolean;
   /** Main pipeline keys required by the first published frame. They are queued
    * (and awaited) before every other main variant; the remaining mains are only
    * queued once the critical subset resolves, so the bootstrap validation scope
@@ -130,7 +133,11 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
   options: PipelinesBuildOptions = {}): Promise<PipelinesBuild> {
   const deformation = options.deformation === true;
   const textureArrays = options.textureArrays === true;
-  const profileVariant = `${deformation ? "deformation" : "static"}-${textureArrays ? "array" : "fallback"}`;
+  const layeredMaterials = options.layeredMaterials === true;
+  if (layeredMaterials && textureArrays) throw new Error("Layered materials use the D2 material pipeline; array batches retain their existing profile.");
+  if (layeredMaterials && device.limits.maxSampledTexturesPerShaderStage < LAYERED_MATERIAL_REQUIRED_TEXTURES)
+    throw new Error("PBR capability layered-materials/texture-limit: requires 19 sampled textures.");
+  const profileVariant = `${deformation ? "deformation" : "static"}-${textureArrays ? "array" : "fallback"}${layeredMaterials ? "-layered" : ""}`;
   const markPipeline = (phase: string): void => {
     if (typeof performance !== "undefined" && typeof performance.mark === "function") {
       performance.mark(`deep-webgpu:pipeline-${profileVariant}-${phase}`);
@@ -149,7 +156,8 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     binding, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage", minBindingSize: 48 },
   })) : [];
   const source = deformation ? deformedSceneShader : sceneShader;
-  const moduleCode = textureArrays ? composeTextureArraySceneShader(source) : source;
+  const moduleCode = textureArrays ? composeTextureArraySceneShader(source)
+    : layeredMaterials ? composeLayeredMaterialSceneShader(source) : source;
   // C26:逐管线编译走指纹缓存(WGSL 源哈希 + 描述符指纹),命中复用并记录
   // 逐管线编译耗时清单;WGSL 源或描述符变更即指纹漂移,陈旧条目自动失效。
   const compileCache = pipelineCompileCacheForDevice(device);
@@ -194,6 +202,7 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     { binding: 9, visibility: GPUShaderStage.FRAGMENT, texture: {} },
     { binding: 10, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
       ...poseEntries,
+      ...(layeredMaterials ? layeredMaterialLayoutEntries() : []),
     ] });
   const emptyMaterialLayout = device.createBindGroupLayout({ label: "Deep plain material group 1", entries: poseEntries });
   const cascadedShadowLayout = device.createBindGroupLayout({ label: "Deep cascaded shadow group 2", entries: [
@@ -352,7 +361,7 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     mainPipelines, displayPipelines, displayDirectionalPipelines, shadowPipelines,
     get output() { return outputPipeline!; },
     get outputShaderProvenance() { return outputProvenance; },
-    materialLayout: { material }, cascadedShadowLayout,
+    materialLayout: { material, ...(layeredMaterials ? { layeredMaterials: true } : {}) }, cascadedShadowLayout,
     ...(deformation ? { deformationPlainLayout: emptyMaterialLayout } : {}),
   };
   // 对象展开会立即求值访问器，条件可选字段必须用 defineProperty 挂 getter，

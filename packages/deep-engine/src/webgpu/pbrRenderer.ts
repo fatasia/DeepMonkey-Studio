@@ -239,7 +239,8 @@ export class PbrRenderer {
   releaseBackgroundPipelines(): void { this.releasePipelines?.(); }
   static async create(canvas: HTMLCanvasElement, gpu: GPU | undefined, signal: AbortSignal, options: PbrRendererOptions = {}): Promise<PbrRenderer> {
     if (typeof performance !== "undefined") performance.mark("deep-webgpu:device-open-start");
-    const session = await DeviceSession.open(canvas, gpu, signal, options.deviceMemoryBudgetBytes, options.recovery);
+    const session = await DeviceSession.open(canvas, gpu, signal, options.deviceMemoryBudgetBytes, options.recovery,
+      options.features?.layeredMaterials === true ? { layeredMaterials: true } : undefined);
     const deviceEpoch = new RendererDeviceEpoch(session.device);
     if (typeof performance !== "undefined") performance.mark("deep-webgpu:device-opened");
     return openPbrRenderer(session, signal, options, () => new DOMException("GPU preparation cancelled", "AbortError"),

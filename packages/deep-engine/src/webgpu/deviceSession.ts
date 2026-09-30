@@ -71,6 +71,7 @@ export class DeviceSession {
     readonly adapterInfo: Readonly<{ vendor: string; architecture: string; device: string; description: string; isFallbackAdapter: boolean }> | undefined,
     memoryBudgetBytes?: number,
     recovery?: DeviceRecoveryOptions,
+    private readonly requiredLimits?: Record<string, number>,
   ) {
     this.currentDevice = device;
     this.memory = new DeviceResourceMemory(memoryBudgetBytes);
@@ -80,21 +81,25 @@ export class DeviceSession {
   }
 
   static async open(canvas: HTMLCanvasElement, gpu: GPU | undefined, signal: AbortSignal, memoryBudgetBytes?: number,
-    recovery?: DeviceRecoveryOptions): Promise<DeviceSession> {
+    recovery?: DeviceRecoveryOptions, capabilities?: { readonly layeredMaterials?: boolean }): Promise<DeviceSession> {
     validateDeviceMemoryBudget(memoryBudgetBytes);
     if (signal.aborted) throw aborted();
     if (!gpu) throw new Error("WebGPU is unavailable in this browser.");
     const adapter = await abortable(gpu.requestAdapter({ powerPreference: "high-performance" }), signal);
     if (!adapter) throw new Error("No WebGPU adapter is available.");
+    const requiredLimits = capabilities?.layeredMaterials === true ? { maxSampledTexturesPerShaderStage: 19 } : undefined;
+    if (requiredLimits && adapter.limits.maxSampledTexturesPerShaderStage < requiredLimits.maxSampledTexturesPerShaderStage)
+      throw new Error("PBR capability layered-materials/texture-limit: adapter requires 19 sampled textures.");
     const requestedFeatures = OPTIONAL_DEVICE_FEATURES.filter(feature => adapter.features.has(feature));
     let device: GPUDevice;
     try {
       device = await abortable(adapter.requestDevice({ label: "Deep Engine isolated device",
+        ...(requiredLimits ? { requiredLimits } : {}),
         ...(requestedFeatures.length ? { requiredFeatures: requestedFeatures } : {}) }), signal, (value) => value.destroy());
     } catch (error) {
       // 可选计时或压缩能力可降级，不能使可用的核心渲染设备无法启动。
       if (!requestedFeatures.length || signal.aborted) throw error;
-      device = await abortable(adapter.requestDevice({ label: "Deep Engine core device" }), signal, (value) => value.destroy());
+      device = await abortable(adapter.requestDevice({ label: "Deep Engine core device", ...(requiredLimits ? { requiredLimits } : {}) }), signal, (value) => value.destroy());
     }
     let session: DeviceSession | undefined;
     try {
@@ -104,7 +109,7 @@ export class DeviceSession {
       const info = adapter.info;
       session = new DeviceSession(context, gpu.getPreferredCanvasFormat(), device, canvas, adapter, info ? Object.freeze({
         vendor: info.vendor, architecture: info.architecture, device: info.device, description: info.description, isFallbackAdapter: info.isFallbackAdapter,
-      }) : undefined, memoryBudgetBytes, recovery);
+      }) : undefined, memoryBudgetBytes, recovery, requiredLimits);
       const layout = canvas as unknown as CanvasLayout;
       session.resize(layout.clientWidth, layout.clientHeight, 1);
       return session;
@@ -186,7 +191,7 @@ export class DeviceSession {
     if (this.isDisposed()) { this.recoveringNow = false; return; }
     let recreated: GPUDevice;
     try {
-      recreated = await this.adapter.requestDevice({ label: "Deep Engine recovered device" });
+      recreated = await this.adapter.requestDevice({ label: "Deep Engine recovered device", ...(this.requiredLimits ? { requiredLimits: this.requiredLimits } : {}) });
       // await 期间会话可能已关闭：迟到的成功必须丢弃（销毁新设备），不得复活会话。
       if (this.isDisposed()) { recreated.destroy(); this.recoveringNow = false; return; }
       if (this.lostDevices.has(recreated)) throw new Error("recovery returned an already-lost device");

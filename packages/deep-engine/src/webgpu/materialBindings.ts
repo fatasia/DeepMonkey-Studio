@@ -4,6 +4,7 @@ import { packExtendedParameterBlock } from "../shader/materialParameterAbi.js";
 import type { DeviceSession } from "./deviceSession.js";
 import { uploadBuffer } from "./meshBuffers.js";
 import type { TextureBinding } from "./textureResources.js";
+import { createLayeredMaterialBinding, createLayeredNeutralTexture, type LayeredMaterialBinding } from "./pbrLayeredMaterialBindings.js";
 
 export interface MaterialBinding {
   readonly group: GPUBindGroup;
@@ -14,9 +15,11 @@ export interface MaterialBinding {
   readonly occlusion?: TextureBinding;
   readonly emissive?: TextureBinding;
   readonly key: string;
+  readonly layered?: LayeredMaterialBinding;
+  readonly neutral?: TextureBinding;
 }
 
-export interface MaterialLayouts { readonly material: GPUBindGroupLayout }
+export interface MaterialLayouts { readonly material: GPUBindGroupLayout; readonly layeredMaterials?: boolean }
 
 interface PooledMaterialBinding {
   readonly binding: MaterialBinding;
@@ -90,12 +93,15 @@ export class MaterialBindingPool {
     if (entry.references > 0) return;
     this.entries.delete(key!);
     this.keys.delete(binding);
+    if (binding.layered) this.session.release(binding.layered.uniform);
+    if (binding.neutral) this.session.release(binding.neutral.texture);
     this.releaseParameters(entry.parameterKey);
   }
 
   private poolKey(textures: PreparedMaterialTextures, lookup: (id: string) => TextureBinding): string {
     const slots = [textures.baseColor, textures.metallicRoughness, textures.normal,
-      textures.occlusion, textures.emissive];
+      textures.occlusion, textures.emissive,
+      ...(textures.layered?.textures.flatMap(layer => [layer.baseColor, layer.metallicRoughness]) ?? [])];
     const identities = slots.map(slot => slot ? this.textureId(lookup(slot.texture)) : 0);
     return `${materialKey(textures)}|${identities.join(",")}`;
   }
@@ -135,16 +141,24 @@ export function createMaterialBinding(session: DeviceSession, layouts: MaterialL
   pooledParameters?: GPUBuffer): MaterialBinding | undefined {
   if (!textures) return undefined;
   if (!layouts) throw new Error("Material bind group layout is unavailable.");
-  const fallbackSlot = textures.baseColor ?? textures.metallicRoughness ?? textures.normal ?? textures.occlusion ?? textures.emissive!;
-  const fallback = lookup(fallbackSlot.texture);
+  if (textures.layered && !layouts.layeredMaterials) throw new Error("PBR capability layered-materials/not-enabled.");
+  const fallbackSlot = textures.baseColor ?? textures.metallicRoughness ?? textures.normal ?? textures.occlusion ?? textures.emissive
+    ?? textures.layered?.textures.flatMap(layer => [layer.baseColor, layer.metallicRoughness]).find(Boolean);
+  const neutral = fallbackSlot ? undefined : layouts.layeredMaterials ? createLayeredNeutralTexture(session) : undefined;
+  if (!fallbackSlot && !neutral) throw new Error("Material has no texture backing.");
+  const fallback = fallbackSlot ? lookup(fallbackSlot.texture) : neutral!;
   const base = textures.baseColor ? lookup(textures.baseColor.texture) : undefined;
   const metallicRoughness = textures.metallicRoughness ? lookup(textures.metallicRoughness.texture) : undefined;
   const normal = textures.normal ? lookup(textures.normal.texture) : undefined;
   const occlusion = textures.occlusion ? lookup(textures.occlusion.texture) : undefined;
   const emissive = textures.emissive ? lookup(textures.emissive.texture) : undefined;
-  const parameters = pooledParameters
-    ?? uploadBuffer(session, "Deep material textures", packMaterialParameters(textures), GPUBufferUsage.UNIFORM);
+  let parameters: GPUBuffer;
+  try { parameters = pooledParameters
+    ?? uploadBuffer(session, "Deep material textures", packMaterialParameters(textures), GPUBufferUsage.UNIFORM); }
+  catch (error) { if (neutral) session.release(neutral.texture); throw error; }
+  let layered: LayeredMaterialBinding | undefined;
   try {
+    layered = layouts.layeredMaterials ? createLayeredMaterialBinding(session, textures, lookup, fallback) : undefined;
     const actual = (binding: TextureBinding | undefined) => binding ?? fallback;
     const b = actual(base), mr = actual(metallicRoughness), ao = actual(occlusion), n = actual(normal), e = actual(emissive);
     const group = session.device.createBindGroup({ label: "Deep material textures", layout: layouts.material, entries: [
@@ -154,10 +168,16 @@ export function createMaterialBinding(session: DeviceSession, layouts: MaterialL
       { binding: 5, resource: ao.view }, { binding: 6, resource: ao.sampler },
       { binding: 7, resource: n.view }, { binding: 8, resource: n.sampler },
       { binding: 9, resource: e.view }, { binding: 10, resource: e.sampler },
+      ...(layered?.entries ?? []),
     ] });
     return { group, parameters, ...(base ? { base } : {}), ...(metallicRoughness ? { metallicRoughness } : {}),
-      ...(normal ? { normal } : {}), ...(occlusion ? { occlusion } : {}), ...(emissive ? { emissive } : {}), key: materialKey(textures) };
-  } catch (error) { if (!pooledParameters) session.release(parameters); throw error; }
+      ...(normal ? { normal } : {}), ...(occlusion ? { occlusion } : {}), ...(emissive ? { emissive } : {}),
+      ...(layered ? { layered } : {}), ...(neutral ? { neutral } : {}), key: materialKey(textures) };
+  } catch (error) {
+    if (layered) session.release(layered.uniform);
+    if (neutral) session.release(neutral.texture);
+    if (!pooledParameters) session.release(parameters); throw error;
+  }
 }
 
 export function materialBindingMatches(binding: MaterialBinding | undefined, textures: PreparedMaterialTextures | undefined,
@@ -167,11 +187,19 @@ export function materialBindingMatches(binding: MaterialBinding | undefined, tex
   const actual = (slot: { readonly texture: string } | undefined) => slot ? lookup(slot.texture) : undefined;
   return binding.base === actual(textures.baseColor) && binding.metallicRoughness === actual(textures.metallicRoughness)
     && binding.normal === actual(textures.normal) && binding.occlusion === actual(textures.occlusion)
-    && binding.emissive === actual(textures.emissive) && binding.key === materialKey(textures);
+    && binding.emissive === actual(textures.emissive) && binding.key === materialKey(textures)
+    && (!textures.layered || textures.layered.parameters.layers.map((layer, index) => ({ layer, index }))
+      .filter(value => value.layer.coverage > 0)
+      .flatMap(({ index }) => [textures.layered!.textures[index]?.baseColor, textures.layered!.textures[index]?.metallicRoughness])
+      .every((slot, index) => binding.layered?.textures[index] === actual(slot)));
 }
 
 export function releaseMaterialBinding(session: DeviceSession, binding: MaterialBinding | undefined): void {
-  if (binding) session.release(binding.parameters);
+  if (binding) {
+    if (binding.layered) session.release(binding.layered.uniform);
+    if (binding.neutral) session.release(binding.neutral.texture);
+    session.release(binding.parameters);
+  }
 }
 
 function writeTransform(target: Float32Array, offset: number,

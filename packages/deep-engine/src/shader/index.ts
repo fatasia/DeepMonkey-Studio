@@ -14,6 +14,7 @@ export * from "./materialParameterRevision.js";
 export * from "../shaderGraph/index.js";
 export * from "./materialLayeredParameters.js";
 export * from "./materialLayeredEvaluate.js";
+export * from "./materialLayeredSurface.js";
 export * from "./materialLayerBlendWgsl.js";
 export * from "./displayColorBackends.js";
 export * from "./schlickFactorGlsl.js";

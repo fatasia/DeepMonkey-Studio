@@ -48,11 +48,11 @@ export async function createPbrPipelineSet(session: DeviceSession, lightingLayou
   let byVariant = byLayout.get(lightingLayout);
   if (!byVariant) { byVariant = new Map(); byLayout.set(lightingLayout, byVariant); }
   const key = [PIPELINE_SET_SCHEMA, session.format, writeGeometry ? 1 : 0, directDisplay ? 1 : 0,
-    oneCascade ? 1 : 0, options.deformation === true ? 1 : 0, features.textureArrays ? 1 : 0].join("/");
+    oneCascade ? 1 : 0, options.deformation === true ? 1 : 0, features.textureArrays ? 1 : 0, features.layeredMaterials ? 1 : 0].join("/");
   const existing = byVariant.get(key);
   if (existing) return existing;
   const created = buildPbrPipelineSet(session, lightingLayout, options, writeGeometry, directDisplay,
-    oneCascade, features.textureArrays);
+    oneCascade, features.textureArrays, features.layeredMaterials);
   byVariant.set(key, created);
   void created.catch(() => { if (byVariant!.get(key) === created) byVariant!.delete(key); });
   return created;
@@ -60,15 +60,17 @@ export async function createPbrPipelineSet(session: DeviceSession, lightingLayou
 
 async function buildPbrPipelineSet(session: DeviceSession, lightingLayout: GPUBindGroupLayout,
   options: PbrRendererOptions, writeGeometry: boolean, directDisplay: boolean, oneCascade: boolean,
-  textureArrays: boolean) {
+  textureArrays: boolean, layeredMaterials: boolean) {
   const firstFrameMainKeys = options.pipelines?.firstFrameMainKeys;
-  const buildOptions = firstFrameMainKeys === undefined ? undefined : { firstFrameMainKeys };
+  const buildOptions = firstFrameMainKeys === undefined && !layeredMaterials ? undefined
+    : { ...(firstFrameMainKeys === undefined ? {} : { firstFrameMainKeys }),
+      ...(layeredMaterials ? { layeredMaterials: true } : {}) };
   const wantsDeformation = options.deformation === true;
   const deferDeformation = wantsDeformation && options.pipelines?.deferDeformation === true;
   const [fallbackBuild, arrayBuild] = await Promise.all([
     createPipelinesBuild(session.device, session.format, lightingLayout, writeGeometry, directDisplay, oneCascade, buildOptions),
     textureArrays ? createPipelinesBuild(session.device, session.format, lightingLayout, writeGeometry,
-      directDisplay, oneCascade, { ...buildOptions, textureArrays: true }) : undefined,
+      directDisplay, oneCascade, { ...(firstFrameMainKeys === undefined ? {} : { firstFrameMainKeys }), textureArrays: true }) : undefined,
   ]);
   const criticalReady = Promise.all([fallbackBuild.criticalReady, ...(arrayBuild ? [arrayBuild.criticalReady] : [])])
     .then(() => undefined);
@@ -99,7 +101,8 @@ async function buildPbrPipelineSet(session: DeviceSession, lightingLayout: GPUBi
   // 非延迟模式：变形变体与其他变体同时开始创建（旧语义），set.ready 覆盖它们。
   if (!deferDeformation && wantsDeformation) {
     const [deformationFallbackBuild, deformationArrayBuild] = await Promise.all([
-      createPipelinesBuild(session.device, session.format, lightingLayout, true, false, oneCascade, { deformation: true }),
+      createPipelinesBuild(session.device, session.format, lightingLayout, true, false, oneCascade,
+        { deformation: true, ...(layeredMaterials ? { layeredMaterials: true } : {}) }),
       wantsDeformation && textureArrays ? createPipelinesBuild(session.device, session.format, lightingLayout,
         true, false, oneCascade, { deformation: true, textureArrays: true }) : undefined,
     ]);
@@ -127,7 +130,8 @@ async function buildPbrPipelineSet(session: DeviceSession, lightingLayout: GPUBi
         session.device.pushErrorScope("validation");
         try {
           const [deformationFallbackBuild, deformationArrayBuild] = await Promise.all([
-            createPipelinesBuild(session.device, session.format, lightingLayout, true, false, oneCascade, { deformation: true }),
+            createPipelinesBuild(session.device, session.format, lightingLayout, true, false, oneCascade,
+              { deformation: true, ...(layeredMaterials ? { layeredMaterials: true } : {}) }),
             textureArrays ? createPipelinesBuild(session.device, session.format, lightingLayout,
               true, false, oneCascade, { deformation: true, textureArrays: true }) : undefined,
           ]);

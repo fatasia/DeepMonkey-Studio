@@ -10,7 +10,7 @@ describe("PBR renderer feature selection", () => {
       ambientOcclusion: false, temporalAa: false, spatialAa: false, bloom: false, vignette: false,
       occlusionCulling: false, toneMapping: "three-aces-r185" })).toEqual({ environment: false, fog: false, groundPlane: true, groundGrid: false,
       ambientOcclusion: false, screenSpaceReflection: false, temporalAa: false, spatialAa: false, bloom: false, vignette: false,
-      volumetricFog: false, visibilityBuffer: false, softRasterizeFallback: false, textureArrays: false,
+      volumetricFog: false, visibilityBuffer: false, softRasterizeFallback: false, textureArrays: false, layeredMaterials: false,
       occlusionCulling: false, contactShadows: false, temporalUpscale: false, toneMapping: "three-aces-r185" });
     expect(DEFAULT_PBR_RENDERER_FEATURES.environment).toBe(true);
   });
