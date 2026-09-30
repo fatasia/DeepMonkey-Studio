@@ -4,6 +4,7 @@ import { type RendererBackend } from "./viewerTypes";
 import { ViewerEngineModelDiff } from "./viewerEngineModelDiff";
 import { bindViewerPerformancePreferences } from "./viewerPerformanceBinding";
 import { normalizeRendererDeviceLoss, runtimeGpuDevice, type RendererInstance, type WebGpuRendererWithLossHandler } from "./viewerRendererTypes";
+import { installThreeDisplayToneMapping } from "./threeDisplayToneMapping";
 
 export type { CollisionRecord, ComponentFacets, ComponentFilter, ComponentRecord } from "./analysis";
 export {
@@ -59,6 +60,7 @@ export class ViewerEngine extends ViewerEngineModelDiff {
         throw error;
       }
     }
+    installThreeDisplayToneMapping();
     return new ViewerEngine(container, new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" }), "webgl", new THREE.Group());
   }
 }

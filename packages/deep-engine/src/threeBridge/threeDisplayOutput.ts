@@ -1,4 +1,4 @@
-import { displayColorLibrary } from "../shader/displayColorBackends.js";
+import { guardedThreeDisplayLibrary } from "./threeToneMappingShader.js";
 
 const acesCall = "ACESFilmicToneMapping( gl_FragColor.rgb )";
 const mainDeclaration = "void main()";
@@ -11,7 +11,7 @@ export function threeDisplayOutputShader(fragmentShader: string): string {
     || fragmentShader.split(mainDeclaration).length !== 2) {
     throw new Error("Three OutputPass shader changed or was already adapted");
   }
-  const library = displayColorLibrary("glsl-es-300");
+  const library = guardedThreeDisplayLibrary();
   return fragmentShader.replace(acesCall, "deepThreeAcesFit( gl_FragColor.rgb, toneMappingExposure )")
-    .replace(mainDeclaration, `${marker}\n${library.code}\n${mainDeclaration}`);
+    .replace(mainDeclaration, `${marker}\n${library}\n${mainDeclaration}`);
 }
