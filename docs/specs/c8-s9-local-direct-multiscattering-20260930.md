@@ -47,3 +47,11 @@ front三家族HDR .002门通过；oblique仍未通过，display均通过2字节�
 两张实际dark1920×1080截图已核看：六组原Three/Deep完整可见，灯光高光宽度、层次和色调接近，标签无遮挡/裁切。使用现有base令牌与同作者fixture，对标原Three r185正式材质响应；Studio氛围/钻取/动效不在此诊断图范围。
 
 十维范围评分：布局9、令牌9、排版9、交互状态不适用、动效不适用、3D材质响应9（HDR全链未认证）、信息设计9、即时反馈不适用、主题/尺寸9（用户仅dark1080）、术语9。保持未认证项；同族覆盖额外方向灯/point/spot与primary0、开关灯/补能消融、两实际视角及两fresh，不重跑旧白炉/导数矩阵。
+
+## 2026-10-01 追加：直射 DFG 同源修复与残差定性
+
+重跑根因归因（CPU 逐像素 ray-cast + half-ulp 分析）发现：Three r185 直射 specular 默认走 BRDF_GGX_Multiscatter（lights_physical_pars_fragment.glsl:556，WebGPU Node 路径 PhysicalLightingModel.js:626 同），其多散射补偿的 DFG 消费上游 16×16 RG16F 硬编码表（DFGLUTData.js，uv=(rough,dotNV) 双线性）；Deep canonical 补能数学同构（f90=1 逐式一致）但消费自有 brdfLut——LUT 数据差在高 lost（粗糙金属）处放大。fixture 实测：粗糙金属球系统差 1.2%（22 half-ulp、sign 一致），multiShare 8.6% 与 16×16 表网格误差量级自洽。
+
+修复：新增 packages/deep-engine/src/webgpu/directDfgLut185.ts（上游表逐 token 提取，MIT 来源注明；decode/bilinear CPU twin；WGSL 常量数组逐值最短 round-trip），pbrDirectMultiscatteringWgsl.ts 直射补能四处采样全部改 deepDirectDfg185(rough, nv)（cluster viewDFG/lightDFG 与主光 FromView），pbrShader.ts 主光 seed 拆分——dfg（brdfLut）继续服务 IBL split-sum 分数（C12 白炉能量分配不变），directDfg=deepDirectDfg185(rough,nv) 供直射补能 viewDFG。零新绑定、零纹理、初始化预算不变。bilinear 边界语义与 GL clamp-to-edge 对齐（i1 从原始 floor+1 clamp）。golden 测试 4 条（上游字节全等/解码精确/边界语义/WGSL 字面 round-trip）+ 既有断言更新，10/10 过，engine tsc/lab tsc 过。
+
+重跑两 fresh×6 realm：secondary-directional oblique .0029296875→.00244140625（LUT 差部分修复）；point/spot oblique .01171875 不变、front 全家族与 strict 全部保持通过。CPU 归因定位 point/spot oblique 最大差像素在 i=0 球（rough .15 dielectric）NoV .907 高光峰，HDR≈5.2，差恰 3 half-ulp（[4,8) 区 ulp=2^-8），邻域符号混合（+/-/0）——量化阶梯形态，非系统性偏差。该残差与多散射/DFG 无关，属高光峰单散射数值路径差被 RGBA16F 量化放大；S7 Fine 消融已证导数类修复对该最差点无效，本追加不再重复该矩阵。定性记录为合法差异矩阵条目：高光峰单散射双实现（GLSL/WGSL）f32 路径差 × half 量化边界。qualityCertified 继续保留 false；完整 C8 的材质/灯光/纹理消费缺口按估时表继续。

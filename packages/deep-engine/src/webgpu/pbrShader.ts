@@ -171,12 +171,13 @@ fn shade(fragmentCoordinate: vec2f, world: vec3f, normalInput: vec3f, geometryNo
   let base = groundGridAlbedo(select(baseInput, frame.floor.rgb, ground), grid, ground);
   let visibility = deepPrimaryShadow(world, n, dot(n, l), authorShadow, fragmentCoordinate, materialFlags);
   var color = brdfWithDielectricF0(n, view, l, base, metal, rough, dielectric) * frame.sunColor.rgb * frame.sunColor.w * visibility;
-  let nv = clamp(dot(n, view), 0.001, 1.0); var dfg = vec2f(0.0);
+  let nv = clamp(dot(n, view), 0.001, 1.0); var dfg = vec2f(0.0); var directDfg = vec2f(0.0);
   if (frame.eye.w > 0.0 || (frame.sunColor.w > 0.0 && dot(n, l) > 0.0)) {
     dfg = textureSampleLevel(brdfLut, environmentSampler, vec2f(nv, rough), 0.0).rg;
-    deepSeedDirectViewDfg(dfg);
+    directDfg = deepDirectDfg185(rough, nv);
+    deepSeedDirectViewDfg(directDfg);
   }
-  color += deepDirectMultiscatteringFromView(n, l, base, metal, rough, dielectric, dfg)
+  color += deepDirectMultiscatteringFromView(n, l, base, metal, rough, dielectric, directDfg)
     * frame.sunColor.rgb * frame.sunColor.w * visibility;
   if (deepClusterParams.limits.z > 0u || deepClusterParams.grid1.w > 0u) {
     color += deepForwardPlusPbrWorldReceivingF0(fragmentCoordinate, world, n, frame.worldToView, base, metal, rough, !flag(materialFlags, 16u), dielectric);

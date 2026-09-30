@@ -12,7 +12,7 @@ it("the direct energy kernel is the registered canonical bytes and occurs once i
   expect(sceneShader.split("fn deepDirectMultiscatteringEnergy(")).toHaveLength(2);
 });
 it("HDR and both direct presentation hosts consume the same energy kernel without new bindings", () => {
-  expect(sceneShader.match(/deepDirectMultiscatteringFromView\(n, l, base, metal, rough, dielectric, dfg\)/g)).toHaveLength(1);
+  expect(sceneShader.match(/deepDirectMultiscatteringFromView\(n, l, base, metal, rough, dielectric, directDfg\)/g)).toHaveLength(1);
   expect(sceneShader.match(/deepSampleDirectMultiscattering\(n, view, l, base, metal, rough, dielectric\)/g)).toHaveLength(2);
   expect(mirror).not.toContain("@group"); expect(mirror).not.toContain("textureSample");
 });
