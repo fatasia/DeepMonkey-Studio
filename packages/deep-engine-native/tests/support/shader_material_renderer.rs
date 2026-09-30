@@ -101,6 +101,7 @@ async fn render_observed(
         device,
         queue,
         &material_layout,
+        None,
         packet,
         content.scene_content_key(),
         &prepared,

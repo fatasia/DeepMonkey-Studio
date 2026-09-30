@@ -23,10 +23,14 @@ fn rt_directional_visibility(world: vec3f, light: vec3f) -> f32 {
   return select(1.0, 0.0, committed.kind != RAY_QUERY_INTERSECTION_NONE);
 }
 
-@fragment fn fragment_main_rt(
+// I-C23:光照主体抽到本体的 native_lit_response + deep_layer_stack 共享函数
+// (同步契约由函数共享而非文本重复保证);本文件只剩 RT 专属的可见性来源与
+// 入口组装。fragment_main_rt_layered 供 RT 分层管线族(扩展 layout)使用。
+fn rt_shade_surface(
   input: VertexOutput,
-  @builtin(front_facing) front_facing: bool,
-) -> @location(0) vec4f {
+  front_facing: bool,
+  layered: bool,
+) -> vec4f {
   if (section_rejected(input.world)) { discard; }
   var base_sample = vec4f(1.0); var mr_sample = vec4f(1.0);
   var ao = 1.0; var emission = vec3f(1.0);
@@ -51,57 +55,21 @@ fn rt_directional_visibility(world: vec3f, light: vec3f) -> f32 {
   if (flag(input.material.w, 2u) && alpha < input.material.y) { discard; }
   let base = input.base_color.rgb * base_sample.rgb;
   let metal = clamp(input.base_color.w * mr_sample.b, 0.0, 1.0);
+  let rough_raw = input.material.x * mr_sample.g;
   let geometry_normal = oriented_normal(input, front_facing);
-  let rough = min(1.0, clamp(input.material.x * mr_sample.g, 0.045, 1.0) + native_view_geometry_roughness(geometry_normal));
   var normal = geometry_normal;
   if (material_textures.normal_row_0.w > 0.5) { normal = mapped_normal(input, front_facing); }
   let authored_light = frame.sunColor.w >= 2.0;
-  var surface_color = base;
-  if (!flag(input.material.w, 64u)) {
   let view = safe_normalize(frame.eye.xyz - input.world, vec3f(0.0, 0.0, 1.0));
   let light = safe_normalize(frame.lightDirection.xyz, vec3f(0.0, 1.0, 0.0));
   // 与本体 fragment_main 的唯一差异：directional 阴影可见性改走 Ray Query。
   let visibility = select(rt_directional_visibility(input.world, light),
     1.0, flag(input.material.w, 16u) || (authored_light && frame.lightingOptions.y == 0.0));
-  let sun = select(vec3f(3.2, 3.0, 2.8), frame.sunColor.rgb, authored_light);
-  let dielectric = input.dielectric;
-  var color = brdfWithDielectricF0(normal, view, light, base, metal, rough, dielectric)
-    * sun * visibility;
-  let nv = clamp(dot(normal, view), 0.001, 1.0);
-  var dfg = vec2f(0.0);
-  let direct_lit = dot(normal, light) > 0.0 && any(sun > vec3f(0.0));
-  if (frame.background.w > 0.5 || direct_lit) {
-    dfg = textureSampleLevel(brdf_lut, environment_sampler, vec2f(nv, rough), 0.0).rg;
-  }
-  if (direct_lit) {
-    color += native_direct_multiscattering(normal, light, base, metal, rough, dielectric, dfg) * sun * visibility;
-  }
-  if (frame.sunColor.w == 3.0) {
-    color += local_direct_lighting(input.world, normal, view, base, metal, rough, !flag(input.material.w,16u), ao, dielectric, input.clip, dfg, frame.background.w > 0.5 || direct_lit);
-  }
-  if (frame.background.w > 0.5) {
-    // Zero is the legacy/default value; authored GI uses the reserved
-    // fog-projection W lane without changing the frame ABI size.
-    let global_illumination = select(1.0, frame.fogProjection.w, frame.fogProjection.w > 0.0);
-    // J2-B3 白炉修复:与本体 fragment_main 同步(TS pbrShader.ts C12 修复式,
-    // 同一 split-sum 分数进 diffuse/specular 两路,构造性守恒)。同步契约见
-    // 文件头;逐字锁定断言在 white_furnace::native_mesh_ibl_split_keeps_ts_authoritative_formula。
-    let f0 = mix(vec3f(dielectric), base, metal);
-    let energy_compensation = vec3f(1.0)
-      + f0 * (1.0 / max(dfg.x + dfg.y, 0.05) - 1.0);
-    let specular_fraction = clamp(f0 * dfg.x + dfg.y, vec3f(0.0), vec3f(1.0)) * energy_compensation;
-    let irradiance = textureSampleLevel(
-      diffuse_environment, environment_sampler, normal, 0.0).rgb;
-    let ambient_occlusion = clamp(ao, 0.0, 1.0);
-    color += (1.0 - specular_fraction) * (1.0 - metal) * base * irradiance * ambient_occlusion * global_illumination;
-    let reflection = safe_normalize(reflect(-view, normal), normal);
-    let max_specular_lod = f32(textureNumLevels(specular_environment) - 1u);
-    let radiance = textureSampleLevel(
-      specular_environment, environment_sampler, reflection, rough * max_specular_lod).rgb;
-    color += radiance * specular_fraction * ambient_occlusion * global_illumination;
-  }
-  color += input.emissive_alpha.rgb * emission;
-  surface_color = color;
+  var surface_color = native_lit_response(input, normal, geometry_normal, base, metal,
+    rough_raw, input.dielectric, ao, emission, view, light, visibility);
+  if (layered) {
+    surface_color = deep_layer_stack(surface_color, input, normal, geometry_normal,
+      base, metal, rough_raw, ao, emission, view, light, visibility);
   }
   let exposure = select(1.0, frame.lightingOptions.x, authored_light);
   if (frame.fogProjection.z == 2.0 && !flag(input.material.w, 32u)) {
@@ -113,4 +81,18 @@ fn rt_directional_visibility(world: vec3f, light: vec3f) -> f32 {
   }
   let output_alpha = select(1.0, alpha, flag(input.material.w, 4u));
   return vec4f(surface_color * exposure, output_alpha);
+}
+
+@fragment fn fragment_main_rt(
+  input: VertexOutput,
+  @builtin(front_facing) front_facing: bool,
+) -> @location(0) vec4f {
+  return rt_shade_surface(input, front_facing, false);
+}
+
+@fragment fn fragment_main_rt_layered(
+  input: VertexOutput,
+  @builtin(front_facing) front_facing: bool,
+) -> @location(0) vec4f {
+  return rt_shade_surface(input, front_facing, true);
 }

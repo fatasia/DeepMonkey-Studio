@@ -123,6 +123,21 @@ export { createBasisKtx2Transcoder } from "./textures/basisKtx2Transcoder.js";
 export type { BasisImageLevelInfo, BasisKtx2File, BasisKtx2Module, BasisKtx2TranscoderOptions } from "./textures/basisKtx2Transcoder.js";
 export { decodeRadianceHdr } from "./textures/radianceHdr.js";
 export type { RadianceHdrDecodeOptions, RadianceHdrImage } from "./textures/radianceHdr.js";
+// I-C16 离线路径追踪出图 CPU 侧：Radiance HDR 编码导出 + 产品模式状态机。
+export { encodeRadianceHdr, quantizeRgbe } from "./textures/radianceHdrEncode.js";
+export { PathTraceProductSession } from "./rayTracing/pathTraceSession.js";
+export type { PathTraceLeaseFactory, PathTraceAdvanceOptions,
+  PathTraceBeginOptions } from "./rayTracing/pathTraceSession.js";
+export { classifyIdentityInvalidation, estimateAccumulationBytes, evaluateConvergence,
+  mergeBatchObservation, validatePathTraceConfig } from "./rayTracing/pathTraceSessionTypes.js";
+export type { BrightnessAccumulator, ConvergenceEvaluation, PathTraceBatchObservation,
+  PathTraceBatchOutcome, PathTraceBeginOutcome, PathTraceExportReceipt,
+  PathTraceInvalidationOutcome, PathTraceInvalidationReason, PathTracePhase,
+  PathTraceSceneIdentity, PathTraceSessionConfig, PathTraceAccumulationLease,
+  ResolvedPathTraceConfig } from "./rayTracing/pathTraceSessionTypes.js";
+export { sampleBrightness } from "./rayTracing/pathTraceReferenceKernel.js";
+export type { PathTraceReferenceKernel, PathTraceReferenceKernelFactory }
+  from "./rayTracing/pathTraceReferenceKernel.js";
 export { prepareHdrEnvironmentUpload } from "./textures/hdrEnvironmentUpload.js";
 export type { HdrEnvironmentUpload, HdrEnvironmentUploadOptions } from "./textures/hdrEnvironmentUpload.js";
 export { resolveRayTracingDecision, validateRayTracingCapabilities } from "./rayTracingCapabilities.js";

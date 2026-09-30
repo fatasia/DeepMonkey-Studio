@@ -66,6 +66,7 @@ pub async fn render(
         device,
         queue,
         &material_layout,
+        None,
         packet,
         crate::player_shader_plan::scene_content_key(packet),
         &prepared,
