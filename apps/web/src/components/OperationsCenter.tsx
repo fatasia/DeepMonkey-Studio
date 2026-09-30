@@ -52,6 +52,7 @@ import { usePlantLiteRunController } from "./plantLiteRunController";
 import { AiSampleRunner } from "./AiSampleRunner";
 import { AlertIngestPanel } from "./AlertIngestPanel";
 import { DataReplayPanel } from "./DataReplayPanel";
+import { EventRecordingPanel } from "./EventRecordingPanel";
 
 const DEFAULT_MAINTENANCE_POLICY: AiDataRunPolicyDraft = {
   mode: "interval",
@@ -744,6 +745,7 @@ export function OperationsCenter({
           <div hidden={tab !== "monitoring"} className="operations-grid">
             <AlertIngestPanel projectId={project.id} request={request} locale="zh-CN" />
             <DataReplayPanel projectId={project.id} request={request} signals={[]} locale="zh-CN" />
+            <EventRecordingPanel key={project.id} projectId={project.id} request={request} studies={snapshot?.studies ?? []} />
           </div>
         )}
         {!embedded && tab !== "battery" && <OperationsStudyHistory

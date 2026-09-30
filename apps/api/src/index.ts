@@ -11,7 +11,7 @@ import { registerPublishedApplicationRoutes } from "./publishedApplicationRoutes
 import { createObjectStore, migrateLocalObjects } from "./objects.js";
 import { createMetadataStore } from "./store.js";
 import { ensureDemoMetrics } from "./dataIntegration.js";
-import { registerDataEventRoutes } from "./dataEvents.js";
+import { registerProductionDataEvents } from "./productionDataEvents.js";
 import { MqttIngestSupervisor } from "./mqttIngest.js";
 import { FileSubscriptionCheckpointStore } from "./fileSubscriptionCheckpointStore.js";
 import { registerMqttIngestRoutes } from "./mqttIngestRoutes.js";
@@ -205,7 +205,7 @@ export async function buildApp() {
   const editorSceneTransactions = new EditorSceneTransactionBridge(editorPresence, store);
   const editorSnapshotFetch = new EditorSnapshotFetchBridge(editorPresence);
   await registerEditorSceneDriverRoutes(app, editorSceneTransactions, editorSnapshotFetch);
-  const dataEventBus = await registerDataEventRoutes(app, store);
+  const dataEventBus = await registerProductionDataEvents(app, store, config.dataDir);
   const mqttIngest = new MqttIngestSupervisor(dataEventBus, async (url, options) => {
     const { connectAsync } = await import("mqtt");
     return connectAsync(url, options as never) as never;

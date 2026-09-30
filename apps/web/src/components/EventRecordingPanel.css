@@ -1,0 +1,38 @@
+.event-recording { grid-column: 1 / -1; padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-1); color: var(--text); display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; font-variant-numeric: tabular-nums; }
+.event-recording header, .event-recording-toolbar, .event-recording-actions, .event-recording-filter, .event-recording-integrity, .event-recording-counts { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
+.event-recording header { justify-content: space-between; }
+.event-recording header > span { display: grid; gap: var(--space-1); }
+.event-recording strong, .event-recording b { color: var(--text-strong); }
+.event-recording small { color: var(--text-muted); }
+.event-recording p { margin: 0; }
+.event-recording button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); min-height: 32px; padding: var(--space-1) var(--space-3); color: var(--text-strong); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; transition: background 160ms ease-out; }
+.event-recording button:hover:not(:disabled) { background: var(--surface-3); border-color: var(--line-strong); }
+.event-recording button:disabled { opacity: .45; cursor: not-allowed; }
+.event-recording .event-recording-primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.event-recording .event-recording-primary:hover:not(:disabled) { background: var(--accent-hover); }
+.event-recording label { display: grid; gap: var(--space-1); min-width: 0; font-size: 12px; }
+.event-recording select, .event-recording input, .event-recording textarea { min-height: 32px; padding: var(--space-2); background: var(--surface-2); color: var(--text-strong); border: 1px solid var(--line); border-radius: var(--radius-sm); min-width: 0; max-width: 100%; font: inherit; }
+.event-recording-toolbar label:first-child { flex: 1 1 300px; }
+.event-recording textarea { width: 100%; resize: vertical; font-family: monospace; }
+.event-recording :is(button, select, input, textarea, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.event-recording details { border-top: 1px solid var(--line-subtle); padding-top: var(--space-2); }
+.event-recording summary { cursor: pointer; color: var(--text-strong); }
+.event-recording details[open] { display: grid; gap: var(--space-2); }
+.event-recording details button { justify-self: start; }
+.event-recording-integrity { padding: var(--space-2) var(--space-3); background: var(--surface-2); border-radius: var(--radius-sm); }
+.event-recording-integrity.verified > svg { color: var(--success); }
+.event-recording-integrity.warning > :is(svg, strong) { color: var(--warning); }
+.event-recording-integrity.invalid, .event-recording [role="alert"] { color: var(--danger); overflow-wrap: anywhere; }
+.event-recording [role="alert"] { display: flex; align-items: start; flex-wrap: wrap; gap: var(--space-2); }
+.event-recording-notice { color: var(--success); }
+.event-recording-counts { border-bottom: 1px solid var(--line-subtle); padding-bottom: var(--space-3); }
+.event-recording-table { overflow: auto; max-height: 320px; }
+.event-recording table { border-collapse: collapse; width: 100%; text-align: left; font-size: 12px; }
+.event-recording :is(th, td) { padding: var(--space-2); border-bottom: 1px solid var(--line-subtle); vertical-align: top; }
+.event-recording td:last-child { overflow-wrap: anywhere; max-width: 400px; }
+.event-recording th { color: var(--text-muted); font-weight: 500; white-space: nowrap; }
+.event-recording pre { max-height: 240px; overflow: auto; margin: 0; padding: var(--space-3); background: var(--surface-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.event-recording-empty { display: grid; justify-items: center; gap: var(--space-2); padding: var(--space-6); text-align: center; }
+.event-recording-empty svg { color: var(--accent); }
+@media (max-width: 600px) { .event-recording { padding: var(--space-3); } .event-recording-toolbar label { flex: 1 1 100%; } .event-recording-filter label { width: 100%; } .event-recording td { min-width: 80px; } }
+@media (prefers-reduced-motion: reduce) { .event-recording button { transition: none; } }
