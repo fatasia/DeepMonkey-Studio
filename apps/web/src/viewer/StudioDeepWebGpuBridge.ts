@@ -273,6 +273,9 @@ export class StudioDeepWebGpuBridge {
             ...(authorHlodClusters?.length ? { hlodClusters: authorHlodClusters } : {}),
             ...(clusterLodStaging ? { clusterLodStaging } : {}),
             renderer: { environment: environment.source, deformation: true, meshlets: true,
+              // F8 自动曝光零配置默认开（Z3.5 授权）：缺省参数由引擎 DEFAULT_PBR_AUTO_EXPOSURE 提供，
+              // 无可靠亮度时 fail-closed 回退固定启发式并经 FrameMetrics.autoExposure 披露。
+              autoExposure: {},
               ...(clusterLodEnabled ? { clusterLod: true } : {}),
               ...(resolutionScalePolicy ? { resolutionScalePolicy } : {}),
               ...(gpuPassTiming ? { gpuPassTiming: true } : {}),

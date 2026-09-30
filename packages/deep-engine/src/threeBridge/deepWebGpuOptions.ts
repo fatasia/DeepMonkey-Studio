@@ -10,7 +10,7 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
     throw new TypeError("Deep WebGPU renderer options must be an object.");
   }
   if (Object.keys(options).some(key => !["shadows", "features", "environment", "deformation", "meshlets", "frameCapture", "adaptiveQuality", "probeClipmap", "pipelines",
-    "resolutionScalePolicy", "gpuPassTiming", "probeDirections", "clusterLod", "virtualTextures", "recovery"].includes(key))) {
+    "resolutionScalePolicy", "gpuPassTiming", "probeDirections", "clusterLod", "virtualTextures", "recovery", "autoExposure"].includes(key))) {
     throw new TypeError("Unknown Deep WebGPU renderer option.");
   }
   if (options.deformation !== undefined && typeof options.deformation !== "boolean") {
@@ -27,6 +27,12 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
   }
   if (options.clusterLod !== undefined && typeof options.clusterLod !== "boolean") {
     throw new TypeError("Deep WebGPU clusterLod option must be boolean.");
+  }
+  // F8 自动曝光快照边界:对象形态在此守门;字段级语义(±EV 包络/时间常数)由
+  // PbrAutoExposureRuntime 校验负责,不在此重复。
+  if (options.autoExposure !== undefined
+    && (!options.autoExposure || typeof options.autoExposure !== "object" || Array.isArray(options.autoExposure))) {
+    throw new TypeError("Deep WebGPU autoExposure option must be an object.");
   }
   // F3 虚拟纹理快照边界:非对象(含 null/标量)在 spread 下会静默吞成空对象穿透
   // 快照,fail-closed 在边界拒绝;字段级语义校验由 resolveVirtualTextureOptions
@@ -57,6 +63,8 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
     // C13 typed device recovery（opt-in）：缺省不进快照，保持旧行为。
     // 时钟注入 now 不序列化（宿主端 DeviceSession 自建默认时钟）；冻结其余字段供首屏一致性校验。
     ...(options.recovery === undefined ? {} : { recovery: Object.freeze((({ now: _injectedClock, ...rest }) => rest)(options.recovery)) }),
+    // F8 自动曝光（Z3.5 授权默认开）：显式配置冻结快照供首屏一致性校验。
+    ...(options.autoExposure === undefined ? {} : { autoExposure: Object.freeze({ ...options.autoExposure }) }),
   });
 }
 
