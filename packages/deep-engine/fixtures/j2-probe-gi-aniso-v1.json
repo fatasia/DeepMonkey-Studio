@@ -1,0 +1,15 @@
+{
+  "schema": "j2-b5-aniso-probe-v1",
+  "origin": [-16, -16, -15],
+  "spacing": 16,
+  "gridSize": [3, 3, 3],
+  "normalBiasCells": 0.2,
+  "dfg": [0.75, 0.0625],
+  "dielectric": 0.04,
+  "metallic": 0,
+  "roughness": 0.8,
+  "absoluteTolerance": 0.001,
+  "zRamp": [[0.25, 0.5, 1], [0.5, 1, 2], [1, 2, 4]],
+  "checkerEven": [0.25, 0.5, 1],
+  "checkerOdd": [1, 2, 4]
+}

@@ -1,0 +1,22 @@
+{
+  "schema": "j3-texture-coverage-v1",
+  "background": [0.012, 0.020, 0.035],
+  "uv0": [0,0,1,0,0.5,1],
+  "uv1": [1,1,0,1,0.5,0],
+  "transform": {"texCoord":1,"offset":[0.1,-0.4],"scale":[1.2,1.2],"rotation":0.23},
+  "baseFactor": [0.8,0.7,0.6],
+  "emissiveFactor": [0.4,0.3,0.2],
+  "baseBytes": [128,192,224,64,224,96,144,128,80,224,128,192,192,144,240,255],
+  "mrBytes": [255,96,64,255,0,144,128,255,80,192,192,255,192,224,240,255],
+  "roughness":0.9,
+  "metallic":0.8,
+  "alphaCutoff":0.5,
+  "radiance":[1.5,1.2,0.9],
+  "surfaceToLight":[0,0,1],
+  "dfg":[0.75,0.0625],
+  "scenarios":["base-uv0","base-uv1","emissive-uv1","mr-linear","mr-zero-metal","mask","blend"],
+  "hdrTolerance":0.002,
+  "minimumStablePerCamera":12,
+  "minimumStableTotal":32,
+  "minimumMetalContributions":16
+}
