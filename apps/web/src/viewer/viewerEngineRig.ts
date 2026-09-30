@@ -353,7 +353,13 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
         brightness: THREE.MathUtils.clamp(state.brightness ?? 0, -1, 1),
         contrast: THREE.MathUtils.clamp(state.contrast ?? 0, -1, 1),
         temperature: THREE.MathUtils.clamp(state.temperature ?? 0, -1, 1),
-        tint: THREE.MathUtils.clamp(state.tint ?? 0, -1, 1)
+        tint: THREE.MathUtils.clamp(state.tint ?? 0, -1, 1),
+        // Z1 审计发现的缺陷修复：体积雾五字段此前被本白名单静默剥掉，UI 开关实际不可用。
+        volumetricFog: state.volumetricFog ?? false,
+        volumetricFogSteps: Math.round(THREE.MathUtils.clamp(state.volumetricFogSteps ?? 48, 32, 64)),
+        volumetricFogDensity: THREE.MathUtils.clamp(state.volumetricFogDensity ?? 0.006, 0.0001, 0.1),
+        volumetricFogHeight: THREE.MathUtils.clamp(state.volumetricFogHeight ?? 64, 1, 1000),
+        volumetricFogAnisotropy: THREE.MathUtils.clamp(state.volumetricFogAnisotropy ?? 0.3, -0.99, 0.99)
       };
       void this.syncPostProcessing();
     }
