@@ -364,3 +364,5 @@ mod c8_geometry_basis;
 mod c8_geometry_roughness;
 #[path = "support/c8_unlit_lighting_skip.rs"]
 mod c8_unlit_lighting_skip;
+#[path = "support/j2_probe_gi_actual.rs"]
+mod j2_probe_gi_actual;

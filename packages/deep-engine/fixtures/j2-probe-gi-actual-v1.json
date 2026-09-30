@@ -1,0 +1,17 @@
+{
+  "schema": "j2-b5-actual-uniform-probe-v1",
+  "origin": [-24, -24, -24],
+  "spacing": 16,
+  "gridSize": [3, 3, 3],
+  "normalBiasCells": 0.2,
+  "dfg": [0.75, 0.0625],
+  "dielectric": 0.04,
+  "metallic": 0,
+  "roughness": 0.8,
+  "absoluteTolerance": 0.001,
+  "scenarios": [
+    {"id": "zero", "irradiance": [0, 0, 0]},
+    {"id": "uniform-a", "irradiance": [0.25, 0.5, 1]},
+    {"id": "uniform-b", "irradiance": [0.5, 1, 2]}
+  ]
+}

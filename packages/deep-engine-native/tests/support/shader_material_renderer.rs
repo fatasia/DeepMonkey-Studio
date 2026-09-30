@@ -204,15 +204,30 @@ async fn render_observed(
             &ibl,
         );
     }
-    // F3:验证装配无真实探针,绑定 96B 全零占位,开关为 0。
-    let probe_frame_buffer = deep_engine_native::probe_gi_storage::disabled_frame_buffer(device);
+    // Consume the existing authored grid through the production storage contract.
+    // FrameObservation.configure owns the mode; legacy observations keep mode zero.
+    let probe_storage = content.probe_grid_records.as_ref().map(|records| {
+        let packed = deep_engine_native::probe_gi_grid::pack_cascade_records(records)
+            .expect("observed authored probe grid must satisfy the production cascade contract");
+        deep_engine_native::probe_gi_storage::ProbeGiStorage::from_packed(
+            device,
+            packed,
+            records.len(),
+        )
+        .expect("observed authored probe grid storage")
+    });
+    let probe_disabled = deep_engine_native::probe_gi_storage::disabled_frame_buffer(device);
+    let probe_frame_buffer = deep_engine_native::probe_gi_storage::frame_probe_buffer(
+        probe_storage.as_ref(),
+        &probe_disabled,
+    );
     let frame_group = ibl.create_frame_bind_group(
         device,
         &layouts.frame,
         &frame_buffer,
         Some(&ies_buffer),
         &shadows,
-        Some(&probe_frame_buffer),
+        Some(probe_frame_buffer),
         "LOD verification frame",
         true,
     );
