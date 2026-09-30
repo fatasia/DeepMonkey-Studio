@@ -20,7 +20,7 @@ describe("cascaded shadow shader ABI", () => {
     expect(CASCADED_SHADOW_WGSL).toMatch(/textureSampleCompare/);
     expect(CASCADED_SHADOW_WGSL).toContain("select(slopeBias, 1.0, deepCascade.params.w > 0.5)");
     expect(CASCADED_SHADOW_WGSL).toMatch(/index \+ 1u >= count/);
-    expect(CASCADED_SHADOW_WGSL).toMatch(/blendStart >= split/);
+    expect(CASCADED_SHADOW_WGSL).toContain("blendStart >= split || viewDepth <= blendStart");
     expect(CASCADED_SHADOW_WGSL).toMatch(/smoothstep\(blendStart, split, viewDepth\)/);
     expect(CASCADED_SHADOW_WGSL).toMatch(/ndc\.z < 0\.0 \|\| ndc\.z > 1\.0/);
   });

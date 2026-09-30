@@ -45,6 +45,7 @@ fn deepShadowVisibility(world: vec3f, normal: vec3f, nDotL: f32) -> f32 {
   if (index + 1u >= count) { return current; }
   let blendStart = deepCascadedShadow.blend_starts[index];
   let split = deepCascadedShadow.split_depths[index];
+  if (blendStart >= split || viewDepth <= blendStart) { return current; }
   return mix(current, deepSampleCascade(index + 1u, world, normal, nDotL), smoothstep(blendStart, split, viewDepth));
 }
 `;

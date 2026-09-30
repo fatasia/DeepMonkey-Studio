@@ -8,7 +8,7 @@ use winit::dpi::PhysicalSize;
 
 use crate::{
     forward_targets::ForwardTargets,
-    frame_bindings::create_frame_layouts,
+    frame_bindings::{create_frame_layouts, create_native_mesh_shader},
     gpu_culling::GpuCulling,
     gpu_ibl::GpuIblEnvironment,
     gpu_lod::GpuLod,
@@ -53,17 +53,7 @@ pub async fn render(
     )
     .unwrap();
     let material_layout = create_material_layout(device);
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("production mesh + CSM shader"),
-        source: wgpu::ShaderSource::Wgsl(
-            concat!(
-                include_str!("../../assets/shaders/native_mesh_v1.wgsl"),
-                "\n",
-                include_str!("../../assets/shaders/native_cascaded_shadow_v1.wgsl")
-            )
-            .into(),
-        ),
-    });
+    let shader = create_native_mesh_shader(device);
     let pipelines = create_mesh_pipelines(
         device,
         &layouts.frame,

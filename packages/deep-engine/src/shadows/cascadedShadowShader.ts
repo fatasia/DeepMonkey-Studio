@@ -91,7 +91,7 @@ fn deepCascadedShadow(viewDepth: f32, worldPosition: vec3f, worldNormal: vec3f, 
   if (index + 1u >= count) { return current; }
   let blendStart = deepCascadeValue(deepCascade.blendStarts0, deepCascade.blendStarts1, index);
   let split = deepCascadeValue(deepCascade.splitDepths0, deepCascade.splitDepths1, index);
-  if (blendStart >= split) { return current; }
+  if (blendStart >= split || viewDepth <= blendStart) { return current; }
   let blend = smoothstep(blendStart, split, viewDepth);
   return mix(current, deepSampleCascade(index + 1u, worldPosition, worldNormal, nDotL), blend);
 }
