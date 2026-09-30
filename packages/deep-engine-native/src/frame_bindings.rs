@@ -38,6 +38,7 @@ pub fn create_native_mesh_shader(device: &wgpu::Device) -> wgpu::ShaderModule {
                 // 对拍与组合解析验证在 deep_engine_native::lighting_math_wgsl。
                 include_str!("../../deep-engine/wgsl/materialDielectric.wgsl"),
                 include_str!("../../deep-engine/wgsl/brdfDirectLighting.wgsl"),
+                include_str!("../../deep-engine/wgsl/brdfDirectMultiscattering.wgsl"),
                 include_str!("../../deep-engine/wgsl/iesSampling.wgsl")
             )
             .into(),
@@ -65,6 +66,7 @@ pub fn create_native_mesh_rt_shader(device: &wgpu::Device) -> wgpu::ShaderModule
                 // 与普通 mesh shader 完全同源的三件套拼接(见上方注释)。
                 include_str!("../../deep-engine/wgsl/materialDielectric.wgsl"),
                 include_str!("../../deep-engine/wgsl/brdfDirectLighting.wgsl"),
+                include_str!("../../deep-engine/wgsl/brdfDirectMultiscattering.wgsl"),
                 include_str!("../../deep-engine/wgsl/iesSampling.wgsl"),
                 "\n",
                 include_str!("../assets/shaders/native_mesh_rt_fragment_v1.wgsl")

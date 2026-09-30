@@ -35,12 +35,17 @@ pub const PBR_BRDF_DIRECT_LIGHTING_WGSL: &str =
 
 /// J2-B1 家族三:IES 光域网采样。引用的 `deepIesShading` storage 由宿主声明
 /// (native mesh binding 9;web FORWARD_PLUS_PBR 模板为 group3/binding12,布局各宿主自持)。
-pub const DEEP_IES_SAMPLING_WGSL: &str =
-    include_str!("../../deep-engine/wgsl/iesSampling.wgsl");
+pub const DEEP_IES_SAMPLING_WGSL: &str = include_str!("../../deep-engine/wgsl/iesSampling.wgsl");
+
+pub const PBR_BRDF_DIRECT_MULTISCATTERING_WGSL: &str =
+    include_str!("../../deep-engine/wgsl/brdfDirectMultiscattering.wgsl");
 
 #[cfg(test)]
 mod tests {
-    use super::{DEEP_IES_SAMPLING_WGSL, MATERIAL_DIELECTRIC_WGSL, PBR_BRDF_DIRECT_LIGHTING_WGSL};
+    use super::{
+        DEEP_IES_SAMPLING_WGSL, MATERIAL_DIELECTRIC_WGSL, PBR_BRDF_DIRECT_LIGHTING_WGSL,
+        PBR_BRDF_DIRECT_MULTISCATTERING_WGSL,
+    };
 
     /// 对拍共享夹具:`<sha256-hex> <byte-len>` 单行;内容或长度任一漂移即失败。
     fn assert_matches_pinned_checksum(wgsl: &str, fixture: &str, label: &str) {
@@ -51,13 +56,42 @@ mod tests {
             .expect("checksum fixture missing byte length")
             .parse()
             .expect("checksum fixture byte length must be a usize");
-        assert_eq!(expected_checksum.len(), 64, "{label}: fixture must hold a sha256 hex digest");
-        assert_eq!(wgsl.len(), expected_bytes, "{label}: byte length drifted from fixture");
+        assert_eq!(
+            expected_checksum.len(),
+            64,
+            "{label}: fixture must hold a sha256 hex digest"
+        );
+        assert_eq!(
+            wgsl.len(),
+            expected_bytes,
+            "{label}: byte length drifted from fixture"
+        );
         assert_eq!(
             crate::shader_package::hash::sha256(wgsl.as_bytes()),
             expected_checksum,
             "{label}: content drifted from pinned cross-host checksum"
         );
+    }
+
+    #[test]
+    fn shared_direct_multiscattering_matches_checksum_and_both_consumers() {
+        assert_matches_pinned_checksum(
+            PBR_BRDF_DIRECT_MULTISCATTERING_WGSL,
+            include_str!("../../deep-engine/wgsl/brdfDirectMultiscattering.wgsl.sha256"),
+            "brdfDirectMultiscattering",
+        );
+        for shader in [
+            include_str!("../assets/shaders/native_mesh_v1.wgsl"),
+            include_str!("../assets/shaders/native_mesh_rt_fragment_v1.wgsl"),
+        ] {
+            assert_eq!(
+                shader
+                    .matches("color += native_direct_multiscattering(")
+                    .count(),
+                1
+            );
+            assert_eq!(shader.matches("vec2f(nv, rough), 0.0).rg").count(), 1);
+        }
     }
 
     #[test]
@@ -92,7 +126,9 @@ mod tests {
         // J2-B1 漂移修复锁:native 原内置副本为 `distribution * visibility * f` 起乘,
         // 白炉验收以 TS 序 `f * visibility * distribution` 为权威;单源化后两侧同序,
         // 若真源被改回 native 序,本断言与 TS 半 brdfDirectLightingWgslChecksum.test.ts 同时失败。
-        assert!(PBR_BRDF_DIRECT_LIGHTING_WGSL.contains("let specular = f * visibility * distribution;"));
+        assert!(
+            PBR_BRDF_DIRECT_LIGHTING_WGSL.contains("let specular = f * visibility * distribution;")
+        );
         assert!(!PBR_BRDF_DIRECT_LIGHTING_WGSL.contains("let specular = distribution"));
     }
 
@@ -110,7 +146,10 @@ mod tests {
     #[test]
     fn shared_dielectric_keeps_legacy_special_case() {
         assert!(MATERIAL_DIELECTRIC_WGSL.contains("fn deepDielectricF0(encodedIor: f32) -> f32 {"));
-        assert!(MATERIAL_DIELECTRIC_WGSL.contains("if (encodedIor == 0.0 || encodedIor == 1.5) { return 0.04; }"));
+        assert!(
+            MATERIAL_DIELECTRIC_WGSL
+                .contains("if (encodedIor == 0.0 || encodedIor == 1.5) { return 0.04; }")
+        );
     }
 
     #[test]
@@ -121,9 +160,13 @@ mod tests {
         for path in [
             "include_str!(\"../../deep-engine/wgsl/materialDielectric.wgsl\")",
             "include_str!(\"../../deep-engine/wgsl/brdfDirectLighting.wgsl\")",
+            "include_str!(\"../../deep-engine/wgsl/brdfDirectMultiscattering.wgsl\")",
             "include_str!(\"../../deep-engine/wgsl/iesSampling.wgsl\")",
         ] {
-            assert!(bindings.contains(path), "frame_bindings must reference {path}");
+            assert!(
+                bindings.contains(path),
+                "frame_bindings must reference {path}"
+            );
         }
     }
 
@@ -136,10 +179,13 @@ mod tests {
         let shadow = include_str!("../assets/shaders/native_cascaded_shadow_v1.wgsl");
         let cascade_math = include_str!("../../deep-engine/wgsl/cascadedShadowMath.wgsl");
         let composed = format!(
-            "{mesh}\n{shadow}\n{cascade_math}\n{MATERIAL_DIELECTRIC_WGSL}{PBR_BRDF_DIRECT_LIGHTING_WGSL}{DEEP_IES_SAMPLING_WGSL}"
+            "{mesh}\n{shadow}\n{cascade_math}\n{MATERIAL_DIELECTRIC_WGSL}{PBR_BRDF_DIRECT_LIGHTING_WGSL}{PBR_BRDF_DIRECT_MULTISCATTERING_WGSL}{DEEP_IES_SAMPLING_WGSL}"
         );
         let module = wgpu::naga::front::wgsl::parse_str(&composed)
             .expect("composed native mesh shader with shared lighting-math libraries must parse");
-        assert!(!module.entry_points.is_empty(), "composed shader must keep its entry points");
+        assert!(
+            !module.entry_points.is_empty(),
+            "composed shader must keep its entry points"
+        );
     }
 }

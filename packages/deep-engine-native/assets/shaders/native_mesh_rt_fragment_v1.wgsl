@@ -64,6 +64,15 @@ fn rt_directional_visibility(world: vec3f, light: vec3f) -> f32 {
   let dielectric = input.dielectric;
   var color = brdfWithDielectricF0(normal, view, light, base, metal, rough, dielectric)
     * sun * visibility;
+  let nv = clamp(dot(normal, view), 0.001, 1.0);
+  var dfg = vec2f(0.0);
+  let direct_lit = dot(normal, light) > 0.0 && any(sun > vec3f(0.0));
+  if (frame.background.w > 0.5 || direct_lit) {
+    dfg = textureSampleLevel(brdf_lut, environment_sampler, vec2f(nv, rough), 0.0).rg;
+  }
+  if (direct_lit) {
+    color += native_direct_multiscattering(normal, light, base, metal, rough, dielectric, dfg) * sun * visibility;
+  }
   if (frame.sunColor.w == 3.0) {
     color += local_direct_lighting(input.world, normal, view, base, metal, rough, !flag(input.material.w,16u), ao, dielectric, input.clip);
   }
@@ -74,10 +83,7 @@ fn rt_directional_visibility(world: vec3f, light: vec3f) -> f32 {
     // J2-B3 白炉修复:与本体 fragment_main 同步(TS pbrShader.ts C12 修复式,
     // 同一 split-sum 分数进 diffuse/specular 两路,构造性守恒)。同步契约见
     // 文件头;逐字锁定断言在 white_furnace::native_mesh_ibl_split_keeps_ts_authoritative_formula。
-    let nv = clamp(dot(normal, view), 0.001, 1.0);
     let f0 = mix(vec3f(dielectric), base, metal);
-    let dfg = textureSampleLevel(
-      brdf_lut, environment_sampler, vec2f(nv, rough), 0.0).rg;
     let energy_compensation = vec3f(1.0)
       + f0 * (1.0 / max(dfg.x + dfg.y, 0.05) - 1.0);
     let specular_fraction = clamp(f0 * dfg.x + dfg.y, vec3f(0.0), vec3f(1.0)) * energy_compensation;

@@ -1,9 +1,9 @@
 #![cfg(windows)]
 #![allow(dead_code)]
-#[path = "support/j3_geometry_depth.rs"]
-mod j3_geometry_depth;
 #[path = "support/j3_device_recovery.rs"]
 mod j3_device_recovery;
+#[path = "support/j3_geometry_depth.rs"]
+mod j3_geometry_depth;
 
 #[path = "../src/forward_targets.rs"]
 mod forward_targets;
@@ -351,3 +351,6 @@ async fn verify_material_draws(device: &wgpu::Device, queue: &wgpu::Queue) {
 mod j3_normal_attachments;
 #[path = "support/j3_shadow_visibility.rs"]
 mod j3_shadow_visibility;
+
+#[path = "support/c8_direct_multiscattering.rs"]
+mod c8_direct_multiscattering;

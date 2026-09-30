@@ -40,6 +40,7 @@ pub fn shader_source() -> &'static str {
         "\n",
         include_str!("../../../deep-engine/wgsl/materialDielectric.wgsl"),
         include_str!("../../../deep-engine/wgsl/brdfDirectLighting.wgsl"),
+        include_str!("../../../deep-engine/wgsl/brdfDirectMultiscattering.wgsl"),
         include_str!("../../../deep-engine/wgsl/iesSampling.wgsl")
     )
 }
