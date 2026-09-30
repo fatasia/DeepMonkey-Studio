@@ -666,6 +666,153 @@
 .behavior-graph-view .react-flow__controls button:hover { color: #e6edef; background: #21303a; }
 .behavior-graph-minimap { border: 1px solid #2b3741; border-radius: 5px; background: #10171a; }
 
+/* ===================== G2-S2a 最小可用编辑回路(调色板/表单/连线/保存门禁) ===================== */
+/* 节点卡样式与只读视图共用 .behavior-graph-card;此处只加编辑态增量(选中/连线反馈/端口),不动只读语义。 */
+
+.interaction-graph-new { display: inline-flex; align-items: center; gap: 5px; justify-self: start; min-height: 22px; padding: 0 9px; margin-top: 2px; color: #829097; border: 1px dashed #3a4a52; border-radius: 4px; background: transparent; font-size: 8px; cursor: pointer; }
+.interaction-graph-new:hover { color: var(--accent); border-color: rgba(214,170,77,.5); }
+.interaction-graph-new:disabled { opacity: .45; cursor: not-allowed; }
+.interaction-code-gate-error { margin: 4px 0 0; color: var(--danger); font-size: 8px; line-height: 1.45; }
+
+.behavior-dirty-dot { display: inline-block; width: 5px; height: 5px; margin-left: 4px; border-radius: 50%; background: var(--warning); }
+.interaction-graph-tabs button { gap: 2px; }
+
+.behavior-graph-editor { display: grid; gap: 0; overflow: hidden; border: 1px solid #2b3741; border-radius: 6px; background: #0d1316; }
+.behavior-editor-status { display: flex; flex-wrap: wrap; gap: 3px 8px; align-items: center; padding: 5px 8px; border-bottom: 1px solid #223036; font-size: 8px; line-height: 1.4; }
+.behavior-editor-status-actions { display: inline-flex; gap: 5px; align-items: center; margin-left: auto; }
+.behavior-editor-status-actions button { display: inline-flex; gap: 4px; align-items: center; min-height: 20px; padding: 0 8px; border: 1px solid #3a4a52; border-radius: 4px; background: #17212a; color: #9aa6ac; font-size: 8px; cursor: pointer; }
+.behavior-editor-status-actions button:hover:not(:disabled) { color: #e6edef; border-color: #46555d; }
+.behavior-editor-status-actions button:disabled { opacity: .45; cursor: not-allowed; }
+.behavior-editor-status-actions button kbd { padding: 0 3px; border: 1px solid #344148; border-radius: 3px; background: #10171a; color: #66777e; font: 7px/1.4 Consolas, monospace; }
+.behavior-editor-save[data-state="ready"] { color: #0d1316; border-color: var(--success); background: var(--success); font-weight: 600; }
+.behavior-editor-save[data-state="ready"] kbd { color: #0d1316; border-color: rgba(13,19,22,.4); background: transparent; }
+.behavior-editor-save[data-state="invalid"] { color: var(--danger); border-color: rgba(226,116,120,.5); background: rgba(226,116,120,.08); }
+
+.behavior-palette { border-bottom: 1px solid #223036; }
+.behavior-palette summary { display: flex; gap: 6px; align-items: baseline; padding: 4px 8px; color: #9aa6ac; font-size: 8px; cursor: pointer; user-select: none; }
+.behavior-palette summary small { color: #66777e; font-size: 7px; }
+.behavior-palette summary::marker { color: #4a565d; }
+.behavior-palette-groups { display: flex; flex-direction: column; gap: 3px; padding: 2px 8px 6px; }
+.behavior-palette-group { display: flex; gap: 5px; align-items: baseline; }
+.behavior-palette-group > span { flex: 0 0 auto; color: #66777e; font-size: 7px; }
+.behavior-palette-group > span.is-event { color: #d6aa4d; }
+.behavior-palette-group > span.is-condition { color: #6fa7c7; }
+.behavior-palette-group > span.is-action { color: #62d493; }
+.behavior-palette-chips { display: flex; flex-wrap: wrap; gap: 3px; }
+.behavior-palette-chips > div { display: inline-flex; gap: 4px; align-items: center; min-height: 18px; padding: 0 7px; border: 1px solid #344148; border-radius: 9px; background: #12191d; color: #aebac1; font-size: 8px; cursor: grab; user-select: none; }
+.behavior-palette-chips > div:hover { color: #e6edef; border-color: #46555d; background: #1a252c; }
+.behavior-palette-chips > div:active { cursor: grabbing; }
+.behavior-palette-chips > div:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.behavior-palette-chips i { width: 5px; height: 5px; border-radius: 50%; }
+.behavior-palette-chips i.is-event { background: #d6aa4d; }
+.behavior-palette-chips i.is-condition { background: #6fa7c7; }
+.behavior-palette-chips i.is-action { background: #62d493; }
+
+.behavior-editor-body { position: relative; height: 320px; background: #0d1316; }
+.behavior-editor-body .react-flow { background: transparent; }
+.behavior-editor-body.is-drop-target::after { content: ""; position: absolute; inset: 0; z-index: 4 /* z-index-audit: keep(页面内容带:画布拖放高亮描边) */; border: 1px dashed rgba(214,170,77,.55); border-radius: 6px; background: rgba(214,170,77,.04); pointer-events: none; }
+.behavior-editor-ghost { position: absolute; top: 0; left: 0; z-index: 5 /* z-index-audit: keep(页面内容带:调色板拖拽跟随预览) */; display: inline-flex; gap: 4px; align-items: center; padding: 2px 8px; border: 1px solid rgba(214,170,77,.65); border-radius: 9px; background: rgba(214,170,77,.12); color: #e6edef; font-size: 8px; pointer-events: none; box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+.behavior-editor-broken { position: absolute; inset: 0; z-index: 6 /* z-index-audit: keep(页面内容带:不可解析态阻断层) */; display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center; padding: 12px; background: rgba(13,19,22,.92); color: var(--danger); font-size: 9px; text-align: center; }
+.behavior-editor-broken button { min-height: 22px; padding: 0 10px; border: 1px solid #3a4a52; border-radius: 4px; background: #17212a; color: #c5d0d5; font-size: 8px; cursor: pointer; }
+.behavior-editor-broken button:hover { color: #e6edef; border-color: #46555d; }
+
+/* 编辑态节点卡增量:选中描边 / 连线拖拽时的合法(绿)/非法(红)反馈与端口状态。 */
+.behavior-graph-card.is-selected { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(214,170,77,.5); }
+.behavior-graph-card.is-connect-legal { border-color: rgba(98,212,147,.65); }
+.behavior-graph-card.is-connect-illegal { border-color: rgba(226,116,120,.7); }
+.behavior-graph-editor .react-flow__handle { width: 7px; height: 7px; border: 1px solid #0d1316; background: #5b6b74; opacity: .85; pointer-events: auto; }
+.behavior-graph-editor .react-flow__handle:hover { opacity: 1; }
+.behavior-graph-editor .react-flow__handle.is-port-legal { background: var(--success); box-shadow: 0 0 0 2px rgba(98,212,147,.35); }
+.behavior-graph-editor .react-flow__handle.is-port-invalid { background: var(--danger); box-shadow: 0 0 0 2px rgba(226,116,120,.35); }
+.behavior-graph-editor .react-flow__handle.connectingfrom,
+.behavior-graph-editor .react-flow__handle.connectingto { background: var(--accent); }
+.behavior-graph-editor .react-flow__edge.is-selected-edge .react-flow__edge-path { stroke: var(--accent); }
+.behavior-graph-editor .react-flow__edge-path { cursor: pointer; }
+
+/* 浮动节点属性表单(画布右上角,ThingJS 式检查器)。 */
+.behavior-node-form { position: absolute; top: 8px; right: 8px; bottom: 8px; z-index: 5 /* z-index-audit: keep(页面内容带:画布内浮动检查器) */; display: flex; flex-direction: column; width: min(232px, calc(100% - 16px)); overflow: hidden; border: 1px solid #3a4a52; border-radius: 6px; background: #12191df2; box-shadow: 0 14px 38px rgba(0,0,0,.4); backdrop-filter: blur(4px); }
+.behavior-node-form header { display: flex; gap: 5px; align-items: center; padding: 5px 7px; border-bottom: 1px solid #223036; font-size: 8px; color: #d8dee1; }
+.behavior-node-form header i { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; }
+.behavior-node-form header i.is-event { background: #d6aa4d; }
+.behavior-node-form header i.is-condition { background: #6fa7c7; }
+.behavior-node-form header i.is-action { background: #62d493; }
+.behavior-node-form header i.is-invalid { background: var(--danger); }
+.behavior-node-form header code { overflow: hidden; color: #8fa0a8; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.behavior-node-form-close { display: grid; place-items: center; flex: 0 0 auto; width: 16px; height: 16px; margin-left: auto; border: 0; border-radius: 4px; background: transparent; color: #66777e; cursor: pointer; }
+.behavior-node-form-close:hover { color: #e6edef; background: #22303a; }
+.behavior-node-form-body { display: grid; gap: 6px; align-content: start; flex: 1; padding: 7px; overflow: auto; }
+.behavior-form-field { display: grid; gap: 2px; font-size: 8px; color: #8fa0a8; }
+.behavior-form-field > span { color: #9aa6ac; }
+.behavior-form-field input, .behavior-form-field select, .behavior-form-field textarea { width: 100%; padding: 3px 6px; border: 1px solid #344148; border-radius: 4px; background: #0d1316; color: #e6edef; font: 8px/1.45 Consolas, "SFMono-Regular", monospace; }
+.behavior-form-field textarea { resize: vertical; min-height: 30px; }
+.behavior-form-field input:focus, .behavior-form-field select:focus, .behavior-form-field textarea:focus { outline: none; border-color: rgba(214,170,77,.55); }
+.behavior-form-field input.is-invalid, .behavior-form-field textarea.is-invalid { border-color: var(--danger); }
+.behavior-form-field input[type="color"] { padding: 1px; height: 22px; }
+.behavior-form-color { display: grid; grid-template-columns: 26px 1fr; gap: 4px; align-items: center; }
+.behavior-field-error { display: block; color: var(--danger); font-size: 7.5px; line-height: 1.45; }
+.behavior-node-form-issues { margin: 0; padding: 0; list-style: none; }
+.behavior-node-form-issues li { display: flex; gap: 5px; align-items: baseline; margin: 2px 0; color: #c9a1a4; font-size: 7.5px; line-height: 1.4; }
+.behavior-node-form-issues li code { flex: 0 0 auto; padding: 0 3px; color: var(--danger); border: 1px solid rgba(226,116,120,.35); border-radius: 3px; background: rgba(226,116,120,.08); font-size: 6.5px; }
+.behavior-node-form-issues li.is-more { color: #66777e; }
+.behavior-node-form-note { margin: 0; color: #66777e; font-size: 8px; line-height: 1.45; }
+.behavior-node-form footer { display: flex; gap: 6px; align-items: center; justify-content: space-between; padding: 5px 7px; border-top: 1px solid #223036; }
+.behavior-node-form footer > span { color: #66777e; font-size: 7.5px; }
+.behavior-node-form-delete { display: inline-flex; gap: 4px; align-items: center; min-height: 20px; padding: 0 8px; border: 1px solid rgba(226,116,120,.4); border-radius: 4px; background: transparent; color: var(--danger); font-size: 8px; cursor: pointer; }
+.behavior-node-form-delete:hover { background: rgba(226,116,120,.1); }
+
+/* 浅色主题:编辑器面与画布元素随主题切换(G2-S1 只读视图一并覆盖)。 */
+:root[data-theme="light"] .behavior-graph-view,
+:root[data-theme="light"] .behavior-graph-editor,
+:root[data-theme="light"] .behavior-editor-body { border-color: var(--line); background: #f4f7f8; }
+:root[data-theme="light"] .behavior-editor-status { border-color: var(--line-subtle); }
+:root[data-theme="light"] .behavior-graph-issue-list { border-color: var(--line-subtle); }
+:root[data-theme="light"] .behavior-graph-issue-list li { color: #6b4046; }
+:root[data-theme="light"] .behavior-graph-issue-list li.is-more,
+:root[data-theme="light"] .behavior-graph-status-item.is-budget { color: var(--text-muted); }
+:root[data-theme="light"] .behavior-graph-card { border-color: #c3ced4; background: #ffffff; color: var(--text-strong); }
+:root[data-theme="light"] .behavior-graph-card header { color: var(--text-strong); }
+:root[data-theme="light"] .behavior-graph-card p { color: var(--text-muted); }
+:root[data-theme="light"] .behavior-graph-card.is-event { background: #faf3e3; }
+:root[data-theme="light"] .behavior-graph-card.is-condition { background: #e9f2f8; }
+:root[data-theme="light"] .behavior-graph-card.is-action { background: #e9f7ef; }
+:root[data-theme="light"] .behavior-graph-card.is-invalid { background: #faeaea; }
+:root[data-theme="light"] .behavior-graph-view .react-flow__edge-path { stroke: #7d8f99; }
+:root[data-theme="light"] .behavior-graph-view .react-flow__edge-text { fill: var(--text-muted); }
+:root[data-theme="light"] .behavior-graph-view .react-flow__edge-textbg { fill: #ffffff; }
+:root[data-theme="light"] .behavior-graph-view .react-flow__controls button,
+:root[data-theme="light"] .behavior-graph-editor .react-flow__controls button { color: var(--text); border-color: var(--line); background: #ffffff; }
+:root[data-theme="light"] .behavior-graph-minimap { border-color: var(--line); background: #ffffff; }
+:root[data-theme="light"] .interaction-graph-tabs button { color: var(--text-muted); border-color: var(--line); background: var(--surface-2); }
+:root[data-theme="light"] .interaction-graph-tabs button:hover { color: var(--text-strong); border-color: var(--line-strong); }
+:root[data-theme="light"] .behavior-editor-status-actions button { color: var(--text); border-color: var(--line); background: #ffffff; }
+:root[data-theme="light"] .behavior-editor-status-actions button kbd { color: var(--text-muted); border-color: var(--line); background: var(--surface-2); }
+:root[data-theme="light"] .behavior-editor-save[data-state="ready"] { color: #ffffff; }
+:root[data-theme="light"] .behavior-editor-save[data-state="ready"] kbd { color: #ffffff; border-color: rgba(255,255,255,.5); background: transparent; }
+:root[data-theme="light"] .behavior-palette { border-color: var(--line-subtle); }
+:root[data-theme="light"] .behavior-palette summary { color: var(--text); }
+:root[data-theme="light"] .behavior-palette summary small { color: var(--text-muted); }
+:root[data-theme="light"] .behavior-palette-group > span { color: var(--text-muted); }
+:root[data-theme="light"] .behavior-palette-chips > div { color: var(--text); border-color: var(--line); background: #ffffff; }
+:root[data-theme="light"] .behavior-palette-chips > div:hover { color: var(--text-strong); border-color: var(--line-strong); background: var(--surface-2); }
+:root[data-theme="light"] .behavior-node-form { border-color: var(--line-strong); background: rgba(255,255,255,.94); box-shadow: 0 14px 38px rgba(23,36,43,.16); }
+:root[data-theme="light"] .behavior-node-form header { color: var(--text-strong); border-color: var(--line-subtle); }
+:root[data-theme="light"] .behavior-node-form header code { color: var(--text-muted); }
+:root[data-theme="light"] .behavior-node-form-close { color: var(--text-muted); }
+:root[data-theme="light"] .behavior-node-form-close:hover { color: var(--text-strong); background: var(--surface-3); }
+:root[data-theme="light"] .behavior-form-field { color: var(--text); }
+:root[data-theme="light"] .behavior-form-field > span { color: var(--text); }
+:root[data-theme="light"] .behavior-form-field input,
+:root[data-theme="light"] .behavior-form-field select,
+:root[data-theme="light"] .behavior-form-field textarea { color: var(--text-strong); border-color: var(--line); background: #ffffff; }
+:root[data-theme="light"] .behavior-node-form-issues li { color: #6b4046; }
+:root[data-theme="light"] .behavior-node-form-note { color: var(--text-muted); }
+:root[data-theme="light"] .behavior-node-form footer { border-color: var(--line-subtle); }
+:root[data-theme="light"] .behavior-node-form footer > span { color: var(--text-muted); }
+:root[data-theme="light"] .behavior-editor-ghost { color: var(--text-strong); }
+:root[data-theme="light"] .behavior-editor-broken { background: rgba(244,247,248,.94); }
+:root[data-theme="light"] .behavior-editor-broken button { color: var(--text); border-color: var(--line); background: #ffffff; }
+:root[data-theme="light"] .interaction-graph-new { color: var(--text-muted); border-color: var(--line-strong); }
+
 /* The optimizer is a full workbench, so its controls must remain readable and keyboard-safe. */
 .optimizer-header-actions button,
 .optimizer-file span,

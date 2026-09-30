@@ -1,4 +1,4 @@
-import { Plus, Play, RotateCcw, Trash2 } from "lucide-react";
+import { Plus, Play, RotateCcw, Trash2, Workflow } from "lucide-react";
 import type { SceneInteractionActionState, SceneInteractionActionType, SceneInteractionScriptState, SceneInteractionTarget, SceneInteractionTrigger, SceneVisualTransitionState } from "@bim-studio/contracts";
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { translate as tr, type AppLocale } from "../i18n";
@@ -14,8 +14,10 @@ import {
   WIDGET_INTERACTION_ACTIONS,
 } from "../interactionState";
 import { isRestrictedInteractionScript } from "../scripting/restrictedInteractionDocument";
+import { guardRestrictedCodeWrite, newRestrictedGraphCode } from "./behaviorGraphDraft";
 import { ProfessionalCodeEditor } from "./ProfessionalCodeEditor";
 import { BehaviorGraphView } from "./BehaviorGraphView";
+import { BehaviorGraphEditorSection } from "./BehaviorGraphEditor";
 import type { SceneScriptIntelligenceContext } from "../studio/sceneScriptContext";
 
 export interface InteractionTargetOption {
@@ -59,6 +61,7 @@ export function InteractionEditor({
 }) {
   const targetScripts = useMemo(() => interactions.filter((script) => sameInteractionTarget(script.target, target)), [interactions, target]);
   const [selectedTrigger, setSelectedTrigger] = useState<SceneInteractionTrigger>(targetScripts[0]?.trigger ?? "click");
+  const [codeGateError, setCodeGateError] = useState<string | undefined>(undefined);
   const actionTypes = target.kind === "widget" ? WIDGET_INTERACTION_ACTIONS : OBJECT_INTERACTION_ACTIONS;
   const [newActionType, setNewActionType] = useState<SceneInteractionActionType>(actionTypes[0]!);
   const selected = targetScripts.find((script) => script.trigger === selectedTrigger);
@@ -74,9 +77,43 @@ export function InteractionEditor({
     onChange([...interactions, createInteractionScript(target, trigger)]);
   }
 
+  /**
+   * G2-S2a 保存门禁(修复 G2-S1 已知洞):一切 code 写路径,凡结果落在受限图域,
+   * 必须先过 parseRestrictedInteractionScript(经 guardRestrictedCodeWrite);失败则
+   * 停在编辑器内并内联呈现权威错误——非法文档 0 条落库。可信 JS 通道一字不动。
+   */
   function updateSelected(patch: Partial<SceneInteractionScriptState>) {
     if (!selected || disabled) return;
+    if (patch.code !== undefined && patch.code !== selected.code) {
+      const blocked = guardRestrictedCodeWrite(patch.code);
+      if (blocked) {
+        setCodeGateError(blocked);
+        return;
+      }
+    }
+    setCodeGateError(undefined);
     onChange(interactions.map((script) => (script.id === selected.id ? { ...script, ...patch } : script)));
+  }
+
+  /** 受限图脚本重置为全新空图(保持受限域,不再静默转成可信 JS 模板)。 */
+  function resetSelectedCode() {
+    if (!selected || disabled) return;
+    updateSelected({ code: isRestrictedInteractionScript(selected) ? newRestrictedGraphCode() : defaultInteractionCode(selected.trigger, target.kind) });
+  }
+
+  /** 新建受限行为图:挑选一个尚未占用脚本的触发器,避免同触发器多脚本互相遮蔽。 */
+  function addRestrictedGraphScript() {
+    if (disabled) return;
+    const freeTrigger = INTERACTION_TRIGGERS.find((trigger) => !targetScripts.some((script) => script.trigger === trigger));
+    if (!freeTrigger) return;
+    const script: SceneInteractionScriptState = {
+      ...createInteractionScript(target, freeTrigger),
+      name: tr(locale, "行为图", "Behavior graph"),
+      actions: [],
+      code: newRestrictedGraphCode(),
+    };
+    onChange([...interactions, script]);
+    setSelectedTrigger(freeTrigger);
   }
 
   function removeSelected() {
@@ -132,6 +169,9 @@ export function InteractionEditor({
             );
           })}
         </div>
+        {!disabled && INTERACTION_TRIGGERS.some((trigger) => !targetScripts.some((script) => script.trigger === trigger)) && (
+          <NewGraphEntry locale={locale} disabled={false} onAdd={addRestrictedGraphScript} />
+        )}
         {selected && (
           <fieldset className="interaction-code-editor" disabled={disabled} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
             <header>
@@ -179,29 +219,16 @@ export function InteractionEditor({
             <details className="interaction-advanced">
               <summary>
                 {isRestrictedInteractionScript(selected)
-                  ? tr(locale, "受限行为图 · 只读视图 / 源码 JSON", "Restricted behavior graph · read-only view / JSON source")
+                  ? tr(locale, "受限行为图 · 可视化编辑 / 源码 JSON", "Restricted behavior graph · visual editing / JSON source")
                   : tr(locale, "高级 JavaScript", "Advanced JavaScript")}
               </summary>
               {isRestrictedInteractionScript(selected) ? (
-                <RestrictedGraphSection
+                <BehaviorGraphEditorSection
                   key={selected.id}
                   locale={locale}
                   code={selected.code}
-                  codeView={disabled ? (
-                    <pre tabIndex={0} aria-label={tr(locale, "只读事件脚本", "Read-only event script")} style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{selected.code}</pre>
-                  ) : (
-                    <ProfessionalCodeEditor
-                      compact
-                      locale={locale}
-                      path={`bim-studio://interaction/${selected.id}.json`}
-                      height={220}
-                      value={selected.code}
-                      {...(intelligence ? { intelligence } : {})}
-                      onChange={(code) => updateSelected({ code })}
-                      onRun={() => onTest(selected)}
-                      {...(onOpenDocs ? { onOpenDocs } : {})}
-                    />
-                  )}
+                  disabled={disabled}
+                  onCommit={(code) => updateSelected({ code })}
                 />
               ) : disabled ? <pre tabIndex={0} aria-label={tr(locale, "只读事件脚本", "Read-only event script")} style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{selected.code}</pre> : <ProfessionalCodeEditor
                 compact
@@ -214,12 +241,18 @@ export function InteractionEditor({
                 onRun={() => onTest(selected)}
                 {...(onOpenDocs ? { onOpenDocs } : {})}
               />}
+              {codeGateError && (
+                <p className="interaction-code-gate-error" role="alert">
+                  {tr(locale, "未通过保存门禁,更改未写入:", "Blocked by the save gate, changes were not written:")}
+                  {codeGateError}
+                </p>
+              )}
               <small>
                 {isRestrictedInteractionScript(selected)
                   ? tr(
                       locale,
-                      "受限行为图以 JSON 为唯一真值;图视图仅用于审阅与错误定位,任何图上交互都不会改写数据,编辑仍走源码 JSON 通道。",
-                      "The restricted graph keeps JSON as the single source of truth; the graph view is for review and issue locating only — canvas interactions never write data, editing stays on the JSON source channel.",
+                      "图与源码 JSON 是同一份 restricted-graph/v1 文档的两个视图;保存时经过全量校验门禁,非法文档不会写入。",
+                      "Graph and JSON source are two views of one restricted-graph/v1 document; saving runs the full validation gate — invalid documents are never written.",
                     )
                   : tr(
                       locale,
@@ -232,8 +265,10 @@ export function InteractionEditor({
               <span>{tr(locale, `已配置 ${(selected.actions ?? []).length} 个内置动作`, `${(selected.actions ?? []).length} built-in actions`)}</span>
               <div>
                 <button
-                  title={tr(locale, "恢复默认注释", "Restore default comments")}
-                  onClick={() => updateSelected({ code: defaultInteractionCode(selected.trigger, target.kind) })}
+                  title={isRestrictedInteractionScript(selected)
+                    ? tr(locale, "重置为全新空行为图", "Reset to a fresh empty behavior graph")
+                    : tr(locale, "恢复默认注释", "Restore default comments")}
+                  onClick={resetSelectedCode}
                 >
                   <RotateCcw size={12} />
                 </button>
@@ -254,28 +289,19 @@ export function InteractionEditor({
 }
 
 /**
- * G2-S1「只读行为图」页签(仅 restricted-graph 脚本进入)。
- * 图页签渲染 BehaviorGraphView(结构上无写回通道);源码页签原样复用既有编辑器,
- * 编辑通道不变——JSON 是唯一真值,图只是它的第二个视图。
+ * G2-S2a「新建行为图」入口:受限行为图不再只能靠 AI 草案或手写 JSON 产生。
+ * 仅在存在空闲触发器时可用,避免同触发器多脚本互相遮蔽。
  */
-function RestrictedGraphSection({ locale, code, codeView }: {
+function NewGraphEntry({ locale, disabled, onAdd }: {
   locale: AppLocale;
-  code: string;
-  codeView: ReactElement;
+  disabled: boolean;
+  onAdd: () => void;
 }) {
-  const [tab, setTab] = useState<"graph" | "code">("graph");
   return (
-    <div className="interaction-graph-section">
-      <div className="interaction-graph-tabs" role="tablist" aria-label={tr(locale, "行为图视图", "Behavior graph views")}>
-        <button type="button" role="tab" aria-selected={tab === "graph"} className={tab === "graph" ? "active" : ""} onClick={() => setTab("graph")}>
-          {tr(locale, "只读行为图", "Read-only graph")}
-        </button>
-        <button type="button" role="tab" aria-selected={tab === "code"} className={tab === "code" ? "active" : ""} onClick={() => setTab("code")}>
-          {tr(locale, "源码 JSON", "JSON source")}
-        </button>
-      </div>
-      {tab === "graph" ? <BehaviorGraphView code={code} locale={locale} /> : codeView}
-    </div>
+    <button type="button" className="interaction-graph-new" disabled={disabled} onClick={onAdd}>
+      <Workflow size={11} />
+      {tr(locale, "新建行为图", "New behavior graph")}
+    </button>
   );
 }
 

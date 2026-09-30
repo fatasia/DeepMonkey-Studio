@@ -144,7 +144,7 @@ describe("OntologyGraphInspector（检查器）", () => {
     expect(html).toContain("效果");
     expect(html).toContain("风险");
     expect(html).toContain("cap.diagnosis");
-    expect(html).toContain("Harness 链路");
+    expect(html).toContain("受控执行走 Harness 审批链");
   });
 
   it("关系边：定义/方向/基数/键映射/来源理由/有效时间/证据全量展示", () => {

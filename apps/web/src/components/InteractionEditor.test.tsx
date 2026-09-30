@@ -46,16 +46,16 @@ describe("restricted graph read-only tab (G2-S1)", () => {
   };
   const restricted = { ...createInteractionScript(target, "click"), code: RESTRICTED_GRAPH_PREFIX + JSON.stringify(validGraph) };
 
-  it("restricted 脚本默认落在只读行为图页签,渲染校验通过与预算,不挂载编辑器、不产生任何写回", () => {
+  it("restricted 脚本默认落在行为图编辑器(双页签),渲染校验通过与预算,写回走保存门禁", () => {
     const onChange = vi.fn();
     const html = renderToStaticMarkup(<InteractionEditor locale="zh-CN" target={target} targetName="图模型"
       interactions={[restricted]} onChange={onChange} onTest={vi.fn()} />);
     expect(html).toContain('role="tablist"');
-    expect(html).toContain("只读行为图");
-    expect(html).toContain('aria-label="只读行为图"');
-    expect(html).toContain('data-readonly="true"');
+    expect(html).toContain("行为图");
+    expect(html).toContain("源码 JSON");
+    expect(html).toContain('aria-label="行为图视图"');
     expect(html).toContain("校验通过");
-    expect(html).toContain("20,000");
+    expect(html).toContain("256"); // S2a 收紧后的节点预算(256)取代 G2-S1 文档期数字(20,000)
     expect(html).not.toContain('data-editor="editable"'); // 图页签默认激活:源码编辑器不渲染
     expect(onChange).not.toHaveBeenCalled(); // 渲染全路径零写回
   });
