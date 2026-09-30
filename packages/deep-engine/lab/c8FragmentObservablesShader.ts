@@ -1,7 +1,8 @@
 import { sha256Utf8 } from "../src/shaderPackage/hash.js";
 import { sceneShader } from "../src/webgpu/pbrShader.js";
 
-export type FragmentObservable = "geometry" | "single";
+export type FragmentObservable = "geometry" | "single" | "rough-single";
+export type FragmentDerivative = "fine" | "coarse";
 const marker = "// C8 isolated fragment observation";
 const identities = {
   re: "f324431f2fd3be681d14462f021f9c1cf84b5c981c7ccd85896f5071476ab293",
@@ -11,20 +12,27 @@ const identities = {
 const output = "return select(color, deepApplySceneFog(select(color, baseInput, flag(materialFlags, 64u)), world, materialFlags), applyFog);";
 const single = "  var color = brdfWithDielectricF0(n, view, l, base, metal, rough, dielectric) * frame.sunColor.rgb * frame.sunColor.w * visibility;";
 function modeGuard(mode: FragmentObservable): void {
-  if (mode !== "geometry" && mode !== "single") throw Error("Unknown fragment observable");
+  if (mode !== "geometry" && mode !== "single" && mode !== "rough-single") throw Error("Unknown fragment observable");
 }
 
 /** Isolated source output only; retains production geometry, material and light evaluation. */
-export function observeDeepFragment(mode: FragmentObservable, source = sceneShader) {
+export function observeDeepFragment(mode: FragmentObservable, source = sceneShader, derivative?: FragmentDerivative) {
   modeGuard(mode);
+  if (derivative !== undefined && derivative !== "fine" && derivative !== "coarse") throw Error("Unknown fragment derivative candidate");
   if (source !== sceneShader || source.includes(marker)) throw Error("Actual production Deep source drifted or was instrumented");
   const start = source.indexOf("fn shade("), end = source.indexOf("\n}\nfn clipUv", start);
   const original = source.slice(start, end + 2);
   if (start < 0 || end < 0 || sha256Utf8(original) !== identities.shade || original.split(output).length !== 2 || original.split(single).length !== 2) throw Error("Production shade observation seam drifted");
-  const observed = mode === "geometry" ? "vec3f(clamp(dot(n, view), 0.0001, 1.0), clamp(dot(n, l), 0.0, 1.0), rough)" : "deepObservedSingle";
+  const observed = mode === "geometry" ? "vec3f(clamp(dot(n, view), 0.0001, 1.0), clamp(dot(n, l), 0.0, 1.0), rough)" : mode === "rough-single" ? "vec3f(rough, deepObservedSingle.rg)" : "deepObservedSingle";
   const instrumented = original.replace(single, `${single}\n  let deepObservedSingle = color;`)
     .replace(output, `return ${observed};`);
-  const code = `${marker}\n${source.slice(0, start)}${instrumented}${source.slice(end + 2)}`;
+  let code = `${marker}\n${source.slice(0, start)}${instrumented}${source.slice(end + 2)}`;
+  if (derivative) {
+    const seam = "let derivative = max(abs(dpdx(normal)), abs(dpdy(normal)));";
+    if (code.split(seam).length !== 2) throw Error("Canonical geometry derivative seam drifted");
+    const suffix = derivative === "fine" ? "Fine" : "Coarse";
+    code = code.replace(seam, `let derivative = max(abs(dpdx${suffix}(normal)), abs(dpdy${suffix}(normal)));`);
+  }
   return { code, originalHash: sha256Utf8(source), instrumentedHash: sha256Utf8(code), mode };
 }
 
@@ -32,9 +40,10 @@ export function observeThreeFragment(mode: FragmentObservable, source: { readonl
   modeGuard(mode);
   const original = source.lights_physical_pars_fragment, matches = [...original.matchAll(/^void RE_Direct_Physical\([^]*?^\}/gm)], re = matches[0]?.[0];
   if (original.includes(marker) || matches.length !== 1 || !re || sha256Utf8(re) !== identities.re || sha256Utf8(source.opaque_fragment) !== identities.opaque) throw Error("Actual Three observation seam drifted or was instrumented");
+  const singleExpression = "irradiance * ( BRDF_GGX( directLight.direction, geometryViewDir, geometryNormal, material ) + BRDF_Lambert( material.diffuseContribution ) )";
   const expression = mode === "geometry"
     ? "vec3( saturate( dot( geometryNormal, geometryViewDir ) ), saturate( dot( geometryNormal, directLight.direction ) ), material.roughness )"
-    : "irradiance * ( BRDF_GGX( directLight.direction, geometryViewDir, geometryNormal, material ) + BRDF_Lambert( material.diffuseContribution ) )";
+    : mode === "rough-single" ? `vec3( material.roughness, ( ${singleExpression} ).rg )` : singleExpression;
   const pars = `${marker}\nvec3 deepObservedFragment = vec3( 0.0 );\n${original.replace(re, `${re.slice(0, -1)}\n\tdeepObservedFragment = ${expression};\n}`)}`;
   const opaque = source.opaque_fragment.replace("vec4( outgoingLight, diffuseColor.a )", "vec4( deepObservedFragment, diffuseColor.a )");
   return { lights_physical_pars_fragment: pars, opaque_fragment: opaque,

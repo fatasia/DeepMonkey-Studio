@@ -1,14 +1,14 @@
 /// <reference types="@webgpu/types" />
 import { sha256Utf8 } from "../src/shaderPackage/hash.js";
-import { observeDeepFragment, observeThreeFragment, type FragmentObservable } from "./c8FragmentObservablesShader.js";
+import { observeDeepFragment, observeThreeFragment, type FragmentObservable, type FragmentDerivative } from "./c8FragmentObservablesShader.js";
 import * as THREE from "three";
 import { runSharedSceneProbe } from "./c8SharedSceneProbe.js";
 
 type Chunks = { lights_physical_pars_fragment: string; opaque_fragment: string };
 
 /** Test leaf: production GPUDevice identity stays intact for native canvas configuration. */
-export function prepareFragmentObservation(mode: FragmentObservable, gpu: GPU, chunks: Chunks) {
-  const deep = observeDeepFragment(mode);
+export function prepareFragmentObservation(mode: FragmentObservable, gpu: GPU, chunks: Chunks, derivative?: FragmentDerivative) {
+  const deep = observeDeepFragment(mode, undefined, derivative);
   const restores: (() => void)[] = [], compiledThreeHashes: string[] = [];
   let disposed = false, deepModuleCount = 0, threeInstallCount = 0;
   let three: ReturnType<typeof observeThreeFragment> | undefined;
@@ -59,7 +59,7 @@ export function prepareFragmentObservation(mode: FragmentObservable, gpu: GPU, c
     },
     receipt() {
       if (deepModuleCount < 1 || threeInstallCount !== 1 || !three || compiledThreeHashes.length < 1) throw Error("Empty actual fragment observation receipt");
-      return { mode, deep: { originalHash: deep.originalHash, instrumentedHash: deep.instrumentedHash, moduleCount: deepModuleCount },
+      return { mode, ...(derivative ? { derivative, threeDerivative: "default" } : {}), deep: { originalHash: deep.originalHash, instrumentedHash: deep.instrumentedHash, moduleCount: deepModuleCount },
         three: { originalChunkHash: three.originalHash, instrumentedChunkHash: three.instrumentedHash, installCount: threeInstallCount,
           actualCompiledFragmentHashes: [...new Set(compiledThreeHashes)], compileObservations: compiledThreeHashes.length } };
     },
@@ -68,8 +68,8 @@ export function prepareFragmentObservation(mode: FragmentObservable, gpu: GPU, c
 }
 
 /** Existing lab injection/compiled-program callback must be wired before GPU use; otherwise receipt fails. */
-export async function runFragmentObservable(mode: FragmentObservable, cameraScale: .6 | 1) {
-  const observer = prepareFragmentObservation(mode, navigator.gpu, THREE.ShaderChunk);
+export async function runFragmentObservable(mode: FragmentObservable, cameraScale: .6 | 1, derivative?: FragmentDerivative) {
+  const observer = prepareFragmentObservation(mode, navigator.gpu, THREE.ShaderChunk, derivative);
   try {
     const options = { exposures: [.5], directProfile: "three-r185" as const, cameraScale,
       hdrAttachmentProfile: "shared-rgba16f" as const, gpu: observer.gpu,
