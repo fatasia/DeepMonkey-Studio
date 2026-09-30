@@ -86,6 +86,7 @@ fn j3_gate_d_actual_geometry_depth() {
                         &content,
                         &mut FrameObservation {
                             capture_normals: false,
+                            shadow_options: None,
                             size: PhysicalSize::new(width, height),
                             view,
                             configure: if profile == "common" {
@@ -93,7 +94,7 @@ fn j3_gate_d_actual_geometry_depth() {
                             } else {
                                 None
                             },
-                            encode: &mut |device, encoder, targets, frame| {
+                            encode: &mut |device, encoder, targets, frame, _shadows| {
                                 vp = frame[..4].iter().flatten().copied().collect();
                                 lighting = hdr_frame::lighting(frame);
                                 readback = Some(depth_readback::encode(

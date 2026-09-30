@@ -58,11 +58,17 @@ pub(super) fn encode_frame(
 
 pub struct FrameObservation<'a> {
     pub capture_normals: bool,
+    pub shadow_options: Option<deep_engine_native::cascaded_shadow::CascadedShadowOptions>,
     pub size: PhysicalSize<u32>,
     pub view: PlayerView,
     pub configure: Option<&'a dyn Fn(&mut FrameUniform)>,
-    pub encode:
-        &'a mut dyn FnMut(&wgpu::Device, &mut wgpu::CommandEncoder, &ForwardTargets, &FrameUniform),
+    pub encode: &'a mut dyn FnMut(
+        &wgpu::Device,
+        &mut wgpu::CommandEncoder,
+        &ForwardTargets,
+        &FrameUniform,
+        &crate::shadow_map::ShadowMap,
+    ),
 }
 
 pub(super) fn frame_parameters(

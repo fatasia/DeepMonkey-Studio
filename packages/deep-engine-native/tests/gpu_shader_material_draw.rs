@@ -349,3 +349,5 @@ async fn verify_material_draws(device: &wgpu::Device, queue: &wgpu::Queue) {
 }
 #[path = "support/j3_normal_attachments.rs"]
 mod j3_normal_attachments;
+#[path = "support/j3_shadow_visibility.rs"]
+mod j3_shadow_visibility;

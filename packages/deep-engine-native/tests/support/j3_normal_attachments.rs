@@ -82,7 +82,8 @@ fn j3_gate_d_actual_normal_attachments() {
                     view,
                     configure: Some(&configure),
                     capture_normals: false,
-                    encode: &mut |_device, _encoder, targets, _frame| {
+                    shadow_options: None,
+                    encode: &mut |_device, _encoder, targets, _frame, _shadows| {
                         assert!(
                             targets.resolved_normal_texture().is_none(),
                             "default path allocated a normal target"
@@ -104,7 +105,8 @@ fn j3_gate_d_actual_normal_attachments() {
                         view,
                         configure: Some(&configure),
                         capture_normals: true,
-                        encode: &mut |device, encoder, targets, frame| {
+                        shadow_options: None,
+                        encode: &mut |device, encoder, targets, frame, _shadows| {
                             vp = frame[..4].iter().flatten().copied().collect();
                             let texture = targets
                                 .resolved_normal_texture()

@@ -45,6 +45,8 @@ Web新 `j3NormalShadowProbe.ts` 用既有deformation capability启geometry MRT�
 
 ## 实际阴影诊断与下一刀
 
+下一刀复用同一生产HDR，无第三MRT/新shade：Native观察宿主增加已有CascadedShadowOptions显式profile和实际ShadowMap回调。现Native采样uniform已具备COPY_SRC，不改生产ShadowMap；按其正式21 vec4/336B读取，Web39 vec4/624B分别解码，再比较共同语义。每点记录实际baseline HDR与同包同frame关闭阴影的HDR，按binary16相邻数中点推导可见度区间；原85点全保留，Web helper仅作诊断。Native默认profile已是far40/map2048/padding10，只需显式合法2/4级联和blend0，不重建planner；场景bounds差异仍记录。来源/矩阵/采样合法差异不通过拟合epsilon抹平。
+
 Web真实CSM uniform读回156 floats，核对cascadeCount、bias=.00075、map2048、far40。`view.far=40, extent=50`使现生产资源派生shadowFar40、padding10；原xy像素域保持，实际VP按正式cameraMath的新far40核验。
 
 | 案例 | 原TLAS挡点 | 实际visibility<.5 | PCF部分点 |
@@ -67,3 +69,7 @@ cube caster关闭后原85点均为visibility=1。baseline实际HDR除以receiver
 CPU 产物 `test-output/interrupted-0930/j3-normal-shadow-cpu.json` 含8行×3场景。原85个点全部通过真实可见实例查询：axis regular 的21点中15点被原第二cube遮挡，oblique regular 的22点中17点遮挡；两个 mirrored 区域24/18点全部为无遮挡对照。关闭cube caster后85点全部无遮挡；关闭triangle receiver后85点全部不受影。world normal均为+Z，oblique view normal沿正式camera基旋转，UNORM8独立量化角界约0.389°。
 
 CPU计划仍标 `currentRun=false`、actual normal/shadow attachments=false；新GPU观察为另立原始证据。矩阵Vitest6PASS、normal比较器Node6PASS、lab tsc/node syntax/rustfmt均PASS。Native生产源与Cargo/GPU由root执行，本专线只新增Web lab/runner/lib/tests和Native独立测试叶子，既有manifest与已验runner保持。
+
+## 主线程fresh联合收口
+
+`node scripts/j3-shadow-visibility-parity.mjs` 已执行 Native normal一次、Native shadow一次及Web24帧一次，使用同一Web读回同时比较；passed/stable/currentRun=true，source identity前后一致。法线最大world角0.4071987039234767°；共同4级联170样本阴影区间零差。此前prior receipts只作历史诊断。J5已加入此正式子集的第14对双腿；完整材质Gate D后继不变。

@@ -68,8 +68,24 @@ async fn render_observed(
         .as_ref()
         .is_some_and(|observation| observation.capture_normals);
     let layouts = create_frame_layouts(device);
-    let shadows =
-        create_shadow_map(device, &layouts.shadow, size, &frame, None, shadow_view).unwrap();
+    let shadows = match frame_observation
+        .as_ref()
+        .and_then(|observation| observation.shadow_options)
+    {
+        Some(options) => crate::shadow_map::ShadowMap::new_with_options(
+            device,
+            &layouts.shadow,
+            &frame,
+            crate::gpu_resources::shadow_camera(size, &frame, shadow_view),
+            crate::gpu_resources::shadow_ray_direction(&frame),
+            None,
+            options,
+        )
+        .unwrap(),
+        None => {
+            create_shadow_map(device, &layouts.shadow, size, &frame, None, shadow_view).unwrap()
+        }
+    };
     let material_layout = create_material_layout(device);
     let shader = create_native_mesh_shader(device);
     let pipelines = create_mesh_pipelines_with_normal_capture(
@@ -228,7 +244,7 @@ async fn render_observed(
         frame_observation.is_some(),
     );
     if let Some(observation) = frame_observation {
-        (observation.encode)(device, &mut encoder, &targets, &frame);
+        (observation.encode)(device, &mut encoder, &targets, &frame, &shadows);
     }
     let hdr = lod_draw_readback::copy_hdr(device, &mut encoder, targets.resolved_texture());
     let metrics = shadows.metrics();

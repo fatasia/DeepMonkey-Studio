@@ -181,6 +181,16 @@ export const GATE_PAIRS = [
     ],
   },
   {
+    id: "normal-shadow-production",
+    name: "正式法线附件与四级联阴影可见度(J3 Gate D)",
+    legs: [
+      { id: "normal-shadow:ts-gpu", side: "ts", requiresGpu: true,
+        command: "node scripts/j3-shadow-visibility-parity.mjs", note: "同包85点，两轮正式法线/HDR/CSM附件；法线量化角界与阴影half区间" },
+      { id: "normal-shadow:native-gpu", side: "native", requiresGpu: true,
+        command: "node scripts/j3-shadow-visibility-parity.mjs", note: "具名Native normal/shadow各一次、Web24帧一次；只认证平面纯直射共同四级联" },
+    ],
+  },
+  {
     id: "device-recovery-product-window",
     name: "实际窗口恢复与Web候选替换(J3 Gate E)",
     legs: [
