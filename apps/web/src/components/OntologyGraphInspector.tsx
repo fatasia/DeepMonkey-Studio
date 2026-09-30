@@ -4,6 +4,8 @@ import { Archive, CheckCircle2, CornerUpLeft, Eye, Focus, Minimize2, PencilLine 
 import { translate as tr, type AppLocale } from "../i18n";
 import { StatusBadge } from "./OntologyWorkspace";
 import { actionRiskPresentation, GRAPH_NODE_KIND_META } from "./ontologyGraphLogic";
+import type { OntologyActionPlanInput, OntologyActionPreview } from "@bim-studio/contracts";
+import { useEffect, useState } from "react";
 
 /**
  * 图谱检查器：点击节点/边后的属性/来源/版本/权限/证据明细（方案 §4.3）。
@@ -33,6 +35,72 @@ function RelationEvidence({ relation, locale }: { relation: OntologyRelationType
   );
 }
 
+/** H-C4-P3 行动预览面板：调 /ai/ontology-actions/preview，4xx 理由码 fail-closed 直呈，不猜测不放行。 */
+function ActionPreviewPanel({ pkgId, action, locale, previewAction }: {
+  pkgId: string;
+  action: OntologyActionType;
+  locale: AppLocale;
+  previewAction: (input: OntologyActionPlanInput) => Promise<OntologyActionPreview>;
+}) {
+  const [preview, setPreview] = useState<OntologyActionPreview | undefined>(undefined);
+  const [error, setError] = useState<{ message: string; reasonCodes?: string[] } | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+  const objectKey = action.boundObject || "";
+  const run = async () => {
+    setBusy(true); setError(undefined); setPreview(undefined);
+    try {
+      setPreview(await previewAction({
+        actionKey: action.key,
+        target: { objectKey, canonicalId: `ontology:${pkgId}:${objectKey}` },
+        arguments: {},
+      }));
+    } catch (cause) {
+      const body = cause as { message?: string; reasonCodes?: string[] };
+      setError({ message: body.message || tr(locale, "预览请求失败", "Preview request failed"), ...(body.reasonCodes ? { reasonCodes: body.reasonCodes } : {}) });
+    } finally { setBusy(false); }
+  };
+  useEffect(() => { if (objectKey) void run(); /* 只读预览，选中即出 */ }, [objectKey, previewAction]);
+  return (
+    <div className="ontology-graph-action-preview">
+      <button type="button" disabled={busy || !objectKey} onClick={run}>
+        {busy ? tr(locale, "预览生成中…", "Previewing…") : tr(locale, "重新生成预览", "Regenerate preview")}
+      </button>
+      {!objectKey && <small>{tr(locale, "行动未绑定对象，无法预览", "Action has no bound object; preview unavailable")}</small>}
+      {error && (
+        <p role="alert" className="ontology-graph-action-preview-error">
+          {error.message}
+          {error.reasonCodes?.length ? <code> [{error.reasonCodes.join(", ")}]</code> : null}
+        </p>
+      )}
+      {preview && (
+        <dl>
+          <dt>{tr(locale, "包/版本", "Package/version")}</dt><dd>{preview.packageId} v{preview.packageVersion}</dd>
+          <dt>{tr(locale, "目标对象", "Target")}</dt><dd><code>{preview.target.canonicalId}</code></dd>
+          <dt>{tr(locale, "风险", "Risk")}</dt><dd>{preview.risk}</dd>
+          <dt>{tr(locale, "需要审批", "Approval")}</dt><dd>{preview.approvalRequired ? tr(locale, "是", "Yes") : tr(locale, "否", "No")}</dd>
+          <dt>{tr(locale, "幂等键", "Idempotency")}</dt><dd><code>{preview.idempotencyKey}</code></dd>
+          <dt>{tr(locale, "前置条件", "Preconditions")}</dt>
+          <dd>{preview.preconditions.length ? preview.preconditions.map((item, index) => (
+            <span key={index}>{item.label}: {item.status}</span>
+          )) : tr(locale, "无", "None")}</dd>
+          <dt>{tr(locale, "影响范围", "Impact")}</dt>
+          <dd>{preview.impact.length ? preview.impact.map((item, index) => (
+            <span key={index}>{item.objectKey} ← {item.relationKey} ({item.hops} 跳)</span>
+          )) : tr(locale, "无邻域影响", "No neighborhood impact")}</dd>
+          <dt>{tr(locale, "可执行", "Executable")}</dt>
+          <dd>{preview.executable ? tr(locale, "是", "Yes") : tr(locale, "否（存在阻断）", "No (blocked)")}</dd>
+          <dt>{tr(locale, "回滚", "Rollback")}</dt><dd>{preview.rollback || tr(locale, "无", "None")}</dd>
+          {preview.blockingReasons.length ? <dt>{tr(locale, "阻断理由", "Blocking reasons")}</dt> : null}
+          {preview.blockingReasons.length ? (
+            <dd>{preview.blockingReasons.map((item, index) => (
+              <span key={index}><code>{item.code}</code> {item.message}</span>
+            ))}</dd>
+          ) : null}
+        </dl>
+      )}
+    </div>
+  );
+}
 function ActionMeta({ action, locale }: { action: OntologyActionType; locale: AppLocale }) {
   const risk = actionRiskPresentation(action.riskLevel);
   return (
@@ -53,17 +121,18 @@ function ActionMeta({ action, locale }: { action: OntologyActionType; locale: Ap
           </>
         )}
       </dl>
-      <p className="ontology-graph-hint">{tr(locale, "行动预览与受控执行在 Harness 链路（H-C4-P3）接入；当前为只读定义视图。", "Action preview and controlled execution arrive with the Harness chain (H-C4-P3); this is the read-only definition view.")}</p>
+      <p className="ontology-graph-hint">{tr(locale, "受控执行走 Harness 审批链（H-C4-P3）；本预览为只读，不产生任何写入。", "Controlled execution goes through the Harness approval chain (H-C4-P3); this preview is read-only and performs no writes.")}</p>
     </>
   );
 }
 
-function NodeDetail({ pkg, node, locale, onFocusRoot, onCollapse }: {
+function NodeDetail({ pkg, node, locale, onFocusRoot, onCollapse, previewAction }: {
   pkg: OntologyPackage | undefined;
   node: OntologyGraphNode;
   locale: AppLocale;
   onFocusRoot: (node: OntologyGraphNode) => void;
   onCollapse: (node: OntologyGraphNode) => void;
+  previewAction?: (input: OntologyActionPlanInput) => Promise<OntologyActionPreview>;
 }) {
   const meta = GRAPH_NODE_KIND_META[node.kind];
   if (node.kind === "object") {
@@ -149,6 +218,9 @@ function NodeDetail({ pkg, node, locale, onFocusRoot, onCollapse }: {
           <dt>{tr(locale, "绑定对象", "Bound object")}</dt><dd>{action?.boundObject || "—"}</dd>
         </dl>
         {action ? <ActionMeta action={action} locale={locale} /> : <small>{tr(locale, "行动定义缺失", "Action definition missing")}</small>}
+        {action && previewAction && pkg && (
+          <ActionPreviewPanel pkgId={pkg.id} action={action} locale={locale} previewAction={previewAction} />
+        )}
         <div className="ontology-graph-inspector-actions">
           <button type="button" onClick={() => onFocusRoot(node)}><Focus size={12} />{tr(locale, "以此为根展开", "Expand from here")}</button>
           <button type="button" onClick={() => onCollapse(node)}><Minimize2 size={12} />{tr(locale, "折叠邻居", "Collapse neighbors")}</button>
@@ -254,7 +326,7 @@ function EdgeDetail({ pkg, edge, locale }: { pkg: OntologyPackage | undefined; e
 }
 
 /** 检查器外壳：节点/边统一入口；无选中时给操作引导。 */
-export default function OntologyGraphInspector({ pkg, selection, node, edge, locale, onFocusRoot, onCollapse, onReset }: {
+export default function OntologyGraphInspector({ pkg, selection, node, edge, locale, onFocusRoot, onCollapse, onReset, previewAction }: {
   pkg: OntologyPackage | undefined;
   selection: GraphSelection;
   node: OntologyGraphNode | undefined;
@@ -263,6 +335,8 @@ export default function OntologyGraphInspector({ pkg, selection, node, edge, loc
   onFocusRoot: (node: OntologyGraphNode) => void;
   onCollapse: (node: OntologyGraphNode) => void;
   onReset: () => void;
+  /** H-C4-P3：行动节点「生成行动预览」回调（接 /ai/ontology-actions/preview）；缺省不渲染按钮。 */
+  previewAction?: (input: OntologyActionPlanInput) => Promise<OntologyActionPreview>;
 }) {
   return (
     <aside className="ontology-graph-inspector" aria-label={tr(locale, "图谱检查器", "Graph inspector")}>
@@ -275,7 +349,7 @@ export default function OntologyGraphInspector({ pkg, selection, node, edge, loc
       )}
       {selection?.kind === "node" && (
         node
-          ? <NodeDetail pkg={pkg} node={node} locale={locale} onFocusRoot={onFocusRoot} onCollapse={onCollapse} />
+          ? <NodeDetail pkg={pkg} node={node} locale={locale} onFocusRoot={onFocusRoot} onCollapse={onCollapse} {...(previewAction ? { previewAction } : {})} />
           : <p className="ontology-graph-hint">{tr(locale, "节点不在当前子图内。", "Node is not in the current subgraph.")}</p>
       )}
       {selection?.kind === "edge" && (

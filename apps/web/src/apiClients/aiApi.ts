@@ -5,6 +5,8 @@ import type {
   AiModelCatalogResult,
   AiProviderSettings,
   AiTelemetrySummary,
+  OntologyActionPlanInput,
+  OntologyActionPreview,
 } from "@bim-studio/contracts";
 import { readAssistantStream } from "./assistantStream";
 
@@ -57,6 +59,13 @@ async function streamAssistant(
 export function createAiApi(request: ApiRequest, open: ApiOpen) {
   return {
     getAssistantModels: () => request<AssistantSessionCatalog>("/api/ai/assistant/models"),
+    /** D1/H-C4-P3 行动预览：图谱/助手 UI 发起结构化行动预览（fail-closed 理由码随 422 返回）。 */
+    previewOntologyAction: (projectId: string, input: OntologyActionPlanInput) =>
+      request<OntologyActionPreview>(`/api/projects/${projectId}/ai/ontology-actions/preview`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      }),
     getAiSettings: () => request<AiProviderSettings>("/api/admin/ai-settings"),
     saveAiSettings: (settings: Partial<AiProviderSettings>) =>
       request<AiProviderSettings>("/api/admin/ai-settings", {

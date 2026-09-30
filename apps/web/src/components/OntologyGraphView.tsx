@@ -32,6 +32,7 @@ import {
   type GraphFilters,
   type GraphPathHighlight,
 } from "./ontologyGraphLogic";
+import { api } from "../api";
 import { useOntologyGraph } from "./useOntologyGraph";
 import "./OntologyGraphView.css";
 
@@ -469,6 +470,7 @@ export default function OntologyGraphView({ projectId, locale, onOpenWorkspace }
                 onFocusRoot={(node) => state.selectRoot(node.kind, node.key)}
                 onCollapse={collapseNeighbors}
                 onReset={resetView}
+                previewAction={(input) => api.previewOntologyAction(projectId, input)}
               />
             )}
           </GraphListMode>
