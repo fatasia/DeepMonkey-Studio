@@ -21,6 +21,61 @@
 pub const PROBE_CLIPMAP_SAMPLING_WGSL: &str =
     include_str!("../../deep-engine/wgsl/probeClipmapSampling.wgsl");
 
+/// Adapt only storage access and the level argument; sampling math stays canonical.
+pub fn native_probe_sampling_wgsl() -> String {
+    native_probe_sampling_wgsl_from_source(PROBE_CLIPMAP_SAMPLING_WGSL)
+}
+
+pub(crate) fn native_probe_sampling_wgsl_from_source(source: &str) -> String {
+    for seam in [
+        "fn deepGiSampleLevel(levelIndex: u32, worldPosition: vec3f, worldNormal: vec3f) -> DeepGiLevelSample {",
+        "  let level = deepGiLevels[levelIndex];",
+    ] {
+        assert_eq!(
+            source.matches(seam).count(),
+            1,
+            "canonical GI adapter seam drifted: {seam}"
+        );
+    }
+    assert_eq!(
+        source.matches("fn deepGiBoundaryCells(").count(),
+        1,
+        "canonical GI boundary function signature drifted"
+    );
+    let (core, _) = source
+        .split_once("fn deepGiBoundaryCells(")
+        .expect("canonical GI boundary function signature drifted");
+    let mut core = core.to_owned();
+    for (before, after) in [
+        (
+            "@group(3) @binding(9)\nvar<storage, read> deepGiProbeRecords: array<DeepGiProbeRecord>;\n@group(3) @binding(10)\nvar<storage, read> deepGiLevels: array<DeepGiLevel>;",
+            "",
+        ),
+        (
+            "fn deepGiSampleLevel(levelIndex: u32, worldPosition: vec3f, worldNormal: vec3f) -> DeepGiLevelSample {\n  let level = deepGiLevels[levelIndex];",
+            "fn deepGiSampleLevelData(level: DeepGiLevel, worldPosition: vec3f, worldNormal: vec3f) -> DeepGiLevelSample {",
+        ),
+        ("arrayLength(&deepGiProbeRecords)", "nativeGiRecordCount()"),
+        (
+            "deepGiProbeRecords[level.baseProbe + linear]",
+            "nativeGiLoadRecord(level.baseProbe + linear)",
+        ),
+    ] {
+        assert_eq!(
+            core.matches(before).count(),
+            1,
+            "canonical GI adapter seam drifted: {before}"
+        );
+        core = core.replacen(before, after, 1);
+    }
+    assert!(
+        !core.contains("deepGiProbeRecords") && !core.contains("deepGiLevels"),
+        "canonical GI adapter retained a default storage dependency"
+    );
+    core.push_str("\nfn nativeGiRecordCount() -> u32 {\n  return arrayLength(&probe_gi) / PROBE_GI_RECORD_FLOATS;\n}\nfn nativeGiLoadRecord(index: u32) -> DeepGiProbeRecord {\n  let row = index * PROBE_GI_RECORD_FLOATS;\n  return DeepGiProbeRecord(probe_gi[row], probe_gi[row + 1u], probe_gi[row + 2u],\n    probe_gi[row + 3u], probe_gi[row + 4u], probe_gi[row + 5u]);\n}\n");
+    core
+}
+
 #[cfg(test)]
 mod tests {
     use super::PROBE_CLIPMAP_SAMPLING_WGSL;
@@ -35,7 +90,11 @@ mod tests {
             .expect("checksum fixture missing byte length")
             .parse()
             .expect("checksum fixture byte length must be a usize");
-        assert_eq!(expected_checksum.len(), 64, "fixture must hold a sha256 hex digest");
+        assert_eq!(
+            expected_checksum.len(),
+            64,
+            "fixture must hold a sha256 hex digest"
+        );
         assert_eq!(PROBE_CLIPMAP_SAMPLING_WGSL.len(), expected_bytes);
         assert_eq!(
             crate::shader_package::hash::sha256(PROBE_CLIPMAP_SAMPLING_WGSL.as_bytes()),

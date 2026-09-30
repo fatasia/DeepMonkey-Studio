@@ -136,46 +136,11 @@ fn probe_gi_grid_contains(level: ProbeGiLevel, world: vec3f) -> bool {
 // 权重归一后返回;累计权重不足 MIN 返回零值零权重。
 fn probe_gi_grid_sample_level(level: ProbeGiLevel, world: vec3f, n: vec3f) -> ProbeGiLevelSample {
   if (level.valid == 0u) { return ProbeGiLevelSample(vec3f(0.0), 0.0); }
-  let spacing = level.spacing;
-  let receiver = world + n * spacing * 0.2;
-  let coordinate = clamp((world - level.origin) / spacing, vec3f(0.0), vec3f(level.grid_size - vec3u(1u)));
-  let low = min(vec3u(floor(coordinate)), level.grid_size - vec3u(2u));
-  let fraction = clamp(coordinate - vec3f(low), vec3f(0.0), vec3f(1.0));
-  var sum = vec3f(0.0);
-  var total_weight = 0.0;
-  for (var corner = 0u; corner < 8u; corner = corner + 1u) {
-    let bits = vec3u(corner & 1u, (corner >> 1u) & 1u, (corner >> 2u) & 1u);
-    let cell = low + bits;
-    let axis_weight = mix(vec3f(1.0) - fraction, fraction, vec3f(bits));
-    let trilinear = axis_weight.x * axis_weight.y * axis_weight.z;
-    if (!(trilinear > 0.0)) { continue; }
-    let linear = (cell.z * level.grid_size.y + cell.y) * level.grid_size.x + cell.x;
-    let base = (level.base_records + linear) * PROBE_GI_RECORD_FLOATS;
-    let validity = clamp(probe_gi[base].w, 0.0, 1.0);
-    if (!(validity > 0.0)) { continue; }
-    let probe_position = level.origin + vec3f(cell) * spacing + probe_gi[base + 2u].xyz;
-    let distance = length(receiver - probe_position);
-    let mean_distance = clamp(probe_gi[base + 1u].x, 0.0, 1000000.0);
-    var visibility = 1.0;
-    if (distance > mean_distance) {
-      let variance = clamp(probe_gi[base + 1u].y, spacing * spacing * 0.0001, 1000000000000.0);
-      let delta = distance - mean_distance;
-      visibility = max(clamp(probe_gi[base + 1u].z, 0.0, 1.0),
-        variance / max(variance + delta * delta, 0.000001));
-    }
-    let to_probe = probe_position - world;
-    let length_to_probe = length(to_probe);
-    var normal_weight = 1.0;
-    if (length_to_probe > 0.000001) {
-      let cosine = dot(to_probe, n) / length_to_probe;
-      normal_weight = select(0.0, pow(cosine, 3.0), cosine > 0.0);
-    }
-    let weight = trilinear * validity * visibility * normal_weight;
-    sum = sum + max(probe_gi[base].xyz, vec3f(0.0)) * weight;
-    total_weight = total_weight + weight;
-  }
-  if (total_weight < 0.001) { return ProbeGiLevelSample(vec3f(0.0), 0.0); }
-  return ProbeGiLevelSample(clamp(sum / total_weight, vec3f(0.0), vec3f(65504.0)), total_weight);
+  let mapped = DeepGiLevel(vec4f(level.origin, level.spacing), level.grid_size, 0u,
+    vec3i(0), level.base_records,
+    level.origin + vec3f(level.grid_size) * level.spacing, level.probe_count);
+  let sampled = deepGiSampleLevelData(mapped, world, n);
+  return ProbeGiLevelSample(sampled.irradiance, sampled.weight);
 }
 // 与 Web boundaryCells 同式:采样点到本层最近边界的距离(格)。
 fn probe_gi_grid_boundary_cells(level: ProbeGiLevel, world: vec3f) -> f32 {

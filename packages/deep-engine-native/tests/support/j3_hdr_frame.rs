@@ -30,17 +30,6 @@ pub fn rgb(bytes: &[u8]) -> Vec<f32> {
 
 /// Identity of the exact current inputs/order used by production frame_bindings factory.
 /// No test shader or drawing pipeline is constructed here.
-pub fn shader_source() -> &'static str {
-    concat!(
-        include_str!("../../assets/shaders/native_mesh_v1.wgsl"),
-        "\n",
-        include_str!("../../assets/shaders/native_cascaded_shadow_v1.wgsl"),
-        "\n",
-        include_str!("../../../deep-engine/wgsl/cascadedShadowMath.wgsl"),
-        "\n",
-        include_str!("../../../deep-engine/wgsl/materialDielectric.wgsl"),
-        include_str!("../../../deep-engine/wgsl/brdfDirectLighting.wgsl"),
-        include_str!("../../../deep-engine/wgsl/brdfDirectMultiscattering.wgsl"),
-        include_str!("../../../deep-engine/wgsl/iesSampling.wgsl")
-    )
+pub fn shader_source() -> String {
+    deep_engine_native::native_mesh_wgsl::native_mesh_shader_source()
 }

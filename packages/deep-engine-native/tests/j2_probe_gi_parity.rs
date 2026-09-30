@@ -78,8 +78,9 @@ fn records(fixture: &Value, test: &Value) -> Vec<IrradianceProbeRecord> {
 
 fn shader() -> String {
     let prefix = NATIVE.split("fn section_rejected(").next().unwrap();
+    let provider = deep_engine_native::probe_gi_wgsl::native_probe_sampling_wgsl();
     format!(
-        "{prefix}\n@group(1) @binding(0) var<storage,read> receiver: array<vec4f>;\n@group(1) @binding(1) var<storage,read_write> result: array<vec4f>;\n@compute @workgroup_size(1) fn probeMain() {{ result[0] = vec4f(probe_gi_grid_trilinear(receiver[0].xyz, receiver[1].xyz),1); }}"
+        "{prefix}\n{provider}\n@group(1) @binding(0) var<storage,read> receiver: array<vec4f>;\n@group(1) @binding(1) var<storage,read_write> result: array<vec4f>;\n@compute @workgroup_size(1) fn probeMain() {{ result[0] = vec4f(probe_gi_grid_trilinear(receiver[0].xyz, receiver[1].xyz),1); }}"
     )
 }
 

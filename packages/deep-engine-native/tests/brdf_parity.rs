@@ -11,11 +11,11 @@ const BASE: [f64; 3] = [0.8, 0.35, 0.12];
 
 #[test]
 fn production_shader_uses_browser_schlick_correlated_smith_and_separate_diffuse() {
-    let shader = include_str!("../assets/shaders/native_mesh_v1.wgsl");
+    let shader = deep_engine_native::native_mesh_wgsl::native_mesh_shader_source();
     for contract in [
         "exp2((-5.55473 * cosine - 6.98316) * cosine)",
-        "let gv = nl * sqrt(alpha_2 + (1.0 - alpha_2) * nv * nv)",
-        "let gl = nv * sqrt(alpha_2 + (1.0 - alpha_2) * nl * nl)",
+        "let gv = nl * sqrt(a2 + (1.0 - a2) * nv * nv)",
+        "let gl = nv * sqrt(a2 + (1.0 - a2) * nl * nl)",
         "let visibility = 0.5 / max(gv + gl, 0.000001)",
         "let diffuse = (1.0 - metal) * base / 3.14159265",
         "clamp(input.material.x * mr_sample.g, 0.045, 1.0)",
@@ -48,13 +48,11 @@ fn production_brdf_matches_cpu_golden_on_real_gpu() {
             .expect("GPU device");
         let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let source = format!(
-            "{}\n{}\n{}\n{}",
-            include_str!("../assets/shaders/native_mesh_v1.wgsl"),
-            include_str!("../assets/shaders/native_cascaded_shadow_v1.wgsl"),
-            include_str!("../../deep-engine/wgsl/cascadedShadowMath.wgsl"),
+            "{}\n{}",
+            deep_engine_native::native_mesh_wgsl::native_mesh_shader_source(),
             "@group(0) @binding(7) var<storage, read_write> brdf_out: array<vec4f>;\n\
              @compute @workgroup_size(1) fn brdf_readback() {\n\
-               brdf_out[0] = vec4f(direct_brdf(vec3f(0.0,0.0,1.0),\n\
+               brdf_out[0] = vec4f(brdf(vec3f(0.0,0.0,1.0),\n\
                  safe_normalize(vec3f(0.3,0.2,1.0), vec3f(0.0,0.0,1.0)),\n\
                  safe_normalize(vec3f(-0.4,0.1,1.0), vec3f(0.0,0.0,1.0)),\n\
                  vec3f(0.8,0.35,0.12), 0.42, 0.31), 1.0);\n}"

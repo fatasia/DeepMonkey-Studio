@@ -10,13 +10,7 @@ use crate::renderer::rt_residency::RtResidencyReject;
 /// layout 漂移。
 #[test]
 fn rt_fragment_shader_source_contract() {
-    let source = format!(
-        "enable wgpu_ray_query;\n{}\n{}\n{}\n{}\n",
-        include_str!("../../assets/shaders/native_mesh_v1.wgsl"),
-        include_str!("../../assets/shaders/native_cascaded_shadow_v1.wgsl"),
-        include_str!("../../../deep-engine/wgsl/cascadedShadowMath.wgsl"),
-        include_str!("../../assets/shaders/native_mesh_rt_fragment_v1.wgsl"),
-    );
+    let source = deep_engine_native::native_mesh_wgsl::native_mesh_rt_shader_source();
     // 使能行必须是第一条语句(拼接契约与 create_native_mesh_rt_shader 一致)。
     assert!(source.starts_with("enable wgpu_ray_query;\n"));
     // binding 10 = 场景 TLAS;与 frame_bindings::FRAME_RT_TLAS_BINDING 对齐。

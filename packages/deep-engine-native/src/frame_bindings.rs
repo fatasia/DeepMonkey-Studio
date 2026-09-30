@@ -26,52 +26,17 @@ pub fn create_native_mesh_shader(device: &wgpu::Device) -> wgpu::ShaderModule {
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Deep Engine native mesh shader v1"),
         source: wgpu::ShaderSource::Wgsl(
-            concat!(
-                include_str!("../assets/shaders/native_mesh_v1.wgsl"),
-                "\n",
-                include_str!("../assets/shaders/native_cascaded_shadow_v1.wgsl"),
-                "\n",
-                include_str!("../../deep-engine/wgsl/cascadedShadowMath.wgsl"),
-                "\n",
-                // J2-B1 灯光数学三件套(介电 F0 / 直射 BRDF / IES 采样)单一真源拼接,
-                // 与 TS 侧生成镜像共享 packages/deep-engine/wgsl/ 同一批字节;
-                // 对拍与组合解析验证在 deep_engine_native::lighting_math_wgsl。
-                include_str!("../../deep-engine/wgsl/materialDielectric.wgsl"),
-                include_str!("../../deep-engine/wgsl/brdfDirectLighting.wgsl"),
-                include_str!("../../deep-engine/wgsl/brdfDirectMultiscattering.wgsl"),
-                include_str!("../../deep-engine/wgsl/iesSampling.wgsl")
-            )
-            .into(),
+            deep_engine_native::native_mesh_wgsl::native_mesh_shader_source().into(),
         ),
     })
 }
 
-/// F2 RT fragment 拼接模块：与普通 mesh shader 完全同源（本体 + 级联阴影），
-/// 仅前置 ray-query 使能行并追加 RT fragment 段（binding 10 TLAS +
-/// `fragment_main_rt`，directional 阴影走硬件 Ray Query）。共享同一份
-/// mesh/shadow 源保证 vertex 阶段与光栅画面逐位同源；模块内包含
-/// `fragment_main_rt` 不影响普通管线继续选择 `fragment_main`。
+/// The RT source shares the ordinary module and adds the ray-query fragment.
 pub fn create_native_mesh_rt_shader(device: &wgpu::Device) -> wgpu::ShaderModule {
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Deep Engine native RT mesh fragment shader v1"),
         source: wgpu::ShaderSource::Wgsl(
-            concat!(
-                "enable wgpu_ray_query;\n",
-                include_str!("../assets/shaders/native_mesh_v1.wgsl"),
-                "\n",
-                include_str!("../assets/shaders/native_cascaded_shadow_v1.wgsl"),
-                "\n",
-                include_str!("../../deep-engine/wgsl/cascadedShadowMath.wgsl"),
-                "\n",
-                // 与普通 mesh shader 完全同源的三件套拼接(见上方注释)。
-                include_str!("../../deep-engine/wgsl/materialDielectric.wgsl"),
-                include_str!("../../deep-engine/wgsl/brdfDirectLighting.wgsl"),
-                include_str!("../../deep-engine/wgsl/brdfDirectMultiscattering.wgsl"),
-                include_str!("../../deep-engine/wgsl/iesSampling.wgsl"),
-                "\n",
-                include_str!("../assets/shaders/native_mesh_rt_fragment_v1.wgsl")
-            )
-            .into(),
+            deep_engine_native::native_mesh_wgsl::native_mesh_rt_shader_source().into(),
         ),
     })
 }

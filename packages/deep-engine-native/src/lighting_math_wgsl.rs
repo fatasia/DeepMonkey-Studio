@@ -82,7 +82,10 @@ mod tests {
         );
         for (shader, direct_calls) in [
             (include_str!("../assets/shaders/native_mesh_v1.wgsl"), 2),
-            (include_str!("../assets/shaders/native_mesh_rt_fragment_v1.wgsl"), 1),
+            (
+                include_str!("../assets/shaders/native_mesh_rt_fragment_v1.wgsl"),
+                1,
+            ),
         ] {
             assert_eq!(
                 shader
@@ -154,9 +157,10 @@ mod tests {
 
     #[test]
     fn frame_bindings_consumes_the_same_single_source_files() {
-        // bin 侧 frame_bindings.rs 以 include_str! 字面量拼装 native mesh shader(普通与 RT
-        // 变体);本断言锁定它引用的正是这三份真源文件,防止拼接路径漂移后库函数失配。
         let bindings = include_str!("frame_bindings.rs");
+        assert!(bindings.contains("native_mesh_wgsl::native_mesh_shader_source()"));
+        assert!(bindings.contains("native_mesh_wgsl::native_mesh_rt_shader_source()"));
+        let source = include_str!("native_mesh_wgsl.rs");
         for path in [
             "include_str!(\"../../deep-engine/wgsl/materialDielectric.wgsl\")",
             "include_str!(\"../../deep-engine/wgsl/brdfDirectLighting.wgsl\")",
@@ -164,23 +168,18 @@ mod tests {
             "include_str!(\"../../deep-engine/wgsl/iesSampling.wgsl\")",
         ] {
             assert!(
-                bindings.contains(path),
-                "frame_bindings must reference {path}"
+                source.contains(path),
+                "production source builder must reference {path}"
             );
         }
     }
 
     #[test]
     fn composed_native_mesh_shader_parses_with_the_shared_libraries() {
-        // 与 frame_bindings.rs 的 concat! 顺序逐段同构:mesh 本体 + 级联阴影 + 三家族库。
+        // Parse the same complete source used by the production factory.
         // naga(即 wgpu 运行时同一前端)解析通过 = 库函数/符号在宿主内可解析、
         // dpdx 派生函数与 binding 声明无冲突;此测试不需要 GPU adapter。
-        let mesh = include_str!("../assets/shaders/native_mesh_v1.wgsl");
-        let shadow = include_str!("../assets/shaders/native_cascaded_shadow_v1.wgsl");
-        let cascade_math = include_str!("../../deep-engine/wgsl/cascadedShadowMath.wgsl");
-        let composed = format!(
-            "{mesh}\n{shadow}\n{cascade_math}\n{MATERIAL_DIELECTRIC_WGSL}{PBR_BRDF_DIRECT_LIGHTING_WGSL}{PBR_BRDF_DIRECT_MULTISCATTERING_WGSL}{DEEP_IES_SAMPLING_WGSL}"
-        );
+        let composed = crate::native_mesh_wgsl::native_mesh_shader_source();
         let module = wgpu::naga::front::wgsl::parse_str(&composed)
             .expect("composed native mesh shader with shared lighting-math libraries must parse");
         assert!(

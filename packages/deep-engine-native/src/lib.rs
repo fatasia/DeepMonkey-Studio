@@ -73,6 +73,9 @@ pub mod probe_gi_grid;
 pub mod probe_gi_storage;
 /// F5 WGSL 单源试点:探针 GI 采样库的 include_str! 消费端与双端校验和对拍(详见模块文档)。
 pub mod probe_gi_wgsl;
+pub mod native_mesh_wgsl;
+#[cfg(test)]
+mod probe_gi_native_adapter_tests;
 pub mod ray_backend;
 pub mod ray_tracing_capability;
 pub mod replay;
