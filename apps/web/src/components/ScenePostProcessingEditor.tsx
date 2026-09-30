@@ -178,6 +178,14 @@ export function ScenePostProcessingEditor({
           "Deep WebGPU only; publication checks block Three WebView and Deep Native explicitly.")}</small>
       </>}
       {value.volumetricFog && <>
+        <button type="button" disabled={!controlsEnabled} className={value.volumetricGodRays ? "active" : ""}
+          aria-pressed={Boolean(value.volumetricGodRays)} onClick={() => update({ volumetricGodRays: !value.volumetricGodRays })}>
+          {tr(locale, "体积光", "Light shafts")}
+        </button>
+        {value.volumetricGodRays && <EffectRange label={tr(locale, "体积光强度", "Shaft strength")} disabled={!controlsEnabled}
+          min={0} max={8} step={0.1} value={value.volumetricGodRaysStrength ?? 1} digits={1}
+          onChange={volumetricGodRaysStrength => update({ volumetricGodRaysStrength })} />}
+
         <EffectRange label={tr(locale, "雾采样步数", "Fog steps")} disabled={!value.enabled}
           min={32} max={64} step={1} value={value.volumetricFogSteps ?? 48} digits={0}
           onChange={volumetricFogSteps => update({ volumetricFogSteps })} />

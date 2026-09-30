@@ -32,6 +32,18 @@ describe("Studio author color effects", () => {
     expect(Object.isFrozen(result.volumetricFogProfile)).toBe(true);
     expect(Object.isFrozen(result.volumetricFogProfile?.medium)).toBe(true);
   });
+  it("preserves zero god-ray strength, omission and the existing Composer activation", () => {
+    const authored = { ...state, volumetricFog: true, volumetricGodRays: true, volumetricGodRaysStrength: 0 };
+    const result = readStudioDeepPostProcess(authored, true);
+    expect(result.volumetricFogProfile).toMatchObject({ godRaysStrength: 0 });
+    authored.volumetricGodRaysStrength = 8;
+    expect(result.volumetricFogProfile).toMatchObject({ godRaysStrength: 0 });
+    expect(readStudioDeepPostProcess({ ...authored, volumetricGodRays: false }, true).volumetricFogProfile)
+      .not.toHaveProperty("godRaysStrength");
+    expect(readStudioDeepPostProcess({ ...authored, volumetricFog: false }, true)).not.toHaveProperty("volumetricFogProfile");
+    expect(readStudioDeepPostProcess(authored, false)).not.toHaveProperty("volumetricFogProfile");
+    expect(Object.isFrozen(result.volumetricFogProfile)).toBe(true);
+  });
   it("snapshots exact Bloom strength/threshold, including zero, without substituting legacy defaults", () => {
     const source = { ...state, bloom: true, bloomStrength: 0, bloomThreshold: 0 };
     const result = readStudioDeepPostProcess(source, true);

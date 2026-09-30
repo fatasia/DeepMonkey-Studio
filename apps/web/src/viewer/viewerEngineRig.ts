@@ -360,7 +360,9 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
         volumetricFogSteps: Math.round(THREE.MathUtils.clamp(state.volumetricFogSteps ?? 48, 32, 64)),
         volumetricFogDensity: THREE.MathUtils.clamp(state.volumetricFogDensity ?? 0.006, 0.0001, 0.1),
         volumetricFogHeight: THREE.MathUtils.clamp(state.volumetricFogHeight ?? 64, 1, 1000),
-        volumetricFogAnisotropy: THREE.MathUtils.clamp(state.volumetricFogAnisotropy ?? 0.3, -0.99, 0.99)
+        volumetricFogAnisotropy: THREE.MathUtils.clamp(state.volumetricFogAnisotropy ?? 0.3, -0.99, 0.99),
+        volumetricGodRays: state.volumetricGodRays ?? false,
+        volumetricGodRaysStrength: THREE.MathUtils.clamp(state.volumetricGodRaysStrength ?? 1, 0, 8)
       };
       void this.syncPostProcessing();
     }

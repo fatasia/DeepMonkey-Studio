@@ -11,6 +11,8 @@ export interface PbrVolumetricFogProfile {
   readonly steps?: number;
   /** Absolute view distance in scene units; omitted derives a bounded distance from scene extent. */
   readonly maxDistance?: number;
+  /** Primary-light shadowed scattering; omitted retains the existing unshadowed fog path. */
+  readonly godRaysStrength?: number;
 }
 
 export interface PbrScreenSpaceReflectionProfile {
@@ -92,13 +94,16 @@ function validateScreenSpaceReflectionProfile(value: PbrScreenSpaceReflectionPro
 function validateVolumetricFogProfile(value: PbrVolumetricFogProfile): void {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Volumetric fog profile must be an object.");
   const keys = Object.keys(value);
-  if (keys.some(key => !["medium", "light", "steps", "maxDistance"].includes(key))) throw new TypeError("Unknown volumetric fog profile option.");
+  if (keys.some(key => !["medium", "light", "steps", "maxDistance", "godRaysStrength"].includes(key))) throw new TypeError("Unknown volumetric fog profile option.");
   validateVolumetricMedium(value.medium); validateVolumetricFogLight(value.light);
   if (value.steps !== undefined && (!Number.isInteger(value.steps) || value.steps < 32 || value.steps > 64)) {
     throw new RangeError("Volumetric fog profile steps must be an integer in [32, 64].");
   }
   if (value.maxDistance !== undefined && (!Number.isFinite(value.maxDistance) || value.maxDistance <= 0)) {
     throw new RangeError("Volumetric fog profile maxDistance must be finite and positive.");
+  }
+  if (value.godRaysStrength !== undefined && (!Number.isFinite(value.godRaysStrength) || value.godRaysStrength < 0 || value.godRaysStrength > 8)) {
+    throw new RangeError("God rays strength must be in [0, 8].");
   }
 }
 
@@ -108,5 +113,6 @@ function snapshotVolumetricFogProfile(value: PbrVolumetricFogProfile): Readonly<
     direction: Object.freeze([...value.light.direction]) as unknown as VolumetricFogLight["direction"],
     radiance: Object.freeze([...value.light.radiance]) as unknown as VolumetricFogLight["radiance"],
   }), ...(value.steps === undefined ? {} : { steps: value.steps }),
-  ...(value.maxDistance === undefined ? {} : { maxDistance: value.maxDistance }) });
+  ...(value.maxDistance === undefined ? {} : { maxDistance: value.maxDistance }),
+  ...(value.godRaysStrength === undefined ? {} : { godRaysStrength: value.godRaysStrength }) });
 }

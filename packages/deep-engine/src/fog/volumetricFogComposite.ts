@@ -77,7 +77,7 @@ export class VolumetricFogCompositePass {
     try {
       handle = this.pool!.acquire({ resourceId: "volumetric-fog-hdr", width: source.color.width, height: source.color.height,
         sampleCount: 1, format: VOLUMETRIC_FOG_COMPOSITE_FORMAT,
-        usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING });
+        usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC });
       const allocation: Allocation = { width: source.color.width, height: source.color.height,
         output: handle.texture, outputView: handle.view, parameters: this.parameters() };
       let cached = this.pooledBindings.find(item => item.output === handle!.texture && item.color === source.color
@@ -103,7 +103,7 @@ export class VolumetricFogCompositePass {
     let output: GPUTexture | undefined, parameters: GPUBuffer | undefined;
     try {
       output = createAdmittedTexture(this.session, { label: "Deep volumetric fog composite HDR", size: { width, height },
-        format: VOLUMETRIC_FOG_COMPOSITE_FORMAT, usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING });
+        format: VOLUMETRIC_FOG_COMPOSITE_FORMAT, usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC });
       parameters = createAdmittedBuffer(this.session, { label: "Deep volumetric fog composite parameters",
         size: PARAMETER_BYTES, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
       return { width, height, output, outputView: output.createView(), parameters };

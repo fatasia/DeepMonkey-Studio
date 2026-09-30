@@ -40,6 +40,18 @@ const input = Object.freeze({ eye: [4, 3, 5] as const, target: [0, 0, 0] as cons
   verticalFovRadians: Math.PI / 3, aspect: 16 / 9, near: 0.1, far: 1_000, extent: 10 });
 
 describe("default PBR cascaded shadow resources", () => {
+  it("borrows the real array and uniform with current enable state without allocating or owning a copy", () => {
+    const f = fixture(), shadows = new CascadedShadowResources(f.session, f.pipelines);
+    expect(() => shadows.godRaysSource()).toThrow("prepared");
+    shadows.prepare(input, true, false); const count = f.owned.size, borrowed = shadows.godRaysSource();
+    expect(borrowed.enabled).toBe(false); expect(borrowed.view).toHaveProperty("descriptor.dimension", "2d-array");
+    expect(borrowed.uniform).toBe(f.buffers[0]); expect(borrowed.sampler).toBe(shadows.sampler);
+    shadows.prepare(input, true, true); expect(shadows.godRaysSource()).toEqual({ ...borrowed, enabled: true });
+    expect(f.owned.size).toBe(count); expect(f.device.createTexture).toHaveBeenCalledOnce();
+    const device = f.session.device; (f.session as { device: GPUDevice }).device = {} as GPUDevice;
+    expect(() => shadows.godRaysSource()).toThrow("previous device"); (f.session as { device: GPUDevice }).device = device;
+    shadows.dispose(); expect(f.owned.size).toBe(0); expect(() => shadows.godRaysSource()).toThrow("prepared");
+  });
   it("uses authored matrix independently of main camera and updates signed sampling parameters", () => {
     const f = fixture(), shadows = new CascadedShadowResources(f.session, f.pipelines,
       { exactProfile: { cascadeCount: 1, shadowMapSize: 1024 } });

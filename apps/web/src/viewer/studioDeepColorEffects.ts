@@ -16,6 +16,7 @@ export function readStudioDeepPostProcess(state: ScenePostProcessingState,
       anisotropy: state.volumetricFogAnisotropy ?? DEFAULT_PBR_VOLUMETRIC_FOG_PROFILE.medium.anisotropy,
     }),
     ...(state.volumetricFogSteps === undefined ? {} : { steps: state.volumetricFogSteps }),
+    ...(state.volumetricGodRays ? { godRaysStrength: state.volumetricGodRaysStrength ?? 1 } : {}),
   }) : undefined;
   return Object.freeze({ ambientOcclusion: composerActive && state.enabled && Boolean(state.ssao || state.gtao),
     screenSpaceReflection,

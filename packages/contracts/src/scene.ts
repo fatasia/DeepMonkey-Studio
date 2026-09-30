@@ -669,6 +669,10 @@ export interface ScenePostProcessingState {
   ssrMaxDistance?: number;
   /** Deep WebGPU height fog; other clients must report unsupported instead of dropping it. */
   volumetricFog?: boolean;
+  /** Deep WebGPU primary-light occlusion in the same participating medium. */
+  volumetricGodRays?: boolean;
+  /** Linear scattered-light strength, [0,8]; zero retains extinction only. */
+  volumetricGodRaysStrength?: number;
   /** Ray-march samples, integer [32,64]. */
   volumetricFogSteps?: number;
   /** Base extinction coefficient for the exponential medium, [0,100]. */

@@ -6,6 +6,7 @@ import { CASCADED_SHADOW_QUALITY_PROFILES, resolveCascadedShadowQuality,
 import { estimateCascadedShadowDepthBytes } from "../shadows/shadowQuality.js";
 import type { CascadedShadowPlan, ShadowVec3 } from "../shadows/types.js";
 import type { DeviceSession } from "./deviceSession.js";
+import type { GodRaysShadowSource } from "../fog/volumetricGodRaysPassTypes.js";
 import { uploadBuffer } from "./meshBuffers.js";
 import { PBR_FRAME_FLOAT_OFFSETS, PBR_FRAME_UNIFORM_FLOATS, type Pipelines } from "./pipelines.js";
 import { snapshotAuthoredShadow, planAuthoredShadow, packAuthoredShadow, type AuthoredDirectionalShadow } from "../shadows/authoredDirectionalShadow.js";
@@ -58,6 +59,8 @@ export class CascadedShadowResources {
   readonly frameBindings: readonly GPUBindGroup[];
   private readonly texture: GPUTexture;
   private readonly uniform: GPUBuffer;
+  private readonly arrayView: GPUTextureView;
+  private readonly createdDevice: GPUDevice;
   private readonly frameBuffers: readonly GPUBuffer[];
   private lastSignature: readonly number[] | undefined;
   private pendingSignature: readonly number[] | undefined;
@@ -70,6 +73,7 @@ export class CascadedShadowResources {
   constructor(private readonly session: DeviceSession, pipelines: Pipelines,
     options: CascadedShadowResourceOptions = {}) {
     const device = session.device;
+    this.createdDevice = device;
     const validatedOptions = validateResourceOptions(options);
     this.depthBias = exactNumber(validatedOptions.exactProfile?.depthBias ?? 0.00075, 0, 0.1, "depth bias");
     const normalBias = validatedOptions.exactProfile?.receiverNormalBias ?? "slope-scaled";
@@ -108,7 +112,7 @@ export class CascadedShadowResources {
         layout: shadowFrameLayout, entries: [{ binding: 0, resource: { buffer } }],
       })));
       this.texture = texture; this.layerViews = layerViews; this.legacyView = legacyView; this.sampler = sampler;
-      this.uniform = uniform; this.binding = binding; this.frameBuffers = Object.freeze(frameBuffers);
+      this.uniform = uniform; this.arrayView = arrayView; this.binding = binding; this.frameBuffers = Object.freeze(frameBuffers);
       this.frameBindings = frameBindings;
     } catch (error) {
       for (const resource of created.reverse()) session.release(resource);
@@ -147,6 +151,13 @@ export class CascadedShadowResources {
 
   get metrics() { return { shadowTier: this.selection.selectedTier, shadowDepthBytes: this.selection.profile.estimatedDepthTextureBytes,
     shadowMapSize: this.selection.profile.options.shadowMapSize, shadowCascadeCount: this.selection.profile.options.cascadeCount }; }
+
+  /** Borrow the current CSM; the shadow owner retains every resource. Call after prepare. */
+  godRaysSource(): GodRaysShadowSource {
+    if (this.disposed || !this.plan) throw new Error("Cascaded shadows must be prepared before god rays.");
+    if (this.session.device !== this.createdDevice) throw new Error("Cascaded shadows belong to a previous device.");
+    return { uniform: this.uniform, view: this.arrayView, sampler: this.sampler, enabled: this.renderingEnabled };
+  }
 
   /** Publishes the prepared plan only after its command buffer was accepted by the queue. */
   commit(): void {

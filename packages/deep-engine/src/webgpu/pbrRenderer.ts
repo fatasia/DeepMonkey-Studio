@@ -53,6 +53,7 @@ import { PbrFrameCapture } from "./pbrFrameCapture.js";
 import type { PbrFrameReadbackResult } from "./pbrFrameCaptureReadback.js";
 import type { FrameCaptureSession } from "../r12/frameCapture.js";
 import { compilePbrFrameGraph } from "./pbrFrameGraph.js";
+import { pbrGodRaysFrame } from "./pbrGodRaysFrame.js";
 import { encodeRenderGraphEncoderGroup } from "./renderGraphEncoderExecutor.js";
 import type { RenderGraphCompileResult } from "../renderGraph.js";
 import { AdaptiveQualityController, adaptiveShadowMapSize } from "./adaptiveQuality.js";
@@ -617,6 +618,8 @@ export class PbrRenderer {
     // The chain owns override resolution. Keep the resolved snapshot above for
     // capture planning, but do not feed it back as if it were author input.
     const postProcessInput: PbrPostProcessInput = { encoder, targets: this.targets, revision: history.revision,
+      ...(postProcess.volumetricFog && postProcess.volumetricFogProfile.godRaysStrength !== undefined
+        ? { godRays: { ...pbrGodRaysFrame(sceneLighting.primary, frameState.worldToView), shadows: this.shadows.godRaysSource() } } : {}),
       ...(view.postProcess === undefined ? {} : { postProcess: view.postProcess }),
       extent: view.extent, verticalFovRadians: frameState.projection.verticalFovRadians,
       cameraCut: history.cameraCut, currentJitter: history.currentJitter,
@@ -871,7 +874,7 @@ export class PbrRenderer {
   } {
     const key = `${size.width}x${size.height}:${transparency ? "transparent" : "opaque"}`
       + `:ao=${postProcess.ambientOcclusion ? 1 : 0}:ssr=${postProcess.screenSpaceReflection ? 1 : 0}`
-      + `:fog=${postProcess.volumetricFog ? 1 : 0}:bloom=${postProcess.bloom ? 1 : 0}:direct=${directDisplay ? 1 : 0}`
+      + `:fog=${postProcess.volumetricFog ? 1 : 0}:god=${postProcess.volumetricFogProfile.godRaysStrength !== undefined ? 1 : 0}:bloom=${postProcess.bloom ? 1 : 0}:direct=${directDisplay ? 1 : 0}`
       + `:cs=${this.features.contactShadows ? 1 : 0}:up=${this.features.temporalUpscale ? 1 : 0}`;
     if (this.capturePlanKey !== key || !this.capturePlan || !this.captureActualPasses) {
       const captureFeatures: PbrRendererFeatures = Object.freeze({ ...this.features,
@@ -882,6 +885,7 @@ export class PbrRenderer {
       });
       const opaqueColorResource = postProcess.ambientOcclusion ? "ao-hdr" : "opaque-hdr";
       const plan = buildPbrFrameExecutionPlan(size, { transparency, features: captureFeatures,
+        godRays: postProcess.volumetricFogProfile.godRaysStrength !== undefined,
         directDisplay, writeGeometryBuffers: this.writeGeometryBuffers });
       const presentInputResource = this.features.temporalUpscale && !directDisplay ? "upscale-hdr"
         : this.features.contactShadows ? "contact-hdr"
@@ -891,6 +895,7 @@ export class PbrRenderer {
           : transparency ? "composited-hdr" : opaqueColorResource;
       const actual = collectActualPbrFramePasses(captureFeatures, transparency,
         { opaqueColorResource, presentInputResource, directDisplay, writeGeometryBuffers: this.writeGeometryBuffers,
+          godRays: postProcess.volumetricFogProfile.godRaysStrength !== undefined,
           bloom: postProcess.bloom });
       assertPlanMatchesActual(plan, actual);
       this.capturePlan = plan;
@@ -902,11 +907,12 @@ export class PbrRenderer {
   private allocationPlanFor(transparency: boolean,
     postProcess: ReturnType<typeof resolvePbrPostProcessOverrides>, directDisplay: boolean): RenderGraphCompileResult {
     const key = `${transparency ? 1 : 0}:${postProcess.ambientOcclusion ? 1 : 0}:${postProcess.screenSpaceReflection ? 1 : 0}`
-      + `:${postProcess.volumetricFog ? 1 : 0}:${postProcess.bloom ? 1 : 0}:${directDisplay ? 1 : 0}`;
+      + `:${postProcess.volumetricFog ? 1 : 0}:${postProcess.volumetricFogProfile.godRaysStrength !== undefined ? 1 : 0}:${postProcess.bloom ? 1 : 0}:${directDisplay ? 1 : 0}`;
     if (this.allocationPlanKey !== key || !this.allocationPlan) {
       this.allocationPlan = compilePbrFrameGraph({ transparency, features: { ...this.features,
         ambientOcclusion: postProcess.ambientOcclusion, screenSpaceReflection: postProcess.screenSpaceReflection,
         volumetricFog: postProcess.volumetricFog, bloom: postProcess.bloom }, directDisplay,
+        godRays: postProcess.volumetricFogProfile.godRaysStrength !== undefined,
         writeGeometryBuffers: this.writeGeometryBuffers });
       if (!this.allocationPlan.valid) throw new Error("PBR transient allocation graph is invalid.");
       this.allocationPlanKey = key;

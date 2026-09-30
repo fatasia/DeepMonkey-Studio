@@ -235,7 +235,7 @@ export function describePbrPresentPasses(inputResourceId: string, spatialAa = tr
         : inputResourceId === "ssr-hdr"
           ? ["storage-binding", "texture-binding", "copy-src"]
           : inputResourceId === "volumetric-fog-hdr"
-            ? ["storage-binding", "texture-binding"] : inputResourceId === "temporal-hdr"
+            ? ["storage-binding", "texture-binding", "copy-src"] : inputResourceId === "temporal-hdr"
               ? ["storage-binding", "texture-binding", "copy-src"]
               : inputResourceId === "upscale-hdr"
                 // F4 超分输出是唯一 display 尺寸输入(读回链落点,usages 同 temporal 合同)。
@@ -250,4 +250,3 @@ export function describePbrPresentPasses(inputResourceId: string, spatialAa = tr
     gpuPassCount: spatialAa && !hdrDisplay ? 2 : 1,
   };
 }
-

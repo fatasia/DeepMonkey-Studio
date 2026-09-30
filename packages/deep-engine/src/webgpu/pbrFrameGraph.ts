@@ -6,6 +6,7 @@ export interface PbrFrameGraphOptions {
   readonly features?: PbrRendererFeatureOptions;
   readonly directDisplay?: boolean;
   readonly writeGeometryBuffers?: boolean;
+  readonly godRays?: boolean;
 }
 
 /**
@@ -67,7 +68,7 @@ export function buildPbrFrameGraph(options: PbrFrameGraphOptions): RenderGraphBu
   if (features.volumetricFog) {
     graph.addResource({ id: "volumetric-fog-scatter", descriptor: "rgba16float-half" })
       .addResource({ id: "volumetric-fog-hdr", descriptor: "rgba16float", aliasKey: "full-rgba16float" })
-      .addPass({ id: "volumetric-fog-march", kind: "compute", inputs: ["linear-depth"], outputs: ["volumetric-fog-scatter"] })
+      .addPass({ id: "volumetric-fog-march", kind: "compute", inputs: ["linear-depth", ...(options.godRays ? ["shadow-atlas"] : [])], outputs: ["volumetric-fog-scatter"] })
       .addPass({ id: "volumetric-fog-composite", kind: "compute", inputs: [temporalInput, "volumetric-fog-scatter"], outputs: ["volumetric-fog-hdr"] });
     temporalInput = "volumetric-fog-hdr";
   }

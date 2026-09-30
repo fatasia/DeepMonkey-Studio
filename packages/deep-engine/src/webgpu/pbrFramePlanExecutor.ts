@@ -139,7 +139,7 @@ export function buildPbrFrameExecutionPlan(surface: SurfaceSize, options: PbrFra
   const passes = compiled.order.map((passId, order) => {
     const descriptor = descriptorByPass.get(passId);
     if (!descriptor) throw new Error(`Compiled pass missing from graph declarations: ${passId}.`);
-    const executor = MAPPED_EXECUTORS[passId];
+    const executor = passId === "volumetric-fog-march" && options.godRays ? "VolumetricGodRaysPass.encode" : MAPPED_EXECUTORS[passId];
     const reason = UNMAPPED_REASONS[passId];
     let mapping: PbrPassMapping;
     if (executor !== undefined) mapping = { status: "mapped", executor };
@@ -265,10 +265,10 @@ export function assertPlanMatchesActual(plan: PbrFrameExecutionPlan, actual: rea
 /** 组装实际执行描述:各执行者文件的 describe* 输出,与 encode 代码路径贴近书写。 */
 export function collectActualPbrFramePasses(features: PbrRendererFeatures, transparency: boolean,
   options: { readonly opaqueColorResource?: string; readonly presentInputResource?: string;
-    readonly directDisplay?: boolean; readonly writeGeometryBuffers?: boolean; readonly bloom?: boolean } = {}): readonly PbrActualPassDescription[] {
+    readonly directDisplay?: boolean; readonly writeGeometryBuffers?: boolean; readonly bloom?: boolean; readonly godRays?: boolean } = {}): readonly PbrActualPassDescription[] {
   if (options.directDisplay) return Object.freeze([describePbrOpaquePass(options)]);
   const opaqueColorResource = options.opaqueColorResource ?? (features.ambientOcclusion ? "ao-hdr" : "opaque-hdr");
-  const effects = PbrPostProcessChain.describePasses(features, transparency, { opaqueColorResource });
+  const effects = PbrPostProcessChain.describePasses(features, transparency, { opaqueColorResource, ...(options.godRays ? { godRays: true } : {}) });
   const opaqueEffect = (pass: PbrActualPassDescription): boolean =>
     pass.passId === "ambient-occlusion" || pass.passId === "apply-ambient-occlusion";
   const contactInput = options.bloom ? "bloom-hdr" : features.temporalAa ? "temporal-hdr"

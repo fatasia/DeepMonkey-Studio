@@ -13,6 +13,9 @@ import { internalRenderSize } from "../postprocess/temporalUpscaleCpu.js";
 import { ScreenSpaceReflectionPass } from "../postprocess/screenSpaceReflection.js";
 import { SSR_COMPOSITE_FORMAT } from "../postprocess/screenSpaceReflectionTypes.js";
 import { VolumetricFogPass } from "../fog/volumetricFogPass.js";
+import { VolumetricGodRaysPass } from "../fog/volumetricGodRaysPass.js";
+import type { GodRaysShadowSource } from "../fog/volumetricGodRaysPassTypes.js";
+import type { VolumetricFogLight } from "../fog/volumetricFogPassTypes.js";
 import { VolumetricFogCompositePass } from "../fog/volumetricFogComposite.js";
 import { VOLUMETRIC_FOG_SCATTER_FORMAT } from "../fog/volumetricFogPassTypes.js";
 import { VOLUMETRIC_FOG_COMPOSITE_FORMAT } from "../fog/volumetricFogCompositeTypes.js";
@@ -55,6 +58,7 @@ export interface PbrPostProcessInput {
   /** C11 SSR 物理化:主着色器同一 split-sum DFG(environment.brdf);缺省时 SSR 拒绝编码。 */
   readonly brdfLut?: GPUTextureView;
   readonly adaptiveQuality?: Readonly<AdaptiveQualityKnobs>;
+  readonly godRays?: { readonly shadows: GodRaysShadowSource; readonly viewToWorld: ArrayLike<number>; readonly light: VolumetricFogLight };
   /**
    * F1 逐 pass GPU 计时作用域(opt-in 诊断)。存在时在计划 pass 组边界发射只写
    * 时间戳的 marker pass;缺失时整条链路零额外开销、逐字节不变。
@@ -88,6 +92,7 @@ export class PbrPostProcessChain {
   private readonly ambientOcclusionComposite: AmbientOcclusionCompositePass | undefined;
   private readonly screenSpaceReflection: ScreenSpaceReflectionPass | undefined;
   private readonly volumetricFog: VolumetricFogPass | undefined;
+  private volumetricGodRays: VolumetricGodRaysPass | undefined;
   private readonly volumetricFogComposite: VolumetricFogCompositePass | undefined;
   private readonly temporalAa: TemporalAaPass | undefined;
   private readonly temporalUpscale: TemporalUpscalePass | undefined;
@@ -185,11 +190,17 @@ export class PbrPostProcessChain {
     if (active.volumetricFog && this.volumetricFog && this.volumetricFogComposite) {
       const profile = active.volumetricFogProfile;
       input.passTiming?.beginMarker(encoder, "volumetric-fog-march");
-      const scatter = this.volumetricFog.encode(encoder, {
+      const source = {
         depth: targets.linearDepthTexture, revision, depthEncoding: "linear-view-depth-positive",
-      }, { verticalFovRadians, steps: Math.min(profile.steps ?? 48, input.adaptiveQuality?.fogSteps ?? 64),
+      } as const;
+      const fogOptions = { verticalFovRadians, steps: Math.min(profile.steps ?? 48, input.adaptiveQuality?.fogSteps ?? 64),
         maxDistance: profile.maxDistance ?? Math.max(1, Math.min(100_000, extent * 4)),
-        medium: profile.medium, light: profile.light });
+        medium: profile.medium, light: profile.light };
+      if (profile.godRaysStrength !== undefined && !input.godRays) throw new Error("God rays requires the current primary light and prepared CSM.");
+      const scatter = profile.godRaysStrength === undefined ? this.volumetricFog.encode(encoder, source, fogOptions)
+        : (this.volumetricGodRays ??= new VolumetricGodRaysPass(this.session, this.pool)).encode(encoder, source,
+          input.godRays!.shadows, { ...fogOptions, maxDistance: Math.min(1000, fogOptions.maxDistance),
+            light: input.godRays!.light, viewToWorld: input.godRays!.viewToWorld, strength: profile.godRaysStrength });
       input.passTiming?.endMarker(encoder, "volumetric-fog-march");
       input.passTiming?.beginMarker(encoder, "volumetric-fog-composite");
       marched = this.volumetricFogComposite.encode(encoder, {
@@ -296,7 +307,7 @@ export class PbrPostProcessChain {
    * 供 pbrFramePlanExecutor 与编译计划对拍;纯静态、不触 GPU、不改变执行。
    */
   static describePasses(features: PbrRendererFeatures, transparency: boolean,
-    options: { readonly opaqueColorResource?: string } = {}): readonly PbrActualPassDescription[] {
+    options: { readonly opaqueColorResource?: string; readonly godRays?: boolean } = {}): readonly PbrActualPassDescription[] {
     const opaqueColorResource = options.opaqueColorResource ?? (features.ambientOcclusion ? "ao-hdr" : "opaque-hdr");
     const opaqueDomain = transparency ? "composited-hdr" : opaqueColorResource;
     const fogInput = opaqueDomain;
@@ -308,7 +319,7 @@ export class PbrPostProcessChain {
       ? ["render-attachment", "texture-binding", "storage-binding", "copy-src"]
       : ["storage-binding", "texture-binding", "render-attachment", "copy-src"];
     const reflectionInputUsages: readonly FramePlanUsage[] = features.volumetricFog
-      ? ["storage-binding", "texture-binding"] : opaqueInputUsages;
+      ? ["storage-binding", "texture-binding", "copy-src"] : opaqueInputUsages;
     // ssr-hdr 自 C12 起带 COPY_SRC(present-color 读回链落点);其余输入域不变。
     const temporalInputUsages: readonly FramePlanUsage[] = features.screenSpaceReflection
       ? ["storage-binding", "texture-binding", "copy-src"] : reflectionInputUsages;
@@ -344,12 +355,15 @@ export class PbrPostProcessChain {
       gpuPassCount: 1,
     });
     if (features.volumetricFog) passes.push({
-      passId: "volumetric-fog-march", executor: "VolumetricFogPass.encode", kind: "compute",
-      reads: ["linear-depth"], writes: ["volumetric-fog-scatter"],
+      passId: "volumetric-fog-march", executor: options.godRays ? "VolumetricGodRaysPass.encode" : "VolumetricFogPass.encode", kind: "compute",
+      reads: ["linear-depth", ...(options.godRays ? ["shadow-atlas"] : [])], writes: ["volumetric-fog-scatter"],
       claims: [geometryRead("linear-depth"),
+        ...(options.godRays ? [{ id: "shadow-atlas", access: "read" as const, format: "depth32float", sampleCount: 1,
+          usages: ["render-attachment", "texture-binding"] as const, sizeRole: "independent" as const }] : []),
         { id: "volumetric-fog-scatter", access: "write", format: VOLUMETRIC_FOG_SCATTER_FORMAT, sampleCount: 1,
           usages: ["storage-binding", "texture-binding"], sizeRole: "half" }],
       gpuPassCount: 1,
+      ...(options.godRays ? { unplannedAttachments: [{ id: "borrowed-csm-uniform/sampler", reason: "复用主光 CSM 的 624B uniform 与 sampler，由原 shadow owner 回收" }] } : {}),
     }, {
       passId: "volumetric-fog-composite", executor: "VolumetricFogCompositePass.encode", kind: "compute",
       reads: [fogInput, "volumetric-fog-scatter"], writes: ["volumetric-fog-hdr"],
@@ -358,7 +372,7 @@ export class PbrPostProcessChain {
       { id: "volumetric-fog-scatter", access: "read", format: VOLUMETRIC_FOG_SCATTER_FORMAT, sampleCount: 1,
         usages: ["storage-binding", "texture-binding"], sizeRole: "half" },
       { id: "volumetric-fog-hdr", access: "write", format: VOLUMETRIC_FOG_COMPOSITE_FORMAT, sampleCount: 1,
-        usages: ["storage-binding", "texture-binding"], sizeRole: "surface" }],
+        usages: ["storage-binding", "texture-binding", "copy-src"], sizeRole: "surface" }],
       unplannedAttachments: [{ id: "volumetric-fog-sampler", reason: "半分辨率散射上采样的私有 filtering sampler" }],
       gpuPassCount: 1,
     });
@@ -421,7 +435,7 @@ export class PbrPostProcessChain {
           : upscaleInput === "bloom-hdr" ? ["texture-binding", "storage-binding", "render-attachment", "copy-src"]
           : upscaleInput === "composited-hdr" || upscaleInput === "opaque-hdr"
             ? ["render-attachment", "texture-binding", "storage-binding", "copy-src"]
-            : upscaleInput === "volumetric-fog-hdr" ? ["storage-binding", "texture-binding"]
+            : upscaleInput === "volumetric-fog-hdr" ? ["storage-binding", "texture-binding", "copy-src"]
             : ["storage-binding", "texture-binding", "copy-src"];
       passes.push({
         passId: "temporal-upscale", executor: "TemporalUpscalePass.encode", kind: "compute",
@@ -445,7 +459,7 @@ export class PbrPostProcessChain {
     this.disposed = true;
     runResourceCleanup("Post-process disposal failed", [() => this.authorBloom?.dispose(), () => this.bloom?.dispose(),
       () => this.temporalAa?.dispose(), () => this.temporalUpscale?.dispose(), () => this.screenSpaceReflection?.dispose(),
-      () => this.volumetricFogComposite?.dispose(), () => this.volumetricFog?.dispose(),
+      () => this.volumetricFogComposite?.dispose(), () => this.volumetricGodRays?.dispose(), () => this.volumetricFog?.dispose(),
       () => this.ambientOcclusionComposite?.dispose(),
       () => this.ambientOcclusion?.dispose(), () => this.hiZ?.dispose()]);
   }

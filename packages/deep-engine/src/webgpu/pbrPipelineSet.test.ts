@@ -34,6 +34,12 @@ describe("production PBR deformation pipeline selection", () => {
     expect(result.startDeformation).toBeUndefined();
   });
 
+  it("uses the same MRT attachments as the renderer for fog-only production frames", async () => {
+    await createPbrPipelineSet(session, lighting, {}, { ...features, ambientOcclusion: false,
+      screenSpaceReflection: false, temporalAa: false, contactShadows: false, volumetricFog: true });
+    expect(vi.mocked(createPipelinesBuild).mock.calls[0]![3]).toBe(true);
+  });
+
   it("selects paired static and deformation array variants and isolates their cache entry", async () => {
     const arrayFeatures = { ...features, textureArrays: true };
     await createPbrPipelineSet(session, lighting, { deformation: true }, arrayFeatures);

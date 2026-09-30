@@ -4,6 +4,15 @@ import { DEFAULT_POST_PROCESSING } from "../appDefaults";
 import { ScenePostProcessingEditor } from "./ScenePostProcessingEditor";
 
 describe("ScenePostProcessingEditor", () => {
+  it("shows independent light-shaft controls and preserves a zero strength", () => {
+    const html = renderToStaticMarkup(<ScenePostProcessingEditor locale="zh-CN" rendererBackend="webgpu"
+      value={{ ...DEFAULT_POST_PROCESSING, volumetricFog: true, volumetricGodRays: true, volumetricGodRaysStrength: 0 }} onChange={vi.fn()} />);
+    expect(html).toContain("体积光"); expect(html).toContain("体积光强度"); expect(html).toContain('max="8"');
+    expect(html).toContain('value="0"');
+    const off = renderToStaticMarkup(<ScenePostProcessingEditor locale="zh-CN" rendererBackend="webgpu"
+      value={{ ...DEFAULT_POST_PROCESSING, volumetricFog: true, volumetricGodRays: false }} onChange={vi.fn()} />);
+    expect(off).toContain("体积光"); expect(off).not.toContain("体积光强度");
+  });
   it("在 WebGPU 下提供完整调色控件", () => {
     const html = renderToStaticMarkup(
       <ScenePostProcessingEditor
