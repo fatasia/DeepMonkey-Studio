@@ -170,6 +170,101 @@ export const DEEP_GAUSSIAN_SPLAT_ENTRY_FRAGMENT = "fsMain";
 `,
     preamble: `/** 3DGS instanced quad splatting 渲染着色器(真源 wgsl/gaussianSplatQuads.wgsl)。 */\nexport const GAUSSIAN_SPLAT_QUADS_WGSL = /* wgsl */ `,
   },
+  {
+    // I 级 C15 反射探针盒投影视差校正家族。真源 wgsl/reflectionProbeBoxProjection.wgsl,
+    // 纯 TS 消费(无 Rust 半;纯函数库,无绑定声明,宿主模板组合同 DEEP_AREA_LIGHTING 家族)。
+    // 哨兵/阈值常量与 src/lighting/reflectionProbeParallax.ts 的 CPU 镜像互钉,
+    // 一致性由 reflectionProbeBoxProjectionWgslChecksum.test.ts 锁定。
+    source: "reflectionProbeBoxProjection.wgsl",
+    module: resolve(packageRoot, "src/lighting/reflectionProbeBoxProjectionWgsl.ts"),
+    gate: "src/lighting/reflectionProbeBoxProjectionWgslChecksum.test.ts",
+    rustHalf: null,
+    constants: `/**
+ * I 级 C15 反射探针盒投影视差校正家族的生成镜像。唯一真源
+ * wgsl/reflectionProbeBoxProjection.wgsl,纯 TS 消费(无 Rust 半);
+ * 纯函数库,无绑定声明,宿主模板组合同 DEEP_AREA_LIGHTING 家族。
+ * 哨兵/阈值与 reflectionProbeParallax.ts(CPU 镜像与数据面)互钉。
+ */
+
+/** ABI 版本:struct 布局、哨兵值或公式语义变化时递增并同步 CPU 镜像。 */
+export const DEEP_REFLECTION_PROBE_ABI_VERSION = 1;
+/** 单探针完整 record 字节数(center/blend + extents/radius + captureOffset/generation + reserved)。 */
+export const DEEP_REFLECTION_PROBE_RECORD_BYTES = 64;
+/** 着色端最小盒描述字节数(DeepReflectionProbeBox:两个 vec4f)。 */
+export const DEEP_REFLECTION_PROBE_BOX_BYTES = 32;
+/** 双探针插值的次级权重裁剪阈(低于则退化为单探针)。 */
+export const DEEP_REFLECTION_PROBE_SECONDARY_CUTOFF = 0.01;
+/** 方向零向量判据(与 WGSL 字面量互钉)。 */
+export const DEEP_REFLECTION_PROBE_DIRECTION_EPSILON = 0.000001;
+/** 不校正哨兵:接收点在影响体 AABB 外(与 influenceWeight>0 同判据)。 */
+export const DEEP_REFLECTION_PROBE_SENTINEL_OUTSIDE = -1;
+/** 不校正哨兵:输入退化(方向零/非有限、AABB 非法)。 */
+export const DEEP_REFLECTION_PROBE_SENTINEL_DEGENERATE = -2;
+/** 不约束轴的出射步长哨兵(参加 min 但必不命中)。 */
+export const DEEP_REFLECTION_PROBE_UNCONSTRAINED_STEP = 1000000000;
+`,
+    preamble: `/** 反射探针盒投影视差校正核(真源 wgsl/reflectionProbeBoxProjection.wgsl)。 */\nexport const DEEP_REFLECTION_PROBE_BOX_PROJECTION_WGSL = /* wgsl */ `,
+  },
+  {
+    // A2 WGSL SDF 碰撞 profile 查询核。真源 wgsl/sdfCollisionQuery.wgsl,
+    // Rust 半在 deep-engine-native/tests/sdf_collision_profile_truth.rs(测试侧
+    // include_str! + sidecar 三方对拍)。合同:每 lane 输出独立(无归约/无原子,
+    // 同输入逐位回放);域外 fail-closed(quiet NaN + status=1,宿主整批拒绝);
+    // 误差边界 vs Rapier 凸包真值由 sdfCollisionProfile.ts 逐字段守护。
+    source: "sdfCollisionQuery.wgsl",
+    module: resolve(packageRoot, "src/physics/sdfCollisionQueryWgsl.ts"),
+    gate: "src/physics/sdfCollisionQueryWgslChecksum.test.ts",
+    rustHalf: "deep-engine-native/tests/sdf_collision_profile_truth.rs",
+    constants: `/**
+ * A2 SDF 碰撞 profile 查询核的生成镜像。唯一真源 wgsl/sdfCollisionQuery.wgsl,
+ * Rust 半在 deep-engine-native/tests/sdf_collision_profile_truth.rs。
+ * 常量与 sdfCollisionProfile.ts(打包/解包/预算)互钉。
+ */
+
+/** workgroup 尺寸:每 lane 独立处理一条查询点,无跨 lane 通信。 */
+export const SDF_QUERY_WORKGROUP_SIZE = 64;
+/** uniform 总字节(origin 12 + cellSize 4 + dimensions 12 + count 4 + contactSkin 4 + pad 12)。 */
+export const SDF_QUERY_PARAMS_BYTES = 48;
+/** compute 入口名(测试与探针按名取 entry point)。 */
+export const SDF_QUERY_ENTRY = "queryCollisions";
+/** lane 状态字:0 = 域内;1 = 域外(fail-closed,宿主见到任何非 0 整批拒绝)。 */
+export const SDF_QUERY_STATUS_IN_DOMAIN = 0;
+export const SDF_QUERY_STATUS_OUT_OF_DOMAIN = 1;
+/** quiet NaN 位型(域外 distance 信号;field 本身永不含 NaN,双向可判)。 */
+export const SDF_QUERY_NAN_BITS = 0x7fc00000;
+/** 单批查询点上限(与 sdfGpuQuery 同源;内存预算由此有界)。 */
+export const SDF_QUERY_MAX_POINTS = 65536;
+`,
+    preamble: `/** SDF 碰撞 profile 查询核:trilinear 距离 + 中心差分梯度 + 域外 fail-closed(真源 wgsl/sdfCollisionQuery.wgsl)。 */\nexport const DEEP_SDF_COLLISION_QUERY_WGSL = /* wgsl */ `,
+  },
+  {
+    // I 级 C23 分层材质混合核家族。真源 wgsl/materialLayerBlend.wgsl,纯 TS 消费
+    // (无 Rust 半;求值响应级 rgb/lobe 逐通道混合,replace/overlay 两种语义)。
+    // 常量与 materialLayeredParameters.ts(MATERIAL_LAYER_BLEND_MODE_CODES 等)互钉,
+    // 混合闭式与 CPU 参考 materialLayeredEvaluate.blendChannel 逐运算镜像,
+    // 一致性由 materialLayerBlendWgslChecksum.test.ts 锁定。
+    source: "materialLayerBlend.wgsl",
+    module: resolve(packageRoot, "src/shader/materialLayerBlendWgsl.ts"),
+    gate: "src/shader/materialLayerBlendWgslChecksum.test.ts",
+    rustHalf: null,
+    constants: `/**
+ * I 级 C23 分层材质混合核家族的生成镜像。唯一真源 wgsl/materialLayerBlend.wgsl,
+ * 纯 TS 消费(无 Rust 半)。常量与 materialLayeredParameters.ts 互钉;
+ * 混合闭式与 CPU 参考 materialLayeredEvaluate.blendChannel 逐运算镜像。
+ */
+
+/** 混合语义 GPU 码(replace=0 / overlay=1),与 MATERIAL_LAYER_BLEND_MODE_CODES 互钉。 */
+export const DEEP_LAYER_BLEND_MODE_REPLACE = 0;
+export const DEEP_LAYER_BLEND_MODE_OVERLAY = 1;
+/** 层栈深度上限,与 MATERIAL_LAYER_MAX_COUNT 互钉。 */
+export const DEEP_LAYER_MAX_COUNT = 2;
+/** 单层槽 f32 数(6 层参数 + coverage + modeCode),与 MATERIAL_LAYER_FLOAT_COUNT 互钉。 */
+export const DEEP_LAYER_SLOT_FLOAT_COUNT = 8;
+/** 分层块定长 f32 数(base 6 + 2 层槽 ×8),与 LAYERED_MATERIAL_FLOAT_COUNT 互钉。 */
+export const DEEP_LAYERED_BLOCK_FLOAT_COUNT = 22;
+`,
+    preamble: `/** 分层材质求值响应级混合核(真源 wgsl/materialLayerBlend.wgsl)。 */\nexport const MATERIAL_LAYER_BLEND_WGSL = /* wgsl */ `,
+  },
 ];
 
 for (const entry of SHARED_WGSL) {

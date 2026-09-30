@@ -35,3 +35,5 @@ export * from "./probeRelocationResolver.js";
 export * from "./probeReferenceScene.js";
 export * from "./probeReferenceIntegrator.js";
 export * from "./probeInvalidationConvergence.js";
+export * from "./reflectionProbeBoxProjectionWgsl.js";
+export * from "./reflectionProbeParallax.js";
