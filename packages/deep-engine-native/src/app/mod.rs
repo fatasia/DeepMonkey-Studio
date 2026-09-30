@@ -50,6 +50,10 @@ mod packet_live_probe;
 mod packet_mailbox;
 mod packet_watch;
 mod recovery;
+#[cfg(not(target_arch = "wasm32"))]
+mod recovery_retry;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod recovery_retry_tests;
 mod renderer_lifecycle;
 #[cfg(all(test, windows))]
 mod resize_epoch_tests;
@@ -107,6 +111,10 @@ struct NativeApp {
     /// and publication verification retain their existing fail-fast path.
     #[cfg(not(target_arch = "wasm32"))]
     startup_frame_pending: bool,
+    #[cfg(not(target_arch = "wasm32"))]
+    recovery_retry: recovery_retry::RecoveryRetry,
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    recovery_failures_remaining: u8,
     #[cfg(target_arch = "wasm32")]
     renderer_initializing: bool,
     #[cfg(target_arch = "wasm32")]
@@ -386,6 +394,10 @@ impl NativeApp {
             renderer: None,
             #[cfg(not(target_arch = "wasm32"))]
             startup_frame_pending: false,
+            #[cfg(not(target_arch = "wasm32"))]
+            recovery_retry: Default::default(),
+            #[cfg(all(test, not(target_arch = "wasm32")))]
+            recovery_failures_remaining: 0,
             #[cfg(target_arch = "wasm32")]
             renderer_initializing: false,
             #[cfg(target_arch = "wasm32")]

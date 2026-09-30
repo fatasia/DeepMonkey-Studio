@@ -205,6 +205,12 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
         return;
     }
     #[cfg(not(target_arch = "wasm32"))]
+    if matches!(outcome, Some(RenderOutcome::Presented))
+        && let Some(renderer) = app.renderer.as_ref()
+    {
+        app.recovery_retry.presented(renderer.id());
+    }
+    #[cfg(not(target_arch = "wasm32"))]
     if app.startup_frame_pending
         && matches!(outcome, Some(RenderOutcome::Presented))
         && let Some(window) = &app.window

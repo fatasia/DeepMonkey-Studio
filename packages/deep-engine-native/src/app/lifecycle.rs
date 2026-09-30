@@ -2,6 +2,14 @@ use super::*;
 
 impl ApplicationHandler<GpuEvent> for NativeApp {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            event_loop.set_control_flow(
+                self.recovery_retry
+                    .clear_managed_wake(event_loop.control_flow()),
+            );
+            recovery::retry_due(self);
+        }
         // Renderer::new is genuinely asynchronous in browsers and retains an
         // immutable content snapshot. Do not run mutable content schedulers
         // until that snapshot is released by the completion event.
@@ -22,14 +30,19 @@ impl ApplicationHandler<GpuEvent> for NativeApp {
         #[cfg(not(target_arch = "wasm32"))]
         {
             if packet_live::retry(self, event_loop, web_time::Instant::now()) {
+                event_loop
+                    .set_control_flow(self.recovery_retry.merge_wake(event_loop.control_flow()));
                 return;
             }
             if package_live::retry(self, event_loop, web_time::Instant::now()) {
+                event_loop
+                    .set_control_flow(self.recovery_retry.merge_wake(event_loop.control_flow()));
                 return;
             }
         }
         #[cfg(windows)]
         if x_runtime::tick(self, event_loop) {
+            event_loop.set_control_flow(self.recovery_retry.merge_wake(event_loop.control_flow()));
             return;
         }
         if self.content.active().dashboard.is_some() {
@@ -50,9 +63,18 @@ impl ApplicationHandler<GpuEvent> for NativeApp {
             if now >= wake_at {
                 self.request_redraw();
             }
-            event_loop
-                .set_control_flow(winit::event_loop::ControlFlow::WaitUntil(wake_at.max(now)));
+            let next = wake_at.max(now);
+            #[cfg(not(target_arch = "wasm32"))]
+            event_loop.set_control_flow(recovery_retry::merge_animation_wake(
+                event_loop.control_flow(),
+                next,
+                now,
+            ));
+            #[cfg(target_arch = "wasm32")]
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(next));
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        event_loop.set_control_flow(self.recovery_retry.merge_wake(event_loop.control_flow()));
     }
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() {

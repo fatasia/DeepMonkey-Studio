@@ -30,6 +30,12 @@ pub(super) fn handle(app: &mut NativeApp, event_loop: &ActiveEventLoop, event: &
             }
             eprintln!("GPU device lost ({reason}): {message}; rebuilding native renderer");
             app.renderer = None;
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                app.recovery_retry.begin();
+                app.initialize_recovery_renderer();
+            }
+            #[cfg(target_arch = "wasm32")]
             app.initialize_renderer();
             true
         }
@@ -126,6 +132,13 @@ pub(super) fn handle(app: &mut NativeApp, event_loop: &ActiveEventLoop, event: &
         | GpuEvent::WasmPhysicsFrameReady { .. }
         | GpuEvent::WasmEditorOverlay { .. }
         | GpuEvent::WasmStop => false,
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) fn retry_due(app: &mut NativeApp) {
+    if app.recovery_retry.take_due(web_time::Instant::now()) {
+        app.initialize_recovery_renderer();
     }
 }
 

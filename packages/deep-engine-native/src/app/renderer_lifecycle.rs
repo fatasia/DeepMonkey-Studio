@@ -7,6 +7,29 @@ thread_local! {
 
 impl NativeApp {
     pub(super) fn initialize_renderer(&mut self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        self.recovery_retry.cancel();
+        self.initialize_renderer_candidate();
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(super) fn initialize_recovery_renderer(&mut self) {
+        if !self.recovery_retry.begin_attempt() {
+            self.state.failed(
+                "GPU device recovery exhausted after 3 attempts (press R to rebuild)".into(),
+            );
+            if let Some(window) = self.window.as_ref() {
+                crate::window_chrome::set_title(
+                    window,
+                    "Deep Engine Native Viewer — GPU recovery exhausted (press R)",
+                );
+            }
+            return;
+        }
+        self.initialize_renderer_candidate();
+    }
+
+    fn initialize_renderer_candidate(&mut self) {
         let Some(window) = self.window.as_ref() else {
             return;
         };
@@ -53,15 +76,29 @@ impl NativeApp {
             });
             return;
         }
+        #[cfg(all(test, not(target_arch = "wasm32")))]
+        let injected_failure = self.recovery_retry.active() && self.recovery_failures_remaining > 0;
+        #[cfg(all(not(test), not(target_arch = "wasm32")))]
+        let injected_failure = false;
+        #[cfg(all(test, not(target_arch = "wasm32")))]
+        if injected_failure {
+            self.recovery_failures_remaining -= 1;
+        }
         #[cfg(not(target_arch = "wasm32"))]
-        match pollster::block_on(Renderer::new(
-            window.clone(),
-            self.proxy.clone(),
-            renderer_id,
-            self.content.active(),
-            self.state.view,
-            self.features.for_content(self.content.active()),
-        )) {
+        let result = if injected_failure {
+            Err("test-injected native recovery candidate creation failure".into())
+        } else {
+            pollster::block_on(Renderer::new(
+                window.clone(),
+                self.proxy.clone(),
+                renderer_id,
+                self.content.active(),
+                self.state.view,
+                self.features.for_content(self.content.active()),
+            ))
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        match result {
             Ok(renderer) => {
                 let renderer_id = renderer.id();
                 self.state.renderer_ready();
@@ -94,6 +131,7 @@ impl NativeApp {
                     }
                 }
                 self.renderer = Some(renderer);
+                self.recovery_retry.ready(renderer_id);
                 self.startup_frame_pending = !self.smoke_frame && self.state.verification.is_none();
                 crate::window_chrome::set_title(window, "");
                 if self.startup_frame_pending {
@@ -109,8 +147,17 @@ impl NativeApp {
                 }
             }
             Err(error) => {
-                eprintln!("{error}");
                 self.startup_frame_pending = false;
+                let retry_at = self.recovery_retry.failed(web_time::Instant::now());
+                let error = if self.recovery_retry.active() && retry_at.is_none() {
+                    format!(
+                        "GPU device recovery exhausted after {} attempts: {error} (press R to rebuild)",
+                        self.recovery_retry.attempts()
+                    )
+                } else {
+                    error
+                };
+                eprintln!("{error}");
                 if self.smoke_frame || !replacing_live_renderer {
                     self.state.failed(error);
                 }
@@ -120,6 +167,12 @@ impl NativeApp {
                         "Deep Engine Native Viewer — rebuild rejected, previous frame retained",
                     );
                     window.request_redraw();
+                } else if retry_at.is_some() {
+                    crate::window_chrome::set_title(
+                        window,
+                        "Deep Engine Native Viewer — GPU recovery retry pending (press R)",
+                    );
+                    window.set_visible(true);
                 } else {
                     crate::window_chrome::set_title(
                         window,

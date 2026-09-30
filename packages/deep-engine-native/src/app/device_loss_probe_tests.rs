@@ -7,15 +7,31 @@ use std::{
 use winit::platform::windows::EventLoopBuilderExtWindows;
 
 const TEST: &str = "app::device_loss_probe_tests::j3_gate_e_actual_window_device_loss";
+const RETRY_TEST: &str = "app::device_loss_probe_tests::j3_gate_e_actual_window_device_loss_retry";
 
 #[test]
 #[ignore = "requires Windows GPU and a real NativeApp window"]
 fn j3_gate_e_actual_window_device_loss() {
+    run(false);
+}
+
+#[test]
+#[ignore = "requires Windows GPU and a real NativeApp window"]
+fn j3_gate_e_actual_window_device_loss_retry() {
+    run(true);
+}
+
+fn run(retry: bool) {
     const CHILD: &str = "DEEP_WINDOW_LOSS_CHILD";
     if std::env::var_os(CHILD).is_none() {
         for round in 1..=2 {
             let result = std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", TEST, "--ignored", "--nocapture"])
+                .args([
+                    "--exact",
+                    if retry { RETRY_TEST } else { TEST },
+                    "--ignored",
+                    "--nocapture",
+                ])
                 .env(CHILD, round.to_string())
                 .output()
                 .unwrap();
@@ -73,6 +89,8 @@ fn j3_gate_e_actual_window_device_loss() {
         view: Default::default(),
         package_hash: String::new(),
         lost_callbacks: 0,
+        retry,
+        retry_started: None,
     };
     event_loop.run_app(&mut probe).unwrap();
     assert_eq!(probe.stage, 2);
@@ -88,6 +106,8 @@ struct Probe {
     view: crate::player_state::PlayerView,
     package_hash: String,
     lost_callbacks: u32,
+    retry: bool,
+    retry_started: Option<Instant>,
 }
 impl Probe {
     fn redraw(&mut self, event_loop: &ActiveEventLoop) {
@@ -157,69 +177,19 @@ impl ApplicationHandler<GpuEvent> for Probe {
                 "actual loss reason: {reason}"
             );
             self.lost_callbacks += 1;
-            self.app.user_event(event_loop, event);
-            let new_id = self.app.renderer.as_ref().unwrap().id();
-            assert_ne!(new_id, self.old_id);
-            assert_eq!(self.app.state.view, self.view);
-            assert_eq!(
-                self.app.state.selected.as_deref(),
-                Some("j3-preserved-selection")
-            );
-            assert_eq!(
-                self.app
-                    .content
-                    .active()
-                    .runtime_package()
-                    .unwrap()
-                    .package_hash,
-                self.package_hash
-            );
-            self.redraw(event_loop);
-            let after_hdr = self
-                .app
-                .renderer
-                .as_mut()
-                .unwrap()
-                .device_loss_probe_presented_hdr();
-            let relative = (after_hdr - self.before_hdr).abs() / self.before_hdr;
-            assert!(relative <= 1e-6, "preserved scene HDR drift: {relative}");
-            // Deliberate stale-event negative control; loss above came from wgpu.
-            self.app.user_event(
-                event_loop,
-                GpuEvent::DeviceLost {
-                    renderer_id: self.old_id,
-                    reason: "stale-negative-control".into(),
-                    message: "must be ignored".into(),
-                },
-            );
-            self.app.user_event(
-                event_loop,
-                GpuEvent::UncapturedError {
-                    renderer_id: self.old_id,
-                    message: "stale-negative-control".into(),
-                },
-            );
-            assert_eq!(self.app.renderer.as_ref().unwrap().id(), new_id);
-            assert!(self.app.state.failure.is_none());
-            let evidence = json!({ "passed": true, "round": std::env::var("DEEP_WINDOW_LOSS_CHILD").unwrap(),
-                "strategy": "destroyed-native-window-rebuild", "realCallbacks": self.lost_callbacks,
-                "oldRenderer": self.old_id, "newRenderer": new_id, "packageHash": self.package_hash,
-                "beforeHdr": self.before_hdr, "afterHdr": after_hdr, "relativeHdrDifference": relative,
-                "presented": true, "viewPreserved": true, "selectionPreserved": true, "staleEventsRejected": true });
-            if let Some(output) = std::env::var_os("J3_WINDOW_NATIVE_OUTPUT") {
-                std::fs::create_dir_all(&output).unwrap();
-                std::fs::write(
-                    PathBuf::from(output).join(format!(
-                        "round-{}.json",
-                        std::env::var("DEEP_WINDOW_LOSS_CHILD").unwrap()
-                    )),
-                    evidence.to_string(),
-                )
-                .unwrap();
+            if self.retry {
+                self.app.recovery_failures_remaining = 1;
+                self.retry_started = Some(Instant::now());
             }
-            println!("J3_WINDOW_RECOVERY {}", evidence);
-            self.stage = 2;
-            event_loop.exit();
+            self.app.user_event(event_loop, event);
+            if self.retry {
+                assert!(self.app.renderer.is_none());
+                assert_eq!(self.app.recovery_failures_remaining, 0);
+                assert_eq!(self.app.recovery_retry.attempts(), 1);
+                event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+                return;
+            }
+            self.finish_recovery(event_loop);
         } else {
             self.app.user_event(event_loop, event);
         }
@@ -236,6 +206,89 @@ impl ApplicationHandler<GpuEvent> for Probe {
             self.started.elapsed() < Duration::from_secs(45),
             "actual lost callback timeout"
         );
-        event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+        if self.retry && self.stage == 1 && self.lost_callbacks == 1 {
+            self.app.about_to_wait(event_loop);
+            if self.app.renderer.is_some() {
+                self.finish_recovery(event_loop);
+            }
+        } else {
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+        }
+    }
+}
+
+impl Probe {
+    fn finish_recovery(&mut self, event_loop: &ActiveEventLoop) {
+        let new_id = self.app.renderer.as_ref().unwrap().id();
+        assert_ne!(new_id, self.old_id);
+        assert_eq!(self.app.state.view, self.view);
+        assert_eq!(
+            self.app.state.selected.as_deref(),
+            Some("j3-preserved-selection")
+        );
+        assert_eq!(
+            self.app
+                .content
+                .active()
+                .runtime_package()
+                .unwrap()
+                .package_hash,
+            self.package_hash
+        );
+        self.redraw(event_loop);
+        let after_hdr = self
+            .app
+            .renderer
+            .as_mut()
+            .unwrap()
+            .device_loss_probe_presented_hdr();
+        let relative = (after_hdr - self.before_hdr).abs() / self.before_hdr;
+        assert!(relative <= 1e-6, "preserved scene HDR drift: {relative}");
+        // Deliberate stale-event negative control; loss above came from wgpu.
+        self.app.user_event(
+            event_loop,
+            GpuEvent::DeviceLost {
+                renderer_id: self.old_id,
+                reason: "stale-negative-control".into(),
+                message: "must be ignored".into(),
+            },
+        );
+        self.app.user_event(
+            event_loop,
+            GpuEvent::UncapturedError {
+                renderer_id: self.old_id,
+                message: "stale-negative-control".into(),
+            },
+        );
+        assert_eq!(self.app.renderer.as_ref().unwrap().id(), new_id);
+        assert!(self.app.state.failure.is_none());
+        if let Some(started) = self.retry_started {
+            assert!(started.elapsed() >= Duration::from_millis(250));
+            assert_eq!(self.app.recovery_retry.attempts(), 2);
+            assert!(!self.app.recovery_retry.active());
+        }
+        let evidence = json!({ "passed": true, "round": std::env::var("DEEP_WINDOW_LOSS_CHILD").unwrap(),
+            "sourceHash":deep_engine_native::runtime_package::runtime_content_sha256(&json!(deep_engine_native::native_mesh_wgsl::native_mesh_shader_source())),
+            "hashEncoding":"canonical-json-wgsl-source",
+        "retryInjection":self.retry,"creationAttempts":self.app.recovery_retry.attempts(),"injectedFailures":u8::from(self.retry),
+        "strategy": "destroyed-native-window-rebuild", "realCallbacks": self.lost_callbacks,
+        "oldRenderer": self.old_id, "newRenderer": new_id, "packageHash": self.package_hash,
+        "beforeHdr": self.before_hdr, "afterHdr": after_hdr, "relativeHdrDifference": relative,
+        "presented": true, "viewPreserved": true, "selectionPreserved": true, "staleEventsRejected": true });
+        if let Some(output) = std::env::var_os("J3_WINDOW_NATIVE_OUTPUT") {
+            std::fs::create_dir_all(&output).unwrap();
+            std::fs::write(
+                PathBuf::from(output).join(format!(
+                    "{}round-{}.json",
+                    if self.retry { "retry-" } else { "" },
+                    std::env::var("DEEP_WINDOW_LOSS_CHILD").unwrap()
+                )),
+                evidence.to_string(),
+            )
+            .unwrap();
+        }
+        println!("J3_WINDOW_RECOVERY {}", evidence);
+        self.stage = 2;
+        event_loop.exit();
     }
 }
