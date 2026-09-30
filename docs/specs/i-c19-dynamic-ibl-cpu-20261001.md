@@ -172,3 +172,11 @@ node scripts/i-c19-dynamic-ibl-frame.mjs --round=1 --round=2
 - 光源大改不失效 IBL 是设计裁定而非实测结论；若未来引入"光源影响环境"的特性（如光源烘焙
   进 IBL），该行失效矩阵必须重审。
 - 行数门：四个源文件均按 ≤300 行设计，超门即拆分，不进 LEGACY_OVERSIZED。
+
+## GPU 实施与验证（2026-10-01 主线程刀）
+
+`lab/iC19DynamicIblProduction.ts` + `scripts/i-c19-dynamic-ibl-frame.mjs`（I-C15 模式）两 fresh 轮全过：
+(a) 同场景同视角下 GPU prefilter（radiance-hdr）与 CPU 参考镜像（prefiltered-ibl 编码）渲染帧逐半像素对拍 129600 样本 maxAbs=9.77e-4（mean 7.2e-5）≤ .002——平滑 fp16 舍入渐变输入；高频棋盘输入会放大 equirect 插值差（诊断记录，不作门）。
+(b) 热替换 A→B→A：包级 stageEnvironment 序列代际回落、第二轮 A 与首轮 A 帧差=0、session.resourceCount 54→54→54。
+(c) 重整包 stage 后帧全有限（keptMips=3 记录）；**采样级 lod 钳制需要 pbrRenderer/mainBindings 接线，属 wired-followup**，evidence excluded 显式登记。
+(d) popErrorScope 空、renderer.dispose 后 session.resourceCount=0、两轮数值逐位稳定、源哈希新鲜。
