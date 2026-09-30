@@ -80,15 +80,15 @@ mod tests {
             include_str!("../../deep-engine/wgsl/brdfDirectMultiscattering.wgsl.sha256"),
             "brdfDirectMultiscattering",
         );
-        for shader in [
-            include_str!("../assets/shaders/native_mesh_v1.wgsl"),
-            include_str!("../assets/shaders/native_mesh_rt_fragment_v1.wgsl"),
+        for (shader, direct_calls) in [
+            (include_str!("../assets/shaders/native_mesh_v1.wgsl"), 2),
+            (include_str!("../assets/shaders/native_mesh_rt_fragment_v1.wgsl"), 1),
         ] {
             assert_eq!(
                 shader
                     .matches("color += native_direct_multiscattering(")
                     .count(),
-                1
+                direct_calls
             );
             assert_eq!(shader.matches("vec2f(nv, rough), 0.0).rg").count(), 1);
         }

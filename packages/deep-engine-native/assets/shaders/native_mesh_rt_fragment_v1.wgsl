@@ -74,7 +74,7 @@ fn rt_directional_visibility(world: vec3f, light: vec3f) -> f32 {
     color += native_direct_multiscattering(normal, light, base, metal, rough, dielectric, dfg) * sun * visibility;
   }
   if (frame.sunColor.w == 3.0) {
-    color += local_direct_lighting(input.world, normal, view, base, metal, rough, !flag(input.material.w,16u), ao, dielectric, input.clip);
+    color += local_direct_lighting(input.world, normal, view, base, metal, rough, !flag(input.material.w,16u), ao, dielectric, input.clip, dfg, frame.background.w > 0.5 || direct_lit);
   }
   if (frame.background.w > 0.5) {
     // Zero is the legacy/default value; authored GI uses the reserved
@@ -100,7 +100,7 @@ fn rt_directional_visibility(world: vec3f, light: vec3f) -> f32 {
   color += input.emissive_alpha.rgb * emission;
   let exposure = select(1.0, frame.lightingOptions.x, authored_light);
   var surface_color = select(color, base, flag(input.material.w, 64u));
-  if (frame.fogProjection.z == 2.0) {
+  if (frame.fogProjection.z == 2.0 && !flag(input.material.w, 32u)) {
     // clip W is signed camera-space depth; no radial-distance or fixed near/far approximation.
     let camera_depth = max((frame.view * vec4f(input.world, 1.0)).w, 0.0);
     let optical_depth = frame.tuning.w * camera_depth;

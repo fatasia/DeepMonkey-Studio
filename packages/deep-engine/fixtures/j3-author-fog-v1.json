@@ -1,0 +1,12 @@
+{
+  "schema": "j3-authored-exp2-common-v1",
+  "color": [0.0625, 0.25, 0.5],
+  "scenarios": [
+    { "id": "control", "density": 0, "materialFog": true },
+    { "id": "density-low", "density": 0.08, "materialFog": true },
+    { "id": "density-high", "density": 0.2, "materialFog": true },
+    { "id": "material-opt-out", "density": 0.2, "materialFog": false }
+  ],
+  "cpuAbsoluteTolerance": 0.001,
+  "crossHostAbsoluteTolerance": 0.001
+}

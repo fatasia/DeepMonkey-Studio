@@ -354,3 +354,7 @@ mod j3_shadow_visibility;
 
 #[path = "support/c8_direct_multiscattering.rs"]
 mod c8_direct_multiscattering;
+#[path = "support/j3_author_fog.rs"]
+mod j3_author_fog;
+#[path = "support/c8_local_direct_multiscattering.rs"]
+mod c8_local_direct_multiscattering;

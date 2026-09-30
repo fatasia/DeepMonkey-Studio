@@ -407,8 +407,10 @@ fn native_direct_multiscattering(normal: vec3f, light: vec3f, base: vec3f,
   return deepDirectMultiscatteringEnergy(mix(vec3f(dielectric), base, metal), dfg_view, dfg_light) * nl;
 }
 
-fn local_direct_lighting(world: vec3f, normal: vec3f, view: vec3f, base: vec3f, metal: f32, rough: f32, receiveShadow: bool, ao: f32, dielectric: f32, screen: vec4f) -> vec3f {
+fn local_direct_lighting(world: vec3f, normal: vec3f, view: vec3f, base: vec3f, metal: f32, rough: f32, receiveShadow: bool, ao: f32, dielectric: f32, screen: vec4f, dfg_view_input: vec2f, dfg_ready_input: bool) -> vec3f {
   var color = vec3f(0.0);
+  var dfg_view = dfg_view_input;
+  var dfg_ready = dfg_ready_input;
   let cluster_valid = cluster_grid[0u] == 1u && cluster_grid[1u] == 64u && cluster_grid[2u] == 16u;
   let ndc = screen.xy / max(screen.w, 0.00001);
   let tile_x = min(u32(clamp(ndc.x * 0.5 + 0.5, 0.0, 0.999999) * 8.0), 7u);
@@ -457,6 +459,15 @@ fn local_direct_lighting(world: vec3f, normal: vec3f, view: vec3f, base: vec3f, 
       visibility = local_spot_visibility(shadowIndex, source.coneDecay.w, world, max(dot(normal,direction),0.0), frame.localShadowSoftness[index / 4u][index % 4u]);
     }
     color += brdfWithDielectricF0(normal, view, direction, base, metal, rough, dielectric) * source.radianceOuter.rgb * attenuation * visibility;
+    if (dot(normal, direction) > 0.0 && any(source.radianceOuter.rgb > vec3f(0.0)) && attenuation > 0.0 && visibility > 0.0) {
+      if (!dfg_ready) {
+        let local_nv = clamp(dot(normal, view), 0.001, 1.0);
+        dfg_view = textureSampleLevel(brdf_lut, environment_sampler, vec2f(local_nv, rough), 0.0).rg;
+        dfg_ready = true;
+      }
+      color += native_direct_multiscattering(normal, direction, base, metal, rough, dielectric, dfg_view)
+        * source.radianceOuter.rgb * attenuation * visibility;
+    }
   }
   return color;
 }
@@ -553,7 +564,7 @@ fn shade_native_mesh(
     color += native_direct_multiscattering(normal, light, base, metal, rough, dielectric, dfg) * sun * visibility;
   }
   if (frame.sunColor.w == 3.0) {
-    color += local_direct_lighting(input.world, normal, view, base, metal, rough, !flag(input.material.w,16u), ao, dielectric, input.clip);
+    color += local_direct_lighting(input.world, normal, view, base, metal, rough, !flag(input.material.w,16u), ao, dielectric, input.clip, dfg, frame.background.w > 0.5 || direct_lit);
   }
   if (frame.background.w > 0.5) {
     // Zero is the legacy/default value; authored GI uses the reserved
@@ -589,7 +600,7 @@ fn shade_native_mesh(
   color += input.emissive_alpha.rgb * emission;
   let exposure = select(1.0, frame.lightingOptions.x, authored_light);
   var surface_color = select(color, base, flag(input.material.w, 64u));
-  if (frame.fogProjection.z == 2.0) {
+  if (frame.fogProjection.z == 2.0 && !flag(input.material.w, 32u)) {
     // clip W is signed camera-space depth; no radial-distance or fixed near/far approximation.
     let camera_depth = max((frame.view * vec4f(input.world, 1.0)).w, 0.0);
     let optical_depth = frame.tuning.w * camera_depth;

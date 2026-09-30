@@ -263,9 +263,12 @@ fn generate_brdf_lut(size: u32) -> PreparedIblTexture2d {
                 let nh = half[2].max(0.0);
                 let vh = dot(view, half).max(0.0);
                 if nl > 0.0 {
-                    let k = roughness * roughness / 2.0;
-                    let geometry = (nv / (nv * (1.0 - k) + k)) * (nl / (nl * (1.0 - k) + k));
-                    let visibility = geometry * vh / (nh * nv).max(0.0001);
+                    let alpha = roughness * roughness;
+                    let a2 = alpha * alpha;
+                    let gv = nl * (a2 + (1.0 - a2) * nv * nv).sqrt();
+                    let gl = nv * (a2 + (1.0 - a2) * nl * nl).sqrt();
+                    let visibility =
+                        4.0 * nl * (0.5 / (gv + gl).max(0.000001)) * vh / nh.max(0.0001);
                     let fresnel = (1.0 - vh).powi(5);
                     result[0] += (1.0 - fresnel) * visibility;
                     result[1] += fresnel * visibility;

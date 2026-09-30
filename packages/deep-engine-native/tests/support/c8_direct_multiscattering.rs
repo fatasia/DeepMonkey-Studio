@@ -9,13 +9,13 @@ use deep_engine_native::{
 use serde_json::{Value, json};
 use winit::dpi::PhysicalSize;
 #[path = "j3_hdr_frame.rs"]
-mod hdr_frame;
-const PACKAGE: &[u8] = include_bytes!("../fixtures/runtime-package-v1.json");
-const MANIFEST: &str = include_str!("../../../deep-engine/fixtures/j3-hdr-flat-normal-v1.json");
-fn vector(value: &Value) -> [f32; 3] {
+pub(super) mod hdr_frame;
+pub(super) const PACKAGE: &[u8] = include_bytes!("../fixtures/runtime-package-v1.json");
+pub(super) const MANIFEST: &str = include_str!("../../../deep-engine/fixtures/j3-hdr-flat-normal-v1.json");
+pub(super) fn vector(value: &Value) -> [f32; 3] {
     std::array::from_fn(|i| value[i].as_f64().unwrap() as f32)
 }
-fn energy(f0: f64) -> f64 {
+pub(super) fn energy(f0: f64) -> f64 {
     let single = f0 * 0.5 + 0.04;
     let lost = 1.0 - (0.5 + 0.04);
     let average = f0 + (1.0 - f0) * 0.047619;
