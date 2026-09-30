@@ -38,6 +38,7 @@ try {
     await page.evaluate(() => window.__j3ContinueFailure());
     const observed = await page.evaluate(() => Promise.race([window.__j3Run,
       new Promise((_, reject) => setTimeout(() => reject(new Error("candidate failure evidence timed out after 45s")), 45_000))]));
+    await writeFile(path.join(output, "observed-" + round + ".json"), JSON.stringify(observed, null, 2));
     assert.deepEqual(observed.stimulus, ["synthetic-recreated-notification", "actual-candidate-device-destroy"]); assert.equal(observed.actualUnknownDriverFault, false);
     assert.equal(observed.immediateFallback, true); assert.equal(observed.activeBackend, "webgl"); assert.equal(observed.authorOpacity, "1");
     assert.equal(observed.differentDevice, true); assert.equal(observed.createdCandidates, 2);

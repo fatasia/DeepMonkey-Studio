@@ -66,3 +66,5 @@
 Web epoch候选成功替换已提交 `1a8f8cae`，实际新device/资源重传和有效首帧后发布；失败门 `a8a13ab8` 修复same-view缓存忽略session/device代次的缺口。两fresh真实GPU轮：候选ready/84资源后actual device.destroy，入场拒绝、failure1、旧与失败候选资源0、Deep Canvas0；作者相机/对象与RGBA指纹保持。宿主recreated通知明确模拟，actualUnknownDriverFault=false。C25真实非空设备/相机变更、两种恢复失败重试两轮通过；加载竞态与成功后错误反馈另修后重新验，尚不提前关闭。当前contracts→engine→web构建与runtime freshness通过，新增生产shader之后严格J5待执行。
 
 I-C25已关闭：34测、真实非空设备/相机改变与还原、增量失败→全量失败→成功重试，以及成功清除旧错误。显式WebGL和无renderer参数偏好恢复各两轮通过，两个加载竞态修复保留旧代取消；页面错误0、每轮4 receipt、Performance Timeline只保留一条。最终两轮深色1080已验图，contracts/engine/web构建、Web类型与runtime freshness通过。当前5/61=8.2%，I2/10=20%，剩余56项359–732h，含旧T核查386–786h。C8材质第二候选实际显示max1、斜视HDR差异较S4降低86.6%，严格HDR门仍未过；不算整项关闭。
+
+最新 `3aaeec5e`：I-C15生产双探针、盒边过渡、11点权重、候选回滚/回收及作者保存重载全部实机两轮通过，本项关闭。新增窗口suite首次strict其余24腿通过，候选两轮稳定性失败；固定实际loss已观察的候选边界并保留完整子日志后，仅fresh复测窗口/成功/失败候选，双端与Web专项各两轮passed/stable/currentRun，4811源前后一致。原失败全量证据保留。当前6/61=9.8%，I3/10=30%，余55项355–724h，含T核查382–778h。主线程接Native actual normal MRT，三路继续C8片元观测/J3 real normal-shadow/I-C18生产接线；完整C8/D/E仍保留。

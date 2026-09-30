@@ -38,6 +38,9 @@ export async function runJ3DeviceEpochFailureProbe() {
         candidateReadyBeforeDestroy = runtime.session.state === "ready";
         candidateResourcesBeforeDestroy = runtime.session.resourceCount;
         runtime.session.device.destroy();
+        // Exercise an already lost candidate before Bridge admission, independently
+        // of the driver's asynchronous device-loss delivery order.
+        await runtime.session.device.lost;
       }
       return backend;
     }

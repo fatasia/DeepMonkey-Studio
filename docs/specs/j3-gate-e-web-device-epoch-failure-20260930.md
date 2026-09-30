@@ -25,6 +25,8 @@
 
 断言实际两device身份不同、候选确实ready后被销毁、old与failed candidate都disposed且资源0、Deep Canvas0、WebGL可见、failure恰1、旧回调重复不生第三候选；相机、作者对象身份及1800×880 RGBA sum/FNV32指纹保留。实际old/candidate device.lost都必须为destroyed。两个fresh Chrome实例记录稳定，截图只dark1920×1080。
 
+主线新增窗口suite首次运行其余24腿通过，失败候选两轮最终记录不同，旧外层日志未保留原断言差值；单独复现两轮通过。候选夹具现在销毁实际device后等待其真实device.lost，再交给Bridge，固定“loss已观察、候选尚未入场”边界，保留全字段deepEqual与原容差。runner每轮断言前保存observed-N.json，suite完整子日志保留原始差值；不把未获取的首次差值写成已证实根因。
+
 ## 验证入口
 
 `node scripts/j3-device-epoch-failure.mjs`输出到`test-output/interrupted-0930/epoch-failure/`。本门只运行Web，currentRun=true仅表示当前独立失败候选门；真实unknown驱动故障、驱动VRAM和恢复耗时另列。脚本语法、diff与web类型检查通过，类型日志`test-output/interrupted-0930/epoch-failure-types.log`。

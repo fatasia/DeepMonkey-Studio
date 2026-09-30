@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 
 const root = path.resolve(fileURLToPath(import.meta.url), "../..");
 const output = "test-output/interrupted-0930/window-recovery-suite/evidence.json";
+const logDirectory = "test-output/interrupted-0930/window-recovery-suite";
 export const WINDOW_RECOVERY_COMPONENTS = [
   { id: "actual-window", script: "scripts/j3-window-recovery-parity.mjs", evidence: "test-output/interrupted-0930/window-recovery/evidence.json" },
   { id: "web-candidate-success", script: "scripts/j3-device-epoch-replacement.mjs", evidence: "test-output/interrupted-0930/epoch-replacement/evidence.json" },
@@ -16,6 +17,30 @@ export const WINDOW_RECOVERY_COMPONENTS = [
 export function freshWindowEnvironment(env) {
   const child = { ...env }; delete child.DEEP_WINDOW_LOSS_CHILD; delete child.J3_WINDOW_NATIVE_OUTPUT;
   return child;
+}
+
+/** Preserve full child diagnostics before rethrowing; J5's compact tail is not a process log. */
+export function createWindowRecoveryScriptRunner({ spawn = spawnSync,
+  writeLog = async (file, content) => {
+    await mkdir(path.dirname(path.join(root, file)), { recursive: true });
+    await writeFile(path.join(root, file), content);
+  }, stdout = value => process.stdout.write(value), stderr = value => process.stderr.write(value),
+} = {}) {
+  return async script => {
+    assert(WINDOW_RECOVERY_COMPONENTS.some(component => component.script === script), "unknown window suite child");
+    const startedAt = new Date().toISOString();
+    const result = spawn(process.execPath, [path.join(root, script)], { cwd: root, env: freshWindowEnvironment(process.env),
+      encoding: "utf8", timeout: 180_000, maxBuffer: 16 * 1024 * 1024 });
+    const log = `${logDirectory}/${path.basename(script, ".mjs")}.log`;
+    await writeLog(log, `script=${script}\nstartedAt=${startedAt}\nfinishedAt=${new Date().toISOString()}\nexit=${result.status}\n`
+      + `stdout:\n${result.stdout ?? ""}\nstderr:\n${result.stderr ?? ""}\nprocessError:\n${result.error?.stack ?? ""}\n`);
+    if (result.stdout) stdout(result.stdout);
+    if (result.stderr) stderr(result.stderr);
+    if (result.error || result.status !== 0) {
+      const cause = result.error ?? new Error(result.stderr?.trim() || result.stdout?.trim() || "Child produced no diagnostic output.");
+      throw new Error(`${script} failed with exit ${result.status}; full child log: ${log}`, { cause });
+    }
+  };
 }
 
 export async function snapshotWindowRecoverySources() {
@@ -39,14 +64,7 @@ export async function snapshotWindowRecoverySources() {
 
 /** Existing children own their GPU/Cargo work, once each and sequentially. */
 export async function executeWindowRecoverySuite({
-  runScript = script => {
-    const result = spawnSync(process.execPath, [path.join(root, script)], { cwd: root, env: freshWindowEnvironment(process.env),
-      encoding: "utf8", timeout: 180_000, maxBuffer: 16 * 1024 * 1024 });
-    if (result.stdout) process.stdout.write(result.stdout);
-    if (result.stderr) process.stderr.write(result.stderr);
-    if (result.error) throw result.error;
-    if (result.status !== 0) throw new Error(`${script} failed with exit ${result.status}`);
-  },
+  runScript = createWindowRecoveryScriptRunner(),
   removeEvidence = file => rm(path.join(root, file), { force: true }),
   readEvidence = async file => JSON.parse(await readFile(path.join(root, file), "utf8")),
   snapshotSources = snapshotWindowRecoverySources,

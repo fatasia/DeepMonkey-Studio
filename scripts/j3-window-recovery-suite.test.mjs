@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { executeWindowRecoverySuite, freshWindowEnvironment, snapshotWindowRecoverySources, WINDOW_RECOVERY_COMPONENTS } from "./j3-window-recovery-suite.mjs";
+import { createWindowRecoveryScriptRunner, executeWindowRecoverySuite, freshWindowEnvironment, snapshotWindowRecoverySources, WINDOW_RECOVERY_COMPONENTS } from "./j3-window-recovery-suite.mjs";
 
 function setup() {
   const calls = [], removed = [], published = [];
@@ -73,4 +73,34 @@ test("the complete product identity includes Native production shader assets and
   const identity = await snapshotWindowRecoverySources();
   assert.match(identity.sources["packages/deep-engine-native/assets/shaders/native_mesh_v1.wgsl"], /^[0-9a-f]{64}$/);
   assert.match(identity.sources["packages/deep-engine-native/tests/fixtures/runtime-package-author-lod-v1.json"], /^[0-9a-f]{64}$/);
+});
+
+test("failed child persists full stdout/stderr and preserves the original assertion as cause", async () => {
+  const logs = [], forwarded = [], out = "complete output\n" + "source-line\n".repeat(2000);
+  const original = "AssertionError [ERR_ASSERTION]: fresh product instances must repeat stably\n+ actual\n- expected\n  fatalCalls: [0, 1]\n";
+  const runner = createWindowRecoveryScriptRunner({ spawn: () => ({ status: 1, stdout: out, stderr: original }),
+    writeLog: async (...args) => logs.push(args), stdout: value => forwarded.push(value), stderr: value => forwarded.push(value) });
+  await assert.rejects(runner(WINDOW_RECOVERY_COMPONENTS[2].script), error => {
+    assert.match(error.message, /full child log: .*j3-device-epoch-failure\.log/);
+    assert.equal(error.cause.message, original.trim()); return true;
+  });
+  assert.equal(logs.length, 1); assert(logs[0][1].includes(out)); assert(logs[0][1].includes(original));
+  assert.match(logs[0][1], /startedAt=.*\nfinishedAt=.*\nexit=1/); assert.deepEqual(forwarded, [out, original]);
+});
+
+test("successful child logs are persisted too, once per original command", async () => {
+  const logs = [], calls = [];
+  const runner = createWindowRecoveryScriptRunner({ spawn: (...args) => { calls.push(args); return { status: 0, stdout: "fresh child", stderr: "" }; },
+    writeLog: async (...args) => logs.push(args), stdout: () => {}, stderr: () => {} });
+  for (const component of WINDOW_RECOVERY_COMPONENTS) await runner(component.script);
+  assert.equal(calls.length, 3); assert.equal(new Set(logs.map(log => log[0])).size, 3);
+  assert(logs.every(log => log[1].includes("exit=0") && log[1].includes("fresh child")));
+});
+
+test("spawn timeout retains partial diagnostics and its original error", async () => {
+  const logs = [], timeout = Object.assign(new Error("spawn timed out"), { code: "ETIMEDOUT" });
+  const runner = createWindowRecoveryScriptRunner({ spawn: () => ({ status: null, stdout: "partial progress", stderr: "", error: timeout }),
+    writeLog: async (...args) => logs.push(args), stdout: () => {}, stderr: () => {} });
+  await assert.rejects(runner(WINDOW_RECOVERY_COMPONENTS[0].script), error => error.cause === timeout);
+  assert(logs[0][1].includes("partial progress")); assert(logs[0][1].includes("spawn timed out"));
 });

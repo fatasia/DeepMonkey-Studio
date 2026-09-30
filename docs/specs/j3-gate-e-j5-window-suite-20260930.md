@@ -13,16 +13,22 @@ J5增加一对实际窗口恢复判据；Web完整候选成功与失败作为同
 
 **已有（不重建）**：真实窗口默认双端门、Web两专项、J5策略/去重/序列执行和证据写入。
 
-**真实缺口**：实际门尚未进入J5必跑图；没有同组fresh/source稳定证据汇总，也没有旧receipts或专项失败会阻断最终门的CPU自测。
+**真实缺口（本刀已补）**：实际门进入J5必跑图，同组fresh/source稳定证据汇总和失败传播CPU测试已接入。首轮strict的窗口对因失败候选两轮比较红；外层只截取尾部5行，原断言差值未落盘，补完整子日志。
 
 ## 最小接线
 
 独立suite先清旧汇总与3个子门evidence，按窗口默认→Web完整候选成功→Web实际候选失败顺序各运行一次，拒绝非零退出/非fresh/非stable/非passed。只有3个fresh子门和源码身份前后都通过才写currentRun=true汇总；原窗口runner拥有Native具名Cargo执行，不重复执行该测试。
 
+三个子进程的完整stdout/stderr、开始/结束时间和exit均写入 `test-output/interrupted-0930/window-recovery-suite/<runner-name>.log`，成功和失败都保留；失败Error包含日志路径，并以cause保存原stderr断言或进程错误。超时也保留已有输出。日志仅用于诊断，通过汇总仍须满足全部fresh和源码身份门。
+
 J5新增device-recovery-product-window对，两腿同`node scripts/j3-window-recovery-suite.mjs`按现command机制去重。双端窗口语义分别是Native实际destroyed重建和Web实际destroyed回退；专项明确为Web synthetic recreated通知与actual GPU candidate操作，actualUnknownDriverFault=false。
 
 ## 验证
 
+当前 production 集成：首次 strict 13对26腿的其余24腿通过，窗口候选失败的两轮稳定性断言失败；原记录 `evidence-20260930104050.json` 保留失败。修正候选实际 device.lost 等待边界并补完整子日志后，仅重跑发生变化的 fresh 窗口suite，passed/stable/currentRun 全为 true。两 fresh Native 子进程、两 Web destroyed 回退、成功/失败候选各两 fresh Web，共4811个生产源的前后身份一致（sha256 `3e74af27c0280acb228bbbc609b2f206e90adea5e649d41cf07a166e7efc925d`）。证据 `test-output/interrupted-0930/window-recovery-suite/evidence.json`，日志 `window-suite-final-run.log`。这是24腿既有集成结果加变更窗口专项复测，不改写成一次新的26腿全量运行。编排与日志37测通过。
+
 仅CPU编排自测，最终Cargo/GPU由主线串行。新增第13对26腿；CPU模式新增两GPU格跳过、strict必须运行整个suite且失败传播。真实新suite汇总待主线最终运行。
 
-两文件CPU编排自测33测通过，日志`test-output/interrupted-0930/j5-window-suite-tests.log`。覆盖三子命令顺序/去重、任一退出失败、不稳定/旧receipts、来源哈希缺省/漂移、隐式Native child环境、源身份期间变更及最终J5两腿失败传播。实际只读完整source快照成功；strict dry-run只列13对26腿，日志`j5-window-suite-plan.log`，没有运行Cargo/GPU。sources覆盖Web/contract/engine/Native代码、canonical WGSL、Native实际runtime-package夹具、依赖lock、子门与suite入口；子evidence源哈希逐项对初始快照，最终全体sha256必须保持。
+两文件CPU编排自测37测通过，日志`test-output/interrupted-0930/j5-window-suite-tests.log`。覆盖三子命令顺序/去重、任一退出失败、不稳定/旧receipts、来源哈希缺省/漂移、隐式Native child环境、源身份期间变更、完整长输出/原assertion cause/超时输出，以及最终J5两腿失败传播。实际只读完整source快照成功；strict dry-run只列13对26腿，日志`j5-window-suite-plan.log`，没有运行Cargo/GPU。sources覆盖Web/contract/engine/Native代码、Native/assets生产shader、canonical WGSL、Native实际runtime-package夹具、依赖lock、子门与suite入口；子evidence源哈希逐项对初始快照，最终全体sha256必须保持。
+
+根首轮strict实际12对24腿通过，窗口对两腿共享同一次失败。根随后单独重跑失败候选两轮PASS，当前全组fresh suite重验待执行；原12对无需重复定位。
