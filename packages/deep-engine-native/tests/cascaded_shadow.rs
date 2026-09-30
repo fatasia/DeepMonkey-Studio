@@ -2,6 +2,8 @@ use deep_engine_native::cascaded_shadow::{
     CASCADED_SHADOW_UNIFORM_BYTES, CascadedShadowCamera, CascadedShadowOptions, CascadedShadowPlan,
     plan_cascaded_shadows, plan_cascaded_shadows_for_scene,
 };
+#[path = "support/j2_csm_linear.rs"]
+mod j2_csm_linear;
 use deep_engine_native::scene_bounds::SceneWorldBounds;
 
 fn camera(x: f32) -> CascadedShadowCamera {

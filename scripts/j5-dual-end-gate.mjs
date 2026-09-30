@@ -160,6 +160,16 @@ export const GATE_PAIRS = [
         command: "node scripts/j3-geometry-depth-parity.mjs", note: "生产 mesh pass 保留观察深度；4xMSAA 合法边界，不认证材质色差" },
     ],
   },
+  {
+    id: "csm-linear-boundary",
+    name: "共同七点与线性PCF边界(J2-B4)",
+    legs: [
+      { id: "csm-linear:ts-gpu", side: "ts", requiresGpu: true,
+        command: "node scripts/j2-csm-linear-parity.mjs", note: "三族真实Chrome采样，固定深度/子像素边缘，独立CPU oracle" },
+      { id: "csm-linear:native-gpu", side: "native", requiresGpu: true,
+        command: "node scripts/j2-csm-linear-parity.mjs", note: "实际Native生产CSM，nearest/linear确实不同，两轮共同输入" },
+    ],
+  },
 ];
 
 /** GPU 腿策略:off=默认 CPU/静态口径;auto=探测可用才跑;strict=不可用即门失败。

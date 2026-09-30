@@ -1,0 +1,11 @@
+{
+  "schema": "j2-csm-parity-v1",
+  "size": 4,
+  "depths": [1, 1.8, 1.9, 2, 2.1, 4, 4.1],
+  "blendStarts": [1.8, 2],
+  "uvXs": [0.125, 0.3125, 0.4375, 0.5, 0.5625, 0.6875, 0.875],
+  "clearDepths": [0.75, 0.25],
+  "edgeRightDepths": [0.25, 0.75],
+  "receiverDepth": 0.5,
+  "maxError": 0.000002
+}
