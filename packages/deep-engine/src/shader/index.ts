@@ -17,3 +17,4 @@ export * from "./materialLayeredEvaluate.js";
 export * from "./materialLayerBlendWgsl.js";
 export * from "./displayColorBackends.js";
 export * from "./schlickFactorGlsl.js";
+export * from "./ggxVisibilityGlsl.js";

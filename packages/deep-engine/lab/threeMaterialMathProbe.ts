@@ -7,8 +7,9 @@ import { sha256Utf8 } from "../src/shaderPackage/hash.js";
 export const width = 384, height = 224;
 type Frame = { name: string; pixels: number[]; directCoverage: number; drawCalls: number; triangles: number };
 
-export function runThreeMaterialMathProbe() {
+export function runThreeMaterialMathProbe(observePrograms?: (value: { patched: boolean; fragments: readonly string[] }) => void) {
   const original = THREE.ShaderChunk.common, originalTone = THREE.ShaderChunk.tonemapping_pars_fragment;
+  const originalPhysical = THREE.ShaderChunk.lights_physical_pars_fragment;
   const renderers: THREE.WebGLRenderer[] = [], materials: THREE.Material[] = [], targets: THREE.WebGLRenderTarget[] = [];
   const scenes: [string, THREE.Scene, THREE.Light[]][] = [], errors: string[] = [];
   const geometry = new THREE.SphereGeometry(.8, 24, 16), quad = new THREE.PlaneGeometry(2, 2);
@@ -65,6 +66,7 @@ export function runThreeMaterialMathProbe() {
     if (patched && !(renderer.info.programs ?? []).every(program => gl.getShaderSource(program.fragmentShader)?.includes("float fresnel = deepSharedSchlickFactor( dotVH );"))) {
       throw Error("Actual lit material programs did not consume the production Fresnel factor");
     }
+    observePrograms?.({ patched, fragments: (renderer.info.programs ?? []).map(program => gl.getShaderSource(program.fragmentShader) ?? "") });
     if (gl.getError() !== gl.NO_ERROR) errors.push("GL error after material/numeric draws");
     return { frames, numbers };
   }
@@ -96,5 +98,6 @@ export function runThreeMaterialMathProbe() {
     materials.forEach(material => material.dispose()); targets.forEach(target => target.dispose()); roughnessMap.dispose(); geometry.dispose(); quad.dispose();
     renderers.forEach(renderer => { renderer.dispose(); renderer.forceContextLoss(); });
     THREE.ShaderChunk.common = original; THREE.ShaderChunk.tonemapping_pars_fragment = originalTone;
+    THREE.ShaderChunk.lights_physical_pars_fragment = originalPhysical;
   }
 }
