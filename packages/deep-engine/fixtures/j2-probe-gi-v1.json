@@ -1,0 +1,453 @@
+{
+  "schema": "j2-probe-gi-v1",
+  "tolerance": 0.00001,
+  "levels": [
+    {
+      "level": 0,
+      "origin": [
+        0,
+        0,
+        0
+      ],
+      "spacing": 1,
+      "gridSize": [
+        2,
+        2,
+        2
+      ],
+      "originCell": [
+        0,
+        0,
+        0
+      ],
+      "max": [
+        1,
+        1,
+        1
+      ],
+      "probeCount": 8
+    },
+    {
+      "level": 1,
+      "origin": [
+        -1,
+        -1,
+        -1
+      ],
+      "spacing": 4,
+      "gridSize": [
+        2,
+        2,
+        2
+      ],
+      "originCell": [
+        0,
+        0,
+        0
+      ],
+      "max": [
+        3,
+        3,
+        3
+      ],
+      "probeCount": 8
+    }
+  ],
+  "records": [
+    {
+      "irradiance": [
+        0.25,
+        0.125,
+        0.25
+      ],
+      "validity": 1,
+      "meanDistance": 100,
+      "distanceVariance": 0.05,
+      "occlusionFloor": 0,
+      "positionOffset": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "irradiance": [
+        0.75,
+        0.125,
+        0.25
+      ],
+      "validity": 1,
+      "meanDistance": 100,
+      "distanceVariance": 0.05,
+      "occlusionFloor": 0,
+      "positionOffset": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "irradiance": [
+        0.25,
+        0.625,
+        0.25
+      ],
+      "validity": 1,
+      "meanDistance": 100,
+      "distanceVariance": 0.05,
+      "occlusionFloor": 0,
+      "positionOffset": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "irradiance": [
+        0.75,
+        0.625,
+        0.25
+      ],
+      "validity": 1,
+      "meanDistance": 100,
+      "distanceVariance": 0.05,
+      "occlusionFloor": 0,
+      "positionOffset": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "irradiance": [
+        0.25,
+        0.125,
+        0.5
+      ],
+      "validity": 1,
+      "meanDistance": 100,
+      "distanceVariance": 0.05,
+      "occlusionFloor": 0,
+      "positionOffset": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "irradiance": [
+        0.75,
+        0.125,
+        0.5
+      ],
+      "validity": 1,
+      "meanDistance": 100,
+      "distanceVariance": 0.05,
+      "occlusionFloor": 0,
+      "positionOffset": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "irradiance": [
+        0.25,
+        0.625,
+        0.5
+      ],
+      "validity": 1,
+      "meanDistance": 100,
+      "distanceVariance": 0.05,
+      "occlusionFloor": 0,
+      "positionOffset": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "irradiance": [
+        0.75,
+        0.625,
+        0.5
+      ],
+      "validity": 1,
+      "meanDistance": 100,
+      "distanceVariance": 0.05,
+      "occlusionFloor": 0,
+      "positionOffset": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "irradiance": [
+        0.125,
+        0.5,
+        0.125
+      ],
+      "validity": 1,
+      "meanDistance": 100,
+      "distanceVariance": 0.05,
+      "occlusionFloor": 0,
+      "positionOffset": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "irradiance": [
+        0.375,
+        0.5,
+        0.125
+      ],
+      "validity": 1,
+      "meanDistance": 100,
+      "distanceVariance": 0.05,
+      "occlusionFloor": 0,
+      "positionOffset": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "irradiance": [
+        0.125,
+        0.75,
+        0.125
+      ],
+      "validity": 1,
+      "meanDistance": 100,
+      "distanceVariance": 0.05,
+      "occlusionFloor": 0,
+      "positionOffset": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "irradiance": [
+        0.375,
+        0.75,
+        0.125
+      ],
+      "validity": 1,
+      "meanDistance": 100,
+      "distanceVariance": 0.05,
+      "occlusionFloor": 0,
+      "positionOffset": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "irradiance": [
+        0.125,
+        0.5,
+        0.625
+      ],
+      "validity": 1,
+      "meanDistance": 100,
+      "distanceVariance": 0.05,
+      "occlusionFloor": 0,
+      "positionOffset": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "irradiance": [
+        0.375,
+        0.5,
+        0.625
+      ],
+      "validity": 1,
+      "meanDistance": 100,
+      "distanceVariance": 0.05,
+      "occlusionFloor": 0,
+      "positionOffset": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "irradiance": [
+        0.125,
+        0.75,
+        0.625
+      ],
+      "validity": 1,
+      "meanDistance": 100,
+      "distanceVariance": 0.05,
+      "occlusionFloor": 0,
+      "positionOffset": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "irradiance": [
+        0.375,
+        0.75,
+        0.625
+      ],
+      "validity": 1,
+      "meanDistance": 100,
+      "distanceVariance": 0.05,
+      "occlusionFloor": 0,
+      "positionOffset": [
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "blend-center",
+      "worldPosition": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "worldNormal": [
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "blend-edge",
+      "worldPosition": [
+        0.25,
+        0.5,
+        0.75
+      ],
+      "worldNormal": [
+        0.7,
+        0.7,
+        0
+      ]
+    },
+    {
+      "id": "fine-boundary",
+      "worldPosition": [
+        0,
+        0.5,
+        0.5
+      ],
+      "worldNormal": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "coarse-only",
+      "worldPosition": [
+        2,
+        2,
+        2
+      ],
+      "worldNormal": [
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "outside-both",
+      "worldPosition": [
+        20,
+        20,
+        20
+      ],
+      "worldNormal": [
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "zero-normal",
+      "worldPosition": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "worldNormal": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "downward",
+      "worldPosition": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "worldNormal": [
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "visibility",
+      "worldPosition": [
+        0.5,
+        0.25,
+        0.75
+      ],
+      "worldNormal": [
+        0,
+        1,
+        0
+      ],
+      "meanDistance": 0.25
+    },
+    {
+      "id": "relocation",
+      "worldPosition": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "worldNormal": [
+        0.7,
+        0.7,
+        0
+      ],
+      "positionOffset": [
+        0.1,
+        -0.2,
+        0.1
+      ]
+    },
+    {
+      "id": "coarse-fallback",
+      "worldPosition": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "worldNormal": [
+        0,
+        1,
+        0
+      ],
+      "fineValidity": 0
+    }
+  ]
+}

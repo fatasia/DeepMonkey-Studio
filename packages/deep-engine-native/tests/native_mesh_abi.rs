@@ -65,9 +65,11 @@ fn native_forward_attachment_profile_matches_the_browser_golden() {
     assert_eq!(FORWARD_SAMPLE_COUNT, 4);
     let mesh = include_str!("../assets/shaders/native_mesh_v1.wgsl");
     let output = include_str!("../assets/shaders/native_output_v1.wgsl");
+    let output_color = include_str!("../assets/shaders/native_output_color.wgsl");
     let mesh_pass = include_str!("../src/mesh_pass.rs");
     assert!(!mesh.contains("fn aces("));
-    assert!(output.contains("fn aces("));
+    assert!(output_color.contains("fn aces("));
+    assert!(output_color.contains("deepAcesFit(color, 1.0)"));
     assert!(output.contains("fragment_srgb_target"));
     assert!(output.contains("fragment_unorm_target"));
     assert!(output.contains("linear_to_srgb"));
@@ -154,7 +156,13 @@ fn wgsl_consumes_compact_rows_uv_sets_and_instance_emissive_alpha() {
         );
     }
     assert!(shader.contains("textureNumLevels(specular_environment) - 1u"));
-    assert!(shader.contains("energy_compensation * ambient_occlusion"));
+    // J2-B3 reserves diffuse and delivers specular from the same compensated
+    // split-sum fraction; multiplying compensation again would break the furnace.
+    assert!(shader.contains("let specular_fraction = clamp(f0 * dfg.x + dfg.y, vec3f(0.0), vec3f(1.0)) * energy_compensation;"));
+    assert!(shader.contains("(1.0 - specular_fraction) * (1.0 - metal) * base * irradiance * ambient_occlusion * global_illumination"));
+    assert!(
+        shader.contains("radiance * specular_fraction * ambient_occlusion * global_illumination")
+    );
     assert!(shader.contains("global_illumination"));
     assert!(!shader.contains("vec3f(0.13, 0.16, 0.22)"));
 }

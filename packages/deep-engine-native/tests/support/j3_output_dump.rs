@@ -51,7 +51,7 @@ fn j3_gate_d_shared_output_dump() {
     );
     let evidence = serde_json::json!({"schema":"deep-engine.j3-output-native", "width":width,
         "height":height, "frames":frames, "gpuErrors":0, "scope":"production-output-common-subset", "fixture":fixture,
-        "shaderSource":include_str!("../../assets/shaders/native_output_v1.wgsl")});
+        "shaderSource":super::output_pass::output_shader(false, false)});
     let path = std::env::var("J3_NATIVE_OUTPUT_PATH")
         .expect("J3_NATIVE_OUTPUT_PATH required for paired evidence");
     std::fs::write(path, serde_json::to_vec(&evidence).unwrap()).unwrap();

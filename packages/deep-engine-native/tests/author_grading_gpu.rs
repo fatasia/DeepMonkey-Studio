@@ -1,3 +1,8 @@
+#[path = "support/native_output_color_matrix.rs"]
+mod native_output_color_matrix;
+#[path = "support/native_output_half.rs"]
+mod native_output_half;
+use native_output_half::{f16, half};
 #[path = "../src/output_pass.rs"]
 mod output_pass;
 
@@ -86,6 +91,7 @@ fn nvidia_author_grading_consumed_before_aces_with_bit_exact_neutral_path() {
 
         // 3) 其余三个变体的 shader/pipeline/bind-group 编译校验。
         compile_variant_outputs(&device, &source_view);
+        native_output_color_matrix::verify_native_output_matrix(&device, &queue).await;
 
         assert!(uncaptured.lock().unwrap().is_empty());
         println!(
@@ -100,6 +106,18 @@ async fn draw_output(
     source: &wgpu::TextureView,
     grading: Option<[f32; 12]>,
 ) -> [f32; 3] {
+    let pixel = draw_variant(device, queue, source, grading, false, false).await;
+    [pixel[0], pixel[1], pixel[2]]
+}
+
+async fn draw_variant(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    source: &wgpu::TextureView,
+    grading: Option<[f32; 12]>,
+    bloom: bool,
+    fog: bool,
+) -> [f32; 4] {
     let output = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("author grading probe output"),
         size: extent(),
@@ -111,8 +129,33 @@ async fn draw_output(
         view_formats: &[],
     });
     let output_view = output.create_view(&Default::default());
-    let pass = OutputPass::new(device, FORWARD_COLOR_FORMAT, source, None, None, grading);
-    assert!(!pass.uses_bloom() && !pass.uses_fog());
+    let depth = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("native output matrix depth"),
+        size: extent(),
+        mip_level_count: 1,
+        sample_count: FORWARD_SAMPLE_COUNT,
+        dimension: wgpu::TextureDimension::D2,
+        format: FORWARD_DEPTH_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let depth_view = depth.create_view(&Default::default());
+    let frame = frame_uniform(1.0, 0.0);
+    let frame_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("native output matrix zero-density fog"),
+        contents: cast_slice(&frame),
+        usage: wgpu::BufferUsages::UNIFORM,
+    });
+    let pass = OutputPass::new(
+        device,
+        FORWARD_COLOR_FORMAT,
+        source,
+        bloom.then_some((source, 0.0)),
+        fog.then_some((&depth_view, &frame_buffer)),
+        grading,
+    );
+    assert_eq!(pass.uses_bloom(), bloom);
+    assert_eq!(pass.uses_fog(), fog);
     let readback = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("author grading probe readback"),
         size: u64::from(WIDTH * HEIGHT * 8),
@@ -142,7 +185,12 @@ async fn draw_output(
     device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
     receiver.recv().unwrap().unwrap();
     let bytes = readback.get_mapped_range(..).unwrap();
-    let color = [half(&bytes, 0), half(&bytes, 2), half(&bytes, 4)];
+    let color = [
+        half(&bytes, 0),
+        half(&bytes, 2),
+        half(&bytes, 4),
+        half(&bytes, 6),
+    ];
     drop(bytes);
     readback.unmap();
     assert!(pollster::block_on(scope.pop()).is_none());
@@ -203,6 +251,14 @@ fn compile_variant_outputs(device: &wgpu::Device, source: &wgpu::TextureView) {
 }
 
 fn source_texture(device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::Texture {
+    source_texture_rgba(device, queue, [4.0, 0.1, 0.05, 1.0])
+}
+
+fn source_texture_rgba(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    rgba: [f32; 4],
+) -> wgpu::Texture {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("author grading probe HDR source"),
         size: extent(),
@@ -213,7 +269,7 @@ fn source_texture(device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::Texture {
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
-    let pixel = [f16(4.0), f16(0.1), f16(0.05), f16(1.0)];
+    let pixel = rgba.map(f16);
     let pixels = pixel.repeat((WIDTH * HEIGHT) as usize);
     queue.write_texture(
         texture.as_image_copy(),
@@ -233,22 +289,5 @@ fn extent() -> wgpu::Extent3d {
         width: WIDTH,
         height: HEIGHT,
         depth_or_array_layers: 1,
-    }
-}
-
-fn f16(value: f32) -> u16 {
-    let bits = value.to_bits();
-    let exponent = ((bits >> 23) & 0xff) as i32 - 112;
-    ((exponent.clamp(1, 30) as u16) << 10) | ((bits >> 13) as u16 & 0x03ff)
-}
-
-fn half(bytes: &[u8], offset: usize) -> f32 {
-    let value = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
-    let exponent = i32::from((value >> 10) & 0x1f);
-    let mantissa = u32::from(value & 0x03ff);
-    match exponent {
-        0 => (mantissa as f32 / 1_024.0) * 2.0_f32.powi(-14),
-        31 => f32::INFINITY,
-        _ => (1.0 + mantissa as f32 / 1_024.0) * 2.0_f32.powi(exponent - 15),
     }
 }

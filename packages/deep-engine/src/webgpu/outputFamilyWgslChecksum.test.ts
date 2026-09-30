@@ -19,8 +19,9 @@ describe("J2-B2 output family single source", () => {
       expect(Buffer.byteLength(code)).toBe(Number(bytes));
     });
   }
-  it("preserves both production compositions byte for byte across migration", () => {
-    expect(hash(outputShader)).toBe("2313954f3df8483ccd52d068352124b58915a4266d02541c5720808eaadc0d11");
+  it("pins production compositions after shared native ACES extraction", () => {
+    // The original byte-preserving migration is recorded in 0a0b26fa.
+    expect(hash(outputShader)).toBe("ea713797ed4d06b8c3b70b128dfe1a7f8f993015885b5e977f3cf5a713686366");
     expect(hash(PBR_DIRECT_DISPLAY_WGSL)).toBe("3c420c52e251c7f678648be56c3d92fcae4fffa8221984b82903ba04da3abfaa");
   });
   it("keeps composed libraries outside leaf sources", () => {

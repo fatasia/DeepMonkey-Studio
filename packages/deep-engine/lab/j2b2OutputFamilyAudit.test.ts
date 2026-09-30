@@ -1,12 +1,6 @@
-// J2-B2 输出家族漂移台账(可执行形态)。审计结论:输出/呈现阶段 WGSL 的 TS 侧
-// (webgpu/pbrOutputShader 组合链、postprocess/bloomWgsl、webgpu/pbrFogWgsl)与
-// Rust 侧副本(native_output_*.wgsl ×4、native_bloom_v1.wgsl)之间**不存在任何
-// 逐字一致的可机械单源化对**——全部子家族带语义漂移,按任务卡纪律本批不硬迁,
-// 漂移修复排后续批。本测试把台账钉成断言:
-// 1. 六项漂移逐条锁死现状(后续批修复时必须有意更新对应断言,不许静默回漂);
-// 2. Rust 内部 4 份输出 shader 的共享段哈希同值锁(副本摘除前的现状存证);
-// 3. TS 输出家族组合产物基线转储(test-output/,后续批 before/after cmp 的基准)。
-// 报告: docs/reports/j2b2-output-family-wgsl-audit-20260929.md
+// J2-B2 live audit: shared ACES/sRGB now feed both hosts; output policy, author
+// grading, vignette, bloom and fog retain their explicitly different contracts.
+// The original byte-preserving migration and hashes are recorded in 0a0b26fa.
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { readFileSync } from "node:fs";
@@ -32,6 +26,8 @@ const rustBloomOutput = readShader("native_output_bloom_v1.wgsl");
 const rustFogOutput = readShader("native_output_fog_v1.wgsl");
 const rustBloomFogOutput = readShader("native_output_bloom_fog_v1.wgsl");
 const rustBloom = readShader("native_bloom_v1.wgsl");
+const rustColor = readShader("native_output_color.wgsl");
+const rustAssembly = readFileSync(resolve(nativeShaders, "../../src/output_pass.rs"), "utf8");
 const rustOutputs = [rustPlain, rustBloomOutput, rustFogOutput, rustBloomFogOutput];
 
 const sha256 = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex");
@@ -43,25 +39,25 @@ const segment = (text: string, startMarker: string, endMarker: string): string =
   return text.slice(start, end === -1 ? undefined : end + endMarker.length);
 };
 
-describe("J2-B2 输出家族漂移台账(现状锁,修复排后续批)", () => {
-  it("DRIFT-1 ACES:TS 双档(Three 矩阵拟合+Narkowicz 曝光档)vs Rust 输出固定 Narkowicz 无曝光", () => {
+describe("J2-B2 shared output math and remaining policy differences", () => {
+  it("shares ACES math while retaining TS dual modes and native upstream exposure", () => {
     expect(PBR_DISPLAY_COLOR_WGSL).toContain("deepThreeAcesFit");
-    expect(PBR_DISPLAY_COLOR_WGSL).toContain("0.59719"); // Three r185 矩阵拟合只在 TS 存在
-    expect(PBR_DISPLAY_COLOR_WGSL).toContain("2.51 * color + 0.03"); // Narkowicz 档 TS 亦有
+    expect(PBR_DISPLAY_COLOR_WGSL).toContain("0.59719");
+    expect(PBR_DISPLAY_COLOR_WGSL).toContain("2.51 * color + 0.03");
+    expect(rustColor).toContain("deepAcesFit(color, 1.0)");
+    expect(rustColor).not.toContain("deepThreeAcesFit(");
+    expect(rustAssembly).toContain('include_str!("../../deep-engine/wgsl/displayColor.wgsl")');
     for (const shader of rustOutputs) {
-      expect(shader).toContain("2.51 * color + 0.03");
-      expect(shader).not.toContain("0.59719"); // native 输出无矩阵拟合
-      expect(shader).not.toContain("exposure"); // native 输出无曝光参数
+      expect(shader).toContain("aces(");
+      expect(shader).not.toContain("2.51 * color + 0.03");
+      expect(shader).not.toContain("exposure");
     }
   });
 
-  it("DRIFT-2 线性→sRGB:TS deepLinearToSrgb 带 max 守卫,Rust linear_to_srgb 裸 pow(负输入语义差)", () => {
+  it("shares guarded linear-to-sRGB instead of four bare-pow copies", () => {
     expect(PBR_DISPLAY_COLOR_WGSL).toContain("pow(max(c, vec3f(0.0))");
-    for (const shader of rustOutputs) {
-      const seg = segment(shader, "fn linear_to_srgb", "\n}\n");
-      expect(seg).toContain("pow(linear, vec3f(1.0 / 2.4))");
-      expect(seg).not.toContain("max("); // 无守卫;当前调用域输入恒为 clamp 后 ACES 输出,安全但字面漂移
-    }
+    expect(segment(rustColor, "fn linear_to_srgb", "\n}\n")).toContain("deepLinearToSrgb(linear)");
+    for (const shader of rustOutputs) expect(shader).not.toContain("fn linear_to_srgb");
   });
 
   it("DRIFT-3 作者分级:TS WGSL 无 abs/无白平衡门控/含 vignette 段,Rust author_grading_apply 有 abs/有门控/无 vignette(TS CPU 权威 applyPbrAuthorColorEffects 与 Rust 同侧)", () => {
@@ -70,12 +66,11 @@ describe("J2-B2 输出家族漂移台账(现状锁,修复排后续批)", () => {
     expect(PBR_AUTHOR_COLOR_EFFECTS_WGSL).not.toContain("wb.x != 0.0");
     expect(PBR_AUTHOR_COLOR_EFFECTS_WGSL).toContain("1.0 - authorEffects.switches.w"); // vignette 段在 TS WGSL
     // TS CPU(白炉仲裁基准)与 Rust WGSL 同侧:abs + 门控。
-    for (const shader of rustOutputs) {
-      const seg = segment(shader, "fn author_grading_apply", "\n}\n");
-      expect(seg).toContain("abs(dot(color, vec3f(0.2126, 0.7152, 0.0722)))");
-      expect(seg).toContain("wb.x != 0.0 || wb.y != 0.0");
-      expect(seg).not.toContain("vignette");
-    }
+    const seg = segment(rustColor, "fn author_grading_apply", "\n}\n");
+    expect(seg).toContain("abs(dot(color, vec3f(0.2126, 0.7152, 0.0722)))");
+    expect(seg).toContain("wb.x != 0.0 || wb.y != 0.0");
+    expect(seg).not.toContain("vignette");
+    for (const shader of rustOutputs) expect(shader).toContain("author_grading_apply(");
   });
 
   it("DRIFT-4 vignette:TS outputShader 有径向 vignette smoothstep,Rust 输出链无 vignette(author_grading.rs 注释:槽位保留,vignette 属后续切片)", () => {
@@ -102,17 +97,16 @@ describe("J2-B2 输出家族漂移台账(现状锁,修复排后续批)", () => {
     expect(PBR_FOG_WGSL).not.toContain("texture_depth_multisampled_2d");
   });
 
-  it("Rust 内部副本现状锁:4 份输出 shader 的 aces/linear_to_srgb/author_grading/分级块四段逐字节同哈希(副本未摘除的存证;后续批摘除时更新)", () => {
+  it("keeps all four native output bodies free of copied color libraries", () => {
     const segments = ["fn aces", "fn linear_to_srgb", "fn author_grading_apply", "struct AuthorGrading"] as const;
     const ends = ["\n}\n", "\n}\n", "\n}\n", "\n}\n"] as const;
     for (let s = 0; s < segments.length; s++) {
-      const hashes = new Set(rustOutputs.map(shader => sha256(segment(shader, segments[s]!, ends[s]!))));
-      expect(hashes.size, `${segments[s]} 段应四份同哈希(共享副本仍在)`).toBe(1);
-      expect([...hashes][0], `${segments[s]} 段哈希非空`).not.toBe(sha256(""));
+      expect(segment(rustColor, segments[s]!, ends[s]!)).not.toBe("");
+      for (const shader of rustOutputs) expect(shader).not.toContain(segments[s]!);
     }
   });
 
-  it("TS 输出家族组合产物基线转储(test-output/j2b2-wgsl-baseline/,后续批 before/after cmp 基准)", () => {
+  it("dumps current composed artifacts while host bodies retain distinct bindings", () => {
     const products: Record<string, string> = {
       "outputShader.wgsl": outputShader,
       "pbrDisplayColor.wgsl": PBR_DISPLAY_COLOR_WGSL,
@@ -127,7 +121,7 @@ describe("J2-B2 输出家族漂移台账(现状锁,修复排后续批)", () => {
     for (const [name, text] of Object.entries(products)) {
       writeFileSync(resolve(outDir, name), text, "utf8");
     }
-    // 跨端判定存证:TS 五份产物与 Rust 五份 shader 无一逐字相等(本批 N=0 的机械依据)。
+    // Host bodies differ; this does not imply that their shared math differs.
     const rustTexts = [...rustOutputs, rustBloom];
     for (const text of Object.values(products)) {
       for (const rust of rustTexts) {
@@ -135,6 +129,6 @@ describe("J2-B2 输出家族漂移台账(现状锁,修复排后续批)", () => {
       }
     }
     writeFileSync(resolve(outDir, "manifest.txt"), manifest.join("\n") + "\n" +
-      "cross-end byte-identical pairs: 0 (all six drift findings recorded)\n", "utf8");
+      "host bodies differ; ACES/sRGB math is shared; remaining policies stay explicit\n", "utf8");
   });
 });

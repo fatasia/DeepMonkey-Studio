@@ -1,4 +1,5 @@
 export { ThreeProjectionBridge } from "./ThreeProjectionBridge.js";
+export { threeDisplayOutputShader } from "./threeDisplayOutput.js";
 export { SceneChangesetProjection } from "./SceneChangesetProjection.js";
 export type { ThreeProjectionDirtyMetrics, ThreeProjectionDirtyPlan, ThreeSceneNodeBinding } from "./SceneChangesetProjection.js";
 export type { ThreeObjectSource, ThreeProjectionHooks, ProjectionIssue, ProjectionResult,

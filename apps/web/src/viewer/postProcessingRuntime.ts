@@ -15,6 +15,7 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { VignetteShader } from "three/examples/jsm/shaders/VignetteShader.js";
 import { HueSaturationShader } from "three/examples/jsm/shaders/HueSaturationShader.js";
 import type { ScenePostProcessingState } from "@bim-studio/contracts";
+import { threeDisplayOutputShader } from "@bim-studio/deep-engine/three-bridge";
 import type { ViewerPostProcessingRuntime } from "./viewerPostProcessingRuntime";
 import { configurePostProcessingAntialias } from "./postProcessingAntialias";
 
@@ -55,7 +56,9 @@ export class PostProcessingRuntime implements ViewerPostProcessingRuntime {
     this.#hueSaturationPass = this.add(new ShaderPass(HueSaturationShader));
     this.#brightnessContrastPass = this.add(new ShaderPass(BRIGHTNESS_CONTRAST_SHADER));
     this.#smaaPass = this.add(new SMAAPass());
-    this.#composer.addPass(new OutputPass());
+    const outputPass = new OutputPass();
+    outputPass.material.fragmentShader = threeDisplayOutputShader(outputPass.material.fragmentShader);
+    this.#composer.addPass(outputPass);
     this.#fxaaPass = this.add(new FXAAPass());
   }
 

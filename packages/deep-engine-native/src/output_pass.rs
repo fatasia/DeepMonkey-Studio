@@ -6,6 +6,8 @@ const PLAIN_SHADER: &str = include_str!("../assets/shaders/native_output_v1.wgsl
 const BLOOM_SHADER: &str = include_str!("../assets/shaders/native_output_bloom_v1.wgsl");
 const FOG_SHADER: &str = include_str!("../assets/shaders/native_output_fog_v1.wgsl");
 const BLOOM_FOG_SHADER: &str = include_str!("../assets/shaders/native_output_bloom_fog_v1.wgsl");
+const DISPLAY_COLOR_SHADER: &str = include_str!("../../deep-engine/wgsl/displayColor.wgsl");
+const AUTHOR_COLOR_SHADER: &str = include_str!("../assets/shaders/native_output_color.wgsl");
 
 /// 作者色彩分级 uniform 字节数：3 × vec4（switches/grading/whiteBalance），
 /// 与 Web `packPbrAuthorColorEffects` 的 12-float 布局逐位一致。
@@ -150,13 +152,15 @@ impl OutputPass {
     }
 }
 
-fn output_shader(bloom: bool, fog: bool) -> &'static str {
-    match (bloom, fog) {
+/// Assemble once at pipeline creation, retaining Native author grading and upstream exposure.
+pub fn output_shader(bloom: bool, fog: bool) -> String {
+    let variant = match (bloom, fog) {
         (false, false) => PLAIN_SHADER,
         (true, false) => BLOOM_SHADER,
         (false, true) => FOG_SHADER,
         (true, true) => BLOOM_FOG_SHADER,
-    }
+    };
+    [DISPLAY_COLOR_SHADER, AUTHOR_COLOR_SHADER, variant].join("\n")
 }
 
 fn create_layout(

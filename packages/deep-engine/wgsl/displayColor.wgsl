@@ -7,6 +7,11 @@ fn deepLinearToSrgb(c: vec3f) -> vec3f {
   return select(1.055 * pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.4)) - 0.055, c * 12.92,
     c <= vec3f(0.0031308));
 }
+fn deepAcesFit(source: vec3f, exposure: f32) -> vec3f {
+  let color = source * exposure;
+  return clamp((color * (2.51 * color + 0.03)) / (color * (2.43 * color + 0.59) + 0.14),
+    vec3f(0.0), vec3f(1.0));
+}
 fn deepThreeAcesFit(source: vec3f, exposure: f32) -> vec3f {
   let input = mat3x3f(vec3f(0.59719, 0.07600, 0.02840), vec3f(0.35458, 0.90834, 0.13383),
     vec3f(0.04823, 0.01566, 0.83777));
@@ -37,8 +42,6 @@ fn deepDisplayColor(source: vec3f, settings: DeepOutputSettings) -> vec3f {
     color *= toneExposure; color = deepApplyColorGrading(color, settings); toneExposure = 1.0;
   }
   if (settings.toneMapping > 0.5) { color = deepThreeAcesFit(color, toneExposure); }
-  else { color *= toneExposure;
-    color = clamp((color * (2.51 * color + 0.03)) / (color * (2.43 * color + 0.59) + 0.14),
-      vec3f(0.0), vec3f(1.0)); }
+  else { color = deepAcesFit(color, toneExposure); }
   return deepLinearToSrgb(color);
 }

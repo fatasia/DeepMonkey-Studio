@@ -6,7 +6,7 @@ struct DeepOutputSettings {
 };
 vec3 deepLinearToSrgb(vec3 c) {
   return mix(1.055 * pow(max(c, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055,
-    c * 12.92, lessThanEqual(c, vec3(0.0031308)));
+    c * 12.92, vec3(lessThanEqual(c, vec3(0.0031308))));
 }
 vec3 deepThreeAcesFit(vec3 source, float exposure) {
   mat3 inputMatrix = mat3(vec3(0.59719, 0.07600, 0.02840), vec3(0.35458, 0.90834, 0.13383),
@@ -27,7 +27,7 @@ vec3 deepApplyColorGrading(vec3 source, DeepOutputSettings settings) {
   vec3 positive = max(color, vec3(0.0));
   vec3 contrasted = 0.18 * exp2(clamp(log2(max(positive / 0.18, vec3(0.000001)))
     * settings.contrast, vec3(-20.0), vec3(20.0)));
-  color = mix(contrasted, vec3(0.0), lessThanEqual(positive, vec3(0.0)));
+  color = mix(contrasted, vec3(0.0), vec3(lessThanEqual(positive, vec3(0.0))));
   float luma = dot(color, weights);
   return clamp(mix(vec3(luma), color, settings.saturation), vec3(0.0), vec3(65504.0));
 }
