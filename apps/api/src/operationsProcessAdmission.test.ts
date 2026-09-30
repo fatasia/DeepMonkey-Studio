@@ -241,17 +241,14 @@ describe("reproduce 路径的准入豁免语义（历史已准入输入按原样
     expect(reproduce.statusCode).toBe(400);
   });
 
-  // 已知问题（20260930 主线取证）：reproducePlantLite 对刚落库的 Study 返回 400「不存在」——
-  // 持久化集合与 this.project() 查找集合疑似不一致，证据本测试 debug 输出；专项修复 lane 在跑。
-  it.skip("线性 Study reproduce 复跑成功且不再触发结构门（历史输入已准入）", async () => {
+  it("线性 Study reproduce 复跑成功且不再触发结构门（历史输入已准入）", async () => {
     const { app, ppr } = await harness();
     const version = await createVersion(ppr, linearDraft());
     const first = await runStudy(app, version, ["A", "B"]);
     expect(first.statusCode).toBe(200);
-    const studyId = (first.json as { id: string }).id;
+    const studyId = (first.json() as { id: string }).id;
     const again = await app.inject({ method: "POST", url: `/api/projects/project-1/operations/logistics/des-studies/${studyId}/reproduce` });
-    if (again.statusCode !== 200) console.log("REPRODUCE_DEBUG", again.statusCode, JSON.stringify(again.json()));
     expect(again.statusCode).toBe(200);
-    expect((again.json as { reproductionOf?: string }).reproductionOf).toBe(studyId);
+    expect((again.json() as { reproductionOf?: string }).reproductionOf).toBe(studyId);
   });
 });
