@@ -336,6 +336,27 @@ export const DEEP_GOD_RAYS_ENTRY = "marchVolumetricGodRays";
 `,
     preamble: `/** 体积光 god rays 半分辨率 ray-march 核(真源 wgsl/volumetricGodRays.wgsl)。 */\nexport const VOLUMETRIC_GOD_RAYS_MARCH_WGSL = /* wgsl */ `,
   },
+  {
+    source: "displayColor.wgsl",
+    module: resolve(packageRoot, "src/webgpu/pbrDisplayColorWgsl.ts"),
+    gate: "src/webgpu/outputFamilyWgslChecksum.test.ts",
+    constants: "",
+    preamble: `export const PBR_DISPLAY_COLOR_WGSL = /* wgsl */ `,
+  },
+  {
+    source: "outputShader.wgsl",
+    module: resolve(packageRoot, "src/webgpu/pbrOutputBodyWgsl.ts"),
+    gate: "src/webgpu/outputFamilyWgslChecksum.test.ts",
+    constants: "",
+    preamble: `export const PBR_OUTPUT_BODY_WGSL = /* wgsl */ `,
+  },
+  {
+    source: "directDisplay.wgsl",
+    module: resolve(packageRoot, "src/webgpu/pbrDirectDisplayBodyWgsl.ts"),
+    gate: "src/webgpu/outputFamilyWgslChecksum.test.ts",
+    constants: "",
+    preamble: `export const PBR_DIRECT_DISPLAY_BODY_WGSL = /* wgsl */ `,
+  },
 ];
 
 for (const entry of SHARED_WGSL) {

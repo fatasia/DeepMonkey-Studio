@@ -1,0 +1,246 @@
+{
+  "schema": "deep-engine.j3-lifecycle",
+  "schemaVersion": 1,
+  "scope": "production-host-components-cpu",
+  "phases": [
+    "staging",
+    "committed",
+    "failed",
+    "superseded",
+    "cancelled",
+    "disposed"
+  ],
+  "transitions": [
+    {
+      "from": null,
+      "to": "staging"
+    },
+    {
+      "from": "staging",
+      "to": "committed"
+    },
+    {
+      "from": "staging",
+      "to": "failed"
+    },
+    {
+      "from": "staging",
+      "to": "superseded"
+    },
+    {
+      "from": "staging",
+      "to": "cancelled"
+    },
+    {
+      "from": "host",
+      "to": "disposed"
+    },
+    {
+      "from": "disposed",
+      "to": "disposed"
+    }
+  ],
+  "resourceScope": "CPU adapter objects / Arc payloads; not GPU allocations",
+  "scenarios": [
+    {
+      "id": "success",
+      "expected": [
+        {
+          "phase": "staging",
+          "generation": 1,
+          "activeGeneration": 0,
+          "cpuResources": 0
+        },
+        {
+          "phase": "committed",
+          "generation": 1,
+          "activeGeneration": 1,
+          "cpuResources": 2
+        },
+        {
+          "phase": "staging",
+          "generation": 2,
+          "activeGeneration": 1,
+          "cpuResources": 2
+        },
+        {
+          "phase": "committed",
+          "generation": 2,
+          "activeGeneration": 2,
+          "cpuResources": 2
+        },
+        {
+          "phase": "disposed",
+          "generation": 0,
+          "activeGeneration": 0,
+          "cpuResources": 0
+        }
+      ]
+    },
+    {
+      "id": "failed-retains-active",
+      "expected": [
+        {
+          "phase": "staging",
+          "generation": 1,
+          "activeGeneration": 0,
+          "cpuResources": 0
+        },
+        {
+          "phase": "committed",
+          "generation": 1,
+          "activeGeneration": 1,
+          "cpuResources": 2
+        },
+        {
+          "phase": "staging",
+          "generation": 2,
+          "activeGeneration": 1,
+          "cpuResources": 2
+        },
+        {
+          "phase": "failed",
+          "generation": 2,
+          "activeGeneration": 1,
+          "cpuResources": 2
+        },
+        {
+          "phase": "disposed",
+          "generation": 0,
+          "activeGeneration": 0,
+          "cpuResources": 0
+        }
+      ]
+    },
+    {
+      "id": "superseded-completion",
+      "expected": [
+        {
+          "phase": "staging",
+          "generation": 1,
+          "activeGeneration": 0,
+          "cpuResources": 0
+        },
+        {
+          "phase": "committed",
+          "generation": 1,
+          "activeGeneration": 1,
+          "cpuResources": 2
+        },
+        {
+          "phase": "staging",
+          "generation": 2,
+          "activeGeneration": 1,
+          "cpuResources": 2
+        },
+        {
+          "phase": "staging",
+          "generation": 3,
+          "activeGeneration": 1,
+          "cpuResources": 2
+        },
+        {
+          "phase": "committed",
+          "generation": 3,
+          "activeGeneration": 3,
+          "cpuResources": 2
+        },
+        {
+          "phase": "superseded",
+          "generation": 2,
+          "activeGeneration": 3,
+          "cpuResources": 2
+        },
+        {
+          "phase": "disposed",
+          "generation": 0,
+          "activeGeneration": 0,
+          "cpuResources": 0
+        }
+      ]
+    },
+    {
+      "id": "cancelled-retains-active",
+      "expected": [
+        {
+          "phase": "staging",
+          "generation": 1,
+          "activeGeneration": 0,
+          "cpuResources": 0
+        },
+        {
+          "phase": "committed",
+          "generation": 1,
+          "activeGeneration": 1,
+          "cpuResources": 2
+        },
+        {
+          "phase": "staging",
+          "generation": 2,
+          "activeGeneration": 1,
+          "cpuResources": 2
+        },
+        {
+          "phase": "cancelled",
+          "generation": 2,
+          "activeGeneration": 1,
+          "cpuResources": 2
+        },
+        {
+          "phase": "disposed",
+          "generation": 0,
+          "activeGeneration": 0,
+          "cpuResources": 0
+        }
+      ]
+    },
+    {
+      "id": "dispose-pending",
+      "expected": [
+        {
+          "phase": "staging",
+          "generation": 1,
+          "activeGeneration": 0,
+          "cpuResources": 0
+        },
+        {
+          "phase": "committed",
+          "generation": 1,
+          "activeGeneration": 1,
+          "cpuResources": 2
+        },
+        {
+          "phase": "staging",
+          "generation": 2,
+          "activeGeneration": 1,
+          "cpuResources": 2
+        },
+        {
+          "phase": "disposed",
+          "generation": 0,
+          "activeGeneration": 0,
+          "cpuResources": 0
+        },
+        {
+          "phase": "superseded",
+          "generation": 2,
+          "activeGeneration": 0,
+          "cpuResources": 0
+        },
+        {
+          "phase": "disposed",
+          "generation": 0,
+          "activeGeneration": 0,
+          "cpuResources": 0
+        }
+      ]
+    }
+  ],
+  "excluded": [
+    "GPU device loss/recovery",
+    "GPU resident bytes",
+    "upload bytes",
+    "first visible frame",
+    "CPU/GPU frame timing"
+  ]
+}

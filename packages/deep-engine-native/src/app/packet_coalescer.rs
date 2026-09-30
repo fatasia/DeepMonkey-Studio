@@ -63,7 +63,7 @@ impl UpdateCoalescer {
     /// Staging finished successfully. Publish unless a burst superseded this
     /// generation or it repeats an already-published/failed state.
     pub fn staged(&self, generation: u64) -> PublishDecision {
-        if generation < self.highest_submitted
+        if generation != self.highest_submitted
             || generation <= self.published
             || self.failed.contains(&generation)
         {
@@ -172,6 +172,16 @@ mod tests {
             PublishDecision::Superseded,
             "already published"
         );
+    }
+
+    #[test]
+    fn an_unsubmitted_future_generation_never_publishes() {
+        let mut coalescer = UpdateCoalescer::new(3);
+        assert_eq!(coalescer.staged(4), PublishDecision::Superseded);
+        assert_eq!(coalescer.submit(4), SubmitDecision::Stage);
+        assert_eq!(coalescer.staged(5), PublishDecision::Superseded);
+        assert_eq!(coalescer.staged(4), PublishDecision::Publish);
+        assert_eq!(coalescer.published(), 3);
     }
 
     #[test]

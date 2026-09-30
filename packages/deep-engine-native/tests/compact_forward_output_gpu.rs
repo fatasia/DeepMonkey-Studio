@@ -1,6 +1,8 @@
 #[allow(dead_code)]
 #[path = "../src/forward_targets.rs"]
 mod forward_targets;
+#[path = "support/j3_output_dump.rs"]
+mod j3_output_dump;
 #[allow(dead_code)]
 #[path = "../src/output_pass.rs"]
 mod output_pass;
@@ -20,6 +22,7 @@ const COLORS: [wgpu::Color; 4] = [
     rgba(0.25, 0.5, 1.0, 0.25),
     rgba(0.0, 0.0, 0.0, 0.0),
 ];
+
 const FORMATS: [wgpu::TextureFormat; 2] = [
     wgpu::TextureFormat::Rgba8Unorm,
     wgpu::TextureFormat::Rgba8UnormSrgb,

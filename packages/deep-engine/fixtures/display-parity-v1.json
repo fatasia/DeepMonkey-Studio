@@ -1,0 +1,10 @@
+{
+  "schema": "deep-engine.display-parity", "schemaVersion": 1,
+  "width": 32, "height": 32,
+  "scope": "production-output-common-subset",
+  "colors": [[0,0,0,1],[0.00390625,0.015625,0.03125,1],[8,2,0.5,1],[0.25,0.5,1,1],[0.0031308,0.0031309,0.18,1],[64,0.02,2,1],[0.18,0.18,0.18,1],[1,1,1,1]],
+  "settings": [[1,0,0,0,0,0,1,1],[1.25,0,0,1,0,0,1,1],[0.75,0,0,0,0.6,-0.3,1.2,0.8],[2,0,0,1,-0.8,0.4,0.75,1.5]],
+  "thresholds": {"outputMaxByteError":1,"outputMinSsim":0.999,"libraryMaxFloatError":0.00002},
+  "legalDifferences": ["rgba8unorm quantization: at most 1 channel step"],
+  "excluded": ["native non-neutral exposure and grading","geometry and depth","shadow","bloom","fog","SSR","TAA"]
+}

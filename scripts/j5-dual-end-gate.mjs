@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createServer } from "node:http";
 import { access, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,10 +7,10 @@ import { fileURLToPath } from "node:url";
 /**
  * J5 强制双端验收门(依 剩余任务清单.md J 级表 J5 行 + docs/reports/deep-core/
  * J3-gate-c-physics-parity-20260929.md):把白炉/身份黄金/布料软体指纹/Runtime
- * Package hash 四族既有 gate 从"可选跑"升格为"提交前强制双端跑"。
+ * Package hash 既有 gate 从"可选跑"升格为"提交前强制双端跑"。
  *
  * 规则:
- * - 一条命令串联四对判据,每对各有 TS 腿 + Native 腿;任一端红即门失败(fail-closed)。
+ * - 一条命令串联全部判据,每对各有 TS 腿 + Native 腿;任一端红即门失败(fail-closed)。
  * - GPU 腿(TS 白炉 headless Chrome 真机腿)由 flag 控制:默认 CPU/静态口径;
  *   --with-gpu / J5_GATE_GPU=on|auto 时先探测 adapter,无 adapter 自动跳过 GPU 腿
  *   但保留 CPU 判据,并如实输出跳过原因(降级通过,证据里标 degraded);
@@ -24,7 +25,7 @@ const CARGO_TEST_BASE = ["cargo", "test", "--manifest-path", "packages/deep-engi
 const vitestCommand = (files) => `pnpm --filter @bim-studio/deep-engine exec vitest run ${files.join(" ")}`;
 const cargoCommand = (cargoArgs) => `cargo test --manifest-path packages/deep-engine-native/Cargo.toml --locked ${cargoArgs}`;
 
-/** 四对判据映射(判据与命令锚定既有文件,漂移即两侧 package.json/本文件同步改)。 */
+/** 全部判据映射(判据与命令锚定既有文件,漂移即两侧 package.json/本文件同步改)。 */
 export const GATE_PAIRS = [
   {
     id: "white-furnace",
@@ -109,6 +110,26 @@ export const GATE_PAIRS = [
       },
     ],
   },
+  {
+    id: "display-output-common-subset",
+    name: "输出色彩共同子集像素对拍(J3 Gate D/C8 首刀)",
+    legs: [
+      { id: "display-output:ts-gpu", side: "ts", requiresGpu: true,
+        command: "node scripts/j3-display-parity.mjs", note: "TS 生产输出+WGSL/GLSL 浮点库；同 runner 比较双端，两轮稳定性门" },
+      { id: "display-output:native-gpu", side: "native", requiresGpu: true,
+        command: "node scripts/j3-display-parity.mjs", note: "native 生产 OutputPass；命令去重复用完整双端证据，非整场景 Gate D" },
+    ],
+  },
+  {
+    id: "lifecycle-host-components",
+    name: "真实宿主生命周期轨迹(J3 Gate E CPU 首刀)",
+    legs: [
+      { id: "lifecycle:ts", side: "ts", requiresGpu: false,
+        command: "node scripts/j3-lifecycle-parity.mjs", note: "真实 resource executor，五情景双轮；比较阶段、代次与 CPU 测试资源" },
+      { id: "lifecycle:native", side: "native", requiresGpu: false,
+        command: "node scripts/j3-lifecycle-parity.mjs", note: "生产 coalescer/mailbox/PublishedState/WatchThread；同 runner 双端比较并去重，不认证 GPU 生命周期" },
+    ],
+  },
 ];
 
 /** GPU 腿策略:off=默认 CPU/静态口径;auto=探测可用才跑;strict=不可用即门失败。
@@ -163,11 +184,22 @@ export async function probeGpuAvailability({
     return unavailable(`Chrome 不存在(${chromePath});可用 BIM_STUDIO_CHROME_PATH 指定`);
   }
   let browser;
+  let probeServer;
   try {
-    browser = await playwrightModule.chromium.launch({
+    const chromium = playwrightModule.chromium ?? playwrightModule.default?.chromium;
+    if (!chromium) return unavailable("playwright-core 未导出 chromium");
+    browser = await chromium.launch({
       executablePath: chromePath, headless: true, args: ["--enable-unsafe-webgpu"],
     });
+    probeServer = createServer((_request, response) => {
+      response.setHeader("Content-Type", "text/html"); response.end("<!doctype html><title>GPU probe</title>");
+    });
+    await new Promise((resolve, reject) => {
+      probeServer.once("error", reject); probeServer.listen(0, "127.0.0.1", resolve);
+    });
     const page = await browser.newPage();
+    // WebGPU needs a trustworthy origin; about:blank does not expose navigator.gpu here.
+    await page.goto(`http://127.0.0.1:${probeServer.address().port}/`);
     const probe = await page.evaluate(async () => {
       if (!navigator.gpu) return { supported: false, adapter: false };
       const adapter = await navigator.gpu.requestAdapter();
@@ -181,6 +213,7 @@ export async function probeGpuAvailability({
     return unavailable(`GPU 探测失败:${error instanceof Error ? error.message : String(error)}`);
   } finally {
     await browser?.close().catch(() => {});
+    if (probeServer?.listening) await new Promise(resolve => probeServer.close(resolve));
   }
 }
 
@@ -280,7 +313,7 @@ function formatSeconds(durationMs) {
   return durationMs >= 60_000 ? `${(durationMs / 60_000).toFixed(1)}m` : `${(durationMs / 1000).toFixed(1)}s`;
 }
 
-/** 双端对照表(四对判据 × TS/Native 腿)+ 逐腿明细。 */
+/** 双端对照表(全部判据 × TS/Native 腿)+ 逐腿明细。 */
 export function formatReport(result) {
   const lines = [];
   lines.push(`J5 强制双端验收门 — GPU 策略=${result.gpuPolicy}${result.gpuProbe ? `(探测: ${result.gpuProbe.available ? "可用" : "不可用"})` : ""}`);
@@ -302,7 +335,7 @@ export function formatReport(result) {
     lines.push(`门判定: PASS(降级) — 判据双端绿;GPU 腿跳过 ${result.skippedCells.length} 项(降级为 CPU/静态口径,已如实标注):`);
     for (const cell of result.skippedCells) lines.push(`  [跳过] ${cell.id}: ${cell.detail}`);
   } else {
-    lines.push("门判定: PASS — 四对判据双端全绿(含 GPU 腿)。");
+    lines.push("门判定: PASS — 全部判据双端全绿(含 GPU 腿)。");
   }
   return lines.join("\n");
 }
@@ -340,7 +373,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
     console.log(`用法: node scripts/j5-dual-end-gate.mjs [--with-gpu|--require-gpu|--no-gpu] [--gpu-policy=off|auto|strict] [--timeout-ms=N] [--dry-run]
-四对判据: 白炉(TS GPU+Native CPU) / 身份黄金 / 布料软体指纹 / Runtime Package hash。
+全部判据: ${GATE_PAIRS.map(pair => pair.name).join(" / ")}。
 GPU 策略: 默认 off(CPU/静态口径);auto=探测可用才跑 GPU 腿,否则跳过并标注;strict=GPU 腿不可用即门失败。
 环境变量: J5_GATE_GPU=on|auto|strict、J5_GATE_TIMEOUT_MS;证据落 test-output/j5-dual-end-gate/。`);
     return;
