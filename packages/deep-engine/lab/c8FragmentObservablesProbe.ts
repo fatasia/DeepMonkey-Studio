@@ -4,7 +4,7 @@ import { observeDeepFragment, observeThreeFragment, type FragmentObservable, typ
 import * as THREE from "three";
 import { runSharedSceneProbe } from "./c8SharedSceneProbe.js";
 
-type Chunks = { lights_physical_pars_fragment: string; opaque_fragment: string };
+type Chunks = { lights_physical_pars_fragment: string; opaque_fragment: string; lights_physical_fragment?: string };
 
 /** Test leaf: production GPUDevice identity stays intact for native canvas configuration. */
 export function prepareFragmentObservation(mode: FragmentObservable, gpu: GPU, chunks: Chunks, derivative?: FragmentDerivative) {
@@ -20,8 +20,10 @@ export function prepareFragmentObservation(mode: FragmentObservable, gpu: GPU, c
     const original = { ...chunks };
     three = observeThreeFragment(mode, original);
     chunks.lights_physical_pars_fragment = three.lights_physical_pars_fragment;
+    if (three.lights_physical_fragment) chunks.lights_physical_fragment = three.lights_physical_fragment;
     chunks.opaque_fragment = three.opaque_fragment; threeInstallCount++;
-    restores.push(() => { chunks.lights_physical_pars_fragment = original.lights_physical_pars_fragment; chunks.opaque_fragment = original.opaque_fragment; });
+    restores.push(() => { chunks.lights_physical_pars_fragment = original.lights_physical_pars_fragment; chunks.opaque_fragment = original.opaque_fragment;
+      if (three?.lights_physical_fragment) { if (original.lights_physical_fragment !== undefined) chunks.lights_physical_fragment = original.lights_physical_fragment; else Reflect.deleteProperty(chunks, "lights_physical_fragment"); } });
   }
   function instrumentDevice(device: GPUDevice) {
     if (disposed) { device.destroy(); throw Error("Fragment observation was disposed before device delivery"); }
@@ -55,11 +57,13 @@ export function prepareFragmentObservation(mode: FragmentObservable, gpu: GPU, c
       ensureLive();
       const actualRe = three?.lights_physical_pars_fragment.match(/^void RE_Direct_Physical\([^]*?^\}/m)?.[0];
       if (!actualRe || !sources.length || sources.some(source => !source.includes(actualRe) || !source.includes("gl_FragColor = vec4( deepObservedFragment, diffuseColor.a )"))) throw Error("Actual Three fragment observation was not compiled");
+      const physicalObservation = three?.lights_physical_fragment?.match(/deepObservedFragment = [^;]+;/)?.[0];
+      if (physicalObservation && sources.some(source => !source.includes(physicalObservation) || !source.includes("vec3 dxy = max( deepObservedDx, deepObservedDy );"))) throw Error("Actual Three geometry derivative observation was not compiled");
       for (const source of sources) compiledThreeHashes.push(sha256Utf8(source));
     },
     receipt() {
       if (deepModuleCount < 1 || threeInstallCount !== 1 || !three || compiledThreeHashes.length < 1) throw Error("Empty actual fragment observation receipt");
-      return { mode, ...(derivative ? { derivative, threeDerivative: "default" } : {}), deep: { originalHash: deep.originalHash, instrumentedHash: deep.instrumentedHash, moduleCount: deepModuleCount },
+      return { mode, ...(derivative ? { derivative, threeDerivative: "default" } : ["view-normal", "abs-dx", "abs-dy"].includes(mode) ? { derivative: "default", threeDerivative: "default" } : {}), deep: { originalHash: deep.originalHash, instrumentedHash: deep.instrumentedHash, moduleCount: deepModuleCount },
         three: { originalChunkHash: three.originalHash, instrumentedChunkHash: three.instrumentedHash, installCount: threeInstallCount,
           actualCompiledFragmentHashes: [...new Set(compiledThreeHashes)], compileObservations: compiledThreeHashes.length } };
     },
