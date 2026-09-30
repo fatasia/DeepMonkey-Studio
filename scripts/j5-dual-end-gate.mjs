@@ -180,6 +180,16 @@ export const GATE_PAIRS = [
         command: "node scripts/j3-geometry-depth-parity.mjs --hdr", note: "生产mesh pass与作者灯光配置，两轮HDR；曲面合法差异另记" },
     ],
   },
+  {
+    id: "device-recovery-product-window",
+    name: "实际窗口恢复与Web候选替换(J3 Gate E)",
+    legs: [
+      { id: "device-window:ts-gpu", side: "ts", requiresGpu: true,
+        command: "node scripts/j3-window-recovery-suite.mjs", note: "真实Viewer/Bridge destroyed回退；Web专项：显式模拟通知+实际不同GPU候选成功/失败，两轮fresh" },
+      { id: "device-window:native-gpu", side: "native", requiresGpu: true,
+        command: "node scripts/j3-window-recovery-suite.mjs", note: "实际NativeApp窗口destroyed重建/Presented/HDR；同suite去重，候选专项只属于Web，不认证Native同候选路径" },
+    ],
+  },
 ];
 
 /** GPU 腿策略:off=默认 CPU/静态口径;auto=探测可用才跑;strict=不可用即门失败。
