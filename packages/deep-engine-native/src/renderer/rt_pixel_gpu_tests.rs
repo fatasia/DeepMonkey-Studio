@@ -42,11 +42,25 @@ pub(crate) fn request_ray_query_device() -> Option<(wgpu::Device, wgpu::Queue)> 
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
     descriptor.backends = wgpu::Backends::DX12 | wgpu::Backends::VULKAN;
     let instance = wgpu::Instance::new(descriptor);
-    let adapter = pollster::block_on(instance.request_adapter(&Default::default())).ok()?;
+    let adapter = match pollster::block_on(instance.request_adapter(&Default::default())) {
+        Ok(adapter) => adapter,
+        Err(error) => {
+            println!(
+                "ray_query_supported=unknown reason=adapter_request_failed scope=not_executed error={error:?}"
+            );
+            return None;
+        }
+    };
+    println!(
+        "ray_query_adapter info={:?} features={:?}",
+        adapter.get_info(),
+        adapter.features()
+    );
     if !adapter
         .features()
         .contains(wgpu::Features::EXPERIMENTAL_RAY_QUERY)
     {
+        println!("ray_query_supported=false reason=feature_missing scope=not_executed");
         return None;
     }
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
@@ -74,6 +88,9 @@ pub(crate) fn request_ray_query_device() -> Option<(wgpu::Device, wgpu::Queue)> 
 #[test]
 fn rt_fragment_pipeline_family_compiles_on_ray_query_device() {
     let Some((device, _queue)) = request_ray_query_device() else {
+        println!(
+            "ray_query_pipeline_executed=false reason=adapter_or_feature_unavailable scope=not_executed"
+        );
         return;
     };
     let layouts = create_frame_layouts(&device);
@@ -92,5 +109,9 @@ fn rt_fragment_pipeline_family_compiles_on_ray_query_device() {
     assert!(
         error.is_none(),
         "RT fragment pipeline family must validate cleanly: {error:?}"
+    );
+    println!(
+        "ray_query_supported=true pipeline_variants=6 validation_scope_passed=true features={:?}",
+        device.features()
     );
 }

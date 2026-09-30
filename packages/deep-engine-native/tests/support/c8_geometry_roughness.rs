@@ -13,7 +13,7 @@ use winit::dpi::PhysicalSize;
 #[path = "../../src/shader_package/hash.rs"]
 mod hash;
 
-fn fixture(smooth: bool, mapped: bool) -> (PlayerContent, Value) {
+pub(super) fn fixture(smooth: bool, mapped: bool) -> (PlayerContent, Value) {
     let mut vertices = Vec::new();
     let mut tangents = Vec::new();
     for [x, y] in [[-1.4_f32, -1.4], [1.4, -1.4], [1.4, 1.4], [-1.4, 1.4]] {

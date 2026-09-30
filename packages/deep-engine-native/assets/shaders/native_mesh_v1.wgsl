@@ -556,9 +556,11 @@ fn shade_native_mesh(
   let rough = min(1.0, clamp(input.material.x * mr_sample.g, 0.045, 1.0) + native_view_geometry_roughness(geometry_normal));
   var normal = geometry_normal;
   if (material_textures.normal_row_0.w > 0.5) { normal = mapped_normal(input, front_facing); }
+  let authored_light = frame.sunColor.w >= 2.0;
+  var surface_color = base;
+  if (!flag(input.material.w, 64u)) {
   let view = safe_normalize(frame.eye.xyz - input.world, vec3f(0.0, 0.0, 1.0));
   let light = safe_normalize(frame.lightDirection.xyz, vec3f(0.0, 1.0, 0.0));
-  let authored_light = frame.sunColor.w >= 2.0;
   let visibility = select(shadow_visibility(input.world, normal, max(dot(normal, light), 0.0)),
     1.0, flag(input.material.w, 16u) || (authored_light && frame.lightingOptions.y == 0.0));
   let sun = select(vec3f(3.2, 3.0, 2.8), frame.sunColor.rgb, authored_light);
@@ -609,8 +611,9 @@ fn shade_native_mesh(
     color += radiance * specular_fraction * ambient_occlusion * global_illumination;
   }
   color += input.emissive_alpha.rgb * emission;
+  surface_color = color;
+  }
   let exposure = select(1.0, frame.lightingOptions.x, authored_light);
-  var surface_color = select(color, base, flag(input.material.w, 64u));
   if (frame.fogProjection.z == 2.0 && !flag(input.material.w, 32u)) {
     // clip W is signed camera-space depth; no radial-distance or fixed near/far approximation.
     let camera_depth = max((frame.view * vec4f(input.world, 1.0)).w, 0.0);

@@ -362,3 +362,5 @@ mod c8_local_direct_multiscattering;
 mod c8_geometry_basis;
 #[path = "support/c8_geometry_roughness.rs"]
 mod c8_geometry_roughness;
+#[path = "support/c8_unlit_lighting_skip.rs"]
+mod c8_unlit_lighting_skip;
