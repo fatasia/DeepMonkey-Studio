@@ -2,6 +2,7 @@ import { STOCK_MATERIAL_INSTANCE_OPTIONS } from "../materialInstanceAbi.js";
 import { prepareRenderPacket, type PbrMaterial, type RenderPacket } from "../renderPacket.js";
 import { array, fields, integer, record, requireValue, string, snapshotJson } from "./primitives.js";
 import { assertNativePacketDeformationSupported, deformationForBrowserJson, materializePacketDeformation } from "./renderPacketDeformation.js";
+import { browserMaterialExtensions } from "./renderPacketBrowserMaterial.js";
 export { assertNativePacketDeformationSupported } from "./renderPacketDeformation.js";
 
 const GEOMETRY_OPTIONAL = ["uv0", "uv1", "tangents", "colors"];
@@ -31,9 +32,11 @@ function numericArray(input: unknown, path: string, maxInteger?: number): number
   path, "Invalid array element.");
   return values as number[];
 }
-function material(input: unknown, path: string): PbrMaterial {
+function material(input: unknown, path: string, browserProfile: boolean): PbrMaterial {
   const value = record(input, path);
-  fields(value, ["id", "baseColor", "metallic", "roughness"], MATERIAL_OPTIONAL, path);
+  const optional = browserProfile ? [...MATERIAL_OPTIONAL, "extendedParameters", "layered"] : MATERIAL_OPTIONAL;
+  fields(value, ["id", "baseColor", "metallic", "roughness"], optional, path);
+  const extensions = browserProfile ? browserMaterialExtensions(value, path) : {};
   id(value.id, `${path}.id`); nonnullOptions(value, MATERIAL_OPTIONAL, path);
   for (const name of ["baseColorTexture", "metallicRoughnessTexture", "normalTexture", "occlusionTexture", "emissiveTexture"]) {
     if (!Object.hasOwn(value, name)) continue;
@@ -52,7 +55,7 @@ function material(input: unknown, path: string): PbrMaterial {
   // for the author RenderPacket ABI without changing the final linear emission.
   const runtimeStrength = Math.max(1, ...emission);
   const { emissiveFactor: _factor, emissiveStrength: _strength, ...rest } = value;
-  return { ...rest, emissiveFactor: emission.map(number => number / runtimeStrength) as [number, number, number],
+  return { ...rest, ...extensions, emissiveFactor: emission.map(number => number / runtimeStrength) as [number, number, number],
     ...(runtimeStrength === 1 ? {} : { emissiveStrength: runtimeStrength }) } as unknown as PbrMaterial;
 }
 function texture(input: unknown, path: string): Record<string, unknown> {
@@ -95,7 +98,7 @@ function lod(input: unknown, path: string): void {
   }
   // prepareRenderPacket below owns level ordering, residency, geometry/material compatibility and numeric limits.
 }
-function parseRuntimeRenderPacket(input: unknown, path: string): RenderPacket {
+function parseRuntimeRenderPacket(input: unknown, path: string, browserProfile = false): RenderPacket {
   const value = record(input, path);
   fields(value, ["geometries", "materials", "instances"], ["schema", "version", "textures", "deformation"], path);
   requireValue(value.schema === undefined || value.schema === "deep-engine.render-packet", path, "Unsupported RenderPacket schema.");
@@ -112,7 +115,7 @@ function parseRuntimeRenderPacket(input: unknown, path: string): RenderPacket {
     return result;
   });
   const materials = array(value.materials, `${path}.materials`, 16_384)
-    .map((item, index) => material(item, `${path}.materials[${index}]`));
+    .map((item, index) => material(item, `${path}.materials[${index}]`, browserProfile));
   const instances = array(value.instances, `${path}.instances`, 16_384).map((input, index) => {
     const p = `${path}.instances[${index}]`, instance = record(input, p);
     fields(instance, ["id", "geometry", "material", "transform"], ["lod", "castShadow", "receiveShadow", "outline", "pose"], p);
@@ -136,7 +139,7 @@ export function validateRuntimeRenderPacket(input: unknown, path: string): void 
 
 /** Rehydrates the validated JSON payload into the typed arrays required by Browser residency upload. */
 export function materializeRuntimeRenderPacket(input: unknown, path: string): RenderPacket {
-  return parseRuntimeRenderPacket(input, path);
+  return parseRuntimeRenderPacket(input, path, true);
 }
 
 /** Browser-only JSON roundtrip retains pose/source fields and the exact skin-joint array width. */

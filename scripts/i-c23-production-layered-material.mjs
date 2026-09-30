@@ -5,7 +5,10 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { createHash } from "node:crypto";
 const root = fileURLToPath(new URL("../", import.meta.url)), require = createRequire(import.meta.url);
-const out = path.join(root, "test-output/i-series-0930/layered-material-production");
+const mode = process.env.C23_GATE_MODE ?? "production";
+if (!["production", "rehydrated"].includes(mode)) throw Error("Unknown C23 gate mode.");
+const rounds = mode === "rehydrated" ? 1 : 2;
+const out = path.join(root, `test-output/i-series-0930/layered-material-${mode}`);
 await mkdir(out, { recursive: true });
 const { build } = require("../packages/deep-engine/node_modules/esbuild"), sharp = require("sharp");
 const sources = ["packages/deep-engine/lab/iC23LayeredMaterialProduction.ts", "scripts/i-c23-production-layered-material.mjs"];
@@ -30,7 +33,7 @@ const runs = [], errors = []; let browser;
 try {
   browser = await chromium.launch({ executablePath: process.env.BIM_STUDIO_CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe",
     headless: true, args: ["--enable-unsafe-webgpu"] });
-  for (let round = 1; round <= 2; round++) {
+  for (let round = 1; round <= rounds; round++) {
     const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
     const page = await context.newPage(), frames = [];
     page.on("pageerror", error => errors.push(error.message));
@@ -45,21 +48,21 @@ try {
       frames.push({ name, visiblePixels, colorBins: bins.size });
     });
     await page.goto(`http://127.0.0.1:${server.address().port}`);
-    const result = await page.evaluate(async () => (await import("/probe.mjs")).runIC23LayeredMaterialProduction(name => globalThis.saveLayeredFrame(name)));
+    const result = await page.evaluate(async mode => (await import("/probe.mjs")).runIC23LayeredMaterialProduction(name => globalThis.saveLayeredFrame(name), mode), mode);
     result.displayFrames = frames;
-    const actual = frames.find(frame => frame.name === "two-layers");
+    const actual = frames.find(frame => frame.name === (mode === "rehydrated" ? "rehydrated-two-layers" : "two-layers"));
     result.passed &&= actual?.visiblePixels > 100_000 && actual?.colorBins > 5;
     runs.push(result); console.log(JSON.stringify({ round, passed: result.passed, maxCombinationError: result.maxCombinationError,
       textureDelta: result.textureDelta, zeroDelta: result.zeroDelta, alphaZeroDelta: result.alphaZeroDelta,
-      maxFurnaceError: result.maxFurnaceError, maxFurnaceLayerDelta: result.maxFurnaceLayerDelta,
+      maxFurnaceError: result.maxFurnaceError, maxFurnaceLayerDelta: result.maxFurnaceLayerDelta, maxRestoredDelta: result.maxRestoredDelta,
       failure: result.failure, validationError: result.validationError, remainingResources: result.remainingResources, actual }));
     await context.close(); if (!result.passed) break;
   }
 } catch (error) { errors.push(error.stack ?? String(error)); }
 finally {
   const sourceFresh = JSON.stringify(sourceHashes) === JSON.stringify(await hashes());
-  const stable = runs.length === 2 && runs.every(run => run.passed) && runs[0].shaderHash === runs[1].shaderHash;
-  const evidence = { passed: stable && sourceFresh && errors.length === 0, stable, sourceFresh, theme: "dark", width: 1920, height: 1080,
+  const stable = runs.length === rounds && runs.every(run => run.passed) && runs.every(run => run.shaderHash === runs[0].shaderHash);
+  const evidence = { passed: stable && sourceFresh && errors.length === 0, mode, stable, sourceFresh, theme: "dark", width: 1920, height: 1080,
     freshRealms: runs.length, sourceHashes, bundleSha256: createHash("sha256").update(await readFile(path.join(out, "probe.mjs"))).digest("hex"), runs, errors };
   await writeFile(path.join(out, "evidence.json"), `${JSON.stringify(evidence, null, 2)}\n`);
   console.log(JSON.stringify({ output: out, passed: evidence.passed, stable, sourceFresh, errors }));

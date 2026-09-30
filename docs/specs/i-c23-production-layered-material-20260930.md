@@ -63,3 +63,26 @@ Native真实差异：contract/types PbrMaterial deny_unknown_fields，既无exte
 - packages/deep-engine/src/webgpu/pbrLayeredMaterialShader.ts
 - packages/deep-engine/lab/iC23LayeredMaterialProduction.ts
 - scripts/i-c23-production-layered-material.mjs
+
+## Browser 保存重开补刀现状核查
+
+1. 全源关键词和未跟踪检查：只有本 runtimePackage/renderPacket.material 闭字段入口缺少新字段，serializeBrowserRenderPacket 已保留；无另一份 hydration 实现。
+2. 合同复用 MaterialParameterOverrides、LayeredSurfaceOverrides 与 normalizeLayeredSurfaceParameters；不新增材质合同或 ABI。
+3. 现有 Vitest、snapshotJson 与 typed-array materialize 无需新依赖。
+4. Browser runtime materialize/Three author packet 消费此入口；Native validate 调用同 parser，因此仅 Browser profile 独立允许两个字段。
+5. 既有 renderPacketMaterialize/Deformation/runtimePackage 测试保留；新增 304B 逐字节、UV/纹理身份、输入快照和未知字段/NaN/Native 拒绝回归；生产 GPU 只追加恢复后单帧，不重复已通过矩阵。
+6. 本规格已记录保存重开真实拒绝；4debbb8d Web 首刀完成，Native 未消费的能力差异仍保持。
+
+已有（不重建）：Browser 序列化 JSON 快照、类型数组还原、层参数规范化、纹理和 UV 生产上传。真实缺口：Browser parser 对扩展/分层字段的独立校验及快照恢复。锁 runtimePackage/renderPacket.ts、新独立 Browser 材质叶与测试；C23 lab/runner 仅增加一轮 rehydration 模式，原 immutable 生产证据保留。
+
+Browser 补刀结果：4文件74测 PASS（新叶11测）；engine/lab tsc PASS。test-output/i-series-0930/layered-material-rehydrated/evidence.json 为唯一1fresh realm 的恢复后增量门，35点作者帧与 serialize→JSON→materialize→实际 PbrRenderer 上传帧 HDR 差0；716800可见像素/8色箱，sourceFresh/stable=true、errors=[]、dispose资源0。两张作者/恢复图已目视，图案和颜色相同。原两fresh production矩阵证据保留；本次没有将1轮标作2轮。
+
+Browser补刀收割（6文件，source冻结）：
+- packages/deep-engine/src/runtimePackage/renderPacket.ts
+- packages/deep-engine/src/runtimePackage/renderPacketBrowserMaterial.ts
+- packages/deep-engine/src/runtimePackage/renderPacketBrowserMaterial.test.ts
+- packages/deep-engine/lab/iC23LayeredMaterialProduction.ts
+- scripts/i-c23-production-layered-material.mjs
+- docs/specs/i-c23-production-layered-material-20260930.md
+
+Native闭字段仍严格拒绝layered/extendedParameters；Native消费与双端白炉后继未完成，I-C23整项保持进行中。

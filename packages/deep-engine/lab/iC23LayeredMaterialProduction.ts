@@ -10,6 +10,7 @@ import { uniformFurnaceEquirect } from "../src/webgpu/whiteFurnace.js";
 import { sceneShader } from "../src/webgpu/pbrShader.js";
 import { composeLayeredMaterialSceneShader } from "../src/webgpu/pbrLayeredMaterialShader.js";
 import { sha256Utf8 } from "../src/shaderPackage/hash.js";
+import { serializeBrowserRenderPacket, materializeRuntimeRenderPacket } from "../src/runtimePackage/renderPacket.js";
 
 const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 const geometry = { id: "layer-plate", revision: 0,
@@ -49,7 +50,7 @@ const layered = (): PbrMaterial => ({ ...base, layered: { layers: [
   { coverage: .4, mode: "overlay", surface: surface(layer1) },
 ] } });
 /** Uses the real packet owner, ordinary PBR material PSO, HDR capture and presentation. */
-export async function runIC23LayeredMaterialProduction(onFrame: (name: string) => Promise<void>) {
+export async function runIC23LayeredMaterialProduction(onFrame: (name: string) => Promise<void>, mode: "production" | "rehydrated" = "production") {
   const canvas = document.createElement("canvas"); canvas.width = 1920; canvas.height = 1080;
   canvas.style.width = "100vw"; canvas.style.height = "100vh"; document.body.append(canvas);
   const capture = new FrameCaptureSession();
@@ -63,8 +64,8 @@ export async function runIC23LayeredMaterialProduction(onFrame: (name: string) =
   });
   const session = renderer.session, device = session.device, frames: unknown[] = [];
   let result: Record<string, any> = {}; device.pushErrorScope("validation");
-  const frame = async (material: PbrMaterial, name: string, currentView = view, sources = textures) => {
-    await renderer.setPacketValidated(packet(material, sources));
+  const frame = async (material: PbrMaterial, name: string, currentView = view, sources = textures, restored?: RenderPacket) => {
+    await renderer.setPacketValidated(restored ?? packet(material, sources));
     const metrics = renderer.render(currentView); if (!metrics) throw Error("Layered production frame did not submit.");
     const image = (await renderer.frameReadbackResults)?.find(isPbrFrameReadbackSnapshot);
     if (!image) throw Error("Layered HDR capture missing.");
@@ -76,6 +77,15 @@ export async function runIC23LayeredMaterialProduction(onFrame: (name: string) =
     return image;
   };
   try {
+    if (mode === "rehydrated") {
+      const authored = packet(layered()), json = serializeBrowserRenderPacket(authored);
+      const restored = materializeRuntimeRenderPacket(JSON.parse(json), "$.browserPacket");
+      const original = await frame(authored.materials[0]!, "author-before-save");
+      const reloaded = await frame(restored.materials[0]!, "rehydrated-two-layers", view, textures, restored);
+      const samples = sampleLocations.map(([x, y]) => ({ x, y, original: rgb(original, x, y), restored: rgb(reloaded, x, y) }));
+      result = { mode, shaderHash: sha256Utf8(composeLayeredMaterialSceneShader(sceneShader)), jsonSha256: sha256Utf8(json),
+        frames, samples, maxRestoredDelta: Math.max(...samples.flatMap(sample => sample.original.map((value, channel) => Math.abs(value - sample.restored[channel]!)))) };
+    } else {
     const baseImage = await frame(base, "base"), a = await frame(layer0, "parent-textured"), b = await frame(layer1, "parent-coating");
     const both = await frame(layered(), "two-layers");
     const combination = sampleLocations.map(([x, y]) => {
@@ -117,14 +127,16 @@ export async function runIC23LayeredMaterialProduction(onFrame: (name: string) =
       maxCombinationError: Math.max(...combination.map(sample => sample.error)), textureDelta, zeroDelta, alphaZeroDelta,
       invalidRetained, cancelledRetained, requiredTextures: device.limits.maxSampledTexturesPerShaderStage,
       furnace, maxFurnaceError, maxFurnaceLayerDelta };
+    }
   } catch (error) { result.failure = error instanceof Error ? `${error.message}\n${error.stack}` : String(error); }
   finally {
     result.validationError = (await device.popErrorScope())?.message; result.errors = session.diagnostics;
     renderer.dispose(); result.remainingResources = session.resourceCount;
   }
-  result.passed = !result.failure && !result.validationError && result.errors.length === 0 && result.remainingResources === 0
+  const clean = !result.failure && !result.validationError && result.errors.length === 0 && result.remainingResources === 0;
+  result.passed = mode === "rehydrated" ? clean && result.maxRestoredDelta === 0 : clean
     && result.maxCombinationError < .002 && result.textureDelta > .01 && result.zeroDelta === 0 && result.alphaZeroDelta === 0
     && result.invalidRetained && result.cancelledRetained;
-  result.passed &&= result.maxFurnaceError < .04 && result.maxFurnaceLayerDelta < .001;
+  if (mode === "production") result.passed &&= result.maxFurnaceError < .04 && result.maxFurnaceLayerDelta < .001;
   return result;
 }
