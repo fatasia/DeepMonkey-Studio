@@ -26,7 +26,7 @@ if (!historic) {
     outfile: `${out}/cloth-export.mjs`, bundle: true, format: "esm", platform: "node" });
   const { exportClothOracleInput } = await import(new URL("../test-output/c5-bullet/cloth-export.mjs", import.meta.url));
   await writeFile(`${out}/cloth-input.json`, JSON.stringify(exportClothOracleInput()));
-  const webLog = run("Web stack/hinge", "cmd.exe", ["/d", "/s", "/c", "pnpm --filter @bim-studio/web exec vitest run src/viewer/rapierPhysicsStackGolden.test.ts src/viewer/rapierPhysicsHingeLimitGolden.test.ts"]);
+  const webLog = run("Web stack/hinge/mechanisms", "cmd.exe", ["/d", "/s", "/c", "pnpm --filter @bim-studio/web exec vitest run src/viewer/rapierPhysicsStackGolden.test.ts src/viewer/rapierPhysicsHingeLimitGolden.test.ts src/viewer/rapierPositionServoGearGolden.test.ts"]);
   await writeFile(`${out}/web-stack.log`, webLog);
   const nativeLog = run("Native stack", "cargo", ["test", "--manifest-path", "packages/deep-engine-native/Cargo.toml", "--locked",
     "--lib", "native_physics::golden_tests::stack_records_per_step_poses_for_cross_end_tolerance_pairing", "--", "--exact"]);
@@ -36,6 +36,16 @@ if (!historic) {
     "native_physics::golden_tests::hinge_exports_existing_actual_golden_for_independent_oracle", "--", "--exact"]);
   await writeFile(`${out}/native-hinge.log`, hingeLog);
   if (!/test result: ok\. [1-9]\d* passed/.test(hingeLog)) throw Error("Native hinge did not execute");
+  const mechanismLog = run("Native mechanisms", "cargo", ["test", "--manifest-path", "packages/deep-engine-native/Cargo.toml", "--locked",
+    "--lib", "native_physics::motor_gear_tests"]);
+  await writeFile(`${out}/native-mechanisms.log`, mechanismLog);
+  if (!/test result: ok\. [1-9]\d* passed/.test(mechanismLog)) throw Error("Native mechanisms did not execute");
+  for (const side of ["web", "native"]) {
+    if ((await stat(`${out}/${side}-slider.json`)).mtimeMs < started) throw Error(`${side} slider output is stale`);
+    const path = `${root}/test-output/t17-motor-gear/${side}-gear-poses.json`;
+    if ((await stat(path)).mtimeMs < started) throw Error(`${side} gear output is stale`);
+    await copyFile(path, `${out}/${side}-gear.json`);
+  }
   for (const side of ["web", "native"]) if ((await stat(`${out}/${side}-hinge.json`)).mtimeMs < started) throw Error(`${side} hinge output is stale`);
   for (const side of ["web", "native"]) {
     const path = `${root}/test-output/t17-cross-tolerance/${side}-stack-poses.json`;
@@ -46,7 +56,10 @@ if (!historic) {
 }
 const [webText, nativeText, clothText, bulletText] = await Promise.all(["web-stack-poses.json", "native-stack-poses.json", "cloth-input.json", "bullet.json"].map(p => readFile(`${out}/${p}`, "utf8")));
 const [webHingeText, nativeHingeText] = await Promise.all(["web-hinge.json", "native-hinge.json"].map(p => readFile(`${out}/${p}`, "utf8")));
-const evidence = { ...compareBullet({ webText, nativeText, clothText, bulletText, webHingeText, nativeHingeText }), currentRun: !historic,
+const [webGearText, nativeGearText, webSliderText, nativeSliderText] = await Promise.all([
+  "web-gear.json", "native-gear.json", "web-slider.json", "native-slider.json"].map(p => readFile(`${out}/${p}`, "utf8")));
+const evidence = { ...compareBullet({ webText, nativeText, clothText, bulletText, webHingeText, nativeHingeText,
+  webGearText, nativeGearText, webSliderText, nativeSliderText }), currentRun: !historic,
   sourceSha256: digest(source), sourceUrl: "https://pypi.org/project/pybullet/3.2.7/",
   evidenceMode: historic ? "historical files only" : "Web/Native/Bullet executed in this run" };
 await writeFile(`${out}/evidence.json`, JSON.stringify(evidence, null, 2)); console.log(JSON.stringify(evidence, null, 2));

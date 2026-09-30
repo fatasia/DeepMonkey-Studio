@@ -1,13 +1,14 @@
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { compareClothCalibration } from "./c5ClothCalibration.mjs";
+import { compareMechanisms } from "./c5MechanismComparison.mjs";
 const hash = text => createHash("sha256").update(text).digest("hex");
 const distance = (a, b) => Math.hypot(...a.map((v, i) => v - b[i]));
 const finite = value => typeof value === "number" ? Number.isFinite(value)
   : Array.isArray(value) ? value.every(finite) : Object.values(value).every(finite);
 
 /** Independent engines have different solvers; report differences, gate only declared invariants. */
-export function compareBullet({ webText, nativeText, clothText, bulletText, webHingeText, nativeHingeText }) {
+export function compareBullet({ webText, nativeText, clothText, bulletText, webHingeText, nativeHingeText, ...mechanismTexts }) {
   const web = JSON.parse(webText), native = JSON.parse(nativeText), cloth = JSON.parse(clothText), bullet = JSON.parse(bulletText);
   if (bullet.version !== "3.2.7" || bullet.inputs?.["web-stack-poses.json"] !== hash(webText)
     || bullet.inputs?.["cloth-input.json"] !== hash(clothText)) throw Error("Bullet version/input provenance mismatch");
@@ -66,11 +67,12 @@ export function compareBullet({ webText, nativeText, clothText, bulletText, webH
   return { passed: true, scope: "independent-test-oracle-record", version: bullet.version,
     stackErrors, hingeAngleErrors, maxClothPositionDifference, maxBulletAnchorDrift, freeFallMaxError, repeatStable: true,
     finiteStiffnessCalibration: compareClothCalibration(cloth, bullet),
-    accuracyEquivalent: false, findings: ["Finite-stiffness cloth trajectory differs; matched compliance/damping/topology calibration remains"],
+    mechanisms: compareMechanisms(mechanismTexts, bullet),
+    accuracyEquivalent: false, findings: ["Full cloth topology/damping family differs; matching finite stiffness subset converges within its registered gate"],
     inputHashes: { web: hash(webText), native: hash(nativeText), cloth: hash(clothText) },
     knownInputDifferences: ["Bullet product friction mapped sqrt(0.6) per collider; Rapier average is 0.6",
       "Bullet sequential impulse/contact ERP vs Rapier solver/contact slop",
       "Bullet hinge torque force10 vs Rapier motor strength10; invariant/angle records only",
       "Bullet triangular mass-spring stiffness40/damping0.1 vs XPBD structural+both diagonals compliance0/substep damping0.01"],
-    excluded: ["solver trajectory equivalence", "gear/slider oracle", "full cloth finite-stiffness family", "full C5"] };
+    excluded: ["solver trajectory equivalence", "full cloth finite-stiffness family"] };
 }

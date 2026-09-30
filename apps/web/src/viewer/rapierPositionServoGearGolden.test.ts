@@ -172,7 +172,7 @@ describe("Rapier Web position-servo golden", () => {
 
   it("drives a prismatic slider to the authored target position within band and drift-free, bit-exactly", async () => {
     const run = async () => {
-      const harness = await buildWorld();
+      const harness = await buildWorld(8);
       const slider = addBody(harness, v(0, 0, 0), v(0.03, 0.02, 0.02), 0.5);
       mountRapierJoint(harness.rapier, harness.world, harness.fixed, slider,
         jointState("j1-slider-world", "prismatic", "body-slider", v(0, 0, 0), v(0, 0, 0), v(1, 0, 0), {
@@ -200,6 +200,11 @@ describe("Rapier Web position-servo golden", () => {
     expect(mean, `settled position ${mean.toFixed(5)} m`).toBeLessThanOrEqual(SERVO.prismaticTarget + SERVO.prismaticBand);
     const drift = Math.max(...first.map((pose) => Math.max(Math.abs(pose.p[1]!), Math.abs(pose.p[2]!))));
     expect(drift, `lateral drift ${drift.toExponential(2)} m`).toBeLessThan(SERVO.lateralDrift);
+    const directory = resolve(__dirname, "../../../../test-output/c5-bullet");
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(resolve(directory, "web-slider.json"), JSON.stringify({ positions: first.map(pose => pose.p),
+      repeat: repeat.map(pose => pose.p), meta: { mass: .5, target: SERVO.prismaticTarget,
+        stiffness: SERVO.stiffness, damping: SERVO.damping, step: SERVO.fixedStep, steps: SERVO.steps, solverIterations: 8 } }));
   });
 
   it("records per-step servo-arm poses for the Web↔Native tolerance pairing (solver iterations aligned at 8)", async () => {
@@ -341,10 +346,14 @@ describe("Rapier Web gear-coupling golden", () => {
       { ratio: GEAR.ratio, stiffness: GEAR.stiffness, damping: GEAR.damping },
     );
     const positions: Array<[number, number, number]> = [];
+    const anglesDriver: number[] = [], anglesFollower: number[] = [];
     for (let step = 0; step < GEAR.steps; step += 1) {
       coupling.update();
       expect(harness.host.advance(GEAR.fixedStep).steps, `step ${step + 1}`).toBe(1);
       positions.push(readBody(gearB).p);
+      const qa = gearA.rotation(), qb = gearB.rotation();
+      anglesDriver.push(unwrap(anglesDriver.at(-1), 2 * Math.atan2(qa.z, qa.w)));
+      anglesFollower.push(unwrap(anglesFollower.at(-1), 2 * Math.atan2(qb.z, qb.w)));
     }
     harness.host.dispose();
     const payload = {
@@ -354,7 +363,7 @@ describe("Rapier Web gear-coupling golden", () => {
         gravity: [0, 0, 0], fixedStepSeconds: GEAR.fixedStep, steps: GEAR.steps,
         solverIterations: 8, bodies: ["body-gear-b"],
       },
-      positions,
+      positions, anglesDriver, anglesFollower,
     };
     const directory = resolve(__dirname, "../../../../test-output/t17-motor-gear");
     mkdirSync(directory, { recursive: true });

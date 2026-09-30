@@ -7,6 +7,7 @@ import pathlib
 import sys
 
 import pybullet as p
+from c5_bullet_mechanisms import mechanism_receipts
 
 root = pathlib.Path(__file__).resolve().parents[1]
 out = root / "test-output/c5-bullet"
@@ -110,12 +111,13 @@ cloth_input = json.loads((out / "cloth-input.json").read_text(encoding="utf8"))
 hinge_input = json.loads((out / "web-hinge.json").read_text(encoding="utf8"))
 result = {"version": version, "apiVersion": p.getAPIVersion(), "host": "Bullet DIRECT; test-only",
           "inputs": {name: hashlib.sha256((out / name).read_bytes()).hexdigest()
-                     for name in ["web-stack-poses.json", "cloth-input.json", "web-hinge.json"]},
+                     for name in ["web-stack-poses.json", "cloth-input.json", "web-hinge.json", "web-gear.json", "web-slider.json"]},
           "stack": [stack(stack_input["meta"]) for _ in range(2)],
           "cloth": [cloth(cloth_input, i) for i in range(2)],
           "freeFall": [cloth(cloth_input["freeFall"], i) for i in range(2)],
           "finiteStiffnessConvergence": [[cloth(profile, i) for i in range(2)]
                                          for profile in cloth_input["finiteStiffnessConvergence"]],
           "hinge": [{"limited": hinge(hinge_input["meta"], True), "control": hinge(hinge_input["meta"], False)} for _ in range(2)]}
+result.update(mechanism_receipts(out))
 (out / "bullet.json").write_text(json.dumps(result, allow_nan=False), encoding="utf8")
 print("Bullet stack/cloth two-round output written")

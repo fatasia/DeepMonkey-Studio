@@ -471,6 +471,12 @@ fn prismatic_position_servo_settles_at_target_bit_exactly() {
         "settled position {mean:.5} outside ±{PRISMATIC_BAND} m of {PRISMATIC_TARGET}"
     );
     assert!(drift < LATERAL_DRIFT, "lateral drift {drift:.2e} m");
+    let directory = concat!(env!("CARGO_MANIFEST_DIR"), "/../../test-output/c5-bullet");
+    std::fs::create_dir_all(directory).unwrap();
+    std::fs::write(format!("{directory}/native-slider.json"), serde_json::to_string(&serde_json::json!({
+        "positions":first,"repeat":repeat,"meta":{"mass":0.5,"target":PRISMATIC_TARGET,
+        "stiffness":SERVO_STIFFNESS,"damping":SERVO_DAMPING,"step":1.0/60.0,"steps":SERVO_STEPS,"solverIterations":8}
+    })).unwrap()).unwrap();
 }
 
 #[test]
