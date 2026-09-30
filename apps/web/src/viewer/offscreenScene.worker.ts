@@ -5,6 +5,7 @@ import { applyOffscreenFrame } from "./offscreenSceneFrames";
 import { createOffscreenPostProcessing } from "./offscreenPostProcessing";
 import type { PostProcessingRuntime } from "./postProcessingRuntime";
 import { installThreeDisplayToneMapping } from "./threeDisplayToneMapping";
+import { installThreeMaterialMath } from "./threeMaterialMath";
 
 let renderer: THREE.WebGLRenderer | undefined; let scene: THREE.Scene | undefined; let snapshot: OffscreenSnapshot | undefined;
 let canvas: OffscreenCanvas | undefined;
@@ -54,6 +55,7 @@ self.onmessage = (event: MessageEvent<OffscreenRequest>) => {
         snapshot = message.snapshot; scene = parseOffscreenSnapshot(snapshot); canvas = message.canvas;
         message.canvas.addEventListener("webglcontextlost", () => { if (!closed) respond({ type: "error", reason: "后台 GPU 上下文已丢失" }); });
         installThreeDisplayToneMapping();
+        installThreeMaterialMath();
         renderer = new THREE.WebGLRenderer({ canvas: message.canvas, antialias: true, alpha: true, powerPreference: "high-performance" }); renderer.info.autoReset = false;
         respond({ type: "ready" });
       }
