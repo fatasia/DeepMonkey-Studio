@@ -139,6 +139,37 @@ export const CLOTH_PARALLEL_ENTRY_FINALIZE = "finalizeVelocityKinetics";
 `,
     preamble: `export const DEEP_CLOTH_PARALLEL_SOLVER_WGSL = /* wgsl */ `,
   },
+  {
+    // I 级 C1 3DGS 实景扫描家族。真源 wgsl/gaussianSplatQuads.wgsl,纯 TS 消费
+    // (无 Rust 半;instanced quad splatting,EWA 协方差投影,排序在 CPU)。
+    // ABI 常量与 src/gaussianSplat/splatGpuResources.ts 的布局常量互钉,
+    // 一致性由 splatQuadsWgslChecksum.test.ts 锁定。
+    source: "gaussianSplatQuads.wgsl",
+    module: resolve(packageRoot, "src/gaussianSplat/splatQuadsWgsl.ts"),
+    gate: "src/gaussianSplat/splatQuadsWgslChecksum.test.ts",
+    rustHalf: null,
+    constants: `/**
+ * I 级 C1 3DGS instanced quad splatting 家族的生成镜像。唯一真源
+ * wgsl/gaussianSplatQuads.wgsl,纯 TS 消费(无 Rust 半)。
+ * 常量与 splatGpuResources.ts(SPLAT_UNIFORM_FLOAT_COUNT 等)互钉。
+ */
+
+/** ABI 版本:record 布局或 uniform 结构变化时递增并同步两端。 */
+export const DEEP_GAUSSIAN_SPLAT_ABI_VERSION = 1;
+/** uniform 绑定组与槽位(group0:binding0 uniform + binding1 storage)。 */
+export const DEEP_GAUSSIAN_SPLAT_UNIFORM_BINDING = 0;
+export const DEEP_GAUSSIAN_SPLAT_STORAGE_BINDING = 1;
+/** 单粒 record 的 vec4f 个数与字节数(CPU 解码产物与 storage 逐字一致)。 */
+export const DEEP_GAUSSIAN_SPLAT_RECORD_VEC4_STRIDE = 4;
+export const DEEP_GAUSSIAN_SPLAT_RECORD_BYTES = 64;
+/** uniform 总字节(view+viewProjection+camera+viewportFocal+controls,176B)。 */
+export const DEEP_GAUSSIAN_SPLAT_UNIFORM_BYTES = 176;
+/** 渲染入口名(消费侧按名取 entry point)。 */
+export const DEEP_GAUSSIAN_SPLAT_ENTRY_VERTEX = "vsMain";
+export const DEEP_GAUSSIAN_SPLAT_ENTRY_FRAGMENT = "fsMain";
+`,
+    preamble: `/** 3DGS instanced quad splatting 渲染着色器(真源 wgsl/gaussianSplatQuads.wgsl)。 */\nexport const GAUSSIAN_SPLAT_QUADS_WGSL = /* wgsl */ `,
+  },
 ];
 
 for (const entry of SHARED_WGSL) {
@@ -149,8 +180,10 @@ for (const entry of SHARED_WGSL) {
   const moduleText = `// GENERATED FILE — DO NOT EDIT BY HAND(全文件生成物,手改会在字节门禁处被打回)。
 // 唯一真源: wgsl/${entry.source}(WGSL 单源,TS 与 Rust 双端共享同一份文件)。
 // 重新生成: pnpm --filter @bim-studio/deep-engine wgsl:sync
-// 字节门禁: ${entry.gate}(?raw 读真源 + SHA-256 夹具对拍);
-//          Rust 半: ${entry.rustHalf}(include_str! 引用同一文件,共用同一夹具)。
+${entry.rustHalf
+    ? `// 字节门禁: ${entry.gate}(?raw 读真源 + SHA-256 夹具对拍);
+//          Rust 半: ${entry.rustHalf}(include_str! 引用同一文件,共用同一夹具)。`
+    : `// 字节门禁: ${entry.gate}(?raw 读真源 + SHA-256 夹具对拍;无 Rust 半,纯 TS 消费)。`}
 
 ${entry.constants}
 ${entry.preamble}${JSON.stringify(wgsl)};

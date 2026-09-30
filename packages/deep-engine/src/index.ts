@@ -179,6 +179,7 @@ export * from "./shadows/index.js";
 export * from "./runtimePackage/index.js";
 export * from "./fog/index.js";
 export * from "./environment/index.js";
+export * from "./gaussianSplat/index.js";
 export * from "./r12/frameCapture.js";
 export * from "./r12/shaderSourceMap.js";
 export * from "./webgpu/pbrFrameCaptureReadback.js";
