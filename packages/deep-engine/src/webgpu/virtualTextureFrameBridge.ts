@@ -129,8 +129,11 @@ export class VirtualTextureFrameBridge {
   private lastSamples: readonly VirtualTextureSampleRequest[] = [];
   private disposed = false;
 
+  private readonly now: () => number;
+
   private constructor(session: DeviceSession, private readonly resolved: ResolvedVirtualTextureOptions
     & { readonly enabled: true }) {
+    this.now = resolved.frameClock ?? (() => Date.now());
     this.residency = new VirtualTextureAtlasResidency(session, resolved.spec, {
       maxResidentBytes: resolved.maxResidentBytes,
       ...(resolved.maxPages !== undefined ? { maxPages: resolved.maxPages } : {}),
@@ -164,7 +167,7 @@ export class VirtualTextureFrameBridge {
    *  fail-closed 口径);累计口径经 pageResolveCounts,收敛断言须在批次收口后差分。 */
   observeFrame(entries: readonly VirtualTextureFeedbackEntry[]): VirtualTextureFrameMetrics {
     this.assertUsable();
-    const begin = performance.now();
+    const begin = this.now();
     const frame = this.tick;
     const observed = this.reader.observe(frame, entries);
     const telemetry = this.residency.advance(this.tick, observed.footprints);
@@ -191,7 +194,7 @@ export class VirtualTextureFrameBridge {
         droppedUnknownTexture: observed.stats.droppedUnknownTexture, mergedEntries: observed.stats.mergedEntries,
         ...(unavailable !== undefined ? { unavailable } : {}) }),
       ...(pages ? { pages: Object.freeze(pages) } : {}),
-      sampleRequests: this.lastSamples.length, advanceMs: performance.now() - begin,
+      sampleRequests: this.lastSamples.length, advanceMs: this.now() - begin,
     });
     this.tick += 1;
     this.lastMetrics = metrics;

@@ -164,7 +164,8 @@ export class PbrRenderer {
     this.clusterLodEnabled = resolveClusterLodSlotOption(options.clusterLod);
     // F4 虚拟纹理(opt-in):resolve disabled(未启用/非法配置)时不构造任何资源,
     // 与整纹理路径零差异;enabled 时驻留失败 fail-closed 回整纹理(原因随遥测披露)。
-    this.virtualTextures = createVirtualTextureFrameBridge(session, options.virtualTextures);
+    this.virtualTextures = createVirtualTextureFrameBridge(session,
+      options.virtualTextures === undefined ? undefined : { ...options.virtualTextures, frameClock: () => performance.now() });
     this.virtualTileLookup = this.virtualTextures ? new VirtualTextureTileLookupPass(session) : undefined;
     this.autoExposure = options.autoExposure === undefined ? undefined
       : new PbrAutoExposureRuntime(options.autoExposure, options.environment);

@@ -96,9 +96,10 @@ export function renderPipelineFingerprint(wgslCodes: readonly string[],
   return `pso-sha256-${sha256Utf8(parts.join("\u0000"))}`;
 }
 
+/** Runtime modules never touch host globals; callers inject their monotonic
+ * clock (the production pipeline module injects performance.now). */
 function defaultNow(): number {
-  return typeof performance !== "undefined" && typeof performance.now === "function"
-    ? performance.now() : Date.now();
+  return Date.now();
 }
 
 const caches = new WeakMap<GPUDevice, PipelineCompileCache>();

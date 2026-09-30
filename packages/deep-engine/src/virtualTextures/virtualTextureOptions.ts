@@ -23,6 +23,9 @@ export interface VirtualTextureOptions {
   readonly maxUploadPagesPerFrame?: number;
   /** 驻留保护帧数(防抖动 dwell);缺省 0 = 无保护。 */
   readonly minResidentFrames?: number;
+  /** Injected monotonic frame clock for advanceMs telemetry; runtime modules
+   * never touch host globals (the production renderer injects performance.now). */
+  readonly frameClock?: () => number;
 }
 
 export type ResolvedVirtualTextureOptions =
@@ -34,6 +37,7 @@ export type ResolvedVirtualTextureOptions =
     readonly spec: VirtualTextureTileSpec;
     readonly maxUploadPagesPerFrame: number;
     readonly minResidentFrames: number;
+    readonly frameClock?: () => number;
   };
 
 /** 缺省值出处:128 MiB 覆盖 ~2048 张 128² RGBA8 页,单张 4K² 纹理全链的 ~1.4 倍。 */
@@ -79,5 +83,6 @@ export function resolveVirtualTextureOptions(options: VirtualTextureOptions = {}
     spec,
     maxUploadPagesPerFrame: options.maxUploadPagesPerFrame ?? DEFAULT_VIRTUAL_TEXTURE_UPLOAD_PAGES_PER_FRAME,
     minResidentFrames: options.minResidentFrames ?? 0,
+    ...(options.frameClock !== undefined ? { frameClock: options.frameClock } : {}),
   };
 }

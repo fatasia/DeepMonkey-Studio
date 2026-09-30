@@ -160,7 +160,7 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     : layeredMaterials ? composeLayeredMaterialSceneShader(source) : source;
   // C26:逐管线编译走指纹缓存(WGSL 源哈希 + 描述符指纹),命中复用并记录
   // 逐管线编译耗时清单;WGSL 源或描述符变更即指纹漂移,陈旧条目自动失效。
-  const compileCache = pipelineCompileCacheForDevice(device);
+  const compileCache = pipelineCompileCacheForDevice(device, { now: () => performance.now() });
   const createPipeline = (descriptor: GPURenderPipelineDescriptor): Promise<GPURenderPipeline> =>
     compileCache.create([moduleCode], descriptor, () => device.createRenderPipelineAsync(descriptor));
   // 首帧关键子集的指纹登记:跨会话预热计划据此识别"上次哪些管线是首帧必需"。
