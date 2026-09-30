@@ -54,6 +54,10 @@ export { createPbrEnvironment } from "./pbrEnvironmentSource.js";
 export type { PbrEnvironmentSource } from "./pbrEnvironmentSource.js";
 export { PbrEnvironmentState } from "./pbrEnvironmentState.js";
 export type { EnvironmentFactory, EnvironmentStageResult } from "./pbrEnvironmentState.js";
+export { DynamicIblResidency, classifyDynamicIblInvalidation, iblIdentity, planDynamicIblStage,
+  dynamicIblLeaseBytes, dynamicIblMipBytes, dynamicIblLutBytes } from "./dynamicIblResidency.js";
+export type { DynamicIblIdentity, DynamicIblInvalidation, DynamicIblDisposition, DynamicIblLease,
+  DynamicIblPlaneLease, DynamicIblStagePlan } from "./dynamicIblResidency.js";
 export type { RenderView, FrameMetrics, PbrRendererOptions } from "./pbrRenderer.js";
 export { encodeRenderGraphEncoderGroup, executeRenderGraphEncoders } from "./renderGraphEncoderExecutor.js";
 export type { RenderGraphEncodedGroup, RenderGraphEncoderExecutionOptions, RenderGraphEncoderExecutionResult,
