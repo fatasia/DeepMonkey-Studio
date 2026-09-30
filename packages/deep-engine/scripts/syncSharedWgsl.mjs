@@ -247,6 +247,37 @@ export const SDF_QUERY_MAX_POINTS = 65536;
     preamble: `/** SDF 碰撞 profile 查询核:trilinear 距离 + 中心差分梯度 + 域外 fail-closed(真源 wgsl/sdfCollisionQuery.wgsl)。 */\nexport const DEEP_SDF_COLLISION_QUERY_WGSL = /* wgsl */ `,
   },
   {
+    // I 级 C17 节点化/流场粒子首刀家族。真源 wgsl/particleFlowField.wgsl,纯 TS 消费
+    // (无 Rust 半;curl-noise 流场驱动的粒子 compute 核,绑定 0..5 与既有粒子核同构,
+    // 新增 binding 6 流场 uniform)。常量与 gpuParticleFlowFieldTypes.ts(打包/校验)
+    // 与 flowFieldNoise.ts(CPU f32 逐运算镜像)互钉,一致性由
+    // gpuParticleFlowFieldWgslChecksum.test.ts 锁定。
+    source: "particleFlowField.wgsl",
+    module: resolve(packageRoot, "src/webgpu/gpuParticleFlowFieldWgsl.ts"),
+    gate: "src/webgpu/gpuParticleFlowFieldWgslChecksum.test.ts",
+    rustHalf: null,
+    constants: `/**
+ * I 级 C17 流场粒子 compute 家族的生成镜像。唯一真源 wgsl/particleFlowField.wgsl,
+ * 纯 TS 消费(无 Rust 半)。常量与 gpuParticleFlowFieldTypes.ts(打包/校验)与
+ * flowFieldNoise.ts(CPU f32 逐运算镜像)互钉。
+ */
+
+/** ABI 版本:FlowParams 布局、哈希常量或公式语义变化时递增并同步 CPU 镜像。 */
+export const GPU_PARTICLE_FLOW_ABI_VERSION = 1;
+/** 流场 uniform 总字节(phase/scale/speed/strength + maxSpeed/seed + pad×2)。 */
+export const GPU_PARTICLE_FLOW_UNIFORM_BYTES = 32;
+/** compute 入口名(运行时与测试按名取 entry point)。 */
+export const GPU_PARTICLE_FLOW_ENTRY = "simulateAndCompactFlow";
+/** 采样域硬限:f32→i32 格点转换前先钳(越界转换未定义,必须钳)。 */
+export const GPU_PARTICLE_FLOW_DOMAIN_LIMIT = 1000000;
+/** 势场去相关种子混入量(host 镜像同字面,任何一端漂移都在字节门禁失败)。 */
+export const GPU_PARTICLE_FLOW_POTENTIAL_A = 1474034859;
+export const GPU_PARTICLE_FLOW_POTENTIAL_B = 645307069;
+export const GPU_PARTICLE_FLOW_POTENTIAL_C = 752542313;
+`,
+    preamble: `/** curl-noise 流场粒子 compute 核(真源 wgsl/particleFlowField.wgsl)。 */\nexport const GPU_PARTICLE_FLOW_FIELD_WGSL = /* wgsl */ `,
+  },
+  {
     // I 级 C23 分层材质混合核家族。真源 wgsl/materialLayerBlend.wgsl,纯 TS 消费
     // (无 Rust 半;求值响应级 rgb/lobe 逐通道混合,replace/overlay 两种语义)。
     // 常量与 materialLayeredParameters.ts(MATERIAL_LAYER_BLEND_MODE_CODES 等)互钉,
@@ -273,6 +304,37 @@ export const DEEP_LAYER_SLOT_FLOAT_COUNT = 8;
 export const DEEP_LAYERED_BLOCK_FLOAT_COUNT = 22;
 `,
     preamble: `/** 分层材质求值响应级混合核(真源 wgsl/materialLayerBlend.wgsl)。 */\nexport const MATERIAL_LAYER_BLEND_WGSL = /* wgsl */ `,
+  },
+  {
+    // I 级 C18 体积光 god rays 家族。真源 wgsl/volumetricGodRays.wgsl,纯 TS 消费
+    // (无 Rust 半;完整 compute kernel,与 G7 体积雾核同参数空间,增量 = 每步
+    // 阴影图遮挡采样 + strength 乘子)。ABI 常量与 volumetricGodRays.ts/
+    // volumetricGodRaysCpu.ts(预算硬顶、光基构造、CPU 镜像)互钉,
+    // 一致性由 volumetricGodRaysWgslChecksum.test.ts 锁定。
+    source: "volumetricGodRays.wgsl",
+    module: resolve(packageRoot, "src/lighting/volumetricGodRaysWgsl.ts"),
+    gate: "src/lighting/volumetricGodRaysWgslChecksum.test.ts",
+    rustHalf: null,
+    constants: `/**
+ * I 级 C18 体积光 god rays 家族的生成镜像。唯一真源 wgsl/volumetricGodRays.wgsl,
+ * 纯 TS 消费(无 Rust 半)。常量与 volumetricGodRays.ts / volumetricGodRaysCpu.ts
+ * (预算硬顶、光空间基、CPU 逐式镜像)互钉。
+ */
+
+/** ABI 版本:GodRaysParams 布局、比较语义或公式变化时递增并同步 CPU 镜像。 */
+export const DEEP_GOD_RAYS_ABI_VERSION = 1;
+/** workgroup 尺寸:与体积雾核同尺寸(8,8)。 */
+export const DEEP_GOD_RAYS_WORKGROUP_SIZE = 8;
+/** GodRaysParams 的 vec4 槽位数(sourceSize/scatterSize 合占 1 槽 + 8 个 vec4 成员)。 */
+export const DEEP_GOD_RAYS_PARAMS_VEC4_COUNT = 9;
+/** GodRaysParams 总字节数(9 x 16B = 144B;结构体 16B 对齐)。 */
+export const DEEP_GOD_RAYS_PARAMS_BYTES = 144;
+/** 深度图未命中 texel 的 FAR 哨兵(与 volumetricGodRays.ts 互钉)。 */
+export const DEEP_GOD_RAYS_SHADOW_FAR_SENTINEL = 1000000000;
+/** compute 入口名(消费侧按名取 entry point)。 */
+export const DEEP_GOD_RAYS_ENTRY = "marchVolumetricGodRays";
+`,
+    preamble: `/** 体积光 god rays 半分辨率 ray-march 核(真源 wgsl/volumetricGodRays.wgsl)。 */\nexport const VOLUMETRIC_GOD_RAYS_MARCH_WGSL = /* wgsl */ `,
   },
 ];
 
