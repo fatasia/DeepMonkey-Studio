@@ -5,6 +5,7 @@ import { closeSharedGltfPool } from "./sharedGltfAssets";
 import { disposeGltfKtx2 } from "./gltfKtx2Support";
 import { disposeOrdinaryPicking } from "./ordinaryPicking";
 import { disposeViewerPerformanceBinding } from "./viewerPerformanceBinding";
+import { disposeStudioReflectionProbes } from "./studioReflectionProbeCarriers";
 
 /** 集中释放浏览器事件、Worker、物理世界和 GPU 资源。 */
 export abstract class ViewerEngineLifecycle extends ViewerEngineNavigationTools {
@@ -79,6 +80,7 @@ export abstract class ViewerEngineLifecycle extends ViewerEngineNavigationTools 
     this.skyboxTextures.forEach((texture) => texture.dispose());
     this.skyboxTextures.clear();
     this.externalEnvironmentTexture?.dispose();
+    disposeStudioReflectionProbes(this.scene);
     this.disposeClippingHelper();
     this.clearNavigationCollisionDebug();
     this.navigationCollisionDebugGroup.removeFromParent();

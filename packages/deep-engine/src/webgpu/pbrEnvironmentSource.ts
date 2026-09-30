@@ -4,13 +4,14 @@ import type { DeviceSession } from "./deviceSession.js";
 import { createStudioEnvironment, type StudioEnvironment } from "./studioEnvironment.js";
 import { createPrefilteredEnvironment } from "./prefilteredEnvironment.js";
 import type { RuntimePrefilteredIbl } from "../runtimePackage/environmentTypes.js";
+import { preparePbrReflectionProbes, snapshotPbrReflectionProbeSources, type PbrReflectionProbeSource } from "./pbrReflectionProbePreparation.js";
 
 function cancelled(reason: unknown): Error {
   if (reason instanceof Error) return reason;
   const error = new Error("GPU preparation cancelled"); error.name = "AbortError"; return error;
 }
 
-export type PbrEnvironmentSource =
+export type PbrEnvironmentSource = (
   | { readonly kind: "studio" }
   | { readonly kind: "prefiltered-ibl"; readonly environment: RuntimePrefilteredIbl }
   | {
@@ -18,7 +19,7 @@ export type PbrEnvironmentSource =
     readonly image: RadianceHdrImage;
     readonly backgroundImage?: RadianceHdrImage;
     readonly options?: HdrEnvironmentOptions;
-  };
+  }) & { readonly reflectionProbes?: readonly PbrReflectionProbeSource[] };
 
 function assertSource(source: PbrEnvironmentSource | undefined): void {
   if (source === undefined) return;
@@ -34,8 +35,10 @@ function assertSource(source: PbrEnvironmentSource | undefined): void {
 export async function createPbrEnvironment(session: DeviceSession, source: PbrEnvironmentSource | undefined,
   signal: AbortSignal): Promise<StudioEnvironment> {
   assertSource(source);
+  const probes = snapshotPbrReflectionProbeSources(source?.reflectionProbes);
   if (signal.aborted) throw cancelled(signal.reason);
-  if (!source || source.kind === "studio") return await createStudioEnvironment(session, signal);
-  if (source.kind === "prefiltered-ibl") return await createPrefilteredEnvironment(session, source.environment, signal);
-  return await createHdrEnvironment(session, source.image, source.options, signal, source.backgroundImage);
+  const base = !source || source.kind === "studio" ? await createStudioEnvironment(session, signal)
+    : source.kind === "prefiltered-ibl" ? await createPrefilteredEnvironment(session, source.environment, signal)
+    : await createHdrEnvironment(session, source.image, source.options, signal, source.backgroundImage);
+  return await preparePbrReflectionProbes(session, base, probes, signal, source?.kind === "radiance-hdr" ? source.image : undefined);
 }

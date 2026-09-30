@@ -21,7 +21,7 @@ export async function readSharedDeepFrame(renderer: PbrRenderer, width: number, 
       { buffer, bytesPerRow }, { width, height }); device.queue.submit([encoder.finish()]);
     const [snapshots] = await Promise.all([bounded(pending), bounded(buffer.mapAsync(GPUMapMode.READ))]);
     const hdr = snapshots.find(isPbrFrameReadbackSnapshot);
-    if (!hdr || hdr.width !== width || hdr.height !== height) throw Error("Formal production HDR frame readback missing or wrong extent");
+    if (!hdr || hdr.width !== width || hdr.height !== height || hdr.format !== "rgba16float") throw Error("Formal production HDR frame readback missing or wrong extent/format");
     const bytes = new Uint8Array(buffer.getMappedRange()), display = new Uint8Array(width * height * 4);
     if (session.format !== "bgra8unorm" && session.format !== "rgba8unorm") throw Error(`Unsupported actual surface format ${session.format}`);
     for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {

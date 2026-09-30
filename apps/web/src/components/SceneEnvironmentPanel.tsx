@@ -18,6 +18,7 @@ import { SceneLightingEditor } from "./SceneLightingEditor";
 import type { ProbeGridBakeUiState } from "./SceneProbeGridBakePanel";
 import { ScenePostProcessingEditor } from "./ScenePostProcessingEditor";
 import { ProjectEnvironmentResourcePicker } from "./ProjectAppearanceResources";
+import { SceneReflectionProbeEditor } from "./SceneReflectionProbeEditor";
 import { useFloatingPanelDrag } from "../hooks/useFloatingPanelDrag";
 import type { RendererBackend } from "../viewer/ViewerEngine";
 
@@ -294,6 +295,7 @@ export function SceneEnvironmentPanel(props: SceneEnvironmentPanelProps) {
         </label>
       </div>
       <ProjectEnvironmentResourcePicker locale={locale} assets={props.projectAssets ?? []} value={environment} onApply={props.onEnvironmentChange} />
+      <SceneReflectionProbeEditor locale={locale} assets={props.projectAssets ?? []} value={environment} onChange={props.onEnvironmentChange} />
     </div>
   );
 }

@@ -8,6 +8,7 @@ import type { WorldClusteredLights } from "../lighting/worldLights.js";
 import { PbrBackgroundPass } from "./pbrBackgroundPass.js";
 import type { PbrFrameUniformView } from "./pbrFrameUniforms.js";
 import { packPbrFog, type PbrFog } from "./pbrFog.js";
+import { packPbrReflectionProbes, pbrReflectionProbeViews } from "./pbrReflectionProbes.js";
 
 /** Frame-global bindings; resources are owned by the renderer's device session. */
 export class PbrMainBindings {
@@ -15,6 +16,8 @@ export class PbrMainBindings {
   private diffuseData = packDiffuseIrradiance();
   private readonly fogBuffer: GPUBuffer;
   private fogData = packPbrFog(undefined);
+  private readonly reflectionBuffers: readonly [GPUBuffer, GPUBuffer];
+  private reflectionBufferIndex = 0;
   binding: GPUBindGroup;
   private backgroundPass: PbrBackgroundPass | undefined;
 
@@ -23,11 +26,17 @@ export class PbrMainBindings {
     environment: StudioEnvironment) {
     this.diffuseBuffer = uploadBuffer(session, "Deep authored diffuse irradiance", this.diffuseData, GPUBufferUsage.UNIFORM);
     let fogBuffer: GPUBuffer | undefined;
+    const reflectionBuffers: GPUBuffer[] = [];
     try {
       fogBuffer = uploadBuffer(session, "Deep authored fog", this.fogData, GPUBufferUsage.UNIFORM);
       this.fogBuffer = fogBuffer;
+      const reflectionData = packPbrReflectionProbes(environment.reflectionProbes);
+      for (let index = 0; index < 2; index++) reflectionBuffers.push(uploadBuffer(session,
+        "Deep local reflection records", reflectionData, GPUBufferUsage.UNIFORM));
+      this.reflectionBuffers = reflectionBuffers as [GPUBuffer, GPUBuffer];
       this.binding = this.createBinding(environment);
     } catch (error) {
+      for (const buffer of reflectionBuffers) session.release(buffer);
       if (fogBuffer) session.release(fogBuffer);
       session.release(this.diffuseBuffer); throw error;
     }
@@ -43,7 +52,13 @@ export class PbrMainBindings {
     return diffuseChanged || fogChanged;
   }
 
-  setEnvironment(environment: StudioEnvironment): void { this.binding = this.createBinding(environment); }
+  setEnvironment(environment: StudioEnvironment): void {
+    const nextIndex = 1 - this.reflectionBufferIndex;
+    const data = packPbrReflectionProbes(environment.reflectionProbes);
+    const binding = this.createBinding(environment, this.shadows, this.reflectionBuffers[nextIndex]!);
+    this.session.device.queue.writeBuffer(this.reflectionBuffers[nextIndex]!, 0, data);
+    this.reflectionBufferIndex = nextIndex; this.binding = binding;
+  }
 
   setShadows(shadows: CascadedShadowResources, environment: StudioEnvironment): void {
     const binding = this.createBinding(environment, shadows);
@@ -66,13 +81,17 @@ export class PbrMainBindings {
     return true;
   }
 
-  private createBinding(environment: StudioEnvironment, shadows = this.shadows): GPUBindGroup {
+  private createBinding(environment: StudioEnvironment, shadows = this.shadows,
+    reflectionBuffer = this.reflectionBuffers[this.reflectionBufferIndex]!): GPUBindGroup {
+    const [primary, secondary] = pbrReflectionProbeViews(environment);
     return this.session.device.createBindGroup({ layout: this.pipelines.main.getBindGroupLayout(0), entries: [
       { binding: 0, resource: { buffer: this.frameBuffer } }, { binding: 1, resource: shadows.legacyView },
       { binding: 2, resource: shadows.sampler }, { binding: 3, resource: environment.specular },
       { binding: 4, resource: environment.diffuse }, { binding: 5, resource: environment.brdf },
       { binding: 6, resource: environment.sampler }, { binding: 7, resource: { buffer: this.diffuseBuffer } },
       { binding: 8, resource: { buffer: this.fogBuffer } },
+      { binding: 9, resource: primary }, { binding: 10, resource: secondary },
+      { binding: 11, resource: { buffer: reflectionBuffer } },
     ] });
   }
 

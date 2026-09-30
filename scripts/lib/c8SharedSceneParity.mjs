@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 
-export function compareSharedScene(run) {
+export function compareSharedScene(run, options = {}) {
+  assert(options && typeof options === "object" && !Array.isArray(options) && Object.keys(options).every(key => key === "exposures"), "invalid comparison options");
+  const exposures = Object.hasOwn(options, "exposures") ? options.exposures : [.5, 2];
+  assert(Array.isArray(exposures) && exposures.length > 0 && exposures.every(value => value === .5 || value === 2) && new Set(exposures).size === exposures.length, "invalid registered exposures");
   const { width, height, frames } = run;
   assert(Number.isInteger(width) && Number.isInteger(height) && width >= 3 && height >= 3, "invalid extent");
-  assert.equal(frames.length, 8, "full stage/camera/exposure matrix required"); assert.deepEqual(run.errors, []);
-  assert.equal(new Set(frames.map(frame => frame.name)).size, 8, "duplicate frame identity");
+  assert.equal(frames.length, 4 * exposures.length, "full stage/camera/exposure matrix required"); assert.deepEqual(run.errors, []);
+  assert.equal(new Set(frames.map(frame => frame.name)).size, frames.length, "duplicate frame identity");
   const keys = frames.map(frame => `${frame.stage}/${frame.camera}/${frame.exposure}`).sort();
-  const expected = ["strict-emissive", "direct-diagnostic"].flatMap(stage => [0, 1].flatMap(camera => [.5, 2].map(exposure => `${stage}/${camera}/${exposure}`))).sort();
+  const expected = ["strict-emissive", "direct-diagnostic"].flatMap(stage => [0, 1].flatMap(camera => exposures.map(exposure => `${stage}/${camera}/${exposure}`))).sort();
   assert.deepEqual(keys, expected, "incomplete or repeated stage/camera/exposure matrix");
   const mask = hdr => Array.from({ length: width * height }, (_, pixel) => Math.max(...hdr.slice(pixel * 3, pixel * 3 + 3)) > .004);
   function boundary(bits, x, y) {

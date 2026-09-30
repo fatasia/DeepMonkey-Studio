@@ -381,6 +381,13 @@ export const DEEP_GOD_RAYS_ENTRY = "marchVolumetricGodRays";
     constants: "",
     preamble: `export const FOG_OPTICAL_DEPTH_WGSL = /* wgsl */ `,
   },
+  {
+    source: "brdfDirectMultiscattering.wgsl",
+    module: resolve(packageRoot, "src/lighting/brdfDirectMultiscatteringWgsl.ts"),
+    gate: "src/lighting/brdfDirectMultiscatteringWgslChecksum.test.ts",
+    constants: "",
+    preamble: `export const PBR_BRDF_DIRECT_MULTISCATTERING_WGSL = /* wgsl */ `,
+  },
 ];
 
 for (const entry of SHARED_WGSL) {

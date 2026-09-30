@@ -21,6 +21,44 @@ function fixture() {
   return { buffer, createBuffer, writeBuffer, createBindGroup, release, environment, create };
 }
 const lights = { ambient: [{ color: [1, 0.5, 0.25] as const, intensity: 2 }] };
+const probeBox = { center: [0, 2, 0] as const, halfExtents: [3, 2, 3] as const, blendDistance: 1, influenceRadius: 2 };
+
+describe("PBR bounded reflection bindings", () => {
+  it("aliases both empty cubemap slots and publishes an actual probe with only an inactive record upload", () => {
+    const f = fixture();
+    let next = 0;
+    f.createBuffer.mockImplementation(() => ({ label: `buffer-${next++}` }) as GPUBuffer);
+    const bindings = f.create();
+    const initial = Array.from((f.createBindGroup.mock.calls[0]![0] as GPUBindGroupDescriptor).entries);
+    expect(initial.find(entry => entry.binding === 9)?.resource).toBe(f.environment.specular);
+    expect(initial.find(entry => entry.binding === 10)?.resource).toBe(f.environment.specular);
+    const active = (initial.find(entry => entry.binding === 11)!.resource as GPUBufferBinding).buffer;
+    const local = { ...f.environment, specular: { label: "local-probe" } } as StudioEnvironment;
+    f.writeBuffer.mockClear();
+    bindings.setEnvironment({ ...f.environment, reflectionProbes: [{ box: probeBox, environment: local }] });
+    const latest = Array.from((f.createBindGroup.mock.calls.at(-1)![0] as GPUBindGroupDescriptor).entries);
+    expect(latest.find(entry => entry.binding === 9)?.resource).toBe(local.specular);
+    expect(latest.find(entry => entry.binding === 10)?.resource).toBe(f.environment.specular);
+    const candidate = (latest.find(entry => entry.binding === 11)!.resource as GPUBufferBinding).buffer;
+    expect(candidate).not.toBe(active); expect(f.writeBuffer).toHaveBeenCalledOnce();
+    expect(f.writeBuffer.mock.calls[0]![0]).toBe(candidate);
+    expect(f.createBuffer).toHaveBeenCalledTimes(4);
+  });
+
+  it("keeps the previous binding and active records after candidate upload failure, then retries the same inactive buffer", () => {
+    const f = fixture(); let next = 0;
+    f.createBuffer.mockImplementation(() => ({ label: `buffer-${next++}` }) as GPUBuffer);
+    const bindings = f.create(), active = bindings.binding;
+    f.writeBuffer.mockClear(); f.writeBuffer.mockImplementationOnce(() => { throw new Error("record upload rejected"); });
+    expect(() => bindings.setEnvironment(f.environment)).toThrow("record upload rejected");
+    expect(bindings.binding).toBe(active);
+    const failed = f.writeBuffer.mock.calls[0]![0]; bindings.setEnvironment(f.environment);
+    expect(f.writeBuffer.mock.calls[1]![0]).toBe(failed);
+    expect(bindings.binding).not.toBe(active);
+    expect(f.createBuffer).toHaveBeenCalledTimes(4);
+  });
+});
+
 describe("PBR authored diffuse binding", () => {
   it("binds replacement shadows against the latest environment and preserves active state on failure", () => {
     const f = fixture(), bindings = f.create();
@@ -41,11 +79,11 @@ describe("PBR authored diffuse binding", () => {
   it("uploads changes once and clears disabled lights without touching environment state", () => {
     const f = fixture(), bindings = f.create();
     expect(bindings.update(lights)).toBe(true); expect(bindings.update(lights)).toBe(false);
-    expect(f.writeBuffer).toHaveBeenCalledTimes(3);
+    expect(f.writeBuffer).toHaveBeenCalledTimes(5);
     expect(f.createBindGroup).toHaveBeenCalledTimes(1);
     bindings.update();
-    expect(f.writeBuffer).toHaveBeenCalledTimes(4);
-    expect(f.writeBuffer.mock.calls[3]![2]).toEqual(new Float32Array(16));
+    expect(f.writeBuffer).toHaveBeenCalledTimes(6);
+    expect(f.writeBuffer.mock.calls[5]![2]).toEqual(new Float32Array(16));
   });
   it("reuses the diffuse resource across environment replacement", () => {
     const f = fixture(), bindings = f.create();
@@ -59,13 +97,13 @@ describe("PBR authored diffuse binding", () => {
     f.writeBuffer.mockImplementationOnce(() => { throw new Error("lost"); });
     expect(() => bindings.update(lights)).toThrow("lost");
     bindings.update(lights);
-    expect(f.writeBuffer).toHaveBeenCalledTimes(4);
+    expect(f.writeBuffer).toHaveBeenCalledTimes(6);
   });
   it("releases the owned buffer if binding creation fails", () => {
     const f = fixture();
     f.createBindGroup.mockImplementationOnce(() => { throw new Error("binding"); });
     expect(f.create).toThrow("binding");
-    expect(f.release).toHaveBeenCalledTimes(2);
+    expect(f.release).toHaveBeenCalledTimes(4);
     expect(f.release).toHaveBeenCalledWith(f.buffer);
   });
   it("applies diffuse outside the IBL gate in HDR, transparent and direct paths", () => {

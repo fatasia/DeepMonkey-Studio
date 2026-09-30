@@ -440,3 +440,11 @@
 .endpoint-test-empty > span { display: grid; gap: 3px; }
 @media (max-width:1180px) { .endpoint-studio { grid-template-columns:220px minmax(0,1fr); }.endpoint-content { display:block;overflow:auto; }.endpoint-form { overflow:visible;border-right:0;border-bottom:1px solid #27343a; }.endpoint-runtime { display:block;overflow:visible; } }
 @media (max-width:760px) { .endpoint-studio { grid-template-columns: 1fr; } .endpoint-library { max-height: 190px; border-right: 0; border-bottom: 1px solid #27343a; } .endpoint-toolbar { align-items: flex-start; flex-direction: column; padding: 10px; } }
+
+.reflection-probe-editor .light-editor { margin-top: 8px; }
+.reflection-probe-editor .light-system-head { grid-column: 1 / -1; margin-bottom: 0; }
+.reflection-probe-editor .light-system-head label { display: inline-flex; gap: 7px; color: var(--text); font-size: 11px; white-space: nowrap; }
+.reflection-probe-editor .light-system-head input[type="checkbox"] { width: 14px; height: 14px; padding: 0; accent-color: var(--accent); }
+.reflection-probe-editor .light-editor > .post-quality-select { grid-template-columns: 104px minmax(0, 1fr); }
+.reflection-probe-editor .light-vector { grid-template-columns: 64px repeat(3, minmax(0, 1fr)); }
+.reflection-probe-editor .light-vector label { min-width: 0; }

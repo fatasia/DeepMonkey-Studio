@@ -162,7 +162,8 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
         ...(state.environmentMapUrl ? { environmentMapUrl: state.environmentMapUrl } : {}),
         ...(state.environmentMapName ? { environmentMapName: state.environmentMapName } : {}),
         environmentAsBackground: state.environmentAsBackground ?? false,
-        environmentIntensity: THREE.MathUtils.clamp(state.environmentIntensity ?? 1, 0, 3)
+        environmentIntensity: THREE.MathUtils.clamp(state.environmentIntensity ?? 1, 0, 3),
+        ...(state.reflectionProbes ? { reflectionProbes: structuredClone(state.reflectionProbes) } : {})
       };
       if (this.gridHelper) this.gridHelper.visible = this.environmentState.gridVisible;
       void this.applyEnvironment();

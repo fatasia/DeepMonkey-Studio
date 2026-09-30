@@ -176,6 +176,8 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     { binding: 6, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
     { binding: 7, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform", minBindingSize: 64 } },
     { binding: 8, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform", minBindingSize: 32 } },
+    ...[9, 10].map(binding => ({ binding, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "cube" as const } })),
+    { binding: 11, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform", minBindingSize: 128 } },
   ] });
   const material = device.createBindGroupLayout({ entries: textureArrays
     ? [...textureArrayMaterialTableLayoutEntries(), ...poseEntries]

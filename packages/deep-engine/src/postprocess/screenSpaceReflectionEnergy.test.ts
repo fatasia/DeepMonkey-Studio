@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ssrBrdfSpecularFractionCpu } from "./screenSpaceReflectionCpu.js";
+import { environmentShader } from "../webgpu/environmentShader.js";
+import { ggxVisibilityLibrary } from "../shader/ggxVisibilityGlsl.js";
 
 /**
  * C11 物理化能量量化:旧 mask(镜面 Schlick)与新 mask(split-sum 高光分数,CPU DFG 复刻)
@@ -23,6 +25,17 @@ function gridSample(count: number): readonly { readonly nv: number; readonly rou
 }
 
 describe("C11 SSR mask 物理化能量量化", () => {
+  it("keeps the CPU DFG weight near the independent r185 LUT at rough direct-light limits", () => {
+    // Bilinear values from Three r185 DFGLUTData (16², 4096-sample RG16F), NV=.8.
+    // This fixture rejects the former separable Schlick integrator, independently of our CPU integration.
+    for (const [rough, a, b] of [[.55, .85171875, .0015791559], [.9, .45383789, .000646636]]) {
+      const expected = (FRESNEL_F0 * a! + b!) * (1 + FRESNEL_F0 * (1 / (a! + b!) - 1));
+      expect(Math.abs(ssrBrdfSpecularFractionCpu(.8, rough!, FRESNEL_F0) - expected)).toBeLessThan(.00025);
+    }
+    expect(environmentShader).toContain(ggxVisibilityLibrary().wgsl);
+    expect(environmentShader).toContain("deepSharedGgxVisibility(alpha * alpha, nv, nl)");
+    expect(environmentShader).toContain("for (var i = 0u; i < 256u; i++)");
+  });
   it("量化旧镜面 Schlick 在粗糙域的能量错配(RMSE 与极值表进报告)", () => {
     const grid = gridSample(16);
     let squaredSum = 0, maxAbs = 0, maxAt = { nv: 0, rough: 0 };

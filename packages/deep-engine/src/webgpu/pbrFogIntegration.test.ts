@@ -52,7 +52,7 @@ describe("PBR author fog GPU integration", () => {
       const body = sceneShader.slice(start, sceneShader.indexOf("\n}", start));
       if (entry.startsWith("fragmentMaterial")) {
         // f6b2289e 起材质路径走 extendedShade；材质雾豁免嵌套在其函数体内已单独钉死。
-        expect(body, entry).toContain("extendedShade(v, normal, surface)");
+        expect(body, entry).toContain("extendedShade(v, normal, geometryNormal, surface)");
       } else {
         expect(body, entry).toContain("shade(v.clip.xy");
         // f6b2289e 起 shade 为 13 参签名（尾参 applyFog），此处只钉材质/电介质实参仍在位。

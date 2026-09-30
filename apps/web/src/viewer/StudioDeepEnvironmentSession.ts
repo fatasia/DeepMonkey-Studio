@@ -21,6 +21,7 @@ export class StudioDeepEnvironmentSession {
   private lastView: StudioDeepEnvironmentView;
   private pending: AbortController | undefined;
   private pendingSource: StudioDeepEnvironmentSourceIdentity | undefined;
+  private failedSource: StudioDeepEnvironmentSourceIdentity | undefined;
   private closed = false;
 
   constructor(private readonly options: StudioDeepEnvironmentSessionOptions) {
@@ -36,7 +37,8 @@ export class StudioDeepEnvironmentSession {
     }
     if (isStudioDeepEnvironmentSourceCurrent(this.options.scene, this.active)) {
       this.lastView = this.options.readView();
-    } else if (!this.pending && !this.closed) {
+    } else if (!this.pending && !this.closed
+      && (!this.failedSource || !isStudioDeepEnvironmentSourceCurrent(this.options.scene, this.failedSource))) {
       const controller = new AbortController();
       this.pending = controller;
       this.pendingSource = captureStudioDeepEnvironmentSource(this.options.scene);
@@ -50,6 +52,7 @@ export class StudioDeepEnvironmentSession {
     this.pending?.abort();
     this.pending = undefined;
     this.pendingSource = undefined;
+    this.failedSource = undefined;
   }
 
   private async prepare(controller: AbortController): Promise<void> {
@@ -66,7 +69,8 @@ export class StudioDeepEnvironmentSession {
       dispose: () => {}, removeCanvas: () => {},
     });
     if (this.closed || controller.signal.aborted || this.pending !== controller) return;
-    const changed = this.pendingSource && !isStudioDeepEnvironmentSourceCurrent(this.options.scene, this.pendingSource);
+    const source = this.pendingSource;
+    const changed = source && !isStudioDeepEnvironmentSourceCurrent(this.options.scene, source);
     this.pending = undefined;
     this.pendingSource = undefined;
     if (changed) { this.view(); return; }
@@ -74,10 +78,14 @@ export class StudioDeepEnvironmentSession {
       try {
         this.lastView = this.options.readView();
         this.active = result.value;
+        this.failedSource = undefined;
         this.options.onReady();
       } catch (reason) {
         this.options.onFailure(reason instanceof Error ? reason : new Error(String(reason)));
       }
-    } else if (result.status === "failed") this.options.onFailure(result.error);
+    } else if (result.status === "failed") {
+      this.failedSource = source;
+      this.options.onFailure(result.error);
+    }
   }
 }

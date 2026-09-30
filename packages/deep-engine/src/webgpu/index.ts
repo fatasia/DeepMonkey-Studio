@@ -275,4 +275,5 @@ export type { PbrFog, PbrFogColor } from "./pbrFog.js";
 export { snapshotEditorOverlay, EDITOR_OVERLAY_MAX_VERTICES, type EditorOverlaySnapshot } from "./editorOverlayTypes.js";
 export type { AuthorGridView } from "./authorGridTypes.js";
 export * from "./adaptiveQuality.js";
+export type { PbrReflectionProbeSource } from "./pbrReflectionProbePreparation.js";
 export { createBrowserImageDecoder, type DecodedImageHandle, type ImageDecoderHost } from "./browserImageDecoder.js";

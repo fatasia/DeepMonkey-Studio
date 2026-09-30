@@ -6,6 +6,8 @@ import type { ModelFormat } from "./project.js";
 import type { RobotLoadCapabilityState, RobotToolLoadState } from "./robot.js";
 import type { SceneCoordinateSystemState } from "./vision.js";
 import type { IndustrialPrefabInstanceState, IndustrialPrefabRuntimeAction } from "./industrialPrefab.js";
+import type { SceneReflectionProbeState } from "./sceneReflectionProbes.js";
+export type { SceneReflectionProbeState } from "./sceneReflectionProbes.js";
 
 /** 三维场景、交互、动画、物理、材质与发布快照合同。 */
 export interface SceneModelState {
@@ -636,6 +638,8 @@ export interface SceneEnvironmentState {
   environmentMapName?: string;
   environmentAsBackground?: boolean;
   environmentIntensity?: number;
+  /** Deep WebGPU local specular probes; at most two. Omitted preserves global IBL. */
+  reflectionProbes?: SceneReflectionProbeState[];
 }
 
 export interface SceneFloorState {

@@ -56,7 +56,7 @@ describe("normal-map WGSL contract", () => {
     expect(sceneShader).toContain("deepClusterParams.limits.z > 0u || deepClusterParams.grid1.w > 0u");
     expect(sceneShader).not.toContain("safeNormalize(vec3f(-0.8, 0.4, -0.6)");
     expect(sceneShader.match(/shade\(v\.clip\.xy/g)).toHaveLength(6);
-    expect(sceneShader).toContain("fn extendedShade(v: Vertex, normal: vec3f, surface: SurfaceSample)");
+    expect(sceneShader).toContain("fn extendedShade(v: Vertex, normal: vec3f, geometryNormal: vec3f, surface: SurfaceSample)");
     expect(sceneShader).toContain("@fragment fn fragmentMainColor");
     expect(sceneShader).toContain("@fragment fn fragmentMaterialColor");
     expect(sceneShader).toContain("@fragment fn fragmentMainDisplay");
@@ -82,7 +82,8 @@ describe("normal-map WGSL contract", () => {
   });
   it("raises roughness from screen-space normal derivatives to suppress specular aliasing", () => {
     expect(PBR_DIRECT_LIGHTING_WGSL).toContain("max(abs(dpdx(normal)), abs(dpdy(normal)))");
-    expect(sceneShader.match(/\+ deepGeometryRoughness\(n\)/g)).toHaveLength(4);
+    expect(sceneShader.match(/\+ deepViewGeometryRoughness\(n\)/g)).toHaveLength(3);
+    expect(sceneShader).toContain("deepViewGeometryRoughness(geometryNormal)");
     expect(sceneShader).toContain("let rough = min(1.0");
   });
   it("uses four blended cascades for the default directional shadow", () => {
@@ -94,6 +95,21 @@ describe("normal-map WGSL contract", () => {
     expect(sceneShader).toContain("let visibility = deepPrimaryShadow(world, n, dot(n, l), authorShadow");
     expect(sceneShader).toContain("return deepCascadedShadow(max(");
     expect(sceneShader).toContain("deepSampleCascade(index + 1u, worldPosition, worldNormal, nDotL), blend)");
+  });
+  it("keeps normal-map perturbation out of geometry roughness in every material host", () => {
+    expect(sceneShader).toContain("frame.worldToView * vec4f(worldGeometryNormal, 0.0)");
+    for (const entry of ["fragmentMaterial", "fragmentMaterialColor", "fragmentMaterialDisplay", "fragmentMaterialTransparent"]) {
+      const start = sceneShader.indexOf(`@fragment fn ${entry}(`);
+      const body = sceneShader.slice(start, sceneShader.indexOf("\n}", start));
+      expect(body, entry).toContain("let geometryNormal = orientedNormal(v.normal, v.material, frontFacing)");
+      expect(body, entry).toContain("var normal = geometryNormal");
+      expect(body, entry).toContain("normal = mappedNormal(v, frontFacing)");
+      expect(body, entry).toContain("extendedShade(v, normal, geometryNormal, surface)");
+    }
+    const start = sceneShader.indexOf("  let stockDirect =");
+    const replacement = sceneShader.slice(start, sceneShader.indexOf("\n}", start));
+    expect(replacement).toContain("+ deepSampleDirectMultiscattering(");
+    expect(replacement).toContain("original - stockDirect + extended.rgb * visibility");
   });
   it("keeps degenerate lighting and tangent vectors finite", () => {
     expect(sceneShader).toContain("fn safeNormalize(value: vec3f, fallback: vec3f)");

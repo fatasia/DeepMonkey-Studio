@@ -26,9 +26,10 @@ export function ssrBrdfSpecularFractionCpu(cosTheta: number, roughness: number, 
     const lightZ = -view[2]! + 2 * vh * half[2]!;
     const nl = Math.max(lightZ, 0), nh = Math.max(half[2], 0), vhd = Math.max(vh, 0);
     if (nl > 0) {
-      const k = roughness * roughness / 2;
-      const geometry = (nv / (nv * (1 - k) + k)) * (nl / (nl * (1 - k) + k));
-      const visibility = geometry * vhd / Math.max(nh * nv, 0.0001);
+      const alpha = roughness * roughness, a2 = alpha * alpha;
+      const gv = nl * Math.sqrt(a2 + (1 - a2) * nv * nv);
+      const gl = nv * Math.sqrt(a2 + (1 - a2) * nl * nl);
+      const visibility = 4 * nl * (0.5 / Math.max(gv + gl, 0.000001)) * vhd / Math.max(nh, 0.0001);
       const fresnel = Math.pow(1 - vhd, 5);
       dfgX += (1 - fresnel) * visibility;
       dfgY += fresnel * visibility;

@@ -9,6 +9,7 @@ export interface StudioEnvironment {
   readonly brdf: GPUTextureView;
   readonly sampler: GPUSampler;
   readonly panorama?: { readonly view: GPUTextureView; readonly sampler: GPUSampler };
+  readonly reflectionProbes?: readonly import("./pbrReflectionProbes.js").PbrReflectionProbe[];
   dispose(): void;
 }
 

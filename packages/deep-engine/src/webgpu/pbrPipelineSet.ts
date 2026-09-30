@@ -4,7 +4,7 @@ import type { PbrRendererFeatures } from "./pbrRendererFeatures.js";
 import { createPipelinesBuild, type Pipelines, type PipelinesBuild } from "./pipelines.js";
 import type { PipelineCompileRecord } from "./pipelineCache.js";
 
-const PIPELINE_SET_SCHEMA = "deep-pbr-pso-v1";
+const PIPELINE_SET_SCHEMA = "deep-pbr-pso-v2-reflection-probes";
 
 /** 静态材质 ABI 保持原布局；变形使用单独的 storage 顶点管线。 */
 export interface PbrPipelineSet {

@@ -1,5 +1,8 @@
+import { ggxVisibilityLibrary } from "../shader/ggxVisibilityGlsl.js";
+
 /** 默认摄影棚环境由 GPU 生成；GGX 预过滤、余弦积分与 DFG 仅初始化时执行。 */
 export const environmentShader = /* wgsl */ `
+${ggxVisibilityLibrary().wgsl}
 struct Settings { roughness: f32, size: f32, diffuse: u32, samples: u32 };
 @group(0) @binding(0) var<uniform> settings: Settings;
 @group(0) @binding(1) var outputCube: texture_storage_2d_array<rgba16float, write>;
@@ -109,9 +112,9 @@ fn equirectangular(direction: vec3f) -> vec3f {
     let h = ggx(hammersley(i, 256u), rough);
     let l = reflect(-v, h); let nl = max(l.z, 0.0); let nh = max(h.z, 0.0); let vh = max(dot(v, h), 0.0);
     if (nl > 0.0) {
-      let k = rough * rough / 2.0;
-      let g = (nv / (nv * (1.0 - k) + k)) * (nl / (nl * (1.0 - k) + k));
-      let visibility = g * vh / max(nh * nv, 0.0001); let fc = pow(1.0 - vh, 5.0);
+      let alpha = rough * rough;
+      let visibility = 4.0 * nl * deepSharedGgxVisibility(alpha * alpha, nv, nl) * vh / max(nh, 0.0001);
+      let fc = pow(1.0 - vh, 5.0);
       result += vec2f((1.0 - fc) * visibility, fc * visibility);
     }
   }

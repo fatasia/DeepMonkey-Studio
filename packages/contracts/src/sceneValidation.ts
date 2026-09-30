@@ -3,6 +3,7 @@ import { assertDirectBindingSpec } from "./directBinding.js";
 import { assertRobotPose } from "./robotAsset.js";
 import { supportedExtensions } from "./project.js";
 import { validateIndustrialPrefabInstance } from "./industrialPrefabValidation.js";
+import { validateSceneReflectionProbes } from "./sceneReflectionProbes.js";
 import {
   expectArray,
   expectBoolean,
@@ -605,6 +606,7 @@ function validateEnvironment(value: unknown, path: string): void {
   for (const key of ["environmentMapUrl", "environmentMapName"] as const) optional(object, key, expectString, path);
   optional(object, "environmentAsBackground", expectBoolean, path);
   optional(object, "environmentIntensity", expectNumber, path);
+  optional(object, "reflectionProbes", validateSceneReflectionProbes, path);
 }
 
 function validateFloor(value: unknown, path: string): void {

@@ -4,6 +4,7 @@ import { resolvePbrRendererFeatures } from "../webgpu/pbrRendererFeatures.js";
 import type { PbrRendererOptions } from "../webgpu/pbrRenderer.js";
 import type { PbrEnvironmentSource } from "../webgpu/pbrEnvironmentSource.js";
 import { snapshotShadows } from "./deepWebGpuShadowPolicy.js";
+import { snapshotPbrReflectionProbeSources } from "../webgpu/pbrReflectionProbePreparation.js";
 
 export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendererOptions {
   if (!options || typeof options !== "object" || Array.isArray(options)) {
@@ -80,11 +81,13 @@ export function snapshotEnvironment(source: PbrEnvironmentSource): PbrEnvironmen
   if (!source || typeof source !== "object" || Array.isArray(source)) {
     throw new TypeError("Deep WebGPU environment source must be an object.");
   }
-  if (source.kind === "studio") return Object.freeze({ kind: "studio" });
+  const reflectionProbes = snapshotPbrReflectionProbeSources(source.reflectionProbes);
+  const probeOptions = reflectionProbes === undefined ? {} : { reflectionProbes };
+  if (source.kind === "studio") return Object.freeze({ kind: "studio", ...probeOptions });
   if (source.kind === "prefiltered-ibl") {
     const environment = snapshotJson(source.environment) as unknown as typeof source.environment;
     validateRuntimePrefilteredIbl(environment, environment.id, environment.revision);
-    return Object.freeze({ kind: "prefiltered-ibl", environment });
+    return Object.freeze({ kind: "prefiltered-ibl", environment, ...probeOptions });
   }
   if (source.kind !== "radiance-hdr") throw new RangeError("Unknown Deep WebGPU environment source.");
   const image = source.image;
@@ -102,7 +105,7 @@ export function snapshotEnvironment(source: PbrEnvironmentSource): PbrEnvironmen
       throw new TypeError("Unknown Deep WebGPU HDR environment option.");
     }
   }
-  return Object.freeze({ kind: "radiance-hdr", image,
+  return Object.freeze({ kind: "radiance-hdr", image, ...probeOptions,
     ...(source.backgroundImage === undefined ? {} : { backgroundImage: source.backgroundImage }),
     ...(options === undefined ? {} : { options: Object.freeze({ ...options }) }) });
 }

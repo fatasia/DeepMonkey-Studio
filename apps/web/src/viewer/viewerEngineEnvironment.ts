@@ -9,6 +9,8 @@ import { configureDirectionalShadow } from "./sceneShadowQuality";
 import { applyLightIes, applySceneIesProfiles } from "./studioIesAuthorCarriers";
 import { DEFAULT_SCENE_LIGHTS } from "./viewerEngineTypes";
 import { ViewerEngineRendering } from "./viewerEngineRendering";
+import { disposeStudioReflectionProbes, loadStudioReflectionProbes, readStudioReflectionProbes, writeStudioReflectionProbes,
+  type StudioReflectionProbeCarriers } from "./studioReflectionProbeCarriers";
 
 /** Environment 职责层。 */
 export abstract class ViewerEngineEnvironment extends ViewerEngineRendering {
@@ -47,9 +49,24 @@ export abstract class ViewerEngineEnvironment extends ViewerEngineRendering {
         environment?.dispose();
         return;
       }
+      const sky = preset === "none" ? undefined : this.getSkyboxTexture(preset);
+      let probes: StudioReflectionProbeCarriers;
+      try {
+        probes = await loadStudioReflectionProbes(this.lightingState.reflectionsEnabled === false ? undefined : state.reflectionProbes,
+          url => this.loadEnvironmentTexture(url), state.environmentMapUrl, environment ?? sky);
+      } catch {
+        environment?.dispose();
+        if (this.rendererDisposalStarted || revision !== this.environmentLoadRevision) return;
+        const previous = readStudioReflectionProbes(this.scene);
+        writeStudioReflectionProbes(this.scene, { ...previous, error: "反射探针环境加载失败；请检查贴图资源后重试。" });
+        this.requestRender(); return;
+      }
+      if (this.rendererDisposalStarted || revision !== this.environmentLoadRevision) {
+        environment?.dispose(); for (const texture of probes.owned) texture.dispose(); return;
+      }
       const previousEnvironment = this.externalEnvironmentTexture;
       this.externalEnvironmentTexture = environment;
-      const sky = preset === "none" ? undefined : this.getSkyboxTexture(preset);
+      disposeStudioReflectionProbes(this.scene); writeStudioReflectionProbes(this.scene, probes);
       this.scene.environment = this.lightingState.reflectionsEnabled === false ? null : environment ?? sky ?? null;
       this.scene.environmentIntensity = state.environmentIntensity ?? 1;
       this.scene.background = state.environmentAsBackground && environment

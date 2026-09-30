@@ -61,7 +61,7 @@ it("builds deformation variants for all main and shadow modes without a fourth v
   for (const descriptor of f.descriptors.filter(item => item.label?.startsWith("Deep shadow"))) {
     expect(descriptor.vertex.entryPoint).toMatch(/^shadow(Mask)?Deformed$/);
   }
-  const poseLayouts = f.layouts.filter(layout => [...layout.entries].some(entry => entry.binding === 11));
+  const poseLayouts = f.layouts.filter(layout => [...layout.entries].some(entry => entry.binding === 11 && entry.buffer?.type === "read-only-storage"));
   expect(poseLayouts).toHaveLength(2);
   for (const layout of poseLayouts) expect([...layout.entries].filter(entry => entry.binding >= 11)).toEqual([
     { binding: 11, visibility: 1, buffer: { type: "read-only-storage", minBindingSize: 48 } },

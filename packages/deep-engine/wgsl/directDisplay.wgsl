@@ -49,7 +49,7 @@ struct DirectDisplayVertex {
 @fragment fn fragmentMainDisplay(v: DirectDisplayVertex,
   @builtin(front_facing) frontFacing: bool) -> @location(0) vec4f {
   let ground = flag(v.material.w, 8u); let normal = orientedNormal(v.normal, v.material, frontFacing);
-  let color = shade(v.clip.xy, v.world, normal, ground,
+  let color = shade(v.clip.xy, v.world, normal, normal, ground,
     v.colorMetal.rgb, v.colorMetal.w, v.material.x, 1.0, v.emissiveAlpha.rgb, v.authorShadow, v.material.w, v.dielectric, true);
   return vec4f(deepDisplayColor(color, frame.output), coverage(v.emissiveAlpha.w, v.material));
 }
@@ -59,10 +59,12 @@ fn shadeDirectNoEffects(fragmentCoordinate: vec2f, world: vec3f, normalInput: ve
   let view = safeNormalize(frame.eye.xyz - world, vec3f(0.0, 0.0, 1.0));
   let l = safeNormalize(frame.lightDirection.xyz, vec3f(0.0, 1.0, 0.0));
   let metal = select(metalInput, 0.0, ground);
-  let rough = min(1.0, select(clamp(roughInput, 0.06, 1.0), 0.9, ground) + deepGeometryRoughness(n));
+  let rough = min(1.0, select(clamp(roughInput, 0.06, 1.0), 0.9, ground) + deepViewGeometryRoughness(n));
   let base = select(baseInput, frame.floor.rgb, ground);
   let visibility = deepPrimaryShadow(world, n, dot(n, l), authorShadow, fragmentCoordinate, flags);
   var color = brdfWithDielectricF0(n, view, l, base, metal, rough, dielectric) * frame.sunColor.rgb * frame.sunColor.w * visibility;
+  color += deepSampleDirectMultiscattering(n, view, l, base, metal, rough, dielectric)
+    * frame.sunColor.rgb * frame.sunColor.w * visibility;
   if (deepClusterParams.limits.z > 0u || deepClusterParams.grid1.w > 0u) {
     color += deepForwardPlusPbrWorldReceivingF0(fragmentCoordinate, world, n, frame.worldToView, base, metal, rough, !flag(flags, 16u), dielectric);
   }
@@ -100,7 +102,7 @@ fn deepSingleCascadeShadow(world: vec3f, normal: vec3f, nDotL: f32) -> f32 {
   let n = safeNormalize(orientedNormal(v.normal, v.material, frontFacing), vec3f(0.0, 1.0, 0.0));
   var color = shadeDirectOneCascade(v.world, n, ground, v.colorMetal, v.material.x, v.emissiveAlpha.rgb, v.authorShadow, v.clip.xy, v.material.w, v.dielectric);
   let metal = select(v.colorMetal.w, 0.0, ground);
-  let rough = min(1.0, select(clamp(v.material.x, 0.06, 1.0), 0.9, ground) + deepGeometryRoughness(n));
+  let rough = min(1.0, select(clamp(v.material.x, 0.06, 1.0), 0.9, ground) + deepViewGeometryRoughness(n));
   let base = select(v.colorMetal.rgb, frame.floor.rgb, ground);
   if (deepClusterParams.limits.z > 0u || deepClusterParams.grid1.w > 0u) {
     color += deepForwardPlusPbrWorldReceivingF0(v.clip.xy, v.world, n, frame.worldToView, base, metal, rough, !flag(v.material.w, 16u), v.dielectric);
@@ -112,7 +114,7 @@ fn shadeDirectOneCascade(world: vec3f, n: vec3f, ground: bool, colorMetal: vec4f
   let view = safeNormalize(frame.eye.xyz - world, vec3f(0.0, 0.0, 1.0));
   let l = safeNormalize(frame.lightDirection.xyz, vec3f(0.0, 1.0, 0.0));
   let metal = select(colorMetal.w, 0.0, ground);
-  let rough = min(1.0, select(clamp(roughInput, 0.06, 1.0), 0.9, ground) + deepGeometryRoughness(n));
+  let rough = min(1.0, select(clamp(roughInput, 0.06, 1.0), 0.9, ground) + deepViewGeometryRoughness(n));
   let base = select(colorMetal.rgb, frame.floor.rgb, ground);
   let viewDepth = max(-(frame.worldToView * vec4f(world, 1.0)).z, 0.0);
   var visibility = 1.0;
@@ -121,6 +123,7 @@ fn shadeDirectOneCascade(world: vec3f, n: vec3f, ground: bool, colorMetal: vec4f
     else if (viewDepth <= deepCascade.splitDepths0.x) { visibility = deepSingleCascadeShadow(world, n, dot(n, l)); }
   }
   return select(brdfWithDielectricF0(n, view, l, base, metal, rough, dielectric) * frame.sunColor.rgb * frame.sunColor.w * visibility
+    + deepSampleDirectMultiscattering(n, view, l, base, metal, rough, dielectric) * frame.sunColor.rgb * frame.sunColor.w * visibility
     + deepAuthoredDiffuse(n, base, metal, 1.0) + select(emissive, vec3f(0.0), ground), colorMetal.rgb, flag(flags, 64u));
 }
 @fragment fn fragmentMainDisplayDirectional(v: DirectDisplayVertex,
