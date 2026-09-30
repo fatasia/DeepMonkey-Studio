@@ -76,7 +76,7 @@ function pixelChange(a: PbrFrameReadbackSnapshot, b: PbrFrameReadbackSnapshot) {
   }
   return changed;
 }
-export async function runIC17ParticleFlowProduction(onFrame: (name: string) => Promise<void>) {
+export async function runIC17ParticleFlowProduction(onFrame: (name: string) => Promise<void>, temporalAa = false, neutralGrading = true) {
   const canvas = document.createElement("canvas"); canvas.width = 1920; canvas.height = 1080;
   canvas.style.width = "100vw"; canvas.style.height = "100vh"; document.body.append(canvas);
   const capture = new FrameCaptureSession();
@@ -84,7 +84,7 @@ export async function runIC17ParticleFlowProduction(onFrame: (name: string) => P
     particleEmitters: [{ id: "stream", preset: "flow-line", start: [-2.4, -1, 0], end: [2.4, 1, 0],
       count: 256, lifetime: 30, size: .025, color: [.1, .65, 1, .85], seed: 17 }], particleRuntime: { capacity: 256 },
     features: { environment: false, groundPlane: false, groundGrid: false, fog: false, ambientOcclusion: false,
-      screenSpaceReflection: false, temporalAa: false, spatialAa: false, bloom: false, vignette: false, occlusionCulling: false },
+      screenSpaceReflection: false, temporalAa, spatialAa: false, bloom: false, vignette: false, occlusionCulling: false },
     frameCapture: { session: capture, readbacks: { requests: [{ resourceId: "opaque-hdr" }] } },
   });
   const session = renderer.session, device = session.device; let result: Record<string, unknown> = {}, validationError: string | undefined;
@@ -102,7 +102,9 @@ export async function runIC17ParticleFlowProduction(onFrame: (name: string) => P
       instances: [{ id: "plate", geometry: "plate", material: "backdrop", transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }] });
     const images: PbrFrameReadbackSnapshot[] = [], draws: number[] = [];
     for (let frame = 0; frame < 5; frame++) {
-      const metrics = renderer.render({ ...view, ...(frame < 4 ? { particleFlow: { phase: frame * .1, flowStrength: 3, seed: 17 } } : {}) });
+      const { authorColorEffects, ...bareView } = view;
+      const metrics = renderer.render({ ...bareView, ...(neutralGrading ? { authorColorEffects } : {}),
+        ...(frame < 4 ? { particleFlow: { phase: frame * .1, flowStrength: 3, seed: 17 } } : {}) });
       if (!metrics) throw Error("C17 production frame missing"); draws.push(metrics.drawCalls);
       const reads = await renderer.frameReadbackResults;
       const image = reads?.find(isPbrFrameReadbackSnapshot) as PbrFrameReadbackSnapshot | undefined;
@@ -111,12 +113,13 @@ export async function runIC17ParticleFlowProduction(onFrame: (name: string) => P
       if (frame === 3 || frame === 4) await onFrame(frame === 3 ? "flow-enabled" : "flow-disabled");
     }
     const changedPixels = pixelChange(images[0]!, images[3]!);
-    result = { flow, baseline, zero, deterministic, seedChangesField, zeroIdentity, changedPixels, draws,
+    result = { temporalAa, neutralGrading, flow, baseline, zero, deterministic, seedChangesField, zeroIdentity, changedPixels, draws,
       shaderHash: sha256Utf8(GPU_PARTICLE_FLOW_FIELD_WGSL), adapter: session.adapterInfo, epoch: session.recovery?.epoch ?? 0,
       sameDevice: session.device === device, passed: deterministic && seedChangesField && zeroIdentity && flow.maxError < .0001
         && flow.speed <= .80001 && flow.invalidRetained && flow.coldExtraResources === 7 && flow.warmExtraResources === 8
         && baseline.warmExtraResources === 7 && zero.warmExtraResources === 7 && changedPixels > 100 && draws.at(-1)! >= 2 };
-  } finally { validationError = (await device.popErrorScope())?.message; renderer.dispose(); canvas.remove(); }
+  } catch (error) { result = { temporalAa, neutralGrading, failure: error instanceof Error ? error.message : String(error), passed: false }; }
+  finally { validationError = (await device.popErrorScope())?.message; renderer.dispose(); canvas.remove(); }
   return { ...result, validationError, diagnostics: session.diagnostics, remainingResources: session.resourceCount,
     passed: result.passed === true && !validationError && !session.hasErrors && session.resourceCount === 0 };
 }

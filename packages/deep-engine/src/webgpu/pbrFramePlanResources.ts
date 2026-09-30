@@ -54,6 +54,8 @@ export const PBR_FRAME_RESOURCE_CONTRACTS: readonly PbrFrameResourceContract[] =
     usages: FULL_COLOR, sizeRole: "surface", external: false },
   { id: "motion", descriptor: "rg16float", format: PBR_MOTION_FORMAT, sampleCount: PBR_MAIN_SAMPLE_COUNT,
     usages: FULL_COLOR, sizeRole: "surface", external: false },
+  { id: "particle-reactive", descriptor: "r8unorm", format: "r8unorm", sampleCount: 1,
+    usages: FULL_COLOR, sizeRole: "surface", external: false },
   { id: "current-hiz", descriptor: "r32float-mip-chain", format: "r32float", sampleCount: 1,
     usages: ["texture-binding", "storage-binding", "copy-src"], sizeRole: "independent", external: false },
   { id: "next-hiz", descriptor: "r32float-mip-chain", format: "r32float", sampleCount: 1,

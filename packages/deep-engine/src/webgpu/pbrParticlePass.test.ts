@@ -99,4 +99,20 @@ describe("PBR particle render pass", () => {
     const notReady = { state: "lost", device: f.device } as unknown as DeviceSession;
     expect(() => new PbrParticlePass(notReady, "rgba16float", "depth24plus")).toThrow(/not ready/);
   });
+  it("matches TAA MRT targets, clears pooled coverage, and uses maximum alpha coverage", () => {
+    const f = fixture(), pass = new PbrParticlePass(f.session, "rgba16float", "depth32float", "r8unorm");
+    const descriptor = f.rawDevice.createRenderPipeline.mock.calls[0]![0];
+    expect(descriptor.fragment!.targets).toHaveLength(2);
+    expect(descriptor.fragment!.targets![1]).toMatchObject({ format: "r8unorm", blend: {
+      color: { operation: "max", srcFactor: "one", dstFactor: "one" } } });
+    const begin = vi.fn(() => ({ setPipeline: vi.fn(), setBindGroup: vi.fn(), drawIndirect: vi.fn(), end: vi.fn() }));
+    const input = { encoder: { beginRenderPass: begin } as unknown as GPUCommandEncoder,
+      colorView: {} as GPUTextureView, depthView: {} as GPUTextureView, width: 1920, height: 1080, camera, binding };
+    expect(() => pass.encode(input)).toThrow(/attachment/); expect(begin).not.toHaveBeenCalled();
+    pass.encode({ ...input, reactiveView: {} as GPUTextureView });
+    expect(begin.mock.calls[0]![0].colorAttachments[1]).toMatchObject({ loadOp: "clear", clearValue: [0, 0, 0, 0], storeOp: "store" });
+    const plain = new PbrParticlePass(f.session, "rgba16float", "depth32float");
+    expect(() => plain.encode({ ...input, reactiveView: {} as GPUTextureView })).toThrow(/attachment/);
+    pass.dispose(); plain.dispose();
+  });
 });

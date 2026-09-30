@@ -176,7 +176,8 @@ export class PbrRenderer {
         `pbr-particles-${probeClipmapDeviceEpoch(session.device)}`, options.particleEmitters,
         options.particleRuntime);
       this.particleRuntime = setup.runtime;
-      this.particlePass = new PbrParticlePass(session, PBR_HDR_FORMAT, PBR_DEPTH_FORMAT);
+      this.particlePass = new PbrParticlePass(session, PBR_HDR_FORMAT, PBR_DEPTH_FORMAT,
+        features.temporalAa ? "r8unorm" : undefined);
     } else {
       this.particleRuntime = undefined;
       this.particlePass = undefined;
@@ -447,7 +448,8 @@ export class PbrRenderer {
     }
     if (this.shadowState.publish(desiredShadowSize, candidate => this.mainBindings.setShadows(candidate, this.environment.current))) this.sceneChanged();
     const drawProfile = this.packets.drawProfile();
-    const directClear = drawProfile.hasDeformation || view.authorGrid ? undefined : pbrDirectDisplayClear(view, this.features, drawProfile.hasTransparent, this.writeGeometryBuffers);
+    const directClear = drawProfile.hasDeformation || view.authorGrid || this.particleRuntime
+      ? undefined : pbrDirectDisplayClear(view, this.features, drawProfile.hasTransparent, this.writeGeometryBuffers);
     const directionalDisplay = directClear !== undefined && !this.lighting.hasProbeClipmap && !hasClusteredLights(sceneLighting.clustered)
       && !drawProfile.hasMaterialTextures && this.pipelines.displayDirectionalMain !== undefined;
     const frameState = updatePbrFrameUniforms(this.session.device.queue, this.cameraHistory, view,
@@ -606,7 +608,7 @@ export class PbrRenderer {
           cameraRight: [frameState.worldToView[0]!, frameState.worldToView[4]!, frameState.worldToView[8]!],
           cameraUp: [frameState.worldToView[1]!, frameState.worldToView[5]!, frameState.worldToView[9]!] },
         binding: particleBinding, ...(particleReactive ? { reactiveView: particleReactive.view } : {}) });
-      if (particleReactive) { drawCalls++; }
+      drawCalls++;
     }
     const gridTriangles = this.ground.author.encode(encoder, this.targets.hdr, this.targets.depth, frameState.depthViewProjection, frameState.worldToView, view.authorGrid);
     if (gridTriangles) { drawCalls++; triangles += gridTriangles; }
@@ -727,11 +729,12 @@ export class PbrRenderer {
       this.frameCapture.recordPasses(this.captureActualPasses ?? [], executedPassIds, present?.sourceMapRefs);
       this.frameCapture.mark("submit", "queue.submit");
     }
-    submitAttempted = true; device.queue.submit([...(preparation?.commandBuffers ?? []), commands]); this.targets.commitFrame();
+    submitAttempted = true; device.queue.submit([...(preparation?.commandBuffers ?? []), commands]);
     // G1-S1：读回本帧选层槽位并派生下一帧命令；异常走槽位 sticky fallback，不打断渲染循环。
     if (clusterLod && clusterLodSupported) void clusterLod.ingest().catch(error => clusterLod.noteIngestFailure(error));
     // TAA 已在 submit 前读取响应掩码；队列有序保证提交后释放可安全回池复用。
-    if (particleReactive) this.transientTextures.release(particleReactive);
+    if (particleReactive) { this.transientTextures.release(particleReactive); particleReactive = undefined; }
+    this.targets.commitFrame();
     if (this.frameCapture && captureOpen) this.lastFrameReadback = this.frameCapture.collectReadbacksAfterSubmit();
     this.postProcess.commitFrame(history.revision);
     const submitted = this.performanceTelemetry.enabled ? performance.now() : 0;
@@ -784,10 +787,10 @@ export class PbrRenderer {
       if (captureOpen) this.frameCapture?.cancel();
       this.postProcess.cancelFrame(history.revision);
       this.transparency.cancelFrame();
+      if (particleReactive) { this.transientTextures.release(particleReactive); particleReactive = undefined; }
       this.targets.failFrame();
       this.packets.cancelDeformationFrame();
       if (submitAttempted) this.packets.failLodFrame(); else this.packets.cancelLodFrame();
-      if (particleReactive) this.transientTextures.release(particleReactive);
       this.lighting.invalidateAssignment(); this.localShadows.failFrame(); this.cameraHistory.cancelPendingFrame();
       if (!submitAttempted) this.clusterLodSlot?.cancelPendingFrame();
       if (hiZPlan) this.previousHiZ.failFrame(hiZPlan); this.pendingHiZ = undefined;

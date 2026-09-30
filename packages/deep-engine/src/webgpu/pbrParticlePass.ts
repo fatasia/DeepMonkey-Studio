@@ -49,6 +49,7 @@ export interface ParticlePassDrawInput {
 /** 持有粒子渲染管线；模拟运行时独占粒子缓冲。 */
 export class PbrParticlePass {
   private readonly pipeline: GPURenderPipeline;
+  private readonly usesReactive: boolean;
   private readonly frameLayout: GPUBindGroupLayout;
   private readonly camera: GPUBuffer;
   private readonly cameraData = new Float32Array(GPU_PARTICLE_CAMERA_UNIFORM_BYTES / 4);
@@ -57,6 +58,7 @@ export class PbrParticlePass {
   constructor(private readonly session: DeviceSession, colorFormat: GPUTextureFormat,
     depthFormat: GPUTextureFormat, reactiveFormat?: GPUTextureFormat) {
     if (session.state !== "ready") throw new Error("GPU session is not ready for the particle pass.");
+    this.usesReactive = reactiveFormat !== undefined;
     const device = session.device;
     const module = device.createShaderModule({ label: "Deep particle render shader",
       code: GPU_PARTICLE_RENDER_WGSL });
@@ -75,8 +77,8 @@ export class PbrParticlePass {
     if (reactiveFormat !== undefined) {
       // 响应掩码取粒子 alpha 覆盖率：max 混合让多重粒子不超 1，供 TAA 降反馈。
       targets.push({ format: reactiveFormat,
-        blend: { color: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
-          alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" } } });
+        blend: { color: { srcFactor: "one", dstFactor: "one", operation: "max" },
+          alpha: { srcFactor: "one", dstFactor: "one", operation: "max" } } });
     }
     this.pipeline = device.createRenderPipeline({ label: "Deep particle render pipeline",
       layout: device.createPipelineLayout({ label: "Deep particle pipeline layout",
@@ -94,6 +96,7 @@ export class PbrParticlePass {
   /** 将一次间接粒子绘制编码到调用方的帧编码器。 */
   encode(input: ParticlePassDrawInput): void {
     if (this.disposed) throw new Error("Particle pass is disposed.");
+    if (this.usesReactive !== (input.reactiveView !== undefined)) throw new Error("Particle reactive attachment must match its pipeline.");
     const device = this.session.device;
     if (!Number.isSafeInteger(input.width) || input.width < 1
       || !Number.isSafeInteger(input.height) || input.height < 1) {
@@ -109,7 +112,7 @@ export class PbrParticlePass {
       layout: this.pipeline.getBindGroupLayout(1), entries: [{ binding: 0, resource: { buffer: this.camera } }] });
     const attachments: GPURenderPassColorAttachment[] = [{
       view: input.colorView, loadOp: "load", storeOp: "store" }];
-    if (input.reactiveView !== undefined) attachments.push({ view: input.reactiveView, loadOp: "load", storeOp: "store" });
+    if (input.reactiveView !== undefined) attachments.push({ view: input.reactiveView, loadOp: "clear", storeOp: "store", clearValue: [0, 0, 0, 0] });
     const pass = input.encoder.beginRenderPass({ label: "Deep particles", colorAttachments: attachments,
       depthStencilAttachment: { view: input.depthView, depthLoadOp: "load", depthStoreOp: "store" } });
     pass.setPipeline(this.pipeline);

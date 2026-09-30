@@ -2,7 +2,7 @@
 
 在已有 GPU 粒子双缓冲运行时接入当前 curl-noise 核，保留原发射、压缩、间接绘制、取消与资源归属。
 
-状态：CPU/类型与两fresh实际GPU已通过，源冻结待主线程构建/提交。
+状态：首刀已提交5b89aca6；默认TAA与AA全关呈现补修已CPU/实际GPU通过，源冻结待主线程收割。
 
 视觉立场：沿Babylon流场机制与Siemens克制工业渲染，用已有base.css深色容器和实际PBR HDR画面呈现单一流线。256粒子的颜色属于显式fixture材质，不加产品主题令牌或编辑器。
 
@@ -46,7 +46,7 @@ RenderView.particleFlow → PbrRenderer.driveParticles → submitGpuParticleEmit
 - 每轮16活粒子×8步，按稳定ID排序与f32参考对拍，最大误差1.1920928955078125e-7，速度帽0.8实值最大0.80000008811671；过期粒子删除、loop寿命回卷与indirect计数核对通过。
 - 同seed重放逐值一致，异seed改变场；zero与原核全记录逐值一致。GPU压缩顺序不作为确定性合同，未声称跨不同GPU逐位一致。
 - 非法参数和预取消保持上一活快照；基线7资源、开启8资源（仅多32B）、关闭后复用同资源、runtime.dispose归还全部。两轮session最后0资源、errors/diagnostics为空、设备同一epoch0。
-- 实际PbrRenderer/RenderView/emitters/indirect/PbrParticlePass走HDR production路径；首帧无粒子与启用帧差异像素11536/11509，后继drawCalls=2。关闭只停止场驱动，不删除原粒子内容。
+- 实际PbrRenderer/RenderView/emitters/indirect/PbrParticlePass走HDR production路径；首刀首帧无粒子与启用帧差异像素11536/11509。旧drawCalls漏计粒子已由下述默认补修改正。关闭只停止场驱动，不删除原粒子内容。
 
 报告 `test-output/i-series-0930/particle-flow/evidence.json`；已目视 `round-1-flow-enabled.png`、`round-2-flow-disabled.png`。原fixture把regular grading contrast设0被产品合法性门拒绝，历史保存在`failure-illegal-fixture-grading.json`，改用C18/S4已有合法中性author grading；生产guard不变。
 
@@ -80,6 +80,35 @@ packages/deep-engine/src/webgpu/gpuParticleEmitters.ts
 packages/deep-engine/src/webgpu/pbrRendererTypes.ts
 packages/deep-engine/src/webgpu/pbrRenderer.ts
 packages/deep-engine/src/webgpu/index.ts
+packages/deep-engine/lab/iC17ParticleFlowProduction.ts
+scripts/i-c17-production-particle-flow.mjs
+docs/specs/i-c17-production-particle-flow-20260930.md
+```
+
+## 默认路径补修
+
+同族核查和真实反例发现：默认temporalAa=true时粒子PSO仅一个target，真实pass有HDR+r8两个attachment；掩码又在targets.commitFrame关闭pool之后才release，catch先failFrame再release覆盖第一错误。AA全关无grading时快路把opaque直接呈现，粒子写HDR却不呈现，canvas流线像素为0。原首刀中性grading/AAoff合法场景通过，但不覆盖这两个默认路径。
+
+已保存不可覆盖的失败：`particle-flow-taa-before/evidence.json`为pool owner错误，`particle-flow-taa-before-details/evidence.json`同时捕获Dawn PSO附件失配与owner错误；`particle-flow-bare-before/evidence.json`两截图流线cyan=0。三报告均在test-output/i-series-0930，未替换首刀数值收据。
+
+最小修复：constructor依已解析features传r8格式；pass每帧clear0并max混合覆盖；mask在commit/fail之前release且置undefined；有particleRuntime时消费HDR；drawCalls每次indirect统一计1。r8目录声明render-attachment/texture-binding、surface尺寸，与实际创建吻合；pool语义、默认无粒子快速路径与WGSL粒子核未改。
+
+最终12文件73测PASS/1既有Naga skip，engine/lab类型PASS。两种模式各两fresh dark1080/sourceFresh/stable PASS，同bundle SHA `7f2bd0c9d278a14af383cee807e59b78b2b561e36ff8ff7bf909cd52527f9e8c`：
+
+| 模式 | 实际画布流线像素（启用帧，两轮） | HDR差异像素 | 后继drawCalls | 最终资源/错误 |
+|---|---:|---:|---:|---|
+| `C17_GATE_MODE=taa`，无grading | 11586 / 11628 | 12209 / 12271 | 3 | 0 / 无 |
+| `C17_GATE_MODE=bare`，AA全关且无grading | 10871 / 10832 | 11538 / 11511 | 3 | 0 / 无 |
+
+报告分别`particle-flow-taa/evidence.json`、`particle-flow-bare/evidence.json`；截图`particle-flow-taa/round-1-flow-enabled.png`和`particle-flow-bare/round-2-flow-disabled.png`已目视。实际画布像素由PNG读取计量，不用HDR中间目标代替呈现证明。CPU参考、重放、zero身份及速度帽仍按原阈值通过。
+
+补修仅以下7文件需再收割；C1独立草稿不混入：
+
+```text
+packages/deep-engine/src/webgpu/pbrRenderer.ts
+packages/deep-engine/src/webgpu/pbrParticlePass.ts
+packages/deep-engine/src/webgpu/pbrParticlePass.test.ts
+packages/deep-engine/src/webgpu/pbrFramePlanResources.ts
 packages/deep-engine/lab/iC17ParticleFlowProduction.ts
 scripts/i-c17-production-particle-flow.mjs
 docs/specs/i-c17-production-particle-flow-20260930.md
