@@ -151,3 +151,7 @@ node scripts/j2-probe-gi-aniso.mjs --prepare
   （诚实声明：GPU 路径未验证）；Native Rust 期望逐点用 CPU sampler 推导，root 接线时若
   f32 舍入超 .001 门（B5 实测量级远低于门，风险低）需回填证据而非放宽门。
 - 本刀不宣称：非均匀生产 GI 已验；两族裸 HDR 等价；capture/producer 覆盖。
+
+## GPU 首跑断点（2026-10-01 主线程）
+
+Native 叶编译与运行通过；Web 双 fresh 采集完成。compare 断点：`axis/z-ramp/6991/round2` Web biased texture 采样 0.1198 vs CPU 镜像期望 0.1398（差 0.020，round1 同点未报错）。形态指向 biased receiver 在 z 梯度纹素边界的采样对 fp16 偏移的敏感性（与 mr-linear 的 metallic 边界采样同族：**旋转/非均匀输入下的纹素边界采样语义**是当前 J3/B5 共同的开放缺口）。已验证部分：CPU admission 与交接值 e-9 级对拍、z 单元可展示性、Native storage 侧。后续刀先 dump 双端逐样本值与 round1/2 差异模式，再定采样语义修复面。
