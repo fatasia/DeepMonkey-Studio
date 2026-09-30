@@ -12,3 +12,6 @@ export * from "./materialParameterAbi.js";
 export * from "./materialEvaluateWgsl.js";
 export * from "./materialParameterRevision.js";
 export * from "../shaderGraph/index.js";
+export * from "./materialLayeredParameters.js";
+export * from "./materialLayeredEvaluate.js";
+export * from "./materialLayerBlendWgsl.js";
