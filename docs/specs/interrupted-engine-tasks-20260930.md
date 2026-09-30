@@ -60,3 +60,9 @@
 本轮后继：C5固定Bullet齿轮/滑轨已加入默认fresh runner，三端机构/布料参照与差异完整登记，参照记录整项关闭；accuracyEquivalent=false不变。原57项4/57=7.0%，J/C3/10=30%，I1/10=10%。C8共同作者root严格8腿HDR最大差0.000293/display1、轮廓0；真实直射8腿差异仍独立诊断。J3无recovery设备loss通知缺口已修，Native真实窗口重建与Chrome真实Viewer回退各两轮通过，完整unknown恢复与指标仍后继。
 
 用户已要求把面向AI的框架方案并入后续，新增H-C7-P1–P4（视觉MCP→模板/Skill→作者API/CLI→Three迁移/20题评测），C24并入P3，净增去重60–120h；授权/自由脚本/既有诊断沿原H/I预算。当前61项4/61=6.6%，余57项361–736净工程小时，含旧T核查388–790h。主线顺序与唯一I并行保持。详见[方案](ai-first-framework-and-agent-integration-20260930.md)与[剩余估时](remaining-tasks-estimates-20260930.md)。
+
+用户随后指出C8截图Deep看起来偏亮且光泽/质感不足。C8后继优先提升Deep真实直射材质链，对照保留原Three r185默认；显式single-scatter Three profile仅做差因诊断，不能以削弱对照端或降低曝光认证改善。已有I-C12补偿属于环境IBL，直接光多散射缺口另核查；复用既有LUT/资源、同源数学，不建第二IBL/白炉。近景材质/高光与原控制组一起固定相机、灯光、曝光，做两轮深色1080验证。
+
+Web epoch候选成功替换已提交 `1a8f8cae`，实际新device/资源重传和有效首帧后发布；失败门 `a8a13ab8` 修复same-view缓存忽略session/device代次的缺口。两fresh真实GPU轮：候选ready/84资源后actual device.destroy，入场拒绝、failure1、旧与失败候选资源0、Deep Canvas0；作者相机/对象与RGBA指纹保持。宿主recreated通知明确模拟，actualUnknownDriverFault=false。C25真实非空设备/相机变更、两种恢复失败重试两轮通过；加载竞态与成功后错误反馈另修后重新验，尚不提前关闭。当前contracts→engine→web构建与runtime freshness通过，新增生产shader之后严格J5待执行。
+
+I-C25已关闭：34测、真实非空设备/相机改变与还原、增量失败→全量失败→成功重试，以及成功清除旧错误。显式WebGL和无renderer参数偏好恢复各两轮通过，两个加载竞态修复保留旧代取消；页面错误0、每轮4 receipt、Performance Timeline只保留一条。最终两轮深色1080已验图，contracts/engine/web构建、Web类型与runtime freshness通过。当前5/61=8.2%，I2/10=20%，剩余56项359–732h，含旧T核查386–786h。C8材质第二候选实际显示max1、斜视HDR差异较S4降低86.6%，严格HDR门仍未过；不算整项关闭。

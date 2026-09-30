@@ -1,5 +1,6 @@
 import type { SceneSnapshot } from "@bim-studio/contracts";
 import { planIncrementalPlayRestore, type IncrementalPlayRestorePlan } from "@bim-studio/deep-engine/scene";
+import { beginPlayRestoreTiming, type PlayRestoreTimeline, type PlayRestoreTimingReceipt } from "./playSessionRestoreTiming";
 
 /**
  * C25 · Play 会话恢复调度器（增量域重载的 web 薄层，T30 host.applyScene 的替换件）。
@@ -40,38 +41,55 @@ export interface PlaySessionRestore {
   restore(scene: SceneSnapshot): Promise<PlaySessionRestoreOutcome>;
   /** 诊断：本会话是否已降级为全量（快速路径失败后为 true，且不会自动恢复）。 */
   isDegraded(): boolean;
+  /** Most recent completed restore; immutable and bounded to one receipt. */
+  getLastTiming(): PlayRestoreTimingReceipt | undefined;
 }
 
-export function createPlaySessionRestore(readDeps: () => PlaySessionRestoreDeps): PlaySessionRestore {
+export function createPlaySessionRestore(readDeps: () => PlaySessionRestoreDeps, timeline?: PlayRestoreTimeline): PlaySessionRestore {
   let degraded = false;
+  let lastTiming: PlayRestoreTimingReceipt | undefined;
 
   async function restore(scene: SceneSnapshot): Promise<PlaySessionRestoreOutcome> {
-    const deps = readDeps();
-    const engine = deps.engine();
-    // 引擎缺失/项目缺失/WebGPU/已降级 → 一律全量（T30 host 闭包原语义，含原报错信息）。
-    if (!deps.project() || !engine || engine.getAuthorRendererBackend() === "webgpu" || degraded) {
-      await deps.applyFull(scene);
-      return { path: "full", plan: undefined };
-    }
-    const live = deps.captureLive();
-    const plan = live ? planIncrementalPlayRestore(scene, live) : undefined;
-    if (!plan || plan.mode === "full") {
-      await deps.applyFull(scene);
-      return { path: "full", plan };
-    }
+    const timing = beginPlayRestoreTiming(scene.id, timeline);
+    let path: PlayRestoreTimingReceipt["path"] = "none", status: PlayRestoreTimingReceipt["status"] = "failed";
     try {
-      await deps.applyIncremental(scene);
-      // 与 T30 P1 同一守卫：本次恢复必须真实完成（同场景恢复代际就绪）才算退出成功。
-      if (!engine.hasRestoredSceneSnapshot(scene.id)) {
-        throw new Error("场景恢复尚未完成，请待模型加载结束后重试退出播放");
+      const deps = readDeps();
+      const engine = deps.engine();
+      // 引擎缺失/项目缺失/WebGPU/已降级 → 一律全量（T30 host 闭包原语义，含原报错信息）。
+      if (!deps.project() || !engine || engine.getAuthorRendererBackend() === "webgpu" || degraded) {
+        path = "full";
+        await timing.async("apply-full", () => deps.applyFull(scene));
+        status = "passed";
+        return { path: "full", plan: undefined };
       }
-    } catch (reason) {
-      // 快速路径一旦失败立即降级：重试退出走全量重载，恢复语义不弱于 T30。
-      degraded = true;
-      throw reason;
+      const live = timing.sync("capture", () => deps.captureLive());
+      const plan = timing.sync("plan", () => live ? planIncrementalPlayRestore(scene, live) : undefined);
+      if (!plan || plan.mode === "full") {
+        path = "full";
+        await timing.async("apply-full", () => deps.applyFull(scene));
+        status = "passed";
+        return { path: "full", plan };
+      }
+      try {
+        path = "incremental";
+        await timing.async("apply-incremental", () => deps.applyIncremental(scene));
+        // 与 T30 P1 同一守卫：本次恢复必须真实完成（同场景恢复代际就绪）才算退出成功。
+        timing.sync("verify", () => {
+          if (!engine.hasRestoredSceneSnapshot(scene.id)) {
+            throw new Error("场景恢复尚未完成，请待模型加载结束后重试退出播放");
+          }
+        });
+      } catch (reason) {
+        // 快速路径一旦失败立即降级：重试退出走全量重载，恢复语义不弱于 T30。
+        degraded = true;
+        throw reason;
+      }
+      status = "passed";
+      return { path: "incremental", plan };
+    } finally {
+      lastTiming = timing.finish(path, status, degraded);
     }
-    return { path: "incremental", plan };
   }
 
-  return { restore, isDegraded: () => degraded };
+  return { restore, isDegraded: () => degraded, getLastTiming: () => lastTiming };
 }

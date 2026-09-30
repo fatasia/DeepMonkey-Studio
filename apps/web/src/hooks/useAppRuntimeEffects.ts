@@ -242,6 +242,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
   const deepBridgeRef = useRef<StudioDeepWebGpuBridge | undefined>(undefined);
   const wasmBridgeRef = useRef<StudioDeepWasmBridge | undefined>(undefined);
   const wasmRefreshRevisionRef = useRef(-1);
+  const rendererSwitchOwnerRef = useRef<symbol | undefined>(undefined);
   const rendererRecoveryContextRef = useRef({
     activeScene,
     project,
@@ -597,8 +598,31 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
   useEffect(() => {
     const bridge = deepBridgeRef.current;
     const wasmBridge = wasmBridgeRef.current;
-    if (!engine || !bridge || !wasmBridge || rendererBackend === rendererActiveBackend) return;
+    if (!engine || !bridge || !wasmBridge) return;
+    const actuallyActive = engine.getAuthorRendererBackend() === "webgl"
+      && (rendererBackend === "webgpu"
+        ? bridge.activeBackend === "webgpu" && wasmBridge.activeBackend === "webgl"
+        : rendererBackend === "wasm"
+          ? wasmBridge.activeBackend === "wasm" && bridge.activeBackend === "webgl"
+          : bridge.activeBackend === "webgl" && wasmBridge.activeBackend === "webgl");
+    if (rendererBackend === rendererActiveBackend && actuallyActive) {
+      // A cancelled request may return to an already active surface without a new candidate.
+      if (rendererSwitchOwnerRef.current !== undefined) {
+        rendererSwitchOwnerRef.current = undefined;
+        setRendererSwitching(false);
+        setRendererSwitchPhase("idle");
+        setRendererSwitchMessage(undefined);
+      }
+      return;
+    }
     let cancelled = false;
+    const owner = Symbol("renderer switch");
+    rendererSwitchOwnerRef.current = owner;
+    const finishLoading = () => {
+      if (rendererSwitchOwnerRef.current !== owner) return;
+      rendererSwitchOwnerRef.current = undefined;
+      setRendererSwitching(false);
+    };
     setRendererSwitching(true);
     setRendererSwitchPhase("preparing");
     setRendererSwitchMessage(`正在准备 ${rendererBackendLabel(rendererBackend)}；当前画布仍可用`);
@@ -615,6 +639,8 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     void switchRenderer().then((result) => {
       if (cancelled) return;
       if (result.status === "switched" || result.status === "unchanged") {
+        // Settling the active backend can run this effect's cleanup before finally.
+        finishLoading();
         if (result.activeBackend === "wasm") wasmRefreshRevisionRef.current = revision;
         setRendererActiveBackend(result.activeBackend);
         try { commitRendererPreference(rendererPreferenceCommitRef, result.activeBackend); }
@@ -623,6 +649,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
         setRendererSwitchMessage(undefined);
         setMessage(`${rendererBackendLabel(result.activeBackend)} 已启用`);
       } else if (result.status === "failed") {
+        finishLoading();
         const persistFallback = rendererPreferenceCommitRef.current === rendererBackend;
         rendererPreferenceCommitRef.current = persistFallback ? "webgl" : undefined;
         if (persistFallback) {
@@ -638,7 +665,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     }).catch((reason) => {
       if (!cancelled) showError(reason);
     }).finally(() => {
-      if (!cancelled) setRendererSwitching(false);
+      if (!cancelled) finishLoading();
     });
     return () => { cancelled = true; bridge.cancelPendingSwitch(); wasmBridge.cancelPendingSwitch(); };
   }, [engine, rendererBackend, rendererActiveBackend, revision, showError]);

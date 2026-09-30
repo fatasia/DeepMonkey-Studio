@@ -836,6 +836,7 @@ export function App() {
         const result = await playMode.exitPlay();
         if (result.ok) {
           restrictedPlayRef.current = undefined;
+          setError(undefined);
           setMessage("已退出播放模式，场景恢复为进入前状态");
         } else {
           showError(new Error("播放已停止受限脚本，但场景恢复未完成；请再次点击退出播放重试。"));
