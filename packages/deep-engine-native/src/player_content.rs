@@ -56,6 +56,7 @@ pub struct PlayerContent {
     pub fog: Option<FogSettings>,
     /// v9 作者色彩分级（六通道）；非中性时由输出 pass 在固定 ACES 前消费。
     pub author_grading: Option<AuthorGrading>,
+    pub display_profile: deep_engine_native::output_color_profile::OutputColorProfile,
     pub shader_packages: Vec<DeepShaderPackageV2>,
     pub material_bindings: Vec<RuntimeMaterialShaderBinding>,
     /// v7 动态场景通道。先随包进入 PlayerContent，供宿主 replay/交互层消费；
@@ -197,6 +198,7 @@ impl PlayerContent {
             lighting: None,
             fog: None,
             author_grading: None,
+            display_profile: Default::default(),
             shader_packages: Vec::new(),
             material_bindings: Vec::new(),
             probe_grid_records: None,
@@ -225,6 +227,7 @@ impl PlayerContent {
             lighting,
             fog,
             author_grading,
+            display_profile,
             shader_packages,
             material_bindings,
             dynamic_runtime,
@@ -315,6 +318,7 @@ impl PlayerContent {
             lighting,
             fog,
             author_grading,
+            display_profile,
             shader_packages,
             material_bindings,
             dynamic_runtime,

@@ -149,6 +149,7 @@ impl Renderer {
             && self.shadow_probe.is_none()
             && self.ibl_probe.is_none();
         (self.shadow_map.metrics().map_size == COMPACT_SHADOW_SIZE) != next_compact
+            || self.output_pass.display_profile() != content.display_profile
             || self.forward_targets.background.is_some() != content.background.is_some()
             || self.lighting != content.lighting
             || (content.background.is_some()
@@ -158,6 +159,11 @@ impl Renderer {
                         .unwrap_or(deep_engine_native::fog::FogSettings::DISABLED))
     }
 }
+
+#[cfg(test)]
+#[cfg(target_os = "windows")]
+#[path = "display_profile_gpu_tests.rs"]
+mod display_profile_gpu_tests;
 
 #[cfg(test)]
 mod tests {

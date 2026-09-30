@@ -22,7 +22,9 @@ export function validateRuntimeEnvironment(value: unknown, id: string, revision:
     const hasFog = object.fog !== undefined;
     fields(object, ["schema", "schemaVersion", "id", "revision", "kind", "backgroundSrgb", "outputTransform",
       ...(hdr ? ["ibl"] : []), ...(object.schemaVersion === 7 ? ["fog"] : []), ...(grading ? ["colorGrading"] : [])],
-      ["lighting", "staticLightmap", "irradianceProbes", ...(studio || grading ? ["fog"] : [])], path);
+      ["lighting", "staticLightmap", "irradianceProbes", "displayProfile", ...(studio || grading ? ["fog"] : [])], path);
+    requireValue(object.displayProfile === undefined || object.displayProfile === "deep-aces"
+      || object.displayProfile === "three-aces-r185", `${path}.displayProfile`, "Unsupported display profile.");
     const pointShadow = object.schemaVersion === 5;
     const shadows = pointShadow || object.schemaVersion === 4;
     const many = shadows || object.schemaVersion === 3;

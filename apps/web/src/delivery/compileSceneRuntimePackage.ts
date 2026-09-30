@@ -130,6 +130,8 @@ export type SceneIrradianceProbeBake = SceneIrradianceProbeGridBake | SceneIrrad
 export interface CompileSceneRuntimeOptions extends CompileSceneRenderOptions {
   readonly packageId: string;
   readonly packageVersion: string;
+  /** Explicit Native display math; omission preserves the original package bytes. */
+  readonly displayProfile?: "deep-aces" | "three-aces-r185";
   readonly hdrEnvironment?: {readonly payload:RuntimePrefilteredIbl;readonly source:{readonly bytes:number;readonly sha256:string}};
   /** F3 探针网格烘焙结果；缺省或 null 不写环境 irradianceProbes 字段，旧包语义逐位不变。 */
   readonly irradianceProbes?: SceneIrradianceProbeBake | null;
@@ -171,7 +173,10 @@ export async function compileSceneRuntimePackage(input: SceneSnapshot,
   const authoredEnvironment = options.hdrEnvironment ? compileSceneHdrEnvironment(scene.environment,scene.lighting,options.hdrEnvironment.payload,scene.weather,localized.frame.origin) : compileSceneEnvironment(scene.environment, scene.lighting, scene.weather, localized.frame.origin, scene.postProcessing);
   // F3:探针网格烘焙结果(可选)经 Native 打包器校验后随环境载荷发布;缺省完全不写该字段。
   const irradianceProbes = compileSceneIrradianceProbes(options.irradianceProbes, localized.frame.origin);
-  const environment = authoredEnvironment && irradianceProbes ? { ...authoredEnvironment, irradianceProbes } : authoredEnvironment;
+  if (options.displayProfile !== undefined && !authoredEnvironment) throw new Error("displayProfile requires a compiled solid environment");
+  const selectedEnvironment = authoredEnvironment && options.displayProfile !== undefined
+    ? { ...authoredEnvironment, displayProfile: options.displayProfile } : authoredEnvironment;
+  const environment = selectedEnvironment && irradianceProbes ? { ...selectedEnvironment, irradianceProbes } : selectedEnvironment;
   const environmentSource=environment?.schemaVersion===6 ? options.hdrEnvironment?.source : undefined;
   if (environment?.schemaVersion===6 && !environmentSource) throw new Error("HDR 来源身份缺失");
   if (environmentSource && (!Number.isSafeInteger(environmentSource.bytes) || environmentSource.bytes<1 || environmentSource.bytes>32*1024**2 || environmentSource.sha256!==environment?.ibl?.source.contentHash.value)) throw new Error("HDR 来源身份或预算无效");

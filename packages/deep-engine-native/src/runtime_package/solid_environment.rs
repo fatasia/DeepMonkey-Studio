@@ -32,6 +32,7 @@ pub(super) struct DecodedSolidEnvironment {
     pub(super) background: [f64; 3],
     pub(super) fog: Option<FogSettings>,
     pub(super) grading: Option<crate::author_grading::AuthorGrading>,
+    pub(super) display_profile: crate::output_color_profile::OutputColorProfile,
 }
 
 pub(super) fn validate_static_lightmap(
@@ -197,6 +198,8 @@ struct SolidEnvironment {
     background_srgb: [f64; 3],
     output_transform: String,
     #[serde(default)]
+    display_profile: crate::output_color_profile::OutputColorProfile,
+    #[serde(default)]
     lighting: Option<crate::scene_lighting::DirectionalLighting>,
     #[serde(default)]
     ibl: Option<serde_json::Value>,
@@ -326,9 +329,17 @@ pub(super) fn decode(
         .transpose()?;
     // Three 的 Color 背景不经 tone mapping；抵消现有固定 ACES，保持作者 sRGB。
     Ok(DecodedSolidEnvironment {
-        background: source.background_srgb.map(inverse_output),
+        background: match source.display_profile {
+            crate::output_color_profile::OutputColorProfile::DeepAces => {
+                source.background_srgb.map(inverse_output)
+            }
+            crate::output_color_profile::OutputColorProfile::ThreeAcesR185 => {
+                crate::output_color_profile::three_background_linear(source.background_srgb)
+            }
+        },
         fog,
         grading,
+        display_profile: source.display_profile,
     })
 }
 

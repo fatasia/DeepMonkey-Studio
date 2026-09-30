@@ -65,6 +65,8 @@ export interface RuntimeSolidEnvironment {
   readonly kind: "solid-background-no-ibl" | "solid-background-prefiltered-ibl" | "solid-background-builtin-ibl";
   readonly ibl?: RuntimePrefilteredIbl;
   readonly backgroundSrgb: readonly [number, number, number];
+  /** Optional display math; omission preserves the published Native default. */
+  readonly displayProfile?: "deep-aces" | "three-aces-r185";
   readonly outputTransform: "native-aces-v1" | "native-aces-light-v2" | "native-aces-lights-v3" | "native-aces-spot-shadows-v4" | "native-aces-local-shadows-v5" | "native-aces-hdr-v6" | "native-aces-fog-v7" | "native-aces-studio-v8" | "native-aces-grading-v9";
   readonly lighting?: RuntimeAuthoredLighting;
   /** B6 静态贴图描述符；缺失时表示没有烘焙光照，不应推断为黑色贴图。 */

@@ -130,6 +130,10 @@ pub(super) fn decode(
         lighting,
         fog,
         author_grading,
+        display_profile: solid_environment
+            .as_ref()
+            .map(|decoded| decoded.display_profile)
+            .unwrap_or_default(),
         shader_packages,
         material_bindings: package.material_bindings,
         dynamic_runtime,

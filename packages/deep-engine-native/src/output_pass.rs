@@ -1,6 +1,7 @@
 use wgpu::util::DeviceExt;
 
 use deep_engine_native::mesh_abi::FRAME_UNIFORM_BYTES;
+use deep_engine_native::output_color_profile::OutputColorProfile;
 
 const PLAIN_SHADER: &str = include_str!("../assets/shaders/native_output_v1.wgsl");
 const BLOOM_SHADER: &str = include_str!("../assets/shaders/native_output_bloom_v1.wgsl");
@@ -24,6 +25,7 @@ pub struct OutputPass {
     bloom_sampler: Option<wgpu::Sampler>,
     grading_buffer: wgpu::Buffer,
     fog_enabled: bool,
+    display_profile: OutputColorProfile,
 }
 
 impl OutputPass {
@@ -36,6 +38,26 @@ impl OutputPass {
         // 作者色彩分级的 12-float 打包；None（未启用或六通道全零中性）时
         // 上传全零 uniform——shader 分支精确恒等，宿主不改变任何管线状态。
         grading: Option<[f32; 12]>,
+    ) -> Self {
+        Self::new_with_profile(
+            device,
+            surface_format,
+            hdr_view,
+            bloom,
+            fog,
+            grading,
+            OutputColorProfile::default(),
+        )
+    }
+
+    pub fn new_with_profile(
+        device: &wgpu::Device,
+        surface_format: wgpu::TextureFormat,
+        hdr_view: &wgpu::TextureView,
+        bloom: Option<(&wgpu::TextureView, f32)>,
+        fog: Option<(&wgpu::TextureView, &wgpu::Buffer)>,
+        grading: Option<[f32; 12]>,
+        profile: OutputColorProfile,
     ) -> Self {
         let bloom_enabled = bloom.is_some();
         let fog_enabled = fog.is_some();
@@ -62,7 +84,9 @@ impl OutputPass {
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Deep Engine native HDR output shader v1"),
-            source: wgpu::ShaderSource::Wgsl(output_shader(bloom_enabled, fog_enabled).into()),
+            source: wgpu::ShaderSource::Wgsl(
+                output_shader_with_profile(bloom_enabled, fog_enabled, profile).into(),
+            ),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Deep Engine native output pipeline layout"),
@@ -88,7 +112,12 @@ impl OutputPass {
             bloom_sampler,
             grading_buffer,
             fog_enabled,
+            display_profile: profile,
         }
+    }
+
+    pub fn display_profile(&self) -> OutputColorProfile {
+        self.display_profile
     }
 
     pub fn uses_bloom(&self) -> bool {
@@ -154,13 +183,28 @@ impl OutputPass {
 
 /// Assemble once at pipeline creation, retaining Native author grading and upstream exposure.
 pub fn output_shader(bloom: bool, fog: bool) -> String {
+    output_shader_with_profile(bloom, fog, OutputColorProfile::default())
+}
+
+pub fn output_shader_with_profile(bloom: bool, fog: bool, profile: OutputColorProfile) -> String {
     let variant = match (bloom, fog) {
         (false, false) => PLAIN_SHADER,
         (true, false) => BLOOM_SHADER,
         (false, true) => FOG_SHADER,
         (true, true) => BLOOM_FOG_SHADER,
     };
-    [DISPLAY_COLOR_SHADER, AUTHOR_COLOR_SHADER, variant].join("\n")
+    if profile == OutputColorProfile::DeepAces {
+        return [DISPLAY_COLOR_SHADER, AUTHOR_COLOR_SHADER, variant].join("\n");
+    }
+    // Specialize the existing shim once; no new binding or per-pixel profile branch.
+    const ACES_CALL: &str = "return deepAcesFit(color, 1.0);";
+    assert_eq!(
+        AUTHOR_COLOR_SHADER.matches(ACES_CALL).count(),
+        1,
+        "Native output profile shim changed"
+    );
+    let author = AUTHOR_COLOR_SHADER.replacen(ACES_CALL, "return deepThreeAcesFit(color, 1.0);", 1);
+    [DISPLAY_COLOR_SHADER, &author, variant].join("\n")
 }
 
 fn create_layout(

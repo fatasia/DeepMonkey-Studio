@@ -285,7 +285,7 @@ pub(super) async fn create_renderer(
         let bloom = BloomPass::new(&device, &forward_targets.hdr_view, size, features.bloom)?;
         // 作者色彩分级（v9 六通道）：仅非中性档写非零 uniform；中性/缺省档
         // 传 None，输出 shader 的全零分支逐位恒等，渲染路径与旧包一致。
-        let output_pass = OutputPass::new(
+        let output_pass = OutputPass::new_with_profile(
             &device,
             config.format,
             &forward_targets.hdr_view,
@@ -300,6 +300,7 @@ pub(super) async fn create_renderer(
                 .author_grading
                 .filter(|grading| !grading.is_neutral())
                 .map(|grading| grading.pack()),
+            content.display_profile,
         );
         let mut outline_pass = crate::outline_pass::OutlinePass::new(&device, config.format);
         outline_pass.rebind(

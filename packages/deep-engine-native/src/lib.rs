@@ -1,6 +1,7 @@
 pub mod adapter_n1;
 pub mod asset_package;
 pub mod author_grading;
+pub mod output_color_profile;
 pub mod behavior_extension;
 pub mod behavior_ir;
 pub mod bloom;
