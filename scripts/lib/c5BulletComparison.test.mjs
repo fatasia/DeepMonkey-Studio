@@ -17,9 +17,15 @@ function load() {
   const clothText = JSON.stringify({ steps: 240, pinned: [132, 143], runs, freeFall: { steps: 30, runs: [
     { poses: freeFall }, { poses: freeFall }] } });
   const hash = text => createHash("sha256").update(text).digest("hex");
+  const hinge = { limited: Array.from({ length: 120 }, () => .5), control: Array.from({ length: 120 }, () => 2) };
+  const webHingeText = JSON.stringify({ ...hinge, meta: { steps: 120, mass: 1, fixedStep: 1/60, limitMin: -.5, limitMax: .5,
+    motorTargetVelocity: 2, motorStrength: 10 } });
+  const nativeHingeText = JSON.stringify({ ...hinge, steps: 120, mass: 1, stepSeconds: 1/60,
+    limitMin: -.5, limitMax: .5, targetVelocity: 2, strength: 10 });
   const bulletText = JSON.stringify({ version: "3.2.7", inputs: { "web-stack-poses.json": hash(webText),
-    "cloth-input.json": hash(clothText) }, stack: [poses, poses], cloth: [clothPoses, clothPoses], freeFall: [freeFall, freeFall] });
-  return { webText, nativeText, clothText, bulletText };
+    "cloth-input.json": hash(clothText), "web-hinge.json": hash(webHingeText) }, stack: [poses, poses], cloth: [clothPoses, clothPoses],
+    freeFall: [freeFall, freeFall], hinge: [hinge, hinge] });
+  return { webText, nativeText, clothText, bulletText, webHingeText, nativeHingeText };
 }
 test("receipt repeat/input provenance and finite measurements", () => {
   const result = compareBullet(load()); assert.equal(result.repeatStable, true);
@@ -40,4 +46,7 @@ test("empty/unstable outputs and moving anchors fail", () => {
   assert.throws(() => compareBullet(mutate(b => {
     for (const run of b.freeFall) run[0][0][0] += .01;
   })), /free-fall/);
+  assert.throws(() => compareBullet(mutate(b => {
+    for (const run of b.hinge) run.limited[0] = .7;
+  })), /invariant/);
 });

@@ -77,13 +77,41 @@ def cloth(source, round_id):
         p.disconnect(client)
 
 
+def hinge(meta, limited):
+    client = p.connect(p.DIRECT)
+    try:
+        p.setGravity(0, 0, 0)
+        p.setTimeStep(meta["fixedStep"])
+        kind = "revolute" if limited else "continuous"
+        limits = f'<limit lower="{meta["limitMin"]}" upper="{meta["limitMax"]}" effort="10" velocity="2"/>'
+        urdf = out / "hinge-input.urdf"
+        urdf.write_text(f'''<robot name="C5-hinge"><link name="world"/>
+<link name="arm"><inertial><origin xyz="0.25 0 0"/><mass value="1"/>
+<inertia ixx="0.0002666666666667" ixy="0" ixz="0" iyy="0.0209666666666667" iyz="0" izz="0.0209666666666667"/></inertial>
+<collision><origin xyz="0.25 0 0"/><geometry><box size="0.5 0.04 0.04"/></geometry></collision></link>
+<joint name="hinge" type="{kind}"><parent link="world"/><child link="arm"/><axis xyz="0 0 1"/>{limits}
+<dynamics damping="0" friction="0"/></joint></robot>''', encoding="utf8")
+        body = p.loadURDF(str(urdf), useFixedBase=True, flags=p.URDF_USE_INERTIA_FROM_FILE)
+        p.changeDynamics(body, 0, linearDamping=0, angularDamping=0)
+        p.setJointMotorControl2(body, 0, p.VELOCITY_CONTROL, targetVelocity=meta["motorTargetVelocity"], force=meta["motorStrength"])
+        angles = []
+        for _ in range(meta["steps"]):
+            p.stepSimulation()
+            angles.append(p.getJointState(body, 0)[0])
+        return angles
+    finally:
+        p.disconnect(client)
+
+
 stack_input = json.loads((out / "web-stack-poses.json").read_text(encoding="utf8"))
 cloth_input = json.loads((out / "cloth-input.json").read_text(encoding="utf8"))
+hinge_input = json.loads((out / "web-hinge.json").read_text(encoding="utf8"))
 result = {"version": version, "apiVersion": p.getAPIVersion(), "host": "Bullet DIRECT; test-only",
           "inputs": {name: hashlib.sha256((out / name).read_bytes()).hexdigest()
-                     for name in ["web-stack-poses.json", "cloth-input.json"]},
+                     for name in ["web-stack-poses.json", "cloth-input.json", "web-hinge.json"]},
           "stack": [stack(stack_input["meta"]) for _ in range(2)],
           "cloth": [cloth(cloth_input, i) for i in range(2)],
-          "freeFall": [cloth(cloth_input["freeFall"], i) for i in range(2)]}
+          "freeFall": [cloth(cloth_input["freeFall"], i) for i in range(2)],
+          "hinge": [{"limited": hinge(hinge_input["meta"], True), "control": hinge(hinge_input["meta"], False)} for _ in range(2)]}
 (out / "bullet.json").write_text(json.dumps(result, allow_nan=False), encoding="utf8")
 print("Bullet stack/cloth two-round output written")

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ScenePhysicsJointState } from "@bim-studio/contracts";
 import { mountRapierRevoluteJoint } from "./rapierPhysicsJoint";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 /**
  * 铰链限位黄金案例(Web 侧)。参数与 Native
@@ -77,6 +79,13 @@ async function runHinge(limitsEnabled: boolean) {
 }
 
 describe("Rapier Web hinge limit golden", () => {
+  it("exports the existing actual hinge golden for an independent oracle", async () => {
+    const limited = await runHinge(true), repeat = await runHinge(true), control = await runHinge(false);
+    expect(repeat.angles).toEqual(limited.angles);
+    const output = resolve(__dirname, "../../../../test-output/c5-bullet"); mkdirSync(output, { recursive: true });
+    writeFileSync(resolve(output, "web-hinge.json"), JSON.stringify({ meta: HINGE,
+      limited: limited.angles, repeat: repeat.angles, control: control.angles }));
+  });
   it("clamps a motor-driven arm at the authored limits and repeats bit-exactly", async () => {
     const first = await runHinge(true);
     const repeat = await runHinge(true);

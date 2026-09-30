@@ -336,3 +336,16 @@ fn hinge_motor_without_limits_drives_far_past_the_authored_band() {
         "unlimited control final angle {final_angle} must exceed the band"
     );
 }
+
+#[test]
+fn hinge_exports_existing_actual_golden_for_independent_oracle() {
+    let limited = run_hinge(true);
+    let repeat = run_hinge(true);
+    assert_eq!(limited, repeat);
+    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test-output/c5-bullet");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::write(out.join("native-hinge.json"), serde_json::to_string(&serde_json::json!({
+        "limited":limited,"repeat":repeat,"control":run_hinge(false),"stepSeconds":1.0/60.0,
+        "steps":HINGE_STEPS,"limitMin":-0.5,"limitMax":0.5,"mass":1,"targetVelocity":2,"strength":10
+    })).unwrap()).unwrap();
+}

@@ -6,7 +6,7 @@ const finite = value => typeof value === "number" ? Number.isFinite(value)
   : Array.isArray(value) ? value.every(finite) : Object.values(value).every(finite);
 
 /** Independent engines have different solvers; report differences, gate only declared invariants. */
-export function compareBullet({ webText, nativeText, clothText, bulletText }) {
+export function compareBullet({ webText, nativeText, clothText, bulletText, webHingeText, nativeHingeText }) {
   const web = JSON.parse(webText), native = JSON.parse(nativeText), cloth = JSON.parse(clothText), bullet = JSON.parse(bulletText);
   if (bullet.version !== "3.2.7" || bullet.inputs?.["web-stack-poses.json"] !== hash(webText)
     || bullet.inputs?.["cloth-input.json"] !== hash(clothText)) throw Error("Bullet version/input provenance mismatch");
@@ -46,12 +46,29 @@ export function compareBullet({ webText, nativeText, clothText, bulletText }) {
   for (let t = 0; t < 30; t++) for (let i = 0; i < 144; i++) freeFallMaxError = Math.max(freeFallMaxError,
     distance(bullet.freeFall[0][t][i], cloth.freeFall.runs[0].poses[t][i]));
   if (freeFallMaxError > 5e-5) throw Error("Matched free-fall integration drift");
+  const wh = JSON.parse(webHingeText), nh = JSON.parse(nativeHingeText);
+  if (bullet.inputs["web-hinge.json"] !== hash(webHingeText) || bullet.hinge?.length !== 2
+    || JSON.stringify(bullet.hinge[0]) !== JSON.stringify(bullet.hinge[1])) throw Error("Hinge input/repetition drift");
+  for (const [name, actual, expected] of [["steps", nh.steps, wh.meta.steps], ["mass", nh.mass, wh.meta.mass],
+    ["step", nh.stepSeconds, wh.meta.fixedStep], ["lower", nh.limitMin, wh.meta.limitMin], ["upper", nh.limitMax, wh.meta.limitMax],
+    ["velocity", nh.targetVelocity, wh.meta.motorTargetVelocity], ["strength", nh.strength, wh.meta.motorStrength]]) {
+    if (actual !== expected) throw Error(`Hinge authored input mismatch: ${name}`);
+  }
+  for (const leg of [wh, nh, bullet.hinge[0]]) {
+    if (leg.limited?.length !== 120 || leg.control?.length !== 120 || !finite(leg.limited) || !finite(leg.control)) throw Error("Missing hinge trajectory");
+    if (leg.repeat && JSON.stringify(leg.repeat) !== JSON.stringify(leg.limited)) throw Error("Production hinge repetition drift");
+    if (Math.max(...leg.limited) > .55 || Math.min(...leg.limited) < -.55
+      || leg.limited.at(-1) < .45 || leg.limited.at(-1) > .55 || leg.control.at(-1) <= 1) throw Error("Hinge limit/control invariant failed");
+  }
+  const hingeAngleErrors = Object.fromEntries([["web", wh], ["native", nh]].map(([side, leg]) => [side,
+    Math.max(...leg.limited.map((v, i) => Math.abs(v - bullet.hinge[0].limited[i])))]));
   return { passed: true, scope: "independent-test-oracle-record", version: bullet.version,
-    stackErrors, maxClothPositionDifference, maxBulletAnchorDrift, freeFallMaxError, repeatStable: true,
+    stackErrors, hingeAngleErrors, maxClothPositionDifference, maxBulletAnchorDrift, freeFallMaxError, repeatStable: true,
     accuracyEquivalent: false, findings: ["Finite-stiffness cloth trajectory differs; matched compliance/damping/topology calibration remains"],
     inputHashes: { web: hash(webText), native: hash(nativeText), cloth: hash(clothText) },
     knownInputDifferences: ["Bullet product friction mapped sqrt(0.6) per collider; Rapier average is 0.6",
       "Bullet sequential impulse/contact ERP vs Rapier solver/contact slop",
+      "Bullet hinge torque force10 vs Rapier motor strength10; invariant/angle records only",
       "Bullet triangular mass-spring stiffness40/damping0.1 vs XPBD structural+both diagonals compliance0/substep damping0.01"],
-    excluded: ["solver trajectory equivalence", "hinge/motor/gear oracle", "cloth finite-stiffness calibration", "full C5"] };
+    excluded: ["solver trajectory equivalence", "gear/slider oracle", "cloth finite-stiffness calibration", "full C5"] };
 }

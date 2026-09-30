@@ -15,6 +15,8 @@
 
 **真实缺口**：固定版本、许可证/哈希来源、独立 Bullet 输出及差异说明。首次先对齐三箱堆叠输入和布料自由落体/固定锚点边界；机构马达和有限刚度求解的语义差异需独立记录，不强求异算法逐位相等。
 
+续接核查：Web/Native 的 runHinge 与限位/无限位控制组已存在，但没有逐步角度导出。只给既有黄金增加证据出口，复用其真实马达/关节装配；Bullet 使用同尺寸、质量、Z轴、限位和速度目标的测试期 URDF。strength 与 Bullet max force 的算法语义分别登记，不能据同数值宣称完全等价。
+
 ## 执行范围
 
 新增测试期 Python oracle 与独立比较器，记录实际包版本、输入、两轮结果、重复性、每步位姿误差。参照安装仅在 test-output/c5-bullet；输出由现有黄金执行产生。装载失败明确报错。完整机构/布料有限刚度 oracle 未经过实测前保持待办。
@@ -30,15 +32,17 @@
 
 ## 实测
 
-默认 fresh runner 实际执行 Web/Native 三箱黄金、现有 XPBD 布料和 Bullet DIRECT，证据 `test-output/c5-bullet/evidence.json`，currentRun=true。重复两轮逐位稳定；来源和输入指纹已验。比较器 3 项拒绝测试通过，含旧输入、错误版本、缺输出、重复漂移与移动锚点。
+默认 fresh runner 实际执行 Web/Native 三箱与限位铰链黄金、现有 XPBD 布料和 Bullet DIRECT，证据 `test-output/c5-bullet/evidence.json`，currentRun=true。重复两轮逐位稳定；来源和输入指纹已验。比较器 3 项拒绝测试通过，含旧输入、错误版本、缺输出、重复漂移、移动锚点、自由落体偏移与铰链越限。
 
 | 测量 | 结果 |
 |---|---:|
 | 堆叠全程 Bullet/Web 最大位置差 | 0.00901723324 m |
 | 堆叠全程 Bullet/Native 最大位置差 | 0.01000846181 m |
 | 堆叠全程最大转角差 Web/Native | 0.02542625118 / 0.02539721970 rad |
+| 限位铰链全程 Bullet/Web 最大角度差 | 0.02772055041 rad |
+| 限位铰链全程 Bullet/Native 最大角度差 | 0.03327996599 rad |
 | 匹配无阻尼自由落体最大差（30帧，每帧8子步） | 3.37176145e-8 m；预注册门5e-5 m |
 | 固定布料锚点最大漂移 | 3.37176878e-8 m；预注册门1e-6 m |
 | 有限刚度布料全程最大位置差 | 8.890696565 m |
 
-`passed` 只表示参照执行/身份/重复性和上述边界合同，`accuracyEquivalent=false`。堆叠采用 Bullet 摩擦乘积规则的 sqrt(0.6) 对应 Rapier 平均0.6；接触 ERP/slop/迭代算法仍不同。布料 Bullet 三角弹簧 stiffness40/damping0.1 与 XPBD 零柔度、双对角结构和子步阻尼0.01不等价，8.89m差异保留为 finding，不能据此验证产品布料准确度。后继先匹配有限柔度/阻尼/拓扑语义，再对机构马达/齿轮作同样独立参照；完整 C5 保持待办。
+`passed` 只表示参照执行/身份/重复性和上述边界合同，`accuracyEquivalent=false`。堆叠采用 Bullet 摩擦乘积规则的 sqrt(0.6) 对应 Rapier 平均0.6；接触 ERP/slop/迭代算法仍不同。三端铰链全程在±0.55rad内、最终角在0.45–0.55rad，无限位控制组最终角超过1rad；Bullet max force10 与 Rapier strength10 的马达语义不同，角度轨迹仅记录差异。布料 Bullet 三角弹簧 stiffness40/damping0.1 与 XPBD 零柔度、双对角结构和子步阻尼0.01不等价，8.89m差异保留为 finding，不能据此验证产品布料准确度。后继先匹配有限柔度/阻尼/拓扑语义，再补齿轮/滑轨参照；完整 C5 保持待办。

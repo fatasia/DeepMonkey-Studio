@@ -26,12 +26,17 @@ if (!historic) {
     outfile: `${out}/cloth-export.mjs`, bundle: true, format: "esm", platform: "node" });
   const { exportClothOracleInput } = await import(new URL("../test-output/c5-bullet/cloth-export.mjs", import.meta.url));
   await writeFile(`${out}/cloth-input.json`, JSON.stringify(exportClothOracleInput()));
-  const webLog = run("Web stack", "cmd.exe", ["/d", "/s", "/c", "pnpm --filter @bim-studio/web exec vitest run src/viewer/rapierPhysicsStackGolden.test.ts"]);
+  const webLog = run("Web stack/hinge", "cmd.exe", ["/d", "/s", "/c", "pnpm --filter @bim-studio/web exec vitest run src/viewer/rapierPhysicsStackGolden.test.ts src/viewer/rapierPhysicsHingeLimitGolden.test.ts"]);
   await writeFile(`${out}/web-stack.log`, webLog);
   const nativeLog = run("Native stack", "cargo", ["test", "--manifest-path", "packages/deep-engine-native/Cargo.toml", "--locked",
     "--lib", "native_physics::golden_tests::stack_records_per_step_poses_for_cross_end_tolerance_pairing", "--", "--exact"]);
   await writeFile(`${out}/native-stack.log`, nativeLog);
   if (!/test result: ok\. [1-9]\d* passed/.test(nativeLog)) throw Error("Native stack did not execute");
+  const hingeLog = run("Native hinge", "cargo", ["test", "--manifest-path", "packages/deep-engine-native/Cargo.toml", "--locked", "--lib",
+    "native_physics::golden_tests::hinge_exports_existing_actual_golden_for_independent_oracle", "--", "--exact"]);
+  await writeFile(`${out}/native-hinge.log`, hingeLog);
+  if (!/test result: ok\. [1-9]\d* passed/.test(hingeLog)) throw Error("Native hinge did not execute");
+  for (const side of ["web", "native"]) if ((await stat(`${out}/${side}-hinge.json`)).mtimeMs < started) throw Error(`${side} hinge output is stale`);
   for (const side of ["web", "native"]) {
     const path = `${root}/test-output/t17-cross-tolerance/${side}-stack-poses.json`;
     if ((await stat(path)).mtimeMs < started) throw Error(`${side} stack output is stale`);
@@ -40,7 +45,8 @@ if (!historic) {
   await writeFile(`${out}/oracle.log`, run("Bullet DIRECT", process.env.C5_PYTHON ?? "python", ["scripts/c5-bullet-oracle.py"], { PYTHONPATH: `${out}/site` }));
 }
 const [webText, nativeText, clothText, bulletText] = await Promise.all(["web-stack-poses.json", "native-stack-poses.json", "cloth-input.json", "bullet.json"].map(p => readFile(`${out}/${p}`, "utf8")));
-const evidence = { ...compareBullet({ webText, nativeText, clothText, bulletText }), currentRun: !historic,
+const [webHingeText, nativeHingeText] = await Promise.all(["web-hinge.json", "native-hinge.json"].map(p => readFile(`${out}/${p}`, "utf8")));
+const evidence = { ...compareBullet({ webText, nativeText, clothText, bulletText, webHingeText, nativeHingeText }), currentRun: !historic,
   sourceSha256: digest(source), sourceUrl: "https://pypi.org/project/pybullet/3.2.7/",
   evidenceMode: historic ? "historical files only" : "Web/Native/Bullet executed in this run" };
 await writeFile(`${out}/evidence.json`, JSON.stringify(evidence, null, 2)); console.log(JSON.stringify(evidence, null, 2));
