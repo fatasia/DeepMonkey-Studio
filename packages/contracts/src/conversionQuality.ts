@@ -40,6 +40,17 @@ export interface PhysicsColliderEvidence {
   evidenceSha256: string;
   /** true 时 collider 只能按近似体消费（T17 approximate 语义），声明 physics-ready 必须附原因。 */
   approximate?: boolean;
+  /** 物理材料标注（D1）：全部可选、越界即整份报告无效（fail-closed），缺省由消费端取引擎默认。 */
+  physicsMaterial?: {
+    /** 摩擦系数 ∈ [0,16]（Rapier/PhysX 常用上界口径）。 */
+    friction?: number;
+    /** 反弹系数 ∈ [0,1]。 */
+    restitution?: number;
+    /** 密度 kg/m³ ∈ (0,100000]。 */
+    densityKgM3?: number;
+  };
+  /** 语义标注（D1）：机器可读标签，同 LOSS_TAG 词法；≤32 条。 */
+  semanticTags?: string[];
 }
 
 /** D1 physics-ready 资产档：两档声明；inspect/preview 质量档永远不得声明 physics-ready。 */
@@ -107,15 +118,60 @@ export function assertConversionQualityReport(value: unknown): asserts value is 
       if (!["convex-hull", "simplified-mesh", "mixed"].includes(evidence.strategy)) throw new Error("collider 策略无效");
       if (!/^[a-f0-9]{64}$/.test(evidence.evidenceSha256)) throw new Error("collider 证据哈希无效");
       if (evidence.approximate === true && !(typeof physics.reason === "string" && physics.reason.trim())) throw new Error("近似 collider 的 physics-ready 必须说明原因");
+      assertColliderAnnotations(evidence);
     } else {
       if (!(typeof physics.reason === "string" && physics.reason.trim())) throw new Error("geometry-only 必须说明原因");
       if (evidence !== undefined) {
         if (!evidence || typeof evidence !== "object" || !PHYSICS_EVIDENCE_ID.test(evidence.evidenceId)
           || !["convex-hull", "simplified-mesh", "mixed"].includes(evidence.strategy)
           || !/^[a-f0-9]{64}$/.test(evidence.evidenceSha256)) throw new Error("geometry-only 携带的 collider 证据无效");
+        assertColliderAnnotations(evidence);
       }
     }
   }
+}
+
+/** D1 标注字段校验（physics-ready 与 geometry-only 证据同一口径）：越界即整份报告无效。 */
+function assertColliderAnnotations(evidence: PhysicsColliderEvidence): void {
+  const material = evidence.physicsMaterial;
+  if (material !== undefined) {
+    if (!material || typeof material !== "object") throw new Error("physicsMaterial 必须是对象");
+    const inRange = (value: number | undefined, min: number, max: number, label: string) => {
+      if (value === undefined) return;
+      if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) throw new Error(`physicsMaterial ${label} 越界`);
+    };
+    inRange(material.friction, 0, 16, "friction");
+    inRange(material.restitution, 0, 1, "restitution");
+    inRange(material.densityKgM3, 0, 100000, "densityKgM3");
+    if (material.densityKgM3 === 0) throw new Error("physicsMaterial densityKgM3 不得为 0");
+  }
+  if (evidence.semanticTags !== undefined) {
+    if (!Array.isArray(evidence.semanticTags) || evidence.semanticTags.length > 32
+      || evidence.semanticTags.some(tag => typeof tag !== "string" || !LOSS_TAG.test(tag))) throw new Error("semanticTags 必须是机器可读标签且 ≤32 条");
+  }
+}
+
+/** D1 三态校验输出：ready=可直接物理消费；partial=physics-ready 但证据为近似体（须按近似语义消费）；not-ready=不可物理消费。 */
+export type PhysicsReadinessState = "ready" | "partial" | "not-ready";
+
+export interface PhysicsReadinessAssessment {
+  state: PhysicsReadinessState;
+  /** 机器可读理由码（与拒绝理由码同词法），非空除非 state=ready。 */
+  reasons: string[];
+}
+
+/** 三态评估：独立于 assert（不抛错），镜像其全部规则——消费端拿报告先过 assert 再用本函数出结论。 */
+export function evaluatePhysicsReadiness(report: ConversionQualityReport): PhysicsReadinessAssessment {
+  const physics = report.physicsReadiness;
+  if (physics === undefined) return { state: "not-ready", reasons: ["no-physics-declaration"] };
+  if (["inspect", "preview"].includes(report.tier)) return { state: "not-ready", reasons: ["tier-insufficient"] };
+  if (physics.tier === "geometry-only") return { state: "not-ready", reasons: ["geometry-only-declared"] };
+  const evidence = physics.colliderEvidence;
+  if (!evidence) return { state: "not-ready", reasons: ["missing-collider-evidence"] };
+  if (evidence.approximate === true) {
+    return { state: "partial", reasons: physics.reason ? ["approximate-collider", "approximate-reason-declared"] : ["approximate-collider"] };
+  }
+  return { state: "ready", reasons: [] };
 }
 
 /** 转换器草稿：sourceHash 由执行器用已核验的输入哈希回填，转换器不得自行声称。 */

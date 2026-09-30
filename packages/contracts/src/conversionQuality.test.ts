@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertConversionQualityReport, type ConversionQualityReport } from "./conversionQuality.js";
+import { assertConversionQualityReport, evaluatePhysicsReadiness, type ConversionQualityReport } from "./conversionQuality.js";
 import { assertSourceBundleRecord } from "./formatImportContracts.js";
 const hash = "a".repeat(64);
 const report = (): ConversionQualityReport => ({ schemaVersion: 1, profileId: "test-v1", tier: "visual-complete", sourceHash: hash,
@@ -91,5 +91,45 @@ describe("conversion quality publication contract", () => {
   it.each(["", "\\\\server\\file.jt", "a\\..\\file.jt", "a//file.jt", "a/./file.jt", "file.jt:stream", "a\u0000.jt"])("rejects unsafe SourceBundle path %s", bundledPath => {
     expect(() => assertSourceBundleRecord({ schemaVersion: 1, sourceName: "file.jt", sourceFormat: "jt", contentHash: hash,
       bundledPath, licenseReference: "local-only" })).toThrow("相对路径");
+  });
+});
+
+describe("D1 physics-ready 标注与三态评估", () => {
+  const physicsReady = (overrides = {}) => {
+    const value = report();
+    value.physicsReadiness = { tier: "physics-ready", colliderEvidence: {
+      evidenceId: "physics:colliders", strategy: "convex-hull",
+      evidenceSha256: "a".repeat(64), ...overrides } };
+    return value;
+  };
+  it("friction/restitution/density 越界即整份报告无效", () => {
+    expect(() => assertConversionQualityReport(physicsReady({ physicsMaterial: { friction: 32 } }))).toThrow("friction");
+    expect(() => assertConversionQualityReport(physicsReady({ physicsMaterial: { restitution: 1.5 } }))).toThrow("restitution");
+    expect(() => assertConversionQualityReport(physicsReady({ physicsMaterial: { densityKgM3: 0 } }))).toThrow("densityKgM3");
+    expect(() => assertConversionQualityReport(physicsReady({ physicsMaterial: { friction: 0.8, restitution: 0.3, densityKgM3: 7850 } }))).not.toThrow();
+  });
+  it("semanticTags 非法标签或超 32 条即无效，合法标签通过", () => {
+    expect(() => assertConversionQualityReport(physicsReady({ semanticTags: ["bad tag!"] }))).toThrow("semanticTags");
+    expect(() => assertConversionQualityReport(physicsReady({ semanticTags: Array.from({ length: 33 }, (_, i) => "tag-" + i) }))).toThrow("32 条");
+    expect(() => assertConversionQualityReport(physicsReady({ semanticTags: ["structural-beam", "ground-anchored"] }))).not.toThrow();
+  });
+  it("三态评估：ready/partial/not-ready 与理由码", () => {
+    const ready = evaluatePhysicsReadiness(physicsReady());
+    expect(ready.state).toBe("ready");
+    expect(ready.reasons).toEqual([]);
+    const approx = physicsReady({ approximate: true });
+    approx.physicsReadiness.reason = "visual-only hull";
+    expect(evaluatePhysicsReadiness(approx)).toEqual({ state: "partial", reasons: ["approximate-collider", "approximate-reason-declared"] });
+    const geometryOnly = report();
+    geometryOnly.tier = "visual-complete";
+    geometryOnly.physicsReadiness = { tier: "geometry-only", reason: "none" };
+    expect(evaluatePhysicsReadiness(geometryOnly).state).toBe("not-ready");
+    expect(evaluatePhysicsReadiness(report()).reasons).toEqual(["no-physics-declaration"]);
+  });
+  it("inspect/preview 声明 physics-ready 走 not-ready 且理由 tier-insufficient（三态不抛错口径）", () => {
+    const value = report();
+    value.tier = "preview";
+    value.physicsReadiness = { tier: "physics-ready", colliderEvidence: { evidenceId: "physics:colliders", strategy: "convex-hull", evidenceSha256: "b".repeat(64) } };
+    expect(evaluatePhysicsReadiness(value)).toEqual({ state: "not-ready", reasons: ["tier-insufficient"] });
   });
 });
