@@ -5,7 +5,7 @@ import type {
   HlodClusterStreamBinding,
   ThreeObjectSource,
 } from "@bim-studio/deep-engine/three-bridge";
-import type { AuthoredQualityProfile, ClusterLodSceneStaging, DeviceRecoveryOptions } from "@bim-studio/deep-engine/webgpu";
+import type { AuthoredQualityProfile, ClusterLodSceneStaging, DeviceRecoveryOptions, HdrDisplayRequest } from "@bim-studio/deep-engine/webgpu";
 import { DEFAULT_RESOLUTION_SCALE_POLICY } from "@bim-studio/deep-engine/postprocess";
 import { buildClusterLodAuthorStaging, clusterLodAuthorBakeFromModule } from "../delivery/buildClusterLodAuthorStaging";
 import { StudioDeepQualityTelemetrySampler, publishStudioQualityTelemetry,
@@ -64,6 +64,8 @@ function recordProbeSample(probe: DeepFlowProbe, tag: string, ...values: readonl
 }
 
 export interface StudioDeepWebGpuBridgeOptions {
+  /** Physical display opt-in. Runtime reports a specific SDR fallback when HDR is unavailable. */
+  readonly hdrDisplay?: HdrDisplayRequest;
   readonly onRuntimeFailure?: (error: Error) => void;
   readonly loadModule?: BridgeModuleLoader;
   readonly preparationTimeoutMs?: number;
@@ -140,6 +142,12 @@ export class StudioDeepWebGpuBridge {
   private settledViewKey = "";
   /** 上次读到的 renderDemand 修订号:静置短路的变化信号(不可用时为 -1)。 */
   private lastDemandRevision = -1;
+  /**
+   * I-C21:构造期冻结的 HDR 请求快照。模块加载/设备创建是异步窗口,宿主在此
+   * 窗口内改动传入对象不得改变实际下发的请求——每次 switchTo 重放同一份冻结
+   * 快照,面板诊断可与之逐字段对账。
+   */
+  private readonly hdrDisplayRequest: HdrDisplayRequest | undefined;
 
   constructor(
     private readonly viewer: ViewerEngine,
@@ -154,6 +162,7 @@ export class StudioDeepWebGpuBridge {
       collectDeepOverlayPrimitives(this.viewer, width, height, pixelRatio));
     this.loadModule = options.loadModule ?? (() => import("@bim-studio/deep-engine/three-bridge"));
     this.cameraFrameInFlightLimit = options.cameraFrameInFlightLimit ?? 2;
+    this.hdrDisplayRequest = options.hdrDisplay === undefined ? undefined : Object.freeze({ ...options.hdrDisplay });
     this.authorCanvas = viewer.renderer.domElement;
     this.authorStyle = captureAuthorStyle(this.authorCanvas);
     this.gizmoInteraction = new DeepGizmoInteraction(viewer, () => this.authorCanvas.getBoundingClientRect());
@@ -165,7 +174,7 @@ export class StudioDeepWebGpuBridge {
   get diagnostics() {
     if (!this.deepBackend) return undefined;
     const backend = this.deepBackend.diagnostics;
-    return { ...(backend ?? {}), cameraFlow: { inFlight: this.cameraFramesInFlight,
+    return { ...(backend ?? {}), ...(this.deepBackend.runtime.hdrDisplay ? { hdrDisplay: this.deepBackend.runtime.hdrDisplay } : {}), cameraFlow: { inFlight: this.cameraFramesInFlight,
       maxInFlight: this.cameraMaxInFlight, submitted: this.cameraFramesSubmitted,
       coalesced: this.cameraFramesCoalesced, pendingLatest: this.pendingCameraView !== undefined,
       limit: this.cameraFrameInFlightLimit } };
@@ -282,6 +291,7 @@ export class StudioDeepWebGpuBridge {
               ...(temporalUpscale ? { features: { temporalUpscale: true } } : {}),
               ...(virtualTextures ? { virtualTextures: { enabled: true } } : {}),
               ...(this.options.recovery ? { recovery: this.options.recovery } : {}),
+              ...(this.hdrDisplayRequest === undefined ? {} : { hdrDisplay: this.hdrDisplayRequest }),
               ...(pipelineBootstrap ? { pipelines: pipelineBootstrap } : {}),
               adaptiveQuality: {
                 enabled: true,

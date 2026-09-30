@@ -86,12 +86,18 @@ describe("I-C21 PbrOutputBindings HDR present —— 激活与直出", () => {
     output.dispose();
   });
 
-  it("HDR 激活时 captureSource 显式拒绝(SDR shader provenance 不适用 HDR 域)", async () => {
+  it("HDR capture maps the actual HDR WGSL and pipeline, without using SDR provenance", async () => {
     const f = hdrFixture();
     const output = new PbrOutputBindings(f.session, f.pipelines, () => 0, false, HDR_POLICY);
     await settle();
-    expect(() => output.present(f.encoder as unknown as GPUCommandEncoder, f.source, undefined, false, undefined, true))
-      .toThrow(/HDR display present has no SDR shader provenance/);
+    const receipt = output.present(f.encoder as unknown as GPUCommandEncoder, f.source, undefined, false, undefined, true);
+    const { hdrDisplayOutputShader } = await import("./pbrHdrDisplayWgsl.js");
+    const { sha256Utf8 } = await import("../shaderPackage/hash.js");
+    expect(receipt.sourceMapRefs).toHaveLength(2);
+    for (const ref of receipt.sourceMapRefs!) {
+      expect(ref.moduleId).toBe(`builtin.pbr-output.sha256-${sha256Utf8(hdrDisplayOutputShader)}`);
+      expect(hdrDisplayOutputShader.split("\n")[ref.generatedLine - 1]).toContain(`@${ref.stage} fn`);
+    }
     output.dispose();
   });
 
@@ -116,6 +122,64 @@ describe("I-C21 PbrOutputBindings HDR present —— 激活与直出", () => {
     expect([...writes[0]!]).toEqual([1, HDR_REFERENCE_WHITE_NITS, 1600, DEFAULT_EXTENDED_HEADROOM]);
     output.dispose();
   });
+});
+
+it("rebinds the same source after an HDR generation change and releases all three owned uniforms", async () => {
+  const f = hdrFixture(), output = new PbrOutputBindings(f.session, f.pipelines, () => 0, false, HDR_POLICY);
+  await output.ready; output.present(f.encoder as unknown as GPUCommandEncoder, f.source, undefined, false);
+  const first = f.device.createBindGroup.mock.calls.at(-1);
+  output.applyHdrDisplay(HDR_POLICY); await output.ready;
+  output.present(f.encoder as unknown as GPUCommandEncoder, f.source, undefined, false);
+  expect(f.device.createBindGroup.mock.calls.at(-1)).not.toBe(first);
+  expect(f.owned.size).toBe(3); output.dispose(); expect(f.owned.size).toBe(0);
+});
+
+it("waits for the production surface candidate before reporting active, and rolls back owned settings on failure", async () => {
+  const f = hdrFixture();
+  let reject!: (error: Error) => void;
+  const activate = vi.fn(() => new Promise<void>((_, fail) => { reject = fail; }));
+  Object.assign(f.session, { hdrDisplayCapability: { policy: HDR_POLICY }, activateHdrCanvas: activate });
+  const output = new PbrOutputBindings(f.session, f.pipelines, () => 0, true, HDR_POLICY);
+  await vi.waitFor(() => expect(activate).toHaveBeenCalledOnce());
+  expect(output.hdrDisplay?.state).toBe("activating");
+  reject(new Error("surface rejected")); await output.ready;
+  expect(output.hdrDisplay).toMatchObject({ state: "fallback", fallbackReason: "hdr-pipeline-failed" });
+  expect(f.owned.size).toBe(2); output.dispose(); expect(f.owned.size).toBe(0);
+});
+
+it("never publishes HDR when the device enters recovery during the candidate wait, and returns the 16B owner", async () => {
+  const f = hdrFixture();
+  let finish!: () => void;
+  const activate = vi.fn(() => new Promise<void>(done => { finish = done; }));
+  Object.assign(f.session, { hdrDisplayCapability: { policy: HDR_POLICY }, activateHdrCanvas: activate });
+  const output = new PbrOutputBindings(f.session, f.pipelines, () => 0, false, HDR_POLICY);
+  const baseline = f.owned.size;
+  await vi.waitFor(() => expect(activate).toHaveBeenCalledOnce());
+  // 候选等待过半:会话进入 recovering 并换绑新设备(recovery adopt 的账面语义:
+  // resources 清空退役、device 指向替代设备)。
+  const replacementDevice = { ...f.device } as unknown as GPUDevice;
+  (f.session as { device: unknown }).device = replacementDevice;
+  (f.session as { state: string }).state = "recovering";
+  finish(); await output.ready;
+  // 发布边界:HDR 运行时不得接管新设备代际,state 停留在 activating(渲染层读作回退)。
+  expect(output.hdrDisplay?.state).not.toBe("active");
+  // 16B owner 随候选作废归还,不泄漏到新代际账面。
+  expect(f.owned.size).toBe(baseline);
+  // 等待窗口内与恢复后,present 都继续走既有 SDR 链(SMAA 未被旁路)。
+  output.present(f.encoder as unknown as GPUCommandEncoder, f.source, undefined, false);
+  expect(f.encoder.beginRenderPass).toHaveBeenCalledWith(expect.objectContaining({ label: "Deep display output" }));
+  expect(f.pass.setPipeline).toHaveBeenCalledWith(f.pipelines.output);
+  output.dispose(); expect(f.owned.size).toBe(0);
+});
+
+it("destroys a late HDR pipeline after disposal instead of publishing it into a new device epoch", async () => {
+  const f = hdrFixture(); let resolve!: (pipeline: any) => void;
+  f.device.createRenderPipelineAsync.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  const output = new PbrOutputBindings(f.session, f.pipelines, () => 0, false, HDR_POLICY);
+  await vi.waitFor(() => expect(resolve).toBeTypeOf("function"));
+  output.dispose(); resolve(f.hdrPipeline); await output.ready;
+  expect(f.owned.size).toBe(0);
+  expect(f.device.createBuffer.mock.results.at(-1)!.value.destroy).toHaveBeenCalledOnce();
 });
 
 describe("I-C21 PbrOutputBindings HDR present —— fail-closed 回 SDR", () => {

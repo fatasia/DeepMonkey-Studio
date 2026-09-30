@@ -7,6 +7,8 @@ export interface PbrFrameGraphOptions {
   readonly directDisplay?: boolean;
   readonly writeGeometryBuffers?: boolean;
   readonly godRays?: boolean;
+  /** Execution metadata for the negotiated HDR canvas; topology and allocations are unchanged. */
+  readonly hdrDisplay?: boolean;
 }
 
 /**

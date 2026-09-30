@@ -24,6 +24,7 @@ type DeepWebGpuCanvas = Parameters<typeof PbrRenderer.create>[0];
 
 /** 可被宿主切换的自研浏览器后端；不持有作者场景，也不依赖 Three 运行时。 */
 export interface DeepWebGpuRenderRuntime {
+  readonly hdrDisplay?: PbrRenderer["hdrDisplay"];
   readonly id: string;
   readonly session?: {
     readonly state?: string;

@@ -1,4 +1,5 @@
 import { hdrDisplayOutputShader } from "./pbrHdrDisplayWgsl.js";
+import { createPbrOutputShaderProvenance, type PbrOutputShaderProvenance } from "./pbrOutputShaderProvenance.js";
 
 /// <reference types="@webgpu/types" />
 /**
@@ -35,6 +36,7 @@ export function createHdrDisplayAuthorLayout(device: GPUDevice): GPUBindGroupLay
 }
 
 export interface HdrDisplayPipeline {
+  readonly provenance: PbrOutputShaderProvenance;
   readonly pipeline: GPURenderPipeline;
   /** HDR 变体 group 0 布局(bind group 0 必须以此创建)。 */
   readonly bindGroupLayout: GPUBindGroupLayout;
@@ -63,5 +65,5 @@ export async function createHdrDisplayPipeline(device: GPUDevice, targetFormat: 
   });
   const hdrSettingsBuffer = device.createBuffer({ label: "Deep HDR display settings",
     size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-  return { pipeline, bindGroupLayout, hdrSettingsBuffer };
+  return { pipeline, bindGroupLayout, hdrSettingsBuffer, provenance: createPbrOutputShaderProvenance(pipeline, hdrDisplayOutputShader) };
 }

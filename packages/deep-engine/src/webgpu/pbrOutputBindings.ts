@@ -40,6 +40,9 @@ export class PbrOutputBindings {
   private hdrSettingsWritten = false;
   /** 激活代际令牌:重入/复位使迟到的一次性管线成功作废,不得覆盖最新策略态。 */
   private hdrGeneration = 0;
+  private hdrReady: Promise<void> | undefined;
+  get ready(): Promise<void> | undefined { return this.hdrReady; }
+  get spatialAaActive(): boolean { return this.spatialAaEnabled && this.hdrState !== "active"; }
 
   constructor(private readonly session: DeviceSession, private readonly pipelines: Pipelines, private readonly now: () => number,
     private readonly spatialAaEnabled = true, hdrDisplay?: HdrDisplayPolicy) {
@@ -59,6 +62,8 @@ export class PbrOutputBindings {
   applyHdrDisplay(policy: HdrDisplayPolicy): void {
     if (this.disposed) throw new Error("PBR output is disposed.");
     this.hdrGeneration += 1;
+    this.hdrBindings = new WeakMap();
+    if (this.session.hdrCanvasActive) this.session.restoreSdrCanvas();
     if (!policy || policy.mode !== "hdr") {
       if (this.hdrRuntime !== undefined) {
         try { this.session.release(this.hdrRuntime.hdrSettingsBuffer); } catch { /* 尽力退役 */ }
@@ -78,17 +83,26 @@ export class PbrOutputBindings {
     this.hdrState = "activating";
     this.hdrFallbackReason = undefined;
     const generation = this.hdrGeneration;
+    const device = this.session.device;
     const authorLayout = this.pipelines.output.getBindGroupLayout(1);
-    void createHdrDisplayPipeline(this.session.device, PBR_HDR_FORMAT, authorLayout).then(runtime => {
-      if (this.disposed || generation !== this.hdrGeneration) { runtime.hdrSettingsBuffer.destroy(); return; }
-      this.hdrRuntime = runtime;
-      this.session.own(runtime.hdrSettingsBuffer);
-      this.hdrState = "active";
+    const current = () => !this.disposed && generation === this.hdrGeneration && device === this.session.device;
+    const fallback = () => { if (current()) {
+      this.hdrRuntime = undefined; this.hdrState = "fallback"; this.hdrFallbackReason = "hdr-pipeline-failed";
+    } };
+    this.hdrReady = createHdrDisplayPipeline(device, PBR_HDR_FORMAT, authorLayout).then(async runtime => {
+      if (!current()) { runtime.hdrSettingsBuffer.destroy(); return; }
+      try {
+        this.session.own(runtime.hdrSettingsBuffer);
+        // Legacy offscreen sinks have no negotiated surface; production sessions do.
+        if (this.session.hdrDisplayCapability) await this.session.activateHdrCanvas(device, current);
+        if (!current()) { this.session.release(runtime.hdrSettingsBuffer); return; }
+        this.hdrRuntime = runtime; this.hdrState = "active";
+      } catch {
+        this.session.release(runtime.hdrSettingsBuffer); fallback();
+      }
     }, error => {
-      if (this.disposed || generation !== this.hdrGeneration) return;
-      this.hdrRuntime = undefined;
-      this.hdrState = "fallback";
-      this.hdrFallbackReason = "hdr-pipeline-failed";
+      if (!current()) return;
+      fallback();
       console.warn(`PBR HDR display failed closed to SDR: ${String(error instanceof Error ? error.message : error)}`);
     });
   }
@@ -164,11 +178,10 @@ export class PbrOutputBindings {
     const surface = this.acquirePresent(measure);
     this.encode(encoder, source, surface.view, effects, queries, detailedTiming);
     // A logical present containing SpatialAA has multiple shader owners; keep it unmapped.
+    if (captureSource && this.hdrState === "active" && this.hdrRuntime) {
+      return { ...surface, sourceMapRefs: this.hdrRuntime.provenance.refsFor(this.hdrRuntime.pipeline) };
+    }
     if (captureSource && !this.spatialAaEnabled) {
-      if (this.hdrState === "active") {
-        throw new Error("PBR HDR display present has no SDR shader provenance; capture must request the "
-          + "present-color readback resource instead.");
-      }
       const provenance = this.pipelines.outputShaderProvenance;
       if (!provenance) throw new Error("PBR output pipeline has no executable shader provenance.");
       return { ...surface, sourceMapRefs: provenance.refsFor(this.pipelines.output) };
@@ -179,6 +192,9 @@ export class PbrOutputBindings {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.hdrGeneration++;
+    if (this.hdrRuntime) { this.session.release(this.hdrRuntime.hdrSettingsBuffer); this.hdrRuntime = undefined; }
+    this.hdrBindings = new WeakMap();
     try { this.overlay?.dispose(); }
     finally { try { this.spatialAa?.dispose(); }
       finally { try { this.author.dispose(); } finally { this.session.release(this.buffer); } } }

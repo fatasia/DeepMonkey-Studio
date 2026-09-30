@@ -25,6 +25,45 @@ function fixture() {
 }
 
 describe("DeviceSession ownership and initialization failures", () => {
+  function hdrFixture() {
+    const f = fixture(), configured = { format: "rgba16float", toneMapping: { mode: "extended" } };
+    const temporary = { configure: vi.fn(), getConfiguration: () => configured, unconfigure: vi.fn() };
+    const pop = vi.fn(async () => null as null | { message: string });
+    Object.assign(f.device, { pushErrorScope: vi.fn(), popErrorScope: pop });
+    Object.assign(f.canvas, { ownerDocument: { defaultView: { matchMedia: () => ({ matches: true }) },
+      createElement: () => ({ getContext: () => temporary }) } });
+    Object.assign(f.context, { getConfiguration: () => configured });
+    const open = () => DeviceSession.open(f.canvas as unknown as HTMLCanvasElement, f.gpu as unknown as GPU,
+      f.controller.signal, undefined, undefined, { hdrDisplay: { enabled: true } });
+    return { ...f, open, pop, temporary };
+  }
+  it("negotiates HDR separately, preserves SDR until pipeline admission, and retains HDR on resize", async () => {
+    const f = hdrFixture(), session = await f.open();
+    expect(session.hdrDisplayCapability?.policy.mode).toBe("hdr"); expect(session.format).toBe("bgra8unorm");
+    expect(f.temporary.unconfigure).toHaveBeenCalledOnce();
+    await session.activateHdrCanvas(session.device, () => true);
+    expect(session.format).toBe("rgba16float"); expect(session.hdrCanvasActive).toBe(true);
+    session.resize(1920, 1080, 1);
+    expect(f.context.configure).toHaveBeenLastCalledWith(expect.objectContaining({ format: "rgba16float", toneMapping: { mode: "extended" } }));
+    session.restoreSdrCanvas(); expect(session.format).toBe("bgra8unorm");
+    expect(f.context.configure).toHaveBeenLastCalledWith({ device: f.device, format: "bgra8unorm", alphaMode: "opaque", usage: 17 });
+    session.dispose(); expect(session.resourceCount).toBe(0);
+  });
+  it("restores the SDR configuration on asynchronous activation validation failure", async () => {
+    const f = hdrFixture(), session = await f.open(); f.pop.mockResolvedValueOnce({ message: "actual surface rejected" });
+    await expect(session.activateHdrCanvas(session.device, () => true)).rejects.toThrow("actual surface rejected");
+    expect(session.format).toBe("bgra8unorm"); expect(session.hdrCanvasActive).toBe(false);
+    expect(f.context.configure).toHaveBeenLastCalledWith(expect.objectContaining({ format: "bgra8unorm" })); session.dispose();
+  });
+  it("rolls back a cancelled candidate without overriding a newer SDR owner", async () => {
+    const f = hdrFixture(), session = await f.open(), pending = deferred<null>();
+    f.pop.mockImplementationOnce(() => pending.promise);
+    let current = true; const candidate = session.activateHdrCanvas(session.device, () => current);
+    current = false; session.restoreSdrCanvas(); pending.resolve(null);
+    await expect(candidate).rejects.toThrow("superseded");
+    expect(session.format).toBe("bgra8unorm"); expect(f.context.configure).toHaveBeenCalledTimes(3);
+    session.dispose();
+  });
   it("requests layered texture limits only for the explicit capability and retains them in optional-feature fallback", async () => {
     const f = fixture(); Object.assign(f.adapter, { limits: { maxSampledTexturesPerShaderStage: 32 } });
     f.adapter.features.add("timestamp-query"); f.adapter.requestDevice.mockRejectedValueOnce(new Error("optional feature rejected"));

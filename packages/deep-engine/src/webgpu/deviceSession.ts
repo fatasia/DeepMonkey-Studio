@@ -1,6 +1,8 @@
 /// <reference types="@webgpu/types" />
 import { surfaceSize, type SurfaceSize } from "./surfaceSize.js";
 import { DeviceResourceMemory, validateDeviceMemoryBudget } from "./deviceResourceMemory.js";
+import { probeHdrDisplayCanvas, type HdrDisplayCanvasCapability } from "./hdrDisplayCanvas.js";
+import type { HdrDisplayRequest } from "./hdrDisplayOutput.js";
 import { classifyDeviceLost, classifyUncapturedError, DeviceRecoveryStateMachine,
   type DeviceRecoveryEvent, type DeviceRecoveryOptions, type DeviceRecoverySnapshot, type GpuErrorClassification } from "./deviceRecovery.js";
 
@@ -55,6 +57,9 @@ export class DeviceSession {
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
   private recoveringNow = false;
   private retiredResourceCount = 0;
+  private currentFormat: GPUTextureFormat;
+  private extendedCanvas = false;
+  private canvasRevision = 0;
   private readonly errorListener = (event: Event): void => {
     event.preventDefault();
     const message = (event as GPUUncapturedErrorEvent).error.message;
@@ -64,7 +69,7 @@ export class DeviceSession {
 
   private constructor(
     readonly context: GPUCanvasContext,
-    readonly format: GPUTextureFormat,
+    private readonly preferredFormat: GPUTextureFormat,
     device: GPUDevice,
     private readonly canvas: HTMLCanvasElement,
     private readonly adapter: GPUAdapter,
@@ -72,8 +77,10 @@ export class DeviceSession {
     memoryBudgetBytes?: number,
     recovery?: DeviceRecoveryOptions,
     private readonly requiredLimits?: Record<string, number>,
+    readonly hdrDisplayCapability?: HdrDisplayCanvasCapability,
   ) {
     this.currentDevice = device;
+    this.currentFormat = preferredFormat;
     this.memory = new DeviceResourceMemory(memoryBudgetBytes);
     this.recoveryMachine = recovery === undefined ? undefined : new DeviceRecoveryStateMachine(recovery);
     device.addEventListener("uncapturederror", this.errorListener);
@@ -81,7 +88,7 @@ export class DeviceSession {
   }
 
   static async open(canvas: HTMLCanvasElement, gpu: GPU | undefined, signal: AbortSignal, memoryBudgetBytes?: number,
-    recovery?: DeviceRecoveryOptions, capabilities?: { readonly layeredMaterials?: boolean }): Promise<DeviceSession> {
+    recovery?: DeviceRecoveryOptions, capabilities?: { readonly layeredMaterials?: boolean; readonly hdrDisplay?: HdrDisplayRequest }): Promise<DeviceSession> {
     validateDeviceMemoryBudget(memoryBudgetBytes);
     if (signal.aborted) throw aborted();
     if (!gpu) throw new Error("WebGPU is unavailable in this browser.");
@@ -107,9 +114,11 @@ export class DeviceSession {
       const context = canvas.getContext("webgpu");
       if (!context) throw new Error("Canvas cannot create a WebGPU context.");
       const info = adapter.info;
+      const hdr = capabilities?.hdrDisplay === undefined ? undefined
+        : await abortable(probeHdrDisplayCanvas(device, canvas, capabilities.hdrDisplay), signal);
       session = new DeviceSession(context, gpu.getPreferredCanvasFormat(), device, canvas, adapter, info ? Object.freeze({
         vendor: info.vendor, architecture: info.architecture, device: info.device, description: info.description, isFallbackAdapter: info.isFallbackAdapter,
-      }) : undefined, memoryBudgetBytes, recovery, requiredLimits);
+      }) : undefined, memoryBudgetBytes, recovery, requiredLimits, hdr);
       const layout = canvas as unknown as CanvasLayout;
       session.resize(layout.clientWidth, layout.clientHeight, 1);
       return session;
@@ -120,6 +129,37 @@ export class DeviceSession {
   }
 
   get device(): GPUDevice { return this.currentDevice; }
+  get format(): GPUTextureFormat { return this.currentFormat; }
+  get hdrCanvasActive(): boolean { return this.extendedCanvas; }
+  /** Called only after a valid HDR present pipeline candidate is ready. Failure restores the SDR surface. */
+  async activateHdrCanvas(device: GPUDevice, isCurrent: () => boolean): Promise<void> {
+    if (this.hdrDisplayCapability?.policy.mode !== "hdr" || device !== this.device || !this.usable() || !isCurrent())
+      throw new Error("HDR canvas candidate is not current or supported.");
+    const revision = ++this.canvasRevision;
+    let scopeOpen = true;
+    device.pushErrorScope("validation");
+    try {
+      this.context.configure({ device, format: "rgba16float", alphaMode: "opaque", toneMapping: { mode: "extended" },
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
+      const actual = this.context.getConfiguration();
+      const pending = device.popErrorScope(); scopeOpen = false;
+      const error = await pending;
+      if (error) throw new Error(error.message);
+      if (actual?.format !== "rgba16float" || actual.toneMapping?.mode !== "extended") throw new Error("HDR canvas configuration was not retained.");
+      if (revision !== this.canvasRevision || device !== this.device || !this.usable() || !isCurrent()) throw new Error("HDR canvas candidate was superseded.");
+      this.currentFormat = "rgba16float"; this.extendedCanvas = true;
+    } catch (error) {
+      if (scopeOpen) try { await device.popErrorScope(); } catch { /* device loss owns diagnostics */ }
+      if (revision === this.canvasRevision && this.usable() && device === this.device) this.restoreSdrCanvas();
+      throw error;
+    }
+  }
+  restoreSdrCanvas(): void {
+    this.canvasRevision++;
+    this.currentFormat = this.preferredFormat; this.extendedCanvas = false;
+    if (this.usable()) this.context.configure({ device: this.device, format: this.format, alphaMode: "opaque",
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
+  }
   get state(): DeviceState { return this.currentState; }
   get diagnostics(): readonly DeviceEvent[] { return this.events.slice(); }
   get hasErrors(): boolean { return this.events.some((event) => event.kind === "error"); }
@@ -232,6 +272,7 @@ export class DeviceSession {
     canvas.width = this.size?.width ?? canvas.width;
     canvas.height = this.size?.height ?? canvas.height;
     this.context.configure({ device, format: this.format, alphaMode: "opaque",
+      ...(this.extendedCanvas ? { toneMapping: { mode: "extended" as const } } : {}),
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
   }
 
@@ -271,6 +312,7 @@ export class DeviceSession {
       canvas.width = size.width;
       canvas.height = size.height;
       this.context.configure({ device: this.currentDevice, format: this.format, alphaMode: "opaque",
+        ...(this.extendedCanvas ? { toneMapping: { mode: "extended" as const } } : {}),
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
       this.size = size;
     }

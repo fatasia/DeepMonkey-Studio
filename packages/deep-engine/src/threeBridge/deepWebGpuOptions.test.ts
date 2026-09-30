@@ -4,6 +4,13 @@ import { resolveVirtualTextureOptions } from "../virtualTextures/virtualTextureO
 
 /** F4 尾巴切片:opt-in 能力经快照白名单暴露给宿主的两键合同。 */
 describe("snapshotRendererOptions opt-in keys", () => {
+  it("snapshots an explicit physical HDR request and leaves the default snapshot untouched", () => {
+    const hdrDisplay = { enabled: true, strategy: "extended-linear" as const };
+    const snapshot = snapshotRendererOptions({ hdrDisplay }); hdrDisplay.enabled = false;
+    expect(snapshot.hdrDisplay).toEqual({ enabled: true, strategy: "extended-linear" });
+    expect(Object.isFrozen(snapshot.hdrDisplay)).toBe(true); expect(snapshotRendererOptions({})).not.toHaveProperty("hdrDisplay");
+    expect(() => snapshotRendererOptions({ hdrDisplay: { unknown: true } as never })).toThrow("known request object");
+  });
   describe("temporalUpscale (features key, F4 super-resolution)", () => {
     it("passes the explicit opt-in through the features snapshot", () => {
       const snapshot = snapshotRendererOptions({ features: { temporalUpscale: true } });

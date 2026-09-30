@@ -72,6 +72,16 @@ describe("pbr frame execution plan", () => {
 });
 
 describe("plan vs actual pass matching", () => {
+  it("declares only an activated HDR surface and matches its single actual present pass", () => {
+    const features = resolvePbrRendererFeatures({ ambientOcclusion: false, temporalAa: false, bloom: false, fog: false, spatialAa: false });
+    const subject = buildPbrFrameExecutionPlan(SURFACE, { transparency: false, features, hdrDisplay: true });
+    const actual = collectActualPbrFramePasses(features, false, { hdrDisplay: true });
+    expect(assertPlanMatchesActual(subject, actual).mismatches).toEqual([]);
+    expect(subject.passes.find(pass => pass.passId === "present")!.resources.find(resource => resource.id === "surface")!.format).toBe("rgba16float");
+    expect(actual.find(pass => pass.passId === "present")!.gpuPassCount).toBe(1);
+    const ordinary = buildPbrFrameExecutionPlan(SURFACE, { transparency: false, features });
+    expect(() => assertPlanMatchesActual(ordinary, actual)).toThrow("format");
+  });
   it("matches every AO/SSR/TAA/bloom/HiZ/transparency feature combination in encode order", () => {
     for (let mask = 0; mask < 128; mask++) {
       const features = resolvePbrRendererFeatures({ ambientOcclusion: !!(mask & 1),

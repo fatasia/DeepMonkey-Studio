@@ -11,13 +11,16 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
     throw new TypeError("Deep WebGPU renderer options must be an object.");
   }
   if (Object.keys(options).some(key => !["shadows", "features", "environment", "deformation", "meshlets", "frameCapture", "adaptiveQuality", "probeClipmap", "pipelines",
-    "resolutionScalePolicy", "gpuPassTiming", "probeDirections", "clusterLod", "virtualTextures", "recovery", "autoExposure"].includes(key))) {
+    "resolutionScalePolicy", "gpuPassTiming", "probeDirections", "clusterLod", "virtualTextures", "recovery", "autoExposure", "hdrDisplay"].includes(key))) {
     throw new TypeError("Unknown Deep WebGPU renderer option.");
   }
   if (options.deformation !== undefined && typeof options.deformation !== "boolean") {
     throw new TypeError("Deep WebGPU deformation option must be boolean.");
   }
   if (options.meshlets !== undefined && typeof options.meshlets !== "boolean") throw new TypeError("Deep WebGPU meshlets option must be boolean.");
+  if (options.hdrDisplay !== undefined && (!options.hdrDisplay || typeof options.hdrDisplay !== "object" || Array.isArray(options.hdrDisplay)
+    || Object.keys(options.hdrDisplay).some(key => !["enabled", "strategy", "pqPeakNits"].includes(key))))
+    throw new TypeError("Deep WebGPU HDR display option must be a known request object.");
   // C13 recovery：对象形态校验（非对象 spread 会静默吞成空对象穿透快照）；now 为时钟注入，不经快照。
   if (options.recovery !== undefined
     && (typeof options.recovery !== "object" || Array.isArray(options.recovery) || options.recovery === null
@@ -44,6 +47,7 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
   }
   return Object.freeze({
     ...(options.meshlets === undefined ? {} : { meshlets: options.meshlets }),
+    ...(options.hdrDisplay === undefined ? {} : { hdrDisplay: Object.freeze({ ...options.hdrDisplay }) }),
     ...(options.deformation === undefined ? {} : { deformation: options.deformation }),
     ...(options.shadows === undefined ? {} : { shadows: snapshotShadows(options.shadows) }),
     ...(options.features === undefined ? {} : { features: resolvePbrRendererFeatures(options.features) }),

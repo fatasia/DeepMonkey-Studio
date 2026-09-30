@@ -26,6 +26,7 @@ import { ContactShadowResources, describeContactShadowPass, describeContactApply
 import { hasClusteredLights, resolvePbrSceneLighting } from "../lighting/pbrSceneLighting.js";
 import { resolveDeepGiProducerDirectionCount } from "../lighting/probeRadianceDirectionGate.js";
 import type { FrameMetrics, PbrRendererOptions, RenderView } from "./pbrRendererTypes.js";
+import { abortableGpu } from "./gpuAbort.js";
 import type { ResidentPacketProjection } from "./residentPacketProjection.js";
 import type { PbrRendererFeatures } from "./pbrRendererFeatures.js";
 import { createPbrEnvironment, type PbrEnvironmentSource } from "./pbrEnvironmentSource.js";
@@ -198,7 +199,7 @@ export class PbrRenderer {
       || deformationPipelines !== undefined;
     this.ground = createPbrGround(session);
     this.frameBuffer = uploadBuffer(session, "Deep frame", this.frameData, GPUBufferUsage.UNIFORM);
-    this.outputs = new PbrOutputBindings(session, pipelines, () => performance.now(), features.spatialAa);
+    this.outputs = new PbrOutputBindings(session, pipelines, () => performance.now(), features.spatialAa, session.hdrDisplayCapability?.policy);
     this.shadowState = new PbrShadowState(session, pipelines, options.shadows);
     this.optionsExactShadowCascade = options.shadows?.exactProfile?.cascadeCount;
     this.probeDirectionsOverride = options.probeDirections;
@@ -225,6 +226,15 @@ export class PbrRenderer {
     this.lighting = lighting; this.localShadows = localShadows;
   }
   get frameCaptureSession(): FrameCaptureSession | undefined { return this.frameCapture?.session; }
+  get hdrDisplay() {
+    const capability = this.session.hdrDisplayCapability;
+    if (!capability) return undefined;
+    const runtime = this.outputs.hdrDisplay;
+    return Object.freeze({ ...capability, state: runtime?.state ?? "fallback",
+      policy: runtime?.fallbackReason ? Object.freeze({ ...capability.policy, mode: "sdr" as const, strategy: "aces-sdr" as const,
+        reason: runtime.fallbackReason, failClosed: true }) : capability.policy,
+      canvasFormat: this.session.format, ...(runtime?.fallbackReason ? { fallbackReason: runtime.fallbackReason } : {}) });
+  }
   /** DC rendering status explicitly reports stored higher-order SH without claiming view-dependent evaluation. */
   get splatRenderStatus() { return this.splats?.current; }
   stageSplatCloud(cloud: SplatCloud, signal?: AbortSignal): Promise<SplatStageResult> {
@@ -240,11 +250,20 @@ export class PbrRenderer {
   static async create(canvas: HTMLCanvasElement, gpu: GPU | undefined, signal: AbortSignal, options: PbrRendererOptions = {}): Promise<PbrRenderer> {
     if (typeof performance !== "undefined") performance.mark("deep-webgpu:device-open-start");
     const session = await DeviceSession.open(canvas, gpu, signal, options.deviceMemoryBudgetBytes, options.recovery,
-      options.features?.layeredMaterials === true ? { layeredMaterials: true } : undefined);
+      options.features?.layeredMaterials === true || options.hdrDisplay !== undefined ? {
+        ...(options.features?.layeredMaterials === true ? { layeredMaterials: true } : {}),
+        ...(options.hdrDisplay === undefined ? {} : { hdrDisplay: options.hdrDisplay }),
+      } : undefined);
     const deviceEpoch = new RendererDeviceEpoch(session.device);
     if (typeof performance !== "undefined") performance.mark("deep-webgpu:device-opened");
-    return openPbrRenderer(session, signal, options, () => new DOMException("GPU preparation cancelled", "AbortError"),
+    const renderer = await openPbrRenderer(session, signal, options, () => new DOMException("GPU preparation cancelled", "AbortError"),
       (...args) => { deviceEpoch.assertCurrent(session.device); return new PbrRenderer(...args); });
+    try {
+      if (renderer.outputs.ready) await abortableGpu(renderer.outputs.ready, signal, "HDR display preparation cancelled.");
+      deviceEpoch.assertCurrent(session.device);
+      if (signal.aborted) throw new DOMException("GPU preparation cancelled", "AbortError");
+      return renderer;
+    } catch (error) { renderer.dispose(); throw error; }
   }
   setInstances(data: Float32Array<ArrayBuffer>): void { this.setPacket(spherePacket(data)); }
   setPacket(packet: RenderPacket): void {
@@ -463,7 +482,7 @@ export class PbrRenderer {
     }
     if (this.shadowState.publish(desiredShadowSize, candidate => this.mainBindings.setShadows(candidate, this.environment.current))) this.sceneChanged();
     const drawProfile = this.packets.drawProfile();
-    const directClear = drawProfile.hasDeformation || view.authorGrid || this.particleRuntime || this.splats?.current?.splatCount
+    const directClear = this.session.hdrCanvasActive || drawProfile.hasDeformation || view.authorGrid || this.particleRuntime || this.splats?.current?.splatCount
       ? undefined : pbrDirectDisplayClear(view, this.features, drawProfile.hasTransparent, this.writeGeometryBuffers);
     const directionalDisplay = directClear !== undefined && !this.lighting.hasProbeClipmap && !hasClusteredLights(sceneLighting.clustered)
       && !drawProfile.hasMaterialTextures && this.pipelines.displayDirectionalMain !== undefined;
@@ -783,7 +802,7 @@ export class PbrRenderer {
       deviceResourceMemory: this.session.resourceMemory,
       ...(this.autoExposure ? { autoExposure: this.autoExposure.metrics() } : {}),
       ...(clusterLod ? { clusterLod: clusterLod.metrics() } : {}),
-      cameraCut: history.cameraCut, postProcessPasses: opaqueEffects.passCount + finalEffects.passCount + (hasTransparent ? 2 + Number(this.transparency.currentReactiveMask !== undefined) : 0) + (upscaling ? 1 : 0) + (!directClear && this.features.spatialAa ? 1 : 0),
+      cameraCut: history.cameraCut, postProcessPasses: opaqueEffects.passCount + finalEffects.passCount + (hasTransparent ? 2 + Number(this.transparency.currentReactiveMask !== undefined) : 0) + (upscaling ? 1 : 0) + (!directClear && this.outputs.spatialAaActive ? 1 : 0),
       weightedOit: hasTransparent,
       hiZMipLevels: opaqueEffects.hiZ?.mipLevelCount ?? 0,
       occlusionCulling: opaqueCulling.occlusionBatches > 0,
@@ -902,18 +921,19 @@ export class PbrRenderer {
     const key = `${size.width}x${size.height}:${transparency ? "transparent" : "opaque"}`
       + `:ao=${postProcess.ambientOcclusion ? 1 : 0}:ssr=${postProcess.screenSpaceReflection ? 1 : 0}`
       + `:fog=${postProcess.volumetricFog ? 1 : 0}:god=${postProcess.volumetricFogProfile.godRaysStrength !== undefined ? 1 : 0}:bloom=${postProcess.bloom ? 1 : 0}:direct=${directDisplay ? 1 : 0}`
-      + `:cs=${this.features.contactShadows ? 1 : 0}:up=${this.features.temporalUpscale ? 1 : 0}`;
+      + `:cs=${this.features.contactShadows ? 1 : 0}:up=${this.features.temporalUpscale ? 1 : 0}:hdr=${this.session.hdrCanvasActive ? 1 : 0}`;
     if (this.capturePlanKey !== key || !this.capturePlan || !this.captureActualPasses) {
       const captureFeatures: PbrRendererFeatures = Object.freeze({ ...this.features,
         ambientOcclusion: postProcess.ambientOcclusion,
         screenSpaceReflection: postProcess.screenSpaceReflection,
         volumetricFog: postProcess.volumetricFog,
         bloom: postProcess.bloom,
+        spatialAa: this.outputs.spatialAaActive,
       });
       const opaqueColorResource = postProcess.ambientOcclusion ? "ao-hdr" : "opaque-hdr";
       const plan = buildPbrFrameExecutionPlan(size, { transparency, features: captureFeatures,
         godRays: postProcess.volumetricFogProfile.godRaysStrength !== undefined,
-        directDisplay, writeGeometryBuffers: this.writeGeometryBuffers });
+        directDisplay, writeGeometryBuffers: this.writeGeometryBuffers, hdrDisplay: this.session.hdrCanvasActive });
       const presentInputResource = this.features.temporalUpscale && !directDisplay ? "upscale-hdr"
         : this.features.contactShadows ? "contact-hdr"
         : postProcess.bloom ? "bloom-hdr"
@@ -923,7 +943,7 @@ export class PbrRenderer {
       const actual = collectActualPbrFramePasses(captureFeatures, transparency,
         { opaqueColorResource, presentInputResource, directDisplay, writeGeometryBuffers: this.writeGeometryBuffers,
           godRays: postProcess.volumetricFogProfile.godRaysStrength !== undefined,
-          bloom: postProcess.bloom });
+          bloom: postProcess.bloom, hdrDisplay: this.session.hdrCanvasActive });
       assertPlanMatchesActual(plan, actual);
       this.capturePlan = plan;
       this.captureActualPasses = actual;

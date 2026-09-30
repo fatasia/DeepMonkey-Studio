@@ -33,13 +33,57 @@ function recoveryFixture(recovery?: DeviceRecoveryOptions) {
   }) };
   const gpu = { requestAdapter: vi.fn(async () => adapter as unknown as GPUAdapter), getPreferredCanvasFormat: () => "bgra8unorm" };
   const controller = new AbortController();
-  const open = (capabilities?: { readonly layeredMaterials?: boolean }) => DeviceSession.open(canvas as unknown as HTMLCanvasElement, gpu as unknown as GPU,
+  const open = (capabilities?: Parameters<typeof DeviceSession.open>[5]) => DeviceSession.open(canvas as unknown as HTMLCanvasElement, gpu as unknown as GPU,
     controller.signal, undefined, recovery, capabilities);
   const supplyNext = () => { const next = makeDevice(); supplied.push(next); return next; };
   return { first, supplied, context, canvas, adapter, gpu, controller, open, supplyNext, makeDevice };
 }
 
 describe("C13 typed device-lost recovery (opt-in)", () => {
+  it("keeps the negotiated extended canvas configuration on replacement-device recovery", async () => {
+    const f = recoveryFixture({ maxAttempts: 2, backoffMs: 1 });
+    const configured = { format: "rgba16float", toneMapping: { mode: "extended" } };
+    Object.assign(f.first, { pushErrorScope: vi.fn(), popErrorScope: vi.fn(async () => null) });
+    Object.assign(f.canvas, { ownerDocument: { defaultView: { matchMedia: () => ({ matches: true }) },
+      createElement: () => ({ getContext: () => ({ configure: vi.fn(), getConfiguration: () => configured, unconfigure: vi.fn() }) }) } });
+    Object.assign(f.context, { getConfiguration: () => configured });
+    const session = await f.open({ hdrDisplay: { enabled: true } });
+    await session.activateHdrCanvas(session.device, () => true); const replacement = f.supplyNext();
+    f.first.fail({ reason: "unknown", message: "HDR device reset" });
+    await vi.waitFor(() => expect(session.recovery?.epoch).toBe(1));
+    expect(f.context.configure).toHaveBeenLastCalledWith(expect.objectContaining({ device: replacement,
+      format: "rgba16float", toneMapping: { mode: "extended" } }));
+    expect(session.format).toBe("rgba16float"); session.dispose();
+  });
+  it("refuses an HDR canvas candidate that overlaps recovery and re-lands the negotiated SDR surface", async () => {
+    const f = recoveryFixture({ maxAttempts: 2, backoffMs: 1 });
+    const configured = { format: "rgba16float", toneMapping: { mode: "extended" } };
+    const pop = vi.fn(async () => null as null | { message: string });
+    Object.assign(f.first, { pushErrorScope: vi.fn(), popErrorScope: pop });
+    Object.assign(f.canvas, { ownerDocument: { defaultView: { matchMedia: () => ({ matches: true }) },
+      createElement: () => ({ getContext: () => ({ configure: vi.fn(), getConfiguration: () => configured, unconfigure: vi.fn() }) }) } });
+    Object.assign(f.context, { getConfiguration: () => configured });
+    const session = await f.open({ hdrDisplay: { enabled: true } });
+    expect(session.hdrDisplayCapability?.policy.mode).toBe("hdr");
+    const pending = deferred<null>();
+    pop.mockImplementationOnce(() => pending.promise);
+    // HDR 候选激活挂在校验作用域读取上;恢复(uncaptured OOM → 换设备)在窗口内落地。
+    const candidate = session.activateHdrCanvas(session.device, () => true);
+    const replacement = f.supplyNext();
+    f.first.error("GPUOutOfMemoryError", "surface reset mid-candidate");
+    await vi.waitFor(() => expect(session.state).toBe("recovering"));
+    pending.resolve(null);
+    // 候选被发布边界拒绝(设备代际或可用性已变),surface 不停在 rgba16float 上。
+    await expect(candidate).rejects.toThrow(/superseded|not current or supported/);
+    expect(session.hdrCanvasActive).toBe(false);
+    await vi.waitFor(() => expect(session.recovery?.epoch).toBe(1));
+    expect(session.format).toBe("bgra8unorm");
+    // 恢复以已协商的 SDR 配置重落 surface(extendedCanvas 从未发布,不得带 extended)。
+    expect(f.context.configure).toHaveBeenLastCalledWith(expect.objectContaining({ device: replacement,
+      format: "bgra8unorm", alphaMode: "opaque" }));
+    expect(f.context.configure).toHaveBeenLastCalledWith(expect.not.objectContaining({ toneMapping: expect.anything() }));
+    session.dispose();
+  });
   it("retains explicitly negotiated layer texture limits on replacement devices", async () => {
     const f = recoveryFixture({ maxAttempts: 2, backoffMs: 1 });
     Object.assign(f.adapter, { limits: { maxSampledTexturesPerShaderStage: 32 } });

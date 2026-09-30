@@ -109,14 +109,14 @@ function validateTimedPassIdentity(plan: PbrFrameExecutionPlan): void {
   }
 }
 
-function plannedResources(pass: RenderPassDescriptor, sizes: ReadonlyMap<string, SurfaceSize>): readonly PbrPlannedPassResource[] {
+function plannedResources(pass: RenderPassDescriptor, sizes: ReadonlyMap<string, SurfaceSize>, hdrDisplay = false): readonly PbrPlannedPassResource[] {
   const claims: PbrPlannedPassResource[] = [];
   for (const access of ["read", "write"] as const) {
     for (const id of access === "read" ? pass.inputs ?? [] : pass.outputs ?? []) {
       const contract = pbrFrameResourceContract(id);
       const size = sizes.get(id);
       claims.push(Object.freeze({
-        id, access, format: contract.format ?? contract.descriptor, sampleCount: contract.sampleCount,
+        id, access, format: id === "surface" && hdrDisplay ? "rgba16float" : contract.format ?? contract.descriptor, sampleCount: contract.sampleCount,
         usages: Object.freeze([...contract.usages]), sizeRole: contract.sizeRole,
         ...(size ? { width: size.width, height: size.height } : {}),
       }));
@@ -148,7 +148,7 @@ export function buildPbrFrameExecutionPlan(surface: SurfaceSize, options: PbrFra
     return Object.freeze({
       passId, kind: descriptor.kind, order,
       reads: Object.freeze([...descriptor.inputs ?? []]), writes: Object.freeze([...descriptor.outputs ?? []]),
-      resources: plannedResources(descriptor, sizes),
+      resources: plannedResources(descriptor, sizes, options.hdrDisplay),
       mapping: Object.freeze(mapping),
     });
   });
@@ -265,7 +265,7 @@ export function assertPlanMatchesActual(plan: PbrFrameExecutionPlan, actual: rea
 /** 组装实际执行描述:各执行者文件的 describe* 输出,与 encode 代码路径贴近书写。 */
 export function collectActualPbrFramePasses(features: PbrRendererFeatures, transparency: boolean,
   options: { readonly opaqueColorResource?: string; readonly presentInputResource?: string;
-    readonly directDisplay?: boolean; readonly writeGeometryBuffers?: boolean; readonly bloom?: boolean; readonly godRays?: boolean } = {}): readonly PbrActualPassDescription[] {
+    readonly directDisplay?: boolean; readonly writeGeometryBuffers?: boolean; readonly bloom?: boolean; readonly godRays?: boolean; readonly hdrDisplay?: boolean } = {}): readonly PbrActualPassDescription[] {
   if (options.directDisplay) return Object.freeze([describePbrOpaquePass(options)]);
   const opaqueColorResource = options.opaqueColorResource ?? (features.ambientOcclusion ? "ao-hdr" : "opaque-hdr");
   const effects = PbrPostProcessChain.describePasses(features, transparency, { opaqueColorResource, ...(options.godRays ? { godRays: true } : {}) });
@@ -286,6 +286,6 @@ export function collectActualPbrFramePasses(features: PbrRendererFeatures, trans
     ...effects.filter(pass => !opaqueEffect(pass)),
     describePbrPresentPasses(upscaleInput ?? (features.bloom ? "bloom-hdr"
       : features.temporalAa ? "temporal-hdr" : features.screenSpaceReflection ? "ssr-hdr" : features.volumetricFog ? "volumetric-fog-hdr"
-        : transparency ? "composited-hdr" : opaqueColorResource), features.spatialAa),
+        : transparency ? "composited-hdr" : opaqueColorResource), features.spatialAa, options.hdrDisplay),
   ]);
 }
