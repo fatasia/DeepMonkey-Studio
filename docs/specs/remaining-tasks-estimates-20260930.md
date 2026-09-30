@@ -55,10 +55,10 @@ I-C17收口：生产SDK/真实Pbr间接绘制两fresh通过，root21聚焦测/1�
 
 | ID | 具体剩余缺口 | 依赖 / 已有底座 | 净工时 | 信心 |
 |---|---|---|---:|---|
-| C8-S3 / I-C8 | 材质/灯光数学真实消费与完整链分批对拍；直渲ACES不再重复 | 5f8d0f51两轮40真实配置byte差0；现有DCIR/WGSL-first | 12–24h | 低 |
+| C8-S3 / I-C8 | 材质/灯光数学真实消费与完整链分批对拍；直渲ACES不再重复。S9 直射DFG已换 three-r185 同源表（fe985ccc，directional oblique .0029→.00244），point/spot oblique .0117=高光峰 3 half-ulp 量化边界已登记 LD-15；purity gate 全绿（37c98eab）| 5f8d0f51；fe985ccc；j3-d 矩阵 LD-15 | 8–16h | 中低 |
 | C4-recording | 已关闭：API生产组合与用户录制/历史/重开/三轴/Study副本入口 | a23def9e；25聚焦测、API/Web类型及两轮生产CI通过 | 0h | 已完成 |
 | C5-oracle | 已关闭：固定Bullet堆叠/铰链/齿轮/滑轨/布料双轮参照与差异，匹配有限刚度子集步长收敛；零产品运行依赖 | test-output/c5-bullet/evidence.json currentRun=true；accuracyEquivalent=false | 0h | 已完成 |
-| N10-geometry | 互锁粗筛之后的机器人连杆/工具/工件窄相位与时间扫掠，出碰撞时刻和最小间距 | 已有 RobotSyncPanel/FK/IK/BVH | 12–24h | 中 |
+| N10-geometry | 已关闭：GJK 窄相位+FK 轨迹扫掠+碰撞时刻二分+最小间距（21 测含解析对拍/Rapier 交叉验证；10k×10 对 2.76µs/查询）；EPA 穿透深度与 UI 接线留后续小项 | 84b640ff；T15 FK/T17 collider | 0h | 已完成 |
 
 本组：24–48h，C5参照记录关闭后扣除4–8h。同一缺口跨编号合并一行，不重复计时。
 
@@ -71,8 +71,8 @@ I-C17收口：生产SDK/真实Pbr间接绘制两fresh通过，root21聚焦测/1�
 | I-C16 / T10 | 离线路径追踪出图产品模式：累积/材质变更失效/取消/导出及收敛对照，复用 MC/RT 参考 | 现有软件 BVH/RT；J 门 | 24–48h | 低 |
 | I-C17 | 已关闭：既有双缓冲运行时消费curl核，SDK显式phase/seed与关停，CPU/GPU确定性与回收 | 21聚焦测/1既有skip；两fresh实际16粒子×8步误差1.19e-7、HDR与资源回收通过 | 0h | 已完成 |
 | I-C18-next | 已关闭：复用体积雾生产 dispatch/真实CSM遮挡，作者强度边界与保存重载，关闭保持旧雾与回收 | 两numeric/两visual/两editor fresh；104聚焦测、build/freshness通过 | 0h | 已完成 |
-| I-C19 | 动态 IBL 投影阴影：已存在 HDR IBL 上增加更新/失效/资源预算与实际帧对照 | HDR IBL；I-C15；J3-D | 12–24h | 低 |
-| I-C21 | HDR 显示策略接 Studio 桥与真实 HDR 面板端到端验证；面板不可用时保留显式未测 | c1e13bbd；现有 PQ/HLG GPU 证据 | 4–8h | 中 |
+| I-C19 | CPU状态机+GPU parity/hot-swap 已过（896eb35a：parity 9.77e-4、热替换差0、代际回落）；剩 pbrRenderer/mainBindings 接线的 keptMips 采样钳制与作者面板消费 | 5031b4e1+896eb35a；I-C15 | 4–8h | 中 |
+| I-C21 | 已关闭：Studio 桥 HDR 快照/探测/回退/恢复保持 + 引擎层真实 GPU 两 fresh（默认SDR零介入、显式请求 fail-closed display-not-hdr）；物理 HDR 面板显式未测 | f32f3ea2；98+136+74 CPU 测 + 两 fresh | 0h | 已完成 |
 | I-C23 | 分层材质响应核接生产 GPU、按层表面色差异/纹理与双端白炉 | 9c56b1fc；C8/J3-D | 8–16h | 中 |
 | I-C25 | 已关闭：真实非空Play恢复分段计时、双失败重试、两个加载竞态与成功后旧错误清除 | 34测；显式WebGL/无renderer参数各两轮；相机/对象恢复、bounded measure、页面错误0 | 0h | 已完成 |
 | I-C26 | 已关闭：公共冻结快照、4096日志预算与两轮实际编译等待/同设备复用量化 | 334d3d93；31测、两轮实际首帧/复用/残留0；墙钟观察值非帧时收益 | 0h | 已完成 |
@@ -123,7 +123,7 @@ I-C17收口：生产SDK/真实Pbr间接绘制两fresh通过，root21聚焦测/1�
 | H-C5-T1/T4 | 澄清候选服务端透传/审计档案浏览端点，复核已完成 carrier 后的实际链路 | 既有 needs-input / provenance.trace | 4–8h | 中 |
 | H-C5-T5 | 逐条引用与真正证据锚对齐，复用 K1 校验器和现有指纹载体 | chatEvidenceGate；H-C4-P2 | 6–12h | 中 |
 | H-C5-T7 | dashboard 流式真实布局预览，现有 shimmer 之后的可感知产品状态 | 现有 dashboard parser/renderer | 4–8h | 中 |
-| ENG-runtime-purity | pipelineCache.ts 与 virtualTextureFrameBridge.ts 共5处 performance 访问修为既有宿主时钟/诊断边界注入；不扩大allowlist掩盖纯运行时约束 | HEAD同内容基线已证明；runtimePurityGate/现有时钟抽象 | 1–2h | 高 |
+| ENG-runtime-purity | 已关闭：5处 performance 全部修为注入时钟（pipelineCache Date.now 缺省+pipelines/pbrRenderer 生产注入；virtualTextureFrameBridge frameClock 注入），gate 965+699 sources 0 issue，无 allowlist 掩盖 | 37c98eab | 0h | 已完成 |
 | ENG-source-size | 18个既存超800行文件按职责拆分，生成表分片；保留公开入口/类型/消费方并做聚焦回归，不加allowlist | 本轮全仓source-size门18项失败，当前切片修改文件均低于300行且未改这18文件 | 20–40h | 中低 |
 | D2/T23-gradient | 解析机构链梯度 vs 有限差分，辅助本地标定；不加通用可微引擎 | T17 黄金/现有校准 | 6–12h | 中 |
 | N5-material-import | 第三方 GLB unlit/无 TANGENT profile 的导入/生成/损失处理，避免零配置样板被拒；范围先核查 | 现有 glTF/质量合同/几何工具 | 4–8h | 中 |
