@@ -114,6 +114,8 @@ mod shadow_probe;
 mod shadow_update_classify;
 mod telemetry;
 mod telemetry_gpu;
+#[cfg(test)]
+mod csm_sampling_gpu_timing_tests;
 mod text_raster_cli;
 mod texture_array_bindings;
 mod window_chrome;
