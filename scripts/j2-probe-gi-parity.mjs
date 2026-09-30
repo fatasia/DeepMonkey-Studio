@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { runFreshProbeGiNative, validateProbeGiNativeEvidence } from "./lib/j2ProbeGiNativeRun.mjs";
+import { validateProbeGiSourceReceipt } from "./lib/j2ProbeGiSourceReceipt.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const out = path.join(root, "test-output/interrupted-0930/probe-gi-parity");
@@ -24,7 +25,12 @@ const require = createRequire(import.meta.url);
 const { build } = require("../packages/deep-engine/node_modules/esbuild");
 await build({ entryPoints: [path.join(root, "packages/deep-engine/lab/j2ProbeGiGpuProbe.ts")],
   outfile: path.join(out, "probe.mjs"), bundle: true, format: "esm", platform: "browser" });
-const nativeSource = await readFile(path.join(root, "packages/deep-engine-native/assets/shaders/native_mesh_v1.wgsl"), "utf8");
+const sourceReceipt = native ?? JSON.parse(await readFile(path.join(out, "native.json"), "utf8"));
+const nativeSource = validateProbeGiSourceReceipt(sourceReceipt, {
+  wrapper: await readFile(path.join(root, "packages/deep-engine-native/assets/shaders/native_mesh_v1.wgsl"), "utf8"),
+  kernel: await readFile(path.join(root, "packages/deep-engine/wgsl/probeClipmapSampling.wgsl"), "utf8"),
+  adapter: await readFile(path.join(root, "packages/deep-engine-native/src/probe_gi_wgsl.rs"), "utf8"),
+});
 const css = await readFile(path.join(root, "apps/web/src/styles/base.css"), "utf8");
 const server = createServer(async (request, response) => {
   if (request.url === "/probe.mjs") { response.setHeader("Content-Type", "text/javascript"); response.end(await readFile(path.join(out, "probe.mjs"))); }
@@ -37,7 +43,7 @@ let browser;
 try {
   browser = await chromium.launch({ executablePath: process.env.BIM_STUDIO_CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe",
     headless: true, args: ["--enable-unsafe-webgpu"] });
-  const page = await browser.newPage({ viewport: { width: 980, height: 1100 } });
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, colorScheme: "dark" });
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   const runs = [];
   for (let round = 1; round <= 2; round++) {
@@ -50,7 +56,7 @@ try {
         line.textContent = `${row.leg} / ${row.id}: ${row.value.map(v => v.toFixed(6)).join(" · ")} / ${row.passed ? "通过" : "失败"}`;
         root.append(line); }
     }, result);
-    await page.screenshot({ path: path.join(out, `round-${round}.png`), fullPage: true });
+    await page.screenshot({ path: path.join(out, `round-${round}.png`) });
   }
   const stable = JSON.stringify(runs[0]) === JSON.stringify(runs[1]);
   const comparisons = native ? runs[0].results.filter(row => row.leg === "native-production-storage").map(row => {

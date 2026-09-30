@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, sep } from "node:path";
 import { test } from "node:test";
@@ -32,6 +32,20 @@ test("wasm input fingerprint changes with shared Rust and embedded shader assets
     writeFileSync(join(repo, "packages/deep-engine-native/assets/shaders/main.wgsl"), "changed");
     assert.notEqual(wasmSourceFingerprint(repo).sha256, rust.sha256);
     assert.equal(artifactSha256(join(repo, "packages/deep-engine-native/src/physics.rs")).length, 64);
+    const canonical = join(repo, "packages/deep-engine/wgsl/probeClipmapSampling.wgsl");
+    mkdirSync(dirname(canonical), { recursive: true });
+    writeFileSync(canonical, "canonical GI original");
+    writeFileSync(join(repo, "packages/deep-engine-native/src/physics.rs"),
+      'const A: &str = include_str!("../../deep-engine/wgsl/probeClipmapSampling.wgsl");\n'
+      + 'const B: &[u8] = include_bytes!(\n "../../deep-engine/wgsl/probeClipmapSampling.wgsl");');
+    const shared = wasmSourceFingerprint(repo);
+    assert.equal(shared.fileCount, first.fileCount + 1, "duplicate cross-package includes count once");
+    writeFileSync(join(dirname(canonical), "unused.wgsl"), "not consumed");
+    assert.deepEqual(wasmSourceFingerprint(repo), shared, "unreferenced neighbors do not invalidate");
+    writeFileSync(canonical, "canonical GI changed");
+    assert.notEqual(wasmSourceFingerprint(repo).sha256, shared.sha256, "shared kernel changes invalidate");
+    unlinkSync(canonical);
+    assert.throws(() => wasmSourceFingerprint(repo), { code: "ENOENT" }, "missing embedded source rejects");
   } finally {
     const target = realpathSync(repo);
     const tempRoot = realpathSync(tmpdir());

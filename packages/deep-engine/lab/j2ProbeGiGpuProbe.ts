@@ -35,9 +35,10 @@ function nativeRecords(fixture: Fixture, records: IrradianceProbeRecord[]): Arra
   return data.buffer;
 }
 
-export async function runJ2ProbeGiGpuProbe(fixture: Fixture, nativeSource: string, fixtureRaw: string) {
-  const boundary = nativeSource.indexOf("fn section_rejected(");
-  if (boundary < 0) throw Error("Native production GI source boundary changed");
+export async function runJ2ProbeGiGpuProbe(fixture: Fixture, nativeComputeSource: string, fixtureRaw: string) {
+  if (!nativeComputeSource.includes("fn nativeGiLoadRecord(") || !nativeComputeSource.includes("fn probeMain()")) {
+    throw Error("Native production GI source receipt lacks its provider or compute entry");
+  }
   const adapter = await navigator.gpu?.requestAdapter({ powerPreference: "high-performance" });
   if (!adapter) throw Error("WebGPU hardware adapter unavailable");
   const device = await adapter.requestDevice(), errors: string[] = [];
@@ -45,13 +46,13 @@ export async function runJ2ProbeGiGpuProbe(fixture: Fixture, nativeSource: strin
   const variants = [
     { id: "shared-storage", source: PROBE_CLIPMAP_SAMPLING_WGSL, group: 3,
       call: "deepGiSample(receiver[0].xyz, receiver[1].xyz, vec3f(0))" },
-    { id: "native-production-storage", source: nativeSource.slice(0, boundary), group: 0,
+    { id: "native-production-storage", source: nativeComputeSource, group: 0,
       call: "probe_gi_grid_trilinear(receiver[0].xyz, receiver[1].xyz)" },
   ];
   const results = [];
   try {
     for (const variant of variants) {
-      const code = `${variant.source}
+      const code = variant.id === "native-production-storage" ? variant.source : `${variant.source}
 @group(1) @binding(0) var<storage,read> receiver: array<vec4f>;
 @group(1) @binding(1) var<storage,read_write> result: array<vec4f>;
 @compute @workgroup_size(1) fn probeMain() { result[0] = vec4f(${variant.call},1); }`;

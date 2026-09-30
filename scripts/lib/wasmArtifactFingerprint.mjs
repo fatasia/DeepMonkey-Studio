@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
-import { join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 
 const SOURCE_ROOTS = [
   "packages/deep-engine-wasm/src",
@@ -28,10 +28,25 @@ export function wasmSourceFingerprint(repoRoot) {
   // deep-engine-wasm mirrors Native sources and depends on its Cargo crate.
   // Hash both source trees and embedded shader assets; paths are included so
   // renames also invalidate the installed bundle.
-  const files = [
+  const inputPaths = [
     ...SOURCE_FILES.map(path => join(repoRoot, path)),
     ...SOURCE_ROOTS.flatMap(path => filesUnder(join(repoRoot, path))),
-  ].map(path => ({ path, name: relative(repoRoot, path).replaceAll("\\", "/") }))
+  ];
+  // Native embeds the canonical cross-package kernels through literal includes.
+  // Follow only this existing input seam; unused neighboring kernels are not
+  // product build inputs. Missing included files must fail the fingerprint.
+  const canonicalRoot = resolve(repoRoot, "packages/deep-engine/wgsl");
+  const inputs = new Set(inputPaths);
+  for (const source of inputPaths.filter(path => path.endsWith(".rs"))) {
+    for (const match of readFileSync(source, "utf8").matchAll(/include_(?:str|bytes)!\s*\(\s*"([^"\r\n]+)"/g)) {
+      const included = resolve(dirname(source), match[1]);
+      const canonicalName = relative(canonicalRoot, included).replaceAll("\\", "/");
+      if (canonicalName !== ".." && !canonicalName.startsWith("../") && !canonicalName.includes(":")) {
+        inputs.add(included);
+      }
+    }
+  }
+  const files = [...inputs].map(path => ({ path, name: relative(repoRoot, path).replaceAll("\\", "/") }))
     .sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
   const hash = createHash("sha256");
   for (const file of files) {

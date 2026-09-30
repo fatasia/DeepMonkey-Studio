@@ -128,6 +128,10 @@ fn j2_probe_gi_production_vectors() {
         results.push(json!({"id":test["id"],"value":first,"expected":expected,"maxError":max_error,"passed":true}));
     }
     let evidence = json!({"fixtureHash":sha256(FIXTURE.as_bytes()),"sourceHash":sha256(code.as_bytes()),
+        "source":code,"sourceInputHashes":{
+            "wrapper":sha256(NATIVE.as_bytes()),
+            "kernel":sha256(deep_engine_native::probe_gi_wgsl::PROBE_CLIPMAP_SAMPLING_WGSL.as_bytes()),
+            "adapter":sha256(include_str!("../src/probe_gi_wgsl.rs").as_bytes())},
         "adapter":adapter,"runs":2,"results":results,"passed":true,
         "scope":"Native wgpu production storage GI functions; not full frame"});
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
