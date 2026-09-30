@@ -27,7 +27,7 @@ export async function snapshotWindowRecoverySources() {
     }
   }
   for (const directory of ["apps/web/src", "packages/contracts/src", "packages/deep-engine/src",
-    "packages/deep-engine/wgsl", "packages/deep-engine-native/src"]) await visit(directory);
+    "packages/deep-engine/wgsl", "packages/deep-engine-native/src", "packages/deep-engine-native/assets"]) await visit(directory);
   files.push("package.json", "pnpm-lock.yaml", "apps/web/package.json", "packages/contracts/package.json", "packages/deep-engine/package.json",
     "packages/deep-engine-native/Cargo.toml", "packages/deep-engine-native/Cargo.lock", "packages/deep-engine-native/build.rs",
     "packages/deep-engine-native/tests/fixtures/runtime-package-author-lod-v1.json",

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { executeWindowRecoverySuite, freshWindowEnvironment, WINDOW_RECOVERY_COMPONENTS } from "./j3-window-recovery-suite.mjs";
+import { executeWindowRecoverySuite, freshWindowEnvironment, snapshotWindowRecoverySources, WINDOW_RECOVERY_COMPONENTS } from "./j3-window-recovery-suite.mjs";
 
 function setup() {
   const calls = [], removed = [], published = [];
@@ -68,4 +68,9 @@ test("a child's stale or absent source identity cannot enter the passing suite",
   await assert.rejects(executeWindowRecoverySuite(f.options), /child source differs/); assert.equal(f.published.length, 0);
   const absent = setup(); delete absent.fixtures[WINDOW_RECOVERY_COMPONENTS[2].evidence].sources;
   await assert.rejects(executeWindowRecoverySuite(absent.options), /child source identity required/); assert.equal(absent.published.length, 0);
+});
+test("the complete product identity includes Native production shader assets and the actual window package", async () => {
+  const identity = await snapshotWindowRecoverySources();
+  assert.match(identity.sources["packages/deep-engine-native/assets/shaders/native_mesh_v1.wgsl"], /^[0-9a-f]{64}$/);
+  assert.match(identity.sources["packages/deep-engine-native/tests/fixtures/runtime-package-author-lod-v1.json"], /^[0-9a-f]{64}$/);
 });
