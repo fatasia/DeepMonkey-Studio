@@ -4,6 +4,9 @@
 mod j3_device_recovery;
 #[path = "support/j3_geometry_depth.rs"]
 mod j3_geometry_depth;
+// J3-E 窗口事件/present 计时 support 骨架（CPU 结构；接线点见文件头，规格 j3-e-gpu-runner-prep-20261001.md）。
+#[path = "support/j3_window_events.rs"]
+mod j3_window_events;
 
 #[path = "../src/forward_targets.rs"]
 mod forward_targets;
@@ -366,3 +369,7 @@ mod c8_geometry_roughness;
 mod c8_unlit_lighting_skip;
 #[path = "support/j2_probe_gi_actual.rs"]
 mod j2_probe_gi_actual;
+#[path = "support/j3_texture_coverage.rs"]
+mod j3_texture_coverage;
+#[path = "support/j2_probe_gi_aniso.rs"]
+mod j2_probe_gi_aniso;
