@@ -62,6 +62,9 @@ import { ProbeClipmapPbrController, type ProbeClipmapPbrTarget } from "./probeCl
 import { ProbeSceneRadianceProducer } from "../rayTracing/probeSceneRadianceProducer.js";
 import { EnvironmentAmbientReader, type EnvironmentAmbient } from "./environmentAmbientReader.js";
 import { PbrParticlePass } from "./pbrParticlePass.js";
+import { GaussianSplatSceneOwner, type SplatStageResult } from "./gaussianSplatSceneOwner.js";
+import type { SplatCloud } from "../gaussianSplat/decodeSplatPly.js";
+import { pbrSplatFrame } from "./pbrSplatFrame.js";
 import { createGpuParticleRuntimeFromEmitters, submitGpuParticleEmitterFrame } from "./gpuParticleEmitters.js";
 import type { GpuParticleRuntime } from "./gpuParticleRuntime.js";
 import { PBR_DEPTH_FORMAT, PBR_HDR_FORMAT } from "./renderTargets.js";
@@ -119,6 +122,7 @@ export class PbrRenderer {
   /** Optional GPU particle simulation; committed binding is consumed one frame later. */
   private readonly particleRuntime: GpuParticleRuntime | undefined;
   private readonly particlePass: PbrParticlePass | undefined;
+  private splats: GaussianSplatSceneOwner | undefined;
   private particleBusy = false;
   private particleLastTime = performance.now();
   private readonly visibility: VisibilityBufferPath | undefined;
@@ -221,6 +225,16 @@ export class PbrRenderer {
     this.lighting = lighting; this.localShadows = localShadows;
   }
   get frameCaptureSession(): FrameCaptureSession | undefined { return this.frameCapture?.session; }
+  /** DC rendering status explicitly reports stored higher-order SH without claiming view-dependent evaluation. */
+  get splatRenderStatus() { return this.splats?.current; }
+  stageSplatCloud(cloud: SplatCloud, signal?: AbortSignal): Promise<SplatStageResult> {
+    this.deviceEpoch?.assertCurrent(this.session.device);
+    this.splats ??= new GaussianSplatSceneOwner(this.session, PBR_HDR_FORMAT, PBR_DEPTH_FORMAT, this.features.temporalAa);
+    return this.splats.stage(cloud, signal).then(result => { if (result === "staged") this.historyDirty = true; return result; });
+  }
+  clearSplatCloud(): void {
+    this.deviceEpoch?.assertCurrent(this.session.device); this.splats?.clear(); this.historyDirty = true;
+  }
   /** 首帧验证通过后由宿主调用：放行背景 main 变体排队，避免与首帧争抢设备。 */
   releaseBackgroundPipelines(): void { this.releasePipelines?.(); }
   static async create(canvas: HTMLCanvasElement, gpu: GPU | undefined, signal: AbortSignal, options: PbrRendererOptions = {}): Promise<PbrRenderer> {
@@ -448,7 +462,7 @@ export class PbrRenderer {
     }
     if (this.shadowState.publish(desiredShadowSize, candidate => this.mainBindings.setShadows(candidate, this.environment.current))) this.sceneChanged();
     const drawProfile = this.packets.drawProfile();
-    const directClear = drawProfile.hasDeformation || view.authorGrid || this.particleRuntime
+    const directClear = drawProfile.hasDeformation || view.authorGrid || this.particleRuntime || this.splats?.current?.splatCount
       ? undefined : pbrDirectDisplayClear(view, this.features, drawProfile.hasTransparent, this.writeGeometryBuffers);
     const directionalDisplay = directClear !== undefined && !this.lighting.hasProbeClipmap && !hasClusteredLights(sceneLighting.clustered)
       && !drawProfile.hasMaterialTextures && this.pipelines.displayDirectionalMain !== undefined;
@@ -595,13 +609,14 @@ export class PbrRenderer {
     // A one-frame simulation-to-render latency avoids queue stalls and keeps particle count
     // fully GPU-driven (drawIndirect never reads instance count back to JS).
     const particleBinding = this.particleRuntime?.current?.binding;
+    const splatCount = this.splats?.current?.splatCount ?? 0;
+    if (this.features.temporalAa && ((this.particlePass && particleBinding) || splatCount)) {
+      particleReactive = this.transientTextures.acquire({ resourceId: "particle-reactive", format: "r8unorm",
+        width: size.width, height: size.height, sampleCount: 1,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
+    }
     if (this.particlePass && particleBinding) {
       // TAA 开启时才分配响应掩码目标；粒子 alpha 覆盖写入第二目标供时域降反馈。
-      particleReactive = this.features.temporalAa
-        ? this.transientTextures.acquire({ resourceId: "particle-reactive", format: "r8unorm",
-          width: size.width, height: size.height, sampleCount: 1,
-          usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING })
-        : undefined;
       this.particlePass.encode({ encoder, colorView: this.targets.hdr, depthView: this.targets.depth,
         width: size.width, height: size.height,
         camera: { viewProjection: [...frameState.depthViewProjection],
@@ -609,6 +624,13 @@ export class PbrRenderer {
           cameraUp: [frameState.worldToView[1]!, frameState.worldToView[5]!, frameState.worldToView[9]!] },
         binding: particleBinding, ...(particleReactive ? { reactiveView: particleReactive.view } : {}) });
       drawCalls++;
+    }
+    if (splatCount) {
+      const count = this.splats!.encode({ encoder, color: this.targets.hdr, depth: this.targets.depth,
+        frame: pbrSplatFrame(frameState.worldToView, frameState.depthViewProjection, view.eye,
+          size.width, size.height, frameState.projection.verticalFovRadians, frameState.projection.near, view.cameraWorldPosition),
+        ...(particleReactive ? { reactiveView: particleReactive.view, clearReactive: !particleBinding } : {}) });
+      if (count) { drawCalls++; triangles += count * 2; }
     }
     const gridTriangles = this.ground.author.encode(encoder, this.targets.hdr, this.targets.depth, frameState.depthViewProjection, frameState.worldToView, view.authorGrid);
     if (gridTriangles) { drawCalls++; triangles += gridTriangles; }
@@ -645,6 +667,7 @@ export class PbrRenderer {
       const transparentStats = this.transparency.encode({ encoder, opaqueColor: opaqueEffects.color,
         hdrColor: this.targets.hdrTexture, hdrView: this.targets.hdr, depthView: this.targets.depth,
         ...(passTiming ? { passTiming } : {}),
+        ...(particleReactive ? { reactiveTarget: { texture: particleReactive.texture, view: particleReactive.view } } : {}),
         viewOf: texture => this.outputs.view(texture), draw: pass => {
           pass.setBindGroup(0, this.mainBindings.binding); pass.setBindGroup(2, this.shadows.binding);
           pass.setBindGroup(lighting!.bindGroupIndex, lighting!.bindGroup);
@@ -949,6 +972,7 @@ export class PbrRenderer {
     this.probeRadianceProducer = undefined;
     this.particlePass?.dispose();
     this.particleRuntime?.dispose();
+    this.splats?.dispose();
     const owners = [this.ground.author, this.outputs, this.environment, this.lighting, this.localShadows,
       this.shadowState, this.previousHiZ, this.transparency, this.postProcess, this.packets, this.targets,
       ...(this.visibility ? [this.visibility] : []), ...(this.clusterLodSlot ? [this.clusterLodSlot] : []),

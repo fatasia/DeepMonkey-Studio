@@ -1,9 +1,7 @@
 // I 级 C1 3DGS 实景扫描——instanced quad splatting 最小渲染路径(WGSL 单源)。
-// ABI:group0 binding0 uniform(SplatFrameParams,176B,列主序)+ binding1
-// storage array<vec4f>(64B/粒 records,布局与 CPU 解码产物逐字一致,直传)。
+// ABI2:group0 binding0 uniform(176B)+ binding1 records(64B/粒)+binding2 order(u32/粒)。
 // 排序在 CPU 完成(far→near instance 序),本文件只做 EWA 协方差投影与
 // 高斯片元;深度测试 on / 深度写入 off,premultiplied alpha 混合。
-// 真机渲染未测量:本切片在无 GPU 会话环境产出,语法未经 naga/Dawn 实编译。
 
 struct SplatFrameParams {
   viewMatrix : mat4x4f,
@@ -12,16 +10,17 @@ struct SplatFrameParams {
   cameraPosition : vec4f,
   // xy = 视口像素,zw = 焦距像素(fx, fy)。
   viewportFocal : vec4f,
-  // x = splatCount, y = alphaCutoff, z = covariancePadPx², w = padding。
+  // x = splatCount, y = alphaCutoff, z = covariancePadPx², w = camera near。
   controls : vec4f,
 }
 
 @group(0) @binding(0) var<uniform> frame : SplatFrameParams;
 @group(0) @binding(1) var<storage, read> splats : array<vec4f>;
+@group(0) @binding(2) var<storage, read> order : array<u32>;
 
 // 与 CPU 端 SPLAT_RECORD_FLOAT_STRIDE=16(4×vec4f)互钉。
 const RECORD_VEC4_STRIDE = 4u;
-const TAU_OVER_SQUARED_EXTENT = 2.0; // quad 半径 2σ ⇒ exp(-2·d²)
+const GAUSSIAN_EXPONENT = 0.5;
 
 struct SplatVertexOutput {
   @builtin(position) position : vec4f,
@@ -50,7 +49,7 @@ fn vsMain(
   @builtin(vertex_index) cornerIndex : u32,
   @builtin(instance_index) instanceIndex : u32,
 ) -> SplatVertexOutput {
-  let base = instanceIndex * RECORD_VEC4_STRIDE;
+  let base = order[instanceIndex] * RECORD_VEC4_STRIDE;
   let positionOpacity = splats[base];
   let scale = splats[base + 1u].xyz;
   let rotation = splats[base + 2u];
@@ -58,8 +57,10 @@ fn vsMain(
 
   // var 而非 let:WGSL 值类型数组禁止运行期下标,var(内存)允许。
   var corners = array<vec2f, 4>(
-    vec2f(-2.0, -2.0), vec2f(2.0, -2.0), vec2f(2.0, 2.0), vec2f(-2.0, 2.0));
-  let corner = corners[cornerIndex];
+    vec2f(-2.0, -2.0), vec2f(2.0, -2.0), vec2f(-2.0, 2.0), vec2f(2.0, 2.0));
+  // Bound each axis where alpha reaches the existing cutoff; avoid visible 2-sigma hard edges.
+  let radius = sqrt(max(-2.0 * log(frame.controls.y / max(colorAlpha.a, frame.controls.y)), 0.0));
+  let corner = corners[cornerIndex] * (0.5 * radius);
 
   let worldPosition = positionOpacity.xyz;
   let viewPosition = frame.viewMatrix * vec4f(worldPosition, 1.0);
@@ -68,7 +69,7 @@ fn vsMain(
   // 近平面守卫:中心在近平面之后(或恰在)时透视 Jacobian 发散,
   // 塌缩为退化顶点丢弃该粒(canonical 3DGS 同为 t.z>ε 才投影)。
   var output : SplatVertexOutput;
-  if (viewPosition.z >= -0.1) {
+  if (viewPosition.z >= -frame.controls.w || clip.w <= 0.0 || colorAlpha.a < frame.controls.y) {
     output.position = vec4f(0.0, 0.0, 2.0, 1.0); // z=w → 裁剪域外
     output.colorAlpha = vec4f(0.0);
     output.quadOffset = vec2f(0.0);
@@ -95,9 +96,11 @@ fn vsMain(
   let viewRotation = mat3x3f(frame.viewMatrix[0].xyz, frame.viewMatrix[1].xyz, frame.viewMatrix[2].xyz);
   // V = J·W·M ⇒ Σ2d = V·Vᵀ(2×2)。
   let v = jacobian * viewRotation * m;
-  let sigma11 = dot(v[0].xy, v[0].xy);
-  let sigma12 = dot(v[0].xy, v[1].xy);
-  let sigma22 = dot(v[1].xy, v[1].xy);
+  let rowX = vec3f(v[0].x, v[1].x, v[2].x);
+  let rowY = vec3f(v[0].y, v[1].y, v[2].y);
+  let sigma11 = dot(rowX, rowX);
+  let sigma12 = dot(rowX, rowY);
+  let sigma22 = dot(rowY, rowY);
 
   // 低通补偿(canonical 0.3 px²)后取特征分解。
   let a = sigma11 + frame.controls.z;
@@ -132,13 +135,26 @@ fn vsMain(
   return output;
 }
 
-@fragment
-fn fsMain(input : SplatVertexOutput) -> @location(0) vec4f {
+fn splatColor(input : SplatVertexOutput) -> vec4f {
   let squaredDistance = dot(input.quadOffset, input.quadOffset);
-  let alpha = input.colorAlpha.a * exp(-TAU_OVER_SQUARED_EXTENT * squaredDistance);
+  let alpha = input.colorAlpha.a * exp(-GAUSSIAN_EXPONENT * squaredDistance);
   if (alpha < frame.controls.y) {
     discard;
   }
   // premultiplied alpha:blend(one, one-minus-src-alpha),depth write off。
   return vec4f(input.colorAlpha.rgb * alpha, alpha);
+}
+
+@fragment
+fn fsMain(input : SplatVertexOutput) -> @location(0) vec4f {
+  return splatColor(input);
+}
+struct SplatFragmentOutput {
+  @location(0) color : vec4f,
+  @location(1) reactive : f32,
+}
+@fragment
+fn fsMainReactive(input : SplatVertexOutput) -> SplatFragmentOutput {
+  let color = splatColor(input);
+  return SplatFragmentOutput(color, color.a);
 }

@@ -36,11 +36,13 @@ export interface SplatFrameUniforms {
   focalPixels: readonly [number, number];
   /** 每帧排序后的粒数(绘制 instance 数)。 */
   splatCount: number;
+  /** Camera near plane; omitted retains the original 0.1 default. */
+  near?: number;
 }
 
 /** 三条边顺序 + strip 复用两个三角形覆盖 [-2,2]²;着色器按 corner 半径采样。 */
 export function createSplatQuadVertexArray(): Float32Array {
-  return new Float32Array([-2, -2, 2, -2, 2, 2, -2, 2]);
+  return new Float32Array([-2, -2, 2, -2, -2, 2, 2, 2]);
 }
 
 export function splatRecordBufferByteLength(splatCount: number): number {
@@ -75,7 +77,7 @@ export function writeSplatUniforms(target: Float32Array, uniforms: SplatFrameUni
   target[40] = uniforms.splatCount;
   target[41] = SPLAT_ALPHA_CUTOFF;
   target[42] = SPLAT_COVARIANCE_PAD_PX2;
-  target[43] = 0; // padding
+  target[43] = uniforms.near ?? 0.1;
 }
 
 export interface SplatGpuResources {

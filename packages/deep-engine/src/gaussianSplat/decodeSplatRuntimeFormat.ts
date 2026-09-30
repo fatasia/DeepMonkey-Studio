@@ -2,10 +2,10 @@
  * I 级 C1 3DGS——antimatter15 `.splat` 运行时格式解码(32B/粒 → 统一 64B records)。
  *
  * 布局(合同冻结,参考 antimatter15/splat 的 `convert` 产物):
- *   [0..12)  position 3×f32(线性米)
+ *   [0..12)  position 3×f32(dataset space,无内置单位标定)
  *   [12..24) scale    3×f32(已线性,不再 exp)
  *   [24..28) color    4×u8,straight alpha(alpha=0..255 不透明度)
- *   [28..32) rotation 4×u8,(v-128)/128 后归一化的 xyzw
+ *   [28..32) rotation 4×u8,wxyz；(v-128)/128 后归一化并转为记录xyzw
  * 失败路径:长度非 32 整数倍 / 粒数超预算 / 四元数全零(不可归一化)。
  * u8 通道无 NaN 可能,故无逐字段 finite 检查。
  */
@@ -41,23 +41,24 @@ export function decodeSplatRuntimeFormat(bytes: Uint8Array): SplatCloud {
   const splatCount = bytes.byteLength / SPLAT_RUNTIME_RECORD_BYTE_STRIDE;
   assertSplatRuntimeCount(splatCount);
 
-  const f32 = new Float32Array(bytes.buffer, bytes.byteOffset, splatCount * 8);
+  const source = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const u8 = bytes;
   const records = new Float32Array(splatCount * SPLAT_RECORD_FLOAT_STRIDE);
   for (let splatIndex = 0; splatIndex < splatCount; splatIndex++) {
-    const sourceBase = splatIndex * 8; // f32 通道:8×f32 = 32B
+    const sourceBase = splatIndex * SPLAT_RUNTIME_RECORD_BYTE_STRIDE;
     const u8Base = splatIndex * SPLAT_RUNTIME_RECORD_BYTE_STRIDE + 24;
     const recordOffset = splatIndex * SPLAT_RECORD_FLOAT_STRIDE;
 
-    records[recordOffset] = f32[sourceBase]!;
-    records[recordOffset + 1] = f32[sourceBase + 1]!;
-    records[recordOffset + 2] = f32[sourceBase + 2]!;
-    records[recordOffset + SPLAT_RECORD_OFFSET_SCALE] = f32[sourceBase + 3]!;
-    records[recordOffset + SPLAT_RECORD_OFFSET_SCALE + 1] = f32[sourceBase + 4]!;
-    records[recordOffset + SPLAT_RECORD_OFFSET_SCALE + 2] = f32[sourceBase + 5]!;
+    for (let channel = 0; channel < 6; channel++) {
+      const value = source.getFloat32(sourceBase + channel * 4, true);
+      if (!Number.isFinite(value) || (channel >= 3 && value <= 0)) {
+        throw new SplatParseError(`Splat #${splatIndex} position/scale channel ${channel} is invalid.`);
+      }
+      records[recordOffset + (channel < 3 ? channel : SPLAT_RECORD_OFFSET_SCALE + channel - 3)] = value;
+    }
 
-    const qx = (u8[u8Base + 4]! - 128) / 128, qy = (u8[u8Base + 5]! - 128) / 128;
-    const qz = (u8[u8Base + 6]! - 128) / 128, qw = (u8[u8Base + 7]! - 128) / 128;
+    const qw = (u8[u8Base + 4]! - 128) / 128, qx = (u8[u8Base + 5]! - 128) / 128;
+    const qy = (u8[u8Base + 6]! - 128) / 128, qz = (u8[u8Base + 7]! - 128) / 128;
     const length = Math.hypot(qx, qy, qz, qw);
     if (length <= 1e-6) {
       throw new SplatParseError(`Splat #${splatIndex} rotation quaternion has zero length and cannot be normalized.`);

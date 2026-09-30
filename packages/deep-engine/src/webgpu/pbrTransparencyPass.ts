@@ -20,6 +20,8 @@ interface TransparencyInput {
   readonly draw: (pass: GPURenderPassEncoder) => DrawStats;
   /** F1 逐 pass 计时(opt-in):括夹 OIT 累积与合成两个计划 pass;缺省零开销。 */
   readonly passTiming?: GpuPassTimingScope;
+  /** Borrow the frame owner's already-cleared particle/Gaussian mask and accumulate OIT coverage. */
+  readonly reactiveTarget?: { readonly texture: GPUTexture; readonly view: GPUTextureView };
 }
 
 /** 管理透明合成目标；AO 关闭时不能读写同一张 HDR 纹理。 */
@@ -28,7 +30,7 @@ export class PbrTransparencyPass {
   private scratch: { texture: GPUTexture; view: GPUTextureView; pooled?: PbrTransientTextureHandle } | undefined;
   private disposed = false;
   private output: GPUTexture | undefined;
-  private reactive: { texture: GPUTexture; view: GPUTextureView } | undefined;
+  private reactive: { texture: GPUTexture; view: GPUTextureView; borrowed: boolean } | undefined;
   private reactivePipeline: GPURenderPipeline | undefined;
   private reactiveLayout: GPUBindGroupLayout | undefined;
 
@@ -70,7 +72,7 @@ export class PbrTransparencyPass {
       input.passTiming?.beginMarker(encoder, "composite-oit");
       this.oit.encodeComposite(encoder, input.viewOf(opaqueColor), destination.view, { outputFormat: PBR_HDR_FORMAT });
       input.passTiming?.endMarker(encoder, "composite-oit");
-      if (this.produceReactiveMask) this.encodeReactiveMask(encoder, hdrColor.width, hdrColor.height);
+      if (this.produceReactiveMask) this.encodeReactiveMask(encoder, hdrColor.width, hdrColor.height, input.reactiveTarget);
       this.output = destination.texture;
       return { color: destination.texture, drawCalls: stats.drawCalls + 1 + Number(this.produceReactiveMask),
         triangles: stats.triangles + 1 + Number(this.produceReactiveMask) };
@@ -119,13 +121,14 @@ export class PbrTransparencyPass {
     ]);
   }
 
-  private encodeReactiveMask(encoder: GPUCommandEncoder, width: number, height: number): void {
+  private encodeReactiveMask(encoder: GPUCommandEncoder, width: number, height: number,
+    borrowed?: TransparencyInput["reactiveTarget"]): void {
     const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
-    const texture = this.session.own(this.session.device.createTexture({
+    const texture = borrowed?.texture ?? this.session.own(this.session.device.createTexture({
       label: "Deep OIT TAA reactive coverage", size: [width, height], format: TEMPORAL_REACTIVE_MASK_FORMAT, usage,
     }));
     try {
-      const view = texture.createView();
+      const view = borrowed?.view ?? texture.createView();
       if (!this.reactivePipeline) {
         const module = this.session.device.createShaderModule({ code: OIT_REACTIVE_MASK_WGSL });
         const layout = this.session.device.createBindGroupLayout({ entries: [
@@ -135,22 +138,24 @@ export class PbrTransparencyPass {
         this.reactivePipeline = this.session.device.createRenderPipeline({
           layout: this.session.device.createPipelineLayout({ bindGroupLayouts: [layout] }),
           vertex: { module, entryPoint: "reactiveVertex" },
-          fragment: { module, entryPoint: "reactiveFragment", targets: [{ format: TEMPORAL_REACTIVE_MASK_FORMAT }] },
+          fragment: { module, entryPoint: "reactiveFragment", targets: [{ format: TEMPORAL_REACTIVE_MASK_FORMAT,
+            blend: { color: { srcFactor: "one", dstFactor: "one", operation: "max" },
+              alpha: { srcFactor: "one", dstFactor: "one", operation: "max" } } }] },
           primitive: { topology: "triangle-list" },
         });
       }
       const bindGroup = this.session.device.createBindGroup({ layout: this.reactiveLayout!,
         entries: [{ binding: 0, resource: this.oit.current!.revealageView }] });
-      const pass = encoder.beginRenderPass({ colorAttachments: [{ view, loadOp: "clear", storeOp: "store",
+      const pass = encoder.beginRenderPass({ colorAttachments: [{ view, loadOp: borrowed ? "load" : "clear", storeOp: "store",
         clearValue: { r: 0, g: 0, b: 0, a: 0 } }] });
       try { pass.setPipeline(this.reactivePipeline); pass.setBindGroup(0, bindGroup); pass.draw(3); }
       finally { pass.end(); }
-      this.reactive = { texture, view };
-    } catch (error) { this.session.release(texture); throw error; }
+      this.reactive = { texture, view, borrowed: borrowed !== undefined };
+    } catch (error) { if (!borrowed) this.session.release(texture); throw error; }
   }
 
   private releaseReactive(): void {
-    if (this.reactive) this.session.release(this.reactive.texture);
+    if (this.reactive && !this.reactive.borrowed) this.session.release(this.reactive.texture);
     this.reactive = undefined;
   }
 

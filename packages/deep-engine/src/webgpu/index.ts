@@ -269,6 +269,7 @@ export * from "./gpuParticleEmitters.js";
 export * from "./gpuParticleBurstTypes.js";
 export * from "./gpuParticleBurstWgsl.js";
 export * from "./gpuParticleFlowFieldTypes.js";
+export type { SplatRenderStatus, SplatStageResult } from "./gaussianSplatSceneOwner.js";
 export * from "./shaderAuthoringCompiler.js";
 export { validatePanoramaBackground } from "./pbrPanoramaBackground.js";
 export { validatePbrFog, snapshotPbrFog, packPbrFog, pbrFogFactor } from "./pbrFog.js";

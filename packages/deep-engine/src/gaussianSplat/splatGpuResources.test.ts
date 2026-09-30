@@ -64,7 +64,7 @@ describe("splatGpuResources (layout contract shared with the WGSL half)", () => 
     // uniform 缓冲是 f32:1/255 与 0.3 落盘后带 f32 舍入,不与 JS double 逐位相等。
     expect(target[41]).toBeCloseTo(SPLAT_ALPHA_CUTOFF, 7);
     expect(target[42]).toBeCloseTo(SPLAT_COVARIANCE_PAD_PX2, 7);
-    expect(target[43]).toBe(0);
+    expect(target[43]).toBeCloseTo(.1, 7);
   });
 
   it("rejects a wrongly sized uniform target and out-of-budget instance counts", () => {
@@ -82,7 +82,7 @@ describe("splatGpuResources (layout contract shared with the WGSL half)", () => 
   it("builds a 4-corner strip vertex array spanning [-2,2] in sigma units", () => {
     const corners = createSplatQuadVertexArray();
     expect(corners.length).toBe(SPLAT_QUAD_CORNER_COUNT * 2);
-    expect(Array.from(corners)).toEqual([-2, -2, 2, -2, 2, 2, -2, 2]);
+    expect(Array.from(corners)).toEqual([-2, -2, 2, -2, -2, 2, 2, 2]);
   });
 
   it("keeps the WGSL mirror consuming the same bindings and entry points the contract publishes", () => {

@@ -155,10 +155,11 @@ export const CLOTH_PARALLEL_ENTRY_FINALIZE = "finalizeVelocityKinetics";
  */
 
 /** ABI 版本:record 布局或 uniform 结构变化时递增并同步两端。 */
-export const DEEP_GAUSSIAN_SPLAT_ABI_VERSION = 1;
+export const DEEP_GAUSSIAN_SPLAT_ABI_VERSION = 2;
 /** uniform 绑定组与槽位(group0:binding0 uniform + binding1 storage)。 */
 export const DEEP_GAUSSIAN_SPLAT_UNIFORM_BINDING = 0;
 export const DEEP_GAUSSIAN_SPLAT_STORAGE_BINDING = 1;
+export const DEEP_GAUSSIAN_SPLAT_ORDER_BINDING = 2;
 /** 单粒 record 的 vec4f 个数与字节数(CPU 解码产物与 storage 逐字一致)。 */
 export const DEEP_GAUSSIAN_SPLAT_RECORD_VEC4_STRIDE = 4;
 export const DEEP_GAUSSIAN_SPLAT_RECORD_BYTES = 64;
@@ -390,7 +391,10 @@ export const DEEP_GOD_RAYS_ENTRY = "marchVolumetricGodRays";
   },
 ];
 
-for (const entry of SHARED_WGSL) {
+// A selected family lets concurrent slices regenerate their own mirror without rewriting others.
+const selectedSource = process.argv.find(argument => argument.startsWith("--source="))?.slice(9);
+if (selectedSource && !SHARED_WGSL.some(entry => entry.source === selectedSource)) throw new Error(`Unknown WGSL family: ${selectedSource}`);
+for (const entry of SHARED_WGSL.filter(entry => !selectedSource || entry.source === selectedSource)) {
   const sourcePath = resolve(wgslRoot, entry.source);
   const wgsl = await readFile(sourcePath, "utf8");
   const bytes = Buffer.byteLength(wgsl, "utf8");

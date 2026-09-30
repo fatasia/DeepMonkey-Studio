@@ -44,6 +44,14 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("PBR transparency composition ownership", () => {
+  it("accumulates OIT onto the borrowed particle/Gaussian mask without allocating or releasing it", () => {
+    const f = fixture(false, true), external = texture();
+    const result = f.owner.encode({ ...f.input(), reactiveTarget: { texture: external, view: external.createView() } });
+    expect(result.drawCalls).toBe(4); expect(f.owner.currentReactiveMask).toBe(external);
+    expect(f.device.createTexture.mock.calls.some(([d]) => d.format === "r8unorm")).toBe(false);
+    expect(f.passes[2]!.descriptor.colorAttachments[0]).toMatchObject({ loadOp: "load" });
+    f.owner.cancelFrame(); f.owner.dispose(); expect(external.destroy).not.toHaveBeenCalled();
+  });
   it("creates a real per-pixel OIT reactive texture only for temporal rendering", () => {
     const f = fixture(false, true);
     const result = f.owner.encode(f.input());

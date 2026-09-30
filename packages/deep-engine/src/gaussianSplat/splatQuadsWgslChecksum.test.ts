@@ -30,7 +30,7 @@ describe("gaussianSplatQuads WGSL single-source gate (TS half)", () => {
   });
 
   it("pins the ABI constants and the record/uniform byte budget on both halves", () => {
-    expect(DEEP_GAUSSIAN_SPLAT_ABI_VERSION).toBe(1);
+    expect(DEEP_GAUSSIAN_SPLAT_ABI_VERSION).toBe(2);
     expect(DEEP_GAUSSIAN_SPLAT_RECORD_BYTES).toBe(64);
     expect(DEEP_GAUSSIAN_SPLAT_UNIFORM_BYTES).toBe(176);
     expect(SPLAT_RECORD_BYTE_STRIDE).toBe(DEEP_GAUSSIAN_SPLAT_RECORD_BYTES);

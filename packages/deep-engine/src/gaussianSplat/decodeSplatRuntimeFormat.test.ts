@@ -13,6 +13,22 @@ import { assertSplatRuntimeCount, decodeSplatRuntimeFormat } from "./decodeSplat
 import { buildSplatRuntimeFixture } from "./splatPlyTestUtils.js";
 
 describe("decodeSplatRuntimeFormat (antimatter15 .splat, 32B per splat)", () => {
+  it("converts the official wxyz byte quaternion to xyzw and accepts unaligned byte views", () => {
+    const bytes = buildSplatRuntimeFixture([{ position: [1, 2, 3], scale: [.1, .2, .3],
+      color: [255, 128, 64, 255], rotation: [192, 160, 144, 136] }]);
+    const backing = new Uint8Array(bytes.length + 1); backing.set(bytes, 1);
+    const result = decodeSplatRuntimeFormat(backing.subarray(1));
+    const length = Math.hypot(64, 32, 16, 8);
+    const expected = [32, 16, 8, 64].map(value => value / length);
+    Array.from(result.records.subarray(8, 12)).forEach((value, index) => expect(value).toBeCloseTo(expected[index]!, 7));
+  });
+  it("rejects nonfinite positions and nonpositive scales from the f32 payload", () => {
+    const bytes = buildSplatRuntimeFixture([{ position: [0, 0, 0], scale: [1, 1, 1], color: [0, 0, 0, 255], rotation: [255, 128, 128, 128] }]);
+    const view = new DataView(bytes.buffer); view.setFloat32(0, Infinity, true);
+    expect(() => decodeSplatRuntimeFormat(bytes)).toThrow(/invalid/);
+    view.setFloat32(0, 0, true); view.setFloat32(12, -1, true);
+    expect(() => decodeSplatRuntimeFormat(bytes)).toThrow(/invalid/);
+  });
   it("expands 32B records to the unified 64B layout with straight-alpha colors and normalized rotation", () => {
     const bytes = buildSplatRuntimeFixture([
       {
