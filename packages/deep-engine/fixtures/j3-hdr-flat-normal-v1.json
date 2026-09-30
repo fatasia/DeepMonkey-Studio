@@ -1,0 +1,254 @@
+{
+  "schema": "j3-hdr-flat-normal-v1",
+  "sourceFixture": "packages/deep-engine-native/tests/fixtures/runtime-package-v1.json",
+  "packageHash": "621d7355747b15ded4f0c128d10090ea4d0730a6b50f4df644a10991fb3cdb6a",
+  "packetHash": "e9f56e13905169dc866b6adc818809fc1883e5c684f1e1d71ccd97011d8f69f9",
+  "width": 128,
+  "height": 128,
+  "cameras": [
+    {
+      "id": "axis",
+      "eye": [
+        0,
+        0,
+        8
+      ],
+      "target": [
+        0,
+        0,
+        0
+      ],
+      "up": [
+        0,
+        1,
+        0
+      ],
+      "verticalFovRadians": 1,
+      "near": 0.1,
+      "far": 100,
+      "expectedVP": [
+        1.8304877281188965,
+        0,
+        0,
+        0,
+        0,
+        1.8304877281188965,
+        0,
+        0,
+        0,
+        0,
+        -1.001001000404358,
+        -1,
+        0,
+        0,
+        7.907907962799072,
+        8
+      ],
+      "subsets": [
+        {
+          "instanceId": "golden-triangle-regular",
+          "materialId": "golden-copper",
+          "diffuseFloor": [
+            0.1532980411861136,
+            0.04791455054747366,
+            0.008823550045014679
+          ],
+          "pixels": [
+            6991,
+            6992,
+            7119,
+            7120,
+            7121,
+            7246,
+            7247,
+            7248,
+            7249,
+            7373,
+            7374,
+            7375,
+            7376,
+            7377,
+            7378,
+            7501,
+            7502,
+            7503,
+            7504,
+            7505,
+            7506
+          ]
+        },
+        {
+          "instanceId": "golden-triangle-mirrored",
+          "materialId": "golden-copper",
+          "diffuseFloor": [
+            0.1532980411861136,
+            0.04791455054747366,
+            0.008823550045014679
+          ],
+          "pixels": [
+            9168,
+            9295,
+            9296,
+            9422,
+            9423,
+            9424,
+            9425,
+            9550,
+            9551,
+            9552,
+            9553,
+            9677,
+            9678,
+            9679,
+            9680,
+            9681,
+            9682,
+            9805,
+            9806,
+            9807,
+            9808,
+            9809,
+            9810,
+            9811
+          ]
+        }
+      ]
+    },
+    {
+      "id": "oblique",
+      "eye": [
+        3,
+        2,
+        8
+      ],
+      "target": [
+        0,
+        0,
+        0
+      ],
+      "up": [
+        0,
+        1,
+        0
+      ],
+      "verticalFovRadians": 1,
+      "near": 0.1,
+      "far": 100,
+      "expectedVP": [
+        1.7139390707015991,
+        -0.14649111032485962,
+        -0.3422239422798157,
+        -0.34188172221183777,
+        0,
+        1.782308578491211,
+        -0.22814930975437164,
+        -0.22792115807533264,
+        -0.6427271962165833,
+        -0.3906429708003998,
+        -0.9125972390174866,
+        -0.9116846323013306,
+        -8.12899848820557e-16,
+        0,
+        8.683647155761719,
+        8.774964332580566
+      ],
+      "subsets": [
+        {
+          "instanceId": "golden-triangle-regular",
+          "materialId": "golden-copper",
+          "diffuseFloor": [
+            0.1532980411861136,
+            0.04791455054747366,
+            0.008823550045014679
+          ],
+          "pixels": [
+            7118,
+            7246,
+            7373,
+            7374,
+            7375,
+            7500,
+            7501,
+            7502,
+            7503,
+            7504,
+            7628,
+            7629,
+            7630,
+            7631,
+            7632,
+            7755,
+            7756,
+            7757,
+            7758,
+            7759,
+            7760,
+            7761
+          ]
+        },
+        {
+          "instanceId": "golden-triangle-mirrored",
+          "materialId": "golden-copper",
+          "diffuseFloor": [
+            0.1532980411861136,
+            0.04791455054747366,
+            0.008823550045014679
+          ],
+          "pixels": [
+            9293,
+            9294,
+            9421,
+            9422,
+            9548,
+            9549,
+            9550,
+            9551,
+            9675,
+            9676,
+            9677,
+            9678,
+            9679,
+            9804,
+            9805,
+            9806,
+            9807,
+            9808
+          ]
+        }
+      ]
+    }
+  ],
+  "thresholds": {
+    "vpMaxError": 0.00002,
+    "depthMaxError": 0.000002,
+    "planeMaxError": 0.000002,
+    "minStablePixels": 64,
+    "edgeRadius": 1
+  },
+  "sun": {
+    "surfaceToLightWorld": [
+      0,
+      0.6,
+      0.8
+    ],
+    "radiance": [
+      2.5,
+      2.4,
+      2.25
+    ],
+    "intensity": 1,
+    "exposure": 1,
+    "shadows": false,
+    "environment": false,
+    "localLights": false,
+    "diffuseLights": false
+  },
+  "hdrThresholds": {
+    "minPixelsPerSubset": 16,
+    "maxChannelError": 0.002,
+    "minPsnr": 60,
+    "minSsim": 0.9999,
+    "peak": 1
+  },
+  "maskContract": "packet golden-triangle projected by frozen official cameraMath expectedVP; every center >=1.5px inside all edges"
+}

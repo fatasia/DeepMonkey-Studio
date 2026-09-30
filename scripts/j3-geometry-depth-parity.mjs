@@ -4,13 +4,17 @@ import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { compareGeometryDepth } from "./lib/j3GeometryDepthParity.mjs";
-const root = fileURLToPath(new URL("../", import.meta.url)), out = path.join(root, "test-output/interrupted-0930/geometry-depth");
+import { compareHdrFlat } from "./lib/j3HdrFlatParity.mjs";
+const root = fileURLToPath(new URL("../", import.meta.url));
 const flags = new Set(process.argv.slice(2));
+const hdrMode = flags.delete("--hdr"), out = path.join(root, `test-output/interrupted-0930/${hdrMode ? "hdr-flat-normal" : "geometry-depth"}`);
 for (const flag of flags) if (!["--compare", "--web-only"].includes(flag)) throw Error(`Unknown option ${flag}`);
 if (flags.size > 1) throw Error("Choose --compare or --web-only");
 await mkdir(out, { recursive: true });
-const manifest = JSON.parse(await readFile(path.join(root, "packages/deep-engine/fixtures/j3-geometry-depth-v1.json"), "utf8"));
+const manifestSource = await readFile(path.join(root, `packages/deep-engine/fixtures/${hdrMode ? "j3-hdr-flat-normal-v1" : "j3-geometry-depth-v1"}.json`), "utf8");
+const manifest = JSON.parse(manifestSource), manifestHash = createHash("sha256").update(manifestSource).digest("hex");
 const nativePath = path.join(out, "native.json"), webPath = path.join(out, "web.json"), evidencePath = path.join(out, "evidence.json");
 if (!flags.has("--compare")) {
   await rm(evidencePath, { force: true }); await rm(webPath, { force: true });
@@ -19,6 +23,7 @@ if (!flags.has("--compare")) {
     const cargo = spawnSync("cargo", ["test", "--manifest-path", "packages/deep-engine-native/Cargo.toml", "--locked",
       "--test", "gpu_shader_material_draw", "j3_gate_d_actual_geometry_depth", "--", "--ignored"], {
       cwd: root, encoding: "utf8", windowsHide: true, timeout: 600000,
+      env: { ...process.env, BIM_J3_HDR_PARITY: hdrMode ? "1" : "0" },
     });
     const log = (cargo.stdout ?? "") + (cargo.stderr ?? ""); await writeFile(path.join(out, "native.log"), log);
     if (cargo.error || cargo.status !== 0 || !/test j3_geometry_depth::j3_gate_d_actual_geometry_depth \.\.\. ok/.test(log)
@@ -47,15 +52,18 @@ if (!flags.has("--compare")) {
     await page.exposeFunction("captureGeometryFrame", async (cameraId, round) => {
       await page.screenshot({ path: path.join(out, `frame-${cameraId}-${round}.png`), fullPage: true });
     });
-    const result = await page.evaluate(async ({ manifest, source }) =>
+    const result = await page.evaluate(async ({ manifest, source, hdrMode }) =>
       (await import("/probe.mjs")).runJ3GeometryDepthProbe(document.querySelector("canvas"), manifest, source,
-        (cameraId, round) => window.captureGeometryFrame(cameraId, round)), { manifest, source });
+        (cameraId, round) => window.captureGeometryFrame(cameraId, round), hdrMode ? manifest : undefined), { manifest, source, hdrMode });
+    if (hdrMode) result.manifestHash = manifestHash;
     await writeFile(webPath, `${JSON.stringify(result)}\n`);
   } finally { try { await browser?.close(); } finally { await new Promise(resolve => server.close(resolve)); } }
 }
 if (flags.has("--web-only")) console.log(`Web-only actual geometry evidence: ${webPath}`);
 else {
-  const evidence = compareGeometryDepth(manifest, JSON.parse(await readFile(webPath, "utf8")), JSON.parse(await readFile(nativePath, "utf8")));
+  const web = JSON.parse(await readFile(webPath, "utf8")), native = JSON.parse(await readFile(nativePath, "utf8"));
+  if (hdrMode && (native.manifestHash !== manifestHash || web.manifestHash !== manifestHash)) throw Error("Actual HDR manifest identity drift");
+  const evidence = hdrMode ? compareHdrFlat(manifest, web, native) : compareGeometryDepth(manifest, web, native);
   const result = { ...evidence, currentRun: !flags.has("--compare"),
     evidenceMode: flags.has("--compare") ? "historical file comparison; no host executed" : "both production hosts executed in this run" };
   await writeFile(evidencePath, `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result, null, 2));

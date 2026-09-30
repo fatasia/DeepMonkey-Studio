@@ -170,6 +170,16 @@ export const GATE_PAIRS = [
         command: "node scripts/j2-csm-linear-parity.mjs", note: "实际Native生产CSM，nearest/linear确实不同，两轮共同输入" },
     ],
   },
+  {
+    id: "hdr-flat-normal",
+    name: "共同作者太阳光平面三角形HDR(J3 Gate D)",
+    legs: [
+      { id: "hdr-flat:ts-gpu", side: "ts", requiresGpu: true,
+        command: "node scripts/j3-geometry-depth-parity.mjs --hdr", note: "生产PbrRenderer，冻结几何内部mask，实际同光uniform与严格HDR门" },
+      { id: "hdr-flat:native-gpu", side: "native", requiresGpu: true,
+        command: "node scripts/j3-geometry-depth-parity.mjs --hdr", note: "生产mesh pass与作者灯光配置，两轮HDR；曲面合法差异另记" },
+    ],
+  },
 ];
 
 /** GPU 腿策略:off=默认 CPU/静态口径;auto=探测可用才跑;strict=不可用即门失败。

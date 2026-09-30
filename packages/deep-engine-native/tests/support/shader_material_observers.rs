@@ -59,6 +59,7 @@ pub(super) fn encode_frame(
 pub struct FrameObservation<'a> {
     pub size: PhysicalSize<u32>,
     pub view: PlayerView,
+    pub configure: Option<&'a dyn Fn(&mut FrameUniform)>,
     pub encode:
         &'a mut dyn FnMut(&wgpu::Device, &mut wgpu::CommandEncoder, &ForwardTargets, &FrameUniform),
 }
@@ -67,11 +68,14 @@ pub(super) fn frame_parameters(
     observation: Option<&FrameObservation<'_>>,
 ) -> (PhysicalSize<u32>, FrameUniform, PlayerView) {
     match observation {
-        Some(observed) => (
-            observed.size,
-            frame_data_with_camera(observed.size, observed.view, FogSettings::DISABLED),
-            observed.view,
-        ),
+        Some(observed) => {
+            let mut frame =
+                frame_data_with_camera(observed.size, observed.view, FogSettings::DISABLED);
+            if let Some(configure) = observed.configure {
+                configure(&mut frame);
+            }
+            (observed.size, frame, observed.view)
+        }
         None => {
             let size = PhysicalSize::new(256, 256);
             (size, frame_data(size, 0.0), PlayerView::default())
