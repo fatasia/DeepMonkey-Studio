@@ -5,6 +5,32 @@ import { DeepWebGpuBackend, type DeepWebGpuRenderRuntime, type DeepWebGpuRuntime
 import { CASCADED_SHADOW_QUALITY_PROFILES } from "../shadows/shadowQuality.js";
 
 describe("DeepWebGpuBackend creation", () => {
+  it.each(["lost", "recovering", "disposed", "degraded"])("rejects a cached first frame after session becomes %s", async state => {
+    const session = { state: "ready", device: { lost: new Promise<never>(() => {}) } };
+    const target = Object.assign(runtime(), { session });
+    const backend = await DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
+      view, renderPacket: { geometries: [], materials: [], instances: [] } }, { create: vi.fn(async () => target) });
+    vi.mocked(target.validateFrame).mockClear(); session.state = state;
+    await expect(backend.prepareView(view)).rejects.toThrow("GPU session is not ready");
+    expect(target.validateFrame).not.toHaveBeenCalled(); backend.dispose();
+  });
+  it("rejects a cached first frame belonging to the previous device", async () => {
+    const session = { state: "ready", device: { lost: new Promise<never>(() => {}) } };
+    const target = Object.assign(runtime(), { session });
+    const backend = await DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
+      view, renderPacket: { geometries: [], materials: [], instances: [] } }, { create: vi.fn(async () => target) });
+    vi.mocked(target.validateFrame).mockClear(); session.device = { lost: new Promise<never>(() => {}) };
+    await expect(backend.prepareView(view)).rejects.toThrow("GPU device changed");
+    expect(target.validateFrame).not.toHaveBeenCalled(); backend.dispose();
+  });
+  it("reuses the cached first frame on its ready original device", async () => {
+    const session = { state: "ready", device: { lost: new Promise<never>(() => {}) } };
+    const target = Object.assign(runtime(), { session });
+    const backend = await DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
+      view, renderPacket: { geometries: [], materials: [], instances: [] } }, { create: vi.fn(async () => target) });
+    vi.mocked(target.validateFrame).mockClear(); await expect(backend.prepareView(view)).resolves.toMatchObject({ frame: 1 });
+    expect(target.validateFrame).not.toHaveBeenCalled(); backend.dispose();
+  });
   it.each([true, false])("snapshots the meshlets runtime option %s", async meshlets => {
     const target = runtime(), createRuntime = vi.fn(async () => target);
     const renderer = { meshlets };

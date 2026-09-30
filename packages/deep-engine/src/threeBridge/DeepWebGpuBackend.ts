@@ -17,6 +17,7 @@ import { CameraRelativeCoordinates, type CameraRelativeCoordinateSnapshot } from
 import { indexObjectBindings } from "./objectBindingIndex.js";
 import { firstFramePipelineMainKeys } from "./firstFramePipelineKeys.js";
 import type { DeviceEvent } from "../webgpu/deviceSession.js";
+import { RendererDeviceEpoch } from "../webgpu/rendererDeviceEpoch.js";
 export type { DeepWebGpuShadowSelection } from "./deepWebGpuShadowPolicy.js";
 
 type DeepWebGpuCanvas = Parameters<typeof PbrRenderer.create>[0];
@@ -136,6 +137,7 @@ export class DeepWebGpuBackend {
   /** 最近一次通过整帧验证的视图指纹与结果；prepareView 视图未变时复用。 */
   private validatedView: { readonly view: RenderView; readonly shadowSelection: DeepWebGpuShadowSelection | undefined } | undefined;
   private validatedFrame: FrameMetrics | undefined;
+  private readonly deviceEpoch: RendererDeviceEpoch | undefined;
   /** Set for the immutable author packet path; no Three hierarchy is retained. */
   private independentPacket = false;
   private readonly coordinates = new CameraRelativeCoordinates();
@@ -149,6 +151,7 @@ export class DeepWebGpuBackend {
     readonly projection: ThreeProjectionBridge | undefined,
     private readonly options: DeepWebGpuBackendOptions = {},
   ) {
+    if (runtime.session?.device) this.deviceEpoch = new RendererDeviceEpoch(runtime.session.device);
     if (runtime.id !== this.id) throw new Error(`Deep runtime id must be ${this.id}.`);
     if (options.authorChunks !== undefined && typeof options.authorChunks !== "boolean") throw new TypeError("authorChunks must be boolean.");
     if (options.meshlets !== undefined && typeof options.meshlets !== "boolean") throw new TypeError("meshlets must be boolean.");
@@ -355,6 +358,9 @@ export class DeepWebGpuBackend {
   async prepareView(view: RenderView, signal?: AbortSignal): Promise<FrameMetrics> {
     this.assertOpen();
     signal?.throwIfAborted();
+    const session = this.runtime.session;
+    if (session?.state !== undefined && session.state !== "ready") throw new Error("GPU session is not ready for candidate admission.");
+    if (session?.device) this.deviceEpoch?.assertCurrent(session.device);
     const localView = this.coordinates.localizeView(view, this.coordinates.current);
     // 候选创建期间视口未变化时，创建路径已验证过完全相同的视图；
     // 重复整帧验证只会重复同一份 GPU 工作，直接复用其结果。
