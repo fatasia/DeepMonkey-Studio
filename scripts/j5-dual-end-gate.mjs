@@ -150,6 +150,16 @@ export const GATE_PAIRS = [
         command: "node scripts/j3-device-recovery-parity.mjs", note: "实际 Native 生产组件跨 lost 存活后退役；同包分阶段，不认证自动恢复/显存" },
     ],
   },
+  {
+    id: "geometry-main-depth",
+    name: "共同 RenderPacket 几何与主深度(J3 Gate D)",
+    legs: [
+      { id: "geometry-depth:ts-gpu", side: "ts", requiresGpu: true,
+        command: "node scripts/j3-geometry-depth-parity.mjs", note: "生产 PbrRenderer，同包双相机双轮；上传矩阵与实际主深度" },
+      { id: "geometry-depth:native-gpu", side: "native", requiresGpu: true,
+        command: "node scripts/j3-geometry-depth-parity.mjs", note: "生产 mesh pass 保留观察深度；4xMSAA 合法边界，不认证材质色差" },
+    ],
+  },
 ];
 
 /** GPU 腿策略:off=默认 CPU/静态口径;auto=探测可用才跑;strict=不可用即门失败。

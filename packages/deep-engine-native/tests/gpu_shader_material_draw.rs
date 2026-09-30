@@ -1,5 +1,7 @@
 #![cfg(windows)]
 #![allow(dead_code)]
+#[path = "support/j3_geometry_depth.rs"]
+mod j3_geometry_depth;
 #[path = "support/j3_device_recovery.rs"]
 mod j3_device_recovery;
 

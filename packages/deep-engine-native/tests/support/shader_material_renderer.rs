@@ -4,7 +4,6 @@ use deep_engine_native::{
     pbr_texture::prepare_pbr_resources, scene::prepare_scene,
 };
 use wgpu::util::DeviceExt;
-use winit::dpi::PhysicalSize;
 
 use crate::{
     forward_targets::ForwardTargets,
@@ -12,11 +11,10 @@ use crate::{
     gpu_culling::GpuCulling,
     gpu_ibl::GpuIblEnvironment,
     gpu_lod::GpuLod,
-    gpu_resources::{create_shadow_map, frame_data},
+    gpu_resources::create_shadow_map,
     gpu_scene::GpuScene,
     gpu_textures::create_material_layout,
     lod_draw_readback,
-    mesh_pass::encode_mesh_passes,
     pipeline::create_mesh_pipelines,
     player_content::PlayerContent,
     shadow_pass::{CascadeScene, encode_shadow_cascades},
@@ -24,7 +22,10 @@ use crate::{
 
 #[path = "shader_material_observers.rs"]
 mod observers;
-pub use observers::{ShaderMaterialReport, Snapshot, render_reported, render_with_live_components};
+pub use observers::{
+    FrameObservation, ShaderMaterialReport, Snapshot, render_reported,
+    render_with_frame_observation, render_with_live_components,
+};
 
 pub async fn render(
     device: &wgpu::Device,
@@ -54,6 +55,7 @@ async fn render_observed(
     reuse_first_cascade: bool,
     foreign_device: Option<&wgpu::Device>,
     observer: Option<&mut dyn FnMut(&Snapshot)>,
+    frame_observation: Option<&mut FrameObservation<'_>>,
 ) -> (Snapshot, ShaderMaterialReport) {
     let packet = content.packet();
     let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
@@ -61,18 +63,10 @@ async fn render_observed(
     let internal = device.push_error_scope(wgpu::ErrorFilter::Internal);
     let prepared = prepare_scene(packet).unwrap();
     let prepared_lod = prepare_gpu_lod(packet, &prepared).unwrap();
-    let size = PhysicalSize::new(256, 256);
-    let frame = frame_data(size, 0.0);
+    let (size, frame, shadow_view) = observers::frame_parameters(frame_observation.as_deref());
     let layouts = create_frame_layouts(device);
-    let shadows = create_shadow_map(
-        device,
-        &layouts.shadow,
-        size,
-        &frame,
-        None,
-        Default::default(),
-    )
-    .unwrap();
+    let shadows =
+        create_shadow_map(device, &layouts.shadow, size, &frame, None, shadow_view).unwrap();
     let material_layout = create_material_layout(device);
     let shader = create_native_mesh_shader(device);
     let pipelines = create_mesh_pipelines(
@@ -109,7 +103,7 @@ async fn render_observed(
         &frame,
         size,
         &shadows,
-        deep_engine_native::mesh_abi::CAMERA_NEAR,
+        shadow_view.near,
     )
     .unwrap();
     let frame_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -219,7 +213,7 @@ async fn render_observed(
         },
         u16::MAX,
     );
-    encode_mesh_passes(
+    observers::encode_frame(
         &mut encoder,
         &targets,
         &frame_group,
@@ -227,8 +221,11 @@ async fn render_observed(
         &culling,
         lod.as_ref(),
         &pipelines,
-        0.0,
+        frame_observation.is_some(),
     );
+    if let Some(observation) = frame_observation {
+        (observation.encode)(device, &mut encoder, &targets, &frame);
+    }
     let hdr = lod_draw_readback::copy_hdr(device, &mut encoder, targets.resolved_texture());
     let metrics = shadows.metrics();
     let depths = lod_draw_readback::extract_depth(

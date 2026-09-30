@@ -1,4 +1,94 @@
 use super::{PlayerContent, render_observed};
+use crate::{
+    forward_targets::ForwardTargets,
+    gpu_culling::GpuCulling,
+    gpu_lod::GpuLod,
+    gpu_resources::{frame_data, frame_data_with_camera},
+    gpu_scene::GpuScene,
+    pipeline::MeshPipelines,
+};
+use deep_engine_native::{fog::FogSettings, mesh_abi::FrameUniform, player_view::PlayerView};
+use winit::dpi::PhysicalSize;
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn encode_frame(
+    encoder: &mut wgpu::CommandEncoder,
+    targets: &ForwardTargets,
+    frame_group: &wgpu::BindGroup,
+    scene: &GpuScene,
+    culling: &GpuCulling,
+    lod: Option<&GpuLod>,
+    pipelines: &MeshPipelines,
+    retain_depth: bool,
+) {
+    if !retain_depth {
+        crate::mesh_pass::encode_mesh_passes(
+            encoder,
+            targets,
+            frame_group,
+            scene,
+            culling,
+            lod,
+            pipelines,
+            0.0,
+        );
+        return;
+    }
+    crate::mesh_pass::encode_opaque_pass(
+        encoder,
+        targets,
+        frame_group,
+        scene,
+        culling,
+        lod,
+        pipelines,
+        true,
+    );
+    crate::mesh_pass::encode_transparent_pass(
+        encoder,
+        targets,
+        frame_group,
+        scene,
+        culling,
+        lod,
+        pipelines,
+        0.0,
+    );
+}
+
+pub struct FrameObservation<'a> {
+    pub size: PhysicalSize<u32>,
+    pub view: PlayerView,
+    pub encode:
+        &'a mut dyn FnMut(&wgpu::Device, &mut wgpu::CommandEncoder, &ForwardTargets, &FrameUniform),
+}
+
+pub(super) fn frame_parameters(
+    observation: Option<&FrameObservation<'_>>,
+) -> (PhysicalSize<u32>, FrameUniform, PlayerView) {
+    match observation {
+        Some(observed) => (
+            observed.size,
+            frame_data_with_camera(observed.size, observed.view, FogSettings::DISABLED),
+            observed.view,
+        ),
+        None => {
+            let size = PhysicalSize::new(256, 256);
+            (size, frame_data(size, 0.0), PlayerView::default())
+        }
+    }
+}
+
+pub async fn render_with_frame_observation(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    content: &PlayerContent,
+    observation: &mut FrameObservation<'_>,
+) -> Snapshot {
+    render_observed(device, queue, content, false, None, None, Some(observation))
+        .await
+        .0
+}
 
 pub struct Snapshot {
     pub hdr: Vec<u8>,
@@ -29,6 +119,7 @@ pub async fn render_reported(
         reuse_first_cascade,
         foreign_device,
         None,
+        None,
     )
     .await
 }
@@ -40,7 +131,7 @@ pub async fn render_with_live_components(
     content: &PlayerContent,
     observer: &mut dyn FnMut(&Snapshot),
 ) -> Snapshot {
-    render_observed(device, queue, content, false, None, Some(observer))
+    render_observed(device, queue, content, false, None, Some(observer), None)
         .await
         .0
 }
