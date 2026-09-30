@@ -10,7 +10,8 @@ import { createSharedSceneFixture, sharedProjection, sharedProfile, type SharedS
 import { bounded, readSharedDeepFrame } from "./c8SharedSceneReadback.js";
 import { threeDirectMaterialProfile, type ThreeDirectMaterialProfile } from "../src/threeBridge/threeDirectMaterialProfile.js";
 
-export async function runSharedSceneProbe(options: { readonly directProfile?: ThreeDirectMaterialProfile; readonly exposures?: readonly number[]; readonly cameraScale?: .6 | 1; readonly hdrAttachmentProfile?: "shared-rgba16f" } = {}) {
+export async function runSharedSceneProbe(options: { readonly directProfile?: ThreeDirectMaterialProfile; readonly exposures?: readonly number[]; readonly cameraScale?: .6 | 1; readonly hdrAttachmentProfile?: "shared-rgba16f";
+  readonly gpu?: GPU; readonly observeThreePrograms?: (renderer: THREE.WebGLRenderer) => void } = {}) {
   if (Object.hasOwn(options, "hdrAttachmentProfile") && options.hdrAttachmentProfile !== "shared-rgba16f") throw Error("Unknown HDR attachment profile");
   const fixture = createSharedSceneFixture(), canvas = document.createElement("canvas");
   canvas.width = sharedProfile.width; canvas.height = sharedProfile.height;
@@ -34,7 +35,7 @@ export async function runSharedSceneProbe(options: { readonly directProfile?: Th
     renderer.debug.onShaderError = (gl, program, vertex, fragment) => errors.push([gl.getProgramInfoLog(program), gl.getShaderInfoLog(vertex), gl.getShaderInfoLog(fragment)].join("\n"));
     hdrTarget = new THREE.WebGLRenderTarget(sharedProfile.width, sharedProfile.height, { type: options.hdrAttachmentProfile ? THREE.HalfFloatType : THREE.FloatType });
     const projection = sharedProjection(), firstView = sharedView(0, .5);
-    backend = await bounded<DeepWebGpuBackend>(DeepWebGpuBackend.create({ canvas, gpu: navigator.gpu, projection, root: fixture.root, view: firstView, signal: lifetime.signal,
+    backend = await bounded<DeepWebGpuBackend>(DeepWebGpuBackend.create({ canvas, gpu: options.gpu ?? navigator.gpu, projection, root: fixture.root, view: firstView, signal: lifetime.signal,
       renderer: { shadows: { exactProfile: { cascadeCount: 1, shadowMapSize: 128 } }, pipelines: { firstFrameSubset: true, deferDeformation: true },
         frameCapture: { session: new FrameCaptureSession(), readbacks: { requests: [{ resourceId: "present-color" }] } },
         features: { toneMapping: "three-aces-r185", environment: false, groundPlane: false, groundGrid: false, fog: false, ambientOcclusion: false,
@@ -64,6 +65,7 @@ export async function runSharedSceneProbe(options: { readonly directProfile?: Th
           threeHdr[(y * sharedProfile.width + x) * 3 + lane] = floats instanceof Uint16Array ? THREE.DataUtils.fromHalfFloat(sample) : sample;
         }
         renderer.setRenderTarget(null); renderer.render(fixture.scene, fixture.camera);
+        options.observeThreePrograms?.(renderer);
         const gl = renderer.getContext(), bytes = new Uint8Array(sharedProfile.width * sharedProfile.height * 4), threeDisplay = new Uint8Array(bytes.length);
         gl.readPixels(0, 0, sharedProfile.width, sharedProfile.height, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
         for (let y = 0; y < sharedProfile.height; y++) threeDisplay.set(bytes.subarray(y * sharedProfile.width * 4, (y + 1) * sharedProfile.width * 4), (sharedProfile.height - 1 - y) * sharedProfile.width * 4);
