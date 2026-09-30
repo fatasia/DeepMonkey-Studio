@@ -2,6 +2,19 @@ import { PBR_BRDF_DIRECT_MULTISCATTERING_WGSL } from "../lighting/brdfDirectMult
 
 /** Uses existing DFG resource/ABI; no light performs no direct LUT sampling. */
 export const PBR_DIRECT_MULTISCATTERING_WGSL = /* wgsl */ `${PBR_BRDF_DIRECT_MULTISCATTERING_WGSL}
+// WGSL private storage belongs to this fragment invocation, never another draw.
+var<private> deepDirectViewDfgReady: bool;
+var<private> deepDirectViewDfg: vec2f;
+fn deepResetDirectViewDfg() { deepDirectViewDfgReady = false; }
+fn deepSeedDirectViewDfg(value: vec2f) { deepDirectViewDfg = value; deepDirectViewDfgReady = true; }
+fn deepClusterDirectMultiscattering(nv: f32, nl: f32, rough: f32, f0: vec3f) -> vec3f {
+  if (nl <= 0.0) { return vec3f(0.0); }
+  if (!deepDirectViewDfgReady) {
+    deepSeedDirectViewDfg(textureSampleLevel(brdfLut, environmentSampler, vec2f(max(nv, 0.001), rough), 0.0).rg);
+  }
+  let dfgLight = textureSampleLevel(brdfLut, environmentSampler, vec2f(nl, rough), 0.0).rg;
+  return deepDirectMultiscatteringEnergy(f0, deepDirectViewDfg, dfgLight);
+}
 fn deepViewGeometryRoughness(worldGeometryNormal: vec3f) -> f32 {
   let viewNormal = safeNormalize((frame.worldToView * vec4f(worldGeometryNormal, 0.0)).xyz, vec3f(0.0, 0.0, 1.0));
   return deepGeometryRoughness(viewNormal);
@@ -15,9 +28,11 @@ fn deepDirectMultiscatteringFromView(n: vec3f, light: vec3f, base: vec3f, metal:
 }
 fn deepSampleDirectMultiscattering(n: vec3f, view: vec3f, light: vec3f, base: vec3f,
   metal: f32, rough: f32, dielectric: f32) -> vec3f {
+  deepResetDirectViewDfg();
   if (frame.sunColor.w <= 0.0 || dot(n, light) <= 0.0) { return vec3f(0.0); }
   let nv = clamp(dot(n, view), 0.001, 1.0);
   let dfgView = textureSampleLevel(brdfLut, environmentSampler, vec2f(nv, rough), 0.0).rg;
+  deepSeedDirectViewDfg(dfgView);
   return deepDirectMultiscatteringFromView(n, light, base, metal, rough, dielectric, dfgView);
 }
 `;

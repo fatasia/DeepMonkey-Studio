@@ -11,9 +11,10 @@ import { bounded, readSharedDeepFrame } from "./c8SharedSceneReadback.js";
 import { threeDirectMaterialProfile, type ThreeDirectMaterialProfile } from "../src/threeBridge/threeDirectMaterialProfile.js";
 
 export async function runSharedSceneProbe(options: { readonly directProfile?: ThreeDirectMaterialProfile; readonly exposures?: readonly number[]; readonly cameraScale?: .6 | 1; readonly hdrAttachmentProfile?: "shared-rgba16f";
-  readonly gpu?: GPU; readonly observeThreePrograms?: (renderer: THREE.WebGLRenderer) => void } = {}) {
+  readonly gpu?: GPU; readonly observeThreePrograms?: (renderer: THREE.WebGLRenderer) => void;
+  readonly fixtureFactory?: typeof createSharedSceneFixture } = {}) {
   if (Object.hasOwn(options, "hdrAttachmentProfile") && options.hdrAttachmentProfile !== "shared-rgba16f") throw Error("Unknown HDR attachment profile");
-  const fixture = createSharedSceneFixture(), canvas = document.createElement("canvas");
+  const fixture = (options.fixtureFactory ?? createSharedSceneFixture)(), canvas = document.createElement("canvas");
   canvas.width = sharedProfile.width; canvas.height = sharedProfile.height;
   const errors: string[] = [], frames = [];
   const lifetime = new AbortController();

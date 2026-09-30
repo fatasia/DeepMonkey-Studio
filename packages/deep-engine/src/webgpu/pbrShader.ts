@@ -157,6 +157,7 @@ ${GROUND_ALBEDO_WGSL}
 fn shade(fragmentCoordinate: vec2f, world: vec3f, normalInput: vec3f, geometryNormal: vec3f, ground: bool, baseInput: vec3f, metalInput: f32,
   roughInput: f32, occlusionInput: f32, emissive: vec3f, authorShadow: vec4f, materialFlags: f32, dielectric: f32,
   applyFog: bool) -> vec3f {
+  deepResetDirectViewDfg();
   let n = safeNormalize(normalInput, vec3f(0.0, 1.0, 0.0));
   let view = safeNormalize(frame.eye.xyz - world, vec3f(0.0, 0.0, 1.0));
   let l = safeNormalize(frame.lightDirection.xyz, vec3f(0.0, 1.0, 0.0));
@@ -173,6 +174,7 @@ fn shade(fragmentCoordinate: vec2f, world: vec3f, normalInput: vec3f, geometryNo
   let nv = clamp(dot(n, view), 0.001, 1.0); var dfg = vec2f(0.0);
   if (frame.eye.w > 0.0 || (frame.sunColor.w > 0.0 && dot(n, l) > 0.0)) {
     dfg = textureSampleLevel(brdfLut, environmentSampler, vec2f(nv, rough), 0.0).rg;
+    deepSeedDirectViewDfg(dfg);
   }
   color += deepDirectMultiscatteringFromView(n, l, base, metal, rough, dielectric, dfg)
     * frame.sunColor.rgb * frame.sunColor.w * visibility;
@@ -333,6 +335,6 @@ fn extendedShade(v: Vertex, normal: vec3f, geometryNormal: vec3f, surface: Surfa
 `;
 
 /** Ready-to-compile default module with the fixed Forward+ group-3 library. */
-export const sceneShader = composeForwardPlusPbrShader(`${CASCADED_SHADOW_WGSL}\n${sceneShaderCore}`);
+export const sceneShader = composeForwardPlusPbrShader(`${CASCADED_SHADOW_WGSL}\n${sceneShaderCore}`, "direct-multiscattering");
 
 export { currentToPreviousUvMotion } from "./pbrMotionCpu.js";

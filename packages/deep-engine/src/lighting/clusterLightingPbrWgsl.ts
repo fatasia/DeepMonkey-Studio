@@ -173,8 +173,25 @@ fn deepForwardPlusPbrWorldReceiving(fragmentCoordinate: vec2f, worldPosition: ve
 }
 `;
 
+const SINGLE_DIRECT_RETURN = "  return (diffuse + specular) * radiance * nDotL;";
+const MULTIPLE_DIRECT_RETURN = `  var multiple = vec3f(0.0);
+  if (any(radiance > vec3f(0.0))) {
+    multiple = deepClusterDirectMultiscattering(nDotV, nDotL, roughness, f0);
+  }
+  return (diffuse + specular + multiple) * radiance * nDotL;`;
+
+/** The formal host supplies canonical energy and its existing DFG resource. */
+export function forwardPlusPbrLibrary(profile?: "direct-multiscattering"): string {
+  if (profile === undefined) return FORWARD_PLUS_PBR_WGSL;
+  if (profile !== "direct-multiscattering") throw Error("Unknown Forward+ material profile");
+  if (FORWARD_PLUS_PBR_WGSL.split(SINGLE_DIRECT_RETURN).length !== 2) throw Error("Forward+ direct return seam drifted");
+  return FORWARD_PLUS_PBR_WGSL.replace(SINGLE_DIRECT_RETURN, MULTIPLE_DIRECT_RETURN);
+}
+
 /** Adds the fixed group-3 Forward+ library to a renderer-owned WGSL module. */
-export function composeForwardPlusPbrShader(shader: string): string {
+export function composeForwardPlusPbrShader(shader: string, profile?: "direct-multiscattering"): string {
   if (!shader.trim()) throw new Error("Forward+ PBR renderer shader must not be empty.");
-  return `${FORWARD_PLUS_PBR_WGSL}\n${shader}`;
+  const library = forwardPlusPbrLibrary(profile);
+  if (profile && !shader.includes("fn deepClusterDirectMultiscattering(")) throw Error("Forward+ material host adapter missing");
+  return `${library}\n${shader}`;
 }
