@@ -1,0 +1,8 @@
+{
+  "schema":"j3-web-only-author-fog-modes-v1",
+  "color":[0.0625,0.25,0.5],"absoluteTolerance":0.001,
+  "profiles":[
+    {"id":"linear","kind":"linear","near":2,"far":7},
+    {"id":"author-volume-eight-step","kind":"volumetric","density":0.2}
+  ]
+}

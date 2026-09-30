@@ -1,0 +1,20 @@
+{
+  "schema":"j3-fog-legal-profiles-v1","width":32,"height":16,
+  "near":0.1,"far":100,"focal":2.05,"geometryDepth":10,
+  "color":[0.0625,0.25,0.5],"source":[0.125,0.25,0.5],"light":[0,0,-1],"radiance":[1,0.95,0.9],"albedo":0.8,
+  "nativeEyeY":[0,8],"absoluteTolerance":0.003,"relativeTolerance":0.004,
+  "profiles":[
+    {"id":"zero","density":0,"height":8,"g":0,"steps":32,"sky":false},
+    {"id":"volume-base","density":0.04,"height":8,"g":0,"steps":32,"sky":false},
+    {"id":"height-min","density":0.04,"height":1,"g":0,"steps":32,"sky":false},
+    {"id":"height-max","density":0.04,"height":256,"g":0,"steps":32,"sky":false},
+    {"id":"hg-negative","density":0.04,"height":8,"g":-0.99,"steps":32,"sky":false},
+    {"id":"hg-positive","density":0.04,"height":8,"g":0.99,"steps":32,"sky":false},
+    {"id":"steps-max","density":0.04,"height":8,"g":0,"steps":64,"sky":false},
+    {"id":"sky","density":0.04,"height":8,"g":0,"steps":32,"sky":true}
+  ],
+  "nativeOnly":[
+    {"id":"exponential","density":0.04,"height":8,"g":0,"steps":32,"sky":false,"exponential":true},
+    {"id":"steps-min","density":0.04,"height":8,"g":0,"steps":1,"sky":false}
+  ]
+}
