@@ -56,6 +56,7 @@ impl GpuScene {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         material_layout: &wgpu::BindGroupLayout,
+        layered_layout: Option<&wgpu::BindGroupLayout>,
         packet: &RenderPacket,
         scene_content_key: u64,
         prepared: &PreparedScene,
@@ -75,7 +76,7 @@ impl GpuScene {
             geometries.push(Arc::new(GpuGeometry::new(device, geometry)));
         }
         let instances = Arc::new(GpuInstanceResource::new(device, &prepared.instances));
-        let pbr = GpuPbrResources::new(device, queue, material_layout, pbr)?;
+        let pbr = GpuPbrResources::new(device, queue, material_layout, layered_layout, pbr)?;
         Ok(Self::from_resources(
             geometries,
             instances,

@@ -31,6 +31,12 @@ pub fn classify_material_resources(
         {
             return MaterialResourceDiff::Structural;
         }
+        // I-C23:分层块走独立 304B uniform,160B 基础快路径看不到它。层行
+        // 存在性或块内容任一变化都按 Structural 回落全量重建(bind group
+        // 携带分层纹理槽,原位覆写会静默丢层)。
+        if old.layered != new.layered {
+            return MaterialResourceDiff::Structural;
+        }
         if old.uniform != new.uniform {
             changed.push(index);
         }
@@ -62,6 +68,7 @@ pub fn instance_material_words_unchanged(before: &[PbrMaterial], after: &[PbrMat
             && before.metallic == after.metallic
             && before.roughness == after.roughness
             && before.ior == after.ior
+            && before.layered == after.layered
             && before.base_color_alpha == after.base_color_alpha
             && before.alpha_cutoff == after.alpha_cutoff
             && before.emissive_factor == after.emissive_factor
@@ -83,6 +90,7 @@ mod tests {
             normal_mapped: false,
             texture_indices: [None; 5],
             uniform: [uniform; 40],
+            layered: None,
         }
     }
 
@@ -154,6 +162,7 @@ mod tests {
             double_sided: None,
             premultiplied_alpha: None,
             fog: None,
+            layered: None,
         }
     }
 

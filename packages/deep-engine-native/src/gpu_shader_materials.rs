@@ -223,6 +223,16 @@ fn bind_pass(
                 pass.id
             ));
         }
+        // I-C23 fail-closed:custom ShaderPackage 材质绑定是 v1 普通组,分层
+        // 材质走它会静默丢层——显式拒绝(分层批次留在内置管线族消费)。
+        if resources.pbr.materials[material_index]
+            .layered
+            .is_some()
+        {
+            return Err(format!(
+                "layered material #{material_index} is not supported by custom ShaderPackage bindings"
+            ));
+        }
         Some(resources.pbr.create_material_bind_group(
             device,
             &pass.bind_group_layouts[1],

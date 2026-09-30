@@ -44,10 +44,32 @@ it("owns restored parameter, color and UV arrays independently of the caller JSO
   expect(block(restored).bytes).toEqual(before);
   expect(block(restored).prepared.parameters.base.clearcoat.factor).toBe(.25);
 });
-it.each(["layered", "extendedParameters"])("keeps Native publish strict for Browser-only %s", field => {
+it("keeps Native publish strict for Browser-only extendedParameters", () => {
   const input = JSON.parse(serializeBrowserRenderPacket(packet()));
-  delete input.materials[0][field === "layered" ? "extendedParameters" : "layered"];
-  expect(() => validateRuntimeRenderPacket(input, "$.packet")).toThrow(`$.packet.materials[0].${field}: Unknown field`);
+  delete input.materials[0].layered;
+  expect(() => validateRuntimeRenderPacket(input, "$.packet")).toThrow("$.packet.materials[0].extendedParameters: Unknown field");
+});
+it("admits layered materials into the Native publish profile with the same closed validation", () => {
+  // I-C23:Native 生产消费接通后,native profile 放行 layered(同一 fail-closed
+  // 校验路径),材质带着规范化层栈通过 native 包校验。
+  const input = JSON.parse(serializeBrowserRenderPacket(packet()));
+  delete input.materials[0].extendedParameters;
+  expect(() => validateRuntimeRenderPacket(input, "$.packet")).not.toThrow();
+  const restored = materializeRuntimeRenderPacket(input, "$.packet");
+  expect(block(restored).bytes).toHaveLength(304);
+  expect(block(restored).prepared.parameters.layers).toHaveLength(2);
+});
+it.each([
+  (input: any) => { input.materials[0].layered.layers[0].coverage = 1.5; },
+  (input: any) => { input.materials[0].layered.layers.push({ coverage: 0.5 }); },
+  (input: any) => { input.materials[0].layered.layers[0].mode = "screen"; },
+  (input: any) => { input.materials[0].layered.layers[0].surface.metallic = 2; },
+  (input: any) => { input.materials[0].layered.layers[0].surface.baseColorTexture.texture = "missing"; },
+])("keeps the Native layered profile fail-closed", mutate => {
+  const input = JSON.parse(serializeBrowserRenderPacket(packet()));
+  delete input.materials[0].extendedParameters;
+  mutate(input);
+  expect(() => validateRuntimeRenderPacket(input, "$.packet")).toThrow();
 });
 it.each([
   (input: any) => { input.materials[0].layered.layers[0].params.anisotropy.strength = NaN; },

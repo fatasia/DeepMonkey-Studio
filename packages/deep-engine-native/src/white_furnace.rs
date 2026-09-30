@@ -517,23 +517,32 @@ mod tests {
 
     #[test]
     fn native_mesh_ibl_split_keeps_ts_authoritative_formula() {
-        // J2-B3 双侧锁(Rust 半):native 本体与 RT fragment 变体的 IBL 能量分配
-        // 必须保持 TS C12 修复式——同一 split-sum 分数进 diffuse 与 specular 两路。
+        // J2-B3 双侧锁(Rust 半):native 的 IBL 能量分配必须保持 TS C12 修复式
+        // ——同一 split-sum 分数进 diffuse 与 specular 两路。
         // (TS 半的权威证据是 C12 真机白炉全绿 + 本测试与 pbrShader.ts 修复式逐字
         // 同构;webgpu/** 为只读基线,TS 半不再另行加锁。)
+        // I-C23 起:光照响应体抽为 native_mesh_v1.wgsl 的 native_lit_response
+        // 共享函数,RT fragment 变体经函数共享(同步契约从文本重复升级为单源),
+        // 因此修复式只允许在本体出现恰一次,且 RT 必须消费该函数而非自带副本。
         let mesh = include_str!("../assets/shaders/native_mesh_v1.wgsl");
         let rt = include_str!("../assets/shaders/native_mesh_rt_fragment_v1.wgsl");
-        for (label, source) in [("native_mesh_v1", mesh), ("native_mesh_rt_fragment_v1", rt)] {
-            assert!(
-                source.contains("let specular_fraction = clamp(f0 * dfg.x + dfg.y, vec3f(0.0), vec3f(1.0)) * energy_compensation;"),
-                "{label}: IBL split-sum fraction must stay on the TS C12 fixed formula"
+        for (label, source, expected) in [
+            ("native_mesh_v1", mesh, 1),
+            ("native_mesh_rt_fragment_v1", rt, 0),
+        ] {
+            assert_eq!(
+                source.matches("let specular_fraction = clamp(f0 * dfg.x + dfg.y, vec3f(0.0), vec3f(1.0)) * energy_compensation;").count(),
+                expected,
+                "{label}: IBL split-sum fraction must stay on the TS C12 fixed formula (shared via native_lit_response)"
             );
-            assert!(
-                source.contains("(1.0 - specular_fraction)"),
+            assert_eq!(
+                source.matches("(1.0 - specular_fraction)").count(),
+                expected,
                 "{label}: diffuse reserve must be (1 - specular_fraction)"
             );
-            assert!(
-                source.contains("radiance * specular_fraction"),
+            assert_eq!(
+                source.matches("radiance * specular_fraction").count(),
+                expected,
                 "{label}: specular must consume the same specular_fraction"
             );
             assert!(
@@ -541,5 +550,9 @@ mod tests {
                 "{label}: specular Schlick must not return as the diffuse reserve (C12 defect)"
             );
         }
+        // RT 变体必须经共享响应核(rt_shade_surface 被 plain/layered 两入口
+        // 复用,故恰一次调用),不允许光照体文本副本。
+        assert_eq!(rt.matches("native_lit_response(").count(), 1,
+            "RT fragment must consume the shared native_lit_response");
     }
 }

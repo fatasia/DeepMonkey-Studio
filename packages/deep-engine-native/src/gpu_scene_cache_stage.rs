@@ -259,7 +259,12 @@ impl GpuSceneCache {
                 } else {
                     metrics.material_uploads += 1;
                     let value = Arc::new(GpuMaterial::new(
-                        device, layout, source, textures, fallbacks,
+                        device,
+                        layout,
+                        self.layered_material_layout.as_ref(),
+                        source,
+                        textures,
+                        fallbacks,
                     )?);
                     pending.push((identity.clone(), Arc::clone(&value)));
                     Ok(value)

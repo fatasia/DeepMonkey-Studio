@@ -75,6 +75,14 @@ pub(crate) async fn create_gpu_context(
     required_limits.max_uniform_buffer_binding_size = required_limits
         .max_uniform_buffer_binding_size
         .min(available_limits.max_uniform_buffer_binding_size);
+    // I-C23 分层材质能力请求:与 Web deviceSession 同一合同常量
+    // (maxSampledTexturesPerShaderStage = 19,native 实际占 13)。请求值同样
+    // 收敛到适配器能力;不足 19 的设备在 renderer init 处按同一常量 fail-closed
+    // 拒绝分层管线(分层材质进包即报错,不静默丢层)。
+    required_limits.max_sampled_textures_per_shader_stage = required_limits
+        .max_sampled_textures_per_shader_stage
+        .max(deep_engine_native::pbr_layered::LAYERED_MATERIAL_REQUIRED_TEXTURES)
+        .min(available_limits.max_sampled_textures_per_shader_stage);
     if required_features.contains(wgpu::Features::EXPERIMENTAL_RAY_QUERY) {
         required_limits.max_blas_primitive_count = available_limits.max_blas_primitive_count;
         required_limits.max_blas_geometry_count = available_limits.max_blas_geometry_count;

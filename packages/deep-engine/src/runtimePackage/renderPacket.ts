@@ -2,7 +2,7 @@ import { STOCK_MATERIAL_INSTANCE_OPTIONS } from "../materialInstanceAbi.js";
 import { prepareRenderPacket, type PbrMaterial, type RenderPacket } from "../renderPacket.js";
 import { array, fields, integer, record, requireValue, string, snapshotJson } from "./primitives.js";
 import { assertNativePacketDeformationSupported, deformationForBrowserJson, materializePacketDeformation } from "./renderPacketDeformation.js";
-import { browserMaterialExtensions } from "./renderPacketBrowserMaterial.js";
+import { browserMaterialExtensions, layeredMaterialExtension } from "./renderPacketBrowserMaterial.js";
 export { assertNativePacketDeformationSupported } from "./renderPacketDeformation.js";
 
 const GEOMETRY_OPTIONAL = ["uv0", "uv1", "tangents", "colors"];
@@ -34,9 +34,16 @@ function numericArray(input: unknown, path: string, maxInteger?: number): number
 }
 function material(input: unknown, path: string, browserProfile: boolean): PbrMaterial {
   const value = record(input, path);
-  const optional = browserProfile ? [...MATERIAL_OPTIONAL, "extendedParameters", "layered"] : MATERIAL_OPTIONAL;
+  // I-C23:layered 是双端字段(Web 消费 + Native 生产消费),两个 profile 都
+  // 走同一 fail-closed 校验;extendedParameters 仍是 Browser-only(native
+  // stock 光照核不评扩展 lobe,native 包携带它会被 Rust 契约拒绝)。
+  const optional = browserProfile ? [...MATERIAL_OPTIONAL, "extendedParameters", "layered"]
+    : [...MATERIAL_OPTIONAL, "layered"];
   fields(value, ["id", "baseColor", "metallic", "roughness"], optional, path);
-  const extensions = browserProfile ? browserMaterialExtensions(value, path) : {};
+  const extensions = browserProfile ? browserMaterialExtensions(value, path)
+    : (Object.hasOwn(value, "layered")
+      ? { layered: layeredMaterialExtension(value, path) }
+      : {});
   id(value.id, `${path}.id`); nonnullOptions(value, MATERIAL_OPTIONAL, path);
   for (const name of ["baseColorTexture", "metallicRoughnessTexture", "normalTexture", "occlusionTexture", "emissiveTexture"]) {
     if (!Object.hasOwn(value, name)) continue;

@@ -348,6 +348,7 @@ mod transform_update_tests {
             double_sided: None,
             premultiplied_alpha: None,
             fog: None,
+            layered: None,
         }
     }
 
@@ -381,6 +382,7 @@ mod transform_update_tests {
             double_sided: None,
             premultiplied_alpha: None,
             fog: None,
+            layered: None,
         };
         for alpha_mode in [
             None,

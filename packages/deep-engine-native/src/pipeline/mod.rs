@@ -20,6 +20,9 @@ pub const SHADOW_PIPELINE_VARIANTS: usize = 9;
 
 pub struct MeshPipelines {
     active: Option<ActiveMeshPipelines>,
+    /// I-C23 分层颜色管线族:仅当分层能力可用(片段采样纹理 ≥ 19 合同)且
+    /// 调用方请求时驻留;shadow/outline 永远走普通族(层不影响阴影/轮廓 ABI)。
+    layered: Option<LayeredColorPipelines>,
 }
 
 struct ActiveMeshPipelines {
@@ -27,6 +30,12 @@ struct ActiveMeshPipelines {
     blend: MaterialPipelines,
     blend_premultiplied: MaterialPipelines,
     shadow: ShadowPipelines,
+}
+
+struct LayeredColorPipelines {
+    solid: MaterialPipelines,
+    blend: MaterialPipelines,
+    blend_premultiplied: MaterialPipelines,
 }
 
 struct MaterialPipelines {
@@ -60,7 +69,7 @@ impl RasterPipelines {
 
 impl MeshPipelines {
     pub fn for_empty_scene() -> Self {
-        Self { active: None }
+        Self { active: None, layered: None }
     }
 
     pub fn counts(&self) -> (usize, usize) {
@@ -99,6 +108,35 @@ impl MeshPipelines {
             &set.standard
         };
         set.select(mirrored, double_sided)
+    }
+
+    /// I-C23:分层批次的颜色管线选择,选择轴与 `select` 完全同构;仅入口与
+    /// 材质 layout 不同。分层族未驻留时返回 None,由 draw 侧回落普通族
+    /// (分层能力不可用的设备上调用方不得让分层材质进场景——见 init 门)。
+    pub fn select_layered(
+        &self,
+        alpha_mode: AlphaMode,
+        premultiplied: bool,
+        mirrored: bool,
+        double_sided: bool,
+        normal_mapped: bool,
+    ) -> Option<&wgpu::RenderPipeline> {
+        let layered = self.layered.as_ref()?;
+        let set = if alpha_mode == AlphaMode::Blend {
+            if premultiplied {
+                &layered.blend_premultiplied
+            } else {
+                &layered.blend
+            }
+        } else {
+            &layered.solid
+        };
+        let set = if normal_mapped {
+            &set.normal_mapped
+        } else {
+            &set.standard
+        };
+        Some(set.select(mirrored, double_sided))
     }
 
     pub fn select_shadow(
@@ -183,5 +221,52 @@ pub fn create_mesh_pipelines_with_normal_capture(
                 shader,
             ),
         }),
+        layered: None,
     }
+}
+
+/// I-C23:在普通管线族之上追加分层颜色管线族(fragment_*_layered 入口 +
+/// 扩展材质 layout)。分层族不驻留时 draw 侧不得使用分层材质(init 门负责)。
+pub fn create_mesh_pipelines_with_layered(
+    device: &wgpu::Device,
+    frame_layout: &wgpu::BindGroupLayout,
+    shadow_frame_layout: &wgpu::BindGroupLayout,
+    material_layout: &wgpu::BindGroupLayout,
+    layered_material_layout: &wgpu::BindGroupLayout,
+    shader: &wgpu::ShaderModule,
+) -> MeshPipelines {
+    let mut pipelines = create_mesh_pipelines(
+        device,
+        frame_layout,
+        shadow_frame_layout,
+        material_layout,
+        shader,
+    );
+    pipelines.layered = Some(LayeredColorPipelines {
+        solid: mesh::create_layered_material_pipelines(
+            device,
+            frame_layout,
+            layered_material_layout,
+            shader,
+            BlendSemantic::Solid,
+            false,
+        ),
+        blend: mesh::create_layered_material_pipelines(
+            device,
+            frame_layout,
+            layered_material_layout,
+            shader,
+            BlendSemantic::Straight,
+            false,
+        ),
+        blend_premultiplied: mesh::create_layered_material_pipelines(
+            device,
+            frame_layout,
+            layered_material_layout,
+            shader,
+            BlendSemantic::Premultiplied,
+            false,
+        ),
+    });
+    pipelines
 }

@@ -113,6 +113,34 @@ fn validate_material_slots(packet: &RenderPacket) -> Result<(), String> {
                 TextureSemantic::Emissive,
             )?;
         }
+        // I-C23:分层材质的按层纹理槽走同一 UV/变换/语义合同。
+        if let Some(layered) = &material.layered {
+            for (index, layer) in layered.layers.iter().enumerate() {
+                let Some(surface) = &layer.surface else {
+                    continue;
+                };
+                if let Some(slot) = &surface.base_color_texture {
+                    validate_slot(slot, &material.id)?;
+                    require_semantic(
+                        &semantics,
+                        &slot.texture,
+                        &material.id,
+                        TextureSemantic::BaseColor,
+                    )
+                    .map_err(|error| format!("layer {index} {error}"))?;
+                }
+                if let Some(slot) = &surface.metallic_roughness_texture {
+                    validate_slot(slot, &material.id)?;
+                    require_semantic(
+                        &semantics,
+                        &slot.texture,
+                        &material.id,
+                        TextureSemantic::MetallicRoughness,
+                    )
+                    .map_err(|error| format!("layer {index} {error}"))?;
+                }
+            }
+        }
     }
     Ok(())
 }

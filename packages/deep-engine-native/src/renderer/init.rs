@@ -21,7 +21,7 @@ use crate::{
     gpu_resources::frame_data_with_camera,
     gpu_scene_cache::GpuSceneCache,
     gpu_shader_materials::GpuShaderMaterials,
-    gpu_textures::create_material_layout,
+    gpu_textures::{create_layered_material_layout, create_material_layout},
     ibl_probe::IblProbe,
     output_pass::OutputPass,
     player_content::PlayerContent,
@@ -142,11 +142,30 @@ pub(super) async fn create_renderer(
         ShadowCasterSet::prepare(packet, &prepared, &prepared_culling, &prepared_lod)?;
     let shadow_shader_key = shader_key(GpuShaderMaterials::content_key(content)?.as_deref());
     let material_layout = create_material_layout(&device);
+    // I-C23 分层能力门:与 Web deviceSession 同一合同(片段采样纹理 ≥ 19)。
+    // 分层材质在包中而能力不足 → 显式报错(fail-closed,不静默丢层);能力
+    // 足且包中确有分层材质 → 追加分层颜色管线族(fragment_*_layered)。
+    let has_layered_materials = prepared_pbr
+        .materials
+        .iter()
+        .any(|material| material.layered.is_some());
+    let layered_ready = device.limits().max_sampled_textures_per_shader_stage
+        >= deep_engine_native::pbr_layered::LAYERED_MATERIAL_REQUIRED_TEXTURES;
+    if has_layered_materials && !layered_ready {
+        return Err(format!(
+            "layered materials require {} sampled fragment textures; device provides {}",
+            deep_engine_native::pbr_layered::LAYERED_MATERIAL_REQUIRED_TEXTURES,
+            device.limits().max_sampled_textures_per_shader_stage
+        ));
+    }
+    let layered_material_layout = layered_ready.then(|| create_layered_material_layout(&device));
     let pipelines = resources::pipelines(
         &device,
         &frame_layout,
         &shadow_frame_layout,
         &material_layout,
+        layered_material_layout.as_ref(),
+        has_layered_materials,
         compact_content,
     );
     // F3:旧包/空场景不创建真实 storage(None);非空探针在
@@ -229,7 +248,8 @@ pub(super) async fn create_renderer(
     )
     .clone();
     let mut scene_cache = GpuSceneCache::new(&device, renderer_id)
-        .with_budget(crate::gpu_scene_cache::default_budget(&device));
+        .with_budget(crate::gpu_scene_cache::default_budget(&device))
+        .with_layered_material_layout(layered_material_layout.clone());
     let candidate = GpuIblEnvironment::new(&device, &queue, &content.environment).and_then(|ibl| {
         ibl.write_cluster_grid(&queue, &cluster_plan);
         diagnostics.note_native_cluster_lookup();

@@ -47,22 +47,27 @@ function surface(input: unknown, path: string): void {
 /** Browser-only fields; Native runtime validation retains its existing closed material profile. */
 export function browserMaterialExtensions(value: Record<string, unknown>, path: string): Pick<PbrMaterial, "extendedParameters" | "layered"> {
   const extendedParameters = Object.hasOwn(value, "extendedParameters") ? parameters(value.extendedParameters, `${path}.extendedParameters`) : undefined;
-  let layered: LayeredSurfaceOverrides | undefined;
-  if (Object.hasOwn(value, "layered")) {
-    const p = `${path}.layered`, input = record(value.layered, p);
-    optionalFields(input, ["base", "layers"], p);
-    const base = Object.hasOwn(input, "base") ? parameters(input.base, `${p}.base`) : undefined;
-    const layers = Object.hasOwn(input, "layers") ? array(input.layers, `${p}.layers`, 2).map((raw, index) => {
-      const lp = `${p}.layers[${index}]`, layer = record(raw, lp);
-      optionalFields(layer, ["params", "coverage", "mode", "surface"], lp);
-      if (Object.hasOwn(layer, "params")) parameters(layer.params, `${lp}.params`);
-      if (Object.hasOwn(layer, "surface")) surface(layer.surface, `${lp}.surface`);
-      return layer;
-    }) : [];
-    const normalized = normalizeLayeredSurfaceParameters({ ...(base ? { base } : {}), layers } as LayeredSurfaceOverrides);
-    layered = Object.freeze({ ...(base ? { base: normalized.base } : {}), layers: Object.freeze(normalized.layers.map((layer, index) => Object.freeze({
-      ...layer, ...(normalized.surfaces[index] ? { surface: normalized.surfaces[index] } : {}),
-    }))) });
-  }
+  const layered = layeredMaterialExtension(value, path);
   return { ...(extendedParameters ? { extendedParameters } : {}), ...(layered ? { layered } : {}) };
+}
+
+/** I-C23:分层材质扩展的独立校验/规范化。Native 生产消费接通后,native
+ * profile 放行 layered(与本扩展同一校验路径),但 extendedParameters 仍是
+ * Browser-only(native stock 光照核不评扩展 lobe,与 native 基材同界)。 */
+export function layeredMaterialExtension(value: Record<string, unknown>, path: string): LayeredSurfaceOverrides | undefined {
+  if (!Object.hasOwn(value, "layered")) return undefined;
+  const p = `${path}.layered`, input = record(value.layered, p);
+  optionalFields(input, ["base", "layers"], p);
+  const base = Object.hasOwn(input, "base") ? parameters(input.base, `${p}.base`) : undefined;
+  const layers = Object.hasOwn(input, "layers") ? array(input.layers, `${p}.layers`, 2).map((raw, index) => {
+    const lp = `${p}.layers[${index}]`, layer = record(raw, lp);
+    optionalFields(layer, ["params", "coverage", "mode", "surface"], lp);
+    if (Object.hasOwn(layer, "params")) parameters(layer.params, `${lp}.params`);
+    if (Object.hasOwn(layer, "surface")) surface(layer.surface, `${lp}.surface`);
+    return layer;
+  }) : [];
+  const normalized = normalizeLayeredSurfaceParameters({ ...(base ? { base } : {}), layers } as LayeredSurfaceOverrides);
+  return Object.freeze({ ...(base ? { base: normalized.base } : {}), layers: Object.freeze(normalized.layers.map((layer, index) => Object.freeze({
+    ...layer, ...(normalized.surfaces[index] ? { surface: normalized.surfaces[index] } : {}),
+  }))) });
 }

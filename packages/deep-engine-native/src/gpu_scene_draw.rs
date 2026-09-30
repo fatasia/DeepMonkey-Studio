@@ -285,6 +285,24 @@ impl GpuScene {
                 pass.set_bind_group(1, material, &[]);
             }
             custom.tangent
+        } else if let (Some(layered), Some(pipeline)) = (
+            material.layered.as_ref(),
+            pipelines.select_layered(
+                batch.alpha_mode,
+                batch.premultiplied,
+                batch.mirrored,
+                batch.double_sided,
+                material.normal_mapped,
+            ),
+        ) {
+            // I-C23:分层批次走 fragment_*_layered 管线族 + 0..19 扩展绑定;
+            // 选择轴与普通族同构,层混合在光照响应级完成。
+            pass.set_pipeline(pipeline);
+            if self.shader_materials.is_some() {
+                frame.bind_builtin(pass);
+            }
+            pass.set_bind_group(1, &layered.bind_group, &[]);
+            material.normal_mapped
         } else {
             pass.set_pipeline(pipelines.select(
                 batch.alpha_mode,
@@ -367,6 +385,9 @@ impl GpuScene {
     }
 
     /// 单批次的 RT 管线绑定与 indirect draw;group 0 由 pass 层绑定一次。
+    /// I-C23:分层批次的 RT 消费(framennt_main_rt_layered)留给后继;含分层
+    /// 材质的场景由 renderer 的 RT 就绪门整帧回退栅格(与 custom shader 批次
+    /// 同语义,fail-closed 不静默丢层),本方法维持只绑定普通族。
     fn draw_rt_batch<'a>(
         &'a self,
         pass: &mut wgpu::RenderPass<'a>,
@@ -378,6 +399,10 @@ impl GpuScene {
     ) {
         let geometry = &self.geometries[batch.geometry_index];
         let material = &self.pbr.materials[batch.material_index];
+        debug_assert!(
+            material.layered.is_none(),
+            "layered batches must not enter the RT pass; readiness gate falls back to raster"
+        );
         pass.set_pipeline(pipelines.select(
             batch.mirrored,
             batch.double_sided,

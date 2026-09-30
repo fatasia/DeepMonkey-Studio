@@ -21,6 +21,47 @@ pub(super) fn create_material_pipelines(
     semantic: BlendSemantic,
     capture: bool,
 ) -> MaterialPipelines {
+    material_pipelines_with_entries(
+        device,
+        frame_layout,
+        material_layout,
+        shader,
+        semantic,
+        capture,
+        false,
+    )
+}
+
+/// I-C23 分层变体:同一 shader 模块,fragment 入口换 `*_layered`,材质 layout
+/// 换扩展 layout(0..10 同构 + 11 的 304B 块 + 12..19 层纹理)。
+pub(super) fn create_layered_material_pipelines(
+    device: &wgpu::Device,
+    frame_layout: &wgpu::BindGroupLayout,
+    layered_material_layout: &wgpu::BindGroupLayout,
+    shader: &wgpu::ShaderModule,
+    semantic: BlendSemantic,
+    capture: bool,
+) -> MaterialPipelines {
+    material_pipelines_with_entries(
+        device,
+        frame_layout,
+        layered_material_layout,
+        shader,
+        semantic,
+        capture,
+        true,
+    )
+}
+
+fn material_pipelines_with_entries(
+    device: &wgpu::Device,
+    frame_layout: &wgpu::BindGroupLayout,
+    material_layout: &wgpu::BindGroupLayout,
+    shader: &wgpu::ShaderModule,
+    semantic: BlendSemantic,
+    capture: bool,
+    layered_entries: bool,
+) -> MaterialPipelines {
     MaterialPipelines {
         standard: create_raster_pipelines(
             device,
@@ -30,6 +71,7 @@ pub(super) fn create_material_pipelines(
             semantic,
             false,
             capture,
+            layered_entries,
         ),
         normal_mapped: create_raster_pipelines(
             device,
@@ -39,10 +81,12 @@ pub(super) fn create_material_pipelines(
             semantic,
             true,
             capture,
+            layered_entries,
         ),
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create_raster_pipelines(
     device: &wgpu::Device,
     frame_layout: &wgpu::BindGroupLayout,
@@ -51,6 +95,7 @@ fn create_raster_pipelines(
     semantic: BlendSemantic,
     normal_mapped: bool,
     capture: bool,
+    layered_entries: bool,
 ) -> RasterPipelines {
     RasterPipelines {
         regular: create_mesh_pipeline(
@@ -62,6 +107,7 @@ fn create_raster_pipelines(
             semantic,
             normal_mapped,
             capture,
+            layered_entries,
         ),
         mirrored: create_mesh_pipeline(
             device,
@@ -72,6 +118,7 @@ fn create_raster_pipelines(
             semantic,
             normal_mapped,
             capture,
+            layered_entries,
         ),
         double_sided: create_mesh_pipeline(
             device,
@@ -82,10 +129,12 @@ fn create_raster_pipelines(
             semantic,
             normal_mapped,
             capture,
+            layered_entries,
         ),
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create_mesh_pipeline(
     device: &wgpu::Device,
     frame_layout: &wgpu::BindGroupLayout,
@@ -95,6 +144,7 @@ fn create_mesh_pipeline(
     semantic: BlendSemantic,
     normal_mapped: bool,
     capture: bool,
+    layered_entries: bool,
 ) -> wgpu::RenderPipeline {
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Deep Engine native pipeline layout"),
@@ -156,10 +206,11 @@ fn create_mesh_pipeline(
         },
         fragment: Some(wgpu::FragmentState {
             module: shader,
-            entry_point: Some(if capture {
-                "fragment_normal_capture"
-            } else {
-                "fragment_main"
+            entry_point: Some(match (capture, layered_entries) {
+                (true, true) => "fragment_normal_capture_layered",
+                (true, false) => "fragment_normal_capture",
+                (false, true) => "fragment_main_layered",
+                (false, false) => "fragment_main",
             }),
             compilation_options: Default::default(),
             targets: &targets[..if capture { 2 } else { 1 }],

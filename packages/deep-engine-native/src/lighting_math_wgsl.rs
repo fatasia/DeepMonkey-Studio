@@ -80,21 +80,31 @@ mod tests {
             include_str!("../../deep-engine/wgsl/brdfDirectMultiscattering.wgsl.sha256"),
             "brdfDirectMultiscattering",
         );
-        for (shader, direct_calls) in [
-            (include_str!("../assets/shaders/native_mesh_v1.wgsl"), 2),
-            (
-                include_str!("../assets/shaders/native_mesh_rt_fragment_v1.wgsl"),
-                1,
-            ),
-        ] {
-            assert_eq!(
-                shader
-                    .matches("color += native_direct_multiscattering(")
-                    .count(),
-                direct_calls
-            );
-            assert_eq!(shader.matches("vec2f(nv, rough), 0.0).rg").count(), 1);
-        }
+        // I-C23 起:直射多散射消费点抽到 native_mesh_v1.wgsl 的
+        // native_lit_response 共享函数(直射两处:主太阳 + 局部光),RT 变体
+        // 经函数共享,不再自带文本副本(单源合同,与 white_furnace 锁同构)。
+        let mesh = include_str!("../assets/shaders/native_mesh_v1.wgsl");
+        let rt = include_str!("../assets/shaders/native_mesh_rt_fragment_v1.wgsl");
+        assert_eq!(
+            mesh.matches("color += native_direct_multiscattering(").count(),
+            2,
+            "mesh body must hold both direct multiscattering sites (sun + local)"
+        );
+        assert_eq!(
+            mesh.matches("vec2f(nv, rough), 0.0).rg").count(),
+            1,
+            "mesh body must hold the single nv LUT sample inside native_lit_response"
+        );
+        assert_eq!(
+            rt.matches("color += native_direct_multiscattering(").count(),
+            0,
+            "RT fragment must not carry a multiscattering text copy"
+        );
+        assert_eq!(
+            rt.matches("native_lit_response(").count(),
+            1,
+            "RT fragment must consume the shared response core (single site, both entries)"
+        );
     }
 
     #[test]

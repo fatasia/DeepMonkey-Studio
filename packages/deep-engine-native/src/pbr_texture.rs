@@ -4,6 +4,10 @@ use crate::contract::{
     PbrMaterial, RenderPacket, TextureResource, TextureSampler, TextureSemantic, TextureSlot,
     validate_packet,
 };
+use crate::pbr_layered::{
+    LAYERED_SURFACE_BLOCK_FLOATS, LayerTextureBinding, LayeredBlockRow, layered_block_rows,
+    pack_layered_surface_block,
+};
 
 pub use crate::mesh_abi::MATERIAL_UNIFORM_FLOATS;
 pub use crate::pbr_reference::{decode_tangent_normal, occlusion_factor, srgb_channel_to_linear};
@@ -62,6 +66,15 @@ pub struct PreparedMaterial {
     pub normal_mapped: bool,
     pub texture_indices: [Option<usize>; 5],
     pub uniform: [f32; MATERIAL_UNIFORM_FLOATS],
+    /// I-C23 分层材质:304B 块 + 按槽纹理索引 [base0, mr0, base1, mr1]。
+    /// 无层材质为 None;层的数组层码在 native D2 借用下恒 0(打包已固定)。
+    pub layered: Option<PreparedLayeredMaterial>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PreparedLayeredMaterial {
+    pub block: [f32; LAYERED_SURFACE_BLOCK_FLOATS],
+    pub texture_indices: [Option<usize>; 4],
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -147,6 +160,7 @@ fn prepare_material_rows_with(
             let normal = material.normal_texture.as_ref();
             let ao = material.occlusion_texture.as_ref();
             let emissive = material.emissive_texture.as_ref();
+            let layered = prepare_layered_material(material, indices)?;
             Ok(PreparedMaterial {
                 id: material.id.clone(),
                 normal_mapped: normal.is_some(),
@@ -158,9 +172,74 @@ fn prepare_material_rows_with(
                     lookup(emissive.map(|slot| slot.texture.as_str()), indices)?,
                 ],
                 uniform,
+                layered,
             })
         })
         .collect()
+}
+
+/// I-C23:分层材质行准备。无层材质返回 None;层行只含 coverage>0 的活动层,
+/// 纹理引用沿基材同一索引解析(缺引用 fail-closed 报错)。
+/// UV 变换与基材 `write_transform_parts` 同式(cos*sx, -sin*sy, tx, sin*sx, cos*sy, ty)。
+pub fn prepare_layered_material(
+    material: &PbrMaterial,
+    indices: &HashMap<&str, usize>,
+) -> Result<Option<PreparedLayeredMaterial>, String> {
+    let Some(layered) = &material.layered else {
+        return Ok(None);
+    };
+    let transform_of = |slot: &TextureSlot| -> Result<LayerTextureBinding, String> {
+        let [tx, ty] = slot.offset.unwrap_or([0.0, 0.0]);
+        let [sx, sy] = slot.scale.unwrap_or([1.0, 1.0]);
+        let (sin, cos) = slot.rotation.unwrap_or(0.0).sin_cos();
+        let tex_coord = slot.tex_coord.unwrap_or(0);
+        if tex_coord > 1 {
+            return Err(format!(
+                "material {} layer texture UV set escaped contract validation",
+                material.id
+            ));
+        }
+        let normalize = |value: f32| if value == 0.0 { 0.0 } else { value };
+        Ok(LayerTextureBinding {
+            uv_transform: [
+                normalize(cos * sx),
+                normalize(-sin * sy),
+                normalize(tx),
+                normalize(sin * sx),
+                normalize(cos * sy),
+                normalize(ty),
+            ],
+            tex_coord,
+            array_layer: 0,
+        })
+    };
+    let rows: Vec<LayeredBlockRow> = layered_block_rows(material, transform_of)?;
+    // 纹理引用解析:沿活动层 surface 槽顺序 [base0, mr0, base1, mr1],缺引用报错。
+    let mut resolved = [None; 4];
+    let mut cursor = 0usize;
+    for layer in &layered.layers {
+        if layer.coverage.unwrap_or(0.0) == 0.0 {
+            continue;
+        }
+        if let Some(surface) = &layer.surface {
+            for slot in [
+                surface.base_color_texture.as_ref(),
+                surface.metallic_roughness_texture.as_ref(),
+            ] {
+                if let Some(slot) = slot {
+                    resolved[cursor] = lookup(Some(slot.texture.as_str()), indices)?;
+                }
+                cursor += 1;
+            }
+        } else {
+            cursor += 2;
+        }
+    }
+    debug_assert!(cursor <= 4, "layer stack depth is validated at most 2");
+    Ok(Some(PreparedLayeredMaterial {
+        block: pack_layered_surface_block(&rows),
+        texture_indices: resolved,
+    }))
 }
 
 /// Prepare only the numeric material uniform; no texture decoding/upload occurs.
@@ -432,6 +511,7 @@ mod tests {
             double_sided: None,
             premultiplied_alpha: None,
             fog: None,
+            layered: None,
         };
         let packet = RenderPacket {
             schema: crate::contract::CONTRACT_SCHEMA.into(),

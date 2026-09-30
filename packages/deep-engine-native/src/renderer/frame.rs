@@ -217,6 +217,8 @@ impl Renderer {
             self.rt_residency.as_ref(),
             self.rt_frame_bind_group.as_ref(),
             self.scene.shader_materials.is_none(),
+            // I-C23:含分层材质的场景整帧回退栅格(见 rt_opaque_ready 条件 5)。
+            self.scene.pbr.materials.iter().any(|m| m.layered.is_some()),
         );
         match rt_opaque {
             Some((pipelines, rt_bind_group)) => encode_opaque_pass_rt(

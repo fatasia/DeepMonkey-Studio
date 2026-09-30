@@ -1,5 +1,12 @@
 // Deep Engine native mesh shader contract v1.
 // Bounded world-space slots share the Web/Three local attenuation and cone policy.
+// I-C23 分层消费核在本模块内以普通函数 + 独立入口(fragment_*_layered)存在:
+// 普通入口的调用图不触及层绑定(binding 11..19),naga 静态使用分析使普通
+// 管线沿用 v1 材质 layout(160B 基础块、五纹理)完全不变;分层管线族用扩展
+// layout(0..10 同构 + 11 的 304B 块 + 12..19 四对层纹理)。层循环的
+// textureSample 处在按管线常量的分支内,与 Web 分层合成一致关闭
+// derivative_uniformity 诊断。
+diagnostic(off, derivative_uniformity);
 struct LocalLight {
   positionRange: vec4f, directionKind: vec4f, radianceOuter: vec4f, coneDecay: vec4f,
 };
@@ -237,6 +244,24 @@ fn section_rejected(world: vec3f) -> bool {
 @group(1) @binding(8) var normal_sampler: sampler;
 @group(1) @binding(9) var emissive_map: texture_2d<f32>;
 @group(1) @binding(10) var emissive_sampler: sampler;
+// I-C23 分层材质:group 1 延续 0..10;11 为 304B 层块(Web DeepLayerSurfaceBlock
+// 同构:header 16B + 2×144B 行),12..19 为四对层纹理/采样器([base0,mr0,base1,mr1],
+// UV set/仿射变换打包在行内)。能力合同常量与 Web 同为 19 个片段采样纹理,
+// native 实际占 13(shadow/env/LUT 4 + 基材 5 + 层 4)。
+struct DeepLayerSurfaceRow {
+  params0: vec4f, params1: vec4f, colorCoverage: vec4f, surfaceMode: vec4f,
+  baseRow0: vec4f, baseRow1: vec4f, mrRow0: vec4f, mrRow1: vec4f, indices: vec4u,
+};
+struct DeepLayerSurfaceBlock { header: vec4u, rows: array<DeepLayerSurfaceRow, 2> };
+@group(1) @binding(11) var<uniform> deep_layer_surface: DeepLayerSurfaceBlock;
+@group(1) @binding(12) var deep_layer_base0: texture_2d<f32>;
+@group(1) @binding(13) var deep_layer_base_sampler0: sampler;
+@group(1) @binding(14) var deep_layer_mr0: texture_2d<f32>;
+@group(1) @binding(15) var deep_layer_mr_sampler0: sampler;
+@group(1) @binding(16) var deep_layer_base1: texture_2d<f32>;
+@group(1) @binding(17) var deep_layer_base_sampler1: sampler;
+@group(1) @binding(18) var deep_layer_mr1: texture_2d<f32>;
+@group(1) @binding(19) var deep_layer_mr_sampler1: sampler;
 
 struct VertexOutput {
   @builtin(position) clip: vec4f,
@@ -489,10 +514,148 @@ struct NativeMeshCapture {
   @location(1) normalRoughness: vec4f,
 };
 
+// I-C23 光照响应核:同一表面输入的 stock 直射+局部光+IBL 出射(Web 层求值
+// stock 分支的同构)。visibility 由入口按阴影来源注入(级联 vs RT ray query);
+// rough_raw 先夹取再加几何粗糙度,与基材路径逐位一致。层 ior 经介电 F0 通道
+// 消费(Web compose 后 select(v.dielectric, deepDielectricF0(params.x), x>=1)
+// 的同式);层的 clearcoat/各向异性/透射词随块携带但 stock 核不评,与 native
+// 基材无 extendedParameters 求值同界(诚实能力边界,见规格)。
+fn native_lit_response(
+  input: VertexOutput,
+  normal: vec3f,
+  geometry_normal: vec3f,
+  base: vec3f,
+  metal: f32,
+  rough_raw: f32,
+  dielectric: f32,
+  ao: f32,
+  emission: vec3f,
+  view: vec3f,
+  light: vec3f,
+  visibility: f32,
+) -> vec3f {
+  if (flag(input.material.w, 64u)) { return base; }
+  let rough = min(1.0, clamp(rough_raw, 0.045, 1.0) + native_view_geometry_roughness(geometry_normal));
+  let authored_light = frame.sunColor.w >= 2.0;
+  let sun = select(vec3f(3.2, 3.0, 2.8), frame.sunColor.rgb, authored_light);
+  var color = brdfWithDielectricF0(normal, view, light, base, metal, rough, dielectric)
+    * sun * visibility;
+  let nv = clamp(dot(normal, view), 0.001, 1.0);
+  var dfg = vec2f(0.0);
+  let direct_lit = dot(normal, light) > 0.0 && any(sun > vec3f(0.0));
+  if (frame.background.w > 0.5 || direct_lit) {
+    dfg = textureSampleLevel(brdf_lut, environment_sampler, vec2f(nv, rough), 0.0).rg;
+  }
+  if (direct_lit) {
+    color += native_direct_multiscattering(normal, light, base, metal, rough, dielectric, dfg) * sun * visibility;
+  }
+  if (frame.sunColor.w == 3.0) {
+    color += local_direct_lighting(input.world, normal, view, base, metal, rough, !flag(input.material.w,16u), ao, dielectric, input.clip, dfg, frame.background.w > 0.5 || direct_lit);
+  }
+  if (frame.background.w > 0.5) {
+    // Zero is the legacy/default value; authored GI uses the reserved
+    // fog-projection W lane without changing the frame ABI size.
+    let global_illumination = select(1.0, frame.fogProjection.w, frame.fogProjection.w > 0.0);
+    // J2-B3 白炉修复(与 web pbrShader.ts C12 修复式逐式对齐):IBL 漫反射/高光
+    // 的能量分配必须用同一 split-sum 分数。修复后 total = (1−fraction) + fraction ≡ 1,
+    // 对任意 f0/rough/nv 构造性守恒;金属路径与镜面极限逐位不变。
+    // 逐字锁定断言:deep_engine_native::white_furnace
+    // ::native_mesh_ibl_split_keeps_ts_authoritative_formula。
+    let f0 = mix(vec3f(dielectric), base, metal);
+    let energy_compensation = vec3f(1.0)
+      + f0 * (1.0 / max(dfg.x + dfg.y, 0.05) - 1.0);
+    let specular_fraction = clamp(f0 * dfg.x + dfg.y, vec3f(0.0), vec3f(1.0)) * energy_compensation;
+    let irradiance = textureSampleLevel(
+      diffuse_environment, environment_sampler, normal, 0.0).rgb;
+    let ambient_occlusion = clamp(ao, 0.0, 1.0);
+    color += (1.0 - specular_fraction) * (1.0 - metal) * base * irradiance * ambient_occlusion * global_illumination;
+    // F3:探针 GI 作为环境漫射的近场补偿叠加进 ambient;开关为 0 时
+    // probe_gi_irradiance 返回零,加零不改既有结果。
+    let probe_irradiance = probe_gi_irradiance(input.world, normal);
+    color += base * (1.0 - metal) * probe_irradiance * ambient_occlusion / 3.141592653589793;
+    let reflection = safe_normalize(reflect(-view, normal), normal);
+    let max_specular_lod = f32(textureNumLevels(specular_environment) - 1u);
+    let radiance = textureSampleLevel(
+      specular_environment, environment_sampler, reflection, rough * max_specular_lod).rgb;
+    color += radiance * specular_fraction * ambient_occlusion * global_illumination;
+  }
+  color += input.emissive_alpha.rgb * emission;
+  return color;
+}
+
+// I-C23 层栈消费(Web layerShade 同构):每活动层独立求值响应后在响应级凸混合
+// (deepLayerBlend,wgsl/materialLayerBlend.wgsl 单源)。应用序 = 行序;层 0 先混,
+// 层 1 作用于层 0 的结果。按层覆盖旗标 bit0/1/2 = 颜色/金属/粗糙覆盖,层纹理
+// 各带独立 UV set 与仿射行(baseRow*.w 选择器:0 无纹理,1/2 = UV0/UV1)。
+fn deep_layer_stack(
+  underlying: vec3f,
+  input: VertexOutput,
+  normal: vec3f,
+  geometry_normal: vec3f,
+  base: vec3f,
+  metal: f32,
+  rough_raw: f32,
+  ao: f32,
+  emission: vec3f,
+  view: vec3f,
+  light: vec3f,
+  visibility: f32,
+) -> vec3f {
+  var result = underlying;
+  for (var index = 0u; index < min(deep_layer_surface.header.x, 2u); index++) {
+    let row = deep_layer_surface.rows[index];
+    let flags = u32(row.surfaceMode.w);
+    var layer_base = select(base, row.colorCoverage.rgb, (flags & 1u) != 0u);
+    var layer_metal = clamp(select(metal, row.surfaceMode.x, (flags & 2u) != 0u), 0.0, 1.0);
+    var layer_rough = select(rough_raw, row.surfaceMode.y, (flags & 4u) != 0u);
+    var coverage = row.colorCoverage.w;
+    if (row.baseRow0.w > 0.5) {
+      let uv = transformed_uv(input.uv0, input.uv1, row.baseRow0, row.baseRow1);
+      var color: vec4f;
+      if (index == 0u) { color = textureSample(deep_layer_base0, deep_layer_base_sampler0, uv); }
+      else { color = textureSample(deep_layer_base1, deep_layer_base_sampler1, uv); }
+      layer_base *= color.rgb; coverage *= color.a;
+    }
+    if (row.mrRow0.w > 0.5) {
+      let uv = transformed_uv(input.uv0, input.uv1, row.mrRow0, row.mrRow1);
+      var mr: vec4f;
+      if (index == 0u) { mr = textureSample(deep_layer_mr0, deep_layer_mr_sampler0, uv); }
+      else { mr = textureSample(deep_layer_mr1, deep_layer_mr_sampler1, uv); }
+      layer_metal = clamp(layer_metal * mr.b, 0.0, 1.0);
+      layer_rough *= mr.g;
+    }
+    let dielectric = select(input.dielectric, deepDielectricF0(row.params0.x), row.params0.x >= 1.0);
+    let layer = native_lit_response(input, normal, geometry_normal, layer_base, layer_metal,
+      layer_rough, dielectric, ao, emission, view, light, visibility);
+    result = deepLayerBlend(result, layer, layer, coverage, u32(row.surfaceMode.z));
+  }
+  return result;
+}
+
+struct NativeMeshShading {
+  color: vec3f,
+  normal: vec3f,
+  rough: f32,
+  alpha: f32,
+  geometry_normal: vec3f,
+  base: vec3f,
+  metal: f32,
+  rough_raw: f32,
+  ao: f32,
+  emission: vec3f,
+  view: vec3f,
+  light: vec3f,
+  visibility: f32,
+}
+
+// naga collects uniform-resource usage by static call-graph reachability, so a
+// runtime `if (layered)` branch inside a shared body still binds group1@11 for
+// every entry point. The layer stack therefore lives ONLY in the *_layered
+// entry wrappers below; the core path keeps its original per-bit sequence.
 fn shade_native_mesh(
   input: VertexOutput,
   front_facing: bool,
-) -> NativeMeshSurface {
+) -> NativeMeshShading {
   if (section_rejected(input.world)) { discard; }
   var base_sample = vec4f(1.0); var mr_sample = vec4f(1.0);
   var ao = 1.0; var emission = vec3f(1.0);
@@ -517,86 +680,71 @@ fn shade_native_mesh(
   if (flag(input.material.w, 2u) && alpha < input.material.y) { discard; }
   let base = input.base_color.rgb * base_sample.rgb;
   let metal = clamp(input.base_color.w * mr_sample.b, 0.0, 1.0);
+  let rough_raw = input.material.x * mr_sample.g;
   let geometry_normal = oriented_normal(input, front_facing);
-  let rough = min(1.0, clamp(input.material.x * mr_sample.g, 0.045, 1.0) + native_view_geometry_roughness(geometry_normal));
+  let rough = min(1.0, clamp(rough_raw, 0.045, 1.0) + native_view_geometry_roughness(geometry_normal));
   var normal = geometry_normal;
   if (material_textures.normal_row_0.w > 0.5) { normal = mapped_normal(input, front_facing); }
   let authored_light = frame.sunColor.w >= 2.0;
-  var surface_color = base;
-  if (!flag(input.material.w, 64u)) {
   let view = safe_normalize(frame.eye.xyz - input.world, vec3f(0.0, 0.0, 1.0));
   let light = safe_normalize(frame.lightDirection.xyz, vec3f(0.0, 1.0, 0.0));
   let visibility = select(shadow_visibility(input.world, normal, max(dot(normal, light), 0.0)),
     1.0, flag(input.material.w, 16u) || (authored_light && frame.lightingOptions.y == 0.0));
-  let sun = select(vec3f(3.2, 3.0, 2.8), frame.sunColor.rgb, authored_light);
-  let dielectric = input.dielectric;
-  var color = brdfWithDielectricF0(normal, view, light, base, metal, rough, dielectric)
-    * sun * visibility;
-  let nv = clamp(dot(normal, view), 0.001, 1.0);
-  var dfg = vec2f(0.0);
-  let direct_lit = dot(normal, light) > 0.0 && any(sun > vec3f(0.0));
-  if (frame.background.w > 0.5 || direct_lit) {
-    dfg = textureSampleLevel(brdf_lut, environment_sampler, vec2f(nv, rough), 0.0).rg;
-  }
-  if (direct_lit) {
-    color += native_direct_multiscattering(normal, light, base, metal, rough, dielectric, dfg) * sun * visibility;
-  }
-  if (frame.sunColor.w == 3.0) {
-    color += local_direct_lighting(input.world, normal, view, base, metal, rough, !flag(input.material.w,16u), ao, dielectric, input.clip, dfg, frame.background.w > 0.5 || direct_lit);
-  }
-  if (frame.background.w > 0.5) {
-    // Zero is the legacy/default value; authored GI uses the reserved
-    // fog-projection W lane without changing the frame ABI size.
-    let global_illumination = select(1.0, frame.fogProjection.w, frame.fogProjection.w > 0.0);
-    // J2-B3 白炉修复(与 web pbrShader.ts C12 修复式逐式对齐):IBL 漫反射/高光
-    // 的能量分配必须用同一 split-sum 分数。原实现把漫反射储备定在镜面 Schlick
-    // (rough→1 时坍缩为 1−f0),而高光实际交付 LUT 分数(rough→1 时
-    // f0·dfg.x+dfg.y ≈ 0.0135),白粗糙面总出射 ≈0.9735E → 白炉欠冲
-    // (native 真机实测:墙腿 mean −2.566% / max −2.588%,与 web C12 的 −2.637%
-    // 同量级)。修复后 total = (1−fraction) + fraction ≡ 1,对任意 f0/rough/nv
-    // 构造性守恒;金属路径(漫反射为 0)与镜面极限(fraction→f0)逐位不变。
-    // 逐字锁定断言:deep_engine_native::white_furnace
-    // ::native_mesh_ibl_split_keeps_ts_authoritative_formula。
-    let f0 = mix(vec3f(dielectric), base, metal);
-    let energy_compensation = vec3f(1.0)
-      + f0 * (1.0 / max(dfg.x + dfg.y, 0.05) - 1.0);
-    let specular_fraction = clamp(f0 * dfg.x + dfg.y, vec3f(0.0), vec3f(1.0)) * energy_compensation;
-    let irradiance = textureSampleLevel(
-      diffuse_environment, environment_sampler, normal, 0.0).rgb;
-    let ambient_occlusion = clamp(ao, 0.0, 1.0);
-    color += (1.0 - specular_fraction) * (1.0 - metal) * base * irradiance * ambient_occlusion * global_illumination;
-    // F3:探针 GI 作为环境漫射的近场补偿叠加进 ambient;开关为 0 时
-    // probe_gi_irradiance 返回零,加零不改既有结果。
-    let probe_irradiance = probe_gi_irradiance(input.world, normal);
-    color += base * (1.0 - metal) * probe_irradiance * ambient_occlusion / 3.141592653589793;
-    let reflection = safe_normalize(reflect(-view, normal), normal);
-    let max_specular_lod = f32(textureNumLevels(specular_environment) - 1u);
-    let radiance = textureSampleLevel(
-      specular_environment, environment_sampler, reflection, rough * max_specular_lod).rgb;
-    color += radiance * specular_fraction * ambient_occlusion * global_illumination;
-  }
-  color += input.emissive_alpha.rgb * emission;
-  surface_color = color;
-  }
-  let exposure = select(1.0, frame.lightingOptions.x, authored_light);
+  let surface_color = native_lit_response(input, normal, geometry_normal, base, metal,
+    rough_raw, input.dielectric, ao, emission, view, light, visibility);
+  return NativeMeshShading(surface_color, normal, rough, alpha, geometry_normal, base, metal,
+    rough_raw, ao, emission, view, light, visibility);
+}
+
+// 曝光/雾收尾:普通与分层入口共用,顺序与拆分前逐位一致(先雾后曝光)。
+fn finish_native_mesh(color: vec3f, input: VertexOutput, authored_light: bool) -> vec3f {
+  var out = color;
   if (frame.fogProjection.z == 2.0 && !flag(input.material.w, 32u)) {
     // clip W is signed camera-space depth; no radial-distance or fixed near/far approximation.
     let camera_depth = max((frame.view * vec4f(input.world, 1.0)).w, 0.0);
     let optical_depth = frame.tuning.w * camera_depth;
     let amount = clamp(1.0 - exp(-optical_depth * optical_depth), 0.0, 1.0);
-    surface_color = mix(surface_color, frame.tuning.rgb, amount);
+    out = mix(out, frame.tuning.rgb, amount);
   }
-  let output_alpha = select(1.0, alpha, flag(input.material.w, 4u));
-  return NativeMeshSurface(vec4f(surface_color * exposure, output_alpha), vec4f(normal * 0.5 + 0.5, rough));
+  return out * select(1.0, frame.lightingOptions.x, authored_light);
 }
 
 @fragment fn fragment_main(input: VertexOutput, @builtin(front_facing) front_facing: bool) -> @location(0) vec4f {
-  return shade_native_mesh(input, front_facing).color;
+  let shaded = shade_native_mesh(input, front_facing);
+  let color = finish_native_mesh(shaded.color, input, frame.sunColor.w >= 2.0);
+  let output_alpha = select(1.0, shaded.alpha, flag(input.material.w, 4u));
+  return vec4f(color, output_alpha);
 }
 
 @fragment fn fragment_normal_capture(input: VertexOutput, @builtin(front_facing) front_facing: bool) -> NativeMeshCapture {
-  let surface = shade_native_mesh(input, front_facing);
-  return NativeMeshCapture(surface.color, surface.normalRoughness);
+  let shaded = shade_native_mesh(input, front_facing);
+  let color = finish_native_mesh(shaded.color, input, frame.sunColor.w >= 2.0);
+  let output_alpha = select(1.0, shaded.alpha, flag(input.material.w, 4u));
+  return NativeMeshCapture(vec4f(color, output_alpha), vec4f(shaded.normal * 0.5 + 0.5, shaded.rough));
+}
+
+// I-C23 分层入口:只有分层管线族(扩展 layout)创建;层栈只被 *_layered 包装
+// 引用,普通入口调用图不含层函数,binding 11..19 对 v1 layout 静态未用。
+// 分层混合在曝光/雾之前(Web 层响应含雾、native 在混合后一次性施加;
+// replace 模式由线性可拆性逐位等价,overlay 差二阶,白炉环境无雾不受影响)。
+@fragment fn fragment_main_layered(input: VertexOutput, @builtin(front_facing) front_facing: bool) -> @location(0) vec4f {
+  let shaded = shade_native_mesh(input, front_facing);
+  let layered_color = deep_layer_stack(shaded.color, input, shaded.normal, shaded.geometry_normal,
+    shaded.base, shaded.metal, shaded.rough_raw, shaded.ao, shaded.emission,
+    shaded.view, shaded.light, shaded.visibility);
+  let color = finish_native_mesh(layered_color, input, frame.sunColor.w >= 2.0);
+  let output_alpha = select(1.0, shaded.alpha, flag(input.material.w, 4u));
+  return vec4f(color, output_alpha);
+}
+
+@fragment fn fragment_normal_capture_layered(input: VertexOutput, @builtin(front_facing) front_facing: bool) -> NativeMeshCapture {
+  let shaded = shade_native_mesh(input, front_facing);
+  let layered_color = deep_layer_stack(shaded.color, input, shaded.normal, shaded.geometry_normal,
+    shaded.base, shaded.metal, shaded.rough_raw, shaded.ao, shaded.emission,
+    shaded.view, shaded.light, shaded.visibility);
+  let color = finish_native_mesh(layered_color, input, frame.sunColor.w >= 2.0);
+  let output_alpha = select(1.0, shaded.alpha, flag(input.material.w, 4u));
+  return NativeMeshCapture(vec4f(color, output_alpha), vec4f(shaded.normal * 0.5 + 0.5, shaded.rough));
 }
 
 @fragment fn outline_mask_fragment(input: VertexOutput) -> @location(0) vec4f {

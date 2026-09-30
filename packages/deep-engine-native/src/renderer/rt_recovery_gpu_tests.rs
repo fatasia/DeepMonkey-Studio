@@ -79,6 +79,7 @@ fn rt_residency_rebuild_after_device_loss_is_self_sufficient() {
         &device,
         &queue,
         &material_layout,
+        None,
         &packet,
         scene_content_key(&packet),
         &prepared,
@@ -157,7 +158,7 @@ fn rt_residency_rebuild_after_device_loss_is_self_sufficient() {
     // ---- 阶段 C:重建后的 frame RT 槽恢复(生产路径的槽位状态机)----
     // 干净态:刚重建、槽未挂、管线族未装——逐帧裁决必须回退栅格,绝不
     // 使用半途状态。
-    let ready_before_slot = rt_opaque_ready::<wgpu::BindGroup>(Some(&residency_b), None, false);
+    let ready_before_slot = rt_opaque_ready::<wgpu::BindGroup>(Some(&residency_b), None, false, false);
     assert!(
         ready_before_slot.is_none(),
         "rebuilt residency without the frame RT slot must fall back to raster"
@@ -205,7 +206,7 @@ fn rt_residency_rebuild_after_device_loss_is_self_sufficient() {
         &create_native_mesh_rt_shader(&device),
     );
     residency_b.install_pixel_pipelines(rt_pipelines);
-    let ready_after_recovery = rt_opaque_ready(Some(&residency_b), Some(&rt_group), false);
+    let ready_after_recovery = rt_opaque_ready(Some(&residency_b), Some(&rt_group), false, false);
     assert!(
         ready_after_recovery.is_some(),
         "after re-binding the frame RT slot and reinstalling pipelines the frame loop must take the RT branch again"

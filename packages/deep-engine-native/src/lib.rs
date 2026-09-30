@@ -61,6 +61,12 @@ pub mod native_physics;
 pub mod physics_sdf_mesh;
 pub mod native_ui;
 pub mod pbr_brdf;
+/// I-C23 分层材质:304B 层块打包 + 求值响应级凸混合 CPU 参考(Web 单源镜像)。
+pub mod pbr_layered;
+
+#[cfg(test)]
+#[path = "pbr_layered_contract_tests.rs"]
+mod pbr_layered_contract_tests;
 pub mod pbr_reference;
 pub mod pbr_texture;
 pub mod platform_text;

@@ -3,7 +3,10 @@ use std::sync::Arc;
 use bytemuck::cast_slice;
 use deep_engine_native::mesh_abi::MATERIAL_UNIFORM_BYTES;
 use deep_engine_native::mesh_abi::MATERIAL_UNIFORM_FLOATS;
-use deep_engine_native::pbr_texture::{PreparedMaterial, PreparedPbrResources, PreparedPbrSummary};
+use deep_engine_native::pbr_layered::LAYERED_SURFACE_BLOCK_BYTES;
+use deep_engine_native::pbr_texture::{
+    PreparedLayeredMaterial, PreparedMaterial, PreparedPbrResources, PreparedPbrSummary,
+};
 use wgpu::util::DeviceExt;
 
 use crate::gpu_texture_upload::{GpuTexture, create_fallbacks, upload_texture};
@@ -15,6 +18,80 @@ pub struct GpuMaterial {
     pub normal_mapped: bool,
     pub base_color_mapped: bool,
     pub textured: bool,
+    /// I-C23 分层绑定:304B uniform + 4 个借用纹理槽([base0, mr0, base1, mr1])。
+    /// 只有调用方提供分层 layout 且材质声明层行时才驻留。
+    pub layered: Option<LayeredGpuMaterial>,
+}
+
+pub struct LayeredGpuMaterial {
+    _uniform: wgpu::Buffer,
+    texture_slots: [Option<Arc<GpuTexture>>; 4],
+    pub bind_group: wgpu::BindGroup,
+}
+
+/// I-C23 分层材质 layout:与 v1 完全同构的 0..10 槽 + binding 11 的 304B
+/// uniform + bindings 12..19 的四对层纹理/采样器(与 Web 分层能力同语义,
+/// 片段采样纹理预算合同常量为 19,native 实际占 13)。
+pub fn create_layered_material_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    let texture = |binding| wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+            view_dimension: wgpu::TextureViewDimension::D2,
+            multisampled: false,
+        },
+        count: None,
+    };
+    let sampler = |binding| wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+        count: None,
+    };
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("Deep Engine native layered PBR material layout v1"),
+        entries: &[
+            texture(0),
+            sampler(1),
+            texture(2),
+            sampler(3),
+            wgpu::BindGroupLayoutEntry {
+                binding: 4,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(MATERIAL_UNIFORM_BYTES),
+                },
+                count: None,
+            },
+            texture(5),
+            sampler(6),
+            texture(7),
+            sampler(8),
+            texture(9),
+            sampler(10),
+            wgpu::BindGroupLayoutEntry {
+                binding: 11,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(LAYERED_SURFACE_BLOCK_BYTES as u64),
+                },
+                count: None,
+            },
+            texture(12),
+            sampler(13),
+            texture(14),
+            sampler(15),
+            texture(16),
+            sampler(17),
+            texture(18),
+            sampler(19),
+        ],
+    })
 }
 
 pub struct GpuPbrResources {
@@ -137,6 +214,7 @@ impl GpuPbrResources {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         layout: &wgpu::BindGroupLayout,
+        layered_layout: Option<&wgpu::BindGroupLayout>,
         prepared: &PreparedPbrResources,
     ) -> Result<Self, String> {
         let limit = device.limits().max_texture_dimension_2d;
@@ -163,7 +241,15 @@ impl GpuPbrResources {
             .materials
             .iter()
             .map(|material| {
-                GpuMaterial::new(device, layout, material, &textures, &fallbacks).map(Arc::new)
+                GpuMaterial::new(
+                    device,
+                    layout,
+                    layered_layout,
+                    material,
+                    &textures,
+                    &fallbacks,
+                )
+                .map(Arc::new)
             })
             .collect::<Result<Vec<_>, String>>()?;
         Ok(Self::from_resources(
@@ -193,6 +279,7 @@ impl GpuMaterial {
     pub(crate) fn new(
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
+        layered_layout: Option<&wgpu::BindGroupLayout>,
         material: &PreparedMaterial,
         textures: &[Arc<GpuTexture>],
         fallbacks: &[GpuTexture],
@@ -237,6 +324,21 @@ impl GpuMaterial {
             layout,
             entries: &entries,
         });
+        let layered = match (layered_layout, &material.layered) {
+            (Some(layered_layout), Some(prepared)) => Some(LayeredGpuMaterial::new(
+                device,
+                layered_layout,
+                &uniform,
+                &texture_slots,
+                prepared,
+                textures,
+                fallbacks,
+            )?),
+            // 无分层 layout 或材质未声明层行:普通绑定即可(层词不进 160B 块)。
+            // 提供 layout 但材质声明了层行却落 None 只发生在 custom ShaderPackage
+            // 路径(那里由调用方 fail-closed 拒绝),此处不静默吞层。
+            _ => None,
+        };
         Ok(Self {
             _uniform: uniform,
             texture_slots,
@@ -244,6 +346,71 @@ impl GpuMaterial {
             normal_mapped: material.normal_mapped,
             base_color_mapped: material.texture_indices[0].is_some(),
             textured: material.texture_indices.iter().any(Option::is_some),
+            layered,
+        })
+    }
+}
+
+impl LayeredGpuMaterial {
+    /// 分层 bind group = 完整 0..19 槽(pipeline 只有一个材质 bind group):
+    /// 0..10 复用基础 uniform 与基础纹理槽,11 为独立 304B 块,12..19 为
+    /// 层纹理([base0, mr0, base1, mr1]),缺槽借中性 fallback(仅未纹理层需要)。
+    fn new(
+        device: &wgpu::Device,
+        layout: &wgpu::BindGroupLayout,
+        base_uniform: &wgpu::Buffer,
+        base_slots: &[Option<Arc<GpuTexture>>; 5],
+        prepared: &PreparedLayeredMaterial,
+        textures: &[Arc<GpuTexture>],
+        fallbacks: &[GpuTexture],
+    ) -> Result<Self, String> {
+        let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Deep Engine native layered material 304B uniform v1"),
+            contents: cast_slice(&prepared.block),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let texture_slots: [Option<Arc<GpuTexture>>; 4] = std::array::from_fn(|slot| {
+            prepared.texture_indices[slot].map(|index| Arc::clone(&textures[index]))
+        });
+        let base_backing = |slot: usize| {
+            base_slots[slot]
+                .as_deref()
+                .unwrap_or(&fallbacks[slot % fallbacks.len()])
+        };
+        let mut entries = vec![
+            view_entry(0, base_backing(0)),
+            sampler_entry(1, base_backing(0)),
+            view_entry(2, base_backing(1)),
+            sampler_entry(3, base_backing(1)),
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: base_uniform.as_entire_binding(),
+            },
+            view_entry(5, base_backing(3)),
+            sampler_entry(6, base_backing(3)),
+            view_entry(7, base_backing(2)),
+            sampler_entry(8, base_backing(2)),
+            view_entry(9, base_backing(4)),
+            sampler_entry(10, base_backing(4)),
+            wgpu::BindGroupEntry {
+                binding: 11,
+                resource: uniform.as_entire_binding(),
+            },
+        ];
+        for (slot, texture) in texture_slots.iter().enumerate() {
+            let backing = texture.as_deref().unwrap_or(&fallbacks[slot % fallbacks.len()]);
+            entries.push(view_entry(12 + slot as u32 * 2, backing));
+            entries.push(sampler_entry(13 + slot as u32 * 2, backing));
+        }
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Deep Engine native layered PBR material bindings v1"),
+            layout,
+            entries: &entries,
+        });
+        Ok(Self {
+            _uniform: uniform,
+            texture_slots,
+            bind_group,
         })
     }
 }
@@ -274,6 +441,7 @@ mod tests {
             normal_mapped: false,
             texture_indices: [None; 5],
             uniform: [value; MATERIAL_UNIFORM_FLOATS],
+            layered: None,
         }
     }
 
@@ -301,7 +469,7 @@ mod tests {
                 materials: vec![prepared("a", 0.25), prepared("b", 0.5)],
             };
             let initial_b = prepared.materials[1].uniform;
-            let mut pbr = GpuPbrResources::new(&device, &queue, &layout, &prepared).unwrap();
+            let mut pbr = GpuPbrResources::new(&device, &queue, &layout, None, &prepared).unwrap();
 
             let mut updated_b = initial_b;
             updated_b[7] = 42.0;

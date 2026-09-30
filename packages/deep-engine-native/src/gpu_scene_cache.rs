@@ -98,6 +98,9 @@ pub struct GpuSceneCache {
     /// 纹理/材质身份向量)。实例内容变化而资源身份不变时,刷新路径凭它
     /// 跳过纹理解码与整包内容哈希;`reset` 清空,commit 覆盖。
     pub(super) committed_manifest: Option<SceneResourceManifest>,
+    /// I-C23 分层材质 layout(None = 分层能力未启用;分层材质进包由 init 门
+    /// fail-closed 拒绝,不会走到静默丢层)。
+    pub(super) layered_material_layout: Option<wgpu::BindGroupLayout>,
 }
 
 /// Conservative default resident budget: twice the device buffer limit,
@@ -123,6 +126,7 @@ impl GpuSceneCache {
             latest_instance: Weak::new(),
             instance_ring: std::cell::RefCell::new(InstanceStagingRing::new()),
             fallbacks: Weak::new(),
+            layered_material_layout: None,
             live_bytes: 0,
             peak_live_bytes: 0,
             committed_manifest: None,
@@ -132,6 +136,16 @@ impl GpuSceneCache {
     /// Replaces the default resident-byte ceiling (builder-style).
     pub fn with_budget(mut self, budget_bytes: u64) -> Self {
         self.budget_bytes = budget_bytes;
+        self
+    }
+
+    /// I-C23:注入分层材质 layout(builder 式)。None 表示分层能力未启用;
+    /// 分层材质进包由 renderer init 门先行 fail-closed。
+    pub fn with_layered_material_layout(
+        mut self,
+        layout: Option<wgpu::BindGroupLayout>,
+    ) -> Self {
+        self.layered_material_layout = layout;
         self
     }
 

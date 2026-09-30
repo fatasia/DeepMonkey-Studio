@@ -169,6 +169,7 @@ impl RasterChain {
             &device,
             &queue,
             &material_layout,
+            None,
             packet,
             scene_content_key(packet),
             prepared,
@@ -343,6 +344,7 @@ fn device_without_ray_query_feature_stays_on_raster_and_matches_baseline() {
         &plain_device,
         &plain_queue,
         &plain_material_layout,
+        None,
         &packet,
         scene_content_key(&packet),
         &prepared,
@@ -464,6 +466,7 @@ fn all_blend_scene_is_rejected_from_residency_on_rt_device() {
         &device,
         &queue,
         &material_layout,
+        None,
         &packet,
         scene_content_key(&packet),
         &prepared,
@@ -504,6 +507,7 @@ fn rt_opaque_ready_matches_frame_loop_contract_on_real_objects() {
         &device,
         &queue,
         &material_layout,
+        None,
         &packet,
         scene_content_key(&packet),
         &prepared,
@@ -554,7 +558,7 @@ fn rt_opaque_ready_matches_frame_loop_contract_on_real_objects() {
     // ① 驻留在、槽已挂,但管线族缺失(error scope 捕获过创建错误后
     //    drop_pixel_pipelines 的形态)→ 回退栅格。
     assert!(
-        rt_opaque_ready(Some(&residency), Some(&rt_group), false).is_none(),
+        rt_opaque_ready(Some(&residency), Some(&rt_group), false, false).is_none(),
         "missing pixel pipelines must fall back to raster"
     );
     // ② 槽未挂(重建事务中段)→ 回退,即使管线族在。
@@ -565,16 +569,21 @@ fn rt_opaque_ready_matches_frame_loop_contract_on_real_objects() {
         &create_native_mesh_rt_shader(&device),
     ));
     assert!(
-        rt_opaque_ready::<wgpu::BindGroup>(Some(&residency), None, false).is_none(),
+        rt_opaque_ready::<wgpu::BindGroup>(Some(&residency), None, false, false).is_none(),
         "unbound frame RT slot must fall back to raster"
     );
     // ③ custom shader 批次场景 → 整帧回退(custom 只能绑普通 frame layout)。
     assert!(
-        rt_opaque_ready(Some(&residency), Some(&rt_group), true).is_none(),
+        rt_opaque_ready(Some(&residency), Some(&rt_group), true, false).is_none(),
         "custom shader scenes must fall back to raster"
     );
+    // ⑤ I-C23:分层材质场景 → 整帧回退(RT 分层消费留给后继,不静默丢层)。
+    assert!(
+        rt_opaque_ready(Some(&residency), Some(&rt_group), false, true).is_none(),
+        "layered material scenes must fall back to raster"
+    );
     // ④ 全就绪 → RT 分支,返回的正是 encode_opaque_pass_rt 消费的二元组。
-    let ready = rt_opaque_ready(Some(&residency), Some(&rt_group), false);
+    let ready = rt_opaque_ready(Some(&residency), Some(&rt_group), false, false);
     assert!(
         ready.is_some(),
         "fully ready residency must take the RT branch"

@@ -283,7 +283,7 @@ fn rt_opaque_ready_falls_back_when_residency_slot_is_empty() {
     // 帧循环必须回退栅格,无论其余槽位处于什么状态——重建未完成前绝不
     // 使用半途状态,也不引用旧实例残留。类型参数显式标注为帧循环里的
     // wgpu::BindGroup,便于脱离 GPU 钉死合同。
-    let fallback = rt_opaque_ready::<wgpu::BindGroup>(None, None, false);
+    let fallback = rt_opaque_ready::<wgpu::BindGroup>(None, None, false, false);
     assert!(
         fallback.is_none(),
         "empty residency slot must fall back to raster"
@@ -291,5 +291,5 @@ fn rt_opaque_ready_falls_back_when_residency_slot_is_empty() {
     // custom shader 场景同样整帧回退(custom 批次只能绑普通 frame
     // layout,RT 管线族对它不可用);裁决函数自身的条件优先级与
     // frame.rs 的消费顺序一致,驻留缺失先于其余条件短路。
-    assert!(rt_opaque_ready::<wgpu::BindGroup>(None, None, true).is_none());
+    assert!(rt_opaque_ready::<wgpu::BindGroup>(None, None, true, false).is_none());
 }

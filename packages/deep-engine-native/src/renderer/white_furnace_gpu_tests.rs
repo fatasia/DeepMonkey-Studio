@@ -241,6 +241,7 @@ fn render_furnace_frame(
         device,
         queue,
         &material_layout,
+        None,
         packet,
         scene_content_key(packet),
         &prepared,

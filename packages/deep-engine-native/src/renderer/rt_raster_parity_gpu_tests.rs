@@ -251,6 +251,7 @@ fn rt_and_raster_shadows_agree_directionally_same_scene() {
         &device,
         &queue,
         &material_layout,
+        None,
         &packet,
         scene_content_key(&packet),
         &prepared,

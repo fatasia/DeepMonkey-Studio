@@ -82,9 +82,114 @@ pub struct PbrMaterial {
     /// 缺省/true 接受场景雾；false 与 Browser 实例 ABI 的 bit 32 对齐。
     #[serde(default, deserialize_with = "present")]
     pub fog: Option<bool>,
+    /// I-C23 分层材质层栈(base + ≤2 层,每层自带扩展参数/覆盖率/混合语义/按层表面)。
+    /// Native 生产消费只吃 stock 分支语义:层的 ior 经介电 F0 通道、按层颜色/MR/UV、
+    /// coverage 与 replace/overlay 凸混合;层的 clearcoat/各向异性/透射词随 304B 块
+    /// 携带但 native 求值核不评(与 native 基材无 extendedParameters 求值同界)。
+    #[serde(default, deserialize_with = "present")]
+    pub layered: Option<LayeredMaterial>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+/// 扩展材质参数的层形态(与 TS `ExtendedMaterialParameters` 键值域同构,camelCase)。
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct LayerMaterialParams {
+    #[serde(default, deserialize_with = "present")]
+    pub ior: Option<f32>,
+    #[serde(default, deserialize_with = "present")]
+    pub clearcoat: Option<LayerClearcoatParams>,
+    #[serde(default, deserialize_with = "present")]
+    pub anisotropy: Option<LayerAnisotropyParams>,
+    #[serde(default, deserialize_with = "present")]
+    pub transmission: Option<LayerTransmissionParams>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct LayerClearcoatParams {
+    #[serde(default, deserialize_with = "present")]
+    pub factor: Option<f32>,
+    #[serde(default, deserialize_with = "present")]
+    pub roughness: Option<f32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct LayerAnisotropyParams {
+    #[serde(default, deserialize_with = "present")]
+    pub strength: Option<f32>,
+    #[serde(default, deserialize_with = "present")]
+    pub rotation: Option<f32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct LayerTransmissionParams {
+    #[serde(default, deserialize_with = "present")]
+    pub factor: Option<f32>,
+}
+
+/// 层混合语义(与 TS MATERIAL_LAYER_BLEND_MODE_CODES 互钉:replace=0 / overlay=1)。
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+pub enum LayerBlendMode {
+    #[serde(rename = "replace")]
+    Replace,
+    #[serde(rename = "overlay")]
+    Overlay,
+}
+
+impl LayerBlendMode {
+    /// GPU 打包码(wgsl/materialLayerBlend.wgsl 的 DEEP_LAYER_BLEND_MODE_*)。
+    pub fn code(self) -> f32 {
+        match self {
+            LayerBlendMode::Replace => 0.0,
+            LayerBlendMode::Overlay => 1.0,
+        }
+    }
+}
+
+/// 按层表面覆盖(独立颜色/金属度/粗糙度与该层自己的两张纹理槽)。
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct LayerSurface {
+    #[serde(default, deserialize_with = "present")]
+    pub base_color: Option<[f32; 3]>,
+    #[serde(default, deserialize_with = "present")]
+    pub metallic: Option<f32>,
+    #[serde(default, deserialize_with = "present")]
+    pub roughness: Option<f32>,
+    #[serde(default, deserialize_with = "present")]
+    pub base_color_texture: Option<TextureSlot>,
+    #[serde(default, deserialize_with = "present")]
+    pub metallic_roughness_texture: Option<TextureSlot>,
+}
+
+/// 单层定义:参数 + 覆盖率 + 混合语义 + 按层表面(全部可选,缺省即 TS 家族缺省)。
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct MaterialLayer {
+    #[serde(default, deserialize_with = "present")]
+    pub params: Option<LayerMaterialParams>,
+    #[serde(default, deserialize_with = "present")]
+    pub coverage: Option<f32>,
+    #[serde(default, deserialize_with = "present")]
+    pub mode: Option<LayerBlendMode>,
+    #[serde(default, deserialize_with = "present")]
+    pub surface: Option<LayerSurface>,
+}
+
+/// 层栈合同:base + ≤2 层。base 参数仅进 304B 契约(CPU 参考与序列化);
+/// GPU 基材响应沿用材质既有路径(native 无 extendedParameters 求值,与 Web
+/// stock 分支同界),层行才是 304B 块的实际载荷。
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct LayeredMaterial {
+    #[serde(default, deserialize_with = "present")]
+    pub base: Option<LayerMaterialParams>,
+    pub layers: Vec<MaterialLayer>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct TextureSlot {
     pub texture: String,

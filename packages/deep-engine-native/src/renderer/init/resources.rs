@@ -37,19 +37,32 @@ pub(super) fn pipelines(
     frame_layout: &wgpu::BindGroupLayout,
     shadow_frame_layout: &wgpu::BindGroupLayout,
     material_layout: &wgpu::BindGroupLayout,
+    layered_material_layout: Option<&wgpu::BindGroupLayout>,
+    layered_materials: bool,
     compact_content: bool,
 ) -> MeshPipelines {
     if compact_content {
         crate::pipeline::MeshPipelines::for_empty_scene()
     } else {
         let shader = create_native_mesh_shader(device);
-        create_mesh_pipelines(
-            device,
-            frame_layout,
-            shadow_frame_layout,
-            material_layout,
-            &shader,
-        )
+        match (layered_material_layout, layered_materials) {
+            (Some(layered_layout), true) => crate::pipeline::create_mesh_pipelines_with_layered(
+                device,
+                frame_layout,
+                shadow_frame_layout,
+                material_layout,
+                layered_layout,
+                &shader,
+            ),
+            // 无分层材质:不建分层管线族(管线预算与普通路径不变)。
+            _ => create_mesh_pipelines(
+                device,
+                frame_layout,
+                shadow_frame_layout,
+                material_layout,
+                &shader,
+            ),
+        }
     }
 }
 

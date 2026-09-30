@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use super::{
-    AlphaMode, CONTRACT_SCHEMA, CONTRACT_VERSION, RenderPacket,
+    AlphaMode, CONTRACT_SCHEMA, CONTRACT_VERSION, LayeredMaterial, RenderPacket,
     lod::validate_lod,
     uv_sets::MaterialFeatures,
     validate_geometry::{norm, validate_geometries, validate_material_geometry},
@@ -74,6 +74,9 @@ pub fn validate_packet(packet: &RenderPacket) -> Result<ContractSummary, String>
                 material.id
             ));
         }
+        if let Some(layered) = &material.layered {
+            validate_layered_material(material.id.as_str(), layered)?;
+        }
         material_features.insert(
             material.id.as_str(),
             MaterialFeatures::from_material(material),
@@ -133,6 +136,41 @@ pub fn validate_packet(packet: &RenderPacket) -> Result<ContractSummary, String>
 pub(super) fn unique_id(ids: &mut HashSet<String>, id: &str, label: &str) -> Result<(), String> {
     if id.is_empty() || id.len() > 256 || !ids.insert(id.to_string()) {
         return Err(format!("invalid or duplicate {label} id"));
+    }
+    Ok(())
+}
+
+/// I-C23 层栈 fail-closed 校验:层数 ≤2、coverage ∈ 0..1、表面覆盖通道 ∈ 0..1。
+/// 层纹理槽的 UV/变换/语义校验与既有一致(validate_texture::validate_material_slots
+/// 扩展覆盖层槽);此处只做数值域,纹理引用解析仍由 prepare 路径兜底报错。
+fn validate_layered_material(material: &str, layered: &LayeredMaterial) -> Result<(), String> {
+    if layered.layers.len() > 2 {
+        return Err(format!(
+            "material {material} layer stack accepts at most 2 layers"
+        ));
+    }
+    for (index, layer) in layered.layers.iter().enumerate() {
+        if layer
+            .coverage
+            .is_some_and(|value| !unit(value))
+        {
+            return Err(format!(
+                "material {material} layer {index} coverage must be in 0..1"
+            ));
+        }
+        let Some(surface) = &layer.surface else {
+            continue;
+        };
+        if surface
+            .base_color
+            .is_some_and(|values: [f32; 3]| values.iter().any(|&value| !unit(value)))
+            || surface.metallic.is_some_and(|value| !unit(value))
+            || surface.roughness.is_some_and(|value| !unit(value))
+        {
+            return Err(format!(
+                "material {material} layer {index} has a surface component outside 0..1"
+            ));
+        }
     }
     Ok(())
 }

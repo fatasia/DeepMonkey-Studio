@@ -19,9 +19,11 @@ use std::{fs::File, io::Read, path::Path};
 
 pub use lod::DEFAULT_LOD_HYSTERESIS_RATIO;
 pub use types::{
-    AlphaMode, GeometryResource, NormalTextureSlot, OcclusionTextureSlot, PbrMaterial, PixelLevel,
-    RenderInstance, RenderLodLevel, RenderLodProfile, RenderPacket, ShadingModel, TextureResource,
-    TextureSampler, TextureSemantic, TextureSlot,
+    AlphaMode, GeometryResource, LayerAnisotropyParams, LayerBlendMode, LayerClearcoatParams,
+    LayerMaterialParams, LayerSurface, LayeredMaterial, MaterialLayer, NormalTextureSlot,
+    OcclusionTextureSlot, PbrMaterial, PixelLevel, RenderInstance, RenderLodLevel,
+    RenderLodProfile, RenderPacket, ShadingModel, TextureResource, TextureSampler, TextureSemantic,
+    TextureSlot, LayerTransmissionParams,
 };
 pub use validate::{ContractSummary, validate_packet};
 

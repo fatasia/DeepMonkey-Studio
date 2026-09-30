@@ -26,7 +26,9 @@ pub(super) struct MaterialFeatures {
 
 impl MaterialFeatures {
     pub fn from_material(material: &PbrMaterial) -> Self {
-        let selected_uvs = [
+        // Layer slots append at runtime, so the set stays a Vec (the base
+        // slots contribute the initial five entries).
+        let mut selected_uvs: Vec<Option<u8>> = vec![
             material
                 .base_color_texture
                 .as_ref()
@@ -48,6 +50,24 @@ impl MaterialFeatures {
                 .as_ref()
                 .map(|slot| slot.tex_coord.unwrap_or(0)),
         ];
+        // I-C23 分层纹理槽参与同一 UV-set 需求合同:层槽声明 texCoord 1 时
+        // 几何必须驻留 uv1(与基材槽同规则)。
+        if let Some(layered) = &material.layered {
+            for layer in &layered.layers {
+                let Some(surface) = &layer.surface else {
+                    continue;
+                };
+                for slot in [
+                    surface.base_color_texture.as_ref(),
+                    surface.metallic_roughness_texture.as_ref(),
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    selected_uvs.push(Some(slot.tex_coord.unwrap_or(0)));
+                }
+            }
+        }
         Self {
             requires_uv0: selected_uvs.contains(&Some(0)),
             requires_uv1: selected_uvs.contains(&Some(1)),
