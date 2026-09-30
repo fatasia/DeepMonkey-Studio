@@ -46,6 +46,8 @@ mod editor_overlay;
 #[cfg(all(test, windows))]
 mod environment_probe_tests;
 mod environment_update;
+#[cfg(all(test, windows))]
+mod device_loss_probe;
 mod frame;
 mod frame_probes;
 mod frame_target;

@@ -40,6 +40,33 @@ function recoveryFixture(recovery?: DeviceRecoveryOptions) {
 }
 
 describe("C13 typed device-lost recovery (opt-in)", () => {
+  it.each(["unknown", "destroyed"])("notifies the idle product fallback once for %s loss with recovery omitted", async reason => {
+    const f = recoveryFixture(), session = await f.open();
+    const fatal = vi.fn(), recreated = vi.fn();
+    session.onFatalLoss(fatal); session.onDeviceRecreated(recreated);
+    f.first.fail({ reason: reason as GPUDeviceLostReason, message: "actual host loss" });
+    await vi.waitFor(() => expect(fatal).toHaveBeenCalledOnce());
+    expect(session.state).toBe("lost");
+    expect(fatal).toHaveBeenCalledWith({ kind: "lost", message: `device-lost/${reason}: actual host loss` });
+    expect(session.diagnostics).toEqual([{ kind: "lost", message: "actual host loss" }]);
+    f.first.fail({ reason: "unknown", message: "late duplicate" });
+    f.first.error("GPUInternalError", "late error");
+    await Promise.resolve();
+    expect(fatal).toHaveBeenCalledOnce(); expect(recreated).not.toHaveBeenCalled();
+    expect(f.adapter.requestDevice).toHaveBeenCalledOnce();
+    session.dispose(); expect(session.state).toBe("disposed");
+  });
+
+  it("allows the fallback consumer to dispose reentrantly and stays silent on late loss", async () => {
+    const f = recoveryFixture(), session = await f.open();
+    const fatal = vi.fn(() => session.dispose()); session.onFatalLoss(fatal);
+    f.first.fail({ reason: "destroyed", message: "destroy while renderer is resident" });
+    await vi.waitFor(() => expect(fatal).toHaveBeenCalledOnce());
+    expect(session.state).toBe("disposed");
+    f.first.fail({ reason: "unknown", message: "late callback" }); await Promise.resolve();
+    expect(fatal).toHaveBeenCalledOnce(); expect(f.adapter.requestDevice).toHaveBeenCalledOnce();
+  });
+
   it("recovers in-session from an unknown device loss: new device, surface reconfigured, resources retired, frames resumable", async () => {
     const f = recoveryFixture({ maxAttempts: 2, backoffMs: 1 });
     const session = await f.open();
@@ -146,12 +173,14 @@ describe("C13 typed device-lost recovery (opt-in)", () => {
   it("does not recover after an explicit dispose and stays silent on late destroyed loss", async () => {
     const f = recoveryFixture();
     const session = await f.open();
+    const fatal = vi.fn(); session.onFatalLoss(fatal);
     session.dispose();
     f.first.fail({ reason: "destroyed", message: "intentional" });
     await Promise.resolve();
     expect(session.state).toBe("disposed");
     expect(session.recoveryEvents).toEqual([]);
     expect(f.adapter.requestDevice).toHaveBeenCalledOnce();
+    expect(fatal).not.toHaveBeenCalled();
   });
 
   it("cancels a pending backoff retry on dispose and no further devices are requested", async () => {

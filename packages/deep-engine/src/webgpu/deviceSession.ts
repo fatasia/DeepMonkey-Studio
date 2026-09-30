@@ -167,8 +167,7 @@ export class DeviceSession {
       this.dispatchClassification(classification);
       // 未启用恢复（或已终态）时保持既有行为：立即置 lost 并留痕，渲染死掉、上层接管。
       if (!this.recoveryMachine && !this.isTerminal()) {
-        this.currentState = "lost";
-        this.events.push({ kind: "lost", message: classification.message });
+        this.fatalLoss(classification.code, classification.message);
       }
     });
   }
