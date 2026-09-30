@@ -206,6 +206,15 @@ export const DEEP_REFLECTION_PROBE_UNCONSTRAINED_STEP = 1000000000;
     preamble: `/** 反射探针盒投影视差校正核(真源 wgsl/reflectionProbeBoxProjection.wgsl)。 */\nexport const DEEP_REFLECTION_PROBE_BOX_PROJECTION_WGSL = /* wgsl */ `,
   },
   {
+    // I 级 C23 分层材质混合核。真源 wgsl/materialLayerBlend.wgsl,
+    // 纯 TS 消费(无 Rust 半;响应级层栈混合,与 T08 求值核正交)。
+    // 共享权重凸混合公式与 materialLayeredEvaluate.ts 的 CPU 闭式互钉,
+    // 一致性由 materialLayerBlendWgslChecksum.test.ts 锁定。
+    source: "materialLayerBlend.wgsl",
+    module: resolve(packageRoot, "src/shader/materialLayerBlendWgsl.ts"),
+    gate: "src/shader/materialLayerBlendWgslChecksum.test.ts",
+  },
+  {
     // A2 WGSL SDF 碰撞 profile 查询核。真源 wgsl/sdfCollisionQuery.wgsl,
     // Rust 半在 deep-engine-native/tests/sdf_collision_profile_truth.rs(测试侧
     // include_str! + sidecar 三方对拍)。合同:每 lane 输出独立(无归约/无原子,
