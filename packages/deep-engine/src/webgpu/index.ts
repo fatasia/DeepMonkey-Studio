@@ -15,6 +15,7 @@ export { DISABLED_QUALITY_TELEMETRY_SNAPSHOT, QUALITY_TELEMETRY_SCHEMA, QUALITY_
   QualityTelemetryCollector } from "./qualityTelemetry.js";
 export type { QualityFrameRecord, QualityTelemetrySnapshot, QualityTelemetryTotals } from "./qualityTelemetry.js";
 export { PbrRenderer } from "./pbrRenderer.js";
+export type { PipelineCompileRecord } from "./pipelineCache.js";
 export { createVirtualTextureFrameBridge, VirtualTextureFrameBridge, virtualTextureUvBounds } from "./virtualTextureFrameBridge.js";
 export type { VirtualTextureCatalogEntry, VirtualTextureFeedbackTotals, VirtualTextureFrameMetrics,
   VirtualTextureSampleRequest } from "./virtualTextureFrameBridge.js";

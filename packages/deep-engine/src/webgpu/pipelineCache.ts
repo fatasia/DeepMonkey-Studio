@@ -153,7 +153,7 @@ export class PipelineCompileCache {
     const existing = this.entries.get(fingerprint);
     if (existing) {
       this.hits += 1;
-      this.recordLog.push({ fingerprint, label: existing.label, durationMs: 0, cacheHit: true, failed: false,
+      this.appendRecord({ fingerprint, label: existing.label, durationMs: 0, cacheHit: true, failed: false,
         settledAtMs: this.now() });
       return existing.promise;
     }
@@ -188,8 +188,12 @@ export class PipelineCompileCache {
 
   private record(entry: CacheEntry, failed: boolean): void {
     const settledAtMs = this.now();
-    this.recordLog.push({ fingerprint: entry.fingerprint, label: entry.label,
+    this.appendRecord({ fingerprint: entry.fingerprint, label: entry.label,
       durationMs: Math.max(0, settledAtMs - entry.startedAtMs), cacheHit: false, failed, settledAtMs });
+  }
+
+  private appendRecord(record: PipelineCompileRecord): void {
+    this.recordLog.push(record);
     if (this.recordLog.length > 4096) this.recordLog.splice(0, this.recordLog.length - 4096);
   }
 }

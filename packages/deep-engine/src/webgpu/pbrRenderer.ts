@@ -2,6 +2,7 @@ import { DeviceSession } from "./deviceSession.js";
 import { uploadBuffer } from "./meshBuffers.js";
 import { authoredShadowPipelines, PBR_FRAME_UNIFORM_FLOATS, type Pipelines } from "./pipelines.js";
 import { openPbrRenderer } from "./pbrRendererBootstrap.js";
+import { snapshotPipelineCompileRecords } from "./pipelineCompileSnapshot.js";
 import { validatePbrFrame } from "./validatePbrFrame.js";
 import { RenderTargets } from "./renderTargets.js";
 import type { StudioEnvironment } from "./studioEnvironment.js";
@@ -77,6 +78,8 @@ export class PbrRenderer {
   private readonly diagnostics: PbrRendererDiagnostics; get gpuTimer() { return this.diagnostics.gpuTimer; }
   get performanceTelemetry() { return this.diagnostics.performance; } get transientTextureStats() { return this.targets.transientStats; }
   get materialBindingStats() { return this.packets.materialBindingStats; }
+  /** C26: immutable device compile ledger, copied only when requested. */
+  getPipelineCompileRecords() { return snapshotPipelineCompileRecords(this.session.device); }
   private readonly packets: PacketBuffers; private readonly ground: PbrGroundResources;
   private readonly frameBuffer: GPUBuffer;
   private readonly mainBindings: PbrMainBindings;
