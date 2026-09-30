@@ -15,8 +15,11 @@ import type { ProbeClipmapRuntimeOptions } from "./probeClipmapRuntime.js";
 import type { GpuParticleEmitter, GpuParticleEmitterRuntimeOptions } from "./gpuParticleEmitters.js";
 import type { VirtualTextureOptions } from "../virtualTextures/virtualTextureOptions.js";
 import type { DeviceRecoveryOptions } from "./deviceRecovery.js";
+import type { GpuParticleFlowField } from "./gpuParticleFlowFieldTypes.js";
 
 export interface RenderView extends PbrFrameUniformView {
+  /** Optional replayable curl field for existing particleEmitters; omission uses the original kernel. */
+  readonly particleFlow?: GpuParticleFlowField;
   readonly authorGrid?: AuthorGridView | undefined;
   readonly editorOverlay?: EditorOverlaySnapshot;
   readonly width: number; readonly height: number; readonly pixelRatio: number;

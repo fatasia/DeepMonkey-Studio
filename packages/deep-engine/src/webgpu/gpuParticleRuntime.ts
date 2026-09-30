@@ -13,6 +13,8 @@ import {
 import { GPU_PARTICLE_COMPUTE_WGSL, GPU_PARTICLE_RENDER_WGSL } from "./gpuParticleWgsl.js";
 import { GPU_PARTICLE_INDIRECT_DCIR } from "./gpuParticleIndirectDcir.js";
 import { runResourceCleanup } from "./resourceCleanup.js";
+import { GpuParticleFlowFieldStage } from "./gpuParticleFlowFieldStage.js";
+import { packGpuParticleFlowField, type GpuParticleFlowField, type PackedGpuParticleFlowField } from "./gpuParticleFlowFieldTypes.js";
 
 interface ParticleSlot {
   readonly state: GPUBuffer;
@@ -27,6 +29,7 @@ export interface GpuParticleRuntimeOptions {
 }
 export interface GpuParticleRuntimeFrameInput extends GpuParticleFrameInput {
   readonly bursts?: readonly GpuParticleBurstEvent[];
+  readonly flow?: GpuParticleFlowField;
 }
 export interface GpuParticleRenderBinding {
   readonly bindGroupIndex: 0;
@@ -72,6 +75,9 @@ export class GpuParticleRuntime {
   private snapshot: GpuParticleSnapshot | undefined;
   private terminal: Error | undefined;
   private burstStage: GpuParticleBurstStage | undefined;
+  private flowStage: GpuParticleFlowFieldStage | undefined;
+  private flowStaging: Promise<void> | undefined;
+  private readonly createdDevice: GPUDevice;
   private disposed = false;
   private released = false;
 
@@ -79,6 +85,7 @@ export class GpuParticleRuntime {
     options: GpuParticleRuntimeOptions = {}) {
     if (session.state !== "ready") throw new Error("GPU session is not ready for particles.");
     if (!/^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$/.test(deviceEpoch)) throw new TypeError("Invalid particle device epoch.");
+    this.createdDevice = session.device;
     this.deviceEpoch = deviceEpoch;
     const seeds = options.initialParticles ?? [];
     this.capacityEvidence = resolveGpuParticleCapacity(session.device, options.capacity, seeds.length);
@@ -121,7 +128,8 @@ export class GpuParticleRuntime {
   }
 
   get current(): GpuParticleSnapshot | undefined {
-    return !this.disposed && !this.terminal && this.session.state === "ready" ? this.snapshot : undefined;
+    return !this.disposed && !this.terminal && this.session.state === "ready"
+      && this.session.device === this.createdDevice ? this.snapshot : undefined;
   }
   get renderLayout(): GPUBindGroupLayout { return this.renderLayoutValue; }
 
@@ -129,7 +137,9 @@ export class GpuParticleRuntime {
     if (this.disposed) throw new Error("GPU particle runtime is disposed.");
     const frame = this.reserveFrame(input.frame);
     let packed: ReturnType<typeof packGpuParticleFrame>, burstPacket: PackedGpuParticleBurstFrame | undefined;
+    let flowPacket: PackedGpuParticleFlowField | undefined;
     try { packed = packGpuParticleFrame(input, this.capacityEvidence.capacity);
+      flowPacket = input.flow === undefined ? undefined : packGpuParticleFlowField(input.flow);
       if (input.bursts !== undefined && !this.burstStage
         && (!Array.isArray(input.bursts) || input.bursts.length > 0)) {
         throw new Error("Particle burst support is not configured.");
@@ -140,7 +150,7 @@ export class GpuParticleRuntime {
       return result(frame, "failed", this.current, new TypeError("Particle frame signal is invalid."));
     }
     if (signal?.aborted) return result(frame, "cancelled", this.current, signal.reason);
-    if (this.terminal || this.session.state !== "ready") {
+    if (this.terminal || this.session.state !== "ready" || this.session.device !== this.createdDevice) {
       return result(frame, "failed", undefined, this.terminal ?? new Error("Particle device is not ready."));
     }
     const generation = ++this.generation;
@@ -150,10 +160,13 @@ export class GpuParticleRuntime {
     try {
       await waitForAbort(Promise.all([this.allocationChecked, this.retirement ?? Promise.resolve()]), controller.signal);
       this.assertCurrent(generation, controller.signal);
+      if (flowPacket?.active) await waitForAbort(this.prepareFlow(), controller.signal);
+      this.assertCurrent(generation, controller.signal);
       this.session.device.queue.writeBuffer(this.frameUniform, 0, packed.bytes);
+      if (flowPacket?.active) this.flowStage!.upload(flowPacket.bytes);
       const target = this.activeSlot === 0 ? 1 : 0;
       if (burstPacket) this.burstStage?.upload(burstPacket);
-      const encoded = gpuValidatedStage(this.session.device, () => this.encode(target, burstPacket),
+      const encoded = gpuValidatedStage(this.session.device, () => this.encode(target, burstPacket, flowPacket?.active ?? false),
         "GPU particle command encoding failed");
       void encoded.checked.catch(() => {}); controller.signal.throwIfAborted();
       this.session.device.queue.submit([encoded.value]);
@@ -202,6 +215,17 @@ export class GpuParticleRuntime {
       layout: this.renderLayout, entries: [{ binding: 0, resource: { buffer: state } }] });
     return { state, counter, indirect, renderBinding };
   }
+  private prepareFlow(): Promise<void> {
+    if (this.flowStaging) return this.flowStaging;
+    if (this.flowStage) return Promise.resolve();
+    const candidate = gpuValidatedStage(this.createdDevice,
+      () => new GpuParticleFlowFieldStage(this.session, this.frameUniform, this.slots), "GPU particle flow allocation failed");
+    this.flowStage = candidate.value;
+    const checked = candidate.checked.catch(error => {
+      candidate.value.dispose(); if (this.flowStage === candidate.value) this.flowStage = undefined; throw error;
+    }).finally(() => { if (this.flowStaging === checked) this.flowStaging = undefined; });
+    this.flowStaging = checked; void checked.catch(() => {}); return checked;
+  }
   private allocate(label: string, size: number, usage: GPUBufferUsageFlags): GPUBuffer {
     const buffer = this.session.own(this.session.device.createBuffer({ label, size, usage }));
     this.buffers.push(buffer); return buffer;
@@ -221,16 +245,17 @@ export class GpuParticleRuntime {
     queue.writeBuffer(this.slots[0]!.indirect, 0, initial);
     queue.writeBuffer(this.slots[1]!.indirect, 0, new Uint32Array([6, 0, 0, 0]));
   }
-  private encode(target: number, burstPacket?: PackedGpuParticleBurstFrame): GPUCommandBuffer {
+  private encode(target: number, burstPacket: PackedGpuParticleBurstFrame | undefined, flow: boolean): GPUCommandBuffer {
     const encoder = this.session.device.createCommandEncoder({ label: "Deep GPU particle frame" });
     const pass = encoder.beginComputePass({ label: "Deep GPU particle simulation" });
     pass.setBindGroup(0, this.computeGroups[this.activeSlot]!);
     pass.setPipeline(this.pipelines.reset); pass.dispatchWorkgroups(1);
-    pass.setPipeline(this.pipelines.simulate);
-    pass.dispatchWorkgroups(Math.ceil(this.capacityEvidence.capacity / GPU_PARTICLE_WORKGROUP_SIZE));
+    if (flow) this.flowStage!.encode(pass, this.activeSlot, this.capacityEvidence.capacity);
+    else { pass.setPipeline(this.pipelines.simulate);
+      pass.dispatchWorkgroups(Math.ceil(this.capacityEvidence.capacity / GPU_PARTICLE_WORKGROUP_SIZE)); }
     const burstEncoded = burstPacket ? this.burstStage?.encode(pass, target, burstPacket) : false;
     pass.setPipeline(this.pipelines.indirect);
-    if (burstEncoded) pass.setBindGroup(0, this.computeGroups[this.activeSlot]!);
+    if (burstEncoded || flow) pass.setBindGroup(0, this.computeGroups[this.activeSlot]!);
     pass.dispatchWorkgroups(1); pass.end();
     return encoder.finish();
   }
@@ -247,7 +272,9 @@ export class GpuParticleRuntime {
   private assertCurrent(generation: number, signal: AbortSignal): void {
     signal.throwIfAborted();
     if (generation !== this.generation) throw abortError("GPU particle frame is stale.");
-    if (this.terminal || this.session.state !== "ready") throw this.terminal ?? new Error("Particle device is not ready.");
+    if (this.terminal || this.session.state !== "ready" || this.session.device !== this.createdDevice) {
+      throw this.terminal ?? new Error("Particle device epoch is no longer current.");
+    }
   }
   private handleDeviceLoss(reason: unknown): void {
     if (this.disposed || this.terminal) return;
@@ -262,6 +289,7 @@ export class GpuParticleRuntime {
   private releaseNow(): void {
     if (this.released) return; this.released = true;
     this.burstStage?.dispose(); this.burstStage = undefined;
+    this.flowStage?.dispose(); this.flowStage = undefined;
     runResourceCleanup("GPU particle resource disposal failed.", this.buffers.map(buffer =>
       () => this.session.release(buffer)));
   }

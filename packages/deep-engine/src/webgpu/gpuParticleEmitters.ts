@@ -1,5 +1,6 @@
 import type { DeviceSession } from "./deviceSession.js";
 import { GpuParticleRuntime, type GpuParticleFrameResult } from "./gpuParticleRuntime.js";
+import type { GpuParticleFlowField } from "./gpuParticleFlowFieldTypes.js";
 import {
   GPU_PARTICLE_DEFAULT_CAPACITY, GPU_PARTICLE_FLAG_LOOP, GPU_PARTICLE_FLAG_PULSE,
   GPU_PARTICLE_MAX_CAPACITY, resolveGpuParticleCapacity,
@@ -48,7 +49,9 @@ export interface GpuParticleEmitterRuntimeSetup {
   readonly program: GpuParticleEmitterProgram;
 }
 export interface GpuParticleEmitterRuntimeOptions { readonly capacity?: number }
-export interface GpuParticleEmitterFrameInput { readonly frame?: number; readonly deltaTime: number }
+export interface GpuParticleEmitterFrameInput {
+  readonly frame?: number; readonly deltaTime: number; readonly flow?: GpuParticleFlowField;
+}
 
 interface NormalizedEmitter {
   readonly source: GpuParticleEmitter;

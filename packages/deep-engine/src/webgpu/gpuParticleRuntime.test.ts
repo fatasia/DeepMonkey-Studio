@@ -64,6 +64,58 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("bounded GPU particle runtime", () => {
+  it("lazily borrows slots for flow, switches off exactly, and restores base bindings for indirect", async () => {
+    const f = fixture(), runtime = new GpuParticleRuntime(f.session, "gpu-flow", { capacity: 8, initialParticles: seeds });
+    const off = { phase: 0, flowStrength: 0 };
+    expect((await runtime.beginFrame({ deltaTime: .1, flow: off })).status).toBe("committed");
+    expect(f.buffers).toHaveLength(7); expect(f.passes[0]!.pipelines[1]).toBe("Deep particle simulation pipeline");
+    expect((await submitGpuParticleEmitterFrame(runtime, { deltaTime: .1, flow: { phase: .2, seed: 17 } })).status).toBe("committed");
+    expect(f.buffers).toHaveLength(8); expect(f.buffers[7]!.size).toBe(32);
+    expect(f.passes[1]).toEqual({ pipelines: ["Deep particle reset pipeline", "Deep particle flow simulation pipeline",
+      "Deep particle indirect DCIR pipeline"], dispatches: [1, 1, 1] });
+    expect(f.bindGroups.slice(-3)).toEqual(["Deep particle compute 1->0", "Deep particle flow 1->0", "Deep particle compute 1->0"]);
+    const before = runtime.current, writes = f.queue.writes.length;
+    expect((await runtime.beginFrame({ deltaTime: .1, flow: { phase: NaN } })).status).toBe("failed");
+    expect(runtime.current).toBe(before); expect(f.queue.writes).toHaveLength(writes);
+    await runtime.beginFrame({ deltaTime: .1 }); expect(f.passes[2]!.pipelines[1]).toBe("Deep particle simulation pipeline");
+    expect(f.buffers).toHaveLength(8); runtime.dispose(); expect(f.owned.size).toBe(0);
+  });
+  it("bounds concurrent lazy flow allocation and preserves generation publication", async () => {
+    const f = fixture(), runtime = new GpuParticleRuntime(f.session, "gpu-flow-reentrant", { capacity: 8 });
+    await turns(); const scope = deferred<GPUError | null>();
+    f.device.popErrorScope.mockReturnValueOnce(scope.promise);
+    const a = runtime.beginFrame({ deltaTime: .1, flow: { phase: 0 } }); await turns();
+    const b = runtime.beginFrame({ deltaTime: .1, flow: { phase: 1 } }); await turns();
+    expect(f.buffers).toHaveLength(8); scope.resolve(null);
+    expect((await a).status).toBe("superseded"); expect((await b).status).toBe("committed");
+    expect(f.queue.submit).toHaveBeenCalledTimes(1); runtime.dispose(); expect(f.owned.size).toBe(0);
+  });
+  it("rejects failed flow candidates, permits retry, and blocks a replaced device", async () => {
+    const f = fixture(), runtime = new GpuParticleRuntime(f.session, "gpu-flow-failed", { capacity: 8 });
+    await turns(); f.device.popErrorScope.mockResolvedValueOnce({ message: "flow validation" } as GPUError);
+    expect((await runtime.beginFrame({ deltaTime: .1, flow: { phase: 0 } })).status).toBe("failed");
+    expect(f.owned.size).toBe(7); expect(f.queue.submit).not.toHaveBeenCalled();
+    expect((await runtime.beginFrame({ deltaTime: .1, flow: { phase: 0 } })).status).toBe("committed");
+    expect(f.owned.size).toBe(8);
+    f.rawSession.device = { ...f.device };
+    expect(runtime.current).toBeUndefined();
+    expect((await runtime.beginFrame({ deltaTime: .1, flow: { phase: 0 } })).status).toBe("failed");
+    expect(f.queue.submit).toHaveBeenCalledTimes(1); runtime.dispose(); expect(f.owned.size).toBe(0);
+  });
+  it("retains the flow uniform until submitted work retires and rejects insufficient flow limits", async () => {
+    const constrained = fixture(); constrained.device.limits.maxUniformBuffersPerShaderStage = 1;
+    const base = new GpuParticleRuntime(constrained.session, "gpu-flow-limits", { capacity: 8 });
+    expect((await base.beginFrame({ deltaTime: .1 })).status).toBe("committed");
+    const previous = base.current;
+    expect((await base.beginFrame({ deltaTime: .1, flow: { phase: 0 } })).status).toBe("failed");
+    expect(base.current).toBe(previous); expect(constrained.owned.size).toBe(7); base.dispose();
+    const f = fixture(), runtime = new GpuParticleRuntime(f.session, "gpu-flow-retirement", { capacity: 8 });
+    const submitted = deferred<void>(); f.queue.onSubmittedWorkDone.mockReturnValue(submitted.promise);
+    const frame = runtime.beginFrame({ deltaTime: .1, flow: { phase: 0 } }); await turns(32);
+    expect(f.queue.submit).toHaveBeenCalledTimes(1); expect(f.owned.size).toBe(8);
+    runtime.dispose(); expect(f.owned.size).toBe(8); expect((await frame).status).toBe("superseded");
+    submitted.resolve(); await turns(32); expect(f.owned.size).toBe(0);
+  });
   it.runIf(Boolean(process.env.DEEP_SHADER_NAGA_BIN))("validates compute and reusable render WGSL with Naga", () => {
     for (const [name, shader] of [["compute", GPU_PARTICLE_COMPUTE_WGSL], ["indirect", GPU_PARTICLE_INDIRECT_DCIR.code],
       ["render", GPU_PARTICLE_RENDER_WGSL], ["burst", GPU_PARTICLE_BURST_WGSL]] as const) {

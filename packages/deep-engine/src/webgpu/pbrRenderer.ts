@@ -344,14 +344,14 @@ export class PbrRenderer {
     catch { this.probeClipmapFailed = true; this.probeClipmap.dispose(); }
   }
   /** Fire-and-forget particle simulation; the previous committed binding is drawn this frame. */
-  private driveParticles(frame: number): void {
+  private driveParticles(frame: number, flow: RenderView["particleFlow"]): void {
     const runtime = this.particleRuntime;
     if (!runtime || this.particleBusy) return;
     this.particleBusy = true;
     const now = performance.now();
     const deltaTime = Math.min(0.25, Math.max(0, (now - this.particleLastTime) / 1000));
     this.particleLastTime = now;
-    void submitGpuParticleEmitterFrame(runtime, { frame, deltaTime })
+    void submitGpuParticleEmitterFrame(runtime, { frame, deltaTime, ...(flow === undefined ? {} : { flow }) })
       .catch(() => undefined).finally(() => { this.particleBusy = false; });
   }
   private driveProbeClipmap(frame: number, size: { readonly width: number; readonly height: number },
@@ -468,7 +468,7 @@ export class PbrRenderer {
     let captureOpen = false;
     try {
       const frameNumber = this.frame + 1;
-      this.driveParticles(frameNumber);
+      this.driveParticles(frameNumber, view.particleFlow);
       this.driveProbeClipmap(frameNumber, size, view.eye, history.cameraCut);
       // The same cached plan powers explicit captures and the lightweight live
       // Frame Graph receipt. Diagnostics stay opt-in, so ordinary frames pay
