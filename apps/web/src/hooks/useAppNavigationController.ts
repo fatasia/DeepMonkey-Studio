@@ -15,6 +15,7 @@ import { useManagerDirectoryController } from "./useManagerDirectoryController";
 import { carriesProjectContext, rememberProjectContext } from "../projectNavigationContext";
 import { stageRendererPreference } from "../viewer/rendererBackendPreference";
 import { rendererBackendLabel } from "../viewer/rendererBackendLabel";
+import { readAnimationPlayheadSec } from "../viewer/animationPlayheadReader";
 
 interface AppNavigationControllerOptions {
   state: AppState;
@@ -128,7 +129,9 @@ export function useAppNavigationController({ state, sceneSnapshotFactoryRef }: A
         const snapshot = sceneSnapshotFactoryRef.current?.();
         if (snapshot) {
           setActiveScene(snapshot);
-          rendererSnapshotRef.current = { scene: snapshot, readOnly: false, fastRuntime: false, recoveryMessage: "已返回编辑器，场景修改已保留" };
+          rendererSnapshotRef.current = { scene: snapshot, readOnly: false, fastRuntime: false,
+            animationPlayheadSec: readAnimationPlayheadSec(engine),
+            recoveryMessage: "已返回编辑器，场景修改已保留" };
         }
       }
     }

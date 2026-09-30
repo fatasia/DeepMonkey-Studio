@@ -48,6 +48,7 @@ import { collectDeepOverlayPrimitives } from "../viewer/deepOverlayPrimitiveSour
 import { mergeDeepOverlayVertices } from "../viewer/deepOverlayPrimitives";
 import { projectStudioEditorOverlay } from "../viewer/studioDeepEditorOverlay";
 import { rendererBackendLabel } from "../viewer/rendererBackendLabel";
+import { readAnimationPlayheadSec } from "../viewer/animationPlayheadReader";
 import { useAppInteractionEffects } from "./useAppInteractionEffects";
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
@@ -120,7 +121,8 @@ interface AppRuntimeEffectsContext {
   behaviorManagerRef: MutableRefObject<SceneBehaviorManager | undefined>;
   primitiveColors: MutableRefObject<Map<string, string>>;
   navigate: (route: AppRoute, replace?: boolean) => void;
-  applyScene: (scene: SceneSnapshot, updateRoute?: boolean, sceneProject?: ProjectRecord, readOnly?: boolean, fastRuntime?: boolean) => Promise<void>;
+  applyScene: (scene: SceneSnapshot, updateRoute?: boolean, sceneProject?: ProjectRecord, readOnly?: boolean, fastRuntime?: boolean,
+    safeAuthoringEntry?: boolean, requireComplete?: boolean, incrementalPlay?: boolean, restoreAnimationPlayheadSec?: number | undefined) => Promise<void>;
   dispatchApplicationInteraction: (source: ApplicationObjectRef, trigger: SceneInteractionTrigger, selectSource?: boolean, payload?: JsonValue) => unknown;
   recordSceneEdit: (label: string) => void;
   captureSceneSnapshot: () => SceneSnapshot | undefined;
@@ -371,6 +373,8 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
               scene: snapshot,
               readOnly: latest.readOnly,
               fastRuntime: latest.fastRuntime,
+              // J3-E：设备丢失瞬间的编辑器播放头随快照一起保留，恢复时经 applyScene 回 seek。
+              animationPlayheadSec: readAnimationPlayheadSec(viewer),
               recoveryMessage: `WebGPU 设备丢失（${info.reason ?? "unknown"}），已无损恢复到 WebGL`,
             };
           }
@@ -478,7 +482,9 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     const pending = rendererSnapshotRef.current;
     if (!engine || !pending || !project) return;
     rendererSnapshotRef.current = undefined;
-    void applyScene(pending.scene, false, project, pending.readOnly, pending.fastRuntime)
+    // J3-E：恢复第 9 参回 seek 播放头（缺省 undefined = 归零，与旧行为逐位一致）。
+    void applyScene(pending.scene, false, project, pending.readOnly, pending.fastRuntime, false, false, false,
+      pending.animationPlayheadSec)
       .then(() => {
         try {
           commitRendererPreference(rendererPreferenceCommitRef, engine.getRendererBackend());

@@ -1,0 +1,44 @@
+{
+  "schema": "deep-engine.j2-b4-device-matrix.v1",
+  "description": "J2-B4 多物理设备矩阵声明：每行 = 一台物理 GPU；每个宿主 = 该设备上的一个 API 栈。宿主定义是全局的，设备行只声明 vendor/architecture 及覆盖的宿主集合；同机双 API 宿主按声明视为同一物理设备，不得据此宣称跨设备完成。",
+  "hosts": [
+    {
+      "id": "web-chrome-webgpu",
+      "api": "WebGPU",
+      "implementation": "Chrome/Dawn",
+      "identityFields": ["vendor", "architecture", "device", "description", "isFallbackAdapter"],
+      "backendTokens": ["webgpu"]
+    },
+    {
+      "id": "native-wgpu-vulkan",
+      "api": "wgpu",
+      "implementation": "wgpu on Vulkan",
+      "identityFields": ["name", "vendor", "device", "pciBus", "driver", "driverInfo", "backend"],
+      "backendTokens": ["Vulkan"]
+    },
+    {
+      "id": "native-wgpu-dx12",
+      "api": "wgpu",
+      "implementation": "wgpu on Direct3D 12",
+      "identityFields": ["name", "vendor", "device", "pciBus", "driver", "driverInfo", "backend"],
+      "backendTokens": ["Dx12"]
+    },
+    {
+      "id": "native-wgpu-gl",
+      "api": "wgpu",
+      "implementation": "wgpu on OpenGL/GLES",
+      "identityFields": ["name", "vendor", "device", "pciBus", "driver", "driverInfo", "backend"],
+      "backendTokens": ["Gl"]
+    }
+  ],
+  "families": ["ts-built-in", "ts-deepsl-package", "native-production-wgsl"],
+  "devices": [
+    {
+      "id": "rtx4060-laptop",
+      "declared": { "vendor": "nvidia", "architecture": "lovelace" },
+      "hosts": ["web-chrome-webgpu", "native-wgpu-vulkan"],
+      "status": "available-on-current-machine"
+    }
+  ],
+  "reservedDevices": []
+}

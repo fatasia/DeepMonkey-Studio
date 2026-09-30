@@ -24,6 +24,7 @@ import { captureSceneThumbnail } from "../studio/sceneThumbnailCapture";
 import { workspaceSaveFailureGuidance } from "../studio/workspaceSaveProtection";
 import { createWorkspaceRecoveryDraft, deleteWorkspaceRecoveryDraft, writeWorkspaceRecoveryDraft } from "../studio/workspaceRecoveryStore";
 import { normalizeSceneCoordinates } from "../viewer/sceneCoordinates";
+import { readAnimationPlayheadSec } from "../viewer/animationPlayheadReader";
 import { normalizeSceneEngineeringAnalysis } from "../viewer/engineeringAnalysisState";
 import { createBrowserCooperativeWorkScheduler } from "../cooperativeWorkScheduler";
 import type { ScenePersistenceControllerContext } from "./scenePersistenceControllerContext";
@@ -197,7 +198,7 @@ export function createScenePersistenceController(context: ScenePersistenceContro
   const fileTransfer = createSceneFileTransferActions(context, makeSnapshot, applyScene);
   const publication = createScenePublicationActions(context, () => saveScene());
 
-  async function applyScene(scene: SceneSnapshot, updateRoute = true, sceneProject = project, readOnly = false, fastRuntime = false, safeAuthoringEntry = false, requireComplete = false, incrementalPlay = false) {
+  async function applyScene(scene: SceneSnapshot, updateRoute = true, sceneProject = project, readOnly = false, fastRuntime = false, safeAuthoringEntry = false, requireComplete = false, incrementalPlay = false, restoreAnimationPlayheadSec?: number) {
     if (!engine || !sceneProject) {
       if (requireComplete) throw new Error("场景引擎或项目资源已卸载，请重新打开场景后重试退出播放");
       return;
@@ -215,6 +216,7 @@ export function createScenePersistenceController(context: ScenePersistenceContro
             scene,
             readOnly,
             fastRuntime,
+            animationPlayheadSec: readAnimationPlayheadSec(engine),
             recoveryMessage: "WebGPU 资源水位已自动回收，场景状态与画质保持不变",
           };
           setRendererSwitching(true);
@@ -336,6 +338,13 @@ export function createScenePersistenceController(context: ScenePersistenceContro
       engine.setPhysicsState(nextPhysics);
       engine.setSceneAnimation(nextAnimation);
       engine.seekSceneAnimation(0);
+      // J3-E：渲染器重建恢复路径（rendererSnapshotRef.animationPlayheadSec）显式回 seek
+      // 播放头；快照协议不含瞬时时刻，缺省 undefined = 归零重放，撤销/重做/导入/路由
+      // 等既有调用方行为逐位不变。clamp 语义归引擎（超出时长按引擎边界处理）。
+      if (typeof restoreAnimationPlayheadSec === "number" && Number.isFinite(restoreAnimationPlayheadSec) && restoreAnimationPlayheadSec > 0) {
+        engine.seekSceneAnimation(restoreAnimationPlayheadSec);
+        setAnimationTime(restoreAnimationPlayheadSec);
+      }
       setWeather(nextWeather);
       setLighting(nextLighting);
       setSceneEnvironment(nextEnvironment);
