@@ -43,3 +43,7 @@ CPU 侧收口(2026-09-30):
 - GPU 侧(两 fresh device 双宿主、Native 实际帧、对拍与 evidence 落盘)未执行,由主线程串行负责。
 
 GPU 前 fixture 开发修订：首稿 UV1 的 3×3 邻居稳定子集全落 texel2，缺少 alpha reject 与多纹素覆盖。没有执行 GPU。改成四角/边中点子像素稳定域，并固定 UV1 scale `[1.2,1.2]`、offset `[0.1,-0.4]`、rotation `0.23`；CPU 轴向 25、斜视 19 稳定点，两相机各覆盖全部四 texel。HDR/覆盖阈值和原 85 点保持。
+
+## 2026-10-01 深夜归因更新（mr-linear）
+
+超差全部限定 texel 2/3（第二行，16/45 stable 点；texel0/1 全过），双端 roughness 读回混合值一致（0.792）。两个矛盾事实：① base-uv1 同几何/同方向光/常量金属已过门，排除直射数学差；② roughness 一致若为真则输入一致、颜色不应差 4.9%。**归因失效点已定位**：两端 roughness 读回通道语义不同（native=normal 附件 alpha=材质 rough；web=HDR 附件 alpha），"输入一致"结论不可靠。下一刀先修 Web 侧 roughness 读回通道（从 normal/材质输出读），再重跑 mr-linear 对拍——预期暴露真实的 metal/rough 采样差或证实输入一致后重归光照端。
