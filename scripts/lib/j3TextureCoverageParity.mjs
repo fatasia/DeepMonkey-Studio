@@ -14,6 +14,10 @@ const requireCondition=(v,m)=>{if(!v)throw Error(m);};
 //    texel3 预测 Δ=[0.01485,0.00774,0.00355] vs 实测 [0.01465,0.00781,0.00354],
 //    texel2 预测 R=0.002687 vs 实测 0.00269,逐通道 ≤1.5%(f16 量化噪声内)。
 // 以下纯函数逐式镜像 shared WGSL,只用于失败归因,不改变门判据。
+// C8-S9 之后(2026-09-30 native 直射三处采样点切换 deepDirectDfg185):双端直射
+// DFG 已同源,本归因模型不再是"现状描述"而是回归检测器——若 mr- 对拍残差仍与
+// "web=185 表 vs native=冻结 brdfLut 常量"的预测签名吻合,说明 native 丢失了
+// 185 切换(直射回退采样 brdf_lut);与该签名不吻合的残差照旧报 unexplained。
 let DFG185;
 function dfg185Lut(){
   if(DFG185)return DFG185;
@@ -54,6 +58,8 @@ export function predictMrDirectMultiscatteringDelta(fixture,texel,roughness){
   return [0,1,2].map(k=>(directMultiscatteringEnergy(f0[k],web,web)-directMultiscatteringEnergy(f0[k],native,native))*radiance[k]);
 }
 function mrAttributionSuffix(plan,scenario,point,error){
+  // C8-S9 双端同源后:本分类器只做回归检测(native 直射回退采样冻结 brdfLut
+  // 常量时,残差会精确重现该预测签名);吻合与否都不改变门判据本身。
   if(!scenario.startsWith("mr-"))return"";
   const expected=point?.byScenario?.[scenario];
   if(!expected||!Number.isFinite(expected.roughness))return"";
