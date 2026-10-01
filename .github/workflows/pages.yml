@@ -32,7 +32,7 @@ jobs:
           mkdir -p _site
           cp docs/video.html docs/poster.png _site/
           curl -L --fail --retry 3 "https://github.com/fatasia/DeepMonkey-Studio/releases/download/v0.1.0/deepmonkey-studio-intro.mp4" -o _site/deepmonkey-studio-intro.mp4
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
       - id: deployment
