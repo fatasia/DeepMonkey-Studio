@@ -45,7 +45,7 @@ I-C17收口：生产SDK/真实Pbr间接绘制两fresh通过，root21聚焦测/1�
 | J2-B2-N-next | 已关闭：可选profile贯通发布/运行包/parser/host/output与热切换；旧缺省字节保持 | 75421e61；224组GPU、黑背景重建、WASM/freshness通过 | 0h | 已完成 |
 | J3-D-full | HDR、阴影/法线与后处理逐层双端实渲对拍；扩展合法差异矩阵 | ae9a3d77几何/主深度已验，同包双相机双轮；J2-B5/B6 | 8–16h | 中 |
 | J3-E-GPU | 自动unknown-loss、Native窗口事件/present、完整编辑器状态、驱动显存/上传与帧时；扩展实际epoch首刀之外的恢复 | 双端真实destroy/lost/reopen/首帧稳定已验；CPU首刀 | 6–12h | 中 |
-| J2-B4 | 多物理设备矩阵与完整场景帧时；保留宿主级联数差异 | linear/Native七点f848945e已验，CSM receiver五成对GPU窗已验 | 2–4h | 中 |
+| J2-B4 | 已关闭：receiver 五成对 GPU 窗计时实测双宿主全 measured（2026-10-01，candidate P95 差 -0.08/-0.10ms 区间稳定为负）；设备矩阵骨架已备（e1261af7），多物理设备行按声明制等真机矩阵需求触发 | csm-timing evidence 2026-10-01；f848945e；j2DeviceMatrix | 0h（矩阵行条件触发另计） | 已完成 |
 | J2-B5 | 共享storage核生产适配与Web texture语义矩阵；共同非均匀场景HDR帧、动态GI/漏光与帧时对拍 | 十情景storage双宿主向量已验；J3-D与既有帧入口 | 3–6h | 中 |
 | J2-B6 | 已关闭：非均匀Bloom全纹理及Fog合法模式/height/HG矩阵；完整工业场景归J3-D | e5fac06e；Fog144组61440像素、Web作者680点，各宿主固定参考门通过 | 0h | 已完成 |
 
