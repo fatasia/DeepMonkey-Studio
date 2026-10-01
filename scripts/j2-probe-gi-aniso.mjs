@@ -70,7 +70,14 @@ if(prepareOnly){
     for(let i=0;i<nativeHosts[0].frames.length;i++)if(nativeHosts[0].frames[i].rgbaHash!==nativeHosts[1].frames[i].rgbaHash)throw Error("Probe aniso Native fresh device full HDR hash changed");
     for(let i=0;i<hosts[0].frames.length;i++)if(hosts[0].frames[i].rgbaHash!==hosts[1].frames[i].rgbaHash)throw Error("Probe aniso Web fresh device full HDR hash changed");
   }
-  const after=await identity();if(JSON.stringify(inputHash)!==JSON.stringify(after))throw Error("Aniso consumed probe source changed");
+  const after=await identity();
+  // The end-of-run guard compares source identities only: inputHash wraps them
+  // with profileHash, so comparing the whole envelopes was structurally always
+  // false and the guard could never pass (earlier full runs died at the
+  // comparison stage before reaching this line).
+  if(JSON.stringify(inputHash.sourceIdentity)!==JSON.stringify(after)){
+    const diffKeys=Object.keys({...inputHash.sourceIdentity,...after}).filter(k=>inputHash.sourceIdentity[k]!==after[k]);
+    throw Error("Aniso consumed probe source changed: "+JSON.stringify(diffKeys.map(k=>({file:k,before:(inputHash.sourceIdentity[k]??"").slice(0,12),after:(after[k]??"").slice(0,12)}))));}
   const evidence={passed:true,currentRun:!compareOnly,inputHash:after,frozen,admission:plan.admission,comparisons,identities,
     pointsCompared:comparisons.reduce((n,c)=>n+c.pointsCompared,0),
     execution:compareOnly?"prior diagnostic both hosts":"two fresh Native and two fresh Web devices, each two draws",
