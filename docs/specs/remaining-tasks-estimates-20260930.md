@@ -8,7 +8,7 @@
 
 当前四路：root集成/真实GPU与难点；J3纹理/UV/透明覆盖；B5实际GI；唯一I专线。最新子集 `c67ca199` 修共享WGSL构建指纹与既有GI十向量Chrome缺provider，双端fresh最大差5.96e-8；`fe963a04`补C23 Browser保存重开，35点实际HDR恢复差0。engine/Web构建及本次WASM产物新鲜度全门通过。以上均为子集，不增加整项关闭数；B5真帧独立HDR门已过，反解量化门另记录规范与附件转换证据。
 
-最新收割 `3aaeec5e`：C15生产双探针/作者保存重载/盒边过渡/回收整项关闭；C8-S5直射材质子集display最大差1，strict HDR仍有残差，不关闭整项。最新strict其余24腿通过，窗口suite修正实际loss等待边界后独立fresh双端/候选复测通过；保留首次失败全量记录，不当作新26腿全量运行。
+最新收割 `3aaeec5e`：C15生产双探针/作者保存重载/盒边过渡/回收整项关闭；C8-S5直射材质子集display最大差1，strict HDR仍有残差，不关闭整项。最新strict其余24腿通过，窗口suite修正实际loss等待边界后独立fresh双端/候选复测通过；保留首次失败全量记录，不当作新26腿全量运行。**2026-10-01 J5统一strict已在生产源冻结后全绿（16对32腿双端含GPU腿，degraded=false，evidence-20261001005939.json）——统一门收口。**
 
 C18收口：生产数值、视觉、实际作者各两fresh通过；主线程104聚焦测与当前runtime freshness通过。修复fog-only MRT附件选择与作者snapshot遗漏，详情见 [生产体积光](i-c18-production-god-rays-20260930.md)。共同4级联实际HDR阴影170样本严格区间相交；统一fresh runner另验，整项Gate D仍后继。
 
