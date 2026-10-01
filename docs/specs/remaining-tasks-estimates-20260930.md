@@ -10,6 +10,12 @@
 
 最新收割 `3aaeec5e`：C15生产双探针/作者保存重载/盒边过渡/回收整项关闭；C8-S5直射材质子集display最大差1，strict HDR仍有残差，不关闭整项。最新strict其余24腿通过，窗口suite修正实际loss等待边界后独立fresh双端/候选复测通过；保留首次失败全量记录，不当作新26腿全量运行。**2026-10-01 J5统一strict已在生产源冻结后全绿（16对32腿双端含GPU腿，degraded=false，evidence-20261001005939.json）——统一门收口。**
 
+## 2026-10-01 深夜批次三（断点清剿）
+
+- **B5 aniso 断点关完**：根因=规格位表把 4.0 编码为 0x4200（实为 3.0），复制进两份对账副本自洽到 CPU 全绿；GPU 采集铁证（仅 B 通道漂移、1530/1530 反演）。修复+加载期回环自检+守卫 envelope 形状 bug（结构上永假，从未到过）。重跑全绿 2040 点（47dae766+bb98f9bb）。
+- **mr-linear 归因反转**：Web 早已读 normal 附件 alpha（交接的 HDR-alpha 说法错误）、双端 roughness 读回半 LSB 一致=输入一致；全部残差由"Native 直射仍采样冻结 brdf_lut、Web 用 r185 表"解释（CPU 模型 ≤3e-4 吻合）。归因模型+分类器已入库（c15ca6d2）。生产修复（Native 切 185 表）由 DFG agent 执行中。
+- **I-C23 两遗留收口**：rt_raster_parity 集成副本三处漂移（索引未局部化/probe GI 占位缺两处）全部对齐 bin 侧；白炉 GPU 腿真实入口在 bin target 且无 #[ignore]（规格 --ignored 命令 0-hit 的三重原因已记录）；新增分层白炉 GPU 腿（2e1be5fe）。
+
 C18收口：生产数值、视觉、实际作者各两fresh通过；主线程104聚焦测与当前runtime freshness通过。修复fog-only MRT附件选择与作者snapshot遗漏，详情见 [生产体积光](i-c18-production-god-rays-20260930.md)。共同4级联实际HDR阴影170样本严格区间相交；统一fresh runner另验，整项Gate D仍后继。
 
 I-C17收口：生产SDK/真实Pbr间接绘制两fresh通过，root21聚焦测/1既有skip、engine/Web构建、新NativeWASM与runtime freshness通过。J3法线/共同4级联阴影fresh联合门2559cd9b通过；Native主光共享核a793a0be实际510样本最大误差.000427，完整C8仍后继。B4线性/七点已存在不重建，新receiver timestamp五成对窗实测两host通过，完整场景收益不外推。
@@ -46,7 +52,7 @@ I-C17收口：生产SDK/真实Pbr间接绘制两fresh通过，root21聚焦测/1�
 | J3-D-full | HDR、阴影/法线与后处理逐层双端实渲对拍；扩展合法差异矩阵 | ae9a3d77几何/主深度已验，同包双相机双轮；J2-B5/B6 | 8–16h | 中 |
 | J3-E-GPU | 自动unknown-loss、Native窗口事件/present、完整编辑器状态、驱动显存/上传与帧时；扩展实际epoch首刀之外的恢复 | 双端真实destroy/lost/reopen/首帧稳定已验；CPU首刀 | 6–12h | 中 |
 | J2-B4 | 已关闭：receiver 五成对 GPU 窗计时实测双宿主全 measured（2026-10-01，candidate P95 差 -0.08/-0.10ms 区间稳定为负）；设备矩阵骨架已备（e1261af7），多物理设备行按声明制等真机矩阵需求触发 | csm-timing evidence 2026-10-01；f848945e；j2DeviceMatrix | 0h（矩阵行条件触发另计） | 已完成 |
-| J2-B5 | 共享storage核生产适配与Web texture语义矩阵；共同非均匀场景HDR帧、动态GI/漏光与帧时对拍 | 十情景storage双宿主向量已验；J3-D与既有帧入口 | 3–6h | 中 |
+| J2-B5 | 已关闭：非均匀(aniso)独立双族 oracle GPU 全绿（47dae766 位表修复+bb98f9bb 守卫修复后重跑：2040 点，Native 1.21e-4/Web 5.00e-4 ≤ .001，admission 与交接值一致）；producer/init、capture commit、动态漏光留条件触发 | 47dae766+bb98f9bb；probe-gi-aniso evidence 2026-10-01 | 0h | 已完成 |
 | J2-B6 | 已关闭：非均匀Bloom全纹理及Fog合法模式/height/HG矩阵；完整工业场景归J3-D | e5fac06e；Fog144组61440像素、Web作者680点，各宿主固定参考门通过 | 0h | 已完成 |
 
 本组：19–38h，B6范围关闭后扣除6–12h。同一缺口跨编号合并一行，不重复计时。
