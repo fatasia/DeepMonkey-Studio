@@ -42,73 +42,59 @@ fn content(id: &str) -> (PlayerContent, Value) {
 
 #[test]
 fn native_unlit_lighting_work_is_guarded_and_output_semantics_remain_outside() {
-    for (source, entry, visibility) in [
-        (
-            include_str!("../../assets/shaders/native_mesh_v1.wgsl"),
-            "fn shade_native_mesh(",
-            "shadow_visibility(",
-        ),
-        (
-            include_str!("../../assets/shaders/native_mesh_rt_fragment_v1.wgsl"),
-            "@fragment fn fragment_main_rt(",
-            "rt_directional_visibility(",
-        ),
+    // I-C23 起守卫形态变更(历史遗留修复):UNLIT 早退改为 native_lit_response
+    // 顶部的 `if (flag(64u)) { return base; }`,完整光照体在其后——UNLIT 命中
+    // 早退即跳过全部光照工作。因此守卫断言从"倒置块包含光照调用"改为:
+    // ① 早退必须仍在响应核顶部;② 全部光照调用首现于早退之后;
+    // ③ 光照文本不逃出共享响应核(RT 变体只消费 native_lit_response)。
+    // rt_directional_visibility 是 RT 专属阴影机制,位于响应核之前,不在本断言族。
+    let mesh = include_str!("../../assets/shaders/native_mesh_v1.wgsl");
+    let rt = include_str!("../../assets/shaders/native_mesh_rt_fragment_v1.wgsl");
+    let response_body: String = mesh
+        .split_once("fn native_lit_response(")
+        .expect("shared response core must exist")
+        .1
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    let marker = "if(flag(input.material.w,64u)){returnbase;}";
+    let guard_end = response_body
+        .find(marker)
+        .expect("UNLIT early-return must stay at the top of native_lit_response")
+        + marker.len();
+    for call in [
+        "shadow_visibility(",
+        "brdfWithDielectricF0(",
+        "native_direct_multiscattering(",
+        "local_direct_lighting(",
+        "textureSampleLevel(brdf_lut,",
+        "textureSampleLevel(diffuse_environment,",
+        "textureSampleLevel(specular_environment,",
     ] {
-        let body: String = source
-            .split_once(entry)
-            .unwrap()
-            .1
-            .chars()
-            .filter(|c| !c.is_whitespace())
-            .collect();
-        let marker = "if(!flag(input.material.w,64u)){";
-        let start = body
-            .find(marker)
-            .expect("UNLIT must skip the complete lighting block");
-        let inner = start + marker.len();
-        let mut depth = 1;
-        let end = inner
-            + body[inner..]
-                .char_indices()
-                .find_map(|(i, c)| {
-                    if c == '{' {
-                        depth += 1;
-                    } else if c == '}' {
-                        depth -= 1;
-                    }
-                    (depth == 0).then_some(i)
-                })
-                .unwrap();
-        let guarded = &body[inner..end];
-        let outside = format!("{}{}", &body[..start], &body[end + 1..]);
-        for call in [
-            visibility,
-            "brdfWithDielectricF0(",
-            "native_direct_multiscattering(",
-            "local_direct_lighting(",
-            "textureSampleLevel(brdf_lut,",
-            "textureSampleLevel(diffuse_environment,",
-            "textureSampleLevel(specular_environment,",
-        ] {
-            assert!(guarded.contains(call), "lighting call not in guard: {call}");
-            assert!(
-                !outside.contains(call),
-                "UNLIT still executes lighting: {call}"
-            );
-        }
-        for semantic in [
-            "native_view_geometry_roughness(geometry_normal)",
-            "mapped_normal(input,front_facing)",
-            "letauthored_light=",
-            "letexposure=",
-            "surface_color=mix(",
-            "letoutput_alpha=",
-        ] {
-            assert!(
-                outside.contains(semantic),
-                "output/observation semantic incorrectly guarded: {semantic}"
-            );
-        }
+        let first = response_body
+            .find(call)
+            .unwrap_or_else(|| panic!("lighting call missing from the response core: {call}"));
+        assert!(
+            first > guard_end,
+            "lighting call before the UNLIT early-return: {call}"
+        );
+        assert!(
+            !rt.contains(call),
+            "RT fragment must consume the shared response core, not a text copy: {call}"
+        );
+    }
+    let stripped_mesh: String = mesh.chars().filter(|c| !c.is_whitespace()).collect();
+    for semantic in [
+        "native_view_geometry_roughness(geometry_normal)",
+        "mapped_normal(input,front_facing)",
+        "letauthored_light=",
+        "surface_color=native_lit_response(",
+        "letoutput_alpha=",
+    ] {
+        assert!(
+            stripped_mesh.contains(semantic),
+            "output/observation semantic incorrectly guarded: {semantic}"
+        );
     }
     for id in [
         "opaque",

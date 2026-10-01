@@ -1,11 +1,15 @@
+use crate::c8_direct_multiscattering::{
+    BASE_COLOR, FROZEN_DFG_FILL, MANIFEST, METALLIC, PACKAGE, ROUGHNESS, ZERO_DFG_FILL,
+    hdr_frame, multiscattering_energy, vector,
+};
 use crate::{
-    c8_direct_multiscattering::{MANIFEST, PACKAGE, energy, hdr_frame, vector},
     player_content::PlayerContent,
     shader_material_renderer::{FrameObservation, render_with_frame_observation},
 };
 use deep_engine_native::{
-    half_decode::half_to_f32, mesh_abi::FrameUniform, player_view::PlayerView,
-    runtime_package::parse_and_validate_runtime_package, scene_lighting::DirectionalLighting,
+    half_decode::half_to_f32, mesh_abi::FrameUniform, pbr_brdf::direct_brdf,
+    player_view::PlayerView, runtime_package::parse_and_validate_runtime_package,
+    scene_lighting::DirectionalLighting,
 };
 use serde_json::{Value, json};
 use winit::dpi::PhysicalSize;
@@ -22,8 +26,19 @@ const CASES: [&str; 9] = [
     "hemisphere",
 ];
 const RADIANCE: [f64; 3] = [2.5, 2.4, 2.25];
+// 零直射控制:几何/衰减/锥形使直射恒为零,整帧必须与暗孪生逐位相等。
+const ZERO_DIRECT_CASES: [&str; 5] = [
+    "zero",
+    "directional-back",
+    "point-back",
+    "outside-range",
+    "reversed-cone",
+];
+// hemisphere 的天空辐射是与 DFG 无关的非直射贡献(dark 孪生只清零 radiance,
+// groundRadiance 本就是 0 → 不构成暗孪生相等),只参与 brdf_lut 填充解耦断言。
+const DIRECTED_CASES: [&str; 3] = ["directional", "point", "spot"];
 
-fn lighting(case: &str) -> DirectionalLighting {
+fn lighting_with_radiance(case: &str, radiance: [f64; 3]) -> DirectionalLighting {
     let kind = match case {
         "directional" | "directional-back" => "directional",
         "spot" | "reversed-cone" => "spot",
@@ -34,7 +49,7 @@ fn lighting(case: &str) -> DirectionalLighting {
     let mut local = json!({"kind":kind,"position":[0,0,if case=="point-back" {-4} else {4}],
         "direction":if kind=="directional" {vec![-0.6,-0.3,if case=="directional-back" {-0.55_f64.sqrt()} else {0.55_f64.sqrt()}]}
             else {vec![0.0,0.0,if kind=="spot" && case!="reversed-cone" {-1.0} else {1.0}]},
-        "radiance":if case=="zero" {[0.0;3]} else {RADIANCE},
+        "radiance":radiance,
         "range":if case=="outside-range" {0.01} else if kind=="point" || kind=="spot" {20.0} else {0.0},
         "decay":2,"innerCos":0.9,"outerCos":0.5,"castShadow":false});
     if kind == "hemisphere" {
@@ -47,18 +62,35 @@ fn lighting(case: &str) -> DirectionalLighting {
     value.validate().unwrap()
 }
 
+fn lighting(case: &str) -> DirectionalLighting {
+    lighting_with_radiance(case, if case == "zero" { [0.0; 3] } else { RADIANCE })
+}
+
+/// 同几何/同槽位的零辐射孪生:差分基线(灯关,主太阳本来就是 0)。
+fn lighting_dark(case: &str) -> DirectionalLighting {
+    lighting_with_radiance(case, [0.0; 3])
+}
+
 // f64 ray/plane intersection, not GPU outputs or production attenuation helpers.
+// C8-S9:期望 = 完整本地直射 = 单散射 GGX(pbr_brdf::direct_brdf,含 nl 因子)
+// + r185 双查表多散射(·nl),同乘 radiance·attenuation;DFG 来源是 twin 查表
+// (dfg_view=dfg185(rough,nv) 懒采样,dfg_light=dfg185(rough,nl)),不再是注入常量。
 fn expected_delta(case: &str, pixel: usize, focal: f32, lane: usize) -> f64 {
-    if !["directional", "point", "spot"].contains(&case) {
+    if !DIRECTED_CASES.contains(&case) {
         return 0.0;
     }
-    let (nl, attenuation) = if case == "directional" {
-        (0.55_f64.sqrt(), 1.0)
+    // 128×128 轴向相机(eye [0,0,8],GPU 腿已断言)打在 z=0 平面。
+    let x = ((pixel % 128) as f64 + 0.5) / 128.0 * 2.0 - 1.0;
+    let y = 1.0 - ((pixel / 128) as f64 + 0.5) / 128.0 * 2.0;
+    let world_x = x * 8.0 / f64::from(focal);
+    let world_y = y * 8.0 / f64::from(focal);
+    let eye_length = (world_x * world_x + world_y * world_y + 64.0).sqrt();
+    let view_direction = [-world_x / eye_length, -world_y / eye_length, 8.0 / eye_length];
+    let nv = (8.0 / eye_length).clamp(0.001, 1.0);
+    let (nl, attenuation, light_direction) = if case == "directional" {
+        let nl = 0.55_f64.sqrt();
+        (nl, 1.0, [-0.6, -0.3, nl])
     } else {
-        let x = ((pixel % 128) as f64 + 0.5) / 128.0 * 2.0 - 1.0;
-        let y = 1.0 - ((pixel / 128) as f64 + 0.5) / 128.0 * 2.0;
-        let world_x = x * 8.0 / f64::from(focal);
-        let world_y = y * 8.0 / f64::from(focal);
         let distance_squared = world_x * world_x + world_y * world_y + 16.0;
         let nl = 4.0 / distance_squared.sqrt();
         let cutoff = (1.0 - (distance_squared / 400.0).powi(2)).max(0.0).powi(2);
@@ -68,10 +100,26 @@ fn expected_delta(case: &str, pixel: usize, focal: f32, lane: usize) -> f64 {
         } else {
             1.0
         };
-        (nl, cutoff / distance_squared * cone)
+        let length = distance_squared.sqrt();
+        (
+            nl,
+            cutoff / distance_squared * cone,
+            [-world_x / length, -world_y / length, 4.0 / length],
+        )
     };
-    let base = [0.86, 0.28, 0.055];
-    energy(0.04 * (1.0 - 0.72) + base[lane] * 0.72) * nl * RADIANCE[lane] * attenuation
+    let ggx = direct_brdf(
+        [0.0, 0.0, 1.0],
+        view_direction,
+        light_direction,
+        BASE_COLOR,
+        METALLIC,
+        ROUGHNESS,
+    );
+    let f0 = 0.04 * (1.0 - METALLIC) + BASE_COLOR[lane] * METALLIC;
+    (ggx[lane] + multiscattering_energy(f0, ROUGHNESS, nv, nl.clamp(0.0, 1.0)))
+        * nl
+        * RADIANCE[lane]
+        * attenuation
 }
 
 #[test]
@@ -86,16 +134,13 @@ fn local_energy_fixture_has_primary_zero_author_mode_three() {
         for lane in 0..3 {
             let delta = expected_delta(case, 8000, 1.8304877, lane);
             assert!(delta.is_finite() && delta >= 0.0);
-            assert_eq!(
-                delta > 0.0,
-                ["directional", "point", "spot"].contains(&case)
-            );
+            assert_eq!(delta > 0.0, DIRECTED_CASES.contains(&case));
         }
     }
 }
 
 #[test]
-#[ignore = "actual production local energy, two fresh devices and constant-DFG oracle"]
+#[ignore = "actual production local energy, two fresh devices and r185-DFG full-direct oracle"]
 fn c8_actual_local_direct_multiscattering() {
     let output = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../test-output/interrupted-0930/c8-native-local-energy");
@@ -142,13 +187,25 @@ fn c8_actual_local_direct_multiscattering() {
             let mut cases = Vec::new();
             for case in CASES {
                 let light = lighting(case);
+                let dark = lighting_dark(case);
+                // 每个 case 四帧:[case×185冻结填充, case×零填充, dark×185冻结填充, dark×零填充]。
+                // 1) 解耦合同:case 与 dark 的两个填充整帧逐位相等(直射不再消费
+                //    brdf_lut,IBL 已被 frame[9][3]=0 关闭);
+                // 2) 灯开关合同:控制 case(零辐射/背光/超距/锥反/半球)必须与暗孪生
+                //    整帧逐位相等;directed case 的 case−dark 差分 = 完整本地直射
+                //    (GGX 单散射 + r185 双查表多散射)·radiance·attenuation。
                 let mut hdr = Vec::new();
                 let mut actual_frames = Vec::new();
-                let configure = |frame: &mut FrameUniform| {
-                    light.apply(frame);
-                    frame[9][3] = 0.0;
-                };
-                for dfg in [[0.0, 0.0, 0.0, 1.0], [0.5, 0.04, 0.0, 1.0]] {
+                for (value, dfg) in [
+                    (&light, FROZEN_DFG_FILL),
+                    (&light, ZERO_DFG_FILL),
+                    (&dark, FROZEN_DFG_FILL),
+                    (&dark, ZERO_DFG_FILL),
+                ] {
+                    let configure = |frame: &mut FrameUniform| {
+                        value.apply(frame);
+                        frame[9][3] = 0.0;
+                    };
                     let mut content = PlayerContent::from_package(
                         parse_and_validate_runtime_package(PACKAGE).unwrap(),
                     )
@@ -177,8 +234,21 @@ fn c8_actual_local_direct_multiscattering() {
                     assert_eq!(snapshot.hdr.len(), 128 * 128 * 8);
                     hdr.push(snapshot.hdr);
                 }
-                assert_eq!(actual_frames.len(), 2);
+                assert_eq!(actual_frames.len(), 4);
                 assert_eq!(actual_frames[0], actual_frames[1]);
+                assert_eq!(actual_frames[2], actual_frames[3]);
+                assert_eq!(
+                    hdr[0], hdr[1],
+                    "brdf_lut fill must not reach native local direct output {case}"
+                );
+                assert_eq!(
+                    hdr[2], hdr[3],
+                    "brdf_lut fill must not reach native local direct output (dark) {case}"
+                );
+                let directed = DIRECTED_CASES.contains(&case);
+                if ZERO_DIRECT_CASES.contains(&case) {
+                    assert_eq!(hdr[0], hdr[2], "control case must equal its dark twin {case}");
+                }
                 let mut samples = Vec::new();
                 for subset in camera["subsets"].as_array().unwrap() {
                     assert_eq!(subset["materialId"], "golden-copper");
@@ -187,13 +257,13 @@ fn c8_actual_local_direct_multiscattering() {
                         let values:Vec<_>=(0..3).map(|lane| {
                             let offset=pixel*8+lane*2;
                             let decode=|bytes:&[u8]| f64::from(half_to_f32(u16::from_le_bytes([bytes[offset],bytes[offset+1]])));
-                            let before=decode(&hdr[0]); let after=decode(&hdr[1]); let expected=expected_delta(case,pixel,view.focal,lane);
-                            let error=(after-before-expected).abs(); maximum=maximum.max(error);
-                            assert!(before.is_finite() && after.is_finite());
-                            assert!(error<=0.002,"round={round} case={case} pixel={pixel} lane={lane} delta={} expected={expected} error={error}",after-before);
-                            if expected>0.0 { assert!(after>before,"missing actual local supplement {case}/{pixel}/{lane}"); }
-                            else { assert_eq!(before,after,"zero/control depends on DFG {case}"); }
-                            json!({"before":before,"after":after,"expected":expected,"error":error})
+                            let lit=decode(&hdr[0]); let dark=decode(&hdr[2]); let expected=expected_delta(case,pixel,view.focal,lane);
+                            let error=(lit-dark-expected).abs(); maximum=maximum.max(error);
+                            assert!(lit.is_finite() && dark.is_finite());
+                            assert!(error<=0.002,"round={round} case={case} pixel={pixel} lane={lane} delta={} expected={expected} error={error}",lit-dark);
+                            if directed { assert!(lit>dark,"missing actual local supplement {case}/{pixel}/{lane}"); }
+                            else if ZERO_DIRECT_CASES.contains(&case) { assert_eq!(lit,dark,"zero/control depends on DFG {case}"); }
+                            json!({"lit":lit,"dark":dark,"expected":expected,"error":error})
                         }).collect();
                         samples.push(
                             json!({"pixel":pixel,"instance":subset["instanceId"],"rgb":values}),
@@ -201,10 +271,6 @@ fn c8_actual_local_direct_multiscattering() {
                     }
                 }
                 assert!(!samples.is_empty());
-                // Backlight is defined for the registered flat-normal subset, not unrelated curved cubes.
-                if ["zero", "outside-range", "reversed-cone", "hemisphere"].contains(&case) {
-                    assert_eq!(hdr[0], hdr[1], "control full HDR changed {case}");
-                }
                 cases.push(
                     json!({"case":case,"actualFrameLighting":actual_frames,"samples":samples}),
                 );
@@ -214,10 +280,10 @@ fn c8_actual_local_direct_multiscattering() {
         }
         assert_eq!(rounds[0], rounds[1]);
         std::fs::write(&evidence,serde_json::to_string_pretty(&json!({
-            "passed":true,"stable":true,"freshDevices":2,"actualProductionHdr":true,"actualFrames":36,
+            "passed":true,"stable":true,"freshDevices":2,"actualProductionHdr":true,"actualFrames":72,
             "adapter":format!("{info:?}"),"source":hdr_frame::shader_source(),"packageHash":manifest["packageHash"],
             "packetHash":manifest["packetHash"],"budget":0.002,"maxError":maximum,"rounds":rounds,
-            "scope":"author primary RGB0/mode3; local directional/point/spot canonical energy with independent f64 constant-DFG differential",
+            "scope":"author primary RGB0/mode3; local directional/point/spot canonical energy with independent f64 full-direct oracle (GGX + r185 twin multiscattering), brdf_lut fill decoupling",
             "excluded":["default DFG profile equivalence","RT hardware","cluster selection correctness","complete Studio visual quality","performance"]
         })).unwrap()).unwrap();
     });

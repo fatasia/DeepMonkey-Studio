@@ -574,6 +574,9 @@ fn assert_layered_furnace_pixels(
     }
     let count = pixels.len() as f64;
     let means: [f64; 3] = sums.map(|sum| sum / count);
+    if cfg!(debug_assertions) {
+        println!("LAYERDBG {label}: means={means:?} expected={expected:?} max_parent={max_parent_response:?}");
+    }
     for (channel, mean) in means.iter().enumerate() {
         let rel = (mean - f64::from(expected[channel])) / f64::from(expected[channel]);
         assert!(

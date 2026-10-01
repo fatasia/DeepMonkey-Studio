@@ -1,8 +1,10 @@
 //! J2-B1 灯光数学三件套 WGSL 单源:Rust 宿主消费端(机制沿袭 F5 试点 `probe_gi_wgsl.rs`)。
 //!
-//! 唯一真源是 `packages/deep-engine/wgsl/` 下的三份文件:
+//! 唯一真源是 `packages/deep-engine/wgsl/` 下的共享文件:
 //! - `materialDielectric.wgsl`  介电 F0(介电 IOR → 反射率);
 //! - `brdfDirectLighting.wgsl`  直射 BRDF(GGX + 相关 Smith visibility + Schlick fresnel);
+//! - `brdfDirectMultiscattering.wgsl` 直射多散射能量核(DFG 采样留在各宿主);
+//! - `directDfgLut185.wgsl`     直射多散射 DFG r185 同源表(C8-S9,三处直射采样点唯一来源);
 //! - `iesSampling.wgsl`         IES 光域网采样(E02 采样次序合同)。
 //!
 //! 消费拓扑:
@@ -40,11 +42,19 @@ pub const DEEP_IES_SAMPLING_WGSL: &str = include_str!("../../deep-engine/wgsl/ie
 pub const PBR_BRDF_DIRECT_MULTISCATTERING_WGSL: &str =
     include_str!("../../deep-engine/wgsl/brdfDirectMultiscattering.wgsl");
 
+/// C8-S9 家族六:直射多散射 DFG r185 同源表。文件本体是裸数组字面量 +
+/// `deepDirectDfg185` 采样函数(无 `var` 声明头)——native_mesh_wgsl 装配链
+/// 与 Web pbrDirectMultiscatteringWgsl 模板各自补
+/// `var<private> DEEP_DIRECT_DFG_185 = ` 前缀消费;TS 侧 canonical 常量
+/// (halves + 解码 + CPU 查表)由 `directDfgLut185.test.ts` 锁定。
+pub const DIRECT_DFG_LUT_185_WGSL: &str =
+    include_str!("../../deep-engine/wgsl/directDfgLut185.wgsl");
+
 #[cfg(test)]
 mod tests {
     use super::{
-        DEEP_IES_SAMPLING_WGSL, MATERIAL_DIELECTRIC_WGSL, PBR_BRDF_DIRECT_LIGHTING_WGSL,
-        PBR_BRDF_DIRECT_MULTISCATTERING_WGSL,
+        DEEP_IES_SAMPLING_WGSL, DIRECT_DFG_LUT_185_WGSL, MATERIAL_DIELECTRIC_WGSL,
+        PBR_BRDF_DIRECT_LIGHTING_WGSL, PBR_BRDF_DIRECT_MULTISCATTERING_WGSL,
     };
 
     /// 对拍共享夹具:`<sha256-hex> <byte-len>` 单行;内容或长度任一漂移即失败。
@@ -135,6 +145,45 @@ mod tests {
     }
 
     #[test]
+    fn shared_direct_dfg_lut_185_matches_pinned_checksum_and_hosts() {
+        assert_matches_pinned_checksum(
+            DIRECT_DFG_LUT_185_WGSL,
+            include_str!("../../deep-engine/wgsl/directDfgLut185.wgsl.sha256"),
+            "directDfgLut185",
+        );
+        // 文件形态合同:注释头之后是裸数组字面量、以 `);` 收尾后接采样函数,
+        // 文件自身不带 var 声明头(两宿主各自补 `var<private> DEEP_DIRECT_DFG_185 = `
+        // 前缀),改成自带头声明会破坏双端拼接。
+        assert!(DIRECT_DFG_LUT_185_WGSL.contains("array<vec2f, 256>("));
+        assert!(!DIRECT_DFG_LUT_185_WGSL.contains("var<private>"));
+        assert!(
+            DIRECT_DFG_LUT_185_WGSL
+                .contains("fn deepDirectDfg185(roughness: f32, dotNv: f32) -> vec2f {")
+        );
+        // C8-S9 合同:native mesh 装配链必须消费该表(直射三处采样点的唯一
+        // DFG 来源);直射核不再采样 brdf_lut,表也绝不反向采样任何纹理。
+        assert!(!DIRECT_DFG_LUT_185_WGSL.contains("texture"));
+        assert!(!DIRECT_DFG_LUT_185_WGSL.contains("@group("));
+        let assembly = include_str!("native_mesh_wgsl.rs");
+        assert!(
+            assembly
+                .contains("include_str!(\"../../deep-engine/wgsl/directDfgLut185.wgsl\")"),
+            "production source builder must assemble the r185 direct DFG table"
+        );
+        let mesh = include_str!("../assets/shaders/native_mesh_v1.wgsl");
+        assert_eq!(
+            mesh.matches("deepDirectDfg185(").count(),
+            3,
+            "mesh body must hold the three direct sampling sites (dfg_light + lazy dfg_view + seed)"
+        );
+        assert_eq!(
+            mesh.matches("textureSampleLevel(brdf_lut,").count(),
+            1,
+            "brdf_lut must stay sampled only for the IBL split-sum fraction (C12 contract)"
+        );
+    }
+
+    #[test]
     fn shared_brdf_keeps_ts_authoritative_specular_order() {
         // J2-B1 漂移修复锁:native 原内置副本为 `distribution * visibility * f` 起乘,
         // 白炉验收以 TS 序 `f * visibility * distribution` 为权威;单源化后两侧同序,
@@ -175,6 +224,7 @@ mod tests {
             "include_str!(\"../../deep-engine/wgsl/materialDielectric.wgsl\")",
             "include_str!(\"../../deep-engine/wgsl/brdfDirectLighting.wgsl\")",
             "include_str!(\"../../deep-engine/wgsl/brdfDirectMultiscattering.wgsl\")",
+            "include_str!(\"../../deep-engine/wgsl/directDfgLut185.wgsl\")",
             "include_str!(\"../../deep-engine/wgsl/iesSampling.wgsl\")",
         ] {
             assert!(

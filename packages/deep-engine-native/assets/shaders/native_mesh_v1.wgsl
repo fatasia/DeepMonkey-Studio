@@ -388,12 +388,17 @@ fn transformed_uv(uv0: vec2f, uv1: vec2f, row_0: vec4f, row_1: vec4f) -> vec2f {
   if (section_rejected(input.world)) { discard; }
 }
 
-// Primary light compensation uses the existing host DFG; sampling stays outside the shared kernel.
+// C8-S9:直射多散射 DFG 与 IBL split-sum 资源解耦。dfg_view/dfg_light 都取
+// r185 同源表 deepDirectDfg185——按 rough+nv/nl 查表(与 Web
+// pbrDirectMultiscatteringWgsl 的 deepDirectMultiscatteringFromView 同构),
+// 不再采样 brdf_lut——那是 C12 白炉 IBL 能量分配专用资源,直射误用它曾在
+// 粗糙金属上留下系统性残差(j3 mr-linear 归因,CPU 模型逐通道 ≤3e-4 吻合)。
+// 表由装配链拼入。
 fn native_direct_multiscattering(normal: vec3f, light: vec3f, base: vec3f,
   metal: f32, rough: f32, dielectric: f32, dfg_view: vec2f) -> vec3f {
   let nl = clamp(dot(normal, light), 0.0, 1.0);
   if (nl <= 0.0) { return vec3f(0.0); }
-  let dfg_light = textureSampleLevel(brdf_lut, environment_sampler, vec2f(nl, rough), 0.0).rg;
+  let dfg_light = deepDirectDfg185(rough, nl);
   return deepDirectMultiscatteringEnergy(mix(vec3f(dielectric), base, metal), dfg_view, dfg_light) * nl;
 }
 
@@ -452,7 +457,7 @@ fn local_direct_lighting(world: vec3f, normal: vec3f, view: vec3f, base: vec3f, 
     if (dot(normal, direction) > 0.0 && any(source.radianceOuter.rgb > vec3f(0.0)) && attenuation > 0.0 && visibility > 0.0) {
       if (!dfg_ready) {
         let local_nv = clamp(dot(normal, view), 0.001, 1.0);
-        dfg_view = textureSampleLevel(brdf_lut, environment_sampler, vec2f(local_nv, rough), 0.0).rg;
+        dfg_view = deepDirectDfg185(rough, local_nv);
         dfg_ready = true;
       }
       color += native_direct_multiscattering(normal, direction, base, metal, rough, dielectric, dfg_view)
@@ -541,16 +546,23 @@ fn native_lit_response(
   var color = brdfWithDielectricF0(normal, view, light, base, metal, rough, dielectric)
     * sun * visibility;
   let nv = clamp(dot(normal, view), 0.001, 1.0);
+  // C8-S9 双变量同构(Web pbrShader.ts shade 的 dfg/directDfg):dfg 仍采样
+  // brdf_lut,只服务下方 IBL split-sum 能量分配(C12 白炉合同逐位不变);
+  // direct_dfg 用 r185 同源表,seed 条件 background.w > 0.5 || direct_lit 与
+  // Web 的 eye.w > 0 || lit 保持同构,并作为 local_direct_lighting 的
+  // 懒采样 ready 输入(同一表面 nv/rough,重复查表省略)。
   var dfg = vec2f(0.0);
+  var direct_dfg = vec2f(0.0);
   let direct_lit = dot(normal, light) > 0.0 && any(sun > vec3f(0.0));
   if (frame.background.w > 0.5 || direct_lit) {
     dfg = textureSampleLevel(brdf_lut, environment_sampler, vec2f(nv, rough), 0.0).rg;
+    direct_dfg = deepDirectDfg185(rough, nv);
   }
   if (direct_lit) {
-    color += native_direct_multiscattering(normal, light, base, metal, rough, dielectric, dfg) * sun * visibility;
+    color += native_direct_multiscattering(normal, light, base, metal, rough, dielectric, direct_dfg) * sun * visibility;
   }
   if (frame.sunColor.w == 3.0) {
-    color += local_direct_lighting(input.world, normal, view, base, metal, rough, !flag(input.material.w,16u), ao, dielectric, input.clip, dfg, frame.background.w > 0.5 || direct_lit);
+    color += local_direct_lighting(input.world, normal, view, base, metal, rough, !flag(input.material.w,16u), ao, dielectric, input.clip, direct_dfg, frame.background.w > 0.5 || direct_lit);
   }
   if (frame.background.w > 0.5) {
     // Zero is the legacy/default value; authored GI uses the reserved

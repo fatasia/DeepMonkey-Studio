@@ -398,13 +398,15 @@ fn rt_and_raster_shadows_agree_directionally_same_scene() {
     // 环境只用 disabled probe 占位(background.w=0 时 shader 不采样),
     // 绑定槽仍需合法纹理。
     let ibl = GpuIblEnvironment::new(&device, &queue, &disabled_probe_environment()).unwrap();
+    // GI 探针槽用生产同款全零占位(validity=0 采样返回零),与 bin 侧副本一致。
+    let probe_gi_placeholder = deep_engine_native::probe_gi_storage::disabled_frame_buffer(&device);
     let frame_group = ibl.create_frame_bind_group(
         &device,
         &layouts.frame,
         &frame_buffer,
         Some(&ies_buffer),
         &shadows,
-        None,
+        Some(&probe_gi_placeholder),
         "RT/raster parity frame",
         true,
     );
@@ -474,7 +476,7 @@ fn rt_and_raster_shadows_agree_directionally_same_scene() {
         Some(&ies_buffer),
         &shadows,
         &tlas,
-        None,
+        Some(&probe_gi_placeholder),
         "RT/raster parity RT frame",
     );
 

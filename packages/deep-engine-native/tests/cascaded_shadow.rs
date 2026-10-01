@@ -268,7 +268,11 @@ fn runtime_contract_uses_array_sampling_dynamic_caster_offsets_and_blending() {
         );
     }
     assert!(mesh_shader.contains("shadow_visibility(input.world, normal"));
-    assert!(frame_bindings.contains("../../deep-engine/wgsl/cascadedShadowMath.wgsl"));
+    // J2-B1 单源重构后,frame_bindings 只经 native_mesh_shader_source() 消费
+    // 装配链;cascadedShadowMath.wgsl 的 include 移入 native_mesh_wgsl.rs。
+    assert!(frame_bindings.contains("native_mesh_wgsl::native_mesh_shader_source()"));
+    assert!(include_str!("../src/native_mesh_wgsl.rs")
+        .contains("../../deep-engine/wgsl/cascadedShadowMath.wgsl"));
     assert!(frame_bindings.contains("view_dimension: wgpu::TextureViewDimension::D2Array"));
     assert!(frame_bindings.contains("has_dynamic_offset: true"));
     assert!(

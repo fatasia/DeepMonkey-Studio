@@ -18,7 +18,10 @@ fn production_shader_uses_browser_schlick_correlated_smith_and_separate_diffuse(
         "let gl = nv * sqrt(a2 + (1.0 - a2) * nl * nl)",
         "let visibility = 0.5 / max(gv + gl, 0.000001)",
         "let diffuse = (1.0 - metal) * base / 3.14159265",
-        "clamp(input.material.x * mr_sample.g, 0.045, 1.0)",
+        // I-C23 起原始粗糙度先提取为 rough_raw(几何粗糙度在其上叠加),
+        // 0.045..1 夹取合同随之落到 rough_raw 形态。
+        "let rough_raw = input.material.x * mr_sample.g;",
+        "clamp(rough_raw, 0.045, 1.0)",
     ] {
         assert!(
             shader.contains(contract),

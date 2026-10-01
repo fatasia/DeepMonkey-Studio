@@ -25,12 +25,13 @@ fn rt_directional_visibility(world: vec3f, light: vec3f) -> f32 {
 
 // I-C23:光照主体抽到本体的 native_lit_response + deep_layer_stack 共享函数
 // (同步契约由函数共享而非文本重复保证);本文件只剩 RT 专属的可见性来源与
-// 入口组装。fragment_main_rt_layered 供 RT 分层管线族(扩展 layout)使用。
+// 与本体同构的拆分:naga 按静态调用图收集 uniform 资源,共享函数里的
+// if(layered) 分支会让普通 RT 入口也绑 group1@11。核心路径返回
+// NativeMeshShading(本体同款结构),层栈只在 *_layered 包装内引用。
 fn rt_shade_surface(
   input: VertexOutput,
   front_facing: bool,
-  layered: bool,
-) -> vec4f {
+) -> NativeMeshShading {
   if (section_rejected(input.world)) { discard; }
   var base_sample = vec4f(1.0); var mr_sample = vec4f(1.0);
   var ao = 1.0; var emission = vec3f(1.0);
@@ -65,34 +66,48 @@ fn rt_shade_surface(
   // 与本体 fragment_main 的唯一差异：directional 阴影可见性改走 Ray Query。
   let visibility = select(rt_directional_visibility(input.world, light),
     1.0, flag(input.material.w, 16u) || (authored_light && frame.lightingOptions.y == 0.0));
-  var surface_color = native_lit_response(input, normal, geometry_normal, base, metal,
+  let surface_color = native_lit_response(input, normal, geometry_normal, base, metal,
     rough_raw, input.dielectric, ao, emission, view, light, visibility);
-  if (layered) {
-    surface_color = deep_layer_stack(surface_color, input, normal, geometry_normal,
-      base, metal, rough_raw, ao, emission, view, light, visibility);
-  }
-  let exposure = select(1.0, frame.lightingOptions.x, authored_light);
-  if (frame.fogProjection.z == 2.0 && !flag(input.material.w, 32u)) {
-    // clip W is signed camera-space depth; no radial-distance or fixed near/far approximation.
-    let camera_depth = max((frame.view * vec4f(input.world, 1.0)).w, 0.0);
-    let optical_depth = frame.tuning.w * camera_depth;
-    let amount = clamp(1.0 - exp(-optical_depth * optical_depth), 0.0, 1.0);
-    surface_color = mix(surface_color, frame.tuning.rgb, amount);
-  }
-  let output_alpha = select(1.0, alpha, flag(input.material.w, 4u));
-  return vec4f(surface_color * exposure, output_alpha);
+  return NativeMeshShading(surface_color, normal, clamp(rough_raw, 0.045, 1.0), alpha, geometry_normal, base,
+    clamp(input.base_color.w * mr_sample.b, 0.0, 1.0), rough_raw, ao, emission, view, light, visibility);
 }
 
+// 曝光/雾收尾:与本体 finish_native_mesh 同序(先雾后曝光);RT 侧复用本体函数亦可,
+// 但 RT 阴影可见性已在 core 内解析,此处保持独立以隔离 RT 语义。
 @fragment fn fragment_main_rt(
   input: VertexOutput,
   @builtin(front_facing) front_facing: bool,
 ) -> @location(0) vec4f {
-  return rt_shade_surface(input, front_facing, false);
+  let shaded = rt_shade_surface(input, front_facing);
+  var color = shaded.color;
+  if (frame.fogProjection.z == 2.0 && !flag(input.material.w, 32u)) {
+    let camera_depth = max((frame.view * vec4f(input.world, 1.0)).w, 0.0);
+    let optical_depth = frame.tuning.w * camera_depth;
+    let amount = clamp(1.0 - exp(-optical_depth * optical_depth), 0.0, 1.0);
+    color = mix(color, frame.tuning.rgb, amount);
+  }
+  let exposure = select(1.0, frame.lightingOptions.x, frame.sunColor.w >= 2.0);
+  let output_alpha = select(1.0, shaded.alpha, flag(input.material.w, 4u));
+  return vec4f(color * exposure, output_alpha);
 }
 
+// I-C23 分层入口:只有 RT 分层管线族(扩展 layout)创建;层栈只被本包装引用。
 @fragment fn fragment_main_rt_layered(
   input: VertexOutput,
   @builtin(front_facing) front_facing: bool,
 ) -> @location(0) vec4f {
-  return rt_shade_surface(input, front_facing, true);
+  let shaded = rt_shade_surface(input, front_facing);
+  let layered_color = deep_layer_stack(shaded.color, input, shaded.normal, shaded.geometry_normal,
+    shaded.base, shaded.metal, shaded.rough_raw, shaded.ao, shaded.emission,
+    shaded.view, shaded.light, shaded.visibility);
+  var color = layered_color;
+  if (frame.fogProjection.z == 2.0 && !flag(input.material.w, 32u)) {
+    let camera_depth = max((frame.view * vec4f(input.world, 1.0)).w, 0.0);
+    let optical_depth = frame.tuning.w * camera_depth;
+    let amount = clamp(1.0 - exp(-optical_depth * optical_depth), 0.0, 1.0);
+    color = mix(color, frame.tuning.rgb, amount);
+  }
+  let exposure = select(1.0, frame.lightingOptions.x, frame.sunColor.w >= 2.0);
+  let output_alpha = select(1.0, shaded.alpha, flag(input.material.w, 4u));
+  return vec4f(color * exposure, output_alpha);
 }
