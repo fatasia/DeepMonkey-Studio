@@ -249,6 +249,10 @@ fn parity_packet() -> RenderPacket {
     );
     let (ground_vertices, box_vertices) = vertices.split_at(24);
     let (ground_indices, box_indices) = indices.split_at(6);
+    // box 索引在 push_face 里沿全局顶点编号递增;切分成独立几何后必须
+    // 减去地面顶点数(4)变回本地索引,否则逐几何校验越界
+    // (与 src/renderer/rt_raster_parity_gpu_tests.rs 的 parity_packet 同修)。
+    let box_indices: Vec<u32> = box_indices.iter().map(|index| index - 4).collect();
     let ground_uv0 = vec![0.0f32; 8];
     let box_uv0 = vec![0.0f32; 48];
     let packet: RenderPacket = serde_json::from_value(serde_json::json!({
