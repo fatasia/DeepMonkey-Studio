@@ -42,6 +42,26 @@ struct Pixel { color:vec4f, normal:vec4f }
   let p=vec2i(i32(id.x%size.x),i32(id.x/size.x));
   result[id.x].color=textureLoad(hdr,p,0);result[id.x].normal=textureLoad(normals,p,0);
 }`;
+/**
+ * J3 Gate D roughness channel semantics of the actual normal MRT alpha (2026-10-01 归因修正)。
+ *
+ * 读回通道是 normal 附件 alpha,不是 HDR alpha;但两端 alpha 的语义不同:
+ * - Web `view-normal` 附件(`rgba8unorm`,见 pbrFramePlanResources)由 `pbrShader.geometryOutput`
+ *   写入 `clamp(surface.rough, 0, 1)` —— **原始感知 roughness**(材质 roughness × MR 纹理 G,
+ *   clamp 前的 SSR 锥滤波语义),不是 shade 消费后的值。
+ * - Native `fragment_normal_capture`(native_mesh_v1.wgsl)写入的是**消费后**形式
+ *   `min(1, clamp(raw, 0.045, 1) + viewGeometryRoughness)`。
+ *
+ * 两者在冻结 J3 fixture 上按构造重合(平面四边形 ⇒ 几何项为 0;raw ≥ 0.339 ⇒ 0.06/0.045
+ * 两个下限都不咬合),8bit 量化后逐点相等 —— 这正是历史上"输入一致"排除依据碰巧成立的原因。
+ * 曲面几何或 raw < 0.06 时两者必然发散( latent:Web 0.06 vs Native 0.045 下限差)。
+ */
+export const textureCoverageNormalAlphaSemantics={web:"raw-perceptual-roughness",native:"consumed-shading-roughness"} as const;
+/** Web shade 消费语义的 roughness(下限 0.06,见 pbrShader.shade;几何项为片元导数,
+ * 附件读回不可复现,平面 fixture 上为 0;Native 用 0.045 下限,差异保留为显式发散)。 */
+export function consumedShadingRoughness(rawNormalAlpha:number){
+  return Math.min(1,Math.max(.06,rawNormalAlpha));
+}
 interface Attachments {
   targets:{hdrTexture:GPUTexture;normalTexture:GPUTexture};
   transparency:{currentColor?:GPUTexture};frameData:Float32Array;
@@ -50,6 +70,7 @@ export async function readTextureCoverageFrame(renderer:PbrRenderer,transparent:
   const actual=renderer as unknown as Attachments,device=renderer.session.device;
   const color=transparent?actual.transparency.currentColor:actual.targets.hdrTexture;
   if(!color||color.format!=="rgba16float"||!actual.targets.normalTexture)throw Error("Actual final HDR/normal attachment unavailable");
+  if(actual.targets.normalTexture.format!=="rgba8unorm")throw Error("Actual normal attachment is not the formal rgba8unorm MRT (roughness alpha quantization contract)");
   if(transparent&&color===actual.targets.hdrTexture)throw Error("OIT profile must capture actual composited destination");
   const size=color.width*color.height*32,output=device.createBuffer({size,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC}),read=device.createBuffer({size,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST});
   try{

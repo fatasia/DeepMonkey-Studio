@@ -3,7 +3,7 @@ import {materializeRuntimeRenderPacket} from "../src/runtimePackage/renderPacket
 import type {RuntimePrefilteredIbl} from "../src/runtimePackage/environmentTypes.js";
 import {sha256Utf8} from "../src/shaderPackage/hash.js";
 import type {buildTextureCoveragePlan,TextureCoverageFixture} from "./j3TextureCoverageFixture.js";
-import {observeTextureCoverageGpu,readTextureCoverageFrame} from "./j3TextureCoverageReadback.js";
+import {observeTextureCoverageGpu,readTextureCoverageFrame,consumedShadingRoughness} from "./j3TextureCoverageReadback.js";
 
 type Plan=ReturnType<typeof buildTextureCoveragePlan>;
 function constantDfg(f:TextureCoverageFixture):RuntimePrefilteredIbl{
@@ -33,7 +33,11 @@ export async function runTextureCoverageProbe(canvas:HTMLCanvasElement,plan:Plan
         frames.push({scenario:scenario.id,cameraId:camera.id,round,packageHash:scenario.packageHash,packetHash:scenario.packetHash,
           fullHash:actual.fullHash,normalHash:actual.normalHash,vp:actual.vp,frame:actual.frame,finalAttachment:actual.finalAttachment,drawCalls:metric.drawCalls,triangles:metric.triangles,
           coverage,coveragePixels:coverage.reduce((sum,v)=>sum+v!,0),
-          samples:camera.points.map(p=>({pixel:p.pixel,hdr:Array.from(actual.data.slice(p.pixel*8,p.pixel*8+4)),roughness:actual.data[p.pixel*8+7]!}))});
+          // roughness = normal 附件 alpha(Web 语义:原始感知 roughness,非 HDR alpha);
+          // consumedRoughness = shade 消费形式(下限 0.06),与 Native fragment_normal_capture
+          // 写入的消费后 alpha 同语义(几何项除外,平面 fixture 上为 0),供跨端对拍配对。
+          samples:camera.points.map(p=>({pixel:p.pixel,hdr:Array.from(actual.data.slice(p.pixel*8,p.pixel*8+4)),
+            roughness:actual.data[p.pixel*8+7]!,consumedRoughness:consumedShadingRoughness(actual.data[p.pixel*8+7]!)}))});
         await observe?.(`${camera.id}-${scenario.id}`,round);
       }
     }

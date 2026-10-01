@@ -1,12 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
-import {validateTextureCoverageHost,requireStableTextureFresh,compareTextureCoveragePair,compareTextureCoverageMasks,requireTextureCoverageNativeRun} from "./j3TextureCoverageParity.mjs";
+import {readFileSync} from "node:fs";
+import {validateTextureCoverageHost,requireStableTextureFresh,compareTextureCoveragePair,compareTextureCoverageMasks,requireTextureCoverageNativeRun,
+  directMultiscatteringEnergy,dfg185DirectAt,predictMrDirectMultiscatteringDelta} from "./j3TextureCoverageParity.mjs";
 
 // J3 Gate D CPU 侧判定器测试:纯合成 85 点/2 相机/7 配置矩阵,不触 GPU。
 // 覆盖:证据/输入身份负例、RGB 严格 0.002 门、HDR alpha/coverage 逐点判据、
 // MR 线性 roughness 门(1/255+1e-5)与 zero-metal 贡献下限、严格 UV1 25/19 稳定域
-// 与两相机 4-texel 覆盖形状、跨端配对(mask 真实轮廓 1px 允许 / 内部失配拒绝)。
+// 与两相机 4-texel 覆盖形状、跨端配对(mask 真实轮廓 1px 允许 / 内部失配拒绝)、
+// 消费语义 roughness 字段门、直射多散射 DFG 归因模型(对照 interrupted-0930 实测)。
 const hex=c=>String(c).repeat(64);
 const sha=v=>createHash("sha256").update(v).digest("hex");
 const BACKGROUND=[.012,.02,.035];
@@ -153,4 +156,69 @@ test("native runner gate accepts only the named passing texture GPU test",()=>{
   assert.throws(()=>requireTextureCoverageNativeRun(ok,1),/did not execute successfully/);
   assert.throws(()=>requireTextureCoverageNativeRun("\ntest j2_b5_actual_probe_gi ... ok\ntest result: ok. 1 passed; 0 failed;\n",0),/did not execute successfully/);
   assert.throws(()=>requireTextureCoverageNativeRun("\ntest j3_actual_texture_uv_coverage ... FAILED\ntest result: FAILED. 1 failed;\n",0),/did not execute successfully/);
+});
+test("web consumed roughness field must track the shade-consumed MR G within the 8-bit gate; native samples stay backward compatible",()=>{
+  const {plan,native,web0,receipt}=buildWorld();
+  const withConsumed=structuredClone(web0);
+  for(const frame of withConsumed.frames)for(const sample of frame.samples){
+    sample.consumedRoughness=Math.min(1,Math.max(.06,sample.roughness));
+  }
+  validateTextureCoverageHost(plan,withConsumed,receipt);
+  const diverged=structuredClone(withConsumed);
+  diverged.frames.find(v=>v.scenario==="mr-linear"&&v.round===0).samples[0].consumedRoughness=.81+.02;
+  assert.throws(()=>validateTextureCoverageHost(plan,diverged,receipt),/consumed roughness diverges/);
+  validateTextureCoverageHost(plan,structuredClone(native),receipt);
+});
+test("dfg185 lookup and multiscattering energy mirror the shared WGSL at hand-computed reference points",()=>{
+  const source=readFileSync(new URL("../../packages/deep-engine/src/webgpu/directDfgLut185.ts",import.meta.url),"utf8");
+  const match=source.match(/DIRECT_DFG_185_WGSL_ARRAY\s*=\s*"((?:[^"\\]|\\.)*)"/);
+  const lut=[...match[1].matchAll(/vec2f\(([-0-9.e+]+),\s*([-0-9.e+]+)\)/g)].map(v=>[Number(v[1]),Number(v[2])]);
+  assert.equal(lut.length,256);
+  assert.deepEqual(lut[15*16+12],[0.5830078125,0.00010627508163452148]);
+  // 行内插值:rough=0.790588(nv=1, 行 15, i=12→13, fu=0.149412)—— Web shade 实际查到的 DFG。
+  // 手算参考:0.5830078125*0.85058824+0.4970703125*0.14941176 = 0.5701677390;
+  //           y = 0.00010627508*0.85058824+0.00009584427*0.14941176 = 0.0001047166。
+  const web=dfg185DirectAt(lut,0.9*224/255,1);
+  assert.ok(Math.abs(web[0]-0.5701677390)<1e-8&&Math.abs(web[1]-0.0001047166)<1e-8,`dfg185 interp ${web}`);
+  // 能量核手算参考:texel3(metal=0.8*240/255,f0=[0.61224,0.53694,0.46165])。
+  const f0=[0.6122352941176471,0.5369411764705883,0.46164705882352944];
+  const native=directMultiscatteringEnergy(f0[0],[0.75,0.0625],[0.75,0.0625]);
+  assert.ok(Math.abs(native-0.0061717)<2e-6,`native energy ${native}`);
+  const webEnergy=directMultiscatteringEnergy(f0[0],web,web);
+  assert.ok(Math.abs(webEnergy-0.0160709)<2e-5,`web energy ${webEnergy}`);
+});
+test("attribution model reproduces the interrupted-0930 mr-linear observed deltas within f16 quantization noise",()=>{
+  const fixture=JSON.parse(readFileSync(new URL("../../packages/deep-engine/fixtures/j3-texture-coverage-v1.json",import.meta.url),"utf8"));
+  // 实测(interrupted-0930/texture-coverage,两 fresh 的 web-0 web-1 与 native.runs[0] 逐点一致):
+  // texel3 稳定点 nH=[0.28955,0.20166,0.12915] wH=[0.3042,0.20947,0.13269];
+  // texel2 稳定点 nH=[0.43042,0.30151,0.19421] wH=[0.43311,0.30273,0.19482]。
+  const observed={2:[0.00269,0.00122,0.00061],3:[0.01465,0.00781,0.00354]};
+  for(const texel of [2,3]){
+    const predicted=predictMrDirectMultiscatteringDelta(fixture,texel,0.9*fixture.mrBytes[texel*4+1]/255);
+    for(let k=0;k<3;k++){
+      assert.ok(predicted[k]>0,`texel${texel} ch${k} must predict web-brighter, got ${predicted[k]}`);
+      assert.ok(Math.abs(predicted[k]-observed[texel][k])<=0.0003,
+        `texel${texel} ch${k} predicted ${predicted[k].toFixed(6)} vs observed ${observed[texel][k]}`);
+    }
+  }
+});
+test("pair drift on mr-linear reports multiscattering attribution; off-prediction drift stays unexplained",()=>{
+  const {plan,native,web0}=buildWorld();
+  const fixture=JSON.parse(readFileSync(new URL("../../packages/deep-engine/fixtures/j3-texture-coverage-v1.json",import.meta.url),"utf8"));
+  plan.fixture={...plan.fixture,...fixture};
+  const point3=plan.cameras[0].points[3];
+  assert.equal(point3.byScenario["mr-linear"].texel,3);
+  const predicted=predictMrDirectMultiscatteringDelta(plan.fixture,3,point3.byScenario["mr-linear"].roughness);
+  const attributed=structuredClone(web0);
+  attributed.frames.find(v=>v.scenario==="mr-linear"&&v.cameraId==="axis"&&v.round===0).samples[3].hdr[0]+=predicted[0];
+  assert.throws(()=>compareTextureCoveragePair(plan,native.runs[0],attributed),/drift .*attributed: direct-multiscattering DFG divergence/);
+  const unknown=structuredClone(web0);
+  unknown.frames.find(v=>v.scenario==="mr-linear"&&v.cameraId==="axis"&&v.round===0).samples[3].hdr[0]+=predicted[0]+0.01;
+  assert.throws(()=>compareTextureCoveragePair(plan,native.runs[0],unknown),/unexplained: multiscattering attribution residual/);
+  const silent=structuredClone(web0);
+  silent.frames.find(v=>v.scenario==="base-uv0"&&v.cameraId==="axis"&&v.round===0).samples[3].hdr[0]+=0.01;
+  let message="";
+  try{compareTextureCoveragePair(plan,native.runs[0],silent);}catch(e){message=String(e.message);}
+  assert.match(message,/Paired texture HDR drift/);
+  assert.doesNotMatch(message,/multiscattering/);
 });

@@ -1,6 +1,70 @@
 import {createHash} from "node:crypto";
+import {readFileSync} from "node:fs";
 const sha=value=>createHash("sha256").update(value).digest("hex"),hash=v=>typeof v==="string"&&/^[a-f0-9]{64}$/.test(v);
 const requireCondition=(v,m)=>{if(!v)throw Error(m);};
+// J3 Gate D mr-linear 归因模型(2026-10-01 CPU 重算,修正规格"深夜归因更新"的通道错位假设):
+// ① Web probe roughness 一直读的是 normal 附件 alpha(非 HDR alpha),两端 8bit 读回逐点相等
+//    (texel3=202/255,texel2=173/255),"输入一致"排除在 roughness 维度成立;
+// ② 真实差异面是直射多散射 DFG 来源:Web shade 用 deepDirectDfg185(Three r185 LUT,
+//    随 roughness/nv 变化),Native native_direct_multiscattering 采样 brdf_lut
+//    (harness 冻结常量 [0.75,0.0625])。两者共享同一 deepDirectMultiscatteringEnergy 能量核,
+//    差异随 metal(f0)与 roughness(lost 项)增长 —— 恰好只在 mr-linear(metal≠0)的高
+//    roughness texel 2/3 上超差(mr-zero-metal f0=0.04 差异可忽略,base 系 UNLIT 不走直射核,
+//    规格里"base-uv1 过门排除直射数学差"的排除本身无效)。数值对拍:
+//    texel3 预测 Δ=[0.01485,0.00774,0.00355] vs 实测 [0.01465,0.00781,0.00354],
+//    texel2 预测 R=0.002687 vs 实测 0.00269,逐通道 ≤1.5%(f16 量化噪声内)。
+// 以下纯函数逐式镜像 shared WGSL,只用于失败归因,不改变门判据。
+let DFG185;
+function dfg185Lut(){
+  if(DFG185)return DFG185;
+  const source=readFileSync(new URL("../../packages/deep-engine/src/webgpu/directDfgLut185.ts",import.meta.url),"utf8");
+  const match=source.match(/DIRECT_DFG_185_WGSL_ARRAY\s*=\s*"((?:[^"\\]|\\.)*)"/);
+  requireCondition(match,"directDfgLut185 source table not found");
+  DFG185=[...match[1].matchAll(/vec2f\(([-0-9.e+]+),\s*([-0-9.e+]+)\)/g)].map(v=>[Number(v[1]),Number(v[2])]);
+  requireCondition(DFG185.length===256,"directDfgLut185 table must hold 256 entries");
+  return DFG185;
+}
+/** 逐式镜像 brdfDirectMultiscatteringWgsl 的 deepDirectMultiscatteringEnergy(单通道标量版)。 */
+export function directMultiscatteringEnergy(f0,dfgView,dfgLight){
+  const singleView=f0*dfgView[0]+dfgView[1],singleLight=f0*dfgLight[0]+dfgLight[1];
+  const lostView=1-(dfgView[0]+dfgView[1]),lostLight=1-(dfgLight[0]+dfgLight[1]);
+  const averageFresnel=f0+(1-f0)*0.047619;
+  const multiple=singleView*singleLight*averageFresnel/(1-lostView*lostLight*averageFresnel+0.000001);
+  return multiple*(lostView*lostLight);
+}
+/** 逐式镜像 pbrDirectMultiscatteringWgsl 的 deepDirectDfg185 双线性查表(行=nv,列=roughness)。 */
+export function dfg185DirectAt(lut,roughness,dotNv){
+  const u=roughness*16-0.5,v=dotNv*16-0.5,fu0=Math.floor(u),fv0=Math.floor(v);
+  const i0=Math.min(Math.max(fu0,0),15),j0=Math.min(Math.max(fv0,0),15);
+  const i1=Math.min(Math.max(fu0+1,0),15),j1=Math.min(Math.max(fv0+1,0),15);
+  const fu=Math.min(Math.max(u-fu0,0),1),fv=Math.min(Math.max(v-fv0,0),1);
+  const at=(j,i)=>lut[j*16+i],a00=at(j0,i0),a10=at(j0,i1),a01=at(j1,i0),a11=at(j1,i1);
+  return [0,1].map(k=>a00[k]*(1-fu)*(1-fv)+a10[k]*fu*(1-fv)+a01[k]*(1-fu)*fv+a11[k]*fu*fv);
+}
+/**
+ * mr- 场景稳定点跨端 HDR 差的直射多散射归因预测(正=Web 更亮)。前向近似 nv=nl=1
+ * (轴向相机 nv≥0.97 落同一 LUT 行,斜视相机残差 ≪ hdrTolerance);f0=mix(0.04,baseFactor,
+ * metallic×mrB/255);单散射 BRDF 两端同源,差值只来自 DFG 来源。假设:harness 冻结黑环境
+ * (无 IBL)、无阴影、exposure=1 —— 与 j3 fixture 一致。
+ */
+export function predictMrDirectMultiscatteringDelta(fixture,texel,roughness){
+  const base=fixture.baseFactor,radiance=fixture.radiance,metal=fixture.metallic*(fixture.mrBytes[texel*4+2]/255);
+  const f0=[0,1,2].map(k=>0.04+(base[k]-0.04)*metal);
+  const web=dfg185DirectAt(dfg185Lut(),roughness,1),native=fixture.dfg;
+  return [0,1,2].map(k=>(directMultiscatteringEnergy(f0[k],web,web)-directMultiscatteringEnergy(f0[k],native,native))*radiance[k]);
+}
+function mrAttributionSuffix(plan,scenario,point,error){
+  if(!scenario.startsWith("mr-"))return"";
+  const expected=point?.byScenario?.[scenario];
+  if(!expected||!Number.isFinite(expected.roughness))return"";
+  let predicted;
+  try{predicted=predictMrDirectMultiscatteringDelta(plan.fixture,expected.texel,expected.roughness);}
+  catch{return" [multiscattering attribution unavailable: dfg185 source unreadable]";}
+  const residual=error-Math.max(...predicted.map(v=>Math.abs(v)));
+  return residual<=plan.fixture.hdrTolerance
+    ?` [attributed: direct-multiscattering DFG divergence (web deepDirectDfg185 vs native brdfLut constant ${JSON.stringify(plan.fixture.dfg)}) predicts ${predicted.map(v=>+v.toFixed(5))}, residual ${residual.toFixed(5)} <= hdrTolerance]`
+    :` [unexplained: multiscattering attribution residual ${residual.toFixed(5)} > hdrTolerance ${plan.fixture.hdrTolerance}]`;
+}
 export function requireTextureCoverageNativeRun(log,code){
   requireCondition(code===0&&/test\s+(?:\S*::)?j3_actual_texture_uv_coverage\s+\.\.\.\s+ok(?:\r?\n|$)/m.test(log)
     &&/test result: ok\. [1-9]\d* passed; 0 failed;/m.test(log),"Named Native texture GPU test did not execute successfully");
@@ -50,6 +114,16 @@ export function validateTextureCoverageHost(plan,host,{inputHash,profileHash,web
         }
         if(s.id.startsWith("mr-")){
           const error=Math.abs(a.roughness-expected.roughness);requireCondition(error<=1/255+.00001,"Actual MR G not linear/UV drift");stats.maxRoughnessError=Math.max(stats.maxRoughnessError,error);
+          // 通道语义修正(2026-10-01):Web 样本另带 shade 消费形式 consumedRoughness(下限 0.06,
+          // 镜像 lab consumedShadingRoughness);Native 的 roughness 字段本身就是消费语义
+          // (fragment_normal_capture: min(1,clamp(raw,0.045,1)+geometry))。冻结 fixture 上
+          // consumed==raw(下限不咬合、几何项 0)—— 显式断言,防止未来 fixture/下限变化让
+          // "输入一致"排除依据再度悄然失效。历史 web/native 样本无该字段,向后兼容跳过。
+          if(typeof a.consumedRoughness==="number"){
+            const consumedError=Math.abs(a.consumedRoughness-Math.min(1,Math.max(.06,expected.roughness)));
+            requireCondition(consumedError<=1/255+.00001,"Actual consumed roughness diverges from shade-consumed MR G beyond 8-bit LSB");
+            stats.maxRoughnessError=Math.max(stats.maxRoughnessError,consumedError);
+          }
           if(s.id==="mr-linear"){
             const zero=run.frames.find(v=>v.scenario==="mr-zero-metal"&&v.cameraId===camera.id&&v.round===round).samples[i];
             if(a.hdr.slice(0,3).some((v,k)=>Math.abs(v-zero.hdr[k])>.002))stats.metalContributions++;
@@ -86,7 +160,7 @@ export function compareTextureCoveragePair(plan,native,web){
     requireCondition(!!camera&&!!w,"Paired texture frame absent");boundaryMismatches+=compareTextureCoverageMasks(n.coverage,w.coverage,plan.width,plan.height);
     for(let i=0;i<camera.points.length;i++)if(camera.points[i].byScenario[n.scenario].stable){
       const error=Math.max(...n.samples[i].hdr.slice(0,3).map((v,k)=>Math.abs(v-w.samples[i].hdr[k])));
-      requireCondition(Number.isFinite(error)&&error<=plan.fixture.hdrTolerance,`Paired texture HDR drift ${n.scenario}/${n.cameraId}/${n.samples[i].pixel}: ${error}`);
+      requireCondition(Number.isFinite(error)&&error<=plan.fixture.hdrTolerance,`Paired texture HDR drift ${n.scenario}/${n.cameraId}/${n.samples[i].pixel}: ${error}${mrAttributionSuffix(plan,n.scenario,camera.points[i],error)}`);
       stablePoints++;maxHdrError=Math.max(maxHdrError,error);
     }
   }
