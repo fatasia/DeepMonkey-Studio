@@ -47,7 +47,11 @@ export function validateProbeAnisoIdentity(host,family,expectedPacket,fixture,we
   for(const f of host.frames){
     assert.equal(f.frame.length,family==="native"?149*4:96);const json=f.frameJson??JSON.stringify(f.frame);assert.equal(hash(json),f.frameHash);
     const fromText=new Float32Array(JSON.parse(json)),observed=new Float32Array(f.frame);
-    assert.deepEqual(Buffer.from(fromText.buffer),Buffer.from(observed.buffer),"actual aniso f32 bytes differ from hashed frame text");
+    // JSON.stringify canonically maps -0 to 0, so a byte-exact roundtrip check
+    // must normalize negative zero on both sides (aniso frames contain -0 from
+    // the negative-origin view matrix; B5 uniform frames did not).
+    const normalizeZero=a=>Float32Array.from(a,v=>v===0?0:v);
+    assert.deepEqual(Buffer.from(normalizeZero(fromText).buffer),Buffer.from(normalizeZero(observed).buffer),"actual aniso f32 bytes differ from hashed frame text");
     if(family==="native"){assert.equal(f.frame[39],1);assert.equal(f.frame[47],f.scenario==="zero"?0:2);assert.deepEqual(f.frame.slice(52,55),[0,0,0]);assert.equal(f.frame[56],1);}
     else{assert.equal(f.frame[67],1);assert.equal(f.frame[79],1);assert.equal(f.frame[87],0);}
   }
