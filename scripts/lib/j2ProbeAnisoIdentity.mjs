@@ -11,6 +11,15 @@ function anisoCellIrradiance(cell,scenario){
   return (cell[0]+cell[1]+cell[2])%2===0?CHECKER_EVEN:CHECKER_ODD;
 }
 const anisoCell=linear=>[linear%3,Math.floor(linear/3)%3,Math.floor(linear/9)];
+const HALF={0:0,0.25:0x3400,0.5:0x3800,1:0x3c00,2:0x4000,4:0x4400};
+// Independent fp16 round-trip guard (this file deliberately does not import the fixture, so the
+// guard is a second copy of the check, not the same code path): 0x4200 is fp16 3.0, not the
+// frozen 4.0 - that mis-encoding was the 2026-10-01 GPU first-run break. Module level so the
+// runner fails before any browser/GPU work instead of uploading wrong lanes.
+const decodeFrozenHalf=bits=>{const exponent=(bits>>>10)&31,fraction=bits&1023;
+  return exponent===0?fraction/1024*2**-14:2**(exponent-15)*(1+fraction/1024);};
+for(const [value,bits] of Object.entries(HALF))if(decodeFrozenHalf(bits)!==Number(value))
+  throw Error(`aniso frozen half-bit table mis-encodes ${value} as 0x${bits.toString(16)} (decodes ${decodeFrozenHalf(bits)})`);
 export function validateProbeAnisoIdentity(host,family,expectedPacket,fixture,webShaderHash){
   assert.equal(hash(host.actualPacketJson),host.actualPacketHash,"actual submitted packet hash");
   assert.equal(stable(JSON.parse(host.actualPacketJson)),stable(host.actualPacket),"packet text matches observed packet");
@@ -31,7 +40,6 @@ export function validateProbeAnisoIdentity(host,family,expectedPacket,fixture,we
         assert.equal(bytes.readFloatLE((p+1)*96+12),1);assert.equal(bytes.readFloatLE((p+1)*96+16),100000);assert.equal(bytes.readFloatLE((p+1)*96+20),1);for(let k=6;k<24;k++)assert.equal(bytes.readFloatLE((p+1)*96+k*4),0);}
     }else{
       assert.equal(input.textureHalfBits.length,27*4);assert.equal(hash(input.textureHalfBits.join(",")),input.textureHash);assert.equal(input.metadataBytes.length,256);assert.equal(hash(input.metadataBytes.join(",")),input.metadataHash);
-      const HALF={0:0,0.25:0x3400,0.5:0x3800,1:0x3c00,2:0x4000,4:0x4200};
       for(let p=0;p<27;p++){const rgb=anisoCellIrradiance(anisoCell(p),scenario);assert.deepEqual(input.textureHalfBits.slice(p*4,p*4+4),[HALF[rgb[0]],HALF[rgb[1]],HALF[rgb[2]],0x3c00]);}
       const bytes=Buffer.from(input.metadataBytes);for(let k=0;k<3;k++){assert.equal(bytes.readFloatLE(k*4),fixture.origin[k]);assert.equal(bytes.readUInt32LE(16+k*4),3);assert.equal(bytes.readFloatLE(48+k*4),fixture.origin[k]+2*fixture.spacing);}assert.equal(bytes.readFloatLE(12),fixture.spacing);assert.equal(bytes.readUInt32LE(60),27);assert(bytes.subarray(64).every(v=>v===0));
     }

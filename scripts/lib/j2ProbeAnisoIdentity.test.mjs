@@ -39,7 +39,7 @@ test("aniso uploaded per-cell bytes, packet and frame are authoritative",()=>{
 });
 test("web half lanes and metadata are frozen per cell",()=>{
   const packet={materials:[{id:"surface",metallic:0,roughness:.8}]};
-  const HALF={0:0,0.25:0x3400,0.5:0x3800,1:0x3c00,2:0x4000,4:0x4200};
+  const HALF={0:0,0.25:0x3400,0.5:0x3800,1:0x3c00,2:0x4000,4:0x4400};
   const Z_RAMP=[[.25,.5,1],[.5,1,2],[1,2,4]],CHECKER_EVEN=[.25,.5,1],CHECKER_ODD=[1,2,4];
   const cellRgb=cell=>scenario=>scenario==="zero"?[0,0,0]:scenario==="z-ramp"?Z_RAMP[cell[2]]:(cell[0]+cell[1]+cell[2])%2===0?CHECKER_EVEN:CHECKER_ODD;
   const metadata=new Uint8Array(256),view=new DataView(metadata.buffer);
@@ -53,6 +53,10 @@ test("web half lanes and metadata are frozen per cell",()=>{
   assert(validateProbeAnisoIdentity(host,"web",packet,fixture,"e".repeat(64)).passed);
   const badLayer=structuredClone(host);badLayer.probeInputs[1].textureHalfBits[18*4]=0x3800;
   assert.throws(()=>validateProbeAnisoIdentity(badLayer,"web",packet,fixture,"e".repeat(64)));
+  // Regression for the 2026-10-01 GPU first-run break: fp16 0x4200 decodes to 3.0, so a blue
+  // lane carrying it in place of the frozen 4.0 (0x4400) must fail identity.
+  const badBlue=structuredClone(host);badBlue.probeInputs[1].textureHalfBits[18*4+2]=0x4200;
+  assert.throws(()=>validateProbeAnisoIdentity(badBlue,"web",packet,fixture,"e".repeat(64)));
   const badShader=structuredClone(host);badShader.sourceHash="d".repeat(64);
   assert.throws(()=>validateProbeAnisoIdentity(badShader,"web",packet,fixture,"e".repeat(64)));
 });

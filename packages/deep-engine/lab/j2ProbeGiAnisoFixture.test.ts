@@ -63,7 +63,11 @@ describe("anisotropic probe follow-up CPU contracts",()=>{
     const halfLanes=anisoTextureHalfLanes("z-ramp",f);
     expect(halfLanes.slice(0,4)).toEqual([0x3400,0x3800,0x3c00,0x3c00]);
     expect(halfLanes.slice(9*4,9*4+4)).toEqual([0x3800,0x3c00,0x4000,0x3c00]);
-    expect(halfLanes.slice(18*4,18*4+4)).toEqual([0x3c00,0x4000,0x4200,0x3c00]);
+    // 0x4400 is fp16 4.0; 0x4200 is 3.0 and was the 2026-10-01 GPU first-run break
+    // (z-ramp layer 2 / checker odd blue uploaded as 3.0 while the oracle expected 4.0).
+    expect(halfLanes.slice(18*4,18*4+4)).toEqual([0x3c00,0x4000,0x4400,0x3c00]);
+    const checkerLanes=anisoTextureHalfLanes("checker",f);
+    expect(checkerLanes.slice(19*4,19*4+4)).toEqual([0x3c00,0x4000,0x4400,0x3c00]);
     expect(halfLanes.length).toBe(27*4);
   });
 

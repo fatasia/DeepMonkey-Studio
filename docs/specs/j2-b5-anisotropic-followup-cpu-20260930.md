@@ -70,7 +70,7 @@ half 精确 irradiance, .001 门]`，全部沿用 B5 已验的合法共同输入
     两族采样均归一化回 [.5,1,2]，证明差异确实来自非均匀输入而非坐标差。
   - `checker`：cell (x+y+z) 偶 [0.25,.5,1] / 奇 [1,2,4]（逐 probe 交替，交接候选第二形态）。
   所有 RGB 值 ∈{0,0.25,0.5,1,2,4}，binary16 精确（half bits 0x0000/0x3400/0x3800/0x3c00/
-  0x4000/0x4200），Web half texture 与 Native f32 storage 承载同一数学值；validity=1、
+  0x4000/0x4400），Web half texture 与 Native f32 storage 承载同一数学值；validity=1、
   meanDistance=100000、variance=1、relocation=0 沿用 B5。
 - **bias/irradiance/门**：normalBiasCells .2、metallic 0、roughness .8、DFG [.75,.0625]、
   dielectric .04、绝对 half 门 .001 全部沿用 B5 冻结值，不重开。
@@ -155,3 +155,12 @@ node scripts/j2-probe-gi-aniso.mjs --prepare
 ## GPU 首跑断点（2026-10-01 主线程）
 
 Native 叶编译与运行通过；Web 双 fresh 采集完成。compare 断点：`axis/z-ramp/6991/round2` Web biased texture 采样 0.1198 vs CPU 镜像期望 0.1398（差 0.020，round1 同点未报错）。形态指向 biased receiver 在 z 梯度纹素边界的采样对 fp16 偏移的敏感性（与 mr-linear 的 metallic 边界采样同族：**旋转/非均匀输入下的纹素边界采样语义**是当前 J3/B5 共同的开放缺口）。已验证部分：CPU admission 与交接值 e-9 级对拍、z 单元可展示性、Native storage 侧。后续刀先 dump 双端逐样本值与 round1/2 差异模式，再定采样语义修复面。
+
+### 断点归因决议（2026-10-01 CPU 归因刀，已修复）
+
+上面"round2/纹素边界敏感性"的初步形态判断**不成立**，实情如下（证据：`test-output/interrupted-0930/probe-gi-aniso/verify-attribution.mjs`）：
+
+- **"round2"是误读**：compare 报错格式为 `Aniso web CPU failed ${camera}/${scenario}/${pixel}/${channel}`，断点消息末尾的 `2` 是**通道索引 k=2（B 通道）**，不是轮次。web-0 与 web-1 的全部 12 帧 rgbaHash 逐字节相同，各 fresh 内 round0/round1 也逐字节相同——采集完全稳定，不存在 fresh 间或轮次间差异。
+- **根因 = Web 采集上传的半精度位表错**：冻结值 4.0 被编码为 `0x4200`（fp16 实为 **3.0**），正确编码是 `0x4400`。受影响的是 z-ramp 第 2 层与 checker 奇单元的 **B 通道**（唯一取值为 4 的通道位），GPU 收到 3.0 后采样完全正确，而 CPU 镜像按数值 4.0 冻结期望，故仅 B 通道、仅在含 4 的场景确定性失配。全量对拍：1530 个采样点通道比较中，对原 oracle 失败 340 个（全部 ch2、全部 z-ramp/checker、zero 全过，首个即 axis/z-ramp/6991/ch2）；把 z-ramp[2]/checkerOdd 的 B 换成 3.0 后 **1530/1530 全过**。GPU biased-texture 采样语义（receiver 偏移、8-tap textureLoad、法线权重）与 CPU 镜像逐条一致，**不存在纹素边界采样语义差**。
+- **修复**：`j2ProbeGiAnisoFixture.ts` 的 `ANISO_HALF_BITS` 与 `j2ProbeAnisoIdentity.mjs` 的 `HALF` 对账副本改为 `4:0x4400`，两处各加载期 fp16 解码回环自检（编错即 import 即失败，先于任何 GPU 工作）；lab 测试与 identity 测试固化 `0x4400` 期望并新增"蓝通道 0x4200 必须 FAIL"回归负例。fixture JSON 数值语义（[1,2,4]）不变，Native storage 路径不受影响。
+- 修复改变 lab/identity 源身份哈希，旧 evidence 按 stale 拒绝属预期；GPU 重跑命令不变（见上文第 1–3 步）。

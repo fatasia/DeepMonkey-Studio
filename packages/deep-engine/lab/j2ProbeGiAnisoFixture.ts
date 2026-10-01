@@ -188,7 +188,11 @@ export function blackProbeAnisoIbl(f:ProbeAnisoFixture):RuntimePrefilteredIbl {
   return {schema:"deep-engine.ibl-prefiltered",schemaVersion:1,id:"j2-probe-aniso-ibl",revision:1,kind:"prefiltered-hdri",format:"rgba16float",encoding:"base64-le",faceOrder:"px-nx-py-ny-pz-nz",
     source:{contentHash:{algorithm:"sha256",value:sha256Utf8(JSON.stringify(f))},license:"CC0 authored diagnostic data"},specular:{mips:[{size:1,dataBase64:black}]},diffuse:{mips:[{size:1,dataBase64:black}]},brdfLut:{width:1,height:1,dataBase64:encode([0x3a00,0x2c00,0,0x3c00])}};
 }
-const ANISO_HALF_BITS:Record<number,number>={0:0,0.25:0x3400,0.5:0x3800,1:0x3c00,2:0x4000,4:0x4200};
+const ANISO_HALF_BITS:Record<number,number>={0:0,0.25:0x3400,0.5:0x3800,1:0x3c00,2:0x4000,4:0x4400};
+// Round-trip guard: uploaded lanes must carry the frozen mathematical values, so every entry
+// must decode back exactly (0x4200 is fp16 3.0, not 4.0 - the 2026-10-01 GPU first-run break).
+for(const [frozen,bits] of Object.entries(ANISO_HALF_BITS))if(decodeFloat16Bits(bits)!==Number(frozen))
+  throw Error(`Aniso frozen half-bit table mis-encodes ${frozen} as 0x${bits.toString(16)} (decodes ${decodeFloat16Bits(bits)})`);
 function anisoHalfBits(value:number){const bits=ANISO_HALF_BITS[value];if(bits===undefined)throw Error(`Aniso frozen input ${value} is not a frozen binary16 value`);return bits;}
 export function anisoTextureHalfLanes(scenario:ProbeAnisoScenario,f:ProbeAnisoFixture){
   return Array.from({length:27},(_,linear)=>{
