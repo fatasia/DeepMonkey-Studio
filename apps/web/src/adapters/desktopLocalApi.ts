@@ -545,7 +545,7 @@ export class DesktopLocalApi {
     const record = { ...structuredClone(historical), snapshot: { ...structuredClone(historical.snapshot), publishedAt: now, updatedAt: now }, publishedAt: now };
     state.scenePublications.push(record);
     scene.publishedAt = now;
-    scene.publicationMode = record.snapshot.publicationMode ?? "webgl";
+    scene.publicationMode = record.snapshot.publicationMode ?? "webgpu-preferred";
     scene.publicationPerformance = record.snapshot.publicationPerformance ?? "standard";
     scene.publicationToolbarVisible = record.snapshot.publicationToolbarVisible !== false;
     await this.store.write(state);

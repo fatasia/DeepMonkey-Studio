@@ -7,7 +7,8 @@
  * == SAH 设计（binned SAH） ==
  * 每内部节点在 3 轴 × binCount 个均匀质心 bin 上做左/右两遍扫掠，取
  * cost = leftArea×leftCount + rightArea×rightCount 最小的（轴,bin 边界）；
- * cost ≥ 叶代价（count×节点面积）即截叶；空侧分裂与全轴退化（质心重合）一律拒分裂截叶。
+ * 空侧分裂与全轴退化（质心重合）拒分裂回退中位（buildBvh 同款 clamp）。叶终止仅由
+ * maxLeafSize/深度/退化决定（Embree 风格：SAH 只选平面，不做代价截叶）。
  * 确定性：轴/平面平局取先者（x<y<z、低 entry 优先，严格 < 更新）；划分用与 buildBvh
  * 相同的稳定原地 partition（centroid < plane 入左）；无 RNG、无键序依赖 ⇒ 两次构建逐位一致。
  *
@@ -104,14 +105,21 @@ export function buildSahBvh(input: BvhBuildInput, options: SahBvhOptions = {}): 
     }
     const split = bestSplit(first, count, centroids, bounds, order, binCount, binMin, binMax, binCounts,
       sweepMin, sweepMax, sweepCount, minX, minY, minZ, maxX, maxY, maxZ);
-    if (split === undefined || split.cost >= count * area) {
-      leafCount++; leafAreaCost += area * count;
-      return nodeIndex;
-    }
-    let leftCount = partition(first, count, order, centroids, split.axis, split.plane);
-    if (leftCount === 0 || leftCount === count) {
-      // 划分粘边（质心相等密度高）的中位回退：保证递归推进且确定性。
-      leftCount = Math.max(1, Math.min(count - 1, count >> 1));
+    let leftCount: number;
+    if (split === undefined) {
+      // 全轴质心退化（重合/点状）：仍按最长轴中位回退（buildBvh 同款 clamp），叶体积有界。
+      if (count > maxLeafSize) {
+        leftCount = medianSplit(first, count, order, centroids, minX, minY, minZ, maxX, maxY, maxZ);
+      } else { leafCount++; leafAreaCost += area * count; return nodeIndex; }
+    } else {
+      // 叶终止仅由 maxLeafSize/深度/退化决定（Embree 风格）：SAH 只选最优平面，不提前截叶——
+      // 重叠几何上"面积×计数"指标与代价模型分歧，提前截叶会让叶体积不可预测。
+      leftCount = partition(first, count, order, centroids, split.axis, split.plane);
+      // 仅空侧回退（划分粘边/质心重合）：保证递归推进且确定性。SAH 的合法偏斜剥离
+      // （隔离边界小簇）不再拦——毛毛虫深度由 maxDepth 护栏兜底（24 < 栈容量 32）。
+      if (leftCount === 0 || leftCount === count) {
+        leftCount = medianSplit(first, count, order, centroids, minX, minY, minZ, maxX, maxY, maxZ);
+      }
     }
     const leftIndex = build(first, leftCount, depth + 1);
     const rightIndex = build(first + leftCount, count - leftCount, depth + 1);
@@ -150,7 +158,7 @@ function bestSplit(first: number, count: number, centroids: Float64Array, bounds
       if (bounds[ox + 3]! > binMax[s]!) binMax[s] = bounds[ox + 3]!;
       if (bounds[ox + 4]! > binMax[s + 1]!) binMax[s + 1] = bounds[ox + 4]!;
       if (bounds[ox + 5]! > binMax[s + 2]!) binMax[s + 2] = bounds[ox + 5]!;
-      binCounts[slot]++;
+      binCounts[slot] = binCounts[slot]! + 1;
     }
     // 左扫掠：sweep[b] = bin 0..b 的并。
     let l0 = Infinity, l1 = Infinity, l2 = Infinity, l3 = -Infinity, l4 = -Infinity, l5 = -Infinity;
@@ -192,7 +200,7 @@ function bestSplit(first: number, count: number, centroids: Float64Array, bounds
   if (bestEntry < 0) return undefined; // 全轴退化（质心重合）：调用方截叶。
   const axisExtent = extents[bestAxis]!;
   const axisMin = bestAxis === 0 ? minX : bestAxis === 1 ? minY : minZ;
-  return { axis: bestAxis, plane: axisMin + (bestEntry + 1) * axisExtent / binCount, cost: bestCost };
+  return { axis: bestAxis, plane: axisMin + (bestEntry + 1) * axisExtent / bins, cost: bestCost };
 }
 
 /** 与 buildBvh 同构的稳定原地 partition：centroid < plane 入左，返回左侧数量。 */
@@ -205,6 +213,17 @@ function partition(first: number, count: number, order: number[], centroids: Flo
     const swap = order[left]!; order[left] = order[right]!; order[right] = swap; right -= 1;
   }
   return left - first;
+}
+
+/** 中位回退：最长轴围绕中心 partition（buildBvh 同款），clamp 到 [1, count-1] 后返回左侧数量。 */
+function medianSplit(first: number, count: number, order: number[], centroids: Float64Array,
+  minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number): number {
+  const extents = [maxX - minX, maxY - minY, maxZ - minZ];
+  const axis: 0 | 1 | 2 = extents[0]! >= extents[1]! && extents[0]! >= extents[2]! ? 0 : extents[1]! >= extents[2]! ? 1 : 2;
+  const low = axis === 0 ? minX : axis === 1 ? minY : minZ;
+  const high = axis === 0 ? maxX : axis === 1 ? maxY : maxZ;
+  const leftCount = partition(first, count, order, centroids, axis, (low + high) / 2);
+  return Math.max(1, Math.min(count - 1, leftCount));
 }
 
 function halfArea(minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number): number {

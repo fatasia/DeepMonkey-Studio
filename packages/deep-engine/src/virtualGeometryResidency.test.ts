@@ -35,14 +35,6 @@ function cameraAt(distance: number): LodCamera {
 function tableFixture(): VirtualGeometryDagPageTable {
   return compileVirtualGeometryDagPages(buildMeshletDag(sphereGeometry(), { levels: 3 }), "fixture");
 }
-function subtreeIds(table: VirtualGeometryDagPageTable, rootId: string): Set<string> {
-  const ids = new Set<string>();
-  for (const page of table.pages) {
-    let cursor: string | null = page.id;
-    while (cursor) { if (cursor === rootId) { ids.add(page.id); break; } cursor = table.byId.get(cursor)!.parentId; }
-  }
-  return ids;
-}
 
 describe("buildVirtualGeometryDagRequests(屏幕误差割)", () => {
   it("远距选最粗层,近距收敛到 level 0;割三角形随逼近单调不减", () => {
@@ -170,16 +162,20 @@ describe("VirtualGeometryDagResidency(驻留与 evict 边界)", () => {
     const table = tableFixture();
     const root = [...table.rootIds].sort()[0]!;
     const child = table.byId.get(root)!.childIds[0]!;
-    const other = table.pages.find((page) => page.level === table.levels - 1 && page.id !== root
-      && !subtreeIds(table, root).has(page.id))!;
-    const residency = new VirtualGeometryDagResidency(table,
-      { maxBytes: table.byId.get(root)!.byteLength + table.byId.get(child)!.byteLength });
+    // 驱逐目标取字节最大的异根粗层页并以其定预算:帧0 父+子能装下,帧2 目标页
+    // 只有在 LRU 最久未见的父页被逐(级联带走子页)腾空后才装得下。
+    const other = table.pages.filter((page) => page.level === table.levels - 1 && page.id !== root)
+      .sort((left, right) => left.byteLength - right.byteLength).at(-1)!;
+    const residency = new VirtualGeometryDagResidency(table, { maxBytes: other.byteLength });
+    expect(table.byId.get(root)!.byteLength + table.byId.get(child)!.byteLength)
+      .toBeLessThanOrEqual(other.byteLength);
     residency.commitAdmissions(residency.plan([root, child], 0).admitted.map((handle) => handle.id));
     // child 在 frame1 刷新 lastUsed,root 保持 frame0 ⇒ LRU 先逐 root。
     residency.commitAdmissions(residency.plan([child], 1).admitted.map((handle) => handle.id));
     const swap = residency.plan([other.id], 2);
     const evictedIds = swap.evicted.map((handle) => handle.id).sort();
     expect(evictedIds).toEqual([child, root].sort()); // root 被逐 ⇒ child 级联同逐
+    expect(swap.admitted.map((handle) => handle.id)).toEqual([other.id]);
     expect(residency.plan([other.id], 3).resident.map((handle) => handle.id)).toEqual([other.id]);
   });
 
@@ -192,11 +188,12 @@ describe("VirtualGeometryDagResidency(驻留与 evict 边界)", () => {
       .toThrow(/committed and cannot be rolled back/);
     expect(() => residency.commitAdmissions(["no-such|l0|c0"])).toThrow(/Unknown virtual geometry page/);
     expect(residency.residentCount).toBe(plan.admitted.length);
+    const root = [...table.rootIds].sort()[0]!;
     const inflight = new VirtualGeometryDagResidency(table, { maxBytes: table.totalBytes });
-    const pending = inflight.plan([pageIdsOf(table)[0]!], 0);
-    inflight.rollbackAdmissions([pageIdsOf(table)[0]!]);
+    const pending = inflight.plan([root], 0);
+    expect(pending.admitted.map((handle) => handle.id)).toEqual([root]);
+    inflight.rollbackAdmissions([root]);
     expect(inflight.residentCount).toBe(0);
-    expect(pending.admitted.length).toBe(1);
   });
 
   it("提交前缀:已提交页的祖先必须全部已提交(in-flight 粗层不是合法回退)", () => {

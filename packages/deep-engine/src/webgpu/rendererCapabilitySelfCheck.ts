@@ -28,6 +28,9 @@ import { DEEP_GI_PROBE_VISIBILITY_SH_WORDS, DEEP_GI_PROBE_VISIBILITY_SH_WORD_OFF
 import { MAX_AREA_LIGHTS } from "../lighting/areaLights.js";
 import { MAX_MEGA_LIGHTS, MEGALIGHTS_CLUSTER_PATH_LIGHT_BUDGET, MEGALIGHTS_RIS_CANDIDATES,
   MEGA_LIGHT_STRIDE_BYTES } from "../lighting/megaLights.js";
+import { DEEP_VIRTUAL_GEOMETRY_DEFAULT_PIXEL_ERROR, DEEP_VIRTUAL_GEOMETRY_MAX_PIXEL_ERROR } from "../virtualGeometryScheduling.js";
+import { DEEP_VIRTUAL_GEOMETRY_MAX_DWELL_FRAMES } from "../virtualGeometryResidency.js";
+import { DEEP_VIRTUAL_GEOMETRY_INDIRECT_COMMAND_BYTES, DEEP_VIRTUAL_GEOMETRY_INDIRECT_COMMAND_FLOATS } from "../virtualGeometryIndirect.js";
 import { PROBE_RADIANCE_MOMENT_LANES } from "../rayTracing/probeRadianceKernel.js";
 import { DEEP_PBR_MESH_V1_BYTE_SIZES } from "../shaderAbi/contract.js";
 import { MATERIAL_PARAMETER_KEYS } from "../shader/materialParameters.js";
@@ -324,6 +327,20 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
       clusterPathLightBudget: MEGALIGHTS_CLUSTER_PATH_LIGHT_BUDGET,
       megaLightPoolCapacity: MAX_MEGA_LIGHTS,
       areaLightCapacity: MAX_AREA_LIGHTS,
+    },
+  },
+  {
+    // B2 Brief-Nanite M3(2026-10-04):DAG 页调度 + indirect 按页分组(CPU 侧通路,
+    // 单测链路全绿)。GPU 上传/主 pass 接线属后续切片——degraded/harness-only,与
+    // contracts 登记表 web 列逐词一致。观测值从实现常量派生(像素误差门/命令 ABI/
+    // dwell 上限漂移即红)。
+    capabilityId: "virtual-geometry", support: "degraded", reason: "harness-only",
+    observed: {
+      pixelErrorThresholdDefault: DEEP_VIRTUAL_GEOMETRY_DEFAULT_PIXEL_ERROR,
+      pixelErrorThresholdMax: DEEP_VIRTUAL_GEOMETRY_MAX_PIXEL_ERROR,
+      indirectCommandFloats: DEEP_VIRTUAL_GEOMETRY_INDIRECT_COMMAND_FLOATS,
+      indirectCommandBytes: DEEP_VIRTUAL_GEOMETRY_INDIRECT_COMMAND_BYTES,
+      maxDwellFrames: DEEP_VIRTUAL_GEOMETRY_MAX_DWELL_FRAMES,
     },
   },
 ]);

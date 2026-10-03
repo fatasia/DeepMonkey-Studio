@@ -29,6 +29,7 @@
  * CPU 参考合同（rayTrace.traceClosest）不计算重心坐标（barycentric 恒 0），GPU 同语义。
  */
 
+import { floatToF16Bits } from "./halfFloat.js";
 import type { BvhBuildResult } from "./bvhBuilder.js";
 import type { RayBatchQuery } from "./rayBackendTypes.js";
 
@@ -112,6 +113,38 @@ export function deserializeBvhNodes(buffer: ArrayBuffer): readonly SerializedBvh
     });
   }
   return nodes;
+}
+
+// —— f16 压缩节点档（compute BVH 骨架） ——
+/** BvhNodeF16 storage stride：32 字节 = 8 words（2×vec4<f16> bounds + 4×u32 meta）。 */
+export const BVH_NODE_F16_STRIDE_BYTES = 32;
+export const BVH_NODE_F16_STRIDE_WORDS = 8;
+
+/**
+ * BvhBuildResult → f16 压缩节点 buffer（bvhTraverseWgsl f16 档 BvhNode 布局）。
+ * bounds **外扩量化**（min 向 -Inf、max 向 +Inf 到 f16 网格，halfFloat 语义）保证
+ * 存储盒 ⊇ 原盒 ⇒ 剪枝只松不紧，命中结果与 f32 布局逐位一致；超出 f16 有限范围按
+ * 合同落 ±Infinity（遍历对 ±Inf 盒安全）。w 槽恒 +0。
+ */
+export function serializeBvhNodesF16(built: BvhBuildResult): ArrayBuffer {
+  const buffer = new ArrayBuffer(built.nodes.length * BVH_NODE_F16_STRIDE_BYTES);
+  const words = new Uint32Array(buffer);
+  built.nodes.forEach((node, index) => {
+    const base = index * BVH_NODE_F16_STRIDE_WORDS;
+    words[base] = f16WordOutward(node.minX, node.minY, "outwardLow");
+    words[base + 1] = f16WordOutward(node.minZ, 0, "outwardLow");
+    words[base + 2] = f16WordOutward(node.maxX, node.maxY, "outwardHigh");
+    words[base + 3] = f16WordOutward(node.maxZ, 0, "outwardHigh");
+    words[base + 4] = node.leftFirst;
+    words[base + 5] = node.count;
+    words[base + 6] = node.rightChild ?? BVH_LEAF_SENTINEL;
+    words[base + 7] = 0;
+  });
+  return buffer;
+}
+
+function f16WordOutward(a: number, b: number, rounding: "outwardLow" | "outwardHigh"): number {
+  return (floatToF16Bits(a, rounding) | (floatToF16Bits(b, rounding) << 16)) >>> 0;
 }
 
 /** RayBatchQuery → 交错 rayStream（fail-closed：流长度不一致或 tMax 非有限正数即抛错）。 */

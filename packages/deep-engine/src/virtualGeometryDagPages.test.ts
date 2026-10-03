@@ -50,12 +50,15 @@ describe("compileVirtualGeometryDagPages", () => {
     }
   });
 
-  it("父子链接与 parentsByLevel 单射一致,根=最粗层,子链接为父链接的精确逆", () => {
+  it("父子链接与 parentsByLevel 一致(含 M2 -1 哨兵孤儿),根=最粗层+孤儿,子链接为父链接的精确逆", () => {
     const { dag, table } = pageTable(4);
     for (const page of table.pages) {
       if (page.level + 1 < dag.levels.length) {
-        const expectedParent = virtualGeometryDagPageId("test-sphere", page.level + 1,
-          dag.parentsByLevel[page.level]![page.cluster]!);
+        const rawParent = dag.parentsByLevel[page.level]![page.cluster]!;
+        const coarseCount = dag.levels[page.level + 1]!.meshletCount;
+        const expectedParent = rawParent < coarseCount
+          ? virtualGeometryDagPageId("test-sphere", page.level + 1, rawParent)
+          : null; // 4294967295 = M2 -1 哨兵(细簇被粗层去重吞没)⇒ 孤儿根
         expect(page.parentId).toBe(expectedParent);
       } else {
         expect(page.parentId).toBeNull();
@@ -64,11 +67,31 @@ describe("compileVirtualGeometryDagPages", () => {
         expect(table.byId.get(childId)!.parentId).toBe(page.id);
       }
     }
-    const roots = table.pages.filter((page) => page.level === dag.levels.length - 1);
+    const roots = table.pages.filter((page) => page.parentId === null);
     expect([...table.rootIds].sort()).toEqual(roots.map((page) => page.id).sort());
     const childLinks = table.pages.flatMap((page) => page.childIds).length;
     const parentLinks = table.pages.filter((page) => page.parentId !== null).length;
     expect(childLinks).toBe(parentLinks);
+  });
+
+  it("孤儿簇(64×32 夹具存在 M2 -1 哨兵):无父但入根集,可从根遍历到达", () => {
+    const table = compileVirtualGeometryDagPages(buildMeshletDag(sphereGeometry(64, 32), { levels: 3 }), "orphan-fixture");
+    const orphans = table.pages.filter((page) => page.level + 1 < table.levels && page.parentId === null);
+    if (orphans.length === 0) throw new Error("fixture expected at least one orphan fine cluster (M2 sentinel)");
+    for (const orphan of orphans) {
+      expect(table.rootIds).toContain(orphan.id);
+      expect(table.byId.get(orphan.id)!.childIds).toEqual([]);
+    }
+    // 全部 level0 页均可从某根沿 childIds 到达(割遍历不漏区域)。
+    for (const finest of table.pages.filter((page) => page.level === 0)) {
+      let reachable = false;
+      for (const rootId of table.rootIds) {
+        let cursor: string | null = finest.id;
+        while (cursor) { if (cursor === rootId) { reachable = true; break; } cursor = table.byId.get(cursor)!.parentId; }
+        if (reachable) break;
+      }
+      expect(reachable).toBe(true);
+    }
   });
 
   it("误差/球界/三角形/firstIndex 与 DAG 层与簇 bounds 同源", () => {

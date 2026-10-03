@@ -58,9 +58,6 @@ export function buildTlas(instances: readonly TlasInstanceDescriptor[]): TlasBui
   // 实例的"质心与包围盒"以其实际 BLAS bounds 经 localToWorld（实例正向变换）后的世界 AABB 表示；
   // 为确定性且免去 8 角变换误差，直接用三轴独立 min/max（与 BLAS bounds 变换等价的保守盒）。
   const instanceBounds: (TlasInstanceBounds | undefined)[] = instances.map(() => undefined);
-  const fakeVertices: number[] = [];
-  const fakeIndices: number[] = [];
-  const participating: number[] = [];
   const preparedBlas = new Map<RayBlasDescriptor, TracedScene>();
   instances.forEach((instance, index) => {
     let scene = preparedBlas.get(instance.blas);
@@ -68,29 +65,46 @@ export function buildTlas(instances: readonly TlasInstanceDescriptor[]): TlasBui
     const node = scene.built.nodes[0];
     if (node === undefined) return; // 空 BLAS 不参与实例盒
     const localToWorld = invertAffine3x4(instance.worldToLocal);
-    const corners: number[][] = [];
     let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
     for (const x of [node.minX, node.maxX]) for (const y of [node.minY, node.maxY]) for (const z of [node.minZ, node.maxZ]) {
       const corner = applyTransform(localToWorld, [x, y, z]);
-      corners.push(corner);
       minX = Math.min(minX, corner[0]!); maxX = Math.max(maxX, corner[0]!);
       minY = Math.min(minY, corner[1]!); maxY = Math.max(maxY, corner[1]!);
       minZ = Math.min(minZ, corner[2]!); maxZ = Math.max(maxZ, corner[2]!);
     }
     instanceBounds[index] = { minX: Math.fround(minX), minY: Math.fround(minY), minZ: Math.fround(minZ),
       maxX: Math.fround(maxX), maxY: Math.fround(maxY), maxZ: Math.fround(maxZ) };
+  });
+  const built = buildTlasFromWorldBounds(instances, instanceBounds);
+  return { built, instances, instanceBounds, preparedBlas };
+}
+
+/**
+ * 实例世界盒 → TLAS BVH（compute BVH 骨架·增量路径共用入口）：buildTlas 与
+ * incrementalTlas 的 TLAS 段构建单一来源（fake 三角 0/7/5 覆盖三轴全距、空 BLAS 不参与、
+ * order 重映射回实例原始下标——防两路口径分叉）。
+ */
+export function buildTlasFromWorldBounds(instances: readonly TlasInstanceDescriptor[],
+  worldBounds: readonly (TlasInstanceBounds | undefined)[]): BvhBuildResult {
+  const fakeVertices: number[] = [];
+  const fakeIndices: number[] = [];
+  const participating: number[] = [];
+  instances.forEach((instance, index) => {
+    const bounds = worldBounds[index];
+    if (bounds === undefined) return; // 空 BLAS 不参与实例盒
     const vertexBase = fakeVertices.length / 3;
-    for (const corner of corners) fakeVertices.push(...corner);
+    for (const x of [bounds.minX, bounds.maxX]) for (const y of [bounds.minY, bounds.maxY]) for (const z of [bounds.minZ, bounds.maxZ]) {
+      fakeVertices.push(x, y, z);
+    }
     participating.push(index);
     // fake 三角必须覆盖盒的三轴全距（角 0=min.x/min.y/min.z、7=max.x/max.y/max.z、
     // 5=max.x/min.y/max.z）：取 0/1/2 会三顶点共享 minX，使盒在 x 轴退化——CPU 遍历不读盒
     // 不受影响，但 GPU TLAS 盒剪枝会把整棵树剪光（真机实测）。
     fakeIndices.push(vertexBase, vertexBase + 7, vertexBase + 5);
   });
-  if (fakeIndices.length === 0) return { ...empty, instances, instanceBounds, preparedBlas };
+  if (fakeIndices.length === 0) return { nodes: Object.freeze([]), order: Object.freeze([]) };
   const compact = buildBvh({ vertices: new Float32Array(fakeVertices), indices: Uint32Array.from(fakeIndices) });
-  const built = { ...compact, order: Object.freeze(compact.order.map(slot => participating[slot]!)) };
-  return { built, instances, instanceBounds, preparedBlas };
+  return { ...compact, order: Object.freeze(compact.order.map(slot => participating[slot]!)) };
 }
 
 export interface TlasHit extends TraceHit {

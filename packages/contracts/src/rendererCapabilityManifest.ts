@@ -569,6 +569,24 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     },
   },
   {
+    // B2 Brief-Nanite M3(2026-10-04):DAG 页调度 + indirect 按页分组。交付 CPU 侧
+    // 完整调度通路(页表/屏幕误差割/驻留预算/绘制集解析/命令打包,单测链路全绿),
+    // GPU 上传与 pbrRenderer 主 pass 接线属后续切片——web 如实登记 harness-only
+    // (与 sdf-gi/megalights M1 同口径);非 DAG 资产继续走现有 HLOD 通路不受影响。
+    id: "virtual-geometry",
+    title: "流式虚拟几何(meshlet DAG 页调度 + indirect 按页分组;Nanite 路线)",
+    webFeatureKeys: [],
+    web: {
+      support: "degraded", reason: "harness-only",
+      evidence: "packages/deep-engine/src/virtualGeometryDagPages.ts:compileVirtualGeometryDagPages(MeshletDag→调度页表:页=簇,误差/球界/字节成本/父子链接,M2 -1 哨兵孤儿按根处理)+virtualGeometryScheduling.ts(屏幕误差割:投影口径与 spatial/lodValidation 同源,割反链+祖先补给请求,绘制集解析=最细已驻留祖先且回退互斥)+virtualGeometryResidency.ts(VirtualGeometryDagResidency:硬字节预算+祖先链前缀准入+LRU 最久未见驱逐(细层先于粗层)+父页级联驱逐+事务 commit/rollback,冻结相机零抖动)+virtualGeometryIndirect.ts(每驻留绘制页一条 drawIndexedIndirect 5×u32 命令,实例经 instanceCount 合批,draw 数与实例规模解耦);单测链路 DAG→页表→驻留→绘制全绿(virtualGeometryDagPages/Residency/Indirect/DagChain.test.ts)",
+    },
+    native: {
+      support: "unavailable", reason: "absent",
+      evidence: "packages/deep-engine-native/src/lib.rs(无 meshlet DAG 页调度/驻留/indirect 分组运行时;Brief-Nanite 离线工具链 geometry_dag 属独立切片)",
+    },
+    sharedQualityVocabulary: true,
+  },
+  {
     // B2 Brief-MegaLights M1(2026-10-04):万灯直接光 RIS 采样。M1 交付域级引擎通路
     // (灯光池+RIS 核+compute 运行时+真机探针),主 pass 接线属 M2——web 如实登记
     // harness-only(非运行时渲染通路;通路选择函数已定 ≤64 簇光/超限 RIS 策略)。

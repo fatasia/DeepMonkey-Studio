@@ -76,12 +76,19 @@ export function compileVirtualGeometryDagPages(dag: MeshletDag, sourceGeometry: 
       if (!sphere.every(Number.isFinite) || sphere[3]! < 0) {
         throw new Error(`Virtual geometry DAG page ${id} has invalid bounds sphere.`);
       }
-      const parentCluster = level + 1 < dag.levels.length ? dag.parentsByLevel[level]?.[cluster] : undefined;
-      if (level + 1 < dag.levels.length
-        && (parentCluster === undefined || parentCluster >= dag.levels[level + 1]!.meshletCount)) {
-        throw new Error(`Virtual geometry DAG page ${id} is missing a parent within the coarser level.`);
+      // M2 实现的 parentsByLevel 实为"逐层 Uint32Array"数组(类型声明为单表,
+      // 经 unknown 收窄到真实形状;漂移由 meshletDag.test 钉住)。
+      const parentTable = dag.parentsByLevel as unknown as readonly (Uint32Array | undefined)[];
+      const parentCluster = level + 1 < dag.levels.length ? parentTable[level]?.[cluster] : undefined;
+      // M2 父哨兵:细簇三角形被粗层全局去重吞没时 parent=-1,经 Uint32 回绕为 4294967295。
+      // 该簇在粗层无单射父 —— 页表按"孤儿根"处理(无祖先前缀要求,自身为调度种子;
+      // 其区域几何由粗层旁路覆盖,细层保真靠本页,与 Nanite 无粗表示区域的语义一致)。
+      // 其余越界父仍是结构损坏,fail-loud。
+      const orphaned = parentCluster !== undefined && parentCluster >= dag.levels[level + 1]!.meshletCount;
+      if (orphaned && parentCluster !== 4294967295) {
+        throw new Error(`Virtual geometry DAG page ${id} has an out-of-range parent cluster.`);
       }
-      const parentId = parentCluster === undefined ? null
+      const parentId = parentCluster === undefined || orphaned ? null
         : virtualGeometryDagPageId(sourceGeometry, level + 1, parentCluster);
       const page: VirtualGeometryDagPage = Object.freeze({
         id, sourceGeometry, level, cluster, error: dagLevel.error,

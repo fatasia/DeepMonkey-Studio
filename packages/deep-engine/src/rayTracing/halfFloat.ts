@@ -45,13 +45,15 @@ export function f16BitsToFloat(bits: number): number {
   const exponent = (bits & F16_EXP_MASK) >>> 10;
   const fraction = bits & F16_FRAC_MASK;
   const word = new Uint32Array(1);
-  if (exponent === 0x1f) word[0] = (sign << F32_SIGN_SHIFT) | 0x7f00_0000 | (fraction << 13);
+  if (exponent === 0x1f) word[0] = (sign << F32_SIGN_SHIFT) | 0x7f80_0000 | (fraction << 13);
   else if (exponent === 0) {
     if (fraction === 0) word[0] = sign << F32_SIGN_SHIFT;
     else {
+      // 归一 denormal：fraction 最高位 p → 无偏指数 p-24（value = fraction×2^-24）；
+      // 循环 s 次移位到 bit10 ⇒ p = e+11，biased = 127 + p - 24 = 114 + e。
       let e = -1, f = fraction;
       while ((f & 0x0400) === 0) { f <<= 1; e--; }
-      word[0] = (sign << F32_SIGN_SHIFT) | ((112 + e) << 23) | ((f & F16_FRAC_MASK) << 13);
+      word[0] = (sign << F32_SIGN_SHIFT) | ((114 + e) << 23) | ((f & F16_FRAC_MASK) << 13);
     }
   } else word[0] = (sign << F32_SIGN_SHIFT) | ((exponent - 15 + 127) << 23) | (fraction << 13);
   return new Float32Array(word.buffer)[0]!;

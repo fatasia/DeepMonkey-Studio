@@ -108,17 +108,26 @@ function validateThreshold(value: number | undefined): number {
 
 /**
  * 绘制集解析:割页在驻留集中取"自身或最细已驻留祖先"(draw-path fallback)。
- * 细页尚在流送时由粗层回退顶上,画面不断裂;解析结果仍是反链(不同割页的祖先
- * 链落在不相交的根子树内)。整链未驻留的割页跳过(仅出现在首批准入提交前的瞬态)。
+ * 细页尚在流送时由粗层回退顶上,画面不断裂。结果强制反链互斥:若某页的祖先
+ * 也在绘制集(同一根子树内不同割页落到不同深度的已驻留页),保留祖先、剔除
+ * 后代 —— 祖先的几何已覆盖后代区域,同帧同区域双份绘制会重叠闪面。
+ * 整链未驻留的割页跳过(仅出现在首批准入提交前的瞬态)。
  */
 export function resolveVirtualGeometryDrawablePages(table: VirtualGeometryDagPageTable,
   cutPageIds: readonly string[], residentPageIds: ReadonlySet<string>): string[] {
-  const seen = new Set<string>();
-  const drawable: string[] = [];
+  const resolved = new Set<string>();
   for (const id of cutPageIds) {
     let cursor: string | null = id;
     while (cursor && !residentPageIds.has(cursor)) cursor = table.byId.get(cursor)?.parentId ?? null;
-    if (cursor && !seen.has(cursor)) { seen.add(cursor); drawable.push(cursor); }
+    if (cursor) resolved.add(cursor);
+  }
+  const drawable: string[] = [];
+  for (const id of resolved) {
+    let overlapped = false;
+    for (let cursor = table.byId.get(id)!.parentId; cursor; cursor = table.byId.get(cursor)!.parentId) {
+      if (resolved.has(cursor)) { overlapped = true; break; }
+    }
+    if (!overlapped) drawable.push(id);
   }
   return drawable;
 }

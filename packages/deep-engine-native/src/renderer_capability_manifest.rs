@@ -358,6 +358,12 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         reason: RendererCapabilityReasonCode::Absent,
         evidence: "无 MegaLights 模块(native clustered_lighting 为逐灯簇光路径,非 RIS 采样;web M1 compute 通路见 deep-engine lighting/megaLights*)",
     },
+    NativeCapabilitySelfCheck {
+        capability_id: "virtual-geometry",
+        support: RendererCapabilitySupport::Unavailable,
+        reason: RendererCapabilityReasonCode::Absent,
+        evidence: "无 meshlet DAG 页调度/驻留/indirect 分组运行时(Brief-Nanite 离线工具链 geometry_dag 属独立切片;web M3 CPU 侧调度通路见 deep-engine virtualGeometryDagPages/Scheduling/Residency/Indirect)",
+    },
 ];
 
 #[cfg(test)]

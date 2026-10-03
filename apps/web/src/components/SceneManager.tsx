@@ -130,7 +130,7 @@ function useSceneManagerController({
   const [cloudError, setCloudError] = useState<string>();
   const [projectCloudBusy, setProjectCloudBusy] = useState(false);
   const [publishTarget, setPublishTarget] = useState<SceneSnapshot>();
-  const [publishMode, setPublishMode] = useState<NonNullable<SceneSnapshot["publicationMode"]>>("webgl");
+  const [publishMode, setPublishMode] = useState<NonNullable<SceneSnapshot["publicationMode"]>>("webgpu-preferred");
   const [publishPerformance, setPublishPerformance] = useState<NonNullable<SceneSnapshot["publicationPerformance"]>>("standard");
   const [publishClientTarget, setPublishClientTarget] = useState<SceneClientPackageTarget>("none");
   const { versionTarget, setVersionTarget, publicationVersions, versionBusy, versionError, openVersions, restoreVersion }

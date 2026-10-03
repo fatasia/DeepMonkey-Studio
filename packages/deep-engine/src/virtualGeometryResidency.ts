@@ -66,8 +66,14 @@ export class VirtualGeometryDagResidency {
   private readonly resident = new Map<string, ResidentEntry>();
   private residentBytes = 0;
   private readonly minResidentFrames: number;
+  private readonly table: VirtualGeometryDagPageTable;
+  private readonly budget: VirtualGeometryResidencyBudget;
 
-  constructor(private readonly table: VirtualGeometryDagPageTable, private readonly budget: VirtualGeometryResidencyBudget) {
+  // 显式字段赋值而非构造器参数属性:能力自检对拍网(scripts/rendererCapabilityManifest.test.mjs)
+  // 经 node strip-only 模式加载本模块,参数属性语法不受支持(实测踩坑)。
+  constructor(table: VirtualGeometryDagPageTable, budget: VirtualGeometryResidencyBudget) {
+    this.table = table;
+    this.budget = budget;
     if (!Number.isSafeInteger(budget.maxBytes) || budget.maxBytes < 1) {
       throw new RangeError("Virtual geometry residency maxBytes must be a positive safe integer.");
     }
@@ -105,9 +111,12 @@ export class VirtualGeometryDagResidency {
     const deferred: string[] = [];
     const chainAdmitted = new Set<string>();
 
+    // 准入优先级:无父根页(含 M2 哨兵孤儿——无更粗回退、不可替代)最先;
+    // 其余粗层优先(level 降序,父先于子满足链前缀),同级 id 序稳定。
     const candidates = uniqueIds
       .map((id) => this.table.byId.get(id)!)
-      .sort((left, right) => right.level - left.level || left.id.localeCompare(right.id));
+      .sort((left, right) => ((left.parentId === null ? 0 : 1) - (right.parentId === null ? 0 : 1))
+        || right.level - left.level || left.id.localeCompare(right.id));
     for (const page of candidates) {
       const entry = this.resident.get(page.id);
       if (entry) { entry.lastUsedFrame = frame; chainAdmitted.add(page.id); continue; }

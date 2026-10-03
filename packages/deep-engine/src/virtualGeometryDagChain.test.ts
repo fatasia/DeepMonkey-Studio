@@ -78,18 +78,20 @@ describe("DAG→页表→驻留→绘制链路", () => {
   it("档位渐变:由近及远割三角形单调不增;极远收敛到最粗根页(LOD 生效)", () => {
     const level0Pages = table.pages.filter((page) => page.level === 0).length;
     let previous = Number.POSITIVE_INFINITY;
-    for (const distance of [1.05, 1.6, 3, 8, 1e3, 1e5]) {
-      const step = frame(table, cameraAt(distance), distance, 1);
+    const distances = [1.05, 1.6, 3, 8, 1e3, 1e5];
+    for (const [index, distance] of distances.entries()) {
+      const step = frame(table, cameraAt(distance), index, 1);
       expect(step.triangles).toBeLessThanOrEqual(previous);
       expect(step.indirect.stats.drawCount).toBeLessThanOrEqual(level0Pages);
       previous = step.triangles;
     }
-    const far = frame(table, cameraAt(1e5), 1e5, 1);
-    expect(far.requests.drawPageIds.every((id) => table.byId.get(id)!.level === table.levels - 1)).toBe(true);
+    const far = frame(table, cameraAt(1e5), distances.length, 1);
+    // 极远割全落在根页(含无粗表示的孤儿根:无更粗档可画,始终保留)。
+    expect(far.requests.drawPageIds.every((id) => table.byId.get(id)!.parentId === null)).toBe(true);
     expect(far.triangles).toBeLessThan(table.totalTriangles);
   });
 
-  it("预算挤兑:驻留字节 ≤ 预算,绘制集仍为合法割(每根子树恰一页且反链)", () => {
+  it("预算挤兑:驻留字节 ≤ 预算,绘制集仍为互斥割(每根子树恰一页且反链)", () => {
     const tightBudget = Math.ceil(table.totalBytes / 2);
     const step = frame(table, cameraAt(1.05), 0, 1, tightBudget);
     expect(step.residency.residentByteCount).toBeLessThanOrEqual(tightBudget);
@@ -100,9 +102,13 @@ describe("DAG→页表→驻留→绘制链路", () => {
         expect(selected.has(cursor)).toBe(false);
       }
     }
-    for (const rootId of table.rootIds) {
-      const subtree = subtreeOf(table, rootId);
-      expect(step.drawable.filter((id) => subtree.has(id)).length).toBe(1);
+    // 每条根→叶路径恰穿一页(不漏绘、不重绘);同根子树含多个细叶割页属正常形态。
+    for (const finest of table.pages.filter((page) => page.level === 0)) {
+      let hits = 0;
+      for (let cursor: string | null = finest.id; cursor; cursor = table.byId.get(cursor)!.parentId) {
+        if (selected.has(cursor)) hits += 1;
+      }
+      expect(hits).toBe(1);
     }
   });
 
@@ -113,8 +119,9 @@ describe("DAG→页表→驻留→绘制链路", () => {
     residency.commitAdmissions(frame0.admitted.map((handle) => handle.id));
     const resident0 = new Set(frame0.admitted.map((handle) => handle.id));
     const drawable0 = resolveVirtualGeometryDrawablePages(table, requests.drawPageIds, resident0);
+    // 粗层先行驻留 ⇒ 绘制面由已驻留的最细回退顶住(孤儿根无粗表示,亦在首批)。
     expect(drawable0.length).toBeGreaterThan(0);
-    expect(drawable0.every((id) => table.byId.get(id)!.level >= table.levels - 2)).toBe(true);
+    expect(drawable0.every((id) => resident0.has(id))).toBe(true);
     const fullBudget = new VirtualGeometryDagResidency(table, { maxBytes: table.totalBytes });
     const frame1 = fullBudget.plan(requests.pageIds, 1);
     fullBudget.commitAdmissions(frame1.admitted.map((handle) => handle.id));
@@ -127,21 +134,37 @@ describe("DAG→页表→驻留→绘制链路", () => {
       planVirtualGeometryIndirect(table, drawable0, 1).stats.triangleCount);
   });
 
-  it("绘制集解析:割页未驻留时回退最细已驻留祖先;结果仍是反链", () => {
-    const rootId = [...table.rootIds].sort()[0]!;
-    const mid = table.byId.get(rootId)!.childIds[0]!;
-    const fine = table.byId.get(mid)!.childIds[0]!;
-    expect(resolveVirtualGeometryDrawablePages(table, [fine], new Set([rootId, mid]))).toEqual([fine]);
-    expect(resolveVirtualGeometryDrawablePages(table, [fine], new Set([rootId]))).toEqual([rootId]);
+  it("绘制集解析:割页未驻留时回退最细已驻留祖先;祖先互斥(后代让位)", () => {
+    // 取一个确有 ≥2 子的中层页构造 fine/sibling(孤儿/浅层夹具下自动适配深度)。
+    const midPage = table.pages.find((page) => page.childIds.length >= 2
+      && page.childIds.every((child) => table.byId.get(child)!.childIds.length === 0))!;
+    const mid = midPage.id;
+    const fine = midPage.childIds[0]!, sibling = midPage.childIds[1]!;
+    const ancestors = new Set<string>();
+    for (let cursor = midPage.parentId; cursor; cursor = table.byId.get(cursor)!.parentId) ancestors.add(cursor);
+    // 逐深度回退:自身驻留 → 父顶上 → 更粗祖先顶上(深度≥3)→ 整链未驻留跳过。
+    expect(resolveVirtualGeometryDrawablePages(table, [fine], new Set([mid, fine]))).toEqual([fine]);
+    expect(resolveVirtualGeometryDrawablePages(table, [fine], new Set([mid]))).toEqual([mid]);
+    if (midPage.parentId !== null) {
+      expect(resolveVirtualGeometryDrawablePages(table, [fine], ancestors)).toEqual([midPage.parentId]);
+    }
     expect(resolveVirtualGeometryDrawablePages(table, [fine], new Set())).toEqual([]);
+    // 祖先互斥:同父两割页,祖先驻留则后代让位(同区域不双绘)。
+    expect(resolveVirtualGeometryDrawablePages(table, [fine, sibling], new Set([mid]))).toEqual([mid]);
+    if (midPage.parentId !== null) {
+      expect(resolveVirtualGeometryDrawablePages(table, [fine, sibling], ancestors)).toEqual([midPage.parentId]);
+    }
+    expect(resolveVirtualGeometryDrawablePages(table, [fine, sibling], new Set([mid, fine]))).toEqual([mid]);
     const cut = buildVirtualGeometryDagRequests(table, cameraAt(3), VIEWPORT);
     const drawable = resolveVirtualGeometryDrawablePages(table, cut.drawPageIds, new Set(table.pages.map((page) => page.id)));
     expect(new Set(drawable).size).toBe(drawable.length);
   });
 
-  it("页表是 DAG 的无损投影:层级数与根数一致,根无父", () => {
+  it("页表是 DAG 的无损投影:层级数一致,根 = 最粗层 + 孤儿根,根无父", () => {
     expect(table.levels).toBe(dag.levels.length);
-    expect(table.rootIds.length).toBe(dag.levels[dag.levels.length - 1]!.meshletCount);
+    const coarsestCount = dag.levels[dag.levels.length - 1]!.meshletCount;
+    const orphanCount = table.pages.filter((page) => page.level + 1 < table.levels && page.parentId === null).length;
+    expect(table.rootIds.length).toBe(coarsestCount + orphanCount);
     for (const id of table.rootIds) expect(table.byId.get(id)!.parentId).toBeNull();
   });
 });
