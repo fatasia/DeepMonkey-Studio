@@ -3,6 +3,7 @@ import type { SceneMaterialState } from "@bim-studio/contracts";
 import type { AppLocale } from "../i18n";
 import { translate as tr } from "../i18n";
 import { inspectSceneCustomShader } from "../delivery/sceneCustomShader";
+import { ShaderNodeCanvas } from "./ShaderNodeCanvas";
 import "./CustomShaderEditor.css";
 
 const STARTER = `shader deep.material {
@@ -16,6 +17,7 @@ const STARTER = `shader deep.material {
 }`;
 
 type Inspection = ReturnType<typeof inspectSceneCustomShader>;
+type EditorMode = "text" | "nodes";
 
 interface Props {
   readonly locale: AppLocale;
@@ -25,6 +27,7 @@ interface Props {
 }
 
 export function CustomShaderEditor({ locale, disabled, material, onChange }: Props) {
+  const [mode, setMode] = useState<EditorMode>("text");
   const bound = material.customShader?.source;
   const [draft, setDraft] = useState(bound ?? "");
   const [inspection, setInspection] = useState<Inspection>();
@@ -40,29 +43,45 @@ export function CustomShaderEditor({ locale, disabled, material, onChange }: Pro
       <span>DeepSL</span>
       <small>{bound ? tr(locale, "已绑定", "Bound") : tr(locale, "未绑定", "Unbound")}</small>
     </summary>
-    <label htmlFor="custom-shader-source">{tr(locale, "着色器源码", "Shader source")}</label>
-    <textarea id="custom-shader-source" spellCheck={false} disabled={disabled} value={draft}
-      placeholder={STARTER} onChange={event => { setDraft(event.target.value); setInspection(undefined); }} />
-    <div className="custom-shader-actions">
-      <button type="button" disabled={disabled || !draft.trim()} onClick={preview}>
-        {tr(locale, "编译诊断", "Compile diagnostics")}
-      </button>
-      <button type="button" disabled={disabled || !draft.trim()} onClick={bind}>
-        {tr(locale, "绑定到材质", "Bind to material")}
-      </button>
-      {bound && <button type="button" disabled={disabled} onClick={() => onChange({ customShader: undefined })}>
-        {tr(locale, "解除绑定", "Unbind")}
-      </button>}
+    <div className="custom-shader-mode-toggle" role="tablist">
+      <button type="button" role="tab" aria-selected={mode === "text"} className={mode === "text" ? "active" : ""}
+        onClick={() => setMode("text")}>{tr(locale, "源码", "Source")}</button>
+      <button type="button" role="tab" aria-selected={mode === "nodes"} className={mode === "nodes" ? "active" : ""}
+        onClick={() => setMode("nodes")}>{tr(locale, "节点图", "Node graph")}</button>
     </div>
-    {inspection && <div className="custom-shader-result" role="status" aria-live="polite">
-      {inspection.success ? <>
-        <strong>{tr(locale, "编译通过 · 包预览", "Compiled · package preview")}</strong>
-        <span>{inspection.shader.packageId}</span>
-        <span title={inspection.cacheKeys.join("\n")}>PassCacheKey · {inspection.cacheKeys[0]?.slice(0, 16)}…</span>
-      </> : <>
-        <strong>{tr(locale, "编译失败", "Compilation failed")}</strong>
-        {inspection.diagnostics.map((message, index) => <span key={`${index}-${message}`}>{message}</span>)}
-      </>}
-    </div>}
+    {mode === "text" && <>
+      <label htmlFor="custom-shader-source">{tr(locale, "着色器源码", "Shader source")}</label>
+      <textarea id="custom-shader-source" spellCheck={false} disabled={disabled} value={draft}
+        placeholder={STARTER} onChange={event => { setDraft(event.target.value); setInspection(undefined); }} />
+      <div className="custom-shader-actions">
+        <button type="button" disabled={disabled || !draft.trim()} onClick={preview}>
+          {tr(locale, "编译诊断", "Compile diagnostics")}
+        </button>
+        <button type="button" disabled={disabled || !draft.trim()} onClick={bind}>
+          {tr(locale, "绑定到材质", "Bind to material")}
+        </button>
+        {bound && <button type="button" disabled={disabled} onClick={() => onChange({ customShader: undefined })}>
+          {tr(locale, "解除绑定", "Unbind")}
+        </button>}
+      </div>
+      {inspection && <div className="custom-shader-result" role="status" aria-live="polite">
+        {inspection.success ? <>
+          <strong>{tr(locale, "编译通过 · 包预览", "Compiled · package preview")}</strong>
+          <span>{inspection.shader.packageId}</span>
+          <span title={inspection.cacheKeys.join("\n")}>PassCacheKey · {inspection.cacheKeys[0]?.slice(0, 16)}…</span>
+        </> : <>
+          <strong>{tr(locale, "编译失败", "Compilation failed")}</strong>
+          {inspection.diagnostics.map((message, index) => <span key={`${index}-${message}`}>{message}</span>)}
+        </>}
+      </div>}
+    </>}
+    {mode === "nodes" && (
+      <ShaderNodeCanvas
+        locale={locale}
+        disabled={disabled}
+        asset={{ schemaVersion: 1, id: "custom-material", target: "webgpu-forward", properties: [], stages: [{ stage: "fragment", nodes: [], edges: [], outputs: [] }] }}
+        onAssetChange={() => {}}
+      />
+    )}
   </details>;
 }
