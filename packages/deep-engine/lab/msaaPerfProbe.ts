@@ -21,7 +21,7 @@ export async function runMsaaPerfProbe(options: { readonly msaaSampleCount: 1 | 
   const lifetime = new AbortController();
   const lights = projectStudioDeepLights(spec.scene, 1, false);
   if (lights.issues.length) throw Error(`perf scene light projection failed: ${JSON.stringify(lights.issues)}`);
-  const view = { eye: [...spec.eye], target: [...spec.target], up: [0, 1, 0] as const, extent: 4,
+  const view = { eye: [...spec.eye] as [number, number, number], target: [...spec.target] as [number, number, number], up: [0, 1, 0] as const, extent: 4,
     background: [0.02, 0.022, 0.026] as const, floor: [0, 0, 0] as const,
     width, height, pixelRatio: 1, exposure: 1.05, roughness: 0.5, environmentIntensity: 0, fog: null,
     verticalFovRadians: Math.PI / 3, near: 0.1, far: 400, lights: lights.lights,
