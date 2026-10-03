@@ -22,6 +22,8 @@ interface ScenePhysicsPanelProps {
   /** B3 缺口 5：碰撞体调试线框当前状态（引擎为事实来源，经控制器同步）。 */
   debugVisible?: boolean;
   onDebugVisibleChange?: (visible: boolean) => void;
+  /** Brief-PhysDbg：打开物理调试面板（时间线/录制/跨端比对在其中）。 */
+  onOpenDebugPanel?: () => void;
   onChange: (next: ScenePhysicsState) => void;
   onSelectedBodyChange: (patch: ScenePhysicsBodyPatch) => void;
   onReset: () => void;
@@ -110,6 +112,14 @@ export function ScenePhysicsPanel(props: ScenePhysicsPanelProps) {
             ? tr(locale, "隐藏碰撞体", "Hide colliders")
             : tr(locale, "显示碰撞体", "Show colliders")}
         </button>
+        {props.onOpenDebugPanel && (
+          <button
+            title={tr(locale, "打开物理调试面板：时间线、录制回放与跨端位姿比对", "Open the physics debug panel: timeline, record/replay and cross-end pose compare")}
+            onClick={props.onOpenDebugPanel}
+          >
+            {tr(locale, "调试时间线", "Debug timeline")}
+          </button>
+        )}
       </div>
       <label className="physics-gravity">
         <span>{tr(locale, "重力 Y", "Gravity Y")}</span>

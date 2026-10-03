@@ -39,6 +39,20 @@
 **验收**:①60s@60Hz 录制零丢 tick(帧追赶上限内);②回放与录制位姿逐位一致(哈希等价);③web/native 差异用例:人为注入偏差能被定位到具体 tick;④录制开启时帧时增量 ≤0.3ms。
 **规模**:2 周。
 
+### Brief-PhysDbg 实施结果(2026-10-03,已交付)
+
+**已有(不重建,T28 核查结论仍有效)**:app 层录制/回放/比对链(`physicsPoseRecorder/Compare`、`viewerEngineSimulation` 钩子、`PhysicsDebugPanel` 七功能区)原样复用;本次只补引擎侧确定性合同、native 镜像、时间线 UI 与通道语义合同。
+
+**交付物**:
+1. `packages/deep-engine/src/physics/debugRecorder.ts`:FixedStepClock 驱动的 tick 级录制器,全 TypedArray ring buffer(热路径零分配),f32 量化(位姿 7×f32/体、接触 9×f32 对、关节脉冲 4×f32),FNV-1a 双车道逐 tick 位姿哈希 + 链哈希,start/stop/mark(bounded 64),12MiB 预算反推 3679 tick ≈ 61.3s@60Hz;`comparePhysicsDebugRecordingTicks` 按 tick 对齐、哈希相等走逐位快路径、>1e-3 红线给首超差/首哈希失配 tick;`toDebugJson/parsePhysicsDebugRecordingJson` 跨端交换。经 `@bim-studio/deep-engine/physics` 公共子路径导出。
+2. `apps/web/src/components/PhysicsDebugTimeline.tsx`(+CSS/测试):时间线节挂入 PhysicsDebugPanel(刻度轨+自适应刻度+点击寻址+播放头+超差红点+跳转首超差帧+位移/旋转包络小图+逐帧步进+语义图例+引擎哈希 JSON 导出);入口按钮「调试时间线」挂 ScenePhysicsPanel(AppStudioViewport 一条 state 接线)。
+3. `packages/deep-engine-native/src/physics_debug_compare.rs`(新文件,未触碰 native_physics*/cloth*/runtime_navigation*):TS 合同逐位镜像(哈希/链/f32 场景/容差比对)+ 4 项 cargo 测试,共享 fixture `tests/fixtures/physics-debug-compare-v1.json` 由 `scripts/physicsDebugFixtureGen.mts` 经产品实现生成。
+4. 语义色合同 `PHYSICS_DEBUG_SEMANTIC_COLORS`(接触=青/穿透=红/约束力=黄,UI 面映射 --info/--danger/--warning 令牌)。**3D 覆盖层挂载点在 apps/web/src/viewer(本任务禁改领地),数据合同先行钉死,挂载留待后续**;时间线内以红点/图例交付 2D 语义渲染。
+
+**验收证据**(`test-output/physdbg/acceptance-evidence.json` + 两轮截图):①3600 tick@60Hz 抖动帧驱动零丢 tick(lost=0,dropped=0);②回放重录链哈希逐位一致 + JSON 往返零超差;③tick 37 注入 2e-3 被精确定位(web 实测 + Rust 镜像 4/4,亚容差 2e-4 只报哈希失配不误报红线);④record() p95=0.0064ms(预算 0.3ms,47× 余量);⑤⑥测试门:engine physics 域 vitest 全绿、web tsc 零错、Timeline 8/8+Panel 16/16+ScenePhysicsPanel 9/9+架构门 6/6;⑦UI 两轮浏览器闭环(1920×1080 深色,录制 95 步→回放 47/95,播放头/曲线光标/步进联动)。
+
+**边界披露(诚实条款)**:整包 deep-engine tsc/build 与全量 vitest 存在并行在途领地错误(MSAA:pbrRendererFrames;VSM:virtualShadowResources;另有未跟踪在途件 meshletDag 自带测试缺陷)——本任务文件零错误,dist/physics 子路径已正确产出,整包构建验证待并行收口后补跑;期间 VSM 一次在途语法错曾短暂阻塞 UI 采集,其自行收口后完成。
+
 ## 派发纪律
 - 同一时间 ≤2 路专项 agent;GPU 验证错峰;文件 owner 互斥(VSM=renderTargets/webgpu 帧管线+contracts.shadow;GI=physics/sdf+probeClipmap+shader;PhysDbg=physics+UI 面板——GI 与 PhysDbg 在 physics/ 有交集,勿同时派)。
 - 每专项收尾:验收数据落 `test-output/<专项>/`,规格文档补"实施结果"节,重建 dist,进 `verify:gpu-release`。

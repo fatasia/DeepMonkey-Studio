@@ -45,5 +45,18 @@ export { createClothGpuStepSession, type ClothGpuStepSession,
   type ClothGpuStepSessionOptions } from "./softBodyGpuDispatch.clothSession.js";
 export { assertFinite, fingerprintFloat64, replayFromStep, runTicks,
   type FixedStepSim, type Vec3 } from "./physicsTypes.js";
+export { PhysicsDebugRecorder, fingerprintFloat32, comparePhysicsDebugRecordingTicks,
+  estimatePhysicsDebugRecorderBytes, parsePhysicsDebugRecordingJson,
+  PHYSICS_DEBUG_RECORDING_SCHEMA, PHYSICS_DEBUG_RECORDING_SCHEMA_VERSION,
+  PHYSICS_DEBUG_POSE_STRIDE, PHYSICS_DEBUG_CONTACT_STRIDE, PHYSICS_DEBUG_JOINT_STRIDE,
+  PHYSICS_DEBUG_DEFAULT_BYTE_BUDGET, PHYSICS_DEBUG_DEFAULT_MAX_BODIES,
+  PHYSICS_DEBUG_DEFAULT_MAX_CONTACTS_PER_TICK, PHYSICS_DEBUG_DEFAULT_MAX_JOINTS_PER_TICK,
+  PHYSICS_DEBUG_MAX_MARKS, PHYSICS_DEBUG_SEMANTIC_COLORS,
+  PHYSICS_DEBUG_DEFAULT_COMPARE_TOLERANCE,
+  type PhysicsDebugRecorderConfig, type PhysicsDebugRecorderEstimate,
+  type PhysicsDebugRecorderTickInput, type PhysicsDebugRecordOutcome,
+  type PhysicsDebugMark, type PhysicsDebugTickSnapshot,
+  type PhysicsDebugCompareTolerance, type PhysicsDebugCompareTickRow,
+  type PhysicsDebugCompareResult, type ParsedPhysicsDebugRecording } from "./debugRecorder.js";
 
 export { projectSoftBodyRenderPacket, type SoftBodyRenderBinding } from "./softBodyRenderProjection.js";

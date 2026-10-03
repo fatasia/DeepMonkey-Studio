@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Download, Pause, Play, StepForward, Trash2, X } from "lucide-react";
 import type { ScenePhysicsState } from "@bim-studio/contracts";
+import { PhysicsDebugRecorder } from "@bim-studio/deep-engine/physics";
 import { translate as tr, type AppLocale } from "../i18n";
 import { DeferredNumberInput } from "./AppFormControls";
 import { useFloatingPanelDrag } from "../hooks/useFloatingPanelDrag";
@@ -9,6 +10,7 @@ import type { PhysicsDebugBodySnapshot, PhysicsDebugJointSnapshot, PhysicsDebugS
 import type { PhysicsPoseFrame } from "../viewer/physicsPoseRecorder";
 import { parsePhysicsPoseJson, type ParsedPoseSeries } from "../viewer/physicsPoseRecorder";
 import { comparePoseSeries, type PoseCompareResult } from "../viewer/physicsPoseCompare";
+import { PhysicsTimelineSection } from "./PhysicsDebugTimeline";
 import "./PhysicsDebugPanel.css";
 
 interface PhysicsDebugPanelProps {
@@ -81,6 +83,42 @@ export function PhysicsDebugPanel(props: PhysicsDebugPanelProps) {
     }
   };
 
+  /**
+   * Brief-PhysDbg:把 T28 录制(T17 位姿)过引擎侧确定性录制器合同——f32 量化 +
+   * 逐 tick FNV 哈希链——导出为跨端对拍 JSON(native physics_debug_compare 直接消费)。
+   */
+  const exportDebugHashJson = () => {
+    const text = engine?.exportPhysicsPoseJson();
+    if (!text) return;
+    try {
+      const series = parsePhysicsPoseJson(text, "editor recording");
+      const recorder = new PhysicsDebugRecorder({
+        tickCapacity: Math.max(1, series.frames.length),
+        maxBodies: Math.max(1, series.bodies.length),
+      });
+      recorder.start(0);
+      for (const frame of series.frames) {
+        const poses = new Float64Array(frame.bodies.length * 7);
+        frame.bodies.forEach((pose, index) => {
+          poses.set(pose.p, index * 7);
+          poses.set(pose.q, index * 7 + 3);
+        });
+        recorder.record({ tick: frame.step, poses, bodyCount: frame.bodies.length });
+      }
+      const json = recorder.toDebugJson({ hz: 60, note: "converted from T28 editor recording (T17 poses)" });
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "physics-debug-recording-web.json";
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setImportError(undefined);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
   const applyReplayFrame = (step: number) => {
     const frames = recording?.frames;
     if (!frames || frames.length === 0) return;
@@ -124,6 +162,7 @@ export function PhysicsDebugPanel(props: PhysicsDebugPanelProps) {
       onCurveMetricChange={setCurveMetric}
       onImport={importSeries}
       onUseRecordingForSlotA={useRecordingForSlotA}
+      onExportDebugHashJson={exportDebugHashJson}
     />
   );
 }
@@ -185,6 +224,8 @@ export interface PhysicsDebugPanelViewProps {
   onCurveMetricChange: (metric: "position" | "rotation") => void;
   onImport: (slot: "a" | "b", file: File) => Promise<void>;
   onUseRecordingForSlotA: () => void;
+  /** Brief-PhysDbg:导出引擎哈希 JSON(确定性录制器合同);未接线时时间线按钮禁用。 */
+  onExportDebugHashJson?: () => void;
 }
 
 /** 面板展示层（无 hooks）：状态全部来自容器，交互经回调上行。 */
@@ -210,6 +251,9 @@ export function PhysicsDebugPanelView(props: PhysicsDebugPanelViewProps) {
   const stepAvailable = physicsEnabled && !playing;
   const bodies = props.snapshot?.bodies ?? [];
   const joints = props.snapshot?.joints ?? [];
+  const comparison = props.seriesA && props.seriesB
+    ? computeComparison(props.seriesA, props.seriesB, props.toleranceMm, props.toleranceMrad)
+    : undefined;
 
   return (
     <div
@@ -375,15 +419,25 @@ export function PhysicsDebugPanelView(props: PhysicsDebugPanelViewProps) {
         </button>
       </section>
 
+      <PhysicsTimelineSection
+        locale={locale}
+        frames={props.recording?.frames ?? []}
+        isReplaying={props.isReplaying}
+        replayStep={props.replayStep}
+        onApplyReplayFrame={props.onApplyReplayFrame}
+        onExitReplay={props.onExitReplay}
+        comparison={comparison}
+        onExportDebugHashJson={() => props.onExportDebugHashJson?.()}
+        debugHashExportAvailable={Boolean(props.onExportDebugHashJson) && frameCount > 0}
+      />
+
       <PhysicsRosterSection locale={locale} bodies={bodies} joints={joints} available={props.snapshot?.available ?? false} />
 
       <PhysicsCompareSection
         locale={locale}
         seriesA={props.seriesA}
         seriesB={props.seriesB}
-        comparison={props.seriesA && props.seriesB
-          ? computeComparison(props.seriesA, props.seriesB, props.toleranceMm, props.toleranceMrad)
-          : undefined}
+        comparison={comparison}
         importError={props.importError}
         curveMetric={props.curveMetric}
         toleranceMm={props.toleranceMm}

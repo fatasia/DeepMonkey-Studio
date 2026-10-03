@@ -491,6 +491,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           onSelectedBodyChange={changeSelectedPhysics}
           debugVisible={physicsDebugVisible}
           onDebugVisibleChange={setPhysicsDebugVisible}
+          onOpenDebugPanel={() => setPhysicsDebugPanelOpen(true)}
           onReset={() => {
             engine?.resetPhysics();
             setRevision((value) => value + 1);
