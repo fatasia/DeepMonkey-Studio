@@ -97,8 +97,10 @@ describe("PBR pipeline texture variants", () => {
     expect(f.descriptors[0]!.multisample?.count).toBe(4);
     expect(f.descriptors[18]!.multisample).toBeUndefined();
     expect(f.descriptors[21]!.multisample).toBeUndefined();
-    expect(f.descriptors).toHaveLength(28);
+    // B1 Brief-VSM:+3 页物化管线(solid×3 raster)+ 1 页清屏管线(pageShadowPipelines)。
+    expect(f.descriptors).toHaveLength(32);
     expect(result.mainPipelines.size).toBe(18); expect(result.shadowPipelines.size).toBe(9);
+    expect(result.pageShadowPipelines.size).toBe(4);
     expect(f.descriptors.slice(0, 18).map(value => value.fragment && value.fragment.entryPoint)).toEqual([
       ...Array(3).fill("fragmentMain"), ...Array(3).fill("fragmentMainTransparent"),
       ...Array(3).fill("fragmentMaterial"), ...Array(3).fill("fragmentMaterialTransparent"),
@@ -144,6 +146,7 @@ describe("PBR pipeline texture variants", () => {
     expect(f.layouts[0]!.entries.find(entry => entry.binding === 8)).toEqual({
       binding: 8, visibility: 2, buffer: { type: "uniform", minBindingSize: 32 },
     });
+    // B1 Brief-VSM:虚拟页表/atlas 折入 group 0(frameLayout 12/13/14)——布局组数不变。
     expect(f.pipelineLayouts.slice(0, 2).map(layout => Array.from(layout.bindGroupLayouts).length)).toEqual([4, 4]);
     expect(Array.from(f.pipelineLayouts[0]!.bindGroupLayouts)[3]).toEqual({});
     expect(Array.from(f.pipelineLayouts[2]!.bindGroupLayouts)).toEqual([f.layouts[0], f.layouts[2], f.layouts[3]]);

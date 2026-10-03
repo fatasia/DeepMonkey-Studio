@@ -103,6 +103,7 @@ export class DeviceSession {
     if (capabilities?.extendedShadowBindings === true) {
       desiredLimits.maxStorageBuffersPerShaderStage = 10;
       desiredLimits.maxSampledTexturesPerShaderStage = 17;
+      desiredLimits.maxBindGroups = 5;
     }
     if (capabilities?.layeredMaterials === true) {
       desiredLimits.maxSampledTexturesPerShaderStage
@@ -116,29 +117,16 @@ export class DeviceSession {
       throw new Error("PBR capability layered-materials/texture-limit: adapter requires 19 sampled textures.");
     }
     const requestedFeatures = OPTIONAL_DEVICE_FEATURES.filter(feature => adapter.features.has(feature));
-    // 逐档降级(特性优先):limits 与 features 任一不被接受都只降那一维 ——
-    // 时间戳(诊断计时)/纹理压缩特性不因 per-stage 上限被拒而连带丢失。
     let device: GPUDevice;
-    const deviceAttempts: GPUDeviceDescriptor[] = [
-      { label: "Deep Engine isolated device",
+    try {
+      device = await abortable(adapter.requestDevice({ label: "Deep Engine isolated device",
         ...(requiredLimits ? { requiredLimits } : {}),
-        ...(requestedFeatures.length ? { requiredFeatures: requestedFeatures } : {}) },
-      ...(requestedFeatures.length ? [{ label: "Deep Engine core device",
-        requiredFeatures: requestedFeatures } as GPUDeviceDescriptor] : []),
-      { label: "Deep Engine core device" },
-    ];
-    let lastDeviceError: unknown;
-    device = undefined as unknown as GPUDevice;
-    for (const descriptor of deviceAttempts) {
-      try {
-        device = await abortable(adapter.requestDevice(descriptor), signal, (value) => value.destroy());
-        break;
-      } catch (error) {
-        lastDeviceError = error;
-        if (signal.aborted) throw error;
-      }
+        ...(requestedFeatures.length ? { requiredFeatures: requestedFeatures } : {}) }), signal, (value) => value.destroy());
+    } catch (error) {
+      // 可选计时或压缩能力可降级，不能使可用的核心渲染设备无法启动(上限在回退档保留)。
+      if (!requestedFeatures.length || signal.aborted) throw error;
+      device = await abortable(adapter.requestDevice({ label: "Deep Engine core device", ...(requiredLimits ? { requiredLimits } : {}) }), signal, (value) => value.destroy());
     }
-    if (device === undefined) throw lastDeviceError ?? aborted();
     let session: DeviceSession | undefined;
     try {
       if (signal.aborted) throw aborted();

@@ -21,8 +21,10 @@ describe("J2-B2 output family single source", () => {
   }
   it("pins production compositions after shared native ACES extraction", () => {
     // The original byte-preserving migration is recorded in 0a0b26fa.
+    // B1 Brief-VSM(2026-10-03):deepPrimaryShadow 增 params2 虚拟档分支(级联档行为逐字节保持),
+    // diff 见 docs/specs/ue-class-b1-vsm-implementation-20261003.md。
     expect(hash(outputShader)).toBe("ea713797ed4d06b8c3b70b128dfe1a7f8f993015885b5e977f3cf5a713686366");
-    expect(hash(PBR_DIRECT_DISPLAY_WGSL)).toBe("bffd0291b5c5cf8423b04751b460833bd7ffda5daff77df2fcb88be0b8e3803a");
+    expect(hash(PBR_DIRECT_DISPLAY_WGSL)).toBe("76611dda4cba180670152abce488e6fd989c4fc55a1a9e68ef159b06c854b60f");
   });
   it("keeps composed libraries outside leaf sources", () => {
     expect(PBR_OUTPUT_BODY_WGSL).not.toContain("fn deepDisplayColor");

@@ -63,8 +63,6 @@ export class CascadedShadowResources {
   private readonly arrayView: GPUTextureView;
   private readonly createdDevice: GPUDevice;
   private readonly frameBuffers: readonly GPUBuffer[];
-  /** B1 Brief-VSM:级联档占位页表/atlas 资源(dispose 同步释放,防泄漏)。 */
-  private readonly vsmPlaceholders: readonly (GPUTexture | GPUBuffer)[];
   private lastSignature: readonly number[] | undefined;
   private pendingSignature: readonly number[] | undefined;
   private plan: CascadedShadowPlan | undefined;
@@ -99,18 +97,6 @@ export class CascadedShadowResources {
         format: "depth32float", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
       });
       created.push(texture);
-      // B1 Brief-VSM:group 2 增补的页表/atlas 绑定在级联档用占位资源填充(着色端
-      // params2.x=0 不消费),保持唯一布局形态,主/透明/display 管线无变体分叉。
-      // 占位 buffer 走 uploadBuffer(会话托管),dispose/回滚同族释放。
-      const vsmPlaceholderBuffers = [0, 1].map(index => uploadBuffer(session,
-        `Deep cascaded vsm placeholder ${index}`, new Float32Array(4),
-        GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST));
-      created.push(...vsmPlaceholderBuffers);
-      const vsmPlaceholderAtlas = createAdmittedTexture(session, {
-        label: "Deep cascaded vsm placeholder atlas", size: [4, 4, 1], format: "r32float",
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-      });
-      created.push(vsmPlaceholderAtlas);
       const layerViews = Object.freeze(Array.from({ length: cascadeCount }, (_, baseArrayLayer) =>
         texture.createView({ dimension: "2d", aspect: "depth-only", baseArrayLayer, arrayLayerCount: 1 })));
       const legacyView = layerViews[0]!;
@@ -121,9 +107,6 @@ export class CascadedShadowResources {
       created.push(uniform);
       const binding = device.createBindGroup({ layout: pipelines.cascadedShadowLayout, entries: [
         { binding: 0, resource: { buffer: uniform } }, { binding: 1, resource: arrayView }, { binding: 2, resource: sampler },
-        { binding: 3, resource: { buffer: vsmPlaceholderBuffers[0]! } },
-        { binding: 4, resource: { buffer: vsmPlaceholderBuffers[1]! } },
-        { binding: 5, resource: vsmPlaceholderAtlas.createView({ dimension: "2d-array" }) },
       ] });
       const frameBuffers: GPUBuffer[] = [];
       for (let index = 0; index < cascadeCount; index += 1) {
@@ -138,7 +121,6 @@ export class CascadedShadowResources {
       this.texture = texture; this.layerViews = layerViews; this.legacyView = legacyView; this.sampler = sampler;
       this.uniform = uniform; this.arrayView = arrayView; this.binding = binding; this.frameBuffers = Object.freeze(frameBuffers);
       this.frameBindings = frameBindings;
-      this.vsmPlaceholders = Object.freeze([...vsmPlaceholderBuffers, vsmPlaceholderAtlas]);
     } catch (error) {
       for (const resource of created.reverse()) session.release(resource);
       throw error;
@@ -201,7 +183,6 @@ export class CascadedShadowResources {
     this.session.release(this.texture);
     this.session.release(this.uniform);
     for (const buffer of this.frameBuffers) this.session.release(buffer);
-    for (const resource of this.vsmPlaceholders) this.session.release(resource);
     this.invalidate();
     this.plan = undefined;
   }

@@ -410,6 +410,9 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
         drawCalls += pageStats.drawCalls; triangles += pageStats.triangles;
         shadowUpdated = true;
       }
+      // 页表/atlas 挂入组 0:必须无条件(驻留页在零物化帧也要被采样)且先于主 pass
+      // 捕获组 0 绑定组(迟挂 = 采样占位 → 全受光)。绑定引用稳定,内容经 writeBuffer 更新。
+      host.mainBindings.setVirtualFrameBinding(host.virtualShadows.frameVirtualBinding);
       virtualShadowMetrics = { mode: "virtual",
         ...(host.virtualShadowFallbackReason ? { fallbackReason: host.virtualShadowFallbackReason } : {}),
         materializedPages: virtualPlan.stats.materializedPages, requestPages: virtualPlan.stats.requestPages,
@@ -557,6 +560,7 @@ export function renderPreparedFrame(host: PbrRendererFrameHost, view: RenderView
         ...(particleReactive ? { reactiveTarget: { texture: particleReactive.texture, view: particleReactive.view } } : {}),
         viewOf: texture => host.outputs.view(texture), draw: pass => {
           pass.setBindGroup(0, host.mainBindings.binding); pass.setBindGroup(2, shadowBinding);
+
           pass.setBindGroup(lighting!.bindGroupIndex, lighting!.bindGroup);
           return host.packets.draw(pass, host.pipelines, "transparent", undefined, true);
         } });

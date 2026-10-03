@@ -72,9 +72,9 @@ describe("virtual shadow WGSL composition", () => {
     expect(gate.match(/fwidth\(/g)?.length).toBe(3);
     expect(gate.indexOf("fwidth(")).toBeLessThan(gate.indexOf("if (frame.background.w"));
     expect(gate.indexOf("deepCascade.params2.x")).toBeLessThan(gate.indexOf("deepCascadedShadow("));
-    expect(sceneShader).toContain("@group(2) @binding(3) var<storage, read> deepVsmMeta : array<vec4u>;");
-    expect(sceneShader).toContain("@group(2) @binding(4) var<storage, read> deepVsmLayers : array<i32>;");
-    expect(sceneShader).toContain("@group(2) @binding(5) var deepVsmAtlas : texture_2d_array<f32>;");
+    expect(sceneShader).toContain("@group(0) @binding(12) var<storage, read> deepVsmMeta : array<vec4u>;");
+    expect(sceneShader).toContain("@group(0) @binding(13) var<storage, read> deepVsmLayers : array<i32>;");
+    expect(sceneShader).toContain("@group(0) @binding(14) var deepVsmAtlas : texture_2d_array<f32>;");
   });
 
   it("keeps the zero-hole fallback chain and page-local clamped PCSS taps in the library", () => {
@@ -95,7 +95,8 @@ describe("virtual shadow WGSL composition", () => {
 
   it("writes linear light depth from builtin z in page materialization fragments", () => {
     expect(sceneShader).toContain("@fragment fn shadowPageDepth(@builtin(position) fragCoord: vec4f) -> @location(0) f32 {\n  return fragCoord.z;\n}");
-    expect(sceneShader).toContain("struct ShadowPageMaskInput");
-    expect(sceneShader).toContain("@fragment fn shadowPageMaskTextured(");
+    // 页管线仅 solid 档:mask 变体移除(texture alpha 叶类按实心投影,documented)。
+    expect(sceneShader).not.toContain("ShadowPageMaskInput");
+    expect(sceneShader).not.toContain("shadowPageMaskTextured");
   });
 });

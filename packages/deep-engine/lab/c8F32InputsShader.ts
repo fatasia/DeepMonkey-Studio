@@ -8,7 +8,9 @@ export type F32InputMode = typeof F32_INPUT_MODES[number];
 // 2026-10-03 二次重锚:e59ce4df 落 F5 方案 A(L1 SH 方向可见度门进 shade,规格
 // docs/specs/f5-directional-l1-implementation-20261003.md)时本钉仍指旧源,导致 c8F32Inputs
 // 全族 7 例红;新源 14eebbd0… 为该提交后的生产 sceneShader 实测 sha256。
-const knownProductionHash = "14eebbd030b4d92609fda85b4eff4f651da321ed228973d7a42ca25cc005a2df";
+// B1 Brief-VSM(2026-10-03):production shader 增虚拟档 params2 分支与页表绑定库后重钉。
+// 旧基线 14eebbd0...;stock WGSL diff 见 docs/specs/ue-class-b1-vsm-implementation-20261003.md。
+const knownProductionHash = "2b437bd2c93fdd5fc5404886506aa621237ce3631059637b3987bb1bc1d76c1f";
 const derivative = "  let derivative = max(abs(dpdx(normal)), abs(dpdy(normal)));";
 const dots = "  let nh = clamp(dot(n, h), 0.0, 1.0); let vh = clamp(dot(v, h), 0.0, 1.0);";
 const fullCapture = "  deepC8F32Witness = deepC8Full;";

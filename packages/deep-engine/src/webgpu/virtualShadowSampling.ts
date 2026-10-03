@@ -92,9 +92,9 @@ export const VIRTUAL_SHADOW_WGSL = /* wgsl */ `
 const DEEP_VSM_MAX_RINGS: u32 = 3u;
 const DEEP_VSM_ATLAS_TILES: u32 = ${VIRTUAL_SHADOW_ATLAS_TILES}u;
 
-@group(2) @binding(3) var<storage, read> deepVsmMeta : array<vec4u>;
-@group(2) @binding(4) var<storage, read> deepVsmLayers : array<i32>;
-@group(2) @binding(5) var deepVsmAtlas : texture_2d_array<f32>;
+@group(0) @binding(12) var<storage, read> deepVsmMeta : array<vec4u>;
+@group(0) @binding(13) var<storage, read> deepVsmLayers : array<i32>;
+@group(0) @binding(14) var deepVsmAtlas : texture_2d_array<f32>;
 
 struct DeepVsmHit {
   found : bool,

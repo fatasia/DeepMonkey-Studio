@@ -49,7 +49,8 @@ describe("PBR bounded reflection bindings", () => {
     const candidate = (latest.find(entry => entry.binding === 11)!.resource as GPUBufferBinding).buffer;
     expect(candidate).not.toBe(active); expect(f.writeBuffer).toHaveBeenCalledOnce();
     expect(f.writeBuffer.mock.calls[0]![0]).toBe(candidate);
-    expect(f.createBuffer).toHaveBeenCalledTimes(4);
+    // B1 Brief-VSM:组 0 增补虚拟页表占位(meta/layers 16B ×2,首次 createBinding 懒建)→ +2。
+    expect(f.createBuffer).toHaveBeenCalledTimes(6);
   });
 
   it("keeps the previous binding and active records after candidate upload failure, then retries the same inactive buffer", () => {
@@ -62,7 +63,8 @@ describe("PBR bounded reflection bindings", () => {
     const failed = f.writeBuffer.mock.calls[0]![0]; bindings.setEnvironment(f.environment);
     expect(f.writeBuffer.mock.calls[1]![0]).toBe(failed);
     expect(bindings.binding).not.toBe(active);
-    expect(f.createBuffer).toHaveBeenCalledTimes(4);
+    // B1 Brief-VSM 同上:占位页资源计入。
+    expect(f.createBuffer).toHaveBeenCalledTimes(6);
   });
 });
 

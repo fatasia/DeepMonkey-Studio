@@ -203,6 +203,13 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     { binding: 8, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform", minBindingSize: 32 } },
     ...[9, 10].map(binding => ({ binding, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "cube" as const } })),
     { binding: 11, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform", minBindingSize: 128 } },
+    // B1 Brief-VSM:虚拟阴影页表 meta/layers(storage)与页 atlas(unfilterable float
+    // 2d-array)挂 frame 组 0 尾部(仅 virtual 档消费;级联档由 mainBindings 以占位
+    // 16B buffer/4×4 纹理填充,params2.x=0 时着色端不读)。
+    { binding: 12, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+    { binding: 13, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+    { binding: 14, visibility: GPUShaderStage.FRAGMENT,
+      texture: { sampleType: "unfilterable-float", viewDimension: "2d-array" } },
   ] });
   const material = device.createBindGroupLayout({ entries: textureArrays
     ? [...textureArrayMaterialTableLayoutEntries(), ...poseEntries]
@@ -222,21 +229,12 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
       ...(layeredMaterials ? layeredMaterialLayoutEntries() : []),
     ] });
   const emptyMaterialLayout = device.createBindGroupLayout({ label: "Deep plain material group 1", entries: poseEntries });
-  // B1 Brief-VSM:group 2 增补 binding 3..5(页表 meta/layers read-only-storage + 页
-  // atlas texture_2d_array<f32>)。级联档 bind group 以占位 buffer/4×4 depth 视图填充,
-  // 着色端 params2.x=0 时不消费 —— 既有级联采样路径零变化。
   const cascadedShadowLayout = device.createBindGroupLayout({ label: "Deep cascaded shadow group 2", entries: [
     { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
       buffer: { type: "uniform", minBindingSize: CASCADED_SHADOW_UNIFORM_BYTES } },
     { binding: 1, visibility: GPUShaderStage.FRAGMENT,
       texture: { sampleType: "depth", viewDimension: "2d-array" } },
     { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "comparison" } },
-    { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
-    { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
-    // r32float 页 atlas = unfilterable-float(无 float32-filterable 特性;采样端
-    // 仅 textureLoad 手动 tap,无过滤需求)。
-    { binding: 5, visibility: GPUShaderStage.FRAGMENT,
-      texture: { sampleType: "unfilterable-float", viewDimension: "2d-array" } },
   ] });
   const plainLayout = device.createPipelineLayout({
     bindGroupLayouts: [frameLayout, emptyMaterialLayout, cascadedShadowLayout, forwardPlusLayout],
@@ -365,17 +363,15 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     depthStencil: { format: "depth32float", depthWriteEnabled: false, depthCompare: "always" },
     multisample: { count: 1 },
   })));
-  for (const mode of ["solid", "maskPlain", "maskMaterial"] as const) for (const raster of ["ccw", "cw", "double"] as const) {
-    const key = shadowPipelineKey(mode, raster), doubleSided = raster === "double";
-    const fragmentEntryPoint = mode === "solid" ? "shadowPageDepth"
-      : mode === "maskPlain" ? "shadowPageMaskPlain" : "shadowPageMaskTextured";
-    const vertexEntryPoint = deformation ? mode === "solid" ? "shadowDeformed" : "shadowMaskDeformed"
-      : mode === "solid" ? "shadowMain" : "shadowMaskMain";
+  // 页管线仅 solid 档 × 3 raster + clear:masked 材质经 packetDraw 的 solid 回退按实心
+  // 投影(documented 简化,见 pbrShader.ts 页物化注释)。
+  for (const raster of ["ccw", "cw", "double"] as const) {
+    const key = shadowPipelineKey("solid", raster), doubleSided = raster === "double";
     pendingPageShadow.push(track(pageShadowPipelines, key, device.createRenderPipelineAsync({
       label: `Deep virtual shadow page ${key}`,
-      layout: mode === "maskMaterial" ? shadowMaterialLayout : shadowPlainLayout,
-      vertex: { module, entryPoint: vertexEntryPoint, buffers: mode === "solid" ? shadowBuffers : shadowMaskBuffers },
-      fragment: { module, entryPoint: fragmentEntryPoint, targets: [{ format: "r32float" }] },
+      layout: shadowPlainLayout,
+      vertex: { module, entryPoint: deformation ? "shadowDeformed" : "shadowMain", buffers: shadowBuffers },
+      fragment: { module, entryPoint: "shadowPageDepth", targets: [{ format: "r32float" }] },
       primitive: { topology: "triangle-list", cullMode: doubleSided ? "none" : "back", frontFace: raster === "cw" ? "cw" : "ccw" },
       depthStencil: { format: "depth32float", depthWriteEnabled: true, depthCompare: "less", depthBias: 1, depthBiasSlopeScale: 1 },
       multisample: { count: 1 },

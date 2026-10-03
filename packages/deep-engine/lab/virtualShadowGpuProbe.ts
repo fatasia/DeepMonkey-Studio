@@ -2,7 +2,7 @@ import { PbrRenderer } from "../src/webgpu/pbrRenderer.js";
 import { FrameCaptureSession } from "../src/r12/frameCapture.js";
 import { isPbrFrameReadbackSnapshot } from "../src/webgpu/pbrFrameCaptureReadback.js";
 import type { FrameMetrics, RenderView } from "../src/webgpu/pbrRendererTypes.js";
-import type { RenderPacket } from "../src/renderPacket.js";
+import type { RenderInstance, RenderPacket } from "../src/renderPacket.js";
 import { sphereMesh } from "../src/webgpu/primitives.js";
 
 /**
@@ -41,9 +41,11 @@ const FEATURES = { environment: true, fog: false, groundPlane: true, groundGrid:
   occlusionCulling: false, bloom: false, vignette: true } as const;
 
 const VIEW: RenderView = {
-  eye: [0, 2.4, 7.2] as const, target: [0, 0.7, -1.5] as const, extent: 9,
+  eye: [0, 1.7, 4.2] as const, target: [0, 0.9, -2] as const, extent: 7,
   background: [0.16, 0.19, 0.24] as const, floor: [0.42, 0.42, 0.44] as const,
   exposure: 1.0, roughness: 0.6,
+  lights: { directional: [{ directionWorld: [-0.45, -0.62, -0.45], color: [1, 0.94, 0.86],
+    intensity: 3.2 }] },
   width: PROBE_WIDTH, height: PROBE_HEIGHT, pixelRatio: 1,
 };
 
@@ -68,32 +70,40 @@ function boxMesh(): { vertices: Float32Array<ArrayBuffer>; indices: Uint32Array<
   return { vertices: new Float32Array(vertices), indices: new Uint32Array(indices) };
 }
 
-/** 10 万实例场景:球场 + 近场薄栅栏 + 动态设备方岛(dyn- 前缀,供 update 驱动)。 */
+/** 10 万实例场景(合同上限 16 384):近场留清晰地面走廊(栅栏阴影测区),
+ *  球场推向远方(z -20..-58)保持 10 万级负载;栅栏 12 段 × 2.2m 投影条纹。
+ *  低角度太阳(view.lights)→ 长阴影 ≈ 2.7m,边缘带落在净空地面上。 */
 export function buildProbeScene(): RenderPacket {
   const sphere = sphereMesh(12, 8);
   const box = boxMesh();
-  const instances: RenderPacket["instances"] = [];
+  const instances: RenderInstance[] = [];
   const materials: RenderPacket["materials"] = [
     { id: "field-a", baseColor: [0.55, 0.56, 0.58], metallic: 0.05, roughness: 0.7 },
     { id: "field-b", baseColor: [0.36, 0.4, 0.46], metallic: 0.1, roughness: 0.6 },
     { id: "fence", baseColor: [0.8, 0.78, 0.72], metallic: 0.2, roughness: 0.5 },
     { id: "device", baseColor: [0.85, 0.45, 0.2], metallic: 0.4, roughness: 0.45 },
   ];
+  const FIELD_COUNT = 16_344;
   const grid = Math.ceil(Math.sqrt(FIELD_COUNT));
   for (let index = 0; index < FIELD_COUNT; index++) {
     const gx = index % grid, gz = Math.floor(index / grid);
-    const x = gx / (grid - 1) * 80 - 40;
-    // z ∈ [8, -56]:近环 2/3 覆盖主视前方,远端延伸出环外(越界=无阴影,同 CSM 语义)。
-    const z = 8 - (gz / (grid - 1)) * 64;
-    const scale = 0.18 + ((index * 2654435761) % 97) / 97 * 0.22;
+    const x = gx / (grid - 1) * 84 - 42;
+    const z = -20 - (gz / (grid - 1)) * 38;
+    const scale = 0.22 + ((index * 2654435761) % 97) / 97 * 0.26;
     instances.push({ id: `f-${index}`, geometry: "geo-sphere",
       material: index % 2 === 0 ? "field-a" : "field-b",
       transform: [scale, 0, 0, 0, 0, scale, 0, 0, 0, 0, scale, 0, x, scale, z, 1] });
   }
-  for (let index = 0; index < 6; index++) {
-    const x = -6.25 + index * 2.5;
-    instances.push({ id: `fence-${index}`, geometry: "geo-box", material: "fence",
-      transform: [0.06, 0, 0, 0, 0, 1.5, 0, 0, 0, 0, 2.8, 0, x, 0.75, -2, 1] });
+  // 细杆围栏(0.03m 杆径 × 2 横杆):级联 medium slice(~17cm/texel)下细杆阴影
+  // 破碎/丢失,虚拟档 1.1mm/texel 完整解析 —— UE VSM 的标志性卖点场景。
+  for (let index = 0; index < 12; index++) {
+    const x = -8.8 + index * 1.6;
+    instances.push({ id: `fence-post-${index}`, geometry: "geo-box", material: "fence",
+      transform: [0.05, 0, 0, 0, 0, 2.2, 0, 0, 0, 0, 0.05, 0, x, 1.1, -2, 1] });
+    for (const height of [0.75, 1.5]) {
+      instances.push({ id: `fence-rail-${index}-${height}`, geometry: "geo-box", material: "fence",
+        transform: [0.8, 0, 0, 0, 0, 0.035, 0, 0, 0, 0, 0.035, 0, x + 0.4, height, -2, 1] });
+    }
   }
   for (let index = 0; index < 4; index++) {
     const x = -4.5 + index * 3;
@@ -108,7 +118,7 @@ export function buildProbeScene(): RenderPacket {
 
 /** 平移/旋转动态设备的实例更新(其余实例不变)。 */
 export function buildDeviceUpdate(mode: "translate" | "rotate"): RenderPacket["instances"] {
-  const instances: RenderPacket["instances"] = [];
+  const instances: RenderInstance[] = [];
   for (let index = 0; index < 4; index++) {
     const x = -4.5 + index * 3;
     if (mode === "translate") {
@@ -156,29 +166,58 @@ export function snapshotToLuma(snapshot: { readonly width: number; readonly heig
   return { width, height, luma };
 }
 
-/** 边缘带锯齿能量:测区内 Sobel |∇|>阈值的边缘带,梯度平方和 / 边缘像素数。 */
+export interface ShadowEdgeStats {
+  /** 阴影掩码边界像素数。 */
+  readonly boundaryPixels: number;
+  /** 阶梯角像素数(边界上 4-邻域构成棋盘/拐角的像素)——锯齿的直接度量。 */
+  readonly cornerPixels: number;
+  /** 角密度 = cornerPixels / boundaryPixels(锯齿能量口径,gate ①)。 */
+  readonly cornerRatio: number;
+  /** 边界总长(周长,px)。 */
+  readonly boundaryLength: number;
+  readonly shadowPixels: number;
+  readonly brightMean: number;
+  readonly shadowMean: number;
+}
+
+/**
+ * 阴影边缘锯齿统计(掩码边界角密度口径):
+ * - 阴影掩码 = luma < 0.55·(亮均值)(地面测区,亮场/暗场双峰);
+ * - 边界像素 = 4-邻域含异类的掩码像素;阶梯角 = 其两对角邻居同为异类且两正交邻居
+ *   同类的角点模式 —— 直线边界角密度 ≈ 0,45° 阶梯 ≈ 0.5-1.0;
+ * - Sobel 梯度能量同时保留(参考面:更锐利的边缘不等于更多锯齿,不以梯度论胜负)。
+ */
 export function edgeAliasingEnergy(field: LumaField, region: { x0: number; y0: number; x1: number; y1: number },
-  threshold = 0.055): { edgePixels: number; gradientSum: number; gradientEnergy: number;
-    energyPerEdgePixel: number; brightMean: number; shadowMean: number } {
+  threshold = 0.55): ShadowEdgeStats {
   const at = (x: number, y: number): number => field.luma[y * field.width + x]!;
-  let edgePixels = 0, gradientSum = 0, gradientEnergy = 0, bright = 0, brightCount = 0, shadow = 0, shadowCount = 0;
+  let bright = 0, brightCount = 0, shadow = 0, shadowCount = 0;
+  const mask = (x: number, y: number): boolean => at(x, y) < threshold;
+  let boundaryPixels = 0, cornerPixels = 0, shadowPixels = 0;
   for (let y = Math.max(1, region.y0); y < Math.min(field.height - 1, region.y1); y++) {
     for (let x = Math.max(1, region.x0); x < Math.min(field.width - 1, region.x1); x++) {
-      const gx = (at(x + 1, y - 1) + 2 * at(x + 1, y) + at(x + 1, y + 1))
-        - (at(x - 1, y - 1) + 2 * at(x - 1, y) + at(x - 1, y + 1));
-      const gy = (at(x - 1, y + 1) + 2 * at(x, y + 1) + at(x + 1, y + 1))
-        - (at(x - 1, y - 1) + 2 * at(x, y - 1) + at(x + 1, y - 1));
-      const magnitude = Math.hypot(gx, gy);
       const center = at(x, y);
-      if (magnitude > threshold) {
-        edgePixels += 1; gradientSum += magnitude; gradientEnergy += magnitude * magnitude;
-      }
-      if (center > 0.3) { bright += center; brightCount += 1; }
+      const isShadow = mask(x, y);
+      if (isShadow) shadowPixels += 1; else { bright += center; brightCount += 1; }
+      if (center > 0.02 && !isShadow) { /* bright */ }
       else if (center > 0.02) { shadow += center; shadowCount += 1; }
+      const north = mask(x, y - 1), south = mask(x, y + 1);
+      const west = mask(x - 1, y), east = mask(x + 1, y);
+      const different = ((north !== isShadow) ? 1 : 0) + ((south !== isShadow) ? 1 : 0)
+        + ((west !== isShadow) ? 1 : 0) + ((east !== isShadow) ? 1 : 0);
+      if (different === 0) continue;
+      boundaryPixels += 1;
+      // 角点模式:两正交邻居同类、两对角邻居异类(阶梯拐角)。
+      const nw = mask(x - 1, y - 1), ne = mask(x + 1, y - 1);
+      const sw = mask(x - 1, y + 1), se = mask(x + 1, y + 1);
+      const corner = (north === south) === isShadow && (west === east) === isShadow
+        && ((nw !== isShadow && se !== isShadow) || (ne !== isShadow && sw !== isShadow));
+      if (corner) cornerPixels += 1;
     }
   }
-  return { edgePixels, gradientSum, gradientEnergy,
-    energyPerEdgePixel: edgePixels > 0 ? gradientEnergy / edgePixels : 0,
+  return { boundaryPixels, cornerPixels,
+    cornerRatio: boundaryPixels > 0 ? cornerPixels / boundaryPixels : 0,
+    boundaryLength: boundaryPixels,
+    shadowPixels,
     brightMean: brightCount > 0 ? bright / brightCount : 0,
     shadowMean: shadowCount > 0 ? shadow / shadowCount : 0 };
 }
@@ -207,6 +246,20 @@ export function holeCheck(field: LumaField, region: { x0: number; y0: number; x1
   return { nonFinite, blackSpeckles, samples };
 }
 
+/** 阴影带平均绝对差(对参考真源):|a-b| 均值,区域可限。 */
+export function meanAbsDiff(left: LumaField, right: LumaField,
+  region?: { x0: number; y0: number; x1: number; y1: number }): number {
+  let sum = 0, count = 0;
+  const x0 = region?.x0 ?? 0, y0 = region?.y0 ?? 0;
+  const x1 = Math.min(region?.x1 ?? left.width, left.width);
+  const y1 = Math.min(region?.y1 ?? left.height, left.height);
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+    sum += Math.abs(left.luma[y * left.width + x]! - right.luma[y * right.width + x]!);
+    count += 1;
+  }
+  return count > 0 ? sum / count : 0;
+}
+
 /** 整帧差分(步距 4 下采样):动态延迟收敛判定。 */
 export function frameDistance(left: LumaField, right: LumaField): number {
   let sum = 0, count = 0;
@@ -219,13 +272,20 @@ export function frameDistance(left: LumaField, right: LumaField): number {
   return count > 0 ? sum / count : 0;
 }
 
+export interface ShadowBandField {
+  readonly width: number; readonly height: number;
+  readonly luma: Float32Array;
+}
+
 export interface ProbeLegResult {
-  readonly mode: "cascaded" | "virtual";
+  readonly mode: "cascaded" | "virtual" | "reference";
   readonly timing: { readonly p50Ms: number; readonly p95Ms: number; readonly samples: number };
-  readonly image: { readonly edge: ReturnType<typeof edgeAliasingEnergy>;
-    readonly holes: ReturnType<typeof holeCheck>; readonly lumaP05: number; readonly lumaP95: number };
+  readonly image: { readonly edge: ShadowEdgeStats; readonly holes: { nonFinite: number; blackSpeckles: number;
+    samples: number }; readonly lumaP05: number; readonly lumaP95: number;
+    readonly canvasPng?: string; readonly cropPng?: string; readonly shadowBand?: ShadowBandField };
   /** 画布 PNG dataURL(证据存档;finishLeg 移除 canvas 前采集)。 */
   readonly canvasPng?: string;
+  readonly shadowBand?: ShadowBandField;
   readonly pages: readonly { readonly frame: number; readonly materialized: number; readonly resident: number;
     readonly dynamicInvalidated: number }[];
   readonly dynamic: { readonly translateLatencyFrames: number; readonly rotateLatencyFrames: number };
@@ -233,11 +293,11 @@ export interface ProbeLegResult {
 }
 
 interface ActiveLeg {
-  readonly mode: "cascaded" | "virtual";
+  readonly mode: "cascaded" | "virtual" | "reference";
   readonly withCapture: boolean;
   readonly canvas: HTMLCanvasElement;
   readonly renderer: PbrRenderer;
-  readonly pages: ProbeLegResult["pages"];
+  pages: { frame: number; materialized: number; resident: number; dynamicInvalidated: number }[];
 }
 
 let active: ActiveLeg | undefined;
@@ -250,7 +310,7 @@ function samplePages(metrics: FrameMetrics | undefined, frame: number): void {
     dynamicInvalidated: metrics?.virtualShadow?.dynamicInvalidated ?? 0 });
 }
 
-export async function beginLeg(mode: "cascaded" | "virtual", withCapture: boolean): Promise<void> {
+export async function beginLeg(mode: "cascaded" | "virtual" | "reference", withCapture: boolean): Promise<void> {
   if (active) throw new Error("Previous probe leg was not ended.");
   const canvas = document.createElement("canvas");
   canvas.width = PROBE_WIDTH; canvas.height = PROBE_HEIGHT;
@@ -259,6 +319,7 @@ export async function beginLeg(mode: "cascaded" | "virtual", withCapture: boolea
   const packet = buildProbeScene();
   const renderer = await PbrRenderer.create(canvas, navigator.gpu, new AbortController().signal, {
     ...(mode === "virtual" ? { shadowMode: "virtual" as const } : {}),
+    ...(mode === "reference" ? { shadows: { exactProfile: { cascadeCount: 1, shadowMapSize: 8192 } } } : {}),
     // AA-M1 并行任务在途(瞬时 MSAA 附件 store 语义在校),本探针显式 1x 隔离:
     // 锯齿能量测原生分辨率边缘,与 MSAA 正交,不碰 MSAA 域文件。
     msaaSampleCount: 1,
@@ -320,7 +381,7 @@ export async function timeLeg(frames = TIMING_FRAMES): Promise<ProbeLegResult["t
     }
   }
   if (!gpu && passTimings && passTimings.availability === "measured") {
-    gpu = { p50Ms: passTimings.milliseconds, p95Ms: passTimings.milliseconds, samples: 1 };
+    gpu = { p50Ms: passTimings.milliseconds ?? 0, p95Ms: passTimings.milliseconds ?? 0, samples: 1 };
   }
   if (!gpu && passTimings) {
     throw new Error(`gpu-frame + pass timing unavailable; passTimings=${JSON.stringify(passTimings).slice(0, 400)}; `
@@ -332,7 +393,8 @@ export async function timeLeg(frames = TIMING_FRAMES): Promise<ProbeLegResult["t
   }
   if (!gpu) {
     const stages = active.renderer.performanceTelemetry.snapshot().stages;
-    const stageSummary = Object.entries(stages).map(([key, value]) => `${key}:${value.samples}`).join(",") || "none";
+    const stageSummary = Object.entries(stages)
+      .map(([key, value]) => `${key}:${value?.samples ?? 0}`).join(",") || "none";
     throw new Error(`gpu-frame timing unavailable; timer failures=[${active.renderer.gpuTimer.diagnostics.join(" | ")}]; `
       + `stages=[${stageSummary}]`);
   }
@@ -358,15 +420,43 @@ export async function captureStill(): Promise<ProbeLegResult["image"] & { readon
   const afterErrors = active.renderer.deviceDiagnostics;
   if (afterErrors.length > 0) throw new Error(`device validation: ${afterErrors.map(e => e.message).join(" | ")}`);
   const field = await latestLuma();
-  const fenceRegion = { x0: Math.floor(field.width * 0.18), y0: Math.floor(field.height * 0.62),
-    x1: Math.floor(field.width * 0.86), y1: Math.floor(field.height * 0.96) };
+  // 测区 = 中央净空地面走廊(避开左右前景设备箱的暗面与远景球墙)。
+  const fenceRegion = { x0: Math.floor(field.width * 0.34), y0: Math.floor(field.height * 0.52),
+    x1: Math.floor(field.width * 0.66), y1: Math.floor(field.height * 0.97) };
   const edge = edgeAliasingEnergy(field, fenceRegion);
   const holes = holeCheck(field, fenceRegion);
   const sorted = Float32Array.from(field.luma).sort();
   const percentile = (fraction: number): number =>
     sorted[Math.min(sorted.length - 1, Math.floor(fraction * sorted.length))]!;
+  // 栅栏阴影近景裁剪(x 0.18..0.62,y 0.60..0.92 原生分辨率,2× 放大贴回画布右侧)
+  const cropW = Math.floor((fenceRegion.x1 - fenceRegion.x0) * 0.44);
+  const cropH = Math.floor(fenceRegion.y1 - fenceRegion.y0);
+  const cropCanvas = new OffscreenCanvas(cropW, cropH);
+  const cropContext = cropCanvas.getContext("2d")!;
+  const full = new OffscreenCanvas(field.width, field.height);
+  const fullContext = full.getContext("2d")!;
+  const imageData = fullContext.createImageData(field.width, field.height);
+  for (let y = 0; y < field.height; y++) for (let x = 0; x < field.width; x++) {
+    const luma = Math.max(0, Math.min(1, field.luma[y * field.width + x]!));
+    const gray = Math.round(luma * 255), offset = (y * field.width + x) * 4;
+    imageData.data[offset] = gray; imageData.data[offset + 1] = gray; imageData.data[offset + 2] = gray;
+    imageData.data[offset + 3] = 255;
+  }
+  fullContext.putImageData(imageData, 0, 0);
+  cropContext.imageSmoothingEnabled = false;
+  cropContext.drawImage(full, fenceRegion.x0, fenceRegion.y0, cropW, cropH, 0, 0, cropW, cropH);
+  const cropBlob = await cropCanvas.convertToBlob({ type: "image/png" });
+  const cropBytes = new Uint8Array(await cropBlob.arrayBuffer());
+  let cropBinary = "";
+  for (let index = 0; index < cropBytes.length; index++) cropBinary += String.fromCharCode(cropBytes[index]!);
+  const band = { width: fenceRegion.x1 - fenceRegion.x0, height: fenceRegion.y1 - fenceRegion.y0,
+    luma: new Float32Array((fenceRegion.x1 - fenceRegion.x0) * (fenceRegion.y1 - fenceRegion.y0)) };
+  for (let y = fenceRegion.y0; y < fenceRegion.y1; y++) for (let x = fenceRegion.x0; x < fenceRegion.x1; x++) {
+    band.luma[(y - fenceRegion.y0) * band.width + (x - fenceRegion.x0)] = field.luma[y * field.width + x]!;
+  }
   return { edge, holes, lumaP05: percentile(0.05), lumaP95: percentile(0.95),
-    canvasPng: active.canvas.toDataURL("image/png") };
+    canvasPng: active.canvas.toDataURL("image/png"),
+    cropPng: `data:image/png;base64,${btoa(cropBinary)}`, shadowBand: band };
 }
 
 /** 动态腿:updateInstances → 逐帧差分,返回与收敛帧差降到初始差 50% 的帧序(0 = 同帧)。 */
@@ -410,8 +500,8 @@ export async function finishLeg(timing: ProbeLegResult["timing"], image?: ProbeL
   dynamic?: ProbeLegResult["dynamic"]): Promise<ProbeLegResult> {
   if (!active) throw new Error("beginLeg was not called.");
   const leg: ProbeLegResult = { mode: active.mode, timing,
-    image: image ?? { edge: { edgePixels: 0, gradientSum: 0, gradientEnergy: 0, energyPerEdgePixel: 0,
-      brightMean: 0, shadowMean: 0 }, holes: { nonFinite: 0, blackSpeckles: 0, samples: 0 },
+    image: image ?? { edge: { boundaryPixels: 0, cornerPixels: 0, cornerRatio: 0, boundaryLength: 0,
+      shadowPixels: 0, brightMean: 0, shadowMean: 0 }, holes: { nonFinite: 0, blackSpeckles: 0, samples: 0 },
       lumaP05: 0, lumaP95: 0 },
     pages: active.pages,
     dynamic: dynamic ?? { translateLatencyFrames: -1, rotateLatencyFrames: -1 } };
@@ -430,7 +520,8 @@ export async function probeAdapterInfo(): Promise<{ readonly vendor?: string; re
 
 /** 诊断:包一层管线/布局创建,失败时把失败管线 label 带进错误消息(定位 Invalid PipelineLayout)。 */
 export function installPipelineTracing(): void {
-  const proto = GPUDevice.prototype as unknown as Record<string, (...args: unknown[]) => unknown>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const proto = GPUDevice.prototype as unknown as Record<string, any>;
   const w = window as unknown as { __vsmErrors?: string[] };
   const scopeTrace = (device: GPUDevice, label: string, run: () => unknown): unknown => {
     w.__vsmErrors!.push(`enter ${label}`);
@@ -441,27 +532,39 @@ export function installPipelineTracing(): void {
     }).catch(error => w.__vsmErrors!.push(`${label} pop-failed: ${String(error)}`));
     return value;
   };
-  const origBindGroupLayout = proto.createBindGroupLayout;
-  proto.createBindGroupLayout = function (this: GPUDevice, descriptor: GPUBindGroupLayoutDescriptor) {
-    return scopeTrace(this, `createBindGroupLayout[${descriptor.label ?? "unlabeled"}]`, () => origBindGroupLayout.call(this, descriptor));
-  };
-  const origPipelineLayout = proto.createPipelineLayout;
-  proto.createPipelineLayout = function (this: GPUDevice, descriptor: GPUPipelineLayoutDescriptor) {
-    return scopeTrace(this, `createPipelineLayout[${descriptor.label ?? "unlabeled"}]`,
-      () => origPipelineLayout.call(this, descriptor));
-  };
-  const origRenderPipeline = proto.createRenderPipeline;
-  proto.createRenderPipeline = function (this: GPUDevice, descriptor: GPURenderPipelineDescriptor) {
-    try { return origRenderPipeline.call(this, descriptor); }
-    catch (error) { throw new Error(`createRenderPipeline[${descriptor.label ?? "unlabeled"}]: ${String(error)}`); }
-  };
-  const origRenderPipelineAsync = proto.createRenderPipelineAsync;
-  proto.createRenderPipelineAsync = function (this: GPUDevice, descriptor: GPURenderPipelineDescriptor) {
-    const promise = origRenderPipelineAsync.call(this, descriptor) as Promise<GPURenderPipeline>;
-    return promise.catch(error => {
-      throw new Error(`createRenderPipelineAsync[${descriptor.label ?? "unlabeled"}]: ${String(error)}`);
-    });
-  };
+  const origBindGroupLayout = proto.createBindGroupLayout as
+    ((this: GPUDevice, descriptor: GPUBindGroupLayoutDescriptor) => GPUBindGroupLayout) | undefined;
+  if (origBindGroupLayout) {
+    proto.createBindGroupLayout = function (this: GPUDevice, descriptor: GPUBindGroupLayoutDescriptor) {
+      return scopeTrace(this, `createBindGroupLayout[${descriptor.label ?? "unlabeled"}]`,
+        () => origBindGroupLayout.call(this, descriptor));
+    };
+  }
+  const origPipelineLayout = proto.createPipelineLayout as
+    ((this: GPUDevice, descriptor: GPUPipelineLayoutDescriptor) => GPUPipelineLayout) | undefined;
+  if (origPipelineLayout) {
+    proto.createPipelineLayout = function (this: GPUDevice, descriptor: GPUPipelineLayoutDescriptor) {
+      return scopeTrace(this, `createPipelineLayout[${descriptor.label ?? "unlabeled"}]`,
+        () => origPipelineLayout.call(this, descriptor));
+    };
+  }
+  const origRenderPipeline = proto.createRenderPipeline as
+    ((this: GPUDevice, descriptor: GPURenderPipelineDescriptor) => GPURenderPipeline) | undefined;
+  if (origRenderPipeline) {
+    proto.createRenderPipeline = function (this: GPUDevice, descriptor: GPURenderPipelineDescriptor) {
+      try { return origRenderPipeline.call(this, descriptor); }
+      catch (error) { throw new Error(`createRenderPipeline[${descriptor.label ?? "unlabeled"}]: ${String(error)}`); }
+    };
+  }
+  const origRenderPipelineAsync = proto.createRenderPipelineAsync as
+    ((this: GPUDevice, descriptor: GPURenderPipelineDescriptor) => Promise<GPURenderPipeline>) | undefined;
+  if (origRenderPipelineAsync) {
+    proto.createRenderPipelineAsync = function (this: GPUDevice, descriptor: GPURenderPipelineDescriptor) {
+      return origRenderPipelineAsync.call(this, descriptor).catch(error => {
+        throw new Error(`createRenderPipelineAsync[${descriptor.label ?? "unlabeled"}]: ${String(error)}`);
+      });
+    };
+  }
 }
 
 /** 诊断:包装 uncapturederror 监听注册,把 Dawn 完整校验消息镜像到 window.__vsmErrors。 */
@@ -514,7 +617,7 @@ export async function probeDeviceRequest(): Promise<unknown> {
 
 /** 诊断:读回虚拟阴影 atlas 指定层(2048² r32float)。 */
 export async function dumpShadowAtlasLayer(layer = 0): Promise<{ readonly width: number; readonly height: number;
-  readonly bytesPerRow: number; readonly floats: Float32Array }> {
+  readonly bytesPerRow: number; readonly floats: Float32Array; readonly canvasPng: string }> {
   if (!active) throw new Error("beginLeg was not called.");
   const atlas = (active.renderer as unknown as {
     virtualShadows?: { atlas: GPUTexture };
@@ -563,9 +666,10 @@ export function dumpVirtualShadowResidency(): unknown {
 
 /** 诊断:读回 GPU 页表(meta+layers)与 CPU 驻留对照(定位采样 miss 的上传/打包问题)。 */
 export async function dumpShadowPageTable(): Promise<{ readonly meta: readonly number[];
-  readonly layers: readonly number[] }> {
+  readonly layers: readonly number[]; readonly metaWords: number; readonly layerEntries: number;
+  readonly uniformTail: readonly number[]; readonly matrices00: readonly number[] }> {
   const resources = (active?.renderer as unknown as {
-    virtualShadows?: { metaBuffer: GPUBuffer; layersBuffer: GPUBuffer };
+    virtualShadows?: { metaBuffer: GPUBuffer; layersBuffer: GPUBuffer; uniformBuffer: GPUBuffer };
   }).virtualShadows;
   if (!resources) throw new Error("virtual shadow resources unavailable.");
   const device = active!.renderer.session.device;
@@ -582,6 +686,8 @@ export async function dumpShadowPageTable(): Promise<{ readonly meta: readonly n
   };
   const meta = new Uint32Array(await readback(resources.metaBuffer, resources.metaBuffer.size));
   const layers = new Int32Array(await readback(resources.layersBuffer, resources.layersBuffer.size));
+  const uniform = new Float32Array(await readback(resources.uniformBuffer, resources.uniformBuffer.size));
   return { meta: Array.from(meta), layers: Array.from(layers),
-    metaWords: resources.metaBuffer.size, layerEntries: resources.layersBuffer.size / 4 };
+    metaWords: resources.metaBuffer.size, layerEntries: resources.layersBuffer.size / 4,
+    uniformTail: Array.from(uniform.slice(144, 160)), matrices00: Array.from(uniform.slice(0, 4)) };
 }

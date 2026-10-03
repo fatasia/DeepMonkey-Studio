@@ -88,9 +88,13 @@ export interface VirtualShadowResourceOptions {
 /** 三环 clipmap 虚拟阴影资源(构造即分配页池;dispose 释放全部托管资源)。 */
 export class VirtualShadowResources {
   readonly binding: GPUBindGroup;
+  /** B1 Brief-VSM:组 0 尾部虚拟页资源(frameLayout 绑定 12/13/14;经 mainBindings 挂入)。 */
+  readonly frameVirtualBinding: { readonly metaBuffer: GPUBuffer; readonly layersBuffer: GPUBuffer;
+    readonly atlasView: GPUTextureView };
   readonly layerViews: readonly GPUTextureView[];
   readonly atlas: GPUTexture;
   readonly frameBindings: readonly GPUBindGroup[];
+  readonly uniformBuffer: GPUBuffer;
   private readonly uniform: GPUBuffer;
   private readonly metaBuffer: GPUBuffer;
   private readonly layersBuffer: GPUBuffer;
@@ -144,10 +148,9 @@ export class VirtualShadowResources {
       });
       created.push(dummyDepth);
       const uniform = uploadBuffer(session, "Deep virtual shadow uniform",
-        new Float32Array(CASCADED_SHADOW_UNIFORM_FLOATS), GPUBufferUsage.UNIFORM);
+        new Float32Array(CASCADED_SHADOW_UNIFORM_FLOATS), GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_SRC);
       created.push(uniform);
       const emptyPacking = packVirtualShadowPageTable(3, () => undefined);
-      // COPY_SRC:联测诊断可读回页表对照 CPU 驻留(产品帧零 readback)。
       // COPY_SRC:联测诊断可读回页表对照 CPU 驻留(产品帧零 readback)。
       const storageUsage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC;
       const metaBuffer = device.createBuffer({ label: "Deep virtual shadow page meta",
@@ -170,16 +173,18 @@ export class VirtualShadowResources {
       this.dummyDepthView = dummyDepth.createView({ dimension: "2d-array" });
       this.dummyLayerView = dummyDepth.createView({ dimension: "2d", aspect: "depth-only" });
       this.sampler = device.createSampler({ compare: "less-equal", minFilter: "linear", magFilter: "linear" });
+      this.uniformBuffer = uniform;
       this.uniform = uniform; this.metaBuffer = metaBuffer; this.layersBuffer = layersBuffer;
       this.pageBuffers = Object.freeze(pageBuffers); this.frameBindings = frameBindings;
+      // group 2:虚拟档 uniform(环矩阵 + params2)与占位 depth 数组(级联绑定形态);
+      // 页表 meta/layers + 页 atlas 经 frameVirtualBinding 挂入组 0(PbrMainBindings)。
       this.binding = device.createBindGroup({ layout: pipelines.cascadedShadowLayout, entries: [
         { binding: 0, resource: { buffer: uniform } },
         { binding: 1, resource: this.dummyDepthView },
         { binding: 2, resource: this.sampler },
-        { binding: 3, resource: { buffer: metaBuffer } },
-        { binding: 4, resource: { buffer: layersBuffer } },
-        { binding: 5, resource: atlas.createView({ dimension: "2d-array" }) },
       ] });
+      this.frameVirtualBinding = { metaBuffer, layersBuffer,
+        atlasView: atlas.createView({ dimension: "2d-array" }) };
     } catch (error) {
       for (const resource of created.reverse()) session.release(resource);
       throw error;

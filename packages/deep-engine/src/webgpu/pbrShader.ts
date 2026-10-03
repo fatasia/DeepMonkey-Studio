@@ -147,11 +147,8 @@ struct ShadowVertex {
   if (v.alphaCutoff.x * sampledAlpha < v.alphaCutoff.y) { discard; }
 }
 // B1 Brief-VSM 虚拟阴影页物化:depth-as-float 片元(线性光深 = frag builtin z,WebGPU 0..1),
-// 写 r32float 页 atlas;mask 变体保留 alphaCut/discard 语义。fragment 输入需独立结构
-// (ShadowVertex 的 @builtin(position) 成员不能作 fragment 输入)。
-struct ShadowPageMaskInput {
-  @location(0) uv0: vec2f, @location(1) uv1: vec2f, @location(2) alphaCutoff: vec2f,
-};
+// 写 r32float 页 atlas。页管线仅 solid 档(无 mask 变体):纹理 alpha 裁剪叶类在页中
+// 按实心投影(documented 简化;textureArray 锚点唯一性合同见 textureArrayWgsl)。
 @fragment fn shadowPageDepth(@builtin(position) fragCoord: vec4f) -> @location(0) f32 {
   return fragCoord.z;
 }
@@ -164,18 +161,6 @@ struct ShadowPageMaskInput {
 }
 @fragment fn shadowPageClearDepth() -> @location(0) f32 {
   return 1.0;
-}
-@fragment fn shadowPageMaskPlain(@builtin(position) fragCoord: vec4f, v: ShadowPageMaskInput) -> @location(0) f32 {
-  if (v.alphaCutoff.x < v.alphaCutoff.y) { discard; }
-  return fragCoord.z;
-}
-@fragment fn shadowPageMaskTextured(@builtin(position) fragCoord: vec4f, v: ShadowPageMaskInput) -> @location(0) f32 {
-  let uv = vec3f(select(v.uv0, v.uv1, materialTextures.baseRow0.w > 1.5), 1.0);
-  let baseUv = vec2f(dot(materialTextures.baseRow0.xyz, uv), dot(materialTextures.baseRow1.xyz, uv));
-  var sampledAlpha = 1.0;
-  if (materialTextures.baseRow0.w > 0.5) { sampledAlpha = textureSample(baseColorMap, baseColorSampler, baseUv).a; }
-  if (v.alphaCutoff.x * sampledAlpha < v.alphaCutoff.y) { discard; }
-  return fragCoord.z;
 }
 ${PBR_DIRECT_LIGHTING_WGSL}
 ${PBR_DIRECT_MULTISCATTERING_WGSL}

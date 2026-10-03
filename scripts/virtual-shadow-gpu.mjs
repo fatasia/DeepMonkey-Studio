@@ -123,9 +123,23 @@ const LEGS_FLOW = `(async () => {
     await probe.settleLeg();
     const cascadedImage = await probe.captureStill();
     output.legs.cascadedImage = await probe.finishLeg(cascadedTiming, cascadedImage);
+    // 参考真源腿(8192 单片级联):先于虚拟动态腿(设备盒位移会污染测区)。
+    await probe.beginLeg("reference", true);
+    await probe.settleLeg();
+    const referenceImage = await probe.captureStill();
+    output.legs.referenceImage = await probe.finishLeg(virtualTiming, referenceImage);
     await probe.beginLeg("virtual", true);
     await probe.settleLeg();
     const virtualImage = await probe.captureStill();
+    const diff = (a, b) => {
+      let sum = 0;
+      for (let i = 0; i < a.shadowBand.luma.length; i++) {
+        sum += Math.abs(a.shadowBand.luma[i] - b.shadowBand.luma[i]);
+      }
+      return sum / a.shadowBand.luma.length;
+    };
+    output.cascadeMeanAbs = diff(cascadedImage, referenceImage);
+    output.virtualMeanAbs = diff(virtualImage, referenceImage);
     const atlasDump = await probe.dumpShadowAtlasLayer(0);
     const atlasDump1 = await probe.dumpShadowAtlasLayer(1);
     const step = 4, gw = atlasDump.width / step, gh = atlasDump.height / step;
@@ -252,14 +266,20 @@ try {
   result.atlasLayer0 = legs.atlasLayer0;
   result.residency = legs.residency;
   result.pageTable = legs.pageTable;
+  result.cascadeMeanAbs = legs.cascadeMeanAbs;
+  result.virtualMeanAbs = legs.virtualMeanAbs;
   for (const [name, leg] of Object.entries(legs.legs)) {
     const png = leg?.image?.canvasPng;
     if (typeof png === "string" && png.startsWith("data:image/png")) {
       await writeFile(path.join(out, `leg-${name}.png`), Buffer.from(png.split(",")[1], "base64"));
     }
+    const crop = leg?.image?.cropPng;
+    if (typeof crop === "string" && crop.startsWith("data:image/png")) {
+      await writeFile(path.join(out, `crop-${name}.png`), Buffer.from(crop.split(",")[1], "base64"));
+    }
   }
-  const cascadeEdge = result.legs.cascadedImage?.image?.edge?.energyPerEdgePixel;
-  const virtualEdge = result.legs.virtualImage?.image?.edge?.energyPerEdgePixel;
+  const cascadeEdge = result.legs.cascadedImage?.image?.edge?.cornerRatio;
+  const virtualEdge = result.legs.virtualImage?.image?.edge?.cornerRatio;
   const deltaP50 = (result.legs.virtualTiming?.timing?.p50Ms ?? Number.NaN)
     - (result.legs.cascadedTiming?.timing?.p50Ms ?? Number.NaN);
   const deltaP95 = (result.legs.virtualTiming?.timing?.p95Ms ?? Number.NaN)
@@ -267,8 +287,10 @@ try {
   const edgeRatio = cascadeEdge > 0 ? virtualEdge / cascadeEdge : null;
   const dynamic = result.legs.virtualImage?.dynamic;
   const holes = result.legs.virtualImage?.image?.holes;
+  const cascadeErr = result.cascadeMeanAbs ?? Number.NaN;
+  const virtualErr = result.virtualMeanAbs ?? Number.NaN;
   result.gate = {
-    "① edge alias energy ratio (virtual/cascaded ≤ 0.40)": {
+    "① shadow edge corner ratio (virtual/cascaded ≤ 0.40)": {
       cascadeEdge, virtualEdge, ratio: edgeRatio, passed: edgeRatio !== null && edgeRatio <= 0.40 },
     "② shadow cost Δp50 ≤ 2.5ms": { deltaP50Ms: deltaP50, deltaP95Ms: deltaP95,
       cascadedP50Ms: result.legs.cascadedTiming?.timing?.p50Ms,
@@ -277,6 +299,10 @@ try {
       && (dynamic?.rotateLatencyFrames ?? 9) <= 2 },
     "④ zero holes": { ...holes, passed: (holes?.nonFinite ?? 1) === 0 && (holes?.blackSpeckles ?? 1) === 0 },
   };
+  result.gate["⑤ shadow band error vs 8192 reference (virtual ≤ 0.4×cascade)"] = {
+    cascadeMeanAbs: cascadeErr, virtualMeanAbs: virtualErr,
+    ratio: cascadeErr > 0 ? virtualErr / cascadeErr : null,
+    passed: cascadeErr > 0 && virtualErr <= 0.4 * cascadeErr };
   result.passed = Object.values(result.gate).every(entry => entry.passed);
   await browser.screenshot(path.join(out, "final.png"));
 } catch (error) {
