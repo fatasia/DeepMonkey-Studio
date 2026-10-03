@@ -17,6 +17,10 @@
 
 ---
 
+## 0.5 抗锯齿专项(2026-10-03 扩展,独立方案)
+
+抗锯齿升级为独立完整体系:**[antialiasing-master-plan-20261003.md](antialiasing-master-plan-20261003.md)**——四层(MSAA+alpha-to-coverage / TSR 防鬼影强化 / SMAA+CMAA2 空间层 / 内容特化线 AA)、八档组合(默认 msaa4,旗舰 ultra=MSAA4+TSR+SMAA)、三批实施(AA-M1 MSAA 通路 → AA-M2 a-to-c+防鬼影+SMAA → AA-M3 全档矩阵),验收=parity aa-bloom RMSE <1 + 各档帧预算。
+
 ## 1. 硬件光追(双通道)
 
 **行业主流级定义**:实时混合管线中,阴影/GI/反射至少一项由光线追踪驱动;离线路径追踪达到降噪后可直接出图。
