@@ -149,7 +149,7 @@ export function createScenePublicationActions(context: PublicationContext, saveS
 
   async function publishScene(
     scene: SceneSnapshot,
-    mode: NonNullable<SceneSnapshot["publicationMode"]> = scene.publicationMode ?? "webgl",
+    mode: NonNullable<SceneSnapshot["publicationMode"]> = scene.publicationMode ?? "webgpu-preferred",
     performanceProfile: NonNullable<SceneSnapshot["publicationPerformance"]> = scene.publicationPerformance ?? "standard",
     toolbarVisible = scene.publicationToolbarVisible !== false,
     clientTarget: SceneClientPackageTarget = "none",

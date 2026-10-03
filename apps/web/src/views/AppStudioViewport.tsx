@@ -317,7 +317,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           <LoaderCircle className="spin" size={18} />{" "}
           <span>
             {" "}
-            {tr(locale, "正在初始化", "Initializing")} {rendererBackend === "wasm" ? "Deep WASM" : rendererBackend === "webgpu" ? "Deep WebGPU Beta" : "WebGL"}{" "}
+            {tr(locale, "正在初始化", "Initializing")} {rendererBackend === "wasm" ? "Deep WASM" : rendererBackend === "webgpu" ? "Deep WebGPU" : "WebGL"}{" "}
           </span>{" "}
         </div>
       )}

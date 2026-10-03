@@ -56,7 +56,7 @@ https://github.com/user-attachments/assets/cb60822e-f2ee-41ec-ab45-943929da2f5a
 ## 功能亮点
 
 - **围绕工程对象工作的 AI**：助手读到的是场景、构件、数据集、语义指标和视觉事件这些带稳定 ID 的对象，而不是一张截图。只读查询、工业分析和场景修改各走受限通道；写入先出差异，经确认才执行，失败可回滚。
-- **高性能自研图形引擎**：Three.js WebGL 保持作者基线，Deep WebGPU（TypeScript 内核、Rust `wgpu` 原生执行器、WASM）按场景能力接入，两侧共用一份显示合约，并有逐像素对拍门。增量编译、GPU 剔除与间接绘制、LOD/流送、实例化和资源驻留控制开销，质量档与降级原因可见。
+- **高性能自研图形引擎**：默认由 Deep WebGPU 渲染（TypeScript 内核、Rust `wgpu` 原生执行器、WASM；设备不支持 WebGPU 时自动回落 Three.js WebGL 作者基线），两侧共用一份显示合约，并有逐像素对拍门。增量编译、GPU 剔除与间接绘制、LOD/流送、实例化和资源驻留控制开销，质量档与降级原因可见。
 - **从脚本到引擎后端都可扩展**：Scene/Server SDK、版本化 contracts、插件能力注册表、`studio.*` 脚本 API、MCP、Unity Bridge 和渲染后端适配层允许独立扩展，不必修改整个平台。
 - **工业创作、数据与仿真在同一个工程里**：2D 看板、3D 场景、设备拓扑和交互共用一份工程；数据层支持三十余类连接，视觉 AI 事件可以驱动场景；Plant Lite、PPR Lite、机器人、虚拟调试和运营研究直接在编辑器内运行。
 - **一次制作，多端交付**：Three WebView、Deep WebGPU、Deep Native 和 Rust WASM 共用发布合同，输出 Web、Windows、WASM 与 Android 运行包，并在交付前检查能力、资源和兼容性。

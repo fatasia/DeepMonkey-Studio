@@ -87,7 +87,7 @@ export function RendererDiagnosticsPanel(props: Props) {
                     : !item.ready
                       ? tr(props.locale, "不可用", "Unavailable")
                       : item.backend === "webgpu"
-                        ? tr(props.locale, "启用 Deep WebGPU Beta", "Enable Deep WebGPU Beta")
+                        ? tr(props.locale, "启用 Deep WebGPU", "Enable Deep WebGPU")
                         : item.backend === "wasm"
                           ? tr(props.locale, "启用 Deep WASM", "Enable Deep WASM")
                           : tr(props.locale, "切换到兼容模式", "Switch to compatibility")}

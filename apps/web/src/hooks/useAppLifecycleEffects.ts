@@ -221,7 +221,7 @@ export function useAppLifecycleEffects({ state, playModeActive = false, saveActi
     const storedValue = window.localStorage.getItem(RENDERER_BACKEND_STORAGE_KEY);
     const stored = storedValue === "webgpu" || storedValue === "wasm" ? storedValue : "webgl";
     if (stored !== rendererBackend) {
-      void changeRendererBackend(stored, { persistPreference: false, message: `已恢复用户渲染偏好：${stored === "wasm" ? "Deep WASM" : stored === "webgpu" ? "Deep WebGPU Beta" : "WebGL"}` });
+      void changeRendererBackend(stored, { persistPreference: false, message: `已恢复用户渲染偏好：${stored === "wasm" ? "Deep WASM" : stored === "webgpu" ? "Deep WebGPU" : "WebGL"}` });
     }
   }, [engine, rendererBackend, rendererSwitching, rendererSwitchPhase, route.view]);
 }
