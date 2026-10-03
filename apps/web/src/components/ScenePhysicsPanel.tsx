@@ -3,6 +3,8 @@ import * as THREE from "three";
 import type {
   SceneCharacterControllerState,
   ScenePhysicsBodyState,
+  ScenePhysicsColliderKind,
+  ScenePhysicsColliderState,
   ScenePhysicsJointState,
   ScenePhysicsState,
   Vector3Value,
@@ -32,6 +34,8 @@ interface ScenePhysicsPanelProps {
 
 type ScenePhysicsBodyPatch = Omit<Partial<ScenePhysicsBodyState>, "character"> & {
   character?: SceneCharacterControllerState | undefined;
+  /** 显式 undefined = 清除碰撞体(回退 render-bounds);exactOptionalPropertyTypes 下需显式联合。 */
+  collider?: ScenePhysicsColliderState | undefined;
 };
 
 export function ScenePhysicsPanel(props: ScenePhysicsPanelProps) {
@@ -168,6 +172,34 @@ export function ScenePhysicsPanel(props: ScenePhysicsPanelProps) {
                 <option value="dynamic">{tr(locale, "动态", "Dynamic")}</option>
                 <option value="kinematic">{tr(locale, "运动学", "Kinematic")}</option>
               </select>
+            </label>
+            <label>
+              <span>{tr(locale, "碰撞体来源", "Collider source")}</span>
+              <select
+                value={selectedBody.collider?.kind ?? "render-bounds"}
+                onChange={(event) => {
+                  const kind = event.target.value as ScenePhysicsColliderKind;
+                  const collider: ScenePhysicsBodyState["collider"] = kind === "render-bounds"
+                    ? undefined
+                    : kind === "primitive"
+                      ? { kind, primitive: { shape: "cuboid", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } }
+                      : { kind };
+                  props.onSelectedBodyChange({ collider });
+                }}
+              >
+                <option value="render-bounds">{tr(locale, "包围盒（默认）", "Bounding box (default)")}</option>
+                <option value="convex-hull">{tr(locale, "凸包（源网格顶点）", "Convex hull (source vertices)")}</option>
+                <option value="simplified-mesh">{tr(locale, "简化网格（T12 派生）", "Simplified mesh (T12)")}</option>
+                <option value="sdf-grid">{tr(locale, "SDF 体素场（凹体，静态）", "SDF voxel field (concave, fixed)")}</option>
+                <option value="primitive">{tr(locale, "显式几何", "Explicit primitive")}</option>
+              </select>
+              <small>
+                {selectedBody.collider?.kind === "convex-hull" && tr(locale, "凸包会过度包裹凹体（碗/管）。", "Hulls over-wrap concave shapes (bowls, pipes).")}
+                {selectedBody.collider?.kind === "simplified-mesh" && tr(locale, "由 T12 简化链路派生网格碰撞体。", "Derived via the T12 simplification pipeline.")}
+                {selectedBody.collider?.kind === "sdf-grid" && tr(locale, "仅静态刚体可消费 SDF 场。", "SDF fields are consumed by fixed bodies only.")}
+                {(selectedBody.collider?.kind ?? "render-bounds") === "render-bounds" && tr(locale, "包围盒为近似体；精确碰撞请选其它来源。", "Bounds are approximate; pick another source for exact collisions.")}
+                {selectedBody.collider?.kind === "primitive" && tr(locale, "显式几何为精确碰撞体。", "Explicit primitives are exact colliders.")}
+              </small>
             </label>
             <label
               title={selectedBody.type !== "dynamic" ? tr(locale, "仅动态刚体可设置质量", "Only dynamic bodies have an editable mass") : undefined}

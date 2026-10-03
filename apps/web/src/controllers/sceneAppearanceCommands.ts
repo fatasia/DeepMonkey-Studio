@@ -7,6 +7,7 @@ import type {
   SceneMaterialState,
   SceneModelEffectsState,
   ScenePhysicsBodyState,
+  ScenePhysicsColliderState,
   ScenePhysicsState,
   ScenePostProcessingState,
   WeatherMode,
@@ -27,6 +28,8 @@ type SetSceneObjectsVisible = (ids: string[], visible: boolean) => void;
 
 type ScenePhysicsBodyPatch = Omit<Partial<ScenePhysicsBodyState>, "character"> & {
   character?: SceneCharacterControllerState | undefined;
+  /** 显式 undefined = 清除碰撞体(回退 render-bounds);exactOptionalPropertyTypes 下需显式联合。 */
+  collider?: ScenePhysicsColliderState | undefined;
 };
 
 /** Applies an editor patch while keeping character settings valid only on kinematic bodies. */
