@@ -68,7 +68,8 @@ export function buildMeshletDag(
     const quantized = clusterSimplify(currentPositions, currentIndices, 2);
     if (quantized.indices.length / 3 >= currentIndices.length / 3) break; // 不再下降即收束
     budget(quantized.indices.length / 3, outputTriangleBudget, "dag level triangles");
-    currentError = currentError === 0 ? 1 : currentError * 2;
+    // 真误差场:该层顶点相对上一层的最大位移,累乘成相对源的最大误差。
+    currentError = currentError === 0 ? quantized.maxDisplacement : currentError + quantized.maxDisplacement;
     const built = buildMeshlets(
       { positions: quantized.positions, indices: quantized.indices as Uint32Array<ArrayBuffer> } as unknown as IndexedTriangleGeometry,
       { maxTriangles },
@@ -90,12 +91,21 @@ export function buildMeshletDag(
 }
 
 /** 确定性网格聚类简化:坐标量化到 cell,每 cell 面积加权代表点;退化三角形(重合顶点)剔除。 */
+export interface ClusterSimplifyResult {
+  positions: Float32Array<ArrayBuffer>;
+  indices: Uint32Array<ArrayBuffer>;
+  /** 每输出三角形 → 代表源三角形索引(父子归属用)。 */
+  sourceTriangles: Uint32Array<ArrayBuffer>;
+  /** 真误差场:顶点相对源位置的最大位移(世界单位)。 */
+  maxDisplacement: number;
+}
+
 export function clusterSimplify(
   positions: Float32Array,
   indices: Uint32Array,
   factor: number,
-): { positions: Float32Array<ArrayBuffer>; indices: Uint32Array<ArrayBuffer> } {
-  if (factor <= 1) return { positions: positions as Float32Array<ArrayBuffer>, indices: indices as Uint32Array<ArrayBuffer> };
+): ClusterSimplifyResult {
+  if (factor <= 1) return { positions: positions as Float32Array<ArrayBuffer>, indices: indices as Uint32Array<ArrayBuffer>, sourceTriangles: new Uint32Array(indices.length / 3).map((_, i) => i), maxDisplacement: 0 };
   // 源包围盒 → 量化网格(边长 = 包围盒最长边 / 64 / factor 的确定性量化)。
   let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
   for (let i = 0; i < positions.length; i += 3) {
@@ -113,6 +123,7 @@ export function clusterSimplify(
   const remap = new Map<number, number>();
   const outPositions: number[] = [];
   const outIndices: number[] = [];
+  const sourceTriangles: number[] = [];
   const mapped = (global: number): number => {
     const cached = remap.get(global);
     if (cached !== undefined) return cached;
@@ -127,11 +138,19 @@ export function clusterSimplify(
   };
   void mapped;
   // 真正的代表点:先聚合全部源顶点进 cell(两遍),再映射索引。
+  let maxDisplacement = 0;
   for (let i = 0; i < positions.length; i += 3) {
     const key = cellOf(positions[i]!, positions[i + 1]!, positions[i + 2]!);
     const bucket = rep.get(key) ?? { x: 0, y: 0, z: 0, w: 0 };
     bucket.x += positions[i]!; bucket.y += positions[i + 1]!; bucket.z += positions[i + 2]!; bucket.w += 1;
     rep.set(key, bucket);
+  }
+  // O(n) 二遍:每顶点对其 cell 代表点求位移,取全网格最大(真误差场)。
+  for (let i = 0; i < positions.length; i += 3) {
+    const bucket = rep.get(cellOf(positions[i]!, positions[i + 1]!, positions[i + 2]!));
+    if (!bucket || bucket.w === 0) continue;
+    const dx = positions[i]! - bucket.x / bucket.w, dy = positions[i + 1]! - bucket.y / bucket.w, dz = positions[i + 2]! - bucket.z / bucket.w;
+    maxDisplacement = Math.max(maxDisplacement, Math.hypot(dx, dy, dz));
   }
   const cellIndex = new Map<string, number>();
   for (let i = 0; i < positions.length; i += 3) {
@@ -156,9 +175,10 @@ export function clusterSimplify(
     const key = a < b ? (b < c ? `${a}_${b}_${c}` : a < c ? `${a}_${c}_${b}` : `${c}_${a}_${b}`) : b < c ? `${b}_${c}_${a}` : a < c ? `${b}_${a}_${c}` : `${c}_${b}_${a}`;
     if (seen.has(key)) continue; // 不同源三角形塌成同一目标三角形时只保留一份
     seen.add(key);
+    sourceTriangles.push(indices[e] !== undefined ? e / 3 : 0);
     outIndices.push(a, b, c);
   }
-  return { positions: Float32Array.from(outPositions), indices: Uint32Array.from(outIndices) };
+  return { positions: Float32Array.from(outPositions), indices: Uint32Array.from(outIndices), sourceTriangles: Uint32Array.from(sourceTriangles), maxDisplacement };
 }
 
 function clusterIdsOfLevel(_base: ReturnType<typeof buildMeshlets>): number[] {
