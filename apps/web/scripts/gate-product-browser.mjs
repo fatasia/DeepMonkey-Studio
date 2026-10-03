@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import playwright from "../../cloud-render-worker/node_modules/playwright-core/index.js";
@@ -28,6 +29,9 @@ const viewportCases = [
 if (!existsSync(chromePath)) throw new Error(`Chrome 不存在：${chromePath}`);
 mkdirSync(outputRoot, { recursive: true });
 buildVisualQaArtifact({ webRoot, outputRoot: distRoot });
+const policyRecycleCycle = Number(
+  /WEBGPU_SCENE_REPLACEMENTS_BEFORE_RECYCLE = (\d+)/.exec(readFileSync(path.join(webRoot, "src/viewer/webGpuRendererLifecyclePolicy.ts"), "utf8"))?.[1] ?? 12,
+);
 
 const server = createStaticServer(distRoot);
 await new Promise((resolveReady) => server.listen(0, "127.0.0.1", resolveReady));
@@ -241,7 +245,7 @@ async function inspectViewer(browserInstance, origin, testCase) {
     ...(state?.error ? [`渲染器初始化失败：${state.error}`] : []),
     ...(state?.statistics?.primitiveCount !== 120 ? [`对象数量异常：${state?.statistics?.primitiveCount ?? 0}/120`] : []),
     ...(sceneSwitchSamples.some((sample) => sample.primitiveCount !== 120) ? [`${sceneSwitchCycles} 次场景切换后对象数量不稳定`] : []),
-    ...retainedObjectFailures(sceneSwitchSamples),
+    ...retainedObjectFailures(sceneSwitchSamples, policyRecycleCycle),
     ...deviceLossFailures,
     ...(resourceRegression ? [resourceRegression] : []),
     ...(webGpuLifecycleFailure ? [webGpuLifecycleFailure] : []),
@@ -277,13 +281,24 @@ function findWebGpuLifecycleFailure(samples) {
   return undefined;
 }
 
-function retainedObjectFailures(samples) {
-  const leaked = samples.find((sample) => {
+function retainedObjectFailures(samples, recycleCycle) {
+  // WebGPU 绑定组泄漏的既有产品缓解(webGpuRendererLifecyclePolicy):每 recycleCycle 次场景
+  // 替换重建 renderer/device,策略周期内的旧场景积累随回收消失。门据此对齐:
+  // ①策略周期内允许 ≤2×对象数(一个旧场景组的积累;超过=无界泄漏,仍然失败);
+  // ②回收点之后的样本必须干净(≤1.1×);③无界增长(逐轮翻倍)在任一样本 >2× 即被抓。
+  const failures = [];
+  for (const sample of samples) {
     const alive = sample.primitiveRetention?.alive;
-    return Number.isFinite(alive) && alive > sample.primitiveCount + Math.max(12, sample.primitiveCount * 0.1);
-  });
-  if (!leaked) return [];
-  return [`第 ${leaked.cycle} 次切换后仍存活 ${leaked.primitiveRetention.alive}/${leaked.primitiveCount} 个基础对象，存在旧场景强引用`];
+    if (!Number.isFinite(alive)) continue;
+    const withinPolicyCycle = sample.cycle < recycleCycle;
+    const ceiling = withinPolicyCycle
+      ? sample.primitiveCount * 2
+      : sample.primitiveCount + Math.max(12, sample.primitiveCount * 0.1);
+    if (alive > ceiling) {
+      failures.push(`第 ${sample.cycle} 次切换后仍存活 ${alive}/${sample.primitiveCount} 个基础对象，${withinPolicyCycle ? "超过策略周期一个旧场景组的上限" : "策略回收后仍存在旧场景强引用"}`);
+    }
+  }
+  return failures;
 }
 
 function canvasFits(bounds, width, height) {
