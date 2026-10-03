@@ -13,8 +13,14 @@ import type { LightVector3 } from "./types.js";
  *  - texture = 单共享 cookie 纹理 + 每灯 UV 窗口(绑定 14/15,缺省 1×1 白纹理)。
  */
 
-/** 面光数量合同上限;buffer 按上限常驻分配(F7b 局部阴影 uniform 同款预算纪律)。 */
-export const MAX_AREA_LIGHTS = 8;
+/**
+ * 面光数量合同上限;buffer 按上限常驻分配(F7b 局部阴影 uniform 同款预算纪律)。
+ * B2 MegaLights(M1):8→64 扩容与 RIS 采样同批交付——既有簇光是逐灯着色,裸扩 64 盏
+ * = 每像素循环成本 ↑8×,帧时爆炸;RIS 通路(每像素 K=32 候选)把逐灯循环换成常数采样,
+ * 二者不可拆(任务书 ue-class-b2-task-briefs-20261004.md「扩容禁独立交付」定案)。
+ * LUT 区(64×64×2)与灯数无关,只灯区 48→384 vec4(6KB)。
+ */
+export const MAX_AREA_LIGHTS = 64;
 /** 每灯 6 vec4(96B):布局见 packAreaLights 的语义表注释(与 WGSL 逐字对应)。 */
 export const AREA_LIGHT_STRIDE_VEC4 = 6;
 /** 组合 buffer 字节布局 = [灯区 MAX×6 vec4][LUT 区 64×64×2 vec4]。 */

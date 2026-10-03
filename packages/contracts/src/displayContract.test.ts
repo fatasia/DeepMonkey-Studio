@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_DISPLAY_CONTRACT, resolveDisplayMsaaSampleCount, resolveDisplayShadowMode } from "./displayContract.js";
+import { DEFAULT_DISPLAY_CONTRACT, resolveDisplayGiMode, resolveDisplayGiTemporalAlpha,
+  resolveDisplayMsaaSampleCount, resolveDisplayShadowMode } from "./displayContract.js";
 
 describe("display contract", () => {
   it("keeps the product display defaults explicit and immutable", () => {
@@ -47,6 +48,31 @@ describe("display contract", () => {
         msaaSampleCount: 8 as 4 })).toBe(4);
       expect(resolveDisplayMsaaSampleCount({ ...DEFAULT_DISPLAY_CONTRACT.antialias,
         msaaSampleCount: 0 as 4 })).toBe(4);
+    });
+  });
+
+  // Brief-GI M1:gi 档缺字段 = off(现行为,向后兼容),fail-closed 解析单源。
+  describe("resolveDisplayGiMode", () => {
+    it("resolves a missing gi field to off (backward compatible default)", () => {
+      expect(resolveDisplayGiMode(undefined)).toBe("off");
+      expect(resolveDisplayGiMode(DEFAULT_DISPLAY_CONTRACT.gi)).toBe("off");
+      expect("gi" in DEFAULT_DISPLAY_CONTRACT).toBe(false);
+    });
+    it("resolves explicit modes and fails closed on invalid values", () => {
+      expect(resolveDisplayGiMode({ mode: "sdf-probe" })).toBe("sdf-probe");
+      expect(resolveDisplayGiMode({ mode: "off" })).toBe("off");
+      expect(resolveDisplayGiMode({ mode: "lumen" as "sdf-probe" })).toBe("off");
+    });
+  });
+
+  describe("resolveDisplayGiTemporalAlpha", () => {
+    it("defaults to 0.1 and fails closed on out-of-domain values", () => {
+      expect(resolveDisplayGiTemporalAlpha(undefined)).toBeCloseTo(0.1, 12);
+      expect(resolveDisplayGiTemporalAlpha({})).toBeCloseTo(0.1, 12);
+      expect(resolveDisplayGiTemporalAlpha({ temporalAlpha: 0.25 })).toBe(0.25);
+      expect(resolveDisplayGiTemporalAlpha({ temporalAlpha: 0 })).toBeCloseTo(0.1, 12);
+      expect(resolveDisplayGiTemporalAlpha({ temporalAlpha: 2 })).toBeCloseTo(0.1, 12);
+      expect(resolveDisplayGiTemporalAlpha({ temporalAlpha: Number.NaN })).toBeCloseTo(0.1, 12);
     });
   });
 });

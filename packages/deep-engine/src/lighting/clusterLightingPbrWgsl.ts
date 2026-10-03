@@ -129,7 +129,7 @@ fn deepForwardPlusPbrReceivingF0(fragmentCoordinate: vec2f, positionViewInput: v
       }
     }
   }
-  // C3 面积光:不参与聚簇,固定 ≤8 盏常驻循环(count=0 时零迭代,既有路径逐位不变)。
+  // C3 面积光:不参与聚簇,固定 ≤64 盏常驻循环(B2 MegaLights 扩容)(count=0 时零迭代,既有路径逐位不变)。
   // cookie 仅在 FLAG_TEXTURE 灯上采样(textureSampleLevel 显式 LOD,非均匀控制流合法)。
   for (var areaIndex = 0u; areaIndex < deepClusterParams.area.x; areaIndex++) {
     let base = areaIndex * DEEP_AREA_LIGHT_STRIDE;

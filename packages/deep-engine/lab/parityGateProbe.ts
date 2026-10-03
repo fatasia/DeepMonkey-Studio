@@ -40,6 +40,8 @@ async function runDeepFrame(spec: ParityScene, signal: AbortSignal, errors: stri
   const shadowSize = spec.shadows ? DEFAULT_DISPLAY_CONTRACT.shadow.mapSize : 128;
   const backend = await bounded(DeepWebGpuBackend.create({ canvas, gpu: navigator.gpu, projection, root: spec.root, view, signal,
     renderer: { shadows: { exactProfile: { cascadeCount: 1, shadowMapSize: shadowSize } }, pipelines: { firstFrameSubset: true, deferDeformation: true },
+      // 场景链路镜像:three 侧 MSAA 只在 antialias 场景启用(parityGateThree),Deep 侧同表。
+      msaaSampleCount: spec.post?.antialias === true ? 4 : 1,
       frameCapture: { session: new FrameCaptureSession(), readbacks: { requests: [{ resourceId: "present-color" }] } },
       ...(spec.environment ? { environment: { kind: "radiance-hdr" as const, image: spec.environment, ...(spec.environmentOptions ? { options: spec.environmentOptions } : {}) } } : {}),
       features: { toneMapping: DEFAULT_DISPLAY_CONTRACT.toneMapping.operator, environment: spec.environment !== undefined, groundPlane: false, groundGrid: false, fog: false,

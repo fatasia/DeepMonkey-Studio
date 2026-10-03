@@ -70,6 +70,11 @@ fn trilinear(l: vec3u, f: vec3f) -> f32 {
 fn sampleField(p: vec3f) -> f32 {
   let q = (p - params.origin) / params.cellSize;
   let maxQ = vec3f(params.dimensions - vec3u(1u));
+  if (any(q < vec3f(0.0)) || any(q > maxQ)) {
+    // 域外 = 开放空间(距离无界,可见性贡献恒 1;与烘焙域的外推圈语义一致,
+    // 绝不把边界环的近零距离泄漏到域外 —— 否则天空方向全部被假遮蔽)。
+    return 1000000.0;
+  }
   let clamped = clamp(q, vec3f(0.0), maxQ);
   let l = vec3u(floor(clamped));
   return trilinear(l, clamped - vec3f(l));

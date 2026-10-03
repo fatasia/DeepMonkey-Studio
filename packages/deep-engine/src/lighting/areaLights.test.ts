@@ -13,12 +13,14 @@ const light = (overrides: Partial<AreaLight> = {}): AreaLight => ({
 
 describe("C3 area lights contract and packing", () => {
   it("caps the light count fail-closed and pins the ABI budget constants", () => {
-    expect(() => packAreaLights(Array.from({ length: MAX_AREA_LIGHTS + 1 }, () => light()))).toThrow("exceeds 8");
+    expect(() => packAreaLights(Array.from({ length: MAX_AREA_LIGHTS + 1 }, () => light()))).toThrow("exceeds 64");
     expect(packAreaLights([light()]).count).toBe(1);
     // 组合 buffer = [灯区 MAX×6][LUT 区 64×64×2];f32 预算与每 texel 8 f32 互钉。
+    // B2 MegaLights M1:8→64 扩容(与 RIS 采样同批交付,「扩容禁独立交付」定案);
+    // WGSL 半由 ltcAreaLightingWgslChecksum.test.ts 以同常量逐字互钉。
     expect(AREA_LIGHT_STRIDE_VEC4).toBe(6);
-    expect(MAX_AREA_LIGHTS).toBe(8);
-    expect(AREA_LIGHT_DATA_VEC4S).toBe(48);
+    expect(MAX_AREA_LIGHTS).toBe(64);
+    expect(AREA_LIGHT_DATA_VEC4S).toBe(384);
     expect(AREA_LIGHT_LUT_VEC4S).toBe(LTC_LUT_SIZE * LTC_LUT_SIZE * 2);
     expect(AREA_LIGHT_DATA_VEC4_TOTAL).toBe(AREA_LIGHT_DATA_VEC4S + AREA_LIGHT_LUT_VEC4S);
     expect(LTC_LUT_FLOATS_PER_TEXEL).toBe(8);

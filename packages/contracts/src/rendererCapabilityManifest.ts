@@ -154,6 +154,20 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     sharedQualityVocabulary: true,
   },
   {
+    id: "sdf-gi",
+    title: "静态 SDF 遮蔽 + 探针混合 GI M1(Brief-GI)",
+    webFeatureKeys: [],
+    web: {
+      support: "degraded", reason: "harness-only",
+      evidence: "packages/deep-engine/src/gi/sdfSceneBake.ts:bakeSdfSceneGrid(场景级 SDF 烘焙:静态实例世界系 min 合成闭体并集,资产哈希增量缓存,动态实例排除,内存档复用 MAX_SDF_PROFILE_GRID_CELLS/estimateSdfCollisionMemory) + gi/sdfSkyVisibility.ts(wgsl/sdfSkyVisibilityTrace.wgsl 单源 compute:每 lane=探针方向×SDF 8..16 步圆锥软阴影口径,域外 fail-open=1 光照语义;CPU 镜像同序 fround) + gi/probeSkyVisibilitySh.ts(L1 SH 投影/时域滤波,白炉均匀场 dipole 精确零) + gi/probeShUpdate.ts(探针 SH 更新接受①天光遮蔽②SSGDI 输入,α=0.1,埋入透传,F5 words[12..23] 捕获块不动) + gi/sdfGiDayNight.ts 昼夜 harness(逐帧 p99≤3/255)+ displayContract.gi 档(resolveDisplayGiMode,缺字段=off);生产 pbrRenderer dispatch 接线属后续切片,M1 仅引擎侧通路",
+    },
+    native: {
+      support: "unavailable", reason: "absent",
+      evidence: "packages/deep-engine-native/src/lib.rs(无场景 SDF 烘焙/圆锥追踪/探针 SH 更新通路;probe_gi_abi.rs 仅 96B 布局合同+直光种子 producer)",
+    },
+    sharedQualityVocabulary: true,
+  },
+  {
     id: "contact-shadows",
     title: "屏幕空间接触阴影(C10)",
     webFeatureKeys: ["contactShadows"],

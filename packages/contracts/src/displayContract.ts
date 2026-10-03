@@ -11,6 +11,21 @@ export type DisplayShadowFilter = "pcf" | "pcf-soft";
  */
 export type DisplayShadowMode = "virtual" | "cascaded";
 export type DisplayAntialiasLevel = "off" | "smaa-gtao";
+/**
+ * SDF 探针混合 GI 档(Brief-GI M1,2026-10-04):
+ * - "sdf-probe":静态场景 SDF 天光遮蔽(圆锥追踪)+ 探针 SH 更新(时域滤波);
+ * - "off":现行为(既有探针 GI 捕获链不变)。
+ * 合同向后兼容:`gi` 缺字段(或 mode 非法)一律按 "off" 处理
+ * (resolveDisplayGiMode fail-closed),既有合同/资产零迁移。
+ */
+export type DisplayGiMode = "off" | "sdf-probe";
+
+export interface DisplayGiSettings {
+  /** GI 实现档;缺字段 = "off"(向后兼容,见 DisplayGiMode)。 */
+  readonly mode?: DisplayGiMode;
+  /** 探针场时域滤波系数 ∈ [0.01, 1];缺字段/非法 = 0.1(resolveDisplayGiTemporalAlpha)。 */
+  readonly temporalAlpha?: number;
+}
 
 export interface DisplayContract {
   readonly toneMapping: {
@@ -57,6 +72,8 @@ export interface DisplayContract {
     readonly radius: number;
     readonly threshold: number;
   };
+  /** SDF 探针混合 GI;缺字段 = "off"(向后兼容,见 DisplayGiSettings)。 */
+  readonly gi?: DisplayGiSettings;
 }
 
 export const DEFAULT_DISPLAY_CONTRACT: DisplayContract = Object.freeze({
@@ -116,4 +133,30 @@ export function resolveDisplayMsaaSampleCount(
 export function resolveDisplayShadowMode(
   shadow: DisplayContract["shadow"] | undefined): DisplayShadowMode {
   return shadow?.mode === "virtual" ? "virtual" : "cascaded";
+}
+
+/**
+ * SDF 探针 GI 档解析(fail-closed):缺字段/非法值/非 "sdf-probe" 一律 "off"。
+ * 单源判定点——宿主不得各自展开 `mode === "sdf-probe"` 字面量比较。
+ */
+export function resolveDisplayGiMode(
+  gi: DisplayGiSettings | undefined): DisplayGiMode {
+  return gi?.mode === "sdf-probe" ? "sdf-probe" : "off";
+}
+
+/** 探针场时域滤波 α 缺省(Brief-GI M1:α≈0.1)。 */
+export const DISPLAY_GI_TEMPORAL_ALPHA_DEFAULT = 0.1;
+
+/**
+ * 探针场时域滤波 α 解析(fail-closed):缺字段 = 0.1;非法值(非有限/出域)
+ * 一律回 0.1,不静默透传任意数字。单源判定点。
+ */
+export function resolveDisplayGiTemporalAlpha(
+  gi: DisplayGiSettings | undefined): number {
+  const value = gi?.temporalAlpha;
+  if (value === undefined) return DISPLAY_GI_TEMPORAL_ALPHA_DEFAULT;
+  if (!Number.isFinite(value) || value < 0.01 || value > 1) {
+    return DISPLAY_GI_TEMPORAL_ALPHA_DEFAULT;
+  }
+  return value;
 }

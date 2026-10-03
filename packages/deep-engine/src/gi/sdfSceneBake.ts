@@ -61,6 +61,13 @@ export interface SdfSceneBakeOptions {
   readonly cellSize?: number;
   /** 增量缓存(跨烘焙携带;命中资产不重烘)。 */
   readonly cache?: SdfSceneBakeCache;
+  /**
+   * 逐资产域覆盖:缺省 `"aabb"` = 逐资产 AABB ±1 cell(buildSdfGrid 外推圈合同;
+   * 域外 cell 不参与合成,多资产未覆盖的空域保持 exteriorDistance —— 光照量语义下
+   * 是有界近似,如实声明)。`"scene"` = 每资产域覆盖整个场景网格(域内逐 cell 精确
+   * min 合成,无未覆盖空域;内存 O(实例数 × 场景 cells),小场景/验收推荐)。
+   */
+  readonly instanceDomain?: "aabb" | "scene";
 }
 
 /** 逐资产 SDF 缓存:hash → 距离场(可变 Map,调用方跨帧持有)。 */
@@ -132,12 +139,15 @@ function transformedTriangleBounds(mesh: SdfMesh,
   return { min, max };
 }
 
-/** 逐资产烘焙键:几何 + 变换 + 网格参数全量指纹(任何一项变化即 miss)。 */
+/** 逐资产烘焙键:几何 + 变换 + cellSize + 域覆盖全量指纹(任何一项变化即 miss;
+ * **不含场景分辨率** —— 逐资产 SDF 与场景网格尺寸无关,场景重划分不清缓存;
+ * "scene" 域除外:其网格尺寸 = 场景分辨率,入键)。 */
 function instanceCacheKey(instance: SdfSceneBakeInstance, bounds: { min: [number, number, number];
-  max: [number, number, number] }, dimensions: readonly [number, number, number], cellSize: number): string {
+  max: [number, number, number] }, cellSize: number, instanceDomain: "aabb" | "scene"): string {
   const basis = instance.transform?.basis ?? IDENTITY_BASIS;
   const translation = instance.transform?.translation ?? [0, 0, 0];
-  const stream = new Float32Array(meshFloatCount(instance.mesh) + basis.length + translation.length + 13);
+  const tail = instanceDomain === "scene" ? 13 : 10;
+  const stream = new Float32Array(meshFloatCount(instance.mesh) + basis.length + translation.length + tail);
   let cursor = 0;
   stream.set(instance.mesh.positions, cursor); cursor += instance.mesh.positions.length;
   for (let index = 0; index < instance.mesh.indices.length; index++) {
@@ -146,7 +156,8 @@ function instanceCacheKey(instance: SdfSceneBakeInstance, bounds: { min: [number
   cursor += instance.mesh.indices.length;
   stream.set([...basis, ...translation], cursor); cursor += 12;
   stream.set([bounds.min[0], bounds.min[1], bounds.min[2], bounds.max[0], bounds.max[1], bounds.max[2],
-    dimensions[0], dimensions[1], dimensions[2], cellSize], cursor);
+    cellSize], cursor);
+  if (instanceDomain === "scene") stream[cursor + 3] = 1;
   return fingerprintFloat32(stream);
 }
 
@@ -209,7 +220,7 @@ export function bakeSdfSceneGrid(instances: readonly SdfSceneBakeInstance[],
     reports.push({ id, status, triangles, gridCells, ...(reason ? { reason } : {}) });
   };
   for (const entry of statics) {
-    const key = instanceCacheKey(entry.instance, entry.bounds, dimensions, cellSize);
+    const key = instanceCacheKey(entry.instance, entry.bounds, cellSize, options.instanceDomain ?? "aabb");
     const hit = cache?.entries.get(key);
     if (hit) {
       cached += 1;
@@ -218,7 +229,8 @@ export function bakeSdfSceneGrid(instances: readonly SdfSceneBakeInstance[],
         hit.dimensions[0] * hit.dimensions[1] * hit.dimensions[2]);
       continue;
     }
-    const local = bakeInstanceGrid(entry, cellSize, dimensions);
+    const local = bakeInstanceGrid(entry, cellSize, dimensions, sceneBounds,
+      options.instanceDomain ?? "aabb");
     if (typeof local === "string") {
       skipped += 1;
       pushStatus(entry.instance.id, "skipped", entry.triangles, 0, local);
@@ -269,17 +281,21 @@ function deriveDimensions(bounds: { min: [number, number, number]; max: [number,
   return [dims[0]!, dims[1]!, dims[2]!];
 }
 
-/** 逐资产有界 SDF(世界系,与场景同 cellSize;±1 cell 外推圈)。失败返回跳过原因。 */
+/** 逐资产有界 SDF(世界系,与场景同 cellSize)。失败返回跳过原因。 */
 function bakeInstanceGrid(entry: { instance: SdfSceneBakeInstance;
   bounds: { min: [number, number, number]; max: [number, number, number] }; triangles: number },
-  cellSize: number, sceneDimensions: readonly [number, number, number]):
+  cellSize: number, sceneDimensions: readonly [number, number, number],
+  sceneBounds: { min: [number, number, number]; max: [number, number, number] },
+  instanceDomain: "aabb" | "scene"):
   Pick<SdfGrid, "origin" | "cellSize" | "dimensions" | "distances"> | string {
-  const pad = cellSize;
-  const origin: [number, number, number] = [
-    Math.fround(entry.bounds.min[0] - pad), Math.fround(entry.bounds.min[1] - pad),
-    Math.fround(entry.bounds.min[2] - pad)];
-  const dimensions = [0, 1, 2].map(axis => Math.ceil(
-    (entry.bounds.max[axis]! + pad - origin[axis]!) / cellSize) + 1) as [number, number, number];
+  const pad = instanceDomain === "scene" ? 0 : cellSize;
+  const origin: [number, number, number] = instanceDomain === "scene"
+    ? [sceneBounds.min[0], sceneBounds.min[1], sceneBounds.min[2]]
+    : [Math.fround(entry.bounds.min[0] - pad), Math.fround(entry.bounds.min[1] - pad),
+      Math.fround(entry.bounds.min[2] - pad)];
+  const dimensions = instanceDomain === "scene" ? [...sceneDimensions]
+    : [0, 1, 2].map(axis => Math.ceil(
+      (entry.bounds.max[axis]! + pad - origin[axis]!) / cellSize) + 1) as [number, number, number];
   if (dimensions.some(value => value > MAX_SDF_SCENE_BAKE_AXIS)) return "grid-extent";
   const cells = dimensions[0] * dimensions[1] * dimensions[2];
   if (cells * entry.triangles > MAX_SDF_SCENE_BAKE_TRIANGLE_SAMPLES) {
@@ -298,7 +314,10 @@ function bakeInstanceGrid(entry: { instance: SdfSceneBakeInstance;
     distances: grid.distances };
 }
 
-/** min 合成(闭体并集):域外实例不贡献;钳制到有界外推值。 */
+/**
+ * min 合成(闭体并集):最近格点查找(round——f32 origin 的 1 ulp 偏移不得放大成整格
+ * 错位),域外 cell 不贡献("scene" 域与场景格恒同格,逐 cell 全覆盖)。
+ */
 function composeInstance(field: Float32Array, local: Pick<SdfGrid, "origin" | "cellSize"
   | "dimensions" | "distances">, sceneOrigin: { min: [number, number, number] }, cellSize: number,
   sceneDimensions: readonly [number, number, number], exteriorDistance: number): void {
@@ -306,9 +325,9 @@ function composeInstance(field: Float32Array, local: Pick<SdfGrid, "origin" | "c
   for (let z = 0; z < nz; z++) for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
     const wx = sceneOrigin.min[0] + x * cellSize, wy = sceneOrigin.min[1] + y * cellSize,
       wz = sceneOrigin.min[2] + z * cellSize;
-    const gx = Math.floor((wx - local.origin[0]) / cellSize);
-    const gy = Math.floor((wy - local.origin[1]) / cellSize);
-    const gz = Math.floor((wz - local.origin[2]) / cellSize);
+    const gx = Math.round((wx - local.origin[0]) / cellSize);
+    const gy = Math.round((wy - local.origin[1]) / cellSize);
+    const gz = Math.round((wz - local.origin[2]) / cellSize);
     if (gx < 0 || gy < 0 || gz < 0 || gx > lx - 1 || gy > ly - 1 || gz > lz - 1) continue;
     const value = local.distances[(gz * ly + gy) * lx + gx]!;
     const index = (z * ny + y) * nx + x;

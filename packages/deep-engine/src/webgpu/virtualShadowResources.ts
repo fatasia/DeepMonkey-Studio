@@ -124,7 +124,9 @@ export class VirtualShadowResources {
       const atlas = createAdmittedTexture(session, {
         label: "Deep virtual shadow page atlas",
         size: [VIRTUAL_SHADOW_ATLAS_EDGE, VIRTUAL_SHADOW_ATLAS_EDGE, VIRTUAL_SHADOW_ATLAS_LAYERS],
-        format: "r32float", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+        // COPY_SRC:联测诊断可读回页内容(验收证据用;产品帧零 readback)。
+        format: "r32float",
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
       });
       created.push(atlas);
       const layerViews = Object.freeze(Array.from({ length: VIRTUAL_SHADOW_ATLAS_LAYERS },

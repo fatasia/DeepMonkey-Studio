@@ -10,7 +10,7 @@
 // 最小二乘已吸收尺度;交付再加 π = 恒定 −68% 系统性欠亮,MC 对拍实测定案)。
 // 内核定案过程与包络质量证据见 docs/reports/I级-C3-矩形带纹理面积光LTC-20260929.md(§数学)。
 
-const DEEP_AREA_LIGHT_MAX: u32 = 8u;
+const DEEP_AREA_LIGHT_MAX: u32 = 64u;
 const DEEP_AREA_LIGHT_STRIDE: u32 = 6u;
 const DEEP_AREA_LIGHT_LUT_SIZE: u32 = 64u;
 const DEEP_AREA_LIGHT_LUT_VEC4S: u32 = 8192u;

@@ -149,6 +149,12 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         evidence: "probe_gi_abi 96B 布局合同 + renderer::native_gi_producer 直光种子;无 32 方向辐射内核",
     },
     NativeCapabilitySelfCheck {
+        capability_id: "sdf-gi",
+        support: RendererCapabilitySupport::Unavailable,
+        reason: RendererCapabilityReasonCode::Absent,
+        evidence: "无场景 SDF 烘焙/天光圆锥追踪/探针 SH 更新通路(probe_gi_abi 仅 96B 布局合同+直光种子)",
+    },
+    NativeCapabilitySelfCheck {
         capability_id: "contact-shadows",
         support: RendererCapabilitySupport::Unavailable,
         reason: RendererCapabilityReasonCode::Absent,

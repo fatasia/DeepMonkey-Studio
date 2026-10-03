@@ -173,6 +173,14 @@
       "types": "./dist/physics/index.d.ts",
       "default": "./dist/physics/index.js"
     },
+    "./gi": {
+      "development": {
+        "types": "./src/gi/index.ts",
+        "default": "./src/gi/index.ts"
+      },
+      "types": "./dist/gi/index.d.ts",
+      "default": "./dist/gi/index.js"
+    },
     "./host": {
       "development": {
         "types": "./src/host.ts",

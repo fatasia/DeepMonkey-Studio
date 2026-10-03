@@ -43,8 +43,32 @@ export function SceneTimelineFrameInspector(props: Props) {
         <option value="smooth">{tr(locale, "平滑缓入缓出", "Ease in-out")}</option>
         <option value="ease-in">{tr(locale, "缓入", "Ease in")}</option>
         <option value="ease-out">{tr(locale, "缓出", "Ease out")}</option>
+        <option value="cubic-bezier">{tr(locale, "自定义贝塞尔", "Cubic bezier")}</option>
         <option value="step">{tr(locale, "保持后切换", "Hold then cut")}</option>
       </select></label>
+      {frame.transition === "cubic-bezier" && (
+        <fieldset className="timeline-frame-bezier">
+          <legend>{tr(locale, "贝塞尔参数 (x1, y1, x2, y2)", "Bezier params (x1, y1, x2, y2)")}</legend>
+          {([0, 1, 2, 3] as const).map((i) => (
+            <label key={`bezier-${i}`}>
+              <span>{["X1", "Y1", "X2", "Y2"][i]}</span>
+              <DeferredNumberInput
+                min={i % 2 === 0 ? 0 : -2}
+                max={i % 2 === 0 ? 1 : 3}
+                step={0.05}
+                value={frame.easing?.[i] ?? [0.42, 0, 0.58, 1][i]}
+                onCommit={(value) => {
+                  const prev = frame.easing ?? [0.42, 0, 0.58, 1];
+                  const next = [...prev] as [number, number, number, number];
+                  next[i] = value;
+                  props.onUpdate({ ...frame, transition: "cubic-bezier", easing: next });
+                }}
+              />
+            </label>
+          ))}
+          <small>{tr(locale, "x∈[0,1] 为进度轴;y 可越界产生过冲。", "x∈[0,1] is progress; y may overshoot.")}</small>
+        </fieldset>
+      )}
       {frame.kind === "camera" ? <>
         {props.onCaptureCamera && <button type="button" onClick={props.onCaptureCamera}>{tr(locale, "更新为当前视角", "Capture current view")}</button>}
         {props.recording && <small role="status">{tr(locale, "调整场景相机会自动更新此帧", "Camera adjustments update this frame")}</small>}

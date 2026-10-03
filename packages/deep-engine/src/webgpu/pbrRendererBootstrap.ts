@@ -24,11 +24,17 @@ export async function openPbrRenderer<T>(session: DeviceSession,
   signal.addEventListener("abort", cancel, { once: true });
   try {
     if (signal.aborted) throw abortError();
-    const features = resolvePbrRendererFeatures(options.features);
+    let features = resolvePbrRendererFeatures(options.features);
     assertTextureArrayProductionReady(features);
     // AA-M1 能力探针必须在 bootstrap 校验作用域之前运行(popErrorScope 弹出最近作用域);
     // 设备不支持 4x 时 fail-closed 回 1x,原因随渲染器披露(FrameMetrics.msaa)。
     const msaa = await probePbrMainSampleCount(session.device, resolvePbrMsaaSampleCount(options.msaaSampleCount));
+    // AA-M1:MSAA 激活即取代 legacy spatialAa 作为空间域 AA。证据(parity aa-bloom,
+    // 2026-10-04):Deep MSAA4+spatialAa RMSE 8.17 比 1x+spatialAa 的 6.05 更差 —— legacy
+    // 边缘算法叠加在已多采样平滑的边缘上属过度处理。M2 以 SMAA 回归显示域兜底档。
+    if (msaa.sampleCount > 1 && features.spatialAa) {
+      features = Object.freeze({ ...features, spatialAa: false });
+    }
     // 管线集合按解析后的采样数构建(缓存键含采样数),渲染器与目标同源。
     const pipelineOptions: PbrRendererOptions = msaa.sampleCount === 4
       ? options : { ...options, msaaSampleCount: 1 };

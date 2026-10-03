@@ -226,7 +226,7 @@ export class ForwardPlusClusterAssigner {
       const clusterLightIndexBuffer = allocate(capacities.clusters * capacities.maxPerCluster * INDEX_BYTES, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC, "Deep Forward+ cluster light indices");
       const overflowBuffer = allocate(4, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC, "Deep Forward+ overflow counter");
       const iesShadingBuffer = allocate(capacities.iesVec4s * IES_VEC4_BYTES, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, "Deep Forward+ IES shading tables");
-      // C3:组合 buffer 常驻固定容量([灯区][LUT 区],上限 8 盏),无面积光场景也存在
+      // C3:组合 buffer 常驻固定容量([灯区][LUT 区],上限 64 盏,B2 MegaLights 扩容),无面积光场景也存在
       // (count=0 时着色循环零迭代,与 ies 最小占位同纪律)。
       const areaLightDataBuffer = allocate(AREA_LIGHT_DATA_VEC4_TOTAL * IES_VEC4_BYTES, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, "Deep Forward+ area lights (LTC)");
       const bindGroup = device.createBindGroup({ label: "Deep Forward+ cluster bindings", layout: this.layout,

@@ -54,7 +54,7 @@ export interface ClusteredLights {
   /** E02：IES 光域网载荷（runtimePackage lightProfiles 原样透传），
    * 与 spots 的 ies.profileId 引用闭合由打包层强制。 */
   readonly lightProfiles?: readonly RuntimeLightProfile[];
-  /** C3 矩形面积光（LTC 着色；不参与聚簇，固定 ≤8 盏常驻绑定）。 */
+  /** C3 矩形面积光（LTC 着色；不参与聚簇，LTC 着色;不参与聚簇,固定 ≤64 盏常驻绑定）。 */
   readonly areas?: readonly AreaLight[];
 }
 

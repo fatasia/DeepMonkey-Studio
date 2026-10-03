@@ -204,3 +204,7 @@
 .trace-replay-position { min-width: 56px; color: var(--text-muted); font-size: 9px; text-align: center; }
 .trace-replay-transport small { margin-left: auto; color: var(--text-muted); font-size: 9px; }
 @media (max-width: 1280px) { .trace-replay-body { grid-template-columns: 1fr; } .trace-replay-detail { border-left: 0; border-top: 1px solid var(--line); } }
+
+.timeline-frame-bezier { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 8px; margin: 8px 0; padding: 8px; border: 1px solid var(--line, #2d393e); border-radius: 6px; }
+.timeline-frame-bezier legend { font-size: 11px; color: var(--text-muted, #85949a); padding: 0 4px; }
+.timeline-frame-bezier label { display: grid; gap: 2px; font-size: 11px; color: var(--text-muted, #85949a); }

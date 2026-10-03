@@ -201,6 +201,7 @@ export * from "./scene/index.js";
 export * from "./animation/index.js";
 export * from "./morph/index.js";
 export * from "./lighting/index.js";
+export * from "./gi/index.js";
 export * from "./postprocess/index.js";
 export * from "./streaming/index.js";
 export * from "./shadows/index.js";

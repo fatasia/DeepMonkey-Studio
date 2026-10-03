@@ -45,7 +45,7 @@ export interface WorldClusteredLights {
   readonly spots?: readonly WorldSpotLight[];
   /** E02：IES 光度表载荷，随灯阵一起透传到聚类打包（灯序不变，索引对齐）。 */
   readonly lightProfiles?: readonly RuntimeLightProfile[];
-  /** C3 矩形面积光(作者态;不参与聚簇,固定 ≤8 盏常驻绑定)。 */
+  /** C3 矩形面积光(作者态;不参与聚簇,LTC 着色;不参与聚簇,固定 ≤64 盏常驻绑定)。 */
   readonly areas?: readonly WorldAreaLight[];
 }
 

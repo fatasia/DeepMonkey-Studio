@@ -12,7 +12,7 @@ describe("RendererDiagnosticsPanel", () => {
         current="webgl"
         desired="webgpu"
         switchPhase="preparing"
-        switchMessage="正在准备 Deep WebGPU Beta；当前画布仍在使用 WebGL 2"
+        switchMessage="正在准备 Deep WebGPU；当前画布仍在使用 WebGL 2"
         switching={false}
         checking={false}
         probe={{ webgl2: true, webgpuApi: false, webgpuAdapter: false, secureContext: true, timestampQuery: false, shaderF16: false }}
@@ -85,7 +85,7 @@ describe("RendererDiagnosticsPanel", () => {
     expect(html).toContain("持续帧压力：P95 42.6 ms");
     expect(html).toContain("不替代浏览器 Performance / GPU Profile");
     expect(html).toContain("导出诊断");
-    expect(html).toContain("正在准备 · WebGL 2 → Deep WebGPU Beta");
+    expect(html).toContain("正在准备 · WebGL 2 → Deep WebGPU");
     expect(html).toContain("保留同一作者状态，成功激活后才保存偏好");
     expect(html).toContain("画质与功能仍需逐场景验收");
   });
@@ -171,7 +171,7 @@ describe("RendererDiagnosticsPanel", () => {
       />,
     );
 
-    expect(html).toContain("Enable Deep WebGPU Beta");
+    expect(html).toContain("Enable Deep WebGPU");
     expect(html).toContain("In-house WebGPU");
     expect(html).toContain("GPU-driven large scenes");
     expect(html).toContain("saves preferences only after activation");

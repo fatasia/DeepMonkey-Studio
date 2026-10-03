@@ -96,6 +96,9 @@ export function traceSdfSkyVisibility(grid: SdfGrid, positions: readonly ProbeVe
     const qx = fround(fround(px - origin[0]!) / cs);
     const qy = fround(fround(py - origin[1]!) / cs);
     const qz = fround(fround(pz - origin[2]!) / cs);
+    // 域外 = 开放空间(与 WGSL 同字面:1e6,可见性贡献恒 1;绝不把边界环的
+    // 近零距离泄漏到域外,否则天空方向全部被假遮蔽)。
+    if (qx < 0 || qy < 0 || qz < 0 || qx > maxX || qy > maxY || qz > maxZ) return 1_000_000;
     const cx = Math.min(Math.max(qx, 0), maxX), cy = Math.min(Math.max(qy, 0), maxY),
       cz = Math.min(Math.max(qz, 0), maxZ);
     const lx = Math.floor(cx), ly = Math.floor(cy), lz = Math.floor(cz);

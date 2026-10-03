@@ -22,6 +22,8 @@ import {
   DEEP_GI_PROBE_DIRECTIONS_HIGH,
   DEEP_GI_PROBE_DIRECTIONS_STANDARD,
 } from "../lighting/probeRadianceDirectionGate.js";
+import { DEEP_GI_PROBE_TEMPORAL_ALPHA } from "../gi/probeShUpdate.js";
+import { SDF_SKY_VISIBILITY_MAX_STEPS, SDF_SKY_VISIBILITY_MIN_STEPS } from "../gi/sdfSkyVisibilityTraceWgsl.js";
 import { DEEP_GI_PROBE_VISIBILITY_SH_WORDS, DEEP_GI_PROBE_VISIBILITY_SH_WORD_OFFSET } from "../lighting/probeDirectionalVisibilitySh.js";
 import { PROBE_RADIANCE_MOMENT_LANES } from "../rayTracing/probeRadianceKernel.js";
 import { DEEP_PBR_MESH_V1_BYTE_SIZES } from "../shaderAbi/contract.js";
@@ -101,6 +103,18 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
       visibilityShWordOffset: DEEP_GI_PROBE_VISIBILITY_SH_WORD_OFFSET,
       visibilityShWords: DEEP_GI_PROBE_VISIBILITY_SH_WORDS,
       captureMomentLanes: PROBE_RADIANCE_MOMENT_LANES,
+    },
+  },
+  {
+    // Brief-GI M1（2026-10-04）：场景级 SDF 烘焙 + 天光遮蔽圆锥追踪 + 探针 SH 更新
+    // （时域滤波 α，F5 words[12..23] 捕获块不动）。观测值从实现常量派生（步数档/α
+    // 漂移即红）。生产 pbrRenderer dispatch 接线未达 —— web = degraded/harness-only，
+    // 与 contracts 登记表/native 自检三方逐词对拍。
+    capabilityId: "sdf-gi", support: "degraded", reason: "harness-only",
+    observed: {
+      skyTraceStepsMin: SDF_SKY_VISIBILITY_MIN_STEPS,
+      skyTraceStepsMax: SDF_SKY_VISIBILITY_MAX_STEPS,
+      probeTemporalAlpha: DEEP_GI_PROBE_TEMPORAL_ALPHA,
     },
   },
   {

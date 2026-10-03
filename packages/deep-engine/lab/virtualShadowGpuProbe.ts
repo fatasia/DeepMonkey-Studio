@@ -34,9 +34,11 @@ const FIELD_COUNT = 16_374;
 const SETTLE_FRAMES = 30;
 const TIMING_FRAMES = 120;
 
+// contactShadows 显式关:C10 近场遮蔽属另一条被动链,隔离主阴影域口径;
+// temporalAa 关:动态延迟测逐帧像素差,时域历史会拖尾帧序。
 const FEATURES = { environment: true, fog: false, groundPlane: true, groundGrid: false,
-  ambientOcclusion: false, temporalAa: false, spatialAa: false, occlusionCulling: false,
-  bloom: false, vignette: true } as const;
+  contactShadows: false, ambientOcclusion: false, temporalAa: false, spatialAa: false,
+  occlusionCulling: false, bloom: false, vignette: true } as const;
 
 const VIEW: RenderView = {
   eye: [0, 2.4, 7.2] as const, target: [0, 0.7, -1.5] as const, extent: 9,
@@ -81,7 +83,8 @@ export function buildProbeScene(): RenderPacket {
   for (let index = 0; index < FIELD_COUNT; index++) {
     const gx = index % grid, gz = Math.floor(index / grid);
     const x = gx / (grid - 1) * 80 - 40;
-    const z = gz / (grid - 1) * -68 - 56 + 8;
+    // z ∈ [8, -56]:近环 2/3 覆盖主视前方,远端延伸出环外(越界=无阴影,同 CSM 语义)。
+    const z = 8 - (gz / (grid - 1)) * 64;
     const scale = 0.18 + ((index * 2654435761) % 97) / 97 * 0.22;
     instances.push({ id: `f-${index}`, geometry: "geo-sphere",
       material: index % 2 === 0 ? "field-a" : "field-b",
@@ -221,6 +224,8 @@ export interface ProbeLegResult {
   readonly timing: { readonly p50Ms: number; readonly p95Ms: number; readonly samples: number };
   readonly image: { readonly edge: ReturnType<typeof edgeAliasingEnergy>;
     readonly holes: ReturnType<typeof holeCheck>; readonly lumaP05: number; readonly lumaP95: number };
+  /** 画布 PNG dataURL(证据存档;finishLeg 移除 canvas 前采集)。 */
+  readonly canvasPng?: string;
   readonly pages: readonly { readonly frame: number; readonly materialized: number; readonly resident: number;
     readonly dynamicInvalidated: number }[];
   readonly dynamic: { readonly translateLatencyFrames: number; readonly rotateLatencyFrames: number };
@@ -257,6 +262,11 @@ export async function beginLeg(mode: "cascaded" | "virtual", withCapture: boolea
     // AA-M1 并行任务在途(瞬时 MSAA 附件 store 语义在校),本探针显式 1x 隔离:
     // 锯齿能量测原生分辨率边缘,与 MSAA 正交,不碰 MSAA 域文件。
     msaaSampleCount: 1,
+    // 诊断采样(gpu-frame timestamp 计时)需要 adaptiveQuality.enabled(msaaPerfProbe
+    // 同配方);不开热点收集,短帧窗内自适应降档不触发。F1 逐 pass 计时同时开启:
+    // PbrFramePassTimings 给出逐 pass 毫秒与 unavailable 原因(诊断面,不伪零)。
+    adaptiveQuality: { enabled: true, collectHotspots: false },
+    gpuPassTiming: true,
     features: FEATURES,
     ...(withCapture ? { frameCapture: { session: new FrameCaptureSession(),
       readbacks: { requests: [{ resourceId: "present-color" }] } } } : {}),
@@ -290,12 +300,31 @@ export async function settleLeg(frames = SETTLE_FRAMES): Promise<readonly number
 export async function timeLeg(frames = TIMING_FRAMES): Promise<ProbeLegResult["timing"]> {
   if (!active) throw new Error("beginLeg was not called.");
   let gpu: { p50Ms: number; p95Ms: number; samples: number } | undefined;
+  let passTimings: FrameMetrics["gpuPassTimings"] | undefined;
   for (let index = 0; index < frames; index++) {
-    active.renderer.render(VIEW);
-    if (index >= 24 && index % 8 === 7) {
+    const metrics = active.renderer.render(VIEW);
+    if (metrics?.gpuPassTimings && passTimings === undefined) passTimings = metrics.gpuPassTimings;
+    // 逐帧背压(msaaPerfProbe 同法):等本帧 GPU 工作完成,时间戳读回微任务才有机会落袋。
+    await active.renderer.session.device.queue.onSubmittedWorkDone().catch(() => { /* lost device */ });
+    if (index >= 16 && index % 8 === 7) {
       const stage = active.renderer.performanceTelemetry.snapshot().stages["gpu-frame"];
       if (stage && stage.samples >= 8) { gpu = stage; break; }
     }
+  }
+  // GPU 时间戳读回滞后 1-2 帧:收尾后再给微任务 300ms 落袋窗口。
+  if (!gpu) {
+    for (let settle = 0; settle < 12 && !gpu; settle++) {
+      await new Promise(resolve => setTimeout(resolve, 25));
+      const stage = active.renderer.performanceTelemetry.snapshot().stages["gpu-frame"];
+      if (stage && stage.samples >= 1) gpu = stage;
+    }
+  }
+  if (!gpu && passTimings && passTimings.availability === "measured") {
+    gpu = { p50Ms: passTimings.milliseconds, p95Ms: passTimings.milliseconds, samples: 1 };
+  }
+  if (!gpu && passTimings) {
+    throw new Error(`gpu-frame + pass timing unavailable; passTimings=${JSON.stringify(passTimings).slice(0, 400)}; `
+      + `timer failures=[${active.renderer.gpuTimer.diagnostics.join(" | ")}]`);
   }
   if (!gpu) {
     const stage = active.renderer.performanceTelemetry.snapshot().stages["gpu-frame"];
@@ -318,8 +347,8 @@ async function latestLuma(): Promise<LumaField> {
   return snapshotToLuma(snapshot);
 }
 
-/** 静态捕获:栅栏条纹测区锯齿能量 + 零洞检查 + 亮度分位。 */
-export async function captureStill(): Promise<ProbeLegResult["image"]> {
+/** 静态捕获:栅栏条纹测区锯齿能量 + 零洞检查 + 亮度分位 + 画布 PNG 存档。 */
+export async function captureStill(): Promise<ProbeLegResult["image"] & { readonly canvasPng: string }> {
   if (!active) throw new Error("beginLeg was not called.");
   // 渲染 3 帧(首帧供 capture 管道就绪),读最后一帧;设备诊断随帧镜像。
   const deviceErrors: readonly { readonly kind: string; readonly message: string }[] =
@@ -336,7 +365,8 @@ export async function captureStill(): Promise<ProbeLegResult["image"]> {
   const sorted = Float32Array.from(field.luma).sort();
   const percentile = (fraction: number): number =>
     sorted[Math.min(sorted.length - 1, Math.floor(fraction * sorted.length))]!;
-  return { edge, holes, lumaP05: percentile(0.05), lumaP95: percentile(0.95) };
+  return { edge, holes, lumaP05: percentile(0.05), lumaP95: percentile(0.95),
+    canvasPng: active.canvas.toDataURL("image/png") };
 }
 
 /** 动态腿:updateInstances → 逐帧差分,返回与收敛帧差降到初始差 50% 的帧序(0 = 同帧)。 */
@@ -355,7 +385,12 @@ export async function dynamicLatencyLeg(mode: "translate" | "rotate",
   ], instances: buildDeviceUpdate(mode) });
   const distances: number[] = [];
   for (let index = 0; index < maxFrames; index++) {
-    const metrics = renderer.render(VIEW); samplePages(metrics, index);
+    let metrics: FrameMetrics | undefined;
+    try { metrics = renderer.render(VIEW); }
+    catch (error) {
+      throw new Error(`render failed after ${mode} update: ${String(error)}; device=[${renderer.deviceDiagnostics.map(e => e.message).join(" | ")}]`);
+    }
+    samplePages(metrics, index);
     const field = await latestLuma();
     distances.push(frameDistance(baseline, field));
   }
@@ -471,4 +506,44 @@ export async function probeDeviceRequest(): Promise<unknown> {
     return { ok: false, error: String(error), desired, adapterLimits: {
       storage: limits.maxStorageBuffersPerShaderStage, sampled: limits.maxSampledTexturesPerShaderStage } };
   }
+}
+
+/** 诊断:读回虚拟阴影 atlas layer 0(2048² r32float),返回行距与原始字节(灰度化在 Node 侧)。 */
+export async function dumpShadowAtlasLayer(): Promise<{ readonly width: number; readonly height: number;
+  readonly bytesPerRow: number; readonly floats: Float32Array }> {
+  if (!active) throw new Error("beginLeg was not called.");
+  const atlas = (active.renderer as unknown as {
+    virtualShadows?: { atlas: GPUTexture };
+  }).virtualShadows?.atlas;
+  if (!atlas) throw new Error("virtual shadow atlas unavailable (cascaded leg or virtual not constructed).");
+  const device = active.renderer.session.device;
+  const width = 2048, height = 2048, bytesPerRow = width * 4;
+  const buffer = device.createBuffer({ size: bytesPerRow * height,
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+  const encoder = device.createCommandEncoder({ label: "vsm atlas readback" });
+  encoder.copyTextureToBuffer({ texture: atlas, origin: { x: 0, y: 0, z: 0 } },
+    { buffer, bytesPerRow, rowsPerImage: height }, [width, height, 1]);
+  device.queue.submit([encoder.finish()]);
+  await buffer.mapAsync(GPUMapMode.READ);
+  const floats = new Float32Array(buffer.getMappedRange().slice(0));
+  buffer.unmap();
+  buffer.destroy();
+  // 灰度可视化贴到离屏 canvas(近=暗),dataURL 随返回值出页(证据存档)。
+  const view = 1024, step = width / view;
+  const canvas = new OffscreenCanvas(view, view);
+  const context = canvas.getContext("2d")!;
+  const image = context.createImageData(view, view);
+  for (let y = 0; y < view; y++) for (let x = 0; x < view; x++) {
+    const value = floats[Math.floor(y * step) * width + Math.floor(x * step)] ?? 1;
+    const gray = Math.round((1 - Math.max(0, Math.min(1, value))) * 255);
+    const offset = (y * view + x) * 4;
+    image.data[offset] = gray; image.data[offset + 1] = gray; image.data[offset + 2] = gray;
+    image.data[offset + 3] = 255;
+  }
+  context.putImageData(image, 0, 0);
+  const blob = await canvas.convertToBlob({ type: "image/png" });
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  for (let index = 0; index < bytes.length; index++) binary += String.fromCharCode(bytes[index]!);
+  return { width, height, bytesPerRow, floats, canvasPng: `data:image/png;base64,${btoa(binary)}` };
 }
