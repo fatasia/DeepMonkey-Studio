@@ -395,6 +395,9 @@ export abstract class ViewerEngineLoading extends ViewerEngineRobot {
   clearSceneModels(): void {
       this.snapshotReadiness.cancelRestore();
       this.modelLoads.invalidate();
+      // 批处理代理持有源 Mesh 强引用(batch.sources)并把源隐藏;必须在模型移除前解引用,
+      // 否则被隐藏的作者对象绕过可见遍历,旧场景整组被钉住(QA viewer-webgpu 泄漏 240/120 根因)。
+      this.repeatedAssetBatcher.clear();
       if (this.rendererBackend === "webgpu" && !this.rendererDisposalStarted && this.models.size > 0) {
         this.primitiveMaterialCache.beginSceneGeneration();
       }
