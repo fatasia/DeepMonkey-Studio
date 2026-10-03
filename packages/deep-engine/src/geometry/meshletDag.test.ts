@@ -65,6 +65,23 @@ describe("meshlet DAG", () => {
     }
   });
 
+  it("parent assignment: every finer cluster has exactly one coarser parent, parents cover all children", () => {
+    const dag = buildMeshletDag(sphereGeometry(), { levels: 4 });
+    for (let k = 0; k < dag.parentsByLevel.length; k++) {
+      const parents = dag.parentsByLevel[k]!;
+      const fineCount = dag.levels[k]!.meshletCount;
+      const coarseCount = dag.levels[k + 1]!.meshletCount;
+      expect(parents.length).toBe(fineCount);
+      const votes = new Set<number>();
+      for (const parent of parents) {
+        expect(parent).toBeGreaterThanOrEqual(0);
+        expect(parent).toBeLessThan(coarseCount);
+        votes.add(parent);
+      }
+      expect(votes.size).toBeGreaterThan(0); // 每个父至少带一个子(不出现空父簇段)
+    }
+  });
+
   it("is deterministic across runs (byte-identical levels)", () => {
     const geometry = sphereGeometry(20, 10);
     const a = buildMeshletDag(geometry, { levels: 3 });

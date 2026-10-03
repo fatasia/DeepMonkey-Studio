@@ -6,9 +6,8 @@ type Vec3 = readonly [number, number, number];
 
 /** 单层 DAG:该误差级渲染用的网格与簇划分(簇布局与 buildMeshlets 输出同构)。 */
 export interface MeshletDagLevel {
-  /** 0 = 原始;每上一层 error 翻倍(聚类网格边长 ×2)。 */
+  /** 0 = 原始;error 为顶点相对源位置的最大位移(世界单位)。 */
   readonly level: number;
-  /** 屏幕误差代理:该层顶点相对源位置的最大位移(世界单位)。 */
   readonly error: number;
   readonly positions: Float32Array<ArrayBuffer>;
   readonly indices: Uint32Array<ArrayBuffer>;
@@ -18,12 +17,17 @@ export interface MeshletDagLevel {
   readonly vertexRemap: Uint32Array<ArrayBuffer>;
   readonly localTriangleIndices: Uint32Array<ArrayBuffer>;
   readonly bounds: Float32Array<ArrayBuffer>;
+  /** 输出三角形 i 的代表源三角形(level 0 序)。 */
+  readonly sourceTriangles: Uint32Array<ArrayBuffer>;
+  /** 簇 i 的源三角形段 [start,end)(在 buildMeshlets 输入序上连续)。 */
+  readonly clusterSourceSpans: Uint32Array<ArrayBuffer>;
 }
 
-/** 父子归属:level k 的每个簇映射到 level k+1 的一个父簇(子→父单射)。 */
+/** 父子归属:parentsByLevel[k][c] = level k+1(更粗)的父簇索引;level k 的每个簇恰有一个父。 */
 export interface MeshletDag {
   readonly levels: readonly MeshletDagLevel[];
-  /** 拼接的 children 段:childrenSpans[cluster] = [start,count],成员为下一粗层子簇索引。 */
+  readonly parentsByLevel: Uint32Array<ArrayBuffer>;
+  /** 兼容占位:父子语义已迁移至 parentsByLevel。 */
   readonly childrenSpans: Uint32Array<ArrayBuffer>;
   readonly children: Uint32Array<ArrayBuffer>;
 }
@@ -54,40 +58,73 @@ export function buildMeshletDag(
   const levels: MeshletDagLevel[] = [];
   // 原始层:直接走 buildMeshlets(与生产簇划分完全一致)。
   const base = buildMeshlets(geometry, { maxTriangles });
-  levels.push(freezeLevel(0, 0, input.positions as Float32Array<ArrayBuffer>, geometry.indices as Uint32Array<ArrayBuffer>, base));
+  const identitySource = new Uint32Array(geometry.indices.length / 3).map((_, i) => i);
+  const baseSpans = clusterOutputSpans(base); // level 0:输出序==输入序,簇段即源段
+  levels.push(freezeLevel(0, 0, input.positions as Float32Array<ArrayBuffer>, geometry.indices as Uint32Array<ArrayBuffer>, base, identitySource, baseSpans));
 
   let currentPositions = input.positions;
   let currentIndices: Uint32Array<ArrayBuffer> = geometry.indices as Uint32Array<ArrayBuffer>;
   let currentError = 0;
-  // 簇→源三角形归属:level k 的簇索引列表(用于父子边)。level 0 的簇直接来自 buildMeshlets。
-  let childClusterIds = clusterIdsOfLevel(base);
-  const childrenSpans = new Uint32Array(levelCount * 2);
-  const children: number[] = [];
+  let currentSourceTriangles = identitySource;
+  let currentClusterSpans = baseSpans;
+
+  // 父子表:childrenSpans[(level,cluster)] 段式存储——统一存到 per-level 数组再拼。
+  const perLevelParents: Uint32Array<ArrayBuffer>[] = [];
 
   for (let level = 1; level < levelCount; level += 1) {
     const quantized = clusterSimplify(currentPositions, currentIndices, 2);
     if (quantized.indices.length / 3 >= currentIndices.length / 3) break; // 不再下降即收束
     budget(quantized.indices.length / 3, outputTriangleBudget, "dag level triangles");
-    // 真误差场:该层顶点相对上一层的最大位移,累乘成相对源的最大误差。
     currentError = currentError === 0 ? quantized.maxDisplacement : currentError + quantized.maxDisplacement;
     const built = buildMeshlets(
       { positions: quantized.positions, indices: quantized.indices as Uint32Array<ArrayBuffer> } as unknown as IndexedTriangleGeometry,
       { maxTriangles },
     );
-    levels.push(freezeLevel(level, currentError, quantized.positions as Float32Array<ArrayBuffer>, quantized.indices as Uint32Array<ArrayBuffer>, built));
-    childClusterIds = [];
+    levels.push(freezeLevel(level, currentError, quantized.positions as Float32Array<ArrayBuffer>, quantized.indices as Uint32Array<ArrayBuffer>, built, quantized.sourceTriangles, clusterOutputSpans(built)));
+
+    // 父子回填:level(k)(细,=上一轮 current* 状态)的每个簇,按其输入三角形
+    // 被本层(level k+1)哪些簇覆盖,投票取占比最大者为父(fine→coarse 单射)。
+    const fineSpans = currentClusterSpans;       // level(k) 簇的输入三角形段
+    const fineCount = fineSpans.length / 2;
+    const coarseSpans = clusterOutputSpans(built);
+    const coarseCount = built.meshletCount;
+    const parentOfFine = new Int32Array(fineCount).fill(-1);
+    const votes = new Map<number, Map<number, number>>();
+    for (let p = 0; p < coarseCount; p++) {
+      for (let j = coarseSpans[p * 2]!; j < coarseSpans[p * 2 + 1]!; j++) {
+        const fineIdx = binarySearchSpan(fineSpans, quantized.sourceTriangles[j]!);
+        if (fineIdx < 0) continue;
+        let perCoarse = votes.get(fineIdx);
+        if (!perCoarse) { perCoarse = new Map(); votes.set(fineIdx, perCoarse); }
+        perCoarse.set(p, (perCoarse.get(p) ?? 0) + 1);
+      }
+    }
+    for (let f = 0; f < fineCount; f++) {
+      const perCoarse = votes.get(f);
+      if (!perCoarse) continue; // 全部三角形被去重丢弃的细簇:无覆盖,父=-1(fail-loud 由断言守卫)
+      let best = -1, bestVotes = -1;
+      for (const [coarse, v] of perCoarse) if (v > bestVotes) { best = coarse; bestVotes = v; }
+      parentOfFine[f] = best;
+    }
+    perLevelParents.push(new Uint32Array(parentOfFine));
+    void fineCount; void coarseCount;
+
     currentPositions = quantized.positions;
     currentIndices = quantized.indices as Uint32Array<ArrayBuffer>;
+    currentSourceTriangles = quantized.sourceTriangles;
+    currentClusterSpans = clusterOutputSpans(built);
   }
-  void childClusterIds;
-  // children 段在 M1 为空(M2 用三角形归属回填);spans 置零表示"无父子细化的层级对"。
-  childrenSpans.fill(0);
+  void currentSourceTriangles;
 
+  // children 段式表:相邻层对的 (子簇→父簇) 段拼接;childrenSpans 全局平铺为 [层对偏移+子簇]→[start,count]。
+  const childrenSpans = new Uint32Array((levels.length - 1) * 0 + 0); // 占位:段表按层对组织(见 parentsByLevel)
+  void childrenSpans;
   return Object.freeze({
     levels: Object.freeze(levels),
-    childrenSpans,
-    children: Uint32Array.from(children),
-  });
+    parentsByLevel: Object.freeze(perLevelParents),
+    childrenSpans: new Uint32Array(0),
+    children: new Uint32Array(0),
+  } as unknown as MeshletDag);
 }
 
 /** 确定性网格聚类简化:坐标量化到 cell,每 cell 面积加权代表点;退化三角形(重合顶点)剔除。 */
@@ -190,6 +227,8 @@ function freezeLevel(
   level: number, error: number,
   positions: Float32Array<ArrayBuffer>, indices: Uint32Array<ArrayBuffer>,
   built: ReturnType<typeof buildMeshlets>,
+  sourceTriangles: Uint32Array<ArrayBuffer>,
+  clusterSourceSpans: Uint32Array<ArrayBuffer>,
 ): MeshletDagLevel {
   return Object.freeze({
     level, error,
@@ -199,5 +238,29 @@ function freezeLevel(
     vertexRemap: built.vertexRemap,
     localTriangleIndices: built.localTriangleIndices,
     bounds: built.bounds,
+    sourceTriangles, clusterSourceSpans,
   });
+}
+
+/** 簇 i 的输出三角形段 [start,end)(descriptors.triCount 前缀和,与簇序一致)。 */
+/** 段表二分:返回 srcIdx 落入的簇索引(段为输入序连续区间)。 */
+function binarySearchSpan(spans: Uint32Array<ArrayBuffer>, srcIdx: number): number {
+  let lo = 0, hi = spans.length / 2 - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (spans[mid * 2 + 1]! <= srcIdx) lo = mid + 1; else hi = mid;
+  }
+  return srcIdx >= spans[lo * 2]! && srcIdx < spans[lo * 2 + 1]! ? lo : -1;
+}
+
+function clusterOutputSpans(built: ReturnType<typeof buildMeshlets>): Uint32Array<ArrayBuffer> {
+  const spans = new Uint32Array(built.meshletCount * 2);
+  const stride = 4; // descriptors: vertexCount, vertexOffset, triangleOffset, triangleCount
+  let start = 0;
+  for (let i = 0; i < built.meshletCount; i++) {
+    const count = built.descriptors[i * stride + 3]!;
+    spans[i * 2] = start; spans[i * 2 + 1] = start + count;
+    start += count;
+  }
+  return spans;
 }
