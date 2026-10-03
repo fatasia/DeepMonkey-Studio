@@ -30,6 +30,7 @@
 
 **目标/要点**:见 B1 Brief-GI;**派发前置**:先完成"A2 SDF 场景覆盖面核查"——`packages/deep-engine/src/physics/sdf*`(sdfCollisionBridge/sdfGpuQuery/sdfCollisionQueryWgsl)现有 SDF 的数据来源(哪些几何可烘焙/精度/规模),若仅碰撞代理覆盖需先补"场景级 SDF 烘焙"步骤(静态资产增量化),该核查报告先行落盘再动 GI。
 **规模**:核查 0.5 天 + 实施 3-4 周。
+**核查结论(2026-10-04 主线程已完成)**:SDF 基座工程化完备——mesh→SDF 提取(≤65,536 三角形,sdfCollisionBridge)、GPU dispatch、查询 WGSL(checksum 门)、真值 fixture、内存预算档(MAX_SDF_PROFILE_GRID_CELLS)。**场景级聚合 SDF 烘焙缺失**(现状按刚体局部网格)——GI 的 M1 第一步=补"静态场景合成 SDF 3D 纹理"烘焙(增量静态资产+天光可见性共用该纹理),工作量 +2-3 天计入实施。
 
 ## Brief-TSR 默认档:残影压制
 
