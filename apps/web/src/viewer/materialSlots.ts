@@ -1,6 +1,7 @@
 import type { SceneMaterialState } from "@bim-studio/contracts";
 import type { GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as THREE from "three";
+import { readPhysicalLobes } from "./materialPhysicalLobes";
 
 const SOURCE_SLOT = "studioGltfMaterialSlot";
 export interface SelectionMaterialSlot { id: string; name: string; material: SceneMaterialState; sourceMaterial?: SceneMaterialState; }
@@ -52,6 +53,7 @@ export function readMaterialSlot(material: THREE.Material): SceneMaterialState {
     ...(typeof value.roughness === "number" ? { roughness: value.roughness } : {}),
     ...(typeof value.metalness === "number" ? { metalness: value.metalness } : {}),
     ...(value.isMeshStandardMaterial ? { ior: (value as THREE.MeshPhysicalMaterial).isMeshPhysicalMaterial ? (value as THREE.MeshPhysicalMaterial).ior : 1.5 } : {}),
+    ...readPhysicalLobes(value),
     ...(value.emissive?.isColor ? { emissive: `#${value.emissive.getHexString()}`, emissiveIntensity: value.emissiveIntensity } : {}),
     doubleSided: value.side === THREE.DoubleSide,
   };

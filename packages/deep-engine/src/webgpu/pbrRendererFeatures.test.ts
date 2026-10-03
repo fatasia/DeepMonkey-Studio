@@ -12,7 +12,7 @@ describe("PBR renderer feature selection", () => {
   it("creates an explicit comparison profile without mutating defaults", () => {
     expect(resolvePbrRendererFeatures({ environment: false, fog: false, groundGrid: false,
       ambientOcclusion: false, temporalAa: false, spatialAa: false, bloom: false, vignette: false,
-      occlusionCulling: false, toneMapping: "three-aces-r185" })).toEqual({ environment: false, fog: false, groundPlane: true, groundGrid: false,
+      occlusionCulling: false, contactShadows: false, toneMapping: "three-aces-r185" })).toEqual({ environment: false, fog: false, groundPlane: true, groundGrid: false,
       ambientOcclusion: false, screenSpaceReflection: false, temporalAa: false, spatialAa: false, bloom: false, vignette: false,
       volumetricFog: false, visibilityBuffer: false, softRasterizeFallback: false, textureArrays: false, layeredMaterials: false,
       occlusionCulling: false, contactShadows: false, temporalUpscale: false, toneMapping: "three-aces-r185" });

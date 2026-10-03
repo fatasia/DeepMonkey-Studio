@@ -115,3 +115,4 @@ export type {
   GltfPrimitiveUvSet, GltfTextureDecodeOptions, GltfTextureManifest, GltfTextureMimeType, GltfTextureResource, GltfTextureSlot,
 } from "./textureTypes.js";
 export { GltfImportError, type GltfErrorCode } from "./validation.js";
+export { attachRuntimeDeformation, decodeDeformablePacketGlb, deformationPoseId, inspectGltfDeformationFeatures, type DeformablePacketGlb, type DeformablePacketMode, type DeformablePacketOptions, type GltfDeformationFeature } from "./decodeDeformablePacketGlb.js";

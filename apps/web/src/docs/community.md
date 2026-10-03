@@ -24,7 +24,7 @@ Deep Monkey Studio 通过 Issue 讨论问题，通过 Pull Request 审查改动�
 
 ## 版本与路线图
 
-发行版本采用语义化版本号。1.0 之前的次版本可能包含已说明的兼容变化；升级前阅读变更日志、迁移要求和恢复步骤。产品文档版本 `2026.09` 是内容版本，不表示已经发布同名安装包。
+发行版本采用语义化版本号。1.0 之前的次版本可能包含已说明的兼容变化；升级前阅读变更日志、迁移要求和恢复步骤。产品文档版本 `2026.10` 是内容版本，不表示已经发布同名安装包。
 
 当前重点与范围见[路线图](https://github.com/fatasia/DeepMonkey-Studio/blob/HEAD/ROADMAP.md)，实际交付以[变更日志](https://github.com/fatasia/DeepMonkey-Studio/blob/HEAD/CHANGELOG.md)和发行说明为准。
 

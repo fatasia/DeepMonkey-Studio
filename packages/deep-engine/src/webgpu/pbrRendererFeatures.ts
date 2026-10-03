@@ -63,7 +63,7 @@ export const DEFAULT_PBR_RENDERER_FEATURES: PbrRendererFeatures = Object.freeze(
   softRasterizeFallback: false,
   textureArrays: false,
   layeredMaterials: false,
-  occlusionCulling: true, bloom: true, vignette: true, contactShadows: false, temporalUpscale: false, toneMapping: "three-aces-r185",
+  occlusionCulling: true, bloom: true, vignette: true, contactShadows: true, temporalUpscale: false, toneMapping: "three-aces-r185",
 });
 
 export function resolvePbrRendererFeatures(options: PbrRendererFeatureOptions = {}): PbrRendererFeatures {

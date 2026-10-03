@@ -1,11 +1,19 @@
 import type { SceneMaterialState } from "@bim-studio/contracts";
 import type { RenderPacket } from "@bim-studio/deep-engine";
 import { isNeutralMaterialField, sceneHexToLinearRgb } from "./sceneNeutralAppearance";
+import { PHYSICAL_LOBE_KEYS, validatePhysicalLobePatch } from "../viewer/materialPhysicalLobeFields";
+import { projectPhysicalLobes, stateHasPhysicalLobeFields } from "./scenePhysicalLobeProjection";
 
 type Material = RenderPacket["materials"][number];
 const scalarFields = new Set(["color", "roughness", "metalness", "ior", "emissive", "emissiveIntensity", "doubleSided", "normalScale", "sourceColor", "sourceEmissive", "customShader"]);
 
+const lobeFields = new Set<string>(PHYSICAL_LOBE_KEYS);
+
 export function assertStaticMaterialOverrides(state: SceneMaterialState | undefined, id: string): void {
+  if (state !== undefined) {
+    const { slotOverrides: _slots, ...own } = state;
+    try { validatePhysicalLobePatch(own); } catch (error) { throw new Error(`对象 ${id} 的高级材质参数无效：${error instanceof Error ? error.message : String(error)}`); }
+  }
   if (state?.slotOverrides !== undefined && (!state.slotOverrides || typeof state.slotOverrides !== "object"
     || Array.isArray(state.slotOverrides) || Object.keys(state.slotOverrides).length > 4096)) throw new Error(`对象 ${id} 的材质槽无效`);
   for (const [slot, value] of Object.entries(state?.slotOverrides ?? {})) {
@@ -15,7 +23,7 @@ export function assertStaticMaterialOverrides(state: SceneMaterialState | undefi
     assertStaticMaterialOverrides(value, id);
   }
   for (const [key, value] of Object.entries(state ?? {})) {
-    if (value !== undefined && key !== "slotOverrides" && !scalarFields.has(key) && !isNeutralMaterialField(key, value)) {
+    if (value !== undefined && key !== "slotOverrides" && !scalarFields.has(key) && !lobeFields.has(key) && !isNeutralMaterialField(key, value)) {
       throw new Error(`对象 ${id} 的扩展外观需要模型适配：${key}`);
     }
   }
@@ -31,8 +39,12 @@ export function applyStaticMaterialOverrides(source: Material, state: SceneMater
   }
   const normalScale = state.normalScale === undefined ? undefined : bounded(state.normalScale, 4, id);
   if (state.ior !== undefined && (typeof state.ior !== "number" || state.ior < 1 || !Number.isFinite(Math.fround(state.ior)))) throw new Error(`对象 ${id} 的折射率必须为不小于 1 的有限数值`);
+  const { extendedParameters: _ext, advancedParameters: _adv, ...withoutLobes } = source;
+  const lobes = stateHasPhysicalLobeFields(state) || state.ior !== undefined
+    ? projectPhysicalLobes(source, state, state.ior ?? source.ior ?? 1.5) : undefined;
   return {
-    ...source,
+    ...(lobes === undefined ? source : { ...withoutLobes,
+      ...(lobes.extended ? { extendedParameters: lobes.extended } : {}), ...(lobes.advanced ? { advancedParameters: lobes.advanced } : {}) }),
     ...(state.ior === undefined ? {} : { ior: state.ior }),
     ...(normalScale === undefined || !source.normalTexture ? {} : { normalTexture: { ...source.normalTexture, normalScale } }),
     ...(state.color === undefined && !state.sourceColor ? {} : { baseColor: state.sourceColor ? original.baseColor : linearColor(state.color!, id) }),

@@ -13,7 +13,8 @@ type Rgba = Uint8ClampedArray<ArrayBuffer>;
 export type PathTraceAuthorWorkerOutput =
   | { readonly kind: "ready" }
   | { readonly kind: "stepped"; readonly brightness: number; readonly noise: number; readonly samples: number;
-    readonly rgba?: Rgba }
+    /** Worker-side wall time of the sample (incl. noise scan) and of the optional preview conversion. */
+    readonly computeMs: number; readonly previewMs: number; readonly rgba?: Rgba }
   | { readonly kind: "snapshot"; readonly mean?: Float32Array<ArrayBuffer>; readonly rgba?: Rgba }
   | { readonly kind: "failed"; readonly message: string };
 

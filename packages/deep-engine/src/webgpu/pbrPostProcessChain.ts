@@ -110,6 +110,7 @@ export class PbrPostProcessChain {
   private readonly bloom: BloomPass | undefined;
   private authorBloom: AuthorBloomPass | undefined;
   private instanceOutline: InstanceOutlinePass | undefined;
+  private outlinePrewarm: Promise<void> | undefined;
   private readonly temporalValidity = new TemporalValidityProvider();
   private pendingTemporalRevision: number | undefined;
   private lastTemporalPlan: TemporalValidityPlan | undefined;
@@ -151,6 +152,19 @@ export class PbrPostProcessChain {
     this.screenSpaceReflection = screenSpaceReflection;
     this.volumetricFog = volumetricFog; this.volumetricFogComposite = volumetricFogComposite;
     this.temporalAa = temporalAa; this.temporalUpscale = temporalUpscale; this.bloom = bloom;
+  }
+
+  /**
+   * 空闲预热:后台编译描边管线(createRender/ComputePipelineAsync),不阻塞任何帧。首个描边帧若尚未完成则回落同步构造;
+   * 抢先被同步路径创建的 pass 使预热结果作废。失败静默(回落同步路径,错误由首次真实使用暴露)。
+   */
+  prewarmInstanceOutline(): Promise<void> {
+    if (this.disposed || this.instanceOutline || this.outlinePrewarm || !this.pool) return Promise.resolve();
+    const pending = InstanceOutlinePass.createAsync(this.session, this.pool).then(pass => {
+      if (this.disposed || this.instanceOutline) pass.dispose(); else this.instanceOutline = pass;
+    }, () => { /* sync fallback at first use */ }).finally(() => { if (this.outlinePrewarm === pending) this.outlinePrewarm = undefined; });
+    this.outlinePrewarm = pending;
+    return pending;
   }
 
   /** Must run after opaque depth is stored and before transparent color composition. */

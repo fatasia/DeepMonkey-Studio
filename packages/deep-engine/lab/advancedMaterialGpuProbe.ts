@@ -21,7 +21,7 @@ const WARM_FRAMES = 4, FURNACE_RADIANCE = 0.5, DARK_RADIANCE = 0.001;
 const TO_LIGHT = norm([0.3, 0.3, 1]);
 const FEATURES = { environment: true, fog: false, groundPlane: false, groundGrid: false,
   ambientOcclusion: false, temporalAa: false, spatialAa: false, occlusionCulling: false,
-  bloom: false, vignette: true } as const;
+  bloom: false, vignette: false, contactShadows: false } as const;
 const sunFor = (toLight: Vec3) => ({ lights: { directional: [{ directionWorld: [-toLight[0], -toLight[1], -toLight[2]] as const,
   color: [1, 1, 1] as const, intensity: 1, castShadow: false }] } }) as const;
 const SUN = sunFor(TO_LIGHT);
@@ -194,7 +194,7 @@ export async function runShowcase(): Promise<void> {
     environment: { kind: "radiance-hdr", image: studioSky() }, features: { ...FEATURES, vignette: false }, advancedMaterials: true });
   showcase = renderer;
   renderer.setPacket(packet);
-  const view = { ...VIEW, eye: [0, 0.4, 13] as const, extent: 14, width: 960, height: 270, exposure: 1.0,
+  const view = { ...VIEW, eye: [0, 0.6, 9.5] as const, extent: 12, width: 960, height: 270, exposure: 1.0,
     background: [0.05, 0.055, 0.065] as const, ...SUN };
   await renderer.validateFrame(view);
   for (let frame = 0; frame < 4; frame++) { renderer.render(view); await new Promise(resolve => requestAnimationFrame(resolve)); }

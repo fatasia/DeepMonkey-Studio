@@ -142,3 +142,41 @@ describe("OpenAI compatible provider", () => {
     expect(await chatCall({ protocol: "chat-completions" })).toEqual(expect.not.objectContaining({ reasoning_effort: expect.anything() }));
   });
 });
+
+describe("OpenAI compatible provider prompt-cache support", () => {
+  it.each([
+    ["chat-completions", { prompt_tokens: 900, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 640 } }, "choices"],
+    ["chat-completions", { prompt_tokens: 900, completion_tokens: 10, prompt_cache_hit_tokens: 512 }, "choices"],
+    ["responses", { input_tokens: 900, output_tokens: 10, input_tokens_details: { cached_tokens: 768 } }, "output_text"],
+  ] as const)("surfaces provider-reported cached input tokens (%s)", async (protocol, usage, shape) => {
+    const body = shape === "choices" ? { choices: [{ message: { content: "ok" } }], usage } : { output_text: "ok", usage };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(body))));
+    const completion = await createOpenAiCompatibleProvider().complete({ ...request, config: { ...request.config, protocol } }, context());
+    expect(completion.usage).toMatchObject({ inputTokens: 900, outputTokens: 10, cachedInputTokens: expect.any(Number) });
+  });
+
+  it("omits cachedInputTokens when the provider reports none, and streams it from the final usage frame", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }], usage: { prompt_tokens: 5, completion_tokens: 1 } }))));
+    const plain = await createOpenAiCompatibleProvider().complete({ ...request, config: { ...request.config, protocol: "chat-completions" } }, context());
+    expect(plain.usage).toEqual({ inputTokens: 5, outputTokens: 1 });
+    const frames = [
+      { choices: [{ delta: { content: "好" } }] },
+      { type: "response.completed", response: { usage: { input_tokens: 40, output_tokens: 2, input_tokens_details: { cached_tokens: 32 } } } },
+    ];
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(`${frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join("")}data: [DONE]\n\n`)));
+    const usage = [];
+    for await (const event of createOpenAiCompatibleProvider().stream!({ ...request, config: { ...request.config, protocol: "responses" } }, context())) if (event.type === "usage") usage.push(event);
+    expect(usage).toEqual([{ type: "usage", inputTokens: 40, outputTokens: 2, cachedInputTokens: 32 }]);
+  });
+
+  it.each(["responses", "chat-completions"] as const)("sends prompt_cache_key only when the host supplies a cacheKey (%s)", async (protocol) => {
+    const send = async (extra: object) => {
+      const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }], output_text: "ok" })));
+      vi.stubGlobal("fetch", fetchMock);
+      await createOpenAiCompatibleProvider().complete({ ...request, ...extra, config: { ...request.config, protocol } }, context());
+      return JSON.parse(String((fetchMock.mock.calls[0]![1] as RequestInit).body)) as Record<string, unknown>;
+    };
+    expect(await send({})).not.toHaveProperty("prompt_cache_key");
+    expect(await send({ cacheKey: "bim-assistant:abc" })).toMatchObject({ prompt_cache_key: "bim-assistant:abc" });
+  });
+});

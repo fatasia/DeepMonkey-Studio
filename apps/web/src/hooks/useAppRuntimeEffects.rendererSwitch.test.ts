@@ -7,6 +7,7 @@ const harness = vi.hoisted(() => ({
   pendingEffect: undefined as (() => void | (() => void)) | undefined,
   deep: { activeBackend: "webgl", switchTo: vi.fn(), cancelPendingSwitch: vi.fn() },
   wasm: { activeBackend: "webgl", switchTo: vi.fn(), cancelPendingSwitch: vi.fn() },
+  outlineSupported: true,
 }));
 vi.mock("react", () => ({
   startTransition: (run: () => void) => run(),
@@ -28,6 +29,7 @@ vi.mock("react", () => ({
 vi.mock("./useAppInteractionEffects", () => ({ useAppInteractionEffects: vi.fn() }));
 vi.mock("../viewer/StudioDeepWebGpuBridge", () => ({ StudioDeepWebGpuBridge: vi.fn(), b4HlodClusterEnabled: vi.fn() }));
 vi.mock("../viewer/StudioDeepWasmBridge", () => ({ StudioDeepWasmBridge: vi.fn() }));
+vi.mock("../viewer/deepOutlineSupport", () => ({ deepSupportsObjectOutline: () => harness.outlineSupported }));
 import { useAppRuntimeEffects } from "./useAppRuntimeEffects";
 
 type Context = Parameters<typeof useAppRuntimeEffects>[0];
@@ -67,7 +69,7 @@ function fixture() {
 beforeEach(() => {
   vi.clearAllMocks(); harness.cursor = 0; harness.refs = []; harness.dependencies = undefined;
   harness.cleanup = undefined; harness.pendingEffect = undefined;
-  harness.deep.activeBackend = "webgl"; harness.wasm.activeBackend = "webgl";
+  harness.deep.activeBackend = "webgl"; harness.wasm.activeBackend = "webgl"; harness.outlineSupported = true;
   harness.wasm.switchTo.mockResolvedValue({ status: "unchanged", activeBackend: "webgl" });
   vi.stubGlobal("window", { localStorage: { setItem: vi.fn() } });
 });
@@ -148,8 +150,22 @@ describe("real runtime renderer switching effect", () => {
     expect(app.state.showError).toHaveBeenCalledOnce();
   });
 
-  it("keeps WebGL with an actionable reason when the scene requires the author-only outline effect", () => {
+  it("switches to Deep for a scene with object outline now that Deep implements it", async () => {
+    const pending = deferred(); harness.deep.switchTo.mockReturnValue(pending.promise);
     const app = fixture();
+    app.state.rendererOutlineRequired = true;
+    app.render(); await flush();
+    expect(harness.deep.switchTo).toHaveBeenCalledWith("webgpu");
+    expect(app.state.setRendererBackend).not.toHaveBeenCalled();
+    expect(app.state.setRendererSwitchPhase).not.toHaveBeenCalledWith("failed");
+    harness.deep.activeBackend = "webgpu"; pending.resolve({ status: "switched", activeBackend: "webgpu" }); await flush();
+    expect(app.state.rendererActiveBackend).toBe("webgpu");
+    expect(app.switching).toEqual([true, false]);
+  });
+
+  it("keeps WebGL with an actionable reason only when Deep lacks the object outline capability (fail-closed)", () => {
+    const app = fixture();
+    harness.outlineSupported = false;
     app.state.rendererOutlineRequired = true;
     app.render();
     expect(app.state.setRendererBackend).toHaveBeenCalledWith("webgl");

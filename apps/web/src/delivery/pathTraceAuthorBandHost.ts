@@ -24,9 +24,10 @@ export class PathTraceAuthorBandHost {
       const band = this.band;
       if (!band) throw new Error("物理出图分块尚未初始化。");
       if (command.kind === "step") {
-        const brightness = band.advanceSample();
-        return { kind: "stepped", brightness, noise: band.maxRelativeStandardError, samples: band.sampleCount,
-          ...(command.preview ? { rgba: this.rgba(band) } : {}) };
+        const started = performance.now(), brightness = band.advanceSample(), noise = band.maxRelativeStandardError;
+        const sampled = performance.now(), rgba = command.preview ? this.rgba(band) : undefined;
+        return { kind: "stepped", brightness, noise, samples: band.sampleCount, computeMs: sampled - started,
+          previewMs: performance.now() - sampled, ...(rgba ? { rgba } : {}) };
       }
       return { kind: "snapshot", ...(command.mean ? { mean: band.meanRows() } : {}), ...(command.rgba ? { rgba: this.rgba(band) } : {}) };
     } catch (error) { return { kind: "failed", message: error instanceof Error ? error.message : String(error) }; }

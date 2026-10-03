@@ -256,6 +256,8 @@
     "test:auto-exposure-gpu": "node scripts/autoExposureGpuTest.mjs",
     "test:white-furnace-gpu": "node scripts/whiteFurnaceGpuTest.mjs",
     "test:clearcoat-furnace-gpu": "node scripts/clearcoatFurnaceGpuTest.mjs",
+    "test:advanced-material-gpu": "node scripts/advancedMaterialGpuTest.mjs",
+    "test:advanced-material-three-parity": "node scripts/advancedMaterialThreeParityTest.mjs",
     "test:contact-shadow-gpu": "node scripts/contactShadowGpuTest.mjs",
     "test:soft-raster-gpu": "node scripts/softRasterizeGpuTest.mjs",
     "test:probe-occlusion-gpu": "node scripts/probeOcclusionGpuTest.mjs",

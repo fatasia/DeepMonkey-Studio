@@ -76,6 +76,9 @@ importers:
       '@bim-studio/workcell-validation-plugin':
         specifier: workspace:*
         version: link:../../packages/workcell-validation-plugin
+      '@bim-studio/world-runtime':
+        specifier: workspace:*
+        version: link:../../packages/world-runtime
       '@bim-studio/xt-reader':
         specifier: workspace:*
         version: link:../../packages/xt-reader

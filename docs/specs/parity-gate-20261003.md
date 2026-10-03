@@ -11,7 +11,7 @@
 | 同一作者根经正式投影桥进 Deep、three 并排渲染的整套基建 | `packages/deep-engine/lab/c8SharedScene{Fixture,Probe,Readback}.ts`、`scripts/c8-shared-scene-parity.mjs` | 沿用 `sharedProjection()`（ThreeProjectionBridge）、`DeepWebGpuBackend.create/sync/render`、`readSharedDeepFrame`（正式 HDR 快照 + 真实 swapchain 字节）、`bounded`、fresh-realm 双轮稳定性、源码/bundle SHA 取证 |
 | 显示合约单一来源 | `packages/contracts/src/displayContract.ts` `DEFAULT_DISPLAY_CONTRACT` | 曝光 1.05、`three-aces-r185`、sRGB、阴影 2048/bias/normalBias/radius、bloom 强度/半径/阈值、环境强度全取合约，不 hardcode |
 | 生产光照/阴影投影 | `apps/web/src/viewer/studioDeepEnvironmentLights.ts` `projectStudioDeepLights`、`studioDeepDirectionalShadow.ts`、`sceneShadowQuality.ts` | 阴影场景用与产品完全相同的 three 灯 → Deep `authored shadow` 映射 |
-| three 侧产品后处理链 | `apps/web/src/viewer/postProcessingRuntime.ts`（RenderPass→UnrealBloom→SMAA→OutputPass） | AA+Bloom 场景的 three 侧按同链重建 |
+| three 侧产品后处理链 | `apps/web/src/viewer/postProcessingRuntime.ts:43-65`：`new EffectComposer(renderer)`（半浮点线性 HDR 目标）+ `configurePostProcessingAntialias`（目标 MSAA）→ RenderPass → UnrealBloom → SMAAPass → 经 `threeDisplayOutputShader` 补丁的 OutputPass | post 场景的 three 侧**逐项同款**：同一 `configurePostProcessingAntialias`、`SMAAPass`、补丁后的 `OutputPass`（实测 `msaaSamples=4`）；透明混合因此发生在线性 HDR 目标内，与产品一致 |
 | 像素度量工具 | `scripts/lib/pixelParity.mjs`（分块 SSIM）、`scripts/lib/j3DisplayParity.mjs`（先例） | SSIM 直接用 `computeBlockSsim`，不新增依赖 |
 | Deep 侧引擎能力 | radiance-hdr 预滤波 IBL、authored 方向光阴影、`authorBloom`、`spatialAa`、加权 OIT 透明 | 全部走正式 `PbrRenderer`，不加测试专用路径 |
 | 对拍先例（与本门互补，不重复） | `c8-three-output/-material-math/-direct-display/-ggx-visibility-parity`（算子级）、`j3-display/bloom-texture/shadow-visibility/normal-shadow-parity`（Deep↔Deep/Native 或 fixture 级）、`e2-z4-visual-regression`（全页面） | 这些不是"同一场景 three 渲染 vs Deep 渲染"的整帧门 |
@@ -28,6 +28,7 @@
 
 - `projectThreeWorldLights`（桥内灯光投影）对方向光 `castShadow=true` fail-closed（只支持聚光灯局部阴影）；方向光阴影在产品里走 `projectStudioDeepLights`。因此阴影场景用产品投影器，不用桥内投影器。
 - Deep 方向光 `castShadow` 缺省 = 预览默认**开启**（`worldLights.ts` 注释）。c8 probe 用 `projectThreeWorldLights`（不写 `castShadow`），其 `castShadow=false` 的 three 灯在 Deep 里仍默认投影阴影——c8 场景恰好没有遮挡关系所以未暴露。本门统一走 `projectStudioDeepLights`，显式写 `castShadow:false`。
+- **Deep 默认特性在途变化（本次实跑撞上）**：他人在途改动把 `DEFAULT_PBR_RENDERER_FEATURES.contactShadows` 改为 `true`，Deep 帧在接触边缘变暗而 three 作者路径没有对应物，导致 c8 严格自发光门（`HDR drift 0.56`）和本门全部场景同时偏离。本门因此像 AO/SSR 一样显式 `contactShadows:false`（对拍口径只比有 three 对应物的特性）。**c8 probe 未显式关闭，当前 `node scripts/c8-shared-scene-parity.mjs` 在该默认值下失败**——不属本任务改动，建议 c8 probe 同样显式写 `contactShadows:false` 或由改动方确认默认值（见遗留）。
 - `ThreeProjectionBridge` 对扩展 PBR 瓣（transmission/sheen/iridescence/clearcoat/anisotropy/dispersion）任一非中性值整体 fail-closed（`MeshPhysicalMaterial non-neutral extensions`）。
 
 ## 设计
@@ -58,18 +59,18 @@
 | `pbr-matrix` | 标准 (a) | 2×5 球：电介质（红）/金属（金）× 粗糙度 .1/.3/.5/.7/.95；主光 + 冷色背光，无环境 | 同根，`environment:false`，直射光 |
 | `ibl` | 标准 (b) | 同矩阵，仅 IBL：同一份 128×64 线性 HDR 全景（含太阳盘 14×、橙色方位标记）→ `PMREMGenerator.fromEquirectangular` | 同一份 `Float32` 作 `radiance-hdr` 预滤波（生产默认 128/32/128） |
 | `directional-shadow` | 标准 (c) | 地面 + 球/方块/细柱，方向光 `castShadow`，`configureDirectionalShadow` 同款参数：2048、bias −1e‑4、normalBias .015、radius 3、intensity .38、PCFShadowMap | `projectStudioDeepLights` → authored directional shadow（exact 1 级联 2048） |
-| `aa-bloom` | 标准 (d) | RenderPass→UnrealBloom(.35/.25/.9)→SMAA→OutputPass（HalfFloat 目标） | `bloom:true` + `authorBloom{strength,threshold}` + `spatialAa:true` |
-| `transparency` | 标准 (e) | 3 个 alpha .45 玻璃球（`transparent`、`depthWrite:false`）叠 4 根不透明背板；three 默认排序混合 | 加权 OIT（BLEND） |
+| `aa-bloom` | 标准 (d) | 产品同款 composer 链：RenderPass→UnrealBloom(.35/.25/.9)→SMAAPass→补丁 OutputPass，目标 MSAA×4 | `bloom:true` + `authorBloom{strength,threshold}` + `spatialAa:true` |
+| `transparency` | 标准 (e) | 3 个 alpha .45 玻璃球（`transparent`、`depthWrite:false`）叠 4 根不透明背板；**产品 composer 链**（RenderPass→补丁 OutputPass，线性 HDR 内混合；MSAA/SMAA 关闭以隔离混合语义，AA 由 aa-bloom 覆盖） | 加权 OIT（BLEND），线性 HDR 合成后色调映射 |
 | `ibl-hq`（诊断） | `ibl` 对照 | 同 `ibl` | specular 256 / diffuse 64 / 256 样本，验证 IBL 噪点来源 |
-| `bloom-only`（诊断） | `aa-bloom` 对照 | 同场景关 SMAA | 关 `spatialAa`，只剩 Bloom，隔离 AA 与泛光 |
-| `transparency-linear`（诊断） | `transparency` 对照 | 先在线性 HDR 目标混合，再 OutputPass（ACES+sRGB） | 同 `transparency` |
+| `bloom-only`（诊断） | `aa-bloom` 对照 | 同场景，composer 关 MSAA 与 SMAA | 关 `spatialAa`，只剩 Bloom，隔离 AA 与泛光 |
+| `transparency-direct`（诊断，**非产品路径**） | `transparency` 口径对照 | three renderer 直出（逐片元 ACES+sRGB 后再 alpha 混合）——产品作者路径不会这样渲染 | 同 `transparency` |
 
 另有"扩展 PBR 瓣"机器证据（不需 GPU）：对 transmission/sheen/iridescence/clearcoat/anisotropy/dispersion 各建一个根交给投影桥，必须 `ok:false` 且 `code:"unsupported"`，门以 `lobeGapsStillFailClosed` 守卫（桥将来支持某瓣时门会提示需新增对拍场景）。透射因此只验证 alpha 简化（场景 e）。
 
 ## 运行
 
 ```
-pnpm gate:parity          # = node scripts/gate-parity.mjs；约 2.7 分钟（8 场景 × 2 轮）
+pnpm gate:parity          # = node scripts/gate-parity.mjs；约 3 分钟（8 场景 × 2 轮）
 pnpm test:parity-gate     # 度量库单测（无 GPU）
 node scripts/gate-parity.mjs --calibrate          # 全部场景只出数，写 calibration.json（刷新基线用）
 node scripts/gate-parity.mjs --only=ibl,ibl-hq    # 单场景调试（隐含 calibrate，不判定）
@@ -79,7 +80,7 @@ node scripts/gate-parity.mjs --only=ibl,ibl-hq    # 单场景调试（隐含 cal
 
 ## 实施结果
 
-环境：NVIDIA RTX 4060（Lovelace，非 fallback），Chrome WebGPU，Windows，深色，320×192，`two fresh rounds identical`。`pnpm gate:parity` 退出码 0；`node scripts/c8-shared-scene-parity.mjs` 仍通过（passed/stable true）。
+环境：NVIDIA RTX 4060（Lovelace，非 fallback），Chrome WebGPU，Windows，深色，320×192，`two fresh rounds identical`。`pnpm gate:parity` 退出码 0；`node scripts/c8-shared-scene-parity.mjs` 在 Deep 默认特性被他人改动前通过，当前因 `contactShadows` 默认值漂移失败（见遗留，非本任务引入）。
 
 ### 指标表（实测，`evidence.json`）
 
@@ -88,18 +89,18 @@ node scripts/gate-parity.mjs --only=ibl,ibl-hq    # 单场景调试（隐含 cal
 | pbr-matrix | strict / strict | 0.258 | 0.02 / 0.51 / 7.8 | 0.02 / 11.6 | 26 | 0.99989 / 0.9837 | 0.0012 |
 | ibl | tolerant / tolerant（已知缺口） | 4.730 | 0.77 / 7.72 / 20.0 | 1.00 / 21.1 | 57 | 0.98503 / 0.8326 | 0.243 |
 | directional-shadow | strict / strict | 0.092 | 0.02 / 0.87 / 1.2 | 0.01 / 1.9 | 4 | 0.99995 / 0.9982 | 0.0003 |
-| aa-bloom | diagnostic / diagnostic（已知缺口） | 6.313 | 0.29 / 5.69 / 66.1 | 0.34 / 69.1 | 178 | 0.99335 / 0.8950 | — |
-| transparency | diagnostic / diagnostic（已知缺口） | 13.414 | 2.49 / 27.79 / 34.9 | 3.61 / 45.2 | 84 | 0.97870 / 0.5958 | 0.027 |
+| aa-bloom | diagnostic / diagnostic（已知缺口） | 6.052 | 0.76 / 4.68 / 66.7 | 0.84 / 71.2 | 182 | 0.99168 / 0.9127 | — |
+| transparency | tolerant / tolerant（口径已修正，残余见下） | 1.497 | 0.20 / 8.61 / 14.4 | 0.26 / 14.9 | 20 | 0.99929 / 0.9543 | 0.0273 |
 | ibl-hq（诊断） | tolerant / tolerant | 4.536 | 0.72 / 7.84 / 19.7 | 0.94 / 20.8 | 57 | 0.98863 / 0.8406 | 0.244 |
 | bloom-only（诊断） | strict / strict | 0.183 | 0.05 / 1.03 / 6.1 | 0.04 / 7.5 | 20 | 0.99989 / 0.9982 | — |
-| transparency-linear（诊断） | tolerant / tolerant | 1.497 | 0.20 / 8.61 / 14.4 | 0.26 / 14.9 | 20 | 0.99929 / 0.9543 | — |
+| transparency-direct（诊断，非产品路径） | diagnostic / diagnostic | 13.414 | 2.49 / 27.79 / 34.9 | 3.61 / 45.2 | 84 | 0.97870 / 0.5958 | 0.0273 |
 
 解读：byteMax/ΔE max 来自轮廓单像素（几何覆盖率差一个像素边缘），所以严格档用 RMSE+ΔE 均值/p99+SSIM 判定，不用 max；max 仍全部落盘。
 
 ### 已知缺口与根因（证据均由门内诊断场景给出）
 
-1. **`aa-bloom` = 边缘 AA 算法差异（不是泛光）**：`bloom-only`（两侧都关 AA）达到严格档（RMSE 0.18 / ΔE00 均值 0.05），说明 Deep `authorBloom` 在合约参数下与 three `UnrealBloomPass` 已一致；`aa-bloom` 的差异图只剩高对比轮廓（three SMAAPass vs Deep `spatialAa`）。动作：对齐 Deep spatialAa 与 SMAA，或作者视图换用同一算法。
-2. **`transparency` = 混合空间不同（不是着色差）**：three 默认帧缓冲对每个透明片元先 ACES+sRGB 编码再 alpha 混合（显示空间混合）；Deep OIT 在线性 HDR 合成后统一色调映射。`transparency-linear`（three 改为线性 HDR 混合 + OutputPass）降到 RMSE 1.50 / ΔE00 均值 0.20；线性域 HDR 相对 RMSE 仅 2.7% 也印证这一点。表现为 Deep 的玻璃球更亮（lumaBias +4.05）。**需要产品决策**：以线性合成为准（Unity/UE 口径，作者视图透明材质改走 OutputPass），或 Deep 提供显示空间混合开关。透射（transmission）桥层直接拒绝，门只覆盖 alpha 简化。残余 `transparency-linear` p99 ΔE00 8.6 未逐像素归因，推测为加权 OIT 与精确排序混合的近似差。
+1. **`aa-bloom` = 边缘 AA 算法差异（不是泛光）**：three 侧已核实为产品同款链（`postProcessingRuntime.ts`：`EffectComposer` 半浮点目标 + `configurePostProcessingAntialias` 的 MSAA×4 + `UnrealBloomPass` + `SMAAPass` + 经 `threeDisplayOutputShader` 补丁的 `OutputPass`；实测 `msaaSamples=4`，本门直接 import 产品的 `configurePostProcessingAntialias` 与 `threeDisplayOutputShader`，不是别的实现）。`bloom-only`（composer 关 MSAA+SMAA、Deep 关 `spatialAa`）达到严格档（RMSE 0.18 / ΔE00 均值 0.05），说明 Deep `authorBloom` 在合约参数下与 `UnrealBloomPass` 已一致；`aa-bloom` 的差异图只剩高对比轮廓像素（byteMax 182）。**根因 = three 的 MSAA×4+SMAA 与 Deep `spatialAa` 的边缘抗锯齿算法差异**；RMSE 6.05 略超容许档上限 6，因此保留诊断档，阈值 = 当前基线 + 回归守卫。动作：对齐 Deep spatialAa 与 MSAA+SMAA 的边缘覆盖/权重（引擎改动，不在门范围内）。
+2. **`transparency` = 已对齐，口径修正（原"混合空间产品决策缺口"撤销）**：初版把 three 侧写成 renderer 直出（逐片元 ACES+sRGB 编码后再 alpha 混合），那不是产品 Deep 对标的路径——产品 three 作者路径是 `EffectComposer + OutputPass`（`postProcessingRuntime.ts:43,62`），透明在线性 HDR 目标内混合后统一色调映射，与 Deep 加权 OIT 的线性合成同口径（`StudioDeepRenderView.ts` 等也显式拒绝 Deep 走非 composer 路径）。现 `transparency` 标准场景的 three 侧改为产品 composer 链（MSAA/SMAA 关闭以隔离混合语义，AA 由 `aa-bloom` 覆盖），实测 RMSE 1.50 / ΔE00 均值 0.20 / SSIM 0.9993，档位 **tolerant**（未达 strict 的是 p99 ΔE00 8.6，推测为加权 OIT 与精确排序混合的近似差，未逐像素归因；线性域 HDR 相对 RMSE 2.7%）。原 renderer 直出口径保留为 `transparency-direct` 诊断（**非产品路径，仅诊断**，RMSE 13.4 / ΔE00 均值 2.49），用于证明旧差距只来自混合空间且已被产品 composer 路径消除。不再需要产品决策。透射（transmission）仍由桥层拒绝，门只覆盖 alpha 简化。
 3. **`ibl` = 预滤波质量/滤波核差异**：同一份 HDR 下 Deep 默认档（128 样本、漫反射 32²）在小而亮的太阳盘上产生橘皮噪点；`ibl-hq`（256/64/256）噪点基本消失（SSIM 0.985→0.9886）。仍有的差异来自 Deep GGX split‑sum 预滤波链与 three PMREM cubeUV 滤波核不同（低粗糙度金属反射最明显，HDR 相对 RMSE 24% 由太阳反射主导）。方位/亮度/太阳位置一致（无朝向错误）。动作：提高默认漫反射预滤波样本或改确定性卷积，或统一同一 PMREM 产物（引擎改动，本任务不做）。
 4. **扩展 PBR 瓣（sheen/iridescence/transmission/clearcoat/anisotropy/dispersion）**：投影桥全部 fail-closed，无法进入对拍；`lobeGapsStillFailClosed` 守卫，桥放开后需新增场景。
 5. **未覆盖**：纹理采样、各向异性/透射 IBL split‑sum（omission-audit 第 95 行）、多光源/点光·聚光阴影、雾、AO/SSR、动态分辨率、设备丢失、性能。
@@ -113,12 +114,13 @@ node scripts/gate-parity.mjs --only=ibl,ibl-hq    # 单场景调试（隐含 cal
 ### 局限与遗留
 
 - 基线来自单一硬件（RTX 4060/Windows/Chrome）；其它 GPU/驱动首次接入需 `--calibrate` 重新标定并在文档登记。
-- 8 场景 × 2 轮约 2.7 分钟；CI 如需缩短可在 CI 配置中去掉诊断场景或单轮（会降低稳定性证据）。
-- 本任务未触碰引擎/生产渲染；上述 1–3 项属引擎/产品侧修复，修复后门会提示 ratchet，届时上调 `expectedTier` 与基线。
+- 8 场景 × 2 轮约 3 分钟；CI 如需缩短可在 CI 配置中去掉诊断场景或单轮（会降低稳定性证据）。
+- 本任务未触碰引擎/生产渲染；上述 1、3 项属引擎侧修复，修复后门会提示 ratchet，届时上调 `expectedTier` 与基线。
 - 发现但未处理：c8 probe 的方向光 `castShadow` 缺省语义（见"已知前提"）——当前 c8 场景无遮挡所以无影响，若扩展 c8 场景需改用 `projectStudioDeepLights`。
-- `tsc -p tsconfig.lab.json` 仅余与本任务无关的他人在途文件错误（`src/shader/materialAdvancedReference.ts`）。
+- `tsc -p tsconfig.lab.json` 本任务文件无错误（仅余他人在途 `lab/instanceOutlineProbe.ts` 的类型错误）。
 
 ## 改动文件
 
 - 新增：`packages/deep-engine/lab/parityGateScenes.ts`、`parityGateThree.ts`、`parityGateProbe.ts`、`parityGateScenes.test.ts`；`scripts/gate-parity.mjs`、`scripts/lib/parityGateMetrics.mjs`、`parityGateMetrics.test.mjs`、`parityGateThresholds.mjs`；本文档。
 - 修改：根 `package.json`（`gate:parity`、`test:parity-gate`）。
+- **c8 当前失败（他人在途改动，非本任务）**：`DEFAULT_PBR_RENDERER_FEATURES.contactShadows` 被改为 `true` 后，`node scripts/c8-shared-scene-parity.mjs` 报 `strict emissive HDR drift 0.56`（c8 probe 的 features 未显式关闭 contactShadows）。本门显式 `contactShadows:false` 不受影响，并因此"撞出"了这次默认值漂移——这正是门的价值。修复方式二选一：改动方确认 three 对应物后保留默认；或 c8 probe 同样显式写 `contactShadows:false`（一行，未擅自修改）。

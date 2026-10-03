@@ -39,6 +39,7 @@ import { StudioDeepWebGpuBridge } from "../viewer/StudioDeepWebGpuBridge";
 import { StudioDeepWasmBridge } from "../viewer/StudioDeepWasmBridge";
 import { compileStudioWasmRuntimePackage, normalizeStudioWasmModel } from "../viewer/studioWasmRuntimePackage";
 import { compileSceneRenderPacket } from "../delivery/compileSceneRenderPacket";
+import { describeDeepCompileNotice } from "../delivery/deepCompileNotice";
 import { loadWebHlodPackage, type WebHlodPackage } from "../delivery/webHlodPackage";
 import { b4HlodClusterEnabled } from "../viewer/StudioDeepWebGpuBridge";
 import type { HlodClusterStreamBinding } from "@bim-studio/deep-engine/three-bridge";
@@ -49,6 +50,7 @@ import { collectDeepOverlayPrimitives } from "../viewer/deepOverlayPrimitiveSour
 import { mergeDeepOverlayVertices } from "../viewer/deepOverlayPrimitives";
 import { projectStudioEditorOverlay } from "../viewer/studioDeepEditorOverlay";
 import { rendererBackendLabel } from "../viewer/rendererBackendLabel";
+import { deepSupportsObjectOutline } from "../viewer/deepOutlineSupport";
 import { readAnimationPlayheadSec } from "../viewer/animationPlayheadReader";
 import { useAppInteractionEffects } from "./useAppInteractionEffects";
 
@@ -164,7 +166,7 @@ interface AppRuntimeEffectsContext {
   setRendererActiveBackend: Setter<RendererBackend>;
   setRendererSwitchPhase: Setter<"idle" | "preparing" | "recovering" | "failed">;
   setRendererSwitchMessage: Setter<string | undefined>;
-  /** 任一模型开启描边(outline)。该效果仅作者(WebGL)路径实现,Deep 包内的实例描边位会以密码式账本不匹配崩溃。 */
+  /** 任一模型开启描边(outline)。Deep 具备对象级描边能力时放行;仅在能力缺失时才保留 WebGL(fail-closed)。 */
   rendererOutlineRequired: boolean;
 }
 
@@ -250,6 +252,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
   const wasmBridgeRef = useRef<StudioDeepWasmBridge | undefined>(undefined);
   const wasmRefreshRevisionRef = useRef(-1);
   const rendererSwitchOwnerRef = useRef<symbol | undefined>(undefined);
+  const deformationNoticeRef = useRef<string | undefined>(undefined);
   const rendererRecoveryContextRef = useRef({
     activeScene,
     project,
@@ -531,6 +534,11 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
       const hlodPackages = b4HlodClusterEnabled() ? await loadSceneHlodPackages(scene, project.models, signal) : undefined;
       const compiled = await compileSceneRenderPacket(scene, {
         signal,
+        // 编辑器逐帧把 Three AnimationMixer 的骨骼/形变姿态同步给 Deep,含蒙皮/形变目标的模型保留为活体。
+        liveDeformation: true,
+        // 4K 贴图合计超出引擎单资产解码预算时按需降采样;引擎导入子集之外的模型只隐藏并提示。
+        textureBudgetBytes: 112 * 1024 * 1024,
+        skipUndecodableModels: true,
         imageDecoder: browserImageDecoder,
         normalizeModel: normalizeStudioWasmModel,
         ...(hlodPackages?.size ? { hlodPackages } : {}),
@@ -545,10 +553,12 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
         },
       });
       signal.throwIfAborted();
+      deformationNoticeRef.current = describeDeepCompileNotice(compiled);
       cachedPacket = { key, packet: compiled.packet, ...(compiled.hlodClusters ? { clusters: compiled.hlodClusters } : {}) };
       return cachedPacket;
     };
     const bridge = new StudioDeepWebGpuBridge(engine, viewportRef.current, {
+      preparationTimeoutMs: 180_000,
       authorRenderPacket: async (signal) => (await compileAuthorScene(signal))?.packet,
       authorHlodClusters: async (signal) => (await compileAuthorScene(signal))?.clusters,
       onRuntimeFailure: (reason) => {
@@ -609,15 +619,14 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     const bridge = deepBridgeRef.current;
     const wasmBridge = wasmBridgeRef.current;
     if (!engine || !bridge || !wasmBridge) return;
-    // 描边(outline)仅由作者(WebGL)路径的 EffectComposer 实现;放行会在 Deep 包内以密码式
-    // "Material effect ledger mismatch"崩溃。与发布链 preserve-authored-effects 同语义:保留
-    // WebGL 并给出可操作原因,用户关闭描边后即可切换。
-    if (rendererBackend === "webgpu" && rendererOutlineRequired) {
+    // 对象级描边已由 Deep(WebGPU)实现(材质账本 bit 256 对账 + 掩码/边缘/合成 pass);只有引擎包缺失
+    // 该能力声明时才保留 WebGL 并给出可操作原因(fail-closed),用户关闭描边后即可切换。
+    if (rendererBackend === "webgpu" && rendererOutlineRequired && !deepSupportsObjectOutline()) {
       setRendererBackend("webgl");
       setRendererActiveBackend("webgl");
       setRendererSwitchPhase("failed");
-      setRendererSwitchMessage("场景包含描边(outline)效果，Deep 渲染路径尚未支持；已保留 WebGL，关闭描边后可切换");
-      setMessage("已保留 WebGL：描边效果暂不支持 Deep 渲染路径");
+      setRendererSwitchMessage("场景包含描边(outline)效果，当前 Deep 引擎不具备描边能力；已保留 WebGL，关闭描边后可切换");
+      setMessage("已保留 WebGL：当前 Deep 引擎不具备描边能力");
       return;
     }
     const actuallyActive = engine.getAuthorRendererBackend() === "webgl"
@@ -668,7 +677,9 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
         catch (reason) { showError(reason); }
         setRendererSwitchPhase("idle");
         setRendererSwitchMessage(undefined);
-        setMessage(`${rendererBackendLabel(result.activeBackend)} 已启用`);
+        setMessage(result.activeBackend === "webgpu" && deformationNoticeRef.current
+          ? `${rendererBackendLabel(result.activeBackend)} 已启用 · ${deformationNoticeRef.current}`
+          : `${rendererBackendLabel(result.activeBackend)} 已启用`);
       } else if (result.status === "failed") {
         finishLoading();
         const persistFallback = rendererPreferenceCommitRef.current === rendererBackend;

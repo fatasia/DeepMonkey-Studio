@@ -50,3 +50,32 @@ it("compact mode keeps only the model picker and shows reasoning only when the m
   state.cursor = 0;
   expect(AssistantModelControls({ locale: "zh-CN", mode: "sql", value: {}, onChange: vi.fn(), compact: true })).toBeNull();
 });
+it("compact mode offers Auto only when allowed and configured, shows the actual route, and preserves it across effort changes", () => {
+  state.catalog.routing = { autoAvailable: true, fastModel: "mini", strongModel: "primary" };
+  const onChange = vi.fn();
+  const selects = (value: any, extra: Record<string, unknown> = {}) => { state.cursor = 0; return walk(AssistantModelControls({ locale: "zh-CN", mode: "platform", value, onChange, compact: true, ...extra })); };
+  const options = (nodes: ReturnType<typeof walk>) => nodes.filter(node => node.type === "option").map(node => node.props.value);
+  expect(options(selects({}))).not.toContain("__auto__");
+  const offered = selects({}, { allowAuto: true });
+  expect(options(offered).slice(0, 3)).toEqual(["", "__auto__", "other"]);
+  const picker = offered.find(node => node.props["aria-label"] === "会话模型")!;
+  picker.props.onChange({ target: { value: "__auto__" } });
+  expect(onChange).toHaveBeenLastCalledWith({ routing: "auto" });
+  picker.props.onChange({ target: { value: "" } });
+  expect(onChange).toHaveBeenLastCalledWith({});
+  const active = selects({ routing: "auto" }, { allowAuto: true, lastRoute: { mode: "auto", tier: "fast", model: "mini", reason: "simple-question" } });
+  const activePicker = active.find(node => node.props["aria-label"] === "会话模型")!;
+  expect(activePicker.props.value).toBe("__auto__");
+  expect(activePicker.props.title).toContain("mini");
+  expect(active.find(node => node.type === "option" && node.props.value === "__auto__")!.props.children).toBe("自动 · mini");
+  active.find(node => node.props["aria-label"] === "会话思考档位")!.props.onChange({ target: { value: "deep" } });
+  expect(onChange).toHaveBeenLastCalledWith({ routing: "auto", reasoningEffort: "deep" });
+});
+
+it("drops a stale Auto choice when the service no longer offers it", () => {
+  const onChange = vi.fn();
+  state.cursor = 0;
+  AssistantModelControls({ locale: "zh-CN", mode: "platform", value: { routing: "auto", reasoningEffort: "deep" }, onChange, compact: true, allowAuto: true });
+  state.effects.at(-1)?.();
+  expect(onChange).toHaveBeenCalledWith({ reasoningEffort: "deep" });
+});

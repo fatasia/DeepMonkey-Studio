@@ -58,26 +58,32 @@ describe("AssistantService", () => {
     expect(response.reliability?.verification).toBe("limited");
   });
 
-  it.each(["complete", "stream"] as const)("reports actual final-context truncation through %s evidence", async (method) => {
+  it.each(["complete", "stream"] as const)("compresses over-budget context by priority through %s and discloses what was trimmed", async (method) => {
     const runtime = await host();
     const service = createAssistantService(runtime.registry);
-    const request = { mode: "scene" as const, question: "解释场景", context: { records: "数".repeat(90_000), later: "UNSENT_SOURCE" }, settings, principal: "operator" };
+    const request = { mode: "scene" as const, question: "解释场景", context: { records: "数".repeat(90_000), later: "KEPT_SMALL_SOURCE" }, settings, principal: "operator" };
     let response;
     if (method === "complete") response = await service.complete(request);
     else for await (const event of service.stream(request)) if (event.type === "done") response = event.result;
-    const warning = response?.reliability?.warnings.find((item) => item.startsWith("上下文已截断："));
-    expect(warning).toContain("仅前 80000 个发送给模型");
-    expect(runtime.observedRequest()?.input).toContain(warning!);
-    expect(runtime.observedRequest()?.input).not.toContain("UNSENT_SOURCE");
-    expect(runtime.observedRequest()?.input).not.toContain("asset.health.score");
+    const warning = response?.reliability?.warnings.find((item) => item.startsWith("上下文已按"));
+    expect(warning).toContain("24000 字符预算压缩");
+    const input = runtime.observedRequest()?.input ?? "";
+    expect(input.length).toBeLessThan(24_000);
+    // 语义安全：发送的上下文仍是完整合法 JSON，被缩减处带截断标记，不会切在结构中间。
+    const sent = JSON.parse(input.slice("当前上下文：".length, input.indexOf("\n\n用户问题：")));
+    expect(sent.records).toContain("已截断");
+    expect(sent.later).toBe("KEPT_SMALL_SOURCE");
+    expect(sent.contextBudget.trimmed).toContainEqual(expect.objectContaining({ id: "records", action: "shrunk" }));
+    expect(input).toContain("asset.health.score");
+    expect(input).not.toContain("assetId");
     expect(response?.reliability?.verification).toBe("limited");
-    expect(response?.reliability?.contextDelivery?.sources).toContainEqual(expect.objectContaining({ id: "capability-catalog", status: "omitted", sentChars: 0 }));
+    expect(response?.reliability?.contextDelivery?.budget).toMatchObject({ budgetChars: 24_000 });
+    expect(response?.reliability?.contextDelivery?.budget?.trimmed).toContainEqual(expect.objectContaining({ id: "records", action: "shrunk" }));
   });
-
   it("discovers capability plugins without treating discovery as execution evidence", async () => {
     const runtime = await host();
     const service = createAssistantService(runtime.registry);
-    await expect(service.complete({ mode: "platform", question: "设备怎么样", context: {}, settings, principal: "operator" })).resolves.toMatchObject({
+    await expect(service.complete({ mode: "platform", question: "设备健康评分能力的输入参数是什么", context: {}, settings, principal: "operator" })).resolves.toMatchObject({
       text: "基于证据的回答",
       reliability: { verification: "unverified", inputRisk: "low", contextTrust: "client-snapshot", evidenceCount: 0, writePolicy: "read-only" },
     });
@@ -320,10 +326,10 @@ describe("AssistantService", () => {
     const runtime = await host({ complete: async () => ({ text: "记录与 EQ-9900 相关。", model: "test-model" }) });
     const response = await createAssistantService(runtime.registry).complete({
       mode: "scene", question: "盘点",
-      context: { records: "数".repeat(90_000), later: { tag: "EQ-9900" } },
+      context: { records: `${"数".repeat(90_000)} EQ-9900` },
       settings, principal: "operator",
     });
-    // 尾部来源被截断、模型从未见过：零锚 + K2 既有未命中警示照常披露。
+    // 尾部被预算器截断、模型从未见过：零锚 + K2 既有未命中警示照常披露。
     expect(response.reliability?.citations).toBeUndefined();
     expect(response.reliability?.warnings.some((item) => item.includes("EQ-9900"))).toBe(true);
   });

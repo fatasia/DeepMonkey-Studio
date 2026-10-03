@@ -249,7 +249,23 @@ export class PbrRenderer {
     this.deviceEpoch?.assertCurrent(this.session.device); this.splats?.clear(); this.historyDirty = true;
   }
   /** 首帧验证通过后由宿主调用：放行背景 main 变体排队，避免与首帧争抢设备。 */
-  releaseBackgroundPipelines(): void { this.releasePipelines?.(); }
+  releaseBackgroundPipelines(): void { this.releasePipelines?.(); this.scheduleOutlinePrewarm(); }
+  /** 就绪后的空闲时刻预编译描边管线(无描边场景也只付一次后台编译,换取首次出现描边零卡顿)。 */
+  private scheduleOutlinePrewarm(): void {
+    if (this.outlinePrewarmScheduled) return;
+    this.outlinePrewarmScheduled = true;
+    const run = () => { this.outlinePrewarmHandle = undefined; if (this.session.state === "ready") void this.postProcess.prewarmInstanceOutline(); };
+    const idle = (globalThis as { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number }).requestIdleCallback;
+    this.outlinePrewarmHandle = typeof idle === "function"
+      ? { kind: "idle", id: idle.call(globalThis, run, { timeout: 2000 }) }
+      : { kind: "timeout", id: setTimeout(run, 250) as unknown as number };
+  }
+  private cancelOutlinePrewarm(): void {
+    const handle = this.outlinePrewarmHandle; this.outlinePrewarmHandle = undefined;
+    if (!handle) return;
+    if (handle.kind === "idle") (globalThis as { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(handle.id);
+    else clearTimeout(handle.id);
+  }
   static async create(canvas: HTMLCanvasElement, gpu: GPU | undefined, signal: AbortSignal, options: PbrRendererOptions = {}): Promise<PbrRenderer> {
     if (typeof performance !== "undefined") performance.mark("deep-webgpu:device-open-start");
     const session = await DeviceSession.open(canvas, gpu, signal, options.deviceMemoryBudgetBytes, options.recovery,
@@ -265,6 +281,7 @@ export class PbrRenderer {
       if (renderer.outputs.ready) await abortableGpu(renderer.outputs.ready, signal, "HDR display preparation cancelled.");
       deviceEpoch.assertCurrent(session.device);
       if (signal.aborted) throw new DOMException("GPU preparation cancelled", "AbortError");
+      renderer.scheduleOutlinePrewarm();
       return renderer;
     } catch (error) { renderer.dispose(); throw error; }
   }
@@ -278,6 +295,9 @@ export class PbrRenderer {
   }
   async setPacketValidated(packet: RenderPacket, signal?: AbortSignal): Promise<void> {
     this.deviceEpoch?.assertCurrent(this.session.device);
+    // 含变形的候选必须等待延迟创建的变形变体,而这些变体只在首帧验证后的 release 才开始创建:
+    // 首次发布即带变形(独立包路径的蒙皮/形变资产)会自锁,因此此处提前放行(幂等)。
+    if (packet.deformation !== undefined || packet.instances.some(instance => instance.pose !== undefined)) this.releasePipelines?.();
     if (await this.packets.setValidated(packet, signal)) { this.sceneChanged(); this.syncProbeClipmapSurfaces(packet); }
     this.virtualTextures?.syncTextures(packet.textures ?? []);
   }
@@ -1019,6 +1039,8 @@ export class PbrRenderer {
     });
   }
   dispose(): void {
+    // 拆除测试以裸 this 调用 dispose;可选调用保持其不依赖新增私有方法。
+    this.cancelOutlinePrewarm?.();
     this.probeClipmap?.dispose();
     this.probeRadianceProducer?.dispose();
     this.probeRadianceProducer = undefined;
@@ -1036,6 +1058,8 @@ export class PbrRenderer {
       () => this.cameraHistory.reset(), () => this.session.dispose()]);
   }
   private sceneChanged(): void { this.shadowDirty = true; this.historyDirty = true; }
+  private outlinePrewarmScheduled = false;
+  private outlinePrewarmHandle: { kind: "idle" | "timeout"; id: number } | undefined;
 }
 
 const probeClipmapDeviceEpochs = new WeakMap<object, string>();

@@ -15,6 +15,7 @@ import {
   ClipboardList,
   FileCheck2,
   History,
+  Layers,
   LoaderCircle,
   Map,
   PauseCircle,
@@ -57,6 +58,9 @@ import {
   shouldReportPollFailure,
 } from "../ai/agentRunPolling";
 import { ServerRequestError } from "@bim-studio/server-sdk";
+import { SCENE_EDIT_DEFAULT_CORRECTIONS, SCENE_EDIT_MAX_CORRECTIONS, type SceneEditPort } from "../ai/sceneEditSession";
+import { useSceneEditLoop } from "../hooks/useSceneEditLoop";
+import { SceneEditLoopCard } from "./SceneEditLoopCard";
 
 const DEFAULT_BUDGET = { maxSteps: 10, maxToolCalls: 6, maxDurationMs: 90_000 };
 
@@ -65,6 +69,8 @@ export function IndustrialAgentWorkspace(props: {
   projectId?: string;
   context: unknown;
   surface?: "assistant" | "script";
+  /** 仅 Studio 提供:场景改动闭环端口(差异预览→应用→验证→撤销)。 */
+  sceneEdit?: SceneEditPort;
   onBack?: () => void;
 }) {
   const { locale, projectId, context, surface = "assistant" } = props;
@@ -83,6 +89,9 @@ export function IndustrialAgentWorkspace(props: {
   const [generalAvailable, setGeneralAvailable] = useState(false);
   const [discovery, setDiscovery] = useState<"curated" | "general">("curated");
   const [modeSaving, setModeSaving] = useState(false);
+  const [sceneEditOn, setSceneEditOn] = useState(false);
+  const [maxCorrections, setMaxCorrections] = useState(SCENE_EDIT_DEFAULT_CORRECTIONS);
+  const sceneLoop = useSceneEditLoop(props.sceneEdit, projectId);
   // H-C5-K11：恢复失败与跨项目运行显式可见，不再只有一句泛化提示或静默丢弃。
   const [recoveryFailure, setRecoveryFailure] = useState<{ runId: string; notFound: boolean; message?: string }>();
   const [crossProject, setCrossProject] = useState<{ runId: string; projectId: string }>();
@@ -97,6 +106,11 @@ export function IndustrialAgentWorkspace(props: {
   useEffect(() => () => { requestEpoch.current += 1; }, []);
   const t = (zh: string, en: string) => tr(locale, zh, en);
   const preview = useMemo(() => selectedToolPreview(tools, selectedToolIds), [selectedToolIds, tools]);
+  const sceneMode = sceneEditOn && Boolean(props.sceneEdit);
+  const runSceneEdit = () => {
+    const text = objective.trim();
+    if (text) void sceneLoop.start({ objective: text, mode: planMode ? "plan" : executionMode, maxCorrections, modelOptions });
+  };
 
   useEffect(() => {
     setCheckpoint(undefined);
@@ -347,7 +361,10 @@ export function IndustrialAgentWorkspace(props: {
         </header>
       )}
 
-      {!checkpoint ? (
+      {sceneLoop.session && !checkpoint ? (
+        <SceneEditLoopCard locale={locale} session={sceneLoop.session} busy={sceneLoop.busy} onApprove={() => void sceneLoop.approve()} onReject={() => void sceneLoop.reject()}
+          onCancel={sceneLoop.cancel} onUndo={() => void sceneLoop.undo()} onNew={() => { sceneLoop.reset(); setObjective(""); }} />
+      ) : !checkpoint ? (
         <div className="industrial-agent-start">
           {/* H-C2/H-C3/K13：记忆、实验档案、历史运行合并为一条折叠行（与对话页上下文组同构），默认收起。 */}
           {projectId && (
@@ -387,19 +404,39 @@ export function IndustrialAgentWorkspace(props: {
                     <option value="autonomous">{t("自主执行", "Autonomous")}</option>
                   </select>
                 </label>
+                {props.sceneEdit && (
+                  <button type="button" className="ai-plan-chip" aria-pressed={sceneEditOn} disabled={busy || sceneLoop.busy}
+                    title={t("让 AI 直接改动当前场景:先预览差异,应用后截图自检,整批可一键撤销。", "Let AI edit the current scene: review the diff, apply, self-check against a screenshot, undo in one step.")}
+                    onClick={() => setSceneEditOn((value) => !value)}>
+                    <Layers size={13} aria-hidden="true" />{t("场景改动", "Scene edit")}
+                  </button>
+                )}
+                {sceneMode && (
+                  <label className="ai-mode-select" title={t("未达成时最多自动修正的轮次(含上限,防止失控)", "Maximum automatic correction rounds when the goal is not met")}>
+                    <select aria-label={t("修正轮次上限", "Correction round limit")} disabled={sceneLoop.busy} value={maxCorrections} onChange={(event) => setMaxCorrections(Number(event.target.value))}>
+                      {Array.from({ length: SCENE_EDIT_MAX_CORRECTIONS + 1 }, (_, n) => <option key={n} value={n}>{t(`修正 ${n} 轮`, ` corrections`)}</option>)}
+                    </select>
+                  </label>
+                )}
                 <AssistantModelControls compact locale={locale} mode="platform" value={modelOptions} onChange={setModelOptions} disabled={busy} />
               </div>
-              <button className="ai-composer-send is-labeled" type="button" aria-label={t("预览并运行", "Review and run")}
-                title={!projectId ? t("请先选择项目", "Select a project first") : selectedToolIds.size === 0 ? t("至少选择一项能力", "Select at least one capability") : t("预览并运行", "Review and run")}
-                disabled={busy || loadingTools || !projectId || !objective.trim() || selectedToolIds.size === 0} onClick={() => void start()}>
-                {busy ? <LoaderCircle className="spin" size={13} /> : <Play size={13} />}
-                {t("运行", "Run")}
+              <button className="ai-composer-send is-labeled" type="button" aria-label={sceneMode ? t("生成改动方案", "Draft scene plan") : t("预览并运行", "Review and run")}
+                title={!projectId ? t("请先选择项目", "Select a project first") : sceneMode ? (props.sceneEdit?.unavailableReason() ?? t("生成可审阅的场景改动方案", "Draft a reviewable scene change plan")) : selectedToolIds.size === 0 ? t("至少选择一项能力", "Select at least one capability") : t("预览并运行", "Review and run")}
+                disabled={sceneMode ? sceneLoop.busy || !projectId || !objective.trim() : busy || loadingTools || !projectId || !objective.trim() || selectedToolIds.size === 0} onClick={() => sceneMode ? runSceneEdit() : void start()}>
+                {(sceneMode ? sceneLoop.busy : busy) ? <LoaderCircle className="spin" size={13} /> : <Play size={13} />}
+                {sceneMode ? t("生成方案", "Draft plan") : t("运行", "Run")}
               </button>
             </div>
           </div>
           <p className={`industrial-agent-risk-line${planMode ? " is-plan" : ""}`} role="status">
             {planMode ? <ClipboardList size={13} aria-hidden="true" /> : <ShieldCheck size={13} aria-hidden="true" />}
-            {planMode
+            {sceneMode
+              ? (planMode
+                ? t("只出计划：生成场景改动与差异预览，不改动场景；确认后才应用。", "Plan only: drafts the scene diff without touching the scene; applies only after you confirm.")
+                : executionMode === "autonomous"
+                  ? t("自主执行：自动应用并以截图/状态自检，未达成时在轮次上限内自动修正；含不可撤销操作仍需确认。", "Autonomous: applies, self-checks against screenshot and state, auto-corrects within the round limit; irreversible actions still need confirmation.")
+                  : t("逐次确认：每一轮改动应用前先审阅差异，整批原子应用、可一键撤销。", "Confirm each: review the diff before every round; applied atomically and undoable in one step."))
+              : planMode
               ? t("只出计划：仅保留读取与分析工具，仿真、写入与控制调用会被拒绝并记录审计。", "Plan only: read and analyze tools only; simulate, write and control calls are rejected and audited.")
               : executionMode === "autonomous" && preview.highRiskCount
                 ? t(`${preview.highRiskCount} 项高风险能力在授权内自动执行（可随时取消，审计与验证不变）`, `${preview.highRiskCount} high-risk capabilities auto-execute within authorization (cancellable; audit and verification unchanged)`)
@@ -407,12 +444,12 @@ export function IndustrialAgentWorkspace(props: {
                   ? t(`${preview.highRiskCount} 项高风险能力仅在用户逐次确认后执行`, `${preview.highRiskCount} high-risk capabilities require per-action confirmation`)
                   : t("当前能力不会直接写入或控制现场", "Selected capabilities do not write to or control the site")}
           </p>
-          {!objective.trim() && (
+          {!objective.trim() && !sceneMode && (
             <AgentObjectiveExamplesRow locale={locale} tools={tools} busy={busy} loading={loadingTools}
               hasProject={Boolean(projectId)} canSample={tools.some(tool => tool.effect === "read" && !tool.requiresApproval)}
               onSample={() => void start(true)} onPick={(item) => setObjective(item)} />
           )}
-          <AgentCapabilityPreview
+          {!sceneMode && <AgentCapabilityPreview
             locale={locale}
             tools={tools}
             selectedToolIds={selectedToolIds}
@@ -422,9 +459,9 @@ export function IndustrialAgentWorkspace(props: {
               if (next.has(id)) next.delete(id); else next.add(id);
               return next;
             })}
-          />
+          />}
           {/* H-autonomy 要素④：通用开发发现面（服务端开关开启才可见；切换重取工具面）。 */}
-          {generalAvailable && (
+          {generalAvailable && !sceneMode && (
             <button type="button" className="ai-plan-chip industrial-agent-discovery" aria-pressed={discovery === "general"} disabled={loadingTools}
               title={t("按授权发现全部已注册能力（策划环之外仍受授权与拒绝清单收口）。", "Discover all registered capabilities by authorization; still bounded by scope and deny list.")}
               onClick={() => void changeDiscovery(discovery === "general" ? "curated" : "general")}>

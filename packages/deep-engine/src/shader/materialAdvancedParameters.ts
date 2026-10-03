@@ -25,8 +25,8 @@ export interface MaterialVolumeParameters {
   readonly thickness: number;
   /** Beer-Lambert 衰减色,(0,1];three `attenuationColor`。 */
   readonly attenuationColor: Rgb;
-  /** 衰减距离;Infinity = 不衰减(three 默认)。 */
-  readonly attenuationDistance: number;
+  /** 衰减距离;缺省/Infinity = 不衰减(three 默认)。缺省形态可经 JSON 往返。 */
+  readonly attenuationDistance?: number | undefined;
 }
 
 export interface AdvancedMaterialParameters {
@@ -38,7 +38,7 @@ export interface AdvancedMaterialParameters {
 export interface NormalizedAdvancedMaterialParameters {
   readonly sheen: MaterialSheenParameters;
   readonly iridescence: MaterialIridescenceParameters;
-  readonly volume: MaterialVolumeParameters;
+  readonly volume: Required<MaterialVolumeParameters>;
 }
 
 export const DEFAULT_ADVANCED_MATERIAL_PARAMETERS: NormalizedAdvancedMaterialParameters = Object.freeze({

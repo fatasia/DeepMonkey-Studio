@@ -9,7 +9,8 @@ export class WorldRuntimeError extends Error {
       | "invalid-action"
       | "object-not-found"
       | "limit-exceeded"
-      | "snapshot-corrupt",
+      | "snapshot-corrupt"
+      | "faulted",
     message: string,
   ) {
     super(message);

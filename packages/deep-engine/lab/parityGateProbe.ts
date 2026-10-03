@@ -43,7 +43,7 @@ async function runDeepFrame(spec: ParityScene, signal: AbortSignal, errors: stri
       frameCapture: { session: new FrameCaptureSession(), readbacks: { requests: [{ resourceId: "present-color" }] } },
       ...(spec.environment ? { environment: { kind: "radiance-hdr" as const, image: spec.environment, ...(spec.environmentOptions ? { options: spec.environmentOptions } : {}) } } : {}),
       features: { toneMapping: DEFAULT_DISPLAY_CONTRACT.toneMapping.operator, environment: spec.environment !== undefined, groundPlane: false, groundGrid: false, fog: false,
-        ambientOcclusion: false, temporalAa: false, spatialAa: spec.post?.antialias === true, occlusionCulling: false, bloom: spec.post?.bloom !== undefined, vignette: false } } }));
+        ambientOcclusion: false, contactShadows: false, temporalAa: false, spatialAa: spec.post?.antialias === true, occlusionCulling: false, bloom: spec.post?.bloom !== undefined, vignette: false } } }));
   let device: GPUDevice | undefined, scopes = 0;
   try {
     if (!(backend.runtime instanceof PbrRenderer)) throw Error("Parity gate requires the formal production PbrRenderer");

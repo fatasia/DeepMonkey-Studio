@@ -1,6 +1,7 @@
 /**
  * 助手 prompt 组成统计：用真实能力注册表 + 典型场景快照，输出各部分字符数与占比。
- * 运行：cd apps/api && node --conditions=development --import tsx scripts/measureAssistantPrompt.ts
+ * 运行：cd apps/api && node --conditions=development --import tsx scripts/measureAssistantPrompt.ts [question]
+ * 输出两段：BEFORE = 旧管线（客户端键序 + 目录全量置尾 + 80k 前缀截断）；AFTER = 预算器（默认 24k，AI_CONTEXT_BUDGET_CHARS 可调）。
  * 平台快照与对话为按真实基数合成的固定样本（见 sampleContext），能力目录取自真实注册表。
  */
 import { mkdtemp, rm } from "node:fs/promises";
@@ -9,6 +10,7 @@ import { OperationsService } from "../src/operations.js";
 import { createIndustrialCapabilityHost } from "../src/industrialCapabilities.js";
 import { assistantPrompts } from "../src/ai/assistantPrompts.js";
 import { prepareAiInput, reliabilitySystemBoundary } from "../src/ai/aiReliabilityPolicy.js";
+import { prioritizeContextForScan } from "../src/ai/assistantContextBudget.js";
 
 function sampleContext() {
   const model = (i: number) => ({ id: `model-${i}`, name: `维护预测模型 ${i}`, version: "1.2.0", algorithm: "gradient-boosting", engine: "onnx", status: "active", benchmarkOnly: false, productionEligible: true, trainRows: 120000, validationRows: 30000, metrics: { auc: 0.91, f1: 0.84, rmse: 0.12 }, updatedAt: "2026-10-01T08:00:00.000Z" });
@@ -37,6 +39,7 @@ function sampleContext() {
   };
 }
 
+const question = process.argv[2] ?? "当前 AGV-17 的状态怎么样？最近的实验结论对节拍有什么影响？";
 const directory = await mkdtemp(path.join(process.cwd(), ".measure-"));
 try {
   const operations = new OperationsService(directory);
@@ -48,19 +51,27 @@ try {
   }));
   const aiProvider = { id: "ai.openai-compatible", version: "1.0.0", label: "OpenAI 兼容模型", execution: "in-process", permissions: ["ai.invoke"], streaming: true, timeoutMs: 90_000 };
   const base = sampleContext();
-  const question = "当前 AGV-17 的状态怎么样？最近的实验结论对节拍有什么影响？";
-  const prepared = prepareAiInput(question, base);
+  const report = (title: string, system: string, user: string, context: Record<string, unknown>, sentChars: number) => {
+    const total = system.length + user.length;
+    console.log(`\n== ${title}: 能力数=${catalog.length} 总提示=${total} 字符（系统 ${system.length} + 用户 ${user.length}），上下文 JSON=${JSON.stringify(context).length}，实际发送上下文=${sentChars}`);
+    for (const [key, value] of Object.entries(context)) console.log(`  context.${key.padEnd(26)} ${String(JSON.stringify(value).length).padStart(7)}  ${(JSON.stringify(value).length / total * 100).toFixed(1)}%`);
+    const platform = context.platform as Record<string, unknown> | undefined;
+    if (platform) for (const [key, value] of Object.entries(platform)) console.log(`    platform.${key.padEnd(22)} ${String(JSON.stringify(value).length).padStart(7)}`);
+  };
+  // BEFORE：旧管线
+  const legacyPrepared = prepareAiInput(question, base);
+  const legacyContext = { ...(legacyPrepared.context as Record<string, unknown>), availableCapabilities: catalog, aiProvider };
+  const legacySerialized = JSON.stringify(legacyContext);
+  const boundary = reliabilitySystemBoundary(legacyPrepared.assessment);
+  const legacySystem = `你是工业数字孪生平台助手。当前模式：platform。${boundary}`;
+  report("BEFORE（旧管线，80k 前缀截断）", legacySystem, `${legacyPrepared.question}\n\n当前上下文：${legacySerialized.slice(0, 80_000)}`, legacyContext, Math.min(80_000, legacySerialized.length));
+  // AFTER：预算器管线（与 assistantService.prepareRequest 同序）
+  const prepared = prepareAiInput(question, prioritizeContextForScan(base));
   const context = { ...(prepared.context as Record<string, unknown>), availableCapabilities: catalog, aiProvider };
   const prompts = assistantPrompts("platform", prepared.question, context);
-  const total = prompts.systemPrompt.length + reliabilitySystemBoundary(prepared.assessment).length + prompts.userPrompt.length;
-  const parts: Array<[string, number]> = [["系统指令(含可靠性边界)", prompts.systemPrompt.length + reliabilitySystemBoundary(prepared.assessment).length], ["当前问题", prepared.question.length]];
-  for (const [key, value] of Object.entries(context)) parts.push([`context.${key}`, JSON.stringify(value).length]);
-  console.log(JSON.stringify({ capabilityCount: catalog.length, totalChars: total, contextChars: JSON.stringify(context).length, sent: prompts.contextSentChars }));
-  for (const [name, size] of parts) console.log(`${name.padEnd(34)} ${String(size).padStart(7)}  ${(size / total * 100).toFixed(1)}%`);
-  const platform = (context as { platform?: Record<string, unknown> }).platform ?? {};
-  for (const [key, value] of Object.entries(platform)) console.log(`  platform.${key.padEnd(24)} ${String(JSON.stringify(value).length).padStart(7)}`);
-  const perCapability = catalog.map((item) => ({ id: item.id, schema: JSON.stringify(item.inputSchema).length })).sort((a, b) => b.schema - a.schema);
-  console.log("catalog schema total", perCapability.reduce((sum, item) => sum + item.schema, 0), "top", JSON.stringify(perCapability.slice(0, 5)));
+  report("AFTER（预算器，默认 24k）", `${prompts.systemPrompt}\n${boundary}`, prompts.userPrompt, (prompts.budgetedContext ?? context) as Record<string, unknown>, prompts.contextSentChars);
+  console.log("  裁剪回执:", JSON.stringify(prompts.budget?.trimmed.map(({ id, action, fromChars, toChars }) => `${id}:${action}:${fromChars}->${toChars}`)));
+  console.log("  警告:", prompts.contextWarning ?? "(无)");
 } finally {
   await rm(directory, { recursive: true, force: true });
 }

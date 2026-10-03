@@ -41,6 +41,8 @@ import { registerResultExportRoutes } from "./resultExportRoutes.js";
 import { registerUnityResourceRoutes } from "./unityResourceRoutes.js";
 import { createIndustrialCapabilityHost, registerIndustrialCapabilityRoutes } from "./industrialCapabilities.js";
 import { registerMcpCapabilityRoute } from "./mcpCapabilityAdapter.js";
+import { registerWorldApiRoutes } from "./worldApiRoutes.js";
+import { WorldSessionManager } from "@bim-studio/world-runtime";
 import { EditorPresenceRegistry, registerEditorPresenceRoutes } from "./editorPresence.js";
 import { EditorSceneTransactionBridge, registerEditorSceneDriverRoutes } from "./mcpEditorSceneTransactionBridge.js";
 import { EditorSnapshotFetchBridge } from "./editorSnapshotFetchBridge.js";
@@ -51,6 +53,7 @@ import { createAiTelemetryRing } from "./ai/aiRequestTelemetry.js";
 import { createIndustrialAgentRuntime } from "./ai/industrialAgentRuntime.js";
 import { registerIndustrialAgentRoutes } from "./ai/industrialAgentRoutes.js";
 import { registerAgentMemoryRoutes } from "./ai/agentMemoryRoutes.js";
+import { registerSceneEditAuditRoutes } from "./ai/sceneEditAuditRoutes.js";
 import { ProvenanceLedgerStore } from "./ai/provenanceLedger.js";
 import { SimulationStudyTaskStore } from "./ai/simulationStudyTasks.js";
 import { createGoldenVerifyProvider } from "./ai/simulationHypothesisPlugin.js";
@@ -115,12 +118,17 @@ export async function buildApp() {
   // H-C4-P0 本体包存储：数据中心"语义与本体"工作区持久层（原子写 + 发布快照/回滚）。
   const ontologyPackages = new OntologyPackageStore(config.dataDir);
   await ontologyPackages.init();
+  // World API v1：进程内确定性世界会话（并发/内存/空闲回收配额见 WorldSessionManager）。
+  const worldSessions = new WorldSessionManager();
+  worldSessions.startSweeper();
   const industrialCapabilities = await createIndustrialCapabilityHost(operations, {
     aiSettings: () => resolveAiSettings(store),
     dataQuerySource,
     conversionTasks,
     provenanceLedger,
     studyTasks,
+    worldSessions,
+    ...(store.addAuditLog ? { addAuditLog: store.addAuditLog.bind(store) } : {}),
   });
   const editorPresence = new EditorPresenceRegistry();
   const industrialAgent = await createIndustrialAgentRuntime({
@@ -265,7 +273,9 @@ export async function buildApp() {
   await registerIndustrialCapabilityRoutes(app, { store, host: industrialCapabilities, dataQuerySource });
   await registerIndustrialAgentRoutes(app, { store, runtime: industrialAgent });
   await registerAgentMemoryRoutes(app, { store, memory: industrialAgent.memory, audit: aiAudit });
+await registerSceneEditAuditRoutes(app, { store, audit: aiAudit });
   await registerProvenanceRoutes(app, { store, ledger: provenanceLedger });
+  await registerWorldApiRoutes(app, { store, host: industrialCapabilities, sessions: worldSessions });
   await registerAiSampleRoutes(app, { store });
   await registerModeling3dRoutes(app, { store });
   await registerMcpCapabilityRoute(app, { store, host: industrialCapabilities, editorPresence, editorSceneTransactions, editorSnapshotFetch });
@@ -298,6 +308,7 @@ export async function buildApp() {
     maintenanceScheduler.stop();
     vision.stop();
     studyTasks.dispose();
+    worldSessions.dispose();
   });
   return { app, config };
 }

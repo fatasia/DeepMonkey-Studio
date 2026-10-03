@@ -38,7 +38,7 @@ function material(input: unknown, path: string, browserProfile: boolean): PbrMat
   // I-C23:layered 是双端字段(Web 消费 + Native 生产消费),两个 profile 都
   // 走同一 fail-closed 校验;extendedParameters 仍是 Browser-only(native
   // stock 光照核不评扩展 lobe,native 包携带它会被 Rust 契约拒绝)。
-  const optional = browserProfile ? [...MATERIAL_OPTIONAL, "extendedParameters", "layered"]
+  const optional = browserProfile ? [...MATERIAL_OPTIONAL, "extendedParameters", "layered", "advancedParameters"]
     : [...MATERIAL_OPTIONAL, "layered"];
   fields(value, ["id", "baseColor", "metallic", "roughness"], optional, path);
   const extensions = browserProfile ? browserMaterialExtensions(value, path)

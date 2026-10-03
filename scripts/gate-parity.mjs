@@ -60,7 +60,7 @@ try {
   assert.deepEqual(errors, [], "page errors"); assert.deepEqual(rounds[0].errors, []);
   const run = rounds[0], stable = JSON.stringify(rounds[0].scenarios) === JSON.stringify(rounds[1].scenarios);
   const scenarios = run.scenarios.map(scenario => ({ id: scenario.id, drawCalls: { three: scenario.three.drawCalls, deep: scenario.deep.drawCalls },
-    triangles: { three: scenario.three.triangles, deep: scenario.deep.triangles }, deepShadow: { tier: scenario.deep.shadowTier, mapSize: scenario.deep.shadowMapSize },
+    triangles: { three: scenario.three.triangles, deep: scenario.deep.triangles }, threeMsaaSamples: scenario.three.msaaSamples ?? null, deepShadow: { tier: scenario.deep.shadowTier, mapSize: scenario.deep.shadowMapSize },
     metrics: measureFrame({ width: run.width, height: run.height, three: scenario.three.display, deep: scenario.deep.display, threeHdr: scenario.three.hdr, deepHdr: scenario.deep.hdr }) }));
   await page.evaluate(({ run, scenarios }) => {
     const host = document.querySelector("#frames");

@@ -43,6 +43,9 @@ export class PathTraceParallelRender {
   private elapsed = 0;
   private stopRequested = false;
   private released = false;
+  private roundWallMs = 0;
+  private computeMs = 0;
+  private previewMs = 0;
 
   constructor(readonly prepared: PathTraceAuthorPrepared, createWorker: () => PathTraceBandWorker,
     private readonly options: PathTraceParallelOptions) {
@@ -73,7 +76,8 @@ export class PathTraceParallelRender {
   requestStop(): void { this.stopRequested = true; }
 
   async run(signal: AbortSignal, onProgress: (progress: PathTraceParallelProgress) => void): Promise<void> {
-    const interval = this.options.previewIntervalMs ?? 250;
+    const baseInterval = this.options.previewIntervalMs ?? 250;
+    let interval = baseInterval;
     try {
       await Promise.all(this.bands.map((rows, index) => this.call(index,
         { kind: "init", prepared: this.prepared, rows, brightnessFloor: this.resolved.brightnessFloor })));
@@ -82,13 +86,15 @@ export class PathTraceParallelRender {
       while (!this.converged && this.session.sampleCount < this.resolved.maxSamples
         && !(this.stopRequested && this.session.sampleCount >= 1)) {
         signal.throwIfAborted();
-        const wantPreview = this.now() - lastPreview >= interval;
+        const roundStart = this.now(), wantPreview = roundStart - lastPreview >= interval;
         const replies = await Promise.all(this.bands.map((_, index) => this.call(index, { kind: "step", preview: wantPreview })));
         signal.throwIfAborted();
-        let frame = 0, noise = 0;
+        this.roundWallMs += this.now() - roundStart;
+        let frame = 0, noise = 0, previewCost = 0;
         replies.forEach((reply, index) => {
           if (reply.kind !== "stepped") throw new Error("物理出图线程返回了意外消息。");
           frame += reply.brightness; noise = Math.max(noise, reply.noise);
+          this.computeMs += reply.computeMs; previewCost = Math.max(previewCost, reply.previewMs);
           if (reply.rgba) this.mergeRgba(index, reply.rgba);
         });
         const outcome = this.session.advanceBatch({ samples: 1, brightnessSum: frame, brightnessSumSq: frame * frame,
@@ -96,6 +102,7 @@ export class PathTraceParallelRender {
         if (outcome.status !== "advanced") throw new Error("物理出图累积被会话拒绝。");
         this.noiseValue = noise; this.elapsed = this.now() - this.startedAt;
         if (wantPreview) {
+          this.previewMs += previewCost; interval = Math.max(baseInterval, previewCost * 6);
           this.rgbaSamples = this.session.sampleCount; lastPreview = this.now();
           onProgress(this.progress(false));
         }
@@ -136,6 +143,8 @@ export class PathTraceParallelRender {
         bandRows: this.bands.map(ranges => ranges.reduce((sum, range) => sum + range.end - range.start, 0)),
         seed: this.prepared.config.sampleSeed ?? 0, transport: "structured-clone" as const,
         crossOriginIsolated: this.options.crossOriginIsolated ?? false,
+        sampleComputeMs: Math.round(this.computeMs), roundWallMs: Math.round(this.roundWallMs), previewMs: Math.round(this.previewMs),
+        efficiency: this.roundWallMs > 0 ? this.computeMs / (this.workerCount * this.roundWallMs) : 0,
         elapsedMs: Math.round(this.elapsed), samplesPerSecond: this.elapsed > 0 ? this.session.sampleCount * 1000 / this.elapsed : 0 }) });
   }
 

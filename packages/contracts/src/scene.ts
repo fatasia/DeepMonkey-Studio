@@ -369,7 +369,8 @@ export interface SceneMaterialState {
   transmission?: number;
   thickness?: number;
   attenuationColor?: string;
-  attenuationDistance?: number;
+  /** 缺省/显式 undefined = 不衰减(three 的无限距离)。 */
+  attenuationDistance?: number | undefined;
   metalness?: number;
   emissive?: string;
   emissiveIntensity?: number;

@@ -17,6 +17,7 @@ import { useAppState } from "./hooks/useAppState";
 import { useSceneHistoryActions } from "./hooks/useSceneHistoryActions";
 import { useApplicationRecovery } from "./hooks/useApplicationRecovery";
 import { useSceneHistoryState } from "./hooks/useSceneHistoryState";
+import type { EditorPrimitiveDeleteAuthoring } from "./studio/editorPrimitiveDeleteAuthoring";
 import { useScenePlayMode, formatPlayEntryNotice, formatPlayExitNotice } from "./hooks/useScenePlayMode";
 import { createRestrictedPlayConsumer, type RestrictedPlayConsumer } from "./scripting/restrictedPlayConsumer";
 import { playTraceStore } from "./scripting/playTraceStore";
@@ -719,21 +720,23 @@ export function App() {
 
   sceneSnapshotFactoryRef.current = makeSnapshot;
 
+  const sceneAuthoring: EditorPrimitiveDeleteAuthoring | undefined = !busy && !playMode.active && !sceneBehaviorActive && !animationPlaying ? {
+    begin: label => {
+      if (sceneHistoryState.sceneEditTransactionRef.current) throw new Error("另一项作者事务尚未结束。");
+      return flushSceneHistoryEdit.beginTransaction(label);
+    },
+    remove: id => sceneHistoryState.runSceneHistoryEdit(() => sceneEditorController.deletePrimitive(id)),
+    restore: async snapshot => {
+      if (!project) throw new Error("项目已卸载，无法恢复删除快照。");
+      sceneHistoryApplyingRef.current = true;
+      try { await applyScene(snapshot, false, project, false, false, false, true); }
+      finally { sceneHistoryApplyingRef.current = false; }
+    },
+  } : undefined;
+
   useAppLifecycleEffects({
     state: appState,
-    sceneAuthoring: !busy && !playMode.active && !sceneBehaviorActive && !animationPlaying ? {
-      begin: label => {
-        if (sceneHistoryState.sceneEditTransactionRef.current) throw new Error("另一项作者事务尚未结束。");
-        return flushSceneHistoryEdit.beginTransaction(label);
-      },
-      remove: id => sceneHistoryState.runSceneHistoryEdit(() => sceneEditorController.deletePrimitive(id)),
-      restore: async snapshot => {
-        if (!project) throw new Error("项目已卸载，无法恢复删除快照。");
-        sceneHistoryApplyingRef.current = true;
-        try { await applyScene(snapshot, false, project, false, false, false, true); }
-        finally { sceneHistoryApplyingRef.current = false; }
-      },
-    } : undefined,
+    sceneAuthoring,
     playModeActive: playMode.active,
     saveActiveApplication,
     saveScene,
@@ -789,6 +792,7 @@ export function App() {
       ...sceneHistoryRef.current.getState(),
       flush: flushSceneHistoryEdit, undo: undoSceneEdit, redo: redoSceneEdit,
     },
+    sceneAuthoring,
     playMode: {
       active: playMode.active,
       enter: () => {

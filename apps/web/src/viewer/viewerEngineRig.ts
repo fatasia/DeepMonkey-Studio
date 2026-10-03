@@ -1,5 +1,6 @@
 import { materialSlotId, readMaterialSlot, sourceMaterialState, mergeMaterialPatch, type SelectionMaterialSlot } from "./materialSlots";
 import { materialIor } from "./materialIor";
+import { readPhysicalLobes } from "./materialPhysicalLobes";
 import * as THREE from "three";
 import type { GlobalLightingState, SceneEnvironmentState, SceneFloorState, SceneIKConstraintState, SceneMaterialState, SceneModelEffectsState, ScenePostProcessingState, SceneRigState, Vector3Value, WeatherMode } from "@bim-studio/contracts";
 import { sceneWeatherFog } from "@bim-studio/contracts";
@@ -240,6 +241,7 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
           ...(typeof standard.roughness === "number" ? { roughness: standard.roughness } : {}),
           ...(typeof standard.metalness === "number" ? { metalness: standard.metalness } : {}),
           ...(materialIor(standard) === undefined ? {} : { ior: materialIor(standard)! }),
+          ...readPhysicalLobes(standard),
           ...(standard.emissive ? { emissive: `#${standard.emissive.getHexString()}`, emissiveIntensity: standard.emissiveIntensity } : {}),
           ...(typeof standard.wireframe === "boolean" ? { wireframe: standard.wireframe } : {}),
           doubleSided: standard.side === THREE.DoubleSide

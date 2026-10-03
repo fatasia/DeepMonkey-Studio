@@ -144,12 +144,14 @@ export function PathTraceAuthorDialog(props: Props) {
     onCancel={event => { event.preventDefault(); close(); }} onClick={event => { if (event.target === event.currentTarget) close(); }}>
     <header><div><small>{text("静帧 · 线性 HDR / sRGB PNG", "Still image · Linear HDR / sRGB PNG")}</small><h2 id="path-trace-title">{text("物理光照出图", "Physical lighting render")}</h2></div>
       <button className="button icon ghost" aria-label={text("关闭", "Close")} onClick={close}><X size={18}/></button></header>
-    <div className="path-trace-body"><div className="path-trace-preview" data-loading={phase === "preparing" || (phase === "accumulating" && !progress) || undefined}
-      style={{ aspectRatio: `${width} / ${pathTraceHeight(width)}` }}>
-      <canvas ref={canvas} hidden={!progress} aria-label={text("路径追踪预览", "Path traced preview")}/>
-      {!progress && <p>{phase === "preparing" ? text("正在编译场景…", "Compiling the scene…") : phase === "accumulating"
-        ? text(`正在启动 ${activeWorkers} 个渲染线程…`, `Starting ${activeWorkers} render threads…`)
-        : text("累积后显示真实光照预览", "Physical lighting appears as samples accumulate")}</p>}
+    <div className="path-trace-body"><div className="path-trace-preview">
+      <div className="path-trace-stage" data-loading={phase === "preparing" || (phase === "accumulating" && !progress) || undefined}
+        style={{ aspectRatio: `${width} / ${pathTraceHeight(width)}` }}>
+        <canvas ref={canvas} hidden={!progress} aria-label={text("路径追踪预览", "Path traced preview")}/>
+        {!progress && <p>{phase === "preparing" ? text("正在编译场景…", "Compiling the scene…") : phase === "accumulating"
+          ? text(`正在启动 ${activeWorkers} 个渲染线程…`, `Starting ${activeWorkers} render threads…`)
+          : text("累积后显示真实光照预览", "Physical lighting appears as samples accumulate")}</p>}
+      </div>
       <small>{text("ACES 预览 · HDR 保留线性辐亮度 · PNG 为 sRGB", "ACES preview · HDR retains linear radiance · PNG is sRGB")}</small>
     </div><div className="path-trace-controls">
       <label>{text("照明模式", "Lighting mode")}<select value={mode} disabled={busy} onChange={event=>setMode(event.target.value as PathTraceAuthorIllumination)}>

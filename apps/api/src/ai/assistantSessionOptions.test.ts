@@ -5,7 +5,7 @@ import { createApiServer } from "../serverOptions.js";
 import { registerSystemRoutes } from "../system.js";
 import type { MetadataStore } from "../store.js";
 import type { AiRuntimeSettings, AssistantRequest, AssistantService } from "./assistantService.js";
-import { assistantSessionCatalog, resolveAssistantSessionOptions } from "./assistantSessionOptions.js";
+import { assistantSessionCatalog, requestedRouting, resolveAssistantSessionOptions } from "./assistantSessionOptions.js";
 import { clearModelCatalogCacheForTests } from "./aiModelCatalog.js";
 
 const settings: AiRuntimeSettings = { providerId: "ai.openai-compatible", baseUrl: "https://models.test/v1", apiKey: "secret-key", model: "primary", protocol: "responses", temperature: .2, reasoningEffort: "deep" };
@@ -78,5 +78,22 @@ describe("assistant session overrides", () => {
         }
       }
     } finally { await app.close(); }
+  });
+});
+
+describe("assistant session routing option", () => {
+  const routed: AiRuntimeSettings = { ...settings, routing: { fastModel: "other", fastMaxQuestionChars: 160, strongKeywords: [] } };
+  it("advertises auto routing only when a distinct, listed fast model is configured", async () => {
+    catalog();
+    expect((await assistantSessionCatalog(settings)).routing).toEqual({ autoAvailable: false, strongModel: "primary" });
+    expect((await assistantSessionCatalog(routed)).routing).toEqual({ autoAvailable: true, strongModel: "primary", fastModel: "other" });
+    expect((await assistantSessionCatalog({ ...routed, routing: { ...routed.routing!, fastModel: "unlisted" } })).routing.autoAvailable).toBe(false);
+  });
+  it("accepts routing=auto without touching settings, and rejects any other routing value", async () => {
+    expect(await resolveAssistantSessionOptions(routed, { routing: "auto" })).toBe(routed);
+    await expect(resolveAssistantSessionOptions(routed, { routing: "turbo" } as never)).rejects.toThrow("路由模式无效");
+    expect(requestedRouting({ routing: "auto" })).toEqual({ routing: "auto" });
+    expect(requestedRouting({ routing: "auto", model: "other" })).toEqual({});
+    expect(requestedRouting({})).toEqual({});
   });
 });

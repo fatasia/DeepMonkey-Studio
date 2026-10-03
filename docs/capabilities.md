@@ -4,14 +4,15 @@ README 只列亮点，这里是目前可用的完整功能清单。清单以代�
 
 ## 模型导入与转换
 
-- 上传 RVT、IFC、STEP/STP、DWG、DXF、GLTF、GLB、FBX。
+- 上传 IFC、STEP/STP、JT、Parasolid X_T、OpenUSD、DXF、GLTF、GLB、FBX；RVT 与 DWG 也可以上传，但没有随包内置的解析链，见下文说明。
+- 工业格式以自研或开源、随包内置、本地离线的解析链为准：JT 9.5 与 10.3 的 LOD0 子集、X_T 的 V24.1 旋转件子集及通用文本解析降级档已内置，JT 8.x 与 X_B 仅做结构检查。未覆盖的 profile 保持检查 / 预览或明确阻断，不借助商业 SDK、云转换或源软件冒充内置能力。逐项登记见[内置 profile 登记表](builtin-profiles.md)。
 - IFC 在浏览器中通过 That Open Components 转为 Fragments；空间结构树可展开到 IFC 构件，并支持拾取、蓝色高亮、显隐、删除、颜色、透明度和属性查看。
 - GLTF/GLB 通过 Three.js 直接加载，支持 `KHR_draco_mesh_compression` Draco 压缩模型。
 - FBX 通过 Three.js FBXLoader 直接加载。
 - STEP/STP 由 `occt-import-js`（Open CASCADE WASM）在 API 转换队列中三角化为 GLB，保留装配/零件目录、名称、颜色和几何统计，不要求安装 CAD 软件。
-- DWG 由 GNU LibreDWG 转为 DXF 后复用基础二维线框查看器，保留常用实体和图层；加载时按 DXF 单位换算为米、选择模型空间并自动归中，避免绝对坐标造成相机漂移；复杂动态块、AEC/Civil 代理对象和高保真文字不在开源链路保证范围内。
+- DWG（部署方自备 GNU LibreDWG 的可选路径，不计入内置能力）转为 DXF 后复用基础二维线框查看器，保留常用实体和图层；加载时按 DXF 单位换算为米、选择模型空间并自动归中，避免绝对坐标造成相机漂移；复杂动态块、AEC/Civil 代理对象和高保真文字不在开源链路保证范围内。
 - DXF 提供基础二维线框加载。
-- RVT 通过自研 C# Revit Worker + Add-in 调用 Revit API；上传时可选“原生 GLB”或“IFC”链路，两种链路复用同一个常驻 Revit 进程。
+- RVT 目前没有内置解析链。仓库保留一条历史路径：自研 C# Revit Worker + Add-in 调用 Revit API，上传时可选“原生 GLB”或“IFC”链路，两种链路复用同一个常驻 Revit 进程。它依赖转换机上已授权的 Revit，不满足“随包内置、本地离线”的口径，不计入内置能力或格式完成度。
 
 ### 转换器输出约定
 
@@ -33,13 +34,14 @@ pnpm dwg:install
 
 脚本从 GNU LibreDWG 官方 GitHub Release 下载到 `tools/libredwg`，API 会自动发现 `dwg2dxf.exe`。已安装到其他目录时，可通过 `.env` 的 `DWG_CONVERTER_COMMAND` 覆盖。LibreDWG 输出的转换警告代表某些高级 DWG 对象可能被跳过；基础 CAD 浏览会继续使用成功生成的 DXF。
 
-场景文件的内容、可移植性和生产路由回退要求见 [场景文件说明](scene-format.md)。DWG 与 STEP 的开源/商业导入路线、许可证影响和推荐架构见 [DWG/STEP 导入调研](dwg-step-import-research.md)。
+场景文件的内容、可移植性和生产路由回退要求见 [场景文件说明](scene-format.md)。工业格式的内置范围和限制见[内置 profile 登记表](builtin-profiles.md)。
 
 ## 项目与场景管理
 
 - 项目可新建、切换、重命名和删除；模型、转换任务和场景状态按项目隔离持久化，一个场景可同时装载多个模型。
 - 独立场景管理页按更新时间倒序排列，支持新建、复制、重命名、保存、删除；导出菜单提供零散 `.scene.json`、包含资源的 `.bimscene`，以及合并当前可见三维对象的 `.glb`。
-- 场景支持直接只读浏览、发布稳定快照、重新发布和撤回；管理中心为 `/manager`，编辑器为 `/studio/:sceneId`，当前保存版浏览为 `/view/:sceneId`，发布版为 `/published/:sceneId`。
+- 新建场景时“初始内容”默认为“示例本体”（底座、立柱和一个点击热点，示例对象名称带“示例”二字，可随时删除），也可以选“空白场景”；项目还提供可一键创建为可编辑副本的内置综合案例。
+- 场景支持直接只读浏览、发布稳定快照、重新发布和撤回；发布对话框可选 WebGL、WebGPU 或云渲染，并可在发布后直接下载 Three WebView 或 Deep Native 的 Windows 单场景客户端；管理中心为 `/manager`，编辑器为 `/studio/:sceneId`，当前保存版浏览为 `/view/:sceneId`，发布版为 `/published/:sceneId`。
 
 ## 场景编辑与浏览
 
@@ -51,7 +53,12 @@ pnpm dwg:install
 - 支持剖切盒、X/Y/Z 轴向剖切、拾取面剖切及方向反转；模型爆炸支持径向、垂直和各轴方向，状态随场景保存。
 - 可为每个已加载模型和正方体单独开启 BVH 三角形硬碰撞检测，返回碰撞构件对和定位点，发生重合时对象显示稳定的红色高光。
 - 轨道浏览、带碰撞和地面跟随的第一人称漫游、带角色跟随镜头的第三人称漫游。
-- GLTF、GLB、FBX 内含的动画可按模型播放或暂停，状态随场景保存。
+- GLTF、GLB、FBX 内含的动画可按模型播放或暂停，状态随场景保存；检查器里的“根运动”开关可把片段的根骨骼位移与旋转应用到模型实例用于预览，并提供复位和保存前提醒。
+- 模型“火焰图层”支持尺寸、不透明度、热度色三条按寿命变化的曲线、叠加或透明排序混合，以及单发射器和场景总量的粒子预算与降级提示。
+- 环境面板的后处理提供体积雾（含步数、密度、高度尺度、各向异性和散射反照率），Deep WebGPU 完整消费，Deep Native 为受限积分，Three WebView 发布时降级为作者雾。
+- 物理以固定 60 Hz 步长确定性推进，不随显示帧率变化。
+- “导出场景 → 物理光照出图”提供 CPU 路径追踪静帧：累积样本、噪声门收敛、导出线性 HDR 与 JSON 回执；多线程并行与 PNG 导出仍在验收。
+- 渲染引擎面板（“更多 → 渲染引擎”）可在兼容模式（WebGL）、Deep WebGPU Beta 与 Deep WASM 之间切换；显示默认值由共享的显示合约统一，`pnpm gate:parity` 在真实 GPU 上对拍 Three 与 Deep 的画面。
 - 场景动画编辑器支持相机轨道与整个模型/立方体的关键帧，提供线性/平滑/曲线插值、播放速度、循环、往返、路径显示和关键帧删除，状态随场景保存。
 - 标签标记可拾取模型表面或地面放置，支持名称、说明、颜色、尺寸、XYZ、显隐、锁定、定位和删除，并随场景保存、导入与导出。
 - 构件可按 BIM 楼层整层显隐，并通过“向上展开”形成楼层分解视图；IFC Fragments 当前保证楼层显隐，逐层位移主要用于原生 GLB/RVT 模型。
@@ -68,18 +75,19 @@ pnpm dwg:install
 ## 数据中心与看板
 
 - 数据中心原生管理 HTTP、WebSocket、MQTT、AMQP、Kafka、CoAP、PostgreSQL、MySQL、Oracle、TDengine、OPC UA、Modbus TCP、BACnet、S7、EtherNet/IP、SNMP、TCP、UDP 和串口连接；Studio 直接绑定清洗后的数据集。
-- Studio 内置 ECharts + GridStack 轻量看板，支持数值、仪表、趋势、面积、柱状、饼图、表格、状态、图片、本地视频、实时监控和网页；图片与视频统一进入项目资源库，RTSP、RTMP、SRT 等浏览器不能直接播放的地址会自动转换为 HLS 或 WebRTC 播放地址。
+- Studio 内置 ECharts + GridStack 轻量看板，支持数值、仪表、趋势、面积、柱状、饼图、表格、状态、图片、本地视频、实时监控和网页；图片与视频统一进入项目资源，RTSP、RTMP、SRT 等浏览器不能直接播放的地址会自动转换为 HLS 或 WebRTC 播放地址。
 - 模型、图层、BIM 构件与二维看板组件共用可信事件脚本，支持加载、点击、鼠标进入/离开和动画开始/结束；脚本可直接访问 Three.js、ViewerEngine 与全部运行时对象。
 - 二维看板保留手填数据键与自动补全，并支持嵌入 HTTP(S) 或站内 URL 网页组件；详细使用与多场景设计见 [看板交互与多场景](interactions-dashboard-and-multiscene.md)。
 
 ## 系统管理
 
-- 内置简化用户与权限：管理员、编辑者、浏览者三种角色，非管理员按项目授权；系统管理页统一查看用户、服务健康度、错误/操作审计和 AI 配置。
+- 内置简化用户与权限：管理员、编辑者、浏览者三种角色，非管理员按项目授权；“设置”页统一查看用户与权限、服务健康、云渲染、通知与推送、审计与日志和 AI 大模型配置。
 - 独立全局设置页可替换 Logo、应用 Icon、系统名、浏览器标题、版权与主题色，并配置默认语言、登录入口、新场景背景/网格和维护模式；该页不出现在系统菜单中，仅管理员可通过 `/branding` 访问。
 
 ## AI 助手
 
 - 支持可验证的 BIM 工程问答、场景问答、当前选中构件问答、只读 SQL 生成/解释，以及根据自然语言生成 ECharts + GridStack 看板方案；BIM 问答会先检索真实构件元数据与空间信息，再计算几何尺寸、坐标和轴对齐净空初筛，结果可直接定位/隔离构件或显示设备试放体；大模型兼容 Responses API 与 Chat Completions，并通过 SSE 流式显示结果。
+- 助手面板分“对话”和“执行任务”两种模式：标题栏的会话下拉切换历史会话，输入框内的“提问范围”与模型下拉决定读取哪些证据和使用哪个模型，“本次上下文”折叠行显示各来源的读取状态；请求失败可重试、换备用模型或改用受控问数。“执行任务”按目标调用白名单能力，执行方式分只出计划、逐次确认和自主执行三档，写入类操作必须确认或授权，并提供执行后的验证证据。
 
 ## 视觉中心
 
@@ -113,7 +121,7 @@ pnpm studio undeploy
 - API: http://localhost:4100
 - 健康检查: http://localhost:4100/health
 
-首次部署的管理员账号与密码均为 `admin`，可通过 `.env` 的 `BIM_STUDIO_ADMIN_PASSWORD` 修改初始密码。登录页勾选“下次自动登录”后使用 30 天签名会话，未勾选时仅在当前浏览器会话保存并于服务重启后失效；生产环境应配置稳定、随机的 `BIM_STUDIO_SESSION_SECRET`。登录后，管理员可从页面右下角“系统”进入用户授权、健康、审计和 AI 配置。AI 也可以直接由 `.env` 初始化：`AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL`、`AI_PROTOCOL`、`AI_TEMPERATURE`；`AI_PROTOCOL` 可设为 `responses`、`chat-completions` 或 `auto`，页面保存后的配置优先于环境变量，API Key 不会回显到浏览器。
+首次部署的管理员账号与密码均为 `admin`，可通过 `.env` 的 `BIM_STUDIO_ADMIN_PASSWORD` 修改初始密码。登录页勾选“下次自动登录”后使用 30 天签名会话，未勾选时仅在当前浏览器会话保存并于服务重启后失效；生产环境应配置稳定、随机的 `BIM_STUDIO_SESSION_SECRET`。登录后，管理员可从“设置”进入用户授权、健康、审计和 AI 配置。AI 也可以直接由 `.env` 初始化：`AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL`、`AI_PROTOCOL`、`AI_TEMPERATURE`；`AI_PROTOCOL` 可设为 `responses`、`chat-completions` 或 `auto`，页面保存后的配置优先于环境变量，API Key 不会回显到浏览器。
 
 ### PostgreSQL 与 MinIO
 

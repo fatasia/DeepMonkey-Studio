@@ -35,6 +35,7 @@ import type { SceneSimulationPanelId } from "../simulation/sceneSimulationRegist
 import type { SimulationDockReservation } from "../simulation/sceneSimulationLayout";
 import { useSceneSimulationOverlay } from "../hooks/useSceneSimulationOverlay";
 import { useScenePlantPlayback } from "../hooks/useScenePlantPlayback";
+import { useSceneEditPort } from "../hooks/useSceneEditPort";
 import type { PlantLitePlaybackFrame } from "../components/plantLitePlaybackModel";
 import { PublishedModelCredits } from "../delivery/PublishedModelCredits";
 import { xrSessionAvailability } from "../rendererCapabilities";
@@ -229,6 +230,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
   const activeSimulationStudy = route.view === "studio" && simulationPanelId && simulationStudy?.model?.sceneBinding?.sceneId === activeScene?.id ? simulationStudy : undefined;
   useEffect(() => { setSimulationStudy(undefined); setSimulationFrame(null); setSimulationTrack(false); setDirectorWorkspace("timeline"); }, [project?.id, activeScene?.id]);
   useScenePlantPlayback(engine, animationOpen && simulationTrack ? activeSimulationStudy?.model : undefined, simulationFrame);
+  const sceneEditPort = useSceneEditPort(controller.bindings, engine);
   const showSimulationStudy = (study: PlantLiteStudyRecord) => {
     if (study.model?.sceneBinding?.sceneId !== activeScene?.id || study.projectId !== project?.id) return;
     setSimulationStudy(study); setSimulationTrack(true); setDirectorWorkspace("timeline"); setAnimationOpen(true);
@@ -531,6 +533,7 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
           locale={locale}
           projectId={project?.id}
           surface="studio"
+          {...(sceneEditPort ? { sceneEdit: sceneEditPort } : {})}
           context={{
             project: project ? { id: project.id, name: project.name } : undefined,
             scene: { id: activeScene?.id, name: sceneName, modelCount: activeScene?.models.length ?? 0 },

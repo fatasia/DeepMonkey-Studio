@@ -4,10 +4,10 @@
 
 ## 分层与模块
 
-- **场景与资源合同**：数据校验、实例、材质与运行包，入口为 `@bim-studio/deep-engine` 和 `/runtime-package`。
-- **资源处理**：glTF/GLB、几何、纹理与调度，入口为 `/gltf`、`/geometry`、`/textures`、`/streaming`。
-- **渲染**：WebGPU 设备、提交、光照、阴影与后处理，入口为 `/webgpu`、`/lighting`、`/shadows`、`/postprocess`。
-- **宿主**：Canvas、帧循环、输入与业务状态，由接入应用持有。
+- 场景与资源合同：数据校验、实例、材质与运行包，入口为 `@bim-studio/deep-engine` 和 `/runtime-package`。
+- 资源处理：glTF/GLB、几何、纹理与调度，入口为 `/gltf`、`/geometry`、`/textures`、`/streaming`。
+- 渲染：WebGPU 设备、提交、光照、阴影与后处理，入口为 `/webgpu`、`/lighting`、`/shadows`、`/postprocess`。
+- 宿主：Canvas、帧循环、输入与业务状态，由接入应用持有。
 
 子路径均以 `@bim-studio/deep-engine` 为前缀。通过包的 exports 导入，不依赖 `src/` 私有路径。Studio 脚本中的 `studio.*` 是另一套宿主 API，不是独立渲染器入口。
 
@@ -93,11 +93,11 @@ async function loadFrame(
 
 ## 生命周期与配置
 
-- **创建**：`PbrRenderer.create` 的第四个参数为 `PbrRendererOptions`，可配置环境、阴影、资源预算和特性开关。未传参数使用现有默认值；并非所有高级特性默认开启。
-- **加载**：等待 `setPacketValidated` 成功，再显示新场景；捕获取消、资源校验与 GPU 创建错误。
-- **更新**：宿主驱动帧循环，调用 `render(view)`。变换变化使用 `updateInstances`，避免重复解码和上传完整几何。
-- **视口**：通过 `RenderView` 传入宽高、像素比、相机、背景和曝光等参数。宿主负责尺寸变化与输入映射。
-- **退出**：停止宿主帧循环和输入监听，再调用 `dispose()`；加载阶段的取消信号不能替代资源释放。
+- 创建：`PbrRenderer.create` 的第四个参数为 `PbrRendererOptions`，可配置环境、阴影、资源预算和特性开关。未传参数使用现有默认值；并非所有高级特性默认开启。
+- 加载：等待 `setPacketValidated` 成功，再显示新场景；捕获取消、资源校验与 GPU 创建错误。
+- 更新：宿主驱动帧循环，调用 `render(view)`。变换变化使用 `updateInstances`，避免重复解码和上传完整几何。
+- 视口：通过 `RenderView` 传入宽高、像素比、相机、背景和曝光等参数。宿主负责尺寸变化与输入映射。
+- 退出：停止宿主帧循环和输入监听，再调用 `dispose()`；加载阶段的取消信号不能替代资源释放。
 
 ## 独立接入状态
 
@@ -117,53 +117,73 @@ pnpm gate:deep-engine-consumer
 
 参见 [Deep Engine](deep-engine)、[Studio 应用 API](studio-api) 与 [SDK 可运行样例](sdk-examples)。
 
-## 本轮新增能力（2026-09-23 更新）
+## 已提供的能力
 
-### DDGI 探针 GI（Web）
+下面按主题列出 SDK 当前已有、并带测试或真机证据的能力。证据文件的路径一并给出，方便复核。
 
-`ProbeClipmapPbrController` 提供级联探针 GI：一跳场景辐射捕获（复用 RayBackend 软件 TLAS→BLAS）、环境均值读回、能量钳制、受限历史反馈、Chebyshev 可见性与 DDGI 法线权重泄漏抑制。宿主通过渲染器工厂启用：
+### 显示默认值与渲染特性
+
+`PbrRenderer` 的默认色调映射是与 Three r185 一致的 ACES（`three-aces-r185`），与 Studio 的显示合约同源；需要旧算子时显式传 `deep-aces`。产品里的曝光、色彩空间、环境强度、阴影滤波与泛光参数见 `packages/contracts/src/displayContract.ts`。独立接入时如果希望画面与 Studio 编辑器一致，从同一份合约取值，不要各自写死。
+
+两端的像素级对比由 `pnpm gate:parity` 守护，结果见[引擎性能与画质基准](/docs/engine-benchmarks#three-与-deep-的像素一致性门)。
+
+### 光照与全局光照
+
+DDGI 探针 GI（Web）：`ProbeClipmapPbrController` 提供级联探针 GI，包含一跳场景辐射捕获（复用软件 TLAS→BLAS 的射线后端）、环境均值读回、能量钳制、受限的历史反馈，以及 Chebyshev 可见性和法线权重的漏光抑制。宿主通过渲染器启用：
 
 ```ts
 renderer.setProbeClipmapEnabled(true); // radianceSource === 'scene' 表示真实场景捕获
 ```
 
-禁用或无真实辐射源时自动回退 IBL；不会发布黑色体积。真机证据：`packages/deep-engine/test-output/probe-radiance-gpu-20260922/report.json`。
+关闭，或者没有真实辐射源时会回退到 IBL，不会发布一个全黑的体积。真机证据：`packages/deep-engine/test-output/probe-radiance-gpu-20260922/report.json`。
 
-### GPU 粒子
+探针网格 GI（Native）：单层探针网格可以从 Web 一路打包到 Native 像素消费。
 
-`GpuParticleRuntime` + `PbrParticlePass` 提供全 GPU 粒子模拟与 billboard 渲染：alarm-pulse / expanding-ring / flow-line 预设、爆发事件、indirect 绘制（CPU 不回读数量）。产品 PBR 帧循环已接线，实际帧间隔驱动（250ms 上限）。真机证据：`packages/deep-engine/test-output/gpu-particle-render-20260923/report.json`。
+- 打包：`packNativeProbeGridRecords(level, probes)`（`deep-engine/lighting`）把原点、间距、网格尺寸和探针数组编码成 Native binding 11 使用的“网格头 + 96B 记录”。网格边长 2–64，总预算 65,535，越界一律拒绝；字节布局与 Rust 端 `probe_gi_grid` 的头解码逐字对拍。
+- 发布：`compileSceneRuntimePackage` 接受可选的 `irradianceProbes`，原点转换到包坐标系后随环境载荷发布，证据标记为 `deep.scene.probe-grid.v1`；不传时不写字段，旧包的字节保持不变。
+- 消费：Native 通过 `frame.lightDirection.w` 选择模式，0 为关闭，1 为最近探针，不小于 1.5 为网格三线性 8 点采样。头部、记录数或世界位置任一非法都返回零。真机证据见 `packages/deep-engine-native/test-output/` 下的 `f2-rt-raster-parity-*`。
+- 边界：多层 clipmap 级联和 GPU 烘焙编排（捕获、读回、聚合）尚未接线。
 
-`@bim-studio/deep-engine/particles` 暴露 CPU 侧粒子基线：曲线求值与 LUT 烘焙（`createParticleCurve` / `bakeParticleCurveLut` / `sampleParticleCurveLut`）、预算计划（`planParticleBudget`）、透明 back-to-front 计数排序（`sortParticlesBackToFront`）。编辑器火焰图层（`SceneFireEffectState.curves/blend/maxParticles`）已消费这三项，详见 `docs/specs/t20-particle-consumption-20261003.md`。
+静态光照描述符：运行包的环境合同提供 `RuntimeStaticLightmapDescriptor`（`deep-engine.static-lightmap` v1），描述纹理 id、SHA-256、UV 集、色彩空间、强度和尺寸。构建期会校验纹理是否存在、occlusion / emissive 语义、尺寸是否匹配、哈希是否一致、几何里是否有对应的 UV 集，任一不满足即构建失败。
 
-### Cluster LOD 间接执行
+### 粒子
 
-`ClusterLodIndirectExecutor` 把既有 cluster selection/indirect plan 接入 WebGPU：GPU command upload、resident geometry 校验、render bundle 缓存、`drawIndexedIndirect`。真机像素对拍证据：`packages/deep-engine/test-output/cluster-lod-gpu-20260920-r1/evidence.json`（real GPU draw PASSED）。
+GPU 粒子：`GpuParticleRuntime` 与 `PbrParticlePass` 提供全 GPU 的粒子模拟和 billboard 渲染，内置警报脉冲、扩散环、流线三种预设，支持爆发事件和 indirect 绘制（CPU 不回读数量），已经接入产品的 PBR 帧循环，按真实帧间隔驱动（单步上限 250 ms）。真机证据：`packages/deep-engine/test-output/gpu-particle-render-20260923/report.json`。
 
-### 静态光照描述符
+CPU 侧基线通过 `@bim-studio/deep-engine/particles` 暴露：
 
-运行包环境合同新增 `RuntimeStaticLightmapDescriptor`（`deep-engine.static-lightmap` v1）：纹理 id、SHA-256、UV set、色彩空间、强度与尺寸在构建期 fail-closed 校验（纹理存在性、occlusion/emissive 语义、尺寸匹配、hash 一致、UV set 存在于几何）。
+- 曲线：`createParticleCurve` 创建关键帧曲线，`bakeParticleCurveLut` 烘焙成 64 点查找表，`sampleParticleCurveLut` 以 O(1) 采样。
+- 预算：`planParticleBudget` 按最大余数法分配多个发射器的预算，并在超限时分级降级。
+- 排序：`sortParticlesBackToFront` 做透明粒子由远到近的计数排序，时间 O(n)、稳定且确定，误差不超过距离范围除以桶数。
 
-### 着色器作者图合同
+编辑器的“火焰图层”已经使用这三项，用法见[三维效果、环境与物理光照出图](/docs/scene-effects-rendering#火焰图层)。GPU 路径的排序核、曲线 LUT 纹理采样和烟体接线还没有完成。
 
-`@bim-studio/deep-engine` 现公开 WGSL-first 作者图合同：`ShaderGraphAssetV1`、节点 registry、canonical 序列化与 hash、fail-closed 校验、到既有 WGSL 编译器 IR 的确定性 lowering、编辑器诊断 MessageStore、预览准备合同与 SubGraph 依赖清单。可视化编辑器仍在开发；当前合同已被 lowering 测试与 shader 套件覆盖。
+### 几何与调度
 
-### 探针网格 GI（Native 消费链，2026-09-23）
+Cluster LOD 间接执行：`ClusterLodIndirectExecutor` 把已有的 cluster 选择和 indirect 计划接到 WebGPU，包括 GPU 命令上传、驻留几何校验、render bundle 缓存和 `drawIndexedIndirect`。真机像素对拍证据：`packages/deep-engine/test-output/cluster-lod-gpu-20260920-r1/evidence.json`。
 
-单层探针网格从 Web 打包到 Native 像素消费全链可用：
+场景动画播放区间：编辑器时间轴的入点和出点（`SceneAnimationState.playbackRange`）发布时会转成 `dynamic-animation.playbackRangeMs`，合同要求 0 ≤ 入点 < 出点 ≤ 时长。Native 的 `sample_animation` 和发布查看器的采样都会钳制在区间内；没有设置区间时播放整条时间线。
 
-- **打包**：`packNativeProbeGridRecords(level, probes)`（`deep-engine/lighting`）把 origin/spacing/gridSize + 探针数组编码为 Native binding 11 的"网格头 + 96B 记录"扁平数组；网格 2–64、预算 65,535、字段越界一律 fail-closed。字节布局与 Rust `probe_gi_grid` 头解码合同逐字对拍（10 项测试）。
-- **发布**：`compileSceneRuntimePackage` 可选 `irradianceProbes` 输入——origin 经局部化到包坐标系后随环境载荷发布，evidence 标记 `deep.scene.probe-grid.v1`；缺省不写字段，旧包逐位不变。
-- **消费**：Native `frame.lightDirection.w` 开关通道三态——0 关（逐位不变）/ 1 最近探针 / ≥1.5 网格三线性 8-tap（三线性 × validity × Chebyshev × 法线权重 bias=3；半球判断用原始着色点，0.2 格偏移只进可见性测试）。头/记录数/世界位置任一非法返回零。真机像素证据：`packages/deep-engine-native/test-output/f2-rt-raster-parity-*` 同族装配下的开关帧对拍测试（`probe_grid_trilinear_adds_uniform_ambient_on_real_gpu`）。
-- **边界**：多层 clipmap 级联与 GPU 烘焙编排（捕获→读回→聚合）尚未接线。
+### 物理
 
-### 物理碰撞体调试视图（B3）
+`@bim-studio/deep-engine/physics` 提供 `FixedStepClock`：按固定频率累计时间并量化成整数步，余量结转到下一帧，追赶步数有上限，超出的部分计入 `droppedTicks`。Studio 的物理宿主用它以 60 Hz 推进 Rapier，因此同一初始状态在不同帧率、不同抖动下，同一个 tick 的轨迹逐位相同。接入时请把宿主的帧间隔交给时钟，不要自己写累加器。
 
-`ViewerEngineSimulation.collectPhysicsDebugColliders()` 返回全部已登记 Cuboid 碰撞体的世界位姿/半尺寸/局部偏移（`translationWrtParent` 语义经真机 WASM 测试钉死）；渲染层 `createPhysicsDebugOverlay()` 按刚体类型四色线框（depthTest 关闭、renderOrder 10_000），`setPhysicsDebugVisible(false)` 帧同步早退零开销。物理面板提供"显示碰撞体"开关。未验证边界：真实画面中的视觉表现（headless 无法挂载 renderer）。
+碰撞体调试视图：`ViewerEngineSimulation.collectPhysicsDebugColliders()` 返回所有已登记 Cuboid 碰撞体的世界位姿、半尺寸和局部偏移，渲染层的 `createPhysicsDebugOverlay()` 按刚体类型用四种颜色画线框，物理面板里有“显示碰撞体”开关。真实画面里的视觉表现还没有在带渲染器的环境中验证。
 
-### 场景动画播放区间（发布语义）
+### 体积雾
 
-编辑器时间轴的入点/出点（`SceneAnimationState.playbackRange`）随发布包下译为 `dynamic-animation.playbackRangeMs`（合同校验 0 ≤ in < out ≤ duration 非退化，serde default 兼容旧包）；Native `sample_animation` 与发布查看器采样均钳制进区间。缺省（未设区间）播放整条时间线。
+Deep WebGPU 使用半分辨率的 march 加 HDR 合成，介质参数包括基础消光、高度尺度、各向异性和散射反照率（`albedo`，默认 0.82）。体积雾默认关闭，关闭时不创建 pass。引擎不提供 RGB 雾色，散射颜色由主光的辐亮度决定。
 
-### 独立消费示例（可运行）
+### 着色器作者图
 
-仓外空工作区离线消费链已验证：`packages/deep-engine/examples/node-standalone.mjs`（运行包校验 + 探针网格打包器）与 `examples/browser-standalone.mjs`（ESM bundle + headless Chrome 断言）。全链驱动：`node packages/deep-engine/scripts/standaloneConsumerExamples.mjs`（重建 dist → pnpm pack 双 tarball → npm 离线安装（断网探针）→ Node 例运行 → 浏览器例截图），证据样例 `test-output/f6-standalone-20260923/`。
+`@bim-studio/deep-engine` 公开 WGSL 优先的作者图合同：`ShaderGraphAssetV1`、节点注册表、规范序列化与哈希、校验、到既有 WGSL 编译器 IR 的确定性降级、编辑器诊断的 MessageStore、预览准备合同，以及 SubGraph 依赖清单。可视化编辑器还在开发中，目前合同由降级测试和 shader 套件覆盖。
+
+### 独立消费示例
+
+在工作区外的空目录里离线消费 SDK 的完整链路已经验证。`packages/deep-engine/examples/node-standalone.mjs` 做运行包校验和探针网格打包，`examples/browser-standalone.mjs` 用 ESM bundle 加无头 Chrome 做断言。整条链路由下面的命令驱动：
+
+```bash
+node packages/deep-engine/scripts/standaloneConsumerExamples.mjs
+```
+
+它会重建 dist，打包两个 tarball，在断网探针下用 npm 离线安装，运行 Node 示例，再用浏览器示例截图。样例证据在 `test-output/f6-standalone-20260923/`。

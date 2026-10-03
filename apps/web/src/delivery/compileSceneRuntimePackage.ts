@@ -26,6 +26,11 @@ function findNonJson(value: unknown, path = "$", seen = new Set<object>()): stri
   else for (const [key, child] of Object.entries(value)) { const issue = findNonJson(child, `${path}.${key}`, seen); if (issue) return issue; }
   seen.delete(value);
 }
+/** native 运行时包的闭合材质 profile 不携带扩展/高级 lobe:给出可操作的提示,而不是裸的 "Unknown field"。 */
+function assertNativePackageMaterials(packet: { readonly materials: ReadonlyArray<{ readonly id: string; readonly extendedParameters?: unknown; readonly advancedParameters?: unknown }> }): void {
+  const ids = packet.materials.filter(material => material.extendedParameters !== undefined || material.advancedParameters !== undefined).map(material => material.id);
+  if (ids.length) throw new Error(`场景含 native 运行时包尚不支持的高级材质（清漆 / 光泽 / 薄膜 / 透射）：${ids.slice(0, 3).join("、")}${ids.length > 3 ? ` 等 ${ids.length} 项` : ""}。请在材质面板的“高级材质”中重置后再发布，或使用 Deep 浏览器渲染路径预览。`);
+}
 function stage<T>(name: string, run: () => T): T { try { return run(); } catch (error) { throw new Error(`${name}: ${error instanceof Error ? error.message : String(error)}`); } }
 /** Lower deterministic camera and object TRS keyframes into the v7 dynamic resource.
  * Imported model clip playback remains deferred until its dedicated consumer exists.
@@ -202,9 +207,9 @@ export async function compileSceneRuntimePackage(input: SceneSnapshot,
   signal?.throwIfAborted();
   const dynamicRuntime = compileDynamicRuntime(localized.scene, { objectBindings: compiled.objectBindings, coordinateOrigin: localized.frame.origin });
   const customShaders = stage("shader compile", () => compileSceneCustomShaders(localized.scene, compiled.packet));
-  const runtimePackage = stage("package build", () => buildDeepRuntimePackage({ packageId, packageVersion, camera, ...(environment ? { environment } : {}), ...(dynamicRuntime ? { dynamicRuntime } : {}),
+  const runtimePackage = stage("package build", () => (assertNativePackageMaterials(compiled.packet), buildDeepRuntimePackage({ packageId, packageVersion, camera, ...(environment ? { environment } : {}), ...(dynamicRuntime ? { dynamicRuntime } : {}),
     ...(customShaders.shaderPackages.length ? { shaderPackages: customShaders.shaderPackages, materialBindings: customShaders.materialBindings } : {}),
-    renderPacket: { id: "scene.main", revision: 1, value: compiled.packet } }));
+    renderPacket: { id: "scene.main", revision: 1, value: compiled.packet } })));
   const nonJson = findNonJson(runtimePackage); if (nonJson) throw new Error(`runtime package non-JSON at ${nonJson}`);
   const packageJson = serializeDeepRuntimePackage(runtimePackage);
   sourceAssets.sort((a, b) => a.assetId < b.assetId ? -1 : a.assetId > b.assetId ? 1 : 0);

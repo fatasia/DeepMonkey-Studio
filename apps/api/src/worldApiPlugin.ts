@@ -122,6 +122,7 @@ function specs(sessions: WorldSessionManager): CapabilitySpec[] {
         const worldId = input.worldId as string;
         const world = sessions.get(owner, worldId);
         const snapshot = world.snapshot();
+        sessions.noteSnapshotIssued(snapshot.snapshotHash);
         return { output: { worldId, snapshot }, stateHash: world.observe({ channels: [] }).stateHash, traceHash: snapshot.traceHash };
       },
     },
@@ -132,8 +133,16 @@ function specs(sessions: WorldSessionManager): CapabilitySpec[] {
         properties: { snapshot: { ...OPEN_OBJECT, description: "world.snapshot 返回的 WorldSnapshot。" }, worldId: { ...WORLD_ID, description: "给定则原地回滚该世界；省略则从快照新建世界。" } },
       },
       async handle(input, owner) {
+        const source = input.snapshot as { snapshotHash?: string; traceHash?: string; seed?: number; sceneHash?: string };
         const { info, observation } = await sessions.restore(owner, input.snapshot, input.worldId as string | undefined);
-        return { output: { world: info, observation }, stateHash: observation.stateHash, audit: { worldId: info.worldId, tick: info.tick } };
+        // 快照里的 traceHash/tick 是客户端可构造的链根：审计如实记录来源与是否为本服务近期签发，使"重置链根"可见。
+        return {
+          output: { world: info, observation }, stateHash: observation.stateHash,
+          audit: {
+            worldId: info.worldId, tick: info.tick, snapshotHash: source.snapshotHash, snapshotTraceHash: source.traceHash,
+            snapshotSeed: source.seed, sceneHash: source.sceneHash, issuedByServer: sessions.wasSnapshotIssued(source.snapshotHash ?? ""),
+          },
+        };
       },
     },
     {
@@ -141,13 +150,31 @@ function specs(sessions: WorldSessionManager): CapabilitySpec[] {
       schema: { type: "object", additionalProperties: false, required: ["worldId"], properties: { worldId: WORLD_ID } },
       async handle(input, owner) {
         const worldId = input.worldId as string;
-        return { output: { worldId, closed: sessions.close(owner, worldId) }, stateHash: "", audit: { worldId } };
+        const closed = sessions.close(owner, worldId);
+        // 未命中（不存在/非本人）没有改变任何状态，不写审计，也避免调用方用任意字符串污染审计行。
+        return { output: { worldId, closed }, stateHash: "", ...(closed ? { audit: { worldId } } : {}) };
       },
     },
   ];
 }
 
 /** 合同/运行时/会话层的"调用方可修正"错误统一回 blocked + 原因，其余异常交给 registry 记为 provider-failed。 */
+/**
+ * 世界归属主体：与 MCP 适配层（mcpCapabilityAdapter.callTool）使用同一格式，
+ * 这样同一用户经 MCP 创建的世界可以经 HTTP 继续 step，反之亦然。
+ */
+export function worldPrincipal(user: { id: string; username: string } | undefined): string {
+  return user ? `${user.username}:${user.id}` : "internal-mcp-test";
+}
+
+/**
+ * 世界配额与归属一律按稳定用户 id 计：MCP 传 `username:id`，通用能力路由与 AI 网关传纯 `id`，
+ * 取最后一个冒号之后的部分统一成 id（id 为 UUID，不含冒号；用户名里带冒号也无法冒充他人 id）。
+ */
+export function normalizeWorldPrincipal(principal: string): string {
+  return principal.slice(principal.lastIndexOf(":") + 1) || principal;
+}
+
 function blockedResult(error: unknown): CapabilityProviderResult | undefined {
   const known = error instanceof WorldApiContractError || error instanceof WorldRuntimeError || error instanceof WorldSessionError;
   if (!known) return undefined;
@@ -172,11 +199,15 @@ export function createWorldCapabilityProviders(options: WorldCapabilityOptions):
       approvalRequired: false,
     },
     async invoke(request: CapabilityRequest<Record<string, unknown>>): Promise<CapabilityProviderResult> {
-      const owner: WorldOwner = { projectId: request.projectId, principal: request.principal };
+      const owner: WorldOwner = { projectId: request.projectId, principal: normalizeWorldPrincipal(request.principal) };
+      // 演练请求不能真实改变世界：本能力面没有"只校验不执行"的语义，直接明确拒绝而不是静默执行。
+      if (request.dryRun === true && !spec.readOnly) {
+        return { status: "blocked", decisionStatus: "insufficient-data", warnings: [`${spec.id} 会真实改变世界，不支持 dryRun；如需演练请先 snapshot，再对副本 restore 后执行`] };
+      }
       try {
         const done = await spec.handle(request.input, owner);
         const warnings: string[] = [];
-        if (!spec.readOnly) {
+        if (!spec.readOnly && done.audit) {
           const audited = await writeAudit(options, spec.id, request, { ...done.audit, ...(done.traceHash ? { traceHash: done.traceHash } : {}), ...(done.stateHash ? { stateHash: done.stateHash } : {}) });
           if (!audited) warnings.push("世界操作审计未能持久化，请勿将本次结果视为完整审计证据");
         }
@@ -201,9 +232,11 @@ export function createWorldCapabilityProviders(options: WorldCapabilityOptions):
 async function writeAudit(options: WorldCapabilityOptions, capabilityId: string, request: CapabilityRequest, detail: Record<string, unknown>): Promise<boolean> {
   if (!options.addAuditLog) return true;
   try {
+    const [username, userId] = splitPrincipal(request.principal);
     await options.addAuditLog({
       id: randomUUID(),
-      username: request.principal,
+      ...(userId ? { userId } : {}),
+      ...(username ? { username } : {}),
       action: capabilityId,
       resource: `/projects/${encodeURIComponent(request.projectId)}/worlds`,
       method: "WORLD",
@@ -215,6 +248,12 @@ async function writeAudit(options: WorldCapabilityOptions, capabilityId: string,
   } catch {
     return false;
   }
+}
+
+/** `username:id` → [username, id]；纯 id（通用路由/AI 网关）→ [undefined, id]。与全局审计钩子的 username/userId 字段对齐。 */
+function splitPrincipal(principal: string): [string | undefined, string] {
+  const index = principal.lastIndexOf(":");
+  return index < 0 ? [undefined, principal] : [principal.slice(0, index), principal.slice(index + 1)];
 }
 
 export async function registerWorldApiPlugin(registry: PluginRegistry, options: WorldCapabilityOptions): Promise<void> {

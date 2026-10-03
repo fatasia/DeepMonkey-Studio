@@ -46,11 +46,15 @@ const LEGS = [
   furnace("f-coat", { coat: { factor: 1, roughness: 0.2 } }),
   furnace("f-trans", { transmission: 1 }),
   furnace("f-trans-vol", { transmission: 1, advanced: { volume: VOLUME } }),
-  ...["off-1", "adv-1", "off-2", "adv-2"].map((tag) => furnace(`t-${tag}`, { advancedRenderer: tag.startsWith("adv"), measureFrames: 60, size: 960, timingOnly: true })),
-  furnace("t-adv-sheen", { advanced: { sheen: SHEEN_GRAY }, measureFrames: 60, size: 960, timingOnly: true }),
-  furnace("t-adv-irid", { advanced: { iridescence: IRID }, measureFrames: 60, size: 960, timingOnly: true }),
-  furnace("t-adv-coat", { coat: { factor: 1, roughness: 0.2 }, measureFrames: 60, size: 960, timingOnly: true }),
-  furnace("t-adv-trans", { transmission: 1, advanced: { volume: VOLUME }, measureFrames: 60, size: 960, timingOnly: true }),
+  // 计时:每种配置交替跑 3 轮取各轮中位数的最小值(GPU 时钟抖动在单轮内可达 ±0.3ms)。
+  ...[1, 2, 3].flatMap((round) => [
+    furnace(`t-off-${round}`, { advancedRenderer: false, measureFrames: 60, size: 960, timingOnly: true }),
+    furnace(`t-adv-${round}`, { measureFrames: 60, size: 960, timingOnly: true }),
+    furnace(`t-sheen-${round}`, { advanced: { sheen: SHEEN_GRAY }, measureFrames: 60, size: 960, timingOnly: true }),
+    furnace(`t-irid-${round}`, { advanced: { iridescence: IRID }, measureFrames: 60, size: 960, timingOnly: true }),
+    furnace(`t-coat-${round}`, { coat: { factor: 1, roughness: 0.2 }, measureFrames: 60, size: 960, timingOnly: true }),
+    furnace(`t-trans-${round}`, { transmission: 1, advanced: { volume: VOLUME }, measureFrames: 60, size: 960, timingOnly: true }),
+  ]),
   ...[0, 25].flatMap((tilt) => [
     direct(`d${tilt}-stock-off`, tilt, { advancedRenderer: false }),
     direct(`d${tilt}-stock-adv`, tilt, {}),
@@ -170,13 +174,16 @@ function analyse(probe) {
     }
   }
   const gpu = (id) => probe.summaries.find((s) => s.id === id)?.gpuMs;
-  const mean2 = (a, b) => a != null && b != null ? (a + b) / 2 : null;
-  const off = mean2(gpu("t-off-1"), gpu("t-off-2")), adv = mean2(gpu("t-adv-1"), gpu("t-adv-2"));
-  add("timing-captured", off != null && adv != null, `plain: advancedOff=${off?.toFixed(4)} advancedOn=${adv?.toFixed(4)} (960² 球体,无回读,中位数,60 帧 ×2 交替)`);
+  const best = (tag) => {
+    const values = [1, 2, 3].map((round) => gpu(`t-${tag}-${round}`)).filter((v) => v != null);
+    return values.length ? Math.min(...values) : null;
+  };
+  const off = best("off"), adv = best("adv");
+  add("timing-captured", off != null && adv != null, `plain: advancedOff=${off?.toFixed(4)} advancedOn=${adv?.toFixed(4)} (960² 球体,无回读,3 轮中位数取最小)`);
   if (off != null && adv != null) add("variant-plain-frame-cost-bounded", adv - off <= T.frameCostMaxMs, `delta=${(adv - off).toFixed(4)}ms limit=${T.frameCostMaxMs}`);
-  for (const id of ["t-adv-sheen", "t-adv-irid", "t-adv-coat", "t-adv-trans"]) {
-    const v = gpu(id);
-    add(`timing:${id}`, v != null && adv != null && v - adv <= T.frameCostMaxMs, `gpu=${v?.toFixed(4)} vsPlainAdvanced=${v != null && adv != null ? (v - adv).toFixed(4) : "n/a"}ms`);
+  for (const tag of ["sheen", "irid", "coat", "trans"]) {
+    const v = best(tag);
+    add(`timing:${tag}`, v != null && adv != null && v - adv <= T.frameCostMaxMs, `gpu=${v?.toFixed(4)} vsPlainAdvanced=${v != null && adv != null ? (v - adv).toFixed(4) : "n/a"}ms`);
   }
   return { checks, gate: checks.every((check) => check.passed) };
 }

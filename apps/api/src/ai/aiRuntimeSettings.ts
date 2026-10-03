@@ -1,6 +1,7 @@
 import type { AiFailoverSettings, AiModelProviderSettings, AiProviderSettings } from "@bim-studio/contracts";
 import type { MetadataStore } from "../store.js";
 import type { AiRuntimeFailoverSettings, AiRuntimeSettings } from "./assistantService.js";
+import { resolveAiRoutingConfig } from "./assistantModelRouter.js";
 
 /** 合并持久化设置与环境变量；密钥只在服务端运行时出现。备用模型档遵循 saved > env > default。 */
 export function resolveAiSettings(store?: Pick<MetadataStore, "getAiSettings">): AiRuntimeSettings {
@@ -14,6 +15,7 @@ export function resolveAiSettings(store?: Pick<MetadataStore, "getAiSettings">):
     temperature: saved?.temperature ?? Number(process.env.AI_TEMPERATURE ?? 0.2),
     ...normalizeReasoningEffort(saved?.reasoningEffort ?? process.env.AI_REASONING_EFFORT),
     failover: resolveFailoverSettings(saved?.failover, saved?.providerId || process.env.AI_PROVIDER_ID || "ai.openai-compatible"),
+    routing: resolveAiRoutingConfig(),
     ...(saved?.modeling3d ? { modeling3d: mergeModeling3dSettings(undefined, saved.modeling3d) } : {}),
     ...(saved?.updatedAt ? { updatedAt: saved.updatedAt } : {})
   };

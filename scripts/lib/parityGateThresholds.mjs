@@ -25,20 +25,20 @@ export const PARITY_EXPECTATIONS = {
   },
   "aa-bloom": {
     role: "standard", expectedTier: "diagnostic", minCoverage: 40000,
-    baseline: {"rmse":6.31289,"deltaE2000Mean":0.285831,"deltaE2000P99":5.68724,"ssimMean":0.993347,"over8Fraction":0.0174805},
+    baseline: {"rmse":6.0517,"deltaE2000Mean":0.755136,"deltaE2000P99":4.67573,"ssimMean":0.991679,"over8Fraction":0.0187663},
     knownGap: {
-      "cause": "边缘抗锯齿算法不同：three SMAAPass vs Deep spatialAa；Bloom 本身与 three UnrealBloomPass 在合约参数下一致（见 bloom-only）",
-      "evidence": "bloom-only（两侧均关 AA）RMSE .18 / ΔE00 均值 .05 达到严格档；差异图只剩高对比轮廓像素（byteMax 178）",
-      "action": "对齐 Deep spatialAa 与 SMAA 的边缘权重，或将作者视图的 SMAA 换为同一算法"
+      "cause": "边缘抗锯齿算法不同：three 产品链为 composer 目标 MSAA×4（configurePostProcessingAntialias）+ SMAAPass，Deep 为 spatialAa；Bloom 本身在合约参数下与 UnrealBloomPass 一致（见 bloom-only）",
+      "evidence": "three 侧即产品同款链（EffectComposer→RenderPass→UnrealBloom→SMAAPass→补丁 OutputPass，msaaSamples=4）；bloom-only（两侧均关 AA/MSAA）RMSE .18 / ΔE00 均值 .05 达严格档；aa-bloom 差异图只剩高对比轮廓像素（byteMax 182），RMSE 6.05 略超容许档 6",
+      "action": "对齐 Deep spatialAa 与 MSAA+SMAA 的边缘覆盖/权重（引擎改动，不在门范围内）"
     },
   },
   "transparency": {
-    role: "standard", expectedTier: "diagnostic", minCoverage: 11000,
-    baseline: {"rmse":13.4142,"deltaE2000Mean":2.48941,"deltaE2000P99":27.7862,"ssimMean":0.978704,"over8Fraction":0.176595,"hdrRelativeRmse":0.0273369},
+    role: "standard", expectedTier: "tolerant", minCoverage: 11000,
+    baseline: {"rmse":1.49688,"deltaE2000Mean":0.196882,"deltaE2000P99":8.60998,"ssimMean":0.999295,"over8Fraction":0.0222656,"hdrRelativeRmse":0.0273369},
     knownGap: {
-      "cause": "混合空间不同：three 在默认帧缓冲里对每个透明片元先 ACES+sRGB 编码再 alpha 混合（显示空间混合）；Deep OIT 在线性 HDR 里合成后统一色调映射。透射（transmission）桥层直接拒绝，只验证 alpha 简化",
-      "evidence": "transparency-linear（three 改为线性 HDR 混合后 OutputPass）降到 RMSE 1.5 / ΔE00 均值 .20，证明着色一致、差距全部来自混合空间；HDR 线性域相对 RMSE 仅 2.7%",
-      "action": "产品决策：以线性合成为准（Unity/UE 口径）并让作者视图透明材质走 OutputPass，或让 Deep 提供显示空间混合开关"
+      "cause": "已对齐（口径修正）：产品 three 作者路径是 EffectComposer+OutputPass，透明在线性 HDR 目标内混合后统一色调映射，与 Deep 加权 OIT 的线性合成同口径；残余为加权 OIT 与精确排序混合的近似差（p99 ΔE00 8.6，未逐像素归因）",
+      "evidence": "three 侧 = 产品 composer 链（AA/MSAA 关闭以隔离混合语义）；RMSE 1.50 / ΔE00 均值 .20 / SSIM .9993；线性域 HDR 相对 RMSE 2.7%。透射（transmission）桥层拒绝，只覆盖 alpha 简化",
+      "action": "无需产品决策；若要升严格档需缩小 OIT 近似差（引擎改动）"
     },
   },
   "ibl-hq": {
@@ -55,13 +55,13 @@ export const PARITY_EXPECTATIONS = {
     baseline: {"rmse":0.18336,"deltaE2000Mean":0.0485673,"deltaE2000P99":1.02525,"ssimMean":0.999888,"over8Fraction":0.0000488281},
     knownGap: null,
   },
-  "transparency-linear": {
-    role: "diagnostic", expectedTier: "tolerant", minCoverage: 11000,
-    baseline: {"rmse":1.49688,"deltaE2000Mean":0.196882,"deltaE2000P99":8.60998,"ssimMean":0.999295,"over8Fraction":0.0222656},
+  "transparency-direct": {
+    role: "diagnostic", expectedTier: "diagnostic", minCoverage: 11000,
+    baseline: {"rmse":13.4142,"deltaE2000Mean":2.48941,"deltaE2000P99":27.7862,"ssimMean":0.978704,"over8Fraction":0.176595,"hdrRelativeRmse":0.0273369},
     knownGap: {
-      "cause": "three 线性混合对照（先线性 HDR 混合再 OutputPass）；残余未逐像素归因，推测为加权 OIT 与精确排序混合的近似差",
-      "evidence": "RMSE 1.5 / ΔE00 均值 .20 / p99 8.6（落在 tolerant 档，未达 strict 的是 p99）",
-      "action": "随 transparency 缺口一并评估"
+      "cause": "非产品路径，仅诊断：three renderer 直出（逐片元 ACES+sRGB 编码后再 alpha 混合，显示空间混合）对比 Deep 线性合成；产品作者路径走 composer，不会出现该差异",
+      "evidence": "与 transparency 同场景同 Deep 帧，差距 RMSE 13.4 / ΔE00 均值 2.49；证明 transparency 的残余只来自混合空间，已被产品 composer 路径消除",
+      "action": "无（保留为口径对照与回归守卫）"
     },
   },
 };

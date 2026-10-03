@@ -34,10 +34,13 @@ pnpm build
 操作截图只放脱敏、可公开的稳定图片到 `docs-assets`，不得把 `test-output`、客户模型、令牌、私人地址或临时登录画面嵌入文章。截图的来源、生成提交和对应验证命令写在文章或发布证据里；测试运行截图仍留在本地证据目录，文档以文字链接描述证据位置，不将临时产物复制成产品文档图片。
 
 ```bash
-pnpm --filter @bim-studio/web test src/docs/docsCatalog.test.ts src/components/DocsCenter.test.tsx
+pnpm --filter @bim-studio/web test src/docs src/components/DocsCenter.test.tsx
+pnpm --filter @bim-studio/docs-runtime test
+pnpm docs:wiki:check
+pnpm docs:wiki:export
 ```
 
-本地文档渲染器支持标题、段落、平铺列表、引用、代码块、链接和图片。复杂表格、嵌套列表和内嵌 HTML 应改为简单段落或步骤，并在实际页面检查渲染。
+本地文档渲染器只支持标题、段落、平铺列表、引用、代码块、行内代码、链接和图片。粗体、表格、嵌套列表和内嵌 HTML 不会被渲染，星号和竖线会原样显示，所以正文里不要用；需要对照时改写成并列的列表项，需要强调就换一种更直接的写法。写完后在 `/docs` 里实际打开检查一遍。
 
 ## 准备可审查的改动
 

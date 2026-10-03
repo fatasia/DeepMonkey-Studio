@@ -54,14 +54,14 @@ const sum = (values: number[]) => values.reduce((total, value) => total + value,
 const repeat = (ticks: number, times: number) => new Array<number>(times).fill(ticks);
 
 describe("HeadlessWorld：reset / observe", () => {
-  it("初始观测：tick=0、含全部物体与地面接触通道，sensors 返回阶段 3 占位", async () => {
+  it("初始观测：tick=0、含全部物体与地面接触通道，sensors 返回 unsupported 占位", async () => {
     const world = await newWorld();
     const observation = world.observe({ sensors: [{ id: "depth0", kind: "depth" }] });
     expect(observation).toMatchObject({ tick: 0, timeSeconds: 0, seed: 7, observationVersion: "1" });
     expect(observation.stateHash).toMatch(/^[0-9a-f]{64}$/);
     expect(observation.bodies?.map((body) => body.id)).toEqual(["box-a", "box-b", "box-c", "ball", "wall", "marker"]);
     expect(observation.bodies?.find((body) => body.id === "marker")).toMatchObject({ bodyType: "none", position: [5, 1, 5], sleeping: false });
-    expect(observation.sensors).toEqual({ depth0: { status: "unsupported", kind: "depth", reason: "reserved-for-stage-3" } });
+    expect(observation.sensors).toEqual({ depth0: { status: "unsupported", kind: "depth", reason: "not-implemented" } });
     expect(world.observe({ channels: ["contacts"] }).bodies).toBeUndefined();
     world.dispose();
   });

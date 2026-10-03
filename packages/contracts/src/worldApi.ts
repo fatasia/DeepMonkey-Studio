@@ -46,6 +46,26 @@ export const WORLD_LIMITS = {
   maxSensorsPerObservation: 16,
   /** reset 时 initialPositionJitter 的上限（米）。 */
   maxInitialPositionJitter: 1,
+  /** 数值量级上限：杜绝 1e308 之类把 Rapier 推成 NaN 或超长求解的输入。 */
+  maxAbsPosition: 10_000,
+  minScale: 0.01,
+  maxScale: 20,
+  maxAbsGravity: 1_000,
+  maxAbsVelocity: 1_000,
+  maxAbsImpulse: 10_000_000,
+  /** 缩放后碰撞体任一半尺寸/半径/半高的上限（米）；与地面 5000 m 半宽同量级以内。 */
+  maxColliderExtent: 500,
+  minMass: 1e-3,
+  maxMass: 1e6,
+  maxFriction: 10,
+  /** 物体名称长度上限；超出在 reset 时截断（名称只是标签）。 */
+  maxNameLength: 128,
+  /** 动作注入事件 data 的 JSON 上限：深度 / 节点数 / 序列化字节。 */
+  maxEventDataDepth: 8,
+  maxEventDataNodes: 256,
+  maxEventDataBytes: 4_096,
+  /** 运行时状态（位置/速度）的健康上限，仅用于 restore 与 step 后的有限性/量级体检。 */
+  maxStateMagnitude: 1e9,
 } as const;
 
 export type WorldVec3 = readonly [number, number, number];
@@ -55,7 +75,7 @@ export const WORLD_OBSERVATION_CHANNELS = ["poses", "contacts", "events"] as con
 export type WorldObservationChannel = (typeof WORLD_OBSERVATION_CHANNELS)[number];
 
 /**
- * 传感器扩展点（阶段 3）：v1 只登记种类，不实现采样。请求这些种类会得到
+ * 传感器扩展点：v1 只登记种类（schema 占位），不实现采样。请求这些种类会得到
  * `status: "unsupported"` 的占位读数，而不是错误或伪造数据。
  */
 export const WORLD_RESERVED_SENSOR_KINDS = ["camera-rgb", "depth", "normal", "segmentation", "lidar"] as const;
@@ -66,7 +86,7 @@ export type WorldBodyType = "none" | "fixed" | "dynamic" | "kinematic";
 export interface WorldResetOptions {
   /** 是否放置与 Viewer 一致的静态地面（y=0 顶面）；默认 true。 */
   ground?: boolean;
-  /** 对动态刚体初始位置施加 seed 驱动的均匀抖动（米，±）；默认 0（域随机化的最小形态）。 */
+  /** 对动态刚体初始位置施加 seed 驱动的均匀抖动（米，±）；默认 0；仅用于让 seed 对 reset 结果可观测，不是域随机化框架。 */
   initialPositionJitter?: number;
 }
 
@@ -156,7 +176,7 @@ export type WorldEventObservation =
   | { tick: number; type: "business.event"; name: string; sceneId: string; data?: JsonValue };
 
 export type WorldSensorReading =
-  | { status: "unsupported"; kind: WorldReservedSensorKind; reason: "reserved-for-stage-3" };
+  | { status: "unsupported"; kind: WorldReservedSensorKind; reason: "not-implemented" };
 
 export interface WorldObservation {
   observationVersion: WorldApiVersion;

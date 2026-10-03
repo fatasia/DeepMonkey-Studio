@@ -9,7 +9,7 @@ describe("DocsCenter", () => {
     expect(html).toContain("返回");
     expect(html).toContain("编写和运行行为脚本");
     expect(html).toContain("创建行为脚本");
-    expect(html).toContain("文档版本 2026.09");
+    expect(html).toContain("文档版本 2026.10");
     expect(html).toContain("本文档随客户端离线提供");
     expect(html).toContain("复制代码");
     expect(html).toContain("相邻文档");

@@ -34,6 +34,22 @@ describe("snapshot primitive render projection", () => {
     expect(effect.emissiveStrength).toBeCloseTo(0.728, 6);
   });
 
+  it("projects advanced material lobes of a primitive into a JSON-friendly packet material", () => {
+    const item = primitive();
+    const neutral = { ...item, material: { clearcoat: 0, sheen: 0, sheenRoughness: 1, sheenColor: "#000000", iridescence: 0, transmission: 0, attenuationColor: "#ffffff" } };
+    expect(sceneSnapshotToRenderPacket(scene([neutral]))).toEqual(sceneSnapshotToRenderPacket(scene([item])));
+    const lobes = { ...item, material: { clearcoat: 0.8, clearcoatRoughness: 0.2, sheen: 1, sheenColor: "#ffffff", sheenRoughness: 0.4,
+      iridescence: 1, iridescenceIOR: 1.4, iridescenceThicknessMax: 350, transmission: 0.5, thickness: 0.5, attenuationColor: "#80ff80" } };
+    const packet = sceneSnapshotToRenderPacket(scene([lobes]));
+    const material = packet.materials[0]!;
+    expect(material.extendedParameters).toMatchObject({ clearcoat: { factor: 0.8, roughness: 0.2 }, transmission: { factor: 0.5 } });
+    expect(material.advancedParameters).toMatchObject({ sheen: { roughness: 0.4 }, iridescence: { factor: 1, ior: 1.4, thickness: 350 }, volume: { thickness: 0.5 } });
+    expect(material.advancedParameters?.volume).not.toHaveProperty("attenuationDistance");
+    // JSON 友好:无 Infinity/undefined,浏览器 profile 序列化可无损往返。
+    expect(JSON.parse(JSON.stringify(material))).toEqual(JSON.parse(JSON.stringify({ ...material })));
+    expect(JSON.stringify(material)).not.toMatch(/null|Infinity/);
+    expect(() => sceneSnapshotToRenderPacket(scene([{ ...item, material: { sheen: 2 } }]))).toThrow(/高级材质参数无效/);
+  });
   it("rejects a large primitive scale even with a precisely represented root position", () => {
     const item = primitive("large"); item.transform.position = { x: 0, y: 0, z: 0 };
     item.transform.rotation = { x: 0, y: 0, z: 0 }; item.transform.scale = { x: 1e8 + 0.25, y: 1, z: 1 };

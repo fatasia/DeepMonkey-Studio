@@ -10,6 +10,7 @@ import type { WorkspaceRecoveryDraft } from "../studio/workspaceRecoveryStore";
 import type { ManagerDirectoryController } from "../hooks/useManagerDirectoryController";
 import type { useApplicationRecovery } from "../hooks/useApplicationRecovery";
 import type { useScenePublicationArtifacts } from "../hooks/useScenePublicationArtifacts";
+import type { EditorPrimitiveDeleteAuthoring } from "../studio/editorPrimitiveDeleteAuthoring";
 import type { SceneEditHistoryFlush } from "../hooks/useSceneHistoryState";
 
 export interface AppViewActions {
@@ -54,6 +55,8 @@ export interface AppViewBindings {
     undo: () => Promise<void>;
     redo: () => Promise<void>;
   };
+  /** 作者写入口(播放/行为/动画运行或忙碌时为 undefined);助手场景改动闭环与编辑器 presence 共用。 */
+  sceneAuthoring?: EditorPrimitiveDeleteAuthoring | undefined;
   playMode?: {
     active: boolean;
     enter: () => void;

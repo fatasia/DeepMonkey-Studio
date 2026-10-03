@@ -3,7 +3,7 @@ import { AccessorReader } from "./accessors.js";
 import { readEmissiveStrength, readMaterialIor } from "./materialExtensions.js";
 import { mapGltfMaterialExtensions } from "../shader/materialGltfMap.js";
 import type { CapabilityFailure } from "./capabilityInventory.js";
-import { generateNormals } from "./generatedNormals.js";
+import { generateNormals, repairZeroNormals } from "./generatedNormals.js";
 import { validateTangentBasis } from "./tangentSpace.js";
 import { MAX_BYTES, budget, factor, invalid, list, noExtensions, object, reference, unsupported, vector } from "./validation.js";
 
@@ -90,7 +90,8 @@ export function meshResources(source: readonly unknown[], materials: readonly Pb
         if (value >= position.count) invalid(`${location}.indices`, "Index exceeds vertex count.");
         indices[index] = value;
       }
-      const normals = normal?.values ?? generateNormals(position.values as Float32Array, indices, `${location}.attributes.NORMAL`);
+      const normals = normal ? repairZeroNormals(normal.values, position.values as Float32Array, indices, `${location}.attributes.NORMAL`)
+        : generateNormals(position.values as Float32Array, indices, `${location}.attributes.NORMAL`);
       for (let vertex = 0; vertex < position.count; vertex++) {
         if (Math.hypot(...normals.subarray(vertex * 3, vertex * 3 + 3)) < 1e-8) invalid(location, "Vertex normal is zero.");
         vertices.set(position.values.subarray(vertex * 3, vertex * 3 + 3), vertex * 6);

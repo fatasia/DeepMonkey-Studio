@@ -165,7 +165,8 @@ function validatePhysicalLobes(m: Record<string, unknown>, advancedMaterials: bo
   const advanced: AdvancedMaterialParameters = {
     ...(sheen > 0 ? { sheen: { color: sheenColor.map(component => component * sheen) as [number, number, number], roughness: sheenRoughness } } : {}),
     ...(iridescence > 0 ? { iridescence: { factor: iridescence, ior: iridescenceIor as number, thickness: (range as number[])[1]! } } : {}),
-    ...(transmission > 0 ? { volume: { thickness, attenuationColor, attenuationDistance: distance as number } } : {}),
+    ...(transmission > 0 ? { volume: { thickness, attenuationColor,
+      ...(Number.isFinite(distance) ? { attenuationDistance: distance as number } : {}) } } : {}),
   };
   return { ...(extended ? { extended } : {}), ...(Object.keys(advanced).length ? { advanced } : {}) };
 }

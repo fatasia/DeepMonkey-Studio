@@ -53,29 +53,29 @@ describe("WorldSessionManager", () => {
   });
 
   it("配额：全局并发数、主体并发数、单世界内存、总内存预算", async () => {
-    const global = manager({ maxWorlds: 2, maxWorldsPerOwner: 5 });
+    const global = manager({ maxWorlds: 2, maxWorldsPerPrincipal: 5 });
     await global.sessions.create(alice, reset());
     await global.sessions.create(bob, reset());
-    expect(await code(() => global.sessions.create({ projectId: "p9", principal: "c" }, reset()))).toBe("limit-exceeded");
+    expect(await code(() => global.sessions.create({ projectId: "p9", principal: "c" }, reset()))).toBe("quota-exceeded");
 
-    const owner = manager({ maxWorldsPerOwner: 1 });
+    const owner = manager({ maxWorldsPerPrincipal: 1 });
     await owner.sessions.create(alice, reset());
-    expect(await code(() => owner.sessions.create(alice, reset()))).toBe("limit-exceeded");
+    expect(await code(() => owner.sessions.create(alice, reset()))).toBe("quota-exceeded");
     await owner.sessions.create(bob, reset());
 
     const single = manager({ maxWorldBytes: 300 * 1024 });
-    expect(await code(() => single.sessions.create(alice, reset(1, 20)))).toBe("limit-exceeded");
+    expect(await code(() => single.sessions.create(alice, reset(1, 20)))).toBe("quota-exceeded");
     expect(single.sessions.size).toBe(0);
 
     const total = manager({ maxTotalBytes: 600 * 1024 });
     await total.sessions.create(alice, reset());
     await total.sessions.create(bob, reset());
-    expect(await code(() => total.sessions.create({ projectId: "p", principal: "z" }, reset()))).toBe("limit-exceeded");
+    expect(await code(() => total.sessions.create({ projectId: "p", principal: "z" }, reset()))).toBe("quota-exceeded");
     for (const m of [global, owner, single, total]) m.sessions.dispose();
   });
 
   it("并发 create 不会同时通过配额检查而超额", async () => {
-    const { sessions } = manager({ maxWorlds: 2, maxWorldsPerOwner: 2 });
+    const { sessions } = manager({ maxWorlds: 2, maxWorldsPerPrincipal: 2 });
     const results = await Promise.allSettled([1, 2, 3, 4].map((seed) => sessions.create({ projectId: "p", principal: `u${seed}` }, reset(seed))));
     expect(results.filter((item) => item.status === "fulfilled")).toHaveLength(2);
     expect(sessions.size).toBe(2);
@@ -97,7 +97,7 @@ describe("WorldSessionManager", () => {
   });
 
   it("restore：给 worldId 原地替换状态；不给则新建世界并占配额；坏快照不破坏原世界", async () => {
-    const { sessions } = manager({ maxWorldsPerOwner: 2 });
+    const { sessions } = manager({ maxWorldsPerPrincipal: 2 });
     await sessions.create(alice, reset(5));
     const world = sessions.get(alice, "w1");
     world.step({ ticks: 30 });
@@ -110,7 +110,7 @@ describe("WorldSessionManager", () => {
     const forked = await sessions.restore(alice, snapshot);
     expect(forked.info).toMatchObject({ worldId: "w2", tick: 30 });
     expect(forked.observation.stateHash).toBe(rewound.observation.stateHash);
-    expect(await code(() => sessions.restore(alice, snapshot))).toBe("limit-exceeded");
+    expect(await code(() => sessions.restore(alice, snapshot))).toBe("quota-exceeded");
 
     await expect(sessions.restore(alice, { ...snapshot, snapshotHash: "0".repeat(64) }, "w1")).rejects.toThrow(/snapshotHash/);
     expect(sessions.describe(alice, "w1").tick).toBe(30);

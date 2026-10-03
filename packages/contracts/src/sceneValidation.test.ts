@@ -210,4 +210,14 @@ describe("material slot persistence validation", () => {
     "rejects unstable, mistyped and nested overrides", slots => {
       expect(() => validateScene(scene(slots), "scene")).toThrow();
     });
+  it("accepts MeshPhysicalMaterial lobes in range and rejects out-of-range or malformed values", () => {
+    const lobes = { clearcoat: 1, clearcoatRoughness: 0.2, sheen: 0.5, sheenRoughness: 0.4, sheenColor: "#ff8800",
+      iridescence: 1, iridescenceIOR: 1.3, iridescenceThicknessMax: 400, transmission: 0.9, thickness: 1.2,
+      attenuationColor: "#80ff80", attenuationDistance: 2.5 };
+    expect(() => validateScene(JSON.parse(JSON.stringify(scene({ "gltf:0": lobes }))), "scene")).not.toThrow();
+    for (const bad of [{ clearcoat: 1.5 }, { sheen: -0.1 }, { iridescenceIOR: 0.5 }, { iridescenceThicknessMax: 1e5 },
+      { thickness: -1 }, { attenuationDistance: 0 }, { attenuationDistance: Infinity }, { sheenColor: "red" }, { attenuationColor: "#fff" }]) {
+      expect(() => validateScene(scene({ "gltf:0": bad }), "scene")).toThrow();
+    }
+  });
 });

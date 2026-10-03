@@ -135,7 +135,7 @@ describe("published renderer selection", () => {
     expect(selectPublishedRenderer("webgl", true, { postProcessingEnabled: false }).reason).toBe("publication-webgl");
   });
 
-  it("treats object outline as a WebGL post-processing requirement", () => {
+  it("does not treat object outline as a WebGL post-processing requirement (Deep implements it)", () => {
     const requirements = rendererRequirementsForScene({
       models: [
         {
@@ -149,8 +149,8 @@ describe("published renderer selection", () => {
       ],
       primitives: [],
     });
-    expect(requirements.postProcessingEnabled).toBe(true);
-    expect(selectPublishedRenderer("webgpu-preferred", true, requirements).backend).toBe("webgl");
+    expect(requirements.postProcessingEnabled).toBe(false);
+    expect(selectPublishedRenderer("webgpu-preferred", true, requirements).backend).toBe("webgpu");
   });
 
   it("does not block WebGPU for an enabled but empty post-processing group", () => {

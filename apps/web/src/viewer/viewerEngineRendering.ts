@@ -17,7 +17,7 @@ import { fitPerspectiveBox } from "./cameraFraming";
 import { createModelFireEffect, disposeModelFireEffect, setModelFireAllocation, updateModelFireEffect } from "./modelFireEffect";
 import { planSceneFireBudget, type FireBudgetReport } from "./modelFireParticles";
 import type { DeepTransformGizmoInput } from "./deepOverlayPrimitives";
-import { syncDeepOutlineTags } from "./deepOutlineTags";
+import { deepOutlineSnapshot, syncDeepOutlineTags, type DeepOutlineSnapshot } from "./deepOutlineTags";
 
 /** Rendering 职责层。 */
 export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
@@ -90,6 +90,8 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
       if (syncDeepOutlineTags(this, this.outlinedObjects())) this.requestRender();
       void this.syncPostProcessing();
     }
+  /** Deep 独立 packet 路径读取当前描边对象集合(含修订号);集合变化即递增。 */
+  getDeepOutlinedObjects(): DeepOutlineSnapshot { return deepOutlineSnapshot(this); }
   /** 模型描边效果对象 + 启用选中描边时的当前选中对象(three OutlinePass 与 Deep 描边共用)。 */
   protected outlinedObjects(): THREE.Object3D[] {
       const outlined = [...this.modelEffects]

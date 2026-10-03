@@ -43,9 +43,60 @@ export interface InstanceOutlineResult {
   readonly skippedBatches: number;
 }
 
+interface OutlineGpu {
+  readonly maskLayout: GPUBindGroupLayout;
+  readonly edgeLayout: GPUBindGroupLayout;
+  readonly composeLayout: GPUBindGroupLayout;
+  readonly silhouette: GPURenderPipeline;
+  readonly visible: GPURenderPipeline;
+  readonly edge: GPUComputePipeline;
+  readonly compose: GPUComputePipeline;
+  readonly sampler: GPUSampler;
+}
+
+/** 管线描述与布局(不触发编译);同步构造与异步预热共用,保证两条路径逐字段一致。 */
+function describeOutline(device: GPUDevice) {
+  const module = device.createShaderModule({ label: "Deep instance outline", code: INSTANCE_OUTLINE_WGSL });
+  const maskLayout = device.createBindGroupLayout({ label: "Deep instance outline mask",
+    entries: [{ binding: 7, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform", minBindingSize: 64 } }] });
+  const unfilterable = { sampleType: "unfilterable-float" as const };
+  const edgeLayout = device.createBindGroupLayout({ label: "Deep instance outline edge", entries: [
+    { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform", minBindingSize: 48 } },
+    { binding: 1, visibility: GPUShaderStage.COMPUTE, texture: unfilterable },
+    { binding: 5, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "write-only", format: INSTANCE_OUTLINE_EDGE_FORMAT } },
+  ] });
+  const composeLayout = device.createBindGroupLayout({ label: "Deep instance outline compose", entries: [
+    { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform", minBindingSize: 48 } },
+    { binding: 1, visibility: GPUShaderStage.COMPUTE, texture: unfilterable },
+    { binding: 2, visibility: GPUShaderStage.COMPUTE, texture: unfilterable },
+    { binding: 3, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "float" } },
+    { binding: 4, visibility: GPUShaderStage.COMPUTE, sampler: { type: "filtering" } },
+    { binding: 6, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "write-only", format: INSTANCE_OUTLINE_COLOR_FORMAT } },
+  ] });
+  const rasterLayout = device.createPipelineLayout({ bindGroupLayouts: [maskLayout] });
+  const raster = (label: string, entryPoint: string, writeMask: number, depthCompare: GPUCompareFunction,
+    bias: { depthBias?: number; depthBiasSlopeScale?: number }): GPURenderPipelineDescriptor => ({ label, layout: rasterLayout,
+    vertex: { module, entryPoint: "maskVertex", buffers: MASK_BUFFERS },
+    fragment: { module, entryPoint, targets: [{ format: INSTANCE_OUTLINE_MASK_FORMAT, writeMask }] },
+    primitive: { topology: "triangle-list", cullMode: "none" },
+    depthStencil: { format: "depth32float", depthWriteEnabled: false, depthCompare, ...bias } });
+  const compute = (label: string, layout: GPUBindGroupLayout, entryPoint: string): GPUComputePipelineDescriptor => ({ label,
+    layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }), compute: { module, entryPoint } });
+  return { maskLayout, edgeLayout, composeLayout,
+    silhouette: raster("Deep instance outline silhouette", "silhouetteFragment", COLOR_WRITE_RED | COLOR_WRITE_GREEN, "always", {}),
+    // 负偏置让同一表面在抖动/未抖动投影下的亚像素深度差仍判为可见(轮廓处掠射角斜率最大)。
+    visible: raster("Deep instance outline visible", "visibleFragment", COLOR_WRITE_GREEN, "less-equal",
+      { depthBias: -4, depthBiasSlopeScale: -2 }),
+    edge: compute("Deep instance outline edge", edgeLayout, "edgeMain"),
+    compose: compute("Deep instance outline compose", composeLayout, "composeMain"),
+    sampler: device.createSampler({ label: "Deep instance outline edge sampler", magFilter: "linear", minFilter: "linear",
+      addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" }) };
+}
+
 /**
  * 对象级描边:掩码光栅(1 个 render pass,2 次实例绘制)→ 半分辨率边缘检测 → 全分辨率加法合成。
- * 懒构造:无描边实例时本类根本不被创建,不编译 shader、不分配纹理/缓冲。
+ * 无描边实例时本类不被创建,不编译 shader、不分配纹理/缓冲;`createAsync` 供后端就绪后空闲预热
+ * (createRender/ComputePipelineAsync,不阻塞任何帧),首帧再遇到描边时直接复用已编译管线。
  */
 export class InstanceOutlinePass {
   private readonly maskLayout: GPUBindGroupLayout;
@@ -60,49 +111,29 @@ export class InstanceOutlinePass {
   private readonly params: GPUBuffer;
   private disposed = false;
 
-  constructor(private readonly session: DeviceSession, private readonly pool: PbrTransientTexturePool) {
+  /** 异步预热:管线在驱动后台线程编译,返回时已就绪;调用方需自行丢弃已过期(被同步路径抢先)的结果。 */
+  static async createAsync(session: DeviceSession, pool: PbrTransientTexturePool): Promise<InstanceOutlinePass> {
+    const device = session.device, plan = describeOutline(device);
+    const [silhouette, visible, edge, compose] = await Promise.all([
+      device.createRenderPipelineAsync(plan.silhouette), device.createRenderPipelineAsync(plan.visible),
+      device.createComputePipelineAsync(plan.edge), device.createComputePipelineAsync(plan.compose)]);
+    return new InstanceOutlinePass(session, pool, { ...plan, silhouette, visible, edge, compose });
+  }
+
+  constructor(private readonly session: DeviceSession, private readonly pool: PbrTransientTexturePool, gpu?: OutlineGpu) {
     const device = session.device;
-    const module = device.createShaderModule({ label: "Deep instance outline", code: INSTANCE_OUTLINE_WGSL });
-    this.maskLayout = device.createBindGroupLayout({ label: "Deep instance outline mask",
-      entries: [{ binding: 7, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform", minBindingSize: 64 } }] });
-    const unfilterable = { sampleType: "unfilterable-float" as const };
-    this.edgeLayout = device.createBindGroupLayout({ label: "Deep instance outline edge", entries: [
-      { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform", minBindingSize: 48 } },
-      { binding: 1, visibility: GPUShaderStage.COMPUTE, texture: unfilterable },
-      { binding: 5, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "write-only", format: INSTANCE_OUTLINE_EDGE_FORMAT } },
-    ] });
-    this.composeLayout = device.createBindGroupLayout({ label: "Deep instance outline compose", entries: [
-      { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform", minBindingSize: 48 } },
-      { binding: 1, visibility: GPUShaderStage.COMPUTE, texture: unfilterable },
-      { binding: 2, visibility: GPUShaderStage.COMPUTE, texture: unfilterable },
-      { binding: 3, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: "float" } },
-      { binding: 4, visibility: GPUShaderStage.COMPUTE, sampler: { type: "filtering" } },
-      { binding: 6, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "write-only", format: INSTANCE_OUTLINE_COLOR_FORMAT } },
-    ] });
-    const rasterLayout = device.createPipelineLayout({ bindGroupLayouts: [this.maskLayout] });
-    const raster = (label: string, entryPoint: string, writeMask: number, depthCompare: GPUCompareFunction,
-      bias: { depthBias?: number; depthBiasSlopeScale?: number }) => device.createRenderPipeline({ label, layout: rasterLayout,
-      vertex: { module, entryPoint: "maskVertex", buffers: MASK_BUFFERS },
-      fragment: { module, entryPoint, targets: [{ format: INSTANCE_OUTLINE_MASK_FORMAT, writeMask }] },
-      primitive: { topology: "triangle-list", cullMode: "none" },
-      depthStencil: { format: "depth32float", depthWriteEnabled: false, depthCompare, ...bias } });
-    this.silhouette = raster("Deep instance outline silhouette", "silhouetteFragment",
-      COLOR_WRITE_RED | COLOR_WRITE_GREEN, "always", {});
-    // 负偏置让同一表面在抖动/未抖动投影下的亚像素深度差仍判为可见(轮廓处掠射角斜率最大)。
-    this.visible = raster("Deep instance outline visible", "visibleFragment", COLOR_WRITE_GREEN, "less-equal",
-      { depthBias: -4, depthBiasSlopeScale: -2 });
-    this.edge = device.createComputePipeline({ label: "Deep instance outline edge",
-      layout: device.createPipelineLayout({ bindGroupLayouts: [this.edgeLayout] }), compute: { module, entryPoint: "edgeMain" } });
-    this.compose = device.createComputePipeline({ label: "Deep instance outline compose",
-      layout: device.createPipelineLayout({ bindGroupLayouts: [this.composeLayout] }), compute: { module, entryPoint: "composeMain" } });
-    this.sampler = device.createSampler({ label: "Deep instance outline edge sampler", magFilter: "linear", minFilter: "linear",
-      addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" });
+    const built = gpu ?? (() => {
+      const plan = describeOutline(device);
+      return { ...plan, silhouette: device.createRenderPipeline(plan.silhouette), visible: device.createRenderPipeline(plan.visible),
+        edge: device.createComputePipeline(plan.edge), compose: device.createComputePipeline(plan.compose) };
+    })();
+    ({ maskLayout: this.maskLayout, edgeLayout: this.edgeLayout, composeLayout: this.composeLayout,
+      silhouette: this.silhouette, visible: this.visible, edge: this.edge, compose: this.compose, sampler: this.sampler } = built);
     this.camera = createAdmittedBuffer(session, { label: "Deep instance outline camera", size: 64,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.params = createAdmittedBuffer(session, { label: "Deep instance outline parameters", size: 48,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   }
-
   encode(encoder: GPUCommandEncoder, input: InstanceOutlineInput): InstanceOutlineResult {
     if (this.disposed) throw new Error("Instance outline is disposed.");
     if (this.session.state !== "ready") throw new Error("GPU session is not ready for instance outline.");

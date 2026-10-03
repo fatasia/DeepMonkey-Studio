@@ -4,11 +4,21 @@
 
 ## 选择输入格式
 
-GLB 适合携带几何与材质交付，单文件便于定位缺失资源。glTF 可能引用外部缓冲与贴图，应确保依赖完整。需要 BIM 构件树和属性时优先验证 IFC 或对应转换链的元数据结果。
+GLB 适合携带几何和材质交付，单文件也最容易定位缺失资源。glTF 可能引用外部缓冲和贴图，上传时要确保依赖齐全。需要 BIM 构件树和属性时优先用 IFC，导入后在浏览器里转换为 Fragments，保留层级和属性。
 
-STEP、DWG、RVT 等工程格式使用各自的转换路径。RVT 依赖匹配版本 Revit 的 Windows Worker；DWG 依赖 LibreDWG 或部署提供的转换器。专业格式先查看系统能力和真实样本结果，再安排批量导入。
+其他格式的处理方式不同：
 
-格式版本、依赖和支持边界以仓库[转换插件与格式支持](https://github.com/fatasia/DeepMonkey-Studio/blob/HEAD/docs/converter-plugin-and-format-support.md)为准。
+- FBX 直接保留源文件，用 Three.js 查看；DXF 作为二维图纸查看。
+- STEP / STP 在本机用 `occt-import-js` 解析并三角化，产出 GLB，同时生成层级和属性文件。
+- OpenUSD（USDA、USDC、USDZ）保留源文件直接查看；复杂的 composition 仍需要用真实样本验证。
+- JT：内置解析器已验证 JT 9.5 和 10.3 的 LOD0 子集（TriStrip 与 TopoMesh）；JT 8.0 / 8.1 只做结构检查，能读出装配层级，但不保证几何可浏览。B-Rep 精确曲面和 PMI 语义暂未解析。
+- Parasolid X_T（文本格式，扩展名 `.x_t`）：内置两档。第一档是 V24.1 单体共轴旋转件，命中时输出完整的 GLB、层级和属性；第二档是通用文本解析，平面、圆柱、圆锥和球面这几类曲面按证据发布，裁剪、实体名称、颜色和装配挂接等会如实记入“损失”清单。两档都没有出几何时，任务停在“待转换器”，只保留检查信息，不会把空模型标成可用。X_B（二进制）目前同样只做检查，等待内置的 B-Rep 离散化。
+
+以上工业格式都走自研或开源的内置解析链，在本机离线完成，不依赖商业 SDK、云转换或源 CAD / BIM 软件。某个版本或特性还没有被内置链路覆盖时，任务会保持“待转换器”或仅检查 / 预览，并说明原因，而不会借助外部结果冒充内置能力。
+
+DWG 和 RVT 目前没有随包内置的几何解析链。部署方可以自行配置外部的 LibreDWG 命令把 DWG 转成 DXF，或使用依赖 Revit 的历史 Worker 处理 RVT，但这些路径要求额外的环境，不计入内置能力，也不应作为批量导入的前提。遇到这两类文件，更稳妥的办法是请提供方另存为 IFC、STEP 或 GLB 后再导入。
+
+导入菜单里列出的扩展名只表示接受上传，能否使用以资源卡片上的处理状态为准：“排队中”“处理中”“可使用”“待转换器”或失败。格式的版本、依赖和支持边界以仓库里的[转换插件与格式支持](https://github.com/fatasia/DeepMonkey-Studio/blob/HEAD/docs/converter-plugin-and-format-support.md)为准，各内置 profile 的登记情况见 [builtin-profiles](https://github.com/fatasia/DeepMonkey-Studio/blob/HEAD/docs/builtin-profiles.md)。
 
 ## 上传并检查处理结果
 

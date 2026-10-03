@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { InstanceOutlinePass } from "./instanceOutline.js";
 import type { DeviceSession } from "../webgpu/deviceSession.js";
 import { PbrTransientTexturePool } from "../webgpu/pbrTransientTexturePool.js";
+import { PbrPostProcessChain } from "../webgpu/pbrPostProcessChain.js";
 
 function fixture() {
   vi.stubGlobal("GPUShaderStage", { VERTEX: 1, COMPUTE: 4 });
@@ -18,6 +19,7 @@ function fixture() {
     createShaderModule: vi.fn((d: unknown) => d), createBindGroupLayout: vi.fn((d: unknown) => d),
     createPipelineLayout: vi.fn((d: unknown) => d),
     createRenderPipeline: vi.fn((d: unknown) => d), createComputePipeline: vi.fn((d: unknown) => d),
+    createRenderPipelineAsync: vi.fn(async (d: unknown) => d), createComputePipelineAsync: vi.fn(async (d: unknown) => d),
     createSampler: vi.fn((d: unknown) => d), createBindGroup: vi.fn((d: unknown) => d),
     createBuffer: vi.fn(() => ({ destroy: vi.fn() })), createTexture };
   const session = { state: "ready", device,
@@ -85,5 +87,49 @@ describe("InstanceOutlinePass", () => {
     f.pool.endFrame(false);
     pass.dispose();
     expect(() => pass.encode(f.encoder as unknown as GPUCommandEncoder, input)).toThrow(/disposed/);
+  });
+
+  it("prewarms every pipeline through the async APIs without any synchronous compilation", async () => {
+    const f = fixture();
+    const pass = await InstanceOutlinePass.createAsync(f.session, f.pool);
+    expect(f.device.createRenderPipelineAsync).toHaveBeenCalledTimes(2);
+    expect(f.device.createComputePipelineAsync).toHaveBeenCalledTimes(2);
+    expect(f.device.createRenderPipeline).not.toHaveBeenCalled();
+    expect(f.device.createComputePipeline).not.toHaveBeenCalled();
+    // Descriptors are the same objects the synchronous path would compile (single source of truth).
+    const sync = new InstanceOutlinePass(f.session, f.pool);
+    const asyncLabels = f.device.createRenderPipelineAsync.mock.calls.map(call => (call[0] as GPURenderPipelineDescriptor).label);
+    const syncLabels = f.device.createRenderPipeline.mock.calls.map(call => (call[0] as GPURenderPipelineDescriptor).label);
+    expect(asyncLabels).toEqual(syncLabels);
+    f.pool.beginFrame();
+    const result = pass.encode(f.encoder as unknown as GPUCommandEncoder, { color: f.color, depthView: {} as GPUTextureView,
+      viewProjection: new Float32Array(16), draw: () => ({ drawCalls: 1, skippedBatches: 0 }) });
+    f.pool.endFrame(true);
+    expect(result.passCount).toBe(3);
+    pass.dispose(); sync.dispose();
+  });
+});
+describe("PbrPostProcessChain outline prewarm", () => {
+  const features = { environment: false, fog: false, groundPlane: false, groundGrid: false, ambientOcclusion: false, temporalAa: false,
+    spatialAa: false, occlusionCulling: false, bloom: false, vignette: false };
+  it("allocates nothing until prewarmed, prewarms once, and releases on dispose", async () => {
+    const f = fixture(), chain = new PbrPostProcessChain(f.session, features, f.pool);
+    expect(f.device.createShaderModule).not.toHaveBeenCalled();
+    expect(f.device.createBuffer).not.toHaveBeenCalled();
+    await Promise.all([chain.prewarmInstanceOutline(), chain.prewarmInstanceOutline()]);
+    await chain.prewarmInstanceOutline();
+    expect(f.device.createRenderPipelineAsync).toHaveBeenCalledTimes(2);
+    expect(f.device.createRenderPipeline).not.toHaveBeenCalled();
+    expect(f.owned.size).toBe(2);
+    chain.dispose();
+    expect(f.owned.size).toBe(0);
+  });
+
+  it("drops a prewarm result that finishes after dispose", async () => {
+    const f = fixture(), chain = new PbrPostProcessChain(f.session, features, f.pool);
+    const pending = chain.prewarmInstanceOutline();
+    chain.dispose();
+    await pending;
+    expect(f.owned.size).toBe(0);
   });
 });

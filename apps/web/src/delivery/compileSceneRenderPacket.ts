@@ -1,9 +1,10 @@
 import { applySourceMaterialOverrides, assertStaticMaterialOverrides, assertMaterialSlotsResolve } from "./sceneMaterialOverrides";
 import { getSceneModelAssetId, type SceneModelState, type SceneSnapshot } from "@bim-studio/contracts";
-import { prepareRenderPacket, type RenderPacket } from "@bim-studio/deep-engine";
+import { prepareRenderPacket, STOCK_MATERIAL_INSTANCE_OPTIONS, type RenderPacket } from "@bim-studio/deep-engine";
 import { invertAffineSceneMatrix, multiplySceneMatrices } from "@bim-studio/deep-engine/scene";
 import { HLOD_PROXY_MATERIAL_ID, type HlodClusterStreamBinding } from "@bim-studio/deep-engine/three-bridge";
-import { decodeTexturedGlb, type GltfImageDecoder } from "@bim-studio/deep-engine/gltf";
+import { decodeDeformablePacketGlb, GltfImportError, type DeformablePacketMode, type GltfDeformationFeature } from "@bim-studio/deep-engine/gltf";
+import { capImageDimension, glbEmbeddedImageDimensions, textureDimensionCap } from "./textureBudget";
 import { runtimeContentSha256 } from "@bim-studio/deep-engine/runtime-package";
 import { sceneModelMatrixValues } from "./sceneModelMatrixValues";
 import { sceneSnapshotToRenderPacket } from "./sceneSnapshotRenderPacket";
@@ -13,6 +14,7 @@ import { sceneHexToLinearRgb, staticSceneEffectEmissive, unsupportedStaticSceneE
 import { compileSceneAuxiliaryGrid } from "./compileSceneAuxiliaryGrid";
 import { readSceneModelMaterialState } from "./sceneAuthorMaterialState";
 import { bindWebHlodAsset, type WebHlodPackage } from "./webHlodPackage";
+import type { GltfImageDecoder } from "@bim-studio/deep-engine/gltf";
 
 export interface CompileSceneRenderOptions {
   readonly loadModel: (assetId: string, signal: AbortSignal) => Promise<Uint8Array>;
@@ -25,6 +27,30 @@ export interface CompileSceneRenderOptions {
   readonly auxiliaryGridOrigin?: { readonly x: number; readonly y: number; readonly z: number };
   /** Opt-in：assetId → 已校验 HLOD 包；提供即把簇代理几何与逐放置簇绑定随编译产出。 */
   readonly hlodPackages?: ReadonlyMap<string, WebHlodPackage>;
+  /**
+   * 宿主逐帧提供蒙皮/形变姿态(编辑器 Deep WebGPU)时为 true:含骨骼/形变目标的模型带变形源进包。
+   * 缺省按绑定姿态静态显示,不会因动画/蒙皮使整份场景编译失败。
+   */
+  readonly liveDeformation?: boolean;
+  /** 每个资产的纹理解码总预算(字节);超出时按需降低该资产纹理边长。缺省不降采样。 */
+  readonly textureBudgetBytes?: number;
+  /** 引擎导入子集之外的资产只隐藏对应模型并经 skippedModels 报告,而不是使整份编译失败(仅编辑器切换使用)。 */
+  readonly skipUndecodableModels?: boolean;
+}
+/** 因引擎无法导入而未进包的模型放置。 */
+export interface SceneSkippedModel {
+  readonly modelId: string;
+  readonly assetId: string;
+  readonly reason: string;
+}
+/** 含 glTF 动画/蒙皮/形变目标的放置,以及它在包内的呈现方式。 */
+export interface SceneDeformedModel {
+  readonly modelId: string;
+  readonly assetId: string;
+  readonly mode: Exclude<DeformablePacketMode, "static">;
+  readonly features: readonly GltfDeformationFeature[];
+  /** 请求 live 却降级为静态绑定姿态时的精确原因。 */
+  readonly fallbackReason?: string;
 }
 /** 单个折叠簇在某放置下的代理绘制（结构兼容 deep-engine HlodClusterProxyDraw）。 */
 export interface SceneHlodProxyDraw {
@@ -44,6 +70,10 @@ export interface SceneRenderCompilation {
   readonly objectBindings: readonly { nodeId: string; instanceIds: readonly string[] }[];
   readonly sourceBytes: number;
   readonly hlodClusters?: readonly SceneHlodClusterBinding[];
+  /** 含变形特性的模型放置;缺省 = 场景中没有。 */
+  readonly deformedModels?: readonly SceneDeformedModel[];
+  /** 被隐藏的不可导入模型(仅 skipUndecodableModels)。 */
+  readonly skippedModels?: readonly SceneSkippedModel[];
 }
 
 /** 将已保存快照和宿主提供的 GLB 转成静态绘制数据，不访问编辑器当前 GPU 状态。 */
@@ -79,12 +109,23 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
   const hlodClusters: SceneHlodClusterBinding[] = [];
   const verifyGeometryPrecision = createSceneGeometryPrecisionValidator();
   const sourceGeometries = new Map<string, RenderPacket["geometries"][number]>();
+  const assetDeformation = new Map<string, Omit<SceneDeformedModel, "modelId" | "assetId">>();
+  const deformationSources: NonNullable<RenderPacket["deformation"]>["sources"][number][] = [];
+  const deformationPoses: NonNullable<RenderPacket["deformation"]>["poses"][number][] = [];
+  const posesByAsset = new Map<string, ReadonlyMap<string, NonNullable<RenderPacket["deformation"]>["poses"][number]>>();
+  const deformedModels: SceneDeformedModel[] = [];
+  const skippedAssets = new Map<string, string>(), skippedModels: SceneSkippedModel[] = [];
+  const skipModel = (modelId: string, assetId: string): void => {
+    objectBindings.push({ nodeId: modelId, instanceIds: [] });
+    skippedModels.push({ modelId, assetId, reason: skippedAssets.get(assetId)! });
+  };
   let sourceBytes = 0;
   for (const model of [...scene.models].sort((a, b) => compare(a.modelId, b.modelId))) {
     signal.throwIfAborted();
     if (!model.visible) { objectBindings.push({ nodeId: model.modelId, instanceIds: [] }); continue; }
     assertStaticModel(model);
     const root = sceneModelMatrixValues(model.transform, model.modelId), assetId = getSceneModelAssetId(model);
+    if (skippedAssets.has(assetId)) { skipModel(model.modelId, assetId); continue; }
     let source = assets.get(assetId);
     if (!source) {
       const bytes = await options.loadModel(assetId, signal);
@@ -94,11 +135,32 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
       const decodedBytes = options.normalizeModel ? await options.normalizeModel(Uint8Array.from(bytes), signal) : bytes;
       signal.throwIfAborted();
       if (decodedBytes.byteLength > maxBytes) throw new Error(`对象 ${model.modelId} 的解压模型超过场景预算`);
-      source = await decodeTexturedGlb(Uint8Array.from(decodedBytes), options.imageDecoder, {
-        resourcePrefix: `asset-${runtimeContentSha256(assetId)}`, signal,
-      });
+      let decoded: Awaited<ReturnType<typeof decodeDeformablePacketGlb>>;
+      try {
+        const glb = Uint8Array.from(decodedBytes);
+        const cap = options.textureBudgetBytes === undefined || !options.imageDecoder ? undefined
+          : textureDimensionCap(glbEmbeddedImageDimensions(glb), options.textureBudgetBytes);
+        decoded = await decodeDeformablePacketGlb(glb, cap === undefined || !options.imageDecoder ? options.imageDecoder
+          : capImageDimension(options.imageDecoder, cap), {
+          resourcePrefix: `asset-${runtimeContentSha256(assetId)}`, signal,
+          ...(options.liveDeformation === true ? { liveDeformation: true } : {}),
+        });
+      } catch (error) {
+        // 编辑器 Deep 切换:单个资产超出引擎导入子集只隐藏它并如实提示,不拖垮整份场景。
+        if (options.skipUndecodableModels !== true || !(error instanceof GltfImportError)) throw error;
+        skippedAssets.set(assetId, `${error.path}: ${error.message}`);
+        skipModel(model.modelId, assetId);
+        continue;
+      }
       signal.throwIfAborted();
+      source = decoded.packet;
       assets.set(assetId, source);
+      if (decoded.mode !== "static") {
+        assetDeformation.set(assetId, { mode: decoded.mode, features: decoded.features,
+          ...(decoded.fallbackReason ? { fallbackReason: decoded.fallbackReason } : {}) });
+        deformationSources.push(...source.deformation?.sources ?? []);
+        posesByAsset.set(assetId, new Map(source.deformation?.poses.map(pose => [pose.id, pose])));
+      }
       geometries.push(...source.geometries); textures.push(...source.textures ?? []);
       for (const geometry of source.geometries) sourceGeometries.set(geometry.id, geometry);
       const hlod = options.hlodPackages?.get(assetId);
@@ -148,10 +210,14 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
       const geometry = sourceGeometries.get(instance.geometry);
       if (!geometry) throw new Error(`对象 ${model.modelId} 缺少几何 ${instance.geometry}`);
       verifyGeometryPrecision(geometry, composed, `models[${model.modelId}].instances[${instance.id}]`);
+      const pose = instance.pose === undefined ? undefined : posesByAsset.get(assetId)?.get(instance.pose);
       instances.push({ ...instance, id, transform, material: materialMap.get(instance.material)!,
-        ...(model.effects?.outline ? { outline: true } : {}) });
+        ...(pose ? { pose: id } : {}), ...(model.effects?.outline ? { outline: true } : {}) });
+      if (pose) deformationPoses.push({ ...pose, id });
       instanceIds.push(id);
     }
+    const deformed = assetDeformation.get(assetId);
+    if (deformed) deformedModels.push({ modelId: model.modelId, assetId, ...deformed });
     objectBindings.push({ nodeId: model.modelId, instanceIds });
     // B4:逐放置簇绑定。manifest 树/代理几何在资产源空间;决策相机经根逆变换换算,
     // 代理绘制 = 根变换(顶点已在源空间,与源实例同一前缀规则展开)。
@@ -178,10 +244,13 @@ export async function compileSceneRenderPacket(input: SceneSnapshot,
     .map(binding => ({ nodeId: binding.nodeId, instanceIds: binding.instanceIds }));
   const packet: RenderPacket = { geometries, materials, instances,
     ...(packetBindings.length ? { objectBindings: packetBindings } : {}),
-    ...(textures.length ? { textures } : {}) };
-  prepareRenderPacket(packet);
+    ...(textures.length ? { textures } : {}),
+    ...(deformationPoses.length ? { deformation: { sources: deformationSources, poses: deformationPoses } } : {}) };
+  // 与运行时包/GPU 上传同一实例 ABI(v5),非默认 IOR 的真实材质才不会在编译期被误拒。
+  prepareRenderPacket(packet, STOCK_MATERIAL_INSTANCE_OPTIONS);
   return { packet, objectBindings: objectBindings.sort((a, b) => compare(a.nodeId, b.nodeId)), sourceBytes,
-    ...(hlodClusters.length ? { hlodClusters } : {}) };
+    ...(hlodClusters.length ? { hlodClusters } : {}), ...(deformedModels.length ? { deformedModels } : {}),
+    ...(skippedModels.length ? { skippedModels } : {}) };
 }
 
 function assertStaticModel(model: SceneModelState): void {

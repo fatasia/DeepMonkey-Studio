@@ -30,3 +30,4 @@ export type { CameraRelativeCoordinateSnapshot } from "./cameraRelativeCoordinat
 export { projectThreeWorldLights } from "./threeWorldLights.js";
 export type { ThreeFallbackLightRange, ThreeLightObjectSource, ThreeLightProjectionIssue,
   ThreeWorldLightsOptions, ThreeWorldLightsResult } from "./threeWorldLights.js";
+export { captureAuthorSkinPalette } from "./authorSkinPose.js";

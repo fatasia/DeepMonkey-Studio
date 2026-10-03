@@ -1,15 +1,18 @@
 import {
   WORLD_LIMITS,
+  canonicalJson,
   type JsonValue,
   type WorldAction,
   type WorldBodyConfig,
   type WorldBodyType,
+  type WorldColliderSpec,
   type WorldCommandResult,
   type WorldSnapshotObject,
   type WorldVec3,
 } from "@bim-studio/contracts";
 import { SceneCommandValidationError, parseSceneCommand, type SceneCommand } from "@bim-studio/scene-sdk";
 import { WorldRuntimeError } from "./worldMath.js";
+import { colliderWithinLimits, primitiveBaseCollider, scaleCollider, scaleWithinLimits } from "./worldObjects.js";
 
 export type WorldOp =
   | { op: "create"; id: string; name: string; kind: string }
@@ -22,6 +25,8 @@ export type WorldOp =
 
 export interface WorldActionPlan {
   ops: WorldOp[];
+  /** action 的 canonical JSON：在改动世界之前算好，step 后半段不再有可能抛错的序列化。 */
+  canonical: string;
   commandResults: WorldCommandResult[];
 }
 
@@ -35,7 +40,7 @@ const NOOP_COMMANDS = new Set<SceneCommand["type"]>([
 interface ShadowObject {
   source: "primitive" | "model";
   bodyType: WorldBodyType;
-  hasCollider: boolean;
+  collider: WorldColliderSpec | null;
   scale: WorldVec3;
 }
 
@@ -49,7 +54,7 @@ const same = (a: WorldVec3, b: WorldVec3) => a[0] === b[0] && a[1] === b[1] && a
 export function planWorldAction(action: WorldAction, sceneId: string, objects: ReadonlyMap<string, WorldSnapshotObject>): WorldActionPlan {
   const shadow = new Map<string, ShadowObject>();
   for (const [id, object] of objects) {
-    shadow.set(id, { source: object.source, bodyType: object.body.type, hasCollider: object.collider !== null, scale: object.transform.scale });
+    shadow.set(id, { source: object.source, bodyType: object.body.type, collider: object.collider, scale: object.transform.scale });
   }
   const fail = (message: string): never => { throw new WorldRuntimeError("invalid-action", message); };
   const need = (id: string): ShadowObject => shadow.get(id) ?? fail(`物体不存在：${id}`);
@@ -75,7 +80,7 @@ export function planWorldAction(action: WorldAction, sceneId: string, objects: R
         const id = objectTarget(command.target);
         if (id.startsWith("@") || shadow.has(id)) fail(`${label} 物体 id 非法或已存在：${id}`);
         if (shadow.size >= WORLD_LIMITS.maxObjects) throw new WorldRuntimeError("limit-exceeded", `${label} 超过物体上限 ${WORLD_LIMITS.maxObjects}`);
-        shadow.set(id, { source: "primitive", bodyType: "none", hasCollider: true, scale: [1, 1, 1] });
+        shadow.set(id, { source: "primitive", bodyType: "none", collider: primitiveBaseCollider(command.kind) ?? null, scale: [1, 1, 1] });
         ops.push({ op: "create", id, name: command.name, kind: command.kind });
         break;
       }
@@ -96,6 +101,10 @@ export function planWorldAction(action: WorldAction, sceneId: string, objects: R
         const id = objectTarget(command.target);
         const object = need(id);
         const scale = command.scale;
+        const limit = WORLD_LIMITS.maxAbsPosition;
+        if (command.position?.some((axis) => Math.abs(axis) > limit)) fail(`${label} position 每个分量绝对值须 ≤ ${limit}`);
+        if (command.rotation?.some((axis) => Math.abs(axis) > 1e6)) fail(`${label} rotation 每个分量绝对值须 ≤ 1e6`);
+        if (scale && !scaleWithinLimits(scale)) fail(`${label} scale 每个轴绝对值须在 [${WORLD_LIMITS.minScale}, ${WORLD_LIMITS.maxScale}]`);
         if (scale && object.bodyType !== "none" && !same(scale, object.scale)) {
           fail(`${label} 已有刚体的物体不支持改缩放；请先创建/摆位再 set-body，或保持原缩放`);
         }
@@ -121,7 +130,10 @@ export function planWorldAction(action: WorldAction, sceneId: string, objects: R
     const object = need(physics.objectId);
     if (physics.type === "set-body") {
       const next = physics.body.type;
-      if (next !== "none" && !object.hasCollider) fail(`${label} ${physics.objectId} 没有可用碰撞体`);
+      if (next !== "none" && !object.collider) fail(`${label} ${physics.objectId} 没有可用碰撞体`);
+      if (next !== "none" && object.collider && !colliderWithinLimits(scaleCollider(object.collider, object.scale))) {
+        fail(`${label} ${physics.objectId} 缩放后的碰撞体尺寸超过 ${WORLD_LIMITS.maxColliderExtent} m 上限`);
+      }
       if (next === "none" && object.bodyType !== "none") fail(`${label} 已有刚体的物体不能退回 none；请删除后重建`);
       object.bodyType = next;
       ops.push({ op: "set-body", id: physics.objectId, body: physics.body });
@@ -132,5 +144,5 @@ export function planWorldAction(action: WorldAction, sceneId: string, objects: R
     }
   }
   for (const event of action.events ?? []) ops.push({ op: "event", name: event.name, ...(event.data !== undefined ? { data: event.data } : {}) });
-  return { ops, commandResults };
+  return { ops, canonical: canonicalJson(action), commandResults };
 }

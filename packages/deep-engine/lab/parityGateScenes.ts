@@ -2,8 +2,8 @@ import * as THREE from "three";
 import { DEFAULT_DISPLAY_CONTRACT } from "../../contracts/src/displayContract.js";
 
 /** 像素一致性门的五个标准场景；three 与 Deep 共用同一作者根（Mesh 层级 + 灯光），只在宿主侧开关特性。 */
-export type ParityScenarioId = "pbr-matrix" | "ibl" | "directional-shadow" | "aa-bloom" | "transparency" | "ibl-hq" | "bloom-only" | "transparency-linear";
-export const PARITY_SCENARIO_IDS: readonly ParityScenarioId[] = ["pbr-matrix", "ibl", "directional-shadow", "aa-bloom", "transparency", "ibl-hq", "bloom-only", "transparency-linear"];
+export type ParityScenarioId = "pbr-matrix" | "ibl" | "directional-shadow" | "aa-bloom" | "transparency" | "ibl-hq" | "bloom-only" | "transparency-direct";
+export const PARITY_SCENARIO_IDS: readonly ParityScenarioId[] = ["pbr-matrix", "ibl", "directional-shadow", "aa-bloom", "transparency", "ibl-hq", "bloom-only", "transparency-direct"];
 export const parityProfile = Object.freeze({ width: 320, height: 192, exposure: DEFAULT_DISPLAY_CONTRACT.toneMapping.exposure,
   verticalFovRadians: Math.PI / 4, near: .1, far: 100, up: [0, 1, 0] as const });
 
@@ -123,12 +123,11 @@ function bloomOnly(): ParityScene {
   return { ...base, post: { ...base.post!, antialias: false } };
 }
 
-/** 诊断：three 先在线性 HDR 目标里混合、再统一 ACES/sRGB（OutputPass），验证 transparency 的差距来自混合空间而非着色。 */
-function transparencyLinear(): ParityScene {
-  return { ...transparency(), post: { antialias: false } };
-}
-
-function transparency(): ParityScene {
+/**
+ * 标准场景：three 走产品 composer 链（线性 HDR 混合 → OutputPass），与 Deep 加权 OIT 的线性合成同口径；AA 关闭以隔离混合语义。
+ * `direct=true`：three renderer 直出（逐片元 ACES+sRGB 后再 alpha 混合）——非产品路径，仅诊断。
+ */
+function transparency(direct = false): ParityScene {
   const scene = new THREE.Scene(), root = new THREE.Group(), geometries: THREE.BufferGeometry[] = [], materials: THREE.Material[] = [];
   scene.add(root);
   const add = (name: string, geometry: THREE.BufferGeometry, material: THREE.Material, at: [number, number, number], order?: number) => {
@@ -141,7 +140,7 @@ function transparency(): ParityScene {
     new THREE.MeshStandardMaterial({ color: new THREE.Color(...color as [number, number, number]).multiplyScalar(.8), roughness: .3, metalness: 0, transparent: true, opacity: .45, depthWrite: false }),
     [(index - 1) * 1.35, .1 * (index - 1), .4 * (1 - index)]));
   key(scene, [-3, 4, 5], 3); key(scene, [4, 1, 3], 1, new THREE.Color(.7, .8, 1));
-  return finish(scene, root, geometries, materials, { eye: [0, 0, 6.2], target: [0, 0, 0], shadows: false });
+  return finish(scene, root, geometries, materials, { eye: [0, 0, 6.2], target: [0, 0, 0], shadows: false, ...(direct ? {} : { post: { antialias: false } }) });
 }
 
 export function createParityScene(id: ParityScenarioId): ParityScene {
@@ -153,7 +152,7 @@ export function createParityScene(id: ParityScenarioId): ParityScene {
     case "transparency": return transparency();
     case "ibl-hq": return iblHq();
     case "bloom-only": return bloomOnly();
-    case "transparency-linear": return transparencyLinear();
+    case "transparency-direct": return transparency(true);
   }
 }
 

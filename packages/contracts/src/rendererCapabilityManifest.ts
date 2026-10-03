@@ -477,6 +477,19 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     },
   },
   {
+    id: "material-advanced",
+    title: "高级材质 sheen / iridescence / 体积透射 / clearcoat IBL(advancedMaterials 变体)",
+    webFeatureKeys: [],
+    web: {
+      support: "supported", reason: "opt-in-default-off",
+      evidence: "packages/deep-engine/src/webgpu/pbrAdvancedMaterialShader.ts:composeAdvancedMaterialSceneShader(PbrRendererOptions.advancedMaterials 缺省 false→场景 WGSL 字节不变;启用后材质 uniform 192→240B,materialAdvancedParameters.ts 12 float 带)+packages/deep-engine/scripts/advancedMaterialGpuTest.mjs(球白炉/解析直射对拍 CPU)+advancedMaterialThreeParityTest.mjs(真 three r185 对拍)+apps/web/src/viewer/StudioDeepWebGpuBridge.ts(场景含激活 lobe 时按需启用,编辑中新激活则受控重建一次)",
+    },
+    native: {
+      support: "unavailable", reason: "absent",
+      evidence: "packages/deep-engine/src/runtimePackage/renderPacket.ts:native profile 的 material 可选字段不含 advancedParameters(闭合材质 profile 拒绝)+packages/deep-engine-native/src/mesh_abi.rs:MATERIAL_UNIFORM_FLOATS(=40 核心块,无 advanced 带与 sheen/薄膜/体积着色路径)",
+    },
+  },
+  {
     id: "local-shadow-abi-16",
     title: "局部阴影 16 灯 ABI 扩容(F7b,点光 6-face 计入 view 预算)",
     webFeatureKeys: [],
@@ -526,6 +539,19 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     native: {
       support: "unavailable", reason: "absent",
       evidence: "packages/deep-engine-native/src/lib.rs(无 HDR 显示输出模块;native 离屏直出经 output-transform ACES SDR,显示 surface 链按设计属 web 宿主)",
+    },
+  },
+  {
+    id: "object-outline",
+    title: "对象级/选择描边(render packet 实例 outline 位 → 掩码+边缘+合成)",
+    webFeatureKeys: [],
+    web: {
+      support: "supported", reason: "full",
+      evidence: "packages/deep-engine/lab/instanceOutlineProbe.ts:Deep PbrRenderer 与 three OutlinePass 同布局 GPU 对拍探针(scripts/instanceOutlineProbeServer.mjs;1920x1080 证据 docs/reports/deep-outline-20261003);实现 postprocess/instanceOutline.ts InstanceOutlinePass(无描边实例时不构造,空闲 createAsync 预热)+ webgpu/packetOutline.ts;账本 materialEffectLedger bit 256 对账;独立包实时翻转 DeepWebGpuBackend.setOutlinedModels(仅 updateInstances);测试 instanceOutline.test.ts / instanceOutlinePass.test.ts / DeepWebGpuBackend.outline.test.ts / packetBuffers.test.ts / materialEffectLedger.test.ts;变形(pose)与 meshlet 批次暂不进掩码,FrameMetrics.outline.skippedBatches 上报",
+    },
+    native: {
+      support: "supported", reason: "full",
+      evidence: "packages/deep-engine-native/src/outline_pass.rs:OutlinePass(native_outline_composite_v1.wgsl 掩码+合成;forward_targets OUTLINE_MASK_FORMAT/OUTLINE_DEPTH_FORMAT;contract/types.rs 实例 outline 字段,与 web 共用 surface flag bit 256)",
     },
   },
 ] as const);

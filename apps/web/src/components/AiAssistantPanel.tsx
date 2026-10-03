@@ -30,6 +30,7 @@ import { AiProvenancePanel } from "./AiProvenancePanel";
 import { AiBimClarificationCard } from "./AiBimClarificationCard";
 import { BimAssistantEvidence, type BimAssistantAction } from "./BimAssistantEvidence";
 import { IndustrialAgentWorkspace } from "./IndustrialAgentWorkspace";
+import type { SceneEditPort } from "../ai/sceneEditSession";
 import "./AiAssistantReliability.css";
 
 interface AiAssistantPanelProps {
@@ -43,6 +44,8 @@ interface AiAssistantPanelProps {
   onValidateDashboardPageDraft?: (draft: unknown, datasets: readonly DataDatasetRecord[]) => { changeCount: number; labels: string[] };
   onApplyDashboardPageDraft?: (draft: unknown, datasets: readonly DataDatasetRecord[]) => void;
   onOpenWorkspaceTask?: (task: Extract<AiWorkspaceTask, { workspace: "operations" }>) => void;
+  /** Studio 提供:"执行任务"页的场景改动闭环端口。 */
+  sceneEdit?: SceneEditPort;
   onClose: () => void;
 }
 
@@ -57,6 +60,7 @@ export function AiAssistantPanel({
   onValidateDashboardPageDraft,
   onApplyDashboardPageDraft,
   onOpenWorkspaceTask,
+  sceneEdit,
   onClose,
 }: AiAssistantPanelProps) {
   const [mode, setMode] = useState<AssistantMode>(() => assistantWorkspaceTarget(context).workspace === "dashboard" ? "dashboard" : surface === "studio" ? "scene" : "platform");
@@ -278,7 +282,7 @@ export function AiAssistantPanel({
       </header>
       <div className="ai-assistant-body" ref={messageScroll.bodyRef} onScroll={messageScroll.onScroll}>
         {experience === "agent" ? (
-          <IndustrialAgentWorkspace locale={locale} {...(projectId ? { projectId } : {})} context={context} />
+          <IndustrialAgentWorkspace locale={locale} {...(projectId ? { projectId } : {})} {...(sceneEdit ? { sceneEdit } : {})} context={context} />
         ) : <>
           <AiAssistantSessionControls locale={locale} sessions={sessions} disabled={busy} onSwitch={resetForSessionSwitch} />
           {/* 上下文、记忆、实验档案合并为一条折叠行：默认只露出范围与来源就绪度，细节按需展开。 */}
@@ -436,7 +440,7 @@ export function AiAssistantPanel({
               {tabs.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
             </select>
           </label>
-          <AssistantModelControls compact locale={locale} mode={mode} value={sessionOptions} onChange={setSessionOptions} disabled={busy} />
+          <AssistantModelControls compact allowAuto lastRoute={execution?.route} locale={locale} mode={mode} value={sessionOptions} onChange={setSessionOptions} disabled={busy} />
         </>}
         onChange={setQuestion} onSend={() => { if (!sessions.loading) void ask(); }} onStop={() => {
           cancelRequest();

@@ -24,6 +24,8 @@ import { StudioDeepEnvironmentSession } from "./StudioDeepEnvironmentSession";
 import { StudioDeepShadowSession } from "./StudioDeepShadowSession";
 import { StudioDeepPerformance } from "./StudioDeepPerformance";
 import { StudioDeepRenderView } from "./StudioDeepRenderView";
+import { StudioDeformationPoseSync } from "./studioDeformationPoseSync";
+import { StudioDeepOutlineSync } from "./studioDeepOutlineSync";
 import { updateAuthorProjectionState } from "./authorLodSelection";
 import { DeepCameraController } from "./deepCameraController";
 import { DeepCameraInputSession } from "./deepCameraInputSession";
@@ -31,6 +33,7 @@ import { DeepGizmoInteraction } from "./deepGizmoInteraction";
 import { createDeepCanvas, prepareAuthorInputCanvas, captureAuthorStyle, restoreAuthorStyle,
   type AuthorCanvasStyle } from "./studioDeepPresentationCanvas";
 import { collectDeepOverlayPrimitives } from "./deepOverlayPrimitiveSource";
+import { isDeepAdvancedMaterialsRejection, packetUsesDeepAdvancedMaterials, sceneUsesDeepAdvancedMaterials } from "./studioDeepAdvancedMaterials";
 import type { FrameCaptureSession, RenderPacket } from "@bim-studio/deep-engine";
 import { createRequestedStudioFrameCaptureSession, createStudioFrameReadbackListener,
   publishStudioFrameCaptureSession, releaseStudioFrameCaptureSession } from "./studioFrameCaptureDiagnostics";
@@ -143,6 +146,11 @@ export class StudioDeepWebGpuBridge {
   private readonly gizmoInteraction: DeepGizmoInteraction;
   /** True after an immutable SceneSnapshot packet was accepted for this session. */
   private independentPacketPath = false;
+  /** 带变形姿态的作者包:候选发布成功后据此建立逐帧姿态同步。 */
+  private pendingDeformationPacket: RenderPacket | undefined;
+  private deformationSync: StudioDeformationPoseSync | undefined;
+  /** 独立包路径的描边实时同步(勾选"轮廓"/选中变化 → 仅翻转实例 outline 位)。 */
+  private outlineSync: StudioDeepOutlineSync | undefined;
   /** 最近一次提交的 view 指纹:settle 背压只对相同指纹的重绘生效。 */
   private settledViewKey = "";
   /** 上次读到的 renderDemand 修订号:静置短路的变化信号(不可用时为 -1)。 */
@@ -154,6 +162,10 @@ export class StudioDeepWebGpuBridge {
    */
   private readonly hdrDisplayRequest: HdrDisplayRequest | undefined;
   private replacementBudget: number | undefined;
+  /** 当前 backend 是否以 advancedMaterials 变体创建(创建时判定,见 switchTo)。 */
+  private advancedMaterialsActive = false;
+  /** 编辑中新激活高级 lobe 后受控重建的粘性请求:此后每次创建都带变体,直到 bridge 释放。 */
+  private advancedMaterialsRequested = false;
   private recoveryCandidateFailure: { readonly generation: number; readonly attempts: number } | undefined;
 
   constructor(
@@ -250,6 +262,7 @@ export class StudioDeepWebGpuBridge {
           const authorRenderPacket = (await packetTask) ?? undefined;
           const pipelineBootstrap = t11PipelineBootstrap(authorRenderPacket !== undefined);
           this.independentPacketPath = authorRenderPacket !== undefined;
+          this.pendingDeformationPacket = authorRenderPacket?.deformation ? authorRenderPacket : undefined;
           this.viewer.setAuthorPacketIndependent(this.independentPacketPath);
           if (!authorRenderPacket) updateAuthorProjectionState(this.viewer.scene, this.viewer.camera, signal);
           else this.viewReader.setIndependentPacketBounds(authorRenderPacket);
@@ -276,7 +289,11 @@ export class StudioDeepWebGpuBridge {
           // A compiled SceneSnapshot packet is a complete Deep input. Keep the
           // Three projection bridge out of this path so geometry, materials,
           // hierarchy and transforms are never read from the author scene.
-          this.projectionBridge = authorRenderPacket ? undefined : new module.ThreeProjectionBridge({ hooks: threePrototypeHooks(), capabilities: { authorDeformation: true, authorLod: true },
+          // 仅当场景含激活的 clearcoat/sheen/iridescence/transmission lobe 时才启用 advancedMaterials 着色变体(按需编译,零开销默认)。
+          const advancedMaterials = this.advancedMaterialsRequested || (authorRenderPacket
+            ? packetUsesDeepAdvancedMaterials(authorRenderPacket) : sceneUsesDeepAdvancedMaterials(this.viewer.scene));
+          this.projectionBridge = authorRenderPacket ? undefined : new module.ThreeProjectionBridge({ hooks: threePrototypeHooks(),
+            capabilities: { authorDeformation: true, authorLod: true, ...(advancedMaterials ? { advancedMaterials: true } : {}) },
             authorTransformResolver: source => resolveAuthorWorldTransform(this.viewer, source),
           });
           // T07 动态分辨率与 T25 逐 pass 计时均为 opt-in；缺省字段不进快照。
@@ -293,6 +310,7 @@ export class StudioDeepWebGpuBridge {
             ...(authorHlodClusters?.length ? { hlodClusters: authorHlodClusters } : {}),
             ...(clusterLodStaging ? { clusterLodStaging } : {}),
             renderer: { environment: environment.source, deformation: true, meshlets: true,
+              ...(advancedMaterials ? { advancedMaterials: true } : {}),
               // F8 自动曝光零配置默认开（Z3.5 授权）：缺省参数由引擎 DEFAULT_PBR_AUTO_EXPOSURE 提供，
               // 无可靠亮度时 fail-closed 回退固定启发式并经 FrameMetrics.autoExposure 披露。
               autoExposure: {},
@@ -326,6 +344,7 @@ export class StudioDeepWebGpuBridge {
             cameraLayerMask: this.viewer.camera.layers.mask, signal,
           });
           markSwitchPhase("deep-webgpu:scene-uploaded");
+          this.advancedMaterialsActive = advancedMaterials;
           if (replacementBudget !== undefined && !signal.aborted) candidateObserver = observeRecoveryCandidate(backend, signal);
           return backend;
         },
@@ -404,6 +423,10 @@ export class StudioDeepWebGpuBridge {
     this.deepCanvas = canvas;
     this.deepBackend = backend;
     this.independentPacketPath = backend.usesIndependentPacket;
+    this.deformationSync = this.independentPacketPath && this.pendingDeformationPacket
+      ? StudioDeformationPoseSync.create(this.pendingDeformationPacket, this.viewer) : undefined;
+    this.pendingDeformationPacket = undefined;
+    this.outlineSync = this.independentPacketPath ? new StudioDeepOutlineSync() : undefined;
     this.viewer.setAuthorPacketIndependent(this.independentPacketPath);
     this.frameCaptureSession = frameCaptureSession;
     publishStudioFrameCaptureSession(frameCaptureSession);
@@ -495,6 +518,8 @@ export class StudioDeepWebGpuBridge {
   private releaseDeep(): void {
     this.viewer.setDeepPointerPick?.(undefined);
     this.projectionBridge = undefined;
+    this.deformationSync = undefined;
+    this.outlineSync = undefined;
     this.independentPacketPath = false;
     this.viewer.setAuthorPacketIndependent(false);
     this.viewer.setPresentationPerformanceSource(undefined);
@@ -584,6 +609,10 @@ export class StudioDeepWebGpuBridge {
       // the external renderer. Keep the explicit path for environment/shadow
       // callbacks and trailing syncs which can run outside an author frame.
       if (!authorMatricesCurrent) this.updateAuthorMatrices();
+      // Three AnimationMixer 已在作者帧推进;把骨骼/形变姿态读成 Deep 姿态。姿态变化即视为新画面,
+      // 清除静置指纹以绕过 TAA 收敛背压,保证动画每帧都被绘制。
+      if (this.deformationSync?.apply(backend)) this.settledViewKey = "";
+      if (this.outlineSync?.apply(backend, this.viewer)) this.settledViewKey = "";
       const camera = cameraSnapshot(this.viewer);
       if (probe) recordProbeSample(probe, "cam", camera[0]!, camera[1]!, camera[3]!, camera[4]!);
       const cameraChanged = !sameSnapshot(camera, this.lastCameraSnapshot);
@@ -787,8 +816,28 @@ export class StudioDeepWebGpuBridge {
     }
   }
 
+  /**
+   * 方案:受控重建(而非桥直接拒绝致整场景回退)。变体在 backend 创建时编译,故编辑中新激活高级 lobe 时,
+   * 先回到作者(three)画布保持可见与可交互,再用 advancedMaterials 变体重建一次 Deep backend——
+   * 与设备恢复重建同一事务(候选画布首帧验证通过才显示)。重建后仍被拒绝则按原路径失败上报。
+   */
+  private restartWithAdvancedMaterials(): void {
+    this.advancedMaterialsRequested = true;
+    const userSwitchPending = this.pending !== undefined;
+    this.cancelPendingSwitch();
+    try { this.publishWebGl(); }
+    catch (error) { this.options.onRuntimeFailure?.(error instanceof Error ? error : new Error(String(error))); return; }
+    if (userSwitchPending) return;
+    void this.switchTo("webgpu").then(result => {
+      if (result.status === "failed" && this.activeBackendValue === "webgl") {
+        this.options.onRuntimeFailure?.(new Error(result.error ?? "Advanced material renderer rebuild failed."));
+      }
+    }, error => this.options.onRuntimeFailure?.(error instanceof Error ? error : new Error(String(error))));
+  }
+
   private failRuntime(reason: unknown): void {
     if (this.closed || this.failureReported || this.activeBackendValue !== "webgpu") return;
+    if (!this.advancedMaterialsActive && isDeepAdvancedMaterialsRejection(reason)) { this.restartWithAdvancedMaterials(); return; }
     this.failureReported = true;
     let error = reason instanceof Error ? reason : new Error(String(reason));
     try { this.publishWebGl(); }
@@ -874,7 +923,7 @@ export class StudioDeepWebGpuBridge {
    * 串行批次提交,每批仍受 updateBudget 约束。
    */
   private pumpProbeCapture(): void {
-    if (this.probePumpArmed || this.closed) return;
+    if (this.probePumpArmed || this.closed || !this.probeClipmapEnabled()) return;
     this.probePumpArmed = true;
     const step = (): void => {
       this.probePumpArmed = false;

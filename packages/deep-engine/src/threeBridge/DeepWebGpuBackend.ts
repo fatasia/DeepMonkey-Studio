@@ -6,6 +6,7 @@ import { applyHlodPlanToInstances, hlodClusterStreamResources, hlodPlanSignature
   type HlodClusterStreamResources } from "./hlodClusterStream.js";
 import type { ProjectionIssue, ProjectionResult, ThreeObjectSource } from "./types.js";
 import type { InstanceUpdate, RenderPacket } from "../renderPacket.js";
+import type { DeformationPose } from "../deformation/types.js";
 import { PbrRenderer, type FrameMetrics, type PbrRendererOptions, type RenderView } from "../webgpu/pbrRenderer.js";
 import type { ClusterLodSceneStaging } from "../webgpu/clusterLodRenderSlot.js";
 import { bakeClusterLodDag, type ClusterLodBakeInput, type ClusterLodBakeResult } from "../rayTracing/clusterLodBake.js";
@@ -130,6 +131,10 @@ export class DeepWebGpuBackend {
   private packetViewRetryAt = 0;
   private probeClipmap: DeepWebGpuProbeClipmapSession | undefined;
   private committedPacket: RenderPacket | undefined;
+  /** 独立包路径最近一次整包发布的实例表(含簇计划);仅带变形姿态的包保留,供逐帧姿态更新复用。 */
+  private publishedInstances: RenderPacket["instances"] | undefined;
+  /** 宿主驱动描边集合最近一次落到 GPU 的实例表;缺省表示沿用整包编译时的 outline 位。 */
+  private outlineInstances: RenderPacket["instances"] | undefined;
   private modelByInstanceId = new Map<string, string>();
   /** B4 簇级决策引擎与代理 overlay 资源;仅在独立 RenderPacket 路径初始化。 */
   private clusterEngine: HlodClusterDecisionEngine | undefined;
@@ -324,6 +329,7 @@ export class DeepWebGpuBackend {
             this.clusterEngine.allProxyDraws(candidate.origin)) }
         : localPacket;
       await this.runtime.setPacketValidated(published, signal);
+      this.publishedInstances = staticPacket ? undefined : published.instances;
       this.chunks?.fullPacketPublished(staticPacket ? "resident-stage-unavailable" : "deformation");
     }
     markBackendPhase("packet-uploaded");
@@ -346,6 +352,7 @@ export class DeepWebGpuBackend {
     if (signal?.aborted) throw abortError("Deep backend packet frame cancelled.");
     this.coordinates.commit(candidate);
     this.committedPacket = localPacket;
+    this.outlineInstances = undefined;
     // F5-GI-2:独立包路径提交后必须重同步 probe 会话(与 sync() 提交分支同一形态),
     // 否则包内容替换后探针继续用旧表面缓存,直到 GI 关/开重建会话。
     this.probeClipmap?.syncPacket(this.committedPacket);
@@ -541,6 +548,45 @@ export class DeepWebGpuBackend {
     return { status, update: projected.update, packet: projected.packet };
   }
 
+  /**
+   * 独立包路径的宿主驱动动画:只替换已发布带姿态实例的变形姿态(骨骼调色板/形变权重),
+   * 几何、材质与实例表沿用整包发布结果;下一帧起生效。未发布变形包时 fail-closed。
+   */
+  updateDeformationPoses(poses: readonly DeformationPose[]): void {
+    this.assertOpen();
+    const packet = this.committedPacket, instances = this.publishedInstances;
+    if (!this.independentPacket || !packet?.deformation || !instances) {
+      throw new Error("Deformation pose updates require a published independent deformation packet.");
+    }
+    this.runtime.updateInstances({ materials: packet.materials, instances, poses });
+  }
+
+  /**
+   * 独立包路径的宿主驱动对象描边(勾选/取消轮廓、选中对象变化):按作者模型 ID 集合翻转实例 outline 位,
+   * 只走 updateInstances(同一批次缓冲写入),不重传几何/材质、不重建 packet 资源。
+   * 返回 "unchanged"(与当前一致,零 GPU 工作)、"updated"(下一帧生效)、
+   * "unsupported"(非独立包、变形包或 HLOD/流送包;这些路径由投影桥/整包发布自行携带 outline)。
+   */
+  setOutlinedModels(modelIds: ReadonlySet<string>): "updated" | "unchanged" | "unsupported" {
+    this.assertOpen();
+    const packet = this.committedPacket;
+    if (!this.independentPacket || !packet || packet.deformation || this.publishedInstances
+      || this.clusterEngine || this.chunks?.hasCatalog) return "unsupported";
+    const current = this.outlineInstances ?? packet.instances;
+    let changed = false;
+    const next = current.map(instance => {
+      const want = modelIds.has(this.modelByInstanceId.get(instance.id) ?? instance.id);
+      if (want === (instance.outline === true)) return instance;
+      changed = true;
+      const { outline: _previous, ...rest } = instance;
+      return want ? { ...rest, outline: true } : rest;
+    });
+    if (!changed) return "unchanged";
+    this.runtime.updateInstances({ materials: packet.materials, instances: next });
+    this.outlineInstances = next;
+    return "updated";
+  }
+
   render(view: RenderView): FrameMetrics | undefined {
     this.assertOpen();
     const localView = this.coordinates.localizeView(view, this.pendingCoordinate ?? this.coordinates.current);
@@ -574,6 +620,7 @@ export class DeepWebGpuBackend {
     this.syncGeneration++;
     this.shadowSelectionValue = undefined;
     this.committedPacket = undefined;
+    this.outlineInstances = undefined;
     this.packetViewRequested = undefined;
     this.packetViewStaged = undefined;
     this.packetViewFailure = undefined;

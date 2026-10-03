@@ -11,7 +11,7 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
     throw new TypeError("Deep WebGPU renderer options must be an object.");
   }
   if (Object.keys(options).some(key => !["shadows", "features", "environment", "deformation", "meshlets", "frameCapture", "adaptiveQuality", "probeClipmap", "pipelines",
-    "resolutionScalePolicy", "gpuPassTiming", "probeDirections", "clusterLod", "virtualTextures", "recovery", "autoExposure", "hdrDisplay"].includes(key))) {
+    "resolutionScalePolicy", "gpuPassTiming", "probeDirections", "clusterLod", "virtualTextures", "recovery", "autoExposure", "hdrDisplay", "advancedMaterials"].includes(key))) {
     throw new TypeError("Unknown Deep WebGPU renderer option.");
   }
   if (options.deformation !== undefined && typeof options.deformation !== "boolean") {
@@ -28,6 +28,9 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
       || (options.recovery.backoffMs !== undefined && (typeof options.recovery.backoffMs !== "number" || !Number.isFinite(options.recovery.backoffMs) || options.recovery.backoffMs < 0))
       || (options.recovery.maxBackoffMs !== undefined && (typeof options.recovery.maxBackoffMs !== "number" || !Number.isFinite(options.recovery.maxBackoffMs) || options.recovery.maxBackoffMs < 0)))) {
     throw new TypeError("Deep WebGPU recovery option must be an object with non-negative numeric maxAttempts/backoffMs/maxBackoffMs.");
+  }
+  if (options.advancedMaterials !== undefined && typeof options.advancedMaterials !== "boolean") {
+    throw new TypeError("Deep WebGPU advancedMaterials option must be boolean.");
   }
   if (options.clusterLod !== undefined && typeof options.clusterLod !== "boolean") {
     throw new TypeError("Deep WebGPU clusterLod option must be boolean.");
@@ -49,6 +52,8 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
     ...(options.meshlets === undefined ? {} : { meshlets: options.meshlets }),
     ...(options.hdrDisplay === undefined ? {} : { hdrDisplay: Object.freeze({ ...options.hdrDisplay }) }),
     ...(options.deformation === undefined ? {} : { deformation: options.deformation }),
+    // 选择性材质变体(opt-in):缺省不进快照,管线 WGSL 与原版逐字节一致。
+    ...(options.advancedMaterials === undefined ? {} : { advancedMaterials: options.advancedMaterials }),
     ...(options.shadows === undefined ? {} : { shadows: snapshotShadows(options.shadows) }),
     ...(options.features === undefined ? {} : { features: resolvePbrRendererFeatures(options.features) }),
     ...(options.environment === undefined ? {} : { environment: snapshotEnvironment(options.environment) }),

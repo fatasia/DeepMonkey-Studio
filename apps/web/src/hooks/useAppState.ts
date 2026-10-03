@@ -251,13 +251,10 @@ export function useAppState() {
 
   const showError = useCallback((reason: unknown) => { setError(reason instanceof Error ? reason.message : "操作失败"); window.setTimeout(() => setError(undefined), 5000); }, []);
   const rendererPostProcessingRequired = useMemo(
-    () => requiresWebGlPostProcessing(
-      postProcessing,
-      engine?.listModels().some((model) => engine.getModelEffects(model.id).outline) ?? false
-    ),
-    [engine, postProcessing, revision]
+    () => requiresWebGlPostProcessing(postProcessing),
+    [postProcessing]
   );
-  // 与 rendererPostProcessingRequired 同源；切后端守卫只拦描边（后处理域在 Deep 侧的支持面另行演进）。
+  // 对象级描边已由 Deep 实现；该标志仅供切后端守卫在 Deep 缺失描边能力时 fail-closed 回落 WebGL。
   const rendererOutlineRequired = useMemo(
     () => engine?.listModels().some((model) => engine.getModelEffects(model.id).outline) ?? false,
     [engine, revision]

@@ -3,6 +3,7 @@ import {
   WORLD_LIMITS,
   WorldApiContractError,
   validateWorldAction,
+  validateWorldEventData,
   validateWorldObserveRequest,
   validateWorldResetRequest,
   validateWorldSnapshot,
@@ -16,7 +17,7 @@ const hex = "a".repeat(64);
 function snapshot(overrides: Record<string, unknown> = {}) {
   return {
     snapshotVersion: "1", seed: 7, tick: 12, sceneId: "scene-1", sceneHash: hex, traceHash: hex, rngState: 5,
-    gravity: [0, -9.81, 0], ground: true, objects: [], groundHandle: null,
+    gravity: [0, -9.81, 0], ground: true, objects: [], groundHandle: 0,
     physics: { encoding: "base64", data: "AAAA", byteLength: 3, sha256: hex }, snapshotHash: hex, ...overrides,
   };
 }
@@ -75,7 +76,7 @@ describe("World API 合同校验", () => {
     expect(field(() => validateWorldAction({ unknown: 1 }))).toBe("action.unknown");
   });
 
-  it("observe：通道去重，传感器只接受阶段 3 预留种类", () => {
+  it("observe：通道去重，传感器只接受已登记的占位种类", () => {
     expect(validateWorldObserveRequest(undefined)).toEqual({});
     expect(validateWorldObserveRequest({ channels: ["poses", "poses"] }).channels).toEqual(["poses"]);
     expect(validateWorldObserveRequest({ sensors: [{ id: "d0", kind: "depth" }] }).sensors).toHaveLength(1);
@@ -90,5 +91,35 @@ describe("World API 合同校验", () => {
     expect(field(() => validateWorldSnapshot(snapshot({ tick: -1 })))).toBe("snapshot.tick");
     expect(field(() => validateWorldSnapshot(snapshot({ physics: { encoding: "base64", data: "A", byteLength: WORLD_LIMITS.maxSnapshotBytes + 1, sha256: hex } })))).toBe("snapshot.physics.byteLength");
     expect(field(() => validateWorldSnapshot(snapshot({ physics: { encoding: "hex", data: "A", byteLength: 1, sha256: hex } })))).toBe("snapshot.physics");
+  });
+
+  it("审查回归：冲量/速度/质量幅值上限与事件 data 的深度、节点、字节、__proto__ 限制", () => {
+    expect(field(() => validateWorldAction({ physics: [{ type: "apply-impulse", objectId: "o", impulse: [1e308, 0, 0] }] }))).toBe("action.physics[0].impulse[0]");
+    expect(field(() => validateWorldAction({ physics: [{ type: "set-linear-velocity", objectId: "o", velocity: [0, WORLD_LIMITS.maxAbsVelocity + 1, 0] }] }))).toBe("action.physics[0].velocity[1]");
+    expect(field(() => validateWorldAction({ physics: [{ type: "set-body", objectId: "o", body: { type: "dynamic", mass: WORLD_LIMITS.maxMass * 2 } }] }))).toBe("action.physics[0].body.mass");
+    const deep = JSON.parse(`${"[".repeat(200_000)}${"]".repeat(200_000)}`);
+    expect(() => validateWorldEventData(deep, "data")).toThrow(/嵌套深度/);
+    expect(() => validateWorldEventData(JSON.parse('{"__proto__":{"x":1}}'), "data")).toThrow(/__proto__/);
+    expect(() => validateWorldEventData("x".repeat(WORLD_LIMITS.maxEventDataBytes + 1), "data")).toThrow(/字节/);
+    expect(validateWorldEventData({ a: [1, "b", null, true] }, "data")).toEqual({ a: [1, "b", null, true] });
+    expect(field(() => validateWorldAction({ commands: [JSON.parse('{"id":"c","type":"data.apply","values":{"__proto__":{}}}')] }))).toBe("action.commands[0]");
+  });
+
+  it("审查回归：快照对象表逐项校验（重复 id/句柄、越界缩放、碰撞体尺寸、地面句柄一致性）", () => {
+    const object = (overrides: Record<string, unknown> = {}) => ({
+      id: "a", kind: "box", source: "primitive", name: "a", visible: true,
+      body: { type: "dynamic", mass: 1, friction: 0.5, restitution: 0 },
+      transform: { position: [0, 1, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      collider: { shape: "cuboid", halfExtents: [1, 1, 1] }, handle: 5e-324, ...overrides,
+    });
+    expect(validateWorldSnapshot(snapshot({ objects: [object()] })).objects).toHaveLength(1);
+    expect(field(() => validateWorldSnapshot(snapshot({ objects: [object(), object({ handle: 1e-323 })] })))).toBe("snapshot.objects[1].id");
+    expect(field(() => validateWorldSnapshot(snapshot({ objects: [object(), object({ id: "b" })] })))).toBe("snapshot.objects[1].handle");
+    expect(field(() => validateWorldSnapshot(snapshot({ objects: [object({ transform: { position: [0, 1, 0], rotation: [0, 0, 0], scale: [1e9, 1, 1] } })] })))).toBe("snapshot.objects[0].transform.scale[0]");
+    expect(field(() => validateWorldSnapshot(snapshot({ objects: [object({ collider: { shape: "ball", radius: 1e6 } })] })))).toBe("snapshot.objects[0].collider.radius");
+    expect(field(() => validateWorldSnapshot(snapshot({ objects: [object({ handle: null })] })))).toBe("snapshot.objects[0].handle");
+    expect(field(() => validateWorldSnapshot(snapshot({ objects: [object({ name: "x".repeat(WORLD_LIMITS.maxNameLength + 1) })] })))).toBe("snapshot.objects[0].name");
+    expect(field(() => validateWorldSnapshot(snapshot({ groundHandle: null })))).toBe("snapshot.groundHandle");
+    expect(field(() => validateWorldSnapshot(snapshot({ gravity: [0, -1e308, 0] })))).toBe("snapshot.gravity[1]");
   });
 });

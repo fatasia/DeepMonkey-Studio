@@ -12,7 +12,8 @@ import { readAssistantStream } from "./assistantStream";
 
 type ApiRequest = <T>(url: string, init?: RequestInit) => Promise<T>;
 type ApiOpen = (url: string, init?: RequestInit) => Promise<Response>;
-export interface AssistantSessionOptions { model?: string; reasoningEffort?: "minimal" | "standard" | "deep" }
+/** routing:"auto" = 由服务端路由器在默认模型与小模型间选择（显式 model 优先）。 */
+export interface AssistantSessionOptions { model?: string; reasoningEffort?: "minimal" | "standard" | "deep"; routing?: "auto" }
 interface AssistantStreamOptions extends AssistantSessionOptions {
   projectId?: string;
   signal?: AbortSignal;
@@ -22,6 +23,8 @@ export interface AssistantSessionCatalog {
   defaultModel: string;
   models: Array<{ id: string; reasoningEfforts: Array<NonNullable<AssistantSessionOptions["reasoningEffort"]>> }>;
   catalogAvailable: boolean;
+  /** 「自动」路由可用性与目标；旧服务端缺省。 */
+  routing?: { autoAvailable: boolean; strongModel: string; fastModel?: string };
 }
 
 export type AssistantMode =
@@ -49,7 +52,8 @@ async function streamAssistant(
       accept: "text/event-stream",
     },
     body: JSON.stringify({ mode, question, context, ...(options.projectId ? { projectId: options.projectId } : {}),
-      ...(options.model ? { model: options.model } : {}), ...(options.reasoningEffort ? { reasoningEffort: options.reasoningEffort } : {}) }),
+      ...(options.model ? { model: options.model } : {}), ...(options.reasoningEffort ? { reasoningEffort: options.reasoningEffort } : {}),
+      ...(options.routing === "auto" && !options.model ? { routing: "auto" } : {}) }),
     ...(options.signal ? { signal: options.signal } : {}),
   });
   return readAssistantStream(response, onDelta, options.signal, options.onExecution);

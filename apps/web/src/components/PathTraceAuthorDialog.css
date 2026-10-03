@@ -4,10 +4,12 @@
 .path-trace-dialog h2 { margin: 3px 0 0; font-size: 20px; color: var(--text-strong); }
 .path-trace-dialog small { color: var(--text-muted); }
 .path-trace-body { display: grid; grid-template-columns: minmax(0, 1fr) 256px; gap: 24px; padding: 24px; }
-.path-trace-preview { display: flex; align-items: center; justify-content: center; flex-direction: column; min-height: 280px; overflow: hidden; border: 1px solid var(--line-subtle); border-radius: var(--radius-md); background: var(--bg-1); }
-.path-trace-preview canvas { width: 100%; height: auto; object-fit: contain; image-rendering: auto; }
-.path-trace-preview small { padding: 12px; }
-.path-trace-preview p { padding: 24px; text-align: center; color: var(--text-muted); }
+.path-trace-preview { display: flex; align-items: stretch; flex-direction: column; align-self: start; overflow: hidden; border: 1px solid var(--line-subtle); border-radius: var(--radius-md); background: var(--bg-1); }
+.path-trace-stage { display: grid; min-height: 0; place-items: center; background: var(--bg-1); }
+.path-trace-stage canvas { display: block; width: 100%; height: 100%; object-fit: contain; image-rendering: auto; }
+.path-trace-preview small { padding: 10px 12px; text-align: center; border-top: 1px solid var(--line-subtle); background: var(--surface-1); }
+.path-trace-stage canvas[hidden] { display: none; }
+.path-trace-stage p { margin: 0; padding: 24px; text-align: center; color: var(--text-muted); }
 .path-trace-controls { display: grid; gap: 14px; align-content: start; }
 .path-trace-controls label { display: grid; gap: 6px; font-size: 12px; color: var(--text-strong); }
 .path-trace-controls :is(select, input) { width: 100%; min-width: 0; height: 36px; padding: 0 9px; color: var(--text-strong); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-md); }
@@ -34,15 +36,16 @@
 .path-trace-tier:disabled { opacity: .42; cursor: not-allowed; }
 .path-trace-controls .path-trace-hint { margin: 0; font-size: 12px; color: var(--text-muted); line-height: 1.6; font-variant-numeric: tabular-nums; }
 .path-trace-controls .path-trace-hint[data-warning] { color: var(--warning); }
-.path-trace-preview[data-loading] { background: linear-gradient(100deg, var(--bg-1) 30%, color-mix(in srgb, var(--accent) 7%, var(--surface-2)) 50%, var(--bg-1) 70%) 0 0 / 220% 100%; animation: path-trace-skeleton 1.4s linear infinite; }
+.path-trace-stage[data-loading] { background: linear-gradient(100deg, var(--bg-1) 30%, color-mix(in srgb, var(--accent) 7%, var(--surface-2)) 50%, var(--bg-1) 70%) 0 0 / 220% 100%; animation: path-trace-skeleton 1.4s linear infinite; }
 @keyframes path-trace-skeleton { from { background-position: 120% 0; } to { background-position: -120% 0; } }
-@media (prefers-reduced-motion: reduce) { .path-trace-preview[data-loading] { animation: none; } .path-trace-meter > i, .path-trace-tier { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .path-trace-stage[data-loading] { animation: none; } .path-trace-meter > i, .path-trace-tier { transition: none; } }
 .path-trace-error { margin: 0; padding: 0 24px 14px; overflow-wrap: anywhere; color: var(--danger); }
 .path-trace-dialog footer { display: flex; justify-content: space-between; gap: 12px; padding: 14px 24px; background: var(--surface-2); border-top: 1px solid var(--line-subtle); }
 .path-trace-dialog footer > div { display: flex; gap: 8px; }
 .path-trace-dialog footer .button { flex: 0 0 auto; width: auto; padding: 0 12px; font-size: 13px; white-space: nowrap; }
 .path-trace-dialog .button:disabled { opacity: .5; cursor: not-allowed; }
+.path-trace-dialog .button.primary:disabled { color: var(--text-muted); background: var(--surface-3); border-color: var(--line); }
 .path-trace-dialog footer > div { flex-wrap: wrap; justify-content: flex-end; }
-@media (max-width: 700px) { .path-trace-body { grid-template-columns: 1fr; gap: 18px; padding: 18px; } .path-trace-preview { min-height: 200px; } .path-trace-controls { grid-template-columns: 1fr 1fr; } .path-trace-controls > :is(label:first-child, p, small) { grid-column: 1 / -1; } }
+@media (max-width: 700px) { .path-trace-body { grid-template-columns: 1fr; gap: 18px; padding: 18px; }  .path-trace-controls { grid-template-columns: 1fr 1fr; } .path-trace-controls > :is(label:first-child, p, small) { grid-column: 1 / -1; } }
 @media (max-width: 700px) { .path-trace-dialog footer { flex-wrap: wrap; } .path-trace-dialog footer > div { margin-left: auto; } }
 @media (max-width: 450px) { .path-trace-dialog footer { padding: 14px 18px; } .path-trace-status { padding: 12px 18px; } .path-trace-status-line { flex-direction: column; gap: 5px; } .path-trace-status span { text-align: left; } }

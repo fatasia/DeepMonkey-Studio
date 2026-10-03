@@ -4,6 +4,7 @@
  * loss 记录复用既有 CapabilityFailure 合同(DE26/C01),未知扩展不得静默丢弃。 */
 
 import type { CapabilityFailure } from "../gltf/capabilityInventory.js";
+import type { AdvancedMaterialParameters, Rgb } from "./materialAdvancedParameters.js";
 import { normalizeExtendedMaterialParameters, serializeMaterialParameters,
   type ExtendedMaterialParameters, type MaterialParameterOverrides, type SerializedMaterialParameters } from "./materialParameters.js";
 
@@ -177,4 +178,75 @@ function freezeMapping(
     mapped: Object.freeze([...mapped]), fallback: Object.freeze([...fallback]),
     losses: Object.freeze([...losses]),
   });
+}
+
+/** advancedMaterials 渲染器能力下额外映射的扩展(sheen / iridescence / volume);其余语义同 MAPPED。 */
+export const ADVANCED_MATERIAL_EXTENSIONS = Object.freeze([
+  "KHR_materials_sheen", "KHR_materials_iridescence", "KHR_materials_volume",
+] as const);
+
+export interface AdvancedExtensionMapping {
+  /** 归一化前的 advanced 参数;全部缺省时为 undefined。 */
+  readonly params: AdvancedMaterialParameters | undefined;
+  /** 已映射的扩展名;调用方据此抑制对应的"回退"loss。 */
+  readonly mapped: readonly string[];
+  readonly losses: readonly CapabilityFailure[];
+}
+
+/** glTF KHR_materials_sheen / iridescence / volume → advanced 参数(three GLTFLoader 同语义:iridescence 厚度取上界)。 */
+export function mapGltfAdvancedMaterialExtensions(
+  material: unknown, assetPath: string, options: MapMaterialOptions = {},
+): AdvancedExtensionMapping {
+  const losses: CapabilityFailure[] = [];
+  const extensions = isObject(material) && isObject(material.extensions) ? material.extensions : undefined;
+  if (!extensions) return Object.freeze({ params: undefined, mapped: [], losses });
+  const mapped: string[] = [];
+  let sheen: AdvancedMaterialParameters["sheen"], iridescence: AdvancedMaterialParameters["iridescence"],
+    volume: AdvancedMaterialParameters["volume"];
+  const color = (source: Record<string, unknown>, key: string, path: string, fallback: Rgb, min: number): Rgb => {
+    const raw = source[key];
+    if (raw === undefined) return fallback;
+    const valid = Array.isArray(raw) && raw.length === 3 && raw.every(v => typeof v === "number" && Number.isFinite(v) && v >= min && v <= 1);
+    if (!valid) {
+      const detail = `${key} 期望 3 个 [${min}..1] 有限数值;回退默认值。`;
+      if (options.failClosed) throw new RangeError(`${path}: ${detail}`);
+      losses.push(loss("material-value-invalid", "material", path, detail));
+      return fallback;
+    }
+    return [Math.fround(raw[0] as number), Math.fround(raw[1] as number), Math.fround(raw[2] as number)];
+  };
+  const sheenSource = extensions.KHR_materials_sheen;
+  if (isObject(sheenSource)) {
+    const path = `${assetPath}.extensions.KHR_materials_sheen`;
+    mapped.push("KHR_materials_sheen");
+    sheen = { color: color(sheenSource, "sheenColorFactor", path, [0, 0, 0], 0),
+      roughness: readNumber(sheenSource, "sheenRoughnessFactor", path, losses, options, { min: 0, max: 1 }) ?? 0 };
+    readTextureLoss(sheenSource, "sheenColorTexture", path, losses);
+    readTextureLoss(sheenSource, "sheenRoughnessTexture", path, losses);
+  }
+  const iridescenceSource = extensions.KHR_materials_iridescence;
+  if (isObject(iridescenceSource)) {
+    const path = `${assetPath}.extensions.KHR_materials_iridescence`;
+    mapped.push("KHR_materials_iridescence");
+    iridescence = {
+      factor: readNumber(iridescenceSource, "iridescenceFactor", path, losses, options, { min: 0, max: 1 }) ?? 0,
+      ior: readNumber(iridescenceSource, "iridescenceIor", path, losses, options, { min: 1, max: 3 }) ?? 1.3,
+      thickness: readNumber(iridescenceSource, "iridescenceThicknessMaximum", path, losses, options, { min: 0, max: 10000 }) ?? 400 };
+    readTextureLoss(iridescenceSource, "iridescenceTexture", path, losses);
+    readTextureLoss(iridescenceSource, "iridescenceThicknessTexture", path, losses);
+  }
+  const volumeSource = extensions.KHR_materials_volume;
+  if (isObject(volumeSource)) {
+    const path = `${assetPath}.extensions.KHR_materials_volume`;
+    mapped.push("KHR_materials_volume");
+    volume = {
+      thickness: readNumber(volumeSource, "thicknessFactor", path, losses, options, { min: 0 }) ?? 0,
+      attenuationColor: color(volumeSource, "attenuationColor", path, [1, 1, 1], 1e-6),
+      ...(() => { const distance = readNumber(volumeSource, "attenuationDistance", path, losses, options, { min: Number.MIN_VALUE });
+        return distance === undefined ? {} : { attenuationDistance: distance }; })() };
+    readTextureLoss(volumeSource, "thicknessTexture", path, losses);
+  }
+  const params: AdvancedMaterialParameters | undefined = mapped.length
+    ? { ...(sheen ? { sheen } : {}), ...(iridescence ? { iridescence } : {}), ...(volume ? { volume } : {}) } : undefined;
+  return Object.freeze({ params, mapped: Object.freeze(mapped), losses });
 }

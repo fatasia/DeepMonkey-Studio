@@ -20,7 +20,7 @@ import { streamAssistantHttp } from "./ai/streamAssistantHttp.js";
 import { AssistantSessionStore } from "./ai/assistantSessionStore.js";
 import { registerAssistantSessionRoutes } from "./ai/assistantSessionRoutes.js";
 import { httpDisconnectScope } from "./httpDisconnectScope.js";
-import { assistantSessionCatalog, resolveAssistantSessionOptions, AssistantSessionOptionError, type AssistantSessionOptions } from "./ai/assistantSessionOptions.js";
+import { assistantSessionCatalog, requestedRouting, resolveAssistantSessionOptions, AssistantSessionOptionError, type AssistantSessionOptions } from "./ai/assistantSessionOptions.js";
 import { mergeAiSettingsDraft, publicAiSettings, resolveAiSettings } from "./ai/aiRuntimeSettings.js";
 import { fetchProviderModels } from "./ai/aiModelCatalog.js";
 import { emptyTelemetrySummary, type AiTelemetryRing } from "./ai/aiRequestTelemetry.js";
@@ -112,7 +112,9 @@ export async function registerSystemRoutes(
     const aiReadAction =
       pathname === "/api/ai/assistant" || pathname === "/api/ai/assistant/stream" || pathname === "/api/mcp"
       || (request.method === "PUT" && /^\/api\/projects\/[^/]+\/ai\/assistant-sessions\/[^/]+(?:\/messages\/[^/]+)?$/.test(pathname))
-      || pathname.startsWith("/api/editor-presence/") || /^\/api\/projects\/[^/]+\/capabilities\/invoke$/.test(pathname);
+      || pathname.startsWith("/api/editor-presence/") || /^\/api\/projects\/[^/]+\/capabilities\/invoke$/.test(pathname)
+      // World API 的 observe/snapshot 是只读语义（带 body 才用 POST）；写操作由路由与能力权限自行拒绝 viewer。
+      || /^\/api\/projects\/[^/]+\/worlds\/[^/]+\/(?:observe|snapshot)$/.test(pathname);
     if (stored.role === "viewer" && !["GET", "HEAD"].includes(request.method) && !aiReadAction) return reply.code(403).send({ message: "浏览者不能修改数据" });
   });
 
@@ -333,6 +335,7 @@ export async function registerSystemRoutes(
         question,
         context: request.body.context ?? {},
         settings: await resolveAssistantSessionOptions(resolveAiSettings(store), request.body, request.body.mode),
+        ...requestedRouting(request.body),
         principal: request.systemUser?.username ?? "api-user",
         ...(projectId ? { projectId } : {}),
       });
@@ -359,6 +362,7 @@ export async function registerSystemRoutes(
         question,
         context: request.body.context ?? {},
         settings: await resolveAssistantSessionOptions(resolveAiSettings(store), request.body, request.body.mode),
+        ...requestedRouting(request.body),
         principal: request.systemUser?.username ?? "api-user",
         ...(projectId ? { projectId } : {}),
       });

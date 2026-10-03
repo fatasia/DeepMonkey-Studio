@@ -240,6 +240,32 @@ describe("Studio Deep WebGPU bridge lifecycle", () => {
     expect(authorCanvas.style.opacity).toBe("1"); expect(failure).not.toHaveBeenCalled();
   });
 
+  it("rebuilds once with the advancedMaterials variant instead of failing the scene when a late lobe is rejected", async () => {
+    const { bridge, first, second, create, authorCanvas, failure } = setup();
+    await activate(bridge);
+    expect(create.mock.calls[0]![0].renderer.advancedMaterials).toBeUndefined();
+    const rejection = new Error("$.materials[0]: Three projection does not support MeshPhysicalMaterial non-neutral extensions.");
+    (bridge as unknown as { failRuntime(reason: unknown): void }).failRuntime(rejection);
+    // 受控重建:先回到作者(three)画布,不上报失败。
+    expect(bridge.activeBackend).toBe("webgl"); expect(authorCanvas.style.opacity).toBe("1");
+    expect(first.dispose).toHaveBeenCalledOnce(); expect(failure).not.toHaveBeenCalled();
+    await microtasks(); await frame(false); await frame(false); await microtasks();
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create.mock.calls[1]![0].renderer.advancedMaterials).toBe(true);
+    expect(bridge.activeBackend).toBe("webgpu"); expect(second.dispose).not.toHaveBeenCalled(); expect(failure).not.toHaveBeenCalled();
+    // 变体已启用后同一拒绝不再重建,走原失败路径(无重建环)。
+    (bridge as unknown as { failRuntime(reason: unknown): void }).failRuntime(rejection);
+    await microtasks();
+    expect(create).toHaveBeenCalledTimes(2); expect(failure).toHaveBeenCalledOnce(); expect(bridge.activeBackend).toBe("webgl");
+  });
+
+  it("does not rebuild for unrelated runtime failures", async () => {
+    const { bridge, create, failure } = setup();
+    await activate(bridge);
+    (bridge as unknown as { failRuntime(reason: unknown): void }).failRuntime(new Error("Deep WebGPU device was lost."));
+    await microtasks();
+    expect(create).toHaveBeenCalledOnce(); expect(failure).toHaveBeenCalledOnce(); expect(bridge.activeBackend).toBe("webgl");
+  });
   it("allocates author frame capture only for an explicitly opened diagnostics session", async () => {
     const regular = setup();
     await activate(regular.bridge);

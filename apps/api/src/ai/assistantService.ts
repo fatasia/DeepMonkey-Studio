@@ -7,6 +7,8 @@ import { assistantOutputLimit, assistantPrompts, parseAssistantContent, type Ass
 import { attemptWithFailover, classifyAiProviderError, resolveFailoverTarget, type AiFailoverTarget } from "./aiFailoverPolicy.js";
 import { newTelemetryRecord, type AiTelemetrySink } from "./aiRequestTelemetry.js";
 import { assistantContextDelivery, assistantContextSourceSegments } from "./assistantContextDelivery.js";
+import { CAPABILITY_BOUNDARY, promptCacheKey, prioritizeContextForScan } from "./assistantContextBudget.js";
+import { routeAssistantModel, routeReceipt, type AiRouteDecision, type AiRoutingConfig } from "./assistantModelRouter.js";
 import { auditChatAnswerEvidence, anchorChatAnswerEvidence, type ChatEvidenceAnchorSource } from "./chatEvidenceGate.js";
 import type { AgentMemoryDelivery } from "./agentMemory.js";
 import { agentMemoryContextDelivery, memoryDeliveryFindings } from "./industrialAgentDecisionProvider.js";
@@ -29,6 +31,8 @@ export interface AiRuntimeFailoverSettings {
 export type AiRuntimeSettings = Omit<AiProviderSettings, "apiKeyConfigured" | "apiKey" | "failover"> & {
   apiKey: string;
   failover?: AiRuntimeFailoverSettings;
+  /** 「自动」模型路由配置（来自环境变量）；缺省视为未配置小模型。 */
+  routing?: AiRoutingConfig;
 };
 
 export interface AssistantRequest {
@@ -39,6 +43,8 @@ export interface AssistantRequest {
   principal: string;
   projectId?: string;
   signal?: AbortSignal;
+  /** 用户选择「自动」模型路由；未设置时严格使用 settings 中的模型。 */
+  routing?: "auto";
 }
 
 export interface AssistantService {
@@ -79,20 +85,20 @@ export function createAssistantService(registry: PluginRegistry, options: Assist
         const result = await attemptWithFailover({
           failover: failoverTarget(request.settings),
           ...(request.signal ? { signal: request.signal } : {}),
-          primary: () => registry.invokeAiProvider(request.settings.providerId, prepared.providerRequest),
+          primary: () => invokeWithRouteFallback(registry, request.settings.providerId, prepared, request.signal),
           fallback: (target) => registry.invokeAiProvider(request.settings.providerId, fallbackProviderRequest(prepared.providerRequest, target)),
         });
         attempt = { servedBy: result.servedBy, ...(result.failover ? { failover: result.failover } : {}) };
         const completion = result.result;
         const response = withReliability(parseAssistantContent(request.mode, completion.text, completion.model), prepared, attempt);
-        if (completion.execution) response.execution = { ...completion.execution, servedBy: attempt.servedBy, ...(attempt.failover ? { failoverCategory: attempt.failover.category } : {}) };
-        await emitAiAudit(options.audit, completionEvent(prepared, request, "completed", options, attempt));
-        recordTelemetry(options, request, attempt, "completed", Date.now() - startedAt, completion);
+        if (completion.execution) response.execution = { ...completion.execution, servedBy: attempt.servedBy, ...(attempt.failover ? { failoverCategory: attempt.failover.category } : {}), ...routeField(prepared) };
+        await emitAiAudit(options.audit, completionEvent(prepared, prepared.request, "completed", options, attempt));
+        recordTelemetry(options, prepared, attempt, "completed", Date.now() - startedAt, completion);
         return response;
       } catch (error) {
         const cancelled = Boolean(request.signal?.aborted);
-        await emitAiAudit(options.audit, completionEvent(prepared, request, cancelled ? "cancelled" : "failed", options, attempt, error));
-        recordTelemetry(options, request, attempt, cancelled ? "cancelled" : "failed", Date.now() - startedAt, undefined, error);
+        await emitAiAudit(options.audit, completionEvent(prepared, prepared.request, cancelled ? "cancelled" : "failed", options, attempt, error));
+        recordTelemetry(options, prepared, attempt, cancelled ? "cancelled" : "failed", Date.now() - startedAt, undefined, error);
         throw error;
       }
     },
@@ -105,8 +111,8 @@ export function createAssistantService(registry: PluginRegistry, options: Assist
       let execution: AiProviderCompletion["execution"];
       let attempt: FailoverAttemptInfo = { servedBy: "primary" };
       try {
-        for await (const [event, served] of streamOnce(registry, prepared.providerRequest, request)) {
-          if (served.servedBy !== attempt.servedBy) {
+        for await (const [event, served] of streamOnce(registry, prepared, request)) {
+          if (served.servedBy !== attempt.servedBy || served.routeFellBack !== attempt.routeFellBack) {
             reportedModel = undefined; usage = undefined; execution = undefined;
             yield { type: "execution", execution: null };
           }
@@ -116,36 +122,37 @@ export function createAssistantService(registry: PluginRegistry, options: Assist
           } else if (event.type === "model") {
             reportedModel = event.model;
           } else if (event.type === "execution") {
-            execution = { ...event.execution, servedBy: served.servedBy, ...(served.failover ? { failoverCategory: served.failover.category } : {}) };
+            execution = { ...event.execution, servedBy: served.servedBy, ...(served.failover ? { failoverCategory: served.failover.category } : {}), ...routeField(prepared) };
             yield { type: "execution", execution };
           } else {
             usage = {
               ...(event.inputTokens !== undefined ? { inputTokens: event.inputTokens } : {}),
               ...(event.outputTokens !== undefined ? { outputTokens: event.outputTokens } : {}),
+              ...(event.cachedInputTokens !== undefined ? { cachedInputTokens: event.cachedInputTokens } : {}),
             };
           }
           attempt = served;
         }
         if (!content.trim()) throw new Error("大模型没有返回内容");
         const response = withReliability(
-          parseAssistantContent(request.mode, content, reportedModel ?? servedModelName(request, attempt)),
+          parseAssistantContent(request.mode, content, reportedModel ?? servedModelName(prepared.request, attempt)),
           prepared,
           attempt,
         );
-        if (execution) response.execution = execution;
-        await emitAiAudit(options.audit, completionEvent(prepared, request, "completed", options, attempt));
-        recordTelemetry(options, request, attempt, "completed", Date.now() - startedAt, { model: reportedModel ?? servedModelName(request, attempt), usage }, undefined, request.mode);
+        if (execution) response.execution = { ...execution, ...routeField(prepared) };
+        await emitAiAudit(options.audit, completionEvent(prepared, prepared.request, "completed", options, attempt));
+        recordTelemetry(options, prepared, attempt, "completed", Date.now() - startedAt, { model: reportedModel ?? servedModelName(prepared.request, attempt), usage }, undefined, request.mode);
         yield { type: "done", result: response };
       } catch (error) {
-        await emitAiAudit(options.audit, completionEvent(prepared, request, request.signal?.aborted ? "cancelled" : "failed", options, attempt, error));
-        recordTelemetry(options, request, attempt, request.signal?.aborted ? "cancelled" : "failed", Date.now() - startedAt, undefined, error, request.mode);
+        await emitAiAudit(options.audit, completionEvent(prepared, prepared.request, request.signal?.aborted ? "cancelled" : "failed", options, attempt, error));
+        recordTelemetry(options, prepared, attempt, request.signal?.aborted ? "cancelled" : "failed", Date.now() - startedAt, undefined, error, request.mode);
         throw error;
       }
     }
   };
 }
 
-type FailoverAttemptInfo = { servedBy: "primary" | "fallback"; failover?: { category: string; reason: string } };
+type FailoverAttemptInfo = { servedBy: "primary" | "fallback"; failover?: { category: string; reason: string }; routeFellBack?: boolean };
 
 /**
  * 流式生成器：首个增量发出之前失败且属于可切换错误时，整体改用备用配置重新流出；
@@ -153,26 +160,32 @@ type FailoverAttemptInfo = { servedBy: "primary" | "fallback"; failover?: { cate
  */
 async function* streamOnce(
   registry: PluginRegistry,
-  providerRequest: AiProviderRequest,
+  prepared: PreparedAssistantRequest,
   request: AssistantRequest,
 ): AsyncGenerator<[AiProviderStreamEvent, FailoverAttemptInfo]> {
   let yieldedDelta = false;
   let primaryError: ReturnType<typeof classifyAiProviderError> | undefined;
-  try {
-    for await (const event of registry.streamAiProvider(request.settings.providerId, providerRequest)) {
-      yieldedDelta = yieldedDelta || event.type === "delta";
-      yield [event, { servedBy: "primary" }];
+  let providerRequest = prepared.providerRequest;
+  for (;;) {
+    try {
+      for await (const event of registry.streamAiProvider(request.settings.providerId, providerRequest)) {
+        yieldedDelta = yieldedDelta || event.type === "delta";
+        yield [event, { servedBy: "primary", ...(prepared.routeFellBack ? { routeFellBack: true } : {}) }];
+      }
+      return;
+    } catch (error) {
+      if (yieldedDelta || request.signal?.aborted) throw error;
+      // 自动路由 fail-open：小模型在出字前失败，原地改用用户/服务默认的强模型再试一次。
+      if (prepared.strongRequest && !prepared.routeFellBack) { markRouteFallback(prepared); providerRequest = prepared.strongRequest; continue; }
+      primaryError = classifyAiProviderError(error);
+      if (!primaryError.failoverEligible || !resolveFailoverTarget(failoverTarget(request.settings))) throw error;
+      break;
     }
-    return;
-  } catch (error) {
-    if (yieldedDelta || request.signal?.aborted) throw error;
-    primaryError = classifyAiProviderError(error);
-    if (!primaryError.failoverEligible || !resolveFailoverTarget(failoverTarget(request.settings))) throw error;
   }
   const target = resolveFailoverTarget(failoverTarget(request.settings))!;
   try {
     for await (const event of registry.streamAiProvider(request.settings.providerId, fallbackProviderRequest(providerRequest, target))) {
-      yield [event, { servedBy: "fallback", failover: { category: primaryError!.category, reason: primaryError!.message } }];
+      yield [event, { servedBy: "fallback", failover: { category: primaryError!.category, reason: primaryError!.message }, ...(prepared.routeFellBack ? { routeFellBack: true } : {}) }];
     }
   } catch (fallbackError) {
     if (request.signal?.aborted) throw fallbackError;
@@ -180,6 +193,26 @@ async function* streamOnce(
   }
 }
 
+/** complete 路径的自动路由 fail-open：小模型失败（非取消）→ 同请求改用强模型；仍失败则交给既有主备 failover。 */
+async function invokeWithRouteFallback(registry: PluginRegistry, providerId: string, prepared: PreparedAssistantRequest, signal?: AbortSignal): Promise<AiProviderCompletion> {
+  try {
+    return await registry.invokeAiProvider(providerId, prepared.providerRequest);
+  } catch (error) {
+    if (!prepared.strongRequest || prepared.routeFellBack || signal?.aborted) throw error;
+    markRouteFallback(prepared);
+    return registry.invokeAiProvider(providerId, prepared.strongRequest);
+  }
+}
+
+function markRouteFallback(prepared: PreparedAssistantRequest): void {
+  prepared.routeFellBack = true;
+  if (prepared.strongRequest) prepared.providerRequest = prepared.strongRequest;
+  prepared.request = { ...prepared.request, settings: prepared.strongSettings };
+}
+
+function routeField(prepared: PreparedAssistantRequest): { route?: ReturnType<typeof routeReceipt> } {
+  return prepared.route ? { route: routeReceipt(prepared.route, prepared.routeFellBack) } : {};
+}
 function servedModelName(request: AssistantRequest, attempt: FailoverAttemptInfo): string {
   if (attempt.servedBy !== "fallback") return request.settings.model;
   return request.settings.failover?.model || request.settings.model;
@@ -208,7 +241,7 @@ function failoverTarget(settings: AiRuntimeSettings): AiFailoverTarget | undefin
 
 function recordTelemetry(
   options: AssistantServiceOptions,
-  request: AssistantRequest,
+  prepared: PreparedAssistantRequest,
   attempt: FailoverAttemptInfo,
   status: "completed" | "failed" | "cancelled",
   latencyMs: number,
@@ -217,6 +250,7 @@ function recordTelemetry(
   mode?: AssistantMode,
 ): void {
   if (!options.telemetry) return;
+  const request = prepared.request;
   const classification = status === "completed" ? undefined : classifyAiProviderError(error);
   options.telemetry(newTelemetryRecord({
     occurredAt: (options.now?.() ?? new Date()).toISOString(),
@@ -229,13 +263,23 @@ function recordTelemetry(
     latencyMs,
     ...(completion?.usage?.inputTokens !== undefined ? { inputTokens: completion.usage.inputTokens } : {}),
     ...(completion?.usage?.outputTokens !== undefined ? { outputTokens: completion.usage.outputTokens } : {}),
+    ...(completion?.usage?.cachedInputTokens !== undefined ? { cachedInputTokens: completion.usage.cachedInputTokens } : {}),
+    contextChars: prepared.contextDelivery.sentChars,
+    ...(prepared.route ? { route: routeReceipt(prepared.route, prepared.routeFellBack) } : {}),
     ...(classification ? { errorCategory: classification.category satisfies AiFailureCategory, errorMessage: classification.message } : {}),
   }));
 }
 
 interface PreparedAssistantRequest {
   traceId: string;
+  /** 生效请求：自动路由选中小模型时 settings.model 即实际模型；路由回退后换回强模型。 */
+  request: AssistantRequest;
   providerRequest: AiProviderRequest;
+  /** 自动路由选了小模型时的强模型兜底请求与设置（fail-open）。 */
+  strongRequest?: AiProviderRequest;
+  strongSettings: AiRuntimeSettings;
+  route?: AiRouteDecision;
+  routeFellBack?: boolean;
   assessment: AiReliabilityAssessment;
   contextFingerprint: string;
   contextWarning?: string;
@@ -258,7 +302,8 @@ async function prepareRequest(registry: PluginRegistry, request: AssistantReques
   const scopedContext = memory.delivery?.configured
     ? { ...(asRecord(request.context) ?? { value: request.context }), agentMemoryContext: agentMemoryContextDelivery(memory.delivery) }
     : request.context;
-  const prepared = prepareAiInput(request.question, scopedContext);
+  // 扫描额度按键序消耗：高优先级字段（对话、证据、选中）先于 platform，避免被 {truncated:true} 挤掉。
+  const prepared = prepareAiInput(request.question, prioritizeContextForScan(scopedContext));
   const contextFingerprint = auditFingerprint(request.context);
   const context = withCapabilityCatalog(registry, prepared.context, request.settings.providerId);
   const assessmentEvent = createAiAuditEvent({
@@ -271,32 +316,47 @@ async function prepareRequest(registry: PluginRegistry, request: AssistantReques
   });
   await emitAiAudit(options.audit, assessmentEvent);
   if (prepared.assessment.decision === "block") throw new AiReliabilityBlockedError(traceId, prepared.assessment.findings.map((item) => item.code));
-  const { systemPrompt, userPrompt, contextWarning, contextSentChars, sentContext } = assistantPrompts(request.mode, prepared.question, context);
-  const contextDelivery = assistantContextDelivery(request.context, context, contextSentChars);
-  // T5：锚定输入与 contextDelivery 同源同坐标系——sentChars 直接取交付回执的逐源已发送长度。
-  const citationSources = assistantContextSourceSegments(context).map((segment) => ({
+  const { systemPrompt, userPrompt, contextWarning, contextSentChars, sentContext, budgetedContext, shapedContext, budget } = assistantPrompts(request.mode, prepared.question, context);
+  // 回执口径：preparedChars = 预算前完整上下文；sent* = 预算器输出（压缩/重排后真正发给模型的对象）。
+  const sentObject: unknown = budgetedContext ?? context;
+  const contextDelivery = assistantContextDelivery(request.context, shapedContext ?? context, contextSentChars, sentObject, budget);
+  // T5：锚定输入与实际发送对象同源同坐标系（偏移取自发送序列化，窗口为已发送前缀）。
+  const citationSources = assistantContextSourceSegments(sentObject).map((segment) => ({
     ...segment,
-    sentChars: contextDelivery.sources.find((source) => source.id === segment.id)?.sentChars ?? 0,
+    sentChars: Math.max(0, Math.min(segment.text.length, contextSentChars - segment.start)),
   }));
-  const providerRequest: AiProviderRequest = {
+  const route = request.routing === "auto"
+    ? routeAssistantModel({ mode: request.mode, question: request.question, settings: request.settings, auto: true, assessment: prepared.assessment.decision })
+    : undefined;
+  const instructions = `${systemPrompt}\n${reliabilitySystemBoundary(prepared.assessment)}`;
+  const cacheKey = /^(1|true|on)$/i.test(process.env.AI_PROMPT_CACHE_KEY ?? "") ? promptCacheKey(request.projectId, request.mode) : undefined;
+  const buildProviderRequest = (settings: AiRuntimeSettings): AiProviderRequest => ({
     requestId: traceId,
     principal: request.principal,
     ...(request.projectId ? { projectId: request.projectId } : {}),
-    model: request.settings.model,
-    instructions: `${systemPrompt}\n${reliabilitySystemBoundary(prepared.assessment)}`,
+    model: settings.model,
+    instructions,
     input: userPrompt,
-    temperature: request.settings.temperature,
+    temperature: settings.temperature,
     maxOutputTokens: assistantOutputLimit(request.mode),
+    ...(cacheKey ? { cacheKey } : {}),
     config: {
-      baseUrl: request.settings.baseUrl,
-      apiKey: request.settings.apiKey,
-      protocol: request.settings.protocol,
-      ...(request.settings.reasoningEffort ? { reasoningEffort: request.settings.reasoningEffort } : {})
+      baseUrl: settings.baseUrl,
+      apiKey: settings.apiKey,
+      protocol: settings.protocol,
+      ...(settings.reasoningEffort ? { reasoningEffort: settings.reasoningEffort } : {})
     },
     ...(request.signal ? { signal: request.signal } : {})
-  };
+  });
+  const routedFast = route?.tier === "fast";
+  const { reasoningEffort: _strongEffort, ...withoutEffort } = request.settings;
+  const effectiveSettings: AiRuntimeSettings = routedFast ? { ...withoutEffort, model: route.model } : request.settings;
+  const providerRequest = buildProviderRequest(effectiveSettings);
   return {
-    traceId, providerRequest, assessment: prepared.assessment, contextFingerprint, contextDelivery, sentContext, citationSources,
+    traceId, request: { ...request, settings: effectiveSettings }, providerRequest, strongSettings: request.settings,
+    ...(routedFast ? { strongRequest: buildProviderRequest(request.settings) } : {}),
+    ...(route ? { route } : {}),
+    assessment: prepared.assessment, contextFingerprint, contextDelivery, sentContext, citationSources,
     memoryFindings: memory.findings, ...(memory.warning ? { memoryWarning: memory.warning } : {}),
     ...(contextWarning ? { contextWarning } : {}),
   };
@@ -424,7 +484,7 @@ function withCapabilityCatalog(registry: PluginRegistry, context: unknown, provi
       kind: capability.kind,
       inputSchemaVersion: capability.inputSchemaVersion,
       inputSchema: capability.inputSchema,
-      decisionBoundary: "目录仅表示可调用；未返回 capabilityResult 前不得声称已经执行"
+      decisionBoundary: CAPABILITY_BOUNDARY
     })),
     aiProvider: registry.getAiProvider(providerId) ?? { id: providerId, status: "unavailable" }
   };

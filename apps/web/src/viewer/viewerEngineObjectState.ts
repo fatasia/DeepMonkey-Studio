@@ -1,5 +1,6 @@
 import { materialStateForSlot, restoreMaterialSourceColors, ungradedMaterialColor } from "./materialSlots";
 import { materialIor, prepareMaterialIor } from "./materialIor";
+import { applyPhysicalLobes, preparePhysicalLobes, readPhysicalLobes, validatePhysicalLobePatch } from "./materialPhysicalLobes";
 import { prepareDeclarativeMaterial, validateDeclarativeMaterialPatch } from "./declarativeMaterial";
 import * as THREE from "three";
 import type { SceneLayerState, SceneMaterialScreenState, SceneMaterialShaderEffect, SceneMaterialState } from "@bim-studio/contracts";
@@ -128,6 +129,7 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
         ...(typeof material.roughness === "number" ? { roughness: material.roughness } : {}),
         ...(typeof material.metalness === "number" ? { metalness: material.metalness } : {}),
         ...(materialIor(material) === undefined ? {} : { ior: materialIor(material)! }),
+        ...readPhysicalLobes(material),
         ...(material.emissive?.isColor
           ? { emissive: `#${material.emissive.getHexString()}`, emissiveIntensity: material.emissiveIntensity }
           : {}),
@@ -143,6 +145,7 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
     // 受控声明式材质：任何 source 先整批编译校验，再换装（clearcoat→Physical 等）；
     // 非法源在任何 mutation 之前抛错（与 IOR 原子性同规）。
     validateDeclarativeMaterialPatch(patch);
+    validatePhysicalLobePatch(patch);
     prepareDeclarativeMaterial(object, patch, this.collisionOriginalMaterials, (source, target) => {
       const textures = this.originalMaterialTextures.get(source);
       if (textures) this.originalMaterialTextures.set(target, textures);
@@ -150,6 +153,12 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
       if (screen) this.modelScreenOriginals.set(target, screen);
     });
     prepareMaterialIor(object, patch, this.collisionOriginalMaterials, (source, target) => {
+      const textures = this.originalMaterialTextures.get(source);
+      if (textures) this.originalMaterialTextures.set(target, textures);
+      const screen = this.modelScreenOriginals.get(source);
+      if (screen) this.modelScreenOriginals.set(target, screen);
+    });
+    preparePhysicalLobes(object, patch, this.collisionOriginalMaterials, (source, target) => {
       const textures = this.originalMaterialTextures.get(source);
       if (textures) this.originalMaterialTextures.set(target, textures);
       const screen = this.modelScreenOriginals.get(source);
@@ -173,6 +182,7 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
         }
         if (state.screen?.enabled === false) this.applyModelScreen(material, state.screen);
         applyMaterialNumbers(material, state);
+        applyPhysicalLobes(material, state);
         restoreMaterialSourceColors(material, state);
         if (state.screen?.enabled !== false) this.applyModelScreen(material, state.screen);
         material.needsUpdate = true;

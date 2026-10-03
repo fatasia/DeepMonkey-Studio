@@ -1,3 +1,5 @@
+import { PHYSICAL_LOBE_KEYS } from "../viewer/materialPhysicalLobeFields";
+import { withPhysicalLobes } from "./scenePhysicalLobeProjection";
 import type { PrimitiveState } from "@bim-studio/contracts";
 import type { RenderPacket } from "@bim-studio/deep-engine";
 import * as THREE from "three";
@@ -75,7 +77,7 @@ function geometryResource(geometry: THREE.BufferGeometry, id: string): RenderPac
 function materialResource(source: THREE.Material, id: string, item: PrimitiveState): RenderPacket["materials"][number] {
   if (!(source instanceof THREE.MeshStandardMaterial)) throw new Error(`铺设材质 ${source.type} 尚未适配`);
   const state = item.material;
-  const supported = new Set(["color", "roughness", "metalness", "ior", "emissive", "emissiveIntensity", "doubleSided"]);
+  const supported = new Set(["color", "roughness", "metalness", "ior", "emissive", "emissiveIntensity", "doubleSided", ...PHYSICAL_LOBE_KEYS]);
   for (const [key, value] of Object.entries(state ?? {})) {
     if (value !== undefined && !supported.has(key) && !isNeutralMaterialField(key, value)) {
       throw new Error(`基础体 ${item.modelId} 的铺设材质需要适配：${key}`);
@@ -89,12 +91,12 @@ function materialResource(source: THREE.Material, id: string, item: PrimitiveSta
   const emissive = new THREE.Color(effectEmissive?.color ?? state?.emissive ?? source.emissive);
   const ior = state?.ior;
   if (ior !== undefined && (!Number.isFinite(ior) || ior < 1)) throw new Error(`基础体 ${item.modelId} 的折射率无效`);
-  return { id, baseColor: [color.r, color.g, color.b], metallic: finiteRange(state?.metalness ?? source.metalness, 0, 1, "金属度"),
+  return withPhysicalLobes({ id, baseColor: [color.r, color.g, color.b], metallic: finiteRange(state?.metalness ?? source.metalness, 0, 1, "金属度"),
     roughness: finiteRange(state?.roughness ?? source.roughness, 0, 1, "粗糙度"), ...(ior === undefined ? {} : { ior }),
     baseColorAlpha: opacity, alphaMode: source.transparent || opacity < 0.999 ? "BLEND" : "OPAQUE",
     doubleSided: state?.doubleSided ?? source.side === THREE.DoubleSide,
     emissiveFactor: [emissive.r, emissive.g, emissive.b],
-    emissiveStrength: effectEmissive?.strength ?? finiteRange(state?.emissiveIntensity ?? source.emissiveIntensity, 0, 256, "自发光强度") };
+    emissiveStrength: effectEmissive?.strength ?? finiteRange(state?.emissiveIntensity ?? source.emissiveIntensity, 0, 256, "自发光强度") }, state, item.modelId, ior ?? 1.5);
 }
 
 function fenceMaterials(item: PrimitiveState): FenceMaterials {

@@ -20,6 +20,8 @@ export interface AiProviderRequest {
   input: string;
   temperature: number;
   maxOutputTokens: number;
+  /** 稳定的缓存路由提示（项目+模式哈希）；provider 仅在显式开启且服务端支持时才发送。 */
+  cacheKey?: string;
   /** Provider 私有配置由宿主注入，插件 Manifest 永远不保存密钥。 */
   config: Readonly<Record<string, unknown>>;
   signal?: AbortSignal;
@@ -30,7 +32,7 @@ export interface AiProviderCompletion {
   model: string;
   execution?: AiProviderExecution;
   finishReason?: string;
-  usage?: { inputTokens?: number; outputTokens?: number };
+  usage?: { inputTokens?: number; outputTokens?: number; cachedInputTokens?: number };
 }
 
 export interface AiProviderExecution {
@@ -47,7 +49,7 @@ export type AiProviderStreamEvent =
   | { type: "delta"; delta: string }
   | { type: "model"; model: string }
   | { type: "execution"; execution: AiProviderExecution }
-  | { type: "usage"; inputTokens?: number; outputTokens?: number };
+  | { type: "usage"; inputTokens?: number; outputTokens?: number; cachedInputTokens?: number };
 
 export interface AiProviderContext {
   pluginId: string;

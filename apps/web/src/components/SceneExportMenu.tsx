@@ -48,7 +48,7 @@ export function SceneExportMenu({ locale, onExportLoose, onExportSingle, onExpor
       {open && (
         <div className="export-menu-popup" role="menu">
           {onExportPathTrace && <button role="menuitem" onClick={() => run(onExportPathTrace)}>
-            <Download size={16}/><span><strong>{tr(locale,"物理光照出图","Physical lighting render")}</strong><small>{tr(locale,"累积、收敛与线性 HDR","Accumulation, convergence and linear HDR")}</small></span>
+            <Download size={16}/><span><strong>{tr(locale,"物理光照出图","Physical lighting render")}</strong><small>{tr(locale,"多线程累积、线性 HDR 与 sRGB PNG","Parallel accumulation, linear HDR and sRGB PNG")}</small></span>
           </button>}
           <button role="menuitem" onClick={() => run(onExportLoose)}>
             <FileJson size={16} /><span><strong>{tr(locale, "场景 JSON", "Scene JSON")}</strong><small>{tr(locale, "仅配置，引用项目模型", "Configuration only; references project models")}</small></span>

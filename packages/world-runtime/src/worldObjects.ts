@@ -53,31 +53,49 @@ function record(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 }
 
-function vec(value: unknown, fallback: WorldVec3, field: string): WorldVec3 {
+function vec(value: unknown, fallback: WorldVec3, field: string, maxAbs = Infinity): WorldVec3 {
   if (value === undefined) return fallback;
   const input = record(value);
   const values = input ? [input.x, input.y, input.z] : Array.isArray(value) ? value : [];
-  if (values.length !== 3 || values.some((item) => typeof item !== "number" || !Number.isFinite(item))) {
-    throw new WorldRuntimeError("invalid-scene", `${field} 必须是 {x,y,z} 有限数`);
+  if (values.length !== 3 || values.some((item) => typeof item !== "number" || !Number.isFinite(item) || Math.abs(item) > maxAbs)) {
+    throw new WorldRuntimeError("invalid-scene", `${field} 必须是 {x,y,z} 有限数，且每个分量绝对值 ≤ ${maxAbs}`);
   }
   return [values[0] as number, values[1] as number, values[2] as number];
 }
 
-function number(value: unknown, fallback: number, field: string): number {
+function number(value: unknown, fallback: number, field: string, min = -Infinity, max = Infinity): number {
   if (value === undefined) return fallback;
-  if (typeof value !== "number" || !Number.isFinite(value)) throw new WorldRuntimeError("invalid-scene", `${field} 必须是有限数`);
+  if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) {
+    throw new WorldRuntimeError("invalid-scene", `${field} 必须是 [${min}, ${max}] 内的有限数`);
+  }
   return value;
+}
+
+/** 缩放后碰撞体任一尺寸不得超过上限：大碰撞体互相重叠会让求解时间随接触数暴涨。 */
+export function colliderWithinLimits(spec: WorldColliderSpec): boolean {
+  const extents = spec.shape === "cuboid" ? spec.halfExtents : spec.shape === "ball" ? [spec.radius] : [spec.radius, spec.halfHeight];
+  return extents.every((extent) => extent <= WORLD_LIMITS.maxColliderExtent);
+}
+
+export function scaleWithinLimits(scale: WorldVec3): boolean {
+  return scale.every((axis) => Math.abs(axis) >= WORLD_LIMITS.minScale && Math.abs(axis) <= WORLD_LIMITS.maxScale);
 }
 
 function primitiveCollider(value: unknown, field: string): WorldColliderSpec {
   const input = record(value);
-  const radius = number(input?.radius, 0, `${field}.radius`);
+  const radius = number(input?.radius, 0, `${field}.radius`, 0, WORLD_LIMITS.maxColliderExtent);
   switch (input?.shape) {
-    case "cuboid": return { shape: "cuboid", halfExtents: vec(input.halfExtents, [0, 0, 0], `${field}.halfExtents`) };
+    case "cuboid": return { shape: "cuboid", halfExtents: vec(input.halfExtents, [0, 0, 0], `${field}.halfExtents`, WORLD_LIMITS.maxColliderExtent) };
     case "sphere": return { shape: "ball", radius };
-    case "cylinder": return { shape: "cylinder", radius, halfHeight: number(input.halfHeight, 0, `${field}.halfHeight`) };
+    case "cylinder": return { shape: "cylinder", radius, halfHeight: number(input.halfHeight, 0, `${field}.halfHeight`, 0, WORLD_LIMITS.maxColliderExtent) };
     default: throw new WorldRuntimeError("invalid-scene", `${field}.shape 必须是 cuboid/sphere/cylinder`);
   }
+}
+
+/** 动态体质量必须在合同范围内；其它类型质量不参与求解，越界值归一为默认 1，避免日后改成 dynamic 时带出 0/负质量。 */
+function bodyMass(value: unknown, type: WorldBodyType, id: string): number {
+  if (type === "dynamic") return number(value, 1, `${id}.physics.mass`, WORLD_LIMITS.minMass, WORLD_LIMITS.maxMass);
+  return typeof value === "number" && value >= WORLD_LIMITS.minMass && value <= WORLD_LIMITS.maxMass ? value : 1;
 }
 
 export interface ParsedScene {
@@ -92,7 +110,7 @@ export interface ParsedScene {
 export function parseSceneObjects(scene: Record<string, unknown>): ParsedScene {
   const sceneId = scene.id as string;
   const physics = record(scene.physics);
-  const gravity = vec(physics?.gravity, DEFAULT_GRAVITY, "scene.physics.gravity");
+  const gravity = vec(physics?.gravity, DEFAULT_GRAVITY, "scene.physics.gravity", WORLD_LIMITS.maxAbsGravity);
   const objects: WorldSnapshotObject[] = [];
   const initialVelocities = new Map<string, WorldVec3>();
   const seen = new Set<string>();
@@ -128,24 +146,29 @@ export function parseSceneObjects(scene: Record<string, unknown>): ParsedScene {
       id,
       kind,
       source,
-      name: typeof model?.name === "string" ? model.name : id,
+      name: typeof model?.name === "string" ? model.name.slice(0, WORLD_LIMITS.maxNameLength) : id,
       visible: model?.visible !== false,
       body: {
         type,
-        mass: number(body?.mass, 1, `${id}.physics.mass`),
-        friction: number(body?.friction, 0.5, `${id}.physics.friction`),
-        restitution: number(body?.restitution, 0, `${id}.physics.restitution`),
+        mass: bodyMass(body?.mass, type, id),
+        friction: number(body?.friction, 0.5, `${id}.physics.friction`, 0, WORLD_LIMITS.maxFriction),
+        restitution: number(body?.restitution, 0, `${id}.physics.restitution`, 0, 1),
       },
       transform: {
-        position: vec(transform?.position, [0, 0, 0], `${id}.transform.position`),
-        rotation: vec(transform?.rotation, [0, 0, 0], `${id}.transform.rotation`),
-        scale: vec(transform?.scale, [1, 1, 1], `${id}.transform.scale`),
+        position: vec(transform?.position, [0, 0, 0], `${id}.transform.position`, WORLD_LIMITS.maxAbsPosition),
+        rotation: vec(transform?.rotation, [0, 0, 0], `${id}.transform.rotation`, 1e6),
+        scale: vec(transform?.scale, [1, 1, 1], `${id}.transform.scale`, WORLD_LIMITS.maxScale),
       },
       collider,
       handle: null,
     });
+    const placed = objects[objects.length - 1] as WorldSnapshotObject;
+    if (!scaleWithinLimits(placed.transform.scale)) throw new WorldRuntimeError("invalid-scene", `${id}.transform.scale 每个轴绝对值须在 [${WORLD_LIMITS.minScale}, ${WORLD_LIMITS.maxScale}]`);
+    if (collider && !colliderWithinLimits(scaleCollider(collider, placed.transform.scale))) {
+      throw new WorldRuntimeError("invalid-scene", `${id} 缩放后的碰撞体尺寸超过 ${WORLD_LIMITS.maxColliderExtent} m 上限`);
+    }
     if (type === "dynamic" && body?.initialLinearVelocity !== undefined) {
-      initialVelocities.set(id, vec(body.initialLinearVelocity, [0, 0, 0], `${id}.physics.initialLinearVelocity`));
+      initialVelocities.set(id, vec(body.initialLinearVelocity, [0, 0, 0], `${id}.physics.initialLinearVelocity`, WORLD_LIMITS.maxAbsVelocity));
     }
   }
   if (objects.length > WORLD_LIMITS.maxObjects) throw new WorldRuntimeError("limit-exceeded", `场景物体数 ${objects.length} 超过上限 ${WORLD_LIMITS.maxObjects}`);

@@ -6,6 +6,8 @@ import { sceneModelMatrixValues } from "./sceneModelMatrixValues";
 import { createSceneGeometryPrecisionValidator } from "./sceneGeometryPrecision";
 import { isNeutralMaterialField, sceneHexToLinearRgb, staticSceneEffectEmissive, unsupportedStaticSceneEffectFields } from "./sceneNeutralAppearance";
 import { compileLinearPrefabRenderPacket } from "./compileLinearPrefabRenderPacket";
+import { PHYSICAL_LOBE_KEYS } from "../viewer/materialPhysicalLobeFields";
+import { withPhysicalLobes } from "./scenePhysicalLobeProjection";
 
 /** 基础体静态绘制投影；相机、环境、行为与二维语义由发布编译器分别处理。 */
 export function sceneSnapshotToRenderPacket(scene: SceneSnapshot): RenderPacket {
@@ -44,7 +46,7 @@ export function sceneSnapshotToRenderPacket(scene: SceneSnapshot): RenderPacket 
 
 function primitiveMaterial(item: PrimitiveState): RenderPacket["materials"][number] {
   const state = item.material;
-  const supported = new Set(["color", "roughness", "metalness", "ior", "emissive", "emissiveIntensity", "doubleSided", "customShader"]);
+  const supported = new Set(["color", "roughness", "metalness", "ior", "emissive", "emissiveIntensity", "doubleSided", "customShader", ...PHYSICAL_LOBE_KEYS]);
   for (const [key, value] of Object.entries(state ?? {})) {
     if (value !== undefined && !supported.has(key) && !isNeutralMaterialField(key, value)) throw new Error(`基础体 ${item.modelId} 的材质需要适配：${key}`);
   }
@@ -58,14 +60,14 @@ function primitiveMaterial(item: PrimitiveState): RenderPacket["materials"][numb
     throw new Error(`基础体 ${item.modelId} 的折射率必须为不小于 1 的有限数值`);
   }
   const effectEmissive = staticSceneEffectEmissive(item.effects);
-  return { id: `material:${item.modelId}`, baseColor,
+  return withPhysicalLobes({ id: `material:${item.modelId}`, baseColor,
     metallic: clamp(state?.metalness ?? 0.05, 1, item.modelId),
     roughness: clamp(state?.roughness ?? 0.72, 1, item.modelId),
     ...(ior === undefined ? {} : { ior }),
     baseColorAlpha: opacity, alphaMode: opacity < 0.999 ? "BLEND" : "OPAQUE",
     doubleSided: state?.doubleSided ?? false,
     emissiveFactor: linearColor(effectEmissive?.color ?? state?.emissive ?? "#000000", item.modelId),
-    emissiveStrength: effectEmissive?.strength ?? clamp(state?.emissiveIntensity ?? 1, 10, item.modelId) };
+    emissiveStrength: effectEmissive?.strength ?? clamp(state?.emissiveIntensity ?? 1, 10, item.modelId) }, state, item.modelId, ior ?? 1.5);
 }
 
 function assertPrimitiveExtensions(item: PrimitiveState, allowPrefab: boolean): void {

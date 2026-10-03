@@ -1,6 +1,6 @@
 # GitHub Wiki 镜像说明
 
-应用内文档中心（`apps/web/src/docs`，32 篇）是唯一文档事实源。GitHub Wiki 只是它的生成镜像，**禁止在 Wiki 上直接编辑内容**，否则会在下次导出时被覆盖。
+应用内文档中心（`apps/web/src/docs`，33 篇）是唯一文档事实源。GitHub Wiki 只是它的生成镜像，禁止在 Wiki 上直接编辑内容，否则会在下次导出时被覆盖。
 
 ## 生成
 
@@ -11,12 +11,14 @@ pnpm docs:wiki:export   # 导出到 artifacts/wiki/
 
 `artifacts/wiki/` 产物：
 
-- `Home.md`：文档首页，按 docsCatalog 六个分组列出全部文章（生成物，勿手改）。
-- `<文章 id>.md`：32 篇正文，`/docs/<id>` 内链已改写为 `<id>.md`，`/docs-assets/` 配图已改写为相对路径并随包复制到 `docs-assets/`。
+- `Home.md`：文档首页，按 docsCatalog 的七个分组列出全部文章（生成物，勿手改）。
+- `<文章 id>.md`：33 篇正文，`/docs/<id>` 内链已改写为 `<id>.md`，`/docs-assets/` 配图已改写为相对路径并随包复制到 `docs-assets/`。
 - `_Sidebar.md`：GitHub Wiki 每页侧边导航（分组同 Home）。
 - `.sync-manifest.json`：每篇文章的源路径与 SHA-256，用于核对镜像与源一致。
 
 导出前 `--check` 必须通过；`pnpm test` 中的 `scripts/sync-docs-wiki.test.mjs` 会再次验证链接改写、配图打包与 Home/_Sidebar 完整性。
+
+写正文时注意：应用内渲染器不支持粗体、表格和嵌套列表，这些写法在应用里会原样显示符号，`docsCatalog.test.ts` 会拦截。分类与顺序只在 `docsCatalog.ts` 里维护，导出脚本直接读取它。
 
 ## 发布到 GitHub Wiki
 

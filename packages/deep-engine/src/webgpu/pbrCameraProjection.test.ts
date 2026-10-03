@@ -38,7 +38,8 @@ describe("PBR camera projection", () => {
     expect(result.stableViewProjection.every(Number.isFinite)).toBe(true);
     expect(Array.from(packed.frameData.slice(76, 80))).toEqual([0, 1, 0, 1]);
     [0.2, 0.4, 0.8, 3].forEach((value, index) => expect(packed.frameData[84 + index]).toBeCloseTo(value));
-    expect(Array.from(packed.outputData)).toEqual([1, 0, 0.25, 0, 0, 0, 1, 1]);
+    // 第 4 位是色调映射选择器:默认算子为 three-aces-r185 时为 1。
+    expect(Array.from(packed.outputData)).toEqual([1, 0, 0.25, 1, 0, 0, 1, 1]);
     expect((queue.writeBuffer as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(3);
   });
 

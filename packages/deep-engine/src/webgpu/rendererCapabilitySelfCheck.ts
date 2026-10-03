@@ -24,10 +24,12 @@ import { DEEP_GI_PROBE_VISIBILITY_SH_WORDS, DEEP_GI_PROBE_VISIBILITY_SH_WORD_OFF
 import { PROBE_RADIANCE_MOMENT_LANES } from "../rayTracing/probeRadianceKernel.js";
 import { DEEP_PBR_MESH_V1_BYTE_SIZES } from "../shaderAbi/contract.js";
 import { MATERIAL_PARAMETER_KEYS } from "../shader/materialParameters.js";
+import { ADVANCED_PARAMETER_FLOAT_COUNT, MATERIAL_PARAMETER_ADVANCED_FLOATS } from "../shader/materialAdvancedParameters.js";
 import { HDR_DISPLAY_REASON_CODES, HDR_DISPLAY_STRATEGIES, resolveHdrDisplayPolicy } from "./hdrDisplayOutput.js";
 import { classifyDeviceLost, DeviceRecoveryStateMachine } from "./deviceRecovery.js";
 import { DEFAULT_PBR_RENDERER_FEATURES, type PbrRendererFeatures } from "./pbrRendererFeatures.js";
 import { PBR_TIMED_PASS_IDS } from "./pbrTimedPassIds.js";
+import { DEEP_INSTANCE_OUTLINE_CAPABILITY, DEFAULT_INSTANCE_OUTLINE } from "../postprocess/instanceOutlineCpu.js";
 
 /** 支持档词汇(与 contracts 逐词一致;跨包不导入,靠对拍测试钉死)。 */
 export type RendererCapabilitySelfCheckSupport = "supported" | "degraded" | "unavailable";
@@ -234,6 +236,11 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
     observed: { extendedParameterKeys: MATERIAL_PARAMETER_KEYS.length, layeredMaterials: FEATURE_DEFAULTS.layeredMaterials },
   },
   {
+    // advancedMaterials 变体:12 float advanced 带与 240B 材质 uniform 从实际常量派生(增删即漂移红)。
+    capabilityId: "material-advanced", support: "supported", reason: "opt-in-default-off",
+    observed: { advancedParameterFloats: ADVANCED_PARAMETER_FLOAT_COUNT, advancedMaterialUniformFloats: MATERIAL_PARAMETER_ADVANCED_FLOATS },
+  },
+  {
     // F7b：16 灯局部阴影 ABI 从实际常量派生（与 shadow-local 行的 spot 口径同源）。
     capabilityId: "local-shadow-abi-16", support: "supported", reason: "full",
     observed: { localShadowMaxLights: LOCAL_SPOT_SHADOW_MAX_LIGHTS,
@@ -263,6 +270,20 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
       hdrProbeFailClosed: resolveHdrDisplayPolicy(
         { webgpuAvailable: false, displayDynamicRange: "high", canvasToneMappingExtended: true,
           canvasFormatRgba16float: true }, { enabled: true }).failClosed,
+    },
+  },
+  {
+    // 对象级描边:门在 packet 实例位(surface flag bit 256)+ 独立 pass,不在 PbrRendererFeatures 特性面
+    // (按需懒构造,无描边实例零开销);与 atmosphere-sky/hdr-display-output 同先例 webFeatureKeys 为空。
+    // observed 取自真实常量:能力声明、WGSL 入口集、默认外观(作者 OutlinePass 口径)、实例位。
+    capabilityId: "object-outline", support: "supported", reason: "full",
+    observed: {
+      objectOutline: DEEP_INSTANCE_OUTLINE_CAPABILITY.objectOutline,
+      unsupportedBatches: [...DEEP_INSTANCE_OUTLINE_CAPABILITY.unsupportedBatches],
+      wgslEntryPoints: 5,
+      defaultStrength: DEFAULT_INSTANCE_OUTLINE.strength,
+      defaultThickness: DEFAULT_INSTANCE_OUTLINE.thickness,
+      instanceFlagBit: 256,
     },
   },
 ]);

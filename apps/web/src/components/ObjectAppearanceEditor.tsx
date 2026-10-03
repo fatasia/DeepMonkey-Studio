@@ -15,6 +15,7 @@ import { ModelEffectsEditor } from "./ModelEffectsEditor";
 import { MaterialTextureSettings } from "./MaterialTextureSettings";
 import { ProjectMaterialResourcePicker } from "./ProjectAppearanceResources";
 import { CustomShaderEditor } from "./CustomShaderEditor";
+import { MaterialAdvancedLobes } from "./MaterialAdvancedLobes";
 
 export type MaterialTextureKind =
   | "baseColor"
@@ -173,6 +174,8 @@ function ObjectAppearanceFields({
             ariaLabel={tr(locale, "折射率", "Index of refraction")} disabled={disabled || material.ior === undefined}
             onCommit={ior => { if (ior >= 1 && Number.isFinite(Math.fround(ior))) onMaterialChange({ ior }); }} />
         </label>
+
+        <MaterialAdvancedLobes locale={locale} rendererBackend={rendererBackend} disabled={disabled} material={material} onChange={onMaterialChange} />
 
         <label className="material-emissive">
           <span>{tr(locale, "自发光", "Emissive")}</span>

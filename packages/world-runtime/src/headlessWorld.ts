@@ -1,4 +1,3 @@
-import RAPIER from "@dimforge/rapier3d-compat";
 import {
   WORLD_API_VERSION,
   WORLD_FIXED_HZ,
@@ -21,9 +20,12 @@ import {
   type WorldVec3,
 } from "@bim-studio/contracts";
 import { planWorldAction, type WorldOp } from "./worldAction.js";
+import { GROUND_FRICTION, GROUND_HALF_EXTENTS, loadRapier, referenceWorld, type ColliderDesc, type Rapier, type RigidBody, type World } from "./rapierRuntime.js";
+import { normalizeIntegration, verifyRestoredWorld } from "./snapshotVerification.js";
 import {
   DYNAMIC_ANGULAR_DAMPING,
   DYNAMIC_LINEAR_DAMPING,
+  colliderWithinLimits,
   parseSceneObjects,
   primitiveBaseCollider,
   scaleCollider,
@@ -31,34 +33,16 @@ import {
 } from "./worldObjects.js";
 import { WorldRng, WorldRuntimeError, eulerXyzToQuaternion, sha256Hex } from "./worldMath.js";
 
-type Rapier = typeof RAPIER;
-type World = InstanceType<Rapier["World"]>;
-type RigidBody = InstanceType<Rapier["RigidBody"]>;
-type ColliderDesc = InstanceType<Rapier["ColliderDesc"]>;
-
-const GROUND_HALF_EXTENTS: WorldVec3 = [5_000, 0.05, 5_000];
-const GROUND_FRICTION = 0.9;
-/** 单世界内存估算（字节）：Rapier wasm 世界的固定开销 + 每物体经验值，供会话配额使用。 */
+/** 单世界内存估算（字节）：Rapier wasm 世界的固定开销 + 每物体经验值，供会话配额使用（物体/名称/碰撞体尺寸均有硬上限，所以估算有界）。 */
 const WORLD_BASE_BYTES = 256 * 1024;
 const WORLD_BYTES_PER_OBJECT = 4 * 1024;
+/** 单次 step 的墙钟预算。超出即作废该世界（见 step）；不影响正常运行的确定性结果。 */
+export const DEFAULT_STEP_BUDGET_MS = 1_000;
 
-let rapierReady: Promise<Rapier> | undefined;
-
-/** Rapier compat 内嵌 wasm，Node 无头可用；只屏蔽其已知的上游弃用提示，其它告警原样透传。 */
-export function loadRapier(): Promise<Rapier> {
-  rapierReady ??= (async () => {
-    const warn = console.warn;
-    console.warn = (...args: unknown[]) => {
-      if (args[0] !== "using deprecated parameters for the initialization function; pass a single object instead") warn(...args);
-    };
-    try {
-      await RAPIER.init();
-    } finally {
-      console.warn = warn;
-    }
-    return RAPIER;
-  })();
-  return rapierReady;
+export interface HeadlessWorldRuntimeOptions {
+  stepBudgetMs?: number;
+  /** 测试注入的单调时钟（毫秒）。 */
+  now?: () => number;
 }
 
 const xyz = (v: { x: number; y: number; z: number }): WorldVec3 => [v.x, v.y, v.z];
@@ -95,8 +79,13 @@ export class HeadlessWorld {
   private contacts: WorldContactObservation[] = [];
   private events: WorldEventObservation[] = [];
   private truncated = false;
+  private faulted = false;
+  private readonly stepBudgetMs: number;
+  private readonly clock: () => number;
 
-  private constructor(private readonly rapier: Rapier, private readonly world: World, init: WorldInit) {
+  private constructor(private readonly rapier: Rapier, private readonly world: World, init: WorldInit, options: HeadlessWorldRuntimeOptions) {
+    this.stepBudgetMs = options.stepBudgetMs ?? DEFAULT_STEP_BUDGET_MS;
+    this.clock = options.now ?? (() => performance.now());
     this.seed = init.seed;
     this.sceneId = init.sceneId;
     this.sceneHash = init.sceneHash;
@@ -117,7 +106,7 @@ export class HeadlessWorld {
   get estimatedBytes(): number { return WORLD_BASE_BYTES + this.objects.size * WORLD_BYTES_PER_OBJECT; }
 
   /** reset(seed, scene)：用 SceneSnapshot 初始化新世界；输入按不可信数据校验。 */
-  static async reset(input: unknown): Promise<HeadlessWorld> {
+  static async reset(input: unknown, options: HeadlessWorldRuntimeOptions = {}): Promise<HeadlessWorld> {
     const request = validateWorldResetRequest(input);
     const rapier = await loadRapier();
     const parsed = parseSceneObjects(request.scene);
@@ -127,7 +116,7 @@ export class HeadlessWorld {
     const instance = new HeadlessWorld(rapier, world, {
       seed: request.seed, tick: 0, sceneId: parsed.sceneId, sceneHash, rngState: request.seed, gravity: parsed.gravity, ground, groundHandle: null,
       traceHash: sha256Hex("world-trace/1", sceneHash, String(request.seed)), objects: parsed.objects,
-    });
+    }, options);
     if (ground) instance.createGround();
     const jitter = request.options?.initialPositionJitter ?? 0;
     for (const object of instance.objects.values()) {
@@ -143,7 +132,7 @@ export class HeadlessWorld {
   }
 
   /** restore(snapshot)：先核验哈希与句柄，再装载；任何不一致都按 snapshot-corrupt 拒绝。 */
-  static async restore(input: unknown): Promise<HeadlessWorld> {
+  static async restore(input: unknown, options: HeadlessWorldRuntimeOptions = {}): Promise<HeadlessWorld> {
     const snapshot = validateWorldSnapshot(input);
     const bytes = Buffer.from(snapshot.physics.data, "base64");
     if (bytes.length !== snapshot.physics.byteLength || sha256Hex(bytes) !== snapshot.physics.sha256) {
@@ -158,31 +147,32 @@ export class HeadlessWorld {
     } catch (error) {
       throw new WorldRuntimeError("snapshot-corrupt", `物理快照无法解码：${error instanceof Error ? error.message : String(error)}`);
     }
-    const instance = new HeadlessWorld(rapier, world, { ...snapshot, rngState: snapshot.rngState, objects: structuredClone(snapshot.objects) });
-    // getRigidBody 对无效句柄也会返回包装对象，必须与世界里真实存在的刚体集合比对。
-    const live = new Map<number, RigidBody>();
-    world.bodies.forEach((body: RigidBody) => live.set(body.handle, body));
-    const claim = (handle: number, label: string): RigidBody => {
-      const body = live.get(handle);
-      if (!body || body.numColliders() < 1) {
-        instance.dispose();
-        throw new WorldRuntimeError("snapshot-corrupt", `快照${label}的刚体句柄无效：${handle}`);
-      }
-      live.delete(handle);
-      return body;
-    };
+    normalizeIntegration(world, referenceWorld(rapier));
+    const objects: WorldSnapshotObject[] = structuredClone(snapshot.objects);
+    const oversized = objects.find((object) => object.collider && !colliderWithinLimits(scaleCollider(object.collider, object.transform.scale)));
+    const problem = oversized
+      ? `物体 ${oversized.id} 缩放后的碰撞体尺寸超过 ${WORLD_LIMITS.maxColliderExtent} m 上限`
+      : verifyRestoredWorld(rapier, world, snapshot);
+    if (problem) {
+      world.free();
+      throw new WorldRuntimeError("snapshot-corrupt", `快照与对象表不一致或超出资源上限：${problem}`);
+    }
+    const instance = new HeadlessWorld(rapier, world, { ...snapshot, objects }, options);
     for (const object of instance.objects.values()) {
-      if (object.handle !== null) instance.owners.set(claim(object.handle, `物体 ${object.id} `).collider(0).handle, object.id);
+      if (object.handle !== null) instance.owners.set(world.getRigidBody(object.handle).collider(0).handle, object.id);
     }
-    if (snapshot.groundHandle !== null) instance.owners.set(claim(snapshot.groundHandle, "地面").collider(0).handle, WORLD_GROUND_ID);
-    if (live.size > 0) {
-      instance.dispose();
-      throw new WorldRuntimeError("snapshot-corrupt", `物理世界含 ${live.size} 个未登记刚体`);
-    }
+    if (snapshot.groundHandle !== null) instance.owners.set(world.getRigidBody(snapshot.groundHandle).collider(0).handle, WORLD_GROUND_ID);
     return instance;
   }
 
+  /**
+   * 推进 ticks 个固定步。校验类错误（合同/动作）发生在任何状态变更之前，世界不变；
+   * 一旦开始求解，只有两种"世界作废"失败：超出墙钟预算、或求解后出现非有限/失常数值。
+   * 作废的世界拒绝后续一切操作（状态半推进、不可信），调用方应关闭它并用快照 restore 重建。
+   * 预算只在失败时介入，正常运行的逐位确定性结果不受墙钟影响。
+   */
   step(input: unknown): WorldStepResult {
+    this.assertUsable();
     const { action, ticks } = validateWorldStepRequest(input);
     if (this.currentTick + ticks > WORLD_LIMITS.maxTotalTicks) {
       throw new WorldRuntimeError("limit-exceeded", `世界累计 tick 将超过上限 ${WORLD_LIMITS.maxTotalTicks}（当前 ${this.currentTick}）`);
@@ -193,20 +183,40 @@ export class HeadlessWorld {
     this.events = [];
     this.truncated = false;
     this.applyOps(plan.ops, tickBefore);
+    const started = this.clock();
     for (let index = 0; index < ticks; index += 1) {
       this.world.step(this.queue);
       this.currentTick += 1;
       this.queue.drainCollisionEvents((first: number, second: number, started: boolean) => this.recordContact(first, second, started));
+      if (this.clock() - started > this.stepBudgetMs) {
+        this.faulted = true;
+        throw new WorldRuntimeError("faulted", `单次 step 超出 ${this.stepBudgetMs} ms 的时间预算（已推进 ${index + 1}/${ticks} tick），世界已作废；请关闭并用快照 restore 重建`);
+      }
     }
-    const observation = this.observe({});
-    this.traceHash = sha256Hex(this.traceHash, String(tickBefore), String(ticks), canonicalJson(action), observation.stateHash);
+    const bodies = this.readBodies();
+    if (bodies.some((entry) => entry.raw.some((value) => !Number.isFinite(value) || Math.abs(value) > WORLD_LIMITS.maxStateMagnitude))) {
+      this.faulted = true;
+      throw new WorldRuntimeError("faulted", "求解后出现非有限或量级失常的位姿/速度，世界已作废；请关闭并用快照 restore 重建");
+    }
+    const observation = this.buildObservation({}, bodies);
+    this.traceHash = sha256Hex(this.traceHash, String(tickBefore), String(ticks), plan.canonical, observation.stateHash);
     return { ticksAdvanced: ticks, tickBefore, tickAfter: this.currentTick, commandResults: plan.commandResults, traceHash: this.traceHash, observation };
   }
 
+  /** 世界是否已因超时/数值失常作废；作废的世界只能被关闭。 */
+  get isFaulted(): boolean { return this.faulted; }
+
+  private assertUsable(): void {
+    if (this.faulted) throw new WorldRuntimeError("faulted", "世界已因超时或数值失常作废，只能关闭；请用快照 restore 重建");
+  }
   observe(input: unknown): WorldObservation {
+    this.assertUsable();
+    return this.buildObservation(input, this.readBodies());
+  }
+
+  private buildObservation(input: unknown, bodies: ReturnType<HeadlessWorld["readBodies"]>): WorldObservation {
     const request = validateWorldObserveRequest(input);
     const channels = new Set(request.channels ?? ["poses", "contacts", "events"]);
-    const bodies = this.readBodies();
     return {
       observationVersion: WORLD_API_VERSION,
       tick: this.currentTick,
@@ -218,12 +228,13 @@ export class HeadlessWorld {
       ...(channels.has("events") ? { events: structuredClone(this.events) } : {}),
       ...(this.truncated ? { truncated: true } : {}),
       ...(request.sensors?.length
-        ? { sensors: Object.fromEntries(request.sensors.map((sensor) => [sensor.id, { status: "unsupported" as const, kind: sensor.kind, reason: "reserved-for-stage-3" as const }])) }
+        ? { sensors: Object.fromEntries(request.sensors.map((sensor) => [sensor.id, { status: "unsupported" as const, kind: sensor.kind, reason: "not-implemented" as const }])) }
         : {}),
     };
   }
 
   snapshot(): WorldSnapshot {
+    this.assertUsable();
     const bytes = Buffer.from(this.world.takeSnapshot());
     const body: Omit<WorldSnapshot, "snapshotHash"> = {
       snapshotVersion: WORLD_API_VERSION, seed: this.seed, tick: this.currentTick, sceneId: this.sceneId, sceneHash: this.sceneHash,

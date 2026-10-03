@@ -6,10 +6,10 @@
 
 ## 四层入口
 
-- **编辑器行为脚本**：在当前项目内控制对象、相机、动画、数据和事件。使用运行时注入的 `studio` 与 `ctx`，不依赖 npm 安装，也不能访问 DOM 或原始渲染器。
-- **Deep Engine Web SDK**：在自己的网页或播放器中创建 WebGPU 渲染器。使用 `@bim-studio/deep-engine` 的公开 exports，不引用 `src/` 私有路径。
-- **Studio HTTP API**：管理登录会话、项目、应用、资源、数据连接和发布。浏览器通过当前 API Origin 访问 `/api/...`，服务端负责权限和审计。
-- **云渲染 Worker API**：为独立渲染 Worker 提供 `/v1/health`、会话和观看页接口。调用必须使用 Bearer Token；Worker 根地址没有业务路由。
+- 编辑器行为脚本：在当前项目内控制对象、相机、动画、数据和事件。使用运行时注入的 `studio` 与 `ctx`，不依赖 npm 安装，也不能访问 DOM 或原始渲染器。
+- Deep Engine Web SDK：在自己的网页或播放器中创建 WebGPU 渲染器。使用 `@bim-studio/deep-engine` 的公开 exports，不引用 `src/` 私有路径。
+- Studio HTTP API：管理登录会话、项目、应用、资源、数据连接和发布。浏览器通过当前 API Origin 访问 `/api/...`，服务端负责权限和审计。
+- 云渲染 Worker API：为独立渲染 Worker 提供 `/v1/health`、会话和观看页接口。调用必须使用 Bearer Token；Worker 根地址没有业务路由。
 
 ## Deep Engine 最小接入
 

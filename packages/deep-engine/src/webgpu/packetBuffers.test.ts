@@ -355,4 +355,24 @@ describe("packet GPU resource ownership", () => {
     expect(f.cache.hasOutline()).toBe(false);
     expect(f.cache.drawOutline(f.pass as unknown as GPURenderPassEncoder).drawCalls).toBe(0);
   });
+
+  it("flips the outline bit in place: no new GPU allocation, geometry/material residency untouched", () => {
+    const f = fixture(), base = packet();
+    expect(f.cache.set(base)).toBe(true);
+    const allocationsAfterSet = f.allocated.length, owned = new Set(f.owned);
+    const vertices = f.byLabel("Deep vertices")[0]!, instances = f.byLabel("Deep packet instances")[0]!;
+    const writesBefore = f.device.queue.writeBuffer.mock.calls.length;
+    for (const outline of [true, false, true]) {
+      expect(f.cache.updateInstances({ materials: base.materials, instances: [{ ...base.instances[0]!, outline }] })).toBe(true);
+    }
+    expect(f.allocated.length).toBe(allocationsAfterSet);
+    expect(f.owned).toEqual(owned);
+    expect(f.owned.has(vertices) && f.owned.has(instances)).toBe(true);
+    expect(f.byLabel("Deep vertices")).toHaveLength(1);
+    // One instance-record write per toggle (+ its previous-transform history is unchanged): the geometry buffer is never rewritten.
+    const rewritten = f.device.queue.writeBuffer.mock.calls.slice(writesBefore).map(call => call[0]);
+    expect(rewritten.every(buffer => buffer === instances)).toBe(true);
+    expect(rewritten).toHaveLength(3);
+    expect(f.cache.hasOutline()).toBe(true);
+  });
 });

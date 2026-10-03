@@ -57,6 +57,7 @@ import { createExternalResourceApi } from "./apiClients/externalResourceApi.js";
 import { createModeling3dApi } from "./apiClients/modeling3dApi.js";
 import { createIndustrialAgentApi } from "./apiClients/industrialAgentApi.js";
 import { createProvenanceApi } from "./apiClients/provenanceApi.js";
+import { createSceneEditAuditApi } from "./apiClients/sceneEditAuditApi.js";
 import { createSemanticModelApi } from "./apiClients/semanticModelApi.js";
 import { createOntologyApi } from "./apiClients/ontologyApi.js";
 import { isRecoverableStudioRead } from "./apiClients/studioReadRecovery.js";
@@ -689,6 +690,7 @@ export const api = {
   },
   ...createIndustrialAgentApi(request),
   ...createProvenanceApi(request),
+  ...createSceneEditAuditApi(request),
   ...createSemanticModelApi(request),
   ...createOntologyApi(request),
   ...createModeling3dApi(request),

@@ -54,7 +54,7 @@ export function createOpenAiCompatibleProvider(): AiProvider {
       yield { type: "execution", execution };
       for await (const data of sseData(response.body)) {
         if (data === "[DONE]") { completed = true; break; }
-        const parsed = JSON.parse(data) as { type?: string; delta?: string; choices?: Array<{ delta?: { content?: string } }>; usage?: { input_tokens?: number; output_tokens?: number; prompt_tokens?: number; completion_tokens?: number } };
+        const parsed = JSON.parse(data) as { type?: string; delta?: string; choices?: Array<{ delta?: { content?: string } }>; usage?: ProviderUsage };
         completed = inspectProviderResponse(parsed) || completed;
         const metadata = parsed as { model?: unknown; response?: { model?: unknown; usage?: typeof parsed.usage } };
         const model = providerModel(metadata.model ?? metadata.response?.model);
@@ -65,22 +65,19 @@ export function createOpenAiCompatibleProvider(): AiProvider {
         const delta = parsed.type === "response.output_text.delta" ? parsed.delta : parsed.choices?.[0]?.delta?.content;
         if (delta) yield { type: "delta", delta } satisfies AiProviderStreamEvent;
         const usage = useResponses ? metadata.response?.usage ?? parsed.usage : parsed.usage;
-        if (usage) {
-          const inputTokens = usage.input_tokens ?? usage.prompt_tokens;
-          const outputTokens = usage.output_tokens ?? usage.completion_tokens;
-          yield {
-            type: "usage",
-            ...(inputTokens !== undefined ? { inputTokens } : {}),
-            ...(outputTokens !== undefined ? { outputTokens } : {})
-          } satisfies AiProviderStreamEvent;
-        }
+        if (usage) yield { type: "usage", ...normalizeUsage(usage) } satisfies AiProviderStreamEvent;
       }
       if (!completed) throw new Error("大模型流式连接提前结束，回答未完成");
     }
   };
 }
 
-interface CompletionContent { text: string; model?: string; execution?: ExecutionReceipt; usage?: { inputTokens?: number; outputTokens?: number } }
+/** chat 与 responses 协议的 usage 字段并集；缓存命中取各家回执（OpenAI cached_tokens / DeepSeek prompt_cache_hit_tokens）。 */
+interface ProviderUsage {
+  input_tokens?: number; output_tokens?: number; prompt_tokens?: number; completion_tokens?: number;
+  prompt_tokens_details?: { cached_tokens?: number }; input_tokens_details?: { cached_tokens?: number }; prompt_cache_hit_tokens?: number;
+}
+interface CompletionContent { text: string; model?: string; execution?: ExecutionReceipt; usage?: { inputTokens?: number; outputTokens?: number; cachedInputTokens?: number } }
 type ExecutionReceipt = NonNullable<Awaited<ReturnType<AiProvider["complete"]>>["execution"]>;
 
 function executionReceipt(request: AiProviderRequest, protocol: "responses" | "chat-completions", response?: unknown): ExecutionReceipt {
@@ -106,7 +103,7 @@ async function completeChatWithFallback(request: AiProviderRequest, config: Prov
   });
   const body = await response.json().catch(() => undefined) as {
     model?: unknown;
-    choices?: Array<{ message?: { content?: string } }>; usage?: { prompt_tokens?: number; completion_tokens?: number }; error?: { code?: string; message?: string };
+    choices?: Array<{ message?: { content?: string } }>; usage?: ProviderUsage; error?: { code?: string; message?: string };
   } | undefined;
   if (!response.ok && config.protocol === "auto" && shouldUseResponses(response.status, body?.error)) return completeResponses(request, config, signal);
   if (!response.ok) throw new AiProviderHttpError(response.status, body?.error?.message);
@@ -115,7 +112,7 @@ async function completeChatWithFallback(request: AiProviderRequest, config: Prov
     text: requireContent(body?.choices?.[0]?.message?.content),
     execution: executionReceipt(request, "chat-completions", body),
     ...(providerModel(body?.model) ? { model: providerModel(body?.model)! } : {}),
-    ...(body?.usage ? { usage: usageFromChat(body.usage) } : {}),
+    ...(body?.usage ? { usage: normalizeUsage(body.usage) } : {}),
   };
 }
 
@@ -130,7 +127,7 @@ async function completeResponses(request: AiProviderRequest, config: ProviderCon
     model?: unknown;
     output_text?: string;
     output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
-    usage?: { input_tokens?: number; output_tokens?: number };
+    usage?: ProviderUsage;
     error?: { message?: string };
   } | undefined;
   if (!response.ok) throw new AiProviderHttpError(response.status, body?.error?.message);
@@ -139,7 +136,7 @@ async function completeResponses(request: AiProviderRequest, config: ProviderCon
     text: requireContent(body?.output_text ?? body?.output?.flatMap((item) => item.content ?? []).find((item) => item.type === "output_text")?.text),
     execution: executionReceipt(request, "responses", body),
     ...(providerModel(body?.model) ? { model: providerModel(body?.model)! } : {}),
-    ...(body?.usage ? { usage: usageFromResponses(body.usage) } : {}),
+    ...(body?.usage ? { usage: normalizeUsage(body.usage) } : {}),
   };
 }
 
@@ -161,6 +158,7 @@ function responsesBody(request: AiProviderRequest, stream: boolean) {
     input: request.input,
     stream,
     max_output_tokens: request.maxOutputTokens,
+    ...cacheParam(request),
     ...reasoningParam(request, "responses")
   };
 }
@@ -171,8 +169,14 @@ function chatCompletionsBody(request: AiProviderRequest, stream: boolean) {
     temperature: request.temperature,
     stream,
     messages: messages(request),
+    ...cacheParam(request),
     ...reasoningParam(request, "chat-completions")
   };
+}
+
+/** 缓存路由提示仅在宿主显式提供 cacheKey 时发送；非 OpenAI 的严格兼容网关默认不接收未知字段。 */
+function cacheParam(request: AiProviderRequest): Record<string, unknown> {
+  return request.cacheKey ? { prompt_cache_key: request.cacheKey } : {};
 }
 
 function reasoningParam(request: AiProviderRequest, protocol: Protocol): Record<string, unknown> {
@@ -250,16 +254,13 @@ function requireContent(value: string | undefined): string {
   return content;
 }
 
-function usageFromChat(usage: { prompt_tokens?: number; completion_tokens?: number }) {
+function normalizeUsage(usage: ProviderUsage) {
+  const inputTokens = usage.input_tokens ?? usage.prompt_tokens;
+  const outputTokens = usage.output_tokens ?? usage.completion_tokens;
+  const cachedInputTokens = usage.prompt_tokens_details?.cached_tokens ?? usage.input_tokens_details?.cached_tokens ?? usage.prompt_cache_hit_tokens;
   return {
-    ...(usage.prompt_tokens !== undefined ? { inputTokens: usage.prompt_tokens } : {}),
-    ...(usage.completion_tokens !== undefined ? { outputTokens: usage.completion_tokens } : {}),
-  };
-}
-
-function usageFromResponses(usage: { input_tokens?: number; output_tokens?: number }) {
-  return {
-    ...(usage.input_tokens !== undefined ? { inputTokens: usage.input_tokens } : {}),
-    ...(usage.output_tokens !== undefined ? { outputTokens: usage.output_tokens } : {}),
+    ...(inputTokens !== undefined ? { inputTokens } : {}),
+    ...(outputTokens !== undefined ? { outputTokens } : {}),
+    ...(typeof cachedInputTokens === "number" && cachedInputTokens >= 0 ? { cachedInputTokens } : {}),
   };
 }

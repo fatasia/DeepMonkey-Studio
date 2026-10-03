@@ -311,6 +311,12 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         evidence: "mesh_abi::MATERIAL_UNIFORM_FLOATS=40(核心块;不消费 Web 扩展带 40..46,无清漆层叠着色路径)",
     },
     NativeCapabilitySelfCheck {
+        capability_id: "material-advanced",
+        support: RendererCapabilitySupport::Unavailable,
+        reason: RendererCapabilityReasonCode::Absent,
+        evidence: "runtime package native profile 拒绝 advancedParameters;mesh_abi::MATERIAL_UNIFORM_FLOATS=40(核心块,无 advanced 带与 sheen/薄膜/体积着色路径)",
+    },
+    NativeCapabilitySelfCheck {
         capability_id: "local-shadow-abi-16",
         support: RendererCapabilitySupport::Degraded,
         reason: RendererCapabilityReasonCode::ReducedTier,
@@ -333,6 +339,12 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         support: RendererCapabilitySupport::Unavailable,
         reason: RendererCapabilityReasonCode::Absent,
         evidence: "无 HDR 显示输出模块(native 离屏直出经 output-transform ACES SDR;显示 surface 链按设计属 web 宿主)",
+    },
+    NativeCapabilitySelfCheck {
+        capability_id: "object-outline",
+        support: RendererCapabilitySupport::Supported,
+        reason: RendererCapabilityReasonCode::Full,
+        evidence: "outline_pass.rs OutlinePass + native_outline_composite_v1.wgsl 掩码/合成(实例 outline 字段共用 surface flag bit 256)",
     },
 ];
 

@@ -11,12 +11,9 @@ describe("local documentation catalog", () => {
       "core-concepts",
       "dashboard-scene",
       "runtime-and-extensions",
-      "deep-engine",
-      "deep-engine-sdk",
-      "engine-design-influences",
-      "engine-benchmarks",
       "resource-workflow",
       "model-import",
+      "scene-effects-rendering",
       "media-widgets",
       "topology-resources",
       "data-pipeline",
@@ -35,13 +32,17 @@ describe("local documentation catalog", () => {
       "container-deployment",
       "troubleshooting",
       "faq",
+      "deep-engine",
+      "deep-engine-sdk",
+      "engine-design-influences",
+      "engine-benchmarks",
       "contributing",
       "community",
       "open-source-assets",
       "on-demand-packaging"
     ]);
     expect(docsDocuments.every((document) => document.version === DOCS_VERSION)).toBe(true);
-    expect(docsCategories).toHaveLength(6);
+    expect(docsCategories.map((category) => category.title)).toEqual(["快速开始", "资源与编辑", "数据与 AI", "工业任务", "交付与运维", "渲染引擎", "参与项目"]);
   });
 
   it("documents the full supported delivery path and industrial tasks", () => {
@@ -68,7 +69,8 @@ describe("local documentation catalog", () => {
       "发布体检",
       "部署与系统运维",
       "使用基础能力",
-      "接入商业扩展",
+      "三维效果、环境与物理光照出图",
+      "可选适配器与内置能力的边界",
     ]) expect(text).toContain(expected);
   });
 
@@ -107,6 +109,8 @@ describe("local documentation catalog", () => {
     for (const document of docsDocuments) {
       const prose = document.markdown.replace(/```[\s\S]*?```/g, "");
       expect(prose, document.id).not.toMatch(/^\|.*\|\s*$/m);
+      expect(prose, document.id).not.toMatch(/\*\*[^*\n]+\*\*/);
+      expect(prose, document.id).not.toMatch(/^[ \t]+([-*+]|\d+[.)])\s/m);
       expect(document.blocks.filter(block => block.type === "heading" && block.level === 1), document.id).toHaveLength(1);
     }
   });

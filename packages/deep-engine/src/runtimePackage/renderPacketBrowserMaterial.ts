@@ -1,6 +1,7 @@
 import type { PbrMaterial } from "../renderPacketTypes.js";
 import { normalizeExtendedMaterialParameters, type MaterialParameterOverrides, type ExtendedMaterialParameters } from "../shader/materialParameters.js";
 import { normalizeLayeredSurfaceParameters, type LayeredSurfaceOverrides } from "../shader/materialLayeredSurface.js";
+import { normalizeAdvancedMaterialParameters, type AdvancedMaterialParameters } from "../shader/materialAdvancedParameters.js";
 import { array, fields, record, requireValue } from "./primitives.js";
 
 function optionalFields(value: Record<string, unknown>, names: readonly string[], path: string): void {
@@ -44,11 +45,36 @@ function surface(input: unknown, path: string): void {
     if (Object.hasOwn(slot, "rotation")) requireValue(typeof slot.rotation === "number", `${p}.rotation`, "Expected a UV rotation number.");
   }
 }
+/** sheen / iridescence / volume(three r185 语义);JSON 友好形态(缺省 attenuationDistance = 不衰减)。 */
+function advancedParameters(input: unknown, path: string): AdvancedMaterialParameters {
+  const value = record(input, path);
+  optionalFields(value, ["sheen", "iridescence", "volume"], path);
+  const rgb = (raw: unknown, p: string) => {
+    const color = array(raw, p, 3);
+    requireValue(color.length === 3 && color.every(channel => typeof channel === "number" && Number.isFinite(channel)), p, "Expected three finite color numbers.");
+  };
+  if (Object.hasOwn(value, "sheen")) {
+    const sheen = record(value.sheen, `${path}.sheen`); fields(sheen, ["color", "roughness"], [], `${path}.sheen`);
+    rgb(sheen.color, `${path}.sheen.color`);
+    requireValue(typeof sheen.roughness === "number", `${path}.sheen.roughness`, "Expected a sheen roughness number.");
+  }
+  if (Object.hasOwn(value, "iridescence")) scalarFields(record(value.iridescence, `${path}.iridescence`), ["factor", "ior", "thickness"], `${path}.iridescence`);
+  if (Object.hasOwn(value, "volume")) {
+    const volume = record(value.volume, `${path}.volume`); fields(volume, ["thickness", "attenuationColor"], ["attenuationDistance"], `${path}.volume`);
+    rgb(volume.attenuationColor, `${path}.volume.attenuationColor`);
+    requireValue(typeof volume.thickness === "number", `${path}.volume.thickness`, "Expected a volume thickness number.");
+    if (Object.hasOwn(volume, "attenuationDistance")) requireValue(typeof volume.attenuationDistance === "number" && Number.isFinite(volume.attenuationDistance),
+      `${path}.volume.attenuationDistance`, "Expected a finite attenuation distance (omit for none).");
+  }
+  normalizeAdvancedMaterialParameters(value as AdvancedMaterialParameters);
+  return value as AdvancedMaterialParameters;
+}
 /** Browser-only fields; Native runtime validation retains its existing closed material profile. */
-export function browserMaterialExtensions(value: Record<string, unknown>, path: string): Pick<PbrMaterial, "extendedParameters" | "layered"> {
+export function browserMaterialExtensions(value: Record<string, unknown>, path: string): Pick<PbrMaterial, "extendedParameters" | "layered" | "advancedParameters"> {
   const extendedParameters = Object.hasOwn(value, "extendedParameters") ? parameters(value.extendedParameters, `${path}.extendedParameters`) : undefined;
   const layered = layeredMaterialExtension(value, path);
-  return { ...(extendedParameters ? { extendedParameters } : {}), ...(layered ? { layered } : {}) };
+  const advanced = Object.hasOwn(value, "advancedParameters") ? advancedParameters(value.advancedParameters, `${path}.advancedParameters`) : undefined;
+  return { ...(extendedParameters ? { extendedParameters } : {}), ...(layered ? { layered } : {}), ...(advanced ? { advancedParameters: advanced } : {}) };
 }
 
 /** I-C23:分层材质扩展的独立校验/规范化。Native 生产消费接通后,native

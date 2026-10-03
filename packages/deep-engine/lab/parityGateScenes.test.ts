@@ -24,7 +24,8 @@ it("only the shadow scenario casts directional shadows, and transparency uses th
       const casters: boolean[] = []; spec.scene.traverse(object => { if (object instanceof DirectionalLight) casters.push(object.castShadow); });
       expect(spec.shadows).toBe(id === "directional-shadow"); expect(casters.some(Boolean)).toBe(spec.shadows);
       expect(spec.environment !== undefined).toBe(id === "ibl" || id === "ibl-hq");
-      if (id === "transparency") {
+      expect(spec.post !== undefined).toBe(["aa-bloom", "bloom-only", "transparency"].includes(id));
+      if (id === "transparency" || id === "transparency-direct") {
         const glass = spec.root.children.filter(child => child.name.startsWith("glass")) as Mesh<never, MeshPhysicalMaterial>[];
         expect(glass).toHaveLength(3);
         for (const mesh of glass) expect(mesh.material).toMatchObject({ transparent: true, depthWrite: false });

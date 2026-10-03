@@ -6,10 +6,10 @@
 
 ## API 分层
 
-- **编辑器脚本 API**：`studio` 和 `ctx` 面向项目内的二维组件、三维对象、相机、动画、数据和业务事件。Worker 脚本没有 DOM、`window`、`document` 或原始渲染器。
-- **Studio HTTP API**：浏览器通过当前登录会话访问 `/api/...`。认证、项目权限和审计由 API 服务处理，前端不直接拼接数据库请求。
-- **云渲染 Worker API**：独立 Worker 只暴露版本化 `/v1/...` 接口，必须带 `Authorization: Bearer <token>`。根地址没有业务路由，直接访问根地址返回 `404` 是正常现象。
-- **3D 生成供应商**：Tripo3D 与腾讯混元 3D 的地址、模型、协议和密钥在“系统 → AI 与模型 → 3D 生成模型配置”保存。没有对应适配器注册时，保存配置不等于已连通或已调用供应商。
+- 编辑器脚本 API：`studio` 和 `ctx` 面向项目内的二维组件、三维对象、相机、动画、数据和业务事件。Worker 脚本没有 DOM、`window`、`document` 或原始渲染器。
+- Studio HTTP API：浏览器通过当前登录会话访问 `/api/...`。认证、项目权限和审计由 API 服务处理，前端不直接拼接数据库请求。
+- 云渲染 Worker API：独立 Worker 只暴露版本化 `/v1/...` 接口，必须带 `Authorization: Bearer <token>`。根地址没有业务路由，直接访问根地址返回 `404` 是正常现象。
+- 3D 生成供应商：Tripo3D 与腾讯混元 3D 的地址、模型、协议和密钥在“设置 → AI 大模型 → 3D 生成”保存。没有对应适配器注册时，保存配置不等于已连通或已调用供应商。
 
 ## `studio` Worker API
 
@@ -101,8 +101,8 @@ curl https://worker.example.com/v1/sessions \
 
 设置页为每个供应商保存独立配置档：
 
-- **Tripo3D**：Provider ID、V3 Base URL、模型名、协议和 API Key。
-- **腾讯混元 3D**：Provider ID、腾讯云 API 地址、模型名、协议和 API Key。
+- Tripo3D：Provider ID、V3 Base URL、模型名、协议和 API Key。
+- 腾讯混元 3D：Provider ID、腾讯云 API 地址、模型名、协议和 API Key。
 - 密钥只在保存请求中提交；再次读取只返回 `apiKeyConfigured`，不会回显明文。
 - 配置可先保存，再由对应适配器负责连接测试、异步任务轮询、结果下载和资源入库。没有适配器时，页面明确显示“仅保存配置”，不把配置伪装成生成成功。
 
@@ -122,7 +122,7 @@ curl https://worker.example.com/v1/sessions \
 - 本产品相机与场景工作流说明：对象观察、相机飞行和园区级场景组织。
 - 本产品画布与自适应说明：画布、分页和等比自适应的实现边界。
 - [Three.js WebGLRenderer](https://threejs.org/docs/pages/WebGLRenderer.html)：`HTMLCanvasElement | OffscreenCanvas`、裁剪面和渲染器诊断边界。
-- [Tripo Developers API](https://developers.tripo3d.ai/)：V3 生成任务 API；Tripo 官方已公告 V2 将于 **2026 年 10 月 1 日** 退休。
+- [Tripo Developers API](https://developers.tripo3d.ai/)：V3 生成任务 API；Tripo 官方已公告 V2 将于 2026 年 10 月 1 日 退休。
 - [腾讯混元 API 概览](https://cloud.tencent.com/document/product/1729/101848)：腾讯云 API 版本、请求和错误码入口。
 - [腾讯混元 API Key 管理](https://cloud.tencent.com/document/product/1729/111008)：开通、创建和管理密钥。
 

@@ -40,7 +40,7 @@ export async function runSharedSceneProbe(options: { readonly directProfile?: Th
       renderer: { shadows: { exactProfile: { cascadeCount: 1, shadowMapSize: 128 } }, pipelines: { firstFrameSubset: true, deferDeformation: true },
         frameCapture: { session: new FrameCaptureSession(), readbacks: { requests: [{ resourceId: "present-color" }] } },
         features: { toneMapping: "three-aces-r185", environment: false, groundPlane: false, groundGrid: false, fog: false, ambientOcclusion: false,
-          temporalAa: false, spatialAa: false, occlusionCulling: false, bloom: false, vignette: false } } }).then(created => {
+          temporalAa: false, spatialAa: false, occlusionCulling: false, bloom: false, vignette: false, contactShadows: false } } }).then(created => {
       if (lifetime.signal.aborted) created.dispose(); return created;
     }));
     if (!(backend.runtime instanceof PbrRenderer)) throw Error("Shared root must use the formal production PbrRenderer factory");

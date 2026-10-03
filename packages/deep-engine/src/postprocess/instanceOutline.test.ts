@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { INSTANCE_OUTLINE_WGSL } from "./instanceOutlineWgsl.js";
+import { DEFAULT_PBR_RENDERER_FEATURES } from "../webgpu/pbrRendererFeatures.js";
+import { resolvePbrPostProcessOverrides, validatePbrPostProcessOverrides } from "../webgpu/pbrPostProcessOverrides.js";
 import { DEFAULT_INSTANCE_OUTLINE, instanceOutlineCompose, instanceOutlineEdge, packInstanceOutlineParams,
   resolveInstanceOutlineOptions, srgbToLinear, validateInstanceOutlineOptions } from "./instanceOutlineCpu.js";
 
@@ -65,5 +67,15 @@ describe("instance outline WGSL", () => {
     expect(INSTANCE_OUTLINE_WGSL.length).toBeLessThan(5_000);
     // 与 renderPacketBatches 的实例 flag 位约定一致:256 = 对象级 outline。
     expect(INSTANCE_OUTLINE_WGSL).toContain("& 256u");
+  });
+});
+
+describe("instance outline per-frame override", () => {
+  it("is carried through the resolved overrides and validated fail-closed", () => {
+    const resolved = resolvePbrPostProcessOverrides({ instanceOutline: { strength: 4 } }, DEFAULT_PBR_RENDERER_FEATURES);
+    expect(resolved.instanceOutline).toEqual({ strength: 4 });
+    expect(resolvePbrPostProcessOverrides({}, DEFAULT_PBR_RENDERER_FEATURES).instanceOutline).toBeUndefined();
+    expect(() => validatePbrPostProcessOverrides({ instanceOutline: { strength: -1 } })).toThrow(RangeError);
+    expect(() => validatePbrPostProcessOverrides({ instanceOutline: { nope: 1 } as never })).toThrow(/Unknown instance outline/);
   });
 });

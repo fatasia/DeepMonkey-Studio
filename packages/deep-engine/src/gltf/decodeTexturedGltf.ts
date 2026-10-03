@@ -3,7 +3,7 @@ import { decodeGltf, type GltfImportOptions } from "./decodeGltf.js";
 import { decodeGltfTextureManifest } from "./textureDecode.js";
 import { extractGltfTextureManifest } from "./textureManifest.js";
 import { KHR_MATERIALS_EMISSIVE_STRENGTH, SCALAR_MATERIAL_EXTENSIONS } from "./materialExtensions.js";
-import { mapGltfMaterialExtensions } from "../shader/materialGltfMap.js";
+import { mapGltfAdvancedMaterialExtensions, mapGltfMaterialExtensions } from "../shader/materialGltfMap.js";
 import { isDefaultExtendedMaterialParameters } from "../shader/materialParameters.js";
 import type { CapabilityFailure } from "./capabilityInventory.js";
 import { projectOptionalMaterialFallbacks, projectThirdPartyMaterialProfile, type GltfOptionalMaterialFallback } from "./optionalMaterialFallback.js";
@@ -14,6 +14,11 @@ import { GltfImportError, list, object, unsupported, type JsonObject } from "./v
 export interface TexturedGltfImportOptions extends GltfImportOptions, GltfTextureDecodeOptions {
   /** Optional material extensions to render through their authored core glTF fallback. */
   readonly optionalMaterialFallbacks?: readonly GltfOptionalMaterialFallback[];
+  /**
+   * 目标渲染器启用了 advancedMaterials 变体:KHR_materials_sheen / iridescence / volume 映射为 advancedParameters,
+   * 且 clearcoat / transmission / 上述 lobe 允许无核心纹理的材质(由中性纹理承载)。缺省保持既有回退与 loss 语义。
+   */
+  readonly advancedMaterials?: boolean;
 }
 
 function textureSlot(slot: GltfTextureSlot): TextureSlot {
@@ -207,23 +212,38 @@ export async function decodeTexturedGltfDocument(json: unknown, buffers: readonl
   const document = object(fallbackDocument, "$"), sourceMaterials = list(document.materials, "materials", 16_383);
   const losses: CapabilityFailure[] = [...projected.losses];
   const materialPrefix = `${options.resourcePrefix ?? "gltf"}/material/`;
+  const advancedOn = options.advancedMaterials === true;
+  const originalMaterials = advancedOn ? list(object(json, "$").materials, "materials", 16_383) : [];
+  const suppressedLosses = new Set<string>();
   const materials = attached.materials.map((material) => {
     const index = material.id.startsWith(materialPrefix) ? Number(material.id.slice(materialPrefix.length)) : -1;
     if (!Number.isSafeInteger(index) || index < 0 || index >= sourceMaterials.length) return material;
     const mapped = mapGltfMaterialExtensions(sourceMaterials[index], `materials[${index}]`, { failClosed: true });
     losses.push(...mapped.losses);
-    if (isDefaultExtendedMaterialParameters(mapped.params)) return material;
-    if (!material.baseColorTexture && !material.metallicRoughnessTexture && !material.normalTexture
+    const advancedMapped = advancedOn ? mapGltfAdvancedMaterialExtensions(originalMaterials[index], `materials[${index}]`, { failClosed: true }) : undefined;
+    if (advancedMapped) {
+      losses.push(...advancedMapped.losses);
+      for (const name of advancedMapped.mapped) suppressedLosses.add(`materials[${index}].extensions.${name}`);
+    }
+    // 体积只在透射存在时有意义(与 three 一致:transmission=0 时 thickness/attenuation 被忽略)。
+    const { volume: mappedVolume, ...withoutVolume } = advancedMapped?.params ?? {};
+    const advancedBase = mapped.params.transmission.factor > 0 && mappedVolume ? { ...withoutVolume, volume: mappedVolume } : withoutVolume;
+    const advancedParameters = Object.keys(advancedBase).length ? advancedBase : undefined;
+    const hasExtended = !isDefaultExtendedMaterialParameters(mapped.params);
+    if (!hasExtended && !advancedParameters) return material;
+    if (!advancedOn && !material.baseColorTexture && !material.metallicRoughnessTexture && !material.normalTexture
       && !material.occlusionTexture && !material.emissiveTexture) {
       losses.push({ code: "material-profile-unsupported", stage: "material", assetPath: `materials[${index}]`, count: 1,
         detail: "该材质无核心纹理，默认 plain PBR 不支持扩展 lobe；保留原材质与已支持 IOR，导入带纹理资产或保持 glTF core 回退。" });
       return material;
     }
-    return { ...material, extendedParameters: mapped.params };
+    return { ...material, ...(hasExtended ? { extendedParameters: mapped.params } : {}),
+      ...(advancedParameters ? { advancedParameters } : {}) };
   });
   const textures = await decodeGltfTextureManifest(manifest, imageDecoder, options);
   options.signal?.throwIfAborted();
   const { geometries, materials: attachedMaterials, losses: attachedLosses } = attached;
   losses.push(...attachedLosses);
-  return { ...packet, geometries, materials, ...(losses.length ? { materialLosses: losses } : {}), textures };
+  const reportedLosses = suppressedLosses.size ? losses.filter(entry => !suppressedLosses.has(entry.assetPath)) : losses;
+  return { ...packet, geometries, materials, ...(reportedLosses.length ? { materialLosses: reportedLosses } : {}), textures };
 }

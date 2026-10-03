@@ -29,3 +29,26 @@ export function generateNormals(positions: Float32Array, indices: Uint32Array, p
   }
   return result;
 }
+
+/**
+ * 真实资产常带零长度顶点法线(退化顶点/导出器缺陷)。Three 容忍并仍能绘制,引擎导入若逐个拒绝会让整件模型不可用:
+ * 零法线顶点改用面积加权的几何法线;顶点不属于任何有效三角形时(绘制不到)用 +Z 占位。
+ * 全部法线有效时原样返回同一数组(零拷贝,行为不变)。
+ */
+export function repairZeroNormals(normals: Float32Array<ArrayBuffer>, positions: Float32Array, indices: Uint32Array,
+  path: string): Float32Array<ArrayBuffer> {
+  const vertexCount = normals.length / 3;
+  let broken = -1;
+  for (let vertex = 0; vertex < vertexCount; vertex++) {
+    if (Math.hypot(normals[vertex * 3]!, normals[vertex * 3 + 1]!, normals[vertex * 3 + 2]!) < 1e-8) { broken = vertex; break; }
+  }
+  if (broken < 0) return normals;
+  const repaired = new Float32Array(normals);
+  const generated = generateNormals(positions, indices, path, [0, 0, 1]);
+  for (let vertex = broken; vertex < vertexCount; vertex++) {
+    if (Math.hypot(repaired[vertex * 3]!, repaired[vertex * 3 + 1]!, repaired[vertex * 3 + 2]!) < 1e-8) {
+      repaired.set(generated.subarray(vertex * 3, vertex * 3 + 3), vertex * 3);
+    }
+  }
+  return repaired;
+}

@@ -1,4 +1,4 @@
-import type { AiContextDelivery } from "@bim-studio/contracts";
+import type { AiContextBudgetReport, AiContextDelivery } from "@bim-studio/contracts";
 
 // IDs match the existing project/workspace source list; paths refer to request snapshots.
 const SOURCE_PATHS: Record<string, string[]> = {
@@ -14,9 +14,14 @@ const SOURCE_PATHS: Record<string, string[]> = {
   "agent-memory-context": ["agentMemoryContext"],
 };
 
-/** JSON offsets are computed from property serialization, never substring searches in user content. */
-export function assistantContextDelivery(original: unknown, prepared: unknown, sentChars: number): AiContextDelivery {
+/**
+ * JSON offsets are computed from property serialization, never substring searches in user content.
+ * `prepared` 是预算前的完整上下文（preparedChars 的口径）；传入 `sent` 时，已发送口径取预算器输出
+ * （重排/压缩后的真实发送对象），sentChars 是其序列化的前缀长度。
+ */
+export function assistantContextDelivery(original: unknown, prepared: unknown, sentChars: number, sent: unknown = prepared, budget?: AiContextBudgetReport): AiContextDelivery {
   const serialized = JSON.stringify(prepared) ?? "null";
+  const sentSerialized = JSON.stringify(sent) ?? "null";
   const sources: AiContextDelivery["sources"] = [];
   for (const [id, path] of Object.entries(SOURCE_PATHS)) {
     const range = locate(prepared, path);
@@ -26,12 +31,20 @@ export function assistantContextDelivery(original: unknown, prepared: unknown, s
       continue;
     }
     const length = range.text.length;
-    const sent = Math.max(0, Math.min(length, sentChars - range.start));
-    const transformed = Boolean(before && before.text !== range.text);
-    sources.push({ id, path: path.join("."), status: sent === 0 ? "omitted" : sent < length || transformed ? "partial" : "sent",
-      preparedChars: length, sentChars: sent, transformed });
+    const sentRange = sent === prepared ? range : locate(sent, path);
+    const sentLength = sentRange ? Math.max(0, Math.min(sentRange.text.length, sentChars - sentRange.start)) : 0;
+    const sentEdited = Boolean(sentRange && sentRange.text !== range.text);
+    const transformed = Boolean(before && before.text !== range.text) || (sent !== prepared && (sentEdited || !sentRange));
+    sources.push({ id, path: path.join("."), status: sentLength === 0 ? "omitted" : sentLength < length || transformed ? "partial" : "sent",
+      preparedChars: length, sentChars: Math.min(sentLength, length), transformed });
   }
-  return { unit: "utf16", preparedChars: serialized.length, sentChars: Math.min(serialized.length, sentChars), sources };
+  return {
+    unit: "utf16",
+    preparedChars: Math.max(serialized.length, sentSerialized.length),
+    sentChars: Math.min(sentSerialized.length, sentChars),
+    sources,
+    ...(budget ? { budget } : {}),
+  };
 }
 
 /** T5：逐条引用锚的证据定位输入——与 contextDelivery 同一坐标系的来源段（start 为 prepared 串内 UTF-16 偏移）。 */
