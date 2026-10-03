@@ -43,6 +43,18 @@ pnpm test
 pnpm build
 ```
 
+### Local GPU gates (not runnable in CI)
+
+`pnpm gate:parity` (three ↔ Deep pixel parity) and `pnpm gate:webgpu` (product browser with WebGPU) require a **local hardware WebGPU adapter** — they fail closed on CI runners and software adapters, by design. Run them on a machine with a real GPU before submitting rendering changes:
+
+```bash
+pnpm gate:parity        # three ↔ Deep pixel parity,320×192 dark;baseline per scripts/lib/parityGateThresholds.mjs
+pnpm gate:webgpu        # product browser with --require-webgpu
+node scripts/c8-shared-scene-parity.mjs
+```
+
+If a scenario's expected metrics change intentionally, recalibrate with `pnpm gate:parity --calibrate`, review the diff in `scripts/lib/parityGateThresholds.mjs`, and record the reason in the PR. The gate never passes silently without a hardware adapter; do not weaken thresholds to make a red gate green.
+
 Browser, GPU, asset, data, and release changes have additional `gate:*` scripts — check the root `package.json` for the ones that apply. List the commands you ran and their outcomes in the Pull Request, and don't mark an unrun check as passed.
 
 Maintainers may ask for a smaller change, stronger evidence, or a design note under `docs/` when the decision affects future contributors.
