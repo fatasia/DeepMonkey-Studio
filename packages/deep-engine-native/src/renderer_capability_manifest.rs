@@ -352,6 +352,12 @@ pub const NATIVE_RENDERER_CAPABILITY_SELF_CHECK: &[NativeCapabilitySelfCheck] = 
         reason: RendererCapabilityReasonCode::Full,
         evidence: "outline_pass.rs OutlinePass + native_outline_composite_v1.wgsl 掩码/合成(实例 outline 字段共用 surface flag bit 256)",
     },
+    NativeCapabilitySelfCheck {
+        capability_id: "megalights",
+        support: RendererCapabilitySupport::Unavailable,
+        reason: RendererCapabilityReasonCode::Absent,
+        evidence: "无 MegaLights 模块(native clustered_lighting 为逐灯簇光路径,非 RIS 采样;web M1 compute 通路见 deep-engine lighting/megaLights*)",
+    },
 ];
 
 #[cfg(test)]

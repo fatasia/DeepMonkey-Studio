@@ -124,9 +124,9 @@ export function validateMegaLight(light: MegaLight, name: string): void {
     }
   }
   if (light.kind === "area") {
-    const [halfWidth, halfHeight] = light.halfExtent ?? [];
-    if (!Number.isFinite(halfWidth) || halfWidth <= 0) throw new Error(`${name}.halfExtent[0] must be finite and positive.`);
-    if (!Number.isFinite(halfHeight) || halfHeight <= 0) throw new Error(`${name}.halfExtent[1] must be finite and positive.`);
+    const halfWidth = light.halfExtent?.[0], halfHeight = light.halfExtent?.[1];
+    if (!Number.isFinite(halfWidth) || halfWidth! <= 0) throw new Error(`${name}.halfExtent[0] must be finite and positive.`);
+    if (!Number.isFinite(halfHeight) || halfHeight! <= 0) throw new Error(`${name}.halfExtent[1] must be finite and positive.`);
     finite3(light.upView, `${name}.upView`);
     if (Math.hypot(...light.upView!) < 1e-8) throw new Error(`${name}.upView must be nonzero.`);
   }
@@ -196,13 +196,15 @@ export function megaLightFromPoint(light: PointLight): MegaLight {
 export function megaLightFromSpot(light: SpotLight, iesSpotIndex?: number): MegaLight {
   return { kind: "spot", positionView: light.positionView, range: light.range, color: light.color,
     intensity: light.intensity, decay: light.decay ?? 2, directionView: light.directionView,
-    innerConeCos: light.innerConeCos, outerConeCos: light.outerConeCos, iesSpotIndex };
+    innerConeCos: light.innerConeCos, outerConeCos: light.outerConeCos,
+    ...(iesSpotIndex === undefined ? {} : { iesSpotIndex }) };
 }
 
 export function megaLightFromArea(light: AreaLight): MegaLight {
   return { kind: "area", positionView: light.positionView, range: light.range, color: light.color,
     intensity: light.intensity, decay: 2, directionView: light.directionView, upView: light.upView,
-    halfExtent: [...light.halfExtent] as [number, number], twoSided: light.twoSided };
+    halfExtent: [...light.halfExtent] as [number, number],
+    ...(light.twoSided === undefined ? {} : { twoSided: light.twoSided }) };
 }
 
 /**
@@ -324,10 +326,10 @@ export function megaLightBrdfCpu(light: MegaLight, surface: MegaLightSurface, ra
   const vDotH = Math.min(Math.max(dot3(view, halfVector), 0), 1);
   const roughness = Math.min(Math.max(surface.roughness, 0.045), 1);
   const metallic = Math.min(Math.max(surface.metallic, 0), 1);
-  const baseColor = [Math.max(surface.baseColor[0], 0), Math.max(surface.baseColor[1], 0), Math.max(surface.baseColor[2], 0)];
-  const f0 = [0.04 * (1 - metallic) + baseColor[0] * metallic,
-    0.04 * (1 - metallic) + baseColor[1] * metallic, 0.04 * (1 - metallic) + baseColor[2] * metallic];
-  const fresnelFactor = Math.exp2((-5.55473 * vDotH - 6.98316) * vDotH);
+  const baseColor = [Math.max(surface.baseColor[0]!, 0), Math.max(surface.baseColor[1]!, 0), Math.max(surface.baseColor[2]!, 0)];
+  const f0 = [0.04 * (1 - metallic) + baseColor[0]! * metallic,
+    0.04 * (1 - metallic) + baseColor[1]! * metallic, 0.04 * (1 - metallic) + baseColor[2]! * metallic];
+  const fresnelFactor = 2 ** ((-5.55473 * vDotH - 6.98316) * vDotH);
   const fresnel = f0.map(component => component * (1 - fresnelFactor) + fresnelFactor);
   const alpha = roughness * roughness, alpha2 = alpha * alpha;
   const denominator = nDotH * nDotH * (alpha2 - 1) + 1;
@@ -335,11 +337,16 @@ export function megaLightBrdfCpu(light: MegaLight, surface: MegaLightSurface, ra
   const gv = nDotL * Math.sqrt(alpha2 + (1 - alpha2) * nDotV * nDotV);
   const gl = nDotV * Math.sqrt(alpha2 + (1 - alpha2) * nDotL * nDotL);
   const visibility = 0.5 / Math.max(gv + gl, 1e-6);
-  const diffuse = (1 - metallic) * PI_FACTOR * baseColor;
+  const diffuse: LightVector3 = [baseColor[0]! * (1 - metallic) * PI_FACTOR,
+    baseColor[1]! * (1 - metallic) * PI_FACTOR, baseColor[2]! * (1 - metallic) * PI_FACTOR];
   const radiance = [light.color[0] * light.intensity * attenuation * radianceScale,
     light.color[1] * light.intensity * attenuation * radianceScale,
     light.color[2] * light.intensity * attenuation * radianceScale];
-  return [0, 1, 2].map(component => (diffuse[component]! + distribution * visibility * fresnel[component]!) * radiance[component]!) as LightVector3;
+  return [
+    (diffuse[0]! + distribution * visibility * fresnel[0]!) * radiance[0]!,
+    (diffuse[1]! + distribution * visibility * fresnel[1]!) * radiance[1]!,
+    (diffuse[2]! + distribution * visibility * fresnel[2]!) * radiance[2]!,
+  ];
 }
 
 const PI_FACTOR = 1 / PI;

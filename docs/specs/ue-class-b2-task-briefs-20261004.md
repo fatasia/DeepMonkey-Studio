@@ -33,6 +33,61 @@
 **规模**:核查 0.5 天 + 实施 3-4 周。
 **核查结论(2026-10-04 主线程已完成)**:SDF 基座工程化完备——mesh→SDF 提取(≤65,536 三角形,sdfCollisionBridge)、GPU dispatch、查询 WGSL(checksum 门)、真值 fixture、内存预算档(MAX_SDF_PROFILE_GRID_CELLS)。**场景级聚合 SDF 烘焙缺失**(现状按刚体局部网格)——GI 的 M1 第一步=补"静态场景合成 SDF 3D 纹理"烘焙(增量静态资产+天光可见性共用该纹理),工作量 +2-3 天计入实施。
 
+### Brief-GI 实施结果(2026-10-04,M1 已交付)
+
+**已有(不重建,A2 核查结论成立)**:SDF 基座(sdfGrid.buildSdfGrid/sdfCollisionProfile 内存档/
+sdfCollisionQueryWgsl checksum 门)、probe 家族(16/32 方向档、probeOcclusionDirection Fibonacci
+权威、probeClipmapSampling 8-tap+Chebyshev+法线权重采样链、F5 words[12..23] L1 SH 逐位合同)、
+C12 whiteFurnace、atmosphereSky 物理大气。**真实缺口(M1 补齐)**:场景级聚合 SDF 烘焙、
+SDF 圆锥天光追踪、探针 SH 更新的①天光遮蔽②SSGDI 输入与时域滤波、sdf-gi 能力登记。
+
+**交付物**(全部 ≤300 行,`@bim-studio/deep-engine/gi` 子路径导出):
+1. `src/gi/sdfSceneBake.ts`+`sdfSceneBakeGrid.ts`:场景级 SDF 烘焙 —— 静态实例世界系
+   **min 合成闭体并集**(`"aabb"` 逐资产域 ±1 cell 缺省 / `"scene"` 全场景域精确覆盖),
+   资产哈希增量缓存(fingerprintFloat32,场景重划分不清缓存),动态实例排除并逐条报告,
+   规模墙 fail-visible(三角形/网格/采样预算跳过 + 原因),内存档复用
+   MAX_SDF_PROFILE_GRID_CELLS/estimateSdfCollisionMemory;产出即 physics `SdfGrid`。
+2. `wgsl/sdfSkyVisibilityTrace.wgsl` + `src/gi/sdfSkyVisibility.ts`:天光遮蔽 compute 单源
+   (每 lane = 探针方向 × SDF 8..16 步圆锥软阴影口径,固定步数无 early-break,域外
+   **fail-open=1** 光照语义),CPU f32 同序镜像;checksum+naga 门
+   (sdfSkyVisibilityTraceWgslChecksum.test.ts)。
+3. `src/gi/probeSkyVisibilitySh.ts`+`probeShUpdate.ts`:可见度→L1 SH 投影(白炉构造:均匀场
+   dipole 精确零);探针 SH 更新接受①天光遮蔽②SSGDI 输入,时域滤波 α=0.1(fail-closed
+   解析),埋入探针透传,**F5 words[12..23] 捕获块原样透传**(白炉 gate≡1 逐位负控不动),
+   occlusionFloor=可见度均值,几何统计(meanDistance/variance)按捕获侧合同注入
+   ——实测踩坑:缺统计时 Chebyshev 采样链整列拒绝(已在合同注释钉死)。
+4. `src/gi/sdfGiDayNight.ts`+`sdfGiShade.ts`:昼夜循环 CPU 参考 harness(参考房间 12 静态盒
+   烘焙 60,192 cells;252 探针×16 方向;物理大气天空,仰角=22°·sin(方位角) 自然入夜;
+   GI-only 着色 + 显示曝光,直射项属生产直射通路不在本刀)。
+5. 合同:`displayContract.gi`(`DisplayGiMode "off"|"sdf-probe"` + temporalAlpha,缺字段=off
+   零迁移,resolveDisplayGiMode/resolveDisplayGiTemporalAlpha fail-closed 单源);
+   `rendererCapabilityManifest` 登记 `sdf-gi`(web=degraded/harness-only,native=unavailable/
+   absent)+ deep-engine 自检行 + native `renderer_capability_manifest.rs` 自检行 + 金样
+   fixtures/renderer-capability-manifest.json 重生成,三方对拍 22/22 绿。
+
+**验收证据**(`test-output/gi/`:evidence.json + day/night 1080p PNG + sha256):
+①昼夜循环旋转天光(0.25°/帧,全循环 1440 帧=60fps 24s,含日出最陡段,预热 16 帧分离收敛
+瞬态)逐帧像素差 **p99=1 ≤3/255**;②F5-L5 三区封门哨兵 + 白炉逐位负控 +
+probeRecordIrradianceSemantics + wallLeak + leakDirectionMatrix 全绿(gi+哨兵合跑 82/82,
+拆分后复跑全绿);③C12 whiteFurnace 测试全绿(16/16);④探针 SH 更新 CPU 侧
+252×16 p95=0.56ms ≤6ms(GPU 圆锥追踪 1.57M trilinear 采样/帧 ≈亚毫秒级,真机帧时归 GPU
+联测);⑤lab parity 场景 ibl/ibl-hq 不在本刀失败集(vitest 全量失败集 =
+pbrShadowState/c8F32Inputs/megaLights*/deviceSession/textureArray*/outputFamily/pipelines,
+全部并行在途域,与本刀文件零交集);⑥tsc 主:src/gi 零错误(仅并行 megaLights 在途
+19 错,committed 破损非本刀引入)+ lab:仅 megaLights 域;`npm run build` 重建 dist 完成
+(tsc 对在途 megaLights 报错但按仓内 noEmitOnError 缺省继续 emit,dist/gi 十文件完整且
+`import('./dist/gi/index.js')` 运行时加载通过;contracts dist 同步重建,金样/合同落位);
+⑦昼夜对比 1080p 深色截图 ×2(day sha256=927a4800…,night feee55d3…,GI-only 着色,
+太阳亮斑/门洞 GI 梯度昼夜可辨)。
+
+**边界披露(诚实条款)**:生产 pbrRenderer 的 GPU dispatch 接线(捕获核消费 SDF 纹理)
+属后续切片,M1 交付引擎侧通路(compute 单源 + CPU 权威镜像 + 更新合同),web 能力档如实
+登记 degraded/harness-only;真机 GPU 帧时与 verify:gpu-release 未跑(GPU 窗口归主线程,
+与 F5 先例同口径);aabb 域模式多资产未覆盖空域为 exterior 有界近似(光照量语义,已在
+合同注释声明,验收用 "scene" 域);runtimePurityGate 的既有违规
+(pbrRendererFrames 等)为并行在途域,sdfGiDayNight 的 performance 计时已移到测试/证据侧
+保持 src 纯净。
+
 ## Brief-TSR 默认档:残影压制
 
 **目标**:TSR 参与默认组合(与 MSAA 并存:MSAA 4x 主目标 + TSR 上采样/低动态重建),残影 2.93%→≤1%。

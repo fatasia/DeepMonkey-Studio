@@ -568,6 +568,22 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
       evidence: "packages/deep-engine-native/src/outline_pass.rs:OutlinePass(native_outline_composite_v1.wgsl 掩码+合成;forward_targets OUTLINE_MASK_FORMAT/OUTLINE_DEPTH_FORMAT;contract/types.rs 实例 outline 字段,与 web 共用 surface flag bit 256)",
     },
   },
+  {
+    // B2 Brief-MegaLights M1(2026-10-04):万灯直接光 RIS 采样。M1 交付域级引擎通路
+    // (灯光池+RIS 核+compute 运行时+真机探针),主 pass 接线属 M2——web 如实登记
+    // harness-only(非运行时渲染通路;通路选择函数已定 ≤64 簇光/超限 RIS 策略)。
+    id: "megalights",
+    title: "万灯直接光 RIS 随机采样(MegaLights;面积光上限 8→64 同批)",
+    webFeatureKeys: [],
+    web: {
+      support: "supported", reason: "harness-only",
+      evidence: "packages/deep-engine/src/lighting/megaLights.ts:MEGA_LIGHT_STRIDE_BYTES(64B/灯 union 灯池;DEEP_AREA_LIGHT_MAX 8→64 同批扩容)+wgsl/megaLightsRis.wgsl(K=32→M=1 RIS 核,checksum 门)+megaLightsRuntime.ts(compute 运行时;真机证据 packages/deep-engine/lab/megaLightsGpuProbe.ts);主 pass 接线属 M2,届时升 opt-in-default-off",
+    },
+    native: {
+      support: "unavailable", reason: "absent",
+      evidence: "packages/deep-engine-native/src/lib.rs(无 MegaLights 模块;native clustered_lighting.rs 为逐灯簇光路径,非 RIS 采样)",
+    },
+  },
 ] as const);
 
 /** 能力 id 单源冻结数组(结构先例:pbrTimedPassIds.PBR_TIMED_PASS_IDS)。 */

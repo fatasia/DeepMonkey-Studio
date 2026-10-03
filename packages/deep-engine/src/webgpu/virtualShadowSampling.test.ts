@@ -17,19 +17,20 @@ describe("virtual shadow page table packing", () => {
   it("lays out per-(ring, mip) meta rows with cumulative layer bases and -1 sentinels", () => {
     const packing = packVirtualShadowPageTable(3, () => undefined);
     expect(packing.params).toEqual(new Uint32Array([3, 8, 128, 16384]));
-    // mip 0 网格 128²,顶 mip 1²;layers 总长 = Σ grid²;环段基址 = 前环整段长。
-    const expectedTotal = Array.from({ length: 8 }, (_, mip) => (128 >> mip) ** 2).reduce((a, b) => a + b, 0);
-    expect(packing.layers).toHaveLength(expectedTotal);
+    // mip 0 网格 128²,顶 mip 1²;layers 总长 = ringCount × Σ grid²(环段基址 = 前环整段长)。
+    const perRing = Array.from({ length: 8 }, (_, mip) => (128 >> mip) ** 2).reduce((a, b) => a + b, 0);
+    expect(perRing).toBe(21845);
+    expect(packing.layers).toHaveLength(perRing * 3);
     expect([...packing.layers].every(value => value === -1)).toBe(true);
     const metaRow = (ring: number, mip: number) => packing.meta.slice((ring * 8 + mip) * 4, (ring * 8 + mip) * 4 + 4);
     expect([...metaRow(0, 0)]).toEqual([128, 128, 0, 0]);
     expect([...metaRow(0, 1)]).toEqual([64, 64, 128 * 128, 0]);
-    expect([...metaRow(1, 0)]).toEqual([128, 128, expectedTotal, 0]);
+    expect([...metaRow(1, 0)]).toEqual([128, 128, perRing, 0]);
   });
 
   it("writes caller-provided packed slots and keeps missing pages at -1", () => {
     const packing = packVirtualShadowPageTable(2, (ring, mip, tileX, tileY) =>
-      ring === 0 && mip === 7 ? packVirtualShadowSlot(2, 0, 0) : undefined);
+      ring === 1 && mip === 7 ? packVirtualShadowSlot(2, 0, 0) : undefined);
     expect(packing.layers.at(-1)).toBe(packVirtualShadowSlot(2, 0, 0));
     expect([...packing.layers].filter(value => value >= 0)).toHaveLength(1);
   });

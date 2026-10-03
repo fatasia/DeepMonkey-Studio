@@ -4,6 +4,7 @@ import { updateProbeShWithSdfGi, type ProbeShUpdateResult } from "./probeShUpdat
 import { probeOcclusionDirection } from "../rayTracing/probeOcclusionRayExtension.js";
 import { buildReferenceRoomScene, intersectReferenceScene, referenceSceneDiagonal,
   sampleReferenceDirect, type ReferenceScene } from "../lighting/probeReferenceScene.js";
+import { evaluateProbeRadianceWithDirections } from "../lighting/probeReferenceIntegrator.js";
 import { sampleIrradianceProbeClipmap, type IrradianceProbeRecord } from "../lighting/probeClipmapSampling.js";
 import type { ProbeClipmapLevel, ProbeVector3 } from "../lighting/probeClipmapPlan.js";
 
@@ -46,8 +47,8 @@ export interface SdfGiDayNightState {
   readonly bounceAlbedo: ProbeVector3;
   records: IrradianceProbeRecord[];
   frameIndex: number;
-  /** 每帧探针 SH 更新耗时(ms,验收④证据链)。 */
-  readonly updateMillis: number[];
+  /** 逐探针几何统计缓存(静态;computeSdfGiGeometryStats 惰性填充)。 */
+  geometryStats?: readonly (readonly [number, number])[];
 }
 
 /** 参考房间(薄墙/门洞/天窗)→ 静态烘焙实例(全部 static;AABB box 各 12 三角形)。 */
@@ -120,7 +121,7 @@ export function createSdfGiDayNightState(options: SdfGiDayNightOptions = {}): Sd
     bounceAlbedo: options.bounceAlbedo ?? [0.45, 0.44, 0.43],
     records: positions.map(() => ({ irradiance: [0, 0, 0], validity: 1,
       meanDistance: referenceSceneDiagonal(scene), distanceVariance: 0 })),
-    frameIndex: 0, updateMillis: [],
+    frameIndex: 0,
   };
 }
 
@@ -140,14 +141,13 @@ export function stepSdfGiDayNightFrame(state: SdfGiDayNightState, azimuthDegrees
   const directionSkyRadiance = state.directions.map(direction =>
     skyRadiance(probeDirectionToEnu(direction)));
   const dynamicDirect = ssgdi ?? computeSdfGiDynamicDirectField(state, directSun);
-  const started = performance.now();
+  const geometryStats = computeSdfGiGeometryStats(state);
   const result = updateProbeShWithSdfGi({
     previous: state.records, positions: state.probes, directions: state.directions,
     visibilities: state.visibility, directionSkyRadiance, ssgdi: dynamicDirect,
-    bounceAlbedo: state.bounceAlbedo, alpha: state.alpha });
+    bounceAlbedo: state.bounceAlbedo, alpha: state.alpha, geometryStats });
   state.records = [...result.records];
   state.frameIndex += 1;
-  state.updateMillis.push(performance.now() - started);
   return result;
 }
 
@@ -162,6 +162,23 @@ export function computeSdfGiDynamicDirectField(state: SdfGiDayNightState,
   return state.probes.map(position =>
     evaluateDynamicDirectField(scene, position, state.directions, tMax, step,
       state.records, state.level, state.bounceAlbedo));
+}
+
+/**
+ * 逐探针几何统计(静态;命中距离均值/方差,参考积分器引擎口径 —— 捕获侧合同,
+ * 采样链 Chebyshev 可见性的遮挡判据输入)。缓存于 state,只算一次。
+ */
+export function computeSdfGiGeometryStats(state: SdfGiDayNightState):
+  readonly (readonly [number, number])[] {
+  if (state.geometryStats) return state.geometryStats;
+  const tMax = referenceSceneDiagonal(state.scene);
+  const stats = state.probes.map(position => {
+    const sample = evaluateProbeRadianceWithDirections(state.scene, position,
+      state.directions, {});
+    return [sample.meanDistance, Math.max(sample.distanceVariance, 1e-4)] as const;
+  });
+  (state as { geometryStats?: readonly (readonly [number, number])[] }).geometryStats = stats;
+  return stats;
 }
 
 /** 阴影直射真值 + 一阶反弹(引擎口径;miss 项 = 0,动态直接层不重复计天空)。 */

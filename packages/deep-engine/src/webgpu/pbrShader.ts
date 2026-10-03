@@ -155,6 +155,16 @@ struct ShadowPageMaskInput {
 @fragment fn shadowPageDepth(@builtin(position) fragCoord: vec4f) -> @location(0) f32 {
   return fragCoord.z;
 }
+// 页矩形背景清屏:整页 viewport 三角带写 far=1.0(空域 = 受光),depth 写关闭
+// (页 depth assist 每 pass 清 1.0,场景片元对 1.0 做 less 比较即可正常覆写)。
+@vertex fn shadowPageClear(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+  let x = f32(index & 1u) * 2.0 - 1.0;
+  let y = 1.0 - f32(index >> 1u) * 2.0;
+  return vec4f(x, y, 1.0, 1.0);
+}
+@fragment fn shadowPageClearDepth() -> @location(0) f32 {
+  return 1.0;
+}
 @fragment fn shadowPageMaskPlain(@builtin(position) fragCoord: vec4f, v: ShadowPageMaskInput) -> @location(0) f32 {
   if (v.alphaCutoff.x < v.alphaCutoff.y) { discard; }
   return fragCoord.z;

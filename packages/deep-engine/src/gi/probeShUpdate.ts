@@ -55,6 +55,13 @@ export interface ProbeShUpdateInput {
   readonly bounceAlbedo?: ProbeVector3;
   /** 时域滤波 α;缺省/非法经 resolveDeepGiTemporalAlpha 回 0.1。 */
   readonly alpha?: number;
+  /**
+   * 逐探针几何统计 [meanDistance, distanceVariance](捕获侧口径,同
+   * probeOcclusionRayExtension/probeRadianceKernel 的命中距离统计)。缺省沿用
+   * previous 或有界缺省——**采样链的 Chebyshev 可见性按这对值判遮挡**,缺失会让
+   * 记录被整列拒绝(实测踩坑:meanDistance=tMax、variance=0 → 全 fallback)。
+   */
+  readonly geometryStats?: readonly (readonly [number, number])[];
 }
 
 export interface ProbeShUpdateResult {
@@ -124,8 +131,8 @@ export function updateProbeShWithSdfGi(input: ProbeShUpdateInput): ProbeShUpdate
     records.push({
       irradiance: blended,
       validity: previous?.validity ?? 1,
-      meanDistance: previous?.meanDistance ?? 1_000,
-      distanceVariance: previous?.distanceVariance ?? 0,
+      meanDistance: input.geometryStats?.[probe]?.[0] ?? previous?.meanDistance ?? 1_000,
+      distanceVariance: input.geometryStats?.[probe]?.[1] ?? previous?.distanceVariance ?? 0,
       occlusionFloor: sh[0]!,
       ...(previous?.directionalVisibilitySh
         ? { directionalVisibilitySh: previous.directionalVisibilitySh } : {}),

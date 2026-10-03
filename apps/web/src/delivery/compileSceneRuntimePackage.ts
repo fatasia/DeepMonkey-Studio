@@ -1,4 +1,4 @@
-import { DEFAULT_DISPLAY_CONTRACT, type DisplayToneMappingOperator, type SceneSnapshot } from "@bim-studio/contracts";
+import { DEFAULT_DISPLAY_CONTRACT, type DisplayToneMappingOperator, type KeyframeTransition, type SceneSnapshot } from "@bim-studio/contracts";
 import { buildDeepRuntimePackage, runtimeContentSha256, serializeDeepRuntimePackage,
   type DeepRuntimePackage, type RuntimeJson, type RuntimePrefilteredIbl,
   type RuntimeIrradianceProbe, type RuntimeIrradianceProbeGrid, type RuntimeIrradianceProbeGridSingle } from "@bim-studio/deep-engine/runtime-package";
@@ -66,8 +66,14 @@ function compileAnimationRuntime(scene: SceneSnapshot): DynamicAnimationRuntime 
       const cx = Math.cos(x / 2), sx = Math.sin(x / 2), cy = Math.cos(y / 2), sy = Math.sin(y / 2), cz = Math.cos(z / 2), sz = Math.sin(z / 2);
       return [sx * cy * cz - cx * sy * sz, cx * sy * cz + sx * cy * sz, cx * cy * sz - sx * sy * cz, cx * cy * cz + sx * sy * sz];
     };
-    const transition = (frame: { transition?: "linear" | "smooth" | "ease-in" | "ease-out" | "step" }) =>
-      frame.transition === undefined ? {} : { transition: frame.transition };
+    const transition = (frame: { transition?: KeyframeTransition }): { transition?: "linear" | "smooth" | "ease-in" | "ease-out" | "step" } => {
+    // RuntimePackage v1 运行时合同尚无 ease-in-out / cubic-bezier:编译期降级为语义最近的
+    // smooth(自定义贝塞尔留待运行时合同扩展,见 B2 任务书)。
+    if (frame.transition === undefined) return {};
+    const mapped: "linear" | "smooth" | "ease-in" | "ease-out" | "step" = frame.transition === "ease-in-out" || frame.transition === "cubic-bezier"
+      ? "smooth" : frame.transition;
+    return { transition: mapped };
+  }
     const translation = sorted.map(frame => {
       const { position } = frame.transform;
       return { timeMs: Math.round(frame.time * 1000), value: [position.x, position.y, position.z, 0, 0, 0, 1] as const, ...transition(frame) };

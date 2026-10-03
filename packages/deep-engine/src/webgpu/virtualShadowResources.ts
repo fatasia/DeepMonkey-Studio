@@ -147,7 +147,9 @@ export class VirtualShadowResources {
         new Float32Array(CASCADED_SHADOW_UNIFORM_FLOATS), GPUBufferUsage.UNIFORM);
       created.push(uniform);
       const emptyPacking = packVirtualShadowPageTable(3, () => undefined);
-      const storageUsage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST;
+      // COPY_SRC:联测诊断可读回页表对照 CPU 驻留(产品帧零 readback)。
+      // COPY_SRC:联测诊断可读回页表对照 CPU 驻留(产品帧零 readback)。
+      const storageUsage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC;
       const metaBuffer = device.createBuffer({ label: "Deep virtual shadow page meta",
         size: emptyPacking.meta.byteLength, usage: storageUsage });
       const layersBuffer = device.createBuffer({ label: "Deep virtual shadow page layers",
@@ -261,14 +263,17 @@ export class VirtualShadowResources {
       byLayer.set(entry.page.slot.layer, list);
     }
     for (const [layer, layerPages] of [...byLayer.entries()].sort(([a], [b]) => a - b)) {
+      // loadOp load:页池是持久资产,整层 clear 会抹掉既有页(真机教训);每页
+      // 重绘前以全页 viewport 背景四边形把页矩形归位 far=1.0(空域 = 受光),
+      // depth assist 每 pass 清一次(页间零串扰)。
       const pass = encoder.beginRenderPass({
         label: `Deep virtual shadow pages layer ${layer}`,
         ...(firstPass && timingStart?.timestampWrites ? timingStart : {}),
-        colorAttachments: [{ view: this.layerViews[layer]!, loadOp: "clear", storeOp: "store",
-          clearValue: { r: 1, g: 1, b: 1, a: 1 } }],
+        colorAttachments: [{ view: this.layerViews[layer]!, loadOp: "load", storeOp: "store" }],
         depthStencilAttachment: { view: this.depthView, depthClearValue: 1,
           depthLoadOp: "clear", depthStoreOp: "store" },
       });
+      const pageClear = pagePipelines.pageShadowPipelines.get("clear");
       for (const entry of layerPages) {
         pass.setViewport(entry.page.slot.tileX * VIRTUAL_SHADOW_PAGE_EDGE,
           entry.page.slot.tileY * VIRTUAL_SHADOW_PAGE_EDGE,
@@ -276,6 +281,7 @@ export class VirtualShadowResources {
         pass.setScissorRect(entry.page.slot.tileX * VIRTUAL_SHADOW_PAGE_EDGE,
           entry.page.slot.tileY * VIRTUAL_SHADOW_PAGE_EDGE,
           VIRTUAL_SHADOW_PAGE_EDGE, VIRTUAL_SHADOW_PAGE_EDGE);
+        if (pageClear) { pass.setPipeline(pageClear); pass.draw(4); drawCalls += 1; }
         pass.setBindGroup(0, this.frameBindings[entry.slot]!);
         const stats = packets.draw(pass, pagePipelines, "shadow", undefined, true, entry.slot, false, false);
         drawCalls += stats.drawCalls; triangles += stats.triangles;

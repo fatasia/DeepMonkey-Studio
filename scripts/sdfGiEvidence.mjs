@@ -193,11 +193,13 @@ evidence.artifacts["night.png"] = { size: nightPng.length, sha256: sha256(nightP
   const ssgdi = (await import(
     pathToFileURL("D:/Documents/bim/bim-studio/packages/deep-engine/src/gi/sdfGiDayNight.ts").href))
     .computeSdfGiDynamicDirectField(budgetState);
-  budgetState.updateMillis.length = 0;
+  const updateMillis = [];
   for (let frame = 0; frame < 24; frame++) {
+    const started = performance.now();
     stepSdfGiDayNightFrame(budgetState, 45, sky.sample, ssgdi);
+    updateMillis.push(performance.now() - started);
   }
-  const sorted = [...budgetState.updateMillis].sort((a, b) => a - b);
+  const sorted = [...updateMillis].sort((a, b) => a - b);
   const p95 = sorted[Math.floor(sorted.length * 0.95)];
   const production = { probes: 6144, directionCount: 32,
     analyticGpuConeTraceSamples: 6144 * 32 * 8,

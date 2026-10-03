@@ -298,6 +298,14 @@ export class VirtualShadowPageTable {
     return this.resident.get(id)?.page.version ?? -1;
   }
 
+  /** 驻留快照(联测诊断:id/环/mip/tile/slot 一览;产品帧零成本)。 */
+  residentSnapshot(): readonly { id: string; ring: number; mip: number; tileX: number; tileY: number;
+    slot: { layer: number; tileX: number; tileY: number; packed: number }; version: number; dynamic: boolean }[] {
+    return [...this.resident.values()].map(entry => ({ id: entry.page.id, ring: entry.page.ring,
+      mip: entry.page.mip, tileX: entry.page.tileX, tileY: entry.page.tileY, slot: entry.page.slot,
+      version: entry.page.version, dynamic: entry.page.dynamic }));
+  }
+
   slotOf(id: string): VirtualShadowPageSlot | undefined {
     return this.resident.get(id)?.slot;
   }

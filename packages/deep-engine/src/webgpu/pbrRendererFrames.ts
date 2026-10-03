@@ -761,31 +761,61 @@ function collectVirtualTextureFeedback(host: PbrRendererFrameHost, frameState: R
     return entries;
   }
 
-  /** B1 Brief-VSM 物化输入:batch 级包围 → 环投影误差对象(与 F4 反馈同口径的静态
-   *  代理:主视裁剪 w≤0 / NDC z 出界;期望 texel = 中心深度处每像素世界尺寸)。
-   *  动态输入取变形批保守包络(与剔除同源,零额外估算)。 */
+  /**
+   * B1 Brief-VSM 物化输入:实例级世界点(从 batch.data 打包行提取,场景修订缓存)→
+   * 环投影误差对象。几何局部包围对页物化无意义(整批共享同一 geometry,实例分布
+   * 决定页分布);每帧 3 环投影一次,大批按 cap 采样控制 CPU 成本。
+   * 动态输入取变形批保守包络(与剔除同源,零额外估算)。
+   */
+const virtualShadowObjectCache = new WeakMap<object, { revision: number;
+    points: Float32Array<ArrayBuffer>; radii: Float32Array<ArrayBuffer> }>();
+const VIRTUAL_SHADOW_INSTANCE_STRIDE = 36;
+const VIRTUAL_SHADOW_MAX_SAMPLES_PER_BATCH = 4096;
 function collectVirtualShadowObjects(host: PbrRendererFrameHost, frameState: ReturnType<typeof updatePbrFrameUniforms>,
     size: { readonly width: number; readonly height: number }): {
     readonly objects: VirtualShadowObjectInput[];
     readonly dynamic: VirtualShadowDynamicInput[];
   } {
     const inputs = host.packets.visibilityInputs();
+    const revision = host.packets.visibilityRevision;
+    let cache = virtualShadowObjectCache.get(inputs.batches);
+    if (!cache || cache.revision !== revision) {
+      const xs: number[] = [], radii: number[] = [];
+      for (const batch of inputs.batches.values()) {
+        if (batch.source.castShadow === false) continue;
+        const geometry = inputs.geometries.get(batch.source.geometry);
+        if (!geometry || !batch.source.data) continue;
+        const data = batch.source.data, stride = VIRTUAL_SHADOW_INSTANCE_STRIDE;
+        const count = Math.min(batch.source.count, VIRTUAL_SHADOW_MAX_SAMPLES_PER_BATCH);
+        const step = Math.max(1, batch.source.count / count);
+        for (let index = 0; index < batch.source.count; index += step) {
+          const base = Math.floor(index) * stride;
+          // 行主序仿射:world = row·p;平移 = 行 w 分量;尺度 ≈ 行 xyz 范数最大者。
+          const tx = data[base + 3]!, ty = data[base + 7]!, tz = data[base + 11]!;
+          const s0 = Math.hypot(data[base]!, data[base + 4]!, data[base + 8]!);
+          const s1 = Math.hypot(data[base + 1]!, data[base + 5]!, data[base + 9]!);
+          const s2 = Math.hypot(data[base + 2]!, data[base + 6]!, data[base + 10]!);
+          xs.push(tx, ty, tz);
+          radii.push(Math.max(s0, s1, s2) * geometry.radius);
+        }
+      }
+      cache = { revision, points: Float32Array.from(xs), radii: Float32Array.from(radii) };
+      virtualShadowObjectCache.set(inputs.batches, cache);
+    }
     const viewProjection = frameState.depthViewProjection;
     const tanHalfFov = Math.tan(frameState.projection.verticalFovRadians / 2);
+    const focal = size.height / (2 * tanHalfFov);
     const objects: VirtualShadowObjectInput[] = [];
-    for (const batch of inputs.batches.values()) {
-      if (batch.source.castShadow === false) continue;
-      const geometry = inputs.geometries.get(batch.source.geometry);
-      if (!geometry) continue;
-      const [cx, cy, cz] = geometry.center;
-      const w = viewProjection[3]! * cx + viewProjection[7]! * cy + viewProjection[11]! * cz + viewProjection[15]!;
+    for (let index = 0; index < cache.points.length / 3; index++) {
+      const x = cache.points[index * 3]!, y = cache.points[index * 3 + 1]!, z = cache.points[index * 3 + 2]!;
+      const w = viewProjection[3]! * x + viewProjection[7]! * y + viewProjection[11]! * z + viewProjection[15]!;
       if (!(w > 0)) continue;
-      const z = viewProjection[2]! * cx + viewProjection[6]! * cy + viewProjection[10]! * cz + viewProjection[14]!;
-      if (z < 0 || z > w) continue;
-      const focal = size.height / (2 * tanHalfFov);
-      const radiusPx = geometry.radius * focal / w;
-      objects.push({ x: cx, y: cy, z: cz, radius: geometry.radius,
-        screenPixels: Math.PI * radiusPx * radiusPx * batch.source.count,
+      const clipZ = viewProjection[2]! * x + viewProjection[6]! * y + viewProjection[10]! * z + viewProjection[14]!;
+      if (clipZ < 0 || clipZ > w) continue;
+      const radius = cache.radii[index]!;
+      const radiusPx = radius * focal / w;
+      objects.push({ x, y, z, radius,
+        screenPixels: Math.PI * radiusPx * radiusPx,
         desiredWorldTexel: 2 * w * tanHalfFov / size.height });
     }
     const dynamic: VirtualShadowDynamicInput[] = [];

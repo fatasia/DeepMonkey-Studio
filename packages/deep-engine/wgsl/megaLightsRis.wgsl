@@ -1,0 +1,312 @@
+// B2 MegaLights M1 万灯直接光 RIS 采样核 —— WGSL 单源(TS 半为生成镜像,宿主模板
+// megaLightsRuntime.ts 组合进 compute pipeline;Rust 半可用同款 include_str! 消费)。
+//
+// 采样语义(megaLightsRisCpu.ts 同式,CPU 权威镜像):
+//   趟一 buildReservoir:像素级 K=32 候选均匀 i.i.d.(辐射目标权重)→ 加权蓄水池
+//        → 时域合并(T07 motion vector 投影 + 深度门 + M 钳 20×)→ 写蓄水池 A。
+//   趟二 reuseAndShade:5×5 空间合并(法线/深度门)→ 胜者着色 →
+//        color = shade(y) × N × w_sum/(M_total × t_y) —— 归一化目标 pdf 代入
+//        Bitterli 2022 Alg.4 后 T 相消的无偏式;K≥N 遍历全灯时输出恒等于精确和
+//        (验收⑤退化一致性的数学基础)。胜者可见性槽 M1 恒 1.0(M2 接 BVH 光线)。
+//
+// 确定性:种子 = hash(像素 × 帧种子 × 流序)(deepMegaPixelSeed);同输入逐位回放。
+// 常量与 TS 打包端(megaLights.ts/megaLightsAbi.ts)逐字互钉,漂移由
+// megaLightsRisWgslChecksum.test.ts 抓红。数学出处:公开领域算法自实现
+// (Bitterli et al., "Spatiotemporal Reservoir Resampling for Real-Time Ray Tracing
+// with Dynamic Direct Lighting", TOG 2022;无引擎专有代码)。
+
+// 互钉常量(megaLights.ts 同值;checksum 门逐字锁定)。
+const DEEP_MEGA_LIGHT_STRIDE: u32 = 4u;
+const DEEP_MEGA_SURFACE_STRIDE: u32 = 3u;
+const DEEP_MEGA_KIND_POINT: u32 = 0u;
+const DEEP_MEGA_KIND_SPOT: u32 = 1u;
+const DEEP_MEGA_KIND_AREA_RECT: u32 = 2u;
+const DEEP_MEGA_RIS_CANDIDATES: u32 = 32u;
+const DEEP_MEGA_RIS_SPATIAL_RADIUS: u32 = 2u;
+const DEEP_MEGA_TEMPORAL_DEPTH_GATE: f32 = 0.1;
+const DEEP_MEGA_SPATIAL_NORMAL_GATE: f32 = 0.9;
+const DEEP_MEGA_PI: f32 = 3.141592653589793;
+const DEEP_MEGA_INVALID: u32 = 0xffffffffu;
+
+// 灯池记录(64B/灯,布局语义表见 megaLights.ts 模块头;与打包端逐字互钉):
+//   [0] position.xyz | kind   [1] radiance.xyz | range
+//   [2] direction.xyz | iesSpotIndex+1(0=无)
+//   [3] point(decay-2,0,0,0) / spot(innerCos,outerCos,coneScale,decay-2)
+//       / area(halfWidth,halfHeight,twoSided,0)
+struct DeepMegaLightRecord {
+  kind: u32,
+  position: vec3f,
+  radiance: vec3f,
+  range: f32,
+  direction: vec3f,
+  iesRow: u32,
+  params: vec4f,
+};
+
+fn deepMegaLoad(index: u32) -> DeepMegaLightRecord {
+  let base = index * DEEP_MEGA_LIGHT_STRIDE;
+  let positionKind = deepMegaLights[base];
+  let radianceRange = deepMegaLights[base + 1u];
+  let directionIes = deepMegaLights[base + 2u];
+  return DeepMegaLightRecord(u32(positionKind.w), positionKind.xyz, radianceRange.xyz,
+    radianceRange.w, directionIes.xyz, u32(directionIes.w), deepMegaLights[base + 3u]);
+}
+
+// 帧参数(uniform;宿主模板声明绑定,布局见 megaLightsAbi.ts 的字级语义表)。
+struct DeepMegaParams {
+  viewport: vec2u,
+  lightCount: u32,
+  frameSeed: u32,
+  spatialEnabled: u32,
+  temporalEnabled: u32,
+  exhaustive: u32,
+  visibilitySlot: f32,
+  alphaBlend: f32,
+  reserved: vec3u,
+};
+
+// ---- 随机(确定性;megaLightsRisCpu.megaHashU32/megaRandomNext/megaPixelSeed 同式) ----
+
+fn deepMegaHash(value: u32) -> u32 {
+  var state = value;
+  state = (state ^ 61u) ^ (state >> 16u);
+  state = state + (state << 3u);
+  state = state ^ (state >> 4u);
+  state = state * 0x27d4eb2du;
+  state = state ^ (state >> 15u);
+  return state;
+}
+
+fn deepMegaRandom(state: ptr<function, u32>) -> f32 {
+  *state = *state * 747796405u + 2891336453u;
+  let word = (*state >> ((*state >> 28u) + 4u)) ^ *state;
+  return f32(word) / 4294967296.0;
+}
+
+fn deepMegaPixelSeed(pixelIndex: u32, frameSeed: u32, stream: u32) -> u32 {
+  return deepMegaHash(pixelIndex + 0x9e3779b9u) + frameSeed * 0x85ebca6bu + stream * 0xc2b2ae35u;
+}
+
+// ---- 着色核(与 clusterLightingPbrWgsl 的 deepClusterRangeAttenuation/deepClusterBrdf
+//      与 lightAbiWgsl 的 deepSpotAttenuation 同式家族;CPU 镜像 megaLights.ts 同序) ----
+
+fn deepMegaSafeNormalize(value: vec3f, fallback: vec3f) -> vec3f {
+  let lengthSquared = dot(value, value);
+  return select(fallback, value * inverseSqrt(max(lengthSquared, 0.00000001)), lengthSquared > 0.00000001);
+}
+
+fn deepMegaRangeAttenuation(distanceSquared: f32, range: f32, decay: f32) -> f32 {
+  let falloff = 1.0 / max(pow(max(sqrt(distanceSquared), 0.00000001), decay), 0.01);
+  if (range == 0.0) { return falloff; }
+  if (distanceSquared >= range * range) { return 0.0; }
+  let ratioSquared = distanceSquared / max(range * range, 0.0001);
+  let window = max(1.0 - ratioSquared * ratioSquared, 0.0);
+  if (decay == 2.0) { return window * window / max(distanceSquared, 0.01); }
+  return window * window * falloff;
+}
+
+fn deepMegaSpotCone(coneCos: f32, outerCos: f32, coneScale: f32) -> f32 {
+  if (coneScale == 0.0) { return select(0.0, 1.0, coneCos >= outerCos); }
+  let coneWeight = clamp((coneCos - outerCos) * coneScale, 0.0, 1.0);
+  return coneWeight * coneWeight * (3.0 - 2.0 * coneWeight);
+}
+
+fn deepMegaBrdf(positionView: vec3f, normalView: vec3f, view: vec3f, baseColor: vec3f,
+  metallic: f32, roughness: f32, surfaceToLight: vec3f, radiance: vec3f) -> vec3f {
+  let nDotL = clamp(dot(normalView, surfaceToLight), 0.0, 1.0);
+  if (nDotL <= 0.0) { return vec3f(0.0); }
+  let normal = deepMegaSafeNormalize(normalView, vec3f(0.0, 0.0, 1.0));
+  let viewDirection = deepMegaSafeNormalize(view, normal);
+  let halfVector = deepMegaSafeNormalize(viewDirection + surfaceToLight, normal);
+  let nDotV = clamp(dot(normal, viewDirection), 0.0001, 1.0);
+  let nDotH = clamp(dot(normal, halfVector), 0.0, 1.0);
+  let vDotH = clamp(dot(viewDirection, halfVector), 0.0, 1.0);
+  let clampedRoughness = clamp(roughness, 0.045, 1.0);
+  let clampedMetallic = clamp(metallic, 0.0, 1.0);
+  let albedo = max(baseColor, vec3f(0.0));
+  let f0 = mix(vec3f(0.04), albedo, clampedMetallic);
+  let fresnelFactor = exp2((-5.55473 * vDotH - 6.98316) * vDotH);
+  let fresnel = f0 * (1.0 - fresnelFactor) + fresnelFactor;
+  let alpha = clampedRoughness * clampedRoughness;
+  let alpha2 = alpha * alpha;
+  let denominator = nDotH * nDotH * (alpha2 - 1.0) + 1.0;
+  let distribution = alpha2 / max(DEEP_MEGA_PI * denominator * denominator, 0.000001);
+  let gv = nDotL * sqrt(alpha2 + (1.0 - alpha2) * nDotV * nDotV);
+  let gl = nDotV * sqrt(alpha2 + (1.0 - alpha2) * nDotL * nDotL);
+  let visibility = 0.5 / max(gv + gl, 0.000001);
+  let diffuse = (1.0 - clampedMetallic) * albedo / DEEP_MEGA_PI;
+  return (diffuse + distribution * visibility * fresnel) * radiance * nDotL;
+}
+
+// 单灯贡献(点/聚/面积中心点近似;胜者着色与目标权重共用同一评价 = importance sampling
+// 目标与被积函数同族,M1 定案;精确 LTC 面积光着色仍走既有面积光路径,M2 合成)。
+fn deepMegaContribution(record: DeepMegaLightRecord, positionView: vec3f, normalView: vec3f,
+  view: vec3f, baseColor: vec3f, metallic: f32, roughness: f32) -> vec3f {
+  let toLight = record.position - positionView;
+  let distanceSquared = dot(toLight, toLight);
+  if (record.kind == DEEP_MEGA_KIND_AREA_RECT) {
+    let facing = dot(positionView - record.position, record.direction);
+    if (record.params.z == 0.0 && facing < 0.0) { return vec3f(0.0); }
+    if (record.range > 0.0 && sqrt(distanceSquared) > record.range) { return vec3f(0.0); }
+    let extentFactor = record.params.x * record.params.y * 4.0;
+    return deepMegaBrdf(positionView, normalView, view, baseColor, metallic, roughness,
+      deepMegaSafeNormalize(toLight, normalView), record.radiance * extentFactor);
+  }
+  // decay 打包口径与既有路径一致:point 存 params.x=decay−2,spot 存 params.w=decay−2。
+  var attenuation = deepMegaRangeAttenuation(distanceSquared, record.range,
+    select(record.params.x + 2.0, record.params.w + 2.0, record.kind == DEEP_MEGA_KIND_SPOT));
+  if (attenuation <= 0.0) { return vec3f(0.0); }
+  let surfaceToLight = deepMegaSafeNormalize(toLight, normalView);
+  var cone = 1.0;
+  if (record.kind == DEEP_MEGA_KIND_SPOT) {
+    let direction = deepMegaSafeNormalize(record.direction, vec3f(0.0, 0.0, 1.0));
+    cone = deepMegaSpotCone(dot(-surfaceToLight, direction), record.params.y, record.params.z);
+  }
+  if (cone <= 0.0) { return vec3f(0.0); }
+  var ies = 1.0;
+  if (record.iesRow != 0u) { ies = deepSpotIesFactor(record.iesRow - 1u, surfaceToLight, record.direction); }
+  return deepMegaBrdf(positionView, normalView, view, baseColor, metallic, roughness,
+    surfaceToLight, record.radiance * attenuation * cone * ies);
+}
+
+fn deepMegaShadeWinner(record: DeepMegaLightRecord, positionView: vec3f, normalView: vec3f,
+  view: vec3f, baseColor: vec3f, metallic: f32, roughness: f32) -> vec3f {
+  // 胜者可见性槽:M1 恒 1.0(params.visibilitySlot 预留);M2 接 BVH 可见性光线。
+  return deepMegaContribution(record, positionView, normalView, view, baseColor, metallic, roughness) * vec3f(1.0);
+}
+
+fn deepMegaLuminance(color: vec3f) -> f32 {
+  return 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
+}
+
+// ---- 蓄水池(winner 打包为 +1 的 f32,0 = 无效;内部 u32 用 0xffffffff 哨兵) ----
+
+struct DeepMegaReservoir {
+  weightSum: f32,
+  winner: u32,
+  m: u32,
+};
+
+fn deepMegaReservoirMerge(reservoir: ptr<function, DeepMegaReservoir>, weight: f32, winner: u32, count: u32, uniform: f32) {
+  if (count == 0u || weight <= 0.0) { return; }
+  let added = weight * f32(count);
+  let total = (*reservoir).weightSum + added;
+  if (uniform * total < added) { (*reservoir).winner = winner; }
+  (*reservoir).weightSum = total;
+  (*reservoir).m = (*reservoir).m + count;
+}
+
+fn deepMegaReservoirPack(reservoir: DeepMegaReservoir, viewDepth: f32) -> vec4f {
+  return vec4f(reservoir.weightSum, select(0.0, f32(reservoir.winner + 1u), reservoir.winner != DEEP_MEGA_INVALID),
+    f32(reservoir.m), viewDepth);
+}
+
+fn deepMegaReservoirUnpack(packed: vec4f) -> DeepMegaReservoir {
+  let winnerWord = u32(packed.y);
+  return DeepMegaReservoir(packed.x, select(DEEP_MEGA_INVALID, winnerWord - 1u, winnerWord != 0u), u32(packed.z));
+}
+
+// 相似门:时域 = 视深相对差;空间 = 法线点积 + 视深(megaLightsRisCpu 同式同值)。
+fn deepMegaDepthGate(depth: f32, otherDepth: f32) -> bool {
+  return abs(depth - otherDepth) <= DEEP_MEGA_TEMPORAL_DEPTH_GATE * max(depth, otherDepth);
+}
+
+// ---- 趟一:K 候选 + 时域合并(宿主入口逐像素调用;previous 为上一帧蓄水池包) ----
+
+fn deepMegaBuildReservoir(params: DeepMegaParams, pixelIndex: u32, surfaceA: vec4f, surfaceB: vec4f,
+  surfaceC: vec4f, previous: vec4f, motionUv: vec2f) -> vec4f {
+  let lightCount = params.lightCount;
+  if (lightCount == 0u) { return deepMegaReservoirPack(DeepMegaReservoir(0.0, DEEP_MEGA_INVALID, 0u), surfaceA.w); }
+  var random = deepMegaPixelSeed(pixelIndex, params.frameSeed, 0u);
+  var reservoir = DeepMegaReservoir(0.0, DEEP_MEGA_INVALID, 0u);
+  let positionView = surfaceA.xyz;
+  let normalView = surfaceB.xyz;
+  let view = deepMegaSafeNormalize(-positionView, vec3f(0.0, 0.0, 1.0));
+  let candidates = select(DEEP_MEGA_RIS_CANDIDATES, lightCount, params.exhaustive != 0u);
+  for (var k = 0u; k < candidates; k = k + 1u) {
+    // 穷举模式第 k 候选恒 k(遍历全灯 → 输出恒等于精确和);随机模式均匀 i.i.d.
+    // (select 两支皆求值:随机流推进与模式无关,保证逐位确定性)。
+    let candidate = select(min(lightCount - 1u, u32(deepMegaRandom(&random) * f32(lightCount))), k,
+      params.exhaustive != 0u);
+    let record = deepMegaLoad(candidate);
+    let weight = deepMegaLuminance(deepMegaContribution(record, positionView, normalView, view,
+      surfaceC.xyz, surfaceA.w, surfaceB.w));
+    if (weight > 0.0) { deepMegaReservoirMerge(&reservoir, weight, candidate, 1u, deepMegaRandom(&random)); }
+  }
+  if (params.temporalEnabled != 0u) {
+    let projected = vec2f(floor(f32(pixelIndex % params.viewport.x) + 0.5 + motionUv.x),
+      floor(f32(pixelIndex / params.viewport.x) + 0.5 + motionUv.y));
+    let inBounds = projected.x >= 0.0 && projected.y >= 0.0
+      && projected.x < f32(params.viewport.x) && projected.y < f32(params.viewport.y);
+    if (inBounds) {
+      let history = deepMegaReservoirUnpack(previous);
+      if (history.winner != DEEP_MEGA_INVALID && deepMegaDepthGate(surfaceA.w, previous.w)) {
+        let record = deepMegaLoad(history.winner);
+        let weight = deepMegaLuminance(deepMegaContribution(record, positionView, normalView, view,
+          surfaceC.xyz, surfaceA.w, surfaceB.w));
+        // 历史胜者按**单候选**合并(2026-10-04 定案:按 clampedM 克隆计权在胜者冻结后
+        // 产生持久像素偏置(实测 EMA 128 帧仍 RMSE 0.17),无 MIS 的克隆合并不满足
+        // i.i.d. 候选集前提;单候选合并不偏,方差收敛交颜色 EMA,真 MIS 复用属 M2)。
+        deepMegaReservoirMerge(&reservoir, weight, history.winner, 1u, deepMegaRandom(&random));
+      }
+    }
+  }
+  return deepMegaReservoirPack(reservoir, surfaceA.w);
+}
+
+// ---- 趟二:5×5 空间合并 + 胜者着色(蓄水池经指针回写为合并后状态 → 宿主写回 B
+//      作下一帧历史,与 CPU 镜像同语义;返回 RGB) ----
+
+fn deepMegaReuseAndShade(params: DeepMegaParams, pixelIndex: u32, surfaceA: vec4f, surfaceB: vec4f,
+  surfaceC: vec4f, reservoir: ptr<function, DeepMegaReservoir>) -> vec3f {
+  let lightCount = params.lightCount;
+  if (lightCount == 0u) { return vec3f(0.0); }
+  var random = deepMegaPixelSeed(pixelIndex, params.frameSeed, 1u);
+  let positionView = surfaceA.xyz;
+  let normalView = surfaceB.xyz;
+  let view = deepMegaSafeNormalize(-positionView, vec3f(0.0, 0.0, 1.0));
+  if (params.exhaustive != 0u) {
+    // 穷举对拍模式:逐灯求和(与既有簇光逐灯路径同式同序,⑤ 退化一致性腿;
+    // 单帧无随机量,输出与簇光路径的差异仅剩 f32 累加次序)。
+    var total = vec3f(0.0);
+    for (var index = 0u; index < lightCount; index = index + 1u) {
+      total = total + deepMegaContribution(deepMegaLoad(index), positionView, normalView, view,
+        surfaceC.xyz, surfaceA.w, surfaceB.w);
+    }
+    return total;
+  }
+  if (params.spatialEnabled != 0u) {
+    let pixelX = pixelIndex % params.viewport.x;
+    let pixelY = pixelIndex / params.viewport.x;
+    for (var offsetY = -i32(DEEP_MEGA_RIS_SPATIAL_RADIUS); offsetY <= i32(DEEP_MEGA_RIS_SPATIAL_RADIUS); offsetY = offsetY + 1) {
+      for (var offsetX = -i32(DEEP_MEGA_RIS_SPATIAL_RADIUS); offsetX <= i32(DEEP_MEGA_RIS_SPATIAL_RADIUS); offsetX = offsetX + 1) {
+        if (offsetX == 0 && offsetY == 0) { continue; }
+        let nx = i32(pixelX) + offsetX;
+        let ny = i32(pixelY) + offsetY;
+        if (nx < 0 || ny < 0 || nx >= i32(params.viewport.x) || ny >= i32(params.viewport.y)) { continue; }
+        let neighborIndex = u32(ny) * params.viewport.x + u32(nx);
+        let neighbor = deepMegaReservoirUnpack(deepMegaReservoirsA[neighborIndex]);
+        if (neighbor.winner == DEEP_MEGA_INVALID || neighbor.m == 0u) { continue; }
+        let neighborSurfaceA = deepMegaSurfaces[neighborIndex * DEEP_MEGA_SURFACE_STRIDE];
+        let neighborSurfaceB = deepMegaSurfaces[neighborIndex * DEEP_MEGA_SURFACE_STRIDE + 1u];
+        let normalDot = dot(normalView, neighborSurfaceB.xyz);
+        if (normalDot < DEEP_MEGA_SPATIAL_NORMAL_GATE
+          || !deepMegaDepthGate(surfaceA.w, neighborSurfaceA.w)) { continue; }
+        let record = deepMegaLoad(neighbor.winner);
+        let weight = deepMegaLuminance(deepMegaContribution(record, positionView, normalView, view,
+          surfaceC.xyz, surfaceA.w, surfaceB.w));
+        // 邻居胜者按**单候选**合并(实测:按 neighbor.m 克隆计权会把跨像素强相关的
+        // 同一胜者放大 24×32 份,合并集非 i.i.d. → 收敛 RMSE 从 0.24 恶化到 0.48,
+        // 2026-10-04 定案;无偏性优先,方差控制交给颜色 EMA/TAA 组合)。
+        if (weight > 0.0) { deepMegaReservoirMerge(reservoir, weight, neighbor.winner, 1u, deepMegaRandom(&random)); }
+      }
+    }
+  }
+  if (reservoir.winner == DEEP_MEGA_INVALID || reservoir.m == 0u || reservoir.weightSum <= 0.0) { return vec3f(0.0); }
+  let winner = deepMegaLoad(reservoir.winner);
+  let shade = deepMegaShadeWinner(winner, positionView, normalView, view, surfaceC.xyz, surfaceA.w, surfaceB.w);
+  let winnerWeight = deepMegaLuminance(deepMegaContribution(winner, positionView, normalView, view,
+    surfaceC.xyz, surfaceA.w, surfaceB.w));
+  if (winnerWeight <= 0.0) { return vec3f(0.0); }
+  return shade * (f32(lightCount) * reservoir.weightSum / (f32(reservoir.m) * winnerWeight));
+}

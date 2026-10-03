@@ -205,6 +205,14 @@
       "types": "./dist/shaderAbi/index.d.ts",
       "default": "./dist/shaderAbi/index.js"
     },
+    "./shader-graph": {
+      "development": {
+        "types": "./src/shaderGraph/index.ts",
+        "default": "./src/shaderGraph/index.ts"
+      },
+      "types": "./dist/shaderGraph/index.d.ts",
+      "default": "./dist/shaderGraph/index.js"
+    },
     "./three-bridge": {
       "development": {
         "types": "./src/threeBridge/index.ts",

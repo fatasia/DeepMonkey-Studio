@@ -353,6 +353,18 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
   // 恒 1x(页池非 MSAA 附件),不入首帧关键集(虚拟档 opt-in)。
   const pageShadowPipelines = new Map<string, GPURenderPipeline>();
   const pendingPageShadow: Array<Promise<GPURenderPipeline>> = [];
+  // 页矩形清屏管线(虚拟阴影专用;loadOp load 下每页重绘前把页矩形归位 far=1.0;
+  // 零绑定布局 —— draw 不设任何 bind group)。
+  pendingPageShadow.push(track(pageShadowPipelines, "clear", device.createRenderPipelineAsync({
+    label: "Deep virtual shadow page clear",
+    layout: device.createPipelineLayout({ label: "Deep virtual shadow page clear layout",
+      bindGroupLayouts: [] }),
+    vertex: { module, entryPoint: "shadowPageClear" },
+    fragment: { module, entryPoint: "shadowPageClearDepth", targets: [{ format: "r32float" }] },
+    primitive: { topology: "triangle-strip" },
+    depthStencil: { format: "depth32float", depthWriteEnabled: false, depthCompare: "always" },
+    multisample: { count: 1 },
+  })));
   for (const mode of ["solid", "maskPlain", "maskMaterial"] as const) for (const raster of ["ccw", "cw", "double"] as const) {
     const key = shadowPipelineKey(mode, raster), doubleSided = raster === "double";
     const fragmentEntryPoint = mode === "solid" ? "shadowPageDepth"

@@ -294,6 +294,20 @@ export const SDF_SKY_VISIBILITY_LIMIT_EPSILON = 0.000001;
     preamble: `/** 天光遮蔽圆锥追踪核:每 lane = 探针方向 × 场景 SDF 软阴影口径(真源 wgsl/sdfSkyVisibilityTrace.wgsl)。 */\nexport const DEEP_SDF_SKY_VISIBILITY_TRACE_WGSL = /* wgsl */ `,
   },
   {
+    // B2 MegaLights M1 RIS 采样核(2026-10-04)。真源 wgsl/megaLightsRis.wgsl,
+    // 纯 TS 消费(无 Rust 半;宿主模板 megaLightsRuntime.ts 组合进 compute pipeline,
+    // 绑定声明留宿主,同 ltcAreaLighting 家族纪律)。互钉常量在 megaLights.ts
+    // (64B/灯 ABI、K=32、空间半径 2、历史钳 20、相似门)与 megaLightsAbi.ts
+    // (绑定槽位/参数字级布局),一致性由 megaLightsRisWgslChecksum.test.ts 锁定;
+    // CPU 权威镜像在 megaLightsRisCpu.ts(同式同序,验收②④⑤真值端)。
+    source: "megaLightsRis.wgsl",
+    module: resolve(packageRoot, "src/lighting/megaLightsRisWgsl.ts"),
+    gate: "src/lighting/megaLightsRisWgslChecksum.test.ts",
+    rustHalf: null,
+    constants: "",
+    preamble: `/** MegaLights RIS 采样核(真源 wgsl/megaLightsRis.wgsl;绑定留宿主模板)。 */\nexport const MEGA_LIGHTS_RIS_WGSL = /* wgsl */ `,
+  },
+  {
     // I 级 C17 节点化/流场粒子首刀家族。真源 wgsl/particleFlowField.wgsl,纯 TS 消费
     // (无 Rust 半;curl-noise 流场驱动的粒子 compute 核,绑定 0..5 与既有粒子核同构,
     // 新增 binding 6 流场 uniform)。常量与 gpuParticleFlowFieldTypes.ts(打包/校验)

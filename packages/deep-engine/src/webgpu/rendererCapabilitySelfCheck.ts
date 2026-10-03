@@ -25,6 +25,9 @@ import {
 import { DEEP_GI_PROBE_TEMPORAL_ALPHA } from "../gi/probeShUpdate.js";
 import { SDF_SKY_VISIBILITY_MAX_STEPS, SDF_SKY_VISIBILITY_MIN_STEPS } from "../gi/sdfSkyVisibilityTraceWgsl.js";
 import { DEEP_GI_PROBE_VISIBILITY_SH_WORDS, DEEP_GI_PROBE_VISIBILITY_SH_WORD_OFFSET } from "../lighting/probeDirectionalVisibilitySh.js";
+import { MAX_AREA_LIGHTS } from "../lighting/areaLights.js";
+import { MAX_MEGA_LIGHTS, MEGALIGHTS_CLUSTER_PATH_LIGHT_BUDGET, MEGALIGHTS_RIS_CANDIDATES,
+  MEGA_LIGHT_STRIDE_BYTES } from "../lighting/megaLights.js";
 import { PROBE_RADIANCE_MOMENT_LANES } from "../rayTracing/probeRadianceKernel.js";
 import { DEEP_PBR_MESH_V1_BYTE_SIZES } from "../shaderAbi/contract.js";
 import { MATERIAL_PARAMETER_KEYS } from "../shader/materialParameters.js";
@@ -307,6 +310,20 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
       defaultStrength: DEFAULT_INSTANCE_OUTLINE.strength,
       defaultThickness: DEFAULT_INSTANCE_OUTLINE.thickness,
       instanceFlagBit: 256,
+    },
+  },
+  {
+    // B2 Brief-MegaLights M1:万灯 RIS 直接光。观测值从灯光池/RIS 核实际常量派生
+    // (64B/灯 stride、K=32 候选、簇光预算 64、面积光上限 64——任一漂移即红)。
+    // M1 = 域级引擎通路 + 真机探针,主 pass 接线属 M2,故 harness-only(与 contracts
+    // 登记表 web 列逐词一致)。
+    capabilityId: "megalights", support: "supported", reason: "harness-only",
+    observed: {
+      megaLightStrideBytes: MEGA_LIGHT_STRIDE_BYTES,
+      risCandidates: MEGALIGHTS_RIS_CANDIDATES,
+      clusterPathLightBudget: MEGALIGHTS_CLUSTER_PATH_LIGHT_BUDGET,
+      megaLightPoolCapacity: MAX_MEGA_LIGHTS,
+      areaLightCapacity: MAX_AREA_LIGHTS,
     },
   },
 ]);

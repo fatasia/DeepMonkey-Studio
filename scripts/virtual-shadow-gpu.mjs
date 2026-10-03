@@ -126,7 +126,8 @@ const LEGS_FLOW = `(async () => {
     await probe.beginLeg("virtual", true);
     await probe.settleLeg();
     const virtualImage = await probe.captureStill();
-    const atlasDump = await probe.dumpShadowAtlasLayer();
+    const atlasDump = await probe.dumpShadowAtlasLayer(0);
+    const atlasDump1 = await probe.dumpShadowAtlasLayer(1);
     const step = 4, gw = atlasDump.width / step, gh = atlasDump.height / step;
     const gray = new Uint8Array(gw * gh);
     let nonzeroPages = 0;
@@ -142,7 +143,11 @@ const LEGS_FLOW = `(async () => {
       nonzeroPages += written ? 1 : 0;
     }
     output.atlasLayer0 = { width: gw, height: gh, nonzeroPages };
+    output.residency = await probe.dumpVirtualShadowResidency();
+    output.pageTable = await probe.dumpShadowPageTable();
     output.atlasCanvasPng = atlasDump.canvasPng;
+    output.atlasCanvasPng1 = atlasDump1.canvasPng;
+    output.residencyFence = atlasDump.floats ? "read" : "none";
     const translateLatency = await probe.dynamicLatencyLeg("translate");
     const rotateLatency = await probe.dynamicLatencyLeg("rotate");
     output.legs.virtualImage = await probe.finishLeg(virtualTiming, virtualImage,
@@ -154,7 +159,7 @@ async function launchCdpBrowser() {
   const chromePath = process.env.BIM_STUDIO_CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
   const chrome = spawn(chromePath, ["--headless=new", "--remote-debugging-port=0",
     "--enable-unsafe-webgpu", "--use-angle=default", "--no-first-run",
-    `--user-data-dir=${path.join(out, "chrome-profile")}`, "about:blank"],
+    `--user-data-dir=${path.join(out, `chrome-profile-${Date.now()}`)}`, "about:blank"],
     { stdio: ["ignore", "ignore", "pipe"] });
   const wsEndpoint = await new Promise((resolve, reject) => {
     let buffer = "";
@@ -166,16 +171,20 @@ async function launchCdpBrowser() {
     });
     chrome.on("exit", () => { clearTimeout(timer); reject(new Error("chrome exited before devtools endpoint")); });
   });
-  const httpBase = wsEndpoint.replace("ws://", "http://");
-  const targets = await (await fetch(`${httpBase}/json/list`)).json();
+  // /json/list 必须查询 host 根,不能拼在 browser 端点路径后(挂点:fetch 无超时)。
+  const wsUrl = new URL(wsEndpoint);
+  const targets = await (await fetch(`http://${wsUrl.host}/json/list`)).json();
   const page = targets.find(target => target.type === "page");
   if (!page) throw new Error("no page target in chrome devtools list");
   const socket = new WebSocket(page.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
   let nextId = 1;
   const pending = new Map();
-  socket.onmessage = event => {
-    const message = JSON.parse(event.data);
+  socket.onmessage = async event => {
+    // undici WebSocket 文本帧可能以 Blob 形态交付;空帧跳过,防 JSON.parse("") 炸全链。
+    const text = typeof event.data === "string" ? event.data : await event.data.text();
+    if (!text.trim()) return;
+    const message = JSON.parse(text);
     if (message.id && pending.has(message.id)) {
       const entry = pending.get(message.id);
       pending.delete(message.id);
@@ -216,7 +225,9 @@ try {
   browser = await launchCdpBrowser();
   await browser.evaluate(`location.href = "http://127.0.0.1:${server.address().port}"`);
   await new Promise(resolve => setTimeout(resolve, 800));
+  console.error("[vsm] preflight...");
   result.preflight = await browser.evaluate(PREFLIGHT_FLOW);
+  console.error("[vsm] preflight done:", JSON.stringify(result.preflight?.messages?.length ?? 0), "messages");
   await browser.evaluate(`(async () => {
     const probe = await import("/probe.mjs");
     probe.installErrorCapture();
@@ -224,14 +235,23 @@ try {
   })()`);
   result.deviceRequest = await browser.evaluate(
     `(async () => (await import("/probe.mjs")).probeDeviceRequest())()`);
+  console.error("[vsm] legs flow start...");
   const legs = await browser.evaluate(LEGS_FLOW);
+  console.error("[vsm] legs flow done; residents:",
+    JSON.stringify(Object.fromEntries(Object.entries(legs.legs).map(([k, v]) => [k, v?.pages?.slice(-1)?.[0]?.resident]))));
   result.legs = legs.legs;
   result.adapter = legs.adapter;
   if (legs.atlasCanvasPng) {
     await writeFile(path.join(out, "atlas-layer0.png"),
       Buffer.from(legs.atlasCanvasPng.split(",").pop(), "base64"));
   }
+  if (legs.atlasCanvasPng1) {
+    await writeFile(path.join(out, "atlas-layer1.png"),
+      Buffer.from(legs.atlasCanvasPng1.split(",").pop(), "base64"));
+  }
   result.atlasLayer0 = legs.atlasLayer0;
+  result.residency = legs.residency;
+  result.pageTable = legs.pageTable;
   for (const [name, leg] of Object.entries(legs.legs)) {
     const png = leg?.image?.canvasPng;
     if (typeof png === "string" && png.startsWith("data:image/png")) {
@@ -269,6 +289,8 @@ try {
   server.close();
 }
 await writeFile(path.join(out, "acceptance.json"), JSON.stringify(result, null, 2));
-console.log(JSON.stringify({ passed: result.passed ?? false, gate: result.gate, error: result.error,
+await writeFile(path.join(out, "residency.json"), JSON.stringify(result.residency ?? [], null, 1));
+await writeFile(path.join(out, "page-table.json"), JSON.stringify(result.pageTable ?? {}, null, 0));
+console.log(JSON.stringify({ passed: result.passed ?? false, error: result.error,
   atlasNonzeroPages: result.atlasLayer0?.nonzeroPages }, null, 2));
 if (!result.passed) process.exitCode = 1;

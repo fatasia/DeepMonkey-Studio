@@ -376,7 +376,11 @@ export async function dynamicLatencyLeg(mode: "translate" | "rotate",
   const renderer = active.renderer;
   const before: LumaField[] = [];
   for (let index = 0; index < 3; index++) {
-    renderer.render(VIEW); samplePages(undefined, index);
+    try { renderer.render(VIEW); }
+    catch (error) {
+      throw new Error(`baseline render failed: ${String(error)}; device=[${renderer.deviceDiagnostics.map(e => e.message).join(" | ")}]`);
+    }
+    samplePages(undefined, index);
     before.push(await latestLuma());
   }
   const baseline = before[2]!;
@@ -508,8 +512,8 @@ export async function probeDeviceRequest(): Promise<unknown> {
   }
 }
 
-/** 诊断:读回虚拟阴影 atlas layer 0(2048² r32float),返回行距与原始字节(灰度化在 Node 侧)。 */
-export async function dumpShadowAtlasLayer(): Promise<{ readonly width: number; readonly height: number;
+/** 诊断:读回虚拟阴影 atlas 指定层(2048² r32float)。 */
+export async function dumpShadowAtlasLayer(layer = 0): Promise<{ readonly width: number; readonly height: number;
   readonly bytesPerRow: number; readonly floats: Float32Array }> {
   if (!active) throw new Error("beginLeg was not called.");
   const atlas = (active.renderer as unknown as {
@@ -521,7 +525,7 @@ export async function dumpShadowAtlasLayer(): Promise<{ readonly width: number; 
   const buffer = device.createBuffer({ size: bytesPerRow * height,
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
   const encoder = device.createCommandEncoder({ label: "vsm atlas readback" });
-  encoder.copyTextureToBuffer({ texture: atlas, origin: { x: 0, y: 0, z: 0 } },
+  encoder.copyTextureToBuffer({ texture: atlas, origin: { x: 0, y: 0, z: layer } },
     { buffer, bytesPerRow, rowsPerImage: height }, [width, height, 1]);
   device.queue.submit([encoder.finish()]);
   await buffer.mapAsync(GPUMapMode.READ);
@@ -546,4 +550,38 @@ export async function dumpShadowAtlasLayer(): Promise<{ readonly width: number; 
   let binary = "";
   for (let index = 0; index < bytes.length; index++) binary += String.fromCharCode(bytes[index]!);
   return { width, height, bytesPerRow, floats, canvasPng: `data:image/png;base64,${btoa(binary)}` };
+}
+
+/** 诊断:虚拟阴影驻留页表快照(id/slot 对照,定位页内容与页坐标的映射问题)。 */
+export function dumpVirtualShadowResidency(): unknown {
+  const table = (active?.renderer as unknown as {
+    virtualShadows?: { table: { residentSnapshot(): unknown[] } };
+  }).virtualShadows?.table;
+  if (!table) throw new Error("virtual shadow table unavailable.");
+  return table.residentSnapshot();
+}
+
+/** 诊断:读回 GPU 页表(meta+layers)与 CPU 驻留对照(定位采样 miss 的上传/打包问题)。 */
+export async function dumpShadowPageTable(): Promise<{ readonly meta: readonly number[];
+  readonly layers: readonly number[] }> {
+  const resources = (active?.renderer as unknown as {
+    virtualShadows?: { metaBuffer: GPUBuffer; layersBuffer: GPUBuffer };
+  }).virtualShadows;
+  if (!resources) throw new Error("virtual shadow resources unavailable.");
+  const device = active!.renderer.session.device;
+  const readback = async (buffer: GPUBuffer, size: number): Promise<ArrayBuffer> => {
+    const staging = device.createBuffer({ size, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    const encoder = device.createCommandEncoder({ label: "vsm page table readback" });
+    encoder.copyBufferToBuffer(buffer, 0, staging, 0, size);
+    device.queue.submit([encoder.finish()]);
+    await staging.mapAsync(GPUMapMode.READ);
+    const copy = staging.getMappedRange().slice(0);
+    staging.unmap();
+    staging.destroy();
+    return copy;
+  };
+  const meta = new Uint32Array(await readback(resources.metaBuffer, resources.metaBuffer.size));
+  const layers = new Int32Array(await readback(resources.layersBuffer, resources.layersBuffer.size));
+  return { meta: Array.from(meta), layers: Array.from(layers),
+    metaWords: resources.metaBuffer.size, layerEntries: resources.layersBuffer.size / 4 };
 }

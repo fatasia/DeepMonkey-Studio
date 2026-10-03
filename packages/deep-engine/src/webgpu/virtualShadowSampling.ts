@@ -49,13 +49,15 @@ export function packVirtualShadowPageTable(ringCount: number,
   }
   if (typeof slotOfPage !== "function") throw new TypeError("Virtual shadow page table expects a slotOfPage provider.");
   const metaRows = ringCount * VIRTUAL_SHADOW_MIP_COUNT;
+  // layers 段 = ringCount × Σ(grid²):少乘 ringCount 会让 ring1+ 的页表写入越界
+  // 被TypedArray 静默丢弃(真机教训:全部采样回退失败 → 全图受光)。
   let layerCount = 0;
   const grids: number[] = [];
   for (let mip = 0; mip < VIRTUAL_SHADOW_MIP_COUNT; mip++) {
     const grid = VIRTUAL_SHADOW_PAGE_GRID >> mip;
     grids.push(grid);
-    layerCount += grid * grid;
   }
+  layerCount = ringCount * grids.reduce((total, grid) => total + grid * grid, 0);
   const meta = new Uint32Array(metaRows * 4);
   const layers = new Int32Array(layerCount).fill(-1);
   let cursor = 0;

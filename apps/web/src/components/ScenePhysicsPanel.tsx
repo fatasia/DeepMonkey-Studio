@@ -184,7 +184,7 @@ export function ScenePhysicsPanel(props: ScenePhysicsPanelProps) {
                     : kind === "primitive"
                       ? { kind, primitive: { shape: "cuboid", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } }
                       : { kind };
-                  props.onSelectedBodyChange({ collider });
+                  props.onSelectedBodyChange({ collider } as ScenePhysicsBodyPatch);
                 }}
               >
                 <option value="render-bounds">{tr(locale, "包围盒（默认）", "Bounding box (default)")}</option>
