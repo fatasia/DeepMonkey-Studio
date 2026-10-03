@@ -1,12 +1,13 @@
 /**
  * 增量 TLAS（compute BVH 光追骨架·实例层基座）：BLAS 段构建期一次缓存（SAH），实例
- * Transform 变更只重写 TLAS 节点段 + 实例记录——BLAS 节点/顶点/索引段与全局段基址
- * （nodeBase/triangleBase/vertexBase，按 blasList 顺序固定）驻留不动，GPU 侧仅需
- * 重传易变区域（ShadowRayMaskPass.updateTlasRegion 接线）。
+ * Transform 变更只重写 TLAS 节点段 + 实例记录——BLAS 节点/顶点/索引段与其**物理段序**
+ * 驻留不动，GPU 侧仅需重传易变区域（ShadowRayMaskPass.updateTlasRegion 接线）。
  *
  * == 合同 ==
  * - BLAS 构建单一来源 buildSahBvh（确定性；f16 档 serializeBvhNodesF16 外扩量化）；
  * - TLAS 段构建单一来源 buildTlasFromWorldBounds（tlas.ts；与 buildTlas 同口径防分叉）；
+ * - 绝对 nodeBase = TLAS 段实际节点数 + BLAS 相对偏移（packTlasScene 合同：BLAS 段在
+ *   TLAS 段后），每次更新随记录重算——相对段序/段字节不变即增量语义成立；
  * - 实例世界盒：缓存 BLAS 根盒 8 角经 localToWorld 逆变换取三轴 min/max 后 fround
  *   （与 tlas.buildTlas 逐位同口径），更新期零三角形级工作；
  * - 未缓存 BLAS 引用 fail-closed 抛错；BLAS 集变更（增删/换几何）须新建场景对象。
@@ -63,6 +64,8 @@ export class IncrementalTlasScene {
     const serialize = this.nodeFormat === "f16" ? serializeBvhNodesF16 : serializeBvhNodes;
     const stride = this.nodeFormat === "f16" ? BVH_NODE_F16_STRIDE_BYTES : BVH_NODE_STRIDE_BYTES;
     this.segmentOrder = blasList;
+    // 相对节点偏移（BLAS 段物理顺序跨更新固定）；绝对 nodeBase = tlasNodeCount + 相对偏移，
+    // 每次更新重算（写入的是每次都重写的实例记录——增量语义不受影响，见头注释合同）。
     let nodeCursor = 0, triangleCursor = 0, vertexCursor = 0;
     for (const blas of blasList) {
       if (this.segments.has(blas)) throw new Error(`Duplicate BLAS descriptor in incremental scene: ${blas.id}`);
@@ -118,6 +121,7 @@ export class IncrementalTlasScene {
         maxX: Math.fround(maxX), maxY: Math.fround(maxY), maxZ: Math.fround(maxZ) };
     });
     const built = buildTlasFromWorldBounds(instances, instanceBounds);
+    const tlasNodeCount = built.nodes.length;
     const tlasNodeBytes = this.nodeFormat === "f16" ? serializeBvhNodesF16(built) : serializeBvhNodes(built);
     const recordBytes = new ArrayBuffer(built.order.length * 128);
     const recordFloats = new Float32Array(recordBytes);
@@ -132,14 +136,16 @@ export class IncrementalTlasScene {
       const base = this.bases.get(instance.blas)!;
       const bounds = instanceBounds[instanceIndex];
       if (bounds === undefined) throw new Error(`TLAS order references empty BLAS instance ${instance.id}.`);
+      // 绝对基址 = TLAS 段实际节点数 + BLAS 相对偏移（packTlasScene 合同：BLAS 段在 TLAS 段后）。
+      const nodeBase = tlasNodeCount + base.nodeBase;
       writeInstanceRecord(recordFloats, recordWords, slot, instance, bounds,
-        base.nodeBase, base.triangleBase, instanceIndex);
+        nodeBase, base.triangleBase, instanceIndex);
       for (let local = 0; local < segment.order.length; local++) {
         order[base.triangleBase + local] = base.triangleBase + segment.order[local]!;
       }
       placements.push({ instanceIndex, mask: instance.mask >>> 0, worldToLocal: instance.worldToLocal,
         minX: bounds.minX, minY: bounds.minY, minZ: bounds.minZ, maxX: bounds.maxX, maxY: bounds.maxY, maxZ: bounds.maxZ,
-        nodeBase: base.nodeBase, triangleBase: base.triangleBase, vertexBase: base.vertexBase,
+        nodeBase, triangleBase: base.triangleBase, vertexBase: base.vertexBase,
         triangleCount: segment.triangleCount });
     });
     this.tlasRebuilds++;

@@ -127,7 +127,7 @@ export class ShadowRayMaskPass {
     const make = (label: string, size: number, usage: number): GPUBuffer => d.createBuffer({ label, size, usage });
     const rays = make("shadow-rays-stream", packedRays.byteLength, USAGE_STORAGE | USAGE_COPY_DST);
     const masks = make("shadow-rays-masks", maskBytes, USAGE_STORAGE | USAGE_COPY_SRC);
-    const overflows = make("shadow-rays-overflows", 4, USAGE_STORAGE | USAGE_COPY_SRC);
+    const overflows = make("shadow-rays-overflows", 4, USAGE_STORAGE | USAGE_COPY_DST | USAGE_COPY_SRC);
     const uniform = make("shadow-rays-uniform", 16, USAGE_UNIFORM | USAGE_COPY_DST);
     const maskReadback = make("shadow-rays-mask-readback", maskBytes, USAGE_COPY_DST | USAGE_MAP_READ);
     const overflowReadback = make("shadow-rays-overflow-readback", 4, USAGE_COPY_DST | USAGE_MAP_READ);

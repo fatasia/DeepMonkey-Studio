@@ -8,10 +8,14 @@
 
 import { emitShadowRayMaskKernelWgsl, SHADOW_RAY_MASK_ENTRY_POINT } from "../src/rayTracing/shadowRayKernel.js";
 import { ShadowRayMaskPass, type ShadowRayMaskResult } from "../src/rayTracing/shadowRayPass.js";
+import { IncrementalTlasScene } from "../src/rayTracing/incrementalTlas.js";
 import { buildShadowBatch, buildShadowCases, buildReceiverPoints, type ShadowScene } from "./shadowRayGpuCases.js";
 
 export { emitShadowRayMaskKernelWgsl, SHADOW_RAY_MASK_ENTRY_POINT };
 export { buildShadowBatch, buildShadowCases, buildReceiverPoints } from "./shadowRayGpuCases.js";
+// Node 仲裁腿专用（脚本侧经 bundle 单一来源取 CPU 参考，防口径分叉）。
+export { SHADOW_RASTER_RESOLUTION, cpuShadowMask, rasterizeShadowMap, sampleRasterShadow, shadowMaskRmse,
+  buildShadowScene } from "./shadowRayGpuCases.js";
 
 export interface ShadowGpuCaseResult {
   readonly variant: "f32" | "f16";
@@ -74,12 +78,18 @@ export async function runShadowRayGpuProbe(): Promise<ShadowGpuProbeResult> {
   const casesSpec = buildShadowCases();
   const receivers = buildReceiverPoints(casesSpec.receiverGrid);
   const batch = buildShadowBatch(receivers);
+  // f16 档需要 f16 布局的 packed nodes（同一实例集独立构建；确定性 SAH ⇒ 语义等价）。
+  const f16Scene: ShadowScene | null = shaderF16
+    ? { ...casesSpec.scene, tlas: new IncrementalTlasScene(casesSpec.scene.blasList,
+        { f16: true, sah: { binCount: 8 } }) }
+    : null;
+  f16Scene?.tlas.updateInstances(casesSpec.scene.instances);
   const variants: Array<{ variant: "f32" | "f16"; f16: boolean }> =
     [{ variant: "f32", f16: false }, ...(shaderF16 ? [{ variant: "f16" as const, f16: true }] : [])];
   for (const spec of variants) {
     try {
-      const pass = new ShadowRayMaskPass(device, casesSpec.scene.tlas.packed,
-        { f16: spec.f16, measureGpuTime: timestampQuery });
+      const packed = spec.f16 === true ? f16Scene!.tlas.packed : casesSpec.scene.tlas.packed;
+      const pass = new ShadowRayMaskPass(device, packed, { f16: spec.f16, measureGpuTime: timestampQuery });
       try {
         // 预热一次（管线编译/pipeline cache），计时取其后多次最小值（验收②：10k rays dispatch <2ms）。
         await pass.dispatchMask(batch);

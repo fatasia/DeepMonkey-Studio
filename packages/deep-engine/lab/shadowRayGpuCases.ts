@@ -16,7 +16,7 @@ import type { RayBlasDescriptor } from "../src/rayTracing/rayBackendTypes.js";
 
 export const SHADOW_LIGHT_DIR: readonly [number, number, number] = normalize([0.35, 1, 0.2]);
 export const SHADOW_T_MAX = 60;
-export const SHADOW_RASTER_RESOLUTION = 128;
+export const SHADOW_RASTER_RESOLUTION = 512;
 
 /** 确定性地面网格 BLAS（meshlet 级三角形集；20×20 单元 = 800 三角）。 */
 export function floorBlas(): RayBlasDescriptor {
@@ -38,7 +38,8 @@ export function boxBlas(id: string, cx: number, cz: number, half: number, y0: nu
   quads.forEach((quad, qi) => {
     const base = qi * 4;
     quad.forEach(cI => vertices.push(...c[cI]!));
-    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    // 外向绕序（法线朝外；阴影光栅的背面剔除依赖它，绕序反=整盒被剔光）。
+    indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
   });
   return { id, vertices: Float32Array.from(vertices), indices: Uint32Array.from(indices) };
 }
@@ -104,6 +105,9 @@ export interface RasterShadowMap {
   readonly origin: readonly [number, number, number];
   readonly right: readonly [number, number, number];
   readonly up: readonly [number, number, number];
+  /** 光空间中心（光栅/采样同一中心化映射：texel = (dot-center+extent)/(2extent)×res）。 */
+  readonly centerX: number;
+  readonly centerY: number;
   readonly extent: number;
   readonly lightDepth: readonly [number, number, number];
 }
@@ -142,13 +146,23 @@ export function rasterizeShadowMap(scene: ShadowScene, resolution: number = SHAD
         const vi = blas.indices[t + c]! * 3;
         return [blas.vertices[vi]!, blas.vertices[vi + 1]!, blas.vertices[vi + 2]!] as [number, number, number];
       });
-      const sx = p.map(q => (dot(right, q) - minX) / (extent * 2) * resolution);
-      const sy = p.map(q => (dot(up, q) - minY) / (extent * 2) * resolution);
-      const sd = p.map(q => dot(light, q) - minD + 5);
+      // 背面剔除（dot(faceNormal, toLight) ≤ 0 跳过）：闭合体的掠射侧面在光空间投影成
+      // 细长 sliver，其深度比同 texel 的地面更近，会把真实受光区误判成阴影（RMSE 杀手）。
+      const e1 = [p[1]![0]! - p[0]![0]!, p[1]![1]! - p[0]![1]!, p[1]![2]! - p[0]![2]!];
+      const e2 = [p[2]![0]! - p[0]![0]!, p[2]![1]! - p[0]![1]!, p[2]![2]! - p[0]![2]!];
+      const normal = [e1[1]! * e2[2]! - e1[2]! * e2[1]!, e1[2]! * e2[0]! - e1[0]! * e2[2]!,
+        e1[0]! * e2[1]! - e1[1]! * e2[0]!];
+      if (normal[0]! * light[0]! + normal[1]! * light[1]! + normal[2]! * light[2]! <= 0) continue;
+      const sx = p.map(q => (dot(right, q) - center[0]! + extent) / (extent * 2) * resolution);
+      const sy = p.map(q => (dot(up, q) - center[1]! + extent) / (extent * 2) * resolution);
+      // 深度 = -(沿光方向投影)：离光越近（dot 越大）数值越小，z-test 保留最近遮挡面。
+      const sd = p.map(q => -dot(light, q));
       const x0 = Math.max(0, Math.floor(Math.min(...sx))), x1 = Math.min(resolution - 1, Math.ceil(Math.max(...sx)));
       const y0 = Math.max(0, Math.floor(Math.min(...sy))), y1 = Math.min(resolution - 1, Math.ceil(Math.max(...sy)));
       const area = (sx[1]! - sx[0]!) * (sy[2]! - sy[0]!) - (sx[2]! - sx[0]!) * (sy[1]! - sy[0]!);
       if (Math.abs(area) < 1e-9) continue;
+      (globalThis as { __triKept?: number }).__triKept = ((globalThis as { __triKept?: number }).__triKept ?? 0) + 1;
+      if ((globalThis as { __triKept?: number }).__triKept !== undefined && (globalThis as { __triKept?: number }).__triKept! <= 12) console.log();
       for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
         const px = x + 0.5, py = y + 0.5;
         const w0 = ((sx[1]! - px) * (sy[2]! - py) - (sx[2]! - px) * (sy[1]! - py)) / area;
@@ -161,21 +175,22 @@ export function rasterizeShadowMap(scene: ShadowScene, resolution: number = SHAD
       }
     }
   }
-  return { resolution, depth, origin, right, up, extent, lightDepth: light };
+  return { resolution, depth, origin, right, up, centerX: center[0]!, centerY: center[1]!, extent, lightDepth: light };
 }
 
 /**
- * 光栅 shadow map 采样：受光点投影到光空间，深度比较（±斜率容差）判阴影。
+ * 光栅 shadow map 采样：受光点投影到光空间，深度比较（容差含地面深度坡度）判阴影。
  * 语义与 RT 阴影一致（阴影=0/受光=1）；图外点记受光（保守可见）。
  */
 export function sampleRasterShadow(map: RasterShadowMap, point: readonly [number, number, number]): 0 | 1 {
   const rel = [point[0]! - map.origin[0]!, point[1]! - map.origin[1]!, point[2]! - map.origin[2]!];
-  const px = dot(map.right, rel), py = dot(map.up, rel), pd = dot(map.lightDepth, rel);
-  if (px < 0 || py < 0 || px >= map.extent * 2 || py >= map.extent * 2) return 1;
-  const x = Math.min(map.resolution - 1, Math.floor(px / (map.extent * 2) * map.resolution));
-  const y = Math.min(map.resolution - 1, Math.floor(py / (map.extent * 2) * map.resolution));
+  const px = dot(map.right, rel), py = dot(map.up, rel), pd = -dot(map.lightDepth, point);
+  if (px < -map.extent || py < -map.extent || px >= map.extent || py >= map.extent) return 1;
+  const x = Math.min(map.resolution - 1, Math.floor((px + map.extent) / (map.extent * 2) * map.resolution));
+  const y = Math.min(map.resolution - 1, Math.floor((py + map.centerY === undefined ? 0 : map.centerY) * 0 + (py + map.extent) / (map.extent * 2) * map.resolution));
   const stored = map.depth[y * map.resolution + x]!;
-  return pd > stored + 0.15 ? 0 : 1; // 0.15 世界单位深度容差（斜面坡度 + 光栅离散）。
+  // 0.08 世界单位深度容差：512² texel ~0.04 世界单位 × 地面深度坡度 ~0.4 → 斜率误差 ~0.016。
+  return pd > stored + 0.08 ? 0 : 1;
 }
 
 /** RMSE 门（同分辨率掩码对：GPU BVH mask vs 光栅 shadow map 掩码）。 */

@@ -87,6 +87,14 @@ export type { BackendPreparation, BackendRevisionBarrier, BackendStateRevision,
 export { BackendPreferenceController } from "./backendPreference.js";
 export { resolveRayTracingCapability } from "./rayTracingCapability.js";
 export type { RayTracingBackend, RayTracingCapability } from "./rayTracingCapability.js";
+// compute BVH 光追骨架（硬件光追双通道的 Web 通道基座）：SAH BLAS/增量 TLAS/阴影光线 pass。
+export { buildSahBvh, SAH_BVH_DEFAULTS } from "./rayTracing/blasBuilder.js";
+export type { SahBvhOptions, SahBvhResult, SahBvhStats } from "./rayTracing/blasBuilder.js";
+export { IncrementalTlasScene } from "./rayTracing/incrementalTlas.js";
+export type { IncrementalTlasOptions, IncrementalTlasStats } from "./rayTracing/incrementalTlas.js";
+export { emitShadowRayMaskKernelWgsl, SHADOW_RAY_MASK_ENTRY_POINT } from "./rayTracing/shadowRayKernel.js";
+export { ShadowRayMaskPass, packDirectionalShadowRays, shadowMaskFromTlas } from "./rayTracing/shadowRayPass.js";
+export type { ShadowRayMaskResult, ShadowRayPassOptions } from "./rayTracing/shadowRayPass.js";
 // F3 探针网格烘焙服务：编辑器 UI（apps/web）经主入口调用 GPU 编排与网格参数类型。
 export { ProbeGridBakeService } from "./rayTracing/probeGridBakeService.js";
 export type { ProbeGridBakeEvidence, ProbeGridBakeServiceOptions } from "./rayTracing/probeGridBakeService.js";

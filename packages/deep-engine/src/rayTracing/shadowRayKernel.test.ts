@@ -11,8 +11,8 @@ import { RAY_TRACE_WORKGROUP_SIZE } from "./rayTraceLayout.js";
  * 骨架基线）。有意变更必须：更新钉值 + 复核 bvhTraverseWgsl/bvhTraverseTlasWgsl 片段
  * 语义 + 重跑 test:shadow-ray-gpu 真机对拍（mask==CPU + RMSE 门）。
  */
-const SHADOW_RAY_MASK_F32_SHA256 = "4ef2e7ac95832567868a5fbc4bbaa1c9246af6ec93dd29342f06b32bdb3c0df6";
-const SHADOW_RAY_MASK_F16_SHA256 = "59c09e7c762d9d9910df600d5fa335f13cec48ad4268683d5359a1bc3ba17622";
+const SHADOW_RAY_MASK_F32_SHA256 = "fb51f75f6b6d6c98b5d1db0ed8f6160763197565d2db638c00b1c6cfda35c8b5";
+const SHADOW_RAY_MASK_F16_SHA256 = "52b42325a6d71a75555f58df78c70fbb19cb929e33146970b07b644c895347f9";
 
 describe("shadow ray mask kernel generation contract", () => {
   const wgsl = emitShadowRayMaskKernelWgsl();

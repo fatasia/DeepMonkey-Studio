@@ -32,6 +32,7 @@ const BVH_NODE_F32 = /* wgsl */ `struct BvhNode {
   pad0: u32,
 }
 `;
+// enable 指令必须先于一切全局声明（const 亦然）——本片段必须置于内核发射的最前。
 const BVH_NODE_F16 = /* wgsl */ `enable f16;
 // f16 压缩节点（stride 32B；bounds 经 halfFloat 外扩量化，剪枝保守性见模块头注释）。
 struct BvhNode {
@@ -47,10 +48,10 @@ struct BvhNode {
 /** 常量 + 节点结构（f32/f16 档）+ TraverseHit；两档共享同名的 nodeMin/nodeMax 存取器。 */
 export function bvhTraverseCoreWgsl(options: BvhTraverseOptions = {}): string {
   const nodeStruct = options.f16 === true ? BVH_NODE_F16 : BVH_NODE_F32;
-  return /* wgsl */ `const STACK_CAPACITY: u32 = 32u;
+  return /* wgsl */ `${nodeStruct}const STACK_CAPACITY: u32 = 32u;
 const SENTINEL: u32 = 4294967295u;
 const DET_EPSILON: f32 = 1e-20;
-${nodeStruct}struct TraverseHit {
+struct TraverseHit {
   normal: vec3f,
   t: f32,
   instanceIndex: u32,

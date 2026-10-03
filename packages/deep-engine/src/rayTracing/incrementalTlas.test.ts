@@ -111,6 +111,17 @@ describe("incremental TLAS (compute BVH skeleton instance layer)", () => {
       .toBe(traceTlasClosest(buildTlasFromWorldBoundsScene(scene, SCENE_B), query, 0xff) !== undefined);
   });
 
+  it("keeps BLAS nodeBase inside the BLAS segment after the TLAS prefix (GPU contract)", () => {
+    // 回归：nodeBase 必须 ≥ TLAS 段节点数（拼接缓冲 TLAS 段在前）——违反时 GPU 遍历读到
+    // TLAS 段当 BLAS（全 miss，真机实测）。同时校验 TLAS 段被预留前缀包容。
+    const records = deserializeTlasInstanceRecords(first.recordBytes);
+    records.forEach(record => {
+      expect(record.nodeBase).toBeGreaterThanOrEqual(first.tlasNodeCount);
+      expect(record.nodeBase).toBeLessThan(first.tlasNodeCount + first.blasNodeCount);
+    });
+    expect(first.nodeBytes.byteLength / 48).toBe(first.tlasNodeCount + first.blasNodeCount);
+  });
+
   it("supports the f16 compact node layout with conservative (outward) bounds", () => {
     const f16Scene = new IncrementalTlasScene(blasList, { f16: true });
     const packed = f16Scene.updateInstances(SCENE_A);
