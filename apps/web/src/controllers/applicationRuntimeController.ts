@@ -125,7 +125,7 @@ export function createApplicationRuntimeController(context: ApplicationRuntimeCo
       const applyPublicationMetadata = (draft: SceneSnapshot): SceneSnapshot => ({
         ...draft,
         publishedAt: publication.publishedAt,
-        publicationMode: publication.snapshot.publicationMode ?? "webgpu-preferred",
+        publicationMode: publication.snapshot.publicationMode ?? "webgl",
         publicationPerformance: publication.snapshot.publicationPerformance ?? "standard",
         publicationToolbarVisible: publication.snapshot.publicationToolbarVisible !== false,
       });

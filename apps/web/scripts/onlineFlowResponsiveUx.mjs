@@ -120,6 +120,13 @@ function assertResponsiveAudit(audit) {
     throw new Error(`${audit.id} 二维画布默认聚焦不足：${JSON.stringify(audit.canvasFocus)}`);
   }
   if (audit.qualityFailures.length > 0) {
+    console.error("VISUAL_EVIDENCE:", JSON.stringify({
+      smallText: audit.smallTextSamples,
+      smallTextAll: (audit.smallText ?? []).slice(0, 6).map(x => x.identity ?? x),
+      inaccessibleIcons: (audit.inaccessibleIconControls ?? []).slice(0, 6).map(x => x.identity ?? x),
+      iconNoTooltip: (audit.iconControlsWithoutTooltip ?? audit.iconControlsWithoutTooltipList ?? (audit.inaccessibleIconControls ?? [])).slice(0, 6).map(x => x.identity ?? x),
+      compressed: (audit.compressedTextControls ?? []).slice(0, 6).map(x => x.identity ?? x),
+    }, null, 1));
     throw new Error(`${audit.id} 视觉质量失败：${audit.qualityFailures.join("；")}`);
   }
 }

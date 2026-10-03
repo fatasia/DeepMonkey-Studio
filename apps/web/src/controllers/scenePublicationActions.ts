@@ -149,7 +149,7 @@ export function createScenePublicationActions(context: PublicationContext, saveS
 
   async function publishScene(
     scene: SceneSnapshot,
-    mode: NonNullable<SceneSnapshot["publicationMode"]> = scene.publicationMode ?? "webgpu-preferred",
+    mode: NonNullable<SceneSnapshot["publicationMode"]> = scene.publicationMode ?? "webgl",
     performanceProfile: NonNullable<SceneSnapshot["publicationPerformance"]> = scene.publicationPerformance ?? "standard",
     toolbarVisible = scene.publicationToolbarVisible !== false,
     clientTarget: SceneClientPackageTarget = "none",
@@ -181,7 +181,7 @@ export function createScenePublicationActions(context: PublicationContext, saveS
           .map((issue) => `${issue.title}：${issue.detail} ${issue.remediation}`).join("\n");
         throw new Error(tr(locale, "发布检查未通过", "Publication checks failed") + `\n${details}`);
       }
-      const renderer = mode === "webgpu-preferred" ? "webgpu-preferred" as const : "webgl" as const;
+      const renderer = mode === "webgl" ? "webgl" as const : "webgl" as const;
       let nativeCandidateId: string | undefined;
       if (clientTarget === "deep-native") {
         const candidate = await api.createNativeSceneCandidate(project.id, configured.id, configured);

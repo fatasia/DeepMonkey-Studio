@@ -426,7 +426,7 @@ export function SceneManagerView({ controller }: { controller: SceneManagerContr
                             aria-label={scene.publishedAt ? tr(locale, "重新发布场景", "Republish scene") : tr(locale, "发布场景", "Publish scene")}
                             title={scene.publishedAt ? tr(locale, "重新发布", "Republish") : tr(locale, "发布", "Publish")}
                             onClick={() => {
-                              setPublishMode(scene.publicationMode ?? "webgpu-preferred");
+                              setPublishMode(scene.publicationMode ?? "webgl");
                               setPublishPerformance(scene.publicationPerformance ?? "standard");
                               setPublishClientTarget("none");
                               setPublishTarget(scene);

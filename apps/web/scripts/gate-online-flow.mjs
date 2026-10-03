@@ -198,6 +198,8 @@ try {
   report.pageAudits.push(await auditPage(page, "dashboard-editor"));
   await page.screenshot({ path: resolve(outputRoot, "02-dashboard-editor.png"), fullPage: true });
   // 商业编辑器的组件库必须支持“拖到哪里就创建在哪里”，同时保留点击插入的低门槛路径。
+  // 组件库在左面板“资源”页签（默认“图层”）——先切换再等卡片。
+  await page.getByRole("button", { name: /资源|Resources/ }).first().click();
   const artboard = page.locator(".dashboard-artboard");
   const componentCard = page.locator(".dashboard-library-card:not(.dashboard-library-scene-card)").first();
   const nodeCountBeforeDrag = await artboard.locator(":scope > .dashboard-node").count();

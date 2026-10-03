@@ -2,6 +2,7 @@
 .dashboard-field-panel-shell.is-open { width: min(300px, 100%); }
 .dashboard-field-panel-shell button { cursor: pointer; }
 .dashboard-field-panel-handle { display: grid; justify-items: center; gap: 5px; width: 36px; padding: 10px 2px; border: 1px solid var(--line-strong); border-radius: 6px 0 0 6px; color: var(--text); background: var(--panel); font-size: 11px; pointer-events: auto; }
+.dashboard-field-panel-handle span { white-space: nowrap; }
 .dashboard-field-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; box-sizing: border-box; color: var(--text); background: var(--panel); border-left: 1px solid var(--line-strong); box-shadow: -8px 0 24px #0002; pointer-events: auto; font-size: 12px; }
 .dashboard-field-panel > header { display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-bottom: 1px solid var(--line-strong); }
 .dashboard-field-panel > header > div { display: flex; gap: 4px; }

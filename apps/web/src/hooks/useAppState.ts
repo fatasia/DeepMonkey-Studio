@@ -92,7 +92,7 @@ export function useAppState() {
   const [rendererGeneration, setRendererGeneration] = useState(0);
   const [rendererDiagnosticsOpen, setRendererDiagnosticsOpen] = useState(false);
   const [systemInitialTab, setSystemInitialTab] = useState<"users" | "cloud-render">("users");
-  const [studioPublishMode, setStudioPublishMode] = useState<NonNullable<SceneSnapshot["publicationMode"]>>("webgpu-preferred");
+  const [studioPublishMode, setStudioPublishMode] = useState<NonNullable<SceneSnapshot["publicationMode"]>>("webgl");
   const [studioPublishPerformance, setStudioPublishPerformance] = useState<NonNullable<SceneSnapshot["publicationPerformance"]>>("standard");
   const [studioPublishClientTarget, setStudioPublishClientTarget] = useState<"none" | "three-webview" | "deep-native">("none");
   const [studioPublishOpen, setStudioPublishOpen] = useState(false);

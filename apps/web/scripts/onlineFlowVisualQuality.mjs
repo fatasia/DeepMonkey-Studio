@@ -206,7 +206,7 @@ export function collectOnlineFlowVisualEvidence(options) {
 export function assessOnlineFlowVisualEvidence(evidence, id = "page") {
   const failures = [];
   const advisories = [];
-  if (evidence.smallTextCount > 0) failures.push(`${id} 存在 ${evidence.smallTextCount} 处低于文字基线的可见内容`);
+  if (evidence.smallTextCount > 0) failures.push(`${id} 存在 ${evidence.smallTextCount} 处低于文字基线的可见内容${evidence.smallTextSamples?.length ? `（如：${evidence.smallTextSamples.slice(0, 3).join("、")}）` : ""}`);
   if (evidence.smallTargetCount > 0) failures.push(`${id} 存在 ${evidence.smallTargetCount} 个小于 28px 的主要点击目标`);
   if ((evidence.inaccessibleIconControlCount ?? 0) > 0) failures.push(`${id} 存在 ${evidence.inaccessibleIconControlCount} 个缺少可访问名称的纯图标控件`);
   if ((evidence.iconControlWithoutTooltipCount ?? 0) > 0) failures.push(`${id} 存在 ${evidence.iconControlWithoutTooltipCount} 个缺少悬停提示的纯图标控件`);

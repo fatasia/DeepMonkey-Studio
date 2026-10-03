@@ -66,7 +66,7 @@ export function summarizeScenePublicationDiff(draft: SceneSnapshot, published: S
 
 function publicationRuntimeState(scene: SceneSnapshot) {
   return {
-    mode: scene.publicationMode ?? "webgpu-preferred",
+    mode: scene.publicationMode ?? "webgl",
     performance: scene.publicationPerformance ?? "standard",
     // 缺省值为 true，保证旧发布的浏览工具不会因升级消失。
     toolbarVisible: scene.publicationToolbarVisible !== false

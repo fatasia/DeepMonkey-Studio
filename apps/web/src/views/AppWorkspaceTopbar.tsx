@@ -272,7 +272,7 @@ export function AppWorkspaceTopbar({ bindings, tools }: { bindings: AppViewBindi
                 aria-label={activeScene?.publishedAt ? tr(locale, "重新发布场景", "Republish scene") : tr(locale, "发布场景", "Publish scene")}
                 title={activeScene?.publishedAt ? tr(locale, "重新发布场景", "Republish scene") : tr(locale, "发布场景", "Publish scene")}
                 onClick={() => {
-                  setStudioPublishMode(activeScene?.publicationMode ?? "webgpu-preferred");
+                  setStudioPublishMode(activeScene?.publicationMode ?? "webgl");
                   setStudioPublishPerformance(activeScene?.publicationPerformance ?? "standard");
                   setStudioPublishOpen(true);
                 }}

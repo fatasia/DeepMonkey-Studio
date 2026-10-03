@@ -92,11 +92,12 @@ export function DashboardComponentLibrary({ locale, projectId, sceneAvailable, t
   return (
     <div className="dashboard-library-browser">
       <div className="dashboard-library-toolbar">
-        <label className="dashboard-library-search">
-          <Search size={14} />
+        <label className="dashboard-library-search" aria-label={tr(locale, "搜索组件", "Search components")} title={tr(locale, "搜索组件", "Search components")}>
+          <Search size={14} aria-hidden="true" />
           <input
             ref={searchInputRef}
             value={query}
+            aria-label={tr(locale, "搜索组件", "Search components")}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={tr(locale, "搜索组件", "Search components")}
           />
