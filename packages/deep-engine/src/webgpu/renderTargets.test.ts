@@ -51,8 +51,12 @@ describe("PBR render targets backed by the frame transient pool", () => {
     // MSAA 附件:RENDER_ATTACHMENT 语义(池侧命中 TRANSIENT 别名),深度多 TEXTURE_BINDING 供深度 resolve 采样。
     expect(f.targets.msaaActive).toBe(true);
     expect(first.slice(5, 9).map(texture => texture.descriptor.format)).toEqual(PBR_OPAQUE_ATTACHMENT_FORMATS);
-    for (const texture of first.slice(5, 9)) expect(texture.descriptor).toMatchObject({ sampleCount: 4,
-      usage: GPUTextureUsage.RENDER_ATTACHMENT });
+    // hdr/view-normal/motion MSAA 附件:纯 RENDER_ATTACHMENT(TRANSIENT 别名);
+    // linear-depth MSAA 附件多 TEXTURE_BINDING(linear-depth compute resolve 采样源)。
+    for (const texture of [first[5], first[7], first[8]])
+      expect(texture!.descriptor).toMatchObject({ sampleCount: 4, usage: GPUTextureUsage.RENDER_ATTACHMENT });
+    expect(first[6]!.descriptor).toMatchObject({ sampleCount: 4,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
     expect(first[9]!.descriptor).toMatchObject({ format: PBR_DEPTH_FORMAT, sampleCount: 4,
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
     expect(f.targets.hdrMsaaTexture).toBe(first[5]); expect(f.targets.depthMsaaTexture).toBe(first[9]);

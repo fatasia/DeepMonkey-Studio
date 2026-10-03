@@ -42,8 +42,11 @@ describe("PBR opaque pass", () => {
     const descriptor = beginRenderPass.mock.calls[0]![0];
     expect(descriptor.colorAttachments.map((attachment: GPURenderPassColorAttachment) => attachment.view))
       .toEqual(["hdr-msaa", "linear-depth-msaa", "normal-msaa", "motion-msaa"]);
+    // linear-depth(r32float)无硬件 resolve:附件 store + compute resolve(sample-0),
+    // 其余颜色目标经 resolveTarget 硬件下采样。
     expect(descriptor.colorAttachments.map((attachment: GPURenderPassColorAttachment) => attachment.resolveTarget))
-      .toEqual(["hdr", "linear-depth", "normal", "motion"]);
+      .toEqual(["hdr", undefined, "normal", "motion"]);
+    expect(descriptor.colorAttachments[1]).toMatchObject({ storeOp: "store" });
     expect(descriptor.depthStencilAttachment).toMatchObject({ view: "depth-msaa", depthLoadOp: "clear", depthStoreOp: "store" });
   });
 

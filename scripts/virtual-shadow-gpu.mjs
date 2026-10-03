@@ -1,19 +1,17 @@
 import { createServer } from "node:http";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 /**
- * B1 Brief-VSM 真机验收驱动(esbuild 打包 lab 探针 → playwright headless Chrome
- * WebGPU,模式与 j2-csm-boundary-gpu.mjs 同构)。
+ * B1 Brief-VSM 真机验收驱动(esbuild 打包 lab 探针 → headless Chrome WebGPU,最小 CDP
+ * 驱动:navigate/evaluate/screenshot 三调用面;模式与 j2-csm-boundary-gpu.mjs 同构)。
  *
- * 四腿:级联计时段 / 级联图像腿 / 虚拟计时段 / 虚拟图像腿(含动态平移+旋转延迟)。
- * 证据:test-output/vsm-20261003/acceptance.json + 截图。门:
- * ① edge.energyPerEdgePixel(virtual) ≤ 0.40×(cascaded)——锯齿能量 ↓≥60%;
- * ② Δp50 = virtual.gpuFrame.p50 − cascaded.gpuFrame.p50 ≤ 2.5ms;
- * ③ translate/rotate 延迟帧 ≤ 2;
- * ④ virtual holes.nonFinite = 0 且 blackSpeckles = 0。
+ * 四腿:级联计时段 / 虚拟计时段 / 级联图像腿 / 虚拟图像腿(含动态平移+旋转延迟)。
+ * 证据:test-output/vsm-20261003/acceptance.json + leg-*.png + atlas-layer0.png。
+ * 门:①edge ratio ≤0.40(锯齿能量 ↓≥60%);②Δp50 ≤2.5ms;③动态延迟 ≤2 帧;④零洞。
  */
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -22,8 +20,7 @@ await mkdir(out, { recursive: true });
 const require = createRequire(import.meta.url);
 const { build } = require("../packages/deep-engine/node_modules/esbuild");
 await build({ entryPoints: [path.join(root, "packages/deep-engine/lab/virtualShadowGpuProbe.ts")],
-  outfile: path.join(out, "probe.mjs"), bundle: true, format: "esm", platform: "browser",
-  logLevel: "silent" });
+  outfile: path.join(out, "probe.mjs"), bundle: true, format: "esm", platform: "browser" });
 const css = await readFile(path.join(root, "apps/web/src/styles/base.css"), "utf8");
 const server = createServer(async (request, response) => {
   if (request.url === "/probe.mjs") {
@@ -38,22 +35,26 @@ const server = createServer(async (request, response) => {
 });
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 
-const { chromium } = require("../apps/cloud-render-worker/node_modules/playwright-core");
-let browser;
-let page;
-const result = { gate: undefined, legs: {}, adapter: undefined, error: undefined,
-  executedAt: new Date().toISOString(), viewport: "1920x1080" };
-try {
-  browser = await chromium.launch({ executablePath: process.env.BIM_STUDIO_CHROME_PATH
-    ?? "C:/Program Files/Google/Chrome/Application/chrome.exe",
-    headless: true, args: ["--enable-unsafe-webgpu", "--use-angle=default"] });
-  page = await browser.newPage({ viewport: { width: 1920, height: 1100 } });
-  page.on("pageerror", error => { result.error = String(error); });
-  page.on("console", message => { if (message.type() === "error") result.error = message.text(); });
-  await page.goto(`http://127.0.0.1:${server.address().port}`);
-  // 前置诊断:直接以裸 WebGPU 复现扩展 group-2 布局 + 主管线形态,未捕获错误
-  // 监听器打印 Dawn 完整校验消息(定位 Invalid PipelineLayout 的具体条目)。
-  result.preflight = await page.evaluate(async () => {
+const PREFLIGHT_WGSL = `
+      @group(0) @binding(0) var<uniform> frameUniform: f32;
+      @group(0) @binding(1) var shadowMap: texture_depth_2d_array;
+      @group(0) @binding(2) var shadowSampler: sampler_comparison;
+      @group(0) @binding(3) var<storage, read> tileMeta: array<vec4u>;
+      @group(0) @binding(4) var<storage, read> pageLayers: array<i32>;
+      @group(0) @binding(5) var atlas: texture_2d_array<f32>;
+      @group(3) @binding(3) var<storage, read> spotLights: array<f32>;
+      @group(3) @binding(4) var<storage, read> clusterHeaders: array<f32>;
+      @group(3) @binding(5) var<storage, read> clusterIndices: array<u32>;
+      @group(0) @binding(7) var<uniform> sun: f32;
+      @vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0); }
+      @fragment fn fs() -> @location(0) f32 {
+        let sampled = textureLoad(atlas, vec2i(0, 0), 0, 0).r;
+        let compared = textureSampleCompareLevel(shadowMap, shadowSampler, vec2f(0.5), 0, 0.5);
+        return sampled + compared + f32(tileMeta[0].x) + f32(pageLayers[0]) + frameUniform + sun
+          + spotLights[0] + clusterHeaders[0] + f32(clusterIndices[0]);
+      }`;
+
+const PREFLIGHT_FLOW = `(async () => {
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) return { error: "no adapter" };
     const device = await adapter.requestDevice();
@@ -70,18 +71,18 @@ try {
       { binding: 5, visibility: GPUShaderStage.FRAGMENT,
         texture: { sampleType: "unfilterable-float", viewDimension: "2d-array" } },
     ] });
-    const bgl = cascaded;
-    // 复刻 plainLayout 四组形态:frame + emptyMaterial + cascaded + forwardPlus(逐段资源计数对齐)。
     const frameBgl = device.createBindGroupLayout({ entries: [
       { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform", minBindingSize: 384 } },
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "depth" } },
       { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "comparison" } },
-      ...[3, 4].map(binding => ({ binding, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "cube" } })),
+      { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "cube" } },
+      { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "cube" } },
       { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: {} },
       { binding: 6, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
       { binding: 7, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform", minBindingSize: 64 } },
       { binding: 8, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform", minBindingSize: 32 } },
-      ...[9, 10].map(binding => ({ binding, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "cube" } })),
+      { binding: 9, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "cube" } },
+      { binding: 10, visibility: GPUShaderStage.FRAGMENT, texture: { viewDimension: "cube" } },
       { binding: 11, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform", minBindingSize: 128 } },
     ] });
     const forwardBgl = device.createBindGroupLayout({ entries: [
@@ -93,52 +94,23 @@ try {
     ] });
     const emptyMaterial = device.createBindGroupLayout({ entries: [] });
     const layout = device.createPipelineLayout({ bindGroupLayouts: [frameBgl, emptyMaterial, cascaded, forwardBgl] });
-    void bgl;
-    const module = device.createShaderModule({ code: `
-      @group(0) @binding(0) var<uniform> frame: f32;
-      @group(0) @binding(1) var shadowMap: texture_depth_2d_array;
-      @group(0) @binding(2) var shadowSampler: sampler_comparison;
-      @group(0) @binding(3) var<storage, read> tileMeta: array<vec4u>;
-      @group(0) @binding(4) var<storage, read> pageLayers: array<i32>;
-      @group(0) @binding(5) var atlas: texture_2d_array<f32>;
-      @vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0); }
-      @fragment fn fs() -> @location(0) f32 {
-        let sampled = textureLoad(atlas, vec2i(0, 0), 0, 0).r;
-        let compared = textureSampleCompareLevel(shadowMap, shadowSampler, vec2f(0.5), 0, 0.5);
-        return sampled + compared + f32(tileMeta[0].x) + f32(pageLayers[0]);
-      }` });
+    const module = device.createShaderModule({ code: ${JSON.stringify(PREFLIGHT_WGSL)} });
     const info = await module.getCompilationInfo();
-    const shaderErrors = info.messages.filter(m => m.type === "error").map(m => `${m.lineNum}: ${m.message}`);
+    const shaderErrors = info.messages.filter(m => m.type === "error").map(m => m.lineNum + ": " + m.message);
     let pipelineError = null;
     try {
       device.createRenderPipeline({ layout, vertex: { module, entryPoint: "vs" },
         fragment: { module, entryPoint: "fs", targets: [{ format: "r32float" }] },
         depthStencil: { format: "depth32float", depthWriteEnabled: true, depthCompare: "less" } });
     } catch (error) { pipelineError = String(error); }
-    await device.queue.onSubmittedWorkDone?.().catch(() => {});
     await new Promise(resolve => setTimeout(resolve, 50));
     device.destroy();
     return { messages, shaderErrors, pipelineError };
-  });
-  // 安装 + 自检独立 evaluate(即使腿失败,自检结果与错误镜像也已落窗口)。
-  await page.evaluate(async () => {
-    const probe = await import("/probe.mjs");
-    probe.installErrorCapture();
-    probe.installPipelineTracing();
-  });
-  result.deviceRequest = await page.evaluate(async () => (await import("/probe.mjs")).probeDeviceRequest());
-  result.traceSelfTest = await page.evaluate(async () => {
-    const adapter = await navigator.gpu.requestAdapter();
-    const device = await adapter.requestDevice();
-    const bgl = device.createBindGroupLayout({ entries: [] });
-    device.createPipelineLayout({ bindGroupLayouts: [bgl] });
-    await new Promise(resolve => setTimeout(resolve, 30));
-    return (window.__vsmErrors ?? []).slice(0, 4);
-  });
-  const legs = await page.evaluate(async () => {
+  })()`;
+
+const LEGS_FLOW = `(async () => {
     const probe = await import("/probe.mjs");
     const output = { legs: {}, adapter: await probe.probeAdapterInfo() };
-    // 计时段(无读回,timestamp 查询):级联 → 虚拟。
     await probe.beginLeg("cascaded", false);
     await probe.settleLeg();
     const cascadedTiming = await probe.timeLeg();
@@ -147,7 +119,6 @@ try {
     await probe.settleLeg();
     const virtualTiming = await probe.timeLeg();
     output.legs.virtualTiming = await probe.finishLeg(virtualTiming);
-    // 图像腿(读回):级联 → 虚拟(含动态平移/旋转延迟)。
     await probe.beginLeg("cascaded", true);
     await probe.settleLeg();
     const cascadedImage = await probe.captureStill();
@@ -155,14 +126,118 @@ try {
     await probe.beginLeg("virtual", true);
     await probe.settleLeg();
     const virtualImage = await probe.captureStill();
+    const atlasDump = await probe.dumpShadowAtlasLayer();
+    const step = 4, gw = atlasDump.width / step, gh = atlasDump.height / step;
+    const gray = new Uint8Array(gw * gh);
+    let nonzeroPages = 0;
+    for (let py = 0; py < 16; py++) for (let px = 0; px < 16; px++) {
+      let written = false;
+      for (let y = 0; y < 128; y++) for (let x = 0; x < 128; x++) {
+        const value = Math.max(0, Math.min(1, atlasDump.floats[(py * 128 + y) * atlasDump.width + px * 128 + x] ?? 1));
+        if (value < 0.999) written = true;
+        if ((y & 3) === 0 && (x & 3) === 0) {
+          gray[(py * 128 + y) / 4 * gw + (px * 128 + x) / 4] = Math.round((1 - value) * 255);
+        }
+      }
+      nonzeroPages += written ? 1 : 0;
+    }
+    output.atlasLayer0 = { width: gw, height: gh, nonzeroPages };
+    output.atlasCanvasPng = atlasDump.canvasPng;
     const translateLatency = await probe.dynamicLatencyLeg("translate");
     const rotateLatency = await probe.dynamicLatencyLeg("rotate");
     output.legs.virtualImage = await probe.finishLeg(virtualTiming, virtualImage,
       { translateLatencyFrames: translateLatency, rotateLatencyFrames: rotateLatency });
     return output;
+  })()`;
+
+async function launchCdpBrowser() {
+  const chromePath = process.env.BIM_STUDIO_CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
+  const chrome = spawn(chromePath, ["--headless=new", "--remote-debugging-port=0",
+    "--enable-unsafe-webgpu", "--use-angle=default", "--no-first-run",
+    `--user-data-dir=${path.join(out, "chrome-profile")}`, "about:blank"],
+    { stdio: ["ignore", "ignore", "pipe"] });
+  const wsEndpoint = await new Promise((resolve, reject) => {
+    let buffer = "";
+    const timer = setTimeout(() => reject(new Error("chrome devtools endpoint timeout")), 30000);
+    chrome.stderr.on("data", chunk => {
+      buffer += chunk.toString();
+      const match = buffer.match(/DevTools listening on (ws:\/\/\S+)/);
+      if (match) { clearTimeout(timer); resolve(match[1]); }
+    });
+    chrome.on("exit", () => { clearTimeout(timer); reject(new Error("chrome exited before devtools endpoint")); });
   });
+  const httpBase = wsEndpoint.replace("ws://", "http://");
+  const targets = await (await fetch(`${httpBase}/json/list`)).json();
+  const page = targets.find(target => target.type === "page");
+  if (!page) throw new Error("no page target in chrome devtools list");
+  const socket = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
+  let nextId = 1;
+  const pending = new Map();
+  socket.onmessage = event => {
+    const message = JSON.parse(event.data);
+    if (message.id && pending.has(message.id)) {
+      const entry = pending.get(message.id);
+      pending.delete(message.id);
+      if (message.error) entry.reject(new Error(message.error.message));
+      else entry.resolve(message.result);
+    }
+  };
+  const send = (method, params = {}) => new Promise((resolve, reject) => {
+    const id = nextId++;
+    pending.set(id, { resolve, reject });
+    socket.send(JSON.stringify({ id, method, params }));
+  });
+  return {
+    chrome, socket,
+    async evaluate(expression) {
+      const result = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
+      if (result.exceptionDetails) {
+        throw new Error(result.exceptionDetails.exception?.description
+          ?? result.exceptionDetails.text ?? "evaluate failed");
+      }
+      return result.result?.value;
+    },
+    async screenshot(file) {
+      const { data } = await send("Page.captureScreenshot", { format: "png" });
+      await writeFile(file, Buffer.from(data, "base64"));
+    },
+    async close() {
+      try { socket.close(); } catch { /* already closed */ }
+      chrome.kill();
+    },
+  };
+}
+
+let browser;
+const result = { gate: undefined, legs: {}, adapter: undefined, error: undefined,
+  executedAt: new Date().toISOString(), viewport: "1920x1080" };
+try {
+  browser = await launchCdpBrowser();
+  await browser.evaluate(`location.href = "http://127.0.0.1:${server.address().port}"`);
+  await new Promise(resolve => setTimeout(resolve, 800));
+  result.preflight = await browser.evaluate(PREFLIGHT_FLOW);
+  await browser.evaluate(`(async () => {
+    const probe = await import("/probe.mjs");
+    probe.installErrorCapture();
+    probe.installPipelineTracing();
+  })()`);
+  result.deviceRequest = await browser.evaluate(
+    `(async () => (await import("/probe.mjs")).probeDeviceRequest())()`);
+  const legs = await browser.evaluate(LEGS_FLOW);
   result.legs = legs.legs;
   result.adapter = legs.adapter;
+  if (legs.atlasCanvasPng) {
+    await writeFile(path.join(out, "atlas-layer0.png"),
+      Buffer.from(legs.atlasCanvasPng.split(",").pop(), "base64"));
+  }
+  result.atlasLayer0 = legs.atlasLayer0;
+  for (const [name, leg] of Object.entries(legs.legs)) {
+    const png = leg?.image?.canvasPng;
+    if (typeof png === "string" && png.startsWith("data:image/png")) {
+      await writeFile(path.join(out, `leg-${name}.png`), Buffer.from(png.split(",")[1], "base64"));
+    }
+  }
   const cascadeEdge = result.legs.cascadedImage?.image?.edge?.energyPerEdgePixel;
   const virtualEdge = result.legs.virtualImage?.image?.edge?.energyPerEdgePixel;
   const deltaP50 = (result.legs.virtualTiming?.timing?.p50Ms ?? Number.NaN)
@@ -183,21 +258,17 @@ try {
     "④ zero holes": { ...holes, passed: (holes?.nonFinite ?? 1) === 0 && (holes?.blackSpeckles ?? 1) === 0 },
   };
   result.passed = Object.values(result.gate).every(entry => entry.passed);
-  await page.screenshot({ path: path.join(out, "final.png"), fullPage: true });
+  await browser.screenshot(path.join(out, "final.png"));
 } catch (error) {
   result.error = String(error);
-  try { result.capturedErrors = await page.evaluate(() => ({
-    errors: window.__vsmErrors ?? [], hasFlag: Boolean(window.__vsmErrors) })); }
-  catch (captureError) { result.captureError = String(captureError); }
-  if (result.capturedErrors && !Array.isArray(result.capturedErrors)) {
-    result.capturedErrors = result.capturedErrors.errors ?? [];
-    result.vsmFlagPresent = result.capturedErrors.hasFlag;
-  }
 } finally {
+  try { result.capturedErrors = await browser.evaluate(
+    "({ errors: window.__vsmErrors ?? [], hasFlag: Boolean(window.__vsmErrors) })"); }
+  catch (captureError) { result.captureError = String(captureError); }
   if (browser) await browser.close();
   server.close();
 }
 await writeFile(path.join(out, "acceptance.json"), JSON.stringify(result, null, 2));
-console.log(JSON.stringify({ passed: result.passed ?? false, preflight: result.preflight,
-  gate: result.gate, error: result.error }, null, 2));
+console.log(JSON.stringify({ passed: result.passed ?? false, gate: result.gate, error: result.error,
+  atlasNonzeroPages: result.atlasLayer0?.nonzeroPages }, null, 2));
 if (!result.passed) process.exitCode = 1;

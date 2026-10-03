@@ -96,7 +96,17 @@ pbrFramePlanExecutor,pbrRenderer,pbrRendererBootstrap,pbrRendererFrames,pbrRende
 clusterLodRenderSlot,clusterLodSlotSupport}.ts、新增 {pbrMsaaCapability,pbrDepthResolve}.ts(+测试)、
 lab/msaaPerfProbe.ts、scripts/bench-msaa1080p.mjs、packages/contracts/src/displayContract.ts。
 
-**证据:** 帧时与 parity 数字见任务交付报告(test-output/parity-gate/、test-output/msaa-perf/)。
+**证据(2026-10-04,RTX 4060 / Chrome headless WebGPU):**
+- 帧时门:1080p 生产默认特性档(MRT+AO/TAA/HiZ/SSR/体积雾),MSAA4 vs 1x 各 240 帧、
+  逐帧 submit 背压。GPU 时间戳口径(gpu-frame):p50 1.835→2.294ms、p95 1.901→2.359ms,
+  **增量 +0.459ms(p50/p95 相同)≤ 2ms 预算,passed**;submit-done 墙钟口径同向
+  (4.3→5.0 / 5.7→6.6)。证据:test-output/msaa-perf/evidence.json(scripts/bench-msaa1080p.mjs)。
+- parity 门:全部 8 场景 passed、stable;**pbr-matrix 0.258 / directional-shadow 0.092 /
+  bloom-only 0.183 严格档逐位保持**;aa-bloom 6.05→**3.844**,SSIM .9917→.9964,
+  over8 1.88%→0.85%,档位 diagnostic→**tolerant(ratchet 已锁)**;其余场景逐字节不变
+  (探针按场景镜像 three 侧 MSAA 配置)。aa-bloom 残差 = three 侧 SMAA(Deep 侧移植在 M2)。
+  证据:test-output/parity-gate/evidence.json(基线刷新与原因见 parityGateThresholds.mjs aa-bloom 注)。
+- FrameMetrics.msaa 遥测:4x 渲染器 `{requested:4, active:4}`;回退帧携带 fallbackReason。
 
 ## 5. 指标体系(进 verify 与 parity)
 1. **parity aa-bloom**:目标 RMSE <1(与 three 同构 MSAA4+SMAA 组合后);

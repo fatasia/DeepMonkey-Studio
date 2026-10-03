@@ -24,12 +24,17 @@ export const PARITY_EXPECTATIONS = {
     knownGap: null,
   },
   "aa-bloom": {
-    role: "standard", expectedTier: "diagnostic", minCoverage: 40000,
-    baseline: {"rmse":6.0517,"deltaE2000Mean":0.755136,"deltaE2000P99":4.67573,"ssimMean":0.991679,"over8Fraction":0.0187663},
+    // AA-M1 后 MSAA×4 达容许档(3.844<6),ratchet 同步锁档(旧 diagnostic)。
+    role: "standard", expectedTier: "tolerant", minCoverage: 40000,
+    // AA-M1(2026-10-04)基线刷新:Deep 主通路 MSAA4 上线(引擎默认档,spatialAa 由
+    // MSAA 取代,parity 探针按场景镜像 three 侧 MSAA 配置)。RMSE 6.05→3.84、SSIM
+    // .9917→.9964、over8 1.88%→0.85%;残差 = three 侧 SMAAPass 的显示域边缘补刀,
+    // Deep 侧 SMAA 移植在 AA-M2(antialiasing-master-plan L3),届时关闭本缺口。
+    baseline: {"rmse":3.84435688524246,"deltaE2000Mean":0.16459803721805358,"deltaE2000P99":1.2349649812701455,"ssimMean":0.9964353169948542,"over8Fraction":0.008463541666666666},
     knownGap: {
-      "cause": "边缘抗锯齿算法不同：three 产品链为 composer 目标 MSAA×4（configurePostProcessingAntialias）+ SMAAPass，Deep 为 spatialAa；Bloom 本身在合约参数下与 UnrealBloomPass 一致（见 bloom-only）",
-      "evidence": "three 侧即产品同款链（EffectComposer→RenderPass→UnrealBloom→SMAAPass→补丁 OutputPass，msaaSamples=4）；bloom-only（两侧均关 AA/MSAA）RMSE .18 / ΔE00 均值 .05 达严格档；aa-bloom 差异图只剩高对比轮廓像素（byteMax 182），RMSE 6.05 略超容许档 6",
-      "action": "对齐 Deep spatialAa 与 MSAA+SMAA 的边缘覆盖/权重（引擎改动，不在门范围内）"
+      "cause": "three 产品链为 composer 目标 MSAA×4 + SMAAPass;Deep 侧 AA-M1 已对齐 MSAA×4(硬件 resolve),SMAA 档位在 AA-M2 移植,当前无显示域兜底。Bloom 本身在合约参数下与 UnrealBloomPass 一致(见 bloom-only)",
+      "evidence": "AA-M1 校准(2026-10-04,RTX 4060):Deep MSAA4 vs three MSAA4+SMAA,RMSE 3.844 / ΔE00 均值 .165 / SSIM .9964 / over8 0.85%(旧基线 1x+spatialAa 为 6.05/.755/.9917/1.88%);差异图只剩高对比轮廓像素(byteMax 196)",
+      "action": "AA-M2 SMAA T2x 移植到 WGSL 后重判目标 RMSE<2(引擎改动,不在门范围内)"
     },
   },
   "transparency": {
