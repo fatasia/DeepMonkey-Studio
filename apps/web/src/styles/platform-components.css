@@ -750,7 +750,7 @@
 .behavior-graph-editor .react-flow__edge.is-selected-edge .react-flow__edge-path { stroke: var(--accent); }
 .behavior-graph-editor .react-flow__edge-path { cursor: pointer; }
 
-/* 浮动节点属性表单(画布右上角,ThingJS 式检查器)。 */
+/* 浮动节点属性表单(画布右上角,行业标杆式浮动检查器)。 */
 .behavior-node-form { position: absolute; top: 8px; right: 8px; bottom: 8px; z-index: 5 /* z-index-audit: keep(页面内容带:画布内浮动检查器) */; display: flex; flex-direction: column; width: min(232px, calc(100% - 16px)); overflow: hidden; border: 1px solid #3a4a52; border-radius: 6px; background: #12191df2; box-shadow: 0 14px 38px rgba(0,0,0,.4); backdrop-filter: blur(4px); }
 .behavior-node-form header { display: flex; gap: 5px; align-items: center; padding: 5px 7px; border-bottom: 1px solid #223036; font-size: 8px; color: #d8dee1; }
 .behavior-node-form header i { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; }

@@ -1,7 +1,8 @@
 import { invalid } from "./validation.js";
 
-/** Generates deterministic, area-weighted smooth normals for triangle geometry. */
-export function generateNormals(positions: Float32Array, indices: Uint32Array, path: string): Float32Array<ArrayBuffer> {
+/** Generates deterministic, area-weighted smooth normals for triangle geometry. fallback 供修复路径给孤立顶点(不属于任何有效三角形)占位;缺省时保持 fail-closed。 */
+export function generateNormals(positions: Float32Array, indices: Uint32Array, path: string,
+  fallback?: readonly [number, number, number]): Float32Array<ArrayBuffer> {
   if (positions.length % 3 !== 0 || indices.length % 3 !== 0) invalid(path, "Normal generation requires complete triangles.");
   const vertexCount = positions.length / 3, accumulated = new Float64Array(positions.length);
   for (let offset = 0; offset < indices.length; offset += 3) {
@@ -24,7 +25,11 @@ export function generateNormals(positions: Float32Array, indices: Uint32Array, p
   for (let vertex = 0; vertex < vertexCount; vertex += 1) {
     const offset = vertex * 3, x = accumulated[offset]!, y = accumulated[offset + 1]!, z = accumulated[offset + 2]!;
     const length = Math.hypot(x, y, z);
-    if (!Number.isFinite(length) || length <= 1e-20) invalid(path, `Cannot generate a normal for vertex ${vertex}.`);
+    if (!Number.isFinite(length) || length <= 1e-20) {
+      if (!fallback) invalid(path, `Cannot generate a normal for vertex ${vertex}.`);
+      result[offset] = fallback![0]; result[offset + 1] = fallback![1]; result[offset + 2] = fallback![2];
+      continue;
+    }
     result[offset] = Math.fround(x / length); result[offset + 1] = Math.fround(y / length); result[offset + 2] = Math.fround(z / length);
   }
   return result;

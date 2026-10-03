@@ -426,6 +426,11 @@ export class StudioDeepWebGpuBridge {
     this.deformationSync = this.independentPacketPath && this.pendingDeformationPacket
       ? StudioDeformationPoseSync.create(this.pendingDeformationPacket, this.viewer) : undefined;
     this.pendingDeformationPacket = undefined;
+    if (this.deformationSync) {
+      const { bound, unmatched } = this.deformationSync.diagnostics;
+      markSwitchPhase(`deep-webgpu:deformation-sync-bound-${bound}-unmatched-${unmatched.length}`);
+      for (const entry of unmatched) console.warn(`[Deep] 变形模型 ${entry.modelId} 未与 Three 对象配对，保持绑定姿态：${entry.reason}`);
+    }
     this.outlineSync = this.independentPacketPath ? new StudioDeepOutlineSync() : undefined;
     this.viewer.setAuthorPacketIndependent(this.independentPacketPath);
     this.frameCaptureSession = frameCaptureSession;
@@ -612,7 +617,11 @@ export class StudioDeepWebGpuBridge {
       // Three AnimationMixer 已在作者帧推进;把骨骼/形变姿态读成 Deep 姿态。姿态变化即视为新画面,
       // 清除静置指纹以绕过 TAA 收敛背压,保证动画每帧都被绘制。
       if (this.deformationSync?.apply(backend)) this.settledViewKey = "";
-      if (this.outlineSync?.apply(backend, this.viewer)) this.settledViewKey = "";
+      if (this.outlineSync?.apply(backend, this.viewer, () => {
+        // 流送包的实例位异步落地:完成后补绘一帧。
+        if (this.deepBackend !== backend) return;
+        this.settledViewKey = ""; this.renderDeepFrame();
+      })) this.settledViewKey = "";
       const camera = cameraSnapshot(this.viewer);
       if (probe) recordProbeSample(probe, "cam", camera[0]!, camera[1]!, camera[3]!, camera[4]!);
       const cameraChanged = !sameSnapshot(camera, this.lastCameraSnapshot);

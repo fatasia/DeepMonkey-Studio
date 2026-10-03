@@ -185,7 +185,12 @@ function snapshotBatch(source: PreparedBatch): PreparedBatch {
 }
 
 function snapshotMaterialTextures(source: PreparedMaterialTextures): PreparedMaterialTextures {
-  return Object.freeze({ emissiveStrength: source.emissiveStrength,
+  // lobe 参数经 prepareMaterialTextures 归一化后已冻结,按引用保留;键序必须与其一致(资源闭包身份是 JSON 比较)。
+  return Object.freeze({
+    ...(source.layered ? { layered: source.layered } : {}),
+    ...(source.advanced ? { advanced: source.advanced } : {}),
+    emissiveStrength: source.emissiveStrength,
+    ...(source.extendedParameters ? { extendedParameters: source.extendedParameters } : {}),
     ...(source.baseColor ? { baseColor: Object.freeze({ ...source.baseColor,
       uvTransform: tuple6(source.baseColor.uvTransform) }) } : {}),
     ...(source.metallicRoughness ? { metallicRoughness: Object.freeze({ ...source.metallicRoughness,

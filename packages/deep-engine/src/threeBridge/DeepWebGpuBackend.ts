@@ -135,6 +135,8 @@ export class DeepWebGpuBackend {
   private publishedInstances: RenderPacket["instances"] | undefined;
   /** 宿主驱动描边集合最近一次落到 GPU 的实例表;缺省表示沿用整包编译时的 outline 位。 */
   private outlineInstances: RenderPacket["instances"] | undefined;
+  /** 最近一次渲染的作者视图(流送包描边更新据此取相机闭包);dispose 清空。 */
+  private latestView: RenderView | undefined;
   private modelByInstanceId = new Map<string, string>();
   /** B4 簇级决策引擎与代理 overlay 资源;仅在独立 RenderPacket 路径初始化。 */
   private clusterEngine: HlodClusterDecisionEngine | undefined;
@@ -563,15 +565,16 @@ export class DeepWebGpuBackend {
 
   /**
    * 独立包路径的宿主驱动对象描边(勾选/取消轮廓、选中对象变化):按作者模型 ID 集合翻转实例 outline 位,
-   * 只走 updateInstances(同一批次缓冲写入),不重传几何/材质、不重建 packet 资源。
+   * 只走实例位更新(同一批次缓冲写入 / 流送包走 catalog.update 的实例级更新),不重传几何/材质、不重建 packet 资源。
+   * 非流送包在 await 之前同步完成 updateInstances(同一帧可见);流送包经 AuthorChunkStream 实例更新异步生效。
    * 返回 "unchanged"(与当前一致,零 GPU 工作)、"updated"(下一帧生效)、
-   * "unsupported"(非独立包、变形包或 HLOD/流送包;这些路径由投影桥/整包发布自行携带 outline)。
+   * "unsupported"(非独立包、变形包或 HLOD 簇包;这些路径由投影桥/整包发布自行携带 outline)。
    */
-  setOutlinedModels(modelIds: ReadonlySet<string>): "updated" | "unchanged" | "unsupported" {
+  async setOutlinedModels(modelIds: ReadonlySet<string>): Promise<"updated" | "unchanged" | "unsupported"> {
     this.assertOpen();
     const packet = this.committedPacket;
-    if (!this.independentPacket || !packet || packet.deformation || this.publishedInstances
-      || this.clusterEngine || this.chunks?.hasCatalog) return "unsupported";
+    if (!this.independentPacket || !packet || packet.deformation || this.publishedInstances || this.clusterEngine) return "unsupported";
+    const chunks = this.chunks?.hasCatalog ? this.chunks : undefined;
     const current = this.outlineInstances ?? packet.instances;
     let changed = false;
     const next = current.map(instance => {
@@ -582,13 +585,28 @@ export class DeepWebGpuBackend {
       return want ? { ...rest, outline: true } : rest;
     });
     if (!changed) return "unchanged";
-    this.runtime.updateInstances({ materials: packet.materials, instances: next });
+    if (!chunks) {
+      this.runtime.updateInstances({ materials: packet.materials, instances: next });
+      this.outlineInstances = next;
+      return "updated";
+    }
+    const raw = this.latestView ?? undefined;
+    const view = raw ? this.coordinates.localizeView(raw, this.coordinates.current) : this.validatedView?.view;
+    if (!view) return "unsupported";
+    // 同一流上的相机 syncView 可能抢占本次更新(superseded);实例位必须落地,有限重试。
+    for (let attempt = 0; ; attempt++) {
+      try { await chunks.sync({ ...packet, instances: next }, false, view); break; }
+      catch (error) {
+        if (this.disposed || this.chunks !== chunks || this.committedPacket !== packet || attempt >= 3) throw error;
+      }
+    }
+    if (this.disposed || this.committedPacket !== packet) return "unchanged";
     this.outlineInstances = next;
     return "updated";
   }
-
   render(view: RenderView): FrameMetrics | undefined {
     this.assertOpen();
+    this.latestView = view;
     const localView = this.coordinates.localizeView(view, this.pendingCoordinate ?? this.coordinates.current);
     const result = this.runtime.render(localView);
     if (result && performance.now() >= this.packetViewRetryAt) this.schedulePacketView(view);
@@ -621,6 +639,7 @@ export class DeepWebGpuBackend {
     this.shadowSelectionValue = undefined;
     this.committedPacket = undefined;
     this.outlineInstances = undefined;
+    this.latestView = undefined;
     this.packetViewRequested = undefined;
     this.packetViewStaged = undefined;
     this.packetViewFailure = undefined;

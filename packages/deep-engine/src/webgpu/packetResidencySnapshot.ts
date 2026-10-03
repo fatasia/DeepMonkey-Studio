@@ -91,7 +91,12 @@ function snapshotTextures(source: PreparedMaterialTextures): PreparedMaterialTex
   const slot = <T extends PreparedTextureSlot>(value: T | undefined): T | undefined => value && Object.freeze({
     ...value, uvTransform: Object.freeze([...value.uvTransform]) as T["uvTransform"],
   });
-  return Object.freeze({ emissiveStrength: source.emissiveStrength,
+  // lobe 参数经 prepareMaterialTextures 归一化后已冻结,按引用保留;键序必须与其一致(资源闭包身份是 JSON 比较)。
+  return Object.freeze({
+    ...(source.layered ? { layered: source.layered } : {}),
+    ...(source.advanced ? { advanced: source.advanced } : {}),
+    emissiveStrength: source.emissiveStrength,
+    ...(source.extendedParameters ? { extendedParameters: source.extendedParameters } : {}),
     ...(source.baseColor ? { baseColor: slot(source.baseColor)! } : {}),
     ...(source.metallicRoughness ? { metallicRoughness: slot(source.metallicRoughness)! } : {}),
     ...(source.normal ? { normal: slot(source.normal)! } : {}),

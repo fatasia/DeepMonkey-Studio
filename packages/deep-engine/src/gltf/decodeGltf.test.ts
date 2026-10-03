@@ -175,14 +175,18 @@ describe("static glTF RenderPacket import", () => {
     const second = fixture(); (second.document.accessors as JsonObject[])[1]!.count = 2;
     expectError(() => decodeGltf(second.document, [second.bytes]), "invalid", "primitives[0]");
   });
-  it("generates missing normals and rejects nonfinite vertices, zero authored normals and incomplete triangles", () => {
+  it("generates missing normals, repairs zero authored normals, and rejects nonfinite vertices and incomplete triangles", () => {
     const generated = fixture(); delete generated.primitive.attributes!.NORMAL;
     expect([...decodeGltf(generated.document, [generated.bytes]).geometries[0]!.vertices])
       .toEqual([0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1]);
     const first = fixture(); new DataView(first.bytes.buffer).setFloat32(0, Infinity, true);
     expectError(() => decodeGltf(first.document, [first.bytes]), "invalid", "accessors[0]");
+    // 零法线自 repairZeroNormals 起被修复为面积加权几何法线,不再整件拒绝;修复输出与删 NORMAL 生成
+    // 分支逐顶点一致(fixture 几何完好,修复即全量重生成)。
     const second = fixture(); second.bytes.fill(0, 12, 24);
-    expectError(() => decodeGltf(second.document, [second.bytes]), "invalid", "primitives[0]");
+    const regenerated = fixture(); delete regenerated.primitive.attributes!.NORMAL;
+    expect([...decodeGltf(second.document, [second.bytes]).geometries[0]!.vertices])
+      .toEqual([...decodeGltf(regenerated.document, [regenerated.bytes]).geometries[0]!.vertices]);
     const third = fixture(); (third.document.accessors as JsonObject[])[2]!.count = 2;
     expectError(() => decodeGltf(third.document, [third.bytes]), "invalid", "primitives[0]");
   });

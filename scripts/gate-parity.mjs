@@ -16,6 +16,7 @@ const root = fileURLToPath(new URL("../", import.meta.url)), require = createReq
 const out = path.join(root, "test-output/parity-gate");
 const sourceFiles = ["packages/deep-engine/lab/parityGateScenes.ts", "packages/deep-engine/lab/parityGateThree.ts", "packages/deep-engine/lab/parityGateProbe.ts",
   "packages/deep-engine/lab/c8SharedSceneFixture.ts", "packages/deep-engine/lab/c8SharedSceneReadback.ts", "packages/contracts/src/displayContract.ts",
+  "apps/web/src/viewer/studioDeepEnvironmentLights.ts",
   "scripts/gate-parity.mjs", "scripts/lib/parityGateMetrics.mjs", "scripts/lib/parityGateThresholds.mjs"];
 const hash = data => createHash("sha256").update(data).digest("hex");
 const fail = message => { console.error(`gate:parity FAILED — ${message}`); process.exitCode = 1; };
@@ -25,8 +26,17 @@ await rm(path.join(out, "evidence.json"), { force: true });
 const { PARITY_EXPECTATIONS } = calibrate ? { PARITY_EXPECTATIONS: undefined } : await import("./lib/parityGateThresholds.mjs");
 const sources = Object.fromEntries(await Promise.all(sourceFiles.filter(file => existsSync(path.join(root, file))).map(async file => [file, hash(await readFile(path.join(root, file)))])));
 const { build } = require("../packages/deep-engine/node_modules/esbuild");
+// lab 的 parityGateLightsHost 桩在打包期替换为 web 灯光投影实现:与场景同 bundle 共用同一
+// three 实例(instanceof 灯光判定跨 bundle 会失效),同时 lab 源不反向深导入 apps。
+const lightsHostPlugin = {
+  name: "parity-lights-host",
+  setup(builder) {
+    builder.onResolve({ filter: /parityGateLightsHost/ },
+      () => ({ path: path.join(root, "apps/web/src/viewer/studioDeepEnvironmentLights.ts") }));
+  },
+};
 await build({ entryPoints: [path.join(root, "packages/deep-engine/lab/parityGateProbe.ts")], outfile: path.join(out, "probe.mjs"),
-  bundle: true, format: "esm", platform: "browser", conditions: ["development"], logLevel: "error" });
+  bundle: true, format: "esm", platform: "browser", conditions: ["development"], plugins: [lightsHostPlugin], logLevel: "error" });
 const bundleHash = hash(await readFile(path.join(out, "probe.mjs")));
 const css = await readFile(path.join(root, "apps/web/src/styles/base.css"), "utf8");
 const html = `<html><head><meta charset="utf-8"><style>${css}</style></head><body style="height:auto;min-height:0;overflow:visible;padding:20px;background:var(--bg-0);color:var(--text-strong);font:13px/1.4 var(--font-sans,system-ui)"><h2 style="margin:0 0 6px">three ↔ Deep 像素一致性门 · 320×192 · 深色</h2><p style="margin:0 0 14px;color:var(--text-muted,#9aa)">每卡左→右：three / Deep / |Δ|×4。分级：严格 · 容许 · 诊断（已知缺口 = 基线 + 回归守卫）。</p><div id="frames" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 18px"></div></body></html>`;

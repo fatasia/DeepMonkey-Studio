@@ -59,9 +59,9 @@ await page.getByRole("button", { name: "渲染引擎设置", exact: true }).clic
 await page.getByRole("button", { name: "启用 Deep WebGPU Beta", exact: true }).click();
 await page.locator(`.viewport canvas[data-renderer-backend="deep-webgpu"]`).waitFor({ state: "attached", timeout: 60_000 });
 await page.getByRole("button", { name: "关闭", exact: true }).click();
-await page.waitForTimeout(6000);
+await page.waitForTimeout(10000);
 report.deepAfter = await backend();
-report.marks = await page.evaluate(() => performance.getEntriesByType("mark").filter(m => /pipeline-.*advanced/.test(m.name)).map(m => m.name));
+report.marks = await page.evaluate(() => performance.getEntriesByType("mark").filter(m => /deep-webgpu:pipeline-.*-advanced-start/.test(m.name)).map(m => m.name));
 await page.getByLabel("更多场景工具", { exact: true }).click(); await page.getByRole("button", { name: "渲染引擎设置", exact: true }).click(); await page.waitForTimeout(500);
 await shot("04-deep-active");
 if (report.deepAfter === "webgl") console.log(JSON.stringify({ errors, text: await page.evaluate(() => [...document.querySelectorAll("body *:not(style):not(script)")].map(e => e.children.length === 0 ? e.textContent.trim() : "").filter(s => s.length < 300 && /准备失败|运行失败|适配|错误|failed/i.test(s)).slice(0, 12)) }));

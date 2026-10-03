@@ -1,3 +1,4 @@
+import { hasAdvancedMaterialFeatures, normalizeAdvancedMaterialParameters } from "../shader/materialAdvancedParameters.js";
 import type { RenderPacket } from "../renderPacket.js";
 import { mainPipelineKey, materialMode, rasterMode } from "../webgpu/pipelines.js";
 
@@ -24,7 +25,11 @@ export function firstFramePipelineMainKeys(packet: RenderPacket): readonly strin
       || material.metallicRoughnessTexture !== undefined
       || material.normalTexture !== undefined
       || material.occlusionTexture !== undefined
-      || material.emissiveTexture !== undefined;
+      || material.emissiveTexture !== undefined
+      // 无纹理的扩展/高级 lobe 材质由中性纹理承载,走 material 管线(与 prepareMaterialTextures 的判定一致)。
+      || material.extendedParameters !== undefined
+      || (material.advancedParameters !== undefined
+        && hasAdvancedMaterialFeatures(normalizeAdvancedMaterialParameters(material.advancedParameters)));
     keys.add(mainPipelineKey(
       materialMode(textured, material.normalTexture !== undefined),
       (material.alphaMode ?? "OPAQUE") === "BLEND",

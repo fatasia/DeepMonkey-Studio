@@ -90,7 +90,7 @@ export function meshResources(source: readonly unknown[], materials: readonly Pb
         if (value >= position.count) invalid(`${location}.indices`, "Index exceeds vertex count.");
         indices[index] = value;
       }
-      const normals = normal ? repairZeroNormals(normal.values, position.values as Float32Array, indices, `${location}.attributes.NORMAL`)
+      const normals = normal ? repairZeroNormals(normal.values as Float32Array<ArrayBuffer>, position.values as Float32Array, indices, `${location}.attributes.NORMAL`)
         : generateNormals(position.values as Float32Array, indices, `${location}.attributes.NORMAL`);
       for (let vertex = 0; vertex < position.count; vertex++) {
         if (Math.hypot(...normals.subarray(vertex * 3, vertex * 3 + 3)) < 1e-8) invalid(location, "Vertex normal is zero.");

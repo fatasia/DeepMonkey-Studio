@@ -5,7 +5,10 @@ import { observeDeepF32Mrt } from "./c8F32MrtShader.js";
 export const F32_INPUT_MODES = ["normal", "view", "geometry-normal", "dx", "dy", "brdf-dots"] as const;
 export type F32InputMode = typeof F32_INPUT_MODES[number];
 // F5 方案 A:L1 门接入镜面项后生产源演进重锚(用户批准);漂移守卫语义不变。
-const knownProductionHash = "90c5fcae51b9619e800742bafbb621e19c1d655f9d65bfef2585f33dd8a8a07c";
+// 2026-10-03 二次重锚:e59ce4df 落 F5 方案 A(L1 SH 方向可见度门进 shade,规格
+// docs/specs/f5-directional-l1-implementation-20261003.md)时本钉仍指旧源,导致 c8F32Inputs
+// 全族 7 例红;新源 14eebbd0… 为该提交后的生产 sceneShader 实测 sha256。
+const knownProductionHash = "14eebbd030b4d92609fda85b4eff4f651da321ed228973d7a42ca25cc005a2df";
 const derivative = "  let derivative = max(abs(dpdx(normal)), abs(dpdy(normal)));";
 const dots = "  let nh = clamp(dot(n, h), 0.0, 1.0); let vh = clamp(dot(v, h), 0.0, 1.0);";
 const fullCapture = "  deepC8F32Witness = deepC8Full;";

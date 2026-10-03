@@ -558,7 +558,6 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
       return cachedPacket;
     };
     const bridge = new StudioDeepWebGpuBridge(engine, viewportRef.current, {
-      preparationTimeoutMs: 180_000,
       authorRenderPacket: async (signal) => (await compileAuthorScene(signal))?.packet,
       authorHlodClusters: async (signal) => (await compileAuthorScene(signal))?.clusters,
       onRuntimeFailure: (reason) => {

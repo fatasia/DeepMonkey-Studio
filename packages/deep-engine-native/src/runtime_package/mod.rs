@@ -15,6 +15,7 @@ mod dashboard_validation;
 mod delta;
 mod delta_manifest;
 mod diff;
+mod dynamic_animation;
 mod dynamic_scene;
 mod dynamic_scene_physics;
 mod entrypoints;

@@ -147,7 +147,31 @@ describe("author chunk formal staging", () => {
     expect(first.released).toBe(true);
     backend.dispose(); expect(f.owned.size).toBe(0);
   });
-  it("retains the old independent frame after camera-stage failure and recovers on a new view", async () => {
+  it("flips the outline bit of a streamed independent packet via an instance-level catalog update (no geometry re-upload)", async () => {
+    const f = fixture();
+    const source = { ...packet(), objectBindings: [{ nodeId: "author-one", instanceIds: ["one"] }] };
+    const runtime = { ...f.target, id: "deep-webgpu", setPacketValidated: vi.fn(async () => {}),
+      updateInstances: vi.fn(), render: vi.fn(() => ({ frame: 1 } as never)),
+      validateFrame: vi.fn(async () => ({ frame: 1, shadowTier: "high", shadowDepthBytes: 64 * 1024 * 1024 } as never)), dispose: vi.fn(() => f.buffers.dispose()) };
+    const backend = await DeepWebGpuBackend.create({ canvas: {} as HTMLCanvasElement, gpu: undefined,
+      renderPacket: source, view, authorChunks: true }, { create: vi.fn(async () => runtime) });
+    f.buffers.publishResidentProjection();
+    expect(f.buffers.hasOutline()).toBe(false);
+    backend.render(view);
+    const stagesBefore = f.target.stageResidentPacketValidated.mock.calls.length, ownedBefore = f.owned.size;
+    expect(await backend.setOutlinedModels(new Set(["author-one"]))).toBe("updated");
+    expect(runtime.setPacketValidated).not.toHaveBeenCalled();
+    expect(runtime.updateInstances).not.toHaveBeenCalled();
+    f.buffers.publishResidentProjection();
+    expect(f.buffers.hasOutline()).toBe(true);
+    expect(f.target.stageResidentPacketValidated.mock.calls.length).toBe(stagesBefore + 1);
+    expect(f.owned.size).toBe(ownedBefore);
+    expect(await backend.setOutlinedModels(new Set(["author-one"]))).toBe("unchanged");
+    expect(await backend.setOutlinedModels(new Set())).toBe("updated");
+    f.buffers.publishResidentProjection();
+    expect(f.buffers.hasOutline()).toBe(false);
+    backend.dispose(); expect(f.owned.size).toBe(0);
+  });  it("retains the old independent frame after camera-stage failure and recovers on a new view", async () => {
     const f = fixture();
     const runtime = { ...f.target, id: "deep-webgpu", setPacketValidated: vi.fn(async () => {}),
       updateInstances: vi.fn(), render: vi.fn(() => ({ frame: 1 } as never)),

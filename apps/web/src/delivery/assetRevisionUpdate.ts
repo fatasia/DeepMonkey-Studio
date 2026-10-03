@@ -14,6 +14,8 @@ import {
   type DeepAssetStoreSnapshot,
 } from "@bim-studio/deep-engine";
 import type { StaleAssetRevision } from "../viewer/assetRevisionSnapshot";
+import { request } from "../api";
+import { createDeepAssetApi } from "../apiClients/deepAssetApi";
 
 export interface AssetRevisionUpdate {
   readonly scenes: readonly SceneSnapshot[];
@@ -27,11 +29,8 @@ interface DeepPackageDocument {
 
 type JsonLoader = (url: string, signal?: AbortSignal) => Promise<unknown>;
 
-const defaultJsonLoader: JsonLoader = async (url, signal) => {
-  const response = await fetch(url, { cache: "no-store", ...(signal ? { signal } : {}) });
-  if (!response.ok) throw new Error(`资产包读取失败（HTTP ${response.status}），请刷新资源状态后重试`);
-  return response.json();
-};
+const deepAssetApi = createDeepAssetApi(request);
+const defaultJsonLoader: JsonLoader = (url, signal) => deepAssetApi.loadDeepAssetPackage(url, signal);
 
 export async function runAssetRevisionReimport(
   stale: StaleAssetRevision,

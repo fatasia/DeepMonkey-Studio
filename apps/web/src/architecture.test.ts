@@ -43,6 +43,9 @@ describe("web architecture boundary", () => {
     const violations: string[] = [];
     for (const sourceRoot of [path.join(workspaceRoot, "apps"), path.join(workspaceRoot, "packages")]) {
       for (const file of typescriptSourceFiles(sourceRoot, true)) {
+        // deep-engine/lab 是门脚本的打包源(esbuild 从工作区根解析),且该包的边界纪律是"不依赖 contracts"
+        // (textOrder.ts 注释),实验区经跨包相对路径取显示合同常量;生产 src 仍一律走公共包 API。
+        if (file.replaceAll("\\", "/").includes("packages/deep-engine/lab/")) continue;
         const source = await readFile(file, "utf8");
         if (moduleSpecifiers(source, file).some((specifier) =>
           isWorkspacePackageSourceDeepImport(specifier, file, workspaceRoot))) {

@@ -6,7 +6,7 @@ import type { RenderView } from "../src/webgpu/pbrRendererTypes.js";
 import { FrameCaptureSession } from "../src/r12/frameCapture.js";
 import { sha256Utf8 } from "../src/shaderPackage/hash.js";
 import { DEFAULT_DISPLAY_CONTRACT } from "../../contracts/src/displayContract.js";
-import { projectStudioDeepLights } from "../../../apps/web/src/viewer/studioDeepEnvironmentLights.js";
+import { projectStudioDeepLights } from "./parityGateLightsHost.js";
 import { sharedProjection } from "./c8SharedSceneFixture.js";
 import { bounded, readSharedDeepFrame } from "./c8SharedSceneReadback.js";
 import { createParityScene, createExtendedLobeProbe, parityProfile, PARITY_EXTENDED_LOBES, PARITY_SCENARIO_IDS, type ParityScenarioId, type ParityScene } from "./parityGateScenes.js";

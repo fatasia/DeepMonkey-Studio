@@ -24,7 +24,7 @@ const shapes: Shape[] = [
   { id: "box-e", geometry: new THREE.BoxGeometry(1.2, 1.2, 1.2), position: [-1.2, 0.6, -2.4], color: "#8d6fb3", outline: true },
 ];
 
-function interleave(geometry: THREE.BufferGeometry): { vertices: Float32Array; indices: Uint32Array } {
+function interleave(geometry: THREE.BufferGeometry): { vertices: Float32Array<ArrayBuffer>; indices: Uint32Array<ArrayBuffer> } {
   const position = geometry.getAttribute("position"), normal = geometry.getAttribute("normal");
   const vertices = new Float32Array(position.count * 6);
   for (let i = 0; i < position.count; i++) {

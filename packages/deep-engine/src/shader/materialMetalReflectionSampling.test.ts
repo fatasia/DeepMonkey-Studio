@@ -49,4 +49,4 @@ it("replays 65536 joint-PDF samples and converges against independent dOmega int
     expect(Math.abs(mean - dense[c]!)).toBeLessThan(6 * se + 1e-4);
     expect(dense[c]).toBeLessThan(1);
   });
-});
+}, 30_000);

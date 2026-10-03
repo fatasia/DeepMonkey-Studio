@@ -103,7 +103,7 @@ async function runRound(gate) {
       const shellBg = shell
         ? await page.locator(shell).evaluate((node) => getComputedStyle(node).backgroundColor)
         : await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-      assert.notEqual(shellBg, "rgb(0, 0, 0)", "页面底色不得为纯黑裸背景(对标山海鲸空气感红线)");
+      assert.notEqual(shellBg, "rgb(0, 0, 0)", "页面底色不得为纯黑裸背景(对标行业可视化基线的空气感红线)");
       entry.checks.shellBackground = shellBg;
       if (exactBg) assert.equal(shellBg, exactBg, `底色必须等于设计令牌 ${exactBg}`);
       const scroll = await page.evaluate(() => ({ inner: window.innerWidth, doc: document.documentElement.scrollWidth }));
