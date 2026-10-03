@@ -113,7 +113,8 @@ export const J3_D_FULL_LAYERS: readonly J3DFullLayer[] = Object.freeze([
     status: "verified-2026-09-30" as const }),
   Object.freeze({ id: "hdr-color" as const, title: "线性 HDR 颜色(严格平法线子集)",
     attachments: { web: "PBR_HDR_FORMAT rgba16float", native: "FORWARD_COLOR_FORMAT Rgba16Float resolved" },
-    evidenceDir: "test-output/interrupted-0930/hdr-flat-normal", scopePrefixes: ["production-HDR-authored-single-sun-flat-normal-triangles"],
+    // 证据目录对齐现行门:j3-normal-shadow-parity.mjs(读同一 hdr-flat-normal fixture 的双半对拍)输出至 normal-shadow。
+    evidenceDir: "test-output/interrupted-0930/normal-shadow", scopePrefixes: ["production-HDR-authored-single-sun-flat-normal-triangles"],
     gateId: "hdr-flat-strict" as const, sceneCellSource: "geometry-manifest-cameras" as const,
     fixtureFile: "packages/deep-engine/fixtures/j3-hdr-flat-normal-v1.json", freshnessKey: "packageHash" as const,
     status: "verified-2026-09-30" as const }),

@@ -30,8 +30,16 @@ mod ccd_tests;
 mod golden_tests;
 
 #[cfg(test)]
+#[path = "native_physics_mechanism_golden_support.rs"]
+mod mechanism_golden_support;
+
+#[cfg(test)]
 #[path = "native_physics_mechanism_golden_tests.rs"]
 mod mechanism_golden_tests;
+
+#[cfg(test)]
+#[path = "native_physics_mechanism_slider_combined_tests.rs"]
+mod mechanism_slider_combined_tests;
 
 #[cfg(test)]
 #[path = "native_physics_motor_gear_tests.rs"]
