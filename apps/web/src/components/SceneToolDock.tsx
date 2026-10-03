@@ -31,6 +31,7 @@ import {
 import type { PrimitiveKind } from "@bim-studio/contracts";
 import { primitiveKindLabel } from "../appPresentation";
 import { translate as tr, type AppLocale } from "../i18n";
+import { DEFAULT_SHORTCUTS } from "../shortcuts/keymap";
 import { SCENE_SIMULATION_PANELS, type SceneSimulationPanelId } from "../simulation/sceneSimulationRegistry";
 import type {
   NavigationMode,
@@ -138,6 +139,7 @@ export function SceneToolDock(props: SceneToolDockProps) {
     >
       <DockButton
         label={tr(props.locale, "适应全部", "Fit all")}
+        hint={DEFAULT_SHORTCUTS["camera.focus"]}
         icon={<Focus size={18} />}
         onClick={props.onFitAll}
       />
@@ -145,6 +147,7 @@ export function SceneToolDock(props: SceneToolDockProps) {
       <span className="scene-tool-separator" />
       <DockButton
         label={tr(props.locale, "选择", "Select")}
+        hint={DEFAULT_SHORTCUTS["tool.select"]}
         icon={<MousePointer2 size={18} />}
         active={
           !props.hasSelection &&
@@ -156,6 +159,7 @@ export function SceneToolDock(props: SceneToolDockProps) {
       />
       <DockButton
         label={tr(props.locale, "移动", "Move")}
+        hint={DEFAULT_SHORTCUTS["tool.translate"]}
         icon={<Move size={18} />}
         active={props.hasSelection && props.transformMode === "translate"}
         disabled={!props.hasSelection}
@@ -163,6 +167,7 @@ export function SceneToolDock(props: SceneToolDockProps) {
       />
       <DockButton
         label={tr(props.locale, "旋转", "Rotate")}
+        hint={DEFAULT_SHORTCUTS["tool.rotate"]}
         icon={<RotateCw size={18} />}
         active={props.hasSelection && props.transformMode === "rotate"}
         disabled={!props.hasSelection}
@@ -170,6 +175,7 @@ export function SceneToolDock(props: SceneToolDockProps) {
       />
       <DockButton
         label={tr(props.locale, "缩放", "Scale")}
+        hint={DEFAULT_SHORTCUTS["tool.scale"]}
         icon={<Scaling size={18} />}
         active={props.hasSelection && props.transformMode === "scale"}
         disabled={!props.hasSelection}
@@ -396,19 +402,22 @@ function DockButton({
   active = false,
   disabled = false,
   onClick,
+  hint,
 }: {
   label: string;
   icon: ReactNode;
   active?: boolean;
   disabled?: boolean;
   onClick: () => void;
+  hint?: string;
 }) {
+  const titled = hint ? `${label} (${hint.toUpperCase()})` : label;
   return (
     <button
       type="button"
       className={`scene-dock-button ${active ? "active" : ""}`}
-      title={label}
-      aria-label={label}
+      title={titled}
+      aria-label={titled}
       aria-pressed={active}
       disabled={disabled}
       onClick={onClick}
