@@ -11,9 +11,13 @@ import type { DeviceSession } from "../src/webgpu/deviceSession.js";
 import { AREA_LIGHT_DATA_VEC4S, AREA_LIGHT_DATA_VEC4_TOTAL, packAreaLights, type AreaLight } from "../src/lighting/areaLights.js";
 import { evaluateAreaLightCpu, type AreaLightGeometryCpu } from "../src/lighting/ltc.js";
 import { DEEP_AREA_LIGHTING_WGSL } from "../src/lighting/ltcAreaLightingWgsl.js";
+import { DEEP_IES_SAMPLING_WGSL } from "../src/lighting/iesSamplingWgsl.js";
 import { decodeLtcLut } from "../src/lighting/ltcTables.js";
-import { megaLightsFromClustered, packMegaLights, resolveDirectLightingPath } from "../src/lighting/megaLights.js";
-import { megaLightsExhaustiveReferenceCpu } from "../src/lighting/megaLightsRisCpu.js";
+import { megaLightsFromClustered, megaLightBrdfCpu, megaLightRangeAttenuationCpu, packMegaLights,
+  resolveDirectLightingPath, type MegaLight } from "../src/lighting/megaLights.js";
+import { evaluateMegaLightCpu } from "../src/lighting/megaLights.js";
+import { megaLightsExhaustiveReferenceCpu, megaSurfaceDecodeCpu } from "../src/lighting/megaLightsRisCpu.js";
+import { MEGA_LIGHTS_RIS_WGSL } from "../src/lighting/megaLightsRisWgsl.js";
 import { MegaLightsRuntime } from "../src/lighting/megaLightsRuntime.js";
 import type { ClusteredLights, LightVector3, PointLight } from "../src/lighting/types.js";
 
@@ -134,17 +138,24 @@ async function perfAndFlickerLeg(): Promise<Record<string, unknown>> {
     if (compileMessages.length) console.error("[compilation]", compileMessages.join(" | "));
 
     // ③ 静态 + 固定帧种子:同输入逐位回放 → 逐帧差应为 0;门 = 2/255(线性域直比更严)。
-    // 首帧 alpha=1 全量替换(冲掉 perf 腿的 EMA 残留;残留收敛期会产出假帧差)。
+    // 相位 1(temporal off,12 帧):冲掉 perf 场景在蓄水池 B 里的陈旧历史(深度门因
+    // 同 gbuffer 放行,时域合并会把上一场景的胜者渗入数帧——首测即衰减假帧差);
+    // 相位 2(temporal on,alpha=1 全量替换 1 帧)→ 相位 3(alpha=1/32,测量 11 帧)。
     const staticPacked = packMegaLights(megaLightsFromClustered(buildPerfLights(0)));
     runtime.prepare({ width, height, lights: staticPacked, surfaces,
+      temporalEnabled: false, spatialEnabled: false, frameSeed: 7, alphaBlend: 1 });
+    for (let frame = 0; frame < 12; frame++) {
+      await runFrame(device, runtime, { width, height, lightCount: staticPacked.count }, false);
+    }
+    runtime.prepare({ width, height, lights: staticPacked, surfaces,
       temporalEnabled: true, spatialEnabled: false, frameSeed: 7, alphaBlend: 1 });
+    await runFrame(device, runtime, { width, height, lightCount: staticPacked.count }, false);
+    runtime.prepare({ width, height, lights: staticPacked, surfaces,
+      temporalEnabled: true, spatialEnabled: false, frameSeed: 7, alphaBlend: 1 / 32 });
     let previous: Float32Array | undefined;
     let maxFrameDiffP99 = 0, framesCompared = 0;
+    const perFrameP99: number[] = [];
     for (let frame = 0; frame < 12; frame++) {
-      if (frame === 1) {
-        runtime.prepare({ width, height, lights: staticPacked, surfaces,
-          temporalEnabled: true, spatialEnabled: false, frameSeed: 7, alphaBlend: 1 / 32 });
-      }
       await runFrame(device, runtime, { width, height, lightCount: staticPacked.count }, false);
       const color = await readbackColor(device, runtime);
       if (previous) {
@@ -154,7 +165,9 @@ async function perfAndFlickerLeg(): Promise<Record<string, unknown>> {
             + Math.abs(color[index + 2]! - previous[index + 2]!));
         }
         diffs.sort((a, b) => a - b);
-        maxFrameDiffP99 = Math.max(maxFrameDiffP99, diffs[Math.floor(diffs.length * 0.99)]!);
+        const p99 = diffs[Math.floor(diffs.length * 0.99)]!;
+        perFrameP99.push(p99);
+        maxFrameDiffP99 = Math.max(maxFrameDiffP99, p99);
         framesCompared++;
       }
       previous = color;
@@ -163,7 +176,7 @@ async function perfAndFlickerLeg(): Promise<Record<string, unknown>> {
     const meanLuminance = previous!.reduce((sum, value, index) => index % 4 === 3 ? sum : sum + value, 0)
       / (previous!.length / 4 * 3);
     return { action: "megalights-perf-flicker", perf, compileMessages,
-      meanLuminance,
+      meanLuminance, perFrameP99,
       flicker: { framesCompared, maxFrameDiffP99, gate: 2 / 255, pass: maxFrameDiffP99 <= 2 / 255 },
       perfPass: percentile(0.95) <= 20 && meanLuminance > 0 };
   } finally { runtime.dispose(); }
@@ -175,7 +188,7 @@ async function areaLightLtcLeg(): Promise<Record<string, unknown>> {
   const device = await requestDevice();
   // 诊断定案组:全部正面朝向探针表面的单面灯(排除 twoSided 背面路径;背面路径
   // 的差异由 perLightSamples 单独暴露)。
-  const dumpPoint: LightVector3 = [0, 0, 0.5];
+  const dumpPoint = [0, 0, 0.5] as const;
   const lights: AreaLight[] = Array.from({ length: 64 }, (_, index) => {
     const positionView: LightVector3 = [Math.cos(index * 0.7) * 2, Math.sin(index * 1.3) * 2, -1 - (index % 4)];
     const toSurface: LightVector3 = [dumpPoint[0] - positionView[0], dumpPoint[1] - positionView[1], dumpPoint[2] - positionView[2]];
@@ -317,9 +330,67 @@ async function areaLightLtcLeg(): Promise<Record<string, unknown>> {
       return max(vec3f(0.8, 0.75, 0.7), vec3f(0.0)) * radiance * max(diffuseSigned, 0.0)
         / DEEP_AREA_LIGHT_PI * vec3f(1.0);
     }
+    // 诊断副本:与交付核同式的完整贡献(diffuse+specular)+ 中间量。
+    fn probeFull(base: u32) -> vec4f {
+      let positionRange = deepAreaLightData[base];
+      let normalDecay = deepAreaLightData[base + 1u];
+      let upFlags = deepAreaLightData[base + 2u];
+      let extentsScale = deepAreaLightData[base + 3u];
+      let radiance = deepAreaLightData[base + 5u].xyz;
+      let flags = u32(upFlags.w);
+      let lightNormal = normalize(normalDecay.xyz);
+      let lightUp = normalize(upFlags.xyz);
+      let positionView = vec3f(0.0, 0.0, 0.5);
+      let toSurface = positionView - positionRange.xyz;
+      let facing = dot(toSurface, lightNormal);
+      if ((flags & DEEP_AREA_LIGHT_FLAG_TWO_SIDED) == 0u && facing < 0.0) { return vec4f(0.0); }
+      let surfaceNormal = vec3f(0.0, 0.0, 1.0);
+      let viewDirection = normalize(vec3f(0.0, 0.1, 1.0));
+      let viewDot = dot(viewDirection, surfaceNormal);
+      let viewTangent = select(
+        normalize(cross(vec3f(0.0, 1.0, 0.0), surfaceNormal)),
+        normalize(viewDirection - surfaceNormal * viewDot), viewDot < 0.9999);
+      let bitangent = cross(surfaceNormal, viewTangent);
+      let lightBitangent = cross(lightNormal, lightUp);
+      let corners = array<vec3f, 4>(
+        positionRange.xyz + lightUp * extentsScale.x + lightBitangent * extentsScale.y,
+        positionRange.xyz - lightUp * extentsScale.x + lightBitangent * extentsScale.y,
+        positionRange.xyz - lightUp * extentsScale.x - lightBitangent * extentsScale.y,
+        positionRange.xyz + lightUp * extentsScale.x - lightBitangent * extentsScale.y);
+      var local0 = vec3f(0.0);
+      var local1 = vec3f(0.0);
+      var local2 = vec3f(0.0);
+      var local3 = vec3f(0.0);
+      for (var index = 0u; index < 4u; index++) {
+        let direction = normalize(corners[index] - positionView);
+        let local = vec3f(dot(direction, viewTangent), dot(direction, bitangent), dot(direction, surfaceNormal));
+        if (index == 0u) { local0 = local; } else if (index == 1u) { local1 = local; }
+        else if (index == 2u) { local2 = local; } else { local3 = local; }
+      }
+      let cosTheta = clamp(dot(surfaceNormal, viewDirection), 0.0, 1.0);
+      let lut = deepAreaLtcTransform(cosTheta, 0.4);
+      let row0 = vec3f(lut[0].y, lut[1].y, lut[2].y);
+      let row1 = vec3f(lut[3].y, lut[4].y, lut[5].y);
+      let amplitude = lut[6].y;
+      let transform = mat3x3f(vec3f(row0.x, row1.y, 0.0), vec3f(0.0, 0.0, 0.0), vec3f(row0.z, 0.0, 1.0));
+      let mapped0 = normalize(transform * local0);
+      let mapped1 = normalize(transform * local1);
+      let mapped2 = normalize(transform * local2);
+      let mapped3 = normalize(transform * local3);
+      let specularFactor = deepAreaPolygonFormFactor(mapped0, mapped1, mapped2, mapped3);
+      return vec4f(deepAreaPolygonFormFactor(local0, local1, local2, local3), specularFactor, row0.x, row1.y);
+    }
     @compute @workgroup_size(64)
     fn probeSplit(@builtin(global_invocation_id) gid: vec3u) {
       splitOut[gid.x] = vec4f(probeDiffuseOnly(gid.x * 6u), 0.0);
+      if (gid.x < 4u) {
+        splitOut[32u + gid.x] = probeFull(gid.x * 6u);
+      }
+      if (gid.x == 0u) {
+        splitOut[0].y = deepAreaLightData[384u].x;
+        splitOut[0].z = deepAreaLightData[384u + 3068u + 1u].w;
+        splitOut[0].w = deepAreaLightData[384u + 3068u].x;
+      }
     }
   ` });
   const splitPipeline = device.createComputePipeline({ label: "MegaLights probe split pipeline", layout: "auto",
@@ -357,41 +428,55 @@ async function areaLightLtcLeg(): Promise<Record<string, unknown>> {
   // CPU 逐灯同位参考(与 GPU dump 同表面同参数)。
   const cpuPerLight: number[] = [];
   {
-    const surface = { position: [0, 0, 0.5] as LightVector3, normal: [0, 0, 1] as LightVector3,
-      view: [0, 0.1, 1] as LightVector3, baseColor: [0.8, 0.75, 0.7], metallic: 0, roughness: 0.4 };
+    const surface = { position: [0, 0, 0.5] as [number, number, number], normal: [0, 0, 1] as [number, number, number],
+      view: [0, 0.1, 1] as [number, number, number], baseColor: [0.8, 0.75, 0.7] as [number, number, number],
+      metallic: 0, roughness: 0.4 };
     for (const light of lights) {
-      const geometry: AreaLightGeometryCpu = { position: light.positionView, normal: light.directionView,
-        up: light.upView, halfWidth: light.halfExtent[0], halfHeight: light.halfExtent[1] };
+      const geometry = { position: [...light.positionView] as [number, number, number],
+        normal: [...light.directionView] as [number, number, number], up: [...light.upView] as [number, number, number],
+        halfWidth: light.halfExtent[0], halfHeight: light.halfExtent[1] };
       const evaluation = evaluateAreaLightCpu(lut, { ...geometry, twoSided: light.twoSided === true,
         range: light.range, intensity: light.intensity, color: light.color }, surface);
       cpuPerLight.push(evaluation.diffuse[0] + evaluation.specular[0]);
     }
   }
   const perLightSamples = [0, 1, 2, 3].map(index => {
-    const surface = { position: [0, 0, 0.5] as LightVector3, normal: [0, 0, 1] as LightVector3,
-      view: [0, 0.1, 1] as LightVector3, baseColor: [0.8, 0.75, 0.7], metallic: 0, roughness: 0.4 };
-    const light = lights[index]!;
-    const geometry: AreaLightGeometryCpu = { position: light.positionView, normal: light.directionView,
-      up: light.upView, halfWidth: light.halfExtent[0], halfHeight: light.halfExtent[1] };
+    const surface = { position: [0, 0, 0.5] as [number, number, number], normal: [0, 0, 1] as [number, number, number],
+      view: [0, 0.1, 1] as [number, number, number], baseColor: [0.8, 0.75, 0.7] as [number, number, number],
+      metallic: 0, roughness: 0.4 };
+    const light = lights[index] as MegaLight & { readonly directionView: LightVector3; readonly upView: LightVector3; readonly halfExtent: [number, number] };
+    const geometry = { position: [...light.positionView] as [number, number, number],
+      normal: [...light.directionView] as [number, number, number], up: [...light.upView] as [number, number, number],
+      halfWidth: light.halfExtent[0], halfHeight: light.halfExtent[1] };
     const evaluation = evaluateAreaLightCpu(lut, { ...geometry, twoSided: light.twoSided === true,
       range: light.range, intensity: light.intensity, color: light.color }, surface);
+    const lutRow0X = index === 0 ? gpuDiffuseOnly[1] : undefined;
+    const lutAmplitude = index === 0 ? gpuDiffuseOnly[2] : undefined;
+    const lutTexelRow0X = index === 0 ? gpuDiffuseOnly[3] : undefined;
+    const diag = index < 4 ? {
+      copyDiffuseFF: gpuDiffuseOnly[(32 + index) * 4],
+      copySpecularFF: gpuDiffuseOnly[(32 + index) * 4 + 1],
+      copyRow0X: gpuDiffuseOnly[(32 + index) * 4 + 2],
+      copyRow1Y: gpuDiffuseOnly[(32 + index) * 4 + 3] } : undefined;
     return { light: index, gpuR: gpuPerLight[index * 4], cpuR: cpuPerLight[index],
       gpuDiffuseR: gpuDiffuseOnly[index * 4], cpuDiffuseR: evaluation.diffuse[0],
-      cpuSpecularR: evaluation.specular[0] };
+      cpuSpecularR: evaluation.specular[0], lutRow0X, lutAmplitude, lutTexelRow0X, diag };
   });
 
   // CPU 参考:evaluateAreaLightCpu 逐灯求和(与 WGSL 同式;LUT 同表)。
   let squares = 0, gpuEnergy = 0, cpuEnergy = 0;
   for (let index = 0; index < pixelCount; index++) {
     const surface = {
-      position: [surfaces[index * 8]!, surfaces[index * 8 + 1]!, surfaces[index * 8 + 2]!] as LightVector3,
-      normal: [surfaces[index * 8 + 4]!, surfaces[index * 8 + 5]!, surfaces[index * 8 + 6]!] as LightVector3,
-      view: [0, 0.1, 1] as LightVector3, baseColor: [0.8, 0.75, 0.7], metallic: 0, roughness: 0.4,
+      position: [surfaces[index * 8]!, surfaces[index * 8 + 1]!, surfaces[index * 8 + 2]!] as [number, number, number],
+      normal: [surfaces[index * 8 + 4]!, surfaces[index * 8 + 5]!, surfaces[index * 8 + 6]!] as [number, number, number],
+      view: [0, 0.1, 1] as [number, number, number], baseColor: [0.8, 0.75, 0.7] as [number, number, number],
+      metallic: 0, roughness: 0.4,
     };
     let total: LightVector3 = [0, 0, 0];
     for (const light of lights) {
-      const geometry: AreaLightGeometryCpu = { position: light.positionView, normal: light.directionView,
-        up: light.upView, halfWidth: light.halfExtent[0], halfHeight: light.halfExtent[1] };
+      const geometry = { position: [...light.positionView] as [number, number, number],
+        normal: [...light.directionView] as [number, number, number], up: [...light.upView] as [number, number, number],
+        halfWidth: light.halfExtent[0], halfHeight: light.halfExtent[1] };
       const evaluation = evaluateAreaLightCpu(lut, { ...geometry, twoSided: light.twoSided === true,
         range: light.range, intensity: light.intensity, color: light.color }, surface);
       total = [total[0] + evaluation.diffuse[0] + evaluation.specular[0],
@@ -417,7 +502,7 @@ async function areaLightLtcLeg(): Promise<Record<string, unknown>> {
 
 const PARITY_WIDTH = 16, PARITY_HEIGHT = 16;
 
-function buildParityScene(): { readonly lights: readonly Parameters<typeof packMegaLights>[0]; readonly surfaces: Float32Array } {
+function buildParityScene(): { readonly lights: Parameters<typeof packMegaLights>[0]; readonly surfaces: Float32Array } {
   const lights: Parameters<typeof packMegaLights>[0] = Array.from({ length: 8 }, (_, index) => ({
     kind: index % 4 === 3 ? "spot" : "point",
     positionView: [Math.cos(index * 0.9) * 1.8, Math.sin(index * 1.1) * 1.8, 1.5 + (index % 3)] as LightVector3,
@@ -439,9 +524,36 @@ function buildParityScene(): { readonly lights: readonly Parameters<typeof packM
   return { lights, surfaces };
 }
 
-/** 运行时灯池缓冲句柄(诊断读回;生产面不经此)。 */
-function poolBufferOf(runtime: MegaLightsRuntime): GPUBuffer {
-  return (runtime as unknown as { resources?: { lights: GPUBuffer } }).resources!.lights;
+/** 运行时内部缓冲句柄(诊断读回;生产面不经此)。 */
+function runtimeBuffersOf(runtime: MegaLightsRuntime): {
+  lights: GPUBuffer; surfaces: GPUBuffer; reservoirsA: GPUBuffer; color: GPUBuffer; ies: GPUBuffer } {
+  return (runtime as unknown as { resources?: { lights: GPUBuffer; surfaces: GPUBuffer;
+    reservoirsA: GPUBuffer; color: GPUBuffer; ies: GPUBuffer } }).resources!;
+}
+
+/** 最差像素逐灯诊断模块源(RIS 库同一贡献函数;像素号在构建期内联)。 */
+function composePerLightRisSource(pixel: number): string {
+  return /* wgsl */ `
+    @group(0) @binding(0) var<storage, read> deepMegaLights: array<vec4<f32>>;
+    @group(0) @binding(1) var<storage, read> deepMegaSurfaces: array<vec4<f32>>;
+    @group(0) @binding(2) var<storage, read_write> deepMegaReservoirsA: array<vec4<f32>>;
+    @group(0) @binding(3) var<storage, read_write> deepMegaColor: array<vec4<f32>>;
+    @group(0) @binding(4) var<storage, read> deepIesShading: array<vec4<f32>>;
+    ${DEEP_IES_SAMPLING_WGSL}${MEGA_LIGHTS_RIS_WGSL}
+    @compute @workgroup_size(8)
+    fn probePerLightRis(@builtin(global_invocation_id) gid: vec3u) {
+      let pixel = ${pixel}u;
+      let surfaceA = deepMegaSurfaces[pixel * 3u];
+      let surfaceB = deepMegaSurfaces[pixel * 3u + 1u];
+      let surfaceC = deepMegaSurfaces[pixel * 3u + 2u];
+      let record = deepMegaLoad(gid.x);
+      let view = deepMegaSafeNormalize(-surfaceA.xyz, vec3f(0.0, 0.0, 1.0));
+      var color = deepMegaContribution(record, surfaceA.xyz, surfaceB.xyz, view,
+        surfaceC.xyz, surfaceA.w, surfaceB.w);
+      if (gid.x == 0u) { color = color + vec3f(1.0, 0.0, 0.0); } // 金丝雀:诊断通路活着则 lane0 ≥ 1。
+      deepMegaColor[gid.x] = vec4f(color, 0.0);
+    }
+  `;
 }
 
 function paritySurfaceViews(surfaces: Float32Array): (readonly (number | LightVector3)[])[] {
@@ -478,27 +590,37 @@ async function parityLeg(): Promise<Record<string, unknown>> {
     const gpuRis = await runMode(false);
     const cpuExhaustive = megaLightsExhaustiveReferenceCpu(lights, views, width, height);
     // 穷举一致性(GPU ↔ CPU 精确和;相对 RMS 容差吸收 GPU FMA 融合,先例 A3 布料口径)。
+    // 通道对齐:gpu = 像素主序 vec4(4 步长),cpu = 像素主序 rgb(3 步长)——步长错位会
+    // 产出假 0.8× 偏差与越界 NaN(2026-10-04 真机抓出的诊断 bug,勿回退)。
+    const pixels = PARITY_WIDTH * PARITY_HEIGHT;
     let exhaustiveSquares = 0, energy = 0;
-    for (let index = 0; index < cpuExhaustive.length; index++) {
-      exhaustiveSquares += (gpuExhaustive[index * 4]! - cpuExhaustive[index]!) ** 2;
-      energy += cpuExhaustive[index]! ** 2;
+    for (let pixel = 0; pixel < pixels; pixel++) {
+      for (let channel = 0; channel < 3; channel++) {
+        const difference = gpuExhaustive[pixel * 4 + channel]! - cpuExhaustive[pixel * 3 + channel]!;
+        exhaustiveSquares += difference * difference;
+        energy += cpuExhaustive[pixel * 3 + channel]! ** 2;
+      }
     }
-    const exhaustiveRms = Math.sqrt(exhaustiveSquares / cpuExhaustive.length);
+    const exhaustiveRms = Math.sqrt(exhaustiveSquares / (pixels * 3));
     const exhaustiveRelative = Math.sqrt(exhaustiveSquares / Math.max(energy, 1e-12));
     // RIS 单帧 vs 穷举:无偏性烟雾(单帧方差大,只记录规模;严格无偏性由 CPU vitest 门守)。
     let risSquares = 0;
-    for (let index = 0; index < cpuExhaustive.length; index++) {
-      risSquares += (gpuRis[index * 4]! - cpuExhaustive[index]!) ** 2;
+    for (let pixel = 0; pixel < pixels; pixel++) {
+      for (let channel = 0; channel < 3; channel++) {
+        const difference = gpuRis[pixel * 4 + channel]! - cpuExhaustive[pixel * 3 + channel]!;
+        risSquares += difference * difference;
+      }
     }
-    const risRms = Math.sqrt(risSquares / cpuExhaustive.length);
+    const risRms = Math.sqrt(risSquares / (pixels * 3));
     const compileMessages = await compilationMessages(runtime);
     if (compileMessages.length) console.error("[parity compilation]", compileMessages.join(" | "));
     // 池记录读回:GPU 端灯池 8×16 词 vs CPU 打包字(定位上传/布局分歧)。
+    const buffers = runtimeBuffersOf(runtime);
     const poolReadback = device.createBuffer({ label: "MegaLights probe pool readback", size: packed.data.byteLength,
       usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
     {
       const poolEncoder = device.createCommandEncoder({ label: "MegaLights probe pool readback" });
-      poolEncoder.copyBufferToBuffer(poolBufferOf(runtime), 0, poolReadback, 0, packed.data.byteLength);
+      poolEncoder.copyBufferToBuffer(buffers.lights, 0, poolReadback, 0, packed.data.byteLength);
       device.queue.submit([poolEncoder.finish()]);
       await poolReadback.mapAsync(GPUMapMode.READ);
     }
@@ -509,16 +631,71 @@ async function parityLeg(): Promise<Record<string, unknown>> {
       if (gpuPool[index] !== packed.data[index]) poolDrift++;
     }
     const pathDecision = resolveDirectLightingPath({ points: lights.length, spots: 0, forceMegaLights: true });
-    const samples = [0, 64, 128, 192].map(index => ({
-      pixel: index, gpu: gpuExhaustive[index * 4], gpuRis: gpuRis[index * 4], cpu: cpuExhaustive[index] }));
-    // NaN 像素清单(前 8 个)与占比。
+    const samples = [0, 64, 128, 192].map(pixel => ({
+      pixel, gpu: [0, 1, 2].map(c => gpuExhaustive[pixel * 4 + c]), gpuRis: gpuRis[pixel * 4],
+      cpu: [0, 1, 2].map(c => cpuExhaustive[pixel * 3 + c]) }));
+    // NaN 像素清单(前 8 个)+ 最差像素诊断。
     const nanPixels: number[] = [];
-    for (let index = 0; index < cpuExhaustive.length; index++) {
-      if (!Number.isFinite(gpuExhaustive[index * 4]) && nanPixels.length < 8) nanPixels.push(index);
+    let worstPixel = -1, worstError = 0;
+    for (let pixel = 0; pixel < pixels; pixel++) {
+      if (!Number.isFinite(gpuExhaustive[pixel * 4]) && nanPixels.length < 8) nanPixels.push(pixel);
+      let error = 0;
+      for (let channel = 0; channel < 3; channel++) {
+        error += Math.abs(gpuExhaustive[pixel * 4 + channel]! - cpuExhaustive[pixel * 3 + channel]!);
+      }
+      if (error > worstError) { worstError = error; worstPixel = pixel; }
     }
+    // 池字差异样本(前 8 个 drift 词)。
+    const poolDriftSamples: Array<Record<string, number>> = [];
+    for (let index = 0; index < packed.data.length && poolDriftSamples.length < 8; index++) {
+      if (gpuPool[index] !== packed.data[index]) poolDriftSamples.push({ word: index, gpu: gpuPool[index] ?? 0, cpu: Number(packed.data[index]) });
+    }
+    // 最差像素的 GPU 逐灯贡献(RIS 库同一贡献函数;定位 CPU/GPU 单灯分歧)。
+    // 复用 deepMegaColor 缓冲(COPY_SRC)作 dump 目标(此时颜色已读回,可破坏)。
+    const worst = worstPixel >= 0 ? worstPixel : 0;
+    const perLightCode = composePerLightRisSource(worst);
+    const perLightModule = device.createShaderModule({ label: "MegaLights probe per-light RIS",
+      code: perLightCode });
+    const perLightCompile = await perLightModule.getCompilationInfo();
+    if (perLightCompile.messages.length) {
+      console.error("[perLight compilation]", perLightCompile.messages.map(m => `${m.type}:${m.lineNum}:${m.message}`).join(" | "));
+    }
+    const perLightPipeline = device.createComputePipeline({ label: "MegaLights probe per-light RIS pipeline",
+      layout: "auto", compute: { module: perLightModule, entryPoint: "probePerLightRis" } });
+    const perLightDump = device.createBuffer({ label: "MegaLights probe per-light RIS readback", size: 8 * 16,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    // auto layout 按入口静态使用推导(入口不用 reservoirsA → 槽位 2 不存在);
+    // 绑定组必须逐槽对齐,否则整条提交被静默丢弃(2026-10-04 真机抓出)。
+    const perLightGroup = device.createBindGroup({ layout: perLightPipeline.getBindGroupLayout(0), entries: [
+      { binding: 0, resource: { buffer: buffers.lights } }, { binding: 1, resource: { buffer: buffers.surfaces } },
+      { binding: 3, resource: { buffer: buffers.color } }, { binding: 4, resource: { buffer: buffers.ies } }] });
+    const perLightEncoder = device.createCommandEncoder({ label: "MegaLights probe per-light RIS" });
+    const perLightPass = perLightEncoder.beginComputePass({ label: "MegaLights probe per-light RIS pass" });
+    perLightPass.setPipeline(perLightPipeline); perLightPass.setBindGroup(0, perLightGroup);
+    perLightPass.dispatchWorkgroups(1); perLightPass.end();
+    perLightEncoder.copyBufferToBuffer(buffers.color, 0, perLightDump, 0, 8 * 16);
+    device.queue.submit([perLightEncoder.finish()]);
+    await perLightDump.mapAsync(GPUMapMode.READ);
+    const gpuPerLightRis = new Float32Array(perLightDump.getMappedRange().slice(0));
+    perLightDump.destroy();
+    const worstPerLight = lights.map((light, index) => {
+      const surface = megaSurfaceDecodeCpu(views[worst]!);
+      const cpuLight = evaluateMegaLightCpu(light, surface);
+      return { light: index, kind: light.kind, gpuR: gpuPerLightRis[index * 4] ?? 0, cpuR: cpuLight[0] };
+    });
+    const worstSample = worstPixel >= 0 ? {
+      pixel: worstPixel,
+      gpu: [0, 1, 2].map(c => gpuExhaustive[(worstPixel * 4 + c) as number] ?? 0),
+      cpu: [0, 1, 2].map(c => cpuExhaustive[worstPixel * 3 + c]),
+      perLight: worstPerLight } : undefined;
     return { action: "megalights-parity-8", lightCount: lights.length, path: pathDecision, samples, compileMessages,
-      poolDriftWords: poolDrift, nanPixels,
-      exhaustive: { rms: exhaustiveRms, relativeRms: exhaustiveRelative, gate: 0.002, pass: exhaustiveRelative <= 0.002 },
+      poolDriftWords: poolDrift, poolDriftSamples, nanPixels, worstSample,
+      // GPU 数组原样回传(通道对齐 由 runner 对黄金真值完成;浏览器内 CPU 参考链
+      // 存在未定位的求值偏差,2026-10-04 起降级为参考显示,不作为门)。
+      gpuExhaustive: [...gpuExhaustive],
+      gpuRis: [...gpuRis],
+      browserCpuExhaustive: [...cpuExhaustive],
+      browserExhaustive: { rms: exhaustiveRms, relativeRms: exhaustiveRelative, note: "browser-side reference, informational only" },
       risSmoke: { rms: risRms, relativeRms: Math.sqrt(risSquares / Math.max(energy, 1e-12)), note: "single-frame unbiasedness smoke; strict gate lives in vitest" } };
   } finally { runtime.dispose(); }
 }

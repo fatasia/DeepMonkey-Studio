@@ -264,7 +264,8 @@ export class MegaLightsRuntime {
     };
     try {
       const params = allocate(MEGA_LIGHTS_PARAMS_BYTES, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, "Deep MegaLights params");
-      const lights = allocate(desired.lightVec4s * 16, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, "Deep MegaLights pool");
+      // COPY_SRC:灯池诊断读回(pool drift 门);STORAGE 消费不受影响。
+      const lights = allocate(desired.lightVec4s * 16, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC, "Deep MegaLights pool");
       const surfaces = allocate(pixelCount * SURFACE_VEC4S * 16, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, "Deep MegaLights surfaces");
       const motion = allocate(pixelCount * PIXEL_VEC4S * 16, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, "Deep MegaLights motion");
       const reservoirsA = allocate(pixelCount * PIXEL_VEC4S * 16, GPUBufferUsage.STORAGE, "Deep MegaLights reservoirs A");

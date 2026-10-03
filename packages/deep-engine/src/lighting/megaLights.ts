@@ -342,10 +342,12 @@ export function megaLightBrdfCpu(light: MegaLight, surface: MegaLightSurface, ra
   const radiance = [light.color[0] * light.intensity * attenuation * radianceScale,
     light.color[1] * light.intensity * attenuation * radianceScale,
     light.color[2] * light.intensity * attenuation * radianceScale];
+  // 与 clusterLightingPbrWgsl.deepClusterBrdf 同式:末项 ×nDotL(2026-10-04 真机对拍
+  // 抓出的镜像缺项——nDotL 只做了 early-out,未进乘法,偏差 = 平均 nDotL ≈ 14%)。
   return [
-    (diffuse[0]! + distribution * visibility * fresnel[0]!) * radiance[0]!,
-    (diffuse[1]! + distribution * visibility * fresnel[1]!) * radiance[1]!,
-    (diffuse[2]! + distribution * visibility * fresnel[2]!) * radiance[2]!,
+    (diffuse[0]! + distribution * visibility * fresnel[0]!) * radiance[0]! * nDotL,
+    (diffuse[1]! + distribution * visibility * fresnel[1]!) * radiance[1]! * nDotL,
+    (diffuse[2]! + distribution * visibility * fresnel[2]!) * radiance[2]! * nDotL,
   ];
 }
 

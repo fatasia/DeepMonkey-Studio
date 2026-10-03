@@ -100,13 +100,20 @@ function surfaceField(surface: readonly (number | LightVector3)[], index: number
   return surface[index] as LightVector3;
 }
 
-/** MegaLightSurface 视图(GPU 3-vec4 布局解码;view 按相机在原点派生,与 WGSL 同式)。 */
+/** MegaLightSurface 视图(GPU 3-vec4 布局解码;view 按相机在原点派生,与 WGSL 同式)。
+ * 行的 .w 槽(metallic/roughness/预留)**必须截断**:WGSL 只读 xyz,而 CPU 镜像的
+ * safeNormalize/Math.hypot(...v) 会把第 4 元素一并算进模长——不截断时 roughness(0.45)
+ * 会把法线长度污染到 1.097,CPU 参考全链 ~15% 偏低(2026-10-04 真机对拍抓出)。 */
 export function megaSurfaceDecodeCpu(surface: readonly (number | LightVector3)[]): {
   readonly positionView: LightVector3; readonly normalView: LightVector3; readonly view: LightVector3;
   readonly baseColor: LightVector3; readonly metallic: number; readonly roughness: number } {
-  const position = surfaceField(surface, 0);
-  const normal = surfaceField(surface, 1);
-  const baseColor = surfaceField(surface, 2);
+  const raw = (row: number): LightVector3 => {
+    const source = surfaceField(surface, row) as readonly number[];
+    return [source[0]!, source[1]!, source[2]!];
+  };
+  const position = raw(0);
+  const normal = raw(1);
+  const baseColor = raw(2);
   const viewLength = Math.hypot(position[0], position[1], position[2]);
   const view: LightVector3 = viewLength > 1e-8
     ? [-position[0] / viewLength, -position[1] / viewLength, -position[2] / viewLength] : [0, 0, 1];

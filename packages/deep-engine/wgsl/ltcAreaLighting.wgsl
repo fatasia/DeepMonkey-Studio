@@ -56,6 +56,11 @@ fn deepAreaLtcTransform(cosTheta: f32, roughness: f32) -> array<vec2f, 8> {
   let columnNext = min(column + 1u, DEEP_AREA_LIGHT_LUT_SIZE - 1u);
   let rowNext = min(row + DEEP_AREA_LIGHT_LUT_SIZE, DEEP_AREA_LIGHT_LUT_SIZE * (DEEP_AREA_LIGHT_LUT_SIZE - 1u));
   // texel 直取(WGSL 无函数类型值,不能写 let 闭包——真机 Tint 编译抓红后定案为内联)。
+  // 每 texel 两个 vec4:vec4[2t]=(row0.xyz, invM[1][1]≡0),vec4[2t+1]=(row1.y, row1.z, 0, amplitude)
+  // (打包序 packTexel:floats[0..2]=row0,[3]=invM[3]=row1.x,[4..5]=row1.yz,[7]=amplitude)。
+  // B2 MegaLights M1 真机对拍(2026-10-04)抓出的潜在缺陷修复:原实现 row1 取
+  // blended[3..5]——[4][5] 是 vec4 越界读(恒 0),row1=(0,0,0),GPU 面积光高光的
+  // 副切向缩放 r 自 C3 起即为死。现 row1 从第 2 个 vec4 的 xyz 双线性。
   let texelA = deepAreaLightData[DEEP_AREA_LIGHT_LUT_BASE + (row + column) * 2u];
   let texelB = deepAreaLightData[DEEP_AREA_LIGHT_LUT_BASE + (row + columnNext) * 2u];
   let texelC = deepAreaLightData[DEEP_AREA_LIGHT_LUT_BASE + (rowNext + column) * 2u];
@@ -63,17 +68,23 @@ fn deepAreaLtcTransform(cosTheta: f32, roughness: f32) -> array<vec2f, 8> {
   let top = mix(texelA, texelB, vec4f(fraction.x));
   let bottom = mix(texelC, texelD, vec4f(fraction.x));
   let blended = mix(top, bottom, vec4f(fraction.y));
+  let texelA2 = deepAreaLightData[DEEP_AREA_LIGHT_LUT_BASE + (row + column) * 2u + 1u];
+  let texelB2 = deepAreaLightData[DEEP_AREA_LIGHT_LUT_BASE + (row + columnNext) * 2u + 1u];
+  let texelC2 = deepAreaLightData[DEEP_AREA_LIGHT_LUT_BASE + (rowNext + column) * 2u + 1u];
+  let texelD2 = deepAreaLightData[DEEP_AREA_LIGHT_LUT_BASE + (rowNext + columnNext) * 2u + 1u];
+  let top2 = mix(texelA2, texelB2, vec4f(fraction.x));
+  let bottom2 = mix(texelC2, texelD2, vec4f(fraction.x));
+  let blended2 = mix(top2, bottom2, vec4f(fraction.y));
+  // 行语义与 CPU sampleLtcLut 逐字同构:row0 = floats[0..2] = vec4[2t].xyz;
+  // row1 = floats[4..6] = vec4[2t+1].xyz;amplitude = floats[7] = vec4[2t+1].w。
   var matrixRows = array<vec2f, 8>();
-  for (var component = 0u; component < 6u; component++) {
-    let part = select(0u, 1u, component >= 3u);
-    matrixRows[component] = vec2f(f32(part), blended[component]);
+  for (var component = 0u; component < 3u; component++) {
+    matrixRows[component] = vec2f(0.0, blended[component]);
   }
-  // 行 6:amplitude 双线性(row0 幅值存于 texel 第 2 个 vec4 的 w);行 7 恒零。
-  let ampA = deepAreaLightData[DEEP_AREA_LIGHT_LUT_BASE + (row + column) * 2u + 1u].w;
-  let ampB = deepAreaLightData[DEEP_AREA_LIGHT_LUT_BASE + (row + columnNext) * 2u + 1u].w;
-  let ampC = deepAreaLightData[DEEP_AREA_LIGHT_LUT_BASE + (rowNext + column) * 2u + 1u].w;
-  let ampD = deepAreaLightData[DEEP_AREA_LIGHT_LUT_BASE + (rowNext + columnNext) * 2u + 1u].w;
-  matrixRows[6] = vec2f(0.0, mix(mix(ampA, ampB, fraction.x), mix(ampC, ampD, fraction.x), fraction.y));
+  for (var component = 0u; component < 3u; component++) {
+    matrixRows[3u + component] = vec2f(0.0, blended2[component]);
+  }
+  matrixRows[6] = vec2f(0.0, blended2.w);
   matrixRows[7] = vec2f(0.0, 0.0);
   return matrixRows;
 }
@@ -134,7 +145,12 @@ fn deepAreaLightContribution(base: u32, positionView: vec3f, normalView: vec3f, 
   let row0 = vec3f(lut[0].y, lut[1].y, lut[2].y);
   let row1 = vec3f(lut[3].y, lut[4].y, lut[5].y);
   let amplitude = lut[6].y;
-  let transform = mat3x3f(row0, row1, vec3f(0.0, 0.0, 1.0));
+  // B2 MegaLights M1 真机对拍(2026-10-04)交付缺陷修复:mat3x3f(...) 是**列构造**,
+  // 原写法把行向量当列 → 交付矩阵 ≠ CPU ltc.ts(inverseMatrixFromRows)的数学矩阵
+  // [[p,0,q],[0,r,0],[0,0,1]](高光逐灯偏差 0.6×~1.5×,能量比 0.35;且任何奇异/降秩
+  // 变体都会把 mapped 角点压到过原点平面 → 多边形形式因子恒 0,高光整项消失)。
+  // 数学矩阵按列展开:col0 = (p,0,0), col1 = (0,r,0), col2 = (q,0,1)。
+  let transform = mat3x3f(vec3f(row0.x, 0.0, 0.0), vec3f(0.0, row1.y, 0.0), vec3f(row0.z, 0.0, 1.0));
   let mapped0 = deepAreaSafeNormalize(transform * local0, surfaceNormal);
   let mapped1 = deepAreaSafeNormalize(transform * local1, surfaceNormal);
   let mapped2 = deepAreaSafeNormalize(transform * local2, surfaceNormal);
