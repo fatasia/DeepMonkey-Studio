@@ -95,8 +95,32 @@ function reliabilityInput(value: unknown): AiSessionReliability {
     ...(contextSourceLabels ? { contextSourceLabels } : {}),
     ...(traceId ? { traceId } : {}), ...(contextFingerprint ? { contextFingerprint } : {}),
     ...(fallbackReason ? { fallbackReason } : {}),
+    ...(body.citations === undefined ? {} : { citations: citationsInput(body.citations) }),
     ...(body.contextDelivery === undefined ? {} : { contextDelivery: contextDeliveryInput(body.contextDelivery) }),
   };
+}
+
+/**
+ * T5：逐条引用锚随会话持久化的白名单校验——与 K2 上限（24 token）对齐，
+ * 锚数量按来源段上限（16）封顶，指纹/偏移形状与合同 AiAssistantCitation 一致。
+ */
+function citationsInput(value: unknown): NonNullable<AiSessionReliability["citations"]> {
+  if (!Array.isArray(value) || value.length > 24) throw new AssistantSessionError(400, "逐条引用数量无效");
+  return value.map((entry) => {
+    const citation = record(entry);
+    const token = text(citation.token, "引用 token", 64);
+    if (!Array.isArray(citation.anchors) || citation.anchors.length < 1 || citation.anchors.length > 16) throw new AssistantSessionError(400, "引用锚数量无效");
+    const anchors = citation.anchors.map((item) => {
+      const anchor = record(item);
+      return {
+        sourceId: text(anchor.sourceId, "引用来源 ID", 128),
+        sourcePath: text(anchor.sourcePath, "引用来源路径", 256),
+        offset: integer(anchor.offset, "引用偏移", 0, 10_000_000),
+        fingerprint: text(anchor.fingerprint, "引用指纹", 128),
+      };
+    });
+    return { token, anchors };
+  });
 }
 
 function contextDeliveryInput(value: unknown): AiContextDelivery {

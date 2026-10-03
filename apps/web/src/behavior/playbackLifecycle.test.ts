@@ -215,4 +215,25 @@ describe("playback lifecycle ownership", () => {
     expect(workers.map((port) => port.posted.filter((item) => item.type === "behavior.invoke" && item.lifecycle === "onEvent").length)).toEqual([1, 1, 0]);
     session.dispose(); vi.runAllTimers();
   });
+  it("hotSwapScript 派生递进变体 id;挂载键稳定,未运行/已结束如实拒绝", async () => {
+    vi.useFakeTimers();
+    const app = source(); app.scripts = [script("global")];
+    const port = new WorkerPort();
+    const session = new ApplicationPlaybackSession(app, "one", { workerFactory: () => port });
+    await session.start();
+    // 未运行的脚本先拒;ready 之前宿主也不可热插(Host 状态拒绝)。
+    expect(() => session.hotSwapScript(script("ghost"))).toThrow(/未在本次试运行/);
+    port.ready();
+    session.hotSwapScript({ ...script("global"), code: "function onStart(ctx) { ctx.log('v2'); }" });
+    expect(port.posted.at(-1)).toMatchObject({ type: "behavior.initialize", module: { id: "global:hot1", code: "function onStart(ctx) { ctx.log('v2'); }" } });
+    port.emit({ type: "behavior.ready", moduleId: "global:hot1", lifecycle: ["onStart"] });
+    const entry = session.entries.find((candidate) => candidate.module.id === "global");
+    expect(entry?.diagnostics).toMatchObject({ status: "running", moduleId: "global:hot1" });
+    expect(entry?.module.id).toBe("global");
+    // 二次热插递进 hot2:核心拒绝同 id,变体序列保证每次可换。
+    session.hotSwapScript(script("global"));
+    expect(port.posted.at(-1)).toMatchObject({ type: "behavior.initialize", module: { id: "global:hot2" } });
+    session.dispose(); vi.runAllTimers();
+    expect(() => session.hotSwapScript(script("global"))).toThrow(/已结束/);
+  });
 });

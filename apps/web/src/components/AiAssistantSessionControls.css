@@ -1,13 +1,20 @@
-.ai-session-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; }
-.ai-session-controls label { display: flex; flex: 1 1 180px; align-items: center; gap: 8px; min-width: 0; }
-.ai-session-controls select { flex: 1; min-width: 0; max-width: 100%; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px; }
-.ai-session-controls button { border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--text); padding: 6px 8px; }
+/* 头部会话选择器：标题下方的轻量下拉，正常态不抢视觉。 */
+.ai-session-picker { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.ai-session-picker select { min-width: 0; max-width: 170px; height: 22px; padding: 0 4px; overflow: hidden; color: var(--text-muted); border: 1px solid transparent; border-radius: 5px; background: transparent; font: inherit; font-size: 11px; text-overflow: ellipsis; cursor: pointer; transition: color 160ms cubic-bezier(0.16, 1, 0.3, 1), border-color 160ms cubic-bezier(0.16, 1, 0.3, 1); }
+.ai-session-picker select:hover:not(:disabled) { color: var(--text-strong); border-color: var(--line); }
+.ai-session-picker select option { color: var(--text); background: var(--surface-2); }
+.ai-session-picker select:disabled { opacity: .6; cursor: not-allowed; }
+.ai-session-picker .ai-session-new { display: grid; flex: 0 0 auto; place-items: center; width: 22px; height: 22px; padding: 0; color: var(--text-muted); border: 0; border-radius: 5px; background: transparent; cursor: pointer; transition: color 160ms cubic-bezier(0.16, 1, 0.3, 1), background-color 160ms cubic-bezier(0.16, 1, 0.3, 1); }
+.ai-session-picker .ai-session-new:hover:not(:disabled) { color: var(--text-strong); background: var(--accent-soft); }
+.ai-session-picker .ai-session-new:disabled { color: var(--text-faint); background: transparent; opacity: .5; cursor: not-allowed; }
+.ai-session-picker select:focus-visible, .ai-session-picker button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* 正文同步/保存异常提示：仅在需要用户处理时出现。 */
+.ai-session-controls { display: grid; gap: 8px; margin-bottom: 10px; }
+.ai-session-controls button { border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--text); padding: 5px 8px; cursor: pointer; }
 .ai-session-controls button:disabled { opacity: .5; cursor: not-allowed; }
-.ai-session-controls button:focus-visible, .ai-session-controls select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.ai-session-controls [role="alert"] { width: 100%; color: var(--danger); overflow-wrap: anywhere; }
-.ai-session-controls [role="alert"] span { display: block; margin-bottom: 8px; }
+.ai-session-controls button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ai-session-controls [role="alert"] { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--danger); font-size: 11px; overflow-wrap: anywhere; border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--line)); border-radius: 6px; padding: 8px; background: color-mix(in srgb, var(--danger) 8%, var(--surface-1)); }
+.ai-session-controls [role="alert"] span { flex: 1 1 200px; }
 /* K12 多标签页同步提示行：external 为中性状态提示，conflict 为语义化冲突告警。 */
-.ai-session-controls [role="status"].ai-session-external { width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text-muted); font-size: 11px; overflow-wrap: anywhere; }
+.ai-session-controls [role="status"].ai-session-external { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text-muted); font-size: 11px; overflow-wrap: anywhere; border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
 .ai-session-controls [role="status"].ai-session-external span { flex: 1 1 200px; }
-.ai-session-controls [role="alert"].ai-session-conflict { width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--danger); font-size: 11px; overflow-wrap: anywhere; border: 1px solid var(--danger); border-radius: 6px; padding: 8px; }
-.ai-session-controls [role="alert"].ai-session-conflict span { flex: 1 1 200px; margin-bottom: 0; }

@@ -28,11 +28,20 @@ export async function registerAgentMemoryRoutes(
     "/api/projects/:projectId/ai/memory",
     async (request, reply) => {
       if (!await projectExists(dependencies.store, request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
-      const [rules, memories] = await Promise.all([
+      const [rules, memories, lessons, runArchives] = await Promise.all([
         dependencies.memory.rulesSummary(request.params.projectId),
         dependencies.memory.listMemories(request.params.projectId),
+        // H-C6-S2：提炼经验与运行归档对用户可见（自动注入源的透明度要求）。
+        dependencies.memory.listLessons(request.params.projectId),
+        dependencies.memory.listRunArchives(request.params.projectId),
       ]);
-      return { rules, memories };
+      return {
+        rules,
+        memories,
+        lessons,
+        runArchives: runArchives.slice(0, 10),
+        runArchiveCount: runArchives.length,
+      };
     },
   );
 

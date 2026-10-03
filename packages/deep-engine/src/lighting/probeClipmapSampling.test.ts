@@ -80,6 +80,28 @@ describe("GI Lite probe clipmap sampling", () => {
     expect(sample.fallback).toBe(false);
   });
 
+  it("rejects sky probes behind thin walls inside the mean distance (F5-GI-1 sealed-room sentinel)", () => {
+    // 封门场景的记录形态:房间外围天空探针(miss 占比 0.4,命中均值被远处地面拉到 8,
+    // 方差 9),室内 receiver 距探针 ~1.5,远在 meanDistance 之内。旧合同在均值内
+    // 无条件全权重,0.04 薄墙不构成 Chebyshev 拒绝 → 穿墙漏光。收紧后天空探针在均值内
+    // 也走双向 Chebyshev(9/(9+Δ²)),与 enclosed 探针混合时亮分量被显著压制。
+    // 天空/enclosed 探针放在同一半球层(x 轴区分,up 法线两者都过半球检验),
+    // 使 Chebyshev 权重差异真正参与混合而不是被归一化抵消。
+    const fine = level(0, [0, 0, 0], 2, [2, 2, 2]);
+    const sky = record([10, 10, 10], { meanDistance: 8, distanceVariance: 9, occlusionFloor: 0.4 });
+    const enclosedRoom = record([0.2, 0.2, 0.2], { meanDistance: 2, distanceVariance: 0.01 });
+    const mixed = sampleIrradianceProbeClipmap({ worldPosition: [1, 1, 1], worldNormal: [0, 1, 0],
+      levels: [fine], records: Array.from({ length: 8 }, (_, corner) =>
+        ((corner >> 1) & 1) && !(corner & 1) ? sky : enclosedRoom) });
+    // 旧合同(均值内全权重)给出 ~5.1;收紧后天空探针权重 9/(9+41.8)≈0.177 → ~1.7。
+    expect(mixed.irradiance[0]).toBeGreaterThan(0.5);
+    expect(mixed.irradiance[0]).toBeLessThan(3);
+    // 同形态但全部为 enclosed 探针:均值分支保持全权重,封闭场景 GI 不回退。
+    const enclosedOnly = sampleIrradianceProbeClipmap({ worldPosition: [1, 1, 1], worldNormal: [0, 0, 0],
+      levels: [fine], records: Array.from({ length: 8 }, () => record([5, 5, 5])) });
+    expect(enclosedOnly.irradiance).toEqual([5, 5, 5]);
+  });
+
   it("selects the finest containing level and smoothly blends its boundary into the next level", () => {
     const fine = level(0, [0, 0, 0], 1, [4, 4, 4]), coarse = level(1, [-3, -3, -3], 2, [4, 4, 4]);
     const records = [...Array.from({ length: 64 }, () => record([1, 0, 0])),
@@ -122,6 +144,9 @@ describe("GI Lite probe clipmap sampling", () => {
     expect(PROBE_CLIPMAP_SAMPLING_WGSL).toContain("linear >= recordCount - level.baseProbe");
     expect(PROBE_CLIPMAP_SAMPLING_WGSL).toContain("corner < 8u");
     expect(PROBE_CLIPMAP_SAMPLING_WGSL).toContain("smoothstep(0.0, 1.5");
+    // F5-GI-1 合同收紧的 WGSL 半:均值分支必须带封闭包络自证,天空探针不得无条件全权重。
+    expect(PROBE_CLIPMAP_SAMPLING_WGSL).toContain("distance <= meanDistance && enclosed");
+    expect(PROBE_CLIPMAP_SAMPLING_WGSL).toContain("let delta = abs(distance - meanDistance);");
   });
   it.runIf(Boolean(process.env.DEEP_SHADER_NAGA_BIN))("passes Naga parsing and semantic validation", () => {
     const code = `${PROBE_CLIPMAP_SAMPLING_WGSL}

@@ -6,3 +6,5 @@ export * from "./packageAdapterTypes.js";
 export { adaptDeepSlStandardToShaderPackage } from "./packageAdapter.js";
 export { adaptDeepSlUnlitToShaderPackage } from "./packageUnlitAdapter.js";
 export { adaptDeepSlToShaderPackage } from "./packageAdapterDispatch.js";
+export { compileDeclarativeMaterial, lowerDeclarativeMaterial, registerDeclarativeMaterialOwner,
+  clearDeclarativeMaterialOwner, declarativeMaterialOwner, type DeclarativeMaterial } from "./declarativeMaterial.js";

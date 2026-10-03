@@ -5,9 +5,11 @@ import { translate, type AppLocale } from "../i18n";
 import "../styles/assistant-model-controls.css";
 export type { AssistantSessionOptions } from "../apiClients/aiApi";
 
-export function AssistantModelControls({ locale, mode, value, onChange, disabled = false }: {
+export function AssistantModelControls({ locale, mode, value, onChange, disabled = false, compact = false }: {
   locale: AppLocale; mode: AssistantMode; value: AssistantSessionOptions;
   onChange: (value: AssistantSessionOptions) => void; disabled?: boolean;
+  /** 紧凑档：嵌入输入框工具栏，只保留模型下拉（及模型支持时的思考档位），说明文案收进 title。 */
+  compact?: boolean;
 }) {
   const t = (zh: string, en: string) => translate(locale, zh, en);
   const [catalog, setCatalog] = useState<AssistantSessionCatalog>();
@@ -31,6 +33,27 @@ export function AssistantModelControls({ locale, mode, value, onChange, disabled
   }, [catalog, value.model, value.reasoningEffort, disabled, onChange]);
   const inactive = disabled || mode === "sql" || !catalog;
   const effortLabel = { minimal: t("简短", "Brief"), standard: t("标准", "Standard"), deep: t("深入", "Deep") };
+  const catalogFailed = error || catalog?.catalogAvailable === false;
+  const retryButton = <button type="button" disabled={disabled} onClick={() => setRevision(n => n + 1)}>{t("模型列表加载失败，重试", "Model list unavailable; retry")}</button>;
+  if (compact) {
+    if (mode === "sql") return null;
+    if (catalogFailed && !catalog?.models.length) return <div className="assistant-model-controls is-compact">{retryButton}</div>;
+    return <div className="assistant-model-controls is-compact">
+      <select aria-label={t("会话模型", "Session model")} disabled={inactive}
+        title={!catalog ? t("正在读取模型…", "Loading models…") : t("会话模型（仅本次会话）", "Session model (this session only)")}
+        value={value.model && value.model !== catalog?.defaultModel ? value.model : ""} onChange={event => onChange(event.target.value ? { model: event.target.value } : {})}>
+        <option value="">{catalog ? catalog.defaultModel : t("默认模型", "Default model")}</option>
+        {catalog?.models.filter(model => model.id !== catalog.defaultModel).map(model => <option key={model.id} value={model.id}>{model.id}</option>)}
+      </select>
+      {efforts.length > 0 && <select aria-label={t("会话思考档位", "Session reasoning effort")} disabled={inactive}
+        title={t("思考档位（仅本次会话）", "Reasoning effort (this session only)")} value={value.reasoningEffort ?? ""}
+        onChange={event => onChange({ ...(value.model ? { model: value.model } : {}), ...(event.target.value ? { reasoningEffort: event.target.value as NonNullable<AssistantSessionOptions["reasoningEffort"]> } : {}) })}>
+        <option value="">{t("思考·默认", "Reasoning·default")}</option>
+        {efforts.map(effort => <option key={effort} value={effort}>{effortLabel[effort]}</option>)}
+      </select>}
+      {catalogFailed && retryButton}
+    </div>;
+  }
   return <div className="assistant-model-controls">
     <label><span>{t("模型", "Model")}</span><select aria-label={t("会话模型", "Session model")} disabled={inactive}
       value={value.model ?? ""} onChange={event => onChange(event.target.value ? { model: event.target.value } : {})}>
@@ -45,7 +68,7 @@ export function AssistantModelControls({ locale, mode, value, onChange, disabled
       {efforts.map(effort => <option key={effort} value={effort}>{effortLabel[effort]}</option>)}
     </select></label>
     {mode === "sql" ? <small>{t("问数使用受控查询服务", "Data queries use the managed query service")}</small>
-      : error || catalog?.catalogAvailable === false ? <button type="button" disabled={disabled} onClick={() => setRevision(n => n + 1)}>{t("模型列表加载失败，重试", "Model list unavailable; retry")}</button>
+      : catalogFailed ? retryButton
         : <small>{!catalog ? t("正在读取模型…", "Loading models…") : !catalog.catalogAvailable
           ? t("模型目录不可用，仅显示已配置模型", "Model directory unavailable; showing the configured model") : efforts.length
           ? t("仅本次会话 · 支持思考档位", "This session only · reasoning levels supported")

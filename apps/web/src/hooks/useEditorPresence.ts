@@ -5,9 +5,10 @@ import { buildEditorSceneDraftSnapshot } from "../studio/editorSceneDraftSnapsho
 import { buildEditorDiagnosticsSnapshotReport } from "../studio/editorDiagnosticsSnapshotReport.js";
 import { readStudioFrameReadbacks } from "../viewer/studioFrameCaptureDiagnostics.js";
 import { isPbrFrameReadbackSnapshot } from "@bim-studio/deep-engine";
-import { getStudioSceneRuntime } from "../studio/studioSceneRuntimeRegistry.js";
-import { runEditorSceneTransaction } from "../studio/editorSceneWriteDriver.js";
+import { readEditorSceneRuntime } from "../studio/editorSceneRuntimeOwner.js";
+import { runEditorSceneTransaction, sceneMetadataDraftPatch } from "../studio/editorSceneWriteDriver.js";
 import type { AppState } from "./useAppState.js";
+import type { EditorPrimitiveDeleteAuthoring } from "../studio/editorPrimitiveDeleteAuthoring";
 
 const HEARTBEAT_MS = 15_000;
 /** 写事务轮询：仅场景编辑面开启；无在途事务时服务端 204，开销可忽略。 */
@@ -20,7 +21,7 @@ const SNAPSHOT_FETCH_BYTE_BUDGET = 64 * 1024 * 1024;
  * optional bounded scene draft mirror (same payload shape validated server-side), and write
  * transactions are pulled by this session and executed through the scene command ports.
  */
-export function useEditorPresence(state: AppState): void {
+export function useEditorPresence(state: AppState, sceneAuthoring?: EditorPrimitiveDeleteAuthoring): void {
   const session = state.applicationSessionRef.current;
   const storeState = session.store.getState();
   const document = storeState.document;
@@ -30,6 +31,10 @@ export function useEditorPresence(state: AppState): void {
   /** 写事务 CAS 基准：与 React applicationRevision 同步递增（store emit 与事务 apply/rollback 各 +1）。 */
   const revisionRef = useRef(state.applicationRevision);
   const activeSceneRef = useRef<string | undefined>(descriptor?.surface === "scene" ? descriptor.targetId : undefined);
+  const runtimeOwnerRef = useRef({ sceneId: state.activeScene?.id, engine: state.engine, busy: state.busy, rendererSwitching: state.rendererSwitching });
+  runtimeOwnerRef.current = { sceneId: state.activeScene?.id, engine: state.engine, busy: state.busy, rendererSwitching: state.rendererSwitching };
+  const authoringRef = useRef(sceneAuthoring);
+  authoringRef.current = sceneAuthoring;
 
   const draftMirror = useMemo(() => {
     if (!document || !storeState.dirty || descriptor?.surface !== "scene" || !descriptor.targetId) return undefined;
@@ -70,9 +75,16 @@ export function useEditorPresence(state: AppState): void {
         const next = await api.nextEditorDriverRequest(current.sessionId, current.leaseId);
         if (!next || lease.current !== current || !activeSceneRef.current) return;
         const sceneId = activeSceneRef.current;
+        const viewer = readEditorSceneRuntime(runtimeOwnerRef.current, sceneId);
+        const currentAuthor = () => {
+          const author = authoringRef.current;
+          if (!author || !viewer || readEditorSceneRuntime(runtimeOwnerRef.current, sceneId) !== viewer) throw new Error("当前作者场景已改变或尚未就绪。");
+          return author;
+        };
         const result = await runEditorSceneTransaction({
           sceneId,
-          viewer: () => getStudioSceneRuntime(sceneId),
+          viewer: () => readEditorSceneRuntime(runtimeOwnerRef.current, sceneId),
+          authoring: authoringRef.current ? { begin: label => currentAuthor().begin(label), remove: id => currentAuthor().remove(id), restore: snapshot => currentAuthor().restore(snapshot) } : undefined,
           readRevision: () => revisionRef.current,
           bumpRevision: () => {
             revisionRef.current += 1;
@@ -80,6 +92,22 @@ export function useEditorPresence(state: AppState): void {
           },
         }, next);
         if (lease.current !== current) return;
+        // H-C7-P4 B5：场景级命令的 draft 文档回写——引擎由端口消费，React draft
+        // 不同步则保存链路（makeSceneSnapshot 消费 React state）会丢失命令效果。
+        // 与相机同规不进撤销栈；场景不匹配等 rejected 路径不触碰 draft。
+        if (result.status === "committed") {
+          const draft = sceneMetadataDraftPatch(next.transaction.commands);
+          if (draft.lightingPatch) state.setLighting(currentValue => ({ ...currentValue, ...draft.lightingPatch! }));
+          if (draft.environmentPatch) state.setSceneEnvironment(currentValue => ({ ...currentValue, ...draft.environmentPatch! }));
+          if (draft.weather) state.setWeather(draft.weather);
+          // H-C7-P3:状态机锚迁移回写 draft——UI 面板下次编辑动画从 draft 全量推引擎,
+          // 不同步会让命令迁移的锚被旧 draft 覆盖;draft 无状态机时保持不动。
+          if (draft.animationAnchorPatch) {
+            state.setSceneAnimation(current => current.stateMachine
+              ? { ...current, stateMachine: { ...current.stateMachine, ...draft.animationAnchorPatch! } }
+              : current);
+          }
+        }
         await api.postEditorDriverResult(current.sessionId, current.leaseId, next.requestId, result);
       } catch {
         // 拉取或回传失败：下个周期重试；已取走的事务由服务端 TTL 兜底作废。

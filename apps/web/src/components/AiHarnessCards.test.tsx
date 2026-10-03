@@ -131,13 +131,14 @@ describe("H-C1 用户可感知接线", () => {
     expect(html).toContain("计划模式");
   });
 
-  it("输入区渲染计划模式 chip（aria-pressed 关闭态、无障碍 label），关闭时无 M7 状态行", () => {
+  it("输入区以单个执行方式下拉承载计划/逐次确认/自主执行，默认逐次确认且无计划状态行", () => {
     const html = renderToStaticMarkup(<IndustrialAgentWorkspace locale="zh-CN" context={{}} />);
-    expect(html).toContain("ai-plan-chip");
-    expect(html).toContain('aria-pressed="false"');
-    expect(html).toContain("计划模式：只读探索并输出实施计划");
-    expect(html).not.toContain("ai-notice-plan");
-    expect(html).not.toContain("计划模式已开启");
+    expect(html).toContain('aria-label="执行方式"');
+    expect(html).toContain("只出计划");
+    expect(html).toMatch(/<option value="confirm" selected="">逐次确认<\/option>/);
+    expect(html).not.toContain("industrial-agent-risk-line is-plan");
+    // 标题块只在脚本工作区出现（助手页签已标明"执行任务"）。
+    expect(html).not.toContain("industrial-agent-heading");
   });
 });
 

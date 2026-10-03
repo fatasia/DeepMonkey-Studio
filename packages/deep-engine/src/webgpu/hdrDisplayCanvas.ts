@@ -13,7 +13,9 @@ export async function probeHdrDisplayCanvas(device: GPUDevice, canvas: HTMLCanva
   if (request.strategy !== undefined && request.strategy !== "extended-linear") {
     return Object.freeze({ policy: resolveHdrDisplayPolicy(undefined, request), canvasProbePerformed: false });
   }
-  const host = canvas.ownerDocument?.defaultView;
+  // 浏览器探测代码:ownerDocument 是合法 DOM API;apps/api(Node 无 DOM lib)会把它
+  // 传递编译进,这里用局部结构化声明避免拉全局 DOM lib(会撞 node ReadableStream 类型)。
+  const host = (canvas as HTMLCanvasElement & { ownerDocument?: { defaultView?: { matchMedia(query: string): { matches: boolean } } } }).ownerDocument?.defaultView;
   let range: HdrDisplayProbe["displayDynamicRange"] = "unknown";
   try { range = host?.matchMedia("(dynamic-range: high)").matches ? "high"
     : host?.matchMedia("(dynamic-range: standard)").matches ? "standard" : "unknown"; } catch { /* unknown retains SDR */ }
@@ -26,10 +28,11 @@ export async function probeHdrDisplayCanvas(device: GPUDevice, canvas: HTMLCanva
   let context: GPUCanvasContext | null | undefined;
   let scopePushed = false;
   try {
-    const temporary = canvas.ownerDocument?.createElement("canvas");
+    const temporary = (canvas as HTMLCanvasElement & { ownerDocument?: { createElement(tag: string): HTMLCanvasElement } }).ownerDocument?.createElement("canvas");
     if (temporary) {
-      temporary.width = temporary.height = 1;
-      context = temporary.getContext("webgpu");
+      const sized = temporary as HTMLCanvasElement & { width: number; height: number };
+      sized.width = sized.height = 1;
+      context = sized.getContext("webgpu");
       device.pushErrorScope("validation"); scopePushed = true;
       if (context) {
         context.configure({ device, format: "rgba16float", alphaMode: "opaque", toneMapping: { mode: "extended" },

@@ -23,7 +23,9 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let q = (points[gid.x].xyz - params.origin) / params.cellSize;
   let maxQ = vec3f(params.dimensions - vec3u(1u));
   if (any(q < vec3f(0.0)) || any(q > maxQ)) {
-    output[gid.x] = bitcast<f32>(0x7fc00000u);
+    // 位型操作数经 uniform 零项打破 const 折叠链 —— Tint(Dawn)拒绝 const 字面量上的
+    // bitcast NaN(真机探针实测,同族修复见 wgsl/sdfCollisionQuery.wgsl);位型不变。
+    output[gid.x] = bitcast<f32>(0x7fc00000u | (params.count * 0u));
     return;
   }
   let l = vec3u(floor(q));

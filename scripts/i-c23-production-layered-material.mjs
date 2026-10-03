@@ -6,12 +6,12 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 const root = fileURLToPath(new URL("../", import.meta.url)), require = createRequire(import.meta.url);
 const mode = process.env.C23_GATE_MODE ?? "production";
-if (!["production", "rehydrated"].includes(mode)) throw Error("Unknown C23 gate mode.");
+if (!["production", "rehydrated", "clearcoat", "metal-reflection"].includes(mode)) throw Error("Unknown C23 gate mode.");
 const rounds = mode === "rehydrated" ? 1 : 2;
-const out = path.join(root, `test-output/i-series-0930/layered-material-${mode}`);
+const out = path.join(root, mode === "metal-reflection" ? "test-output/i-c23-layer-anisotropy-20261001/web-gpu" : mode === "clearcoat" ? "test-output/i-c23-layer-clearcoat-20261001/web-gpu" : `test-output/i-series-0930/layered-material-${mode}`);
 await mkdir(out, { recursive: true });
 const { build } = require("../packages/deep-engine/node_modules/esbuild"), sharp = require("sharp");
-const sources = ["packages/deep-engine/lab/iC23LayeredMaterialProduction.ts", "scripts/i-c23-production-layered-material.mjs"];
+const sources = ["packages/deep-engine/lab/iC23LayeredMaterialProduction.ts", "packages/deep-engine/lab/iC23MetalReflectionFrames.ts", "scripts/i-c23-production-layered-material.mjs"];
 for (const folder of ["packages/deep-engine/src", "packages/deep-engine/wgsl"]) {
   for (const entry of await readdir(path.join(root, folder), { recursive: true, withFileTypes: true })) {
     if (entry.isFile() && /\.(ts|wgsl|sha256)$/.test(entry.name)) sources.push(path.relative(root, path.join(entry.parentPath, entry.name)).replaceAll("\\", "/"));
@@ -50,10 +50,10 @@ try {
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     const result = await page.evaluate(async mode => (await import("/probe.mjs")).runIC23LayeredMaterialProduction(name => globalThis.saveLayeredFrame(name), mode), mode);
     result.displayFrames = frames;
-    const actual = frames.find(frame => frame.name === (mode === "rehydrated" ? "rehydrated-two-layers" : "two-layers"));
+    const actual = frames.find(frame => frame.name === (mode === "metal-reflection" ? "metal-texture-alpha-255" : mode === "clearcoat" ? "clearcoat-layer" : mode === "rehydrated" ? "rehydrated-two-layers" : "two-layers"));
     result.passed &&= actual?.visiblePixels > 100_000 && actual?.colorBins > 5;
     runs.push(result); console.log(JSON.stringify({ round, passed: result.passed, maxCombinationError: result.maxCombinationError,
-      textureDelta: result.textureDelta, zeroDelta: result.zeroDelta, alphaZeroDelta: result.alphaZeroDelta,
+      coatDelta: result.coatDelta, factor0Delta: result.factor0Delta, textureDelta: result.textureDelta, zeroDelta: result.zeroDelta, alphaZeroDelta: result.alphaZeroDelta,
       maxFurnaceError: result.maxFurnaceError, maxFurnaceLayerDelta: result.maxFurnaceLayerDelta, maxRestoredDelta: result.maxRestoredDelta,
       failure: result.failure, validationError: result.validationError, remainingResources: result.remainingResources, actual }));
     await context.close(); if (!result.passed) break;

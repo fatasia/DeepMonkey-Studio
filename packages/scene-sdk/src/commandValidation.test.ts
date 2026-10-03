@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { prepareSceneCommandTransaction } from "./sceneCommandTransaction.js";
 import type { SceneCommand } from "./protocol.js";
 import {
   isSceneCommand,
@@ -175,5 +176,93 @@ describe("isSceneCommand", () => {
   it("provides a boolean boundary check", () => {
     expect(isSceneCommand(validCommands[0])).toBe(true);
     expect(isSceneCommand({ id: "bad", type: "selection.set", targets: "all" })).toBe(false);
+  });
+});
+
+describe("H-C7-P4 B5 命令面:lighting.set / environment.set", () => {
+  it("lighting.set 合法 patch 解析,至少一字段合同", () => {
+    const result = validateSceneCommand({ id: "l1", type: "lighting.set", sceneId: "s", patch: { intensity: 1.5, globalIlluminationEnabled: true } });
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.command).toMatchObject({ type: "lighting.set", sceneId: "s", patch: { intensity: 1.5, globalIlluminationEnabled: true } });
+    }
+    expect(validateSceneCommand({ id: "l2", type: "lighting.set", sceneId: "s", patch: {} }).valid).toBe(false);
+    expect(validateSceneCommand({ id: "l3", type: "lighting.set", sceneId: "s", patch: { intensity: -1 } }).valid).toBe(false);
+    expect(validateSceneCommand({ id: "l4", type: "lighting.set", sceneId: "s", patch: { unknown: 1 } }).valid).toBe(false);
+  });
+
+  it("environment.set 合法 patch 解析,weather 枚举与 backgroundColor", () => {
+    const result = validateSceneCommand({ id: "e1", type: "environment.set", sceneId: "s", patch: { weather: "fog", backgroundColor: "#101418", environmentIntensity: 0.5 } });
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.command).toMatchObject({ patch: { weather: "fog", backgroundColor: "#101418", environmentIntensity: 0.5 } });
+    }
+    expect(validateSceneCommand({ id: "e2", type: "environment.set", sceneId: "s", patch: { weather: "sandstorm" } }).valid).toBe(false);
+    expect(validateSceneCommand({ id: "e3", type: "environment.set", sceneId: "s", patch: {} }).valid).toBe(false);
+  });
+
+  it("场景不匹配与 capability:lighting/environment 走 studio.scene", () => {
+    expect(validateSceneCommand({ id: "l5", type: "lighting.set", sceneId: "wrong", patch: { enabled: true } }).valid).toBe(true); // 校验层不管场景匹配
+    expect(prepareSceneCommandTransaction({
+      id: "tx-l", sceneId: "s", baseRevision: 0,
+      module: { id: "m", capabilities: ["studio.object"], permissions: ["scene.write"] },
+      commands: [{ id: "l6", type: "lighting.set", sceneId: "s", patch: { enabled: true } }],
+    }).status).toBe("rejected");
+    const prepared = prepareSceneCommandTransaction({
+      id: "tx-l2", sceneId: "s", baseRevision: 0,
+      module: { id: "m", capabilities: ["studio.scene"], permissions: ["scene.write"] },
+      commands: [{ id: "l7", type: "lighting.set", sceneId: "s", patch: { enabled: true } }, { id: "e4", type: "environment.set", sceneId: "s", patch: { weather: "rain" } }],
+    });
+    expect(prepared.status).toBe("prepared");
+    if (prepared.status === "prepared") {
+      expect(prepared.plan.requiredCapabilities).toEqual(["studio.scene"]);
+      expect(prepared.plan.diff.map(d => d.type)).toEqual(["lighting.set", "environment.set"]);
+    }
+  });
+});
+
+describe("H-C7-P3 命令面:animation.set-anchor(状态机锚迁移)", () => {
+  it("合法锚解析:仅 initialStateId / 仅 activeStateId / 双锚", () => {
+    const initialOnly = validateSceneCommand({ id: "a1", type: "animation.set-anchor", sceneId: "s", anchor: { initialStateId: "idle" } });
+    expect(initialOnly.valid).toBe(true);
+    if (initialOnly.valid) {
+      expect(initialOnly.command).toMatchObject({ type: "animation.set-anchor", sceneId: "s", anchor: { initialStateId: "idle" } });
+    }
+    const activeOnly = validateSceneCommand({ id: "a2", type: "animation.set-anchor", sceneId: "s", anchor: { activeStateId: "work" } });
+    expect(activeOnly.valid).toBe(true);
+    if (activeOnly.valid) {
+      expect(activeOnly.command).toMatchObject({ anchor: { activeStateId: "work" } });
+    }
+    const both = validateSceneCommand({ id: "a3", type: "animation.set-anchor", sceneId: "s", anchor: { initialStateId: "idle", activeStateId: "work" } });
+    expect(both.valid).toBe(true);
+    if (both.valid) {
+      expect(both.command).toMatchObject({ anchor: { initialStateId: "idle", activeStateId: "work" } });
+    }
+  });
+
+  it("非法锚拒绝:空 anchor / 空串 id / 未知字段 / 非串 id / 缺 sceneId", () => {
+    expect(validateSceneCommand({ id: "a4", type: "animation.set-anchor", sceneId: "s", anchor: {} }).valid).toBe(false);
+    expect(validateSceneCommand({ id: "a5", type: "animation.set-anchor", sceneId: "s", anchor: { initialStateId: "" } }).valid).toBe(false);
+    expect(validateSceneCommand({ id: "a6", type: "animation.set-anchor", sceneId: "s", anchor: { unknownField: "x" } }).valid).toBe(false);
+    expect(validateSceneCommand({ id: "a7", type: "animation.set-anchor", sceneId: "s", anchor: { initialStateId: 3 } }).valid).toBe(false);
+    expect(validateSceneCommand({ id: "a8", type: "animation.set-anchor", anchor: { activeStateId: "work" } }).valid).toBe(false);
+  });
+
+  it("capability 走 studio.animation,场景不匹配拒绝", () => {
+    expect(prepareSceneCommandTransaction({
+      id: "tx-a1", sceneId: "s", baseRevision: 0,
+      module: { id: "m", capabilities: ["studio.object"], permissions: ["scene.write"] },
+      commands: [{ id: "a9", type: "animation.set-anchor", sceneId: "s", anchor: { initialStateId: "idle" } }],
+    }).status).toBe("rejected");
+    const prepared = prepareSceneCommandTransaction({
+      id: "tx-a2", sceneId: "s", baseRevision: 0,
+      module: { id: "m", capabilities: ["studio.animation"], permissions: ["scene.write"] },
+      commands: [{ id: "a10", type: "animation.set-anchor", sceneId: "s", anchor: { initialStateId: "idle" } }],
+    });
+    expect(prepared.status).toBe("prepared");
+    if (prepared.status === "prepared") {
+      expect(prepared.plan.requiredCapabilities).toEqual(["studio.animation"]);
+    }
+    expect(validateSceneCommand({ id: "a11", type: "animation.set-anchor", sceneId: "wrong", anchor: { initialStateId: "idle" } }).valid).toBe(true); // 校验层不管场景匹配
   });
 });

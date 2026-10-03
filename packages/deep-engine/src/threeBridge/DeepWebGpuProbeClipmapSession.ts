@@ -8,6 +8,9 @@ let nextDeviceEpoch = 1;
 
 type ControllerFactory = (target: ProbeClipmapPbrTarget, deviceEpoch: string) => ProbeClipmapPbrController;
 
+/** F5-L4: capture-tick outcome for hosts that pump probe capture independently of rendered frames. */
+export type ProbeCaptureTickResult = "idle" | "busy" | "submitted" | "unavailable";
+
 export interface DeepWebGpuProbeClipmapDiagnostics {
   readonly requested: boolean;
   readonly active: boolean;
@@ -38,6 +41,8 @@ export class DeepWebGpuProbeClipmapSession {
   private failureValue: unknown;
   private rejectedFallback = false;
   private updateBudget = 64;
+  /** Last submitted view snapshot, reused verbatim by `captureTick` (no per-tick allocation). */
+  private lastView: RenderView | undefined;
 
   /**
    * `createController` must install a real scene-radiance encoder. Omitting it is an
@@ -66,6 +71,44 @@ export class DeepWebGpuProbeClipmapSession {
   setUpdateBudget(value: number): void {
     if (!Number.isSafeInteger(value) || value < 1 || value > 64) throw new RangeError("Probe update budget must be an integer in [1,64].");
     this.updateBudget = value;
+  }
+
+  /**
+   * 诊断读回:已发布 GI 体积的 rgba16float 全量快照。每 texel = 一探针
+   * (rgb = 过滤后 irradiance,a = validity),layer = localZ + level × gridSizeZ。
+   * 仅供宿主诊断/测试对拍(GI 漏光排查),不在渲染路径上。
+   */
+  async readbackVolume(): Promise<{ width: number; height: number; layers: number; rgba16: Uint16Array }> {
+    const binding = this.controller?.current?.binding;
+    if (!binding) throw new Error("Probe volume readback requires an active probe session with a published volume.");
+    const device = (this.target as { session: { device: GPUDevice } }).session.device;
+    const texture = binding.texture;
+    const width = texture.width, height = texture.height, layers = texture.depthOrArrayLayers;
+    const bytesPerTexel = 8;
+    const bytesPerRow = Math.ceil(width * bytesPerTexel / 256) * 256;
+    const buffer = device.createBuffer({ label: "Deep probe volume readback", size: bytesPerRow * height * layers,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    let encoder: GPUCommandEncoder | undefined;
+    try {
+      encoder = device.createCommandEncoder({ label: "Deep probe volume readback" });
+      encoder.copyTextureToBuffer({ texture }, { buffer, bytesPerRow, rowsPerImage: height },
+        { width, height, depthOrArrayLayers: layers });
+      device.queue.submit([encoder.finish()]);
+      await buffer.mapAsync(GPUMapMode.READ);
+      const raw = new Uint8Array(buffer.getMappedRange());
+      // 去除每行 copy 填充,压平为 rgba16 texel 序(x 逐列,y 逐行,z 逐层)。
+      const rgba16 = new Uint16Array(width * height * layers * 4);
+      for (let z = 0; z < layers; z += 1) for (let y = 0; y < height; y += 1) {
+        const rowStart = z * bytesPerRow * height + y * bytesPerRow;
+        const src = new Uint16Array(raw.buffer, raw.byteOffset + rowStart, width * 4);
+        rgba16.set(src, (z * height * width + y * width) * 4);
+      }
+      buffer.unmap();
+      return { width, height, layers, rgba16 };
+    } finally {
+      buffer.destroy();
+      void encoder;
+    }
   }
 
   setEnabled(enabled: boolean): void {
@@ -112,6 +155,36 @@ export class DeepWebGpuProbeClipmapSession {
     this.submit(snapshot);
   }
 
+  /**
+   * F5-L4 capture pump: advances one serialized capture batch without a rendered frame.
+   * Still scenes stop rendering (render demand gate), which used to starve probe capture —
+   * the published volume stayed at its initial fill and sampling fell back to full IBL.
+   * The tick reuses the last submitted view verbatim (zero per-tick allocation) and the
+   * submit path keeps the serialized-batch + updateBudget contract, so this only re-arms
+   * the existing scheduler; it never dispatches extra GPU work beyond one budgeted batch.
+   */
+  captureTick(): ProbeCaptureTickResult {
+    if (this.disposed || !this.controller) return "unavailable";
+    // A latched failure is persistent for this packet (no radiance source, unavailable
+    // scene): stop pumping here. Rendered frames re-arm once per frame via beginFrame,
+    // which retries — bounded, never an idle RAF loop.
+    if (this.failureValue !== undefined) return "unavailable";
+    if (this.pending) return "busy";
+    if (!this.lastView) return "unavailable";
+    if (!this.hasPendingWork()) return "idle";
+    this.submit(this.lastView);
+    return "submitted";
+  }
+
+  /** True while the clipmap still owes capture work (initial fill, deferred probes, dirty surfaces). */
+  hasPendingWork(): boolean {
+    if (this.disposed || !this.controller) return false;
+    if (this.controller.surfaceCache.pendingCount > 0) return true;
+    const snapshot = this.controller.current;
+    // No committed frame yet (initial fill), or the last plan deferred candidates.
+    return snapshot === undefined || snapshot.frameStats.deferredCount > 0;
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -145,6 +218,7 @@ export class DeepWebGpuProbeClipmapSession {
     this.pending?.abort();
     this.pending = undefined;
     this.queuedView = undefined;
+    this.lastView = undefined;
     this.controller?.dispose();
     this.controller = undefined;
   }
@@ -152,6 +226,7 @@ export class DeepWebGpuProbeClipmapSession {
   private submit(view: RenderView): void {
     const controller = this.controller;
     if (!controller) return;
+    this.lastView = view;
     const pending = new AbortController();
     this.pending = pending;
     void controller.beginFrame({

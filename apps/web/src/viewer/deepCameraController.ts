@@ -68,8 +68,11 @@ interface Spherical {
 /** 与 up 正交的稳定正交基;两个球坐标换算必须共用同一基,否则往返方位漂移。 */
 function upBasis(upAxis: Vec3): { right: Vec3; forward: Vec3 } {
   const basis: Vec3 = Math.abs(upAxis[0]) < 0.9 ? [1, 0, 0] : [0, 0, 1];
-  const right = normalize(cross(basis, upAxis));
-  const forward = normalize(cross(upAxis, right));
+  // 手性对齐 Three OrbitControls:其 theta 绕 up 轴满足 x=sinθ·sinφ / z=cosθ·sinφ
+  // (Vector3.setFromSphericalCoords),即 right = up × basis 而非 basis × up。
+  // 反手性曾致水平拖拽方向与 WebGL 作者路径相反(用户实测 2026-10-04)。
+  const right = normalize(cross(upAxis, basis));
+  const forward = normalize(cross(right, upAxis));
   return { right, forward };
 }
 

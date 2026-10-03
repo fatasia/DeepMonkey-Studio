@@ -1,5 +1,6 @@
 import { compareText } from "@bim-studio/contracts";
 import type {
+  AgentDiscoveryMode,
   AgentEvidence,
   AgentToolCall,
   AgentToolDefinition,
@@ -48,9 +49,11 @@ export class IndustrialAgentToolGateway implements AgentToolGateway {
     this.registry = registry;
   }
 
-  list(): AgentToolDefinition[] {
-    return this.registry.listCapabilities()
-      .filter((descriptor) => CURATED_TOOL_IDS.has(descriptor.id))
+  list(mode: AgentDiscoveryMode = "curated"): AgentToolDefinition[] {
+    // H-autonomy 要素④：curated=工业策划清单（现状）；general=通用开发模式面——注册表已注册
+    // 能力全量（仍无动态命令/shell/文件工具），放行与否由运行级 allowedToolIds 授权收口。
+    const descriptors = this.registry.listCapabilities();
+    return (mode === "general" ? descriptors : descriptors.filter((descriptor) => CURATED_TOOL_IDS.has(descriptor.id)))
       .map(toDefinition);
   }
 
@@ -60,7 +63,9 @@ export class IndustrialAgentToolGateway implements AgentToolGateway {
 
   async execute(call: AgentToolCall, context: Parameters<AgentToolGateway["execute"]>[1]): Promise<AgentToolOutcome> {
     const descriptor = this.registry.getCapability(call.toolId);
-    const definition = this.list().find((tool) => tool.id === call.toolId);
+    // H-autonomy 要素④：发现面随 run 的 discovery 档走；general 档允许注册表内策划环外工具，
+    // curated 档保持现状（策划清单外一律 tool-not-allowed）。
+    const definition = this.list(discoveryOfCheckpoint(context.checkpoint)).find((tool) => tool.id === call.toolId);
     if (!descriptor || !definition) return blocked("tool-not-allowed", `工具 ${call.toolId} 不在工业 Agent 白名单`);
     // H-C1 plan 档：计划模式是"更严的工具白名单"——只放行 read/analyze，
     // simulate/write/control 越界即拒并落 denied 审计（硬防线在网关，不在提示词）。
@@ -167,6 +172,11 @@ function toDefinition(descriptor: CapabilityDescriptor): AgentToolDefinition {
 }
 
 const PLAN_ALLOWED_EFFECTS: readonly AgentToolEffect[] = ["read", "analyze"];
+
+/** run 的发现面：缺省 curated（策划清单，历史行为）。 */
+function discoveryOfCheckpoint(checkpoint: Parameters<AgentToolGateway["execute"]>[1]["checkpoint"]): AgentDiscoveryMode {
+  return checkpoint.discovery === "general" ? "general" : "curated";
+}
 
 /** 从成功的 golden.verify 输出中读回经合同校验的信封；形状不符一律视作无 verdict。 */
 function readVerificationEnvelope(output: unknown): AiVerificationEnvelope | undefined {

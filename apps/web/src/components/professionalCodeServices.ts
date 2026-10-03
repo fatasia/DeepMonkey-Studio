@@ -1,27 +1,24 @@
+import "./monacoWorkerEnvironment";
 import { loader, type BeforeMount } from "@monaco-editor/react";
 import type * as monaco from "monaco-editor";
+import "monaco-editor/internal/common/workers.js";
+import "monaco-editor/languages/definitions/javascript/register.js";
 import type { SceneScriptIntelligenceContext } from "../studio/sceneScriptContext";
 import { apiDocumentationAt, contextualSuggestions, docsMarkdown, isWorkerBehaviorModel, referenceLabel, snippet, stringLiteralAt } from "./professionalCodeIntelligence";
 import { PLATFORM_TYPES } from "./professionalCodePlatformTypes";
 
-const monacoEnvironmentTarget = globalThis as typeof globalThis & { MonacoEnvironment?: { getWorker(moduleId: string, label: string): Worker } };
-monacoEnvironmentTarget.MonacoEnvironment = {
-  getWorker(_moduleId: string, label: string) {
-    return label === "javascript" || label === "typescript"
-      ? new Worker(new URL("../workers/monacoTypescript.worker.ts", import.meta.url), { type: "module", name: "studio-typescript" })
-      : new Worker(new URL("../workers/monacoEditor.worker.ts", import.meta.url), { type: "module", name: "studio-editor" });
-  },
-};
-
 let monacoLoadPromise: Promise<typeof import("monaco-editor")> | undefined;
 
 export function loadMonacoEditor(): Promise<typeof import("monaco-editor")> {
-  monacoLoadPromise ??= import("monaco-editor")
+  monacoLoadPromise ??= import("monaco-editor/editor/editor.api.js")
     .then(async (api) => {
       const typescript = await import("monaco-editor/language/typescript/monaco.contribution.js");
       // Monaco 0.56 的语言贡献模块改为显式导出，不再自动写回 languages 命名空间。
-      const configuredApi = { ...api, languages: { ...api.languages, typescript } } as typeof import("monaco-editor");
-      loader.config({ monaco: configuredApi });
+      // @monaco-editor/react 的 loader 类型按全量 monaco-editor 入口建模；运行时这里只加载 editor.api + TS 贡献，
+      // 避免把未使用的 css/html/json 语言 worker 拉进产物。
+      const editorApi = api as typeof import("monaco-editor/editor/editor.api.js");
+      const configuredApi = { ...editorApi, languages: { ...editorApi.languages, typescript } } as typeof import("monaco-editor");
+      loader.config({ monaco: configuredApi as unknown as typeof import("monaco-editor") });
       return configuredApi;
     })
     .catch((error: unknown) => {

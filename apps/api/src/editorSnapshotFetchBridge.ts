@@ -86,17 +86,26 @@ export class EditorSnapshotFetchBridge {
       const expiresAt = this.now() + this.pendingTtlMs;
       const previous = this.pending.get(entry.sessionId);
       if (previous) previous.resolve({ status: "unavailable", resourceId: previous.request.resourceId, message: "被更新的拉取请求取代" });
-      this.pending.set(entry.sessionId, {
+      // 与写事务桥同构的 setTimeout 兜底：driver 死亡（停止轮询）时 prune 无人触发，
+      // 挂起的 MCP 调用必须仍能有界结算，而不是悬挂到 HTTP 层超时。
+      const pending: PendingSnapshot = {
         requestId: parsed.requestId, leaseId: entry.leaseId, expiresAt,
         request: { requestId: parsed.requestId, resourceId: parsed.resourceId, frameId: parsed.frameId },
         resolve: result => {
+          clearTimeout(timer);
           const cache = this.completed.get(entry.sessionId) ?? new Map();
           cache.set(parsed.requestId, { result, at: this.now() });
           if (cache.size > 8) cache.delete(cache.keys().next().value as string);
           this.completed.set(entry.sessionId, cache);
           resolve(result);
         },
-      });
+      };
+      const timer = setTimeout(() => {
+        if (this.pending.get(entry.sessionId) !== pending) return;
+        this.pending.delete(entry.sessionId);
+        pending.resolve({ status: "unavailable", resourceId: pending.request.resourceId, message: "拉取等待超时" });
+      }, this.pendingTtlMs);
+      this.pending.set(entry.sessionId, pending);
     });
   }
 
@@ -181,26 +190,31 @@ export function editorSnapshotFetchToolDefinition() {
     inputSchema: {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       type: "object",
-      required: ["projectId", "sessionId", "resourceId"],
+      required: ["projectId", "sessionId", "resourceId", "requestId"],
       properties: {
         projectId: { type: "string", minLength: 1 },
         sessionId: { type: "string", minLength: 1 },
         resourceId: { type: "string", enum: ["present-color", "opaque-hdr", "linear-depth"] },
+        // requestId 与运行时 parseFetchRequest 的必填合同一致；缺了它合规客户端必然失败。
+        requestId: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$" },
         frameId: { type: "string", maxLength: 160 },
       },
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotent: true, openWorldHint: false },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   };
 }
 
-/** MCP tools/call 入口：治理走 request()，结果以 JSON 文本返回。 */
+/** MCP tools/call 入口：治理走 request()，结果以 JSON 文本返回。
+ *  入参信封与 editor.scene-transaction 同构——工具 schema 声明的字段在 arguments 顶层
+ *  （projectId/sessionId/resourceId/requestId/frameId），历史版本误读 params.input，
+ *  导致任何合规 MCP 调用都返回「拉取输入不合法」，已按根因修正。 */
 export async function callEditorSnapshotFetchTool(
-  params: Record<string, unknown>, bridge: EditorSnapshotFetchBridge, user: SystemUserRecord,
+  params: Record<string, unknown> | undefined, bridge: EditorSnapshotFetchBridge, user: SystemUserRecord,
 ): Promise<{ text: string }> {
-  const input = (params as { input?: unknown }).input;
-  const sessionId = typeof (input as { sessionId?: unknown })?.sessionId === "string"
-    ? (input as { sessionId: string }).sessionId : "";
+  const args = params?.arguments;
+  const input = args && typeof args === "object" ? (args as Record<string, unknown>) : undefined;
+  const sessionId = typeof input?.sessionId === "string" ? input.sessionId : "";
   const result = await bridge.request(user, sessionId, input);
   return { text: JSON.stringify(result) };
 }

@@ -42,10 +42,22 @@ export interface AskDataPlanningIssue {
   message: string;
 }
 
+/**
+ * H-C5-T1：needs-input 且歧义在数据集选择时，服务端随响应透传的项目目录候选。
+ * 只来自服务端真实目录（不虚构）；字段刻意收敛为浏览所需最小集。
+ */
+export interface AskDataQueryDatasetCandidate {
+  id: string;
+  name: string;
+  updatedAt: string;
+}
+
 export interface AskDataQueryPlanningResult {
   status: "ready" | "needs-input";
   plan?: AskDataQueryPlan;
   issues: AskDataPlanningIssue[];
+  /** 仅 needs-input 且歧义为 dataset-not-found 时由服务端目录透传；ready 或其他歧义不携带。 */
+  candidates?: AskDataQueryDatasetCandidate[];
 }
 
 export interface AskDataQueryReadResult {

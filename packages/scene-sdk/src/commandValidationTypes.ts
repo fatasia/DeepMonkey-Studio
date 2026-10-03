@@ -3,6 +3,7 @@ import type { SceneCommand } from "./protocol.js";
 export const SCENE_COMMAND_VALIDATION_LIMITS = {
   maxIdentifierLength: 1_024,
   maxDataStringLength: 65_536,
+  maxMaterialSourceBytes: 32 * 1_024,
   maxJsonDepth: 32,
   maxJsonNodes: 10_000,
   maxArrayItems: 4_096,

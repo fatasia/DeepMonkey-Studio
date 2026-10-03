@@ -91,4 +91,21 @@ describe("assistantReliability", () => {
 
     expect(source).toMatchObject({ state: "unavailable", kind: "snapshot" });
   });
+
+  it("passes through per-item citations and drops malformed entries instead of rendering them (T5)", () => {
+    const fingerprint = "f".repeat(64);
+    const result = assistantReliabilityFromResponse({ reliability: {
+      traceId: "trace-citations", verification: "unverified", contextTrust: "server-evidence",
+      evidenceCount: 0, inputRisk: "low", writePolicy: "read-only", warnings: [],
+      citations: [
+        { token: "EQ-2205", anchors: [{ sourceId: "workspace-scene", sourcePath: "scene", offset: 12, fingerprint }] },
+        { token: "no-anchors", anchors: [] },
+        { token: "half-anchor", anchors: [{ sourceId: "workspace-scene", sourcePath: "scene", offset: "12", fingerprint }] },
+        "not-an-object",
+      ],
+    } }, "scene", []);
+    expect(result.citations).toEqual([
+      { token: "EQ-2205", anchors: [{ sourceId: "workspace-scene", sourcePath: "scene", offset: 12, fingerprint }] },
+    ]);
+  });
 });

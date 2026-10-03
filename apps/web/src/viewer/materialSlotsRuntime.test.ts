@@ -3,10 +3,12 @@ import * as THREE from "three";
 import { describe, expect, it, vi } from "vitest";
 import type { SceneMaterialState } from "@bim-studio/contracts";
 import { ViewerEngineObjectState } from "./viewerEngineObjectState";
+import { readMaterialSlot } from "./materialSlots";
 
 const apply = ViewerEngineObjectState.prototype as unknown as {
   applyMaterialState: (this: unknown, object: THREE.Object3D, state: SceneMaterialState) => void;
   materialsForMesh: (mesh: THREE.Mesh) => THREE.Material[];
+  getMaterialState: (this: unknown, object: THREE.Object3D) => SceneMaterialState;
 };
 function harness() {
   return { collisionOriginalMaterials: new Map(), materialsForMesh: apply.materialsForMesh,
@@ -22,6 +24,57 @@ function model() {
   return { mesh, materials };
 }
 describe("material slot renderer consumption", () => {
+  it("serializes ungraded author color so saved grading reproduces exact rendered RGB rather than grading twice", () => {
+    const renderer = harness();
+    const original = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial({ color: "#d4a84f" }));
+    const neutral = original.material.color.toArray();
+    apply.applyMaterialState.call(renderer, original, { brightness: 0.35, contrast: -0.3 });
+    const graded = original.material.color.toArray();
+    const saved = apply.getMaterialState.call(renderer, original);
+    console.info("C2/B2 color readback", JSON.stringify({ rendered: original.material.color.getHexString(), serialized: saved.color, ungraded: original.material.userData.studioUngradedColor }));
+    expect(graded).not.toEqual(neutral); // Positive control: real grading changed the output.
+    expect(saved.color).toBe("#d4a84f");
+    expect(readMaterialSlot(original.material).color).toBe(saved.color);
+    const reopened = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial({ color: "#d4a84f" }));
+    apply.applyMaterialState.call(renderer, reopened, JSON.parse(JSON.stringify(saved)));
+    expect(reopened.material.color.toArray()).toEqual(graded);
+    expect(reopened.material.userData.studioColorAdjustment).toEqual(original.material.userData.studioColorAdjustment);
+    const wrong = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial({ color: "#d4a84f" }));
+    apply.applyMaterialState.call(renderer, wrong, { ...saved, color: `#${original.material.color.getHexString()}` });
+    expect(wrong.material.color.toArray()).not.toEqual(graded); // Same-phase negative control detects double grading.
+  });
+
+  it("keeps zero adjustment bit-identical for precise linear source colors and reset after nonzero grading", () => {
+    const renderer = harness();
+    const colors = [[0.1234567, 0.3456789, 0.5678912], [0, 0.0000123456, 1], [0.25, 0.75, 0.5]];
+    const bits = (values: number[]) => Array.from(new BigUint64Array(Float64Array.from(values).buffer));
+    for (const source of colors) {
+      const material = new THREE.MeshStandardMaterial(); material.color.fromArray(source);
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(), material), baseline = bits(material.color.toArray());
+      const zero = { hue: 0, saturation: 0, brightness: 0, contrast: 0 };
+      apply.applyMaterialState.call(renderer, mesh, zero);
+      expect(bits(material.color.toArray())).toEqual(baseline);
+      apply.applyMaterialState.call(renderer, mesh, { brightness: 0.3, contrast: -0.25 });
+      expect(bits(material.color.toArray())).not.toEqual(baseline);
+      apply.applyMaterialState.call(renderer, mesh, zero);
+      expect(bits(material.color.toArray())).toEqual(baseline);
+    }
+  });
+  it("preserves the linear baseline through a material clone and explicit author-color changes", () => {
+    const renderer = harness(), material = new THREE.MeshStandardMaterial();
+    material.color.fromArray([0.1234567, 0.3456789, 0.5678912]);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(), material), original = material.color.toArray();
+    apply.applyMaterialState.call(renderer, mesh, { brightness: 0.3 });
+    const clone = new THREE.Mesh(new THREE.BoxGeometry(), material.clone());
+    apply.applyMaterialState.call(renderer, clone, { brightness: 0 });
+    expect(clone.material.color.toArray()).toEqual(original);
+    apply.applyMaterialState.call(renderer, clone, { color: "#12abef" });
+    expect(clone.material.color.toArray()).toEqual(new THREE.Color("#12abef").toArray());
+    apply.applyMaterialState.call(renderer, clone, { brightness: 0.2 });
+    apply.applyMaterialState.call(renderer, clone, { brightness: 0 });
+    expect(clone.material.color.toArray()).toEqual(new THREE.Color("#12abef").toArray());
+  });
+
   it("edits exactly one slot and leaves the other instance and slot unchanged", () => {
     const a = model(), b = model(), renderer = harness();
     apply.applyMaterialState.call(renderer, a.mesh, { slotOverrides: { "gltf:1": { roughness: 0.12 } } });

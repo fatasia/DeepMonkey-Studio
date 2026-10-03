@@ -56,6 +56,7 @@ mod hi_z_pyramid;
 mod hi_z_pyramid_tests;
 mod init;
 mod init_report;
+mod initial_preparation;
 mod material_resource_diff;
 #[cfg(all(test, target_os = "windows"))]
 mod material_uniform_fastpath_gpu_tests;
@@ -160,6 +161,7 @@ pub struct Renderer {
     view: PlayerView,
     coordinate_frame_revision: u64,
     telemetry: Option<crate::telemetry::FrameTelemetry>,
+    initial_preparation: Option<initial_preparation::InitialPreparationReport>,
     /// T01 跨端质量诊断;与 telemetry 同一开关(features.telemetry)。关闭时
     /// 为 None,frame.rs 全部采集点 `if let Some` 短路——零分配零格式化。
     quality: Option<quality_telemetry::QualityTelemetry>,

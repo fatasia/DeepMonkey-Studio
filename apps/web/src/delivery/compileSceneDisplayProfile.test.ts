@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import type { SceneSnapshot } from "@bim-studio/contracts";
+import { DEFAULT_DISPLAY_CONTRACT, type SceneSnapshot } from "@bim-studio/contracts";
 import { parseDeepRuntimePackage } from "@bim-studio/deep-engine/runtime-package";
 import { compileSceneRuntimePackage } from "./compileSceneRuntimePackage";
 
@@ -10,15 +10,18 @@ const scene: SceneSnapshot = { schemaVersion: 1, id: "profile-source", projectId
 const options = { packageId: "profile.fixture", packageVersion: "1.0.0", loadModel: async () => new Uint8Array() };
 
 it("publishes the requested profile through the actual compiler and package hash", async () => {
-  const legacy = await compileSceneRuntimePackage(scene, options);
   const omitted = await compileSceneRuntimePackage(scene, { ...options });
-  expect(omitted).toEqual(legacy);
-  expect(legacy.runtimePackage.payloads["scene.environment"]).not.toHaveProperty("displayProfile");
+  expect(omitted.runtimePackage.payloads["scene.environment"]).toMatchObject({
+    displayProfile: DEFAULT_DISPLAY_CONTRACT.toneMapping.operator,
+    schemaVersion: 1,
+    outputTransform: "native-aces-v1",
+  });
   const selected = await compileSceneRuntimePackage(scene, { ...options, displayProfile: "three-aces-r185" });
   expect(selected.runtimePackage.payloads["scene.environment"]).toMatchObject({ displayProfile: "three-aces-r185",
     schemaVersion: 1, outputTransform: "native-aces-v1" });
   expect(parseDeepRuntimePackage(selected.packageJson).valid).toBe(true);
-  expect(selected.runtimePackage.packageHash).not.toEqual(legacy.runtimePackage.packageHash);
+  const legacyDeep = await compileSceneRuntimePackage(scene, { ...options, displayProfile: "deep-aces" });
+  expect(selected.runtimePackage.packageHash).not.toEqual(legacyDeep.runtimePackage.packageHash);
   expect(scene.environment).toEqual({ gridVisible: false, backgroundColor: "#2050a0", skybox: "none" });
 });
 

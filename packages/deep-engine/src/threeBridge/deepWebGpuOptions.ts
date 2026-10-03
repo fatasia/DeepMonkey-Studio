@@ -86,7 +86,11 @@ export function snapshotEnvironment(source: PbrEnvironmentSource): PbrEnvironmen
     throw new TypeError("Deep WebGPU environment source must be an object.");
   }
   const reflectionProbes = snapshotPbrReflectionProbeSources(source.reflectionProbes);
-  const probeOptions = reflectionProbes === undefined ? {} : { reflectionProbes };
+  if (source.keptMips !== undefined && (!Number.isInteger(source.keptMips) || source.keptMips < 1 || source.keptMips > 16)) {
+    throw new RangeError("Deep WebGPU keptMips must be an integer within 1..16.");
+  }
+  const probeOptions = { ...(reflectionProbes === undefined ? {} : { reflectionProbes }),
+    ...(source.keptMips === undefined ? {} : { keptMips: source.keptMips }) };
   if (source.kind === "studio") return Object.freeze({ kind: "studio", ...probeOptions });
   if (source.kind === "prefiltered-ibl") {
     const environment = snapshotJson(source.environment) as unknown as typeof source.environment;
@@ -103,7 +107,7 @@ export function snapshotEnvironment(source: PbrEnvironmentSource): PbrEnvironmen
   }
   const options = source.options;
   if (options !== undefined) {
-    const allowed = ["specularSize", "diffuseSize", "sampleCount", "maxUploadBytes", "maxRadiance"];
+    const allowed = ["specularSize", "diffuseSize", "sampleCount", "maxUploadBytes", "maxRadiance", "keptMips"];
     if (!options || typeof options !== "object" || Array.isArray(options)
       || Object.keys(options).some(key => !allowed.includes(key))) {
       throw new TypeError("Unknown Deep WebGPU HDR environment option.");

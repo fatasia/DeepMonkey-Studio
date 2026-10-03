@@ -34,6 +34,15 @@ DeepWebGpuRenderRuntime & { packets: RenderPacket[]; updates: InstanceUpdate[] }
 }
 
 describe("DeepWebGpuBackend environment preparation", () => {
+  it("preserves retained-mip policy through both initial and replacement source snapshots", async () => {
+    const target = runtime(), stage = vi.fn(async (_source: PbrEnvironmentSource) => "staged" as const);
+    target.stageEnvironment = stage;
+    await new DeepWebGpuBackend(target, bridge()).stageEnvironment({ kind: "studio", keptMips: 4 });
+    expect(stage.mock.calls[0]![0]).toEqual({ kind: "studio", keptMips: 4 });
+    await new DeepWebGpuBackend(target, bridge()).stageEnvironment({ kind: "prefiltered-ibl", keptMips: 1,
+      environment: createRuntimeIblFixture() as RuntimePrefilteredIbl });
+    expect(stage.mock.calls[1]![0].keptMips).toBe(1);
+  });
   it("forwards an owned prefiltered payload through the formal backend", async () => {
     const target = runtime(), stage = vi.fn(async (_source: PbrEnvironmentSource) => "staged" as const);
     target.stageEnvironment = stage;

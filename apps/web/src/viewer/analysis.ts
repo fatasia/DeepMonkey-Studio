@@ -185,6 +185,15 @@ function geometryBvh(geometry: THREE.BufferGeometry): MeshBVH {
   return bvh;
 }
 
+/**
+ * 几何级 BVH 缓存的只读访问器(E4 维护净空扫掠等时间域消费):
+ * 同一几何的 BVH 全程只构建一次,跨采样/跨运行复用;调用方以此做
+ * "sweep 前后 BVH 不重建"的身份断言(bvhBefore === bvhAfter)。
+ */
+export function cachedGeometryBvh(geometry: THREE.BufferGeometry): MeshBVH {
+  return geometryBvh(geometry);
+}
+
 function visibleMeshes(root: THREE.Object3D): THREE.Mesh[] {
   const meshes: THREE.Mesh[] = [];
   root.traverse((object) => {

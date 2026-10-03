@@ -17,8 +17,9 @@ import { useAppState } from "./hooks/useAppState";
 import { useSceneHistoryActions } from "./hooks/useSceneHistoryActions";
 import { useApplicationRecovery } from "./hooks/useApplicationRecovery";
 import { useSceneHistoryState } from "./hooks/useSceneHistoryState";
-import { useScenePlayMode } from "./hooks/useScenePlayMode";
+import { useScenePlayMode, formatPlayEntryNotice, formatPlayExitNotice } from "./hooks/useScenePlayMode";
 import { createRestrictedPlayConsumer, type RestrictedPlayConsumer } from "./scripting/restrictedPlayConsumer";
+import { playTraceStore } from "./scripting/playTraceStore";
 import { useRef } from "react";
 import { downloadWorkspaceRecoveryDraft } from "./studio/workspaceRecoveryStore";
 import type { AppViewBindings } from "./views/appViewBindings";
@@ -327,6 +328,7 @@ export function App() {
     sceneSnapshotFactoryRef,
     sceneHistoryApplyingRef,
     sceneHistoryRecordRef,
+    playAbsorbedEditsRef,
     sceneHistoryRevision,
     flushSceneHistoryEdit,
   } = sceneHistoryState;
@@ -719,6 +721,19 @@ export function App() {
 
   useAppLifecycleEffects({
     state: appState,
+    sceneAuthoring: !busy && !playMode.active && !sceneBehaviorActive && !animationPlaying ? {
+      begin: label => {
+        if (sceneHistoryState.sceneEditTransactionRef.current) throw new Error("另一项作者事务尚未结束。");
+        return flushSceneHistoryEdit.beginTransaction(label);
+      },
+      remove: id => sceneHistoryState.runSceneHistoryEdit(() => sceneEditorController.deletePrimitive(id)),
+      restore: async snapshot => {
+        if (!project) throw new Error("项目已卸载，无法恢复删除快照。");
+        sceneHistoryApplyingRef.current = true;
+        try { await applyScene(snapshot, false, project, false, false, false, true); }
+        finally { sceneHistoryApplyingRef.current = false; }
+      },
+    } : undefined,
     playModeActive: playMode.active,
     saveActiveApplication,
     saveScene,
@@ -794,11 +809,16 @@ export function App() {
           showError(new Error("场景编辑事务尚未完成，请等待当前操作完成后再播放"));
           return;
         }
+        // S2b：会话临时修改计数清零（进入前的散记属于作者域，不计入本次播放）。
+        playAbsorbedEditsRef.current = 0;
         let restricted: RestrictedPlayConsumer;
         try {
+          // S2d:本会话轨迹仓重置后收纳 T31 快照(onTrace),退出后仍可审阅(审计器语义)。
+          playTraceStore.resetPlayTrace(new Date().toISOString());
           restricted = createRestrictedPlayConsumer({
             scripts: engine?.getInteractionScripts() ?? [],
             host: { engine: engine!, sceneId: activeScene.id },
+            onTrace: (scriptId, entries) => playTraceStore.recordPlayTrace(scriptId, entries),
             onError: showError,
           });
           restricted.start();
@@ -814,7 +834,8 @@ export function App() {
         if (result.ok) {
           restrictedPlayRef.current = restricted;
           engine?.setContinuousRender("restricted-play", true);
-          setMessage("已进入播放模式；修改仅在本次播放期间生效");
+          // S2b：未保存的脚本草稿不参与本次播放（热重载语义），必须如实呈现。
+          setMessage(formatPlayEntryNotice(Boolean(appState.pendingBehaviorDraftRef.current)));
         } else {
           if (engine) {
             engine.onRestrictedInteraction = undefined;
@@ -837,7 +858,8 @@ export function App() {
         if (result.ok) {
           restrictedPlayRef.current = undefined;
           setError(undefined);
-          setMessage("已退出播放模式，场景恢复为进入前状态");
+          // S2b：播放期间被吸收的临时修改随整体恢复丢弃，数量如实汇报。
+          setMessage(formatPlayExitNotice(playAbsorbedEditsRef.current));
         } else {
           showError(new Error("播放已停止受限脚本，但场景恢复未完成；请再次点击退出播放重试。"));
         }

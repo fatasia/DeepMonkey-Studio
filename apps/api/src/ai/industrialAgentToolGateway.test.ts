@@ -88,6 +88,66 @@ describe("IndustrialAgentToolGateway", () => {
       ["tool-result", "completed"],
     ]);
   });
+
+  // H-autonomy 要素④：通用开发发现面——注册表内策划环外工具按 discovery 放行/收口。
+  it("exposes registered capabilities beyond the curated loop only in general discovery mode", async () => {
+    const draftCapability: CapabilityDescriptor = {
+      ...descriptor,
+      id: "modeling.parametric.draft",
+      label: "AI 参数化草案",
+      kind: "model",
+      permissions: ["modeling.write", "ai.invoke"],
+    };
+    const invokeCapability = vi.fn(async () => ({
+      status: "completed" as const,
+      capabilityId: draftCapability.id,
+      pluginId: "test.modeling",
+      capabilityVersion: "1.0.0",
+      requestId: "request-2",
+      traceId: "trace-2",
+      generatedAt: new Date().toISOString(),
+      durationMs: 2,
+      decisionStatus: "production" as const,
+      output: { verificationStatus: "passed" },
+      evidence: [{ id: "draft-evidence", kind: "trace" as const, label: "草案回读", source: "modeling", fingerprint: "verified" }],
+      warnings: [],
+      suggestedActions: [],
+    }));
+    const registry = {
+      listCapabilities: () => [descriptor, draftCapability],
+      getCapability: (id: string) => id === descriptor.id ? descriptor : id === draftCapability.id ? draftCapability : undefined,
+      invokeCapability,
+    } as unknown as PluginRegistry;
+    const audit = new AiReliabilityAuditBuffer();
+    const gateway = new IndustrialAgentToolGateway(registry, audit.sink);
+
+    // curated 面（缺省）：只含策划清单；general 面：注册表全量（含策划环外）。
+    expect(gateway.list().map((tool) => tool.id)).toEqual([descriptor.id]);
+    expect(gateway.list("general").map((tool) => tool.id)).toEqual([descriptor.id, draftCapability.id]);
+    expect(gateway.list("general").find((tool) => tool.id === draftCapability.id)).toMatchObject({ effect: "write", risk: "high", requiresApproval: true });
+
+    const call = {
+      toolId: draftCapability.id,
+      arguments: { target: "conveyor", enabled: true },
+      resources: [{ kind: "project", id: "project-1", projectId: "project-1" }],
+    };
+    // curated checkpoint：策划环外工具保持 tool-not-allowed（现状不变）。
+    const curatedDenied = await gateway.execute(call, { checkpoint: checkpointFixture(), signal: new AbortController().signal });
+    expect(curatedDenied).toMatchObject({ status: "blocked", error: { code: "tool-not-allowed" } });
+    expect(invokeCapability).not.toHaveBeenCalled();
+
+    // general checkpoint：同一工具按授权放行；无审批仍被策略硬拒（审批指纹纪律不变）。
+    const generalCheckpoint = { ...checkpointFixture(), discovery: "general" as const };
+    const generalDenied = await gateway.execute(call, { checkpoint: generalCheckpoint, signal: new AbortController().signal });
+    expect(generalDenied).toMatchObject({ status: "blocked", error: { code: "tool-policy" } });
+    const completed = await gateway.execute(call, {
+      checkpoint: generalCheckpoint,
+      approval: { approvedBy: "autonomy-policy", approvedAt: new Date().toISOString(), scopeFingerprint: gateway.fingerprint(call) },
+      signal: new AbortController().signal,
+    });
+    expect(completed).toMatchObject({ status: "completed" });
+    expect(invokeCapability).toHaveBeenCalledTimes(1);
+  });
 });
 
 function checkpointFixture(): AgentCheckpoint {

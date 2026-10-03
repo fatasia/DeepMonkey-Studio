@@ -507,6 +507,7 @@ export abstract class ViewerEngineNavigationTools extends ViewerEngineMeasuremen
     model.object.position.set(state.transform.position.x, state.transform.position.y, state.transform.position.z);
     model.object.rotation.set(state.transform.rotation.x, state.transform.rotation.y, state.transform.rotation.z);
     model.object.scale.set(state.transform.scale.x, state.transform.scale.y, state.transform.scale.z);
+    this.authorModelTransforms?.set(id, structuredClone(state.transform));
     this.setVisible(id, state.visible);
     this.setOpacity(id, state.opacity);
     // `color` in schema v1 was inferred from the first material and corrupted

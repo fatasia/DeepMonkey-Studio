@@ -1,0 +1,27 @@
+.path-trace-dialog { width: min(920px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 48px); margin: 24px auto auto; padding: 0; overflow: auto; color: var(--text); background: var(--surface-1); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-float); }
+.path-trace-dialog::backdrop { background: color-mix(in srgb, var(--bg-0) 72%, transparent); backdrop-filter: blur(5px); }
+.path-trace-dialog header { display: flex; justify-content: space-between; align-items: center; padding: 22px 24px 18px; border-bottom: 1px solid var(--line-subtle); }
+.path-trace-dialog h2 { margin: 3px 0 0; font-size: 20px; color: var(--text-strong); }
+.path-trace-dialog small { color: var(--text-muted); }
+.path-trace-body { display: grid; grid-template-columns: minmax(0, 1fr) 256px; gap: 24px; padding: 24px; }
+.path-trace-preview { display: flex; align-items: center; justify-content: center; flex-direction: column; min-height: 280px; overflow: hidden; border: 1px solid var(--line-subtle); border-radius: var(--radius-md); background: var(--bg-1); }
+.path-trace-preview canvas { width: 100%; height: auto; object-fit: contain; image-rendering: auto; }
+.path-trace-preview small { padding: 12px; }
+.path-trace-preview p { padding: 24px; text-align: center; color: var(--text-muted); }
+.path-trace-controls { display: grid; gap: 14px; align-content: start; }
+.path-trace-controls label { display: grid; gap: 6px; font-size: 12px; color: var(--text-strong); }
+.path-trace-controls :is(select, input) { width: 100%; min-width: 0; height: 36px; padding: 0 9px; color: var(--text-strong); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-md); }
+.path-trace-controls :is(select, input):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.path-trace-controls p { margin: -2px 0 0; font-size: 12px; color: var(--text-muted); line-height: 1.65; }
+.path-trace-status { display: flex; gap: 16px; justify-content: space-between; padding: 13px 24px; border-top: 1px solid var(--line-subtle); font-variant-numeric: tabular-nums; }
+.path-trace-status strong { color: var(--text-strong); font-weight: 500; }
+.path-trace-status span { color: var(--text-muted); }
+.path-trace-error { margin: 0; padding: 0 24px 14px; overflow-wrap: anywhere; color: var(--danger); }
+.path-trace-dialog footer { display: flex; justify-content: space-between; gap: 12px; padding: 14px 24px; background: var(--surface-2); border-top: 1px solid var(--line-subtle); }
+.path-trace-dialog footer > div { display: flex; gap: 8px; }
+.path-trace-dialog footer .button { flex: 0 0 auto; width: auto; padding: 0 12px; font-size: 13px; white-space: nowrap; }
+.path-trace-dialog .button:disabled { cursor: not-allowed; }
+.path-trace-dialog footer > div { flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 700px) { .path-trace-body { grid-template-columns: 1fr; gap: 18px; padding: 18px; } .path-trace-preview { min-height: 200px; } .path-trace-controls { grid-template-columns: 1fr 1fr; } .path-trace-controls > :is(label:first-child, p, small) { grid-column: 1 / -1; } }
+@media (max-width: 700px) { .path-trace-dialog footer { flex-wrap: wrap; } .path-trace-dialog footer > div { margin-left: auto; } }
+@media (max-width: 450px) { .path-trace-dialog footer { padding: 14px 18px; } .path-trace-status { flex-direction: column; gap: 5px; padding: 12px 18px; } }

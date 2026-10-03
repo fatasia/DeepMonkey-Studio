@@ -5,6 +5,11 @@ import type { BimAssistantPreparedContext } from "../bimAssistant";
 import { translate as tr, type AppLocale } from "../i18n";
 import { assistantReliabilityFromResponse, queryCapabilityReliability, type AssistantContextSource, type AssistantReliabilitySummary } from "./assistantReliability";
 
+import { parseDashboardStreamPreview } from "./dashboardStreamPreview";
+
+/** chat 整体 deadline 缺省（K9）：覆盖 sql 规划/读取、BIM 准备与流式全程。集中导出供测试注入。 */
+export const CHAT_REQUEST_DEADLINE_MS = 180_000;
+
 export interface AssistantRequestResult {
   text: string;
   model?: string;
@@ -46,6 +51,57 @@ export async function runAssistantRequest(input: {
   recentConversation: Array<{ mode: AssistantMode; question: string; answer: string; scope?: string }>;
   signal: AbortSignal;
   onDelta: (delta: string) => void;
+  onDashboardStream?: (preview: { labels: string[]; types: string[] }) => void;
+  onExecution?: (execution: AssistantRequestResult["execution"]) => void;
+  onPrepared?: (prepared: BimAssistantPreparedContext) => void;
+  prepareBim?: (question: string) => Promise<BimAssistantPreparedContext>;
+  /** K9 整体 deadline；缺省 180s。手动取消（外部 signal）语义不受影响。 */
+  overallDeadlineMs?: number;
+}): Promise<AssistantRequestResult> {
+  const { signal, locale } = input;
+  const t = (zh: string, en: string) => tr(locale, zh, en);
+  // K9：整体 deadline 级联——内部 controller 承接外部取消与超时两个来源；
+  // 超时触发时 abort 下游（fetch/流随之解体）并由 race 抛本地化错误，迟到 rejection 吞掉。
+  const overallDeadlineMs = input.overallDeadlineMs ?? CHAT_REQUEST_DEADLINE_MS;
+  const deadlineController = new AbortController();
+  // 入口前已取消的外部 signal 不会触发 abort 事件,必须立即级联(K9 首跑真缺陷)。
+  if (signal.aborted) deadlineController.abort(signal.reason);
+  const onOuterAbort = () => deadlineController.abort();
+  signal.addEventListener("abort", onOuterAbort, { once: true });
+  const timeoutMessage = t("AI 请求超时（超过 3 分钟）。请重试，或拆小问题后重试。", "AI request timed out after 3 minutes. Retry, or try a smaller question.");
+  const deadlineRejected = overallDeadlineMs <= 0 ? new Promise<never>(() => {}) : new Promise<never>((_, reject) => {
+    deadlineController.signal.addEventListener("abort", () => {
+      if (deadlineController.signal.reason instanceof Error && deadlineController.signal.reason.message === timeoutMessage) reject(deadlineController.signal.reason);
+    }, { once: true });
+    setTimeout(() => { deadlineController.abort(new Error(timeoutMessage)); }, overallDeadlineMs);
+  });
+  const workload = runAssistantRequestInner({ ...input, signal: deadlineController.signal });
+  // deadline 赢得竞速时,内层随 abort 解体后的迟到 rejection 必须吞掉(K9 首跑 unhandled 真缺陷)。
+  workload.catch(() => undefined);
+  return (async () => {
+    try {
+      return await Promise.race([workload, deadlineRejected]);
+    } finally {
+      signal.removeEventListener("abort", onOuterAbort);
+    }
+  })();
+}
+
+/** 一次请求从本地 BIM 准备、问数规划到流式读取共用取消信号；每个 await 后检查所有权。 */
+async function runAssistantRequestInner(input: {
+  client: Pick<typeof api, "invokeCapability" | "streamAssistant" | "listDatasets">;
+  mode: AssistantMode;
+  prompt: string;
+  projectId?: string;
+  sessionOptions?: AssistantSessionOptions;
+  locale: AppLocale;
+  context: unknown;
+  platformContext: unknown;
+  sources: AssistantContextSource[];
+  recentConversation: Array<{ mode: AssistantMode; question: string; answer: string; scope?: string }>;
+  signal: AbortSignal;
+  onDelta: (delta: string) => void;
+  onDashboardStream?: (preview: { labels: string[]; types: string[] }) => void;
   onExecution?: (execution: AssistantRequestResult["execution"]) => void;
   onPrepared?: (prepared: BimAssistantPreparedContext) => void;
   prepareBim?: (question: string) => Promise<BimAssistantPreparedContext>;
@@ -60,14 +116,19 @@ export async function runAssistantRequest(input: {
     const plan = drafted.output?.planning.plan;
     if (!plan) {
       const issue = drafted.output?.planning.issues[0]?.message;
-      // T2：needs-input（如数据集不匹配）且项目目录确有数据集时，返回结构化澄清
-      // （候选来自服务端目录，不虚构），而不是把歧义当错误抛出；目录不可用则保持原错误路径。
+      // T2：needs-input（如数据集不匹配）且确有候选时，返回结构化澄清（候选不虚构），
+      // 而不是把歧义当错误抛出。T1：候选优先消费服务端随响应透传的目录段；
+      // 服务端未透传（旧服务端/其他歧义）才回退本地目录自拼，目录不可用则保持原错误路径。
       if (drafted.output?.planning.status === "needs-input") {
-        let datasets: import("@bim-studio/contracts").DataDatasetRecord[] = [];
-        try { datasets = await client.listDatasets(projectId); } catch { /* 目录读取失败时走下方原错误抛出。 */ }
-        signal.throwIfAborted();
-        const options = datasets.filter(dataset => dataset.projectId === projectId).slice(0, 8)
-          .map(dataset => ({ id: dataset.id, label: dataset.name }));
+        let options = (drafted.output.planning.candidates ?? []).slice(0, 8)
+          .map((candidate) => ({ id: candidate.id, label: candidate.name }));
+        if (!options.length) {
+          let datasets: import("@bim-studio/contracts").DataDatasetRecord[] = [];
+          try { datasets = await client.listDatasets(projectId); } catch { /* 目录读取失败时走下方原错误抛出。 */ }
+          signal.throwIfAborted();
+          options = datasets.filter(dataset => dataset.projectId === projectId).slice(0, 8)
+            .map(dataset => ({ id: dataset.id, label: dataset.name }));
+        }
         if (options.length) {
           return {
             text: issue ?? t("需要先确认要查询的数据集", "The dataset to query needs to be confirmed first"),
@@ -110,6 +171,11 @@ export async function runAssistantRequest(input: {
     const next = dashboardAssistantStreamText(dashboardRaw);
     if (next.startsWith(dashboardVisible) && next.length > dashboardVisible.length) input.onDelta(next.slice(dashboardVisible.length));
     dashboardVisible = next;
+    // T7:流式期布局预览——只解析已完整闭合的 widget,坏数据 fail-quiet 不冒充草稿。
+    if (input.onDashboardStream && dashboardRaw.length <= 262_144) {
+      const preview = parseDashboardStreamPreview(dashboardRaw);
+      input.onDashboardStream({ labels: preview.labels, types: preview.types });
+    }
   }, { ...input.sessionOptions, ...(projectId ? { projectId } : {}), signal,
     onExecution: execution => { if (!signal.aborted) input.onExecution?.(execution); } });
   signal.throwIfAborted();

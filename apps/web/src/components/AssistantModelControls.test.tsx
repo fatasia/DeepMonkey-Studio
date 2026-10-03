@@ -40,3 +40,13 @@ it("clears options removed by a successful catalog refresh but preserves them du
   AssistantModelControls({ locale: "zh-CN", mode: "platform", value: { model: "removed" }, onChange });
   state.effects.at(-1)?.(); expect(onChange).not.toHaveBeenCalled();
 });
+it("compact mode keeps only the model picker and shows reasoning only when the model supports it", () => {
+  const withEfforts = walk(AssistantModelControls({ locale: "zh-CN", mode: "platform", value: {}, onChange: vi.fn(), compact: true }));
+  expect(withEfforts.filter(node => node.type === "select").map(node => node.props["aria-label"])).toEqual(["会话模型", "会话思考档位"]);
+  expect(withEfforts.some(node => node.type === "small")).toBe(false);
+  state.cursor = 0;
+  const without = walk(AssistantModelControls({ locale: "zh-CN", mode: "platform", value: { model: "other" }, onChange: vi.fn(), compact: true }));
+  expect(without.filter(node => node.type === "select").map(node => node.props["aria-label"])).toEqual(["会话模型"]);
+  state.cursor = 0;
+  expect(AssistantModelControls({ locale: "zh-CN", mode: "sql", value: {}, onChange: vi.fn(), compact: true })).toBeNull();
+});

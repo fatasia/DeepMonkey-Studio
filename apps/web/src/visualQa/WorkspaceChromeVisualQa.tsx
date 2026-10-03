@@ -6,7 +6,7 @@ import { FlatSceneObjectList } from "../components/FlatSceneObjectList";
 import type { SceneOrganizationObject } from "../components/SceneOrganizationPanel";
 import { SceneOutlinerPanel } from "../components/SceneOutlinerPanel";
 import { SceneSelectionBar } from "../components/SceneSelectionBar";
-import { SceneTimelinePanel } from "../components/SceneTimelinePanel";
+import { SceneTimelinePanel, type SceneDirectorWorkspace } from "../components/SceneTimelinePanel";
 import { ViewOrientationCube } from "../components/ViewOrientationCube";
 import "../components/ViewOrientationCube.css";
 import "./workspaceChromeVisualQa.css";
@@ -24,7 +24,7 @@ export default function WorkspaceChromeVisualQa() {
   const [selectedIds, setSelectedIds] = useState(new Set(["pump", "cabinet"]));
   const [animation, setAnimation] = useState(() => structuredClone(DEFAULT_ANIMATION));
   const [currentTime, setCurrentTime] = useState(1.4);
-  const [directorWorkspace, setDirectorWorkspace] = useState<"timeline" | "shots" | "navigation">("timeline");
+  const [directorWorkspace, setDirectorWorkspace] = useState<SceneDirectorWorkspace>("timeline");
   const [importSettingsOpen, setImportSettingsOpen] = useState(false);
   const transientChannels = useMemo(() => createTransientRegistry(), []);
   useEffect(() => {

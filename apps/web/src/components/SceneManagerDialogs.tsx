@@ -22,6 +22,7 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
     busy,
     cloudConfigured,
     cloudHint,
+    creationTemplate,
     deliveryReviewOpen,
     dialogMode,
     locale,
@@ -43,6 +44,7 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
     scenes,
     setDeliveryReviewOpen,
     setDialogMode,
+    setCreationTemplate,
     setManagerTab,
     setName,
     setParametricSourceModel,
@@ -80,7 +82,7 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
             <p>
               {dialogMode === "rename"
                 ? tr(locale, "修改场景在管理中心和编辑器中显示的名称。", "Change the scene name shown in management and the editor.")
-                : tr(locale, "新场景从空画布开始，之后可以连续加载多个模型。", "A new scene starts empty and can load multiple models.")}
+                : tr(locale, "新场景默认带一个轻量示例本体，也可以选择空白场景从零开始。", "A new scene starts with a lightweight sample object, or you can choose a blank scene.")}
             </p>
             <label>
               <span>{tr(locale, "场景名称", "Scene name")}</span>
@@ -94,6 +96,37 @@ export function SceneManagerDialogs({ controller }: { controller: SceneManagerCo
               />
             </label>
             <NameLengthHint id="scene-name-hint" value={name} locale={locale} />
+            {dialogMode === "create" && (
+              <fieldset className="dialog-fieldset" disabled={busy}>
+                <legend>{tr(locale, "初始内容", "Initial content")}</legend>
+                <label className="dialog-radio">
+                  <input
+                    type="radio"
+                    name="scene-template"
+                    value="sample"
+                    checked={creationTemplate === "sample"}
+                    onChange={() => setCreationTemplate("sample")}
+                  />
+                  <span>
+                    <strong>{tr(locale, "示例本体（推荐）", "Sample object (recommended)")}</strong>
+                    <small>{tr(locale, "底座、立柱和点击行为，进入画布即可看到效果。", "Base, pillar and click behavior so the canvas is immediately visible.")}</small>
+                  </span>
+                </label>
+                <label className="dialog-radio">
+                  <input
+                    type="radio"
+                    name="scene-template"
+                    value="blank"
+                    checked={creationTemplate === "blank"}
+                    onChange={() => setCreationTemplate("blank")}
+                  />
+                  <span>
+                    <strong>{tr(locale, "空白场景", "Blank scene")}</strong>
+                    <small>{tr(locale, "不注入任何模型或图元，保留原始创建路径。", "Do not inject any model or primitive; keep the original blank path.")}</small>
+                  </span>
+                </label>
+              </fieldset>
+            )}
             <div className="dialog-actions">
               <button type="button" className="button" disabled={busy} onClick={() => setDialogMode(undefined)}>
                 {tr(locale, "取消", "Cancel")}

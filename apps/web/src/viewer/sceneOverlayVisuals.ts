@@ -23,7 +23,10 @@ export function createMeasurementVisual(measurement: MeasurementState, preview: 
   const end = points[1] ?? start;
   const distance = measurement.distance;
   const color = preview ? 0xf0d58d : 0xf6c453;
-  const material = new THREE.LineBasicMaterial({ color, depthTest: false, transparent: preview, opacity: preview ? 0.75 : 1 });
+  // toneMapped=false 是深 overlay 投影合同(studioDeepEditorOverlay 拒绝 toneMapped
+  // 材质)与场景内其余辅助体(灯光代理/选择盒)的统一约定;缺失会使测量/批注
+  // 视觉体在深候选准备窗口(呈现后端为 webgl 时)破坏 Deep 切换与恢复。
+  const material = new THREE.LineBasicMaterial({ color, depthTest: false, toneMapped: false, transparent: preview, opacity: preview ? 0.75 : 1 });
   const linePoints = kind === "angle" && points[2] ? [start, end, start, points[2]] : [start, end];
   const line = kind === "angle" && points[2]
     ? new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(linePoints), material)
@@ -36,7 +39,7 @@ export function createMeasurementVisual(measurement: MeasurementState, preview: 
   for (const point of points) {
     const marker = new THREE.Mesh(
       new THREE.SphereGeometry(markerSize, 12, 8),
-      new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: preview, opacity: preview ? 0.75 : 1 })
+      new THREE.MeshBasicMaterial({ color, depthTest: false, toneMapped: false, transparent: preview, opacity: preview ? 0.75 : 1 })
     );
     marker.position.copy(point);
     marker.renderOrder = 21;
@@ -84,7 +87,7 @@ export function createAnnotationVisual(annotation: SceneAnnotationState, selecte
   const pinHeight = 0.48 * size;
   const line = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, pinHeight, 0)]),
-    new THREE.LineBasicMaterial({ color, depthTest: false })
+    new THREE.LineBasicMaterial({ color, depthTest: false, toneMapped: false })
   );
   line.renderOrder = 31;
   line.userData.annotationId = annotation.id;
@@ -92,7 +95,7 @@ export function createAnnotationVisual(annotation: SceneAnnotationState, selecte
 
   const marker = new THREE.Mesh(
     new THREE.SphereGeometry(0.075 * size, 16, 10),
-    new THREE.MeshBasicMaterial({ color, depthTest: false })
+    new THREE.MeshBasicMaterial({ color, depthTest: false, toneMapped: false })
   );
   marker.position.y = pinHeight;
   marker.renderOrder = 32;

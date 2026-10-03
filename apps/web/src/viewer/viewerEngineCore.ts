@@ -2,6 +2,7 @@ import type * as FRAGS from "@thatopen/fragments";
 import * as THREE from "three";
 import type { ClippingGroup } from "three/webgpu";
 import type { EventQueue, RigidBody, World as RapierWorld } from "@dimforge/rapier3d-compat";
+import { DEFAULT_DISPLAY_CONTRACT } from "@bim-studio/contracts";
 import { CompatibleGLTFLoader as GLTFLoader } from "./CompatibleGLTFLoader";
 import { configureGltfKtx2 } from "./gltfKtx2Support";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
@@ -92,6 +93,10 @@ import { installOcclusionDrawFilter } from "./occlusionDrawFilter";
 import { ViewerOffscreenController } from "./viewerOffscreenController";
 import { PhysicsWorldHost } from "./physicsWorldHost";
 import { createPhysicsDebugOverlay } from "./rapierPhysicsDebugOverlay";
+
+const THREE_OUTPUT_COLOR_SPACE = {
+  srgb: THREE.SRGBColorSpace,
+} as const;
 
 /** ViewerEngine 的共享状态与跨模块契约，具体能力由职责层逐级实现。 */
 export abstract class ViewerEngineCore extends ViewerEngineContract {
@@ -419,12 +424,13 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
       overlaySprites: () => this.overlaySpritesProvider(),
     });
     this.renderer.setPixelRatio(this.adaptiveRenderScaleController.state().basePixelRatio);
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.outputColorSpace = THREE_OUTPUT_COLOR_SPACE[DEFAULT_DISPLAY_CONTRACT.outputColorSpace];
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = DEFAULT_DISPLAY_CONTRACT.toneMapping.exposure;
     if (this.renderer instanceof THREE.WebGLRenderer) {
       this.renderer.localClippingEnabled = true;
-      this.renderer.shadowMap.type = THREE.PCFShadowMap;
+      this.renderer.shadowMap.type = DEFAULT_DISPLAY_CONTRACT.shadow.filter === "pcf-soft"
+        ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     }
     this.container.append(this.renderer.domElement);
     this.scene.add(this.modelRoot);

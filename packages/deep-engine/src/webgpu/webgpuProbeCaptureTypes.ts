@@ -12,6 +12,8 @@ export interface WebGpuProbeRadianceContext {
   readonly updateIndex: number;
   readonly destination: GPUTexture;
   readonly destinationView: GPUTextureView;
+  /** Optional internal visibility capture target; absent preserves the legacy/Native kernel. */
+  readonly momentsDestinationView?: GPUTextureView;
   readonly destinationOrigin: Readonly<{ x: number; y: number; z: number }>;
   readonly context: ProbeCaptureBeginContext;
 }
@@ -20,6 +22,8 @@ export interface WebGpuProbeCaptureOptions {
   readonly fallbackRadiance?: ProbeVector3;
   readonly maxTransientBytes?: number;
   readonly encodeSourceRadiance?: WebGpuProbeRadianceEncoder;
+  /** Product-only moment capture; missing/false retains the legacy texture sampler path. */
+  readonly captureVisibilityMoments?: boolean;
   /** Previous-frame weight for scheduler-classified dynamic probes. */
   readonly dynamicIrradianceHysteresis?: number;
   /** F1 slice-3: max per-channel frame-to-frame change relative to history; 0 (default) disables. */
@@ -39,6 +43,8 @@ export interface WebGpuProbeSamplingBinding {
   readonly view: GPUTextureView;
   readonly sampler: GPUSampler;
   readonly levelMetadataBuffer: GPUBuffer;
+  /** Atomically committed, unfiltered hit moments in the existing record visibility order. */
+  readonly momentsView?: GPUTextureView;
   readonly format: typeof WEBGPU_PROBE_VOLUME_FORMAT;
   readonly width: number;
   readonly height: number;

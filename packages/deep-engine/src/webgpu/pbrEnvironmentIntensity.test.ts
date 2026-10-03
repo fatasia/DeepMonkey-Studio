@@ -53,7 +53,7 @@ describe("PBR authored environment intensity", () => {
 
   it("scales both actual IBL shader samples before GI blending, without changing direct or emissive terms", () => {
     expect(sceneShader).toContain("environmentSampler, n, 0.0).rgb * frame.lightDirection.w");
-    expect(sceneShader).toContain("reflection, rough * maxSpecularLod).rgb * frame.lightDirection.w");
+    expect(sceneShader).toContain("let radiance = deepPbrReflectionRadiance(world, reflection, rough) * frame.lightDirection.w;");
     expect(sceneShader.match(/\* frame\.lightDirection\.w/g)).toHaveLength(2);
     expect(sceneShader).toContain("mix(environmentIrradiance, gi.rgb, gi.a)");
     expect(sceneShader).toContain("frame.sunColor.rgb * frame.sunColor.w * visibility");

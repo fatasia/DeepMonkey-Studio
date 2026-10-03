@@ -318,6 +318,7 @@ export class MqttIngestSupervisor {
           ...(config.samplingIntervalMs !== undefined ? { samplingIntervalMs: config.samplingIntervalMs } : {}),
           ...(config.publishingIntervalMs !== undefined ? { publishingIntervalMs: config.publishingIntervalMs } : {}),
           ...(config.queueSize !== undefined ? { queueSize: config.queueSize } : {}),
+          ...(config.security ? { security: config.security } : {}),
           ...(resume.lastSequence !== null || resume.lastTimestamp !== null ? { resume } : {}),
         }),
       project: (sample) => projectOpcUaSample(config, sample),

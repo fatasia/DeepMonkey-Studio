@@ -1,9 +1,18 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { AgentRunError, type AgentApproval, type AgentBudget, type AgentCheckpoint } from "@bim-studio/industrial-agent-orchestrator";
+import type { AgentAutonomySettings } from "@bim-studio/contracts";
 import type { MetadataStore } from "../store.js";
 import { OntologyPackageStore } from "../ontology/ontologyStore.js";
 import type { IndustrialAgentRuntime } from "./industrialAgentRuntime.js";
 import { AssistantSessionOptionError, type AssistantSessionOptions } from "./assistantSessionOptions.js";
+import {
+  AgentAutonomySettingsError,
+  applyGeneralDenyList,
+  mergeAgentAutonomySettingsDraft,
+  resolveAgentAutonomySettings,
+  resolveDiscoveryMode,
+  resolveRunExecutionMode,
+} from "./agentAutonomySettings.js";
 import {
   OntologyActionRejectionError,
   OntologyActionRuntimeError,
@@ -26,16 +35,23 @@ interface StartBody {
   modelOptions?: AssistantSessionOptions;
   /** H-C1 plan 档：true 时工具面收敛为 read/analyze，finish 不允许 production 结论。 */
   planMode?: boolean;
+  /** H-autonomy：本次运行的执行模式覆盖；缺省回落持久化默认（confirm）。 */
+  executionMode?: "confirm" | "autonomous";
+  /** H-autonomy：自主模式免逐条审批白名单覆盖；缺省回落持久化授权面。 */
+  autoApproveToolIds?: string[];
+  /** H-autonomy：工具发现面；general 需设置开关开启，否则 400 fail-closed。 */
+  discovery?: "curated" | "general";
 }
 
 /**
  * 路由只接收目标与预算；身份、审批人和项目范围始终从服务端会话注入。
  * H-C4-P3：本体行动路径端点挂在同一 Harness 路由模块（计划→预览→执行→回执）。
+ * H-autonomy：授权范围/执行模式的持久化默认从这里读写（settings 面挂同一模块，不新增大页）。
  */
 export async function registerIndustrialAgentRoutes(
   app: FastifyInstance,
   dependencies: {
-    store: Pick<MetadataStore, "getProject">;
+    store: Pick<MetadataStore, "getProject" | "getAgentSettings" | "saveAgentSettings">;
     runtime: IndustrialAgentRuntime;
     /** 测试直注；生产由 runtime.dataDir + 共享账本懒装配（见 createOntologyActionRoutes）。 */
     ontologyActionService?: OntologyActionService;
@@ -44,11 +60,27 @@ export async function registerIndustrialAgentRoutes(
   // Retries share the durable stop operation, including requests arriving before its write completes.
   const cancellations = new Map<string, Promise<AgentCheckpoint>>();
   await registerOntologyActionRoutes(app, dependencies.store, dependencies.runtime, dependencies.ontologyActionService);
-  app.get<{ Params: { projectId: string } }>(
+  await registerAgentAutonomySettingsRoutes(app, dependencies);
+
+  app.get<{ Params: { projectId: string }; Querystring: { discovery?: string } }>(
     "/api/projects/:projectId/ai/agent-tools",
-    async (request, reply) => dependencies.store.getProject(request.params.projectId)
-      ? { tools: dependencies.runtime.tools.list() }
-      : reply.code(404).send({ message: "项目不存在" }),
+    async (request, reply) => {
+      if (!dependencies.store.getProject(request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
+      // H-autonomy 要素④：?discovery=general 请求通用开发发现面；开关关闭 fail-closed 400。
+      const settings = resolveAgentAutonomySettings(dependencies.store);
+      let discovery: "curated" | "general";
+      try {
+        discovery = resolveDiscoveryMode(request.query?.discovery, settings);
+      } catch {
+        return reply.code(400).send({ code: "general-development-disabled", message: "通用开发模式未开启；发现面保持工业策划清单" });
+      }
+      const tools = dependencies.runtime.tools.list(discovery);
+      return {
+        tools,
+        discovery,
+        generalAvailable: settings.generalDevelopment === true,
+      };
+    },
   );
 
   app.post<{ Params: { projectId: string }; Body: StartBody }>(
@@ -58,8 +90,26 @@ export async function registerIndustrialAgentRoutes(
       if (request.systemUser?.role === "viewer") return reply.code(403).send({ message: "浏览者不能启动工业 Agent" });
       const objective = typeof request.body?.objective === "string" ? request.body.objective.trim() : "";
       if (!objective) return reply.code(400).send({ message: "Agent 目标不能为空" });
-      const available = dependencies.runtime.tools.list();
-      const allowedToolIds = request.body.allowedToolIds ?? available.map((tool) => tool.id);
+      // H-autonomy 要素①②：执行模式 = 请求覆盖 ?? 持久化默认；发现面 general 需开关开启。
+      const settings = resolveAgentAutonomySettings(dependencies.store);
+      let executionMode: "confirm" | "autonomous";
+      let discovery: "curated" | "general";
+      const autoApproveToolIds = request.body?.autoApproveToolIds;
+      if (autoApproveToolIds !== undefined
+        && (!Array.isArray(autoApproveToolIds) || !autoApproveToolIds.every((id) => typeof id === "string"))) {
+        return reply.code(400).send({ code: "invalid-tool-list", message: "自主审批白名单必须是字符串数组" });
+      }
+      try {
+        executionMode = resolveRunExecutionMode(request.body?.executionMode, settings);
+        discovery = resolveDiscoveryMode(request.body?.discovery, settings);
+      } catch (error) {
+        const code = error instanceof AgentAutonomySettingsError ? error.code : "invalid-mode";
+        return reply.code(400).send({ code, message: error instanceof Error ? error.message : "执行模式或发现面无效" });
+      }
+      const available = dependencies.runtime.tools.list(discovery);
+      const authorizedToolIds = request.body.allowedToolIds ?? available.map((tool) => tool.id);
+      // general 面 fail-closed 收口：显式拒绝清单优先于注册表可见性（curated 面由 orchestrator 归一收口）。
+      const allowedToolIds = discovery === "general" ? applyGeneralDenyList(authorizedToolIds, settings) : authorizedToolIds;
       const controller = new AbortController();
       const abortFromClient = () => controller.abort(new Error("客户端已断开工业 Agent 请求"));
       request.raw.once("aborted", abortFromClient);
@@ -79,6 +129,10 @@ export async function registerIndustrialAgentRoutes(
           context: request.body.context ?? {},
           allowedToolIds,
           ...(request.body.planMode === true ? { planMode: true } : {}),
+          ...(executionMode === "autonomous"
+            ? { executionMode, ...(Array.isArray(autoApproveToolIds) ? { autoApproveToolIds } : {}) }
+            : {}),
+          ...(discovery === "general" ? { discovery } : {}),
           ...(request.body.budget ? { budget: request.body.budget } : {}),
         };
         const checkpoint = request.body.execution === "background"
@@ -168,6 +222,54 @@ export async function registerIndustrialAgentRoutes(
 async function projectCheckpoint(runtime: IndustrialAgentRuntime, projectId: string, runId: string): Promise<AgentCheckpoint | undefined> {
   const checkpoint = await runtime.orchestrator.get(runId);
   return checkpoint?.projectId === projectId ? checkpoint : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// H-autonomy 要素①：授权范围/执行模式配置面（挂既有 agent 路由模块，不新增大页）
+// ---------------------------------------------------------------------------
+
+/**
+ * GET 读回持久化默认（无秘密字段，登录即可读）；PUT 由编辑者及以上修改（浏览者 403）。
+ * 非法草案 fail-closed 400（理由码透传）；保存后读回即生效（新运行默认）。
+ */
+function registerAgentAutonomySettingsRoutes(
+  app: FastifyInstance,
+  dependencies: {
+    store: Pick<MetadataStore, "getProject" | "getAgentSettings" | "saveAgentSettings">;
+    runtime: IndustrialAgentRuntime;
+  },
+): void {
+  app.get<{ Params: { projectId: string } }>(
+    "/api/projects/:projectId/ai/agent-settings",
+    async (request, reply) => {
+      if (!dependencies.store.getProject(request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
+      const settings = resolveAgentAutonomySettings(dependencies.store);
+      return { settings, curatedToolCount: dependencies.runtime.tools.list("curated").length };
+    },
+  );
+
+  app.put<{ Params: { projectId: string }; Body: Partial<AgentAutonomySettings> }>(
+    "/api/projects/:projectId/ai/agent-settings",
+    async (request, reply) => {
+      if (!dependencies.store.getProject(request.params.projectId)) return reply.code(404).send({ message: "项目不存在" });
+      if (request.systemUser?.role === "viewer") return reply.code(403).send({ message: "浏览者不能修改工业 Agent 授权配置" });
+      try {
+        const current = resolveAgentAutonomySettings(dependencies.store);
+        const merged = mergeAgentAutonomySettingsDraft(
+          current,
+          request.body ?? {},
+          request.systemUser?.id ?? "api-user",
+        );
+        const saved = await dependencies.store.saveAgentSettings(merged);
+        return { settings: saved };
+      } catch (error) {
+        if (error instanceof AgentAutonomySettingsError) {
+          return reply.code(400).send({ code: error.code, message: error.message });
+        }
+        return reply.code(500).send({ message: error instanceof Error ? error.message : "授权配置保存失败" });
+      }
+    },
+  );
 }
 
 function sendAgentError(reply: FastifyReply, error: unknown) {

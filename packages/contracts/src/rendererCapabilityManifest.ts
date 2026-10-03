@@ -145,11 +145,11 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     webFeatureKeys: [],
     web: {
       support: "supported", reason: "full",
-      evidence: "packages/deep-engine/src/lighting/probeRadianceDirectionGate.ts:DEEP_GI_PROBE_DIRECTIONS_STANDARD/HIGH(16/32;内核容量 32;生产默认 32)",
+      evidence: "packages/deep-engine/src/lighting/probeRadianceDirectionGate.ts:DEEP_GI_PROBE_DIRECTIONS_STANDARD/HIGH(16/32;内核容量 32;生产默认 32) + F5 方案A:96B record words[12..23]=RGB L1 SH 方向可见度(probeDirectionalVisibilitySh.ts CPU 参考,channel-major l0/l1m-1/l1m0/l1m1;捕获核 moments lane1..3;镜面消费 deepGiSpecularDirectionalVisibility=clamp(luma(SH重建(reflection))/luma(env),0,1),SH缺失探针标量门fallback;白炉均匀场dipole精确零gate≡1逐位负控;合同 docs/specs/f5-directional-l1-implementation-20261003.md)",
     },
     native: {
       support: "degraded", reason: "reduced-tier",
-      evidence: "packages/deep-engine-native/src/renderer/native_gi_producer.rs:produce_direct_irradiance(确定性直光种子 producer + probe_gi_abi.rs 96B 布局合同;无 32 方向辐射内核/clipmap 采样通路)",
+      evidence: "packages/deep-engine-native/src/renderer/native_gi_producer.rs:produce_direct_irradiance(确定性直光种子 producer + probe_gi_abi.rs 96B 布局合同;无 32 方向辐射内核/clipmap 采样通路) + probe_gi_abi.rs reserved[12] 声明升级为 words[12..23]=RGB L1 SH 方向可见度(与 Web 同形;native producer 仍发全零 reserved=SH缺失语义,消费端按同族标量 fallback,启用消费走 cargo 线)",
     },
     sharedQualityVocabulary: true,
   },
@@ -158,8 +158,8 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     title: "屏幕空间接触阴影(C10)",
     webFeatureKeys: ["contactShadows"],
     web: {
-      support: "supported", reason: "opt-in-default-off",
-      evidence: "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:contactShadows(opt-in 默认 false;shadows/contactShadowQuality.ts 三档质量档)",
+      support: "supported", reason: "full",
+      evidence: "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:contactShadows(默认 true,Z2/Z3.5 质感默认;shadows/contactShadowQuality.ts 三档质量档)",
     },
     native: { support: "unavailable", reason: "absent", evidence: "packages/deep-engine-native/src/lib.rs(无 contact shadow 模块;shadow 通路仅 cascaded/local)" },
     sharedQualityVocabulary: true,
@@ -295,7 +295,7 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
     webFeatureKeys: ["toneMapping"],
     web: {
       support: "supported", reason: "full",
-      evidence: "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:toneMapping(deep-aces 默认 | three-aces-r185)",
+      evidence: "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:toneMapping(three-aces-r185 默认 | deep-aces 显式可选)",
     },
     native: {
       support: "supported", reason: "full",
@@ -466,7 +466,7 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
   {
     id: "material-clearcoat",
     title: "清漆层与扩展材质带(C9)",
-    webFeatureKeys: [],
+    webFeatureKeys: ["layeredMaterials"],
     web: {
       support: "supported", reason: "opt-in-default-off",
       evidence: "packages/deep-engine/src/shader/materialParameters.ts:MATERIAL_PARAMETER_KEYS(扩展带 ior/clearcoat/各向异性/透射 6 参数;factor=0 即 KHR_materials_clearcoat 默认无层,缺省零行为=stock PBR;materialBindings.ts MATERIAL_PARAMETER_EXTENDED_BAND_FLOAT_OFFSET=40 六 float 槽 40..46,materialEvaluateWgsl.ts 清漆层叠着色路径+白炉真机守恒 gate)",

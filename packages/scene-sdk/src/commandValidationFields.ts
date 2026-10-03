@@ -42,6 +42,7 @@ export function parseMaterialPatch(
     "emissive",
     "wireframe",
     "doubleSided",
+    "customShader",
     ...MATERIAL_NUMBER_KEYS,
   ] as const;
   rejectUnknownProperties(record, allowed, path, context);
@@ -61,6 +62,30 @@ export function parseMaterialPatch(
     const flag = parseBoolean(record.values.get(key), propertyPath(path, key), context);
     if (flag !== undefined) patch[key] = flag;
   }
+  if (record.values.has("customShader")) {
+    const shaderPath = propertyPath(path, "customShader");
+    const value = record.values.get("customShader");
+    if (value === undefined) {
+      patch.customShader = undefined;
+    } else {
+      const shader = inspectRecord(value, shaderPath, context);
+      if (shader) {
+        rejectUnknownProperties(shader, ["source"], shaderPath, context);
+        const source = readRequired(shader, "source", shaderPath, context);
+        const sourcePath = propertyPath(shaderPath, "source");
+        if (typeof source !== "string") {
+          if (source !== undefined) addIssue(context, sourcePath, "invalid-type", "Expected a shader source string.");
+        } else if (!source.trim()) {
+          addIssue(context, sourcePath, "invalid-value", "Expected a non-empty shader source.");
+        } else if (source.length > SCENE_COMMAND_VALIDATION_LIMITS.maxMaterialSourceBytes
+          || new TextEncoder().encode(source).byteLength > SCENE_COMMAND_VALIDATION_LIMITS.maxMaterialSourceBytes) {
+          addIssue(context, sourcePath, "limit-exceeded", `Shader source exceeds ${SCENE_COMMAND_VALIDATION_LIMITS.maxMaterialSourceBytes} UTF-8 bytes.`);
+        } else {
+          patch.customShader = { source };
+        }
+      }
+    }
+  }
   for (const key of MATERIAL_NUMBER_KEYS) {
     const number = parseMaterialNumber(record, key, path, context);
     if (number !== undefined) patch[key] = number;
@@ -68,7 +93,7 @@ export function parseMaterialPatch(
   return patch;
 }
 
-function parseMaterialColor(
+export function parseMaterialColor(
   value: unknown,
   path: string,
   context: ValidationContext,

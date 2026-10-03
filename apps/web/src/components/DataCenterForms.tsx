@@ -47,6 +47,12 @@ export function ConnectionForm({
   const [database, setDatabase] = useState(String(initial?.config.database ?? ""));
   const [serviceName, setServiceName] = useState(String(initial?.config.serviceName ?? ""));
   const [user, setUser] = useState(String(initial?.config.user ?? ""));
+  const [opcuaCertDir, setOpcuaCertDir] = useState(String(initial?.config.certificateManagerRootDir ?? ""));
+  const [opcuaAppName, setOpcuaAppName] = useState(String(initial?.config.applicationName ?? ""));
+  const [opcuaSecurityMode, setOpcuaSecurityMode] = useState(() => {
+    const mode = String(initial?.config.securityMode ?? "sign").trim().toLowerCase();
+    return mode === "signandencrypt" ? "signAndEncrypt" : mode;
+  });
   const [passwordEnv, setPasswordEnv] = useState(String(initial?.config.passwordEnv ?? defaultPasswordEnv(type)));
   const [retryAttempts, setRetryAttempts] = useState(Number(initial?.config.retryAttempts ?? 0));
   const [retryDelayMs, setRetryDelayMs] = useState(Number(initial?.config.retryDelayMs ?? 250));
@@ -63,6 +69,9 @@ export function ConnectionForm({
 
   async function save() {
     try {
+      if (type === "opcua" && opcuaCertDir.trim() !== "" && opcuaSecurityMode !== "sign" && opcuaSecurityMode !== "signAndEncrypt") {
+        throw new Error(tr(locale, "OPC UA 安全模式无效，请重新选择仅签名或签名加密。", "Invalid OPC UA security mode. Select signing or signing with encryption."));
+      }
       const baseConfig = databaseConnection
         ? {
             host,
@@ -79,6 +88,13 @@ export function ConnectionForm({
             ...(user.trim() ? { user: user.trim() } : {}),
             ...(passwordEnv.trim() ? { passwordEnv: passwordEnv.trim() } : {}),
             ...(type === "http" ? { method: httpMethod, authMode: httpAuthMode, ...(httpAuthMode === "api-key" ? { headerName: httpHeaderName } : {}) } : {}),
+            ...(type === "opcua" && opcuaCertDir.trim() !== ""
+              ? {
+                  certificateManagerRootDir: opcuaCertDir.trim(),
+                  ...(opcuaAppName.trim() ? { applicationName: opcuaAppName.trim() } : {}),
+                  securityMode: opcuaSecurityMode,
+                }
+              : {}),
           };
       const config = {
         ...baseConfig,
@@ -205,6 +221,34 @@ export function ConnectionForm({
                 <span>{tr(locale, "密码环境变量", "Password environment")}</span>
                 <input value={passwordEnv} onChange={(event) => setPasswordEnv(event.target.value)} placeholder={defaultPasswordEnv(type)} />
               </label>
+              {type === "opcua" && (
+                <>
+                  <label>
+                    <span>{tr(locale, "证书目录（可选，安全通道）", "Certificate dir (optional, secure channel)")}</span>
+                    <input value={opcuaCertDir} onChange={(event) => setOpcuaCertDir(event.target.value)} placeholder={tr(locale, "留空使用匿名 None 通道", "Leave empty for anonymous None channel")} />
+                    <small>{tr(locale, "填写后走 Basic256Sha256 签名/加密通道（安全模式见下）。", "When set, connects over the Basic256Sha256 secure channel (mode below).")}</small>
+                  </label>
+                  {opcuaCertDir.trim() !== "" && (
+                    <>
+                      <label>
+                        <span>{tr(locale, "安全模式", "Security mode")}</span>
+                        <select value={opcuaSecurityMode} onChange={(event) => setOpcuaSecurityMode(event.target.value)}>
+                          {opcuaSecurityMode !== "sign" && opcuaSecurityMode !== "signAndEncrypt" && (
+                            <option value={opcuaSecurityMode} disabled>{tr(locale, "配置无效，请重新选择", "Invalid configuration; select a mode")}</option>
+                          )}
+                          <option value="sign">{tr(locale, "sign — 仅签名（默认）", "sign — signing only (default)")}</option>
+                          <option value="signAndEncrypt">{tr(locale, "signAndEncrypt — 签名+加密", "signAndEncrypt — signing + encryption")}</option>
+                        </select>
+                        <small>{tr(locale, "signAndEncrypt 在签名基础上加密消息体；需对端声明同策略。", "signAndEncrypt additionally encrypts messages; the server must declare the same policy.")}</small>
+                      </label>
+                      <label>
+                        <span>{tr(locale, "应用名（可选）", "Application name (optional)")}</span>
+                        <input value={opcuaAppName} onChange={(event) => setOpcuaAppName(event.target.value)} />
+                      </label>
+                    </>
+                  )}
+                </>
+              )}
             </>
           )}
           {type === "snmp" && (

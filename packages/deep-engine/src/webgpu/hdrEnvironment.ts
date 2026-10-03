@@ -5,6 +5,7 @@ import type { DeviceSession } from "./deviceSession.js";
 import { environmentShader } from "./environmentShader.js";
 import { abortableGpu, gpuAbortReason } from "./gpuAbort.js";
 import type { StudioEnvironment } from "./studioEnvironment.js";
+import { environmentMipSelection } from "./environmentMipSelection.js";
 
 export interface HdrEnvironmentOptions {
   readonly specularSize?: 64 | 128 | 256;
@@ -12,6 +13,7 @@ export interface HdrEnvironmentOptions {
   readonly sampleCount?: 64 | 128 | 256;
   readonly maxUploadBytes?: number;
   readonly maxRadiance?: number;
+  readonly keptMips?: number;
 }
 
 export interface HdrEnvironment extends StudioEnvironment {
@@ -32,6 +34,7 @@ export async function createHdrEnvironment(session: DeviceSession, image: Radian
   const sampleCount = options.sampleCount ?? 128, levels = mipCount(specularSize);
   if (![64, 128, 256].includes(specularSize) || ![16, 32, 64].includes(diffuseSize)
     || ![64, 128, 256].includes(sampleCount)) throw new Error("Invalid HDR environment quality setting.");
+  const selection = environmentMipSelection(levels, options.keptMips), baseSize = specularSize >> selection.droppedMips;
   const upload = prepareHdrEnvironmentUpload(image, {
     ...(options.maxUploadBytes === undefined ? {} : { maxBytes: options.maxUploadBytes }),
     ...(options.maxRadiance === undefined ? {} : { maxRadiance: options.maxRadiance }),
@@ -71,18 +74,18 @@ export async function createHdrEnvironment(session: DeviceSession, image: Radian
       device.queue.writeTexture({ texture: panorama }, background.data,
         { bytesPerRow: background.bytesPerRow, rowsPerImage: background.height }, [background.width, background.height]);
     }
-    const specular = texture({ label: "Deep HDRI specular", size: [specularSize, specularSize, 6],
-      mipLevelCount: levels, format: "rgba16float", usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING });
+    const specular = texture({ label: "Deep HDRI specular", size: [baseSize, baseSize, 6],
+      mipLevelCount: selection.keptMips, format: "rgba16float", usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING });
     const diffuse = texture({ label: "Deep HDRI diffuse", size: [diffuseSize, diffuseSize, 6],
       format: "rgba16float", usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING });
     const brdf = texture({ label: "Deep HDRI DFG LUT", size: [128, 128], format: "rgba16float",
       usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING });
-    const stride = Math.max(256, device.limits.minUniformBufferOffsetAlignment), records = levels + 1;
+    const stride = Math.max(256, device.limits.minUniformBufferOffsetAlignment), records = selection.keptMips + 1;
     const data = new ArrayBuffer(stride * records), floats = new Float32Array(data), integers = new Uint32Array(data);
     for (let level = 0; level < records; level++) {
-      const index = level * stride / 4, diffuseLevel = level === levels;
-      floats[index] = diffuseLevel ? 1 : level / Math.max(levels - 1, 1);
-      floats[index + 1] = diffuseLevel ? diffuseSize : specularSize >> level;
+      const index = level * stride / 4, diffuseLevel = level === selection.keptMips;
+      floats[index] = diffuseLevel ? 1 : (level + selection.droppedMips) / Math.max(levels - 1, 1);
+      floats[index + 1] = diffuseLevel ? diffuseSize : baseSize >> level;
       integers[index + 2] = diffuseLevel ? 1 : 0; integers[index + 3] = sampleCount;
     }
     settings = createAdmittedBuffer(session, { label: "Deep HDRI settings", size: data.byteLength,
@@ -92,8 +95,8 @@ export async function createHdrEnvironment(session: DeviceSession, image: Radian
       minFilter: "linear", magFilter: "linear" });
     const encoder = device.createCommandEncoder({ label: "Deep prefilter HDR environment" });
     for (let level = 0; level < records; level++) {
-      const diffuseLevel = level === levels, output = diffuseLevel ? diffuse : specular;
-      const size = diffuseLevel ? diffuseSize : specularSize >> level;
+      const diffuseLevel = level === selection.keptMips, output = diffuseLevel ? diffuse : specular;
+      const size = diffuseLevel ? diffuseSize : baseSize >> level;
       const bindGroup = device.createBindGroup({ layout: environment.getBindGroupLayout(0), entries: [
         { binding: 0, resource: { buffer: settings, offset: level * stride, size: 16 } },
         { binding: 1, resource: output.createView({ dimension: "2d-array",
@@ -119,6 +122,7 @@ export async function createHdrEnvironment(session: DeviceSession, image: Radian
     if (panorama !== source) { session.release(source); owned.splice(owned.indexOf(source), 1); }
     let disposed = false;
     return Object.freeze({ specular: specular.createView({ dimension: "cube" }),
+      specularMipSelection: selection,
       diffuse: diffuse.createView({ dimension: "cube" }), brdf: brdf.createView(),
       sampler: device.createSampler({ minFilter: "linear", magFilter: "linear", mipmapFilter: "linear" }),
       panorama: Object.freeze({ view: panorama.createView(), sampler }),

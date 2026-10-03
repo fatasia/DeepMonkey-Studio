@@ -11,7 +11,11 @@ export async function packDeepEngineConsumerDependencies({ root, workspace, repo
     label: "deep-engine", required: ["dist/index.js", "dist/index.d.ts", "dist/app/index.js", "dist/app/index.d.ts",
       "dist/webgpu/index.js", "dist/webgpu/index.d.ts"] });
   assert.equal(engine.manifest.private, true, "Deep Engine remains a private source-available workspace package");
-  assert.equal(engine.manifest.dependencies?.["@webgpu/types"], "0.1.72", "WebGPU declarations must be an exact runtime dependency");
+  // @webgpu/types 是 types-only 包,现挂 engine manifest 的 devDependencies(与
+  // version-pin.test.mjs 的合并声明口径一致);外部消费者的类型解析由下方单独 pack
+  // @webgpu/types + consumer 直接依赖 + pnpm override 保证,不依赖 engine 的 dependencies 组。
+  const declaredWebgpuTypes = { ...engine.manifest.dependencies, ...engine.manifest.devDependencies }["@webgpu/types"];
+  assert.equal(declaredWebgpuTypes, "0.1.72", "WebGPU declarations must be pinned to an exact version in the engine manifest");
   assert.ok(engine.entries.includes("package/dist/app/index.js") && engine.entries.includes("package/dist/app/index.d.ts"));
   const webgpuDir = await realpath(join(engineDir, "node_modules/@webgpu/types"));
   const webgpu = await packPackage({ cwd: webgpuDir, archiveDir, reportDir, pnpm,

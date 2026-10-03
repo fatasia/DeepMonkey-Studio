@@ -3,6 +3,11 @@ import { validateBehaviorGraph, type BehaviorAction, type BehaviorGraph } from "
 
 /** Persisted in the existing interaction.code field; never interpreted as author JavaScript. */
 export const RESTRICTED_GRAPH_PREFIX = "/* @bim-studio/restricted-graph/v1 */\n";
+/**
+ * 受限域与可信预定义动作互斥的权威措辞(编辑器写回门禁与解析器同源引用,禁止各自转写)。
+ * G2 源码写回收口:InteractionEditor 对受限脚本的 actions 写入用同一常量拦截。
+ */
+export const RESTRICTED_ACTIONS_MIX_MESSAGE = "受限行为图不可混用可信脚本预定义动作，请将动作写入受限图";
 const MAX_DOCUMENT_LENGTH = 65_536;
 const MAX_JSON_DEPTH = 16;
 const ACTION_TYPES = new Set<BehaviorAction["type"]>([
@@ -21,7 +26,7 @@ export function parseRestrictedInteractionScript(script: SceneInteractionScriptS
   if (!isRestrictedInteractionScript(script)) throw new Error("脚本未声明受限行为图域");
   if (!script.code.startsWith(RESTRICTED_GRAPH_PREFIX)) throw new Error("受限图域标记格式错误：标记后必须换行");
   if (script.code.length > MAX_DOCUMENT_LENGTH) throw new Error(`受限行为图超过 ${MAX_DOCUMENT_LENGTH} 字符上限`);
-  if (script.actions?.length) throw new Error("受限行为图不可混用可信脚本预定义动作，请将动作写入受限图");
+  if (script.actions?.length) throw new Error(RESTRICTED_ACTIONS_MIX_MESSAGE);
   let document: unknown;
   try {
     document = JSON.parse(script.code.slice(RESTRICTED_GRAPH_PREFIX.length));

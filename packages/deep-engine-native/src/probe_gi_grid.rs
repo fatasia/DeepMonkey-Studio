@@ -435,7 +435,11 @@ fn sample_grid_level(
             header.origin[1] + cell[1] as f32 * spacing + record.position_offset[1],
             header.origin[2] + cell[2] as f32 * spacing + record.position_offset[2],
         ];
-        // Chebyshev 可见性：接收点在 meanDistance 内直接通过，否则按距离方差衰减。
+        // Chebyshev 可见性（F5-GI-1 合同收紧，与 wgsl/probeClipmapSampling.wgsl
+        // deepGiVisibility 及 TS probeClipmapSampling.visibilityWeight 逐式同步）：
+        // 均值分支只在记录自证封闭包络（floor≈0 且命中离散不超过包络尺度）时适用；
+        // 天空探针（floor>0）走双向 Chebyshev，occlusionFloor 是内容限定符，
+        // 不作 receiver 链路权重下界（否则天空探针隔着薄墙也保底漏光）。
         let delta = [
             receiver[0] - probe_position[0],
             receiver[1] - probe_position[1],
@@ -443,15 +447,17 @@ fn sample_grid_level(
         ];
         let distance = (delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2]).sqrt();
         let mean_distance = record.mean_distance.clamp(0.0, 1_000_000.0);
-        let visibility = if distance <= mean_distance {
+        let variance = record
+            .distance_variance
+            .clamp(spacing * spacing * 0.0001, 1_000_000_000_000.0);
+        let occlusion_floor = record.occlusion_floor.clamp(0.0, 1.0);
+        let enclosed = occlusion_floor <= 0.001
+            && variance <= (mean_distance * mean_distance).max(spacing * spacing);
+        let visibility = if distance <= mean_distance && enclosed {
             1.0
         } else {
-            let variance = record
-                .distance_variance
-                .clamp(spacing * spacing * 0.0001, 1_000_000_000_000.0);
-            let excess = distance - mean_distance;
-            let chebyshev = variance / (variance + excess * excess).max(0.000_001);
-            record.occlusion_floor.clamp(0.0, 1.0).max(chebyshev)
+            let excess = (distance - mean_distance).abs();
+            variance / (variance + excess * excess).max(0.000_001)
         };
         // 法线权重：半球判断用原始着色点 world（不是偏移后的 receiver）。
         let to_probe = [

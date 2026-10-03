@@ -14,7 +14,13 @@
 #root .dialog :is(input, textarea, select, button, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; box-shadow: 0 0 0 3px var(--accent-soft); }
 .dialog :is(input, textarea, select):disabled { cursor: not-allowed; opacity: .55; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 23px; }
-
+.dialog-fieldset { display: grid; gap: 8px; margin-top: 14px; padding: 10px; border: 1px solid var(--line); border-radius: 9px; }
+.dialog-fieldset legend { padding: 0 5px; color: var(--text-muted); font-size: 12px; font-weight: 700; }
+.dialog-radio { display: grid !important; grid-template-columns: auto minmax(0, 1fr); gap: 9px !important; align-items: flex-start; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
+.dialog-radio input[type="radio"] { width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--accent); }
+.dialog-radio span { display: grid; gap: 4px; color: var(--text); font-size: 12px; }
+.dialog-radio strong { color: var(--text-strong); font-size: 12px; }
+.dialog-radio small { color: var(--text-muted); font-size: 11px; line-height: 1.45; }
 .model-library-dialog { width: min(820px, 100%); max-height: min(760px, calc(100vh - 48px)); overflow: hidden; border: 1px solid #343c42; border-radius: 13px; background: #1b2023; box-shadow: 0 30px 80px rgba(0,0,0,.46); }
 .model-library-head { display: flex; align-items: flex-start; justify-content: space-between; padding: 24px 24px 17px; border-bottom: 1px solid #2c3338; }
 .model-library-head h2 { margin: 7px 0 5px; font-size: 21px; }
@@ -662,9 +668,24 @@
 .behavior-graph-view .react-flow__edge-text { fill: #8fa0a8; font-size: 8px; }
 .behavior-graph-view .react-flow__edge-textbg { fill: #10171a; }
 .behavior-graph-view .react-flow__attribution { background: transparent; color: #4a565d; font-size: 7px; }
-.behavior-graph-view .react-flow__controls button { color: #9aa6ac; border-bottom: 1px solid #2b3741; background: #17212a; }
-.behavior-graph-view .react-flow__controls button:hover { color: #e6edef; background: #21303a; }
+/* 编辑器 Controls 与只读视图同族同修:xy-theme 默认白底按钮在深色下刺眼(round1 同族排查)。 */
+.behavior-graph-view .react-flow__controls button,
+.behavior-graph-editor .react-flow__controls button { color: #9aa6ac; border-bottom: 1px solid #2b3741; background: #17212a; }
+.behavior-graph-view .react-flow__controls button:hover,
+.behavior-graph-editor .react-flow__controls button:hover { color: #e6edef; background: #21303a; }
 .behavior-graph-minimap { border: 1px solid #2b3741; border-radius: 5px; background: #10171a; }
+/* 修复:xy-theme 默认 --xy-minimap-background-color:#fff 盖过容器背景,深色主题下
+   minimap 呈白底(G2-S2a 视觉闭环 round1 发现);用库变量按主题给色,只读/编辑两视图同修。 */
+.behavior-graph-minimap.react-flow__minimap { --xy-minimap-background-color: #10171a; --xy-minimap-mask-background-color: rgb(13 19 22 / 60%); }
+.behavior-graph-editor .behavior-graph-minimap.react-flow__minimap { width: 118px; height: 92px; }
+/* G2-S2a 视觉闭环 round1:右检查器内嵌画布约 237px 宽,固定 118px minimap 占比过半,
+   与多节点布局几何冲突(遮节点或被节点遮挡,且拖动过的节点 z 提升后反盖 Controls)。
+   窄画布(<360px)minimap 自动让位,宽画布保留全功能;只读视图与编辑器同族同修。 */
+.behavior-graph-view, .behavior-graph-editor { container-type: inline-size; }
+@container (max-width: 359px) {
+  .behavior-graph-view .behavior-graph-minimap.react-flow__minimap,
+  .behavior-graph-editor .behavior-graph-minimap.react-flow__minimap { display: none; }
+}
 
 /* ===================== G2-S2a 最小可用编辑回路(调色板/表单/连线/保存门禁) ===================== */
 /* 节点卡样式与只读视图共用 .behavior-graph-card;此处只加编辑态增量(选中/连线反馈/端口),不动只读语义。 */
@@ -782,6 +803,7 @@
 :root[data-theme="light"] .behavior-graph-view .react-flow__controls button,
 :root[data-theme="light"] .behavior-graph-editor .react-flow__controls button { color: var(--text); border-color: var(--line); background: #ffffff; }
 :root[data-theme="light"] .behavior-graph-minimap { border-color: var(--line); background: #ffffff; }
+:root[data-theme="light"] .behavior-graph-minimap.react-flow__minimap { --xy-minimap-background-color: #ffffff; --xy-minimap-mask-background-color: rgb(244 247 248 / 70%); }
 :root[data-theme="light"] .interaction-graph-tabs button { color: var(--text-muted); border-color: var(--line); background: var(--surface-2); }
 :root[data-theme="light"] .interaction-graph-tabs button:hover { color: var(--text-strong); border-color: var(--line-strong); }
 :root[data-theme="light"] .behavior-editor-status-actions button { color: var(--text); border-color: var(--line); background: #ffffff; }

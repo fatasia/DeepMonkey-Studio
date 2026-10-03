@@ -704,9 +704,9 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
           onCreateProject={() => openProjectDialog("create")}
           onRenameProject={() => openProjectDialog("rename")}
           onDeleteProject={() => void deleteCurrentProject()}
-          onCreate={async (name) => {
+          onCreate={async (name, options) => {
             try {
-              await createScene(name);
+              await createScene(name, options);
             } catch (reason) {
               showError(reason);
             }
@@ -784,6 +784,9 @@ export function AppPlatformRoutes({ bindings }: { bindings: AppViewBindings }) {
           onUploadModels={uploadModels}
           onDeleteModel={deleteModel}
           onRefreshModels={refreshProject}
+          onAssetRevisionScenesUpdated={(updatedScenes) => {
+            setScenes(items => items.map(item => updatedScenes.find(scene => scene.id === item.id) ?? item));
+          }}
           />
         </Suspense>
       )}

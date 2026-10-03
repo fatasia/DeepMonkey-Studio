@@ -7,8 +7,10 @@
  * 软件遍历（共享片段 WGSL_CORE/WGSL_HELPERS 自 rayTraceKernel 导入，sha256 钉死合同不触碰），
  * 命中点按 Lambert 一跳着色（albedo × NdotL × 直射光 / π），miss 记环境 ambient；
  * 探针辐射 = 方向均值，写入捕获纹理的该探针 texel（rgba16float 2d-array，layer =
- * localCell.z + level × gridSize.z）。这是一跳直射+环境估计：命中点不追第二次阴影射线，
- * 高光/天空遮挡、MASK 纹理 alpha、动态蒙皮都按 RenderPacketRayScene 的既有排除口径处理。
+ * localCell.z + level × gridSize.z）。这是一跳直射+环境估计：命中点向主光方向补一条
+ * 遮挡射线（F5-GI-1b：此前的"命中点不追阴影射线"会把封闭房间内壁按无阴影直射着色，
+ * 是穿墙漏光——封门哨兵 leakRatio≈1——的真实载体）；命中点二次反弹、高光/天空遮挡、
+ * MASK 纹理 alpha、动态蒙皮仍按 RenderPacketRayScene 的既有排除口径处理。
  *
  * == 布局合同 ==
  * binding 0..4 与 rayTraceTlasKernel 完全一致（packTlasScene 拼接：nodes/instances/vertices/
@@ -31,6 +33,13 @@ export const PROBE_RADIANCE_ENTRY_POINT = "probe_scene_radiance_batch";
 /** 每探针方向数上限（与 probeOcclusionRayExtension 同预算口径）。 */
 export const PROBE_RADIANCE_MAX_DIRECTIONS = 32;
 export const PROBE_RADIANCE_WORKGROUP_SIZE = RAY_TRACE_WORKGROUP_SIZE;
+/**
+ * F5 方案 A：moments 体积 lane 数。raw/output moments 2d-array 每逻辑探针层展开为
+ * 4 个 lane：lane0 = (mean, variance, missRatio, valid)，lane1..3 = RGB L1 SH 方向
+ * 可见度（words[12..23] 同合同，channel-major l0/l1m-1/l1m0/l1m1）。消费侧常量
+ * （probeClipmapTextureSamplingWgsl / webgpuProbeMoments）从本常量导入，禁双源。
+ */
+export const PROBE_RADIANCE_MOMENT_LANES = 4;
 
 export const PROBE_RADIANCE_BINDINGS = Object.freeze([
   { binding: 0, name: "nodes", type: "read-only-storage" },
@@ -110,7 +119,7 @@ export function packProbeRadianceProbeParams(updates: readonly {
   return data;
 }
 
-export function emitProbeRadianceKernelWgsl(): string {
+export function emitProbeRadianceKernelWgsl(visibilityMoments = false): string {
   return /* wgsl */ `// Deep GI probe one-bounce scene radiance capture (F1). Concat contract: tlasLayout.ts.
 // Traversal mirrors rayTraceTlasKernel (arbitrated against tlas.ts traceTlasClosest); the
 // Fibonacci direction set mirrors probeOcclusionDirection (probeOcclusionRayExtension.ts).
@@ -156,7 +165,7 @@ struct RadianceParams {
 @group(0) @binding(7) var<uniform> params: RadianceParams;
 @group(0) @binding(8) var capture: texture_storage_2d_array<rgba16float, write>;
 @group(0) @binding(9) var<storage, read_write> stackOverflows: atomic<u32>;
-
+${visibilityMoments ? "@group(0) @binding(10) var captureMoments: texture_storage_2d_array<rgba32float, write>;\n" : ""}
 ${WGSL_HELPERS}
 
 // Two-level closest hit with inline origin/direction (no rayStream): identical traversal,
@@ -282,7 +291,10 @@ fn ${PROBE_RADIANCE_ENTRY_POINT}(@builtin(global_invocation_id) gid: vec3u) {
   var nearHits = 0u;
   var nearDirectionSum = vec3f(0.0);
   var misses = 0u;
-  // Very short hits in opposing directions indicate a probe enclosed by thin geometry.
+${visibilityMoments ? `  var momentHits = 0u; var momentMean = 0.0; var momentM2 = 0.0;
+  // F5 方案 A：逐方向贡献快照（等权 LSQ L1 投影的输入；与 sum 同值同序）。
+  var shSamples: array<vec3f, ${PROBE_RADIANCE_MAX_DIRECTIONS}>;
+  var shR = vec4f(0.0); var shG = vec4f(0.0); var shB = vec4f(0.0);\n` : ""}  // Very short hits in opposing directions indicate a probe enclosed by thin geometry.
   // This only rejects confirmed enclosures; partial/one-sided occlusion stays valid.
   let nearLimit = min(params.tMax, 0.25);
   for (var ordinal: u32 = 0u; ordinal < params.directionCount; ordinal = ordinal + 1u) {
@@ -293,13 +305,18 @@ fn ${PROBE_RADIANCE_ENTRY_POINT}(@builtin(global_invocation_id) gid: vec3u) {
     // probeTraceClosest returns tMax (>= 0) on miss; a negative t is the overflow rejection.
     let t = probeTraceClosest(origin, dir, inv, params.tMax, &prim, &instance);
     if (t < 0.0) { overflowed = true; break; }
+    var contribution = vec3f(0.0);
     if (prim == SENTINEL || instance == SENTINEL) {
       misses = misses + 1u;
       // Open direction: the probe sees the environment ambient directly.
-      sum = sum + params.ambient.rgb;
-      continue;
+      contribution = params.ambient.rgb;
+      sum = sum + contribution;
+${visibilityMoments ? "      shSamples[ordinal] = contribution;\n" : ""}      continue;
     }
-    if (t <= nearLimit) {
+${visibilityMoments ? `    momentHits += 1u;
+    let momentDelta = t - momentMean;
+    momentMean += momentDelta / f32(momentHits);
+    momentM2 += momentDelta * (t - momentMean);\n` : ""}    if (t <= nearLimit) {
       nearHits = nearHits + 1u;
       nearDirectionSum = nearDirectionSum + dir;
     }
@@ -310,19 +327,59 @@ fn ${PROBE_RADIANCE_ENTRY_POINT}(@builtin(global_invocation_id) gid: vec3u) {
     if (dot(normal, dir) > 0.0) { normal = -normal; }
     let albedo = instanceAlbedos[instance].rgb;
     let nDotL = max(dot(normal, params.lightDirIntensity.xyz), 0.0);
-    let lambert = albedo * params.lightColor.rgb * params.lightDirIntensity.w * nDotL / PI;
-    sum = sum + lambert;
-  }
+    var lambert = albedo * params.lightColor.rgb * params.lightDirIntensity.w * nDotL / PI;
+    // F5-GI-1b shadow occlusion: hit points were previously shaded as unshadowed, so a
+    // sealed room's interior walls fed full-sun irradiance into the probe volume (the
+    // sealed-door sentinel measured leakRatio ~1). Trace one occlusion ray toward the
+    // primary light; an occluded hit contributes zero — its indirect term is out of this
+    // one-bounce slice's scope. A shadow-trace overflow (negative t) keeps the unshadowed
+    // term: the primary ray's overflow path already fails the whole probe closed.
+    if (nDotL > 0.0) {
+      let lightDir = params.lightDirIntensity.xyz;
+      let shadowOrigin = origin + dir * t + normal * 0.002 + lightDir * 0.002;
+      var shadowPrim = SENTINEL;
+      var shadowInstance = SENTINEL;
+      let shadowT = probeTraceClosest(shadowOrigin, lightDir,
+        vec3f(1.0 / lightDir.x, 1.0 / lightDir.y, 1.0 / lightDir.z), params.tMax,
+        &shadowPrim, &shadowInstance);
+      if (shadowT >= 0.0 && shadowPrim != SENTINEL) { lambert = vec3f(0.0, 0.0, 0.0); }
+    }
+    contribution = lambert;
+    sum = sum + contribution;
+${visibilityMoments ? "    shSamples[ordinal] = contribution;\n" : ""}  }
   // Require no open rays, a majority of sub-quarter-unit hits, and balanced short-hit
   // directions. Unlike a mean-distance cut this keeps probes near a single wall valid.
   let buried = misses == 0u && nearHits >= (params.directionCount * 3u) / 4u
     && length(nearDirectionSum) <= f32(nearHits) * 0.35;
   if (overflowed || buried) {
     textureStore(capture, cell, layer, vec4f(0.0));
-    return;
+${visibilityMoments ? `    textureStore(captureMoments, cell, u32(layer) * ${PROBE_RADIANCE_MOMENT_LANES}u + 0u, vec4f(0.0, 0.0, 0.0, -1.0));
+    // 无效捕获的 SH lane 写全零 = SH 缺失（消费侧标量 fallback 门）。
+    textureStore(captureMoments, cell, u32(layer) * ${PROBE_RADIANCE_MOMENT_LANES}u + 1u, vec4f(0.0));
+    textureStore(captureMoments, cell, u32(layer) * ${PROBE_RADIANCE_MOMENT_LANES}u + 2u, vec4f(0.0));
+    textureStore(captureMoments, cell, u32(layer) * ${PROBE_RADIANCE_MOMENT_LANES}u + 3u, vec4f(0.0));\n` : ""}    return;
   }
   let mean = sum / f32(params.directionCount);
   textureStore(capture, cell, layer, vec4f(mean, 1.0));
-}
+${visibilityMoments ? `  let hitMean = select(params.tMax, momentMean, momentHits > 0u);
+  let hitVariance = max(momentM2 / f32(max(momentHits, 1u)), 0.0);
+  textureStore(captureMoments, cell, u32(layer) * ${PROBE_RADIANCE_MOMENT_LANES}u + 0u, vec4f(hitMean, hitVariance,
+    f32(misses) / f32(params.directionCount), 1.0));
+  // F5 方案 A RGB L1 SH（白炉构造性逐位负控）：均值扣除后投影，均匀场 dipole 精确零；
+  // 系数序 = (l0, l1m-1·y, l1m0·z, l1m1·x)，与 CPU probeDirectionalVisibilitySh 同式同序。
+  let shInverseCount = 3.0 / f32(params.directionCount);
+  for (var shOrdinal: u32 = 0u; shOrdinal < params.directionCount; shOrdinal = shOrdinal + 1u) {
+    let centered = shSamples[shOrdinal] - mean;
+    let shDir = params.directions[shOrdinal].xyz;
+    shR = vec4f(shR.xyz + centered.r * vec3f(shDir.y, shDir.z, shDir.x), 0.0);
+    shG = vec4f(shG.xyz + centered.g * vec3f(shDir.y, shDir.z, shDir.x), 0.0);
+    shB = vec4f(shB.xyz + centered.b * vec3f(shDir.y, shDir.z, shDir.x), 0.0);
+  }
+  shR = vec4f(shR.xyz * shInverseCount, mean.r);
+  shG = vec4f(shG.xyz * shInverseCount, mean.g);
+  shB = vec4f(shB.xyz * shInverseCount, mean.b);
+  textureStore(captureMoments, cell, u32(layer) * ${PROBE_RADIANCE_MOMENT_LANES}u + 1u, shR);
+  textureStore(captureMoments, cell, u32(layer) * ${PROBE_RADIANCE_MOMENT_LANES}u + 2u, shG);
+  textureStore(captureMoments, cell, u32(layer) * ${PROBE_RADIANCE_MOMENT_LANES}u + 3u, shB);\n` : ""}}
 `;
 }

@@ -3,6 +3,7 @@ import type {
   AiDataBindingRunRecord,
   AiDataBindingRunStatus,
   AiProviderSettings,
+  AgentAutonomySettings,
   ApplicationDocument,
   ApplicationPublicationPointer,
   AuditLogRecord,
@@ -205,6 +206,8 @@ export interface MetadataStore {
   addAuditLog(record: AuditLogRecord): Promise<void>;
   getAiSettings(): DatabaseDocument["aiSettings"];
   saveAiSettings(settings: NonNullable<DatabaseDocument["aiSettings"]>): Promise<AiProviderSettings>;
+  getAgentSettings(): DatabaseDocument["agentSettings"];
+  saveAgentSettings(settings: NonNullable<DatabaseDocument["agentSettings"]>): Promise<AgentAutonomySettings>;
   getBrandingSettings(): SystemBrandingSettings | undefined;
   saveBrandingSettings(settings: SystemBrandingSettings): Promise<SystemBrandingSettings>;
 }

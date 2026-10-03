@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import type { DataConnectionRecord, DataConnectorDiagnostics, DataDatasetPreview, DataDatasetRecord, ProjectRecord, SystemUserRecord } from "@bim-studio/contracts";
+import { buildSampleConnectionDraft, buildSampleDatasetDraft, SAMPLE_CONNECTION_NAME_ZH } from "./dataCenterSampleData";
 import { api } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
 import "../styles/data-center-workbench.css";
@@ -74,6 +75,29 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
   const previewScope = useRef({ projectId: project.id, selectedDatasetId });
   previewScope.current = { projectId: project.id, selectedDatasetId };
   useEffect(() => () => { previewSequence.current++; }, []);
+
+  const [sampleBusy, setSampleBusy] = useState(false);
+  /** KWeaver 式开箱即用:一键装载内置演示数据(http 连接→内置演示数据集),幂等防重。 */
+  async function loadBuiltinSample() {
+    if (sampleBusy) return;
+    setSampleBusy(true);
+    setError(undefined);
+    try {
+      const name = tr(locale, SAMPLE_CONNECTION_NAME_ZH, "Built-in demo data");
+      const existing = connections.find((item) => item.name === name);
+      const connection = existing ?? await api.createDataConnection(project.id, buildSampleConnectionDraft(name));
+      let dataset = datasets.find((item) => item.connectionId === connection.id);
+      if (!dataset) {
+        dataset = await api.createDataset(project.id, { ...buildSampleDatasetDraft(connection.id, tr(locale, "设备遥测演示", "Device telemetry demo"), locale) });
+      }
+      await load(connection.id, dataset.id);
+      setNotice(tr(locale, "内置样例已就绪：可直接创建语义模型或接入仪表盘。", "Built-in sample ready: create semantic models or dashboard widgets right away."));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setSampleBusy(false);
+    }
+  }
 
   async function load(preferredConnectionId?: string, preferredDatasetId?: string) {
     setBusy(true);
@@ -430,7 +454,12 @@ export function DataCenter({ locale, project, currentUser, onBack }: { locale: A
                   <Database size={24} />
                   <strong>{tr(locale, "连接第一个数据源", "Connect your first data source")}</strong>
                   <span>{tr(locale, "从数据库、HTTP、文件或现场协议开始，保存后即可创建数据集。", "Start with a database, HTTP, file or industrial protocol, then create a dataset.")}</span>
-                  <button onClick={() => setConnectionEditor("new")}><Plus size={13} />{tr(locale, "新建连接", "New connection")}</button>
+                  <div className="data-list-empty-actions">
+                    <button onClick={() => setConnectionEditor("new")}><Plus size={13} />{tr(locale, "新建连接", "New connection")}</button>
+                    <button className="secondary" disabled={sampleBusy} onClick={() => void loadBuiltinSample()}>
+                      {sampleBusy ? tr(locale, "正在装载…", "Loading…") : tr(locale, "加载内置样例数据", "Load built-in sample data")}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

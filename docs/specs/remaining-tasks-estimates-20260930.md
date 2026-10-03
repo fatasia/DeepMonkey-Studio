@@ -1,5 +1,37 @@
 # 剩余任务与估时（2026-09-30，北京时间）
 
+## 最新状态（2026-10-03 终态重查覆盖，指向权威终态）
+
+**权威终态见 [61-row-final-status-20261004.md](61-row-final-status-20261004.md) 与机器账 `test-output/progress-audit-20261002/61-row-status.json`：58/61=95.1% 登记关闭，剩 3 行（J3-E-GPU、B2/T11、Z2/Z3/Z3.5）挂 GPU 独占窗口批次 1（系统级 D3D12 摆动，看门狗探窗中）。2026-10-03 独立重查判定：29 个 10-02 开放行中 A 证据扎实 19 行、B 自标尾项未清 7 行（C8-S3/I-C8、F5/G3/T02、H-C5-T7、H-C7-P1、H-C7-P3/C24、H-C7-P4、E1）、C 未闭环 3 行（同上 GPU 三行）。下方 10-01 及更早计数全部为历史快照，不再回填。**
+
+## 最新状态（2026-10-01 Codex续接，覆盖下方历史计数）
+
+**23:41停止覆盖**：用户要求立即停止并交GLM。整项 **17/61=27.9%**、J/C **8/10=80%**、I **9/10=90%**，剩44项；本批没有新增整项关闭。J3-E Native五行实际通过，Web最后pre-present修复候选70CPU未提升；I23 Native纹理观察器、C8 source-vertex观察器仍未产有效原门通过结果。子智能体已停止，无本批GPU/Cargo后台任务。[GLM接手文档](../handoffs/glm-handoff-20261001.md)逐项区分正式已验、失败与候选，旧进行中排程不代表继续后台开发。
+
+**21:03覆盖**：关闭当前登记 **J3-D-full**；总 **17/61=27.9%**，J/C **8/10=80%**、I **9/10=90%**，剩44项。原九层48格20:17实际刷新批次、同包32完整场景帧/715点精确证书join及最终effects64帧均通过；4982效果记录源当前逐SHA一致。原strictfalse、四shadow cross gap与合法AA来源证书并列保留，旧广域guard后续被无关作者/F6变化触发时只记录measured batch。详见[J3-D最终裁定](j3-d-full-independent-closure-review-20261001.md)；整个J3/E与C8/I23不混关。
+
+F6消费小样 `run-2026-10-01T12-59-54.453Z` 两fresh24实际帧/116检查通过，460消费源稳定，solver→geometry/fresh附件、实际HDR/present变化、contact/stream负控、240次publication与SDK资源释放0均通过。首次24帧HDR零值由fixture进入directDisplay未写HDR附件造成，原失败保留；开启现有spatialAA进入HDR链后原物理输入和检查门保持。该片不关闭F6并行/高频原位buffer/Native等后继。
+
+**20:38 覆盖**：整项仍 **16/61=26.2%**，J/C7/10、I9/10，剩45项。AI可编程世界已并入后续H-C7-P1–P4，不新增重复任务。T22既有合法JT9.5/10.3 LOD0与X_T V24.1单体已由root复跑实际导入/Three消费，有界接受；排除后继保留，不扩样本。
+
+I23显式主光金属片 CPU112/112、双端两fresh真实GPU及旧coat HDR身份保持通过，完整I23未闭。F6静态sphere/OBB与顶点资源流两片正式34+28测通过，24帧GPU待root。作者SDK object.set-parent同事务/原生图/空间与CLI真实消费、Three高频迁移例已提升，正式Web19/19、SDK93/93/build及Web/Deep类型构建全绿；P3创建/删除/完整保存撤销、P4的20题仍后继。J3最新32frame与原715阴影证书join已过，最终effects源和D闭行由root裁定，计数暂不变。详情见[jc-i最新状态](jc-i-continuation-20261001.md)和[作者首片](native-author-api-three-migration-audit-20261001.md)。下方估时是历史锁定范围，未按此切片重新估算。
+
+20:04 用户最新排程：优先 C/J/I、C8、I23、F6、原生作者 API、Three 高频迁移及 T22；仅做本次改动必要回归与原验收门，已通过且源未变的证据复用。T22 三个固定合法 profile 的实际 converter→CompatibleGLTFLoader→Three 已由 root 复跑通过，按[有界验收](t22-bounded-acceptance-20261001.md)接受；JT8.x、PMI、X_T owner 关联等未支持范围保留后继，不扩大样本。T22 是历史尾项核查，不增加 61 项计数。
+
+用户已将[AI 原生可编程三维世界](ai-native-3d-upgrade-plan-20261001.md)并入后续任务。复用 H-C7-P1–P4 作者/客户端/模板/迁移底座，随后按依赖推进持续空间上下文、局部共同编辑与世界模型资产桥，不新增重复底座或重复工时。当前停止扩写调研，继续优先实现。
+
+I23 显式主光金属反射模型已正式提升：正式 CPU112/112、完整 SDK typecheck、Web 两 fresh 26 帧/16 组合、Native 两 fresh 16 组合均通过原 .002 门；旧 coat 前后两端两 fresh HDR hash 完全相同。整项 I23 的完整分层组合仍未关闭。C8 当前 canonical 真实基线正在刷新，F6 fixed sphere/OBB 接触草稿34测已冻结，待正式集成；16/61 计数保持。
+
+当前 **16/61=26.2%**，剩45项；J/C **7/10=70%**，I **9/10=90%**。承接GLM 14/61，新增关闭I-C19“keptMips生产采样＋作者消费”和I-C16“静帧出图产品”。I19两fresh实际GPU、作者保存/重载/SPA、CPU105测与声明源SHA通过，见[生产实现](i-c19-production-kept-mips-20261001.md)和[独立复核](i-c19-independent-closure-review-20261001.md)；I16实际菜单/Worker/累积/取消/材质失效/preview及final下载两fresh通过，root3085源SHA与独立RGBE读回通过，见[产品独立验收](i-c16-product-independent-review-20261001.md)。I19全局预算双驻留/LUT跨代共享及T10硬件RT/refit/纹理/降噪仍为后继。
+
+18:56覆盖：J3实际observer16帧七原始域SHA全等，root4943源核实；全部715点两fresh caster/comparison bits/整数采样和及compute=fragment印证，712 HDR原区间通过。root独立复跑完整32帧HDR→显示原byte1/SSIM、1159点含297曲面、2860 control及规范除法负控通过；原strictfalse保留。完整场景合法证书已交付，旧48cells新鲜度需按当前正式源重跑，不先闭行。Native独立startup CPU窗口四叶已提升，正式3/3、两fresh52GPU帧与HDR差0及源/阶段边界核实；初始GPU copy耗时/源字节仍null，E开放。C8五真实管线180登记帧/260实际render执行中。I23显式金属模型ignored合同/双端消费草稿107测通过，正式核不改。J5 `evidence-20261001100652.json`16对32腿PASS仅代表telemetry提升前批次，新正式批次待统一门。16/61不变。
+
+2026-10-01 17:10：I-C16作者物理光照/NEE/studio与薄Worker产品入口19项已正式提升；SDK与后处理回归122测、Apps交互9测、完整类型检查/构建/产物新鲜度、purity与engine-size2946文件零失败通过，浏览器产品/两轮视觉待验。实际作者2%噪声门在30901spp通过，产品已可选32768/65536，preview与final分名。纹理/单面/alpha/扩展层/HDR环境/局部IES及T10硬件RT/refit/降噪保持后继，不混入本表静帧产品行。C8新候选前视half已通过，斜视仍2通道，正式shader未改。J3 exact CSM消费/缓存修复已提升并过真实32帧稳定，阴影仍4可观测gap；同包Fog/Bloom4profile真实64帧正在执行。J5最新081816批次16对32腿全绿、degraded=false；该收据在随后CSM/I16产品/工业effects提升前，最新统一门待最终集成重跑。完整C8、J3-D/E、I-C16/I-C23不因子集通过增加计数。下方历史10/61和工时不代表最新计数或重新估过的剩余投入。
+
+2026-10-01 17:34覆盖：同包工业Fog/Bloom实际双端64帧、32组全部通过（最终最大1字节、最低SSIM .9991590557），root独立4960消费源SHA核实，见[j3后处理](j3-d-industrial-effects-20261001.md)。I16真实React effect修复单源已提升，真实mount/update 5/5、Web tsc/build通过；实际隔离浏览器两轮正在执行。C8原语54真实帧稳定、原输出保持已通过，余下两通道交给CPU全域分析。J3独立sampler校准CPU2/2，首次Native编译因wgpu30测试API不兼容失败，保留日志并修测试叶，尚无该校准GPU结果。计数15/61不变。
+
+2026-10-01 17:51覆盖：阴影独立校准原4pattern与扩展16mask均实际双端各两fresh通过；每device147488查询/256depth，root4945消费源SHA核实。校准守恒模型全域0，但工业source-PCF尚有小残差，不能关闭J3-D。C8 view-vertex实际raw18+half18稳定/Three与emissive保持0差，仍原两lane超差，无新增超门，候选停推进。I16真实菜单/Worker/积累/取消/preview下载/材质失效已过，480按钮竖排已局部CSS修并重建；实际preview还定位applyModelState遗漏作者变换缓存同步，作者恢复/快照回归修复中。最终两fresh HDR/视觉尚未完整通过，计数15/61不变。
+
 这份表给继续开发和排程用：只估真实后继缺口，已完成首刀不再排一遍。主线顺序 **J/C → G → F → 其他 → 最后验收**；2026-09-30 用户指定另设唯一 I 子智能体，与 J/C 并行推进，依赖未就绪时先做 I 内独立切片。
 
 **原锁定57项已关闭10项、剩余47项；用户新增AI方案4项，当前共61项、剩余51项，净投入331–668小时（约42–84个8小时人日）**。已关闭C4生产录制、Native可选输出profile、I-C26公共编译诊断、C5固定Bullet参照记录、I-C25实际Play恢复、I-C15生产局部反射、I-C18生产体积光、I-C17生产粒子流场、I-C1生产高斯点云与J2-B6数学/profile矩阵。原57项后继净投入271–548小时，AI新增去重预算60–120小时；包含必要测试、类型检查与实机验证。历史T00–T32另21组尾项核查27–54小时，含核查共358–722小时，四路约16–42个8小时工作日。未知全包范围仍待锁定；工时为工程投入估算。
@@ -49,13 +81,13 @@ I-C17收口：生产SDK/真实Pbr间接绘制两fresh通过，root21聚焦测/1�
 | ID | 具体剩余缺口 | 依赖 / 已有底座 | 净工时 | 信心 |
 |---|---|---|---:|---|
 | J2-B2-N-next | 已关闭：可选profile贯通发布/运行包/parser/host/output与热切换；旧缺省字节保持 | 75421e61；224组GPU、黑背景重建、WASM/freshness通过 | 0h | 已完成 |
-| J3-D-full | HDR、阴影/法线与后处理逐层双端实渲对拍；扩展合法差异矩阵 | ae9a3d77几何/主深度已验，同包双相机双轮；J2-B5/B6 | 8–16h | 中 |
+| J3-D-full | 已关闭当前登记共同域：原九层48格＋同包32完整场景帧/715点来源join＋64合法effects帧，LD-16–21独立来源及负控；原strictfalse保留 | 10-01最终范围裁定与4982效果源SHA；Gate E及未启用高层组合沿各自任务 | 0h | 已完成 |
 | J3-E-GPU | 自动unknown-loss、Native窗口事件/present、完整编辑器状态、驱动显存/上传与帧时；扩展实际epoch首刀之外的恢复 | 双端真实destroy/lost/reopen/首帧稳定已验；CPU首刀 | 6–12h | 中 |
 | J2-B4 | 已关闭：receiver 五成对 GPU 窗计时实测双宿主全 measured（2026-10-01，candidate P95 差 -0.08/-0.10ms 区间稳定为负）；设备矩阵骨架已备（e1261af7），多物理设备行按声明制等真机矩阵需求触发 | csm-timing evidence 2026-10-01；f848945e；j2DeviceMatrix | 0h（矩阵行条件触发另计） | 已完成 |
 | J2-B5 | 已关闭：非均匀(aniso)独立双族 oracle GPU 全绿（47dae766 位表修复+bb98f9bb 守卫修复后重跑：2040 点，Native 1.21e-4/Web 5.00e-4 ≤ .001，admission 与交接值一致）；producer/init、capture commit、动态漏光留条件触发 | 47dae766+bb98f9bb；probe-gi-aniso evidence 2026-10-01 | 0h | 已完成 |
 | J2-B6 | 已关闭：非均匀Bloom全纹理及Fog合法模式/height/HG矩阵；完整工业场景归J3-D | e5fac06e；Fog144组61440像素、Web作者680点，各宿主固定参考门通过 | 0h | 已完成 |
 
-本组：19–38h，B6范围关闭后扣除6–12h。同一缺口跨编号合并一行，不重复计时。
+本组当前锁定剩余6–12h（J3-E）；B4多物理设备行按条件触发另计。B6与登记D范围已关闭，不重复计时；下方其他组总时数保留历史估时口径。
 
 ## C 系列与本轮提级的 C8
 
@@ -74,12 +106,12 @@ I-C17收口：生产SDK/真实Pbr间接绘制两fresh通过，root21聚焦测/1�
 |---|---|---|---:|---|
 | I-C1 | 已关闭：生产SDK Gaussian/EWA/OIT、mesh共存、排序/取消/回收；当前仅DC呈现，高阶SH存储边界显式 | 8e79b6b1；272956点真样本，bare/TAA各两fresh、静止176B、回收0 | 0h | 已完成 |
 | I-C15 | 已关闭：生产双 cubemap/盒边混合，编辑器保存重载/非法值保持与候选回收；Deep WebGPU范围 | 3aaeec5e；实际两GPU realm/两作者context、11权重点、资源54→56→54→0 | 0h | 已完成 |
-| I-C16 / T10 | 离线路径追踪出图产品模式：累积/材质变更失效/取消/导出及收敛对照，复用 MC/RT 参考 | 现有软件 BVH/RT；J 门 | 24–48h | 低 |
+| I-C16 / T10 | 已关闭：离线路径追踪静帧出图产品，实际累积/材质失效/取消/preview与final HDR下载及原2%收敛对照；T10硬件RT/refit/纹理/降噪另计 | 正式作者物理NEE/studio/Worker；两fresh实际浏览器、独立RGBE与3085源SHA、SDK122/Apps9/effect5/恢复7测 | 0h | 已完成 |
 | I-C17 | 已关闭：既有双缓冲运行时消费curl核，SDK显式phase/seed与关停，CPU/GPU确定性与回收 | 21聚焦测/1既有skip；两fresh实际16粒子×8步误差1.19e-7、HDR与资源回收通过 | 0h | 已完成 |
 | I-C18-next | 已关闭：复用体积雾生产 dispatch/真实CSM遮挡，作者强度边界与保存重载，关闭保持旧雾与回收 | 两numeric/两visual/两editor fresh；104聚焦测、build/freshness通过 | 0h | 已完成 |
-| I-C19 | CPU状态机+GPU parity/hot-swap 已过（896eb35a：parity 9.77e-4、热替换差0、代际回落）；剩 pbrRenderer/mainBindings 接线的 keptMips 采样钳制与作者面板消费 | 5031b4e1+896eb35a；I-C15 | 4–8h | 中 |
+| I-C19 | 已关闭本行：生产链尾上传/生成、原roughness域采样/global-probe独立offset、事务回滚，作者档位保存/重载/SPA消费 | 20261001两fresh GPU；独立105测/14声明源哈希匹配；上述实现与复核规格 | 0h（自动预算/LUT共享另列后继） | 已完成 |
 | I-C21 | 已关闭：Studio 桥 HDR 快照/探测/回退/恢复保持 + 引擎层真实 GPU 两 fresh（默认SDR零介入、显式请求 fail-closed display-not-hdr）；物理 HDR 面板显式未测 | f32f3ea2；98+136+74 CPU 测 + 两 fresh | 0h | 已完成 |
-| I-C23 | 分层材质响应核接生产 GPU、按层表面色差异/纹理与双端白炉 | 9c56b1fc；C8/J3-D | 8–16h | 中 |
+| I-C23 | 分层材质响应核接生产 GPU、按层表面色差异/纹理与双端白炉 | 9c56b1fc；C8/J3-D；10-01显式金属主光片双端两fresh及旧coat HDR身份保持已验，完整组合/作者消费后继 | 8–16h | 中 |
 | I-C25 | 已关闭：真实非空Play恢复分段计时、双失败重试、两个加载竞态与成功后旧错误清除 | 34测；显式WebGL/无renderer参数各两轮；相机/对象恢复、bounded measure、页面错误0 | 0h | 已完成 |
 | I-C26 | 已关闭：公共冻结快照、4096日志预算与两轮实际编译等待/同设备复用量化 | 334d3d93；31测、两轮实际首帧/复用/残留0；墙钟观察值非帧时收益 | 0h | 已完成 |
 
@@ -105,7 +137,7 @@ I-C17收口：生产SDK/真实Pbr间接绘制两fresh通过，root21聚焦测/1�
 | F4/B3/T07 | 自有上采样核进产品目标与历史，67% 分辨率四序列画质/帧时报告；透明/粒子掩码已有 | 既有 scaler/MRT reactive；J3-D | 6–12h | 中 |
 | F5/G3/T02 | Chebyshev/实际产品多尺度薄壁与动态场景视觉闭环；32 方向/失效收敛/一阶多散射已做 | a6e8a304/42954e5b；J2-B5 | 4–8h | 中 |
 | F6-A3 | 生产换核后全 substeps 单 pass 真 GPU复验、FMA 容差/核选择会话口径与缓冲会话化 | 3206952f/b06d8086；Cargo 串行 | 4–8h | 中 |
-| F6/T18-collision | 布料/软体风场与碰撞、软体并行、顶点流生产消费；CPU/GPU 参考不重建 | A3；Rapier/BVH；T17 | 12–24h | 低 |
+| F6/T18-collision | 布料/软体风场与碰撞、软体并行、顶点流生产消费；CPU/GPU 参考不重建 | A3；Rapier/BVH；T17；10-01静态sphere/OBB与顶点流两片正式34+28测，24帧GPU待root，整项未闭 | 12–24h | 低 |
 | A2-next | SDF barrel 导出、真实 WebGPU 查询探针及凹体消费 profile 接缝核查；不重做 SDF 核 | 13eb2187；既有 native 参考 | 3–6h | 中 |
 
 本组：42–84h。同一缺口跨编号合并一行，不重复计时。
@@ -135,8 +167,8 @@ I-C17收口：生产SDK/真实Pbr间接绘制两fresh通过，root21聚焦测/1�
 | N5-material-import | 第三方 GLB unlit/无 TANGENT profile 的导入/生成/损失处理，避免零配置样板被拒；范围先核查 | 现有 glTF/质量合同/几何工具 | 4–8h | 中 |
 | H-C7-P1 | 修快照标准MCP参数与可视PNG返回；Claude/Codex实际握手、查询、截图、取消；对象定位与性能口径接现有诊断 | 现有MCP/readback/registry，H-K17；不重建服务器 | 4–8h | 中 |
 | H-C7-P2 | 8个空项目可运行3D模板、版本化references、一份Skill生成双客户端分发，示例类型/导出/运行门 | 现有独立Web SDK消费门；P1提供视觉循环 | 8–16h | 中 |
-| H-C7-P3/C24 | 原生高层作者API：创建/删除/层级/材质/相机与批量修改，CLI复用同执行路径；保存重开/取消/撤销 | 作者合同/SceneCommandTransaction，H-C6-S1；共享自由脚本与授权工时不重复 | 24–48h | 中低 |
-| H-C7-P4 | Three高频子集迁移映射与可检查样例/codemod；20题真实生成/视觉修正/性能任务基准 | P1–P3、J/C/I已验能力；不承诺任意addon/GLSL自动兼容 | 24–48h | 中低 |
+| H-C7-P3/C24 | 原生高层作者API：创建/删除/层级/材质/相机与批量修改，CLI复用同执行路径；保存重开/取消/撤销 | 作者合同/SceneCommandTransaction，H-C6-S1；10-01父级命令与graph/空间/CLI真实消费已验，其余后继；共享授权不重复 | 24–48h | 中低 |
+| H-C7-P4 | Three高频子集迁移映射与可检查样例/codemod；20题真实生成/视觉修正/性能任务基准 | P1–P3、J/C/I；10-01Box/Sphere/Standard/相机灯光迁移例直接Node已验，20题后继；任意addon/GLSL不承诺自动兼容 | 24–48h | 中低 |
 
 本组：157–320h，新增AI方案净增60–120h，H-autonomy/H-C6/K17等共用工作不再计入P1–P4。方案与完整验收条件见 [面向AI的3D框架](ai-first-framework-and-agent-integration-20260930.md)。组内执行先P1→P2→P3→P4，P3与H-C6-S1接线协调；主线仍J/C→G→F→其他→最后验收，I独立并行。
 
@@ -174,7 +206,7 @@ I-C17收口：生产SDK/真实Pbr间接绘制两fresh通过，root21聚焦测/1�
 | T19 | navmesh/动态障碍/坡度步高、对向窄道、10k 到达与跨端统一时钟/SoA ABI | navigation/AGV/SimulationEngine | 1–2h | 低 |
 | T20 | 除 I-C17 外的粒子透明排序/曲线 LUT/火焰预算遥测、有边界烟体求解；通用流体已排除 | gpuParticleRuntime/模型火焰/B3 MRT | 1–2h | 中 |
 | T21 | 2D 骨骼/独立2D物理/UIA跨层与移动触控/动作映射；10万行/IME/文本矩阵已有 | retainedUi/Deep2D/input；既有浏览器 | 1–2h | 低 |
-| T22 | JT 8.x 网格/PMI、X_T 曲面与生产 profile、PMI/装配/材质语义；被删除样本追索不得复入 | 工业格式唯一计划、现有 parser/fixtures | 2–4h | 低 |
+| T22 | 本轮有界验收通过：JT9.5/10.3 LOD0、X_T V24.1 单体实际导入/Three消费；JT8.x、PMI及X_T owner关联等未支持范围保留后继，被删除样本不得复入 | [验收范围与收据](t22-bounded-acceptance-20261001.md)、用户10-01基本通过即验收指令 | 本轮核查0h；排除后继另锁范围 | 有界已验 |
 | T23 | C2 校准集已完成之外的离线数据质量/谱系、告警原因→历史回放业务链 | plant-lite/Study/数据绑定/录制 | 1–2h | 中 |
 | T24 | SubscriptionTransfer、签名/加密证书、backfill 与质量可视化；持久订阅和文件 checkpoint 已完成 | OPC UA/MQTT/订阅 runtime；不追PLC | 1–2h | 中 |
 | T27 | 事务标签/低频域记账/长事务/崩溃草稿的真实余项；Undo/Redo 与 Play 隔离已做 | scene history/transaction/persistence | 1–2h | 中 |

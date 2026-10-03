@@ -1,90 +1,18 @@
+// Probe scene radiance producer 测试(sourceSizeGate 拆分:夹具/场景包/上下文/光照输入
+// 移至 probeSceneRadianceProducer.testUtils.ts,代码逐行同源;describe/it 名零变化,
+// 语义零变化——外部证据按测试名引用不受影响)。
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ProbeCaptureBeginContext } from "../lighting/probeClipmapCaptureExecutor.js";
-import type { ProbeClipmapPlan, ProbeUpdate } from "../lighting/probeClipmapPlan.js";
 import type { RenderPacket } from "../renderPacket.js";
 import {
   emitProbeRadianceKernelWgsl, packProbeRadianceProbeParams, packProbeRadianceUniform,
-  PROBE_RADIANCE_UNIFORM_BYTES,
+  PROBE_RADIANCE_MOMENT_LANES, PROBE_RADIANCE_UNIFORM_BYTES,
 } from "./probeRadianceKernel.js";
 import { probeOcclusionDirection } from "./probeOcclusionRayExtension.js";
 import {
-  ProbeSceneRadianceProducer, type ProbeRadianceLighting,
+  ProbeSceneRadianceProducer,
 } from "./probeSceneRadianceProducer.js";
-
-interface FakeBuffer extends Omit<GPUBuffer, "destroy"> { readonly destroy: ReturnType<typeof vi.fn> }
-interface PassRecord { readonly label: string; readonly dispatch: number[][] }
-
-function fixture() {
-  const buffers: FakeBuffer[] = [];
-  const encoders: PassRecord[][] = [];
-  const writeBufferCalls: { buffer: unknown; offset: number; size: number | undefined }[] = [];
-  const lost = new Promise<GPUDeviceLostInfo>(() => {});
-  const queue = { writeBuffer: vi.fn((buffer: GPUBuffer, offset: number, _data: BufferSource,
-    size?: number) => { writeBufferCalls.push({ buffer, offset, size }); }),
-    submit: vi.fn(), onSubmittedWorkDone: vi.fn(() => Promise.resolve()) };
-  const device = {
-    limits: {}, queue, lost,
-    pushErrorScope: vi.fn(), popErrorScope: vi.fn(() => Promise.resolve(null)),
-    createShaderModule: vi.fn(({ label }: { label: string }) => ({ label })),
-    createBindGroupLayout: vi.fn(({ label }: { label: string }) => ({ label })),
-    createPipelineLayout: vi.fn(({ label }: { label: string }) => ({ label })),
-    createComputePipeline: vi.fn(({ label }: { label: string }) => ({ label,
-      getBindGroupLayout: vi.fn((index: number) => ({ label: `layout-${index}` })) })),
-    createBindGroup: vi.fn(({ label, entries }: { label: string; entries: GPUBindGroupEntry[] }) =>
-      ({ label, entries })),
-    createBuffer: vi.fn((descriptor: GPUBufferDescriptor) => {
-      const buffer = { size: descriptor.size, usage: descriptor.usage,
-        destroy: vi.fn() } as unknown as FakeBuffer; buffers.push(buffer); return buffer;
-    }),
-    createCommandEncoder: vi.fn(() => {
-      const passes: PassRecord[] = []; encoders.push(passes);
-      return { beginComputePass: vi.fn(({ label }: { label: string }) => {
-        const pass: PassRecord = { label, dispatch: [] }; passes.push(pass);
-        return { setPipeline: vi.fn(), setBindGroup: vi.fn(),
-          dispatchWorkgroups: vi.fn((...args: number[]) => pass.dispatch.push(args)), end: vi.fn() };
-      }) };
-    }),
-  };
-  return { device: device as unknown as GPUDevice, rawDevice: device, queue, buffers,
-    encoders, writeBufferCalls };
-}
-
-function planePacket(baseColor: readonly [number, number, number] = [0.5, 0.5, 0.5],
-  alphaMode?: "OPAQUE" | "BLEND"): RenderPacket {
-  // Ground plane at y=0 with upward normals (position+normal interleaved, 6 floats/vertex).
-  const corners: [number, number][] = [[-4, -4], [4, -4], [4, 4], [-4, 4]];
-  const vertices = new Float32Array(corners.flatMap(([x, z]) => [x, 0, z, 0, 1, 0]));
-  return { geometries: [{ id: "ground", revision: 0, vertices, indices: new Uint32Array([0, 1, 2, 0, 2, 3]) }],
-    materials: [{ id: "m", baseColor, metallic: 0, roughness: 1,
-      ...(alphaMode ? { alphaMode } : {}) }],
-    instances: [{ id: "ground-1", geometry: "ground", material: "m",
-      transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }] };
-}
-
-function update(index: number, position: readonly [number, number, number],
-  localCell: readonly [number, number, number] = [0, 0, 0], level = 0): ProbeUpdate {
-  return Object.freeze({ level, cell: localCell, localCell, linearIndex: index,
-    position: Object.freeze([...position]) as unknown as ProbeUpdate["position"], reason: "initial" });
-}
-
-function captureContext(device: GPUDevice, generation: number,
-  updates: readonly ProbeUpdate[]) {
-  const plan = { profile: { gridSize: [4, 2, 4] }, updates } as unknown as ProbeClipmapPlan;
-  return {
-    encoder: device.createCommandEncoder(),
-    update: updates[0]!, updateIndex: 0,
-    destination: {} as GPUTexture,
-    destinationView: { label: "capture-view" } as unknown as GPUTextureView,
-    destinationOrigin: Object.freeze({ x: 0, y: 0, z: 0 }),
-    context: { generation, plan, deviceEpoch: "e", signal: new AbortController().signal,
-      resource: {} } as unknown as ProbeCaptureBeginContext,
-  };
-}
-
-const sunlit: ProbeRadianceLighting = {
-  primary: { surfaceToLightWorld: [0, 1, 0], color: [1, 1, 1], intensity: 2 },
-  ambient: [0.1, 0.1, 0.1] };
+import { captureContext, fixture, planePacket, sunlit, update } from "./probeSceneRadianceProducer.testUtils.js";
 
 beforeEach(() => {
   vi.stubGlobal("GPUShaderStage", { COMPUTE: 1 });
@@ -162,6 +90,36 @@ describe("probe scene radiance producer", () => {
     expect(() => new ProbeSceneRadianceProducer(device, { maxDistance: 1_000_001 })).toThrow(RangeError);
   });
 
+  it("captures real moments with an optional texture while keeping eight compute storage buffers", () => {
+    const f = fixture(), producer = new ProbeSceneRadianceProducer(f.device);
+    producer.syncScene(planePacket()); producer.syncLighting(sunlit);
+    const input = { ...captureContext(f.device, 10, [update(0, [0, 1, 0])]),
+      momentsDestinationView: { label: "raw-moments" } as unknown as GPUTextureView };
+    producer.encodeSourceRadiance(input as never);
+    const bind = f.rawDevice.createBindGroup.mock.calls.at(-1)![0];
+    expect(bind.entries.find(entry => entry.binding === 10)!.resource).toBe(input.momentsDestinationView);
+    const code = emitProbeRadianceKernelWgsl(true);
+    expect(code.match(/var<storage/g)).toHaveLength(8);
+    expect(code).toContain("momentM2 += momentDelta * (t - momentMean)");
+    expect(code).toContain("f32(misses) / f32(params.directionCount)");
+    expect(code).toContain("rgba32float");
+    // F5 方案 A：逐方向贡献快照 + 均值扣除 L1 投影 + lane1..3 RGB SH 写出（lane 合同
+    // 与 webgpuProbeMoments/probeClipmapTextureSamplingWgsl 单源共享）。
+    expect(code).toContain("var shSamples: array<vec3f, 32>;");
+    expect(code).toContain("let centered = shSamples[shOrdinal] - mean;");
+    expect(code).toContain("shR = vec4f(shR.xyz * shInverseCount, mean.r);");
+    expect(code.match(/u32\(layer\) \* 4u \+ 1u/g)).toHaveLength(2);
+    expect(code).toContain(`u32(layer) * ${PROBE_RADIANCE_MOMENT_LANES}u`);
+    expect(emitProbeRadianceKernelWgsl()).not.toContain("captureMoments");
+  });
+
+  it.runIf(Boolean(process.env.DEEP_SHADER_NAGA_BIN))("validates the optional moment capture with Naga", () => {
+    const result = spawnSync(process.env.DEEP_SHADER_NAGA_BIN!,
+      ["--stdin-file-path", "deep-moment-capture.wgsl", "--input-kind", "wgsl"],
+      { input: emitProbeRadianceKernelWgsl(true), encoding: "utf8" });
+    expect(result.status, result.stderr).toBe(0);
+  });
+
   it("uploads the ray scene once per packet and dedupes by packet identity", () => {
     const f = fixture();
     const producer = new ProbeSceneRadianceProducer(f.device);
@@ -206,6 +164,28 @@ describe("probe scene radiance producer", () => {
     producer.syncLighting({ ambient: [0.2, 0.2, 0.2] });
     producer.encodeSourceRadiance(captureContext(f.device, 3, updates) as never);
     expect(f.encoders.at(-1)![0]!.dispatch).toEqual([[1]]);
+  });
+
+  it("keeps the F1 slice-2 ambient contract: environment-average ambient alone drives capture", () => {
+    // F5-L4 裁定钉子:slice-1 头注释的 [0,0,0] 是过渡起步值;F1 slice-2(d1626b2f,
+    // EnvironmentAmbientReader)交付后,宿主馈送的环境立方体 GPU 读回均值即本接口的
+    // 文档正确值。禁止以"回到 F1 声明的 [0,0,0]"为由回退——那会让 miss 方向丢天空
+    // 辐射(室外探针变暗)。本用例以 studio 环境实测均值 (0.525, 0.563, 0.613) 复现。
+    const f = fixture();
+    const producer = new ProbeSceneRadianceProducer(f.device);
+    producer.syncScene(planePacket());
+    const updates = [update(0, [0, 1, 0])];
+    producer.syncLighting({ ambient: [0.525, 0.563, 0.613] });
+    producer.encodeSourceRadiance(captureContext(f.device, 11, updates) as never);
+    const uniformWrite = (f.queue.writeBuffer as ReturnType<typeof vi.fn>).mock.calls
+      .find(([, , data]) => data instanceof ArrayBuffer && data.byteLength === 576);
+    expect(uniformWrite).toBeDefined();
+    // params 布局(floats):[0..3]=u32 头+ tMax,ambient 在 float 12(字节 48)起的 vec3。
+    const floats = new Float32Array(uniformWrite![2] as ArrayBuffer);
+    expect(floats[12]).toBeCloseTo(0.525, 6);
+    expect(floats[13]).toBeCloseTo(0.563, 6);
+    expect(floats[14]).toBeCloseTo(0.613, 6);
+    expect(floats[15]).toBe(0);
   });
 
   it("encodes one dispatch per generation, packs the latest lighting and stays idempotent", () => {

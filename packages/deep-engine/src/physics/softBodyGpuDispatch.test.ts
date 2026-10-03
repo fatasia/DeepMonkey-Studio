@@ -146,8 +146,9 @@ describe("F6 GPU dispatch 生产入口(编排语义)", () => {
     const { device, buffers } = fakeDevice(stateBytes);
     const result = await dispatchSoftBodyGpuStep(device, softInput);
     expect(result.state.byteLength).toBe(stateBytes);
-    // uniform 48B + 粒子 192B + 边 6×16B + 四面体 32B + readback 192B。
-    expect(buffers.map(buffer => buffer.size)).toEqual([48, 192, 96, 32, 192]);
+    // uniform 96B(风场刀 96B ABI;串行核按头 48B 消费)+ 粒子 192B + 边 6×16B +
+    // 四面体 32B + readback 192B。
+    expect(buffers.map(buffer => buffer.size)).toEqual([96, 192, 96, 32, 192]);
     const layout = mirrorSoftBodyGpuStep(softInput);
     expect(result.state.byteLength).toBe(layout.byteLength);
   });

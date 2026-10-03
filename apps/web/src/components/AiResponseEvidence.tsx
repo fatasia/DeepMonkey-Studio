@@ -70,6 +70,32 @@ export function AiResponseEvidence({ locale, reliability }: AiResponseEvidencePr
             </div>
           )}
         </dl>
+        {reliability.citations && reliability.citations.length > 0 && (
+          <>
+            <p className="citations-title">{t("逐条引用（回答数值 ↔ 已发送证据）", "Per-item citations (answer values ↔ sent evidence)")}</p>
+            <dl className="ai-response-citations">
+              {reliability.citations.map((citation) => (
+                <div key={citation.token} className="citation-row">
+                  <dt><code>{citation.token}</code></dt>
+                  <dd className="citation-anchors">
+                    {citation.anchors.map((anchor) => {
+                      const label = citationSourceLabel(anchor.sourceId, anchor.sourcePath, reliability.contextSourceLabels, t);
+                      return (
+                        <span key={`${anchor.sourceId}:${anchor.offset}`} className="citation-anchor"
+                          title={`${label} · ${anchor.sourcePath} @${anchor.offset} · ${anchor.fingerprint}`}>
+                          <strong>{label}</strong>
+                          <small>@{anchor.offset}</small>
+                          <EvidenceCopyButton locale={locale} value={anchor.fingerprint}
+                            labelZh={`来源指纹（${label}）`} labelEn={`source fingerprint (${label})`} />
+                        </span>
+                      );
+                    })}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </>
+        )}
         {reliability.contextDelivery && <AiContextDeliveryEvidence receipt={reliability.contextDelivery} labels={reliability.contextSourceLabels} locale={locale} />}
         {!reliability.contextDelivery && reliability.sourceLabels.length > 0 && (
           <p>
@@ -105,11 +131,31 @@ function riskLabel(risk: AssistantReliabilitySummary["inputRisk"], locale: AppLo
 }
 
 /**
+ * T5（审计 20260929 §二 T5）：逐条引用——回答中的具体数值/编号对应到具体已发送证据。
+ * 每行 = 回答 token（dt 等宽码）+ 服务端锚（来源标签 + 源内偏移 + 可复制来源指纹）。
+ * 锚全部来自服务端 citations（K2 校验器同源、发送窗口内真实定位），前端不自造、不猜来源；
+ * title 悬浮给出来源路径与指纹全文，可见行保持信息密度纪律。来源标签回退与
+ * AiContextDeliveryEvidence 同族（目录/BIM 证据/路径）。
+ */
+function citationSourceLabel(sourceId: string, sourcePath: string, labels: Record<string, string> | undefined, t: (zh: string, en: string) => string): string {
+  return labels?.[sourceId] ?? (sourceId === "capability-catalog" ? t("可调用能力目录", "Capability catalog") : sourceId === "bim-evidence" ? t("BIM 证据", "BIM evidence") : sourcePath);
+}
+
+/**
  * T4（审计 §二）：traceId / 证据指纹从"title 全文纯文本"升级为可点复制的结构化行——
  * 三跳可溯链的第一跳入口（复制后可在实验档案/审计侧核对），title 仍保留全文。
  * 复制失败静默保留纯文本可选手动复制（不弹错打断阅读）。
  */
 function EvidenceCopyValue({ locale, value, labelZh, labelEn }: { locale: AppLocale; value: string; labelZh: string; labelEn: string }) {
+  return (
+    <dd>
+      <EvidenceCopyButton locale={locale} value={value} labelZh={labelZh} labelEn={labelEn} />
+    </dd>
+  );
+}
+
+/** T5：裸复制钮（无 dd 包装）——主证据行与逐条引用锚共用同一复制行为，不建第二套逻辑。 */
+function EvidenceCopyButton({ locale, value, labelZh, labelEn }: { locale: AppLocale; value: string; labelZh: string; labelEn: string }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
     void copyDocumentationCode(value)
@@ -120,13 +166,11 @@ function EvidenceCopyValue({ locale, value, labelZh, labelEn }: { locale: AppLoc
       .catch(() => { /* 复制失败不打断阅读；文本仍可手动选择复制。 */ });
   };
   return (
-    <dd>
-      <button type="button" className="ai-evidence-copy" title={value} onClick={copy}
-        aria-label={tr(locale, `复制${labelZh}`, `Copy ${labelEn}`)}>
-        <code>{value}</code>
-        {copied ? <Check size={11} aria-hidden="true" /> : <Copy size={11} aria-hidden="true" />}
-        <span className={copied ? undefined : "sr-only"} role="status">{copied ? tr(locale, "已复制", "Copied") : ""}</span>
-      </button>
-    </dd>
+    <button type="button" className="ai-evidence-copy" title={value} onClick={copy}
+      aria-label={tr(locale, `复制${labelZh}`, `Copy ${labelEn}`)}>
+      <code>{value}</code>
+      {copied ? <Check size={11} aria-hidden="true" /> : <Copy size={11} aria-hidden="true" />}
+      <span className={copied ? undefined : "sr-only"} role="status">{copied ? tr(locale, "已复制", "Copied") : ""}</span>
+    </button>
   );
 }

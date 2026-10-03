@@ -12,6 +12,18 @@ export interface StudioDeepEnvironmentIssue {
 type Lights = NonNullable<RenderView["lights"]>;
 type Vec3 = readonly [number, number, number];
 
+/**
+ * WebGL 作者路径的全局光照站位光（viewerEngineCore 的 globalIlluminationLight，
+ * HemisphereLight 天/地双色）。产品 `globalIlluminationEnabled` 开关在 Deep 端的
+ * 语义是探针 GI 体积（StudioDeepWebGpuBridge.probeClipmapEnabled 同一谓词）；
+ * 站位光若同时进入 Deep 光照投影，会经 packDiffuseIrradiance → deepAuthoredDiffuse
+ * 与探针 GI 双重计账——该站位填充无遮挡、门态无关，是封门哨兵 leakRatio 的载体
+ * （F5-L5 实测：三区 gi-on−gi-off delta 全部蓝主异，量级与该灯合同值同阶）。
+ * 因此 Deep 投影恒排除它：GI 关闭时该灯 visible=false 本就不进投影，此拦截只
+ * 作用于 GI 开启态；作者自建的半球光（有独立 id）不受影响。
+ */
+export const GLOBAL_ILLUMINATION_STAND_IN_LIGHT_NAME = "scene-light:global-illumination";
+
 /** E02：Three SpotLight 的 IES 载体（object.userData.ies）合同验证；非法即 issue。 */
 function readSpotIes(object: THREE.Object3D, path: string,
   report: (code: string, message: string) => void): SpotLightIes | undefined {
@@ -64,6 +76,8 @@ export function projectStudioDeepLights(scene: THREE.Scene, cameraLayerMask = 0x
   const lightProfiles = readSceneLightProfiles(scene, reportScene);
   scene.traverseVisible(object => {
     if (!(object instanceof THREE.Light) || object.intensity === 0) return;
+    // Deep GI 权威 = 探针体积;WebGL GI 站位光不进入 Deep 光照投影(防双重计账,见常量注释)。
+    if (object.name === GLOBAL_ILLUMINATION_STAND_IN_LIGHT_NAME) return;
     if ((object.layers.mask & cameraLayerMask) === 0) return;
     const path = `lights.${object.uuid}`;
     const report = (code: string, message: string) => issues.push({ code, path, message });

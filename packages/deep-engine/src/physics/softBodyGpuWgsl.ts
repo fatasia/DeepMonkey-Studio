@@ -5,11 +5,42 @@
  * and tetrahedra. This is intentionally serial: the reduction/order contract is
  * explicit before a production parallel coloring scheme is introduced.
  */
+import { WIND_NOISE_SALT } from "./clothSolver.js";
 
 export const SOFT_BODY_GPU_PARTICLE_STRIDE_BYTES = 48;
 export const SOFT_BODY_GPU_EDGE_STRIDE_BYTES = 16;
 export const SOFT_BODY_GPU_TET_STRIDE_BYTES = 32;
-export const SOFT_BODY_GPU_PARAMS_BYTES = 48;
+/** F6/T18 风场刀:48B→96B。头 48B 与旧 ABI 逐位同布局(串行核 SoftBodyParams 仍按
+ * 头 48B 消费,绑定 ≥ minBindingSize 合法、风槽被串行核忽略——与 obstacles 字段先例
+ * 同为"文档化忽略",非静默分歧);尾 48B = 风(槽序见 packSoftBodyGpuParams 与并行核
+ * Params struct 互钉)。布料教训(softbody-parallel-divergence):struct 全长决定
+ * minBindingSize,宿主分配必须同步,否则 Submit 整体静默丢弃。 */
+export const SOFT_BODY_GPU_PARAMS_BYTES = 96;
+/** 静态障碍 ABI:与布料并行核 packClothGpuObstacles 同构(64×80B,逐槽同位)。
+ * F6/T18 软体并行核障碍刀引入;跨核字节恒等由 softBodyGpuDispatch.softbodyParallel.test.ts 锁死。 */
+export const SOFT_BODY_GPU_OBSTACLE_STRIDE_BYTES = 80;
+export const SOFT_BODY_GPU_MAX_OBSTACLES = 64;
+
+/** F6/T18 静态障碍(GPU):sphere(radius>0)或 cuboid OBB;行主序旋转与
+ * softBodyStaticCollision.ts 同构(quaternion→矩阵换算在调用方,黄金工厂同式)。 */
+export interface SoftBodyGpuObstacle {
+  readonly center: readonly [number, number, number];
+  readonly radius: number;
+  readonly rotation: readonly [number, number, number, number, number, number, number, number, number];
+  readonly halfExtents: readonly [number, number, number];
+}
+
+/** F6/T18 风场刀:确定性风(与布料 ClothGpuWind 同形)。加速度 =
+ * direction × baseSpeed × (0.5+valueNoise(tickSeconds·gustFreq, y·spatialScale, seed^salt));
+ * tickSeconds 由调用方按 tick 基传入,dispatch 每子步副本递进 +sub·h(与布料同式)。 */
+export interface SoftBodyGpuWind {
+  readonly direction: SoftBodyVec3;
+  readonly baseSpeed: number;
+  readonly gustFrequency: number;
+  readonly spatialScale: number;
+  readonly seed: number;
+  readonly tickSeconds: number;
+}
 
 type SoftBodyVec3 = readonly [number, number, number];
 
@@ -43,6 +74,14 @@ export interface SoftBodyGpuStepInput {
   readonly complianceVolume: number;
   readonly damping: number;
   readonly gravity: SoftBodyVec3;
+  /** 静态障碍(可选;并行核每子步积分后和约束后投影)。
+   * 串行核(stepSoftBody/mirrorSoftBodyGpuStep)无障碍能力,该字段被忽略——
+   * 与串行 kernel 合同一致,非静默分歧。 */
+  readonly obstacles?: readonly SoftBodyGpuObstacle[];
+  /** F6/T18 风场(可选;并行核 integrate 每子步消费)。
+   * 串行核(stepSoftBody/mirrorSoftBodyGpuStep)无风场能力,该字段被忽略——
+   * 与 obstacles 同款文档化先例,非静默分歧。 */
+  readonly wind?: SoftBodyGpuWind;
 }
 
 export function packSoftBodyGpuParticles(particles: readonly SoftBodyGpuParticleInput[]): Float32Array<ArrayBuffer> {
@@ -82,6 +121,17 @@ export function packSoftBodyGpuTets(tets: readonly SoftBodyGpuTetInput[], partic
   return out;
 }
 
+/**
+ * 全局参数 pack(96B,风场刀)。头 48B 与旧 ABI 逐位同布局:
+ * integers[0..3] = [particleCount, edgeCount, tetCount, substeps]——字段序与并行核
+ * Params struct 声明序互钉(softBodyParallelParamsAbi.test 读实际 WGSL 声明序核对),
+ * 历史教训:错序曾被 8粒子/8子步巧合输入掩盖。
+ * 风 48B 尾(风关时写零,与风开路径同缓冲尺寸;零风消费路径不触):
+ * integers[12]=windEnabled@48、integers[13]=windSeed^WIND_NOISE_SALT@52(盐与布料
+ * pack/f64 黄金同源,clothSolver.ts 导出)、floats[14]=baseSpeed@56、
+ * floats[15]=gustFreq@60、floats[16]=spatialScale@64、floats[17]=tickSeconds@68、
+ * integers[18..19]=pad@72..80、floats[20..23]=windDirection vec4f(w 槽 0)@80..96。
+ */
 export function packSoftBodyGpuParams(input: SoftBodyGpuStepInput): ArrayBuffer {
   validateStepInput(input);
   const out = new ArrayBuffer(SOFT_BODY_GPU_PARAMS_BYTES);
@@ -93,6 +143,61 @@ export function packSoftBodyGpuParams(input: SoftBodyGpuStepInput): ArrayBuffer 
   floats[6] = Math.fround(input.complianceVolume); floats[7] = Math.fround(input.damping);
   floats[8] = Math.fround(input.gravity[0]); floats[9] = Math.fround(input.gravity[1]);
   floats[10] = Math.fround(input.gravity[2]);
+  const wind = input.wind;
+  if (wind) {
+    integers[12] = 1;
+    integers[13] = (wind.seed ^ WIND_NOISE_SALT) >>> 0;
+    floats[14] = Math.fround(wind.baseSpeed);
+    floats[15] = Math.fround(wind.gustFrequency);
+    floats[16] = Math.fround(wind.spatialScale);
+    floats[17] = Math.fround(wind.tickSeconds);
+    integers[18] = 0; integers[19] = 0;
+    floats[20] = Math.fround(wind.direction[0]);
+    floats[21] = Math.fround(wind.direction[1]);
+    floats[22] = Math.fround(wind.direction[2]);
+    floats[23] = 0;
+  }
+  return out;
+}
+
+/** 障碍字段校验(pack 与镜像共用单一校验源;错误信息与 pack 同文)。 */
+export function validateSoftBodyGpuObstacles(obstacles: readonly SoftBodyGpuObstacle[]): void {
+  if (obstacles.length > SOFT_BODY_GPU_MAX_OBSTACLES) {
+    throw new Error(`Soft-body GPU obstacles exceed budget ${SOFT_BODY_GPU_MAX_OBSTACLES}, got ${obstacles.length}.`);
+  }
+  obstacles.forEach((obstacle, index) => {
+    if (obstacle.center.length !== 3 || !obstacle.center.every(Number.isFinite)) throw new Error(`Soft-body GPU obstacle ${index} center must contain three finite values.`);
+    if (!Number.isFinite(obstacle.radius) || obstacle.radius < 0) throw new Error(`Soft-body GPU obstacle ${index} radius must be finite and >= 0.`);
+    if (obstacle.rotation.length !== 9 || !obstacle.rotation.every(Number.isFinite)) throw new Error(`Soft-body GPU obstacle ${index} rotation must be a 3x3 row-major matrix of finite values.`);
+    if (obstacle.halfExtents.length !== 3 || !obstacle.halfExtents.every(value => Number.isFinite(value) && value >= 0)) throw new Error(`Soft-body GPU obstacle ${index} halfExtents must contain three finite values >= 0.`);
+  });
+}
+
+/**
+ * 静态障碍 pack:64×80B 预算,槽位与 WGSL Obstacle struct(5×vec4f)逐槽对齐——
+ * 槽 0..3 = center.xyz + center.w = radius(sphere 分支读此槽);
+ * 槽 4..12 = rotation 行主序 3×3;槽 13..15 = padding(row2.w);
+ * 槽 16..18 = halfExtents.xyz;槽 19 = sphere/cuboid 判别式(radius>0?radius:0)。
+ * 布料教训(softbody-divergence-20261002 同族):槽位错位不报错、WGSL 读到零/垃圾
+ * 后静默无效应——跨核字节恒等锁(与 packClothGpuObstacles)在测试先行钉死。
+ */
+export function packSoftBodyGpuObstacles(obstacles: readonly SoftBodyGpuObstacle[]): ArrayBuffer {
+  validateSoftBodyGpuObstacles(obstacles);
+  const out = new ArrayBuffer(SOFT_BODY_GPU_MAX_OBSTACLES * SOFT_BODY_GPU_OBSTACLE_STRIDE_BYTES);
+  const floats = new Float32Array(out);
+  obstacles.forEach((obstacle, index) => {
+    const base = index * 20;
+    floats[base] = Math.fround(obstacle.center[0]);
+    floats[base + 1] = Math.fround(obstacle.center[1]);
+    floats[base + 2] = Math.fround(obstacle.center[2]);
+    floats[base + 3] = Math.fround(obstacle.radius); // Obstacle.center.w = radius(WGSL sphere 分支读此槽)
+    for (let r = 0; r < 9; r += 1) floats[base + 4 + r] = Math.fround(obstacle.rotation[r]!);
+    // 判别式合同:槽 19 = radius>0?radius:0(sphere)——与布料 packClothGpuObstacles 逐槽同源。
+    floats[base + 16] = Math.fround(obstacle.halfExtents[0]);
+    floats[base + 17] = Math.fround(obstacle.halfExtents[1]);
+    floats[base + 18] = Math.fround(obstacle.halfExtents[2]);
+    floats[base + 19] = obstacle.radius > 0 ? Math.fround(obstacle.radius) : 0;
+  });
   return out;
 }
 
@@ -140,7 +245,7 @@ export function mirrorSoftBodyGpuStep(input: SoftBodyGpuStepInput): Float32Array
   return state;
 }
 
-function projectEdge(state: Float32Array, edge: SoftBodyGpuEdgeInput, alpha: number): void {
+export function projectEdge(state: Float32Array, edge: SoftBodyGpuEdgeInput, alpha: number): void {
   const a = edge.a * 12; const b = edge.b * 12;
   const wa = state[a + 3]!; const wb = state[b + 3]!; const denominator = wa + wb;
   if (denominator === 0) return;
@@ -153,7 +258,7 @@ function projectEdge(state: Float32Array, edge: SoftBodyGpuEdgeInput, alpha: num
   state[b] = state[b]! - wb * correction * nx; state[b + 1] = state[b + 1]! - wb * correction * ny; state[b + 2] = state[b + 2]! - wb * correction * nz;
 }
 
-function projectVolume(state: Float32Array, tet: SoftBodyGpuTetInput, alpha: number): void {
+export function projectVolume(state: Float32Array, tet: SoftBodyGpuTetInput, alpha: number): void {
   const ids = [tet.i0, tet.i1, tet.i2, tet.i3];
   const p = ids.map(index => index * 12);
   const e1 = sub(state, p[1]!, p[3]!); const e2 = sub(state, p[2]!, p[3]!);
@@ -192,6 +297,14 @@ function validateStepInput(input: SoftBodyGpuStepInput): void {
   if (!(input.complianceVolume >= 0) || !Number.isFinite(input.complianceVolume)) throw new Error("Soft-body GPU volume compliance must be finite and >= 0.");
   if (!(input.damping >= 0) || input.damping >= 1 || !Number.isFinite(input.damping)) throw new Error("Soft-body GPU damping must be finite in [0,1).");
   if (input.gravity.length !== 3 || !input.gravity.every(Number.isFinite)) throw new Error("Soft-body GPU gravity must contain three finite values.");
+  if (input.wind) {
+    const wind = input.wind;
+    if (wind.direction.length !== 3 || !wind.direction.every(Number.isFinite)) throw new Error("Soft-body GPU wind direction must contain three finite values.");
+    if (!Number.isFinite(wind.baseSpeed) || wind.baseSpeed < 0) throw new Error("Soft-body GPU wind baseSpeed must be finite and >= 0.");
+    if (!Number.isFinite(wind.gustFrequency) || wind.gustFrequency < 0) throw new Error("Soft-body GPU wind gustFrequency must be finite and >= 0.");
+    if (!Number.isFinite(wind.spatialScale) || wind.spatialScale < 0) throw new Error("Soft-body GPU wind spatialScale must be finite and >= 0.");
+    if (!Number.isFinite(wind.tickSeconds)) throw new Error("Soft-body GPU wind tickSeconds must be finite.");
+  }
   input.particles.forEach((particle, index) => validateParticle(particle, index));
   input.edges.forEach((edge, index) => validateEdge(edge, index, input.particles.length));
   input.tets.forEach((tet, index) => validateTet(tet, index, input.particles.length));

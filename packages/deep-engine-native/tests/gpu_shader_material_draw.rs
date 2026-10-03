@@ -373,3 +373,19 @@ mod j2_probe_gi_actual;
 mod j3_texture_coverage;
 #[path = "support/j2_probe_gi_aniso.rs"]
 mod j2_probe_gi_aniso;
+
+#[path = "support/j3_fullscene.rs"]
+mod j3_fullscene;
+
+#[path = "../src/bloom_pipeline.rs"]
+mod bloom_pipeline;
+#[path = "../src/bloom_pass.rs"]
+mod bloom_pass;
+#[path = "support/j3_industrial_effects.rs"]
+mod j3_industrial_effects;
+
+#[path = "support/j3_compare_sampler.rs"]
+mod j3_compare_sampler;
+
+#[path = "support/j3_compare_sampler_masks.rs"]
+mod j3_compare_sampler_masks;

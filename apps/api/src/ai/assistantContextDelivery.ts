@@ -34,6 +34,27 @@ export function assistantContextDelivery(original: unknown, prepared: unknown, s
   return { unit: "utf16", preparedChars: serialized.length, sentChars: Math.min(serialized.length, sentChars), sources };
 }
 
+/** T5：逐条引用锚的证据定位输入——与 contextDelivery 同一坐标系的来源段（start 为 prepared 串内 UTF-16 偏移）。 */
+export interface AssistantContextSourceSegment {
+  id: string;
+  path: string;
+  start: number;
+  text: string;
+}
+
+/**
+ * 与 assistantContextDelivery 同源（同一 locate/SOURCE_PATHS、同一次序列化口径）提取来源段；
+ * 只对「准备后真正用于发送的 prepared」调用。零新机制：锚定坐标系与 contextDelivery 逐字节一致。
+ */
+export function assistantContextSourceSegments(prepared: unknown): AssistantContextSourceSegment[] {
+  const segments: AssistantContextSourceSegment[] = [];
+  for (const [id, path] of Object.entries(SOURCE_PATHS)) {
+    const range = locate(prepared, path);
+    if (range) segments.push({ id, path: path.join("."), start: range.start, text: range.text });
+  }
+  return segments;
+}
+
 function locate(value: unknown, path: string[], start = 0): { start: number; text: string } | undefined {
   if (!path.length) {
     const text = JSON.stringify(value);

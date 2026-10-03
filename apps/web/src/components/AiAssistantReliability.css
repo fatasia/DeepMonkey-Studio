@@ -9,8 +9,8 @@
   margin-bottom: 12px;
 }
 
-.ai-assistant-panel:not(.agent-active) { grid-template-rows: auto auto minmax(0, 1fr) auto auto; }
-.ai-assistant-panel.agent-active { grid-template-rows: auto auto minmax(0, 1fr); }
+.ai-assistant-panel:not(.agent-active) { grid-template-rows: auto minmax(0, 1fr) auto; }
+.ai-assistant-panel.agent-active { grid-template-rows: auto minmax(0, 1fr); }
 
 .ai-context-disclosure > summary > span:first-child { flex: 1; }
 .ai-context-disclosure > summary strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -183,8 +183,60 @@
   color: var(--warning);
 }
 
+/* T5（审计 §二）：逐条引用——回答 token ↔ 已发送证据锚（来源+偏移+指纹）。
+   行网格直接复用 .ai-response-evidence dl > div；复制钮选择器放宽到面板作用域（主行 dd 与 T5 引用锚裸钮共用）。 */
+.ai-response-evidence p.citations-title {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.ai-response-citations {
+  display: grid;
+  gap: 3px;
+  margin: 4px 0 0;
+}
+
+.ai-response-citations dt code {
+  display: block;
+  max-width: 74px;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+}
+
+.ai-response-citations .citation-anchors {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  white-space: normal;
+}
+
+.ai-response-citations .citation-anchor {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.ai-response-citations .citation-anchor strong {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-response-citations .citation-anchor small {
+  flex: none;
+  color: var(--muted);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+
 /* T4（审计 §二）：Trace / 证据指纹可点复制行——monospace 截断 + title 全文，复制钮内联。 */
-.ai-response-evidence dd .ai-evidence-copy {
+.ai-response-evidence .ai-evidence-copy {
   display: inline-flex;
   min-width: 0;
   max-width: 100%;
@@ -199,19 +251,19 @@
   text-align: left;
 }
 
-.ai-response-evidence dd .ai-evidence-copy code {
+.ai-response-evidence .ai-evidence-copy code {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.ai-response-evidence dd .ai-evidence-copy svg {
+.ai-response-evidence .ai-evidence-copy svg {
   flex: none;
   color: var(--text-muted);
 }
 
-.ai-response-evidence dd .ai-evidence-copy:hover svg {
+.ai-response-evidence .ai-evidence-copy:hover svg {
   color: var(--accent);
 }
 
@@ -460,46 +512,60 @@
   cursor: pointer;
 }
 
+/* 头部"对话 / 执行任务"文字分段按钮：替代原先整行纯图标页签。 */
 .ai-assistant-experience {
   display: flex;
   align-items: center;
   box-sizing: border-box;
-  height: 36px;
+  height: 30px;
   flex: 0 0 auto;
   gap: 2px;
   padding: 2px;
-  border: 1px solid var(--line-strong);
-  border-radius: 7px;
-  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
 }
 
-.ai-assistant-panel > nav .ai-assistant-experience > button {
-  display: grid;
-  place-items: center;
-  box-sizing: border-box;
-  padding: 0;
-  width: 32px;
-  height: 30px;
-  min-height: 30px;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  border-color: transparent;
+.ai-assistant-experience > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  color: var(--text-muted);
+  border: 0;
+  border-radius: 6px;
   background: transparent;
-  font-size: 10px;
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 160ms cubic-bezier(0.16, 1, 0.3, 1), background-color 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.ai-assistant-panel > nav .ai-assistant-experience > button.active {
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
-  background: color-mix(in srgb, var(--accent) 18%, var(--surface-2));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-strong) 6%, transparent);
-}
-.ai-assistant-experience > button svg { display: block; margin: 0; }
+.ai-assistant-experience > button:hover:not(:disabled) { color: var(--text-strong); }
+.ai-assistant-experience > button:disabled { opacity: .5; cursor: not-allowed; }
+.ai-assistant-experience > button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-.ai-assistant-panel.agent-active > nav {
-  justify-content: flex-start;
+.ai-assistant-experience > button.active {
+  color: var(--text-strong);
+  background: var(--surface-1);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--bg-0) 45%, transparent), inset 0 0 0 1px var(--line-strong);
 }
 
+.ai-assistant-experience > button.active svg { color: var(--accent); }
+.ai-assistant-experience > button svg { display: block; flex: 0 0 auto; margin: 0; }
+
+/* 上下文组：范围/来源/记忆/档案合并为一条折叠行，内部子面板去掉外框，避免框中框。 */
+.ai-context-group > summary small { color: var(--text-faint); font-size: 10px; }
+.ai-context-group-body { display: grid; gap: 8px; padding: 0 10px 10px; }
+.ai-context-group-body > .ai-context-disclosure-body { padding: 0; }
+.ai-context-group-body > details.ai-context-disclosure { margin: 0; }
+
+@media (max-width: 480px) {
+  .ai-assistant-experience > button span { display: none; }
+  .ai-assistant-experience > button { padding: 0 8px; }
+}
 .ai-assistant-panel.agent-active .ai-assistant-body {
   padding: 14px;
 }

@@ -131,10 +131,11 @@ export function QualityTelemetryPanel(props: QualityTelemetryPanelProps) {
                 <Metric label={tr(locale, "上传字节/窗口", "Uploads / window")} tone={coverage?.uploadedBytes}
                   value={coverage?.uploadedBytes === "chunk-stream-residency-delta" && latest
                     ? formatBytes(latest.uploadedBytes) : tr(locale, "未接入", "Not attached")} />
-                <Metric label={tr(locale, "可见实例", "Visible instances")} tone={coverage?.visibleInstances}
-                  title={tr(locale, "TS 运行时未挂遮挡读回,该值在 WebGPU 后端暂不可测(Native 可测)。",
-                    "The TS runtime has no occlusion readback yet; this value is unmeasured on WebGPU (measured on Native).")}
-                  value={tr(locale, "未接入", "Not attached")} />
+                <Metric label={tr(locale, "可见绘制(draw)", "Visible draws")} tone={coverage?.visibleInstances}
+                  title={tr(locale, "F1 口径:主 pass 包体 CPU 编码 draw 调用数(量,非时)。逐实例幸存数仍需遮挡读回,WebGPU 未挂,不伪称逐实例。",
+                    "F1: main-pass encoded draw-call count (count, not timing). Per-instance survivor counts still need an occlusion readback, not attached on WebGPU.")}
+                  value={coverage?.visibleInstances === "main-pass-draw-calls" && quality?.latestVisibleDraws
+                    ? String(quality.latestVisibleDraws.drawCalls) : tr(locale, "未接入", "Not attached")} />
                 <Metric label={tr(locale, "自适应决策", "Adaptive decisions")}
                   value={latest ? String(latest.adaptiveDecisions) : "—"} />
               </>

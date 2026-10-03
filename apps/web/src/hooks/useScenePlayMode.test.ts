@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ScenePhysicsState, SceneSnapshot } from "@bim-studio/contracts";
 import * as React from "react";
 import { useSceneHistoryState } from "./useSceneHistoryState";
-import { createScenePlayModeController, useScenePlayMode, type ScenePlayModeHost } from "./useScenePlayMode";
+import { createScenePlayModeController, useScenePlayMode, formatPlayEntryNotice, formatPlayExitNotice, type ScenePlayModeHost } from "./useScenePlayMode";
 
 vi.mock("react", () => {
   interface RefBox {
@@ -503,5 +503,49 @@ describe("play mode history isolation (T30 × T27)", () => {
     expect(live.models[0]!.transform).toEqual(before.models[0]!.transform);
     expect(emissions).toBe(emissionsInPlay);
     expect(history.getState()).toMatchObject({ canUndo: true, undoLabel: "进入前的编辑" });
+  });
+
+  it("counts absorbed schedule and discrete edits during play (S2b discard reporting), without changing any bookkeeping verdict", () => {
+    const h = historyHarness(true);
+    expect(h.state.playAbsorbedEditsRef.current).toBe(0);
+    // 防抖散记 + 离散命令各被门禁吸收一次：计数如实累加，撤销栈零增长。
+    h.record("播放中的散记");
+    h.state.runSceneHistoryEdit(() => {
+      h.live.name = "播放中的临时名";
+    });
+    vi.advanceTimersByTime(300);
+    expect(h.state.playAbsorbedEditsRef.current).toBe(2);
+    expect(h.emissions).toBe(0);
+    expect(h.history.getState()).toEqual({ canUndo: false, canRedo: false });
+    // App 在进入播放时清零：新会话从 0 重新计数（上一会话的数字由退出汇报消费）。
+    h.state.playAbsorbedEditsRef.current = 0;
+    h.record("第二次播放中的散记");
+    expect(h.state.playAbsorbedEditsRef.current).toBe(1);
+  });
+
+  it("does not count authoring-domain bookkeeping outside play (counter stays at zero)", () => {
+    const h = historyHarness(false);
+    h.rename("作者域改名");
+    h.record("作者域编辑");
+    vi.advanceTimersByTime(300);
+    h.state.runSceneHistoryEdit(() => {
+      h.live.name = "作者域离散编辑";
+    });
+    expect(h.state.playAbsorbedEditsRef.current).toBe(0);
+    expect(h.emissions).toBeGreaterThan(0);
+  });
+});
+
+describe("play draft & discard notices (S2b)", () => {
+  it("entry notice states the pending-draft exclusion only when a draft is actually pending", () => {
+    expect(formatPlayEntryNotice(false)).toBe("已进入播放模式；修改仅在本次播放期间生效");
+    expect(formatPlayEntryNotice(true)).toBe(
+      "已进入播放模式；修改仅在本次播放期间生效；未保存的脚本草稿未参与本次播放，按已保存版本运行",
+    );
+  });
+
+  it("exit notice reports the discarded transient edit count only when it is positive", () => {
+    expect(formatPlayExitNotice(0)).toBe("已退出播放模式，场景恢复为进入前状态");
+    expect(formatPlayExitNotice(7)).toBe("已退出播放模式；播放期间的 7 项临时状态变更已丢弃，场景已恢复为进入前状态");
   });
 });

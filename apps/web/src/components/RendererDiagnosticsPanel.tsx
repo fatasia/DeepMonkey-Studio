@@ -8,6 +8,8 @@ import { downloadRendererDiagnosticEvidence } from "../viewer/rendererDiagnostic
 import type { StudioFrameCaptureSnapshot, StudioFrameReadbackEntry } from "../viewer/studioFrameCaptureDiagnostics";
 import { FrameCaptureSourceMapPanel } from "./FrameCaptureSourceMapPanel";
 import { rendererBackendLabel } from "../viewer/rendererBackendLabel";
+import { rendererCapabilityRows } from "../rendererCapabilityUserFace";
+import { rendererCapabilityEvidencePath } from "@bim-studio/contracts";
 
 interface Props {
   locale: AppLocale;
@@ -93,6 +95,7 @@ export function RendererDiagnosticsPanel(props: Props) {
               </article>
             ))}
           </div>
+          <RendererCapabilityList locale={props.locale} />
           <div className="renderer-device-card">
             <Cpu size={17} />
             <span>
@@ -421,4 +424,33 @@ function trDetail(locale: AppLocale, detail: string): string {
     return `Hardware ray tracing unavailable; retaining the ${unavailableLine[1].replaceAll("、", ", ")} path`;
   }
   return detail;
+}
+
+/** K17:渲染能力清单(单源=contracts 登记表,三方对拍由既有测试强制)。默认收起,受限项计数前置。 */
+const SUPPORT_LABELS = {
+  supported: { zh: "完整", en: "Full" },
+  degraded: { zh: "降级", en: "Degraded" },
+  unavailable: { zh: "不可用", en: "Unavailable" },
+} as const;
+
+function RendererCapabilityList({ locale }: { locale: AppLocale }) {
+  const rows = rendererCapabilityRows();
+  const degraded = rows.filter(row => row.support !== "supported");
+  return (
+    <details className="renderer-capability-list">
+      <summary>
+        {degraded.length === 0
+          ? tr(locale, `渲染能力清单：${rows.length} 项全部完整`, `Renderer capabilities: all ${rows.length} fully supported`)
+          : tr(locale, `渲染能力清单：${degraded.length}/${rows.length} 项受限`, `Renderer capabilities: ${degraded.length}/${rows.length} limited`)}
+      </summary>
+      <ul>
+        {rows.map(row => (
+          <li key={row.id} className={row.support} title={rendererCapabilityEvidencePath(row.evidence)}>
+            <span>{locale === "zh-CN" ? row.title : row.id}</span>
+            <small>{SUPPORT_LABELS[row.support][locale === "zh-CN" ? "zh" : "en"]} · {row.reason}</small>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
 }

@@ -5,7 +5,7 @@ import { LOCAL_SPOT_SHADOW_UNIFORM_BYTES } from "../shadows/localSpotShadowShade
 import { failWithResourceCleanup } from "../webgpu/resourceCleanup.js";
 import { FORWARD_PLUS_LIGHTING_BIND_GROUP } from "./clusterAbiWgsl.js";
 import type { ForwardPlusClusterResources } from "./clusterCompute.js";
-import { DEEP_GI_TEXTURE_LEVEL_METADATA_BYTES } from "./probeClipmapTextureSamplingWgsl.js";
+import { DEEP_GI_TEXTURE_LEVEL_METADATA_BYTES, DEEP_GI_TEXTURE_MOMENTS_BINDING } from "./probeClipmapTextureSamplingWgsl.js";
 
 type LightingSession = Pick<DeviceSession, "device" | "state" | "own" | "release">;
 
@@ -18,6 +18,7 @@ export interface ProbeClipmapLightingBinding {
   readonly view: GPUTextureView;
   readonly sampler: GPUSampler;
   readonly levelMetadataBuffer: GPUBuffer;
+  readonly momentsView?: GPUTextureView;
 }
 /** C3 面积光 cookie(光斑)纹理;缺省 1×1 白纹理(均匀发射,采样恒等)。 */
 export interface AreaCookieBinding {
@@ -76,7 +77,9 @@ export class ForwardPlusPbrLightingBindings {
       // C3:面积光数据 + cookie 纹理/采样器(缺省 1×1 白,均匀发射恒等)。
       { binding: FORWARD_PLUS_AREA_DATA_BINDING, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
       { binding: FORWARD_PLUS_AREA_COOKIE_TEXTURE_BINDING, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float", viewDimension: "2d" } },
-      { binding: FORWARD_PLUS_AREA_COOKIE_SAMPLER_BINDING, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } });
+      { binding: FORWARD_PLUS_AREA_COOKIE_SAMPLER_BINDING, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
+      { binding: DEEP_GI_TEXTURE_MOMENTS_BINDING, visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: "unfilterable-float", viewDimension: "2d-array" } });
       this.giFallback = giFallback = createGiFallback(session);
       this.cookieFallback = cookieFallback = createCookieFallback(session);
       this.layout = session.device.createBindGroupLayout({ label: "Deep Forward+ PBR lighting group 3", entries });
@@ -93,7 +96,8 @@ export class ForwardPlusPbrLightingBindings {
   setProbeClipmap(binding?: ProbeClipmapLightingBinding): void {
     this.assertReady();
     if (this.probe?.view === binding?.view && this.probe?.sampler === binding?.sampler
-      && this.probe?.levelMetadataBuffer === binding?.levelMetadataBuffer) return;
+      && this.probe?.levelMetadataBuffer === binding?.levelMetadataBuffer
+      && this.probe?.momentsView === binding?.momentsView) return;
     this.probe = binding; this.signature = undefined; this.cached = undefined;
   }
 
@@ -112,7 +116,8 @@ export class ForwardPlusPbrLightingBindings {
       resources.spotLightBuffer, resources.clusterHeaderBuffer, resources.clusterLightIndexBuffer,
       resources.iesShadingBuffer] as const;
     const signature = [...clusterBuffers, resources.areaLightDataBuffer,
-      probe.view, probe.sampler, probe.levelMetadataBuffer, cookie.view, cookie.sampler] as const;
+      probe.view, probe.sampler, probe.levelMetadataBuffer, probe.momentsView ?? this.giFallback.view,
+      cookie.view, cookie.sampler] as const;
     if (!this.cached || !this.signature || !signature.every((buffer, index) => buffer === this.signature![index])) {
       const entries: GPUBindGroupEntry[] = clusterBuffers.map((buffer, binding) => ({ binding: binding < 6 ? binding : 12, resource: { buffer } }));
       entries.push({ binding: 6, resource: { buffer: this.localShadow.uniform } },
@@ -121,7 +126,8 @@ export class ForwardPlusPbrLightingBindings {
         { binding: 11, resource: { buffer: probe.levelMetadataBuffer } },
         { binding: FORWARD_PLUS_AREA_DATA_BINDING, resource: { buffer: resources.areaLightDataBuffer } },
         { binding: FORWARD_PLUS_AREA_COOKIE_TEXTURE_BINDING, resource: cookie.view },
-        { binding: FORWARD_PLUS_AREA_COOKIE_SAMPLER_BINDING, resource: cookie.sampler });
+        { binding: FORWARD_PLUS_AREA_COOKIE_SAMPLER_BINDING, resource: cookie.sampler },
+        { binding: DEEP_GI_TEXTURE_MOMENTS_BINDING, resource: probe.momentsView ?? this.giFallback.view });
       const bindGroup = this.session.device.createBindGroup({ label: "Deep Forward+ PBR lighting bindings",
         layout: this.layout, entries });
       this.signature = signature; this.cached = bindGroup;

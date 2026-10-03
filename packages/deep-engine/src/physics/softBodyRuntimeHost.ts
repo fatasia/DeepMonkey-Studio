@@ -13,6 +13,8 @@
  *   f32,不参与逐位合同)。
  */
 import type { DynamicPhysicsRuntime, DynamicSoftBodyRuntime } from "../runtimePackage/dynamicSceneRuntime.js";
+import { createSoftBodyStaticCollision } from "./softBodyStaticCollision.js";
+import { createParticleSeparation, type ParticleSeparationSet } from "./clothSelfCollision.js";
 import { ClothSolver, type ClothSnapshot } from "./clothSolver.js";
 import { SoftBodySolver, type SoftBodySnapshot, type VolumeStats } from "./softBodySolver.js";
 import type { Vec3 } from "./physicsTypes.js";
@@ -56,17 +58,48 @@ export interface SoftBodyRuntimeSession {
   restore(snapshot: SoftBodyRuntimeSnapshot): void;
 }
 
-export function createSoftBodyRuntimeSession(physics: DynamicPhysicsRuntime): SoftBodyRuntimeSession {
+export interface SoftBodyRuntimeOptions {
+  readonly collisionBodyIds?: readonly string[];
+  /** 跨软体互碰粒子半径(米),接触距离 = 2r。首片边界:启用时全部 body 须为
+   * cloth kind 且 substeps 一致、各自满足 2r ≤ spacing;同布内部自碰撞由各
+   * solver 的 selfCollisionRadius 独立负责,互碰投影只处理跨集合粒子对。
+   * 投影式位置分离:互碰位移不进入速度回算(非弹性接触语义),无反弹冲量。 */
+  readonly mutualCollisionRadius?: number;
+}
+
+export function createSoftBodyRuntimeSession(physics: DynamicPhysicsRuntime, options: SoftBodyRuntimeOptions = {}): SoftBodyRuntimeSession {
   const softBodies = physics.softBodies ?? [];
   if (softBodies.length > SOFT_BODY_BUDGETS.maxBodies) {
     throw new SoftBodyBudgetError(
       `软体数量 ${softBodies.length} 超出预算 ${SOFT_BODY_BUDGETS.maxBodies}`,
     );
   }
+  const contacts = createSoftBodyStaticCollision(physics.bodies, options.collisionBodyIds ?? []);
   const gravity: Vec3 = physics.gravity;
   let totalParticles = 0;
   const solvers = new Map<string, ClothSolver | SoftBodySolver>();
   const entries: SoftBodyRuntimeEntry[] = [];
+  // 跨软体互碰:构造期 fail-closed 校验(首片仅布料、substeps 一致、2r ≤ 各自 spacing)。
+  const mutualRadius = options.mutualCollisionRadius;
+  let mutualSubsteps: number | undefined;
+  const mutualSets: ParticleSeparationSet[] = [];
+  if (mutualRadius !== undefined) {
+    if (!(mutualRadius > 0) || !Number.isFinite(mutualRadius)) {
+      throw new Error(`mutualCollisionRadius must be positive finite, got ${mutualRadius}.`);
+    }
+    for (const body of softBodies) {
+      if (body.kind !== "cloth") {
+        throw new Error(`软体互碰首片仅支持 cloth,${body.id} 是 ${body.kind}。`);
+      }
+      if (2 * mutualRadius > body.spacing) {
+        throw new Error(`软体 ${body.id} 互碰半径违反 2r ≤ spacing(${2 * mutualRadius} > ${body.spacing})。`);
+      }
+      if (mutualSubsteps === undefined) mutualSubsteps = body.substeps;
+      else if (mutualSubsteps !== body.substeps) {
+        throw new Error(`软体互碰要求全部 body substeps 一致(${mutualSubsteps} vs ${body.substeps})。`);
+      }
+    }
+  }
   for (const body of softBodies) {
     const particleCount = body.kind === "cloth" ? body.columns * body.rows : body.positions.length;
     if (particleCount > SOFT_BODY_BUDGETS.maxParticlesPerBody) {
@@ -91,6 +124,7 @@ export function createSoftBodyRuntimeSession(physics: DynamicPhysicsRuntime): So
         gravity, dtSeconds: FIXED_DT, substeps: body.substeps, compliance: body.compliance,
         damping: body.damping, perturbation: body.perturbation, seed: body.seed,
         origin: body.origin,
+        ...(contacts ? { contacts } : {}),
         ...(body.groundY === undefined ? {} : { groundY: body.groundY }),
         ...(body.wind === undefined ? {} : {
           wind: {
@@ -113,6 +147,7 @@ export function createSoftBodyRuntimeSession(physics: DynamicPhysicsRuntime): So
         positions: body.positions, tets: body.tets, mass: body.mass, gravity,
         dtSeconds: FIXED_DT, substeps: body.substeps, complianceDistance: body.complianceDistance,
         complianceVolume: body.complianceVolume, damping: body.damping, pinned: body.pinned,
+        ...(contacts ? { contacts } : {}),
         ...(body.groundY === undefined ? {} : { groundY: body.groundY }),
       });
       solvers.set(body.id, solver);
@@ -120,14 +155,26 @@ export function createSoftBodyRuntimeSession(physics: DynamicPhysicsRuntime): So
     }
   }
 
+  // 互碰分离核:子步后投影,只处理跨集合粒子对(同布内部走各自 selfCollisionRadius)。
+  const mutualSeparation = mutualRadius === undefined || solvers.size === 0 ? undefined : createParticleSeparation({
+    sets: [...solvers.values()].map(solver => solver.particleBuffers()),
+    diameter: 2 * mutualRadius,
+    crossOnly: true,
+  });
+
   let tick = 0;
   return {
     entries,
     get tick(): number { return tick; },
     step(): void {
-      for (const [id, solver] of solvers) {
-        solver.step();
-        void id;
+      if (mutualSeparation) {
+        const substeps = mutualSubsteps ?? 1;
+        for (let sub = 0; sub < substeps; sub += 1) {
+          for (const solver of solvers.values()) solver.stepSubstep(sub);
+          mutualSeparation.resolve();
+        }
+      } else {
+        for (const solver of solvers.values()) solver.step();
       }
       tick += 1;
     },

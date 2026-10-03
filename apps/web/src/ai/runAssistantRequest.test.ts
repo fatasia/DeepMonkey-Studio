@@ -81,8 +81,11 @@ describe("assistant request lifecycle", () => {
     input.mode = "sql";
     client.invokeCapability.mockReturnValue(draft.promise);
     const request = runAssistantRequest(input);
-    expect(client.invokeCapability).toHaveBeenCalledWith("project-1", "data.query.draft", { prompt: input.prompt }, "web-user", controller.signal);
+    // K9 合同演进:下游收级联 signal(外部取消/整体超时都会 abort),身份不再是外层对象。
+    const downstreamSignal = client.invokeCapability.mock.calls[0]?.[4] as AbortSignal;
+    expect(downstreamSignal).not.toBe(controller.signal);
     controller.abort();
+    expect(downstreamSignal.aborted).toBe(true);
     draft.resolve({ output: { planning: { plan: { datasetId: "telemetry" } } } });
     await expect(request).rejects.toMatchObject({ name: "AbortError" });
     expect(client.invokeCapability).toHaveBeenCalledTimes(1);
@@ -95,8 +98,10 @@ describe("assistant request lifecycle", () => {
     client.invokeCapability.mockResolvedValueOnce({ output: { planning: { plan: { datasetId: "telemetry" } } } }).mockReturnValueOnce(read.promise);
     const request = runAssistantRequest(input);
     await vi.waitFor(() => expect(client.invokeCapability).toHaveBeenCalledTimes(2));
-    expect(client.invokeCapability.mock.calls[1]?.[4]).toBe(controller.signal);
+    const downstreamSignal = client.invokeCapability.mock.calls[1]?.[4] as AbortSignal;
+    expect(downstreamSignal).not.toBe(controller.signal);
     controller.abort();
+    expect(downstreamSignal.aborted).toBe(true);
     read.resolve({ output: { rows: [] } });
     await expect(request).rejects.toMatchObject({ name: "AbortError" });
   });
@@ -168,5 +173,98 @@ describe("assistant request lifecycle", () => {
     client.listDatasets.mockResolvedValue([]);
     await expect(runAssistantRequest(input)).rejects.toThrow("无法确定数据集");
     expect(client.listDatasets).toHaveBeenCalled();
+  });
+
+  // ── H-C5-T1：服务端透传候选优先消费，web 不再重复拉目录自拼 ──
+  it("T1: prefers server-transmitted planning candidates without re-fetching the dataset catalog", async () => {
+    const { client, input } = setup();
+    input.mode = "sql";
+    client.invokeCapability.mockResolvedValue({
+      output: {
+        planning: {
+          status: "needs-input",
+          issues: [{ path: "datasetId", code: "dataset-not-found", message: "数据集「产量」不唯一" }],
+          candidates: [
+            { id: "s1", name: "服务端候选产线产量", updatedAt: "2026-10-01T00:00:00.000Z" },
+            { id: "s2", name: "服务端候选质检记录", updatedAt: "2026-10-01T00:00:00.000Z" },
+          ],
+        },
+        model: "planner",
+      },
+      warnings: [], traceId: "draft-t1",
+    });
+    const result = await runAssistantRequest(input);
+    expect(result.clarification).toEqual({
+      question: "数据集「产量」不唯一",
+      options: [{ id: "s1", label: "服务端候选产线产量" }, { id: "s2", label: "服务端候选质检记录" }],
+    });
+    expect(client.listDatasets).not.toHaveBeenCalled();
+    expect(result.reliability).toMatchObject({ grade: "limited", contextTrust: "capability-result" });
+  });
+
+  it("T1: falls back to the local catalog when the server transmits no candidates (old-server compat)", async () => {
+    const { client, input } = setup();
+    input.mode = "sql";
+    client.invokeCapability.mockResolvedValue({
+      output: { planning: { status: "needs-input", issues: [{ path: "datasetId", code: "dataset-not-found", message: "数据集不存在" }] }, model: "planner" },
+      warnings: [], traceId: "draft-t1-fallback",
+    });
+    client.listDatasets.mockResolvedValue([{ id: "d1", projectId: "project-1", name: "本地目录数据集" }]);
+    const result = await runAssistantRequest(input);
+    expect(result.clarification?.options).toEqual([{ id: "d1", label: "本地目录数据集" }]);
+    expect(client.listDatasets).toHaveBeenCalled();
+  });
+});
+
+describe("K9 chat 整体 deadline", () => {
+  it("流挂死时整体 deadline 触发:本地化超时错误且下游被 abort", async () => {
+    const { controller, client, input } = setup();
+    let downstreamAborted = false;
+    client.streamAssistant.mockImplementation(async (_mode, _prompt, _context, _onDelta, options) => {
+      options.signal.addEventListener("abort", () => { downstreamAborted = true; });
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true });
+      });
+    });
+    await expect(runAssistantRequest({ ...input, overallDeadlineMs: 30 })).rejects.toThrow(/AI 请求超时/);
+    expect(downstreamAborted).toBe(true);
+    void controller;
+  });
+
+  it("手动取消仍优先:外部 abort 后错误保持 AbortError,不被 deadline 分支改写", async () => {
+    const { controller, client, input } = setup();
+    // 模拟真实 fetch:abort 时以 signal reason 拒绝流 promise(在监听器里 throw 会变成 uncaught)。
+    client.streamAssistant.mockImplementation(async (_mode, _prompt, _context, _onDelta, options) => {
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true });
+      });
+    });
+    const request = runAssistantRequest({ ...input, overallDeadlineMs: 60_000 });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    controller.abort();
+    await expect(request).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("正常完成不受 deadline 影响:resolve 先到即返回结果", async () => {
+    const { client, input } = setup();
+    client.streamAssistant.mockResolvedValue({ text: "ok", model: "selected" });
+    await expect(runAssistantRequest({ ...input, overallDeadlineMs: 30 })).resolves.toMatchObject({ text: "ok" });
+  });
+});
+
+describe("T7 dashboard 流式布局预览透传", () => {
+  it("dashboard 模式下流式 JSON 的已闭合 widget 经 onDashboardStream 上报;非 dashboard 不回调", async () => {
+    const { controller, client, input } = setup();
+    input.mode = "dashboard";
+    const previews: Array<{ labels: string[]; types: string[] }> = [];
+    client.streamAssistant.mockImplementation(async (_mode, _prompt, _context, onDelta, options) => {
+      void options;
+      onDelta(`{"widgets":[{"type":"kpi","title":"OEE"},`);
+      onDelta(`{"type":"chart.line","title":"温度"}]}`);
+      return { text: "已生成" };
+    });
+    await runAssistantRequest({ ...input, onDashboardStream: preview => previews.push(preview) });
+    expect(previews.at(-1)).toEqual({ labels: ["OEE", "温度"], types: ["kpi", "chart.line"] });
+    void controller;
   });
 });

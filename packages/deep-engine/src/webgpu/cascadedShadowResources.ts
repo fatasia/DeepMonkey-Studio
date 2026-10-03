@@ -20,6 +20,7 @@ export interface CascadedShadowResourceOptions {
   readonly maxDepthTextureBytes?: number;
   readonly exactProfile?: Readonly<{ cascadeCount: number; shadowMapSize: number;
     splitLambda?: number; blendRatio?: number; depthBias?: number;
+    depthPadding?: number; maxShadowDistance?: number;
     receiverNormalBias?: "slope-scaled" | "constant-one-texel" }>;
 }
 
@@ -69,6 +70,8 @@ export class CascadedShadowResources {
   private renderingEnabled = true;
   private readonly depthBias: number;
   private readonly constantNormalBias: boolean;
+  private readonly exactDepthPadding: number | undefined;
+  private readonly exactMaxShadowDistance: number | undefined;
 
   constructor(private readonly session: DeviceSession, pipelines: Pipelines,
     options: CascadedShadowResourceOptions = {}) {
@@ -76,6 +79,10 @@ export class CascadedShadowResources {
     this.createdDevice = device;
     const validatedOptions = validateResourceOptions(options);
     this.depthBias = exactNumber(validatedOptions.exactProfile?.depthBias ?? 0.00075, 0, 0.1, "depth bias");
+    this.exactDepthPadding = validatedOptions.exactProfile?.depthPadding === undefined ? undefined
+      : exactNumber(validatedOptions.exactProfile.depthPadding, 0, 1_000_000, "depth padding");
+    this.exactMaxShadowDistance = validatedOptions.exactProfile?.maxShadowDistance === undefined ? undefined
+      : exactNumber(validatedOptions.exactProfile.maxShadowDistance, Number.MIN_VALUE, 1_000_000, "maximum shadow distance");
     const normalBias = validatedOptions.exactProfile?.receiverNormalBias ?? "slope-scaled";
     if (normalBias !== "slope-scaled" && normalBias !== "constant-one-texel") {
       throw new RangeError("Invalid exact shadow receiver normal bias.");
@@ -128,15 +135,18 @@ export class CascadedShadowResources {
     const authored = input.authored === undefined ? undefined : snapshotAuthoredShadow(input.authored);
     if (authored && (this.layerViews.length !== 1 || authored.mapSize !== this.selection.profile.options.shadowMapSize)) throw new Error("Authored shadow requires a matching one-layer shadow resource.");
     const maximum = Math.min(input.far, 1_000_000);
-    const shadowFar = Math.min(maximum, Math.max(input.near + 1e-4, input.extent * 20));
+    const requestedFar = this.exactMaxShadowDistance === undefined ? Math.max(input.near + 1e-4, input.extent * 20)
+      : exactNumber(this.exactMaxShadowDistance, input.near + 1e-4, 1_000_000, "maximum shadow distance");
+    const shadowFar = Math.min(maximum, requestedFar);
+    const depthPadding = this.exactDepthPadding ?? Math.max(1, input.extent * 0.2);
     const signature = authored ? [2, ...authored.viewProjection, ...direction, authored.mapSize, authored.bias, authored.normalBias, authored.intensity, authored.radius, input.viewportHeight ?? 0]
-      : [0, ...input.eye, ...input.target, ...(input.up ?? [0, 1, 0]), input.verticalFovRadians, input.aspect, input.near, shadowFar, ...direction];
+      : [0, ...input.eye, ...input.target, ...(input.up ?? [0, 1, 0]), input.verticalFovRadians, input.aspect, input.near, shadowFar, depthPadding, ...direction];
     const changed = !this.lastSignature || !same(signature, this.lastSignature);
     if (changed) {
       this.plan = authored ? planAuthoredShadow(authored, direction) : planCascadedShadows({ eye: input.eye, target: input.target, ...(input.up ? { up: input.up } : {}),
         verticalFovRadians: input.verticalFovRadians, aspect: input.aspect, near: input.near, far: shadowFar },
       direction, { ...this.selection.profile.options,
-        maxShadowDistance: shadowFar, depthPadding: Math.max(1, input.extent * 0.2) });
+        maxShadowDistance: shadowFar, depthPadding });
       this.session.device.queue.writeBuffer(this.uniform, 0,
         authored ? packAuthoredShadow(this.plan, authored, input.viewportHeight) : packCascadedShadowUniform(this.plan, this.depthBias, this.constantNormalBias));
       this.plan.cascades.forEach((cascade, index) => {

@@ -24,6 +24,13 @@ const lights = { ambient: [{ color: [1, 0.5, 0.25] as const, intensity: 2 }] };
 const probeBox = { center: [0, 2, 0] as const, halfExtents: [3, 2, 3] as const, blendDistance: 1, influenceRadius: 2 };
 
 describe("PBR bounded reflection bindings", () => {
+  it("atomically replaces mip offsets and restores them with a previous environment", () => {
+    const f = fixture(), bindings = f.create(); f.writeBuffer.mockClear();
+    bindings.setEnvironment({ ...f.environment, specularMipSelection: { rawMips: 8, keptMips: 4, droppedMips: 4 } });
+    expect([...((f.writeBuffer.mock.calls.at(-1)![2]) as Float32Array).slice(12, 15)]).toEqual([4, 4, 4]);
+    bindings.setEnvironment(f.environment);
+    expect([...((f.writeBuffer.mock.calls.at(-1)![2]) as Float32Array).slice(12, 15)]).toEqual([0, 0, 0]);
+  });
   it("aliases both empty cubemap slots and publishes an actual probe with only an inactive record upload", () => {
     const f = fixture();
     let next = 0;

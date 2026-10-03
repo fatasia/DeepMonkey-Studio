@@ -120,6 +120,7 @@ export class ProbeClipmapRuntime {
     this.adapter = new WebGpuProbeCaptureAdapter(session, deviceEpoch, {
       ...(options.fallbackRadiance ? { fallbackRadiance: options.fallbackRadiance } : {}),
       ...(options.encodeSourceRadiance ? { encodeSourceRadiance: options.encodeSourceRadiance } : {}),
+      ...(options.captureVisibilityMoments !== undefined ? { captureVisibilityMoments: options.captureVisibilityMoments } : {}),
       dynamicIrradianceHysteresis: options.dynamicIrradianceHysteresis
         ?? DEFAULT_PROBE_CLIPMAP_RUNTIME_OPTIONS.dynamicIrradianceHysteresis,
       ...(options.energyClamp !== undefined ? { energyClamp: options.energyClamp } : {}),

@@ -24,7 +24,8 @@ export type * from "./dashboardTableTypes.js";
 export { DashboardCandidateController } from "./dashboardCandidateController.js";
 export type * from "./dashboardCandidateTypes.js";
 export { buildChartRuntimePackage } from "./chart.js";
-export { createRuntimeDeepSlMaterial, type RuntimeShaderMaterial } from "./deepSlMaterial.js";
+export { createRuntimeDeepSlMaterial, type RuntimeShaderMaterial, type RuntimeShaderMaterialProfile } from "./deepSlMaterial.js";
+export { prepareShaderPackageInstanceStream, type ShaderPackageInstanceStream } from "./shaderInstanceProfile.js";
 export { validateDeepRuntimePackage, BUILTIN_RUNTIME_IBL_ID } from "./validation.js";
 export {
   validateDynamicSceneRuntime,

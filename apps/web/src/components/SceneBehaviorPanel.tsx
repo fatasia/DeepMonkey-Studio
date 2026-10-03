@@ -16,6 +16,7 @@ import { useBehaviorDraft } from "./useBehaviorDraft";
 import { BehaviorPanelHeader } from "./BehaviorPanelHeader";
 import { BehaviorConsole } from "./BehaviorConsole";
 import { BehaviorScriptList } from "./BehaviorScriptList";
+import { hotSwapDisabledReason, settleHotSwap, type BehaviorHotSwapPhase } from "../behavior/behaviorHotSwap";
 import type { BehaviorLogEntry } from "../behavior/behaviorLogModel";
 import type { AuthorBehaviorScope } from "../behavior/authorBehaviorDocument";
 import type { BehaviorLayoutMode } from "../appDefaults";
@@ -60,6 +61,8 @@ export function SceneBehaviorPanel(props: {
   onReplaceScripts: (scripts: readonly ScriptModule[]) => void | Promise<void>;
   onRun: (draft?: ScriptModule, scope?: AuthorBehaviorScope) => void | Promise<void>;
   onDebug?: (draft: ScriptModule) => void | Promise<void>;
+  /** H-C6-S1:运行中热插应用——把当前草稿(含未保存修改)换入运行中的同名脚本。 */
+  onHotSwap?: (draft: ScriptModule) => void;
   debugging?: boolean;
   onPauseResume: () => void;
   onStop: () => void;
@@ -115,6 +118,8 @@ export function SceneBehaviorPanel(props: {
   useEffect(() => {
     setAiDraftUndo(undefined);
     setAiDraftInserted(false);
+    // 切换脚本时清掉上一脚本的热插结论;pending 跨脚本保留,结算仍落在热插目标上。
+    setSwapPhase(current => current === "pending" ? current : "idle");
     setFeedback(current => current.scriptId === draft?.id ? current : { scriptId: undefined, message: "" });
   }, [draft?.id]);
   useEffect(() => {
@@ -124,6 +129,39 @@ export function SceneBehaviorPanel(props: {
     return () => props.onPendingDraftChange?.(undefined);
   }, [dirty, draft, props.onPendingDraftChange]);
   const runtime = selected ? props.runtimeEntries.find((entry) => entry.module.id === selected.id) : undefined;
+  // H-C6-S1 热插应用:pending 期间按热插目标(而非当前选中)的运行时诊断结算三态;
+  // fromModuleId 锚定本次点击的起点,防止连续热插时用上一轮变体状态误判本轮成功。
+  const [swapPhase, setSwapPhase] = useState<BehaviorHotSwapPhase>("idle");
+  const swapTargetRef = useRef<{ scriptId: string; fromModuleId: string | undefined } | undefined>(undefined);
+  const hotSwapReason = props.onHotSwap
+    ? hotSwapDisabledReason(runtime, Boolean(props.debugging), Boolean(draft?.name.trim()), props.locale)
+    : tr(props.locale, "当前会话不支持热插应用", "Hot swap is unavailable in this session");
+  const canHotSwap = Boolean(props.onHotSwap) && !hotSwapReason && swapPhase !== "pending";
+  useEffect(() => {
+    if (swapPhase !== "pending" || !swapTargetRef.current) return;
+    const target = swapTargetRef.current;
+    const entry = props.runtimeEntries.find((candidate) => candidate.module.id === target.scriptId);
+    const outcome = settleHotSwap(entry, target, props.locale);
+    if (!outcome) return;
+    swapTargetRef.current = undefined;
+    setSwapPhase(outcome.phase);
+    setFeedback({ scriptId: target.scriptId, message: outcome.feedback });
+  }, [swapPhase, props.runtimeEntries, props.locale]);
+  function hotSwapApply() {
+    if (!draft || !draft.name.trim() || !props.onHotSwap || swapPhase === "pending") return;
+    const targetId = draft.id;
+    swapTargetRef.current = { scriptId: targetId, fromModuleId: runtime?.diagnostics.moduleId };
+    setLogsOpen(true);
+    setActionFeedback(tr(props.locale, "正在热插应用…", "Applying hot swap…"), targetId);
+    try {
+      props.onHotSwap(draft);
+      setSwapPhase("pending");
+    } catch (reason) {
+      swapTargetRef.current = undefined;
+      setSwapPhase("failed");
+      setActionFeedback(tr(props.locale, "热插应用失败：", "Hot swap failed: ") + (reason instanceof Error ? reason.message : String(reason)), targetId);
+    }
+  }
   const [logsOpen, setLogsOpen] = useState(false);
   // 默认把注意力留给脚本和诊断；资源与高级声明按需展开，降低首次使用的信息负担。
   const [inspectorOpen, setInspectorOpen] = useState(false);
@@ -285,7 +323,7 @@ export function SceneBehaviorPanel(props: {
       style={{ "--behavior-script-list-width": `${scriptListWidth}px` } as CSSProperties}
       aria-label={tr(props.locale, "场景行为脚本", "Scene behavior scripts")}
     >
-      <BehaviorPanelHeader locale={props.locale} layoutMode={props.layoutMode} contextLabel={selectedContextLabel} dirty={dirty} paused={props.paused} running={props.runtimeEntries.some((entry) => ["initializing", "running", "paused"].includes(entry.diagnostics.status))} hasSession={props.hasSession ?? Boolean(props.runtimeEntries.length)} canStep={props.canStep ?? false} onStep={props.onStep ?? (() => undefined)} runScope={runScope} onRunScopeChange={setRunScope} hasDraft={Boolean(draft)} hasTarget={Boolean(attachedTarget)} agentOpen={agentOpen} dependenciesOpen={dependenciesOpen} versionOpen={versionOpen} inspectorOpen={inspectorOpen} scriptListCollapsed={scriptListCollapsed} onLayoutModeChange={props.onLayoutModeChange} onToggleScriptList={() => { const next = !scriptListCollapsed; setScriptListCollapsed(next); persistBehaviorScriptListCollapsed(next); }} onToggleAgent={() => { setAgentMode("explain"); setDependenciesOpen(false); setVersionOpen(false); setAgentOpen((open) => !open); }} onToggleDependencies={() => { setAgentOpen(false); setVersionOpen(false); setDependenciesOpen((open) => !open); }} onToggleVersion={() => { setAgentOpen(false); setDependenciesOpen(false); setVersionOpen((open) => !open); }} onFocusTarget={() => attachedTarget && leaveForWorkspace(() => props.onFocusTarget(attachedTarget))} onRun={() => void applyAndRun()} onDebug={props.onDebug ? () => { void applyAndRun(true); } : undefined} onPauseResume={props.onPauseResume} onStop={stopRun} onToggleInspector={() => setInspectorOpen((value) => !value)} onClose={closePanel} />
+      <BehaviorPanelHeader locale={props.locale} layoutMode={props.layoutMode} contextLabel={selectedContextLabel} dirty={dirty} paused={props.paused} running={props.runtimeEntries.some((entry) => ["initializing", "running", "paused"].includes(entry.diagnostics.status))} hasSession={props.hasSession ?? Boolean(props.runtimeEntries.length)} canStep={props.canStep ?? false} onStep={props.onStep ?? (() => undefined)} runScope={runScope} onRunScopeChange={setRunScope} hasDraft={Boolean(draft)} hasTarget={Boolean(attachedTarget)} agentOpen={agentOpen} dependenciesOpen={dependenciesOpen} versionOpen={versionOpen} inspectorOpen={inspectorOpen} scriptListCollapsed={scriptListCollapsed} onLayoutModeChange={props.onLayoutModeChange} onToggleScriptList={() => { const next = !scriptListCollapsed; setScriptListCollapsed(next); persistBehaviorScriptListCollapsed(next); }} onToggleAgent={() => { setAgentMode("explain"); setDependenciesOpen(false); setVersionOpen(false); setAgentOpen((open) => !open); }} onToggleDependencies={() => { setAgentOpen(false); setVersionOpen(false); setDependenciesOpen((open) => !open); }} onToggleVersion={() => { setAgentOpen(false); setDependenciesOpen(false); setVersionOpen((open) => !open); }} onFocusTarget={() => attachedTarget && leaveForWorkspace(() => props.onFocusTarget(attachedTarget))} onRun={() => void applyAndRun()} onDebug={props.onDebug ? () => { void applyAndRun(true); } : undefined} onPauseResume={props.onPauseResume} onStop={stopRun} canHotSwap={canHotSwap} hotSwapPending={swapPhase === "pending"} {...(hotSwapReason ? { hotSwapDisabledReason: hotSwapReason } : {})} onHotSwap={hotSwapApply} onToggleInspector={() => setInspectorOpen((value) => !value)} onClose={closePanel} />
       <div className="behavior-panel-body">
         {!scriptListCollapsed && <BehaviorScriptList locale={props.locale} scripts={props.scripts} entries={props.runtimeEntries} targets={props.codeTargets} selectedId={selected?.id}
           onAdd={addScript} onImport={(event) => void importScriptFiles(event)} onSelect={selectScript}
@@ -313,6 +351,7 @@ export function SceneBehaviorPanel(props: {
                 {...(insertRequest ? { insertRequest } : {})}
                 onChange={(code) => {
                   setActionFeedback("");
+                  setSwapPhase(current => current === "pending" ? current : "idle");
                   setDraft({ ...draft, code });
                   setAiDraftUndo(undefined);
                   setAiDraftInserted(false);
@@ -328,7 +367,7 @@ export function SceneBehaviorPanel(props: {
                 <span>
                   {draft.code.split("\n").length} {tr(props.locale, "行", "lines")}
                 </span>
-                <em className={dirty ? "pending" : runtime?.diagnostics.status === "error" ? "error" : "ready"} role="status" aria-live="polite">
+                <em className={`${dirty ? "pending" : runtime?.diagnostics.status === "error" ? "error" : "ready"}${swapPhase === "applied" ? " swap-applied" : swapPhase === "rolled-back" ? " swap-rolled-back" : swapPhase === "failed" ? " swap-failed" : ""}`} role="status" aria-live="polite">
                   {!draft.name.trim() ? tr(props.locale, "请先填写脚本名称", "Enter a script name first") : actionFeedback || (dirty
                     ? aiDraftInserted
                       ? tr(props.locale, "动作草稿待应用", "Action draft awaiting apply")

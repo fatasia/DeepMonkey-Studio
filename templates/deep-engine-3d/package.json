@@ -1,0 +1,14 @@
+{
+  "name": "@bim-studio/deep-engine-templates",
+  "version": "0.1.0",
+  "private": true,
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "description": "H-C7-P2: 8 个空项目可运行 3D 模板、版本化 references、一份 canonical Skill 生成双客户端分发。非 pnpm workspace 成员；由 scripts/gate-templates.mjs 以仓外独立消费者形态验收。",
+  "type": "module",
+  "scripts": {
+    "gate": "node scripts/gate-templates.mjs",
+    "test": "node --test scripts/version-pin.test.mjs scripts/distribute-skill.test.mjs",
+    "skill:distribute": "node scripts/distribute-skill.mjs",
+    "skill:verify": "node scripts/verify-distribution.mjs"
+  }
+}

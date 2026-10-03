@@ -8,63 +8,19 @@
  * compliance=0 时退化为刚性距离约束。全部 f64,粒子/约束按构建序遍历,无随机源。
  * 约束静止长度由网格间距解析给出,不受 seed 初始扰动污染。
  * 风场是 (t, y) 的纯函数:复用 terrain 确定性 value noise,同 seed 逐位一致。
+ *
+ * sourceSizeGate 拆分(2026-10-03):合同类型(ClothWind/ClothSolverConfig/ClothSnapshot/
+ * StretchStats)与 WIND_NOISE_SALT 移至 clothSolverContract.ts,代码逐行同源仅改可见性,
+ * 语义零变化;本文件原样再导出合同面,消费方导入路径不变。
  */
 import { createValueNoise2D } from "../terrain/terrainRandom.js";
+import { createClothSelfCollision, type ClothSelfCollisionResolver } from "./clothSelfCollision.js";
 import { assertFinite, type FixedStepSim, type Vec3 } from "./physicsTypes.js";
+import { WIND_NOISE_SALT, type ClothSolverConfig, type ClothSnapshot, type StretchStats } from "./clothSolverContract.js";
 
-/** 确定性风场:加速度 = direction × baseSpeed × gustFactor(noise(t·f, y·scale)∈[0,1] 映射到 [0.5,1.5])。 */
-export interface ClothWind {
-  readonly direction: Vec3;
-  readonly baseSpeed: number;
-  readonly gustFrequency: number;
-  readonly spatialScale: number;
-  readonly seed: number;
-}
-
-export interface ClothSolverConfig {
-  readonly columns: number;
-  readonly rows: number;
-  /** 网格静止间距(米),结构约束共用;剪切约束 rest = spacing·√2。 */
-  readonly spacing: number;
-  /** 单质点质量(kg)。 */
-  readonly mass: number;
-  readonly gravity: Vec3;
-  /** 固定步长(秒),仿真内部唯一时间基。 */
-  readonly dtSeconds: number;
-  readonly substeps: number;
-  /** XPBD compliance(m/N);0 = 刚性约束。 */
-  readonly compliance: number;
-  /** 每子步线性速度阻尼系数 [0,1)。 */
-  readonly damping: number;
-  /** seed 驱动的初始 z 向扰动幅度(米),≥0;0 = 完全平整初始态。 */
-  readonly perturbation: number;
-  readonly seed: number;
-  /** 初始布局平移(米);省略 = [0,0,0]。运行包 F6 通道消费。 */
-  readonly origin?: Vec3;
-  /** 地面接触平面 y = groundY(米);省略 = 无接触。积分投影式约束,
-   * 确定性(same-op f64);不动锚点粒子。 */
-  readonly groundY?: number;
-  readonly wind?: ClothWind | null;
-}
-
-export interface ClothSnapshot {
-  readonly tick: number;
-  readonly px: Float64Array;
-  readonly py: Float64Array;
-  readonly pz: Float64Array;
-  readonly vx: Float64Array;
-  readonly vy: Float64Array;
-  readonly vz: Float64Array;
-}
-
-export interface StretchStats {
-  /** max|len−rest|/rest(全约束;双锚点约束恒为 0)。 */
-  readonly maxRatio: number;
-  readonly meanRatio: number;
-  readonly constraintCount: number;
-}
-
-const WIND_NOISE_SALT = 0x51ed2701;
+export { WIND_NOISE_SALT };
+export type { ClothSolverConfig, ClothSnapshot, StretchStats };
+export type { ClothWind } from "./clothSolverContract.js";
 
 export class ClothSolver implements FixedStepSim<ClothSnapshot> {
   readonly #cfg: ClothSolverConfig;
@@ -86,6 +42,7 @@ export class ClothSolver implements FixedStepSim<ClothSnapshot> {
   readonly #rest: Float64Array;
   readonly #lambda: Float64Array;
   readonly #noise: (x: number, z: number) => number;
+  readonly #selfCollision: ClothSelfCollisionResolver | null;
   #tick = 0;
 
   constructor(config: ClothSolverConfig) {
@@ -102,6 +59,15 @@ export class ClothSolver implements FixedStepSim<ClothSnapshot> {
     }
     if (!c.gravity.every(Number.isFinite)) throw new Error("ClothSolver: gravity must be finite.");
     this.#cfg = c;
+    if (c.selfCollisionRadius !== undefined) {
+      const r = c.selfCollisionRadius;
+      if (!(r > 0) || !Number.isFinite(r) || 2 * r > c.spacing) {
+        throw new Error(`ClothSolver: selfCollisionRadius must be positive finite with 2r <= spacing (${c.spacing}), got ${r}.`);
+      }
+      this.#selfCollision = createClothSelfCollision({ count: c.columns * c.rows, radius: r });
+    } else {
+      this.#selfCollision = null;
+    }
     this.#count = c.columns * c.rows;
     const n = this.#count;
     this.#px = new Float64Array(n); this.#py = new Float64Array(n); this.#pz = new Float64Array(n);
@@ -198,49 +164,61 @@ export class ClothSolver implements FixedStepSim<ClothSnapshot> {
   }
 
   step(): void {
+    for (let sub = 0; sub < this.#cfg.substeps; sub += 1) this.stepSubstep(sub);
+    this.#tick += 1;
+    assertFinite(this.#px, "cloth.px"); assertFinite(this.#py, "cloth.py"); assertFinite(this.#pz, "cloth.pz");
+  }
+
+  /** 内部缓冲只读引用(会话级跨软体互碰投影消费;调用方不得写入)。 */
+  particleBuffers(): { px: Float64Array; py: Float64Array; pz: Float64Array; inverseMass: Float64Array; count: number } {
+    return { px: this.#px, py: this.#py, pz: this.#pz, inverseMass: this.#invMass, count: this.#count };
+  }
+
+  /** 单子步(互碰会话的子步级编排消费);tick 计数与 finite 审计仍属 step()。
+   * substep 是本 tick 内的子步序号,时间基与连续 step() 逐位一致。 */
+  stepSubstep(substep: number): void {
     const c = this.#cfg;
     const h = c.dtSeconds / c.substeps;
-    const t0 = this.#tick * c.dtSeconds;
+    const t = this.#tick * c.dtSeconds + substep * h;
     const dampingScale = 1 - c.damping * h;
     const alphaTilde = c.compliance / (h * h);
     const px = this.#px; const py = this.#py; const pz = this.#pz;
     const vx = this.#vx; const vy = this.#vy; const vz = this.#vz;
     const qx = this.#qx; const qy = this.#qy; const qz = this.#qz;
     const invMass = this.#invMass;
-    for (let sub = 0; sub < c.substeps; sub += 1) {
-      this.#qx.set(this.#px); this.#qy.set(this.#py); this.#qz.set(this.#pz);
-      const t = t0 + sub * h;
-      const groundY = c.groundY;
+    this.#qx.set(this.#px); this.#qy.set(this.#py); this.#qz.set(this.#pz);
+    const groundY = c.groundY;
+    for (let i = 0; i < this.#count; i += 1) {
+      if (invMass[i] === 0) continue;
+      const w = this.windAcceleration(t, py[i]!);
+      vx[i] = (vx[i]! + (c.gravity[0] + w[0]) * h) * dampingScale;
+      vy[i] = (vy[i]! + (c.gravity[1] + w[1]) * h) * dampingScale;
+      vz[i] = (vz[i]! + (c.gravity[2] + w[2]) * h) * dampingScale;
+      px[i] = px[i]! + vx[i]! * h; py[i] = py[i]! + vy[i]! * h; pz[i] = pz[i]! + vz[i]! * h;
+      // 地面接触:积分后位置投影(y = groundY 钳制);速度由 (p−q)/h 回算自然
+      // 消去法向分量,切向摩擦不在本切片(与运行包合同注释一致)。
+      if (groundY !== undefined && py[i]! < groundY) py[i] = groundY;
+    }
+    c.contacts?.project(px, py, pz, invMass, c.groundY);
+    this.#selfCollision?.resolve(px, py, pz, invMass);
+    this.#lambda.fill(0);
+    for (let k = 0; k < this.#rest.length; k += 1) this.#project(k, alphaTilde);
+    // 约束投影可能把粒子再次推到地面下;速度回算前再钳制一次,
+    // 保证回算出的法向速度非负(接触不吸附)。
+    if (c.groundY !== undefined) {
       for (let i = 0; i < this.#count; i += 1) {
-        if (invMass[i] === 0) continue;
-        const w = this.windAcceleration(t, py[i]!);
-        vx[i] = (vx[i]! + (c.gravity[0] + w[0]) * h) * dampingScale;
-        vy[i] = (vy[i]! + (c.gravity[1] + w[1]) * h) * dampingScale;
-        vz[i] = (vz[i]! + (c.gravity[2] + w[2]) * h) * dampingScale;
-        px[i] = px[i]! + vx[i]! * h; py[i] = py[i]! + vy[i]! * h; pz[i] = pz[i]! + vz[i]! * h;
-        // 地面接触:积分后位置投影(y = groundY 钳制);速度由 (p−q)/h 回算自然
-        // 消去法向分量,切向摩擦不在本切片(与运行包合同注释一致)。
-        if (groundY !== undefined && py[i]! < groundY) py[i] = groundY;
-      }
-      this.#lambda.fill(0);
-      for (let k = 0; k < this.#rest.length; k += 1) this.#project(k, alphaTilde);
-      // 约束投影可能把粒子再次推到地面下;速度回算前再钳制一次,
-      // 保证回算出的法向速度非负(接触不吸附)。
-      if (c.groundY !== undefined) {
-        for (let i = 0; i < this.#count; i += 1) {
-          if (this.#invMass[i] !== 0 && py[i]! < c.groundY) py[i] = c.groundY;
-        }
-      }
-      const invH = 1 / h;
-      for (let i = 0; i < this.#count; i += 1) {
-        if (invMass[i] === 0) { vx[i] = 0; vy[i] = 0; vz[i] = 0; continue; }
-        vx[i] = (px[i]! - qx[i]!) * invH;
-        vy[i] = (py[i]! - qy[i]!) * invH;
-        vz[i] = (pz[i]! - qz[i]!) * invH;
+        if (this.#invMass[i] !== 0 && py[i]! < c.groundY) py[i] = c.groundY;
       }
     }
-    this.#tick += 1;
-    assertFinite(this.#px, "cloth.px"); assertFinite(this.#py, "cloth.py"); assertFinite(this.#pz, "cloth.pz");
+    c.contacts?.project(px, py, pz, invMass, c.groundY);
+    this.#selfCollision?.resolve(px, py, pz, invMass);
+    const invH = 1 / h;
+    for (let i = 0; i < this.#count; i += 1) {
+      if (invMass[i] === 0) { vx[i] = 0; vy[i] = 0; vz[i] = 0; continue; }
+      vx[i] = (px[i]! - qx[i]!) * invH;
+      vy[i] = (py[i]! - qy[i]!) * invH;
+      vz[i] = (pz[i]! - qz[i]!) * invH;
+    }
   }
 
   /** XPBD 距离约束投影:Δλ = (−C − α̃λ)/(w1+w2+α̃);Δp = Δλ·w·∇C。 */

@@ -2,10 +2,10 @@ import type { DeepPbrMeshV1MaterialDefaults } from "@bim-studio/deep-engine/shad
 import type { PreparedShaderPackagePass } from "@bim-studio/deep-engine/webgpu";
 import {
   PBR_PROBE_BYTES_PER_ROW, PBR_PROBE_CLEAR,
-  PBR_PROBE_HEIGHT, PBR_PROBE_WIDTH, pbrProbeFrame, pbrProbeGeometry, pbrProbeInstance,
+  PBR_PROBE_HEIGHT, PBR_PROBE_WIDTH, pbrProbeFrame, pbrProbeGeometry,
 } from "./deepSlPbrProbeFixture.js";
 import {
-  clearCsmProbeLayers, readPbrProbeReadback, rgbaTexture, solidTexture, uploadBuffer, validateCsmProbe, validatePasses,
+  clearCsmProbeLayers, preparePbrProbeInstance, readPbrProbeReadback, rgbaTexture, solidTexture, uploadBuffer, validateCsmProbe, validatePasses,
   type DeepSlPbrDrawOptions, type DeepSlPbrGpuSample,
 } from "./deepSlPbrGpuDrawSupport.js";
 export type { DeepSlPbrDrawOptions, DeepSlPbrGpuSample, DeepSlPbrMaterialTextureSource } from "./deepSlPbrGpuDrawSupport.js";
@@ -21,6 +21,7 @@ export async function drawDeepSlPbrCase(
   validatePasses(forward, shadow, textured);
   validateCsmProbe(options);
   const csm = options.cascadedShadow;
+  const instanceStream = preparePbrProbeInstance(material, options);
   const buffers: GPUBuffer[] = [];
   const textures: GPUTexture[] = [];
   let readback: GPUBuffer | undefined;
@@ -67,11 +68,11 @@ export async function drawDeepSlPbrCase(
     if (geometryData.length !== 30 || geometryData.some((value) => !Number.isFinite(value))) {
       throw new Error("DeepSL package probe geometry must contain three finite geometry40 vertices.");
     }
-    const instanceData = pbrProbeInstance(material);
+    const instanceData = instanceStream.data;
     const frame = buffer("DeepSL package Frame208", frameData, GPUBufferUsage.UNIFORM);
     const cascadedShadow = csm ? buffer("DeepSL package CSM336", csm.uniform, GPUBufferUsage.UNIFORM) : undefined;
     const geometry = buffer("DeepSL package geometry40", geometryData, GPUBufferUsage.VERTEX);
-    const instance = buffer("DeepSL package instance144", instanceData, GPUBufferUsage.VERTEX);
+    const instance = buffer(`DeepSL package instance${instanceStream.arrayStride}`, instanceData, GPUBufferUsage.VERTEX);
     let tangent: GPUBuffer | undefined;
     if (options.tangents) {
       if (options.tangents.length !== 12 || options.tangents.some((value) => !Number.isFinite(value))) {
@@ -216,7 +217,7 @@ export async function drawDeepSlPbrCase(
       raw16, pixel,
       frameBytes: frameData.byteLength as 208,
       geometryStride: (geometryData.byteLength / 3) as 40,
-      instanceStride: instanceData.byteLength as 144,
+      instanceStride: instanceStream.arrayStride as 144 | 160,
       shadowDraws: 1, forwardDraws: 1, resolveUsed: true,
       colorFormat: forward.attachmentProfile.colorAttachments[0]!.format,
       sampleCount: forward.attachmentProfile.sampleCount as 4,

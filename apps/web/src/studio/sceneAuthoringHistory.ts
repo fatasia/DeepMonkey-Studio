@@ -26,8 +26,22 @@ export class SceneAuthoringHistory {
   private undoStack: SceneHistoryEntry[] = [];
   private redoStack: SceneHistoryEntry[] = [];
   private readonly listeners = new Set<Listener>();
+  private mutationRevision = 0;
 
   constructor(private readonly limit = DEFAULT_HISTORY_LIMIT) {}
+
+  /** Local monotonic CAS token; independent of persisted document revisions. */
+  get revision(): number { return this.mutationRevision; }
+
+  /** Rehydration normalizes defaults: adopt its readback without recording an authored edit. */
+  acceptRestoredScene(scene: SceneSnapshot, expectedRevision: number): void {
+    if (this.mutationRevision !== expectedRevision || !this.current
+      || scene.id !== this.current.id || scene.projectId !== this.current.projectId) {
+      throw new Error("场景历史版本已前进或所属场景已改变，不能用较旧恢复结果覆盖新编辑，请重试。");
+    }
+    this.current = cloneScene(scene);
+    this.mutationRevision += 1;
+  }
 
   getState(): SceneAuthoringHistoryState {
     const undoEntry = this.undoStack.at(-1);
@@ -99,6 +113,7 @@ export class SceneAuthoringHistory {
   }
 
   private emit(): void {
+    this.mutationRevision += 1;
     for (const listener of this.listeners) listener();
   }
 }

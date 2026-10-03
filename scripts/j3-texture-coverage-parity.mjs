@@ -76,7 +76,7 @@ try{
   if(hosts[0].freshInstance!==0||hosts[1].freshInstance!==1)throw Error("Web fresh identities duplicated");requireStableTextureFresh(hosts[0],hosts[1]);
   const pairs=native.runs.map((r,i)=>compareTextureCoveragePair(plan,r,hosts[i]));
   const after=await identity();if(JSON.stringify(before)!==JSON.stringify(after))throw Error("Consumed texture source changed during run");
-  const evidence={passed:true,currentRun:!historical,execution:historical?"historical comparison only":"two fresh devices per host, each28actualframes",profileHash,inputHash,sourceIdentity:before,summaries,pairs,
+  const evidence={scope:"actual-production-texture-UV-MR-alpha-coverage",passed:true,stable:true,currentRun:!historical,execution:historical?"historical comparison only":"two fresh devices per host, each28actualframes",profileHash,inputHash,sourceIdentity:before,summaries,pairs,
     excluded:["overlapping transparency","linear/mip/aniso sampling","normal-mapped materials","texture arrays","layered materials","ray tracing","driver loss"]};
   await writeFile(path.join(out,"evidence.json"),JSON.stringify(evidence,null,2));console.log(JSON.stringify({passed:true,currentRun:evidence.currentRun,pairs,summaries}));
 }catch(e){

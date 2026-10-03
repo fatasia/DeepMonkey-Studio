@@ -37,6 +37,8 @@ export interface ClothParallelConfig {
   readonly origin?: readonly [number, number, number];
   /** 锚点 (col,row) 列表(构建期定,与黄金 setPinned 语义一致:invMass=0 且速度清零)。 */
   readonly pinned?: ReadonlyArray<readonly [number, number]>;
+  /** F6/T18:确定性风(可选);镜像与 GPU 并行核同构 f32。 */
+  readonly wind?: import("./clothSolver.js").ClothWind;
 }
 
 export interface ClothParallelBuild {
@@ -233,7 +235,25 @@ export class ClothParallelMirror {
     this.#kineticPerSubstep.length = 0;
 
     for (let sub = 0; sub < cfg.substeps; sub += 1) {
-      // pass A:积分(每粒子独立,并行纯函数)。
+      // pass A:积分(每粒子独立,并行纯函数)。风时间基 = tick·dt + sub·h。
+      // 推导与 dispatch packClothParallelParams 同式(f64 累加后一次 fround)——
+      // 镜像此前逐步舍入,与 pack 值有 1 ULP 级差,是真机噪声对拍的输入端偏差源。
+      const wind = cfg.wind;
+      const tickSeconds = f(this.#tick * cfg.dtSeconds + sub * (cfg.dtSeconds / cfg.substeps));
+      // 与 f64 黄金同源:clothSolver 构造期 seed^WIND_NOISE_SALT(clothSolver.ts 导出)。
+      const noiseSeed = wind ? ((wind.seed ^ 0x51ed2701) >>> 0) : 0;
+      const gustF = wind ? f(wind.gustFrequency) : 0;
+      const spatial = wind ? f(wind.spatialScale) : 0;
+      const baseSpeed = wind ? f(wind.baseSpeed) : 0;
+      const wdx = wind ? f(wind.direction[0]) : 0;
+      const wdy = wind ? f(wind.direction[1]) : 0;
+      const wdz = wind ? f(wind.direction[2]) : 0;
+      const windAt = (y: number): readonly [number, number, number] => {
+        if (!wind) return [0, 0, 0];
+        const n = f(mirrorWindNoise(f(f(tickSeconds) * gustF), f(y * spatial), noiseSeed));
+        const speed = f(baseSpeed * f(0.5 + n));
+        return [f(wdx * speed), f(wdy * speed), f(wdz * speed)];
+      };
       for (let i = 0; i < build.particleCount; i += 1) {
         const base = i * 12;
         state[base + 8] = state[base]!;
@@ -243,9 +263,10 @@ export class ClothParallelMirror {
           state[base + 4] = 0; state[base + 5] = 0; state[base + 6] = 0;
           continue;
         }
-        state[base + 4] = f(f(state[base + 4]! + f(gx * h)) * dampingScale);
-        state[base + 5] = f(f(state[base + 5]! + f(gy * h)) * dampingScale);
-        state[base + 6] = f(f(state[base + 6]! + f(gz * h)) * dampingScale);
+        const [wx, wy, wz] = windAt(state[base + 1]!);
+        state[base + 4] = f(f(state[base + 4]! + f(f(gx + wx) * h)) * dampingScale);
+        state[base + 5] = f(f(state[base + 5]! + f(f(gy + wy) * h)) * dampingScale);
+        state[base + 6] = f(f(state[base + 6]! + f(f(gz + wz) * h)) * dampingScale);
         state[base] = f(state[base]! + f(state[base + 4]! * h));
         state[base + 1] = f(state[base + 1]! + f(state[base + 5]! * h));
         state[base + 2] = f(state[base + 2]! + f(state[base + 6]! * h));
@@ -375,4 +396,38 @@ export class ClothParallelMirror {
   captureState(): Float32Array { return new Float32Array(this.#state); }
 
   restoreState(snapshot: Float32Array): void { this.#state.set(snapshot); }
+}
+
+/** F6/T18:镜像侧风噪声(与 WGSL windValueNoise 逐运算 f32 同构;hash 整数链逐位)。
+ * sx/sz 必须逐运算 fround:WGSL 里每个乘/减都是独立 f32 操作(每步正确舍入),
+ * 整表达式只舍一次会引入最高 ~11 ULP 的输入差(真机对拍实测),动力学放大后超容差。
+ * F6/T18 风场刀起导出:软体并行核镜像同函数消费(跨族单一真源,禁复制——
+ * 账本追加二十四「重复补丁外科去除」教训)。 */
+export function mirrorWindHash(xi: number, zi: number, seed: number): number {
+  let h = (Math.imul(xi | 0, 0x27d4eb2d) ^ Math.imul(zi | 0, 0x165667b1) ^ Math.imul(seed | 0, 0x9e3779b9)) >>> 0;
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d) >>> 0;
+  h = Math.imul(h ^ (h >>> 12), 0x297a2d39) >>> 0;
+  h = (h ^ (h >>> 15)) >>> 0;
+  return h;
+}
+/** WGSL `tx * tx * tx * (tx * (tx * 6.0 - 15.0) + 10.0)` 的逐运算 f32 镜像。 */
+export function mirrorQuintic(tx: number): number {
+  const b = f(f(tx * tx) * tx); // tx*tx*tx
+  const g = f(f(tx * f(f(tx * 6) - 15)) + 10); // tx*(tx*6-15)+10
+  return f(b * g);
+}
+export function mirrorWindNoise(x: number, z: number, seed: number): number {
+  const xi = Math.floor(x);
+  const zi = Math.floor(z);
+  const tx = f(x - xi);
+  const tz = f(z - zi);
+  const sx = mirrorQuintic(tx);
+  const sz = mirrorQuintic(tz);
+  const v00 = f(mirrorWindHash(xi, zi, seed) * 2.3283064365386963e-10);
+  const v10 = f(mirrorWindHash(xi + 1, zi, seed) * 2.3283064365386963e-10);
+  const v01 = f(mirrorWindHash(xi, zi + 1, seed) * 2.3283064365386963e-10);
+  const v11 = f(mirrorWindHash(xi + 1, zi + 1, seed) * 2.3283064365386963e-10);
+  const a = f(v00 + f(f(v10 - v00) * sx));
+  const b = f(v01 + f(f(v11 - v01) * sx));
+  return f(a + f(f(b - a) * sz));
 }

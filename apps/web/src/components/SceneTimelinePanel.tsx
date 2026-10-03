@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import { Box, Camera, ChevronDown, CircleDot, Film, Footprints, Pause, Play, Plus, RotateCcw, Trash2, X } from "lucide-react";
+import { Box, Camera, ChevronDown, CircleDot, Film, Footprints, History, Pause, Play, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import type { ModelKeyframe, SceneAnimationState } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import { normalizeAnimationFrameRate, snapAnimationTime } from "../viewer/timeline";
@@ -15,8 +15,9 @@ import { useTimelineCameraRecording } from "./useTimelineCameraRecording";
 import { useTimelineModelRecording } from "./useTimelineModelRecording";
 import { removeTimelineTrack, type TimelineTrackId } from "./timelineTrackEditing";
 import { SceneAnimationStateMachineEditor } from "./SceneAnimationStateMachineEditor";
+import { BehaviorTraceReplay } from "./BehaviorTraceReplay";
 
-export type SceneDirectorWorkspace = "timeline" | "shots" | "navigation";
+export type SceneDirectorWorkspace = "timeline" | "shots" | "navigation" | "trace";
 const selectAnimationTime = (snapshot: { time: number; playing: boolean }) => snapshot.time;
 
 interface Props {
@@ -49,6 +50,14 @@ interface Props {
 export function SceneTimelinePanel(props: Props) {
   const drag = useFloatingPanelDrag<HTMLElement>();
   const workspace = props.workspace ?? "timeline";
+  // S2d 行为轨迹审阅器:T31 日志的只读回放面,与动画时间线/镜头/漫游并列的第四工作区。
+  if (workspace === "trace") return (
+    <section ref={drag.panelRef} style={drag.style} className="timeline-panel timeline-panel-resizable scene-behavior-trace" aria-label={tr(props.locale, "行为轨迹回放", "Behavior trace replay")}>
+      <DirectorHeading locale={props.locale} drag={drag} subtitle={tr(props.locale, "行为轨迹 · 确定性回放审阅", "Behavior trace · deterministic review")} onClose={props.onClose} />
+      <DirectorTabs locale={props.locale} workspace={workspace} {...(props.onWorkspaceChange ? { onChange: props.onWorkspaceChange } : {})} />
+      <BehaviorTraceReplay locale={props.locale} {...(props.engine ? { engine: props.engine } : {})} />
+    </section>
+  );
   if (workspace !== "timeline" && props.cameraWorkspace) return (
     <section ref={drag.panelRef} style={drag.style} className="timeline-panel timeline-panel-resizable scene-director-camera" aria-label={tr(props.locale, "场景导演台", "Scene director")}>
       <DirectorHeading locale={props.locale} drag={drag} subtitle={tr(props.locale, "镜头与漫游", "Shots & navigation")} onClose={props.onClose} />
@@ -483,6 +492,7 @@ function DirectorTabs({ locale, workspace, onChange }: { locale: AppLocale; work
     { id: "timeline", icon: <Film size={14} />, zh: "时间线", en: "Timeline" },
     { id: "shots", icon: <Camera size={14} />, zh: "镜头", en: "Shots" },
     { id: "navigation", icon: <Footprints size={14} />, zh: "漫游", en: "Navigation" },
+    { id: "trace", icon: <History size={14} />, zh: "行为轨迹", en: "Behavior trace" },
   ];
   return <nav className="scene-director-tabs" aria-label={tr(locale, "导演台工作区", "Director workspaces")}>
     {items.map((item) => <button type="button" key={item.id} className={workspace === item.id ? "active" : ""} aria-current={workspace === item.id ? "page" : undefined} onClick={() => onChange(item.id)}>{item.icon}<span>{tr(locale, item.zh, item.en)}</span></button>)}

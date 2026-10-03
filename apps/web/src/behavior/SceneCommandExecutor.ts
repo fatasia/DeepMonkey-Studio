@@ -8,6 +8,8 @@ export type SceneCommandPortOutcome =
   | { status: "unsupported"; message: string };
 
 export interface SceneCommandPort {
+  deletePrimitive?(target: Extract<SceneObjectRef, { kind: "object" }>): SceneCommandPortOutcome;
+  createPrimitive?(command: CommandOf<"object.create-primitive">): SceneCommandPortOutcome;
   setObjectVisibility(target: SceneObjectRef, visible: boolean): MaybePromise<SceneCommandPortOutcome>;
   setObjectTransform(
     target: SceneObjectRef,
@@ -27,6 +29,11 @@ export interface SceneCommandPort {
     target: CommandOf<"camera.fly-to">["target"],
     durationMs: number
   ): MaybePromise<SceneCommandPortOutcome>;
+  /** T24/B5:场景级灯光与环境状态(H-C7-P4 B5 命令面);宿主实现可选。 */
+  setLighting?(sceneId: string, patch: CommandOf<"lighting.set">["patch"]): MaybePromise<SceneCommandPortOutcome>;
+  setEnvironment?(sceneId: string, patch: CommandOf<"environment.set">["patch"]): MaybePromise<SceneCommandPortOutcome>;
+  /** H-C7-P3:场景级状态机锚迁移(删除流 fail-closed 的配套编程口);宿主实现可选。 */
+  setAnimationAnchor?(sceneId: string, anchor: CommandOf<"animation.set-anchor">["anchor"]): MaybePromise<SceneCommandPortOutcome>;
   controlAnimation(
     target: SceneObjectRef,
     control: Pick<CommandOf<"animation.control">, "action" | "clipId" | "time">
@@ -91,6 +98,12 @@ export class SceneCommandExecutor {
 
 async function dispatchCommand(port: SceneCommandPort, command: SceneCommand): Promise<SceneCommandPortOutcome> {
   switch (command.type) {
+    case "object.delete-primitive":
+      return port.deletePrimitive ? port.deletePrimitive(command.target) : { status: "unsupported", message: "当前宿主尚未连接作者图元删除。" };
+    case "object.create-primitive":
+      return port.createPrimitive ? port.createPrimitive(command) : { status: "unsupported", message: "当前宿主尚未连接图元创建。" };
+    case "object.set-parent":
+      return { status: "unsupported", message: "当前 Viewer 作者端口尚未连接层级修改。" };
     case "object.set-visibility":
       return port.setObjectVisibility(command.target, command.visible);
     case "object.set-transform":
@@ -103,6 +116,18 @@ async function dispatchCommand(port: SceneCommandPort, command: SceneCommand): P
       return port.setCamera(command.sceneId, optionalFields(command, ["position", "target", "near", "far", "fov"]));
     case "camera.fly-to":
       return port.flyCamera(command.sceneId, command.target, command.durationMs);
+    case "lighting.set":
+      return port.setLighting
+        ? port.setLighting(command.sceneId, command.patch)
+        : { status: "unsupported", message: "当前宿主尚未连接场景灯光状态。" };
+    case "environment.set":
+      return port.setEnvironment
+        ? port.setEnvironment(command.sceneId, command.patch)
+        : { status: "unsupported", message: "当前宿主尚未连接场景环境状态。" };
+    case "animation.set-anchor":
+      return port.setAnimationAnchor
+        ? port.setAnimationAnchor(command.sceneId, command.anchor)
+        : { status: "unsupported", message: "当前宿主尚未连接状态机锚迁移。" };
     case "animation.control":
       return port.controlAnimation(command.target, optionalFields(command, ["action", "clipId", "time"]));
     case "data.apply":
@@ -117,7 +142,7 @@ async function dispatchCommand(port: SceneCommandPort, command: SceneCommand): P
 }
 
 function sceneScopeError(command: SceneCommand, activeSceneId: string): string | undefined {
-  if (command.type === "camera.set" || command.type === "camera.fly-to") {
+  if (command.type === "camera.set" || command.type === "camera.fly-to" || command.type === "lighting.set" || command.type === "environment.set" || command.type === "animation.set-anchor") {
     if (command.sceneId !== activeSceneId) return mismatchMessage(command.sceneId, activeSceneId);
   }
 
@@ -136,6 +161,9 @@ function commandTargets(command: SceneCommand): readonly SceneObjectRef[] {
   switch (command.type) {
     case "selection.set":
       return command.targets;
+    case "object.delete-primitive":
+    case "object.create-primitive":
+    case "object.set-parent":
     case "object.set-visibility":
     case "object.set-transform":
     case "material.set":
@@ -145,6 +173,9 @@ function commandTargets(command: SceneCommand): readonly SceneObjectRef[] {
     case "camera.fly-to":
       return "kind" in command.target ? [command.target] : [];
     case "camera.set":
+    case "lighting.set":
+    case "environment.set":
+    case "animation.set-anchor":
     case "component.update":
     case "unity.properties.set":
     case "unity.action.invoke":

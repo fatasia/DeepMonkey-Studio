@@ -17,15 +17,15 @@ export class WebGpuProbeCapturePool {
   private readonly buffers: GPUBuffer[] = [];
   private disposed = false;
 
-  constructor(private readonly session: DeviceSession) {}
+  constructor(private readonly session: DeviceSession, private readonly maxVolumes = 3, private readonly maxBuffers = 4) {}
 
-  takeVolume(size: ProbeVolumeSize): ProbeVolume {
+  takeVolume(size: ProbeVolumeSize, format: GPUTextureFormat = WEBGPU_PROBE_VOLUME_FORMAT): ProbeVolume {
     this.assertReady();
-    const pooled = this.volumes.findIndex(item => item.key === size.key);
+    const pooled = this.volumes.findIndex(item => item.key === size.key && item.texture.format === format);
     if (pooled >= 0) return this.volumes.splice(pooled, 1)[0]!;
     const texture = this.session.own(this.session.device.createTexture({ label: "Deep GI probe volume",
       size: { width: size.width, height: size.height, depthOrArrayLayers: size.layers }, dimension: "2d",
-      mipLevelCount: size.mipCount, format: WEBGPU_PROBE_VOLUME_FORMAT,
+      mipLevelCount: size.mipCount, format,
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC
         | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT }));
     try {
@@ -46,12 +46,12 @@ export class WebGpuProbeCapturePool {
   }
 
   recycleVolume(volume: ProbeVolume): void {
-    if (this.disposed || this.session.state !== "ready" || this.volumes.length >= 3) {
+    if (this.disposed || this.session.state !== "ready" || this.volumes.length >= this.maxVolumes) {
       this.session.release(volume.texture);
     } else this.volumes.push(volume);
   }
   recycleBuffer(buffer: GPUBuffer): void {
-    if (this.disposed || this.session.state !== "ready" || this.buffers.length >= 4) {
+    if (this.disposed || this.session.state !== "ready" || this.buffers.length >= this.maxBuffers) {
       this.session.release(buffer);
     } else this.buffers.push(buffer);
   }

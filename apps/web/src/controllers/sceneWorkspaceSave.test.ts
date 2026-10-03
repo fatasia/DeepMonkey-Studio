@@ -77,6 +77,7 @@ describe("Play exits through the production scene persistence path", () => {
       setPostProcessing: vi.fn(), setSceneAnimation: vi.fn(), clearSceneModelsAndPrimitives: vi.fn(),
       setClipping: vi.fn(), select: vi.fn(), selectAnnotation: vi.fn(), selectLayer: vi.fn(),
       controlAnimation: vi.fn(),
+      bindSavedSceneSnapshot: vi.fn(),
       requestRender: vi.fn(),
     };
     const context = {
@@ -108,6 +109,23 @@ describe("Play exits through the production scene persistence path", () => {
     }), () => undefined);
     return { f, readiness, scene, live, engine, context, persistence, play, errors };
   }
+
+  it("A4 saves then reopens through production apply and advances the existing local scene revision exactly once", async () => {
+    const f = playFixture();
+    let localRevision = f.context.revision;
+    f.context.setRevision = vi.fn(update => { localRevision = typeof update === "function" ? update(localRevision) : update; });
+    const persisted = await f.persistence.saveScene();
+    expect(persisted).toBeDefined();
+    expect(localRevision).toBe(3); // Save acknowledges the draft; it is not the reopen revision step.
+    const reopen = createScenePersistenceController(f.context);
+    f.live.x = 99;
+    await reopen.applyScene(JSON.parse(JSON.stringify(persisted)), false, f.context.project, false, false, false, true);
+    expect(f.live.x).toBe(persisted!.models[0]!.transform.position.x);
+    expect(localRevision).toBe(4);
+    expect(f.context.lastAutoSavedSceneRevisionRef.current).toBe(4);
+    expect(f.engine.hasRestoredSceneSnapshot(persisted!.id)).toBe(true);
+    expect(f.context.setRevision).toHaveBeenCalledOnce();
+  });
 
   it("settles active only after the real apply completes the matching restore generation", async () => {
     const f = playFixture();

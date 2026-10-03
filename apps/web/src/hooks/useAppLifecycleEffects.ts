@@ -21,12 +21,14 @@ import {
 import { applyDocumentBranding } from "../branding/documentBranding";
 import { canAutomaticallyChangeRenderer } from "../viewer/rendererBackendPreference";
 import { useEditorPresence } from "./useEditorPresence.js";
+import type { EditorPrimitiveDeleteAuthoring } from "../studio/editorPrimitiveDeleteAuthoring";
 
 type ApplicationController = ReturnType<typeof createApplicationRuntimeController>;
 type PersistenceController = ReturnType<typeof createScenePersistenceController>;
 type NavigationController = ReturnType<typeof useAppNavigationController>;
 
 interface AppLifecycleEffectsOptions {
+  sceneAuthoring?: EditorPrimitiveDeleteAuthoring | undefined;
   state: AppState;
   playModeActive?: boolean;
   saveActiveApplication: ApplicationController["saveActiveApplication"];
@@ -35,8 +37,8 @@ interface AppLifecycleEffectsOptions {
 }
 
 /** 集中处理会话、自动保存、品牌和发布渲染策略等应用生命周期副作用。 */
-export function useAppLifecycleEffects({ state, playModeActive = false, saveActiveApplication, saveScene, changeRendererBackend }: AppLifecycleEffectsOptions) {
-  useEditorPresence(state);
+export function useAppLifecycleEffects({ state, playModeActive = false, saveActiveApplication, saveScene, changeRendererBackend, sceneAuthoring }: AppLifecycleEffectsOptions) {
+  useEditorPresence(state, sceneAuthoring);
   const {
     activeApplication,
     activeScene,

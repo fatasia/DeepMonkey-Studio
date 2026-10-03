@@ -134,6 +134,31 @@ export function isAgentTerminal(status: AgentRunStatus): boolean {
   return ["completed", "blocked", "failed", "cancelled", "budget-exhausted"].includes(status);
 }
 
+// ---------------------------------------------------------------------------
+// H-autonomy：执行模式与审批来源的 UI 语义（纯函数，供工作台与测试共用）
+// ---------------------------------------------------------------------------
+
+/** H-autonomy 策略签发审批的审计身份（与 orchestrator AUTONOMY_APPROVER 同字面量）。 */
+export const AUTONOMY_APPROVER_ID = "autonomy-policy";
+
+/** run 是否处于自主执行档（checkpoint 启动时固化的自治授权）。 */
+export function isAutonomousRun(checkpoint: Pick<AgentCheckpoint, "autonomy" | "planMode">): boolean {
+  return checkpoint.autonomy?.mode === "autonomous" && checkpoint.planMode !== true;
+}
+
+/** 审批来源文案：策略自主签发 vs 人工审批（工具记录/待确认面板共用）。 */
+export function describeApprovalSource(approvedBy: string | undefined, locale: AppLocale): string {
+  if (approvedBy === AUTONOMY_APPROVER_ID) return tr(locale, "授权内自主执行（策略签发，审计留痕）", "Autonomous within authorization (policy-signed, audited)");
+  return tr(locale, "人工确认", "Manually approved");
+}
+
+/** 执行模式选项标签（配置行双 chip 与运行视图徽标共用）。 */
+export function describeExecutionMode(mode: "confirm" | "autonomous", locale: AppLocale): string {
+  return mode === "autonomous"
+    ? tr(locale, "自主执行", "Autonomous")
+    : tr(locale, "逐次确认", "Confirm each");
+}
+
 export function describeAgentEffect(effect: AgentToolDefinition["effect"], locale: AppLocale): string {
   const labels: Record<AgentToolDefinition["effect"], [string, string]> = {
     read: ["只读", "Read"],

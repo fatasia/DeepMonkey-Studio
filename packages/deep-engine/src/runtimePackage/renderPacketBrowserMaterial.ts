@@ -61,7 +61,7 @@ export function layeredMaterialExtension(value: Record<string, unknown>, path: s
   const base = Object.hasOwn(input, "base") ? parameters(input.base, `${p}.base`) : undefined;
   const layers = Object.hasOwn(input, "layers") ? array(input.layers, `${p}.layers`, 2).map((raw, index) => {
     const lp = `${p}.layers[${index}]`, layer = record(raw, lp);
-    optionalFields(layer, ["params", "coverage", "mode", "surface"], lp);
+    optionalFields(layer, ["params", "coverage", "mode", "surface", "responseModel"], lp);
     if (Object.hasOwn(layer, "params")) parameters(layer.params, `${lp}.params`);
     if (Object.hasOwn(layer, "surface")) surface(layer.surface, `${lp}.surface`);
     return layer;

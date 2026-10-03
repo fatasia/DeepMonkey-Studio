@@ -223,6 +223,7 @@ export function AppBehaviorOverlay({ bindings, sdkExampleRequest, onSdkExampleCo
       onDependenciesChange={dependencies => { authorRun.stop(); return applicationRuntime.replaceScriptDependencies(dependencies); }}
       onRun={authorRun.run}
       onDebug={authorRun.debug}
+      onHotSwap={authorRun.hotSwap}
       debugging={authorRun.session?.debugging ?? false}
       onPauseResume={authorRun.pauseResume}
       onStop={authorRun.stop}

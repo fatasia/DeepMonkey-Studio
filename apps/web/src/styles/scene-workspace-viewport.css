@@ -81,20 +81,20 @@
 .environment-control input:disabled { opacity: .32; }
 .environment-control output { color: #aab2b7; font-size: 8px; text-align: right; }
 .dock-separator { width: 1px; height: 22px; margin: 0 3px; background: #3b4247; }
-.measure-mode-bar { position: absolute; top: 70px; left: 50%; display: flex; align-items: center; gap: 4px; padding: 5px 6px; color: #89939a; border: 1px solid rgba(69, 77, 83, .8); border-radius: 8px; background: rgba(25, 30, 33, .94); box-shadow: 0 10px 30px rgba(0,0,0,.25); transform: translateX(-50%); backdrop-filter: blur(12px); }
+.measure-mode-bar { z-index: 2; /* z-index-audit: keep(视口工具条,作者画布 z1 之上、面板带 12 之下;与 viewport-status 同族遮蔽修复) */ position: absolute; top: 70px; left: 50%; display: flex; align-items: center; gap: 4px; padding: 5px 6px; color: #89939a; border: 1px solid rgba(69, 77, 83, .8); border-radius: 8px; background: rgba(25, 30, 33, .94); box-shadow: 0 10px 30px rgba(0,0,0,.25); transform: translateX(-50%); backdrop-filter: blur(12px); }
 .measure-mode-bar > span { padding: 0 8px 0 4px; color: #d5dadd; font-size: 10px; font-weight: 800; }
 .measure-mode-bar button { height: 28px; padding: 0 9px; color: #919ba2; border: 0; border-radius: 5px; background: transparent; font-size: 9px; cursor: pointer; }
 .measure-mode-bar button:hover { color: #eef1f3; background: #293035; }
 .measure-mode-bar button.active { color: #1c160c; background: var(--accent); font-weight: 800; }
 .measure-mode-bar small { padding: 0 5px 0 8px; color: #636e75; font-size: 8px; }
-.annotation-placement-bar { position: absolute; top: 70px; left: 50%; display: flex; align-items: center; gap: 8px; min-height: 39px; padding: 5px 6px 5px 10px; color: #89939a; border: 1px solid rgba(70,99,133,.85); border-radius: 8px; background: rgba(22,29,36,.96); box-shadow: 0 10px 30px rgba(0,0,0,.25); transform: translateX(-50%); backdrop-filter: blur(12px); }
+.annotation-placement-bar { z-index: 2; /* z-index-audit: keep(视口工具条,作者画布 z1 之上、面板带 12 之下;与 viewport-status 同族遮蔽修复) */ position: absolute; top: 70px; left: 50%; display: flex; align-items: center; gap: 8px; min-height: 39px; padding: 5px 6px 5px 10px; color: #89939a; border: 1px solid rgba(70,99,133,.85); border-radius: 8px; background: rgba(22,29,36,.96); box-shadow: 0 10px 30px rgba(0,0,0,.25); transform: translateX(-50%); backdrop-filter: blur(12px); }
 .annotation-placement-bar > svg { color: #4d9fff; }
 .annotation-placement-bar strong { color: #e2e8ed; font-size: 10px; }
 .annotation-placement-bar span { color: #9ba6ad; font-size: 9px; }
 .annotation-placement-bar small { color: #62707a; font-size: 8px; }
 .annotation-placement-bar button { display: grid; place-items: center; width: 27px; height: 27px; color: #8d989f; border: 0; border-radius: 5px; background: #263039; cursor: pointer; }
 .annotation-placement-bar button:hover { color: #eef4f8; background: #34414c; }
-.clipping-bar { position: absolute; top: 70px; left: 50%; display: flex; flex-direction: column; gap: 5px; min-width: 510px; max-width: calc(100% - 34px); padding: 6px; color: #89939a; border: 1px solid rgba(69,77,83,.8); border-radius: 8px; background: rgba(25,30,33,.96); box-shadow: 0 10px 30px rgba(0,0,0,.25); transform: translateX(-50%); backdrop-filter: blur(12px); }
+.clipping-bar { z-index: 2; /* z-index-audit: keep(视口工具条,作者画布 z1 之上、面板带 12 之下;与 viewport-status 同族遮蔽修复) */ position: absolute; top: 70px; left: 50%; display: flex; flex-direction: column; gap: 5px; min-width: 510px; max-width: calc(100% - 34px); padding: 6px; color: #89939a; border: 1px solid rgba(69,77,83,.8); border-radius: 8px; background: rgba(25,30,33,.96); box-shadow: 0 10px 30px rgba(0,0,0,.25); transform: translateX(-50%); backdrop-filter: blur(12px); }
 .clipping-tabs, .clipping-axis-controls, .clipping-face-controls { display: flex; align-items: center; gap: 4px; width: 100%; }
 .clipping-tabs[data-drag-handle="true"] { cursor: grab; touch-action: none; }
 .clipping-tabs[data-drag-handle="true"]:active { cursor: grabbing; }

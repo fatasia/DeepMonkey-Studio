@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { auditChatAnswerEvidence } from "./chatEvidenceGate.js";
+import { auditFingerprint } from "./aiReliabilityAudit.js";
+import { anchorChatAnswerEvidence, auditChatAnswerEvidence } from "./chatEvidenceGate.js";
 
 /**
  * K2 回归锁（AI 助手交互与可靠性深度审计 20260929 §一 K2）：
@@ -48,5 +49,50 @@ describe("chatEvidenceGate (K2 answer token audit)", () => {
     const audit = auditChatAnswerEvidence(answer, "");
     expect(audit.checked).toBe(24);
     expect(audit.unmatched).toHaveLength(24);
+  });
+});
+
+/**
+ * T5 回归锁（H-C5-T5 逐条引用与真正证据锚对齐 20261003）：
+ * 引用锚必须落在来源**已发送窗口内**且指纹可复核——窗口外/无来源一律不出锚，
+ * 防伪造引用与引用漂移；锚坐标系与 contextDelivery 一致（utf16 源内偏移）。
+ */
+describe("anchorChatAnswerEvidence (T5 per-item citation anchors)", () => {
+  const source = (id: string, text: string, sentChars = text.length) => ({ id, path: id, start: 0, text, sentChars });
+
+  it("anchors a matched token to the exact source offset with a verifiable fingerprint", () => {
+    const text = JSON.stringify({ devices: [{ id: "EQ-2205", score: 92 }] });
+    const citations = anchorChatAnswerEvidence("设备 EQ-2205 健康分 92，建议检修。", [source("workspace-scene", text)]);
+    expect(citations).toHaveLength(2);
+    const byToken = new Map(citations.map((citation) => [citation.token, citation]));
+    expect(byToken.get("EQ-2205")).toEqual({
+      token: "EQ-2205",
+      anchors: [{ sourceId: "workspace-scene", sourcePath: "workspace-scene", offset: text.indexOf("EQ-2205"), fingerprint: auditFingerprint(text) }],
+    });
+    expect(byToken.get("92")?.anchors[0].offset).toBe(text.indexOf("92"));
+  });
+
+  it("refuses anchors beyond the sent window of a partially sent source", () => {
+    const text = '{"head":"P101","tail":"EQ-9900"}';
+    const citations = anchorChatAnswerEvidence("P101 与 EQ-9900 均需复核。", [source("datasets", text, text.indexOf('"tail"'))]);
+    expect(citations.map((citation) => citation.token)).toEqual(["P101"]);
+  });
+
+  it("collects one anchor per source when several sources contain the token", () => {
+    const first = '{"tag":"P101"}';
+    const second = '{"device":"P101"}';
+    const citations = anchorChatAnswerEvidence("泵 P101。", [source("datasets", first), source("bim-evidence", second)]);
+    expect(citations).toHaveLength(1);
+    expect(citations[0].anchors.map((anchor) => anchor.sourceId)).toEqual(["datasets", "bim-evidence"]);
+    expect(citations[0].anchors[0].fingerprint).toBe(auditFingerprint(first));
+    expect(citations[0].anchors[1].fingerprint).toBe(auditFingerprint(second));
+  });
+
+  it("anchors comma-formatted values via their plain variant and yields nothing without sources", () => {
+    const text = '{"units":1250}';
+    const citations = anchorChatAnswerEvidence("本季 1,250 台。", [source("datasets", text)]);
+    expect(citations[0].token).toBe("1,250");
+    expect(citations[0].anchors[0].offset).toBe(text.indexOf("1250"));
+    expect(anchorChatAnswerEvidence("本季 1,250 台。", [])).toEqual([]);
   });
 });

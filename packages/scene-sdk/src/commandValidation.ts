@@ -1,4 +1,5 @@
 import type { SceneCommand, SceneObjectRef } from "./protocol.js";
+import { parsePrimitiveCommand } from "./commandValidationPrimitive.js";
 
 import {
   SCENE_COMMAND_VALIDATION_LIMITS,
@@ -39,13 +40,19 @@ export class SceneCommandValidationError extends TypeError {
 }
 
 const COMMAND_TYPES = [
+  "object.delete-primitive",
+  "object.create-primitive",
+  "object.set-parent",
   "object.set-visibility",
   "object.set-transform",
   "material.set",
   "selection.set",
   "camera.set",
   "camera.fly-to",
+  "lighting.set",
+  "environment.set",
   "animation.control",
+  "animation.set-anchor",
   "data.apply",
   "component.update",
   "unity.properties.set",
@@ -111,6 +118,25 @@ function parseCommandByType(
   context: ValidationContext
 ): SceneCommand | undefined {
   switch (type) {
+    case "object.delete-primitive": {
+      rejectUnknownProperties(record, ["id", "type", "target"], "$", context);
+      const target = parseObjectRef(readRequired(record, "target", "$", context), "$.target", context);
+      if (target && target.kind !== "object") addIssue(context, "$.target", "invalid-value", "Primitive deletion requires an object target.");
+      return target?.kind === "object" ? { id, type, target } : undefined;
+    }
+    case "object.create-primitive":
+      return parsePrimitiveCommand(id, record, parseObjectRef(readRequired(record, "target", "$", context), "$.target", context), context);
+    case "object.set-parent": {
+      rejectUnknownProperties(record, ["id", "type", "target", "parentId", "keepWorldTransform"], "$", context);
+      const target = parseObjectRef(readRequired(record, "target", "$", context), "$.target", context);
+      if (target && target.kind !== "object") addIssue(context, "$.target", "invalid-value", "Parent changes require an object target.");
+      const parentValue = readRequired(record, "parentId", "$", context);
+      const parentId = parentValue === null ? null : parseRequiredIdentifier(record, "parentId", "$", context);
+      const keepWorldTransform = record.values.has("keepWorldTransform")
+        ? parseBoolean(record.values.get("keepWorldTransform"), "$.keepWorldTransform", context) : undefined;
+      return target?.kind === "object" && parentId !== undefined
+        ? { id, type, target, parentId, ...(keepWorldTransform === undefined ? {} : { keepWorldTransform }) } : undefined;
+    }
     case "object.set-visibility": {
       rejectUnknownProperties(record, ["id", "type", "target", "visible"], "$", context);
       const target = parseObjectRef(readRequired(record, "target", "$", context), "$.target", context);
@@ -167,6 +193,77 @@ function parseCommandByType(
         ...(fov === undefined ? {} : { fov })
       };
     }
+    case "lighting.set": {
+      rejectUnknownProperties(record, ["id", "type", "sceneId", "patch"], "$", context);
+      const sceneId = parseRequiredIdentifier(record, "sceneId", "$", context);
+      const patchRecord = inspectRecord(readRequired(record, "patch", "$", context), "$.patch", context);
+      if (!patchRecord) return undefined;
+      rejectUnknownProperties(patchRecord, ["enabled", "intensity", "shadowsEnabled", "globalIlluminationEnabled", "globalIlluminationIntensity"], "$.patch", context);
+      const patch: { enabled?: boolean; intensity?: number; shadowsEnabled?: boolean; globalIlluminationEnabled?: boolean; globalIlluminationIntensity?: number } = {};
+      const enabledValue = patchRecord.values.get("enabled");
+      if (enabledValue !== undefined) {
+        const enabled = parseBoolean(enabledValue, "$.patch.enabled", context);
+        if (enabled !== undefined) patch.enabled = enabled;
+      }
+      const intensityValue = patchRecord.values.get("intensity");
+      if (intensityValue !== undefined) {
+        const intensity = parseNumber(intensityValue, "$.patch.intensity", context);
+        if (intensity !== undefined && intensity >= 0) patch.intensity = intensity;
+        else if (intensity === undefined) addIssue(context, "$.patch.intensity", "invalid-value", "Expected intensity to be a non-negative number.");
+      }
+      const shadowsValue = patchRecord.values.get("shadowsEnabled");
+      if (shadowsValue !== undefined) {
+        const shadows = parseBoolean(shadowsValue, "$.patch.shadowsEnabled", context);
+        if (shadows !== undefined) patch.shadowsEnabled = shadows;
+      }
+      const giEnabledValue = patchRecord.values.get("globalIlluminationEnabled");
+      if (giEnabledValue !== undefined) {
+        const gi = parseBoolean(giEnabledValue, "$.patch.globalIlluminationEnabled", context);
+        if (gi !== undefined) patch.globalIlluminationEnabled = gi;
+      }
+      const giIntensityValue = patchRecord.values.get("globalIlluminationIntensity");
+      if (giIntensityValue !== undefined) {
+        const giIntensity = parseNumber(giIntensityValue, "$.patch.globalIlluminationIntensity", context);
+        if (giIntensity !== undefined && giIntensity >= 0) patch.globalIlluminationIntensity = giIntensity;
+        else if (giIntensity === undefined) addIssue(context, "$.patch.globalIlluminationIntensity", "invalid-value", "Expected globalIlluminationIntensity to be a non-negative number.");
+      }
+      if (!sceneId) return undefined;
+      if (Object.keys(patch).length === 0) {
+        addIssue(context, "$.patch", "invalid-value", "Expected at least one lighting field in patch.");
+        return undefined;
+      }
+      return { id, type, sceneId, patch };
+    }
+    case "environment.set": {
+      rejectUnknownProperties(record, ["id", "type", "sceneId", "patch"], "$", context);
+      const sceneId = parseRequiredIdentifier(record, "sceneId", "$", context);
+      const patchRecord = inspectRecord(readRequired(record, "patch", "$", context), "$.patch", context);
+      if (!patchRecord) return undefined;
+      rejectUnknownProperties(patchRecord, ["backgroundColor", "weather", "environmentIntensity"], "$.patch", context);
+      const patch: { backgroundColor?: string; weather?: "sunny" | "cloudy" | "rain" | "snow" | "fog" | "storm"; environmentIntensity?: number } = {};
+      const backgroundColor = parseOptionalIdentifier(patchRecord, "backgroundColor", "$.patch", context);
+      if (backgroundColor !== undefined) patch.backgroundColor = backgroundColor;
+      const weatherRecord = patchRecord.values.get("weather");
+      if (weatherRecord !== undefined) {
+        if (typeof weatherRecord !== "string" || !["sunny", "cloudy", "rain", "snow", "fog", "storm"].includes(weatherRecord)) {
+          addIssue(context, "$.patch.weather", "invalid-value", "Expected weather to be one of sunny/cloudy/rain/snow/fog/storm.");
+        } else {
+          patch.weather = weatherRecord as "sunny" | "cloudy" | "rain" | "snow" | "fog" | "storm";
+        }
+      }
+      const environmentIntensityValue = patchRecord.values.get("environmentIntensity");
+      if (environmentIntensityValue !== undefined) {
+        const environmentIntensity = parseNumber(environmentIntensityValue, "$.patch.environmentIntensity", context);
+        if (environmentIntensity !== undefined && environmentIntensity >= 0) patch.environmentIntensity = environmentIntensity;
+        else if (environmentIntensity === undefined) addIssue(context, "$.patch.environmentIntensity", "invalid-value", "Expected environmentIntensity to be a non-negative number.");
+      }
+      if (!sceneId) return undefined;
+      if (Object.keys(patch).length === 0) {
+        addIssue(context, "$.patch", "invalid-value", "Expected at least one environment field in patch.");
+        return undefined;
+      }
+      return { id, type, sceneId, patch };
+    }
     case "camera.fly-to": {
       rejectUnknownProperties(record, ["id", "type", "sceneId", "target", "durationMs"], "$", context);
       const sceneId = parseRequiredIdentifier(record, "sceneId", "$", context);
@@ -195,6 +292,24 @@ function parseCommandByType(
         ...(clipId === undefined ? {} : { clipId }),
         ...(time === undefined ? {} : { time })
       };
+    }
+    case "animation.set-anchor": {
+      rejectUnknownProperties(record, ["id", "type", "sceneId", "anchor"], "$", context);
+      const sceneId = parseRequiredIdentifier(record, "sceneId", "$", context);
+      const anchorRecord = inspectRecord(readRequired(record, "anchor", "$", context), "$.anchor", context);
+      if (!anchorRecord) return undefined;
+      rejectUnknownProperties(anchorRecord, ["initialStateId", "activeStateId"], "$.anchor", context);
+      const anchor: { initialStateId?: string; activeStateId?: string } = {};
+      const initialStateId = parseOptionalIdentifier(anchorRecord, "initialStateId", "$.anchor", context);
+      if (initialStateId !== undefined) anchor.initialStateId = initialStateId;
+      const activeStateId = parseOptionalIdentifier(anchorRecord, "activeStateId", "$.anchor", context);
+      if (activeStateId !== undefined) anchor.activeStateId = activeStateId;
+      if (!sceneId) return undefined;
+      if (Object.keys(anchor).length === 0) {
+        addIssue(context, "$.anchor", "invalid-value", "Expected at least one anchor field (initialStateId or activeStateId).");
+        return undefined;
+      }
+      return { id, type, sceneId, anchor };
     }
     case "data.apply": {
       rejectUnknownProperties(record, ["id", "type", "target", "values", "timestamp"], "$", context);

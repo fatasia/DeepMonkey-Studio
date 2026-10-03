@@ -151,3 +151,56 @@
   .timeline-track-create { justify-self:end; }
   .timeline-heading { min-height:38px; }
 }
+
+/* S2d 行为轨迹回放审阅器:与时间线同令牌体系;只读审阅,不引入新颜色令牌。 */
+/* 行序同族对齐 scene-director-camera:标题 auto + 页签 auto + 内容 minmax(0,1fr),页签不得被拉伸悬空。 */
+.scene-behavior-trace { grid-template-rows: auto auto minmax(0, 1fr); }
+.trace-replay { display: grid; min-height: 0; grid-template-rows: auto 1fr auto; }
+.trace-replay-summary { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 12px; border-bottom: 1px solid var(--line); background: var(--surface-1); color: var(--text-muted); font-size: 9px; }
+.trace-replay-summary > span { padding: 3px 6px; border-radius: 4px; background: var(--surface-3); white-space: nowrap; }
+.trace-replay-follow, .trace-replay-export { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; padding: 3px 8px; color: var(--text); border: 1px solid var(--line); border-radius: 5px; background: var(--surface-2); font-size: 9px; cursor: pointer; }
+.trace-replay-follow { margin-left: 0; }
+.trace-replay-summary .trace-replay-export { margin-left: auto; }
+.trace-replay-follow:hover, .trace-replay-export:hover:not(:disabled) { color: var(--text-strong); border-color: var(--accent); background: var(--accent-soft); }
+.trace-replay-follow.active { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: var(--accent-soft); }
+.trace-replay-export:disabled, .trace-replay-step:disabled { opacity: .42; cursor: not-allowed; }
+.trace-replay-empty { display: grid; place-content: center; gap: 6px; padding: 24px; text-align: center; color: var(--text-muted); }
+.trace-replay-empty strong { color: var(--text-strong); font-size: 12px; }
+.trace-replay-empty small { max-width: 420px; font-size: 10px; line-height: 1.6; }
+.trace-replay-body { display: grid; min-height: 0; grid-template-columns: minmax(0, 1fr) 236px; }
+.trace-replay-tracks { min-width: 0; overflow-y: auto; padding: 8px 12px 8px 0; }
+.trace-replay-ruler, .trace-replay-track { display: grid; grid-template-columns: 128px minmax(0, 1fr); align-items: center; gap: 8px; min-height: 30px; }
+.trace-replay-ruler > span, .trace-replay-track-label { overflow: hidden; padding-left: 12px; color: var(--text-muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.trace-replay-track-label { display: flex; align-items: center; gap: 5px; color: var(--text); }
+.trace-replay-track-label small { padding: 1px 4px; border-radius: 3px; background: var(--surface-3); color: var(--text-muted); }
+.trace-replay-ruler-rail, .trace-replay-rail { position: relative; height: 26px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface-2); }
+.trace-replay-ruler-rail { height: 18px; border-style: dashed; }
+.trace-replay-ruler-rail i { position: absolute; top: 100%; color: var(--text-muted); font-size: 8px; font-style: normal; transform: translateX(-50%); }
+.trace-replay-line { position: absolute; inset: 50% 0 auto 0; height: 1px; background: var(--line); }
+.trace-replay-rail { cursor: crosshair; touch-action: none; }
+.trace-replay-rail:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.trace-replay-marker { position: absolute; top: 50%; width: 9px; height: 9px; padding: 0; border: 1px solid var(--line-strong); border-radius: 2px; transform: translate(-50%, -50%) rotate(45deg); cursor: pointer; }
+.trace-replay-marker.is-applied { background: var(--success); }
+.trace-replay-marker.is-skipped { background: var(--warning); }
+.trace-replay-marker.is-rejected { background: var(--danger); }
+.trace-replay-marker:hover, .trace-replay-marker.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.trace-replay-playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); border-radius: 1px; transform: translateX(-1px); pointer-events: none; }
+.trace-replay-sampled { position: absolute; top: 1px; right: 5px; color: var(--text-muted); font-size: 8px; pointer-events: none; }
+.trace-replay-detail { overflow-y: auto; padding: 8px 12px; border-left: 1px solid var(--line); background: var(--surface-1); }
+.trace-replay-detail header { display: flex; flex-direction: column; gap: 3px; margin-bottom: 6px; }
+.trace-replay-outcome { align-self: flex-start; padding: 2px 7px; border-radius: 4px; font-size: 9px; font-weight: 650; }
+.trace-replay-outcome.is-applied { color: var(--success); border: 1px solid color-mix(in srgb, var(--success) 45%, var(--line)); background: color-mix(in srgb, var(--success) 12%, var(--surface-1)); }
+.trace-replay-outcome.is-skipped { color: var(--warning); border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--line)); background: color-mix(in srgb, var(--warning) 12%, var(--surface-1)); }
+.trace-replay-outcome.is-rejected { color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--line)); background: color-mix(in srgb, var(--danger) 12%, var(--surface-1)); }
+.trace-replay-detail small { color: var(--text-muted); font-size: 9px; }
+.trace-replay-detail dl { display: grid; gap: 5px; margin: 0; }
+.trace-replay-detail dl > div { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 6px; align-items: baseline; }
+.trace-replay-detail dt { color: var(--text-muted); font-size: 9px; }
+.trace-replay-detail dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--text); font-size: 10px; }
+.trace-replay-detail dd code { font-family: var(--font-mono, ui-monospace, monospace); font-size: 9px; }
+.trace-replay-transport { display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 4px 12px; border-top: 1px solid var(--line); background: var(--surface-1); }
+.trace-replay-step { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; color: var(--text); border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface-2); cursor: pointer; }
+.trace-replay-step:hover:not(:disabled) { color: var(--text-strong); border-color: var(--accent); background: var(--accent-soft); }
+.trace-replay-position { min-width: 56px; color: var(--text-muted); font-size: 9px; text-align: center; }
+.trace-replay-transport small { margin-left: auto; color: var(--text-muted); font-size: 9px; }
+@media (max-width: 1280px) { .trace-replay-body { grid-template-columns: 1fr; } .trace-replay-detail { border-left: 0; border-top: 1px solid var(--line); } }

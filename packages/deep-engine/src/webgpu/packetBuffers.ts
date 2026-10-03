@@ -1,4 +1,5 @@
 import { STOCK_MATERIAL_INSTANCE_OPTIONS } from "../materialInstanceAbi.js";
+import { assertVertexPacketMembership } from "./packetVertexStreaming.js";
 import { prepareRenderPacket, type InstanceUpdate, type PreparedBatch, type PreparedPacket,
   type RenderPacket } from "../renderPacket.js";
 import type { DeviceSession } from "./deviceSession.js";
@@ -32,7 +33,6 @@ import { PacketDeformationState } from "./packetDeformationState.js";
 import { PacketValidatedPublication } from "./packetValidatedPublication.js";
 import { compileMaterialEffectLedger, type MaterialEffectLedgerSnapshot } from "./materialEffectLedger.js";
 import { PacketTextureArrayConsumer, type PacketTextureArrayStage } from "./packetTextureArrayConsumer.js";
-
 const cancelled = (): DOMException => new DOMException("Packet update cancelled or superseded.", "AbortError");
 type TextureArrayPacketStage = StagedPacketBuffers & { readonly arrayStage?: PacketTextureArrayStage };
 export { GPU_CULLING_MIN_INSTANCES } from "./packetCulling.js";
@@ -63,7 +63,7 @@ export class PacketBuffers {
   constructor(private readonly session: DeviceSession, materialLayout?: MaterialLayouts,
     deformationPipelines?: Pipelines | Promise<Pipelines>,
     private readonly meshletsEnabled = false, private readonly meshletVisibility = false,
-    textureArrayLayout?: GPUBindGroupLayout) {
+    textureArrayLayout?: GPUBindGroupLayout, private readonly vertexStreamingGeometry?: string) {
     // 延迟变形变体以 promise 注入：状态机先以“未启用”运行，就绪后原地附着。
     if (deformationPipelines instanceof Promise) {
       this.deformationReadiness = deformationPipelines.then(value => {
@@ -83,7 +83,6 @@ export class PacketBuffers {
     this.materials = new MaterialBindingPool(session, materialLayout);
     this.textureArrays = textureArrayLayout ? new PacketTextureArrayConsumer(session, textureArrayLayout) : undefined;
   }
-
   private readonly deformationReadiness: Promise<void> | undefined;
 
   /** Monotonic revision of successfully published visibility-affecting author state. */
@@ -95,6 +94,7 @@ export class PacketBuffers {
   /** Live production material residency/bind-group telemetry; counters are monotonic for this renderer epoch. */
   get materialBindingStats() { return this.materials.stats; }
   set(packet: RenderPacket): boolean {
+    assertVertexPacketMembership(this.vertexStreamingGeometry,packet);
     const generation = this.beginMutation();
     const prepared = prepareRenderPacket(packet, STOCK_MATERIAL_INSTANCE_OPTIONS);
     const ledger = compileMaterialEffectLedger(packet, prepared.batches);
@@ -203,6 +203,7 @@ export class PacketBuffers {
   }
   /** 返回前等待创建/上传的 GPU 错误；等待期间旧投影可绘制，后发修改使旧候选失效。 */
   async setValidated(packet: RenderPacket, signal?: AbortSignal): Promise<boolean> {
+    assertVertexPacketMembership(this.vertexStreamingGeometry,packet);
     if (signal?.aborted) throw cancelled();
     // 仅当候选确含变形且变形变体为延迟注入时才等待；静态候选零开销、零时序变化。
     if ((packet.deformation !== undefined || packet.instances.some(instance => instance.pose !== undefined))
@@ -270,6 +271,7 @@ export class PacketBuffers {
     this.deformation.publish(staged.deformation, staged.deformationSnapshot, staged.deformationBoundsProfiles);
     if (gpuValidated) staged.deformation?.publishValidatedSources();
     this.textureLookup = this.textureArrays?.lookup(this.textures) ?? this.textures;
+    for (const update of staged.vertexUpdates) update.commit();
     staged.settled = true;
     const previousResident = this.resident.detachActive();
     const oldGeometries = this.geometries, oldBatches = this.batches;
@@ -380,6 +382,7 @@ export class PacketBuffers {
   private stagingContext(): PacketBufferStagingContext {
     const resident = this.resident.active !== undefined;
     return {
+      ...(this.vertexStreamingGeometry!==undefined?{vertexStreamingGeometry:this.vertexStreamingGeometry}:{}),
       deformationEnabled: this.deformation.enabled, meshletsEnabled: this.meshletsEnabled,
       ...(this.meshletVisibility ? { meshletVisibility: true } : {}),
       deformationStaticSources: this.deformationStaticSources,

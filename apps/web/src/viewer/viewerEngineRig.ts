@@ -12,6 +12,7 @@ import { ViewerEngineInteraction } from "./viewerEngineInteraction";
 import { normalizeRobotKinematicsState } from "./robotKinematics";
 import { normalizeFireEffect } from "./modelEffectState";
 import { materialTextureTransformState } from "./materialTextureTransform";
+import { setStudioDeepEnvironmentMips } from "./studioDeepEnvironmentMips";
 
 /** Rig 职责层。 */
 export abstract class ViewerEngineRig extends ViewerEngineInteraction {
@@ -152,6 +153,7 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
       return structuredClone(this.environmentState);
     }
   setSceneEnvironment(state: SceneEnvironmentState): void {
+      setStudioDeepEnvironmentMips(this.scene, state.environmentSpecularMips);
       const backgroundColor = /^#[0-9a-f]{6}$/i.test(state.backgroundColor)
         ? state.backgroundColor
         : this.environmentState.backgroundColor;
@@ -163,6 +165,7 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
         ...(state.environmentMapName ? { environmentMapName: state.environmentMapName } : {}),
         environmentAsBackground: state.environmentAsBackground ?? false,
         environmentIntensity: THREE.MathUtils.clamp(state.environmentIntensity ?? 1, 0, 3),
+        ...(state.environmentSpecularMips === undefined ? {} : { environmentSpecularMips: state.environmentSpecularMips }),
         ...(state.reflectionProbes ? { reflectionProbes: structuredClone(state.reflectionProbes) } : {})
       };
       if (this.gridHelper) this.gridHelper.visible = this.environmentState.gridVisible;

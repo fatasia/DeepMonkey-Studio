@@ -35,14 +35,25 @@ fn deepGiContains(level: DeepGiLevel, worldPosition: vec3f) -> bool {
   return deepGiLevelUsable(level) && all(worldPosition >= level.originSpacing.xyz)
     && all(worldPosition <= level.maxPosition);
 }
+// Chebyshev 可见性(F5-GI-1 合同收紧,TS/Rust CPU 镜像逐式同步):
+// 记录语义单一来源 = probeOcclusionRayExtension:visibility.x = 命中射线距离均值,
+// visibility.y = 命中距离总体方差,visibility.z = miss 方向占比(occlusionFloor)。
+// == 均值分支的适用边界 == "receiver 近于均值命中距离 → 无遮挡视线"只在记录自证
+// 封闭包络时成立(无天空方向:floor≈0,且命中离散不超过包络尺度)。天空探针的均值
+// 不含天空方向,不能证明 receiver 方向无遮挡——薄墙可在均值以内但被中间几何遮挡,
+// 必须走 Chebyshev 遮挡估计,不得无条件全权重。floor 是"探针内容里环境光占比"的
+// 内容限定符,不构成 receiver 链路的权重下界(否则天空探针隔着墙也保底漏光)。
 fn deepGiVisibility(record: DeepGiProbeRecord, receiver: vec3f, probePosition: vec3f, spacing: f32) -> f32 {
   if (!deepGiFinite3(record.visibility.xyz, 1000000000000.0)) { return 0.0; }
   let distance = length(receiver - probePosition);
   let meanDistance = clamp(record.visibility.x, 0.0, 1000000.0);
   let variance = clamp(record.visibility.y, spacing * spacing * 0.0001, 1000000000000.0);
-  let delta = max(distance - meanDistance, 0.0);
+  let occlusionFloor = clamp(record.visibility.z, 0.0, 1.0);
+  let enclosed = occlusionFloor <= 0.001
+    && variance <= max(meanDistance * meanDistance, spacing * spacing);
+  let delta = abs(distance - meanDistance);
   let chebyshev = variance / max(variance + delta * delta, 0.000001);
-  return select(max(clamp(record.visibility.z, 0.0, 1.0), chebyshev), 1.0, distance <= meanDistance);
+  return select(chebyshev, 1.0, distance <= meanDistance && enclosed);
 }
 // DDGI 法线权重（泄漏抑制，逐式对应 probeClipmapSampling.probeNormalWeight）：
 // 只让接收面的正半球探针参与，并按余弦的 bias 次幂衰减。

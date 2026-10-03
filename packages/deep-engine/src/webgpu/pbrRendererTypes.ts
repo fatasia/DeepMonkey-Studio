@@ -40,6 +40,9 @@ export interface PbrPipelineBootstrapOptions {
 }
 
 export interface PbrRendererOptions {
+  /** One explicit fixed-topology, untextured, single-instance CPU vertex stream. Off by default.
+   * Publish before command encoding; this does not supply previous-vertex TAA history. */
+  readonly vertexStreamingGeometry?: string;
   /** Explicit physical display opt-in; omitted preserves the existing SDR surface. */
   readonly hdrDisplay?: import("./hdrDisplayOutput.js").HdrDisplayRequest;
   /** 显式的同设备托管资源估算上限；未知布局拒绝，非驱动物理 VRAM 上限。 */
@@ -116,8 +119,24 @@ export interface PbrRendererOptions {
 }
 
 export interface FrameMetrics {
-  /** Optional bounded Frame Graph execution coverage for diagnostics; per-pass GPU timings ride on gpuPassTimings. */
+  /**
+   * 常规帧图回执(每帧,非 timing):pass 序/本帧实际编码集/未映射槽位。逐 pass
+   * GPU 毫秒不在此,经 gpuPassTimings 滞后发布;samples 对缺测 pass 保持显式
+   * unavailable(原因注明「异步发布/未请求」),不伪零。
+   */
   readonly frameGraphReceipt?: import("./pbrFramePlanExecutor.js").PbrFrameExecutionReceipt;
+  /**
+   * F1 真实执行 coverage(每帧):帧图登记 pass 集与本帧实际编码集的差集读数
+   * (量,非时);执行集合来自编码分支,禁止从图成员推断。
+   */
+  readonly frameExecutionCoverage?: import("./pbrFrameExecutionCoverage.js").PbrFrameExecutionCoverage;
+  /**
+   * F1 可见绘制量读出(每帧,量非时):主 pass 包体(packets.draw)的 CPU 编码
+   * drawCalls/triangles 与该帧剔除批计数。GPU 逐实例幸存数需读回(=新同步),
+   * 不提供;T01 visibleInstances 保持 null,不把该读数伪称逐实例。
+   */
+  readonly visibleDraws?: { readonly drawCalls: number; readonly triangles: number;
+    readonly frustumCulledBatches: number; readonly hiZOccludedBatches: number };
   /**
    * F1 逐 pass GPU 计时(opt-in,`gpuPassTiming`):最新完成读回的一帧逐 pass
    * 毫秒数据。GPU 读回滞后 1-2 帧,实测帧号在 `frame` 字段内,不得当成本帧;

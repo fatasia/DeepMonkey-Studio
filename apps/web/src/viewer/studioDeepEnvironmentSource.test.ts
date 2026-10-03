@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { prepareStudioDeepEnvironmentSource, isStudioDeepEnvironmentSourceCurrent } from "./studioDeepEnvironmentSource";
+import { setStudioDeepEnvironmentMips } from "./studioDeepEnvironmentMips";
 
 function texture(rgb: readonly number[] = [2, 1, 0]): THREE.DataTexture {
   const result = new THREE.DataTexture(new Float32Array([...rgb, 1, ...rgb, 1]),
@@ -20,6 +21,20 @@ function scene(): THREE.Scene {
 const prepare = (value: THREE.Scene) => prepareStudioDeepEnvironmentSource(value, new AbortController().signal);
 
 describe("Studio author environment source preparation", () => {
+  it("stages saved mip policy and invalidates it independently of unchanged pixels", async () => {
+    const author = scene(); author.environment = texture();
+    setStudioDeepEnvironmentMips(author, 4);
+    const result = await prepare(author);
+    expect(result.source.keptMips).toBe(4);
+    expect(isStudioDeepEnvironmentSourceCurrent(author, result)).toBe(true);
+    setStudioDeepEnvironmentMips(author, 6);
+    expect(isStudioDeepEnvironmentSourceCurrent(author, result)).toBe(false);
+    const next = await prepare(author); expect(next.source.keptMips).toBe(6);
+    setStudioDeepEnvironmentMips(author, undefined);
+    expect(isStudioDeepEnvironmentSourceCurrent(author, next)).toBe(false);
+    expect((await prepare(author)).source.keptMips).toBeUndefined();
+    expect(() => setStudioDeepEnvironmentMips(author, 9)).toThrow();
+  });
   it("falls back to the engine-native neutral studio IBL when the author has no environment", async () => {
     const author = scene(); const result = await prepare(author);
     // Z1 P3:黑 IBL 兜底把材质打回死黑并让 DDGI 捕获零辐照,已替换为中性环境。

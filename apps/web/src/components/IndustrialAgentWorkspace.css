@@ -44,8 +44,7 @@
 
 .industrial-agent-heading button,
 .industrial-agent-run-actions button,
-.industrial-agent-approval button,
-.industrial-agent-start-actions button {
+.industrial-agent-approval button {
   display: inline-flex;
   min-height: 32px;
   align-items: center;
@@ -86,23 +85,27 @@
   gap: 10px;
 }
 
-.industrial-agent-start > label { display: grid; gap: 7px; }
-.industrial-agent-start > label > span { color: var(--text); font-size: 11px; font-weight: 650; }
-.industrial-agent-start textarea {
-  min-height: 94px;
-  padding: 10px 11px;
-  resize: vertical;
+/* 目标输入：复用对话页 ai-composer-box 外框，执行方式/模型/运行收进框内工具栏。 */
+.industrial-agent-objective textarea {
+  min-height: 64px;
+  max-height: 180px;
+  padding: 2px 4px;
+  resize: none;
   color: var(--text-strong);
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  border: 0;
   outline: none;
-  background: var(--surface-1);
+  background: transparent;
   font: inherit;
-  font-size: 11px;
-  line-height: 1.6;
+  font-size: 13px;
+  line-height: 1.55;
+  field-sizing: content;
 }
-.industrial-agent-start textarea:focus { border-color: var(--agent-accent); box-shadow: 0 0 0 2px var(--accent-soft); }
-.industrial-agent-start textarea::placeholder { color: var(--text-muted); }
+.industrial-agent-objective textarea::placeholder { color: var(--text-faint); }
+.ai-composer-send.is-labeled { display: inline-flex; width: auto; gap: 5px; padding: 0 11px; font-size: 12px; font-weight: 650; }
+.industrial-agent-risk-line { display: flex; align-items: flex-start; gap: 6px; margin: -2px 2px 0; color: var(--text-muted); font-size: 11px; line-height: 1.45; }
+.industrial-agent-risk-line > svg { flex: 0 0 auto; margin-top: 1px; color: var(--agent-accent); }
+.industrial-agent-risk-line.is-plan { color: var(--text); }
+.industrial-agent-discovery { justify-self: start; }
 
 .industrial-agent-examples { display: flex; flex-wrap: wrap; gap: 5px; }
 .industrial-agent-examples button {
@@ -175,7 +178,6 @@
 .industrial-agent-capabilities em.simulate { color: var(--agent-info); background: color-mix(in srgb, var(--agent-info) 10%, var(--surface-1)); }
 .industrial-agent-capabilities em.high { color: var(--agent-warning); background: color-mix(in srgb, var(--agent-warning) 10%, var(--surface-1)); }
 
-.industrial-agent-start-actions,
 .industrial-agent-run-actions,
 .industrial-agent-approval > div {
   display: flex;
@@ -183,8 +185,6 @@
   justify-content: space-between;
   gap: 8px;
 }
-.industrial-agent-start-actions > span { display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 11px; line-height: 1.4; }
-.industrial-agent-start-actions > span svg { flex: 0 0 auto; color: var(--agent-accent); }
 
 .industrial-agent-status {
   display: grid;
@@ -248,13 +248,19 @@
 .industrial-agent-history ol { display: grid; gap: 5px; margin: 0; padding: 8px; border-top: 1px solid var(--line); list-style: none; }
 .industrial-agent-history li { display: grid; align-items: start; gap: 7px; grid-template-columns: 18px minmax(0, 1fr); color: var(--text); font-size: 11px; line-height: 1.45; }
 .industrial-agent-history li b { display: grid; width: 18px; height: 18px; place-items: center; color: var(--agent-warning); border: 1px solid color-mix(in srgb, var(--agent-warning) 28%, var(--line)); border-radius: 50%; }
+
+/* H-autonomy 要素③：工具记录审批来源列表（策略签发 vs 人工确认在 UI 可见）。 */
+.industrial-agent-tool-audit { display: grid; gap: 5px; margin: 0; padding: 8px; border-top: 1px dashed var(--line); list-style: none; }
+.industrial-agent-tool-audit li { display: grid; align-items: center; gap: 7px; grid-template-columns: 18px minmax(0, 1fr) auto; color: var(--text); font-size: 11px; line-height: 1.45; }
+.industrial-agent-tool-audit li b { display: grid; width: 18px; height: 18px; place-items: center; color: var(--text-muted); border: 1px solid var(--line); border-radius: 50%; }
+.industrial-agent-tool-audit li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.industrial-agent-tool-audit li span small { color: var(--text-muted); }
+.industrial-agent-tool-audit li em { color: var(--text-muted); font-size: 10px; font-style: normal; text-align: right; }
 .industrial-agent-run-actions { justify-content: flex-end; flex-wrap: wrap; }
 
 .behavior-agent-workspace .industrial-agent-workspace { max-width: 780px; margin: 0 auto; }
 
 @media (max-width: 540px) {
-  .industrial-agent-start-actions { align-items: stretch; flex-direction: column; }
-  .industrial-agent-start-actions button { width: 100%; }
   .industrial-agent-capabilities li { grid-template-columns: minmax(0, 1fr); }
   .industrial-agent-capabilities em { justify-self: start; }
 }
@@ -269,3 +275,36 @@
 /* K14 面板常驻：运行视图内记忆/档案折叠行容器（折叠行本体样式复用 AiHarnessCards 的 ai-context-disclosure）。 */
 .industrial-agent-context { display: grid; gap: 8px; }
 .industrial-agent-context > .ai-context-disclosure { margin-bottom: 0; }
+
+/* H-C5-K13 历史运行折叠行（复用 ai-context-disclosure 本体，仅补充行内布局与语义色状态）。 */
+.industrial-agent-run-history-body { display: grid; gap: 6px; }
+.industrial-agent-run-history-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.industrial-agent-run-history-item { display: flex; align-items: center; gap: 7px; padding: 6px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); font-size: 11px; }
+.industrial-agent-run-history-item.stale { border-style: dashed; }
+.industrial-agent-run-history-state { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; font-size: 10px; font-weight: 600; white-space: nowrap; }
+.industrial-agent-run-history-state.tone-success { color: var(--agent-success); }
+.industrial-agent-run-history-state.tone-danger { color: var(--agent-danger); }
+.industrial-agent-run-history-state.tone-warning { color: var(--agent-warning); }
+.industrial-agent-run-history-state.tone-muted { color: var(--text-muted); }
+.industrial-agent-run-history-objective { flex: 1 1 auto; overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
+.industrial-agent-run-history-item code { flex: 0 0 auto; color: var(--text-muted); font: 10px/1.4 ui-monospace, Consolas, monospace; }
+.industrial-agent-run-history-item button { flex: 0 0 auto; padding: 3px 8px; }
+.industrial-agent-run-history-stale { flex: 0 0 auto; color: var(--agent-warning); font-size: 10px; font-style: normal; font-weight: 700; }
+.industrial-agent-run-history-archive-error { color: var(--text-muted); word-break: break-word; }
+
+/* H-C5-K11 恢复失败（danger）与跨项目（warning）显式提示：语义色+图标+文字三重编码。 */
+.industrial-agent-recovery-failure,
+.industrial-agent-cross-project { display: flex; align-items: flex-start; gap: 7px; padding: 9px; border-radius: 7px; font-size: 11px; line-height: 1.45; }
+.industrial-agent-recovery-failure { color: var(--agent-danger); border: 1px solid color-mix(in srgb, var(--agent-danger) 35%, var(--line)); background: color-mix(in srgb, var(--agent-danger) 10%, var(--surface-1)); }
+.industrial-agent-cross-project { color: var(--agent-warning); border: 1px solid color-mix(in srgb, var(--agent-warning) 35%, var(--line)); background: color-mix(in srgb, var(--agent-warning) 10%, var(--surface-1)); }
+.industrial-agent-recovery-failure svg,
+.industrial-agent-cross-project svg { flex: 0 0 auto; }
+.industrial-agent-recovery-failure > span,
+.industrial-agent-cross-project > span { flex: 1 1 auto; display: grid; gap: 3px; }
+.industrial-agent-recovery-failure strong,
+.industrial-agent-cross-project strong { font-size: 11px; }
+.industrial-agent-recovery-failure small,
+.industrial-agent-cross-project small { color: var(--text-muted); }
+.industrial-agent-recovery-actions { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 5px; }
+.industrial-agent-recovery-failure button,
+.industrial-agent-cross-project button { flex: 0 0 auto; padding: 3px 8px; }

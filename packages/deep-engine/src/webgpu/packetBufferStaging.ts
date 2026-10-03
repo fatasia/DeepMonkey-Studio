@@ -12,6 +12,8 @@ import {
   materialBindingMatches,
   type MaterialBinding,
 } from "./materialBindings.js";
+import { admitPacketVertexStreaming } from "./packetVertexStreaming.js";
+import { captureVertexStreamBaseline, type MeshVertexUpdate } from "./meshVertexStream.js";
 import { MeshBuffers, uploadBuffer } from "./meshBuffers.js";
 import type { CachedPacketBatch, CachedPacketGeometry } from "./packetBufferTypes.js";
 import { packPreviousTransforms } from "./packetInstanceHistory.js";
@@ -26,6 +28,7 @@ import { authorLodMetadataChanged } from "./authorLodMetadata.js";
 import { PACKET_MESHLET_STAGE_BYTES } from "./packetMeshletSource.js";
 
 export interface StagedPacketBuffers {
+  readonly vertexUpdates: MeshVertexUpdate[];
   readonly deformation?: PacketDeformationResources;
   readonly deformationSnapshot?: DeformationSnapshot;
   readonly deformationBoundsProfiles?: ReadonlyMap<string, DeformationBoundsProfile>;
@@ -40,6 +43,7 @@ export interface StagedPacketBuffers {
 }
 
 export interface PacketBufferStagingContext {
+  readonly vertexStreamingGeometry?: string;
   readonly meshletsEnabled?: boolean;
   /** P0-2 opt-in：author 几何同时构建可见性无共享布局（默认关，零额外显存）。 */
   readonly meshletVisibility?: boolean;
@@ -62,10 +66,12 @@ export function stagePacketBuffers(
   omitTextureStorage?: ReadonlySet<string>,
 ): StagedPacketBuffers {
   assertPacketDeformationSupported(prepared, context?.deformationEnabled === true);
+  admitPacketVertexStreaming(context, prepared);
   if (prepared.deformation) assertSnapshotRevisions(prepared.deformation, context.deformationSnapshot);
   const geometries = new Map<string, CachedPacketGeometry>();
   const batches = new Map<string, CachedPacketBatch>();
   const createdMeshes: MeshBuffers[] = [];
+  const vertexUpdates: MeshVertexUpdate[] = [];
   const createdBuffers: GPUBuffer[] = [];
   const acquiredMaterials: MaterialBinding[] = [];
   const textures = context.textures.stagePrepared(prepared.textures, omitTextureStorage);
@@ -78,11 +84,11 @@ export function stagePacketBuffers(
       deformation = new PacketDeformationResources(context.session, context.deformationStaticSources);
       deformation.prepare(prepared.deformation, new Map([...prepared.geometries].map(([id, geometry]) => [id, geometry.revision])));
     }
-    stageGeometries(context, prepared, geometries, createdMeshes);
+    stageGeometries(context, prepared, geometries, createdMeshes, vertexUpdates);
     stageBatches(context, { ...prepared, batches: preparedBatches }, textures, batches, createdBuffers, acquiredMaterials,
       stagedBinding);
   } catch (error) {
-    try { releaseStage(context, createdMeshes, createdBuffers, acquiredMaterials, textures, deformation); }
+    try { releaseStage(context, createdMeshes, createdBuffers, acquiredMaterials, textures, deformation, vertexUpdates); }
     catch (cleanupError) {
       throw new AggregateError([error, cleanupError], "Packet buffer staging failed.");
     }
@@ -90,6 +96,7 @@ export function stagePacketBuffers(
   }
   return {
     ...(deformation ? { deformation, deformationSnapshot: prepared.deformation!, deformationBoundsProfiles } : {}),
+    vertexUpdates,
     geometries,
     batches,
     createdMeshes,
@@ -97,7 +104,7 @@ export function stagePacketBuffers(
     acquiredMaterials,
     textures,
     settled: false,
-    changed: deformation !== undefined || textures.changed || createdMeshes.length > 0 || createdBuffers.length > 0
+    changed: vertexUpdates.some(update=>update.bounds.revision!==context.geometries.get(update.geometry.id)?.source.revision) || deformation !== undefined || textures.changed || createdMeshes.length > 0 || createdBuffers.length > 0
       || acquiredMaterials.length > 0 || context.batches.size !== batches.size
       || context.geometries.size !== geometries.size || [...batches].some(([key, batch]) => batch !== context.batches.get(key)),
   };
@@ -110,7 +117,7 @@ export function discardPacketBufferStage(
   if (staged.settled) return;
   staged.settled = true;
   releaseStage(context, staged.createdMeshes, staged.createdBuffers,
-    staged.acquiredMaterials, staged.textures, staged.deformation);
+    staged.acquiredMaterials, staged.textures, staged.deformation, staged.vertexUpdates);
 }
 
 function stageGeometries(
@@ -118,6 +125,7 @@ function stageGeometries(
   prepared: PreparedPacket,
   target: Map<string, CachedPacketGeometry>,
   created: MeshBuffers[],
+  updates: MeshVertexUpdate[],
 ): void {
   const meshletBudget: { remainingBytes: number; visibility?: boolean } = { remainingBytes: PACKET_MESHLET_STAGE_BYTES };
   if (context.meshletVisibility) meshletBudget.visibility = true;
@@ -128,6 +136,14 @@ function stageGeometries(
   const authorGeometries = new Set(prepared.batches.flatMap(batch => batch.lod?.strategy === "author-selected" ? batch.lod.levels.map(level => level.geometry) : []));
   for (const [id, source] of prepared.geometries) {
     const previous = context.geometries.get(id);
+    if (previous && id === context.vertexStreamingGeometry) {
+      const lease = previous.mesh.stageVertexUpdate(source);
+      updates.push(lease);
+      target.set(id, source.revision===previous.source.revision ? previous : {
+        source: {...previous.source,revision:lease.geometry.revision,vertices:lease.geometry.vertices},
+        mesh: previous.mesh, center:lease.bounds.center, radius:lease.bounds.radius });
+      continue;
+    }
     if (previous && source.revision < previous.source.revision) {
       throw new Error(`Stale geometry revision: ${id}`);
     }
@@ -139,9 +155,11 @@ function stageGeometries(
       continue;
     }
     validateGeometrySize(context.session, source);
-    const mesh = new MeshBuffers(context.session, source, context.meshletsEnabled && authorGeometries.has(id) ? meshletBudget : undefined);
+    const owned = id===context.vertexStreamingGeometry ? captureVertexStreamBaseline(source) : source;
+    const mesh = new MeshBuffers(context.session, owned, context.meshletsEnabled && authorGeometries.has(id) ? meshletBudget : undefined,
+      id===context.vertexStreamingGeometry ? {vertexStreaming:true} : undefined);
     created.push(mesh);
-    target.set(id, { source, mesh, ...geometryBounds(source) });
+    target.set(id, { source:owned, mesh, ...geometryBounds(owned) });
   }
 }
 
@@ -160,7 +178,7 @@ function stageBatches(
     const lookup = (id: string) => stagedBinding?.(textures, id) ?? context.textures.stagedBinding(textures, id);
     const sameMaterial = materialBindingMatches(previous?.material, source.textures, lookup);
     if (previous && equal(previous.source.data, source.data) && sameMaterial) {
-      target.set(source.key, metadataChanged ? { ...previous, source } : previous);
+      target.set(source.key, metadataChanged || (source.geometry===context.vertexStreamingGeometry && !equalOptionalCenter(source.sortCenter,previous.source.sortCenter)) ? { ...previous, source } : previous);
       continue;
     }
     const material = sameMaterial
@@ -237,8 +255,10 @@ function releaseStage(
   materials: readonly MaterialBinding[],
   textures: StagedTextureSet,
   deformation?: PacketDeformationResources,
+  updates: readonly MeshVertexUpdate[] = [],
 ): void {
   runResourceCleanup("Packet buffer stage rollback failed.", [
+    ...updates.map(update => () => update.discard()),
     () => deformation?.dispose(),
     ...meshes.map(mesh => () => mesh.dispose()),
     ...buffers.map(buffer => () => context.session.release(buffer)),
@@ -255,4 +275,8 @@ function equalOptional(
   b: Float32Array<ArrayBuffer> | undefined,
 ): boolean {
   return a === undefined ? b === undefined : b !== undefined && equal(a, b);
+}
+
+function equalOptionalCenter(a: readonly number[]|undefined,b: readonly number[]|undefined):boolean {
+  return a===undefined ? b===undefined : b!==undefined && a.length===b.length && a.every((x,i)=>Object.is(x,b[i]));
 }

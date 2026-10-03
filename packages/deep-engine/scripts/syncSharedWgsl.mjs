@@ -20,6 +20,18 @@ const wgslRoot = resolve(packageRoot, "wgsl");
 
 /** 单源登记表:真源 .wgsl → 生成目标。 */
 const SHARED_WGSL = [
+  { source: "materialMetalReflection.wgsl",
+    module: resolve(packageRoot, "src/shader/materialMetalReflectionWgsl.ts"),
+    gate: "src/shader/materialMetalReflectionWgslChecksum.test.ts",
+    rustHalf: "deep-engine-native/src/native_mesh_wgsl.rs", constants: "",
+    preamble: `export const MATERIAL_METAL_REFLECTION_WGSL = /* wgsl */ `,
+  },
+  { source: "materialEvaluateCore.wgsl",
+    module: resolve(packageRoot, "src/shader/materialEvaluateCoreWgsl.ts"),
+    gate: "src/shader/materialEvaluateCoreWgslChecksum.test.ts",
+    rustHalf: "deep-engine-native/src/lighting_math_wgsl.rs", constants: "",
+    preamble: `export const EXTENDED_MATERIAL_CORE_WGSL = /* wgsl */ `,
+  },
   {
     source: "probeClipmapSampling.wgsl",
     module: resolve(packageRoot, "src/lighting/probeClipmapSamplingWgsl.ts"),
@@ -128,8 +140,12 @@ export const CLOTH_PARALLEL_SOLVER_WORKGROUP_SIZE = 64;
 export const CLOTH_PARALLEL_PARTICLE_STRIDE_BYTES = 48;
 /** 约束存储步长:a, b, restLength, pad(按色桶排序)。 */
 export const CLOTH_PARALLEL_CONSTRAINT_STRIDE_BYTES = 16;
-/** 全局参数 uniform 步长(counts×4 + dt/compliance/damping/pad + gravity)。 */
-export const CLOTH_PARALLEL_PARAMS_BYTES = 48;
+/** 全局参数 uniform 步长(counts×4 + dt/compliance/damping/windEnabled + gravity +
+ * windDirection + windSeed/baseSpeed/gustFreq/spatialScale/tickSeconds + obstacleCount/pad×2;
+ * F6/T18 风+障碍扩展后 struct 尾对齐 96B。Chrome auto layout 按 struct 全长取
+ * minBindingSize,宿主分配必须同步——48B 旧值让 bind group/命令缓冲在 Submit 处
+ * 被整体静默丢弃,无异常只有 uncapturederror)。 */
+export const CLOTH_PARALLEL_PARAMS_BYTES = 96;
 /** 每色 dispatch uniform 步长(rangeStart/rangeEnd/pad×2)。 */
 export const CLOTH_PARALLEL_STEP_RANGE_BYTES = 16;
 /** compute 入口名(测试与探针按名取 entry point)。 */

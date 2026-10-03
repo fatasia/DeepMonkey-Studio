@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildTlas, invertAffine3x4, traceTlasClosest, type TlasInstanceDescriptor } from "./tlas.js";
 import { buildTracedScene, traceClosest, type TraceQuery } from "./rayTrace.js";
 import type { RayBlasDescriptor } from "./rayBackendTypes.js";
+import { packTlasScene } from "./tlasLayout.js";
 
 function unitBlas(id: string, offsetX = 0, offsetY = 0): RayBlasDescriptor {
   const vertices = new Float32Array([
@@ -14,6 +15,43 @@ function unitBlas(id: string, offsetX = 0, offsetY = 0): RayBlasDescriptor {
 const IDENTITY: TlasInstanceDescriptor["worldToLocal"] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
 
 describe("tlas instance layer", () => {
+  it("preserves original instance indices when empty BLAS precede and split participating instances", () => {
+    const empty = { id: "empty", vertices: new Float32Array(0), indices: new Uint32Array(0) };
+    const tlas = buildTlas([
+      { id: "empty-first", blas: empty, worldToLocal: IDENTITY, mask: 1 },
+      { id: "near", blas: unitBlas("shared"), worldToLocal: IDENTITY, mask: 1 },
+      { id: "empty-middle", blas: empty, worldToLocal: IDENTITY, mask: 1 },
+      { id: "far", blas: unitBlas("far"), worldToLocal: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 5], mask: 1 },
+    ]);
+    expect([...tlas.built.order].sort()).toEqual([1, 3]);
+    expect(traceTlasClosest(tlas, { ox: 0, oy: 0, oz: 5, dx: 0, dy: 0, dz: -1, tMax: 20 }))
+      .toMatchObject({ instanceId: "near", t: 5 });
+    expect(traceTlasClosest(tlas, { ox: 0, oy: 0, oz: -1, dx: 0, dy: 0, dz: -1, tMax: 20 }))
+      .toMatchObject({ instanceId: "far", t: 4 });
+    const packed = packTlasScene(tlas);
+    expect(packed.instanceCount).toBe(2);
+    expect(packed.placements.map(p => p.instanceIndex).sort()).toEqual([1, 3]);
+  });
+
+  it("accepts a snapshot-owned prepared BLAS resolver without rebuilding on every ray", () => {
+    const blas = unitBlas("shared");
+    const tlas = buildTlas([
+      { id: "left", blas, worldToLocal: IDENTITY, mask: 1 },
+      { id: "right", blas, worldToLocal: [1, 0, 0, -5, 0, 1, 0, 0, 0, 0, 1, 0], mask: 1 },
+    ]);
+    const cache = new Map<RayBlasDescriptor, ReturnType<typeof buildTracedScene>>();
+    let builds = 0;
+    const resolve = (descriptor: RayBlasDescriptor) => {
+      let scene = cache.get(descriptor);
+      if (!scene) { builds++; scene = buildTracedScene(descriptor); cache.set(descriptor, scene); }
+      return scene;
+    };
+    for (let ray = 0; ray < 32; ray++) {
+      expect(traceTlasClosest(tlas, { ox: 0, oy: 0, oz: 5, dx: 0, dy: 0, dz: -1, tMax: 20 }, 1, resolve))
+        .toMatchObject({ instanceId: "left", t: 5 });
+    }
+    expect(builds).toBe(1); expect(cache.size).toBe(1);
+  });
   it("hits the nearest instance across two translated quads", () => {
     const tlas = buildTlas([
       { id: "near", blas: unitBlas("near"), worldToLocal: IDENTITY, mask: 1 },

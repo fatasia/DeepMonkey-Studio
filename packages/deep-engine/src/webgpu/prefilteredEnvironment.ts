@@ -8,18 +8,21 @@ import type { StudioEnvironment } from "./studioEnvironment.js";
 import { gpuValidatedStage } from "./gpuValidatedStage.js";
 import { abortableGpu, gpuAbortReason } from "./gpuAbort.js";
 import { failWithResourceCleanup, runResourceCleanup } from "./resourceCleanup.js";
+import { environmentMipSelection } from "./environmentMipSelection.js";
 
 /** Uploads validated offline IBL bytes directly; does not re-filter or decode source HDR files. */
 export async function createPrefilteredEnvironment(session: DeviceSession, input: RuntimePrefilteredIbl,
-  signal: AbortSignal): Promise<StudioEnvironment> {
+  signal: AbortSignal, keptMips?: number): Promise<StudioEnvironment> {
   const cancelled = () => { if (signal.aborted) throw gpuAbortReason(signal, "IBL upload cancelled."); };
   cancelled();
   const source = snapshotJson(input) as unknown as RuntimePrefilteredIbl;
   validateRuntimePrefilteredIbl(source, source.id, source.revision);
+  const selection = environmentMipSelection(source.specular.mips.length, keptMips);
+  const specularMips = source.specular.mips.slice(selection.droppedMips);
   cancelled();
   if (session.state !== "ready") throw Error("GPU session is not ready for IBL upload.");
   const device = session.device, owned: GPUTexture[] = [];
-  for (const size of [source.specular.mips[0]!.size, source.diffuse.mips[0]!.size, source.brdfLut.width]) {
+  for (const size of [specularMips[0]!.size, source.diffuse.mips[0]!.size, source.brdfLut.width]) {
     if (size > device.limits.maxTextureDimension2D) throw Error("IBL exceeds device texture dimension limit.");
   }
   const create = (label: string, size: number, layers: number, mipLevelCount: number) => {
@@ -42,14 +45,15 @@ export async function createPrefilteredEnvironment(session: DeviceSession, input
   };
   try {
     const stage = gpuValidatedStage(device, () => {
-      const specular = create("Deep imported specular IBL", source.specular.mips[0]!.size, 6, source.specular.mips.length);
+      const specular = create("Deep imported specular IBL", specularMips[0]!.size, 6, selection.keptMips);
       const diffuse = create("Deep imported diffuse IBL", source.diffuse.mips[0]!.size, 6, 1);
       const brdf = create("Deep imported BRDF LUT", source.brdfLut.width, 1, 1);
-      source.specular.mips.forEach((mip, level) => upload(specular, mip, level, 6));
+      specularMips.forEach((mip, level) => upload(specular, mip, level, 6));
       upload(diffuse, source.diffuse.mips[0]!, 0, 6);
       upload(brdf, { size: source.brdfLut.width, dataBase64: source.brdfLut.dataBase64 }, 0, 1);
       return Object.freeze({ specular: specular.createView({ dimension: "cube" }), diffuse: diffuse.createView({ dimension: "cube" }),
-        brdf: brdf.createView(), sampler: device.createSampler({ minFilter: "linear", magFilter: "linear", mipmapFilter: "linear" }), dispose });
+        brdf: brdf.createView(), specularMipSelection: selection,
+        sampler: device.createSampler({ minFilter: "linear", magFilter: "linear", mipmapFilter: "linear" }), dispose });
     }, "Prefiltered IBL GPU validation failed");
     await abortableGpu(Promise.all([stage.checked, Promise.resolve().then(() => device.queue.onSubmittedWorkDone())]), signal, "IBL upload cancelled.");
     cancelled();

@@ -93,6 +93,9 @@ export function useSceneHistoryState({ activeScene, routeView, sceneBehaviorActi
   const sceneHistoryRecordRef = useRef<(label: string) => void>(() => undefined);
   const sceneEditTransactionRef = useRef<SceneEditTransaction | undefined>(undefined);
   const [sceneHistoryRevision, setSceneHistoryRevision] = useState(0);
+  // S2b：Play 会话内被门禁吸收的记账次数（防抖散记 + 离散命令）＝播放中临时修改的
+  // 可呈现计数。会话开始由 App 显式清零，退出时读取后写入丢弃汇报；不影响任何记账裁决。
+  const playAbsorbedEditsRef = useRef(0);
 
   useEffect(() => sceneHistoryRef.current.subscribe(() => setSceneHistoryRevision((value) => value + 1)), []);
 
@@ -118,7 +121,7 @@ export function useSceneHistoryState({ activeScene, routeView, sceneBehaviorActi
     if (pending) window.clearTimeout(pending.timer);
     sceneHistoryTimerRef.current = undefined;
     // T30：Play 态的一切记账吸收（含待落的防抖编辑），播放产物不进撤销栈。
-    if (playModeActive) return;
+    if (playModeActive || sceneHistoryApplyingRef.current) return;
     // T27：事务窗口内的散记全部吸收，由 commit 统一落一条。
     if (sceneEditTransactionRef.current) return;
     const snapshot = sceneSnapshotFactoryRef.current?.();
@@ -126,7 +129,12 @@ export function useSceneHistoryState({ activeScene, routeView, sceneBehaviorActi
   }
 
   function scheduleSceneHistoryEdit(label: string): void {
-    if (routeView !== "studio" || sceneHistoryApplyingRef.current || sceneBehaviorActive || animationPlaying || playModeActive) return;
+    if (routeView !== "studio" || sceneHistoryApplyingRef.current || sceneBehaviorActive || animationPlaying) return;
+    // S2b：Play 门禁吸收的防抖散记计入临时修改计数（记账裁决不变）。
+    if (playModeActive) {
+      playAbsorbedEditsRef.current += 1;
+      return;
+    }
     const pending = sceneHistoryTimerRef.current;
     if (pending) window.clearTimeout(pending.timer);
     sceneHistoryTimerRef.current = undefined;
@@ -140,7 +148,16 @@ export function useSceneHistoryState({ activeScene, routeView, sceneBehaviorActi
 
   function runSceneHistoryEdit(change: () => void): void {
     // T30：Play 态下离散命令照常生效于画布（临时态），只是不产生撤销条目。
-    if (routeView !== "studio" || sceneHistoryApplyingRef.current || sceneBehaviorActive || animationPlaying || playModeActive) { change(); return; }
+    if (routeView !== "studio" || sceneHistoryApplyingRef.current || sceneBehaviorActive || animationPlaying) {
+      change();
+      return;
+    }
+    // S2b：Play 门禁吸收的离散命令计入临时修改计数（记账裁决不变）。
+    if (playModeActive) {
+      playAbsorbedEditsRef.current += 1;
+      change();
+      return;
+    }
     runSceneHistoryTransaction(change, flushSceneHistoryEdit, flushSync);
   }
 
@@ -173,6 +190,7 @@ export function useSceneHistoryState({ activeScene, routeView, sceneBehaviorActi
     sceneSnapshotFactoryRef,
     sceneHistoryApplyingRef,
     sceneHistoryRecordRef,
+    playAbsorbedEditsRef,
     sceneEditTransactionRef,
     sceneHistoryRevision,
     flushSceneHistoryEdit: sceneEditFlush,

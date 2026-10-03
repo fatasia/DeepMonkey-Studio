@@ -11,8 +11,8 @@ import { hash, aggregateLayerMatrix } from "./lib/j3DFullLayerMatrix.mjs";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const require = createRequire(import.meta.url);
 const flags = new Set(process.argv.slice(2));
-if (flags.size > 1 || [...flags].some(flag => !["--prepare", "--compare"].includes(flag)))
-  throw Error("Choose default (plan), --prepare or --compare; GPU execution belongs to the main thread runners");
+if (flags.size > 1 || [...flags].some(flag => !["--prepare", "--compare", "--verify-fresh"].includes(flag)))
+  throw Error("Choose default (plan), --prepare, --compare or --verify-fresh; GPU execution belongs to the main thread runners");
 const out = path.join(root, "test-output/interrupted-0930/j3-d-full-layer-matrix");
 await mkdir(out, { recursive: true });
 const { build } = require("../packages/deep-engine/node_modules/esbuild");
@@ -25,6 +25,7 @@ const layers = catalog.J3_D_FULL_LAYERS;
 const fixtureText = new Map(await Promise.all(layers.filter(layer => layer.fixtureFile).map(async layer =>
   [layer.id, await readFile(path.join(root, layer.fixtureFile), "utf8")])));
 const fixtureData = new Map([...fixtureText].map(([id, text]) => [id, JSON.parse(text)]));
+fixtureData.set("texture-coverage", { ...fixtureData.get("texture-coverage"), cameras: fixtureData.get("normal").cameras });
 const identityOf = layer => {
   if (!layer.fixtureFile) return undefined;
   const text = fixtureText.get(layer.id);
@@ -35,10 +36,22 @@ const cellsOf = layer => catalog.expandSceneCells(layer, fixtureData.get(layer.i
   ?? { cameras: [], cases: [], profiles: [], nativeOnly: [], colors: [] });
 const evidencePath = layer => path.join(root, layer.evidenceDir, "evidence.json");
 const loadEvidence = async layer => JSON.parse(await readFile(evidencePath(layer), "utf8"));
+const sourceHashes = new Map();
+const sourcesOf = async (_layer, evidence) => {
+  const sources = evidence.sourceIdentity?.sources ?? evidence.sourceIdentity;
+  if (!sources) return undefined;
+  return Object.fromEntries(await Promise.all(Object.keys(sources).map(async file => {
+    const target = path.resolve(root, file);
+    if (!target.startsWith(path.resolve(root) + path.sep)) throw Error(`Source outside repository: ${file}`);
+    if (!sourceHashes.has(file)) sourceHashes.set(file, readFile(target).then(hash, () => null));
+    return [file, await sourceHashes.get(file)];
+  })));
+};
 const { validateLayerEvidence } = await import("./lib/j3DFullLayerMatrix.mjs");
 
 /** 主线程 GPU 命令清单(顺序即建议执行序;全部命令已验收、root 串行、禁止 --compare/--web-only 替代 strict)。 */
 const GPU_COMMANDS = [
+  { layers: ["texture-coverage"], command: "node scripts/j3-texture-coverage-parity.mjs" },
   { layers: ["geometry-coverage", "main-depth"], command: "node scripts/j3-geometry-depth-parity.mjs" },
   { layers: ["hdr-color"], command: "node scripts/j3-geometry-depth-parity.mjs --hdr" },
   { layers: ["normal", "shadow-visibility"], command: "node scripts/j3-shadow-visibility-parity.mjs" },
@@ -58,11 +71,12 @@ if (flags.has("--prepare")) {
       try {
         const evidence = JSON.parse(await readFile(file, "utf8"));
         try {
-          validateLayerEvidence(layer, evidence, { expectedIdentity: identityOf(layer), freshRequired: false });
-          status = evidence.currentRun === true ? "fresh" : "historical-retained";
+          const expectedSources = await sourcesOf(layer, evidence);
+          validateLayerEvidence(layer, evidence, { expectedIdentity: identityOf(layer), expectedSources, freshRequired: false });
+          status = evidence.currentRun === true && expectedSources ? "fresh-source-verified" : "historical-retained";
           detail = `scope ok, currentRun=${evidence.currentRun}`;
         } catch (error) {
-          status = String(error.message).startsWith("stale evidence") || String(error.message).includes("wrong-layer")
+          status = String(error.message).startsWith("stale ") || String(error.message).includes("wrong-layer")
             || String(error.message).includes("identity") ? "invalidated-stale-input" : "invalidated-unreadable";
           detail = String(error.message);
           await rm(file, { force: true });
@@ -76,11 +90,16 @@ if (flags.has("--prepare")) {
   const payload = { schema: catalog.J3_D_FULL_SCHEMA, preparedAt: new Date().toISOString(), report };
   await writeFile(path.join(out, "prepare-report.json"), `${JSON.stringify(payload, null, 2)}\n`);
   console.log(JSON.stringify(report, null, 2));
-} else if (flags.has("--compare")) {
-  const evidence = await aggregateLayerMatrix({ layers, loadEvidence, identityOf, cellsOf, compare: true });
+} else if (flags.has("--compare") || flags.has("--verify-fresh")) {
+  // A failed audit must not leave the preceding successful aggregate visible.
+  await rm(path.join(out, "evidence.json"), { force: true });
+  const fresh = flags.has("--verify-fresh");
+  const joined = await aggregateLayerMatrix({ layers, loadEvidence, identityOf, sourcesOf, cellsOf, compare: !fresh });
+  const evidence = { ...joined, currentRun: false, freshnessVerified: fresh,
+    execution: fresh ? "current production source verified against fresh producer receipts; aggregation executes no host" : joined.execution };
   await writeFile(path.join(out, "evidence.json"), `${JSON.stringify(evidence, null, 2)}\n`);
   console.log(JSON.stringify({ passed: evidence.passed, currentRun: evidence.currentRun,
-    gridRows: evidence.grid.length, freshnessNotes: evidence.freshnessNotes }, null, 2));
+    freshnessVerified: evidence.freshnessVerified, gridRows: evidence.grid.length, freshnessNotes: evidence.freshnessNotes }, null, 2));
 } else {
   const plan = { schema: catalog.J3_D_FULL_SCHEMA, mode: "cpu-plan-only; GPU deferred to main thread",
     gates: catalog.J3_D_FULL_GATES,

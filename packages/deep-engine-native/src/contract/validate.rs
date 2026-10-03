@@ -5,6 +5,7 @@ use super::{
     lod::validate_lod,
     uv_sets::MaterialFeatures,
     validate_geometry::{norm, validate_geometries, validate_material_geometry},
+    validate_layered_params::validate_layered_params,
     validate_texture,
 };
 
@@ -76,6 +77,7 @@ pub fn validate_packet(packet: &RenderPacket) -> Result<ContractSummary, String>
         }
         if let Some(layered) = &material.layered {
             validate_layered_material(material.id.as_str(), layered)?;
+            validate_layered_params(material.id.as_str(), material.ior, layered)?;
         }
         material_features.insert(
             material.id.as_str(),
@@ -150,10 +152,7 @@ fn validate_layered_material(material: &str, layered: &LayeredMaterial) -> Resul
         ));
     }
     for (index, layer) in layered.layers.iter().enumerate() {
-        if layer
-            .coverage
-            .is_some_and(|value| !unit(value))
-        {
+        if layer.coverage.is_some_and(|value| !unit(value)) {
             return Err(format!(
                 "material {material} layer {index} coverage must be in 0..1"
             ));

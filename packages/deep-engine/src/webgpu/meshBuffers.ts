@@ -5,6 +5,9 @@ import type { GeometryResource } from "../renderPacket.js";
 import { PacketMeshletSource, type PacketMeshletBudget } from "./packetMeshletSource.js";
 import type { PacketLodDraw } from "./packetLodTypes.js";
 import { failWithResourceCleanup } from "./resourceCleanup.js";
+import { MeshVertexStream, captureVertexStreamBaseline, type MeshVertexUpdate } from "./meshVertexStream.js";
+
+export interface MeshBufferOptions { readonly vertexStreaming?: boolean }
 
 export function uploadBuffer(session: DeviceSession, label: string, data: Float32Array<ArrayBuffer> | Uint32Array<ArrayBuffer>, usage: GPUBufferUsageFlags): GPUBuffer {
   const buffer = createAdmittedBuffer(session, { label, size: Math.max(4, data.byteLength), usage: usage | GPUBufferUsage.COPY_DST });
@@ -14,7 +17,10 @@ export function uploadBuffer(session: DeviceSession, label: string, data: Float3
 }
 
 export class MeshBuffers {
-  readonly vertices: GPUBuffer;
+  private readonly originalVertices: GPUBuffer;
+  private vertexStream: MeshVertexStream | undefined;
+  private disposed = false;
+  get vertices(): GPUBuffer { return this.vertexStream?.vertices ?? this.originalVertices; }
   readonly tangents: GPUBuffer | undefined;
   /** 线性 RGBA 顶点色；独立流，旧无颜色几何没有该 buffer，顶点流布局保持 40B 不变。 */
   readonly colors: GPUBuffer | undefined;
@@ -23,13 +29,18 @@ export class MeshBuffers {
   readonly meshletSource: PacketMeshletSource | undefined;
   readonly meshletFallback: string | undefined;
 
-  constructor(private readonly session: DeviceSession, mesh: MeshData | GeometryResource, meshletBudget?: PacketMeshletBudget) {
-    this.vertices = uploadBuffer(session, "Deep vertices", interleaveUvSets(mesh), GPUBufferUsage.VERTEX);
+  constructor(private readonly session: DeviceSession, mesh: MeshData | GeometryResource,
+    meshletBudget?: PacketMeshletBudget, options?: MeshBufferOptions) {
+    if(options?.vertexStreaming && (!("id" in mesh) || meshletBudget)) {
+      throw Error("Mesh vertex streaming requires a constructor-admitted non-meshlet GeometryResource.");
+    }
+    const baseline=options?.vertexStreaming ? captureVertexStreamBaseline(mesh as GeometryResource) : undefined;
+    this.originalVertices = uploadBuffer(session, "Deep vertices", interleaveUvSets(baseline ?? mesh), GPUBufferUsage.VERTEX);
     let tangents: GPUBuffer | undefined, colors: GPUBuffer | undefined;
     try {
       if ("tangents" in mesh && mesh.tangents) tangents = uploadBuffer(session, "Deep tangents", mesh.tangents, GPUBufferUsage.VERTEX);
-      if ("colors" in mesh && mesh.colors) colors = uploadBuffer(session, "Deep colors", mesh.colors, GPUBufferUsage.VERTEX);
-      this.indices = uploadBuffer(session, "Deep indices", mesh.indices, GPUBufferUsage.INDEX);
+      if ("colors" in mesh && mesh.colors) colors = uploadBuffer(session, "Deep colors", baseline?.colors ?? mesh.colors, GPUBufferUsage.VERTEX);
+      this.indices = uploadBuffer(session, "Deep indices", baseline?.indices ?? mesh.indices, GPUBufferUsage.INDEX);
     } catch (error) {
       const allocated = [tangents, colors].filter(Boolean) as GPUBuffer[];
       for (const buffer of allocated) session.release(buffer);
@@ -41,17 +52,30 @@ export class MeshBuffers {
       const prepared = meshletBudget && "id" in mesh ? PacketMeshletSource.prepare(session, mesh, meshletBudget) : undefined;
       this.meshletSource = prepared?.source; this.meshletFallback = prepared?.fallback;
     } catch (error) { failWithResourceCleanup(error, "Mesh buffer preparation failed.", [() => this.dispose()]); }
+    if(baseline) this.vertexStream=new MeshVertexStream(this.session,baseline,this.originalVertices,
+      interleaveUvSets,data=>uploadBuffer(this.session,"Deep stream vertices",data,GPUBufferUsage.VERTEX));
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     const failures: unknown[] = [];
+    try { this.vertexStream?.dispose(); } catch (error) { failures.push(error); }
     try { this.meshletSource?.dispose(); } catch (error) { failures.push(error); }
-    for (const buffer of [this.vertices, this.tangents, this.colors, this.indices]) {
+    for (const buffer of [this.originalVertices, this.tangents, this.colors, this.indices]) {
       if (!buffer) continue;
       try { this.session.release(buffer); }
       catch (error) { failures.push(error); }
     }
     if (failures.length) throw new AggregateError(failures, "Mesh buffer disposal failed.");
+  }
+
+  /** Resource layer only; the packet owner must commit its corresponding bounds/revision. */
+  stageVertexUpdate(source: GeometryResource): MeshVertexUpdate {
+    if (this.disposed || !this.vertexStream) {
+      throw Error("Mesh vertex streaming requires a live constructor opt-in.");
+    }
+    return this.vertexStream.stage(source);
   }
 
   /** 颜色流绑定 slot4：现行 pipeline 未声明该 slot 的属性输入（shader 消费在颜色变体切片接入），

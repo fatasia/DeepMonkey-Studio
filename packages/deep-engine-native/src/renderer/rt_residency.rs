@@ -352,9 +352,8 @@ impl RtSceneResidency {
 /// 3. 场景无 custom shader 批次(custom 只能绑普通 frame layout,整帧
 ///    必须走普通绑定);
 /// 4. RT pixel 管线族创建成功(error scope 捕获到错误时为 None)。
-/// 5. I-C23:场景无分层材质。分层 RT 消费(framennt_main_rt_layered)留给
-///    后继;含分层材质的场景整帧回退栅格(fail-closed,与 custom shader
-///    批次同语义,不静默丢层)。
+/// 5. A layered scene requires the additional RT layered pipeline family;
+///    missing capability or an ordinary-only migrated family falls back to raster.
 pub(crate) fn rt_opaque_ready<'a, B>(
     residency: Option<&'a RtSceneResidency>,
     rt_frame_bound: Option<&'a B>,
@@ -362,10 +361,13 @@ pub(crate) fn rt_opaque_ready<'a, B>(
     has_layered_materials: bool,
 ) -> Option<(&'a crate::pipeline::RtMeshPipelines, &'a B)> {
     let residency = residency?;
-    if has_custom_shader || has_layered_materials {
+    if has_custom_shader {
         return None;
     }
     let pipelines = residency.pixel_pipelines()?;
+    if has_layered_materials && !pipelines.supports_layered() {
+        return None;
+    }
     let bind_group = rt_frame_bound?;
     Some((pipelines, bind_group))
 }

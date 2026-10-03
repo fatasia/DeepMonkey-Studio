@@ -11,6 +11,23 @@ export type AgentRunStatus =
 export type AgentToolEffect = "read" | "analyze" | "simulate" | "write" | "control";
 export type AgentToolRisk = "low" | "medium" | "high" | "critical";
 
+/**
+ * H-autonomy 执行模式：confirm=高风险工具逐条审批（现行默认）；
+ * autonomous=授权范围内自主执行（策略签发审批直接执行，审计与取消不变）。
+ * 本包不依赖 contracts；API 层负责与 contracts AgentExecutionMode 的同字面量映射。
+ */
+export type AgentExecutionMode = "confirm" | "autonomous";
+
+/** H-autonomy 工具发现面：curated=工业策划清单（默认，现状）；general=注册表全量按授权收口。 */
+export type AgentDiscoveryMode = "curated" | "general";
+
+/** run 级自治授权：启动时固化进 checkpoint，随恢复语义持久化（管理面中途改配置不影响在途 run）。 */
+export interface AgentAutonomyPolicy {
+  mode: AgentExecutionMode;
+  /** 自主模式免逐条审批的工具白名单；缺省 = 授权面内全部高风险工具。 */
+  autoApproveToolIds?: string[];
+}
+
 export interface AgentBudget {
   maxSteps: number;
   maxDurationMs: number;
@@ -116,6 +133,11 @@ export interface AgentToolRecord {
   startedAt: string;
   completedAt: string;
   outcome: AgentToolOutcome;
+  /**
+   * H-autonomy 审计来源：人审批=审批人身份；自主执行=策略签发（approvedBy="autonomy-policy"）。
+   * 可选字段向后兼容既有 checkpoint；无审批的调用（低风险直行）缺省。
+   */
+  approval?: AgentApproval;
 }
 
 export interface AgentPendingTool {
@@ -139,6 +161,10 @@ export interface AgentCheckpoint {
   status: AgentRunStatus;
   /** H-C1 plan 档：true 时工具面收敛为 read/analyze，finish 不允许 production 结论。 */
   planMode?: boolean;
+  /** H-autonomy：run 级自治授权（启动时固化；缺省 = confirm 逐条审批，行为与历史一致）。 */
+  autonomy?: AgentAutonomyPolicy;
+  /** H-autonomy：工具发现面；缺省 curated=工业策划清单。 */
+  discovery?: AgentDiscoveryMode;
   /** H-C2 保安状态：变体拒绝计数与熔断记录（持久化在 checkpoint，随恢复语义走）。 */
   guards?: AgentGuardState;
   budget: AgentBudget;
@@ -197,14 +223,35 @@ export interface AgentGuardPostExecuteContext {
 export interface AgentGuardHooks {
   /** tool.pre-execute：语义预检等增值检查。返回 undefined 放行；返回拒绝即不执行。 */
   preExecute?: (context: AgentGuardPreExecuteContext) => Promise<AgentGuardRejection | undefined>;
-  /** tool.post-execute：verdict 回灌等增值记录。抛错不阻断执行链（由实现侧落审计）。 */
+  /** tool.post-execute：verdict 回灌等增值记录。抛错不阻断执行链；异常由本层记入
+   *  checkpoint.guards.postExecuteFindings（H-C5-K8：不吞），实现侧自行落审计。 */
   postExecute?: (context: AgentGuardPostExecuteContext) => Promise<void>;
 }
+
+/**
+ * H-C6-S2 受控终态通知：run 达到终态（completed/blocked/failed/cancelled/budget-exhausted）
+ * 时恰好回调一次，供专家日志归档/提炼流水线消费。不是 hook 框架——实现方只能是仓内
+ * 确定性模块；通知失败不得改变 run 终态，orchestrator 兜底记入 postExecuteFindings。
+ */
+export type AgentRunSettledHook = (checkpoint: AgentCheckpoint) => Promise<void>;
 
 /** 同变体拒绝计数；熔断一旦打开即终态，随 checkpoint 持久化。 */
 export interface AgentGuardState {
   variantDenials?: Record<string, { count: number; lastCode: string; lastMessage: string; lastDeniedAt: string }>;
   circuit?: { variantKey: string; reasonCode: string; message: string; openedAt: string; denials: number };
+  /**
+   * H-C5-K8：post-execute 增值记录（verdict 回灌等）抛错时的审计 finding——
+   * 不阻断执行链，但绝不静默吞掉：可重试信息随 checkpoint 持久化，决策者与
+   * UI 可据此定位"上轮结论没有回灌"。实现侧（保安/记忆模块）同时自行落审计。
+   */
+  postExecuteFindings?: Array<{
+    step: number;
+    toolId: string;
+    code: string;
+    message: string;
+    occurredAt: string;
+    retryable: boolean;
+  }>;
 }
 
 export interface StartAgentRunInput {
@@ -217,6 +264,12 @@ export interface StartAgentRunInput {
   allowedToolIds: string[];
   /** 计划模式：只读/分析探索并输出计划文档（finish-with-plan），不执行 simulate/write/control。 */
   planMode?: boolean;
+  /** H-autonomy：执行模式覆盖（缺省/confirm = 逐条审批现状）。 */
+  executionMode?: AgentExecutionMode;
+  /** H-autonomy：自主模式免逐条审批工具白名单（缺省 = 授权面内全部高风险工具）。 */
+  autoApproveToolIds?: string[];
+  /** H-autonomy：工具发现面覆盖（缺省 curated）。 */
+  discovery?: AgentDiscoveryMode;
   budget?: Partial<AgentBudget>;
   signal?: AbortSignal;
 }
@@ -239,7 +292,11 @@ export interface AgentToolExecutionContext {
 }
 
 export interface AgentToolGateway {
-  list(): AgentToolDefinition[];
+  /**
+   * 工具定义清单。mode 缺省 = "curated"（工业策划清单，历史行为）；
+   * "general" = 通用开发模式面（注册表已注册能力全量，是否放行仍由运行级授权收口）。
+   */
+  list(mode?: AgentDiscoveryMode): AgentToolDefinition[];
   fingerprint(call: AgentToolCall): string;
   execute(call: AgentToolCall, context: AgentToolExecutionContext): Promise<AgentToolOutcome>;
 }

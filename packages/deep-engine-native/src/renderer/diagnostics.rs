@@ -38,6 +38,9 @@ impl Renderer {
         let telemetry = self.telemetry.as_ref()?;
         let mut metrics = telemetry.report(&self.device, &self.queue);
         metrics["shadow_cascades"] = serde_json::json!(self.last_shadow_evidence);
+        if let Some(initial) = self.initial_preparation.as_ref() {
+            metrics["initial_preparation"] = initial.json();
+        }
         // T01:跨端质量诊断随同一诊断开关并入报告;与
         // packages/deep-engine/src/webgpu/qualityTelemetry.ts 同 schema。
         if let Some(quality) = self.quality.as_ref() {

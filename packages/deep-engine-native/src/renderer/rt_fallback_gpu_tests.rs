@@ -577,10 +577,10 @@ fn rt_opaque_ready_matches_frame_loop_contract_on_real_objects() {
         rt_opaque_ready(Some(&residency), Some(&rt_group), true, false).is_none(),
         "custom shader scenes must fall back to raster"
     );
-    // ⑤ I-C23:分层材质场景 → 整帧回退(RT 分层消费留给后继,不静默丢层)。
+    // ⑤ Ordinary-only RT family must still reject a layered scene.
     assert!(
         rt_opaque_ready(Some(&residency), Some(&rt_group), false, true).is_none(),
-        "layered material scenes must fall back to raster"
+        "layered material scenes with an ordinary-only RT family must fall back to raster"
     );
     // ④ 全就绪 → RT 分支,返回的正是 encode_opaque_pass_rt 消费的二元组。
     let ready = rt_opaque_ready(Some(&residency), Some(&rt_group), false, false);

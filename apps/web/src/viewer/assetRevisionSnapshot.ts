@@ -7,8 +7,10 @@ export interface StaleAssetRevision {
   packageId: string;
   /** 实例保存时所用修订。 */
   sceneRevision: number;
+  sceneSourceHash: string;
   /** 素材库当前最新修订。 */
   latestRevision: number;
+  latestSourceHash: string;
 }
 
 /**
@@ -19,25 +21,29 @@ export function detectStaleAssetRevisions(
   sceneModels: readonly SceneModelState[],
   projectModels: readonly ModelRecord[],
 ): StaleAssetRevision[] {
-  const latestByPackage = new Map<string, number>();
+  const latestByPackage = new Map<string, { revision: number; sourceHash: string }>();
   for (const model of projectModels) {
     const reference = model.manifest?.deepAssetPackage;
     if (!reference) continue;
     const current = latestByPackage.get(reference.packageId);
-    if (current === undefined || reference.revision > current) latestByPackage.set(reference.packageId, reference.revision);
+    if (current === undefined || reference.revision > current.revision) {
+      latestByPackage.set(reference.packageId, { revision: reference.revision, sourceHash: reference.sourceHash });
+    }
   }
   const stale: StaleAssetRevision[] = [];
   for (const state of sceneModels) {
     const snapshot = state.assetRevision;
     if (!snapshot) continue;
     const latest = latestByPackage.get(snapshot.packageId);
-    if (latest !== undefined && latest > snapshot.revision) {
+    if (latest !== undefined && latest.revision > snapshot.revision) {
       stale.push({
         modelId: state.modelId,
         assetModelId: state.assetModelId ?? state.modelId,
         packageId: snapshot.packageId,
         sceneRevision: snapshot.revision,
-        latestRevision: latest,
+        sceneSourceHash: snapshot.sourceHash,
+        latestRevision: latest.revision,
+        latestSourceHash: latest.sourceHash,
       });
     }
   }

@@ -39,6 +39,8 @@ import {
   previewUdp,
   previewWebSocket,
 } from "./dataIntegrationPreviewAdapters.js";
+// T24 安全联动:preview 与持久订阅共享 security 组装/校验(单一事实源,含 fail-closed)。
+import { resolveOpcUaSecurity } from "./opcUaSubscriptionSource.js";
 // 保持历史 API 导出稳定，数据计算工具的实现已移到独立模块。
 export { applyComputedFields, inferFieldType } from "./dataIntegrationHelpers.js";
 
@@ -379,12 +381,28 @@ async function previewOpcUa(connection: DataConnectionRecord, dataset: DataDatas
     .split(/[,\n]/)
     .map((item) => item.trim())
     .filter(Boolean);
-  const client = OPCUAClient.create({
-    endpointMustExist: false,
-    connectionStrategy: { initialDelay: 250, maxDelay: 1_000, maxRetry: 1 },
-    securityMode: MessageSecurityMode.None,
-    securityPolicy: SecurityPolicy.None,
-  });
+  // T24 安全联动(preview 与持久订阅同口径):连接配置存在 certificateManagerRootDir 键时
+  // 切签名通道(Sign + Basic256Sha256,客户端自签证书由 CertificateManager 管理并同目录复用);
+  // 无键时 resolveOpcUaSecurity 返回 undefined,下方 None 匿名构造与联动前逐位相同(零退化);
+  // 键存在但空/非文本 fail-closed 拒绝,绝不静默降级回 None(会掩盖用户的安全意图)。
+  const security = resolveOpcUaSecurity(connection.config);
+  const client = security
+    ? await (async () => {
+        // 安全路径惰性 import:None 匿名路径不加载证书/PKI 传输批,模块级加载面不变。
+        const { createSignedOpcUaClient } = await import("./opcUaSecureTransport.js");
+        return createSignedOpcUaClient({
+          endpointUrl: endpoint,
+          certificateManagerRootDir: security.certificateManagerRootDir,
+          ...(security.applicationName ? { applicationName: security.applicationName } : {}),
+          ...(security.messageSecurityMode !== undefined ? { messageSecurityMode: security.messageSecurityMode } : {}),
+        });
+      })()
+    : OPCUAClient.create({
+        endpointMustExist: false,
+        connectionStrategy: { initialDelay: 250, maxDelay: 1_000, maxRetry: 1 },
+        securityMode: MessageSecurityMode.None,
+        securityPolicy: SecurityPolicy.None,
+      });
   try {
     await client.connect(endpoint);
     const session = await client.createSession(

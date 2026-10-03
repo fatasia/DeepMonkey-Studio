@@ -4,14 +4,17 @@ import { prepareAgentRecovery } from "./recovery.js";
 import { normalizeAllowedTools, normalizeApproval, normalizeBudget, requiredText, safeClone } from "./runValidation.js";
 import type {
   AgentApproval,
+  AgentAutonomyPolicy,
   AgentCheckpoint,
   AgentCheckpointStore,
   AgentDecision,
   AgentDecisionProvider,
+  AgentDiscoveryMode,
   AgentGuardHooks,
   AgentGuardRejection,
   AgentGuardState,
   AgentPendingTool,
+  AgentRunSettledHook,
   AgentToolDefinition,
   AgentToolEffect,
   AgentToolGateway,
@@ -21,6 +24,8 @@ import type {
 
 /** 同变体连续拒绝的默认熔断阈值（Codex 3/50 思想的最小本地版；N 独立可配）。 */
 export const DEFAULT_VARIANT_DENIAL_LIMIT = 3;
+/** post-execute / settle 审计 finding 容量：滚动保留最近 N 条，防长跑撑爆 checkpoint。 */
+export const MAX_GUARD_FINDINGS = 10;
 
 export class IndustrialAgentOrchestrator {
   readonly #running = new Map<string, Promise<AgentCheckpoint>>();
@@ -33,6 +38,8 @@ export class IndustrialAgentOrchestrator {
     checkpoints: AgentCheckpointStore;
     /** H-C2 受控挂载点：仓内保安/记忆模块，非 hook 框架。 */
     guards?: AgentGuardHooks;
+    /** H-C6-S2 终态通知：专家日志归档/提炼流水线在 run 收口时消费（实现方自行兜错落审计）。 */
+    onRunSettled?: AgentRunSettledHook;
     /** 同变体连续拒绝熔断阈值；缺省 3。 */
     variantDenialLimit?: number;
     now?: () => Date;
@@ -70,13 +77,15 @@ export class IndustrialAgentOrchestrator {
       context: safeClone(input.context ?? {}),
       status: "running",
       ...(input.planMode === true ? { planMode: true } : {}),
+      ...normalizeAutonomyPolicy(input),
+      ...(input.discovery === "general" ? { discovery: "general" as const } : {}),
       budget: normalizeBudget(input.budget),
       usage: { steps: 0, toolCalls: 0, activeDurationMs: 0 },
       allowedToolIds: normalizeAllowedTools(
         input.planMode === true
-          ? restrictToPlanEffects(input.allowedToolIds, this.dependencies.tools.list())
+          ? restrictToPlanEffects(input.allowedToolIds, this.dependencies.tools.list(discoveryOf(input)))
           : input.allowedToolIds,
-        this.dependencies.tools.list(),
+        this.dependencies.tools.list(discoveryOf(input)),
       ),
       decisions: [],
       toolRecords: [],
@@ -237,6 +246,17 @@ export class IndustrialAgentOrchestrator {
         checkpoint.decisions.push({ step: checkpoint.usage.steps, decidedAt: this.now(), decision, ...(execution ? { execution } : {}) });
         checkpoint = await this.applyDecision(checkpoint, decision, persist);
       }
+      // H-C6-S2 终态通知：本 segment 推进后到达终态才触发（awaiting-approval/input
+      // 等待暂停不是终态，审批续跑后由后续 segment 收口）。通知失败不改 run 终态，
+      // 兜底记入审计 finding（K8：不吞），由随后的持久化一起落盘。
+      if (terminal(checkpoint.status) && this.dependencies.onRunSettled) {
+        try {
+          await this.dependencies.onRunSettled(structuredClone(checkpoint));
+        } catch (error) {
+          this.recordPostExecuteFinding(checkpoint, checkpoint.usage.steps, "run-settle-failed", message(error));
+          await this.save(checkpoint);
+        }
+      }
       return structuredClone(checkpoint);
     } finally {
       clearTimeout(timeout);
@@ -304,14 +324,26 @@ export class IndustrialAgentOrchestrator {
       await persist();
       return blocked;
     }
+    /**
+     * H-autonomy 要素②：自主模式下授权范围内的高风险工具不再逐条等人审批。
+     * 签发策略审批（approvedBy="autonomy-policy"），scopeFingerprint 仍取本调用指纹——
+     * 下游 executeReliableAiTool 的审批指纹与时效硬校验照常执行，防线不降级；
+     * plan 档优先级最高，自主模式不绕过只读收敛。
+     */
+    const autoApproved = isAutoApprovedCall(checkpoint, definition);
     checkpoint.pendingTool = {
       step: checkpoint.usage.steps,
       fingerprint,
       call: structuredClone(decision.call),
       effect: definition.effect,
-      state: definition.requiresApproval ? "awaiting-approval" : "ready",
+      state: definition.requiresApproval && !autoApproved ? "awaiting-approval" : "ready",
+      ...(autoApproved ? { approval: {
+        approvedBy: AUTONOMY_APPROVER,
+        approvedAt: this.now(),
+        scopeFingerprint: fingerprint,
+      } } : {}),
     };
-    if (definition.requiresApproval) checkpoint.status = "awaiting-approval";
+    if (definition.requiresApproval && !autoApproved) checkpoint.status = "awaiting-approval";
     await persist();
     return checkpoint;
   }
@@ -360,9 +392,11 @@ export class IndustrialAgentOrchestrator {
         startedAt,
         completedAt: this.now(),
         outcome: structuredClone(outcome),
+        ...(pending.approval ? { approval: structuredClone(pending.approval) } : {}),
       });
       checkpoint.seenToolFingerprints.push(pending.fingerprint);
-      // 挂载点② tool.post-execute：verdict 回灌等增值记录。失败不阻断执行链（实现侧自行落审计）。
+      // 挂载点② tool.post-execute：verdict 回灌等增值记录。失败不阻断执行链，
+      // 但按 H-C5-K8 绝不静默吞：可重试信息记入 checkpoint 审计 finding 随恢复语义持久化。
       if (this.dependencies.guards?.postExecute) {
         try {
           await this.dependencies.guards.postExecute({
@@ -371,7 +405,9 @@ export class IndustrialAgentOrchestrator {
             effect: pending.effect,
             outcome: structuredClone(outcome),
           });
-        } catch { /* 增值记录失败不得变成新的执行故障面。 */ }
+        } catch (error) {
+          this.recordPostExecuteFinding(checkpoint, pending.step, "post-execute-failed", message(error));
+        }
       }
       delete checkpoint.pendingTool;
       if (outcome.status !== "completed") {
@@ -463,7 +499,7 @@ export class IndustrialAgentOrchestrator {
 
   private allowedDefinitions(checkpoint: AgentCheckpoint): AgentToolDefinition[] {
     const allowed = new Set(checkpoint.allowedToolIds);
-    return this.dependencies.tools.list()
+    return this.dependencies.tools.list(discoveryOf(checkpoint))
       .filter((tool) => allowed.has(tool.id))
       // 双重防线：plan 档下决策者只看得见 read/analyze 工具（执行层硬拒在网关）。
       .filter((tool) => !checkpoint.planMode || PLAN_ALLOWED_EFFECTS.includes(tool.effect))
@@ -483,6 +519,25 @@ export class IndustrialAgentOrchestrator {
   }
 
   private now(): string { return (this.dependencies.now?.() ?? new Date()).toISOString(); }
+
+  /**
+   * H-C5-K8 审计 finding：post-execute 增值记录（verdict 回灌/记忆提炼）抛错或
+   * 终态通知失败时落 checkpoint——执行链不受影响，但"记忆没有回灌"这件事必须
+   * 可见可重试。滚动保留最近 MAX_GUARD_FINDINGS 条，防止长跑撑爆 checkpoint。
+   */
+  private recordPostExecuteFinding(checkpoint: AgentCheckpoint, step: number, code: string, errorText: string): void {
+    const state: AgentGuardState = checkpoint.guards ??= {};
+    const findings = state.postExecuteFindings ??= [];
+    findings.push({
+      step,
+      toolId: checkpoint.pendingTool?.call.toolId ?? "",
+      code,
+      message: errorText.slice(0, 500),
+      occurredAt: this.now(),
+      retryable: true,
+    });
+    if (findings.length > MAX_GUARD_FINDINGS) findings.splice(0, findings.length - MAX_GUARD_FINDINGS);
+  }
 }
 
 function fail(checkpoint: AgentCheckpoint, status: Extract<AgentCheckpoint["status"], "blocked" | "failed" | "cancelled" | "budget-exhausted">, code: string, messageText: string, retryable: boolean): AgentCheckpoint {
@@ -505,6 +560,42 @@ function restrictToPlanEffects(toolIds: string[], available: AgentToolDefinition
 }
 
 const PLAN_ALLOWED_EFFECTS: readonly AgentToolEffect[] = ["read", "analyze"];
+
+/** H-autonomy：策略签发审批的审计身份（工具记录与 pendingTool.approval 均可回溯）。 */
+export const AUTONOMY_APPROVER = "autonomy-policy";
+
+/** checkpoint 或启动输入的发现面：缺省 curated（策划清单，历史行为）。 */
+function discoveryOf(source: Pick<AgentCheckpoint, "discovery"> | Pick<StartAgentRunInput, "discovery">): AgentDiscoveryMode {
+  return source.discovery === "general" ? "general" : "curated";
+}
+
+/**
+ * H-autonomy 自主执行判定：run 处于 autonomous 档、工具确需审批、不在 plan 档、
+ * 且工具在授权白名单内（白名单缺省/空 = 授权面内全部需审批工具）。
+ */
+function isAutoApprovedCall(checkpoint: AgentCheckpoint, definition: AgentToolDefinition): boolean {
+  if (!definition.requiresApproval) return false;
+  const autonomy: AgentAutonomyPolicy | undefined = checkpoint.autonomy;
+  if (autonomy?.mode !== "autonomous" || checkpoint.planMode === true) return false;
+  const scope = autonomy.autoApproveToolIds;
+  if (!scope || scope.length === 0) return true;
+  return scope.includes(definition.id);
+}
+
+/** 启动输入 → checkpoint 固化的自治授权档；confirm 且无白名单时不落字段（与历史 checkpoint 形状一致）。 */
+function normalizeAutonomyPolicy(input: Pick<StartAgentRunInput, "executionMode" | "autoApproveToolIds">): { autonomy?: AgentAutonomyPolicy } {
+  if (input.executionMode !== "autonomous") return {};
+  // 纵深防御：非字符串条目静默剔除（路由层已先行 400），白名单永不因垃圾输入放大。
+  const autoApproveToolIds = (input.autoApproveToolIds ?? [])
+    .filter((id): id is string => typeof id === "string")
+    .map((id) => id.trim())
+    .filter(Boolean);
+  const policy: AgentAutonomyPolicy = {
+    mode: "autonomous",
+    ...(autoApproveToolIds.length ? { autoApproveToolIds: [...new Set(autoApproveToolIds)] } : {}),
+  };
+  return { autonomy: policy };
+}
 
 function terminal(status: AgentCheckpoint["status"]): boolean {
   return ["completed", "blocked", "failed", "cancelled", "budget-exhausted"].includes(status);

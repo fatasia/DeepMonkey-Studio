@@ -3,6 +3,7 @@ import {
   QualityTelemetryCollector,
   type AuthoredQualityProfile,
   type FrameMetrics,
+  type PbrFrameExecutionCoverage,
   type PbrFramePassTimings,
   type QualityTelemetrySnapshot,
 } from "@bim-studio/deep-engine/webgpu";
@@ -24,8 +25,13 @@ export interface StudioQualityTelemetryCoverage {
   readonly passCount: "frame-graph-receipt" | "unavailable";
   /** 上传字节 = chunk 流驻留 GPU 字节在采样窗口内的增量(驱逐收缩不计);无 chunk 流即 unavailable。 */
   readonly uploadedBytes: "chunk-stream-residency-delta" | "unavailable";
-  /** TS 未挂遮挡读回,visibleInstances 恒为 null(T01 遗留,不得伪零)。 */
-  readonly visibleInstances: "unavailable";
+  /**
+   * F1 可见量读出口径:"main-pass-draw-calls" = 主 pass 包体 CPU 编码 draw 数
+   * (FrameMetrics.visibleDraws,量非时)已挂;"unavailable" = 后端未产出该读数。
+   * 注意:逐实例幸存数仍需遮挡读回(=新 GPU 同步),WebGPU 未挂,该口径是
+   * 可见绘制量的代理,不伪称逐实例(T01 record.visibleInstances 保持 null)。
+   */
+  readonly visibleInstances: "main-pass-draw-calls" | "unavailable";
 }
 
 /** 面板/支持报告读取的会话级快照;undefined = 当前没有 Deep 后端发布(WebGL 作者后端等)。 */
@@ -41,6 +47,10 @@ export interface StudioQualityTelemetryStatus {
    * 在 frame 字段内。
    */
   readonly latestPassTimings?: PbrFramePassTimings;
+  /** F1 真实执行 coverage 最新读数(undefined = 后端未产出,常规回执帧必有)。 */
+  readonly latestExecutionCoverage?: PbrFrameExecutionCoverage;
+  /** F1 可见绘制量最新读出(undefined = 后端未产出该读数)。 */
+  readonly latestVisibleDraws?: NonNullable<FrameMetrics["visibleDraws"]>;
   /** 采集器拒收等自检失败;非空表示采样已停止,面板必须展示而非静默。 */
   readonly failure?: string;
 }
@@ -81,6 +91,9 @@ export class StudioDeepQualityTelemetrySampler {
   private lastFlushAt = 0;
   private failure: string | undefined;
   private latestPassTimings: PbrFramePassTimings | undefined;
+  private visibleMeasured = false;
+  private latestVisibleDraws: NonNullable<FrameMetrics["visibleDraws"]> | undefined;
+  private latestExecutionCoverage: PbrFrameExecutionCoverage | undefined;
 
   constructor(options: StudioQualityTelemetryOptions | undefined, activeProfile: AuthoredQualityProfile | null,
     readResidentBytes: () => number | undefined) {
@@ -101,6 +114,9 @@ export class StudioDeepQualityTelemetrySampler {
     this.latestMemory = metrics.deviceResourceMemory;
     // F1 逐 pass 计时直通:只透传最新读回,不做二次加工;metrics 未携带 = 未开启。
     this.latestPassTimings = metrics.gpuPassTimings;
+    // F1 执行 coverage 与可见绘制量直通:同为量读数,只透传不加工。
+    if (metrics.frameExecutionCoverage) this.latestExecutionCoverage = metrics.frameExecutionCoverage;
+    if (metrics.visibleDraws) { this.visibleMeasured = true; this.latestVisibleDraws = metrics.visibleDraws; }
     this.windowFrames++;
     this.windowLatestFrame = metrics.frame;
     const receipt = metrics.frameGraphReceipt;
@@ -130,9 +146,11 @@ export class StudioDeepQualityTelemetrySampler {
       coverage: {
         passCount: this.receiptMeasured ? "frame-graph-receipt" : "unavailable",
         uploadedBytes: this.residencyMeasured ? "chunk-stream-residency-delta" : "unavailable",
-        visibleInstances: "unavailable",
+        visibleInstances: this.visibleMeasured ? "main-pass-draw-calls" : "unavailable",
       },
       ...(this.latestPassTimings !== undefined ? { latestPassTimings: this.latestPassTimings } : {}),
+      ...(this.latestExecutionCoverage !== undefined ? { latestExecutionCoverage: this.latestExecutionCoverage } : {}),
+      ...(this.latestVisibleDraws !== undefined ? { latestVisibleDraws: this.latestVisibleDraws } : {}),
       ...(this.failure !== undefined ? { failure: this.failure } : {}),
     };  }
 

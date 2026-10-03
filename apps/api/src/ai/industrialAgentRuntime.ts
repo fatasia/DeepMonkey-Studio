@@ -12,6 +12,7 @@ import { IndustrialAgentCheckpointStore } from "./industrialAgentCheckpointStore
 import { createIndustrialAgentDecisionProvider } from "./industrialAgentDecisionProvider.js";
 import { IndustrialAgentToolGateway } from "./industrialAgentToolGateway.js";
 import { createAgentHarnessGuards } from "./agentHarnessGuards.js";
+import { createAgentMemoryPipeline } from "./agentMemoryPipeline.js";
 import { AgentMemoryStore } from "./agentMemory.js";
 import { resolveAssistantSessionOptions, type AssistantSessionOptions } from "./assistantSessionOptions.js";
 import { ontologyClarificationCandidates } from "./industrialAgentSelection.js";
@@ -55,6 +56,8 @@ export async function createIndustrialAgentRuntime(input: {
   await memory.init();
   const tools = new IndustrialAgentToolGateway(input.registry, input.audit);
   const guards = createAgentHarnessGuards({ ...(input.audit ? { audit: input.audit } : {}), memory });
+  // H-C6-S2：专家日志流水线挂受控终态通知——run 收口自动归档+提炼，回灌由 loadDelivery 承担。
+  const memoryPipeline = createAgentMemoryPipeline({ memory, ...(input.audit ? { audit: input.audit } : {}) });
   const decisions = createIndustrialAgentDecisionProvider({
     registry: input.registry,
     settings: input.settings,
@@ -62,7 +65,7 @@ export async function createIndustrialAgentRuntime(input: {
     ...(input.projectContext ? { projectContext: input.projectContext } : {}),
     ...(input.audit ? { audit: input.audit } : {}),
     ...(input.telemetry ? { telemetry: input.telemetry } : {}),
-    memory: (projectId) => memory.loadDelivery(projectId),
+    memory: (projectId, toolIds) => memory.loadDelivery(projectId, undefined, toolIds ? { toolIds } : undefined),
     // T2 澄清候选：每次 decide 取新读取器（与 ontologyActionRoutes 同模式，避免长缓存漂移）；
     // 只读 listPackages，目录缺失时返回空名单（本体未发布则澄清退回纯数据集候选）。
     ontology: async (projectId) => ontologyClarificationCandidates(await new OntologyPackageStore(input.dataDir).listPackages(projectId)),
@@ -81,6 +84,7 @@ export async function createIndustrialAgentRuntime(input: {
       tools,
       checkpoints,
       guards,
+      onRunSettled: memoryPipeline.onRunSettled,
       ...(input.variantDenialLimit !== undefined ? { variantDenialLimit: input.variantDenialLimit } : {}),
     }),
   };

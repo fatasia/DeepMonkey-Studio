@@ -133,3 +133,37 @@ describe("质量遥测模块注册表", () => {
     expect(readStudioQualityTelemetry()).toBeUndefined();
   });
 });
+
+describe("F1 执行 coverage 与可见绘制量直通", () => {
+  const coverage = (frame: number, notExecuted: readonly string[]) => ({
+    frame, planHash: "0123abcd", registeredPassCount: 12, mappedPassCount: 6,
+    executedPassCount: 6 - notExecuted.length,
+    notExecutedMappedPassIds: notExecuted, executedCoverageRatio: (6 - notExecuted.length) / 12,
+  });
+  const visibleDraws = (drawCalls: number) => ({ drawCalls, triangles: drawCalls * 640,
+    frustumCulledBatches: 1, hiZOccludedBatches: 0 });
+
+  it("metrics 携带 coverage/visibleDraws 时直通 status,coverage.visibleInstances 声明 draw 口径", () => {
+    const sampler = new StudioDeepQualityTelemetrySampler({ sampleHz: 4 }, null, () => undefined);
+    sampler.record(frameMetrics({ frameGraphReceipt: receipt(["a"]),
+      frameExecutionCoverage: coverage(1, ["bloom"]), visibleDraws: visibleDraws(9) }), 0);
+    const status = sampler.status();
+    expect(status.coverage.visibleInstances).toBe("main-pass-draw-calls");
+    expect(status.latestExecutionCoverage).toEqual(coverage(1, ["bloom"]));
+    expect(status.latestVisibleDraws).toEqual(visibleDraws(9));
+  });
+
+  it("metrics 未携带读数时保持 unavailable,且最新值跟随最新帧(直通不残留)", () => {
+    const sampler = new StudioDeepQualityTelemetrySampler({ sampleHz: 4 }, null, () => undefined);
+    sampler.record(frameMetrics({ visibleDraws: visibleDraws(9) }), 0);
+    sampler.record(frameMetrics(), 10);
+    const status = sampler.status();
+    expect(status.coverage.visibleInstances).toBe("main-pass-draw-calls");
+    expect(status.latestVisibleDraws).toEqual(visibleDraws(9));
+    expect(status.latestExecutionCoverage).toBeUndefined();
+    const bare = new StudioDeepQualityTelemetrySampler({ sampleHz: 4 }, null, () => undefined);
+    bare.record(frameMetrics({ frameGraphReceipt: receipt(["a"]) }), 0);
+    expect(bare.status().coverage.visibleInstances).toBe("unavailable");
+    expect(bare.status().latestVisibleDraws).toBeUndefined();
+  });
+});

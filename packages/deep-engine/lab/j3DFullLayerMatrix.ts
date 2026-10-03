@@ -9,16 +9,16 @@ import { encodeFloat16Bits } from "./temporalAaProbe.js";
 export const J3_D_FULL_SCHEMA = "j3-d-full-layer-matrix-v1";
 
 export type J3DFullLayerId = "geometry-coverage" | "main-depth" | "normal" | "shadow-visibility"
-  | "hdr-color" | "post-bloom" | "post-fog" | "display";
+  | "hdr-color" | "post-bloom" | "post-fog" | "display" | "texture-coverage";
 
 export type J3DFullGateId = "geometry-depth-interior" | "normal-quantized-angle" | "shadow-half-interval"
-  | "hdr-flat-strict" | "post-half-store" | "display-byte";
+  | "hdr-flat-strict" | "post-half-store" | "display-byte" | "texture-hdr-coverage";
 
 /** 事前冻结的门合同。hdr002/displayByte 两个字段是".002 HDR 门与 display 字节门层内适用性"的机器可读结论。 */
 export interface J3DFullGate {
   readonly id: J3DFullGateId;
   readonly formula: string;
-  /** .002 严格 HDR 门是否适用于本门所辖层;全局只有 hdr-flat-strict 为 true。 */
+  /** .002 严格 HDR 门适用于冻结平法线与纹理覆盖两类线性HDR附件。 */
   readonly hdr002Applicable: boolean;
   /** display 1/255 字节门是否适用于本门所辖层;全局只有 display-byte 为 true。 */
   readonly displayByteApplicable: boolean;
@@ -47,6 +47,11 @@ export const J3_D_FULL_GATES: Readonly<Record<J3DFullGateId, J3DFullGate>> = Obj
     formula: "同 uniform 同材质同光冻结 mask: 最大通道差≤0.002、peak=1 PSNR≥60dB、SSIM≥0.9999、CPU Lambert 下界+half 量化余量 max(floor/1024,1e-6)",
     hdr002Applicable: true, displayByteApplicable: false,
     comparators: ["scripts/lib/j3HdrFlatParity.mjs"] }),
+  "texture-hdr-coverage": Object.freeze({
+    id: "texture-hdr-coverage" as const,
+    formula: "七配置×两相机双fresh；UV/sRGB/MR/alpha独立参考、稳定域HDR最大通道差≤0.002；MASK/单层BLEND边界差仅1px",
+    hdr002Applicable: true, displayByteApplicable: false,
+    comparators: ["scripts/lib/j3TextureCoverageParity.mjs"] }),
   "post-half-store": Object.freeze({
     id: "post-half-store" as const,
     formula: "各宿主对独立 CPU 参考: abs(actual-expected) ≤ 0.003 + |expected|*0.004(含半精度 store 幅度项); 跨宿主等值不是门,只记录诊断差异",
@@ -68,13 +73,19 @@ export interface J3DFullLayer {
   readonly scopePrefixes: readonly string[];
   readonly gateId: J3DFullGateId;
   readonly sceneCellSource: "geometry-manifest-cameras" | "bloom-fixture-cases"
-    | "fog-fixture-profiles" | "display-fixture-colors";
+    | "fog-fixture-profiles" | "display-fixture-colors" | "texture-fixture-scenarios";
   readonly fixtureFile?: string;
-  readonly freshnessKey?: "packageHash" | "fixtureHash";
-  readonly status: "verified-2026-09-30" | "cpu-prep-only";
+  readonly freshnessKey?: "packageHash" | "fixtureHash" | "profileHash";
+  readonly status: "verified-2026-09-30" | "verified-2026-10-01" | "cpu-prep-only";
 }
 
 export const J3_D_FULL_LAYERS: readonly J3DFullLayer[] = Object.freeze([
+  Object.freeze({ id: "texture-coverage" as const, title: "纹理UV/MR/alpha覆盖",
+    attachments: { web: "生产PbrRenderer rgba16float", native: "生产shader_material_renderer Rgba16Float" },
+    evidenceDir: "test-output/interrupted-0930/texture-coverage", scopePrefixes: ["actual-production-texture-UV-MR-alpha-coverage"],
+    gateId: "texture-hdr-coverage" as const, sceneCellSource: "texture-fixture-scenarios" as const,
+    fixtureFile: "packages/deep-engine/fixtures/j3-texture-coverage-v1.json", freshnessKey: "profileHash" as const,
+    status: "verified-2026-10-01" as const }),
   Object.freeze({ id: "geometry-coverage" as const, title: "几何覆盖 mask",
     attachments: { web: "PbrRenderer depthTexture depth32float 1x 覆盖", native: "ForwardTargets depth Depth24Plus 4xMSAA 逐样本覆盖" },
     evidenceDir: "test-output/interrupted-0930/geometry-depth", scopePrefixes: ["production-geometry-depth-interior"],
@@ -92,11 +103,13 @@ export const J3_D_FULL_LAYERS: readonly J3DFullLayer[] = Object.freeze([
     // canonical fresh 回执 = shadow-visibility/evidence.json(统一 runner 同批写 normals);normal-shadow/ 是历史首刀 receipt。
     evidenceDir: "test-output/interrupted-0930/shadow-visibility", scopePrefixes: ["actual Web normal attachment", "actual production HDR shadow visibility"],
     gateId: "normal-quantized-angle" as const, sceneCellSource: "geometry-manifest-cameras" as const,
+    fixtureFile: "packages/deep-engine/fixtures/j3-hdr-flat-normal-v1.json",
     status: "verified-2026-09-30" as const }),
   Object.freeze({ id: "shadow-visibility" as const, title: "共同 4 级联阴影可见度",
     attachments: { web: "生产 HDR/control 比值 + CSM uniform 39vec4/624B", native: "生产 HDR/control 比值 + sampling_uniform 21vec4/336B" },
     evidenceDir: "test-output/interrupted-0930/shadow-visibility", scopePrefixes: ["actual production HDR shadow visibility"],
     gateId: "shadow-half-interval" as const, sceneCellSource: "geometry-manifest-cameras" as const,
+    fixtureFile: "packages/deep-engine/fixtures/j3-hdr-flat-normal-v1.json",
     status: "verified-2026-09-30" as const }),
   Object.freeze({ id: "hdr-color" as const, title: "线性 HDR 颜色(严格平法线子集)",
     attachments: { web: "PBR_HDR_FORMAT rgba16float", native: "FORWARD_COLOR_FORMAT Rgba16Float resolved" },
@@ -132,7 +145,7 @@ export const REQUIRED_LAYER_GATE: Readonly<Record<J3DFullLayerId, J3DFullGateId>
 export const DISPLAY_BYTE_LSB = 1 / 255;
 export const HDR_STRICT_CHANNEL_ERROR = 0.002;
 
-export interface LayerSceneCell { readonly cellId: string; readonly hostScope: "web+native" | "web-only" }
+export interface LayerSceneCell { readonly cellId: string; readonly hostScope: "web+native" | "web-only" | "native-only" }
 
 /** 层×场景格展开:场景格身份全部来自冻结 fixture/manifest,不在 GPU 后选格。 */
 export function expandSceneCells(layer: J3DFullLayer, fixtureData: unknown): readonly LayerSceneCell[] {
@@ -148,12 +161,16 @@ export function expandSceneCells(layer: J3DFullLayer, fixtureData: unknown): rea
       const shared = ((data.profiles as readonly FogProfile[]) ?? []).map(profile =>
         Object.freeze({ cellId: profile.id, hostScope: "web+native" as const }));
       const nativeOnly = ((data.nativeOnly as readonly FogProfile[]) ?? []).map(profile =>
-        Object.freeze({ cellId: profile.id, hostScope: "web-only" as const }));
+        Object.freeze({ cellId: profile.id, hostScope: "native-only" as const }));
       return [...shared, ...nativeOnly];
     }
     case "display-fixture-colors":
       return ((data.colors as readonly unknown[]) ?? []).map((_, index) =>
         Object.freeze({ cellId: `swatch-${index}`, hostScope: "web+native" as const }));
+    case "texture-fixture-scenarios":
+      return ((data.scenarios as readonly string[]) ?? []).flatMap(scenario =>
+        ((data.cameras as readonly { id: string }[]) ?? []).map(camera =>
+          Object.freeze({ cellId: `${camera.id}/${scenario}`, hostScope: "web+native" as const })));
   }
 }
 

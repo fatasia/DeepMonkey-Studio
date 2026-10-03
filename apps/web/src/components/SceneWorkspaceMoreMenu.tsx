@@ -33,6 +33,7 @@ interface Props {
   onExportSingle: () => void;
   onExportGlb: () => void;
   onExportFbx: () => void;
+  onExportPathTrace?: () => void;
   onBrowse: () => void;
   browseDisabled: boolean;
   onDrillGuide?: () => void;
@@ -90,6 +91,7 @@ export function SceneWorkspaceMoreMenu(props: Props) {
             onExportSingle={props.onExportSingle}
             onExportGlb={props.onExportGlb}
             onExportFbx={props.onExportFbx}
+            onExportPathTrace={props.onExportPathTrace}
           />
           {!props.browseDisabled && (
             <button type="button" onClick={props.onBrowse}>

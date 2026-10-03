@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_DISPLAY_CONTRACT } from "@bim-studio/contracts";
 import type { RenderView } from "@bim-studio/deep-engine/webgpu";
 import type { ViewerEngine } from "./ViewerEngine";
 import { StudioDeepWebGpuBridge } from "./StudioDeepWebGpuBridge";
@@ -91,7 +92,8 @@ describe("Studio Deep bridge author lighting", () => {
     light.shadow.mapSize.set(2048, 2048); light.shadow.bias = -0.002; light.shadow.normalBias = 0.03;
     await activate(bridge);
     expect(create.mock.calls[0]![0].renderer).toMatchObject({ shadows: {
-      exactProfile: { cascadeCount: 1, shadowMapSize: 2048 } } });
+      exactProfile: { cascadeCount: 1, shadowMapSize: 2048 } },
+      features: { toneMapping: DEFAULT_DISPLAY_CONTRACT.toneMapping.operator } });
     const initial = create.mock.calls[0]![0].view.lights?.directional?.[0]?.shadow;
     expect(initial).toMatchObject({ mapSize: 2048, bias: -0.002, normalBias: 0.03 });
     light.position.x = 3; await frame();

@@ -1,0 +1,31 @@
+{
+  "milestone": "S2b+S2d 源码实现与聚焦测试完成",
+  "date": "2026-10-02",
+  "S2b": {
+    "files": [
+      "apps/web/src/hooks/useScenePlayMode.ts(+formatPlayEntryNotice/formatPlayExitNotice 纯文案函数)",
+      "apps/web/src/hooks/useSceneHistoryState.ts(+playAbsorbedEditsRef:Play 门禁吸收计数,schedule/run 两分支,裁决不变)",
+      "apps/web/src/App.tsx(enterPlay 清零计数+formatPlayEntryNotice 草稿排除呈现;exit formatPlayExitNotice 丢弃汇报)",
+      "apps/web/src/hooks/useScenePlayMode.test.ts(+4 测:两条文案×2、吸收计数、作者域不计数)"
+    ],
+    "semantics": "未保存脚本草稿不参与 Play(热重载 §2.3)→进入时如实呈现;播放期临时修改被门禁吸收→退出按数汇报丢弃;退出/异常重新应用状态复用 I-C25(restore-failed 保持可重试),零重建"
+  },
+  "S2d": {
+    "files": [
+      "apps/web/src/scripting/playTraceStore.ts(新:scriptId→全量快照收纳、确定性展开 atMs→graphId→seq、尾沿节流订阅 250ms、确定性 JSON 导出 bim-studio/behavior-trace/v1)",
+      "apps/web/src/components/BehaviorTraceReplay.tsx(新:只读审阅器——时间域 scrub/退化顺序域、outcome 三色标记、步进四键+跟随最新、before/after mono 详情卡、抽稀 ≤160 标记/轨道、导出)",
+      "apps/web/src/components/SceneTimelinePanel.tsx(第四工作区 trace:分支+DirectorTabs 行为轨迹页签;复用导演台面板壳,不建第二套时间轴)",
+      "apps/web/src/App.tsx(enterPlay resetPlayTrace+onTrace→recordPlayTrace;轨迹退出后仍可审阅)",
+      "apps/web/src/styles/scene-workspace-timeline.css(+.trace-replay-* 块,全令牌引用零新色)",
+      "apps/web/src/visualQa/WorkspaceChromeVisualQa.tsx(类型跟进:useState<SceneDirectorWorkspace>)",
+      "apps/web/src/scripting/playTraceStore.test.ts(+6 测)、apps/web/src/components/BehaviorTraceReplay.test.tsx(+4 测 SSR)"
+    ],
+    "semantics": "回放面板=审阅器不是第二运行时(§2.4),回放不写场景;真值=T31 日志(restrictedPlayConsumer.onTrace 聚合+引擎 snapshotModelAnimationEventTrace 死 API 首次获得 UI 消费方);导出体零墙钟"
+  },
+  "verification": {
+    "focusedTests": "useScenePlayMode 18 + sceneWorkspaceSave 17 + playSessionRestoreTiming 5 + playTraceStore 6 + BehaviorTraceReplay 4 + behaviorTraceLog 9 + behaviorGraphRuntime 14 + restrictedPlayConsumer 10 = 93 全绿",
+    "regression": "Topbar 6 + InteractionEditor 9 + lifecycle 18 + sceneSync 10 全绿(70)",
+    "tsc": "apps/web npx tsc --noEmit = 0 错(修 1 处 visualQa 类型跟进)"
+  },
+  "gatePlan": "g2-s2b-s2d-visual-gate.mjs:tick(1s)→set-value 受限图(调色板点击放置+dagre 布局避叠压)→保存→导演台行为轨迹页签→空态 t0→进 Play→轨迹累计 t1→导出 JSON 断言→步进/scrub t2→退出后仍可审阅 t3→再进 Play 放置立方体(放置基础元素被吸收)→退出『1 项临时修改已丢弃』b2;进 Play 消息断言 b1;两轮独立项目/场景/端口"
+}

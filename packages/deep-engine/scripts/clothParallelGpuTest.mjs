@@ -47,7 +47,7 @@ async function runInBrowser(origin) {
     const adapter = await page.evaluate(async () => (await import("./probe.bundle.mjs")).probeAdapterInfo());
     const result = await page.evaluate(async () => {
       const module = await import("./probe.bundle.mjs");
-      try { return { ok: true, result: await module.runClothParallelGpuReplay() }; }
+      try { return { ok: true, result: await module.runClothParallelGpuReplay(), production: await module.runClothParallelGpuProductionReplay(), softbody: await module.runSoftBodyParallelGpuCheck() }; }
       catch (error) {
         return { ok: false, error: String(error instanceof Error ? error.message : error),
           stack: String(error instanceof Error ? error.stack ?? "" : "").slice(0, 2000) };
@@ -90,8 +90,15 @@ async function main() {
     createdAt: new Date().toISOString(),
     lane: "t18-a3-cloth-parallel-gpu-real-device",
     method: "wgsl/clothSolver.wgsl 单源编译真实 pipeline;色序 dispatch 合同;逐 24 tick 读回对拍 CPU f32 模拟镜像与 f64 黄金",
-    adapter, replay: replay.result,
+    adapter, replay: replay.result, production: replay.production, softbody: replay.softbody,
     verdict: {
+      productionKernelParallel: replay.production?.production?.kernel === "cloth-parallel" && !replay.production?.production?.fallbackSeen,
+      productionGoldenWithinTolerance: replay.production?.production?.goldenWithinTolerance === true, // 风场景容差 0.1(probe 侧登记)
+      sessionBitwiseEqualsPerCall: replay.production?.sessionProfile?.bitwiseEqualsPerCall === true,
+      sessionGoldenWithinTolerance: replay.production?.sessionProfile?.goldenWithinTolerance === true,
+      sessionStretchWithinBand: replay.production?.sessionProfile?.stretchWithinBand === true,
+      softbodyReplayBitwise: replay.softbody?.replayBitwise === true,
+      softbodyMirrorTolerance: (replay.softbody?.per24 ?? []).every(row => row.maxErrVsMirror <= 0.05),
       simulationParityBitwise: replay.result.simulationParityBitwise,
       replayBitwise: replay.result.replayBitwise,
       goldenWithinTolerance: replay.result.golden.withinTolerance,
@@ -110,9 +117,18 @@ async function main() {
     `goldenMaxErr=${replay.result.golden.maxPositionError.toExponential(3)} withinTolerance=${replay.result.golden.withinTolerance} ` +
     `gpuStretch=${replay.result.stretch.gpuMaxRatio.toExponential(3)}`);
   console.log(`evidence: ${evidencePath} (sha256=${sha256(await readFile(evidencePath))})`);
+  const production = replay.production;
   const pass = replay.result.golden.withinTolerance
     && replay.result.stretch.gpuMaxRatio <= replay.result.stretch.band
-    && replay.result.replayBitwise;
+    && replay.result.replayBitwise
+    && production?.production?.kernel === "cloth-parallel"
+    && !production?.production?.fallbackSeen
+    && production?.production?.goldenWithinTolerance === true
+    && production?.sessionProfile?.bitwiseEqualsPerCall === true
+    && production?.sessionProfile?.goldenWithinTolerance === true
+    && production?.sessionProfile?.stretchWithinBand === true
+    && replay.softbody?.replayBitwise === true
+    && (replay.softbody?.per24 ?? []).every(row => row.maxErrVsMirror <= 0.05);
   if (!pass) process.exitCode = 1;
 }
 

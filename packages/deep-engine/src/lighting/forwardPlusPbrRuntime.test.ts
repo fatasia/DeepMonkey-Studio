@@ -123,8 +123,10 @@ describe("default PBR Forward+ frame runtime", () => {
     expect(runtime.hasProbeClipmap).toBe(true);
     const published = runtime.prepareAndEncode(f.encoder, input()).bindGroup as unknown as { entries: GPUBindGroupEntry[] };
     expect(published).not.toBe(fallback);
-    expect(published.entries.slice(-6, -3)).toEqual([{ binding: 9, resource: view }, { binding: 10, resource: sampler },
+    expect(published.entries.filter(entry => entry.binding >= 9 && entry.binding <= 11)).toEqual([
+      { binding: 9, resource: view }, { binding: 10, resource: sampler },
       { binding: 11, resource: { buffer: metadata } }]);
+    expect(published.entries.find(entry => entry.binding === 16)).toBeDefined();
     runtime.setProbeClipmap({ view, sampler, levelMetadataBuffer: metadata });
     expect(runtime.prepareAndEncode(f.encoder, input()).bindGroup).toBe(published);
     runtime.setProbeClipmap(); expect(runtime.hasProbeClipmap).toBe(false);

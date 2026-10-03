@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { DEFAULT_DISPLAY_CONTRACT } from "@bim-studio/contracts";
 import type {
   DeepWebGpuBackend,
   DeepWebGpuSyncResult,
@@ -13,6 +14,7 @@ import { StudioDeepQualityTelemetrySampler, publishStudioQualityTelemetry,
 import type { ViewerEngine } from "./ViewerEngine";
 import type { RendererBackend } from "./viewerTypes";
 import { prepareStudioRendererCandidate } from "./prepareStudioRendererCandidate";
+import { observeRecoveryCandidate, recoveredAttemptCount } from "./studioRecoveryCandidate";
 import { TemporalFrameSettler } from "./temporalFrameSettler";
 import { studioDeepShadowAllocation, studioDeepShadowMapSize, studioDeepShadowTier } from "./studioDeepShadowAllocation";
 import { prepareStudioDeepEnvironmentSource, isStudioDeepEnvironmentSourceCurrent,
@@ -131,6 +133,9 @@ export class StudioDeepWebGpuBridge {
    * most one settle submission pending so RAF cannot build an unbounded queue. */
   private settleFrameInFlight = false;
   private settleFrameBackend: DeepWebGpuBackend | undefined;
+  /** F5-L4 探针捕获心跳泵:探针仍有捕获欠账时的一条自终止 RAF 心跳。渲染帧曾是
+   * 唯一捕获驱动,静置场景因此饿死捕获,GI 采样回退全量 IBL(门态无关洗光)。 */
+  private probePumpArmed = false;
   private controller: DeepCameraController | undefined;
   private inputSession: DeepCameraInputSession | undefined;
   private gestureActive = false;
@@ -148,6 +153,8 @@ export class StudioDeepWebGpuBridge {
    * 快照,面板诊断可与之逐字段对账。
    */
   private readonly hdrDisplayRequest: HdrDisplayRequest | undefined;
+  private replacementBudget: number | undefined;
+  private recoveryCandidateFailure: { readonly generation: number; readonly attempts: number } | undefined;
 
   constructor(
     private readonly viewer: ViewerEngine,
@@ -187,6 +194,9 @@ export class StudioDeepWebGpuBridge {
   }
 
   async switchTo(target: RendererBackend): Promise<StudioRendererSwitchResult> {
+    const replacementBudget = this.replacementBudget;
+    this.replacementBudget = undefined;
+    this.recoveryCandidateFailure = undefined;
     if (this.closed) return this.result("failed", "Renderer bridge is disposed.");
     this.cancelPendingSwitch();
     const generation = this.generation;
@@ -215,6 +225,7 @@ export class StudioDeepWebGpuBridge {
     let environment: PreparedStudioDeepEnvironment | undefined;
     let shadowMapSize = 1024;
     let frameCaptureSession: FrameCaptureSession | undefined;
+    let candidateObserver: ReturnType<typeof observeRecoveryCandidate> | undefined;
     try {
       const prepared = await prepareStudioRendererCandidate({
         signal: controller.signal,
@@ -290,7 +301,9 @@ export class StudioDeepWebGpuBridge {
               ...(gpuPassTiming ? { gpuPassTiming: true } : {}),
               ...(temporalUpscale ? { features: { temporalUpscale: true } } : {}),
               ...(virtualTextures ? { virtualTextures: { enabled: true } } : {}),
-              ...(this.options.recovery ? { recovery: this.options.recovery } : {}),
+              ...(this.options.recovery && replacementBudget !== 0 ? { recovery: {
+                ...this.options.recovery, ...(replacementBudget === undefined ? {} : { maxAttempts: replacementBudget }),
+              } } : {}),
               ...(this.hdrDisplayRequest === undefined ? {} : { hdrDisplay: this.hdrDisplayRequest }),
               ...(pipelineBootstrap ? { pipelines: pipelineBootstrap } : {}),
               adaptiveQuality: {
@@ -305,28 +318,38 @@ export class StudioDeepWebGpuBridge {
               //（studioDeepShadowTier）驱动无作者阴影时的兜底分配尺寸。
               shadows: { exactProfile: { cascadeCount: 1, shadowMapSize } },
               features: { environment: true, groundPlane: false,
-                groundGrid: false, screenSpaceReflection: true, volumetricFog: true, toneMapping: "three-aces-r185" },
+                groundGrid: false, screenSpaceReflection: true, volumetricFog: true,
+                toneMapping: DEFAULT_DISPLAY_CONTRACT.toneMapping.operator },
               ...(frameCaptureSession ? { frameCapture: { session: frameCaptureSession,
                 readbacks: { requests: [{ resourceId: "present-color" as const }, { resourceId: "linear-depth" as const }] },
                 onReadbackResults: createStudioFrameReadbackListener() } } : {}) },
             cameraLayerMask: this.viewer.camera.layers.mask, signal,
           });
           markSwitchPhase("deep-webgpu:scene-uploaded");
+          if (replacementBudget !== undefined && !signal.aborted) candidateObserver = observeRecoveryCandidate(backend, signal);
           return backend;
         },
         prepare: async (backend, signal) => {
-          await nextFrame(signal);
-          if (!this.independentPacketPath) updateAuthorProjectionState(this.viewer.scene, this.viewer.camera, signal);
-          // create 期间作者仍可编辑；重新投影并验证当前相机，而非发布创建时的快照。
-          // 这不是 revision 锁：验证期间的连续动画仍由发布后的作者帧订阅追平。
-          const latestView = this.viewReader.renderViewDirect(canvas);
-          if (typeof backend.prepareView === "function") await backend.prepareView(latestView, signal);
-          else await backend.prepareScene(this.projectionRoot(), latestView, this.viewer.camera.layers.mask, signal);
-          readStudioDeepEnvironmentView(this.viewer.scene, this.viewer.usesAuthorPostProcessing());
-          if (!environment || !isStudioDeepEnvironmentSourceCurrent(this.viewer.scene, environment)) {
-            throw new Error("作者环境在候选准备期间已改变。");
-          }
-          markSwitchPhase("deep-webgpu:frame-validated");
+          try {
+            await nextFrame(signal);
+            if (!this.independentPacketPath) updateAuthorProjectionState(this.viewer.scene, this.viewer.camera, signal);
+            // create 期间作者仍可编辑；重新投影并验证当前相机，而非发布创建时的快照。
+            // 这不是 revision 锁：验证期间的连续动画仍由发布后的作者帧订阅追平。
+            const latestView = this.viewReader.renderViewDirect(canvas);
+            if (typeof backend.prepareView === "function") await backend.prepareView(latestView, signal);
+            else await backend.prepareScene(this.projectionRoot(), latestView, this.viewer.camera.layers.mask, signal);
+            readStudioDeepEnvironmentView(this.viewer.scene, this.viewer.usesAuthorPostProcessing());
+            if (!environment || !isStudioDeepEnvironmentSourceCurrent(this.viewer.scene, environment)) {
+              throw new Error("作者环境在候选准备期间已改变。");
+            }
+            markSwitchPhase("deep-webgpu:frame-validated");
+          } catch (error) {
+            const attempts = await candidateObserver?.retryAfter(error);
+            if (attempts !== undefined && !signal.aborted && generation === this.generation) {
+              this.recoveryCandidateFailure = { generation, attempts };
+            }
+            throw error;
+          } finally { candidateObserver?.dispose(); }
         },
         dispose: (backend) => backend.dispose(),
         removeCanvas: () => canvas.remove(),
@@ -341,6 +364,7 @@ export class StudioDeepWebGpuBridge {
       markSwitchPhase("deep-webgpu:published");
       return this.result("switched");
     } finally {
+      candidateObserver?.dispose();
       if (this.pending === controller) this.pending = undefined;
     }
   }
@@ -439,21 +463,33 @@ export class StudioDeepWebGpuBridge {
   private replaceRecoveredBackend(backend: DeepWebGpuBackend): void {
     if (this.closed || this.deepBackend !== backend) return;
     const userSwitchPending = this.pending !== undefined;
+    let usedAttempts = recoveredAttemptCount(backend);
+    const maxAttempts = this.options.recovery?.maxAttempts ?? 3;
     this.cancelPendingSwitch();
     try { this.publishWebGl(); }
     catch (error) { this.options.onRuntimeFailure?.(error instanceof Error ? error : new Error(String(error))); return; }
     if (userSwitchPending) return;
     // The candidate transaction creates every GPU owner and validates its first
     // frame. A recovered DeviceSession cannot reuse the old resource graph.
-    const replacement = this.switchTo("webgpu"), generation = this.generation;
-    const reportFailure = (error: Error): void => {
-      if (!this.closed && generation === this.generation && this.activeBackendValue === "webgl") {
-        this.options.onRuntimeFailure?.(error);
+    const replace = async (): Promise<void> => {
+      while (!this.closed && usedAttempts <= maxAttempts) {
+        this.replacementBudget = maxAttempts - usedAttempts;
+        const replacement = this.switchTo("webgpu"), generation = this.generation;
+        let result: StudioRendererSwitchResult;
+        try { result = await replacement; }
+        catch (error) { result = this.result("failed", error instanceof Error ? error.message : String(error)); }
+        if (this.closed || generation !== this.generation || result.status === "cancelled") return;
+        if (result.status !== "failed") return;
+        const lost = this.recoveryCandidateFailure;
+        if (lost?.generation === generation) {
+          usedAttempts += lost.attempts;
+          if (usedAttempts <= maxAttempts) continue;
+        }
+        if (this.activeBackendValue === "webgl") this.options.onRuntimeFailure?.(new Error(result.error ?? "GPU renderer replacement failed."));
+        return;
       }
     };
-    void replacement.then(result => {
-      if (result.status === "failed") reportFailure(new Error(result.error ?? "GPU renderer replacement failed."));
-    }, error => reportFailure(error instanceof Error ? error : new Error(String(error))));
+    void replace();
   }
 
   private releaseDeep(): void {
@@ -708,6 +744,8 @@ export class StudioDeepWebGpuBridge {
         if (this.quality?.record(metrics) === true) publishStudioQualityTelemetry(this.quality.status());
       }
       this.shadowSession?.acknowledgeMapSize(metrics?.shadowMapSize);
+      // F5-L4: 渲染帧之外仍可能欠捕获(初始填充/包 dirty/调度器 deferred),武装心跳泵。
+      this.pumpProbeCapture();
       const session = (backend.runtime as { session?: RuntimeSession }).session;
       if (!metrics && session?.state === "lost") {
         throw new Error(session.diagnostics?.at(-1)?.message || "Deep WebGPU device was lost.");
@@ -827,6 +865,28 @@ export class StudioDeepWebGpuBridge {
   private probeClipmapEnabled(): boolean {
     const lighting = (this.viewer as Partial<ViewerEngine>).getGlobalLighting?.();
     return lighting?.enabled === true && lighting.globalIlluminationEnabled === true;
+  }
+
+  /**
+   * F5-L4: 武装探针捕获心跳泵。每次 deep 帧绘制后调用——覆盖探针启用、包修订
+   * (dirty 全场景)、相机事件三类捕获需求源;泵按 RAF 自续,直到会话上报无欠账
+   * (idle)自停,静置期不驻留任何定时器/回调。预算合同不变:泵只重新触发会话既有的
+   * 串行批次提交,每批仍受 updateBudget 约束。
+   */
+  private pumpProbeCapture(): void {
+    if (this.probePumpArmed || this.closed) return;
+    this.probePumpArmed = true;
+    const step = (): void => {
+      this.probePumpArmed = false;
+      const backend = this.deepBackend;
+      if (!backend || this.closed || !this.probeClipmapEnabled()
+        || document.visibilityState !== "visible") return;
+      let tick: "idle" | "busy" | "submitted" | "unavailable";
+      try { tick = backend.probeCaptureTick(); }
+      catch { return; }
+      if (tick === "submitted" || tick === "busy") this.pumpProbeCapture();
+    };
+    requestAnimationFrame(step);
   }
 
   private projectionRoot(): ThreeObjectSource {

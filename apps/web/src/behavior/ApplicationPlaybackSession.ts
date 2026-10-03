@@ -1,10 +1,11 @@
-import type { ApplicationDocument, JsonValue, ProjectRecord } from "@bim-studio/contracts";
+import type { ApplicationDocument, JsonValue, ProjectRecord, ScriptModule } from "@bim-studio/contracts";
 import type { ApplicationInteractionEffect, ApplicationInteractionEvent } from "@bim-studio/studio-core";
 import type { SceneBehaviorDependencyModule, SceneBehaviorModule, SceneCommand, SceneEvent } from "@bim-studio/scene-sdk";
 import { ApplicationPlaybackState } from "./ApplicationPlaybackState";
 import { SceneBehaviorManager, type SceneBehaviorManagerEntry, type SceneBehaviorManagerOptions } from "./SceneBehaviorManager";
 import { SceneCommandExecutor, type SceneCommandPort } from "./SceneCommandExecutor";
 import { resolveSceneBehaviorModule } from "./scriptModuleAdapter";
+import { hotSwapVariantId } from "./behaviorHotSwap";
 import { authorizeSceneCommands } from "./sceneCommandPolicy";
 import { executeUnityScriptCommand, isUnitySceneCommand } from "./unityScriptCommandHost";
 import { publishApplicationInteractionEffects } from "../studio/applicationInteractionHost";
@@ -35,6 +36,8 @@ export class ApplicationPlaybackSession {
   private disposed = false;
   private generation = 0;
   private queue = Promise.resolve();
+  /** 热插变体计数:每脚本每会话单调递增,保证变体 id 唯一(核心拒绝同 id)。 */
+  private readonly hotSwapCounts = new Map<string, number>();
 
   constructor(readonly source: ApplicationDocument, pageId: string, private readonly options: SceneBehaviorManagerOptions & {
     project?: ProjectRecord;
@@ -111,6 +114,27 @@ export class ApplicationPlaybackSession {
   advance(deltaMs: number) { if (!this.disposed && !this.paused) this.manager.advance(deltaMs); }
   get canStep() { return !this.disposed && this.paused && this.manager.canStep; }
   step() { return this.canStep && this.manager.step(); }
+
+  /**
+   * H-C6-S1 UI 接线:把编辑草稿(含未保存修改)热插进运行中的同名脚本,不重启会话、
+   * 不重置场景状态。核心合同拒绝同 id 热插,这里按原脚本 id 派生 `:hot{n}` 变体 id,
+   * 并继承运行中模块已解析的项目依赖;失败回滚由 Host 保证,非法热插同步抛出。
+   * 命令授权仍按文档已保存脚本的权限(挂载键不变,变体不可热插提权,fail-closed)。
+   */
+  hotSwapScript(script: ScriptModule): void {
+    if (this.disposed) throw new Error("试运行已结束，无法热插应用");
+    const running = this.modules.find((candidate) => candidate.id === script.id);
+    if (!running) throw new Error("当前脚本未在本次试运行中，请先试运行再热插应用");
+    const sequence = (this.hotSwapCounts.get(script.id) ?? 0) + 1;
+    const resolution = resolveSceneBehaviorModule(
+      { ...script, id: hotSwapVariantId(script.id, sequence) },
+      running.dependencies ?? [],
+    );
+    if (resolution.status !== "ready") throw new Error(resolution.message);
+    this.hotSwapCounts.set(script.id, sequence);
+    this.manager.hotSwap(script.id, resolution.module);
+  }
+
   togglePause() {
     if (this.disposed) return;
     if (this.debugging && this.paused && (this.loading || !this.entries.length || this.entries.some(entry => entry.diagnostics.status === "initializing"))) return;

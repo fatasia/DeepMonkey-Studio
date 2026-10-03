@@ -19,7 +19,7 @@ describe("industrial Agent HTTP lifecycle", () => {
     const runtime = testRuntime([]);
     runtime.resolveModelOptions = vi.fn(async () => ({ model: "selected", reasoningEffort: "deep" }));
     const app = createApiServer(); closeTasks.push(() => app.close());
-    await registerIndustrialAgentRoutes(app, { store: { getProject: () => ({ id: "project-1" } as never) }, runtime });
+    await registerIndustrialAgentRoutes(app, { store: testStore(), runtime });
     const result = await app.inject({ method: "POST", url: "/api/projects/project-1/ai/agent-runs",
       payload: { objective: "检查", allowedToolIds: ["industrial.control"], modelOptions: { model: "selected", reasoningEffort: "deep" } } });
     expect(result.statusCode).toBe(201);
@@ -36,7 +36,7 @@ describe("industrial Agent HTTP lifecycle", () => {
       return { kind: "finish", rationale: "已恢复", summary: "等待真实采样", decisionStatus: "insufficient-data", evidenceIds: [] };
     } } });
     const app = createApiServer(); closeTasks.push(() => app.close());
-    await registerIndustrialAgentRoutes(app, { store: { getProject: () => ({ id: "project-1" } as never) }, runtime });
+    await registerIndustrialAgentRoutes(app, { store: testStore(), runtime });
     const origin = await app.listen({ port: 0, host: "127.0.0.1" });
     const created = await fetch(`${origin}/api/projects/project-1/ai/agent-runs`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ objective: "检查温度", allowedToolIds: ["industrial.control"] }) });
     const failed = await created.json() as { id: string; revision: number; status: string };
@@ -57,7 +57,7 @@ describe("industrial Agent HTTP lifecycle", () => {
     ]);
     const app = createApiServer(); closeTasks.push(() => app.close());
     app.addHook("preHandler", async request => { request.systemUser = { id: "server-actor", role: "editor" } as never; });
-    await registerIndustrialAgentRoutes(app, { store: { getProject: () => ({ id: "project-1" } as never) }, runtime });
+    await registerIndustrialAgentRoutes(app, { store: testStore(), runtime });
     const start = await app.inject({ method: "POST", url: "/api/projects/project-1/ai/agent-runs", payload: { objective: "查询温度", allowedToolIds: ["industrial.control"] } });
     const waiting = start.json();
     expect(waiting.status).toBe("awaiting-input");
@@ -75,7 +75,7 @@ describe("industrial Agent HTTP lifecycle", () => {
     const runtime = testRuntime([]);
     const app = createApiServer(); closeTasks.push(() => app.close());
     app.addHook("preHandler", async request => { request.systemUser = { id: "viewer", role: "viewer" } as never; });
-    await registerIndustrialAgentRoutes(app, { store: { getProject: () => ({ id: "project-1" } as never) }, runtime });
+    await registerIndustrialAgentRoutes(app, { store: testStore(), runtime });
     const response = await app.inject({ method: "POST", url: "/api/projects/project-1/ai/agent-runs/run-http-1/resume", payload: { selectionId: "a", expectedRevision: 2 } });
     expect(response.statusCode).toBe(403);
     expect(await runtime.checkpoints.get("run-http-1")).toBeUndefined();
@@ -91,7 +91,7 @@ describe("industrial Agent HTTP lifecycle", () => {
       },
     }]);
     const app = createApiServer();
-    await registerIndustrialAgentRoutes(app, { store: { getProject: () => ({ id: "project-1" } as never) }, runtime });
+    await registerIndustrialAgentRoutes(app, { store: testStore(), runtime });
     const address = await app.listen({ port: 0, host: "127.0.0.1" });
     closeTasks.push(() => app.close());
 
@@ -131,7 +131,7 @@ describe("industrial Agent HTTP lifecycle", () => {
     ];
     const runtime = testRuntime(decisions);
     const app = createApiServer();
-    await registerIndustrialAgentRoutes(app, { store: { getProject: (id) => id === "project-1" ? ({ id } as never) : undefined }, runtime });
+    await registerIndustrialAgentRoutes(app, { store: { getProject: (id) => id === "project-1" ? ({ id } as never) : undefined, getAgentSettings: () => undefined, saveAgentSettings: async (settings: unknown) => settings }, runtime });
     const address = await app.listen({ port: 0, host: "127.0.0.1" });
     closeTasks.push(() => app.close());
 
@@ -160,6 +160,146 @@ describe("industrial Agent HTTP lifecycle", () => {
     expect(runtime.tools.execute).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ approval: expect.objectContaining({ scopeFingerprint: waiting.pendingTool.fingerprint }) }));
   });
 });
+
+
+// ---------------------------------------------------------------------------
+// H-autonomy：授权范围/执行模式配置面与自主执行 HTTP 闭环
+// ---------------------------------------------------------------------------
+
+describe("industrial Agent autonomy settings", () => {
+  it("round-trips execution mode and general-development switch with fail-closed validation", async () => {
+    const saved: unknown[] = [];
+    const runtime = testRuntime([]);
+    const app = createApiServer(); closeTasks.push(() => app.close());
+    app.addHook("preHandler", async request => { request.systemUser = { id: "admin-1", role: "admin" } as never; });
+    await registerIndustrialAgentRoutes(app, {
+      store: {
+        getProject: () => ({ id: "project-1" } as never),
+        getAgentSettings: () => saved.at(-1) as never,
+        saveAgentSettings: async (settings: unknown) => { saved.push(structuredClone(settings)); return settings; },
+      },
+      runtime,
+    });
+
+    const initial = await app.inject({ method: "GET", url: "/api/projects/project-1/ai/agent-settings" });
+    expect(initial.json()).toMatchObject({ settings: { mode: "confirm", generalDevelopment: false } });
+
+    // 开关未开启：general 发现面的启动请求 fail-closed 400（理由码透传，先于任何工具解析）。
+    const disabledStart = await app.inject({ method: "POST", url: "/api/projects/project-1/ai/agent-runs",
+      payload: { objective: "检查", allowedToolIds: ["industrial.control"], discovery: "general" } });
+    expect(disabledStart.statusCode).toBe(400);
+    expect(disabledStart.json()).toMatchObject({ code: "invalid-flag" });
+
+    const updated = await app.inject({ method: "PUT", url: "/api/projects/project-1/ai/agent-settings",
+      payload: { mode: "autonomous", generalDevelopment: true, autoApproveToolIds: [" operations.control.apply ", "operations.control.apply"] } });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toMatchObject({ settings: { mode: "autonomous", generalDevelopment: true, autoApproveToolIds: ["operations.control.apply"], updatedBy: "admin-1" } });
+
+    const readBack = await app.inject({ method: "GET", url: "/api/projects/project-1/ai/agent-settings" });
+    expect(readBack.json().settings.mode).toBe("autonomous");
+
+    const invalid = await app.inject({ method: "PUT", url: "/api/projects/project-1/ai/agent-settings", payload: { mode: "run-wild" } });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json()).toMatchObject({ code: "invalid-mode" });
+    const unknownField = await app.inject({ method: "PUT", url: "/api/projects/project-1/ai/agent-settings", payload: { secret: true } });
+    expect(unknownField.statusCode).toBe(400);
+    expect(unknownField.json()).toMatchObject({ code: "unknown-field" });
+    // 自主白名单垃圾输入 fail-closed 400（不得 500，更不得静默放大自主面）。
+    const garbage = await app.inject({ method: "POST", url: "/api/projects/project-1/ai/agent-runs",
+      payload: { objective: "检查", allowedToolIds: ["industrial.control"], executionMode: "autonomous", autoApproveToolIds: [42] } });
+    expect(garbage.statusCode).toBe(400);
+    expect(garbage.json()).toMatchObject({ code: "invalid-tool-list" });
+  });
+
+  it("refuses settings writes and general discovery for viewers and disabled switches", async () => {
+    const runtime = testRuntime([]);
+    const app = createApiServer(); closeTasks.push(() => app.close());
+    app.addHook("preHandler", async request => { request.systemUser = { id: "viewer", role: "viewer" } as never; });
+    await registerIndustrialAgentRoutes(app, { store: testStore(), runtime });
+
+    const denied = await app.inject({ method: "PUT", url: "/api/projects/project-1/ai/agent-settings", payload: { mode: "autonomous" } });
+    expect(denied.statusCode).toBe(403);
+    // 开关未开启：general 发现面目录请求 fail-closed 400（理由码透传）。
+    const tools = await app.inject({ method: "GET", url: "/api/projects/project-1/ai/agent-tools?discovery=general" });
+    expect(tools.statusCode).toBe(400);
+    expect(tools.json()).toMatchObject({ code: "general-development-disabled" });
+  });
+
+  it("runs an authorized high-risk tool without per-action approval in autonomous mode", async () => {
+    const decisions: AgentDecision[] = [
+      { kind: "call-tool", rationale: "受控操作", call: { toolId: "industrial.control", arguments: { target: "pump-1", enabled: true }, resources: [{ kind: "project", id: "project-1", projectId: "project-1" }] } },
+      { kind: "finish", rationale: "证据完整", summary: "泵已验证", decisionStatus: "production", evidenceIds: ["command-trace", "state-readback"] },
+    ];
+    const runtime = testRuntime(decisions);
+    const app = createApiServer(); closeTasks.push(() => app.close());
+    await registerIndustrialAgentRoutes(app, { store: testStore(), runtime });
+
+    const started = await app.inject({ method: "POST", url: "/api/projects/project-1/ai/agent-runs",
+      payload: { objective: "自主控制泵", allowedToolIds: ["industrial.control"], executionMode: "autonomous", execution: "background" } });
+    expect(started.statusCode).toBe(202);
+    const checkpoint = started.json();
+    expect(checkpoint.autonomy).toEqual({ mode: "autonomous" });
+    await vi.waitFor(async () => {
+      const view = await app.inject({ method: "GET", url: `/api/projects/project-1/ai/agent-runs/${checkpoint.id}` });
+      expect(view.json()).toMatchObject({ status: "completed" });
+    });
+    // 自主执行不逐条等人审批；审批以策略身份随调用进入执行链（审计留痕）。
+    const persisted = await runtime.checkpoints.get(checkpoint.id);
+    expect(runtime.tools.execute).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      approval: expect.objectContaining({ approvedBy: "autonomy-policy", scopeFingerprint: persisted?.toolRecords[0]?.fingerprint }),
+    }));
+    expect(persisted?.toolRecords[0]?.approval).toMatchObject({ approvedBy: "autonomy-policy" });
+  });
+
+  it("discovers registered capabilities by authorization and clamps the deny list", async () => {
+    const draftTool = { id: "modeling.parametric.draft", label: "参数化草案", description: "注册环外能力", effect: "write" as const, risk: "high" as const, requiresApproval: true };
+    const decisions: AgentDecision[] = [
+      { kind: "call-tool", rationale: "草案", call: { toolId: "modeling.parametric.draft", arguments: { target: "line", enabled: true }, resources: [{ kind: "project", id: "project-1", projectId: "project-1" }] } },
+      { kind: "stop", rationale: "收尾", code: "done", message: "草案已产出" },
+    ];
+    const runtime = testRuntime(decisions);
+    const originalList = runtime.tools.list.bind(runtime.tools);
+    runtime.tools.list = ((mode?: "curated" | "general") => mode === "general" ? [...originalList(), draftTool] : originalList()) as typeof runtime.tools.list;
+    const app = createApiServer(); closeTasks.push(() => app.close());
+    await registerIndustrialAgentRoutes(app, {
+      store: {
+        getProject: () => ({ id: "project-1" } as never),
+        getAgentSettings: () => ({ mode: "confirm", generalDevelopment: true, generalDevelopmentDeniedToolIds: ["industrial.control"] }) as never,
+        saveAgentSettings: async (settings: unknown) => settings,
+      },
+      runtime,
+    });
+
+    const catalog = await app.inject({ method: "GET", url: "/api/projects/project-1/ai/agent-tools?discovery=general" });
+    expect(catalog.statusCode).toBe(200);
+    expect(catalog.json()).toMatchObject({ discovery: "general", generalAvailable: true });
+    expect(catalog.json().tools.map((tool: { id: string }) => tool.id)).toContain("modeling.parametric.draft");
+
+    // 拒绝清单优先于注册表可见性：industrial.control 被显式排除后启动归一拒绝（fail-closed 400）。
+    const deniedStart = await app.inject({ method: "POST", url: "/api/projects/project-1/ai/agent-runs",
+      payload: { objective: "控制", allowedToolIds: ["industrial.control"], discovery: "general" } });
+    expect(deniedStart.statusCode).toBe(400);
+
+    const started = await app.inject({ method: "POST", url: "/api/projects/project-1/ai/agent-runs",
+      payload: { objective: "生成草案", allowedToolIds: ["modeling.parametric.draft"], discovery: "general", executionMode: "autonomous", execution: "background" } });
+    expect(started.statusCode).toBe(202);
+    expect(started.json()).toMatchObject({ discovery: "general" });
+    await vi.waitFor(async () => {
+      const view = await app.inject({ method: "GET", url: `/api/projects/project-1/ai/agent-runs/${started.json().id}` });
+      expect(view.json()).toMatchObject({ status: "blocked", failure: { code: "done" } });
+    });
+    expect(runtime.tools.execute).toHaveBeenCalledTimes(1);
+  });
+});
+
+function testStore() {
+  return {
+    getProject: () => ({ id: "project-1" } as never),
+    // H-autonomy：设置面依赖（未配置即默认 confirm/curated，行为与历史一致）。
+    getAgentSettings: () => undefined,
+    saveAgentSettings: async (settings: unknown) => settings,
+  };
+}
 
 function testRuntime(sequence: AgentDecision[]): IndustrialAgentRuntime {
   const decisions = [...sequence];

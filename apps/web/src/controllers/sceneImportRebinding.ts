@@ -56,6 +56,9 @@ export function rebindImportedSceneModels(
     ...(scene.animation ? {
       animation: {
         ...scene.animation,
+        ...(scene.animation.stateMachine ? { stateMachine: { ...scene.animation.stateMachine,
+          states: scene.animation.stateMachine.states.map((state) => ({ ...state, modelId: rebindId(state.modelId) })),
+        } } : {}),
         models: scene.animation.models.map((frame) => ({ ...frame, modelId: rebindId(frame.modelId) }))
       }
     } : {}),

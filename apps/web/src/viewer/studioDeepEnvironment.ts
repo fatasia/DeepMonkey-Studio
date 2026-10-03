@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { ScenePostProcessingState } from "@bim-studio/contracts";
+import { DEFAULT_DISPLAY_CONTRACT, type ScenePostProcessingState } from "@bim-studio/contracts";
 import type { PbrEnvironmentSource, PbrRendererOptions, RenderView } from "@bim-studio/deep-engine/webgpu";
 import { resolvePbrEnvironmentIntensity } from "@bim-studio/deep-engine/webgpu";
 import { projectStudioDeepLights, type StudioDeepEnvironmentIssue } from "./studioDeepEnvironmentLights";
@@ -60,7 +60,7 @@ export function projectStudioDeepEnvironment(input: StudioDeepEnvironmentInput):
       ambientOcclusion: post.enabled && Boolean(post.ssao || post.gtao),
       screenSpaceReflection: post.enabled && Boolean(post.screenSpaceReflection), temporalAa: false,
       occlusionCulling: true, bloom: post.enabled && post.bloom, vignette: post.enabled && Boolean(post.vignette),
-      toneMapping: "three-aces-r185" },
+      toneMapping: DEFAULT_DISPLAY_CONTRACT.toneMapping.operator },
       ...(environmentEnabled && input.preparedEnvironment ? { environment: input.preparedEnvironment } : {}) },
     view: { background: rgb(scene.background), floor: rgb(input.floorColor), exposure: input.exposure,
       lights, colorGrading: "neutral", environmentIntensity },

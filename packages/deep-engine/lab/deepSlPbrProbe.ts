@@ -127,6 +127,7 @@ export async function verifyDeepSlPbrPackage(device: GPUDevice): Promise<DeepSlP
 
       stage = "draw-readback";
       const sample = await drawDeepSlPbrCase(device, forward, shadow, adapted.report.materialDefaults);
+      if (sample.instanceStride !== 144) throw new Error("Legacy PBR probe requires its original instance144 stream.");
       executedAbi ??= Object.freeze({
         frameBytes: sample.frameBytes,
         geometryStride: sample.geometryStride,

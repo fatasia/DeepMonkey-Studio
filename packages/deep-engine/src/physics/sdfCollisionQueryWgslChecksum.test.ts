@@ -35,8 +35,11 @@ describe("SDF collision query WGSL single-source cross-host gate (TS half)", () 
     // i32 钳制取值(u32 减法在 0 处会回绕到远侧,这是实测踩出来的坑):
     expect(DEEP_SDF_COLLISION_QUERY_WGSL).toContain("fn at(x: i32, y: i32, z: i32) -> f32");
     expect(DEEP_SDF_COLLISION_QUERY_WGSL).toContain("clamp(x, 0, d.x - 1)");
-    // 域外 fail-closed:quiet NaN 位型 + 状态字,绝不静默「无碰撞」:
-    expect(DEEP_SDF_COLLISION_QUERY_WGSL).toContain("bitcast<f32>(0x7fc00000u)");
+    // 域外 fail-closed:quiet NaN 位型 + 状态字,绝不静默「无碰撞」。位型操作数经
+    // uniform 零项打破 const 折叠链(Tint/Dawn 拒绝 const bitcast NaN,真机探针实测,
+    // 见 wgsl/sdfCollisionQuery.wgsl 域外分支注释);NaN 字面量与 bitcast 形态分开钉定:
+    expect(DEEP_SDF_COLLISION_QUERY_WGSL).toContain("bitcast<f32>(nanBits)");
+    expect(DEEP_SDF_COLLISION_QUERY_WGSL).toContain("0x7fc00000u | (params.count * 0u)");
     expect(SDF_QUERY_NAN_BITS).toBe(0x7fc00000);
     expect(DEEP_SDF_COLLISION_QUERY_WGSL).toContain("statuses[gid.x] = 1u;");
     // trilinear + 中心差分梯度(固定 stencil 序 x→y→z):

@@ -20,7 +20,7 @@ describe("PBR direct display output", () => {
 
   it("uses one-pass output only when no effect or transparency needs HDR history", () => {
     expect(pbrDirectDisplayClear(view, directFeatures, false)).toEqual(
-      encodePbrDisplayColor(view.background, { exposure: 1, toneMapping: "deep-aces" }));
+      encodePbrDisplayColor(view.background, { exposure: 1, toneMapping: "three-aces-r185" }));
     expect(pbrDirectDisplayClear(view, directFeatures, true)).toBeUndefined();
     for (const feature of ["ambientOcclusion", "temporalAa", "spatialAa", "occlusionCulling", "bloom", "vignette"] as const) {
       expect(pbrDirectDisplayClear(view, { ...directFeatures, [feature]: true }, false)).toBeUndefined();

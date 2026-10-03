@@ -613,6 +613,8 @@ export abstract class ViewerEngineSimulation extends ViewerEngineRig {
       this.sceneAnimation = {
         duration: Math.max(animation.duration, 0.1),
         loop: animation.loop,
+        ...(animation.autoplay !== undefined ? { autoplay: animation.autoplay } : {}),
+        ...(animation.stateMachine !== undefined ? { stateMachine: structuredClone(animation.stateMachine) } : {}),
         pingPong: animation.pingPong ?? false,
         playbackSpeed: THREE.MathUtils.clamp(animation.playbackSpeed ?? 1, 0.1, 4),
         ...(animation.playbackRange !== undefined ? { playbackRange: animation.playbackRange } : {}),

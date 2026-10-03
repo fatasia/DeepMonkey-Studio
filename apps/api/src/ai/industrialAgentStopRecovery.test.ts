@@ -22,7 +22,7 @@ async function fixture() {
     const app = createApiServer();
     cleanup.push(() => app.close());
     app.addHook("preHandler", async request => { request.systemUser = { id: "operator", role: request.headers["x-test-role"] === "viewer" ? "viewer" : "editor" } as never; });
-    await registerIndustrialAgentRoutes(app, { store: { getProject: () => ({ id: "p" } as never) }, runtime: { checkpoints, tools, orchestrator } });
+    await registerIndustrialAgentRoutes(app, { store: { getProject: () => ({ id: "p" } as never), getAgentSettings: () => undefined, saveAgentSettings: async (settings: unknown) => settings }, runtime: { checkpoints, tools, orchestrator } });
     return { app, orchestrator };
   }
   return { directory, store, server, decisions, tools };

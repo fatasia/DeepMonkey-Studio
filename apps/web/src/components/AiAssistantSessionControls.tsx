@@ -1,20 +1,45 @@
+import { SquarePen } from "lucide-react";
 import type { useAssistantSessions } from "../ai/useAssistantSessions";
 import { translate as tr, type AppLocale } from "../i18n";
 import "./AiAssistantSessionControls.css";
 
-export function AiAssistantSessionControls({ sessions, locale, disabled, onSwitch }: {
-  sessions: ReturnType<typeof useAssistantSessions>; locale: AppLocale; disabled: boolean; onSwitch: () => void;
+type AssistantSessions = ReturnType<typeof useAssistantSessions>;
+const LOAD_MORE_SESSIONS = "__more__";
+
+/** 头部会话切换：标题下方的轻量下拉 + 新会话按钮；分页以"更多会话…"选项承载，不再占独立按钮。 */
+export function AiAssistantSessionPicker({ sessions, locale, disabled, onSwitch }: {
+  sessions: AssistantSessions; locale: AppLocale; disabled: boolean; onSwitch: () => void;
 }) {
   const t = (zh: string, en: string) => tr(locale, zh, en);
-  return <section className="ai-session-controls" aria-label={t("会话历史", "Conversation history")}>
-    <label>{t("会话", "Conversation")} <select aria-label={t("选择会话", "Choose conversation")} disabled={disabled || sessions.loading}
-      value={sessions.sessionId} onChange={event => { onSwitch(); if (event.target.value) void sessions.select(event.target.value); else sessions.newSession(); }}>
-      <option value="">{t("新会话", "New conversation")}</option>
+  const locked = disabled || sessions.loading;
+  return <div className="ai-session-picker">
+    <select aria-label={t("选择会话", "Choose conversation")} disabled={locked}
+      title={sessions.loading ? t("正在恢复会话…", "Restoring conversation…") : t("切换历史会话", "Switch conversation")}
+      value={sessions.sessionId} onChange={event => {
+        const next = event.target.value;
+        if (next === LOAD_MORE_SESSIONS) { void sessions.refresh(true); return; }
+        onSwitch();
+        if (next) void sessions.select(next); else sessions.newSession();
+      }}>
+      <option value="">{sessions.loading ? t("正在恢复会话…", "Restoring…") : t("新会话", "New conversation")}</option>
       {sessions.sessions.map(session => <option key={session.id} value={session.id}>{session.title}</option>)}
-    </select></label>
-    <button type="button" disabled={disabled || sessions.loading} onClick={() => { onSwitch(); sessions.newSession(); }}>{t("新会话", "New conversation")}</button>
-    {sessions.cursor && <button type="button" disabled={disabled} onClick={() => void sessions.refresh(true)}>{t("更多会话", "More conversations")}</button>}
-    {sessions.loading && <small role="status">{t("正在恢复会话…", "Restoring conversation…")}</small>}
+      {sessions.cursor && <option value={LOAD_MORE_SESSIONS}>{t("更多会话…", "More conversations…")}</option>}
+    </select>
+    <button type="button" className="ai-session-new" disabled={locked || !sessions.sessionId}
+      aria-label={t("新会话", "New conversation")} title={t("新会话", "New conversation")}
+      onClick={() => { onSwitch(); sessions.newSession(); }}>
+      <SquarePen size={14} />
+    </button>
+  </div>;
+}
+
+/** 会话同步/保存的异常提示：正常状态不渲染任何内容，只有需要用户处理时才出现。 */
+export function AiAssistantSessionControls({ sessions, locale, disabled, onSwitch }: {
+  sessions: AssistantSessions; locale: AppLocale; disabled: boolean; onSwitch: () => void;
+}) {
+  const t = (zh: string, en: string) => tr(locale, zh, en);
+  if (!sessions.externalSessionId && !sessions.conflict && !sessions.error) return null;
+  return <section className="ai-session-controls" aria-label={t("会话同步", "Conversation sync")}>
     {/* K12 多标签页同步：其他窗口保存了此会话时提示，由用户决定何时载入（不打断本页流式）。 */}
     {sessions.externalSessionId && <div role="status" className="ai-session-external"><span>
       {t("另一个窗口更新了此会话，可载入最新内容。", "This conversation was updated in another window; you can load the latest content.")}

@@ -92,7 +92,7 @@
 .topology-editor__actions { align-items: center; display: flex; gap: 5px; }
 .topology-editor__actions button { align-items: center; background: var(--bg-0); border: 1px solid var(--line-strong); border-radius: 5px; color: var(--text-strong); cursor: pointer; display: inline-flex; gap: 5px; height: 30px; padding: 0 8px; white-space: nowrap; }
 .topology-editor__actions button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.topology-editor__actions button.primary { background: var(--accent); border-color: var(--accent); color: var(--text-faint); font-weight: 700; }
+.topology-editor__actions button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
 .topology-editor__actions button:disabled { opacity: .38; cursor: default; }
 .topology-editor__actions label { align-items: center; color: var(--text-strong); cursor: pointer; display: inline-flex; font-size: 12px; gap: 5px; white-space: nowrap; }
 .topology-editor__actions input { accent-color: var(--topology-accent); }

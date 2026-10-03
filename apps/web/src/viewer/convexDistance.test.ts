@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   convexDistance,
+  convexPenetration,
   convexShapeFromUrdfGeometry,
   toWorldBody,
   translationTransform,
@@ -113,6 +114,136 @@ describe("convexDistance 解析对拍", () => {
     const first = convexDistance(a, b);
     const second = convexDistance(a, b);
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));
+  });
+});
+
+describe("convexPenetration EPA 合同", () => {
+  it.each([
+    { name: "球-球", a: sphereBody(1, [0, 0, 0]), b: sphereBody(0.5, [1, 0, 0]), depth: 0.5 },
+    { name: "盒-盒", a: verticesBody(unitBoxVertices(), translationTransform([0, 0, 0])), b: verticesBody(unitBoxVertices(), translationTransform([1.5, 0.2, 0.1])), depth: 0.5 },
+    { name: "盒-球", a: verticesBody(unitBoxVertices(), translationTransform([0, 0, 0])), b: sphereBody(0.5, [1.25, 0.2, 0.1]), depth: 0.25 },
+  ])("$name:解析深度、方向与支撑接触点", ({ a, b, depth }) => {
+    const result = convexPenetration(a, b, { relativeTolerance: 1e-9 });
+    expect(result.converged).toBe(true);
+    expect(result.depth).toBeCloseTo(depth, 5);
+    expect(result.normal[0]).toBeCloseTo(1, 3);
+    expect(result.normal[1]).toBeCloseTo(0, 3);
+    expect(result.normal[2]).toBeCloseTo(0, 3);
+    expect(Math.hypot(...result.normal)).toBeCloseTo(1, 12);
+    for (let axis = 0; axis < 3; axis++) {
+      expect(result.pointA[axis]! - result.pointB[axis]!).toBeCloseTo(result.depth * result.normal[axis]!, 6);
+    }
+  });
+
+  it.each([
+    { name: "球切触", a: sphereBody(0.5, [0, 0, 0]), b: sphereBody(0.5, [1, 0, 0]) },
+    { name: "盒切触", a: verticesBody(unitBoxVertices(), translationTransform([0, 0, 0])), b: verticesBody(unitBoxVertices(), translationTransform([2, 0, 0])) },
+    { name: "球分离", a: sphereBody(0.5, [0, 0, 0]), b: sphereBody(0.5, [2, 0, 0]) },
+    { name: "共面退化", a: verticesBody([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], translationTransform([0, 0, 0])), b: verticesBody([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], translationTransform([0.1, 0, 0])) },
+  ])("$name:不能作为严格穿透返回", ({ a, b }) => {
+    expect(() => convexPenetration(a, b)).toThrow(/touch|degenerate|strict|penetrat/i);
+  });
+
+  it("默认公差:球深度误差受支撑间隙界限约束", () => {
+    const result = convexPenetration(sphereBody(1, [0, 0, 0]), sphereBody(0.5, [1, 0, 0]));
+    expect(result.converged).toBe(true);
+    expect(result.depth).toBeGreaterThan(0);
+    expect(0.5 - result.depth).toBeLessThanOrEqual(1e-6 * result.depth + 1e-9);
+  });
+
+  it.each(["球", "盒"])("%s:交换两体后深度保持、唯一 MTD 方向翻转", (kind) => {
+    const a = kind === "球" ? sphereBody(1, [0, 0, 0]) : verticesBody(unitBoxVertices(), translationTransform([0, 0, 0]));
+    const b = kind === "球" ? sphereBody(0.5, [0.7, 0.4, -0.2]) : verticesBody(unitBoxVertices(), translationTransform([1.5, 0.2, -0.1]));
+    const ab = convexPenetration(a, b, { relativeTolerance: 1e-9 });
+    const ba = convexPenetration(b, a, { relativeTolerance: 1e-9 });
+    expect(ab.converged && ba.converged).toBe(true);
+    expect(ab.depth).toBeCloseTo(ba.depth, 6);
+    for (let axis = 0; axis < 3; axis++) expect(ab.normal[axis]).toBeCloseTo(-ba.normal[axis]!, 3);
+    expect(convexPenetration(a, b, { relativeTolerance: 1e-9 })).toEqual(ab);
+  });
+
+  it("共同刚体旋转/平移:盒深度与世界方向保持合同,MTD 之后分离", () => {
+    const angle = 0.7;
+    const nx = Math.cos(angle), ny = Math.sin(angle);
+    const offset: [number, number, number] = [3.1, -2.2, 0.3];
+    const a = verticesBody(unitBoxVertices(), { translation: offset, rotationQuaternion: quatZ(angle) });
+    const boxB = (distance: number) => verticesBody(unitBoxVertices(), {
+      translation: [offset[0] + nx * distance - ny * 0.2, offset[1] + ny * distance + nx * 0.2, offset[2] + 0.1],
+      rotationQuaternion: quatZ(angle),
+    });
+    const result = convexPenetration(a, boxB(1.5));
+    expect(result.converged).toBe(true);
+    expect(result.depth).toBeCloseTo(0.5, 9);
+    expect(result.normal[0]).toBeCloseTo(nx, 9);
+    expect(result.normal[1]).toBeCloseTo(ny, 9);
+    for (let axis = 0; axis < 3; axis++) expect(result.pointA[axis]! - result.pointB[axis]!).toBeCloseTo(result.depth * result.normal[axis]!, 9);
+    const separated = convexDistance(a, boxB(1.5 + result.depth + 1e-5));
+    expect(separated.separated).toBe(true);
+    if (separated.separated) expect(separated.distance).toBeCloseTo(1e-5, 9);
+    expect(() => convexPenetration(a, boxB(2))).toThrow(/touch|strict/i);
+  });
+
+  it("低预算:有限深度下界不能冒充收敛", () => {
+    const result = convexPenetration(sphereBody(1, [0, 0, 0]), sphereBody(0.5, [0.7, 0.4, 0.2]), { maxIterations: 1 });
+    const exactDepth = 1.5 - Math.hypot(0.7, 0.4, 0.2);
+    expect(result.converged).toBe(false);
+    expect(Number.isFinite(result.depth)).toBe(true);
+    expect(result.depth).toBeGreaterThanOrEqual(0);
+    expect(result.depth).toBeLessThanOrEqual(exactDepth);
+    expect([...result.normal, ...result.pointA, ...result.pointB].every(Number.isFinite)).toBe(true);
+  });
+
+  it("完全重心重合:MTD 非唯一仍返回确定的有限下界", () => {
+    const a = sphereBody(1, [0, 0, 0]);
+    const b = sphereBody(0.5, [0, 0, 0]);
+    const result = convexPenetration(a, b);
+    expect(result.depth).toBeGreaterThan(0);
+    expect(result.depth).toBeLessThanOrEqual(1.5);
+    expect(result.converged).toBe(false);
+    expect([...result.normal, ...result.pointA, ...result.pointB].every(Number.isFinite)).toBe(true);
+    expect(convexPenetration(a, b)).toEqual(result);
+  });
+
+  it("薄盒补维与小尺度球:严格穿透输出有限接触点", () => {
+    const thin = convexShapeFromUrdfGeometry({ type: "box", size: { x: 4, y: 2e-4, z: 1 } });
+    const a = toWorldBody(thin, { translation: [0, 0, 0], rotationQuaternion: quatZ(0.7) });
+    const b = toWorldBody(thin, { translation: [-Math.sin(0.7) * 1e-4, Math.cos(0.7) * 1e-4, 0], rotationQuaternion: quatZ(0.7) });
+    const result = convexPenetration(a, b);
+    expect(result.converged).toBe(true);
+    expect(result.depth).toBeCloseTo(1e-4, 9);
+    const small = convexPenetration(sphereBody(1e-5, [0, 0, 0]), sphereBody(1e-5, [1.5e-5, 0, 0]), { absoluteTolerance: 1e-12 });
+    expect(small.converged).toBe(true);
+    expect(small.depth).toBeCloseTo(5e-6, 10);
+    expect([...small.normal, ...small.pointA, ...small.pointB].every(Number.isFinite)).toBe(true);
+    for (let axis = 0; axis < 3; axis++) {
+      expect(Math.abs(small.pointA[axis]! - small.pointB[axis]! - small.depth * small.normal[axis]!)).toBeLessThan(1e-12);
+    }
+  });
+
+  it("EPA 选项沿用 GJK 校验合同", () => {
+    const a = sphereBody(1, [0, 0, 0]), b = sphereBody(1, [0.5, 0, 0]);
+    expect(() => convexPenetration(a, b, { relativeTolerance: 1 })).toThrow();
+    expect(() => convexPenetration(a, b, { absoluteTolerance: 0 })).toThrow();
+    expect(() => convexPenetration(a, b, { maxIterations: 0 })).toThrow();
+  });
+
+  it.each(Array.from({ length: 12 }, (_, index) => index + 1))("球解析方向矩阵 %i:深度、方向与点差", (index) => {
+    const radiusA = 0.3 + index * 0.03, radiusB = 0.2 + index * 0.02;
+    const raw = [Math.sin(index * 0.7), Math.cos(index * 1.3), Math.sin(index * 0.3)];
+    const length = Math.hypot(...raw);
+    const normal = raw.map(value => value / length);
+    const distance = (radiusA + radiusB) * 0.75;
+    const a = sphereBody(radiusA, [0.1, -0.2, 0.3]);
+    const b = sphereBody(radiusB, [0.1 + normal[0]! * distance, -0.2 + normal[1]! * distance, 0.3 + normal[2]! * distance]);
+    const result = convexPenetration(a, b, { relativeTolerance: 1e-8 });
+    const exact = radiusA + radiusB - distance;
+    expect(result.converged).toBe(true);
+    expect(result.depth).toBeGreaterThan(0);
+    expect(Math.abs(exact - result.depth)).toBeLessThanOrEqual(1e-8 * result.depth + 1e-9);
+    for (let axis = 0; axis < 3; axis++) {
+      expect(result.normal[axis]).toBeCloseTo(normal[axis]!, 3);
+      expect(result.pointA[axis]! - result.pointB[axis]!).toBeCloseTo(result.depth * result.normal[axis]!, 8);
+    }
   });
 });
 

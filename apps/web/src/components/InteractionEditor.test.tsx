@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { createInteractionScript } from "../interactionState";
-import { RESTRICTED_GRAPH_PREFIX } from "../scripting/restrictedInteractionDocument";
+import { parseRestrictedInteractionScript, RESTRICTED_ACTIONS_MIX_MESSAGE, RESTRICTED_GRAPH_PREFIX } from "../scripting/restrictedInteractionDocument";
 import { InteractionEditor } from "./InteractionEditor";
 
 vi.mock("./ProfessionalCodeEditor", () => ({ ProfessionalCodeEditor: () => <div data-editor="editable" /> }));
@@ -83,5 +83,40 @@ describe("restricted graph read-only tab (G2-S1)", () => {
     expect(html).not.toContain('role="tablist"');
     expect(html).not.toContain("只读行为图");
     expect(html).toContain("高级 JavaScript");
+  });
+});
+
+describe("G2 源码写回收口:受限域与可信预定义动作互斥(2026-10-02)", () => {
+  const target = { kind: "object" as const, modelId: "gate-model" };
+  const restricted = { ...createInteractionScript(target, "click"), code: RESTRICTED_GRAPH_PREFIX + JSON.stringify({
+    schemaVersion: 1,
+    graph: { id: "g", name: "图", nodes: [], edges: [] },
+  }) };
+
+  it("权威措辞单一事实来源:编辑器门禁常量与解析器抛错逐字节一致", () => {
+    let thrown: string | undefined;
+    try {
+      parseRestrictedInteractionScript({ ...restricted, actions: [{ id: "a1", type: "message", enabled: true, message: "混入" }] });
+    } catch (cause) {
+      thrown = cause instanceof Error ? cause.message : String(cause);
+    }
+    expect(thrown).toBe(RESTRICTED_ACTIONS_MIX_MESSAGE);
+  });
+
+  it("受限脚本:可信动作添加区不渲染(UI 防呆),页脚声明动作归属受限图", () => {
+    const html = renderToStaticMarkup(<InteractionEditor locale="zh-CN" target={target} targetName="图模型"
+      interactions={[restricted]} onChange={vi.fn()} onTest={vi.fn()} />);
+    expect(html).not.toContain("interaction-action-add");
+    expect(html).not.toContain("添加动作");
+    expect(html).toContain("动作由受限行为图管理");
+    expect(html).toContain('role="tablist"'); // 图编辑器不受影响
+  });
+
+  it("可信脚本:动作添加区保持原样(合法专业 JS 通道不误杀)", () => {
+    const html = renderToStaticMarkup(<InteractionEditor locale="zh-CN" target={target} targetName="模型"
+      interactions={[{ ...createInteractionScript(target, "click"), code: "api.log(1);" }]} onChange={vi.fn()} onTest={vi.fn()} />);
+    expect(html).toContain("interaction-action-add");
+    expect(html).toContain("添加动作");
+    expect(html).toContain("已配置 0 个内置动作");
   });
 });

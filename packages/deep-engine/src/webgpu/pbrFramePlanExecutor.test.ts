@@ -73,7 +73,7 @@ describe("pbr frame execution plan", () => {
 
 describe("plan vs actual pass matching", () => {
   it("declares only an activated HDR surface and matches its single actual present pass", () => {
-    const features = resolvePbrRendererFeatures({ ambientOcclusion: false, temporalAa: false, bloom: false, fog: false, spatialAa: false });
+    const features = resolvePbrRendererFeatures({ contactShadows: false,  ambientOcclusion: false, temporalAa: false, bloom: false, fog: false, spatialAa: false  });
     const subject = buildPbrFrameExecutionPlan(SURFACE, { transparency: false, features, hdrDisplay: true });
     const actual = collectActualPbrFramePasses(features, false, { hdrDisplay: true });
     expect(assertPlanMatchesActual(subject, actual).mismatches).toEqual([]);
@@ -84,9 +84,9 @@ describe("plan vs actual pass matching", () => {
   });
   it("matches every AO/SSR/TAA/bloom/HiZ/transparency feature combination in encode order", () => {
     for (let mask = 0; mask < 128; mask++) {
-      const features = resolvePbrRendererFeatures({ ambientOcclusion: !!(mask & 1),
+      const features = resolvePbrRendererFeatures({ contactShadows: false,  ambientOcclusion: !!(mask & 1),
         screenSpaceReflection: !!(mask & 2), temporalAa: !!(mask & 4), bloom: !!(mask & 8),
-        occlusionCulling: !!(mask & 16), spatialAa: false, volumetricFog: !!(mask & 64) });
+        occlusionCulling: !!(mask & 16), spatialAa: false, volumetricFog: !!(mask & 64)  });
       const transparency = !!(mask & 32);
       const writeGeometryBuffers = features.ambientOcclusion || features.screenSpaceReflection || features.volumetricFog
         || features.temporalAa || features.occlusionCulling;
@@ -148,7 +148,7 @@ describe("plan vs actual pass matching", () => {
 
   it("reports every plan pass that loses its actual description when features disable it", () => {
     const subject = plan(false);
-    const actual = collectActualPbrFramePasses(resolvePbrRendererFeatures({ ambientOcclusion: false }), false);
+    const actual = collectActualPbrFramePasses(resolvePbrRendererFeatures({ contactShadows: false,  ambientOcclusion: false  }), false);
     try { assertPlanMatchesActual(subject, actual); throw new Error("expected mismatch"); }
     catch (error) { expect((error as Error).message).toContain("actual-description"); }
   });
@@ -261,6 +261,28 @@ describe("pass execution receipt", () => {
     const bloom = receipt.samples.find(sample => sample.passChannel.endsWith(".bloom"))!;
     expect(bloom.unavailableReason).toBe("pass not encoded on this frame");
     expect(() => createPbrFrameReceipt(9, subject, [], 100, 116, new Set(["deform"]))).toThrow(/not mapped/);
+  });
+
+  it("regular receipts declare why mapped passes carry no timing instead of a bare missing reason", () => {
+    const subject = plan(false);
+    const executed = new Set(["opaque", "present"]);
+    // F1: 缺省路径保持历史 reason 逐字不变。
+    const legacy = createPbrFrameReceipt(1, subject, [], 0, 16, executed);
+    const opaqueLegacy = legacy.samples.find(sample => sample.passChannel.endsWith(".opaque"))!;
+    expect(opaqueLegacy.unavailableReason).toBe("missing timing entry for mapped pass");
+    // 常规回执帧:计时异步发布 / 未请求 两种口径,未编码 pass 的 reason 不受影响。
+    const deferred = createPbrFrameReceipt(2, subject, [], 0, 16, executed, "deferred-to-gpu-pass-timings");
+    expect(deferred.samples.find(sample => sample.passChannel.endsWith(".opaque"))!.unavailableReason)
+      .toBe("pass timing published asynchronously via gpuPassTimings");
+    const notRequested = createPbrFrameReceipt(3, subject, [], 0, 16, executed, "not-requested");
+    expect(notRequested.samples.find(sample => sample.passChannel.endsWith(".opaque"))!.unavailableReason)
+      .toBe("timing not requested on this frame");
+    for (const receipt of [deferred, notRequested]) {
+      expect(receipt.samples.find(sample => sample.passChannel.endsWith(".bloom"))!.unavailableReason)
+        .toBe("pass not encoded on this frame");
+      expect(receipt.samples.find(sample => sample.passChannel.endsWith(".deform"))!.unavailableReason)
+        .toContain("pass 未纳入第一切片");
+    }
   });
 
   it("rejects duplicate or out-of-plan timings and invalid durations", () => {

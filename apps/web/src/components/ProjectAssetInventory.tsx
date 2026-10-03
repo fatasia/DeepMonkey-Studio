@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, FileSliders, Gauge, Plus, Image as ImageIcon, Pencil, Search, Trash2, Video, WandSparkles } from "lucide-react";
+import { AlertTriangle, Box, CheckCircle2, FileSliders, Gauge, Plus, Image as ImageIcon, Pencil, RefreshCw, Search, Trash2, Video, WandSparkles } from "lucide-react";
 import type { ConversionStatus, ModelRecord } from "@bim-studio/contracts";
 import { translate as tr, type AppLocale } from "../i18n";
 import type { SceneManagerController } from "./SceneManager";
@@ -13,6 +13,56 @@ import { ModelEngineeringDialog } from "./ModelEngineeringDialog";
 import { UploadedResourceThumbnails } from "./UploadedResourceThumbnails";
 import { ProjectAssetThumbnail } from "./ProjectAssetThumbnail";
 import "./ProjectAssetInventory.css";
+
+export interface AssetRevisionInlineNoticeProps {
+  locale: AppLocale;
+  staleCount: number;
+  oldestSceneRevision: number;
+  latestRevision: number;
+  busy: boolean;
+  disabled: boolean;
+  notice?: { kind: "success" | "error" | "info"; message: string } | undefined;
+  onUpdate: () => void;
+}
+
+export function AssetRevisionInlineNotice({
+  locale,
+  staleCount,
+  oldestSceneRevision,
+  latestRevision,
+  busy,
+  disabled,
+  notice,
+  onUpdate,
+}: AssetRevisionInlineNoticeProps) {
+  if (staleCount === 0 && !notice) return null;
+  const kind = notice?.kind ?? "warning";
+  return (
+    <div className={`asset-revision-inline ${kind}`} role={notice?.kind === "error" ? "alert" : "status"}>
+      {notice?.kind === "success" ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+      <span>
+        <strong>
+          {notice?.kind === "success"
+            ? tr(locale, "修订已更新", "Revision updated")
+            : tr(locale, "资产修订陈旧", "Asset revision is stale")}
+        </strong>
+        <small title={notice?.message}>
+          {notice?.message ?? tr(
+            locale,
+            `场景 r${oldestSceneRevision} → 最新 r${latestRevision}，影响 ${staleCount} 个实例`,
+            `Scene r${oldestSceneRevision} → latest r${latestRevision}, ${staleCount} instances affected`,
+          )}
+        </small>
+      </span>
+      {staleCount > 0 && (
+        <button type="button" disabled={disabled} onClick={onUpdate}>
+          <RefreshCw className={busy ? "spin" : ""} size={13} />
+          {notice?.kind === "error" ? tr(locale, "重试更新", "Retry") : tr(locale, "一键更新", "Update")}
+        </button>
+      )}
+    </div>
+  );
+}
 
 export function ProjectAssetInventory({ controller }: { controller: SceneManagerController }) {
   const [preview, setPreview] = useState<ResourcePreviewItem | null>(null);
@@ -40,7 +90,13 @@ export function ProjectAssetInventory({ controller }: { controller: SceneManager
         <label><Search size={14} /><input aria-label={tr(locale, "搜索项目资源", "Search project assets")} value={assetSearch} onChange={(event) => setAssetSearch(event.target.value)} placeholder={tr(locale, "搜索项目资源", "Search project assets")} /></label>
       </div>
       <div className="project-resource-grid unified-assets-grid">
-        {visibleModels.map((model) => (
+        {visibleModels.map((model) => {
+          const staleReports = controller.assetRevisionReportsByAsset.get(model.id) ?? [];
+          const revisionBusy = controller.assetRevisionBusyIds.has(model.id);
+          const revisionNotice = controller.assetRevisionNotice?.modelId === model.id ? controller.assetRevisionNotice : undefined;
+          const latestRevision = Math.max(...staleReports.map(report => report.latestRevision), 0);
+          const oldestSceneRevision = Math.min(...staleReports.map(report => report.sceneRevision), latestRevision);
+          return (
           <article className={`project-resource-card unified-asset-card ${controller.selectedAssetModelId === model.id ? "asset-workflow-selected" : ""}`} key={model.id} data-model-id={model.id} tabIndex={controller.selectedAssetModelId === model.id ? -1 : undefined} ref={controller.selectedAssetModelId === model.id ? focusedModel : undefined}>
             <button type="button" className="project-resource-thumbnail" title={tr(locale, "浏览与设置缩略图", "Preview and set thumbnail")} onClick={() => setPreview(model)}><ProjectAssetThumbnail item={model} locale={locale} /></button>
             <div className="model-library-info">
@@ -55,6 +111,16 @@ export function ProjectAssetInventory({ controller }: { controller: SceneManager
               <ResourceUsageBadge locale={locale} resource={resourceGovernance.resources.find((resource) => resource.kind === "model" && resource.id === model.id)} />
               {model.status === "processing" && <progress max={100} value={model.progress} aria-label={`${tr(locale, "转换进度", "Conversion progress")} ${model.progress}%`} />}
             </div>
+            <AssetRevisionInlineNotice
+              locale={locale}
+              staleCount={staleReports.length}
+              oldestSceneRevision={oldestSceneRevision}
+              latestRevision={latestRevision}
+              busy={revisionBusy}
+              disabled={modelLibraryBusy || revisionBusy || model.status !== "ready"}
+              notice={revisionNotice ? { kind: revisionNotice.kind, message: revisionNotice.message } : undefined}
+              onUpdate={() => void controller.updateAssetRevision(model)}
+            />
             <div className="model-asset-actions" role="group" aria-label={tr(locale, `${model.name} 操作`, `Actions for ${model.name}`)}>
             <RobotAssetMediaActions locale={locale} model={model} disabled={modelLibraryBusy} screenshot={false} compact />
             <button className="button" onClick={() => setPreview(model)} aria-label={tr(locale, `浏览 ${model.name}`, `Browse ${model.name}`)}>{tr(locale, "浏览", "Browse")}</button>
@@ -67,7 +133,8 @@ export function ProjectAssetInventory({ controller }: { controller: SceneManager
             <button className="manager-icon-button danger" aria-label={tr(locale, `删除模型 ${model.name}`, `Delete model ${model.name}`)} title={tr(locale, "删除模型", "Delete model")} disabled={modelLibraryBusy} onClick={() => void deleteLibraryModel(model)}><Trash2 size={15} /></button>
             </div>
           </article>
-        ))}
+          );
+        })}
         {visibleImages.map((asset) => (
           <article className="project-resource-card unified-asset-card" key={asset.id}>
             <button type="button" className="project-resource-thumbnail" title={tr(locale, "浏览与设置缩略图", "Preview and set thumbnail")} onClick={() => setPreview(asset)}><ProjectAssetThumbnail item={asset} locale={locale} /></button>

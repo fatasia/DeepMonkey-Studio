@@ -391,3 +391,7 @@
   .data-center-page .data-center-columns { grid-template-columns: 1fr; }
   .data-center-page .data-center-pane { border-right: 0; border-bottom: 1px solid var(--dc-line); }
 }
+
+/* KWeaver 式开箱即用:样例装载与新建连接并列的空态动作组。 */
+.data-list-empty-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.data-list-empty-actions .secondary { background: var(--bg-2, #1a252c); color: var(--text-primary, #dfe9ee); border: 1px solid var(--border, #2c3a42); }

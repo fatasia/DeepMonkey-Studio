@@ -154,11 +154,17 @@ fn orientedNormal(normalInput: vec3f, material: vec4f, frontFacing: bool) -> vec
   return safeNormalize(select(normalInput, -normalInput, reverseBackFace), vec3f(0.0, 1.0, 0.0));
 }
 ${GROUND_ALBEDO_WGSL}
+// F5 方案 A（2026-10-03 用户批准）：镜面 IBL 方向可见度门以探针 RGB L1 SH 重建
+// clamp(luma(recon(reflection))/luma(env),0,1) 为主路径（SH 缺失探针按 f5-variant-semantics
+// 标量门 fallback）；f5-final-webgpu-verification 撤销的「全域标量亮度比乘子」不再以全域
+// 形式回归——标量只作为缺失 SH 的逐探针 fallback（其暗 albedo vs 遮挡不可辨识局限在案）。
+// 白炉/域外 gate≡1.0 → 乘法逐位不变。见 docs/specs/f5-directional-l1-implementation-20261003.md。
 fn shade(fragmentCoordinate: vec2f, world: vec3f, normalInput: vec3f, geometryNormal: vec3f, ground: bool, baseInput: vec3f, metalInput: f32,
   roughInput: f32, occlusionInput: f32, emissive: vec3f, authorShadow: vec4f, materialFlags: f32, dielectric: f32,
   applyFog: bool) -> vec3f {
   deepResetDirectViewDfg();
-  let n = safeNormalize(normalInput, vec3f(0.0, 1.0, 0.0));
+  // orientedNormal/mappedNormal already normalize and provide fallback.
+  let n = normalInput;
   let view = safeNormalize(frame.eye.xyz - world, vec3f(0.0, 0.0, 1.0));
   let l = safeNormalize(frame.lightDirection.xyz, vec3f(0.0, 1.0, 0.0));
   let metal = select(metalInput, 0.0, ground); let rough = min(1.0,
@@ -197,7 +203,12 @@ fn shade(fragmentCoordinate: vec2f, world: vec3f, normalInput: vec3f, geometryNo
     color += (1.0 - specularFraction) * (1.0 - metal) * base * irradiance * occlusion * frame.eye.w;
     let reflection = reflect(-view, n);
     let radiance = deepPbrReflectionRadiance(world, reflection, rough) * frame.lightDirection.w;
-    color += radiance * specularFraction * occlusion * frame.eye.w;
+    // F5 方案 A（批准设计）：镜面 IBL 方向可见度门 = clamp(luma(L1 SH 重建(reflection)) /
+    // luma(env), 0, 1)。保守三分支（域外/近黑/采样不足恒 1）+ SH 缺失探针标量 fallback；
+    // 白炉/开阔天空 gate≡1.0 → radiance*1.0 与无门版本逐位同（IEEE754 ×1.0 精确）。
+    // 合同：docs/specs/f5-directional-l1-implementation-20261003.md §1.3。
+    let specularDirectionalVisibility = deepGiSpecularDirectionalVisibility(world, n, reflection, environmentIrradiance);
+    color += radiance * specularDirectionalVisibility * specularFraction * occlusion * frame.eye.w;
   }
   color += deepAuthoredDiffuse(n, base, metal, occlusionInput) + select(emissive, vec3f(0.0), ground);
   return select(color, deepApplySceneFog(select(color, baseInput, flag(materialFlags, 64u)), world, materialFlags), applyFog);

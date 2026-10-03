@@ -4,6 +4,7 @@ import type { RuntimePrefilteredIbl } from "../runtimePackage/environmentTypes.j
 import { createPbrEnvironment } from "./pbrEnvironmentSource.js";
 import type { DeviceSession } from "./deviceSession.js";
 import { DeviceResourceBudgetError } from "./deviceResourceMemory.js";
+import { DynamicIblResidency } from "./dynamicIblResidency.js";
 
 function fixture() {
   const owned = new Set<any>(), allocated: any[] = [];
@@ -21,6 +22,28 @@ const input = () => ({ kind: "prefiltered-ibl" as const, environment: createRunt
 beforeEach(() => vi.stubGlobal("GPUTextureUsage", { TEXTURE_BINDING: 1, COPY_DST: 2 }));
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 describe("prefiltered IBL production source", () => {
+  it("uploads the retained chain tail at physical mip0 with original-domain metadata", async () => {
+    const f = fixture(), source = { ...input(), keptMips: 1 };
+    const ibl = source.environment;
+    const tailBudget = ibl.specular.mips[1]!.size ** 2 * 48 + ibl.diffuse.mips[0]!.size ** 2 * 48
+      + ibl.brdfLut.width * ibl.brdfLut.height * 8;
+    const residency = new DynamicIblResidency(tailBudget), plan = residency.plan(ibl);
+    expect(plan.disposition).toBe("accept-degraded");
+    source.keptMips = plan.keptMips;
+    const environment = await createPbrEnvironment(f.session, source, new AbortController().signal);
+    expect(f.allocated[0].descriptor).toMatchObject({ mipLevelCount: 1,
+      size: { width: 1, height: 1, depthOrArrayLayers: 6 } });
+    expect(f.device.queue.writeTexture).toHaveBeenCalledTimes(3);
+    expect([...f.device.queue.writeTexture.mock.calls[0]![1]])
+      .toEqual([...Buffer.from(source.environment.specular.mips[1]!.dataBase64, "base64")]);
+    expect(environment.specularMipSelection).toEqual({ rawMips: 2, keptMips: 1, droppedMips: 1 });
+    environment.dispose(); expect(f.owned.size).toBe(0);
+  });
+  it.each([0, 3, NaN, 1.5])("rejects invalid retained count %s before allocating", async keptMips => {
+    const f = fixture();
+    await expect(createPbrEnvironment(f.session, { ...input(), keptMips }, new AbortController().signal)).rejects.toThrow("keptMips");
+    expect(f.allocated).toHaveLength(0);
+  });
   it("refuses a candidate before allocation and rolls back earlier candidate textures", async () => {
     const f = fixture(), error = new DeviceResourceBudgetError("budget refused");
     f.session.assertResourceAdmission = vi.fn().mockImplementationOnce(() => {}).mockImplementation(() => { throw error; });

@@ -101,10 +101,14 @@ describe("contact shadow frame plan", () => {
     expect(PBR_TIMED_PASS_IDS).toContain("contact-shadow");
   });
 
-  it("is absent from the plan when the opt-in feature is off (Z 默认档不带)", () => {
-    const plan = buildPbrFrameExecutionPlan(SURFACE,
+  it("is in the default plan (Z2/Z3.5 质感默认) and absent when explicitly opted out", () => {
+    // Z2/Z3.5:接触阴影进入默认档(用户授权的质感默认);显式 off 仍如实从计划摘除。
+    const defaultPlan = buildPbrFrameExecutionPlan(SURFACE,
       { transparency: false, features: resolvePbrRendererFeatures({}) });
-    expect(plan.passOrder).not.toContain("contact-shadow");
+    expect(defaultPlan.passOrder).toContain("contact-shadow");
+    const optedOut = buildPbrFrameExecutionPlan(SURFACE,
+      { transparency: false, features: resolvePbrRendererFeatures({ contactShadows: false }) });
+    expect(optedOut.passOrder).not.toContain("contact-shadow");
     expect(PBR_TIMED_PASS_IDS).toContain("contact-shadow");
   });
 });

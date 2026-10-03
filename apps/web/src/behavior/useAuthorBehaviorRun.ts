@@ -97,6 +97,12 @@ export function useAuthorBehaviorRun(options: Options) {
 
   return { session, logs, run, stop, id: runId.current,
     debug: (draft: ScriptModule) => run(draft, "current", true),
+    /** H-C6-S1:把当前草稿热插进运行中的同名脚本;非法热插同步抛出,由面板呈现三态。 */
+    hotSwap: (draft: ScriptModule) => {
+      const session = owner.current;
+      if (!session) throw new Error("当前没有试运行会话，请先试运行再热插应用");
+      session.hotSwapScript(draft);
+    },
     clearLogs: () => { if (session) session.logs = []; setLogs([]); },
     pauseResume: () => { owner.current?.togglePause(); refresh(value => value + 1); },
     step: () => { owner.current?.step(); refresh(value => value + 1); },

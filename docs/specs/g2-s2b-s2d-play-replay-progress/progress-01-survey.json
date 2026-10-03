@@ -1,0 +1,66 @@
+{
+  "line": "G2-S2b/S2d Play 草稿/重新应用状态与轨迹回放 UI",
+  "date": "2026-10-02",
+  "surveySteps": {
+    "1-grep": {
+      "playDraft": "全仓无 playDraft 命中——「Play 草稿」是估时表 G 行对剩余缺口的措辞,非既有符号",
+      "useScenePlayMode": [
+        "apps/web/src/App.tsx",
+        "apps/web/src/hooks/useScenePlayMode.ts",
+        "apps/web/src/hooks/useScenePlayMode.test.ts",
+        "apps/web/src/controllers/playSessionRestoreTiming.test.ts",
+        "apps/web/src/controllers/sceneWorkspaceSave.test.ts",
+        "apps/web/src/scripting/playModeScriptRuntime.ts",
+        "apps/web/src/views/AppWorkspaceTopbar.tsx"
+      ],
+      "behaviorTraceLog": [
+        "apps/web/src/scripting/behaviorTraceLog.ts",
+        "apps/web/src/scripting/behaviorGraphRuntime.ts",
+        "apps/web/src/scripting/restrictedPlayConsumer.ts",
+        "apps/web/src/viewer/viewerEngineRootMotion.ts",
+        "apps/web/src/viewer/viewerEngineRuntime.ts"
+      ],
+      "trajectoryOrReplay": "Workcell 轨迹族(WorkcellTrajectoryEvidence/trajectoryEngine)属规划证据域,非本 S2d;DataReplayPanel/PlantLitePlayback/PhysicsDebugPanel 为其他域回放先例"
+    },
+    "2-contracts": {
+      "BehaviorTraceEntry": "apps/web/src/scripting/behaviorTraceLog.ts(164 行):seq/atMs/graphId/eventNodeId/actionNodeId/action/target/before/after/outcome(applied|skipped|rejected)/reason,环形缓冲 ≤4096,注入时钟确定性",
+      "SceneInteractionTrigger": "packages/contracts/src/scene.ts:845",
+      "SceneDirectorWorkspace": "apps/web/src/components/SceneTimelinePanel.tsx:19 = \"timeline\"|\"shots\"|\"navigation\""
+    },
+    "3-deps": "零新依赖:lucide-react/react 既有;i18n 走 tr() 内联;导出走 Blob+anchor(PhysicsDebugPanel 先例)",
+    "4-consumers": {
+      "restrictedPlayConsumer.onTrace/onCommand": "接口存在(App.tsx:812 创建时未传)——T31 轨迹在生产 Play 链路被丢弃",
+      "engine.snapshotModelAnimationEventTrace": "viewerEngineRuntime.ts:66 公开,无 UI 消费方(dead API)",
+      "useSceneHistoryState playModeActive 门禁": "useSceneHistoryState.ts:121/137/156 三处吸收记账,无计数呈现",
+      "pendingBehaviorDraftRef": "enterPlay 不 flush 行为草稿(仅离开三维工作区时 flush);Play 按已保存脚本运行,草稿忽略但无呈现"
+    },
+    "5-tests": {
+      "useScenePlayMode.test.ts": "生命周期/恢复/历史隔离家族(T30×T27)已绿",
+      "sceneWorkspaceSave.test.ts": "Play 走生产持久化恢复 + 代际竞争重试已绿",
+      "playSessionRestoreTiming.test.ts": "I-C25 分段计时/双失败重试已绿",
+      "behaviorTraceLog.test.ts / behaviorGraphRuntime.test.ts": "T31 日志与运行时确定性已绿"
+    },
+    "6-specs": [
+      "docs/specs/g2-behavior-authoring-design-20260930.md §2.4 确定性回放(真值=轨迹日志;面板=审阅器不是第二运行时;回放不写场景;导出沿 T17/T28 纪律)§3-6 达标线(时间轴 scrub+逐条步进+before/after+outcome 徽标;1 万条无明显卡顿;JSON 导出)",
+      "docs/specs/g2-s2a-visual-review-20261002.md(S2a 基线与 10 维验收标准)",
+      "docs/specs/i-c25-play-restore-evidence-20260930.md(Play 恢复分段计时/双失败重试已收口)",
+      "docs/specs/remaining-tasks-estimates-20260930.md G 行(G2-S2b/S2d 唯一权威缺口表述)"
+    ]
+  },
+  "existing": [
+    "Play 状态机与快照恢复(T30 useScenePlayMode + I-C25 playSessionRestore):进入 flush+深拷贝快照、退出 applyScene 整体恢复、restore-failed 保持可重试、engine-lost 上报——退出/异常重新应用状态机制完备,复用不重建",
+    "Play UI 呈现半壁:顶栏按钮 is-playing 态/自动保存暂停徽标/undo-redo 禁用 tooltip/进出 toast",
+    "T31 轨迹日志全链(restrictedPlayConsumer/behaviorGraphRuntime/viewerEngineRootMotion)与 SceneTimelinePanel 导演台(549 行,timeline/shots/navigation 三工作区)、S2a 验收基建(isolatedStudioGate+visual-gate 脚本模式)、C4 录制、T28 步进/导出先例"
+  ],
+  "gaps": [
+    "S2b-B1 未保存行为脚本草稿不参与 Play(热重载语义正确)但进入时零呈现——用户不知道 Play 按已保存版本运行",
+    "S2b-B2 Play 期间临时修改无计数呈现,退出无丢弃汇报(修改默默消失)",
+    "S2d-C1 Play 会话 T31 轨迹生产链路被丢弃(App 未接 onTrace),退出即失,不可审计",
+    "S2d-C2 确定性回放面板(§2.4:时间轴 scrub/步进/before-after/outcome 徽标/JSON 导出)为零;引擎动画事件轨迹 API 无消费方"
+  ],
+  "plan": {
+    "S2b": "useSceneHistoryState 播放吸收计数 ref(会话内清零)+ useScenePlayMode 域纯文案函数(进入:草稿排除说明;退出:丢弃计数汇报)+ App 接线 + 聚焦测试",
+    "S2d": "playTraceStore(scriptId→条目集,确定性排序/JSON 导出,订阅+节流)+ BehaviorTraceReplay 审阅器(只读,复用导演台第四工作区『行为轨迹』,不建第二套时间轴,标记抽稀防 4k 卡顿)+ App 接 onTrace + SceneTimelinePanel 加 workspace + 聚焦测试",
+    "acceptance": "聚焦测试绿 + web tsc + g2-s2b-s2d-visual-gate.mjs 两轮 1920×1080 深色(tick 图驱动轨迹,免拾取)逐张 Read + 10 维自评"
+  }
+}

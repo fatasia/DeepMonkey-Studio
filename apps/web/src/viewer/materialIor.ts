@@ -7,6 +7,18 @@ export function materialIor(material: THREE.Material): number | undefined {
   return value.isMeshStandardMaterial ? value.isMeshPhysicalMaterial ? value.ior : 1.5 : undefined;
 }
 
+/** Copy the existing owned surface without transferring or disposing borrowed texture resources. */
+export function copyOwnedMaterialSurface(target: THREE.Material, source: THREE.Material): void {
+  const physical = target as THREE.MeshPhysicalMaterial;
+  const standard = source as THREE.MeshStandardMaterial;
+  if (physical.isMeshStandardMaterial && standard.isMeshStandardMaterial) THREE.MeshStandardMaterial.prototype.copy.call(physical, standard);
+  else target.copy(source);
+  if (physical.isMeshPhysicalMaterial) physical.defines = { ...(standard.defines ?? {}), PHYSICAL: "", STANDARD: "" };
+  target.userData = { ...source.userData };
+  target.onBeforeCompile = source.onBeforeCompile;
+  target.customProgramCacheKey = source.customProgramCacheKey;
+}
+
 /** Promote only edited standard materials; physical parameters require Three's physical shader. */
 export function prepareMaterialIor(object: THREE.Object3D, patch: SceneMaterialState,
   collisionOriginals: Map<THREE.Mesh, THREE.Material | THREE.Material[]>,
@@ -33,12 +45,7 @@ export function prepareMaterialIor(object: THREE.Object3D, patch: SceneMaterialS
       if (material.isMeshPhysicalMaterial) { material.ior = ior; return source; }
       if (ior === 1.5) return source;
       const physical = new THREE.MeshPhysicalMaterial();
-      THREE.MeshStandardMaterial.prototype.copy.call(physical, material);
-      physical.defines = { ...material.defines, PHYSICAL: "" };
-      // Texture ownership metadata and source snapshots retain their original objects.
-      physical.userData = { ...material.userData };
-      physical.onBeforeCompile = material.onBeforeCompile;
-      physical.customProgramCacheKey = material.customProgramCacheKey;
+      copyOwnedMaterialSurface(physical, material);
       physical.ior = ior;
       onPromote?.(source, physical);
       replacements.set(source, physical);

@@ -7,6 +7,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { compareGeometryDepth } from "./lib/j3GeometryDepthParity.mjs";
 import { compareHdrFlat } from "./lib/j3HdrFlatParity.mjs";
+import { snapshotLayerSources, requireUnchangedLayerSources } from "./lib/j3LayerSourceIdentity.mjs";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const flags = new Set(process.argv.slice(2));
 const hdrMode = flags.delete("--hdr"), out = path.join(root, `test-output/interrupted-0930/${hdrMode ? "hdr-flat-normal" : "geometry-depth"}`);
@@ -16,6 +17,18 @@ await mkdir(out, { recursive: true });
 const manifestSource = await readFile(path.join(root, `packages/deep-engine/fixtures/${hdrMode ? "j3-hdr-flat-normal-v1" : "j3-geometry-depth-v1"}.json`), "utf8");
 const manifest = JSON.parse(manifestSource), manifestHash = createHash("sha256").update(manifestSource).digest("hex");
 const nativePath = path.join(out, "native.json"), webPath = path.join(out, "web.json"), evidencePath = path.join(out, "evidence.json");
+const sourceFiles = ["scripts/j3-geometry-depth-parity.mjs", "scripts/lib/j3GeometryDepthParity.mjs",
+  "scripts/lib/j3HdrFlatParity.mjs", "packages/deep-engine/lab/j3GeometryDepthProbe.ts",
+  "packages/deep-engine/fixtures/j3-geometry-depth-v1.json", "packages/deep-engine/fixtures/j3-hdr-flat-normal-v1.json",
+  manifest.sourceFixture, "packages/deep-engine-native/tests/gpu_shader_material_draw.rs",
+  "packages/deep-engine-native/tests/support/lod_draw_readback.rs",
+  "packages/deep-engine-native/tests/support/j3_geometry_depth.rs", "packages/deep-engine-native/tests/support/j3_geometry_depth_readback.rs",
+  "packages/deep-engine-native/tests/support/j3_hdr_frame.rs", "packages/deep-engine-native/tests/support/shader_material_renderer.rs",
+  "packages/deep-engine-native/tests/support/shader_material_observers.rs"];
+const stored = flags.has("--compare") ? JSON.parse(await readFile(evidencePath, "utf8")) : undefined;
+await rm(evidencePath, { force: true });
+const before = await snapshotLayerSources(sourceFiles);
+if (stored) requireUnchangedLayerSources(stored.sourceIdentity, before);
 if (!flags.has("--compare")) {
   await rm(evidencePath, { force: true }); await rm(webPath, { force: true });
   if (!flags.has("--web-only")) {
@@ -65,6 +78,8 @@ else {
   if (hdrMode && (native.manifestHash !== manifestHash || web.manifestHash !== manifestHash)) throw Error("Actual HDR manifest identity drift");
   const evidence = hdrMode ? compareHdrFlat(manifest, web, native) : compareGeometryDepth(manifest, web, native);
   const result = { ...evidence, currentRun: !flags.has("--compare"),
+    sourceIdentity: stored?.sourceIdentity ?? before,
     evidenceMode: flags.has("--compare") ? "historical file comparison; no host executed" : "both production hosts executed in this run" };
+  requireUnchangedLayerSources(before, await snapshotLayerSources(sourceFiles));
   await writeFile(evidencePath, `${JSON.stringify(result, null, 2)}\n`); console.log(JSON.stringify(result, null, 2));
 }

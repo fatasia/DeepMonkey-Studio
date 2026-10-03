@@ -72,6 +72,25 @@ describe("assistant session persistence", () => {
     expect(restored.messages[0].reliability).toEqual(reliability);
     expect((await f.app.inject({ method: "PUT", url: `${base}/reliability/messages/bad`, payload: { ...turn, reliability: { ...reliability, evidenceCount: -1 } } })).statusCode).toBe(400);
   });
+  it("persists per-item citation anchors and rejects malformed ones (T5)", async () => {
+    const f = await fixture();
+    await f.app.inject({ method: "PUT", url: `${base}/citations`, payload: { title: "逐条引用" } });
+    const reliability = {
+      grade: "context-supported", contextTrust: "server-evidence", inputRisk: "low", writePolicy: "read-only",
+      evidenceCount: 0, warnings: [], sourceLabels: ["设备数据"], traceId: "trace-1", contextFingerprint: "sha256:abc",
+      citations: [{ token: "EQ-2205", anchors: [{ sourceId: "workspace-scene", sourcePath: "scene", offset: 12, fingerprint: "a".repeat(64) }] }],
+    };
+    expect((await f.app.inject({ method: "PUT", url: `${base}/citations/messages/m`, payload: { ...turn, reliability } })).statusCode).toBe(200);
+    const restored = (await f.app.inject({ url: `${base}/citations/messages` })).json();
+    expect(restored.messages[0].reliability.citations).toEqual(reliability.citations);
+    for (const broken of [
+      { ...reliability, citations: [{ token: "EQ-2205", anchors: [{ sourceId: "workspace-scene", sourcePath: "scene", offset: -1, fingerprint: "a".repeat(64) }] }] },
+      { ...reliability, citations: [{ token: "EQ-2205", anchors: [] }] },
+      { ...reliability, citations: "EQ-2205" },
+    ]) {
+      expect((await f.app.inject({ method: "PUT", url: `${base}/citations/messages/bad`, payload: { ...turn, reliability: broken } })).statusCode).toBe(400);
+    }
+  });
   it("isolates owners/projects and restores partial/complete/stopped turns after restart", async () => {
     const f = await fixture();
     expect((await f.app.inject({ url: base, headers: { "x-user": "anonymous" } })).statusCode).toBe(401);

@@ -60,6 +60,8 @@ pub(super) async fn create_renderer(
             "authored solid background requires the native-aces-v1 output without Bloom/Fog".into(),
         );
     }
+    let mut initial_preparation_clock =
+        super::initial_preparation::InitialPreparationClock::begin(features.telemetry);
     let packet = content.packet();
     if view.clipping != [0.0; 4] && !content.material_bindings.is_empty() {
         return Err("section-unavailable: authored ShaderPackage ABI has no section plane".into());
@@ -70,6 +72,9 @@ pub(super) async fn create_renderer(
     let prepared_lod = prepare_gpu_lod(packet, &prepared)?;
     let prepared_pbr = prepare_pbr_resources(packet)?;
     let scene_bounds = prepare_scene_bounds(packet)?;
+    if let Some(clock) = initial_preparation_clock.as_mut() {
+        clock.scene_prepared()?;
+    }
     let GpuContext {
         instance,
         window,
@@ -83,6 +88,9 @@ pub(super) async fn create_renderer(
         size,
         failures,
     } = create_gpu_context(window, proxy, renderer_id, features.telemetry).await?;
+    if let Some(clock) = initial_preparation_clock.as_mut() {
+        clock.resources_started()?;
+    }
     let mut diagnostics = crate::player_diagnostics::PlayerDiagnostics::new(
         adapter_info,
         adapter_features,
@@ -135,7 +143,22 @@ pub(super) async fn create_renderer(
         view,
         compact_content,
     )?;
-    queue.write_buffer(&shadow_map.section_uniform, 0, cast_slice(&view.clipping));
+    match initial_preparation_clock.as_mut() {
+        Some(clock) => {
+            clock
+                .note_upload_bytes(u64::try_from(
+                    cast_slice::<f32, u8>(&view.clipping).len(),
+                )
+                .unwrap_or(u64::MAX));
+            clock.upload_timed(|| {
+                queue.write_buffer(&shadow_map.section_uniform, 0, cast_slice(&view.clipping))
+            });
+        }
+        None => queue.write_buffer(&shadow_map.section_uniform, 0, cast_slice(&view.clipping)),
+    }
+    if let Some(clock) = initial_preparation_clock.as_mut() {
+        clock.resource_stage_prepared(0)?;
+    }
     let shadow_cache = ShadowDirtyCache::default();
     let shadow_version = ShadowVersion::INITIAL;
     let shadow_casters =
@@ -168,6 +191,9 @@ pub(super) async fn create_renderer(
         has_layered_materials,
         compact_content,
     );
+    if let Some(clock) = initial_preparation_clock.as_mut() {
+        clock.resource_stage_prepared(1)?;
+    }
     // F3:旧包/空场景不创建真实 storage(None);非空探针在
     // frame.lightDirection.w 保留通道写 1 开启采样(零=关,旧包逐位不变)。
     // 开关必须在 frame_buffer 固化前写入 uniform。
@@ -250,8 +276,28 @@ pub(super) async fn create_renderer(
     let mut scene_cache = GpuSceneCache::new(&device, renderer_id)
         .with_budget(crate::gpu_scene_cache::default_budget(&device))
         .with_layered_material_layout(layered_material_layout.clone());
-    let candidate = GpuIblEnvironment::new(&device, &queue, &content.environment).and_then(|ibl| {
-        ibl.write_cluster_grid(&queue, &cluster_plan);
+    // 启动期上传计量:IBL 构造(texture 上传,驻留字节估计)与 cluster grid
+    // 直发 write_buffer 计入 uploadedBytes/gpuUploadTimeNs;口径声明见
+    // initial_preparation.rs json() 的 uploadedBytesCoverage/gpuUploadTimeNote。
+    let ibl_environment = match initial_preparation_clock.as_mut() {
+        Some(clock) => {
+            clock.upload_timed(|| GpuIblEnvironment::new(&device, &queue, &content.environment))
+        }
+        None => GpuIblEnvironment::new(&device, &queue, &content.environment),
+    };
+    if let (Some(clock), Ok(ibl)) = (initial_preparation_clock.as_mut(), ibl_environment.as_ref()) {
+        clock.note_upload_bytes(ibl.resident_bytes);
+        clock.note_upload_bytes(
+            u64::try_from(cluster_plan.pack_storage().len()).unwrap_or(u64::MAX / 4) * 4,
+        );
+    }
+    let candidate = ibl_environment.and_then(|ibl| {
+        match initial_preparation_clock.as_mut() {
+            Some(clock) => {
+                clock.upload_timed(|| ibl.write_cluster_grid(&queue, &cluster_plan));
+            }
+            None => ibl.write_cluster_grid(&queue, &cluster_plan),
+        }
         diagnostics.note_native_cluster_lookup();
         let frame_bind_group = ibl.create_frame_bind_group(
             &device,
@@ -340,6 +386,9 @@ pub(super) async fn create_renderer(
             &material_layout,
             &outline_shader,
         );
+        if let Some(clock) = initial_preparation_clock.as_mut() {
+            clock.resource_stage_prepared(2)?;
+        }
         scene_cache
             .stage_scoped(
                 &device,
@@ -503,12 +552,19 @@ pub(super) async fn create_renderer(
     let cache_metrics = scene_candidate.metrics();
     let scene = scene_cache.commit(scene_candidate)?;
     super::init_report::report_scene_cache(&scene_cache, cache_metrics, &scene, content);
+    if let Some(clock) = initial_preparation_clock.as_mut() {
+        clock.resource_stage_prepared(3)?;
+    }
     // F2:硬件 RT 驻留(静态实例 BLAS 缓存 + 场景 TLAS)在栅格原子事务之外
     // 建立——任何拒绝都 fail-closed 关闭 RT 并记录诊断原因,绝不阻塞栅格主通路。
     let mut rt_residency = match super::rt_residency::RtSceneResidency::build(&device, &scene) {
         Ok((residency, blas_encoder, tlas_encoder)) => {
             // BLAS 必须先于 TLAS 完成;单次 submit 内 FIFO 保证 GPU 执行序。
-            queue.submit([blas_encoder.finish(), tlas_encoder.finish()]);
+            match initial_preparation_clock.as_mut() {
+                Some(clock) => clock
+                    .upload_timed(|| queue.submit([blas_encoder.finish(), tlas_encoder.finish()])),
+                None => queue.submit([blas_encoder.finish(), tlas_encoder.finish()]),
+            };
             diagnostics.note_rt_tlas_resident();
             Some(residency)
         }
@@ -542,12 +598,22 @@ pub(super) async fn create_renderer(
         && scene.shader_materials.is_none()
     {
         let rt_shader = crate::frame_bindings::create_native_mesh_rt_shader(&device);
-        residency.install_pixel_pipelines(crate::pipeline::create_rt_mesh_pipelines(
-            &device,
-            layout,
-            &material_layout,
-            &rt_shader,
-        ));
+        let rt_pipelines = match (has_layered_materials, layered_material_layout.as_ref()) {
+            (true, Some(layered_layout)) => crate::pipeline::create_rt_mesh_pipelines_with_layered(
+                &device,
+                layout,
+                &material_layout,
+                layered_layout,
+                &rt_shader,
+            ),
+            _ => crate::pipeline::create_rt_mesh_pipelines(
+                &device,
+                layout,
+                &material_layout,
+                &rt_shader,
+            ),
+        };
+        residency.install_pixel_pipelines(rt_pipelines);
     }
     match rt_pixel_scope.pop().await {
         Some(_) => {
@@ -566,6 +632,9 @@ pub(super) async fn create_renderer(
         }
         None => {}
     }
+    if let Some(clock) = initial_preparation_clock.as_mut() {
+        clock.resource_stage_prepared(4)?;
+    }
     let telemetry = features
         .telemetry
         .then(|| crate::telemetry::FrameTelemetry::for_device(&device, &queue, renderer_id));
@@ -581,6 +650,9 @@ pub(super) async fn create_renderer(
     }
     #[cfg(target_arch = "wasm32")]
     let editor_overlay = super::editor_overlay::EditorOverlay::new(&device, config.format);
+    let initial_preparation = initial_preparation_clock
+        .map(|clock| clock.finish(renderer_id))
+        .transpose()?;
     Ok(Renderer {
         id: renderer_id,
         instance,
@@ -635,6 +707,7 @@ pub(super) async fn create_renderer(
         view,
         coordinate_frame_revision: content.coordinate_frame_revision(),
         telemetry,
+        initial_preparation,
         quality,
         diagnostics,
         content_profile: super::content_profile::ContentProfileReport::evaluate(content, features),

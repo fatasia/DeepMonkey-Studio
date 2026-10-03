@@ -39,14 +39,17 @@ fn main(@builtin(global_invocation_id) gid : vec3u) {
   let sample = samples[gid.x];
   let texIndex = min(u32(sample.z), params.textureCount - 1u);
   let lod = min(u32(sample.w), params.maxChainMips - 1u);
-  let meta = mipMeta[texIndex * params.maxChainMips + lod];
-  let grid = vec2u(meta.xy);
+  // meta 是 WGSL 保留字(同族教训见 wgsl/iesSampling.wgsl)——真机 dawn 拒编译,这里用 tileMeta。
+  let tileMeta = mipMeta[texIndex * params.maxChainMips + lod];
+  let grid = vec2u(tileMeta.xy);
   if (grid.x == 0u || grid.y == 0u) { outColors[gid.x] = vec4f(1.0, 0.0, 1.0, 1.0); return; }
   let tile = min(vec2u(sample.xy * vec2f(grid)), grid - 1u);
-  let layer = pageLayers[meta.z + tile.y * grid.x + tile.x];
-  // 页内相对坐标 × (mipEdge / atlasEdge):atlas 每 layer 恰一张 mip0 边长页。
-  let pageUv = (vec2f(tile) + clamp(fract(sample.xy) * vec2f(grid) - vec2f(tile), vec2f(0.0), vec2f(1.0)))
-    * (f32(meta.w) / f32(params.atlasEdge));
+  let layer = pageLayers[tileMeta.z + tile.y * grid.x + tile.x];
+  // 页内相对坐标 × (mipEdge / atlasEdge):atlas 每 layer 恰一张 mip0 边长页,页占层左上角。
+  // pageUv 必须是页内相对坐标(不含 tile 全局偏移):曾误加 vec2f(tile) 偏移项,
+  // 非零 tile 采样越出页域被 clamp-to-edge 吃掉(真机 SSIM 0.371 vs 全量基线,2026-10-02 证据)。
+  let pageUv = clamp(fract(sample.xy) * vec2f(grid) - vec2f(tile), vec2f(0.0), vec2f(1.0))
+    * (f32(tileMeta.w) / f32(params.atlasEdge));
   let color = select(vec4f(1.0, 0.0, 1.0, 1.0),
     textureSampleLevel(atlas, atlasSampler, pageUv, u32(layer), 0.0), layer >= 0);
   outColors[gid.x] = color;

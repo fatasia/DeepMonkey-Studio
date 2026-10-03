@@ -11,7 +11,12 @@ struct DeepPbrReflectionPair { records: array<DeepPbrReflectionRecord, 2> };
 
 fn deepPbrGlobalReflection(reflection: vec3f, roughness: f32) -> vec3f {
   let maxSpecularLod = f32(textureNumLevels(specularEnvironment) - 1u);
-  return textureSampleLevel(specularEnvironment, environmentSampler, reflection, roughness * maxSpecularLod).rgb;
+  let lod = deepPbrRebasedLod(roughness, maxSpecularLod, localReflectionProbes.records[0].reserved.x);
+  return textureSampleLevel(specularEnvironment, environmentSampler, reflection, lod).rgb;
+}
+
+fn deepPbrRebasedLod(roughness: f32, keptMaxLod: f32, droppedMips: f32) -> f32 {
+  return clamp(roughness * (keptMaxLod + droppedMips) - droppedMips, 0.0, keptMaxLod);
 }
 
 // Preserve canonical projection inside the box; fade to its planar sentinel at the boundary.
@@ -46,12 +51,14 @@ fn deepPbrReflectionRadiance(world: vec3f, reflection: vec3f, roughness: f32) ->
   var radiance = vec3f(0.0);
   if (weights.x > 0.0) {
     let direction = deepPbrReflectionDirection(world, reflection, first);
-    let lod = roughness * f32(textureNumLevels(primaryReflectionEnvironment) - 1u);
+    let lod = deepPbrRebasedLod(roughness, f32(textureNumLevels(primaryReflectionEnvironment) - 1u),
+      localReflectionProbes.records[0].reserved.y);
     radiance += textureSampleLevel(primaryReflectionEnvironment, environmentSampler, direction, lod).rgb * weights.x;
   }
   if (weights.y > 0.0) {
     let direction = deepPbrReflectionDirection(world, reflection, second);
-    let lod = roughness * f32(textureNumLevels(secondaryReflectionEnvironment) - 1u);
+    let lod = deepPbrRebasedLod(roughness, f32(textureNumLevels(secondaryReflectionEnvironment) - 1u),
+      localReflectionProbes.records[0].reserved.z);
     radiance += textureSampleLevel(secondaryReflectionEnvironment, environmentSampler, direction, lod).rgb * weights.y;
   }
   let coverage = min(raw.x + raw.y, 1.0);

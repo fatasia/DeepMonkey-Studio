@@ -1,3 +1,4 @@
+import { runMetalReflectionFrames } from "./iC23MetalReflectionFrames.js";
 /// <reference types="@webgpu/types" />
 import { PbrRenderer } from "../src/webgpu/pbrRenderer.js";
 import type { RenderView } from "../src/webgpu/pbrRendererTypes.js";
@@ -11,6 +12,7 @@ import { sceneShader } from "../src/webgpu/pbrShader.js";
 import { composeLayeredMaterialSceneShader } from "../src/webgpu/pbrLayeredMaterialShader.js";
 import { sha256Utf8 } from "../src/shaderPackage/hash.js";
 import { serializeBrowserRenderPacket, materializeRuntimeRenderPacket } from "../src/runtimePackage/renderPacket.js";
+import { normalizeExtendedMaterialParameters } from "../src/shader/materialParameters.js";
 
 const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 const geometry = { id: "layer-plate", revision: 0,
@@ -50,7 +52,7 @@ const layered = (): PbrMaterial => ({ ...base, layered: { layers: [
   { coverage: .4, mode: "overlay", surface: surface(layer1) },
 ] } });
 /** Uses the real packet owner, ordinary PBR material PSO, HDR capture and presentation. */
-export async function runIC23LayeredMaterialProduction(onFrame: (name: string) => Promise<void>, mode: "production" | "rehydrated" = "production") {
+export async function runIC23LayeredMaterialProduction(onFrame: (name: string) => Promise<void>, mode: "production" | "rehydrated" | "clearcoat" | "metal-reflection" = "production") {
   const canvas = document.createElement("canvas"); canvas.width = 1920; canvas.height = 1080;
   canvas.style.width = "100vw"; canvas.style.height = "100vh"; document.body.append(canvas);
   const capture = new FrameCaptureSession();
@@ -72,12 +74,15 @@ export async function runIC23LayeredMaterialProduction(onFrame: (name: string) =
     const passes = capture.records().at(-1)?.passes.map(pass => pass.passId) ?? [];
     if (!passes.includes("opaque") || !passes.includes("present")) throw Error("Layered fixture did not execute HDR and present: " + JSON.stringify({ passes, records: capture.records().length, metrics }));
     await device.queue.onSubmittedWorkDone(); await onFrame(name);
-    frames.push({ name, passes, drawCalls: metrics.drawCalls, resources: session.resourceCount,
+    const hdrSha256 = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", image.bytes.slice()))).map(value => value.toString(16).padStart(2, "0")).join("");
+    frames.push({ name, hdrSha256, passes, drawCalls: metrics.drawCalls, resources: session.resourceCount,
       resourceBytes: session.resourceMemory.estimatedBytes, cpuSubmitMs: metrics.cpuSubmitMs });
     return image;
   };
   try {
-    if (mode === "rehydrated") {
+    if (mode === "metal-reflection") {
+      result = { ...await runMetalReflectionFrames(frame, base, view, packet), frames, shaderHash: sha256Utf8(composeLayeredMaterialSceneShader(sceneShader)) };
+    } else if (mode === "rehydrated") {
       const authored = packet(layered()), json = serializeBrowserRenderPacket(authored);
       const restored = materializeRuntimeRenderPacket(JSON.parse(json), "$.browserPacket");
       const original = await frame(authored.materials[0]!, "author-before-save");
@@ -85,6 +90,37 @@ export async function runIC23LayeredMaterialProduction(onFrame: (name: string) =
       const samples = sampleLocations.map(([x, y]) => ({ x, y, original: rgb(original, x, y), restored: rgb(reloaded, x, y) }));
       result = { mode, shaderHash: sha256Utf8(composeLayeredMaterialSceneShader(sceneShader)), jsonSha256: sha256Utf8(json),
         frames, samples, maxRestoredDelta: Math.max(...samples.flatMap(sample => sample.original.map((value, channel) => Math.abs(value - sample.restored[channel]!)))) };
+    } else if (mode === "clearcoat") {
+      const coat = { factor: .7, roughness: .35 };
+      const material: PbrMaterial = { ...base, layered: { layers: [
+        { coverage: .65, surface: surface(layer0), params: { clearcoat: coat } },
+      ] } };
+      const baseImage = await frame(base, "coat-base");
+      const parent = await frame({ ...layer0, extendedParameters: normalizeExtendedMaterialParameters({ clearcoat: coat }) }, "coat-parent");
+      const active = await frame(material, "clearcoat-layer");
+      const factor0 = await frame({ ...base, layered: { layers: [
+        { coverage: .65, surface: surface(layer0), params: { clearcoat: { factor: 0, roughness: .35 } } },
+      ] } }, "coat-factor-zero");
+      const stock = await frame({ ...base, layered: { layers: [
+        { coverage: .65, surface: surface(layer0) },
+      ] } }, "coat-stock-layer");
+      const zero = await frame({ ...base, layered: { layers: [
+        { coverage: 0, surface: surface(layer0), params: { clearcoat: coat } },
+      ] } }, "coat-zero-coverage");
+      const json = serializeBrowserRenderPacket(packet(material));
+      const restored = materializeRuntimeRenderPacket(JSON.parse(json), "$.browserPacket");
+      const restoredImage = await frame(restored.materials[0]!, "coat-restored", view, textures, restored);
+      const delta = (a: PbrFrameReadbackSnapshot, b: PbrFrameReadbackSnapshot) => Math.max(...sampleLocations.flatMap(
+        ([x,y]) => rgb(a,x,y).map((value, channel) => Math.abs(value-rgb(b,x,y)[channel]!))));
+      const combination = sampleLocations.map(([x,y]) => {
+        const actual = rgb(active,x,y), p0 = rgb(baseImage,x,y), p1 = rgb(parent,x,y);
+        const weight = Math.fround(.65) * (128/255);
+        const expected = p0.map((value,channel) => value*(1-weight)+p1[channel]!*weight);
+        return {x,y,actual,expected,error:Math.max(...actual.map((value,channel)=>Math.abs(value-expected[channel]!)))};
+      });
+      result = { mode, shaderHash:sha256Utf8(composeLayeredMaterialSceneShader(sceneShader)), frames, combination,
+        maxCombinationError:Math.max(...combination.map(sample=>sample.error)), coatDelta:delta(active,factor0),
+        factor0Delta:delta(factor0,stock), zeroDelta:delta(zero,baseImage), maxRestoredDelta:delta(active,restoredImage) };
     } else {
     const baseImage = await frame(base, "base"), a = await frame(layer0, "parent-textured"), b = await frame(layer1, "parent-coating");
     const both = await frame(layered(), "two-layers");
@@ -134,7 +170,9 @@ export async function runIC23LayeredMaterialProduction(onFrame: (name: string) =
     renderer.dispose(); result.remainingResources = session.resourceCount;
   }
   const clean = !result.failure && !result.validationError && result.errors.length === 0 && result.remainingResources === 0;
-  result.passed = mode === "rehydrated" ? clean && result.maxRestoredDelta === 0 : clean
+  result.passed = mode === "metal-reflection" ? clean && result.passedMath : mode === "clearcoat" ? clean && result.maxCombinationError < .002 && result.coatDelta > .001
+    && result.factor0Delta === 0 && result.zeroDelta === 0 && result.maxRestoredDelta === 0
+    : mode === "rehydrated" ? clean && result.maxRestoredDelta === 0 : clean
     && result.maxCombinationError < .002 && result.textureDelta > .01 && result.zeroDelta === 0 && result.alphaZeroDelta === 0
     && result.invalidRetained && result.cancelledRetained;
   if (mode === "production") result.passed &&= result.maxFurnaceError < .04 && result.maxFurnaceLayerDelta < .001;

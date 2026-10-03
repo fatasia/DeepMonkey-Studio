@@ -3,7 +3,7 @@
  * 纯标量实现——热路径零对象分配(支撑查询返回复用缓冲),固定迭代序、无随机源,
  * 同输入双跑逐位一致。算法口径见 docs/specs/n10-narrow-phase-sweep-20261001.md §3:
  * 支撑映射直接吃顶点集/解析球,查询期不构建凸包(T17 quickhull 仍服务离线 collider 生成)。
- * EPA 穿透深度不在本切片:穿透只返回布尔,不输出接触点(接触集不唯一,诚实边界)。
+ * GJK 穿透只返回布尔;严格穿透的深度与接触点由独立 convexPenetration 查询。
  */
 
 /** 刚体变换:平移 + (x,y,z,w) 四元数。 */
@@ -304,9 +304,9 @@ function closestOnSimplex(entries: SimplexEntry[]): { x: number; y: number; z: n
   }
   // 内点分支:重心坐标;退化(共线,va+vb+vc ≈ 0)时回退三条边取最近,防除零 NaN。
   const total = va + vb + vc;
-  if (Number.isFinite(total) && total > 1e-30) {
-    const denominator = 1 / total;
-    const v = va * denominator, w = vb * denominator, u = vc * denominator;
+  if (Number.isFinite(total) && total > 0) {
+    // 直接求比例:合法小尺度三角形的 total 可远小于 1e-30,不能按绝对量级误判共线。
+    const v = va / total, w = vb / total, u = vc / total;
     return {
       x: a.wx * v + b.wx * w + c.wx * u,
       y: a.wy * v + b.wy * w + c.wy * u,
@@ -314,12 +314,18 @@ function closestOnSimplex(entries: SimplexEntry[]): { x: number; y: number; z: n
       bary: [v, w, u],
     };
   }
-  const edges: Array<[SimplexEntry, SimplexEntry]> = [[a, b], [a, c], [b, c]];
-  let best = closestOnSimplex([a]);
-  for (const [p, q] of edges) {
+  const edges: Array<[number, number]> = [[0, 1], [0, 2], [1, 2]];
+  let best = { x: a.wx, y: a.wy, z: a.wz, bary: [1, 0, 0] };
+  for (const [i, j] of edges) {
+    const p = entries[i]!, q = entries[j]!;
     const candidate = closestOnSimplex([p, q]);
     if (candidate.x * candidate.x + candidate.y * candidate.y + candidate.z * candidate.z
-      < best.x * best.x + best.y * best.y + best.z * best.z) best = candidate;
+      < best.x * best.x + best.y * best.y + best.z * best.z) {
+      const bary = [0, 0, 0];
+      bary[i] = candidate.bary[0]!;
+      bary[j] = candidate.bary[1] ?? 0;
+      best = { x: candidate.x, y: candidate.y, z: candidate.z, bary };
+    }
   }
   return best;
 }
@@ -486,19 +492,19 @@ function epaTriangle(a: SimplexEntry, b: SimplexEntry, c: SimplexEntry): EpaTria
   const length = Math.hypot(nx, ny, nz);
   if (!(length > 1e-30)) return null;
   const ux = nx / length, uy = ny / length, uz = nz / length;
-  const dist = -(ux * a.wx + uy * a.wy + uz * a.wz);
+  const dist = ux * a.wx + uy * a.wy + uz * a.wz;
   return { a, b, c, nx: ux, ny: uy, nz: uz, dist };
 }
 
 /** 法向翻转朝外(原点在多面体内 ⇒ 外向 = 远离原点一侧,dist ≥ 0)。 */
-function orientOutward(triangle: EpaTriangle): EpaTriangle {
-  if (triangle.dist < 0) {
+function orientOutward(triangle: EpaTriangle, roundoff: number): EpaTriangle {
+  if (triangle.dist < -roundoff) {
     return { a: triangle.a, b: triangle.c, c: triangle.b, nx: -triangle.nx, ny: -triangle.ny, nz: -triangle.nz, dist: -triangle.dist };
   }
-  return triangle;
+  return triangle.dist < 0 ? { ...triangle, dist: 0 } : triangle;
 }
 
-/** GJK 循环直到四面体包含原点(仅碰撞态可达);返回 4 条目。 */
+/** GJK 构建包含原点的单纯形;线/面包含原点时保留条目供 EPA 补维。 */
 function gjkTetrahedronForEpa(a: WorldConvexBody, b: WorldConvexBody, absTol: number, maxIterations: number): SimplexEntry[] {
   const supportA = new Float64Array(3);
   const supportB = new Float64Array(3);
@@ -515,10 +521,14 @@ function gjkTetrahedronForEpa(a: WorldConvexBody, b: WorldConvexBody, absTol: nu
   for (let iteration = 0; iteration < maxIterations; iteration++) {
     const vx = closest.x, vy = closest.y, vz = closest.z;
     const vNorm = Math.hypot(vx, vy, vz);
+    if (vNorm <= absTol) break; // 原点可能在线/面上,不能除零或把严格穿透误当切触。
     const ux = -vx / vNorm, uy = -vy / vNorm, uz = -vz / vNorm;
     supportBody(a, ux, uy, uz, supportA, 0);
     supportBody(b, -ux, -uy, -uz, supportB, 0);
     const entry = makeEntry(supportA[0]!, supportA[1]!, supportA[2]!, supportB[0]!, supportB[1]!, supportB[2]!);
+    if (entry.wx * ux + entry.wy * uy + entry.wz * uz <= 0) {
+      throw new Error("convexPenetration requires strict penetration (touch or separated)");
+    }
     if (entries.some(existing => {
       const ex = entry.wx - existing.wx, ey = entry.wy - existing.wy, ez = entry.wz - existing.wz;
       return ex * ex + ey * ey + ez * ez <= 1e-24;
@@ -527,31 +537,54 @@ function gjkTetrahedronForEpa(a: WorldConvexBody, b: WorldConvexBody, absTol: nu
     if (entries.length === 4 && originInsideTetrahedron(entries)) return entries;
     if (entries.length === 4) reduceTetrahedronToClosestFace(entries);
     closest = closestOnSimplex(entries);
-    if (vNorm <= absTol && entries.length < 4) break; // 切触态。
   }
-  throw new Error("EPA direct tetrahedron unavailable; falling back to axis reconstruction");
+  return entries;
 }
 
-/** 轴系候选方向构建包含原点的初始四面体(切触/退化兜底)。 */
-function initialEpaPolytope(a: WorldConvexBody, b: WorldConvexBody): EpaTriangle[] {
-  const directions: Array<readonly [number, number, number]> = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1], [1, 1, 1], [-1, -1, -1]];
+/** GJK 线/面补维:候选点中选取真实四面体,不能把 >4 点数组当作四面体。 */
+function initialEpaPolytope(a: WorldConvexBody, b: WorldConvexBody, entries: SimplexEntry[]): EpaTriangle[] {
+  if (entries.length === 4 && originInsideTetrahedron(entries)) return epaTetrahedronFaces(entries);
+  const directions: Array<readonly [number, number, number]> = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+  // 球支撑必须消费单位方向;对角方向同时打破轴系共面与支撑点 tie。
+  for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) directions.push([x, y, z]);
+  if (entries.length >= 2) {
+    const p = entries[0]!, q = entries[1]!;
+    const dx = q.wx - p.wx, dy = q.wy - p.wy, dz = q.wz - p.wz;
+    // 线性单纯形补两个正交维度,包含任意朝向的窄/薄凸体。
+    const axis: readonly [number, number, number] = Math.abs(dx) <= Math.abs(dy) && Math.abs(dx) <= Math.abs(dz)
+      ? [1, 0, 0] : Math.abs(dy) <= Math.abs(dz) ? [0, 1, 0] : [0, 0, 1];
+    const px = dy * axis[2] - dz * axis[1], py = dz * axis[0] - dx * axis[2], pz = dx * axis[1] - dy * axis[0];
+    const qx = dy * pz - dz * py, qy = dz * px - dx * pz, qz = dx * py - dy * px;
+    directions.unshift([px, py, pz], [-px, -py, -pz], [qx, qy, qz], [-qx, -qy, -qz]);
+  }
+  if (entries.length >= 3) {
+    const p = entries[0]!, q = entries[1]!, r = entries[2]!;
+    const dx = q.wx - p.wx, dy = q.wy - p.wy, dz = q.wz - p.wz;
+    const ex = r.wx - p.wx, ey = r.wy - p.wy, ez = r.wz - p.wz;
+    const nx = dy * ez - dz * ey, ny = dz * ex - dx * ez, nz = dx * ey - dy * ex;
+    directions.unshift([nx, ny, nz], [-nx, -ny, -nz]);
+  }
   const supportA = new Float64Array(3);
   const supportB = new Float64Array(3);
-  const entries: SimplexEntry[] = [];
-  for (const [ux, uy, uz] of directions) {
+  for (const [dx, dy, dz] of directions) {
+    const length = Math.hypot(dx, dy, dz);
+    if (length <= 1e-30) continue;
+    const ux = dx / length, uy = dy / length, uz = dz / length;
     supportBody(a, ux, uy, uz, supportA, 0);
     supportBody(b, -ux, -uy, -uz, supportB, 0);
     const entry = makeEntry(supportA[0]!, supportA[1]!, supportA[2]!, supportB[0]!, supportB[1]!, supportB[2]!);
-    if (!entries.some(existing => {
+    if (entries.some(existing => {
       const ex = entry.wx - existing.wx, ey = entry.wy - existing.wy, ez = entry.wz - existing.wz;
       return ex * ex + ey * ey + ez * ez <= 1e-24;
-    })) entries.push(entry);
-    if (entries.length === 4 && originInsideTetrahedron(entries)) break;
+    })) continue;
+    entries.push(entry);
+    const last = entries.length - 1;
+    for (let i = 0; i < last - 2; i++) for (let j = i + 1; j < last - 1; j++) for (let k = j + 1; k < last; k++) {
+      const tetrahedron = [entries[i]!, entries[j]!, entries[k]!, entry];
+      if (originInsideTetrahedron(tetrahedron)) return epaTetrahedronFaces(tetrahedron);
+    }
   }
-  if (entries.length < 4 || !originInsideTetrahedron(entries)) {
-    throw new Error("convexPenetration could not build a containing tetrahedron (touch or degenerate overlap)");
-  }
-  return epaTetrahedronFaces(entries);
+  throw new Error("convexPenetration requires strict penetration (touch, separated or degenerate overlap)");
 }
 
 /** 四面体 → 四个外向绕序三角形(对顶点在面法向负侧)。 */
@@ -592,12 +625,7 @@ export function convexPenetration(a: WorldConvexBody, b: WorldConvexBody, option
   const { absTol, relTol, maxIterations } = resolveOptions(options);
   const supportA = new Float64Array(3);
   const supportB = new Float64Array(3);
-  let polytope: EpaTriangle[];
-  try {
-    polytope = epaTetrahedronFaces(gjkTetrahedronForEpa(a, b, absTol, maxIterations));
-  } catch {
-    polytope = initialEpaPolytope(a, b); // 切触/退化兜底:轴系方向重建包含四面体。
-  }
+  let polytope = initialEpaPolytope(a, b, gjkTetrahedronForEpa(a, b, absTol, maxIterations));
   const support = (ux: number, uy: number, uz: number): SimplexEntry => {
     supportBody(a, ux, uy, uz, supportA, 0);
     supportBody(b, -ux, -uy, -uz, supportB, 0);
@@ -615,6 +643,11 @@ export function convexPenetration(a: WorldConvexBody, b: WorldConvexBody, option
     best = polytope[closestIndex]!;
     const vertex = support(best.nx, best.ny, best.nz);
     const projection = vertex.wx * best.nx + vertex.wy * best.ny + vertex.wz * best.nz;
+    // 共面的浮点噪声不得被当成可见面,否则原点在线/边上的 seed 会破坏地平线绕序。
+    const roundoff = 32 * Number.EPSILON * Math.max(Math.abs(vertex.wx), Math.abs(vertex.wy), Math.abs(vertex.wz), a.bounding.radius + b.bounding.radius);
+    if (projection <= absTol) {
+      throw new Error("convexPenetration requires strict penetration (touch or degenerate overlap)");
+    }
     if (projection - best.dist <= relTol * best.dist + absTol) {
       converged = true;
       break;
@@ -624,7 +657,7 @@ export function convexPenetration(a: WorldConvexBody, b: WorldConvexBody, option
     const kept: EpaTriangle[] = [];
     for (const triangle of polytope) {
       const facing = triangle.nx * (vertex.wx - triangle.a.wx) + triangle.ny * (vertex.wy - triangle.a.wy) + triangle.nz * (vertex.wz - triangle.a.wz);
-      if (facing > 1e-30) {
+      if (facing > roundoff) {
         horizon.push([triangle.a, triangle.b], [triangle.b, triangle.c], [triangle.c, triangle.a]);
       } else {
         kept.push(triangle);
@@ -632,16 +665,19 @@ export function convexPenetration(a: WorldConvexBody, b: WorldConvexBody, option
     }
     const unique: Array<[SimplexEntry, SimplexEntry]> = [];
     for (const [start, end] of horizon) {
-      const reverseExists = horizon.some(([s, e]) => s === end && e === start && s !== end);
+      const reverseExists = horizon.some(([s, e]) => s === end && e === start);
       const duplicate = unique.some(([s, e]) => s === start && e === end);
       if (!reverseExists && !duplicate) unique.push([start, end]);
     }
-    if (unique.length < 3) { converged = true; break; } // 地平线退化/支撑点在内:按当前值收敛。
+    if (unique.length < 3) break; // 拓扑退化不能冒充误差界已收敛。
     polytope = kept;
     for (const [start, end] of unique) {
       const triangle = epaTriangle(start, end, vertex);
-      if (triangle) polytope.push(orientOutward(triangle));
+      if (triangle) polytope.push(orientOutward(triangle, roundoff));
     }
+  }
+  if (best.dist <= absTol && converged) {
+    throw new Error("convexPenetration requires strict penetration (touch or degenerate overlap)");
   }
   // 接触点:原点在 MTD 三角形上的投影 barycentric 加权两侧支撑点。
   const closest = closestOnSimplex([best.a, best.b, best.c]);

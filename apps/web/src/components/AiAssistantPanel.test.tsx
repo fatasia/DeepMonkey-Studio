@@ -72,24 +72,26 @@ describe("AiAssistantPanel", () => {
     expect(html).toContain("场景");
     expect(html).toContain("对象");
     expect(html).toContain("仿真运营");
-    expect(html).toContain("正在发现插件能力");
     expect(html).toContain("看板");
     expect(html).toContain("问数据");
     expect(html).toContain("执行任务");
     expect(html).toContain("搬运机器人");
     expect(html).toContain('data-drag-handle="true"');
-    expect(html).toContain('title="问答与生成" aria-label="问答与生成"');
-    expect(html).toContain('title="执行任务" aria-label="执行任务"');
-    expect(html).toContain('title="场景" aria-label="场景"');
-    expect(html).not.toContain(">问答与生成</button>");
-    expect(html).not.toContain(">执行任务</button>");
+    // 体验切换为带文字的分段按钮；范围收进输入框工具栏的单个下拉，不再是一整行纯图标页签。
+    expect(html).toContain("<span>对话</span>");
+    expect(html).toContain("<span>执行任务</span>");
+    expect(html).toContain('aria-label="提问范围"');
+    expect(html).toMatch(/<option value="scene" selected="">场景<\/option>/);
+    expect(html).not.toContain("ai-assistant-tabs");
+    expect(html).not.toContain('aria-pressed=');
   });
 
-  it("keeps every assistant tab icon in one horizontal row", async () => {
+  it("drops the separate tab row and keeps the panel to header / body / composer", async () => {
     const chrome = await readFile(new URL("../styles/platform-pages.css", import.meta.url), "utf8");
     const reliability = await readFile(new URL("./AiAssistantReliability.css", import.meta.url), "utf8");
 
-    expect(chrome).toContain(".ai-assistant-panel > nav { display: flex; align-items: center;");
+    expect(chrome).not.toContain(".ai-assistant-panel > nav");
+    expect(chrome).toContain("grid-template-rows: auto minmax(0, 1fr) auto;");
     expect(reliability).toMatch(/\.ai-assistant-experience\s*\{[\s\S]*?display: flex;[\s\S]*?flex: 0 0 auto;/);
   });
 
@@ -99,10 +101,9 @@ describe("AiAssistantPanel", () => {
       onValidateDashboardPageDraft={() => ({ changeCount: 1, labels: ["产量"] })}
       onApplyDashboardPageDraft={vi.fn()} onClose={vi.fn()} />);
     expect(html).toContain("二维 AI 助手");
-    expect(html).toContain('title="二维" aria-label="二维" aria-pressed="true"');
+    expect(html).toMatch(/<option value="dashboard" selected="">二维<\/option>/);
     expect(html).toContain("当前二维看板草稿");
     expect(html).toContain("会话模型");
-    expect(html).toContain("会话思考档位");
     expect(html).toContain("向 AI 助手提问");
   });
 
@@ -221,14 +222,29 @@ describe("AiAssistantPanel", () => {
     }
   });
 
-  it("T9: the empty state keeps the full inline catalog", () => {
+  it("T9: the empty state uses the same collapsed capability drawer and one-tap suggestions", () => {
     const html = renderToStaticMarkup(
       <AiAssistantPanel locale="zh-CN" projectId="project-1" surface="studio"
         context={{ project: { id: "project-1", name: "电池工厂" }, scene: { id: "scene-1", name: "模组线", modelCount: 4 } }}
         onClose={vi.fn()} />,
     );
-    expect(html).not.toContain('aria-label="可用能力"');
-    expect(html).toContain("正在发现插件能力");
+    expect(html).toContain('aria-label="可用能力"');
+    expect(html).not.toContain("正在发现插件能力");
+    expect(html).toContain("检查当前场景的对象、数据绑定和交互缺口");
+    // 建议即点即问，旧的重复"一键运行样例"入口已移除。
+    expect(html).not.toContain("一键运行样例");
+  });
+
+  it("folds context, memory and provenance into one collapsed context row", () => {
+    const html = renderToStaticMarkup(
+      <AiAssistantPanel locale="zh-CN" projectId="project-1" surface="studio"
+        context={{ project: { id: "project-1", name: "电池工厂" }, scene: { id: "scene-1", name: "模组线", modelCount: 4 } }}
+        onClose={vi.fn()} />,
+    );
+    expect(html).toContain('aria-label="本次上下文"');
+    expect(html).not.toContain('aria-label="本次上下文" open');
+    const group = html.slice(html.indexOf('aria-label="本次上下文"'));
+    expect(group.indexOf('aria-label="项目记忆"')).toBeLessThan(group.indexOf('aria-label="可用能力"'));
   });
 
   // ── T10 回归（审计 §二 2.4：chat 侧记忆/档案空态带首次引导与一键切换，经面板接线）──

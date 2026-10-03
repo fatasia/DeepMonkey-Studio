@@ -22,8 +22,13 @@ import {
   dashboardJsonValue as jsonValue,
   finiteDashboardNumber as toFiniteNumber,
 } from "./dashboardWidgetValues";
+import {
+  dashboardMapGeoJsonPlaceholderMessage,
+  resolveDashboardMapGeoJsonState,
+} from "./dashboardMapResourceModel";
 
 export function DashboardDrillChart({
+  locale,
   widget,
   metric,
   analysis: baseAnalysis,
@@ -32,6 +37,7 @@ export function DashboardDrillChart({
   onAnimationStart,
   onAnimationEnd,
 }: {
+  locale: AppLocale;
   widget: DashboardDataWidgetConfig;
   metric: DashboardMetric | undefined;
   analysis: DashboardAnalysisResult;
@@ -67,6 +73,7 @@ export function DashboardDrillChart({
         {widget.unit && <span data-capture-role="unit">{widget.unit}</span>}
       </header>}
       <DashboardChart
+        locale={locale}
         widget={drillWidget}
         metric={drillMetric}
         analysis={analysis}
@@ -356,6 +363,7 @@ export function widgetBackgroundStyle(widget: DashboardDataWidgetConfig): CSSPro
 }
 
 function DashboardChart({
+  locale,
   widget,
   metric,
   analysis,
@@ -364,6 +372,7 @@ function DashboardChart({
   onAnimationStart,
   onAnimationEnd,
 }: {
+  locale: AppLocale;
   widget: DashboardDataWidgetConfig;
   metric: DashboardMetric | undefined;
   analysis: DashboardAnalysisResult;
@@ -376,19 +385,30 @@ function DashboardChart({
   const chartRef = useRef<EChartsType | undefined>(undefined);
   const [ready, setReady] = useState(false);
   const [geoJson, setGeoJson] = useState<unknown>();
+  const [geoJsonFailed, setGeoJsonFailed] = useState(false);
   useEffect(() => {
     if (widget.type !== "map" || !widget.map?.geoJsonUrl) {
       setGeoJson(undefined);
+      setGeoJsonFailed(false);
       return;
     }
     let cancelled = false;
+    // 换地址即重置：旧图残留会让新地址的失败被旧数据掩盖。
+    setGeoJson(undefined);
+    setGeoJsonFailed(false);
     void api
       .getExternalJson(widget.map.geoJsonUrl)
       .then((value) => {
-        if (!cancelled) setGeoJson(value);
+        if (cancelled) return;
+        // 非对象 JSON（null/数组/标量）无法注册为地图，按失败处理而不是永远“加载中”。
+        if (!value || typeof value !== "object" || Array.isArray(value)) {
+          setGeoJsonFailed(true);
+          return;
+        }
+        setGeoJson(value);
       })
       .catch(() => {
-        if (!cancelled) setGeoJson(undefined);
+        if (!cancelled) setGeoJsonFailed(true);
       });
     return () => {
       cancelled = true;
@@ -425,6 +445,8 @@ function DashboardChart({
           components.PolarComponent,
           components.TooltipComponent,
           components.LegendComponent,
+          // 地图外部资源加载中/失败占位用 title 呈现;未注册时 ECharts 直接丢弃该组件
+          components.TitleComponent,
           renderers.CanvasRenderer,
         ]);
         const chart = echarts.init(element, undefined, { renderer: "canvas" });
@@ -575,12 +597,13 @@ function DashboardChart({
     }
     if (widget.type === "map") {
       const mapName = widget.map?.mapName || "studio-custom-map";
-      if (!geoJson) {
+      const mapState = resolveDashboardMapGeoJsonState({ url: widget.map?.geoJsonUrl, loaded: Boolean(geoJson), failed: geoJsonFailed });
+      if (mapState !== "ready") {
         chart.setOption(
           {
             animation: false,
             title: {
-              text: widget.map?.geoJsonUrl ? "GeoJSON 加载中…" : "请配置 GeoJSON",
+              text: dashboardMapGeoJsonPlaceholderMessage(mapState, locale),
               left: "center",
               top: "center",
               textStyle: { color: "#81939b", fontSize: 10, fontWeight: "normal" },
@@ -592,40 +615,50 @@ function DashboardChart({
         return;
       }
       const chartApi = chart as unknown as { __studioMapRegistered?: string };
+      const regionField = widget.map?.regionField || widget.analysis?.dimensionField || "name";
+      const valueField = widget.map?.valueField || widget.analysis?.measureField || widget.field || "value";
+      const applyMapSeries = () => {
+        chart.setOption(
+          {
+            animation: !compact,
+            tooltip: { trigger: "item" },
+            visualMap: {
+              min: 0,
+              max: Math.max(1, ...analysis.rows.map((row) => toFiniteNumber(row[valueField]) ?? 0)),
+              left: "left",
+              bottom: 6,
+              textStyle: { color: "#a7b5ba", fontSize: 8 },
+            },
+            series: [
+              {
+                type: "map",
+                map: mapName,
+                roam: true,
+                label: { show: false },
+                data: analysis.rows.flatMap((row) => (row[regionField] === undefined ? [] : [{ name: String(row[regionField]), value: toFiniteNumber(row[valueField]) ?? 0 }])),
+              },
+            ],
+          },
+          true,
+        );
+      };
       if (chartApi.__studioMapRegistered !== mapName) {
         // ECharts keeps registerMap on the core namespace; the chart instance does not.
         // The dynamic import below is intentionally local to keep map support lazy.
+        // 注册是异步的:主流程必须停在占位上,等注册完成再应用地图 series,
+        // 否则同步 setOption 会在地图不存在时抛错并击穿渲染边界。
         void import("echarts/core").then((core) => {
+          if (chartRef.current !== chart || chart.isDisposed()) return;
           core.registerMap(mapName, geoJson as never);
           chartApi.__studioMapRegistered = mapName;
-          chart.setOption({ series: [{ type: "map", map: mapName, data: [] }] });
+          applyMapSeries();
+        }).catch(() => {
+          // 模块加载失败时保留占位文案;静默不是选项,但画布内无处可报,交给控制台
+          console.error("[dashboard] 地图模块加载失败,外部 GeoJSON 未渲染");
         });
+        return;
       }
-      const regionField = widget.map?.regionField || widget.analysis?.dimensionField || "name";
-      const valueField = widget.map?.valueField || widget.analysis?.measureField || widget.field || "value";
-      chart.setOption(
-        {
-          animation: !compact,
-          tooltip: { trigger: "item" },
-          visualMap: {
-            min: 0,
-            max: Math.max(1, ...analysis.rows.map((row) => toFiniteNumber(row[valueField]) ?? 0)),
-            left: "left",
-            bottom: 6,
-            textStyle: { color: "#a7b5ba", fontSize: 8 },
-          },
-          series: [
-            {
-              type: "map",
-              map: mapName,
-              roam: true,
-              label: { show: false },
-              data: analysis.rows.flatMap((row) => (row[regionField] === undefined ? [] : [{ name: String(row[regionField]), value: toFiniteNumber(row[valueField]) ?? 0 }])),
-            },
-          ],
-        },
-        true,
-      );
+      applyMapSeries();
       return;
     }
     if (widget.type === "sunburst" || widget.type === "treemap") {
@@ -720,6 +753,6 @@ function DashboardChart({
       },
       true,
     );
-  }, [analysis, compact, geoJson, metric, onAnimationEnd, onAnimationStart, ready, widget]);
+  }, [analysis, compact, geoJson, geoJsonFailed, metric, onAnimationEnd, onAnimationStart, ready, widget]);
   return <div className="dashboard-chart" ref={ref} />;
 }

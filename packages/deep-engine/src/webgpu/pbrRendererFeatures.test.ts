@@ -4,6 +4,10 @@ import { DEFAULT_PBR_RENDERER_FEATURES, resolvePbrRendererFeatures } from "./pbr
 describe("PBR renderer feature selection", () => {
   it("preserves the native high-quality defaults", () => {
     expect(resolvePbrRendererFeatures()).toEqual(DEFAULT_PBR_RENDERER_FEATURES);
+    expect(DEFAULT_PBR_RENDERER_FEATURES.toneMapping).toBe("three-aces-r185");
+  });
+  it("keeps deep ACES available only by explicit selection", () => {
+    expect(resolvePbrRendererFeatures({ toneMapping: "deep-aces" }).toneMapping).toBe("deep-aces");
   });
   it("creates an explicit comparison profile without mutating defaults", () => {
     expect(resolvePbrRendererFeatures({ environment: false, fog: false, groundGrid: false,

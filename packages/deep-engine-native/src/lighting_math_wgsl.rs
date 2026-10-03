@@ -96,7 +96,8 @@ mod tests {
         let mesh = include_str!("../assets/shaders/native_mesh_v1.wgsl");
         let rt = include_str!("../assets/shaders/native_mesh_rt_fragment_v1.wgsl");
         assert_eq!(
-            mesh.matches("color += native_direct_multiscattering(").count(),
+            mesh.matches("color += native_direct_multiscattering(")
+                .count(),
             2,
             "mesh body must hold both direct multiscattering sites (sun + local)"
         );
@@ -106,7 +107,8 @@ mod tests {
             "mesh body must hold the single nv LUT sample inside native_lit_response"
         );
         assert_eq!(
-            rt.matches("color += native_direct_multiscattering(").count(),
+            rt.matches("color += native_direct_multiscattering(")
+                .count(),
             0,
             "RT fragment must not carry a multiscattering text copy"
         );
@@ -115,6 +117,28 @@ mod tests {
             1,
             "RT fragment must consume the shared response core (single site, both entries)"
         );
+    }
+
+    #[test]
+    fn shared_material_evaluate_core_matches_checksum_and_layer_consumer() {
+        let core = include_str!("../../deep-engine/wgsl/materialEvaluateCore.wgsl");
+        assert_matches_pinned_checksum(
+            core,
+            include_str!("../../deep-engine/wgsl/materialEvaluateCore.wgsl.sha256"),
+            "materialEvaluateCore",
+        );
+        assert!(!core.contains("@group("));
+        assert!(!core.contains("texture"));
+        assert!(!core.contains("fn deepDielectricF0("));
+        let source = include_str!("native_mesh_wgsl.rs");
+        assert!(
+            source.contains("include_str!(\"../../deep-engine/wgsl/materialEvaluateCore.wgsl\")")
+        );
+        assert!(source.contains("native_layer_extended_v1.wgsl"));
+        let wrapper = include_str!("../assets/shaders/native_layer_extended_v1.wgsl");
+        assert!(wrapper.contains("if (params0.y == 0.0"));
+        assert!(wrapper.contains("params0.x, params0.y, params0.z"));
+        assert!(!wrapper.contains("deepLayeredMaterial"));
     }
 
     #[test]
@@ -132,6 +156,15 @@ mod tests {
             PBR_BRDF_DIRECT_LIGHTING_WGSL,
             include_str!("../../deep-engine/wgsl/brdfDirectLighting.wgsl.sha256"),
             "brdfDirectLighting",
+        );
+    }
+
+    #[test]
+    fn shared_metal_reflection_wgsl_matches_pinned_checksum() {
+        assert_matches_pinned_checksum(
+            include_str!("../../deep-engine/wgsl/materialMetalReflection.wgsl"),
+            include_str!("../../deep-engine/wgsl/materialMetalReflection.wgsl.sha256"),
+            "materialMetalReflection",
         );
     }
 
@@ -166,8 +199,7 @@ mod tests {
         assert!(!DIRECT_DFG_LUT_185_WGSL.contains("@group("));
         let assembly = include_str!("native_mesh_wgsl.rs");
         assert!(
-            assembly
-                .contains("include_str!(\"../../deep-engine/wgsl/directDfgLut185.wgsl\")"),
+            assembly.contains("include_str!(\"../../deep-engine/wgsl/directDfgLut185.wgsl\")"),
             "production source builder must assemble the r185 direct DFG table"
         );
         let mesh = include_str!("../assets/shaders/native_mesh_v1.wgsl");

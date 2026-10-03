@@ -28,7 +28,8 @@
     "gate:performance-evidence": "node scripts/gate-performance-evidence.mjs",
     "gate:object-tree-100k": "node scripts/gate-object-tree-100k.mjs",
     "gate:timeline-transient": "node scripts/gate-timeline-transient.mjs",
-    "gate:spatial-audio": "node scripts/gate-spatial-audio-offline.mjs"
+    "gate:spatial-audio": "node scripts/gate-spatial-audio-offline.mjs",
+    "sweep:maintenance": "tsx scripts/e4-maintenance-sweep.ts"
   },
   "dependencies": {
     "@bim-studio/contracts": "workspace:*",

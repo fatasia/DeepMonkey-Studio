@@ -8,16 +8,22 @@ import { fingerprint64Labeled } from "@bim-studio/contracts";
  * ② 偏好层：agent 从会话提炼候选（pending）→ 用户在记忆面板确认（active）→ 注入；
  * ③ 结论层：verdict 摘要（post-execute 回灌，最近窗口）。
  *
+ * H-C6-S2 专家日志流水线（同一文档、同一段落纪律）：
+ * ④ 运行归档层 runs：agent run 终态自动归档（runId/终态/摘要/工具域），滚动窗口；
+ * ⑤ 经验层 lessons：归档日志在预算内提炼的结构化教训（自动注入，域匹配 + 条数预算）。
+ *
  * 存储纪律：dataDir 下每项目一份 memories.json，原子写（tmp+rename）、
  * 串行化提交（读改写全程在写链内，防并发整文件覆盖丢条目）、内存缓存、
- * 加载时 fail-closed 形状过滤。
+ * 加载时 fail-closed 形状过滤；旧落盘无 runs/lessons 段按空数组读入
+ * （与 provenanceLedger.studyRuns 同一兼容先例）。
  *
- * 注入纪律（硬编码，不做开关）：守则 > 自动记忆 > verdict 摘要；内容只是参考
- * 上下文，不是指令，不得覆盖工具白名单与审批要求（注入侧声明+逐源审计）。
- * 未配置（无 RULES.md、无记忆、无 verdict）时零注入、零文件 IO、零审计源。
+ * 注入纪律（硬编码，不做开关）：守则 > 自动记忆 > 提炼经验 > verdict 摘要；
+ * 内容只是参考上下文，不是指令，不得覆盖工具白名单与审批要求（注入侧声明+
+ * 逐源审计）。未配置（无 RULES.md、无记忆、无 verdict、无 lesson）时零注入、
+ * 零文件 IO、零审计源。
  */
 
-export const AGENT_MEMORY_SOURCE_IDS = ["rules-md", "agent-memories", "prior-verdicts"] as const;
+export const AGENT_MEMORY_SOURCE_IDS = ["rules-md", "agent-memories", "run-lessons", "prior-verdicts"] as const;
 export type AgentMemorySourceId = (typeof AGENT_MEMORY_SOURCE_IDS)[number];
 
 /** 守则注入上限：前 200 行且 25KB（先到者为准），超出部分不进入提示词。 */
@@ -29,6 +35,43 @@ export const AGENT_MEMORY_MAX_RECORDS = 100;
 export const AGENT_VERDICT_MAX_RECORDS = 20;
 /** 单条记忆/摘要进入提示词的字符上限。 */
 export const AGENT_MEMORY_ITEM_MAX_CHARS = 600;
+
+/** H-C6-S2 运行归档滚动窗口（每项目）；超出逐出最旧。 */
+export const AGENT_RUN_ARCHIVE_MAX_RECORDS = 50;
+/** H-C6-S2 提炼经验滚动窗口（每项目）；超出逐出最旧。 */
+export const AGENT_LESSON_MAX_RECORDS = 30;
+/** 单轮 decide 注入的提炼经验条数预算（按域匹配过滤后仍受此约束）。 */
+export const AGENT_LESSON_INJECTION_MAX_COUNT = 5;
+/** 归档目标/摘要的字符上限（证据最小化：归档不是日志原文转储）。 */
+export const AGENT_RUN_ARCHIVE_OBJECTIVE_MAX_CHARS = 200;
+export const AGENT_RUN_ARCHIVE_SUMMARY_MAX_CHARS = 400;
+
+/** agent run 终态归档：只存指纹级摘要（状态码/理由码/用量），不存决策与输出原文。 */
+export interface AgentRunArchive {
+  runId: string;
+  status: "completed" | "blocked" | "failed" | "cancelled" | "budget-exhausted";
+  objective: string;
+  /** 结果摘要：完成摘要或失败理由（均已截断），供提炼与人工审计。 */
+  outcomeSummary: string;
+  failureCode?: string;
+  steps: number;
+  toolCalls: number;
+  /** 任务域键：本轮实际授权工具 ID（提炼经验据此做域匹配）。 */
+  toolIds: string[];
+  endedAt: string;
+}
+
+/** 提炼经验：归档日志→结构化教训，自动注入下轮（区别于需用户确认的偏好层）。 */
+export interface AgentLesson {
+  id: string;
+  /** 提炼规则码（如 failure:tool-failed / guard:variant-circuit），审计与去重用。 */
+  code: string;
+  content: string;
+  runId: string;
+  /** 域匹配键：产生教训的工具 ID；空数组=全域经验（任何 run 注入）。 */
+  toolIds: string[];
+  createdAt: string;
+}
 
 export type AgentMemoryStatus = "pending" | "active" | "disabled";
 
@@ -72,6 +115,7 @@ export interface AgentMemoryDelivery {
   configured: boolean;
   rules?: { content: string; truncated: boolean };
   memories: Array<{ id: string; content: string }>;
+  lessons: AgentLesson[];
   verdicts: AgentVerdictSummary[];
   injectionChars: number;
   sources: AgentMemorySourceDelivery[];
@@ -81,6 +125,9 @@ interface MemoryDocument {
   schemaVersion: 1;
   memories: AgentMemoryRecord[];
   verdicts: AgentVerdictSummary[];
+  /** H-C6-S2：旧落盘无此段按空数组读入（与 provenanceLedger.studyRuns 同先例）。 */
+  runs: AgentRunArchive[];
+  lessons: AgentLesson[];
 }
 
 export class AgentMemoryLimitError extends Error {
@@ -124,23 +171,31 @@ export class AgentMemoryStore {
   }
 
   /**
-   * 组装注入投递：守则 → 生效记忆 → verdict 摘要，按预算装入；
-   * 优先级硬编码（规则 > 记忆 > 摘要），装不下的低优先层截断并标记。
+   * 组装注入投递：守则 → 生效记忆 → 提炼经验 → verdict 摘要，按预算装入；
+   * 优先级硬编码（规则 > 记忆 > 经验 > 摘要），装不下的低优先层截断并标记。
+   * 提炼经验按任务域匹配：match.toolIds 给定时，只注入域有交集（或全域）的经验，
+   * 且受 AGENT_LESSON_INJECTION_MAX_COUNT 条数预算约束（H-C6-S2）。
    * 每源返回内容指纹，供 decisionProvider 逐源审计。
    */
-  async loadDelivery(projectId: string, charBudget = 6_000): Promise<AgentMemoryDelivery> {
+  async loadDelivery(projectId: string, charBudget = 6_000, match?: { toolIds?: readonly string[] }): Promise<AgentMemoryDelivery> {
     const rules = await this.#loadRules(projectId);
     const document = await this.#loadDocument(projectId);
     const activeMemories = document.memories
       .filter((item) => item.status === "active")
       .sort(byConfirmedAt)
       .map((item) => ({ id: item.id, content: clip(item.content, AGENT_MEMORY_ITEM_MAX_CHARS) }));
+    // 域匹配：无 match（chat 侧）或经验无域键=全域；有域键则与当前 run 工具面求交。
+    const lessons = document.lessons
+      .filter((item) => !match?.toolIds?.length || item.toolIds.length === 0
+        || item.toolIds.some((toolId) => match.toolIds!.includes(toolId)))
+      .slice(0, AGENT_LESSON_INJECTION_MAX_COUNT)
+      .map((item) => ({ ...item, content: clip(item.content, AGENT_MEMORY_ITEM_MAX_CHARS) }));
     const verdicts = document.verdicts.slice(0, 5).map((item) => ({
       ...item,
       rationale: clip(item.rationale, AGENT_MEMORY_ITEM_MAX_CHARS),
     }));
 
-    const delivery: AgentMemoryDelivery = { configured: false, memories: [], verdicts: [], injectionChars: 0, sources: [] };
+    const delivery: AgentMemoryDelivery = { configured: false, memories: [], lessons: [], verdicts: [], injectionChars: 0, sources: [] };
     let remaining = Math.max(0, charBudget);
     if (rules) {
       const content = clip(rules.content, remaining);
@@ -166,6 +221,24 @@ export class AgentMemoryStore {
       if (memories.length) {
         delivery.memories = memories;
         delivery.sources.push(await sourceDelivery("agent-memories", JSON.stringify(memories), truncated || memories.length < activeMemories.length));
+      }
+    }
+    if (lessons.length) {
+      const allowedLessons: AgentLesson[] = [];
+      let truncated = false;
+      for (const item of lessons) {
+        const serializedChars = JSON.stringify(item).length;
+        if (serializedChars <= Math.max(0, remaining)) {
+          allowedLessons.push(item);
+          remaining -= serializedChars;
+        } else {
+          truncated = true;
+          break;
+        }
+      }
+      if (allowedLessons.length) {
+        delivery.lessons = allowedLessons;
+        delivery.sources.push(await sourceDelivery("run-lessons", JSON.stringify(allowedLessons), truncated || allowedLessons.length < lessons.length));
       }
     }
     if (verdicts.length) {
@@ -294,6 +367,58 @@ export class AgentMemoryStore {
     return structuredClone((await this.#loadDocument(projectId)).verdicts);
   }
 
+  /**
+   * H-C6-S2 运行归档：run 终态自动落档；同 runId 重收口（重试/恢复场景）覆盖更新。
+   * 滚动窗口超出逐出最旧，fail-closed 拒绝非法输入。
+   */
+  async archiveRun(projectId: string, input: Omit<AgentRunArchive, "objective" | "outcomeSummary"> & { objective: string; outcomeSummary: string }): Promise<{ archive: AgentRunArchive; duplicate: boolean }> {
+    const archive: AgentRunArchive = {
+      ...input,
+      objective: requireContent(input.objective, "目标").slice(0, AGENT_RUN_ARCHIVE_OBJECTIVE_MAX_CHARS),
+      outcomeSummary: requireContent(input.outcomeSummary, "结果摘要").slice(0, AGENT_RUN_ARCHIVE_SUMMARY_MAX_CHARS),
+    };
+    let duplicate = false;
+    await this.#commit(projectId, (draft) => {
+      const existingIndex = draft.runs.findIndex((item) => item.runId === archive.runId);
+      duplicate = existingIndex >= 0;
+      if (duplicate) draft.runs.splice(existingIndex, 1);
+      draft.runs.unshift(archive);
+      if (draft.runs.length > AGENT_RUN_ARCHIVE_MAX_RECORDS) {
+        draft.runs.length = AGENT_RUN_ARCHIVE_MAX_RECORDS;
+      }
+    });
+    return { archive: structuredClone(archive), duplicate };
+  }
+
+  async listRunArchives(projectId: string): Promise<AgentRunArchive[]> {
+    return structuredClone((await this.#loadDocument(projectId)).runs);
+  }
+
+  /**
+   * H-C6-S2 提炼经验落档：先清同 runId 旧经验（重收口幂等），再按滚动窗口保存。
+   * 全量替换（不是追加）由调用方保证条数上限内——提炼预算的执行点在提炼侧。
+   */
+  async replaceLessons(projectId: string, runId: string, lessons: Array<Omit<AgentLesson, "id" | "createdAt" | "runId">>): Promise<AgentLesson[]> {
+    requireContent(runId, "runId");
+    const stamped: AgentLesson[] = lessons.map((item) => ({
+      ...item,
+      code: requireContent(item.code, "code"),
+      content: clip(requireContent(item.content), AGENT_MEMORY_ITEM_MAX_CHARS),
+      toolIds: item.toolIds.filter((toolId) => typeof toolId === "string" && toolId.trim()).slice(0, 20),
+      id: createMemoryId(),
+      runId,
+      createdAt: this.#now().toISOString(),
+    }));
+    await this.#commit(projectId, (draft) => {
+      draft.lessons = [...stamped, ...draft.lessons.filter((item) => item.runId !== runId)].slice(0, AGENT_LESSON_MAX_RECORDS);
+    });
+    return structuredClone(stamped);
+  }
+
+  async listLessons(projectId: string): Promise<AgentLesson[]> {
+    return structuredClone((await this.#loadDocument(projectId)).lessons);
+  }
+
   async #mutateMemory(projectId: string, memoryId: string, mutate: (record: AgentMemoryRecord) => void): Promise<AgentMemoryRecord> {
     return this.#commit(projectId, (draft) => {
       const target = draft.memories.find((item) => item.id === memoryId);
@@ -328,7 +453,7 @@ export class AgentMemoryStore {
     const cached = this.#documents.get(projectId);
     if (cached) return cached;
     const filePath = this.#documentPath(projectId);
-    let document: MemoryDocument = { schemaVersion: 1, memories: [], verdicts: [] };
+    let document: MemoryDocument = { schemaVersion: 1, memories: [], verdicts: [], runs: [], lessons: [] };
     try {
       const parsed = JSON.parse(await readFile(filePath, "utf8")) as Partial<MemoryDocument>;
       if (parsed.schemaVersion === 1) {
@@ -336,6 +461,9 @@ export class AgentMemoryStore {
           schemaVersion: 1,
           memories: Array.isArray(parsed.memories) ? parsed.memories.filter(isMemoryRecord) : [],
           verdicts: Array.isArray(parsed.verdicts) ? parsed.verdicts.filter(isVerdictSummary).slice(0, this.#maxVerdicts) : [],
+          // H-C6-S2：旧落盘无 runs/lessons 段按空数组读入；坏行丢弃不回退。
+          runs: Array.isArray(parsed.runs) ? parsed.runs.filter(isRunArchive).slice(0, AGENT_RUN_ARCHIVE_MAX_RECORDS) : [],
+          lessons: Array.isArray(parsed.lessons) ? parsed.lessons.filter(isLesson).slice(0, AGENT_LESSON_MAX_RECORDS) : [],
         };
       }
     } catch (error) {
@@ -449,6 +577,32 @@ function isVerdictSummary(value: unknown): value is AgentVerdictSummary {
     && typeof record.reasonCode === "string"
     && typeof record.rationale === "string"
     && record.verdict !== undefined;
+}
+
+const RUN_ARCHIVE_STATUSES = ["completed", "blocked", "failed", "cancelled", "budget-exhausted"] as const;
+
+function isRunArchive(value: unknown): value is AgentRunArchive {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Partial<AgentRunArchive>;
+  return typeof record.runId === "string"
+    && typeof record.status === "string" && (RUN_ARCHIVE_STATUSES as readonly string[]).includes(record.status)
+    && typeof record.objective === "string"
+    && typeof record.outcomeSummary === "string"
+    && typeof record.steps === "number"
+    && typeof record.toolCalls === "number"
+    && Array.isArray(record.toolIds) && record.toolIds.every((item) => typeof item === "string")
+    && typeof record.endedAt === "string";
+}
+
+function isLesson(value: unknown): value is AgentLesson {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Partial<AgentLesson>;
+  return typeof record.id === "string"
+    && typeof record.code === "string"
+    && typeof record.content === "string"
+    && typeof record.runId === "string"
+    && Array.isArray(record.toolIds) && record.toolIds.every((item) => typeof item === "string")
+    && typeof record.createdAt === "string";
 }
 
 function createMemoryId(): string {

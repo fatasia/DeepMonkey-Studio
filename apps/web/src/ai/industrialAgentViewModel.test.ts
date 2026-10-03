@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { AgentCheckpoint, AgentToolDefinition } from "@bim-studio/industrial-agent-orchestrator";
-import { agentEvidenceViews, agentObjectiveExamples, agentProgress, agentStatusLabel, selectedToolPreview } from "./industrialAgentViewModel";
+import {
+  agentEvidenceViews,
+  agentObjectiveExamples,
+  agentProgress,
+  agentStatusLabel,
+  AUTONOMY_APPROVER_ID,
+  describeApprovalSource,
+  describeExecutionMode,
+  isAutonomousRun,
+  selectedToolPreview,
+} from "./industrialAgentViewModel";
 
 const tools: AgentToolDefinition[] = [
   { id: "read", label: "读取数据", description: "", effect: "read", risk: "low", requiresApproval: false },
@@ -99,3 +109,26 @@ function fixture(): AgentCheckpoint {
     revision: 1,
   };
 }
+
+// ---------------------------------------------------------------------------
+// H-autonomy：执行模式与审批来源的 UI 语义
+// ---------------------------------------------------------------------------
+
+describe("H-autonomy execution mode semantics", () => {
+  it("marks autonomous runs and keeps plan mode prioritized", () => {
+    const checkpoint = fixture();
+    expect(isAutonomousRun(checkpoint)).toBe(false);
+    expect(isAutonomousRun({ ...checkpoint, autonomy: { mode: "autonomous" } })).toBe(true);
+    // plan 档优先：自主档在计划模式下不标注（不产生免确认写入的视觉暗示）。
+    expect(isAutonomousRun({ ...checkpoint, autonomy: { mode: "autonomous" }, planMode: true })).toBe(false);
+  });
+
+  it("distinguishes policy-signed autonomous approvals from human approvals", () => {
+    expect(describeApprovalSource(AUTONOMY_APPROVER_ID, "zh-CN")).toContain("自主执行");
+    expect(describeApprovalSource("operator-1", "zh-CN")).toBe("人工确认");
+    expect(describeApprovalSource(undefined, "zh-CN")).toBe("人工确认");
+    expect(describeExecutionMode("autonomous", "zh-CN")).toBe("自主执行");
+    expect(describeExecutionMode("confirm", "zh-CN")).toBe("逐次确认");
+    expect(describeExecutionMode("autonomous", "en-US")).toBe("Autonomous");
+  });
+});

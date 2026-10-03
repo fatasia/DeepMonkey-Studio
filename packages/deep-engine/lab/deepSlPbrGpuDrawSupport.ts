@@ -1,6 +1,7 @@
 import type { DeepPbrMeshV1MaterialDefaults } from "@bim-studio/deep-engine/shader-authoring";
 import type { PreparedShaderPackagePass } from "@bim-studio/deep-engine/webgpu";
-import { decodePbrProbePixel, PBR_PROBE_BYTES_PER_ROW, PBR_PROBE_HEIGHT, PBR_PROBE_WIDTH } from "./deepSlPbrProbeFixture.js";
+import { prepareShaderPackageInstanceStream } from "@bim-studio/deep-engine/runtime-package";
+import { decodePbrProbePixel, pbrProbeInstance, PBR_PROBE_BYTES_PER_ROW, PBR_PROBE_HEIGHT, PBR_PROBE_WIDTH } from "./deepSlPbrProbeFixture.js";
 
 export interface DeepSlPbrMaterialTextureSource {
   readonly width: number;
@@ -13,7 +14,7 @@ export interface DeepSlPbrGpuSample {
   readonly pixel: readonly number[];
   readonly frameBytes: 208;
   readonly geometryStride: 40;
-  readonly instanceStride: 144;
+  readonly instanceStride: 144 | 160;
   readonly shadowDraws: 1;
   readonly forwardDraws: 1;
   readonly resolveUsed: true;
@@ -26,6 +27,8 @@ export interface DeepSlPbrGpuSample {
 }
 
 export interface DeepSlPbrDrawOptions {
+  readonly shaderAbi?: "deep.pbr.mesh.v1" | "deep.pbr.mesh.v2" | "deep.pbr.mesh.v3";
+  readonly objectId?: number;
   readonly geometry?: Float32Array;
   readonly materialTextures?: Readonly<{
     parameters: readonly number[];
@@ -42,6 +45,14 @@ export interface DeepSlPbrDrawOptions {
     shadowLayer: number;
   }>;
   readonly samplePoints?: readonly (readonly [number, number])[];
+}
+
+export function preparePbrProbeInstance(material: DeepPbrMeshV1MaterialDefaults, options: DeepSlPbrDrawOptions) {
+  const data = new Float32Array(pbrProbeInstance(material));
+  const shaderAbi = options.shaderAbi ?? "deep.pbr.mesh.v1";
+  if (shaderAbi === "deep.pbr.mesh.v1") return { data, arrayStride: 144 as const };
+  return prepareShaderPackageInstanceStream({ data, count: 1, instanceIds: ["probe"] }, shaderAbi,
+    options.objectId === undefined ? undefined : new Map([["probe", options.objectId]]));
 }
 
 export function validateCsmProbe(options: DeepSlPbrDrawOptions): void {

@@ -238,7 +238,7 @@ function targetLabel(target: SceneObjectRef): string {
 }
 
 function commandSceneMismatch(command: SceneCommand, sceneId: string): string | undefined {
-  if ((command.type === "camera.set" || command.type === "camera.fly-to") && command.sceneId !== sceneId) {
+  if ((command.type === "camera.set" || command.type === "camera.fly-to" || command.type === "lighting.set" || command.type === "environment.set" || command.type === "animation.set-anchor") && command.sceneId !== sceneId) {
     return `Command targets scene ${command.sceneId}; active scene is ${sceneId}.`;
   }
   if (command.type === "selection.set") {
@@ -246,7 +246,7 @@ function commandSceneMismatch(command: SceneCommand, sceneId: string): string | 
     if (wrong) return `Command target scene ${wrong.sceneId}; active scene is ${sceneId}.`;
   } else if (command.type === "camera.fly-to") {
     if ("kind" in command.target && command.target.sceneId !== sceneId) return `Command target scene ${command.target.sceneId}; active scene is ${sceneId}.`;
-  } else if (command.type === "object.set-visibility" || command.type === "object.set-transform"
+  } else if (command.type === "object.delete-primitive" || command.type === "object.create-primitive" || command.type === "object.set-parent" || command.type === "object.set-visibility" || command.type === "object.set-transform"
     || command.type === "material.set" || command.type === "animation.control" || command.type === "data.apply") {
     if (command.target.sceneId !== sceneId) return `Command target scene ${command.target.sceneId}; active scene is ${sceneId}.`;
   }
@@ -257,10 +257,10 @@ function requiredCapabilities(type: SceneCommand["type"]): readonly SceneCapabil
   if (type.startsWith("unity.")) return ["studio.unity"];
   if (type === "component.update") return ["studio.component"];
   if (type === "camera.set" || type === "camera.fly-to") return ["studio.camera"];
-  if (type === "animation.control") return ["studio.animation"];
+  if (type === "animation.control" || type === "animation.set-anchor") return ["studio.animation"];
   if (type === "material.set") return ["studio.material", "studio.object"];
   if (type === "data.apply") return ["studio.data", "studio.object"];
-  if (type === "selection.set") return ["studio.scene"];
+  if (type === "selection.set" || type === "lighting.set" || type === "environment.set") return ["studio.scene"];
   return ["studio.object"];
 }
 

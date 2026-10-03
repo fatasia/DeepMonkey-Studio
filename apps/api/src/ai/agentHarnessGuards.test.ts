@@ -240,12 +240,13 @@ describe("H-C2 verdict 回灌（post-execute）", () => {
     expect(await memory.listMemories("project-1")).toHaveLength(0);
   });
 
-  it("记忆容量满时候选提炼静默降级，verdict 摘要不受影响", async () => {
+  it("记忆容量满时候选提炼降级但落审计 finding（不再静默），verdict 摘要不受影响", async () => {
     const memory = await makeStore();
+    const audit = auditBuffer();
     for (let index = 0; index < 100; index += 1) {
       await memory.addMemoryCandidate("project-1", { content: `既有候选 ${index}` });
     }
-    const guards = createAgentHarnessGuards({ memory, calibrationResourceIds: VALID_RESOURCE_IDS });
+    const guards = createAgentHarnessGuards({ memory, calibrationResourceIds: VALID_RESOURCE_IDS, audit: audit.sink });
     await guards.postExecute?.({
       checkpoint: context().checkpoint,
       call: context().call,
@@ -254,6 +255,29 @@ describe("H-C2 verdict 回灌（post-execute）", () => {
     });
     expect(await memory.listVerdicts("project-1")).toHaveLength(1);
     expect(await memory.listMemories("project-1")).toHaveLength(100);
+    // H-C5-K8：容量满是预期限制（info finding），不静默也不再上抛。
+    const event = audit.events.at(-1)!;
+    expect(event.findings.map((item) => item.code)).toContain("memory-candidate-limit");
+    expect(event.findings.find((item) => item.code === "memory-candidate-limit")?.severity).toBe("info");
+  });
+
+  // H-C5-K8：verdict 回灌失败落专项审计 finding 并上抛（orchestrator 记入 checkpoint finding）。
+  it("verdict 回灌失败：audit finding verdict-record-failed + 异常上抛", async () => {
+    const audit = auditBuffer();
+    const broken = {
+      recordVerdict: async () => { throw new Error("memories.json 写入失败"); },
+    } as unknown as AgentMemoryStore;
+    const guards = createAgentHarnessGuards({ memory: broken, calibrationResourceIds: VALID_RESOURCE_IDS, audit: audit.sink });
+    await expect(guards.postExecute?.({
+      checkpoint: context().checkpoint,
+      call: context().call,
+      effect: "analyze",
+      outcome: { status: "completed", output: ENVELOPE, evidence: [], verificationEvidence: [] },
+    })).rejects.toThrow("memories.json 写入失败");
+    const event = audit.events.at(-1)!;
+    expect(event.stage).toBe("memory-action");
+    expect(event.findings.map((item) => item.code)).toContain("verdict-record-failed");
+    expect(event.failure).toMatchObject({ code: "verdict-record-failed", retryable: true });
   });
 
   it("容量上限对直接候选注入同样生效（AgentMemoryLimitError）", async () => {

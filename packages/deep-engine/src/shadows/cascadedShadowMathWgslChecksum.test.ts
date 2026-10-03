@@ -23,7 +23,17 @@ describe("CSM blend source identity", () => {
   });
 
   it("wires the same canonical file to ordinary and RT production factories", () => {
-    expect(bindings.match(/include_str!\("\.\.\/\.\.\/deep-engine\/wgsl\/cascadedShadowMath\.wgsl"\)/g)).toHaveLength(2);
+    // J2-B1 后装配链单源:frame_bindings 不再直接 include_str,只经 native_mesh_wgsl
+    // 两工厂消费;canonical include 唯一,住在 ordinary 工厂(native_mesh_shader_source),
+    // RT 工厂由 ordinary 源拼接派生(前缀 ray-query enable + RT fragment),同源不变。
+    const wiring = readFileSync(new URL("../../../deep-engine-native/src/native_mesh_wgsl.rs", import.meta.url), "utf8");
+    expect(wiring.match(/include_str!\("\.\.\/\.\.\/deep-engine\/wgsl\/cascadedShadowMath\.wgsl"\)/g)).toHaveLength(1);
+    expect(bindings).toContain("native_mesh_wgsl::native_mesh_shader_source()");
+    expect(bindings).toContain("native_mesh_wgsl::native_mesh_rt_shader_source()");
+    // RT 工厂必须经 ordinary 源消费同一 canonical 文件,不许私接第二份拷贝。
+    const rtFactory = wiring.slice(wiring.indexOf("fn native_mesh_rt_shader_source"));
+    expect(rtFactory).toContain("native_mesh_shader_source()");
+    expect(bindings).not.toMatch(/include_str!\("[^"]*cascadedShadowMath\.wgsl"\)/);
     expect(source).not.toMatch(/@group|@binding|texture|sampler|array</);
   });
 });

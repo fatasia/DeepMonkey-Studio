@@ -6,8 +6,8 @@ import { prepareAiInput, reliabilitySystemBoundary, type AiReliabilityAssessment
 import { assistantOutputLimit, assistantPrompts, parseAssistantContent, type AssistantMode, type ParsedAssistantContent } from "./assistantPrompts.js";
 import { attemptWithFailover, classifyAiProviderError, resolveFailoverTarget, type AiFailoverTarget } from "./aiFailoverPolicy.js";
 import { newTelemetryRecord, type AiTelemetrySink } from "./aiRequestTelemetry.js";
-import { assistantContextDelivery } from "./assistantContextDelivery.js";
-import { auditChatAnswerEvidence } from "./chatEvidenceGate.js";
+import { assistantContextDelivery, assistantContextSourceSegments } from "./assistantContextDelivery.js";
+import { auditChatAnswerEvidence, anchorChatAnswerEvidence, type ChatEvidenceAnchorSource } from "./chatEvidenceGate.js";
 import type { AgentMemoryDelivery } from "./agentMemory.js";
 import { agentMemoryContextDelivery, memoryDeliveryFindings } from "./industrialAgentDecisionProvider.js";
 import { industrialAgentRuntimeIfReady } from "./industrialAgentRuntime.js";
@@ -242,6 +242,8 @@ interface PreparedAssistantRequest {
   contextDelivery: ReturnType<typeof assistantContextDelivery>;
   /** K2：真正发送给模型的上下文前缀——出域复核只比对模型能看到的内容。 */
   sentContext: string;
+  /** T5：逐条引用锚的证据定位输入（与 contextDelivery 同坐标系，已并入各来源的已发送长度）。 */
+  citationSources: ChatEvidenceAnchorSource[];
   /** K4：逐源审计与警示（读取失败时不阻断请求，但必须留痕）。 */
   memoryFindings: Array<{ code: string; severity: string; sourceId: string; contentFingerprint: string }>;
   memoryWarning?: string;
@@ -271,6 +273,11 @@ async function prepareRequest(registry: PluginRegistry, request: AssistantReques
   if (prepared.assessment.decision === "block") throw new AiReliabilityBlockedError(traceId, prepared.assessment.findings.map((item) => item.code));
   const { systemPrompt, userPrompt, contextWarning, contextSentChars, sentContext } = assistantPrompts(request.mode, prepared.question, context);
   const contextDelivery = assistantContextDelivery(request.context, context, contextSentChars);
+  // T5：锚定输入与 contextDelivery 同源同坐标系——sentChars 直接取交付回执的逐源已发送长度。
+  const citationSources = assistantContextSourceSegments(context).map((segment) => ({
+    ...segment,
+    sentChars: contextDelivery.sources.find((source) => source.id === segment.id)?.sentChars ?? 0,
+  }));
   const providerRequest: AiProviderRequest = {
     requestId: traceId,
     principal: request.principal,
@@ -289,7 +296,7 @@ async function prepareRequest(registry: PluginRegistry, request: AssistantReques
     ...(request.signal ? { signal: request.signal } : {})
   };
   return {
-    traceId, providerRequest, assessment: prepared.assessment, contextFingerprint, contextDelivery, sentContext,
+    traceId, providerRequest, assessment: prepared.assessment, contextFingerprint, contextDelivery, sentContext, citationSources,
     memoryFindings: memory.findings, ...(memory.warning ? { memoryWarning: memory.warning } : {}),
     ...(contextWarning ? { contextWarning } : {}),
   };
@@ -334,6 +341,8 @@ function withReliability(
   const suspicious = prepared.assessment.findings.length > 0;
   // K2 出域复核：答案中的数值/编号与发送上下文逐项比对，未命中即披露并降级。
   const evidence = auditChatAnswerEvidence(result.text, prepared.sentContext);
+  // T5 逐条引用锚：把命中 token 对齐到真正证据定位（来源+指纹+已发送窗口内偏移）。
+  const citations = anchorChatAnswerEvidence(result.text, prepared.citationSources);
   const evidenceWarnings = evidence.unmatched.length
     ? [`出域复核：${evidence.unmatched.join("、")} 未在本次发送的上下文中找到依据，相关数值或编号不可作为事实引用`]
     : [];
@@ -364,6 +373,8 @@ function withReliability(
       contextFingerprint: prepared.contextFingerprint,
       contextDelivery: prepared.contextDelivery,
       evidenceCount: 0,
+      // T5：无锚不挂字段（省体积且与合同「缺省=无锚」语义一致）。
+      ...(citations.length ? { citations } : {}),
       warnings,
       writePolicy: "read-only",
       servedProvider: attempt.servedBy,

@@ -7,13 +7,14 @@ import { decodeHalfFloat } from "../src/rayTracing/probeGridBakeMath.js";
 import { prefilterPanoramaReference } from "./iblPrefilterReference.js";
 import { sha256Utf8 } from "../src/shaderPackage/hash.js";
 import { compareIblReference, encodeRuntimeIblReference, floatToHalf } from "./iblReferenceEncode.js";
+import { probeKeptMipsProduction, type KeptMipsProductionResult } from "./iC19KeptMipsProduction.js";
 
 export interface DynamicIblProbeResult {
   webgpu: boolean;
   adapterNonFallback: boolean;
   referenceParity: { maxAbsError: number; meanAbsError: number; pass: boolean; samples: number };
   hotSwap: { generationReturn: boolean; repeatStableMaxError: number; counts: readonly number[] };
-  degradedClamp: { finite: boolean; keptMips: number };
+  degradedClamp: KeptMipsProductionResult;
   outstandingLeases: number;
   deviceErrors: string[];
 }
@@ -88,7 +89,9 @@ export async function runDynamicIblProductionProbe(): Promise<DynamicIblProbeRes
   device.pushErrorScope("validation");
   let referenceParity = { maxAbsError: -1, meanAbsError: -1, pass: false, samples: 0 };
   let hotSwap = { generationReturn: false, repeatStableMaxError: -1, counts: [] as number[] };
-  let degradedClamp = { finite: false, keptMips: 0 };
+  let degradedClamp: KeptMipsProductionResult = { finite: false, keptMips: 0, sharpClampError: -1,
+    roughPreservationError: -1, sharpSignal: -1, fullTextureBytes: 0, tailTextureBytes: 0,
+    expectedSavedBytes: 0, actualSavedBytes: 0, hdrTailError: -1 };
   try {
     await renderer.setPacketValidated({ geometries: [{ id: "sphere-room", revision: 1,
       vertices: new Float32Array([-4, -2, 0, 0, 0, 1, 4, -2, 0, 0, 0, 1, 4, 2, 0, 0, 0, 1, -4, 2, 0, 0, 0, 1]),
@@ -136,17 +139,13 @@ export async function runDynamicIblProductionProbe(): Promise<DynamicIblProbeRes
       counts,
     };
 
-    // (c) Degraded residency decision (CPU state machine) plus a finite-frame
-    // check on the re-staged package. The keptMips sampler clamp itself needs
-    // the pbrRenderer/mainBindings wiring that this knife does not touch, so
-    // the frame assertion covers the package the plan accepts, and the
-    // clamp is recorded as wired-followup in the evidence.
-    const keptMips = Math.max(1, reference.mipCount >> 1);
-    const degradedPackage = encodeRuntimeIblReference(reference, identity("dynamic-ibl-a", 2, "fixture-a-degraded"), 64);
-    await renderer.stageEnvironment({ kind: "prefiltered-ibl", environment: degradedPackage });
-    for (let i = 0; i < 2; i++) await frame();
-    const degradedFrame = await frame();
-    degradedClamp = { finite: frameRgb(degradedFrame).every(Number.isFinite), keptMips };
+    // (c) Per-mip fingerprints prove sharp clamping, unchanged rough-domain lighting,
+    // physical byte reduction, and original-domain HDR prefilter settings.
+    degradedClamp = await probeKeptMipsProduction(renderer, encodedA, frame, roughness => renderer.updateInstances({
+      materials: [{ id: "chrome", baseColor: [.9, .9, .92], metallic: 1, roughness, doubleSided: true }],
+      instances: [{ id: "wall", geometry: "sphere-room", material: "chrome",
+        transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }] }),
+      { kind: "radiance-hdr", image: warmA, options: quality });
 
     // (d) Return to the exact-A package and confirm byte-stable hot-swap target.
     await renderer.stageEnvironment({ kind: "prefiltered-ibl", environment: encodedA });

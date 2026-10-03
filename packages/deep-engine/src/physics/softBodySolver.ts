@@ -5,49 +5,16 @@
  * 每个四面体一个体积约束 C = V − V0(∇ 为棱叉积梯度),叠加唯一化的边距离约束
  * 抗剪切;compliance=0 时两类约束均为刚性。全部 f64、固定遍历序,无随机源。
  * 输入四面体环绕方向不要求一致:构建期把负体积四元组规整为正环绕(确定性)。
+ *
+ * sourceSizeGate 拆分(2026-10-03):合同类型(SoftBodySolverConfig/SoftBodySnapshot/
+ * VolumeStats)移至 softBodySolverContract.ts,代码逐行同源仅改可见性,语义零变化;
+ * 本文件原样再导出合同面,消费方导入路径不变。
  */
-import { assertFinite, type FixedStepSim, type Vec3 } from "./physicsTypes.js";
+import { createSoftBodySelfCollision, extractSoftBodySurfaceTopology, type SoftBodySelfCollisionResolver } from "./softBodySelfCollision.js";
+import { assertFinite, type FixedStepSim } from "./physicsTypes.js";
+import type { SoftBodySolverConfig, SoftBodySnapshot, VolumeStats } from "./softBodySolverContract.js";
 
-export interface SoftBodySolverConfig {
-  /** 初始顶点位置(米)。 */
-  readonly positions: readonly (readonly [number, number, number])[];
-  /** 四面体顶点索引;环绕方向可不统一(构建期规整为正体积)。 */
-  readonly tets: readonly (readonly [number, number, number, number])[];
-  /** 单质点质量(kg)。 */
-  readonly mass: number;
-  readonly gravity: Vec3;
-  readonly dtSeconds: number;
-  readonly substeps: number;
-  /** 边距离约束 compliance(m/N)。 */
-  readonly complianceDistance: number;
-  /** 体积约束 compliance(m³/N)。 */
-  readonly complianceVolume: number;
-  /** 每子步线性速度阻尼系数 [0,1)。 */
-  readonly damping: number;
-  /** 锚点顶点索引(invMass=0)。 */
-  readonly pinned: readonly number[];
-  /** 地面接触平面 y = groundY(米);省略 = 无接触。积分投影式约束,
-   * 确定性(same-op f64);不动锚点粒子。 */
-  readonly groundY?: number;
-}
-
-export interface SoftBodySnapshot {
-  readonly tick: number;
-  readonly px: Float64Array;
-  readonly py: Float64Array;
-  readonly pz: Float64Array;
-  readonly vx: Float64Array;
-  readonly vy: Float64Array;
-  readonly vz: Float64Array;
-}
-
-export interface VolumeStats {
-  /** max|V−V0|/V0(逐四面体)。 */
-  readonly maxTetRatio: number;
-  /** |ΣV−ΣV0|/ΣV0(整体守恒)。 */
-  readonly totalRatio: number;
-  readonly tetCount: number;
-}
+export type { SoftBodySolverConfig, SoftBodySnapshot, VolumeStats };
 
 export class SoftBodySolver implements FixedStepSim<SoftBodySnapshot> {
   readonly #count: number;
@@ -67,6 +34,7 @@ export class SoftBodySolver implements FixedStepSim<SoftBodySnapshot> {
   readonly #edgeRest: Float64Array;
   readonly #lambdaVol: Float64Array;
   readonly #lambdaEdge: Float64Array;
+  readonly #selfCollision: SoftBodySelfCollisionResolver | null;
   /** 体积约束梯度工作缓冲(每 tick 复用,零热路径分配)。 */
   readonly #gx = new Float64Array(4);
   readonly #gy = new Float64Array(4);
@@ -140,6 +108,16 @@ export class SoftBodySolver implements FixedStepSim<SoftBodySnapshot> {
       this.#edgeRest[e] = Math.hypot(this.#px[a]! - this.#px[b]!, this.#py[a]! - this.#py[b]!, this.#pz[a]! - this.#pz[b]!);
       if (!(this.#edgeRest[e]! > 0)) throw new Error(`SoftBodySolver: edge ${e} has zero rest length (duplicate vertex positions ${a}/${b}).`);
     }
+    if (config.selfCollisionRadius !== undefined) {
+      const radius = config.selfCollisionRadius;
+      const minEdge = Math.min(...Array.from(this.#edgeRest));
+      this.#selfCollision = createSoftBodySelfCollision({
+        topology: extractSoftBodySurfaceTopology(tets, n),
+        count: n, radius, minEdgeLength: minEdge,
+      });
+    } else {
+      this.#selfCollision = null;
+    }
   }
 
   get tick(): number { return this.#tick; }
@@ -186,6 +164,18 @@ export class SoftBodySolver implements FixedStepSim<SoftBodySnapshot> {
   }
 
   step(): void {
+    for (let sub = 0; sub < this.#cfg.substeps; sub += 1) this.stepSubstep(sub);
+    this.#tick += 1;
+    assertFinite(this.#px, "softbody.px"); assertFinite(this.#py, "softbody.py"); assertFinite(this.#pz, "softbody.pz");
+  }
+
+  /** 内部缓冲只读引用(会话级跨软体互碰投影消费;调用方不得写入)。 */
+  particleBuffers(): { px: Float64Array; py: Float64Array; pz: Float64Array; inverseMass: Float64Array; count: number } {
+    return { px: this.#px, py: this.#py, pz: this.#pz, inverseMass: this.#invMass, count: this.#count };
+  }
+
+  /** 单子步(互碰会话的子步级编排消费);tick 计数与 finite 审计仍属 step()。 */
+  stepSubstep(substep: number): void {
     const c = this.#cfg;
     const h = c.dtSeconds / c.substeps;
     const dampingScale = 1 - c.damping * h;
@@ -195,37 +185,38 @@ export class SoftBodySolver implements FixedStepSim<SoftBodySnapshot> {
     const vx = this.#vx; const vy = this.#vy; const vz = this.#vz;
     const qx = this.#qx; const qy = this.#qy; const qz = this.#qz;
     const invMass = this.#invMass;
-    for (let sub = 0; sub < c.substeps; sub += 1) {
-      this.#qx.set(this.#px); this.#qy.set(this.#py); this.#qz.set(this.#pz);
-      const groundY = c.groundY;
+    void substep; // 软体无风场,时间基不进入子步体;签名与 ClothSolver 对齐。
+    this.#qx.set(this.#px); this.#qy.set(this.#py); this.#qz.set(this.#pz);
+    const groundY = c.groundY;
+    for (let i = 0; i < this.#count; i += 1) {
+      if (invMass[i] === 0) continue;
+      vx[i] = (vx[i]! + c.gravity[0] * h) * dampingScale;
+      vy[i] = (vy[i]! + c.gravity[1] * h) * dampingScale;
+      vz[i] = (vz[i]! + c.gravity[2] * h) * dampingScale;
+      px[i] = px[i]! + vx[i]! * h; py[i] = py[i]! + vy[i]! * h; pz[i] = pz[i]! + vz[i]! * h;
+      // 地面接触:积分后位置投影;速度由 (p−q)/h 回算自然消去法向分量。
+      if (groundY !== undefined && py[i]! < groundY) py[i] = groundY;
+    }
+    c.contacts?.project(px, py, pz, invMass, c.groundY);
+    this.#selfCollision?.resolve(px, py, pz, invMass);
+    this.#lambdaEdge.fill(0); this.#lambdaVol.fill(0);
+    for (let e = 0; e < this.#edgeRest.length; e += 1) this.#projectEdge(e, alphaEdge);
+    for (let t = 0; t < this.#restVolume.length; t += 1) this.#projectVolume(t, alphaVol);
+    // 约束投影可能把粒子再次推到地面下;速度回算前再钳制一次。
+    if (c.groundY !== undefined) {
       for (let i = 0; i < this.#count; i += 1) {
-        if (invMass[i] === 0) continue;
-        vx[i] = (vx[i]! + c.gravity[0] * h) * dampingScale;
-        vy[i] = (vy[i]! + c.gravity[1] * h) * dampingScale;
-        vz[i] = (vz[i]! + c.gravity[2] * h) * dampingScale;
-        px[i] = px[i]! + vx[i]! * h; py[i] = py[i]! + vy[i]! * h; pz[i] = pz[i]! + vz[i]! * h;
-        // 地面接触:积分后位置投影;速度由 (p−q)/h 回算自然消去法向分量。
-        if (groundY !== undefined && py[i]! < groundY) py[i] = groundY;
-      }
-      this.#lambdaEdge.fill(0); this.#lambdaVol.fill(0);
-      for (let e = 0; e < this.#edgeRest.length; e += 1) this.#projectEdge(e, alphaEdge);
-      for (let t = 0; t < this.#restVolume.length; t += 1) this.#projectVolume(t, alphaVol);
-      // 约束投影可能把粒子再次推到地面下;速度回算前再钳制一次。
-      if (c.groundY !== undefined) {
-        for (let i = 0; i < this.#count; i += 1) {
-          if (this.#invMass[i] !== 0 && py[i]! < c.groundY) py[i] = c.groundY;
-        }
-      }
-      const invH = 1 / h;
-      for (let i = 0; i < this.#count; i += 1) {
-        if (invMass[i] === 0) { vx[i] = 0; vy[i] = 0; vz[i] = 0; continue; }
-        vx[i] = (px[i]! - qx[i]!) * invH;
-        vy[i] = (py[i]! - qy[i]!) * invH;
-        vz[i] = (pz[i]! - qz[i]!) * invH;
+        if (this.#invMass[i] !== 0 && py[i]! < c.groundY) py[i] = c.groundY;
       }
     }
-    this.#tick += 1;
-    assertFinite(this.#px, "softbody.px"); assertFinite(this.#py, "softbody.py"); assertFinite(this.#pz, "softbody.pz");
+    c.contacts?.project(px, py, pz, invMass, c.groundY);
+    this.#selfCollision?.resolve(px, py, pz, invMass);
+    const invH = 1 / h;
+    for (let i = 0; i < this.#count; i += 1) {
+      if (invMass[i] === 0) { vx[i] = 0; vy[i] = 0; vz[i] = 0; continue; }
+      vx[i] = (px[i]! - qx[i]!) * invH;
+      vy[i] = (py[i]! - qy[i]!) * invH;
+      vz[i] = (pz[i]! - qz[i]!) * invH;
+    }
   }
 
   #projectEdge(e: number, alphaTilde: number): void {

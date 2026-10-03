@@ -7,8 +7,8 @@
  * 结构合同(两条都由闭式逐字保证):
  * - 权重 w 只由**层 rgb** 派生,同一 w 施加于 rgb 与全部四 lobe ⇒ 四 lobe 之和恒等 rgb
  *   (混合是同一线性映射,不破坏分量分解);
- * - 两种模式都是凸混合(逐通道权重和恒 1)⇒ 每格输出 ≤ max(双亲),半球反射率不增,
- *   白炉口径 ≤1 由双亲(既有 T08 已证 ≤1+1e-3)直接继承;
+ * - 两种模式都是凸混合(逐通道权重和恒 1)⇒ 每个方向的输出 ≤ max(双亲);
+ *   方向相关权重不保证半球积分 ≤1，白炉能量须独立验证，不能从此逐点界推出;
  * - overlay 语义:层响应弱(L_rgb→0)有效权重→0,底材全保留;层响应饱和(L_rgb≥1)
  *   w=c,与 replace 同式同序 ⇒ 逐位收敛;响应弱的层按自身份额自遮蔽渗透。
  * 确定性与退化合同:
@@ -73,6 +73,9 @@ export function evaluateLayeredMaterialDirect(
   let result = evaluateExtendedMaterialDirect(surface, params.base, geometry, radiance);
   for (const layer of params.layers) {
     if (layer.coverage === 0) continue; // 剪枝合同:零覆盖层不产生任何浮点扰动。
+    if (layer.responseModel === "microfacet-metal-reflection") {
+      throw new RangeError("microfacet-metal-reflection requires the surface-aware evaluator; the scalar evaluator cannot represent it.");
+    }
     const layerResult = evaluateExtendedMaterialDirect(surface, layer.params, geometry, radiance);
     const weights = layerWeights(layerResult.rgb, layer.coverage, layer.mode);
     result = {

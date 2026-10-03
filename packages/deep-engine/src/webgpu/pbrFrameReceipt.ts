@@ -76,10 +76,25 @@ export function pbrFramePassTimingsUnavailable(frame: number, reason: string): P
   return Object.freeze({ frame, availability: "unavailable", unavailableReason: reason });
 }
 
+/**
+ * 已映射 pass 缺 timing 样本时的 unavailable 原因口径:
+ * - "missing"(缺省,历史行为):确实缺样本,调用方无法解释;
+ * - "deferred-to-gpu-pass-timings":计时已请求,毫秒经 gpuPassTimings 通道滞后 1-2 帧异步发布;
+ * - "not-requested":本帧未请求逐 pass 计时(常规回执帧)。
+ */
+export type PbrReceiptTimingAvailability = "missing" | "deferred-to-gpu-pass-timings" | "not-requested";
+
+const TIMING_AVAILABILITY_REASONS: Readonly<Record<PbrReceiptTimingAvailability, string>> = Object.freeze({
+  "missing": "missing timing entry for mapped pass",
+  "deferred-to-gpu-pass-timings": "pass timing published asynchronously via gpuPassTimings",
+  "not-requested": "timing not requested on this frame",
+});
+
 /** 回执必须完整覆盖计划 pass:有实测给实测;未接/缺样本一律显式 unavailable。 */
 export function createPbrFrameReceipt(frame: number, plan: PbrFrameExecutionPlan,
   timings: readonly PbrPassTimingEntry[], windowStartMs: number, windowEndMs: number,
-  executedPassIds: ReadonlySet<string> = new Set()): PbrFrameExecutionReceipt {
+  executedPassIds: ReadonlySet<string> = new Set(),
+  timingAvailability: PbrReceiptTimingAvailability = "missing"): PbrFrameExecutionReceipt {
   assertWindowBounds(windowStartMs, windowEndMs);
   const timingByPass = new Map<string, number>();
   for (const entry of timings) {
@@ -100,7 +115,7 @@ export function createPbrFrameReceipt(frame: number, plan: PbrFrameExecutionPlan
     const mapping = plan.passes.find(pass => pass.passId === passId)!.mapping;
     const reason = mapping.status === "unmapped" ? `pass 未纳入第一切片(${mapping.reason})`
       : executedPassIds.size > 0 && !executedPassIds.has(passId) ? "pass not encoded on this frame"
-        : "missing timing entry for mapped pass";
+        : TIMING_AVAILABILITY_REASONS[timingAvailability];
     return createPbrPassUnavailableSample(passId, reason, windowStartMs, windowEndMs);
   });
   // perPass 只收实测样本;给了 executedPassIds 时再与之取交(未编码 pass 的 timing 已在上面抛错)。

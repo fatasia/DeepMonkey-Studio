@@ -72,7 +72,7 @@ export class DeviceSession {
     private readonly preferredFormat: GPUTextureFormat,
     device: GPUDevice,
     private readonly canvas: HTMLCanvasElement,
-    private readonly adapter: GPUAdapter,
+    private readonly gpu: GPU,
     readonly adapterInfo: Readonly<{ vendor: string; architecture: string; device: string; description: string; isFallbackAdapter: boolean }> | undefined,
     memoryBudgetBytes?: number,
     recovery?: DeviceRecoveryOptions,
@@ -116,7 +116,7 @@ export class DeviceSession {
       const info = adapter.info;
       const hdr = capabilities?.hdrDisplay === undefined ? undefined
         : await abortable(probeHdrDisplayCanvas(device, canvas, capabilities.hdrDisplay), signal);
-      session = new DeviceSession(context, gpu.getPreferredCanvasFormat(), device, canvas, adapter, info ? Object.freeze({
+      session = new DeviceSession(context, gpu.getPreferredCanvasFormat(), device, canvas, gpu, info ? Object.freeze({
         vendor: info.vendor, architecture: info.architecture, device: info.device, description: info.description, isFallbackAdapter: info.isFallbackAdapter,
       }) : undefined, memoryBudgetBytes, recovery, requiredLimits, hdr);
       const layout = canvas as unknown as CanvasLayout;
@@ -217,7 +217,7 @@ export class DeviceSession {
     });
   }
 
-  /** 会话内恢复：同一 adapter 重新 requestDevice（保守核心配置）+ surface 重新 configure + 资源表退役。 */
+  /** 会话内恢复：申请新 adapter/device（保守核心配置）并重绑 surface、退役旧资源表。 */
   private startRecovery(code: string, message: string): void {
     const machine = this.recoveryMachine;
     if (!machine || this.currentState === "disposed" || this.currentState === "lost" || this.recoveringNow) return;
@@ -231,7 +231,12 @@ export class DeviceSession {
     if (this.isDisposed()) { this.recoveringNow = false; return; }
     let recreated: GPUDevice;
     try {
-      recreated = await this.adapter.requestDevice({ label: "Deep Engine recovered device", ...(this.requiredLimits ? { requiredLimits: this.requiredLimits } : {}) });
+      // GPUAdapter is consumed by requestDevice on conforming implementations.
+      // Each recovery attempt needs a fresh adapter, including failed retries.
+      const adapter = await this.gpu.requestAdapter({ powerPreference: "high-performance" });
+      if (this.isDisposed()) { this.recoveringNow = false; return; }
+      if (!adapter) throw new Error("No WebGPU adapter is available for recovery.");
+      recreated = await adapter.requestDevice({ label: "Deep Engine recovered device", ...(this.requiredLimits ? { requiredLimits: this.requiredLimits } : {}) });
       // await 期间会话可能已关闭：迟到的成功必须丢弃（销毁新设备），不得复活会话。
       if (this.isDisposed()) { recreated.destroy(); this.recoveringNow = false; return; }
       if (this.lostDevices.has(recreated)) throw new Error("recovery returned an already-lost device");

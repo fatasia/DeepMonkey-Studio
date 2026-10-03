@@ -198,7 +198,7 @@ export function createScenePersistenceController(context: ScenePersistenceContro
   const fileTransfer = createSceneFileTransferActions(context, makeSnapshot, applyScene);
   const publication = createScenePublicationActions(context, () => saveScene());
 
-  async function applyScene(scene: SceneSnapshot, updateRoute = true, sceneProject = project, readOnly = false, fastRuntime = false, safeAuthoringEntry = false, requireComplete = false, incrementalPlay = false, restoreAnimationPlayheadSec?: number) {
+  async function applyScene(scene: SceneSnapshot, updateRoute = true, sceneProject = project, readOnly = false, fastRuntime = false, safeAuthoringEntry = false, requireComplete = false, incrementalPlay = false, restoreAnimationPlayheadSec?: number, restoreLiveCamera = false) {
     if (!engine || !sceneProject) {
       if (requireComplete) throw new Error("场景引擎或项目资源已卸载，请重新打开场景后重试退出播放");
       return;
@@ -272,8 +272,9 @@ export function createScenePersistenceController(context: ScenePersistenceContro
         }
         return true;
       };
-      const essentialModels = readOnly ? scene.models.slice(0, 1) : scene.models;
-      const deferredModels = readOnly ? scene.models.slice(1) : [];
+      // Strict recovery waits for every model; ordinary viewer entry still streams after its first model.
+      const essentialModels = readOnly && !requireComplete ? scene.models.slice(0, 1) : scene.models;
+      const deferredModels = readOnly && !requireComplete ? scene.models.slice(1) : [];
       if (readOnly) setViewerLoadState({ loaded: 0, total: scene.models.length, current: essentialModels[0]?.name ?? scene.name, phase: "essential" });
       for (const [index, item] of essentialModels.entries()) {
         if (!(await loadSceneModel(item))) return;
@@ -306,7 +307,8 @@ export function createScenePersistenceController(context: ScenePersistenceContro
       }
       setAnnotations(engine.listAnnotations());
       const nextCameraViews = scene.cameraViews ?? [];
-      const authoredEntryCamera = nextCameraViews.find((item) => item.id === scene.defaultCameraViewId)?.camera ?? scene.camera;
+      const authoredEntryCamera = restoreLiveCamera ? scene.camera
+        : nextCameraViews.find((item) => item.id === scene.defaultCameraViewId)?.camera ?? scene.camera;
       const entryCamera = resolveSceneEntryCamera(authoredEntryCamera, { readOnly, safeAuthoringEntry });
       const nextCameraConstraints = normalizeCameraConstraints({ ...DEFAULT_CAMERA_CONSTRAINTS, ...scene.cameraConstraints });
       const nextNavigationSettings = normalizeNavigationSettings(scene.navigationSettings);
@@ -343,7 +345,6 @@ export function createScenePersistenceController(context: ScenePersistenceContro
       // 等既有调用方行为逐位不变。clamp 语义归引擎（超出时长按引擎边界处理）。
       if (typeof restoreAnimationPlayheadSec === "number" && Number.isFinite(restoreAnimationPlayheadSec) && restoreAnimationPlayheadSec > 0) {
         engine.seekSceneAnimation(restoreAnimationPlayheadSec);
-        setAnimationTime(restoreAnimationPlayheadSec);
       }
       setWeather(nextWeather);
       setLighting(nextLighting);
@@ -354,7 +355,8 @@ export function createScenePersistenceController(context: ScenePersistenceContro
       setPhysics(nextPhysics);
       setSceneDashboard(nextDashboard);
       setEngineeringAnalysis(nextEngineeringAnalysis);
-      setAnimationTime(0);
+      setAnimationTime(typeof restoreAnimationPlayheadSec === "number" && Number.isFinite(restoreAnimationPlayheadSec)
+        && restoreAnimationPlayheadSec > 0 ? readAnimationPlayheadSec(engine) ?? 0 : 0);
       setAnimationPlaying(false);
       const nextClipping = scene.clipping ?? DEFAULT_CLIPPING;
       engine.setClipping(nextClipping);

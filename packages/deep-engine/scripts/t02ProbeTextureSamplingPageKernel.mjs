@@ -29,6 +29,7 @@ export async function t02ProbeTextureSamplingKernel(payload) {
       { binding: 9, visibility: shaderStage, texture: { viewDimension: "2d-array" } },
       { binding: 10, visibility: shaderStage, sampler: { type: "filtering" } },
       { binding: 11, visibility: shaderStage, buffer: { type: "uniform" } },
+      { binding: 16, visibility: shaderStage, texture: { sampleType: "unfilterable-float", viewDimension: "2d-array" } },
     ] });
     const pipeline = device.createComputePipeline({
       layout: device.createPipelineLayout({ bindGroupLayouts: [ioLayout, empty, empty, textureLayout] }),
@@ -50,10 +51,13 @@ export async function t02ProbeTextureSamplingKernel(payload) {
     const texture = device.createTexture({ size: [7, 2, 5], format: "rgba16float",
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
     const textureView = texture.createView({ dimension: "2d-array" });
+    const momentFallback = device.createTexture({ size: [1, 1, 1], format: "rgba32float",
+      usage: GPUTextureUsage.TEXTURE_BINDING });
     const samplingGroup = device.createBindGroup({ layout: textureLayout, entries: [
       { binding: 9, resource: textureView },
       { binding: 10, resource: device.createSampler({ magFilter: "linear", minFilter: "linear" }) },
       { binding: 11, resource: { buffer: levels } },
+      { binding: 16, resource: momentFallback.createView({ dimension: "2d-array" }) },
     ] });
     const values = [];
     for (const textureB64 of payload.textureSetsB64) {

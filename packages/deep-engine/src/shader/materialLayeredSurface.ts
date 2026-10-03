@@ -1,5 +1,6 @@
 import { normalizeLayeredMaterialParameters, type LayeredMaterialOverrides,
   type LayeredMaterialParameters, type MaterialLayerOverrideInput } from "./materialLayeredParameters.js";
+import { assertMetalReflectionLayer } from "./materialMetalReflectionProfile.js";
 import { packExtendedParameterBlock } from "./materialParameterAbi.js";
 import type { StandardSurfaceInputs, Vec3 } from "./materialEvaluate.js";
 import type { PreparedTextureSlot, TextureSlot } from "../renderPacketTypes.js";
@@ -44,6 +45,7 @@ function snapshotSlot(slot: TextureSlot | undefined): TextureSlot | undefined {
 }
 export function normalizeLayeredSurfaceParameters(input: LayeredSurfaceOverrides): LayeredSurfaceParameters {
   const normalized = normalizeLayeredMaterialParameters(input);
+  for (const layer of input.layers ?? []) assertMetalReflectionLayer(layer);
   const surfaces = (input.layers ?? []).map(layer => {
     const surface = layer.surface;
     if (!surface) return undefined;
@@ -72,7 +74,8 @@ export function packLayeredSurfaceBlock(input: LayeredSurfaceParameters,
     const surface = input.surfaces[index], binding = bindings[index], base = 4 + activeCount++ * (LAYERED_SURFACE_ROW_BYTES / 4);
     block.set(packExtendedParameterBlock(layer.params), base);
     block.set([...(surface?.baseColor ?? [1, 1, 1]), layer.coverage], base + 8);
-    const flags = Number(surface?.baseColor !== undefined) | (Number(surface?.metallic !== undefined) << 1) | (Number(surface?.roughness !== undefined) << 2);
+    const flags = Number(surface?.baseColor !== undefined) | (Number(surface?.metallic !== undefined) << 1) | (Number(surface?.roughness !== undefined) << 2)
+      | (Number(layer.responseModel === "microfacet-metal-reflection") << 3);
     block.set([surface?.metallic ?? 0, surface?.roughness ?? 0, layer.mode === "overlay" ? 1 : 0, flags], base + 12);
     for (const [semantic, offset, codeOffset] of [["baseColor", 16, 32], ["metallicRoughness", 24, 33]] as const) {
       const texture = binding?.[semantic], transform = texture?.slot.uvTransform ?? [1, 0, 0, 0, 1, 0];

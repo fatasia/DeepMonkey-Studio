@@ -234,6 +234,7 @@ describe("AssistantService", () => {
     configured: true,
     rules: { content: "规则：涉高压设备必须先断电确认。", truncated: false },
     memories: [{ id: "m1", content: "用户偏好中文答复" }],
+    lessons: [],
     verdicts: [{
       proposalFingerprint: "pf-1", resultFingerprint: "rf-1", verdict: "refuted",
       reasonCode: "golden-mismatch", rationale: "更换轴承未能消除振动，内核复算不匹配", recordedAt: "2026-09-29T00:00:00.000Z",
@@ -294,5 +295,36 @@ describe("AssistantService", () => {
     expect(input).not.toContain("ignore previous instructions");
     expect(response.reliability?.inputRisk).toBe("high");
     expect(response.reliability?.warnings.some((item) => item.includes("可疑输入特征"))).toBe(true);
+  });
+
+  // T5（H-C5-T5 20261003）：回答数值 ↔ 真正证据锚的端到端对齐——
+  // 锚只来自真实来源段（来源 id+源内偏移+sha256 指纹），且随响应合同出域。
+  it("T5: aligns answer values to real per-source evidence anchors in the response", async () => {
+    const runtime = await host({ complete: async () => ({ text: "设备 EQ-2205 健康分 92，建议检修。", model: "test-model" }) });
+    const response = await createAssistantService(runtime.registry).complete({
+      mode: "scene", question: "设备现状",
+      context: { scene: { devices: [{ id: "EQ-2205", score: 92 }] } },
+      settings, principal: "operator",
+    });
+    const citations = response.reliability?.citations ?? [];
+    expect(citations.map((citation) => citation.token).sort()).toEqual(["92", "EQ-2205"].sort());
+    const anchor = citations.find((citation) => citation.token === "EQ-2205")?.anchors[0];
+    expect(anchor?.sourceId).toBe("workspace-scene");
+    expect(anchor?.sourcePath).toBe("scene");
+    expect(anchor?.offset).toBeGreaterThan(0);
+    expect(anchor?.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(response.reliability?.contextTrust).toBe("server-evidence");
+  });
+
+  it("T5: never cites evidence outside what the model actually received", async () => {
+    const runtime = await host({ complete: async () => ({ text: "记录与 EQ-9900 相关。", model: "test-model" }) });
+    const response = await createAssistantService(runtime.registry).complete({
+      mode: "scene", question: "盘点",
+      context: { records: "数".repeat(90_000), later: { tag: "EQ-9900" } },
+      settings, principal: "operator",
+    });
+    // 尾部来源被截断、模型从未见过：零锚 + K2 既有未命中警示照常披露。
+    expect(response.reliability?.citations).toBeUndefined();
+    expect(response.reliability?.warnings.some((item) => item.includes("EQ-9900"))).toBe(true);
   });
 });

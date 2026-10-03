@@ -6,7 +6,7 @@
  */
 
 import { buildBvh, intersectTriangle, type BvhBuildResult } from "./bvhBuilder.js";
-import { buildTracedScene, traceClosest, type TraceHit, type TraceQuery } from "./rayTrace.js";
+import { buildTracedScene, traceClosest, type TraceHit, type TraceQuery, type TracedScene } from "./rayTrace.js";
 import type { RayBlasDescriptor } from "./rayBackendTypes.js";
 
 export interface TlasInstanceDescriptor {
@@ -33,6 +33,8 @@ export interface TlasBuildResult {
    *  以 f32 量化（fround）——合同即 f32 精度盒，与 GPU storage 记录逐位一致；CPU 遍历
    *  不读盒（保守下钻）不受影响，GPU TLAS 盒剪枝与打包以此为准。 */
   readonly instanceBounds: readonly (TlasInstanceBounds | undefined)[];
+  /** Build-time BLAS cache. Snapshot owners may reuse it through the explicit trace resolver. */
+  readonly preparedBlas?: ReadonlyMap<RayBlasDescriptor, TracedScene>;
 }
 
 /** 行主序 3×4 仿射求逆（local = M × world ⇒ world = M⁻¹ × local）；3×3 奇异即抛错。 */
@@ -58,8 +60,11 @@ export function buildTlas(instances: readonly TlasInstanceDescriptor[]): TlasBui
   const instanceBounds: (TlasInstanceBounds | undefined)[] = instances.map(() => undefined);
   const fakeVertices: number[] = [];
   const fakeIndices: number[] = [];
+  const participating: number[] = [];
+  const preparedBlas = new Map<RayBlasDescriptor, TracedScene>();
   instances.forEach((instance, index) => {
-    const scene = buildTracedScene(instance.blas);
+    let scene = preparedBlas.get(instance.blas);
+    if (!scene) { scene = buildTracedScene(instance.blas); preparedBlas.set(instance.blas, scene); }
     const node = scene.built.nodes[0];
     if (node === undefined) return; // 空 BLAS 不参与实例盒
     const localToWorld = invertAffine3x4(instance.worldToLocal);
@@ -74,15 +79,18 @@ export function buildTlas(instances: readonly TlasInstanceDescriptor[]): TlasBui
     }
     instanceBounds[index] = { minX: Math.fround(minX), minY: Math.fround(minY), minZ: Math.fround(minZ),
       maxX: Math.fround(maxX), maxY: Math.fround(maxY), maxZ: Math.fround(maxZ) };
+    const vertexBase = fakeVertices.length / 3;
     for (const corner of corners) fakeVertices.push(...corner);
+    participating.push(index);
     // fake 三角必须覆盖盒的三轴全距（角 0=min.x/min.y/min.z、7=max.x/max.y/max.z、
     // 5=max.x/min.y/max.z）：取 0/1/2 会三顶点共享 minX，使盒在 x 轴退化——CPU 遍历不读盒
     // 不受影响，但 GPU TLAS 盒剪枝会把整棵树剪光（真机实测）。
-    fakeIndices.push(index * 8 + 0, index * 8 + 7, index * 8 + 5);
+    fakeIndices.push(vertexBase, vertexBase + 7, vertexBase + 5);
   });
-  if (fakeIndices.length === 0) return { ...empty, instances, instanceBounds };
-  const built = buildBvh({ vertices: new Float32Array(fakeVertices), indices: Uint32Array.from(fakeIndices) });
-  return { built, instances, instanceBounds };
+  if (fakeIndices.length === 0) return { ...empty, instances, instanceBounds, preparedBlas };
+  const compact = buildBvh({ vertices: new Float32Array(fakeVertices), indices: Uint32Array.from(fakeIndices) });
+  const built = { ...compact, order: Object.freeze(compact.order.map(slot => participating[slot]!)) };
+  return { built, instances, instanceBounds, preparedBlas };
 }
 
 export interface TlasHit extends TraceHit {
@@ -90,7 +98,8 @@ export interface TlasHit extends TraceHit {
 }
 
 /** 两级最近命中：TLAS 盒剪枝 → 逆变换到 BLAS 局部 → traceClosest；取全局最近 t。 */
-export function traceTlasClosest(tlas: TlasBuildResult, query: TraceQuery, mask = 0xFFFFFFFF): TlasHit | undefined {
+export function traceTlasClosest(tlas: TlasBuildResult, query: TraceQuery, mask = 0xFFFFFFFF,
+  resolvePreparedBlas?: (blas: RayBlasDescriptor) => TracedScene): TlasHit | undefined {
   if (!(query.tMax > 0) || tlas.built.nodes.length === 0) return undefined;
   let best: (TraceHit & { instanceId: string }) | undefined;
   const stack: number[] = [0];
@@ -115,7 +124,8 @@ export function traceTlasClosest(tlas: TlasBuildResult, query: TraceQuery, mask 
       const localQuery: TraceQuery = { ox: localOrigin[0], oy: localOrigin[1], oz: localOrigin[2],
         dx: localDirection[0] / scale, dy: localDirection[1] / scale, dz: localDirection[2] / scale,
         tMax: query.tMax * scale };
-      const scene = buildTracedScene(instance.blas);
+      const scene = resolvePreparedBlas?.(instance.blas) ?? buildTracedScene(instance.blas);
+      if (scene.blas !== instance.blas) throw new Error("Prepared TLAS BLAS does not match its instance.");
       const hit: TraceHit | undefined = traceClosest(scene, localQuery);
       if (hit !== undefined) {
         const worldT = hit.t / scale;

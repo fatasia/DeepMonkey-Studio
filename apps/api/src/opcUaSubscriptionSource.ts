@@ -3,6 +3,8 @@
  *
  * 链路:endpoint 连接 → session → ClientSubscription → 每 NodeId 一个 MonitoredItem(Value 属性)
  * → DataChangeNotification("changed")→ SourceSample 事件流。
+ * 安全(T24 接线):config.security 存在时默认 createClient 走 Sign + Basic256Sha256
+ * (opcUaSecureTransport,客户端自签证书跨实例复用);缺省维持 None 匿名(零退化)。
  * 断线检测:client "connection_lost"、session "session_closed"、subscription "terminated"
  * 任一触发即上报 disconnected,由订阅运行时的既有退避重连 + 恢复对账接管;
  * 内部自动重连关闭(connectionStrategy.maxRetry=0),重连所有权归运行时,避免双权重连。
@@ -24,7 +26,10 @@
  * 每次重连由会话经 sourceFactory 重建全新实例;旧实例 dispose() 释放全部监听器与连接对象。
  */
 import { createHash } from "node:crypto";
+import path from "node:path";
 import type { DataEvent, DataEventAction, DataEventTarget } from "@bim-studio/contracts";
+// 类型引用在编译期擦除,不破坏本模块级零 node-opcua 运行时依赖(安全路径惰性 import)。
+import type { OpcUaMessageSecurityMode } from "./opcUaSecureTransport.js";
 import { normalizeOpcUaLiveValue, isFullOpcUaNodeId, resolveOpcUaNodeId } from "@bim-studio/contracts";
 import type { SourceLifecycleEvent, SourceResumeContext, SourceSample, SubscriptionSource } from "./subscriptionRuntime.js";
 
@@ -68,11 +73,73 @@ export interface OpcUaClientLike {
   off?(event: string, listener: (...args: never[]) => void): unknown;
 }
 
-export type OpcUaClientFactory = () => OpcUaClientLike;
+/**
+ * 客户端工厂:同步注入(测试假客户端)与异步默认实现(安全路径需先生成/复用证书)都合法;
+ * 调用侧统一 await,同步返回值 await 后原样透传(零行为变化)。
+ */
+export type OpcUaClientFactory = () => OpcUaClientLike | Promise<OpcUaClientLike>;
 
 export interface OpcUaSubscriptionDeps {
-  /** 默认用 node-opcua-client 的 OPCUAClient.create;测试注入可控假客户端。 */
+  /** 默认用 node-opcua-client 的 OPCUAClient.create;测试注入可控假客户端。显式注入优先于 security 默认签名客户端。 */
   createClient?: OpcUaClientFactory;
+}
+
+/**
+ * 安全配置(可选):存在即把默认 createClient 切到 Basic256Sha256 签名通道
+ * (opcUaSecureTransport.createSignedOpcUaClient,客户端自签证书落盘于 rootDir 并跨实例复用);
+ * messageSecurityMode 缺省 sign(既有行为);不存在时维持 None 匿名(既有行为,零退化)。
+ * 注意:deps.createClient 显式注入优先于本默认。
+ */
+export interface OpcUaSecurityConfig {
+  /** 客户端 PKI 存储根目录(证书/私钥落盘于此;同目录重连复用既有证书)。 */
+  certificateManagerRootDir: string;
+  /** 客户端证书 CN 与 applicationName;缺省 bim-studio-client。 */
+  applicationName?: string;
+  /** 消息安全模式;缺省 sign。"signAndEncrypt"=签名+加密通道。 */
+  messageSecurityMode?: OpcUaMessageSecurityMode;
+}
+
+/**
+ * 连接配置 → security 组装(单一事实源,2026-10-02 自 mqttIngestRoutes 上移,preview 与
+ * 持久订阅两条链共用同一校验):连接配置是扁平原始值(Record<string, string|number|boolean>),
+ * 无法直接嵌套 security 对象,在此统一组装。
+ * 校验口径:配置了 certificateManagerRootDir 键即视为启用签名通道——空值/非文本是配置错误,
+ * fail-closed 显式拒绝(静默降级回 None 匿名会掩盖用户的安全意图);未配置该键时返回
+ * undefined,调用方 config 输出与透传前逐位相同(None 匿名路径零退化)。
+ */
+export function resolveOpcUaSecurity(config: Record<string, string | number | boolean>): OpcUaSecurityConfig | undefined {
+  const rootDirRaw = config.certificateManagerRootDir;
+  if (rootDirRaw === undefined) {
+    if (config.securityMode !== undefined) {
+      throw new Error("OPC UA 显式 securityMode 需要 certificateManagerRootDir，不能降级为 None 通道");
+    }
+    return undefined;
+  }
+  if (typeof rootDirRaw !== "string" || rootDirRaw.trim() === "") {
+    throw new Error("OPC UA 签名通道需要非空的 certificateManagerRootDir(客户端证书 PKI 根目录)");
+  }
+  const applicationNameRaw = config.applicationName;
+  if (applicationNameRaw !== undefined && (typeof applicationNameRaw !== "string" || applicationNameRaw.trim() === "")) {
+    throw new Error("OPC UA 签名通道 applicationName 必须是非空文本");
+  }
+  const securityModeRaw = config.securityMode;
+  let messageSecurityMode: OpcUaMessageSecurityMode | undefined;
+  if (securityModeRaw !== undefined) {
+    if (typeof securityModeRaw !== "string") {
+      throw new Error("OPC UA 安全通道 securityMode 必须是文本:sign | signAndEncrypt");
+    }
+    const normalized = securityModeRaw.trim().toLowerCase();
+    if (normalized !== "sign" && normalized !== "signandencrypt") {
+      throw new Error(`OPC UA 安全通道 securityMode 不支持 "${securityModeRaw}":仅 sign | signAndEncrypt(fail-closed,拒绝静默降级)`);
+    }
+    messageSecurityMode = normalized === "sign" ? "sign" : "signAndEncrypt";
+  }
+  return {
+    // 路径规整:去首尾空白 + 统一分隔符/折叠冗余段;不绝对化,相对路径语义保持宿主进程。
+    certificateManagerRootDir: path.normalize(rootDirRaw.trim()),
+    ...(applicationNameRaw !== undefined ? { applicationName: applicationNameRaw.trim() } : {}),
+    ...(messageSecurityMode !== undefined ? { messageSecurityMode } : {}),
+  };
 }
 
 /** AttributeIds.Value;数字字面量避免为类型注入引入整包常量依赖。 */
@@ -95,6 +162,8 @@ export interface OpcUaSubscriptionSourceConfig {
   publishingIntervalMs?: number;
   /** MonitoredItem 队列深度;缺省 10。 */
   queueSize?: number;
+  /** 安全配置;存在即默认 Sign + Basic256Sha256 签名通道,缺省 None 匿名(零退化)。 */
+  security?: OpcUaSecurityConfig;
   /** 运行时(重)连时注入的恢复位置;用于断线区间的缺口估计。 */
   resume?: SourceResumeContext;
   deps?: OpcUaSubscriptionDeps;
@@ -120,6 +189,8 @@ export interface OpcUaIngestConfig extends OpcUaEventProjection {
   samplingIntervalMs?: number;
   publishingIntervalMs?: number;
   queueSize?: number;
+  /** 安全配置透传(T24 路由层):存在即签名通道;由路由层从连接配置组装并校验。 */
+  security?: OpcUaSecurityConfig;
   now?: () => number;
 }
 
@@ -389,20 +460,38 @@ export function createOpcUaSubscriptionSource(config: OpcUaSubscriptionSourceCon
       if (started) throw new Error("OPC UA 订阅源已启动;重连请通过 sourceFactory 重建实例");
       started = true;
       const { OPCUAClient, ClientSubscription, MessageSecurityMode, SecurityPolicy, UserTokenType } = await import("node-opcua-client");
+      const security = config.security;
       const clientFactory: OpcUaClientFactory =
         config.deps?.createClient ??
-        (() =>
-          adaptRealClient(
-            OPCUAClient.create({
-              endpointMustExist: false,
-              // 内部自动重连关闭:重连所有权归订阅运行时的退避策略,避免双权重连。
-              connectionStrategy: { initialDelay: 250, maxDelay: 1_000, maxRetry: 0 },
-              securityMode: MessageSecurityMode.None,
-              securityPolicy: SecurityPolicy.None,
-            }) as unknown as RealClientShape,
-            ClientSubscription as unknown as RealClientSubscriptionShape,
-          ));
-      client = clientFactory();
+        (security
+          ? async () => {
+              // 安全路径(T24 接线):Sign + Basic256Sha256,客户端自签证书由
+              // opcUaSecureTransport 的 CertificateManager 生成并在同 rootDir 内跨实例复用。
+              // 惰性 import 保持本模块级零 node-opcua 依赖(仅安全路径加载传输批)。
+              const { createSignedOpcUaClient } = await import("./opcUaSecureTransport.js");
+              const realClient = await createSignedOpcUaClient({
+                endpointUrl: config.endpointUrl.trim(),
+                certificateManagerRootDir: security.certificateManagerRootDir,
+                ...(security.applicationName ? { applicationName: security.applicationName } : {}),
+                ...(security.messageSecurityMode !== undefined ? { messageSecurityMode: security.messageSecurityMode } : {}),
+              });
+              return adaptRealClient(
+                realClient as unknown as RealClientShape,
+                ClientSubscription as unknown as RealClientSubscriptionShape,
+              );
+            }
+          : () =>
+              adaptRealClient(
+                OPCUAClient.create({
+                  endpointMustExist: false,
+                  // 内部自动重连关闭:重连所有权归订阅运行时的退避策略,避免双权重连。
+                  connectionStrategy: { initialDelay: 250, maxDelay: 1_000, maxRetry: 0 },
+                  securityMode: MessageSecurityMode.None,
+                  securityPolicy: SecurityPolicy.None,
+                }) as unknown as RealClientShape,
+                ClientSubscription as unknown as RealClientSubscriptionShape,
+              ));
+      client = await clientFactory();
       client.on("connection_lost", onConnectionLost as unknown as (...args: never[]) => void);
       const activeClient = client;
       try {
@@ -507,8 +596,13 @@ export function createOpcUaSubscriptionSource(config: OpcUaSubscriptionSourceCon
   };
 }
 
-/** 支持度描述:路由与编辑器消费它如实标注能力边界(替代旧 implemented:false 占位)。 */
-export function describeOpcUaSubscriptionSupport(): {
+/**
+ * 支持度描述:路由与编辑器消费它如实标注能力边界(替代旧 implemented:false 占位)。
+ * securityEnabled:安全声明随实际配置条件化——配置 security 的调用方应传 true,
+ * 此时限定为 Sign + Basic256Sha256 并如实声明未覆盖面;无参调用(既有路由/编辑器)
+ * 输出与安全接线前逐字一致(零变化承诺)。
+ */
+export function describeOpcUaSubscriptionSupport(options?: { securityEnabled?: boolean }): {
   implemented: true;
   sequenceSemantics: string;
   limitations: string[];
@@ -519,7 +613,9 @@ export function describeOpcUaSubscriptionSupport(): {
       "服务端时间戳(sourceTimestamp 优先、serverTimestamp 兜底)单调序映射为序列;配置 samplingIntervalMs 时按时间差估计断线/停摆丢失点数(sequenceKnown:true),未配置或时间戳不可用时如实降级为完整性未知(sequenceKnown:false)。",
     limitations: [
       "SubscriptionTransfer(subscriptionId 迁移)未实现:断线后由运行时重建订阅,断线区间数据不补发,以缺口报告对账。",
-      "安全模式固定 None(与 previewOpcUa 同口径);Sign/SignAndEncrypt 需宿主证书管理,留待后续子项。",
+      options?.securityEnabled === true
+        ? "支持 Basic256Sha256；securityMode 可选 sign / signAndEncrypt，缺省 sign。客户端自签证书由 CertificateManager 管理；远端 CA/CRL 信任配置未接入产品连接表单，静态 CRL 拒绝仅有隔离服务端测试证据。"
+        : "安全模式固定 None(与 previewOpcUa 同口径);Sign/SignAndEncrypt 需宿主证书管理,留待后续子项。",
       "缺口 estimatedCount 是按声明更新周期的估计值,以 fromTime/toTime 为界;非周期源请勿配置 samplingIntervalMs。",
     ],
   };

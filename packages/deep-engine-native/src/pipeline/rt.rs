@@ -21,6 +21,12 @@ use super::raster::RasterState;
 pub(crate) struct RtMeshPipelines {
     standard: RtRasterPipelines,
     normal_mapped: RtRasterPipelines,
+    layered: Option<RtLayeredPipelines>,
+}
+
+struct RtLayeredPipelines {
+    standard: RtRasterPipelines,
+    normal_mapped: RtRasterPipelines,
 }
 
 struct RtRasterPipelines {
@@ -30,6 +36,31 @@ struct RtRasterPipelines {
 }
 
 impl RtMeshPipelines {
+    pub(crate) fn supports_layered(&self) -> bool {
+        self.layered.is_some()
+    }
+
+    pub(crate) fn select_layered(
+        &self,
+        mirrored: bool,
+        double_sided: bool,
+        normal_mapped: bool,
+    ) -> Option<&wgpu::RenderPipeline> {
+        let layered = self.layered.as_ref()?;
+        let set = if normal_mapped {
+            &layered.normal_mapped
+        } else {
+            &layered.standard
+        };
+        Some(if double_sided {
+            &set.double_sided
+        } else if mirrored {
+            &set.mirrored
+        } else {
+            &set.regular
+        })
+    }
+
     /// 与栅格 `MeshPipelines::select` 的 solid 分支同语义的变体选择。
     pub(crate) fn select(
         &self,
@@ -60,6 +91,46 @@ pub(crate) fn create_rt_mesh_pipelines(
     material_layout: &wgpu::BindGroupLayout,
     shader: &wgpu::ShaderModule,
 ) -> RtMeshPipelines {
+    let ordinary = create_rt_material_pipelines(
+        device,
+        frame_rt_layout,
+        material_layout,
+        shader,
+        "fragment_main_rt",
+    );
+    RtMeshPipelines {
+        standard: ordinary.standard,
+        normal_mapped: ordinary.normal_mapped,
+        layered: None,
+    }
+}
+
+/// Append six layered variants without changing ordinary resource reachability.
+pub(crate) fn create_rt_mesh_pipelines_with_layered(
+    device: &wgpu::Device,
+    frame_rt_layout: &wgpu::BindGroupLayout,
+    material_layout: &wgpu::BindGroupLayout,
+    layered_material_layout: &wgpu::BindGroupLayout,
+    shader: &wgpu::ShaderModule,
+) -> RtMeshPipelines {
+    let mut pipelines = create_rt_mesh_pipelines(device, frame_rt_layout, material_layout, shader);
+    pipelines.layered = Some(create_rt_material_pipelines(
+        device,
+        frame_rt_layout,
+        layered_material_layout,
+        shader,
+        "fragment_main_rt_layered",
+    ));
+    pipelines
+}
+
+fn create_rt_material_pipelines(
+    device: &wgpu::Device,
+    frame_rt_layout: &wgpu::BindGroupLayout,
+    material_layout: &wgpu::BindGroupLayout,
+    shader: &wgpu::ShaderModule,
+    fragment_entry: &'static str,
+) -> RtLayeredPipelines {
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Deep Engine native RT mesh pipeline layout"),
         bind_group_layouts: &[Some(frame_rt_layout), Some(material_layout)],
@@ -72,7 +143,10 @@ pub(crate) fn create_rt_mesh_pipelines(
         write_mask: wgpu::ColorWrites::ALL,
     })];
     let create = |raster: RasterState, normal_mapped: bool| {
-        let label = format!("Deep Engine native RT {} mesh pipeline", raster.label);
+        let label = format!(
+            "Deep Engine native RT {} {fragment_entry} mesh pipeline",
+            raster.label
+        );
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some(&label),
             layout: Some(&pipeline_layout),
@@ -106,7 +180,7 @@ pub(crate) fn create_rt_mesh_pipelines(
             },
             fragment: Some(wgpu::FragmentState {
                 module: shader,
-                entry_point: Some("fragment_main_rt"),
+                entry_point: Some(fragment_entry),
                 compilation_options: Default::default(),
                 targets: &targets,
             }),
@@ -114,7 +188,7 @@ pub(crate) fn create_rt_mesh_pipelines(
             cache: None,
         })
     };
-    RtMeshPipelines {
+    RtLayeredPipelines {
         standard: RtRasterPipelines {
             regular: create(RasterState::REGULAR, false),
             mirrored: create(RasterState::MIRRORED, false),

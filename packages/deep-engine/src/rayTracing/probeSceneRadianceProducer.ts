@@ -37,7 +37,11 @@ export interface ProbeRadianceLighting {
     readonly color: readonly [number, number, number];
     readonly intensity: number;
   };
-  /** 环境项（本切片由宿主以 [0,0,0] 起步；接口就绪，环境均值读回属后续切片）。 */
+  /** 环境项(miss 方向记录的物理天空辐射)。合同链:slice-1 第一切片以 [0,0,0] 过渡起步;
+   *  F1 slice-2(d1626b2f,EnvironmentAmbientReader)交付后,宿主馈送环境立方体 GPU 读回均值
+   *  即本字段的文档正确值——回退硬零会让室外探针丢天空填充。F5-L4:宿主侧须以与显示端
+   *  envIrr 相同的 environmentIntensity 缩放(scalePbrEnvironmentRadiance),否则 valid 探针
+   *  的 miss 值携带 1/强度× 的能量,呈现门态无关洗光。全零能量仍被拒绝编码(fail-closed)。 */
   readonly ambient: readonly [number, number, number];
 }
 
@@ -68,6 +72,7 @@ const WORKGROUP = 64;
 export class ProbeSceneRadianceProducer {
   private readonly device: GPUDevice;
   private readonly pipeline: GPUComputePipeline;
+  private momentsPipeline: GPUComputePipeline | undefined;
   private readonly uniform: GPUBuffer;
   private readonly overflow: GPUBuffer;
   private sceneNodes: GPUBuffer | undefined;
@@ -218,8 +223,9 @@ export class ProbeSceneRadianceProducer {
       update => ({ position: update.position, layer: layerOf(update),
         cellX: update.localCell[0], cellY: update.localCell[1] }))));
     this.device.queue.writeBuffer(this.overflow, 0, new Uint32Array(1));
+    const pipeline = context.momentsDestinationView ? this.visibilityPipeline() : this.pipeline;
     const bindGroup = this.device.createBindGroup({ label: "Deep GI probe scene radiance bindings",
-      layout: this.pipeline.getBindGroupLayout(0), entries: [
+      layout: pipeline.getBindGroupLayout(0), entries: [
         { binding: 0, resource: { buffer: this.sceneNodes! } },
         { binding: 1, resource: { buffer: this.sceneInstances! } },
         { binding: 2, resource: { buffer: this.sceneVertices! } },
@@ -230,9 +236,10 @@ export class ProbeSceneRadianceProducer {
         { binding: 7, resource: { buffer: this.uniform } },
         { binding: 8, resource: context.destinationView },
         { binding: 9, resource: { buffer: this.overflow } },
+        ...(context.momentsDestinationView ? [{ binding: 10, resource: context.momentsDestinationView }] : []),
       ] });
     const pass = context.encoder.beginComputePass({ label: "Deep GI probe scene radiance capture" });
-    pass.setPipeline(this.pipeline);
+    pass.setPipeline(pipeline);
     pass.setBindGroup(0, bindGroup);
     pass.dispatchWorkgroups(Math.ceil(updates.length / WORKGROUP));
     pass.end();
@@ -251,6 +258,24 @@ export class ProbeSceneRadianceProducer {
         this.sceneOrder, this.sceneAlbedos, this.probeParams]
         .map(buffer => () => buffer?.destroy()),
     ]);
+  }
+
+  private visibilityPipeline(): GPUComputePipeline {
+    if (this.momentsPipeline) return this.momentsPipeline;
+    const module = this.device.createShaderModule({ label: "Deep GI radiance with hit moments",
+      code: emitProbeRadianceKernelWgsl(true) });
+    const entries: GPUBindGroupLayoutEntry[] = [0, 1, 2, 3, 4, 5, 6].map(storageReadLayout);
+    entries.push({ binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
+      { binding: 8, visibility: GPUShaderStage.COMPUTE,
+        storageTexture: { access: "write-only", format: "rgba16float", viewDimension: "2d-array" } },
+      { binding: 9, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+      { binding: 10, visibility: GPUShaderStage.COMPUTE,
+        storageTexture: { access: "write-only", format: "rgba32float", viewDimension: "2d-array" } });
+    const layout = this.device.createBindGroupLayout({ label: "Deep GI moment capture layout", entries });
+    this.momentsPipeline = this.device.createComputePipeline({ label: "Deep GI moment capture pipeline",
+      layout: this.device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+      compute: { module, entryPoint: PROBE_RADIANCE_ENTRY_POINT } });
+    return this.momentsPipeline;
   }
 
   private upload(label: string, data: GPUAllowSharedBufferSource,

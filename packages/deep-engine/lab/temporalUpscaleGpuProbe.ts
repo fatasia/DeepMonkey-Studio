@@ -44,8 +44,8 @@ let active: ActiveLeg | undefined;
 const truthSnapshots: Array<{ readonly width: number; readonly height: number; readonly rgb: Float32Array }> = [];
 const completed: Array<{ readonly mode: LegMode; readonly frames: readonly UpscaleProbeFrame[] }> = [];
 
-/** 中性灰度等距柱状环境(与场景对比中性,PSNR 由几何边缘主导)。 */
-function uniformEquirect(gray: number) {
+/** 中性灰度等距柱状环境(与场景对比中性,PSNR 由几何边缘主导)。F4 四序列探针复用。 */
+export function uniformEquirect(gray: number) {
   const width = 64, height = 32, data = new Float32Array(width * height * 3);
   for (let index = 0; index < width * height; index++) {
     data[index * 3] = gray; data[index * 3 + 1] = gray; data[index * 3 + 2] = gray;
@@ -54,7 +54,7 @@ function uniformEquirect(gray: number) {
 }
 
 /** 高频对抗场景:7×5 棋盘球(中频) + 12 根细栅栏条(奈奎斯特附近,上采样核的判别点)。 */
-function gridInstances(): Float32Array {
+export function gridInstances(): Float32Array {
   const floats: number[] = [];
   for (let row = 0; row < 5; row++) for (let column = 0; column < 7; column++) {
     const x = (column - 3) * 0.52, z = (row - 2) * 0.52;
@@ -129,7 +129,7 @@ export async function beginLeg(mode: LegMode): Promise<void> {
 }
 
 /** HDR snapshot → 线性 RGB 平面(行距感知,双线性重采样到 truth 网格供跨腿对拍)。 */
-function snapshotRgb(snapshot: { readonly width: number; readonly height: number;
+export function snapshotRgb(snapshot: { readonly width: number; readonly height: number;
   readonly bytesPerRow: number; readonly format: string; readonly bytes: Uint8Array }): Float32Array {
   if (snapshot.format !== "rgba16float") throw new Error(`Unexpected present-color format ${snapshot.format}.`);
   const words = new Uint16Array(snapshot.bytes.buffer, snapshot.bytes.byteOffset, snapshot.bytes.byteLength / 2);
@@ -144,7 +144,7 @@ function snapshotRgb(snapshot: { readonly width: number; readonly height: number
 }
 
 /** 双线性重采样(源网格 → W×H):stretched 腿 0.75 画布升到 truth 网格,复刻浏览器拉伸。 */
-function resampleBilinear(source: Float32Array, sw: number, sh: number, width: number, height: number): Float32Array {
+export function resampleBilinear(source: Float32Array, sw: number, sh: number, width: number, height: number): Float32Array {
   const output = new Float32Array(width * height * 3);
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const px = (x + 0.5) / width * sw - 0.5, py = (y + 0.5) / height * sh - 0.5;
@@ -160,7 +160,7 @@ function resampleBilinear(source: Float32Array, sw: number, sh: number, width: n
   return output;
 }
 
-function psnr(a: Float32Array, b: Float32Array): number {
+export function psnr(a: Float32Array, b: Float32Array): number {
   let sum = 0;
   for (let index = 0; index < a.length; index++) { const d = a[index]! - b[index]!; sum += d * d; }
   const mse = sum / a.length;
@@ -168,7 +168,7 @@ function psnr(a: Float32Array, b: Float32Array): number {
 }
 
 /** RGB 平面的边缘 Laplacian 能量(|∇²| 平方和):感知锐度代理,值高=边缘更锐。 */
-function edgeEnergy(rgb: Float32Array, width: number, height: number): number {
+export function edgeEnergy(rgb: Float32Array, width: number, height: number): number {
   let sum = 0;
   for (let y = 1; y < height - 1; y++) for (let x = 1; x < width - 1; x++) {
     for (let channel = 0; channel < 3; channel++) {

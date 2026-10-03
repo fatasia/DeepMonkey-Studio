@@ -194,7 +194,7 @@ async function buildApp(options: { role?: string; injectService?: boolean; ledge
       now: NOW,
     })
     : undefined;
-  await registerIndustrialAgentRoutes(app, { store: { getProject: async (id: string) => (id === PROJECT ? { id } : undefined) as never }, runtime, ...(injected ? { ontologyActionService: injected } : {}) });
+  await registerIndustrialAgentRoutes(app, { store: { getProject: async (id: string) => (id === PROJECT ? { id } : undefined) as never, getAgentSettings: () => undefined, saveAgentSettings: async (settings: unknown) => settings }, runtime, ...(injected ? { ontologyActionService: injected } : {}) });
   return { app, ledger, dataDir };
 }
 

@@ -79,3 +79,34 @@ describe("assistant response stream ownership", () => {
     await expect(pending).rejects.toThrow("意外结束"); expect(stream.body.locked).toBe(false);
   });
 });
+
+it("K9:idle 超时——服务器收下连接不发字节,快速失败并释放 reader", async () => {
+  const stream = transport();
+  const pending = readAssistantStream(stream.response, vi.fn(), undefined, undefined, 20);
+  await expect(pending).rejects.toThrow(/AI 响应超时（0 秒无数据）/);
+  expect(stream.cancelled).toHaveBeenCalled();
+});
+
+it("K9:流停摆——首块后无字节同样触发空闲超时", async () => {
+  const stream = transport();
+  const delta = vi.fn();
+  const pending = readAssistantStream(stream.response, delta, undefined, undefined, 20);
+  stream.send('event: delta\ndata: {"delta":"部分"}\n\n');
+  await new Promise(resolve => setTimeout(resolve, 5));
+  expect(delta).toHaveBeenCalledWith("部分");
+  await expect(pending).rejects.toThrow(/AI 响应超时/);
+  expect(stream.cancelled).toHaveBeenCalled();
+});
+
+it("K9:有字节持续到达则空闲计时逐块重置,不误伤慢流", async () => {
+  const stream = transport();
+  const delta = vi.fn();
+  const pending = readAssistantStream(stream.response, delta, undefined, undefined, 40);
+  for (let index = 0; index < 3; index++) {
+    stream.send(`event: delta\ndata: {"delta":"${index}"}\n\n`);
+    await new Promise(resolve => setTimeout(resolve, 15));
+  }
+  stream.send('event: done\ndata: {"text":"012"}\n\n');
+  await expect(pending).resolves.toMatchObject({ text: "012" });
+  expect(delta).toHaveBeenCalledTimes(3);
+});

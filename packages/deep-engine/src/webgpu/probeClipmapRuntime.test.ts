@@ -3,6 +3,7 @@ import type { RenderPacket } from "../renderPacket.js";
 import type { DeviceSession } from "./deviceSession.js";
 import { ProbeClipmapPbrController } from "./probeClipmapPbrController.js";
 import { ProbeClipmapRuntime } from "./probeClipmapRuntime.js";
+import { RendererDeviceEpoch } from "./rendererDeviceEpoch.js";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -62,6 +63,36 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("probe clipmap WebGPU runtime", () => {
+  it("releases a stale GI owner after a ready session changes device without publishing on its replacement", async () => {
+    const f = fixture(), epoch = new RendererDeviceEpoch(f.device);
+    const setProbeClipmap = vi.fn(() => epoch.assertCurrent(f.session.device));
+    const controller = new ProbeClipmapPbrController({ session: f.session, setProbeClipmap }, "old", options);
+    expect((await controller.beginFrame(frame())).status).toBe("committed");
+    expect(f.resources.size).toBeGreaterThan(0);
+    const replacementQueue = { ...f.queue, writeBuffer: vi.fn(), submit: vi.fn() };
+    f.rawSession.device = { ...f.device, queue: replacementQueue };
+    expect(() => epoch.assertCurrent(f.session.device)).toThrow("GPU device changed");
+    expect(() => controller.dispose()).not.toThrow();
+    expect(setProbeClipmap).toHaveBeenCalledOnce();
+    expect(replacementQueue.writeBuffer).not.toHaveBeenCalled();
+    expect(replacementQueue.submit).not.toHaveBeenCalled();
+    expect(f.resources.size).toBe(0);
+    controller.dispose();
+    expect(setProbeClipmap).toHaveBeenCalledOnce();
+  });
+
+  it("preserves an unrelated detach error while releasing the same-device runtime exactly once", async () => {
+    const f = fixture(), failure = new Error("unrelated detach failure");
+    const setProbeClipmap = vi.fn(binding => { if (binding === undefined) throw failure; });
+    const controller = new ProbeClipmapPbrController({ session: f.session, setProbeClipmap }, "same", options);
+    expect((await controller.beginFrame(frame())).status).toBe("committed");
+    expect(f.resources.size).toBeGreaterThan(0);
+    expect(() => controller.dispose()).toThrow(failure);
+    expect(f.resources.size).toBe(0);
+    expect(setProbeClipmap).toHaveBeenCalledTimes(2);
+    controller.dispose();
+    expect(setProbeClipmap).toHaveBeenCalledTimes(2);
+  });
   it("provides one automatic frame entry and detects a bounded camera cut", async () => {
     const f = fixture(), runtime = new ProbeClipmapRuntime(f.session, "gpu-1", options);
     const first = await runtime.beginFrame(frame());

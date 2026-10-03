@@ -42,6 +42,19 @@ function harness(initial = baseScene("初始")) {
 }
 
 describe("scene edit unified transaction (T27)", () => {
+  it("suppresses flush and scheduled restoration writes while apply is active", () => {
+    const h = harness();
+    h.rename("A"); h.record("A"); vi.advanceTimersByTime(220);
+    const version = h.history.revision;
+    h.state.sceneHistoryApplyingRef.current = true;
+    h.rename("恢复中的规范化状态");
+    h.state.flushSceneHistoryEdit(); h.record("恢复事件"); vi.advanceTimersByTime(500);
+    expect(h.history.revision).toBe(version);
+    expect(h.history.getState().undoLabel).toBe("A");
+    h.state.sceneHistoryApplyingRef.current = false;
+    h.rename("B"); h.record("B"); vi.advanceTimersByTime(220);
+    expect(h.history.undo()?.name).toBe("A");
+  });
   it("groups every edit made inside the window into one undo unit that restores the pre-transaction snapshot", () => {
     const h = harness();
     const transaction = h.state.beginSceneEditTransaction("替换素材");

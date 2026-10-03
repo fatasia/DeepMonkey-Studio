@@ -537,3 +537,11 @@
   .renderer-source-map-query { grid-template-columns: 1fr; }
   .renderer-option-list { grid-template-columns: 1fr; }
 }
+
+/* K17 渲染能力清单:默认收起的紧凑表,受限项用语义色令牌。 */
+.renderer-capability-list { margin-top: 10px; font-size: 12px; color: var(--text-secondary, #9db2bd); }
+.renderer-capability-list summary { cursor: pointer; user-select: none; padding: 6px 0; }
+.renderer-capability-list ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
+.renderer-capability-list li { display: flex; justify-content: space-between; gap: 12px; }
+.renderer-capability-list li.degraded small { color: var(--warning, #d9a441); }
+.renderer-capability-list li.unavailable small { color: var(--danger, #e06c6c); }

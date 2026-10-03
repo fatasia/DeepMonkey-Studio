@@ -136,6 +136,16 @@ export type { BrightnessAccumulator, ConvergenceEvaluation, PathTraceBatchObserv
   PathTraceSceneIdentity, PathTraceSessionConfig, PathTraceAccumulationLease,
   ResolvedPathTraceConfig } from "./rayTracing/pathTraceSessionTypes.js";
 export { sampleBrightness } from "./rayTracing/pathTraceReferenceKernel.js";
+export { createPathTraceCpuKernel } from "./rayTracing/pathTraceCpuKernel.js";
+export { PathTraceCpuRender } from "./rayTracing/pathTraceCpuRender.js";
+export { pathTraceStudioEnvironment } from "./rayTracing/pathTraceStudioEnvironment.js";
+export { encodePbrDisplayColor } from "./webgpu/pbrDisplayColor.js";
+export { createPathTraceRenderPacketKernel } from "./rayTracing/pathTraceRenderPacketKernel.js";
+export { PATH_TRACE_RENDER_PACKET_PROFILE } from "./rayTracing/pathTraceRenderPacketMaterial.js";
+export type { PathTraceRenderPacketKernelOptions, PathTraceRenderPacketKernel }
+  from "./rayTracing/pathTraceRenderPacketKernel.js";
+export type { PathTraceCpuKernelOptions, PathTraceCpuCamera, PathTraceCpuMaterial,
+  PathTraceRgb } from "./rayTracing/pathTraceCpuTypes.js";
 export type { PathTraceReferenceKernel, PathTraceReferenceKernelFactory }
   from "./rayTracing/pathTraceReferenceKernel.js";
 export { prepareHdrEnvironmentUpload } from "./textures/hdrEnvironmentUpload.js";

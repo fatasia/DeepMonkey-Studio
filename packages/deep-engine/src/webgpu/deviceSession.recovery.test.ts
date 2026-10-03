@@ -40,6 +40,29 @@ function recoveryFixture(recovery?: DeviceRecoveryOptions) {
 }
 
 describe("C13 typed device-lost recovery (opt-in)", () => {
+  it("uses a fresh adapter when the initial adapter has been consumed", async () => {
+    const f = recoveryFixture({ maxAttempts: 2, backoffMs: 1 }), session = await f.open();
+    const replacement = f.supplyNext();
+    f.adapter.requestDevice.mockRejectedValue(new Error('adapter is consumed'));
+    const fresh = { requestDevice: vi.fn(async () => replacement as unknown as GPUDevice) };
+    f.gpu.requestAdapter.mockResolvedValue(fresh as unknown as GPUAdapter);
+    f.first.fail({ reason: 'unknown', message: 'registered reset' });
+    await vi.waitFor(() => expect(session.recovery?.epoch).toBe(1));
+    expect(f.adapter.requestDevice).toHaveBeenCalledOnce();
+    expect(f.gpu.requestAdapter).toHaveBeenCalledTimes(2);
+    expect(fresh.requestDevice).toHaveBeenCalledOnce();
+    expect(session.device).toBe(replacement); session.dispose();
+  });
+  it("does not request a device from an adapter that arrives after disposal", async () => {
+    const f = recoveryFixture({ maxAttempts: 2, backoffMs: 1 }), session = await f.open();
+    const pending = deferred<GPUAdapter>(), fresh = { requestDevice: vi.fn() };
+    f.gpu.requestAdapter.mockReturnValueOnce(pending.promise);
+    f.first.fail({ reason: 'unknown', message: 'registered reset' });
+    await vi.waitFor(() => expect(f.gpu.requestAdapter).toHaveBeenCalledTimes(2));
+    session.dispose(); pending.resolve(fresh as unknown as GPUAdapter);
+    await Promise.resolve(); await Promise.resolve();
+    expect(fresh.requestDevice).not.toHaveBeenCalled(); expect(session.state).toBe('disposed');
+  });
   it("keeps the negotiated extended canvas configuration on replacement-device recovery", async () => {
     const f = recoveryFixture({ maxAttempts: 2, backoffMs: 1 });
     const configured = { format: "rgba16float", toneMapping: { mode: "extended" } };
@@ -211,11 +234,11 @@ describe("C13 typed device-lost recovery (opt-in)", () => {
   });
 
   it("counts a recovered-lost device handed back by the adapter as a failed attempt", async () => {
-    const f = recoveryFixture({ maxAttempts: 3, backoffMs: 1 });
+    const f = recoveryFixture({ maxAttempts: 3, backoffMs: 100 });
     const session = await f.open();
     f.first.fail({ reason: "unknown", message: "reset" });
     // 恢复首次尝试从 adapter 拿回的是同一台已丢失设备：计一次失败而不是误判成功。
-    await vi.waitFor(() => expect(session.recoveryEvents.some((event) => event.type === "attempt")));
+    await vi.waitFor(() => expect(session.recoveryEvents.some((event) => event.type === "attempt")).toBe(true));
     f.supplied.push(f.makeDevice());
     await vi.waitFor(() => expect(session.state).toBe("ready"));
     expect(session.device).toBe(f.supplied.at(-1) as unknown as GPUDevice);

@@ -6,6 +6,20 @@ export const KHR_MATERIALS_EMISSIVE_STRENGTH = "KHR_materials_emissive_strength"
 export const KHR_MATERIALS_IOR = "KHR_materials_ior";
 /** Scalar-only browser WebGPU profile; unsupported extension textures are recorded as losses. */
 export const SCALAR_MATERIAL_EXTENSIONS: ReadonlySet<string> = new Set(MAPPED_MATERIAL_EXTENSIONS);
+/** Extensions the textured import manifest may legally see in extensionsUsed (textureManifest shares this set). */
+export const DOCUMENT_SUPPORTED_EXTENSIONS: ReadonlySet<string> = new Set([
+  "KHR_texture_transform", "KHR_texture_basisu", KHR_MATERIALS_EMISSIVE_STRENGTH, ...SCALAR_MATERIAL_EXTENSIONS,
+]);
+/**
+ * N5 zero-config projection set: engine-known material extensions that the scalar render profile cannot
+ * evaluate and that have a well-defined core glTF fallback. Superset member KHR_materials_emissive_strength
+ * of the T08 fallback list is excluded here because the gltf layer evaluates it natively; clearcoat,
+ * anisotropy, transmission and ior are mapped, not projected.
+ */
+export const PROJECTABLE_FALLBACK_EXTENSIONS: ReadonlySet<string> = new Set([
+  "KHR_materials_unlit", "KHR_materials_volume", "KHR_materials_dispersion",
+  "KHR_materials_sheen", "KHR_materials_iridescence", "KHR_materials_specular",
+]);
 
 export function readMaterialIor(material: JsonObject, path: string, used: ReadonlySet<string>): number | undefined {
   if (material.extensions === undefined) return undefined;

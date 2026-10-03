@@ -21,10 +21,16 @@ function bilinear(source:readonly number[]|Float32Array,width:number,height:numb
 /** Reuses the existing production CPU execution mirror; this is not a second independent march algorithm. */
 export function fogWebReference(f:FogProfileFixture,p:FogProfile){
   const options=fogWebOptions(f,p);validateVolumetricFogOptions(options);
-  const mirror=volumetricFogPassCpu({width:f.width,height:f.height,depth:Array(f.width*f.height).fill(p.sky?0:f.geometryDepth)},options);
-  const scatter=Float32Array.from(mirror.scatter,halfFog),source=fogSourcePixels(f),composite=new Float32Array(source.length);
-  for(let y=0;y<f.height;y++)for(let x=0;x<f.width;x++){
-    const s=bilinear(scatter,mirror.width,mirror.height,(x+.5)/f.width,(y+.5)/f.height),at=(y*f.width+x)*4;
+  return fogWebImageReference(f.width,f.height,fogSourcePixels(f),Array(f.width*f.height).fill(p.sky?0:f.geometryDepth),options);
+}
+/** The existing Web mirror/composite, with actual per-pixel scene sources. */
+export function fogWebImageReference(width:number,height:number,source:readonly number[]|Float32Array,
+  linearDepth:readonly number[],options:Parameters<typeof volumetricFogPassCpu>[1]){
+  validateSceneImage(width,height,source,linearDepth,false);
+  const mirror=volumetricFogPassCpu({width,height,depth:linearDepth},options);
+  const scatter=Float32Array.from(mirror.scatter,halfFog),composite=new Float32Array(source.length);
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+    const s=bilinear(scatter,mirror.width,mirror.height,(x+.5)/width,(y+.5)/height),at=(y*width+x)*4;
     for(let k=0;k<3;k++)composite[at+k]=halfFog(source[at+k]!*Math.max(0,Math.min(1,s[3]!))+Math.max(s[k]!,0));
     composite[at+3]=source[at+3]!;
   }
@@ -34,12 +40,19 @@ function display(value:number){const a=Math.max(0,Math.min(1,value*(2.51*value+.
   return halfFog(a<=.0031308?a*12.92:1.055*Math.pow(a,1/2.4)-.055);}
 /** Independent Native output-profile oracle from actual frame inputs, not copied WGSL or a replacement GPU shader. */
 export function fogNativeReference(f:FogProfileFixture,p:FogProfile,eyeY:number,frame:readonly number[][],depth:number){
-  const projection=frame[143]!,near=projection[0]!,far=projection[1]!,distance=near*far/Math.max(far-depth*(far-near),.0001);
+  return fogNativeImageReference(f,p,eyeY,frame,Array(f.width*f.height).fill(depth),fogSourcePixels(f));
+}
+/** The same Native profile oracle, using actual scene HDR and per-pixel min-MSAA depth. */
+export function fogNativeImageReference(f:Pick<FogProfileFixture,"width"|"height">,p:Pick<FogProfile,"exponential">,eyeY:number,frame:readonly number[][],
+  depths:readonly number[],source:readonly number[]|Float32Array){
+  validateSceneImage(f.width,f.height,source,depths,true);
+  const projection=frame[143]!,near=projection[0]!,far=projection[1]!;
   const density=frame[12]![3]!,height=frame[148]![1]!,g=frame[148]![2]!,steps=Math.max(1,Math.min(64,Math.round(frame[148]![0]!)));
-  const color=frame[12]!.slice(0,3),sun=frame[11]!.slice(0,3),sunLength=Math.hypot(...sun),source=fogSourcePixels(f),pixels=[];
+  const color=frame[12]!.slice(0,3),sun=frame[11]!.slice(0,3),sunLength=Math.hypot(...sun),pixels=[];
   const right=frame.slice(0,3).map(c=>c[0]!),up=frame.slice(0,3).map(c=>c[1]!),forward=frame.slice(0,3).map(c=>c[3]!);
   const length=Math.hypot(...forward);for(let k=0;k<3;k++)forward[k]!/=length;
   for(let y=0;y<f.height;y++)for(let x=0;x<f.width;x++){
+    const depth=depths[y*f.width+x]!,distance=near*far/Math.max(far-depth*(far-near),.0001);
     let amount=1-Math.exp(-density*distance);
     if(!p.exponential){
       const ndcX=2*(x+.5)/f.width-1,ndcY=1-2*(y+.5)/f.height;
@@ -59,4 +72,10 @@ export function fogNativeReference(f:FogProfileFixture,p:FogProfile,eyeY:number,
     for(let k=0;k<3;k++)pixels.push(display(source[at+k]!*(1-amount)+color[k]!*amount));pixels.push(source[at+3]!);
   }
   return pixels;
+}
+function validateSceneImage(width:number,height:number,source:readonly number[]|Float32Array,depths:readonly number[],normalized:boolean){
+  if(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||width<1||height<1
+    ||source.length!==width*height*4||depths.length!==width*height)throw Error("Fog actual scene image dimensions differ");
+  if(!Array.from(source).every(Number.isFinite)||!depths.every(v=>Number.isFinite(v)&&v>=0&&(!normalized||v<=1)))
+    throw Error("Fog actual scene HDR or depth domain is invalid");
 }

@@ -11,6 +11,8 @@ export interface AiSessionReliability {
   traceId?: string;
   contextFingerprint?: string;
   evidenceCount: number;
+  /** T5：逐条引用锚随会话持久化——刷新后回答数值仍可对应到已发送证据。 */
+  citations?: import("./index.js").AiAssistantCitation[];
   inputRisk: "low" | "medium" | "high";
   writePolicy: "read-only" | "confirm-required";
   warnings: string[];

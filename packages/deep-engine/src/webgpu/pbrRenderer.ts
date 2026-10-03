@@ -20,6 +20,7 @@ import { pbrVisibilityInput } from "./pbrVisibilityInput.js";
 import { ForwardPlusPbrRuntime } from "../lighting/forwardPlusPbrRuntime.js";
 import { transformWorldLightsToView } from "../lighting/worldLights.js";
 import { updatePbrFrameUniforms } from "./pbrFrameUniforms.js";
+import { scalePbrEnvironmentRadiance } from "./pbrEnvironmentIntensity.js";
 import { PreviousHiZVisibility, type PreviousHiZFramePlan } from "./previousHiZVisibility.js";
 import { PbrShadowState } from "./pbrShadowState.js";
 import { ContactShadowResources, describeContactShadowPass, describeContactApplyPass } from "../shadows/contactShadowResources.js";
@@ -49,7 +50,8 @@ import { DynamicResolutionScaler, internalResolutionReport,
 import { internalRenderSize, temporalUpscaleActive } from "../postprocess/temporalUpscaleCpu.js";
 import { buildPbrFrameExecutionPlan, collectActualPbrFramePasses, assertPlanMatchesActual,
   createPbrFrameReceipt, pbrFramePassTimingsUnavailable } from "./pbrFramePlanExecutor.js";
-import type { PbrFramePassTimings } from "./pbrFrameReceipt.js";
+import type { PbrFramePassTimings, PbrReceiptTimingAvailability } from "./pbrFrameReceipt.js";
+import { computePbrFrameExecutionCoverage } from "./pbrFrameExecutionCoverage.js";
 import { PbrFrameCapture } from "./pbrFrameCapture.js";
 import type { PbrFrameReadbackResult } from "./pbrFrameCaptureReadback.js";
 import type { FrameCaptureSession } from "../r12/frameCapture.js";
@@ -195,7 +197,7 @@ export class PbrRenderer {
     // packet 边界等待并附着。
     this.packets = new PacketBuffers(session, (fallback ?? pipelines).materialLayout,
       deformationPipelines, options.meshlets === true, features.visibilityBuffer,
-      fallback ? pipelines.materialLayout.material : undefined);
+      fallback ? pipelines.materialLayout.material : undefined, options.vertexStreamingGeometry);
     this.writeGeometryBuffers = features.ambientOcclusion || features.screenSpaceReflection || features.volumetricFog || features.temporalAa || features.contactShadows
       || deformationPipelines !== undefined;
     this.ground = createPbrGround(session);
@@ -339,6 +341,7 @@ export class PbrRenderer {
     return new ProbeClipmapPbrController(target, deviceEpoch, {
       frameBudget, cameraCutBudget: frameBudget,
       encodeSourceRadiance: context => producer.encodeSourceRadiance(context),
+      captureVisibilityMoments: true,
       // Soft scene sync: an invalid packet (e.g. a deformation snapshot the ray scene
       // rejects) records a capture-blocked reason and later captures refuse, instead of
       // throwing through the session activation and killing the render loop.
@@ -425,8 +428,17 @@ export class PbrRenderer {
     if (this.mainBindings.update(view.lights, view.fog)) this.historyDirty = true;
     // F1 scene-radiance latch: the producer packs whatever was latest at capture encode time,
     // so probes shade with the same primary light the raster pass uses. The ambient term is
-    // the environment's GPU-read average; until the first readback lands it stays zero and a
-    // zero total energy still fails closed (no dark volume is ever published).
+    // the environment's GPU-read average — the F1 slice-2 contract (d1626b2f), which
+    // supersedes slice-1's transitional [0,0,0] start. It stays zero only until the first
+    // readback lands, and a zero total energy still fails closed (no dark volume is ever
+    // published). Miss directions record this ambient as physical sky radiance; do not
+    // revert it to a hard zero (that regresses outdoor probes' sky fill).
+    // F5-L4: the average is scaled by the SAME authored environmentIntensity the display
+    // applies to `environmentIrradiance` before GI blending (scalePbrEnvironmentRadiance —
+    // "CPU reference for IBL radiance before BRDF evaluation and GI blending"). Feeding the
+    // raw average made every miss direction carry `1/intensity`× the IBL energy the valid
+    // probes replace, so "GI on" rendered a door-independent wash (sealed-room sentinel
+    // leakRatio ≈ 1 regardless of probe content).
     const currentEnvironment = this.environment.current;
     if (this.probeRadianceProducer && this.ambientEnvironment !== currentEnvironment
       && !this.ambientReader?.busy) {
@@ -439,7 +451,7 @@ export class PbrRenderer {
     this.probeRadianceProducer?.syncLighting({
       primary: { surfaceToLightWorld: [...sceneLighting.primary.surfaceToLightWorld],
         color: [...sceneLighting.primary.color], intensity: sceneLighting.primary.intensity },
-      ambient: this.environmentAmbient });
+      ambient: scalePbrEnvironmentRadiance(this.environmentAmbient, view.environmentIntensity) });
     if (this.pendingHiZ) { this.previousHiZ.failFrame(this.pendingHiZ); this.pendingHiZ = undefined; }
     this.packets.failLodFrame();
     this.packets.cancelDeformationFrame();
@@ -507,11 +519,13 @@ export class PbrRenderer {
       const frameNumber = this.frame + 1;
       this.driveParticles(frameNumber, view.particleFlow);
       this.driveProbeClipmap(frameNumber, size, view.eye, history.cameraCut);
-      // The same cached plan powers explicit captures and the lightweight live
-      // Frame Graph receipt. Diagnostics stay opt-in, so ordinary frames pay
-      // neither plan construction nor receipt allocation.
-      const capturePlan = (this.frameCapture || this.performanceTelemetry.enabled)
-        ? this.captureForFrame(size, drawProfile.hasTransparent, postProcess, directClear !== undefined) : undefined;
+      // The same cached plan powers explicit captures, the lightweight live
+      // Frame Graph receipt, and the execution coverage readout. The plan is
+      // key-cached (string compare per frame); only a feature/size change pays
+      // plan construction. F1: receipts are now regular — every frame carries
+      // pass order / executed set, while per-pass GPU timings stay on the
+      // async gpuPassTimings channel.
+      const capturePlan = this.captureForFrame(size, drawProfile.hasTransparent, postProcess, directClear !== undefined);
       if (this.frameCapture && capturePlan) {
         this.frameCapture.begin(`frame-${frameNumber}`, capturePlan.plan);
         captureOpen = true;
@@ -564,7 +578,7 @@ export class PbrRenderer {
     const detailedTiming = directClear === undefined && !view.editorOverlay?.vertices.length;
     // F1 逐 pass 计时:pass 清单取自同一帧的执行计划 ∩ executed 集合(单一 pass 身份
     // 来源,禁止第二套)。scope 不可用(不支持/槽忙/超容)时回退帧级三段计时。
-    const executedPasses = this.executedCapturePassIds(directClear !== undefined, postProcess, hasTransparent);
+    const executedPasses = this.executedCapturePassIds(directClear !== undefined, postProcess, hasTransparent, upscaling);
     const passTiming = capturePlan && this.gpuTimer.passTimingEnabled ? this.gpuTimer.beginPasses(this.frame + 1,
       capturePlan.plan.mappedPassIds.filter(passId => executedPasses.has(passId))) : undefined;
     const timing = passTiming ? undefined : this.gpuTimer.begin(this.frame + 1, detailedTiming);
@@ -809,12 +823,19 @@ export class PbrRenderer {
       occlusionCulling: opaqueCulling.occlusionBatches > 0,
       frustumCulledBatches: opaqueCulling.frustumBatches, hiZOccludedBatches: opaqueCulling.occlusionBatches, lodSelectionBatches: lodStats.selectionBatches, lodIndirectDraws: lodStats.indirectDraws,
       lightCount: lighting?.lightCount ?? 0, lightClusters: lighting?.grid.clusterCount ?? 0,
-      ...(capturePlan && this.performanceTelemetry.enabled ? {
-        // 帧图回执记录本帧编码覆盖;逐 pass 毫秒随读回异步完成,发布在
-        // gpuPassTimings(带实测帧号),本回执的 samples 对缺测 pass 保持显式
-        // unavailable,不伪零。
+      ...(capturePlan ? {
+        // F1 常规帧图回执(非 timing):每帧记录 pass 序与本帧真实编码覆盖;逐 pass
+        // 毫秒随读回异步完成,发布在 gpuPassTimings(带实测帧号)。本回执的 samples
+        // 对缺测 pass 保持显式 unavailable(注明异步发布/未请求),不伪零。
         frameGraphReceipt: createPbrFrameReceipt(frameNumber, capturePlan.plan, [], begin,
-          Math.max(performance.now(), begin + 0.001), executedPasses),
+          Math.max(performance.now(), begin + 0.001), executedPasses,
+          (this.gpuTimer.passTimingEnabled ? "deferred-to-gpu-pass-timings" : "not-requested") satisfies PbrReceiptTimingAvailability),
+        // F1 真实执行 coverage:登记 vs 编码差集读数(量,非时),与回执同源。
+        frameExecutionCoverage: computePbrFrameExecutionCoverage(capturePlan.plan, executedPasses, frameNumber),
+        // F1 可见绘制量读出:主 pass 包体 CPU 编码量 + 本帧剔除批计数。
+        // GPU 逐实例幸存数需读回(=新同步),不提供,T01 visibleInstances 不伪测。
+        visibleDraws: { drawCalls: stats.drawCalls, triangles: stats.triangles,
+          frustumCulledBatches: opaqueCulling.frustumBatches, hiZOccludedBatches: opaqueCulling.occlusionBatches },
       } : {}),
       ...(this.gpuTimer.passTimingEnabled ? { gpuPassTimings: this.passTimingsMetrics(frameNumber) } : {}),
       ...(this.resolutionScale === 1 ? {} : { resolutionScale: this.resolutionScaleMetrics(surface) }),
@@ -968,7 +989,7 @@ export class PbrRenderer {
     return this.allocationPlan;
   }
   private executedCapturePassIds(directClear: boolean, postProcess: ReturnType<typeof resolvePbrPostProcessOverrides>,
-    transparency: boolean): ReadonlySet<string> {
+    transparency: boolean, upscaling: boolean): ReadonlySet<string> {
     const ids = new Set<string>(["opaque"]);
     if (directClear) return ids;
     if (postProcess.ambientOcclusion) { ids.add("ambient-occlusion"); ids.add("apply-ambient-occlusion"); }
@@ -976,7 +997,10 @@ export class PbrRenderer {
     if (transparency) { ids.add("transparent-oit"); ids.add("composite-oit"); }
     if (postProcess.volumetricFog) { ids.add("volumetric-fog-march"); ids.add("volumetric-fog-composite"); }
     if (this.features.temporalAa) ids.add("temporal-aa");
-    if (this.features.temporalUpscale) ids.add("temporal-upscale");
+    // F4:超分编码门 = 特性位 && 实际降档(encodeUpscale 调用点的同一 upscaling 谓词,
+    // 单一真值来源)。执行集若只看特性位,coverage/回执会在"特性开但 scale=1"帧
+    // 谎报 temporal-upscale 已执行;此时它如实落入 notExecutedMappedPassIds(合法跳过显式可见)。
+    if (this.features.temporalUpscale && upscaling) ids.add("temporal-upscale");
     if (postProcess.bloom) ids.add("bloom");
     ids.add("present");
     return ids;

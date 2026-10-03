@@ -37,7 +37,7 @@
 .dashboard-pages-panel > section { padding: 10px 8px; border-bottom: 1px solid #283136; }
 .dashboard-panel-label { display: flex; align-items: center; justify-content: space-between; padding: 0 5px 7px; color: #6f7c83; font-size: 8px; }
 .dashboard-panel-label > span:first-child { display: inline-flex; align-items: center; gap: 6px; }
-.dashboard-panel-label small { color: #4f5c62; font-size: 10px; }
+.dashboard-panel-label small { color: var(--text-muted); font-size: 10px; }
 .dashboard-page-actions { display: flex; gap: 3px; }
 .dashboard-page-actions button { display: grid; width: 23px; height: 21px; padding: 0; place-items: center; color: #748188; border: 1px solid #303a3f; border-radius: 4px; background: #171d20; cursor: pointer; }
 .dashboard-page-actions button:hover { color: #e1b85c; border-color: #6f592b; }
@@ -155,7 +155,7 @@
 .dashboard-canvas-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 0 10px; overflow: visible; color: #717e84; border-bottom: 1px solid #242d31; background: #121719; font-size: 8px; }
 .dashboard-canvas-toolbar > span { display: flex; align-items: center; gap: 10px; }
 .dashboard-canvas-toolbar > span,.dashboard-canvas-toolbar > div { flex: 0 0 auto; }
-.dashboard-canvas-toolbar > span small { color: #4f5c62; font-size: 7px; }
+.dashboard-canvas-toolbar > span small { color: var(--text-muted); font-size: 7px; }
 .dashboard-canvas-toolbar .dashboard-overflow-warning { width: auto; height: 22px; padding: 0 7px; color: #e4a49d; border-color: #6a3d3a; background: rgba(126,55,50,.16); font-size: 7px; }
 .dashboard-canvas-toolbar > div { display: flex; align-items: center; gap: 4px; }
 .dashboard-canvas-toolbar button { width: 25px; height: 24px; padding: 0; }

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { useAssistantSessions } from "../ai/useAssistantSessions";
-import { AiAssistantSessionControls } from "./AiAssistantSessionControls";
+import { AiAssistantSessionControls, AiAssistantSessionPicker } from "./AiAssistantSessionControls";
 
 const noop = () => undefined;
 const noopAsync = async () => undefined;
@@ -51,5 +51,27 @@ describe("AiAssistantSessionControls（K12 多标签页同步语义行）", () =
     );
     expect(html).not.toContain("另一个标签页已更新");
     expect(html).not.toContain("另一个窗口更新了此会话");
+    // 正常态不占空间：没有需要处理的事项时整块不渲染。
+    expect(html).toBe("");
+  });
+});
+
+describe("AiAssistantSessionPicker", () => {
+  it("folds pagination into the dropdown and disables 'new' when already on a new conversation", () => {
+    const html = renderToStaticMarkup(
+      <AiAssistantSessionPicker locale="zh-CN" disabled={false} onSwitch={noop}
+        sessions={sessions({ sessions: [{ id: "s1", title: "产线巡检" }] as never, cursor: "c2" })} />,
+    );
+    expect(html).toContain("产线巡检");
+    expect(html).toContain("更多会话…");
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*aria-label="新会话"/);
+  });
+
+  it("shows the restore state inside the dropdown instead of a separate status line", () => {
+    const html = renderToStaticMarkup(
+      <AiAssistantSessionPicker locale="zh-CN" disabled={false} onSwitch={noop} sessions={sessions({ loading: true })} />,
+    );
+    expect(html).toContain("正在恢复会话…");
+    expect(html).toMatch(/<select[^>]*disabled=""/);
   });
 });

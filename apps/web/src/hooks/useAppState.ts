@@ -257,12 +257,17 @@ export function useAppState() {
     ),
     [engine, postProcessing, revision]
   );
+  // 与 rendererPostProcessingRequired 同源；切后端守卫只拦描边（后处理域在 Deep 侧的支持面另行演进）。
+  const rendererOutlineRequired = useMemo(
+    () => engine?.listModels().some((model) => engine.getModelEffects(model.id).outline) ?? false,
+    [engine, revision]
+  );
   const rendererDiagnostics = useRendererDiagnostics(engine, rendererDiagnosticsOpen, rendererPostProcessingRequired, showError);
   return {
     initialPathRef, defaultEntryAppliedRef, viewportRef, uploadRef,
     importRef, environmentMapRef, materialTextureRef, materialTextureKindRef,
     sceneNameCommitRef, sceneApplyVersionRef, sceneWorkspaceLoadRef, rendererSnapshotRef, rendererPreferenceCommitRef,
-    webGpuSceneReplacementCountRef,
+    webGpuSceneReplacementCountRef, rendererOutlineRequired,
     applicationSessionRef, activeSceneIdRef, pendingSceneFocusRef, visionEventCursorRef,
     behaviorManagerRef, behaviorCommandQueueRef, pendingBehaviorDraftRef, engine, setEngine,
     currentUser, setCurrentUser, branding, setBranding,

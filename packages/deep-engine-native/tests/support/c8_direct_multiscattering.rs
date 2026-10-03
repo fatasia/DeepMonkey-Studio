@@ -115,7 +115,7 @@ pub(super) fn pixel_view_on_ground(view: &PlayerView, pixel: usize, size: u32) -
     });
     let s = -f64::from(eye[2]) / direction[2];
     assert!(s > 0.0, "camera ray must hit the z=0 plane in front of the eye");
-    let to_eye: [f64; 3] = std::array::from_fn(|axis| f64::from(eye[axis]) - direction[axis] * s);
+    let to_eye: [f64; 3] = direction.map(|axis| -axis * s);
     let length = (to_eye[0] * to_eye[0] + to_eye[1] * to_eye[1] + to_eye[2] * to_eye[2]).sqrt();
     let view_direction = std::array::from_fn(|axis| to_eye[axis] / length);
     (view_direction, view_direction[2])
@@ -124,6 +124,13 @@ pub(super) fn pixel_view_on_ground(view: &PlayerView, pixel: usize, size: u32) -
 #[test]
 #[ignore = "actual production HDR r185-DFG direct differential, two fresh hardware devices"]
 fn c8_actual_primary_direct_multiscattering() {
+    let output = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../test-output/interrupted-0930/c8-native-direct-energy");
+    std::fs::create_dir_all(&output).unwrap();
+    let evidence_path = output.join("evidence.json");
+    if let Err(error) = std::fs::remove_file(&evidence_path) {
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+    }
     pollster::block_on(async {
         let manifest: Value = serde_json::from_str(MANIFEST).unwrap();
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
@@ -215,25 +222,29 @@ fn c8_actual_primary_direct_multiscattering() {
                         }
                     }
                 }
-                assert_eq!(
-                    lit_hdr[0], lit_hdr[1],
+                assert!(
+                    lit_hdr[0] == lit_hdr[1],
                     "brdf_lut fill must not reach native direct output (lit)"
                 );
-                assert_eq!(
-                    back_hdr[0], back_hdr[1],
+                assert!(
+                    back_hdr[0] == back_hdr[1],
                     "brdf_lut fill must not reach native direct output (back)"
                 );
-                assert_eq!(
-                    off_hdr[0], off_hdr[1],
+                assert!(
+                    off_hdr[0] == off_hdr[1],
                     "brdf_lut fill must not reach native direct output (off)"
                 );
-                // 灯开关合同:背光(nl≤0)与关灯(radiance=0)的直射恒为零,
-                // 两帧必须与关灯基线逐位相等(旧机制的 mode 差分保留为整帧断言)。
-                assert_eq!(back_hdr[0], off_hdr[0], "backlight direct must be zero");
+                // 冻结稳定域的法线为 +Z，背光 nl<=0。其余面和 MSAA
+                // 轮廓拥有不同法线，不能把该域合同外推为整幅图恒黑。
                 let mut samples = Vec::new();
                 for subset in camera["subsets"].as_array().unwrap() {
                     for pixel in subset["pixels"].as_array().unwrap() {
                         let pixel = pixel.as_u64().unwrap() as usize;
+                        assert!(
+                            back_hdr[0][pixel * 8..pixel * 8 + 8]
+                                == off_hdr[0][pixel * 8..pixel * 8 + 8],
+                            "backlight direct must be zero at frozen stable pixel {pixel}"
+                        );
                         let (view_direction, nv) = pixel_view_on_ground(&view, pixel, 128);
                         let nl = 0.55_f64.sqrt();
                         let ggx = direct_brdf(
@@ -249,9 +260,9 @@ fn c8_actual_primary_direct_multiscattering() {
                             let decode = |bytes: &[u8]| half_to_f32(u16::from_le_bytes([bytes[offset],bytes[offset+1]])) as f64;
                             let lit = decode(&lit_hdr[0]); let off = decode(&off_hdr[0]);
                             let f0 = 0.04 * (1.0 - METALLIC) + BASE_COLOR[lane] * METALLIC;
+                            // direct_brdf 已含 nl，多散射能量核尚未含 nl。
                             let expected = (ggx[lane]
-                                + multiscattering_energy(f0, ROUGHNESS, nv.clamp(0.001, 1.0), nl))
-                                * nl
+                                + multiscattering_energy(f0, ROUGHNESS, nv.clamp(0.001, 1.0), nl) * nl)
                                 * RADIANCE[lane];
                             let error = (lit - off - expected).abs();
                             maximum = maximum.max(error);
@@ -270,10 +281,7 @@ fn c8_actual_primary_direct_multiscattering() {
             rounds.push(cases);
         }
         assert_eq!(rounds[0], rounds[1]);
-        let output = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../test-output/interrupted-0930/c8-native-direct-energy");
-        std::fs::create_dir_all(&output).unwrap();
-        std::fs::write(output.join("evidence.json"), serde_json::to_string_pretty(&json!({
+        std::fs::write(&evidence_path, serde_json::to_string_pretty(&json!({
             "passed":true,"stable":true,"freshDevices":2,"actualProductionHdr":true,"adapter":format!("{info:?}"),
             "source":hdr_frame::shader_source(),"maxError":maximum,"budget":0.002,"rounds":rounds,
             "scope":"primary full-direct energy (GGX via pbr_brdf::direct_brdf + r185 twin multiscattering) lit/off differential, brdf_lut fill decoupling, IBL disabled",
@@ -283,6 +291,25 @@ fn c8_actual_primary_direct_multiscattering() {
 }
 
 pub(super) const RADIANCE: [f64; 3] = [2.5, 2.4, 2.25];
+
+#[test]
+fn direct_oracle_view_ray_matches_axis_camera_closed_form() {
+    let view = PlayerView::default()
+        .with_eye_target([0.0, 0.0, 8.0], [0.0; 3])
+        .unwrap();
+    for pixel in [6991, 8256, 9814] {
+        let x = ((pixel % 128) as f64 + 0.5) / 128.0 * 2.0 - 1.0;
+        let y = 1.0 - ((pixel / 128) as f64 + 0.5) / 128.0 * 2.0;
+        let unnormalized = [-x / f64::from(view.focal), -y / f64::from(view.focal), 1.0];
+        let length = unnormalized.iter().map(|v| v * v).sum::<f64>().sqrt();
+        let expected = unnormalized.map(|v| v / length);
+        let (actual, nv) = pixel_view_on_ground(&view, pixel, 128);
+        for lane in 0..3 {
+            assert!((actual[lane] - expected[lane]).abs() < 1e-8);
+        }
+        assert!((nv - expected[2]).abs() < 1e-8);
+    }
+}
 
 #[test]
 fn direct_dfg_185_twin_matches_shared_wgsl_anchors() {

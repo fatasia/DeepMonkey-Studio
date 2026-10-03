@@ -8,11 +8,20 @@ export interface RuntimeShaderMaterial {
   readonly binding: RuntimeMaterialShaderBinding;
 }
 
+export interface RuntimeShaderMaterialProfile {
+  /** Actual consumer support; omission preserves Native/legacy v2 admission. */
+  readonly shaderAbis?: readonly ("deep.pbr.mesh.v2" | "deep.pbr.mesh.v3")[];
+}
+
 /** Transfers authored defaults into the RenderPacket; WGSL alone does not contain instance/material values. */
 export function createRuntimeDeepSlMaterial(id: string, compiled: DeepSlPackageAdapterResult,
-  textureReferences: Readonly<Partial<Record<DeepPbrMeshV1TextureSemantic, string>>> = {}): RuntimeShaderMaterial {
+  textureReferences: Readonly<Partial<Record<DeepPbrMeshV1TextureSemantic, string>>> = {},
+  profile: RuntimeShaderMaterialProfile = {}): RuntimeShaderMaterial {
   requireValue(compiled.success, "$.shader", "Cannot bind a rejected DeepSL compilation.");
-  requireValue(String(compiled.package.shaderAbi.id) === "deep.pbr.mesh.v2", "$.shader", "Runtime materials require CSM shader ABI v2.");
+  const supported = profile.shaderAbis ?? ["deep.pbr.mesh.v2"];
+  requireValue(Array.isArray(supported) && supported.every(abi => abi === "deep.pbr.mesh.v2" || abi === "deep.pbr.mesh.v3")
+    && supported.includes(compiled.package.shaderAbi.id as "deep.pbr.mesh.v2" | "deep.pbr.mesh.v3"),
+    "$.shader", "Runtime materials require CSM shader ABI support explicitly declared by the consumer (default v2).");
   const defaults = compiled.report.materialDefaults, textures = compiled.report.materialTextureDefaults;
   requireValue(defaults, "$.shader", "DeepSL compilation omitted material defaults.");
   requireValue(typeof id === "string" && id.length > 0 && new TextEncoder().encode(id).length <= 256,

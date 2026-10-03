@@ -3,6 +3,7 @@ import { prepareRenderPacket, type PbrMaterial, type RenderPacket } from "../ren
 import { array, fields, integer, record, requireValue, string, snapshotJson } from "./primitives.js";
 import { assertNativePacketDeformationSupported, deformationForBrowserJson, materializePacketDeformation } from "./renderPacketDeformation.js";
 import { browserMaterialExtensions, layeredMaterialExtension } from "./renderPacketBrowserMaterial.js";
+import { assertNativeLayeredMaterialSupported } from "./renderPacketNativeMaterial.js";
 export { assertNativePacketDeformationSupported } from "./renderPacketDeformation.js";
 
 const GEOMETRY_OPTIONAL = ["uv0", "uv1", "tangents", "colors"];
@@ -44,6 +45,7 @@ function material(input: unknown, path: string, browserProfile: boolean): PbrMat
     : (Object.hasOwn(value, "layered")
       ? { layered: layeredMaterialExtension(value, path) }
       : {});
+  if (!browserProfile) assertNativeLayeredMaterialSupported(extensions.layered, `${path}.layered`);
   id(value.id, `${path}.id`); nonnullOptions(value, MATERIAL_OPTIONAL, path);
   for (const name of ["baseColorTexture", "metallicRoughnessTexture", "normalTexture", "occlusionTexture", "emissiveTexture"]) {
     if (!Object.hasOwn(value, name)) continue;

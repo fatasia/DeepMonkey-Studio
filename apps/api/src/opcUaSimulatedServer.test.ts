@@ -7,91 +7,30 @@
  * 确定性手段:源值经 setValueFromSource 显式携带受控 sourceTimestamp,写入间隔大于采样窗避免合并;
  * 恢复场景经测试内 TCP 代理注入断连(见恢复 describe 块说明),退避首试 3s 保证写入先于重连。
  */
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { DataEvent, DataSubscriptionGapReport } from "@bim-studio/contracts";
+import { MessageSecurityMode, SecurityPolicy } from "node-opcua-client";
 import {
   PersistentSubscriptionSession,
   InMemoryCheckpointStore,
   type SourceResumeContext,
 } from "./subscriptionRuntime.js";
-import { createOpcUaSubscriptionSource, projectOpcUaSample } from "./opcUaSubscriptionSource.js";
-
-interface SimulatedServer {
-  endpointUrl: string;
-  boundPort: number;
-  nodeId: string;
-  addTag: (browseName: string, initial: number) => string;
-  setValue: (nodeId: string, value: number, timestampMs?: number) => void;
-  shutdown: () => Promise<void>;
-}
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-async function startSimulatedServer(port: number): Promise<SimulatedServer> {
-  const { OPCUAServer, Variant, DataType, StatusCodes } = await import("node-opcua");
-  const server = new OPCUAServer({ port });
-  await server.initialize();
-  const ns = server.engine.addressSpace.getOwnNamespace();
-  const variables = new Map<string, { setValue: (value: number, timestampMs?: number) => void }>();
-  const addTag = (browseName: string, initial: number): string => {
-    const variable = ns.addVariable({
-      organizedBy: server.engine.addressSpace.rootFolder.objects,
-      browseName,
-      dataType: "Double",
-      value: new Variant({ dataType: DataType.Double, value: initial }),
-    });
-    variables.set(variable.nodeId.toString(), {
-      setValue: (value, timestampMs) =>
-        variable.setValueFromSource(new Variant({ dataType: DataType.Double, value }), StatusCodes.Good, timestampMs !== undefined ? new Date(timestampMs) : undefined),
-    });
-    return variable.nodeId.toString();
-  };
-  const firstNodeId = addTag("Tag1", 0);
-  await server.start();
-  // port=0 时内核分配临时端口:必须从 server 实际绑定地址解析,不能用入参。
-  const boundPort = Number(new URL(server.getEndpointUrl().replace(/^opc\.tcp/i, "http")).port);
-  return {
-    endpointUrl: `opc.tcp://127.0.0.1:${boundPort}`,
-    boundPort,
-    nodeId: firstNodeId,
-    addTag,
-    setValue: (nodeId, value, timestampMs) => variables.get(nodeId)?.setValue(value, timestampMs),
-    shutdown: () => server.shutdown(),
-  };
-}
-
-/** 先起一个临时 server 占位拿空闲端口,关掉后把端口还给调用方。 */
-async function reserveFreePort(): Promise<number> {
-  const probe = await startSimulatedServer(0);
-  const port = probe.boundPort;
-  await probe.shutdown();
-  return port;
-}
-
-function waitForCondition<T>(
-  probe: () => T,
-  predicate: (value: T) => boolean,
-  timeoutMs: number,
-  stepMs = 100,
-  label = "unlabeled",
-): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const deadline = Date.now() + timeoutMs;
-    const tick = () => {
-      const value = probe();
-      if (predicate(value)) {
-        resolve(value);
-        return;
-      }
-      if (Date.now() > deadline) {
-        reject(new Error(`等待条件超时(${timeoutMs}ms): ${label}`));
-        return;
-      }
-      setTimeout(tick, stepMs);
-    };
-    tick();
-  });
-}
+import {
+  createOpcUaSubscriptionSource,
+  describeOpcUaSubscriptionSupport,
+  projectOpcUaSample,
+} from "./opcUaSubscriptionSource.js";
+// 模拟 server harness 已抽至测试支持模块(2026-10-02 previewOpcUa 联动批),逐字搬移零行为变化。
+import {
+  reserveFreePort,
+  sleep,
+  startSimulatedServer,
+  waitForCondition,
+  type SimulatedServer,
+} from "./opcUaSimulatedServer.js";
 
 describe("OPC UA 模拟 server 联测:适配器层(真实内嵌 server)", () => {
   it("正常流:初始值通知 → 值变更 → 多节点独立;同值不产生新通知(源语义)", { timeout: 30_000 }, async () => {
@@ -147,6 +86,86 @@ describe("OPC UA 模拟 server 联测:适配器层(真实内嵌 server)", () => 
     );
     expect(lifecycle).toEqual(["ready", "disconnected"]);
     await source.dispose();
+  });
+});
+
+describe("OPC UA 模拟 server 联测:安全订阅接线(Sign + Basic256Sha256 端到端)", () => {
+  /**
+   * T24 接线验收:secure server(securityPolicies 声明 Basic256Sha256)↔ security 订阅源(默认签名客户端)。
+   * 注(2026-10-02 preview 联动批实证):node-opcua 2.178 下该 server 仍恒声明 None 端点
+   * (findMatchingEndpoints = None|None + Sign|SignAndEncrypt|Basic256Sha256),"None 客户端被拒"
+   * 不成立——本用例的有效证据是下方 server 侧协商通道恒等断言(连接存活期观测),非端点声明面。
+   * - 数据面:签名通道上 ≥3 个数据点(初始值 + 值变更,值逐点断言);
+   * - 安全面:server 侧枚举真实建立的会话(engine.getSessions() → session.channel),
+   *   断言协商结果为 Sign + Basic256Sha256(非客户端请求参数,是通道上的实际值);
+   * - cleanup:source.dispose → server.shutdown → 证书根目录删除,全部在 finally 内。
+   */
+  it("security 配置订阅源经签名通道收发数据,server 侧会话安全策略为 Sign+Basic256Sha256", { timeout: 60_000 }, async () => {
+    const clientRoot = await mkdtemp(path.join(tmpdir(), "opcua-source-cert-"));
+    const server = await startSimulatedServer(0, { securityPolicies: ["Basic256Sha256"] });
+    const secondNodeId = server.addTag("Tag2", 0);
+    const samples: string[] = [];
+    const lifecycle: string[] = [];
+    const source = createOpcUaSubscriptionSource({
+      endpointUrl: server.endpointUrl,
+      nodeIds: [server.nodeId, secondNodeId],
+      samplingIntervalMs: 50,
+      publishingIntervalMs: 100,
+      security: { certificateManagerRootDir: clientRoot, applicationName: "t24-wired-secure-source" },
+    });
+    try {
+      source.onSample((sample) => samples.push(`${sample.topic}:${String(sample.value)}`));
+      source.onLifecycle((event) => lifecycle.push(event.kind));
+      await source.start();
+      expect(lifecycle).toEqual(["ready"]);
+
+      // 数据面:签名通道上的初始值通知(2)→ 值变更(2),共 4 点 ≥ 3。
+      await waitForCondition(() => samples.length, (length) => length >= 2, 20_000, 100, "签名通道初始值通知");
+      server.setValue(server.nodeId, 11);
+      server.setValue(secondNodeId, 22);
+      await waitForCondition(() => samples.length, (length) => length >= 4, 20_000, 100, "签名通道值变更通知");
+      await sleep(250);
+      expect(samples.length).toBeGreaterThanOrEqual(3);
+      expect(samples.sort()).toEqual([
+        `${server.nodeId}:0`,
+        `${server.nodeId}:11`,
+        `${secondNodeId}:0`,
+        `${secondNodeId}:22`,
+      ]);
+      expect(source.stats().samplesEmitted).toBe(4);
+
+      // 安全面:server 侧真实协商结果——每个活动会话通道均为 Sign + Basic256Sha256。
+      const channelSecurity = server.listSessionChannelSecurity();
+      expect(channelSecurity.length).toBeGreaterThanOrEqual(1);
+      for (const channel of channelSecurity) {
+        expect(channel.securityMode).toBe(MessageSecurityMode.Sign);
+        expect(channel.securityPolicy).toBe(SecurityPolicy.Basic256Sha256);
+      }
+    } finally {
+      await source.dispose();
+      await server.shutdown();
+      await rm(clientRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("describeOpcUaSubscriptionSupport:securityEnabled 条件声明切换,无参输出零变化", () => {
+    const withoutSecurity = describeOpcUaSubscriptionSupport();
+    const withSecurity = describeOpcUaSubscriptionSupport({ securityEnabled: true });
+    expect(withSecurity.implemented).toBe(true);
+    // securityEnabled:声明 Basic256Sha256 签名通道 + messageSecurityMode 可选面(sign|signAndEncrypt)
+    // + 吊销链覆盖声明(2026-10-02 SignAndEncrypt/吊销链批,能力扩面后声明同步)。
+    expect(withSecurity.limitations.some((item) => item.includes("Basic256Sha256"))).toBe(true);
+    expect(withSecurity.limitations.some((item) => item.includes("signAndEncrypt"))).toBe(true);
+    expect(withSecurity.limitations.some((item) => item.includes("CA/CRL 信任配置未接入产品连接表单"))).toBe(true);
+    expect(withSecurity.limitations.some((item) => item.includes("仅有隔离服务端测试证据"))).toBe(true);
+    // 无参调用(既有路由/编辑器):与接线前逐字一致——仍是 None 固定声明。
+    expect(withoutSecurity.limitations.some((item) => item.includes("安全模式固定 None"))).toBe(true);
+    expect(withoutSecurity.limitations.every((item) => !item.includes("Basic256Sha256"))).toBe(true);
+    // 序列语义与公共限制两分支一致。
+    expect(withoutSecurity.sequenceSemantics).toBe(withSecurity.sequenceSemantics);
+    expect(withoutSecurity.limitations.filter((_, index) => index !== 1)).toEqual(
+      withSecurity.limitations.filter((_, index) => index !== 1),
+    );
   });
 });
 

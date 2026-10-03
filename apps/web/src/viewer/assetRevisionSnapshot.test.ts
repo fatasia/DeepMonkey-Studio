@@ -26,7 +26,11 @@ const projectModel = (revision?: number): ModelRecord => ({
 describe("detectStaleAssetRevisions", () => {
   it("素材有更高修订时报告陈旧实例", () => {
     expect(detectStaleAssetRevisions([sceneState()], [projectModel(3)]))
-      .toEqual([{ modelId: "instance-1", assetModelId: "asset-1", packageId: "pkg:a", sceneRevision: 2, latestRevision: 3 }]);
+      .toEqual([{
+        modelId: "instance-1", assetModelId: "asset-1", packageId: "pkg:a",
+        sceneRevision: 2, sceneSourceHash: "a".repeat(64),
+        latestRevision: 3, latestSourceHash: "b".repeat(64),
+      }]);
   });
 
   it("同修订、无快照、无资产包引用的实例不报告", () => {

@@ -6,6 +6,7 @@ import type { AppLocale } from "../i18n";
 import type { AssistantSessionOptions } from "../apiClients/aiApi";
 import type { AssistantContextSource } from "./assistantReliability";
 import { runAssistantRequest } from "./runAssistantRequest";
+import { assistantErrorMessage } from "./assistantErrorFraming";
 import type { useAssistantSessions } from "./useAssistantSessions";
 import type { AssistantConversationItem } from "../components/AiAssistantMessages";
 
@@ -16,7 +17,8 @@ export function useAssistantChatRun(input: {
   prepareBim: ((question: string) => Promise<BimAssistantPreparedContext>) | undefined;
   onDashboardPageDraft?: (draft: unknown) => void;
 }) {
-  const [answer, setAnswer] = useState(""); const [busy, setBusy] = useState(false);
+  const [answer, setAnswer] = useState("");
+  const [dashboardStreamPreview, setDashboardStreamPreview] = useState<{ labels: string[]; types: string[] } | undefined>(undefined); const [busy, setBusy] = useState(false);
   const [execution, setExecution] = useState<AssistantConversationItem["execution"]>();
   const [stopped, setStopped] = useState(false); const [error, setError] = useState<string>();
   const [lastPrompt, setLastPrompt] = useState(""); const [lastScope, setLastScope] = useState("");
@@ -54,14 +56,14 @@ export function useAssistantChatRun(input: {
     const snapshot = { question: prompt, answer: "", mode: input.mode, status: "streaming" as const, ...(input.scopeLabel ? { scope: input.scopeLabel } : {}) };
     let ended = false;
     async function finish(status: "completed" | "stopped" | "failed", model?: string, execution = lastExecution,
-      reliability?: AssistantConversationItem["reliability"]) {
+      reliability?: AssistantConversationItem["reliability"], error?: string) {
       if (!saved || ended) return;
       ended = true;
       if (status !== "completed" && saved.isCurrent() && requestAbort.current === controller && currentScope.current === scope) {
         partialTurn.current = { isCurrent: saved.isCurrent, item: { id: saved.message, question: prompt, answer: streamed,
-          mode: input.mode, scope: input.scopeLabel, status, ...(execution ? { execution } : {}) } };
+          mode: input.mode, scope: input.scopeLabel, status, ...(execution ? { execution } : {}), ...(error ? { error } : {}) } };
       }
-      saved.writer.update({ ...snapshot, answer: streamed, status, ...(model ? { model } : {}), ...(execution ? { execution } : {}), ...(reliability ? { reliability } : {}) });
+      saved.writer.update({ ...snapshot, answer: streamed, status, ...(model ? { model } : {}), ...(execution ? { execution } : {}), ...(reliability ? { reliability } : {}), ...(error ? { error } : {}) });
       try { await saved.writer.flush(); } catch { /* Session hook retains the failed snapshot and exposes retry. */ }
     }
     try {
@@ -77,8 +79,10 @@ export function useAssistantChatRun(input: {
         onPrepared: prepared => { if (isCurrent()) setBimEvidence(prepared); },
         onExecution: execution => { if (isCurrent()) { lastExecution = execution; setExecution(execution); saved?.writer.update({ ...snapshot, answer: streamed, ...(execution ? { execution } : {}) }); } },
         onDelta: delta => { if (isCurrent()) { streamed += delta; setAnswer(streamed); saved?.writer.update({ ...snapshot, answer: streamed, ...(lastExecution ? { execution: lastExecution } : {}) }); } },
+        onDashboardStream: preview => { if (isCurrent()) setDashboardStreamPreview(preview); },
       });
       if (!isCurrent()) return;
+      setDashboardStreamPreview(undefined);
       if (result.dashboardPageDraft) input.onDashboardPageDraft?.(result.dashboardPageDraft);
       streamed = result.text;
       await finish("completed", result.model, result.execution, result.reliability);
@@ -91,12 +95,14 @@ export function useAssistantChatRun(input: {
         // T2：sql 歧义澄清卡——结构化候选来自服务端数据集目录，缺省不渲染。
         ...(result.clarification ? { clarification: result.clarification } : {}) }]);
     } catch (reason) {
-      await finish(controller.signal.aborted ? "stopped" : "failed");
-      if (isCurrent()) setError(reason instanceof Error ? reason.message : String(reason));
+      setDashboardStreamPreview(undefined);
+      await finish(controller.signal.aborted ? "stopped" : "failed", undefined, undefined, undefined,
+        controller.signal.aborted ? undefined : assistantErrorMessage(reason, input.locale));
+      if (isCurrent()) setError(assistantErrorMessage(reason, input.locale));
     } finally {
       if (requestAbort.current === controller) { requestAbort.current = undefined; activeStop.current = undefined; setBusy(false); }
     }
   }
   return { answer, setAnswer, execution, busy, stopped, setStopped, error, setError, lastPrompt, setLastPrompt, lastScope,
-    dashboard, setDashboard, bimEvidence, setBimEvidence, requestAbort, cancelRequest, ask };
+    dashboard, setDashboard, bimEvidence, setBimEvidence, requestAbort, cancelRequest, ask, dashboardStreamPreview };
 }

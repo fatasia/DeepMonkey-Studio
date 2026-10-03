@@ -40,11 +40,11 @@ describe("量化协议(同 T19 语义)", () => {
     expect(() => clock.advanceSeconds(Number.NaN)).toThrow(/finite/);
   });
 
-  it("非整倍帧率(1/45)整体放慢:3 帧(理想 4.8 ticks)只执行 4 ticks", () => {
+  it("非整倍帧率(1/45)长程精确:3 帧理想 4 ticks 恰执行 4 ticks", () => {
     const clock = new FixedStepClock({ hz: 60, maxCatchUpTicks: 4 });
     let executed = 0;
     for (let i = 0; i < 3; i += 1) executed += clock.advanceSeconds(1 / 45);
-    // 80ms/帧 × 3 = 240ms = 4.8 ticks 理想;round 量化执行 4 ticks(放慢方向)。
+    // 1/45 × 60 = 4/3 tick/帧;round 序列 1,2,1 → 3 帧 4 ticks,与理想一致(E3 对拍)。
     expect(executed).toBe(4);
     expect(clock.tick).toBe(4);
   });

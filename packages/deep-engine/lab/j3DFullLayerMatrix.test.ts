@@ -16,9 +16,9 @@ const readFixture = (relative: string): unknown =>
   JSON.parse(readFileSync(path.join(root, relative), "utf8"));
 
 describe("J3-D-full 层目录与门绑定", () => {
-  it("八个层、唯一 id、每层门都存在且绑定与必备表一致", () => {
-    expect(J3_D_FULL_LAYERS).toHaveLength(8);
-    expect(new Set(J3_D_FULL_LAYERS.map(layer => layer.id)).size).toBe(8);
+  it("九个层、唯一 id、每层门都存在且绑定与必备表一致", () => {
+    expect(J3_D_FULL_LAYERS).toHaveLength(9);
+    expect(new Set(J3_D_FULL_LAYERS.map(layer => layer.id)).size).toBe(9);
     for (const layer of J3_D_FULL_LAYERS) {
       expect(J3_D_FULL_GATES[layer.gateId], `层 ${layer.id} 的门必须存在`).toBeDefined();
       expect(REQUIRED_LAYER_GATE[layer.id]).toBe(layer.gateId);
@@ -29,7 +29,7 @@ describe("J3-D-full 层目录与门绑定", () => {
   it(".002 HDR 门与 display 字节门的全局唯一性与互斥不变量", () => {
     const gates = Object.values(J3_D_FULL_GATES);
     expect(gates.filter(gate => gate.hdr002Applicable).map(gate => gate.id))
-      .toEqual(["hdr-flat-strict"]);
+      .toEqual(["hdr-flat-strict", "texture-hdr-coverage"]);
     expect(gates.filter(gate => gate.displayByteApplicable).map(gate => gate.id))
       .toEqual(["display-byte"]);
     // 1/255=0.00392 > 0.002:display 门若用于 HDR 层即放水,HDR 门若用于显示域即过严;两者不可互换。
@@ -39,7 +39,7 @@ describe("J3-D-full 层目录与门绑定", () => {
 
   it("已验证层指向的证据目录当前存在(引用完整性,不读内容)", () => {
     for (const layer of J3_D_FULL_LAYERS) {
-      if (layer.status !== "verified-2026-09-30") continue;
+      if (layer.status === "cpu-prep-only") continue;
       expect(existsSync(path.join(root, layer.evidenceDir, "evidence.json")),
         `${layer.id} 声称已验证但缺 evidence.json`).toBe(true);
     }
@@ -62,10 +62,23 @@ describe("J3-D-full 层目录与门绑定", () => {
     expect(expandSceneCells(requireLayer("post-bloom"), bloom)).toHaveLength(bloom.cases.length);
     const fogCells = expandSceneCells(requireLayer("post-fog"), fog);
     expect(fogCells).toHaveLength(fog.profiles.length + fog.nativeOnly.length);
-    expect(fogCells.filter(cell => cell.hostScope === "web-only").map(cell => cell.cellId).sort())
+    expect(fogCells.filter(cell => cell.hostScope === "native-only").map(cell => cell.cellId).sort())
       .toEqual(["exponential", "steps-min"]);
     expect(expandSceneCells(requireLayer("display"), display))
       .toHaveLength((display.colors as unknown[]).length);
+    const texture = readFixture("packages/deep-engine/fixtures/j3-texture-coverage-v1.json") as { scenarios: string[] };
+    const hdr = readFixture("packages/deep-engine/fixtures/j3-hdr-flat-normal-v1.json") as { cameras: { id: string }[] };
+    const cells = expandSceneCells(requireLayer("texture-coverage"), { ...texture, cameras: hdr.cameras });
+    expect(cells.map(cell => cell.cellId)).toEqual(texture.scenarios.flatMap(scenario => hdr.cameras.map(camera => `${camera.id}/${scenario}`)));
+    expect(cells).toHaveLength(14);
+  });
+  it("每个已登记层都有非空冻结场景格,法线与阴影也使用同一相机矩阵", () => {
+    for (const layer of J3_D_FULL_LAYERS) {
+      expect(layer.fixtureFile, layer.id).toBeDefined();
+      const fixture = readFixture(layer.fixtureFile!) as Record<string, unknown>;
+      const hdr = readFixture("packages/deep-engine/fixtures/j3-hdr-flat-normal-v1.json") as { cameras: { id: string }[] };
+      expect(expandSceneCells(layer, layer.id === "texture-coverage" ? { ...fixture, cameras: hdr.cameras } : fixture).length, layer.id).toBeGreaterThan(0);
+    }
   });
 });
 

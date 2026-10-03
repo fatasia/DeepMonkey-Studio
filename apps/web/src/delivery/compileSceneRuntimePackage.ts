@@ -1,4 +1,4 @@
-import type { SceneSnapshot } from "@bim-studio/contracts";
+import { DEFAULT_DISPLAY_CONTRACT, type DisplayToneMappingOperator, type SceneSnapshot } from "@bim-studio/contracts";
 import { buildDeepRuntimePackage, runtimeContentSha256, serializeDeepRuntimePackage,
   type DeepRuntimePackage, type RuntimeJson, type RuntimePrefilteredIbl,
   type RuntimeIrradianceProbe, type RuntimeIrradianceProbeGrid, type RuntimeIrradianceProbeGridSingle } from "@bim-studio/deep-engine/runtime-package";
@@ -130,8 +130,8 @@ export type SceneIrradianceProbeBake = SceneIrradianceProbeGridBake | SceneIrrad
 export interface CompileSceneRuntimeOptions extends CompileSceneRenderOptions {
   readonly packageId: string;
   readonly packageVersion: string;
-  /** Explicit Native display math; omission preserves the original package bytes. */
-  readonly displayProfile?: "deep-aces" | "three-aces-r185";
+  /** Explicit Native display math; omission uses the product display contract. */
+  readonly displayProfile?: DisplayToneMappingOperator;
   readonly hdrEnvironment?: {readonly payload:RuntimePrefilteredIbl;readonly source:{readonly bytes:number;readonly sha256:string}};
   /** F3 探针网格烘焙结果；缺省或 null 不写环境 irradianceProbes 字段，旧包语义逐位不变。 */
   readonly irradianceProbes?: SceneIrradianceProbeBake | null;
@@ -174,8 +174,8 @@ export async function compileSceneRuntimePackage(input: SceneSnapshot,
   // F3:探针网格烘焙结果(可选)经 Native 打包器校验后随环境载荷发布;缺省完全不写该字段。
   const irradianceProbes = compileSceneIrradianceProbes(options.irradianceProbes, localized.frame.origin);
   if (options.displayProfile !== undefined && !authoredEnvironment) throw new Error("displayProfile requires a compiled solid environment");
-  const selectedEnvironment = authoredEnvironment && options.displayProfile !== undefined
-    ? { ...authoredEnvironment, displayProfile: options.displayProfile } : authoredEnvironment;
+  const displayProfile = options.displayProfile ?? DEFAULT_DISPLAY_CONTRACT.toneMapping.operator;
+  const selectedEnvironment = authoredEnvironment ? { ...authoredEnvironment, displayProfile } : authoredEnvironment;
   const environment = selectedEnvironment && irradianceProbes ? { ...selectedEnvironment, irradianceProbes } : selectedEnvironment;
   const environmentSource=environment?.schemaVersion===6 ? options.hdrEnvironment?.source : undefined;
   if (environment?.schemaVersion===6 && !environmentSource) throw new Error("HDR 来源身份缺失");

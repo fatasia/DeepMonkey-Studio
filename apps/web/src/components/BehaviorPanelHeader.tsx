@@ -1,6 +1,6 @@
 import {
   Braces, Bug, CircleStop, ExternalLink, Focus, Maximize2, PanelLeftClose, PanelLeftOpen,
-  GitBranch, MoreHorizontal, PackagePlus, PanelRightOpen, Pause, Play, Settings2, Sparkles, StepForward, X,
+  GitBranch, MoreHorizontal, PackagePlus, PanelRightOpen, Pause, Play, RefreshCw, Settings2, Sparkles, StepForward, X,
 } from "lucide-react";
 import { translate as tr, type AppLocale } from "../i18n";
 import type { BehaviorLayoutMode } from "../appDefaults";
@@ -37,6 +37,11 @@ interface Props {
   onDebug?: (() => void) | undefined;
   onPauseResume: () => void;
   onStop: () => void;
+  /** H-C6-S1 运行中热插应用:canHotSwap=false 时按钮禁用,原因经 title 如实呈现(fail-closed)。 */
+  canHotSwap: boolean;
+  hotSwapPending: boolean;
+  hotSwapDisabledReason?: string;
+  onHotSwap: () => void;
   onToggleInspector: () => void;
   onClose: () => void;
 }
@@ -73,6 +78,14 @@ export function BehaviorPanelHeader(props: Props) {
       <button type="button" className="behavior-run-action" disabled={!props.hasDraft} aria-label={runLabel} title={`${runLabel} · Ctrl+Enter`} onClick={props.onRun}><Play size={13} /><span>{tr(props.locale, "试运行", "Test run")}</span></button>
       {props.running && <Action label={props.paused ? tr(props.locale, "继续运行", "Resume") : tr(props.locale, "暂停运行", "Pause")} onClick={props.onPauseResume} icon={props.paused ? <Play size={13} /> : <Pause size={13} />} />}
       {props.paused && <Action label={tr(props.locale, "推进一帧（1/60 秒，非源码单步）", "Advance one frame (1/60 s, not source stepping)")} disabled={!props.canStep} onClick={props.onStep} icon={<StepForward size={13} />} />}
+      {props.running && <Action
+        label={props.hotSwapPending
+          ? tr(props.locale, "正在热插应用…", "Applying hot swap…")
+          : tr(props.locale, "热插应用：将当前草稿（含未保存修改）替换进运行中的行为，场景状态保留", "Hot-swap apply: replace the running behavior with this draft (unsaved edits included); scene state is kept")}
+        title={props.hotSwapDisabledReason}
+        disabled={!props.canHotSwap}
+        onClick={props.onHotSwap}
+        icon={<RefreshCw size={13} className={props.hotSwapPending ? "spin" : undefined} />} />}
       {(props.hasSession ?? props.running) && <Action label={tr(props.locale, "停止运行", "Stop")} onClick={props.onStop} icon={<CircleStop size={13} />} />}
       <details ref={moreMenuRef} className="behavior-header-menu behavior-more-menu">
         <summary aria-label={tr(props.locale, "更多工具", "More tools")} title={tr(props.locale, "更多工具", "More tools")}><MoreHorizontal size={14} /></summary>
@@ -93,6 +106,6 @@ function MenuAction(props: { label: string; icon: React.ReactNode; active?: bool
   return <button className={props.active ? "active" : ""} type="button" onClick={event => { event.currentTarget.closest("details")?.removeAttribute("open"); props.onClick(); }}>{props.icon}<span>{props.label}</span></button>;
 }
 
-function Action(props: { label: string; icon: React.ReactNode; active?: boolean; expanded?: boolean; disabled?: boolean; onClick: () => void }) {
-  return <button className={`behavior-icon-action${props.active ? " active" : ""}`} type="button" aria-label={props.label} aria-pressed={props.active} {...(props.expanded === undefined ? {} : { "aria-expanded": props.expanded })} title={props.label} disabled={props.disabled} onClick={props.onClick}>{props.icon}</button>;
+function Action(props: { label: string; icon: React.ReactNode; active?: boolean; expanded?: boolean; disabled?: boolean; title?: string | undefined; onClick: () => void }) {
+  return <button className={`behavior-icon-action${props.active ? " active" : ""}`} type="button" aria-label={props.label} aria-pressed={props.active} {...(props.expanded === undefined ? {} : { "aria-expanded": props.expanded })} title={props.title ?? props.label} disabled={props.disabled} onClick={props.onClick}>{props.icon}</button>;
 }

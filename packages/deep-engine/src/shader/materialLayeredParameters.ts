@@ -35,7 +35,10 @@ export const MATERIAL_LAYER_BLEND_MODE_NAMES: Readonly<Record<number, MaterialLa
 /** 层栈深度上限(首刀 ≤2;扩栈是显式合同修订,不是静默放宽)。 */
 export const MATERIAL_LAYER_MAX_COUNT = 2 as const;
 
+export type MaterialLayerResponseModel = "legacy" | "microfacet-metal-reflection";
+
 export interface MaterialLayerDefinition {
+  readonly responseModel?: MaterialLayerResponseModel;
   /** 层自身的扩展材质参数(规范化后形态,与 base 同一 schema/校验/默认值家族)。 */
   readonly params: ExtendedMaterialParameters;
   /** 覆盖率 0..1;0 = 层剪枝(求值逐位等于跳过该层)。 */
@@ -55,6 +58,7 @@ export type LayeredMaterialOverrides = {
   readonly layers?: readonly MaterialLayerOverrideInput[] | undefined;
 };
 export type MaterialLayerOverrideInput = {
+  readonly responseModel?: MaterialLayerResponseModel | undefined;
   readonly params?: MaterialParameterOverrides | undefined;
   readonly coverage?: number | undefined;
   readonly mode?: MaterialLayerBlendMode | undefined;
@@ -79,6 +83,7 @@ export const LAYERED_MATERIAL_FLOAT_COUNT = (MATERIAL_PARAMETER_KEYS.length
 export type SerializedMaterialLayer = SerializedMaterialParameters & {
   readonly coverage: number;
   readonly modeCode: 0 | 1;
+  readonly responseModel?: MaterialLayerResponseModel;
 };
 
 export interface SerializedLayeredMaterialParameters {
@@ -112,8 +117,18 @@ export function normalizeLayeredMaterialParameters(
     if (!(MATERIAL_LAYER_BLEND_MODES as readonly string[]).includes(mode)) {
       throw new RangeError(`Unknown material layer blend mode: ${String(mode)}`);
     }
+    const responseModel = layer?.responseModel;
+    if (responseModel !== undefined && responseModel !== "legacy" && responseModel !== "microfacet-metal-reflection") {
+      throw new RangeError(`Unknown material layer response model: ${String(responseModel)}`);
+    }
     return Object.freeze({
-      params: normalizeExtendedMaterialParameters(layer?.params ?? {}),
+      ...(responseModel === undefined ? {} : { responseModel }),
+      params: responseModel === "microfacet-metal-reflection" ? (() => {
+        const params = normalizeExtendedMaterialParameters(layer?.params ?? {});
+        const angle = Math.fround(layer?.params?.anisotropy?.rotation ?? 0);
+        return Object.freeze({ ...params, anisotropy: Object.freeze({ ...params.anisotropy,
+          rotation: angle === -Math.fround(Math.PI) ? Math.fround(Math.PI) : angle }) });
+      })() : normalizeExtendedMaterialParameters(layer?.params ?? {}),
       coverage: Math.fround(coverage),
       mode,
     });
@@ -136,8 +151,10 @@ export function serializeLayeredMaterialParameters(
       .filter((layer) => layer.coverage !== 0)
       .map((layer): SerializedMaterialLayer => Object.freeze({
         ...serializeMaterialParameters(layer.params),
+        ...(layer.responseModel === "microfacet-metal-reflection" ? { anisotropyRotation: layer.params.anisotropy.rotation } : {}),
         coverage: Math.fround(layer.coverage),
         modeCode: MATERIAL_LAYER_BLEND_MODE_CODES[layer.mode],
+        ...(layer.responseModel === undefined ? {} : { responseModel: layer.responseModel }),
       }))),
   });
 }
@@ -149,7 +166,7 @@ export function deserializeLayeredMaterialParameters(
 ): LayeredMaterialParameters {
   const layers = (record.layers ?? []).map((layer) => {
     for (const name of Object.keys(layer)) {
-      if (!(MATERIAL_LAYER_KEYS as readonly string[]).includes(name)) {
+      if (name !== "responseModel" && !(MATERIAL_LAYER_KEYS as readonly string[]).includes(name)) {
         throw new RangeError(`Unknown serialized material layer key: ${name}`);
       }
     }
@@ -160,11 +177,16 @@ export function deserializeLayeredMaterialParameters(
     const modeName = MATERIAL_LAYER_BLEND_MODE_NAMES[code];
     if (modeName === undefined) throw new RangeError("Material layer blend mode code is unmapped.");
     // 6 个层参数键走家族既有扁平→schema 路径(其内部再做 MATERIAL_PARAMETER_KEYS 白名单)。
-    const { coverage: _coverage, modeCode: _modeCode, ...layerParams } = layer;
+    const { coverage: _coverage, modeCode: _modeCode, responseModel, ...layerParams } = layer;
     void _coverage;
     void _modeCode;
     return {
-      params: deserializeMaterialParameters(layerParams),
+      ...(responseModel === undefined ? {} : { responseModel: responseModel as MaterialLayerResponseModel }),
+      params: responseModel === "microfacet-metal-reflection" ? {
+        ...deserializeMaterialParameters(layerParams),
+        anisotropy: { ...deserializeMaterialParameters(layerParams).anisotropy,
+          rotation: typeof layer.anisotropyRotation === "number" ? layer.anisotropyRotation : undefined },
+      } : deserializeMaterialParameters(layerParams),
       coverage: typeof layer.coverage === "number" ? layer.coverage : undefined,
       mode: modeName,
     };
@@ -181,6 +203,9 @@ export function packLayeredMaterialFloatArray(
   params: LayeredMaterialParameters,
 ): readonly number[] {
   const serialized = serializeLayeredMaterialParameters(params);
+  if (serialized.layers.some(layer => layer.responseModel === "microfacet-metal-reflection")) {
+    throw new RangeError("microfacet-metal-reflection requires the 304B surface ABI; the 22-float scalar ABI cannot represent it.");
+  }
   const packed: number[] = MATERIAL_PARAMETER_KEYS.map((key) => Math.fround(serialized.base[key]));
   for (let slot = 0; slot < MATERIAL_LAYER_MAX_COUNT; slot++) {
     const layer = serialized.layers[slot];

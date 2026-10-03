@@ -19,7 +19,9 @@ export type PbrEnvironmentSource = (
     readonly image: RadianceHdrImage;
     readonly backgroundImage?: RadianceHdrImage;
     readonly options?: HdrEnvironmentOptions;
-  }) & { readonly reflectionProbes?: readonly PbrReflectionProbeSource[] };
+  }) & { readonly reflectionProbes?: readonly PbrReflectionProbeSource[];
+    /** Chain tail from DynamicIblStagePlan; omitted uploads/generates the complete source. */
+    readonly keptMips?: number };
 
 function assertSource(source: PbrEnvironmentSource | undefined): void {
   if (source === undefined) return;
@@ -37,8 +39,9 @@ export async function createPbrEnvironment(session: DeviceSession, source: PbrEn
   assertSource(source);
   const probes = snapshotPbrReflectionProbeSources(source?.reflectionProbes);
   if (signal.aborted) throw cancelled(signal.reason);
-  const base = !source || source.kind === "studio" ? await createStudioEnvironment(session, signal)
-    : source.kind === "prefiltered-ibl" ? await createPrefilteredEnvironment(session, source.environment, signal)
-    : await createHdrEnvironment(session, source.image, source.options, signal, source.backgroundImage);
+  const base = !source || source.kind === "studio" ? await createStudioEnvironment(session, signal, source?.keptMips)
+    : source.kind === "prefiltered-ibl" ? await createPrefilteredEnvironment(session, source.environment, signal, source.keptMips)
+    : await createHdrEnvironment(session, source.image, { ...source.options,
+      ...(source.keptMips === undefined ? {} : { keptMips: source.keptMips }) }, signal, source.backgroundImage);
   return await preparePbrReflectionProbes(session, base, probes, signal, source?.kind === "radiance-hdr" ? source.image : undefined);
 }

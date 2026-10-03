@@ -1,4 +1,5 @@
 import {
+  DEFAULT_DISPLAY_CONTRACT,
   DEFAULT_PRODUCT_BRANDING,
   supportedExtensions,
   type SystemBrandingSettings,
@@ -38,7 +39,7 @@ export const DEFAULT_LIGHTING: GlobalLightingState = {
   shadowsEnabled: true,
   reflectionsEnabled: true,
   globalIlluminationEnabled: true,
-  globalIlluminationIntensity: 0.32,
+  globalIlluminationIntensity: DEFAULT_DISPLAY_CONTRACT.environment.globalIlluminationIntensity,
   lights: [
     { id: "sun-default", name: "主方向光", type: "directional", enabled: true, color: "#ffffff", intensity: 2.2, position: { x: 18, y: 28, z: 12 }, target: { x: 0, y: 0, z: 0 }, castShadow: true }
   ]
@@ -49,19 +50,19 @@ export const DEFAULT_ENVIRONMENT: SceneEnvironmentState = {
   backgroundColor: "#0b1419",
   skybox: "studio",
   environmentAsBackground: false,
-  environmentIntensity: 1
+  environmentIntensity: DEFAULT_DISPLAY_CONTRACT.environment.environmentIntensity
 };
 
 export const DEFAULT_BRANDING: SystemBrandingSettings = { ...DEFAULT_PRODUCT_BRANDING };
 
 export const DEFAULT_POST_PROCESSING: ScenePostProcessingState = {
   enabled: true,
-  smaa: true,
-  fxaa: false,
+  smaa: DEFAULT_DISPLAY_CONTRACT.antialias.smaa,
+  fxaa: DEFAULT_DISPLAY_CONTRACT.antialias.fxaa,
   ssao: false,
   ssaoIntensity: 1,
-  gtao: true,
-  gtaoIntensity: 0.72,
+  gtao: DEFAULT_DISPLAY_CONTRACT.antialias.gtao,
+  gtaoIntensity: DEFAULT_DISPLAY_CONTRACT.antialias.gtaoIntensity,
   screenSpaceReflection: false,
   ssrSteps: 32,
   ssrThickness: 0.01,
@@ -71,9 +72,9 @@ export const DEFAULT_POST_PROCESSING: ScenePostProcessingState = {
   volumetricFogDensity: 0.006,
   volumetricFogHeight: 64,
   volumetricFogAnisotropy: 0.3,
-  bloom: false,
-  bloomStrength: 0.35,
-  bloomThreshold: 0.9,
+  bloom: DEFAULT_DISPLAY_CONTRACT.bloom.enabled,
+  bloomStrength: DEFAULT_DISPLAY_CONTRACT.bloom.strength,
+  bloomThreshold: DEFAULT_DISPLAY_CONTRACT.bloom.threshold,
   outline: false,
   outlineStrength: 2.5,
   depthOfField: false,

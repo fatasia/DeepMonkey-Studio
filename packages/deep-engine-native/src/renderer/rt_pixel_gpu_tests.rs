@@ -32,6 +32,10 @@ mod rt_recovery_gpu_tests;
 #[path = "rt_fallback_gpu_tests.rs"]
 mod rt_fallback_gpu_tests;
 
+#[cfg(test)]
+#[path = "rt_layered_gpu_tests.rs"]
+mod rt_layered_gpu_tests;
+
 use crate::frame_bindings::{create_frame_layouts, create_native_mesh_rt_shader};
 use crate::gpu_textures::create_material_layout;
 use crate::pipeline::create_rt_mesh_pipelines;
@@ -39,6 +43,20 @@ use crate::pipeline::create_rt_mesh_pipelines;
 /// 真机 ray-query 设备请求;RT/栅格像素对拍(rt_raster_parity_gpu_tests)
 /// 与本文件同界复用。非 RT 适配器返回 None,调用方按测试跳过处理。
 pub(crate) fn request_ray_query_device() -> Option<(wgpu::Device, wgpu::Queue)> {
+    request_ray_query_device_with_texture_limit(
+        wgpu::Limits::default().max_sampled_textures_per_shader_stage,
+    )
+}
+
+pub(crate) fn request_layered_ray_query_device() -> Option<(wgpu::Device, wgpu::Queue)> {
+    request_ray_query_device_with_texture_limit(
+        deep_engine_native::pbr_layered::LAYERED_MATERIAL_REQUIRED_TEXTURES,
+    )
+}
+
+fn request_ray_query_device_with_texture_limit(
+    sampled_textures: u32,
+) -> Option<(wgpu::Device, wgpu::Queue)> {
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
     descriptor.backends = wgpu::Backends::DX12 | wgpu::Backends::VULKAN;
     let instance = wgpu::Instance::new(descriptor);
@@ -63,12 +81,19 @@ pub(crate) fn request_ray_query_device() -> Option<(wgpu::Device, wgpu::Queue)> 
         println!("ray_query_supported=false reason=feature_missing scope=not_executed");
         return None;
     }
+    if adapter.limits().max_sampled_textures_per_shader_stage < sampled_textures {
+        println!(
+            "ray_query_layered_executed=false reason=sampled_texture_limit scope=not_executed"
+        );
+        return None;
+    }
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
         required_features: wgpu::Features::EXPERIMENTAL_RAY_QUERY,
         experimental_features: unsafe { wgpu::ExperimentalFeatures::enabled() },
         required_limits: {
             let available = adapter.limits();
             wgpu::Limits {
+                max_sampled_textures_per_shader_stage: sampled_textures,
                 max_blas_primitive_count: available.max_blas_primitive_count,
                 max_blas_geometry_count: available.max_blas_geometry_count,
                 max_tlas_instance_count: available.max_tlas_instance_count,

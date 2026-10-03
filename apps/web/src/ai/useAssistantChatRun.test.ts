@@ -62,3 +62,32 @@ describe("assistant partial conversation lifecycle", () => {
     expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ reliability: expect.objectContaining({ grade: "capability-verified", traceId: "trace-1" }) }));
   });
 });
+
+describe("K9 失败路径:超时错误即时可见且条目按 failed 收口", () => {
+  it("surfaces the timeout reason via error state and persists a failed (retryable) turn", async () => {
+    const { render, update, input } = setup();
+    h.run.mockImplementationOnce(options => new Promise((_resolve, reject) => {
+      setTimeout(() => reject(new Error("AI 响应超时（30 秒无数据）。请重试，或检查网络与服务状态。")), 5);
+      void options;
+    }));
+    render().ask();
+    await ticks(); await new Promise(resolve => setTimeout(resolve, 10)); await ticks(); await ticks();
+    // 即时可见:错误原因为人话超时文案(而非裸 AbortError);mock useState 下重读 cell。
+    expect(render().error).toContain("AI 响应超时");
+    // 会话条目按 failed 收口且可重试(writer 保留失败快照),answer 停留在已流出内容。
+    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ status: "failed" }));
+    void input;
+  });
+
+  it("K18:失败原因随条目持久化(网络错误分型为人话文案),刷新后条目仍可见原因", async () => {
+    const { render, update } = setup();
+    h.run.mockImplementationOnce(() => Promise.reject(new TypeError("Failed to fetch")));
+    render().ask();
+    await ticks(); await new Promise(resolve => setTimeout(resolve, 10)); await ticks(); await ticks();
+    // 条目级 error 字段=分型后的本地化文案(非浏览器英文原文)。
+    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({
+      status: "failed", error: expect.stringContaining("无法连接 AI 服务") }));
+    // 瞬时 error 态同样可见。
+    expect(render().error).toContain("无法连接 AI 服务");
+  });
+});

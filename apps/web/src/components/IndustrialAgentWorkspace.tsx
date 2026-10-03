@@ -14,6 +14,7 @@ import {
   CircleGauge,
   ClipboardList,
   FileCheck2,
+  History,
   LoaderCircle,
   Map,
   PauseCircle,
@@ -36,12 +37,26 @@ import {
   agentStatusTone,
   agentVerdictEnvelopes,
   describeAgentEffect,
+  describeApprovalSource,
+  AUTONOMY_APPROVER_ID,
   isAgentTerminal,
+  isAutonomousRun,
   selectedToolPreview,
 } from "../ai/industrialAgentViewModel";
 import "./IndustrialAgentWorkspace.css";
 import { IndustrialAgentContinuation } from "./IndustrialAgentContinuation";
 import { AssistantModelControls, type AssistantSessionOptions } from "./AssistantModelControls";
+import { AgentCrossProjectNotice, AgentRecoveryFailureNotice, AgentRunHistoryPanel } from "./AgentRunHistoryPanel";
+import {
+  browserRunHistoryStore,
+  isStaleCheckpoint,
+} from "../ai/agentRunHistory";
+import {
+  AGENT_POLL_INTERVAL_MS,
+  createAgentPollBackoff,
+  shouldReportPollFailure,
+} from "../ai/agentRunPolling";
+import { ServerRequestError } from "@bim-studio/server-sdk";
 
 const DEFAULT_BUDGET = { maxSteps: 10, maxToolCalls: 6, maxDurationMs: 90_000 };
 
@@ -63,6 +78,14 @@ export function IndustrialAgentWorkspace(props: {
   const [busy, setBusy] = useState(false);
   const [restored, setRestored] = useState(false);
   const [error, setError] = useState<string>();
+  // H-autonomy 要素①：执行模式与发现面（持久化默认读回 + 逐次覆盖）。
+  const [executionMode, setExecutionMode] = useState<"confirm" | "autonomous">("confirm");
+  const [generalAvailable, setGeneralAvailable] = useState(false);
+  const [discovery, setDiscovery] = useState<"curated" | "general">("curated");
+  const [modeSaving, setModeSaving] = useState(false);
+  // H-C5-K11：恢复失败与跨项目运行显式可见，不再只有一句泛化提示或静默丢弃。
+  const [recoveryFailure, setRecoveryFailure] = useState<{ runId: string; notFound: boolean; message?: string }>();
+  const [crossProject, setCrossProject] = useState<{ runId: string; projectId: string }>();
   const requestEpoch = useRef(0);
   const activeProject = useRef(projectId);
   const actionPending = useRef(false);
@@ -83,6 +106,11 @@ export function IndustrialAgentWorkspace(props: {
     setSelectedToolIds(new Set());
     setRestored(false);
     setError(undefined);
+    setRecoveryFailure(undefined);
+    setCrossProject(undefined);
+    setExecutionMode("confirm");
+    setGeneralAvailable(false);
+    setDiscovery("curated");
     if (!projectId) {
       setTools([]);
       setSelectedToolIds(new Set());
@@ -92,21 +120,28 @@ export function IndustrialAgentWorkspace(props: {
     const controller = new AbortController();
     setLoadingTools(true);
     void getAgentApi().then(async (client) => {
-      const [catalogResult, recoveryResult] = await Promise.allSettled([
+      const runId = latestRememberedRunId(projectId);
+      const [catalogResult, recoveryResult, settingsResult] = await Promise.allSettled([
         client.listIndustrialAgentTools(projectId, controller.signal),
-        restoreRun(client, projectId, controller.signal),
+        runId ? client.getIndustrialAgentRun(projectId, runId, controller.signal) : Promise.resolve(undefined),
+        client.getAgentAutonomySettings(projectId, controller.signal),
       ]);
       if (controller.signal.aborted) return;
       if (catalogResult.status === "rejected") throw catalogResult.reason;
       setTools(catalogResult.value.tools);
       setSelectedToolIds(new Set(catalogResult.value.tools.map((tool) => tool.id)));
+      // H-autonomy 要素①：持久化默认读回（失败不阻塞工作台，回落 confirm/curated 现状）。
+      if (settingsResult.status === "fulfilled") {
+        setExecutionMode(settingsResult.value.settings.mode === "autonomous" ? "autonomous" : "confirm");
+        setGeneralAvailable(settingsResult.value.settings.generalDevelopment === true);
+      }
       if (recoveryResult.status === "fulfilled" && recoveryResult.value) {
         setCheckpoint(recoveryResult.value);
         setObjective(recoveryResult.value.objective);
         setRestored(true);
-      } else if (recoveryResult.status === "rejected" && !controller.signal.aborted) {
-        // 旧 checkpoint 不可达时仍允许创建新任务，网络恢复后也可再次打开面板重试。
-        setError(t("上次运行暂时无法恢复，你仍可开始新任务", "The previous run is temporarily unavailable; you can still start a new task"));
+      } else if (recoveryResult.status === "rejected" && !controller.signal.aborted && runId) {
+        // K11：旧 checkpoint 不可达时给出 runId 与重试入口；仍允许创建新任务。
+        setRecoveryFailure({ runId, notFound: isNotFound(recoveryResult.reason), message: errorMessage(recoveryResult.reason) });
       }
     }).catch((reason) => {
       if (!controller.signal.aborted) setError(errorMessage(reason));
@@ -118,28 +153,81 @@ export function IndustrialAgentWorkspace(props: {
 
   useEffect(() => {
     if (!projectId || checkpoint?.status !== "running" || busy) return;
+    // K10：失败后指数退避（1.2s→…→15s 封顶），连续失败只在首次上报，成功即复位。
+    const backoff = createAgentPollBackoff();
     const controller = new AbortController();
     let refreshing = false;
-    const timer = window.setInterval(() => {
+    let timer = 0;
+    const schedule = (delay: number) => { timer = window.setTimeout(tick, delay); };
+    const tick = () => {
       if (refreshing) return;
       refreshing = true;
       void getAgentApi().then((client) => controller.signal.aborted ? undefined : client.getIndustrialAgentRun(projectId, checkpoint.id, controller.signal))
-        .then((next) => { if (next && !controller.signal.aborted) updateCheckpoint(next); })
+        .then((next) => {
+          if (controller.signal.aborted) return;
+          backoff.reset();
+          schedule(AGENT_POLL_INTERVAL_MS);
+          if (next) updateCheckpoint(next);
+        })
         .catch((reason) => {
-          if (!controller.signal.aborted) setError(errorMessage(reason));
-        }).finally(() => { refreshing = false; });
-    }, 1_200);
+          if (controller.signal.aborted) return;
+          const failures = backoff.failures + 1;
+          schedule(backoff.next());
+          if (shouldReportPollFailure(failures)) setError(errorMessage(reason));
+        })
+        .finally(() => { refreshing = false; });
+    };
+    schedule(AGENT_POLL_INTERVAL_MS);
     return () => {
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
       controller.abort();
     };
   }, [busy, checkpoint?.id, checkpoint?.status, projectId]);
 
   function updateCheckpoint(next: AgentCheckpoint) {
-    if (next.projectId !== projectId) return;
+    if (next.projectId !== projectId) {
+      // K11：跨项目 checkpoint 不静默丢弃——显式标注并保留本地视图。
+      setCrossProject({ runId: next.id, projectId: next.projectId });
+      return;
+    }
+    setCrossProject(undefined);
     setCheckpoint((current) => current?.id === next.id && current.revision > next.revision ? current : next);
     setError(undefined);
-    if (projectId) rememberRun(projectId, next.id);
+    if (projectId) rememberCheckpoint(projectId, next);
+  }
+
+  /** 从历史区打开一条本地记住的运行；失败给出 runId 与重试入口（K11）。 */
+  async function openRememberedRun(runId: string) {
+    if (!projectId || actionPending.current) return;
+    const epoch = requestEpoch.current;
+    const isCurrent = () => requestEpoch.current === epoch;
+    actionPending.current = true;
+    setBusy(true);
+    setError(undefined);
+    setRecoveryFailure(undefined);
+    try {
+      const client = await getAgentApi();
+      if (!isCurrent()) return;
+      const next = await client.getIndustrialAgentRun(projectId, runId);
+      if (!isCurrent()) return;
+      if (next.projectId !== projectId) {
+        // 用户主动点开的跨项目运行：只标注，不替换当前视图（作用域守卫保持项目隔离）。
+        setCrossProject({ runId: next.id, projectId: next.projectId });
+        return;
+      }
+      setCheckpoint(next);
+      setObjective(next.objective);
+      setRestored(true);
+    } catch (reason) {
+      if (!isCurrent()) return;
+      setRecoveryFailure({ runId, notFound: isNotFound(reason), message: errorMessage(reason) });
+    } finally {
+      if (isCurrent()) { actionPending.current = false; setBusy(false); }
+    }
+  }
+
+  async function retryRecovery(runId: string) {
+    await openRememberedRun(runId);
   }
 
   async function start(sample = false) {
@@ -162,15 +250,58 @@ export function IndustrialAgentWorkspace(props: {
         context,
         allowedToolIds: toolIds,
         ...(planMode ? { planMode: true } : {}),
+        // H-autonomy：执行模式逐次覆盖（confirm 不带字段=历史请求形状不变）；general 面显式声明。
+        ...(executionMode === "autonomous" ? { executionMode } : {}),
+        ...(discovery === "general" ? { discovery } : {}),
         budget: DEFAULT_BUDGET,
       });
       // 后台任务不因切页重放；只在所属项目记住 ID，界面更新仍要求当前请求所有权。
-      if (next.projectId === projectId) rememberRun(projectId, next.id);
+      if (next.projectId === projectId) rememberCheckpoint(projectId, next);
       if (isCurrent()) updateCheckpoint(next);
     } catch (reason) {
       if (isCurrent()) setError(errorMessage(reason));
     } finally {
       if (isCurrent()) { actionPending.current = false; setBusy(false); }
+    }
+  }
+
+  /** H-autonomy 要素①：切换执行模式即持久化（新运行默认随之生效）；失败回滚并显式报错。 */
+  async function changeExecutionMode(mode: "confirm" | "autonomous") {
+    if (!projectId || modeSaving || mode === executionMode) return;
+    const epoch = requestEpoch.current;
+    const isCurrent = () => requestEpoch.current === epoch;
+    const previous = executionMode;
+    setExecutionMode(mode);
+    setModeSaving(true);
+    setError(undefined);
+    try {
+      const client = await getAgentApi();
+      await client.updateAgentAutonomySettings(projectId, { mode });
+    } catch (reason) {
+      if (isCurrent()) setExecutionMode(previous);
+      setError(errorMessage(reason));
+    } finally {
+      if (isCurrent()) setModeSaving(false);
+    }
+  }
+
+  /** H-autonomy 要素④：通用开发发现面切换（开关由服务端门控，关闭时请求 400 fail-closed）。 */
+  async function changeDiscovery(next: "curated" | "general") {
+    if (!projectId || next === discovery || loadingTools) return;
+    const controller = new AbortController();
+    setLoadingTools(true);
+    setError(undefined);
+    try {
+      const client = await getAgentApi();
+      const view = await client.listIndustrialAgentTools(projectId, controller.signal, next);
+      if (controller.signal.aborted) return;
+      setTools(view.tools);
+      setSelectedToolIds(new Set(view.tools.map((tool) => tool.id)));
+      setDiscovery(view.discovery);
+    } catch (reason) {
+      if (!controller.signal.aborted) setError(errorMessage(reason));
+    } finally {
+      if (!controller.signal.aborted) setLoadingTools(false);
     }
   }
 
@@ -204,53 +335,83 @@ export function IndustrialAgentWorkspace(props: {
 
   return (
     <section className={`industrial-agent-workspace ${surface}`} aria-label={t("工业 Agent 工作区", "Industrial Agent workspace")}>
-      <header className="industrial-agent-heading">
-        <span><Workflow size={17} /></span>
-        <div>
-          <strong>{t("工业任务 Agent", "Industrial task agent")}</strong>
-          <small>{t("有边界、有确认、有证据的受控执行", "Bounded, confirmed and evidence-backed execution")}</small>
-        </div>
-        {props.onBack && <button type="button" onClick={props.onBack}><ArrowLeft size={13} />{t("返回脚本", "Back to script")}</button>}
-      </header>
+      {/* 助手面板里页签已标明"执行任务"，标题块只在脚本工作区（带返回入口）出现。 */}
+      {props.onBack && (
+        <header className="industrial-agent-heading">
+          <span><Workflow size={17} /></span>
+          <div>
+            <strong>{t("工业任务 Agent", "Industrial task agent")}</strong>
+            <small>{t("有边界、有确认、有证据的受控执行", "Bounded, confirmed and evidence-backed execution")}</small>
+          </div>
+          <button type="button" onClick={props.onBack}><ArrowLeft size={13} />{t("返回脚本", "Back to script")}</button>
+        </header>
+      )}
 
       {!checkpoint ? (
         <div className="industrial-agent-start">
-          {/* H-C2 记忆面板入口：M0 族折叠行，body 顶部与上下文披露同构。 */}
-          {projectId && <AiMemoryPanel locale={locale} projectId={projectId} />}
-          {/* H-C3 实验档案入口：三跳链列表，点开任意链看 假设→运行→判定 时间轴。 */}
-          {projectId && <AiProvenancePanel locale={locale} projectId={projectId} />}
-          <AssistantModelControls locale={locale} mode="platform" value={modelOptions} onChange={setModelOptions} disabled={busy} />
-          <label>
-            <span>{t("用一句话说明要完成的目标", "Describe the outcome in one sentence")}</span>
+          {/* H-C2/H-C3/K13：记忆、实验档案、历史运行合并为一条折叠行（与对话页上下文组同构），默认收起。 */}
+          {projectId && (
+            <details className="ai-context-disclosure ai-context-group" aria-label={t("记忆与历史运行", "Memory and run history")}>
+              <summary>
+                <span><History size={13} aria-hidden="true" /><strong>{t("记忆 · 档案 · 历史运行", "Memory · archive · runs")}</strong></span>
+                <span className="ready">{t("展开", "Expand")}<ChevronDown size={12} /></span>
+              </summary>
+              <div className="ai-context-group-body">
+                <AiMemoryPanel locale={locale} projectId={projectId} />
+                <AiProvenancePanel locale={locale} projectId={projectId} />
+                <AgentRunHistoryPanel locale={locale} projectId={projectId} onOpen={(runId) => void openRememberedRun(runId)} />
+              </div>
+            </details>
+          )}
+          <div className="ai-composer-box industrial-agent-objective">
             <textarea
+              aria-label={t("任务目标", "Task objective")}
               value={objective}
               onChange={(event) => setObjective(event.target.value)}
-              placeholder={t("例如：检查当前产线的设备风险，给出有证据的处理建议；涉及控制时先让我确认。", "Example: inspect line risks and return evidence-backed actions; ask before any control change.")}
+              placeholder={t("用一句话说明目标，例如：检查当前产线的设备风险，给出有证据的处理建议。", "Describe the outcome, e.g. inspect line risks and return evidence-backed actions.")}
             />
-          </label>
-          <div className="industrial-agent-plan-row">
-            <button
-              type="button"
-              className="ai-plan-chip"
-              aria-pressed={planMode}
-              aria-label={t("计划模式：只读探索并输出实施计划，不执行仿真或写入", "Plan mode: read-only exploration that outputs a plan; no simulation or writes")}
-              title={t("计划模式只保留读取与分析工具；仿真、写入与控制调用会被拒绝并记录审计。", "Plan mode keeps read and analyze tools only; simulate, write and control calls are rejected and audited.")}
-              onClick={() => setPlanMode((current) => !current)}
-            >
-              <Map size={13} aria-hidden="true" />
-              {t("计划", "Plan")}
-            </button>
-            <small>{planMode ? t("输出计划文档，不执行", "Outputs a plan; nothing executes") : t("按所选能力执行", "Runs with selected capabilities")}</small>
-          </div>
-          {planMode && (
-            <div className="ai-notice-plan" role="status">
-              <ClipboardList size={13} aria-hidden="true" />
-              {t("计划模式已开启：simulate/写入将被拒绝，仅产出计划。", "Plan mode is on: simulate/writes will be rejected; only a plan is produced.")}
+            <div className="ai-composer-toolbar">
+              <div className="ai-composer-tools">
+                {/* H-autonomy 要素①：计划/逐次确认/自主执行合并为一个执行方式下拉；确认/自主切换即持久化为新运行默认。 */}
+                <label className="ai-mode-select" title={t("计划只读探索不执行；逐次确认为默认；自主执行在授权内自动执行，取消与审计仍生效。", "Plan explores read-only; confirm-each is the default; autonomous runs within authorization with cancel and audit intact.")}>
+                  {planMode ? <Map size={12} aria-hidden="true" /> : executionMode === "autonomous" ? <Play size={12} aria-hidden="true" /> : <ShieldCheck size={12} aria-hidden="true" />}
+                  <select aria-label={t("执行方式", "Execution mode")} disabled={modeSaving || busy} value={planMode ? "plan" : executionMode}
+                    onChange={(event) => {
+                      const next = event.target.value;
+                      if (next === "plan") { setPlanMode(true); return; }
+                      setPlanMode(false);
+                      if (next !== executionMode) void changeExecutionMode(next as "confirm" | "autonomous");
+                    }}>
+                    <option value="plan">{t("只出计划", "Plan only")}</option>
+                    <option value="confirm">{t("逐次确认", "Confirm each")}</option>
+                    <option value="autonomous">{t("自主执行", "Autonomous")}</option>
+                  </select>
+                </label>
+                <AssistantModelControls compact locale={locale} mode="platform" value={modelOptions} onChange={setModelOptions} disabled={busy} />
+              </div>
+              <button className="ai-composer-send is-labeled" type="button" aria-label={t("预览并运行", "Review and run")}
+                title={!projectId ? t("请先选择项目", "Select a project first") : selectedToolIds.size === 0 ? t("至少选择一项能力", "Select at least one capability") : t("预览并运行", "Review and run")}
+                disabled={busy || loadingTools || !projectId || !objective.trim() || selectedToolIds.size === 0} onClick={() => void start()}>
+                {busy ? <LoaderCircle className="spin" size={13} /> : <Play size={13} />}
+                {t("运行", "Run")}
+              </button>
             </div>
+          </div>
+          <p className={`industrial-agent-risk-line${planMode ? " is-plan" : ""}`} role="status">
+            {planMode ? <ClipboardList size={13} aria-hidden="true" /> : <ShieldCheck size={13} aria-hidden="true" />}
+            {planMode
+              ? t("只出计划：仅保留读取与分析工具，仿真、写入与控制调用会被拒绝并记录审计。", "Plan only: read and analyze tools only; simulate, write and control calls are rejected and audited.")
+              : executionMode === "autonomous" && preview.highRiskCount
+                ? t(`${preview.highRiskCount} 项高风险能力在授权内自动执行（可随时取消，审计与验证不变）`, `${preview.highRiskCount} high-risk capabilities auto-execute within authorization (cancellable; audit and verification unchanged)`)
+                : preview.highRiskCount
+                  ? t(`${preview.highRiskCount} 项高风险能力仅在用户逐次确认后执行`, `${preview.highRiskCount} high-risk capabilities require per-action confirmation`)
+                  : t("当前能力不会直接写入或控制现场", "Selected capabilities do not write to or control the site")}
+          </p>
+          {!objective.trim() && (
+            <AgentObjectiveExamplesRow locale={locale} tools={tools} busy={busy} loading={loadingTools}
+              hasProject={Boolean(projectId)} canSample={tools.some(tool => tool.effect === "read" && !tool.requiresApproval)}
+              onSample={() => void start(true)} onPick={(item) => setObjective(item)} />
           )}
-          <AgentObjectiveExamplesRow locale={locale} tools={tools} busy={busy} loading={loadingTools}
-            hasProject={Boolean(projectId)} canSample={tools.some(tool => tool.effect === "read" && !tool.requiresApproval)}
-            onSample={() => void start(true)} onPick={(item) => setObjective(item)} />
           <AgentCapabilityPreview
             locale={locale}
             tools={tools}
@@ -262,18 +423,15 @@ export function IndustrialAgentWorkspace(props: {
               return next;
             })}
           />
-          <div className="industrial-agent-start-actions">
-            <span>
-              <ShieldCheck size={13} />
-              {preview.highRiskCount
-                ? t(`${preview.highRiskCount} 项高风险能力仅在用户逐次确认后执行`, `${preview.highRiskCount} high-risk capabilities require per-action confirmation`)
-                : t("当前能力不会直接写入或控制现场", "Selected capabilities do not write to or control the site")}
-            </span>
-            <button className="primary" type="button" disabled={busy || loadingTools || !projectId || !objective.trim() || selectedToolIds.size === 0} onClick={() => void start()}>
-              {busy ? <LoaderCircle className="spin" size={14} /> : <Play size={14} />}
-              {t("预览并运行", "Review and run")}
+          {/* H-autonomy 要素④：通用开发发现面（服务端开关开启才可见；切换重取工具面）。 */}
+          {generalAvailable && (
+            <button type="button" className="ai-plan-chip industrial-agent-discovery" aria-pressed={discovery === "general"} disabled={loadingTools}
+              title={t("按授权发现全部已注册能力（策划环之外仍受授权与拒绝清单收口）。", "Discover all registered capabilities by authorization; still bounded by scope and deny list.")}
+              onClick={() => void changeDiscovery(discovery === "general" ? "curated" : "general")}>
+              <Workflow size={13} aria-hidden="true" />
+              {t("发现全部已注册能力", "Discover all registered")}
             </button>
-          </div>
+          )}
         </div>
       ) : (
         <IndustrialAgentRunView
@@ -284,13 +442,33 @@ export function IndustrialAgentWorkspace(props: {
           restored={restored}
           {...(projectId ? { projectId } : {})}
           {...(error ? { error } : {})}
+          {...(crossProject ? { crossProject } : {})}
+          {...(crossProject ? { onDismissCrossProject: () => setCrossProject(undefined) } : {})}
           onAction={(action) => void act(action)}
           onSelect={(id) => void act("resume", id)}
           onNew={() => {
             setCheckpoint(undefined);
             setRestored(false);
             setError(undefined);
+            setCrossProject(undefined);
             setObjective("");
+          }}
+        />
+      )}
+      {!checkpoint && recoveryFailure && (
+        <AgentRecoveryFailureNotice
+          locale={locale}
+          runId={recoveryFailure.runId}
+          notFound={recoveryFailure.notFound}
+          {...(recoveryFailure.message ? { message: recoveryFailure.message } : {})}
+          busy={busy}
+          onRetry={() => void retryRecovery(recoveryFailure.runId)}
+          onDismiss={() => setRecoveryFailure(undefined)}
+          onClear={() => {
+            if (projectId) {
+              try { browserRunHistoryStore().forget(projectId, recoveryFailure.runId); } catch { /* 清除失败保留记录，仅关闭提示。 */ }
+            }
+            setRecoveryFailure(undefined);
           }}
         />
       )}
@@ -342,6 +520,9 @@ export function IndustrialAgentRunView(props: {
   /** H-C3：档案动作位作用域；缺省时结论卡片不渲染"查看档案"。 */
   projectId?: string;
   error?: string;
+  /** K11：收到的更新属于其他项目时显式标注（不静默丢弃）。 */
+  crossProject?: { runId: string; projectId: string };
+  onDismissCrossProject?: () => void;
   onAction: (action: "approve" | "resume" | "cancel" | "refresh") => void;
   onNew: () => void;
   onSelect?: (id: string) => void;
@@ -360,7 +541,7 @@ export function IndustrialAgentRunView(props: {
     <div className="industrial-agent-run">
       <header className={`industrial-agent-status ${statusTone}`} aria-live="polite">
         <span>{statusTone === "success" ? <CheckCircle2 size={17} /> : statusTone === "danger" ? <Ban size={17} /> : <LoaderCircle className={checkpoint.status === "running" ? "spin" : ""} size={17} />}</span>
-        <div><strong>{agentStatusLabel(checkpoint.status, props.locale)}</strong><small>{checkpoint.objective}{checkpoint.planMode ? ` · ${t("计划模式", "Plan mode")}` : ""}</small></div>
+        <div><strong>{agentStatusLabel(checkpoint.status, props.locale)}</strong><small>{checkpoint.objective}{checkpoint.planMode ? ` · ${t("计划模式", "Plan mode")}` : ""}{isAutonomousRun(checkpoint) ? ` · ${t("自主执行", "Autonomous")}` : ""}</small></div>
         <em>{agentProgress(checkpoint)}%</em>
       </header>
       <div className="industrial-agent-progress"><i style={{ width: `${agentProgress(checkpoint)}%` }} /></div>
@@ -374,7 +555,10 @@ export function IndustrialAgentRunView(props: {
         <div><dt>{t("工具调用", "Tool calls")}</dt><dd>{checkpoint.usage.toolCalls} / {checkpoint.budget.maxToolCalls}</dd></div>
         <div><dt>{t("证据", "Evidence")}</dt><dd>{evidence.length}</dd></div>
       </dl>
-      {props.restored && <p className="industrial-agent-notice"><RefreshCw size={12} />{t("已恢复上次检查点，未重复执行已完成的调用。", "Restored the last checkpoint without replaying completed calls.")}</p>}
+      {props.restored && <p className="industrial-agent-notice"><RefreshCw size={12} />{isStaleCheckpoint(checkpoint) ? t("已恢复上次检查点；距最后更新已超过 48 小时，状态可能陈旧。", "Restored the last checkpoint; it has not been updated for over 48h and may be stale.") : t("已恢复上次检查点，未重复执行已完成的调用。", "Restored the last checkpoint without replaying completed calls.")}</p>}
+      {props.crossProject && props.onDismissCrossProject && (
+        <AgentCrossProjectNotice locale={props.locale} runId={props.crossProject.runId} projectId={props.crossProject.projectId} onDismiss={props.onDismissCrossProject} />
+      )}
       {checkpoint.status === "awaiting-approval" && checkpoint.pendingTool && (
         <section className="industrial-agent-approval" aria-label={t("待确认操作", "Action awaiting confirmation")}>
           <header><ShieldCheck size={15} /><span><strong>{t("执行前需要你确认", "Confirmation required before execution")}</strong><small>{pendingTool?.label ?? checkpoint.pendingTool.call.toolId}</small></span></header>
@@ -418,6 +602,20 @@ export function IndustrialAgentRunView(props: {
       <details className="industrial-agent-history">
         <summary>{t("查看决策与工具记录", "Decision and tool history")}<span>{checkpoint.decisions.length + checkpoint.toolRecords.length}<ChevronDown size={13} /></span></summary>
         <ol>{checkpoint.decisions.map((record) => <li key={`decision-${record.step}`}><b>{record.step}</b><span>{record.decision.rationale}{record.execution && <AiExecutionDetails locale={props.locale} execution={record.execution} />}</span></li>)}</ol>
+        {/* H-autonomy 要素③：审批来源随工具记录可见（策略签发 vs 人工确认），审计不只在服务端。 */}
+        {checkpoint.toolRecords.length > 0 && <ul className="industrial-agent-tool-audit">
+          {checkpoint.toolRecords.map((record) => <li key={`tool-${record.step}-${record.fingerprint}`}>
+            <b>{record.step}</b>
+            <span>{record.call.toolId}<small> · {record.outcome.status === "completed"
+              ? t("已完成", "Completed")
+              : record.outcome.status === "failed" ? t("失败", "Failed") : t("已阻断", "Blocked")}</small></span>
+            <em>{record.approval
+              ? (record.approval.approvedBy === AUTONOMY_APPROVER_ID
+                ? describeApprovalSource(record.approval.approvedBy, props.locale)
+                : `${t("人工确认", "Manually approved")} · ${record.approval.approvedBy}`)
+              : t("无需确认", "No confirmation required")}</em>
+          </li>)}
+        </ul>}
       </details>
       <footer className="industrial-agent-run-actions">
         {!terminal && checkpoint.status !== "awaiting-approval" && <><button type="button" disabled={props.busy} onClick={() => props.onAction("refresh")}><RefreshCw size={13} />{t("刷新", "Refresh")}</button>{checkpoint.status !== "awaiting-input" && <button type="button" disabled={props.busy} onClick={() => props.onAction("resume")}><Play size={13} />{t("从检查点继续", "Resume checkpoint")}</button>}<button type="button" disabled={props.busy} onClick={() => props.onAction("cancel")}><PauseCircle size={13} />{t("取消", "Cancel")}</button></>}
@@ -465,17 +663,25 @@ async function getAgentApi(): Promise<IndustrialAgentApi> {
   return (await import("../api")).api;
 }
 
-async function restoreRun(client: IndustrialAgentApi, projectId: string, signal: AbortSignal): Promise<AgentCheckpoint | undefined> {
-  const runId = readRememberedRun(projectId);
-  return runId ? client.getIndustrialAgentRun(projectId, runId, signal) : undefined;
+/** K13：把检查点写进滚动历史（最近 10 条；旧单槽键由 store 内部迁移兜底）。 */
+function rememberCheckpoint(projectId: string, checkpoint: AgentCheckpoint) {
+  try {
+    browserRunHistoryStore().remember(projectId, {
+      runId: checkpoint.id,
+      objective: checkpoint.objective,
+      savedAt: new Date().toISOString(),
+      status: checkpoint.status,
+    });
+  } catch { /* 历史记忆不可用时放弃，当前会话不受影响。 */ }
 }
 
-function rememberRun(projectId: string, runId: string) {
-  try { window.localStorage.setItem(`bim-studio:industrial-agent:${projectId}`, runId); } catch { /* 本地记忆不可用时仍可完成当前会话。 */ }
+function latestRememberedRunId(projectId: string): string | undefined {
+  try { return browserRunHistoryStore().list(projectId)[0]?.runId; } catch { return undefined; }
 }
 
-function readRememberedRun(projectId: string): string | undefined {
-  try { return window.localStorage.getItem(`bim-studio:industrial-agent:${projectId}`) ?? undefined; } catch { return undefined; }
+/** 404（运行已被服务端清理）与网络/服务故障在恢复提示里分开表述。 */
+function isNotFound(reason: unknown): boolean {
+  return reason instanceof ServerRequestError && reason.status === 404;
 }
 
 function errorMessage(reason: unknown): string {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ModelRecord, ProjectAssetRecord, SceneSnapshot } from "@bim-studio/contracts";
 import { api } from "../api";
-import { translate as tr } from "../i18n";
+import { translate as tr, type AppLocale } from "../i18n";
 import type { SceneManagerProps } from "./sceneManagerTypes";
 import { SceneManagerView } from "./SceneManagerView";
 import { analyzeProjectResourceGovernance } from "./projectResourceGovernance";
@@ -9,8 +9,27 @@ import { filterAndSortScenes, type SceneSortKey, type SceneStatusFilter } from "
 import { useScenePublicationHistory } from "../hooks/useScenePublicationHistory";
 import { projectModelMatchesSearch } from "./projectModelSearch";
 import type { SceneClientPackageTarget } from "../delivery/sceneClientPackage";
+import type { SceneCreationTemplate } from "../controllers/defaultSceneSample";
+import { computeAssetDeletionImpact, type AssetDeletionImpact } from "../delivery/assetDeletionImpact";
+import { applyAssetRevisionToScenes, runAssetRevisionReimport } from "../delivery/assetRevisionUpdate";
+import { detectStaleAssetRevisions, type StaleAssetRevision } from "../viewer/assetRevisionSnapshot";
 
 type ProjectAssetTab = "all" | "model" | "image" | "video" | "environment" | "pbr-material";
+
+function formatDeletionImpact(impact: AssetDeletionImpact, locale: AppLocale): string | undefined {
+  if (!impact.totalReferences) return undefined;
+  const lines = impact.scenes.slice(0, 3).map(scene => {
+    const paths = scene.references.slice(0, 4).join(", ");
+    const more = scene.references.length > 4 ? tr(locale, ` 等 ${scene.references.length} 处`, ` and ${scene.references.length} references`) : "";
+    return `- ${scene.sceneName}: ${paths}${more}`;
+  }).join("\n");
+  const moreScenes = impact.scenes.length > 3 ? tr(locale, `\n…另有 ${impact.scenes.length - 3} 个场景`, `\n…plus ${impact.scenes.length - 3} scenes`) : "";
+  return tr(
+    locale,
+    `影响范围：共 ${impact.totalReferences} 处引用\n${lines}${moreScenes}`,
+    `Impact: ${impact.totalReferences} references\n${lines}${moreScenes}`,
+  );
+}
 
 function useSceneManagerController({
   publicationArtifacts,
@@ -74,6 +93,7 @@ function useSceneManagerController({
   onUploadModels,
   onDeleteModel,
   onRefreshModels,
+  onAssetRevisionScenesUpdated,
 }: SceneManagerProps) {
   const [dialogMode, setDialogMode] = useState<"create" | "rename">();
   const [localManagerTab, setLocalManagerTab] = useState<"scenes" | "assets" | "topology" | "examples">("scenes");
@@ -81,9 +101,14 @@ function useSceneManagerController({
   const setManagerTab = (tab: typeof managerTab) => { setLocalManagerTab(tab); onManagerTabChange?.(tab); };
   const [targetScene, setTargetScene] = useState<SceneSnapshot>();
   const [name, setName] = useState("");
+  const [creationTemplate, setCreationTemplate] = useState<SceneCreationTemplate>("sample");
   const [busy, setBusy] = useState(false);
   const publicationPendingRef = useRef(false);
   const [modelLibraryBusy, setModelLibraryBusy] = useState(false);
+  const [assetRevisionBusyIds, setAssetRevisionBusyIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [assetRevisionNotice, setAssetRevisionNotice] = useState<
+    { kind: "success" | "error" | "info"; modelId: string; message: string } | undefined
+  >();
   const [uploadedResources, setUploadedResources] = useState<Array<ModelRecord | ProjectAssetRecord>>([]);
   const resourceProject = useRef(project?.id);
   resourceProject.current = project?.id;
@@ -124,6 +149,19 @@ function useSceneManagerController({
     () => analyzeProjectResourceGovernance(project, applications, scenes),
     [applications, project, scenes],
   );
+  const staleAssetRevisions = useMemo(
+    () => detectStaleAssetRevisions(scenes.flatMap(scene => scene.models), project?.models ?? []),
+    [project?.models, scenes],
+  );
+  const assetRevisionReportsByAsset = useMemo(() => {
+    const grouped = new Map<string, StaleAssetRevision[]>();
+    for (const report of staleAssetRevisions) {
+      const reports = grouped.get(report.assetModelId) ?? [];
+      reports.push(report);
+      grouped.set(report.assetModelId, reports);
+    }
+    return grouped;
+  }, [staleAssetRevisions]);
 
   useEffect(() => {
     if (!isAdmin || !project) return;
@@ -224,6 +262,7 @@ function useSceneManagerController({
   function openCreateDialog() {
     setTargetScene(undefined);
     setName("");
+    setCreationTemplate("sample");
     setDialogMode("create");
   }
 
@@ -239,7 +278,7 @@ function useSceneManagerController({
     setBusy(true);
     try {
       if (dialogMode === "rename" && targetScene) await onRename(targetScene, value);
-      else await onCreate(value);
+      else await onCreate(value, { template: creationTemplate });
       setName("");
       setTargetScene(undefined);
       setDialogMode(undefined);
@@ -272,18 +311,19 @@ function useSceneManagerController({
 
   async function deleteLibraryModel(model: ModelRecord) {
     const usage = resourceGovernance.resources.find((resource) => resource.kind === "model" && resource.id === model.id);
+    const impact = computeAssetDeletionImpact(model.id, scenes);
+    const impactText = formatDeletionImpact(impact, locale);
+    const baseMessage = tr(
+      locale,
+      usage?.instanceCount
+        ? `模型“${model.name}”仍有 ${usage.instanceCount} 个场景实例。继续删除会造成引用断开，建议先移除实例。仍要删除吗？`
+        : `确定删除未引用模型“${model.name}”吗？`,
+      usage?.instanceCount
+        ? `Model “${model.name}” still has ${usage.instanceCount} scene instances. Deleting it breaks those references; remove the instances first. Delete anyway?`
+        : `Delete unused model “${model.name}”?`,
+    );
     if (
-      !window.confirm(
-        tr(
-          locale,
-          usage?.instanceCount
-            ? `模型“${model.name}”仍有 ${usage.instanceCount} 个场景实例。继续删除会造成引用断开，建议先移除实例。仍要删除吗？`
-            : `确定删除未引用模型“${model.name}”吗？`,
-          usage?.instanceCount
-            ? `Model “${model.name}” still has ${usage.instanceCount} scene instances. Deleting it breaks those references; remove the instances first. Delete anyway?`
-            : `Delete unused model “${model.name}”?`,
-        ),
-      )
+      !window.confirm(impactText ? `${baseMessage}\n\n${impactText}` : baseMessage)
     )
       return;
     setModelLibraryBusy(true);
@@ -364,6 +404,8 @@ function useSceneManagerController({
           ? tr(locale, "材质", "material")
           : tr(locale, "图片", "image");
     const usage = resourceGovernance.resources.find((resource) => resource.kind === "media" && resource.id === asset.id);
+    const impact = computeAssetDeletionImpact(asset.id, scenes);
+    const impactText = formatDeletionImpact(impact, locale);
     const appearanceAsset = asset.kind === "environment" || asset.kind === "pbr-material";
     const message = usage?.instanceCount
       ? tr(
@@ -372,7 +414,7 @@ function useSceneManagerController({
           `${kindName} “${asset.name}” is referenced by ${usage.instanceCount} ${appearanceAsset ? "scenes or objects" : "dashboard components"}. Delete it and break those references?`,
         )
       : tr(locale, `确定删除未引用${kindName}“${asset.name}”吗？`, `Delete unused ${kindName} “${asset.name}”?`);
-    if (!project || !window.confirm(message)) return;
+    if (!project || !window.confirm(impactText ? `${message}\n\n${impactText}` : message)) return;
     setModelLibraryBusy(true);
     try {
       await api.deleteAsset(project.id, asset.id);
@@ -381,6 +423,44 @@ function useSceneManagerController({
       window.alert(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setModelLibraryBusy(false);
+    }
+  }
+
+  async function updateAssetRevision(model: ModelRecord) {
+    if (!project) return;
+    const reports = assetRevisionReportsByAsset.get(model.id) ?? [];
+    if (!reports.length) return;
+    setAssetRevisionBusyIds(current => new Set(current).add(model.id));
+    setAssetRevisionNotice({ kind: "info", modelId: model.id, message: tr(locale, "正在更新场景修订引用…", "Updating scene revision references…") });
+    try {
+      await runAssetRevisionReimport(reports[0]!, model);
+      const update = applyAssetRevisionToScenes(scenes, model, reports);
+      const savedScenes: SceneSnapshot[] = [];
+      for (const scene of update.scenes) {
+        if (update.changedSceneIds.includes(scene.id)) savedScenes.push(await api.saveScene(scene));
+      }
+      onAssetRevisionScenesUpdated?.(savedScenes);
+      setAssetRevisionNotice({
+        kind: "success",
+        modelId: model.id,
+        message: tr(
+          locale,
+          `已更新 ${update.updatedInstances} 个实例，影响 ${update.changedSceneIds.length} 个场景`,
+          `Updated ${update.updatedInstances} instances across ${update.changedSceneIds.length} scenes`,
+        ),
+      });
+    } catch (reason) {
+      setAssetRevisionNotice({
+        kind: "error",
+        modelId: model.id,
+        message: reason instanceof Error ? reason.message : String(reason),
+      });
+    } finally {
+      setAssetRevisionBusyIds(current => {
+        const next = new Set(current);
+        next.delete(model.id);
+        return next;
+      });
     }
   }
 
@@ -407,6 +487,9 @@ function useSceneManagerController({
     onReturnToScene,
     assetSearch,
     assetTab,
+    assetRevisionBusyIds,
+    assetRevisionNotice,
+    assetRevisionReportsByAsset,
     branding,
     busy,
     cloudBusySceneId,
@@ -417,6 +500,7 @@ function useSceneManagerController({
     cloudScenePolicies,
     copyLink,
     copyNotice,
+    creationTemplate,
     createShowcase,
     deleteLibraryAsset,
     deleteLibraryModel,
@@ -493,6 +577,7 @@ function useSceneManagerController({
     setAssetSearch,
     setAssetTab,
     setCloudError,
+    setCreationTemplate,
     setDeliveryReviewOpen,
     projectTransferOpen,
     setProjectTransferOpen,
@@ -521,6 +606,7 @@ function useSceneManagerController({
     setUploadedResources,
     uploadLibraryModels,
     uploadLibraryVideos,
+    updateAssetRevision,
     userName,
     versionBusy,
     versionError,

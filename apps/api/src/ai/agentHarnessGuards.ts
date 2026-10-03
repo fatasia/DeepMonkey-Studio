@@ -11,9 +11,9 @@ import type {
   AgentGuardRejection,
   AgentToolCall,
 } from "@bim-studio/industrial-agent-orchestrator";
-import { createAiAuditEvent, emitAiAudit, type AiReliabilityAuditSink } from "./aiReliabilityAudit.js";
+import { createAiAuditEvent, emitAiAudit, safeErrorMessage, type AiReliabilityAuditSink } from "./aiReliabilityAudit.js";
 import { aiToolScopeFingerprint, type AiToolCall } from "./aiToolReliability.js";
-import type { AgentMemoryStore } from "./agentMemory.js";
+import { AgentMemoryLimitError, type AgentMemoryStore } from "./agentMemory.js";
 
 /**
  * H-C2 保安三件（增强 1）：语义预检（挂 tool.pre-execute）、变体熔断计数键、
@@ -58,15 +58,22 @@ export function createAgentHarnessGuards(input: AgentHarnessGuardsInput): AgentG
       if (outcome.status !== "completed") return;
       const envelope = readEnvelope(outcome.output);
       if (!envelope) return;
-      await input.memory.recordVerdict(checkpoint.projectId, {
-        proposalFingerprint: envelope.proposalFingerprint,
-        resultFingerprint: envelope.resultFingerprint,
-        verdict: envelope.verdict,
-        reasonCode: envelope.reasonCode,
-        rationale: envelope.rationale,
-        runId: checkpoint.id,
-        step: checkpoint.usage.steps,
-      });
+      // H-C5-K8：verdict 回灌失败落专项审计 finding 后再抛——执行链由 orchestrator
+      // 兜底（记入 checkpoint.guards.postExecuteFindings），这里保证审计侧同样可见可重试。
+      try {
+        await input.memory.recordVerdict(checkpoint.projectId, {
+          proposalFingerprint: envelope.proposalFingerprint,
+          resultFingerprint: envelope.resultFingerprint,
+          verdict: envelope.verdict,
+          reasonCode: envelope.reasonCode,
+          rationale: envelope.rationale,
+          runId: checkpoint.id,
+          step: checkpoint.usage.steps,
+        });
+      } catch (error) {
+        await emitFeedbackFailure(input.audit, checkpoint, call.toolId, "verdict-record-failed", error);
+        throw error;
+      }
       // 被确定性内核反驳的结论进入候选记忆（用户确认制）：下轮注入后不得重复同方案。
       if (envelope.verdict === "refuted") {
         try {
@@ -76,7 +83,12 @@ export function createAgentHarnessGuards(input: AgentHarnessGuardsInput): AgentG
             step: checkpoint.usage.steps,
             proposalFingerprint: envelope.proposalFingerprint,
           });
-        } catch { /* 记忆容量满不阻断执行链；面板清理后可再提炼。 */ }
+        } catch (error) {
+          // 容量满是用户面已提示的预期限制（面板清理后可再提炼）：warn finding、不再上抛。
+          const expected = error instanceof AgentMemoryLimitError;
+          await emitFeedbackFailure(input.audit, checkpoint, call.toolId, expected ? "memory-candidate-limit" : "memory-candidate-failed", error, expected ? "info" : "warn");
+          if (!expected) throw error;
+        }
       }
     },
   };
@@ -212,6 +224,28 @@ function readEnvelope(output: unknown) {
   } catch {
     return undefined;
   }
+}
+
+/** H-C5-K8：记忆回灌（verdict/候选）失败落审计 finding；指纹只存固定标记，不复制错误原文。 */
+async function emitFeedbackFailure(
+  audit: AiReliabilityAuditSink | undefined,
+  checkpoint: Parameters<NonNullable<AgentGuardHooks["preExecute"]>>[0]["checkpoint"],
+  toolId: string,
+  code: string,
+  error: unknown,
+  severity = "warn",
+): Promise<void> {
+  if (!audit) return;
+  await emitAiAudit(audit, createAiAuditEvent({
+    traceId: `${checkpoint.id}:${checkpoint.usage.steps}:post-execute`,
+    stage: "memory-action",
+    outcome: "degraded",
+    principal: checkpoint.principal,
+    projectId: checkpoint.projectId,
+    tool: { id: toolId, risk: "low", resourceFingerprints: [] },
+    findings: [{ code, severity, sourceId: "agent-memory", contentFingerprint: "feedback-unavailable" }],
+    failure: { code, message: safeErrorMessage(error), retryable: true },
+  }));
 }
 
 function clipText(value: string, max: number): string {

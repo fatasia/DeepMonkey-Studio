@@ -15,6 +15,8 @@ interface AiContextDisclosureProps {
   loading: boolean;
   /** K6：chat 历史窗口裁剪披露——sent < total 时明确"更早轮次不参与本次回答"。 */
   historyWindow?: { sent: number; total: number };
+  /** 嵌入面板统一的"上下文"折叠组时只渲染正文，摘要由外层折叠行承担。 */
+  embedded?: boolean;
 }
 
 /**
@@ -24,7 +26,7 @@ interface AiContextDisclosureProps {
 export const CHAT_HISTORY_WINDOW = 6;
 
 /** 让用户在发送前看见本次请求的对象身份与数据边界。 */
-export function AiContextDisclosure({ locale, mode, context, sources, loading, historyWindow }: AiContextDisclosureProps) {
+export function AiContextDisclosure({ locale, mode, context, sources, loading, historyWindow, embedded = false }: AiContextDisclosureProps) {
   const target = assistantWorkspaceTarget(context);
   const readiness = assistantContextReadiness(sources);
   const t = (zh: string, en: string) => tr(locale, zh, en);
@@ -49,20 +51,7 @@ export function AiContextDisclosure({ locale, mode, context, sources, loading, h
       : undefined,
   ].filter(Boolean) as Array<{ icon: typeof Box; label: string; value: string }>;
 
-  return (
-    <details className="ai-context-disclosure">
-      <summary>
-        <span>
-          <Database size={13} />
-          <strong title={`${t("本次读取范围", "Context used for this request")} · ${scope}`}>{scope}</strong>
-        </span>
-        <span className={loading ? "loading" : readiness.unavailable > 0 ? "partial" : "ready"}>
-          {loading
-            ? t("读取中", "Loading")
-            : t(`${readiness.ready}/${readiness.total} 个来源就绪`, `${readiness.ready}/${readiness.total} sources ready`)}
-          <ChevronDown size={12} />
-        </span>
-      </summary>
+  const body = (
       <div className="ai-context-disclosure-body">
         {targetItems.length > 0 && (
           <div className="ai-context-targets">
@@ -107,6 +96,23 @@ export function AiContextDisclosure({ locale, mode, context, sources, loading, h
           </p>
         )}
       </div>
+  );
+  if (embedded) return body;
+  return (
+    <details className="ai-context-disclosure">
+      <summary>
+        <span>
+          <Database size={13} />
+          <strong title={`${t("本次读取范围", "Context used for this request")} · ${scope}`}>{scope}</strong>
+        </span>
+        <span className={loading ? "loading" : readiness.unavailable > 0 ? "partial" : "ready"}>
+          {loading
+            ? t("读取中", "Loading")
+            : t(`${readiness.ready}/${readiness.total} 个来源就绪`, `${readiness.ready}/${readiness.total} sources ready`)}
+          <ChevronDown size={12} />
+        </span>
+      </summary>
+      {body}
     </details>
   );
 }

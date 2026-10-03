@@ -3,6 +3,16 @@
 //! 布局必须与 Web `packIrradianceProbeRecord` 逐字段一致：
 //! 0..3 irradiance.xyz + validity，4..7 meanDistance + distanceVariance +
 //! occlusionFloor + padding，8..11 positionOffset.xyz + padding，总计 96 字节。
+//!
+//! == F5 方案 A（2026-10-03 批准，声明级启用；本 crate 行为零变更，禁 cargo） ==
+//! words[12..23]（reserved[12]）合同从「必须为零」升级为 **RGB L1 SH 方向可见度**
+//! （f32 小端，channel-major：12..15 = R 通道 (l0, l1m-1, l1m0, l1m1)，16..19 = G，
+//! 20..23 = B；重建核 (1, dir.y, dir.z, dir.x)，与 Frame deepDiffuse 64B eval 同族）。
+//! 唯一实现源 = Web `probeDirectionalVisibilitySh.ts`（投影/重建/标量 fallback 门），
+//! 合同文档 `docs/specs/f5-directional-l1-implementation-20261003.md`。
+//! **过渡语义**：`validate()` 的全零校验保持不变 —— native producer 继续发全零
+//! reserved = 「SH 缺失」，Web 消费端按同族标量门 fallback；native 侧对非零 SH 的
+//! 消费/校验启用走后续 cargo 线（本声明先行对齐双端字面）。
 
 // F3 合同先行落库:着色采样消费方在后续切片接入,窄特性目标只驱动
 // 编码/解码/打包合同,故模块级放行 dead_code(与 render_graph 同一惯例)。
@@ -27,7 +37,10 @@ pub struct IrradianceProbeRecord {
     pub padding: f32,
     pub position_offset: [f32; 3],
     pub position_padding: f32,
-    /// Web 96B 合同保留区，当前必须为零，未来扩展不得改变前 48B 字段。
+    /// Web 96B 合同 words[12..23]：F5 方案 A 起为 RGB L1 SH 方向可见度
+    /// （channel-major l0/l1m-1/l1m0/l1m1，声明级启用）。本 crate 的 validate/producer
+    /// 仍按全零处理（= SH 缺失，Web 消费端标量 fallback）；非零 SH 的 native 校验/
+    /// 消费启用走 cargo 线。前 48B 字段不得因本启用改变。
     pub reserved: [f32; 12],
 }
 

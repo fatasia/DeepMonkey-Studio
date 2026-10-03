@@ -1,0 +1,72 @@
+{
+  "schema": "deep-engine-3d.templates/1",
+  "kitRoot": "templates/deep-engine-3d",
+  "sharedFiles": ["sceneTypes.ts", "harness.ts", "nodeHarness.ts", "tsconfig.node.base.json", "tsconfig.browser.base.json"],
+  "copySetNote": "复制单个模板目录时必须同时携带 sharedFiles 中列出的共享文件；运行门按'空项目 + 精确版本 SDK 安装'逐模板验收",
+  "templates": [
+    {
+      "id": "01-starter",
+      "title": "通用基础场景",
+      "domain": "通用",
+      "useWhen": "从零起步的最小可运行场景；确认 SDK 安装、渲染与动画链路",
+      "showcases": ["box/cylinder 几何", "渐变背景与地面网格", "bloom+vignette+ACES", "环绕相机"],
+      "entry": { "node": "node.ts", "browser": "browser.ts", "html": "index.html" }
+    },
+    {
+      "id": "02-factory-floor",
+      "title": "工厂车间",
+      "domain": "工厂车间",
+      "useWhen": "车间产线布局：设备阵列、通道标线、雾效纵深",
+      "showcases": ["几何共享实例化", "安全黄标线 emissive", "fog+groundGrid", "多材质 PBR"],
+      "entry": { "node": "node.ts", "browser": "browser.ts", "html": "index.html" }
+    },
+    {
+      "id": "03-equipment-monitor",
+      "title": "设备监控",
+      "domain": "设备监控",
+      "useWhen": "设备状态语义色、告警呼吸、屏幕面板与选中高亮",
+      "showcases": ["shadingModel unlit 屏幕面板", "emissiveStrength 呼吸动画", "outline 选中高亮", "状态三色编码"],
+      "entry": { "node": "node.ts", "browser": "browser.ts", "html": "index.html" }
+    },
+    {
+      "id": "04-robot-cell",
+      "title": "机器人单元",
+      "domain": "机器人",
+      "useWhen": "多关节机械臂层级运动、工作围栏、末端执行器",
+      "showcases": ["层级 mat4 变换链", "关节角正弦动画", "矩阵数学 Node 断言", "围栏实例化"],
+      "entry": { "node": "node.ts", "browser": "browser.ts", "html": "index.html" }
+    },
+    {
+      "id": "05-pipeline",
+      "title": "管线输送",
+      "domain": "管线",
+      "useWhen": "管廊走向、介质流动标记、泵站与透明观察段",
+      "showcases": ["alphaMode BLEND 透明段", "路径参数化流动动画", "doubleSided", "立管/横管组合"],
+      "entry": { "node": "node.ts", "browser": "browser.ts", "html": "index.html" }
+    },
+    {
+      "id": "06-logistics",
+      "title": "物流仓储",
+      "domain": "物流",
+      "useWhen": "货架巷道、AGV 沿线运动、输送辊道与托盘堆垛",
+      "showcases": ["AGV 位移动画", "辊道实例化", "货架重复布局", "castShadow"],
+      "entry": { "node": "node.ts", "browser": "browser.ts", "html": "index.html" }
+    },
+    {
+      "id": "07-energy",
+      "title": "能源站",
+      "domain": "能源",
+      "useWhen": "储罐、变配电与警示信标的能源场景",
+      "showcases": ["sphere 储罐封头", "警示信标脉冲", "管汇连接", "雾效氛围"],
+      "entry": { "node": "node.ts", "browser": "browser.ts", "html": "index.html" }
+    },
+    {
+      "id": "08-structure",
+      "title": "结构框架",
+      "domain": "结构",
+      "useWhen": "梁柱框架、楼层分层与玻璃幕墙的结构浏览",
+      "showcases": ["梁柱网格布局", "BLEND 幕墙玻璃", "outline 构件高亮", "楼层分组"],
+      "entry": { "node": "node.ts", "browser": "browser.ts", "html": "index.html" }
+    }
+  ]
+}

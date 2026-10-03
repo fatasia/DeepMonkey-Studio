@@ -194,6 +194,10 @@
 .behavior-editor > footer { display: flex; min-height: 28px; align-items:center; gap: 12px; padding: 5px 9px; color: var(--text-muted); border-top: 1px solid var(--line); font-size: 11px; }
 .behavior-editor > footer em { margin-left: auto; color: var(--warning); font-style: normal; }
 .behavior-editor > footer em.ready { color:var(--success); }.behavior-editor > footer em.error { color:var(--danger); }
+/* H-C6-S1 热插应用三态:成功/回滚/失败沿 base.css 状态令牌,不引入新色值。 */
+.behavior-editor > footer em.swap-applied { color:var(--success); }
+.behavior-editor > footer em.swap-rolled-back { color:var(--warning); }
+.behavior-editor > footer em.swap-failed { color:var(--danger); }
 .behavior-inspector { overflow: auto; padding: 10px; border-left: 1px solid var(--line-subtle); background: var(--surface-1); }
 .behavior-inspector section + section { margin-top: 13px; padding-top: 11px; border-top: 1px solid #28333c; }
 .behavior-script-assistant { display:grid; gap:7px; padding:8px; border:1px solid #30404b; border-radius:6px; background:#111920; }

@@ -4,6 +4,16 @@ import { spawn } from "node:child_process";
 import { access, cp, mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
+// runLogged 以裸 "tar" 解析归档;Git Bash 的 GNU tar 会把 "C:\..." 当远程主机
+// (tar: Cannot connect to C: resolve failed)。win32 下前置 System32 优先用自带
+// bsdtar,与 templates/deep-engine-3d/scripts/gate-templates.mjs 的守卫同一机制。
+if (process.platform === "win32") {
+  const system32 = join(process.env.SystemRoot ?? "C:\\Windows", "System32");
+  if (!process.env.PATH?.split(";").includes(system32)) {
+    process.env.PATH = `${system32};${process.env.PATH ?? ""}`;
+  }
+}
+
 export const sdkPackages = ["contracts", "scene-sdk", "server-sdk"];
 
 export function isWithin(parent, child) {

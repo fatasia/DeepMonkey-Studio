@@ -57,7 +57,8 @@ describe("T18 A3 GPU physics ABI", () => {
     expect(packSoftBodyGpuParticles(SOFT_INPUT.particles).byteLength).toBe(4 * 48);
     expect(packSoftBodyGpuEdges(SOFT_INPUT.edges, 4).byteLength).toBe(6 * 16);
     expect(packSoftBodyGpuTets(SOFT_INPUT.tets, 4).byteLength).toBe(32);
-    expect(packSoftBodyGpuParams(SOFT_INPUT).byteLength).toBe(48);
+    // 风场刀:params 96B(头 48B 同旧 ABI,风尾零填充)。
+    expect(packSoftBodyGpuParams(SOFT_INPUT).byteLength).toBe(96);
   });
 
   it("mirrors the cloth projection order, preserving the pinned particle", () => {

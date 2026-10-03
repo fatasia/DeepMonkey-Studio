@@ -5,6 +5,7 @@ import { prepareStudioEnvironmentTextureAsync, isStudioEnvironmentTextureCurrent
   type PreparedStudioEnvironmentTexture } from "./studioDeepEnvironmentTexture";
 import { studioDeepNeutralEnvironment } from "./studioDeepNeutralEnvironment";
 import { readStudioReflectionProbes, type StudioReflectionProbeCarriers } from "./studioReflectionProbeCarriers";
+import { readStudioDeepEnvironmentMips } from "./studioDeepEnvironmentMips";
 
 export interface PreparedStudioDeepEnvironment {
   readonly source: PbrEnvironmentSource;
@@ -12,6 +13,7 @@ export interface PreparedStudioDeepEnvironment {
   readonly background: THREE.Scene["background"];
   readonly textures: readonly PreparedStudioEnvironmentTexture[];
   readonly reflectionProbes?: StudioReflectionProbeCarriers;
+  readonly keptMips?: number;
 }
 
 export interface StudioDeepEnvironmentSourceIdentity {
@@ -19,6 +21,7 @@ export interface StudioDeepEnvironmentSourceIdentity {
   readonly background: THREE.Scene["background"];
   readonly textures: readonly { readonly identity: StudioEnvironmentTextureIdentity }[];
   readonly reflectionProbes?: StudioReflectionProbeCarriers;
+  readonly keptMips?: number;
 }
 
 export function captureStudioDeepEnvironmentSource(scene: THREE.Scene): StudioDeepEnvironmentSourceIdentity {
@@ -26,6 +29,7 @@ export function captureStudioDeepEnvironmentSource(scene: THREE.Scene): StudioDe
   const textures = [scene.environment, scene.background, ...reflectionProbes.probes.map(probe => probe.texture)]
     .filter((value): value is THREE.Texture => value instanceof THREE.Texture);
   return { environment: scene.environment, background: scene.background,
+    ...(readStudioDeepEnvironmentMips(scene) === undefined ? {} : { keptMips: readStudioDeepEnvironmentMips(scene)! }),
     reflectionProbes,
     textures: [...new Set(textures)].map(texture => ({ identity: captureStudioEnvironmentTexture(texture) })) };
 }
@@ -34,6 +38,7 @@ export function captureStudioDeepEnvironmentSource(scene: THREE.Scene): StudioDe
 export async function prepareStudioDeepEnvironmentSource(scene: THREE.Scene,
   signal: AbortSignal): Promise<PreparedStudioDeepEnvironment> {
   const environment = scene.environment, background = scene.background;
+  const keptMips = readStudioDeepEnvironmentMips(scene);
   const reflectionProbes = readStudioReflectionProbes(scene);
   if (reflectionProbes.error) throw new Error(reflectionProbes.error);
   if (signal.aborted) throw new DOMException("环境准备已取消。", "AbortError");
@@ -71,7 +76,9 @@ export async function prepareStudioDeepEnvironmentSource(scene: THREE.Scene,
       // 黑 IBL 兜底会把材质打回死黑并让 DDGI 捕获零辐照，禁止回归。
       : studioDeepNeutralEnvironment(sky?.image);
   const result: PreparedStudioDeepEnvironment = { environment, background, textures, reflectionProbes,
-    source: probeSources.length ? { ...baseSource, reflectionProbes: probeSources } : baseSource };
+    ...(keptMips === undefined ? {} : { keptMips }),
+    source: { ...baseSource, ...(probeSources.length ? { reflectionProbes: probeSources } : {}),
+      ...(keptMips === undefined ? {} : { keptMips }) } };
   if (signal.aborted) throw new DOMException("环境准备已取消。", "AbortError");
   if (!isStudioDeepEnvironmentSourceCurrent(scene, result)) throw new Error("作者环境在准备期间已改变。");
   return result;
@@ -81,6 +88,7 @@ export async function prepareStudioDeepEnvironmentSource(scene: THREE.Scene,
 export function isStudioDeepEnvironmentSourceCurrent(scene: THREE.Scene,
   prepared: StudioDeepEnvironmentSourceIdentity): boolean {
   return scene.environment === prepared.environment
+    && readStudioDeepEnvironmentMips(scene) === prepared.keptMips
     && (prepared.reflectionProbes === undefined || readStudioReflectionProbes(scene) === prepared.reflectionProbes)
     && (scene.background === prepared.background
       || scene.background instanceof THREE.Color && prepared.background instanceof THREE.Color)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_VARIANT_DENIAL_LIMIT, IndustrialAgentOrchestrator } from "./orchestrator.js";
+import { DEFAULT_VARIANT_DENIAL_LIMIT, IndustrialAgentOrchestrator, MAX_GUARD_FINDINGS } from "./orchestrator.js";
 import { MemoryAgentCheckpointStore } from "./memoryCheckpointStore.js";
 import type {
   AgentDecision,
@@ -24,6 +24,7 @@ const ALL_TOOLS = [READ_TOOL];
 function fixture(options: {
   decisions: AgentDecision[];
   guards?: AgentGuardHooks;
+  onRunSettled?: (checkpoint: import("./types.js").AgentCheckpoint) => Promise<void>;
   variantDenialLimit?: number;
   execute?: (call: AgentToolCall) => Promise<{ status: "completed"; evidence: never[]; verificationEvidence: never[] }>;
 }) {
@@ -33,6 +34,7 @@ function fixture(options: {
   const orchestrator = new IndustrialAgentOrchestrator({
     checkpoints: store,
     ...(options.guards ? { guards: options.guards } : {}),
+    ...(options.onRunSettled ? { onRunSettled: options.onRunSettled } : {}),
     ...(options.variantDenialLimit !== undefined ? { variantDenialLimit: options.variantDenialLimit } : {}),
     decisions: {
       decide: async () => options.decisions[Math.min(step++, options.decisions.length - 1)]!,
@@ -211,6 +213,107 @@ describe("H-C2 受控挂载点：tool.pre-execute / tool.post-execute", () => {
     expect(executed).toEqual(["data.read"]);
     expect(result.status).toBe("completed");
     expect(seen).toEqual([{ toolId: "data.read", status: "completed" }]);
+  });
+
+  // H-C5-K8：增值记录抛错不再静默吞——可重试信息落 checkpoint 审计 finding。
+  it("post-execute 抛错：执行链继续，且 finding 记入 checkpoint.guards.postExecuteFindings（持久化可查）", async () => {
+    const { orchestrator, store } = fixture({
+      decisions: [callDecision("data.read"), finish],
+      guards: { postExecute: async () => { throw new Error("verdict 回灌存储不可用"); } },
+    });
+    const result = await orchestrator.start({
+      projectId: "project-1",
+      principal: "operator",
+      objective: "回灌失败落 finding",
+      allowedToolIds: [READ_TOOL.id],
+    });
+    expect(result.status).toBe("completed");
+    const findings = result.guards?.postExecuteFindings ?? [];
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ step: 1, toolId: "data.read", code: "post-execute-failed", retryable: true });
+    expect(findings[0]?.message).toContain("verdict 回灌存储不可用");
+    const persisted = await store.get(result.id);
+    expect(persisted?.guards?.postExecuteFindings).toHaveLength(1);
+  });
+
+  // H-C6-S2：终态通知——归档/提炼流水线的受控挂载点。
+  it("onRunSettled：终态恰触发一次并携带终态 checkpoint；awaiting-approval 暂停不触发", async () => {
+    const settled: string[] = [];
+    const { orchestrator } = fixture({
+      decisions: [callDecision("data.read"), finish],
+      guards: { postExecute: async () => undefined },
+      onRunSettled: async (checkpoint) => { settled.push(checkpoint.status); },
+    });
+    const done = await orchestrator.start({
+      projectId: "project-1",
+      principal: "operator",
+      objective: "终态通知",
+      allowedToolIds: [READ_TOOL.id],
+    });
+    expect(done.status).toBe("completed");
+    expect(settled).toEqual(["completed"]);
+
+    // awaiting-approval：需要审批的工具暂停不是终态，不触发通知。
+    const APPROVAL_TOOL: AgentToolDefinition = { ...READ_TOOL, id: "data.write", requiresApproval: true };
+    let asked = 0;
+    const gated = new IndustrialAgentOrchestrator({
+      checkpoints: new MemoryAgentCheckpointStore(),
+      onRunSettled: async (checkpoint) => { settled.push(checkpoint.status); },
+      decisions: { decide: async () => asked++ === 0 ? callDecision("data.write") : finish },
+      tools: {
+        list: () => [{ ...APPROVAL_TOOL }, { ...READ_TOOL }],
+        fingerprint: (call) => `fp:${call.toolId}:${JSON.stringify(call.arguments)}`,
+        execute: async () => ({ status: "completed", evidence: [], verificationEvidence: [] }),
+      },
+    });
+    const paused = await gated.start({
+      projectId: "project-1",
+      principal: "operator",
+      objective: "审批暂停不通知",
+      allowedToolIds: [APPROVAL_TOOL.id, READ_TOOL.id],
+    });
+    expect(paused.status).toBe("awaiting-approval");
+    expect(settled).toEqual(["completed"]);
+    const resumed = await gated.resume(paused.id, { approval: { approvedBy: "chief", approvedAt: new Date().toISOString(), scopeFingerprint: paused.pendingTool!.fingerprint } });
+    expect(resumed.status).toBe("completed");
+    expect(settled).toEqual(["completed", "completed"]);
+  });
+
+  it("onRunSettled 抛错：run 终态不变，finding 记入 checkpoint（兜底不吞）", async () => {
+    const { orchestrator } = fixture({
+      decisions: [callDecision("data.read"), finish],
+      onRunSettled: async () => { throw new Error("归档存储不可用"); },
+    });
+    const result = await orchestrator.start({
+      projectId: "project-1",
+      principal: "operator",
+      objective: "收口失败兜底",
+      allowedToolIds: [READ_TOOL.id],
+    });
+    expect(result.status).toBe("completed");
+    expect(result.guards?.postExecuteFindings?.[0]).toMatchObject({ code: "run-settle-failed", retryable: true });
+    expect(result.guards?.postExecuteFindings?.[0]?.message).toContain("归档存储不可用");
+  });
+
+  it("post-execute finding 容量滚动：超过上限逐出最旧（长跑不撑爆 checkpoint）", async () => {
+    const decisions = Array.from({ length: 12 }, (_, index) => callDecision("data.read", { n: index }));
+    decisions.push(finish);
+    const { orchestrator } = fixture({
+      decisions,
+      guards: { postExecute: async () => { throw new Error("always"); } },
+    });
+    const result = await orchestrator.start({
+      projectId: "project-1",
+      principal: "operator",
+      objective: "滚动容量",
+      allowedToolIds: [READ_TOOL.id],
+      budget: { maxSteps: 16, maxToolCalls: 14, maxDurationMs: 60_000 },
+    });
+    expect(result.status).toBe("completed");
+    expect(result.guards?.postExecuteFindings).toHaveLength(MAX_GUARD_FINDINGS);
+    // 逐出的是最旧：第 12 次调用的 finding 在档，第 1 次的已被逐出。
+    expect(result.guards?.postExecuteFindings?.at(-1)?.step).toBe(12);
+    expect(result.guards?.postExecuteFindings?.[0]?.step).toBe(3);
   });
 
   it("未配置 guards 时行为与 H-C1 完全一致（零增量面）", async () => {

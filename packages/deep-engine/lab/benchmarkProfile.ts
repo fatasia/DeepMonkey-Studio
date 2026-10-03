@@ -46,7 +46,7 @@ export function createBenchmarkFidelitySnapshot(engine: "deep-webgpu" | "three-w
       : disabledEffects(),
     "tone-mapping": baseline || engine === "three-webgpu"
       ? { operator: "three-aces-r185", exposure: 1, outputTransfer: "srgb" }
-      : engine === "deep-webgpu" ? { operator: "deep-aces", exposure: 1, outputTransfer: "srgb" }
+      : engine === "deep-webgpu" ? { operator: "three-aces-r185", exposure: 1, outputTransfer: "srgb" }
       : { operator: "babylon-image-processing-aces", exposure: 1, outputTransfer: "srgb" },
   };
   return Object.freeze({ profile, categories: Object.freeze(categories) });

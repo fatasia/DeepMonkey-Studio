@@ -1,15 +1,9 @@
 /**
- * I-C16 / T10 路径追踪参考核——**最小接口声明（本刀不实现核本体）**。
+ * I-C16 / T10 路径追踪参考核接口。
  *
- * == 裁定（诚实边界） ==
- * 仓内现状核查（2026-10-01）确认没有现成软件路径追踪核：
- * - `rayTrace.ts` 是 BVH 命中参考（closest-hit/occlusion，无弹射）；
- * - `probeReferenceIntegrator.ts` 是探针场一跳直射参考（无相机光线/BSDF 采样）；
- * - `apps/web/src/optimizer/lightmapBaker.ts` 显式声明避免离线 PT。
- * 按任务纪律"不重写核、不冒充已有能力"：本模块只冻结对拍期望生成器的接口形状，
- * 完整核（相机射线生成、Lambert/GGX BSDF 采样、Russian roulette、逐像素累积归并）
- * 由后续切片新建。实现义务：确定性（同 seed/序号逐位同输出，I-C17 显式 seed 模式）、
- * 纯 CPU、fail-closed 入参校验。
+ * `createPathTraceCpuKernel` 提供单 BLAS、Lambert/GGX 导体、多跳 CPU 实现；
+ * `PathTraceCpuRender` 持有真实像素累积并消费产品会话与 HDR 编码。
+ * TLAS 动态实例、生产材质全族、GPU 和产品 UI 不在该 CPU 子集。
  */
 
 /** 参考核输入场景的组件清单——全部已存在，核实现必须复用而非重建：
@@ -21,7 +15,7 @@ export interface PathTraceReferenceKernel {
   /**
    * 单像素单样本路径积分。约定：
    * - `x`/`y` 像素坐标（整数，左上原点）；越界抛 RangeError；
-   * - `sampleOrdinal` 批内样本序号（≥0）；`seed` 完整 u32（I-C17 显式 seed 模式）；
+   * - `sampleOrdinal` 绝对样本序号（≥0，不因分批重置）；`seed` 完整 u32；
    * - 返回线性 RGB（非负有限），供 `PathTraceProductSession.advanceBatch` 的
    *   标量亮度聚合（通道均值）与 GPU 刀的实机对拍共用；
    * - 同 (x, y, sampleOrdinal, seed) 必须逐位同输出——这是对拍与收敛统计的前提。
@@ -30,7 +24,7 @@ export interface PathTraceReferenceKernel {
     readonly [number, number, number];
 }
 
-/** 核工厂签名（后续切片实现）；本刀不提供实现，避免半成品核污染对拍基线。 */
+/** 注入场景/相机后供消费者使用的核工厂签名。 */
 export type PathTraceReferenceKernelFactory = (options: {
   readonly width: number;
   readonly height: number;

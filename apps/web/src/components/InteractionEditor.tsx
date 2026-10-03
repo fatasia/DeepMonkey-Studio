@@ -13,7 +13,7 @@ import {
   triggerLabel,
   WIDGET_INTERACTION_ACTIONS,
 } from "../interactionState";
-import { isRestrictedInteractionScript } from "../scripting/restrictedInteractionDocument";
+import { isRestrictedInteractionScript, RESTRICTED_ACTIONS_MIX_MESSAGE } from "../scripting/restrictedInteractionDocument";
 import { guardRestrictedCodeWrite, newRestrictedGraphCode } from "./behaviorGraphDraft";
 import { ProfessionalCodeEditor } from "./ProfessionalCodeEditor";
 import { BehaviorGraphView } from "./BehaviorGraphView";
@@ -81,6 +81,9 @@ export function InteractionEditor({
    * G2-S2a 保存门禁(修复 G2-S1 已知洞):一切 code 写路径,凡结果落在受限图域,
    * 必须先过 parseRestrictedInteractionScript(经 guardRestrictedCodeWrite);失败则
    * 停在编辑器内并内联呈现权威错误——非法文档 0 条落库。可信 JS 通道一字不动。
+   * G2 源码写回收口(2026-10-02):受限脚本的 actions 写入同样受门禁——解析器规则
+   * "受限行为图不可混用可信脚本预定义动作"在此强制(此前仅拦 code,动作区可绕过);
+   * 清空动作(修复历史混用脏数据)放行,新增/保留非空动作一律拦截。
    */
   function updateSelected(patch: Partial<SceneInteractionScriptState>) {
     if (!selected || disabled) return;
@@ -90,6 +93,10 @@ export function InteractionEditor({
         setCodeGateError(blocked);
         return;
       }
+    }
+    if (patch.actions !== undefined && isRestrictedInteractionScript(selected) && patch.actions.length > 0) {
+      setCodeGateError(RESTRICTED_ACTIONS_MIX_MESSAGE);
+      return;
     }
     setCodeGateError(undefined);
     onChange(interactions.map((script) => (script.id === selected.id ? { ...script, ...patch } : script)));
@@ -106,11 +113,19 @@ export function InteractionEditor({
     if (disabled) return;
     const freeTrigger = INTERACTION_TRIGGERS.find((trigger) => !targetScripts.some((script) => script.trigger === trigger));
     if (!freeTrigger) return;
+    // 写回门禁(纵深防御):生成器产物也必须过 guardRestrictedCodeWrite,生成器
+    // 漂移(序列化不再合法)时原地拦截,非法文档 0 条落库(与其他 code 写通道同一纪律)。
+    const code = newRestrictedGraphCode();
+    const blocked = guardRestrictedCodeWrite(code);
+    if (blocked) {
+      setCodeGateError(blocked);
+      return;
+    }
     const script: SceneInteractionScriptState = {
       ...createInteractionScript(target, freeTrigger),
       name: tr(locale, "行为图", "Behavior graph"),
       actions: [],
-      code: newRestrictedGraphCode(),
+      code,
     };
     onChange([...interactions, script]);
     setSelectedTrigger(freeTrigger);
@@ -187,6 +202,9 @@ export function InteractionEditor({
               />
               <span>{triggerLabel(selected.trigger, locale)}</span>
             </header>
+            {/* 受限行为图不渲染可信预定义动作区:受限域动作在图内白名单管理,混用会被
+                解析器与 updateSelected 门禁双双拦截(UI 防呆与数据门禁同一规则)。 */}
+            {!isRestrictedInteractionScript(selected) && (
             <section className="interaction-actions">
               <div className="interaction-action-add">
                 <select value={newActionType} onChange={(event) => setNewActionType(event.target.value as SceneInteractionActionType)}>
@@ -216,6 +234,7 @@ export function InteractionEditor({
                 />
               ))}
             </section>
+            )}
             <details className="interaction-advanced">
               <summary>
                 {isRestrictedInteractionScript(selected)
@@ -262,7 +281,7 @@ export function InteractionEditor({
               </small>
             </details>
             <footer>
-              <span>{tr(locale, `已配置 ${(selected.actions ?? []).length} 个内置动作`, `${(selected.actions ?? []).length} built-in actions`)}</span>
+              <span>{isRestrictedInteractionScript(selected) ? tr(locale, "动作由受限行为图管理", "Actions are managed inside the restricted graph") : tr(locale, `已配置 ${(selected.actions ?? []).length} 个内置动作`, `${(selected.actions ?? []).length} built-in actions`)}</span>
               <div>
                 <button
                   title={isRestrictedInteractionScript(selected)

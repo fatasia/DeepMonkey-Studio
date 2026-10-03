@@ -55,7 +55,8 @@ struct DirectDisplayVertex {
 }
 fn shadeDirectNoEffects(fragmentCoordinate: vec2f, world: vec3f, normalInput: vec3f, ground: bool,
   baseInput: vec3f, metalInput: f32, roughInput: f32, emissive: vec3f, authorShadow: vec4f, flags: f32, dielectric: f32) -> vec3f {
-  let n = safeNormalize(normalInput, vec3f(0.0, 1.0, 0.0));
+  // orientedNormal already normalizes and provides fallback.
+  let n = normalInput;
   let view = safeNormalize(frame.eye.xyz - world, vec3f(0.0, 0.0, 1.0));
   let l = safeNormalize(frame.lightDirection.xyz, vec3f(0.0, 1.0, 0.0));
   let metal = select(metalInput, 0.0, ground);
@@ -99,7 +100,7 @@ fn deepSingleCascadeShadow(world: vec3f, normal: vec3f, nDotL: f32) -> f32 {
 @fragment fn fragmentMainDisplayNoEffectsOneCascade(v: DirectDisplayVertex,
   @builtin(front_facing) frontFacing: bool) -> @location(0) vec4f {
   let ground = flag(v.material.w, 8u);
-  let n = safeNormalize(orientedNormal(v.normal, v.material, frontFacing), vec3f(0.0, 1.0, 0.0));
+  let n = orientedNormal(v.normal, v.material, frontFacing);
   var color = shadeDirectOneCascade(v.world, n, ground, v.colorMetal, v.material.x, v.emissiveAlpha.rgb, v.authorShadow, v.clip.xy, v.material.w, v.dielectric);
   let metal = select(v.colorMetal.w, 0.0, ground);
   let rough = min(1.0, select(clamp(v.material.x, 0.06, 1.0), 0.9, ground) + deepViewGeometryRoughness(n));
@@ -129,7 +130,7 @@ fn shadeDirectOneCascade(world: vec3f, n: vec3f, ground: bool, colorMetal: vec4f
 @fragment fn fragmentMainDisplayDirectional(v: DirectDisplayVertex,
   @builtin(front_facing) frontFacing: bool) -> @location(0) vec4f {
   let ground = flag(v.material.w, 8u);
-  let n = safeNormalize(orientedNormal(v.normal, v.material, frontFacing), vec3f(0.0, 1.0, 0.0));
+  let n = orientedNormal(v.normal, v.material, frontFacing);
   let color = shadeDirectOneCascade(v.world, n, ground, v.colorMetal, v.material.x, v.emissiveAlpha.rgb, v.authorShadow, v.clip.xy, v.material.w, v.dielectric);
   return vec4f(deepDisplayColor(color, frame.output), coverage(v.emissiveAlpha.w, v.material));
 }

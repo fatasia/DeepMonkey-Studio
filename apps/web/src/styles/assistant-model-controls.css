@@ -5,3 +5,8 @@
 .assistant-model-controls select:disabled { opacity: .55; cursor: not-allowed; }
 .assistant-model-controls > small { flex-basis: 100%; color: var(--text-muted); font-size: 10px; }
 .assistant-model-controls > button { border: 0; padding: 0; background: transparent; color: var(--accent); cursor: pointer; font: inherit; }
+.assistant-model-controls.is-compact { flex-wrap: nowrap; align-items: center; gap: 4px; padding: 0; min-width: 0; }
+.assistant-model-controls.is-compact select { width: auto; max-width: 150px; height: 26px; padding: 0 6px; color: var(--text-muted); border-color: transparent; background: transparent; font-size: 11px; text-overflow: ellipsis; cursor: pointer; }
+.assistant-model-controls.is-compact select:hover:not(:disabled) { color: var(--text-strong); border-color: var(--line); background: var(--surface-2); }
+.assistant-model-controls.is-compact select option { color: var(--text); background: var(--surface-2); }
+.assistant-model-controls.is-compact > button { font-size: 11px; white-space: nowrap; }

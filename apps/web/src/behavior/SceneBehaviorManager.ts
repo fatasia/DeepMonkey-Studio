@@ -112,6 +112,20 @@ export class SceneBehaviorManager {
     for (const { host } of this.hosts.values()) host.advance(deltaMs);
   }
 
+  /**
+   * H-C6-S1 UI 接线:按挂载键(entryId=原脚本 id)热插行为模块,直通 Host.updateModule。
+   * 挂载键与存档模块保持不变——面板 runtime 查找、日志 moduleId 映射与 reconcile
+   * 存活比较全部稳定;新模块初始化失败由 Host 自动回滚,非法热插(非运行态/同 id/
+   * authorDebug)同步抛出由调用方呈现。命令授权仍按文档原模块权限(fail-closed,
+   * 热插变体不可提权)。
+   */
+  hotSwap(entryId: string, module: SceneBehaviorModule): void {
+    if (this.disposed) throw new Error("行为管理器已销毁");
+    const entry = this.hosts.get(entryId);
+    if (!entry) throw new Error(`行为脚本未在运行：${entryId}`);
+    entry.host.updateModule(module);
+  }
+
   dispatchEvent(event: SceneEvent, componentId?: string): void {
     for (const { module, host, sceneId } of this.hosts.values()) {
       if (componentId && module.target && module.target.kind !== "scene" && (module.target.kind !== "component" || module.target.id !== componentId)) continue;

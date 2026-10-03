@@ -12,6 +12,7 @@ export const REQUIRED_LAYER_GATES = Object.freeze({
   normal: "normal-quantized-angle", "shadow-visibility": "shadow-half-interval",
   "hdr-color": "hdr-flat-strict", "post-bloom": "post-half-store",
   "post-fog": "post-half-store", display: "display-byte",
+  "texture-coverage": "texture-hdr-coverage",
 });
 
 /**
@@ -31,15 +32,15 @@ export const LEGAL_DIFFERENCE_MATRIX_V1 = Object.freeze([
     rule: "深度比较只在双方全覆盖内部稳定像素; 边界 1px 内差异合法",
     evidence: ["docs/specs/j3-gate-d-geometry-depth-20260930.md"], status: "confirmed" }),
   Object.freeze({ id: "LD-03", layer: ["hdr-color"],
-    difference: "Web shade 对平滑法线附加 deepGeometryRoughness(normal) 的 dpdx/dpdy 导数粗糙度项; Native 无该项",
-    host: { web: "导数粗糙度项 + 粗糙度下限 0.06", native: "无导数项 + 粗糙度下限 0.045" },
-    rule: "平法线三角形 mask 内严格 0.002 门; smooth cube 域仅诊断,不设等值门,不得按实测拟合容差",
-    evidence: ["docs/specs/j3-gate-d-hdr-normal-current-state-20260930.md"], status: "confirmed" }),
+    difference: "Raster 双端均消费视图域导数粗糙度; 材质粗糙度下限仍不同",
+    host: { web: "deepViewGeometryRoughness + 粗糙度下限 0.06", native: "native_view_geometry_roughness + 粗糙度下限 0.045; RT 无片元导数" },
+    rule: "共同 raster 平法线稳定域仍走严格 0.002 门; 下限差与 RT 导数缺失单独诊断,不得按实测拟合容差",
+    evidence: ["docs/specs/j3-gate-d-hdr-normal-current-state-20260930.md", "docs/specs/c8-native-geometry-roughness-20260930.md"], status: "confirmed" }),
   Object.freeze({ id: "LD-04", layer: ["hdr-color", "display"],
-    difference: "DFG 来源: Web 消费 three@0.185 DFG LUT(16x16 RG16F 双线性), Native 为解析/常量 DFG",
-    host: { web: "directDfgLut185.ts(three@0.185 DFGLUTData)", native: "native_mesh_v1.wgsl 解析 DFG" },
-    rule: "多散射能量补偿会放大 DFG 差异(粗糙金属); 差异记诊断,共同档 flat-normal 严格门只在无 IBL/常量 DFG 路径认证",
-    evidence: ["packages/deep-engine/src/webgpu/directDfgLut185.ts", "docs/specs/c8-native-dfg-correlated-20260930.md"],
+    difference: "直射已双端同源 r185 DFG; IBL 积分纹理预算仍为合法宿主差异",
+    host: { web: "直射 deepDirectDfg185; IBL 默认128²积分纹理", native: "直射同一 wgsl/directDfgLut185.wgsl; IBL 内置32²×128样本" },
+    rule: "直射 DFG 源差已消除,不得作为直射残差豁免; IBL 不同纹理预算仍单独诊断,共同严格门关 IBL",
+    evidence: ["packages/deep-engine/src/webgpu/directDfgLut185.ts", "packages/deep-engine/wgsl/directDfgLut185.wgsl", "docs/specs/c8-native-dfg-correlated-20260930.md"],
     status: "diagnostic" }),
   Object.freeze({ id: "LD-05", layer: ["post-bloom"],
     difference: "Bloom 合法算法/默认档不同: Web box5级/整数5tap/0.5重建 vs Native 半分辨率±0.25采样/分数5tap/radius1",
@@ -97,8 +98,21 @@ export const LEGAL_DIFFERENCE_MATRIX_V1 = Object.freeze([
   Object.freeze({ id: "LD-15", layer: ["hdr-color"],
     difference: "直射高光峰双实现(GLSL/WGSL) f32 路径差 × RGBA16F 量化: 亮度≥4 区 1 half-ulp(.0039@4) 已超 .002 绝对门",
     host: { web: "Three 原生 BRDF_GGX_Multiscatter 直射路径", native: "FrameObservation 分支" },
-    rule: "仅当 max 差像素呈 half-ulp 阶梯形态(差=±k·ulp(亮度), 邻域符号混合)且数值路径已同源(DFG 表/公式/visibility)时适用; 系统性同号差不得援引本条",
-    evidence: ["docs/specs/c8-s9-local-direct-multiscattering-20260930.md", "docs/specs/j3-d-full-cpu-prep-20261001.md"], status: "diagnostic" }),
+    rule: "仅当 max 差像素呈 half-ulp 阶梯形态(差=±k·ulp(亮度))且数值路径已同源(DFG 表/公式/visibility)时适用; 符号判据按 2026-10-02 修订执行: 全域符号混合, D 尖峰邻域因增益符号一致可解释局部单符号(原『局部 3×3 邻域符号混合』必要条件经最坏局部实测证伪, 废止); 跨域引用以 LD-16 为准; 系统性同号差不得援引本条",
+    evidence: ["docs/specs/c8-s9-local-direct-multiscattering-20260930.md", "docs/specs/j3-d-full-cpu-prep-20261001.md", "docs/specs/c8-ld16-ld17-adjudication-20261002.md"], status: "diagnostic" }),
+  Object.freeze({ id: "LD-16", layer: ["hdr-color"],
+    difference: "直射 GGX 主瓣区双后端 fp32 算术调度差(点积 ≤4-6 ULP) × D 尖峰(denom≈1.6-2.0e-3, dSpec/dnh≈2.9e5-5.8e5) × D3D RTZ 存储: 亮度 4.1-6.6 区 1-2 half-ulp(0.0039-0.0078) 超 .002 门",
+    host: { web: "Three r185 via WebGL/ANGLE(D3D11)", native: "生产 PBR plain via WebGPU/Dawn(D3D12)" },
+    rule: "同时满足: (1)数值源同源——等输入 CPU 全式对照差 ≤1e-7 相对; (2)阶梯形态——存储差=±k·ulp(亮度) 且两侧 prestore F32 距 RTZ 格点 <1 step(F32 差 ≤1.5 ULP); (3)输入差 ≤6 fp32 ULP 且其×该像素 D 灵敏度覆盖观测输出差; (4)全域符号混合——局部单符号以 D 尖峰邻域增益解释; 系统性 >1.5 ULP F32 同号差不得援引(远斜归 LD-17); 仅作归因, 不构成 .002 门豁免",
+    evidence: ["docs/specs/c8-ld16-ld17-adjudication-20261002.md", "docs/specs/c8-eight-channel-convergence-20261002.md",
+      "test-output/c8-eight-channel-convergence-20261002/progress-02-attribution.json", "test-output/c8-eight-channel-convergence-20261002/consumed-mrt.json",
+      "test-output/c8-input-chain-20261001/conclusion.json"], status: "diagnostic" }),
+  Object.freeze({ id: "LD-17", layer: ["hdr-color"],
+    difference: "后端 ddx helper-lane 关联差 × geometryRoughness(远斜实测 deep 0.088566518 vs three ≈0.0808-0.0823) → 粗糙金属区持续同号存储差 ≤10 half-ulp@0.26",
+    host: { web: "Three r185 lights_physical_fragment geometryRoughness(非扰动法线 dFdx/dFdy)", native: "生产 deepViewGeometryRoughness(视图域法线 dpdx/dpdy)" },
+    rule: "同时满足: (1)该像素 roughness 双侧实测差 ≥2/256 且等输入对照差 ≤1e-7 相对; (2)双侧 ddx/dy 分别匹配 CPU 平面外推的相邻行/列(误差 <2.2e-4); (3)差为粗糙金属主瓣连贯区形态, 非孤立翻转; (4)跨通道比值消去解得的 roughness 与独立 ddx 实测一致; shader 语义层不可修(候选 A GPU 实测 6225 改善/6125 恶化零净修复, 候选 B no-op); 仅作归因, 不构成 .002 门豁免; 若后端行为变化(驱动/Chrome 升级)须重新验证",
+    evidence: ["docs/specs/c8-ld16-ld17-adjudication-20261002.md", "docs/specs/c8-eight-channel-convergence-20261002.md", "docs/specs/c8-full-chain-closure-audit-20261001.md",
+      "test-output/c8-eight-channel-convergence-20261002/progress-04-fresh-closure.json", "test-output/c8-eight-channel-convergence-20261002/gpu-far-output/evidence.json"], status: "diagnostic" }),
 ]);
 
 /** 新发现差异登记格式(追加条目必须过此校验;拒绝无证据引用或撞号的条目)。 */
@@ -121,7 +135,7 @@ export function registerLegalDifference(matrix, entry) {
 }
 
 /** 校验单层 evidence 合同。expectedIdentity 为 runner 现算的源身份(可选);freshRequired 时拒绝历史档。 */
-export function validateLayerEvidence(layer, evidence, { expectedIdentity, freshRequired = false, evidenceMode = "live" } = {}) {
+export function validateLayerEvidence(layer, evidence, { expectedIdentity, expectedSources, freshRequired = false, evidenceMode = "live" } = {}) {
   if (!evidence) throw Error(`Layer ${layer.id} evidence missing`);
   if (typeof evidence.scope !== "string" || !layer.scopePrefixes.some(prefix => evidence.scope.startsWith(prefix)))
     throw Error(`wrong-layer evidence: scope "${evidence.scope}" does not match layer ${layer.id} contracts ${JSON.stringify(layer.scopePrefixes)}`);
@@ -132,11 +146,27 @@ export function validateLayerEvidence(layer, evidence, { expectedIdentity, fresh
     throw Error(`wrong-gate evidence: ${layer.id} evidence declares gate "${evidence.gateId}", contract requires "${requiredGate}"`);
   if (evidence.passed !== true) throw Error(`Layer ${layer.id} evidence reports failure`);
   if (evidence.stable === false) throw Error(`Layer ${layer.id} evidence reports instability`);
+  if (layer.id === "normal" && (evidence.normals?.passed !== true || evidence.normals.stable !== true))
+    throw Error("Layer normal requires passed, stable normals attachment evidence");
   if (freshRequired && evidence.currentRun !== true)
     throw Error(`Layer ${layer.id} historical receipt presented as fresh (currentRun=${evidence.currentRun})`);
   if (!freshRequired && evidenceMode === "live" && evidence.currentRun === true
     && evidence.execution === "historical file comparison; no host executed")
     throw Error(`Layer ${layer.id} historical comparison must not claim currentRun=true`);
+  const sources = evidence.sourceIdentity?.sources ?? evidence.sourceIdentity;
+  if (freshRequired && (!sources || !expectedSources))
+    throw Error(`Layer ${layer.id} lacks verified production source identity`);
+  if (sources) {
+    const entries = Object.entries(sources);
+    if (!entries.length || !entries.some(([file]) => /^packages\/.+\/(src|wgsl)\//.test(file))
+      || entries.some(([file, value]) => !/^(?:(packages|apps|scripts)\/|package\.json$|pnpm-lock\.yaml$)/.test(file)
+        || file.split("/").includes("..") || typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value)))
+      throw Error(`Layer ${layer.id} invalid production source identity`);
+    if (expectedSources) for (const [file, recorded] of entries) {
+      if (expectedSources[file] !== recorded)
+        throw Error(`stale production evidence: ${layer.id} consumed source changed or missing: ${file}`);
+    }
+  }
   if (layer.freshnessKey) {
     const recorded = evidence[layer.freshnessKey];
     if (typeof recorded !== "string" || !/^[0-9a-f]{64}$/.test(recorded))
@@ -148,19 +178,25 @@ export function validateLayerEvidence(layer, evidence, { expectedIdentity, fresh
 }
 
 /** 聚合层矩阵 evidence:格网行 + 合法差异矩阵 + 执行语义。compare=true 时仅读历史,currentRun 恒 false。 */
-export async function aggregateLayerMatrix({ layers, loadEvidence, identityOf, cellsOf, compare }) {
+export async function aggregateLayerMatrix({ layers, loadEvidence, identityOf, sourcesOf, cellsOf, compare }) {
   const grid = [], notes = [];
   for (const layer of layers) {
     let evidence;
     try { evidence = await loadEvidence(layer); }
     catch { throw Error(`Layer ${layer.id} evidence missing`); }
     const expectedIdentity = layer.freshnessKey && identityOf ? identityOf(layer) : undefined;
-    validateLayerEvidence(layer, evidence, { expectedIdentity, freshRequired: !compare });
-    for (const cell of cellsOf(layer)) {
+    const expectedSources = sourcesOf ? await sourcesOf(layer, evidence) : undefined;
+    validateLayerEvidence(layer, evidence, { expectedIdentity, expectedSources, freshRequired: !compare });
+    const cells = cellsOf(layer);
+    if (!cells.length || cells.some(cell => typeof cell.cellId !== "string" || !cell.cellId.length
+      || !["web+native", "web-only", "native-only"].includes(cell.hostScope))
+      || new Set(cells.map(cell => cell.cellId)).size !== cells.length)
+      throw Error(`Layer ${layer.id} scene cells missing, invalid or duplicated`);
+    for (const cell of cells) {
       grid.push({ layerId: layer.id, cellId: cell.cellId, hostScope: cell.hostScope,
         gateId: layer.gateId, evidenceDir: layer.evidenceDir });
     }
-    if (!layer.freshnessKey) notes.push(`${layer.id}: receipt records no fixture identity; freshness rests on currentRun/execution semantics`);
+    if (!evidence.sourceIdentity) notes.push(`${layer.id}: no production source digest; historical receipt cannot certify fresh`);
   }
   return { schema: "j3-d-full-layer-matrix-v1", passed: true, stable: true, currentRun: !compare,
     grid, legalDifferenceMatrix: LEGAL_DIFFERENCE_MATRIX_V1,

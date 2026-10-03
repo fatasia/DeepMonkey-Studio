@@ -2,6 +2,7 @@ import type {
   DirectBindingSpec,
   DirectBindingTemplateValue,
   JsonValue,
+  PrimitiveKind,
   SceneMaterialState,
   SceneApiVersion,
   SceneCapability,
@@ -35,16 +36,24 @@ export type SceneMaterialCommandPatch = Pick<
   | "textureRotation"
   | "wireframe"
   | "doubleSided"
+  | "customShader"
 >;
 
 export type SceneCommand =
+  | { id: string; type: "object.delete-primitive"; target: Extract<SceneObjectRef, { kind: "object" }> }
+  | { id: string; type: "object.create-primitive"; target: Extract<SceneObjectRef, { kind: "object" }>; name: string; kind: PrimitiveKind; color: string }
+  | { id: string; type: "object.set-parent"; target: Extract<SceneObjectRef, { kind: "object" }>; parentId: string | null; keepWorldTransform?: boolean }
   | { id: string; type: "object.set-visibility"; target: SceneObjectRef; visible: boolean }
   | { id: string; type: "object.set-transform"; target: SceneObjectRef; position?: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] }
   | { id: string; type: "material.set"; target: SceneObjectRef; patch: SceneMaterialCommandPatch }
   | { id: string; type: "selection.set"; targets: SceneObjectRef[] }
   | { id: string; type: "camera.set"; sceneId: string; position: [number, number, number]; target: [number, number, number]; near?: number; far?: number; fov?: number }
   | { id: string; type: "camera.fly-to"; sceneId: string; target: SceneObjectRef | { position: [number, number, number] }; durationMs: number }
+  | { id: string; type: "lighting.set"; sceneId: string; patch: { enabled?: boolean; intensity?: number; shadowsEnabled?: boolean; globalIlluminationEnabled?: boolean; globalIlluminationIntensity?: number } }
+  | { id: string; type: "environment.set"; sceneId: string; patch: { backgroundColor?: string; weather?: "sunny" | "cloudy" | "rain" | "snow" | "fog" | "storm"; environmentIntensity?: number } }
   | { id: string; type: "animation.control"; target: SceneObjectRef; action: "play" | "pause" | "stop" | "seek"; clipId?: string; time?: number }
+  /** H-C7-P3:状态机锚迁移(scene 级)——删除流 fail-closed 拒绝被锚引用对象时的宿主迁移编程口;anchor 至少一项。 */
+  | { id: string; type: "animation.set-anchor"; sceneId: string; anchor: { initialStateId?: string; activeStateId?: string } }
   | { id: string; type: "data.apply"; target: SceneObjectRef; values: Record<string, JsonValue>; timestamp: string }
   | { id: string; type: "component.update"; componentId: string; patch: Record<string, JsonValue> }
   | { id: string; type: "unity.properties.set"; componentId: string; values: Record<string, JsonValue> }

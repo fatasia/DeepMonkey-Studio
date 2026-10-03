@@ -5,6 +5,10 @@ mod types;
 mod uv_sets;
 mod validate;
 mod validate_geometry;
+mod validate_layered_params;
+mod validate_metal_reflection;
+#[cfg(test)]
+mod validate_metal_reflection_tests;
 mod validate_texture;
 
 #[cfg(test)]
@@ -15,15 +19,18 @@ mod color_stream_tests;
 #[path = "contract_transparency_tests.rs"]
 mod transparency_tests;
 
+#[cfg(test)]
+mod validate_layered_params_tests;
+
 use std::{fs::File, io::Read, path::Path};
 
 pub use lod::DEFAULT_LOD_HYSTERESIS_RATIO;
 pub use types::{
     AlphaMode, GeometryResource, LayerAnisotropyParams, LayerBlendMode, LayerClearcoatParams,
-    LayerMaterialParams, LayerSurface, LayeredMaterial, MaterialLayer, NormalTextureSlot,
-    OcclusionTextureSlot, PbrMaterial, PixelLevel, RenderInstance, RenderLodLevel,
-    RenderLodProfile, RenderPacket, ShadingModel, TextureResource, TextureSampler, TextureSemantic,
-    TextureSlot, LayerTransmissionParams,
+    LayerMaterialParams, LayerResponseModel, LayerSurface, LayerTransmissionParams, LayeredMaterial, MaterialLayer,
+    NormalTextureSlot, OcclusionTextureSlot, PbrMaterial, PixelLevel, RenderInstance,
+    RenderLodLevel, RenderLodProfile, RenderPacket, ShadingModel, TextureResource, TextureSampler,
+    TextureSemantic, TextureSlot,
 };
 pub use validate::{ContractSummary, validate_packet};
 

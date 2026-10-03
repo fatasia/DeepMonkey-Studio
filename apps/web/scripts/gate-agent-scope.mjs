@@ -99,7 +99,7 @@ try {
       assert.equal(await workspace.locator(".industrial-agent-run").count(), 0);
       assert.equal(await workspace.getByText(tool(second).label, { exact: true }).count(), 0);
       await page.screenshot({ path: `${output}${theme}-${width}.png` });
-      entry.contrast = await workspace.evaluate(collectTextContrast, ".industrial-agent-heading strong, .industrial-agent-heading small, .industrial-agent-start > label > span, .industrial-agent-capabilities summary strong, .industrial-agent-examples button, button.primary");
+      entry.contrast = await workspace.evaluate(collectTextContrast, ".industrial-agent-heading strong, .industrial-agent-heading small, .industrial-agent-objective textarea, .industrial-agent-capabilities summary strong, .industrial-agent-examples button, button.primary");
       assert.ok(entry.contrast.length >= 5 && entry.contrast.every(item => item.contrast >= 4.5 && item.fontSize >= 11), JSON.stringify(entry.contrast));
       assert.notEqual(await workspace.locator("button.primary").evaluate(node => getComputedStyle(node).backgroundColor), "rgba(0, 0, 0, 0)");
       assert.deepEqual(entry.errors, []);

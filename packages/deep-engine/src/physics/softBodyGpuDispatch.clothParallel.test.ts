@@ -1,131 +1,20 @@
 // F6 接线清单①:布料并行核生产换核的编排与合同测试(无适配器环境,fake device)。
 // 证据口径:验证接线语义(dispatch 编排序/缓冲 ABI/回退原因/遥测/host 侧双跑逐位),
 // 不是 GPU 数值证据——数值由 A3 锁死(240 tick 指纹 fixture + 真机探针 9.0e-3 m 容差)。串行核零改动。
-import { readFileSync } from "node:fs";
+//
+// sourceSizeGate 拆分(2026-10-03):夹具(枚举 shim/fake device/网格与星形输入/期望命令流/
+// parity fixture)移至 softBodyGpuDispatch.clothParallel.testUtils.ts,代码逐行同源;
+// describe/it 名零变化,语义零变化——外部证据按测试名引用不受影响。
 import { beforeEach, describe, expect, it } from "vitest";
 import { colorClothConstraints } from "./clothConstraintColoring.js";
 import { packClothGpuConstraints, packClothGpuParams, packClothGpuParticles } from "./clothGpuWgsl.js";
 import { ClothParallelMirror, buildClothParallelState } from "./clothParallelSolver.js";
-import { CLOTH_PARALLEL_ENTRY_INTEGRATE, CLOTH_PARALLEL_PARAMS_BYTES, CLOTH_PARALLEL_SOLVER_WORKGROUP_SIZE,
-  DEEP_CLOTH_PARALLEL_SOLVER_WGSL } from "./clothSolverWgsl.js";
+import { CLOTH_PARALLEL_PARAMS_BYTES, CLOTH_PARALLEL_SOLVER_WORKGROUP_SIZE } from "./clothSolverWgsl.js";
 import { dispatchClothGpuStep } from "./softBodyGpuDispatch.js";
 import { ClothParallelDispatchError, clothParallelDispatchCount, dispatchClothParallelGpuStep,
-  dispatchClothStepAuto, resetClothKernelSwitchTelemetry,
+  dispatchClothStepAuto, packClothGpuObstacles, resetClothKernelSwitchTelemetry,
   snapshotClothKernelSwitchTelemetry } from "./softBodyGpuDispatch.clothParallel.js";
-
-// Node 测试环境无 WebGPU 全局:垫最小枚举 shim(数值与规范一致,fake 只做位判断)。
-const GPU_ENUMS = {
-  GPUBufferUsage: { MAP_READ: 1, MAP_WRITE: 2, COPY_SRC: 4, COPY_DST: 8, INDEX: 16, VERTEX: 32, UNIFORM: 64, STORAGE: 128, INDIRECT: 256, QUERY_RESOLVE: 512 },
-  GPUMapMode: { READ: 1, WRITE: 2 },
-} as const;
-for (const [key, value] of Object.entries(GPU_ENUMS)) (globalThis as Record<string, unknown>)[key] ??= value;
-
-type FailMode = "none" | "shader" | "pipeline";
-// failMode 只打击并行核(真实回退场景 = 串行核可用、并行核特性缺失);串行核被打击时回退链整体失败,不入本测。
-
-interface FakeBuffer {
-  size: number; usage: GPUBufferUsageFlags; written: ArrayBuffer | null; mapState: string; destroyed: boolean;
-  mapAsync: () => Promise<void>; unmap: () => void; getMappedRange: () => ArrayBuffer; destroy: () => void;
-}
-
-function fakeDevice(failMode: FailMode = "none"): { device: GPUDevice; buffers: FakeBuffer[]; trace: string[] } {
-  const buffers: FakeBuffer[] = [];
-  const trace: string[] = [];
-  const device = {
-    createBuffer: (descriptor: { size: number; usage: GPUBufferUsageFlags }) => {
-      const buffer: FakeBuffer = {
-        size: descriptor.size, usage: descriptor.usage, written: null, mapState: "unmapped", destroyed: false,
-        mapAsync: async () => { buffer.mapState = "mapped"; }, unmap: () => { buffer.mapState = "unmapped"; },
-        getMappedRange: () => new ArrayBuffer(descriptor.size), destroy: () => { buffer.destroyed = true; },
-      };
-      buffers.push(buffer);
-      return buffer;
-    },
-    queue: {
-      writeBuffer: (buffer: FakeBuffer, offset: number, data: ArrayBuffer | ArrayBufferView<ArrayBuffer>) => {
-        expect(offset).toBe(0);
-        // 裸 ArrayBuffer(pack 层约束/参数)与 TypedArray 视图(粒子)两种入参都取字节拷贝。
-        buffer.written = data instanceof ArrayBuffer
-          ? data.slice(0) : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-      },
-      submit: () => { for (const b of buffers) if (b.usage & GPUBufferUsage.MAP_READ) b.mapState = "mapped"; },
-    },
-    createShaderModule: (descriptor: { code: string }) => {
-      if (failMode === "shader" && descriptor.code === DEEP_CLOTH_PARALLEL_SOLVER_WGSL) {
-        throw new Error("mock parallel shader module failure");
-      }
-      return { code: descriptor.code, getCompilationInfo: async () => ({ messages: [] }) };
-    },
-    createComputePipelineAsync: async (descriptor: { compute: { entryPoint: string } }) => {
-      if (failMode === "pipeline" && descriptor.compute.entryPoint === CLOTH_PARALLEL_ENTRY_INTEGRATE) {
-        throw new Error("mock parallel pipeline failure");
-      }
-      return { entryPoint: descriptor.compute.entryPoint, getBindGroupLayout: () => ({}) };
-    },
-    createBindGroup: (descriptor: { entries: unknown[] }) => ({ entryCount: descriptor.entries.length }),
-    createCommandEncoder: () => ({
-      beginComputePass: () => ({
-        setPipeline: (pipeline: { entryPoint: string }) => { trace.push(`set:${pipeline.entryPoint}`); },
-        setBindGroup: () => { trace.push("bind"); },
-        dispatchWorkgroups: (count: number) => { trace.push(`dispatch:${count}`); },
-        end: () => { trace.push("end"); },
-      }),
-      copyBufferToBuffer: () => { trace.push("copy"); },
-      finish: () => ({ trace: [...trace] }),
-    }),
-  } as unknown as GPUDevice;
-  return { device, buffers, trace };
-}
-
-/** 网格输入(构建序:右/下/两对角,与黄金/A3 拓扑同源)。 */
-function gridInput(columns: number, rows: number, substeps: number) {
-  const spacing = 0.1;
-  const particles = Array.from({ length: columns * rows }, (_, index) => ({
-    position: [(index % columns) * spacing, Math.floor(index / columns) * spacing, 0] as const,
-    velocity: [0, 0, 0] as const, inverseMass: index === 0 ? 0 : 1,
-  }));
-  const constraints: Array<{ a: number; b: number; restLength: number }> = [];
-  const diagonal = spacing * Math.SQRT2;
-  for (let row = 0; row < rows; row += 1) {
-    for (let col = 0; col < columns; col += 1) {
-      const index = row * columns + col;
-      if (col + 1 < columns) constraints.push({ a: index, b: index + 1, restLength: spacing });
-      if (row + 1 < rows) constraints.push({ a: index, b: index + columns, restLength: spacing });
-      if (col + 1 < columns && row + 1 < rows) {
-        constraints.push({ a: index, b: index + columns + 1, restLength: diagonal },
-          { a: index + 1, b: index + columns, restLength: diagonal });
-      }
-    }
-  }
-  return {
-    particles, constraints,
-    dtSeconds: 1 / 60, substeps, compliance: 0, damping: 0.01, gravity: [0, -9.81, 0] as const,
-  };
-}
-
-/** N 约束共端点的星形拓扑:N>32 时着色必超 u32 掩码上限(fail-closed 的实触发)。 */
-function starInput(leaves: number) {
-  return {
-    particles: Array.from({ length: leaves + 1 }, (_, i) => ({
-      position: [i * 0.1, 0, 0] as const, velocity: [0, 0, 0] as const, inverseMass: i === 0 ? 0 : 1 })),
-    constraints: Array.from({ length: leaves }, (_, i) => ({ a: 0, b: i + 1, restLength: 0.1 })),
-    dtSeconds: 1 / 60, substeps: 1, compliance: 0, damping: 0, gravity: [0, 0, 0] as const,
-  };
-}
-
-function expectedTrace(substeps: number, workgroups: number, colorWorkgroups: number[]): string[] {
-  const perSubstep = [
-    "set:integrateParticles", "bind", `dispatch:${workgroups}`,
-    "set:projectConstraintsColor",
-    ...colorWorkgroups.flatMap((count) => ["bind", `dispatch:${count}`]),
-    "set:finalizeVelocityKinetics", "bind", `dispatch:${workgroups}`,
-  ];
-  return [...Array.from({ length: substeps }, () => perSubstep).flat(), "end", "copy"];
-}
-
-const PARITY_FIXTURE = JSON.parse(readFileSync(new URL(
-  "../../../deep-engine-native/tests/fixtures/cloth-parallel-compute-v1.json", import.meta.url), "utf8",
-)) as { replay: { fingerprints: { per24: string[] } } };
+import { expectedTrace, fakeDevice, gridInput, PARITY_FIXTURE, starInput } from "./softBodyGpuDispatch.clothParallel.testUtils.js";
 
 beforeEach(() => resetClothKernelSwitchTelemetry());
 
@@ -140,8 +29,8 @@ describe("F6 并行核生产换核:编排与 ABI", () => {
     const workgroups = Math.ceil(input.particles.length / CLOTH_PARALLEL_SOLVER_WORKGROUP_SIZE);
     const colorWorkgroups = coloring.colorRanges.map(([s, e]) => Math.ceil((e - s) / CLOTH_PARALLEL_SOLVER_WORKGROUP_SIZE));
     expect(trace).toEqual(expectedTrace(2, workgroups, colorWorkgroups));
-    // 缓冲创建序:params 48 + 粒子 144×48 + 约束 506×16 + kinetic 3×4 + 8×range 16 + readback。
-    expect(buffers.map((b) => b.size)).toEqual([6912, 8096, 48, 12, ...Array.from({ length: 8 }, () => 16), 6912]);
+    // 缓冲创建序:params 96(风+障碍 ABI)+ 粒子 144×48 + 约束 506×16 + kinetic 3×4 + 8×range 16 + readback。
+    expect(buffers.map((b) => b.size)).toEqual([6912, 8096, 96, 12, ...Array.from({ length: 8 }, () => 16), 6912]);
     expect([result.dispatchCount, result.state.byteLength, buffers.every((b) => b.destroyed)])
       .toEqual([clothParallelDispatchCount(2, 8), 144 * 48, true]);
   });
@@ -218,6 +107,25 @@ describe("F6 并行核生产换核:确定性(host 侧)与量化", () => {
     ]);
     expect(first.trace).toEqual(second.trace);
     expect(first.buffers.map((b) => b.written)).toEqual(second.buffers.map((b) => b.written));
+  });
+
+  it("障碍 ABI:pack 按 WGSL Obstacle 布局落位——center.w=radius、halfExtents 在槽16..18、判别式槽19(sphere>0/cuboid=0)", () => {
+    // C8 定位批回归锁:旧实现把 halfExtents 写槽 13..15 且判别式恒 0,sphere 被当
+    // 零尺寸 cuboid → projectObstacles 静默无效应(真机逐子步定位 softbody-divergence)。
+    const sphere = { center: [0.55, 0.5, 0.05] as const, radius: 0.45,
+      rotation: [1, 0, 0, 0, 1, 0, 0, 0, 1] as const, halfExtents: [0, 0, 0] as const };
+    const cuboid = { center: [1, 2, 3] as const, radius: 0,
+      rotation: [0, 1, 0, 0, 0, 1, 1, 0, 0] as const, halfExtents: [0.2, 0.3, 0.4] as const };
+    const packed = new Float32Array(packClothGpuObstacles([sphere, cuboid]));
+    const expectRow = (index: number, row: number[]) =>
+      expect(Array.from(packed.subarray(index * 20, index * 20 + 20))).toEqual(row.map(Math.fround));
+    // sphere:槽 0..3=center+radius;槽 4..12=rotation 行主序;槽 16..18=halfExtents.xyz;槽 19=判别式>0。
+    expectRow(0, [0.55, 0.5, 0.05, 0.45, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0.45]);
+    // cuboid:radius=0 → 判别式槽 19=0(WGSL else 分支),halfExtents.xyz 在槽 16..18。
+    expectRow(1, [1, 2, 3, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0.2, 0.3, 0.4, 0]);
+    // 判别式恒式:sphere 槽 19 与 center.w(槽 3)同值(都是 radius)。
+    expect(packed[19]).toBe(packed[3]);
+    expect(packed[39]).toBe(0);
   });
 
   it("桶序 ABI:约束缓冲=着色桶序、range uniform=colorRanges、params 槽3=colorCount", async () => {

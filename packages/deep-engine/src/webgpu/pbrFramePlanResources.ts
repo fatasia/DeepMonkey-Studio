@@ -72,7 +72,9 @@ export const PBR_FRAME_RESOURCE_CONTRACTS: readonly PbrFrameResourceContract[] =
   { id: "contact-shadow-mask", descriptor: "rgba16float-half", format: "rgba16float", sampleCount: 1,
     usages: ["storage-binding", "texture-binding"], sizeRole: "half", external: false },
   { id: "contact-hdr", descriptor: "rgba16float", format: "rgba16float", sampleCount: 1,
-    usages: ["storage-binding", "texture-binding", "render-attachment", "copy-src"], sizeRole: "surface", external: false },
+    // 真实编码(contactShadowResources.encode):apply 以 compute storageTexture
+    // write-only 写入,present 采样、读回拷贝;全程无渲染附件路径,不虚报 usage。
+    usages: ["storage-binding", "texture-binding", "copy-src"], sizeRole: "surface", external: false },
   { id: "ssr-trace", descriptor: "rgba16float-half", format: SSR_TRACE_FORMAT, sampleCount: 1,
     usages: ["storage-binding", "texture-binding"], sizeRole: "half", external: false },
   { id: "ssr-hdr", descriptor: "rgba16float", format: SSR_COMPOSITE_FORMAT, sampleCount: 1,

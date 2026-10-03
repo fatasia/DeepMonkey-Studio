@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { flushSync } from "react-dom";
 import type { SceneSnapshot } from "@bim-studio/contracts";
 import { createWorkspaceRecoveryDraft, deleteWorkspaceRecoveryDraft, writeWorkspaceRecoveryDraft } from "../studio/workspaceRecoveryStore";
 import type { createScenePersistenceController } from "../controllers/scenePersistenceController";
@@ -32,16 +33,36 @@ export function useSceneHistoryActions({ state, history, playModeActive = false,
     flushSceneHistoryEdit,
   } = history;
 
+  const latestState = useRef(state);
+  latestState.current = state;
+
   async function applySceneHistorySnapshot(snapshot: SceneSnapshot, action: "undo" | "redo"): Promise<void> {
     if (!project) return;
+    const stack = sceneHistoryRef.current;
+    const expectedRevision = stack.revision;
+    const owner = { engine, projectId: project.id, sceneId: activeScene?.id };
+    const ownsRestore = () => {
+      const latest = latestState.current;
+      const currentScene = latest.getActiveScene?.() ?? latest.activeScene;
+      return latest.engine === owner.engine && latest.project?.id === owner.projectId
+        && latest.route.view === "studio" && currentScene?.id === owner.sceneId;
+    };
     sceneHistoryApplyingRef.current = true;
     try {
-      await applyScene(snapshot, false, project, false);
+      // Ordinary apply swallows load failures; history must settle only a complete restore.
+      await applyScene(snapshot, false, project, false, false, false, true);
+      flushSync(() => undefined);
+      if (!ownsRestore()) throw new Error("场景已切换，已拒绝迟到的撤销/重做恢复，请在当前场景重试。");
+      const restored = sceneSnapshotFactoryRef.current?.();
+      if (!restored) throw new Error("场景恢复后无法读取作者快照，请等待模型就绪后重试。");
+      stack.acceptRestoredScene(restored, expectedRevision);
       setMessage(action === "undo" ? "已撤销三维编辑" : "已重做三维编辑");
     } catch (reason) {
-      // 恢复失败时把历史指针退回原位，避免按钮状态与画布内容脱节。
-      if (action === "undo") sceneHistoryRef.current.redo();
-      else sceneHistoryRef.current.undo();
+      // Never move a newer stack to compensate an obsolete asynchronous restore.
+      if (ownsRestore() && stack.revision === expectedRevision) {
+        if (action === "undo") stack.redo();
+        else stack.undo();
+      }
       showError(reason);
     } finally {
       sceneHistoryApplyingRef.current = false;
@@ -49,15 +70,16 @@ export function useSceneHistoryActions({ state, history, playModeActive = false,
   }
 
   async function undoSceneEdit(): Promise<void> {
-    // T27：事务窗口未提交时拒绝撤销，避免撤销栈指针越过尚未成条的变更。
-    if (playModeActive || sceneEditTransactionRef?.current) return;
+    // Shared by toolbar/keyboard: no duplicate restore, open transaction or Play mutation.
+    if (playModeActive || sceneEditTransactionRef?.current || sceneHistoryApplyingRef.current || busy || !project || !activeScene) return;
     flushSceneHistoryEdit();
     const snapshot = sceneHistoryRef.current.undo();
     if (snapshot) await applySceneHistorySnapshot(snapshot, "undo");
   }
 
   async function redoSceneEdit(): Promise<void> {
-    if (playModeActive || sceneEditTransactionRef?.current) return;
+    if (playModeActive || sceneEditTransactionRef?.current || sceneHistoryApplyingRef.current || busy || !project || !activeScene) return;
+    flushSceneHistoryEdit();
     const snapshot = sceneHistoryRef.current.redo();
     if (snapshot) await applySceneHistorySnapshot(snapshot, "redo");
   }

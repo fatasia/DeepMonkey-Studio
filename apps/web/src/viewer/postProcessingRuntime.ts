@@ -14,6 +14,7 @@ import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { VignetteShader } from "three/examples/jsm/shaders/VignetteShader.js";
 import { HueSaturationShader } from "three/examples/jsm/shaders/HueSaturationShader.js";
+import { DEFAULT_DISPLAY_CONTRACT } from "@bim-studio/contracts";
 import type { ScenePostProcessingState } from "@bim-studio/contracts";
 import { threeDisplayOutputShader } from "@bim-studio/deep-engine/three-bridge";
 import type { ViewerPostProcessingRuntime } from "./viewerPostProcessingRuntime";
@@ -48,7 +49,9 @@ export class PostProcessingRuntime implements ViewerPostProcessingRuntime {
     this.#outlinePass.visibleEdgeColor.set(0x4d9fff);
     this.#outlinePass.hiddenEdgeColor.set(0x234a71);
     this.#installSpriteGhostGuard(scene);
-    this.#bloomPass = this.add(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.35, 0.25, 0.9));
+    this.#bloomPass = this.add(new UnrealBloomPass(new THREE.Vector2(1, 1),
+      DEFAULT_DISPLAY_CONTRACT.bloom.strength, DEFAULT_DISPLAY_CONTRACT.bloom.radius,
+      DEFAULT_DISPLAY_CONTRACT.bloom.threshold));
     this.#bokehPass = this.add(new BokehPass(scene, camera, { focus: 10, aperture: 0.00002, maxblur: 0.006 }));
     this.#afterimagePass = this.add(new AfterimagePass(0.9));
     this.#filmPass = this.add(new FilmPass(0.18, false));

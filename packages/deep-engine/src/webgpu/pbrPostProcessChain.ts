@@ -430,13 +430,17 @@ export class PbrPostProcessChain {
     if (features.temporalUpscale) {
       const upscaleInput = features.contactShadows ? "contact-hdr" : bloomInput;
       const upscaleInputUsages: readonly FramePlanUsage[] =
-        upscaleInput === "contact-hdr" || upscaleInput === "ao-hdr"
-          ? ["storage-binding", "texture-binding", "render-attachment", "copy-src"]
-          : upscaleInput === "bloom-hdr" ? ["texture-binding", "storage-binding", "render-attachment", "copy-src"]
-          : upscaleInput === "composited-hdr" || upscaleInput === "opaque-hdr"
-            ? ["render-attachment", "texture-binding", "storage-binding", "copy-src"]
-            : upscaleInput === "volumetric-fog-hdr" ? ["storage-binding", "texture-binding", "copy-src"]
-            : ["storage-binding", "texture-binding", "copy-src"];
+        upscaleInput === "contact-hdr"
+          // contact-hdr 真实生产是 compute storage 写(contactShadowResources.encode),
+          // 与 ssr/temporal/fog/upscale 同合同,无渲染附件用途。
+          ? ["storage-binding", "texture-binding", "copy-src"]
+          : upscaleInput === "ao-hdr"
+            ? ["storage-binding", "texture-binding", "render-attachment", "copy-src"]
+            : upscaleInput === "bloom-hdr" ? ["texture-binding", "storage-binding", "render-attachment", "copy-src"]
+            : upscaleInput === "composited-hdr" || upscaleInput === "opaque-hdr"
+              ? ["render-attachment", "texture-binding", "storage-binding", "copy-src"]
+              : upscaleInput === "volumetric-fog-hdr" ? ["storage-binding", "texture-binding", "copy-src"]
+              : ["storage-binding", "texture-binding", "copy-src"];
       passes.push({
         passId: "temporal-upscale", executor: "TemporalUpscalePass.encode", kind: "compute",
         reads: [upscaleInput, "motion", "linear-depth"], writes: ["upscale-hdr"],

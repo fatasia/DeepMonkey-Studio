@@ -49,7 +49,7 @@ describe("cloth parallel solver WGSL single-source cross-host gate (TS half)", (
   it("keeps the storage ABI byte strides pinned to the host packer contract", () => {
     expect(CLOTH_PARALLEL_PARTICLE_STRIDE_BYTES).toBe(48);
     expect(CLOTH_PARALLEL_CONSTRAINT_STRIDE_BYTES).toBe(16);
-    expect(CLOTH_PARALLEL_PARAMS_BYTES).toBe(48);
+    expect(CLOTH_PARALLEL_PARAMS_BYTES).toBe(96); // F6/T18 风+障碍扩展后 struct 尾对齐 96B(minBindingSize 按 struct 全长)
     expect(CLOTH_PARALLEL_STEP_RANGE_BYTES).toBe(16);
     expect(DEEP_CLOTH_PARALLEL_SOLVER_WGSL).toContain("position: vec4f,\n  velocity: vec4f,\n  previous: vec4f,");
     expect(DEEP_CLOTH_PARALLEL_SOLVER_WGSL).toContain("a: u32,\n  b: u32,\n  restLength: f32,\n  _padding: u32,");

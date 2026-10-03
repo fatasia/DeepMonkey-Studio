@@ -638,6 +638,8 @@ export interface SceneEnvironmentState {
   environmentMapName?: string;
   environmentAsBackground?: boolean;
   environmentIntensity?: number;
+  /** Deep WebGPU specular chain-tail residency, 1..8; omitted keeps the full chain. */
+  environmentSpecularMips?: number;
   /** Deep WebGPU local specular probes; at most two. Omitted preserves global IBL. */
   reflectionProbes?: SceneReflectionProbeState[];
 }

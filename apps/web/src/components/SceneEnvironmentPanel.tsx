@@ -19,6 +19,7 @@ import type { ProbeGridBakeUiState } from "./SceneProbeGridBakePanel";
 import { ScenePostProcessingEditor } from "./ScenePostProcessingEditor";
 import { ProjectEnvironmentResourcePicker } from "./ProjectAppearanceResources";
 import { SceneReflectionProbeEditor } from "./SceneReflectionProbeEditor";
+import { SceneEnvironmentMips } from "./SceneEnvironmentMips";
 import { useFloatingPanelDrag } from "../hooks/useFloatingPanelDrag";
 import type { RendererBackend } from "../viewer/ViewerEngine";
 
@@ -295,6 +296,7 @@ export function SceneEnvironmentPanel(props: SceneEnvironmentPanelProps) {
         </label>
       </div>
       <ProjectEnvironmentResourcePicker locale={locale} assets={props.projectAssets ?? []} value={environment} onApply={props.onEnvironmentChange} />
+      <SceneEnvironmentMips locale={locale} environment={environment} active={props.rendererBackend === "webgpu"} onChange={props.onEnvironmentChange} />
       <SceneReflectionProbeEditor locale={locale} assets={props.projectAssets ?? []} value={environment} onChange={props.onEnvironmentChange} />
     </div>
   );

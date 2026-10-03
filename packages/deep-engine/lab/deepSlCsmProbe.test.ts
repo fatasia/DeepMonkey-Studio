@@ -3,8 +3,8 @@ import { DEEP_PBR_MESH_V2_SHA256 } from "@bim-studio/deep-engine/shader-abi";
 import { resolveShaderPackagePipeline } from "../src/shaderPackage/pipeline.js";
 import { adaptDeepSlCsmProbe, CSM_PROBE_POINTS, CSM_PROBE_STATES, csmProbeUniform, evaluateCsmProbe,
   type CsmProbeCase } from "./deepSlCsmProbeFixture.js";
-import { readPbrProbeReadback, validateCsmProbe, type DeepSlPbrGpuSample } from "./deepSlPbrGpuDrawSupport.js";
-import { PBR_PROBE_CLEAR } from "./deepSlPbrProbeFixture.js";
+import { readPbrProbeReadback, preparePbrProbeInstance, validateCsmProbe, type DeepSlPbrGpuSample } from "./deepSlPbrGpuDrawSupport.js";
+import { PBR_PROBE_CLEAR, pbrProbeInstance } from "./deepSlPbrProbeFixture.js";
 
 function cases(): CsmProbeCase[] {
   const samples = [
@@ -21,6 +21,21 @@ function cases(): CsmProbeCase[] {
 }
 
 describe("DeepSL CSM GPU probe evidence", () => {
+  it("uses the real profile-aware instance stream with unchanged v1/v2 bytes and explicit v3 object IDs", () => {
+    const adapted = adaptDeepSlCsmProbe({ features: [], limits: { maxBindGroups: 4, maxBindingsPerBindGroup: 16, maxInterStageShaderVariables: 16 } });
+    if (!adapted.success) throw new Error("fixture compile failed");
+    const defaults = adapted.report.materialDefaults!;
+    for (const shaderAbi of [undefined, "deep.pbr.mesh.v1", "deep.pbr.mesh.v2"] as const) {
+      const result = preparePbrProbeInstance(defaults, shaderAbi ? { shaderAbi } : {});
+      expect(result.arrayStride).toBe(144); expect(result.data).toEqual(pbrProbeInstance(defaults));
+    }
+    const result = preparePbrProbeInstance(defaults, { shaderAbi: "deep.pbr.mesh.v3", objectId: 0x01020304 });
+    expect(result.arrayStride).toBe(160); expect(result.data.byteLength).toBe(160);
+    expect(result.data.slice(0, 36)).toEqual(pbrProbeInstance(defaults));
+    expect(result.data.slice(36)).toEqual(Float32Array.from([4, 3, 2, 1].map(value => value / 255)));
+    expect(() => preparePbrProbeInstance(defaults, { shaderAbi: "deep.pbr.mesh.v3" })).toThrow("object-id");
+    expect(() => preparePbrProbeInstance(defaults, { shaderAbi: "deep.pbr.mesh.v3", objectId: 0 })).toThrow("nonzero");
+  });
   it.each([false, true])("reads center and optional CSM samples with a single mapped range: %s", withSamples => {
     const data = new ArrayBuffer(4096);
     const view = new DataView(data);

@@ -9,6 +9,7 @@ import {
   normalizeCameraConstraints
 } from "./appDefaults";
 import { supportedExtensions } from "@bim-studio/contracts";
+import { DEFAULT_DISPLAY_CONTRACT } from "@bim-studio/contracts";
 
 describe("app defaults", () => {
   it("uses a neutral first-party product name in user-visible defaults", () => {
@@ -44,16 +45,21 @@ describe("app defaults", () => {
 
   it("provides a restrained industrial visual baseline without decorative effects", () => {
     expect(DEFAULT_ENVIRONMENT.skybox).toBe("studio");
+    expect(DEFAULT_ENVIRONMENT.environmentIntensity).toBe(DEFAULT_DISPLAY_CONTRACT.environment.environmentIntensity);
     expect(DEFAULT_LIGHTING).toEqual(expect.objectContaining({
       shadowsEnabled: true,
       reflectionsEnabled: true,
-      globalIlluminationEnabled: true
+      globalIlluminationEnabled: true,
+      globalIlluminationIntensity: DEFAULT_DISPLAY_CONTRACT.environment.globalIlluminationIntensity
     }));
     expect(DEFAULT_POST_PROCESSING).toEqual(expect.objectContaining({
       enabled: true,
       smaa: true,
       gtao: true,
+      gtaoIntensity: DEFAULT_DISPLAY_CONTRACT.antialias.gtaoIntensity,
       bloom: false,
+      bloomStrength: DEFAULT_DISPLAY_CONTRACT.bloom.strength,
+      bloomThreshold: DEFAULT_DISPLAY_CONTRACT.bloom.threshold,
       depthOfField: false,
       filmGrain: false,
       afterimage: false

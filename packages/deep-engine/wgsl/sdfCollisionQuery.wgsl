@@ -74,7 +74,12 @@ fn queryCollisions(@builtin(global_invocation_id) gid: vec3u) {
   let q = (p - params.origin) / params.cellSize;
   let maxQ = vec3f(params.dimensions - vec3u(1u));
   if (any(q < vec3f(0.0)) || any(q > maxQ)) {
-    results[gid.x] = vec4f(0.0, 0.0, 0.0, bitcast<f32>(0x7fc00000u));
+    // quiet NaN 位型 0x7fc00000:位型操作数经 uniform 零项(count·0)打破 const 表达式
+    // 折叠链 —— Tint(Dawn)对 const 字面量上的 bitcast NaN 会以
+    // 「value nan cannot be represented as 'f32'」拒绝整个模块(2026-10-02 真机探针实测);
+    // 运行时语义不变(0x7fc00000 | 0 = 0x7fc00000,与宿主 isSdfQueryNanBitPattern 互钉)。
+    let nanBits = 0x7fc00000u | (params.count * 0u);
+    results[gid.x] = vec4f(0.0, 0.0, 0.0, bitcast<f32>(nanBits));
     statuses[gid.x] = 1u;
     return;
   }

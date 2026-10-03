@@ -245,18 +245,22 @@ export function describePbrPresentPasses(inputResourceId: string, spatialAa = tr
     passId: "present", executor: "PbrOutputBindings.present → \"Deep display output\"", kind: "render",
     reads: [inputResourceId], writes: ["surface"],
     claims: [{ id: inputResourceId, access: "read", format: PBR_HDR_FORMAT, sampleCount: 1,
-      usages: inputResourceId === "opaque-hdr" || inputResourceId === "composited-hdr" || inputResourceId === "contact-hdr"
-        ? ["render-attachment", "texture-binding", "storage-binding", "copy-src"]
-        // ssr-hdr 自 C12 起带 COPY_SRC(present-color 读回链落点,与 ao/temporal 对齐)。
-        : inputResourceId === "ssr-hdr"
-          ? ["storage-binding", "texture-binding", "copy-src"]
-          : inputResourceId === "volumetric-fog-hdr"
-            ? ["storage-binding", "texture-binding", "copy-src"] : inputResourceId === "temporal-hdr"
-              ? ["storage-binding", "texture-binding", "copy-src"]
-              : inputResourceId === "upscale-hdr"
-                // F4 超分输出是唯一 display 尺寸输入(读回链落点,usages 同 temporal 合同)。
+      // contact-hdr 与 ssr/temporal/fog/upscale 同合同:apply compute storage 写入,
+      // 无渲染附件用途(contactShadowResources.encode 是唯一生产者)。
+      usages: inputResourceId === "contact-hdr"
+        ? ["storage-binding", "texture-binding", "copy-src"]
+        : inputResourceId === "opaque-hdr" || inputResourceId === "composited-hdr"
+          ? ["render-attachment", "texture-binding", "storage-binding", "copy-src"]
+          // ssr-hdr 自 C12 起带 COPY_SRC(present-color 读回链落点,与 ao/temporal 对齐)。
+          : inputResourceId === "ssr-hdr"
+            ? ["storage-binding", "texture-binding", "copy-src"]
+            : inputResourceId === "volumetric-fog-hdr"
+              ? ["storage-binding", "texture-binding", "copy-src"] : inputResourceId === "temporal-hdr"
                 ? ["storage-binding", "texture-binding", "copy-src"]
-                : ["texture-binding", "storage-binding", "render-attachment", "copy-src"],
+                : inputResourceId === "upscale-hdr"
+                  // F4 超分输出是唯一 display 尺寸输入(读回链落点,usages 同 temporal 合同)。
+                  ? ["storage-binding", "texture-binding", "copy-src"]
+                  : ["texture-binding", "storage-binding", "render-attachment", "copy-src"],
       sizeRole: inputResourceId === "upscale-hdr" ? "display" : "surface" },
       { id: "surface", access: "write", format: hdrDisplay ? PBR_HDR_FORMAT : "swapchain", sampleCount: 1,
         usages: ["render-attachment"], sizeRole: "independent" }],

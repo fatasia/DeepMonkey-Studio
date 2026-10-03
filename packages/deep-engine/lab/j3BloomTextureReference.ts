@@ -25,9 +25,9 @@ export function bloomTextureInput(id:string,width:number,height:number):BloomTex
     return [...rgb,alpha];
   });
 }
-function image(width:number,height:number,pixel:(x:number,y:number)=>readonly number[]):BloomTextureImage {
+function image(width:number,height:number,pixel:(x:number,y:number)=>readonly number[],roundStore=true):BloomTextureImage {
   const pixels=new Float32Array(width*height*4);
-  for(let y=0;y<height;y++)for(let x=0;x<width;x++)pixels.set(pixel(x,y).map(half),(y*width+x)*4);
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++)pixels.set(pixel(x,y).map(v=>roundStore?half(v):v),(y*width+x)*4);
   return {width,height,pixels};
 }
 function load(source:BloomTextureImage,x:number,y:number):number[]{
@@ -82,7 +82,7 @@ export function webBloomTextureReference(source:BloomTextureImage,options:BloomT
     return original.slice(0,3).map((v,k)=>v+glow[k]!*options.intensity).concat(original[3]!);
   });
 }
-export function nativeBloomTextureReference(source:BloomTextureImage,options:BloomTextureFixture["native"]):{
+export function nativeBloomTextureReference(source:BloomTextureImage,options:BloomTextureFixture["native"],roundComposite=true):{
   blurred:BloomTextureImage;display:BloomTextureImage;linearComposite:BloomTextureImage
 }{
   const width=Math.max(1,Math.ceil(source.width/2)),height=Math.max(1,Math.ceil(source.height/2));
@@ -111,5 +111,5 @@ export function nativeBloomTextureReference(source:BloomTextureImage,options:Blo
       return a<=.0031308?a*12.92:1.055*Math.pow(a,1/2.4)-.055;
     }).concat(hdr[3]!);
   });
-  return {blurred,display,linearComposite:image(source.width,source.height,compositeAt)};
+  return {blurred,display,linearComposite:image(source.width,source.height,compositeAt,roundComposite)};
 }

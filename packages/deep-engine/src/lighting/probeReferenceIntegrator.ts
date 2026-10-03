@@ -43,6 +43,11 @@ export interface ProbeRadianceOptions {
    */
   readonly indirectBounce?: (hit: ReferenceSceneHit, hitPoint: ProbeVector3,
     direction: ProbeVector3) => ProbeVector3;
+  /**
+   * F5 方案 A：请求逐方向贡献（与 `sum` 同值同序、与方向集逐下标对齐），供 L1 SH
+   * 投影复用同一功能量（不重建第二条求和链）。默认 false = 零行为变化。
+   */
+  readonly withDirectionSamples?: boolean;
 }
 
 export interface ProbeRadianceSample {
@@ -74,40 +79,50 @@ export function evaluateProbeRadianceEngineParity(scene: ReferenceScene, positio
 
 /** 任意方向集的探针值（功能量唯一实现点；引擎口径与参考积分共用）。 */
 export function evaluateProbeRadianceWithDirections(scene: ReferenceScene, position: ProbeVector3,
-  directions: readonly ProbeVector3[], options: ProbeRadianceOptions = {}): ProbeRadianceSample {
+  directions: readonly ProbeVector3[], options: ProbeRadianceOptions = {}): ProbeRadianceSample & {
+  /** 仅 `withDirectionSamples` 时在场：与方向集逐下标对齐的每方向贡献。 */
+  readonly directionSamples?: readonly ProbeVector3[];
+} {
   const shadowed = options.shadowed === true;
   const tMax = referenceSceneDiagonal(scene);
   const sum: [number, number, number] = [0, 0, 0];
   const distances: number[] = [];
+  const directionSamples: ProbeVector3[] | undefined = options.withDirectionSamples ? [] : undefined;
   for (const direction of directions) {
     const hit = intersectReferenceScene(scene, position, direction, tMax);
+    let contribution: ProbeVector3;
     if (hit === undefined) {
       const ambient = options.missRadiance?.(direction) ?? scene.ambient;
+      contribution = [ambient[0], ambient[1], ambient[2]];
       sum[0] += ambient[0]; sum[1] += ambient[1]; sum[2] += ambient[2];
-      continue;
-    }
-    const hitPoint: ProbeVector3 = [position[0]! + direction[0]! * hit.t,
-      position[1]! + direction[1]! * hit.t, position[2]! + direction[2]! * hit.t];
-    const radiance = sampleReferenceDirect(scene, hitPoint, hit.normal, hit.albedo, shadowed);
-    const bounce = options.indirectBounce?.(hit, hitPoint, direction);
-    if (bounce !== undefined) {
-      sum[0] += radiance[0] + bounce[0]; sum[1] += radiance[1] + bounce[1];
-      sum[2] += radiance[2] + bounce[2];
     } else {
-      sum[0] += radiance[0]; sum[1] += radiance[1]; sum[2] += radiance[2];
+      const hitPoint: ProbeVector3 = [position[0]! + direction[0]! * hit.t,
+        position[1]! + direction[1]! * hit.t, position[2]! + direction[2]! * hit.t];
+      const radiance = sampleReferenceDirect(scene, hitPoint, hit.normal, hit.albedo, shadowed);
+      const bounce = options.indirectBounce?.(hit, hitPoint, direction);
+      if (bounce !== undefined) {
+        contribution = [radiance[0] + bounce[0], radiance[1] + bounce[1], radiance[2] + bounce[2]];
+      } else {
+        contribution = [radiance[0], radiance[1], radiance[2]];
+      }
+      sum[0] += contribution[0]; sum[1] += contribution[1]; sum[2] += contribution[2];
     }
-    distances.push(hit.t);
+    directionSamples?.push(contribution);
+    distances.push(hit?.t ?? 0);
   }
   const count = directions.length;
-  const meanDistance = distances.length > 0
-    ? distances.reduce((sum, value) => sum + value, 0) / distances.length : tMax;
-  const variance = distances.length > 1
-    ? distances.reduce((sum, value) => sum + (value - meanDistance) ** 2, 0) / distances.length : 0;
+  const hitCount = distances.filter(distance => distance > 0).length;
+  const hitDistances = distances.filter(distance => distance > 0);
+  const meanDistance = hitDistances.length > 0
+    ? hitDistances.reduce((sum, value) => sum + value, 0) / hitDistances.length : tMax;
+  const variance = hitDistances.length > 1
+    ? hitDistances.reduce((sum, value) => sum + (value - meanDistance) ** 2, 0) / hitDistances.length : 0;
   const irradiance: ProbeVector3 = [sum[0] / count, sum[1] / count, sum[2] / count];
   return Object.freeze({ irradiance: Object.freeze(irradiance),
-    missRatio: 1 - distances.length / count,
+    missRatio: 1 - hitCount / count,
     meanDistance, distanceVariance: variance,
-    directionCount: count });
+    directionCount: count,
+    ...(directionSamples ? { directionSamples: Object.freeze(directionSamples) } : {}) });
 }
 
 export interface ProbeReferenceOptions {

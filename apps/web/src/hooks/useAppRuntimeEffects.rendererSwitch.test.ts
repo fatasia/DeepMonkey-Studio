@@ -18,7 +18,7 @@ vi.mock("react", () => ({
   },
   useEffect: (effect: () => void | (() => void), deps: unknown[]) => {
     // Execute the real backend switching effect; unrelated runtime effects stay inactive.
-    if (deps.length !== 5 || typeof deps[1] !== "string" || typeof deps[2] !== "string") return;
+    if (deps.length !== 6 || typeof deps[1] !== "string" || typeof deps[2] !== "string" || typeof deps[3] !== "boolean") return;
     if (!harness.dependencies || deps.some((value, index) => !Object.is(value, harness.dependencies?.[index]))) {
       harness.dependencies = deps;
       harness.pendingEffect = effect;
@@ -44,6 +44,7 @@ function fixture() {
   const switching: boolean[] = [];
   const state = {
     engine: { getAuthorRendererBackend: () => "webgl" }, rendererBackend: "webgpu", rendererActiveBackend: "webgl", revision: 1,
+    rendererOutlineRequired: false,
     route: { view: "studio" }, applicationState: { variables: {} }, rendererPreferenceCommitRef: { current: "webgpu" },
     showError: vi.fn(), setRendererSwitchPhase: vi.fn(), setRendererSwitchMessage: vi.fn(), setMessage: vi.fn(),
     setRendererSwitching: vi.fn((value: boolean) => switching.push(value)),
@@ -145,5 +146,17 @@ describe("real runtime renderer switching effect", () => {
     late.reject(new Error("late")); await flush();
     expect(app.switching).toEqual([true, false, true]);
     expect(app.state.showError).toHaveBeenCalledOnce();
+  });
+
+  it("keeps WebGL with an actionable reason when the scene requires the author-only outline effect", () => {
+    const app = fixture();
+    app.state.rendererOutlineRequired = true;
+    app.render();
+    expect(app.state.setRendererBackend).toHaveBeenCalledWith("webgl");
+    expect(app.state.setRendererActiveBackend).toHaveBeenCalledWith("webgl");
+    expect(app.state.setRendererSwitchPhase).toHaveBeenCalledWith("failed");
+    expect(app.state.setRendererSwitchMessage).toHaveBeenCalledWith(expect.stringContaining("描边"));
+    expect(harness.deep.switchTo).not.toHaveBeenCalled();
+    expect(app.switching).toEqual([]);
   });
 });

@@ -1,10 +1,12 @@
 import type { ApplicationDocument, ApplicationPublicationPointer, PublishedApplicationRecord } from "./application.js";
+import type { AgentAutonomySettings } from "./agentAutonomy.js";
 import type { SceneDashboardState } from "./dashboard.js";
 import type { ProjectRecord } from "./project.js";
 import type { PublishedSceneRecord, SceneSnapshot } from "./scene.js";
 export * from "./directBinding.js";
 export type { AiSessionMessageStatus, AiSessionReliability, AiSessionSummary, AiSessionMessageInput, AiSessionMessage, AiSessionList, AiSessionMessages } from "./aiSession.js";
 export * from "./aiDataBinding.js";
+export * from "./agentAutonomy.js";
 export * from "./aiHypothesis.js";
 export * from "./provenance.js";
 export * from "./parametricModeling.js";
@@ -25,11 +27,13 @@ export * from "./workcellValidation.js";
 export * from "./askData.js";
 export * from "./dashboard.js";
 export * from "./dashboardSampleData.js";
+export * from "./displayContract.js";
 export * from "./project.js";
 export * from "./ergonomics.js";
 export * from "./humanFigure.js";
 export * from "./robot.js";
 export * from "./scene.js";
+export { validateScene } from "./sceneValidation.js";
 export * from "./sceneWeatherFog.js";
 export * from "./sceneModelAsset.js";
 export * from "./industrialPrefab.js";
@@ -203,6 +207,25 @@ export interface SystemDiagnosticSnapshot {
   logs: ServiceLogQueryResult;
 }
 
+/**
+ * T5（审计 20260929 §二 T5）：逐条引用锚——回答中被出域复核器命中的数值/编号 token，
+ * 与其**真实证据定位**（来源+指纹+已发送窗口内的偏移）的一一对齐。
+ * 锚由服务端在真正发送的上下文上计算；模型未见过的位置绝不产出（防伪造引用/引用漂移）。
+ */
+export interface AiAssistantCitation {
+  /** 回答中被锚定的数值或编号 token（与 K2 出域复核器同源抽取）。 */
+  token: string;
+  /** 该 token 的证据锚列表；每个锚都是可独立复核的定位（sha256 与 contextFingerprint 同族）。 */
+  anchors: Array<{
+    sourceId: string;
+    sourcePath: string;
+    /** 来源准备文本内的 UTF-16 偏移（与 contextDelivery 同一坐标系）。 */
+    offset: number;
+    /** 来源准备文本的 sha256 指纹（auditFingerprint 同一载体）。 */
+    fingerprint: string;
+  }>;
+}
+
 export type AiAssistantVerification = "verified" | "supported" | "limited" | "unverified";
 export type AiAssistantInputRisk = "low" | "medium" | "high";
 export type AiAssistantWritePolicy = "read-only" | "confirm-required";
@@ -221,6 +244,8 @@ export interface AiAssistantReliability {
   contextTrust: AiAssistantContextTrust;
   contextFingerprint: string;
   evidenceCount: number;
+  /** T5：逐条引用锚——回答数值/编号到已发送证据的逐条对齐；无锚（或全部未命中）时缺省。 */
+  citations?: AiAssistantCitation[];
   warnings: string[];
   writePolicy: AiAssistantWritePolicy;
   /** 本次响应实际由哪个配置提供服务；缺省视为 primary，兼容旧响应。 */
@@ -320,6 +345,8 @@ export interface DatabaseDocument {
   users?: StoredSystemUserRecord[];
   auditLogs?: AuditLogRecord[];
   aiSettings?: Omit<AiProviderSettings, "apiKeyConfigured"> & { apiKey?: string };
+  /** H-autonomy：工业 Agent 授权范围/执行模式全局默认（运行启动可逐次覆盖）。 */
+  agentSettings?: AgentAutonomySettings;
   branding?: SystemBrandingSettings;
   /** endpointId -> SHA-256(API key)，不会包含在 ProjectRecord API 响应中。 */
   dataEndpointSecrets?: Record<string, string>;

@@ -35,7 +35,7 @@ function hemisphereReflectance(
   let sum = 0;
   for (let i = 0; i < nTheta; i++) {
     const theta = (i + 0.5) * (PI / 2) / nTheta;
-    const bandWeight = Math.cos(theta) * Math.sin(theta) * PI * PI / (nTheta * nPhi);
+    const bandWeight = Math.sin(theta) * PI * PI / (nTheta * nPhi);
     for (let j = 0; j < nPhi; j++) {
       const phi = (j + 0.5) * 2 * PI / nPhi;
       const light: Vec3 = [Math.sin(theta) * Math.cos(phi), Math.sin(theta) * Math.sin(phi), Math.cos(theta)];

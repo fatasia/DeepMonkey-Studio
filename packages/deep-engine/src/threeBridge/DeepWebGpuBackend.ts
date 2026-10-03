@@ -346,6 +346,9 @@ export class DeepWebGpuBackend {
     if (signal?.aborted) throw abortError("Deep backend packet frame cancelled.");
     this.coordinates.commit(candidate);
     this.committedPacket = localPacket;
+    // F5-GI-2:独立包路径提交后必须重同步 probe 会话(与 sync() 提交分支同一形态),
+    // 否则包内容替换后探针继续用旧表面缓存,直到 GI 关/开重建会话。
+    this.probeClipmap?.syncPacket(this.committedPacket);
     this.modelByInstanceId = indexObjectBindings(localPacket);
     markBackendPhase("packet-frame-validated");
     this.validatedView = { view: localView, shadowSelection: this.shadowSelectionValue };
@@ -551,6 +554,18 @@ export class DeepWebGpuBackend {
       this.probeClipmap?.beginFrame(localView);
     }
     return result;
+  }
+
+  /**
+   * F5-L4 capture pump: one probe-capture batch without a rendered frame. Still scenes
+   * stop rendering, which used to starve capture (incomplete initial fill → validity=0
+   * texels → sampling falls back to full IBL). Read-only on the render path; the session
+   * keeps its serialized-batch + updateBudget contract and latches failures (the host's
+   * next rendered frame re-arms the pump once per frame — no idle retry loop).
+   */
+  probeCaptureTick(): "idle" | "busy" | "submitted" | "unavailable" {
+    this.assertOpen();
+    return this.probeClipmap?.captureTick() ?? "unavailable";
   }
 
   dispose(): void {

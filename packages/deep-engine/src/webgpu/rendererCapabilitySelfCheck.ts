@@ -20,6 +20,8 @@ import {
   DEEP_GI_PROBE_DIRECTIONS_HIGH,
   DEEP_GI_PROBE_DIRECTIONS_STANDARD,
 } from "../lighting/probeRadianceDirectionGate.js";
+import { DEEP_GI_PROBE_VISIBILITY_SH_WORDS, DEEP_GI_PROBE_VISIBILITY_SH_WORD_OFFSET } from "../lighting/probeDirectionalVisibilitySh.js";
+import { PROBE_RADIANCE_MOMENT_LANES } from "../rayTracing/probeRadianceKernel.js";
 import { DEEP_PBR_MESH_V1_BYTE_SIZES } from "../shaderAbi/contract.js";
 import { MATERIAL_PARAMETER_KEYS } from "../shader/materialParameters.js";
 import { HDR_DISPLAY_REASON_CODES, HDR_DISPLAY_STRATEGIES, resolveHdrDisplayPolicy } from "./hdrDisplayOutput.js";
@@ -89,10 +91,16 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
     observed: {
       standardDirections: PBR_RENDERER_TS_SURFACE.giDirectionStandard,
       highDirections: PBR_RENDERER_TS_SURFACE.giDirectionHigh,
+      // F5 方案 A（2026-10-03 批准）：96B record words[12..23] 启用为 RGB L1 SH 方向
+      // 可见度；常量从实现派生（布局/捕获 lane 漂移即红）。合同：
+      // docs/specs/f5-directional-l1-implementation-20261003.md。
+      visibilityShWordOffset: DEEP_GI_PROBE_VISIBILITY_SH_WORD_OFFSET,
+      visibilityShWords: DEEP_GI_PROBE_VISIBILITY_SH_WORDS,
+      captureMomentLanes: PROBE_RADIANCE_MOMENT_LANES,
     },
   },
   {
-    capabilityId: "contact-shadows", support: "supported", reason: "opt-in-default-off",
+    capabilityId: "contact-shadows", support: "supported", reason: "full",
     passIds: passes("contact-shadow", "contact-apply"),
     observed: {
       contactShadows: FEATURE_DEFAULTS.contactShadows,
@@ -223,7 +231,7 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
   {
     // C9：扩展带参数键数从实际 schema 常量派生（6 参数增删即漂移红）。
     capabilityId: "material-clearcoat", support: "supported", reason: "opt-in-default-off",
-    observed: { extendedParameterKeys: MATERIAL_PARAMETER_KEYS.length },
+    observed: { extendedParameterKeys: MATERIAL_PARAMETER_KEYS.length, layeredMaterials: FEATURE_DEFAULTS.layeredMaterials },
   },
   {
     // F7b：16 灯局部阴影 ABI 从实际常量派生（与 shadow-local 行的 spot 口径同源）。

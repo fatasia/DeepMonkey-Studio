@@ -5,7 +5,8 @@ import { assessWorkspaceRecovery } from "../studio/workspaceRecoveryDecision";
 import { createWorkspaceRecoveryDraft, readWorkspaceRecoveryDraft } from "../studio/workspaceRecoveryStore";
 
 const disk = vi.hoisted(() => ({ draft: undefined as unknown }));
-vi.mock("react", async original => ({ ...await original<typeof import("react")>(), useEffect: vi.fn() }));
+vi.mock("react", async original => ({ ...await original<typeof import("react")>(), useEffect: vi.fn(), useRef: (current: unknown) => ({ current }) }));
+vi.mock("react-dom", () => ({ flushSync: (change: () => void) => change() }));
 vi.mock("../studio/workspaceRecoveryStore", async original => ({
   ...await original<typeof import("../studio/workspaceRecoveryStore")>(),
   readWorkspaceRecoveryDraft: vi.fn(async () => structuredClone(disk.draft)),
@@ -96,8 +97,8 @@ describe("transaction window guard (T27)", () => {
       history: {
         recoveryDraft: undefined, recoveryDecisionRef: { current: undefined }, setRecoveryDraft: vi.fn(), setRecoveryBusy: vi.fn(),
         sceneHistoryApplyingRef: { current: false }, sceneEditTransactionRef: transaction,
-        sceneHistoryRef: { current: { record: vi.fn(), undo, redo } },
-        sceneSnapshotFactoryRef: { current: () => undefined }, flushSceneHistoryEdit: vi.fn(),
+        sceneHistoryRef: { current: { revision: 7, record: vi.fn(), undo, redo, acceptRestoredScene: vi.fn() } },
+        sceneSnapshotFactoryRef: { current: () => structuredClone(server) }, flushSceneHistoryEdit: vi.fn(),
       },
       playModeActive,
       applyScene,

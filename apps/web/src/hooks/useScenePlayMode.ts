@@ -67,6 +67,29 @@ interface ScenePlaySession {
 
 const IDLE_STATE: ScenePlayModeState = { active: false, enteredAt: undefined };
 
+/**
+ * S2b 进入 Play 的草稿语义文案。未保存的脚本草稿不参与本次播放——Play 会话按已保存
+ * 版本的交互脚本运行（热重载语义 §2.3：Play 中编辑不改变运行中会话，退出再进装载新图），
+ * 该事实必须如实呈现，不得让用户误以为草稿已生效。
+ */
+export function formatPlayEntryNotice(hasPendingBehaviorDraft: boolean): string {
+  return hasPendingBehaviorDraft
+    ? "已进入播放模式；修改仅在本次播放期间生效；未保存的脚本草稿未参与本次播放，按已保存版本运行"
+    : "已进入播放模式；修改仅在本次播放期间生效";
+}
+
+/**
+ * S2b 退出汇报。播放期间被门禁吸收的每一次记账(用户编辑与引擎/物理驱动的临时
+ * 状态改写)在整体恢复时全部丢弃(撤销栈与持久化都不留痕),数量大于零时必须如实
+ * 汇报丢弃事实。措辞用「状态变更」而非「修改」:计数包含模拟驱动的改写,不暗示
+ * 全部出自用户之手。
+ */
+export function formatPlayExitNotice(discardedEdits: number): string {
+  return discardedEdits > 0
+    ? `已退出播放模式；播放期间的 ${discardedEdits} 项临时状态变更已丢弃，场景已恢复为进入前状态`
+    : "已退出播放模式，场景恢复为进入前状态";
+}
+
 export interface ScenePlayModeController {
   readonly active: boolean;
   enterPlay(): ScenePlayModeResult;

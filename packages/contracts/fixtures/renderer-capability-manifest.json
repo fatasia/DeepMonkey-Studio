@@ -1,537 +1,539 @@
 {
-  "contractVersion": 1,
-  "entries": [
-    {
-      "id": "material-abi-192b",
-      "title": "材质参数 ABI 块(Web 192B 打包 / native 160B 核心块)",
-      "webFeatureKeys": [],
-      "web": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine/src/webgpu/materialBindings.ts:MATERIAL_PARAMETER_FLOATS(48 float=192B 唯一打包实现;基础块 40 float=160B 与 native 同源)"
-      },
-      "native": {
-        "support": "degraded",
-        "reason": "reduced-tier",
-        "evidence": "packages/deep-engine-native/src/mesh_abi.rs:MATERIAL_UNIFORM_FLOATS(=40,160B 核心块;Web 扩展带 40..48 由 WGSL extendedShade 零填充回退,native 不消费扩展参数)"
-      }
-    },
-    {
-      "id": "gi-probe-directions",
-      "title": "探针 GI 方向档(standard 16 / high 32)",
-      "webFeatureKeys": [],
-      "web": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine/src/lighting/probeRadianceDirectionGate.ts:DEEP_GI_PROBE_DIRECTIONS_STANDARD/HIGH(16/32;内核容量 32;生产默认 32)"
-      },
-      "native": {
-        "support": "degraded",
-        "reason": "reduced-tier",
-        "evidence": "packages/deep-engine-native/src/renderer/native_gi_producer.rs:produce_direct_irradiance(确定性直光种子 producer + probe_gi_abi.rs 96B 布局合同;无 32 方向辐射内核/clipmap 采样通路)"
-      },
-      "sharedQualityVocabulary": true
-    },
-    {
-      "id": "contact-shadows",
-      "title": "屏幕空间接触阴影(C10)",
-      "webFeatureKeys": [
-        "contactShadows"
-      ],
-      "web": {
-        "support": "supported",
-        "reason": "opt-in-default-off",
-        "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:contactShadows(opt-in 默认 false;shadows/contactShadowQuality.ts 三档质量档)"
-      },
-      "native": {
-        "support": "unavailable",
-        "reason": "absent",
-        "evidence": "packages/deep-engine-native/src/lib.rs(无 contact shadow 模块;shadow 通路仅 cascaded/local)"
-      },
-      "sharedQualityVocabulary": true
-    },
-    {
-      "id": "auto-exposure",
-      "title": "自动曝光(F8)",
-      "webFeatureKeys": [],
-      "web": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine/src/webgpu/pbrAutoExposure.ts:estimateEnvironmentLuminance(环境亮度估计→EV 包络曝光,默认启用)"
-      },
-      "native": {
-        "support": "unavailable",
-        "reason": "absent",
-        "evidence": "packages/deep-engine-native/src/lib.rs(无 auto exposure 模块)"
-      }
-    },
-    {
-      "id": "temporal-upscale",
-      "title": "时域超分上采样(F4)",
-      "webFeatureKeys": [
-        "temporalUpscale"
-      ],
-      "web": {
-        "support": "supported",
-        "reason": "opt-in-default-off",
-        "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:temporalUpscale(opt-in;temporal-upscale 计时 pass;Catmull-Rom+时域重投影核;reactiveMask 供给消费 postprocess/temporalReactiveMask.ts binding8+flags.y 历史权重衰减,encodeUpscale 透明 OIT/粒子两路与 encodeFinal 同式透传;Studio 桥 f4-temporal-upscale URL 开关,超分需动态分辨率同开)"
-      },
-      "native": {
-        "support": "unavailable",
-        "reason": "absent",
-        "evidence": "packages/deep-engine-native/src/lib.rs(native 按原生分辨率直出,无上采样通路)"
-      }
-    },
-    {
-      "id": "virtual-textures",
-      "title": "虚拟纹理驻留/采样(F3)",
-      "webFeatureKeys": [],
-      "web": {
-        "support": "supported",
-        "reason": "opt-in-default-off",
-        "evidence": "packages/deep-engine/src/webgpu/virtualTextureResidency.ts:resolveVirtualTextureResidencyBudget(页表驻留+采样+帧桥,经管线开关接入;PbrRendererOptions.virtualTextures 快照白名单+逐帧反馈→驻留 drive+FrameMetrics 遥测;Studio 桥 f3-virtual-textures URL 开关)"
-      },
-      "native": {
-        "support": "unavailable",
-        "reason": "absent",
-        "evidence": "packages/deep-engine-native/src/lib.rs(无 virtual texture 模块)"
-      }
-    },
-    {
-      "id": "cluster-lod",
-      "title": "微多边形簇 LOD + 软光栅后备(G1)",
-      "webFeatureKeys": [
-        "softRasterizeFallback"
-      ],
-      "web": {
-        "support": "supported",
-        "reason": "opt-in-default-off",
-        "evidence": "packages/deep-engine/src/webgpu/clusterLodIndirectExecutor.ts:ClusterLodIndirectPlan(indirect 簇绘制;softRasterizeFallback 超误差微三角软光栅,均 opt-in;G1 Studio 桥接线:buildClusterLodAuthorStaging author staging+bake 随包下发,g1ClusterLodEnabled URL 开关传递 clusterLodStaging)"
-      },
-      "native": {
-        "support": "unavailable",
-        "reason": "absent",
-        "evidence": "packages/deep-engine-native/src/gpu_lod.rs:GpuLod(传统 mesh/实例 LOD,非 meshlet 簇 LOD;无软光栅后备)"
-      }
-    },
-    {
-      "id": "white-furnace-conservation",
-      "title": "白炉能量守恒验收(C12)",
-      "webFeatureKeys": [],
-      "web": {
-        "support": "supported",
-        "reason": "harness-only",
-        "evidence": "packages/deep-engine/src/webgpu/whiteFurnace.ts:FURNACE_TOLERANCES(纯 CPU 参考白炉+相对误差/通道增益/SSR 净零断言)"
-      },
-      "native": {
-        "support": "supported",
-        "reason": "harness-only",
-        "evidence": "packages/deep-engine-native/src/white_furnace.rs:evaluate_furnace_checks(CPU 判据/容差逐式移植 TS FURNACE_TOLERANCES 且字面量测试锁定;renderer/white_furnace_gpu_tests.rs 球腿+墙腿真机 GPU 门;背景腿为 clear 色链宿主差异、SSR toggle 判据属 web SSR 合成链不在移植面,均如实声明)"
-      }
-    },
-    {
-      "id": "device-recovery",
-      "title": "GPU 设备丢失分型与会话内恢复(C13)",
-      "webFeatureKeys": [],
-      "web": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine/src/webgpu/deviceRecovery.ts:classifyDeviceLost(device-lost|uncaptured|recovery 错误码分型 + healthy/degraded/recovering/lost 显式状态机 + 次数预算/指数退避;deviceSession.recovery 会话内重建设备)"
-      },
-      "native": {
-        "support": "degraded",
-        "reason": "reduced-tier",
-        "evidence": "packages/deep-engine-native/src/app/recovery.rs:handle(DeviceLost→整渲染器重建;UncapturedError→failed+手动 R 重建;无错误分型词汇/恢复阶段机/次数预算)"
-      }
-    },
-    {
-      "id": "ssr",
-      "title": "屏幕空间反射(C11 物理化)",
-      "webFeatureKeys": [
-        "screenSpaceReflection"
-      ],
-      "web": {
-        "support": "supported",
-        "reason": "opt-in-default-off",
-        "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:screenSpaceReflection(E04 opt-in;screen-space-reflection-trace/composite 计时 pass)"
-      },
-      "native": {
-        "support": "unavailable",
-        "reason": "absent",
-        "evidence": "packages/deep-engine-native/src/lib.rs(无 SSR 模块)"
-      }
-    },
-    {
-      "id": "fog-volumetric",
-      "title": "雾(Web 体积雾 march / native 屏幕空间近似)",
-      "webFeatureKeys": [
-        "fog",
-        "volumetricFog"
-      ],
-      "web": {
-        "support": "supported",
-        "reason": "opt-in-default-off",
-        "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:volumetricFog(G7 半分辨率参与介质 march+HDR 合成 opt-in;表面雾默认开,volumetricFog 开启时替换)"
-      },
-      "native": {
-        "support": "degraded",
-        "reason": "reduced-tier",
-        "evidence": "packages/deep-engine-native/src/fog.rs:FogSettings.volumetric(受预算约束的屏幕空间固定步线性深度积分,非 froxel/体积光照管线)"
-      }
-    },
-    {
-      "id": "taa",
-      "title": "时域抗锯齿(TAA)",
-      "webFeatureKeys": [
-        "temporalAa"
-      ],
-      "web": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:temporalAa(默认开;temporal-aa 计时 pass,时域历史链)"
-      },
-      "native": {
-        "support": "unavailable",
-        "reason": "absent",
-        "evidence": "packages/deep-engine-native/src/lib.rs(native 直出通路无时域历史/TAA)"
-      }
-    },
-    {
-      "id": "ambient-occlusion",
-      "title": "屏幕空间环境光遮蔽",
-      "webFeatureKeys": [
-        "ambientOcclusion"
-      ],
-      "web": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:ambientOcclusion(默认开;ambient-occlusion/apply-ambient-occlusion 计时 pass)"
-      },
-      "native": {
-        "support": "unavailable",
-        "reason": "absent",
-        "evidence": "packages/deep-engine-native/src/lib.rs(无 SSAO/AO 通路)"
-      }
-    },
-    {
-      "id": "bloom",
-      "title": "Bloom 辉光",
-      "webFeatureKeys": [
-        "bloom"
-      ],
-      "web": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:bloom(默认开;bloom 计时 pass)"
-      },
-      "native": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine-native/src/bloom_pipeline.rs:BloomPass(bloom/bloom_pass/bloom_pipeline 三模块;quality_profile.rs 对 Bloom 施加确定性预算)"
-      }
-    },
-    {
-      "id": "tonemap-display",
-      "title": "色调映射与显示变换(ACES)",
-      "webFeatureKeys": [
-        "toneMapping"
-      ],
-      "web": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:toneMapping(deep-aces 默认 | three-aces-r185)"
-      },
-      "native": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine-native/src/runtime_package/solid_environment.rs:output-transform(native-aces-v1 / native-aces-light-v2;author_grading.rs 在 ACES 前 HDR 线性域逐式应用六通道)"
-      },
-      "sharedQualityVocabulary": true
-    },
-    {
-      "id": "author-grading-vignette",
-      "title": "作者色彩分级与暗角",
-      "webFeatureKeys": [
-        "vignette"
-      ],
-      "web": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:vignette(默认开;pbrAuthorColorEffects 六通道 hue/saturation/brightness/contrast/temperature/tint)"
-      },
-      "native": {
-        "support": "degraded",
-        "reason": "reduced-tier",
-        "evidence": "packages/deep-engine-native/src/author_grading.rs:switches(vignette 槽位保留、本切片恒未启用;六通道分级已与 Web 逐位镜像)"
-      }
-    },
-    {
-      "id": "ground-preview",
-      "title": "内置地面/网格预览",
-      "webFeatureKeys": [
-        "groundPlane",
-        "groundGrid"
-      ],
-      "web": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:groundPlane/groundGrid(默认开;作者场景接管地板时关闭)"
-      },
-      "native": {
-        "support": "unavailable",
-        "reason": "absent",
-        "evidence": "packages/deep-engine-native/src/runtime_package/solid_environment.rs(solid-background-no-ibl/prefiltered-ibl 仅背景底,无内置地面/网格)"
-      }
-    },
-    {
-      "id": "ibl-environment",
-      "title": "IBL 环境光照",
-      "webFeatureKeys": [
-        "environment"
-      ],
-      "web": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:environment(默认开;environmentShader/pbrDiffuseIrradiance 漫反射 irradiance 卷积+预滤波镜面)"
-      },
-      "native": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine-native/src/renderer/mod.rs:ibl(GpuIblEnvironment;gpu_ibl.rs+ibl.rs)"
-      }
-    },
-    {
-      "id": "texture-arrays",
-      "title": "材质纹理数组化(bindless 级 1)",
-      "webFeatureKeys": [
-        "textureArrays"
-      ],
-      "web": {
-        "support": "supported",
-        "reason": "opt-in-default-off",
-        "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:textureArrays(波次5 opt-in;textureArrayMaterialTable/ProductionGate/共享表行 224B=192B 材质+32B 索引)"
-      },
-      "native": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine-native/src/texture_array_bindings.rs:MATERIAL_UNIFORM_BINDING(=10;texture_array_packing.rs 打包与 Web 同源)"
-      }
-    },
-    {
-      "id": "visibility-buffer",
-      "title": "可见性缓冲(P0-2)",
-      "webFeatureKeys": [
-        "visibilityBuffer"
-      ],
-      "web": {
-        "support": "supported",
-        "reason": "opt-in-default-off",
-        "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:visibilityBuffer(static opaque meshlet 批;visibilityBufferPass/Encoding/Resolve,opt-in 保持 forward 逐字节不变)"
-      },
-      "native": {
-        "support": "unavailable",
-        "reason": "absent",
-        "evidence": "packages/deep-engine-native/src/lib.rs(无 visibility buffer 通路)"
-      }
-    },
-    {
-      "id": "occlusion-culling",
-      "title": "视锥/遮挡剔除",
-      "webFeatureKeys": [
-        "occlusionCulling"
-      ],
-      "web": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:occlusionCulling(默认开;gpuFrustumCulling GPU 剔除通路)"
-      },
-      "native": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine-native/src/gpu_culling.rs:GpuCulling(gpu_occlusion*.rs+renderer/hi_z_pyramid.rs R4 主视锥 HiZ,opt-in 开关)"
-      }
-    },
-    {
-      "id": "gpu-lod",
-      "title": "GPU 驱动 LOD 选择",
-      "webFeatureKeys": [],
-      "web": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine/src/webgpu/gpuLodSelector.ts:GPU LOD 选择(gpuLodPacking/gpuLodWgsl 同一选择核)"
-      },
-      "native": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine-native/src/renderer/mod.rs:lod(GpuLod;lod_contract.rs 与 Web 合同同源)"
-      }
-    },
-    {
-      "id": "shadow-cascades",
-      "title": "级联阴影(CSM)",
-      "webFeatureKeys": [],
-      "web": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine/src/shadows/cascadedShadowPlanner.ts:cascadedShadowPlanner(cascadedShadowShader/资源规划默认通路)"
-      },
-      "native": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine-native/src/cascaded_shadow.rs:cascaded_shadow(cascaded_shadow_math.rs;renderer shadow_map.rs CascadedShadowGpuMetrics)"
-      }
-    },
-    {
-      "id": "shadow-local",
-      "title": "局部光阴影(聚光/点光)",
-      "webFeatureKeys": [],
-      "web": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine/src/shadows/localSpotShadowShader.ts:localSpotShadowShader(F7b spot uniform ABI 16 条目×96B=1536B;localSpotShadowAtlasQuality multi-light 档 16 灯可达;localShadowSoftness 软阴影核)"
-      },
-      "native": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine-native/src/local_shadow.rs:local_shadow(16 spot entries/16-view frame ABI; point light consumes six faces;local_lighting + clustered_lighting 共用)"
-      }
-    },
-    {
-      "id": "weighted-oit",
-      "title": "加权有序无关透明(OIT)",
-      "webFeatureKeys": [],
-      "web": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine/src/webgpu/weightedOit.ts:weightedOit(transparent-oit/composite-oit 计时 pass;weightedOitBlendSemantics)"
-      },
-      "native": {
-        "support": "unavailable",
-        "reason": "absent",
-        "evidence": "packages/deep-engine-native/src/lib.rs(无 OIT 模块)"
-      }
-    },
-    {
-      "id": "spatial-aa",
-      "title": "空间域边缘 AA",
-      "webFeatureKeys": [
-        "spatialAa"
-      ],
-      "web": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine/src/webgpu/spatialAaPresent.ts:spatialAaPresent(显示域边缘 AA,独立于时域历史,默认开)"
-      },
-      "native": {
-        "support": "unavailable",
-        "reason": "absent",
-        "evidence": "packages/deep-engine-native/src/lib.rs(无 FXAA/空间 AA 后处理)"
-      }
-    },
-    {
-      "id": "hardware-ray-query",
-      "title": "硬件光线查询(RT)",
-      "webFeatureKeys": [],
-      "web": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine/src/rayTracing/probeRadianceKernel.ts:PROBE_RADIANCE_MAX_DIRECTIONS(硬件 ray query 采集核;适配器 tier 探测见 apps rendererCapabilities)"
-      },
-      "native": {
-        "support": "unavailable",
-        "reason": "api-missing",
-        "evidence": "packages/deep-engine-native/src/host_capabilities/rt_probe.rs:probe_adapter(wgpu 30 无 RT 特性→Unsupported/BackendLacksRtApi;rt_residency.rs 仅驻留+绑定,不做像素消费)"
-      }
-    },
-    {
-      "id": "ies-lighting",
-      "title": "IES 光域网配光(E02)",
-      "webFeatureKeys": [],
-      "web": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine/src/lighting/iesSampling.ts:iesSampling(iesProfile 表;E02 16 行参数+361 列归一化表)"
-      },
-      "native": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine-native/src/ies_shading.rs:IES 资源打包(字节布局镜像 WebGPU E02 表)"
-      }
-    },
-    {
-      "id": "material-clearcoat",
-      "title": "清漆层与扩展材质带(C9)",
-      "webFeatureKeys": [],
-      "web": {
-        "support": "supported",
-        "reason": "opt-in-default-off",
-        "evidence": "packages/deep-engine/src/shader/materialParameters.ts:MATERIAL_PARAMETER_KEYS(扩展带 ior/clearcoat/各向异性/透射 6 参数;factor=0 即 KHR_materials_clearcoat 默认无层,缺省零行为=stock PBR;materialBindings.ts MATERIAL_PARAMETER_EXTENDED_BAND_FLOAT_OFFSET=40 六 float 槽 40..46,materialEvaluateWgsl.ts 清漆层叠着色路径+白炉真机守恒 gate)"
-      },
-      "native": {
-        "support": "unavailable",
-        "reason": "absent",
-        "evidence": "packages/deep-engine-native/src/mesh_abi.rs:MATERIAL_UNIFORM_FLOATS(=40 核心块;native 不消费 Web 扩展带 40..46,无清漆层叠着色路径)"
-      }
-    },
-    {
-      "id": "local-shadow-abi-16",
-      "title": "局部阴影 16 灯 ABI 扩容(F7b,点光 6-face 计入 view 预算)",
-      "webFeatureKeys": [],
-      "web": {
-        "support": "supported",
-        "reason": "full",
-        "evidence": "packages/deep-engine/src/shadows/localSpotShadowShader.ts:LOCAL_SPOT_SHADOW_MAX_LIGHTS(16 条目×96B=1536B;localSpotShadowRuntime.ts 16 灯帧装配;localSpotShadowAtlasQuality.ts standard|multi-light 两档,multi-light 产品档 16 灯放行)"
-      },
-      "native": {
-        "support": "degraded",
-        "reason": "reduced-tier",
-        "evidence": "packages/deep-engine-native/src/mesh_abi.rs:FRAME_ABI_ID(deep.native.frame.v8:16 local lights+16 shadow views+16 softness=2384B)+local_shadow.rs MAX_SPOT_SHADOWS=16(点光≤1×6 face 计入 16 view 预算;frame v8 与 TS 侧布局未做跨端逐字节对齐验证,如实降档)"
-      }
-    },
-    {
-      "id": "device-recovery-bridge",
-      "title": "设备恢复宿主桥消费(C13 消费接线)",
-      "webFeatureKeys": [],
-      "web": {
-        "support": "supported",
-        "reason": "opt-in-default-off",
-        "evidence": "apps/web/src/viewer/StudioDeepWebGpuBridge.ts:onFatalLoss/onDeviceRecreated(可恢复型 epoch 重建后清同步态重放渲染不整页回退,终态单次交接 WebGL;recovery opt-in 缺省零行为;DeepWebGpuBackend.ts hooks 暴露+deepWebGpuOptions.ts recovery 对象校验+cb44f6ad 桥接行为测试)"
-      },
-      "native": {
-        "support": "unavailable",
-        "reason": "host-specific",
-        "evidence": "packages/deep-engine-native/src/app/recovery.rs(native 宿主自身的恢复消费已在 device-recovery 行登记;Studio WebGPU 桥消费策略按设计属 web 宿主专属)"
-      }
-    },
-    {
-      "id": "atmosphere-sky",
-      "title": "物理大气散射天空(Bruneton 类预计算表,opt-in)",
-      "webFeatureKeys": [],
-      "web": {
-        "support": "supported",
-        "reason": "opt-in-default-off",
-        "evidence": "packages/deep-engine/src/environment/atmosphereSkyGate.ts:resolveAtmosphereSkyMode(fail-closed 门,默认 neutral;atmosphereSky.ts 预计算表采样+equirect 环境图走 radiance-hdr 权威 IBL 链能量链零改动;quality 档映射 atmosphereSkyPresetForQuality)"
-      },
-      "native": {
-        "support": "unavailable",
-        "reason": "absent",
-        "evidence": "packages/deep-engine-native/src/lib.rs(native 直出光栅化无环境源通路,无大气散射模块;天空源按设计属 web PbrRenderer 的 radiance-hdr/studio 环境)"
-      }
-    },
-    {
-      "id": "hdr-display-output",
-      "title": "HDR 显示输出(HDR10/PQ 直出显示链,I-C21,opt-in)",
-      "webFeatureKeys": [],
-      "web": {
-        "support": "supported",
-        "reason": "opt-in-default-off",
-        "evidence": "packages/deep-engine/src/webgpu/hdrDisplayOutput.ts:resolveHdrDisplayPolicy(检测→策略匹配→canvas rgba16float+extended 配置描述符;fail-closed 原因码封闭集默认关;pbrOutputBindings.applyHdrDisplay HDR present 变体直出+hdr-pipeline-failed 显式回退;pbrHdrDisplayWgsl PQ/HLG/headroom 编码核与 pbrHdrDisplay CPU 镜像同源)"
-      },
-      "native": {
-        "support": "unavailable",
-        "reason": "absent",
-        "evidence": "packages/deep-engine-native/src/lib.rs(无 HDR 显示输出模块;native 离屏直出经 output-transform ACES SDR,显示 surface 链按设计属 web 宿主)"
-      }
-    }
-  ]
+ "contractVersion": 1,
+ "entries": [
+  {
+   "id": "material-abi-192b",
+   "title": "材质参数 ABI 块(Web 192B 打包 / native 160B 核心块)",
+   "webFeatureKeys": [],
+   "web": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine/src/webgpu/materialBindings.ts:MATERIAL_PARAMETER_FLOATS(48 float=192B 唯一打包实现;基础块 40 float=160B 与 native 同源)"
+   },
+   "native": {
+    "support": "degraded",
+    "reason": "reduced-tier",
+    "evidence": "packages/deep-engine-native/src/mesh_abi.rs:MATERIAL_UNIFORM_FLOATS(=40,160B 核心块;Web 扩展带 40..48 由 WGSL extendedShade 零填充回退,native 不消费扩展参数)"
+   }
+  },
+  {
+   "id": "gi-probe-directions",
+   "title": "探针 GI 方向档(standard 16 / high 32)",
+   "webFeatureKeys": [],
+   "web": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine/src/lighting/probeRadianceDirectionGate.ts:DEEP_GI_PROBE_DIRECTIONS_STANDARD/HIGH(16/32;内核容量 32;生产默认 32) + F5 方案A:96B record words[12..23]=RGB L1 SH 方向可见度(probeDirectionalVisibilitySh.ts CPU 参考,channel-major l0/l1m-1/l1m0/l1m1;捕获核 moments lane1..3;镜面消费 deepGiSpecularDirectionalVisibility=clamp(luma(SH重建(reflection))/luma(env),0,1),SH缺失探针标量门fallback;白炉均匀场dipole精确零gate≡1逐位负控;合同 docs/specs/f5-directional-l1-implementation-20261003.md)"
+   },
+   "native": {
+    "support": "degraded",
+    "reason": "reduced-tier",
+    "evidence": "packages/deep-engine-native/src/renderer/native_gi_producer.rs:produce_direct_irradiance(确定性直光种子 producer + probe_gi_abi.rs 96B 布局合同;无 32 方向辐射内核/clipmap 采样通路) + probe_gi_abi.rs reserved[12] 声明升级为 words[12..23]=RGB L1 SH 方向可见度(与 Web 同形;native producer 仍发全零 reserved=SH缺失语义,消费端按同族标量 fallback,启用消费走 cargo 线)"
+   },
+   "sharedQualityVocabulary": true
+  },
+  {
+   "id": "contact-shadows",
+   "title": "屏幕空间接触阴影(C10)",
+   "webFeatureKeys": [
+    "contactShadows"
+   ],
+   "web": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:contactShadows(默认 true,Z2/Z3.5 质感默认;shadows/contactShadowQuality.ts 三档质量档)"
+   },
+   "native": {
+    "support": "unavailable",
+    "reason": "absent",
+    "evidence": "packages/deep-engine-native/src/lib.rs(无 contact shadow 模块;shadow 通路仅 cascaded/local)"
+   },
+   "sharedQualityVocabulary": true
+  },
+  {
+   "id": "auto-exposure",
+   "title": "自动曝光(F8)",
+   "webFeatureKeys": [],
+   "web": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine/src/webgpu/pbrAutoExposure.ts:estimateEnvironmentLuminance(环境亮度估计→EV 包络曝光,默认启用)"
+   },
+   "native": {
+    "support": "unavailable",
+    "reason": "absent",
+    "evidence": "packages/deep-engine-native/src/lib.rs(无 auto exposure 模块)"
+   }
+  },
+  {
+   "id": "temporal-upscale",
+   "title": "时域超分上采样(F4)",
+   "webFeatureKeys": [
+    "temporalUpscale"
+   ],
+   "web": {
+    "support": "supported",
+    "reason": "opt-in-default-off",
+    "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:temporalUpscale(opt-in;temporal-upscale 计时 pass;Catmull-Rom+时域重投影核;reactiveMask 供给消费 postprocess/temporalReactiveMask.ts binding8+flags.y 历史权重衰减,encodeUpscale 透明 OIT/粒子两路与 encodeFinal 同式透传;Studio 桥 f4-temporal-upscale URL 开关,超分需动态分辨率同开)"
+   },
+   "native": {
+    "support": "unavailable",
+    "reason": "absent",
+    "evidence": "packages/deep-engine-native/src/lib.rs(native 按原生分辨率直出,无上采样通路)"
+   }
+  },
+  {
+   "id": "virtual-textures",
+   "title": "虚拟纹理驻留/采样(F3)",
+   "webFeatureKeys": [],
+   "web": {
+    "support": "supported",
+    "reason": "opt-in-default-off",
+    "evidence": "packages/deep-engine/src/webgpu/virtualTextureResidency.ts:resolveVirtualTextureResidencyBudget(页表驻留+采样+帧桥,经管线开关接入;PbrRendererOptions.virtualTextures 快照白名单+逐帧反馈→驻留 drive+FrameMetrics 遥测;Studio 桥 f3-virtual-textures URL 开关)"
+   },
+   "native": {
+    "support": "unavailable",
+    "reason": "absent",
+    "evidence": "packages/deep-engine-native/src/lib.rs(无 virtual texture 模块)"
+   }
+  },
+  {
+   "id": "cluster-lod",
+   "title": "微多边形簇 LOD + 软光栅后备(G1)",
+   "webFeatureKeys": [
+    "softRasterizeFallback"
+   ],
+   "web": {
+    "support": "supported",
+    "reason": "opt-in-default-off",
+    "evidence": "packages/deep-engine/src/webgpu/clusterLodIndirectExecutor.ts:ClusterLodIndirectPlan(indirect 簇绘制;softRasterizeFallback 超误差微三角软光栅,均 opt-in;G1 Studio 桥接线:buildClusterLodAuthorStaging author staging+bake 随包下发,g1ClusterLodEnabled URL 开关传递 clusterLodStaging)"
+   },
+   "native": {
+    "support": "unavailable",
+    "reason": "absent",
+    "evidence": "packages/deep-engine-native/src/gpu_lod.rs:GpuLod(传统 mesh/实例 LOD,非 meshlet 簇 LOD;无软光栅后备)"
+   }
+  },
+  {
+   "id": "white-furnace-conservation",
+   "title": "白炉能量守恒验收(C12)",
+   "webFeatureKeys": [],
+   "web": {
+    "support": "supported",
+    "reason": "harness-only",
+    "evidence": "packages/deep-engine/src/webgpu/whiteFurnace.ts:FURNACE_TOLERANCES(纯 CPU 参考白炉+相对误差/通道增益/SSR 净零断言)"
+   },
+   "native": {
+    "support": "supported",
+    "reason": "harness-only",
+    "evidence": "packages/deep-engine-native/src/white_furnace.rs:evaluate_furnace_checks(CPU 判据/容差逐式移植 TS FURNACE_TOLERANCES 且字面量测试锁定;renderer/white_furnace_gpu_tests.rs 球腿+墙腿真机 GPU 门;背景腿为 clear 色链宿主差异、SSR toggle 判据属 web SSR 合成链不在移植面,均如实声明)"
+   }
+  },
+  {
+   "id": "device-recovery",
+   "title": "GPU 设备丢失分型与会话内恢复(C13)",
+   "webFeatureKeys": [],
+   "web": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine/src/webgpu/deviceRecovery.ts:classifyDeviceLost(device-lost|uncaptured|recovery 错误码分型 + healthy/degraded/recovering/lost 显式状态机 + 次数预算/指数退避;deviceSession.recovery 会话内重建设备)"
+   },
+   "native": {
+    "support": "degraded",
+    "reason": "reduced-tier",
+    "evidence": "packages/deep-engine-native/src/app/recovery.rs:handle(DeviceLost→整渲染器重建;UncapturedError→failed+手动 R 重建;无错误分型词汇/恢复阶段机/次数预算)"
+   }
+  },
+  {
+   "id": "ssr",
+   "title": "屏幕空间反射(C11 物理化)",
+   "webFeatureKeys": [
+    "screenSpaceReflection"
+   ],
+   "web": {
+    "support": "supported",
+    "reason": "opt-in-default-off",
+    "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:screenSpaceReflection(E04 opt-in;screen-space-reflection-trace/composite 计时 pass)"
+   },
+   "native": {
+    "support": "unavailable",
+    "reason": "absent",
+    "evidence": "packages/deep-engine-native/src/lib.rs(无 SSR 模块)"
+   }
+  },
+  {
+   "id": "fog-volumetric",
+   "title": "雾(Web 体积雾 march / native 屏幕空间近似)",
+   "webFeatureKeys": [
+    "fog",
+    "volumetricFog"
+   ],
+   "web": {
+    "support": "supported",
+    "reason": "opt-in-default-off",
+    "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:volumetricFog(G7 半分辨率参与介质 march+HDR 合成 opt-in;表面雾默认开,volumetricFog 开启时替换)"
+   },
+   "native": {
+    "support": "degraded",
+    "reason": "reduced-tier",
+    "evidence": "packages/deep-engine-native/src/fog.rs:FogSettings.volumetric(受预算约束的屏幕空间固定步线性深度积分,非 froxel/体积光照管线)"
+   }
+  },
+  {
+   "id": "taa",
+   "title": "时域抗锯齿(TAA)",
+   "webFeatureKeys": [
+    "temporalAa"
+   ],
+   "web": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:temporalAa(默认开;temporal-aa 计时 pass,时域历史链)"
+   },
+   "native": {
+    "support": "unavailable",
+    "reason": "absent",
+    "evidence": "packages/deep-engine-native/src/lib.rs(native 直出通路无时域历史/TAA)"
+   }
+  },
+  {
+   "id": "ambient-occlusion",
+   "title": "屏幕空间环境光遮蔽",
+   "webFeatureKeys": [
+    "ambientOcclusion"
+   ],
+   "web": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:ambientOcclusion(默认开;ambient-occlusion/apply-ambient-occlusion 计时 pass)"
+   },
+   "native": {
+    "support": "unavailable",
+    "reason": "absent",
+    "evidence": "packages/deep-engine-native/src/lib.rs(无 SSAO/AO 通路)"
+   }
+  },
+  {
+   "id": "bloom",
+   "title": "Bloom 辉光",
+   "webFeatureKeys": [
+    "bloom"
+   ],
+   "web": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:bloom(默认开;bloom 计时 pass)"
+   },
+   "native": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine-native/src/bloom_pipeline.rs:BloomPass(bloom/bloom_pass/bloom_pipeline 三模块;quality_profile.rs 对 Bloom 施加确定性预算)"
+   }
+  },
+  {
+   "id": "tonemap-display",
+   "title": "色调映射与显示变换(ACES)",
+   "webFeatureKeys": [
+    "toneMapping"
+   ],
+   "web": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:toneMapping(three-aces-r185 默认 | deep-aces 显式可选)"
+   },
+   "native": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine-native/src/runtime_package/solid_environment.rs:output-transform(native-aces-v1 / native-aces-light-v2;author_grading.rs 在 ACES 前 HDR 线性域逐式应用六通道)"
+   },
+   "sharedQualityVocabulary": true
+  },
+  {
+   "id": "author-grading-vignette",
+   "title": "作者色彩分级与暗角",
+   "webFeatureKeys": [
+    "vignette"
+   ],
+   "web": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:vignette(默认开;pbrAuthorColorEffects 六通道 hue/saturation/brightness/contrast/temperature/tint)"
+   },
+   "native": {
+    "support": "degraded",
+    "reason": "reduced-tier",
+    "evidence": "packages/deep-engine-native/src/author_grading.rs:switches(vignette 槽位保留、本切片恒未启用;六通道分级已与 Web 逐位镜像)"
+   }
+  },
+  {
+   "id": "ground-preview",
+   "title": "内置地面/网格预览",
+   "webFeatureKeys": [
+    "groundPlane",
+    "groundGrid"
+   ],
+   "web": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:groundPlane/groundGrid(默认开;作者场景接管地板时关闭)"
+   },
+   "native": {
+    "support": "unavailable",
+    "reason": "absent",
+    "evidence": "packages/deep-engine-native/src/runtime_package/solid_environment.rs(solid-background-no-ibl/prefiltered-ibl 仅背景底,无内置地面/网格)"
+   }
+  },
+  {
+   "id": "ibl-environment",
+   "title": "IBL 环境光照",
+   "webFeatureKeys": [
+    "environment"
+   ],
+   "web": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:environment(默认开;environmentShader/pbrDiffuseIrradiance 漫反射 irradiance 卷积+预滤波镜面)"
+   },
+   "native": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine-native/src/renderer/mod.rs:ibl(GpuIblEnvironment;gpu_ibl.rs+ibl.rs)"
+   }
+  },
+  {
+   "id": "texture-arrays",
+   "title": "材质纹理数组化(bindless 级 1)",
+   "webFeatureKeys": [
+    "textureArrays"
+   ],
+   "web": {
+    "support": "supported",
+    "reason": "opt-in-default-off",
+    "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:textureArrays(波次5 opt-in;textureArrayMaterialTable/ProductionGate/共享表行 224B=192B 材质+32B 索引)"
+   },
+   "native": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine-native/src/texture_array_bindings.rs:MATERIAL_UNIFORM_BINDING(=10;texture_array_packing.rs 打包与 Web 同源)"
+   }
+  },
+  {
+   "id": "visibility-buffer",
+   "title": "可见性缓冲(P0-2)",
+   "webFeatureKeys": [
+    "visibilityBuffer"
+   ],
+   "web": {
+    "support": "supported",
+    "reason": "opt-in-default-off",
+    "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:visibilityBuffer(static opaque meshlet 批;visibilityBufferPass/Encoding/Resolve,opt-in 保持 forward 逐字节不变)"
+   },
+   "native": {
+    "support": "unavailable",
+    "reason": "absent",
+    "evidence": "packages/deep-engine-native/src/lib.rs(无 visibility buffer 通路)"
+   }
+  },
+  {
+   "id": "occlusion-culling",
+   "title": "视锥/遮挡剔除",
+   "webFeatureKeys": [
+    "occlusionCulling"
+   ],
+   "web": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine/src/webgpu/pbrRendererFeatures.ts:occlusionCulling(默认开;gpuFrustumCulling GPU 剔除通路)"
+   },
+   "native": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine-native/src/gpu_culling.rs:GpuCulling(gpu_occlusion*.rs+renderer/hi_z_pyramid.rs R4 主视锥 HiZ,opt-in 开关)"
+   }
+  },
+  {
+   "id": "gpu-lod",
+   "title": "GPU 驱动 LOD 选择",
+   "webFeatureKeys": [],
+   "web": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine/src/webgpu/gpuLodSelector.ts:GPU LOD 选择(gpuLodPacking/gpuLodWgsl 同一选择核)"
+   },
+   "native": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine-native/src/renderer/mod.rs:lod(GpuLod;lod_contract.rs 与 Web 合同同源)"
+   }
+  },
+  {
+   "id": "shadow-cascades",
+   "title": "级联阴影(CSM)",
+   "webFeatureKeys": [],
+   "web": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine/src/shadows/cascadedShadowPlanner.ts:cascadedShadowPlanner(cascadedShadowShader/资源规划默认通路)"
+   },
+   "native": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine-native/src/cascaded_shadow.rs:cascaded_shadow(cascaded_shadow_math.rs;renderer shadow_map.rs CascadedShadowGpuMetrics)"
+   }
+  },
+  {
+   "id": "shadow-local",
+   "title": "局部光阴影(聚光/点光)",
+   "webFeatureKeys": [],
+   "web": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine/src/shadows/localSpotShadowShader.ts:localSpotShadowShader(F7b spot uniform ABI 16 条目×96B=1536B;localSpotShadowAtlasQuality multi-light 档 16 灯可达;localShadowSoftness 软阴影核)"
+   },
+   "native": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine-native/src/local_shadow.rs:local_shadow(16 spot entries/16-view frame ABI; point light consumes six faces;local_lighting + clustered_lighting 共用)"
+   }
+  },
+  {
+   "id": "weighted-oit",
+   "title": "加权有序无关透明(OIT)",
+   "webFeatureKeys": [],
+   "web": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine/src/webgpu/weightedOit.ts:weightedOit(transparent-oit/composite-oit 计时 pass;weightedOitBlendSemantics)"
+   },
+   "native": {
+    "support": "unavailable",
+    "reason": "absent",
+    "evidence": "packages/deep-engine-native/src/lib.rs(无 OIT 模块)"
+   }
+  },
+  {
+   "id": "spatial-aa",
+   "title": "空间域边缘 AA",
+   "webFeatureKeys": [
+    "spatialAa"
+   ],
+   "web": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine/src/webgpu/spatialAaPresent.ts:spatialAaPresent(显示域边缘 AA,独立于时域历史,默认开)"
+   },
+   "native": {
+    "support": "unavailable",
+    "reason": "absent",
+    "evidence": "packages/deep-engine-native/src/lib.rs(无 FXAA/空间 AA 后处理)"
+   }
+  },
+  {
+   "id": "hardware-ray-query",
+   "title": "硬件光线查询(RT)",
+   "webFeatureKeys": [],
+   "web": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine/src/rayTracing/probeRadianceKernel.ts:PROBE_RADIANCE_MAX_DIRECTIONS(硬件 ray query 采集核;适配器 tier 探测见 apps rendererCapabilities)"
+   },
+   "native": {
+    "support": "unavailable",
+    "reason": "api-missing",
+    "evidence": "packages/deep-engine-native/src/host_capabilities/rt_probe.rs:probe_adapter(wgpu 30 无 RT 特性→Unsupported/BackendLacksRtApi;rt_residency.rs 仅驻留+绑定,不做像素消费)"
+   }
+  },
+  {
+   "id": "ies-lighting",
+   "title": "IES 光域网配光(E02)",
+   "webFeatureKeys": [],
+   "web": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine/src/lighting/iesSampling.ts:iesSampling(iesProfile 表;E02 16 行参数+361 列归一化表)"
+   },
+   "native": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine-native/src/ies_shading.rs:IES 资源打包(字节布局镜像 WebGPU E02 表)"
+   }
+  },
+  {
+   "id": "material-clearcoat",
+   "title": "清漆层与扩展材质带(C9)",
+   "webFeatureKeys": [
+    "layeredMaterials"
+   ],
+   "web": {
+    "support": "supported",
+    "reason": "opt-in-default-off",
+    "evidence": "packages/deep-engine/src/shader/materialParameters.ts:MATERIAL_PARAMETER_KEYS(扩展带 ior/clearcoat/各向异性/透射 6 参数;factor=0 即 KHR_materials_clearcoat 默认无层,缺省零行为=stock PBR;materialBindings.ts MATERIAL_PARAMETER_EXTENDED_BAND_FLOAT_OFFSET=40 六 float 槽 40..46,materialEvaluateWgsl.ts 清漆层叠着色路径+白炉真机守恒 gate)"
+   },
+   "native": {
+    "support": "unavailable",
+    "reason": "absent",
+    "evidence": "packages/deep-engine-native/src/mesh_abi.rs:MATERIAL_UNIFORM_FLOATS(=40 核心块;native 不消费 Web 扩展带 40..46,无清漆层叠着色路径)"
+   }
+  },
+  {
+   "id": "local-shadow-abi-16",
+   "title": "局部阴影 16 灯 ABI 扩容(F7b,点光 6-face 计入 view 预算)",
+   "webFeatureKeys": [],
+   "web": {
+    "support": "supported",
+    "reason": "full",
+    "evidence": "packages/deep-engine/src/shadows/localSpotShadowShader.ts:LOCAL_SPOT_SHADOW_MAX_LIGHTS(16 条目×96B=1536B;localSpotShadowRuntime.ts 16 灯帧装配;localSpotShadowAtlasQuality.ts standard|multi-light 两档,multi-light 产品档 16 灯放行)"
+   },
+   "native": {
+    "support": "degraded",
+    "reason": "reduced-tier",
+    "evidence": "packages/deep-engine-native/src/mesh_abi.rs:FRAME_ABI_ID(deep.native.frame.v8:16 local lights+16 shadow views+16 softness=2384B)+local_shadow.rs MAX_SPOT_SHADOWS=16(点光≤1×6 face 计入 16 view 预算;frame v8 与 TS 侧布局未做跨端逐字节对齐验证,如实降档)"
+   }
+  },
+  {
+   "id": "device-recovery-bridge",
+   "title": "设备恢复宿主桥消费(C13 消费接线)",
+   "webFeatureKeys": [],
+   "web": {
+    "support": "supported",
+    "reason": "opt-in-default-off",
+    "evidence": "apps/web/src/viewer/StudioDeepWebGpuBridge.ts:onFatalLoss/onDeviceRecreated(可恢复型 epoch 重建后清同步态重放渲染不整页回退,终态单次交接 WebGL;recovery opt-in 缺省零行为;DeepWebGpuBackend.ts hooks 暴露+deepWebGpuOptions.ts recovery 对象校验+cb44f6ad 桥接行为测试)"
+   },
+   "native": {
+    "support": "unavailable",
+    "reason": "host-specific",
+    "evidence": "packages/deep-engine-native/src/app/recovery.rs(native 宿主自身的恢复消费已在 device-recovery 行登记;Studio WebGPU 桥消费策略按设计属 web 宿主专属)"
+   }
+  },
+  {
+   "id": "atmosphere-sky",
+   "title": "物理大气散射天空(Bruneton 类预计算表,opt-in)",
+   "webFeatureKeys": [],
+   "web": {
+    "support": "supported",
+    "reason": "opt-in-default-off",
+    "evidence": "packages/deep-engine/src/environment/atmosphereSkyGate.ts:resolveAtmosphereSkyMode(fail-closed 门,默认 neutral;atmosphereSky.ts 预计算表采样+equirect 环境图走 radiance-hdr 权威 IBL 链能量链零改动;quality 档映射 atmosphereSkyPresetForQuality)"
+   },
+   "native": {
+    "support": "unavailable",
+    "reason": "absent",
+    "evidence": "packages/deep-engine-native/src/lib.rs(native 直出光栅化无环境源通路,无大气散射模块;天空源按设计属 web PbrRenderer 的 radiance-hdr/studio 环境)"
+   }
+  },
+  {
+   "id": "hdr-display-output",
+   "title": "HDR 显示输出(HDR10/PQ 直出显示链,I-C21,opt-in)",
+   "webFeatureKeys": [],
+   "web": {
+    "support": "supported",
+    "reason": "opt-in-default-off",
+    "evidence": "packages/deep-engine/src/webgpu/hdrDisplayOutput.ts:resolveHdrDisplayPolicy(检测→策略匹配→canvas rgba16float+extended 配置描述符;fail-closed 原因码封闭集默认关;pbrOutputBindings.applyHdrDisplay HDR present 变体直出+hdr-pipeline-failed 显式回退;pbrHdrDisplayWgsl PQ/HLG/headroom 编码核与 pbrHdrDisplay CPU 镜像同源)"
+   },
+   "native": {
+    "support": "unavailable",
+    "reason": "absent",
+    "evidence": "packages/deep-engine-native/src/lib.rs(无 HDR 显示输出模块;native 离屏直出经 output-transform ACES SDR,显示 surface 链按设计属 web 宿主)"
+   }
+  }
+ ]
 }

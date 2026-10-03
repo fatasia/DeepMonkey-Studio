@@ -19,6 +19,8 @@ describe("production PBR frame graph", () => {
       "composite-oit",
       "temporal-aa",
       "bloom",
+      "contact-shadow",
+      "contact-apply",
       "present",
     ]);
     const resources = new Map(result.resources.map(resource => [resource.id, resource]));
@@ -34,7 +36,8 @@ describe("production PBR frame graph", () => {
     expect(result.valid).toBe(true);
     expect(result.order).not.toContain("transparent-oit");
     expect(result.order).not.toContain("composite-oit");
-    expect(result.order.slice(-3)).toEqual(["temporal-aa", "bloom", "present"]);
+    // Z2/Z3.5 默认开接触阴影:链尾在 bloom 后插入 contact-shadow→contact-apply(真实编码序)。
+    expect(result.order.slice(-4)).toEqual(["bloom", "contact-shadow", "contact-apply", "present"]);
     expect(result.resources.some(resource => resource.id.startsWith("oit-"))).toBe(false);
   });
 

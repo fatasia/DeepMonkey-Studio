@@ -26,6 +26,17 @@ export interface ClothGpuConstraintInput {
   readonly restLength: number;
 }
 
+/** 确定性风(f6):windAcceleration = direction × baseSpeed × (0.5+valueNoise(t·f, y·scale));
+ * tickSeconds 由调用方按 tick 基+子步偏移传入(per-substep params 副本)。 */
+export interface ClothGpuWind {
+  readonly direction: ClothVec3;
+  readonly baseSpeed: number;
+  readonly gustFrequency: number;
+  readonly spatialScale: number;
+  readonly seed: number;
+  readonly tickSeconds: number;
+}
+
 export interface ClothGpuStepInput {
   readonly particles: readonly ClothGpuParticleInput[];
   readonly constraints: readonly ClothGpuConstraintInput[];
@@ -34,6 +45,16 @@ export interface ClothGpuStepInput {
   readonly compliance: number;
   readonly damping: number;
   readonly gravity: ClothVec3;
+  readonly wind?: ClothGpuWind;
+  /** F6/T18 静态障碍(GPU 接触投影);与 contacts(CPU f64 黄金)同语义的 sphere/cuboid 子集。 */
+  readonly obstacles?: ReadonlyArray<ClothGpuObstacleData>;
+}
+
+export interface ClothGpuObstacleData {
+  readonly center: readonly [number, number, number];
+  readonly radius: number;
+  readonly rotation: readonly [number, number, number, number, number, number, number, number, number];
+  readonly halfExtents: readonly [number, number, number];
 }
 
 /** Packed storage ABI: position/inverse mass, velocity, previous position. */

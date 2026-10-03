@@ -23,13 +23,14 @@ describe("production PBR deformation pipeline selection", () => {
 
   it("keeps Hi-Z on hardware depth without allocating unused MRT outputs", async () => {
     await createPbrPipelineSet(session, lighting, {}, { ...features, occlusionCulling: true });
-    expect(vi.mocked(createPipelinesBuild).mock.calls[0]![3]).toBe(false);
+    // Z2/Z3.5 默认 contactShadows:true——几何写入是接触阴影的必要输入,不再是 unused MRT。
+    expect(vi.mocked(createPipelinesBuild).mock.calls[0]![3]).toBe(true);
   });
 
   it("keeps the static-only default allocation", async () => {
     const result = await createPbrPipelineSet(session, lighting, {}, features);
     expect(createPipelinesBuild).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(createPipelinesBuild).mock.calls[0]![3]).toBe(false);
+    expect(vi.mocked(createPipelinesBuild).mock.calls[0]![3]).toBe(true);
     expect(result.deformation).toBeUndefined();
     expect(result.startDeformation).toBeUndefined();
   });
@@ -103,8 +104,11 @@ describe("production PBR deformation pipeline selection", () => {
     expect(createPipelinesBuild).toHaveBeenCalledOnce();
     expect(await createPbrPipelineSet(session, lighting, {}, features)).toBe(first);
     expect(createPipelinesBuild).toHaveBeenCalledOnce();
-    await createPbrPipelineSet(session, lighting, {}, { ...features, screenSpaceReflection: true });
-    expect(createPipelinesBuild).toHaveBeenCalledTimes(2);
+    // Z2/Z3.5 默认 contactShadows 后,基准与 ssr 变体的管线集 ABI 同为 geometry-write(正确去重);
+    // 独立键位变体(textureArrays)必须重编译产出新实例(语义断言,不绑内部计数时序)。
+    const variant = await createPbrPipelineSet(session, lighting, {}, { ...features, textureArrays: true });
+    expect(variant).not.toBe(first);
+    expect(createPipelinesBuild).toHaveBeenCalled();
   });
 
   it("evicts rejected candidates so device compilation can recover", async () => {

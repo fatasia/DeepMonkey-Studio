@@ -1,6 +1,7 @@
 import { packReflectionProbeRecord, type ReflectionProbeBoxSpec } from "../lighting/reflectionProbeParallax.js";
 import type { StudioEnvironment } from "./studioEnvironment.js";
 import { runResourceCleanup } from "./resourceCleanup.js";
+import { environmentMipSelection } from "./environmentMipSelection.js";
 
 export const PBR_REFLECTION_PROBE_BYTES = 128;
 export interface PbrReflectionProbe {
@@ -21,6 +22,23 @@ export function packPbrReflectionProbes(probes: readonly Pick<PbrReflectionProbe
   for (let index = 0; index < 2; index++) {
     result.set(new Float32Array(packReflectionProbeRecord(probes[index]?.box ?? EMPTY_BOX)), index * 16);
   }
+  return result;
+}
+
+/** Reserved record row carries mip rebasing without growing the frame/binding ABI. */
+export function packPbrEnvironmentReflections(environment: StudioEnvironment): Float32Array<ArrayBuffer> {
+  const result = packPbrReflectionProbes(environment.reflectionProbes);
+  const dropped = (value: StudioEnvironment): number => {
+    const selection = value.specularMipSelection;
+    if (!selection) return 0;
+    const expected = environmentMipSelection(selection.rawMips, selection.keptMips);
+    if (expected.droppedMips !== selection.droppedMips) throw new RangeError("IBL mip metadata is inconsistent.");
+    return expected.droppedMips;
+  };
+  // row0.reserved: x = global, y = first probe, z = second probe dropped mip count.
+  result[12] = dropped(environment);
+  result[13] = dropped(environment.reflectionProbes?.[0]?.environment ?? environment);
+  result[14] = dropped(environment.reflectionProbes?.[1]?.environment ?? environment);
   return result;
 }
 

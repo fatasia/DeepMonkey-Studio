@@ -36,9 +36,11 @@ export class ProbeClipmapPbrController {
   private readonly sceneRadianceSync: ProbeClipmapPbrControllerOptions["sceneRadianceSync"];
   private publishedGeneration = -1;
   private disposed = false;
+  private readonly createdDevice: GPUDevice;
 
   constructor(private readonly target: ProbeClipmapPbrTarget, deviceEpoch: string,
     options: ProbeClipmapPbrControllerOptions = {}) {
+    this.createdDevice = target.session.device;
     this.runtime = new ProbeClipmapRuntime(target.session, deviceEpoch, options);
     this.sceneRadianceSync = options.sceneRadianceSync;
   }
@@ -82,7 +84,11 @@ export class ProbeClipmapPbrController {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    if (this.target.session.state === "ready") this.target.setProbeClipmap();
-    this.runtime.dispose();
+    try {
+      // A ready replacement session does not make this old owner publishable.
+      if (this.target.session.state === "ready" && this.target.session.device === this.createdDevice) {
+        this.target.setProbeClipmap();
+      }
+    } finally { this.runtime.dispose(); }
   }
 }

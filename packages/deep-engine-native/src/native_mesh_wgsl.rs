@@ -9,6 +9,10 @@ pub fn native_mesh_shader_source() -> String {
         include_str!("../../deep-engine/wgsl/cascadedShadowMath.wgsl"),
         "\n",
         include_str!("../../deep-engine/wgsl/materialDielectric.wgsl"),
+        include_str!("../../deep-engine/wgsl/materialEvaluateCore.wgsl"),
+        include_str!("../../deep-engine/wgsl/materialMetalReflection.wgsl"),
+        include_str!("../assets/shaders/native_layer_metal_v1.wgsl"),
+        include_str!("../assets/shaders/native_layer_extended_v1.wgsl"),
         // I-C23 分层混合核:与 Web 同一单源真文件(deepLayerBlend 函数库,
         // 纯函数、无入口,checksum 门与 TS 镜像共享)。
         include_str!("../../deep-engine/wgsl/materialLayerBlend.wgsl"),
@@ -38,3 +42,7 @@ pub fn native_mesh_rt_shader_source() -> String {
     ));
     source
 }
+
+#[cfg(test)]
+#[path = "native_material_layer_reachability_tests.rs"]
+mod material_layer_reachability_tests;

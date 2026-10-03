@@ -7,7 +7,7 @@ import { contactShadowWgsl, CONTACT_APPLY_WGSL, CONTACT_SHADOW_UNIFORM_BYTES } f
 import { resolveContactShadowQuality, estimateContactShadowMaskBytes,
   type ContactShadowQualitySelection, type ContactShadowQualityTier } from "./contactShadowQuality.js";
 import type { ShadowVec3 } from "./types.js";
-import type { PbrActualPassDescription } from "../webgpu/pbrFramePlanResources.js";
+import type { FramePlanUsage, PbrActualPassDescription } from "../webgpu/pbrFramePlanResources.js";
 
 /**
  * C10 屏幕空间接触阴影资源合同(cascadedShadowResources 同款纪律):
@@ -269,18 +269,44 @@ export function describeContactShadowPass(): PbrActualPassDescription {
   };
 }
 
-/** 第一切片计划对拍声明:contact-apply 全分辨率合成(输入=前链颜色+遮蔽贴)。 */
+/**
+ * 第一切片计划对拍声明:contact-apply 全分辨率合成(输入=前链颜色+遮蔽贴)。
+ *
+ * 真实编码唯一权威(contactShadowResources.encode):apply 全程 compute pass——
+ * 输入 HDR 经 bindGroup 纹理采样(texture: sampleType "float"),输出 contact-hdr
+ * 经 storageTexture write-only 写入;链路里没有任何 beginRenderPass,不存在
+ * 渲染附件路径。claims 的 usages 按资源终身合同逐 id 声明
+ * (pbrOutputBindings.describePbrPresentPasses 同款惯例);输入域未知 id 显式报错,
+ * 不许静默猜。
+ */
+const CONTACT_APPLY_INPUT_USAGES: Readonly<Record<string, readonly FramePlanUsage[]>> = Object.freeze({
+  "opaque-hdr": ["render-attachment", "texture-binding", "storage-binding", "copy-src"],
+  "composited-hdr": ["render-attachment", "texture-binding", "storage-binding", "copy-src"],
+  "bloom-hdr": ["texture-binding", "storage-binding", "render-attachment", "copy-src"],
+  "ao-hdr": ["storage-binding", "texture-binding", "render-attachment", "copy-src"],
+  "ssr-hdr": ["storage-binding", "texture-binding", "copy-src"],
+  "temporal-hdr": ["storage-binding", "texture-binding", "copy-src"],
+  "volumetric-fog-hdr": ["storage-binding", "texture-binding", "copy-src"],
+  "upscale-hdr": ["storage-binding", "texture-binding", "copy-src"],
+});
+
 export function describeContactApplyPass(inputResource: string): PbrActualPassDescription {
+  const inputUsages = CONTACT_APPLY_INPUT_USAGES[inputResource];
+  if (!inputUsages) {
+    throw new Error(`describeContactApplyPass: input resource ${inputResource} is not a declared chain-tail resource.`);
+  }
   return {
     passId: "contact-apply", executor: "ContactShadowResources.encode/apply", kind: "compute",
     reads: [inputResource, "contact-shadow-mask"], writes: ["contact-hdr"],
     claims: [
       { id: inputResource, access: "read", format: "rgba16float", sampleCount: 1,
-        usages: ["storage-binding", "texture-binding", "render-attachment", "copy-src"], sizeRole: "surface" },
+        usages: inputUsages, sizeRole: "surface" },
       { id: "contact-shadow-mask", access: "read", format: "rgba16float", sampleCount: 1,
         usages: ["storage-binding", "texture-binding"], sizeRole: "half" },
       { id: "contact-hdr", access: "write", format: "rgba16float", sampleCount: 1,
-        usages: ["storage-binding", "texture-binding", "render-attachment", "copy-src"], sizeRole: "surface" },
+        // 真实写入是 compute storage write-only(contactShadowResources.encode),
+        // present 采样(texture-binding)、读回拷贝(copy-src);无渲染附件用途。
+        usages: ["storage-binding", "texture-binding", "copy-src"], sizeRole: "surface" },
     ],
     gpuPassCount: 1,
   };

@@ -26,7 +26,7 @@ function requiredCapability(type: SceneCommand["type"]): SceneCapability[] {
   if (type.startsWith("unity.")) return ["studio.unity"];
   if (type === "component.update") return ["studio.component"];
   if (type === "camera.set" || type === "camera.fly-to") return ["studio.camera"];
-  if (type === "animation.control") return ["studio.animation"];
+  if (type === "animation.control" || type === "animation.set-anchor") return ["studio.animation"];
   if (type === "material.set") return ["studio.material", "studio.object"];
   if (type === "data.apply") return ["studio.data", "studio.object"];
   if (type === "selection.set") return ["studio.scene"];

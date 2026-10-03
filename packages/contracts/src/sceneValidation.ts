@@ -606,6 +606,9 @@ function validateEnvironment(value: unknown, path: string): void {
   for (const key of ["environmentMapUrl", "environmentMapName"] as const) optional(object, key, expectString, path);
   optional(object, "environmentAsBackground", expectBoolean, path);
   optional(object, "environmentIntensity", expectNumber, path);
+  if (object.environmentSpecularMips !== undefined && (typeof object.environmentSpecularMips !== "number"
+    || !Number.isInteger(object.environmentSpecularMips) || object.environmentSpecularMips < 1
+    || object.environmentSpecularMips > 8)) invalid(`${path}.environmentSpecularMips`, "expected integer 1..8");
   optional(object, "reflectionProbes", validateSceneReflectionProbes, path);
 }
 

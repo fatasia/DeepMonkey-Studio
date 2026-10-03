@@ -1,5 +1,6 @@
-import { materialStateForSlot, restoreMaterialSourceColors } from "./materialSlots";
+import { materialStateForSlot, restoreMaterialSourceColors, ungradedMaterialColor } from "./materialSlots";
 import { materialIor, prepareMaterialIor } from "./materialIor";
+import { prepareDeclarativeMaterial, validateDeclarativeMaterialPatch } from "./declarativeMaterial";
 import * as THREE from "three";
 import type { SceneLayerState, SceneMaterialScreenState, SceneMaterialShaderEffect, SceneMaterialState } from "@bim-studio/contracts";
 import { buildComponentRecords, type ComponentRecord } from "./analysis";
@@ -104,6 +105,8 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
         const material = source as THREE.Material & { color?: THREE.Color };
         if (!material.color?.isColor) continue;
         material.color.set(color);
+        material.userData.studioUngradedColor = color;
+        material.userData.studioUngradedLinearColor = material.color.toArray();
         material.needsUpdate = true;
       }
     });
@@ -116,7 +119,7 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
       const material = this.materialsForMesh(child as THREE.Mesh)[0] as THREE.MeshStandardMaterial | undefined;
       if (!material) return;
       result = {
-        ...(material.color?.isColor ? { color: `#${material.color.getHexString()}` } : {}),
+        ...(material.color?.isColor ? { color: ungradedMaterialColor(material) } : {}),
         ...materialColorAdjustmentState(material),
         ...materialTextureState(material),
         ...(material.userData.studioShaderEffect ? { shaderEffect: structuredClone(material.userData.studioShaderEffect) } : {}),
@@ -137,6 +140,15 @@ export abstract class ViewerEngineObjectState extends ViewerEngineRuntime {
 
   protected applyMaterialState(object: THREE.Object3D, patch: SceneMaterialState): void {
     detachSharedPrimitiveMaterials(object, this.collisionOriginalMaterials);
+    // 受控声明式材质：任何 source 先整批编译校验，再换装（clearcoat→Physical 等）；
+    // 非法源在任何 mutation 之前抛错（与 IOR 原子性同规）。
+    validateDeclarativeMaterialPatch(patch);
+    prepareDeclarativeMaterial(object, patch, this.collisionOriginalMaterials, (source, target) => {
+      const textures = this.originalMaterialTextures.get(source);
+      if (textures) this.originalMaterialTextures.set(target, textures);
+      const screen = this.modelScreenOriginals.get(source);
+      if (screen) this.modelScreenOriginals.set(target, screen);
+    });
     prepareMaterialIor(object, patch, this.collisionOriginalMaterials, (source, target) => {
       const textures = this.originalMaterialTextures.get(source);
       if (textures) this.originalMaterialTextures.set(target, textures);
@@ -484,11 +496,19 @@ function applyMaterialColorAdjustment(material: THREE.MeshStandardMaterial, stat
     brightness: THREE.MathUtils.clamp(state.brightness ?? current.brightness ?? 0, -1, 1),
     contrast: THREE.MathUtils.clamp(state.contrast ?? current.contrast ?? 0, -1, 1),
   };
-  const baseColor = state.color
-    ?? (typeof material.userData.studioUngradedColor === "string" ? material.userData.studioUngradedColor : `#${material.color.getHexString()}`);
+  const previousBase = material.userData.studioUngradedColor;
+  const baseColor = state.color ?? ungradedMaterialColor(material);
+  let linear = material.userData.studioUngradedLinearColor as number[] | undefined;
+  if (!Array.isArray(linear) || linear.length !== 3 || !linear.every(Number.isFinite)
+    || (state.color !== undefined && state.color !== previousBase)) {
+    linear = state.color !== undefined ? new THREE.Color(state.color).toArray() : material.color.toArray();
+    material.userData.studioUngradedLinearColor = linear;
+  }
   material.userData.studioUngradedColor = baseColor;
   material.userData.studioColorAdjustment = next;
-  material.color.set(baseColor);
+  material.color.fromArray(linear);
+  // Neutral means exact source bits, not hex quantization or a lossy HSL/contrast round-trip.
+  if (next.hue === 0 && next.saturation === 0 && next.brightness === 0 && next.contrast === 0) return;
   material.color.offsetHSL(next.hue / 360, next.saturation, next.brightness * 0.5);
   const factor = next.contrast + 1;
   material.color.setRGB(

@@ -178,10 +178,21 @@ pub(super) fn redraw(app: &mut NativeApp, event_loop: &ActiveEventLoop) {
         }
         replay.use_alternate = !replay.use_alternate;
     }
-    let outcome = app
-        .renderer
-        .as_mut()
-        .map(|renderer| renderer.render(verify));
+    let outcome = app.renderer.as_mut().map(|renderer| {
+        #[cfg(all(test, windows))]
+        let present_started = super::super::device_loss_probe_tests::begin_present_measurement();
+        let outcome = renderer.render(verify);
+        #[cfg(all(test, windows))]
+        if matches!(outcome, RenderOutcome::Presented)
+            && let Some(started) = present_started
+        {
+            super::super::device_loss_probe_tests::observe_present(
+                renderer.id(),
+                started.elapsed(),
+            );
+        }
+        outcome
+    });
     if let Some(RenderOutcome::Failed(error)) = outcome.as_ref() {
         app.state.failure = Some(error.clone());
         eprintln!("native frame failed: {error}");

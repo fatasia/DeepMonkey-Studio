@@ -85,10 +85,15 @@ function createProvider(registry: PluginRegistry, source: DataQuerySource, setti
         };
       }
       const planning = createDataQueryPlan(draft, source.getDataset(request.projectId, draft.datasetId));
+      // H-C5-T1：歧义在"选哪个数据集"时，把服务端目录候选随响应透传（web 不必再拉目录自拼）；
+      // ready 或非数据集歧义（字段/窗口校验失败）不携带——后者语义是"修计划"而非"选数据集"。
+      const candidates = planning.plan || !planning.issues.some((item) => item.code === "dataset-not-found")
+        ? undefined
+        : datasets.slice(0, 8).map((item) => ({ id: item.id, name: item.name, updatedAt: item.updatedAt }));
       return {
         status: planning.plan ? "completed" : "needs-input",
         decisionStatus: planning.plan ? "research-candidate" : "insufficient-data",
-        output: { planning, model: completion.model, providerId: settings.providerId },
+        output: { planning: candidates ? { ...planning, candidates } : planning, model: completion.model, providerId: settings.providerId },
         evidence: [reliability, { id: `ask-data-draft:${request.requestId}`, kind: "model", label: "自然语言问数计划草案", source: `${settings.providerId}:${completion.model}` }],
         warnings: planning.plan
           ? ["AI 只选择查询计划；数据结果由受控读取插件确定性执行", ...(prepared.assessment.findings.length ? ["输入包含可疑指令特征，已按不可信数据约束"] : [])]

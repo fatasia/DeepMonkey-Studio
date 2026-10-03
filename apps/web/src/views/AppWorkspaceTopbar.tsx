@@ -2,6 +2,7 @@ import { ArrowLeft, Bot, LayoutDashboard, Play, Plus, Redo2, Rocket, Save, Squar
 import { useRef, useState } from "react";
 import { SceneWorkspaceMoreMenu } from "../components/SceneWorkspaceMoreMenu";
 import { SceneDrillWizard } from "../components/SceneDrillWizard";
+import { PathTraceAuthorDialog } from "../components/PathTraceAuthorDialog";
 import { WorkspaceModeSwitch } from "../components/WorkspaceModeSwitch";
 import { flushPendingBehaviorDraft } from "../behavior/behaviorDraftNavigation";
 import { translate as tr } from "../i18n";
@@ -18,6 +19,7 @@ export interface AppWorkspaceTopbarTools {
 
 export function AppWorkspaceTopbar({ bindings, tools }: { bindings: AppViewBindings; tools?: AppWorkspaceTopbarTools }) {
   const [drillGuideOpen, setDrillGuideOpen] = useState(false);
+  const [pathTraceOpen, setPathTraceOpen] = useState(false);
   const latestBindings = useRef(bindings);
   latestBindings.current = bindings;
   const exitPending = useRef(false);
@@ -249,6 +251,7 @@ export function AppWorkspaceTopbar({ bindings, tools }: { bindings: AppViewBindi
               onExportSingle={() => void exportSingleFileScene()}
               onExportGlb={() => void exportGlbScene()}
               onExportFbx={() => void exportFbxScene()}
+              onExportPathTrace={() => setPathTraceOpen(true)}
               onBrowse={() => void browseActiveScene()}
               browseDisabled={Boolean(activeApplication) || busy}
             />}
@@ -299,6 +302,10 @@ export function AppWorkspaceTopbar({ bindings, tools }: { bindings: AppViewBindi
         </div>
       )}
     </header>
+    {pathTraceOpen && project && <PathTraceAuthorDialog locale={locale} models={project.models}
+      sourceKey={`${project.id}/${activeScene?.id ?? ""}/${state.revision}`}
+      getSnapshot={() => latestBindings.current.scenePersistence.makeSnapshot()}
+      onClose={() => setPathTraceOpen(false)}/>}
     {drillGuideOpen && activeScene && <SceneDrillWizard
       locale={locale} sceneId={activeScene.id} sceneName={sceneName}
       sources={state.interactionTargetOptions} scenes={state.scenes.map((scene) => ({ id: scene.id, name: scene.name }))}

@@ -18,6 +18,36 @@ function scene(): SceneSnapshot {
 }
 
 describe("SceneAuthoringHistory", () => {
+  it("accepts normalized restore readback without an entry or redo loss, preserving each original step", () => {
+    const history = new SceneAuthoringHistory();
+    const baseline = scene(); history.reset(baseline);
+    const first = { ...baseline, name: "A" }, second = { ...baseline, name: "B" };
+    history.record(first, "A"); history.record(second, "B");
+    expect(history.undo()).toEqual(first);
+    const readback = { ...first, dashboard: { side: "right" as const, width: 410, widgets: [] } };
+    const state = history.getState(), revision = history.revision;
+    history.acceptRestoredScene(readback, revision);
+    expect(history.getState()).toEqual(state);
+    expect(history.record(readback, "恢复通知")).toBe(false);
+    readback.name = "污染读回对象";
+    expect(history.undo()).toEqual(baseline);
+    expect(history.redo()).toEqual(first);
+    expect(history.redo()).toEqual(second);
+  });
+
+  it("rejects restoring over a newer revision or a different scene without moving the stack", () => {
+    const history = new SceneAuthoringHistory();
+    const baseline = scene(); history.reset(baseline);
+    history.record({ ...baseline, name: "A" }, "A");
+    const restored = history.undo()!, oldRevision = history.revision;
+    history.record({ ...baseline, name: "较新作者版本" }, "新编辑");
+    const state = history.getState(), revision = history.revision;
+    expect(() => history.acceptRestoredScene(restored, oldRevision)).toThrow("版本");
+    expect(() => history.acceptRestoredScene({ ...restored, id: "other" }, revision)).toThrow("所属场景");
+    expect(history.getState()).toEqual(state);
+    expect(history.revision).toBe(revision);
+    expect(history.undo()?.name).toBe(baseline.name);
+  });
   it("undoes root order and group membership together, then restores the saved order on redo", () => {
     const history = new SceneAuthoringHistory();
     const baseline = { ...scene(), selectionSets: [{ id: "g", kind: "group" as const, name: "Group", objectIds: ["child"] }] };

@@ -38,14 +38,12 @@ use deep_engine_native::{
     fog::FogSettings,
     ibl::builtin_default_environment,
     ies_shading::NativeIesShadingResource,
-    pbr_layered::{LAYERED_MATERIAL_REQUIRED_TEXTURES, LayerResponse, blend_layer_stack},
     pbr_texture::prepare_pbr_resources,
     player_view::PlayerView,
     scene::prepare_scene,
     white_furnace::{
-        FURNACE_ENVIRONMENT_RADIANCE, FURNACE_TOLERANCES, FurnaceCheck, FurnaceRegion,
-        evaluate_furnace_checks, furnace_sphere_segmentation, region_stats,
-        uniform_furnace_environment,
+        FURNACE_ENVIRONMENT_RADIANCE, FurnaceCheck, FurnaceRegion, evaluate_furnace_checks,
+        furnace_sphere_segmentation, region_stats, uniform_furnace_environment,
     },
 };
 use std::sync::{Arc, Mutex};
@@ -249,17 +247,46 @@ fn render_furnace_frame(
     label: &'static str,
     layered: bool,
 ) -> Vec<[f32; 3]> {
+    let (frame, view) = furnace_frame();
+    render_material_frame(device, queue, packet, label, layered, frame, view)
+}
+
+fn render_material_frame(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    packet: &RenderPacket,
+    label: &'static str,
+    layered: bool,
+    frame: [[f32; 4]; deep_engine_native::mesh_abi::FRAME_UNIFORM_FLOATS / 4],
+    view: PlayerView,
+) -> Vec<[f32; 3]> {
+    render_material_frame_with_shader(device, queue, packet, label, layered, frame, view, None)
+}
+
+fn render_material_frame_with_shader(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    packet: &RenderPacket,
+    label: &'static str,
+    layered: bool,
+    frame: [[f32; 4]; deep_engine_native::mesh_abi::FRAME_UNIFORM_FLOATS / 4],
+    view: PlayerView,
+    shader_override: Option<&wgpu::ShaderModule>,
+) -> Vec<[f32; 3]> {
     let environment_radiance = FURNACE_ENVIRONMENT_RADIANCE as f32;
     let prepared = prepare_scene(packet).unwrap();
     let pbr = prepare_pbr_resources(packet).unwrap();
     let size = PhysicalSize::new(SIZE, SIZE);
-    let (frame, view) = furnace_frame();
     let layouts = create_frame_layouts(device);
     let shadows = create_shadow_map(device, &layouts.shadow, size, &frame, None, view).unwrap();
     let material_layout = create_material_layout(device);
     // I-C23 分层腿:普通族与分层族(扩展材质 layout + fragment_*_layered 入口)
     // 二选一;GpuScene 同步注入分层 layout,材质 group 才会建 0..19 扩展绑定。
     let layered_layout = layered.then(|| create_layered_material_layout(device));
+    let default_shader = shader_override
+        .is_none()
+        .then(|| create_native_mesh_shader(device));
+    let shader = shader_override.unwrap_or_else(|| default_shader.as_ref().unwrap());
     let pipelines = if let Some(layered_layout) = &layered_layout {
         create_mesh_pipelines_with_layered(
             device,
@@ -267,7 +294,7 @@ fn render_furnace_frame(
             &layouts.shadow,
             &material_layout,
             layered_layout,
-            &create_native_mesh_shader(device),
+            shader,
         )
     } else {
         create_mesh_pipelines(
@@ -275,7 +302,7 @@ fn render_furnace_frame(
             &layouts.frame,
             &layouts.shadow,
             &material_layout,
-            &create_native_mesh_shader(device),
+            shader,
         )
     };
     let scene = GpuScene::new(
@@ -488,249 +515,27 @@ fn white_furnace_wall_conserves_energy_full_frame() {
     );
 }
 
-/// 分层白炉腿设备:在普通白炉设备合同之上追加 I-C23 采样纹理能力门
-/// (max_sampled_textures_per_shader_stage ≥ 19,与 gpu_context 同一合同
-/// 常量)。适配器不足 19 时返回 None——分层管线在该设备本就 fail-closed,
-/// 此腿跳过,而不是请求一个必然被拒的 limits。
-fn request_layered_furnace_device() -> Option<(wgpu::Device, wgpu::Queue)> {
-    let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
-    descriptor.backends = wgpu::Backends::DX12 | wgpu::Backends::VULKAN;
-    let instance = wgpu::Instance::new(descriptor);
-    let adapter = pollster::block_on(instance.request_adapter(&Default::default())).ok()?;
-    if adapter.limits().max_sampled_textures_per_shader_stage < LAYERED_MATERIAL_REQUIRED_TEXTURES {
-        return None;
-    }
-    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        required_limits: wgpu::Limits {
-            max_sampled_textures_per_shader_stage: LAYERED_MATERIAL_REQUIRED_TEXTURES,
-            ..Default::default()
-        },
-        ..Default::default()
-    }))
-    .expect("layered-capable adapter must create a device");
-    Some((device, queue))
-}
-
-/// 白炉分层墙:几何与墙腿同款(全帧覆盖 Lambert 面);材质 = 白炉基材
-/// (`base`)+ 纯色层栈(`layers`:rgb + overlay 标志,metal 0 / rough 1,
-/// 无层纹理 → 走 baseRow 纯色路径)。`coverages` 逐层覆盖实际请求的
-/// coverage;全零时层被 GPU 剪枝,退回基材身份帧。
-fn layered_furnace_wall_packet(base: [f32; 3], layers: &[([f32; 3], f32, bool)]) -> RenderPacket {
-    let vertices = facing_wall_vertices();
-    let packet: RenderPacket = serde_json::from_value(serde_json::json!({
-        "schema": "deep-engine.render-packet",
-        "version": 1,
-        "geometries": [{
-            "id": "furnace-layered-wall", "revision": 1,
-            "vertices": vertices, "uv0": vec![0.0f32; 8],
-            "indices": [0, 1, 2, 0, 2, 3],
-        }],
-        "materials": [{
-            "id": "furnace-layered-lambert", "baseColor": base,
-            "metallic": 0.0, "roughness": 1.0, "alphaMode": "OPAQUE",
-            "layered": {
-                "layers": layers
-                    .iter()
-                    .map(|(rgb, coverage, overlay)| serde_json::json!({
-                        "coverage": coverage,
-                        "mode": if *overlay { "overlay" } else { "replace" },
-                        "surface": { "baseColor": rgb, "metallic": 0.0, "roughness": 1.0 },
-                    }))
-                    .collect::<Vec<_>>(),
-            },
-        }],
-        "instances": [{
-            "id": "furnace-layered-wall", "geometry": "furnace-layered-wall",
-            "material": "furnace-layered-lambert",
-            "transform": [1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0, 0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0]
-        }],
-        "textures": []
-    }))
-    .expect("layered furnace wall packet JSON must deserialize");
-    validate_packet(&packet).expect("layered furnace wall packet must pass contract validation");
-    packet
-}
-
-/// 分层白炉读回判据:逐通道均值与逐像素都对照 CPU 闭式预测
-/// (`furnace.blended` × E;光照对 albedo 线性,响应级混合 = 响应 × E),
-/// 容差沿用既有炉容差(geometryMean/MaxRelative);另断言白炉凸包上界
-/// ——凸混合不超双亲响应(`furnace_bound_holds` 的 GPU 镜像)。
-fn assert_layered_furnace_pixels(
-    pixels: &[[f32; 3]],
-    expected: [f32; 3],
-    max_parent_response: [f32; 3],
-    label: &str,
-) {
-    assert!(!pixels.is_empty(), "{label}: readback must not be empty");
-    let mut sums = [0.0f64; 3];
-    let mut max_rel = 0.0f64;
-    for pixel in pixels {
-        for (channel, value) in pixel.iter().enumerate() {
-            let value = f64::from(*value);
-            sums[channel] += value;
-            let rel = (value - f64::from(expected[channel])) / f64::from(expected[channel]);
-            max_rel = max_rel.max(rel.abs());
-        }
-    }
-    let count = pixels.len() as f64;
-    let means: [f64; 3] = sums.map(|sum| sum / count);
-    if cfg!(debug_assertions) {
-        println!("LAYERDBG {label}: means={means:?} expected={expected:?} max_parent={max_parent_response:?}");
-    }
-    for (channel, mean) in means.iter().enumerate() {
-        let rel = (mean - f64::from(expected[channel])) / f64::from(expected[channel]);
-        assert!(
-            rel.abs() <= FURNACE_TOLERANCES.geometry_mean_relative,
-            "{label}: channel {channel} mean {mean:.6} vs predicted {:.6} exceeds \
-             the furnace mean tolerance ({:.4}%)",
-            expected[channel],
-            100.0 * rel
-        );
-    }
-    assert!(
-        max_rel <= FURNACE_TOLERANCES.geometry_max_relative,
-        "{label}: per-pixel deviation {:.4} exceeds the furnace max tolerance",
-        max_rel
-    );
-    for pixel in pixels {
-        for (channel, value) in pixel.iter().enumerate() {
-            let bound = f64::from(max_parent_response[channel])
-                * (1.0 + FURNACE_TOLERANCES.geometry_max_relative);
-            assert!(
-                f64::from(*value) <= bound,
-                "{label}: channel {channel} value {value} escapes the furnace \
-                 convex hull bound {bound}"
-            );
-        }
-    }
-    println!(
-        "layered white furnace [{label}]: means=[{:.6}, {:.6}, {:.6}] \
-         predicted=[{:.6}, {:.6}, {:.6}] maxRel={:.4}%",
-        means[0],
-        means[1],
-        means[2],
-        expected[0],
-        expected[1],
-        expected[2],
-        100.0 * max_rel
-    );
-}
+#[path = "white_furnace_layered_gpu_tests.rs"]
+mod layered_gpu_tests;
 
 #[test]
 #[ignore = "requires a real GPU with the I-C23 layered capability (>= 19 sampled \
             textures per stage); run explicitly with --ignored"]
 fn white_furnace_layered_stack_matches_cpu_convexity() {
-    let Some((device, queue)) = request_layered_furnace_device() else {
-        println!(
-            "layered white furnace GPU leg skipped: no DX12/Vulkan adapter with \
-             >= {LAYERED_MATERIAL_REQUIRED_TEXTURES} sampled-texture stages"
-        );
-        return;
-    };
-    let errors = Arc::new(Mutex::new(Vec::new()));
-    device.on_uncaptured_error(Arc::new({
-        let errors = errors.clone();
-        move |error| errors.lock().unwrap().push(error.to_string())
-    }));
-
-    // CPU 参考 = fixture 白炉凸性案例(TS 权威端生成;pack/blend 已由
-    // pbr_layered 的 fixture 门逐位钉死,此处再用混合闭式自证一次)。
-    let fixture: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../deep-engine/fixtures/i-c23-native-layered-block-v1.json"
-    ))
-    .expect("layered fixture parses");
-    let furnace = &fixture["furnace"];
-    let rgb3 = |value: &serde_json::Value| -> [f32; 3] {
-        let values: Vec<f64> = value
-            .as_array()
-            .expect("rgb triple")
-            .iter()
-            .map(|v| v.as_f64().expect("finite rgb"))
-            .collect();
-        [values[0] as f32, values[1] as f32, values[2] as f32]
-    };
-    let base = rgb3(&furnace["base"]);
-    let layers: Vec<([f32; 3], f32, bool)> = furnace["layers"]
-        .as_array()
-        .expect("furnace layers")
-        .iter()
-        .map(|layer| {
-            (
-                rgb3(&layer["rgb"]),
-                layer["coverage"].as_f64().expect("coverage") as f32,
-                layer["overlay"].as_bool().expect("layer mode flag"),
-            )
-        })
-        .collect();
-    let blended = rgb3(&furnace["blended"]);
-    let blended_cpu = blend_layer_stack(
-        base,
-        &layers
-            .iter()
-            .map(|(rgb, coverage, overlay)| {
-                (
-                    *rgb,
-                    LayerResponse {
-                        coverage: *coverage,
-                        overlay: *overlay,
-                    },
-                )
-            })
-            .collect::<Vec<_>>(),
-    );
-    assert_eq!(
-        blended_cpu, blended,
-        "fixture blended must match the CPU closed form"
-    );
-    let environment_radiance = FURNACE_ENVIRONMENT_RADIANCE as f32;
-    let expected: [f32; 3] = blended.map(|channel| channel * environment_radiance);
-    // 白炉凸包上界(响应级):max(基材, 各层) 逐通道——GPU 凸混合不超双亲。
-    let mut max_parent = base;
-    for (rgb, _, _) in &layers {
-        for (parent, channel) in max_parent.iter_mut().zip(rgb) {
-            *parent = (*parent).max(*channel);
-        }
-    }
-    let max_parent_response: [f32; 3] = max_parent.map(|channel| channel * environment_radiance);
-
-    // ① 全栈分层帧:层 0 overlay(coverage 0.75)先混,层 1 replace(0.5)
-    //    作用于其结果;读回 = blended × E。
-    let packet = layered_furnace_wall_packet(base, &layers);
-    let pixels = render_furnace_frame(
-        &device,
-        &queue,
-        &packet,
-        "layered white furnace frame",
-        true,
-    );
-    assert_layered_furnace_pixels(&pixels, expected, max_parent_response, "layered stack");
-
-    // ② 零覆盖回归帧:coverage 全 0 → 层剪枝 → 基材身份(≈ base × E)。
-    let packet_off = layered_furnace_wall_packet(
-        base,
-        &layers
-            .iter()
-            .map(|(rgb, _, overlay)| (*rgb, 0.0f32, *overlay))
-            .collect::<Vec<_>>(),
-    );
-    let pixels_off = render_furnace_frame(
-        &device,
-        &queue,
-        &packet_off,
-        "layered-off white furnace frame",
-        true,
-    );
-    let base_expected: [f32; 3] = base.map(|channel| channel * environment_radiance);
-    assert_layered_furnace_pixels(
-        &pixels_off,
-        base_expected,
-        max_parent_response,
-        "zero-coverage identity",
-    );
-
-    let uncaptured = errors.lock().unwrap().clone();
-    assert!(
-        uncaptured.is_empty(),
-        "uncaptured device errors: {uncaptured:?}"
-    );
+    layered_gpu_tests::white_furnace_layered_stack_matches_cpu_convexity();
 }
+
+#[path = "layered_clearcoat_gpu_tests.rs"]
+mod clearcoat_gpu_tests;
+
+#[path = "layered_metal_reflection_gpu_tests.rs"]
+mod metal_reflection_gpu_tests;
+
+#[path = "layered_combination_gpu_tests.rs"]
+mod combination_gpu_tests;
+
+#[path = "layered_texture_gpu_tests.rs"]
+mod texture_gpu_tests;
+
+#[path = "layered_texture_observer.rs"]
+mod texture_observer;

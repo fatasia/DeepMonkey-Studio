@@ -1,95 +1,12 @@
+// WebGPU probe capture adapter 测试(sourceSizeGate 拆分:夹具/计划/上下文/事务辅助
+// 移至 webgpuProbeCaptureAdapter.testUtils.ts,代码逐行同源;describe/it 名零变化,
+// 语义零变化——外部证据按测试名引用不受影响)。
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ProbeCaptureBeginContext, ProbeCaptureTransaction } from "../lighting/probeClipmapCaptureExecutor.js";
-import { planIrradianceProbeClipmap, type ProbeClipmapPlan } from "../lighting/probeClipmapPlan.js";
-import type { ProbeClipmapGpuResource } from "../lighting/probeClipmapResources.js";
-import type { DeviceSession } from "./deviceSession.js";
-import { WebGpuProbeCaptureAdapter } from "./webgpuProbeCaptureAdapter.js";
-import type { WebGpuProbeCaptureSubmission, WebGpuProbeSamplingBinding } from "./webgpuProbeCaptureTypes.js";
 import { WEBGPU_PROBE_CAPTURE_WGSL } from "./webgpuProbeCaptureWgsl.js";
-
-interface FakeTexture extends GPUTexture {
-  readonly descriptor: GPUTextureDescriptor;
-  readonly destroy: ReturnType<typeof vi.fn>;
-  readonly createView: ReturnType<typeof vi.fn>;
-}
-interface FakeBuffer extends GPUBuffer { readonly destroy: ReturnType<typeof vi.fn> }
-interface PassRecord { readonly label: string; readonly dispatch: number[][] }
-interface EncoderRecord { readonly passes: PassRecord[]; readonly copies: unknown[][] }
-
-function fixture() {
-  const owned = new Set<GPUTexture | GPUBuffer>(), textures: FakeTexture[] = [], buffers: FakeBuffer[] = [];
-  const encoders: EncoderRecord[] = [];
-  const lost = new Promise<GPUDeviceLostInfo>(() => {});
-  const queue = { writeBuffer: vi.fn(), submit: vi.fn(), onSubmittedWorkDone: vi.fn(() => Promise.resolve()) };
-  const device = {
-    limits: { maxTextureDimension2D: 16_384, maxTextureArrayLayers: 256,
-      maxComputeWorkgroupsPerDimension: 65_535 }, queue, lost,
-    pushErrorScope: vi.fn(), popErrorScope: vi.fn(() => Promise.resolve(null)),
-    createShaderModule: vi.fn(({ label }: { label: string }) => ({ label })),
-    createBindGroupLayout: vi.fn(({ label }: { label: string }) => ({ label })),
-    createPipelineLayout: vi.fn(({ label }: { label: string }) => ({ label })),
-    createComputePipeline: vi.fn(({ label }: { label: string }) => ({ label })),
-    createSampler: vi.fn((descriptor: GPUSamplerDescriptor) => ({ descriptor })),
-    createBindGroup: vi.fn(({ label, entries }: { label: string; entries: GPUBindGroupEntry[] }) => ({ label, entries })),
-    createTexture: vi.fn((descriptor: GPUTextureDescriptor) => {
-      const size = descriptor.size as GPUExtent3DDict;
-      const texture = { width: size.width, height: size.height,
-        depthOrArrayLayers: size.depthOrArrayLayers, mipLevelCount: descriptor.mipLevelCount ?? 1,
-        sampleCount: 1, dimension: "2d", format: descriptor.format, usage: descriptor.usage, descriptor,
-        destroy: vi.fn(), createView: vi.fn((view = {}) => ({ texture, view })) } as unknown as FakeTexture;
-      textures.push(texture); return texture;
-    }),
-    createBuffer: vi.fn((descriptor: GPUBufferDescriptor) => {
-      const buffer = { size: descriptor.size, usage: descriptor.usage,
-        destroy: vi.fn() } as unknown as FakeBuffer; buffers.push(buffer); return buffer;
-    }),
-    createCommandEncoder: vi.fn(() => {
-      const record: EncoderRecord = { passes: [], copies: [] }; encoders.push(record);
-      return {
-        copyTextureToTexture: vi.fn((...args: unknown[]) => record.copies.push(args)),
-        beginComputePass: vi.fn(({ label }: { label: string }) => {
-          const pass: PassRecord = { label, dispatch: [] }; record.passes.push(pass);
-          return { setPipeline: vi.fn(), setBindGroup: vi.fn(),
-            dispatchWorkgroups: vi.fn((...args: number[]) => pass.dispatch.push(args)), end: vi.fn() };
-        }),
-        finish: vi.fn(() => ({ id: encoders.length })),
-      };
-    }),
-  };
-  const session = { state: "ready", device,
-    own<T extends GPUTexture | GPUBuffer>(resource: T): T { owned.add(resource); return resource; },
-    release(resource: GPUTexture | GPUBuffer): void { if (owned.delete(resource)) resource.destroy(); },
-  };
-  return { session: session as unknown as DeviceSession, rawSession: session, device, queue,
-    owned, textures, buffers, encoders };
-}
-
-function plan(previous?: ProbeClipmapPlan): ProbeClipmapPlan {
-  return planIrradianceProbeClipmap({ cameraPosition: [0, 0, 0],
-    sceneBounds: { min: [-100, -100, -100], max: [100, 100, 100] },
-    ...(previous ? { previous: previous.history } : {}),
-    options: { levelCount: 2, gridSize: [4, 2, 4], updateBudget: 4 } });
-}
-function context(source: ProbeClipmapPlan, invalidation: "initial" | "none" | "resize" = "initial",
-  dynamicUpdateIndices: readonly number[] = []):
-ProbeCaptureBeginContext {
-  const buffer = {} as GPUBuffer;
-  return { generation: 1, deviceEpoch: "gpu-1", plan: source, signal: new AbortController().signal,
-    resource: { deviceEpoch: "gpu-1", profileKey: "probe-profile", plan: source,
-      probeStorageBuffer: buffer, updateListBuffer: buffer, levelMetadataBuffer: buffer,
-      allocatedBytes: source.profile.estimatedBytes } as ProbeClipmapGpuResource,
-    publication: { frame: 0, schedulerGeneration: 1, frameBudget: 4,
-      capacityBudget: 4, cameraCut: false, invalidation, dynamicUpdateIndices } };
-}
-async function execute(transaction: ProbeCaptureTransaction<WebGpuProbeCaptureSubmission, WebGpuProbeSamplingBinding>,
-  adapter: WebGpuProbeCaptureAdapter, source: ProbeClipmapPlan): Promise<WebGpuProbeSamplingBinding> {
-  source.updates.forEach((update, index) => transaction.encodeCapture(update, index));
-  source.updates.forEach((update, index) => transaction.encodeFilter(update, index));
-  source.updates.forEach((update, index) => transaction.encodeMips(update, index));
-  const submission = transaction.finish(); await adapter.submit(submission, new AbortController().signal);
-  return transaction.commit();
-}
+import { PROBE_MOMENTS_WGSL } from "./webgpuProbeMoments.js";
+import { WebGpuProbeCaptureAdapter } from "./webgpuProbeCaptureAdapter.js";
+import { context, execute, fixture, plan } from "./webgpuProbeCaptureAdapter.testUtils.js";
 
 beforeEach(() => {
   vi.stubGlobal("GPUShaderStage", { COMPUTE: 1 });
@@ -132,6 +49,94 @@ describe("concrete WebGPU probe capture adapter", () => {
       .not.toBe(beginContext.resource.updateListBuffer);
     expect((f.queue.writeBuffer.mock.calls[1]![2] as Uint8Array).byteLength).toBe(256);
     expect(adapter.current).toBe(binding); expect(f.owned.size).toBe(5);
+  });
+
+  it.runIf(Boolean(process.env.DEEP_SHADER_NAGA_BIN))("validates same-generation moment publication with Naga", () => {
+    const result = spawnSync(process.env.DEEP_SHADER_NAGA_BIN!,
+      ["--stdin-file-path", "deep-moment-publication.wgsl", "--input-kind", "wgsl"],
+      { input: PROBE_MOMENTS_WGSL, encoding: "utf8" });
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it("commits moments and radiance together, preserving 96-byte record lanes and reusing volumes", async () => {
+    const f = fixture(), contexts: unknown[] = [], source = plan();
+    const adapter = new WebGpuProbeCaptureAdapter(f.session, "gpu-1", {
+      captureVisibilityMoments: true, encodeSourceRadiance: input => contexts.push(input),
+    });
+    const first = await execute(adapter.begin(context(source)), adapter, source);
+    expect(first.momentsView).toBeDefined();
+    expect(f.textures.filter(texture => texture.format === "rgba32float")).toHaveLength(2);
+    expect(contexts).toHaveLength(source.updates.length);
+    expect(contexts.every(input => (input as { momentsDestinationView?: unknown }).momentsDestinationView)).toBe(true);
+    expect(f.encoders[0]!.passes.map(p => p.label)).toContain("Deep GI publish moments");
+    expect(PROBE_MOMENTS_WGSL).toContain("records[recordIndex].visibility = vec4f(moment.xyz, 0.0)");
+    expect(PROBE_MOMENTS_WGSL).not.toContain("records[recordIndex].relocation =");
+    const secondSource = plan(source);
+    const second = await execute(adapter.begin(context(secondSource, "none")), adapter, secondSource);
+    expect(second.momentsView).not.toBe(first.momentsView);
+    expect(f.encoders[1]!.copies).toHaveLength(2);
+    const thirdSource = plan(secondSource);
+    await execute(adapter.begin(context(thirdSource, "none")), adapter, thirdSource);
+    expect(f.textures.filter(texture => texture.format === "rgba32float")).toHaveLength(3);
+    adapter.dispose(); expect(f.owned.size).toBe(0);
+    expect(f.textures.every(texture => texture.destroy.mock.calls.length === 1)).toBe(true);
+  });
+
+  it("keeps old visible moments during rollback and rejects moment fallback without a real encoder", async () => {
+    const f = fixture(), source = plan();
+    expect(() => new WebGpuProbeCaptureAdapter(f.session, "gpu-1", { captureVisibilityMoments: true }))
+      .toThrow("real scene radiance encoder");
+    const adapter = new WebGpuProbeCaptureAdapter(f.session, "gpu-1", {
+      captureVisibilityMoments: true, encodeSourceRadiance: () => {},
+    });
+    const first = await execute(adapter.begin(context(source)), adapter, source);
+    const next = adapter.begin(context(plan(source), "none"));
+    next.rollback(new Error("cancelled"));
+    expect(adapter.current).toBe(first); expect(adapter.current!.momentsView).toBe(first.momentsView);
+    adapter.dispose(); expect(f.owned.size).toBe(0);
+  });
+
+  it("fails moment transient limits before allocation and clears moments across grid shifts", async () => {
+    const f = fixture(), source = plan();
+    const constrained = new WebGpuProbeCaptureAdapter(f.session, "gpu-1", {
+      maxTransientBytes: 2200, captureVisibilityMoments: true, encodeSourceRadiance: () => {},
+    });
+    expect(() => constrained.begin(context(source))).toThrow("transient budget");
+    expect(f.textures).toHaveLength(0);
+    const adapter = new WebGpuProbeCaptureAdapter(f.session, "gpu-1", {
+      captureVisibilityMoments: true, encodeSourceRadiance: () => {},
+    });
+    await execute(adapter.begin(context(source)), adapter, source);
+    const nextSource = plan(source);
+    const shifted = { ...nextSource, levels: nextSource.levels.map(level => ({ ...level,
+      originCell: [level.originCell[0] + 1, level.originCell[1], level.originCell[2]] as const,
+      origin: [level.origin[0] + level.spacing, level.origin[1], level.origin[2]] as const,
+      max: [level.max[0] + level.spacing, level.max[1], level.max[2]] as const })) };
+    await execute(adapter.begin(context(shifted, "none")), adapter, shifted);
+    expect(f.encoders[1]!.copies).toHaveLength(0);
+    expect(f.encoders[1]!.passes.filter(p => p.label === "Deep GI clear moments")).toHaveLength(2);
+    adapter.dispose(); constrained.dispose();
+  });
+
+  it.each(["cancel", "device-loss"])("retires real-moment transactions safely after %s", async mode => {
+    const f = fixture(), source = plan();
+    const adapter = new WebGpuProbeCaptureAdapter(f.session, "gpu-1", {
+      captureVisibilityMoments: true, encodeSourceRadiance: () => {},
+    });
+    await execute(adapter.begin(context(source)), adapter, source);
+    let retire!: () => void;
+    f.queue.onSubmittedWorkDone.mockReturnValue(new Promise<void>(resolve => { retire = resolve; }));
+    const nextSource = plan(source), transaction = adapter.begin(context(nextSource, "none"));
+    nextSource.updates.forEach((u,i) => { transaction.encodeCapture(u,i);transaction.encodeFilter(u,i);transaction.encodeMips(u,i); });
+    const controller = new AbortController();
+    const submitted = adapter.submit(transaction.finish(), controller.signal);
+    controller.abort(); transaction.rollback(controller.signal.reason);
+    if (mode === "device-loss") { f.rawSession.state = "lost"; adapter.dispose(); }
+    retire(); await expect(submitted).rejects.toMatchObject({ name: "AbortError" });
+    await Promise.resolve(); adapter.dispose(); await Promise.resolve();
+    expect(f.owned.size).toBe(0);
+    expect(f.textures.every(texture => texture.destroy.mock.calls.length === 1)).toBe(true);
+    expect(f.buffers.every(buffer => buffer.destroy.mock.calls.length === 1)).toBe(true);
   });
 
   it("reuses ping-pong textures and uniform buffers after warmup", async () => {

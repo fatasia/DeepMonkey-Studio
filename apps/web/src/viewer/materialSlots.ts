@@ -35,6 +35,11 @@ export function materialStateForSlot(state: SceneMaterialState, material: THREE.
   if (Object.keys(global).length === 0 && !slot) return undefined;
   return slot ? { ...global, ...slot } : global;
 }
+export function ungradedMaterialColor(material: THREE.Material & { color: THREE.Color }): string {
+  const authored = material.userData.studioUngradedColor;
+  return typeof authored === "string" ? authored : `#${material.color.getHexString()}`;
+}
+
 export function readMaterialSlot(material: THREE.Material): SceneMaterialState {
   const value = material as THREE.MeshStandardMaterial;
   const adjustment = value.userData.studioColorAdjustment as Partial<SceneMaterialState> | undefined;
@@ -43,7 +48,7 @@ export function readMaterialSlot(material: THREE.Material): SceneMaterialState {
     brightness: adjustment?.brightness ?? 0, contrast: adjustment?.contrast ?? 0,
     ...(value.normalScale?.isVector2 ? { normalScale: value.normalScale.x } : {}),
     ...(typeof value.wireframe === "boolean" ? { wireframe: value.wireframe } : {}),
-    ...(value.color?.isColor ? { color: `#${value.color.getHexString()}` } : {}),
+    ...(value.color?.isColor ? { color: ungradedMaterialColor(value) } : {}),
     ...(typeof value.roughness === "number" ? { roughness: value.roughness } : {}),
     ...(typeof value.metalness === "number" ? { metalness: value.metalness } : {}),
     ...(value.isMeshStandardMaterial ? { ior: (value as THREE.MeshPhysicalMaterial).isMeshPhysicalMaterial ? (value as THREE.MeshPhysicalMaterial).ior : 1.5 } : {}),
@@ -59,7 +64,11 @@ export function sourceMaterialState(material: THREE.Material): SceneMaterialStat
 
 export function restoreMaterialSourceColors(material: THREE.MeshStandardMaterial, state: SceneMaterialState): void {
   const source = material.userData.studioSourceLinearColors as { color?: number[]; emissive?: number[] } | undefined;
-  if (state.sourceColor && source?.color && material.color?.isColor) material.color.fromArray(source.color);
+  if (state.sourceColor && source?.color && material.color?.isColor) {
+    material.color.fromArray(source.color);
+    material.userData.studioUngradedColor = `#${material.color.getHexString()}`;
+    material.userData.studioUngradedLinearColor = [...source.color];
+  }
   if (state.sourceEmissive && source?.emissive && material.emissive?.isColor) material.emissive.fromArray(source.emissive);
 }
 

@@ -4,7 +4,8 @@
  * - 规范驱动器 `advanceTicks(n)`(确定性回放只用它);
  * - 便利驱动器 `advanceSeconds(dt)` 把渲染帧时间量化为整 tick:`round(dt × hz)`,
  *   亚 tick 余量累计保留;超过 `maxCatchUpTicks` 的积压按上限执行并丢弃超出部分
- *   (1/45 这类非整倍帧率会整体放慢——与 T19 相同的已声明限定);
+ *   (放慢只来自该积压丢弃;非整倍帧率本身——如 1/45@60hz——的 round 量化长程
+ *   平均等于理想值,E3 对拍实测,fixedStepRateParity.test.ts 钉死);
  * - 负 dt 按输入契约视为 0(浮点误差容忍),不抛错。
  */
 import type { FixedStepSim } from "./physicsTypes.js";

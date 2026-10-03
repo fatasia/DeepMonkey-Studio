@@ -4,6 +4,7 @@ import { api } from "../api";
 import { translate as tr, type AppLocale } from "../i18n";
 import { sourceFromSettled, type AssistantContextSource } from "./assistantReliability";
 import { buildAskDataSemanticContext } from "./dataSemanticContext";
+import { degradedRendererCapabilities, rendererCapabilityContextSummary } from "../rendererCapabilityUserFace";
 
 interface AiProjectContextState {
   platformContext: Record<string, unknown>;
@@ -75,6 +76,11 @@ export function useAiProjectContext(projectId: string | undefined, locale: AppLo
       setPlatformContext({
         loadedAt: new Date().toISOString(),
         contextTrust: "client-snapshot",
+        // K17:渲染能力状态随平台上下文进入助手——AI 回答"支不支持某效果"有据可查。
+        rendererCapabilities: {
+          summary: rendererCapabilityContextSummary(locale),
+          limited: degradedRendererCapabilities().map(row => ({ id: row.id, support: row.support, reason: row.reason })),
+        },
         sourceStatus: sources,
         operations: operationValue
           ? {

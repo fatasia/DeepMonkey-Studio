@@ -78,6 +78,7 @@ async function samplePublishedProbe(session: DeviceSession, binding: WebGpuProbe
     { binding: 9, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float", viewDimension: "2d-array" } },
     { binding: 10, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
     { binding: 11, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform", minBindingSize: 256 } },
+    { binding: 16, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "unfilterable-float", viewDimension: "2d-array" } },
   ] });
   const samplePosition = [position[0], position[1] - spacing * 0.2, position[2]];
   const module = device.createShaderModule({ label: "Deep GI production texture sample WGSL", code: `${PROBE_CLIPMAP_TEXTURE_SAMPLING_WGSL}
@@ -91,9 +92,12 @@ async function samplePublishedProbe(session: DeviceSession, binding: WebGpuProbe
     layout: device.createPipelineLayout({ bindGroupLayouts: [...empty, layout] }),
     vertex: { module, entryPoint: "vertexMain" }, fragment: { module, entryPoint: "fragmentMain",
       targets: [{ format: "rgba16float" }] } });
+  const momentFallback = own(device.createTexture({ label: "Deep GI absent moment evidence", size: [1, 1, 1],
+    format: "rgba32float", usage: GPUTextureUsage.TEXTURE_BINDING }));
   const group = device.createBindGroup({ label: "Deep GI production texture sample binding", layout, entries: [
     { binding: 9, resource: binding.view }, { binding: 10, resource: binding.sampler },
     { binding: 11, resource: { buffer: binding.levelMetadataBuffer } },
+    { binding: 16, resource: binding.momentsView ?? momentFallback.createView({ dimension: "2d-array" }) },
   ] });
   const target = own(device.createTexture({ label: "Deep GI production sample target", size: [1, 1], format: "rgba16float",
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC }));

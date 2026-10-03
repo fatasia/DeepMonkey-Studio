@@ -523,8 +523,8 @@ struct NativeMeshCapture {
 // stock 分支的同构)。visibility 由入口按阴影来源注入(级联 vs RT ray query);
 // rough_raw 先夹取再加几何粗糙度,与基材路径逐位一致。层 ior 经介电 F0 通道
 // 消费(Web compose 后 select(v.dielectric, deepDielectricF0(params.x), x>=1)
-// 的同式);层的 clearcoat/各向异性/透射词随块携带但 stock 核不评,与 native
-// 基材无 extendedParameters 求值同界(诚实能力边界,见规格)。
+// 的同式)。活动层清漆由 native_layer_lit_response 替换主方向光;普通基材仍走
+// stock,各向异性/透射及基材清漆由发布合同拒绝。
 fn native_lit_response(
   input: VertexOutput,
   normal: vec3f,
@@ -637,8 +637,8 @@ fn deep_layer_stack(
       layer_rough *= mr.g;
     }
     let dielectric = select(input.dielectric, deepDielectricF0(row.params0.x), row.params0.x >= 1.0);
-    let layer = native_lit_response(input, normal, geometry_normal, layer_base, layer_metal,
-      layer_rough, dielectric, ao, emission, view, light, visibility);
+    let layer = native_layer_lit_response(input, normal, geometry_normal, layer_base, layer_metal,
+      layer_rough, dielectric, ao, emission, view, light, visibility, row.params0, row.params1, (flags & 8u) != 0u);
     result = deepLayerBlend(result, layer, layer, coverage, u32(row.surfaceMode.z));
   }
   return result;

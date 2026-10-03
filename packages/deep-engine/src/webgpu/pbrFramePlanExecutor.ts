@@ -271,21 +271,23 @@ export function collectActualPbrFramePasses(features: PbrRendererFeatures, trans
   const effects = PbrPostProcessChain.describePasses(features, transparency, { opaqueColorResource, ...(options.godRays ? { godRays: true } : {}) });
   const opaqueEffect = (pass: PbrActualPassDescription): boolean =>
     pass.passId === "ambient-occlusion" || pass.passId === "apply-ambient-occlusion";
-  const contactInput = options.bloom ? "bloom-hdr" : features.temporalAa ? "temporal-hdr"
-    : features.screenSpaceReflection ? "ssr-hdr" : features.volumetricFog ? "volumetric-fog-hdr"
-    : transparency ? "composited-hdr" : opaqueColorResource;
   // F4 超分开启时 upscale-hdr 是唯一 display 输入(优先级最高,链尾)。
   // 超分 pass 的实际描述由 PbrPostProcessChain.describePasses 追加进 effects(同 taa/bloom)。
   const upscaleInput = features.temporalUpscale ? "upscale-hdr" : undefined;
+  // C10 真实编码序(pbrRenderer):contact 在**全部 effects 编码后**把遮蔽乘回最终 HDR,
+  // present 读其输出(contact-hdr)——不是链头。此前模拟写在链头,默认 opt-in 时从不暴露;
+  // 默认开启后被 plan/actual 对拍抓出(本修复对齐真实编码,非放宽)。
+  const chainTail = features.bloom ? "bloom-hdr" : features.temporalAa ? "temporal-hdr"
+    : features.screenSpaceReflection ? "ssr-hdr" : features.volumetricFog ? "volumetric-fog-hdr"
+      : transparency ? "composited-hdr" : opaqueColorResource;
   return Object.freeze([
-    ...(features.contactShadows && !options.directDisplay
-      ? [describeContactShadowPass(), describeContactApplyPass(contactInput)] : []),
     describePbrOpaquePass(options),
     ...effects.filter(opaqueEffect),
     ...(transparency ? PbrTransparencyPass.describePasses(opaqueColorResource) : []),
     ...effects.filter(pass => !opaqueEffect(pass)),
-    describePbrPresentPasses(upscaleInput ?? (features.bloom ? "bloom-hdr"
-      : features.temporalAa ? "temporal-hdr" : features.screenSpaceReflection ? "ssr-hdr" : features.volumetricFog ? "volumetric-fog-hdr"
-        : transparency ? "composited-hdr" : opaqueColorResource), features.spatialAa, options.hdrDisplay),
+    ...(features.contactShadows && !options.directDisplay
+      ? [describeContactShadowPass(), describeContactApplyPass(upscaleInput ?? chainTail)] : []),
+    describePbrPresentPasses(features.contactShadows && !options.directDisplay
+      ? "contact-hdr" : upscaleInput ?? chainTail, features.spatialAa, options.hdrDisplay),
   ]);
 }

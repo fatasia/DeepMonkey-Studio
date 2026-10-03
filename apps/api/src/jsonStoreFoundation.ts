@@ -3,6 +3,7 @@ import path from "node:path";
 import type {
   AiModelProviderSettings,
   AiProviderSettings,
+  AgentAutonomySettings,
   AuditLogRecord,
   DatabaseDocument,
   ConversionTaskRecord,
@@ -129,6 +130,17 @@ export abstract class JsonStoreFoundation {
 
   getBrandingSettings(): SystemBrandingSettings | undefined {
     return this.document.branding ? structuredClone(this.document.branding) : undefined;
+  }
+
+  getAgentSettings(): DatabaseDocument["agentSettings"] {
+    return this.document.agentSettings ? structuredClone(this.document.agentSettings) : undefined;
+  }
+
+  async saveAgentSettings(settings: NonNullable<DatabaseDocument["agentSettings"]>): Promise<AgentAutonomySettings> {
+    return this.runDocumentMutation((candidate) => {
+      candidate.agentSettings = structuredClone(settings);
+      return changed(structuredClone(settings));
+    });
   }
 
   async saveBrandingSettings(settings: SystemBrandingSettings): Promise<SystemBrandingSettings> {

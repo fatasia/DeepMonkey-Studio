@@ -54,6 +54,7 @@ it("admits layered materials into the Native publish profile with the same close
   // 校验路径),材质带着规范化层栈通过 native 包校验。
   const input = JSON.parse(serializeBrowserRenderPacket(packet()));
   delete input.materials[0].extendedParameters;
+  input.materials[0].layered.layers[0].params.anisotropy.strength = 0;
   expect(() => validateRuntimeRenderPacket(input, "$.packet")).not.toThrow();
   const restored = materializeRuntimeRenderPacket(input, "$.packet");
   expect(block(restored).bytes).toHaveLength(304);
@@ -68,6 +69,7 @@ it.each([
 ])("keeps the Native layered profile fail-closed", mutate => {
   const input = JSON.parse(serializeBrowserRenderPacket(packet()));
   delete input.materials[0].extendedParameters;
+  input.materials[0].layered.layers[0].params.anisotropy.strength = 0;
   mutate(input);
   expect(() => validateRuntimeRenderPacket(input, "$.packet")).toThrow();
 });

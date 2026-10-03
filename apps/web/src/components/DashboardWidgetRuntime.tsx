@@ -268,6 +268,7 @@ export function DashboardWidgetView({
   if (["line", "area", "bar", "combo", "pie", "scatter", "radar", "funnel", "gauge", "sankey", "sunburst", "treemap", "graph", "map", "wordcloud", "boxplot", "waterfall", "polarBar"].includes(widget.type))
     return (
       <DashboardDrillChart
+        locale={locale}
         widget={widget}
         metric={metric}
         analysis={analysis}

@@ -6,43 +6,54 @@ use std::{
 };
 use winit::platform::windows::EventLoopBuilderExtWindows;
 
-const TEST: &str = "app::device_loss_probe_tests::j3_gate_e_actual_window_device_loss";
-const RETRY_TEST: &str = "app::device_loss_probe_tests::j3_gate_e_actual_window_device_loss_retry";
+#[path = "device_loss_probe_fresh.rs"]
+mod fresh;
+#[path = "device_loss_probe_input.rs"]
+mod input;
+#[path = "device_loss_gpu_measurement.rs"]
+mod gpu_measurement;
+#[path = "../../tests/support/j3_window_events.rs"]
+mod window_events_support;
+#[path = "device_loss_window_timing.rs"]
+mod window_timing;
+#[path = "device_loss_unknown_matrix.rs"]
+mod unknown_matrix;
+use window_events_support::WindowEventKind;
+use window_timing::record_event;
 
+pub(super) fn begin_present_measurement() -> Option<Instant> {
+    window_timing::begin_present_measurement()
+}
+
+pub(super) fn observe_present(renderer_id: u64, elapsed: Duration) {
+    window_timing::observe_present(renderer_id, elapsed);
+}
 #[test]
 #[ignore = "requires Windows GPU and a real NativeApp window"]
 fn j3_gate_e_actual_window_device_loss() {
-    run(false);
+    run(false, false);
 }
 
 #[test]
 #[ignore = "requires Windows GPU and a real NativeApp window"]
 fn j3_gate_e_actual_window_device_loss_retry() {
-    run(true);
+    run(true, false);
 }
 
-fn run(retry: bool) {
-    const CHILD: &str = "DEEP_WINDOW_LOSS_CHILD";
-    if std::env::var_os(CHILD).is_none() {
-        for round in 1..=2 {
-            let result = std::process::Command::new(std::env::current_exe().unwrap())
-                .args([
-                    "--exact",
-                    if retry { RETRY_TEST } else { TEST },
-                    "--ignored",
-                    "--nocapture",
-                ])
-                .env(CHILD, round.to_string())
-                .output()
-                .unwrap();
-            assert!(
-                result.status.success(),
-                "{}{}",
-                String::from_utf8_lossy(&result.stdout),
-                String::from_utf8_lossy(&result.stderr)
-            );
-            println!("{}", String::from_utf8_lossy(&result.stdout));
-        }
+#[test]
+#[ignore = "requires Windows GPU and a real NativeApp window"]
+fn j3_gate_e_window_events_present() {
+    run(false, true);
+}
+
+#[test]
+#[ignore = "requires Windows GPU and a real NativeApp window"]
+fn j3_gate_e_window_events_present_retry() {
+    run(true, true);
+}
+
+fn run(retry: bool, window_events: bool) {
+    if fresh::parent_run(retry, window_events) {
         return;
     }
     let content = package_source::load(
@@ -54,32 +65,7 @@ fn run(retry: bool) {
     builder.with_any_thread(true);
     let event_loop = builder.build().unwrap();
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
-    let app = NativeApp::new(
-        content,
-        event_loop.create_proxy(),
-        NativeAppSetup {
-            smoke_frame: false,
-            features: RendererFeatures {
-                bloom: Default::default(),
-                fog: deep_engine_native::fog::FogSettings::DISABLED,
-                shadow_probe: false,
-                ibl_probe: false,
-                telemetry: false,
-            },
-            occlusion_probe: false,
-            dynamic_playback: None,
-            state_ops: None,
-            shadow_update_probe: None,
-            packet_live_probe: None,
-            packet_live_transport: None,
-            package_live_transport: None,
-            telemetry_prepare_replay: None,
-            telemetry_report: false,
-            selection_probe: false,
-            section_probe: false,
-            chart_key_probe: false,
-        },
-    );
+    let app = NativeApp::new(content, event_loop.create_proxy(), fresh::setup());
     let mut probe = Probe {
         app,
         stage: 0,
@@ -91,10 +77,12 @@ fn run(retry: bool) {
         lost_callbacks: 0,
         retry,
         retry_started: None,
+        window_events,
     };
     event_loop.run_app(&mut probe).unwrap();
     assert_eq!(probe.stage, 2);
     assert_eq!(probe.lost_callbacks, 1);
+    window_timing::clear();
 }
 
 struct Probe {
@@ -108,6 +96,7 @@ struct Probe {
     lost_callbacks: u32,
     retry: bool,
     retry_started: Option<Instant>,
+    window_events: bool,
 }
 impl Probe {
     fn redraw(&mut self, event_loop: &ActiveEventLoop) {
@@ -131,6 +120,11 @@ impl ApplicationHandler<GpuEvent> for Probe {
             return;
         }
         let size = winit::dpi::PhysicalSize::new(1920, 1080);
+        if self.window_events {
+            window_timing::start();
+            // The production initializer consumes this exact next generation after window creation.
+            self.old_id = self.app.next_renderer_id;
+        }
         self.app.window = Some(Arc::new(
             event_loop
                 .create_window(
@@ -141,6 +135,9 @@ impl ApplicationHandler<GpuEvent> for Probe {
                 )
                 .unwrap(),
         ));
+        if self.window_events {
+            record_event(WindowEventKind::WindowCreated, self.old_id);
+        }
         self.app.state.orbit(0.125, 0.0625);
         self.app.state.selected = Some("j3-preserved-selection".into());
         self.view = self.app.state.view;
@@ -154,7 +151,12 @@ impl ApplicationHandler<GpuEvent> for Probe {
             .clone();
         self.app.initialize_renderer();
         self.redraw(event_loop);
+        input::assert_ignored(self, event_loop);
+        gpu_measurement::before(self, event_loop);
         let renderer = self.app.renderer.as_mut().unwrap();
+        if self.window_events {
+            assert_eq!(renderer.id(), self.old_id);
+        }
         self.old_id = renderer.id();
         self.before_hdr = renderer.device_loss_probe_presented_hdr();
         self.stage = 1;
@@ -177,6 +179,8 @@ impl ApplicationHandler<GpuEvent> for Probe {
                 "actual loss reason: {reason}"
             );
             self.lost_callbacks += 1;
+            // Record arrival before synchronous handle/rebuild so recovery duration includes creation.
+            record_event(WindowEventKind::DeviceLostCallback, *renderer_id);
             if self.retry {
                 self.app.recovery_failures_remaining = 1;
                 self.retry_started = Some(Instant::now());
@@ -195,6 +199,9 @@ impl ApplicationHandler<GpuEvent> for Probe {
         }
     }
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        if !input::fixture_lifecycle(&event) {
+            return;
+        }
         // Avoid submitting on the destroyed owner until its actual lost callback arrives.
         if self.stage == 1 && matches!(event, WindowEvent::RedrawRequested) {
             return;
@@ -221,6 +228,7 @@ impl Probe {
     fn finish_recovery(&mut self, event_loop: &ActiveEventLoop) {
         let new_id = self.app.renderer.as_ref().unwrap().id();
         assert_ne!(new_id, self.old_id);
+        record_event(WindowEventKind::RecoveryCandidateCreated, new_id);
         assert_eq!(self.app.state.view, self.view);
         assert_eq!(
             self.app.state.selected.as_deref(),
@@ -236,6 +244,7 @@ impl Probe {
             self.package_hash
         );
         self.redraw(event_loop);
+        let gpu_measurement = gpu_measurement::after(self, event_loop);
         let after_hdr = self
             .app
             .renderer
@@ -262,12 +271,13 @@ impl Probe {
         );
         assert_eq!(self.app.renderer.as_ref().unwrap().id(), new_id);
         assert!(self.app.state.failure.is_none());
+        record_event(WindowEventKind::StaleEventRejected, self.old_id);
         if let Some(started) = self.retry_started {
             assert!(started.elapsed() >= Duration::from_millis(250));
             assert_eq!(self.app.recovery_retry.attempts(), 2);
             assert!(!self.app.recovery_retry.active());
         }
-        let evidence = json!({ "passed": true, "round": std::env::var("DEEP_WINDOW_LOSS_CHILD").unwrap(),
+        let mut evidence = json!({ "passed": true, "round": std::env::var("DEEP_WINDOW_LOSS_CHILD").unwrap(),
             "sourceHash":deep_engine_native::runtime_package::runtime_content_sha256(&json!(deep_engine_native::native_mesh_wgsl::native_mesh_shader_source())),
             "hashEncoding":"canonical-json-wgsl-source",
         "retryInjection":self.retry,"creationAttempts":self.app.recovery_retry.attempts(),"injectedFailures":u8::from(self.retry),
@@ -275,18 +285,12 @@ impl Probe {
         "oldRenderer": self.old_id, "newRenderer": new_id, "packageHash": self.package_hash,
         "beforeHdr": self.before_hdr, "afterHdr": after_hdr, "relativeHdrDifference": relative,
         "presented": true, "viewPreserved": true, "selectionPreserved": true, "staleEventsRejected": true });
-        if let Some(output) = std::env::var_os("J3_WINDOW_NATIVE_OUTPUT") {
-            std::fs::create_dir_all(&output).unwrap();
-            std::fs::write(
-                PathBuf::from(output).join(format!(
-                    "{}round-{}.json",
-                    if self.retry { "retry-" } else { "" },
-                    std::env::var("DEEP_WINDOW_LOSS_CHILD").unwrap()
-                )),
-                evidence.to_string(),
-            )
-            .unwrap();
+        if self.window_events {
+            evidence["windowEvents"] = window_timing::evidence(self.old_id, new_id);
         }
+        evidence["fixtureInputNegativeControl"] = json!({"passed":true,"events":4});
+        if let Some(measurement) = gpu_measurement { gpu_measurement::attach(&mut evidence, measurement, self.window_events); }
+        window_timing::write_evidence(&evidence, self.retry, self.window_events);
         println!("J3_WINDOW_RECOVERY {}", evidence);
         self.stage = 2;
         event_loop.exit();

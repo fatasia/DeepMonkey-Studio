@@ -111,7 +111,33 @@ describe("IndustrialAgentRunView", () => {
     expect(render(fixture())).not.toContain('aria-label="项目记忆"');
     expect(render(fixture())).not.toContain('aria-label="实验档案"');
   });
+
+  it("marks cross-project updates explicitly instead of silently dropping them (K11)", () => {
+    const html = renderToStaticMarkup(
+      <IndustrialAgentRunView locale="zh-CN" checkpoint={fixture()} tools={tools} busy={false}
+        crossProject={{ runId: "run-9", projectId: "project-9" }}
+        onDismissCrossProject={vi.fn()} onAction={vi.fn()} onNew={vi.fn()} />,
+    );
+    expect(html).toContain("属于其他项目（project-9）");
+    expect(html).toContain("已忽略其更新");
+  });
+
+  it("flags a restored checkpoint as possibly stale after the 48h threshold (K11)", () => {
+    const stale = fixture();
+    stale.updatedAt = "2026-08-01T00:00:00.000Z";
+    expect(renderToStaticMarkup(renderView(stale, { restored: true }))).toContain("状态可能陈旧");
+    const fresh = fixture();
+    fresh.updatedAt = new Date().toISOString();
+    expect(renderToStaticMarkup(renderView(fresh, { restored: true }))).toContain("未重复执行已完成的调用");
+  });
 });
+
+function renderView(checkpoint: AgentCheckpoint, props: { restored: boolean }): React.ReactElement {
+  return (
+    <IndustrialAgentRunView locale="zh-CN" checkpoint={checkpoint} tools={tools} busy={false} restored={props.restored}
+      onAction={vi.fn()} onNew={vi.fn()} />
+  );
+}
 
 // ── T11（审计 §二 T11：示例与能力面脱节；目录加载失败只剩禁用态）──
 describe("AgentObjectiveExamplesRow（T11 示例随工具目录生成）", () => {

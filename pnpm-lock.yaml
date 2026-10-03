@@ -154,9 +154,15 @@ importers:
       net-snmp:
         specifier: ^3.26.3
         version: 3.26.3
+      node-opcua-certificate-manager:
+        specifier: 2.178.0
+        version: 2.178.0(proper-lockfile@4.1.2)
       node-opcua-client:
         specifier: 2.178.0
         version: 2.178.0(proper-lockfile@4.1.2)
+      node-opcua-pki:
+        specifier: 6.20.0
+        version: 6.20.0(proper-lockfile@4.1.2)
       nodemailer:
         specifier: ^10.0.10
         version: 10.0.10

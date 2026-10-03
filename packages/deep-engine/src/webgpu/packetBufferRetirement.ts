@@ -31,7 +31,7 @@ export function retirePacketBuffers(
     options.clearTextures!.publishPrepared(staged);
   });
   if (options.ownMeshes) for (const [id, value] of previousGeometries) {
-    if (nextGeometries.get(id) !== value) attempt(failures, () => value.mesh.dispose());
+    if (nextGeometries.get(id)?.mesh !== value.mesh) attempt(failures, () => value.mesh.dispose());
   }
   for (const [key, value] of previousBatches) {
     const next = nextBatches.get(key);

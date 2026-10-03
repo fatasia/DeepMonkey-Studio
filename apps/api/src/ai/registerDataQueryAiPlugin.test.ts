@@ -1,4 +1,4 @@
-import type { DataDatasetRecord } from "@bim-studio/contracts";
+import type { AskDataQueryDraftResult, DataDatasetRecord } from "@bim-studio/contracts";
 import type { DataQuerySource } from "@bim-studio/data-query-plugin";
 import { PluginRegistry, type AiProviderRequest } from "@bim-studio/plugin-runtime";
 import { describe, expect, it, vi } from "vitest";
@@ -75,6 +75,41 @@ describe("Ask Data AI reliability", () => {
     });
     expect(result).toMatchObject({ status: "blocked", decisionStatus: "insufficient-data" });
     expect(complete).not.toHaveBeenCalled();
+  });
+
+  // ── H-C5-T1：needs-input 且歧义在数据集选择时，服务端目录候选随响应透传（web 不再自拼）──
+  it("T1: passes server catalog candidates through when the draft misses the dataset", async () => {
+    const registry = registryHost();
+    await registerFakeAi(registry, async () => JSON.stringify({ datasetId: "missing", fields: ["temperature"], limit: 10 }));
+    await registerDataQueryAiPlugin(registry, source(dataset), settings);
+    const result = await registry.invokeCapability<AskDataQueryDraftResult>("data.query.draft", {
+      requestId: "query-t1-candidates", projectId: "project-1", principal: "engineer", input: { prompt: "查询温度" },
+    });
+    expect(result.status).toBe("needs-input");
+    expect(result.output?.planning.status).toBe("needs-input");
+    expect(result.output?.planning.candidates).toEqual([
+      { id: "telemetry", name: "设备遥测", updatedAt: "2026-08-30T00:00:00.000Z" },
+    ]);
+  });
+
+  it("T1: ready plans and non-dataset ambiguity carry no candidates", async () => {
+    const readyRegistry = registryHost();
+    await registerFakeAi(readyRegistry, async () => JSON.stringify({ datasetId: "telemetry", fields: ["temperature"], limit: 10 }));
+    await registerDataQueryAiPlugin(readyRegistry, source(dataset), settings);
+    const ready = await readyRegistry.invokeCapability<AskDataQueryDraftResult>("data.query.draft", {
+      requestId: "query-t1-ready", projectId: "project-1", principal: "engineer", input: { prompt: "查询温度" },
+    });
+    expect(ready.output?.planning.status).toBe("ready");
+    expect(ready.output?.planning.candidates).toBeUndefined();
+
+    const fieldRegistry = registryHost();
+    await registerFakeAi(fieldRegistry, async () => JSON.stringify({ datasetId: "telemetry", fields: ["nonexistent"], limit: 10 }));
+    await registerDataQueryAiPlugin(fieldRegistry, source(dataset), settings);
+    const fieldAmbiguous = await fieldRegistry.invokeCapability<AskDataQueryDraftResult>("data.query.draft", {
+      requestId: "query-t1-field", projectId: "project-1", principal: "engineer", input: { prompt: "查询温度" },
+    });
+    expect(fieldAmbiguous.status).toBe("needs-input");
+    expect(fieldAmbiguous.output?.planning.candidates).toBeUndefined();
   });
 });
 

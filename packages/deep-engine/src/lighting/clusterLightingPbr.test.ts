@@ -192,6 +192,7 @@ describe("Forward+ clustered PBR lighting", () => {
       { binding: 13, visibility: 2, buffer: { type: "read-only-storage" } },
       { binding: 14, visibility: 2, texture: { sampleType: "float", viewDimension: "2d" } },
       { binding: 15, visibility: 2, sampler: { type: "filtering" } },
+      { binding: 16, visibility: 2, texture: { sampleType: "unfilterable-float", viewDimension: "2d-array" } },
     ]);
     const resources = assigner.prepare(grid, { points: [point()] }), result = bindings.bind(resources);
     const entries = (result.bindGroup as unknown as { entries: GPUBindGroupEntry[] }).entries;
@@ -209,6 +210,12 @@ describe("Forward+ clustered PBR lighting", () => {
     // C3:cookie 缺省 1×1 白纹理与过滤采样器收尾(binding 14/15)。
     expect(withProbe.entries[14]?.binding).toBe(14);
     expect(withProbe.entries[15]?.binding).toBe(15);
+    const moment = {} as GPUTextureView;
+    bindings.setProbeClipmap({ ...probe, momentsView: moment });
+    const withMoments = bindings.bind(resources).bindGroup as unknown as { entries: GPUBindGroupEntry[] };
+    expect(withMoments).not.toBe(withProbe);
+    expect(withMoments.entries.find(entry => entry.binding === 16)!.resource).toBe(moment);
+    expect(layout.entries.filter(entry => entry.buffer?.type === "read-only-storage")).toHaveLength(8);
     bindings.dispose(); assigner.dispose(); expect(f.owned.size).toBe(0);
   });
 

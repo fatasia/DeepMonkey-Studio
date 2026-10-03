@@ -73,6 +73,10 @@ export class SceneBehaviorHost {
   private readonly worker: SceneBehaviorWorkerPort;
   private readonly authorDebug: boolean;
   private awaitingDebugStart = false;
+  /** H-C6-S1 热插上下文:新模块初始化期间保留旧模块与运行形态;ready=恢复,fail=回滚。 */
+  private reloadContext: { module: SceneBehaviorModule; status: "running" | "paused" } | undefined;
+  /** 热插回滚防循环计数:回滚再失败进入 error,不再二次回滚。 */
+  private reloadRollbackAttempts = 0;
   private readonly scheduler: SceneBehaviorScheduler;
   private readonly executionBudgetMs: number;
   private readonly initializationTimeoutMs: number;
@@ -128,6 +132,33 @@ export class SceneBehaviorHost {
     this.scheduler.reset();
     this.worker.postMessage({ type: "behavior.initialize", module: this.module, sceneId });
     if (!this.authorDebug) this.initTimeoutId = globalThis.setTimeout(() => this.fail(`行为“${module.name}”初始化超过 ${this.initializationTimeoutMs} ms`), this.initializationTimeoutMs);
+    this.emitDiagnostics();
+  }
+
+  /**
+   * H-C6-S1 切片:运行中/暂停热插脚本模块。
+   * 语义:旧脚本 onStop → 新模块 initialize → 新 onStart/onData;场景快照(latestData)、
+   * 数据流与调度时钟保留——只换行为逻辑,不重置场景。新模块初始化失败自动回滚旧模块
+   * 重新 initialize(fail-closed 保运行);回滚自身再失败进入 error(如实)。
+   * authorDebug 调试会话不支持热插(所有权简单化,fail-closed)。
+   */
+  updateModule(module: SceneBehaviorModule): void {
+    if (this.authorDebug) throw new Error("作者调试会话不支持运行中热插");
+    if (this.status !== "running" && this.status !== "paused") throw new Error(`行为运行时当前状态为 ${this.status}，仅运行中/暂停可热插`);
+    if (!module?.id) throw new Error("热插模块需要 id");
+    if (this.module?.id === module.id) throw new Error("热插模块 id 须与当前模块不同（同 id 更新走 stop/start）");
+    const previous = this.module!;
+    const previousStatus: "running" | "paused" = this.status;
+    if (previous.lifecycle.includes("onStop")) this.invoke("onStop", this.scheduler.diagnostics().elapsedMs);
+    this.reloadContext = { module: previous, status: previousStatus };
+    this.module = structuredClone(module);
+    this.status = "initializing";
+    this.lastError = undefined;
+    this.lastErrorLocation = undefined;
+    this.clearInitializationTimeout();
+    this.clearPending();
+    this.worker.postMessage({ type: "behavior.initialize", module: this.module, sceneId: this.sceneId });
+    this.initTimeoutId = globalThis.setTimeout(() => this.fail(`热插行为“${module.name}”初始化超过 ${this.initializationTimeoutMs} ms`), this.initializationTimeoutMs);
     this.emitDiagnostics();
   }
 
@@ -278,6 +309,17 @@ export class SceneBehaviorHost {
     if (value.type === "behavior.ready") {
       if (this.status !== "initializing" || value.moduleId !== this.module?.id) return;
       this.clearInitializationTimeout();
+      if (this.reloadContext) {
+        // H-C6-S1:热插(或其回滚)握手完成——恢复热插前运行形态。
+        const resumed = this.reloadContext.status;
+        this.reloadContext = undefined;
+        this.reloadRollbackAttempts = 0;
+        this.status = resumed;
+        if (resumed === "running") this.invokeInitialLifecycles();
+        else this.scheduler.pause();
+        this.emitDiagnostics();
+        return;
+      }
       this.awaitingDebugStart = this.authorDebug;
       this.status = this.authorDebug ? "paused" : "running";
       if (this.authorDebug) this.scheduler.pause();
@@ -392,6 +434,32 @@ export class SceneBehaviorHost {
 
   private fail(message: string, location?: { line: number; column: number }): void {
     if (this.status === "disposed" || this.status === "error") return;
+    if (this.reloadContext && this.status === "initializing") {
+      // H-C6-S1:热插初始化失败——回滚旧模块重新 initialize(fail-closed 保运行);
+      // 回滚自身再失败(计数 ≥2)进入 error,不无限循环。
+      const rollback = this.reloadContext;
+      this.reloadContext = undefined;
+      this.clearInitializationTimeout();
+      this.clearPending();
+      if (this.reloadRollbackAttempts >= 1) {
+        this.lastError = `热插失败且回滚失败:${message}`;
+        this.lastErrorLocation = location;
+        this.status = "error";
+        this.scheduler.pause();
+        this.terminate();
+        this.emitDiagnostics();
+        return;
+      }
+      this.reloadRollbackAttempts += 1;
+      this.module = rollback.module;
+      this.reloadContext = { module: rollback.module, status: rollback.status };
+      this.status = "initializing";
+      this.lastError = `热插失败已回滚:${message}`;
+      this.worker.postMessage({ type: "behavior.initialize", module: this.module, sceneId: this.sceneId });
+      this.initTimeoutId = globalThis.setTimeout(() => this.fail(`回滚行为“${this.module?.name ?? "unknown"}”初始化超过 ${this.initializationTimeoutMs} ms`), this.initializationTimeoutMs);
+      this.emitDiagnostics();
+      return;
+    }
     this.lastError = message;
     this.lastErrorLocation = location;
     this.status = "error";

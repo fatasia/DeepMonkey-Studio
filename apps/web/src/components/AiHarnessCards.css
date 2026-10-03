@@ -148,20 +148,6 @@
 
 .ai-plan-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-/* M7 状态行：计划模式开启提示。 */
-.ai-notice-plan {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 10px;
-  padding: 7px 10px;
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
-  border-radius: var(--radius-sm);
-  background: var(--accent-soft);
-  color: var(--text-strong);
-  font-size: 11px;
-}
-
 /* ---------- H-C2 M6 拒绝理由气泡（理由码徽标 + 保证句 + 恢复动作） ---------- */
 
 .ai-card-denial {

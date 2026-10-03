@@ -4,6 +4,8 @@ import { DEEP_GI_CASCADE_BLEND_CELLS, DEEP_GI_LEVEL_METADATA_BINDING, DEEP_GI_MA
   DEEP_GI_MIN_SAMPLE_WEIGHT, DEEP_GI_NORMAL_BIAS_CELLS, DEEP_GI_PROBE_STORAGE_BINDING,
   DEEP_GI_SAMPLING_ABI_VERSION, DEEP_GI_SAMPLING_BIND_GROUP,
   DEEP_GI_NORMAL_WEIGHT_BIAS } from "./probeClipmapSamplingWgsl.js";
+import { DEEP_GI_PROBE_VISIBILITY_SH_WORD_OFFSET, validateProbeVisibilitySh,
+  type ProbeDirectionalVisibilitySh } from "./probeDirectionalVisibilitySh.js";
 
 export interface IrradianceProbeRecord {
   readonly irradiance: ProbeVector3;
@@ -12,6 +14,11 @@ export interface IrradianceProbeRecord {
   readonly distanceVariance: number;
   readonly occlusionFloor?: number;
   readonly positionOffset?: ProbeVector3;
+  /**
+   * F5 方案 A：RGB L1 SH 方向可见度（words[12..23]，channel-major l0/l1m-1/l1m0/l1m1）。
+   * undefined/全零 = SH 缺失（旧捕获/未启用 moments 变体），消费侧按标量门 fallback。
+   */
+  readonly directionalVisibilitySh?: ProbeDirectionalVisibilitySh;
 }
 export interface ProbeClipmapSampleRequest {
   readonly worldPosition: ProbeVector3;
@@ -56,9 +63,16 @@ export function packIrradianceProbeRecord(record: IrradianceProbeRecord): ArrayB
   const variance = finite(record.distanceVariance, "distanceVariance", 0, 1_000_000_000_000);
   const floor = finite(record.occlusionFloor ?? 0, "occlusionFloor", 0, 1);
   const relocation = vector(record.positionOffset ?? [0, 0, 0], "positionOffset", -1_000_000, 1_000_000);
+  // F5 方案 A：words[12..23] 启用为 RGB L1 SH 方向可见度（缺省仍写全零 = SH 缺失，
+  // 旧消费者/native 零校验路径不受影响）。
+  validateProbeVisibilitySh(record.directionalVisibilitySh);
+  const visibilitySh = record.directionalVisibilitySh;
   const values = new Float32Array(DEEP_GI_PROBE_RECORD_BYTES / 4);
   values.set([...irradiance, validity], 0); values.set([meanDistance, variance, floor, 0], 4);
-  values.set([...relocation, 0], 8); return values.buffer;
+  values.set([...relocation, 0], 8);
+  if (visibilitySh) values.set([...visibilitySh.r, ...visibilitySh.g, ...visibilitySh.b],
+    DEEP_GI_PROBE_VISIBILITY_SH_WORD_OFFSET);
+  return values.buffer;
 }
 
 interface LevelSample { irradiance: ProbeVector3; weight: number; probes: number }
@@ -143,12 +157,29 @@ function probeNormalWeight(probePosition: readonly number[], shadingPoint: reado
   return Math.pow(cosine, DEEP_GI_NORMAL_WEIGHT_BIAS);
 }
 
+/**
+ * DDGI Chebyshev 可见性(F5-GI-1 合同收紧,与 wgsl/probeClipmapSampling.wgsl
+ * deepGiVisibility 及 Rust 半 probe_gi_grid.rs 逐式同步)。记录语义单一来源 =
+ * probeOcclusionRayExtension:meanDistance = 命中射线距离均值、distanceVariance =
+ * 命中距离总体方差、occlusionFloor = miss 方向占比。
+ *
+ * == 均值分支的适用边界 == "receiver 近于均值命中距离 → 无遮挡视线"只在记录自证
+ * 封闭包络时成立(无天空方向:floor≈0,且命中离散不超过包络尺度)。天空探针的均值
+ * 不含天空方向,不能证明 receiver 方向无遮挡——薄墙可在均值以内但被中间几何遮挡,
+ * 必须走 Chebyshev 遮挡估计(双向 delta),不得无条件全权重。floor 是"探针内容里
+ * 环境光占比"的内容限定符,不构成 receiver 链路的权重下界(否则天空探针隔着墙
+ * 也保底漏光,即封门哨兵坐实的穿墙漏光形态)。
+ */
 function visibilityWeight(record: IrradianceProbeRecord, receiver: readonly number[], probe: readonly number[], spacing: number): number {
   const distance = Math.hypot(...receiver.map((value, axis) => value - probe[axis]!));
-  if (distance <= record.meanDistance) return 1;
+  const floor = clamp(record.occlusionFloor ?? 0, 0, 1);
   const variance = clamp(record.distanceVariance, spacing * spacing * 0.0001, 1_000_000_000_000);
-  const delta = distance - record.meanDistance, chebyshev = variance / Math.max(variance + delta * delta, 1e-6);
-  return Math.max(clamp(record.occlusionFloor ?? 0, 0, 1), chebyshev);
+  const enclosed = floor <= 0.001
+    && variance <= Math.max(record.meanDistance * record.meanDistance, spacing * spacing);
+  if (distance <= record.meanDistance && enclosed) return 1;
+  const delta = Math.abs(distance - record.meanDistance);
+  const chebyshev = variance / Math.max(variance + delta * delta, 1e-6);
+  return chebyshev;
 }
 function contains(level: ProbeClipmapLevel, position: ProbeVector3): boolean {
   return usableLevel(level) && position.every((value, axis) => value >= level.origin[axis]! && value <= level.max[axis]!);
@@ -162,12 +193,15 @@ function validProbeCount(level: ProbeClipmapLevel): number {
   const count = level.gridSize[0] * level.gridSize[1] * level.gridSize[2]; return Number.isSafeInteger(count) ? count : 0;
 }
 function recordFinite(record: IrradianceProbeRecord): boolean {
+  const sh = record.directionalVisibilitySh;
   return record.irradiance.length === 3 && record.irradiance.every(value => Number.isFinite(value) && Math.abs(value) <= 65_504)
     && Number.isFinite(record.validity) && record.validity >= 0 && record.validity <= 1
     && Number.isFinite(record.meanDistance) && record.meanDistance >= 0 && record.meanDistance <= 1_000_000
     && Number.isFinite(record.distanceVariance) && record.distanceVariance >= 0 && record.distanceVariance <= 1_000_000_000_000
     && Number.isFinite(record.occlusionFloor ?? 0) && (record.occlusionFloor ?? 0) >= 0 && (record.occlusionFloor ?? 0) <= 1
-    && (record.positionOffset ?? [0, 0, 0]).every(value => Number.isFinite(value) && Math.abs(value) <= 1_000_000);
+    && (record.positionOffset ?? [0, 0, 0]).every(value => Number.isFinite(value) && Math.abs(value) <= 1_000_000)
+    && (sh === undefined || [...sh.r, ...sh.g, ...sh.b].every(value =>
+      Number.isFinite(value) && Math.abs(value) <= 1_000_000));
 }
 function boundaryCells(level: ProbeClipmapLevel, position: ProbeVector3): number {
   const coordinate = position.map((value, axis) => (value - level.origin[axis]!) / level.spacing);

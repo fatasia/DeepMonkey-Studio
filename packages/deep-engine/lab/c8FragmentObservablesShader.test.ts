@@ -19,9 +19,20 @@ it("keeps actual geometry/material preparation before reading effective roughnes
   expect(observeDeepFragment("geometry").code).toContain("return vec3f(clamp(dot(n, view), 0.0001, 1.0), clamp(dot(n, l), 0.0, 1.0), rough);");
   expect(observeThreeFragment("geometry", ShaderChunk).lights_physical_pars_fragment).toContain("material.roughness");
 });
+it("keeps current direct DFG and IBL separation intact in every observation mode", () => {
+  for (const mode of ["geometry", "single", "rough-single", "view-normal", "abs-dx", "abs-dy"] as const) {
+    const observed = observeDeepFragment(mode);
+    expect(observed.code.includes("directDfg = deepDirectDfg185(rough, nv);")).toBe(true);
+    expect(observed.code.includes("deepSeedDirectViewDfg(directDfg);")).toBe(true);
+    expect(observed.code.includes("color += deepDirectMultiscatteringFromView(n, l, base, metal, rough, dielectric, directDfg)")).toBe(true);
+    expect(observed.code.includes("dfg = textureSampleLevel(brdfLut, environmentSampler")).toBe(true);
+  }
+});
 it("rejects unknown mode, stale input, duplicate output and Three source drift", () => {
   expect(() => observeDeepFragment("bad" as never)).toThrow("Unknown");
-  expect(() => observeDeepFragment("single", sceneShader.replace("let n = safeNormalize(normalInput", "let n = normalize(normalInput"))).toThrow("drifted");
+  const stale = sceneShader.replace("let n = normalInput;", "let n = safeNormalize(normalInput, vec3f(0.0, 1.0, 0.0));");
+  expect(stale).not.toBe(sceneShader);
+  expect(() => observeDeepFragment("single", stale)).toThrow("drifted");
   expect(() => observeDeepFragment("single", observeDeepFragment("geometry").code)).toThrow("instrumented");
   expect(() => observeThreeFragment("geometry", observeThreeFragment("single", ShaderChunk))).toThrow("instrumented");
   expect(() => observeThreeFragment("single", { ...ShaderChunk, opaque_fragment: `${ShaderChunk.opaque_fragment}\n` })).toThrow("drifted");

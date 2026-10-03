@@ -37,6 +37,36 @@ describe("ScriptVersionManager", () => {
     expect(html).not.toContain("提交快照");
   });
 
+  it("asks to save the project first when no projectId exists", () => {
+    const html = renderToStaticMarkup(<ScriptVersionManager
+      locale="zh-CN"
+      scripts={[script("controller", "产线控制")]}
+      onReplaceScripts={vi.fn()}
+      onClose={vi.fn()}
+    />);
+    expect(html).toContain("请先保存项目");
+    expect(html).not.toContain("提交快照");
+    expect(html).not.toContain("远端同步");
+  });
+
+  it("shows the loading frame while the injected client reads status and history", () => {
+    const pending = () => new Promise<never>(() => {});
+    const html = renderToStaticMarkup(<ScriptVersionManager
+      locale="zh-CN"
+      projectId="project-1"
+      scripts={[script("controller", "产线控制")]}
+      client={{
+        getScriptGitStatus: pending, listScriptGitHistory: pending, commitScriptSnapshot: pending,
+        configureScriptGitRemote: pending, removeScriptGitRemote: pending, pullScriptGit: pending, pushScriptGit: pending,
+      }}
+      onReplaceScripts={vi.fn()}
+      onClose={vi.fn()}
+    />);
+    expect(html).toContain("正在读取脚本版本");
+    expect(html).toContain('role="status"');
+    expect(html).not.toContain("本地提交");
+  });
+
   it("keeps business typography readable and the drawer responsive", () => {
     const css = readFileSync(new URL("./ScriptVersionManager.css", import.meta.url), "utf8");
     const undersized = [...css.matchAll(/(?:font-size|font)\s*:\s*(\d+(?:\.\d+)?)px/g)]

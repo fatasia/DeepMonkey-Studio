@@ -1,0 +1,22 @@
+{
+  "schema": "deep-engine-3d.sdk-versions/1",
+  "generatedFrom": "packages/deep-engine/package.json",
+  "pinPolicy": "exact — 模板与消费者清单只允许此处登记的精确版本；升级必须先更新本文件并通过 scripts/version-pin.test.mjs",
+  "engines": {
+    "@bim-studio/deep-engine": "0.1.0",
+    "@webgpu/types": "0.1.72"
+  },
+  "provenance": {
+    "deepEngineManifest": "packages/deep-engine/package.json#version",
+    "webgpuTypesManifest": "packages/deep-engine/package.json#devDependencies.@webgpu/types",
+    "verifiedGate": "test-output/deep-engine-consumer-20260922/report.json"
+  },
+  "upgradeDetection": {
+    "test": "node --test templates/deep-engine-3d/scripts/version-pin.test.mjs",
+    "onDrift": "把 references/sdk-versions.json 的 engines 更新为新版本，重跑 templates/deep-engine-3d/scripts/gate-templates.mjs 取得新像素证据后提交"
+  },
+  "skillBinding": {
+    "canonicalSkill": "templates/deep-engine-3d/skill/canonical/SKILL.md",
+    "clients": [".agents/skills/deep-engine-3d", ".claude/skills/deep-engine-3d"]
+  }
+}

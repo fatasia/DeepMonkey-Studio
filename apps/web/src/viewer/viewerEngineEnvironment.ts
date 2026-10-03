@@ -1,12 +1,14 @@
 import * as THREE from "three";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
+import { DEFAULT_DISPLAY_CONTRACT } from "@bim-studio/contracts";
 import type { SceneLightState, SkyboxPreset, WeatherMode } from "@bim-studio/contracts";
 import { shouldRenderSceneLightProxy } from "./viewerTypes";
 import { createSceneGrid } from "./sceneGrid";
 import { updateSceneLightDirectionLine } from "./sceneLightDirectionLine";
 import { configureDirectionalShadow } from "./sceneShadowQuality";
 import { applyLightIes, applySceneIesProfiles } from "./studioIesAuthorCarriers";
+import { GLOBAL_ILLUMINATION_STAND_IN_LIGHT_NAME } from "./studioDeepEnvironmentLights";
 import { DEFAULT_SCENE_LIGHTS } from "./viewerEngineTypes";
 import { ViewerEngineRendering } from "./viewerEngineRendering";
 import { disposeStudioReflectionProbes, loadStudioReflectionProbes, readStudioReflectionProbes, writeStudioReflectionProbes,
@@ -16,7 +18,7 @@ import { disposeStudioReflectionProbes, loadStudioReflectionProbes, readStudioRe
 export abstract class ViewerEngineEnvironment extends ViewerEngineRendering {
   protected setupEnvironment(): void {
       this.syncSceneLights();
-      this.globalIlluminationLight.name = "scene-light:global-illumination";
+      this.globalIlluminationLight.name = GLOBAL_ILLUMINATION_STAND_IN_LIGHT_NAME;
       this.scene.add(this.globalIlluminationLight);
       this.gridHelper = createSceneGrid();
       this.scene.add(this.gridHelper);
@@ -197,9 +199,11 @@ export abstract class ViewerEngineEnvironment extends ViewerEngineRendering {
         ? (this.lightingState.globalIlluminationIntensity ?? 0.45) * weatherFactor[this.weatherMode] * intensity
         : 0;
       if ("shadowMap" in this.renderer) this.renderer.shadowMap.enabled = Boolean(this.lightingState.shadowsEnabled);
-      this.renderer.toneMappingExposure = this.lightingState.enabled
-        ? THREE.MathUtils.clamp(0.72 + intensity * weatherFactor[this.weatherMode] * 0.33, 0.55, 1.55)
-        : 0.55;
+      const exposure = DEFAULT_DISPLAY_CONTRACT.toneMapping.dynamicExposure;
+      this.renderer.toneMappingExposure = this.lightingState.enabled && exposure.enabled
+        ? THREE.MathUtils.clamp(exposure.base + intensity * weatherFactor[this.weatherMode] * exposure.intensityScale,
+          exposure.min, exposure.max)
+        : exposure.min;
       this.markShadowMapDirty();
       this.scheduleRendererPipelineWarmup();
     }

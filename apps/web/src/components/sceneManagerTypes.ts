@@ -11,6 +11,7 @@ import type { ManagerWorkspaceTab } from "../appRoute";
 import type { ManagerDirectoryController } from "../hooks/useManagerDirectoryController";
 import type { SceneClientPackageTarget } from "../delivery/sceneClientPackage";
 import type { useScenePublicationArtifacts } from "../hooks/useScenePublicationArtifacts";
+import type { SceneCreationOptions } from "../controllers/defaultSceneSample";
 
 /** 场景管理器的外部业务契约，页面内部状态不应泄漏到此接口。 */
 export interface SceneManagerProps {
@@ -37,7 +38,7 @@ export interface SceneManagerProps {
   onCreateProject: () => void;
   onRenameProject: () => void;
   onDeleteProject: () => void;
-  onCreate: (name: string) => Promise<void>;
+  onCreate: (name: string, options?: SceneCreationOptions) => Promise<void>;
   onCreateShowcase: () => Promise<void>;
   showcaseExists: boolean;
   onOpen: (scene: SceneSnapshot) => Promise<void>;
@@ -83,4 +84,5 @@ export interface SceneManagerProps {
   onUploadModels: (files: FileList | File[], robotEntries?: ReadonlyMap<File, string>) => Promise<ModelRecord[]>;
   onDeleteModel: (model: ModelRecord) => Promise<void>;
   onRefreshModels: () => Promise<void>;
+  onAssetRevisionScenesUpdated?: (scenes: readonly SceneSnapshot[]) => void;
 }

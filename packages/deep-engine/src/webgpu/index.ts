@@ -88,6 +88,9 @@ export type { PbrFrameExecutionPlan, PbrPlannedPass, PbrPlannedPassResource, Pbr
   PbrPassTimingEntry, PbrFramePassTimings } from "./pbrFramePlanExecutor.js";
 export { PBR_TIMED_PASS_IDS, pbrPassTimingStage, isPbrPassTimingStage } from "./pbrTimedPassIds.js";
 export type { PbrTimedPassId } from "./pbrTimedPassIds.js";
+export { computePbrFrameExecutionCoverage } from "./pbrFrameExecutionCoverage.js";
+export type { PbrFrameExecutionCoverage } from "./pbrFrameExecutionCoverage.js";
+export type { PbrReceiptTimingAvailability } from "./pbrFrameReceipt.js";
 export type { GpuTiming, GpuPassTimingScope } from "./gpuTimer.js";
 export { PBR_FRAME_RESOURCE_CONTRACTS, resolvePbrFrameResourceSizes, resolvePbrFramePlanSurface,
   pbrFrameResourceContract, FRAME_PLAN_USAGES } from "./pbrFramePlanResources.js";

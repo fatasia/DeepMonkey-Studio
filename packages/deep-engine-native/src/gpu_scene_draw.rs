@@ -385,9 +385,8 @@ impl GpuScene {
     }
 
     /// 单批次的 RT 管线绑定与 indirect draw;group 0 由 pass 层绑定一次。
-    /// I-C23:分层批次的 RT 消费(framennt_main_rt_layered)留给后继;含分层
-    /// 材质的场景由 renderer 的 RT 就绪门整帧回退栅格(与 custom shader 批次
-    /// 同语义,fail-closed 不静默丢层),本方法维持只绑定普通族。
+    /// Layered batches consume the extended material binding and RT layered PSO.
+    /// Readiness rejects a scene needing layers when the pipeline family lacks them.
     fn draw_rt_batch<'a>(
         &'a self,
         pass: &mut wgpu::RenderPass<'a>,
@@ -399,16 +398,21 @@ impl GpuScene {
     ) {
         let geometry = &self.geometries[batch.geometry_index];
         let material = &self.pbr.materials[batch.material_index];
-        debug_assert!(
-            material.layered.is_none(),
-            "layered batches must not enter the RT pass; readiness gate falls back to raster"
-        );
-        pass.set_pipeline(pipelines.select(
-            batch.mirrored,
-            batch.double_sided,
-            material.normal_mapped,
-        ));
-        pass.set_bind_group(1, &material.bind_group, &[]);
+        if let Some(layered) = material.layered.as_ref() {
+            pass.set_pipeline(
+                pipelines
+                    .select_layered(batch.mirrored, batch.double_sided, material.normal_mapped)
+                    .expect("RT readiness must require the layered pipeline family"),
+            );
+            pass.set_bind_group(1, &layered.bind_group, &[]);
+        } else {
+            pass.set_pipeline(pipelines.select(
+                batch.mirrored,
+                batch.double_sided,
+                material.normal_mapped,
+            ));
+            pass.set_bind_group(1, &material.bind_group, &[]);
+        }
         pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
         if material.normal_mapped {
             pass.set_vertex_buffer(

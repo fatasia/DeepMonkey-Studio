@@ -14,7 +14,10 @@ const require = createRequire(import.meta.url);
 const sourcePaths = ["packages/deep-engine/lab/iC19DynamicIblProduction.ts", "packages/deep-engine/lab/iblPrefilterReference.ts",
   "packages/deep-engine/lab/iblReferenceEncode.ts", "packages/deep-engine/src/webgpu/dynamicIblResidency.ts",
   "packages/deep-engine/src/webgpu/pbrRenderer.ts", "packages/deep-engine/src/webgpu/hdrEnvironment.ts",
-  "packages/deep-engine/src/webgpu/prefilteredEnvironment.ts"];
+  "packages/deep-engine/src/webgpu/prefilteredEnvironment.ts", "packages/deep-engine/lab/iC19KeptMipsProduction.ts",
+  "packages/deep-engine/src/webgpu/environmentMipSelection.ts", "packages/deep-engine/src/webgpu/studioEnvironment.ts",
+  "packages/deep-engine/src/webgpu/pbrEnvironmentSource.ts", "packages/deep-engine/src/webgpu/pbrMainBindings.ts",
+  "packages/deep-engine/src/webgpu/pbrReflectionProbes.ts", "packages/deep-engine/src/webgpu/pbrReflectionProbeWgsl.ts"];
 const sourceHashes = async () => Object.fromEntries(await Promise.all(sourcePaths.map(async file =>
   [file, createHash("sha256").update(await readFile(path.join(root, file))).digest("hex")])));
 const sourcesBefore = await sourceHashes();
@@ -58,13 +61,17 @@ const stable = rounds.length === 2 && JSON.stringify([rounds[0].referenceParity,
   === JSON.stringify([rounds[1].referenceParity, rounds[1].hotSwap, rounds[1].degradedClamp, rounds[1].outstandingLeases]);
 const gates = rounds.every(r => r.adapterNonFallback === true && r.referenceParity.pass === true
   && r.hotSwap.generationReturn === true && r.hotSwap.repeatStableMaxError <= 0.002
-  && r.degradedClamp.finite === true && r.deviceErrors.length === 0);
+  && r.degradedClamp.finite === true && r.degradedClamp.sharpClampError <= .002
+  && r.degradedClamp.roughPreservationError <= .002 && r.degradedClamp.hdrTailError <= .002
+  && r.degradedClamp.sharpSignal > .01 && r.degradedClamp.expectedSavedBytes > 0
+  && r.degradedClamp.actualSavedBytes === r.degradedClamp.expectedSavedBytes
+  && r.outstandingLeases === 0 && r.deviceErrors.length === 0);
 const sourcesAfter = await sourceHashes(), sourceFresh = JSON.stringify(sourcesBefore) === JSON.stringify(sourcesAfter);
 const evidence = {
   passed: rounds.length === 2 && stable && gates && sourceFresh && errors.length === 0,
   stable, gates, sourceFresh, rounds, errors, sources: sourcesAfter,
   scope: "dynamic IBL production: CPU-reference vs GPU-prefilter scene parity, hot swap A->B->A, degraded clamp; two fresh rounds",
-  excluded: ["mip-level readback (scene-band scene parity instead)", "keptMips sampler clamp (needs pbrRenderer/mainBindings wiring - wired-followup)", "author panel wiring", "other hosts"],
+  excluded: ["mip-level readback (per-mip scene fingerprints instead)", "author panel screenshots (separate visual acceptance)", "automatic global budget/LUT sharing", "other hosts"],
 };
 await rm(path.join(out, "evidence.json"), { force: true });
 await writeFile(path.join(out, "evidence.json"), JSON.stringify(evidence, null, 1));

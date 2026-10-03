@@ -7,7 +7,10 @@ const marker = "// C8 isolated fragment observation";
 const identities = {
   re: "f324431f2fd3be681d14462f021f9c1cf84b5c981c7ccd85896f5071476ab293",
   opaque: "4a436437d533d5ec900793dac710f8dad603067ebcb012fd9187441eb520284a",
-  shade: "b41d2059f024b3b893cd74b3c0fa5b86ef7c23e5e0f54b325e6050e004be94c4",
+  // Current production shade with normalized input; the full body
+  // remains pinned so changes cannot silently bypass this observation seam.
+  // F5 方案 A:L1 方向可见度门接入镜面项(用户批准),观察缝 pin 随生产源演进重锚。
+  shade: "598ba4e9cefd11404a99a54635c20c418bc6bbcdee128b98fbcd0bd05af8328b",
   physical: "ff8ddc3b4509c5ea976a57b80a7c1c3397a42241b945e4caadca6c69f2bbce7d",
 } as const;
 const output = "return select(color, deepApplySceneFog(select(color, baseInput, flag(materialFlags, 64u)), world, materialFlags), applyFog);";

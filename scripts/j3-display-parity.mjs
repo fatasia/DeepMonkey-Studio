@@ -7,10 +7,16 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { compareDisplayFrames, compareDisplayLibraries } from "./lib/j3DisplayParity.mjs";
+import { snapshotLayerSources, requireUnchangedLayerSources } from "./lib/j3LayerSourceIdentity.mjs";
 
 const root = fileURLToPath(new URL("../",import.meta.url)), require = createRequire(import.meta.url);
 const out = path.join(root,"test-output/interrupted-0930/display-parity");
 await mkdir(out,{recursive:true});
+await rm(path.join(out,"evidence.json"),{force:true});
+const sourceFiles = ["scripts/j3-display-parity.mjs", "scripts/lib/j3DisplayParity.mjs",
+  "packages/deep-engine/lab/displayBackendParityProbe.ts", "packages/deep-engine/fixtures/display-parity-v1.json",
+  "packages/deep-engine-native/tests/compact_forward_output_gpu.rs", "packages/deep-engine-native/tests/support/j3_output_dump.rs"];
+const before = await snapshotLayerSources(sourceFiles);
 const fixturePath=path.join(root,"packages/deep-engine/fixtures/display-parity-v1.json");
 const fixture=JSON.parse(await readFile(fixturePath,"utf8"));
 const { build } = require("../packages/deep-engine/node_modules/esbuild");
@@ -43,7 +49,9 @@ try {
     "j3_gate_d_shared_output_dump","--","--ignored","--nocapture"],
     {cwd:root,env:{...process.env,J3_NATIVE_OUTPUT_PATH:nativePath},encoding:"utf8",windowsHide:true,timeout:600000});
   await writeFile(path.join(out,"native.log"),(cargo.stdout??"")+ (cargo.stderr??""));
-  if(cargo.status!==0) throw Error(`Native output leg failed (${cargo.status}); see ${out}/native.log`);
+  const nativeLog=(cargo.stdout??"")+(cargo.stderr??"");
+  if(cargo.error||cargo.status!==0||!/test j3_output_dump::j3_gate_d_shared_output_dump \.\.\. ok/.test(nativeLog)
+    ||!/test result: ok\. [1-9]\d* passed/.test(nativeLog)) throw Error(`Native output leg failed or did not execute (${cargo.status}); see ${out}/native.log`);
   const native=JSON.parse(await readFile(nativePath,"utf8"));
   assert.deepEqual(native.fixture,fixture,"native must consume exactly the current shared manifest");
   assert.equal(native.width,fixture.width); assert.equal(native.height,fixture.height);
@@ -59,7 +67,9 @@ try {
   const stable=JSON.stringify(web[0])===JSON.stringify(web[1]) && JSON.stringify(native.frames[0])===JSON.stringify(native.frames[1]);
   const passed=stable && results.every(r=>r.output.passed&&r.libraries.every(l=>l.passed)&&r.gpuErrors.length===0);
   const hash = bytes=>createHash("sha256").update(bytes).digest("hex");
-  const evidence={scope:fixture.scope,passed,stable,results,identities:{fixture:hash(await readFile(fixturePath)),
+  requireUnchangedLayerSources(before,await snapshotLayerSources(sourceFiles));
+  const evidence={scope:fixture.scope,passed,stable,currentRun:true,sourceIdentity:before,
+    execution:"fresh named Native output test plus two Web rounds",results,identities:{fixture:hash(await readFile(fixturePath)),
     web:web[0].identities,nativeOutput:hash(native.shaderSource)},legalDifferences:fixture.legalDifferences,excluded:fixture.excluded,
     note:"Output stage only; scene, HDR lighting, depth/shadow, resource lifecycle are not certified by this gate."};
   await writeFile(path.join(out,"evidence.json"),JSON.stringify(evidence,null,2));

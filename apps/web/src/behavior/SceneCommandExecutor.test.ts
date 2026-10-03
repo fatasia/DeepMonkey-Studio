@@ -104,6 +104,32 @@ describe("SceneCommandExecutor", () => {
   it("requires a non-empty active scene id", () => {
     expect(() => new SceneCommandExecutor("  ", createPort())).toThrow("当前场景 ID 不能为空");
   });
+
+  it("H-C7-P3:animation.set-anchor 分发 port.setAnimationAnchor,跨场景拒绝,端口缺省 unsupported", async () => {
+    const calls: string[] = [];
+    const port = createPort(calls);
+    const executor = new SceneCommandExecutor("scene-1", port);
+    const [applied] = await executor.execute([
+      { id: "anchor-1", type: "animation.set-anchor", sceneId: "scene-1", anchor: { initialStateId: "idle", activeStateId: "work" } }
+    ]);
+    expect(applied).toMatchObject({ id: "anchor-1", success: true });
+    expect(port.setAnimationAnchor).toHaveBeenCalledWith("scene-1", { initialStateId: "idle", activeStateId: "work" });
+    expect(calls).toEqual(["anchor"]);
+
+    const mismatchPort = createPort();
+    const [mismatch] = await new SceneCommandExecutor("scene-1", mismatchPort).execute([
+      { id: "anchor-2", type: "animation.set-anchor", sceneId: "scene-9", anchor: { initialStateId: "idle" } }
+    ]);
+    expect(mismatch).toMatchObject({ id: "anchor-2", success: false, code: "scene-mismatch" });
+    expect(mismatchPort.setAnimationAnchor).not.toHaveBeenCalled();
+
+    const bare = createPort();
+    (bare as Record<string, unknown>).setAnimationAnchor = undefined;
+    const [unsupportedResult] = await new SceneCommandExecutor("scene-1", bare as unknown as SceneCommandPort).execute([
+      { id: "anchor-3", type: "animation.set-anchor", sceneId: "scene-1", anchor: { activeStateId: "work" } }
+    ]);
+    expect(unsupportedResult).toMatchObject({ id: "anchor-3", success: false, code: "unsupported", message: expect.stringContaining("状态机锚迁移") });
+  });
 });
 
 function objectRef(sceneId = "scene-1"): SceneObjectRef {
@@ -116,12 +142,17 @@ function createPort(calls: string[] = []): SceneCommandPort & Record<keyof Scene
     return SCENE_COMMAND_APPLIED;
   });
   return {
+    createPrimitive: vi.fn(() => SCENE_COMMAND_APPLIED),
+    deletePrimitive: vi.fn(() => SCENE_COMMAND_APPLIED),
     setObjectVisibility: method("visibility"),
     setObjectTransform: method("transform"),
     setObjectMaterial: method("material"),
     setSelection: method("selection"),
     setCamera: method("camera"),
     flyCamera: method("fly"),
+    setLighting: method("lighting"),
+    setEnvironment: method("environment"),
+    setAnimationAnchor: method("anchor"),
     controlAnimation: method("animation"),
     applyData: method("data"),
     updateComponent: method("component")

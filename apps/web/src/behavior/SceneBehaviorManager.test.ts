@@ -119,6 +119,32 @@ describe("SceneBehaviorManager", () => {
     expect(workers[1]!.posted.some((message) => message.type === "behavior.invoke" && message.lifecycle === "onUpdate")).toBe(true);
     expect(workers[0]!.terminate).toHaveBeenCalledOnce();
   });
+
+  it("hotSwap 直通 Host.updateModule:挂载键与存档模块保持稳定,变体接管运行时", () => {
+    const workers: FakeWorker[] = [];
+    const manager = new SceneBehaviorManager({ workerFactory: () => { const worker = new FakeWorker(); workers.push(worker); return worker; } });
+    manager.start([{ ...module("a"), lifecycle: ["onStart", "onStop"] }], "scene-1");
+    workers[0]!.emit({ type: "behavior.ready", moduleId: "a", lifecycle: ["onStart", "onStop"] });
+
+    manager.hotSwap("a", { ...module("a:hot1"), lifecycle: ["onStart", "onStop"] });
+    expect(manager.entries().find((entry) => entry.module.id === "a")?.diagnostics.status).toBe("initializing");
+    // 旧 onStop 先于新 initialize(消息序=热插语义);存档模块仍按挂载键可查。
+    const posted = workers[0]!.posted;
+    expect((posted.at(-2) as { lifecycle?: string }).lifecycle).toBe("onStop");
+    expect(posted.at(-1)).toMatchObject({ type: "behavior.initialize", module: { id: "a:hot1" } });
+
+    workers[0]!.emit({ type: "behavior.ready", moduleId: "a:hot1", lifecycle: ["onStart", "onStop"] });
+    const entry = manager.entries().find((candidate) => candidate.module.id === "a");
+    expect(entry?.diagnostics).toMatchObject({ status: "running", moduleId: "a:hot1" });
+    expect(entry?.module.id).toBe("a");
+    // 回滚路径:hot2 初始化失败 → Host 自动回滚"紧邻上一代"模块(hot1),存档键不变。
+    manager.hotSwap("a", module("a:hot2"));
+    workers[0]!.emit({ type: "behavior.error", message: "变体崩溃" });
+    workers[0]!.emit({ type: "behavior.ready", moduleId: "a:hot1", lifecycle: ["onStart", "onStop"] });
+    expect(manager.entries().find((candidate) => candidate.module.id === "a")?.diagnostics).toMatchObject({ status: "running", moduleId: "a:hot1", lastError: expect.stringContaining("热插失败已回滚") });
+
+    expect(() => manager.hotSwap("missing", module("x"))).toThrow(/未在运行/);
+  });
 });
 
 function module(id: string): SceneBehaviorModule {

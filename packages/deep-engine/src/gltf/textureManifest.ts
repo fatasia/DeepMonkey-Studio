@@ -2,10 +2,10 @@ import type { TextureSampler, TextureSemantic } from "../textures/decodedTexture
 import { TextureDataReader } from "./textureDataReader.js";
 import { decodeImageDataUri } from "./textureDataUri.js";
 import {
-  KHR_MATERIALS_EMISSIVE_STRENGTH, SCALAR_MATERIAL_EXTENSIONS, readEmissiveStrength, validateExtensionSets,
+  DOCUMENT_SUPPORTED_EXTENSIONS, KHR_MATERIALS_EMISSIVE_STRENGTH, readEmissiveStrength, validateExtensionSets,
 } from "./materialExtensions.js";
 import type { GltfEncodedImage, GltfNormalTextureSlot, GltfOcclusionTextureSlot, GltfTextureManifest, GltfTextureResource, GltfTextureSlot } from "./textureTypes.js";
-import { MAX_BYTES, budget, integer, invalid, list, noExtensions, object, reference, unsupported, validateJson, vector, type JsonObject } from "./validation.js";
+import { GltfImportError, MAX_BYTES, budget, integer, invalid, list, noExtensions, object, reference, unsupported, validateJson, vector, type JsonObject } from "./validation.js";
 
 const TRANSFORM = "KHR_texture_transform";
 const BASISU = "KHR_texture_basisu";
@@ -119,8 +119,7 @@ export function extractGltfTextureManifest(json: unknown, buffers: readonly Uint
   noExtensions(document, "$"); noExtensions(asset, "asset");
   if (asset.version !== "2.0") unsupported("asset.version", "glTF versions other than 2.0");
   if (asset.minVersion !== undefined && asset.minVersion !== "2.0") unsupported("asset.minVersion", "newer minimum glTF versions");
-  const { used, required } = validateExtensionSets(document,
-    new Set([TRANSFORM, BASISU, KHR_MATERIALS_EMISSIVE_STRENGTH, ...SCALAR_MATERIAL_EXTENSIONS]));
+  const { used, required } = validateExtensionSets(document, DOCUMENT_SUPPORTED_EXTENSIONS);
   const prefix = options.resourcePrefix === undefined ? "gltf" : options.resourcePrefix;
   if (typeof prefix !== "string" || !prefix.length || prefix.length > 256) invalid("options.resourcePrefix", "Expected a nonempty prefix of at most 256 characters.");
   const maxImageBytes = options.maxImageBytes ?? MAX_BYTES;
@@ -219,9 +218,18 @@ export function extractGltfTextureManifest(json: unknown, buffers: readonly Uint
         const values = reader.texCoord(attributes[attribute], `${location}.attributes.${attribute}`);
         if (values.length / 2 !== positionCount) invalid(location, `POSITION and ${attribute} counts differ.`);
         const requiresTangents = material.normalTexture?.texCoord === texCoord;
-        const tangents = requiresTangents && attributes.TANGENT !== undefined
-          ? reader.tangent4(attributes.TANGENT, `${location}.attributes.TANGENT`) : undefined;
-        if (tangents && tangents.length / 4 !== positionCount) invalid(location, "POSITION and TANGENT counts differ.");
+        // N5: an unusable authored TANGENT degrades to geometric tangent generation instead of rejecting
+        // the asset; attachManifest records a loss when even generation cannot deliver a tangent basis.
+        let tangents: Float32Array<ArrayBuffer> | undefined;
+        if (requiresTangents && attributes.TANGENT !== undefined) {
+          try {
+            tangents = reader.tangent4(attributes.TANGENT, `${location}.attributes.TANGENT`);
+            if (tangents.length / 4 !== positionCount) invalid(location, "POSITION and TANGENT counts differ.");
+          } catch (error) {
+            if (!(error instanceof GltfImportError)) throw error;
+            tangents = undefined;
+          }
+        }
         budget(++uvCount, 8192, "texture coordinate sets");
         return { geometry: `${prefix}/mesh/${meshIndex}/primitive/${primitiveIndex}`, meshIndex, primitiveIndex, texCoord, values,
           requiresTangents, ...(tangents ? { tangents } : {}) };

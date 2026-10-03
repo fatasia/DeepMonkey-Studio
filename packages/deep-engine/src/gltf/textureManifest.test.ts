@@ -205,7 +205,11 @@ describe("glTF texture manifest extraction", () => {
     expect(manifest.uvSets[0]).toMatchObject({ requiresTangents: true, tangents: new Float32Array(tangentValues) });
 
     view.setFloat32(source.uvLength + 3 * 4, 0, true);
-    expectError(() => extractGltfTextureManifest(source.document, [bytes]), "invalid", "accessors[2]");
+    // N5：不可用的 authored TANGENT 在 manifest 层降级为几何生成路径（tangents 置空），
+    // 由 attachManifest 生成或按损失合同丢弃法线贴图，不再整文件拒绝。
+    const degraded = extractGltfTextureManifest(source.document, [bytes]);
+    expect(degraded.uvSets[0]).toMatchObject({ requiresTangents: true });
+    expect(degraded.uvSets[0]!.tangents).toBeUndefined();
   });
 
   it("deduplicates resources only for the same texture and semantic", () => {

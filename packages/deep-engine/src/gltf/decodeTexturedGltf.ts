@@ -6,10 +6,10 @@ import { KHR_MATERIALS_EMISSIVE_STRENGTH, SCALAR_MATERIAL_EXTENSIONS } from "./m
 import { mapGltfMaterialExtensions } from "../shader/materialGltfMap.js";
 import { isDefaultExtendedMaterialParameters } from "../shader/materialParameters.js";
 import type { CapabilityFailure } from "./capabilityInventory.js";
-import { projectOptionalMaterialFallbacks, type GltfOptionalMaterialFallback } from "./optionalMaterialFallback.js";
+import { projectOptionalMaterialFallbacks, projectThirdPartyMaterialProfile, type GltfOptionalMaterialFallback } from "./optionalMaterialFallback.js";
 import type { GltfImageDecoder, GltfTextureDecodeOptions, GltfTextureManifest, GltfTextureSlot } from "./textureTypes.js";
 import { generateTangents, validateTangentBasis } from "./tangentSpace.js";
-import { list, object, unsupported, type JsonObject } from "./validation.js";
+import { GltfImportError, list, object, unsupported, type JsonObject } from "./validation.js";
 
 export interface TexturedGltfImportOptions extends GltfImportOptions, GltfTextureDecodeOptions {
   /** Optional material extensions to render through their authored core glTF fallback. */
@@ -79,6 +79,9 @@ function geometryDocument(json: unknown, manifest: GltfTextureManifest, handledD
         const geometryAttributes: JsonObject = { ...attributes };
         // The texture layer owns both core UV attributes. Geometry decode receives only position/TBN data.
         delete geometryAttributes.TEXCOORD_0; delete geometryAttributes.TEXCOORD_1;
+        // N5: normal-mapped primitives receive their tangent basis through the manifest layer (authored
+        // copy or geometric generation); the strict geometry decoder must not hard-reject unusable tangents.
+        if (textureData?.some(uv => uv.requiresTangents)) delete geometryAttributes.TANGENT;
         if (handledDeformations) {
           for (const name of Object.keys(geometryAttributes)) {
             if (name.startsWith("JOINTS_") || name.startsWith("WEIGHTS_")) delete geometryAttributes[name];
@@ -107,9 +110,23 @@ function geometryDocument(json: unknown, manifest: GltfTextureManifest, handledD
   return result;
 }
 
-function attachManifest(packet: RenderPacket, manifest: GltfTextureManifest): Pick<RenderPacket, "geometries" | "materials"> {
+function attachManifest(packet: RenderPacket, manifest: GltfTextureManifest, sourceDocument: JsonObject,
+): Pick<RenderPacket, "geometries" | "materials"> & { losses: CapabilityFailure[] } {
+  const losses: CapabilityFailure[] = [];
+  const materialIndexByPrimitive = new Map<string, number>();
+  if (sourceDocument.meshes !== undefined) {
+    list(sourceDocument.meshes, "meshes", 4096).forEach((value, meshIndex) => {
+      const path = `meshes[${meshIndex}]`;
+      list(object(value, path).primitives, `${path}.primitives`, 4096).forEach((primitive, primitiveIndex) => {
+        const material = object(primitive, `${path}.primitives[${primitiveIndex}]`).material;
+        if (typeof material === "number") materialIndexByPrimitive.set(`${meshIndex}:${primitiveIndex}`, material);
+      });
+    });
+  }
   const uvByGeometry = new Map<string, typeof manifest.uvSets>();
   for (const uv of manifest.uvSets) uvByGeometry.set(uv.geometry, [...(uvByGeometry.get(uv.geometry) ?? []), uv]);
+  /** Normal maps whose tangent basis could not be delivered; keyed by manifest material id. */
+  const undeliverableNormalMaterials = new Map<string, string>();
   const geometries: GeometryResource[] = packet.geometries.map(geometry => {
     const coordinates = uvByGeometry.get(geometry.id);
     if (!coordinates) return geometry;
@@ -117,8 +134,17 @@ function attachManifest(packet: RenderPacket, manifest: GltfTextureManifest): Pi
     let tangents = normalCoordinates?.tangents?.slice();
     if (normalCoordinates) {
       const tangentPath = `meshes[${normalCoordinates.meshIndex}].primitives[${normalCoordinates.primitiveIndex}].attributes.TANGENT`;
-      tangents ??= generateTangents(geometry.vertices, normalCoordinates.values, geometry.indices, tangentPath);
-      validateTangentBasis(geometry.vertices, tangents, geometry.indices, tangentPath);
+      try {
+        tangents ??= generateTangents(geometry.vertices, normalCoordinates.values, geometry.indices, tangentPath);
+        validateTangentBasis(geometry.vertices, tangents, geometry.indices, tangentPath);
+      } catch (error) {
+        // N5: mirrored/degenerate UVs make a tangent basis undeliverable; degrade instead of rejecting.
+        if (!(error instanceof GltfImportError)) throw error;
+        tangents = undefined;
+        const materialIndex = materialIndexByPrimitive.get(`${normalCoordinates.meshIndex}:${normalCoordinates.primitiveIndex}`);
+        const materialId = manifest.materials.find(entry => entry.materialIndex === materialIndex)?.id;
+        if (materialId !== undefined) undeliverableNormalMaterials.set(materialId, `${error.path}: ${error.message}`);
+      }
     }
     const uv0 = coordinates.find(uv => uv.texCoord === 0), uv1 = coordinates.find(uv => uv.texCoord === 1);
     return { ...geometry, ...(uv0 ? { uv0: uv0.values.slice() } : {}), ...(uv1 ? { uv1: uv1.values.slice() } : {}),
@@ -131,6 +157,17 @@ function attachManifest(packet: RenderPacket, manifest: GltfTextureManifest): Pi
   const materials: PbrMaterial[] = packet.materials.map(material => {
     const textured = textureByMaterial.get(material.id);
     if (!textured) return material;
+    if (undeliverableNormalMaterials.has(material.id) && textured.normalTexture !== undefined) {
+      losses.push({ code: "material-normal-tangents-undeliverable", stage: "material",
+        assetPath: `materials[${textured.materialIndex}].normalTexture`, count: 1,
+        detail: `法线贴图的切线基不可交付（${undeliverableNormalMaterials.get(material.id)}）；已降级为无该法线贴图渲染并如实登记，资产保持可渲染。` });
+      return { ...material,
+        ...(textured.baseColorTexture ? { baseColorTexture: textureSlot(textured.baseColorTexture) } : {}),
+        ...(textured.metallicRoughnessTexture ? { metallicRoughnessTexture: textureSlot(textured.metallicRoughnessTexture) } : {}),
+        ...(textured.occlusionTexture ? { occlusionTexture: { ...textureSlot(textured.occlusionTexture), strength: textured.occlusionTexture.strength } } : {}),
+        ...(textured.emissiveTexture ? { emissiveTexture: textureSlot(textured.emissiveTexture) } : {}),
+        ...(textured.emissiveStrength !== undefined ? { emissiveStrength: textured.emissiveStrength } : {}) };
+    }
     return { ...material,
       ...(textured.baseColorTexture ? { baseColorTexture: textureSlot(textured.baseColorTexture) } : {}),
       ...(textured.metallicRoughnessTexture ? { metallicRoughnessTexture: textureSlot(textured.metallicRoughnessTexture) } : {}),
@@ -139,7 +176,7 @@ function attachManifest(packet: RenderPacket, manifest: GltfTextureManifest): Pi
       ...(textured.emissiveTexture ? { emissiveTexture: textureSlot(textured.emissiveTexture) } : {}),
       ...(textured.emissiveStrength !== undefined ? { emissiveStrength: textured.emissiveStrength } : {}) };
   });
-  return { geometries, materials };
+  return { geometries, materials, losses };
 }
 
 /** 从调用者持有的 buffer 导入静态纹理 glTF；函数自身不发起外部 IO。 */
@@ -152,7 +189,13 @@ export async function decodeTexturedGltf(json: unknown, buffers: readonly Uint8A
 export async function decodeTexturedGltfDocument(json: unknown, buffers: readonly Uint8Array[], imageDecoder: GltfImageDecoder | undefined,
   options: TexturedGltfImportOptions, handledDeformations: boolean): Promise<RenderPacket> {
   object(options, "options"); options.signal?.throwIfAborted();
-  const fallbackDocument = projectOptionalMaterialFallbacks(json, options.optionalMaterialFallbacks);
+  // N5: explicit opt-in projection stays loss-silent (the caller chose the fallback); without it the
+  // zero-config third-party profile projects known-fallback and unknown material extensions with
+  // per-material losses instead of rejecting the asset.
+  const projected = options.optionalMaterialFallbacks !== undefined
+    ? { document: projectOptionalMaterialFallbacks(json, options.optionalMaterialFallbacks), losses: [] as CapabilityFailure[] }
+    : projectThirdPartyMaterialProfile(json);
+  const fallbackDocument = projected.document;
   const manifest = extractGltfTextureManifest(fallbackDocument, buffers, {
     ...(options.resourcePrefix === undefined ? {} : { resourcePrefix: options.resourcePrefix }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
@@ -160,9 +203,9 @@ export async function decodeTexturedGltfDocument(json: unknown, buffers: readonl
   });
   const packet = decodeGltf(geometryDocument(fallbackDocument, manifest, handledDeformations), buffers,
     { ...options, materialLosses: [] });
-  const attached = attachManifest(packet, manifest);
+  const attached = attachManifest(packet, manifest, object(fallbackDocument, "$"));
   const document = object(fallbackDocument, "$"), sourceMaterials = list(document.materials, "materials", 16_383);
-  const losses: CapabilityFailure[] = [];
+  const losses: CapabilityFailure[] = [...projected.losses];
   const materialPrefix = `${options.resourcePrefix ?? "gltf"}/material/`;
   const materials = attached.materials.map((material) => {
     const index = material.id.startsWith(materialPrefix) ? Number(material.id.slice(materialPrefix.length)) : -1;
@@ -180,5 +223,7 @@ export async function decodeTexturedGltfDocument(json: unknown, buffers: readonl
   });
   const textures = await decodeGltfTextureManifest(manifest, imageDecoder, options);
   options.signal?.throwIfAborted();
-  return { ...packet, ...attached, materials, ...(losses.length ? { materialLosses: losses } : {}), textures };
+  const { geometries, materials: attachedMaterials, losses: attachedLosses } = attached;
+  losses.push(...attachedLosses);
+  return { ...packet, geometries, materials, ...(losses.length ? { materialLosses: losses } : {}), textures };
 }

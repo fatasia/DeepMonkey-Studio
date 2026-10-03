@@ -8,11 +8,12 @@ interface SceneExportMenuProps {
   onExportSingle: () => void;
   onExportGlb: () => void;
   onExportFbx: () => void;
+  onExportPathTrace?: (() => void) | undefined;
   compact?: boolean;
   disabled?: boolean;
 }
 
-export function SceneExportMenu({ locale, onExportLoose, onExportSingle, onExportGlb, onExportFbx, compact = false, disabled = false }: SceneExportMenuProps) {
+export function SceneExportMenu({ locale, onExportLoose, onExportSingle, onExportGlb, onExportFbx, onExportPathTrace, compact = false, disabled = false }: SceneExportMenuProps) {
   const [open, setOpen] = useState(false);
 
   function run(action: () => void) {
@@ -46,6 +47,9 @@ export function SceneExportMenu({ locale, onExportLoose, onExportSingle, onExpor
       </button>
       {open && (
         <div className="export-menu-popup" role="menu">
+          {onExportPathTrace && <button role="menuitem" onClick={() => run(onExportPathTrace)}>
+            <Download size={16}/><span><strong>{tr(locale,"物理光照出图","Physical lighting render")}</strong><small>{tr(locale,"累积、收敛与线性 HDR","Accumulation, convergence and linear HDR")}</small></span>
+          </button>}
           <button role="menuitem" onClick={() => run(onExportLoose)}>
             <FileJson size={16} /><span><strong>{tr(locale, "场景 JSON", "Scene JSON")}</strong><small>{tr(locale, "仅配置，引用项目模型", "Configuration only; references project models")}</small></span>
           </button>

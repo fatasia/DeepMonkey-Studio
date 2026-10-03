@@ -2,7 +2,7 @@ import type { DataConnectionRecord, DataDatasetRecord } from "@bim-studio/contra
 import type { FastifyInstance } from "fastify";
 import { connectionPassword, connectorUrl, requiredSource } from "./dataIntegrationHelpers.js";
 import type { MetadataStore } from "./store.js";
-import type { OpcUaIngestConfig } from "./opcUaSubscriptionSource.js";
+import { resolveOpcUaSecurity, type OpcUaIngestConfig } from "./opcUaSubscriptionSource.js";
 import type { MqttIngestConfig, MqttIngestMapping, MqttIngestSupervisor } from "./mqttIngest.js";
 
 interface IngestBody {
@@ -153,6 +153,7 @@ function buildOpcUaIngestConfig(connection: DataConnectionRecord, dataset: DataD
   const samplingRaw = connection.config.samplingIntervalMs;
   const samplingIntervalMs =
     typeof samplingRaw === "number" ? samplingRaw : samplingRaw !== undefined && String(samplingRaw).trim() !== "" ? Number(samplingRaw) : undefined;
+  const security = resolveOpcUaSecurity(connection.config);
   return {
     connectionId: connection.id,
     projectId: connection.projectId,
@@ -163,6 +164,7 @@ function buildOpcUaIngestConfig(connection: DataConnectionRecord, dataset: DataD
     ...(connection.config.user ? { password: connectionPassword(connection, "OPCUA_PASSWORD") } : {}),
     ...(samplingIntervalMs !== undefined && Number.isFinite(samplingIntervalMs) ? { samplingIntervalMs } : {}),
     ...(connection.config.sceneId ? { sceneId: String(connection.config.sceneId) } : {}),
+    ...(security ? { security } : {}),
   };
 }
 

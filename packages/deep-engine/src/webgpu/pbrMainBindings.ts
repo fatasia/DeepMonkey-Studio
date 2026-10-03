@@ -8,7 +8,7 @@ import type { WorldClusteredLights } from "../lighting/worldLights.js";
 import { PbrBackgroundPass } from "./pbrBackgroundPass.js";
 import type { PbrFrameUniformView } from "./pbrFrameUniforms.js";
 import { packPbrFog, type PbrFog } from "./pbrFog.js";
-import { packPbrReflectionProbes, pbrReflectionProbeViews } from "./pbrReflectionProbes.js";
+import { packPbrEnvironmentReflections, pbrReflectionProbeViews } from "./pbrReflectionProbes.js";
 
 /** Frame-global bindings; resources are owned by the renderer's device session. */
 export class PbrMainBindings {
@@ -30,7 +30,7 @@ export class PbrMainBindings {
     try {
       fogBuffer = uploadBuffer(session, "Deep authored fog", this.fogData, GPUBufferUsage.UNIFORM);
       this.fogBuffer = fogBuffer;
-      const reflectionData = packPbrReflectionProbes(environment.reflectionProbes);
+      const reflectionData = packPbrEnvironmentReflections(environment);
       for (let index = 0; index < 2; index++) reflectionBuffers.push(uploadBuffer(session,
         "Deep local reflection records", reflectionData, GPUBufferUsage.UNIFORM));
       this.reflectionBuffers = reflectionBuffers as [GPUBuffer, GPUBuffer];
@@ -54,7 +54,7 @@ export class PbrMainBindings {
 
   setEnvironment(environment: StudioEnvironment): void {
     const nextIndex = 1 - this.reflectionBufferIndex;
-    const data = packPbrReflectionProbes(environment.reflectionProbes);
+    const data = packPbrEnvironmentReflections(environment);
     const binding = this.createBinding(environment, this.shadows, this.reflectionBuffers[nextIndex]!);
     this.session.device.queue.writeBuffer(this.reflectionBuffers[nextIndex]!, 0, data);
     this.reflectionBufferIndex = nextIndex; this.binding = binding;

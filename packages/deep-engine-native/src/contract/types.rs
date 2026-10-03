@@ -83,9 +83,9 @@ pub struct PbrMaterial {
     #[serde(default, deserialize_with = "present")]
     pub fog: Option<bool>,
     /// I-C23 分层材质层栈(base + ≤2 层,每层自带扩展参数/覆盖率/混合语义/按层表面)。
-    /// Native 生产消费只吃 stock 分支语义:层的 ior 经介电 F0 通道、按层颜色/MR/UV、
-    /// coverage 与 replace/overlay 凸混合;层的 clearcoat/各向异性/透射词随 304B 块
-    /// 携带但 native 求值核不评(与 native 基材无 extendedParameters 求值同界)。
+    /// Native 消费层 IOR、颜色/MR/UV、coverage 与 replace/overlay 凸混合。
+    /// 活动层清漆替换主方向光;IBL/GI/局部灯/自发光保持 stock。
+    /// 基材清漆与各向异性/透射由发布合同拒绝。
     #[serde(default, deserialize_with = "present")]
     pub layered: Option<LayeredMaterial>,
 }
@@ -164,10 +164,20 @@ pub struct LayerSurface {
     pub metallic_roughness_texture: Option<TextureSlot>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+pub enum LayerResponseModel {
+    #[serde(rename = "legacy")]
+    Legacy,
+    #[serde(rename = "microfacet-metal-reflection")]
+    MicrofacetMetalReflection,
+}
+
 /// 单层定义:参数 + 覆盖率 + 混合语义 + 按层表面(全部可选,缺省即 TS 家族缺省)。
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct MaterialLayer {
+    #[serde(default, deserialize_with = "present")]
+    pub response_model: Option<LayerResponseModel>,
     #[serde(default, deserialize_with = "present")]
     pub params: Option<LayerMaterialParams>,
     #[serde(default, deserialize_with = "present")]

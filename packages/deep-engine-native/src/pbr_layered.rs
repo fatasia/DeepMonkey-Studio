@@ -9,14 +9,12 @@
 //!   只由层总响应 rgb 派生并共享给全部通道(replace w=coverage;overlay w=coverage×
 //!   clamp01(layer))。凸性 ⇒ 输出 ≤ max(双亲),白炉口径 ≤1 由双亲直接继承。
 //!
-//! Native 求值边界(诚实声明,非缺陷):native 光照核是 stock BRDF
-//! (`brdfWithDielectricF0`,与 Web stock 分支同构),没有扩展求值核;层的
-//! clearcoat/各向异性/透射词随 304B 块携带但 native 不评,层 ior 经介电 F0
-//! 通道消费(Web compose 后 `select(v.dielectric, deepDielectricF0(params.x),
-//! params.x >= 1.0)` 的同式镜像)。白炉对拍 fixture 固定扩展词全零,此时
-//! Web 层求值恰走 stock 分支,双端语义逐位同构。
+//! Native 活动层清漆复用 T08 共享核,只替换主方向光;IBL/GI/局部灯/自发光
+//! 保持 stock 响应。层 IOR 经介电 F0 消费,304B params0.y/z 消费清漆因子与
+//! 粗糙度。基材清漆及各向异性/透射由发布合同拒绝。factor0 原样返回 stock;
+//! 原白炉 fixture 的扩展词全零,双端旧响应逐位保持。
 
-use crate::contract::{LayerBlendMode, MaterialLayer, PbrMaterial, TextureSlot};
+use crate::contract::{LayerBlendMode, LayerResponseModel, MaterialLayer, PbrMaterial, TextureSlot};
 
 /// 304B 层块(header 16B + 2×144B 行,16B 对齐 uniform)。
 pub const LAYERED_SURFACE_BLOCK_BYTES: usize = 304;
@@ -48,6 +46,7 @@ pub struct LayeredBlockRow {
     pub params: [f32; 6],
     pub coverage: f32,
     pub overlay: bool,
+    pub metal_reflection: bool,
     pub color: Option<[f32; 3]>,
     pub metallic: Option<f32>,
     pub roughness: Option<f32>,
@@ -61,7 +60,8 @@ impl LayeredBlockRow {
     fn flags(&self) -> f32 {
         (u32::from(self.color.is_some())
             | (u32::from(self.metallic.is_some()) << 1)
-            | (u32::from(self.roughness.is_some()) << 2)) as f32
+            | (u32::from(self.roughness.is_some()) << 2)
+            | (u32::from(self.metal_reflection) << 3)) as f32
     }
 }
 
@@ -136,6 +136,7 @@ pub fn layered_block_rows(
             params: layer_params(layer),
             coverage,
             overlay: layer.mode == Some(LayerBlendMode::Overlay),
+            metal_reflection: layer.response_model == Some(LayerResponseModel::MicrofacetMetalReflection),
             color: layer.surface.as_ref().and_then(|s| s.base_color),
             metallic: layer.surface.as_ref().and_then(|s| s.metallic),
             roughness: layer.surface.as_ref().and_then(|s| s.roughness),
@@ -156,11 +157,15 @@ pub fn layered_block_rows(
     Ok(rows)
 }
 
-/// 层参数 → 6 f32(缺省合并;clearcoat/各向异性/透射词进块但不被 native 核评)。
+/// 层参数 → 6 f32(缺省合并);IOR 与清漆由 shader 消费,其余瓣由发布合同拒绝。
 fn layer_params(layer: &MaterialLayer) -> [f32; 6] {
     let Some(params) = &layer.params else {
         return DEFAULT_LAYER_PARAMS;
     };
+    let rotation = params.anisotropy.as_ref().and_then(|a| a.rotation).unwrap_or(0.0);
+    let rotation = if layer.response_model == Some(LayerResponseModel::MicrofacetMetalReflection) {
+        if rotation == -std::f32::consts::PI { std::f32::consts::PI } else { rotation }
+    } else { rotation };
     [
         params.ior.unwrap_or(DEFAULT_LAYER_PARAMS[0]),
         params
@@ -178,11 +183,7 @@ fn layer_params(layer: &MaterialLayer) -> [f32; 6] {
             .as_ref()
             .and_then(|a| a.strength)
             .unwrap_or(0.0),
-        params
-            .anisotropy
-            .as_ref()
-            .and_then(|a| a.rotation)
-            .unwrap_or(0.0),
+        rotation,
         params
             .transmission
             .as_ref()
@@ -305,6 +306,7 @@ mod tests {
             base: Some(params(1.5)),
             layers: vec![
                 MaterialLayer {
+                    response_model: None,
                     params: Some(params(1.5)),
                     coverage: Some(0.75),
                     mode: Some(LayerBlendMode::Overlay),
@@ -315,6 +317,7 @@ mod tests {
                     )),
                 },
                 MaterialLayer {
+                    response_model: None,
                     params: Some(params(1.5)),
                     coverage: Some(0.5),
                     mode: Some(LayerBlendMode::Replace),
@@ -546,6 +549,7 @@ mod tests {
                     params: DEFAULT_LAYER_PARAMS,
                     coverage,
                     overlay: layer["mode"] == "overlay",
+                    metal_reflection: layer["responseModel"] == "microfacet-metal-reflection",
                     color: layer["surface"]["baseColor"].as_array().map(|values| {
                         [
                             values[0].as_f64().unwrap() as f32,

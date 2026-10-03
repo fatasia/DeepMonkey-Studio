@@ -17,12 +17,13 @@ import type { AiWorkspaceTask } from "../ai/capabilityCatalog";
 import { assistantModeTabs } from "../ai/assistantModeTabs";
 import { assistantSuggestions } from "../ai/assistantSuggestions";
 import {
+  assistantContextReadiness,
   assistantWorkspaceTarget,
 } from "../ai/assistantReliability";
 import { useAiProjectContext } from "../ai/useAiProjectContext";
 import { useAssistantSessions } from "../ai/useAssistantSessions";
 import { useAssistantChatRun } from "../ai/useAssistantChatRun";
-import { AiAssistantSessionControls } from "./AiAssistantSessionControls";
+import { AiAssistantSessionControls, AiAssistantSessionPicker } from "./AiAssistantSessionControls";
 import { AiContextDisclosure, CHAT_HISTORY_WINDOW } from "./AiContextDisclosure";
 import { AiMemoryPanel } from "./AiMemoryPanel";
 import { AiProvenancePanel } from "./AiProvenancePanel";
@@ -83,7 +84,7 @@ export function AiAssistantPanel({
   const sessions = useAssistantSessions(projectId, JSON.stringify([workspaceTarget.scene?.id, workspaceTarget.dashboard?.id, workspaceTarget.script?.id]));
   const { conversation } = sessions;
   const { answer, setAnswer, execution, busy, stopped, setStopped, error, setError, lastPrompt, setLastPrompt, lastScope,
-    dashboard, setDashboard, bimEvidence, setBimEvidence, requestAbort, cancelRequest, ask } = useAssistantChatRun({
+    dashboard, setDashboard, bimEvidence, setBimEvidence, requestAbort, cancelRequest, ask, dashboardStreamPreview } = useAssistantChatRun({
     sessions, projectId, requestScope: `${requestScope}:${sessions.identity}`, scopeLabel, scopeId: workspaceTarget.scene?.id ?? workspaceTarget.dashboard?.id ?? workspaceTarget.script?.id,
     question, setQuestion, mode, locale, context: requestContext, platformContext, sources: effectiveSources, sessionOptions,
     prepareBim: onPrepareBimContext,
@@ -193,14 +194,7 @@ export function AiAssistantPanel({
 
   function switchToControlledQuery() {
     if (busy || !lastPrompt) return;
-    setMode("sql");
-    setStopped(false);
-    setAnswer("");
-    setDashboard(undefined);
-    setDashboardPageDraft(undefined);
-    setConfirmDashboard(false);
-    setError(undefined);
-    setApplyError(undefined);
+    selectMode("sql");
     setQuestion(lastPrompt);
   }
 
@@ -220,6 +214,32 @@ export function AiAssistantPanel({
   const tabs = assistantModeTabs(locale, surface, Boolean(workspaceTarget.selected), dashboardModeAvailable);
   const suggestions = assistantSuggestions(mode, locale);
   const latestReliability = conversation.at(-1)?.reliability;
+  const readiness = assistantContextReadiness(effectiveSources);
+  const contextLoading = !platformLoaded && !projectMissing;
+  const conversationActive = conversation.length > 0 || Boolean(answer) || busy || Boolean(error);
+  const capabilityTaskProps = {
+    canOpenTask: (task: AiWorkspaceTask) => Boolean(projectId) && (task.workspace === "ask-data" || Boolean(onOpenWorkspaceTask)),
+    onOpenTask: (task: AiWorkspaceTask) => {
+      if (task.workspace === "ask-data") { selectMode("sql"); return; }
+      onOpenWorkspaceTask?.(task as Extract<AiWorkspaceTask, { workspace: "operations" }>);
+    },
+  };
+
+  function selectMode(next: AssistantMode) {
+    setMode(next);
+    setStopped(false);
+    setAnswer("");
+    setDashboard(undefined);
+    setDashboardPageDraft(undefined);
+    setConfirmDashboard(false);
+    setError(undefined);
+    setApplyError(undefined);
+  }
+
+  function resetForSessionSwitch() {
+    void cancelRequest(); setAnswer(""); setLastPrompt(""); setQuestion(""); setStopped(false); setError(undefined);
+    setDashboard(undefined); setConfirmDashboard(false); setBimEvidence(undefined);
+  }
 
   return (
     <aside
@@ -235,128 +255,84 @@ export function AiAssistantPanel({
         onPointerUp={panelDrag.onPointerUp}
         onPointerCancel={panelDrag.onPointerCancel}
       >
-        <div>
+        <div className="ai-assistant-title">
           <Bot size={18} />
           <span>
             <strong>{workspaceTarget.workspace === "dashboard" ? t("二维 AI 助手", "2D AI Assistant") : t("平台 AI 助手", "Platform AI Assistant")}</strong>
+            {experience === "chat" && <AiAssistantSessionPicker locale={locale} sessions={sessions} disabled={busy} onSwitch={resetForSessionSwitch} />}
           </span>
         </div>
         <div className="ai-assistant-header-actions">
-          <button aria-label={t("关闭 AI 助手", "Close AI assistant")} title={t("关闭 AI 助手", "Close AI assistant")} onClick={() => { cancelRequest(); onClose(); }}>
+          <div className="ai-assistant-experience" role="tablist" aria-label={t("AI 使用方式", "AI experience")}>
+            <button role="tab" disabled={busy} aria-selected={experience === "chat"} title={t("问答与生成", "Ask & create")} className={experience === "chat" ? "active" : ""} onClick={() => setExperience("chat")}>
+              <MessageSquare size={13} /><span>{t("对话", "Chat")}</span>
+            </button>
+            <button role="tab" disabled={busy} aria-selected={experience === "agent"} title={t("执行任务", "Run task")} className={experience === "agent" ? "active" : ""} onClick={() => setExperience("agent")}>
+              <Workflow size={13} /><span>{t("执行任务", "Run task")}</span>
+            </button>
+          </div>
+          <button className="ai-assistant-close" aria-label={t("关闭 AI 助手", "Close AI assistant")} title={t("关闭 AI 助手（Esc）", "Close AI assistant (Esc)")} onClick={() => { cancelRequest(); onClose(); }}>
             <X size={15} />
           </button>
         </div>
       </header>
-      <nav className="ai-assistant-tabs">
-        <div className="ai-assistant-experience" role="tablist" aria-label={t("AI 使用方式", "AI experience")}>
-          <button role="tab" disabled={busy} aria-selected={experience === "chat"} title={t("问答与生成", "Ask & create")} aria-label={t("问答与生成", "Ask & create")} className={experience === "chat" ? "active" : ""} onClick={() => setExperience("chat")}>
-            <MessageSquare size={14} />
-          </button>
-          <button role="tab" disabled={busy} aria-selected={experience === "agent"} title={t("执行任务", "Run task")} aria-label={t("执行任务", "Run task")} className={experience === "agent" ? "active" : ""} onClick={() => setExperience("agent")}>
-            <Workflow size={14} />
-          </button>
-        </div>
-        {experience === "chat" && tabs.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            disabled={busy}
-            className={mode === id ? "active" : ""}
-            title={label}
-            aria-label={label}
-            aria-pressed={mode === id}
-            onClick={() => {
-              setMode(id);
-              setStopped(false);
-              setAnswer("");
-              setDashboard(undefined);
-              setDashboardPageDraft(undefined);
-              setConfirmDashboard(false);
-              setError(undefined);
-              setApplyError(undefined);
-            }}
-          >
-            <Icon size={12} />
-          </button>
-        ))}
-      </nav>
       <div className="ai-assistant-body" ref={messageScroll.bodyRef} onScroll={messageScroll.onScroll}>
         {experience === "agent" ? (
           <IndustrialAgentWorkspace locale={locale} {...(projectId ? { projectId } : {})} context={context} />
         ) : <>
-          <AiAssistantSessionControls locale={locale} sessions={sessions} disabled={busy} onSwitch={() => {
-            void cancelRequest(); setAnswer(""); setLastPrompt(""); setQuestion(""); setStopped(false); setError(undefined);
-            setDashboard(undefined); setConfirmDashboard(false); setBimEvidence(undefined);
-          }} />
-          <AiContextDisclosure
-          locale={locale}
-          mode={mode}
-          context={context}
-          sources={effectiveSources}
-          loading={!platformLoaded && !projectMissing}
-          {...(conversation.length > CHAT_HISTORY_WINDOW
-            ? { historyWindow: { sent: CHAT_HISTORY_WINDOW, total: conversation.length } }
-            : {})}
-        />
-        {/* K14 面板常驻：chat 侧补齐记忆与实验档案折叠行（与 agent start 视图同构，M0 族）。 */}
-        {projectId && <AiMemoryPanel locale={locale} projectId={projectId} {...(experience === "chat" ? { onOpenAgent: openAgentWorkspace } : {})} />}
-        {projectId && <AiProvenancePanel locale={locale} projectId={projectId} {...(experience === "chat" ? { onOpenAgent: openAgentWorkspace } : {})} />}
-        {/* T9（审计 §二 2.4）：能力发现在对话进行中不再关闭——空态之外以 M0 折叠行常驻，展开才挂载目录（避免双请求）。 */}
-        {(mode === "platform" || mode === "scene") && (conversation.length > 0 || answer || busy || error) && (
-          <details className="ai-context-disclosure ai-capability-drawer" aria-label={t("可用能力", "Available capabilities")}
-            open={capabilityDrawerOpen} onToggle={(event) => setCapabilityDrawerOpen((event.target as HTMLDetailsElement).open)}>
+          <AiAssistantSessionControls locale={locale} sessions={sessions} disabled={busy} onSwitch={resetForSessionSwitch} />
+          {/* 上下文、记忆、实验档案合并为一条折叠行：默认只露出范围与来源就绪度，细节按需展开。 */}
+          <details className="ai-context-disclosure ai-context-group" aria-label={t("本次上下文", "Request context")}>
             <summary>
-              <span><Boxes size={13} aria-hidden="true" /><strong>{t("可用能力", "Available capabilities")}</strong></span>
-              <span className="ready">{t("展开查看与提问", "Expand to browse and ask")}<ChevronDown size={12} /></span>
+              <span>
+                <Database size={13} aria-hidden="true" />
+                <strong title={`${t("本次读取范围", "Context used for this request")} · ${scopeLabel || t("全平台", "Platform")}`}>{scopeLabel || t("全平台", "Platform")}</strong>
+              </span>
+              <span className={contextLoading ? "loading" : readiness.unavailable > 0 ? "partial" : "ready"}>
+                {contextLoading
+                  ? t("读取中", "Loading")
+                  : t(`${readiness.ready}/${readiness.total} 个来源就绪`, `${readiness.ready}/${readiness.total} sources ready`)}
+                {projectId && <small>{t(" · 记忆 · 档案", " · memory · archive")}</small>}
+                <ChevronDown size={12} />
+              </span>
             </summary>
-            {capabilityDrawerOpen && (
-              <AiCapabilityCatalog locale={locale} askDisabled={busy}
-                canOpenTask={(task) => Boolean(projectId) && (task.workspace === "ask-data" || Boolean(onOpenWorkspaceTask))}
-                onOpenTask={(task) => {
-                  if (task.workspace === "ask-data") {
-                    setMode("sql");
-                    return;
-                  }
-                  onOpenWorkspaceTask?.(task);
-                }}
-                onAskExample={(sample) => void ask(sample)} />
-            )}
-          </details>
-        )}
-        {mode === "sql" && projectId && <AskDataQuickQuery projectId={projectId} datasets={datasets} locale={locale} />}
-        {conversation.length === 0 && !answer && !busy && !error && mode !== "sql" && (
-          <div className="ai-assistant-empty">
-            <Sparkles size={23} />
-            <strong>{t("问当前平台，不问空泛知识", "Ask your platform, not generic knowledge")}</strong>
-            <span>
-              {t("项目证据与插件能力会按当前部署动态发现。", "Project evidence and plugin capabilities are discovered from this deployment.")}
-            </span>
-            {(mode === "platform" || mode === "scene") && (
-              <AiCapabilityCatalog
-                locale={locale}
-                askDisabled={busy}
-                canOpenTask={(task) => Boolean(projectId) && (task.workspace === "ask-data" || Boolean(onOpenWorkspaceTask))}
-                onOpenTask={(task) => {
-                  if (task.workspace === "ask-data") {
-                    setMode("sql");
-                    return;
-                  }
-                  onOpenWorkspaceTask?.(task);
-                }}
-                onAskExample={(sample) => void ask(sample)}
-              />
-            )}
-            <div className="ai-platform-suggestions">
-              <button type="button" disabled={!projectId || busy} onClick={() => void ask(suggestions[0])}>
-                <Sparkles size={13} />{t("一键运行样例", "Run sample")}
-              </button>
-              {suggestions.map((item) => (
-                <button key={item} onClick={() => setQuestion(item)}>
-                  {item}
-                </button>
-              ))}
+            <div className="ai-context-group-body">
+              <AiContextDisclosure embedded locale={locale} mode={mode} context={context} sources={effectiveSources} loading={contextLoading}
+                {...(conversation.length > CHAT_HISTORY_WINDOW ? { historyWindow: { sent: CHAT_HISTORY_WINDOW, total: conversation.length } } : {})} />
+              {/* K14：记忆与实验档案常驻（projectId 权限闸），收进上下文组内避免三条并列折叠行。 */}
+              {projectId && <AiMemoryPanel locale={locale} projectId={projectId} onOpenAgent={openAgentWorkspace} />}
+              {projectId && <AiProvenancePanel locale={locale} projectId={projectId} onOpenAgent={openAgentWorkspace} />}
             </div>
-          </div>
-        )}
+          </details>
+          {/* T9：能力目录统一为折叠行（空态与对话中同一入口），展开才挂载目录，避免双请求。 */}
+          {(mode === "platform" || mode === "scene") && (
+            <details className="ai-context-disclosure ai-capability-drawer" aria-label={t("可用能力", "Available capabilities")}
+              open={capabilityDrawerOpen} onToggle={(event) => setCapabilityDrawerOpen((event.target as HTMLDetailsElement).open)}>
+              <summary>
+                <span><Boxes size={13} aria-hidden="true" /><strong>{t("可用能力", "Available capabilities")}</strong></span>
+                <span className="ready">{t("展开查看与提问", "Expand to browse and ask")}<ChevronDown size={12} /></span>
+              </summary>
+              {capabilityDrawerOpen && (
+                <AiCapabilityCatalog locale={locale} askDisabled={busy} {...capabilityTaskProps}
+                  onAskExample={(sample) => void ask(sample)} />
+              )}
+            </details>
+          )}
+          {mode === "sql" && projectId && <AskDataQuickQuery projectId={projectId} datasets={datasets} locale={locale} />}
+          {!conversationActive && mode !== "sql" && (
+            <div className="ai-assistant-empty">
+              <Sparkles size={22} aria-hidden="true" />
+              <strong>{t("问当前平台，不问空泛知识", "Ask your platform, not generic knowledge")}</strong>
+              <span>{t("回答只基于本项目证据与已装载能力；点下面的问题即可直接提问。", "Answers use only this project's evidence and loaded capabilities; tap a question to ask it.")}</span>
+              <div className="ai-platform-suggestions">
+                {suggestions.map((item) => (
+                  <button key={item} type="button" disabled={busy || sessions.loading} onClick={() => void ask(item)}>
+                    <Sparkles size={12} aria-hidden="true" /><span>{item}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         <AiAssistantMessages locale={locale} conversation={conversation} busy={busy} error={error}
           stopped={stopped} lastPrompt={lastPrompt} lastScope={lastScope} answer={answer} execution={execution}
           onRetry={() => void ask(lastPrompt)} {...(projectId ? { projectId } : {})}
@@ -368,6 +344,14 @@ export function AiAssistantPanel({
             <LayoutDashboard size={13} />
             {t("查看并应用", "Review & apply")}
           </button>
+        )}
+        {dashboardStreamPreview && !dashboardPageDraft && (
+          <div className="ai-dashboard-stream-preview" role="status">
+            {t(`正在生成布局：${dashboardStreamPreview.labels.length} 个组件`, `Generating layout: ${dashboardStreamPreview.labels.length} widgets`)}
+            {dashboardStreamPreview.types.length > 0 && (
+              <small>{dashboardStreamPreview.types.join(" · ")}</small>
+            )}
+          </div>
         )}
         {dashboardPageDraft && onApplyDashboardPageDraft && !confirmDashboard && (
           <button className="primary ai-apply-dashboard" onClick={() => setConfirmDashboard(true)}>
@@ -442,10 +426,18 @@ export function AiAssistantPanel({
           )}
         </>}
       </div>
-      {experience === "chat" && <AssistantModelControls locale={locale} mode={mode} value={sessionOptions}
-        onChange={setSessionOptions} disabled={busy} />}
       {experience === "chat" && <AiAssistantComposer locale={locale} question={question} busy={busy}
         sendDisabled={sessions.loading} disabledReason={t("正在恢复会话，请稍候", "Restoring the conversation; please wait")}
+        toolbar={<>
+          <label className="ai-mode-select" title={t("提问范围：决定读取哪些证据", "Scope: decides which evidence is read")}>
+            {(() => { const ActiveIcon = tabs.find((tab) => tab.id === mode)?.icon ?? Sparkles; return <ActiveIcon size={12} aria-hidden="true" />; })()}
+            <select aria-label={t("提问范围", "Question scope")} disabled={busy} value={mode}
+              onChange={(event) => selectMode(event.target.value as AssistantMode)}>
+              {tabs.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
+            </select>
+          </label>
+          <AssistantModelControls compact locale={locale} mode={mode} value={sessionOptions} onChange={setSessionOptions} disabled={busy} />
+        </>}
         onChange={setQuestion} onSend={() => { if (!sessions.loading) void ask(); }} onStop={() => {
           cancelRequest();
           setStopped(true);

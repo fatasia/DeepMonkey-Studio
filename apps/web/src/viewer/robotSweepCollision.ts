@@ -4,7 +4,10 @@
  * 粗筛给出候选对,本层做几何裁决——固定步长采样 → 每步 FK(复用 T15 ikSkeleton)→
  * 对级球粗筛(保守剪枝)→ GJK 窄相位(convexDistance)→ 状态翻转二分细化碰撞时刻。
  * 输出碰撞时刻、接触点(仅分离/切触态)、最小间距(最近点对距离)与涉及连杆对。
- * 算法口径与离散化极限见 docs/specs/n10-narrow-phase-sweep-20261001.md。
+ * 轨迹两种形态:骨架 FK(poseAt 关节值)与路径驱动(framesAt 直给节点变换,
+ * E4 维护净空的人体/工具/拆卸件过道语义),共用同一套采样/粗筛/窄相位/二分机器。
+ * 算法口径与离散化极限见 docs/specs/n10-narrow-phase-sweep-20261001.md;
+ * 路径模式口径见 docs/specs/e4-sweep-20261002.md。
  */
 
 import { skeletonFK, type IKSkeleton } from "./ikSkeleton";
@@ -43,7 +46,8 @@ export interface SweepPairSpec {
   bodyIdB: string;
 }
 
-export interface SweepTrajectorySpec {
+/** 骨架 FK 轨迹(N10 原形态):关节值 → skeletonFK 全量节点位姿。 */
+export interface SweepSkeletonTrajectorySpec {
   skeleton: IKSkeleton;
   startTimeSeconds: number;
   endTimeSeconds: number;
@@ -51,6 +55,29 @@ export interface SweepTrajectorySpec {
   sampleCount: number;
   /** 关节轨迹采样:返回全量节点序姿态(长度 = 骨架节点数);由调用方保证确定性与合法性。 */
   poseAt(seconds: number): readonly number[];
+}
+
+/**
+ * 路径驱动轨迹(E4 维护净空):不经骨架 FK,framesAt 直接给出各"路径节点"的世界变换;
+ * 节点索引 = SweepAttachedBody.nodeIndex。人体过道/工具搬运/拆卸件抽取等
+ * 路径驱动刚体运动由此进入同一套采样/粗筛/窄相位/二分机器,不另建平行系统。
+ * framesAt 由调用方保证确定性与合法性(与骨架 poseAt 同约):数组按 nodeIndex 取用,
+ * 长度不足或分量非有限在求值点显式报错。
+ */
+export interface SweepFramesTrajectorySpec {
+  framesAt(seconds: number): readonly RigidTransform[];
+  startTimeSeconds: number;
+  endTimeSeconds: number;
+  /** 采样数(含两端点),≥2。 */
+  sampleCount: number;
+}
+
+export type SweepTrajectorySpec = SweepSkeletonTrajectorySpec | SweepFramesTrajectorySpec;
+
+/** 路径节点位姿的结构形态(骨架 FK 与路径模式共用;composeNodeTransform/球粗筛消费)。 */
+interface SweepNodeFrame {
+  position: { x: number; y: number; z: number };
+  quaternion: { x: number; y: number; z: number; w: number };
 }
 
 export interface SweepCollisionOptions {
@@ -201,7 +228,7 @@ export function runSweepCollision(
   if (!(touchEpsilon >= 0) || !(refinementTolerance > 0) || !Number.isInteger(maxRefinement) || maxRefinement < 1) {
     throw new Error("扫掠选项非法:touchEpsilon ≥ 0、refinementTimeToleranceSeconds > 0、maxRefinementIterations 为正整数");
   }
-  const skeleton = trajectory.skeleton;
+  const skeleton: IKSkeleton | undefined = "skeleton" in trajectory ? trajectory.skeleton : undefined;
   const bodyById = new Map<string, PreparedBody>();
   for (const item of bodies) {
     // 先取标量字段再判别,避免联合收窄到 never(exactOptional/判别联合组合下的 TS 限制)。
@@ -209,7 +236,10 @@ export function runSweepCollision(
     const bodyId = item.bodyId;
     if (bodyById.has(bodyId)) throw new Error(`bodyId 重复:${bodyId}`);
     if (item.attach === "node") {
-      if (!Number.isInteger(item.nodeIndex) || item.nodeIndex < 0 || item.nodeIndex >= skeleton.nodes.length) {
+      if (!Number.isInteger(item.nodeIndex) || item.nodeIndex < 0) {
+        throw new Error(`体 ${bodyId} 的 nodeIndex ${String(item.nodeIndex)} 必须是非负整数`);
+      }
+      if (skeleton && item.nodeIndex >= skeleton.nodes.length) {
         throw new Error(`体 ${bodyId} 的 nodeIndex ${String(item.nodeIndex)} 超出骨架节点范围 0..${skeleton.nodes.length - 1}`);
       }
     } else if (item.attach !== "static") {
@@ -241,14 +271,26 @@ export function runSweepCollision(
     index === sampleCount - 1 ? endTimeSeconds : startTimeSeconds + index * stepDuration;
 
   // ── 时刻评估器:采样与二分细化共用同一条路径,保证状态一致 ──
+  // 骨架模式走 T15 FK;路径模式(E4)直接取 framesAt 变换,两者产出同一结构形态。
+  const nodeFramesAt = (seconds: number): readonly SweepNodeFrame[] => {
+    if ("skeleton" in trajectory) return skeletonFK(trajectory.skeleton, trajectory.poseAt(seconds));
+    const frames = trajectory.framesAt(seconds);
+    if (!Array.isArray(frames)) throw new Error("framesAt 必须返回变换数组");
+    return frames.map(frameToWorldFrame);
+  };
+  const nodeFrameOf = (frames: readonly SweepNodeFrame[], spec: SweepAttachedBody): SweepNodeFrame => {
+    const frame = frames[spec.nodeIndex];
+    if (!frame) throw new Error(`体 ${spec.bodyId} 的路径节点 ${spec.nodeIndex} 超出 framesAt 返回范围(长度 ${frames.length})`);
+    return frame;
+  };
   let refinementEvaluations = 0;
   const evaluateAt = (seconds: number, bodyIdA: string, bodyIdB: string): ConvexDistanceResult => {
-    const frames = skeletonFK(skeleton, trajectory.poseAt(seconds));
+    const frames = nodeFramesAt(seconds);
     const evaluate = (bodyId: string): WorldConvexBody => {
       const body = bodyById.get(bodyId)!;
       const spec = body.spec;
       if (spec.attach === "static") return toWorldBody(spec.shape, spec.transform);
-      return toWorldBody(spec.shape, composeNodeTransform(frames[spec.nodeIndex]!, spec.localTransform));
+      return toWorldBody(spec.shape, composeNodeTransform(nodeFrameOf(frames, spec), spec.localTransform));
     };
     return convexDistance(evaluate(bodyIdA), evaluate(bodyIdB), options.gjk);
   };
@@ -263,7 +305,7 @@ export function runSweepCollision(
   // ── 主扫掠:逐采样 → 逐对(球粗筛 → GJK 窄相位)──
   for (let sample = 0; sample < sampleCount; sample++) {
     const seconds = sampleTime(sample);
-    const frames = skeletonFK(skeleton, trajectory.poseAt(seconds));
+    const frames = nodeFramesAt(seconds);
     const worldCache = new Map<string, WorldConvexBody>();
     const worldOf = (bodyId: string): WorldConvexBody => {
       const cached = worldCache.get(bodyId);
@@ -272,7 +314,7 @@ export function runSweepCollision(
       const spec = body.spec;
       const world = spec.attach === "static"
         ? toWorldBody(spec.shape, spec.transform)
-        : toWorldBody(spec.shape, composeNodeTransform(frames[spec.nodeIndex]!, spec.localTransform));
+        : toWorldBody(spec.shape, composeNodeTransform(nodeFrameOf(frames, spec), spec.localTransform));
       worldCache.set(bodyId, world);
       return world;
     };
@@ -288,7 +330,7 @@ export function runSweepCollision(
           spec.transform.translation[2] + rotated[2],
         ];
       }
-      const frame = frames[spec.nodeIndex]!;
+      const frame = nodeFrameOf(frames, spec);
       let center: [number, number, number] = [bounding.centerX, bounding.centerY, bounding.centerZ];
       if (spec.localTransform) {
         center = rotateVector(spec.localTransform.rotationQuaternion, center);
@@ -407,6 +449,19 @@ export function runSweepCollision(
     },
     elapsedMs: finishedAt - startedAt,
   };
+}
+
+/** 路径模式:RigidTransform → 路径节点位姿结构(分量有限性在此把关,四元数归一由 toWorldBody 负责)。 */
+function frameToWorldFrame(transform: RigidTransform): SweepNodeFrame {
+  if (!transform || !Array.isArray(transform.translation) || !Array.isArray(transform.rotationQuaternion)) {
+    throw new Error("framesAt 返回的变换无效(缺少平移/旋转数组)");
+  }
+  const [tx, ty, tz] = transform.translation;
+  const [qx, qy, qz, qw] = transform.rotationQuaternion;
+  assertFinite(tx, "路径变换平移.x"); assertFinite(ty, "路径变换平移.y"); assertFinite(tz, "路径变换平移.z");
+  assertFinite(qx, "路径变换旋转.x"); assertFinite(qy, "路径变换旋转.y");
+  assertFinite(qz, "路径变换旋转.z"); assertFinite(qw, "路径变换旋转.w");
+  return { position: { x: tx, y: ty, z: tz }, quaternion: { x: qx, y: qy, z: qz, w: qw } };
 }
 
 function composeNodeTransform(

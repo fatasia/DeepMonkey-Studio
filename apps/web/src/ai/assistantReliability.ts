@@ -1,5 +1,5 @@
 import type { AssistantMode } from "../api";
-import type { AiContextDelivery } from "@bim-studio/contracts";
+import type { AiAssistantCitation, AiContextDelivery } from "@bim-studio/contracts";
 import { readContextDelivery } from "./assistantContextDelivery";
 import type { BimAssistantPreparedContext } from "../bimAssistant";
 
@@ -42,6 +42,8 @@ export interface AssistantReliabilitySummary {
   traceId?: string;
   contextFingerprint?: string;
   evidenceCount: number;
+  /** T5：逐条引用锚——服务端产出的回答数值↔已发送证据对齐表；旧服务端/无锚时缺省。 */
+  citations?: AiAssistantCitation[];
   inputRisk: "low" | "medium" | "high";
   writePolicy: "read-only" | "confirm-required";
   warnings: string[];
@@ -57,6 +59,7 @@ interface ReliabilityMetadata {
   contextFingerprint?: unknown;
   contextTrust?: unknown;
   evidenceCount?: unknown;
+  citations?: unknown;
   warnings?: unknown;
   writePolicy?: unknown;
 }
@@ -173,6 +176,7 @@ export function assistantReliabilityFromResponse(
   const contextAvailable = sourceLabels.length > 0 || Boolean(bimEvidence);
   const limitedBim = mode === "bim" && bimEvidence?.confidence === "insufficient";
   const contextDelivery = readContextDelivery(metadata.contextDelivery);
+  const citations = readCitations(metadata.citations);
   return {
     ...(contextDelivery ? { contextDelivery, contextSourceLabels: Object.fromEntries(sources.map((source) => [source.id, source.label])) } : {}),
     grade: verificationGrade({
@@ -184,6 +188,7 @@ export function assistantReliabilityFromResponse(
     ...(traceId ? { traceId } : {}),
     ...(contextFingerprint ? { contextFingerprint } : {}),
     evidenceCount,
+    ...(citations.length ? { citations } : {}),
     contextTrust: trustValue(metadata.contextTrust, evidenceCount),
     inputRisk: riskValue(metadata.inputRisk),
     writePolicy: metadata.writePolicy === "confirm-required" ? "confirm-required" : "read-only",
@@ -247,6 +252,32 @@ function numberValue(value: unknown): number | undefined {
 
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+}
+
+/**
+ * T5：逐条引用锚防御性过滤——形状不对的条目丢弃而非渲染崩坏；
+ * 引用锚是服务端可复核定位，前端绝不自造（无输入即无清单）。
+ */
+function readCitations(value: unknown): AiAssistantCitation[] {
+  if (!Array.isArray(value)) return [];
+  const citations: AiAssistantCitation[] = [];
+  for (const entry of value) {
+    const record = asRecord(entry);
+    const token = stringValue(record?.token);
+    const rawAnchors = Array.isArray(record?.anchors) ? record.anchors : [];
+    const anchors = rawAnchors.flatMap((item) => {
+      const anchor = asRecord(item);
+      const sourceId = stringValue(anchor?.sourceId);
+      const sourcePath = typeof anchor?.sourcePath === "string" ? anchor.sourcePath : undefined;
+      const offset = numberValue(anchor?.offset);
+      const fingerprint = stringValue(anchor?.fingerprint);
+      return sourceId && sourcePath !== undefined && offset !== undefined && fingerprint
+        ? [{ sourceId, sourcePath, offset, fingerprint }]
+        : [];
+    });
+    if (token && anchors.length) citations.push({ token, anchors });
+  }
+  return citations;
 }
 
 function riskValue(value: unknown): "low" | "medium" | "high" {

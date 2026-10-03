@@ -33,6 +33,7 @@ import type { BimSpaceRecord, LoadedSceneModel, NavigationCollisionDiagnostics, 
 import type { RendererRecoveryState } from "../viewer/rendererRecoveryState";
 import { isSceneViewerDeliveryRuntime } from "../delivery/sceneViewerDelivery";
 import { synchronizeSelectionFromViewport } from "../controllers/sceneSelectionSynchronization";
+import { restoreRendererRecoveryState } from "../controllers/restoreRendererRecoveryState";
 import { commitRendererPreference, type PendingRendererPreference } from "../viewer/rendererBackendPreference";
 import { StudioDeepWebGpuBridge } from "../viewer/StudioDeepWebGpuBridge";
 import { StudioDeepWasmBridge } from "../viewer/StudioDeepWasmBridge";
@@ -122,7 +123,8 @@ interface AppRuntimeEffectsContext {
   primitiveColors: MutableRefObject<Map<string, string>>;
   navigate: (route: AppRoute, replace?: boolean) => void;
   applyScene: (scene: SceneSnapshot, updateRoute?: boolean, sceneProject?: ProjectRecord, readOnly?: boolean, fastRuntime?: boolean,
-    safeAuthoringEntry?: boolean, requireComplete?: boolean, incrementalPlay?: boolean, restoreAnimationPlayheadSec?: number | undefined) => Promise<void>;
+    safeAuthoringEntry?: boolean, requireComplete?: boolean, incrementalPlay?: boolean, restoreAnimationPlayheadSec?: number | undefined,
+    restoreLiveCamera?: boolean) => Promise<void>;
   dispatchApplicationInteraction: (source: ApplicationObjectRef, trigger: SceneInteractionTrigger, selectSource?: boolean, payload?: JsonValue) => unknown;
   recordSceneEdit: (label: string) => void;
   captureSceneSnapshot: () => SceneSnapshot | undefined;
@@ -162,6 +164,8 @@ interface AppRuntimeEffectsContext {
   setRendererActiveBackend: Setter<RendererBackend>;
   setRendererSwitchPhase: Setter<"idle" | "preparing" | "recovering" | "failed">;
   setRendererSwitchMessage: Setter<string | undefined>;
+  /** 任一模型开启描边(outline)。该效果仅作者(WebGL)路径实现,Deep 包内的实例描边位会以密码式账本不匹配崩溃。 */
+  rendererOutlineRequired: boolean;
 }
 
 /** 集中管理渲染器、实时数据、WebXR 与交互总线的生命周期副作用。 */
@@ -173,6 +177,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     viewportRef,
     rendererBackend,
     rendererActiveBackend,
+    rendererOutlineRequired,
     rendererGeneration,
     revision,
     engine,
@@ -482,9 +487,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     const pending = rendererSnapshotRef.current;
     if (!engine || !pending || !project) return;
     rendererSnapshotRef.current = undefined;
-    // J3-E：恢复第 9 参回 seek 播放头（缺省 undefined = 归零，与旧行为逐位一致）。
-    void applyScene(pending.scene, false, project, pending.readOnly, pending.fastRuntime, false, false, false,
-      pending.animationPlayheadSec)
+    void restoreRendererRecoveryState(pending, project, applyScene)
       .then(() => {
         try {
           commitRendererPreference(rendererPreferenceCommitRef, engine.getRendererBackend());
@@ -499,6 +502,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
         setRendererSwitchMessage(undefined);
       })
       .catch((reason) => {
+        if (rendererSnapshotRef.current === undefined) rendererSnapshotRef.current = pending;
         setRendererSwitchPhase("failed");
         setRendererSwitchMessage(`场景恢复失败：${reason instanceof Error ? reason.message : String(reason)}`);
         showError(reason);
@@ -605,6 +609,17 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
     const bridge = deepBridgeRef.current;
     const wasmBridge = wasmBridgeRef.current;
     if (!engine || !bridge || !wasmBridge) return;
+    // 描边(outline)仅由作者(WebGL)路径的 EffectComposer 实现;放行会在 Deep 包内以密码式
+    // "Material effect ledger mismatch"崩溃。与发布链 preserve-authored-effects 同语义:保留
+    // WebGL 并给出可操作原因,用户关闭描边后即可切换。
+    if (rendererBackend === "webgpu" && rendererOutlineRequired) {
+      setRendererBackend("webgl");
+      setRendererActiveBackend("webgl");
+      setRendererSwitchPhase("failed");
+      setRendererSwitchMessage("场景包含描边(outline)效果，Deep 渲染路径尚未支持；已保留 WebGL，关闭描边后可切换");
+      setMessage("已保留 WebGL：描边效果暂不支持 Deep 渲染路径");
+      return;
+    }
     const actuallyActive = engine.getAuthorRendererBackend() === "webgl"
       && (rendererBackend === "webgpu"
         ? bridge.activeBackend === "webgpu" && wasmBridge.activeBackend === "webgl"
@@ -674,7 +689,7 @@ export function useAppRuntimeEffects(context: AppRuntimeEffectsContext): void {
       if (!cancelled) finishLoading();
     });
     return () => { cancelled = true; bridge.cancelPendingSwitch(); wasmBridge.cancelPendingSwitch(); };
-  }, [engine, rendererBackend, rendererActiveBackend, revision, showError]);
+  }, [engine, rendererBackend, rendererActiveBackend, rendererOutlineRequired, revision, showError]);
 
   useEffect(() => {
     const bridge = wasmBridgeRef.current;

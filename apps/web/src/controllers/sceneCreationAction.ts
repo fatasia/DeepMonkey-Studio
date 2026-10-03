@@ -12,6 +12,7 @@ import { DEFAULT_DASHBOARD_STATE } from "../components/dashboardState";
 import { DEFAULT_NAVIGATION_SETTINGS } from "../navigationSettings";
 import { DEFAULT_SCENE_COORDINATES } from "../viewer/sceneCoordinates";
 import { DEFAULT_ENGINEERING_ANALYSIS } from "../viewer/engineeringAnalysisState";
+import { createDefaultSceneSample, type SceneCreationOptions } from "./defaultSceneSample";
 import type { ScenePersistenceControllerContext } from "./scenePersistenceControllerContext";
 
 type SceneCreationContext = Pick<
@@ -107,7 +108,7 @@ export function createSceneCreationAction(context: SceneCreationContext, openSce
     setWeather,
   } = context;
 
-  return async function createScene(name: string) {
+  return async function createScene(name: string, options?: SceneCreationOptions) {
     if (!project) return;
     sceneApplyVersionRef.current += 1;
     if (engine) {
@@ -142,18 +143,20 @@ export function createSceneCreationAction(context: SceneCreationContext, openSce
     setDefaultCameraViewId(undefined);
 
     const now = new Date().toISOString();
+    const sample = createDefaultSceneSample(options, now);
     const scene: SceneSnapshot = {
       schemaVersion: 1,
       id: crypto.randomUUID(),
       projectId: project.id,
       name,
-      camera: { position: { x: 12, y: 8, z: 12 }, target: { x: 0, y: 1, z: 0 }, mode: "orbit" },
+      camera: sample?.camera ?? { position: { x: 12, y: 8, z: 12 }, target: { x: 0, y: 1, z: 0 }, mode: "orbit" },
       coordinateSystem: DEFAULT_SCENE_COORDINATES,
       cameraConstraints: DEFAULT_CAMERA_CONSTRAINTS,
       navigationSettings: DEFAULT_NAVIGATION_SETTINGS,
-      cameraViews: [],
+      cameraViews: sample?.cameraViews ?? [],
+      ...(sample?.defaultCameraViewId ? { defaultCameraViewId: sample.defaultCameraViewId } : {}),
       models: [],
-      primitives: [],
+      primitives: sample?.primitives ?? [],
       measurements: [],
       annotations: [],
       weather: "sunny",
@@ -165,12 +168,18 @@ export function createSceneCreationAction(context: SceneCreationContext, openSce
       engineeringAnalysis: structuredClone(DEFAULT_ENGINEERING_ANALYSIS),
       dashboard: structuredClone(DEFAULT_DASHBOARD_STATE),
       dataBindings: [],
-      interactions: [],
+      interactions: sample?.interactions ?? [],
       selectionSets: [],
       createdAt: now,
       updatedAt: now,
     };
     const saved = await api.saveScene(scene);
+    for (const primitive of saved.primitives) {
+      primitiveColors.current.set(primitive.modelId, primitive.color);
+      engine?.createPrimitive(primitive.modelId, primitive.name, primitive.kind, primitive.color);
+      engine?.applyModelState(primitive.modelId, primitive);
+    }
+    engine?.setInteractionScripts(saved.interactions ?? []);
     engine?.applyCamera(saved.camera);
     setActiveScene(saved);
     setSceneName(saved.name);
@@ -182,7 +191,7 @@ export function createSceneCreationAction(context: SceneCreationContext, openSce
     setSceneDashboard(structuredClone(DEFAULT_DASHBOARD_STATE));
     setSceneDataBindings([]);
     setSceneDataBindingRuntime({});
-    setSceneInteractions([]);
+    setSceneInteractions(saved.interactions ?? []);
     setSelectionSets([]);
     setRootLayerOrder?.(undefined);
     setSceneEnvironment(configuredDefaultEnvironment);
@@ -191,8 +200,8 @@ export function createSceneCreationAction(context: SceneCreationContext, openSce
     setPhysics(DEFAULT_PHYSICS);
     setEngineeringAnalysis(structuredClone(DEFAULT_ENGINEERING_ANALYSIS));
     setSceneAnimation(DEFAULT_ANIMATION);
-    setCameraViews([]);
-    setDefaultCameraViewId(undefined);
+    setCameraViews(saved.cameraViews ?? []);
+    setDefaultCameraViewId(saved.defaultCameraViewId);
     setAnimationTime(0);
     setAnimationPlaying(false);
     await openSceneDashboard(saved);
