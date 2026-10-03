@@ -128,7 +128,8 @@
 
 | # | 任务 | 动作 | 验收标准 |
 |---|---|---|---|
-| P0-1 | 全量测试基线 | `cd apps/web && npx vitest run`；`cd packages/deep-engine && npx vitest run`；`cd packages/contracts && npx vitest run`；`cd apps/api && npx vitest run` | 失败清单落盘；每个失败归类为"本轮引入 / 既有 / 超时" |
+| P0-0 | 架构边界测试 2 例失败（**已定位到文件**） | `cd apps/web && npx vitest run src/architecture.test.ts`（约 18–36 秒）。违规：(1) `packages/deep-engine/lab/parityGateProbe.ts`、`packages/deep-engine/lab/parityGateScenes.ts` 违反"只经公共包 API 导入"（`architecture.test.ts:53`）——改为从包的公开入口导入，或把这两个 lab 文件加入测试里已有的 lab 例外名单；(2) `apps/web/src/delivery/assetRevisionUpdate.ts` 在 `api.ts` 之外使用原始 HTTP 传输（`:82`）——把请求收回 `apiClients/*`（或 `api.ts`）并由 `assetRevisionUpdate.ts` 注入调用，不要加例外 | `architecture.test.ts` 6 例全绿 |
+| P0-1 | 全量测试基线 | `cd apps/web && npx vitest run`（本会话实测 139 秒，除 P0-0 外全绿）；`cd packages/deep-engine && npx vitest run`；`cd packages/contracts && npx vitest run`；`cd apps/api && npx vitest run` | 失败清单落盘；每个失败归类为"本轮引入 / 既有 / 超时" |
 | P0-2 | WGSL 校验和漂移 | 已知失败：`c8F32Inputs`、`j3DFullLayerMatrix`、`iesSamplingWgslChecksum`、`materialMetalReflectionSampling`（65536 样本 CPU 积分，6.9s 超时）。先 `git log -p` 查是谁改了生产着色器源；本轮材质补齐声称 stock WGSL 零变化，需验证 | 校验和漂移要么是有意变更（更新金样并记账）要么回滚；超时用例调 timeout 或降样本 |
 | P0-3 | 默认样例在 Deep 下可创建 | 本会话临时测试证明 `sceneSnapshotToRenderPacket` 对样例 3 个基础体**不抛错**（已通过）。但 deep-outline、路径追踪两个子智能体都曾报 `基础体 sample-pedestal 的材质需要适配:clearcoat`，判断为材质子智能体改动期间的瞬时状态。**需在真编辑器里复验一次**：新建场景（默认样例）→ 切 Deep WebGPU → 1080p 深色截图，且不报错 | 截图证明 Deep 下底座、立柱、热点都显示；无"材质需要适配" |
 | P0-4 | 描边实时勾选退步 | 独立 packet 路径下实时勾选"轮廓"在 Deep 视口不立即显示（[deep-outline §6-1](deep-outline-20261003.md)）。让描边集合变化走 `updateInstances` 的 `outline` 位（≤1 帧可见，不重建 packet）；首次描边的 4 条管线改异步预热 | 单测：描边位变更不重建 packet 资源；真编辑器 1080p 深色截图：勾选即出现 |
