@@ -8,7 +8,8 @@
 **目标**:≥5000 盏动态点/聚光实时直接光;面积光上限 8→64。
 **复用基座**:`packages/deep-engine/src/lighting/`(areaLights.ts/ltc.ts 常量互钉、`DEEP_AREA_LIGHT_MAX=8`→扩容)、Forward+ 簇光(clusterLightingPbr)、T20 曲线 LUT、§1 BVH(compute,影子光线;若 B1 光追未就绪先用随机一灯硬阴影近似+降噪)。
 **实施要点**:
-1. 灯光池:统一 `MegaLight` buffer(点/聚/面积三型 union,64B/灯;IES 索引复用 iesShading);`DEEP_AREA_LIGHT_MAX 8→64` 时 **stride/LUT/打包 ABI 全链重算**(areaLights/ltc.ts 互钉测试+checksum 门同步)。
+1. 灯光池:统一 `MegaLight` buffer(点/聚/面积三型 union,64B/灯;IES 索引复用 iesShading);`DEEP_AREA_LIGHT_MAX 8→64` 时 **stride/LUT/打包 ABI 全链重算**(areaLights.ts:17 与 wgsl/ltcAreaLighting.wgsl:13 互钉测试+checksum 门同步)。
+   **扩容禁独立交付(2026-10-04 盘点)**:现有簇光是逐灯着色,裸扩 64 盏=每像素循环成本 ↑8×,帧时爆炸——面积光扩容必须与 RIS 采样同批交付(LUT 表 64×64×2 与灯数无关,只改灯数组 6KB,风险可控)。
 2. RIS 初始采样:像素级 K=32 候选(辐射重要度加权,LOD 化:距离衰减截断)→ 权重 resample 到 M=1;时域复用(复用 T07 motion vector);空间复用 5×5。
 3. 阴影:胜者灯 1 条可见性光线(compute BVH 或 shadow map 回退);无时间闪烁门(逐帧差 p99≤2/255)。
 4. 通路选择:`rendererCapabilityManifest` 加 `meg lights`(supported/degraded);≤64 盏自动走既有簇光快路径。
