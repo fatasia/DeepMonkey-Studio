@@ -31,4 +31,25 @@ describe("AssetRevisionInlineNotice", () => {
     expect(String(nodes.find(node => node.type === "button")!.props.children)).toContain("重试更新");
     expect(nodes.some(node => node.props.title === "网络不可达")).toBe(true);
   });
+
+  it("offers keep-current next to the update action and disables update while busy", () => {
+    const onKeep = vi.fn();
+    const nodes = walk(AssetRevisionInlineNotice({ locale: "zh-CN", staleCount: 1, oldestSceneRevision: 1, latestRevision: 2, busy: true, disabled: true, onUpdate: vi.fn(), onKeep }));
+    const buttons = nodes.filter(node => node.type === "button");
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]!.props.disabled).toBe(true);
+    expect(buttons[0]!.props["aria-busy"]).toBe(true);
+    expect(String(buttons[0]!.props.children)).toContain("更新中");
+    expect(String(buttons[1]!.props.children)).toBe("保持当前");
+    expect(buttons[1]!.props.disabled).toBe(true);
+  });
+
+  it("invokes keep-current when idle", () => {
+    const onKeep = vi.fn();
+    const keep = walk(AssetRevisionInlineNotice({ locale: "zh-CN", staleCount: 1, oldestSceneRevision: 1, latestRevision: 2, busy: false, disabled: false, onUpdate: vi.fn(), onKeep }))
+      .filter(node => node.type === "button")[1]!;
+    expect(keep.props.disabled).toBe(false);
+    keep.props.onClick();
+    expect(onKeep).toHaveBeenCalledOnce();
+  });
 });

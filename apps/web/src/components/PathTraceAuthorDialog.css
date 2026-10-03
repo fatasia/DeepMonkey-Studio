@@ -13,15 +13,36 @@
 .path-trace-controls :is(select, input) { width: 100%; min-width: 0; height: 36px; padding: 0 9px; color: var(--text-strong); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-md); }
 .path-trace-controls :is(select, input):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .path-trace-controls p { margin: -2px 0 0; font-size: 12px; color: var(--text-muted); line-height: 1.65; }
-.path-trace-status { display: flex; gap: 16px; justify-content: space-between; padding: 13px 24px; border-top: 1px solid var(--line-subtle); font-variant-numeric: tabular-nums; }
+.path-trace-status { display: grid; gap: 9px; padding: 13px 24px 15px; border-top: 1px solid var(--line-subtle); font-variant-numeric: tabular-nums; }
+.path-trace-status-line { display: flex; gap: 16px; justify-content: space-between; align-items: baseline; }
 .path-trace-status strong { color: var(--text-strong); font-weight: 500; }
-.path-trace-status span { color: var(--text-muted); }
+.path-trace-status span { color: var(--text-muted); text-align: right; }
+.path-trace-meter { height: 3px; overflow: hidden; border-radius: 2px; background: var(--line); }
+.path-trace-meter > i { display: block; height: 100%; transform-origin: left center; background: var(--accent); transition: transform 240ms cubic-bezier(.16, 1, .3, 1); }
+.path-trace-status[data-phase="ready"] .path-trace-meter > i, .path-trace-status[data-phase="exported"] .path-trace-meter > i { background: var(--success); }
+.path-trace-status[data-phase="failed"] .path-trace-meter > i { background: var(--danger); }
+.path-trace-status[data-phase="cancelled"] .path-trace-meter > i, .path-trace-status[data-phase="invalidated"] .path-trace-meter > i { background: var(--warning); }
+.path-trace-field { display: grid; gap: 6px; }
+.path-trace-field-label { font-size: 12px; color: var(--text-strong); }
+.path-trace-tiers { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; padding: 3px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-md); }
+.path-trace-tiers > span { display: flex; min-width: 0; }
+.path-trace-tier { display: grid; flex: 1; min-width: 0; height: 36px; place-content: center; padding: 0 2px; color: var(--text); font: inherit; font-size: 12px; font-variant-numeric: tabular-nums; line-height: 1.15; background: transparent; border: 1px solid transparent; border-radius: var(--radius-sm); cursor: pointer; transition: background-color 160ms cubic-bezier(.16, 1, .3, 1), color 160ms cubic-bezier(.16, 1, .3, 1), border-color 160ms cubic-bezier(.16, 1, .3, 1); }
+.path-trace-tier em { font-size: 10px; font-style: normal; color: var(--text-muted); }
+.path-trace-tier:hover:not(:disabled) { color: var(--text-strong); background: var(--accent-soft); }
+.path-trace-tier[aria-checked="true"] { color: var(--text-strong); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+.path-trace-tier:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.path-trace-tier:disabled { opacity: .42; cursor: not-allowed; }
+.path-trace-controls .path-trace-hint { margin: 0; font-size: 12px; color: var(--text-muted); line-height: 1.6; font-variant-numeric: tabular-nums; }
+.path-trace-controls .path-trace-hint[data-warning] { color: var(--warning); }
+.path-trace-preview[data-loading] { background: linear-gradient(100deg, var(--bg-1) 30%, color-mix(in srgb, var(--accent) 7%, var(--surface-2)) 50%, var(--bg-1) 70%) 0 0 / 220% 100%; animation: path-trace-skeleton 1.4s linear infinite; }
+@keyframes path-trace-skeleton { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+@media (prefers-reduced-motion: reduce) { .path-trace-preview[data-loading] { animation: none; } .path-trace-meter > i, .path-trace-tier { transition: none; } }
 .path-trace-error { margin: 0; padding: 0 24px 14px; overflow-wrap: anywhere; color: var(--danger); }
 .path-trace-dialog footer { display: flex; justify-content: space-between; gap: 12px; padding: 14px 24px; background: var(--surface-2); border-top: 1px solid var(--line-subtle); }
 .path-trace-dialog footer > div { display: flex; gap: 8px; }
 .path-trace-dialog footer .button { flex: 0 0 auto; width: auto; padding: 0 12px; font-size: 13px; white-space: nowrap; }
-.path-trace-dialog .button:disabled { cursor: not-allowed; }
+.path-trace-dialog .button:disabled { opacity: .5; cursor: not-allowed; }
 .path-trace-dialog footer > div { flex-wrap: wrap; justify-content: flex-end; }
 @media (max-width: 700px) { .path-trace-body { grid-template-columns: 1fr; gap: 18px; padding: 18px; } .path-trace-preview { min-height: 200px; } .path-trace-controls { grid-template-columns: 1fr 1fr; } .path-trace-controls > :is(label:first-child, p, small) { grid-column: 1 / -1; } }
 @media (max-width: 700px) { .path-trace-dialog footer { flex-wrap: wrap; } .path-trace-dialog footer > div { margin-left: auto; } }
-@media (max-width: 450px) { .path-trace-dialog footer { padding: 14px 18px; } .path-trace-status { flex-direction: column; gap: 5px; padding: 12px 18px; } }
+@media (max-width: 450px) { .path-trace-dialog footer { padding: 14px 18px; } .path-trace-status { padding: 12px 18px; } .path-trace-status-line { flex-direction: column; gap: 5px; } .path-trace-status span { text-align: left; } }

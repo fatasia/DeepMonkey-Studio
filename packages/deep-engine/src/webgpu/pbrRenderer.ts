@@ -495,7 +495,9 @@ export class PbrRenderer {
     }
     if (this.shadowState.publish(desiredShadowSize, candidate => this.mainBindings.setShadows(candidate, this.environment.current))) this.sceneChanged();
     const drawProfile = this.packets.drawProfile();
-    const directClear = this.session.hdrCanvasActive || drawProfile.hasDeformation || view.authorGrid || this.particleRuntime || this.splats?.current?.splatCount
+    // 对象级描边需要 HDR 链(掩码深度 + 合成),不能走直出到交换链的快路径;无描边实例时恒 false。
+    const outlined = this.packets.hasOutline();
+    const directClear = outlined || this.session.hdrCanvasActive || drawProfile.hasDeformation || view.authorGrid || this.particleRuntime || this.splats?.current?.splatCount
       ? undefined : pbrDirectDisplayClear(view, this.features, drawProfile.hasTransparent, this.writeGeometryBuffers);
     const directionalDisplay = directClear !== undefined && !this.lighting.hasProbeClipmap && !hasClusteredLights(sceneLighting.clustered)
       && !drawProfile.hasMaterialTextures && this.pipelines.displayDirectionalMain !== undefined;
@@ -680,6 +682,8 @@ export class PbrRenderer {
       ...(postProcess.volumetricFog && postProcess.volumetricFogProfile.godRaysStrength !== undefined
         ? { godRays: { ...pbrGodRaysFrame(sceneLighting.primary, frameState.worldToView), shadows: this.shadows.godRaysSource() } } : {}),
       ...(view.postProcess === undefined ? {} : { postProcess: view.postProcess }),
+      ...(outlined ? { outline: { viewProjection: frameState.stableViewProjection,
+        draw: (pass: GPURenderPassEncoder) => this.packets.drawOutline(pass) } } : {}),
       extent: view.extent, verticalFovRadians: frameState.projection.verticalFovRadians,
       cameraCut: history.cameraCut, currentJitter: history.currentJitter,
       previousJitter: history.previousJitter, materialRevision: this.packets.visibilityRevision,
@@ -716,6 +720,7 @@ export class PbrRenderer {
         reactiveMaskAvailable: this.transparency.currentReactiveMask !== undefined || particleReactive !== undefined,
         ...(this.transparency.currentReactiveMask ? { reactiveMask: this.transparency.currentReactiveMask }
           : particleReactive ? { reactiveMask: particleReactive.texture } : {}) }, temporalInput);
+    if (finalEffects.outline) { drawCalls += finalEffects.outline.drawCalls; }
     // C10 接触阴影(AO 同款管线形态):主 pass 写完 linear-depth 后短距步进生成
     // 半分辨率遮蔽贴,apply 将其乘回最终 HDR(整帧衰减,语义同 SSAO 合成)。
     // 相机切换帧强度归零(fail-closed)。opt-in:features.contactShadows,默认关闭。
@@ -840,6 +845,7 @@ export class PbrRenderer {
       ...(this.gpuTimer.passTimingEnabled ? { gpuPassTimings: this.passTimingsMetrics(frameNumber) } : {}),
       ...(this.resolutionScale === 1 ? {} : { resolutionScale: this.resolutionScaleMetrics(surface) }),
       ...(upscaleMetrics ? { temporalUpscale: upscaleMetrics } : {}),
+      ...(finalEffects.outline ? { outline: finalEffects.outline } : {}),
       ...this.shadows.metrics,
       ...(virtualTexturesMetrics ? { virtualTextures: virtualTexturesMetrics } : {}),
       ...(this.contactShadows ? this.contactShadows.metrics : {}) };

@@ -351,6 +351,25 @@ export interface SceneMaterialState {
   roughness?: number;
   /** Dielectric index of refraction; source values are preserved, default 1.5. */
   ior?: number;
+  /**
+   * MeshPhysicalMaterial 扩展 lobes(three r185 语义,线性值,缺省 = 中性)。仅在 Deep 渲染器
+   * 启用 advancedMaterials 变体时求值;贴图类扩展不在本合同内。JSON 无法表达 Infinity,
+   * attenuationDistance 缺省即不衰减。
+   */
+  clearcoat?: number;
+  clearcoatRoughness?: number;
+  sheen?: number;
+  sheenRoughness?: number;
+  /** #RRGGBB;与 sheen 标量相乘得到有效光泽色。 */
+  sheenColor?: string;
+  iridescence?: number;
+  iridescenceIOR?: number;
+  /** iridescenceThicknessRange 的上界(nm);three 无贴图时只取上界。 */
+  iridescenceThicknessMax?: number;
+  transmission?: number;
+  thickness?: number;
+  attenuationColor?: string;
+  attenuationDistance?: number;
   metalness?: number;
   emissive?: string;
   emissiveIntensity?: number;
@@ -433,6 +452,29 @@ export interface SceneFireEffectState {
   height: number;
   /** 粒子密度倍率，运行时限制在 0.25..2。 */
   density: number;
+  /** 生命周期曲线；省略时使用火焰默认曲线。 */
+  curves?: SceneFireCurves;
+  /** 混合模式；alpha 会按相机距离做 back-to-front 排序，省略为 additive。 */
+  blend?: SceneFireBlend;
+  /** 单发射器粒子上限（16..512）；场景总预算在运行时统一分配。 */
+  maxParticles?: number;
+}
+
+export type SceneFireBlend = "additive" | "alpha";
+
+/** 生命周期关键帧：time 为归一化寿命 0..1，value 取值范围随曲线语义而定。 */
+export interface SceneFireCurveKey {
+  time: number;
+  value: number;
+}
+
+export interface SceneFireCurves {
+  /** 尺寸倍率 0..4。 */
+  size?: SceneFireCurveKey[];
+  /** 不透明度 0..1。 */
+  alpha?: SceneFireCurveKey[];
+  /** 热度 0..1：0 余烬、0.5 基色、1 高光。 */
+  color?: SceneFireCurveKey[];
 }
 
 export interface SceneBonePoseState {
@@ -683,6 +725,8 @@ export interface ScenePostProcessingState {
   volumetricFogHeight?: number;
   /** Henyey-Greenstein anisotropy, [-0.99,0.99]. */
   volumetricFogAnisotropy?: number;
+  /** Single-scatter albedo of the medium, [0,1]; 0 keeps extinction only, default 0.82. */
+  volumetricFogAlbedo?: number;
   bloom: boolean;
   bloomStrength: number;
   bloomThreshold: number;

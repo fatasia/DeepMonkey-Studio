@@ -24,3 +24,4 @@ export * from "./screenSpaceReflectionTypes.js";
 export * from "./screenSpaceReflectionWgsl.js";
 export * from "./screenSpaceReflectionCpu.js";
 export * from "./screenSpaceReflection.js";
+export * from "./instanceOutlineCpu.js";

@@ -39,6 +39,10 @@ export async function createPbrPipelineSet(session: DeviceSession, lightingLayou
   if (options.deformation !== undefined && typeof options.deformation !== "boolean")
     throw new TypeError("PBR deformation capability must be boolean.");
   if (options.meshlets !== undefined && typeof options.meshlets !== "boolean") throw new TypeError("PBR meshlets capability must be boolean.");
+  if (options.advancedMaterials !== undefined && typeof options.advancedMaterials !== "boolean")
+    throw new TypeError("PBR advancedMaterials capability must be boolean.");
+  if (options.advancedMaterials === true && options.features?.layeredMaterials === true)
+    throw new Error("PBR advancedMaterials cannot combine with layeredMaterials.");
   const writeGeometry = features.ambientOcclusion || features.screenSpaceReflection || features.volumetricFog || features.temporalAa || features.contactShadows
     || options.deformation === true;
   const directDisplay = !features.environment && !features.fog && !features.groundGrid;
@@ -48,11 +52,12 @@ export async function createPbrPipelineSet(session: DeviceSession, lightingLayou
   let byVariant = byLayout.get(lightingLayout);
   if (!byVariant) { byVariant = new Map(); byLayout.set(lightingLayout, byVariant); }
   const key = [PIPELINE_SET_SCHEMA, session.format, writeGeometry ? 1 : 0, directDisplay ? 1 : 0,
-    oneCascade ? 1 : 0, options.deformation === true ? 1 : 0, features.textureArrays ? 1 : 0, features.layeredMaterials ? 1 : 0].join("/");
+    oneCascade ? 1 : 0, options.deformation === true ? 1 : 0, features.textureArrays ? 1 : 0, features.layeredMaterials ? 1 : 0,
+    options.advancedMaterials === true ? 1 : 0].join("/");
   const existing = byVariant.get(key);
   if (existing) return existing;
   const created = buildPbrPipelineSet(session, lightingLayout, options, writeGeometry, directDisplay,
-    oneCascade, features.textureArrays, features.layeredMaterials);
+    oneCascade, features.textureArrays, features.layeredMaterials, options.advancedMaterials === true);
   byVariant.set(key, created);
   void created.catch(() => { if (byVariant!.get(key) === created) byVariant!.delete(key); });
   return created;
@@ -60,11 +65,11 @@ export async function createPbrPipelineSet(session: DeviceSession, lightingLayou
 
 async function buildPbrPipelineSet(session: DeviceSession, lightingLayout: GPUBindGroupLayout,
   options: PbrRendererOptions, writeGeometry: boolean, directDisplay: boolean, oneCascade: boolean,
-  textureArrays: boolean, layeredMaterials: boolean) {
+  textureArrays: boolean, layeredMaterials: boolean, advancedMaterials = false) {
   const firstFrameMainKeys = options.pipelines?.firstFrameMainKeys;
-  const buildOptions = firstFrameMainKeys === undefined && !layeredMaterials ? undefined
+  const buildOptions = firstFrameMainKeys === undefined && !layeredMaterials && !advancedMaterials ? undefined
     : { ...(firstFrameMainKeys === undefined ? {} : { firstFrameMainKeys }),
-      ...(layeredMaterials ? { layeredMaterials: true } : {}) };
+      ...(layeredMaterials ? { layeredMaterials: true } : {}), ...(advancedMaterials ? { advancedMaterials: true } : {}) };
   const wantsDeformation = options.deformation === true;
   const deferDeformation = wantsDeformation && options.pipelines?.deferDeformation === true;
   const [fallbackBuild, arrayBuild] = await Promise.all([
@@ -102,7 +107,7 @@ async function buildPbrPipelineSet(session: DeviceSession, lightingLayout: GPUBi
   if (!deferDeformation && wantsDeformation) {
     const [deformationFallbackBuild, deformationArrayBuild] = await Promise.all([
       createPipelinesBuild(session.device, session.format, lightingLayout, true, false, oneCascade,
-        { deformation: true, ...(layeredMaterials ? { layeredMaterials: true } : {}) }),
+        { deformation: true, ...(layeredMaterials ? { layeredMaterials: true } : {}), ...(advancedMaterials ? { advancedMaterials: true } : {}) }),
       wantsDeformation && textureArrays ? createPipelinesBuild(session.device, session.format, lightingLayout,
         true, false, oneCascade, { deformation: true, textureArrays: true }) : undefined,
     ]);
@@ -131,7 +136,7 @@ async function buildPbrPipelineSet(session: DeviceSession, lightingLayout: GPUBi
         try {
           const [deformationFallbackBuild, deformationArrayBuild] = await Promise.all([
             createPipelinesBuild(session.device, session.format, lightingLayout, true, false, oneCascade,
-              { deformation: true, ...(layeredMaterials ? { layeredMaterials: true } : {}) }),
+              { deformation: true, ...(layeredMaterials ? { layeredMaterials: true } : {}), ...(advancedMaterials ? { advancedMaterials: true } : {}) }),
             textureArrays ? createPipelinesBuild(session.device, session.format, lightingLayout,
               true, false, oneCascade, { deformation: true, textureArrays: true }) : undefined,
           ]);

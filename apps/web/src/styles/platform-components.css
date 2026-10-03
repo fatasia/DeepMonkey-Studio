@@ -895,3 +895,38 @@
 .spatial-audio-editor output,
 .interaction-action-range output,
 .optimizer-option-body label output { font-variant-numeric: tabular-nums; }
+
+/* 火焰粒子：曲线编辑 / 预算读数 / 混合模式（令牌取 base.css，强调色派生自 --accent） */
+.fire-segment { display: grid; grid-template-columns: 62px repeat(2, minmax(0,1fr)); align-items: center; gap: var(--space-1); color: var(--text-muted); font-size: 9px; }
+.fire-segment > button { min-height: 24px; padding: 0 var(--space-2); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius-xs); background: var(--surface-2); font-size: 9px; cursor: pointer; transition: background-color 160ms cubic-bezier(.16,1,.3,1), border-color 160ms cubic-bezier(.16,1,.3,1); }
+.fire-segment > button:hover:not(:disabled) { border-color: var(--line-strong); }
+.fire-segment > button.active { color: var(--text-strong); border-color: var(--accent); background: var(--accent-soft); }
+.fire-segment > button:disabled { opacity: .5; cursor: not-allowed; }
+.fire-budget { display: grid; gap: var(--space-1); padding: var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); font-size: 9px; }
+.fire-budget-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); color: var(--text-muted); }
+.fire-budget-row output { color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.fire-budget-bar { height: 3px; overflow: hidden; border-radius: 2px; background: var(--line-subtle); }
+.fire-budget-bar > i { display: block; height: 100%; background: var(--accent); transition: width 200ms cubic-bezier(.16,1,.3,1); }
+.fire-budget[data-degraded="true"] { border-color: color-mix(in srgb, var(--warning) 55%, var(--line)); }
+.fire-budget[data-degraded="true"] .fire-budget-bar > i { background: var(--warning); }
+.fire-budget-warning { margin: 0; color: var(--warning); line-height: 1.5; overflow-wrap: anywhere; }
+.fire-curves { display: grid; gap: var(--space-2); }
+.fire-curve { display: grid; gap: var(--space-1); }
+.fire-curve.is-disabled { opacity: .6; }
+.fire-curve-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); color: var(--text-muted); font-size: 9px; }
+.fire-curve-head output { color: var(--text); font-variant-numeric: tabular-nums; }
+.fire-curve-plot { width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--radius-xs); background: var(--surface-1); touch-action: none; user-select: none; }
+.fire-curve-grid { stroke: var(--line-subtle); stroke-width: 1; }
+.fire-curve-area { fill: var(--accent-soft); stroke: none; }
+.fire-curve-line { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-linejoin: round; }
+.fire-curve-handle { fill: var(--surface-3); stroke: var(--accent); stroke-width: 1.5; cursor: grab; outline: none; }
+.fire-curve-handle:hover { fill: var(--accent-hover); }
+.fire-curve-handle.is-active { fill: var(--accent); }
+.fire-curve-handle:focus-visible { outline: none; stroke: var(--text-strong); stroke-width: 2.5; }
+.fire-curve-presets { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.fire-curve-presets > button { min-height: 20px; padding: 0 var(--space-2); color: var(--text-muted); border: 1px solid var(--line-subtle); border-radius: var(--radius-xs); background: transparent; font-size: 9px; cursor: pointer; }
+.fire-curve-presets > button:hover:not(:disabled) { color: var(--text-strong); border-color: var(--line-strong); }
+.fire-curve-presets > button:disabled { opacity: .45; cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) {
+  .fire-segment > button, .fire-budget-bar > i { transition: none; }
+}

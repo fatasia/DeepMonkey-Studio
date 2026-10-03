@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { RenderPacket } from "@bim-studio/deep-engine";
 import type { RenderView } from "@bim-studio/deep-engine/webgpu";
 import type { ViewerEngine } from "./ViewerEngine";
+import { DISPLAY_THREE_SHADOW_MAP_TYPE } from "./displayContractThree";
 import type { StudioDeepEnvironmentSession } from "./StudioDeepEnvironmentSession";
 import type { StudioDeepShadowSession } from "./StudioDeepShadowSession";
 import { StudioDeepEditorOverlaySession } from "./StudioDeepEditorOverlaySession";
@@ -119,7 +120,7 @@ export class StudioDeepRenderView {
     const post = this.viewer.getPostProcessing(), composerActive = this.viewer.usesAuthorPostProcessing();
     const fog = readStudioDeepFog(this.viewer.scene, composerActive);
     const lighting = projectStudioDeepLights(this.viewer.scene, this.viewer.camera.layers.mask,
-      this.viewer.renderer.shadowMap?.enabled ?? true, this.viewer.renderer.shadowMap?.type ?? THREE.PCFShadowMap);
+      this.viewer.renderer.shadowMap?.enabled ?? true, this.viewer.renderer.shadowMap?.type ?? DISPLAY_THREE_SHADOW_MAP_TYPE);
     if (lighting.issues.length) throw new Error(lighting.issues.map(issue => `${issue.path}: ${issue.message}`).join("\n"));
     const extent = this.projectionExtent ?? (() => {
       const bounds = new THREE.Box3().setFromObject(this.viewer.getDeepProjectionRoot() as THREE.Object3D);

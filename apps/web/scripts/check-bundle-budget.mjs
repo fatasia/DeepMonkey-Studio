@@ -85,7 +85,11 @@ function assertInitialJavaScriptBudget(manifest, maximumBytes, maximumGzipBytes)
 }
 
 function findManifestEntry(manifest, sourceSuffix) {
-  const match = Object.entries(manifest).find(([key, item]) => key.replaceAll("\\", "/").endsWith(sourceSuffix) || item.src?.replaceAll("\\", "/").endsWith(sourceSuffix));
+  const normalized = (value) => value?.replaceAll("\\", "/");
+  const match = Object.entries(manifest).find(([key, item]) => normalized(key).endsWith(sourceSuffix) || normalized(item.src)?.endsWith(sourceSuffix))
+    // 入口模块被合并进共享 chunk 时 manifest 不再带 src，退回按 chunk 名匹配（后续静态/动态依赖检查不变）。
+    ?? Object.entries(manifest).find(([, item]) => !sourceSuffix.includes("?") && item.name !== undefined
+      && sourceSuffix.replace(/\.[a-z]+$/, "").split("/").pop() === item.name && /\.(m?js)$/.test(item.file ?? ""));
   if (!match) throw new Error(`manifest 未找到运行时入口：${sourceSuffix}`);
   return match;
 }

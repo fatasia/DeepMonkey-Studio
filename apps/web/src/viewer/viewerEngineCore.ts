@@ -91,12 +91,9 @@ import { RepeatedAssetBatcher } from "./repeatedAssetBatcher";
 import { ConservativeOcclusion } from "./conservativeOcclusion";
 import { installOcclusionDrawFilter } from "./occlusionDrawFilter";
 import { ViewerOffscreenController } from "./viewerOffscreenController";
+import { DISPLAY_THREE_SHADOW_MAP_TYPE, DISPLAY_THREE_TONE_MAPPING, threeOutputColorSpaceFor } from "./displayContractThree";
 import { PhysicsWorldHost } from "./physicsWorldHost";
 import { createPhysicsDebugOverlay } from "./rapierPhysicsDebugOverlay";
-
-const THREE_OUTPUT_COLOR_SPACE = {
-  srgb: THREE.SRGBColorSpace,
-} as const;
 
 /** ViewerEngine 的共享状态与跨模块契约，具体能力由职责层逐级实现。 */
 export abstract class ViewerEngineCore extends ViewerEngineContract {
@@ -238,6 +235,8 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
     { plan: MotionRoutePlan; elapsedSeconds: number; lastArrivalToken?: string }
   >();
   protected readonly modelEffectRuntimes = new Map<string, ModelEffectRuntime>();
+  /** 火焰粒子集合变化后需按场景预算重新分配；在下一帧 updateModelEffects 中统一处理。 */
+  protected fireBudgetDirty = false;
   protected readonly layerObjects = new Map<string, Map<string, THREE.Object3D>>();
   protected readonly layerStates = new Map<string, Map<string, SceneLayerState>>();
   protected readonly fragmentModels = new Map<string, FRAGS.FragmentsModel>();
@@ -424,13 +423,12 @@ export abstract class ViewerEngineCore extends ViewerEngineContract {
       overlaySprites: () => this.overlaySpritesProvider(),
     });
     this.renderer.setPixelRatio(this.adaptiveRenderScaleController.state().basePixelRatio);
-    this.renderer.outputColorSpace = THREE_OUTPUT_COLOR_SPACE[DEFAULT_DISPLAY_CONTRACT.outputColorSpace];
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.outputColorSpace = threeOutputColorSpaceFor(DEFAULT_DISPLAY_CONTRACT.outputColorSpace);
+    this.renderer.toneMapping = DISPLAY_THREE_TONE_MAPPING;
     this.renderer.toneMappingExposure = DEFAULT_DISPLAY_CONTRACT.toneMapping.exposure;
     if (this.renderer instanceof THREE.WebGLRenderer) {
       this.renderer.localClippingEnabled = true;
-      this.renderer.shadowMap.type = DEFAULT_DISPLAY_CONTRACT.shadow.filter === "pcf-soft"
-        ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+      this.renderer.shadowMap.type = DISPLAY_THREE_SHADOW_MAP_TYPE;
     }
     this.container.append(this.renderer.domElement);
     this.scene.add(this.modelRoot);

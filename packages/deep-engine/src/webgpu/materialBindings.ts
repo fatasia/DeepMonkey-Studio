@@ -1,6 +1,8 @@
 import type { PreparedMaterialTextures } from "../renderPacket.js";
 import { DEEP_PBR_MESH_V1_MATERIAL_PARAMETER_SEMANTICS } from "../shaderAbi/contract.js";
 import { packExtendedParameterBlock } from "../shader/materialParameterAbi.js";
+import { MATERIAL_PARAMETER_ADVANCED_BAND_FLOAT_OFFSET, MATERIAL_PARAMETER_ADVANCED_FLOATS,
+  packAdvancedParameterBlock } from "../shader/materialAdvancedParameters.js";
 import type { DeviceSession } from "./deviceSession.js";
 import { uploadBuffer } from "./meshBuffers.js";
 import type { TextureBinding } from "./textureResources.js";
@@ -19,7 +21,7 @@ export interface MaterialBinding {
   readonly neutral?: TextureBinding;
 }
 
-export interface MaterialLayouts { readonly material: GPUBindGroupLayout; readonly layeredMaterials?: boolean }
+export interface MaterialLayouts { readonly material: GPUBindGroupLayout; readonly layeredMaterials?: boolean; readonly advancedMaterials?: boolean }
 
 interface PooledMaterialBinding {
   readonly binding: MaterialBinding;
@@ -58,7 +60,8 @@ export class MaterialBindingPool {
 
   get stats(): MaterialBindingPoolStats {
     return Object.freeze({ bindGroups: this.entries.size, parameterBuffers: this.parameters.size,
-      parameterBytes: this.parameters.size * MATERIAL_PARAMETER_FLOATS * Float32Array.BYTES_PER_ELEMENT,
+      parameterBytes: this.parameters.size * (this.layouts?.advancedMaterials === true ? MATERIAL_PARAMETER_ADVANCED_FLOATS : MATERIAL_PARAMETER_FLOATS)
+        * Float32Array.BYTES_PER_ELEMENT,
       ...this.counters });
   }
 
@@ -72,7 +75,7 @@ export class MaterialBindingPool {
       return existing.binding;
     }
     this.counters.bindGroupMisses++;
-    const parameterKey = materialParameterKey(textures);
+    const parameterKey = materialParameterKey(textures, this.layouts?.advancedMaterials === true);
     const parameters = this.acquireParameters(parameterKey, textures);
     let binding: MaterialBinding;
     try { binding = createMaterialBinding(this.session, this.layouts, textures, lookup, parameters)!; }
@@ -118,7 +121,8 @@ export class MaterialBindingPool {
   private acquireParameters(key: string, textures: PreparedMaterialTextures): GPUBuffer {
     const existing = this.parameters.get(key);
     if (existing) { existing.references++; this.counters.parameterHits++; return existing.buffer; }
-    const buffer = uploadBuffer(this.session, "Deep material parameter pool", packMaterialParameters(textures), GPUBufferUsage.UNIFORM);
+    const buffer = uploadBuffer(this.session, "Deep material parameter pool",
+      packMaterialParameters(textures, this.layouts?.advancedMaterials === true), GPUBufferUsage.UNIFORM);
     this.parameters.set(key, { buffer, references: 1 }); this.counters.parameterMisses++;
     return buffer;
   }
@@ -142,9 +146,11 @@ export function createMaterialBinding(session: DeviceSession, layouts: MaterialL
   if (!textures) return undefined;
   if (!layouts) throw new Error("Material bind group layout is unavailable.");
   if (textures.layered && !layouts.layeredMaterials) throw new Error("PBR capability layered-materials/not-enabled.");
+  if (textures.advanced && !layouts.advancedMaterials) throw new Error("PBR capability advanced-materials/not-enabled.");
   const fallbackSlot = textures.baseColor ?? textures.metallicRoughness ?? textures.normal ?? textures.occlusion ?? textures.emissive
     ?? textures.layered?.textures.flatMap(layer => [layer.baseColor, layer.metallicRoughness]).find(Boolean);
-  const neutral = fallbackSlot ? undefined : layouts.layeredMaterials ? createLayeredNeutralTexture(session) : undefined;
+  const neutral = fallbackSlot ? undefined
+    : layouts.layeredMaterials || layouts.advancedMaterials ? createLayeredNeutralTexture(session) : undefined;
   if (!fallbackSlot && !neutral) throw new Error("Material has no texture backing.");
   const fallback = fallbackSlot ? lookup(fallbackSlot.texture) : neutral!;
   const base = textures.baseColor ? lookup(textures.baseColor.texture) : undefined;
@@ -154,7 +160,7 @@ export function createMaterialBinding(session: DeviceSession, layouts: MaterialL
   const emissive = textures.emissive ? lookup(textures.emissive.texture) : undefined;
   let parameters: GPUBuffer;
   try { parameters = pooledParameters
-    ?? uploadBuffer(session, "Deep material textures", packMaterialParameters(textures), GPUBufferUsage.UNIFORM); }
+    ?? uploadBuffer(session, "Deep material textures", packMaterialParameters(textures, layouts.advancedMaterials === true), GPUBufferUsage.UNIFORM); }
   catch (error) { if (neutral) session.release(neutral.texture); throw error; }
   let layered: LayeredMaterialBinding | undefined;
   try {
@@ -230,8 +236,8 @@ export const MATERIAL_PARAMETER_EXTENDED_BAND_FLOAT_OFFSET = 40;
  * shade 分支），有扩展参数时在偏移 40 写入 6-float 参数块。恒定尺寸同时满足
  * uniform 池（binding 4 最小绑定 192B）与纹理数组共享表行
  * （rowStride 224B = 192B 材质块 + 32B 索引）两条消费路径。 */
-export function packMaterialParameters(textures: PreparedMaterialTextures): Float32Array<ArrayBuffer> {
-  const data = new Float32Array(MATERIAL_PARAMETER_FLOATS);
+export function packMaterialParameters(textures: PreparedMaterialTextures, advancedLayout = false): Float32Array<ArrayBuffer> {
+  const data = new Float32Array(advancedLayout ? MATERIAL_PARAMETER_ADVANCED_FLOATS : MATERIAL_PARAMETER_FLOATS);
   writeTransform(data, 0, textures.baseColor, textures.baseColor !== undefined);
   writeTransform(data, 8, textures.metallicRoughness, textures.metallicRoughness !== undefined);
   writeTransform(data, 16, textures.occlusion, textures.occlusion !== undefined);
@@ -243,9 +249,10 @@ export function packMaterialParameters(textures: PreparedMaterialTextures): Floa
   if (textures.extendedParameters) {
     data.set(packExtendedParameterBlock(textures.extendedParameters), MATERIAL_PARAMETER_EXTENDED_BAND_FLOAT_OFFSET);
   }
+  if (advancedLayout && textures.advanced) data.set(packAdvancedParameterBlock(textures.advanced), MATERIAL_PARAMETER_ADVANCED_BAND_FLOAT_OFFSET);
   return data;
 }
 
-function materialParameterKey(textures: PreparedMaterialTextures): string {
-  return JSON.stringify(Array.from(packMaterialParameters(textures)));
+function materialParameterKey(textures: PreparedMaterialTextures, advancedLayout: boolean): string {
+  return JSON.stringify(Array.from(packMaterialParameters(textures, advancedLayout)));
 }

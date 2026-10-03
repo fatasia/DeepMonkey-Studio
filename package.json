@@ -42,6 +42,8 @@
     "gate:j5": "node scripts/j5-dual-end-gate.mjs",
     "gate:j5:gpu": "node scripts/j5-dual-end-gate.mjs --with-gpu",
     "gate:j3:display": "node scripts/j3-display-parity.mjs",
+    "gate:parity": "node scripts/gate-parity.mjs",
+    "test:parity-gate": "node --test scripts/lib/parityGateMetrics.test.mjs",
     "gate:j3:lifecycle": "node scripts/j3-lifecycle-parity.mjs",
     "gate:deep-engine-editor": "pnpm --filter @bim-studio/deep-engine typecheck && pnpm --filter @bim-studio/deep-engine test && pnpm --filter @bim-studio/deep-engine build && pnpm --filter @bim-studio/web typecheck && pnpm --filter @bim-studio/web test src/viewer/measurement.test.ts src/viewer/cameraFraming.test.ts src/viewer/cameraFramingIntegration.test.ts src/viewer/StudioDeepWebGpuBridge.test.ts src/viewer/StudioDeepWebGpuBridge.environment.test.ts src/viewer/StudioDeepWebGpuBridge.lights.test.ts src/viewer/StudioDeepShadowSession.test.ts src/viewer/StudioDeepPerformance.test.ts src/viewer/viewerEngineDeepOverlayRoots.test.ts src/components/DocsCenter.test.tsx src/docs/docsCatalog.test.ts --run && pnpm test:unity-bridge",
     "audit:licenses": "node --test scripts/audit-third-party-licenses.test.mjs && node scripts/audit-third-party-licenses.mjs",

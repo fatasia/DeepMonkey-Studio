@@ -74,7 +74,8 @@ const SAMPLE_PRIMITIVES: PrimitiveState[] = [
       emissiveIntensity: 0.45,
     },
     effects: {
-      outline: true,
+      // 描边仅 WebGL 作者路径实现，开启会把用户的 Deep 偏好打回 WebGL；样例用发光 + 边缘光表达热点。
+      outline: false,
       glow: true,
       xray: false,
       scanline: false,

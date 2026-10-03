@@ -22,6 +22,7 @@ export class FixedStepClock {
   readonly #maxCatchUpTicks: number;
   #tick = 0;
   #remainder = 0;
+  #dropped = 0;
 
   constructor(config: FixedStepClockConfig) {
     if (!Number.isFinite(config.hz) || config.hz <= 0) throw new Error(`FixedStepClock: hz must be a positive finite number, got ${config.hz}.`);
@@ -52,11 +53,22 @@ export class FixedStepClock {
     this.#remainder += dtSeconds * this.#hz;
     const quantized = Math.round(this.#remainder);
     const executed = Math.min(quantized, this.#maxCatchUpTicks);
+    if (quantized > executed) this.#dropped += quantized - executed;
     this.#remainder -= executed;
     // 余量封顶:积压超过一个 tick 的碎屑丢弃,避免量化残差无限累积。
     if (this.#remainder > 1) this.#remainder = 0;
     this.#tick += executed;
     return executed;
+  }
+
+  /** 因 maxCatchUpTicks 被丢弃的积压 tick 累计数(诊断;非零即发生过长帧追赶截断)。 */
+  get droppedTicks(): number {
+    return this.#dropped;
+  }
+
+  /** 丢弃亚 tick 余量但保留 tick 计数与丢弃统计(暂停/恢复边界用,避免暂停期积压泄漏进恢复帧)。 */
+  discardRemainder(): void {
+    this.#remainder = 0;
   }
 
   /** 规范驱动器:精确执行 n 个固定步。 */
@@ -68,6 +80,7 @@ export class FixedStepClock {
   reset(): void {
     this.#tick = 0;
     this.#remainder = 0;
+    this.#dropped = 0;
   }
 }
 

@@ -72,6 +72,7 @@ export const DEFAULT_POST_PROCESSING: ScenePostProcessingState = {
   volumetricFogDensity: 0.006,
   volumetricFogHeight: 64,
   volumetricFogAnisotropy: 0.3,
+  volumetricFogAlbedo: 0.82,
   bloom: DEFAULT_DISPLAY_CONTRACT.bloom.enabled,
   bloomStrength: DEFAULT_DISPLAY_CONTRACT.bloom.strength,
   bloomThreshold: DEFAULT_DISPLAY_CONTRACT.bloom.threshold,

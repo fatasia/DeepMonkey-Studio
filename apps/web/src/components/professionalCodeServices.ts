@@ -1,16 +1,21 @@
 import "./monacoWorkerEnvironment";
 import { loader, type BeforeMount } from "@monaco-editor/react";
 import type * as monaco from "monaco-editor";
-import "monaco-editor/internal/common/workers.js";
-import "monaco-editor/languages/definitions/javascript/register.js";
 import type { SceneScriptIntelligenceContext } from "../studio/sceneScriptContext";
 import { apiDocumentationAt, contextualSuggestions, docsMarkdown, isWorkerBehaviorModel, referenceLabel, snippet, stringLiteralAt } from "./professionalCodeIntelligence";
 import { PLATFORM_TYPES } from "./professionalCodePlatformTypes";
 
 let monacoLoadPromise: Promise<typeof import("monaco-editor")> | undefined;
 
+// 编辑器贡献与 JS 语言注册必须动态加载：静态导入会让 Monaco 在 Node 单测和面板 chunk 中被急切求值。
+async function loadMonacoCore() {
+  await import("monaco-editor/internal/common/workers.js");
+  await import("monaco-editor/languages/definitions/javascript/register.js");
+  return import("monaco-editor/editor/editor.api.js");
+}
+
 export function loadMonacoEditor(): Promise<typeof import("monaco-editor")> {
-  monacoLoadPromise ??= import("monaco-editor/editor/editor.api.js")
+  monacoLoadPromise ??= loadMonacoCore()
     .then(async (api) => {
       const typescript = await import("monaco-editor/language/typescript/monaco.contribution.js");
       // Monaco 0.56 的语言贡献模块改为显式导出，不再自动写回 languages 命名空间。

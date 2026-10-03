@@ -3,6 +3,8 @@ import { validateAuthorBloomOptions, type AuthorBloomOptions as PbrAuthorBloomOp
 import type { VolumetricFogLight } from "../fog/volumetricFogPassTypes.js";
 import type { VolumetricMedium } from "../fog/volumetricFog.js";
 import { validateVolumetricFogLight, validateVolumetricMedium } from "../fog/volumetricFogPassCpu.js";
+import { validateInstanceOutlineOptions, type InstanceOutlineOptions } from "../postprocess/instanceOutlineCpu.js";
+export type { InstanceOutlineOptions as PbrInstanceOutlineOptions } from "../postprocess/instanceOutlineCpu.js";
 export type { AuthorBloomOptions as PbrAuthorBloomOptions } from "../postprocess/authorBloomCpu.js";
 
 export interface PbrVolumetricFogProfile {
@@ -37,6 +39,11 @@ export interface PbrPostProcessOverrides {
   readonly volumetricFogProfile?: PbrVolumetricFogProfile;
   readonly bloom?: boolean;
   readonly authorBloom?: PbrAuthorBloomOptions;
+  /**
+   * 对象级描边外观(强度/厚度/辉光/颜色)。是否绘制只由 packet 中 outline 实例决定;
+   * 缺省使用作者 OutlinePass 默认外观。无描边实例时该字段不产生任何开销。
+   */
+  readonly instanceOutline?: InstanceOutlineOptions;
 }
 
 export function validatePbrPostProcessOverrides(value: PbrPostProcessOverrides | undefined): void {
@@ -45,6 +52,7 @@ export function validatePbrPostProcessOverrides(value: PbrPostProcessOverrides |
     throw new TypeError("PBR postProcess must be an options object.");
   }
   for (const [key, candidate] of Object.entries(value)) {
+    if (key === "instanceOutline") { validateInstanceOutlineOptions(candidate as InstanceOutlineOptions); continue; }
     if (key === "authorBloom") { validateAuthorBloomOptions(candidate as PbrAuthorBloomOptions); continue; }
     if (key === "volumetricFogProfile") { validateVolumetricFogProfile(candidate as PbrVolumetricFogProfile); continue; }
     if (key === "screenSpaceReflectionProfile") { validateScreenSpaceReflectionProfile(candidate as PbrScreenSpaceReflectionProfile); continue; }
@@ -60,7 +68,7 @@ export function resolvePbrPostProcessOverrides(value: PbrPostProcessOverrides | 
     & Partial<Pick<PbrRendererFeatures, "volumetricFog">>): Readonly<{
     ambientOcclusion: boolean; screenSpaceReflection: boolean; volumetricFog: boolean; bloom: boolean;
     volumetricFogProfile: Readonly<PbrVolumetricFogProfile>; screenSpaceReflectionProfile?: Readonly<PbrScreenSpaceReflectionProfile>;
-    authorBloom?: PbrAuthorBloomOptions }> {
+    authorBloom?: PbrAuthorBloomOptions; instanceOutline?: InstanceOutlineOptions }> {
   validatePbrPostProcessOverrides(value);
   for (const key of ["ambientOcclusion", "screenSpaceReflection", "volumetricFog", "bloom"] as const) {
     if (value?.[key] === true && !features[key]) throw new Error(`PBR postProcess ${key} was not allocated by renderer features.`);
@@ -77,6 +85,7 @@ export function resolvePbrPostProcessOverrides(value: PbrPostProcessOverrides | 
     volumetricFogProfile: value?.volumetricFogProfile
       ? snapshotVolumetricFogProfile(value.volumetricFogProfile) : DEFAULT_PBR_VOLUMETRIC_FOG_PROFILE,
     ...(value?.screenSpaceReflectionProfile ? { screenSpaceReflectionProfile: Object.freeze({ ...value.screenSpaceReflectionProfile }) } : {}),
+    ...(value?.instanceOutline ? { instanceOutline: value.instanceOutline } : {}),
     ...(value?.authorBloom ? { authorBloom: Object.freeze({ strength: value.authorBloom.strength,
       threshold: value.authorBloom.threshold }) } : {}) };
 }

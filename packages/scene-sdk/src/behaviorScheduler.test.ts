@@ -52,4 +52,37 @@ describe("SceneBehaviorScheduler", () => {
     scheduler.advance(10_000);
     expect(scheduler.diagnostics()).toMatchObject({ elapsedMs: 250, droppedFixedSteps: 0, pendingFixedMs: 50 });
   });
-});
+
+  describe("fixed-step determinism across frame rates", () => {
+    function fixedTickTimes(frameDts: readonly number[], untilMs: number): number[] {
+      const scheduler = new SceneBehaviorScheduler();
+      const times: number[] = [];
+      for (const dt of frameDts) {
+        if (scheduler.diagnostics().elapsedMs >= untilMs) break;
+        for (const tick of scheduler.advance(dt)) if (tick.lifecycle === "onFixedUpdate") times.push(tick.elapsedMs);
+      }
+      return times;
+    }
+    function jitter(seed: number, count: number, minMs: number, maxMs: number): number[] {
+      let state = seed >>> 0;
+      return Array.from({ length: count }, () => {
+        state = (state + 0x6d2b79f5) >>> 0;
+        let t = Math.imul(state ^ (state >>> 15), 1 | state);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return minMs + (((t ^ (t >>> 14)) >>> 0) / 4294967296) * (maxMs - minMs);
+      });
+    }
+
+    it("same seed ⇒ identical fixed tick series; different frame rates ⇒ the same tick-indexed timeline", () => {
+      const seeded = fixedTickTimes(jitter(20261003, 3000, 6, 28), 10_000);
+      expect(fixedTickTimes(jitter(20261003, 3000, 6, 28), 10_000)).toEqual(seeded);
+      const reference = fixedTickTimes(Array.from({ length: 700 }, () => 1000 / 60), 10_000);
+      for (const times of [fixedTickTimes(Array.from({ length: 400 }, () => 1000 / 30), 10_000),
+        fixedTickTimes(Array.from({ length: 1500 }, () => 1000 / 144), 10_000), seeded]) {
+        expect(Math.abs(times.length - reference.length)).toBeLessThanOrEqual(2);
+        const common = Math.min(times.length, reference.length);
+        // fixedElapsedMs 为 tick 序号 × 步长的累加,与帧划分无关。
+        expect(times.slice(0, common)).toEqual(reference.slice(0, common));
+      }
+    });
+  });});

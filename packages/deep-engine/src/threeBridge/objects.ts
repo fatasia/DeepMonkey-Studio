@@ -1,4 +1,15 @@
+import { INSTANCE_OUTLINE_USER_DATA_KEY } from "../postprocess/instanceOutlineCpu.js";
 import { invalid, limit, record, unsupported, type ThreeObjectSource, type ThreeProjectionHooks } from "./types.js";
+
+/** 对象自身或任一祖先带 userData[INSTANCE_OUTLINE_USER_DATA_KEY] === true;深度有界,防御异常环。 */
+export function objectOutlined(object: ThreeObjectSource): boolean {
+  let current = object as unknown as { userData?: Record<string, unknown>; parent?: unknown } | undefined;
+  for (let depth = 0; current && depth < 256; depth++) {
+    if (current.userData?.[INSTANCE_OUTLINE_USER_DATA_KEY] === true) return true;
+    current = current.parent as typeof current;
+  }
+  return false;
+}
 
 export function inspectObject(object: ThreeObjectSource, hooks: ThreeProjectionHooks, allowDeformation = false, allowAuthorLod = false): "mesh" | "container" | "lod" {
   const o = object as unknown as Record<string, unknown>;

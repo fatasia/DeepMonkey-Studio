@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { RenderView, SpotLightIes } from "@bim-studio/deep-engine/webgpu";
 import type { RuntimeLightProfile } from "@bim-studio/deep-engine/runtime-package";
+import { DISPLAY_THREE_SHADOW_MAP_TYPE } from "./displayContractThree";
 import { projectStudioDirectionalShadow } from "./studioDeepDirectionalShadow";
 
 export interface StudioDeepEnvironmentIssue {
@@ -63,7 +64,7 @@ function readSceneLightProfiles(scene: THREE.Scene, report: (code: string, messa
 
 /** Reads resolved world matrices; the author frame must update matrices before calling. */
 export function projectStudioDeepLights(scene: THREE.Scene, cameraLayerMask = 0xffffffff, shadowsEnabled = true,
-  shadowType: THREE.ShadowMapType = THREE.PCFShadowMap): {
+  shadowType: THREE.ShadowMapType = DISPLAY_THREE_SHADOW_MAP_TYPE): {
   lights: Lights; issues: StudioDeepEnvironmentIssue[];
 } {
   const directional: NonNullable<Lights["directional"]>[number][] = [];

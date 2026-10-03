@@ -297,6 +297,8 @@ export function AppStudioInspector({ controller }: { controller: AppStudioContro
                   material={selectionMaterial}
                   projectAssets={project?.assets ?? []}
                   {...(selectedEffects ? { effects: selectedEffects } : {})}
+                  particleBudget={engine?.getParticleBudgetReport?.()}
+                  particleEmitterId={selected.id}
                   onMaterialChange={updateSelectionMaterial}
                   onEffectsChange={updateSelectedEffects}
                   onChooseTexture={chooseMaterialTexture}

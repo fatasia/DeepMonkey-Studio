@@ -335,4 +335,24 @@ describe("packet GPU resource ownership", () => {
     expect(f.allocated.every(buffer => buffer.destroy.mock.calls.length === 1)).toBe(true);
     expect(() => f.cache.dispose()).not.toThrow();
   });
+
+  it("keeps an outlined packet alive across set and instance updates, and only draws outlined batches", () => {
+    const f = fixture(), base = packet();
+    const withOutline = (outline: boolean) => ({ ...base, instances: [{ ...base.instances[0]!, outline }] });
+    expect(f.cache.set(base)).toBe(true);
+    expect(f.cache.hasOutline()).toBe(false);
+    expect(f.cache.drawOutline(f.pass as unknown as GPURenderPassEncoder)).toEqual({ drawCalls: 0, skippedBatches: 0 });
+    expect(f.pass.drawIndexed).not.toHaveBeenCalled();
+    // Regression: outline (surface flag 256) used to fail the material ledger and dispose the whole packet.
+    expect(() => f.cache.updateInstances(withOutline(true))).not.toThrow();
+    expect(f.cache.hasOutline()).toBe(true);
+    expect(f.cache.materialEffectLedger?.entries[0]?.consumed.surfaceFlags).toBe(256);
+    expect(f.cache.drawOutline(f.pass as unknown as GPURenderPassEncoder)).toEqual({ drawCalls: 1, skippedBatches: 0 });
+    expect(f.pass.setVertexBuffer).toHaveBeenCalledTimes(2);
+    expect(f.pass.drawIndexed).toHaveBeenCalledWith(3, 1);
+    expect(f.cache.set(withOutline(true))).toBe(false);
+    expect(() => f.cache.updateInstances(withOutline(false))).not.toThrow();
+    expect(f.cache.hasOutline()).toBe(false);
+    expect(f.cache.drawOutline(f.pass as unknown as GPURenderPassEncoder).drawCalls).toBe(0);
+  });
 });

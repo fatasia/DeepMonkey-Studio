@@ -198,6 +198,9 @@ export function ScenePostProcessingEditor({
         <EffectRange label={tr(locale, "各向异性", "Anisotropy")} disabled={!value.enabled}
           min={-0.9} max={0.9} step={0.01} value={value.volumetricFogAnisotropy ?? 0.3} digits={2}
           onChange={volumetricFogAnisotropy => update({ volumetricFogAnisotropy })} />
+        <EffectRange label={tr(locale, "散射反照率", "Scatter albedo")} disabled={!value.enabled}
+          min={0} max={1} step={0.01} value={value.volumetricFogAlbedo ?? 0.82} digits={2}
+          onChange={volumetricFogAlbedo => update({ volumetricFogAlbedo })} />
         <small>{tr(locale, "Deep WebGPU 使用完整参数；Deep Native 使用受限 8 步积分；Three WebView 发布时降级为作者雾。", "Deep WebGPU uses the full profile; Deep Native uses bounded 8-step integration; Three WebView falls back to author fog at publication.")}</small>
       </>}
       {value.bloom && (

@@ -1,4 +1,6 @@
 import type { AlphaMode, PbrMaterial } from "../renderPacket.js";
+import type { AdvancedMaterialParameters } from "../shader/materialAdvancedParameters.js";
+import type { ExtendedMaterialParameters } from "../shader/materialParameters.js";
 import type { DecodedTexture } from "../textures/decodedTexture.js";
 import { ThreeTextureProjector, type ProjectedTexture } from "./textures.js";
 import { invalid, record, unsupported, type ThreeProjectionHooks } from "./types.js";
@@ -24,8 +26,9 @@ export interface ProjectedMaterial {
   readonly depthWrite: boolean;
 }
 
+/** advancedMaterials=true 表示渲染器带 advancedMaterials 变体:clearcoat / sheen / iridescence / 透射体积按 three r185 语义投影,否则维持"非中性即 fail-closed"。 */
 export function projectMaterial(value: unknown, id: string, hooks: ThreeProjectionHooks,
-  textures: ThreeTextureProjector): ProjectedMaterial {
+  textures: ThreeTextureProjector, advancedMaterials = false): ProjectedMaterial {
   const m = record(value, "material"), physical = m.isMeshPhysicalMaterial === true;
   const basic = m.type === "MeshBasicMaterial" && m.isMeshBasicMaterial === true;
   const standard = m.type === "MeshStandardMaterial" && m.isMeshStandardMaterial === true && !physical;
@@ -34,7 +37,7 @@ export function projectMaterial(value: unknown, id: string, hooks: ThreeProjecti
     || m.customProgramCacheKey !== hooks.materialProgramCacheKey) unsupported("material render hooks");
   validateDefines(m, physical, basic);
   if (basic) for (const key of ["aoMap", "specularMap"] as const) if (m[key] != null) unsupported(`material.${key}`);
-  if (physical) validateNeutralPhysical(m);
+  const lobes = physical ? validatePhysicalLobes(m, advancedMaterials) : undefined;
   for (const key of unsupportedTextureFields) if (m[key] != null) unsupported(`material.${key}`);
   if (m.alphaHash || m.alphaToCoverage) unsupported("material stochastic alpha");
   // DE26/C03：premultipliedAlpha 缺省=未请求(straight)；true 仅在 BLEND 支持矩阵内，否则 fail-closed。
@@ -86,6 +89,8 @@ export function projectMaterial(value: unknown, id: string, hooks: ThreeProjecti
   if (physical && (typeof m.ior !== "number" || m.ior < 1 || !Number.isFinite(Math.fround(m.ior)))) invalid("material.ior");
   const material: PbrMaterial = { id, baseColor: color, metallic, roughness,
     ...(physical ? { ior: m.ior as number } : {}),
+    ...(lobes?.extended ? { extendedParameters: { ...lobes.extended, ior: m.ior as number } } : {}),
+    ...(lobes?.advanced ? { advancedParameters: lobes.advanced } : {}),
     ...(basic ? { shadingModel: "unlit" as const } : {}),
     ...(m.fog === false ? { fog: false } : {}),
     ...(base ? { baseColorTexture: base.slot } : {}),
@@ -126,7 +131,45 @@ function validateDefines(m: Record<string, unknown>, physical: boolean, basic: b
   }
 }
 
-/** Physical 只有扩展 lobes 全部处于 r185 默认中性值时，才与当前 metallic-roughness 合同等价。 */
+/**
+ * Physical 材质 lobes 校验与投影。未开启 advancedMaterials 时只有全部处于 r185 默认中性值才与
+ * metallic-roughness 合同等价;开启后 clearcoat / sheen / iridescence / 透射体积(无贴图)投影为
+ * 扩展参数,贴图、各向异性、色散、specular 扩展仍 fail-closed。
+ */
+function validatePhysicalLobes(m: Record<string, unknown>, advancedMaterials: boolean):
+  { readonly extended?: ExtendedMaterialParameters; readonly advanced?: AdvancedMaterialParameters } | undefined {
+  if (!advancedMaterials) { validateNeutralPhysical(m); return undefined; }
+  for (const key of physicalTextureFields) if (m[key] != null) unsupported(`material.${key}`);
+  if (m.anisotropy !== 0 || m.anisotropyRotation !== 0 || m.dispersion !== 0 || m.specularIntensity !== 1
+    || !same(color3(m.specularColor, "material.specularColor"), [1, 1, 1])
+    || !same(vector2(m.clearcoatNormalScale, "material.clearcoatNormalScale"), [1, 1])) {
+    unsupported("MeshPhysicalMaterial non-neutral extensions");
+  }
+  const clearcoat = unit(m.clearcoat, "material.clearcoat"), clearcoatRoughness = unit(m.clearcoatRoughness, "material.clearcoatRoughness");
+  const sheen = unit(m.sheen, "material.sheen"), sheenRoughness = unit(m.sheenRoughness, "material.sheenRoughness");
+  const sheenColor = color3(m.sheenColor, "material.sheenColor");
+  const iridescence = unit(m.iridescence, "material.iridescence");
+  const transmission = unit(m.transmission, "material.transmission"), thickness = nonnegative(m.thickness, "material.thickness");
+  const iridescenceIor = m.iridescenceIOR, range = m.iridescenceThicknessRange;
+  if (typeof iridescenceIor !== "number" || !Number.isFinite(iridescenceIor)) invalid("material.iridescenceIOR");
+  if (!Array.isArray(range) || range.length !== 2 || !range.every(v => typeof v === "number" && Number.isFinite(v) && v >= 0)) {
+    invalid("material.iridescenceThicknessRange");
+  }
+  const distance = m.attenuationDistance;
+  if (typeof distance !== "number" || Number.isNaN(distance) || distance <= 0) invalid("material.attenuationDistance");
+  const attenuationColor = color3(m.attenuationColor, "material.attenuationColor");
+  // three 在 refreshUniformsPhysical 中按 >0 才装载各 lobe;其余字段值被忽略,这里同样忽略。
+  const extended: ExtendedMaterialParameters | undefined = clearcoat > 0 || transmission > 0 ? {
+    ior: m.ior as number, clearcoat: { factor: clearcoat > 0 ? clearcoat : 0, roughness: clearcoat > 0 ? clearcoatRoughness : 0 },
+    anisotropy: { strength: 0, rotation: 0 }, transmission: { factor: transmission } } : undefined;
+  const advanced: AdvancedMaterialParameters = {
+    ...(sheen > 0 ? { sheen: { color: sheenColor.map(component => component * sheen) as [number, number, number], roughness: sheenRoughness } } : {}),
+    ...(iridescence > 0 ? { iridescence: { factor: iridescence, ior: iridescenceIor as number, thickness: (range as number[])[1]! } } : {}),
+    ...(transmission > 0 ? { volume: { thickness, attenuationColor, attenuationDistance: distance as number } } : {}),
+  };
+  return { ...(extended ? { extended } : {}), ...(Object.keys(advanced).length ? { advanced } : {}) };
+}
+
 function validateNeutralPhysical(m: Record<string, unknown>): void {
   for (const key of physicalTextureFields) if (m[key] != null) unsupported(`material.${key}`);
   const defaults: Readonly<Record<string, number>> = { anisotropy: 0, anisotropyRotation: 0, clearcoat: 0,

@@ -87,3 +87,26 @@ describe("时钟 + 求解器组合与局部回放", () => {
     expect(b.value).toBe(a.value);
   });
 });
+
+describe("追赶截断统计与余量丢弃(宿主接线所需)", () => {
+  it("droppedTicks 精确记录超出 maxCatchUpTicks 的积压,reset 清零", () => {
+    const clock = new FixedStepClock({ hz: 60, maxCatchUpTicks: 5 });
+    expect(clock.advanceSeconds(1)).toBe(5);
+    expect(clock.droppedTicks).toBe(55);
+    expect(clock.advanceSeconds(1 / 60)).toBe(1);
+    expect(clock.droppedTicks).toBe(55);
+    clock.reset();
+    expect(clock.droppedTicks).toBe(0);
+  });
+  it("discardRemainder 只清亚 tick 余量,保留 tick 与丢弃统计", () => {
+    const clock = new FixedStepClock({ hz: 60, maxCatchUpTicks: 5 });
+    clock.advanceSeconds(1 / 180);
+    expect(clock.pendingRemainderSeconds).toBeGreaterThan(0);
+    clock.advanceSeconds(1);
+    const { tick, droppedTicks } = clock;
+    clock.discardRemainder();
+    expect(clock.pendingRemainderSeconds).toBe(0);
+    expect(clock.tick).toBe(tick);
+    expect(clock.droppedTicks).toBe(droppedTicks);
+  });
+});

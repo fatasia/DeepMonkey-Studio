@@ -14,8 +14,10 @@ import { ViewerEngineLifecycle } from "./viewerEngineLifecycle";
 import { loadViewerAssetText } from "./viewerAssetTransport";
 import { syncSpaceVisualTransforms } from "./spaceVisualSync";
 import { fitPerspectiveBox } from "./cameraFraming";
-import { createModelFireEffect, disposeModelFireEffect, updateModelFireEffect } from "./modelFireEffect";
+import { createModelFireEffect, disposeModelFireEffect, setModelFireAllocation, updateModelFireEffect } from "./modelFireEffect";
+import { planSceneFireBudget, type FireBudgetReport } from "./modelFireParticles";
 import type { DeepTransformGizmoInput } from "./deepOverlayPrimitives";
+import { syncDeepOutlineTags } from "./deepOutlineTags";
 
 /** Rendering 职责层。 */
 export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
@@ -84,7 +86,20 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
       this.scene.add(this.selectionHelper);
     }
   protected updatePostProcessingSelection(): void {
+      // Deep 路径:同一组对象标记 userData,投影桥据此产出 outline 实例;集合变化需重绘以触发投影同步。
+      if (syncDeepOutlineTags(this, this.outlinedObjects())) this.requestRender();
       void this.syncPostProcessing();
+    }
+  /** 模型描边效果对象 + 启用选中描边时的当前选中对象(three OutlinePass 与 Deep 描边共用)。 */
+  protected outlinedObjects(): THREE.Object3D[] {
+      const outlined = [...this.modelEffects]
+        .filter(([, effects]) => effects.outline)
+        .map(([id]) => this.models.get(id)?.object)
+        .filter((object): object is THREE.Object3D => Boolean(object?.visible));
+      const selected = this.postProcessingState.enabled && this.postProcessingState.outline && this.inspectedObject?.visible
+        ? [this.inspectedObject]
+        : [];
+      return [...new Set([...outlined, ...selected])];
     }
   /** 只有作者实际启用屏幕后效或对象轮廓时，才下载并创建 Composer。 */
     protected async syncPostProcessing(): Promise<void> {
@@ -122,14 +137,7 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
       }
       runtime.setPixelRatio(this.renderer.getPixelRatio());
       runtime.setSize(Math.max(this.container.clientWidth, 1), Math.max(this.container.clientHeight, 1));
-      const outlined = [...this.modelEffects]
-        .filter(([, effects]) => effects.outline)
-        .map(([id]) => this.models.get(id)?.object)
-        .filter((object): object is THREE.Object3D => Boolean(object?.visible));
-      const selected = this.postProcessingState.enabled && this.postProcessingState.outline && this.inspectedObject?.visible
-        ? [this.inspectedObject]
-        : [];
-      runtime.apply(this.postProcessingState, [...new Set([...outlined, ...selected])]);
+      runtime.apply(this.postProcessingState, this.outlinedObjects());
       this.requestRender();
     }
   protected needsPostProcessing(): boolean {
@@ -160,6 +168,7 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
         // WebGPU 通过 Viewer 的退休队列延迟销毁，避免释放仍在当前提交中使用的 Buffer。
         disposeModelFireEffect(runtime.fire, (object) => this.disposeObject(object));
         delete runtime.fire;
+        this.fireBudgetDirty = true;
       }
       if (runtime.helper) {
         this.disposeObject(runtime.helper);
@@ -258,19 +267,41 @@ export abstract class ViewerEngineRendering extends ViewerEngineLifecycle {
         this.scene.add(helper);
       }
       if (fireEnabled && state.fire) {
-        const fire = createModelFireEffect(model.object, state.fire);
-        if (fire) runtime.fire = fire;
+        // WebGPU 节点材质不支持注入逐粒子尺寸属性，退化为曲线均值。
+        const fire = createModelFireEffect(model.object, state.fire, { perParticleSize: this.rendererBackend !== "webgpu" });
+        if (fire) {
+          runtime.fire = fire;
+          this.fireBudgetDirty = true;
+        }
       }
+      this.rebalanceFireBudget();
       this.updatePostProcessingSelection();
       this.scheduleRendererPipelineWarmup();
     }
+  getParticleBudgetReport(): FireBudgetReport {
+      const requests: { id: string; requested: number }[] = [];
+      for (const [id, runtime] of this.modelEffectRuntimes) {
+        if (runtime.fire) requests.push({ id, requested: runtime.fire.requestedCount });
+      }
+      return planSceneFireBudget(requests);
+    }
+  /** 按场景总预算重新分配所有火焰发射器；超限时只缩绘制范围，不重建几何。 */
+  protected rebalanceFireBudget(): void {
+      this.fireBudgetDirty = false;
+      const report = this.getParticleBudgetReport();
+      for (const emitter of report.emitters) {
+        const fire = this.modelEffectRuntimes.get(emitter.id)?.fire;
+        if (fire && fire.allocatedCount !== emitter.allocated) setModelFireAllocation(fire, emitter.allocated);
+      }
+    }
   protected updateModelEffects(delta: number): void {
+      if (this.fireBudgetDirty) this.rebalanceFireBudget();
       for (const runtime of this.modelEffectRuntimes.values()) {
         if (runtime.scan) {
           runtime.scan.phase = (runtime.scan.phase + delta * 0.32) % 1;
           runtime.scan.mesh.position.y = THREE.MathUtils.lerp(runtime.scan.minY, runtime.scan.maxY, runtime.scan.phase);
         }
-        if (runtime.fire) updateModelFireEffect(runtime.fire, delta);
+        if (runtime.fire) updateModelFireEffect(runtime.fire, delta, this.camera.position);
       }
     }
   protected removeSelectionHelper(): void {

@@ -3,6 +3,7 @@ import { materialIor } from "./materialIor";
 import * as THREE from "three";
 import type { GlobalLightingState, SceneEnvironmentState, SceneFloorState, SceneIKConstraintState, SceneMaterialState, SceneModelEffectsState, ScenePostProcessingState, SceneRigState, Vector3Value, WeatherMode } from "@bim-studio/contracts";
 import { sceneWeatherFog } from "@bim-studio/contracts";
+import { resolveGlobalIlluminationIntensity } from "./displayContractThree";
 import { readXRThumbstick } from "./xrInput";
 import { describeXrEntryBlock, describeXrSessionRequestFailure, describeXrSessionSetupFailure } from "./xrSession";
 import { componentFacets } from "./analysis";
@@ -181,7 +182,7 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
         shadowsEnabled: state.shadowsEnabled ?? false,
         reflectionsEnabled: state.reflectionsEnabled ?? false,
         globalIlluminationEnabled: state.globalIlluminationEnabled ?? false,
-        globalIlluminationIntensity: THREE.MathUtils.clamp(state.globalIlluminationIntensity ?? 0.45, 0, 2),
+        globalIlluminationIntensity: THREE.MathUtils.clamp(resolveGlobalIlluminationIntensity(state.globalIlluminationIntensity), 0, 2),
         lights: structuredClone((state.lights?.length ? state.lights : DEFAULT_SCENE_LIGHTS).map(light => ({ ...light,
           ...(light.type === "spot" ? { shadowSoftness: THREE.MathUtils.clamp(light.shadowSoftness ?? 0, 0, 1) } : {}) }))),
         ...(state.lightProfiles?.length ? { lightProfiles: structuredClone(state.lightProfiles) } : {})
@@ -364,6 +365,7 @@ export abstract class ViewerEngineRig extends ViewerEngineInteraction {
         volumetricFogDensity: THREE.MathUtils.clamp(state.volumetricFogDensity ?? 0.006, 0.0001, 0.1),
         volumetricFogHeight: THREE.MathUtils.clamp(state.volumetricFogHeight ?? 64, 1, 1000),
         volumetricFogAnisotropy: THREE.MathUtils.clamp(state.volumetricFogAnisotropy ?? 0.3, -0.99, 0.99),
+        volumetricFogAlbedo: THREE.MathUtils.clamp(state.volumetricFogAlbedo ?? 0.82, 0, 1),
         volumetricGodRays: state.volumetricGodRays ?? false,
         volumetricGodRaysStrength: THREE.MathUtils.clamp(state.volumetricGodRaysStrength ?? 1, 0, 8)
       };

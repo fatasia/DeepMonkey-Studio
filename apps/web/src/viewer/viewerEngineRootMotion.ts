@@ -3,6 +3,8 @@ import type { ModelTransform } from "@bim-studio/contracts";
 import { collectClipEvents, DEFAULT_MAX_EVENTS_PER_UPDATE, type GltfAnimationClipEventMarker, type GltfAnimationEvent } from "@bim-studio/deep-engine/gltf";
 import { BehaviorTraceLog, MonotonicBehaviorClock, summarizeTraceValue, type BehaviorTraceEntry } from "../scripting/behaviorTraceLog";
 import type { AnimationContext } from "./viewerEngineAnimation";
+import { actionPlayhead } from "./viewerEngineAnimationPlayhead";
+import { isIdentityRotation, sampleCycleCorrectedDelta } from "./viewerEngineRootMotionSampling";
 
 /**
  * T14 编辑器消费切片:模型动画的根运动应用与 clip 事件动作消费。
@@ -22,7 +24,10 @@ import type { AnimationContext } from "./viewerEngineAnimation";
  * - 开关:`setModelRootMotion` 默认关;未启用且未注册事件动作时本模块每帧零行为
  *   (不改 mixer、不写 transform、不产生日志、不推进时钟)。
  *
- * 旋转增量本切片只记录不应用(实例侧应用需同步抽除根骨骼旋转,留待下一切片);
+ * 旋转增量:同一被跟踪节点的 `.quaternion` 轨道经 `viewerEngineRootMotionSampling` 做同口径回绕校正采样,
+ * 增量由父链世界旋转共轭到世界空间后左乘实例旋转(绕实例原点),再把节点旋转钳回轨道起点——
+ * 等价平移的"抽取+移除",避免实例与骨骼双重旋转;单位增量(无旋转轨道/本帧无转动)不写回,
+ * 避免空转与欧拉往返噪声。位置与旋转合并为单次 `setModelTransform`;本模块帧内不分配(全部 scratch)。
  * 平移世界换算假设被跟踪节点与实例之间的父链在播放期间静态(标准角色层级成立)。
  */
 
@@ -68,13 +73,22 @@ export interface ModelRootMotionSnapshot {
   readonly appliedTranslation: readonly [number, number, number];
   /** 最近一次前进应用的世界位移;null 表示尚无前进。 */
   readonly lastTranslation: readonly [number, number, number] | null;
+  /** 启用以来累计应用到实例的世界旋转增量(四元数 x,y,z,w;无旋转为单位)。 */
+  readonly appliedRotation: readonly [number, number, number, number];
+  /** 最近一次前进应用的世界旋转增量;null 表示尚无非单位旋转被应用。 */
+  readonly lastRotation: readonly [number, number, number, number] | null;
 }
 
 interface RootTrackResolution {
   readonly node: THREE.Object3D;
-  readonly interpolant: THREE.Interpolant;
+  /** 平移轨道插值器;被跟踪节点只有旋转轨道时为 null。 */
+  readonly interpolant: THREE.Interpolant | null;
   /** 轨道起点平移(每帧钳回目标)。 */
   readonly rest: [number, number, number];
+  /** 同节点 `.quaternion` 轨道插值器;无则 null(不应用旋转)。 */
+  readonly rotationInterpolant: THREE.Interpolant | null;
+  /** 轨道起点旋转(每帧钳回目标)。 */
+  readonly restRotation: [number, number, number, number];
 }
 
 /** 编辑器已加载模型的最小形状(引擎 LoadedSceneModel 的消费子集)。 */
@@ -89,8 +103,14 @@ interface ModelConsumptionState {
   eventActions: readonly ModelAnimationEventActionDef[];
   unwrapped: number;
   appliedTranslation: [number, number, number];
-  lastTranslation: [number, number, number] | null;
+  lastTranslation: [number, number, number];
+  hasLastTranslation: boolean;
+  appliedRotation: THREE.Quaternion;
+  lastRotation: THREE.Quaternion;
+  hasLastRotation: boolean;
   trackResolved: boolean;
+  /** 开关由关到开时的实例 transform 基线(弧度欧拉),供"复位"使用。 */
+  baseline: { position: [number, number, number]; rotation: [number, number, number] } | null;
   resolutions: WeakMap<THREE.AnimationClip, RootTrackResolution | null>;
 }
 
@@ -118,7 +138,21 @@ const consumptions = new WeakMap<AnimationContext, ContextConsumption>();
 const scratchMatrix = new THREE.Matrix4();
 const scratchWorld = new THREE.Vector3();
 const scratchDelta = new THREE.Vector3();
+const scratchDeltaQuat = new THREE.Quaternion();
+const scratchWorldQuat = new THREE.Quaternion();
+const scratchWorldDelta = new THREE.Quaternion();
+const scratchInstanceQuat = new THREE.Quaternion();
+const scratchEuler = new THREE.Euler();
+const scratchPosition = new THREE.Vector3();
+const scratchScale = new THREE.Vector3();
+// 引擎 setModelTransform 只读取并拷贝入参、不留引用,故可复用同一组 payload,保证帧内零分配。
+const scratchPositionArray: [number, number, number] = [0, 0, 0];
+const scratchRotationArray: [number, number, number] = [0, 0, 0];
+const payloadPosition = { position: scratchPositionArray };
+const payloadRotation = { rotation: scratchRotationArray };
+const payloadBoth = { position: scratchPositionArray, rotation: scratchRotationArray };
 const POSITION_SUFFIX = ".position";
+const QUATERNION_SUFFIX = ".quaternion";
 
 function consumptionOf(context: AnimationContext): ContextConsumption {
   let consumption = consumptions.get(context);
@@ -134,7 +168,8 @@ function stateOf(consumption: ContextConsumption, id: string): ModelConsumptionS
   let state = consumption.states.get(id);
   if (!state) {
     state = { rootMotion: { enabled: false }, eventActions: [], unwrapped: 0,
-      appliedTranslation: [0, 0, 0], lastTranslation: null, trackResolved: false, resolutions: new WeakMap() };
+      appliedTranslation: [0, 0, 0], lastTranslation: [0, 0, 0], hasLastTranslation: false, appliedRotation: new THREE.Quaternion(),
+      lastRotation: new THREE.Quaternion(), hasLastRotation: false, trackResolved: false, baseline: null, resolutions: new WeakMap() };
     consumption.states.set(id, state);
   }
   return state;
@@ -160,12 +195,10 @@ function loopModeOf(context: AnimationContext, id: string): "once" | "loop" {
   return context.modelAnimationPlaybackStates.get(id)?.loopMode === "once" ? "once" : "loop";
 }
 
-/** mixer.time 折算的当前有效播放头(loop 取模 / once 钳制),与 getAnimationPlayback 同式。 */
+/** 被追踪 action 的当前有效播放头(与 getAnimationPlayback 同源,见 actionPlayhead)。 */
 function effectivePlayhead(context: AnimationContext, id: string, clip: THREE.AnimationClip): number {
   const mixer = context.mixers.get(id);
-  if (!mixer || !(clip.duration > 0)) return 0;
-  const raw = Math.max(0, mixer.time);
-  return loopModeOf(context, id) === "loop" ? raw % clip.duration : Math.min(raw, clip.duration);
+  return mixer ? actionPlayhead(mixer, clip, loopModeOf(context, id)) : 0;
 }
 
 /**
@@ -179,11 +212,70 @@ export function setModelRootMotion(context: AnimationContext, id: string, option
     || (typeof options.rootNode === "string" && options.rootNode.length > 0 && Boolean(model.object.getObjectByName(options.rootNode)));
   if (!rootNodeOk) return false;
   const state = stateOf(consumptionOf(context), id);
+  const enabling = Boolean(options.enabled) && !state.rootMotion.enabled;
+  if (enabling) captureBaseline(context, id, state);
   state.rootMotion = { enabled: Boolean(options.enabled), ...(options.rootNode !== undefined ? { rootNode: options.rootNode } : {}) };
   state.resolutions = new WeakMap();
   const active = activeClip(context, id);
   state.unwrapped = active ? effectivePlayhead(context, id, active.clip) : 0;
   return true;
+}
+
+/** 开启时记录实例 transform 基线并清零累计量,使"启用以来累计"与复位口径一致。 */
+function captureBaseline(context: AnimationContext, id: string, state: ModelConsumptionState): void {
+  const current = engineSurface(context).getModelTransform(id);
+  state.baseline = current
+    ? { position: [current.position.x, current.position.y, current.position.z], rotation: [current.rotation.x, current.rotation.y, current.rotation.z] }
+    : null;
+  clearApplied(state);
+}
+
+function clearApplied(state: ModelConsumptionState): void {
+  state.appliedTranslation[0] = 0;
+  state.appliedTranslation[1] = 0;
+  state.appliedTranslation[2] = 0;
+  state.lastTranslation[0] = 0;
+  state.lastTranslation[1] = 0;
+  state.lastTranslation[2] = 0;
+  state.hasLastTranslation = false;
+  state.appliedRotation.identity();
+  state.lastRotation.identity();
+  state.hasLastRotation = false;
+}
+
+/**
+ * 把实例 transform 复位到最近一次开启根运动时的基线并清零累计量(编辑器预览后的"回到原位")。
+ * 无基线(从未开启过)或模型不存在时返回 false;不改变开关状态。
+ */
+export function resetModelRootMotionPose(context: AnimationContext, id: string): boolean {
+  const state = consumptions.get(context)?.states.get(id);
+  if (!state?.baseline || !loadedModelOf(context, id)) return false;
+  const applied = engineSurface(context).setModelTransform(id, {
+    position: [...state.baseline.position], rotation: [...state.baseline.rotation],
+  });
+  if (applied) clearApplied(state);
+  return applied;
+}
+
+/** 活动 clip 的根运动能力探测(UI 开关可用性);无需先开启、无需推进帧。 */
+export interface ModelRootMotionAvailability {
+  readonly available: boolean;
+  /** available=false 的原因:no-animation=模型无动画/无 mixer;no-root-track=活动 clip 无平移轨道。 */
+  readonly reason?: "no-animation" | "no-root-track";
+  /** 活动 clip 含平移轨道(可抽取位移)。 */
+  readonly translation: boolean;
+  /** 活动 clip 含旋转轨道(提供 rootNode 时可抽取旋转)。 */
+  readonly rotation: boolean;
+}
+
+export function getModelRootMotionAvailability(context: AnimationContext, id: string): ModelRootMotionAvailability {
+  const active = context.mixers.has(id) ? activeClip(context, id) : undefined;
+  if (!active) return { available: false, reason: "no-animation", translation: false, rotation: false };
+  const translation = active.clip.tracks.some((track) => track.name.endsWith(POSITION_SUFFIX));
+  const rotation = active.clip.tracks.some((track) => track.name.endsWith(QUATERNION_SUFFIX));
+  return translation
+    ? { available: true, translation, rotation }
+    : { available: false, reason: "no-root-track", translation, rotation };
 }
 
 /** 只读快照;未配置过时返回缺省关闭状态。 */
@@ -195,7 +287,9 @@ export function getModelRootMotionState(context: AnimationContext, id: string): 
     trackResolved: state?.trackResolved ?? false,
     unwrappedTime: state?.unwrapped ?? 0,
     appliedTranslation: Object.freeze([...(state?.appliedTranslation ?? [0, 0, 0])] as [number, number, number]),
-    lastTranslation: state?.lastTranslation ? Object.freeze([...state.lastTranslation] as [number, number, number]) : null,
+    lastTranslation: state?.hasLastTranslation ? Object.freeze([...state.lastTranslation] as [number, number, number]) : null,
+    appliedRotation: Object.freeze((state?.appliedRotation.toArray() ?? [0, 0, 0, 1]) as [number, number, number, number]),
+    lastRotation: state?.hasLastRotation ? Object.freeze(state.lastRotation.toArray() as [number, number, number, number]) : null,
   });
 }
 
@@ -332,55 +426,47 @@ function appendTrace(context: AnimationContext, modelId: string, event: GltfAnim
   });
 }
 
+function createInterpolant(track: THREE.KeyframeTrack): THREE.Interpolant {
+  // three 的 KeyframeTrack 类型声明未含 createInterpolant,运行时存在。
+  return (track as unknown as { createInterpolant(): THREE.Interpolant }).createInterpolant();
+}
+
 function resolveRootTrack(state: ModelConsumptionState, root: THREE.Object3D, clip: THREE.AnimationClip): RootTrackResolution | null {
   const cached = state.resolutions.get(clip);
   if (cached !== undefined) return cached;
   const wanted = state.rootMotion.rootNode;
-  const track = clip.tracks.find((item) => item.name.endsWith(POSITION_SUFFIX)
-    && (wanted === undefined || item.name === `${wanted}${POSITION_SUFFIX}` || item.name.endsWith(`${wanted}${POSITION_SUFFIX}`)));
+  const matches = (trackName: string, suffix: string): boolean => trackName.endsWith(suffix)
+    && (wanted === undefined || trackName === `${wanted}${suffix}` || trackName.endsWith(`${wanted}${suffix}`));
+  // 平移轨道优先定位节点;仅有旋转轨道时(转台类)须显式 rootNode 才以旋转轨道定位,
+  // 避免缺省把任意骨骼的旋转当作根运动。
+  const positionTrack = clip.tracks.find((item) => matches(item.name, POSITION_SUFFIX));
+  const anchorTrack = positionTrack ?? (wanted !== undefined ? clip.tracks.find((item) => matches(item.name, QUATERNION_SUFFIX)) : undefined);
   let resolved: RootTrackResolution | null = null;
-  if (track) {
-    const nodeName = track.name.slice(0, track.name.length - POSITION_SUFFIX.length);
+  if (anchorTrack) {
+    const suffix = positionTrack ? POSITION_SUFFIX : QUATERNION_SUFFIX;
+    const nodeName = anchorTrack.name.slice(0, anchorTrack.name.length - suffix.length);
     const node = (wanted ?? nodeName).length > 0 ? root.getObjectByName(wanted ?? nodeName) : undefined;
     if (node) {
-      // three 的 KeyframeTrack 类型声明未含 createInterpolant,运行时存在。
-      const interpolant = (track as unknown as { createInterpolant(): THREE.Interpolant }).createInterpolant();
-      const rest = interpolant.evaluate(0) as ArrayLike<number>;
-      resolved = { node, interpolant, rest: [rest[0] ?? 0, rest[1] ?? 0, rest[2] ?? 0] };
+      const rotationTrack = clip.tracks.find((item) => item.name === `${nodeName}${QUATERNION_SUFFIX}`);
+      const interpolant = positionTrack ? createInterpolant(positionTrack) : null;
+      const rotationInterpolant = rotationTrack ? createInterpolant(rotationTrack) : null;
+      const rest = interpolant?.evaluate(0) as ArrayLike<number> | undefined;
+      const restRotation = rotationInterpolant?.evaluate(0) as ArrayLike<number> | undefined;
+      resolved = {
+        node, interpolant, rotationInterpolant,
+        rest: [rest?.[0] ?? 0, rest?.[1] ?? 0, rest?.[2] ?? 0],
+        restRotation: [restRotation?.[0] ?? 0, restRotation?.[1] ?? 0, restRotation?.[2] ?? 0, restRotation?.[3] ?? 1],
+      };
     }
   }
   state.resolutions.set(clip, resolved);
   return resolved;
 }
 
-/** 回绕校正的未包裹时间平移采样:逐段求和,段端点取该段包裹末姿态。 */
-function cycleCorrectedTranslation(interpolant: THREE.Interpolant, from: number, to: number, duration: number): THREE.Vector3 {
-  scratchDelta.set(0, 0, 0);
-  const wrapEpsilon = duration * 1e-9;
-  let cursor = from;
-  while (cursor < to - wrapEpsilon) {
-    const segEnd = Math.min(to, (Math.floor(cursor / duration) + 1) * duration);
-    const startWrapped = cursor % duration;
-    const rawEnd = segEnd % duration;
-    // 段端点落在回绕边界时取"整圈末姿态"(evaluate(duration) 钳到末关键帧),而非下一圈起点。
-    const endWrapped = rawEnd <= wrapEpsilon || duration - rawEnd <= wrapEpsilon ? duration : rawEnd;
-    const start = interpolant.evaluate(startWrapped) as ArrayLike<number>;
-    // evaluate 复用同一 resultBuffer:两次调用别名同一数组,必须在第二次求值前拷贝首样本。
-    const startX = start[0] ?? 0;
-    const startY = start[1] ?? 0;
-    const startZ = start[2] ?? 0;
-    const end = interpolant.evaluate(endWrapped) as ArrayLike<number>;
-    scratchDelta.x += (end[0] ?? 0) - startX;
-    scratchDelta.y += (end[1] ?? 0) - startY;
-    scratchDelta.z += (end[2] ?? 0) - startZ;
-    cursor = segEnd;
-  }
-  return scratchDelta;
-}
-
 /**
- * 一次前进的根运动应用:clip 采样位移 → 父链世界线性变换 → 实例 position 累加
- * (经引擎公开 transform 接口)→ 被跟踪节点动画平移钳回轨道起点。
+ * 一次前进的根运动应用:clip 采样平移/旋转增量 → 父链世界变换 → 实例 position 累加、
+ * rotation 左乘(经引擎公开 transform 接口,单次调用)→ 被跟踪节点动画平移/旋转钳回轨道起点。
+ * 单位旋转增量不写回 rotation;无平移增量(仅旋转轨道)不写回 position。
  */
 function applyRootMotionAdvance(context: AnimationContext, id: string, clip: THREE.AnimationClip, state: ModelConsumptionState,
   from: number, to: number): void {
@@ -392,20 +478,51 @@ function applyRootMotionAdvance(context: AnimationContext, id: string, clip: THR
     return;
   }
   state.trackResolved = true;
-  const local = cycleCorrectedTranslation(resolution.interpolant, from, to, clip.duration);
-  const parent = resolution.node.parent ?? model.object;
-  parent.updateWorldMatrix(true, false);
-  scratchMatrix.copy(parent.matrixWorld).setPosition(0, 0, 0);
-  const world = scratchWorld.copy(local).applyMatrix4(scratchMatrix);
-  const current = engineSurface(context).getModelTransform(id);
+  scratchDelta.set(0, 0, 0);
+  scratchDeltaQuat.identity();
+  sampleCycleCorrectedDelta(resolution.interpolant, resolution.rotationInterpolant, from, to, clip.duration, scratchDelta, scratchDeltaQuat);
+  const engine = engineSurface(context);
+  const current = engine.getModelTransform(id);
   if (current) {
-    engineSurface(context).setModelTransform(id, {
-      position: [current.position.x + world.x, current.position.y + world.y, current.position.z + world.z],
-    });
-    state.appliedTranslation[0] += world.x;
-    state.appliedTranslation[1] += world.y;
-    state.appliedTranslation[2] += world.z;
-    state.lastTranslation = [world.x, world.y, world.z];
+    const parent = resolution.node.parent ?? model.object;
+    parent.updateWorldMatrix(true, false);
+    parent.matrixWorld.decompose(scratchPosition, scratchWorldQuat, scratchScale);
+    let hasPosition = false;
+    let hasRotation = false;
+    if (resolution.interpolant) {
+      scratchMatrix.copy(parent.matrixWorld).setPosition(0, 0, 0);
+      const world = scratchWorld.copy(scratchDelta).applyMatrix4(scratchMatrix);
+      scratchPositionArray[0] = current.position.x + world.x;
+      scratchPositionArray[1] = current.position.y + world.y;
+      scratchPositionArray[2] = current.position.z + world.z;
+      hasPosition = true;
+      state.appliedTranslation[0] += world.x;
+      state.appliedTranslation[1] += world.y;
+      state.appliedTranslation[2] += world.z;
+      state.lastTranslation[0] = world.x;
+      state.lastTranslation[1] = world.y;
+      state.lastTranslation[2] = world.z;
+      state.hasLastTranslation = true;
+    }
+    if (resolution.rotationInterpolant && !isIdentityRotation(scratchDeltaQuat)) {
+      // 父空间增量 δ 共轭到世界:W·δ·W⁻¹,再左乘实例旋转(绕实例原点)。
+      scratchWorldDelta.copy(scratchWorldQuat).multiply(scratchDeltaQuat).multiply(scratchWorldQuat.invert());
+      const order = model.object.rotation.order;
+      scratchEuler.set(current.rotation.x, current.rotation.y, current.rotation.z, order);
+      scratchInstanceQuat.setFromEuler(scratchEuler).premultiply(scratchWorldDelta).normalize();
+      scratchEuler.setFromQuaternion(scratchInstanceQuat, order);
+      scratchRotationArray[0] = scratchEuler.x;
+      scratchRotationArray[1] = scratchEuler.y;
+      scratchRotationArray[2] = scratchEuler.z;
+      hasRotation = true;
+      state.appliedRotation.premultiply(scratchWorldDelta).normalize();
+      state.lastRotation.copy(scratchWorldDelta);
+      state.hasLastRotation = true;
+    }
+    if (hasPosition || hasRotation) engine.setModelTransform(id, hasPosition && hasRotation ? payloadBoth : hasPosition ? payloadPosition : payloadRotation);
   }
-  resolution.node.position.set(resolution.rest[0], resolution.rest[1], resolution.rest[2]);
+  if (resolution.interpolant) resolution.node.position.set(resolution.rest[0], resolution.rest[1], resolution.rest[2]);
+  if (resolution.rotationInterpolant) {
+    resolution.node.quaternion.set(resolution.restRotation[0], resolution.restRotation[1], resolution.restRotation[2], resolution.restRotation[3]);
+  }
 }

@@ -73,6 +73,12 @@ export interface PbrRendererOptions {
    */
   readonly virtualTextures?: VirtualTextureOptions;
   readonly features?: PbrRendererFeatureOptions;
+  /**
+   * 选择性材质变体(opt-in,缺省 false = 管线 WGSL 与原版逐字节一致):编译 sheen / iridescence /
+   * clearcoat IBL / 体积透射(three r185 语义),材质 uniform 为 240B;与 layeredMaterials、textureArrays
+   * 管线互斥(texture-array 批次对含 advanced 参数的材质回退常规路径)。
+   */
+  readonly advancedMaterials?: boolean;
   readonly environment?: PbrEnvironmentSource;
   /** Optional R12 capture transaction; omitted on normal production frames. */
   readonly frameCapture?: PbrFrameCaptureOptions;
@@ -192,5 +198,7 @@ export interface FrameMetrics {
    */
   readonly temporalUpscale?: { readonly displayWidth: number; readonly displayHeight: number;
     readonly historyUsed: boolean; readonly invalidation: string };
+  /** 对象级描边遥测(仅 packet 含 outline 实例的帧出现);skippedBatches>0 表示变形/meshlet 批次未进入掩码。 */
+  readonly outline?: { readonly drawCalls: number; readonly skippedBatches: number };
   readonly adaptiveHotspots?: readonly AdaptiveQualityHotspotSummary[];
 }

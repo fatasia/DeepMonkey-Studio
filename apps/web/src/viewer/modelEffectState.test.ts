@@ -18,6 +18,17 @@ describe("model effect state", () => {
     });
   });
 
+  it("normalizes curves, blend and particle cap, and omits them when absent", () => {
+    const normalized = normalizeFireEffect({
+      enabled: true, blend: "alpha", maxParticles: 9_999,
+      curves: { alpha: [{ time: 2, value: 3 }, { time: 0, value: -1 }], size: [] },
+    });
+    expect(normalized.blend).toBe("alpha");
+    expect(normalized.maxParticles).toBe(160);
+    expect(normalized.curves).toEqual({ alpha: [{ time: 0, value: 0 }, { time: 1, value: 1 }] });
+    const plain = normalizeFireEffect({ enabled: true, blend: "multiply" as never, maxParticles: Number.NaN });
+    expect("curves" in plain || "blend" in plain || "maxParticles" in plain).toBe(false);
+  });
   it("deep-merges a data/script fire patch without losing authored parameters", () => {
     expect(mergeModelEffectsPatch(baseEffects, { fire: { intensity: 3.2 } }).fire).toEqual({
       ...baseEffects.fire,

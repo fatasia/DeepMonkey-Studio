@@ -100,3 +100,18 @@
 
 .app-shell .right-panel .material-source-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-block: 6px; }
 .app-shell .right-panel .material-source-actions > * { min-width: 0; flex: 1 1 100px; }
+
+.app-shell .right-panel .model-animation-root-motion { display: grid; grid-template-columns: minmax(0, 1fr) auto 27px; gap: 6px; align-items: center; min-height: 29px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-1); }
+.app-shell .right-panel .model-animation-root-motion[data-state=on] { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 7%, var(--surface-1)); }
+.app-shell .right-panel .model-animation-root-motion-switch { min-width: 0; }
+.app-shell .right-panel .model-animation-root-motion .toggle { color: var(--text-strong); font-size: 10px; }
+.app-shell .right-panel .model-animation-root-motion output { color: var(--text-strong); font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.app-shell .right-panel .model-animation-root-motion button { transition: border-color 160ms ease-out, background-color 160ms ease-out, opacity 160ms ease-out; }
+.app-shell .right-panel .model-animation-root-motion button:disabled { opacity: .5; cursor: not-allowed; pointer-events: none; }
+.app-shell .right-panel .model-animation-root-motion button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.app-shell .right-panel .model-animation-root-motion-note { margin: 0; padding: 0 2px; color: var(--warning); font-size: 10px; line-height: 1.4; }
+.app-shell .right-panel .model-animation-root-motion-reset { display: grid; width: 27px; height: 25px; padding: 0; place-items: center; color: var(--text-strong); border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface-2); cursor: pointer; }
+.app-shell .right-panel .model-animation-root-motion-reset:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
+@media (prefers-reduced-motion: reduce) {
+  .app-shell .right-panel .model-animation-root-motion button { transition: none; }
+}

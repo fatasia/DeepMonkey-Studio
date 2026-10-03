@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
-import { DEFAULT_DISPLAY_CONTRACT } from "@bim-studio/contracts";
+import { resolveDynamicExposure, resolveGlobalIlluminationIntensity } from "./displayContractThree";
 import type { SceneLightState, SkyboxPreset, WeatherMode } from "@bim-studio/contracts";
 import { shouldRenderSceneLightProxy } from "./viewerTypes";
 import { createSceneGrid } from "./sceneGrid";
@@ -196,14 +196,11 @@ export abstract class ViewerEngineEnvironment extends ViewerEngineRendering {
       }
       this.globalIlluminationLight.visible = Boolean(this.lightingState.enabled && this.lightingState.globalIlluminationEnabled);
       this.globalIlluminationLight.intensity = this.globalIlluminationLight.visible
-        ? (this.lightingState.globalIlluminationIntensity ?? 0.45) * weatherFactor[this.weatherMode] * intensity
+        ? resolveGlobalIlluminationIntensity(this.lightingState.globalIlluminationIntensity) * weatherFactor[this.weatherMode] * intensity
         : 0;
       if ("shadowMap" in this.renderer) this.renderer.shadowMap.enabled = Boolean(this.lightingState.shadowsEnabled);
-      const exposure = DEFAULT_DISPLAY_CONTRACT.toneMapping.dynamicExposure;
-      this.renderer.toneMappingExposure = this.lightingState.enabled && exposure.enabled
-        ? THREE.MathUtils.clamp(exposure.base + intensity * weatherFactor[this.weatherMode] * exposure.intensityScale,
-          exposure.min, exposure.max)
-        : exposure.min;
+      this.renderer.toneMappingExposure = resolveDynamicExposure(Boolean(this.lightingState.enabled), intensity,
+        weatherFactor[this.weatherMode]);
       this.markShadowMapDirty();
       this.scheduleRendererPipelineWarmup();
     }

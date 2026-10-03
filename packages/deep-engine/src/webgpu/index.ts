@@ -73,7 +73,7 @@ export type { PbrColorGrading, PbrColorGradingOptions } from "./pbrColorGrading.
 export { applyPbrAuthorColorEffects, packPbrAuthorColorEffects } from "./pbrAuthorColorEffects.js";
 export type { PbrAuthorColorEffects } from "./pbrAuthorColorEffects.js";
 export { DEFAULT_PBR_VOLUMETRIC_FOG_PROFILE } from "./pbrPostProcessOverrides.js";
-export type { PbrPostProcessOverrides, PbrAuthorBloomOptions, PbrVolumetricFogProfile } from "./pbrPostProcessOverrides.js";
+export type { PbrPostProcessOverrides, PbrAuthorBloomOptions, PbrVolumetricFogProfile, PbrInstanceOutlineOptions } from "./pbrPostProcessOverrides.js";
 export type { Vec3 } from "./cameraMath.js";
 export { CameraFrameHistory, jitterViewProjection } from "./cameraFrameHistory.js";
 export type { CameraFrameHistoryResult, CameraFrameState } from "./cameraFrameHistory.js";

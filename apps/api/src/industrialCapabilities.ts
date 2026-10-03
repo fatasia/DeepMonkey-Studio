@@ -42,6 +42,9 @@ import { registerProvenanceTracePlugin } from "./ai/provenanceTracePlugin.js";
 import { registerSimulationStudyAsyncPlugin } from "./ai/simulationStudyAsyncPlugin.js";
 import type { SimulationStudyTaskStore } from "./ai/simulationStudyTasks.js";
 import type { ProvenanceLedgerStore } from "./ai/provenanceLedger.js";
+import { registerWorldApiPlugin } from "./worldApiPlugin.js";
+import type { WorldSessionManager } from "@bim-studio/world-runtime";
+import type { AuditLogRecord } from "@bim-studio/contracts";
 import { registerDataQueryPlugin } from "./registerDataQueryPlugin.js";
 import type { DataQuerySource } from "@bim-studio/data-query-plugin";
 import { registerDataQueryAiPlugin } from "./ai/registerDataQueryAiPlugin.js";
@@ -105,6 +108,10 @@ export async function createIndustrialCapabilityHost(
     provenanceLedger?: ProvenanceLedgerStore;
     /** H-C3 后续切片：异步长跑任务存储；传入即注册 run-async/status/cancel 任务面。 */
     studyTasks?: SimulationStudyTaskStore;
+    /** World API v1：传入即注册 world.reset/step/observe/snapshot/restore/close 能力（MCP 与 HTTP 共用）。 */
+    worldSessions?: WorldSessionManager;
+    /** World API 对 reset/step/restore/close 逐次写审计；缺省则不落审计。 */
+    addAuditLog?: (record: AuditLogRecord) => Promise<void>;
   } = {},
 ): Promise<IndustrialCapabilityHost> {
   let batteryOnnx =
@@ -149,6 +156,7 @@ export async function createIndustrialCapabilityHost(
   const registry = new PluginRegistry(hostPolicy([
     ...(options.provenanceLedger ? ["provenance.trace"] : []),
     ...(options.studyTasks ? ["simulation.study"] : []),
+    ...(options.worldSessions ? ["simulation.world"] : []),
   ]));
   const manifest = {
     schemaVersion: 1 as const,
@@ -224,6 +232,9 @@ export async function createIndustrialCapabilityHost(
   // H-C3 后续切片：MCP Tasks 异步长跑（durable 句柄 + 轮询 + mid-flight 取消）。
   if (options.studyTasks) {
     await registerSimulationStudyAsyncPlugin(registry, { tasks: options.studyTasks });
+  }
+  if (options.worldSessions) {
+    await registerWorldApiPlugin(registry, { sessions: options.worldSessions, ...(options.addAuditLog ? { addAuditLog: options.addAuditLog } : {}) });
   }
   if (options.conversionTasks)
     await registerConversionCapabilityPlugin(registry, options.conversionTasks);

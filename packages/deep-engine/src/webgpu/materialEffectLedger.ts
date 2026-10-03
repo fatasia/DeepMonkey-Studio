@@ -56,7 +56,7 @@ export function compileMaterialEffectLedger(
     if (!located) throw new Error(`Material effect ledger is missing consumed instance: ${instance.id}.`);
     prepared.delete(instance.id);
     const authored = authorValues(material, instance.receiveShadow !== false,
-      instance.castShadow !== false, located.batch.textures !== undefined);
+      instance.castShadow !== false, located.batch.textures !== undefined, instance.outline === true);
     const consumed = consumedValues(located.batch, located.record);
     assertValues(instance.id, authored, consumed);
     return Object.freeze({ instanceId: instance.id, materialId: material.id,
@@ -68,7 +68,7 @@ export function compileMaterialEffectLedger(
 }
 
 function authorValues(material: PbrMaterial, receiveShadow: boolean, castShadow: boolean,
-  textured: boolean): MaterialEffectValues {
+  textured: boolean, outline: boolean): MaterialEffectValues {
   const alphaMode = material.alphaMode ?? "OPAQUE";
   const emissiveFactor = material.emissiveFactor ?? [0, 0, 0];
   const emissiveStrength = material.emissiveStrength ?? 1;
@@ -81,7 +81,8 @@ function authorValues(material: PbrMaterial, receiveShadow: boolean, castShadow:
       + (alphaMode === "MASK" ? 2 : alphaMode === "BLEND" ? 4 + (material.alphaCutoff !== undefined ? 2 : 0) : 0)
       + (receiveShadow ? 0 : 16) + (material.fog === false ? 32 : 0)
       + (material.shadingModel === "unlit" ? 64 : 0)
-      + (alphaMode === "BLEND" && material.premultipliedAlpha === true ? 128 : 0),
+      + (alphaMode === "BLEND" && material.premultipliedAlpha === true ? 128 : 0)
+      + (outline ? 256 : 0),
     emissive: emissiveFactor.map(value => Math.fround(value * packedEmissiveStrength)) as unknown as readonly [number, number, number],
     alpha: Math.fround(material.baseColorAlpha ?? 1),
     emissiveStrength: Math.fround(textured ? emissiveStrength : 1),

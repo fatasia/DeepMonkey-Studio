@@ -146,7 +146,7 @@ export class TextureArrayResources {
 
   supportsMaterial(textures: PreparedMaterialTextures): boolean {
     this.assertReady();
-    if (textures.layered) return false;
+    if (textures.layered || textures.advanced) return false;
     const used = TEXTURE_ARRAY_SLOT_BINDINGS.map(config => textures[config.slot]).filter(Boolean);
     return used.length > 0 && used.every(slot => this.plan.assignments.has(slot!.texture));
   }
@@ -164,6 +164,7 @@ export class TextureArrayResources {
   /** 材质数组 bind group；任一在用槽位无法数组化时返回 undefined（调用方回退常规路径）。 */
   materialGroup(textures: PreparedMaterialTextures, parameters?: GPUBuffer): TextureArrayMaterialGroup | undefined {
     this.assertReady();
+    if (textures.advanced) return undefined;
     const slots = TEXTURE_ARRAY_SLOT_BINDINGS.map(config => {
       const slot = textures[config.slot];
       const assignment = slot ? this.plan.assignments.get(slot.texture) : undefined;

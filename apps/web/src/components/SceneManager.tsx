@@ -109,6 +109,7 @@ function useSceneManagerController({
   const [assetRevisionNotice, setAssetRevisionNotice] = useState<
     { kind: "success" | "error" | "info"; modelId: string; message: string } | undefined
   >();
+  const [keptAssetRevisions, setKeptAssetRevisions] = useState<ReadonlySet<string>>(() => new Set());
   const [uploadedResources, setUploadedResources] = useState<Array<ModelRecord | ProjectAssetRecord>>([]);
   const resourceProject = useRef(project?.id);
   resourceProject.current = project?.id;
@@ -156,12 +157,13 @@ function useSceneManagerController({
   const assetRevisionReportsByAsset = useMemo(() => {
     const grouped = new Map<string, StaleAssetRevision[]>();
     for (const report of staleAssetRevisions) {
+      if (keptAssetRevisions.has(`${report.assetModelId}@${report.latestRevision}`)) continue;
       const reports = grouped.get(report.assetModelId) ?? [];
       reports.push(report);
       grouped.set(report.assetModelId, reports);
     }
     return grouped;
-  }, [staleAssetRevisions]);
+  }, [keptAssetRevisions, staleAssetRevisions]);
 
   useEffect(() => {
     if (!isAdmin || !project) return;
@@ -313,13 +315,14 @@ function useSceneManagerController({
     const usage = resourceGovernance.resources.find((resource) => resource.kind === "model" && resource.id === model.id);
     const impact = computeAssetDeletionImpact(model.id, scenes);
     const impactText = formatDeletionImpact(impact, locale);
+    const referenceCount = usage?.instanceCount || impact.totalReferences;
     const baseMessage = tr(
       locale,
-      usage?.instanceCount
-        ? `模型“${model.name}”仍有 ${usage.instanceCount} 个场景实例。继续删除会造成引用断开，建议先移除实例。仍要删除吗？`
+      referenceCount
+        ? `模型“${model.name}”仍有 ${referenceCount} 处场景引用。继续删除会造成引用断开，建议先移除实例。仍要删除吗？`
         : `确定删除未引用模型“${model.name}”吗？`,
-      usage?.instanceCount
-        ? `Model “${model.name}” still has ${usage.instanceCount} scene instances. Deleting it breaks those references; remove the instances first. Delete anyway?`
+      referenceCount
+        ? `Model “${model.name}” still has ${referenceCount} scene references. Deleting it breaks those references; remove the instances first. Delete anyway?`
         : `Delete unused model “${model.name}”?`,
     );
     if (
@@ -407,11 +410,12 @@ function useSceneManagerController({
     const impact = computeAssetDeletionImpact(asset.id, scenes);
     const impactText = formatDeletionImpact(impact, locale);
     const appearanceAsset = asset.kind === "environment" || asset.kind === "pbr-material";
-    const message = usage?.instanceCount
+    const referenceCount = usage?.instanceCount || impact.totalReferences;
+    const message = referenceCount
       ? tr(
           locale,
-          `${kindName}“${asset.name}”仍被 ${usage.instanceCount} 个${appearanceAsset ? "场景或对象" : "二维组件"}引用，删除后引用会断开。仍要删除吗？`,
-          `${kindName} “${asset.name}” is referenced by ${usage.instanceCount} ${appearanceAsset ? "scenes or objects" : "dashboard components"}. Delete it and break those references?`,
+          `${kindName}“${asset.name}”仍被 ${referenceCount} 处${appearanceAsset ? "场景或对象" : "二维组件"}引用，删除后引用会断开。仍要删除吗？`,
+          `${kindName} “${asset.name}” is referenced by ${referenceCount} ${appearanceAsset ? "scenes or objects" : "dashboard components"}. Delete it and break those references?`,
         )
       : tr(locale, `确定删除未引用${kindName}“${asset.name}”吗？`, `Delete unused ${kindName} “${asset.name}”?`);
     if (!project || !window.confirm(impactText ? `${message}\n\n${impactText}` : message)) return;
@@ -424,6 +428,12 @@ function useSceneManagerController({
     } finally {
       setModelLibraryBusy(false);
     }
+  }
+
+  function keepAssetRevision(model: ModelRecord) {
+    const latest = Math.max(0, ...(assetRevisionReportsByAsset.get(model.id) ?? []).map(report => report.latestRevision));
+    setKeptAssetRevisions(current => new Set(current).add(`${model.id}@${latest}`));
+    setAssetRevisionNotice(current => (current?.modelId === model.id ? undefined : current));
   }
 
   async function updateAssetRevision(model: ModelRecord) {
@@ -607,6 +617,7 @@ function useSceneManagerController({
     uploadLibraryModels,
     uploadLibraryVideos,
     updateAssetRevision,
+    keepAssetRevision,
     userName,
     versionBusy,
     versionError,

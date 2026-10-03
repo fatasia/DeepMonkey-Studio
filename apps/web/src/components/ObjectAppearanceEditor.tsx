@@ -9,6 +9,7 @@ import type {
 import { useEffect, useState } from "react";
 import { translate as tr, type AppLocale } from "../i18n";
 import type { RendererBackend } from "../viewer/ViewerEngine";
+import type { FireBudgetReport } from "../viewer/modelFireParticles";
 import { ModelScreenEditor } from "./ModelScreenEditor";
 import { ModelEffectsEditor } from "./ModelEffectsEditor";
 import { MaterialTextureSettings } from "./MaterialTextureSettings";
@@ -29,6 +30,9 @@ interface ObjectAppearanceEditorProps {
   disabled: boolean;
   material: SceneMaterialState;
   effects?: SceneModelEffectsState;
+  /** 场景火焰粒子预算报告；缺省时面板不显示预算读数。 */
+  particleBudget?: FireBudgetReport | undefined;
+  particleEmitterId?: string | undefined;
   onMaterialChange: (patch: SceneMaterialState) => void;
   onEffectsChange: (patch: Partial<SceneModelEffectsState>) => void;
   onChooseTexture: (kind: MaterialTextureKind, slotId?: string) => void;
@@ -97,6 +101,8 @@ function ObjectAppearanceFields({
   effects,
   onMaterialChange,
   onEffectsChange,
+  particleBudget,
+  particleEmitterId,
   onChooseTexture,
   projectAssets = [],
 }: ObjectAppearanceEditorProps) {
@@ -296,7 +302,7 @@ function ObjectAppearanceFields({
 
       <ModelScreenEditor locale={locale} disabled={disabled} screen={material.screen} onChange={onMaterialChange} />
 
-      {effects && <ModelEffectsEditor locale={locale} rendererBackend={rendererBackend} disabled={disabled} effects={effects} onChange={onEffectsChange} />}
+      {effects && <ModelEffectsEditor locale={locale} rendererBackend={rendererBackend} disabled={disabled} effects={effects} onChange={onEffectsChange} particleBudget={particleBudget} particleEmitterId={particleEmitterId} />}
     </>
   );
 }

@@ -4,6 +4,7 @@ import { AMBIENT_OCCLUSION_COMPOSITE_COLOR_FORMAT } from "../postprocess/ambient
 import { AMBIENT_OCCLUSION_OUTPUT_FORMAT } from "../postprocess/ambientOcclusionTypes.js";
 import { BloomPass } from "../postprocess/bloom.js";
 import { AuthorBloomPass } from "../postprocess/authorBloom.js";
+import { InstanceOutlinePass, type InstanceOutlineDrawStats } from "../postprocess/instanceOutline.js";
 import { BLOOM_COLOR_FORMAT } from "../postprocess/bloomTypes.js";
 import { TemporalAaPass } from "../postprocess/temporalAa.js";
 import { TEMPORAL_AA_COLOR_FORMAT } from "../postprocess/temporalAaTypes.js";
@@ -58,6 +59,14 @@ export interface PbrPostProcessInput {
   /** C11 SSR 物理化:主着色器同一 split-sum DFG(environment.brdf);缺省时 SSR 拒绝编码。 */
   readonly brdfLut?: GPUTextureView;
   readonly adaptiveQuality?: Readonly<AdaptiveQualityKnobs>;
+  /**
+   * 对象级描边帧输入。仅当 packet 含 outline 实例时由渲染器提供;缺省(绝大多数帧)时
+   * InstanceOutlinePass 不构造、不编译、不分配,链路逐字节不变。
+   */
+  readonly outline?: {
+    readonly viewProjection: ArrayLike<number>;
+    readonly draw: (pass: GPURenderPassEncoder) => InstanceOutlineDrawStats;
+  };
   readonly godRays?: { readonly shadows: GodRaysShadowSource; readonly viewToWorld: ArrayLike<number>; readonly light: VolumetricFogLight };
   /**
    * F1 逐 pass GPU 计时作用域(opt-in 诊断)。存在时在计划 pass 组边界发射只写
@@ -83,6 +92,8 @@ export interface PbrOpaqueEffectsResult {
 export interface PbrFinalEffectsResult {
   readonly color: GPUTexture;
   readonly passCount: number;
+  /** 描边实际绘制/跳过的批次统计;未执行描边时缺省。 */
+  readonly outline?: InstanceOutlineDrawStats;
 }
 
 /** Owns the stable post-process resources used by the default PBR frame. */
@@ -98,6 +109,7 @@ export class PbrPostProcessChain {
   private readonly temporalUpscale: TemporalUpscalePass | undefined;
   private readonly bloom: BloomPass | undefined;
   private authorBloom: AuthorBloomPass | undefined;
+  private instanceOutline: InstanceOutlinePass | undefined;
   private readonly temporalValidity = new TemporalValidityProvider();
   private pendingTemporalRevision: number | undefined;
   private lastTemporalPlan: TemporalValidityPlan | undefined;
@@ -237,14 +249,27 @@ export class PbrPostProcessChain {
       }, { feedback: 0.9, depthThreshold: Math.min(100, Math.max(0.01, extent * 0.001)), relativeDepthThreshold: 0.02 });
       input.passTiming?.endMarker(encoder, "temporal-aa");
     }
-    if (!active.bloom) return Object.freeze({ color: temporal.texture, passCount: effectPasses + (this.features.temporalAa ? 1 : 0) });
-    const source = { color: temporal.texture, revision, colorEncoding: "linear-hdr" as const };
+    // 对象级描边在 TAA 之后、bloom 之前(同作者 EffectComposer:Outline → Bloom → Output),写入新的瞬态纹理,
+    // 不污染 TAA 历史。
+    let graded = temporal.texture, outline: InstanceOutlineDrawStats | undefined;
+    if (input.outline) {
+      if (!this.pool) throw new Error("Instance outline requires the transient texture pool.");
+      const outlined = (this.instanceOutline ??= new InstanceOutlinePass(this.session, this.pool)).encode(encoder, {
+        color: graded, depthView: targets.depth, viewProjection: input.outline.viewProjection,
+        ...(active.instanceOutline ? { options: active.instanceOutline } : {}), draw: input.outline.draw });
+      graded = outlined.texture; effectPasses += outlined.passCount;
+      outline = Object.freeze({ drawCalls: outlined.drawCalls, skippedBatches: outlined.skippedBatches });
+    }
+    if (!active.bloom) return Object.freeze({ color: graded, passCount: effectPasses + (this.features.temporalAa ? 1 : 0),
+      ...(outline ? { outline } : {}) });
+    const source = { color: graded, revision, colorEncoding: "linear-hdr" as const };
     input.passTiming?.beginMarker(encoder, "bloom");
     const bloom = active.authorBloom
       ? (this.authorBloom ??= new AuthorBloomPass(this.session, this.pool)).encode(encoder, source, active.authorBloom)
       : this.bloom!.encode(encoder, source, DEFAULT_PBR_BLOOM_OPTIONS);
     input.passTiming?.endMarker(encoder, "bloom");
-    return Object.freeze({ color: bloom.texture, passCount: effectPasses + (this.features.temporalAa ? 1 : 0) + bloom.passCount });
+    return Object.freeze({ color: bloom.texture, passCount: effectPasses + (this.features.temporalAa ? 1 : 0) + bloom.passCount,
+      ...(outline ? { outline } : {}) });
   }
 
   /**
@@ -461,7 +486,7 @@ export class PbrPostProcessChain {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    runResourceCleanup("Post-process disposal failed", [() => this.authorBloom?.dispose(), () => this.bloom?.dispose(),
+    runResourceCleanup("Post-process disposal failed", [() => this.instanceOutline?.dispose(), () => this.authorBloom?.dispose(), () => this.bloom?.dispose(),
       () => this.temporalAa?.dispose(), () => this.temporalUpscale?.dispose(), () => this.screenSpaceReflection?.dispose(),
       () => this.volumetricFogComposite?.dispose(), () => this.volumetricGodRays?.dispose(), () => this.volumetricFog?.dispose(),
       () => this.ambientOcclusionComposite?.dispose(),

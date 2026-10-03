@@ -9,6 +9,12 @@ describe("persistent volumetric light author values", () => {
     for (const strength of [0, 1, 8]) expect(() => validateScene({ ...scene, postProcessing: { ...scene.postProcessing,
       volumetricFog: true, volumetricGodRays: true, volumetricGodRaysStrength: strength } }, "scene")).not.toThrow();
   });
+  it("bounds the fog scatter albedo to [0,1] and keeps old scenes valid", () => {
+    for (const albedo of [0, 0.82, 1]) expect(() => validateScene({ ...scene, postProcessing: { ...scene.postProcessing,
+      volumetricFog: true, volumetricFogAlbedo: albedo } }, "scene")).not.toThrow();
+    for (const albedo of [-0.1, 1.1, Infinity, NaN]) expect(() => validateScene({ ...scene,
+      postProcessing: { ...scene.postProcessing, volumetricFogAlbedo: albedo } }, "scene")).toThrow();
+  });
   it("rejects nonfinite/out-of-budget strength and nonboolean activation", () => {
     for (const strength of [-1, 8.1, Infinity, NaN]) expect(() => validateScene({ ...scene,
       postProcessing: { ...scene.postProcessing, volumetricGodRaysStrength: strength } }, "scene")).toThrow();

@@ -1,3 +1,4 @@
+import { DEFAULT_DISPLAY_CONTRACT } from "@bim-studio/contracts";
 import { validateLightIes, validateLightingIes, validateLightProfileShape,
   type RuntimeLightProfile, type RuntimeLocalLight, type RuntimeSolidEnvironment } from "@bim-studio/deep-engine/runtime-package";
 type Vec3 = [number,number,number];
@@ -14,6 +15,7 @@ export function compileSceneLighting(value: unknown, weather?: unknown, coordina
     || (state.globalIlluminationIntensity !== undefined && !bounded(state.globalIlluminationIntensity, 16))
     || !Array.isArray(state.lights) || state.lights.length < 1 || state.lights.length > 17
     || origin.length !== 3 || !origin.every(Number.isFinite)) return;
+  const dynamicExposure = DEFAULT_DISPLAY_CONTRACT.toneMapping.dynamicExposure;
   const profiles = compileProfiles(state.lightProfiles);
   if (state.lightProfiles !== undefined && !profiles) return;
   const seen = new Set<string>();
@@ -32,9 +34,9 @@ export function compileSceneLighting(value: unknown, weather?: unknown, coordina
       || (light.kind === "spot" && (light.outerCos <= .001 || light.outerCos >= .999999))
       || (light.range !== 0 && light.range <= .0001))) return;
   const result = { direction: primary?.light.direction ?? [0,1,0], radiance: primary?.light.radiance ?? [0,0,0],
-    exposure: state.enabled ? Math.min(1.55, Math.max(0.55, 0.72 + state.intensity * 0.33)) : 0.55,
+    exposure: state.enabled ? Math.min(dynamicExposure.max, Math.max(dynamicExposure.min, dynamicExposure.base + state.intensity * dynamicExposure.intensityScale)) : dynamicExposure.min,
     shadows: state.shadowsEnabled && (primary?.castShadow ?? false),
-    ...(builtinIbl && state.globalIlluminationEnabled === true ? { globalIlluminationIntensity: state.globalIlluminationIntensity ?? 1 } : {}),
+    ...(builtinIbl && state.globalIlluminationEnabled === true ? { globalIlluminationIntensity: state.globalIlluminationIntensity ?? DEFAULT_DISPLAY_CONTRACT.environment.globalIlluminationIntensity } : {}),
     ...(lights.length ? { localLights: lights.map(item => ({ ...item.light, ...(state.shadowsEnabled && item.castShadow ? { castShadow:true } : {}) })) } : {}),
     ...(profiles?.length ? { lightProfiles: profiles } : {}) };
   try { validateLightingIes(result as unknown as Record<string, unknown>, "$.lighting"); } catch { return; }

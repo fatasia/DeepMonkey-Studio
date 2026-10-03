@@ -2,13 +2,14 @@ import * as THREE from "three";
 import { ThreeProjectionBridge, type AuthorTransformResolver } from "./ThreeProjectionBridge.js";
 import type { ProjectionResult } from "./types.js";
 
-export function bridge(authorTransformResolver?: AuthorTransformResolver): ThreeProjectionBridge {
+export function bridge(authorTransformResolver?: AuthorTransformResolver,
+  capabilities?: { readonly advancedMaterials?: boolean }): ThreeProjectionBridge {
   return new ThreeProjectionBridge({ hooks: {
     objectBeforeRender: THREE.Object3D.prototype.onBeforeRender, objectAfterRender: THREE.Object3D.prototype.onAfterRender,
     objectBeforeShadow: THREE.Object3D.prototype.onBeforeShadow, objectAfterShadow: THREE.Object3D.prototype.onAfterShadow,
     materialBeforeRender: THREE.Material.prototype.onBeforeRender, materialBeforeCompile: THREE.Material.prototype.onBeforeCompile,
     materialProgramCacheKey: THREE.Material.prototype.customProgramCacheKey,
-  }, ...(authorTransformResolver ? { authorTransformResolver } : {}) });
+  }, ...(authorTransformResolver ? { authorTransformResolver } : {}), ...(capabilities ? { capabilities } : {}) });
 }
 export function mesh(): THREE.Mesh<THREE.BoxGeometry, THREE.MeshStandardMaterial> {
   return new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial({ color: "#ff8000", metalness: 0.2, roughness: 0.7 }));

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { SceneModelAnimationPlaybackState } from "@bim-studio/contracts";
+import { actionPlayhead } from "./viewerEngineAnimationPlayhead";
 import { rearmModelAnimationConsumption } from "./viewerEngineRootMotion";
 
 export type AnimationControl = {
@@ -49,7 +50,8 @@ export function getAnimationPlayback(context: AnimationContext, id: string): Ani
   const selected = selectedId ? clips.find((clip) => (clip.name || clip.uuid) === selectedId) : clips[0];
   const duration = Math.max(0, selected?.duration ?? Math.max(...clips.map((clip) => clip.duration)));
   const policy = getModelAnimationPlaybackState(context, id);
-  const time = duration > 0 ? (policy.loopMode === "loop" ? mixer.time % duration : Math.min(mixer.time, duration)) : mixer.time;
+  // mixer.time 是全局累计量;选中 clip 的相位取其 action.time,无选中 clip 时回退 mixer.time。
+  const time = selected ? actionPlayhead(mixer, selected, policy.loopMode) : mixer.time;
   return {
     ...(selected ? { clipId: selected.name || selected.uuid } : {}),
     time,

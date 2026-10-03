@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SceneSnapshot } from "@bim-studio/contracts";
+import { DEFAULT_DISPLAY_CONTRACT, type SceneSnapshot } from "@bim-studio/contracts";
 import { parseDeepRuntimePackage, runtimeContentSha256 } from "@bim-studio/deep-engine/runtime-package";
 import { compileSceneEnvironment } from "./compileSceneEnvironment";
 import { compileSceneRuntimePackage } from "./compileSceneRuntimePackage";
@@ -53,7 +53,8 @@ describe("authored solid environment", () => {
     expect(parseDeepRuntimePackage(result.packageJson).valid).toBe(true);
     const payload = result.runtimePackage.payloads["scene.environment"];
     expect(payload).toEqual({ schema: "deep-engine.solid-environment", schemaVersion: 1, id: "scene.environment", revision: 1,
-      kind: "solid-background-no-ibl", outputTransform: "native-aces-v1", backgroundSrgb: [23 / 255, 33 / 255, 38 / 255] });
+      kind: "solid-background-no-ibl", outputTransform: "native-aces-v1", backgroundSrgb: [23 / 255, 33 / 255, 38 / 255],
+      displayProfile: DEFAULT_DISPLAY_CONTRACT.toneMapping.operator });
     const e = result.evidence, runtime = result.runtimePackage;
     expect(e.compileGraphHash).toBe(runtimeContentSha256({ recipe: e.recipe, sourceSemanticHash: e.sourceSemanticHash,
       sourceAssets: e.sourceAssets, packageId: runtime.packageId, packageVersion: runtime.packageVersion,

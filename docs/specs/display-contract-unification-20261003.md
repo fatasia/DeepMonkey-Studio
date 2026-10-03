@@ -62,3 +62,33 @@
 
 本阶段保留 `PCFShadowMap`，不切 `PCFSoftShadowMap`。原因：Z1 报告已记录 authored-shadow 硬合同和 WebGL PCFSoft 属后续主线项；当前任务目标是显示合约统一，不把阴影滤波语义与性能风险合入本切片。合约中显式登记当前产品值为 `pcf`，后续若切 `pcf-soft` 必须配套性能与视觉回归证据。
 
+
+## 实施结果（2026-10-03）
+
+**核实**：合约已接线项（先前会话完成）——appDefaults（环境强度/GI/SMAA/FXAA/GTAO/Bloom）、viewerEngineCore（输出色彩空间/曝光/阴影滤波）、viewerEngineEnvironment（动态曝光 base/scale/min/max）、sceneShadowQuality（mapSize/radius/blurSamples/bias/normalBias）、postProcessingRuntime（Bloom 参数）、StudioDeepWebGpuBridge / studioDeepEnvironment / pathTraceAuthorPreview / compileSceneRuntimePackage（Deep 显示算子 `three-aces-r185`）；Deep 引擎 `DEFAULT_PBR_RENDERER_FEATURES.toneMapping` 已改为 `three-aces-r185`，`deep-aces` 保留为显式可选。
+
+**本轮补齐（仅 apps/web，deep-engine 零改动、无新依赖、WGSL 未动）**
+- 新增 `apps/web/src/viewer/displayContractThree.ts`：合约枚举 → three 枚举的唯一映射（`threeToneMappingFor / threeOutputColorSpaceFor / threeShadowMapTypeFor` 及 `DISPLAY_THREE_TONE_MAPPING / DISPLAY_THREE_SHADOW_MAP_TYPE`）。
+- `viewerEngineCore.ts`：删除本地 `THREE_OUTPUT_COLOR_SPACE`，toneMapping / 阴影滤波类型改取映射（此前 `toneMapping` 仍写死 `ACESFilmicToneMapping`、阴影类型内联三元）。
+- `studioDeepEnvironment.ts`（作者 tone-mapping 等价校验）、`studioDeepEnvironmentLights.ts`、`StudioDeepRenderView.ts`（阴影滤波兜底）：移除写死的 `ACESFilmicToneMapping / PCFShadowMap`，改取映射。
+- 新增 `apps/web/src/viewer/displayContractParity.test.ts`（5 例）：Deep 引擎默认算子/环境强度 = 合约；three 枚举由合约派生；动态曝光在 intensity=1 时等于静态曝光 1.05 且在 [min,max] 内；appDefaults 与方向光阴影参数 = 合约；Studio Deep 投影取合约算子且接受 three 默认。
+
+**校验**
+- contracts：`tsc -p .`（dist 已重建）+ vitest 51 文件 / 465 例全绿。
+- deep-engine：`tsc --noEmit` 通过；`vitest run src/webgpu` 1825 过 / 5 败（pbrFrameGraph×2、pbrPipelineSet×2、pbrCameraProjection×1，均为并行会话在途的帧图/接触阴影/投影改动，与显示合约无关，相关源文件未被本任务触碰）。
+- web：`tsc --noEmit -p .` 0 错误；相关测试 34 文件通过；`StudioDeepWebGpuBridge.test.ts` 2 例失败（帧调度计数 `frames.size`、WebGL 交接），与显示合约无关（并行会话的帧调度改动）。
+
+**遗留**
+- Deep 引擎 `bloom/vignette` 能力开关默认仍为 true（仅为分配闸门；Studio 实际启停由 `view.postProcess` 按合约 Bloom=false 驱动）。
+- `deep-aces` 在 three 侧无等价算子，映射回落 ACES。
+- OptimizerPreview（曝光 0.9）/ParametricModelPreview/resourcePreviewRuntime 为独立预览渲染器，未并入合约。
+- 真实 GPU three↔Deep 像素对拍与严格阈值门禁仍未建（沿用前述缺口）。
+
+## 审查修复（2026-10-03，code-review）
+
+- **[Medium] GI 缺省三处不一致**：`viewerEngineEnvironment.ts`、`viewerEngineRig.ts`（原 `?? 0.45`）与 `compileSceneLighting.ts`（原 `?? 1`）现全部取 `DEFAULT_DISPLAY_CONTRACT.environment.globalIlluminationIntensity`（0.32）。three 侧经 `displayContractThree.ts#resolveGlobalIlluminationIntensity`；Deep 发布编译直接读合约（delivery 不引入 three）。
+- **同类硬编码**：`compileSceneLighting.ts` 的 `0.72 + intensity*0.33 / 0.55 / 1.55` 改读合约 `dynamicExposure`（base/intensityScale/min/max）；three 动态曝光抽为 `resolveDynamicExposure`，与编译侧同公式。
+- **`threeToneMappingFor`** 改为按参数 switch 返回；`deep-aces` 无 three 等价算子，明确回落 ACESFilmic（已注释）。
+- **vite.config.ts**：确认全仓无对 `monaco-editor/esm/vs/editor/editor.worker.js`、`.../typescript/ts.worker.js` 裸说明符的引用（`monacoWorkerEnvironment.ts` 用 `new URL` 相对路径），删除这两条 alias（`resolve.alias` 块整体移除）。
+- **回归测试**：`displayContractParity.test.ts` 新增 2 例——缺 `globalIlluminationIntensity` 时 three 解析与 Deep 编译同为合约值（显式值与 0 透传）；动态曝光公式 three 与编译在多档强度/禁用/上限夹紧下一致，且 intensity=1 等于静态曝光。
+- 验证：`tsc --noEmit -p .` 0 错误；parity 7 例、`src/delivery`、`appDefaults`、`viewerEngine*` 共 108 文件通过；唯一失败 `viewerEngineRootMotion.test.ts`（播放头相位）为他会话在途改动，与本修复无关。

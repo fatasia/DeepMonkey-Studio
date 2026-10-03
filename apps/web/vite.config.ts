@@ -28,12 +28,6 @@ export default defineConfig(({ mode }) => {
       // scripts/*.test.mjs 是 node:test 门禁脚本（真实浏览器长跑），不归 vitest 收集。
       exclude: ["**/node_modules/**", "**/dist/**", "scripts/**"],
     },
-    resolve: {
-      alias: {
-        "monaco-editor/esm/vs/editor/editor.worker.js": resolve(projectRoot, "apps/web/node_modules/monaco-editor/esm/vs/editor/editor.worker.js"),
-        "monaco-editor/esm/vs/language/typescript/ts.worker.js": resolve(projectRoot, "apps/web/node_modules/monaco-editor/esm/vs/language/typescript/ts.worker.js")
-      }
-    },
     server: {
       host: value("BIM_STUDIO_WEB_HOST", "0.0.0.0"),
       port: boundedPort(value("BIM_STUDIO_WEB_PORT", "5173"), 5173),

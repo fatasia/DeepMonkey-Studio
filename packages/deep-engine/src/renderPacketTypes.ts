@@ -1,5 +1,6 @@
 import type { DecodedTexture, PreparedTexture } from "./textures/decodedTexture.js";
 import type { ExtendedMaterialParameters } from "./shader/materialParameters.js";
+import type { AdvancedMaterialParameters, NormalizedAdvancedMaterialParameters } from "./shader/materialAdvancedParameters.js";
 import type { LayeredSurfaceOverrides, LayeredSurfaceParameters } from "./shader/materialLayeredSurface.js";
 import type { CapabilityFailure } from "./gltf/capabilityInventory.js";
 import type { DeformationPose, DeformationSnapshot } from "./deformation/types.js";
@@ -45,6 +46,8 @@ export interface PbrMaterial {
   readonly ior?: number;
   /** Browser WebGPU extended lobes; absent preserves the stock PBR path byte-for-byte. */
   readonly extendedParameters?: ExtendedMaterialParameters;
+  /** sheen / iridescence / volume(three r185 语义);要求 advancedMaterials 渲染器能力,缺省保持原路径逐字节不变。 */
+  readonly advancedParameters?: AdvancedMaterialParameters;
   /** Ordered response layers; requires the explicit layeredMaterials WebGPU capability. */
   readonly layered?: LayeredSurfaceOverrides;
   readonly baseColorTexture?: TextureSlot;
@@ -163,6 +166,8 @@ export interface PreparedMaterialTextures {
   readonly emissiveStrength: number;
   /** Present only for supported, textured browser WebGPU extended-material profile. */
   readonly extendedParameters?: ExtendedMaterialParameters;
+  /** 已归一化的 advanced 参数;仅 advancedMaterials 管线变体消费。 */
+  readonly advanced?: NormalizedAdvancedMaterialParameters;
   readonly baseColor?: PreparedTextureSlot;
   readonly metallicRoughness?: PreparedTextureSlot;
   readonly normal?: PreparedTextureSlot & { readonly normalScale: number };

@@ -16,7 +16,7 @@ const server = createStaticServer(dist);
 await new Promise(done => server.listen(0, "127.0.0.1", done));
 const origin = `http://127.0.0.1:${server.address().port}`;
 const browser = await playwright.chromium.launch({ executablePath: "C:/Program Files/Google/Chrome/Application/chrome.exe", headless: true, args: ["--enable-unsafe-webgpu"] });
-const report = { createdAt: new Date().toISOString(), boundary: "Production-built QA primitives, no API/industrial model; local headless Chrome, 1440x900 DPR1, effects/shadows on; diagnostic baseline, not Unity parity or 10k acceptance", cases: [] };
+const report = { createdAt: new Date().toISOString(), boundary: "Production-built QA primitives, no API/industrial model; local headless Chrome, 1920x1080 DPR1, effects/shadows on; diagnostic baseline, not Unity parity or 10k acceptance", cases: [] };
 try {
   const browserCdp = await browser.newBrowserCDPSession();
   const info = await browserCdp.send("SystemInfo.getInfo");
@@ -25,7 +25,7 @@ try {
   for (const objects of [120, 1000]) for (const renderer of ["webgl", "webgpu"]) {
     const entry = { objects, renderer, errors: [], warnings: [] };
     report.cases.push(entry);
-    const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+    const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
     page.on("console", m => { if (m.type() === "error") entry.errors.push(m.text()); else if (m.type() === "warning") entry.warnings.push(m.text()); });
     page.on("pageerror", e => entry.errors.push(e.message));
     const cdp = await page.context().newCDPSession(page);

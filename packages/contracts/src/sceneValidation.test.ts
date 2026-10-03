@@ -47,6 +47,43 @@ describe("scene material validation", () => {
     }, "scene")).toThrow("density");
   });
 
+  describe("fire particle curves, blend and budget", () => {
+    const sceneWithFire = (fire: Record<string, unknown>) => ({
+      id: "scene-fire", name: "消防演练",
+      camera: { position: { x: 1, y: 2, z: 3 }, target: { x: 0, y: 0, z: 0 }, mode: "orbit" },
+      models: [{
+        modelId: "tank-1", name: "储罐", visible: true, opacity: 1, transform,
+        effects: {
+          outline: false, glow: false, xray: false, scanline: false, heatmap: false, dissolve: 0, edgeLight: false,
+          color: "#ff6a22", intensity: 1,
+          fire: { enabled: true, color: "#ff6a22", intensity: 2, height: 3, density: 1, ...fire },
+        },
+      }],
+      primitives: [], measurements: [],
+    });
+
+    it("accepts valid curves, blend mode and particle cap", () => {
+      expect(() => validateScene(sceneWithFire({
+        blend: "alpha", maxParticles: 128,
+        curves: {
+          size: [{ time: 0, value: 0.5 }, { time: 1, value: 2 }],
+          alpha: [{ time: 0, value: 0 }, { time: 0.2, value: 1 }, { time: 1, value: 0 }],
+          color: [{ time: 0, value: 1 }],
+        },
+      }), "scene")).not.toThrow();
+    });
+
+    it.each([
+      ["blend", { blend: "multiply" }],
+      ["maxParticles", { maxParticles: 4096 }],
+      ["value", { curves: { alpha: [{ time: 0, value: 2 }] } }],
+      ["time", { curves: { size: [{ time: 0.5, value: 1 }, { time: 0.5, value: 1 }] } }],
+      ["关键帧数量", { curves: { size: [] } }],
+      ["time", { curves: { color: [{ time: 1.5, value: 1 }] } }],
+    ])("rejects invalid %s", (needle, fire) => {
+      expect(() => validateScene(sceneWithFire(fire), "scene")).toThrow(needle);
+    });
+  });
   it("accepts a persistent UV animation configuration", () => {
     expect(() => validateScene({
       id: "scene-1",

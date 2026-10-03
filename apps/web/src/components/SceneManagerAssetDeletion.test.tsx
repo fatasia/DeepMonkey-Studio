@@ -106,5 +106,6 @@ describe("SceneManager asset deletion impact", () => {
     await captured!.deleteLibraryModel(model);
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("影响范围：共 1 处引用"));
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("models[0].modelId"));
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("仍有 1 处场景引用"));
   });
 });

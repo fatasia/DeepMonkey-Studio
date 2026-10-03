@@ -133,6 +133,8 @@ renderer.setProbeClipmapEnabled(true); // radianceSource === 'scene' 表示真�
 
 `GpuParticleRuntime` + `PbrParticlePass` 提供全 GPU 粒子模拟与 billboard 渲染：alarm-pulse / expanding-ring / flow-line 预设、爆发事件、indirect 绘制（CPU 不回读数量）。产品 PBR 帧循环已接线，实际帧间隔驱动（250ms 上限）。真机证据：`packages/deep-engine/test-output/gpu-particle-render-20260923/report.json`。
 
+`@bim-studio/deep-engine/particles` 暴露 CPU 侧粒子基线：曲线求值与 LUT 烘焙（`createParticleCurve` / `bakeParticleCurveLut` / `sampleParticleCurveLut`）、预算计划（`planParticleBudget`）、透明 back-to-front 计数排序（`sortParticlesBackToFront`）。编辑器火焰图层（`SceneFireEffectState.curves/blend/maxParticles`）已消费这三项，详见 `docs/specs/t20-particle-consumption-20261003.md`。
+
 ### Cluster LOD 间接执行
 
 `ClusterLodIndirectExecutor` 把既有 cluster selection/indirect plan 接入 WebGPU：GPU command upload、resident geometry 校验、render bundle 缓存、`drawIndexedIndirect`。真机像素对拍证据：`packages/deep-engine/test-output/cluster-lod-gpu-20260920-r1/evidence.json`（real GPU draw PASSED）。

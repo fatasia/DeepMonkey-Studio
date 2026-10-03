@@ -213,6 +213,14 @@
       "types": "./dist/lighting/index.d.ts",
       "default": "./dist/lighting/index.js"
     },
+    "./particles": {
+      "development": {
+        "types": "./src/particles/index.ts",
+        "default": "./src/particles/index.ts"
+      },
+      "types": "./dist/particles/index.d.ts",
+      "default": "./dist/particles/index.js"
+    },
     "./postprocess": {
       "development": {
         "types": "./src/postprocess/index.ts",

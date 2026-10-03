@@ -32,6 +32,7 @@ import { failWithResourceCleanup, runResourceCleanup } from "./resourceCleanup.j
 import { PacketDeformationState } from "./packetDeformationState.js";
 import { PacketValidatedPublication } from "./packetValidatedPublication.js";
 import { compileMaterialEffectLedger, type MaterialEffectLedgerSnapshot } from "./materialEffectLedger.js";
+import { drawOutlineMask, hasOutlinedInstances } from "./packetOutline.js";
 import { PacketTextureArrayConsumer, type PacketTextureArrayStage } from "./packetTextureArrayConsumer.js";
 const cancelled = (): DOMException => new DOMException("Packet update cancelled or superseded.", "AbortError");
 type TextureArrayPacketStage = StagedPacketBuffers & { readonly arrayStage?: PacketTextureArrayStage };
@@ -355,6 +356,15 @@ export class PacketBuffers {
     if (this.disposed) throw new Error("Packet resources are disposed.");
     return drawPacketBatches(pass, pipelines, phase, this.batches, this.geometries, this.culling, lodOverride !== undefined ? lodOverride ?? undefined : phase === "shadow" ? this.shadowLod?.cascade(shadowCascade) : this.lod, view, useIndirect, shadowCascade, directionalOnly, authorShadow,
       this.deformation.drawContext(this.batches, this.culling));
+  }
+
+  /** True when any resident instance carries the object-level outline flag (no allocation, no GPU work). */
+  hasOutline(): boolean { return !this.disposed && hasOutlinedInstances(this.batches); }
+
+  /** Draws outline-flagged instances into the outline mask pass; see drawOutlineMask for unsupported batches. */
+  drawOutline(pass: GPURenderPassEncoder): { drawCalls: number; skippedBatches: number } {
+    if (this.disposed) throw new Error("Packet resources are disposed.");
+    return drawOutlineMask(pass, this.batches, this.geometries, this.lod);
   }
 
   dispose(): void {

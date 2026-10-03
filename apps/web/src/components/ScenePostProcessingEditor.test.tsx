@@ -42,6 +42,7 @@ describe("ScenePostProcessingEditor", () => {
     expect(html).toContain("雾密度");
     expect(html).toContain("高度尺度");
     expect(html).toContain("各向异性");
+    expect(html).toContain("散射反照率");
     expect(html).toContain("Deep Native 使用受限 8 步积分");
   });
 });

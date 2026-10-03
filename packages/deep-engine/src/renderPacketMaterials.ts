@@ -11,6 +11,7 @@ import { finiteFloat32, unitFloat } from "./renderPacketValidation.js";
 import { packMaterialIor, STOCK_MATERIAL_INSTANCE_OPTIONS } from "./materialInstanceAbi.js";
 import { normalizeExtendedMaterialParameters } from "./shader/materialParameters.js";
 import { normalizeLayeredSurfaceParameters } from "./shader/materialLayeredSurface.js";
+import { hasAdvancedMaterialFeatures, normalizeAdvancedMaterialParameters } from "./shader/materialAdvancedParameters.js";
 
 /** HDR 上限对应 8 EV 发光增益；避免任意作者数值污染 rgba16float 中间目标。 */
 export const MAX_EMISSIVE_STRENGTH = 256;
@@ -45,11 +46,15 @@ export function prepareMaterialTextures(
     } : undefined;
     const extendedParameters = layered ? layerParameters!.base : (material.extendedParameters === undefined ? undefined
       : normalizeExtendedMaterialParameters(material.extendedParameters));
-    if (extendedParameters && !layered && !baseColor && !metallicRoughness && !normal && !occlusion && !emissive) {
-      throw new Error("Extended material lobes require a textured browser WebGPU material profile.");
-    }
-    result.set(material.id, baseColor || metallicRoughness || normal || occlusion || emissive || layered ? {
+    const advancedNormalized = material.advancedParameters === undefined ? undefined
+      : normalizeAdvancedMaterialParameters(material.advancedParameters);
+    const advanced = advancedNormalized && hasAdvancedMaterialFeatures(advancedNormalized) ? advancedNormalized : undefined;
+    // 无纹理的扩展/advanced 材质由 advancedMaterials 变体用中性纹理承载;未启用变体时在绑定阶段 fail-closed。
+    const untexturedLobes = (extendedParameters !== undefined || advanced !== undefined) && !layered
+      && !baseColor && !metallicRoughness && !normal && !occlusion && !emissive;
+    result.set(material.id, baseColor || metallicRoughness || normal || occlusion || emissive || layered || untexturedLobes ? {
       ...(layered ? { layered } : {}),
+      ...(advanced ? { advanced } : {}),
       emissiveStrength: Math.fround(emissiveStrength),
       ...(extendedParameters ? { extendedParameters } : {}),
       ...(baseColor ? { baseColor } : {}),
@@ -64,6 +69,9 @@ export function prepareMaterialTextures(
 
 function validateMaterial(material: PbrMaterial): number {
   packMaterialIor(material.ior, STOCK_MATERIAL_INSTANCE_OPTIONS);
+  if (material.advancedParameters !== undefined && material.shadingModel === "unlit") {
+    throw new Error("Unlit materials cannot consume PBR extension lobes.");
+  }
   if (material.extendedParameters !== undefined) {
     const extended = normalizeExtendedMaterialParameters(material.extendedParameters);
     if (Math.fround(material.ior ?? 1.5) !== extended.ior) {

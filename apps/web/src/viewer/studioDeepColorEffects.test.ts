@@ -25,10 +25,14 @@ describe("Studio author color effects", () => {
   it("compiles author volumetric fog into a frozen Deep profile", () => {
     const result = readStudioDeepPostProcess({ ...state, volumetricFog: true,
       volumetricFogSteps: 56, volumetricFogDensity: 0.02, volumetricFogHeight: 32,
-      volumetricFogAnisotropy: -0.2 }, true);
+      volumetricFogAnisotropy: -0.2, volumetricFogAlbedo: 0.4 }, true);
     expect(result).toMatchObject({ volumetricFog: true,
       volumetricFogProfile: { steps: 56,
-        medium: { baseExtinction: 0.02, scaleHeight: 32, anisotropy: -0.2 } } });
+        medium: { baseExtinction: 0.02, scaleHeight: 32, anisotropy: -0.2, albedo: 0.4 } } });
+    expect(readStudioDeepPostProcess({ ...state, volumetricFog: true }, true).volumetricFogProfile)
+      .toMatchObject({ medium: { albedo: 0.82 } });
+    expect(readStudioDeepPostProcess({ ...state, volumetricFog: true, volumetricFogAlbedo: 0 }, true).volumetricFogProfile)
+      .toMatchObject({ medium: { albedo: 0 } });
     expect(Object.isFrozen(result.volumetricFogProfile)).toBe(true);
     expect(Object.isFrozen(result.volumetricFogProfile?.medium)).toBe(true);
   });

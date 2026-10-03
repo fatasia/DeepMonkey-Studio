@@ -138,6 +138,9 @@ export type { BrightnessAccumulator, ConvergenceEvaluation, PathTraceBatchObserv
 export { sampleBrightness } from "./rayTracing/pathTraceReferenceKernel.js";
 export { createPathTraceCpuKernel } from "./rayTracing/pathTraceCpuKernel.js";
 export { PathTraceCpuRender } from "./rayTracing/pathTraceCpuRender.js";
+export { PathTraceCpuBand, partitionPathTraceRows, pathTraceBandRowCount,
+  scatterPathTraceBandRows } from "./rayTracing/pathTraceCpuBand.js";
+export type { PathTraceCpuBandOptions, PathTraceRowRange } from "./rayTracing/pathTraceCpuBand.js";
 export { pathTraceStudioEnvironment } from "./rayTracing/pathTraceStudioEnvironment.js";
 export { encodePbrDisplayColor } from "./webgpu/pbrDisplayColor.js";
 export { createPathTraceRenderPacketKernel } from "./rayTracing/pathTraceRenderPacketKernel.js";

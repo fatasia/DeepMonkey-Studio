@@ -170,6 +170,9 @@
 .dashboard-workspace .dashboard-runtime-status output { color: var(--text); }
 .dashboard-workspace .dashboard-artboard { box-shadow: var(--shadow-float); }
 .dashboard-canvas-toolbar { flex-wrap: wrap; gap: 4px 10px; padding-block: 4px; }
+.dashboard-workspace .dashboard-canvas-toolbar { padding-left: 26px; }
+/* 左面板折叠按钮锚在面板边缘 ±14px：展开时让出 26px，折叠后按钮移到 6px 处，需让出 44px，避免遮挡尺寸文字。 */
+.dashboard-workspace.left-panel-collapsed .dashboard-canvas-toolbar { padding-left: 44px; }
 .dashboard-design-surface { grid-template-rows: auto minmax(0, 1fr); }
 .dashboard-canvas-toolbar .dashboard-layout-tools { flex: 1 1 auto; min-width: 0; flex-wrap: wrap; }
 .dashboard-page-tabs button,

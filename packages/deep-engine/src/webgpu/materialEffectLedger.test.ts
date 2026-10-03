@@ -47,4 +47,19 @@ describe("material effect ledger", () => {
       prepared.batches)).toThrow(/duplicate instance identity|missing consumed instance/);
     expect(() => compileMaterialEffectLedger({ ...source, instances: [] }, prepared.batches)).toThrow(/unknown consumed instance/);
   });
+
+  it("accepts object-level outline (surface flag bit 256) instead of crashing the packet", () => {
+    const source = packet(), outlined = { ...source, instances: [{ ...source.instances[0]!, outline: true }] };
+    const prepared = prepareRenderPacket(outlined);
+    expect(prepared.batches[0]!.data[31]! % 1024 & 256).toBe(256);
+    const ledger = compileMaterialEffectLedger(outlined, prepared.batches);
+    expect(ledger.entries[0]!.authored.surfaceFlags).toBe(181 + 256);
+    expect(ledger.entries[0]!.consumed.surfaceFlags).toBe(181 + 256);
+    // A drifted packed bit is still rejected: the outline flag is reconciled, not ignored.
+    const dropped = new Float32Array(prepared.batches[0]!.data); dropped[31] -= 256;
+    expect(() => compileMaterialEffectLedger(outlined, [{ ...prepared.batches[0]!, data: dropped }])).toThrow(/surfaceFlags/);
+    const spurious = prepareRenderPacket(source);
+    const forged = new Float32Array(spurious.batches[0]!.data); forged[31] += 256;
+    expect(() => compileMaterialEffectLedger(source, [{ ...spurious.batches[0]!, data: forged }])).toThrow(/surfaceFlags/);
+  });
 });

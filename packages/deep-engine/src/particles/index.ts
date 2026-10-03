@@ -24,3 +24,8 @@ export type { ParticleCollisionPlane, ParticleEvent, ParticleEventKind, Particle
 export { simulateSmokeDiffusion, smokeAnalyticField, smokeDiffusionConvergence } from "./smokeDiffusion.js";
 export type { SmokeBoundary, SmokeConvergenceRow, SmokeDiffusionOptions,
   SmokeDiffusionResult } from "./smokeDiffusion.js";
+
+export { bakeParticleCurveLut, PARTICLE_CURVE_LUT_DEFAULT_RESOLUTION, sampleParticleCurveLut } from "./particleCurveLut.js";
+
+export { createParticleSortScratch, PARTICLE_SORT_DEFAULT_BINS, sortParticlesBackToFront } from "./particleSort.js";
+export type { ParticleSortScratch } from "./particleSort.js";

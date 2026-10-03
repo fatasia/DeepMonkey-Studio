@@ -1,4 +1,5 @@
 import type { SceneFireEffectState, SceneModelEffectsState } from "@bim-studio/contracts";
+import { FIRE_MAX_PARTICLES_RANGE, sanitizeFireCurves } from "./modelFireParticles";
 
 export const DEFAULT_FIRE_EFFECT: SceneFireEffectState = {
   enabled: false,
@@ -13,12 +14,18 @@ export type ModelEffectsPatch = Omit<Partial<SceneModelEffectsState>, "fire"> & 
 
 export function normalizeFireEffect(value: FireEffectPatch | undefined): SceneFireEffectState {
   const color = value?.color;
+  const curves = sanitizeFireCurves(value?.curves);
   return {
     enabled: value?.enabled === true,
     color: isHexColor(color) ? color : DEFAULT_FIRE_EFFECT.color,
     intensity: clamp(value?.intensity, 0, 5, DEFAULT_FIRE_EFFECT.intensity),
     height: clamp(value?.height, 0.1, 50, DEFAULT_FIRE_EFFECT.height),
     density: clamp(value?.density, 0.25, 2, DEFAULT_FIRE_EFFECT.density),
+    ...(curves ? { curves } : {}),
+    ...(value?.blend === "alpha" || value?.blend === "additive" ? { blend: value.blend } : {}),
+    ...(typeof value?.maxParticles === "number" && Number.isFinite(value.maxParticles)
+      ? { maxParticles: Math.round(clamp(value.maxParticles, 16, FIRE_MAX_PARTICLES_RANGE.max, FIRE_MAX_PARTICLES_RANGE.max)) }
+      : {}),
   };
 }
 

@@ -257,6 +257,24 @@ function validateMaterial(value: unknown, path: string): void {
     expectNumber(value, valuePath);
     if (typeof value !== "number" || value < 1 || !Number.isFinite(Math.fround(value))) throw new Error(`${valuePath} must be a finite float32 >= 1`);
   }, path);
+  for (const [key, minimum, maximum] of [
+    ["clearcoat", 0, 1], ["clearcoatRoughness", 0, 1], ["sheen", 0, 1], ["sheenRoughness", 0, 1],
+    ["iridescence", 0, 1], ["iridescenceIOR", 1, 3], ["iridescenceThicknessMax", 0, 10000],
+    ["transmission", 0, 1], ["thickness", 0, 1e6],
+  ] as const) optional(object, key, (value, valuePath) => {
+    expectNumber(value, valuePath);
+    if (typeof value !== "number" || !Number.isFinite(value) || value < minimum || value > maximum) {
+      throw new Error(`${valuePath} 必须是 ${minimum}–${maximum} 之间的有限数值`);
+    }
+  }, path);
+  optional(object, "attenuationDistance", (value, valuePath) => {
+    expectNumber(value, valuePath);
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) throw new Error(`${valuePath} 必须是大于 0 的有限数值(缺省表示不衰减)`);
+  }, path);
+  for (const key of ["sheenColor", "attenuationColor"] as const) optional(object, key, (value, valuePath) => {
+    expectString(value, valuePath);
+    if (typeof value === "string" && !/^#[0-9a-f]{6}$/i.test(value)) throw new Error(`${valuePath} 必须是 #RRGGBB`);
+  }, path);
   for (const key of ["wireframe", "doubleSided", "sourceColor", "sourceEmissive"] as const) optional(object, key, expectBoolean, path);
   optional(object, "uvAnimation", (animation, animationPath) => {
     const animationObject = expectObject(animation, animationPath);
@@ -294,7 +312,34 @@ function validateModelEffects(value: unknown, path: string): void {
     validateNumberRange(fireObject.intensity, `${firePath}.intensity`, 0, 5);
     validateNumberRange(fireObject.height, `${firePath}.height`, 0.1, 50);
     validateNumberRange(fireObject.density, `${firePath}.density`, 0.25, 2);
+    optionalLiteral(fireObject, "blend", ["additive", "alpha"], firePath);
+    optional(fireObject, "maxParticles", (value, valuePath) => {
+      expectNumber(value, valuePath);
+      validateNumberRange(value, valuePath, 16, 512);
+    }, firePath);
+    optional(fireObject, "curves", (curves, curvesPath) => {
+      const curvesObject = expectObject(curves, curvesPath);
+      for (const [key, maximum] of [["size", 4], ["alpha", 1], ["color", 1]] as const) {
+        optional(curvesObject, key, (keys, keysPath) => validateFireCurve(keys, keysPath, maximum), curvesPath);
+      }
+    }, firePath);
   }, path);
+}
+
+function validateFireCurve(keys: unknown, path: string, maximum: number): void {
+  if (Array.isArray(keys) && (keys.length < 1 || keys.length > 16)) invalid(path, "关键帧数量必须在 1–16 之间");
+  let previous = -1;
+  expectArray(keys, path, (frame, framePath) => {
+    const object = expectObject(frame, framePath);
+    required(object, "time", expectNumber, framePath);
+    required(object, "value", expectNumber, framePath);
+    validateNumberRange(object.time, `${framePath}.time`, 0, 1);
+    validateNumberRange(object.value, `${framePath}.value`, 0, maximum);
+    if (typeof object.time === "number") {
+      if (object.time <= previous) invalid(`${framePath}.time`, "必须严格递增");
+      previous = object.time;
+    }
+  });
 }
 
 function validateNumberRange(value: unknown, path: string, minimum: number, maximum: number): void {
@@ -626,7 +671,7 @@ function validatePostProcessing(value: unknown, path: string): void {
   for (const key of ["ssaoIntensity", "bloomStrength", "bloomThreshold"] as const) required(object, key, expectNumber, path);
   for (const key of ["fxaa", "gtao", "screenSpaceReflection", "volumetricFog", "volumetricGodRays", "outline", "depthOfField", "vignette", "filmGrain", "afterimage", "colorGrading"] as const) optional(object, key, expectBoolean, path);
   optionalLiteral(object, "qualityProfile", ["performance", "balanced", "quality", "ultra"], path);
-  for (const key of ["gtaoIntensity", "ssrSteps", "ssrThickness", "ssrMaxDistance", "volumetricFogSteps", "volumetricFogDensity", "volumetricFogHeight", "volumetricFogAnisotropy", "volumetricGodRaysStrength", "outlineStrength", "focusDistance", "aperture", "maxBlur", "vignetteDarkness", "filmGrainIntensity", "afterimageDamp", "hue", "saturation", "brightness", "contrast", "temperature", "tint"] as const) {
+  for (const key of ["gtaoIntensity", "ssrSteps", "ssrThickness", "ssrMaxDistance", "volumetricFogSteps", "volumetricFogDensity", "volumetricFogHeight", "volumetricFogAnisotropy", "volumetricFogAlbedo", "volumetricGodRaysStrength", "outlineStrength", "focusDistance", "aperture", "maxBlur", "vignetteDarkness", "filmGrainIntensity", "afterimageDamp", "hue", "saturation", "brightness", "contrast", "temperature", "tint"] as const) {
     optional(object, key, expectNumber, path);
   }
   if (typeof object.volumetricGodRaysStrength === "number" && (object.volumetricGodRaysStrength < 0 || object.volumetricGodRaysStrength > 8))
@@ -639,6 +684,7 @@ function validatePostProcessing(value: unknown, path: string): void {
       || object.volumetricFogSteps < 32 || object.volumetricFogSteps > 64)) invalid(`${path}.volumetricFogSteps`, "必须为 [32,64] 内的整数");
   if (typeof object.volumetricFogDensity === "number" && (object.volumetricFogDensity < 0 || object.volumetricFogDensity > 100)) invalid(`${path}.volumetricFogDensity`, "必须在 [0,100] 内");
   if (typeof object.volumetricFogHeight === "number" && object.volumetricFogHeight <= 0) invalid(`${path}.volumetricFogHeight`, "必须大于 0");
+  if (typeof object.volumetricFogAlbedo === "number" && (object.volumetricFogAlbedo < 0 || object.volumetricFogAlbedo > 1)) invalid(`${path}.volumetricFogAlbedo`, "必须在 [0,1] 内");
   if (typeof object.volumetricFogAnisotropy === "number" && (object.volumetricFogAnisotropy < -0.99 || object.volumetricFogAnisotropy > 0.99)) invalid(`${path}.volumetricFogAnisotropy`, "必须在 [-0.99,0.99] 内");
 }
 

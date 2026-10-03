@@ -18,9 +18,9 @@ import { updateAuthorLodSelection } from "./authorLodSelection";
 import { getPresentationPerformance } from "./viewerPresentationPerformance";
 import type { AnimationContext } from "./viewerEngineAnimation";
 import {
-  getModelRootMotionState, setModelAnimationEventActions, setModelAnimationEventSink,
+  getModelRootMotionAvailability, getModelRootMotionState, resetModelRootMotionPose, setModelAnimationEventActions, setModelAnimationEventSink,
   setModelRootMotion, snapshotModelAnimationEventTrace, updateModelAnimationConsumption,
-  type ModelAnimationEventActionDef, type ModelAnimationEventActionSink, type ModelRootMotionOptions,
+  type ModelAnimationEventActionDef, type ModelAnimationEventActionSink, type ModelRootMotionAvailability, type ModelRootMotionOptions,
   type ModelRootMotionSnapshot,
 } from "./viewerEngineRootMotion";
 
@@ -50,6 +50,16 @@ export abstract class ViewerEngineRuntime extends ViewerEngineRuntimeSupport {
   /** 根运动消费状态快照(累计应用位移/镜像播放头/轨道解析结果)。 */
   getModelRootMotionState(id: string): ModelRootMotionSnapshot {
     return getModelRootMotionState(this as unknown as AnimationContext, id);
+  }
+
+  /** 活动 clip 的根运动可用性探测(UI 开关可用性/禁用原因)。 */
+  getModelRootMotionAvailability(id: string): ModelRootMotionAvailability {
+    return getModelRootMotionAvailability(this as unknown as AnimationContext, id);
+  }
+
+  /** 实例 transform 复位到开启根运动时的基线(预览后回原位);无基线返回 false。 */
+  resetModelRootMotion(id: string): boolean {
+    return resetModelRootMotionPose(this as unknown as AnimationContext, id);
   }
 
   /** 整组替换模型的事件动作定义;fail-closed 校验,非法输入整体拒绝并保留原注册。 */

@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { DEFAULT_DISPLAY_CONTRACT, type ScenePostProcessingState } from "@bim-studio/contracts";
 import type { PbrEnvironmentSource, PbrRendererOptions, RenderView } from "@bim-studio/deep-engine/webgpu";
 import { resolvePbrEnvironmentIntensity } from "@bim-studio/deep-engine/webgpu";
+import { DISPLAY_THREE_TONE_MAPPING } from "./displayContractThree";
 import { projectStudioDeepLights, type StudioDeepEnvironmentIssue } from "./studioDeepEnvironmentLights";
 
 export interface StudioDeepEnvironmentInput {
@@ -36,7 +37,7 @@ export function projectStudioDeepEnvironment(input: StudioDeepEnvironmentInput):
     return values;
   };
   if (!Number.isFinite(input.exposure) || input.exposure < 0) throw new Error("作者曝光必须为有限非负数。");
-  if (input.toneMapping !== THREE.ACESFilmicToneMapping) issue("tone-mapping", "renderer.toneMapping",
+  if (input.toneMapping !== DISPLAY_THREE_TONE_MAPPING) issue("tone-mapping", "renderer.toneMapping",
     "Deep 的 Three ACES 路径只对应作者 ACESFilmicToneMapping。");
   const environmentEnabled = Boolean(scene.environment);
   const environmentIntensity = resolvePbrEnvironmentIntensity(scene.environmentIntensity);

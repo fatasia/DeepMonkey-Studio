@@ -170,6 +170,8 @@ export interface AiAssistantResponse {
     reasoningEffortReported?: string;
   servedBy?: "primary" | "fallback";
   failoverCategory?: string;
+  /** 「自动」模型路由回执：仅当用户选择自动时出现，说明实际选用的模型与原因。 */
+  route?: AiAssistantRoute;
   };
   reliability?: AiAssistantReliability;
 }
@@ -254,8 +256,33 @@ export interface AiAssistantReliability {
   failoverReason?: string;
 }
 
+/** 自动路由回执：reason 为稳定码（前端本地化），fellBack 表示小模型失败后已改用强模型。 */
+export interface AiAssistantRoute {
+  mode: "auto";
+  tier: "fast" | "strong";
+  model: string;
+  reason: string;
+  fellBack?: boolean;
+}
+
+/** 上下文预算裁剪回执：逐来源说明被压缩/缩减/省略了什么。 */
+export interface AiContextBudgetReport {
+  budgetChars: number;
+  originalChars: number;
+  usedChars: number;
+  trimmed: Array<{
+    id: string;
+    action: "compacted" | "shrunk" | "omitted";
+    fromChars: number;
+    toChars: number;
+    reason: string;
+  }>;
+}
+
 export interface AiContextDelivery {
   unit: "utf16";
+  /** 统一上下文预算器的裁剪回执；缺省表示未触发任何裁剪。 */
+  budget?: AiContextBudgetReport;
   preparedChars: number;
   sentChars: number;
   sources: Array<{
@@ -284,6 +311,11 @@ export interface AiRequestTelemetryRecord {
   latencyMs: number;
   inputTokens?: number;
   outputTokens?: number;
+  /** provider 回执的缓存命中输入 token（未回执则缺省，不推断）。 */
+  cachedInputTokens?: number;
+  /** 发送给模型的上下文字符数（预算器之后）。 */
+  contextChars?: number;
+  route?: AiAssistantRoute;
   errorCategory?: AiFailureCategory;
   errorMessage?: string;
 }
@@ -390,3 +422,5 @@ export * from "./textOrder.js";
 export * from "./rendererCapabilityManifest.js";
 export * from "./eventRecording.js";
 export * from "./processAdmission.js";
+export * from "./worldApi.js";
+export * from "./worldApiValidation.js";

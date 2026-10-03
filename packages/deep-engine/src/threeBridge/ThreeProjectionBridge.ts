@@ -6,7 +6,7 @@ import { authorPoseLod, type AuthorPoseLod } from "./authorPoseLod.js";
 import type { RenderView } from "../webgpu/pbrRenderer.js";
 import { ThreeAuthorLodProjector } from "./authorLod.js";
 import { materialVisible, projectMaterial, type ProjectedMaterial } from "./materials.js";
-import { inspectObject, objectTransforms } from "./objects.js";
+import { inspectObject, objectOutlined, objectTransforms } from "./objects.js";
 import { ThreeTextureProjector } from "./textures.js";
 import { ProjectionFailure, invalid, limit, unsupported, type IncrementalProjectionResult, type ProjectionIssue, type ProjectionResult, type ThreeObjectSource, type ThreeProjectionHooks } from "./types.js";
 import type { ThreeProjectionDirtyPlan } from "./SceneChangesetProjection.js";
@@ -35,15 +35,17 @@ export class ThreeProjectionBridge {
   private readonly textureProjector = new ThreeTextureProjector(source => this.id(source, "texture"));
   private readonly deformationProjector = new ThreeDeformationProjector();
   private readonly authorDeformation: boolean;
+  private readonly advancedMaterials: boolean;
   private readonly authorLod: boolean;
   private readonly lodProjector = new ThreeAuthorLodProjector();
   private readonly authorTransformResolver: AuthorTransformResolver | undefined;
 
-  constructor(options: { readonly hooks: ThreeProjectionHooks; readonly capabilities?: { readonly authorDeformation?: boolean; readonly authorLod?: boolean }; readonly authorTransformResolver?: AuthorTransformResolver }) {
+  constructor(options: { readonly hooks: ThreeProjectionHooks; readonly capabilities?: { readonly authorDeformation?: boolean; readonly authorLod?: boolean; readonly advancedMaterials?: boolean }; readonly authorTransformResolver?: AuthorTransformResolver }) {
     const keys: readonly (keyof ThreeProjectionHooks)[] = ["objectBeforeRender", "objectAfterRender", "objectBeforeShadow", "objectAfterShadow", "materialBeforeRender", "materialBeforeCompile", "materialProgramCacheKey"];
     for (const key of keys) if (typeof options.hooks[key] !== "function") throw new Error("Three projection requires default prototype hooks.");
     this.hooks = { ...options.hooks };
     this.authorDeformation = options.capabilities?.authorDeformation === true;
+    this.advancedMaterials = options.capabilities?.advancedMaterials === true;
     this.authorLod = options.capabilities?.authorLod === true;
     this.authorTransformResolver = options.authorTransformResolver;
   }
@@ -288,12 +290,13 @@ export class ThreeProjectionBridge {
     const transforms = resolvedTransform === undefined ? objectTransforms(object) : [Float64Array.from(resolvedTransform)];
     if (resolvedTransform !== undefined && resolvedTransform.length !== 16) invalid("author transform");
     if (!transforms.length) return;
+    const outline = objectOutlined(object);
     for (const slice of view.slices) {
       if (!materialVisible(slice.material)) continue;
       if (instances.length + transforms.length > 16_384) limit("instances");
       const materialId = this.id(slice.material as object, "material");
       if (!materials.has(materialId)) {
-        const projected = projectMaterial(slice.material, materialId, this.hooks, this.textureProjector);
+        const projected = projectMaterial(slice.material, materialId, this.hooks, this.textureProjector, this.advancedMaterials);
         materials.set(materialId, projected);
         for (const texture of projected.textures) textures.set(texture.id, texture);
       }
@@ -316,6 +319,7 @@ export class ThreeProjectionBridge {
       const pose = this.authorDeformation ? this.deformationProjector.project(object, objectId, geometries.get(geometryId)!, tier) : undefined;
       transforms.forEach((transform, instance) => instances.push({ id: `${objectId}/${slice.slot}/${instance}`, geometry: geometryId, material: materialId, transform,
         ...(pose ? { pose } : {}),
+        ...(outline ? { outline: true } : {}),
         ...(source.castShadow === true ? {} : { castShadow: false }),
         ...(source.receiveShadow === true ? {} : { receiveShadow: false }) }));
     }

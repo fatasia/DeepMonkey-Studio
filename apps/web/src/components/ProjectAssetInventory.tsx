@@ -23,6 +23,7 @@ export interface AssetRevisionInlineNoticeProps {
   disabled: boolean;
   notice?: { kind: "success" | "error" | "info"; message: string } | undefined;
   onUpdate: () => void;
+  onKeep?: (() => void) | undefined;
 }
 
 export function AssetRevisionInlineNotice({
@@ -34,6 +35,7 @@ export function AssetRevisionInlineNotice({
   disabled,
   notice,
   onUpdate,
+  onKeep,
 }: AssetRevisionInlineNoticeProps) {
   if (staleCount === 0 && !notice) return null;
   const kind = notice?.kind ?? "warning";
@@ -44,7 +46,9 @@ export function AssetRevisionInlineNotice({
         <strong>
           {notice?.kind === "success"
             ? tr(locale, "修订已更新", "Revision updated")
-            : tr(locale, "资产修订陈旧", "Asset revision is stale")}
+            : notice?.kind === "info"
+              ? tr(locale, "正在更新修订", "Updating revision")
+              : tr(locale, "资产修订陈旧", "Asset revision is stale")}
         </strong>
         <small title={notice?.message}>
           {notice?.message ?? tr(
@@ -55,10 +59,19 @@ export function AssetRevisionInlineNotice({
         </small>
       </span>
       {staleCount > 0 && (
-        <button type="button" disabled={disabled} onClick={onUpdate}>
-          <RefreshCw className={busy ? "spin" : ""} size={13} />
-          {notice?.kind === "error" ? tr(locale, "重试更新", "Retry") : tr(locale, "一键更新", "Update")}
-        </button>
+        <div className="asset-revision-actions">
+          <button type="button" disabled={disabled} aria-busy={busy} onClick={onUpdate}>
+            <RefreshCw className={busy ? "spin" : ""} size={13} />
+            {busy
+              ? tr(locale, "更新中…", "Updating…")
+              : notice?.kind === "error" ? tr(locale, "重试更新", "Retry") : tr(locale, "更新到最新版本", "Update to latest")}
+          </button>
+          {onKeep && (
+            <button type="button" className="keep" disabled={busy} onClick={onKeep}>
+              {tr(locale, "保持当前", "Keep current")}
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -109,6 +122,7 @@ export function ProjectAssetInventory({ controller }: { controller: SceneManager
             <div className="model-library-state">
               <span className={`model-status model-status-${model.status}`}>{statusLabel(model.status, locale)}</span>
               <ResourceUsageBadge locale={locale} resource={resourceGovernance.resources.find((resource) => resource.kind === "model" && resource.id === model.id)} />
+              {staleReports.length > 0 && <span className="asset-stale-badge" title={tr(locale, `场景引用 r${oldestSceneRevision}，最新 r${latestRevision}`, `Scenes reference r${oldestSceneRevision}, latest r${latestRevision}`)}><AlertTriangle size={11} />{tr(locale, "已陈旧", "Stale")}</span>}
               {model.status === "processing" && <progress max={100} value={model.progress} aria-label={`${tr(locale, "转换进度", "Conversion progress")} ${model.progress}%`} />}
             </div>
             <AssetRevisionInlineNotice
@@ -120,6 +134,7 @@ export function ProjectAssetInventory({ controller }: { controller: SceneManager
               disabled={modelLibraryBusy || revisionBusy || model.status !== "ready"}
               notice={revisionNotice ? { kind: revisionNotice.kind, message: revisionNotice.message } : undefined}
               onUpdate={() => void controller.updateAssetRevision(model)}
+              onKeep={() => controller.keepAssetRevision(model)}
             />
             <div className="model-asset-actions" role="group" aria-label={tr(locale, `${model.name} 操作`, `Actions for ${model.name}`)}>
             <RobotAssetMediaActions locale={locale} model={model} disabled={modelLibraryBusy} screenshot={false} compact />
