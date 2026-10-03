@@ -278,7 +278,8 @@
     "test:soft-raster-gpu": "node scripts/softRasterizeGpuTest.mjs",
     "test:probe-occlusion-gpu": "node scripts/probeOcclusionGpuTest.mjs",
     "test:probe-radiance-gpu": "node scripts/probeRadianceGpuTest.mjs",
-    "test:probe-grid-bake-gpu": "node scripts/probeGridBakeGpuTest.mjs"
+    "test:probe-grid-bake-gpu": "node scripts/probeGridBakeGpuTest.mjs",
+    "test:shadow-ray-gpu": "node scripts/shadowRayGpuTest.mjs"
   },
   "devDependencies": {
     "@webgpu/types": "0.1.72",

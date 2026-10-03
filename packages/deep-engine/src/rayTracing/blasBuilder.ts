@@ -7,6 +7,8 @@
  * == SAH 设计（binned SAH） ==
  * 每内部节点在 3 轴 × binCount 个均匀质心 bin 上做左/右两遍扫掠，取
  * cost = leftArea×leftCount + rightArea×rightCount 最小的（轴,bin 边界）；
+ * cost ≥ 叶代价（count×节点面积）且 count ≤ 8×maxLeafSize 即截叶（pbrt 风格 cost-leaf，
+ * 防偏斜剥离复合；超限强制分裂保叶体积有界）；
  * 空侧分裂与全轴退化（质心重合）拒分裂回退中位（buildBvh 同款 clamp）。叶终止仅由
  * maxLeafSize/深度/退化决定（Embree 风格：SAH 只选平面，不做代价截叶）。
  * 确定性：轴/平面平局取先者（x<y<z、低 entry 优先，严格 < 更新）；划分用与 buildBvh
@@ -106,18 +108,23 @@ export function buildSahBvh(input: BvhBuildInput, options: SahBvhOptions = {}): 
     const split = bestSplit(first, count, centroids, bounds, order, binCount, binMin, binMax, binCounts,
       sweepMin, sweepMax, sweepCount, minX, minY, minZ, maxX, maxY, maxZ);
     let leftCount: number;
-    if (split === undefined) {
-      // 全轴质心退化（重合/点状）：仍按最长轴中位回退（buildBvh 同款 clamp），叶体积有界。
-      if (count > maxLeafSize) {
-        leftCount = medianSplit(first, count, order, centroids, minX, minY, minZ, maxX, maxY, maxZ);
-      } else { leafCount++; leafAreaCost += area * count; return nodeIndex; }
+    // 深度预算尾段（最后 8 层）切中位细炼：SAH 剥离合法但会复合吃穿预算产生巨叶，
+    // 尾段中位保证收尾（buildBvh 同款）且总深度恒 ≤ maxDepth。
+    const nearDepthCap = depth >= maxDepth - 8;
+    // cost-leaf（pbrt 风格）：最优分裂不划算即截叶，防偏斜剥离复合成毛毛虫树；
+    // count 超 8×maxLeafSize 时仍强制分裂——重叠几何上叶体积必须有界。
+    if (split !== undefined && split.cost >= count * area && count <= maxLeafSize * 8 && !nearDepthCap) {
+      leafCount++; leafAreaCost += area * count;
+      return nodeIndex;
+    }
+    if (split === undefined || nearDepthCap) {
+      // 全轴质心退化/尾段：按最长轴中位回退（buildBvh 同款 clamp），叶体积有界。
+      leftCount = medianSplit(first, count, order, centroids, minX, minY, minZ, maxX, maxY, maxZ);
     } else {
-      // 叶终止仅由 maxLeafSize/深度/退化决定（Embree 风格）：SAH 只选最优平面，不提前截叶——
-      // 重叠几何上"面积×计数"指标与代价模型分歧，提前截叶会让叶体积不可预测。
       leftCount = partition(first, count, order, centroids, split.axis, split.plane);
-      // 仅空侧回退（划分粘边/质心重合）：保证递归推进且确定性。SAH 的合法偏斜剥离
-      // （隔离边界小簇）不再拦——毛毛虫深度由 maxDepth 护栏兜底（24 < 栈容量 32）。
-      if (leftCount === 0 || leftCount === count) {
+      // 空侧/极端偏斜回退：空侧（粘边/质心重合）与 1..3 三角剥离（毛毛虫树驱动源，
+      // 剥离复合会吃穿深度预算产生巨叶）都退最长轴中位——确定性且深度 O(log n)。
+      if (leftCount === 0 || leftCount === count || leftCount < 4 || count - leftCount < 4) {
         leftCount = medianSplit(first, count, order, centroids, minX, minY, minZ, maxX, maxY, maxZ);
       }
     }

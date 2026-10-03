@@ -62,7 +62,7 @@ ${bvhTraverseCoreWgsl(options)}${BVH_SLAB_WGSL}${BVH_INTERSECT_WGSL}${TLAS_INSTA
 @group(0) @binding(7) var<storage, read_write> stackOverflows: atomic<u32>;
 @group(0) @binding(8) var<uniform> params: Params;
 
-${TLAS_LOCAL_RAY_WGSL}${TLAS_OCCLUDED_WGSL}@compute @workgroup_size(${RAY_TRACE_WORKGROUP_SIZE})
+${TLAS_LOCAL_RAY_WGSL}${BVH_BLAS_OCCLUDED_WGSL}${TLAS_OCCLUDED_WGSL}@compute @workgroup_size(${RAY_TRACE_WORKGROUP_SIZE})
 fn ${SHADOW_RAY_MASK_ENTRY_POINT}(@builtin(global_invocation_id) gid: vec3u) {
   let rayIndex = gid.x;
   if (rayIndex >= params.rayCount) { return; }

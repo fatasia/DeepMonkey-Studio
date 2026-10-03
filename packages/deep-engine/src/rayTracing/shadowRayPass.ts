@@ -27,14 +27,26 @@ export interface ShadowRayMaskResult {
   /** 逐射线可见性（1=可见/0=遮挡），与射线流同序。 */
   readonly mask: Uint32Array;
   readonly stackOverflows: number;
+  /** GPU dispatch 时间（ms；timestamp query 实测。measureGpuTime 未开/feature 缺失为 undefined）。 */
+  readonly gpuMs?: number;
 }
 
 export interface ShadowRayPassOptions {
   /** f16 压缩节点档（需 shader-f16 feature；默认 false）。 */
   readonly f16?: boolean;
+  /** GPU 时间测量（timestamp-query；<2ms 验收门的数据源，默认 false）。 */
+  readonly measureGpuTime?: boolean;
 }
 
 const USAGE_STORAGE = 0x80, USAGE_COPY_DST = 0x8, USAGE_COPY_SRC = 0x4, USAGE_MAP_READ = 0x1, USAGE_UNIFORM = 0x40;
+const USAGE_QUERY_RESOLVE = 0x200;
+const MAP_MODE_READ = 0x1;
+const TIMESTAMP_BYTES = 16;
+/**
+ * @webgpu/types 0.1.72 尚无 GPUCommandEncoder.writeTimestamp（运行时 WebGPU 规范已有）；
+ * 局部类型桥接（运行时缺失会由 validation error scope fail-closed 捕获，不会静默）。
+ */
+type TimestampEncoder = GPUCommandEncoder & { writeTimestamp(querySet: GPUQuerySet, queryIndex: number): void };
 
 export class ShadowRayMaskPass {
   /** packed scene 当前视图（探针校验 placements/instanceCount 用；增量更新时整体替换）。 */
@@ -42,11 +54,18 @@ export class ShadowRayMaskPass {
   private readonly pipeline: GPUComputePipeline;
   private readonly validated: Promise<void>;
   private readonly sceneBuffers: GPUBuffer[];
+  private readonly querySet?: GPUQuerySet;
+  private readonly queryBuffer?: GPUBuffer;
+  private readonly queryReadback?: GPUBuffer;
 
   constructor(private readonly device: GPUDevice, packed: TlasPackedScene, options: ShadowRayPassOptions = {}) {
     this.packed = packed;
     if (options.f16 === true && !device.features.has("shader-f16")) {
       throw new Error("ShadowRayMaskPass f16 variant requires the shader-f16 adapter feature.");
+    }
+    const wantTiming = options.measureGpuTime === true && device.features.has("timestamp-query");
+    if (options.measureGpuTime === true && !wantTiming) {
+      throw new Error("ShadowRayMaskPass measureGpuTime requires the timestamp-query adapter feature.");
     }
     if (packed.instanceCount > RAY_BACKEND_LIMITS.maxInstances) {
       throw new Error(`ShadowRayMaskPass: exceeds maxInstances (${RAY_BACKEND_LIMITS.maxInstances}).`);
@@ -72,6 +91,13 @@ export class ShadowRayMaskPass {
     device.queue.writeBuffer(indices, 0, packed.indices.buffer, packed.indices.byteOffset, packed.indices.byteLength);
     device.queue.writeBuffer(order, 0, packed.order.buffer, packed.order.byteOffset, packed.order.byteLength);
     this.sceneBuffers = [nodes, instances, vertices, indices, order];
+    if (wantTiming) {
+      this.querySet = device.createQuerySet({ label: "shadow-rays-timestamps", type: "timestamp", count: 2 });
+      this.queryBuffer = device.createBuffer({ label: "shadow-rays-timestamp-resolve", size: TIMESTAMP_BYTES,
+        usage: USAGE_QUERY_RESOLVE | USAGE_COPY_SRC });
+      this.queryReadback = device.createBuffer({ label: "shadow-rays-timestamp-readback", size: TIMESTAMP_BYTES,
+        usage: USAGE_COPY_DST | USAGE_MAP_READ });
+    }
   }
 
   /** 增量 TLAS 接线：实例记录/TLAS 节点段重写（BLAS 段与顶点/索引驻留不动）。 */
@@ -114,13 +140,19 @@ export class ShadowRayMaskPass {
         entries: [...this.sceneBuffers, rays, masks, overflows, uniform]
           .map((buffer, binding) => ({ binding, resource: { buffer } })) });
       const encoder = d.createCommandEncoder({ label: "shadow-ray-mask-batch" });
+      if (this.querySet !== undefined) (encoder as TimestampEncoder).writeTimestamp(this.querySet, 0);
       const pass = encoder.beginComputePass({ label: "shadow-ray-mask-batch" });
       pass.setPipeline(this.pipeline);
       pass.setBindGroup(0, bindGroup);
       pass.dispatchWorkgroups(dispatchX, 1, 1);
       pass.end();
+      if (this.querySet !== undefined) (encoder as TimestampEncoder).writeTimestamp(this.querySet, 1);
       encoder.copyBufferToBuffer(masks, 0, maskReadback, 0, maskBytes);
       encoder.copyBufferToBuffer(overflows, 0, overflowReadback, 0, 4);
+      if (this.querySet !== undefined && this.queryBuffer !== undefined && this.queryReadback !== undefined) {
+        encoder.resolveQuerySet(this.querySet, 0, 2, this.queryBuffer, 0);
+        encoder.copyBufferToBuffer(this.queryBuffer, 0, this.queryReadback, 0, TIMESTAMP_BYTES);
+      }
       d.queue.submit([encoder.finish()]);
       const validationError = await d.popErrorScope();
       if (validationError) throw new Error(`Shadow ray mask GPU validation failed: ${validationError.message}`);
@@ -130,7 +162,14 @@ export class ShadowRayMaskPass {
       if (stackOverflows !== 0) {
         throw new Error(`Shadow ray mask stack overflow on ${stackOverflows} ray(s); batch rejected (fail-closed).`);
       }
-      return { mask: new Uint32Array(maskBytesRead), stackOverflows };
+      let gpuMs: number | undefined;
+      if (this.queryReadback !== undefined) {
+        await this.queryReadback.mapAsync(MAP_MODE_READ, 0, TIMESTAMP_BYTES);
+        const stamps = new BigUint64Array(this.queryReadback.getMappedRange(0, TIMESTAMP_BYTES));
+        gpuMs = Number(stamps[1]! - stamps[0]!) * 1e-6; // GPU 时间戳纳秒 → 毫秒。
+        this.queryReadback.unmap();
+      }
+      return { mask: new Uint32Array(maskBytesRead), stackOverflows, ...(gpuMs !== undefined ? { gpuMs } : {}) };
     } finally {
       for (const buffer of [rays, masks, overflows, uniform, maskReadback, overflowReadback]) buffer.destroy();
     }
@@ -138,6 +177,9 @@ export class ShadowRayMaskPass {
 
   destroy(): void {
     for (const buffer of this.sceneBuffers) buffer.destroy();
+    this.querySet?.destroy();
+    this.queryBuffer?.destroy();
+    this.queryReadback?.destroy();
   }
 }
 
