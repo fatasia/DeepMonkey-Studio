@@ -106,6 +106,21 @@ export function transitionProgress(progress: number, transition: KeyframeTransit
   return t;
 }
 
+/** CSS 风格三次贝塞尔 y(x):x1/x2∈[0,1];x 求根用二分(单调保证:B(x) 在 [0,1] 单调),20 次达 1e-9。 */
+export function cubicBezierProgress(progress: number, bezier: readonly [number, number, number, number]): number {
+  const t = clampProgress(progress);
+  const [x1, y1, x2, y2] = bezier;
+  const bx = (u: number): number => 3 * u * u * (1 - u) * x1 + 3 * u * (1 - u) * (1 - u) * x2 + u * u * u;
+  const by = (u: number): number => 3 * u * u * (1 - u) * y1 + 3 * u * (1 - u) * (1 - u) * y2 + u * u * u;
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 24; i += 1) {
+    const mid = (lo + hi) / 2;
+    if (bx(mid) < t) lo = mid; else hi = mid;
+  }
+  const u = (lo + hi) / 2;
+  return by(u);
+}
+
 function interpolateVector(start: Vector3Value, end: Vector3Value, progress: number, smooth = true): Vector3Value {
   const amount = smooth ? smoothStep(progress) : clampProgress(progress);
   return {
@@ -183,7 +198,9 @@ export function sampleModelKeyframes(frames: ModelKeyframe[], time: number, inte
   const sample = surroundingFrames(frames, time);
   if (!sample) return undefined;
   const [start, end, progress] = sample;
-  const amount = transitionProgress(progress, start.transition ?? interpolation);
+  const amount = start.transition === "cubic-bezier" && start.easing
+    ? cubicBezierProgress(progress, start.easing)
+    : transitionProgress(progress, start.transition ?? interpolation);
   return {
     position: interpolateVector(start.transform.position, end.transform.position, amount, false),
     rotation: {

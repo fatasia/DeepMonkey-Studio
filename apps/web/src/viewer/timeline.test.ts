@@ -10,6 +10,22 @@ describe("timeline sampling", () => {
     expect(sampleCameraKeyframes(frames, 6)?.position.x).toBe(5);
     expect(sampleCameraKeyframes(frames, 8)?.position.x).toBe(8);
   });
+  it("cubic-bezier easing solves y(x) with monotone x and honours per-keyframe easing params", () => {
+    // ease(x1=0,y1=0,x2=1,y2=1) ≡ linear:进度 0.5 → 值 5(起点 0,终点 10)。
+    const frames = [
+      { id: "a", modelId: "m", time: 0, transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } }, transition: "cubic-bezier" as const, easing: [0, 0, 1, 1] as const },
+      { id: "b", modelId: "m", time: 10, transform: { position: { x: 10, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 2, y: 2, z: 2 } } },
+    ];
+    expect(sampleModelKeyframes(frames, 5)?.position.x).toBeCloseTo(5, 3);
+    // ease(x1=.5,y1=0,x2=.5,y2=1)(标准 ease-in-out 形状):进度 0.5 → 恰中点 5。
+    const inout = frames.map((f, i) => i === 0 ? { ...f, easing: [0.5, 0, 0.5, 1] as const } : f);
+    expect(sampleModelKeyframes(inout, 5)?.position.x).toBeCloseTo(5, 3);
+    // 进度 0.25:该曲线 y≈0.39(解析值),介于线性(2.5)与中点(5)之间。
+    const quarter = sampleModelKeyframes(inout, 2.5)?.position.x ?? 0;
+    expect(quarter).toBeGreaterThan(2.5);
+    expect(quarter).toBeLessThan(5);
+  });
+
   it("applies outgoing easing to position, rotation, scale and clip time consistently", () => {
     const transform = (x: number) => ({ position: { x, y: 0, z: 0 }, rotation: { x: 0, y: x / 10, z: 0 }, scale: { x: 1 + x / 10, y: 1, z: 1 } });
     const frames = [{ id: "a", modelId: "m", time: 0, transform: transform(0), animation: { time: 0 }, transition: "ease-out" as const }, { id: "b", modelId: "m", time: 10, transform: transform(10), animation: { time: 10 } }];

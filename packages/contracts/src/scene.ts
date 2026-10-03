@@ -434,13 +434,17 @@ export interface ScenePostProcessingState {
 }
 
 /** Transition from this keyframe to the next one; omitted uses the track default. */
-export type KeyframeTransition = "linear" | "smooth" | "ease-in" | "ease-out" | "ease-in-out" | "step";
+export type KeyframeTransition = "linear" | "smooth" | "ease-in" | "ease-out" | "ease-in-out" | "step" | "cubic-bezier";
+/** CSS 风格三次贝塞尔缓动参数(x1,y1,x2,y2;x∈[0,1],y 不限);transition === "cubic-bezier" 时生效。 */
+export type CubicBezierEasing = readonly [number, number, number, number];
 
 export interface CameraKeyframe {
   id: string;
   time: number;
   camera: CameraState;
   transition?: KeyframeTransition;
+  /** 自定义贝塞尔缓动参数(仅 transition === "cubic-bezier" 消费;缺省按 linear)。 */
+  easing?: CubicBezierEasing;
 }
 
 export interface CameraViewState {
@@ -456,6 +460,8 @@ export interface ModelKeyframe {
   modelId: string;
   transform: ModelTransform;
   transition?: KeyframeTransition;
+  /** 自定义贝塞尔缓动参数(仅 transition === "cubic-bezier" 消费;缺省按 linear)。 */
+  easing?: CubicBezierEasing;
   /** Optional imported GLTF/FBX animation clip state recorded on the same object track. */
   animation?: ModelAnimationKeyframeState;
   /** B2-a 可见性轨道：该关键帧起对象可见性；缺省保持上一帧状态。 */
