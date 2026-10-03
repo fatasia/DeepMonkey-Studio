@@ -1,4 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { Keyboard } from "lucide-react";
+import { ShortcutSettingsPanel } from "./ShortcutSettingsPanel";
 import { Activity, BellRing, Bot, Braces, CloudCog, FileClock, Gauge, Users } from "lucide-react";
 import type {
   AiProviderSettings,
@@ -22,7 +24,7 @@ import { AiSettingsPanel } from "./SystemAiSettingsPanel";
 import { AiModelingSettingsPanel, AiPluginPanel } from "./SystemAiCapabilityPanels";
 export { AiSettingsPanel } from "./SystemAiSettingsPanel";
 
-export type SystemCenterTab = "users" | "health" | "audit" | "ai" | "mcp" | "cloud-render" | "notifications" | "performance";
+export type SystemCenterTab = "users" | "health" | "audit" | "ai" | "mcp" | "cloud-render" | "notifications" | "performance" | "shortcuts";
 type Translate = (zh: string, en: string) => string;
 
 export function SystemCenter({
@@ -102,6 +104,7 @@ export function SystemCenter({
         <TabButton active={tab === "audit"} onClick={() => selectTab("audit")} icon={<FileClock />} label={t("审计与日志", "Audit & logs")} />
         <TabButton active={tab === "ai"} onClick={() => selectTab("ai")} icon={<Bot />} label={t("AI 大模型", "AI model")} />
         <TabButton active={tab === "mcp"} onClick={() => selectTab("mcp")} icon={<Braces />} label="MCP" />
+        <TabButton active={tab === "shortcuts"} onClick={() => selectTab("shortcuts")} icon={<Keyboard />} label={t("快捷键", "Shortcuts")} />
       </nav>
       <section className="system-content">
         {tab === "users" && (
@@ -120,6 +123,7 @@ export function SystemCenter({
           </div>
         )}
         {tab === "mcp" && <McpSettingsPanel locale={locale} />}
+        {tab === "shortcuts" && <ShortcutSettingsPanel locale={locale} />}
       </section>
     </main>
   );

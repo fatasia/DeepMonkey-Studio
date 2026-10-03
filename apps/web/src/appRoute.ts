@@ -33,7 +33,7 @@ export interface AppRoute {
   dashboardReturn?: DashboardReturnContext;
   topologyReturn?: TopologyReturnContext;
   operationsTab?: "maintenance" | "commissioning" | "battery" | "logistics" | "energy" | "whatif" | "monitoring";
-  systemTab?: "users" | "health" | "cloud-render" | "notifications" | "audit" | "ai" | "mcp" | "performance";
+  systemTab?: "users" | "health" | "cloud-render" | "notifications" | "audit" | "ai" | "mcp" | "performance" | "shortcuts";
 }
 
 const operationsTabs = new Set(["maintenance", "commissioning", "battery", "logistics", "energy", "whatif", "monitoring"]);
