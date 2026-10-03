@@ -16,6 +16,8 @@
 
 import { CONTACT_SHADOW_QUALITY_PROFILES } from "../shadows/contactShadowQuality.js";
 import { LOCAL_SPOT_SHADOW_MAX_LIGHTS, LOCAL_SPOT_SHADOW_UNIFORM_BYTES } from "../shadows/localSpotShadowShader.js";
+import { VIRTUAL_SHADOW_MIP_COUNT, VIRTUAL_SHADOW_PAGE_EDGE, VIRTUAL_SHADOW_RING_COUNT,
+  VIRTUAL_SHADOW_VIRTUAL_EDGE } from "../shadows/virtualShadowClipmap.js";
 import {
   DEEP_GI_PROBE_DIRECTIONS_HIGH,
   DEEP_GI_PROBE_DIRECTIONS_STANDARD,
@@ -203,8 +205,15 @@ export const PBR_RENDERER_CAPABILITY_SELF_CHECK: readonly RendererCapabilitySelf
     observed: {},
   },
   {
+    // B1 Brief-VSM 双档:级联默认档 + 三环 clipmap 虚拟档(opt-in)。观测值从
+    // virtualShadowClipmap 常量派生(虚拟分辨率/页边/mip 链变化即漂移红)。
     capabilityId: "shadow-cascades", support: "supported", reason: "full",
-    observed: {},
+    observed: {
+      virtualShadowRingCount: VIRTUAL_SHADOW_RING_COUNT,
+      virtualShadowEdge: VIRTUAL_SHADOW_VIRTUAL_EDGE,
+      virtualShadowPageEdge: VIRTUAL_SHADOW_PAGE_EDGE,
+      virtualShadowMipCount: VIRTUAL_SHADOW_MIP_COUNT,
+    },
   },
   {
     capabilityId: "shadow-local", support: "supported", reason: "full",

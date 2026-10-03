@@ -18,12 +18,14 @@ describe("authored directional shadow", () => {
     expect(Math.max(...slice.corners.map(p => p[2]))).toBeCloseTo(-0.1);
     expect(Object.isFrozen(snapshot.viewProjection)).toBe(true);
   });
-  it("packs signed compare bias, world normal bias, intensity and PCF radius without growing ABI", () => {
+  it("packs signed compare bias, world normal bias, intensity and PCF radius (params2 slot stays zero for cascaded)", () => {
     const plan = planAuthoredShadow(source, [0, 0, -1]), data = packAuthoredShadow(plan, source, 800);
-    expect(data).toHaveLength(156); expect(data[155]).toBe(2);
+    expect(data).toHaveLength(160); expect(data[155]).toBe(2);
     expect(data[153]).toBeCloseTo(-0.0001); expect(data[148]).toBeCloseTo(0.015);
     expect(data[149]).toBeCloseTo(0.38); expect(data[150]).toBe(3); expect(data[151]).toBe(800);
     expect(data[154]).toBe(1 / 1024);
+    // params2(B1 Brief-VSM 新增):author 阴影属级联档,mode 位恒 0。
+    expect(Array.from(data.slice(156, 160))).toEqual([0, 0, 0, 0]);
   });
   it.each([{ bias: NaN }, { bias: 0.11 }, { normalBias: -1 }, { intensity: 1.1 },
     { radius: Infinity }, { mapSize: 0 }])("rejects invalid sampling %j", changes => {

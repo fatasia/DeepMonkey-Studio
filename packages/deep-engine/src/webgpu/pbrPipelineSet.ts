@@ -2,6 +2,7 @@ import type { DeviceSession } from "./deviceSession.js";
 import type { PbrRendererOptions } from "./pbrRendererTypes.js";
 import type { PbrRendererFeatures } from "./pbrRendererFeatures.js";
 import { createPipelinesBuild, type Pipelines, type PipelinesBuild } from "./pipelines.js";
+import { resolvePbrMsaaSampleCount } from "./renderTargets.js";
 import type { PipelineCompileRecord } from "./pipelineCache.js";
 
 const PIPELINE_SET_SCHEMA = "deep-pbr-pso-v2-reflection-probes";
@@ -47,17 +48,19 @@ export async function createPbrPipelineSet(session: DeviceSession, lightingLayou
     || options.deformation === true;
   const directDisplay = !features.environment && !features.fog && !features.groundGrid;
   const oneCascade = options.shadows?.exactProfile?.cascadeCount === 1;
+  // AA-M1:主 pass 采样数是管线集合身份的一部分(fail-closed 解析,非法值直接抛出)。
+  const mainSampleCount = resolvePbrMsaaSampleCount(options.msaaSampleCount);
   let byLayout = pipelineSets.get(session.device);
   if (!byLayout) { byLayout = new WeakMap(); pipelineSets.set(session.device, byLayout); }
   let byVariant = byLayout.get(lightingLayout);
   if (!byVariant) { byVariant = new Map(); byLayout.set(lightingLayout, byVariant); }
   const key = [PIPELINE_SET_SCHEMA, session.format, writeGeometry ? 1 : 0, directDisplay ? 1 : 0,
     oneCascade ? 1 : 0, options.deformation === true ? 1 : 0, features.textureArrays ? 1 : 0, features.layeredMaterials ? 1 : 0,
-    options.advancedMaterials === true ? 1 : 0].join("/");
+    options.advancedMaterials === true ? 1 : 0, mainSampleCount].join("/");
   const existing = byVariant.get(key);
   if (existing) return existing;
   const created = buildPbrPipelineSet(session, lightingLayout, options, writeGeometry, directDisplay,
-    oneCascade, features.textureArrays, features.layeredMaterials, options.advancedMaterials === true);
+    oneCascade, features.textureArrays, features.layeredMaterials, options.advancedMaterials === true, mainSampleCount);
   byVariant.set(key, created);
   void created.catch(() => { if (byVariant!.get(key) === created) byVariant!.delete(key); });
   return created;
@@ -65,17 +68,23 @@ export async function createPbrPipelineSet(session: DeviceSession, lightingLayou
 
 async function buildPbrPipelineSet(session: DeviceSession, lightingLayout: GPUBindGroupLayout,
   options: PbrRendererOptions, writeGeometry: boolean, directDisplay: boolean, oneCascade: boolean,
-  textureArrays: boolean, layeredMaterials: boolean, advancedMaterials = false) {
+  textureArrays: boolean, layeredMaterials: boolean, advancedMaterials = false,
+  mainSampleCount: 1 | 4 = 1) {
   const firstFrameMainKeys = options.pipelines?.firstFrameMainKeys;
-  const buildOptions = firstFrameMainKeys === undefined && !layeredMaterials && !advancedMaterials ? undefined
+  // AA-M1:mainSampleCount 必须无条件下发 —— pipelines.ts 对 undefined 的默认已从 1
+  // 改为请求常量 4,省略会把 1x 回退渲染器静默升回 4x 管线(与 1x 目标失配)。
+  const buildOptions = (firstFrameMainKeys === undefined && !layeredMaterials && !advancedMaterials)
+    ? { mainSampleCount }
     : { ...(firstFrameMainKeys === undefined ? {} : { firstFrameMainKeys }),
-      ...(layeredMaterials ? { layeredMaterials: true } : {}), ...(advancedMaterials ? { advancedMaterials: true } : {}) };
+      ...(layeredMaterials ? { layeredMaterials: true } : {}), ...(advancedMaterials ? { advancedMaterials: true } : {}),
+      mainSampleCount };
   const wantsDeformation = options.deformation === true;
   const deferDeformation = wantsDeformation && options.pipelines?.deferDeformation === true;
   const [fallbackBuild, arrayBuild] = await Promise.all([
     createPipelinesBuild(session.device, session.format, lightingLayout, writeGeometry, directDisplay, oneCascade, buildOptions),
     textureArrays ? createPipelinesBuild(session.device, session.format, lightingLayout, writeGeometry,
-      directDisplay, oneCascade, { ...(firstFrameMainKeys === undefined ? {} : { firstFrameMainKeys }), textureArrays: true }) : undefined,
+      directDisplay, oneCascade, { ...(firstFrameMainKeys === undefined ? {} : { firstFrameMainKeys }), textureArrays: true,
+      mainSampleCount }) : undefined,
   ]);
   const criticalReady = Promise.all([fallbackBuild.criticalReady, ...(arrayBuild ? [arrayBuild.criticalReady] : [])])
     .then(() => undefined);
@@ -107,9 +116,10 @@ async function buildPbrPipelineSet(session: DeviceSession, lightingLayout: GPUBi
   if (!deferDeformation && wantsDeformation) {
     const [deformationFallbackBuild, deformationArrayBuild] = await Promise.all([
       createPipelinesBuild(session.device, session.format, lightingLayout, true, false, oneCascade,
-        { deformation: true, ...(layeredMaterials ? { layeredMaterials: true } : {}), ...(advancedMaterials ? { advancedMaterials: true } : {}) }),
+        { deformation: true, ...(layeredMaterials ? { layeredMaterials: true } : {}), ...(advancedMaterials ? { advancedMaterials: true } : {}),
+          mainSampleCount }),
       wantsDeformation && textureArrays ? createPipelinesBuild(session.device, session.format, lightingLayout,
-        true, false, oneCascade, { deformation: true, textureArrays: true }) : undefined,
+        true, false, oneCascade, { deformation: true, textureArrays: true, mainSampleCount }) : undefined,
     ]);
     const deformation = deformationPipelines(deformationArrayBuild, deformationFallbackBuild)!;
     return {
@@ -136,9 +146,10 @@ async function buildPbrPipelineSet(session: DeviceSession, lightingLayout: GPUBi
         try {
           const [deformationFallbackBuild, deformationArrayBuild] = await Promise.all([
             createPipelinesBuild(session.device, session.format, lightingLayout, true, false, oneCascade,
-              { deformation: true, ...(layeredMaterials ? { layeredMaterials: true } : {}), ...(advancedMaterials ? { advancedMaterials: true } : {}) }),
+              { deformation: true, ...(layeredMaterials ? { layeredMaterials: true } : {}), ...(advancedMaterials ? { advancedMaterials: true } : {}),
+                mainSampleCount }),
             textureArrays ? createPipelinesBuild(session.device, session.format, lightingLayout,
-              true, false, oneCascade, { deformation: true, textureArrays: true }) : undefined,
+              true, false, oneCascade, { deformation: true, textureArrays: true, mainSampleCount }) : undefined,
           ]);
           const merged = await deformationPipelines(deformationArrayBuild, deformationFallbackBuild)!;
           const deferredError = await session.device.popErrorScope();

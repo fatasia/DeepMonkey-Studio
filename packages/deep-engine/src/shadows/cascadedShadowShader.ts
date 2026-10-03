@@ -3,7 +3,12 @@ import { AUTHORED_DIRECTIONAL_SHADOW_WGSL } from "./authoredDirectionalShadowWgs
 import { CASCADED_SHADOW_MATH_WGSL } from "./cascadedShadowMathWgsl.js";
 
 export const CASCADED_SHADOW_MAX_CASCADES = 8;
-export const CASCADED_SHADOW_UNIFORM_FLOATS = 156;
+/**
+ * Uniform ABI:8×mat4 + 8×6 vec4 + params + params2(B1 Brief-VSM)。
+ * params2 = (mode: 0=级联 1=三环 clipmap 虚拟, ringCount, topMip, pageEdge)。
+ * 级联档 params2.x 恒 0 —— 着色端分支逐字节保持既有级联行为。
+ */
+export const CASCADED_SHADOW_UNIFORM_FLOATS = 160;
 export const CASCADED_SHADOW_UNIFORM_BYTES = CASCADED_SHADOW_UNIFORM_FLOATS * 4;
 
 const IDENTITY = Object.freeze([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
@@ -27,6 +32,8 @@ export function packCascadedShadowUniform(plan: CascadedShadowPlan, depthBias = 
     data[144 + index] = cascade?.texelWorldSize ?? last.texelWorldSize;
   }
   data.set([plan.cascades.length, depthBias, 1 / plan.shadowMapSize, constantNormalBias ? 1 : 0], 152);
+  // params2:(mode=0 级联, 0, 0, 0)——级联档回退语义保持原样。
+  data.set([0, 0, 0, 0], 156);
   return data;
 }
 
@@ -44,6 +51,10 @@ struct DeepCascadeShadowData {
   texelWorld0: vec4f,
   texelWorld1: vec4f,
   params: vec4f,
+  // B1 Brief-VSM:x=mode(0=级联 1=虚拟 clipmap)、y=ringCount、z=topMip、w=pageEdge。
+  // 虚拟档复用 matrices[0..2] = 环 viewProjection、texelWorld0[0..2] = 环 texel 世界尺寸、
+  // splitDepths0[0..2] = 环光空间深度范围;页表/atlas 走 binding 3..5(virtualShadowSampling)。
+  params2: vec4f,
 };
 
 @group(2) @binding(0) var<uniform> deepCascade: DeepCascadeShadowData;

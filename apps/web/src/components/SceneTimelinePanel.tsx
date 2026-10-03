@@ -424,6 +424,7 @@ function SceneAnimationTimeline(props: Props) {
             >
               <option value="linear">{tr(props.locale, "线性", "Linear")}</option>
               <option value="smooth">{tr(props.locale, "平滑缓动", "Smooth easing")}</option>
+              <option value="ease-in-out">{tr(props.locale, "缓入缓出", "Ease in-out")}</option>
             </select>
           </label>
           <label>

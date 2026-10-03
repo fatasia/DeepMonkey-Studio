@@ -102,6 +102,7 @@ export function transitionProgress(progress: number, transition: KeyframeTransit
   if (transition === "smooth") return smoothStep(t);
   if (transition === "ease-in") return t * t;
   if (transition === "ease-out") return 1 - (1 - t) * (1 - t);
+  if (transition === "ease-in-out") return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
   return t;
 }
 

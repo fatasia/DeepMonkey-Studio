@@ -261,7 +261,7 @@ export function describeContactShadowPass(): PbrActualPassDescription {
     reads: ["linear-depth"], writes: ["contact-shadow-mask"],
     claims: [
       { id: "linear-depth", access: "read", format: "r32float", sampleCount: 1,
-        usages: ["render-attachment", "texture-binding", "copy-src"], sizeRole: "surface" },
+        usages: ["render-attachment", "texture-binding", "copy-src", "storage-binding"], sizeRole: "surface" },
       { id: "contact-shadow-mask", access: "write", format: "rgba16float", sampleCount: 1,
         usages: ["storage-binding", "texture-binding"], sizeRole: "half" },
     ],

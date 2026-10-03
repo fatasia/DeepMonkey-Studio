@@ -11,8 +11,13 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
     throw new TypeError("Deep WebGPU renderer options must be an object.");
   }
   if (Object.keys(options).some(key => !["shadows", "features", "environment", "deformation", "meshlets", "frameCapture", "adaptiveQuality", "probeClipmap", "pipelines",
-    "resolutionScalePolicy", "gpuPassTiming", "probeDirections", "clusterLod", "virtualTextures", "recovery", "autoExposure", "hdrDisplay", "advancedMaterials"].includes(key))) {
+    "resolutionScalePolicy", "gpuPassTiming", "probeDirections", "clusterLod", "virtualTextures", "recovery", "autoExposure", "hdrDisplay", "advancedMaterials",
+    "msaaSampleCount", "localSpotShadowAtlasTier"].includes(key))) {
     throw new TypeError("Unknown Deep WebGPU renderer option.");
+  }
+  // AA-M1:主 pass MSAA 请求档(1/4);缺省 4,非法值在渲染器侧 resolvePbrMsaaSampleCount fail-closed。
+  if (options.msaaSampleCount !== undefined && options.msaaSampleCount !== 1 && options.msaaSampleCount !== 4) {
+    throw new TypeError(`Deep WebGPU msaaSampleCount option must be 1 or 4; got ${String(options.msaaSampleCount)} (${typeof options.msaaSampleCount})`);
   }
   if (options.deformation !== undefined && typeof options.deformation !== "boolean") {
     throw new TypeError("Deep WebGPU deformation option must be boolean.");
@@ -75,6 +80,8 @@ export function snapshotRendererOptions(options: PbrRendererOptions): PbrRendere
     ...(options.recovery === undefined ? {} : { recovery: Object.freeze((({ now: _injectedClock, ...rest }) => rest)(options.recovery)) }),
     // F8 自动曝光（Z3.5 授权默认开）：显式配置冻结快照供首屏一致性校验。
     ...(options.autoExposure === undefined ? {} : { autoExposure: Object.freeze({ ...options.autoExposure }) }),
+    // AA-M1 主 pass MSAA 请求档(opt-in 显式覆盖;缺省 4 不进快照,渲染器默认即 4)。
+    ...(options.msaaSampleCount === undefined ? {} : { msaaSampleCount: options.msaaSampleCount }),
   });
 }
 

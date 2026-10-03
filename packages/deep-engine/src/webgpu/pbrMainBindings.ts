@@ -1,4 +1,3 @@
-import type { CascadedShadowResources } from "./cascadedShadowResources.js";
 import type { Pipelines } from "./pipelines.js";
 import type { StudioEnvironment } from "./studioEnvironment.js";
 import type { DeviceSession } from "./deviceSession.js";
@@ -9,6 +8,13 @@ import { PbrBackgroundPass } from "./pbrBackgroundPass.js";
 import type { PbrFrameUniformView } from "./pbrFrameUniforms.js";
 import { packPbrFog, type PbrFog } from "./pbrFog.js";
 import { packPbrEnvironmentReflections, pbrReflectionProbeViews } from "./pbrReflectionProbes.js";
+
+/** 帧全局阴影绑定源(级联/虚拟两档同形;B1 Brief-VSM 双档切换共用此结构)。 */
+export interface PbrShadowBindingSource {
+  readonly binding: GPUBindGroup;
+  readonly legacyView: GPUTextureView;
+  readonly sampler: GPUSampler;
+}
 
 /** Frame-global bindings; resources are owned by the renderer's device session. */
 export class PbrMainBindings {
@@ -22,7 +28,7 @@ export class PbrMainBindings {
   private backgroundPass: PbrBackgroundPass | undefined;
 
   constructor(private readonly session: DeviceSession, private readonly pipelines: Pipelines,
-    private readonly frameBuffer: GPUBuffer, private shadows: CascadedShadowResources,
+    private readonly frameBuffer: GPUBuffer, private shadows: PbrShadowBindingSource,
     environment: StudioEnvironment) {
     this.diffuseBuffer = uploadBuffer(session, "Deep authored diffuse irradiance", this.diffuseData, GPUBufferUsage.UNIFORM);
     let fogBuffer: GPUBuffer | undefined;
@@ -60,15 +66,16 @@ export class PbrMainBindings {
     this.reflectionBufferIndex = nextIndex; this.binding = binding;
   }
 
-  setShadows(shadows: CascadedShadowResources, environment: StudioEnvironment): void {
+  setShadows(shadows: PbrShadowBindingSource, environment: StudioEnvironment): void {
     const binding = this.createBinding(environment, shadows);
     this.shadows = shadows; this.binding = binding;
   }
 
   prepareBackground(view: PbrFrameUniformView, environment: StudioEnvironment, aspect: number,
-    writeGeometryBuffers: boolean): ((pass: GPURenderPassEncoder) => void) | undefined {
+    writeGeometryBuffers: boolean, mainSampleCount: 1 | 4 = 1): ((pass: GPURenderPassEncoder) => void) | undefined {
     if (!view.panoramaBackground) return undefined;
-    this.backgroundPass ??= new PbrBackgroundPass(this.session, writeGeometryBuffers);
+    // AA-M1:HDR 全景在主 pass 内绘制,采样数必须与主 pass 附件一致(display 通路缺省 1)。
+    this.backgroundPass ??= new PbrBackgroundPass(this.session, writeGeometryBuffers, mainSampleCount);
     if (view.panoramaBackground.toneMapped === false) return undefined;
     return this.backgroundPass.prepare(view, environment, aspect);
   }

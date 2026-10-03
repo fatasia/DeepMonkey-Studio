@@ -3,7 +3,20 @@ import type { PbrTransientTextureHandle, PbrTransientTexturePool,
   PbrTransientTexturePoolStats } from "./pbrTransientTexturePool.js";
 import type { SurfaceSize } from "./surfaceSize.js";
 
-export const PBR_MAIN_SAMPLE_COUNT = 1;
+/**
+ * AA-M1 主 pass 请求采样数(默认 4):bootstrap 经 probePbrMainSampleCount 按设备能力
+ * 解析(fail-closed 回 1),运行期常量只表达"请求值"。设备/驱动不支持 MSAA4 时渲染器
+ * 以 1x 构建(RenderTargets/pipelines 全部回退),原因经 FrameMetrics.msaa 披露。
+ */
+export const PBR_MAIN_SAMPLE_COUNT = 4;
+
+/** MSAA 档位解析:undefined = 默认 4;仅 1/4 合法(WebGPU 核心多采样档),其余 fail-closed 拒绝。 */
+export function resolvePbrMsaaSampleCount(requested: number | undefined): 1 | 4 {
+  if (requested === undefined) return PBR_MAIN_SAMPLE_COUNT;
+  if (requested === 1 || requested === 4) return requested;
+  throw new RangeError(`PBR main MSAA sample count must be 1 or 4; got ${String(requested)}.`);
+}
+
 export const PBR_HDR_FORMAT = "rgba16float" as const satisfies GPUTextureFormat;
 export const PBR_LINEAR_DEPTH_FORMAT = "r32float" as const satisfies GPUTextureFormat;
 // rgba8snorm is not renderable on all WebGPU adapters (notably Vulkan/ANGLE).
@@ -27,25 +40,43 @@ export class RenderTargets {
   private dimensions: SurfaceSize | undefined;
   private disposed = false;
   private readonly sampler: GPUSampler;
+  /**
+   * 单采样、可着色读的主帧附件(AA-M1 起 = MSAA 的 resolve 产物):后处理链、输出
+   * bind group、读回与全部次级 pass(粒子/样条/网格/OIT/描边/背景)消费方均绑定此层,
+   * MSAA 开关对它们零可见变化。附属目标(linear-depth/view-normal/motion)默认保持 1x
+   * —— 渲染 pass 采样数一致性要求其 MSAA 附件存在,但内容只经 resolve 产出。
+   */
   hdrTexture!: GPUTexture; linearDepthTexture!: GPUTexture; normalTexture!: GPUTexture; motionTexture!: GPUTexture; depthTexture!: GPUTexture;
   hdr!: GPUTextureView; linearDepth!: GPUTextureView; normal!: GPUTextureView; motion!: GPUTextureView;
   /** Compatibility alias during the renderer migration; direct rendering uses hdr without resolveTarget. */
   color!: GPUTextureView;
   depth!: GPUTextureView;
   outputBindGroup!: GPUBindGroup;
+  /** AA-M1:主 pass 的 MSAA 附件(仅 RENDER_ATTACHMENT 语义;1x 渲染器恒 undefined)。 */
+  hdrMsaaTexture: GPUTexture | undefined;
+  hdrMsaa: GPUTextureView | undefined;
+  linearDepthMsaaTexture: GPUTexture | undefined; linearDepthMsaa: GPUTextureView | undefined;
+  normalMsaaTexture: GPUTexture | undefined; normalMsaa: GPUTextureView | undefined;
+  motionMsaaTexture: GPUTexture | undefined; motionMsaa: GPUTextureView | undefined;
+  /** MSAA 硬件深度附件;TEXTURE_BINDING 供深度 resolve pass 采样(sample-0)。 */
+  depthMsaaTexture: GPUTexture | undefined;
+  depthMsaa: GPUTextureView | undefined;
 
   constructor(private readonly session: DeviceSession, private readonly layout: GPUBindGroupLayout,
-    private readonly settings: GPUBuffer, private readonly pool: PbrTransientTexturePool) {
+    private readonly settings: GPUBuffer, private readonly pool: PbrTransientTexturePool,
+    readonly mainSampleCount: 1 | 4 = PBR_MAIN_SAMPLE_COUNT) {
     this.sampler = session.device.createSampler({ minFilter: "linear", magFilter: "linear" });
     void session.device.lost.then(() => this.invalidateDeviceLoss(), () => this.invalidateDeviceLoss());
   }
 
   get transientStats(): PbrTransientTexturePoolStats { return this.pool.stats; }
+  /** MSAA 主通路激活(4x 渲染器)。directDisplay 帧不使用,见 beginFrame 的 msaaMainAttachments。 */
+  get msaaActive(): boolean { return this.mainSampleCount > 1; }
 
   /** Opens the real frame allocation scope. Resources return to the pool only after commitFrame(queue.submit). */
   beginFrame(size: SurfaceSize,
     resourceLifetimes?: readonly import("../renderGraph.js").RenderResourceLifetime[],
-    requireGeometryBuffers = false): void {
+    requireGeometryBuffers = false, msaaMainAttachments = true): void {
     if (this.disposed) throw new Error("PBR render targets are disposed.");
     if (this.handles.length || this.pool.frameOpen) throw new Error("PBR render target frame is already open.");
     const resized = this.dimensions !== undefined
@@ -54,6 +85,9 @@ export class RenderTargets {
     this.pool.beginFrame(resourceLifetimes ?? []);
     const device = this.session.device;
     const attachmentUsage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
+    // MSAA 附件内容只在 pass 内消费(color 走 resolveTarget,深度由 resolve pass 采样),
+    // 因此 RENDER_ATTACHMENT 之外零 usage —— 池侧命中 TRANSIENT_ATTACHMENT 驱动内存别名。
+    const msaaAttachmentUsage = GPUTextureUsage.RENDER_ATTACHMENT;
     try {
       const planned = resourceLifetimes === undefined ? undefined : new Set(resourceLifetimes.map(resource => resource.id));
       // The opaque MRT pipeline has a fixed four-target signature. A graph may
@@ -62,18 +96,36 @@ export class RenderTargets {
       const needs = (resourceId: string): boolean => requireGeometryBuffers
         || planned === undefined || planned.has(resourceId);
       const acquire = (resourceId: string, format: GPUTextureFormat, usage = attachmentUsage) => this.pool.acquire({
-        resourceId, format, width: size.width, height: size.height, sampleCount: PBR_MAIN_SAMPLE_COUNT, usage,
+        resourceId, format, width: size.width, height: size.height, sampleCount: 1, usage,
       });
+      const acquireMsaa = (resourceId: string, format: GPUTextureFormat, usage: GPUTextureUsageFlags): PbrTransientTextureHandle | undefined =>
+        this.msaaActive && msaaMainAttachments
+          ? this.pool.acquire({ resourceId, format, width: size.width, height: size.height,
+            sampleCount: this.mainSampleCount, usage })
+          : undefined;
       // HDR remains available for the stable output bind group. Optional MRTs follow the compiled live-resource set.
       const hdrHandle = acquire("opaque-hdr", PBR_HDR_FORMAT, pbrFullHdrTransientUsage());
       // linear-depth 额外 COPY_SRC：R12 白名单诊断快照（planned 合同已声明，见 pbrFramePlanResources）。
+      // STORAGE_BINDING:AA-M1 MSAA 主通路下 1x linear-depth 由 compute resolve 写出
+      // (r32float 无硬件 resolve);1x 渲染器该位闲置无害。
       const linearDepthHandle = needs("linear-depth")
-        ? acquire("linear-depth", PBR_LINEAR_DEPTH_FORMAT, attachmentUsage | GPUTextureUsage.COPY_SRC)
+        ? acquire("linear-depth", PBR_LINEAR_DEPTH_FORMAT, attachmentUsage | GPUTextureUsage.COPY_SRC
+          | GPUTextureUsage.STORAGE_BINDING)
         : undefined;
       const normalHandle = needs("view-normal") ? acquire("view-normal", PBR_VIEW_NORMAL_FORMAT) : undefined;
       const motionHandle = needs("motion") ? acquire("motion", PBR_MOTION_FORMAT) : undefined;
       const depthHandle = acquire("hardware-depth", PBR_DEPTH_FORMAT);
-      const handles = [hdrHandle, linearDepthHandle, normalHandle, motionHandle, depthHandle]
+      const hdrMsaaHandle = acquireMsaa("opaque-hdr-msaa", PBR_HDR_FORMAT, msaaAttachmentUsage);
+      // linear-depth(r32float)不支持硬件 resolve(WebGPU 32 位格式无 resolve 能力),
+      // MSAA 附件内容经 compute 采样还原,需要 TEXTURE_BINDING;也因此不能带
+      // TRANSIENT 标记(usage != RENDER_ATTACHMENT 恰好命中池侧判定)。
+      const linearDepthMsaaHandle = linearDepthHandle ? acquireMsaa("linear-depth-msaa", PBR_LINEAR_DEPTH_FORMAT,
+        msaaAttachmentUsage | GPUTextureUsage.TEXTURE_BINDING) : undefined;
+      const normalMsaaHandle = normalHandle ? acquireMsaa("view-normal-msaa", PBR_VIEW_NORMAL_FORMAT, msaaAttachmentUsage) : undefined;
+      const motionMsaaHandle = motionHandle ? acquireMsaa("motion-msaa", PBR_MOTION_FORMAT, msaaAttachmentUsage) : undefined;
+      const depthMsaaHandle = acquireMsaa("hardware-depth-msaa", PBR_DEPTH_FORMAT, msaaAttachmentUsage | GPUTextureUsage.TEXTURE_BINDING);
+      const handles = [hdrHandle, linearDepthHandle, normalHandle, motionHandle, depthHandle,
+        hdrMsaaHandle, linearDepthMsaaHandle, normalMsaaHandle, motionMsaaHandle, depthMsaaHandle]
         .filter((handle): handle is PbrTransientTextureHandle => handle !== undefined);
       const outputBindGroup = device.createBindGroup({ layout: this.layout, entries: [
         { binding: 0, resource: hdrHandle.view }, { binding: 1, resource: this.sampler },
@@ -86,6 +138,11 @@ export class RenderTargets {
       this.hdr = hdrHandle.view; this.color = this.hdr; this.linearDepth = linearDepthHandle?.view as GPUTextureView;
       this.normal = normalHandle?.view as GPUTextureView; this.motion = motionHandle?.view as GPUTextureView;
       this.depth = depthHandle.view;
+      this.hdrMsaaTexture = hdrMsaaHandle?.texture; this.hdrMsaa = hdrMsaaHandle?.view;
+      this.linearDepthMsaaTexture = linearDepthMsaaHandle?.texture; this.linearDepthMsaa = linearDepthMsaaHandle?.view;
+      this.normalMsaaTexture = normalMsaaHandle?.texture; this.normalMsaa = normalMsaaHandle?.view;
+      this.motionMsaaTexture = motionMsaaHandle?.texture; this.motionMsaa = motionMsaaHandle?.view;
+      this.depthMsaaTexture = depthMsaaHandle?.texture; this.depthMsaa = depthMsaaHandle?.view;
       this.outputBindGroup = outputBindGroup; this.dimensions = Object.freeze({ width: size.width, height: size.height });
     } catch (error) {
       this.pool.endFrame(false); throw error;

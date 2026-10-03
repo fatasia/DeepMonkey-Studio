@@ -1,7 +1,19 @@
 
 fn deepPrimaryShadow(world: vec3f, normal: vec3f, nDotL: f32, authorShadow: vec4f, pixel: vec2f, flags: f32) -> f32 {
+  // B1 Brief-VSM:环梯度在函数顶部一致控制流内预取(fwidth ×3,任何分支之前 ——
+  // flags/params 分支对 WGSL 一致性分析不可证均匀;级联档多付 3 次预取,数值行为零变化)。
+  var grad0 = vec2f(0.0); var grad1 = vec2f(0.0); var grad2 = vec2f(0.0);
+  let clip0 = deepCascade.matrices[0] * vec4f(world, 1.0);
+  grad0 = fwidth(clip0.xy / max(clip0.w, 0.000001));
+  let clip1 = deepCascade.matrices[1] * vec4f(world, 1.0);
+  grad1 = fwidth(clip1.xy / max(clip1.w, 0.000001));
+  let clip2 = deepCascade.matrices[2] * vec4f(world, 1.0);
+  grad2 = fwidth(clip2.xy / max(clip2.w, 0.000001));
   if (frame.background.w <= 0.0 || flag(flags, 16u)) { return 1.0; }
   if (deepCascade.params.w > 1.5) { return deepAuthorShadowVisibility(authorShadow, pixel); }
+  // 虚拟档分支(params2.x=1)。级联档 params2.x 恒 0,该分支不进入,既有级联行为
+  // 逐字节保持(j3 shadow-visibility 门不受影响)。
+  if (deepCascade.params2.x > 0.5) { return deepVirtualShadow(world, normal, nDotL, pixel, grad0, grad1, grad2); }
   return deepCascadedShadow(max(-(frame.worldToView * vec4f(world, 1.0)).z, 0.0), world, normal, nDotL);
 }
 struct DirectDisplayVertex {

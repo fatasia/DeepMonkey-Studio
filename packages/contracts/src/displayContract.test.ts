@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_DISPLAY_CONTRACT } from "./displayContract.js";
+import { DEFAULT_DISPLAY_CONTRACT, resolveDisplayMsaaSampleCount, resolveDisplayShadowMode } from "./displayContract.js";
 
 describe("display contract", () => {
   it("keeps the product display defaults explicit and immutable", () => {
@@ -18,5 +18,35 @@ describe("display contract", () => {
     expect(Object.isFrozen(DEFAULT_DISPLAY_CONTRACT)).toBe(true);
     expect(Object.isFrozen(DEFAULT_DISPLAY_CONTRACT.toneMapping)).toBe(true);
     expect(Object.isFrozen(DEFAULT_DISPLAY_CONTRACT.toneMapping.dynamicExposure)).toBe(true);
+  });
+
+  // B1 Brief-VSM:shadow.mode 缺字段 = 级联(向后兼容),fail-closed 解析单源。
+  describe("resolveDisplayShadowMode", () => {
+    it("resolves a missing mode field to cascaded (backward compatible default)", () => {
+      expect(resolveDisplayShadowMode(DEFAULT_DISPLAY_CONTRACT.shadow)).toBe("cascaded");
+      expect(resolveDisplayShadowMode(undefined)).toBe("cascaded");
+    });
+    it("resolves explicit modes and fails closed on invalid values", () => {
+      expect(resolveDisplayShadowMode({ ...DEFAULT_DISPLAY_CONTRACT.shadow, mode: "cascaded" })).toBe("cascaded");
+      expect(resolveDisplayShadowMode({ ...DEFAULT_DISPLAY_CONTRACT.shadow, mode: "virtual" })).toBe("virtual");
+      expect(resolveDisplayShadowMode({ ...DEFAULT_DISPLAY_CONTRACT.shadow,
+        mode: "unknown" as "virtual" })).toBe("cascaded");
+    });
+  });
+
+  // AA-M1:主 pass MSAA 档缺字段 = 4(引擎默认开,向后兼容旧合同);非法值 fail-closed 回 4。
+  describe("resolveDisplayMsaaSampleCount", () => {
+    it("resolves a missing msaa field to the engine default 4 (backward compatible)", () => {
+      expect(resolveDisplayMsaaSampleCount(undefined)).toBe(4);
+      expect(resolveDisplayMsaaSampleCount(DEFAULT_DISPLAY_CONTRACT.antialias)).toBe(4);
+    });
+    it("resolves explicit values and fails closed on anything outside the 1/4 lattice", () => {
+      expect(resolveDisplayMsaaSampleCount({ ...DEFAULT_DISPLAY_CONTRACT.antialias, msaaSampleCount: 1 })).toBe(1);
+      expect(resolveDisplayMsaaSampleCount({ ...DEFAULT_DISPLAY_CONTRACT.antialias, msaaSampleCount: 4 })).toBe(4);
+      expect(resolveDisplayMsaaSampleCount({ ...DEFAULT_DISPLAY_CONTRACT.antialias,
+        msaaSampleCount: 8 as 4 })).toBe(4);
+      expect(resolveDisplayMsaaSampleCount({ ...DEFAULT_DISPLAY_CONTRACT.antialias,
+        msaaSampleCount: 0 as 4 })).toBe(4);
+    });
   });
 });

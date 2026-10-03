@@ -3,7 +3,7 @@ export { authoredShadowPipelines } from "./authoredShadowPipelines.js";
 import { sceneShader, outputShader } from "./pbrShader.js";
 import { deformedSceneShader } from "./pbrDeformationShader.js";
 import type { MaterialLayouts } from "./materialBindings.js";
-import { PBR_DEPTH_FORMAT, PBR_HDR_FORMAT, PBR_MAIN_SAMPLE_COUNT, PBR_OPAQUE_ATTACHMENT_FORMATS } from "./renderTargets.js";
+import { PBR_DEPTH_FORMAT, PBR_HDR_FORMAT, resolvePbrMsaaSampleCount, PBR_OPAQUE_ATTACHMENT_FORMATS } from "./renderTargets.js";
 import { weightedOitColorTargets } from "./weightedOit.js";
 import { CASCADED_SHADOW_UNIFORM_BYTES } from "../shadows/cascadedShadowShader.js";
 import { createPbrOutputShaderProvenance, type PbrOutputShaderProvenance } from "./pbrOutputShaderProvenance.js";
@@ -45,6 +45,8 @@ export interface Pipelines {
   readonly displayDirectionalPipelines: ReadonlyMap<string, GPURenderPipeline>;
   readonly displayDirectionalMain?: GPURenderPipeline;
   readonly shadowPipelines: ReadonlyMap<string, GPURenderPipeline>;
+  /** B1 Brief-VSM 虚拟阴影页物化管线(键与 shadowPipelines 同形,片元写 r32float 光深)。 */
+  readonly pageShadowPipelines: ReadonlyMap<string, GPURenderPipeline>;
   readonly output: GPURenderPipeline;
   readonly outputShaderProvenance?: PbrOutputShaderProvenance | undefined;
   readonly materialLayout: MaterialLayouts;
@@ -96,6 +98,13 @@ export interface PipelinesBuildOptions {
   readonly layeredMaterials?: boolean;
   /** sheen / iridescence / clearcoat IBL / 体积透射着色变体(材质 uniform 240B);与 layered、textureArrays 互斥。 */
   readonly advancedMaterials?: boolean;
+  /**
+   * AA-M1 主 pass 采样数(能力解析后的生效值,1 或 4):只作用于 HDR 主 opaque 管线
+   * (mainPipelines)与主 pass 内绘制的全景背景/簇级 bundle;直出 display 管线渲染进
+   * 1x swapchain,恒 1;阴影图集管线恒 1。缺省 = 请求常量(4),由调用方(bootstrap
+   * 能力探针)决定是否降为 1。
+   */
+  readonly mainSampleCount?: number;
   /** Main pipeline keys required by the first published frame. They are queued
    * (and awaited) before every other main variant; the remaining mains are only
    * queued once the critical subset resolves, so the bootstrap validation scope
@@ -138,6 +147,8 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
   const textureArrays = options.textureArrays === true;
   const layeredMaterials = options.layeredMaterials === true;
   const advancedMaterials = options.advancedMaterials === true;
+  // AA-M1:主 pass 采样数在构建期定死(渲染器构造期已按设备能力解析),undefined = 请求常量。
+  const mainSampleCount = resolvePbrMsaaSampleCount(options.mainSampleCount);
   if (advancedMaterials && (layeredMaterials || textureArrays)) throw new Error("Advanced materials cannot combine with layered or texture-array pipelines.");
   if (layeredMaterials && textureArrays) throw new Error("Layered materials use the D2 material pipeline; array batches retain their existing profile.");
   if (layeredMaterials && device.limits.maxSampledTexturesPerShaderStage < LAYERED_MATERIAL_REQUIRED_TEXTURES)
@@ -211,12 +222,21 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
       ...(layeredMaterials ? layeredMaterialLayoutEntries() : []),
     ] });
   const emptyMaterialLayout = device.createBindGroupLayout({ label: "Deep plain material group 1", entries: poseEntries });
+  // B1 Brief-VSM:group 2 增补 binding 3..5(页表 meta/layers read-only-storage + 页
+  // atlas texture_2d_array<f32>)。级联档 bind group 以占位 buffer/4×4 depth 视图填充,
+  // 着色端 params2.x=0 时不消费 —— 既有级联采样路径零变化。
   const cascadedShadowLayout = device.createBindGroupLayout({ label: "Deep cascaded shadow group 2", entries: [
     { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
       buffer: { type: "uniform", minBindingSize: CASCADED_SHADOW_UNIFORM_BYTES } },
     { binding: 1, visibility: GPUShaderStage.FRAGMENT,
       texture: { sampleType: "depth", viewDimension: "2d-array" } },
     { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "comparison" } },
+    { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+    { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "read-only-storage" } },
+    // r32float 页 atlas = unfilterable-float(无 float32-filterable 特性;采样端
+    // 仅 textureLoad 手动 tap,无过滤需求)。
+    { binding: 5, visibility: GPUShaderStage.FRAGMENT,
+      texture: { sampleType: "unfilterable-float", viewDimension: "2d-array" } },
   ] });
   const plainLayout = device.createPipelineLayout({
     bindGroupLayouts: [frameLayout, emptyMaterialLayout, cascadedShadowLayout, forwardPlusLayout],
@@ -249,7 +269,9 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
           : writeGeometryBuffers ? opaqueEntry : `${opaqueEntry}Color`, targets },
         primitive: { topology: "triangle-list", cullMode: doubleSided ? "none" : "back", frontFace: raster === "cw" ? "cw" : "ccw" },
         depthStencil: { format: PBR_DEPTH_FORMAT, depthWriteEnabled: !transparent, depthCompare: "less" },
-        multisample: { count: PBR_MAIN_SAMPLE_COUNT },
+        // 透明(blend/OIT)变体恒 1x:绘制目标是 1x OIT 累积 pass(主方案纪律:
+        // 混合链不进 MSAA 主目标,加权 OIT 的逐片元权重无多采样语义)。
+        multisample: { count: transparent ? 1 : mainSampleCount },
       };
       mainFactories.push({ key, descriptor, create: () => createPipeline(descriptor) });
     }
@@ -284,7 +306,8 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
           targets: [{ format }] },
         primitive: { topology: "triangle-list", cullMode: doubleSided ? "none" : "back", frontFace: raster === "cw" ? "cw" : "ccw" },
         depthStencil: { format: PBR_DEPTH_FORMAT, depthWriteEnabled: true, depthCompare: "less" },
-        multisample: { count: PBR_MAIN_SAMPLE_COUNT },
+        // 直出 display 管线渲染进 1x swapchain 视图,恒不参与 MSAA(AA-M1)。
+        multisample: { count: 1 },
       })));
     }
   }
@@ -300,16 +323,17 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
         primitive: { topology: "triangle-list", cullMode: doubleSided ? "none" : "back",
           frontFace: raster === "cw" ? "cw" : "ccw" },
         depthStencil: { format: PBR_DEPTH_FORMAT, depthWriteEnabled: true, depthCompare: "less" },
-        multisample: { count: PBR_MAIN_SAMPLE_COUNT },
+        multisample: { count: 1 },
       })));
     }
   }
-  const shadowFrameLayout = device.createBindGroupLayout({ entries: [
+  const shadowFrameLayout = device.createBindGroupLayout({ label: "Deep shadow frame group 0", entries: [
     { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } },
   ] });
-  const shadowPlainLayout = device.createPipelineLayout({ bindGroupLayouts: deformation
-    ? [shadowFrameLayout, emptyMaterialLayout] : [shadowFrameLayout] });
-  const shadowMaterialLayout = device.createPipelineLayout({ bindGroupLayouts: [shadowFrameLayout, material] });
+  const shadowPlainLayout = device.createPipelineLayout({ label: "Deep shadow plain layout",
+    bindGroupLayouts: deformation ? [shadowFrameLayout, emptyMaterialLayout] : [shadowFrameLayout] });
+  const shadowMaterialLayout = device.createPipelineLayout({ label: "Deep shadow material layout",
+    bindGroupLayouts: [shadowFrameLayout, material] });
   const shadowPipelines = new Map<string, GPURenderPipeline>(), pendingShadow: Array<Promise<GPURenderPipeline>> = [], pendingShadowKeys: string[] = [];
   for (const authored of directDisplayOneCascade ? [false, true] : [false]) for (const mode of ["solid", "maskPlain", "maskMaterial"] as const) for (const raster of ["ccw", "cw", "double"] as const) {
     const key = (authored ? "author/" : "") + shadowPipelineKey(mode, raster), doubleSided = raster === "double";
@@ -324,11 +348,34 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
       depthStencil: { format: "depth32float", depthWriteEnabled: true, depthCompare: "less", depthBias: authored ? 0 : 1, depthBiasSlopeScale: authored ? 0 : 1 },
     })));
   }
+  // B1 Brief-VSM 虚拟阴影页物化管线:与级联阴影同顶点/同键位,片元额外把线性光深
+  // (builtin z,WebGPU 0..1)写进 r32float 页 atlas;depth32float 附件仍承担近者胜。
+  // 恒 1x(页池非 MSAA 附件),不入首帧关键集(虚拟档 opt-in)。
+  const pageShadowPipelines = new Map<string, GPURenderPipeline>();
+  const pendingPageShadow: Array<Promise<GPURenderPipeline>> = [];
+  for (const mode of ["solid", "maskPlain", "maskMaterial"] as const) for (const raster of ["ccw", "cw", "double"] as const) {
+    const key = shadowPipelineKey(mode, raster), doubleSided = raster === "double";
+    const fragmentEntryPoint = mode === "solid" ? "shadowPageDepth"
+      : mode === "maskPlain" ? "shadowPageMaskPlain" : "shadowPageMaskTextured";
+    const vertexEntryPoint = deformation ? mode === "solid" ? "shadowDeformed" : "shadowMaskDeformed"
+      : mode === "solid" ? "shadowMain" : "shadowMaskMain";
+    pendingPageShadow.push(track(pageShadowPipelines, key, device.createRenderPipelineAsync({
+      label: `Deep virtual shadow page ${key}`,
+      layout: mode === "maskMaterial" ? shadowMaterialLayout : shadowPlainLayout,
+      vertex: { module, entryPoint: vertexEntryPoint, buffers: mode === "solid" ? shadowBuffers : shadowMaskBuffers },
+      fragment: { module, entryPoint: fragmentEntryPoint, targets: [{ format: "r32float" }] },
+      primitive: { topology: "triangle-list", cullMode: doubleSided ? "none" : "back", frontFace: raster === "cw" ? "cw" : "ccw" },
+      depthStencil: { format: "depth32float", depthWriteEnabled: true, depthCompare: "less", depthBias: 1, depthBiasSlopeScale: 1 },
+      multisample: { count: 1 },
+    })));
+  }
   const output = sharedOutput.renderPipeline();
-  markPipeline(`queued-main${mainFactories.length}-display${pendingDisplay.length}-directional${pendingDirectional.length}-shadow${pendingShadow.length}-output1`);
+  markPipeline(`queued-main${mainFactories.length}-display${pendingDisplay.length}-directional${pendingDirectional.length}-shadow${pendingShadow.length}-pageShadow${pendingPageShadow.length}-output1`);
   const displayReady = Promise.all(pendingDisplay).then(value => { markPipeline("display-ready"); return value; });
   const directionalReady = Promise.all(pendingDirectional).then(value => { markPipeline("directional-ready"); return value; });
   const shadowReady = Promise.all(pendingShadow).then(value => { markPipeline("shadow-ready"); return value; });
+  // B1 Brief-VSM:页物化管线随 ready 结算(opt-in 能力,不占首帧关键集)。
+  const pageShadowReady = Promise.all(pendingPageShadow).then(value => { markPipeline("page-shadow-ready"); return value; });
   const outputPipelineReady = output.then(value => { markPipeline("output-ready"); return value; });
   const criticalReady = Promise.all([criticalMainReady, displayReady, directionalReady, shadowReady, outputPipelineReady])
     .then(() => { markPipeline("critical-ready"); });
@@ -353,7 +400,8 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
     return value;
   });
   if (deferredMains.length === 0) releaseDeferredQueues?.();
-  const ready = Promise.all([deferredMainReady, displayReady, directionalReady, shadowReady, outputPipelineReady])
+  // B1 Brief-VSM:页物化管线失败同样让 ready 拒绝(不静默;虚拟档 opt-in 构造即需可用)。
+  const ready = Promise.all([deferredMainReady, displayReady, directionalReady, shadowReady, pageShadowReady, outputPipelineReady])
     .then(() => { markPipeline("ready"); });
   let outputPipeline: GPURenderPipeline | undefined;
   let outputProvenance: PbrOutputShaderProvenance | undefined;
@@ -364,7 +412,7 @@ export async function createPipelinesBuild(device: GPUDevice, format: GPUTexture
   const pipelines: Pipelines = {
     get main() { return mainPipelines.get(passMainKey)!; },
     get shadow() { return shadowPipelines.get(shadowPipelineKey("solid", "ccw"))!; },
-    mainPipelines, displayPipelines, displayDirectionalPipelines, shadowPipelines,
+    mainPipelines, displayPipelines, displayDirectionalPipelines, shadowPipelines, pageShadowPipelines,
     get output() { return outputPipeline!; },
     get outputShaderProvenance() { return outputProvenance; },
     materialLayout: { material, ...(layeredMaterials ? { layeredMaterials: true } : {}), ...(advancedMaterials ? { advancedMaterials: true } : {}) }, cascadedShadowLayout,

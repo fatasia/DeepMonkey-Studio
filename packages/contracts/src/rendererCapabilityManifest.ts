@@ -393,15 +393,15 @@ export const RENDERER_CAPABILITY_MANIFEST: readonly RendererCapabilityManifestEn
   },
   {
     id: "shadow-cascades",
-    title: "级联阴影(CSM)",
+    title: "主阴影双档:级联 CSM(默认档)+ 三环 clipmap 虚拟阴影(回退可切档)",
     webFeatureKeys: [],
     web: {
       support: "supported", reason: "full",
-      evidence: "packages/deep-engine/src/shadows/cascadedShadowPlanner.ts:cascadedShadowPlanner(cascadedShadowShader/资源规划默认通路)",
+      evidence: "packages/deep-engine/src/shadows/cascadedShadowPlanner.ts:cascadedShadowPlanner(cascadedShadowShader/资源规划默认档) + packages/deep-engine/src/shadows/virtualShadowClipmap.ts:planVirtualShadowClipmap(virtual 档:三环 clipmap 虚拟 16384²/页 128²,物化 2048²×4 页池,shadows/virtualShadowPages.ts 投影误差 Top-K+动态页掩码,webgpu/virtualShadowResources.ts 页渲染+页表绑定,webgpu/virtualShadowSampling.ts 着色端页表查询+PCSS+缺页回退上一环;合同 displayContract.shadow.mode,缺字段=级联)",
     },
     native: {
       support: "supported", reason: "full",
-      evidence: "packages/deep-engine-native/src/cascaded_shadow.rs:cascaded_shadow(cascaded_shadow_math.rs;renderer shadow_map.rs CascadedShadowGpuMetrics)",
+      evidence: "packages/deep-engine-native/src/cascaded_shadow.rs:cascaded_shadow(cascaded_shadow_math.rs;renderer shadow_map.rs CascadedShadowGpuMetrics;native 直出通路按设计走级联档,虚拟档属 web opt-in)",
     },
   },
   {

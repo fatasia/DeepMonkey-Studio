@@ -1,6 +1,15 @@
 export type DisplayToneMappingOperator = "three-aces-r185" | "deep-aces";
 export type DisplayOutputColorSpace = "srgb";
 export type DisplayShadowFilter = "pcf" | "pcf-soft";
+/**
+ * 主阴影实现档(B1 Brief-VSM,2026-10-03):
+ * - "virtual":三环 clipmap 虚拟阴影图(16k² 等效虚拟分辨率,页表物化 + 着色端页
+ *   表查询,PCSS 软硬化,页缺失回退上一环);
+ * - "cascaded":既有级联阴影(CSM)。
+ * 合同向后兼容:`shadow.mode` 缺字段(或非法值)一律按 "cascaded" 处理
+ * (resolveDisplayShadowMode fail-closed),既有合同/资产/录制零迁移。
+ */
+export type DisplayShadowMode = "virtual" | "cascaded";
 export type DisplayAntialiasLevel = "off" | "smaa-gtao";
 
 export interface DisplayContract {
@@ -27,6 +36,8 @@ export interface DisplayContract {
     readonly normalBias: number;
     readonly radius: number;
     readonly blurSamples: number;
+    /** 主阴影实现档;缺字段 = "cascaded"(向后兼容,见 DisplayShadowMode)。 */
+    readonly mode?: DisplayShadowMode;
   };
   readonly antialias: {
     readonly level: DisplayAntialiasLevel;
@@ -34,6 +45,11 @@ export interface DisplayContract {
     readonly fxaa: boolean;
     readonly gtao: boolean;
     readonly gtaoIntensity: number;
+    /**
+     * AA-M1(2026-10-03)主 pass 硬件 MSAA 采样数档;缺字段 = 引擎默认(4 = 默认开)。
+     * 设备不支持时引擎侧 fail-closed 回 1x 并在帧遥测披露;合同本身不感知设备能力。
+     */
+    readonly msaaSampleCount?: 1 | 4;
   };
   readonly bloom: {
     readonly enabled: boolean;
@@ -82,3 +98,22 @@ export const DEFAULT_DISPLAY_CONTRACT: DisplayContract = Object.freeze({
     threshold: 0.9,
   }),
 });
+
+/**
+ * 主 pass MSAA 档解析(fail-closed):缺字段 = 4(引擎默认,向后兼容旧合同/资产);
+ * 非法值一律回 4,不静默透传任意数字。单源判定点 —— 宿主经它取值后喂
+ * PbrRendererOptions.msaaSampleCount。
+ */
+export function resolveDisplayMsaaSampleCount(
+  antialias: DisplayContract["antialias"] | undefined): 1 | 4 {
+  return antialias?.msaaSampleCount === 1 ? 1 : 4;
+}
+
+/**
+ * 阴影档解析(fail-closed):缺字段/非法值/非 "virtual" 一律 "cascaded"。
+ * 单源判定点——宿主不得各自展开 `mode === "virtual"` 字面量比较。
+ */
+export function resolveDisplayShadowMode(
+  shadow: DisplayContract["shadow"] | undefined): DisplayShadowMode {
+  return shadow?.mode === "virtual" ? "virtual" : "cascaded";
+}

@@ -59,7 +59,7 @@ describe("SceneToolDock", () => {
       />,
     );
 
-    expect(html).toContain('aria-label="选择"');
+    expect(html).toContain('aria-label="选择 (Q)"');
     expect(html).toContain('aria-label="测量"');
     expect(html).toContain("创建");
     expect(html).toContain("查看与分析");

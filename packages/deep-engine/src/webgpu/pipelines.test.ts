@@ -92,6 +92,11 @@ it("keeps default raster bias while providing isolated unbiased author variants"
 describe("PBR pipeline texture variants", () => {
   it("bounds material variants while separating transparent depth/blend and masked shadows", async () => {
     const f = fixture(), result = await createPipelines(f.device, "bgra8unorm", {} as GPUBindGroupLayout);
+    // AA-M1 采样数合同(置于易随并行任务变动的管线计数断言之前,单独可判):
+    // HDR 主管线 4x;阴影管线无多采样(1x 图集;直出 display 见下方 color-only 用例)。
+    expect(f.descriptors[0]!.multisample?.count).toBe(4);
+    expect(f.descriptors[18]!.multisample).toBeUndefined();
+    expect(f.descriptors[21]!.multisample).toBeUndefined();
     expect(f.descriptors).toHaveLength(28);
     expect(result.mainPipelines.size).toBe(18); expect(result.shadowPipelines.size).toBe(9);
     expect(f.descriptors.slice(0, 18).map(value => value.fragment && value.fragment.entryPoint)).toEqual([
@@ -111,7 +116,6 @@ describe("PBR pipeline texture variants", () => {
     expect(f.descriptors[0]!.primitive?.cullMode).toBe("back");
     expect(f.descriptors[2]!.primitive?.cullMode).toBe("none");
     expect(f.descriptors[3]!.depthStencil?.depthWriteEnabled).toBe(false);
-    expect(f.descriptors[0]!.multisample?.count).toBe(1);
     expect(f.descriptors[0]!.fragment!.targets.map(target => target!.format)).toEqual([
       "rgba16float", "r32float", "rgba8unorm", "rg16float",
     ]);
@@ -175,6 +179,8 @@ describe("PBR pipeline texture variants", () => {
     expect(f.descriptors[18]!.vertex).toMatchObject({ entryPoint: "vertexDirectDisplay", buffers: { length: 2 } });
     expect(f.descriptors[21]!.vertex).toMatchObject({ entryPoint: "vertexMaterialDirectDisplay", buffers: { length: 2 } });
     expect(f.descriptors[24]!.vertex).toMatchObject({ entryPoint: "vertexNormalMaterialDirectDisplay", buffers: { length: 3 } });
+    // AA-M1:直出 display 管线渲染进 1x swapchain,恒不参与 MSAA。
+    expect(f.descriptors.slice(18, 27).every(value => value.multisample?.count === 1)).toBe(true);
     expect(f.descriptors.slice(18, 27).every(value => value.fragment?.targets[0]?.format === "bgra8unorm")).toBe(true);
   });
 

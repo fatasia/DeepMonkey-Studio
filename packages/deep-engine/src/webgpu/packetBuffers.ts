@@ -303,6 +303,15 @@ export class PacketBuffers {
       deformationActive: this.deformation.hasDeformation };
   }
 
+  /**
+   * B1 Brief-VSM 动态页掩码输入:变形批的世界保守包围(批次键 → 包络)。
+   * 只读视图,供虚拟阴影按动态物体失效页(与剔除同一包络源,零额外估算)。
+   */
+  dynamicBoundsEnvelope(): ReadonlyMap<string, DeformationBoundsEnvelope> {
+    if (this.disposed) throw new Error("Packet resources are disposed.");
+    return this.deformation.dynamicBounds;
+  }
+
   encodeDeformation(encoder: GPUCommandEncoder): void { this.deformation.encode(encoder, this.batches, this.geometries); }
   cancelDeformationFrame(): void { this.deformation.cancelFrame(); }
 

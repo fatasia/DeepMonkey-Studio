@@ -24,6 +24,8 @@ import { updatePbrFrameUniforms } from "./pbrFrameUniforms.js";
 import { scalePbrEnvironmentRadiance } from "./pbrEnvironmentIntensity.js";
 import { PreviousHiZVisibility, type PreviousHiZFramePlan } from "./previousHiZVisibility.js";
 import { PbrShadowState } from "./pbrShadowState.js";
+import { VirtualShadowResources } from "./virtualShadowResources.js";
+import { VirtualShadowPageTable, VIRTUAL_SHADOW_PHYSICAL_PAGES } from "../shadows/virtualShadowPages.js";
 import { ContactShadowResources, describeContactShadowPass, describeContactApplyPass } from "../shadows/contactShadowResources.js";
 import { hasClusteredLights, resolvePbrSceneLighting } from "../lighting/pbrSceneLighting.js";
 import { resolveDeepGiProducerDirectionCount } from "../lighting/probeRadianceDirectionGate.js";
@@ -71,7 +73,8 @@ import type { SplatCloud } from "../gaussianSplat/decodeSplatPly.js";
 import { pbrSplatFrame } from "./pbrSplatFrame.js";
 import { createGpuParticleRuntimeFromEmitters, submitGpuParticleEmitterFrame } from "./gpuParticleEmitters.js";
 import type { GpuParticleRuntime } from "./gpuParticleRuntime.js";
-import { PBR_DEPTH_FORMAT, PBR_HDR_FORMAT } from "./renderTargets.js";
+import { PBR_DEPTH_FORMAT, PBR_HDR_FORMAT, resolvePbrMsaaSampleCount } from "./renderTargets.js";
+import { PbrDepthResolvePass } from "./pbrDepthResolve.js";
 import { VisibilityBufferPath } from "./visibilityBufferPass.js";
 import { SoftRasterizeFallback } from "./softRasterizeFallback.js";
 import { ClusterLodRenderSlot, type ClusterLodSceneStaging } from "./clusterLodRenderSlot.js";
@@ -86,6 +89,8 @@ export class PbrRenderer {
   readonly id = "deep-webgpu";
   private readonly diagnostics: PbrRendererDiagnostics; get gpuTimer() { return this.diagnostics.gpuTimer; }
   get performanceTelemetry() { return this.diagnostics.performance; } get transientTextureStats() { return this.targets.transientStats; }
+  /** 设备侧未捕获错误镜像(session.events 的只读视图;探针/面板诊断用)。 */
+  get deviceDiagnostics() { return this.session.diagnostics; }
   get materialBindingStats() { return this.packets.materialBindingStats; }
   /** C26: immutable device compile ledger, copied only when requested. */
   getPipelineCompileRecords() { return snapshotPipelineCompileRecords(this.session.device); }
@@ -94,6 +99,10 @@ export class PbrRenderer {
   private readonly mainBindings: PbrMainBindings;
   private readonly environment: PbrEnvironmentState;
   private readonly shadowState: PbrShadowState; private get shadows() { return this.shadowState.current; }
+  /** B1 Brief-VSM 主阴影档与虚拟阴影资源(缺省/失败 = undefined,fail-closed 回级联)。 */
+  readonly shadowMode: "virtual" | "cascaded";
+  readonly virtualShadows: import("./virtualShadowResources.js").VirtualShadowResources | undefined;
+  readonly virtualShadowFallbackReason: string | undefined;
   /** C10 屏幕空间接触阴影;opt-in(features.contactShadows),默认不存在。 */
   private readonly contactShadows: ContactShadowResources | undefined;
   private readonly targets: RenderTargets; private readonly transientTextures: PbrTransientTexturePool;
@@ -131,6 +140,10 @@ export class PbrRenderer {
   private particleLastTime = performance.now();
   private readonly visibility: VisibilityBufferPath | undefined;
   private readonly adaptiveQuality: AdaptiveQualityController | undefined;
+  /** AA-M1:主 pass 生效采样数与遥测快照(能力探针结果);帧宿主接口与 FrameMetrics 消费。 */
+  readonly mainSampleCount: 1 | 4;
+  readonly msaaMetrics: import("./pbrRendererTypes.js").FrameMetrics["msaa"];
+  readonly depthResolve: import("./pbrDepthResolve.js").PbrDepthResolvePass | undefined;
   /** G1-S1 簇级微多边形绘制槽位；仅 options.clusterLod === true 时可经 stageClusterLodScene 注入。 */
   private readonly clusterLodEnabled: boolean;
   private clusterLodSlot: ClusterLodRenderSlot | undefined;
@@ -161,7 +174,8 @@ export class PbrRenderer {
   private previousFrameCameraCut = false;
   private constructor(readonly session: DeviceSession, private readonly pipelines: Pipelines, environment: StudioEnvironment,
     lighting: ForwardPlusPbrRuntime, localShadows: LocalSpotShadowRuntime, options: PbrRendererOptions, features: PbrRendererFeatures,
-    deformationPipelines?: Pipelines | Promise<Pipelines>, private readonly releasePipelines?: () => void) {
+    deformationPipelines?: Pipelines | Promise<Pipelines>, private readonly releasePipelines?: () => void,
+    msaa: import("./pbrMsaaCapability.js").PbrMsaaCapability = { sampleCount: 1 }) {
     this.deviceEpoch = new RendererDeviceEpoch(session.device);
     this.diagnostics = new PbrRendererDiagnostics(session);
     this.clusterLodEnabled = resolveClusterLodSlotOption(options.clusterLod);
@@ -206,12 +220,35 @@ export class PbrRenderer {
     this.outputs = new PbrOutputBindings(session, pipelines, () => performance.now(), features.spatialAa, session.hdrDisplayCapability?.policy);
     this.shadowState = new PbrShadowState(session, pipelines, options.shadows);
     this.optionsExactShadowCascade = options.shadows?.exactProfile?.cascadeCount;
+    // B1 Brief-VSM:虚拟档资源(opt-in shadowMode="virtual";构造失败 fail-closed 回
+    // 级联档,原因随遥测披露 —— 不静默,不阻塞渲染循环)。
+    this.shadowMode = options.shadowMode === "virtual" ? "virtual" : "cascaded";
+    if (this.shadowMode === "virtual") {
+      try {
+        this.virtualShadows = new VirtualShadowResources(session, pipelines,
+          new VirtualShadowPageTable(VIRTUAL_SHADOW_PHYSICAL_PAGES, options.virtualShadow?.perPageCostMs),
+          options.virtualShadow ?? {});
+      } catch (error) {
+        this.virtualShadows = undefined;
+        this.virtualShadowFallbackReason = error instanceof Error ? error.message : String(error);
+      }
+    } else {
+      this.virtualShadows = undefined;
+      this.virtualShadowFallbackReason = undefined;
+    }
+    this.mainSampleCount = msaa.sampleCount;
+    this.msaaMetrics = Object.freeze({ requested: resolvePbrMsaaSampleCount(options.msaaSampleCount),
+      active: msaa.sampleCount, ...(msaa.fallbackReason ? { fallbackReason: msaa.fallbackReason } : {}) });
+    // AA-M1:深度 resolve pass 仅 MSAA 渲染器持有(管线 + 按帧源视图的 bind group 缓存)。
+    this.depthResolve = msaa.sampleCount > 1 ? new PbrDepthResolvePass(session) : undefined;
     this.probeDirectionsOverride = options.probeDirections;
     this.lastAuthorShadowSize = options.shadows?.exactProfile?.shadowMapSize;
     this.contactShadows = features.contactShadows ? new ContactShadowResources(session, options.contactShadows ?? {}) : undefined;
     this.environment = new PbrEnvironmentState(environment);
     this.mainBindings = new PbrMainBindings(session, pipelines, this.frameBuffer, this.shadows, environment);
-    this.transientTextures = new PbrTransientTexturePool(session, options.transientTextureBudgetBytes); this.targets = new RenderTargets(session, pipelines.output.getBindGroupLayout(0), this.outputs.buffer, this.transientTextures);
+    this.transientTextures = new PbrTransientTexturePool(session, options.transientTextureBudgetBytes);
+    this.targets = new RenderTargets(session, pipelines.output.getBindGroupLayout(0), this.outputs.buffer,
+      this.transientTextures, msaa.sampleCount);
     this.features = features;
     this.resolutionScaler = options.resolutionScalePolicy === undefined ? undefined
       : new DynamicResolutionScaler(options.resolutionScalePolicy);
@@ -273,7 +310,13 @@ export class PbrRenderer {
       options.features?.layeredMaterials === true || options.hdrDisplay !== undefined ? {
         ...(options.features?.layeredMaterials === true ? { layeredMaterials: true } : {}),
         ...(options.hdrDisplay === undefined ? {} : { hdrDisplay: options.hdrDisplay }),
-      } : undefined);
+        // B1 Brief-VSM:group 2 布局对全部档位统一增补页表/页 atlas 绑定(级联档占位),
+        // 片元峰值 10 storage / 17 sampled 超出 WebGPU 基线 8/16 —— 与 layered 材质
+        // (19 sampled)同先例按需抬高上限,DeviceSession 侧 clamp 到 adapter 能力。
+        extendedShadowBindings: true,
+      } : {
+        extendedShadowBindings: true,
+      });
     const deviceEpoch = new RendererDeviceEpoch(session.device);
     if (typeof performance !== "undefined") performance.mark("deep-webgpu:device-opened");
     const renderer = await openPbrRenderer(session, signal, options, () => new DOMException("GPU preparation cancelled", "AbortError"),
@@ -342,7 +385,7 @@ export class PbrRenderer {
       throw new Error("Cluster LOD slot is not enabled (PbrRendererOptions.clusterLod).");
     }
     this.clusterLodSlot?.dispose();
-    this.clusterLodSlot = ClusterLodRenderSlot.create(this.session, staging);
+    this.clusterLodSlot = ClusterLodRenderSlot.create(this.session, staging, this.mainSampleCount);
   }
   /**
    * Product GI source (DeepWebGpuRenderRuntime contract): installs the real one-bounce
@@ -444,7 +487,8 @@ export class PbrRenderer {
       this.shadowState, this.previousHiZ, this.transparency, this.postProcess, this.packets, this.targets,
       ...(this.visibility ? [this.visibility] : []), ...(this.clusterLodSlot ? [this.clusterLodSlot] : []),
       ...(this.virtualTextures ? [this.virtualTextures] : []),
-      ...(this.virtualTileLookup ? [this.virtualTileLookup] : [])];
+      ...(this.virtualTileLookup ? [this.virtualTileLookup] : []),
+      ...(this.virtualShadows ? [this.virtualShadows] : [])];
     // 释放背景排队门：未 release 就销毁的宿主也能让挂起的门禁 promise 结算。
     this.releasePipelines?.();
     runResourceCleanup("PBR renderer cleanup failed.", [...owners.map(owner => () => owner.dispose()),

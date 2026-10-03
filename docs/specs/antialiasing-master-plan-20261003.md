@@ -69,6 +69,35 @@
 | AA-M2 | alpha-to-coverage + TSR 防鬼影强化(残影 ≤1%)+ SMAA 移植(T2x) | 组合档全通;阶梯能量 ↓≥80% |
 | AA-M3 | CMAA2 档 + 线 AA 全分辨率 + 8x 检测档 + 自适应组合 + manifest/文档 | 全档位证据矩阵 |
 
+### AA-M1 落地记录(2026-10-04)
+
+**架构决策(与 §3 纪律的偏差与理由):**
+- WebGPU 渲染 pass 强制全部附件同采样数,"MSAA 主 pass + 1x 附属 MRT(线性深度/
+  view-normal/motion)"单 pass 内不成立。落地为:**主 pass 全附件 4x**(hdr + 三个
+  MRT + 深度),颜色目标经 `resolveTarget` 硬件下采样到单采样主帧目标(后处理链/
+  输出 bind group/读回/次级 pass 全部只消费 resolve 层,合同 sampleCount=1);
+  MRT MSAA 附件仅 RENDER_ATTACHMENT 语义(TRANSIENT 驱动内存别名),内容只在
+  pass 内经 resolve 消费 —— "附属目标默认 1x"在**消费层**成立。
+- **深度无 resolveTarget(depth32float 不可 resolve、不可 storage 写)**:新增
+  `pbrDepthResolve.ts`(depth-only 渲染 pass,`@builtin(frag_depth)` 直写 sample-0)。
+  仅当主 pass 后仍有深度消费方(Hi-Z/透明 OIT/粒子/样条/作者网格/可见性/描边/
+  display 背景)时编码;无消费方帧主 pass 直接 `depthStoreOp:"discard"`(任务口径)。
+  sample-0 而非均值:保持深度数值语义(背景 depthCompare "equal"、Hi-Z 比较不变)。
+- 直出 display 快路径(1x swapchain)不参与 MSAA;display/directional/阴影管线恒 1x。
+- 能力回退:bootstrap 前 `probePbrMainSampleCount` error-scope 探针(同 activateHdrCanvas
+  先例)探测 rgba16float+depth32float 4x;失败 fail-closed 回 1x(整渲染器 1x 构建,
+  逐字节旧行为),原因经 `FrameMetrics.msaa.fallbackReason` 披露。
+- `PBR_MAIN_SAMPLE_COUNT=4` 语义改为"请求默认档";`PbrRendererOptions.msaaSampleCount`
+  (1|4)与 `displayContract.antialias.msaaSampleCount?`(缺字段=4,向后兼容)双入口。
+
+**改动文件:** packages/deep-engine/src/webgpu/{renderTargets,pipelines,pbrPipelineSet,
+pbrBackgroundPass,pbrMainBindings,pbrOpaquePass,pbrFramePlanResources,pbrPostProcessChain,
+pbrFramePlanExecutor,pbrRenderer,pbrRendererBootstrap,pbrRendererFrames,pbrRendererTypes,
+clusterLodRenderSlot,clusterLodSlotSupport}.ts、新增 {pbrMsaaCapability,pbrDepthResolve}.ts(+测试)、
+lab/msaaPerfProbe.ts、scripts/bench-msaa1080p.mjs、packages/contracts/src/displayContract.ts。
+
+**证据:** 帧时与 parity 数字见任务交付报告(test-output/parity-gate/、test-output/msaa-perf/)。
+
 ## 5. 指标体系(进 verify 与 parity)
 1. **parity aa-bloom**:目标 RMSE <1(与 three 同构 MSAA4+SMAA 组合后);
 2. **边缘质量**:边缘带像素梯度能量 vs 4x 超采样参考(离线路径追踪或 2x 分辨率渲染);

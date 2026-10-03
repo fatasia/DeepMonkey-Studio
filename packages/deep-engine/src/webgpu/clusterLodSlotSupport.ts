@@ -95,7 +95,8 @@ export async function readBackWords(buffer: GPUBuffer, wordCount: number): Promi
  * 深度测试 "less" 与主 pass 一致——槽位几何不污染后续 pass 的深度历史。
  */
 export function createClusterLodSlotRenderResources(session: DeviceSession,
-  viewProjection: ArrayBuffer): ClusterLodSlotRenderResources {
+  viewProjection: ArrayBuffer, /** AA-M1:主 pass 生效采样数(槽位管线与主 pass 附件一致)。 */
+  sampleCount: 1 | 4 = 1): ClusterLodSlotRenderResources {
   const device = session.device;
   const module = device.createShaderModule({ label: "Deep cluster LOD slot shader", code: /* wgsl */ `
 struct Frame { viewProjection: mat4x4f };
@@ -113,6 +114,7 @@ struct VertexOutput { @builtin(position) position: vec4f };
       buffers: [{ arrayStride: 12, attributes: [{ shaderLocation: 0, offset: 0, format: "float32x3" }] }] },
     fragment: { module, entryPoint: "fragment", targets: [{ format: PBR_HDR_FORMAT }] },
     depthStencil: { format: PBR_DEPTH_FORMAT, depthWriteEnabled: false, depthCompare: "less" },
+    multisample: { count: sampleCount },
     primitive: { topology: "triangle-list", cullMode: "none" } });
   const viewProjectionBuffer = session.own(device.createBuffer({
     label: "Deep cluster LOD slot view projection", size: 64,

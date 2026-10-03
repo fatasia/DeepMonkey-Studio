@@ -265,7 +265,8 @@ export function assertPlanMatchesActual(plan: PbrFrameExecutionPlan, actual: rea
 /** 组装实际执行描述:各执行者文件的 describe* 输出,与 encode 代码路径贴近书写。 */
 export function collectActualPbrFramePasses(features: PbrRendererFeatures, transparency: boolean,
   options: { readonly opaqueColorResource?: string; readonly presentInputResource?: string;
-    readonly directDisplay?: boolean; readonly writeGeometryBuffers?: boolean; readonly bloom?: boolean; readonly godRays?: boolean; readonly hdrDisplay?: boolean } = {}): readonly PbrActualPassDescription[] {
+    readonly directDisplay?: boolean; readonly writeGeometryBuffers?: boolean; readonly bloom?: boolean; readonly godRays?: boolean; readonly hdrDisplay?: boolean;
+    readonly msaa?: boolean; readonly depthResolved?: boolean } = {}): readonly PbrActualPassDescription[] {
   if (options.directDisplay) return Object.freeze([describePbrOpaquePass(options)]);
   const opaqueColorResource = options.opaqueColorResource ?? (features.ambientOcclusion ? "ao-hdr" : "opaque-hdr");
   const effects = PbrPostProcessChain.describePasses(features, transparency, { opaqueColorResource, ...(options.godRays ? { godRays: true } : {}) });

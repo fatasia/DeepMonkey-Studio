@@ -45,10 +45,11 @@ describe("production PBR deformation pipeline selection", () => {
     const arrayFeatures = { ...features, textureArrays: true };
     await createPbrPipelineSet(session, lighting, { deformation: true }, arrayFeatures);
     const [fallback, array, poseFallback, poseArray] = vi.mocked(createPipelinesBuild).mock.calls;
-    expect(fallback![6]).toBeUndefined();
-    expect(array![6]).toEqual({ textureArrays: true });
-    expect(poseFallback![6]).toEqual({ deformation: true });
-    expect(poseArray![6]).toEqual({ deformation: true, textureArrays: true });
+    // AA-M1 默认档(4x)常驻 buildOptions;显式 1x 渲染器回到 undefined(旧口径)。
+    expect(fallback![6]).toEqual({ mainSampleCount: 4 });
+    expect(array![6]).toEqual({ textureArrays: true, mainSampleCount: 4 });
+    expect(poseFallback![6]).toEqual({ deformation: true, mainSampleCount: 4 });
+    expect(poseArray![6]).toEqual({ deformation: true, textureArrays: true, mainSampleCount: 4 });
     await createPbrPipelineSet(session, lighting, {}, features);
     expect(createPipelinesBuild).toHaveBeenCalledTimes(5);
   });
@@ -61,7 +62,7 @@ describe("production PBR deformation pipeline selection", () => {
     await createPbrPipelineSet(scopedSession, lighting, { deformation: true,
       pipelines: { deferDeformation: true } }, features);
     expect(createPipelinesBuild).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(createPipelinesBuild).mock.calls[0]![6]).toBeUndefined();
+    expect(vi.mocked(createPipelinesBuild).mock.calls[0]![6]).toEqual({ mainSampleCount: 4 });
     const set = await createPbrPipelineSet(scopedSession, lighting, { deformation: true,
       pipelines: { deferDeformation: true } }, features);
     expect(set.deformation).toBeUndefined();
@@ -74,7 +75,7 @@ describe("production PBR deformation pipeline selection", () => {
     set.release();
     await deformation;
     expect(createPipelinesBuild).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(createPipelinesBuild).mock.calls[1]![6]).toEqual({ deformation: true });
+    expect(vi.mocked(createPipelinesBuild).mock.calls[1]![6]).toEqual({ deformation: true, mainSampleCount: 4 });
     await set.startDeformation!();
     expect(createPipelinesBuild).toHaveBeenCalledTimes(2);
   });
@@ -87,7 +88,7 @@ describe("production PBR deformation pipeline selection", () => {
     expect(base![3]).toBe(true); expect(pose![3]).toBe(true);
     expect(pose![4]).toBe(false);
     expect(base![5]).toBe(cascadeCount === 1); expect(pose![5]).toBe(cascadeCount === 1);
-    expect(pose![6]).toEqual({ deformation: true });
+    expect(pose![6]).toEqual({ deformation: true, mainSampleCount: 4 });
   });
 
   it("rejects non-boolean capability values before pipeline allocation", async () => {

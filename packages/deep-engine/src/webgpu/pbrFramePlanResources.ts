@@ -6,7 +6,7 @@ import { TEMPORAL_AA_COLOR_FORMAT } from "../postprocess/temporalAaTypes.js";
 import { SSR_COMPOSITE_FORMAT, SSR_TRACE_FORMAT } from "../postprocess/screenSpaceReflectionTypes.js";
 import { VOLUMETRIC_FOG_SCATTER_FORMAT } from "../fog/volumetricFogPassTypes.js";
 import { VOLUMETRIC_FOG_COMPOSITE_FORMAT } from "../fog/volumetricFogCompositeTypes.js";
-import { PBR_HDR_FORMAT, PBR_LINEAR_DEPTH_FORMAT, PBR_MAIN_SAMPLE_COUNT,
+import { PBR_HDR_FORMAT, PBR_LINEAR_DEPTH_FORMAT,
   PBR_MOTION_FORMAT, PBR_VIEW_NORMAL_FORMAT } from "./renderTargets.js";
 import { surfaceSize, type SurfaceSize } from "./surfaceSize.js";
 import { WEIGHTED_OIT_ACCUMULATION_FORMAT, WEIGHTED_OIT_REVEALAGE_FORMAT } from "./weightedOitTypes.js";
@@ -46,13 +46,17 @@ export const PBR_FRAME_RESOURCE_CONTRACTS: readonly PbrFrameResourceContract[] =
   { id: "shadow-atlas", descriptor: "depth32float-array", format: "depth32float", sampleCount: 1,
     usages: ["render-attachment", "texture-binding"], sizeRole: "independent", external: false },
   { id: "light-grid", descriptor: "forward-plus-grid-v1", sampleCount: 1, usages: [], sizeRole: "independent", external: false },
-  { id: "opaque-hdr", descriptor: "rgba16float", format: PBR_HDR_FORMAT, sampleCount: PBR_MAIN_SAMPLE_COUNT,
+  // AA-M1:主帧目标合同全部为单采样 —— 它们是 MSAA 主通路(resolveTarget/深度
+  // resolve pass)的 resolve 产物,链上消费方(后处理/输出/读回/次级 pass)只读这一层。
+  // MSAA 附件本身是图外实现事实,在 describePbrOpaquePass 的 unplannedAttachments 登记。
+  { id: "opaque-hdr", descriptor: "rgba16float", format: PBR_HDR_FORMAT, sampleCount: 1,
     usages: FULL_HDR_TRANSIENT, sizeRole: "surface", external: false },
-  { id: "linear-depth", descriptor: "r32float", format: PBR_LINEAR_DEPTH_FORMAT, sampleCount: PBR_MAIN_SAMPLE_COUNT,
-    usages: ["render-attachment", "texture-binding", "copy-src"], sizeRole: "surface", external: false },
-  { id: "view-normal", descriptor: "rgba8unorm", format: PBR_VIEW_NORMAL_FORMAT, sampleCount: PBR_MAIN_SAMPLE_COUNT,
+  // STORAGE_BINDING:MSAA 主通路下由 linear-depth compute resolve(sample-0)写出。
+  { id: "linear-depth", descriptor: "r32float", format: PBR_LINEAR_DEPTH_FORMAT, sampleCount: 1,
+    usages: ["render-attachment", "texture-binding", "copy-src", "storage-binding"], sizeRole: "surface", external: false },
+  { id: "view-normal", descriptor: "rgba8unorm", format: PBR_VIEW_NORMAL_FORMAT, sampleCount: 1,
     usages: FULL_COLOR, sizeRole: "surface", external: false },
-  { id: "motion", descriptor: "rg16float", format: PBR_MOTION_FORMAT, sampleCount: PBR_MAIN_SAMPLE_COUNT,
+  { id: "motion", descriptor: "rg16float", format: PBR_MOTION_FORMAT, sampleCount: 1,
     usages: FULL_COLOR, sizeRole: "surface", external: false },
   { id: "particle-reactive", descriptor: "r8unorm", format: "r8unorm", sampleCount: 1,
     usages: FULL_COLOR, sizeRole: "surface", external: false },

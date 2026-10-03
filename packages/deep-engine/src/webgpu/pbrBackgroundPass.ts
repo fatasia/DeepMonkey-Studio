@@ -2,7 +2,7 @@ import type { DeviceSession } from "./deviceSession.js";
 import type { StudioEnvironment } from "./studioEnvironment.js";
 import type { PbrFrameUniformView } from "./pbrFrameUniforms.js";
 import { PBR_PANORAMA_WGSL, packPanoramaBackground } from "./pbrPanoramaBackground.js";
-import { PBR_DEPTH_FORMAT, PBR_MAIN_SAMPLE_COUNT, PBR_OPAQUE_ATTACHMENT_FORMATS } from "./renderTargets.js";
+import { PBR_DEPTH_FORMAT, PBR_OPAQUE_ATTACHMENT_FORMATS } from "./renderTargets.js";
 import { uploadBuffer } from "./meshBuffers.js";
 
 /** The panorama is drawn before geometry in linear HDR, without writing depth. */
@@ -14,14 +14,16 @@ export class PbrBackgroundPass {
   private displayBinding: GPUBindGroup | undefined;
   private panorama: StudioEnvironment["panorama"];
 
-  constructor(private readonly session: DeviceSession, writeGeometryBuffers: boolean) {
+  constructor(private readonly session: DeviceSession, writeGeometryBuffers: boolean,
+    /** AA-M1:主 pass 生效采样数(HDR 全景在该 pass 内绘制,必须与附件一致);display 通路恒 1。 */
+    mainSampleCount: 1 | 4 = 1) {
     const device = session.device;
     const module = device.createShaderModule({ label: "Deep panorama background", code: PBR_PANORAMA_WGSL });
     this.pipeline = device.createRenderPipeline({ label: "Deep HDR panorama", layout: "auto",
       vertex: { module, entryPoint: "vertex" },
       fragment: { module, entryPoint: writeGeometryBuffers ? "mrt" : "color",
         targets: PBR_OPAQUE_ATTACHMENT_FORMATS.slice(0, writeGeometryBuffers ? 4 : 1).map(format => ({ format })) },
-      primitive: { topology: "triangle-list" }, multisample: { count: PBR_MAIN_SAMPLE_COUNT },
+      primitive: { topology: "triangle-list" }, multisample: { count: mainSampleCount },
       depthStencil: { format: PBR_DEPTH_FORMAT, depthWriteEnabled: false, depthCompare: "always" },
     });
     this.displayPipeline = device.createRenderPipeline({ label: "Deep display-space panorama", layout: "auto",

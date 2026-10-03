@@ -9,6 +9,8 @@ import { pipelineWarmupEntriesFromLedger, persistPipelineWarmupPlanToBrowser } f
 import type { StudioEnvironment } from "./studioEnvironment.js";
 import type { PbrRendererOptions } from "./pbrRendererTypes.js";
 import { assertTextureArrayProductionReady } from "./textureArrayProductionGate.js";
+import { probePbrMainSampleCount, type PbrMsaaCapability } from "./pbrMsaaCapability.js";
+import { resolvePbrMsaaSampleCount } from "./renderTargets.js";
 
 /** Owns bootstrap error scopes and cancellation; the renderer owns successfully prepared resources. */
 export async function openPbrRenderer<T>(session: DeviceSession,
@@ -16,7 +18,7 @@ export async function openPbrRenderer<T>(session: DeviceSession,
   create: (session: DeviceSession, pipelines: Pipelines, environment: StudioEnvironment,
     lighting: ForwardPlusPbrRuntime, shadows: LocalSpotShadowRuntime, options: PbrRendererOptions,
     features: PbrRendererFeatures, deformation?: Pipelines | Promise<Pipelines>,
-    releasePipelines?: () => void) => T): Promise<T> {
+    releasePipelines?: () => void, msaa?: PbrMsaaCapability) => T): Promise<T> {
   const cancel = (): void => session.dispose();
   let scopeOpen = false;
   signal.addEventListener("abort", cancel, { once: true });
@@ -24,6 +26,12 @@ export async function openPbrRenderer<T>(session: DeviceSession,
     if (signal.aborted) throw abortError();
     const features = resolvePbrRendererFeatures(options.features);
     assertTextureArrayProductionReady(features);
+    // AA-M1 能力探针必须在 bootstrap 校验作用域之前运行(popErrorScope 弹出最近作用域);
+    // 设备不支持 4x 时 fail-closed 回 1x,原因随渲染器披露(FrameMetrics.msaa)。
+    const msaa = await probePbrMainSampleCount(session.device, resolvePbrMsaaSampleCount(options.msaaSampleCount));
+    // 管线集合按解析后的采样数构建(缓存键含采样数),渲染器与目标同源。
+    const pipelineOptions: PbrRendererOptions = msaa.sampleCount === 4
+      ? options : { ...options, msaaSampleCount: 1 };
     session.device.pushErrorScope("validation"); scopeOpen = true;
     markBootstrap("local-shadows-start");
     // F7b：档位第三参贯通(opt-in,缺省 standard = 既有调用语义逐位不变)。
@@ -36,7 +44,7 @@ export async function openPbrRenderer<T>(session: DeviceSession,
     // 未启用任何时序开关时保持旧语义：全量变体（含 deformation）就绪后才继续。
     const legacyAwaitAll = options.pipelines?.firstFrameMainKeys === undefined && !deferDeformation;
     const [set, environment] = await Promise.all([
-      createPbrPipelineSet(session, lighting.layout, options, features).then(async value => {
+      createPbrPipelineSet(session, lighting.layout, pipelineOptions, features).then(async value => {
         // 未启用时序开关：全量变体（含 deformation）就绪后才继续（旧语义）。
         // 启用时只等首帧关键子集，剩余变体在作用域关闭后于背景排队。
         if (legacyAwaitAll) {
@@ -68,7 +76,7 @@ export async function openPbrRenderer<T>(session: DeviceSession,
     if (error) throw new Error(error.message);
     const deferredDeformation = deferDeformation ? set.startDeformation?.() : undefined;
     const renderer = create(session, set.pipelines, environment, lighting, localShadows, options, features,
-      deferDeformation ? deferredDeformation : set.deformation, set.release);
+      deferDeformation ? deferredDeformation : set.deformation, set.release, msaa);
     markBootstrap("bootstrap-created");
     markBootstrap("bootstrap-errors-cleared");
     return renderer;

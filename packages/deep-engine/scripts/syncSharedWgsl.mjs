@@ -264,6 +264,36 @@ export const SDF_QUERY_MAX_POINTS = 65536;
     preamble: `/** SDF 碰撞 profile 查询核:trilinear 距离 + 中心差分梯度 + 域外 fail-closed(真源 wgsl/sdfCollisionQuery.wgsl)。 */\nexport const DEEP_SDF_COLLISION_QUERY_WGSL = /* wgsl */ `,
   },
   {
+    // Brief-GI M1 天光遮蔽核(2026-10-04)。真源 wgsl/sdfSkyVisibilityTrace.wgsl,
+    // 纯 TS 消费(无 Rust 半;每 lane 一个探针方向 × 场景 SDF 圆锥追踪)。
+    // 合同:固定步数无 early-break(同输入逐位回放);域外 fail-open=1(光照量,
+    // 非安全量,刻意与碰撞查询的 fail-closed NaN 不同);CPU 镜像在
+    // src/gi/sdfSkyVisibility.ts(同序 fround),一致性由
+    // sdfSkyVisibilityTraceWgslChecksum.test.ts 锁定。
+    source: "sdfSkyVisibilityTrace.wgsl",
+    module: resolve(packageRoot, "src/gi/sdfSkyVisibilityTraceWgsl.ts"),
+    gate: "src/gi/sdfSkyVisibilityTraceWgslChecksum.test.ts",
+    rustHalf: null,
+    constants: `/**
+ * Brief-GI M1 天光遮蔽核的生成镜像。唯一真源 wgsl/sdfSkyVisibilityTrace.wgsl,
+ * 纯 TS 消费(无 Rust 半)。常量与 sdfSkyVisibility.ts(打包/镜像)互钉。
+ */
+
+/** workgroup 尺寸:每 lane 独立处理一条 (探针 × 方向),无跨 lane 通信。 */
+export const SDF_SKY_VISIBILITY_WORKGROUP_SIZE = 64;
+/** uniform 总字节(origin 12 + cellSize 4 + dimensions 12 + steps 4 + coneTan 4 + maxDistance 4 + directionCount 4 + probeCount 4)。 */
+export const SDF_SKY_VISIBILITY_PARAMS_BYTES = 48;
+/** compute 入口名(测试与宿主按名取 entry point)。 */
+export const SDF_SKY_VISIBILITY_ENTRY = "traceSkyVisibility";
+/** 圆锥步数下限/上限(Brief-GI:8..16 步)。 */
+export const SDF_SKY_VISIBILITY_MIN_STEPS = 8;
+export const SDF_SKY_VISIBILITY_MAX_STEPS = 16;
+/** 圆锥 limit 的除法下限(max(coneTan·t, 该值)),防 t≈0 除零。 */
+export const SDF_SKY_VISIBILITY_LIMIT_EPSILON = 0.000001;
+`,
+    preamble: `/** 天光遮蔽圆锥追踪核:每 lane = 探针方向 × 场景 SDF 软阴影口径(真源 wgsl/sdfSkyVisibilityTrace.wgsl)。 */\nexport const DEEP_SDF_SKY_VISIBILITY_TRACE_WGSL = /* wgsl */ `,
+  },
+  {
     // I 级 C17 节点化/流场粒子首刀家族。真源 wgsl/particleFlowField.wgsl,纯 TS 消费
     // (无 Rust 半;curl-noise 流场驱动的粒子 compute 核,绑定 0..5 与既有粒子核同构,
     // 新增 binding 6 流场 uniform)。常量与 gpuParticleFlowFieldTypes.ts(打包/校验)

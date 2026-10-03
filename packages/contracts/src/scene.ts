@@ -434,7 +434,7 @@ export interface ScenePostProcessingState {
 }
 
 /** Transition from this keyframe to the next one; omitted uses the track default. */
-export type KeyframeTransition = "linear" | "smooth" | "ease-in" | "ease-out" | "step";
+export type KeyframeTransition = "linear" | "smooth" | "ease-in" | "ease-out" | "ease-in-out" | "step";
 
 export interface CameraKeyframe {
   id: string;

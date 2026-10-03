@@ -40,14 +40,18 @@ const input = Object.freeze({ eye: [4, 3, 5] as const, target: [0, 0, 0] as cons
   verticalFovRadians: Math.PI / 3, aspect: 16 / 9, near: 0.1, far: 1_000, extent: 10 });
 
 describe("default PBR cascaded shadow resources", () => {
+  // B1 Brief-VSM:group 2 增补 binding 3..5 后,级联档持有 2 占位 storage buffer +
+  // 1 占位 r32float atlas(4×4)。资源序:[ph0, ph1, uniform, frame0..N-1]。
+  const VSM_PLACEHOLDER_BUFFERS = 2, VSM_PLACEHOLDER_TEXTURES = 1;
   it("borrows the real array and uniform with current enable state without allocating or owning a copy", () => {
     const f = fixture(), shadows = new CascadedShadowResources(f.session, f.pipelines);
     expect(() => shadows.godRaysSource()).toThrow("prepared");
     shadows.prepare(input, true, false); const count = f.owned.size, borrowed = shadows.godRaysSource();
     expect(borrowed.enabled).toBe(false); expect(borrowed.view).toHaveProperty("descriptor.dimension", "2d-array");
-    expect(borrowed.uniform).toBe(f.buffers[0]); expect(borrowed.sampler).toBe(shadows.sampler);
+    expect(borrowed.uniform).toBe(f.buffers[VSM_PLACEHOLDER_BUFFERS]); expect(borrowed.sampler).toBe(shadows.sampler);
     shadows.prepare(input, true, true); expect(shadows.godRaysSource()).toEqual({ ...borrowed, enabled: true });
-    expect(f.owned.size).toBe(count); expect(f.device.createTexture).toHaveBeenCalledOnce();
+    expect(f.owned.size).toBe(count);
+    expect(f.device.createTexture).toHaveBeenCalledTimes(1 + VSM_PLACEHOLDER_TEXTURES);
     const device = f.session.device; (f.session as { device: GPUDevice }).device = {} as GPUDevice;
     expect(() => shadows.godRaysSource()).toThrow("previous device"); (f.session as { device: GPUDevice }).device = device;
     shadows.dispose(); expect(f.owned.size).toBe(0); expect(() => shadows.godRaysSource()).toThrow("prepared");
@@ -80,7 +84,7 @@ describe("default PBR cascaded shadow resources", () => {
     shadows.commit();
     expect(shadows.prepare(input, false, true).render).toBe(false);
     expect(shadows.binding).toBe(binding);
-    expect(f.device.createTexture).toHaveBeenCalledTimes(1);
+    expect(f.device.createTexture).toHaveBeenCalledTimes(1 + VSM_PLACEHOLDER_TEXTURES);
     shadows.dispose();
   });
   it("refreshes an existing map after author changes while shadows are disabled", () => {
@@ -101,9 +105,11 @@ describe("default PBR cascaded shadow resources", () => {
     }));
     expect(f.views.slice(0, PBR_CASCADE_COUNT)).toEqual(Array.from({ length: PBR_CASCADE_COUNT }, (_, baseArrayLayer) =>
       ({ dimension: "2d", aspect: "depth-only", baseArrayLayer, arrayLayerCount: 1 })));
-    expect(f.views.at(-1)).toEqual({ dimension: "2d-array", baseArrayLayer: 0, arrayLayerCount: PBR_CASCADE_COUNT });
+    // B1 Brief-VSM:末位视图 = 占位 atlas(binding 5);数组视图在其前一位。
+    expect(f.views.at(-1)).toEqual({ dimension: "2d-array" });
+    expect(f.views.at(-2)).toEqual({ dimension: "2d-array", baseArrayLayer: 0, arrayLayerCount: PBR_CASCADE_COUNT });
     expect(shadows.frameBindings).toHaveLength(PBR_CASCADE_COUNT);
-    expect(f.bufferDescriptors[0]!.size).toBe(CASCADED_SHADOW_UNIFORM_BYTES);
+    expect(f.bufferDescriptors[VSM_PLACEHOLDER_BUFFERS]!.size).toBe(CASCADED_SHADOW_UNIFORM_BYTES);
   });
 
   it("uses the selected tier for texture layers, frame ABI and planner options", () => {
@@ -179,7 +185,9 @@ describe("default PBR cascaded shadow resources", () => {
 
   it("releases every owned GPU allocation", () => {
     const f = fixture(), shadows = new CascadedShadowResources(f.session, f.pipelines);
-    expect(f.owned.size).toBe(1 + 1 + PBR_CASCADE_COUNT);
+    // fixture 的 fake createTexture 恒返回同一 texture 对象,owned Set 去重后
+    // 占位 atlas 与级联图算 1(真机为独立纹理,释放路径同族覆盖)。
+    expect(f.owned.size).toBe(1 + VSM_PLACEHOLDER_BUFFERS + 1 + PBR_CASCADE_COUNT);
     shadows.dispose(); shadows.dispose(); expect(f.owned.size).toBe(0);
     expect(f.texture.destroy).toHaveBeenCalledOnce();
     for (const buffer of f.buffers) expect(buffer.destroy).toHaveBeenCalledOnce();

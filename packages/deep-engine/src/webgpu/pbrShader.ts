@@ -10,6 +10,7 @@ import { WEIGHTED_OIT_FRAGMENT_WGSL } from "./weightedOitWgsl.js";
 import { composeForwardPlusPbrShader } from "../lighting/clusterLightingPbrWgsl.js";
 import { PROBE_CLIPMAP_TEXTURE_SAMPLING_WGSL } from "../lighting/probeClipmapTextureSamplingWgsl.js";
 import { CASCADED_SHADOW_WGSL } from "../shadows/cascadedShadowShader.js";
+import { VIRTUAL_SHADOW_WGSL } from "./virtualShadowSampling.js";
 // J2-B7-migrate：Frame struct 单源生成文本（schema wgslName 钉宿主表面名，DeepOutputSettings
 // 由 PBR_DISPLAY_COLOR_WGSL 先于本段定义）。
 import { FRAME_STRUCTS_WGSL } from "../frameAbi/generated/frameStructsWgsl.js";
@@ -144,6 +145,27 @@ struct ShadowVertex {
   var sampledAlpha = 1.0;
   if (materialTextures.baseRow0.w > 0.5) { sampledAlpha = textureSample(baseColorMap, baseColorSampler, baseUv).a; }
   if (v.alphaCutoff.x * sampledAlpha < v.alphaCutoff.y) { discard; }
+}
+// B1 Brief-VSM 虚拟阴影页物化:depth-as-float 片元(线性光深 = frag builtin z,WebGPU 0..1),
+// 写 r32float 页 atlas;mask 变体保留 alphaCut/discard 语义。fragment 输入需独立结构
+// (ShadowVertex 的 @builtin(position) 成员不能作 fragment 输入)。
+struct ShadowPageMaskInput {
+  @location(0) uv0: vec2f, @location(1) uv1: vec2f, @location(2) alphaCutoff: vec2f,
+};
+@fragment fn shadowPageDepth(@builtin(position) fragCoord: vec4f) -> @location(0) f32 {
+  return fragCoord.z;
+}
+@fragment fn shadowPageMaskPlain(@builtin(position) fragCoord: vec4f, v: ShadowPageMaskInput) -> @location(0) f32 {
+  if (v.alphaCutoff.x < v.alphaCutoff.y) { discard; }
+  return fragCoord.z;
+}
+@fragment fn shadowPageMaskTextured(@builtin(position) fragCoord: vec4f, v: ShadowPageMaskInput) -> @location(0) f32 {
+  let uv = vec3f(select(v.uv0, v.uv1, materialTextures.baseRow0.w > 1.5), 1.0);
+  let baseUv = vec2f(dot(materialTextures.baseRow0.xyz, uv), dot(materialTextures.baseRow1.xyz, uv));
+  var sampledAlpha = 1.0;
+  if (materialTextures.baseRow0.w > 0.5) { sampledAlpha = textureSample(baseColorMap, baseColorSampler, baseUv).a; }
+  if (v.alphaCutoff.x * sampledAlpha < v.alphaCutoff.y) { discard; }
+  return fragCoord.z;
 }
 ${PBR_DIRECT_LIGHTING_WGSL}
 ${PBR_DIRECT_MULTISCATTERING_WGSL}
@@ -346,7 +368,10 @@ fn extendedShade(v: Vertex, normal: vec3f, geometryNormal: vec3f, surface: Surfa
 }
 `;
 
-/** Ready-to-compile default module with the fixed Forward+ group-3 library. */
-export const sceneShader = composeForwardPlusPbrShader(`${CASCADED_SHADOW_WGSL}\n${sceneShaderCore}`, "direct-multiscattering");
+/** Ready-to-compile default module with the fixed Forward+ group-3 library.
+ *  B1 Brief-VSM:虚拟阴影采样库紧随级联库注入(params2.x=0 时虚拟分支全部不进入,
+ *  级联档 WGSL 行为逐字节等价;stock WGSL 变更 diff 见交付报告)。 */
+export const sceneShader = composeForwardPlusPbrShader(
+  `${CASCADED_SHADOW_WGSL}\n${VIRTUAL_SHADOW_WGSL}\n${sceneShaderCore}`, "direct-multiscattering");
 
 export { currentToPreviousUvMotion } from "./pbrMotionCpu.js";

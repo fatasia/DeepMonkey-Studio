@@ -120,6 +120,23 @@ export interface PbrRendererOptions {
    * (16 条目/1536B)放行;宿主显式 limits 更小时解析器 fail-closed。
    */
   readonly localSpotShadowAtlasTier?: import("../shadows/localSpotShadowAtlasQuality.js").LocalSpotShadowAtlasTier;
+  /**
+   * B1 Brief-VSM 主阴影档(opt-in,缺省 undefined = 级联,与 displayContract.shadow.mode
+   * 缺字段=级联同口径):"virtual" 时主方向光阴影走三环 clipmap 虚拟阴影
+   * (16k² 等效虚拟分辨率,页表物化 + 着色端页表查询 + PCSS + 缺页回退上一环);
+   * 级联资源保留为回退档(虚拟构造失败 fail-closed 回级联,原因随遥测披露)。
+   * author 阴影(scene primary.shadow)存在时不生效(回级联,显式不静默)。
+   */
+  readonly shadowMode?: "virtual" | "cascaded";
+  /** B1 Brief-VSM 虚拟阴影资源配置(shadowMode="virtual" 时生效;缺省全默认)。 */
+  readonly virtualShadow?: import("./virtualShadowResources.js").VirtualShadowResourceOptions;
+  /**
+   * AA-M1 主 pass MSAA 采样数请求(仅 1/4 合法,缺省 4 = 默认开):设备不支持 4x
+   * (depth32float 多采样缺失等)时 bootstrap 探针 fail-closed 回 1x,原因经
+   * FrameMetrics.msaa.fallbackReason 显式披露。附属目标(线性深度/view-normal/OIT)
+   * 恒 1x;直出 display 快路径不参与 MSAA。
+   */
+  readonly msaaSampleCount?: 1 | 4;
   /** C13 typed device recovery; omitted keeps the legacy immediate-loss behavior. */
   readonly recovery?: DeviceRecoveryOptions;
 }
@@ -167,6 +184,41 @@ export interface FrameMetrics {
   readonly frame: number; readonly cpuSubmitMs: number;
   readonly drawCalls: number; readonly triangles: number;
   readonly width: number; readonly height: number; readonly resources: number;
+  /**
+   * AA-M1 主 pass MSAA 状态(每帧):requested = 请求档(缺省 4),active = 能力探针
+   * 解析后的生效档;设备不支持 4x 回退 1x 时 fallbackReason 携带探针验证错误原文。
+   */
+  readonly msaa?: { readonly requested: 1 | 4; readonly active: 1 | 4; readonly fallbackReason?: string };
+  /**
+   * B1 Brief-VSM 虚拟阴影遥测(shadowMode="virtual" 档每帧):物化/驻留/动态失效/
+   * 预算利用率;fallbackReason = 构造或启用失败的原因(fail-closed 回级联,不伪零)。
+   */
+  readonly virtualShadow?: {
+    readonly mode: "virtual" | "cascaded";
+    readonly fallbackReason?: string;
+    readonly materializedPages?: number;
+    readonly requestPages?: number;
+    readonly deferredByBudget?: number;
+    readonly dynamicInvalidated?: number;
+    readonly residentPages?: number;
+    readonly evictedPages?: number;
+    readonly estimatedCostMs?: number;
+    readonly budgetUtilization?: number;
+    readonly pageDrawCalls?: number;
+    readonly pageRenderPasses?: number;
+  };
+  /** B1 Brief-VSM 主阴影档(virtual 档构造成功时出现;级联档缺省零行为)。 */
+  readonly shadowMode?: "virtual";
+  /** B1 Brief-VSM 虚拟页池几何遥测(virtual 档构造成功时出现)。 */
+  readonly virtualShadowPages?: {
+    readonly residentPages: number;
+    readonly allocatedSlots: number;
+    readonly physicalPages: number;
+    readonly atlasEdge: number;
+    readonly atlasLayers: number;
+    readonly pageEdge: number;
+    readonly mipCount: number;
+  };
   /** Real RenderTargets allocation/reuse counters after this frame's queue submission. */
   readonly transientTextures?: PbrTransientTexturePoolStats;
   /** 同一 device 的已托管分配；已包含 transient，二者不能相加。 */

@@ -88,26 +88,57 @@ export class DeviceSession {
   }
 
   static async open(canvas: HTMLCanvasElement, gpu: GPU | undefined, signal: AbortSignal, memoryBudgetBytes?: number,
-    recovery?: DeviceRecoveryOptions, capabilities?: { readonly layeredMaterials?: boolean; readonly hdrDisplay?: HdrDisplayRequest }): Promise<DeviceSession> {
+    recovery?: DeviceRecoveryOptions, capabilities?: { readonly layeredMaterials?: boolean;
+      readonly hdrDisplay?: HdrDisplayRequest; readonly extendedShadowBindings?: boolean }): Promise<DeviceSession> {
     validateDeviceMemoryBudget(memoryBudgetBytes);
     if (signal.aborted) throw aborted();
     if (!gpu) throw new Error("WebGPU is unavailable in this browser.");
     const adapter = await abortable(gpu.requestAdapter({ powerPreference: "high-performance" }), signal);
     if (!adapter) throw new Error("No WebGPU adapter is available.");
-    const requiredLimits = capabilities?.layeredMaterials === true ? { maxSampledTexturesPerShaderStage: 19 } : undefined;
-    if (requiredLimits && adapter.limits.maxSampledTexturesPerShaderStage < requiredLimits.maxSampledTexturesPerShaderStage)
-      throw new Error("PBR capability layered-materials/texture-limit: adapter requires 19 sampled textures.");
-    const requestedFeatures = OPTIONAL_DEVICE_FEATURES.filter(feature => adapter.features.has(feature));
-    let device: GPUDevice;
-    try {
-      device = await abortable(adapter.requestDevice({ label: "Deep Engine isolated device",
-        ...(requiredLimits ? { requiredLimits } : {}),
-        ...(requestedFeatures.length ? { requiredFeatures: requestedFeatures } : {}) }), signal, (value) => value.destroy());
-    } catch (error) {
-      // 可选计时或压缩能力可降级，不能使可用的核心渲染设备无法启动。
-      if (!requestedFeatures.length || signal.aborted) throw error;
-      device = await abortable(adapter.requestDevice({ label: "Deep Engine core device", ...(requiredLimits ? { requiredLimits } : {}) }), signal, (value) => value.destroy());
+    // B1 Brief-VSM:group 2 增补(页表 storage ×2 + 页 atlas 采样纹理 ×1)后,主片元
+    // 布局峰值为 10 storage / 17 sampled;layered 材质峰值 19 sampled。按需取并集、
+    // clamp 到 adapter 上限(requestDevice 不接受超上限值),适配器不足时由管线布局
+    // 验证显式失败(fail-closed,不静默降级),虚拟档回退级联路径见 PbrShadowState。
+    const desiredLimits: Record<string, number> = {};
+    if (capabilities?.extendedShadowBindings === true) {
+      desiredLimits.maxStorageBuffersPerShaderStage = 10;
+      desiredLimits.maxSampledTexturesPerShaderStage = 17;
     }
+    if (capabilities?.layeredMaterials === true) {
+      desiredLimits.maxSampledTexturesPerShaderStage
+        = Math.max(desiredLimits.maxSampledTexturesPerShaderStage ?? 0, 19);
+    }
+    const requiredLimits = Object.keys(desiredLimits).length === 0 ? undefined
+      : Object.fromEntries(Object.entries(desiredLimits).map(([key, value]) => [key,
+        Math.min(value, adapter.limits[key as keyof GPUSupportedLimits] as number)]));
+    if (requiredLimits && (requiredLimits.maxSampledTexturesPerShaderStage ?? 0) < (desiredLimits.maxSampledTexturesPerShaderStage ?? 0)
+      && capabilities?.layeredMaterials === true) {
+      throw new Error("PBR capability layered-materials/texture-limit: adapter requires 19 sampled textures.");
+    }
+    const requestedFeatures = OPTIONAL_DEVICE_FEATURES.filter(feature => adapter.features.has(feature));
+    // 逐档降级(特性优先):limits 与 features 任一不被接受都只降那一维 ——
+    // 时间戳(诊断计时)/纹理压缩特性不因 per-stage 上限被拒而连带丢失。
+    let device: GPUDevice;
+    const deviceAttempts: GPUDeviceDescriptor[] = [
+      { label: "Deep Engine isolated device",
+        ...(requiredLimits ? { requiredLimits } : {}),
+        ...(requestedFeatures.length ? { requiredFeatures: requestedFeatures } : {}) },
+      ...(requestedFeatures.length ? [{ label: "Deep Engine core device",
+        requiredFeatures: requestedFeatures } as GPUDeviceDescriptor] : []),
+      { label: "Deep Engine core device" },
+    ];
+    let lastDeviceError: unknown;
+    device = undefined as unknown as GPUDevice;
+    for (const descriptor of deviceAttempts) {
+      try {
+        device = await abortable(adapter.requestDevice(descriptor), signal, (value) => value.destroy());
+        break;
+      } catch (error) {
+        lastDeviceError = error;
+        if (signal.aborted) throw error;
+      }
+    }
+    if (device === undefined) throw lastDeviceError ?? aborted();
     let session: DeviceSession | undefined;
     try {
       if (signal.aborted) throw aborted();

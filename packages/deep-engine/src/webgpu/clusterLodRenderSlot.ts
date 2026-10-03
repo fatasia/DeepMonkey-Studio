@@ -30,7 +30,7 @@ import { planClusterLodIndirect, type ClusterLodLevelGeometrySummary } from "../
 import { validateClusterLodDag, type ClusterLodDagDescriptor } from "../rayTracing/clusterLodDag.js";
 import { concatenateLevelGeometry, createClusterLodSlotRenderResources, deriveClusterLodCamera,
   packClusterLodViewProjection, readBackWords, type RenderViewCamera } from "./clusterLodSlotSupport.js";
-import { PBR_DEPTH_FORMAT, PBR_HDR_FORMAT, PBR_MAIN_SAMPLE_COUNT } from "./renderTargets.js";
+import { PBR_DEPTH_FORMAT, PBR_HDR_FORMAT } from "./renderTargets.js";
 
 /** 宿主 stage 输入：bake 产物（clusterLodBake）+ 可选像素阈值（默认 1px，Nanite 式感知阈值）。 */
 export interface ClusterLodSceneStaging {
@@ -85,7 +85,9 @@ export class ClusterLodRenderSlot {
   private evidenceFrontier: readonly string[] | undefined;
   private disposed = false;
 
-  private constructor(private readonly session: DeviceSession, staging: ClusterLodSceneStaging) {
+  private constructor(private readonly session: DeviceSession, staging: ClusterLodSceneStaging,
+    /** AA-M1:主 pass 生效采样数(槽位 bundle 在主 pass 内执行,必须与附件一致)。 */
+    mainSampleCount: 1 | 4 = 1) {
     const validation = validateClusterLodDag(staging.dag);
     if (!validation.valid) throw new Error(`Cluster LOD slot staging rejected: ${validation.reason}`);
     this.pixelThreshold = staging.pixelThreshold ?? CLUSTER_LOD_DEFAULT_PIXEL_THRESHOLD;
@@ -140,17 +142,17 @@ export class ClusterLodRenderSlot {
       entries: [this.nodesBuffer, this.selectionBuffer, this.faultsBuffer, this.cameraBuffer]
         .map((buffer, binding) => ({ binding, resource: { buffer } })) });
     const resources = createClusterLodSlotRenderResources(session,
-      packClusterLodViewProjection([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]));
+      packClusterLodViewProjection([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]), mainSampleCount);
     this.viewProjectionBuffer = resources.viewProjectionBuffer;
     this.owned.push(this.viewProjectionBuffer);
     this.request = { pipeline: resources.pipeline, colorFormats: [PBR_HDR_FORMAT],
-      depthStencilFormat: PBR_DEPTH_FORMAT, sampleCount: PBR_MAIN_SAMPLE_COUNT,
+      depthStencilFormat: PBR_DEPTH_FORMAT, sampleCount: mainSampleCount,
       bindGroups: [{ index: 0, bindGroup: resources.bindGroup }] };
     this.executor = new ClusterLodIndirectExecutor(session);
   }
 
-  static create(session: DeviceSession, staging: ClusterLodSceneStaging): ClusterLodRenderSlot {
-    return new ClusterLodRenderSlot(session, staging);
+  static create(session: DeviceSession, staging: ClusterLodSceneStaging, mainSampleCount: 1 | 4 = 1): ClusterLodRenderSlot {
+    return new ClusterLodRenderSlot(session, staging, mainSampleCount);
   }
 
   /** 由 RenderView 推导选层相机（内部分辨率 + 本槽位像素阈值）；相机未变时零 GPU 写。 */

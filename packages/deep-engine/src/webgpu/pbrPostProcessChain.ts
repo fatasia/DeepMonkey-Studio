@@ -24,7 +24,7 @@ import type { DeviceSession } from "./deviceSession.js";
 import type { GpuPassTimingScope } from "./gpuTimer.js";
 import { HiZPyramid, type HiZResult } from "./hiZPyramid.js";
 import type { RenderTargets } from "./renderTargets.js";
-import { PBR_HDR_FORMAT, PBR_LINEAR_DEPTH_FORMAT, PBR_MAIN_SAMPLE_COUNT, PBR_MOTION_FORMAT,
+import { PBR_HDR_FORMAT, PBR_LINEAR_DEPTH_FORMAT, PBR_MOTION_FORMAT,
   PBR_VIEW_NORMAL_FORMAT } from "./renderTargets.js";
 import type { PbrActualPassDescription, FramePlanUsage } from "./pbrFramePlanResources.js";
 import { failWithResourceCleanup, runResourceCleanup } from "./resourceCleanup.js";
@@ -368,8 +368,9 @@ export class PbrPostProcessChain {
     const geometryRead = (id: string): PbrActualPassDescription["claims"][number] => ({
       id, access: "read", format: id === "linear-depth" ? PBR_LINEAR_DEPTH_FORMAT : PBR_VIEW_NORMAL_FORMAT,
       // linear-depth 带 COPY_SRC（R12 白名单诊断快照），读侧 claim 与资源实际 usage 一致。
-      sampleCount: PBR_MAIN_SAMPLE_COUNT,
-      usages: id === "linear-depth" ? ["render-attachment", "texture-binding", "copy-src"]
+      // AA-M1:主帧目标合同为单采样(MSAA 的 resolve 产物),采样链只见这一层。
+      sampleCount: 1,
+      usages: id === "linear-depth" ? ["render-attachment", "texture-binding", "copy-src", "storage-binding"]
         : ["render-attachment", "texture-binding"], sizeRole: "surface",
     });
     const passes: PbrActualPassDescription[] = [];
@@ -384,7 +385,7 @@ export class PbrPostProcessChain {
     }, {
       passId: "apply-ambient-occlusion", executor: "AmbientOcclusionCompositePass.encode", kind: "compute",
       reads: ["opaque-hdr", "linear-depth", "view-normal", "ao-half"], writes: ["ao-hdr"],
-      claims: [{ id: "opaque-hdr", access: "read", format: PBR_HDR_FORMAT, sampleCount: PBR_MAIN_SAMPLE_COUNT,
+      claims: [{ id: "opaque-hdr", access: "read", format: PBR_HDR_FORMAT, sampleCount: 1,
         usages: ["render-attachment", "texture-binding", "storage-binding", "copy-src"], sizeRole: "surface" },
         geometryRead("linear-depth"), geometryRead("view-normal"),
         { id: "ao-half", access: "read", format: AMBIENT_OCCLUSION_OUTPUT_FORMAT, sampleCount: 1,
@@ -447,7 +448,7 @@ export class PbrPostProcessChain {
       claims: [{ id: temporalInput, access: "read", format: TEMPORAL_AA_COLOR_FORMAT, sampleCount: 1,
         usages: temporalInputUsages, sizeRole: "surface" },
         geometryRead("linear-depth"),
-        { id: "motion", access: "read", format: PBR_MOTION_FORMAT, sampleCount: PBR_MAIN_SAMPLE_COUNT,
+        { id: "motion", access: "read", format: PBR_MOTION_FORMAT, sampleCount: 1,
           usages: ["render-attachment", "texture-binding"], sizeRole: "surface" },
         { id: "temporal-hdr", access: "write", format: TEMPORAL_AA_COLOR_FORMAT, sampleCount: 1,
           usages: ["storage-binding", "texture-binding", "copy-src"], sizeRole: "surface" }],
@@ -485,7 +486,7 @@ export class PbrPostProcessChain {
         reads: [upscaleInput, "motion", "linear-depth"], writes: ["upscale-hdr"],
         claims: [{ id: upscaleInput, access: "read", format: TEMPORAL_AA_COLOR_FORMAT, sampleCount: 1,
           usages: upscaleInputUsages, sizeRole: "surface" },
-          { id: "motion", access: "read", format: PBR_MOTION_FORMAT, sampleCount: PBR_MAIN_SAMPLE_COUNT,
+          { id: "motion", access: "read", format: PBR_MOTION_FORMAT, sampleCount: 1,
             usages: ["render-attachment", "texture-binding"], sizeRole: "surface" },
           geometryRead("linear-depth"),
           { id: "upscale-hdr", access: "write", format: TEMPORAL_UPSCALE_COLOR_FORMAT, sampleCount: 1,
