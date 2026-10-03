@@ -5,6 +5,7 @@ import { publishedInitialDashboardFilters } from "./publishedApplicationModel";
 import { registerPreprocessor } from "echarts/core";
 import type { DashboardWebPackage } from "./dashboardWebPackage";
 import "../styles/platform-components.css";
+import "../styles/platform-components-behavior-graph.css";
 import "../styles/dashboard-workspace.css";
 import "../styles/dashboardWorkspacePolish.css";
 import "./dashboard-static.css";

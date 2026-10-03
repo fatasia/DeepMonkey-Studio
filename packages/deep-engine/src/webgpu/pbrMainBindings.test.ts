@@ -120,20 +120,22 @@ describe("PBR authored diffuse binding", () => {
     expect(sceneShader).toContain("/ 3.141592653589793");
   });
   it("invalidates temporal history only after an environment is actually published", () => {
+    // 帧编排自 2026-10-03 拆至 pbrRendererFrames(host 结构视图);render 委托留在 pbrRenderer.ts。
     const source = readFileSync(new URL("./pbrRenderer.ts", import.meta.url), "utf8");
-    expect(source).toContain("if (this.environment.beginFrame(candidate => this.mainBindings.setEnvironment(candidate))) this.historyDirty = true;");
+    const frames = readFileSync(new URL("./pbrRendererFrames.ts", import.meta.url), "utf8");
+    expect(frames).toContain("if (host.environment.beginFrame(candidate => host.mainBindings.setEnvironment(candidate))) host.historyDirty = true;");
     expect(source).toContain("this.environment.runFrame(() => this.renderPreparedFrame(view), previous => this.mainBindings.setEnvironment(previous))");
-    expect(source).toContain("if (this.mainBindings.update(view.lights, view.fog)) this.historyDirty = true;");
+    expect(frames).toContain("if (host.mainBindings.update(view.lights, view.fog)) host.historyDirty = true;");
   });
 
   it("does not publish replacement shadow resources before the zero-size frame guard", () => {
-    const source = readFileSync(new URL("./pbrRenderer.ts", import.meta.url), "utf8");
+    const source = readFileSync(new URL("./pbrRendererFrames.ts", import.meta.url), "utf8");
     // F4 超分尺寸决策后 guard 变量为画布 surface(渲染 size 由其派生),guard 语义不变。
     const guard = source.indexOf("if (!surface) return undefined;");
-    const publication = source.indexOf("this.shadowState.publish(");
+    const publication = source.indexOf("host.shadowState.publish(");
     expect(guard).toBeGreaterThan(0);
     expect(publication).toBeGreaterThan(guard);
-    expect(publication).toBeLessThan(source.indexOf("updatePbrFrameUniforms(this.session.device.queue"));
+    expect(publication).toBeLessThan(source.indexOf("updatePbrFrameUniforms(host.session.device.queue"));
   });
 
   it("binds 32-byte fog settings and distinguishes legacy, explicit off and authored updates", () => {

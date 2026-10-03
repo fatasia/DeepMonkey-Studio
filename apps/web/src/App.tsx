@@ -18,13 +18,12 @@ import { useSceneHistoryActions } from "./hooks/useSceneHistoryActions";
 import { useApplicationRecovery } from "./hooks/useApplicationRecovery";
 import { useSceneHistoryState } from "./hooks/useSceneHistoryState";
 import type { EditorPrimitiveDeleteAuthoring } from "./studio/editorPrimitiveDeleteAuthoring";
-import { useScenePlayMode, formatPlayEntryNotice, formatPlayExitNotice } from "./hooks/useScenePlayMode";
-import { createRestrictedPlayConsumer, type RestrictedPlayConsumer } from "./scripting/restrictedPlayConsumer";
-import { playTraceStore } from "./scripting/playTraceStore";
+import { useScenePlayMode } from "./hooks/useScenePlayMode";
+import type { RestrictedPlayConsumer } from "./scripting/restrictedPlayConsumer";
 import { useRef } from "react";
-import { downloadWorkspaceRecoveryDraft } from "./studio/workspaceRecoveryStore";
 import type { AppViewBindings } from "./views/appViewBindings";
 import { AppRootView } from "./views/AppRootView";
+import { buildAppViewBindings } from "./views/buildAppViewBindings";
 import { NetworkStatusBanner } from "./appStatus/NetworkStatusBanner";
 
 export function App() {
@@ -334,6 +333,7 @@ export function App() {
     flushSceneHistoryEdit,
   } = sceneHistoryState;
 
+  const navigationController = useAppNavigationController({ state: appState, sceneSnapshotFactoryRef });
   const {
     managerDirectory,
     navigate,
@@ -349,7 +349,7 @@ export function App() {
     submitProjectDialog,
     deleteCurrentProject,
     refreshProject,
-  } = useAppNavigationController({ state: appState, sceneSnapshotFactoryRef });
+  } = navigationController;
 
   const derivedState = useAppDerivedState(appState);
   const {
@@ -744,12 +744,13 @@ export function App() {
   });
 
   const applicationRecovery = useApplicationRecovery(appState);
-  const { undoSceneEdit, redoSceneEdit, restoreRecoveryDraft, deferRecoveryDraft, discardRecoveryDraft } = useSceneHistoryActions({
+  const historyActions = useSceneHistoryActions({
     state: appState,
     history: sceneHistoryState,
     playModeActive: playMode.active,
     applyScene,
   });
+  const { undoSceneEdit, redoSceneEdit, restoreRecoveryDraft, deferRecoveryDraft, discardRecoveryDraft } = historyActions;
 
   useAppRuntimeEffects({
     ...appState,
@@ -760,116 +761,13 @@ export function App() {
     captureSceneSnapshot: () => sceneSnapshotFactoryRef.current?.(),
   });
 
-  const viewBindings: AppViewBindings = {
-    managerDirectory,
-    state: appState,
-    derived: derivedState,
-    sceneEditor: sceneEditorController,
-    scenePersistence: scenePersistenceController,
-    publicationArtifacts,
-    applicationRuntime: applicationRuntimeController,
-    actions: {
-      navigate,
-      openDataCenter,
-      closeDataCenter,
-      openDocs,
-      replaceDashboardView,
-      changeRendererBackend,
-      switchProjectById,
-      openProjectDialog,
-      submitProjectDialog,
-      deleteCurrentProject,
-      refreshProject,
-    },
-    applicationRecovery,
-    recovery: {
-      draft: recoveryDraft,
-      busy: recoveryBusy,
-      restore: restoreRecoveryDraft, defer: deferRecoveryDraft, discard: discardRecoveryDraft,
-      export: () => { if (recoveryDraft) downloadWorkspaceRecoveryDraft(recoveryDraft); },
-    },
-    sceneHistory: {
-      ...sceneHistoryRef.current.getState(),
-      flush: flushSceneHistoryEdit, undo: undoSceneEdit, redo: redoSceneEdit,
-    },
-    sceneAuthoring,
-    playMode: {
-      active: playMode.active,
-      enter: () => {
-        if (route.view !== "studio" || busy || rendererSwitching || sceneBehaviorOpen || sceneBehaviorActive || !activeScene || !project) return;
-        if (sceneNameCommitRef.current || sceneName !== activeScene.name) {
-          showError(new Error("场景名称尚未保存，请待名称提交后再播放"));
-          return;
-        }
-        if (animationPlaying || engine?.getPhysicsState().playing) {
-          showError(new Error("动画或物理正在运行，请先暂停再进入播放模式"));
-          return;
-        }
-        if (engine?.getAuthorRendererBackend() === "webgpu") {
-          showError(new Error("当前 WebGPU 渲染器暂不支持安全的 Play 快照恢复；请先切换 WebGL"));
-          return;
-        }
-        if (sceneHistoryState.sceneEditTransactionRef.current) {
-          showError(new Error("场景编辑事务尚未完成，请等待当前操作完成后再播放"));
-          return;
-        }
-        // S2b：会话临时修改计数清零（进入前的散记属于作者域，不计入本次播放）。
-        playAbsorbedEditsRef.current = 0;
-        let restricted: RestrictedPlayConsumer;
-        try {
-          // S2d:本会话轨迹仓重置后收纳 T31 快照(onTrace),退出后仍可审阅(审计器语义)。
-          playTraceStore.resetPlayTrace(new Date().toISOString());
-          restricted = createRestrictedPlayConsumer({
-            scripts: engine?.getInteractionScripts() ?? [],
-            host: { engine: engine!, sceneId: activeScene.id },
-            onTrace: (scriptId, entries) => playTraceStore.recordPlayTrace(scriptId, entries),
-            onError: showError,
-          });
-          restricted.start();
-        } catch (error) {
-          showError(error instanceof Error ? error : new Error(String(error)));
-          return;
-        }
-        if (engine) {
-          engine.onRestrictedInteraction = (trigger, target, detail) => restricted.dispatchInteraction(trigger, target, detail);
-          engine.onRestrictedPlayFrame = (deltaMs) => restricted.advance(deltaMs);
-        }
-        const result = playMode.enterPlay();
-        if (result.ok) {
-          restrictedPlayRef.current = restricted;
-          engine?.setContinuousRender("restricted-play", true);
-          // S2b：未保存的脚本草稿不参与本次播放（热重载语义），必须如实呈现。
-          setMessage(formatPlayEntryNotice(Boolean(appState.pendingBehaviorDraftRef.current)));
-        } else {
-          if (engine) {
-            engine.onRestrictedInteraction = undefined;
-            engine.onRestrictedPlayFrame = undefined;
-          }
-          void restricted.stop();
-          if (result.reason === "scene-not-ready") showError(new Error("场景尚未完整载入，请稍后重试进入播放"));
-          else if (result.reason === "engine-missing") showError(new Error("三维引擎尚未就绪，请稍后重试进入播放"));
-        }
-      },
-      exit: async () => {
-        const restricted = restrictedPlayRef.current;
-        if (engine) {
-          engine.onRestrictedInteraction = undefined;
-          engine.onRestrictedPlayFrame = undefined;
-          engine.setContinuousRender("restricted-play", false);
-        }
-        await restricted?.stop();
-        const result = await playMode.exitPlay();
-        if (result.ok) {
-          restrictedPlayRef.current = undefined;
-          setError(undefined);
-          // S2b：播放期间被吸收的临时修改随整体恢复丢弃，数量如实汇报。
-          setMessage(formatPlayExitNotice(playAbsorbedEditsRef.current));
-        } else {
-          showError(new Error("播放已停止受限脚本，但场景恢复未完成；请再次点击退出播放重试。"));
-        }
-      },
-    },
-  };
+  const viewBindings = buildAppViewBindings({
+    appState, navigationController, derivedState,
+    sceneEditor: sceneEditorController, scenePersistence: scenePersistenceController,
+    publicationArtifacts, applicationRuntime: applicationRuntimeController,
+    applicationRecovery, sceneHistoryState, historyActions,
+    sceneAuthoring, playMode, restrictedPlayRef,
+  });
 
   return <>
     <NetworkStatusBanner />

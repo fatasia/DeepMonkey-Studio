@@ -1,16 +1,13 @@
-import * as THREE from "three";
 import { DEFAULT_DISPLAY_CONTRACT } from "@bim-studio/contracts";
 import type {
   DeepWebGpuBackend,
   DeepWebGpuSyncResult,
-  HlodClusterStreamBinding,
   ThreeObjectSource,
 } from "@bim-studio/deep-engine/three-bridge";
-import type { AuthoredQualityProfile, ClusterLodSceneStaging, DeviceRecoveryOptions, HdrDisplayRequest } from "@bim-studio/deep-engine/webgpu";
-import { DEFAULT_RESOLUTION_SCALE_POLICY } from "@bim-studio/deep-engine/postprocess";
+import type { AuthoredQualityProfile, ClusterLodSceneStaging, HdrDisplayRequest } from "@bim-studio/deep-engine/webgpu";
 import { buildClusterLodAuthorStaging, clusterLodAuthorBakeFromModule } from "../delivery/buildClusterLodAuthorStaging";
-import { StudioDeepQualityTelemetrySampler, publishStudioQualityTelemetry,
-  type StudioQualityTelemetryOptions } from "./StudioDeepQualityTelemetry";
+import { publishStudioQualityTelemetry, type StudioDeepQualityTelemetrySampler } from "./StudioDeepQualityTelemetry";
+import { StudioDeepRenderView } from "./StudioDeepRenderView";
 import type { ViewerEngine } from "./ViewerEngine";
 import type { RendererBackend } from "./viewerTypes";
 import { prepareStudioRendererCandidate } from "./prepareStudioRendererCandidate";
@@ -20,81 +17,33 @@ import { studioDeepShadowAllocation, studioDeepShadowMapSize, studioDeepShadowTi
 import { prepareStudioDeepEnvironmentSource, isStudioDeepEnvironmentSourceCurrent,
   type PreparedStudioDeepEnvironment } from "./studioDeepEnvironmentSource";
 import { readStudioDeepEnvironmentView } from "./studioDeepEnvironmentView";
-import { StudioDeepEnvironmentSession } from "./StudioDeepEnvironmentSession";
-import { StudioDeepShadowSession } from "./StudioDeepShadowSession";
-import { StudioDeepPerformance } from "./StudioDeepPerformance";
-import { StudioDeepRenderView } from "./StudioDeepRenderView";
-import { StudioDeformationPoseSync } from "./studioDeformationPoseSync";
-import { StudioDeepOutlineSync } from "./studioDeepOutlineSync";
+import type { StudioDeepEnvironmentSession } from "./StudioDeepEnvironmentSession";
+import type { StudioDeepShadowSession } from "./StudioDeepShadowSession";
+import type { StudioDeepPerformance } from "./StudioDeepPerformance";
+import type { StudioDeformationPoseSync } from "./studioDeformationPoseSync";
+import type { StudioDeepOutlineSync } from "./studioDeepOutlineSync";
 import { updateAuthorProjectionState } from "./authorLodSelection";
-import { DeepCameraController } from "./deepCameraController";
-import { DeepCameraInputSession } from "./deepCameraInputSession";
+import type { DeepCameraController } from "./deepCameraController";
+import type { DeepCameraInputSession } from "./deepCameraInputSession";
 import { DeepGizmoInteraction } from "./deepGizmoInteraction";
 import { createDeepCanvas, prepareAuthorInputCanvas, captureAuthorStyle, restoreAuthorStyle,
   type AuthorCanvasStyle } from "./studioDeepPresentationCanvas";
 import { collectDeepOverlayPrimitives } from "./deepOverlayPrimitiveSource";
 import { isDeepAdvancedMaterialsRejection, packetUsesDeepAdvancedMaterials, sceneUsesDeepAdvancedMaterials } from "./studioDeepAdvancedMaterials";
 import type { FrameCaptureSession, RenderPacket } from "@bim-studio/deep-engine";
-import { createRequestedStudioFrameCaptureSession, createStudioFrameReadbackListener,
-  publishStudioFrameCaptureSession, releaseStudioFrameCaptureSession } from "./studioFrameCaptureDiagnostics";
+import { createRequestedStudioFrameCaptureSession, createStudioFrameReadbackListener } from "./studioFrameCaptureDiagnostics";
+import { publishDeepPresentation, publishWebGlPresentation, releaseDeepPresentation,
+  type StudioDeepBridgePresentationHost } from "./studioDeepWebGpuBridgePresentation";
+import { flowProbe, recordProbeSample, type DeepFlowProbe } from "./studioDeepWebGpuBridgeFlowProbe";
+import { cameraSnapshot, renderViewFingerprint, sameSnapshot, resolveAuthorWorldTransform, threePrototypeHooks,
+  nextFrame, type BridgeModuleLoader, type RuntimeSession, type DeepRenderView } from "./studioDeepWebGpuBridgeSceneHelpers";
+import { markSwitchPhase, t11PipelineBootstrap, t07DynamicResolutionPolicy, b4HlodClusterEnabled, g1ClusterLodEnabled,
+  t25GpuPassTimingEnabled, f4TemporalUpscaleEnabled, f3VirtualTexturesEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
+import type { StudioDeepWebGpuBridgeOptions, StudioRendererSwitchResult } from "./studioDeepWebGpuBridgeOptions";
 
-type BridgeModule = typeof import("@bim-studio/deep-engine/three-bridge");
-type BridgeModuleLoader = () => Promise<BridgeModule>;
-interface RuntimeSession {
-  readonly state?: string;
-  readonly diagnostics?: readonly { message: string }[];
-  readonly onFatalLoss?: (listener: (reason: { readonly message: string }) => void) => () => void;
-  readonly onDeviceRecreated?: (listener: (epoch: number) => void) => () => void;
-  readonly device?: { readonly lost: Promise<{ readonly message: string; readonly reason: string }>;
-    readonly queue?: { onSubmittedWorkDone(): Promise<void> } };
-}
-
-type DeepRenderView = ReturnType<StudioDeepRenderView["renderViewDirect"]>;
-
-interface DeepFlowProbe {
-  renderDeepFrame: number; cameraPath: number; syncPath: number; coalesced: number;
-  draws: number; viewMs: number; renderMs: number; samples: string[];
-  syncCount?: number; syncMs?: number; shortCircuits?: number; keyChanges?: number; demand?: unknown;
-}
-
-/** pointer→submit 链路归因探针:仅在宿主预先挂载 window.__deepFlowProbe 时
- * 按帧累计各层调用与耗时;默认零开销(一次属性读取),不影响任何行为。 */
-function flowProbe(): DeepFlowProbe | undefined {
-  return (globalThis as { __deepFlowProbe?: DeepFlowProbe }).__deepFlowProbe;
-}
-
-function recordProbeSample(probe: DeepFlowProbe, tag: string, ...values: readonly number[]): void {
-  if (probe.samples.length >= 48) probe.samples.shift();
-  probe.samples.push(`${tag}:${values.map(v => v.toFixed(2)).join(",")}`);
-}
-
-export interface StudioDeepWebGpuBridgeOptions {
-  /** Physical display opt-in. Runtime reports a specific SDR fallback when HDR is unavailable. */
-  readonly hdrDisplay?: HdrDisplayRequest;
-  readonly onRuntimeFailure?: (error: Error) => void;
-  readonly loadModule?: BridgeModuleLoader;
-  readonly preparationTimeoutMs?: number;
-  /** Maximum submitted camera views awaiting GPU queue completion. */
-  readonly cameraFrameInFlightLimit?: 1 | 2;
-  /** Optional packet compiled from SceneSnapshot; when provided Deep skips
-   * Three scene projection for candidate publication. */
-  readonly authorRenderPacket?: (signal: AbortSignal) => Promise<RenderPacket | undefined>;
-  /**
-   * B4 簇级 HLOD(opt-in,`b4-hlod-cluster=1`):逐放置簇绑定提供方;仅在独立
-   * 作者包路径下被消费,与 authorRenderPacket 共享同一编译缓存由宿主保证。
-   */
-  readonly authorHlodClusters?: (signal: AbortSignal) => Promise<readonly HlodClusterStreamBinding[] | undefined>;
-  /** T25 质量遥测采样配置;缺省 4Hz 聚合、256 帧窗口。 */
-  readonly qualityTelemetry?: StudioQualityTelemetryOptions;
-  /** C13 recovery is explicit opt-in; omitted keeps the legacy bridge behavior. */
-  readonly recovery?: DeviceRecoveryOptions;
-}
-
-export interface StudioRendererSwitchResult {
-  readonly status: "switched" | "unchanged" | "cancelled" | "failed";
-  readonly activeBackend: RendererBackend;
-  readonly error?: string;
-}
+export { t11PipelineBootstrap, t07DynamicResolutionPolicy, b4HlodClusterEnabled, g1ClusterLodEnabled,
+  t25GpuPassTimingEnabled, f4TemporalUpscaleEnabled, f3VirtualTexturesEnabled } from "./studioDeepWebGpuBridgeFeatureToggles";
+export type { StudioDeepWebGpuBridgeOptions, StudioRendererSwitchResult } from "./studioDeepWebGpuBridgeOptions";
 
 /**
  * Studio 保留唯一的 WebGL 作者 Viewer，Deep 只持有可重建的投影快照和独立画布。
@@ -403,90 +352,12 @@ export class StudioDeepWebGpuBridge {
 
   private publishDeep(canvas: HTMLCanvasElement, backend: DeepWebGpuBackend, environment: PreparedStudioDeepEnvironment,
     shadowMapSize: number, frameCaptureSession: FrameCaptureSession | undefined): void {
-    backend.setProbeClipmapEnabled(this.probeClipmapEnabled());
-    const environmentSession = new StudioDeepEnvironmentSession({ scene: this.viewer.scene, initial: environment,
-      readView: () => readStudioDeepEnvironmentView(this.viewer.scene, this.viewer.usesAuthorPostProcessing()),
-      stage: (source, signal) => backend.stageEnvironment(source, signal),
-      onReady: this.renderDeepFrame, onFailure: error => this.failRuntime(error) });
-    // Publishing is the atomic handoff boundary. If retiring the previous
-    // backend reports a cleanup error, the candidate must be retired too;
-    // otherwise a failed switch leaks a live GPU device and canvas.
-    try {
-      this.releaseDeep();
-    } catch (error) {
-      try { backend.dispose(); } finally { canvas.remove(); }
-      throw error;
-    }
-    canvas.style.visibility = "visible";
-    canvas.style.opacity = "1";
-    this.authorCanvas.style.opacity = "0";
-    this.deepCanvas = canvas;
-    this.deepBackend = backend;
-    this.independentPacketPath = backend.usesIndependentPacket;
-    this.deformationSync = this.independentPacketPath && this.pendingDeformationPacket
-      ? StudioDeformationPoseSync.create(this.pendingDeformationPacket, this.viewer) : undefined;
-    this.pendingDeformationPacket = undefined;
-    if (this.deformationSync) {
-      const { bound, unmatched } = this.deformationSync.diagnostics;
-      markSwitchPhase(`deep-webgpu:deformation-sync-bound-${bound}-unmatched-${unmatched.length}`);
-      for (const entry of unmatched) console.warn(`[Deep] 变形模型 ${entry.modelId} 未与 Three 对象配对，保持绑定姿态：${entry.reason}`);
-    }
-    this.outlineSync = this.independentPacketPath ? new StudioDeepOutlineSync() : undefined;
-    this.viewer.setAuthorPacketIndependent(this.independentPacketPath);
-    this.frameCaptureSession = frameCaptureSession;
-    publishStudioFrameCaptureSession(frameCaptureSession);
-    this.performanceSource = new StudioDeepPerformance(backend.runtime as ConstructorParameters<typeof StudioDeepPerformance>[0]);
-    this.performanceSource.setDiagnosticsSource(() => {
-      const diagnostics = backend.diagnostics;
-      return diagnostics?.probeClipmap ? { probeClipmap: diagnostics.probeClipmap } : undefined;
-    });
-    this.viewer.setPresentationPerformanceSource(this.performanceSource);
-    // T25:每个 Deep 会话一个采样器;先发布"等待采样"状态,面板立即可见会话存在。
-    this.quality = new StudioDeepQualityTelemetrySampler(this.options.qualityTelemetry,
-      this.qualityProfile, () => backend.chunkStreaming?.residentGpuBytes);
-    publishStudioQualityTelemetry(this.quality.status());
-    this.environmentSession = environmentSession;
-    this.shadowSession = new StudioDeepShadowSession({ initialMapSize: shadowMapSize,
-      stage: (mapSize, signal) => backend.stageShadowMapSize(mapSize, signal),
-      onReady: this.renderDeepFrame, onFailure: error => this.failRuntime(error) });
-    this.activeBackendValue = "webgpu";
-    this.viewer.setPresentationRendererBackend("webgpu");
-    this.viewer.setDeepPointerPick?.((origin, direction) => this.pickDeep(backend, origin, direction));
-    this.failureReported = false;
-    this.lastCameraSnapshot = cameraSnapshot(this.viewer);
-    this.takeoverGesture();
-    // 静止视口没有帧回调，设备丢失必须主动通知，不能等待下一次用户输入。
-    const session = (backend.runtime as { session?: RuntimeSession }).session;
-    const unsubscribeFatalLoss = backend.onFatalLoss?.(reason => {
-      if (this.deepBackend === backend) this.failRuntime(new Error(reason.message));
-    });
-    const unsubscribeRecreated = backend.onDeviceRecreated?.(() => {
-      if (this.deepBackend !== backend) return;
-      this.replaceRecoveredBackend(backend);
-    });
-    const legacyLoss = session?.onFatalLoss === undefined && session?.device?.lost;
-    if (legacyLoss) void legacyLoss.then((info) => {
-      if (this.deepBackend === backend) this.failRuntime(new Error(info.message || info.reason));
-    }).catch((reason) => {
-      if (this.deepBackend === backend) this.failRuntime(reason);
-    });
-    const unsubscribeFrames = this.viewer.subscribePresentationFrames(this.renderPresentationFrame);
-    const previousUnsubscribe = this.unsubscribeFrame;
-    this.unsubscribeFrame = () => {
-      unsubscribeFrames();
-      previousUnsubscribe?.();
-      unsubscribeFatalLoss?.();
-      unsubscribeRecreated?.();
-    };
+    publishDeepPresentation(this as unknown as StudioDeepBridgePresentationHost, canvas, backend, environment, shadowMapSize, frameCaptureSession);
   }
 
-  private publishWebGl(): void {
-    this.generation++;
-    this.authorCanvas.style.opacity = "1";
-    this.activeBackendValue = "webgl";
-    this.viewer.setPresentationRendererBackend("webgl");
-    this.releaseDeep();
-  }
+  private publishWebGl(): void { publishWebGlPresentation(this as unknown as StudioDeepBridgePresentationHost); }
+
+  private releaseDeep(): void { releaseDeepPresentation(this as unknown as StudioDeepBridgePresentationHost); }
 
   private replaceRecoveredBackend(backend: DeepWebGpuBackend): void {
     if (this.closed || this.deepBackend !== backend) return;
@@ -518,80 +389,6 @@ export class StudioDeepWebGpuBridge {
       }
     };
     void replace();
-  }
-
-  private releaseDeep(): void {
-    this.viewer.setDeepPointerPick?.(undefined);
-    this.projectionBridge = undefined;
-    this.deformationSync = undefined;
-    this.outlineSync = undefined;
-    this.independentPacketPath = false;
-    this.viewer.setAuthorPacketIndependent(false);
-    this.viewer.setPresentationPerformanceSource(undefined);
-    this.quality = undefined;
-    publishStudioQualityTelemetry(undefined);
-    this.performanceSource?.dispose();
-    this.performanceSource = undefined;
-    this.temporalSettler.cancel();
-    this.viewReader.reset();
-    this.environmentSession?.dispose();
-    this.environmentSession = undefined;
-    this.shadowSession?.dispose();
-    this.shadowSession = undefined;
-    const unsubscribe = this.unsubscribeFrame;
-    this.unsubscribeFrame = undefined;
-    const backend = this.deepBackend;
-    const canvas = this.deepCanvas;
-    const frameCaptureSession = this.frameCaptureSession;
-    this.deepBackend = undefined;
-    this.deepCanvas = undefined;
-    this.frameCaptureSession = undefined;
-    releaseStudioFrameCaptureSession(frameCaptureSession);
-    this.syncPending = undefined;
-    this.syncAgain = undefined;
-    this.releaseGesture();
-    this.lastCameraSnapshot = undefined;
-    this.cameraFramesInFlight = 0;
-    this.pendingCameraView = undefined;
-    this.cameraFramesSubmitted = 0;
-    this.cameraFramesCoalesced = 0;
-    this.cameraMaxInFlight = 0;
-    this.settledViewKey = "";
-    this.lastDemandRevision = -1;
-    this.qualityProfile = null;
-    this.cancelCameraSettle();
-    const errors: unknown[] = [];
-    for (const clean of [unsubscribe, () => backend?.dispose(), () => canvas?.remove()]) {
-      try { clean?.(); } catch (error) { errors.push(error); }
-    }
-    if (errors.length) throw new AggregateError(errors, "Deep renderer cleanup failed.");
-  }
-
-  private pickDeep(backend: DeepWebGpuBackend, origin: readonly [number, number, number],
-    direction: readonly [number, number, number]): import("./viewerEngineTypes").DeepPointerPickResult {
-    const runtime = backend.runtime as unknown as {
-      pick?: (origin: ArrayLike<number>, direction: ArrayLike<number>, options?: { maxHits?: number }) =>
-        { available: false; reason: string } | { available: true; hits: readonly { instanceId: string; point: readonly [number, number, number]; distance: number }[]; degraded?: readonly string[] };
-    };
-    if (typeof runtime.pick !== "function") return { available: false, reason: "Deep runtime does not expose picking.", fallbackToAuthor: true };
-    let result;
-    const localOrigin = backend.worldToRenderLocal(origin);
-    try { result = runtime.pick(localOrigin, direction, { maxHits: 1 }); }
-    catch (reason) { return { available: false, reason: reason instanceof Error ? reason.message : String(reason), fallbackToAuthor: true }; }
-    if (!result.available) return { available: false, reason: result.reason, fallbackToAuthor: true };
-    const hit = result.hits[0];
-    if (!hit) return result.degraded
-      ? { available: true, degraded: result.degraded, fallbackToAuthor: false }
-      : { available: true, fallbackToAuthor: false };
-    const packetModelId = backend.modelIdForInstanceId(hit.instanceId);
-    const source = this.projectionBridge?.sourceForInstanceId(hit.instanceId) as unknown as
-      { userData?: Record<string, unknown>; parent?: unknown } | undefined;
-    const modelId = packetModelId ?? (source ? authorModelId(source) : undefined);
-    if (!modelId) return { available: true, degraded: [...(result.degraded ?? []), "node-mapping-unavailable:deep-hit-not-selectable"], fallbackToAuthor: true };
-    const picked = { point: new THREE.Vector3(...hit.point), distance: hit.distance, objectName: modelId, modelId };
-    return result.degraded
-      ? { available: true, degraded: result.degraded, hit: picked, fallbackToAuthor: false }
-      : { available: true, hit: picked, fallbackToAuthor: false };
   }
 
   private readonly renderPresentationFrame = (): void => {
@@ -859,41 +656,6 @@ export class StudioDeepWebGpuBridge {
     this.viewer.camera.updateMatrixWorld(true);
   }
 
-  /** 视口手势接管:Deep 画布持有输入,作者画布降级为透传目标(拾取/gizmo 零损失)。 */
-  private takeoverGesture(): void {
-    const state = this.viewer.getCameraState?.();
-    const controller = this.controller ??= new DeepCameraController({
-      verticalFovDegrees: this.viewer.getCameraProjectionState?.().verticalFovDegrees ?? 50,
-    });
-    if (state) controller.setPose([state.position.x, state.position.y, state.position.z],
-      [state.target.x, state.target.y, state.target.z]);
-    if (this.viewer.enableViewportGestureTakeover?.() !== true || !this.deepCanvas) return;
-    this.gestureActive = true;
-    this.deepCanvas.style.pointerEvents = "auto";
-    this.authorCanvas.style.pointerEvents = "none";
-    this.inputSession ??= new DeepCameraInputSession(this.deepCanvas, controller, () => this.applyGesturePose(), {
-      forwardTo: this.authorCanvas,
-      suppressGesture: () => this.viewer.isViewportGestureSuppressed?.() === true,
-      handleGizmoPointer: (phase, event) => {
-        const consumed = this.gizmoInteraction.handle(phase, event);
-        const probe = flowProbe();
-        if (probe) recordProbeSample(probe, `gizmo:${phase}=${consumed ? 1 : 0}@${Math.round(event.clientX)},${Math.round(event.clientY)}`);
-        return consumed;
-      },
-    });
-    this.inputSession.attach();
-  }
-
-  private releaseGesture(): void {
-    if (!this.gestureActive) return;
-    this.gestureActive = false;
-    this.lastGestureTickAt = undefined;
-    this.inputSession?.detach();
-    if (this.deepCanvas) this.deepCanvas.style.pointerEvents = "none";
-    this.authorCanvas.style.pointerEvents = "auto";
-    this.viewer.disableViewportGestureTakeover?.();
-  }
-
   /** 手势帧:控制器推进后把姿态写回作者相机(单一事实源),由既有 fast path 出帧。 */
   private readonly applyGesturePose = (): void => {
     if (!this.gestureActive || !this.controller) return;
@@ -954,180 +716,4 @@ export class StudioDeepWebGpuBridge {
   private result(status: StudioRendererSwitchResult["status"], error?: string): StudioRendererSwitchResult {
     return { status, activeBackend: this.activeBackendValue, ...(error ? { error } : {}) };
   }
-}
-
-function cameraSnapshot(viewer: ViewerEngine): readonly number[] {
-  const camera = viewer.camera, target = viewer.orbit.target;
-  return [camera.position.x, camera.position.y, camera.position.z,
-    target.x, target.y, target.z, camera.fov, camera.zoom, camera.near, camera.far,
-    camera.up.x, camera.up.y, camera.up.z];
-}
-
-function authorModelId(source: { userData?: Record<string, unknown>; parent?: unknown }): string | undefined {
-  let current: { userData?: Record<string, unknown>; parent?: unknown } | undefined = source;
-  for (let depth = 0; current && depth < 64; depth++) {
-    const value = current.userData?.modelId;
-    if (typeof value === "string" && value.length > 0) return value;
-    current = current.parent as typeof current;
-  }
-  return undefined;
-}
-
-function resolveAuthorWorldTransform(viewer: ViewerEngine, source: ThreeObjectSource): ArrayLike<number> | undefined {
-  const modelId = authorModelId(source as unknown as { userData?: Record<string, unknown>; parent?: unknown });
-  if (!modelId) return undefined;
-  const model = viewer.listModels().find(candidate => candidate.id === modelId);
-  const authored = viewer.getModelTransform(modelId);
-  if (!model || !authored) return undefined;
-  const root = model.object;
-  root.updateWorldMatrix(true, true);
-  const object = source as unknown as THREE.Object3D;
-  object.updateWorldMatrix(true, false);
-  const relative = new THREE.Matrix4().copy(root.matrixWorld).invert().multiply(object.matrixWorld);
-  const authoredWorld = new THREE.Matrix4().compose(
-    new THREE.Vector3(authored.position.x, authored.position.y, authored.position.z),
-    new THREE.Quaternion().setFromEuler(new THREE.Euler(authored.rotation.x, authored.rotation.y, authored.rotation.z)),
-    new THREE.Vector3(authored.scale.x, authored.scale.y, authored.scale.z),
-  );
-  return authoredWorld.multiply(relative).elements;
-}
-
-function sameSnapshot(a: readonly number[], b: readonly number[] | undefined, epsilon = 1e-6): boolean {
-  return b !== undefined && a.length === b.length && a.every((value, index) => Math.abs(value - b[index]!) <= epsilon);
-}
-
-/** 呈现指纹:eye/target/尺寸/编辑辅助投影/灯光摘要的轻量序列。编辑辅助(选择
- * 盒/gizmo/测量线)的顶点校验和与灯光强度/颜色随场景状态变化,足以区分"同一
- * 画面"与"新状态";未纳入指纹的编辑仍由保底重同步与 settle 序列收敛。 */
-function renderViewFingerprint(view: DeepRenderView): string {
-  const overlay = view.editorOverlay;
-  let overlaySum = 0;
-  if (overlay && "vertices" in overlay) {
-    const vertices = overlay.vertices as ArrayLike<number>;
-    for (let index = 0; index < vertices.length; index += 12) overlaySum += vertices[index]!;
-  }
-  const lights = view.lights;
-  let lightsKey = "0";
-  if (lights) {
-    const digest: string[] = [];
-    for (const light of lights.directional ?? []) digest.push(`${light.intensity?.toFixed(3)},${light.color?.map(v => v.toFixed(2)).join(".")}`);
-    for (const light of lights.points ?? []) digest.push(`${light.intensity?.toFixed(3)}`);
-    for (const light of lights.spots ?? []) digest.push(`${light.intensity?.toFixed(3)}`);
-    lightsKey = digest.join(";");
-  }
-  return `${view.eye[0]},${view.eye[1]},${view.eye[2]},${view.target[0]},${view.target[1]},${view.target[2]},`
-    + `${view.width}x${view.height}@${view.pixelRatio}|ov:${overlay ? overlay.revision : -1}:${overlaySum.toFixed(2)}|li:${lightsKey}`;
-}
-
-function markSwitchPhase(name: string): void {
-  if (typeof performance?.mark === "function") performance.mark(name);
-}
-
-/**
- * T11 首帧管线时序开关：独立作者包路径生产默认启用两个可独立回退的时序优化——
- * 首帧关键管线子集（`t11-critical-pipelines=0` 关闭）与变形变体延迟创建
- * （`t11-defer-deformation=0` 关闭）。两开关只改变"发布前等待哪些变体"，
- * 不改变任何帧的画质与管线集合内容。
- */
-export function t11PipelineBootstrap(hasAuthorPacket: boolean):
-  { firstFrameSubset: boolean; deferDeformation: boolean } | undefined {
-  if (!hasAuthorPacket) return undefined;
-  const params = typeof location !== "undefined" && location.search
-    ? new URLSearchParams(location.search) : undefined;
-  const enabled = (name: string): boolean => {
-    const value = params?.get(name)?.toLowerCase();
-    return value !== "0" && value !== "false" && value !== "off";
-  };
-  return { firstFrameSubset: enabled("t11-critical-pipelines"), deferDeformation: enabled("t11-defer-deformation") };
-}
-
-/**
- * T07 动态内部分辨率接入开关：默认关闭（67% 模式画质未经 GPU 序列联测，不冒充
- * 默认优秀画质）；`t07-dynamic-resolution=1` 显式开启后按帧时反馈在 0.5–1 之间
- * 调整内部渲染比例。开启即消费 deep-engine `resolutionScalePolicy` 能力。
- */
-export function t07DynamicResolutionPolicy():
-  import("@bim-studio/deep-engine/postprocess").ResolutionScalePolicy | undefined {
-  const params = typeof location !== "undefined" && location.search
-    ? new URLSearchParams(location.search) : undefined;
-  const value = params?.get("t07-dynamic-resolution")?.toLowerCase();
-  if (value !== "1" && value !== "true" && value !== "on") return undefined;
-  return { ...DEFAULT_RESOLUTION_SCALE_POLICY };
-}
-
-/**
- * B4 簇级 HLOD 驻留感知隐藏开关：默认关闭（簇代理画质与切换序列未过浏览器视觉
- * 闭环，不冒充默认体验）；`b4-hlod-cluster=1` 显式开启后，Deep 后端按相机消费
- * 簇决策做 demand 过滤 + 行置零补偿 + 代理 overlay 注入，选择/剖切/测量
- * （编辑辅助 overlay 顶点非空）强制原件驻留。
- */
-export function b4HlodClusterEnabled(): boolean {
-  const params = typeof location !== "undefined" && location.search
-    ? new URLSearchParams(location.search) : undefined;
-  const value = params?.get("b4-hlod-cluster")?.toLowerCase();
-  return value === "1" || value === "true" || value === "on";
-}
-
-/**
- * G1 簇级微多边形槽位开关：默认关闭（作者链路帧时收益未过真机对照，不冒充默认
- * 体验）；`g1-cluster-lod=1` 显式开启后，宿主把作者包合并静态几何 bake 成簇级
- * DAG 随 create 下发，backend 在静态包发布成功后注入渲染器槽位（像素阈值选层 +
- * indirect RenderBundle 进默认 opaque pass）。注入失败仅记诊断，不打断渲染链。
- */
-export function g1ClusterLodEnabled(): boolean {
-  const params = typeof location !== "undefined" && location.search
-    ? new URLSearchParams(location.search) : undefined;
-  const value = params?.get("g1-cluster-lod")?.toLowerCase();
-  return value === "1" || value === "true" || value === "on";
-}
-
-/**
- * T25 逐 pass GPU 计时采集开关（F1）：默认关闭（timestamp 查询有逐帧开销）；
- * `t25-gpu-pass-timing=1` 开启后 T25 面板出现「逐 Pass GPU 耗时」小节。
- */
-export function t25GpuPassTimingEnabled(): boolean {
-  const params = typeof location !== "undefined" && location.search
-    ? new URLSearchParams(location.search) : undefined;
-  const value = params?.get("t25-gpu-pass-timing")?.toLowerCase();
-  return value === "1" || value === "true" || value === "on";
-}
-
-/**
- * F4 时域超分采集开关：`f4-temporal-upscale=1`。需与 `t07-dynamic-resolution=1`
- * 同开——超分在 scale<1 时才激活（temporalUpscaleActive 门），单开无效。
- */
-export function f4TemporalUpscaleEnabled(): boolean {
-  const params = typeof location !== "undefined" && location.search
-    ? new URLSearchParams(location.search) : undefined;
-  const value = params?.get("f4-temporal-upscale")?.toLowerCase();
-  return value === "1" || value === "true" || value === "on";
-}
-
-/** F3 虚拟纹理开关：`f3-virtual-textures=1`（opt-in，默认整纹理驻留路径零变化）。 */
-export function f3VirtualTexturesEnabled(): boolean {
-  const params = typeof location !== "undefined" && location.search
-    ? new URLSearchParams(location.search) : undefined;
-  const value = params?.get("f3-virtual-textures")?.toLowerCase();
-  return value === "1" || value === "true" || value === "on";
-}
-
-function threePrototypeHooks() {
-  return {
-    objectBeforeRender: THREE.Object3D.prototype.onBeforeRender,
-    objectAfterRender: THREE.Object3D.prototype.onAfterRender,
-    objectBeforeShadow: THREE.Object3D.prototype.onBeforeShadow,
-    objectAfterShadow: THREE.Object3D.prototype.onAfterShadow,
-    materialBeforeRender: THREE.Material.prototype.onBeforeRender,
-    materialBeforeCompile: THREE.Material.prototype.onBeforeCompile,
-    materialProgramCacheKey: THREE.Material.prototype.customProgramCacheKey,
-  };
-}
-
-function nextFrame(signal?: AbortSignal): Promise<void> {
-  if (signal?.aborted) return Promise.reject(new DOMException("Renderer switch cancelled", "AbortError"));
-  return new Promise((resolve, reject) => {
-    const frame = requestAnimationFrame(() => { signal?.removeEventListener("abort", onAbort); resolve(); });
-    const onAbort = () => { cancelAnimationFrame(frame); reject(new DOMException("Renderer switch cancelled", "AbortError")); };
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
 }

@@ -5,6 +5,7 @@ import { DashboardWidgetView } from "../../src/components/DashboardWidgetRuntime
 import { captureRenderedDashboardData } from "../../src/delivery/captureRenderedDashboardData";
 import "../../src/styles/base.css";
 import "../../src/styles/platform-components.css";
+import "../../src/styles/platform-components-behavior-graph.css";
 import "../../src/styles/dashboard-workspace.css";
 
 // 请求由受宿主驱动的 addInitScript 注入;页面代码不自行决定任何身份。

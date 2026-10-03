@@ -5,6 +5,7 @@ import { DashboardWidgetView } from "../../src/components/DashboardWidgetRuntime
 import { captureRenderedDashboardData } from "../../src/delivery/captureRenderedDashboardData";
 import "../../src/styles/base.css";
 import "../../src/styles/platform-components.css";
+import "../../src/styles/platform-components-behavior-graph.css";
 import "../../src/styles/dashboard-workspace.css";
 
 const common = { key: "capture", title: "产量", unit: "件", source: "sample", color: "#ffffff" };

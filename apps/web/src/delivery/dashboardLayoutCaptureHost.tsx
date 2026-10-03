@@ -7,6 +7,7 @@ import { captureRenderedDashboardData } from "./captureRenderedDashboardData";
 import { dashboardFrozenFontStyle } from "./dashboardFrozenFontStyle";
 import "../styles/base.css";
 import "../styles/platform-components.css";
+import "../styles/platform-components-behavior-graph.css";
 import "../styles/dashboard-workspace.css";
 import "../components/DashboardTemplateTypography.css";
 

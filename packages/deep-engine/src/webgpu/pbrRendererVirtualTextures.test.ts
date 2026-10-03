@@ -8,6 +8,7 @@ import type { PreparedBatch } from "../renderPacket.js";
 import { createVirtualTextureFrameBridge, type VirtualTextureFrameBridge } from "./virtualTextureFrameBridge.js";
 import { VirtualTextureTileLookupPass } from "./virtualTextureSampling.js";
 import { PbrRenderer } from "./pbrRenderer.js";
+import { driveVirtualTextures } from "./pbrRendererFrames.js";
 
 /**
  * F4 虚拟纹理渲染接线(prototype 直调,照 probeFactory/disposal 先例):
@@ -93,10 +94,8 @@ describe("virtual texture render wiring", () => {
     const renderer = Object.assign(Object.create(PbrRenderer.prototype), {
       virtualTextures: f.bridge, virtualTileLookup: f.lookup,
       packets: { visibilityInputs: () => ({ batches, geometries, lod: undefined, deformationActive: false }) } });
-    const drive = (PbrRenderer.prototype as unknown as Record<string, (...args: unknown[]) => unknown>)
-      ["driveVirtualTextures"]!;
-    // 第 1 帧:反馈入队,atlas 懒创建于上传前;编码可能因 atlas 尚未 commit 而跳过(遥测披露)。
-    const first = drive.call(renderer as never, FRAME_STATE, { width: 800, height: 600 }, f.encoder) as
+    // driveVirtualTextures 自 2026-10-03 起为 pbrRendererFrames 模块函数(host 结构视图)。
+    const first = driveVirtualTextures(renderer as never, FRAME_STATE, { width: 800, height: 600 }, f.encoder) as
       ReturnType<VirtualTextureFrameBridge["observeFrame"]>;
     expect(first.enabled).toBe(true);
     expect(first.feedback.entryCount).toBe(1);
@@ -105,7 +104,7 @@ describe("virtual texture render wiring", () => {
     await f.settle();
     expect(f.writeTexture).toHaveBeenCalled();
     // 第 2 帧:页已提交,atlas 存在,消费编码执行。
-    const second = drive.call(renderer as never, FRAME_STATE, { width: 800, height: 600 }, f.encoder) as
+    const second = driveVirtualTextures(renderer as never, FRAME_STATE, { width: 800, height: 600 }, f.encoder) as
       ReturnType<VirtualTextureFrameBridge["observeFrame"]>;
     expect(second.frame).toBe(1);
     expect(second.sampling).toBeDefined();
@@ -126,9 +125,7 @@ describe("virtual texture render wiring", () => {
     const renderer = Object.assign(Object.create(PbrRenderer.prototype), {
       virtualTextures: f.bridge, virtualTileLookup: f.lookup,
       packets: { visibilityInputs: () => ({ batches, geometries, lod: undefined, deformationActive: false }) } });
-    const drive = (PbrRenderer.prototype as unknown as Record<string, (...args: unknown[]) => unknown>)
-      ["driveVirtualTextures"]!;
-    const metrics = drive.call(renderer as never, FRAME_STATE, { width: 800, height: 600 }, f.encoder) as
+    const metrics = driveVirtualTextures(renderer as never, FRAME_STATE, { width: 800, height: 600 }, f.encoder) as
       ReturnType<VirtualTextureFrameBridge["observeFrame"]>;
     expect(metrics.feedback.entryCount).toBe(0);
     expect(metrics.feedback.footprintCount).toBe(0);
