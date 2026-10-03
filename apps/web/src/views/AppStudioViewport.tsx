@@ -33,6 +33,7 @@ import type { AppStudioController } from "./AppStudioShell";
 import { sceneViewerDeliveryToolbarVisible } from "../delivery/sceneViewerDelivery";
 import type { SceneSimulationPanelId } from "../simulation/sceneSimulationRegistry";
 import type { SimulationDockReservation } from "../simulation/sceneSimulationLayout";
+import { useGlobalShortcuts } from "../shortcuts/useGlobalShortcuts";
 import { useSceneSimulationOverlay } from "../hooks/useSceneSimulationOverlay";
 import { useScenePlantPlayback } from "../hooks/useScenePlantPlayback";
 import { useSceneEditPort } from "../hooks/useSceneEditPort";
@@ -305,6 +306,15 @@ export function AppStudioViewport({ controller }: { controller: AppStudioControl
     setSimulationPanelId(undefined);
     navigate({ view: "studio", sceneId });
   }
+
+  // 全局工具快捷键(Q/W/E/R 切换工具,F 全景)。engine 缺失时动作自空操作。
+  useGlobalShortcuts({
+    "tool.select": () => changeNavigation("orbit"),
+    "tool.translate": () => changeTransform("translate"),
+    "tool.rotate": () => changeTransform("rotate"),
+    "tool.scale": () => changeTransform("scale"),
+    "camera.focus": () => engine?.fitAll(),
+  });
 
   return (
     <div className="workspace" data-simulation-dock={route.view === "studio" && simulationPanelId ? simulationDock.placement : "float"} role={workspaceIsPrimary ? "main" : undefined} aria-hidden={workspaceIsPrimary ? undefined : true}>
